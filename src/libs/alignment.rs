@@ -24,7 +24,7 @@ lazy_static! {
 /// let seq2 = b"TTTAGCTAgc-";
 /// // difference 5
 /// // comparable 10
-/// assert_eq!(hnsm::pair_d(seq1, seq2), 0.5);
+/// assert_eq!(pgr::pair_d(seq1, seq2), 0.5);
 /// ```
 pub fn pair_d(seq1: &[u8], seq2: &[u8]) -> f32 {
     assert_eq!(
@@ -62,21 +62,21 @@ pub fn pair_d(seq1: &[u8], seq2: &[u8]) -> f32 {
 ///     b"AAAATTTTGG".as_ref(),
 ///     b"aaaatttttg".as_ref(),
 /// ];
-/// assert_eq!(hnsm::alignment_stat(&seqs), (10, 10, 1, 0, 0, 0.1,));
+/// assert_eq!(pgr::alignment_stat(&seqs), (10, 10, 1, 0, 0, 0.1,));
 ///
 /// let seqs = vec![
 ///     //*          * *
 ///     b"TTAGCCGCTGAGAAGCC".as_ref(),
 ///     b"GTAGCCGCTGA-AGGCC".as_ref(),
 /// ];
-/// assert_eq!(hnsm::alignment_stat(&seqs), (17, 16, 2, 1, 0, 0.125,));
+/// assert_eq!(pgr::alignment_stat(&seqs), (17, 16, 2, 1, 0, 0.125,));
 ///
 /// let seqs = vec![
 ///     //    * **    *   ** *   *
 ///     b"GATTATCATCACCCCAGCCACATW".as_ref(),
 ///     b"GATTTT--TCACTCCATTCGCATA".as_ref(),
 /// ];
-/// assert_eq!(hnsm::alignment_stat(&seqs), (24, 21, 5, 2, 1, 0.238,));
+/// assert_eq!(pgr::alignment_stat(&seqs), (24, 21, 5, 2, 1, 0.238,));
 ///
 /// ```
 pub fn alignment_stat(seqs: &[&[u8]]) -> (i32, i32, i32, i32, i32, f32) {
@@ -172,7 +172,7 @@ impl fmt::Display for Substitution {
 ///     b"aaaatttttg".as_ref(),
 ///     b"AAAATTTTAG".as_ref(),
 /// ];
-/// let subs = hnsm::get_subs(&seqs[..2]).unwrap();
+/// let subs = pgr::get_subs(&seqs[..2]).unwrap();
 /// let sub = subs.first().unwrap();
 /// assert_eq!(sub.pos, 9);
 /// assert_eq!(sub.tbase, "G".to_string());
@@ -188,7 +188,7 @@ impl fmt::Display for Substitution {
 ///     b"TTAG--GCTGAGAAGC".as_ref(),
 ///     b"GTAGCCGCTGA-AGGC".as_ref(),
 /// ];
-/// let subs = hnsm::get_subs(&seqs).unwrap();
+/// let subs = pgr::get_subs(&seqs).unwrap();
 /// let sub = subs.first().unwrap();
 /// assert_eq!(sub.pos, 1);
 /// assert_eq!(sub.tbase, "T".to_string());
@@ -296,8 +296,8 @@ pub fn get_subs(seqs: &[&[u8]]) -> anyhow::Result<Vec<Substitution>> {
 ///     b"AAAATTTTAG".as_ref(),
 ///     b"AAAATTTTAG".as_ref(),
 /// ];
-/// let mut subs = hnsm::get_subs(&seqs[0..2]).unwrap();
-/// hnsm::polarize_subs(&mut subs, &seqs[2]);
+/// let mut subs = pgr::get_subs(&seqs[0..2]).unwrap();
+/// pgr::polarize_subs(&mut subs, &seqs[2]);
 /// let sub = subs.first().unwrap();
 /// assert_eq!(sub.pos, 9);
 /// assert_eq!(sub.tbase, "G".to_string());
@@ -314,8 +314,8 @@ pub fn get_subs(seqs: &[&[u8]]) -> anyhow::Result<Vec<Substitution>> {
 ///     b"GTAGCCGCTGA-AGGC".as_ref(),
 ///     b"TTAGCCGCTGAGAGGC".as_ref(),
 /// ];
-/// let mut subs = hnsm::get_subs(&seqs[0..2]).unwrap();
-/// hnsm::polarize_subs(&mut subs, &seqs[2]);
+/// let mut subs = pgr::get_subs(&seqs[0..2]).unwrap();
+/// pgr::polarize_subs(&mut subs, &seqs[2]);
 /// let sub = subs.first().unwrap();
 /// assert_eq!(sub.pos, 1);
 /// assert_eq!(sub.tbase, "T".to_string());
@@ -431,7 +431,7 @@ impl fmt::Display for Indel {
 ///     b"AAAATTTT----".as_ref(),
 ///     b"AAAATTTTGGGG".as_ref(),
 /// ];
-/// let indels = hnsm::get_indels(&seqs).unwrap();
+/// let indels = pgr::get_indels(&seqs).unwrap();
 /// let indel = indels.first().unwrap();
 /// assert_eq!(indel.start, 9);
 /// assert_eq!(indel.end, 12);
@@ -448,7 +448,7 @@ impl fmt::Display for Indel {
 ///     b"AAAATTTTGGGG".as_ref(),
 ///     b"----TTTTGGGG".as_ref(),
 /// ];
-/// let indels = hnsm::get_indels(&seqs).unwrap();
+/// let indels = pgr::get_indels(&seqs).unwrap();
 /// let indel = indels.first().unwrap();
 /// assert_eq!(indel.start, 1);
 /// assert_eq!(indel.end, 4);
@@ -464,7 +464,7 @@ impl fmt::Display for Indel {
 ///     b"TTAG--GCTGAGAAGC".as_ref(),
 ///     b"GTAGCCGCTGA-AGGC".as_ref(),
 /// ];
-/// let indels = hnsm::get_indels(&seqs).unwrap();
+/// let indels = pgr::get_indels(&seqs).unwrap();
 /// let indel = indels.first().unwrap();
 /// assert_eq!(indel.start, 5);
 /// assert_eq!(indel.end, 6);
@@ -571,8 +571,8 @@ pub fn get_indels(seqs: &[&[u8]]) -> anyhow::Result<Vec<Indel>> {
 ///     b"AAAATTTT----".as_ref(),
 ///     b"AAAATTTTGGGG".as_ref(),
 /// ];
-/// let mut indels = hnsm::get_indels(&seqs[0..2]).unwrap();
-/// hnsm::polarize_indels(&mut indels, &seqs[2]);
+/// let mut indels = pgr::get_indels(&seqs[0..2]).unwrap();
+/// pgr::polarize_indels(&mut indels, &seqs[2]);
 /// let indel = indels.first().unwrap();
 /// assert_eq!(indel.start, 9);
 /// assert_eq!(indel.end, 12);
@@ -590,8 +590,8 @@ pub fn get_indels(seqs: &[&[u8]]) -> anyhow::Result<Vec<Indel>> {
 ///     b"AAAATTTTGGGG".as_ref(),
 ///     b"----TTTTGGGG".as_ref(),
 /// ];
-/// let mut indels = hnsm::get_indels(&seqs[0..2]).unwrap();
-/// hnsm::polarize_indels(&mut indels, &seqs[2]);
+/// let mut indels = pgr::get_indels(&seqs[0..2]).unwrap();
+/// pgr::polarize_indels(&mut indels, &seqs[2]);
 /// let indel = indels.first().unwrap();
 /// assert_eq!(indel.start, 1);
 /// assert_eq!(indel.end, 4);
@@ -609,8 +609,8 @@ pub fn get_indels(seqs: &[&[u8]]) -> anyhow::Result<Vec<Indel>> {
 ///     b"GTAGCCGCTGA-AGGC".as_ref(),
 ///     b"GTAGCCGCTGA--GGC".as_ref(),
 /// ];
-/// let mut indels = hnsm::get_indels(&seqs[0..2]).unwrap();
-/// hnsm::polarize_indels(&mut indels, &seqs[2]);
+/// let mut indels = pgr::get_indels(&seqs[0..2]).unwrap();
+/// pgr::polarize_indels(&mut indels, &seqs[2]);
 /// let indel = indels.first().unwrap();
 /// assert_eq!(indel.start, 5);
 /// assert_eq!(indel.end, 6);
@@ -727,7 +727,7 @@ pub fn polarize_indels(indels: &mut Vec<Indel>, og: &[u8]) {
 }
 
 /// ```
-/// use hnsm::{indel_intspan, seq_intspan};
+/// use pgr::{indel_intspan, seq_intspan};
 /// let tests : Vec<(&str, &str)> = vec![
 ///     // seq, expected
 ///     ("ATAA", "-"),
@@ -772,7 +772,7 @@ pub fn seq_intspan(seq: &[u8]) -> IntSpan {
 ///             b"TTAGCCGCTGAGAAGC".as_ref(),
 ///             b"TTAGCCGCTGA-AAGC".as_ref(),
 ///         ];
-///         let cons = hnsm::get_consensus_poa(&seqs).unwrap();
+///         let cons = pgr::get_consensus_poa(&seqs).unwrap();
 ///         assert_eq!(cons, "TTAGCCGCTGAGAAGC".to_string());
 ///
 ///         let seqs = vec![
@@ -780,7 +780,7 @@ pub fn seq_intspan(seq: &[u8]) -> IntSpan {
 ///             b"AAATTTTGG".as_ref(),
 ///             b"AAAATTTTT".as_ref(),
 ///         ];
-///         let cons = hnsm::get_consensus_poa(&seqs).unwrap();
+///         let cons = pgr::get_consensus_poa(&seqs).unwrap();
 ///         assert_eq!(cons, "AAAATTTTGG".to_string());
 ///
 ///         let seqs = vec![
@@ -788,14 +788,14 @@ pub fn seq_intspan(seq: &[u8]) -> IntSpan {
 ///             b"AAAATTTTGG".as_ref(),
 ///             b"AAAATTTTTG".as_ref(),
 ///         ];
-///         let cons = hnsm::get_consensus_poa(&seqs).unwrap();
+///         let cons = pgr::get_consensus_poa(&seqs).unwrap();
 ///         assert_eq!(cons, "AAAATTTTTG".to_string());
 ///
 ///         let seqs = vec![
 ///         //
 ///             b"AAAATTTTGG".as_ref(),
 ///         ];
-///         let cons = hnsm::get_consensus_poa(&seqs).unwrap();
+///         let cons = pgr::get_consensus_poa(&seqs).unwrap();
 ///         assert_eq!(cons, "AAAATTTTGG".to_string());
 ///
 ///     }
@@ -856,11 +856,11 @@ pub fn get_consensus_poa(seqs: &[&[u8]]) -> anyhow::Result<String> {
 /// ```
 /// match which::which("hnsm") {
 ///     Ok(_) => {
-///         let seq = hnsm::get_seq_loc("tests/fasr/NC_000932.fa", "NC_000932:1-10").unwrap();
+///         let seq = pgr::get_seq_loc("tests/fasr/NC_000932.fa", "NC_000932:1-10").unwrap();
 ///         assert_eq!(seq, "ATGGGCGAAC".to_string());
-///         let seq = hnsm::get_seq_loc("tests/fasr/NC_000932.fa", "NC_000932(-):1-10").unwrap();
+///         let seq = pgr::get_seq_loc("tests/fasr/NC_000932.fa", "NC_000932(-):1-10").unwrap();
 ///         assert_eq!(seq, "GTTCGCCCAT".to_string());
-///         let res = hnsm::get_seq_loc("tests/fasr/NC_000932.fa", "FAKE:1-10");
+///         let res = pgr::get_seq_loc("tests/fasr/NC_000932.fa", "FAKE:1-10");
 ///         assert_eq!(res.unwrap(), "".to_string());
 ///     }
 ///     Err(_) => {}
@@ -906,7 +906,7 @@ pub fn get_seq_loc(file: &str, range: &str) -> anyhow::Result<String> {
 /// Coordinate transforming - from chr to align
 ///
 /// ```
-/// use hnsm::{indel_intspan, seq_intspan};
+/// use pgr::{indel_intspan, seq_intspan};
 /// let tests : Vec<(&str, i32, i32, &str, i32)> = vec![
 ///     // seq, pos, chr_start, strand, expected
 ///     ("AAAATTTTTG", 4, 1, "+", 4),
@@ -919,7 +919,7 @@ pub fn get_seq_loc(file: &str, range: &str) -> anyhow::Result<String> {
 /// for (seq, pos, chr_start, strand, expected) in tests {
 ///     let ints = seq_intspan(seq.as_ref());
 ///     // eprintln!("ints.to_string() = {:#?}", ints.to_string());
-///     let result = hnsm::chr_to_align(&ints, pos, chr_start, strand).unwrap();
+///     let result = pgr::chr_to_align(&ints, pos, chr_start, strand).unwrap();
 ///     assert_eq!(result, expected);
 /// }
 /// ```
@@ -949,7 +949,7 @@ pub fn chr_to_align(ints: &IntSpan, pos: i32, chr_start: i32, strand: &str) -> a
 /// Coordinate transforming - from align to chr
 ///
 /// ```
-/// use hnsm::{indel_intspan, seq_intspan};
+/// use pgr::{indel_intspan, seq_intspan};
 /// let data : Vec<(&str, i32, i32, &str, i32)> = vec![
 ///     // seq, pos, chr_start, strand, expected
 ///     ("AAAATTTTTG", 4, 1, "+", 4),
@@ -970,7 +970,7 @@ pub fn chr_to_align(ints: &IntSpan, pos: i32, chr_start: i32, strand: &str) -> a
 /// for (seq, pos, chr_start, strand, expected) in data {
 ///     let ints = seq_intspan(seq.as_ref());
 ///     // eprintln!("ints.to_string() = {:#?}", ints.to_string());
-///     let result = hnsm::align_to_chr(&ints, pos, chr_start, strand).unwrap();
+///     let result = pgr::align_to_chr(&ints, pos, chr_start, strand).unwrap();
 ///     assert_eq!(result, expected);
 /// }
 /// ```
@@ -1026,7 +1026,7 @@ pub fn align_to_chr(ints: &IntSpan, pos: i32, chr_start: i32, strand: &str) -> a
 ///             "TTAGCCGCTGAGAAGC".to_string(),
 ///             "TTAGCCGCTGAAAGC".to_string(),
 ///         ];
-///         let alns = hnsm::align_seqs(&seqs, "clustalw").unwrap();
+///         let alns = pgr::align_seqs(&seqs, "clustalw").unwrap();
 ///         assert_eq!(alns[2], "TTAGCCGCTGA-AAGC".to_string());
 ///
 ///     }
@@ -1221,7 +1221,7 @@ pub fn align_seqs_quick(
 ///     "AAAATTTTTG".to_string(),
 ///     "AAAATTTTTG".to_string(),
 /// ];
-/// hnsm::trim_pure_dash(&mut seqs);
+/// pgr::trim_pure_dash(&mut seqs);
 /// assert_eq!(seqs[0].len(), 10);
 ///
 /// let mut seqs = vec![
@@ -1229,7 +1229,7 @@ pub fn align_seqs_quick(
 ///     "-AA--TTTGG".to_string(),
 ///     "-AA--TTTGG".to_string(),
 /// ];
-/// hnsm::trim_pure_dash(&mut seqs);
+/// pgr::trim_pure_dash(&mut seqs);
 /// assert_eq!(seqs[0].len(), 7);
 ///
 /// let mut seqs = vec![
@@ -1237,7 +1237,7 @@ pub fn align_seqs_quick(
 ///     "-AAA-TTTGG".to_string(),
 ///     "AAA--TTTTG".to_string(),
 /// ];
-/// hnsm::trim_pure_dash(&mut seqs);
+/// pgr::trim_pure_dash(&mut seqs);
 /// assert_eq!(seqs[0].len(), 9);
 ///
 /// ```
@@ -1296,7 +1296,7 @@ fn align_indel_ints(seqs: &mut Vec<String>, count: usize) -> (IntSpan, IntSpan) 
 ///     "AAAATTTTTG".to_string(),
 ///     "AAAATTTTTG".to_string(),
 /// ];
-/// hnsm::trim_outgroup(&mut seqs);
+/// pgr::trim_outgroup(&mut seqs);
 /// assert_eq!(seqs[0].len(), 10);
 ///
 /// let mut seqs = vec![
@@ -1304,7 +1304,7 @@ fn align_indel_ints(seqs: &mut Vec<String>, count: usize) -> (IntSpan, IntSpan) 
 ///     "-AA--TTTGG".to_string(),
 ///     "-AA--TTTGG".to_string(),
 /// ];
-/// hnsm::trim_outgroup(&mut seqs);
+/// pgr::trim_outgroup(&mut seqs);
 /// assert_eq!(seqs[0].len(), 7);
 ///
 /// let mut seqs = vec![
@@ -1312,7 +1312,7 @@ fn align_indel_ints(seqs: &mut Vec<String>, count: usize) -> (IntSpan, IntSpan) 
 ///     "-AAA-TTTGG".to_string(),
 ///     "AAA--TTTTG".to_string(),
 /// ];
-/// hnsm::trim_outgroup(&mut seqs);
+/// pgr::trim_outgroup(&mut seqs);
 /// assert_eq!(seqs[0].len(), 9);
 ///
 /// let mut seqs = vec![
@@ -1320,7 +1320,7 @@ fn align_indel_ints(seqs: &mut Vec<String>, count: usize) -> (IntSpan, IntSpan) 
 ///     "AAAATTT-GG".to_string(),
 ///     "AAA--TTTTG".to_string(),
 /// ];
-/// hnsm::trim_outgroup(&mut seqs);
+/// pgr::trim_outgroup(&mut seqs);
 /// assert_eq!(seqs[0].len(), 9);
 ///
 /// let mut seqs = vec![
@@ -1328,7 +1328,7 @@ fn align_indel_ints(seqs: &mut Vec<String>, count: usize) -> (IntSpan, IntSpan) 
 ///     "-AAA-TT-GG".to_string(),
 ///     "AAA--TTTTG".to_string(),
 /// ];
-/// hnsm::trim_outgroup(&mut seqs);
+/// pgr::trim_outgroup(&mut seqs);
 /// assert_eq!(seqs[0].len(), 8);
 ///
 /// ```
@@ -1375,8 +1375,8 @@ pub fn trim_outgroup(seqs: &mut Vec<String>) {
 ///     "AAAATTTTTG".to_string(),
 ///     "AAAATTTTTG".to_string(),
 /// ];
-/// hnsm::trim_outgroup(&mut seqs);
-/// let complex = hnsm::trim_complex_indel(&mut seqs);
+/// pgr::trim_outgroup(&mut seqs);
+/// let complex = pgr::trim_complex_indel(&mut seqs);
 /// assert_eq!(seqs[0].len(), 10);
 /// assert_eq!(complex.to_string(), "-");
 ///
@@ -1385,8 +1385,8 @@ pub fn trim_outgroup(seqs: &mut Vec<String>) {
 ///     "-AA--TTTGG".to_string(),
 ///     "-AA--TTTGG".to_string(),
 /// ];
-/// hnsm::trim_outgroup(&mut seqs);
-/// let complex = hnsm::trim_complex_indel(&mut seqs);
+/// pgr::trim_outgroup(&mut seqs);
+/// let complex = pgr::trim_complex_indel(&mut seqs);
 /// assert_eq!(seqs[0].len(), 7);
 /// assert_eq!(complex.to_string(), "-");
 ///
@@ -1395,8 +1395,8 @@ pub fn trim_outgroup(seqs: &mut Vec<String>) {
 ///     "-AAA-TTTGG".to_string(),
 ///     "AAA--TTTGG".to_string(),
 /// ];
-/// hnsm::trim_outgroup(&mut seqs);
-/// let complex = hnsm::trim_complex_indel(&mut seqs);
+/// pgr::trim_outgroup(&mut seqs);
+/// let complex = pgr::trim_complex_indel(&mut seqs);
 /// assert_eq!(seqs[0].len(), 8);
 /// assert_eq!(complex.to_string(), "3");
 ///
@@ -1405,8 +1405,8 @@ pub fn trim_outgroup(seqs: &mut Vec<String>) {
 ///     "AAAATTT-GG".to_string(),
 ///     "AAA--TTTTG".to_string(),
 /// ];
-/// hnsm::trim_outgroup(&mut seqs);
-/// let complex = hnsm::trim_complex_indel(&mut seqs);
+/// pgr::trim_outgroup(&mut seqs);
+/// let complex = pgr::trim_complex_indel(&mut seqs);
 /// assert_eq!(seqs[0].len(), 9);
 /// assert_eq!(complex.to_string(), "-");
 ///
@@ -1415,8 +1415,8 @@ pub fn trim_outgroup(seqs: &mut Vec<String>) {
 ///     "-AAA-TT-GG".to_string(),
 ///     "AAA--TTTTG".to_string(),
 /// ];
-/// hnsm::trim_outgroup(&mut seqs);
-/// let complex = hnsm::trim_complex_indel(&mut seqs);
+/// pgr::trim_outgroup(&mut seqs);
+/// let complex = pgr::trim_complex_indel(&mut seqs);
 /// assert_eq!(seqs[0].len(), 7);
 /// assert_eq!(complex.to_string(), "3");
 ///
@@ -1425,8 +1425,8 @@ pub fn trim_outgroup(seqs: &mut Vec<String>) {
 ///     "-AAA-TT-GG".to_string(),
 ///     "AAA--TTTTG".to_string(),
 /// ];
-/// hnsm::trim_outgroup(&mut seqs);
-/// let complex = hnsm::trim_complex_indel(&mut seqs);
+/// pgr::trim_outgroup(&mut seqs);
+/// let complex = pgr::trim_complex_indel(&mut seqs);
 /// assert_eq!(seqs[0].len(), 8);
 /// assert_eq!(complex.to_string(), "3");
 ///
@@ -1435,8 +1435,8 @@ pub fn trim_outgroup(seqs: &mut Vec<String>) {
 ///     "-AAA-TT-GG".to_string(),
 ///     "AAA--TT--G".to_string(),
 /// ];
-/// hnsm::trim_outgroup(&mut seqs);
-/// let complex = hnsm::trim_complex_indel(&mut seqs);
+/// pgr::trim_outgroup(&mut seqs);
+/// let complex = pgr::trim_complex_indel(&mut seqs);
 /// assert_eq!(seqs[0].len(), 8);
 /// assert_eq!(complex.to_string(), "3");
 ///
@@ -1445,8 +1445,8 @@ pub fn trim_outgroup(seqs: &mut Vec<String>) {
 ///     "-AAA-TT--G".to_string(),
 ///     "AAA--TT-GG".to_string(),
 /// ];
-/// hnsm::trim_outgroup(&mut seqs);
-/// let complex = hnsm::trim_complex_indel(&mut seqs);
+/// pgr::trim_outgroup(&mut seqs);
+/// let complex = pgr::trim_complex_indel(&mut seqs);
 /// assert_eq!(seqs[0].len(), 8);
 /// assert_eq!(complex.to_string(), "3");
 ///
@@ -1508,14 +1508,14 @@ pub fn trim_complex_indel(seqs: &mut Vec<String>) -> String {
 ///
 /// let mut seqc = seqs.clone();
 /// let mut rangec = ranges.clone();
-/// hnsm::trim_head_tail(&mut seqc, &mut rangec, 0);
+/// pgr::trim_head_tail(&mut seqc, &mut rangec, 0);
 /// assert_eq!(seqc[0].len(), 27);
 /// assert_eq!(rangec[0].start, 101);
 /// assert_eq!(rangec[1].start, 1);
 ///
 /// let mut seqc = seqs.clone();
 /// let mut rangec = ranges.clone();
-/// hnsm::trim_head_tail(&mut seqc, &mut rangec, 1); // head 1
+/// pgr::trim_head_tail(&mut seqc, &mut rangec, 1); // head 1
 /// assert_eq!(seqc[0].len(), 26);
 /// assert_eq!(rangec[0].start, 101);
 /// assert_eq!(rangec[1].start, 1);
@@ -1524,7 +1524,7 @@ pub fn trim_complex_indel(seqs: &mut Vec<String>) -> String {
 ///
 /// let mut seqc = seqs.clone();
 /// let mut rangec = ranges.clone();
-/// hnsm::trim_head_tail(&mut seqc, &mut rangec, 2); // head 1, tail 2
+/// pgr::trim_head_tail(&mut seqc, &mut rangec, 2); // head 1, tail 2
 /// assert_eq!(seqc[0].len(), 24);
 /// assert_eq!(rangec[0].start, 101);
 /// assert_eq!(rangec[0].end, 122);
@@ -1535,7 +1535,7 @@ pub fn trim_complex_indel(seqs: &mut Vec<String>) -> String {
 ///
 /// let mut seqc = seqs.clone();
 /// let mut rangec = ranges.clone();
-/// hnsm::trim_head_tail(&mut seqc, &mut rangec, 4); // head 5, tail 2
+/// pgr::trim_head_tail(&mut seqc, &mut rangec, 4); // head 5, tail 2
 /// assert_eq!(seqc[0].len(), 20);
 /// assert_eq!(rangec[0].start, 103);
 /// assert_eq!(rangec[0].end, 122);
@@ -1561,7 +1561,7 @@ pub fn trim_complex_indel(seqs: &mut Vec<String>) -> String {
 ///
 /// let mut seqc = seqs.clone();
 /// let mut rangec = ranges.clone();
-/// hnsm::trim_head_tail(&mut seqc, &mut rangec, 4); // head 5, tail 2
+/// pgr::trim_head_tail(&mut seqc, &mut rangec, 4); // head 5, tail 2
 /// assert_eq!(seqc[0].len(), 20);
 /// assert_eq!(seqc[0], "TTTGGCATGCATG1234567".to_string());
 /// assert_eq!(rangec[0].start, 103);

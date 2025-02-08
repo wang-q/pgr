@@ -84,7 +84,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         let mut reader = intspan::reader(infile);
 
         // Parse each AXT block
-        while let Ok(block) = hnsm::next_axt_block(&mut reader, &sizes, opt_tname, opt_qname) {
+        while let Ok(block) = pgr::next_axt_block(&mut reader, &sizes, opt_tname, opt_qname) {
             for entry in block.entries {
                 //----------------------------
                 // Output

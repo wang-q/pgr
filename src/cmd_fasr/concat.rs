@@ -79,7 +79,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     for infile in args.get_many::<String>("infiles").unwrap() {
         let mut reader = intspan::reader(infile);
 
-        while let Ok(block) = hnsm::next_fas_block(&mut reader) {
+        while let Ok(block) = pgr::next_fas_block(&mut reader) {
             let block_names = block.names;
             let length = block.entries.first().unwrap().seq().len();
 

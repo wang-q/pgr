@@ -75,7 +75,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     for infile in args.get_many::<String>("infiles").unwrap() {
         let mut reader = intspan::reader(infile);
 
-        while let Ok(block) = hnsm::next_fas_block(&mut reader) {
+        while let Ok(block) = pgr::next_fas_block(&mut reader) {
             let headers: Vec<String> = block
                 .entries
                 .iter()
@@ -99,7 +99,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                         if i == j {
                             continue;
                         }
-                        let dist = hnsm::pair_d(block.entries[i].seq(), block.entries[j].seq());
+                        let dist = pgr::pair_d(block.entries[i].seq(), block.entries[j].seq());
                         if dist < dist_idx.0 {
                             dist_idx = (dist, j);
                         }

@@ -106,7 +106,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     for infile in args.get_many::<String>("infiles").unwrap() {
         let mut reader = intspan::reader(infile);
 
-        'BLOCK: while let Ok(block) = hnsm::next_fas_block(&mut reader) {
+        'BLOCK: while let Ok(block) = pgr::next_fas_block(&mut reader) {
             // Determine the index of the species
             let idx = if !opt_name.is_empty() {
                 if !block.names.contains(opt_name) {
@@ -148,7 +148,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 //----------------------------
                 // Output
                 //----------------------------
-                let out_entry = hnsm::FasEntry::from(entry.range(), &out_seq);
+                let out_entry = pgr::FasEntry::from(entry.range(), &out_seq);
                 writer.write_all(out_entry.to_string().as_ref())?;
             }
 

@@ -72,7 +72,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     for infile in args.get_many::<String>("infiles").unwrap() {
         let mut reader = intspan::reader(infile);
 
-        while let Ok(block) = hnsm::next_fas_block(&mut reader) {
+        while let Ok(block) = pgr::next_fas_block(&mut reader) {
             let block_names = block.names;
 
             // Check if a specific species is requested
@@ -97,7 +97,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn check_seq(entry: &hnsm::FasEntry, genome: &str) -> anyhow::Result<String> {
+fn check_seq(entry: &pgr::FasEntry, genome: &str) -> anyhow::Result<String> {
     let range = entry.range();
     let seq = entry.seq().to_vec();
     let seq = std::str::from_utf8(&seq)?
@@ -105,7 +105,7 @@ fn check_seq(entry: &hnsm::FasEntry, genome: &str) -> anyhow::Result<String> {
         .to_ascii_uppercase()
         .replace('-', "");
 
-    let gseq = hnsm::get_seq_loc(genome, &range.to_string())?.to_ascii_uppercase();
+    let gseq = pgr::get_seq_loc(genome, &range.to_string())?.to_ascii_uppercase();
 
     let status = if seq == gseq { "OK" } else { "FAILED" };
 

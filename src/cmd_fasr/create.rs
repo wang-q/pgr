@@ -90,7 +90,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 }
 
                 // Fetch the sequence from the reference genome
-                let seq = hnsm::get_seq_loc(opt_genome, &range.to_string())?;
+                let seq = pgr::get_seq_loc(opt_genome, &range.to_string())?;
 
                 //----------------------------
                 // Output

@@ -80,8 +80,8 @@ pub fn make_subcommand() -> Command {
 /// Enum to represent variations (substitutions or indels)
 #[derive(Debug)]
 enum Variation {
-    Substitution(hnsm::Substitution),
-    Indel(hnsm::Indel),
+    Substitution(pgr::Substitution),
+    Indel(pgr::Indel),
 }
 
 #[derive(Debug)]
@@ -137,7 +137,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     for infile in args.get_many::<String>("infiles").unwrap() {
         let mut reader = intspan::reader(infile);
 
-        while let Ok(block) = hnsm::next_fas_block(&mut reader) {
+        while let Ok(block) = pgr::next_fas_block(&mut reader) {
             let mut seqs: Vec<&[u8]> = vec![];
             for entry in &block.entries {
                 seqs.push(entry.seq().as_ref());
@@ -206,7 +206,7 @@ fn paint_name(
     worksheet: &mut Worksheet,
     format_of: &BTreeMap<String, Format>,
     opt: &mut Opt,
-    block: &hnsm::FasBlock,
+    block: &pgr::FasBlock,
 ) -> anyhow::Result<()> {
     for i in 1..=block.entries.len() {
         let pos_row = opt.sec_height * (opt.sec_cursor - 1);
@@ -229,7 +229,7 @@ fn paint_indel(
     worksheet: &mut Worksheet,
     format_of: BTreeMap<String, Format>,
     opt: &mut Opt,
-    indel: &hnsm::Indel,
+    indel: &pgr::Indel,
 ) -> anyhow::Result<()> {
     let mut pos_row = opt.sec_height * (opt.sec_cursor - 1);
 
@@ -348,7 +348,7 @@ fn paint_sub(
     worksheet: &mut Worksheet,
     format_of: &BTreeMap<String, Format>,
     opt: &mut Opt,
-    sub: &hnsm::Substitution,
+    sub: &pgr::Substitution,
 ) -> anyhow::Result<()> {
     let pos_row = opt.sec_height * (opt.sec_cursor - 1);
 
@@ -414,11 +414,11 @@ fn get_vars(
 
     // Get substitutions
     let subs = if is_outgroup {
-        let mut unpolarized = hnsm::get_subs(&seqs[..seq_count])?;
-        hnsm::polarize_subs(&mut unpolarized, out_seq.unwrap());
+        let mut unpolarized = pgr::get_subs(&seqs[..seq_count])?;
+        pgr::polarize_subs(&mut unpolarized, out_seq.unwrap());
         unpolarized
     } else {
-        hnsm::get_subs(&seqs)?
+        pgr::get_subs(&seqs)?
     };
 
     for sub in subs {
@@ -446,11 +446,11 @@ fn get_vars(
     // Get indels
     if is_indel {
         let indels = if is_outgroup {
-            let mut unpolarized = hnsm::get_indels(&seqs[..seq_count])?;
-            hnsm::polarize_indels(&mut unpolarized, out_seq.unwrap());
+            let mut unpolarized = pgr::get_indels(&seqs[..seq_count])?;
+            pgr::polarize_indels(&mut unpolarized, out_seq.unwrap());
             unpolarized
         } else {
-            hnsm::get_indels(&seqs)?
+            pgr::get_indels(&seqs)?
         };
 
         for indel in indels {
