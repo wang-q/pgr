@@ -258,7 +258,7 @@ fasr link tests/fasr/example.fas --best
 fasr replace tests/fasr/replace.tsv tests/fasr/example.fas
 fasr replace tests/fasr/replace.fail.tsv tests/fasr/example.fas
 
-samtools faidx tests/fasr/NC_000932.fa NC_000932:1-10
+hnsm range tests/fasr/NC_000932.fa NC_000932:1-10
 
 fasr check tests/fasr/NC_000932.fa tests/fasr/A_tha.pair.fas
 fasr check tests/fasr/NC_000932.fa tests/fasr/A_tha.pair.fas --name A_tha
