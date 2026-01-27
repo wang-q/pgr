@@ -20,4 +20,5 @@ pub mod split;
 pub mod stat;
 pub mod subset;
 pub mod variation;
+pub mod vcf;
 pub mod xlsx;

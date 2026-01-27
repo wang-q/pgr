@@ -300,6 +300,11 @@ cargo run --bin fasr stat tests/fasr/example.fas --outgroup
 cargo run --bin fasr variation tests/fasr/example.fas
 cargo run --bin fasr variation tests/fasr/example.fas --outgroup
 
+# snp-sites -v tests/fasr/YDL184C.fas
+cargo run --bin fasr vcf tests/fasr/YDL184C.fas
+cargo run --bin fasr vcf tests/fasr/example.fas
+cargo run --bin fasr vcf --sizes tests/fasr/S288c.chr.sizes tests/fasr/YDL184C.fas
+
 #fasops xlsx tests/fasr/example.fas -o example.xlsx
 #fasops xlsx tests/fasr/example.fas -l 50 --outgroup -o example.outgroup.xlsx
 fasr xlsx tests/fasr/example.fas --indel

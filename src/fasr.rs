@@ -31,6 +31,7 @@ fn main() -> anyhow::Result<()> {
         .subcommand(cmd_fasr::stat::make_subcommand())
         .subcommand(cmd_fasr::subset::make_subcommand())
         .subcommand(cmd_fasr::variation::make_subcommand())
+        .subcommand(cmd_fasr::vcf::make_subcommand())
         .subcommand(cmd_fasr::xlsx::make_subcommand())
         .after_help(
             r###"
@@ -41,7 +42,7 @@ Subcommand groups:
 * records: separate / split / subset
 * transform: filter / replace / refine
 * transmute: concat / consensus / join / pl-p2m / slice
-* variations: variation / xlsx
+* variations: variation / vcf / xlsx
 
 "###,
         );
@@ -74,6 +75,7 @@ Subcommand groups:
         Some(("slice", sub_matches)) => cmd_fasr::slice::execute(sub_matches),
         // variations
         Some(("variation", sub_matches)) => cmd_fasr::variation::execute(sub_matches),
+        Some(("vcf", sub_matches)) => cmd_fasr::vcf::execute(sub_matches),
         Some(("xlsx", sub_matches)) => cmd_fasr::xlsx::execute(sub_matches),
         _ => unreachable!(),
     }?;
