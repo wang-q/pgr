@@ -5,24 +5,24 @@
 - 范围：参数解析、随机数与种子管理、输入解析（ms 输出）、GC 设定、DNA 序列生成、FASTA 输出、多群体标签与批次命名
 
 ## 源码结构参考
-- 主程序：读取参数、设定种子、迭代输入样本 [ms2dna.c](file:///c:/Users/wangq/Scripts/pgr/ms2dna-master/src/ms2dna.c)
-- 参数/界面：getArgs、printUsage、printSplash [interface.c](file:///c:/Users/wangq/Scripts/pgr/ms2dna-master/src/interface.c)
-- 样本处理：读取 ms 输出、生成祖先序列与突变序列、FASTA 打印 [sample.c](file:///c:/Users/wangq/Scripts/pgr/ms2dna-master/src/sample.c)
-- 结构体定义：样本结构与字段 [sample.h](file:///c:/Users/wangq/Scripts/pgr/ms2dna-master/src/sample.h)
+- 主程序：读取参数、设定种子、迭代输入样本
+- 参数/界面：getArgs、printUsage、printSplash
+- 样本处理：读取 ms 输出、生成祖先序列与突变序列、FASTA 打印
+- 结构体定义：样本结构与字段
 - 随机数/工具：ran.c、stringUtil.c、sequence_data.c、eprintf.c
 
 ## 输入与输出
 - 输入：ms 输出文本流或文件，格式包含
-  - 首行命令行（解析 nsam, howmany, -r nsite, -I 群体与样本数）[sample.c](file:///c:/Users/wangq/Scripts/pgr/ms2dna-master/src/sample.c#L50-L74)
-  - 每个样本块的 segregating sites 与 positions 与 haplotypes [sample.c](file:///c:/Users/wangq/Scripts/pgr/ms2dna-master/src/sample.c#L101-L137)
+  - 首行命令行（解析 nsam, howmany, -r nsite, -I 群体与样本数）
+  - 每个样本块的 segregating sites 与 positions 与 haplotypes
 - 输出：FASTA 序列，带批次/群体/个体标签，单行序列（不换行）
 
 ## 行为概述
-- 祖先序列生成：按 GC 比例（-g）随机生成祖先序列（A/T 与 G/C 各 0.5）[sample.c](file:///c:/Users/wangq/Scripts/pgr/ms2dna-master/src/sample.c#L145-L160)
-- 位点映射：将 segsites 的 positions 映射到 [0, nsite) 的整数位置，避免重复命中 [sample.c](file:///c:/Users/wangq/Scripts/pgr/ms2dna-master/src/sample.c#L167-L174)
-- 变异生成：在映射位置按 GC/AT 决定派生碱基，遵循互补/随机二选一规则 [sample.c](file:///c:/Users/wangq/Scripts/pgr/ms2dna-master/src/sample.c#L178-L204)
-- 标签规则：Lx（批次）/ Px（群体）/ Sx（样本序号）[sample.c](file:///c:/Users/wangq/Scripts/pgr/ms2dna-master/src/sample.c#L221-L240)
-- 位置精度增强：将 ms 的 4 位 positions 通过小扰动提升精度 [sample.c](file:///c:/Users/wangq/Scripts/pgr/ms2dna-master/src/sample.c#L117-L125)
+- 祖先序列生成：按 GC 比例（-g）随机生成祖先序列（A/T 与 G/C 各 0.5）
+- 位点映射：将 segsites 的 positions 映射到 [0, nsite) 的整数位置，避免重复命中
+- 变异生成：在映射位置按 GC/AT 决定派生碱基，遵循互补/随机二选一规则
+- 标签规则：Lx（批次）/ Px（群体）/ Sx（样本序号）
+- 位置精度增强：将 ms 的 4 位 positions 通过小扰动提升精度
 
 ## Rust 架构设计
 - 模块划分
@@ -64,7 +64,7 @@
   - 变异生成规则（AT/GC 派生）与边界条件
 - FASTA 标签与单行输出
 - 端到端：
-  - 使用仓库 data/test.ms、simpleTest.dat 比对输出 [test.ms](file:///c:/Users/wangq/Scripts/pgr/ms2dna-master/data/test.ms) [simpleTest.dat](file:///c:/Users/wangq/Scripts/pgr/ms2dna-master/data/simpleTest.dat)
+  - 使用仓库 data/test.ms、simpleTest.dat 比对输出
   - 固定种子下比对输出（容差微小）
 - 基准：
   - 大样本与大量 segsites 的解析与生成时间/内存曲线
@@ -78,7 +78,7 @@
 - 阶段 6：端到端与性能优化
 
 ## 风险与规避
-- 输入多样性：ms 输出格式变体（macs 提示）；对 segsites>nsite 情况输出警告并容错 [sample.c](file:///c:/Users/wangq/Scripts/pgr/ms2dna-master/src/sample.c#L163-L166)
+- 输入多样性：ms 输出格式变体（macs 提示）；对 segsites>nsite 情况输出警告并容错
 - 浮点扰动：positions 微扰需控制边界与重复映射概率
 - GC 比例：统计波动与随机性需通过批量测试验证
 - 大文件：采用流式解析与按需分配，避免 OOM
@@ -89,7 +89,7 @@
 - 独立二进制备选：ms2dna（与 C 版名字一致），后续视需求可提供
 
 ## 参考文件
-- 主程序：[ms2dna.c](file:///c:/Users/wangq/Scripts/pgr/ms2dna-master/src/ms2dna.c)
-- 参数接口：[interface.c](file:///c:/Users/wangq/Scripts/pgr/ms2dna-master/src/interface.c)
-- 样本处理：[sample.c](file:///c:/Users/wangq/Scripts/pgr/ms2dna-master/src/sample.c)
-- 结构体定义：[sample.h](file:///c:/Users/wangq/Scripts/pgr/ms2dna-master/src/sample.h)
+- 主程序：ms2dna.c
+- 参数接口：interface.c
+- 样本处理：sample.c
+- 结构体定义：sample.h
