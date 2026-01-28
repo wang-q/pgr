@@ -146,7 +146,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     run_cmd!(info "==> Paths")?;
     run_cmd!(info "    \"pgr\"     = ${pgr}")?;
-    run_cmd!(info "    \"curdir\"  = ${curdir}")?;
+    run_cmd!(info "    \"curdir\"  = ${curdir:?}")?;
     run_cmd!(info "    \"tempdir\" = ${tempdir_str}")?;
 
     run_cmd!(info "==> Absolute paths")?;
@@ -252,10 +252,13 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         while !files.is_empty() {
             let batching: Vec<_> = files.drain(0..100.min(files.len())).collect();
 
-            intspan::write_lines(
-                "chainList.tmp",
-                &batching.iter().map(AsRef::as_ref).collect(),
-            )?;
+            {
+                use std::io::Write;
+                let mut fh = std::fs::File::create("chainList.tmp")?;
+                for s in &batching {
+                    writeln!(fh, "{}", s)?;
+                }
+            }
             run_cmd!(
                 chainMergeSort -inputList=chainList.tmp > all.${sn}.chain.tmp
             )?;

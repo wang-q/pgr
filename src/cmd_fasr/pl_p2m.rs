@@ -53,7 +53,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     run_cmd!(echo "==> Paths")?;
     run_cmd!(echo "    \"fasr\"   = ${fasr}")?;
-    run_cmd!(echo "    \"curdir\" = ${curdir}")?;
+    run_cmd!(echo "    \"curdir\" = ${curdir:?}")?;
     run_cmd!(echo "    \"outdir\" = ${outdir}")?;
 
     // basename => [abs_path, .json, .slice.fas]
