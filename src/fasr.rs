@@ -83,7 +83,6 @@ Subcommand groups:
     Ok(())
 }
 
-// TODO: add more tools - vcf, match
 // TODO: fasr variation --indel
 // TODO: fasr match
 //  sparsemem -maxmatch -F -l %d -b -n -k 4 -threads 4 %s %s > %s

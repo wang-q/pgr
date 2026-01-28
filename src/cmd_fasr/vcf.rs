@@ -8,10 +8,21 @@ pub fn make_subcommand() -> Command {
         .about("Output VCF file (substitutions only)")
         .after_help(
             r###"
-* <infiles> are paths to block FASTA files, .fas.gz supported
-    * infile == stdin means reading from STDIN
+This subcommand converts block FA files into VCF containing SNPs only.
 
-* With an outgroup, substitutions are polarized, but REF uses the target base
+Input files can be gzipped. If the input file is 'stdin', data is read from standard input.
+
+Note:
+- Outputs substitutions only; ID/QUAL/FILTER/INFO are '.'
+- CHROM/POS are derived from the target range; REF is the target base; ALT are non-REF bases
+- Use `--sizes` to emit `##contig=<ID=...,length=...>` headers
+
+Examples:
+1. Output VCF from a block FASTA:
+   fasr vcf tests/fasr/example.fas
+
+2. Output VCF with contig headers:
+   fasr vcf --sizes tests/fasr/S288c.chr.sizes tests/fasr/YDL184C.fas
 
 "###,
         )

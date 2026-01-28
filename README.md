@@ -230,6 +230,10 @@ pgr chain tests/pgr/pseudocat.fa tests/pgr/pseudopig.fa tests/pgr/lastz.psl
 
 lastz --self <(gzip -dcf tests/pgr/mg1655.fa.gz)
 
+multiz M=10 tests/multiz/S288cvsRM11_1a.maf     tests/multiz/S288cvsSpar.maf     1 out1 out2
+
+cargo run -q --bin pgr multiz tests/multiz/S288cvsRM11_1a.maf tests/multiz/S288cvsSpar.maf --v 1 -M 10
+
 ```
 
 ### Block FA files
