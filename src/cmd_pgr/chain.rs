@@ -197,12 +197,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     run_cmd!(info "==> Switch to tempdir")?;
     std::env::set_current_dir(tempdir_str)?;
 
-    run_cmd!(info "==> Target .sizes anc .2bit")?;
+    run_cmd!(info "==> Target .sizes and .2bit")?;
     run_cmd!(
         hnsm size ${abs_target} -o target.chr.sizes;
         faToTwoBit ${abs_target} target.chr.2bit;
     )?;
-    run_cmd!(info "==> Query .sizes anc .2bit")?;
+    run_cmd!(info "==> Query .sizes and .2bit")?;
     run_cmd!(
         hnsm size ${abs_query} -o query.chr.sizes;
         faToTwoBit ${abs_query} query.chr.2bit;
