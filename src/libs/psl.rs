@@ -277,6 +277,48 @@ impl Psl {
             - self.q_num_insert as i32
             - self.t_num_insert as i32
     }
+
+    pub fn calc_aligned(&self) -> u32 {
+        self.match_count + self.mismatch_count + self.rep_match + self.n_count
+    }
+
+    pub fn calc_match(&self) -> u32 {
+        self.match_count + self.rep_match
+    }
+
+    pub fn calc_ident(&self) -> f32 {
+        let aligned = self.calc_aligned();
+        if aligned == 0 {
+            0.0
+        } else {
+            self.calc_match() as f32 / aligned as f32
+        }
+    }
+
+    pub fn calc_q_cover(&self) -> f32 {
+        if self.q_size == 0 {
+            0.0
+        } else {
+            self.calc_aligned() as f32 / self.q_size as f32
+        }
+    }
+
+    pub fn calc_t_cover(&self) -> f32 {
+        if self.t_size == 0 {
+            0.0
+        } else {
+            self.calc_aligned() as f32 / self.t_size as f32
+        }
+    }
+
+    pub fn calc_rep_match(&self) -> f32 {
+        let aligned = self.calc_aligned();
+        if aligned == 0 {
+            0.0
+        } else {
+            self.rep_match as f32 / aligned as f32
+        }
+    }
 }
 
 impl std::str::FromStr for Psl {
