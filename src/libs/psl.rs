@@ -534,4 +534,143 @@ mod tests {
         let expected = "59\t13\t0\t0\t2\t3\t1\t1\t+\tquery\t100\t10\t90\ttarget\t200\t50\t130\t2\t40,40,\t10,50,\t50,90,";
         assert_eq!(output, expected);
     }
+
+    #[test]
+    fn test_parse_valid() {
+        let line = "59\t13\t0\t0\t2\t3\t1\t1\t+\tquery\t100\t10\t90\ttarget\t200\t50\t130\t2\t40,40,\t10,50,\t50,90,";
+        let psl: Psl = line.parse().unwrap();
+        assert_eq!(psl.match_count, 59);
+        assert_eq!(psl.block_count, 2);
+        assert_eq!(psl.block_sizes, vec![40, 40]);
+        assert_eq!(psl.q_starts, vec![10, 50]);
+        assert_eq!(psl.t_starts, vec![50, 90]);
+    }
+
+    #[test]
+    fn test_parse_invalid() {
+        let line = "59\t13"; // Too short
+        let res: Result<Psl, _> = line.parse();
+        assert!(res.is_err());
+
+        let line = "invalid\t13\t0\t0\t2\t3\t1\t1\t+\tquery\t100\t10\t90\ttarget\t200\t50\t130\t2\t40,40,\t10,50,\t50,90,";
+        let res: Result<Psl, _> = line.parse();
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn test_score_dna() {
+        // match=10, mismatch=2, rep=0, ins=0 -> 10 - 2 = 8
+        let mut psl = Psl::default();
+        psl.match_count = 10;
+        psl.mismatch_count = 2;
+        psl.q_size = 100;
+        psl.t_size = 100;
+        // make sure it's not protein
+        psl.block_count = 1;
+        psl.block_sizes = vec![10];
+        psl.t_starts = vec![0];
+        psl.t_start = 0;
+        psl.t_end = 10;
+        psl.strand = "+".to_string();
+
+        assert_eq!(psl.score(), 8);
+    }
+
+    #[test]
+    fn test_calc_ident() {
+        let mut psl = Psl::default();
+        psl.match_count = 90;
+        psl.mismatch_count = 10;
+        // aligned = 100. ident = 90/100 = 0.9
+        assert_eq!(psl.calc_ident(), 0.9);
+        assert_eq!(psl.calc_q_cover(), 0.0); // q_size is 0
+
+        psl.q_size = 100;
+        assert_eq!(psl.calc_q_cover(), 1.0);
+    }
+
+    #[test]
+    fn test_swap() {
+        let mut psl = Psl::default();
+        psl.q_name = "q".to_string();
+        psl.t_name = "t".to_string();
+        psl.q_size = 100;
+        psl.t_size = 200;
+        psl.strand = "+".to_string();
+        psl.block_count = 1;
+        psl.block_sizes = vec![10];
+        psl.q_starts = vec![0];
+        psl.t_starts = vec![0];
+        psl.q_start = 0;
+        psl.q_end = 10;
+        psl.t_start = 0;
+        psl.t_end = 10;
+
+        psl.swap(false);
+        assert_eq!(psl.q_name, "t");
+        assert_eq!(psl.t_name, "q");
+        assert_eq!(psl.q_size, 200);
+        assert_eq!(psl.t_size, 100);
+    }
+
+    #[test]
+    fn test_rc() {
+        // Simple case: 1 block, length 10.
+        // T: 0-10 (size 100) -> RC: 100-10 = 90, 100-0 = 100. New start 90.
+        let mut psl = Psl::default();
+        psl.t_size = 100;
+        psl.q_size = 50;
+        psl.block_count = 1;
+        psl.block_sizes = vec![10];
+        psl.t_starts = vec![0];
+        psl.q_starts = vec![0];
+        psl.strand = "++".to_string();
+
+        psl.rc();
+
+        // strand should flip chars: ++ -> --
+        assert_eq!(psl.strand, "--");
+        // t_start: size(100) - (0 + 10) = 90
+        assert_eq!(psl.t_starts[0], 90);
+        // q_start: size(50) - (0 + 10) = 40
+        assert_eq!(psl.q_starts[0], 40);
+    }
+
+    #[test]
+    fn test_from_align() {
+        // q: AC-G
+        // t: ACTG
+        let q_seq = "AC-G";
+        let t_seq = "ACTG";
+        let psl = Psl::from_align(
+            "q", 3, 0, 3, q_seq,
+            "t", 4, 0, 4, t_seq,
+            "+",
+        ).unwrap();
+
+        assert_eq!(psl.block_count, 2);
+        assert_eq!(psl.block_sizes, vec![2, 1]); // AC, G
+        assert_eq!(psl.q_starts, vec![0, 2]);
+        assert_eq!(psl.t_starts, vec![0, 3]); // T is at index 2 in target, G is at 3
+        assert_eq!(psl.match_count, 3); // A, C, G
+        assert_eq!(psl.t_num_insert, 1);
+        assert_eq!(psl.t_base_insert, 1);
+    }
+
+    #[test]
+    fn test_is_protein() {
+        let mut psl = Psl::default();
+        psl.block_count = 1;
+        psl.block_sizes = vec![10];
+        psl.t_starts = vec![0];
+        psl.t_start = 0;
+        psl.t_end = 30; // 3 * 10
+        psl.strand = "+".to_string();
+        psl.t_size = 100;
+
+        assert!(psl.is_protein());
+
+        psl.t_end = 10;
+        assert!(!psl.is_protein());
+    }
 }
