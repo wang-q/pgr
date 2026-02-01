@@ -3,10 +3,23 @@ use std::fs;
 use std::path::PathBuf;
 use tempfile::TempDir;
 
+fn get_path(subcommand: &str, dir: &str, filename: &str) -> PathBuf {
+    let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    path.push("tests/psl");
+    path.push(subcommand);
+    path.push(dir);
+    path.push(filename);
+    path
+}
+
+//
+// psl histo
+//
+
 #[test]
-fn command_psl_histo_apq_base() -> anyhow::Result<()> {
+fn test_histo_apq_base() -> anyhow::Result<()> {
     let temp = TempDir::new()?;
-    let input = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/psl/histo/input/basic.psl");
+    let input = get_path("histo", "input", "basic.psl");
     let output = temp.path().join("apq.histo");
 
     let mut cmd = Command::cargo_bin("pgr")?;
@@ -39,9 +52,9 @@ fn command_psl_histo_apq_base() -> anyhow::Result<()> {
 }
 
 #[test]
-fn command_psl_histo_apq_multi() -> anyhow::Result<()> {
+fn test_histo_apq_multi() -> anyhow::Result<()> {
     let temp = TempDir::new()?;
-    let input = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/psl/histo/input/basic.psl");
+    let input = get_path("histo", "input", "basic.psl");
     let output = temp.path().join("apq_multi.histo");
 
     let mut cmd = Command::cargo_bin("pgr")?;
@@ -66,9 +79,9 @@ fn command_psl_histo_apq_multi() -> anyhow::Result<()> {
 }
 
 #[test]
-fn command_psl_histo_cover_spread() -> anyhow::Result<()> {
+fn test_histo_cover_spread() -> anyhow::Result<()> {
     let temp = TempDir::new()?;
-    let input = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/psl/histo/input/basic.psl");
+    let input = get_path("histo", "input", "basic.psl");
     let output = temp.path().join("cover.histo");
 
     let mut cmd = Command::cargo_bin("pgr")?;
@@ -88,7 +101,7 @@ fn command_psl_histo_cover_spread() -> anyhow::Result<()> {
     //   3482+120+0 / 13938 = 0.25843
     //   6410+4+0 / 13938 = 0.46018
     //   Diff: 0.46018 - 0.24616 = 0.2140
-
+    //
     // Just checking it runs and produces output. Precise float matching is tricky.
     // I will check if output contains "0.2140"
     let output_content = fs::read_to_string(&output)?;
@@ -98,12 +111,15 @@ fn command_psl_histo_cover_spread() -> anyhow::Result<()> {
     Ok(())
 }
 
+//
+// psl tochain
+//
+
 #[test]
-fn command_psl_to_chain_fix_strand() -> anyhow::Result<()> {
+fn test_tochain_fix_strand() -> anyhow::Result<()> {
     let temp = TempDir::new()?;
-    let input = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/psl/tochain/input/mtor.psl");
-    let expected_output =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/psl/tochain/expected/example3.chain");
+    let input = get_path("tochain", "input", "mtor.psl");
+    let expected_output = get_path("tochain", "expected", "example3.chain");
     let output = temp.path().join("output.chain");
 
     let mut cmd = Command::cargo_bin("pgr")?;
@@ -124,9 +140,9 @@ fn command_psl_to_chain_fix_strand() -> anyhow::Result<()> {
 }
 
 #[test]
-fn command_psl_to_chain_fail_neg_strand() -> anyhow::Result<()> {
+fn test_tochain_fail_neg_strand() -> anyhow::Result<()> {
     let temp = TempDir::new()?;
-    let input = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/psl/tochain/input/mtor.psl");
+    let input = get_path("tochain", "input", "mtor.psl");
     let output = temp.path().join("fail.chain");
 
     let mut cmd = Command::cargo_bin("pgr")?;
@@ -138,5 +154,109 @@ fn command_psl_to_chain_fail_neg_strand() -> anyhow::Result<()> {
     // Should fail because mtor.psl has negative target strand
     cmd.assert().failure();
 
+    Ok(())
+}
+
+//
+// psl rc
+//
+
+#[test]
+fn test_rc_mrna() -> anyhow::Result<()> {
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("psl")
+        .arg("rc")
+        .arg(get_path("rc", "input", "mrna.psl"))
+        .arg("-o")
+        .arg("stdout")
+        .output()
+        .unwrap();
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let expected = std::fs::read_to_string(get_path("rc", "expected", "mrnaTest.psl"))?;
+
+    assert_eq!(stdout.replace("\r\n", "\n"), expected.replace("\r\n", "\n"));
+    Ok(())
+}
+
+#[test]
+fn test_rc_trans() -> anyhow::Result<()> {
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("psl")
+        .arg("rc")
+        .arg(get_path("rc", "input", "trans.psl"))
+        .arg("-o")
+        .arg("stdout")
+        .output()
+        .unwrap();
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let expected = std::fs::read_to_string(get_path("rc", "expected", "transTest.psl"))?;
+
+    assert_eq!(stdout.replace("\r\n", "\n"), expected.replace("\r\n", "\n"));
+    Ok(())
+}
+
+//
+// psl swap
+//
+
+#[test]
+fn test_swap_mrna() -> anyhow::Result<()> {
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("psl")
+        .arg("swap")
+        .arg(get_path("swap", "input", "mrna.psl"))
+        .arg("-o")
+        .arg("stdout")
+        .output()
+        .unwrap();
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let expected = std::fs::read_to_string(get_path("swap", "expected", "mrnaTest.psl"))?;
+
+    assert_eq!(stdout.replace("\r\n", "\n"), expected.replace("\r\n", "\n"));
+    Ok(())
+}
+
+#[test]
+fn test_swap_trans() -> anyhow::Result<()> {
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("psl")
+        .arg("swap")
+        .arg(get_path("swap", "input", "trans.psl"))
+        .arg("-o")
+        .arg("stdout")
+        .output()
+        .unwrap();
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let expected = std::fs::read_to_string(get_path("swap", "expected", "transTest.psl"))?;
+
+    assert_eq!(stdout.replace("\r\n", "\n"), expected.replace("\r\n", "\n"));
+    Ok(())
+}
+
+#[test]
+fn test_swap_mrna_no_rc() -> anyhow::Result<()> {
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("psl")
+        .arg("swap")
+        .arg("--no-rc")
+        .arg(get_path("swap", "input", "mrna.psl"))
+        .arg("-o")
+        .arg("stdout")
+        .output()
+        .unwrap();
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let expected = std::fs::read_to_string(get_path("swap", "expected", "mrnaNoRcTest.psl"))?;
+
+    assert_eq!(stdout.replace("\r\n", "\n"), expected.replace("\r\n", "\n"));
     Ok(())
 }
