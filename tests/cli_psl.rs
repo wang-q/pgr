@@ -6,7 +6,7 @@ use tempfile::TempDir;
 #[test]
 fn command_psl_histo_apq_base() -> anyhow::Result<()> {
     let temp = TempDir::new()?;
-    let input = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/psl/basic.psl");
+    let input = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/psl/histo/input/basic.psl");
     let output = temp.path().join("apq.histo");
 
     let mut cmd = Command::cargo_bin("pgr")?;
@@ -41,7 +41,7 @@ fn command_psl_histo_apq_base() -> anyhow::Result<()> {
 #[test]
 fn command_psl_histo_apq_multi() -> anyhow::Result<()> {
     let temp = TempDir::new()?;
-    let input = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/psl/basic.psl");
+    let input = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/psl/histo/input/basic.psl");
     let output = temp.path().join("apq_multi.histo");
 
     let mut cmd = Command::cargo_bin("pgr")?;
@@ -68,7 +68,7 @@ fn command_psl_histo_apq_multi() -> anyhow::Result<()> {
 #[test]
 fn command_psl_histo_cover_spread() -> anyhow::Result<()> {
     let temp = TempDir::new()?;
-    let input = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/psl/basic.psl");
+    let input = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/psl/histo/input/basic.psl");
     let output = temp.path().join("cover.histo");
 
     let mut cmd = Command::cargo_bin("pgr")?;
@@ -101,9 +101,9 @@ fn command_psl_histo_cover_spread() -> anyhow::Result<()> {
 #[test]
 fn command_psl_to_chain_fix_strand() -> anyhow::Result<()> {
     let temp = TempDir::new()?;
-    let input = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/psl/mtor.psl");
+    let input = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/psl/tochain/input/mtor.psl");
     let expected_output =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/psl/example3.chain");
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/psl/tochain/expected/example3.chain");
     let output = temp.path().join("output.chain");
 
     let mut cmd = Command::cargo_bin("pgr")?;
@@ -126,7 +126,7 @@ fn command_psl_to_chain_fix_strand() -> anyhow::Result<()> {
 #[test]
 fn command_psl_to_chain_fail_neg_strand() -> anyhow::Result<()> {
     let temp = TempDir::new()?;
-    let input = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/psl/mtor.psl");
+    let input = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/psl/tochain/input/mtor.psl");
     let output = temp.path().join("fail.chain");
 
     let mut cmd = Command::cargo_bin("pgr")?;

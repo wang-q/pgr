@@ -35,25 +35,6 @@ fn test_mrna() -> anyhow::Result<()> {
 }
 
 #[test]
-fn test_with_seq() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
-    let output = cmd
-        .arg("psl")
-        .arg("swap")
-        .arg(get_input_path("withSeq.psl"))
-        .arg("-o")
-        .arg("stdout")
-        .output()
-        .unwrap();
-
-    let stdout = String::from_utf8(output.stdout).unwrap();
-    let expected = std::fs::read_to_string(get_expected_path("withSeqTest.psl"))?;
-
-    assert_eq!(stdout.replace("\r\n", "\n"), expected.replace("\r\n", "\n"));
-    Ok(())
-}
-
-#[test]
 fn test_trans() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd

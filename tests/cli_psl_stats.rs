@@ -4,14 +4,14 @@ use std::path::PathBuf;
 
 fn get_expected_path(filename: &str) -> PathBuf {
     let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    path.push("tests/psl/expected");
+    path.push("tests/psl/stats/expected");
     path.push(filename);
     path
 }
 
 fn get_input_path(filename: &str) -> PathBuf {
     let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    path.push("tests/psl");
+    path.push("tests/psl/stats/input");
     path.push(filename);
     path
 }
