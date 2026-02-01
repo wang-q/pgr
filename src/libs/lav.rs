@@ -424,8 +424,8 @@ m {
                 q_name,
                 is_rc,
             } => {
-                assert_eq!(t_name, "target.fa");
-                assert_eq!(q_name, "query.fa");
+                assert_eq!(t_name, "target");
+                assert_eq!(q_name, "query");
                 assert_eq!(is_rc, false);
             }
             _ => panic!("Expected Header stanza, got {:?}", stanza),

@@ -368,3 +368,72 @@ MmUn_161829_35\t7971
 
     Ok(())
 }
+
+#[test]
+fn command_axt_tofas_basic() -> anyhow::Result<()> {
+    let dir = tempdir()?;
+    let input_path = dir.path().join("input.axt");
+    let sizes_path = dir.path().join("q.sizes");
+    let output_path = dir.path().join("output.fas");
+
+    // input.axt
+    // 0 chr1 11 14 chr2 21 24 + 100
+    // ACGT
+    // ACGT
+    let input_content = "\
+0 chr1 11 14 chr2 21 24 + 100
+ACGT
+ACGT
+";
+    // q.sizes
+    let sizes_content = "chr2\t100\n";
+
+    {
+        let mut f = File::create(&input_path)?;
+        f.write_all(input_content.as_bytes())?;
+    }
+    {
+        let mut f = File::create(&sizes_path)?;
+        f.write_all(sizes_content.as_bytes())?;
+    }
+
+    let mut cmd = Command::cargo_bin("pgr")?;
+    cmd.arg("axt")
+        .arg("tofas")
+        .arg(&sizes_path)
+        .arg(&input_path)
+        .arg("-o")
+        .arg(&output_path);
+
+    cmd.assert().success();
+
+    let output = std::fs::read_to_string(&output_path)?;
+    
+    // Check for expected FASTA headers and sequences
+    assert!(output.contains(">target.chr1(+):11-14"));
+    assert!(output.contains(">query.chr2(+):21-24"));
+    
+    Ok(())
+}
+
+#[test]
+fn command_axt_tofas_example() -> anyhow::Result<()> {
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("axt")
+        .arg("tofas")
+        .arg("tests/fasr/RM11_1a.chr.sizes")
+        .arg("tests/fasr/example.axt")
+        .arg("--qname")
+        .arg("RM11_1a")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    assert_eq!(stdout.lines().count(), 10);
+    assert!(stdout.contains("target.I(+)"), "name list");
+    assert!(stdout.contains("RM11_1a.scaffold_14"), "name list");
+    assert!(stdout.contains("(+):3634-3714"), "positive strand");
+    assert!(stdout.contains("(-):22732-22852"), "coordinate transformed");
+
+    Ok(())
+}

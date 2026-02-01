@@ -11,7 +11,6 @@ fn main() -> anyhow::Result<()> {
         .propagate_version(true)
         .arg_required_else_help(true)
         .color(ColorChoice::Auto)
-        .subcommand(cmd_fasr::axt2fas::make_subcommand())
         .subcommand(cmd_fasr::check::make_subcommand())
         .subcommand(cmd_fasr::concat::make_subcommand())
         .subcommand(cmd_fasr::consensus::make_subcommand())
@@ -38,7 +37,7 @@ fn main() -> anyhow::Result<()> {
 Subcommand groups:
 
 * info: check / cover / link / name / stat
-* creation: axt2fas / maf2fas / create
+* creation: maf2fas / create
 * records: separate / split / subset
 * transform: filter / replace / refine
 * transmute: concat / consensus / join / pl-p2m / slice
@@ -56,7 +55,6 @@ Subcommand groups:
         Some(("name", sub_matches)) => cmd_fasr::name::execute(sub_matches),
         Some(("stat", sub_matches)) => cmd_fasr::stat::execute(sub_matches),
         // creation
-        Some(("axt2fas", sub_matches)) => cmd_fasr::axt2fas::execute(sub_matches),
         Some(("maf2fas", sub_matches)) => cmd_fasr::maf2fas::execute(sub_matches),
         Some(("create", sub_matches)) => cmd_fasr::create::execute(sub_matches),
         // records

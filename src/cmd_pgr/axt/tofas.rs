@@ -1,8 +1,9 @@
 use clap::*;
+use std::io::Write;
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
-    Command::new("axt2fas")
+    Command::new("tofas")
         .about("Convert AXT format files to block FA format")
         .after_help(
             r###"
@@ -18,13 +19,13 @@ Note:
 
 Examples:
 1. Convert from a file and output to stdout:
-   fasr axt2fas tests/fasr/RM11_1a.chr.sizes tests/fasr/example.axt
+   pgr axt tofas tests/fasr/RM11_1a.chr.sizes tests/fasr/example.axt
 
 2. Read from stdin and output to a file:
-   cat tests/fasr/example.axt | fasr axt2fas tests/fasr/RM11_1a.chr.sizes stdin -o output.fas
+   cat tests/fasr/example.axt | pgr axt tofas tests/fasr/RM11_1a.chr.sizes stdin -o output.fas
 
 3. Specify target and query names:
-   fasr axt2fas tests/fasr/RM11_1a.chr.sizes tests/fasr/example.axt --tname S288c --qname RM11_1a
+   pgr axt tofas tests/fasr/RM11_1a.chr.sizes tests/fasr/example.axt --tname S288c --qname RM11_1a
 
 "###,
         )

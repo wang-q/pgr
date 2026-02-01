@@ -1,6 +1,5 @@
 //! Subcommand modules for the `fasr` binary.
 
-pub mod axt2fas;
 pub mod check;
 pub mod concat;
 pub mod consensus;

@@ -45,27 +45,6 @@ fn command_maf2fas() -> anyhow::Result<()> {
 }
 
 #[test]
-fn command_axt2fas() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("fasr")?;
-    let output = cmd
-        .arg("axt2fas")
-        .arg("tests/fasr/RM11_1a.chr.sizes")
-        .arg("tests/fasr/example.axt")
-        .arg("--qname")
-        .arg("RM11_1a")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
-
-    assert_eq!(stdout.lines().count(), 10);
-    assert!(stdout.contains("target.I(+)"), "name list");
-    assert!(stdout.contains("RM11_1a.scaffold_14"), "name list");
-    assert!(stdout.contains("(+):3634-3714"), "positive strand");
-    assert!(stdout.contains("(-):22732-22852"), "coordinate transformed");
-
-    Ok(())
-}
-
-#[test]
 fn command_cover() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("fasr")?;
     let output = cmd.arg("cover").arg("tests/fasr/example.fas").output()?;
