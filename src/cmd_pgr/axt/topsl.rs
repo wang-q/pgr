@@ -1,7 +1,7 @@
 use clap::*;
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{BufRead, BufReader, BufWriter};
+use std::io::{BufRead, BufReader};
 
 use pgr::libs::axt::AxtReader;
 use pgr::libs::psl::Psl;
@@ -12,26 +12,29 @@ pub fn make_subcommand() -> Command {
         .arg(
             Arg::new("input")
                 .help("Input axt file")
-                .index(1)
-                .required(true),
+                .default_value("stdin")
+                .index(1),
         )
         .arg(
             Arg::new("t_sizes")
+                .long("t-sizes")
+                .short('t')
                 .help("Target sizes file")
-                .index(2)
                 .required(true),
         )
         .arg(
             Arg::new("q_sizes")
+                .long("q-sizes")
+                .short('q')
                 .help("Query sizes file")
-                .index(3)
                 .required(true),
         )
         .arg(
             Arg::new("output")
+                .short('o')
+                .long("output")
                 .help("Output psl file")
-                .index(4)
-                .required(true),
+                .default_value("stdout"),
         )
 }
 
@@ -71,16 +74,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let q_sizes = load_sizes(q_sizes_path)?;
 
     // Open input
-    let reader = if input == "stdin" {
-        AxtReader::new(Box::new(std::io::stdin()) as Box<dyn std::io::Read>)
-    } else {
-        let file = File::open(input)?;
-        AxtReader::new(Box::new(file) as Box<dyn std::io::Read>)
-    };
+    let reader = intspan::reader(input);
+    let reader = AxtReader::new(reader);
 
     // Open output
-    let out_file = File::create(output)?;
-    let mut writer = BufWriter::new(out_file);
+    let mut writer = intspan::writer(output);
 
     for result in reader {
         let axt = result?;

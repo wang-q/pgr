@@ -13,26 +13,29 @@ pub fn make_subcommand() -> Command {
         .arg(
             Arg::new("input")
                 .help("Input axt file")
-                .index(1)
-                .required(true),
+                .default_value("stdin")
+                .index(1),
         )
         .arg(
             Arg::new("t_sizes")
+                .long("t-sizes")
+                .short('t')
                 .help("Target sizes file")
-                .index(2)
                 .required(true),
         )
         .arg(
             Arg::new("q_sizes")
+                .long("q-sizes")
+                .short('q')
                 .help("Query sizes file")
-                .index(3)
                 .required(true),
         )
         .arg(
             Arg::new("output")
+                .short('o')
+                .long("output")
                 .help("Output maf file (or directory if --t-split is used)")
-                .index(4)
-                .required(true),
+                .default_value("stdout"),
         )
         .arg(
             Arg::new("q_prefix")
@@ -104,25 +107,25 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let q_sizes = load_sizes(q_sizes_path)?;
 
     // Open input
-    let reader = File::open(input)?;
+    let reader = intspan::reader(input);
     let axt_reader = AxtReader::new(reader);
 
     // Prepare output
     let mut current_t_name = String::new();
-    let mut single_writer: Option<MafWriter<BufWriter<File>>> = None;
+    let mut single_writer: Option<MafWriter<Box<dyn std::io::Write>>> = None;
 
     if t_split {
         if !Path::new(output).exists() {
             fs::create_dir_all(output)?;
         }
     } else {
-        let file = File::create(output)?;
-        let mut writer = MafWriter::new(BufWriter::new(file));
+        let writer = intspan::writer(output);
+        let mut writer = MafWriter::new(writer);
         writer.write_header("blastz")?; // Default to blastz as in C code
         single_writer = Some(writer);
     }
 
-    let mut split_writers: HashMap<String, MafWriter<BufWriter<File>>> = HashMap::new();
+    let mut split_writers: HashMap<String, MafWriter<Box<dyn std::io::Write>>> = HashMap::new();
 
     for result in axt_reader {
         let axt = result?;
@@ -163,7 +166,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                     split_writers.clear(); // Close previous
 
                     let file = File::create(&path)?;
-                    let mut w = MafWriter::new(BufWriter::new(file));
+                    let mut w = MafWriter::new(Box::new(BufWriter::new(file)) as Box<dyn std::io::Write>);
                     w.write_header("blastz")?;
                     split_writers.insert(axt.t_name.clone(), w);
                 }

@@ -118,8 +118,11 @@ chr19	63790860
     cmd.arg("axt")
         .arg("tomaf")
         .arg(&input_path)
+        .arg("--t-sizes")
         .arg(&t_sizes_path)
+        .arg("--q-sizes")
         .arg(&q_sizes_path)
+        .arg("-o")
         .arg(&output_path);
 
     cmd.assert().success();
@@ -227,8 +230,11 @@ ACTG
     cmd.arg("axt")
         .arg("tomaf")
         .arg(&axt_path)
+        .arg("-t")
         .arg(&t_sizes_path)
+        .arg("-q")
         .arg(&q_sizes_path)
+        .arg("-o")
         .arg(&output_path);
 
     cmd.assert().success();
@@ -280,8 +286,11 @@ ACTG
         .arg("tomaf")
         .arg("--t-split")
         .arg(&axt_path)
+        .arg("-t")
         .arg(&t_sizes_path)
+        .arg("-q")
         .arg(&q_sizes_path)
+        .arg("-o")
         .arg(&output_dir);
 
     cmd.assert().success();
@@ -341,8 +350,11 @@ MmUn_161829_35\t7971
     cmd.arg("axt")
         .arg("topsl")
         .arg(&input_path)
+        .arg("-t")
         .arg(&t_sizes_path)
+        .arg("-q")
         .arg(&q_sizes_path)
+        .arg("-o")
         .arg(&output_path);
 
     cmd.assert().success();
