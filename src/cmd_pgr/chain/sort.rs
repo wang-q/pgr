@@ -22,10 +22,10 @@ pub fn make_subcommand() -> Command {
             .help("Keep existing chain IDs (default: renumber starting from 1)"))
 }
 
-pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
-    let files: Vec<&String> = matches.get_many("files").unwrap().collect();
-    let output = matches.get_one::<String>("output");
-    let save_id = matches.get_flag("save_id");
+pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
+    let files: Vec<&String> = args.get_many("files").unwrap().collect();
+    let output = args.get_one::<String>("output");
+    let save_id = args.get_flag("save_id");
 
     let mut all_chains = Vec::new();
 

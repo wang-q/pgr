@@ -1,6 +1,5 @@
 use clap::*;
 use pgr::libs::axt::{AxtReader, write_axt};
-use std::io::BufWriter;
 
 // Create subcommand arguments
 pub fn make_subcommand() -> Command {
@@ -8,15 +7,17 @@ pub fn make_subcommand() -> Command {
         .about("Sort axt files")
         .arg(
             Arg::new("input")
-                .help("Input axt file")
                 .index(1)
-                .required(true),
+                .default_value("stdin")
+                .help("Input axt file (or stdin if not specified)")
         )
         .arg(
             Arg::new("output")
-                .help("Output axt file")
-                .index(2)
-                .required(true),
+                .short('o')
+                .long("output")
+                .help("Output axt file (or stdout if not specified)")
+                .num_args(1)
+                .default_value("stdout")
         )
         .arg(
             Arg::new("query")
@@ -38,7 +39,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let by_query = args.get_flag("query");
     let by_score = args.get_flag("by-score");
 
-    let reader = std::fs::File::open(input)?;
+    let reader = intspan::reader(input);
+    let mut writer = intspan::writer(output);
+    
     let axt_reader = AxtReader::new(reader);
     
     let mut axts = Vec::new();
@@ -63,11 +66,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         });
     }
 
-    let writer = std::fs::File::create(output)?;
-    let mut buf_writer = BufWriter::new(writer);
-    
     for axt in axts {
-        write_axt(&mut buf_writer, &axt)?;
+        write_axt(&mut writer, &axt)?;
     }
 
     Ok(())

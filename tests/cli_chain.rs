@@ -153,3 +153,41 @@ fn test_chain_anti_repeat() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
+
+#[test]
+fn test_chain_sort() -> Result<(), Box<dyn std::error::Error>> {
+    let dir = tempdir()?;
+    let chain1_path = dir.path().join("1.chain");
+    let chain2_path = dir.path().join("2.chain");
+    let out_path = dir.path().join("out.chain");
+
+    // Chain 1: score 100
+    // chain 100 chr1 100 + 0 10 chr2 100 + 0 10 1
+    let c1 = "chain 100 chr1 100 + 0 10 chr2 100 + 0 10 1\n10\n\n";
+    fs::write(&chain1_path, c1)?;
+
+    // Chain 2: score 200
+    // chain 200 chr1 100 + 20 30 chr2 100 + 20 30 2
+    let c2 = "chain 200 chr1 100 + 20 30 chr2 100 + 20 30 2\n10\n\n";
+    fs::write(&chain2_path, c2)?;
+
+    let mut cmd = Command::cargo_bin("pgr")?;
+    cmd.arg("chain")
+        .arg("sort")
+        .arg(chain1_path.to_str().unwrap())
+        .arg(chain2_path.to_str().unwrap())
+        .arg("--output").arg(out_path.to_str().unwrap());
+
+    cmd.assert().success();
+
+    let output = fs::read_to_string(&out_path)?;
+    // Should be sorted by score descending: 200 then 100
+    // IDs are renumbered by default: 1 then 2
+    
+    let lines: Vec<&str> = output.lines().filter(|l| l.starts_with("chain")).collect();
+    assert_eq!(lines.len(), 2);
+    assert!(lines[0].contains("chain 200"));
+    assert!(lines[1].contains("chain 100"));
+    
+    Ok(())
+}

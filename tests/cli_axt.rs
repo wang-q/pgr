@@ -61,6 +61,7 @@ TTTT
     let mut cmd = Command::cargo_bin("pgr")?;
     cmd.arg("axt").arg("sort")
        .arg(&input_path)
+       .arg("-o")
        .arg(&output_path);
     
     cmd.assert().success();
@@ -177,6 +178,7 @@ TTTT
     cmd.arg("axt").arg("sort")
        .arg("--by-score")
        .arg(&input_path)
+       .arg("-o")
        .arg(&output_path);
     
     cmd.assert().success();

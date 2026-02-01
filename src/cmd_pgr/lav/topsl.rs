@@ -27,12 +27,12 @@ pub fn make_subcommand() -> Command {
         )
 }
 
-pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
+pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     // Args
     //----------------------------
-    let input = matches.get_one::<String>("input").unwrap();
-    let output = matches.get_one::<String>("output").unwrap();
+    let input = args.get_one::<String>("input").unwrap();
+    let output = args.get_one::<String>("output").unwrap();
 
     let reader = intspan::reader(input);
     let mut writer = intspan::writer(output);
