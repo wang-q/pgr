@@ -5,7 +5,7 @@ use std::fs::File;
 use std::io::{self, BufReader, BufWriter};
 
 pub fn make_subcommand() -> Command {
-    Command::new("to-psl")
+    Command::new("topsl")
         .about("Convert LAV to PSL format")
         .arg(
             Arg::new("input")

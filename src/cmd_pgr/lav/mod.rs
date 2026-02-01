@@ -11,7 +11,7 @@ pub fn make_subcommand() -> Command {
 
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     match args.subcommand() {
-        Some(("to-psl", sub_matches)) => topsl::execute(sub_matches),
+        Some(("topsl", sub_matches)) => topsl::execute(sub_matches),
         _ => unreachable!(),
     }
 }
