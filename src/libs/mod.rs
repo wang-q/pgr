@@ -5,3 +5,4 @@ pub mod fas;
 pub mod ms;
 pub mod ms2dna;
 pub mod maf;
+pub mod net;

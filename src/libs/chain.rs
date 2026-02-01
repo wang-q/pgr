@@ -143,7 +143,38 @@ impl Chain {
         writeln!(writer)?;
         Ok(())
     }
+
+    pub fn subset(&self, t_start: u64, t_end: u64) -> Option<Chain> {
+        let blocks = self.to_blocks();
+        let mut new_blocks = Vec::new();
+
+        for b in blocks {
+            // Check for overlap
+            let start = std::cmp::max(b.t_start, t_start);
+            let end = std::cmp::min(b.t_end, t_end);
+
+            if start < end {
+                let offset = start - b.t_start;
+                let len = end - start;
+                new_blocks.push(Block {
+                    t_start: start,
+                    t_end: end,
+                    q_start: b.q_start + offset,
+                    q_end: b.q_start + offset + len,
+                });
+            }
+        }
+
+        if new_blocks.is_empty() {
+            None
+        } else {
+            let mut header = self.header.clone();
+            let data = Chain::from_blocks(&mut header, &new_blocks);
+            Some(Chain { header, data })
+        }
+    }
 }
+
 
 impl FromStr for ChainHeader {
     type Err = anyhow::Error;
@@ -200,6 +231,55 @@ impl<R: std::io::Read> ChainReader<R> {
     fn push_back(&mut self, line: String) {
         self.next_line = Some(line);
     }
+}
+
+pub fn read_chains<R: std::io::Read>(reader: R) -> anyhow::Result<Vec<Chain>> {
+    let mut reader = ChainReader::new(reader);
+    let mut chains = Vec::new();
+
+    while let Some(line) = reader.read_line()? {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+
+        if line.starts_with("chain") {
+            let header = ChainHeader::from_str(line)?;
+            let mut data = Vec::new();
+
+            while let Some(inner_line) = reader.read_line()? {
+                let inner_line_trim = inner_line.trim();
+                if inner_line_trim.is_empty() {
+                    break;
+                }
+                // Check if next line is a new chain (shouldn't happen if properly formatted with blank lines, but just in case)
+                if inner_line_trim.starts_with("chain") {
+                    reader.push_back(inner_line);
+                    break;
+                }
+
+                let parts: Vec<&str> = inner_line_trim.split_whitespace().collect();
+                if parts.len() == 1 {
+                    data.push(ChainData {
+                        size: parts[0].parse()?,
+                        dt: 0,
+                        dq: 0,
+                    });
+                } else if parts.len() == 3 {
+                    data.push(ChainData {
+                        size: parts[0].parse()?,
+                        dt: parts[1].parse()?,
+                        dq: parts[2].parse()?,
+                    });
+                } else {
+                    return Err(anyhow::anyhow!("Invalid chain data line: {}", inner_line_trim));
+                }
+            }
+            chains.push(Chain { header, data });
+        }
+    }
+
+    Ok(chains)
 }
 
 impl<R: std::io::Read> Iterator for ChainReader<R> {
