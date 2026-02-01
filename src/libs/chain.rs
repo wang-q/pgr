@@ -30,6 +30,36 @@ pub struct Chain {
     pub data: Vec<ChainData>,
 }
 
+impl Chain {
+    pub fn write<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        writeln!(writer, "chain {} {} {} {} {} {} {} {} {} {} {} {}",
+            self.header.score,
+            self.header.t_name,
+            self.header.t_size,
+            self.header.t_strand,
+            self.header.t_start,
+            self.header.t_end,
+            self.header.q_name,
+            self.header.q_size,
+            self.header.q_strand,
+            self.header.q_start,
+            self.header.q_end,
+            self.header.id
+        )?;
+
+        let len = self.data.len();
+        for (i, d) in self.data.iter().enumerate() {
+            if i == len - 1 {
+                writeln!(writer, "{}", d.size)?;
+            } else {
+                writeln!(writer, "{} {} {}", d.size, d.dt, d.dq)?;
+            }
+        }
+        writeln!(writer)?;
+        Ok(())
+    }
+}
+
 impl FromStr for ChainHeader {
     type Err = anyhow::Error;
 

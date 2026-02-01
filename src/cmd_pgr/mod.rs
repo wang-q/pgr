@@ -6,3 +6,4 @@ pub mod rept;
 pub mod trf;
 pub mod ms2dna;
 pub mod axt;
+pub mod chain;

@@ -1,0 +1,17 @@
+pub mod split;
+
+use clap::{Command, ArgMatches};
+
+pub fn make_subcommand() -> Command {
+    Command::new("chain")
+        .about("Chain tools")
+        .subcommand_required(true)
+        .subcommand(split::make_subcommand())
+}
+
+pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
+    match args.subcommand() {
+        Some(("split", sub_matches)) => split::execute(sub_matches),
+        _ => unreachable!(),
+    }
+}
