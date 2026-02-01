@@ -1,7 +1,7 @@
 use clap::{Arg, ArgMatches, Command};
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{self, BufReader, Write};
+use std::io::{self, BufReader};
 use std::rc::Rc;
 use std::cell::{Ref, RefCell};
 

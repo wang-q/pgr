@@ -7,8 +7,7 @@ use std::path::Path;
 use pgr::libs::chain::{read_chains, Chain, Block};
 
 // Default scores from UCSC chainAntiRepeat.c
-const DEFAULT_MIN_SCORE: usize = 5000;
-const DEFAULT_NO_CHECK_SCORE: usize = 200000;
+
 
 pub fn make_subcommand() -> Command {
     Command::new("anti-repeat")
