@@ -28,7 +28,7 @@ fn command_psl_histo_apq_base() -> anyhow::Result<()> {
     // NM_153248.2: 1
     // NM_005577.1: 4
     // NM_FAKE.1: 2
-    // Expected output order depends on hash map iteration unless sorted. 
+    // Expected output order depends on hash map iteration unless sorted.
     // I implemented sorting by key.
     // Sorted keys: NM_000014.3, NM_000015.1, NM_005577.1, NM_033178.1, NM_153248.2, NM_173571.1, NM_FAKE.1
     // Counts: 1, 1, 4, 2, 1, 3, 2
@@ -82,13 +82,13 @@ fn command_psl_histo_cover_spread() -> anyhow::Result<()> {
     cmd.assert().success();
 
     // NM_000014.3: 1 align. Spread = 0.
-    // NM_005577.1: 4 aligns. 
+    // NM_005577.1: 4 aligns.
     //   3335+96+0 / 13938 = 0.24616
     //   3444+105+0 / 13938 = 0.25463
     //   3482+120+0 / 13938 = 0.25843
     //   6410+4+0 / 13938 = 0.46018
     //   Diff: 0.46018 - 0.24616 = 0.2140
-    
+
     // Just checking it runs and produces output. Precise float matching is tricky.
     // I will check if output contains "0.2140"
     let output_content = fs::read_to_string(&output)?;
@@ -102,7 +102,8 @@ fn command_psl_histo_cover_spread() -> anyhow::Result<()> {
 fn command_psl_to_chain_fix_strand() -> anyhow::Result<()> {
     let temp = TempDir::new()?;
     let input = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/psl/mtor.psl");
-    let expected_output = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/psl/example3.chain");
+    let expected_output =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/psl/example3.chain");
     let output = temp.path().join("output.chain");
 
     let mut cmd = Command::cargo_bin("pgr")?;
@@ -116,7 +117,7 @@ fn command_psl_to_chain_fix_strand() -> anyhow::Result<()> {
 
     let output_content = fs::read_to_string(&output)?;
     let expected_content = fs::read_to_string(&expected_output)?;
-    
+
     assert_eq!(output_content, expected_content);
 
     Ok(())

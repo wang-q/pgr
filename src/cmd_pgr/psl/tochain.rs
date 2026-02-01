@@ -78,7 +78,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         let q_name = &psl.q_name;
         let q_size = psl.q_size;
         let q_strand_char = psl.strand.chars().nth(0).unwrap_or('+');
-        
+
         // Handle query strand for Chain format
         // Chain format: tStrand is always +, qStrand can be + or -
         // If qStrand is -, qStart/qEnd are relative to reverse end.
@@ -114,10 +114,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         for i in 0..psl.block_count as usize {
             let size = psl.block_sizes[i];
             write!(writer, "{}", size)?;
-            
+
             if i < (psl.block_count as usize) - 1 {
-                let dt = psl.t_starts[i+1] - (psl.t_starts[i] + size);
-                let dq = psl.q_starts[i+1] - (psl.q_starts[i] + size);
+                let dt = psl.t_starts[i + 1] - (psl.t_starts[i] + size);
+                let dq = psl.q_starts[i + 1] - (psl.q_starts[i] + size);
                 write!(writer, "\t{}\t{}", dt, dq)?;
             }
             writeln!(writer)?;

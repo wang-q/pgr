@@ -238,8 +238,7 @@ impl Psl {
             false
         };
 
-        if is_prot {
-        }
+        if is_prot {}
         is_prot
     }
 
@@ -289,12 +288,21 @@ impl std::str::FromStr for Psl {
             return Err(anyhow::anyhow!("Invalid PSL line: fewer than 21 columns"));
         }
 
-        let parse_u32 = |s: &str| s.parse::<u32>().map_err(|_| anyhow::anyhow!("Invalid u32: {}", s));
-        let parse_i32 = |s: &str| s.parse::<i32>().map_err(|_| anyhow::anyhow!("Invalid i32: {}", s));
+        let parse_u32 = |s: &str| {
+            s.parse::<u32>()
+                .map_err(|_| anyhow::anyhow!("Invalid u32: {}", s))
+        };
+        let parse_i32 = |s: &str| {
+            s.parse::<i32>()
+                .map_err(|_| anyhow::anyhow!("Invalid i32: {}", s))
+        };
         let parse_vec = |s: &str| -> Result<Vec<u32>, anyhow::Error> {
             s.split(',')
                 .filter(|v| !v.is_empty())
-                .map(|v| v.parse::<u32>().map_err(|_| anyhow::anyhow!("Invalid array val: {}", v)))
+                .map(|v| {
+                    v.parse::<u32>()
+                        .map_err(|_| anyhow::anyhow!("Invalid array val: {}", v))
+                })
                 .collect()
         };
 
