@@ -1,3 +1,4 @@
+pub mod anti_repeat;
 pub mod net;
 pub mod prenet;
 pub mod sort;
@@ -10,6 +11,7 @@ pub fn make_subcommand() -> Command {
     Command::new("chain")
         .about("Chain tools")
         .subcommand_required(true)
+        .subcommand(anti_repeat::make_subcommand())
         .subcommand(split::make_subcommand())
         .subcommand(stitch::make_subcommand())
         .subcommand(sort::make_subcommand())
@@ -19,6 +21,7 @@ pub fn make_subcommand() -> Command {
 
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     match args.subcommand() {
+        Some(("anti-repeat", sub_matches)) => anti_repeat::execute(sub_matches),
         Some(("split", sub_matches)) => split::execute(sub_matches),
         Some(("stitch", sub_matches)) => stitch::execute(sub_matches),
         Some(("sort", sub_matches)) => sort::execute(sub_matches),

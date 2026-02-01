@@ -21,7 +21,7 @@ This command implements the UCSC pipeline for pairwise genome alignments, psl-ch
 
 * The following binaries from the kent-tools are required and should be found in $PATH:
     * axtChain
-    * chainAntiRepeat
+    * chainAntiRepeat (migrated as `pgr chain anti-repeat`)
     * chainMergeSort (migrated as `pgr chain sort`)
     * chainPreNet (migrated as `pgr chain pre-net`)
     * chainNet (migrated as `pgr chain net`)
@@ -32,7 +32,8 @@ This command implements the UCSC pipeline for pairwise genome alignments, psl-ch
     * netToAxt (migrated as `pgr net to-axt`)
     * axtSort (migrated as `pgr axt sort`)
     * axtToMaf (migrated as `pgr axt tomaf`)
-    * netFilter
+    * netFilter (migrated as `pgr net filter`)
+    * netClass (migrated as `pgr net class`)
     * chainSplit (migrated as `pgr chain split`)
 
 Definitions:

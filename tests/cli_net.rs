@@ -1,6 +1,7 @@
 use assert_cmd::Command;
 use std::io::Write;
 use tempfile::NamedTempFile;
+use predicates::prelude::*;
 
 // --- net syntenic tests ---
 
@@ -316,6 +317,87 @@ fn test_net_subset_split_on_insert() -> Result<(), Box<dyn std::error::Error>> {
     
     assert!(output.contains("chain 1000 chr1 1000 + 0 200"));
     assert!(output.contains("chain 1000 chr1 1000 + 300 500"));
+
+    Ok(())
+}
+
+// --- net filter tests ---
+
+#[test]
+fn test_net_filter_basic() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = Command::cargo_bin("pgr")?;
+    
+    // Create input net file
+    let mut in_file = NamedTempFile::new()?;
+    writeln!(in_file, "net chr1 1000")?;
+    writeln!(in_file, " fill 0 100 chr2 + 0 100 id 1 score 100 ali 100")?; // Pass
+    writeln!(in_file, " fill 200 100 chr2 + 200 100 id 2 score 50 ali 100")?; // Fail score
+    
+    cmd.arg("net")
+        .arg("filter")
+        .arg(in_file.path().to_str().unwrap())
+        .arg("--min-score")
+        .arg("80")
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("id 1"))
+        .stdout(predicates::str::contains("id 2").not());
+
+    Ok(())
+}
+
+#[test]
+fn test_net_filter_nested() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = Command::cargo_bin("pgr")?;
+    
+    // Nested structure
+    let mut in_file = NamedTempFile::new()?;
+    writeln!(in_file, "net chr1 1000")?;
+    writeln!(in_file, " fill 0 500 chr2 + 0 500 id 1 score 200 ali 200")?; // Pass
+    writeln!(in_file, "  gap 100 100 chr2 + 100 100")?;
+    writeln!(in_file, "   fill 100 100 chr2 + 100 100 id 2 score 50 ali 50")?; // Fail score
+    
+    // If child fails, parent should still be kept (pruning removes children).
+    
+    cmd.arg("net")
+        .arg("filter")
+        .arg(in_file.path().to_str().unwrap())
+        .arg("--min-score")
+        .arg("100")
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("id 1"))
+        .stdout(predicates::str::contains("id 2").not());
+
+    Ok(())
+}
+
+// --- net class tests ---
+
+#[test]
+fn test_net_class_basic() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = Command::cargo_bin("pgr")?;
+    
+    // Create input net file
+    let mut in_file = NamedTempFile::new()?;
+    writeln!(in_file, "net chr1 1000")?;
+    writeln!(in_file, " fill 0 100 chr2 + 0 100 id 1 score 100 ali 100")?; // Unknown class
+    writeln!(in_file, " fill 200 100 chr2 + 200 100 id 2 score 50 ali 100 type top")?; // Class "top"
+    writeln!(in_file, " fill 400 100 chr2 + 400 100 id 3 score 50 ali 100 type syn")?; // Class "syn"
+    
+    // Total size 1000.
+    // Fills: 100 (unknown) + 100 (top) + 100 (syn) = 300 bases.
+    // Gaps: 1000 - 300 = 700 bases.
+    
+    cmd.arg("net")
+        .arg("class")
+        .arg(in_file.path().to_str().unwrap())
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("unknown").and(predicates::str::contains("100")))
+        .stdout(predicates::str::contains("top").and(predicates::str::contains("100")))
+        .stdout(predicates::str::contains("syn").and(predicates::str::contains("100")))
+        .stdout(predicates::str::contains("gap").and(predicates::str::contains("700")));
 
     Ok(())
 }
