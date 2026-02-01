@@ -10,7 +10,6 @@ pub fn make_subcommand() -> Command {
         .about("Convert AXT format files to block FA format")
         .after_help(
             r###"
-AXT is a format for representing pairwise genomic alignments.
 This subcommand converts AXT files into block FA format for further analysis.
 
 Input files can be gzipped. If the input file is 'stdin', data is read from standard input.

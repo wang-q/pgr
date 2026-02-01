@@ -8,6 +8,12 @@ pub mod topsl;
 pub fn make_subcommand() -> Command {
     Command::new("axt")
         .about("Axt tools")
+        .after_help(
+            r###"
+AXT is a format for representing pairwise genomic alignments.
+
+"###,
+        )
         .subcommand_required(true)
         .arg_required_else_help(true)
         .subcommand(sort::make_subcommand())
