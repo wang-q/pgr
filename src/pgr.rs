@@ -11,7 +11,7 @@ fn main() -> anyhow::Result<()> {
         .propagate_version(true)
         .arg_required_else_help(true)
         .color(ColorChoice::Auto)
-        .subcommand(cmd_pgr::chain::make_subcommand())
+        .subcommand(cmd_pgr::pipeline::make_subcommand())
         .subcommand(cmd_pgr::ir::make_subcommand())
         .subcommand(cmd_pgr::rept::make_subcommand())
         .subcommand(cmd_pgr::trf::make_subcommand())
@@ -36,7 +36,7 @@ Subcommand groups:
 
     // Check which subcomamnd the user ran...
     match app.get_matches().subcommand() {
-        Some(("chain", sub_matches)) => cmd_pgr::chain::execute(sub_matches),
+        Some(("pipeline", sub_matches)) => cmd_pgr::pipeline::execute(sub_matches),
         Some(("ir", sub_matches)) => cmd_pgr::ir::execute(sub_matches),
         Some(("rept", sub_matches)) => cmd_pgr::rept::execute(sub_matches),
         Some(("trf", sub_matches)) => cmd_pgr::trf::execute(sub_matches),

@@ -3,7 +3,7 @@ use cmd_lib::*;
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
-    Command::new("chain")
+    Command::new("pipeline")
         .about("UCSC chain/net pipeline")
         .after_help(
             r###"
@@ -141,7 +141,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     let curdir = std::env::current_dir()?;
     let pgr = std::env::current_exe()?.display().to_string();
-    let tempdir = tempfile::Builder::new().prefix("pgr_chain_").tempdir()?;
+    let tempdir = tempfile::Builder::new().prefix("pgr_pipeline_").tempdir()?;
     let tempdir_str = tempdir.path().to_str().unwrap();
 
     run_cmd!(info "==> Paths")?;
