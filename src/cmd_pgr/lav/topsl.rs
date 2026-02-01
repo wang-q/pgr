@@ -3,12 +3,11 @@ use pgr::libs::lav::{blocks_to_psl, LavReader, LavStanza};
 
 pub fn make_subcommand() -> Command {
     Command::new("topsl")
-        .about("Convert LAV to PSL format")
+        .about("Convert from lav to psl format")
         .after_help(
             r###"
-* <input> is the path to a LAV file, .lav.gz is supported
-    * input == stdin means reading from STDIN
-
+Examples:
+pgr lav topsl in.lav -o out.psl
 "###,
         )
         .arg(

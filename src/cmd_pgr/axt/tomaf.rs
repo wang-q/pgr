@@ -10,6 +10,19 @@ use pgr::libs::maf::{MafAli, MafComp, MafWriter};
 pub fn make_subcommand() -> Command {
     Command::new("tomaf")
         .about("Convert from axt to maf format")
+        .after_help(
+            r###"
+Where tSizes and qSizes is a file that contains the sizes of the target and query sequences.
+Very often this will be a chrom.sizes file.
+
+Examples:
+# Convert axt to maf
+pgr axt tomaf in.axt -t t.sizes -q q.sizes -o out.maf
+
+# Split output by target name
+pgr axt tomaf in.axt -t t.sizes -q q.sizes --t-split -o out_dir
+"###,
+        )
         .arg(
             Arg::new("input")
                 .help("Input axt file")

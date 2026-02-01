@@ -6,6 +6,12 @@ use std::str::FromStr;
 pub fn make_subcommand() -> Command {
     Command::new("tochain")
         .about("Convert PSL to Chain format")
+        .after_help(
+            r###"
+Examples:
+pgr psl tochain in.psl -o out.chain
+"###,
+        )
         .arg(
             Arg::new("input")
                 .help("Input PSL file")

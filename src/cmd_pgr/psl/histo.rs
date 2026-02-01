@@ -7,6 +7,22 @@ use std::str::FromStr;
 pub fn make_subcommand() -> Command {
     Command::new("histo")
         .about("Collect counts on PSL alignments for making histograms")
+        .after_help(
+            r###"
+These then be analyzed with R, textHistogram, etc.
+
+The 'what' argument determines what data to collect, the following are currently supported:
+
+* alignsPerQuery - number of alignments per query. Output is one line per query with the number of alignments.
+
+* coverSpread - difference between the highest and lowest coverage for alignments of a query. Output line per query, with the difference. Only includes queries with multiple alignments.
+
+* idSpread - difference between the highest and lowest fraction identity for alignments of a query. Output line per query, with the difference.
+
+Examples:
+pgr psl histo --what alignsPerQuery in.psl -o out.histo
+"###,
+        )
         .arg(
             Arg::new("what")
                 .long("what")

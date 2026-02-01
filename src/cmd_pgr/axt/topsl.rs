@@ -9,6 +9,14 @@ use pgr::libs::psl::Psl;
 pub fn make_subcommand() -> Command {
     Command::new("topsl")
         .about("Convert from axt to psl format")
+        .after_help(
+            r###"
+Where tSizes and qSizes are tab-delimited files with <seqName> <size> columns.
+
+Examples:
+pgr axt topsl in.axt -t t.sizes -q q.sizes -o out.psl
+"###,
+        )
         .arg(
             Arg::new("input")
                 .help("Input axt file")

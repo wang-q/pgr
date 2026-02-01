@@ -5,6 +5,21 @@ use pgr::libs::axt::{write_axt, AxtReader};
 pub fn make_subcommand() -> Command {
     Command::new("sort")
         .about("Sort axt files")
+        .after_help(
+            r###"
+Sorts axt files by target, query, or score.
+
+Examples:
+# Sort by target (default)
+pgr axt sort in.axt -o out.axt
+
+# Sort by query
+pgr axt sort in.axt --query -o out.axt
+
+# Sort by score (descending)
+pgr axt sort in.axt --by-score -o out.axt
+"###,
+        )
         .arg(
             Arg::new("input")
                 .index(1)
