@@ -218,11 +218,25 @@ fn parse_header_word(word: &str) -> String {
         s = &s[..idx];
     }
     
-    if let Some(idx) = s.find(".nib:") {
-        s = &s[idx+5..];
+    // Remove range specifiers (e.g., :start-end)
+    if let Some(idx) = s.find(':') {
+        s = &s[..idx];
     }
+
+    // Extract filename from path
     if let Some(idx) = s.rfind('/') {
         s = &s[idx+1..];
+    }
+
+    // Remove common extensions
+    if let Some(stripped) = s.strip_suffix(".nib") {
+        s = stripped;
+    } else if let Some(stripped) = s.strip_suffix(".fa") {
+        s = stripped;
+    } else if let Some(stripped) = s.strip_suffix(".fasta") {
+        s = stripped;
+    } else if let Some(stripped) = s.strip_suffix(".2bit") {
+        s = stripped;
     }
     
     s.to_string()

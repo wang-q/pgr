@@ -1,15 +1,21 @@
 use pgr::libs::lav::{LavReader, LavStanza, Block};
 use pgr::libs::psl::Psl;
 use clap::{Arg, ArgMatches, Command};
-use std::fs::File;
-use std::io::{self, BufReader, BufWriter};
 
 pub fn make_subcommand() -> Command {
     Command::new("topsl")
         .about("Convert LAV to PSL format")
+        .after_help(
+            r###"
+* <input> is the path to a LAV file, .lav.gz is supported
+    * input == stdin means reading from STDIN
+
+"###,
+        )
         .arg(
             Arg::new("input")
                 .index(1)
+                .default_value("stdin")
                 .help("Input LAV file (or stdin if not specified)")
         )
         .arg(
@@ -18,23 +24,23 @@ pub fn make_subcommand() -> Command {
                 .long("output")
                 .help("Output PSL file (or stdout if not specified)")
                 .num_args(1)
+                .default_value("stdout")
         )
 }
 
 pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
-    let input = matches.get_one::<String>("input");
-    let output = matches.get_one::<String>("output");
+    //----------------------------
+    // Args
+    //----------------------------
+    let input = matches.get_one::<String>("input").unwrap();
+    let output = matches.get_one::<String>("output").unwrap();
 
-    let reader: Box<dyn std::io::BufRead> = match input {
-        Some(path) => Box::new(BufReader::new(File::open(path)?)),
-        None => Box::new(BufReader::new(io::stdin())),
-    };
+    let reader = intspan::reader(input);
+    let mut writer = intspan::writer(output);
 
-    let mut writer: Box<dyn std::io::Write> = match output {
-        Some(path) => Box::new(BufWriter::new(File::create(path)?)),
-        None => Box::new(BufWriter::new(io::stdout())),
-    };
-
+    //----------------------------
+    // Ops
+    //----------------------------
     let mut lav_reader = LavReader::new(reader);
     
     // State
@@ -103,8 +109,13 @@ fn blocks_to_psl(blocks: &[Block], t_size: u32, q_size: u32, t_name: &str, q_nam
     }
     
     if !blocks.is_empty() {
-        psl.q_start = q_min as i32;
-        psl.q_end = q_max as i32;
+        if strand == "-" {
+            psl.q_start = (q_size as i64 - q_max) as i32;
+            psl.q_end = (q_size as i64 - q_min) as i32;
+        } else {
+            psl.q_start = q_min as i32;
+            psl.q_end = q_max as i32;
+        }
         psl.t_start = t_min as i32;
         psl.t_end = t_max as i32;
     }
