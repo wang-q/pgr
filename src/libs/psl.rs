@@ -217,6 +217,65 @@ impl Psl {
         }
     }
 
+    pub fn swap(&mut self, no_rc: bool) {
+        // Swap simple fields
+        std::mem::swap(&mut self.q_base_insert, &mut self.t_base_insert);
+        std::mem::swap(&mut self.t_num_insert, &mut self.q_num_insert);
+        std::mem::swap(&mut self.q_name, &mut self.t_name);
+        std::mem::swap(&mut self.q_size, &mut self.t_size);
+        std::mem::swap(&mut self.q_start, &mut self.t_start);
+        std::mem::swap(&mut self.q_end, &mut self.t_end);
+
+        // Handle strand and blocks
+        let q_strand = self.strand.chars().nth(0).unwrap_or('+');
+        let t_strand = self.strand.chars().nth(1);
+
+        if let Some(ts) = t_strand {
+            // Translated
+            self.strand = format!("{}{}", ts, q_strand);
+            self.swap_blocks();
+        } else if no_rc {
+            // Untranslated with no reverse complement
+            // psl->strand[1] = psl->strand[0];
+            // psl->strand[0] = '+';
+            self.strand = format!("+{}", q_strand);
+            self.swap_blocks();
+        } else {
+            // Untranslated
+            if q_strand == '+' {
+                self.swap_blocks();
+            } else {
+                self.swap_rc_blocks();
+                self.strand = "-".to_string();
+            }
+        }
+    }
+
+    fn swap_blocks(&mut self) {
+        for i in 0..self.block_count as usize {
+            let tmp = self.q_starts[i];
+            self.q_starts[i] = self.t_starts[i];
+            self.t_starts[i] = tmp;
+        }
+    }
+
+    fn swap_rc_blocks(&mut self) {
+        // Reverse arrays
+        self.t_starts.reverse();
+        self.q_starts.reverse();
+        self.block_sizes.reverse();
+
+        // Swap starts
+        std::mem::swap(&mut self.t_starts, &mut self.q_starts);
+
+        // Recalculate coordinates
+        // qSize and tSize have already been swapped
+        for i in 0..self.block_count as usize {
+            self.q_starts[i] = self.q_size - (self.q_starts[i] + self.block_sizes[i]);
+            self.t_starts[i] = self.t_size - (self.t_starts[i] + self.block_sizes[i]);
+        }
+    }
+
     pub fn is_protein(&self) -> bool {
         if self.block_count == 0 {
             return false;
@@ -348,7 +407,7 @@ impl std::str::FromStr for Psl {
                 .collect()
         };
 
-        Ok(Psl {
+        let mut psl = Psl {
             match_count: parse_u32(fields[0])?,
             mismatch_count: parse_u32(fields[1])?,
             rep_match: parse_u32(fields[2])?,
@@ -370,7 +429,21 @@ impl std::str::FromStr for Psl {
             block_sizes: parse_vec(fields[18])?,
             q_starts: parse_vec(fields[19])?,
             t_starts: parse_vec(fields[20])?,
-        })
+        };
+
+        // Ensure consistency between block_count and vector lengths
+        let min_len = psl.block_sizes.len()
+            .min(psl.q_starts.len())
+            .min(psl.t_starts.len());
+
+        if (psl.block_count as usize) != min_len {
+            psl.block_count = min_len as u32;
+            psl.block_sizes.truncate(min_len);
+            psl.q_starts.truncate(min_len);
+            psl.t_starts.truncate(min_len);
+        }
+
+        Ok(psl)
     }
 }
 
