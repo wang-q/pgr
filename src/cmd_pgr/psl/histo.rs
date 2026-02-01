@@ -9,22 +9,23 @@ pub fn make_subcommand() -> Command {
         .about("Collect counts on PSL alignments for making histograms")
         .arg(
             Arg::new("what")
-                .index(1)
+                .long("what")
                 .required(true)
                 .value_parser(["alignsPerQuery", "coverSpread", "idSpread"])
                 .help("What data to collect"),
         )
         .arg(
             Arg::new("input")
-                .index(2)
-                .required(true)
-                .help("Input PSL file"),
+                .index(1)
+                .help("Input PSL file")
+                .default_value("stdin"),
         )
         .arg(
             Arg::new("output")
-                .index(3)
-                .required(true)
-                .help("Output histogram file"),
+                .short('o')
+                .long("output")
+                .help("Output histogram file")
+                .default_value("stdout"),
         )
         .arg(
             Arg::new("multi_only")

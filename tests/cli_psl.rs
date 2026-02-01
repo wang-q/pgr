@@ -12,8 +12,10 @@ fn command_psl_histo_apq_base() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("pgr")?;
     cmd.arg("psl")
         .arg("histo")
+        .arg("--what")
         .arg("alignsPerQuery")
         .arg(&input)
+        .arg("-o")
         .arg(&output);
     cmd.assert().success();
 
@@ -45,8 +47,10 @@ fn command_psl_histo_apq_multi() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("pgr")?;
     cmd.arg("psl")
         .arg("histo")
+        .arg("--what")
         .arg("alignsPerQuery")
         .arg(&input)
+        .arg("-o")
         .arg(&output)
         .arg("--multi-only");
     cmd.assert().success();
@@ -70,8 +74,10 @@ fn command_psl_histo_cover_spread() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("pgr")?;
     cmd.arg("psl")
         .arg("histo")
+        .arg("--what")
         .arg("coverSpread")
         .arg(&input)
+        .arg("-o")
         .arg(&output);
     cmd.assert().success();
 
