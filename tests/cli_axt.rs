@@ -77,6 +77,79 @@ TTTT
 }
 
 #[test]
+fn command_axt_tomaf_zero_score() -> anyhow::Result<()> {
+    let dir = tempdir()?;
+    let input_path = dir.path().join("zeroScore.axt");
+    let t_sizes_path = dir.path().join("rn3.sizes");
+    let q_sizes_path = dir.path().join("hg15.sizes");
+    let output_path = dir.path().join("zeroScore.maf");
+
+    // input/zeroScore.axt
+    let input_content = "\
+7579 chr8 16067581 16067602 chr19 54649198 54649224 - 0
+ATTCGCTGGTATACAT---------GAGGTC
+----GCTGATGTATCTACAAAAGAAGAGGTC
+";
+    // input/rn3.sizes (subset)
+    let t_sizes_content = "\
+chr8	129061546
+";
+    // input/hg15.sizes (subset)
+    let q_sizes_content = "\
+chr19	63790860
+";
+
+    {
+        let mut f = File::create(&input_path)?;
+        f.write_all(input_content.as_bytes())?;
+    }
+    {
+        let mut f = File::create(&t_sizes_path)?;
+        f.write_all(t_sizes_content.as_bytes())?;
+    }
+    {
+        let mut f = File::create(&q_sizes_path)?;
+        f.write_all(q_sizes_content.as_bytes())?;
+    }
+
+    let mut cmd = Command::cargo_bin("pgr")?;
+    cmd.arg("axt").arg("tomaf")
+       .arg(&input_path)
+       .arg(&t_sizes_path)
+       .arg(&q_sizes_path)
+       .arg(&output_path);
+    
+    cmd.assert().success();
+
+    let output = std::fs::read_to_string(&output_path)?;
+    
+    // Expected output check
+    // s chr8  16067580 22 + 129061546 ATTCGCTGGTATACAT---------GAGGTC
+    // s chr19 54649197 27 -  63790860 ----GCTGATGTATCTACAAAAGAAGAGGTC
+    
+    // Check score=0.0 (pgr output format)
+    assert!(output.contains("score=0.0"));
+    
+    // Check target line components
+    assert!(output.contains("chr8"));
+    assert!(output.contains("16067580"));
+    assert!(output.contains("22"));
+    assert!(output.contains("+"));
+    assert!(output.contains("129061546"));
+    assert!(output.contains("ATTCGCTGGTATACAT---------GAGGTC"));
+    
+    // Check query line components
+    assert!(output.contains("chr19"));
+    assert!(output.contains("54649197"));
+    assert!(output.contains("27"));
+    assert!(output.contains("-"));
+    assert!(output.contains("63790860"));
+    assert!(output.contains("----GCTGATGTATCTACAAAAGAAGAGGTC"));
+
+    Ok(())
+}
+
+#[test]
 fn command_axt_sort_by_score() -> anyhow::Result<()> {
     let dir = tempdir()?;
     let input_path = dir.path().join("input.axt");
@@ -217,6 +290,61 @@ ACTG
     let output_chr2 = std::fs::read_to_string(output_dir.join("chr2.maf"))?;
     assert!(output_chr2.contains("s chr2                         20"));
     assert!(!output_chr2.contains("s chr1                         10")); // Should not contain the first record
+
+    Ok(())
+}
+
+#[test]
+fn command_axt_topsl_blockbug() -> anyhow::Result<()> {
+    let dir = tempdir()?;
+    let input_path = dir.path().join("blockBug.axt");
+    let t_sizes_path = dir.path().join("t.sizes");
+    let q_sizes_path = dir.path().join("q.sizes");
+    let output_path = dir.path().join("output.psl");
+
+    // BlockBug content
+    let input_content = "\
+183 MmUn_161829_35 2396 3008 MmUn_71944_35 586 1136 + 3228
+GTCAAAGTGCTAAACTGTGGTGTATCAGTACTGCAATATTCTGTTACAGTCCTCCTCTGTCGTGTCACAGTTCTCAAAACTGCTGTCCCACTGTTCCAGTTTTGTATCACTGTGCAGCATTTTTCTGTAACAGTCATCTACTGCGGTGTCAAGGTGCTCACCTGTGGTGCCACAGTGCT-CCACTGTGGTGTCACATTGCTCCACTGTGGTGTCAGAGTGATCCgctgtggtgtcacagtgctccactgtgctgtcacagtgctgcactctgttgtcactgtgctccaatgtggtgtcacagtgctc---cactgtgctgtcacagtcctccactgtggtgtCACATTGCTCCACTGTTGTGTCAGAGTGATCCCCTGTGGTTTCACAGTGCTCCACTGT-GATGTCGCAGTGCTCCATGTTGTGTCACAGTTCT-CCACTGTGCTGTCACGGTGCACCCTGTGGAGTCACAGTGCTCCCCTGTATTGTCAAAGTGCTCCACTTTCATGTCAAAGTGCTCCACTGTGCTATCAAAGTGCTCTATTGTGATGTCACAGTGTTCAAGTTTGTTTTAACAGTGCTCCACTGTGGTGTGACAGTTTTCCACTTTGTTGTGACA
+GTCACAGTTCACCAATGTGGTGTCACAGTGCTCCACTGTGGTGTCACAGTGCTCCACTGTGATGTCACAATGCTCCACTGTGATGTCAGA--------GTGCTCCAATAATGTG-------------TCAAAG-----------AGCTCCATTTTGTTGTCATGGTACTCCACTGTGCTGTCACAGTGCTCCTATATGGTGTCATTGTGCTCCACTTTTAAGTCACAGTGCTCCTCTGTGGCTTCACAATGCTGCACTCTTATTTCACAGTGCTCCAACTGTGCTGTCACATTGCTTCACTCTGCTTTCACAGTGCACCACTATGATGTCATAATGCTCCACTGTGATGTCACAGTGCTCTGCT---GTGGTGTCACAGTGCTCCACTG-----------T----------TGAGTCACAGTGCTCCAGTGTGGTGTCACAGTGC--TCAATGTG------GTG---TCAAAGTGCTCCACTTTTGTTTCACAG-ACTCCACTGTGGAGACCGCATTCTCTATTGTACTGTCACAGTGCACCACTGTGATGACATAGTTCTCCCCTGTGATGTCAGAGTCTTCCAGCTAGATGTTACAGTGTTCCATTGTGCTGTAACA
+";
+
+    // blockBug.sizes:
+    // MmUn_71944_35	1218
+    // MmUn_161829_35	7971
+    let sizes_content = "\
+MmUn_71944_35\t1218
+MmUn_161829_35\t7971
+";
+
+    {
+        let mut f = File::create(&input_path)?;
+        f.write_all(input_content.as_bytes())?;
+    }
+    {
+        let mut f = File::create(&t_sizes_path)?;
+        f.write_all(sizes_content.as_bytes())?;
+    }
+    {
+        let mut f = File::create(&q_sizes_path)?;
+        f.write_all(sizes_content.as_bytes())?;
+    }
+
+    let mut cmd = Command::cargo_bin("pgr")?;
+    cmd.arg("axt").arg("topsl")
+       .arg(&input_path)
+       .arg(&t_sizes_path)
+       .arg(&q_sizes_path)
+       .arg(&output_path);
+    
+    cmd.assert().success();
+
+    let output = std::fs::read_to_string(&output_path)?;
+    
+    // Check against expected
+    let expected = "261\t231\t53\t0\t4\t6\t10\t68\t+\tMmUn_71944_35\t1218\t585\t1136\tMmUn_161829_35\t7971\t2395\t3008\t13\t90,16,6,35,127,54,22,24,9,8,3,27,124,\t585,675,691,697,733,863,917,940,965,974,982,985,1012,\t2395,2493,2522,2539,2574,2701,2758,2801,2825,2836,2850,2856,2884,";
+    
+    assert!(output.trim().contains(expected.trim()));
 
     Ok(())
 }
