@@ -1,32 +1,26 @@
-use clap::{Command, Arg, ArgMatches};
+use bio::alphabets::dna::revcomp;
+use bio::io::fasta;
+use clap::{Arg, ArgMatches, Command};
+use pgr::libs::chain::{Chain, ChainReader};
+use pgr::libs::net::{read_nets, Fill, Gap};
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Write};
-use pgr::libs::net::{read_nets, Fill, Gap};
-use pgr::libs::chain::{ChainReader, Chain};
-use std::collections::HashMap;
 use std::rc::Rc;
-use std::cell::RefCell;
-use bio::io::fasta;
-use bio::alphabets::dna::revcomp;
 
 pub fn make_subcommand() -> Command {
     Command::new("to-axt")
         .about("Convert net (and chain) to axt")
-        .arg(Arg::new("in_net")
-            .required(true)
-            .help("Input net file"))
-        .arg(Arg::new("in_chain")
-            .required(true)
-            .help("Input chain file"))
-        .arg(Arg::new("target_fa")
-            .required(true)
-            .help("Target FASTA file"))
-        .arg(Arg::new("query_fa")
-            .required(true)
-            .help("Query FASTA file"))
-        .arg(Arg::new("out_axt")
-            .required(true)
-            .help("Output AXT file"))
+        .arg(Arg::new("in_net").required(true).help("Input net file"))
+        .arg(Arg::new("in_chain").required(true).help("Input chain file"))
+        .arg(
+            Arg::new("target_fa")
+                .required(true)
+                .help("Target FASTA file"),
+        )
+        .arg(Arg::new("query_fa").required(true).help("Query FASTA file"))
+        .arg(Arg::new("out_axt").required(true).help("Output AXT file"))
 }
 
 pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
@@ -86,7 +80,7 @@ fn r_convert<W: Write>(
                 convert_fill(&f, chain, t_seqs, q_seqs, writer)?;
             }
         }
-        
+
         // Recurse
         if !f.gaps.is_empty() {
             // Need to drop borrow of f to recurse if we were passing f, but we pass gaps.
@@ -116,27 +110,33 @@ fn convert_fill<W: Write>(
     // Get subset of chain
     // We need to convert chain to blocks and find those overlapping [t_start, t_end)
     let blocks = chain.to_blocks();
-    
+
     // Iterate blocks
     for (i, block) in blocks.iter().enumerate() {
         // Check overlap
         let start = block.t_start.max(t_start);
         let end = block.t_end.min(t_end);
-        
+
         if start < end {
             // Calculate offsets
             let t_offset = start - block.t_start;
             let len = end - start;
-            
+
             let q_start_block = block.q_start + t_offset;
             let q_end_block = q_start_block + len;
-            
+
             // Extract sequences
             let t_seq = get_subseq(t_seqs, &chain.header.t_name, start, end, '+')?;
-            let q_seq = get_subseq(q_seqs, &chain.header.q_name, q_start_block, q_end_block, chain.header.q_strand)?;
-            
+            let q_seq = get_subseq(
+                q_seqs,
+                &chain.header.q_name,
+                q_start_block,
+                q_end_block,
+                chain.header.q_strand,
+            )?;
+
             // Check if this is the last block (for AXT header purposes, AXTs are usually per block or per chain?)
-            // AXT format: 
+            // AXT format:
             // id chr1 start end chr2 start end strand score
             // seq1
             // seq2
@@ -151,30 +151,32 @@ fn convert_fill<W: Write>(
             // `chainToAxt` has `maxGap` parameter.
             // If I just output one AXT per block, it is "valid" AXT but very fragmented.
             // For now, I will output one AXT per block for simplicity, or try to merge if gap is small.
-            // Given I am implementing `netToAxt` which is supposed to be "best" alignment, 
+            // Given I am implementing `netToAxt` which is supposed to be "best" alignment,
             // and `fill` defines a range.
             // The `chain` might have gaps within this fill.
-            
+
             // Let's implement simple per-block AXT for MVP.
-            
-            writeln!(writer, "{} {} {} {} {} {} {} {} {}", 
+
+            writeln!(
+                writer,
+                "{} {} {} {} {} {} {} {} {}",
                 i, // AXT index (should be unique per file? or per chain?)
                 chain.header.t_name,
                 start + 1, // AXT is 1-based
                 end,
                 chain.header.q_name,
                 q_start_block + 1, // AXT 1-based. If strand is -, this needs care.
-                q_end_block, 
+                q_end_block,
                 chain.header.q_strand,
                 chain.header.score // This is chain score, not block score.
             )?;
-            
+
             writeln!(writer, "{}", std::str::from_utf8(&t_seq).unwrap())?;
             writeln!(writer, "{}", std::str::from_utf8(&q_seq).unwrap())?;
             writeln!(writer)?;
         }
     }
-    
+
     Ok(())
 }
 
@@ -185,11 +187,19 @@ fn get_subseq(
     end: u64,
     strand: char,
 ) -> anyhow::Result<Vec<u8>> {
-    let seq = seqs.get(name).ok_or_else(|| anyhow::anyhow!("Sequence not found: {}", name))?;
+    let seq = seqs
+        .get(name)
+        .ok_or_else(|| anyhow::anyhow!("Sequence not found: {}", name))?;
     let len = seq.len() as u64;
-    
+
     if start >= len || end > len {
-        return Err(anyhow::anyhow!("Coordinates out of bounds: {} {}-{} (len {})", name, start, end, len));
+        return Err(anyhow::anyhow!(
+            "Coordinates out of bounds: {} {}-{} (len {})",
+            name,
+            start,
+            end,
+            len
+        ));
     }
 
     // If strand is '+', simple slice.
@@ -202,7 +212,7 @@ fn get_subseq(
     // This corresponds to the last 10 bases of the + strand, reversed and complemented.
     // + strand range: [100-10, 100-0) = [90, 100).
     // So we extract + strand [90, 100), then revcomp.
-    
+
     let sub = if strand == '+' {
         seq[start as usize..end as usize].to_vec()
     } else {
@@ -211,6 +221,6 @@ fn get_subseq(
         let s = seq[p_start as usize..p_end as usize].to_vec();
         revcomp(&s)
     };
-    
+
     Ok(sub)
 }

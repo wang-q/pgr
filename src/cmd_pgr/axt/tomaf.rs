@@ -89,8 +89,14 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let t_sizes_path = args.get_one::<String>("t_sizes").unwrap();
     let q_sizes_path = args.get_one::<String>("q_sizes").unwrap();
     let output = args.get_one::<String>("output").unwrap();
-    let q_prefix = args.get_one::<String>("q_prefix").map(|s| s.as_str()).unwrap_or("");
-    let t_prefix = args.get_one::<String>("t_prefix").map(|s| s.as_str()).unwrap_or("");
+    let q_prefix = args
+        .get_one::<String>("q_prefix")
+        .map(|s| s.as_str())
+        .unwrap_or("");
+    let t_prefix = args
+        .get_one::<String>("t_prefix")
+        .map(|s| s.as_str())
+        .unwrap_or("");
     let t_split = args.get_flag("t_split");
 
     // Load sizes
@@ -129,37 +135,37 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 // The C code errors if not sorted.
                 // "if (hashLookup(uniqHash, tName) != NULL) errAbort(...)"
                 // I will implement similar check or just open the file.
-                // Since OS has limit on open files, and C code closes previous file, 
+                // Since OS has limit on open files, and C code closes previous file,
                 // it implies we should only keep one open or check sort.
                 // Let's assume sorted as per C code requirement and implement the check?
                 // Or just open/append. C code overwrites ("w").
                 // If the input is not sorted, overwriting would lose data.
-                // So I should enforce sorted check or append. 
+                // So I should enforce sorted check or append.
                 // C code uses "w", so it implies STRICTLY sorted (grouped).
-                
+
                 // Let's strictly follow C logic: check if we've seen this tName before after leaving it.
                 // But simpler: just track current name. If it changes, close old, open new.
                 // If we see an old name again, it's an error if we follow C strictly.
                 // But for robustness, appending is safer if we don't enforce sort.
                 // However, C code says "in.maf must be sorted".
                 // Let's just open new file for current tName.
-                
+
                 let path = Path::new(output).join(format!("{}.maf", axt.t_name));
                 // We need to manage writers.
                 // If we want to support unsorted, we need a map of writers (up to limit) or open/append.
                 // Let's stick to C behavior: Open new file.
                 // To avoid opening/closing for every record if sorted, we cache the current writer.
-                
+
                 if !split_writers.contains_key(&axt.t_name) {
-                     // Check if we should close the previous one? 
-                     // C code: closes `f` when tName changes.
-                     // So it only keeps ONE file open.
-                     split_writers.clear(); // Close previous
-                     
-                     let file = File::create(&path)?;
-                     let mut w = MafWriter::new(BufWriter::new(file));
-                     w.write_header("blastz")?;
-                     split_writers.insert(axt.t_name.clone(), w);
+                    // Check if we should close the previous one?
+                    // C code: closes `f` when tName changes.
+                    // So it only keeps ONE file open.
+                    split_writers.clear(); // Close previous
+
+                    let file = File::create(&path)?;
+                    let mut w = MafWriter::new(BufWriter::new(file));
+                    w.write_header("blastz")?;
+                    split_writers.insert(axt.t_name.clone(), w);
                 }
                 current_t_name = axt.t_name.clone();
             }
@@ -169,13 +175,15 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         };
 
         // Construct MAF alignment
-        let score = axt.score.map(|s| s as f64); 
+        let score = axt.score.map(|s| s as f64);
         // Note: axt.score is Option<i32>, maf uses f64.
-        
+
         // Target component
         let t_src = format!("{}{}", t_prefix, axt.t_name);
-        let t_size = *t_sizes.get(&axt.t_name).ok_or_else(|| anyhow::anyhow!("Target size not found for {}", axt.t_name))?;
-        
+        let t_size = *t_sizes
+            .get(&axt.t_name)
+            .ok_or_else(|| anyhow::anyhow!("Target size not found for {}", axt.t_name))?;
+
         let t_comp = MafComp {
             src: t_src,
             start: axt.t_start,
@@ -187,8 +195,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
         // Query component
         let q_src = format!("{}{}", q_prefix, axt.q_name);
-        let q_size = *q_sizes.get(&axt.q_name).ok_or_else(|| anyhow::anyhow!("Query size not found for {}", axt.q_name))?;
-        
+        let q_size = *q_sizes
+            .get(&axt.q_name)
+            .ok_or_else(|| anyhow::anyhow!("Query size not found for {}", axt.q_name))?;
+
         let q_comp = MafComp {
             src: q_src,
             start: axt.q_start,

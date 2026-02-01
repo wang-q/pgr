@@ -47,7 +47,7 @@ impl Psl {
         let q_bytes = q_string.as_bytes();
         let t_bytes = t_string.as_bytes();
         let ali_len = q_bytes.len();
-        
+
         if t_bytes.len() != ali_len {
             return None;
         }
@@ -61,8 +61,11 @@ impl Psl {
             let q = q_bytes[start_idx];
             let t = t_bytes[start_idx];
             if Self::is_del_char(q) || Self::is_del_char(t) {
-                if !Self::is_del_char(q) { q_start += 1; }
-                else if !Self::is_del_char(t) { t_start += 1; }
+                if !Self::is_del_char(q) {
+                    q_start += 1;
+                } else if !Self::is_del_char(t) {
+                    t_start += 1;
+                }
                 start_idx += 1;
             } else {
                 break;
@@ -74,8 +77,11 @@ impl Psl {
             let q = q_bytes[end_idx - 1];
             let t = t_bytes[end_idx - 1];
             if Self::is_del_char(q) || Self::is_del_char(t) {
-                if !Self::is_del_char(q) { q_end -= 1; }
-                else if !Self::is_del_char(t) { t_end -= 1; }
+                if !Self::is_del_char(q) {
+                    q_end -= 1;
+                } else if !Self::is_del_char(t) {
+                    t_end -= 1;
+                }
                 end_idx -= 1;
             } else {
                 break;
@@ -104,17 +110,17 @@ impl Psl {
         if strand.starts_with('-') {
             Self::reverse_range(&mut qs, &mut qe, psl.q_size);
         }
-        
+
         let mut ts = psl.t_start;
         let mut te = psl.t_end;
         let t_strand_rev = if strand.len() >= 2 {
             strand.chars().nth(1) == Some('-')
         } else {
-            false 
+            false
         };
 
         if t_strand_rev {
-             Self::reverse_range(&mut ts, &mut te, psl.t_size);
+            Self::reverse_range(&mut ts, &mut te, psl.t_size);
         }
 
         let mut either_insert = false;
@@ -122,7 +128,7 @@ impl Psl {
         // In C: qe = qs; te = ts;
         qe = qs;
         te = ts;
-        
+
         let mut prev_q = 0;
         let mut prev_t = 0;
 
@@ -137,8 +143,12 @@ impl Psl {
                     psl.add_block(qs, qe, ts, te);
                     either_insert = true;
                 }
-                if !Self::is_del_char(q) { qe += 1; }
-                if !Self::is_del_char(t) { te += 1; }
+                if !Self::is_del_char(q) {
+                    qe += 1;
+                }
+                if !Self::is_del_char(t) {
+                    te += 1;
+                }
             } else {
                 if either_insert {
                     qs = qe;
@@ -153,7 +163,7 @@ impl Psl {
             prev_t = t;
         }
         psl.add_block(qs, qe, ts, te);
-        
+
         Some(psl)
     }
 
@@ -171,10 +181,10 @@ impl Psl {
     fn add_block(&mut self, qs: i32, qe: i32, ts: i32, _te: i32) {
         let size = qe - qs;
         if size > 0 {
-             self.block_count += 1;
-             self.block_sizes.push(size as u32);
-             self.q_starts.push(qs as u32);
-             self.t_starts.push(ts as u32);
+            self.block_count += 1;
+            self.block_sizes.push(size as u32);
+            self.q_starts.push(qs as u32);
+            self.t_starts.push(ts as u32);
         }
     }
 
@@ -182,13 +192,14 @@ impl Psl {
         if !Self::is_del_char(q) && !Self::is_del_char(t) {
             let qu = q.to_ascii_uppercase();
             let tu = t.to_ascii_uppercase();
-            if q == b'N' || t == b'N' { // Strict 'N' check as in C
+            if q == b'N' || t == b'N' {
+                // Strict 'N' check as in C
                 self.n_count += 1;
             } else if qu == tu {
                 if qu != q || tu != t {
-                     self.rep_match += 1;
+                    self.rep_match += 1;
                 } else {
-                     self.match_count += 1;
+                    self.match_count += 1;
                 }
             } else {
                 self.mismatch_count += 1;
@@ -207,19 +218,41 @@ impl Psl {
     }
 
     pub fn write_to<W: io::Write>(&self, w: &mut W) -> io::Result<()> {
-        write!(w, "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t",
-            self.match_count, self.mismatch_count, self.rep_match, self.n_count,
-            self.q_num_insert, self.q_base_insert, self.t_num_insert, self.t_base_insert,
-            self.strand, self.q_name, self.q_size, self.q_start, self.q_end,
-            self.t_name, self.t_size, self.t_start, self.t_end, self.block_count
+        write!(
+            w,
+            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t",
+            self.match_count,
+            self.mismatch_count,
+            self.rep_match,
+            self.n_count,
+            self.q_num_insert,
+            self.q_base_insert,
+            self.t_num_insert,
+            self.t_base_insert,
+            self.strand,
+            self.q_name,
+            self.q_size,
+            self.q_start,
+            self.q_end,
+            self.t_name,
+            self.t_size,
+            self.t_start,
+            self.t_end,
+            self.block_count
         )?;
-        
-        for s in &self.block_sizes { write!(w, "{},", s)?; }
+
+        for s in &self.block_sizes {
+            write!(w, "{},", s)?;
+        }
         write!(w, "\t")?;
-        for s in &self.q_starts { write!(w, "{},", s)?; }
+        for s in &self.q_starts {
+            write!(w, "{},", s)?;
+        }
         write!(w, "\t")?;
-        for s in &self.t_starts { write!(w, "{},", s)?; }
-        
+        for s in &self.t_starts {
+            write!(w, "{},", s)?;
+        }
+
         writeln!(w)?;
         Ok(())
     }

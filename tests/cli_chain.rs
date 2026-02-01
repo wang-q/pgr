@@ -19,7 +19,7 @@ fn test_chain_net_basic() -> Result<(), Box<dyn std::error::Error>> {
     // chain score tName tSize tStrand tStart tEnd qName qSize qStrand qStart qEnd id
     let chain_content = "chain 1000 chr1 1000 + 0 100 chr2 1000 + 0 100 1\n100\n\n";
     fs::write(&chain_path, chain_content)?;
-    
+
     fs::write(&t_sizes_path, "chr1 1000\n")?;
     fs::write(&q_sizes_path, "chr2 1000\n")?;
 
@@ -68,7 +68,7 @@ fn test_chain_net_reverse() -> Result<(), Box<dyn std::error::Error>> {
     // So Q net should show fill at 100, size 100.
     let chain_content = "chain 1000 chr1 1000 + 100 200 chr2 1000 - 800 900 1\n100\n\n";
     fs::write(&chain_path, chain_content)?;
-    
+
     fs::write(&t_sizes_path, "chr1 1000\n")?;
     fs::write(&q_sizes_path, "chr2 1000\n")?;
 
@@ -95,7 +95,7 @@ fn test_chain_net_reverse() -> Result<(), Box<dyn std::error::Error>> {
     println!("Q Net content:\n{}", q_net_content);
     assert!(q_net_content.contains("net chr2 1000"));
     assert!(q_net_content.contains("fill 100 100 chr1 + 100 100"));
-    
+
     Ok(())
 }
 
@@ -113,7 +113,7 @@ fn test_chain_anti_repeat() -> Result<(), Box<dyn std::error::Error>> {
     // 20-30: "ACTGACTGAC" (good)
     let t_seq = ">chr1\nAAAAAAAAAAactgactgacACTGACTGAC\n";
     fs::write(&t_fa_path, t_seq)?;
-    
+
     // Query: chr2 (matches perfectly)
     let q_seq = ">chr2\nAAAAAAAAAAactgactgacACTGACTGAC\n";
     fs::write(&q_fa_path, q_seq)?;
@@ -121,7 +121,7 @@ fn test_chain_anti_repeat() -> Result<(), Box<dyn std::error::Error>> {
     // Chain 1: 0-10 (Low complexity) -> score 1000
     // Chain 2: 10-20 (Repeat) -> score 1000
     // Chain 3: 20-30 (Good) -> score 1000
-    
+
     // chain score tName tSize tStrand tStart tEnd qName qSize qStrand qStart qEnd id
     // Chain 1
     let c1 = "chain 1000 chr1 30 + 0 10 chr2 30 + 0 10 1\n10\n\n";
@@ -129,17 +129,20 @@ fn test_chain_anti_repeat() -> Result<(), Box<dyn std::error::Error>> {
     let c2 = "chain 1000 chr1 30 + 10 20 chr2 30 + 10 20 2\n10\n\n";
     // Chain 3
     let c3 = "chain 1000 chr1 30 + 20 30 chr2 30 + 20 30 3\n10\n\n";
-    
+
     fs::write(&chain_path, format!("{}{}{}", c1, c2, c3))?;
 
     let mut cmd = Command::cargo_bin("pgr")?;
     cmd.arg("chain")
         .arg("anti-repeat")
-        .arg("--target").arg(t_fa_path.to_str().unwrap())
-        .arg("--query").arg(q_fa_path.to_str().unwrap())
+        .arg("--target")
+        .arg(t_fa_path.to_str().unwrap())
+        .arg("--query")
+        .arg(q_fa_path.to_str().unwrap())
         .arg(chain_path.to_str().unwrap())
         .arg(out_path.to_str().unwrap())
-        .arg("--min-score").arg("800"); 
+        .arg("--min-score")
+        .arg("800");
 
     cmd.assert().success();
 
@@ -176,18 +179,19 @@ fn test_chain_sort() -> Result<(), Box<dyn std::error::Error>> {
         .arg("sort")
         .arg(chain1_path.to_str().unwrap())
         .arg(chain2_path.to_str().unwrap())
-        .arg("--output").arg(out_path.to_str().unwrap());
+        .arg("--output")
+        .arg(out_path.to_str().unwrap());
 
     cmd.assert().success();
 
     let output = fs::read_to_string(&out_path)?;
     // Should be sorted by score descending: 200 then 100
     // IDs are renumbered by default: 1 then 2
-    
+
     let lines: Vec<&str> = output.lines().filter(|l| l.starts_with("chain")).collect();
     assert_eq!(lines.len(), 2);
     assert!(lines[0].contains("chain 200"));
     assert!(lines[1].contains("chain 100"));
-    
+
     Ok(())
 }

@@ -4,10 +4,9 @@ use std::fs::File;
 use std::io::{BufReader, BufWriter};
 use std::path::Path;
 
-use pgr::libs::chain::{read_chains, Chain, Block};
+use pgr::libs::chain::{read_chains, Block, Chain};
 
 // Default scores from UCSC chainAntiRepeat.c
-
 
 pub fn make_subcommand() -> Command {
     Command::new("anti-repeat")
@@ -26,16 +25,8 @@ pub fn make_subcommand() -> Command {
                 .required(true)
                 .help("Query sequence file (FASTA)"),
         )
-        .arg(
-            Arg::new("input")
-                .required(true)
-                .help("Input chain file"),
-        )
-        .arg(
-            Arg::new("output")
-                .required(true)
-                .help("Output chain file"),
-        )
+        .arg(Arg::new("input").required(true).help("Input chain file"))
+        .arg(Arg::new("output").required(true).help("Output chain file"))
         .arg(
             Arg::new("min_score")
                 .long("min-score")
@@ -108,7 +99,7 @@ fn check_chain(
     };
 
     let blocks = chain.to_blocks();
-    
+
     // 1. Degeneracy Filter (Low complexity check)
     if !check_degeneracy(chain, &blocks, t_seq, q_seq, min_score) {
         return false;
@@ -119,11 +110,11 @@ fn check_chain(
 }
 
 fn get_slices<'a>(
-    block: &Block, 
-    t_seq: &'a [u8], 
-    q_seq: &'a [u8], 
-    q_strand: char, 
-    q_size: u64
+    block: &Block,
+    t_seq: &'a [u8],
+    q_seq: &'a [u8],
+    q_strand: char,
+    q_size: u64,
 ) -> Option<(&'a [u8], &'a [u8])> {
     if block.t_end as usize > t_seq.len() {
         return None;
@@ -136,12 +127,12 @@ fn get_slices<'a>(
         let q_len = q_size as usize;
         (q_len - block.q_end as usize, q_len - block.q_start as usize)
     };
-    
+
     if q_end > q_seq.len() {
         return None;
     }
     let q_slice = &q_seq[q_start..q_end];
-    
+
     Some((t_slice, q_slice))
 }
 
@@ -156,7 +147,13 @@ fn check_degeneracy(
     let mut total_matches = 0;
 
     for block in blocks {
-        if let Some((t_slice, q_slice)) = get_slices(block, t_seq, q_seq, chain.header.q_strand, chain.header.q_size) {
+        if let Some((t_slice, q_slice)) = get_slices(
+            block,
+            t_seq,
+            q_seq,
+            chain.header.q_strand,
+            chain.header.q_size,
+        ) {
             for i in 0..t_slice.len() {
                 let t_base = t_slice[i];
                 let q_base_raw = if chain.header.q_strand == '+' {
@@ -164,14 +161,14 @@ fn check_degeneracy(
                 } else {
                     q_slice[q_slice.len() - 1 - i]
                 };
-                
+
                 let t_val = nt_val(t_base);
                 let mut q_val = nt_val(q_base_raw);
 
                 if chain.header.q_strand == '-' && q_val >= 0 {
                     q_val = (q_val + 2) % 4;
                 }
-                
+
                 if t_val >= 0 && t_val == q_val {
                     counts[t_val as usize] += 1;
                     total_matches += 1;
@@ -200,7 +197,10 @@ fn check_degeneracy(
         let adjust_factor = 1.01 - over_ok / max_over_ok;
         let adjusted_score = chain.header.score * adjust_factor;
         if adjusted_score < min_score as f64 {
-            eprintln!("Chain {} filtered by degeneracy: score {} -> {}", chain.header.id, chain.header.score, adjusted_score);
+            eprintln!(
+                "Chain {} filtered by degeneracy: score {} -> {}",
+                chain.header.id, chain.header.score, adjusted_score
+            );
             false
         } else {
             true
@@ -219,7 +219,13 @@ fn check_repeat(
     let mut total = 0;
 
     for block in blocks {
-        if let Some((t_slice, q_slice)) = get_slices(block, t_seq, q_seq, chain.header.q_strand, chain.header.q_size) {
+        if let Some((t_slice, q_slice)) = get_slices(
+            block,
+            t_seq,
+            q_seq,
+            chain.header.q_strand,
+            chain.header.q_size,
+        ) {
             for i in 0..t_slice.len() {
                 let t_base = t_slice[i];
                 let q_base = if chain.header.q_strand == '+' {
@@ -227,7 +233,7 @@ fn check_repeat(
                 } else {
                     q_slice[q_slice.len() - 1 - i]
                 };
-                
+
                 if is_lower(t_base) || is_lower(q_base) {
                     rep_count += 1;
                 }
@@ -235,14 +241,17 @@ fn check_repeat(
             total += t_slice.len();
         }
     }
-    
+
     if total == 0 {
         return false;
     }
 
     let adjusted_score = chain.header.score * 2.0 * ((total - rep_count) as f64) / (total as f64);
     if adjusted_score < min_score as f64 {
-        eprintln!("Chain {} filtered by repeat: score {} -> {} (rep {}/{})", chain.header.id, chain.header.score, adjusted_score, rep_count, total);
+        eprintln!(
+            "Chain {} filtered by repeat: score {} -> {} (rep {}/{})",
+            chain.header.id, chain.header.score, adjusted_score, rep_count, total
+        );
         false
     } else {
         true
@@ -262,4 +271,3 @@ fn nt_val(base: u8) -> i8 {
 fn is_lower(base: u8) -> bool {
     base >= b'a' && base <= b'z'
 }
-

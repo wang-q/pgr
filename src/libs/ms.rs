@@ -1,7 +1,7 @@
-use std::io::BufRead;
 use anyhow::Result;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::io::BufRead;
 use std::process;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 pub struct MsHeader {
     pub nsam: usize,

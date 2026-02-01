@@ -1,5 +1,5 @@
-use std::io::{self, BufRead};
 use crate::libs::psl::Psl;
+use std::io::{self, BufRead};
 
 #[derive(Debug, Clone, Default)]
 pub struct Block {
@@ -13,10 +13,21 @@ pub struct Block {
 
 #[derive(Debug, Clone)]
 pub enum LavStanza {
-    Sizes { t_size: i64, q_size: i64 },
-    Header { t_name: String, q_name: String, is_rc: bool },
-    Data { lines: Vec<String> },
-    Alignment { blocks: Vec<Block> },
+    Sizes {
+        t_size: i64,
+        q_size: i64,
+    },
+    Header {
+        t_name: String,
+        q_name: String,
+        is_rc: bool,
+    },
+    Data {
+        lines: Vec<String>,
+    },
+    Alignment {
+        blocks: Vec<Block>,
+    },
     Unknown(String),
 }
 
@@ -71,9 +82,14 @@ impl<R: BufRead> LavReader<R> {
             }
             let parts: Vec<&str> = line.split_whitespace().collect();
             if parts.len() < 3 {
-                 return Err(io::Error::new(io::ErrorKind::InvalidData, format!("Invalid s stanza line (expected >= 3 words): {}", line)));
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("Invalid s stanza line (expected >= 3 words): {}", line),
+                ));
             }
-            return parts[2].parse::<i64>().map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e));
+            return parts[2]
+                .parse::<i64>()
+                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e));
         }
     }
 
@@ -81,7 +97,7 @@ impl<R: BufRead> LavReader<R> {
         let mut t_name = String::new();
         let mut q_name = String::new();
         let mut is_rc = false;
-        
+
         let mut i = 0;
         loop {
             let line = self.read_line()?;
@@ -92,27 +108,33 @@ impl<R: BufRead> LavReader<R> {
             if line_trim.starts_with('#') || line_trim.is_empty() {
                 continue;
             }
-            
+
             let parts: Vec<&str> = line_trim.split_whitespace().collect();
-            if parts.is_empty() { continue; }
-            
+            if parts.is_empty() {
+                continue;
+            }
+
             let word = parts[0];
             let content = parse_header_word(word);
-            
+
             if i == 0 {
                 t_name = content;
             } else if i == 1 {
                 q_name = content;
             }
-            
+
             if line.contains("(reverse") {
                 is_rc = true;
             }
-            
+
             i += 1;
         }
-        
-        Ok(LavStanza::Header { t_name, q_name, is_rc })
+
+        Ok(LavStanza::Header {
+            t_name,
+            q_name,
+            is_rc,
+        })
     }
 
     fn parse_d(&mut self) -> io::Result<LavStanza> {
@@ -144,22 +166,37 @@ impl<R: BufRead> LavReader<R> {
             if line.starts_with('s') {
                 let parts: Vec<&str> = line.split_whitespace().collect();
                 if parts.len() >= 2 {
-                     if let Ok(s) = parts[1].parse::<i32>() {
-                         // C code: score = lineFileNeedNum(lf, words, 1) - 1;
-                         current_score = s - 1;
-                     }
+                    if let Ok(s) = parts[1].parse::<i32>() {
+                        // C code: score = lineFileNeedNum(lf, words, 1) - 1;
+                        current_score = s - 1;
+                    }
                 }
             } else if line.starts_with('l') {
                 let parts: Vec<&str> = line.split_whitespace().collect();
                 if parts.len() >= 6 {
-                    let t_start = parts[1].parse::<i64>().map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))? - 1;
-                    let q_start = parts[2].parse::<i64>().map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))? - 1;
-                    let t_end = parts[3].parse::<i64>().map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-                    let q_end = parts[4].parse::<i64>().map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-                    let percent_id = parts[5].parse::<i32>().map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+                    let t_start = parts[1]
+                        .parse::<i64>()
+                        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?
+                        - 1;
+                    let q_start = parts[2]
+                        .parse::<i64>()
+                        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?
+                        - 1;
+                    let t_end = parts[3]
+                        .parse::<i64>()
+                        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+                    let q_end = parts[4]
+                        .parse::<i64>()
+                        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+                    let percent_id = parts[5]
+                        .parse::<i32>()
+                        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
 
                     if (q_end - q_start) != (t_end - t_start) {
-                        return Err(io::Error::new(io::ErrorKind::InvalidData, "Block size mismatch"));
+                        return Err(io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            "Block size mismatch",
+                        ));
                     }
 
                     if q_end == q_start && t_end == t_start {
@@ -187,7 +224,10 @@ impl<R: BufRead> LavReader<R> {
         if let Some(res) = self.lines.next() {
             res
         } else {
-            Err(io::Error::new(io::ErrorKind::UnexpectedEof, "Unexpected EOF"))
+            Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "Unexpected EOF",
+            ))
         }
     }
 
@@ -200,7 +240,7 @@ impl<R: BufRead> LavReader<R> {
         }
         Ok(())
     }
-    
+
     fn skip_stanza(&mut self) -> io::Result<()> {
         self.skip_until_brace()
     }
@@ -214,11 +254,11 @@ fn parse_header_word(word: &str) -> String {
     if s.starts_with('>') {
         s = &s[1..];
     }
-    
+
     if let Some(idx) = s.find('"') {
         s = &s[..idx];
     }
-    
+
     // Remove range specifiers (e.g., :start-end)
     if let Some(idx) = s.find(':') {
         s = &s[..idx];
@@ -226,7 +266,7 @@ fn parse_header_word(word: &str) -> String {
 
     // Extract filename from path
     if let Some(idx) = s.rfind('/') {
-        s = &s[idx+1..];
+        s = &s[idx + 1..];
     }
 
     // Remove common extensions
@@ -239,7 +279,7 @@ fn parse_header_word(word: &str) -> String {
     } else if let Some(stripped) = s.strip_suffix(".2bit") {
         s = stripped;
     }
-    
+
     s.to_string()
 }
 
@@ -247,20 +287,27 @@ fn remove_frayed_ends(mut blocks: Vec<Block>) -> Vec<Block> {
     while !blocks.is_empty() && blocks[0].q_start == blocks[0].q_end {
         blocks.remove(0);
     }
-    while !blocks.is_empty() && blocks[blocks.len()-1].q_start == blocks[blocks.len()-1].q_end {
+    while !blocks.is_empty() && blocks[blocks.len() - 1].q_start == blocks[blocks.len() - 1].q_end {
         blocks.pop();
     }
     blocks
 }
 
-pub fn blocks_to_psl(blocks: &[Block], t_size: u32, q_size: u32, t_name: &str, q_name: &str, strand: &str) -> Psl {
+pub fn blocks_to_psl(
+    blocks: &[Block],
+    t_size: u32,
+    q_size: u32,
+    t_name: &str,
+    q_name: &str,
+    strand: &str,
+) -> Psl {
     let mut psl = Psl::new();
     psl.t_size = t_size;
     psl.q_size = q_size;
     psl.t_name = t_name.to_string();
     psl.q_name = q_name.to_string();
     psl.strand = strand.to_string();
-    
+
     // Calculate overall range and stats
     let mut q_min = i64::MAX;
     let mut q_max = i64::MIN;
@@ -272,21 +319,29 @@ pub fn blocks_to_psl(blocks: &[Block], t_size: u32, q_size: u32, t_name: &str, q
         // UCSC lavToPsl calculation: match = (width * identity + 50)/100
         let match_cnt = (len * block.percent_id as u32 + 50) / 100;
         let mismatch_cnt = len - match_cnt;
-        
+
         psl.match_count += match_cnt;
         psl.mismatch_count += mismatch_cnt;
-        
+
         psl.block_count += 1;
         psl.block_sizes.push(len);
         psl.q_starts.push(block.q_start as u32);
         psl.t_starts.push(block.t_start as u32);
 
-        if block.q_start < q_min { q_min = block.q_start; }
-        if block.q_end > q_max { q_max = block.q_end; }
-        if block.t_start < t_min { t_min = block.t_start; }
-        if block.t_end > t_max { t_max = block.t_end; }
+        if block.q_start < q_min {
+            q_min = block.q_start;
+        }
+        if block.q_end > q_max {
+            q_max = block.q_end;
+        }
+        if block.t_start < t_min {
+            t_min = block.t_start;
+        }
+        if block.t_end > t_max {
+            t_max = block.t_end;
+        }
     }
-    
+
     if !blocks.is_empty() {
         if strand == "-" {
             psl.q_start = (q_size as i64 - q_max) as i32;
@@ -302,26 +357,26 @@ pub fn blocks_to_psl(blocks: &[Block], t_size: u32, q_size: u32, t_name: &str, q
     // Gaps (inserts)
     for i in 0..blocks.len() - 1 {
         let curr = &blocks[i];
-        let next = &blocks[i+1];
-        
+        let next = &blocks[i + 1];
+
         // Assumption: blocks are sorted by T. LAV usually implies this.
         // If not, gap calculation might be weird (negative).
         // Let's assume non-negative gaps for now, or clamp to 0.
-        
+
         let q_gap = next.q_start - curr.q_end;
         let t_gap = next.t_start - curr.t_end;
-        
+
         if q_gap > 0 {
             psl.q_num_insert += 1;
             psl.q_base_insert += q_gap as i32;
         }
-        
+
         if t_gap > 0 {
             psl.t_num_insert += 1;
             psl.t_base_insert += t_gap as i32;
         }
     }
-    
+
     psl
 }
 
@@ -350,28 +405,32 @@ m {
 }
 "#;
         let mut reader = LavReader::new(Cursor::new(data));
-        
+
         // 1. s stanza
         let stanza = reader.next_stanza().unwrap().unwrap();
         match stanza {
             LavStanza::Sizes { t_size, q_size } => {
                 assert_eq!(t_size, 1000);
                 assert_eq!(q_size, 500);
-            },
+            }
             _ => panic!("Expected Sizes stanza, got {:?}", stanza),
         }
-        
+
         // 2. h stanza
         let stanza = reader.next_stanza().unwrap().unwrap();
         match stanza {
-            LavStanza::Header { t_name, q_name, is_rc } => {
+            LavStanza::Header {
+                t_name,
+                q_name,
+                is_rc,
+            } => {
                 assert_eq!(t_name, "target.fa");
                 assert_eq!(q_name, "query.fa");
                 assert_eq!(is_rc, false);
-            },
+            }
             _ => panic!("Expected Header stanza, got {:?}", stanza),
         }
-        
+
         // 3. a stanza
         let stanza = reader.next_stanza().unwrap().unwrap();
         match stanza {
@@ -382,19 +441,19 @@ m {
                 assert_eq!(blocks[0].q_start, 0); // 1 - 1
                 assert_eq!(blocks[0].t_end, 10);
                 assert_eq!(blocks[0].q_end, 10);
-            },
+            }
             _ => panic!("Expected Alignment stanza, got {:?}", stanza),
         }
-        
+
         // 4. m stanza (Unknown)
         let stanza = reader.next_stanza().unwrap().unwrap();
         match stanza {
             LavStanza::Unknown(line) => {
                 assert!(line.contains("m {"));
-            },
+            }
             _ => panic!("Expected Unknown stanza, got {:?}", stanza),
         }
-        
+
         // End
         assert!(reader.next_stanza().unwrap().is_none());
     }
@@ -412,7 +471,7 @@ h {
         match stanza {
             LavStanza::Header { is_rc, .. } => {
                 assert!(is_rc);
-            },
+            }
             _ => panic!("Expected Header stanza, got {:?}", stanza),
         }
     }

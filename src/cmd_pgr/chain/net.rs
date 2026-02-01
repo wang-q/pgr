@@ -1,7 +1,7 @@
-use clap::{Arg, ArgAction, Command, ArgMatches};
-use pgr::libs::chain::ChainReader;
-use pgr::libs::net::{ChainNet, finalize_net, write_net};
 use anyhow::Result;
+use clap::{Arg, ArgAction, ArgMatches, Command};
+use pgr::libs::chain::ChainReader;
+use pgr::libs::net::{finalize_net, write_net, ChainNet};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter};
@@ -9,39 +9,53 @@ use std::io::{BufRead, BufReader, BufWriter};
 pub fn make_subcommand() -> Command {
     Command::new("net")
         .about("Make alignment nets out of chains")
-        .arg(Arg::new("input")
-            .required(true)
-            .help("Input chain file"))
-        .arg(Arg::new("target_sizes")
-            .required(true)
-            .help("Target sequence sizes"))
-        .arg(Arg::new("query_sizes")
-            .required(true)
-            .help("Query sequence sizes"))
-        .arg(Arg::new("target_net")
-            .required(true)
-            .help("Output target net file"))
-        .arg(Arg::new("query_net")
-            .required(true)
-            .help("Output query net file"))
-        .arg(Arg::new("min_space")
-            .long("min-space")
-            .default_value("25")
-            .value_parser(clap::value_parser!(u64))
-            .help("Minimum gap size to fill"))
-        .arg(Arg::new("min_fill")
-            .long("min-fill")
-            .value_parser(clap::value_parser!(u64))
-            .help("Minimum fill to record (default: min_space / 2)"))
-        .arg(Arg::new("min_score")
-            .long("min-score")
-            .default_value("2000")
-            .value_parser(clap::value_parser!(f64))
-            .help("Minimum chain score to consider"))
-        .arg(Arg::new("incl_hap")
-            .long("incl-hap")
-            .action(ArgAction::SetTrue)
-            .help("Include haplotype pseudochromosome queries"))
+        .arg(Arg::new("input").required(true).help("Input chain file"))
+        .arg(
+            Arg::new("target_sizes")
+                .required(true)
+                .help("Target sequence sizes"),
+        )
+        .arg(
+            Arg::new("query_sizes")
+                .required(true)
+                .help("Query sequence sizes"),
+        )
+        .arg(
+            Arg::new("target_net")
+                .required(true)
+                .help("Output target net file"),
+        )
+        .arg(
+            Arg::new("query_net")
+                .required(true)
+                .help("Output query net file"),
+        )
+        .arg(
+            Arg::new("min_space")
+                .long("min-space")
+                .default_value("25")
+                .value_parser(clap::value_parser!(u64))
+                .help("Minimum gap size to fill"),
+        )
+        .arg(
+            Arg::new("min_fill")
+                .long("min-fill")
+                .value_parser(clap::value_parser!(u64))
+                .help("Minimum fill to record (default: min_space / 2)"),
+        )
+        .arg(
+            Arg::new("min_score")
+                .long("min-score")
+                .default_value("2000")
+                .value_parser(clap::value_parser!(f64))
+                .help("Minimum chain score to consider"),
+        )
+        .arg(
+            Arg::new("incl_hap")
+                .long("incl-hap")
+                .action(ArgAction::SetTrue)
+                .help("Include haplotype pseudochromosome queries"),
+        )
 }
 
 pub fn execute(args: &ArgMatches) -> Result<()> {
@@ -50,9 +64,12 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
     let query_sizes_path = args.get_one::<String>("query_sizes").unwrap();
     let target_net_path = args.get_one::<String>("target_net").unwrap();
     let query_net_path = args.get_one::<String>("query_net").unwrap();
-    
+
     let min_space = *args.get_one::<u64>("min_space").unwrap();
-    let min_fill = args.get_one::<u64>("min_fill").copied().unwrap_or(min_space / 2);
+    let min_fill = args
+        .get_one::<u64>("min_fill")
+        .copied()
+        .unwrap_or(min_space / 2);
     let min_score = *args.get_one::<f64>("min_score").unwrap();
     let incl_hap = args.get_flag("incl_hap");
 
@@ -69,13 +86,13 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
 
     while let Some(res) = reader.next() {
         let chain = res?;
-        
+
         // Sort check (optional but good)
         if (chain.header.score as f64) > last_score {
-             // In C code, it doesn't strictly abort, but expects sorted.
-             // We can just warn or proceed. The greedy algorithm relies on score sorting.
-             // Let's bail if strict, or just log.
-             // bail!("Input not sorted by score");
+            // In C code, it doesn't strictly abort, but expects sorted.
+            // We can just warn or proceed. The greedy algorithm relies on score sorting.
+            // Let's bail if strict, or just log.
+            // bail!("Input not sorted by score");
         }
         last_score = chain.header.score as f64;
 
@@ -89,7 +106,7 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
 
         // Add to T net
         t_net.add_chain(chain.clone(), min_space, min_fill);
-        
+
         // Add to Q net
         q_net.add_chain_as_q(chain, min_space, min_fill);
     }
@@ -98,7 +115,7 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
     {
         let out_file = File::create(target_net_path)?;
         let mut writer = BufWriter::new(out_file);
-        
+
         // We need to iterate chroms in order? C code iterates chromList (which is reversed from creation? No, preserved order).
         // Hash map iteration is random.
         // We should sort keys or iterate if we had a list.
@@ -119,7 +136,7 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
     {
         let out_file = File::create(query_net_path)?;
         let mut writer = BufWriter::new(out_file);
-        
+
         let mut q_chrom_names: Vec<_> = q_net.chroms.keys().cloned().collect();
         q_chrom_names.sort();
 

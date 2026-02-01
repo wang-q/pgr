@@ -84,18 +84,20 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     for result in reader {
         let axt = result?;
-        
+
         // Get sizes
-        let q_size = *q_sizes.get(&axt.q_name)
+        let q_size = *q_sizes
+            .get(&axt.q_name)
             .ok_or_else(|| anyhow::anyhow!("Query size not found for {}", axt.q_name))?;
-        let t_size = *t_sizes.get(&axt.t_name)
+        let t_size = *t_sizes
+            .get(&axt.t_name)
             .ok_or_else(|| anyhow::anyhow!("Target size not found for {}", axt.t_name))?;
 
         // Prepare coordinates
         // libs/axt.rs returns 0-based half-open coordinates
         let mut q_start = axt.q_start as i32;
         let mut q_end = axt.q_end as i32;
-        
+
         // axtToPsl.c logic: "if (axt->qStrand == '-') reverseIntRange(&qStart, &qEnd, qSize);"
         // This converts strand-relative coordinates (as in AXT) to positive strand coordinates
         // which pslFromAlign expects (so it can reverse them back internally).

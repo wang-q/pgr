@@ -1,9 +1,9 @@
 use clap::*;
+use pgr::libs::ms::{parse_header, perturb_positions, read_next_sample, system_seed, SimpleRng};
+use pgr::libs::ms2dna::{build_anc_seq, build_mut_seq, map_positions as map_pos, write_fasta};
+use std::fs::File;
 use std::io::Write;
 use std::io::{BufRead, BufReader};
-use std::fs::File;
-use pgr::libs::ms::{parse_header, read_next_sample, perturb_positions, SimpleRng, system_seed};
-use pgr::libs::ms2dna::{build_anc_seq, map_positions as map_pos, build_mut_seq, write_fasta};
 
 pub fn make_subcommand() -> Command {
     Command::new("ms2dna")
@@ -147,11 +147,23 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // Process inputs (stdin or files)
     if abs_files.is_empty() {
         let stdin = std::io::stdin();
-        convert_stream(BufReader::new(stdin.lock()), gc, Some(seed_final), &mut writer, no_perturb)?;
+        convert_stream(
+            BufReader::new(stdin.lock()),
+            gc,
+            Some(seed_final),
+            &mut writer,
+            no_perturb,
+        )?;
     } else {
         for path in abs_files {
             let fp = File::open(&path)?;
-            convert_stream(BufReader::new(fp), gc, Some(seed_final), &mut writer, no_perturb)?;
+            convert_stream(
+                BufReader::new(fp),
+                gc,
+                Some(seed_final),
+                &mut writer,
+                no_perturb,
+            )?;
         }
     }
     Ok(())
@@ -214,38 +226,41 @@ fn convert_stream<R: BufRead>(
     let seed_final = seed.unwrap_or(system_seed());
     let mut rng = SimpleRng::new(seed_final);
     while let Some(sample) = read_next_sample(&mut reader, nsam)? {
-            let segsites = sample.segsites;
-            let mut positions = sample.positions;
-            let haplotypes = sample.haplotypes;
-            // Build sequences
-            let seq_anc = build_anc_seq(gc, nsite, &mut rng);
-            if segsites > 0 && !no_perturb {
-                perturb_positions(&mut positions, &mut rng);
-            }
-            if segsites > nsite {
-                writeln!(
-                    writer,
-                    "#WARNING: number of segregating sites ({}) > number of mutable sites ({})",
-                    segsites, nsite
-                )?;
-                writeln!(writer, "#Hint: input may come from macs; ensure positions/nsite are compatible")?;
-            }
-            let map = map_pos(&positions, nsite, &mut rng);
-            let seq_mut = build_mut_seq(&seq_anc, &map, gc, &mut rng, nsite);
-            sample_counter += 1;
-            write_fasta(
+        let segsites = sample.segsites;
+        let mut positions = sample.positions;
+        let haplotypes = sample.haplotypes;
+        // Build sequences
+        let seq_anc = build_anc_seq(gc, nsite, &mut rng);
+        if segsites > 0 && !no_perturb {
+            perturb_positions(&mut positions, &mut rng);
+        }
+        if segsites > nsite {
+            writeln!(
                 writer,
-                nsam,
-                nsite,
-                &map,
-                &seq_anc,
-                &seq_mut,
-                &haplotypes,
-                howmany,
-                npop,
-                sample_sizes.as_deref(),
-                sample_counter,
+                "#WARNING: number of segregating sites ({}) > number of mutable sites ({})",
+                segsites, nsite
             )?;
+            writeln!(
+                writer,
+                "#Hint: input may come from macs; ensure positions/nsite are compatible"
+            )?;
+        }
+        let map = map_pos(&positions, nsite, &mut rng);
+        let seq_mut = build_mut_seq(&seq_anc, &map, gc, &mut rng, nsite);
+        sample_counter += 1;
+        write_fasta(
+            writer,
+            nsam,
+            nsite,
+            &map,
+            &seq_anc,
+            &seq_mut,
+            &haplotypes,
+            howmany,
+            npop,
+            sample_sizes.as_deref(),
+            sample_counter,
+        )?;
     }
     Ok(())
 }

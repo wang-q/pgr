@@ -1,6 +1,6 @@
-use clap::{Arg, ArgAction, Command, ArgMatches};
+use anyhow::{bail, Result};
+use clap::{Arg, ArgAction, ArgMatches, Command};
 use pgr::libs::chain::ChainReader;
-use anyhow::{Result, bail};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter};
@@ -8,11 +8,7 @@ use std::io::{BufRead, BufReader, BufWriter};
 pub fn make_subcommand() -> Command {
     Command::new("pre-net")
         .about("Remove chains that don't have a chance of being netted")
-        .arg(
-            Arg::new("input")
-                .required(true)
-                .help("Input chain file"),
-        )
+        .arg(Arg::new("input").required(true).help("Input chain file"))
         .arg(
             Arg::new("target_sizes")
                 .required(true)
@@ -23,11 +19,7 @@ pub fn make_subcommand() -> Command {
                 .required(true)
                 .help("Query sizes file"),
         )
-        .arg(
-            Arg::new("output")
-                .required(true)
-                .help("Output chain file"),
-        )
+        .arg(Arg::new("output").required(true).help("Output chain file"))
         .arg(
             Arg::new("dots")
                 .long("dots")
@@ -64,14 +56,18 @@ impl BitMap {
     }
 
     fn set_range(&mut self, start: u64, len: u64) {
-        if len == 0 { return; }
+        if len == 0 {
+            return;
+        }
         let end = (start + len).min(self.size);
         let start = start.min(self.size);
-        if start >= end { return; }
+        if start >= end {
+            return;
+        }
 
         let start_word = (start / 64) as usize;
         let end_word = ((end - 1) / 64) as usize;
-        
+
         let start_bit = start % 64;
         let end_bit = (end - 1) % 64;
 
@@ -81,26 +77,30 @@ impl BitMap {
         } else {
             // First word
             self.bits[start_word] |= !0u64 << start_bit;
-            
+
             // Middle words
             for i in (start_word + 1)..end_word {
                 self.bits[i] = !0u64;
             }
-            
+
             // Last word
             self.bits[end_word] |= !0u64 >> (63 - end_bit);
         }
     }
 
     fn is_fully_set(&self, start: u64, len: u64) -> bool {
-        if len == 0 { return true; }
+        if len == 0 {
+            return true;
+        }
         let end = (start + len).min(self.size);
         let start = start.min(self.size);
-        if start >= end { return true; }
+        if start >= end {
+            return true;
+        }
 
         let start_word = (start / 64) as usize;
         let end_word = ((end - 1) / 64) as usize;
-        
+
         let start_bit = start % 64;
         let end_bit = (end - 1) % 64;
 
@@ -110,16 +110,22 @@ impl BitMap {
         } else {
             // First word
             let mask1 = !0u64 << start_bit;
-            if (self.bits[start_word] & mask1) != mask1 { return false; }
+            if (self.bits[start_word] & mask1) != mask1 {
+                return false;
+            }
 
             // Middle words
             for i in (start_word + 1)..end_word {
-                if self.bits[i] != !0u64 { return false; }
+                if self.bits[i] != !0u64 {
+                    return false;
+                }
             }
 
             // Last word
             let mask2 = !0u64 >> (63 - end_bit);
-            if (self.bits[end_word] & mask2) != mask2 { return false; }
+            if (self.bits[end_word] & mask2) != mask2 {
+                return false;
+            }
         }
 
         true
@@ -144,8 +150,11 @@ fn load_sizes(path: &str) -> Result<HashMap<String, BitMap>> {
 }
 
 fn is_haplotype(name: &str) -> bool {
-    name.ends_with("_hap") || name.ends_with("_alt") || name.contains("_hap") || name.contains("_alt")
-    // UCSC implementation: 
+    name.ends_with("_hap")
+        || name.ends_with("_alt")
+        || name.contains("_hap")
+        || name.contains("_alt")
+    // UCSC implementation:
     // boolean haplotype(char *chrom)
     // {
     // return (stringIn("_hap", chrom) != NULL) || (stringIn("_alt", chrom) != NULL);
@@ -160,7 +169,7 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
     let target_sizes_path = args.get_one::<String>("target_sizes").unwrap();
     let query_sizes_path = args.get_one::<String>("query_sizes").unwrap();
     let output_path = args.get_one::<String>("output").unwrap();
-    
+
     let dots = args.get_one::<usize>("dots").copied();
     let pad = args.get_one::<u64>("pad").copied().unwrap_or(1);
     let incl_hap = args.get_flag("incl_hap");
@@ -179,10 +188,14 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
 
     while let Some(res) = reader.next() {
         let chain = res?;
-        
+
         // Check sort order
         if chain.header.score as f64 > last_score {
-            bail!("Input not sorted by score: {} > {}", chain.header.score, last_score);
+            bail!(
+                "Input not sorted by score: {} > {}",
+                chain.header.score,
+                last_score
+            );
         }
         last_score = chain.header.score as f64;
 
@@ -198,13 +211,15 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
             continue;
         }
 
-        let t_chrom = t_hash.get_mut(&chain.header.t_name)
-            .ok_or_else(|| anyhow::anyhow!("Target sequence {} not found in sizes", chain.header.t_name))?;
-        
+        let t_chrom = t_hash.get_mut(&chain.header.t_name).ok_or_else(|| {
+            anyhow::anyhow!("Target sequence {} not found in sizes", chain.header.t_name)
+        })?;
+
         // We need to access q_chrom as well. But Rust ownership prevents mutable borrowing both from the same HashMap if they were in the same map.
         // Luckily they are in different HashMaps (t_hash and q_hash).
-        let q_chrom = q_hash.get_mut(&chain.header.q_name)
-            .ok_or_else(|| anyhow::anyhow!("Query sequence {} not found in sizes", chain.header.q_name))?;
+        let q_chrom = q_hash.get_mut(&chain.header.q_name).ok_or_else(|| {
+            anyhow::anyhow!("Query sequence {} not found in sizes", chain.header.q_name)
+        })?;
 
         // Check used
         // Need to iterate blocks
@@ -226,13 +241,13 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
 
         if any_open {
             chain.write(&mut writer)?;
-            
+
             // Mark as used with pad
             for b in &blocks {
                 // Apply pad
                 // setWithPad(qChrom, b->qStart, b->qEnd);
                 // setWithPad(tChrom, b->tStart, b->tEnd);
-                
+
                 // setWithPad logic:
                 // s -= pad; if (s < 0) s = 0;
                 // e += pad; if (e > size) e = size;
@@ -248,7 +263,7 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
             }
         }
     }
-    
+
     if dots.is_some() {
         eprintln!();
     }

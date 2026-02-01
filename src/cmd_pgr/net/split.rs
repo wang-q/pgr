@@ -1,4 +1,4 @@
-use clap::{Arg, Command, ArgMatches};
+use clap::{Arg, ArgMatches, Command};
 use pgr::libs::net::read_nets;
 use std::fs::{self, File};
 use std::io::{self, BufReader};

@@ -93,31 +93,26 @@ impl Chain {
         for i in 0..blocks.len() {
             let curr = &blocks[i];
             let size = curr.t_end - curr.t_start;
-            
+
             // Sanity check
             // assert_eq!(size, curr.q_end - curr.q_start);
 
             let (dt, dq) = if i < blocks.len() - 1 {
                 let next = &blocks[i + 1];
-                (
-                    next.t_start - curr.t_end,
-                    next.q_start - curr.q_end
-                )
+                (next.t_start - curr.t_end, next.q_start - curr.q_end)
             } else {
                 (0, 0)
             };
 
-            data.push(ChainData {
-                size,
-                dt,
-                dq,
-            });
+            data.push(ChainData { size, dt, dq });
         }
         data
     }
 
     pub fn write<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
-        writeln!(writer, "chain {} {} {} {} {} {} {} {} {} {} {} {}",
+        writeln!(
+            writer,
+            "chain {} {} {} {} {} {} {} {} {} {} {} {}",
             self.header.score,
             self.header.t_name,
             self.header.t_size,
@@ -174,7 +169,6 @@ impl Chain {
         }
     }
 }
-
 
 impl FromStr for ChainHeader {
     type Err = anyhow::Error;
@@ -272,7 +266,10 @@ pub fn read_chains<R: std::io::Read>(reader: R) -> anyhow::Result<Vec<Chain>> {
                         dq: parts[2].parse()?,
                     });
                 } else {
-                    return Err(anyhow::anyhow!("Invalid chain data line: {}", inner_line_trim));
+                    return Err(anyhow::anyhow!(
+                        "Invalid chain data line: {}",
+                        inner_line_trim
+                    ));
                 }
             }
             chains.push(Chain { header, data });
@@ -317,7 +314,7 @@ impl<R: std::io::Read> Iterator for ChainReader<R> {
                 Ok(Some(line)) => {
                     let trimmed = line.trim();
                     if trimmed.is_empty() {
-                        continue; 
+                        continue;
                     }
                     if trimmed.starts_with("chain") {
                         self.push_back(line); // Push back for next iteration
@@ -332,11 +329,9 @@ impl<R: std::io::Read> Iterator for ChainReader<R> {
                         }
                     } else if parts.len() == 3 {
                         // size dt dq
-                        if let (Ok(size), Ok(dt), Ok(dq)) = (
-                            parts[0].parse(),
-                            parts[1].parse(),
-                            parts[2].parse(),
-                        ) {
+                        if let (Ok(size), Ok(dt), Ok(dq)) =
+                            (parts[0].parse(), parts[1].parse(), parts[2].parse())
+                        {
                             data.push(ChainData { size, dt, dq });
                         }
                     } else {

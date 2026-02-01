@@ -54,7 +54,7 @@ impl<R: std::io::Read> Iterator for AxtReader<R> {
                     if line.is_empty() || line.starts_with('#') {
                         continue;
                     }
-                    
+
                     // Parse header
                     // Format: id tName tStart tEnd tStrand? qName qStart qEnd qStrand score?
                     // Example: 0 chr19 3001012 3001075 chr11 70568380 70568443 - 3500
@@ -65,13 +65,23 @@ impl<R: std::io::Read> Iterator for AxtReader<R> {
 
                     let id: u64 = match parts[0].parse() {
                         Ok(v) => v,
-                        Err(_) => return Some(Err(anyhow::anyhow!("Invalid AXT id: {}", parts[0]))),
+                        Err(_) => {
+                            return Some(Err(anyhow::anyhow!("Invalid AXT id: {}", parts[0])))
+                        }
                     };
 
                     let t_name = parts[1].to_string();
                     let t_start: usize = match parts[2].parse::<usize>() {
-                        Ok(v) => if v > 0 { v - 1 } else { 0 }, // 1-based to 0-based
-                        Err(_) => return Some(Err(anyhow::anyhow!("Invalid tStart: {}", parts[2]))),
+                        Ok(v) => {
+                            if v > 0 {
+                                v - 1
+                            } else {
+                                0
+                            }
+                        } // 1-based to 0-based
+                        Err(_) => {
+                            return Some(Err(anyhow::anyhow!("Invalid tStart: {}", parts[2])))
+                        }
                     };
                     let t_end: usize = match parts[3].parse::<usize>() {
                         Ok(v) => v,
@@ -80,8 +90,16 @@ impl<R: std::io::Read> Iterator for AxtReader<R> {
 
                     let q_name = parts[4].to_string();
                     let q_start: usize = match parts[5].parse::<usize>() {
-                        Ok(v) => if v > 0 { v - 1 } else { 0 }, // 1-based to 0-based
-                        Err(_) => return Some(Err(anyhow::anyhow!("Invalid qStart: {}", parts[5]))),
+                        Ok(v) => {
+                            if v > 0 {
+                                v - 1
+                            } else {
+                                0
+                            }
+                        } // 1-based to 0-based
+                        Err(_) => {
+                            return Some(Err(anyhow::anyhow!("Invalid qStart: {}", parts[5])))
+                        }
                     };
                     let q_end: usize = match parts[6].parse::<usize>() {
                         Ok(v) => v,
@@ -89,7 +107,7 @@ impl<R: std::io::Read> Iterator for AxtReader<R> {
                     };
 
                     let q_strand = parts[7].chars().next().unwrap_or('?');
-                    
+
                     let score = if parts.len() > 8 {
                         match parts[8].parse() {
                             Ok(v) => Some(v),
@@ -130,8 +148,8 @@ impl<R: std::io::Read> Iterator for AxtReader<R> {
 
                     if axt.t_sym.len() != axt.q_sym.len() {
                         return Some(Err(anyhow::anyhow!(
-                            "Alignment lengths differ: {} vs {}", 
-                            axt.t_sym.len(), 
+                            "Alignment lengths differ: {} vs {}",
+                            axt.t_sym.len(),
                             axt.q_sym.len()
                         )));
                     }
@@ -151,7 +169,7 @@ pub fn write_axt<W: std::io::Write>(writer: &mut W, axt: &Axt) -> std::io::Resul
     let t_end = axt.t_end;
     let q_start = axt.q_start + 1;
     let q_end = axt.q_end;
-    
+
     let score_str = match axt.score {
         Some(s) => format!(" {}", s),
         None => String::new(),
@@ -169,9 +187,9 @@ pub fn write_axt<W: std::io::Write>(writer: &mut W, axt: &Axt) -> std::io::Resul
         q_end,
         axt.q_strand,
         score_str, // Just a space if no score? format string handles the space prefix
-        "" // Placeholder
+        ""         // Placeholder
     )?;
-    
+
     writeln!(writer, "{}", axt.t_sym)?;
     writeln!(writer, "{}", axt.q_sym)?;
     writeln!(writer)?; // Blank line

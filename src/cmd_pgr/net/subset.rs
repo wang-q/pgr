@@ -1,10 +1,10 @@
-use clap::{Arg, Command, ArgMatches, ArgAction};
+use clap::{Arg, ArgAction, ArgMatches, Command};
+use pgr::libs::chain::{read_chains, Chain};
 use pgr::libs::net::{read_nets, Fill};
-use pgr::libs::chain::{Chain, read_chains};
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufReader, BufWriter};
-use std::cell::RefCell;
 use std::rc::Rc;
 
 pub fn make_subcommand() -> Command {
@@ -122,54 +122,54 @@ fn process_fill(
     if let Some(t) = type_filter {
         if &fill.class != t {
             return Ok(()); // Skip but continue traversal?
-            // In C: if (!sameString(type, fill->type)) return;
-            // It returns from convertFill, but then it continues recursion in rConvert.
-            // Wait, in C rConvert calls convertFill THEN recurses.
-            // So if type doesn't match, we don't output this fill, but do we recurse?
-            // C code:
-            // if (fill->chainId) { ... convertFill ... }
-            // if (fill->children) rConvert(...);
-            //
-            // convertFill checks type and returns if mismatch.
-            // So yes, we should still recurse.
+                           // In C: if (!sameString(type, fill->type)) return;
+                           // It returns from convertFill, but then it continues recursion in rConvert.
+                           // Wait, in C rConvert calls convertFill THEN recurses.
+                           // So if type doesn't match, we don't output this fill, but do we recurse?
+                           // C code:
+                           // if (fill->chainId) { ... convertFill ... }
+                           // if (fill->children) rConvert(...);
+                           //
+                           // convertFill checks type and returns if mismatch.
+                           // So yes, we should still recurse.
         }
     }
-    
+
     // Process current fill
     if fill.chain_id != 0 {
         if let Some(chain) = chains_map.get(&fill.chain_id) {
-             if whole_chains {
-                 chain.write(writer)?;
-             } else if split_on_insert {
-                 // Split on insert logic
-                 let mut t_start = fill.start;
-                 
-                 // Iterate over gaps to find inserts
-                 for gap_rc in &fill.gaps {
-                     let gap = gap_rc.borrow();
-                     if !gap.fills.is_empty() {
-                         // This gap has inserts (children fills)
-                         // Output chain part from t_start to gap.start
-                         if gap.start > t_start {
-                             if let Some(sub) = chain.subset(t_start, gap.start) {
-                                 sub.write(writer)?;
-                             }
-                         }
-                         t_start = gap.end;
-                     }
-                 }
-                 // Output remaining part
-                 if fill.end > t_start {
-                     if let Some(sub) = chain.subset(t_start, fill.end) {
-                         sub.write(writer)?;
-                     }
-                 }
-             } else {
-                 // Default: subset to fill range
-                 if let Some(sub) = chain.subset(fill.start, fill.end) {
-                     sub.write(writer)?;
-                 }
-             }
+            if whole_chains {
+                chain.write(writer)?;
+            } else if split_on_insert {
+                // Split on insert logic
+                let mut t_start = fill.start;
+
+                // Iterate over gaps to find inserts
+                for gap_rc in &fill.gaps {
+                    let gap = gap_rc.borrow();
+                    if !gap.fills.is_empty() {
+                        // This gap has inserts (children fills)
+                        // Output chain part from t_start to gap.start
+                        if gap.start > t_start {
+                            if let Some(sub) = chain.subset(t_start, gap.start) {
+                                sub.write(writer)?;
+                            }
+                        }
+                        t_start = gap.end;
+                    }
+                }
+                // Output remaining part
+                if fill.end > t_start {
+                    if let Some(sub) = chain.subset(t_start, fill.end) {
+                        sub.write(writer)?;
+                    }
+                }
+            } else {
+                // Default: subset to fill range
+                if let Some(sub) = chain.subset(fill.start, fill.end) {
+                    sub.write(writer)?;
+                }
+            }
         }
     }
 

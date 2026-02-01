@@ -1,6 +1,6 @@
+use crate::libs::ms::SimpleRng;
 use anyhow::Result;
 use std::io::Write;
-use crate::libs::ms::SimpleRng;
 
 pub fn build_anc_seq(gc: f64, nsite: usize, rng: &mut SimpleRng) -> Vec<u8> {
     let mut seq = vec![b'A'; nsite];
@@ -8,9 +8,17 @@ pub fn build_anc_seq(gc: f64, nsite: usize, rng: &mut SimpleRng) -> Vec<u8> {
         let r1 = rng.next_f64();
         let r2 = rng.next_f64();
         seq[i] = if r1 <= gc {
-            if r2 <= 0.5 { b'G' } else { b'C' }
+            if r2 <= 0.5 {
+                b'G'
+            } else {
+                b'C'
+            }
         } else {
-            if r2 <= 0.5 { b'A' } else { b'T' }
+            if r2 <= 0.5 {
+                b'A'
+            } else {
+                b'T'
+            }
         };
     }
     seq
@@ -37,7 +45,13 @@ pub fn map_positions(positions: &[f64], nsite: usize, rng: &mut SimpleRng) -> Ve
     map
 }
 
-pub fn build_mut_seq(seq_anc: &[u8], map: &[usize], gc: f64, rng: &mut SimpleRng, nsite: usize) -> Vec<u8> {
+pub fn build_mut_seq(
+    seq_anc: &[u8],
+    map: &[usize],
+    gc: f64,
+    rng: &mut SimpleRng,
+    nsite: usize,
+) -> Vec<u8> {
     let mut seq_mut = vec![b'x'; nsite];
     for &p in map {
         let r1 = rng.next_f64();
@@ -47,13 +61,25 @@ pub fn build_mut_seq(seq_anc: &[u8], map: &[usize], gc: f64, rng: &mut SimpleRng
             match anc {
                 b'G' => b'C',
                 b'C' => b'G',
-                _ => if r2 <= 0.5 { b'G' } else { b'C' },
+                _ => {
+                    if r2 <= 0.5 {
+                        b'G'
+                    } else {
+                        b'C'
+                    }
+                }
             }
         } else {
             match anc {
                 b'A' => b'T',
                 b'T' => b'A',
-                _ => if r2 <= 0.5 { b'A' } else { b'T' },
+                _ => {
+                    if r2 <= 0.5 {
+                        b'A'
+                    } else {
+                        b'T'
+                    }
+                }
             }
         };
         seq_mut[p] = nuc;
@@ -227,10 +253,10 @@ mod tests {
             &seq_anc,
             &seq_mut,
             &haplotypes,
-            2,  // howmany > 1 triggers L{sample_counter}
+            2, // howmany > 1 triggers L{sample_counter}
             1,
             None,
-            1,  // sample_counter = 1
+            1, // sample_counter = 1
         )
         .unwrap();
         let s = String::from_utf8(out).unwrap();
@@ -299,10 +325,10 @@ mod tests {
             &seq_anc,
             &seq_mut,
             &haplotypes,
-            2,          // howmany > 1 -> L prefix
-            2,          // npop > 1 -> P and _S formatting
+            2, // howmany > 1 -> L prefix
+            2, // npop > 1 -> P and _S formatting
             Some(&[2, 1]),
-            1,          // sample_counter
+            1, // sample_counter
         )
         .unwrap();
         let s = String::from_utf8(out).unwrap();

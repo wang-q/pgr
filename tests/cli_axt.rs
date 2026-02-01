@@ -1,8 +1,8 @@
 use assert_cmd::Command;
 use predicates::prelude::*;
-use tempfile::tempdir;
-use std::io::Write;
 use std::fs::File;
+use std::io::Write;
+use tempfile::tempdir;
 
 #[test]
 fn command_axt_help() -> anyhow::Result<()> {
@@ -59,16 +59,17 @@ TTTT
     }
 
     let mut cmd = Command::cargo_bin("pgr")?;
-    cmd.arg("axt").arg("sort")
-       .arg(&input_path)
-       .arg("-o")
-       .arg(&output_path);
-    
+    cmd.arg("axt")
+        .arg("sort")
+        .arg(&input_path)
+        .arg("-o")
+        .arg(&output_path);
+
     cmd.assert().success();
 
     let output = std::fs::read_to_string(&output_path)?;
     let lines: Vec<&str> = output.lines().filter(|l| !l.is_empty()).collect();
-    
+
     // Expected order: 1 (start 6), 0 (start 11), 2 (start 31)
     assert!(lines[0].contains("chr1 6 16"));
     assert!(lines[3].contains("chr1 11 21"));
@@ -114,23 +115,24 @@ chr19	63790860
     }
 
     let mut cmd = Command::cargo_bin("pgr")?;
-    cmd.arg("axt").arg("tomaf")
-       .arg(&input_path)
-       .arg(&t_sizes_path)
-       .arg(&q_sizes_path)
-       .arg(&output_path);
-    
+    cmd.arg("axt")
+        .arg("tomaf")
+        .arg(&input_path)
+        .arg(&t_sizes_path)
+        .arg(&q_sizes_path)
+        .arg(&output_path);
+
     cmd.assert().success();
 
     let output = std::fs::read_to_string(&output_path)?;
-    
+
     // Expected output check
     // s chr8  16067580 22 + 129061546 ATTCGCTGGTATACAT---------GAGGTC
     // s chr19 54649197 27 -  63790860 ----GCTGATGTATCTACAAAAGAAGAGGTC
-    
+
     // Check score=0.0 (pgr output format)
     assert!(output.contains("score=0.0"));
-    
+
     // Check target line components
     assert!(output.contains("chr8"));
     assert!(output.contains("16067580"));
@@ -138,7 +140,7 @@ chr19	63790860
     assert!(output.contains("+"));
     assert!(output.contains("129061546"));
     assert!(output.contains("ATTCGCTGGTATACAT---------GAGGTC"));
-    
+
     // Check query line components
     assert!(output.contains("chr19"));
     assert!(output.contains("54649197"));
@@ -175,17 +177,18 @@ TTTT
     }
 
     let mut cmd = Command::cargo_bin("pgr")?;
-    cmd.arg("axt").arg("sort")
-       .arg("--by-score")
-       .arg(&input_path)
-       .arg("-o")
-       .arg(&output_path);
-    
+    cmd.arg("axt")
+        .arg("sort")
+        .arg("--by-score")
+        .arg(&input_path)
+        .arg("-o")
+        .arg(&output_path);
+
     cmd.assert().success();
 
     let output = std::fs::read_to_string(&output_path)?;
     let lines: Vec<&str> = output.lines().filter(|l| !l.is_empty()).collect();
-    
+
     // Expected order: 2 (score 200), 0 (score 100), 1 (score 50)
     assert!(lines[0].contains("2 chr1 31 41"));
     assert!(lines[3].contains("0 chr1 11 21"));
@@ -221,11 +224,12 @@ ACTG
     }
 
     let mut cmd = Command::cargo_bin("pgr")?;
-    cmd.arg("axt").arg("tomaf")
-       .arg(&axt_path)
-       .arg(&t_sizes_path)
-       .arg(&q_sizes_path)
-       .arg(&output_path);
+    cmd.arg("axt")
+        .arg("tomaf")
+        .arg(&axt_path)
+        .arg(&t_sizes_path)
+        .arg(&q_sizes_path)
+        .arg(&output_path);
 
     cmd.assert().success();
 
@@ -233,11 +237,11 @@ ACTG
     assert!(output.contains("scoring=blastz"));
     assert!(output.contains("s chr1"));
     assert!(output.contains("s chr2"));
-    
+
     // AXT: chr1 11 14 (1-based, inclusive). Length 4.
     // MAF: start 10 (0-based), size 4.
     assert!(output.contains("chr1                         10          4"));
-    
+
     Ok(())
 }
 
@@ -272,12 +276,13 @@ ACTG
     }
 
     let mut cmd = Command::cargo_bin("pgr")?;
-    cmd.arg("axt").arg("tomaf")
-       .arg("--t-split")
-       .arg(&axt_path)
-       .arg(&t_sizes_path)
-       .arg(&q_sizes_path)
-       .arg(&output_dir);
+    cmd.arg("axt")
+        .arg("tomaf")
+        .arg("--t-split")
+        .arg(&axt_path)
+        .arg(&t_sizes_path)
+        .arg(&q_sizes_path)
+        .arg(&output_dir);
 
     cmd.assert().success();
 
@@ -333,19 +338,20 @@ MmUn_161829_35\t7971
     }
 
     let mut cmd = Command::cargo_bin("pgr")?;
-    cmd.arg("axt").arg("topsl")
-       .arg(&input_path)
-       .arg(&t_sizes_path)
-       .arg(&q_sizes_path)
-       .arg(&output_path);
-    
+    cmd.arg("axt")
+        .arg("topsl")
+        .arg(&input_path)
+        .arg(&t_sizes_path)
+        .arg(&q_sizes_path)
+        .arg(&output_path);
+
     cmd.assert().success();
 
     let output = std::fs::read_to_string(&output_path)?;
-    
+
     // Check against expected
     let expected = "261\t231\t53\t0\t4\t6\t10\t68\t+\tMmUn_71944_35\t1218\t585\t1136\tMmUn_161829_35\t7971\t2395\t3008\t13\t90,16,6,35,127,54,22,24,9,8,3,27,124,\t585,675,691,697,733,863,917,940,965,974,982,985,1012,\t2395,2493,2522,2539,2574,2701,2758,2801,2825,2836,2850,2856,2884,";
-    
+
     assert!(output.trim().contains(expected.trim()));
 
     Ok(())

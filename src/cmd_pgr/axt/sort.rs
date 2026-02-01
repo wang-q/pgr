@@ -1,5 +1,5 @@
 use clap::*;
-use pgr::libs::axt::{AxtReader, write_axt};
+use pgr::libs::axt::{write_axt, AxtReader};
 
 // Create subcommand arguments
 pub fn make_subcommand() -> Command {
@@ -9,7 +9,7 @@ pub fn make_subcommand() -> Command {
             Arg::new("input")
                 .index(1)
                 .default_value("stdin")
-                .help("Input axt file (or stdin if not specified)")
+                .help("Input axt file (or stdin if not specified)"),
         )
         .arg(
             Arg::new("output")
@@ -17,7 +17,7 @@ pub fn make_subcommand() -> Command {
                 .long("output")
                 .help("Output axt file (or stdout if not specified)")
                 .num_args(1)
-                .default_value("stdout")
+                .default_value("stdout"),
         )
         .arg(
             Arg::new("query")
@@ -41,9 +41,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let reader = intspan::reader(input);
     let mut writer = intspan::writer(output);
-    
+
     let axt_reader = AxtReader::new(reader);
-    
+
     let mut axts = Vec::new();
     for result in axt_reader {
         let axt = result?;
@@ -54,16 +54,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         // Sort by score. Assuming higher score is better (descending).
         axts.sort_by(|a, b| b.score.unwrap_or(0).cmp(&a.score.unwrap_or(0)));
     } else if by_query {
-        axts.sort_by(|a, b| {
-            a.q_name.cmp(&b.q_name)
-                .then(a.q_start.cmp(&b.q_start))
-        });
+        axts.sort_by(|a, b| a.q_name.cmp(&b.q_name).then(a.q_start.cmp(&b.q_start)));
     } else {
         // Sort by target (default)
-        axts.sort_by(|a, b| {
-            a.t_name.cmp(&b.t_name)
-                .then(a.t_start.cmp(&b.t_start))
-        });
+        axts.sort_by(|a, b| a.t_name.cmp(&b.t_name).then(a.t_start.cmp(&b.t_start)));
     }
 
     for axt in axts {

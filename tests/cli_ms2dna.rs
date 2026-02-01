@@ -23,15 +23,15 @@ positions: 0.25 0.75
 ";
     let mut cmd = Command::cargo_bin("pgr")?;
     cmd.arg("ms2dna").arg("--seed").arg("42").write_stdin(input);
-    
+
     // With seed 42, we expect deterministic output
-    // nsite=4. 
+    // nsite=4.
     // Ancestral generation and mutation logic is tested in unit tests,
     // here we verify the CLI pipeline works and produces FASTA format.
-    
+
     let output = cmd.ok()?;
     let stdout = String::from_utf8(output.stdout)?;
-    
+
     // Check for FASTA headers
     assert!(stdout.contains(">S1"));
     assert!(stdout.contains(">S2"));
@@ -58,16 +58,21 @@ positions:
 ";
     let mut cmd = Command::cargo_bin("pgr")?;
     // High GC content
-    cmd.arg("ms2dna").arg("-g").arg("1.0").arg("-s").arg("123").write_stdin(input);
-    
+    cmd.arg("ms2dna")
+        .arg("-g")
+        .arg("1.0")
+        .arg("-s")
+        .arg("123")
+        .write_stdin(input);
+
     let output = cmd.ok()?;
     let stdout = String::from_utf8(output.stdout)?;
-    
+
     let lines: Vec<&str> = stdout.lines().collect();
     let seq = lines[1];
     // Check that most bases are G or C
     let gc_count = seq.chars().filter(|c| *c == 'G' || *c == 'C').count();
     assert!(gc_count > 90, "Expected high GC content, got {}", gc_count);
-    
+
     Ok(())
 }
