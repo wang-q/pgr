@@ -25,12 +25,97 @@ pub struct ChainData {
 }
 
 #[derive(Debug, Clone, Default)]
+pub struct Block {
+    pub t_start: u64,
+    pub t_end: u64,
+    pub q_start: u64,
+    pub q_end: u64,
+}
+
+#[derive(Debug, Clone, Default)]
 pub struct Chain {
     pub header: ChainHeader,
     pub data: Vec<ChainData>,
 }
 
 impl Chain {
+    /// Convert chain data (relative coordinates) to blocks (absolute coordinates).
+    /// Note: Coordinates are 0-based, half-open [start, end).
+    /// This handles strand logic:
+    /// - t_strand is always '+'.
+    /// - q_strand can be '-' (which means q_start/q_end are on the reverse strand coordinates,
+    ///   but the Block struct stores them as increasing numbers on that strand).
+    ///   Wait, in UCSC chain format, if qStrand is '-', qStart and qEnd are already in reverse strand coordinates
+    ///   relative to the qSize. Specifically, qStart = qSize - real_end, qEnd = qSize - real_start.
+    ///   However, the chain format defines the alignment blocks.
+    ///   Let's verify the logic:
+    ///   t_current starts at header.t_start
+    ///   q_current starts at header.q_start
+    ///   For each line:
+    ///     block size: both advance by size
+    ///     dt: t advances by dt
+    ///     dq: q advances by dq
+    pub fn to_blocks(&self) -> Vec<Block> {
+        let mut blocks = Vec::with_capacity(self.data.len());
+        let mut t_curr = self.header.t_start;
+        let mut q_curr = self.header.q_start;
+
+        for d in &self.data {
+            blocks.push(Block {
+                t_start: t_curr,
+                t_end: t_curr + d.size,
+                q_start: q_curr,
+                q_end: q_curr + d.size,
+            });
+
+            t_curr += d.size + d.dt;
+            q_curr += d.size + d.dq;
+        }
+
+        blocks
+    }
+
+    /// Reconstruct chain data from blocks.
+    /// Assumes blocks are sorted by t_start and consistent with the header.
+    /// Will update header.t_start, t_end, q_start, q_end based on the blocks.
+    pub fn from_blocks(header: &mut ChainHeader, blocks: &[Block]) -> Vec<ChainData> {
+        if blocks.is_empty() {
+            return Vec::new();
+        }
+
+        // Update header range
+        header.t_start = blocks.first().unwrap().t_start;
+        header.t_end = blocks.last().unwrap().t_end;
+        header.q_start = blocks.first().unwrap().q_start;
+        header.q_end = blocks.last().unwrap().q_end;
+
+        let mut data = Vec::with_capacity(blocks.len());
+        for i in 0..blocks.len() {
+            let curr = &blocks[i];
+            let size = curr.t_end - curr.t_start;
+            
+            // Sanity check
+            // assert_eq!(size, curr.q_end - curr.q_start);
+
+            let (dt, dq) = if i < blocks.len() - 1 {
+                let next = &blocks[i + 1];
+                (
+                    next.t_start - curr.t_end,
+                    next.q_start - curr.q_end
+                )
+            } else {
+                (0, 0)
+            };
+
+            data.push(ChainData {
+                size,
+                dt,
+                dq,
+            });
+        }
+        data
+    }
+
     pub fn write<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
         writeln!(writer, "chain {} {} {} {} {} {} {} {} {} {} {} {}",
             self.header.score,
