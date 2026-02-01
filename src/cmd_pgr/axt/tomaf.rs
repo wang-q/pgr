@@ -47,7 +47,7 @@ pgr axt tomaf in.axt -t t.sizes -q q.sizes --t-split -o out_dir
             Arg::new("output")
                 .short('o')
                 .long("output")
-                .help("Output maf file (or directory if --t-split is used)")
+                .help("Output maf file (or directory if --t-split is used) (or stdout if not specified)")
                 .default_value("stdout"),
         )
         .arg(

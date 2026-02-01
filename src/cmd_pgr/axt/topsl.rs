@@ -14,12 +14,12 @@ pub fn make_subcommand() -> Command {
 Where tSizes and qSizes are tab-delimited files with <seqName> <size> columns.
 
 Examples:
-pgr axt topsl in.axt -t t.sizes -q q.sizes -o out.psl
+  pgr axt topsl in.axt -t t.sizes -q q.sizes -o out.psl
 "###,
         )
         .arg(
             Arg::new("input")
-                .help("Input axt file")
+                .help("Input axt file (or stdin if not specified)")
                 .default_value("stdin")
                 .index(1),
         )
@@ -41,7 +41,7 @@ pgr axt topsl in.axt -t t.sizes -q q.sizes -o out.psl
             Arg::new("output")
                 .short('o')
                 .long("output")
-                .help("Output psl file")
+                .help("Output psl file (or stdout if not specified)")
                 .default_value("stdout"),
         )
 }

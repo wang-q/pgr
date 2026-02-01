@@ -10,14 +10,14 @@ pub fn make_subcommand() -> Command {
 Sorts axt files by target, query, or score.
 
 Examples:
-# Sort by target (default)
-pgr axt sort in.axt -o out.axt
+  # Sort by target (default)
+  pgr axt sort in.axt -o out.axt
 
-# Sort by query
-pgr axt sort in.axt --query -o out.axt
+  # Sort by query
+  pgr axt sort in.axt --query -o out.axt
 
-# Sort by score (descending)
-pgr axt sort in.axt --by-score -o out.axt
+  # Sort by score (descending)
+  pgr axt sort in.axt --by-score -o out.axt
 "###,
         )
         .arg(

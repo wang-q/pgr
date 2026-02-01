@@ -6,8 +6,10 @@ pub fn make_subcommand() -> Command {
         .about("Convert from lav to psl format")
         .after_help(
             r###"
+Convert blastz lav to psl format.
+
 Examples:
-pgr lav topsl in.lav -o out.psl
+  pgr lav topsl in.lav -o out.psl
 "###,
         )
         .arg(

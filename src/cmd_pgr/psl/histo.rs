@@ -20,7 +20,7 @@ The 'what' argument determines what data to collect, the following are currently
 * idSpread - difference between the highest and lowest fraction identity for alignments of a query. Output line per query, with the difference.
 
 Examples:
-pgr psl histo --what alignsPerQuery in.psl -o out.histo
+  pgr psl histo --what alignsPerQuery in.psl -o out.histo
 "###,
         )
         .arg(
@@ -46,12 +46,14 @@ pgr psl histo --what alignsPerQuery in.psl -o out.histo
         .arg(
             Arg::new("multi_only")
                 .long("multi-only")
+                .short('m')
                 .action(ArgAction::SetTrue)
                 .help("Omit queries with only one alignment"),
         )
         .arg(
             Arg::new("non_zero")
                 .long("non-zero")
+                .short('z')
                 .action(ArgAction::SetTrue)
                 .help("Omit queries with zero values"),
         )

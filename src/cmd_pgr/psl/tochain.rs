@@ -9,7 +9,7 @@ pub fn make_subcommand() -> Command {
         .after_help(
             r###"
 Examples:
-pgr psl tochain in.psl -o out.chain
+  pgr psl tochain in.psl -o out.chain
 "###,
         )
         .arg(
