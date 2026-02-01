@@ -216,6 +216,68 @@ impl Psl {
             }
         }
     }
+
+    pub fn is_protein(&self) -> bool {
+        if self.block_count == 0 {
+            return false;
+        }
+        let last = (self.block_count as usize) - 1;
+        let t_strand = self.strand.chars().nth(1).unwrap_or('+');
+
+        let t_end = self.t_end as u32;
+        let t_start = self.t_start as u32;
+        let t_size = self.t_size;
+        let t_start_last = self.t_starts[last];
+        let block_size_last = self.block_sizes[last];
+
+        let is_prot = if t_strand == '+' {
+            t_end == t_start_last + 3 * block_size_last
+        } else if t_strand == '-' {
+            t_start == t_size - (t_start_last + 3 * block_size_last)
+        } else {
+            false
+        };
+
+        if is_prot {
+        }
+        is_prot
+    }
+
+    /// Reverse-complement a PSL alignment. This makes the target strand explicit.
+    pub fn rc(&mut self) {
+        let is_prot = self.is_protein();
+        let mult = if is_prot { 3 } else { 1 };
+
+        // swap strand, forcing target to have an explict strand
+        let q_s = self.strand.chars().nth(0).unwrap_or('+');
+        let t_s = self.strand.chars().nth(1).unwrap_or('+');
+
+        let flip = |c| if c == '-' { '+' } else { '-' };
+        let new_q_s = flip(q_s);
+        let new_t_s = flip(t_s);
+        self.strand = format!("{}{}", new_q_s, new_t_s);
+
+        let t_size = self.t_size;
+        let q_size = self.q_size;
+
+        for i in 0..self.block_count as usize {
+            self.t_starts[i] = t_size - (self.t_starts[i] + mult * self.block_sizes[i]);
+            self.q_starts[i] = q_size - (self.q_starts[i] + self.block_sizes[i]);
+        }
+
+        self.t_starts.reverse();
+        self.q_starts.reverse();
+        self.block_sizes.reverse();
+    }
+
+    pub fn score(&self) -> i32 {
+        let is_prot = self.is_protein();
+        let size_mul = if is_prot { 3 } else { 1 };
+        (size_mul * (self.match_count + (self.rep_match >> 1))) as i32
+            - (size_mul * self.mismatch_count) as i32
+            - self.q_num_insert as i32
+            - self.t_num_insert as i32
+    }
 }
 
 impl std::str::FromStr for Psl {
