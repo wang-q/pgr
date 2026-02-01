@@ -1,4 +1,7 @@
 use clap::*;
+use intspan::Range;
+use pgr::libs::axt::AxtReader;
+use pgr::libs::fas::FasEntry;
 use std::io::Write;
 
 // Create clap subcommand arguments
@@ -75,26 +78,58 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut writer = intspan::writer(args.get_one::<String>("outfile").unwrap());
     let sizes = intspan::read_sizes(args.get_one::<String>("chr.sizes").unwrap());
 
-    let opt_tname = args.get_one::<String>("tname").unwrap();
-    let opt_qname = args.get_one::<String>("qname").unwrap();
+    let tname = args.get_one::<String>("tname").unwrap();
+    let qname = args.get_one::<String>("qname").unwrap();
 
     //----------------------------
     // Ops
     //----------------------------
     for infile in args.get_many::<String>("infiles").unwrap() {
-        let mut reader = intspan::reader(infile);
+        let reader = intspan::reader(infile);
+        let axt_iter = AxtReader::new(reader);
 
-        // Parse each AXT block
-        while let Ok(block) = pgr::next_axt_block(&mut reader, &sizes, opt_tname, opt_qname) {
-            for entry in block.entries {
-                //----------------------------
-                // Output
-                //----------------------------
-                writer.write_all(entry.to_string().as_ref())?;
-            }
+        for axt_res in axt_iter {
+            let axt = axt_res?;
+
+            //----------------------------
+            // Output
+            //----------------------------
+            // Target Entry
+            let t_start = (axt.t_start + 1) as i32;
+            let t_end = axt.t_end as i32;
+            let mut t_range = Range::from(&axt.t_name, t_start, t_end);
+            *t_range.name_mut() = tname.to_string();
+            *t_range.strand_mut() = "+".to_string();
+
+            let t_entry = FasEntry::from(&t_range, axt.t_sym.as_bytes());
+            writer.write_all(t_entry.to_string().as_bytes())?;
+
+            // Query Entry
+            let q_len = *sizes.get(&axt.q_name).ok_or_else(|| {
+                anyhow::anyhow!(".sizes file doesn't contain the needed chr: {}", axt.q_name)
+            })?;
+
+            let (q_start, q_end) = if axt.q_strand == '-' {
+                let q_s_1 = (axt.q_start + 1) as i32;
+                let q_e_1 = axt.q_end as i32;
+
+                let fwd_start = q_len - q_e_1 + 1;
+                let fwd_end = q_len - q_s_1 + 1;
+
+                (fwd_start, fwd_end)
+            } else {
+                ((axt.q_start + 1) as i32, axt.q_end as i32)
+            };
+
+            let mut q_range = Range::from(&axt.q_name, q_start, q_end);
+            *q_range.name_mut() = qname.to_string();
+            *q_range.strand_mut() = axt.q_strand.to_string();
+
+            let q_entry = FasEntry::from(&q_range, axt.q_sym.as_bytes());
+            writer.write_all(q_entry.to_string().as_bytes())?;
 
             // Add a newline to separate blocks
-            writer.write_all("\n".as_ref())?;
+            writer.write_all(b"\n")?;
         }
     }
 
