@@ -88,6 +88,21 @@ PSL 文件是制表符分隔的文本文件，通常包含 21 列：
 20. `qStarts`: 每个比对块在查询序列中的起始位置（逗号分隔）。
 21. `tStarts`: 每个比对块在目标序列中的起始位置（逗号分隔）。
 
+### 坐标系说明 (Coordinate System)
+
+*   **0-based, half-open**: PSL 格式标准使用 0-based 起始，半开区间 `[start, end)`。
+*   负链坐标 (Negative Strand Coordinates):
+    *   查询序列 (Query): 如果 strand 是 `-`，`qStart` 和 `qEnd` 以及 `qStarts` 数组中的坐标是相对于查询序列**反向互补**后的正向坐标，还是相对于原始序列的坐标？
+    *   UCSC 标准:
+        *   `qStart`, `qEnd`: 在 PSL 文件中，如果是 `-` 链，这两个值通常是相对于 **反向互补后** 的序列末尾计数的（即从原始序列末尾向前的坐标），或者说是“反转”的坐标。
+        *   但是，在 `psl.c` 的 `pslLoad` 中，如果是 `-` 链，它通常会把坐标转换回正链坐标吗？不，`pslLoad` 只是直接加载文件内容。
+        *   关键点: UCSC 的 `psl` 结构体在内存中通常存储的是文件中的原始值。
+        *   对于 `-` 链，文件中的 `qStart` 是从查询序列末尾算起的吗？
+            *   UCSC FAQ 说明: "If the strand is '-', then the qStart and qEnd fields are coordinates in the reverse complement of the query sequence."
+            *   这意味着：`qStart` 是从反向互补序列的 0 开始算的。
+            *   换算回原始序列索引：`original_index = qSize - 1 - rc_index` (对于点坐标)。对于区间 `[s, e)`，`orig_start = qSize - rc_end`, `orig_end = qSize - rc_start`。
+    *   `pgr` 实现：目前 `Psl` 结构体只是数据的容器，直接存储文件中的值，不进行自动坐标转换，这与 UCSC 的 `psl` 结构体行为一致。
+
 ### `pgr` 实现 (`libs/psl.rs`) 与 UCSC `psl` 库的对比
 
 `pgr` 的 PSL 实现 (`src/libs/psl.rs`) 旨在与 UCSC 的 `psl.c`/`psl.h` 兼容。
@@ -116,20 +131,5 @@ PSL 文件是制表符分隔的文本文件，通常包含 21 列：
     *   UCSC: 支持完整的 `pslLoad` 和 `pslWrite`。
     *   pgr: 目前仅实现 `Psl` 结构体定义和 `write_to` 输出（用于转换工具），尚未实现解析读取。
     *   输出格式: `write_to` 生成标准的制表符分隔格式，数组字段以逗号分隔，与 UCSC 严格一致。
-
-#### 坐标系说明 (Coordinate System)
-
-*   **0-based, half-open**: PSL 格式标准使用 0-based 起始，半开区间 `[start, end)`。
-*   负链坐标 (Negative Strand Coordinates):
-    *   查询序列 (Query): 如果 strand 是 `-`，`qStart` 和 `qEnd` 以及 `qStarts` 数组中的坐标是相对于查询序列**反向互补**后的正向坐标，还是相对于原始序列的坐标？
-    *   UCSC 标准:
-        *   `qStart`, `qEnd`: 在 PSL 文件中，如果是 `-` 链，这两个值通常是相对于 **反向互补后** 的序列末尾计数的（即从原始序列末尾向前的坐标），或者说是“反转”的坐标。
-        *   但是，在 `psl.c` 的 `pslLoad` 中，如果是 `-` 链，它通常会把坐标转换回正链坐标吗？不，`pslLoad` 只是直接加载文件内容。
-        *   关键点: UCSC 的 `psl` 结构体在内存中通常存储的是文件中的原始值。
-        *   对于 `-` 链，文件中的 `qStart` 是从查询序列末尾算起的吗？
-            *   UCSC FAQ 说明: "If the strand is '-', then the qStart and qEnd fields are coordinates in the reverse complement of the query sequence."
-            *   这意味着：`qStart` 是从反向互补序列的 0 开始算的。
-            *   换算回原始序列索引：`original_index = qSize - 1 - rc_index` (对于点坐标)。对于区间 `[s, e)`，`orig_start = qSize - rc_end`, `orig_end = qSize - rc_start`。
-    *   `pgr` 实现：目前 `Psl` 结构体只是数据的容器，直接存储文件中的值，不进行自动坐标转换，这与 UCSC 的 `psl` 结构体行为一致。
 
 
