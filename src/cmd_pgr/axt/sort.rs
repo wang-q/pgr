@@ -24,14 +24,15 @@ Examples:
             Arg::new("input")
                 .index(1)
                 .default_value("stdin")
-                .help("Input axt file (or stdin if not specified)"),
+                .help("Input AXT file"),
         )
         .arg(
             Arg::new("output")
                 .short('o')
                 .long("output")
-                .help("Output axt file (or stdout if not specified)")
+                .help("Output AXT file")
                 .num_args(1)
+                .value_name("FILE")
                 .default_value("stdout"),
         )
         .arg(

@@ -16,16 +16,16 @@ Where tSizes and qSizes is a file that contains the sizes of the target and quer
 Very often this will be a chrom.sizes file.
 
 Examples:
-# Convert axt to maf
-pgr axt tomaf in.axt -t t.sizes -q q.sizes -o out.maf
+  # Convert axt to maf
+  pgr axt tomaf in.axt -t t.sizes -q q.sizes -o out.maf
 
-# Split output by target name
-pgr axt tomaf in.axt -t t.sizes -q q.sizes --t-split -o out_dir
+  # Split output by target name
+  pgr axt tomaf in.axt -t t.sizes -q q.sizes --t-split -o out_dir
 "###,
         )
         .arg(
             Arg::new("input")
-                .help("Input axt file")
+                .help("Input AXT file")
                 .default_value("stdin")
                 .index(1),
         )
@@ -33,6 +33,7 @@ pgr axt tomaf in.axt -t t.sizes -q q.sizes --t-split -o out_dir
             Arg::new("t_sizes")
                 .long("t-sizes")
                 .short('t')
+                .value_name("FILE")
                 .help("Target sizes file")
                 .required(true),
         )
@@ -40,6 +41,7 @@ pgr axt tomaf in.axt -t t.sizes -q q.sizes --t-split -o out_dir
             Arg::new("q_sizes")
                 .long("q-sizes")
                 .short('q')
+                .value_name("FILE")
                 .help("Query sizes file")
                 .required(true),
         )
@@ -47,18 +49,21 @@ pgr axt tomaf in.axt -t t.sizes -q q.sizes --t-split -o out_dir
             Arg::new("output")
                 .short('o')
                 .long("output")
-                .help("Output maf file (or directory if --t-split is used) (or stdout if not specified)")
+                .value_name("FILE")
+                .help("Output MAF file or directory")
                 .default_value("stdout"),
         )
         .arg(
             Arg::new("q_prefix")
                 .long("q-prefix")
+                .value_name("STR")
                 .help("Add prefix to start of query sequence name in maf")
                 .action(ArgAction::Set),
         )
         .arg(
             Arg::new("t_prefix")
                 .long("t-prefix")
+                .value_name("STR")
                 .help("Add prefix to start of target sequence name in maf")
                 .action(ArgAction::Set),
         )

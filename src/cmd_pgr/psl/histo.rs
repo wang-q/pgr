@@ -20,6 +20,7 @@ The 'what' argument determines what data to collect, the following are currently
 * idSpread - difference between the highest and lowest fraction identity for alignments of a query. Output line per query, with the difference.
 
 Examples:
+  # Collect alignment counts per query
   pgr psl histo --what alignsPerQuery in.psl -o out.histo
 "###,
         )
@@ -27,6 +28,7 @@ Examples:
             Arg::new("what")
                 .long("what")
                 .required(true)
+                .value_name("TYPE")
                 .value_parser(["alignsPerQuery", "coverSpread", "idSpread"])
                 .help("What data to collect"),
         )
@@ -40,6 +42,7 @@ Examples:
             Arg::new("output")
                 .short('o')
                 .long("output")
+                .value_name("FILE")
                 .help("Output histogram file")
                 .default_value("stdout"),
         )

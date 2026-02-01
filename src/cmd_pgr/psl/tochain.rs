@@ -9,6 +9,7 @@ pub fn make_subcommand() -> Command {
         .after_help(
             r###"
 Examples:
+  # Convert PSL to Chain
   pgr psl tochain in.psl -o out.chain
 "###,
         )
@@ -22,6 +23,7 @@ Examples:
             Arg::new("output")
                 .short('o')
                 .long("output")
+                .value_name("FILE")
                 .help("Output Chain file")
                 .default_value("stdout"),
         )

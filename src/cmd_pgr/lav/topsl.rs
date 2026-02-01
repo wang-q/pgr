@@ -9,6 +9,7 @@ pub fn make_subcommand() -> Command {
 Convert blastz lav to psl format.
 
 Examples:
+  # Convert lav to psl
   pgr lav topsl in.lav -o out.psl
 "###,
         )
@@ -16,15 +17,28 @@ Examples:
             Arg::new("input")
                 .index(1)
                 .default_value("stdin")
-                .help("Input LAV file (or stdin if not specified)"),
+                .help("Input LAV file"),
         )
         .arg(
             Arg::new("output")
                 .short('o')
                 .long("output")
-                .help("Output PSL file (or stdout if not specified)")
+                .value_name("FILE")
+                .help("Output PSL file")
                 .num_args(1)
                 .default_value("stdout"),
+        )
+        .arg(
+            Arg::new("target_strand")
+                .long("target-strand")
+                .value_name("STRAND")
+                .help("Set the target strand (default is no strand)"),
+        )
+        .arg(
+            Arg::new("score_file")
+                .long("score-file")
+                .value_name("FILE")
+                .help("Output lav scores to side file"),
         )
 }
 
@@ -34,6 +48,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     let input = args.get_one::<String>("input").unwrap();
     let output = args.get_one::<String>("output").unwrap();
+    let target_strand = args.get_one::<String>("target_strand");
+    // let score_file = args.get_one::<String>("score_file"); // TODO: Implement score file output
 
     let reader = intspan::reader(input);
     let mut writer = intspan::writer(output);
@@ -77,7 +93,15 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                     continue;
                 }
 
-                let psl = blocks_to_psl(&blocks, t_size, q_size, &t_name, &q_name, &strand);
+                let mut psl = blocks_to_psl(&blocks, t_size, q_size, &t_name, &q_name, &strand);
+                
+                if let Some(ts) = target_strand {
+                    // Append target strand if provided
+                    if psl.strand.len() == 1 {
+                         psl.strand.push(ts.chars().next().unwrap_or('+'));
+                    }
+                }
+                
                 psl.write_to(&mut writer)?;
             }
             _ => {}
