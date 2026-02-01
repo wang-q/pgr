@@ -7,5 +7,6 @@ pub mod lav;
 pub mod ms2dna;
 pub mod net;
 pub mod pipeline;
+pub mod psl;
 pub mod rept;
 pub mod trf;

@@ -216,7 +216,53 @@ impl Psl {
             }
         }
     }
+}
 
+impl std::str::FromStr for Psl {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let fields: Vec<&str> = s.split('\t').collect();
+        if fields.len() < 21 {
+            return Err(anyhow::anyhow!("Invalid PSL line: fewer than 21 columns"));
+        }
+
+        let parse_u32 = |s: &str| s.parse::<u32>().map_err(|_| anyhow::anyhow!("Invalid u32: {}", s));
+        let parse_i32 = |s: &str| s.parse::<i32>().map_err(|_| anyhow::anyhow!("Invalid i32: {}", s));
+        let parse_vec = |s: &str| -> Result<Vec<u32>, anyhow::Error> {
+            s.split(',')
+                .filter(|v| !v.is_empty())
+                .map(|v| v.parse::<u32>().map_err(|_| anyhow::anyhow!("Invalid array val: {}", v)))
+                .collect()
+        };
+
+        Ok(Psl {
+            match_count: parse_u32(fields[0])?,
+            mismatch_count: parse_u32(fields[1])?,
+            rep_match: parse_u32(fields[2])?,
+            n_count: parse_u32(fields[3])?,
+            q_num_insert: parse_u32(fields[4])?,
+            q_base_insert: parse_i32(fields[5])?,
+            t_num_insert: parse_u32(fields[6])?,
+            t_base_insert: parse_i32(fields[7])?,
+            strand: fields[8].to_string(),
+            q_name: fields[9].to_string(),
+            q_size: parse_u32(fields[10])?,
+            q_start: parse_i32(fields[11])?,
+            q_end: parse_i32(fields[12])?,
+            t_name: fields[13].to_string(),
+            t_size: parse_u32(fields[14])?,
+            t_start: parse_i32(fields[15])?,
+            t_end: parse_i32(fields[16])?,
+            block_count: parse_u32(fields[17])?,
+            block_sizes: parse_vec(fields[18])?,
+            q_starts: parse_vec(fields[19])?,
+            t_starts: parse_vec(fields[20])?,
+        })
+    }
+}
+
+impl Psl {
     pub fn write_to<W: io::Write>(&self, w: &mut W) -> io::Result<()> {
         write!(
             w,
