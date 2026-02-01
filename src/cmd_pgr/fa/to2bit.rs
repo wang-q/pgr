@@ -11,9 +11,9 @@ pub fn make_subcommand() -> Command {
             r###"
 Examples:
   # Convert FASTA to 2bit
-  pgr twobit to2bit in.fa -o out.2bit
-  pgr twobit to2bit in1.fa in2.fa -o out.2bit
-  pgr twobit to2bit in.fa -o out.2bit --no-mask
+  pgr fa to2bit in.fa -o out.2bit
+  pgr fa to2bit in1.fa in2.fa -o out.2bit
+  pgr fa to2bit in.fa -o out.2bit --no-mask
 "###,
         )
         .arg(

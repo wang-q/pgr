@@ -12,7 +12,7 @@ fn test_2bit_to2bit() -> anyhow::Result<()> {
     fs::write(&input, ">seq1\nACGT\n>seq2\nNNNN\n")?;
     
     let mut cmd = Command::cargo_bin("pgr")?;
-    cmd.arg("2bit")
+    cmd.arg("fa")
         .arg("to2bit")
         .arg(&input)
         .arg("-o")
@@ -46,7 +46,7 @@ fn test_2bit_to2bit_strip_version() -> anyhow::Result<()> {
     fs::write(&input, ">NM_001.1\nACGT\n")?;
     
     let mut cmd = Command::cargo_bin("pgr")?;
-    cmd.arg("2bit")
+    cmd.arg("fa")
         .arg("to2bit")
         .arg(&input)
         .arg("-o")
@@ -71,7 +71,7 @@ fn test_2bit_to2bit_mask() -> anyhow::Result<()> {
     fs::write(&input, ">seq1\nacgtACGT\n")?;
     
     let mut cmd = Command::cargo_bin("pgr")?;
-    cmd.arg("2bit")
+    cmd.arg("fa")
         .arg("to2bit")
         .arg(&input)
         .arg("-o")
@@ -100,7 +100,7 @@ fn test_2bit_tofa_basic() -> anyhow::Result<()> {
     
     // Create 2bit first
     let mut cmd = Command::cargo_bin("pgr")?;
-    cmd.arg("2bit")
+    cmd.arg("fa")
         .arg("to2bit")
         .arg(&input)
         .arg("-o")
@@ -139,7 +139,7 @@ fn test_2bit_tofa_seq_range() -> anyhow::Result<()> {
     
     // Create 2bit
     let mut cmd = Command::cargo_bin("pgr")?;
-    cmd.arg("2bit")
+    cmd.arg("fa")
         .arg("to2bit")
         .arg(&input)
         .arg("-o")
@@ -180,7 +180,7 @@ fn test_2bit_tofa_seq_list() -> anyhow::Result<()> {
     
     // Create 2bit
     let mut cmd = Command::cargo_bin("pgr")?;
-    cmd.arg("2bit")
+    cmd.arg("fa")
         .arg("to2bit")
         .arg(&input)
         .arg("-o")
@@ -217,7 +217,7 @@ fn test_2bit_tofa_mask() -> anyhow::Result<()> {
     
     // Create 2bit
     let mut cmd = Command::cargo_bin("pgr")?;
-    cmd.arg("2bit")
+    cmd.arg("fa")
         .arg("to2bit")
         .arg(&input)
         .arg("-o")

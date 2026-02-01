@@ -22,6 +22,7 @@ fn main() -> anyhow::Result<()> {
         .subcommand(cmd_pgr::net::make_subcommand())
         .subcommand(cmd_pgr::psl::make_subcommand())
         .subcommand(cmd_pgr::twobit::make_subcommand())
+        .subcommand(cmd_pgr::fa::make_subcommand())
         .after_help(
             r###"
 `pgr` can also refer to `Populations defined by Gene transfeR`,
@@ -36,6 +37,7 @@ Subcommand groups:
     * lav
     * psl
     * 2bit
+    * fa
 
 * Repeats:
     * ir / rept / trf
@@ -56,6 +58,7 @@ Subcommand groups:
         Some(("net", sub_matches)) => cmd_pgr::net::execute(sub_matches),
         Some(("psl", sub_matches)) => cmd_pgr::psl::execute(sub_matches),
         Some(("2bit", sub_matches)) => cmd_pgr::twobit::execute(sub_matches),
+        Some(("fa", sub_matches)) => cmd_pgr::fa::execute(sub_matches),
         _ => unreachable!(),
     }?;
 
