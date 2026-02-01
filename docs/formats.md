@@ -129,7 +129,15 @@ PSL 文件是制表符分隔的文本文件，通常包含 21 列：
 
 *   读写支持 (Read/Write Support)
     *   UCSC: 支持完整的 `pslLoad` 和 `pslWrite`。
-    *   pgr: 目前仅实现 `Psl` 结构体定义和 `write_to` 输出（用于转换工具），尚未实现解析读取。
+    *   pgr: 实现了 `from_str` (对应 `pslLoad`) 和 `write_to` (对应 `pslTabOut`)。支持从字符串解析和写入到 writer。
     *   输出格式: `write_to` 生成标准的制表符分隔格式，数组字段以逗号分隔，与 UCSC 严格一致。
 
+*   功能函数 (Functional Parity)
+    *   `pslRc`: `pgr` 实现了 `rc` 方法。**注意**: 由于 `pgr` 的 `Psl` 结构体目前不包含序列字段 (`qSequence`/`tSequence`)，因此 `rc` 只处理坐标和 Strand 的反向互补，不处理序列本身。
+    *   `pslScore`: `pgr` 实现了 `score` 方法，计算逻辑与 UCSC 一致 (考虑了 protein 乘数)。
+    *   `pslIsProtein`: `pgr` 实现了 `is_protein` 方法，通过检查 block 坐标判定是否为蛋白质比对。
+    *   `pslFromAlign`: `pgr` 实现了 `from_align` 构造函数，支持从序列比对构建 PSL 记录（包含 trimIndel 逻辑）。
+    *   缺失功能: 尚未实现 `pslCheck`, `pslRecalcMatchCounts` 等校验和重算功能。
 
+*   结构差异 (Structure Differences)
+    *   序列字段: UCSC `psl` 结构体包含 `qSequence` 和 `tSequence` 字段存储具体序列；`pgr` 目前未实现这些字段，仅存储坐标和统计信息。
