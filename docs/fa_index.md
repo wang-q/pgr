@@ -10,8 +10,7 @@ input, often causing errors with draft assemblies or "messy" files.
     wrapping. `pgr fa` reliably extracts subsequences from draft assemblies and "messy" files
     without prior cleanup.
 *   **Unified Architecture**: Uses a consistent indexing strategy for both plain text and
-    BGZF-compressed data. The `range` command works identically on both, abstracting away
-    compression details.
+    BGZF-compressed data, abstracting away compression details for seamless access.
 *   **Performance Optimization**: An internal LRU cache accelerates access for microbial genomes and
     contigs, minimizing disk I/O overhead during intensive retrieval operations.
 *   **Large Genome Support**: For mammalian-sized genomes, `pgr 2bit` ports the UCSC 2bit tools while
