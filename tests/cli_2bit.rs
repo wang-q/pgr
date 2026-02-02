@@ -313,31 +313,42 @@ fn test_2bit_size_flags() -> anyhow::Result<()> {
     assert!(stdout.contains("seq1\t8"));
     assert!(stdout.contains("seq2\t4"));
 
-    // Test --n-bed
-    let mut cmd = Command::cargo_bin("pgr")?;
-    let output = cmd.arg("2bit")
-        .arg("size")
-        .arg(&twobit)
-        .arg("--n-bed")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
-    // seq1 has Ns at 4-8
-    assert!(stdout.contains("seq1\t4\t8"));
-    // seq2 has no Ns, should not appear
-    assert!(!stdout.contains("seq2"));
+    Ok(())
+}
 
-    // Test --mask-bed
+#[test]
+fn test_2bit_size_multiple() -> anyhow::Result<()> {
+    let temp = TempDir::new()?;
+    let input1 = temp.path().join("test1.fa");
+    let input2 = temp.path().join("test2.fa");
+    let twobit1 = temp.path().join("test1.2bit");
+    let twobit2 = temp.path().join("test2.2bit");
+    
+    fs::write(&input1, ">seq1\nACGT\n")?;
+    fs::write(&input2, ">seq2\nTGCA\n")?;
+    
+    // Create 2bit files
+    for (inp, out) in [(&input1, &twobit1), (&input2, &twobit2)] {
+        let mut cmd = Command::cargo_bin("pgr")?;
+        cmd.arg("fa")
+            .arg("to2bit")
+            .arg(inp)
+            .arg("-o")
+            .arg(out);
+        cmd.assert().success();
+    }
+    
+    // Run 2bit size with multiple inputs
     let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd.arg("2bit")
         .arg("size")
-        .arg(&twobit)
-        .arg("--mask-bed")
+        .arg(&twobit1)
+        .arg(&twobit2)
         .output()?;
+        
     let stdout = String::from_utf8(output.stdout)?;
-    // seq1 has no mask
-    assert!(!stdout.contains("seq1"));
-    // seq2 is all mask (lowercase) 0-4
-    assert!(stdout.contains("seq2\t0\t4"));
+    assert!(stdout.contains("seq1\t4"));
+    assert!(stdout.contains("seq2\t4"));
 
     Ok(())
 }

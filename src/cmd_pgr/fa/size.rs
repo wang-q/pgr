@@ -36,11 +36,18 @@ Examples:
                 .default_value("stdout")
                 .help("Output filename. [stdout] for screen"),
         )
+        .arg(
+            Arg::new("no_ns")
+                .long("no-ns")
+                .action(ArgAction::SetTrue)
+                .help("Output size without Ns"),
+        )
 }
 
 // command implementation
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut writer = intspan::writer(args.get_one::<String>("outfile").unwrap());
+    let no_ns = args.get_flag("no_ns");
 
     for infile in args.get_many::<String>("infiles").unwrap() {
         let reader = intspan::reader(infile);
@@ -49,8 +56,15 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         for result in fa_in.records() {
             let record = result?;
             let name = String::from_utf8(record.name().into())?;
+            let seq = record.sequence();
 
-            writer.write_fmt(format_args!("{}\t{}\n", name, record.sequence().len()))?;
+            let len = if no_ns {
+                seq.get(..).unwrap().iter().filter(|&&b| !pgr::libs::nt::is_n(b)).count()
+            } else {
+                seq.len()
+            };
+
+            writer.write_fmt(format_args!("{}\t{}\n", name, len))?;
         }
     }
 

@@ -60,6 +60,29 @@ fn command_fa_size_gz() -> anyhow::Result<()> {
 }
 
 #[test]
+fn command_fa_size_no_ns() -> anyhow::Result<()> {
+    let temp = TempDir::new()?;
+    let input = temp.path().join("test_nons.fa");
+    
+    // seq1: 12 bases, 4 Ns (ACGT NNNN ACGT) -> 8 bases
+    // seq2: 4 bases, 0 Ns -> 4 bases
+    fs::write(&input, ">seq1\nACGTNNNNACGT\n>seq2\nACGT\n")?;
+
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd.arg("fa")
+        .arg("size")
+        .arg(&input)
+        .arg("--no-ns")
+        .output()?;
+
+    let stdout = String::from_utf8(output.stdout)?;
+    assert!(stdout.contains("seq1\t8\n"));
+    assert!(stdout.contains("seq2\t4\n"));
+
+    Ok(())
+}
+
+#[test]
 fn command_masked() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd.arg("fa").arg("masked").arg("tests/fasta/ufasta.fa").output()?;
