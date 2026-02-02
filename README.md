@@ -1,4 +1,4 @@
-# pgr - Population Genomes Refiner
+# pgr - Practical Genome Refiner
 
 [![Build](https://github.com/wang-q/pgr/actions/workflows/build.yml/badge.svg)](https://github.com/wang-q/pgr/actions)
 [![codecov](https://codecov.io/gh/wang-q/pgr/branch/master/graph/badge.svg?token=8toyNHCsVU)](https://codecov.io/gh/wang-q/pgr)
@@ -37,6 +37,54 @@ cargo build
 ## Synopsis
 
 ### `pgr help`
+
+```text
+`pgr` - Practical Genome Refiner
+
+Usage: pgr [COMMAND]
+
+Commands:
+  pipeline  UCSC chain/net pipeline
+  ir        Identify interspersed repeats in a genome
+  rept      Identify repetitive regions in a genome
+  trf       Identify tandem repeats in a genome
+  ms2dna    Convert ms output haplotypes (0/1) to DNA sequences (FASTA)
+  axt       Axt tools
+  chain     Chain tools
+  lav       LAV tools
+  net       Net tools
+  psl       Psl tools
+  2bit      2bit tools
+  fa        Fasta tools
+  fq        Fastq tools
+  help      Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help     Print help
+  -V, --version  Print version
+
+Subcommand groups:
+
+* Fasta files
+    * info: size / count / masked / n50
+    * records: one / some / order / split
+    * transform: replace / rc / filter / dedup / mask / sixframe
+    * indexing: gz / range / prefilter
+
+* Genome alignments:
+    * chain
+    * net
+    * axt
+    * lav
+    * psl
+    * 2bit
+    * fa
+    * fq
+
+* Repeats:
+    * ir / rept / trf
+
+```
 
 ### `fasr help`
 

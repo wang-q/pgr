@@ -7,7 +7,7 @@ fn main() -> anyhow::Result<()> {
     let app = Command::new("pgr")
         .version(crate_version!())
         .author(crate_authors!())
-        .about("`pgr` - Population Genomes Refiner")
+        .about("`pgr` - Practical Genome Refiner")
         .propagate_version(true)
         .arg_required_else_help(true)
         .color(ColorChoice::Auto)
@@ -25,11 +25,13 @@ fn main() -> anyhow::Result<()> {
         .subcommand(cmd_pgr::fa::make_subcommand())
         .subcommand(cmd_pgr::fq::make_subcommand())
         .after_help(
-            r###"
-`pgr` can also refer to `Populations defined by Gene transfeR`,
-as a reimplementation of PopCOGenT (populations as clusters of gene transfer)
+            r###"Subcommand groups:
 
-Subcommand groups:
+* Fasta files
+    * info: size / count / masked / n50
+    * records: one / some / order / split
+    * transform: replace / rc / filter / dedup / mask / sixframe
+    * indexing: gz / range / prefilter
 
 * Genome alignments:
     * chain
