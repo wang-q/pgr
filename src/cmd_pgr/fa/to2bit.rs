@@ -63,7 +63,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let no_mask = args.get_flag("no_mask");
     let strip_version = args.get_flag("strip_version");
     let ignore_dups = args.get_flag("ignore_dups");
-    let name_prefix = args.get_one::<String>("name_prefix").map(|s| s.as_str()).unwrap_or("");
+    let name_prefix = args
+        .get_one::<String>("name_prefix")
+        .map(|s| s.as_str())
+        .unwrap_or("");
 
     let mut seen_names = HashSet::new();
     let mut data = Vec::new();
@@ -73,19 +76,19 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         for result in reader.records() {
             let record = result?;
             let mut name = record.id().to_string();
-            
+
             if strip_version {
                 if let Some(idx) = name.rfind('.') {
-                    if name[idx+1..].chars().all(|c| c.is_ascii_digit()) {
+                    if name[idx + 1..].chars().all(|c| c.is_ascii_digit()) {
                         name.truncate(idx);
                     }
                 }
             }
-            
+
             if !name_prefix.is_empty() {
                 name = format!("{}{}", name_prefix, name);
             }
-            
+
             if seen_names.contains(&name) {
                 if ignore_dups {
                     continue;
@@ -93,21 +96,21 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                     anyhow::bail!("Duplicate sequence name: {}", name);
                 }
             }
-            
+
             seen_names.insert(name.clone());
-            
+
             let seq = std::str::from_utf8(record.seq())?.to_string();
             data.push((name, seq));
         }
     }
-    
+
     let refs: Vec<(&str, &str)> = data.iter().map(|(n, s)| (n.as_str(), s.as_str())).collect();
-    
+
     let f = File::create(output)?;
     let mut writer = BufWriter::new(f);
     let mut tb_writer = TwoBitWriter::new(&mut writer);
-    
+
     tb_writer.write(&refs, !no_mask)?;
-    
+
     Ok(())
 }

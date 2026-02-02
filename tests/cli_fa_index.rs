@@ -123,7 +123,8 @@ fn command_fa_gz_reindex() -> anyhow::Result<()> {
 
     // 1. Create a valid BGZF file first
     let mut cmd_compress = Command::cargo_bin("pgr")?;
-    cmd_compress.arg("fa")
+    cmd_compress
+        .arg("fa")
         .arg("gz")
         .arg(raw_infile)
         .arg("-o")
@@ -151,7 +152,7 @@ fn command_fa_gz_reindex() -> anyhow::Result<()> {
 fn command_fa_gz_reindex_fail_not_bgzf() -> anyhow::Result<()> {
     let temp = TempDir::new()?;
     let infile = "tests/fasta/ufasta.fa"; // Normal FASTA, not BGZF
-    
+
     let mut cmd = Command::cargo_bin("pgr")?;
     cmd.arg("fa")
         .arg("gz")
@@ -162,7 +163,6 @@ fn command_fa_gz_reindex_fail_not_bgzf() -> anyhow::Result<()> {
 
     Ok(())
 }
-
 
 #[test]
 fn command_range() -> anyhow::Result<()> {

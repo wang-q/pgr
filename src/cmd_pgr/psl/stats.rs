@@ -108,22 +108,22 @@ impl SumStats {
             self.max_t_cover = t_cover;
             self.min_rep_match = rep_match;
             self.max_rep_match = rep_match;
-            
+
             self.min_q_size = self.min_q_size.min(psl.q_size);
             self.max_q_size = self.max_q_size.max(psl.q_size);
         } else {
             self.min_q_size = self.min_q_size.min(psl.q_size);
             self.max_q_size = self.max_q_size.max(psl.q_size);
-            
+
             self.min_ident = self.min_ident.min(ident);
             self.max_ident = self.max_ident.max(ident);
-            
+
             self.min_q_cover = self.min_q_cover.min(q_cover);
             self.max_q_cover = self.max_q_cover.max(q_cover);
-            
+
             self.min_t_cover = self.min_t_cover.min(t_cover);
             self.max_t_cover = self.max_t_cover.max(t_cover);
-            
+
             self.min_rep_match = self.min_rep_match.min(rep_match);
             self.max_rep_match = self.max_rep_match.max(rep_match);
         }
@@ -136,29 +136,29 @@ impl SumStats {
 
     fn merge(&mut self, other: &SumStats) {
         if self.aln_cnt == 0 {
-             self.min_q_size = other.min_q_size;
-             self.max_q_size = other.max_q_size;
-             self.min_ident = other.min_ident;
-             self.max_ident = other.max_ident;
-             self.min_q_cover = other.min_q_cover;
-             self.max_q_cover = other.max_q_cover;
-             self.min_t_cover = other.min_t_cover;
-             self.max_t_cover = other.max_t_cover;
-             self.min_rep_match = other.min_rep_match;
-             self.max_rep_match = other.max_rep_match;
+            self.min_q_size = other.min_q_size;
+            self.max_q_size = other.max_q_size;
+            self.min_ident = other.min_ident;
+            self.max_ident = other.max_ident;
+            self.min_q_cover = other.min_q_cover;
+            self.max_q_cover = other.max_q_cover;
+            self.min_t_cover = other.min_t_cover;
+            self.max_t_cover = other.max_t_cover;
+            self.min_rep_match = other.min_rep_match;
+            self.max_rep_match = other.max_rep_match;
         } else if other.aln_cnt > 0 {
-             self.min_q_size = self.min_q_size.min(other.min_q_size);
-             self.max_q_size = self.max_q_size.max(other.max_q_size);
-             self.min_ident = self.min_ident.min(other.min_ident);
-             self.max_ident = self.max_ident.max(other.max_ident);
-             self.min_q_cover = self.min_q_cover.min(other.min_q_cover);
-             self.max_q_cover = self.max_q_cover.max(other.max_q_cover);
-             self.min_t_cover = self.min_t_cover.min(other.min_t_cover);
-             self.max_t_cover = self.max_t_cover.max(other.max_t_cover);
-             self.min_rep_match = self.min_rep_match.min(other.min_rep_match);
-             self.max_rep_match = self.max_rep_match.max(other.max_rep_match);
+            self.min_q_size = self.min_q_size.min(other.min_q_size);
+            self.max_q_size = self.max_q_size.max(other.max_q_size);
+            self.min_ident = self.min_ident.min(other.min_ident);
+            self.max_ident = self.max_ident.max(other.max_ident);
+            self.min_q_cover = self.min_q_cover.min(other.min_q_cover);
+            self.max_q_cover = self.max_q_cover.max(other.max_q_cover);
+            self.min_t_cover = self.min_t_cover.min(other.min_t_cover);
+            self.max_t_cover = self.max_t_cover.max(other.max_t_cover);
+            self.min_rep_match = self.min_rep_match.min(other.min_rep_match);
+            self.max_rep_match = self.max_rep_match.max(other.max_rep_match);
         }
-        
+
         self.query_cnt += other.query_cnt;
         self.total_q_size += other.total_q_size;
         self.total_align += other.total_align;
@@ -168,19 +168,35 @@ impl SumStats {
     }
 
     fn mean_ident(&self) -> f32 {
-        if self.total_align == 0 { 0.0 } else { self.total_match as f32 / self.total_align as f32 }
+        if self.total_align == 0 {
+            0.0
+        } else {
+            self.total_match as f32 / self.total_align as f32
+        }
     }
-    
+
     fn mean_q_size(&self) -> u32 {
-        if self.query_cnt == 0 { 0 } else { (self.total_q_size / self.query_cnt as u64) as u32 }
+        if self.query_cnt == 0 {
+            0
+        } else {
+            (self.total_q_size / self.query_cnt as u64) as u32
+        }
     }
 
     fn mean_q_cover(&self) -> f32 {
-        if self.total_q_size == 0 { 0.0 } else { self.total_align as f32 / self.total_q_size as f32 }
+        if self.total_q_size == 0 {
+            0.0
+        } else {
+            self.total_align as f32 / self.total_q_size as f32
+        }
     }
 
     fn mean_rep_match(&self) -> f32 {
-        if self.total_align == 0 { 0.0 } else { self.total_rep_match as f32 / self.total_align as f32 }
+        if self.total_align == 0 {
+            0.0
+        } else {
+            self.total_rep_match as f32 / self.total_align as f32
+        }
     }
 }
 
@@ -215,17 +231,19 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         // Aggregation modes
         for line in reader.lines() {
             let line = line?;
-            if line.is_empty() || line.starts_with('#') { continue; }
-            
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+
             if let Ok(psl) = line.parse::<Psl>() {
                 if queries_file.is_some() {
                     if let Some(entry) = query_stats_tbl.get_mut(&psl.q_name) {
                         entry.accumulate(&psl);
                     }
                 } else {
-                    let entry = query_stats_tbl.entry(psl.q_name.clone()).or_insert_with(|| {
-                         SumStats::new(&psl.q_name, psl.q_size)
-                    });
+                    let entry = query_stats_tbl
+                        .entry(psl.q_name.clone())
+                        .or_insert_with(|| SumStats::new(&psl.q_name, psl.q_size));
                     entry.accumulate(&psl);
                 }
             }
@@ -236,7 +254,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 write!(writer, "#")?;
             }
             writeln!(writer, "qName\tqSize\talnCnt\tminIdent\tmaxIdent\tmeanIdent\tminQCover\tmaxQCover\tmeanQCover\tminRepMatch\tmaxRepMatch\tmeanRepMatch\tminTCover\tmaxTCover")?;
-            
+
             let mut keys: Vec<_> = query_stats_tbl.keys().cloned().collect();
             keys.sort();
 
@@ -270,8 +288,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 write!(writer, "#")?;
             }
             writeln!(writer, "queryCnt\tminQSize\tmaxQSize\tmeanQSize\talnCnt\tminIdent\tmaxIdent\tmeanIdent\tminQCover\tmaxQCover\tmeanQCover\tminRepMatch\tmaxRepMatch\tmeanRepMatch\tminTCover\tmaxTCover\taligned\taligned1\talignedN\ttotalAlignedSize")?;
-            
-             writeln!(writer, "{}\t{}\t{}\t{}\t{}\t{:.4}\t{:.4}\t{:.4}\t{:.4}\t{:.4}\t{:.4}\t{:.4}\t{:.4}\t{:.4}\t{:.4}\t{:.4}\t{}\t{}\t{}\t{}",
+
+            writeln!(writer, "{}\t{}\t{}\t{}\t{}\t{:.4}\t{:.4}\t{:.4}\t{:.4}\t{:.4}\t{:.4}\t{:.4}\t{:.4}\t{:.4}\t{:.4}\t{:.4}\t{}\t{}\t{}\t{}",
                 os.query_cnt, os.min_q_size, os.max_q_size, os.mean_q_size(),
                 os.aln_cnt,
                 os.min_ident, os.max_ident, os.mean_ident(),
@@ -281,46 +299,69 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 aligned1 + aligned_n, aligned1, aligned_n,
                 os.total_align
             )?;
-
         }
-
     } else {
         // Per-alignment mode
         if !tsv {
             write!(writer, "#")?;
         }
-        writeln!(writer, "qName\tqSize\ttName\ttStart\ttEnd\tident\tqCover\trepMatch\ttCover")?;
+        writeln!(
+            writer,
+            "qName\tqSize\ttName\ttStart\ttEnd\tident\tqCover\trepMatch\ttCover"
+        )?;
 
         for line in reader.lines() {
             let line = line?;
-            if line.is_empty() || line.starts_with('#') { continue; }
-            
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+
             if let Ok(psl) = line.parse::<Psl>() {
                 if queries_file.is_some() {
                     if let Some(entry) = query_stats_tbl.get_mut(&psl.q_name) {
-                        writeln!(writer, "{}\t{}\t{}\t{}\t{}\t{:.4}\t{:.4}\t{:.4}\t{:.4}",
-                            psl.q_name, psl.q_size, psl.t_name, psl.t_start, psl.t_end,
-                            psl.calc_ident(), psl.calc_q_cover(), psl.calc_rep_match(), psl.calc_t_cover()
+                        writeln!(
+                            writer,
+                            "{}\t{}\t{}\t{}\t{}\t{:.4}\t{:.4}\t{:.4}\t{:.4}",
+                            psl.q_name,
+                            psl.q_size,
+                            psl.t_name,
+                            psl.t_start,
+                            psl.t_end,
+                            psl.calc_ident(),
+                            psl.calc_q_cover(),
+                            psl.calc_rep_match(),
+                            psl.calc_t_cover()
                         )?;
                         entry.aln_cnt += 1;
                     }
                 } else {
-                    writeln!(writer, "{}\t{}\t{}\t{}\t{}\t{:.4}\t{:.4}\t{:.4}\t{:.4}",
-                        psl.q_name, psl.q_size, psl.t_name, psl.t_start, psl.t_end,
-                        psl.calc_ident(), psl.calc_q_cover(), psl.calc_rep_match(), psl.calc_t_cover()
+                    writeln!(
+                        writer,
+                        "{}\t{}\t{}\t{}\t{}\t{:.4}\t{:.4}\t{:.4}\t{:.4}",
+                        psl.q_name,
+                        psl.q_size,
+                        psl.t_name,
+                        psl.t_start,
+                        psl.t_end,
+                        psl.calc_ident(),
+                        psl.calc_q_cover(),
+                        psl.calc_rep_match(),
+                        psl.calc_t_cover()
                     )?;
                 }
             }
         }
-        
+
         if queries_file.is_some() {
             let mut keys: Vec<_> = query_stats_tbl.keys().cloned().collect();
             keys.sort();
-            
+
             for k in keys {
                 let s = &query_stats_tbl[&k];
                 if s.aln_cnt == 0 {
-                    writeln!(writer, "{}\t{}\t\t0\t0\t0.0000\t0.0000\t0.0000\t0.0000",
+                    writeln!(
+                        writer,
+                        "{}\t{}\t\t0\t0\t0.0000\t0.0000\t0.0000\t0.0000",
                         s.q_name, s.min_q_size
                     )?;
                 }

@@ -5,11 +5,11 @@ use tempfile::NamedTempFile;
 fn command_fq_tofa() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("pgr")?;
     let input = "@SEQ_ID\nGATTTGGGGTTCAAAGCAGTATCGATCAAATAGTAAATCCATTTGTTCAACTCACAGTTT\n+\n!''*((((***+))%%%++)(%%%%).1***-+*''))**55CCF>>>>>>CCCCCCC65\n";
-    
+
     let mut file = NamedTempFile::new()?;
     use std::io::Write;
     file.write_all(input.as_bytes())?;
-    
+
     cmd.arg("fq")
         .arg("tofa")
         .arg(file.path())
@@ -23,21 +23,17 @@ fn command_fq_tofa() -> anyhow::Result<()> {
 fn command_fq_tofa_output() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("pgr")?;
     let input = "@SEQ_ID\nGATTTGGGGTTCAAAGCAGTATCGATCAAATAGTAAATCCATTTGTTCAACTCACAGTTT\n+\n!''*((((***+))%%%++)(%%%%).1***-+*''))**55CCF>>>>>>CCCCCCC65\n";
-    
+
     let mut file = NamedTempFile::new()?;
     use std::io::Write;
     file.write_all(input.as_bytes())?;
-    
-    let output = cmd.arg("fq")
-        .arg("tofa")
-        .arg(file.path())
-        .output()
-        .unwrap();
-        
+
+    let output = cmd.arg("fq").arg("tofa").arg(file.path()).output().unwrap();
+
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(stdout.contains(">SEQ_ID"));
     assert!(stdout.contains("GATTTGGGGTTCAAAGCAGTATCGATCAAATAGTAAATCCATTTGTTCAACTCACAGTTT"));
-    
+
     Ok(())
 }
 
@@ -45,7 +41,8 @@ fn command_fq_tofa_output() -> anyhow::Result<()> {
 fn command_fq_tofa_r1() -> anyhow::Result<()> {
     // Basic conversion test
     let mut cmd = Command::cargo_bin("pgr")?;
-    let output = cmd.arg("fq")
+    let output = cmd
+        .arg("fq")
         .arg("tofa")
         .arg("tests/fastq/R1.fq.gz")
         .output()?;
@@ -68,7 +65,7 @@ fn command_fq_tofa_r1() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("pgr")?;
     let temp = tempfile::Builder::new().suffix(".fa").tempfile()?;
     let temp_path = temp.path();
-    
+
     cmd.arg("fq")
         .arg("tofa")
         .arg("tests/fastq/R1.fq.gz")
@@ -94,7 +91,8 @@ fn command_fq_tofa_r1() -> anyhow::Result<()> {
 #[test]
 fn command_fq_interleave() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("pgr")?;
-    let output = cmd.arg("fq")
+    let output = cmd
+        .arg("fq")
         .arg("interleave")
         .arg("tests/fastq/R1.fq.gz")
         .arg("tests/fastq/R2.fq.gz")
@@ -117,7 +115,6 @@ fn command_fq_interleave() -> anyhow::Result<()> {
 
     Ok(())
 }
-
 
 #[test]
 fn command_fq_interleave_fa() -> anyhow::Result<()> {

@@ -1,5 +1,5 @@
-pub mod tofa;
 pub mod interleave;
+pub mod tofa;
 
 pub fn make_subcommand() -> clap::Command {
     clap::Command::new("fq")

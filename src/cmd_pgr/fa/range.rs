@@ -1,5 +1,5 @@
-use pgr::libs::loc;
 use clap::*;
+use pgr::libs::loc;
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
@@ -147,7 +147,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let loc_of: indexmap::IndexMap<String, (u64, usize)> = loc::load_loc(&loc_file)?;
 
     let mut reader = if is_bgzf {
-        loc::Input::Bgzf(noodles_bgzf::io::indexed_reader::Builder::default().build_from_path(infile)?)
+        loc::Input::Bgzf(
+            noodles_bgzf::io::indexed_reader::Builder::default().build_from_path(infile)?,
+        )
     } else {
         loc::Input::File(std::fs::File::open(std::path::Path::new(infile))?)
     };

@@ -1,36 +1,36 @@
 use assert_cmd::Command;
+use pgr::libs::twobit::TwoBitFile;
 use std::fs;
 use tempfile::TempDir;
-use pgr::libs::twobit::TwoBitFile;
 
 #[test]
 fn test_2bit_to2bit() -> anyhow::Result<()> {
     let temp = TempDir::new()?;
     let input = temp.path().join("test.fa");
     let output = temp.path().join("out.2bit");
-    
+
     fs::write(&input, ">seq1\nACGT\n>seq2\nNNNN\n")?;
-    
+
     let mut cmd = Command::cargo_bin("pgr")?;
     cmd.arg("fa")
         .arg("to2bit")
         .arg(&input)
         .arg("-o")
         .arg(&output);
-    
+
     cmd.assert().success();
-    
+
     assert!(output.exists());
-    
+
     let mut tb = TwoBitFile::open(&output)?;
     let names = tb.get_sequence_names();
     assert_eq!(names.len(), 2);
     assert!(names.contains(&"seq1".to_string()));
     assert!(names.contains(&"seq2".to_string()));
-    
+
     let seq1 = tb.read_sequence("seq1", None, None, false)?;
     assert_eq!(seq1, "ACGT");
-    
+
     let seq2 = tb.read_sequence("seq2", None, None, false)?;
     assert_eq!(seq2, "NNNN");
 
@@ -42,9 +42,9 @@ fn test_2bit_to2bit_strip_version() -> anyhow::Result<()> {
     let temp = TempDir::new()?;
     let input = temp.path().join("test_ver.fa");
     let output = temp.path().join("out_ver.2bit");
-    
+
     fs::write(&input, ">NM_001.1\nACGT\n")?;
-    
+
     let mut cmd = Command::cargo_bin("pgr")?;
     cmd.arg("fa")
         .arg("to2bit")
@@ -52,13 +52,13 @@ fn test_2bit_to2bit_strip_version() -> anyhow::Result<()> {
         .arg("-o")
         .arg(&output)
         .arg("--strip-version");
-    
+
     cmd.assert().success();
-    
+
     let tb = TwoBitFile::open(&output)?;
     let names = tb.get_sequence_names();
     assert_eq!(names[0], "NM_001");
-    
+
     Ok(())
 }
 
@@ -67,22 +67,22 @@ fn test_2bit_to2bit_mask() -> anyhow::Result<()> {
     let temp = TempDir::new()?;
     let input = temp.path().join("test_mask.fa");
     let output = temp.path().join("out_mask.2bit");
-    
+
     fs::write(&input, ">seq1\nacgtACGT\n")?;
-    
+
     let mut cmd = Command::cargo_bin("pgr")?;
     cmd.arg("fa")
         .arg("to2bit")
         .arg(&input)
         .arg("-o")
         .arg(&output);
-    
+
     cmd.assert().success();
-    
+
     let mut tb = TwoBitFile::open(&output)?;
     let seq_masked = tb.read_sequence("seq1", None, None, false)?;
     assert_eq!(seq_masked, "acgtACGT");
-    
+
     let seq_unmasked = tb.read_sequence("seq1", None, None, true)?;
     assert_eq!(seq_unmasked, "ACGTACGT");
 
@@ -95,9 +95,9 @@ fn test_2bit_tofa_basic() -> anyhow::Result<()> {
     let input = temp.path().join("test.fa");
     let twobit = temp.path().join("test.2bit");
     let output = temp.path().join("out.fa");
-    
+
     fs::write(&input, ">seq1\nACGT\n>seq2\nNNNN\n")?;
-    
+
     // Create 2bit first
     let mut cmd = Command::cargo_bin("pgr")?;
     cmd.arg("fa")
@@ -106,7 +106,7 @@ fn test_2bit_tofa_basic() -> anyhow::Result<()> {
         .arg("-o")
         .arg(&twobit);
     cmd.assert().success();
-    
+
     // Convert back to FASTA
     let mut cmd2 = Command::cargo_bin("pgr")?;
     cmd2.arg("2bit")
@@ -115,7 +115,7 @@ fn test_2bit_tofa_basic() -> anyhow::Result<()> {
         .arg("-o")
         .arg(&output);
     cmd2.assert().success();
-    
+
     let content = fs::read_to_string(&output)?;
     // Order might differ, but content should match.
     // >seq1
@@ -134,9 +134,9 @@ fn test_2bit_range_basic() -> anyhow::Result<()> {
     let input = temp.path().join("test.fa");
     let twobit = temp.path().join("test.2bit");
     let output = temp.path().join("out.fa");
-    
+
     fs::write(&input, ">seq1\nACGTACGT\n")?;
-    
+
     // Create 2bit
     let mut cmd = Command::cargo_bin("pgr")?;
     cmd.arg("fa")
@@ -145,7 +145,7 @@ fn test_2bit_range_basic() -> anyhow::Result<()> {
         .arg("-o")
         .arg(&twobit);
     cmd.assert().success();
-    
+
     // Extract range 2-5 (CGTA) - 1-based
     // 01234567
     // ACGTACGT
@@ -158,7 +158,7 @@ fn test_2bit_range_basic() -> anyhow::Result<()> {
         .arg("-o")
         .arg(&output);
     cmd2.assert().success();
-    
+
     let content = fs::read_to_string(&output)?;
     assert!(content.contains(">seq1:2-5\nCGTA"));
 
@@ -187,11 +187,11 @@ fn test_2bit_range_rgfile() -> anyhow::Result<()> {
     let twobit = temp.path().join("test.2bit");
     let list = temp.path().join("ranges.txt");
     let output = temp.path().join("out.fa");
-    
+
     fs::write(&input, ">seq1\nACGT\n>seq2\nTGCA\n")?;
     // Request seq2 (entire sequence) and seq1:1-2
     fs::write(&list, "seq2\nseq1:1-2\n")?;
-    
+
     // Create 2bit
     let mut cmd = Command::cargo_bin("pgr")?;
     cmd.arg("fa")
@@ -200,7 +200,7 @@ fn test_2bit_range_rgfile() -> anyhow::Result<()> {
         .arg("-o")
         .arg(&twobit);
     cmd.assert().success();
-    
+
     // Extract ranges
     let mut cmd2 = Command::cargo_bin("pgr")?;
     cmd2.arg("2bit")
@@ -211,14 +211,13 @@ fn test_2bit_range_rgfile() -> anyhow::Result<()> {
         .arg("-o")
         .arg(&output);
     cmd2.assert().success();
-    
+
     let content = fs::read_to_string(&output)?;
     assert!(content.contains(">seq2\nTGCA"));
     assert!(content.contains(">seq1:1-2\nAC"));
 
     Ok(())
 }
-
 
 #[test]
 fn test_2bit_tofa_mask() -> anyhow::Result<()> {
@@ -227,9 +226,9 @@ fn test_2bit_tofa_mask() -> anyhow::Result<()> {
     let twobit = temp.path().join("test.2bit");
     let output_masked = temp.path().join("masked.fa");
     let output_unmasked = temp.path().join("unmasked.fa");
-    
+
     fs::write(&input, ">seq1\nacgtACGT\n")?;
-    
+
     // Create 2bit
     let mut cmd = Command::cargo_bin("pgr")?;
     cmd.arg("fa")
@@ -238,7 +237,7 @@ fn test_2bit_tofa_mask() -> anyhow::Result<()> {
         .arg("-o")
         .arg(&twobit);
     cmd.assert().success();
-    
+
     // Default (masked)
     let mut cmd2 = Command::cargo_bin("pgr")?;
     cmd2.arg("2bit")
@@ -247,10 +246,10 @@ fn test_2bit_tofa_mask() -> anyhow::Result<()> {
         .arg("-o")
         .arg(&output_masked);
     cmd2.assert().success();
-    
+
     let content_masked = fs::read_to_string(&output_masked)?;
     assert!(content_masked.contains("acgtACGT"));
-    
+
     // No mask
     let mut cmd3 = Command::cargo_bin("pgr")?;
     cmd3.arg("2bit")
@@ -260,7 +259,7 @@ fn test_2bit_tofa_mask() -> anyhow::Result<()> {
         .arg("-o")
         .arg(&output_unmasked);
     cmd3.assert().success();
-    
+
     let content_unmasked = fs::read_to_string(&output_unmasked)?;
     assert!(content_unmasked.contains("ACGTACGT"));
 
@@ -272,9 +271,9 @@ fn test_2bit_size() -> anyhow::Result<()> {
     let temp = TempDir::new()?;
     let input = temp.path().join("test.fa");
     let twobit = temp.path().join("test.2bit");
-    
+
     fs::write(&input, ">seq1\nACGT\n>seq2\nNNNN\n")?;
-    
+
     // Create 2bit file first
     let mut cmd = Command::cargo_bin("pgr")?;
     cmd.arg("fa")
@@ -283,14 +282,11 @@ fn test_2bit_size() -> anyhow::Result<()> {
         .arg("-o")
         .arg(&twobit);
     cmd.assert().success();
-    
+
     // Run 2bit size
     let mut cmd = Command::cargo_bin("pgr")?;
-    let output = cmd.arg("2bit")
-        .arg("size")
-        .arg(&twobit)
-        .output()?;
-        
+    let output = cmd.arg("2bit").arg("size").arg(&twobit).output()?;
+
     let stdout = String::from_utf8(output.stdout)?;
     assert!(stdout.contains("seq1\t4"));
     assert!(stdout.contains("seq2\t4"));
@@ -303,11 +299,11 @@ fn test_2bit_size_flags() -> anyhow::Result<()> {
     let temp = TempDir::new()?;
     let input = temp.path().join("test_flags.fa");
     let twobit = temp.path().join("test_flags.2bit");
-    
+
     // seq1: 12 bases, Ns at 4-8 (4 Ns). ACGT NNNN ACGT. Size 12. No-Ns: 8.
     // seq2: 4 bases. acgt. Size 4. No-Ns: 4. Mask: 0-4.
     fs::write(&input, ">seq1\nACGTNNNNACGT\n>seq2\nacgt\n")?;
-    
+
     // Create 2bit
     let mut cmd = Command::cargo_bin("pgr")?;
     cmd.arg("fa")
@@ -316,10 +312,11 @@ fn test_2bit_size_flags() -> anyhow::Result<()> {
         .arg("-o")
         .arg(&twobit);
     cmd.assert().success();
-    
+
     // Test --no-ns
     let mut cmd = Command::cargo_bin("pgr")?;
-    let output = cmd.arg("2bit")
+    let output = cmd
+        .arg("2bit")
         .arg("size")
         .arg(&twobit)
         .arg("--no-ns")
@@ -338,29 +335,26 @@ fn test_2bit_size_multiple() -> anyhow::Result<()> {
     let input2 = temp.path().join("test2.fa");
     let twobit1 = temp.path().join("test1.2bit");
     let twobit2 = temp.path().join("test2.2bit");
-    
+
     fs::write(&input1, ">seq1\nACGT\n")?;
     fs::write(&input2, ">seq2\nTGCA\n")?;
-    
+
     // Create 2bit files
     for (inp, out) in [(&input1, &twobit1), (&input2, &twobit2)] {
         let mut cmd = Command::cargo_bin("pgr")?;
-        cmd.arg("fa")
-            .arg("to2bit")
-            .arg(inp)
-            .arg("-o")
-            .arg(out);
+        cmd.arg("fa").arg("to2bit").arg(inp).arg("-o").arg(out);
         cmd.assert().success();
     }
-    
+
     // Run 2bit size with multiple inputs
     let mut cmd = Command::cargo_bin("pgr")?;
-    let output = cmd.arg("2bit")
+    let output = cmd
+        .arg("2bit")
         .arg("size")
         .arg(&twobit1)
         .arg(&twobit2)
         .output()?;
-        
+
     let stdout = String::from_utf8(output.stdout)?;
     assert!(stdout.contains("seq1\t4"));
     assert!(stdout.contains("seq2\t4"));
@@ -373,10 +367,10 @@ fn test_2bit_range_seqlist1_file() -> anyhow::Result<()> {
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")?;
     let input = std::path::Path::new(&manifest_dir).join("tests/2bit/input/testMask.2bit");
     let list = std::path::Path::new(&manifest_dir).join("tests/2bit/input/seqlist1");
-    
+
     let temp = TempDir::new()?;
     let output = temp.path().join("out.fa");
-    
+
     let mut cmd = Command::cargo_bin("pgr")?;
     cmd.arg("2bit")
         .arg("range")
@@ -386,28 +380,27 @@ fn test_2bit_range_seqlist1_file() -> anyhow::Result<()> {
         .arg("-o")
         .arg(&output);
     cmd.assert().success();
-    
+
     let output_content = fs::read_to_string(&output)?;
-    
+
     assert!(output_content.contains(">noLower"));
     assert!(output_content.contains(">startLower"));
     assert!(output_content.contains(">endLower"));
     assert!(!output_content.contains(">manyLower"));
-    
+
     Ok(())
 }
-
 
 #[test]
 fn test_2bit_masked() -> anyhow::Result<()> {
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")?;
     let input_mask = std::path::Path::new(&manifest_dir).join("tests/2bit/input/testMask.2bit");
     let input_n = std::path::Path::new(&manifest_dir).join("tests/2bit/input/testN.2bit");
-    
+
     let temp = TempDir::new()?;
     let out_mask = temp.path().join("out_mask.txt");
     let out_n = temp.path().join("out_n.txt");
-    
+
     // 1. testMask.2bit
     let mut cmd = Command::cargo_bin("pgr")?;
     cmd.arg("2bit")
@@ -416,14 +409,14 @@ fn test_2bit_masked() -> anyhow::Result<()> {
         .arg("-o")
         .arg(&out_mask);
     cmd.assert().success();
-    
+
     let content_mask = fs::read_to_string(&out_mask)?;
-    
+
     // allLower is masked. It has 12 bases.
     assert!(content_mask.contains("allLower:1-12"));
     // noLower should not be in output
     assert!(!content_mask.contains("noLower"));
-    
+
     // 2. testN.2bit with --gap
     let mut cmd2 = Command::cargo_bin("pgr")?;
     cmd2.arg("2bit")
@@ -433,9 +426,9 @@ fn test_2bit_masked() -> anyhow::Result<()> {
         .arg("-o")
         .arg(&out_n);
     cmd2.assert().success();
-    
+
     let content_n = fs::read_to_string(&out_n)?;
-    
+
     // startN: NANNAANNNAAA
     // Ns at: 1, 3-4, 7-9
     assert!(content_n.contains("startN:1"));
@@ -456,9 +449,9 @@ fn test_2bit_range_legacy_cases() -> anyhow::Result<()> {
     let test_range = |start: usize, end: usize, expected: &str| -> anyhow::Result<()> {
         let out_name = format!("out_{}_{}.fa", start, end);
         let out_path = temp.path().join(&out_name);
-        
+
         let range_str = format!("manyLower:{}-{}", start, end);
-        
+
         let mut cmd = Command::cargo_bin("pgr")?;
         cmd.arg("2bit")
             .arg("range")
@@ -467,10 +460,15 @@ fn test_2bit_range_legacy_cases() -> anyhow::Result<()> {
             .arg("-o")
             .arg(&out_path);
         cmd.assert().success();
-        
+
         let content = fs::read_to_string(&out_path)?;
         if !content.contains(expected) {
-             anyhow::bail!("Failed for {}: expected {}, got {}", range_str, expected, content);
+            anyhow::bail!(
+                "Failed for {}: expected {}, got {}",
+                range_str,
+                expected,
+                content
+            );
         }
         Ok(())
     };
@@ -516,7 +514,7 @@ fn test_2bit_compat_mask_file() -> anyhow::Result<()> {
 
     // Check masking (lowercase)
     // allLower should be all lowercase
-    // We can't easily check full content without reading exact expectation,    
+    // We can't easily check full content without reading exact expectation,
     // but we can check if it contains lowercase letters.
     assert!(output_content.chars().any(|c| c.is_lowercase()));
 

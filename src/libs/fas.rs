@@ -27,7 +27,6 @@ impl<'a, B: io::BufRead> Iterator for LinesRef<'a, B> {
     }
 }
 
-
 /// Indicates one of the two strands.
 fn parse_strand(strand: &str) -> Result<String, io::Error> {
     match strand {

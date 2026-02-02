@@ -431,7 +431,7 @@ mod tests {
         // NT_VAL[R] = 4 (N). So it should be X.
         assert_eq!(translate(b"RCT"), "X");
     }
-    
+
     #[test]
     fn test_translate_non_ascii() {
         // 255 is non-ascii

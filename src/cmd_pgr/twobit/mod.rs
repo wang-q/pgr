@@ -1,8 +1,8 @@
-pub mod size;
-pub mod tofa;
 pub mod masked;
-pub mod some;
 pub mod range;
+pub mod size;
+pub mod some;
+pub mod tofa;
 
 pub fn make_subcommand() -> clap::Command {
     clap::Command::new("2bit")

@@ -432,7 +432,9 @@ impl std::str::FromStr for Psl {
         };
 
         // Ensure consistency between block_count and vector lengths
-        let min_len = psl.block_sizes.len()
+        let min_len = psl
+            .block_sizes
+            .len()
             .min(psl.q_starts.len())
             .min(psl.t_starts.len());
 
@@ -642,11 +644,7 @@ mod tests {
         // t: ACTG
         let q_seq = "AC-G";
         let t_seq = "ACTG";
-        let psl = Psl::from_align(
-            "q", 3, 0, 3, q_seq,
-            "t", 4, 0, 4, t_seq,
-            "+",
-        ).unwrap();
+        let psl = Psl::from_align("q", 3, 0, 3, q_seq, "t", 4, 0, 4, t_seq, "+").unwrap();
 
         assert_eq!(psl.block_count, 2);
         assert_eq!(psl.block_sizes, vec![2, 1]); // AC, G

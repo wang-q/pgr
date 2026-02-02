@@ -1,6 +1,6 @@
 use clap::*;
-use std::io::Write;
 use pgr::libs::twobit::TwoBitFile;
+use std::io::Write;
 use std::ops::Range;
 
 // Create clap subcommand arguments
@@ -71,7 +71,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
         for name in names {
             let (n_blocks, mask_blocks) = tb.get_sequence_blocks(&name)?;
-            
+
             let mut blocks = Vec::new();
             blocks.extend(n_blocks.0.into_iter());
             if !is_gap {
@@ -109,11 +109,13 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 // Convert 0-based half-open [start, end) to 1-based inclusive
                 let start_1based = block.start + 1;
                 let end_1based = block.end;
-                
+
                 if start_1based == end_1based {
                     writer.write_all(format!("{}:{}\n", name, start_1based).as_bytes())?;
                 } else {
-                    writer.write_all(format!("{}:{}-{}\n", name, start_1based, end_1based).as_bytes())?;
+                    writer.write_all(
+                        format!("{}:{}-{}\n", name, start_1based, end_1based).as_bytes(),
+                    )?;
                 }
             }
         }

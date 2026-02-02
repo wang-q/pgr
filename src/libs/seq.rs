@@ -44,8 +44,8 @@ pub fn is_fq<P: AsRef<Path>>(path: P) -> bool {
 mod tests {
     use super::*;
     use flate2::write::GzEncoder;
-    use tempfile::tempdir;
     use std::io::Write;
+    use tempfile::tempdir;
 
     #[test]
     fn test_is_fq_plain_text() {

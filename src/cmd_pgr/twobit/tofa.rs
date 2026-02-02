@@ -1,4 +1,4 @@
-use clap::{Arg, ArgAction, ArgMatches, Command, value_parser};
+use clap::{value_parser, Arg, ArgAction, ArgMatches, Command};
 use pgr::libs::twobit::TwoBitFile;
 use std::io::Write;
 
@@ -62,9 +62,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let names = tb.get_sequence_names();
     for name in names {
         let seq = tb.read_sequence(&name, None, None, no_mask)?;
-        
+
         writeln!(writer, ">{}", name)?;
-        
+
         if line_width == 0 {
             writeln!(writer, "{}", seq)?;
         } else {

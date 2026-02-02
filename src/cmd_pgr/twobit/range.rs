@@ -129,7 +129,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         let header = if *rg.start() == 0 {
             rg.to_string()
         } else {
-            // Reconstruct range string with actual coordinates if needed, 
+            // Reconstruct range string with actual coordinates if needed,
             // but rg.to_string() usually gives what we want "chr:start-end"
             // If strand is -, intspan might output "chr(-):start-end"
             rg.to_string()
@@ -141,4 +141,3 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     Ok(())
 }
-

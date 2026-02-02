@@ -408,11 +408,11 @@ ACGT
     cmd.assert().success();
 
     let output = std::fs::read_to_string(&output_path)?;
-    
+
     // Check for expected FASTA headers and sequences
     assert!(output.contains(">target.chr1(+):11-14"));
     assert!(output.contains(">query.chr2(+):21-24"));
-    
+
     Ok(())
 }
 

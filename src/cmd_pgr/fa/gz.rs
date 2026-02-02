@@ -106,7 +106,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             return Err(anyhow::anyhow!("Input file not found: {}", infile));
         }
         if !is_bgzf(infile) {
-            return Err(anyhow::anyhow!("Input file is not a valid BGZF file: {}", infile));
+            return Err(anyhow::anyhow!(
+                "Input file is not a valid BGZF file: {}",
+                infile
+            ));
         }
         build_gzi_index(infile)?;
         return Ok(());
@@ -145,13 +148,13 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         std::fs::File::create(&outfile).unwrap(),
     ));
 
-    let mut builder = bgzf::io::multithreaded_writer::Builder::default()
-        .set_worker_count(opt_parallel);
+    let mut builder =
+        bgzf::io::multithreaded_writer::Builder::default().set_worker_count(opt_parallel);
 
     if compress_level >= 0 && compress_level <= 9 {
         use noodles_bgzf::io::writer::CompressionLevel;
-        builder = builder
-            .set_compression_level(CompressionLevel::new(compress_level as u8).unwrap());
+        builder =
+            builder.set_compression_level(CompressionLevel::new(compress_level as u8).unwrap());
     }
 
     let mut writer = builder.build_from_writer(inner_writer);
@@ -199,7 +202,7 @@ fn build_gzi_index(path: &str) -> anyhow::Result<()> {
     loop {
         // Seek to start of current block
         file.seek(std::io::SeekFrom::Start(compressed_offset))?;
-        
+
         // 1. Read fixed header (12 bytes)
         // [0-1]   ID1, ID2: 0x1f, 0x8b (GZIP magic)
         // [2]     CM: 8 (Deflate)
@@ -210,7 +213,7 @@ fn build_gzi_index(path: &str) -> anyhow::Result<()> {
         // [10-11] XLEN: Length of extra fields
         let mut header_fixed = [0u8; 12];
         match file.read_exact(&mut header_fixed) {
-            Ok(_) => {},
+            Ok(_) => {}
             Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => break, // EOF reached cleanly
             Err(e) => return Err(e.into()),
         }
@@ -221,17 +224,17 @@ fn build_gzi_index(path: &str) -> anyhow::Result<()> {
         if header_fixed[0] != 0x1f || header_fixed[1] != 0x8b {
             break; // Not a GZIP block
         }
-        
+
         // Verify BGZF flag (FEXTRA = 4)
         let flg = header_fixed[3];
         if (flg & 4) == 0 {
-             break; // Standard GZIP, not BGZF
+            break; // Standard GZIP, not BGZF
         }
 
         // Get Extra Field Length (XLEN)
         let xlen = u16::from_le_bytes([header_fixed[10], header_fixed[11]]) as u64;
         if xlen == 0 {
-             break; // Should not happen in valid BGZF
+            break; // Should not happen in valid BGZF
         }
 
         // 2. Read Extra Fields
@@ -243,26 +246,29 @@ fn build_gzi_index(path: &str) -> anyhow::Result<()> {
         let mut bsize = 0u16;
         let mut cursor = 0;
         let mut found_bc = false;
-        
+
         while cursor + 4 <= extra.len() {
-             let si1 = extra[cursor];
-             let si2 = extra[cursor+1];
-             let slen = u16::from_le_bytes([extra[cursor+2], extra[cursor+3]]);
-             
-             // BGZF block size is stored in 'BC' subfield with SLEN=2
-             if si1 == b'B' && si2 == b'C' && slen == 2 {
-                 if cursor + 6 <= extra.len() {
-                     bsize = u16::from_le_bytes([extra[cursor+4], extra[cursor+5]]);
-                     found_bc = true;
-                 }
-                 break;
-             }
-             // Move to next subfield
-             cursor += 4 + slen as usize;
+            let si1 = extra[cursor];
+            let si2 = extra[cursor + 1];
+            let slen = u16::from_le_bytes([extra[cursor + 2], extra[cursor + 3]]);
+
+            // BGZF block size is stored in 'BC' subfield with SLEN=2
+            if si1 == b'B' && si2 == b'C' && slen == 2 {
+                if cursor + 6 <= extra.len() {
+                    bsize = u16::from_le_bytes([extra[cursor + 4], extra[cursor + 5]]);
+                    found_bc = true;
+                }
+                break;
+            }
+            // Move to next subfield
+            cursor += 4 + slen as usize;
         }
 
         if !found_bc {
-            return Err(anyhow::anyhow!("Missing BC subfield in BGZF block at offset {}", compressed_offset));
+            return Err(anyhow::anyhow!(
+                "Missing BC subfield in BGZF block at offset {}",
+                compressed_offset
+            ));
         }
 
         // BSIZE is total block size - 1
@@ -287,7 +293,7 @@ fn build_gzi_index(path: &str) -> anyhow::Result<()> {
         compressed_offset += block_size;
         uncompressed_offset += isize;
     }
-    
+
     // Write the GZI index
     let index = bgzf::gzi::Index::from(index_data);
     let index_path = format!("{}.gzi", path);

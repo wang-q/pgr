@@ -37,7 +37,8 @@ impl Blocks {
             Bound::Unbounded => Bound::Unbounded,
         };
 
-        self.0.iter()
+        self.0
+            .iter()
             // Assume blocks are sorted
             .skip_while(move |block| block.end <= start)
             .take_while(move |block| match end {
@@ -74,7 +75,7 @@ impl Blocks {
         let mut n_blocks_vec = Vec::new();
         let mut mask_blocks_vec = Vec::new();
         let mut packed_dna = Vec::with_capacity((len + 3) / 4);
-        
+
         // Temporary buffer for current byte construction
         let mut current_byte = 0u8;
         let mut bit_offset = 6; // Starts at 6 (highest bits), then 4, 2, 0
@@ -99,9 +100,9 @@ impl Blocks {
             }
 
             // Handle Mask-blocks (Soft mask - lowercase)
-            // Note: Ns are usually not counted as soft-mask in UCSC, 
-            // but if they are lowercase 'n', they might be? 
-            // twoBit.c: "lower-case characters are masked". 
+            // Note: Ns are usually not counted as soft-mask in UCSC,
+            // but if they are lowercase 'n', they might be?
+            // twoBit.c: "lower-case characters are masked".
             // faToTwoBit.c: unknownToN converts to 'N' or 'n' based on case.
             // But usually N-mask takes precedence or is separate.
             // Let's stick to simple logic: if it's lowercase, it's a mask block.
@@ -119,7 +120,7 @@ impl Blocks {
 
             // Pack DNA
             // T=00, C=01, A=10, G=11
-            // N is treated as T (00) usually, or C? 
+            // N is treated as T (00) usually, or C?
             // UCSC twoBitFromDnaSeq: val = ntVal[c]
             // We need a map. T/t/N/n -> ?
             // Usually arbitrary for N since it's masked. Let's use T (00).
@@ -155,7 +156,12 @@ impl Blocks {
             packed_dna.push(current_byte);
         }
 
-        (packed_dna, Blocks(n_blocks_vec), Blocks(mask_blocks_vec), len as u32)
+        (
+            packed_dna,
+            Blocks(n_blocks_vec),
+            Blocks(mask_blocks_vec),
+            len as u32,
+        )
     }
 }
 
@@ -172,16 +178,17 @@ impl<W: std::io::Write> TwoBitWriter<W> {
         // 1. Write Header
         self.writer.write_all(&TWOBIT_MAGIC.to_ne_bytes())?;
         self.writer.write_all(&1u32.to_ne_bytes())?; // Version 1
-        self.writer.write_all(&(sequences.len() as u32).to_ne_bytes())?; // SeqCount
+        self.writer
+            .write_all(&(sequences.len() as u32).to_ne_bytes())?; // SeqCount
         self.writer.write_all(&0u32.to_ne_bytes())?; // Reserved
 
         // 2. Calculate offsets and Write Index
         // We need to know where each record starts.
         // Header is 16 bytes.
         // Index entry: NameLen(1) + Name(N) + Offset(8)
-        
+
         let mut current_offset = 16u64; // Start after header? No, start of file is 0.
-        // Index starts at 16.
+                                        // Index starts at 16.
         for (name, _) in sequences {
             current_offset += 1 + name.len() as u64 + 8;
         }
@@ -205,12 +212,12 @@ impl<W: std::io::Write> TwoBitWriter<W> {
 
             // Calculate next offset
             // Record overhead:
-            // size(4) + nBlockCount(4) + nStarts(...) + nSizes(...) + 
-            // maskBlockCount(4) + maskStarts(...) + maskSizes(...) + 
+            // size(4) + nBlockCount(4) + nStarts(...) + nSizes(...) +
+            // maskBlockCount(4) + maskStarts(...) + maskSizes(...) +
             // reserved(4) + packedDna(...)
-            
+
             let (_, n_blocks, mask_blocks, _) = Blocks::from_dna(dna, do_mask);
-            
+
             let n_count = n_blocks.0.len() as u64;
             let mask_count = mask_blocks.0.len() as u64;
             let packed_len = ((dna.len() + 3) / 4) as u64;
@@ -235,21 +242,25 @@ impl<W: std::io::Write> TwoBitWriter<W> {
             self.writer.write_all(&dna_size.to_ne_bytes())?;
 
             // Write N Blocks
-            self.writer.write_all(&(n_blocks.0.len() as u32).to_ne_bytes())?;
+            self.writer
+                .write_all(&(n_blocks.0.len() as u32).to_ne_bytes())?;
             for block in &n_blocks.0 {
                 self.writer.write_all(&(block.start as u32).to_ne_bytes())?;
             }
             for block in &n_blocks.0 {
-                self.writer.write_all(&((block.end - block.start) as u32).to_ne_bytes())?;
+                self.writer
+                    .write_all(&((block.end - block.start) as u32).to_ne_bytes())?;
             }
 
             // Write Mask Blocks
-            self.writer.write_all(&(mask_blocks.0.len() as u32).to_ne_bytes())?;
+            self.writer
+                .write_all(&(mask_blocks.0.len() as u32).to_ne_bytes())?;
             for block in &mask_blocks.0 {
                 self.writer.write_all(&(block.start as u32).to_ne_bytes())?;
             }
             for block in &mask_blocks.0 {
-                self.writer.write_all(&((block.end - block.start) as u32).to_ne_bytes())?;
+                self.writer
+                    .write_all(&((block.end - block.start) as u32).to_ne_bytes())?;
             }
 
             // Reserved
@@ -306,7 +317,10 @@ impl<R: Read + Seek> TwoBitFile<R> {
         // Read version
         let version = read_u32(&mut reader, is_swapped)?;
         if version != 0 && version != 1 {
-            return Err(anyhow!("Unsupported 2bit version: {} (only version 0 and 1 are supported)", version));
+            return Err(anyhow!(
+                "Unsupported 2bit version: {} (only version 0 and 1 are supported)",
+                version
+            ));
         }
 
         // Read seqCount
@@ -472,9 +486,9 @@ impl<R: Read + Seek> TwoBitFile<R> {
         let dna_size = read_u32(&mut self.reader, self.is_swapped)? as usize;
 
         let n_blocks = self.read_blocks()?;
-        
+
         let n_count: usize = n_blocks.iter().map(|b| b.end - b.start).sum();
-        
+
         if n_count > dna_size {
             return Err(anyhow!("N blocks size {} > dna size {}", n_count, dna_size));
         }
@@ -523,16 +537,16 @@ mod tests {
 
         // Header (16 bytes)
         data.extend_from_slice(&TWOBIT_MAGIC.to_ne_bytes()); // Magic
-        data.extend_from_slice(&1u32.to_ne_bytes());         // Version 1
-        data.extend_from_slice(&1u32.to_ne_bytes());         // SeqCount 1
-        data.extend_from_slice(&0u32.to_ne_bytes());         // Reserved
+        data.extend_from_slice(&1u32.to_ne_bytes()); // Version 1
+        data.extend_from_slice(&1u32.to_ne_bytes()); // SeqCount 1
+        data.extend_from_slice(&0u32.to_ne_bytes()); // Reserved
 
         // Index
         // Name: "seq1"
         let name = "seq1";
         data.push(name.len() as u8);
         data.extend_from_slice(name.as_bytes());
-        
+
         // Offset calculation:
         // Header (16) + NameLen(1) + Name(4) + Offset(8) = 29 bytes
         let offset = 29u64;
@@ -543,7 +557,7 @@ mod tests {
         // T=00, C=01, A=10, G=11 -> 00011011 = 0x1B
         let dna_size = 4u32;
         data.extend_from_slice(&dna_size.to_ne_bytes());
-        
+
         // N Blocks
         data.extend_from_slice(&0u32.to_ne_bytes()); // Count
 
@@ -566,7 +580,7 @@ mod tests {
         let mut tb = TwoBitFile::new(cursor)?;
 
         assert_eq!(tb.version, 1);
-        
+
         let names = tb.get_sequence_names();
         assert_eq!(names, vec!["seq1"]);
 
@@ -582,16 +596,16 @@ mod tests {
 
         // Header (16 bytes)
         data.extend_from_slice(&TWOBIT_MAGIC.to_ne_bytes()); // Magic
-        data.extend_from_slice(&0u32.to_ne_bytes());         // Version 0
-        data.extend_from_slice(&1u32.to_ne_bytes());         // SeqCount 1
-        data.extend_from_slice(&0u32.to_ne_bytes());         // Reserved
+        data.extend_from_slice(&0u32.to_ne_bytes()); // Version 0
+        data.extend_from_slice(&1u32.to_ne_bytes()); // SeqCount 1
+        data.extend_from_slice(&0u32.to_ne_bytes()); // Reserved
 
         // Index
         // Name: "seq1"
         let name = "seq1";
         data.push(name.len() as u8);
         data.extend_from_slice(name.as_bytes());
-        
+
         // Offset calculation:
         // Header (16) + NameLen(1) + Name(4) + Offset(4) = 25 bytes
         let offset = 25u32;
@@ -602,7 +616,7 @@ mod tests {
         // T=00, C=01, A=10, G=11 -> 00011011 = 0x1B
         let dna_size = 4u32;
         data.extend_from_slice(&dna_size.to_ne_bytes());
-        
+
         // N Blocks
         data.extend_from_slice(&0u32.to_ne_bytes()); // Count
 
@@ -625,7 +639,7 @@ mod tests {
         let mut tb = TwoBitFile::new(cursor)?;
 
         assert_eq!(tb.version, 0);
-        
+
         let names = tb.get_sequence_names();
         assert_eq!(names, vec!["seq1"]);
 
@@ -642,12 +656,15 @@ mod tests {
         let mut data = Vec::new();
         data.extend_from_slice(&TWOBIT_MAGIC.to_ne_bytes());
         data.extend_from_slice(&2u32.to_ne_bytes()); // Version 2
-        // ... rest doesn't matter as it fails fast
+                                                     // ... rest doesn't matter as it fails fast
 
         let cursor = Cursor::new(data);
         let res = TwoBitFile::new(cursor);
         assert!(res.is_err());
-        assert!(res.unwrap_err().to_string().contains("Unsupported 2bit version: 2"));
+        assert!(res
+            .unwrap_err()
+            .to_string()
+            .contains("Unsupported 2bit version: 2"));
     }
 
     #[test]
@@ -656,42 +673,39 @@ mod tests {
         // a=2(10), c=1(01), G=3(11), T=0(00), N=0(00), n=0(00)
         // 10 01 11 00 -> 0x9C
         // 00 00 -> 0x00
-        
+
         let (packed, n_blocks, mask_blocks, size) = Blocks::from_dna(dna, true);
         assert_eq!(size, 6);
         assert_eq!(packed, vec![0x9C, 0x00]);
-        
+
         // N blocks: 4..6 (N, n)
         assert_eq!(n_blocks.0, vec![4..6]);
-        
+
         // Mask blocks: 0..2 (a, c), 5..6 (n)
         assert_eq!(mask_blocks.0, vec![0..2, 5..6]);
     }
 
     #[test]
     fn test_write_read_roundtrip() -> Result<()> {
-        let seqs = vec![
-            ("seq1", "TCAG"),
-            ("seq2", "aaNgg"), 
-        ];
-        
+        let seqs = vec![("seq1", "TCAG"), ("seq2", "aaNgg")];
+
         let mut buffer = Cursor::new(Vec::new());
         let mut writer = TwoBitWriter::new(&mut buffer);
         writer.write(&seqs, true)?;
-        
+
         buffer.set_position(0);
         let mut reader = TwoBitFile::new(buffer)?;
-        
+
         let mut names = reader.get_sequence_names();
         names.sort();
         assert_eq!(names, vec!["seq1", "seq2"]);
-        
+
         let s1 = reader.read_sequence("seq1", None, None, false)?;
         assert_eq!(s1, "TCAG");
-        
+
         let s2 = reader.read_sequence("seq2", None, None, false)?;
         assert_eq!(s2, "aaNgg");
-        
+
         Ok(())
     }
 }

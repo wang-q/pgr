@@ -184,7 +184,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                     split_writers.clear(); // Close previous
 
                     let file = File::create(&path)?;
-                    let mut w = MafWriter::new(Box::new(BufWriter::new(file)) as Box<dyn std::io::Write>);
+                    let mut w =
+                        MafWriter::new(Box::new(BufWriter::new(file)) as Box<dyn std::io::Write>);
                     w.write_header("blastz")?;
                     split_writers.insert(axt.t_name.clone(), w);
                 }

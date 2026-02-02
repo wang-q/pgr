@@ -1,8 +1,7 @@
 use assert_cmd::Command;
+use predicates::prelude::*;
 use std::fs;
 use tempfile::TempDir;
-use predicates::prelude::*;
-
 
 #[test]
 fn command_invalid() -> anyhow::Result<()> {
@@ -57,7 +56,11 @@ fn command_fa_size() -> anyhow::Result<()> {
 #[test]
 fn command_fa_size_file() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("pgr")?;
-    let output = cmd.arg("fa").arg("size").arg("tests/fasta/ufasta.fa").output()?;
+    let output = cmd
+        .arg("fa")
+        .arg("size")
+        .arg("tests/fasta/ufasta.fa")
+        .output()?;
     let stdout = String::from_utf8(output.stdout)?;
 
     assert_eq!(stdout.lines().count(), 50);
@@ -98,13 +101,14 @@ fn command_fa_size_gz() -> anyhow::Result<()> {
 fn command_fa_size_no_ns() -> anyhow::Result<()> {
     let temp = TempDir::new()?;
     let input = temp.path().join("test_nons.fa");
-    
+
     // seq1: 12 bases, 4 Ns (ACGT NNNN ACGT) -> 8 bases
     // seq2: 4 bases, 0 Ns -> 4 bases
     fs::write(&input, ">seq1\nACGTNNNNACGT\n>seq2\nACGT\n")?;
 
     let mut cmd = Command::cargo_bin("pgr")?;
-    let output = cmd.arg("fa")
+    let output = cmd
+        .arg("fa")
         .arg("size")
         .arg(&input)
         .arg("--no-ns")
@@ -120,7 +124,11 @@ fn command_fa_size_no_ns() -> anyhow::Result<()> {
 #[test]
 fn command_masked() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("pgr")?;
-    let output = cmd.arg("fa").arg("masked").arg("tests/fasta/ufasta.fa").output()?;
+    let output = cmd
+        .arg("fa")
+        .arg("masked")
+        .arg("tests/fasta/ufasta.fa")
+        .output()?;
     let stdout = String::from_utf8(output.stdout)?;
 
     assert!(stdout.contains("read46:3-4"), "read46");
@@ -241,12 +249,15 @@ fn command_fa_n50_stats() -> anyhow::Result<()> {
     Ok(())
 }
 
-
 #[test]
 fn command_fa_n50_comprehensive() -> anyhow::Result<()> {
     // display header
     let mut cmd = Command::cargo_bin("pgr")?;
-    let output = cmd.arg("fa").arg("n50").arg("tests/fasta/ufasta.fa").output()?;
+    let output = cmd
+        .arg("fa")
+        .arg("n50")
+        .arg("tests/fasta/ufasta.fa")
+        .output()?;
     let stdout = String::from_utf8(output.stdout)?;
 
     assert_eq!(stdout.lines().count(), 1);
@@ -335,7 +346,6 @@ fn command_fa_n50_comprehensive() -> anyhow::Result<()> {
 
     Ok(())
 }
-
 
 // faops filter -l 0 -a 10 -z 50 tests/fasta/ufasta.fa stdout
 // faops filter -l 0 -a 1 -u <(cat tests/fasta/ufasta.fa tests/fasta/ufasta.fa) stdout
@@ -433,7 +443,11 @@ fn command_filter_fmt() -> anyhow::Result<()> {
 #[test]
 fn command_count() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("pgr")?;
-    let output = cmd.arg("fa").arg("count").arg("tests/fasta/ufasta.fa").output()?;
+    let output = cmd
+        .arg("fa")
+        .arg("count")
+        .arg("tests/fasta/ufasta.fa")
+        .output()?;
     let stdout = String::from_utf8(output.stdout)?;
 
     assert!(stdout.contains("read45\t0\t0"), "empty");
@@ -441,7 +455,6 @@ fn command_count() -> anyhow::Result<()> {
 
     Ok(())
 }
-
 
 #[test]
 fn command_one() -> anyhow::Result<()> {
@@ -563,7 +576,11 @@ fn command_replace() -> anyhow::Result<()> {
 #[test]
 fn command_rc() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("pgr")?;
-    let output = cmd.arg("fa").arg("rc").arg("tests/fasta/ufasta.fa").output()?;
+    let output = cmd
+        .arg("fa")
+        .arg("rc")
+        .arg("tests/fasta/ufasta.fa")
+        .output()?;
     let stdout = String::from_utf8(output.stdout)?;
 
     assert!(stdout.contains("GgacTgcggCTagAA"), "read46");
@@ -666,7 +683,6 @@ fn command_dedup() -> anyhow::Result<()> {
     Ok(())
 }
 
-
 #[test]
 fn command_mask() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("pgr")?;
@@ -696,7 +712,6 @@ fn command_mask() -> anyhow::Result<()> {
 
     Ok(())
 }
-
 
 #[test]
 fn command_sixframe() -> anyhow::Result<()> {
@@ -755,4 +770,3 @@ fn command_sixframe() -> anyhow::Result<()> {
 
     Ok(())
 }
-

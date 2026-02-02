@@ -94,14 +94,14 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 }
 
                 let mut psl = blocks_to_psl(&blocks, t_size, q_size, &t_name, &q_name, &strand);
-                
+
                 if let Some(ts) = target_strand {
                     // Append target strand if provided
                     if psl.strand.len() == 1 {
-                         psl.strand.push(ts.chars().next().unwrap_or('+'));
+                        psl.strand.push(ts.chars().next().unwrap_or('+'));
                     }
                 }
-                
+
                 psl.write_to(&mut writer)?;
             }
             _ => {}

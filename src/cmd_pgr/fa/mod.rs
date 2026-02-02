@@ -10,10 +10,10 @@ pub mod order;
 pub mod range;
 pub mod rc;
 pub mod replace;
+pub mod sixframe;
 pub mod size;
 pub mod some;
 pub mod split;
-pub mod sixframe;
 pub mod to2bit;
 
 pub fn make_subcommand() -> clap::Command {

@@ -1,8 +1,8 @@
 use clap::*;
 
 pub mod sort;
-pub mod tomaf;
 pub mod tofas;
+pub mod tomaf;
 pub mod topsl;
 
 pub fn make_subcommand() -> Command {

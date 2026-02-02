@@ -70,9 +70,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     // Load list
     //----------------------------
-    let set_list: HashSet<String> = intspan::read_first_column(list_file)
-        .into_iter()
-        .collect();
+    let set_list: HashSet<String> = intspan::read_first_column(list_file).into_iter().collect();
 
     //----------------------------
     // Process
@@ -86,7 +84,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         if set_list.contains(&name) != is_invert {
             // Read sequence with masking (no_mask = false)
             let seq = tb.read_sequence(&name, None, None, false)?;
-            
+
             // Write FASTA
             // Matches pgr fa some behavior (single line sequence)
             write!(writer, ">{}\n{}\n", name, seq)?;
