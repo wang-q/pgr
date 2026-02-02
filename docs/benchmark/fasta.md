@@ -88,11 +88,11 @@ cat size.md.tmp
 ```shell
 hyperfine --warmup 10 --export-markdown size.md.tmp \
     -n "pgr fa size .fa.gz" \
-    'pgr fa size tests/pgr/mg1655.fa.gz > /dev/null' \
+    'pgr fa size tests/genome/mg1655.fa.gz > /dev/null' \
     -n "faops size .fa.gz" \
-    'faops size tests/pgr/mg1655.fa.gz > /dev/null' \
+    'faops size tests/genome/mg1655.fa.gz > /dev/null' \
     -n "pgr 2bit size .2bit" \
-    'pgr 2bit size tests/pgr/mg1655.2bit > /dev/null'
+    'pgr 2bit size tests/genome/mg1655.2bit > /dev/null'
 
 cat size.md.tmp
 
@@ -176,4 +176,4 @@ The `pgr` implementation demonstrates competitive performance compared to the hi
 
 *   **Small datasets**: `pgr` shows a slight overhead (1.1x - 1.4x). This is likely due to the startup time of the larger executable (~3MB vs ~400KB for `faops`) and the initialization of Rust's runtime and command-line parser.
 *   **Larger compressed datasets**: `pgr` significantly outperforms `faops` (e.g., ~2x faster for `mg1655.fa.gz` and ~1.6x faster for `mg1655.pro.fa.gz`), highlighting the efficiency of Rust's Gzip handling and I/O.
-*   **2bit format**: `pgr` provides extremely fast random access and metadata retrieval.
+*   **2bit format**: `pgr` provides extremely fast metadata retrieval.
