@@ -427,6 +427,52 @@ impl<R: Read + Seek> TwoBitFile<R> {
 
         Ok(String::from_utf8(seq_vec).unwrap())
     }
+
+    pub fn get_sequence_len(&mut self, name: &str) -> Result<usize> {
+        let offset = *self
+            .sequence_offsets
+            .get(name)
+            .ok_or_else(|| anyhow!("Sequence not found: {}", name))?;
+
+        self.reader.seek(SeekFrom::Start(offset))?;
+        let dna_size = read_u32(&mut self.reader, self.is_swapped)? as usize;
+        Ok(dna_size)
+    }
+
+    pub fn get_sequence_blocks(&mut self, name: &str) -> Result<(Blocks, Blocks)> {
+        let offset = *self
+            .sequence_offsets
+            .get(name)
+            .ok_or_else(|| anyhow!("Sequence not found: {}", name))?;
+
+        self.reader.seek(SeekFrom::Start(offset))?;
+        let _dna_size = read_u32(&mut self.reader, self.is_swapped)?;
+
+        let n_blocks = self.read_blocks()?;
+        let mask_blocks = self.read_blocks()?;
+
+        Ok((n_blocks, mask_blocks))
+    }
+
+    pub fn get_sequence_len_no_ns(&mut self, name: &str) -> Result<usize> {
+        let offset = *self
+            .sequence_offsets
+            .get(name)
+            .ok_or_else(|| anyhow!("Sequence not found: {}", name))?;
+
+        self.reader.seek(SeekFrom::Start(offset))?;
+        let dna_size = read_u32(&mut self.reader, self.is_swapped)? as usize;
+
+        let n_blocks = self.read_blocks()?;
+        
+        let n_count: usize = n_blocks.iter().map(|b| b.end - b.start).sum();
+        
+        if n_count > dna_size {
+            return Err(anyhow!("N blocks size {} > dna size {}", n_count, dna_size));
+        }
+
+        Ok(dna_size - n_count)
+    }
 }
 
 fn read_u32<R: Read>(reader: &mut R, is_swapped: bool) -> Result<u32> {

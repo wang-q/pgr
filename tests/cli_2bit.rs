@@ -251,3 +251,93 @@ fn test_2bit_tofa_mask() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_2bit_size() -> anyhow::Result<()> {
+    let temp = TempDir::new()?;
+    let input = temp.path().join("test.fa");
+    let twobit = temp.path().join("test.2bit");
+    
+    fs::write(&input, ">seq1\nACGT\n>seq2\nNNNN\n")?;
+    
+    // Create 2bit file first
+    let mut cmd = Command::cargo_bin("pgr")?;
+    cmd.arg("fa")
+        .arg("to2bit")
+        .arg(&input)
+        .arg("-o")
+        .arg(&twobit);
+    cmd.assert().success();
+    
+    // Run 2bit size
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd.arg("2bit")
+        .arg("size")
+        .arg(&twobit)
+        .output()?;
+        
+    let stdout = String::from_utf8(output.stdout)?;
+    assert!(stdout.contains("seq1\t4"));
+    assert!(stdout.contains("seq2\t4"));
+
+    Ok(())
+}
+
+#[test]
+fn test_2bit_size_flags() -> anyhow::Result<()> {
+    let temp = TempDir::new()?;
+    let input = temp.path().join("test_flags.fa");
+    let twobit = temp.path().join("test_flags.2bit");
+    
+    // seq1: 12 bases, Ns at 4-8 (4 Ns). ACGT NNNN ACGT. Size 12. No-Ns: 8.
+    // seq2: 4 bases. acgt. Size 4. No-Ns: 4. Mask: 0-4.
+    fs::write(&input, ">seq1\nACGTNNNNACGT\n>seq2\nacgt\n")?;
+    
+    // Create 2bit
+    let mut cmd = Command::cargo_bin("pgr")?;
+    cmd.arg("fa")
+        .arg("to2bit")
+        .arg(&input)
+        .arg("-o")
+        .arg(&twobit);
+    cmd.assert().success();
+    
+    // Test --no-ns
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd.arg("2bit")
+        .arg("size")
+        .arg(&twobit)
+        .arg("--no-ns")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+    assert!(stdout.contains("seq1\t8"));
+    assert!(stdout.contains("seq2\t4"));
+
+    // Test --n-bed
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd.arg("2bit")
+        .arg("size")
+        .arg(&twobit)
+        .arg("--n-bed")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+    // seq1 has Ns at 4-8
+    assert!(stdout.contains("seq1\t4\t8"));
+    // seq2 has no Ns, should not appear
+    assert!(!stdout.contains("seq2"));
+
+    // Test --mask-bed
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd.arg("2bit")
+        .arg("size")
+        .arg(&twobit)
+        .arg("--mask-bed")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+    // seq1 has no mask
+    assert!(!stdout.contains("seq1"));
+    // seq2 is all mask (lowercase) 0-4
+    assert!(stdout.contains("seq2\t0\t4"));
+
+    Ok(())
+}
