@@ -75,13 +75,13 @@ cat size.md.tmp
 
 ```
 
-| Command | Mean [ms] | Min [ms] | Max [ms] | Relative |
-|:---|---:|---:|---:|---:|
-| `pgr fa size .fa` | 2.9 ± 0.3 | 2.4 | 4.7 | 1.19 ± 0.21 |
-| `faops size .fa` | 2.6 ± 0.3 | 2.0 | 6.4 | 1.07 ± 0.18 |
-| `pgr fa size .fa.gz` | 3.0 ± 0.3 | 2.5 | 4.8 | 1.23 ± 0.20 |
-| `faops size .fa.gz` | 2.4 ± 0.3 | 1.8 | 4.4 | 1.00 |
-| `pgr 2bit size .2bit` | 10.7 ± 0.7 | 9.6 | 14.3 | 4.41 ± 0.63 |
+| Command               | Mean [ms]  | Min [ms] | Max [ms] | Relative    |
+|:----------------------|-----------:|---------:|---------:|------------:|
+| `pgr fa size .fa`     | 2.9 ± 0.3  | 2.4      | 4.7      | 1.19 ± 0.21 |
+| `faops size .fa`      | 2.6 ± 0.3  | 2.0      | 6.4      | 1.07 ± 0.18 |
+| `pgr fa size .fa.gz`  | 3.0 ± 0.3  | 2.5      | 4.8      | 1.23 ± 0.20 |
+| `faops size .fa.gz`   | 2.4 ± 0.3  | 1.8      | 4.4      | 1.00        |
+| `pgr 2bit size .2bit` | 10.7 ± 0.7 | 9.6      | 14.3     | 4.41 ± 0.63 |
 
 * mg1655
 
@@ -98,11 +98,11 @@ cat size.md.tmp
 
 ```
 
-| Command | Mean [ms] | Min [ms] | Max [ms] | Relative |
-|:---|---:|---:|---:|---:|
-| `pgr fa size .fa.gz` | 19.0 ± 0.6 | 17.8 | 21.8 | 6.87 ± 0.64 |
-| `faops size .fa.gz` | 36.7 ± 0.7 | 35.6 | 40.4 | 13.23 ± 1.19 |
-| `pgr 2bit size .2bit` | 2.8 ± 0.2 | 2.4 | 4.2 | 1.00 |
+| Command               | Mean [ms]  | Min [ms] | Max [ms] | Relative     |
+|:----------------------|-----------:|---------:|---------:|-------------:|
+| `pgr fa size .fa.gz`  | 19.0 ± 0.6 | 17.8     | 21.8     | 6.87 ± 0.64  |
+| `faops size .fa.gz`   | 36.7 ± 0.7 | 35.6     | 40.4     | 13.23 ± 1.19 |
+| `pgr 2bit size .2bit` | 2.8 ± 0.2  | 2.4      | 4.2      | 1.00         |
 
 * mg1655 protein
 
@@ -117,10 +117,10 @@ cat size.md.tmp
 
 ```
 
-| Command | Mean [ms] | Min [ms] | Max [ms] | Relative |
-|:---|---:|---:|---:|---:|
-| `pgr fa size .pro.fa.gz` | 11.7 ± 0.5 | 10.8 | 14.3 | 1.00 |
-| `faops size .pro.fa.gz` | 19.1 ± 0.6 | 18.2 | 24.6 | 1.63 ± 0.09 |
+| Command                   | Mean [ms]  | Min [ms] | Max [ms] | Relative    |
+|:--------------------------|-----------:|---------:|---------:|------------:|
+| `pgr fa size .pro.fa.gz`  | 11.7 ± 0.5 | 10.8     | 14.3     | 1.00        |
+| `faops size .pro.fa.gz`   | 19.1 ± 0.6 | 18.2     | 24.6     | 1.63 ± 0.09 |
 
 ## `pgr fa some`
 
@@ -130,21 +130,27 @@ hyperfine --warmup 10 --export-markdown some.md.tmp \
     'pgr fa some tests/fasta/ufasta.fa.gz tests/fasta/list.txt > /dev/null' \
     -n "faops some" \
     'faops some tests/fasta/ufasta.fa.gz tests/fasta/list.txt stdout > /dev/null' \
+    -n "pgr 2bit some" \
+    'pgr 2bit some tests/fasta/ufasta.2bit tests/fasta/list.txt > /dev/null' \
     -n "pgr fa some -i" \
     'pgr fa some -i tests/fasta/ufasta.fa.gz tests/fasta/list.txt > /dev/null' \
     -n "faops some -i" \
-    'faops some -i tests/fasta/ufasta.fa.gz tests/fasta/list.txt stdout > /dev/null'
+    'faops some -i tests/fasta/ufasta.fa.gz tests/fasta/list.txt stdout > /dev/null' \
+    -n "pgr 2bit some -i" \
+    'pgr 2bit some tests/fasta/ufasta.2bit tests/fasta/list.txt -i > /dev/null'
 
 cat some.md.tmp
 
 ```
 
-| Command | Mean [ms] | Min [ms] | Max [ms] | Relative |
-|:---|---:|---:|---:|---:|
-| `pgr fa some` | 4.1 ± 0.3 | 3.3 | 5.6 | 1.08 ± 0.14 |
-| `faops some` | 3.9 ± 0.4 | 3.3 | 5.4 | 1.04 ± 0.16 |
-| `pgr fa some -i` | 4.6 ± 0.5 | 3.6 | 8.1 | 1.21 ± 0.19 |
-| `faops some -i` | 3.8 ± 0.4 | 3.2 | 6.2 | 1.00 |
+| Command              | Mean [ms]  | Min [ms] | Max [ms] | Relative    |
+|:---------------------|-----------:|---------:|---------:|------------:|
+| `pgr fa some`        | 4.1 ± 0.3  | 3.6      | 5.9      | 1.15 ± 0.14 |
+| `faops some`         | 3.6 ± 0.3  | 2.8      | 5.0      | 1.00        |
+| `pgr 2bit some`      | 5.1 ± 0.4  | 4.0      | 6.8      | 1.42 ± 0.17 |
+| `pgr fa some -i`     | 4.3 ± 0.4  | 3.7      | 5.9      | 1.19 ± 0.16 |
+| `faops some -i`      | 3.6 ± 0.2  | 3.2      | 4.5      | 1.01 ± 0.12 |
+| `pgr 2bit some -i`   | 19.3 ± 0.7 | 18.2     | 23.7     | 5.41 ± 0.54 |
 
 ## `pgr fa n50`
 
@@ -163,12 +169,12 @@ cat n50.md.tmp
 
 ```
 
-| Command | Mean [ms] | Min [ms] | Max [ms] | Relative |
-|:---|---:|---:|---:|---:|
-| `pgr fa n50 .gz` | 3.0 ± 0.3 | 2.5 | 5.7 | 1.29 ± 0.19 |
-| `faops n50 .gz` | 2.4 ± 0.3 | 2.0 | 3.9 | 1.00 |
-| `pgr fa n50 -E -S -A` | 3.4 ± 0.2 | 3.0 | 5.0 | 1.44 ± 0.19 |
-| `faops n50 -E -S -A` | 2.4 ± 0.2 | 2.1 | 3.9 | 1.03 ± 0.15 |
+| Command                 | Mean [ms] | Min [ms] | Max [ms] | Relative    |
+|:------------------------|----------:|---------:|---------:|------------:|
+| `pgr fa n50 .gz`        | 3.0 ± 0.3 | 2.5      | 5.7      | 1.29 ± 0.19 |
+| `faops n50 .gz`         | 2.4 ± 0.3 | 2.0      | 3.9      | 1.00        |
+| `pgr fa n50 -E -S -A`   | 3.4 ± 0.2 | 3.0      | 5.0      | 1.44 ± 0.19 |
+| `faops n50 -E -S -A`    | 2.4 ± 0.2 | 2.1      | 3.9      | 1.03 ± 0.15 |
 
 ## Conclusion
 
