@@ -8,6 +8,7 @@ pub mod order;
 pub mod range;
 pub mod size;
 pub mod some;
+pub mod split;
 pub mod to2bit;
 
 pub fn make_subcommand() -> clap::Command {
@@ -29,6 +30,7 @@ pub fn make_subcommand() -> clap::Command {
         .subcommand(range::make_subcommand())
         .subcommand(size::make_subcommand())
         .subcommand(some::make_subcommand())
+        .subcommand(split::make_subcommand())
         .subcommand(to2bit::make_subcommand())
 }
 
@@ -44,6 +46,7 @@ pub fn execute(matches: &clap::ArgMatches) -> anyhow::Result<()> {
         Some(("range", sub_matches)) => range::execute(sub_matches),
         Some(("size", sub_matches)) => size::execute(sub_matches),
         Some(("some", sub_matches)) => some::execute(sub_matches),
+        Some(("split", sub_matches)) => split::execute(sub_matches),
         Some(("to2bit", sub_matches)) => to2bit::execute(sub_matches),
         _ => Ok(()),
     }

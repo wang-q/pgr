@@ -442,3 +442,26 @@ fn command_order() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn command_split_name() -> anyhow::Result<()> {
+    let tempdir = TempDir::new()?;
+    let tempdir_str = tempdir.path().to_str().unwrap();
+
+    let mut cmd = Command::cargo_bin("pgr")?;
+    cmd.arg("fa")
+        .arg("split")
+        .arg("name")
+        .arg("tests/fasta/ufasta.fa")
+        .arg("-o")
+        .arg(tempdir_str)
+        .assert()
+        .success()
+        .stdout(predicates::str::is_empty());
+
+    assert!(&tempdir.path().join("read0.fa").is_file());
+    assert!(!&tempdir.path().join("000.fa").exists());
+
+    tempdir.close()?;
+    Ok(())
+}
