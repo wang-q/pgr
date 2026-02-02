@@ -151,15 +151,18 @@ fn command_fa_gz_reindex() -> anyhow::Result<()> {
 #[test]
 fn command_fa_gz_reindex_fail_not_bgzf() -> anyhow::Result<()> {
     let temp = TempDir::new()?;
-    let infile = "tests/fasta/ufasta.fa"; // Normal FASTA, not BGZF
+    let infile_src = "tests/fasta/ufasta.fa";
+    let infile_dst = temp.path().join("ufasta.fa");
+    fs::copy(infile_src, &infile_dst)?;
 
     let mut cmd = Command::cargo_bin("pgr")?;
     cmd.arg("fa")
         .arg("gz")
-        .arg(infile)
+        .arg(&infile_dst)
         .arg("-r")
         .assert()
-        .failure(); // Should fail
+        .failure()
+        .stderr(predicate::str::contains("not a valid BGZF file"));
 
     Ok(())
 }
