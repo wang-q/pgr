@@ -3,6 +3,7 @@ pub mod filter;
 pub mod gz;
 pub mod masked;
 pub mod n50;
+pub mod one;
 pub mod range;
 pub mod size;
 pub mod some;
@@ -22,6 +23,7 @@ pub fn make_subcommand() -> clap::Command {
         .subcommand(gz::make_subcommand())
         .subcommand(masked::make_subcommand())
         .subcommand(n50::make_subcommand())
+        .subcommand(one::make_subcommand())
         .subcommand(range::make_subcommand())
         .subcommand(size::make_subcommand())
         .subcommand(some::make_subcommand())
@@ -35,6 +37,7 @@ pub fn execute(matches: &clap::ArgMatches) -> anyhow::Result<()> {
         Some(("gz", sub_matches)) => gz::execute(sub_matches),
         Some(("masked", sub_matches)) => masked::execute(sub_matches),
         Some(("n50", sub_matches)) => n50::execute(sub_matches),
+        Some(("one", sub_matches)) => one::execute(sub_matches),
         Some(("range", sub_matches)) => range::execute(sub_matches),
         Some(("size", sub_matches)) => size::execute(sub_matches),
         Some(("some", sub_matches)) => some::execute(sub_matches),
