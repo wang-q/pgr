@@ -20,6 +20,53 @@ fn command_fq_tofa() -> anyhow::Result<()> {
 }
 
 #[test]
+fn command_fq_interleave_coverage_gap() -> anyhow::Result<()> {
+    // 1. 1 file (FQ) -> Output FA
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("fq")
+        .arg("interleave")
+        .arg("tests/fastq/R1.fq.gz")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+    assert!(stdout.starts_with(">"));
+    assert!(stdout.contains("/1\n"));
+    assert!(stdout.contains("/2\n"));
+    assert!(!stdout.contains("\n+\n"));
+
+    // 2. 2 files (FQ) -> Output FA
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("fq")
+        .arg("interleave")
+        .arg("tests/fastq/R1.fq.gz")
+        .arg("tests/fastq/R2.fq.gz")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+    assert!(stdout.starts_with(">"));
+    assert!(stdout.contains("/1\n"));
+    assert!(stdout.contains("/2\n"));
+    assert!(!stdout.contains("\n+\n"));
+
+    // 3. 2 files (FA) -> Output FQ
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("fq")
+        .arg("interleave")
+        .arg("tests/fasta/ufasta.fa")
+        .arg("tests/fasta/ufasta.fa")
+        .arg("--fq")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+    assert!(stdout.starts_with("@"));
+    assert!(stdout.contains("\n+\n"));
+    // FA -> FQ fills quality with '!'
+    assert!(stdout.contains("!"));
+
+    Ok(())
+}
+
+#[test]
 fn command_fq_tofa_output() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("pgr")?;
     let input = "@SEQ_ID\nGATTTGGGGTTCAAAGCAGTATCGATCAAATAGTAAATCCATTTGTTCAACTCACAGTTT\n+\n!''*((((***+))%%%++)(%%%%).1***-+*''))**55CCF>>>>>>CCCCCCC65\n";
@@ -49,17 +96,10 @@ fn command_fq_tofa_r1() -> anyhow::Result<()> {
     let stdout = String::from_utf8(output.stdout)?;
 
     // Verify output format
-    assert_eq!(
-        stdout
-            .lines()
-            .into_iter()
-            .filter(|e| e.starts_with(">"))
-            .count(),
-        25
-    );
-    assert_eq!(stdout.lines().into_iter().filter(|e| *e == "").count(), 0);
-    assert_eq!(stdout.lines().into_iter().filter(|e| *e == "+").count(), 0);
-    assert_eq!(stdout.lines().into_iter().filter(|e| *e == "!").count(), 0);
+    assert_eq!(stdout.lines().filter(|e| e.starts_with(">")).count(), 25);
+    assert_eq!(stdout.lines().filter(|e| e.is_empty()).count(), 0);
+    assert_eq!(stdout.lines().filter(|e| *e == "+").count(), 0);
+    assert_eq!(stdout.lines().filter(|e| *e == "!").count(), 0);
 
     // Test file output
     let mut cmd = Command::cargo_bin("pgr")?;
@@ -76,14 +116,7 @@ fn command_fq_tofa_r1() -> anyhow::Result<()> {
 
     // Read and verify output file
     let output = std::fs::read_to_string(temp_path)?;
-    assert_eq!(
-        output
-            .lines()
-            .into_iter()
-            .filter(|e| e.starts_with(">"))
-            .count(),
-        25
-    );
+    assert_eq!(output.lines().filter(|e| e.starts_with(">")).count(), 25);
 
     Ok(())
 }
@@ -102,14 +135,7 @@ fn command_fq_interleave() -> anyhow::Result<()> {
 
     // Verify output format
     // 25 pairs * 2 reads/pair = 50 reads
-    assert_eq!(
-        stdout
-            .lines()
-            .into_iter()
-            .filter(|e| e.starts_with("@"))
-            .count(),
-        50
-    );
+    assert_eq!(stdout.lines().filter(|e| e.starts_with("@")).count(), 50);
     // Check if it's FASTQ (has + lines)
     assert!(stdout.contains("\n+\n"));
 
@@ -128,7 +154,7 @@ fn command_fq_interleave_fa() -> anyhow::Result<()> {
         .output()?;
     let stdout = String::from_utf8(output.stdout)?;
 
-    assert_eq!(stdout.lines().into_iter().filter(|e| *e == "").count(), 10);
+    assert_eq!(stdout.lines().filter(|e| e.is_empty()).count(), 10);
 
     // count empty seqs (single)
     let mut cmd = Command::cargo_bin("pgr")?;
@@ -139,7 +165,7 @@ fn command_fq_interleave_fa() -> anyhow::Result<()> {
         .output()?;
     let stdout = String::from_utf8(output.stdout)?;
 
-    assert_eq!(stdout.lines().into_iter().filter(|e| *e == "").count(), 5);
+    assert_eq!(stdout.lines().filter(|e| e.is_empty()).count(), 5);
 
     // count empty seqs (single)
     let mut cmd = Command::cargo_bin("pgr")?;
@@ -151,7 +177,7 @@ fn command_fq_interleave_fa() -> anyhow::Result<()> {
         .output()?;
     let stdout = String::from_utf8(output.stdout)?;
 
-    assert_eq!(stdout.lines().into_iter().filter(|e| *e == "").count(), 10);
+    assert_eq!(stdout.lines().filter(|e| e.is_empty()).count(), 10);
 
     Ok(())
 }
@@ -169,24 +195,10 @@ fn command_fq_interleave_fq_detailed() -> anyhow::Result<()> {
         .output()?;
     let stdout = String::from_utf8(output.stdout)?;
 
-    assert_eq!(stdout.lines().into_iter().filter(|e| *e == "!").count(), 0);
-    assert_eq!(stdout.lines().into_iter().filter(|e| *e == "+").count(), 50);
-    assert_eq!(
-        stdout
-            .lines()
-            .into_iter()
-            .filter(|e| e.ends_with("/1"))
-            .count(),
-        25
-    );
-    assert_eq!(
-        stdout
-            .lines()
-            .into_iter()
-            .filter(|e| e.ends_with("/2"))
-            .count(),
-        25
-    );
+    assert_eq!(stdout.lines().filter(|e| *e == "!").count(), 0);
+    assert_eq!(stdout.lines().filter(|e| *e == "+").count(), 50);
+    assert_eq!(stdout.lines().filter(|e| e.ends_with("/1")).count(), 25);
+    assert_eq!(stdout.lines().filter(|e| e.ends_with("/2")).count(), 25);
 
     // fq (single)
     let mut cmd = Command::cargo_bin("pgr")?;
@@ -198,24 +210,10 @@ fn command_fq_interleave_fq_detailed() -> anyhow::Result<()> {
         .output()?;
     let stdout = String::from_utf8(output.stdout)?;
 
-    assert_eq!(stdout.lines().into_iter().filter(|e| *e == "!").count(), 25);
-    assert_eq!(stdout.lines().into_iter().filter(|e| *e == "+").count(), 50);
-    assert_eq!(
-        stdout
-            .lines()
-            .into_iter()
-            .filter(|e| e.ends_with("/1"))
-            .count(),
-        25
-    );
-    assert_eq!(
-        stdout
-            .lines()
-            .into_iter()
-            .filter(|e| e.ends_with("/2"))
-            .count(),
-        25
-    );
+    assert_eq!(stdout.lines().filter(|e| *e == "!").count(), 25);
+    assert_eq!(stdout.lines().filter(|e| *e == "+").count(), 50);
+    assert_eq!(stdout.lines().filter(|e| e.ends_with("/1")).count(), 25);
+    assert_eq!(stdout.lines().filter(|e| e.ends_with("/2")).count(), 25);
 
     Ok(())
 }
