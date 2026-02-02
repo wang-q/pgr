@@ -1,7 +1,6 @@
 use assert_cmd::Command;
 use std::fs;
-use std::io::Write;
-use tempfile::{tempdir, NamedTempFile};
+use tempfile::tempdir;
 
 // --- chain net tests ---
 
