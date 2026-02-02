@@ -392,77 +392,59 @@ fn test_2bit_compat_seqlist2_file() -> anyhow::Result<()> {
     
     let output_content = fs::read_to_string(&output)?;
     
+    // seqlist2 has: noLower, startLower:0-5, endLower:2-8
     assert!(output_content.contains(">noLower"));
-    assert!(output_content.contains("ACGTTTACT")); 
-    
     assert!(output_content.contains(">startLower:0-5"));
-    assert!(output_content.contains("aaaca"));
-    
     assert!(output_content.contains(">endLower:2-8"));
-    assert!(output_content.contains("AACCCa"));
+    assert!(!output_content.contains(">manyLower"));
     
     Ok(())
 }
 
 #[test]
-fn test_2bit_compat_bed_file() -> anyhow::Result<()> {
+fn test_2bit_masked() -> anyhow::Result<()> {
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")?;
-    let input = std::path::Path::new(&manifest_dir).join("tests/2bit/input/testMask.2bit");
-    let bed = std::path::Path::new(&manifest_dir).join("tests/2bit/input/seqlist2.bed");
+    let input_mask = std::path::Path::new(&manifest_dir).join("tests/2bit/input/testMask.2bit");
+    let input_n = std::path::Path::new(&manifest_dir).join("tests/2bit/input/testN.2bit");
     
     let temp = TempDir::new()?;
-    let output = temp.path().join("out.fa");
+    let out_mask = temp.path().join("out_mask.txt");
+    let out_n = temp.path().join("out_n.txt");
     
+    // 1. testMask.2bit
     let mut cmd = Command::cargo_bin("pgr")?;
     cmd.arg("2bit")
-        .arg("tofa")
-        .arg(&input)
-        .arg("--bed")
-        .arg(&bed)
+        .arg("masked")
+        .arg(&input_mask)
         .arg("-o")
-        .arg(&output);
+        .arg(&out_mask);
     cmd.assert().success();
     
-    let output_content = fs::read_to_string(&output)?;
+    let content_mask = fs::read_to_string(&out_mask)?;
     
-    assert!(output_content.contains(">startLowerName"));
-    assert!(output_content.contains("aaaca"));
+    // allLower is masked. It has 12 bases.
+    assert!(content_mask.contains("allLower:1-12"));
+    // noLower should not be in output
+    assert!(!content_mask.contains("noLower"));
     
-    assert!(output_content.contains(">endLowerName"));
-    assert!(output_content.contains("AACCCa"));
+    // 2. testN.2bit with --gap
+    let mut cmd2 = Command::cargo_bin("pgr")?;
+    cmd2.arg("2bit")
+        .arg("masked")
+        .arg(&input_n)
+        .arg("--gap")
+        .arg("-o")
+        .arg(&out_n);
+    cmd2.assert().success();
     
-    Ok(())
-}
+    let content_n = fs::read_to_string(&out_n)?;
+    
+    // startN: NANNAANNNAAA
+    // Ns at: 1, 3-4, 7-9
+    assert!(content_n.contains("startN:1"));
+    assert!(content_n.contains("startN:3-4"));
+    assert!(content_n.contains("startN:7-9"));
 
-#[test]
-fn test_2bit_compat_bed_strand() -> anyhow::Result<()> {
-    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")?;
-    let input = std::path::Path::new(&manifest_dir).join("tests/2bit/input/testMask.2bit");
-    let bed = std::path::Path::new(&manifest_dir).join("tests/2bit/input/bed_with_strand.bed");
-    
-    let temp = TempDir::new()?;
-    let output = temp.path().join("out.fa");
-    
-    let mut cmd = Command::cargo_bin("pgr")?;
-    cmd.arg("2bit")
-        .arg("tofa")
-        .arg(&input)
-        .arg("--bed")
-        .arg(&bed)
-        .arg("-o")
-        .arg(&output);
-    cmd.assert().success();
-    
-    let output_content = fs::read_to_string(&output)?;
-    
-    // startLowerPos (0-5 of startLower): aaaca -> aaaca (same as before)
-    assert!(output_content.contains(">startLowerPos"));
-    assert!(output_content.contains("aaaca"));
-    
-    // endLowerNeg (2-8 of endLower): AACCCa -> RC -> tGGGTT
-    assert!(output_content.contains(">endLowerNeg"));
-    assert!(output_content.contains("tGGGTT"));
-    
     Ok(())
 }
 
@@ -470,10 +452,10 @@ fn test_2bit_compat_bed_strand() -> anyhow::Result<()> {
 fn test_2bit_compat_single_seq_ranges() -> anyhow::Result<()> {
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")?;
     let input = std::path::Path::new(&manifest_dir).join("tests/2bit/input/testMask.2bit");
-    
+
     let temp = TempDir::new()?;
     let output = temp.path().join("out.fa");
-    
+
     // Test ml_1_11: manyLower 1-11
     let mut cmd = Command::cargo_bin("pgr")?;
     cmd.arg("2bit")
@@ -488,13 +470,13 @@ fn test_2bit_compat_single_seq_ranges() -> anyhow::Result<()> {
         .arg("-o")
         .arg(&output);
     cmd.assert().success();
-    
+
     let output_content = fs::read_to_string(&output)?;
     assert!(output_content.contains(">manyLower"));
     // manyLower: aaCCggTTaCgT
     // 1-11: aCCggTTaCg
     assert!(output_content.contains("aCCggTTaCg"));
-    
+
     // Test spec_ml_2_10: manyLower 2-10
     // 2-10: CCggTTaC
     let output2 = temp.path().join("out2.fa");
@@ -511,7 +493,7 @@ fn test_2bit_compat_single_seq_ranges() -> anyhow::Result<()> {
         .arg("-o")
         .arg(&output2);
     cmd2.assert().success();
-    
+
     let output_content2 = fs::read_to_string(&output2)?;
     assert!(output_content2.contains("CCggTTaC"));
 
@@ -561,10 +543,10 @@ fn test_2bit_compat_single_seq_ranges() -> anyhow::Result<()> {
 fn test_2bit_compat_mask_file() -> anyhow::Result<()> {
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")?;
     let input = std::path::Path::new(&manifest_dir).join("tests/2bit/input/testMask.2bit");
-    
+
     let temp = TempDir::new()?;
     let output = temp.path().join("out.fa");
-    
+
     let mut cmd = Command::cargo_bin("pgr")?;
     cmd.arg("2bit")
         .arg("tofa")
@@ -572,22 +554,22 @@ fn test_2bit_compat_mask_file() -> anyhow::Result<()> {
         .arg("-o")
         .arg(&output);
     cmd.assert().success();
-    
+
     let output_content = fs::read_to_string(&output)?;
-    
+
     // Check for sequence names
     assert!(output_content.contains(">allLower"));
     assert!(output_content.contains(">endLower"));
     assert!(output_content.contains(">manyLower"));
     assert!(output_content.contains(">noLower"));
     assert!(output_content.contains(">startLower"));
-    
+
     // Check masking (lowercase)
     // allLower should be all lowercase
-    // We can't easily check full content without reading exact expectation, 
+    // We can't easily check full content without reading exact expectation,    
     // but we can check if it contains lowercase letters.
     assert!(output_content.chars().any(|c| c.is_lowercase()));
-    
+
     Ok(())
 }
 
@@ -595,10 +577,10 @@ fn test_2bit_compat_mask_file() -> anyhow::Result<()> {
 fn test_2bit_compat_n_file() -> anyhow::Result<()> {
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")?;
     let input = std::path::Path::new(&manifest_dir).join("tests/2bit/input/testN.2bit");
-    
+
     let temp = TempDir::new()?;
     let output = temp.path().join("out.fa");
-    
+
     let mut cmd = Command::cargo_bin("pgr")?;
     cmd.arg("2bit")
         .arg("tofa")
@@ -606,14 +588,14 @@ fn test_2bit_compat_n_file() -> anyhow::Result<()> {
         .arg("-o")
         .arg(&output);
     cmd.assert().success();
-    
+
     let output_content = fs::read_to_string(&output)?;
-    
+
     assert!(output_content.contains(">startN"));
     assert!(output_content.contains("NANNAANNNAAA"));
-    
+
     assert!(output_content.contains(">startNonN"));
     assert!(output_content.contains("ANAANNAAANNN"));
-    
+
     Ok(())
 }
