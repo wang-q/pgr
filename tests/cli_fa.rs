@@ -1,6 +1,41 @@
 use assert_cmd::Command;
 use std::fs;
 use tempfile::TempDir;
+use predicates::prelude::*;
+
+
+#[test]
+fn command_invalid() -> anyhow::Result<()> {
+    let mut cmd = Command::cargo_bin("pgr")?;
+    cmd.arg("fa").arg("foobar");
+    cmd.assert()
+        .failure()
+        .stderr(predicate::str::contains("recognized"));
+
+    Ok(())
+}
+
+#[test]
+fn file_doesnt_provided() -> anyhow::Result<()> {
+    let mut cmd = Command::cargo_bin("pgr")?;
+    cmd.arg("fa").arg("size");
+    cmd.assert()
+        .failure()
+        .stderr(predicate::str::contains("not provided"));
+
+    Ok(())
+}
+
+#[test]
+fn file_doesnt_exist() -> anyhow::Result<()> {
+    let mut cmd = Command::cargo_bin("pgr")?;
+    cmd.arg("fa").arg("size").arg("tests/file/doesnt/exist");
+    cmd.assert()
+        .failure()
+        .stderr(predicate::str::contains("could not open"));
+
+    Ok(())
+}
 
 #[test]
 fn command_fa_size() -> anyhow::Result<()> {

@@ -25,7 +25,7 @@ pub fn make_subcommand() -> clap::Command {
 * info: size / count / masked / n50
 * records: one / some / order / split
 * transform: replace / rc / filter / dedup / mask / 6frame
-* indexing: gz / range / prefilter
+* indexing: gz / range
 
 "###,
         )
