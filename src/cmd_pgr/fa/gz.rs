@@ -1,6 +1,6 @@
 use clap::*;
 use noodles_bgzf as bgzf;
-use std::io::{Read, Seek};
+use std::io::{Read, Seek, Write};
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
@@ -125,7 +125,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // Input
     //----------------------------
     let mut reader: Box<dyn std::io::BufRead> = if infile == "stdin" {
-        Box::new(std::io::BufReader::new(std::io::stdin()))
+        // Use 64KB buffer (BGZF block size) to optimize read performance
+        Box::new(std::io::BufReader::with_capacity(
+            64 * 1024,
+            std::io::stdin(),
+        ))
     } else {
         let path = std::path::Path::new(infile);
         let file = match std::fs::File::open(path) {
@@ -133,7 +137,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             Ok(file) => file,
         };
 
-        Box::new(std::io::BufReader::new(file))
+        // Use 64KB buffer (BGZF block size) to optimize read performance
+        Box::new(std::io::BufReader::with_capacity(64 * 1024, file))
     };
 
     let inner_writer = Box::new(std::io::BufWriter::new(
@@ -145,7 +150,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     if compress_level >= 0 && compress_level <= 9 {
         use noodles_bgzf::io::writer::CompressionLevel;
-        builder = builder.set_compression_level(CompressionLevel::new(compress_level as u8).unwrap());
+        builder = builder
+            .set_compression_level(CompressionLevel::new(compress_level as u8).unwrap());
     }
 
     let mut writer = builder.build_from_writer(inner_writer);
@@ -153,7 +159,18 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     // Output
     //----------------------------
-    std::io::copy(&mut reader, &mut writer)?;
+    // Manually read/write in 64KB chunks (BGZF block size) instead of std::io::copy.
+    // std::io::copy uses a smaller default buffer (usually 8KB), which causes frequent small writes.
+    // For MultithreadedWriter, this increases channel/lock overhead significantly,
+    // negating the benefits of parallelism on small/medium files.
+    let mut buf = vec![0u8; 64 * 1024];
+    loop {
+        let n = reader.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        writer.write_all(&buf[..n])?;
+    }
     writer.finish()?;
 
     // Generate GZI index
