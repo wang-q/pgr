@@ -7,6 +7,7 @@ pub mod maf;
 pub mod ms;
 pub mod ms2dna;
 pub mod net;
+pub mod nt;
 pub mod psl;
 pub mod twobit;
 
