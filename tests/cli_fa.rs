@@ -394,3 +394,15 @@ fn command_filter_fmt() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn command_count() -> anyhow::Result<()> {
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd.arg("fa").arg("count").arg("tests/fasta/ufasta.fa").output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    assert!(stdout.contains("read45\t0\t0"), "empty");
+    assert!(stdout.contains("total\t9317\t2318"), "total");
+
+    Ok(())
+}

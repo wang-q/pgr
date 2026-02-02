@@ -1,3 +1,4 @@
+pub mod count;
 pub mod filter;
 pub mod gz;
 pub mod masked;
@@ -16,6 +17,7 @@ pub fn make_subcommand() -> clap::Command {
 
 "###,
         )
+        .subcommand(count::make_subcommand())
         .subcommand(filter::make_subcommand())
         .subcommand(gz::make_subcommand())
         .subcommand(masked::make_subcommand())
@@ -28,6 +30,7 @@ pub fn make_subcommand() -> clap::Command {
 
 pub fn execute(matches: &clap::ArgMatches) -> anyhow::Result<()> {
     match matches.subcommand() {
+        Some(("count", sub_matches)) => count::execute(sub_matches),
         Some(("filter", sub_matches)) => filter::execute(sub_matches),
         Some(("gz", sub_matches)) => gz::execute(sub_matches),
         Some(("masked", sub_matches)) => masked::execute(sub_matches),
