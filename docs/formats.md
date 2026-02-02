@@ -221,7 +221,7 @@ AXT 文件由一系列的比对块 (block) 组成，块与块之间通常由空�
 
 *   版本支持 (Version Support)
     *   UCSC: 支持版本 0 (32-bit) 和版本 1 (64-bit)。
-    *   pgr: 仅支持版本 1 (64-bit)，因为所有 2bit 文件均为内部生成。
+    *   pgr: **同时支持版本 0 (32-bit) 和版本 1 (64-bit)**。写入时默认使用版本 1 以支持大文件。
 
 *   字节序处理 (Endianness)
     *   UCSC: 通过检查魔数自动检测字节序并进行 swap。
@@ -235,7 +235,7 @@ AXT 文件由一系列的比对块 (block) 组成，块与块之间通常由空�
 
 *   随机访问 (Random Access)
     *   UCSC: 使用 `twoBitOpen` 加载索引，支持 `twoBitReadSeqFrag` 读取片段。
-    *   pgr: `open` 时预加载所有序列的偏移量到 `HashMap`，`read_sequence` 支持 `start`/`end` 参数读取任意片段，只解码必要的字节块，高效处理大文件。
+    *   pgr: `open` 时预加载所有序列的偏移量到 `HashMap`，并**保留原始序列顺序**。`read_sequence` 支持 `start`/`end` 参数读取任意片段，只解码必要的字节块，高效处理大文件。
 
 
 

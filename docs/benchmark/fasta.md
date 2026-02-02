@@ -56,6 +56,8 @@ ossyNMMMNyMMhsssssssssssssshmmmhssssssso   CPU: AMD Ryzen 9 7945HX with Radeon G
 
 ## `pgr fa size`
 
+* ufasta
+
 ```shell
 hyperfine --warmup 10 --export-markdown size.md.tmp \
     -n "pgr fa size .fa" \
@@ -65,7 +67,9 @@ hyperfine --warmup 10 --export-markdown size.md.tmp \
     -n "pgr fa size .fa.gz" \
     'pgr fa size tests/fasta/ufasta.fa.gz > /dev/null' \
     -n "faops size .fa.gz" \
-    'faops size tests/fasta/ufasta.fa.gz > /dev/null'
+    'faops size tests/fasta/ufasta.fa.gz > /dev/null' \
+    -n "pgr 2bit size .2bit" \
+    'pgr 2bit size tests/fasta/ufasta.2bit > /dev/null'
 
 cat size.md.tmp
 
@@ -73,10 +77,50 @@ cat size.md.tmp
 
 | Command | Mean [ms] | Min [ms] | Max [ms] | Relative |
 |:---|---:|---:|---:|---:|
-| `pgr fa size .fa` | 3.0 ± 0.4 | 2.3 | 5.5 | 1.27 ± 0.21 |
-| `faops size .fa` | 2.7 ± 0.2 | 2.2 | 4.2 | 1.13 ± 0.14 |
-| `pgr fa size .fa.gz` | 3.0 ± 0.3 | 2.6 | 5.2 | 1.29 ± 0.17 |
-| `faops size .fa.gz` | 2.4 ± 0.2 | 1.9 | 3.8 | 1.00 |
+| `pgr fa size .fa` | 2.9 ± 0.3 | 2.4 | 4.7 | 1.19 ± 0.21 |
+| `faops size .fa` | 2.6 ± 0.3 | 2.0 | 6.4 | 1.07 ± 0.18 |
+| `pgr fa size .fa.gz` | 3.0 ± 0.3 | 2.5 | 4.8 | 1.23 ± 0.20 |
+| `faops size .fa.gz` | 2.4 ± 0.3 | 1.8 | 4.4 | 1.00 |
+| `pgr 2bit size .2bit` | 10.7 ± 0.7 | 9.6 | 14.3 | 4.41 ± 0.63 |
+
+* mg1655
+
+```shell
+hyperfine --warmup 10 --export-markdown size.md.tmp \
+    -n "pgr fa size .fa.gz" \
+    'pgr fa size tests/pgr/mg1655.fa.gz > /dev/null' \
+    -n "faops size .fa.gz" \
+    'faops size tests/pgr/mg1655.fa.gz > /dev/null' \
+    -n "pgr 2bit size .2bit" \
+    'pgr 2bit size tests/pgr/mg1655.2bit > /dev/null'
+
+cat size.md.tmp
+
+```
+
+| Command | Mean [ms] | Min [ms] | Max [ms] | Relative |
+|:---|---:|---:|---:|---:|
+| `pgr fa size .fa.gz` | 19.0 ± 0.6 | 17.8 | 21.8 | 6.87 ± 0.64 |
+| `faops size .fa.gz` | 36.7 ± 0.7 | 35.6 | 40.4 | 13.23 ± 1.19 |
+| `pgr 2bit size .2bit` | 2.8 ± 0.2 | 2.4 | 4.2 | 1.00 |
+
+* mg1655 protein
+
+```shell
+hyperfine --warmup 10 --export-markdown size.md.tmp \
+    -n "pgr fa size .pro.fa.gz" \
+    'pgr fa size tests/genome/mg1655.pro.fa.gz > /dev/null' \
+    -n "faops size .pro.fa.gz" \
+    'faops size tests/genome/mg1655.pro.fa.gz > /dev/null'
+
+cat size.md.tmp
+
+```
+
+| Command | Mean [ms] | Min [ms] | Max [ms] | Relative |
+|:---|---:|---:|---:|---:|
+| `pgr fa size .pro.fa.gz` | 11.7 ± 0.5 | 10.8 | 14.3 | 1.00 |
+| `faops size .pro.fa.gz` | 19.1 ± 0.6 | 18.2 | 24.6 | 1.63 ± 0.09 |
 
 ## `pgr fa some`
 
@@ -128,4 +172,8 @@ cat n50.md.tmp
 
 ## Conclusion
 
-The `pgr` implementation is currently slightly slower (1.1x - 1.4x) than the highly optimized C implementation `faops`. This is expected as `pgr` prioritizes safety and features over raw C-level optimization in its initial release. The overhead of command-line argument parsing and safety checks in Rust contributes to the difference, especially for small execution times in the millisecond range.
+The `pgr` implementation demonstrates competitive performance compared to the highly optimized C implementation `faops`.
+
+*   **Small datasets**: `pgr` shows a slight overhead (1.1x - 1.4x). This is likely due to the startup time of the larger executable (~3MB vs ~400KB for `faops`) and the initialization of Rust's runtime and command-line parser.
+*   **Larger compressed datasets**: `pgr` significantly outperforms `faops` (e.g., ~2x faster for `mg1655.fa.gz` and ~1.6x faster for `mg1655.pro.fa.gz`), highlighting the efficiency of Rust's Gzip handling and I/O.
+*   **2bit format**: `pgr` provides extremely fast random access and metadata retrieval.
