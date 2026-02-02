@@ -465,3 +465,86 @@ fn command_split_name() -> anyhow::Result<()> {
     tempdir.close()?;
     Ok(())
 }
+
+#[test]
+fn command_split_about() -> anyhow::Result<()> {
+    let tempdir = TempDir::new()?;
+    let tempdir_str = tempdir.path().to_str().unwrap();
+
+    let mut cmd = Command::cargo_bin("pgr")?;
+    cmd.arg("fa")
+        .arg("split")
+        .arg("about")
+        .arg("tests/fasta/ufasta.fa")
+        .arg("-c")
+        .arg("2000")
+        .arg("-o")
+        .arg(tempdir_str)
+        .assert()
+        .success()
+        .stdout(predicates::str::is_empty());
+
+    assert!(!&tempdir.path().join("read0.fa").is_file());
+    assert!(&tempdir.path().join("000.fa").exists());
+    assert!(&tempdir.path().join("004.fa").exists());
+    assert!(!&tempdir.path().join("005.fa").exists());
+
+    tempdir.close()?;
+    Ok(())
+}
+
+#[test]
+fn command_replace() -> anyhow::Result<()> {
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("fa")
+        .arg("replace")
+        .arg("tests/fasta/ufasta.fa")
+        .arg("tests/fasta/replace.tsv")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    assert_eq!(stdout.lines().count(), 95);
+    assert!(stdout.contains(">359"), "read0");
+    assert!(!stdout.contains(">read0"), "read0");
+
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("fa")
+        .arg("replace")
+        .arg("tests/fasta/ufasta.fa")
+        .arg("tests/fasta/replace.tsv")
+        .arg("--some")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    assert_eq!(stdout.lines().count(), 6);
+    assert!(stdout.contains(">359"), "read0");
+    assert!(!stdout.contains(">read0"), "read0");
+
+    Ok(())
+}
+
+#[test]
+fn command_rc() -> anyhow::Result<()> {
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd.arg("fa").arg("rc").arg("tests/fasta/ufasta.fa").output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    assert!(stdout.contains("GgacTgcggCTagAA"), "read46");
+
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("fa")
+        .arg("rc")
+        .arg("tests/fasta/ufasta.fa")
+        .arg("tests/fasta/list.txt")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    assert!(stdout.contains(">RC_read12"), "read12");
+    assert!(!stdout.contains(">RC_read46"), "read46");
+    assert!(!stdout.contains("GgacTgcggCTagAA"), "read46");
+
+    Ok(())
+}

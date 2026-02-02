@@ -6,6 +6,8 @@ pub mod n50;
 pub mod one;
 pub mod order;
 pub mod range;
+pub mod rc;
+pub mod replace;
 pub mod size;
 pub mod some;
 pub mod split;
@@ -28,6 +30,8 @@ pub fn make_subcommand() -> clap::Command {
         .subcommand(one::make_subcommand())
         .subcommand(order::make_subcommand())
         .subcommand(range::make_subcommand())
+        .subcommand(rc::make_subcommand())
+        .subcommand(replace::make_subcommand())
         .subcommand(size::make_subcommand())
         .subcommand(some::make_subcommand())
         .subcommand(split::make_subcommand())
@@ -44,6 +48,8 @@ pub fn execute(matches: &clap::ArgMatches) -> anyhow::Result<()> {
         Some(("one", sub_matches)) => one::execute(sub_matches),
         Some(("order", sub_matches)) => order::execute(sub_matches),
         Some(("range", sub_matches)) => range::execute(sub_matches),
+        Some(("rc", sub_matches)) => rc::execute(sub_matches),
+        Some(("replace", sub_matches)) => replace::execute(sub_matches),
         Some(("size", sub_matches)) => size::execute(sub_matches),
         Some(("some", sub_matches)) => some::execute(sub_matches),
         Some(("split", sub_matches)) => split::execute(sub_matches),
