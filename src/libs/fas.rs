@@ -32,7 +32,7 @@ fn parse_strand(strand: &str) -> Result<String, io::Error> {
     match strand {
         "+" => Ok("+".to_string()),
         "-" => Ok("-".to_string()),
-        _ => Err(io::Error::new(io::ErrorKind::Other, "Strand not valid")),
+        _ => Err(io::Error::other("Strand not valid")),
     }
 }
 
@@ -128,12 +128,12 @@ pub fn next_fas_block<T: io::BufRead + ?Sized>(mut input: &mut T) -> Result<FasB
                 break;
             } else {
                 // Shouldn't see this.
-                return Err(io::Error::new(io::ErrorKind::Other, "Unexpected line"));
+                return Err(io::Error::other("Unexpected line"));
             }
         }
     }
     let block = parse_fas_block(
-        header.ok_or(io::Error::new(io::ErrorKind::Other, "EOF"))?,
+        header.ok_or(io::Error::other("EOF"))?,
         LinesRef { buf: &mut input },
     )?;
     Ok(block)
@@ -301,12 +301,12 @@ pub fn next_maf_block<T: io::BufRead + ?Sized>(mut input: &mut T) -> Result<MafB
                 break;
             } else {
                 // Shouldn't see this.
-                return Err(io::Error::new(io::ErrorKind::Other, "Unexpected line"));
+                return Err(io::Error::other("Unexpected line"));
             }
         }
     }
     let block = parse_maf_block(
-        header.ok_or(io::Error::new(io::ErrorKind::Other, "EOF"))?,
+        header.ok_or(io::Error::other("EOF"))?,
         LinesRef { buf: &mut input },
     )?;
     Ok(block)
@@ -316,37 +316,33 @@ fn parse_s_line(
     fields: &mut Vec<&str>,
     block_entries: &mut Vec<MafEntry>,
 ) -> Result<(), io::Error> {
-    let alignment = fields
-        .pop()
-        .ok_or(io::Error::new(io::ErrorKind::Other, "s line incomplete"))?;
+    let alignment = fields.pop().ok_or(io::Error::other("s line incomplete"))?;
     let src_size = fields
         .pop()
-        .ok_or(io::Error::new(io::ErrorKind::Other, "s line incomplete"))
+        .ok_or(io::Error::other("s line incomplete"))
         .and_then(|s| {
             s.parse::<u64>()
-                .map_err(|_| io::Error::new(io::ErrorKind::Other, "invalid sequence size"))
+                .map_err(|_| io::Error::other("invalid sequence size"))
         })?;
     let strand = fields
         .pop()
-        .ok_or(io::Error::new(io::ErrorKind::Other, "s line incomplete"))
+        .ok_or(io::Error::other("s line incomplete"))
         .and_then(parse_strand)?;
     let aligned_length = fields
         .pop()
-        .ok_or(io::Error::new(io::ErrorKind::Other, "s line incomplete"))
+        .ok_or(io::Error::other("s line incomplete"))
         .and_then(|s| {
             s.parse::<u64>()
-                .map_err(|_| io::Error::new(io::ErrorKind::Other, "invalid aligned length"))
+                .map_err(|_| io::Error::other("invalid aligned length"))
         })?;
     let start = fields
         .pop()
-        .ok_or(io::Error::new(io::ErrorKind::Other, "s line incomplete"))
+        .ok_or(io::Error::other("s line incomplete"))
         .and_then(|s| {
             s.parse::<u64>()
-                .map_err(|_| io::Error::new(io::ErrorKind::Other, "invalid start"))
+                .map_err(|_| io::Error::other("invalid start"))
         })?;
-    let src = fields
-        .pop()
-        .ok_or(io::Error::new(io::ErrorKind::Other, "s line incomplete"))?;
+    let src = fields.pop().ok_or(io::Error::other("s line incomplete"))?;
     block_entries.push(MafEntry {
         alignment: alignment.as_bytes().to_vec(),
         src: src.to_string(),
@@ -384,7 +380,7 @@ pub fn parse_maf_block(
             "e" => (),
             "q" => (),
             "track" => (),
-            _ => return Err(io::Error::new(io::ErrorKind::Other, "BadLineType")),
+            _ => return Err(io::Error::other("BadLineType")),
         };
     }
 

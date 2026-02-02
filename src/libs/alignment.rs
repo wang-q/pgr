@@ -41,7 +41,7 @@ pub fn pair_d(seq1: &[u8], seq2: &[u8]) -> f32 {
     for (base1, base2) in seq1.iter().zip(seq2) {
         if BASES.contains(base1) && BASES.contains(base2) {
             comparable += 1;
-            if base1.to_ascii_uppercase() != base2.to_ascii_uppercase() {
+            if !base1.eq_ignore_ascii_case(base2) {
                 difference += 1;
             }
         }
@@ -103,7 +103,7 @@ pub fn alignment_stat(seqs: &[&[u8]]) -> (i32, i32, i32, i32, i32, f32) {
             if column.iter().any(|e| *e != column[0]) {
                 difference += 1;
             }
-        } else if column.iter().any(|e| *e == b'-') {
+        } else if column.contains(&b'-') {
             gap += 1;
         } else {
             ambiguous += 1;
@@ -235,7 +235,7 @@ pub fn get_subs(seqs: &[&[u8]]) -> anyhow::Result<Vec<Substitution>> {
     for pos in bases_of.keys().sorted() {
         let bases = bases_of.get(pos).unwrap();
 
-        let tbase = bases.get(0).unwrap();
+        let tbase = bases.first().unwrap();
 
         let class: Vec<_> = bases.iter().unique().collect();
 
@@ -343,7 +343,7 @@ pub fn polarize_subs(subs: &mut Vec<Substitution>, og: &[u8]) {
         let obase_u8 = og[(pos - 1) as usize].to_ascii_uppercase();
         let obase = String::from_utf8(vec![obase_u8]).unwrap();
 
-        if sub.qbase == "".to_string() {
+        if sub.qbase.is_empty() {
             // complex ingroup bases
             sub.obase = obase.clone();
         } else if BASES.contains(&obase_u8) {
@@ -1482,7 +1482,7 @@ pub fn trim_complex_indel(seqs: &mut Vec<String>) -> String {
         complex_region = complex_region.banish(*lower, *upper);
     }
 
-    return complex_region.to_string();
+    complex_region.to_string()
 }
 
 /// Trims head and tail indels.
@@ -1608,7 +1608,7 @@ pub fn trim_head_tail(seqs: &mut Vec<String>, ranges: &mut Vec<intspan::Range>, 
                 for i in 0..seq_count {
                     let base = seqs[i].remove(0);
                     if base != '-' {
-                        if ranges[i].strand == "+".to_string() || ranges[i].strand.is_empty() {
+                        if ranges[i].strand == "+" || ranges[i].strand.is_empty() {
                             ranges[i].start += 1;
                         } else {
                             ranges[i].end -= 1;
@@ -1631,7 +1631,7 @@ pub fn trim_head_tail(seqs: &mut Vec<String>, ranges: &mut Vec<intspan::Range>, 
                 for i in 0..seq_count {
                     let base = seqs[i].remove(cur_len - 1);
                     if base != '-' {
-                        if ranges[i].strand == "+".to_string() || ranges[i].strand.is_empty() {
+                        if ranges[i].strand == "+" || ranges[i].strand.is_empty() {
                             ranges[i].end -= 1;
                         } else {
                             ranges[i].start += 1;

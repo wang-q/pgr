@@ -74,7 +74,7 @@ impl Blocks {
         let len = dna.len();
         let mut n_blocks_vec = Vec::new();
         let mut mask_blocks_vec = Vec::new();
-        let mut packed_dna = Vec::with_capacity((len + 3) / 4);
+        let mut packed_dna = Vec::with_capacity(len.div_ceil(4));
 
         // Temporary buffer for current byte construction
         let mut current_byte = 0u8;
@@ -220,7 +220,7 @@ impl<W: std::io::Write> TwoBitWriter<W> {
 
             let n_count = n_blocks.0.len() as u64;
             let mask_count = mask_blocks.0.len() as u64;
-            let packed_len = ((dna.len() + 3) / 4) as u64;
+            let packed_len = dna.len().div_ceil(4) as u64;
 
             let record_size = 4 + // dnaSize
                 4 + (n_count * 4) + (n_count * 4) + // N blocks
@@ -232,7 +232,7 @@ impl<W: std::io::Write> TwoBitWriter<W> {
         }
 
         // 3. Write Records
-        for (_i, (_, dna)) in sequences.iter().enumerate() {
+        for (_, dna) in sequences.iter() {
             // Verify we are at the correct offset (optional debug check)
             // let pos = self.writer.stream_position()?;
             // assert_eq!(pos, record_offsets[i]);
@@ -370,7 +370,7 @@ impl<R: Read + Seek> TwoBitFile<R> {
 
         let blocks: Vec<Block> = starts
             .into_iter()
-            .zip(sizes.into_iter())
+            .zip(sizes)
             .map(|(start, size)| {
                 let s = start as usize;
                 let e = s + size as usize;

@@ -45,16 +45,6 @@ impl Chain {
     /// - t_strand is always '+'.
     /// - q_strand can be '-' (which means q_start/q_end are on the reverse strand coordinates,
     ///   but the Block struct stores them as increasing numbers on that strand).
-    ///   Wait, in UCSC chain format, if qStrand is '-', qStart and qEnd are already in reverse strand coordinates
-    ///   relative to the qSize. Specifically, qStart = qSize - real_end, qEnd = qSize - real_start.
-    ///   However, the chain format defines the alignment blocks.
-    ///   Let's verify the logic:
-    ///   t_current starts at header.t_start
-    ///   q_current starts at header.q_start
-    ///   For each line:
-    ///     block size: both advance by size
-    ///     dt: t advances by dt
-    ///     dq: q advances by dq
     pub fn to_blocks(&self) -> Vec<Block> {
         let mut blocks = Vec::with_capacity(self.data.len());
         let mut t_curr = self.header.t_start;

@@ -193,7 +193,7 @@ pub fn read_nets<R: BufRead>(mut reader: R) -> io::Result<Vec<Chrom>> {
             }
         }
 
-        let parts: Vec<&str> = line.trim().split_whitespace().collect();
+        let parts: Vec<&str> = line.split_whitespace().collect();
         if parts.is_empty() {
             line.clear();
             continue;
@@ -416,11 +416,7 @@ impl ChainNet {
 pub fn range_intersection(start1: u64, end1: u64, start2: u64, end2: u64) -> u64 {
     let s = start1.max(start2);
     let e = end1.min(end2);
-    if s < e {
-        e - s
-    } else {
-        0
-    }
+    e.saturating_sub(s)
 }
 
 fn reverse_range(start: &mut u64, end: &mut u64, size: u64) {
@@ -481,15 +477,13 @@ fn subchain_info(chain: &Chain, start: u64, end: u64, is_q: bool) -> (u64, f64) 
         } else {
             chain_base_count_sub_q(chain, s, e)
         }
+    } else if start <= chain.header.t_start && end >= chain.header.t_end {
+        full_ali_size
     } else {
-        if start <= chain.header.t_start && end >= chain.header.t_end {
-            full_ali_size
-        } else {
-            chain_base_count_sub_t(chain, start, end)
-        }
+        chain_base_count_sub_t(chain, start, end)
     };
 
-    let sub_score = (chain.header.score as f64) * (sub_size as f64) / (full_ali_size as f64);
+    let sub_score = chain.header.score * (sub_size as f64) / (full_ali_size as f64);
     (sub_size, sub_score)
 }
 
@@ -706,12 +700,10 @@ fn fill_space(
         {
             let (os, oe) = if !is_q {
                 (b1.q_end, b2.q_start)
+            } else if chain.header.q_strand == '-' {
+                (b2.t_end, b1.t_start)
             } else {
-                if chain.header.q_strand == '-' {
-                    (b2.t_end, b1.t_start)
-                } else {
-                    (b1.t_end, b2.t_start)
-                }
+                (b1.t_end, b2.t_start)
             };
 
             let new_gap = Rc::new(RefCell::new(Gap {

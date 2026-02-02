@@ -4,21 +4,19 @@ use std::io::Write;
 
 pub fn build_anc_seq(gc: f64, nsite: usize, rng: &mut SimpleRng) -> Vec<u8> {
     let mut seq = vec![b'A'; nsite];
-    for i in 0..nsite {
+    for base in seq.iter_mut().take(nsite) {
         let r1 = rng.next_f64();
         let r2 = rng.next_f64();
-        seq[i] = if r1 <= gc {
+        *base = if r1 <= gc {
             if r2 <= 0.5 {
                 b'G'
             } else {
                 b'C'
             }
+        } else if r2 <= 0.5 {
+            b'A'
         } else {
-            if r2 <= 0.5 {
-                b'A'
-            } else {
-                b'T'
-            }
+            b'T'
         };
     }
     seq
@@ -28,18 +26,15 @@ pub fn map_positions(positions: &[f64], nsite: usize, rng: &mut SimpleRng) -> Ve
     let segsites = positions.len();
     let mut used = vec![false; nsite];
     let mut map = Vec::with_capacity(segsites);
-    let mut used_count = 0;
-    for i in 0..segsites {
+    for (used_count, &pos) in positions.iter().take(segsites).enumerate() {
         if used_count >= nsite {
             break;
         }
-        let pos = positions[i];
         let mut p = ((pos * (nsite as f64)) as isize).clamp(0, (nsite - 1) as isize) as usize;
         while used[p] {
             p = (rng.next_f64() * (nsite as f64)) as usize;
         }
         used[p] = true;
-        used_count += 1;
         map.push(p);
     }
     map
@@ -106,7 +101,7 @@ pub fn write_fasta(
     for (seg_idx, &p) in map.iter().enumerate() {
         pos_to_seg[p] = seg_idx;
     }
-    for i in 0..nsam {
+    for hap in haplotypes.iter().take(nsam) {
         writer.write_all(b">")?;
         if howmany > 1 {
             writer.write_fmt(format_args!("L{}", sample_counter))?;
@@ -132,7 +127,6 @@ pub fn write_fasta(
                 }
             }
         }
-        let hap = &haplotypes[i];
         for j in 0..nsite {
             let seg_idx = pos_to_seg[j];
             if seg_idx != usize::MAX && seg_idx < hap.len() {

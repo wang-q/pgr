@@ -253,9 +253,7 @@ impl Psl {
 
     fn swap_blocks(&mut self) {
         for i in 0..self.block_count as usize {
-            let tmp = self.q_starts[i];
-            self.q_starts[i] = self.t_starts[i];
-            self.t_starts[i] = tmp;
+            std::mem::swap(&mut self.q_starts[i], &mut self.t_starts[i]);
         }
     }
 
@@ -289,16 +287,13 @@ impl Psl {
         let t_start_last = self.t_starts[last];
         let block_size_last = self.block_sizes[last];
 
-        let is_prot = if t_strand == '+' {
+        if t_strand == '+' {
             t_end == t_start_last + 3 * block_size_last
         } else if t_strand == '-' {
             t_start == t_size - (t_start_last + 3 * block_size_last)
         } else {
             false
-        };
-
-        if is_prot {}
-        is_prot
+        }
     }
 
     /// Reverse-complement a PSL alignment. This makes the target strand explicit.

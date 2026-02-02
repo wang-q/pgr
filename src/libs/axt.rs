@@ -109,10 +109,7 @@ impl<R: std::io::Read> Iterator for AxtReader<R> {
                     let q_strand = parts[7].chars().next().unwrap_or('?');
 
                     let score = if parts.len() > 8 {
-                        match parts[8].parse() {
-                            Ok(v) => Some(v),
-                            Err(_) => None,
-                        }
+                        parts[8].parse().ok()
                     } else {
                         None
                     };
@@ -177,7 +174,7 @@ pub fn write_axt<W: std::io::Write>(writer: &mut W, axt: &Axt) -> std::io::Resul
 
     writeln!(
         writer,
-        "{} {} {} {} {} {} {} {} {}{}",
+        "{} {} {} {} {} {} {} {} {}",
         axt.id,
         axt.t_name,
         t_start,
@@ -186,8 +183,7 @@ pub fn write_axt<W: std::io::Write>(writer: &mut W, axt: &Axt) -> std::io::Resul
         q_start,
         q_end,
         axt.q_strand,
-        score_str, // Just a space if no score? format string handles the space prefix
-        ""         // Placeholder
+        score_str // Placeholder
     )?;
 
     writeln!(writer, "{}", axt.t_sym)?;

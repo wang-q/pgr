@@ -35,7 +35,7 @@ pub fn create_loc(infile: &str, locfile: &str, is_bgzf: bool) -> anyhow::Result<
             break;
         }
 
-        if line.starts_with('>') {
+        if let Some(stripped) = line.strip_prefix('>') {
             if record_size > 0 {
                 // the size of the previous record
                 writer.write_fmt(format_args!("\t{}\n", record_size))?;
@@ -44,8 +44,8 @@ pub fn create_loc(infile: &str, locfile: &str, is_bgzf: bool) -> anyhow::Result<
             record_size = 0;
 
             //current record name
-            let name = &line[1..]
-                .splitn(2, |c: char| c.is_ascii_whitespace())
+            let name = stripped
+                .split(|c: char| c.is_ascii_whitespace())
                 .next()
                 .unwrap();
             writer.write_fmt(format_args!("{}\t{}", name, offset))?;
