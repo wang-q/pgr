@@ -176,7 +176,6 @@ fn command_fa_some_invert() -> anyhow::Result<()> {
     Ok(())
 }
 
-
 #[test]
 fn command_order() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("pgr")?;
