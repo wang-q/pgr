@@ -1,4 +1,5 @@
 use clap::*;
+use pgr::libs::nt;
 use pgr::libs::twobit::TwoBitFile;
 use std::io::Write;
 
@@ -120,7 +121,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         let mut seq = tb.read_sequence(seq_id, start, end, false)?;
 
         if rg.strand() == "-" {
-            seq = reverse_complement(&seq);
+            let rev_bytes: Vec<u8> = nt::rev_comp(seq.as_bytes()).collect();
+            seq = String::from_utf8(rev_bytes).unwrap();
         }
 
         // Header construction
@@ -134,30 +136,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         };
 
         writeln!(writer, ">{}", header)?;
-        
-        let mut idx = 0;
-        let len = seq.len();
-        while idx < len {
-            let next_idx = (idx + 60).min(len);
-            writeln!(writer, "{}", &seq[idx..next_idx])?;
-            idx = next_idx;
-        }
+        writeln!(writer, "{}", seq)?;
     }
 
     Ok(())
 }
 
-fn reverse_complement(seq: &str) -> String {
-    seq.chars()
-        .rev()
-        .map(|c| match c {
-            'A' => 'T', 'a' => 't',
-            'C' => 'G', 'c' => 'g',
-            'G' => 'C', 'g' => 'c',
-            'T' => 'A', 't' => 'a',
-            'U' => 'A', 'u' => 'a',
-            'N' => 'N', 'n' => 'n',
-            _ => c,
-        })
-        .collect()
-}
