@@ -1,4 +1,4 @@
-use clap::{Arg, ArgAction, ArgMatches, Command};
+use clap::{Arg, ArgAction, ArgMatches, Command, value_parser};
 use pgr::libs::twobit::TwoBitFile;
 use std::io::Write;
 
@@ -9,10 +9,14 @@ pub fn make_subcommand() -> Command {
             r###"
 Examples:
   # Convert entire 2bit file to FASTA
-  pgr twobit tofa input.2bit -o output.fa
+  pgr 2bit tofa input.2bit -o output.fa
 
   # No masking (all uppercase)
-  pgr twobit tofa input.2bit --no-mask -o out.fa
+  pgr 2bit tofa input.2bit --no-mask -o out.fa
+
+  # Set line width (default 60)
+  pgr 2bit tofa input.2bit -l 80
+  pgr 2bit tofa input.2bit -l 0  # no wrapping
 "###,
         )
         .arg(
@@ -30,6 +34,15 @@ Examples:
                 .default_value("stdout"),
         )
         .arg(
+            Arg::new("line")
+                .long("line")
+                .short('l')
+                .num_args(1)
+                .value_parser(value_parser!(usize))
+                .default_value("60")
+                .help("Sequence line length"),
+        )
+        .arg(
             Arg::new("no_mask")
                 .long("no-mask")
                 .action(ArgAction::SetTrue)
@@ -41,6 +54,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let input_path = args.get_one::<String>("input").unwrap();
     let output_path = args.get_one::<String>("output").unwrap();
     let no_mask = args.get_flag("no_mask");
+    let line_width = args.get_one::<usize>("line").copied().unwrap_or(60);
 
     let mut tb = TwoBitFile::open(input_path)?;
     let mut writer = intspan::writer(output_path);
@@ -51,12 +65,16 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         
         writeln!(writer, ">{}", name)?;
         
-        let mut idx = 0;
-        let len = seq.len();
-        while idx < len {
-            let next_idx = (idx + 60).min(len);
-            writeln!(writer, "{}", &seq[idx..next_idx])?;
-            idx = next_idx;
+        if line_width == 0 {
+            writeln!(writer, "{}", seq)?;
+        } else {
+            let mut idx = 0;
+            let len = seq.len();
+            while idx < len {
+                let next_idx = (idx + line_width).min(len);
+                writeln!(writer, "{}", &seq[idx..next_idx])?;
+                idx = next_idx;
+            }
         }
     }
 
