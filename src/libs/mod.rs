@@ -3,6 +3,7 @@ pub mod axt;
 pub mod chain;
 pub mod fas;
 pub mod lav;
+pub mod loc;
 pub mod maf;
 pub mod ms;
 pub mod ms2dna;

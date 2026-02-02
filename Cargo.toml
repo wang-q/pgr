@@ -21,6 +21,9 @@ itertools = "0.14.0"
 
 crossbeam = "0.8.4"
 
+indexmap = "2.13.0"
+lru = "0.13.0"
+
 intspan = "0.8.7"
 noodles = { version = "0.104.0", features = ["core", "fasta", "fastq", "bgzf"] }
 noodles-core = "0.18.0"
