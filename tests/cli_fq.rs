@@ -90,3 +90,30 @@ fn command_fq_tofa_r1() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn command_fq_interleave() -> anyhow::Result<()> {
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd.arg("fq")
+        .arg("interleave")
+        .arg("tests/fastq/R1.fq.gz")
+        .arg("tests/fastq/R2.fq.gz")
+        .arg("--fq")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    // Verify output format
+    // 25 pairs * 2 reads/pair = 50 reads
+    assert_eq!(
+        stdout
+            .lines()
+            .into_iter()
+            .filter(|e| e.starts_with("@"))
+            .count(),
+        50
+    );
+    // Check if it's FASTQ (has + lines)
+    assert!(stdout.contains("\n+\n"));
+
+    Ok(())
+}
