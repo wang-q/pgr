@@ -2,6 +2,7 @@ pub mod size;
 pub mod tofa;
 pub mod masked;
 pub mod some;
+pub mod range;
 
 pub fn make_subcommand() -> clap::Command {
     clap::Command::new("2bit")
@@ -10,6 +11,7 @@ pub fn make_subcommand() -> clap::Command {
         .subcommand(tofa::make_subcommand())
         .subcommand(masked::make_subcommand())
         .subcommand(some::make_subcommand())
+        .subcommand(range::make_subcommand())
 }
 
 pub fn execute(matches: &clap::ArgMatches) -> anyhow::Result<()> {
@@ -18,6 +20,7 @@ pub fn execute(matches: &clap::ArgMatches) -> anyhow::Result<()> {
         Some(("tofa", sub_matches)) => tofa::execute(sub_matches),
         Some(("masked", sub_matches)) => masked::execute(sub_matches),
         Some(("some", sub_matches)) => some::execute(sub_matches),
+        Some(("range", sub_matches)) => range::execute(sub_matches),
         _ => Ok(()),
     }
 }

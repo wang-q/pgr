@@ -129,7 +129,7 @@ fn test_2bit_tofa_basic() -> anyhow::Result<()> {
 }
 
 #[test]
-fn test_2bit_tofa_seq_range() -> anyhow::Result<()> {
+fn test_2bit_range_basic() -> anyhow::Result<()> {
     let temp = TempDir::new()?;
     let input = temp.path().join("test.fa");
     let twobit = temp.path().join("test.2bit");
@@ -146,37 +146,51 @@ fn test_2bit_tofa_seq_range() -> anyhow::Result<()> {
         .arg(&twobit);
     cmd.assert().success();
     
-    // Extract range 1-5 (CGTA)
+    // Extract range 2-5 (CGTA) - 1-based
+    // 01234567
+    // ACGTACGT
+    //  CGTA
     let mut cmd2 = Command::cargo_bin("pgr")?;
     cmd2.arg("2bit")
-        .arg("tofa")
+        .arg("range")
         .arg(&twobit)
-        .arg("--seq")
-        .arg("seq1")
-        .arg("--start")
-        .arg("1")
-        .arg("--end")
-        .arg("5")
+        .arg("seq1:2-5")
         .arg("-o")
         .arg(&output);
     cmd2.assert().success();
     
     let content = fs::read_to_string(&output)?;
-    assert!(content.contains(">seq1:1-5\nCGTA"));
+    assert!(content.contains(">seq1:2-5\nCGTA"));
+
+    // Extract negative strand
+    // seq1:2-5 is CGTA. RevComp: TACG.
+    let output_neg = temp.path().join("out_neg.fa");
+    let mut cmd3 = Command::cargo_bin("pgr")?;
+    cmd3.arg("2bit")
+        .arg("range")
+        .arg(&twobit)
+        .arg("seq1(-):2-5")
+        .arg("-o")
+        .arg(&output_neg);
+    cmd3.assert().success();
+
+    let content_neg = fs::read_to_string(&output_neg)?;
+    assert!(content_neg.contains(">seq1(-):2-5\nTACG"));
 
     Ok(())
 }
 
 #[test]
-fn test_2bit_tofa_seq_list() -> anyhow::Result<()> {
+fn test_2bit_range_rgfile() -> anyhow::Result<()> {
     let temp = TempDir::new()?;
     let input = temp.path().join("test.fa");
     let twobit = temp.path().join("test.2bit");
-    let list = temp.path().join("list.txt");
+    let list = temp.path().join("ranges.txt");
     let output = temp.path().join("out.fa");
     
     fs::write(&input, ">seq1\nACGT\n>seq2\nTGCA\n")?;
-    fs::write(&list, "seq2\n")?;
+    // Request seq2 (entire sequence) and seq1:1-2
+    fs::write(&list, "seq2\nseq1:1-2\n")?;
     
     // Create 2bit
     let mut cmd = Command::cargo_bin("pgr")?;
@@ -187,12 +201,12 @@ fn test_2bit_tofa_seq_list() -> anyhow::Result<()> {
         .arg(&twobit);
     cmd.assert().success();
     
-    // Extract seq2
+    // Extract ranges
     let mut cmd2 = Command::cargo_bin("pgr")?;
     cmd2.arg("2bit")
-        .arg("tofa")
+        .arg("range")
         .arg(&twobit)
-        .arg("--seqList")
+        .arg("-r")
         .arg(&list)
         .arg("-o")
         .arg(&output);
@@ -200,10 +214,11 @@ fn test_2bit_tofa_seq_list() -> anyhow::Result<()> {
     
     let content = fs::read_to_string(&output)?;
     assert!(content.contains(">seq2\nTGCA"));
-    assert!(!content.contains(">seq1"));
+    assert!(content.contains(">seq1:1-2\nAC"));
 
     Ok(())
 }
+
 
 #[test]
 fn test_2bit_tofa_mask() -> anyhow::Result<()> {
@@ -354,7 +369,7 @@ fn test_2bit_size_multiple() -> anyhow::Result<()> {
 }
 
 #[test]
-fn test_2bit_compat_seqlist1_file() -> anyhow::Result<()> {
+fn test_2bit_range_seqlist1_file() -> anyhow::Result<()> {
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")?;
     let input = std::path::Path::new(&manifest_dir).join("tests/2bit/input/testMask.2bit");
     let list = std::path::Path::new(&manifest_dir).join("tests/2bit/input/seqlist1");
@@ -364,9 +379,9 @@ fn test_2bit_compat_seqlist1_file() -> anyhow::Result<()> {
     
     let mut cmd = Command::cargo_bin("pgr")?;
     cmd.arg("2bit")
-        .arg("tofa")
+        .arg("range")
         .arg(&input)
-        .arg("--seqList")
+        .arg("--rgfile")
         .arg(&list)
         .arg("-o")
         .arg(&output);
@@ -382,35 +397,6 @@ fn test_2bit_compat_seqlist1_file() -> anyhow::Result<()> {
     Ok(())
 }
 
-#[test]
-fn test_2bit_compat_seqlist2_file() -> anyhow::Result<()> {
-    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")?;
-    let input = std::path::Path::new(&manifest_dir).join("tests/2bit/input/testMask.2bit");
-    let list = std::path::Path::new(&manifest_dir).join("tests/2bit/input/seqlist2");
-    
-    let temp = TempDir::new()?;
-    let output = temp.path().join("out.fa");
-    
-    let mut cmd = Command::cargo_bin("pgr")?;
-    cmd.arg("2bit")
-        .arg("tofa")
-        .arg(&input)
-        .arg("--seqList")
-        .arg(&list)
-        .arg("-o")
-        .arg(&output);
-    cmd.assert().success();
-    
-    let output_content = fs::read_to_string(&output)?;
-    
-    // seqlist2 has: noLower, startLower:0-5, endLower:2-8
-    assert!(output_content.contains(">noLower"));
-    assert!(output_content.contains(">startLower:0-5"));
-    assert!(output_content.contains(">endLower:2-8"));
-    assert!(!output_content.contains(">manyLower"));
-    
-    Ok(())
-}
 
 #[test]
 fn test_2bit_masked() -> anyhow::Result<()> {
@@ -460,91 +446,44 @@ fn test_2bit_masked() -> anyhow::Result<()> {
 }
 
 #[test]
-fn test_2bit_compat_single_seq_ranges() -> anyhow::Result<()> {
+fn test_2bit_range_legacy_cases() -> anyhow::Result<()> {
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")?;
     let input = std::path::Path::new(&manifest_dir).join("tests/2bit/input/testMask.2bit");
 
     let temp = TempDir::new()?;
-    let output = temp.path().join("out.fa");
-
-    // Test ml_1_11: manyLower 1-11
-    let mut cmd = Command::cargo_bin("pgr")?;
-    cmd.arg("2bit")
-        .arg("tofa")
-        .arg(&input)
-        .arg("--seq")
-        .arg("manyLower")
-        .arg("--start")
-        .arg("1")
-        .arg("--end")
-        .arg("11")
-        .arg("-o")
-        .arg(&output);
-    cmd.assert().success();
-
-    let output_content = fs::read_to_string(&output)?;
-    assert!(output_content.contains(">manyLower"));
-    // manyLower: aaCCggTTaCgT
-    // 1-11: aCCggTTaCg
-    assert!(output_content.contains("aCCggTTaCg"));
-
-    // Test spec_ml_2_10: manyLower 2-10
-    // 2-10: CCggTTaC
-    let output2 = temp.path().join("out2.fa");
-    let mut cmd2 = Command::cargo_bin("pgr")?;
-    cmd2.arg("2bit")
-        .arg("tofa")
-        .arg(&input)
-        .arg("--seq")
-        .arg("manyLower")
-        .arg("--start")
-        .arg("2")
-        .arg("--end")
-        .arg("10")
-        .arg("-o")
-        .arg(&output2);
-    cmd2.assert().success();
-
-    let output_content2 = fs::read_to_string(&output2)?;
-    assert!(output_content2.contains("CCggTTaC"));
 
     // Helper to test range and expected sequence
     let test_range = |start: usize, end: usize, expected: &str| -> anyhow::Result<()> {
         let out_name = format!("out_{}_{}.fa", start, end);
         let out_path = temp.path().join(&out_name);
+        
+        let range_str = format!("manyLower:{}-{}", start, end);
+        
         let mut cmd = Command::cargo_bin("pgr")?;
         cmd.arg("2bit")
-            .arg("tofa")
+            .arg("range")
             .arg(&input)
-            .arg("--seq")
-            .arg("manyLower")
-            .arg("--start")
-            .arg(&start.to_string())
-            .arg("--end")
-            .arg(&end.to_string())
+            .arg(&range_str)
             .arg("-o")
             .arg(&out_path);
         cmd.assert().success();
+        
         let content = fs::read_to_string(&out_path)?;
         if !content.contains(expected) {
-             anyhow::bail!("Failed for {}-{}: expected {}, got {}", start, end, expected, content);
+             anyhow::bail!("Failed for {}: expected {}, got {}", range_str, expected, content);
         }
         Ok(())
     };
 
-    // ml_3_9: 3-9 -> CggTTa
+    // Test cases from original test
+    test_range(1, 11, "aCCggTTaCg")?;
+    test_range(2, 10, "CCggTTaC")?;
     test_range(3, 9, "CggTTa")?;
-    // ml_4_8: 4-8 -> ggTT
     test_range(4, 8, "ggTT")?;
-    // ml_5_6: 5-6 -> g
     test_range(5, 6, "g")?;
-    // ml_5_7: 5-7 -> gT
     test_range(5, 7, "gT")?;
-    // ml_6_7: 6-7 -> T
     test_range(6, 7, "T")?;
-    // ml_7_8: 7-8 -> T
     test_range(7, 8, "T")?;
-    // ml_8_9: 8-9 -> a
     test_range(8, 9, "a")?;
 
     Ok(())
