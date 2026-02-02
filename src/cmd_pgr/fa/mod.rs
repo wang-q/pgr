@@ -7,6 +7,12 @@ pub mod to2bit;
 pub fn make_subcommand() -> clap::Command {
     clap::Command::new("fa")
         .about("Fasta tools")
+        .after_help(
+            r###"Notes:
+* Supports both plain text and gzipped (.gz) files
+
+"###,
+        )
         .subcommand(masked::make_subcommand())
         .subcommand(n50::make_subcommand())
         .subcommand(size::make_subcommand())
