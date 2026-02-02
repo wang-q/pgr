@@ -163,7 +163,7 @@ pub struct TwoBitWriter<W> {
     writer: W,
 }
 
-impl<W: std::io::Write + Seek> TwoBitWriter<W> {
+impl<W: std::io::Write> TwoBitWriter<W> {
     pub fn new(writer: W) -> Self {
         Self { writer }
     }
