@@ -43,7 +43,7 @@ Examples:
                 .long("some")
                 .short('s')
                 .action(ArgAction::SetTrue)
-                .help("Only output sequences listed in the TSV file, like `hnsm some`"),
+                .help("Only output sequences listed in the TSV file, like `pgr fa some`"),
         )
         .arg(
             Arg::new("outfile")

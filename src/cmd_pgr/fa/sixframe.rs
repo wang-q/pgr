@@ -3,7 +3,7 @@ use std::io::Write;
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
-    Command::new("sixframe")
+    Command::new("6frame")
         .about("Translate DNA sequences in six frames")
         .after_help(
             r###"
@@ -30,13 +30,13 @@ Notes:
 
 Examples:
 1. Basic translation:
-   pgr fa sixframe input.fa -o orfs.fa
+   pgr fa 6frame input.fa -o orfs.fa
 
 2. Filter long ORFs:
-   pgr fa sixframe input.fa --len 100 -o orfs.fa
+   pgr fa 6frame input.fa --len 100 -o orfs.fa
 
 3. Complete proteins only:
-   pgr fa sixframe input.fa --start --end -o orfs.fa
+   pgr fa 6frame input.fa --start --end -o orfs.fa
 
 "###,
         )

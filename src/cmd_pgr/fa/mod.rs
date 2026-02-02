@@ -24,7 +24,7 @@ pub fn make_subcommand() -> clap::Command {
 
 * info: size / count / masked / n50
 * records: one / some / order / split
-* transform: replace / rc / filter / dedup / mask / sixframe
+* transform: replace / rc / filter / dedup / mask / 6frame
 * indexing: gz / range / prefilter
 
 "###,
@@ -62,7 +62,7 @@ pub fn execute(matches: &clap::ArgMatches) -> anyhow::Result<()> {
         Some(("range", sub_matches)) => range::execute(sub_matches),
         Some(("rc", sub_matches)) => rc::execute(sub_matches),
         Some(("replace", sub_matches)) => replace::execute(sub_matches),
-        Some(("sixframe", sub_matches)) => sixframe::execute(sub_matches),
+        Some(("6frame", sub_matches)) => sixframe::execute(sub_matches),
         Some(("size", sub_matches)) => size::execute(sub_matches),
         Some(("some", sub_matches)) => some::execute(sub_matches),
         Some(("split", sub_matches)) => split::execute(sub_matches),

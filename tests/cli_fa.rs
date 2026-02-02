@@ -668,7 +668,7 @@ fn command_sixframe() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
         .arg("fa")
-        .arg("sixframe")
+        .arg("6frame")
         .arg("tests/fasta/trans.fa")
         .output()?;
     let stdout = String::from_utf8(output.stdout)?;
@@ -682,7 +682,7 @@ fn command_sixframe() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
         .arg("fa")
-        .arg("sixframe")
+        .arg("6frame")
         .arg("tests/fasta/trans.fa")
         .arg("--len")
         .arg("3")
@@ -694,7 +694,7 @@ fn command_sixframe() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
         .arg("fa")
-        .arg("sixframe")
+        .arg("6frame")
         .arg("tests/fasta/trans.fa")
         .arg("--len")
         .arg("3")
@@ -707,7 +707,7 @@ fn command_sixframe() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
         .arg("fa")
-        .arg("sixframe")
+        .arg("6frame")
         .arg("tests/fasta/trans.fa")
         .arg("--len")
         .arg("3")
