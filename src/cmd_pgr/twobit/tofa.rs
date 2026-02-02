@@ -64,11 +64,31 @@ Examples:
                 .help("File containing list of sequence names (one per line)"),
         )
         .arg(
+            Arg::new("bed")
+                .long("bed")
+                .value_name("FILE")
+                .help("Grab sequences specified by input.bed"),
+        )
+        .arg(
+            Arg::new("bed_pos")
+                .long("bedPos")
+                .action(ArgAction::SetTrue)
+                .help("With -bed, use chrom:start-end as the fasta ID"),
+        )
+        .arg(
             Arg::new("no_mask")
                 .long("no-mask")
                 .action(ArgAction::SetTrue)
                 .help("Convert sequence to all upper case"),
         )
+}
+
+struct Target {
+    seq_name: String,
+    start: Option<usize>,
+    end: Option<usize>,
+    header_name: String,
+    is_rev_comp: bool,
 }
 
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
@@ -78,16 +98,31 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let opt_start = args.get_one::<usize>("start").copied();
     let opt_end = args.get_one::<usize>("end").copied();
     let opt_seq_list = args.get_one::<String>("seq_list");
+    let opt_bed = args.get_one::<String>("bed");
+    let bed_pos = args.get_flag("bed_pos");
     let no_mask = args.get_flag("no_mask");
 
     let mut tb = TwoBitFile::open(input_path)?;
     let mut writer = intspan::writer(output_path);
 
-    // Determine targets: Vec<(name, start, end)>
-    let mut targets = Vec::new();
+    // Determine targets
+    let mut targets: Vec<Target> = Vec::new();
 
     if let Some(seq) = opt_seq {
-        targets.push((seq.clone(), opt_start, opt_end));
+        let header_name = if opt_start.is_some() || opt_end.is_some() {
+             // Will be refined later based on actual end
+             seq.clone() 
+        } else {
+             seq.clone()
+        };
+        
+        targets.push(Target {
+            seq_name: seq.clone(),
+            start: opt_start,
+            end: opt_end,
+            header_name,
+            is_rev_comp: false,
+        });
     } else if let Some(list_path) = opt_seq_list {
         let file = File::open(list_path)?;
         let reader = BufReader::new(file);
@@ -107,77 +142,106 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                     let end_str = &range_part[dash_idx+1..];
                     let start = start_str.parse::<usize>().ok();
                     let end = end_str.parse::<usize>().ok();
-                    targets.push((name, start, end));
+                    // For seqList, UCSC behavior is usually to use the line as header?
+                    // Or name:start-end.
+                    // Let's use the full line spec as header name if range is present.
+                    targets.push(Target {
+                        seq_name: name,
+                        start,
+                        end,
+                        header_name: line.to_string(),
+                        is_rev_comp: false,
+                    });
                 } else {
-                    // Invalid range format, treat as name? Or error?
-                    // UCSC allows just name, or name:start-end. 
-                    // If no dash, maybe just name? But colon implies range.
-                    // Let's assume if colon exists, we try to parse range.
-                    targets.push((name, None, None)); 
+                    targets.push(Target {
+                        seq_name: name,
+                        start: None,
+                        end: None,
+                        header_name: line.to_string(),
+                        is_rev_comp: false,
+                    });
                 }
             } else {
-                targets.push((line.to_string(), None, None));
+                targets.push(Target {
+                    seq_name: line.to_string(),
+                    start: None,
+                    end: None,
+                    header_name: line.to_string(),
+                    is_rev_comp: false,
+                });
             }
+        }
+    } else if let Some(bed_path) = opt_bed {
+        let file = File::open(bed_path)?;
+        let reader = BufReader::new(file);
+        for line in reader.lines() {
+            let line = line?;
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            let fields: Vec<&str> = line.split_whitespace().collect();
+            if fields.len() < 3 {
+                continue; // Skip invalid lines
+            }
+            
+            let chrom = fields[0].to_string();
+            let start = fields[1].parse::<usize>().ok();
+            let end = fields[2].parse::<usize>().ok();
+            let name = if fields.len() > 3 { fields[3].to_string() } else { chrom.clone() };
+            let strand = if fields.len() > 5 { fields[5] } else { "+" };
+            
+            let is_rev_comp = strand == "-";
+            
+            let header_name = if bed_pos {
+                if let (Some(s), Some(e)) = (start, end) {
+                    format!("{}:{}-{}", chrom, s, e)
+                } else {
+                    chrom.clone()
+                }
+            } else {
+                name
+            };
+
+            targets.push(Target {
+                seq_name: chrom,
+                start,
+                end,
+                header_name,
+                is_rev_comp,
+            });
         }
     } else {
         // All sequences
         let names = tb.get_sequence_names();
         for name in names {
-            targets.push((name, None, None));
+            targets.push(Target {
+                seq_name: name.clone(),
+                start: None,
+                end: None,
+                header_name: name,
+                is_rev_comp: false,
+            });
         }
     }
 
-    for (name, start, end) in targets {
-        // If start/end provided, we might want to adjust them or validate?
-        // read_sequence handles None by using default.
+    for target in targets {
+        let mut seq = tb.read_sequence(&target.seq_name, target.start, target.end, no_mask)?;
         
-        let seq = tb.read_sequence(&name, start, end, no_mask)?;
-        
-        // Write FASTA
-        // Header: >name (if range, maybe add range info? UCSC usually just >name:start-end)
-        // UCSC twoBitToFa behavior:
-        // If -seq is used: >name
-        // If -seqList is used: >name:start-end (if range specified)
-        // If whole file: >name
-        
-        // Let's stick to simple >name unless it's a subslice.
-        // If start/end are specified, we should probably indicate it in header
-        // to match UCSC or just be helpful.
-        // But UCSC `twoBitToFa` output header depends on input.
-        // If I do `twoBitToFa hg38.2bit -seq=chr1 -start=0 -end=10 out.fa`
-        // Output header is `>chr1:0-10`.
-        
-        let header = if start.is_some() || end.is_some() {
-            // We need to know the actual start/end used.
-            // read_sequence doesn't return them.
-            // But we can guess.
-            // If start is None, it's 0.
-            // If end is None, it's seq len. 
-            // We don't have seq len easily here without querying index.
-            // But `read_sequence` does it internally.
-            
-            // For now, let's construct header based on request.
-            let s = start.unwrap_or(0);
-            if let Some(e) = end {
-                format!("{}:{}-{}", name, s, e)
-            } else {
-                // If end is None, we don't know the end without querying size.
-                // We can query size from `tb`.
-                // But `tb` interface for size is `sequence_offsets`? No, that gives offset.
-                // We need to read the record header to get size.
-                // Or just use the returned sequence length.
-                let e = s + seq.len();
-                format!("{}:{}-{}", name, s, e)
-            }
+        if target.is_rev_comp {
+            seq = reverse_complement(&seq);
+        }
+
+        // Refine header if needed (for --seq case where we constructed it lazily)
+        let header = if opt_seq.is_some() && (target.start.is_some() || target.end.is_some()) {
+            let s = target.start.unwrap_or(0);
+            let e = s + seq.len(); // Approximate end based on read length
+             format!("{}:{}-{}", target.seq_name, s, e)
         } else {
-            name
+            target.header_name
         };
 
         writeln!(writer, ">{}", header)?;
-        // Wrap lines? UCSC does 50 chars.
-        // Let's just write line by line or wrap at 60/80.
-        // `fas` usually 60 or 80.
-        // Let's use 60.
         
         let mut idx = 0;
         let len = seq.len();
@@ -189,4 +253,19 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+fn reverse_complement(seq: &str) -> String {
+    seq.chars()
+        .rev()
+        .map(|c| match c {
+            'A' => 'T', 'a' => 't',
+            'C' => 'G', 'c' => 'g',
+            'G' => 'C', 'g' => 'c',
+            'T' => 'A', 't' => 'a',
+            'U' => 'A', 'u' => 'a',
+            'N' => 'N', 'n' => 'n',
+            _ => c,
+        })
+        .collect()
 }

@@ -77,6 +77,16 @@ Options:
 
 ## Examples
 
+### 2bit
+
+```bash
+# pgr fa to2bit tests/fasta/ufasta.fa -o tests/fasta/ufasta.2bit
+faToTwoBit -long tests/pgr/mg1655.fa.gz tests/pgr/mg1655.2bit
+
+pgr 2bit size tests/pgr/mg1655.2bit
+
+```
+
 ### Genomes
 
 * genomes

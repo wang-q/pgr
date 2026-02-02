@@ -267,6 +267,7 @@ impl<W: std::io::Write + Seek> TwoBitWriter<W> {
 pub struct TwoBitFile<R> {
     reader: R,
     pub sequence_offsets: HashMap<String, u64>,
+    pub sequence_order: Vec<String>,
     is_swapped: bool,
     pub version: u32,
 }
@@ -304,8 +305,8 @@ impl<R: Read + Seek> TwoBitFile<R> {
 
         // Read version
         let version = read_u32(&mut reader, is_swapped)?;
-        if version != 1 {
-            return Err(anyhow!("Unsupported 2bit version: {} (only version 1 is supported)", version));
+        if version != 0 && version != 1 {
+            return Err(anyhow!("Unsupported 2bit version: {} (only version 0 and 1 are supported)", version));
         }
 
         // Read seqCount
@@ -316,6 +317,7 @@ impl<R: Read + Seek> TwoBitFile<R> {
 
         // Read Index
         let mut sequence_offsets = HashMap::new();
+        let mut sequence_order = Vec::new();
         for _ in 0..seq_count {
             let mut len_buf = [0u8; 1];
             reader.read_exact(&mut len_buf)?;
@@ -325,20 +327,26 @@ impl<R: Read + Seek> TwoBitFile<R> {
             reader.read_exact(&mut name_buf)?;
             let name = String::from_utf8(name_buf)?;
 
-            let offset = read_u64(&mut reader, is_swapped)?;
-            sequence_offsets.insert(name, offset);
+            let offset = if version == 0 {
+                read_u32(&mut reader, is_swapped)? as u64
+            } else {
+                read_u64(&mut reader, is_swapped)?
+            };
+            sequence_offsets.insert(name.clone(), offset);
+            sequence_order.push(name);
         }
 
         Ok(Self {
             reader,
             sequence_offsets,
+            sequence_order,
             is_swapped,
             version,
         })
     }
 
     pub fn get_sequence_names(&self) -> Vec<String> {
-        self.sequence_offsets.keys().cloned().collect()
+        self.sequence_order.clone()
     }
 
     fn read_blocks(&mut self) -> Result<Blocks> {
@@ -569,18 +577,77 @@ mod tests {
         Ok(())
     }
 
+    fn create_v0_2bit_data() -> Vec<u8> {
+        let mut data = Vec::new();
+
+        // Header (16 bytes)
+        data.extend_from_slice(&TWOBIT_MAGIC.to_ne_bytes()); // Magic
+        data.extend_from_slice(&0u32.to_ne_bytes());         // Version 0
+        data.extend_from_slice(&1u32.to_ne_bytes());         // SeqCount 1
+        data.extend_from_slice(&0u32.to_ne_bytes());         // Reserved
+
+        // Index
+        // Name: "seq1"
+        let name = "seq1";
+        data.push(name.len() as u8);
+        data.extend_from_slice(name.as_bytes());
+        
+        // Offset calculation:
+        // Header (16) + NameLen(1) + Name(4) + Offset(4) = 25 bytes
+        let offset = 25u32;
+        data.extend_from_slice(&offset.to_ne_bytes());
+
+        // Data Record at offset 25
+        // Sequence: TCAG (4 bp)
+        // T=00, C=01, A=10, G=11 -> 00011011 = 0x1B
+        let dna_size = 4u32;
+        data.extend_from_slice(&dna_size.to_ne_bytes());
+        
+        // N Blocks
+        data.extend_from_slice(&0u32.to_ne_bytes()); // Count
+
+        // Mask Blocks
+        data.extend_from_slice(&0u32.to_ne_bytes()); // Count
+
+        // Reserved
+        data.extend_from_slice(&0u32.to_ne_bytes());
+
+        // Packed DNA
+        data.push(0x1B); // TCAG
+
+        data
+    }
+
+    #[test]
+    fn test_read_v0_basic() -> Result<()> {
+        let data = create_v0_2bit_data();
+        let cursor = Cursor::new(data);
+        let mut tb = TwoBitFile::new(cursor)?;
+
+        assert_eq!(tb.version, 0);
+        
+        let names = tb.get_sequence_names();
+        assert_eq!(names, vec!["seq1"]);
+
+        // Read "seq1"
+        let seq = tb.read_sequence("seq1", None, None, false)?;
+        assert_eq!(seq, "TCAG");
+
+        Ok(())
+    }
+
     #[test]
     fn test_version_check() {
-        // Construct a version 0 file
+        // Construct a version 2 file (unsupported)
         let mut data = Vec::new();
         data.extend_from_slice(&TWOBIT_MAGIC.to_ne_bytes());
-        data.extend_from_slice(&0u32.to_ne_bytes()); // Version 0
+        data.extend_from_slice(&2u32.to_ne_bytes()); // Version 2
         // ... rest doesn't matter as it fails fast
 
         let cursor = Cursor::new(data);
         let res = TwoBitFile::new(cursor);
         assert!(res.is_err());
-        assert!(res.unwrap_err().to_string().contains("only version 1 is supported"));
+        assert!(res.unwrap_err().to_string().contains("Unsupported 2bit version: 2"));
     }
 
     #[test]
