@@ -2,6 +2,7 @@ pub mod count;
 pub mod dedup;
 pub mod filter;
 pub mod gz;
+pub mod mask;
 pub mod masked;
 pub mod n50;
 pub mod one;
@@ -18,8 +19,12 @@ pub fn make_subcommand() -> clap::Command {
     clap::Command::new("fa")
         .about("Fasta tools")
         .after_help(
-            r###"Notes:
-* Supports both plain text and gzipped (.gz) files
+            r###"Subcommand groups:
+
+* info: size / count / masked / n50
+* records: one / some / order / split
+* transform: replace / rc / filter / dedup / mask / sixframe
+* indexing: gz / range / prefilter
 
 "###,
         )
@@ -27,6 +32,7 @@ pub fn make_subcommand() -> clap::Command {
         .subcommand(dedup::make_subcommand())
         .subcommand(filter::make_subcommand())
         .subcommand(gz::make_subcommand())
+        .subcommand(mask::make_subcommand())
         .subcommand(masked::make_subcommand())
         .subcommand(n50::make_subcommand())
         .subcommand(one::make_subcommand())
@@ -46,6 +52,7 @@ pub fn execute(matches: &clap::ArgMatches) -> anyhow::Result<()> {
         Some(("dedup", sub_matches)) => dedup::execute(sub_matches),
         Some(("filter", sub_matches)) => filter::execute(sub_matches),
         Some(("gz", sub_matches)) => gz::execute(sub_matches),
+        Some(("mask", sub_matches)) => mask::execute(sub_matches),
         Some(("masked", sub_matches)) => masked::execute(sub_matches),
         Some(("n50", sub_matches)) => n50::execute(sub_matches),
         Some(("one", sub_matches)) => one::execute(sub_matches),
