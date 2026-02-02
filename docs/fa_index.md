@@ -11,8 +11,8 @@ input, often causing errors with draft assemblies or "messy" files.
     without prior cleanup.
 *   **Unified Architecture**: Uses a consistent indexing strategy for both plain text and
     BGZF-compressed data, abstracting away compression details for seamless access.
-*   **Performance Optimization**: An internal LRU cache accelerates access for microbial genomes and
-    contigs, minimizing disk I/O overhead during intensive retrieval operations.
+*   **Performance Optimization**: An internal LRU cache accelerates access for microbial genomes,
+    contigs, and protein sequences, minimizing disk I/O overhead during intensive retrieval operations.
 *   **Large Genome Support**: For mammalian-sized genomes, `pgr 2bit` ports the UCSC 2bit tools while
     maintaining a consistent command-line interface with `pgr fa`, ensuring a uniform experience
     across formats.
@@ -22,6 +22,8 @@ input, often causing errors with draft assemblies or "messy" files.
 bgzip --keep --index tests/index/final.contigs.fa
 
 pgr fa gz tests/index/final.contigs.fa -o tmp.gz
+
+faToTwoBit tests/index/final.contigs.fa tests/index/final.contigs.2bit
 
 # range
 samtools faidx tests/index/final.contigs.fa
@@ -33,12 +35,17 @@ pgr fa range tests/index/final.contigs.fa.gz \
     "k81_130" "k81_130:11-20" "k81_170:304-323" "k81_170(-):1-20" "k81_158:70001-70020"
 pgr fa range tests/index/final.contigs.fa.gz -r tests/index/sample.rg
 
+pgr 2bit range tests/index/final.contigs.2bit \
+    "k81_130" "k81_130:11-20" "k81_170:304-323" "k81_170(-):1-20" "k81_158:70001-70020"
+pgr 2bit range tests/index/final.contigs.2bit -r tests/index/sample.rg
+
 ```
 
 ## Benchmarks
 
 ```shell
 cbp install samtools
+cbp install chainnet
 cbp install hyperfine
 
 ```
@@ -58,7 +65,13 @@ hyperfine --warmup 5 --export-markdown gz.md.tmp \
      pgr fa gz tests/index/final.contigs.fa' \
     -n "pgr fa gz -p 2" \
     'rm -f tests/index/final.contigs.fa.gz*;
-     pgr fa gz -p 2 tests/index/final.contigs.fa'
+     pgr fa gz -p 2 tests/index/final.contigs.fa' \
+    -n "faToTwoBit" \
+    'rm -f tests/index/final.contigs.2bit;
+     faToTwoBit tests/index/final.contigs.fa tests/index/final.contigs.2bit' \
+    -n "pgr fa to2bit" \
+    'rm -f tests/index/final.contigs.2bit;
+     pgr fa to2bit tests/index/final.contigs.fa -o tests/index/final.contigs.2bit'
 
 cat gz.md.tmp
 
@@ -66,12 +79,14 @@ cat gz.md.tmp
 
 | Command             |  Mean [ms] | Min [ms] | Max [ms] |    Relative |
 |:--------------------|-----------:|---------:|---------:|------------:|
-| `bgzip`             | 71.2 ± 1.7 |     68.9 |     76.3 | 2.12 ± 0.10 |
-| `bgzip --threads 2` | 51.5 ± 1.0 |     50.0 |     54.8 | 1.53 ± 0.07 |
-| `pgr fa gz`         | 42.3 ± 1.2 |     40.1 |     45.0 | 1.26 ± 0.06 |
-| `pgr fa gz -p 2`    | 33.6 ± 1.3 |     32.0 |     40.6 |        1.00 |
+| `bgzip`             | 71.6 ± 1.5 |     69.2 |     74.6 | 2.35 ± 0.09 |
+| `bgzip --threads 2` | 52.2 ± 0.9 |     50.6 |     54.4 | 1.71 ± 0.06 |
+| `pgr fa gz`         | 42.2 ± 0.9 |     40.8 |     44.6 | 1.38 ± 0.05 |
+| `pgr fa gz -p 2`    | 32.7 ± 1.3 |     30.7 |     40.5 | 1.07 ± 0.06 |
+| `faToTwoBit`        | 30.5 ± 1.0 |     29.0 |     33.7 |        1.00 |
+| `pgr fa to2bit`     | 31.1 ± 2.4 |     28.1 |     38.3 | 1.02 ± 0.08 |
 
-### `.loc` and `.fai`
+### Create `.loc` and `.fai`
 
 ```shell
 hyperfine --warmup 5 --export-markdown faidx.md.tmp \
@@ -114,6 +129,9 @@ hyperfine --warmup 5 --export-markdown rg.md.tmp \
         "k81_130" "k81_130:11-20" "k81_170:304-323" "k81_158:70001-70020"' \
     -n "pgr fa range .fa.gz" \
     'pgr fa range tests/index/final.contigs.fa.gz \
+        "k81_130" "k81_130:11-20" "k81_170:304-323" "k81_158:70001-70020"' \
+    -n "pgr 2bit range" \
+    'pgr 2bit range tests/index/final.contigs.2bit \
         "k81_130" "k81_130:11-20" "k81_170:304-323" "k81_158:70001-70020"'
 
 cat rg.md.tmp
@@ -122,10 +140,11 @@ cat rg.md.tmp
 
 | Command                 |  Mean [ms] | Min [ms] | Max [ms] |    Relative |
 |:------------------------|-----------:|---------:|---------:|------------:|
-| `samtools faidx .fa`    |  6.1 ± 0.4 |      5.5 |      8.9 |        1.00 |
-| `samtools faidx .fa.gz` |  7.9 ± 0.4 |      7.3 |     11.1 | 1.29 ± 0.11 |
-| `pgr fa range .fa`      |  8.0 ± 0.4 |      7.2 |     10.3 | 1.30 ± 0.11 |
-| `pgr fa range .fa.gz`   | 11.0 ± 0.5 |     10.0 |     12.7 | 1.78 ± 0.14 |
+| `samtools faidx .fa`    |  6.1 ± 0.4 |      4.8 |      8.5 | 1.07 ± 0.11 |
+| `samtools faidx .fa.gz` |  7.7 ± 0.7 |      7.0 |     18.1 | 1.36 ± 0.16 |
+| `pgr fa range .fa`      |  8.3 ± 0.6 |      7.3 |     10.4 | 1.45 ± 0.15 |
+| `pgr fa range .fa.gz`   | 11.2 ± 0.7 |      9.8 |     13.0 | 1.96 ± 0.19 |
+| `pgr 2bit range`        |  5.7 ± 0.4 |      5.0 |      7.2 |        1.00 |
 
 ### `pgr fa range -r`
 
@@ -138,15 +157,18 @@ hyperfine --warmup 5 --export-markdown rg.md.tmp \
     -n "pgr fa range .fa" \
     'pgr fa range tests/index/final.contigs.fa -r tests/index/sample.rg > /dev/null' \
     -n "pgr fa range .fa.gz" \
-    'pgr fa range tests/index/final.contigs.fa.gz -r tests/index/sample.rg > /dev/null'
+    'pgr fa range tests/index/final.contigs.fa.gz -r tests/index/sample.rg > /dev/null' \
+    -n "pgr 2bit range" \
+    'pgr 2bit range tests/index/final.contigs.2bit -r tests/index/sample.rg > /dev/null'
 
 cat rg.md.tmp
 
 ```
 
-| Command                 |  Mean [ms] | Min [ms] | Max [ms] |    Relative |
-|:------------------------|-----------:|---------:|---------:|------------:|
-| `samtools faidx .fa`    |  7.9 ± 0.6 |      7.1 |     12.1 |        1.00 |
-| `samtools faidx .fa.gz` |  9.4 ± 0.6 |      8.3 |     12.3 | 1.18 ± 0.11 |
-| `pgr fa range .fa`      | 10.4 ± 0.6 |      9.2 |     13.0 | 1.31 ± 0.13 |
-| `pgr fa range .fa.gz`   | 13.0 ± 0.5 |     11.9 |     14.5 | 1.64 ± 0.14 |
+| Command                   |  Mean [ms] | Min [ms] | Max [ms] |    Relative |
+|:--------------------------|-----------:|---------:|---------:|------------:|
+| `samtools faidx .fa`      |  8.3 ± 0.7 |      7.1 |     12.1 | 1.05 ± 0.11 |
+| `samtools faidx .fa.gz`   |  9.8 ± 0.5 |      9.0 |     11.9 | 1.25 ± 0.10 |
+| `pgr fa range .fa`        | 10.0 ± 0.5 |      9.2 |     13.3 | 1.27 ± 0.10 |
+| `pgr fa range .fa.gz`     | 12.4 ± 0.5 |     11.5 |     15.5 | 1.58 ± 0.12 |
+| `pgr 2bit range`          |  7.9 ± 0.5 |      7.1 |     10.6 |        1.00 |
