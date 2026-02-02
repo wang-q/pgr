@@ -23,6 +23,7 @@ crossbeam = "0.8.4"
 
 indexmap = "2.13.0"
 lru = "0.13.0"
+rapidhash = { version = "1.4.0", features = ["rng"] }
 
 intspan = "0.8.7"
 noodles = { version = "0.104.0", features = ["core", "fasta", "fastq", "bgzf"] }

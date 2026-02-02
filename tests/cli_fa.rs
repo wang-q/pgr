@@ -548,3 +548,85 @@ fn command_rc() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn command_dedup() -> anyhow::Result<()> {
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("fa")
+        .arg("dedup")
+        .arg("tests/fasta/dedup.fa")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    assert_eq!(stdout.lines().count(), 8);
+    assert!(!stdout.contains(">read0 some text"));
+
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("fa")
+        .arg("dedup")
+        .arg("tests/fasta/dedup.fa")
+        .arg("--desc")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    assert_eq!(stdout.lines().count(), 10);
+    assert!(stdout.contains(">read0 some text"));
+
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("fa")
+        .arg("dedup")
+        .arg("tests/fasta/dedup.fa")
+        .arg("--seq")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    assert_eq!(stdout.lines().count(), 6);
+    assert!(!stdout.contains(">read1"));
+
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("fa")
+        .arg("dedup")
+        .arg("tests/fasta/dedup.fa")
+        .arg("--seq")
+        .arg("--case")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    assert_eq!(stdout.lines().count(), 4);
+    assert!(!stdout.contains(">read2"));
+
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("fa")
+        .arg("dedup")
+        .arg("tests/fasta/dedup.fa")
+        .arg("--seq")
+        .arg("--both")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    assert_eq!(stdout.lines().count(), 2);
+    assert!(!stdout.contains(">read3"));
+
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("fa")
+        .arg("dedup")
+        .arg("tests/fasta/dedup.fa")
+        .arg("--seq")
+        .arg("--both")
+        .arg("--file")
+        .arg("stdout")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    assert_eq!(stdout.lines().count(), 7);
+    assert!(stdout.contains(">read0"));
+    assert!(stdout.contains("read0\tread3"));
+
+    Ok(())
+}
