@@ -3,6 +3,28 @@ use calamine::Reader;
 use std::process::Command;
 use tempfile::NamedTempFile;
 
+
+#[test]
+fn command_variation() -> anyhow::Result<()> {
+    let mut cmd = Command::cargo_bin("fasr")?;
+    let output = cmd.arg("variation").arg("tests/fas/example.fas").output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    assert_eq!(stdout.lines().count(), 81);
+
+    let mut cmd = Command::cargo_bin("fasr")?;
+    let output = cmd
+        .arg("variation")
+        .arg("tests/fas/example.fas")
+        .arg("--outgroup")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    assert_eq!(stdout.lines().count(), 49);
+
+    Ok(())
+}
+
 #[test]
 fn command_xlsx() -> anyhow::Result<()> {
     let temp_file = NamedTempFile::new()?.into_temp_path();

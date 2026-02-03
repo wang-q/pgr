@@ -630,15 +630,20 @@ fn command_slice() -> anyhow::Result<()> {
 
 #[test]
 fn command_stat() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("fasr")?;
-    let output = cmd.arg("stat").arg("tests/fas/example.fas").output()?;
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("fas")
+        .arg("stat")
+        .arg("tests/fas/example.fas")
+        .output()?;
     let stdout = String::from_utf8(output.stdout)?;
 
     assert_eq!(stdout.lines().count(), 4);
     assert!(stdout.contains("0.192\t6\n"), "all together");
 
-    let mut cmd = Command::cargo_bin("fasr")?;
+    let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
+        .arg("fas")
         .arg("stat")
         .arg("tests/fas/example.fas")
         .arg("--outgroup")
@@ -652,36 +657,20 @@ fn command_stat() -> anyhow::Result<()> {
 }
 
 #[test]
-fn command_variation() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("fasr")?;
-    let output = cmd.arg("variation").arg("tests/fas/example.fas").output()?;
-    let stdout = String::from_utf8(output.stdout)?;
-
-    assert_eq!(stdout.lines().count(), 81);
-
-    let mut cmd = Command::cargo_bin("fasr")?;
-    let output = cmd
-        .arg("variation")
-        .arg("tests/fas/example.fas")
-        .arg("--outgroup")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
-
-    assert_eq!(stdout.lines().count(), 49);
-
-    Ok(())
-}
-
-#[test]
 fn command_filter() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("fasr")?;
-    let output = cmd.arg("filter").arg("tests/fas/example.fas").output()?;
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("fas")
+        .arg("filter")
+        .arg("tests/fas/example.fas")
+        .output()?;
     let stdout = String::from_utf8(output.stdout)?;
 
     assert_eq!(stdout.lines().count(), 27);
 
-    let mut cmd = Command::cargo_bin("fasr")?;
+    let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
+        .arg("fas")
         .arg("filter")
         .arg("tests/fas/example.fas")
         .arg("--ge")
@@ -691,8 +680,9 @@ fn command_filter() -> anyhow::Result<()> {
 
     assert_eq!(stdout.lines().count(), 18);
 
-    let mut cmd = Command::cargo_bin("fasr")?;
+    let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
+        .arg("fas")
         .arg("filter")
         .arg("tests/fas/example.fas")
         .arg("--ge")

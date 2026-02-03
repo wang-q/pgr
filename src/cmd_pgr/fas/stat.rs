@@ -1,4 +1,5 @@
 use clap::*;
+use std::io::Write;
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
@@ -61,7 +62,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     for infile in args.get_many::<String>("infiles").unwrap() {
         let mut reader = intspan::reader(infile);
 
-        while let Ok(block) = pgr::next_fas_block(&mut reader) {
+        while let Ok(block) = pgr::libs::fas::next_fas_block(&mut reader) {
             let target = block.entries.first().unwrap().range().to_string();
 
             let mut seqs: Vec<&[u8]> = vec![];
@@ -74,11 +75,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             }
 
             // let (length, comparable, difference, gap, ambiguous, mean_d) = alignment_stat(&seqs);
-            let result = pgr::alignment_stat(&seqs);
+            let result = pgr::libs::alignment::alignment_stat(&seqs);
 
             let mut indel_ints = intspan::IntSpan::new();
             for seq in seqs {
-                indel_ints.merge(&pgr::indel_intspan(seq));
+                indel_ints.merge(&pgr::libs::alignment::indel_intspan(seq));
             }
 
             writer.write_all(

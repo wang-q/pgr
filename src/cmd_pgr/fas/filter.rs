@@ -1,4 +1,5 @@
 use clap::*;
+use std::io::Write;
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
@@ -18,19 +19,19 @@ Note:
 
 Examples:
 1. Filter blocks for a specific species:
-   fasr filter tests/fasr/example.fas --name S288c
+   pgr fas filter tests/fasr/example.fas --name S288c
 
 2. Filter blocks with sequences >= 100 bp:
-   fasr filter tests/fasr/example.fas --ge 100
+   pgr fas filter tests/fasr/example.fas --ge 100
 
 3. Filter blocks with sequences <= 200 bp:
-   fasr filter tests/fasr/example.fas --le 200
+   pgr fas filter tests/fasr/example.fas --le 200
 
 4. Convert sequences to uppercase and remove dashes:
-   fasr filter tests/fasr/example.fas --upper --dash
+   pgr fas filter tests/fasr/example.fas --upper --dash
 
 5. Output results to a file:
-   fasr filter tests/fasr/example.fas -o output.fas
+   pgr fas filter tests/fasr/example.fas -o output.fas
 
 "###,
         )
@@ -106,7 +107,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     for infile in args.get_many::<String>("infiles").unwrap() {
         let mut reader = intspan::reader(infile);
 
-        'BLOCK: while let Ok(block) = pgr::next_fas_block(&mut reader) {
+        'BLOCK: while let Ok(block) = pgr::libs::fas::next_fas_block(&mut reader) {
             // Determine the index of the species
             let idx = if !opt_name.is_empty() {
                 if !block.names.contains(opt_name) {
@@ -148,7 +149,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 //----------------------------
                 // Output
                 //----------------------------
-                let out_entry = pgr::FasEntry::from(entry.range(), &out_seq);
+                let out_entry = pgr::libs::fas::FasEntry::from(entry.range(), &out_seq);
                 writer.write_all(out_entry.to_string().as_ref())?;
             }
 
