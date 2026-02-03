@@ -8,14 +8,17 @@ pub fn make_subcommand() -> Command {
         .after_help(
             r###"
 This command replaces sequence headers in a FASTA file based on a TSV mapping file.
-The TSV file should contain two or more columns: the original name and the replacement name.
-If more than two columns are provided, the sequence will be duplicated for each replacement name.
-Multiple lines of the same original_name will also duplicate the record.
-
 The TSV file format:
     seq1    replace_name    more_replace_name
     seq2    replace_name
     seq2    another_replace_name
+
+Notes:
+* The TSV file should contain two or more columns: the original name and the replacement name
+* If more than two columns are provided, the sequence will be duplicated for each replacement name
+* Multiple lines of the same original_name will also duplicate the record
+* Supports both plain text and gzipped (.gz) files
+* Reads from stdin if input file is 'stdin'
 
 Examples:
 1. Replace headers using a TSV file:

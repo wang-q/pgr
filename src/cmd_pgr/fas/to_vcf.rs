@@ -13,12 +13,12 @@ pub fn make_subcommand() -> Command {
             r###"
 Outputs VCF file (substitutions only) from block FA files.
 
-Input files can be gzipped. If the input file is 'stdin', data is read from standard input.
-
-Note:
-- Outputs substitutions only; ID/QUAL/FILTER/INFO are '.'
-- CHROM/POS are derived from the target range; REF is the target base; ALT are non-REF bases
-- Use `--sizes` to emit `##contig=<ID=...,length=...>` headers
+Notes:
+* Supports both plain text and gzipped (.gz) files
+* Reads from stdin if input file is 'stdin'
+* Outputs substitutions only; ID/QUAL/FILTER/INFO are '.'
+* CHROM/POS are derived from the target range; REF is the target base; ALT are non-REF bases
+* Use `--sizes` to emit `##contig=<ID=...,length=...>` headers
 
 Examples:
 1. Output VCF from a block FASTA:

@@ -17,15 +17,12 @@ Output format:
 >sequence_name(strand):start-end|frame=N
 MXXXXXX*
 
-Filters:
-* --len N: Minimum ORF length (amino acids)
-* --start: Must start with Methionine (M)
-* --end: Must end with stop codon (*)
-
 Notes:
+* Filters: --len N (min length), --start (starts with M), --end (ends with *)
 * Coordinates are 1-based
 * Non-standard bases are translated as X
 * Supports both plain text and gzipped (.gz) files
+* Reads from stdin if input file is 'stdin'
 * Stop codons are included in the output
 
 Examples:

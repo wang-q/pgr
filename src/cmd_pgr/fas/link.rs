@@ -10,12 +10,12 @@ pub fn make_subcommand() -> Command {
             r###"
 Outputs bi/multi-lateral range links from block FA files.
 
-Input files can be gzipped. If the input file is 'stdin', data is read from standard input.
-
-Note:
-- By default, the tool outputs multi-lateral links (all ranges in a block).
-- Use `--pair` to output bilateral (pairwise) links.
-- Use `--best` to output best-to-best bilateral links based on sequence similarity.
+Notes:
+* Supports both plain text and gzipped (.gz) files
+* Reads from stdin if input file is 'stdin'
+* By default, the tool outputs multi-lateral links (all ranges in a block)
+* Use `--pair` to output bilateral (pairwise) links
+* Use `--best` to output best-to-best bilateral links based on sequence similarity
 
 Examples:
 1. Output multi-lateral links:

@@ -9,16 +9,15 @@ pub fn make_subcommand() -> Command {
             r###"
 This command reverse complements DNA sequences in FASTA files.
 
-Features:
+Notes:
 * Process all sequences or only selected ones
 * Optionally prefix names with 'RC_'
 * Handles IUPAC ambiguous codes correctly
 * Preserves case (upper/lower) of bases
-
-Notes:
 * Case-sensitive name matching when using list
 * Empty lines and lines starting with '#' are ignored in list
 * Supports both plain text and gzipped (.gz) files
+* Reads from stdin if input file is 'stdin'
 * Non-IUPAC characters are preserved as-is
 
 Examples:

@@ -10,20 +10,18 @@ pub fn make_subcommand() -> Command {
             r###"
 This command compresses a file using BGZF (Blocked Gzip Format).
 
-Features:
+Notes:
 * Parallel compression with multiple threads
 * Creates index file (.gzi) for random access
-* Supports stdin as input
+* Supports stdin as input (use 'stdin' as filename)
 * Preserves original file
+* Cannot compress already gzipped files
+* Default thread count is 1
+* Index creation is automatic
 
 Output files:
 * <infile>.gz: Compressed file
 * <infile>.gz.gzi: Index file
-
-Notes:
-* Cannot compress already gzipped files
-* Default thread count is 1
-* Index creation is automatic
 
 Examples:
 1. Compress a file with default settings, and the outfile is input.fa.gz:

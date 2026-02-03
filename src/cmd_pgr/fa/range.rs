@@ -12,31 +12,13 @@ This command extracts sequence regions from FASTA files using genomic coordinate
 Range format:
     seq_name(strand):start-end
 
-* seq_name: Required, sequence identifier
-* strand: Optional, + (default) or -
-* start-end: Required, 1-based coordinates
-
-Examples:
-    Mito
-    I:1-100
-    I(+):90-150
-    S288c.I(-):190-200
-    II:21294-22075
-    II:23537-24097
-
-Input methods:
-* Command line: pgr fa range input.fa "chr1:1-1000"
-* Range file: pgr fa range input.fa -r ranges.txt
-
-Features:
+Notes:
+* Cannot read from stdin or plain gzip (requires BGZF for random access)
 * Supports BGZF compressed files (.gz)
 * Automatic index creation (.loc)
 * LRU caching for better performance
 * Reverse complement for negative strand
-
-Notes:
-* Cannot read from stdin or gzip
-* All coordinates (<start> and <end>) are based on the positive strand, regardless of the specified strand.
+* All coordinates (<start> and <end>) are based on the positive strand
 * Sort range file for better performance
 * Cache size affects memory usage
 

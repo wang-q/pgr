@@ -9,6 +9,12 @@ pub fn make_subcommand() -> Command {
         .about("Converts FASTA to 2bit")
         .after_help(
             r###"
+This command converts FASTA files to 2bit format.
+
+Notes:
+* Supports both plain text and gzipped (.gz) files
+* Reads from stdin if input file is 'stdin'
+
 Examples:
   # Convert FASTA to 2bit
   pgr fa to-2bit in.fa -o out.2bit
@@ -72,7 +78,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut data = Vec::new();
 
     for infile in infiles {
-        let reader = bio::io::fasta::Reader::from_file(infile)?;
+        let reader = intspan::reader(infile);
+        let reader = bio::io::fasta::Reader::new(reader);
         for result in reader.records() {
             let record = result?;
             let mut name = record.id().to_string();

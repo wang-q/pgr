@@ -10,12 +10,12 @@ pub fn make_subcommand() -> Command {
             r###"
 Splits block FA files into per-alignment or per-chromosome FA files.
 
-Input files can be gzipped. If the input file is 'stdin', data is read from standard input.
-
-Note:
-- By default, each alignment block is written to a separate file.
-- Use `--chr` to split files by chromosome.
-- Use `--simple` to simplify headers by keeping only species names.
+Notes:
+* Supports both plain text and gzipped (.gz) files
+* Reads from stdin if input file is 'stdin'
+* By default, each alignment block is written to a separate file
+* Use `--chr` to split files by chromosome
+* Use `--simple` to simplify headers by keeping only species names
 
 Examples:
 1. Split block FA files into per-alignment files:

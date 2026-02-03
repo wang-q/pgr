@@ -14,10 +14,11 @@ This subcommand converts AXT files into block FA format for further analysis.
 
 Input files can be gzipped. If the input file is 'stdin', data is read from standard input.
 
-Note:
-- A chromosome sizes file (chr.sizes) for the query genome is required to correctly handle
-  coordinates on the negative strand.
-- The output file defaults to standard output (stdout). Use the -o option to specify an output file.
+Notes:
+* Supports both plain text and gzipped (.gz) files
+* Reads from stdin if input file is 'stdin'
+* A chromosome sizes file (chr.sizes) for the query genome is required to correctly handle coordinates on the negative strand
+* The output file defaults to standard output (stdout). Use the -o option to specify an output file
 
 Examples:
 1. Convert from a file and output to stdout:

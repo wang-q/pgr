@@ -10,6 +10,10 @@ pub fn make_subcommand() -> Command {
             r###"
 Checks genome locations in block FA headers against a chrom.sizes file.
 
+Notes:
+* Supports both plain text and gzipped (.gz) files
+* Reads from stdin if input file is 'stdin'
+
 "###,
         )
         .arg(

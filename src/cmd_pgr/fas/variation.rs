@@ -9,11 +9,11 @@ pub fn make_subcommand() -> Command {
             r###"
 Lists variations (substitutions and indels) from block FA files in TSV format.
 
-Input files can be gzipped. If the input file is 'stdin', data is read from standard input.
-
-Note:
-- Filter out complex variations: `tsv-filter -H --ne freq:-1`
-- Filter out singletons: `tsv-filter -H --ne freq:1`
+Notes:
+* Supports both plain text and gzipped (.gz) files
+* Reads from stdin if input file is 'stdin'
+* Filter out complex variations: `tsv-filter -H --ne freq:-1`
+* Filter out singletons: `tsv-filter -H --ne freq:1`
 
 Examples:
 1. List substitutions from block FA files:

@@ -7,8 +7,12 @@ pub fn make_subcommand() -> Command {
         .after_help(
             r###"
 This command extracts a single record from a FASTA file by its sequence name (ID).
-If the index file (.fai) exists, it will be used for fast random access.
-Otherwise, the file will be scanned sequentially.
+
+Notes:
+* If the index file (.fai) exists, it will be used for fast random access
+* Otherwise, the file will be scanned sequentially
+* Supports both plain text and gzipped (.gz) files
+* Reads from stdin if input file is 'stdin'
 
 Examples:
 1. Extract a record by name:

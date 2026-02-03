@@ -10,12 +10,12 @@ pub fn make_subcommand() -> Command {
 Filters blocks in block FA files based on species name and sequence length.
 It can also format sequences by converting them to uppercase or removing dashes.
 
-Input files can be gzipped. If the input file is 'stdin', data is read from standard input.
-
-Note:
-- If `--name` is not specified, the first species in each block is used as the default.
-- Sequences can be filtered based on length using `--ge` (greater than or equal) and `--le` (less than or equal).
-- Sequences can be formatted using `--upper` (convert to uppercase) and `--dash` (remove dashes).
+Notes:
+* Supports both plain text and gzipped (.gz) files
+* Reads from stdin if input file is 'stdin'
+* If `--name` is not specified, the first species in each block is used as the default
+* Sequences can be filtered based on length using `--ge` (greater than or equal) and `--le` (less than or equal)
+* Sequences can be formatted using `--upper` (convert to uppercase) and `--dash` (remove dashes)
 
 Examples:
 1. Filter blocks for a specific species:

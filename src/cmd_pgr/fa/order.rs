@@ -15,6 +15,7 @@ Notes:
 * Empty lines and lines starting with '#' are ignored
 * All sequences are loaded into memory
 * Supports both plain text and gzipped (.gz) files
+* Reads from stdin if input file is 'stdin'
 * Missing sequences in the input file are silently skipped
 
 Examples:

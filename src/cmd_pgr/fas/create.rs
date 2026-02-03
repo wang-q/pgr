@@ -9,13 +9,13 @@ pub fn make_subcommand() -> Command {
             r###"
 Creates block FA files from links of ranges.
 
-Input files can be gzipped. If the input file is 'stdin', data is read from standard input.
-
-Note:
-- The reference genome(s) must be provided as a multi-sequence FA file, can be bgzipped.
-- Two styles of FA headers are supported:
-  - `>chr` for single-genome self-alignments.
-  - `>name.chr` for multiple genomes.
+Notes:
+* Supports both plain text and gzipped (.gz) files
+* Reads from stdin if input file is 'stdin'
+* The reference genome(s) must be provided as a multi-sequence FA file, can be bgzipped
+* Two styles of FA headers are supported:
+  * `>chr` for single-genome self-alignments
+  * `>name.chr` for multiple genomes
 
 Examples:
 1. Create block FA files for a single genome:

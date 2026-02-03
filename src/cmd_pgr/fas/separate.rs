@@ -10,12 +10,12 @@ pub fn make_subcommand() -> Command {
             r###"
 Separates block FA files by species, creating individual output files for each species.
 
-Input files can be gzipped. If the input file is 'stdin', data is read from standard input.
-
-Note:
-- Dashes ('-') in sequences are removed.
-- If the target file already exists, it will be overwritten.
-- Optionally, sequences can be reverse-complemented if the chromosome strand is '-'.
+Notes:
+* Supports both plain text and gzipped (.gz) files
+* Reads from stdin if input file is 'stdin'
+* Dashes ('-') in sequences are removed
+* If the target file already exists, it will be overwritten
+* Optionally, sequences can be reverse-complemented if the chromosome strand is '-'
 
 Examples:
 1. Separate block FA files by species:

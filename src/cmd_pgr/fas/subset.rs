@@ -9,11 +9,11 @@ pub fn make_subcommand() -> Command {
             r###"
 Extracts a subset of species from block FA files.
 
-Input files can be gzipped. If the input file is 'stdin', data is read from standard input.
-
-Note:
-- The --required file lists species names to keep, one per line.
-- The order of species in the output follows the order in the <name.lst> file.
+Notes:
+* Supports both plain text and gzipped (.gz) files
+* Reads from stdin if input file is 'stdin'
+* The --required file lists species names to keep, one per line
+* The order of species in the output follows the order in the <name.lst> file
 
 Examples:
 1. Extract a subset of species:

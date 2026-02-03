@@ -11,9 +11,11 @@ This subcommand converts MAF (Multiple Alignment Format) files into block FA for
 
 Input files can be gzipped. If the input file is 'stdin', data is read from standard input.
 
-Note:
-- MAF files typically contain multiple sequence alignments, and this tool extracts each alignment into block FASTA format.
-- The output preserves the alignment structure, with each block separated by a newline.
+Notes:
+* Supports both plain text and gzipped (.gz) files
+* Reads from stdin if input file is 'stdin'
+* MAF files typically contain multiple sequence alignments, and this tool extracts each alignment into block FASTA format
+* The output preserves the alignment structure, with each block separated by a newline
 
 Examples:
 1. Convert a MAF file to block FASTA format:

@@ -10,13 +10,13 @@ pub fn make_subcommand() -> Command {
             r###"
 Replaces headers in block FA files using a TSV file.
 
-Input files can be gzipped. If the input file is 'stdin', data is read from standard input.
-
-Note:
-- The replacement file (--required) should contain one or more fields:
-  - `original_name  replace_name   more_replace_name`
-- One field: Deletes the entire alignment block for the specified species.
-- Three or more fields: Duplicates the entire alignment block for each replacement name.
+Notes:
+* Supports both plain text and gzipped (.gz) files
+* Reads from stdin if input file is 'stdin'
+* The replacement file (--required) should contain one or more fields:
+  * `original_name  replace_name   more_replace_name`
+* One field: Deletes the entire alignment block for the specified species
+* Three or more fields: Duplicates the entire alignment block for each replacement name
 
 Examples:
 1. Replace species names in a block FA file:

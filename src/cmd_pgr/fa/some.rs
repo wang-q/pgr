@@ -13,6 +13,8 @@ Notes:
 * Case-sensitive name matching
 * One sequence name per line in the list file
 * Empty lines and lines starting with '#' are ignored
+* Supports both plain text and gzipped (.gz) files
+* Reads from stdin if input file is 'stdin'
 
 Examples:
 1. Extract sequences listed in list.txt:

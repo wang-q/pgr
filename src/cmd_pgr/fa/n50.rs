@@ -20,6 +20,7 @@ Notes:
 * Multiple N-statistics: `-N 50 -N 90`
 * Use --genome to calculate statistics based on estimated genome size
 * Supports both plain text and gzipped (.gz) files
+* Reads from stdin if input file is 'stdin'
 
 Examples:
 1. Basic N50 calculation:

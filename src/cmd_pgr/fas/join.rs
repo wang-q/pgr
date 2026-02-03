@@ -10,7 +10,9 @@ pub fn make_subcommand() -> Command {
             r###"
 Joins multiple block fasta files by a common target sequence.
 
-Input files can be gzipped. If the input file is 'stdin', data is read from standard input.
+Notes:
+* Supports both plain text and gzipped (.gz) files
+* Reads from stdin if input file is 'stdin'
 
 Examples:
 1. Join multiple block FA files:

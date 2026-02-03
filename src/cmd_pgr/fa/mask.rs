@@ -24,6 +24,7 @@ Notes:
 * Inclusive ranges
 * Sequences not in runlist remain unchanged
 * Supports both plain text and gzipped (.gz) files
+* Reads from stdin if input file is 'stdin'
 * Invalid ranges are silently ignored
 
 Examples:

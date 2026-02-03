@@ -9,6 +9,10 @@ pub fn make_subcommand() -> Command {
 This command counts the total number of bases in one or more FASTA files. It outputs the sequence name
 and its length in a tab-separated format.
 
+Notes:
+* Supports both plain text and gzipped (.gz) files
+* Reads from stdin if input file is 'stdin'
+
 Examples:
 1. Count bases in a single FASTA file:
    pgr fa size input.fa

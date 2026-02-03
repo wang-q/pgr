@@ -9,12 +9,12 @@ pub fn make_subcommand() -> Command {
             r###"
 Outputs covered regions on chromosomes from block FA files.
 
-Input files can be gzipped. If the input file is 'stdin', data is read from standard input.
-
-Note:
-- The output is in JSON format, showing the coverage of sequences on chromosomes.
-- Optionally, you can specify a species name to limit the output to that species.
-- For lastz results, use --trim 10
+Notes:
+* Supports both plain text and gzipped (.gz) files
+* Reads from stdin if input file is 'stdin'
+* The output is in JSON format, showing the coverage of sequences on chromosomes
+* Optionally, you can specify a species name to limit the output to that species
+* For lastz results, use --trim 10
 
 Examples:
 1. Calculate coverage for all species:

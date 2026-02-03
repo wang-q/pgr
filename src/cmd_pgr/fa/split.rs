@@ -21,6 +21,7 @@ Split FASTA files into multiple smaller files based on different modes:
 
 Notes:
 * Supports both plain text and gzipped (.gz) files
+* Reads from stdin if input file is 'stdin'
 * Output files are named as xxx.fa
 * For 'name' mode, filenames are sanitized
 * For 'about' mode, files are zero-padded numbered

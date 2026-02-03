@@ -9,15 +9,15 @@ pub fn make_subcommand() -> Command {
             r###"
 Generates consensus sequences using POA (Partial Order Alignment) graph.
 
-Input files can be gzipped. If the input file is 'stdin', data is read from standard input.
-
-Note:
-- Requires `spoa` to be installed and available in $PATH.
+Notes:
+* Supports both plain text and gzipped (.gz) files
+* Reads from stdin if input file is 'stdin'
+* Requires `spoa` to be installed and available in $PATH
     * The original `poa` was unstable and sometimes crashed
-- Supports parallel processing for improved performance.
+* Supports parallel processing for improved performance
     * Running in parallel mode with 1 reader, 1 writer and the corresponding number of workers
     * The order of output may be different from the original
-- If outgroups are present, they are handled appropriately.
+* If outgroups are present, they are handled appropriately
 
 Examples:
 1. Generate consensus sequences from a block FA file:

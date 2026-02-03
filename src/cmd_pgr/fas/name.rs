@@ -10,11 +10,11 @@ pub fn make_subcommand() -> Command {
             r###"
 Extracts and outputs all species names from block FA files.
 
-Input files can be gzipped. If the input file is 'stdin', data is read from standard input.
-
-Note:
-- By default, the subcommand outputs a list of unique species names.
-- Use `--count` to also output the number of occurrences of each species name.
+Notes:
+* Supports both plain text and gzipped (.gz) files
+* Reads from stdin if input file is 'stdin'
+* By default, the subcommand outputs a list of unique species names
+* Use `--count` to also output the number of occurrences of each species name
 
 Examples:
 1. Output all species names:

@@ -10,10 +10,10 @@ pub fn make_subcommand() -> Command {
             r###"
 Extracts alignment slices from block FA files using a runlist JSON.
 
-Input files can be gzipped. If the input file is 'stdin', data is read from standard input.
-
-Note:
-- The JSON file (--required) keys are chromosome/sequence names, and values are runlists (e.g., "1-100,200-300").
+Notes:
+* Supports both plain text and gzipped (.gz) files
+* Reads from stdin if input file is 'stdin'
+* The JSON file (--required) keys are chromosome/sequence names, and values are runlists (e.g., "1-100,200-300")
 
 Examples:
 1. Extract slices defined in a JSON file:

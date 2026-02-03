@@ -8,10 +8,14 @@ pub fn make_subcommand() -> Command {
             r###"
 This command calculates the base statistics (A, C, G, T, N) for each sequence in one or more FASTA files.
 It outputs a TSV table with the following columns:
-1. seq: Sequence name
-2. len: Sequence length
-3. A, C, G, T, N: Count of each base
-4. ignored: Count of other characters (e.g., IUPAC codes, gaps)
+* seq: Sequence name
+* len: Sequence length
+* A, C, G, T, N: Count of each base
+* ignored: Count of other characters (e.g., IUPAC codes, gaps)
+
+Notes:
+* Supports both plain text and gzipped (.gz) files
+* Reads from stdin if input file is 'stdin'
 
 Examples:
 1. Count base statistics for a single FASTA file:

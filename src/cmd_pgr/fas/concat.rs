@@ -9,12 +9,12 @@ pub fn make_subcommand() -> Command {
             r###"
 Concatenates sequence pieces of the same species from block FA files.
 
-Input files can be gzipped. If the input file is 'stdin', data is read from standard input.
-
-Note:
-- The --required file lists species names to keep, one per line.
-- The order of species in the output follows the order in the <name.lst> file.
-- Missing sequences are filled with gaps (`-`).
+Notes:
+* Supports both plain text and gzipped (.gz) files
+* Reads from stdin if input file is 'stdin'
+* The --required file lists species names to keep, one per line
+* The order of species in the output follows the order in the <name.lst> file
+* Missing sequences are filled with gaps (`-`)
 
 Examples:
 1. Concatenate sequences and output in FASTA format:
