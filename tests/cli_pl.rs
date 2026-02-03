@@ -32,3 +32,17 @@ fn command_pl_p2m() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn command_pl_trf_help() -> anyhow::Result<()> {
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("pl")
+        .arg("trf")
+        .arg("--help")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    assert!(stdout.contains("Identify tandem repeats in a genome"));
+    Ok(())
+}

@@ -6,14 +6,19 @@ use tempfile::NamedTempFile;
 
 #[test]
 fn command_variation() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("fasr")?;
-    let output = cmd.arg("variation").arg("tests/fas/example.fas").output()?;
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("fas")
+        .arg("variation")
+        .arg("tests/fas/example.fas")
+        .output()?;
     let stdout = String::from_utf8(output.stdout)?;
 
     assert_eq!(stdout.lines().count(), 81);
 
-    let mut cmd = Command::cargo_bin("fasr")?;
+    let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
+        .arg("fas")
         .arg("variation")
         .arg("tests/fas/example.fas")
         .arg("--outgroup")
@@ -26,13 +31,14 @@ fn command_variation() -> anyhow::Result<()> {
 }
 
 #[test]
-fn command_xlsx() -> anyhow::Result<()> {
+fn command_toxlsx() -> anyhow::Result<()> {
     let temp_file = NamedTempFile::new()?.into_temp_path();
     let temp_path = temp_file.to_str().unwrap();
 
-    let mut cmd = Command::cargo_bin("fasr")?;
+    let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
-        .arg("xlsx")
+        .arg("fas")
+        .arg("toxlsx")
         .arg("tests/fas/example.fas")
         .arg("-o")
         .arg(temp_path)
@@ -57,13 +63,14 @@ fn command_xlsx() -> anyhow::Result<()> {
 }
 
 #[test]
-fn command_xlsx_indel() -> anyhow::Result<()> {
+fn command_toxlsx_indel() -> anyhow::Result<()> {
     let temp_file = NamedTempFile::new()?.into_temp_path();
     let temp_path = temp_file.to_str().unwrap();
 
-    let mut cmd = Command::cargo_bin("fasr")?;
+    let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
-        .arg("xlsx")
+        .arg("fas")
+        .arg("toxlsx")
         .arg("tests/fas/example.fas")
         .arg("--indel")
         .arg("-o")
@@ -88,13 +95,14 @@ fn command_xlsx_indel() -> anyhow::Result<()> {
 }
 
 #[test]
-fn command_xlsx_nocomplex() -> anyhow::Result<()> {
+fn command_toxlsx_nocomplex() -> anyhow::Result<()> {
     let temp_file = NamedTempFile::new()?.into_temp_path();
     let temp_path = temp_file.to_str().unwrap();
 
-    let mut cmd = Command::cargo_bin("fasr")?;
+    let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
-        .arg("xlsx")
+        .arg("fas")
+        .arg("toxlsx")
         .arg("tests/fas/example.fas")
         .arg("--indel")
         .arg("--nocomplex")
@@ -120,13 +128,14 @@ fn command_xlsx_nocomplex() -> anyhow::Result<()> {
 }
 
 #[test]
-fn command_xlsx_nosingle() -> anyhow::Result<()> {
+fn command_toxlsx_nosingle() -> anyhow::Result<()> {
     let temp_file = NamedTempFile::new()?.into_temp_path();
     let temp_path = temp_file.to_str().unwrap();
 
-    let mut cmd = Command::cargo_bin("fasr")?;
+    let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
-        .arg("xlsx")
+        .arg("fas")
+        .arg("toxlsx")
         .arg("tests/fas/example.fas")
         .arg("--indel")
         .arg("--nosingle")
@@ -152,13 +161,14 @@ fn command_xlsx_nosingle() -> anyhow::Result<()> {
 }
 
 #[test]
-fn command_xlsx_minmax() -> anyhow::Result<()> {
+fn command_toxlsx_minmax() -> anyhow::Result<()> {
     let temp_file = NamedTempFile::new()?.into_temp_path();
     let temp_path = temp_file.to_str().unwrap();
 
-    let mut cmd = Command::cargo_bin("fasr")?;
+    let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
-        .arg("xlsx")
+        .arg("fas")
+        .arg("toxlsx")
         .arg("tests/fas/example.fas")
         .arg("--indel")
         .arg("--min")
@@ -187,13 +197,14 @@ fn command_xlsx_minmax() -> anyhow::Result<()> {
 }
 
 #[test]
-fn command_xlsx_outgroup() -> anyhow::Result<()> {
+fn command_toxlsx_outgroup() -> anyhow::Result<()> {
     let temp_file = NamedTempFile::new()?.into_temp_path();
     let temp_path = temp_file.to_str().unwrap();
 
-    let mut cmd = Command::cargo_bin("fasr")?;
+    let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
-        .arg("xlsx")
+        .arg("fas")
+        .arg("toxlsx")
         .arg("tests/fas/example.fas")
         .arg("--indel")
         .arg("--outgroup")

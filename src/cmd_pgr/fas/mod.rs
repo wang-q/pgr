@@ -11,6 +11,9 @@ pub mod slice;
 pub mod split;
 pub mod stat;
 pub mod subset;
+pub mod variation;
+pub mod toxlsx;
+pub mod tovcf;
 pub mod filter;
 
 pub fn make_subcommand() -> clap::Command {
@@ -31,6 +34,9 @@ pub fn make_subcommand() -> clap::Command {
         .subcommand(slice::make_subcommand())
         .subcommand(split::make_subcommand())
         .subcommand(stat::make_subcommand())
+        .subcommand(variation::make_subcommand())
+        .subcommand(toxlsx::make_subcommand())
+        .subcommand(tovcf::make_subcommand())
         .subcommand(subset::make_subcommand())
 }
 
@@ -49,6 +55,9 @@ pub fn execute(matches: &clap::ArgMatches) -> anyhow::Result<()> {
         Some(("slice", sub_matches)) => slice::execute(sub_matches),
         Some(("split", sub_matches)) => split::execute(sub_matches),
         Some(("stat", sub_matches)) => stat::execute(sub_matches),
+        Some(("variation", sub_matches)) => variation::execute(sub_matches),
+        Some(("toxlsx", sub_matches)) => toxlsx::execute(sub_matches),
+        Some(("tovcf", sub_matches)) => tovcf::execute(sub_matches),
         Some(("subset", sub_matches)) => subset::execute(sub_matches),
         _ => unreachable!(),
     }

@@ -13,9 +13,6 @@ fn main() -> anyhow::Result<()> {
         .color(ColorChoice::Auto)
         .subcommand(cmd_fasr::check::make_subcommand())
         .subcommand(cmd_fasr::create::make_subcommand())
-        .subcommand(cmd_fasr::variation::make_subcommand())
-        .subcommand(cmd_fasr::vcf::make_subcommand())
-        .subcommand(cmd_fasr::xlsx::make_subcommand())
         .after_help(
             r###"
 Subcommand groups:
@@ -25,7 +22,6 @@ Subcommand groups:
 * records: (none)
 * transform: (none)
 * transmute: (none)
-* variations: variation / vcf / xlsx
 
 "###,
         );
@@ -39,10 +35,6 @@ Subcommand groups:
         // records
         // transform
         // transmute
-        // variations
-        Some(("variation", sub_matches)) => cmd_fasr::variation::execute(sub_matches),
-        Some(("vcf", sub_matches)) => cmd_fasr::vcf::execute(sub_matches),
-        Some(("xlsx", sub_matches)) => cmd_fasr::xlsx::execute(sub_matches),
         _ => unreachable!(),
     }?;
 

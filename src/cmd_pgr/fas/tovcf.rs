@@ -3,8 +3,11 @@ use itertools::Itertools;
 use std::collections::{BTreeMap, HashSet};
 use std::io::Write;
 
+use pgr::libs::alignment::{align_to_chr, get_subs, seq_intspan};
+use pgr::libs::fas::next_fas_block;
+
 pub fn make_subcommand() -> Command {
-    Command::new("vcf")
+    Command::new("tovcf")
         .about("Output VCF file (substitutions only)")
         .after_help(
             r###"
@@ -19,10 +22,10 @@ Note:
 
 Examples:
 1. Output VCF from a block FASTA:
-   fasr vcf tests/fasr/example.fas
+   pgr fas tovcf tests/fasr/example.fas
 
 2. Output VCF with contig headers:
-   fasr vcf --sizes tests/fasr/S288c.chr.sizes tests/fasr/YDL184C.fas
+   pgr fas tovcf --sizes tests/fasr/S288c.chr.sizes tests/fasr/YDL184C.fas
 
 "###,
         )
@@ -72,7 +75,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                     continue;
                 }
                 let mut reader = intspan::reader(infile);
-                while let Ok(block) = pgr::next_fas_block(&mut reader) {
+                while let Ok(block) = next_fas_block(&mut reader) {
                     let chr = block.entries.first().unwrap().range().chr().to_string();
                     contigs.insert(chr);
                 }
@@ -83,7 +86,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     for infile in args.get_many::<String>("infiles").unwrap() {
         let mut reader = intspan::reader(infile);
 
-        while let Ok(block) = pgr::next_fas_block(&mut reader) {
+        while let Ok(block) = next_fas_block(&mut reader) {
             if !header_written {
                 if !sizes.is_empty() {
                     for (chr, len) in sizes.iter() {
@@ -116,14 +119,14 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
             let target_entry_idx = 0usize;
             let trange = block.entries.get(target_entry_idx).unwrap().range().clone();
-            let t_ints_seq = pgr::seq_intspan(block.entries.get(target_entry_idx).unwrap().seq());
+            let t_ints_seq = seq_intspan(block.entries.get(target_entry_idx).unwrap().seq());
 
             let seq_count = seqs.len();
-            let subs = pgr::get_subs(&seqs)?;
+            let subs = get_subs(&seqs)?;
 
             for s in subs {
                 let chr = trange.chr();
-                let chr_pos = pgr::align_to_chr(&t_ints_seq, s.pos, trange.start, trange.strand())?;
+                let chr_pos = align_to_chr(&t_ints_seq, s.pos, trange.start, trange.strand())?;
 
                 let pos_idx = (s.pos - 1) as usize;
                 let ref_base = char::from(seqs[0][pos_idx]).to_ascii_uppercase();

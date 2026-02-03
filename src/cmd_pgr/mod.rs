@@ -14,5 +14,4 @@ pub mod pipeline;
 pub mod pl;
 pub mod psl;
 pub mod rept;
-pub mod trf;
 pub mod twobit;

@@ -3,9 +3,14 @@ use rust_xlsxwriter::*;
 use std::cmp::max;
 use std::collections::BTreeMap;
 
+use pgr::libs::alignment::{
+    get_indels, get_subs, polarize_indels, polarize_subs, Indel, Substitution,
+};
+use pgr::libs::fas::{next_fas_block, FasBlock};
+
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
-    Command::new("xlsx")
+    Command::new("toxlsx")
         .about("List variations (substitutions/indels)")
         .after_help(
             r###"
@@ -80,8 +85,8 @@ pub fn make_subcommand() -> Command {
 /// Enum to represent variations (substitutions or indels)
 #[derive(Debug)]
 enum Variation {
-    Substitution(pgr::Substitution),
-    Indel(pgr::Indel),
+    Substitution(Substitution),
+    Indel(Indel),
 }
 
 #[derive(Debug)]
@@ -137,7 +142,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     for infile in args.get_many::<String>("infiles").unwrap() {
         let mut reader = intspan::reader(infile);
 
-        while let Ok(block) = pgr::next_fas_block(&mut reader) {
+        while let Ok(block) = next_fas_block(&mut reader) {
             let mut seqs: Vec<&[u8]> = vec![];
             for entry in &block.entries {
                 seqs.push(entry.seq().as_ref());
@@ -206,7 +211,7 @@ fn paint_name(
     worksheet: &mut Worksheet,
     format_of: &BTreeMap<String, Format>,
     opt: &mut Opt,
-    block: &pgr::FasBlock,
+    block: &FasBlock,
 ) -> anyhow::Result<()> {
     for i in 1..=block.entries.len() {
         let pos_row = opt.sec_height * (opt.sec_cursor - 1);
@@ -229,7 +234,7 @@ fn paint_indel(
     worksheet: &mut Worksheet,
     format_of: BTreeMap<String, Format>,
     opt: &mut Opt,
-    indel: &pgr::Indel,
+    indel: &Indel,
 ) -> anyhow::Result<()> {
     let mut pos_row = opt.sec_height * (opt.sec_cursor - 1);
 
@@ -348,7 +353,7 @@ fn paint_sub(
     worksheet: &mut Worksheet,
     format_of: &BTreeMap<String, Format>,
     opt: &mut Opt,
-    sub: &pgr::Substitution,
+    sub: &Substitution,
 ) -> anyhow::Result<()> {
     let pos_row = opt.sec_height * (opt.sec_cursor - 1);
 
@@ -414,11 +419,11 @@ fn get_vars(
 
     // Get substitutions
     let subs = if is_outgroup {
-        let mut unpolarized = pgr::get_subs(&seqs[..seq_count])?;
-        pgr::polarize_subs(&mut unpolarized, out_seq.unwrap());
+        let mut unpolarized = get_subs(&seqs[..seq_count])?;
+        polarize_subs(&mut unpolarized, out_seq.unwrap());
         unpolarized
     } else {
-        pgr::get_subs(&seqs)?
+        get_subs(seqs)?
     };
 
     for sub in subs {
@@ -446,11 +451,11 @@ fn get_vars(
     // Get indels
     if is_indel {
         let indels = if is_outgroup {
-            let mut unpolarized = pgr::get_indels(&seqs[..seq_count])?;
-            pgr::polarize_indels(&mut unpolarized, out_seq.unwrap());
+            let mut unpolarized = get_indels(&seqs[..seq_count])?;
+            polarize_indels(&mut unpolarized, out_seq.unwrap());
             unpolarized
         } else {
-            pgr::get_indels(&seqs)?
+            get_indels(seqs)?
         };
 
         for indel in indels {
@@ -533,6 +538,7 @@ fn create_formats() -> BTreeMap<String, Format> {
         ("G".to_string(), 0x660066), // Dark Purple, 28
         ("T".to_string(), 0x800000), // Dark Red, Brown, 16
         ("N".to_string(), 0x000000), // Black, 8
+        ("N".to_string(), 0x000000), // Black, 8
         ("-".to_string(), 0x000000), // Black, 8
     ]);
 
@@ -555,12 +561,12 @@ fn create_formats() -> BTreeMap<String, Format> {
             format_of.insert(
                 key,
                 Format::new()
-                    .set_font_name("Courier New")
-                    .set_font_size(10)
-                    .set_align(FormatAlign::VerticalCenter)
-                    .set_align(FormatAlign::Center)
-                    .set_font_color(*sub_fc_of.get(fc).unwrap())
-                    .set_background_color(*bg_colors.get(i).unwrap()),
+                .set_font_name("Courier New")
+                .set_font_size(10)
+                .set_align(FormatAlign::VerticalCenter)
+                .set_align(FormatAlign::Center)
+                .set_font_color(*sub_fc_of.get(fc).unwrap())
+                .set_background_color(*bg_colors.get(i).unwrap()),
             );
         }
     }
