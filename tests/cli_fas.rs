@@ -74,8 +74,9 @@ fn command_concat() -> anyhow::Result<()> {
     let output = cmd
         .arg("fas")
         .arg("concat")
-        .arg("tests/fas/name.lst")
         .arg("tests/fas/example.fas")
+        .arg("-r")
+        .arg("tests/fas/name.lst")
         .output()?;
     let stdout = String::from_utf8(output.stdout)?;
 
@@ -94,8 +95,9 @@ fn command_concat_phylip() -> anyhow::Result<()> {
     let output = cmd
         .arg("fas")
         .arg("concat")
-        .arg("tests/fas/name.lst")
         .arg("tests/fas/example.fas")
+        .arg("-r")
+        .arg("tests/fas/name.lst")
         .arg("--phylip")
         .output()?;
     let stdout = String::from_utf8(output.stdout)?;
@@ -115,8 +117,9 @@ fn command_subset() -> anyhow::Result<()> {
     let output = cmd
         .arg("fas")
         .arg("subset")
-        .arg("tests/fas/name.lst")
         .arg("tests/fas/example.fas")
+        .arg("-r")
+        .arg("tests/fas/name.lst")
         .output()?;
     let stdout = String::from_utf8(output.stdout)?;
 
@@ -127,9 +130,10 @@ fn command_subset() -> anyhow::Result<()> {
     let output = cmd
         .arg("fas")
         .arg("subset")
-        .arg("tests/fas/name.lst")
         .arg("tests/fas/example.fas")
-        .arg("--required")
+        .arg("-r")
+        .arg("tests/fas/name.lst")
+        .arg("--strict")
         .output()?;
     let stdout = String::from_utf8(output.stdout)?;
 
@@ -187,8 +191,9 @@ fn command_replace() -> anyhow::Result<()> {
     let output = cmd
         .arg("fas")
         .arg("replace")
-        .arg("tests/fas/replace.tsv")
         .arg("tests/fas/example.fas")
+        .arg("-r")
+        .arg("tests/fas/replace.tsv")
         .output()?;
     let stdout = String::from_utf8(output.stdout)?;
 
@@ -200,8 +205,9 @@ fn command_replace() -> anyhow::Result<()> {
     let output = cmd
         .arg("fas")
         .arg("replace")
-        .arg("tests/fas/replace.fail.tsv")
         .arg("tests/fas/example.fas")
+        .arg("-r")
+        .arg("tests/fas/replace.fail.tsv")
         .output()?;
     let stdout = String::from_utf8(output.stdout)?;
     let stderr = String::from_utf8(output.stderr)?;
@@ -215,8 +221,9 @@ fn command_replace() -> anyhow::Result<()> {
     let output = cmd
         .arg("fas")
         .arg("replace")
-        .arg("tests/fas/replace.remove.tsv")
         .arg("tests/fas/example.fas")
+        .arg("-r")
+        .arg("tests/fas/replace.remove.tsv")
         .output()?;
     let stdout = String::from_utf8(output.stdout)?;
 
@@ -232,8 +239,9 @@ fn command_check() -> anyhow::Result<()> {
     let output = cmd
         .arg("fas")
         .arg("check")
-        .arg("tests/fas/NC_000932.fa")
         .arg("tests/fas/A_tha.pair.fas")
+        .arg("-r")
+        .arg("tests/fas/NC_000932.fa")
         .output()?;
     let stdout = String::from_utf8(output.stdout)?;
 
@@ -246,8 +254,9 @@ fn command_check() -> anyhow::Result<()> {
     let output = cmd
         .arg("fas")
         .arg("check")
-        .arg("tests/fas/NC_000932.fa")
         .arg("tests/fas/A_tha.pair.fas")
+        .arg("-r")
+        .arg("tests/fas/NC_000932.fa")
         .arg("--name")
         .arg("A_tha")
         .output()?;
@@ -266,8 +275,9 @@ fn command_create() -> anyhow::Result<()> {
     let output = cmd
         .arg("fas")
         .arg("create")
-        .arg("tests/fas/genome.fa")
         .arg("tests/fas/I.connect.tsv")
+        .arg("-r")
+        .arg("tests/fas/genome.fa")
         .arg("--name")
         .arg("S288c")
         .output()?;
@@ -606,8 +616,9 @@ fn command_slice() -> anyhow::Result<()> {
     let output = cmd
         .arg("fas")
         .arg("slice")
-        .arg("tests/fas/slice.json")
         .arg("tests/fas/slice.fas")
+        .arg("-r")
+        .arg("tests/fas/slice.json")
         .arg("--name")
         .arg("S288c")
         .output()?;

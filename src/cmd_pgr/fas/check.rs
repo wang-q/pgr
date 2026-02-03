@@ -17,25 +17,26 @@ Note:
 
 Examples:
 1. Check all sequences in a block FA file:
-   pgr fas check tests/fasr/NC_000932.fa tests/fasr/A_tha.pair.fas
+   pgr fas check tests/fas/A_tha.pair.fas -r tests/fas/NC_000932.fa
 
 2. Check sequences for a specific species:
-   pgr fas check tests/fasr/NC_000932.fa tests/fasr/A_tha.pair.fas --name A_tha
+   pgr fas check tests/fas/A_tha.pair.fas --name A_tha -r tests/fas/NC_000932.fa
 
 "###,
         )
         .arg(
             Arg::new("genome.fa")
+                .short('r')
+                .long("genome")
                 .required(true)
                 .num_args(1)
-                .index(1)
                 .help("Path to the reference genome FA file"),
         )
         .arg(
             Arg::new("infiles")
                 .required(true)
                 .num_args(1..)
-                .index(2)
+                .index(1)
                 .help("Input block FA file(s) to check"),
         )
         .arg(

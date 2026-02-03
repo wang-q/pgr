@@ -269,29 +269,29 @@ pgr fas cover tests/fas/example.fas
 
 pgr fas cover tests/fas/example.fas --name S288c --trim 10
 
-pgr fas concat tests/fas/name.lst tests/fas/example.fas
+pgr fas concat tests/fas/example.fas -r tests/fas/name.lst
 
-pgr fas subset tests/fas/name.lst tests/fas/example.fas
-pgr fas subset tests/fas/name.lst tests/fas/refine.fas --required
+pgr fas subset tests/fas/example.fas -r tests/fas/name.lst
+pgr fas subset tests/fas/refine.fas -r tests/fas/name.lst --strict
 
 pgr fas link tests/fas/example.fas --pair
 pgr fas link tests/fas/example.fas --best
 
-pgr fas replace tests/fas/replace.tsv tests/fas/example.fas
-pgr fas replace tests/fas/replace.fail.tsv tests/fas/example.fas
+pgr fas replace tests/fas/example.fas -r tests/fas/replace.tsv
+pgr fas replace tests/fas/example.fas -r tests/fas/replace.fail.tsv
 
 pgr fa range tests/fas/NC_000932.fa NC_000932:1-10
 
-pgr fas check tests/fas/NC_000932.fa tests/fas/A_tha.pair.fas
-pgr fas check tests/fas/NC_000932.fa tests/fas/A_tha.pair.fas --name A_tha
+pgr fas check tests/fas/A_tha.pair.fas -r tests/fas/NC_000932.fa
+pgr fas check tests/fas/A_tha.pair.fas --name A_tha -r tests/fas/NC_000932.fa
 
-pgr fas create tests/fas/genome.fa tests/fas/I.connect.tsv --name S288c
+pgr fas create tests/fas/I.connect.tsv -r tests/fas/genome.fa --name S288c
 
 # Create a fasta file containing multiple genomes
 cat tests/fas/genome.fa | sed 's/^>/>S288c./' > tests/fas/genomes.fa
 samtools faidx tests/fas/genomes.fa S288c.I:1-100
 
-cargo run --bin pgr -- fas create tests/fas/genomes.fa tests/fas/I.name.tsv --multi
+cargo run --bin pgr -- fas create tests/fas/I.name.tsv -r tests/fas/genomes.fa --multi
 
 pgr fas separate tests/fas/example.fas -o . --suffix .tmp
 
@@ -309,7 +309,7 @@ pgr fas refine tests/fas/example.fas --quick
 pgr fas split tests/fas/example.fas --simple
 pgr fas split tests/fas/example.fas -o . --chr --suffix .tmp
 
-pgr fas slice tests/fas/slice.json tests/fas/slice.fas --name S288c
+pgr fas slice tests/fas/slice.fas -r tests/fas/slice.json --name S288c
 
 cargo run --bin pgr -- fas join tests/fas/S288cvsYJM789.slice.fas --name YJM789
 cargo run --bin pgr -- fas join \

@@ -8,23 +8,40 @@ pub fn make_subcommand() -> Command {
         .about("Extract alignment slices")
         .after_help(
             r###"
+Extract alignment slices from block FA files based on a runlist JSON file.
+
+* --required <runlist.json>: A JSON file describing ranges to extract.
+    - The JSON object keys are chromosome/sequence names.
+    - The values are runlists (e.g., "1-100,200-300").
+
 * <infiles> are paths to block fasta files, .fas.gz is supported
     * infile == stdin means reading from STDIN
+
+Examples:
+1. Extract slices defined in a JSON file:
+   pgr fas slice tests/fas/slice.fas -r tests/fas/slice.json
+
+2. Extract slices and name the output based on a specific species:
+   pgr fas slice tests/fas/slice.fas -r tests/fas/slice.json --name S288c
+
+3. Output results to a file:
+   pgr fas slice tests/fas/slice.fas -r tests/fas/slice.json -o output.fas
 
 "###,
         )
         .arg(
             Arg::new("runlist.json")
+                .short('r')
+                .long("required")
                 .required(true)
-                .index(1)
                 .num_args(1)
-                .help("Set the runlist file to use"),
+                .help("Required: JSON file describing ranges to extract"),
         )
         .arg(
             Arg::new("infiles")
                 .required(true)
                 .num_args(1..)
-                .index(2)
+                .index(1)
                 .help("Set the input files to use"),
         )
         .arg(

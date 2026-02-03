@@ -7,38 +7,38 @@ pub fn make_subcommand() -> Command {
         .about("Concatenate sequence pieces of the same species")
         .after_help(
             r###"
-This subcommand concatenates sequence pieces of the same species from block FA files into a single sequence per species.
+* --required <name.lst>: File with a list of species names to keep, one per line.
+    - The order of species in the output follows the order in the <name.lst> file.
+    - Missing sequences are filled with gaps (`-`).
 
-Input files can be gzipped. If the input file is 'stdin', data is read from standard input.
-
-Note:
-- The order of species in the output follows the order in the <name.lst> file.
-- Missing sequences are filled with gaps (`-`).
+* <infiles> are paths to block fasta files, .fas.gz is supported
+    * infile == stdin means reading from STDIN
 
 Examples:
 1. Concatenate sequences and output in FASTA format:
-   pgr fas concat tests/fasr/name.lst tests/fasr/example.fas
+   pgr fas concat tests/fasr/example.fas -r tests/fasr/name.lst
 
 2. Concatenate sequences and output in relaxed PHYLIP format:
-   pgr fas concat tests/fasr/name.lst tests/fasr/example.fas --phylip
+   pgr fas concat tests/fasr/example.fas -r tests/fasr/name.lst --phylip
 
 3. Output results to a file:
-   pgr fas concat tests/fasr/name.lst tests/fasr/example.fas -o output.fas
+   pgr fas concat tests/fasr/example.fas -r tests/fasr/name.lst -o output.fas
 
 "###,
         )
         .arg(
             Arg::new("name.lst")
+                .short('r')
+                .long("required")
                 .required(true)
                 .num_args(1)
-                .index(1)
-                .help("File with a list of species names to keep, one per line"),
+                .help("Required: File with a list of species names to keep, one per line"),
         )
         .arg(
             Arg::new("infiles")
                 .required(true)
                 .num_args(1..)
-                .index(2)
+                .index(1)
                 .help("Input block FA file(s) to process"),
         )
         .arg(

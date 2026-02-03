@@ -9,34 +9,42 @@ pub fn make_subcommand() -> Command {
             r###"
 Extract a subset of species from block FA files based on a list of names.
 
-* <name.lst>: A file containing a list of species names to keep, one per line.
+* --required <name.lst>: A file containing a list of species names to keep, one per line.
     - The order of species in the output will follow the order in <name.lst>.
-
-* <name.lst> is a file with a list of names to keep, one per line
-    * Orders in the output file will following the ones in <name.lst>
 
 * <infiles> are paths to block fasta files, .fas.gz is supported
     * infile == stdin means reading from STDIN
+
+Examples:
+1. Extract a subset of species:
+   pgr fas subset tests/fas/example.fas -r tests/fas/name.lst
+
+2. Extract a subset and skip blocks missing any required species:
+   pgr fas subset tests/fas/example.fas -r tests/fas/name.lst --strict
+
+3. Output results to a file:
+   pgr fas subset tests/fas/example.fas -r tests/fas/name.lst -o output.fas
 
 "###,
         )
         .arg(
             Arg::new("name.lst")
+                .short('r')
+                .long("required")
                 .required(true)
                 .num_args(1)
-                .index(1)
-                .help("Path to name.lst"),
+                .help("Required: File with a list of species names to keep"),
         )
         .arg(
             Arg::new("infiles")
                 .required(true)
                 .num_args(1..)
-                .index(2)
+                .index(1)
                 .help("Set the input files to use"),
         )
         .arg(
-            Arg::new("required")
-                .long("required")
+            Arg::new("strict")
+                .long("strict")
                 .action(ArgAction::SetTrue)
                 .help("Skip blocks not containing all the names"),
         )
@@ -56,7 +64,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // Args
     //----------------------------
     let mut writer = intspan::writer(args.get_one::<String>("outfile").unwrap());
-    let is_required = args.get_flag("required");
+    let is_strict = args.get_flag("strict");
 
     let needed = intspan::read_first_column(args.get_one::<String>("name.lst").unwrap());
 
@@ -69,7 +77,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         'BLOCK: while let Ok(block) = pgr::libs::fas::next_fas_block(&mut reader) {
             let block_names = block.names;
 
-            if is_required {
+            if is_strict {
                 for name in &needed {
                     if !block_names.contains(name) {
                         continue 'BLOCK;

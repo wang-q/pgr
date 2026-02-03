@@ -19,25 +19,26 @@ Note:
 
 Examples:
 1. Create block FA files for a single genome:
-   pgr fas create tests/fasr/genome.fa tests/fasr/I.connect.tsv
+   pgr fas create tests/fasr/I.connect.tsv -r tests/fasr/genome.fa
 
 2. Create block FA files for a specific species:
-   pgr fas create tests/fasr/genome.fa tests/fasr/I.connect.tsv --name S288c
+   pgr fas create tests/fasr/I.connect.tsv -r tests/fasr/genome.fa --name S288c
 
 "###,
         )
         .arg(
             Arg::new("genome.fa")
+                .short('r')
+                .long("genome")
                 .required(true)
                 .num_args(1)
-                .index(1)
                 .help("Path to the reference genome FA file"),
         )
         .arg(
             Arg::new("infiles")
                 .required(true)
                 .num_args(1..)
-                .index(2)
+                .index(1)
                 .help("Input file(s) containing links of ranges"),
         )
         .arg(

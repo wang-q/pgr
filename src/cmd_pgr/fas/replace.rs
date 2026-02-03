@@ -8,35 +8,37 @@ pub fn make_subcommand() -> Command {
         .about("Replace headers in block FA files")
         .after_help(
             r###"
-This subcommand replaces headers (name.range) in block FA files based on a TSV file.
+* --required <replace.tsv>: Path to the TSV file containing replacement rules.
+    - The TSV file should contain one or more fields:
+      - `original_name  replace_name   more_replace_name`
+      - One field: Deletes the entire alignment block for the specified species.
+      - Three or more fields: Duplicates the entire alignment block for each replacement name.
 
-Input files can be gzipped. If the input file is 'stdin', data is read from standard input.
-
-Note:
-- The TSV file should contain one or more fields:
-  - `original_name  replace_name   more_replace_name`
-  - One field: Deletes the entire alignment block for the specified species.
-  - Three or more fields: Duplicates the entire alignment block for each replacement name.
-- Does not support replacing multiple records in one block.
+* <infiles> are paths to block fasta files, .fas.gz is supported
+    * infile == stdin means reading from STDIN
 
 Examples:
 1. Replace species names in a block FA file:
-   pgr fas replace tests/fas/replace.tsv tests/fas/example.fas
+   pgr fas replace tests/fas/example.fas -r tests/fas/replace.tsv
+
+2. Output results to a file:
+   pgr fas replace tests/fas/example.fas -r tests/fas/replace.tsv -o output.fas
 
 "###,
         )
         .arg(
             Arg::new("replace.tsv")
+                .short('r')
+                .long("required")
                 .required(true)
                 .num_args(1)
-                .index(1)
-                .help("Path to the TSV file containing replacement rules"),
+                .help("Required: Path to the TSV file containing replacement rules"),
         )
         .arg(
             Arg::new("infiles")
                 .required(true)
                 .num_args(1..)
-                .index(2)
+                .index(1)
                 .help("Input block FA file(s) to process"),
         )
         .arg(
