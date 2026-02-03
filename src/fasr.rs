@@ -18,7 +18,6 @@ fn main() -> anyhow::Result<()> {
         .subcommand(cmd_fasr::join::make_subcommand())
         .subcommand(cmd_fasr::pl_p2m::make_subcommand())
         .subcommand(cmd_fasr::refine::make_subcommand())
-        .subcommand(cmd_fasr::replace::make_subcommand())
         .subcommand(cmd_fasr::separate::make_subcommand())
         .subcommand(cmd_fasr::slice::make_subcommand())
         .subcommand(cmd_fasr::split::make_subcommand())
@@ -33,7 +32,7 @@ Subcommand groups:
 * info: check / stat
 * creation: create
 * records: separate / split
-* transform: filter / replace / refine
+* transform: filter / refine
 * transmute: consensus / join / pl-p2m / slice
 * variations: variation / vcf / xlsx
 
@@ -52,7 +51,6 @@ Subcommand groups:
         Some(("split", sub_matches)) => cmd_fasr::split::execute(sub_matches),
         // transform
         Some(("filter", sub_matches)) => cmd_fasr::filter::execute(sub_matches),
-        Some(("replace", sub_matches)) => cmd_fasr::replace::execute(sub_matches),
         Some(("refine", sub_matches)) => cmd_fasr::refine::execute(sub_matches),
         // transmute
         Some(("consensus", sub_matches)) => cmd_fasr::consensus::execute(sub_matches),

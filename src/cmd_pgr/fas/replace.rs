@@ -1,5 +1,6 @@
 use clap::*;
 use std::collections::BTreeMap;
+use std::io::Write;
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
@@ -20,7 +21,7 @@ Note:
 
 Examples:
 1. Replace species names in a block FA file:
-   fasr replace tests/fasr/replace.tsv tests/fasr/example.fas
+   pgr fas replace tests/fas/replace.tsv tests/fas/example.fas
 
 "###,
         )
@@ -78,7 +79,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     for infile in args.get_many::<String>("infiles").unwrap() {
         let mut reader = intspan::reader(infile);
 
-        while let Ok(block) = pgr::next_fas_block(&mut reader) {
+        while let Ok(block) = pgr::libs::fas::next_fas_block(&mut reader) {
             let originals = block.headers.clone();
 
             let matched: Vec<String> = replace_of

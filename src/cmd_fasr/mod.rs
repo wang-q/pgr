@@ -7,7 +7,6 @@ pub mod filter;
 pub mod join;
 pub mod pl_p2m;
 pub mod refine;
-pub mod replace;
 pub mod separate;
 pub mod slice;
 pub mod split;

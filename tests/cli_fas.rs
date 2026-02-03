@@ -183,10 +183,11 @@ fn command_link() -> anyhow::Result<()> {
 
 #[test]
 fn command_replace() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("fasr")?;
+    let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
+        .arg("fas")
         .arg("replace")
-        .arg("tests/fasr/replace.tsv")
+        .arg("tests/fas/replace.tsv")
         .arg("tests/fas/example.fas")
         .output()?;
     let stdout = String::from_utf8(output.stdout)?;
@@ -195,10 +196,11 @@ fn command_replace() -> anyhow::Result<()> {
     assert!(stdout.contains(">query.VIII(+)"));
 
     // fail
-    let mut cmd = Command::cargo_bin("fasr")?;
+    let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
+        .arg("fas")
         .arg("replace")
-        .arg("tests/fasr/replace.fail.tsv")
+        .arg("tests/fas/replace.fail.tsv")
         .arg("tests/fas/example.fas")
         .output()?;
     let stdout = String::from_utf8(output.stdout)?;
@@ -209,10 +211,11 @@ fn command_replace() -> anyhow::Result<()> {
     assert!(stderr.contains("records"), "error message");
 
     // remove
-    let mut cmd = Command::cargo_bin("fasr")?;
+    let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
+        .arg("fas")
         .arg("replace")
-        .arg("tests/fasr/replace.remove.tsv")
+        .arg("tests/fas/replace.remove.tsv")
         .arg("tests/fas/example.fas")
         .output()?;
     let stdout = String::from_utf8(output.stdout)?;

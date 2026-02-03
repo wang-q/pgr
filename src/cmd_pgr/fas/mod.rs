@@ -2,6 +2,7 @@ pub mod concat;
 pub mod cover;
 pub mod link;
 pub mod name;
+pub mod replace;
 pub mod subset;
 
 pub fn make_subcommand() -> clap::Command {
@@ -13,6 +14,7 @@ pub fn make_subcommand() -> clap::Command {
         .subcommand(cover::make_subcommand())
         .subcommand(link::make_subcommand())
         .subcommand(name::make_subcommand())
+        .subcommand(replace::make_subcommand())
         .subcommand(subset::make_subcommand())
 }
 
@@ -22,6 +24,7 @@ pub fn execute(matches: &clap::ArgMatches) -> anyhow::Result<()> {
         Some(("cover", sub_matches)) => cover::execute(sub_matches),
         Some(("link", sub_matches)) => link::execute(sub_matches),
         Some(("name", sub_matches)) => name::execute(sub_matches),
+        Some(("replace", sub_matches)) => replace::execute(sub_matches),
         Some(("subset", sub_matches)) => subset::execute(sub_matches),
         _ => unreachable!(),
     }
