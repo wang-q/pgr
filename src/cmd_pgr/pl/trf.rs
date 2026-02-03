@@ -139,12 +139,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     run_cmd!(info "==> Split by names")?;
     run_cmd!(
-        hnsm split name ${abs_infile} -o .
+        ${pgr} fa split name ${abs_infile} -o .
     )?;
 
     run_cmd!(info "==> Process each chromosome")?;
     run_cmd!(
-        hnsm size ${abs_infile} -o chr.sizes
+        ${pgr} fa size ${abs_infile} -o chr.sizes
     )?;
     let mut chrs: Vec<String> = vec![];
     for line in intspan::read_lines("chr.sizes") {

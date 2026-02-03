@@ -118,7 +118,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     run_cmd!(info "==> Process each chromosome")?;
     run_cmd!(
-        hnsm size ${abs_infile} -o chr.sizes
+        ${pgr} fa size ${abs_infile} -o chr.sizes
     )?;
 
     let mut chrs: Vec<String> = vec![];

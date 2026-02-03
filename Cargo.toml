@@ -35,7 +35,6 @@ noodles-bgzf = "0.45.0"
 which = "7.0.0"
 tempfile = "3.14.0"
 
-# fasr
 rust_xlsxwriter = "0.83.0"
 bio = "0.30.1"
 cmd_lib = "1.9.6"

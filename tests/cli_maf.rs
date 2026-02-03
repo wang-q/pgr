@@ -7,7 +7,7 @@ fn command_maf_to_fas() -> anyhow::Result<()> {
     let output = cmd
         .arg("maf")
         .arg("to-fas")
-        .arg("tests/fasr/example.maf")
+        .arg("tests/maf/example.maf")
         .output()
         .unwrap();
 

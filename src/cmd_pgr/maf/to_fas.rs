@@ -17,7 +17,7 @@ Note:
 
 Examples:
 1. Convert a MAF file to block FASTA format:
-   pgr maf to-fas tests/fasr/example.maf
+   pgr maf to-fas tests/maf/example.maf
 
 "###,
         )

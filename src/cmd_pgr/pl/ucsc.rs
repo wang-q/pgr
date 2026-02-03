@@ -200,12 +200,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     run_cmd!(info "==> Target .sizes and .2bit")?;
     run_cmd!(
-        hnsm size ${abs_target} -o target.chr.sizes;
+        ${pgr} fa size ${abs_target} -o target.chr.sizes;
         faToTwoBit ${abs_target} target.chr.2bit;
     )?;
     run_cmd!(info "==> Query .sizes and .2bit")?;
     run_cmd!(
-        hnsm size ${abs_query} -o query.chr.sizes;
+        ${pgr} fa size ${abs_query} -o query.chr.sizes;
         faToTwoBit ${abs_query} query.chr.2bit;
     )?;
 

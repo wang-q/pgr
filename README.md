@@ -86,43 +86,6 @@ Subcommand groups:
 
 ```
 
-### `fasr help`
-
-```text
-`fasr` operates block fasta files
-
-Usage: fasr [COMMAND]
-
-Commands:
-  axt2fas    Convert axt to block fasta
-  check      Check genome locations in block fasta headers
-  concat     Concatenate sequence pieces of the same species
-  consensus  Generate consensus sequences by POA
-  cover      Output covers on chromosomes
-  create     Create block fasta files from links of ranges
-  filter     Filter blocks, and can also be used as a formatter
-  join       Join multiple block fasta files by a common target
-  link       Output bi/multi-lateral range links
-  maf2fas    Convert maf to block fasta
-  name       Output all species names
-  pl-p2m     Pipeline - pairwise alignments to multiple alignments
-  refine     Realign files with external programs and trim unwanted regions
-  replace    Concatenate sequence pieces of the same species
-  separate   Separate block fasta files by species
-  slice      Extract alignment slices
-  split      Split block fasta files to per-alignment/chromosome fasta files
-  stat       Extract a subset of species
-  subset     Extract a subset of species
-  variation  List variations (substitutions/indels)
-  xlsx       List variations (substitutions/indels)
-  help       Print this message or the help of the given subcommand(s)
-
-Options:
-  -h, --help     Print help
-  -V, --version  Print version
-
-```
-
 ## Examples
 
 ### 2bit
@@ -295,87 +258,98 @@ multiz M=10 tests/multiz/S288cvsRM11_1a.maf     tests/multiz/S288cvsSpar.maf    
 ### Block FA files
 
 ```bash
-fasr maf2fas tests/fasr/example.maf
+pgr maf to-fas tests/maf/example.maf
 
-fasr axt2fas tests/fasr/RM11_1a.chr.sizes tests/fasr/example.axt --qname RM11_1a
+pgr axt to-fas tests/fas/RM11_1a.chr.sizes tests/fas/example.axt --qname RM11_1a
 
-fasr filter tests/fasr/example.fas --ge 10
+pgr fas filter tests/fas/example.fas --ge 10
 
-fasr name tests/fasr/example.fas --count
+pgr fas name tests/fas/example.fas --count
 
-fasr cover tests/fasr/example.fas
+pgr fas cover tests/fas/example.fas
 
-fasr cover tests/fasr/example.fas --name S288c --trim 10
+pgr fas cover tests/fas/example.fas --name S288c --trim 10
 
-fasr concat tests/fasr/name.lst tests/fasr/example.fas
+pgr fas concat tests/fas/name.lst tests/fas/example.fas
 
-fasr subset tests/fasr/name.lst tests/fasr/example.fas
-fasr subset tests/fasr/name.lst tests/fasr/refine.fas --required
+pgr fas subset tests/fas/name.lst tests/fas/example.fas
+pgr fas subset tests/fas/name.lst tests/fas/refine.fas --required
 
-fasr link tests/fasr/example.fas --pair
-fasr link tests/fasr/example.fas --best
+pgr fas link tests/fas/example.fas --pair
+pgr fas link tests/fas/example.fas --best
 
-fasr replace tests/fasr/replace.tsv tests/fasr/example.fas
-fasr replace tests/fasr/replace.fail.tsv tests/fasr/example.fas
+pgr fas replace tests/fas/replace.tsv tests/fas/example.fas
+pgr fas replace tests/fas/replace.fail.tsv tests/fas/example.fas
 
-hnsm range tests/fasr/NC_000932.fa NC_000932:1-10
+pgr fa range tests/fas/NC_000932.fa NC_000932:1-10
 
-fasr check tests/fasr/NC_000932.fa tests/fasr/A_tha.pair.fas
-fasr check tests/fasr/NC_000932.fa tests/fasr/A_tha.pair.fas --name A_tha
+pgr fas check tests/fas/NC_000932.fa tests/fas/A_tha.pair.fas
+pgr fas check tests/fas/NC_000932.fa tests/fas/A_tha.pair.fas --name A_tha
 
-fasr create tests/fasr/genome.fa tests/fasr/I.connect.tsv --name S288c
+pgr fas create tests/fas/genome.fa tests/fas/I.connect.tsv --name S288c
 
 # Create a fasta file containing multiple genomes
-cat tests/fasr/genome.fa | sed 's/^>/>S288c./' > tests/fasr/genomes.fa
-samtools faidx tests/fasr/genomes.fa S288c.I:1-100
+cat tests/fas/genome.fa | sed 's/^>/>S288c./' > tests/fas/genomes.fa
+samtools faidx tests/fas/genomes.fa S288c.I:1-100
 
-cargo run --bin fasr create tests/fasr/genomes.fa tests/fasr/I.name.tsv --multi
+cargo run --bin pgr -- fas create tests/fas/genomes.fa tests/fas/I.name.tsv --multi
 
-fasr separate tests/fasr/example.fas -o . --suffix .tmp
+pgr fas separate tests/fas/example.fas -o . --suffix .tmp
 
-spoa tests/fasr/refine.fasta -r 1
+spoa tests/fas/refine.fasta -r 1
 
-fasr consensus tests/fasr/example.fas
-fasr consensus tests/fasr/refine.fas
-fasr consensus tests/fasr/refine.fas --outgroup -p 2
+pgr fas consensus tests/fas/example.fas
+pgr fas consensus tests/fas/refine.fas
+pgr fas consensus tests/fas/refine.fas --outgroup -p 2
 
-fasr refine tests/fasr/example.fas
-fasr refine tests/fasr/example.fas --msa none --chop 10
-fasr refine tests/fasr/refine2.fas --msa clustalw --outgroup
-fasr refine tests/fasr/example.fas --quick
+pgr fas refine tests/fas/example.fas
+pgr fas refine tests/fas/example.fas --msa none --chop 10
+pgr fas refine tests/fas/refine2.fas --msa clustalw --outgroup
+pgr fas refine tests/fas/example.fas --quick
 
-fasr split tests/fasr/example.fas --simple
-fasr split tests/fasr/example.fas -o . --chr --suffix .tmp
+pgr fas split tests/fas/example.fas --simple
+pgr fas split tests/fas/example.fas -o . --chr --suffix .tmp
 
-fasr slice tests/fasr/slice.json tests/fasr/slice.fas --name S288c
+pgr fas slice tests/fas/slice.json tests/fas/slice.fas --name S288c
 
-cargo run --bin fasr join tests/fasr/S288cvsYJM789.slice.fas --name YJM789
-cargo run --bin fasr join \
-    tests/fasr/S288cvsRM11_1a.slice.fas \
-    tests/fasr/S288cvsYJM789.slice.fas \
-    tests/fasr/S288cvsSpar.slice.fas
+cargo run --bin pgr -- fas join tests/fas/S288cvsYJM789.slice.fas --name YJM789
+cargo run --bin pgr -- fas join \
+    tests/fas/S288cvsRM11_1a.slice.fas \
+    tests/fas/S288cvsYJM789.slice.fas \
+    tests/fas/S288cvsSpar.slice.fas
 
-cargo run --bin fasr stat tests/fasr/example.fas --outgroup
+cargo run --bin pgr -- fas stat tests/fas/example.fas --outgroup
 
-cargo run --bin fasr variation tests/fasr/example.fas
-cargo run --bin fasr variation tests/fasr/example.fas --outgroup
+cargo run --bin pgr -- fas variation tests/fas/example.fas
+cargo run --bin pgr -- fas variation tests/fas/example.fas --outgroup
 
-# snp-sites -v tests/fasr/YDL184C.fas
-cargo run --bin fasr vcf tests/fasr/YDL184C.fas
-cargo run --bin fasr vcf tests/fasr/example.fas
-cargo run --bin fasr vcf --sizes tests/fasr/S288c.chr.sizes tests/fasr/YDL184C.fas
+# snp-sites -v tests/fas/YDL184C.fas
+cargo run --bin pgr -- fas to-vcf tests/fas/YDL184C.fas
+cargo run --bin pgr -- fas to-vcf tests/fas/example.fas
+cargo run --bin pgr -- fas to-vcf --sizes tests/fas/S288c.chr.sizes tests/fas/YDL184C.fas
 
-#fasops xlsx tests/fasr/example.fas -o example.xlsx
-#fasops xlsx tests/fasr/example.fas -l 50 --outgroup -o example.outgroup.xlsx
-fasr xlsx tests/fasr/example.fas --indel
-fasr xlsx tests/fasr/example.fas --indel --outgroup
-fasr xlsx tests/fasr/example.fas --nosingle
-fasr xlsx tests/fasr/example.fas --indel --nocomplex
-fasr xlsx tests/fasr/example.fas --indel --min 0.3 --max 0.7
+#fasops xlsx tests/fas/example.fas -o example.xlsx
+#fasops xlsx tests/fas/example.fas -l 50 --outgroup -o example.outgroup.xlsx
+pgr fas to-xlsx tests/fas/example.fas --indel
+pgr fas to-xlsx tests/fas/example.fas --indel --outgroup
+pgr fas to-xlsx tests/fas/example.fas --nosingle
+pgr fas to-xlsx tests/fas/example.fas --indel --nocomplex
+pgr fas to-xlsx tests/fas/example.fas --indel --min 0.3 --max 0.7
 
-cargo run --bin fasr pl-p2m tests/fasr/S288cvsRM11_1a.slice.fas tests/fasr/S288cvsSpar.slice.fas
+cargo run --bin pgr -- pl p2m tests/fas/S288cvsRM11_1a.slice.fas tests/fas/S288cvsSpar.slice.fas
 
 ```
+
+## Deps
+
+pgr 子命令所依赖的外部可执行程序：
+
+- pgr pl ucsc : 依赖 UCSC kent-tools 套件。
+  - 包括: faToTwoBit , axtChain , chainAntiRepeat , chainMergeSort , chainPreNet , chainNet , netSyntenic , netChainSubset , chainStitchId , netSplit , netToAxt , axtSort , axtToMaf , netFilter , netClass , chainSplit 。
+- pgr pl trf : 依赖 trf , spanr 。
+- pgr pl rept / pgr pl ir : 依赖 FastK , Profex , spanr 。
+- pgr pl p2m : 依赖 spanr 。
+- pgr fas refine : 依赖 clustalw (默认), 或 muscle , mafft 。
 
 ## Author
 
