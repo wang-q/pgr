@@ -8,8 +8,20 @@ pub fn make_subcommand() -> Command {
         .about("Join multiple block fasta files by a common target")
         .after_help(
             r###"
+This subcommand joins multiple block FA files based on a common target sequence.
+
 * <infiles> are paths to block fasta files, .fas.gz is supported
     * infile == stdin means reading from STDIN
+
+Examples:
+1. Join multiple block FA files:
+   pgr fas join tests/fas/part1.fas tests/fas/part2.fas
+
+2. Join files based on a specific species:
+   pgr fas join tests/fas/part1.fas tests/fas/part2.fas --name S288c
+
+3. Output results to a file:
+   pgr fas join tests/fas/part1.fas tests/fas/part2.fas -o output.fas
 
 "###,
         )

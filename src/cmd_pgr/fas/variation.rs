@@ -16,6 +16,19 @@ pub fn make_subcommand() -> Command {
 * Filter out singletons
     * tsv-filter -H --ne freq:1
 
+Examples:
+1. List substitutions from block FA files:
+   pgr fas variation tests/fas/part1.fas
+
+2. List both substitutions and indels:
+   pgr fas variation tests/fas/part1.fas --indel
+
+3. Handle outgroup (last sequence) for polarization:
+   pgr fas variation tests/fas/part1.fas --outgroup
+
+4. Output results to a file:
+   pgr fas variation tests/fas/part1.fas -o output.tsv
+
 "###,
         )
         .arg(

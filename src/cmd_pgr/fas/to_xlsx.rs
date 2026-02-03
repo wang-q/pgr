@@ -17,6 +17,19 @@ pub fn make_subcommand() -> Command {
 * <infiles> are paths to block fasta files, .fas.gz is supported
     * infile == stdin means reading from STDIN
 
+Examples:
+1. Export variations to an Excel file:
+   pgr fas to-xlsx tests/fas/part1.fas -o variations.xlsx
+
+2. Include indels and handle outgroup:
+   pgr fas to-xlsx tests/fas/part1.fas --indel --outgroup
+
+3. Filter variations by frequency (e.g., min 0.1, max 0.9):
+   pgr fas to-xlsx tests/fas/part1.fas --min 0.1 --max 0.9
+
+4. Omit singleton and complex variations:
+   pgr fas to-xlsx tests/fas/part1.fas --nosingle --nocomplex
+
 "###,
         )
         .arg(

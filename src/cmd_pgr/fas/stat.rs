@@ -4,11 +4,21 @@ use std::io::Write;
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("stat")
-        .about("Extract a subset of species")
+        .about("Basic statistics of block FA files")
         .after_help(
             r###"
 * <infiles> are paths to block fasta files, .fas.gz is supported
     * infile == stdin means reading from STDIN
+
+Examples:
+1. Get statistics for block FA files:
+   pgr fas stat tests/fas/part1.fas
+
+2. Statistics treating the last sequence as an outgroup:
+   pgr fas stat tests/fas/part1.fas --outgroup
+
+3. Output results to a file:
+   pgr fas stat tests/fas/part1.fas -o output.tsv
 
 "###,
         )

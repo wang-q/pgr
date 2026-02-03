@@ -24,6 +24,19 @@ pub fn make_subcommand() -> Command {
 * Running in parallel mode with 1 reader, 1 writer and the corresponding number of workers
     * The order of blocks in output may be different from the original
 
+Examples:
+1. Realign block FA files using clustalw (default):
+   pgr fas refine tests/fas/part1.fas tests/fas/part2.fas
+
+2. Realign using mafft with 4 threads:
+   pgr fas refine tests/fas/part1.fas --msa mafft --parallel 4
+
+3. Quick alignment for files converted from pairwise alignments:
+   pgr fas refine tests/fas/part1.fas --quick --parallel 4
+
+4. Output results to a file:
+   pgr fas refine tests/fas/part1.fas -o output.fas
+
 "###,
         )
         .arg(
