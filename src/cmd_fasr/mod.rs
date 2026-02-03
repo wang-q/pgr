@@ -1,12 +1,10 @@
 //! Subcommand modules for the `fasr` binary.
 
 pub mod check;
-pub mod concat;
 pub mod consensus;
 pub mod create;
 pub mod filter;
 pub mod join;
-pub mod link;
 pub mod pl_p2m;
 pub mod refine;
 pub mod replace;
@@ -14,7 +12,6 @@ pub mod separate;
 pub mod slice;
 pub mod split;
 pub mod stat;
-pub mod subset;
 pub mod variation;
 pub mod vcf;
 pub mod xlsx;

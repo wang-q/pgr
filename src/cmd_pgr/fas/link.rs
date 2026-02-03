@@ -1,5 +1,6 @@
 use clap::*;
 use itertools::Itertools;
+use std::io::Write;
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
@@ -18,16 +19,16 @@ Note:
 
 Examples:
 1. Output multi-lateral links:
-   fasr link tests/fasr/example.fas
+   pgr fas link tests/fas/example.fas
 
 2. Output bilateral (pairwise) links:
-   fasr link tests/fasr/example.fas --pair
+   pgr fas link tests/fas/example.fas --pair
 
 3. Output best-to-best bilateral links:
-   fasr link tests/fasr/example.fas --best
+   pgr fas link tests/fas/example.fas --best
 
 4. Output results to a file:
-   fasr link tests/fasr/example.fas -o output.tsv
+   pgr fas link tests/fas/example.fas -o output.tsv
 
 "###,
         )
@@ -75,7 +76,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     for infile in args.get_many::<String>("infiles").unwrap() {
         let mut reader = intspan::reader(infile);
 
-        while let Ok(block) = pgr::next_fas_block(&mut reader) {
+        while let Ok(block) = pgr::libs::fas::next_fas_block(&mut reader) {
             let headers: Vec<String> = block
                 .entries
                 .iter()
@@ -99,7 +100,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                         if i == j {
                             continue;
                         }
-                        let dist = pgr::pair_d(block.entries[i].seq(), block.entries[j].seq());
+                        let dist = pgr::libs::alignment::pair_d(block.entries[i].seq(), block.entries[j].seq());
                         if dist < dist_idx.0 {
                             dist_idx = (dist, j);
                         }

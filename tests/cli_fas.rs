@@ -70,8 +70,9 @@ fn command_cover() -> anyhow::Result<()> {
 
 #[test]
 fn command_concat() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("fasr")?;
+    let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
+        .arg("fas")
         .arg("concat")
         .arg("tests/fas/name.lst")
         .arg("tests/fas/example.fas")
@@ -89,8 +90,9 @@ fn command_concat() -> anyhow::Result<()> {
 
 #[test]
 fn command_concat_phylip() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("fasr")?;
+    let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
+        .arg("fas")
         .arg("concat")
         .arg("tests/fas/name.lst")
         .arg("tests/fas/example.fas")
@@ -109,8 +111,9 @@ fn command_concat_phylip() -> anyhow::Result<()> {
 
 #[test]
 fn command_subset() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("fasr")?;
+    let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
+        .arg("fas")
         .arg("subset")
         .arg("tests/fas/name.lst")
         .arg("tests/fas/example.fas")
@@ -120,8 +123,9 @@ fn command_subset() -> anyhow::Result<()> {
     assert_eq!(stdout.lines().count(), 15);
     assert!(stdout.lines().next().unwrap().contains("Spar")); // >Spar.
 
-    let mut cmd = Command::cargo_bin("fasr")?;
+    let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
+        .arg("fas")
         .arg("subset")
         .arg("tests/fas/name.lst")
         .arg("tests/fas/example.fas")
@@ -137,16 +141,21 @@ fn command_subset() -> anyhow::Result<()> {
 
 #[test]
 fn command_link() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("fasr")?;
-    let output = cmd.arg("link").arg("tests/fas/example.fas").output()?;
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("fas")
+        .arg("link")
+        .arg("tests/fas/example.fas")
+        .output()?;
     let stdout = String::from_utf8(output.stdout)?;
 
     assert_eq!(stdout.lines().count(), 3);
     assert_eq!(stdout.lines().next().unwrap().split_whitespace().count(), 4);
 
     // --pair
-    let mut cmd = Command::cargo_bin("fasr")?;
+    let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
+        .arg("fas")
         .arg("link")
         .arg("tests/fas/example.fas")
         .arg("--pair")
@@ -157,8 +166,9 @@ fn command_link() -> anyhow::Result<()> {
     assert_eq!(stdout.lines().next().unwrap().split_whitespace().count(), 2);
 
     // --best
-    let mut cmd = Command::cargo_bin("fasr")?;
+    let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
+        .arg("fas")
         .arg("link")
         .arg("tests/fas/example.fas")
         .arg("--best")

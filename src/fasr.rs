@@ -12,12 +12,10 @@ fn main() -> anyhow::Result<()> {
         .arg_required_else_help(true)
         .color(ColorChoice::Auto)
         .subcommand(cmd_fasr::check::make_subcommand())
-        .subcommand(cmd_fasr::concat::make_subcommand())
         .subcommand(cmd_fasr::consensus::make_subcommand())
         .subcommand(cmd_fasr::create::make_subcommand())
         .subcommand(cmd_fasr::filter::make_subcommand())
         .subcommand(cmd_fasr::join::make_subcommand())
-        .subcommand(cmd_fasr::link::make_subcommand())
         .subcommand(cmd_fasr::pl_p2m::make_subcommand())
         .subcommand(cmd_fasr::refine::make_subcommand())
         .subcommand(cmd_fasr::replace::make_subcommand())
@@ -25,7 +23,6 @@ fn main() -> anyhow::Result<()> {
         .subcommand(cmd_fasr::slice::make_subcommand())
         .subcommand(cmd_fasr::split::make_subcommand())
         .subcommand(cmd_fasr::stat::make_subcommand())
-        .subcommand(cmd_fasr::subset::make_subcommand())
         .subcommand(cmd_fasr::variation::make_subcommand())
         .subcommand(cmd_fasr::vcf::make_subcommand())
         .subcommand(cmd_fasr::xlsx::make_subcommand())
@@ -33,11 +30,11 @@ fn main() -> anyhow::Result<()> {
             r###"
 Subcommand groups:
 
-* info: check / link / stat
+* info: check / stat
 * creation: create
-* records: separate / split / subset
+* records: separate / split
 * transform: filter / replace / refine
-* transmute: concat / consensus / join / pl-p2m / slice
+* transmute: consensus / join / pl-p2m / slice
 * variations: variation / vcf / xlsx
 
 "###,
@@ -47,20 +44,17 @@ Subcommand groups:
     match app.get_matches().subcommand() {
         // info
         Some(("check", sub_matches)) => cmd_fasr::check::execute(sub_matches),
-        Some(("link", sub_matches)) => cmd_fasr::link::execute(sub_matches),
         Some(("stat", sub_matches)) => cmd_fasr::stat::execute(sub_matches),
         // creation
         Some(("create", sub_matches)) => cmd_fasr::create::execute(sub_matches),
         // records
         Some(("separate", sub_matches)) => cmd_fasr::separate::execute(sub_matches),
         Some(("split", sub_matches)) => cmd_fasr::split::execute(sub_matches),
-        Some(("subset", sub_matches)) => cmd_fasr::subset::execute(sub_matches),
         // transform
         Some(("filter", sub_matches)) => cmd_fasr::filter::execute(sub_matches),
         Some(("replace", sub_matches)) => cmd_fasr::replace::execute(sub_matches),
         Some(("refine", sub_matches)) => cmd_fasr::refine::execute(sub_matches),
         // transmute
-        Some(("concat", sub_matches)) => cmd_fasr::concat::execute(sub_matches),
         Some(("consensus", sub_matches)) => cmd_fasr::consensus::execute(sub_matches),
         Some(("join", sub_matches)) => cmd_fasr::join::execute(sub_matches),
         Some(("pl-p2m", sub_matches)) => cmd_fasr::pl_p2m::execute(sub_matches),

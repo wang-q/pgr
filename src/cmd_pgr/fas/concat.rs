@@ -1,6 +1,6 @@
 use clap::*;
 use std::collections::BTreeMap;
-
+use std::io::Write;
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("concat")
@@ -17,13 +17,13 @@ Note:
 
 Examples:
 1. Concatenate sequences and output in FASTA format:
-   fasr concat tests/fasr/name.lst tests/fasr/example.fas
+   pgr fas concat tests/fasr/name.lst tests/fasr/example.fas
 
 2. Concatenate sequences and output in relaxed PHYLIP format:
-   fasr concat tests/fasr/name.lst tests/fasr/example.fas --phylip
+   pgr fas concat tests/fasr/name.lst tests/fasr/example.fas --phylip
 
 3. Output results to a file:
-   fasr concat tests/fasr/name.lst tests/fasr/example.fas -o output.fas
+   pgr fas concat tests/fasr/name.lst tests/fasr/example.fas -o output.fas
 
 "###,
         )
@@ -79,7 +79,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     for infile in args.get_many::<String>("infiles").unwrap() {
         let mut reader = intspan::reader(infile);
 
-        while let Ok(block) = pgr::next_fas_block(&mut reader) {
+        while let Ok(block) = pgr::libs::fas::next_fas_block(&mut reader) {
             let block_names = block.names;
             let length = block.entries.first().unwrap().seq().len();
 
