@@ -83,9 +83,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         run_cmd!(
             ${pgr} fas name ${infile} -o name.first.lst
         )?;
-        target_name = run_fun!(cat name.first.lst)
+        target_name = fs::read_to_string("name.first.lst")
             .unwrap()
-            .split('\n')
+            .lines()
             .next()
             .unwrap()
             .to_string();
@@ -122,7 +122,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     for (basename, info) in info_of.iter_mut() {
         let infile = info.get(0).unwrap();
         let outfile = format!("{}.slice.fas", basename);
-        run_cmd!(${pgr} fas slice intersect.json ${infile} --name ${target_name} -o ${outfile})?;
+        run_cmd!(${pgr} fas slice ${infile} --required intersect.json --name ${target_name} -o ${outfile})?;
 
         info.push(outfile.to_string());
     }
@@ -144,7 +144,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             ${pgr} fas name join.raw.fas -o name.lst
         )?;
         run_cmd!(
-            ${pgr} fas subset name.lst join.raw.fas --required -o join.subset.fas
+            ${pgr} fas subset join.raw.fas --required name.lst -o join.subset.fas
         )?;
     }
 
