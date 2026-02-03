@@ -3,20 +3,20 @@ use pgr::libs::twobit::TwoBitFile;
 use std::io::Write;
 
 pub fn make_subcommand() -> Command {
-    Command::new("tofa")
+    Command::new("to-fa")
         .about("Convert 2bit to FASTA")
         .after_help(
             r###"
 Examples:
   # Convert entire 2bit file to FASTA
-  pgr 2bit tofa input.2bit -o output.fa
+  pgr 2bit to-fa input.2bit -o output.fa
 
   # No masking (all uppercase)
-  pgr 2bit tofa input.2bit --no-mask -o out.fa
+  pgr 2bit to-fa input.2bit --no-mask -o out.fa
 
   # Set line width (default 60)
-  pgr 2bit tofa input.2bit -l 80
-  pgr 2bit tofa input.2bit -l 0  # no wrapping
+  pgr 2bit to-fa input.2bit -l 80
+  pgr 2bit to-fa input.2bit -l 0  # no wrapping
 "###,
         )
         .arg(

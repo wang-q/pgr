@@ -2,13 +2,13 @@ pub mod masked;
 pub mod range;
 pub mod size;
 pub mod some;
-pub mod tofa;
+pub mod to_fa;
 
 pub fn make_subcommand() -> clap::Command {
     clap::Command::new("2bit")
         .about("2bit tools")
         .subcommand(size::make_subcommand())
-        .subcommand(tofa::make_subcommand())
+        .subcommand(to_fa::make_subcommand())
         .subcommand(masked::make_subcommand())
         .subcommand(some::make_subcommand())
         .subcommand(range::make_subcommand())
@@ -17,7 +17,7 @@ pub fn make_subcommand() -> clap::Command {
 pub fn execute(matches: &clap::ArgMatches) -> anyhow::Result<()> {
     match matches.subcommand() {
         Some(("size", sub_matches)) => size::execute(sub_matches),
-        Some(("tofa", sub_matches)) => tofa::execute(sub_matches),
+        Some(("to-fa", sub_matches)) => to_fa::execute(sub_matches),
         Some(("masked", sub_matches)) => masked::execute(sub_matches),
         Some(("some", sub_matches)) => some::execute(sub_matches),
         Some(("range", sub_matches)) => range::execute(sub_matches),

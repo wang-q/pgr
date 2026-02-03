@@ -90,7 +90,7 @@ fn test_2bit_to_2bit_mask() -> anyhow::Result<()> {
 }
 
 #[test]
-fn test_2bit_tofa_basic() -> anyhow::Result<()> {
+fn test_2bit_to_fa_basic() -> anyhow::Result<()> {
     let temp = TempDir::new()?;
     let input = temp.path().join("test.fa");
     let twobit = temp.path().join("test.2bit");
@@ -110,7 +110,7 @@ fn test_2bit_tofa_basic() -> anyhow::Result<()> {
     // Convert back to FASTA
     let mut cmd2 = Command::cargo_bin("pgr")?;
     cmd2.arg("2bit")
-        .arg("tofa")
+        .arg("to-fa")
         .arg(&twobit)
         .arg("-o")
         .arg(&output);
@@ -220,7 +220,7 @@ fn test_2bit_range_rgfile() -> anyhow::Result<()> {
 }
 
 #[test]
-fn test_2bit_tofa_mask() -> anyhow::Result<()> {
+fn test_2bit_to_fa_mask() -> anyhow::Result<()> {
     let temp = TempDir::new()?;
     let input = temp.path().join("test.fa");
     let twobit = temp.path().join("test.2bit");
@@ -241,7 +241,7 @@ fn test_2bit_tofa_mask() -> anyhow::Result<()> {
     // Default (masked)
     let mut cmd2 = Command::cargo_bin("pgr")?;
     cmd2.arg("2bit")
-        .arg("tofa")
+        .arg("to-fa")
         .arg(&twobit)
         .arg("-o")
         .arg(&output_masked);
@@ -253,7 +253,7 @@ fn test_2bit_tofa_mask() -> anyhow::Result<()> {
     // No mask
     let mut cmd3 = Command::cargo_bin("pgr")?;
     cmd3.arg("2bit")
-        .arg("tofa")
+        .arg("to-fa")
         .arg(&twobit)
         .arg("--no-mask")
         .arg("-o")
@@ -497,7 +497,7 @@ fn test_2bit_compat_mask_file() -> anyhow::Result<()> {
 
     let mut cmd = Command::cargo_bin("pgr")?;
     cmd.arg("2bit")
-        .arg("tofa")
+        .arg("to-fa")
         .arg(&input)
         .arg("-o")
         .arg(&output);
@@ -531,7 +531,7 @@ fn test_2bit_compat_n_file() -> anyhow::Result<()> {
 
     let mut cmd = Command::cargo_bin("pgr")?;
     cmd.arg("2bit")
-        .arg("tofa")
+        .arg("to-fa")
         .arg(&input)
         .arg("-o")
         .arg(&output);
