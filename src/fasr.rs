@@ -14,7 +14,6 @@ fn main() -> anyhow::Result<()> {
         .subcommand(cmd_fasr::check::make_subcommand())
         .subcommand(cmd_fasr::concat::make_subcommand())
         .subcommand(cmd_fasr::consensus::make_subcommand())
-        .subcommand(cmd_fasr::cover::make_subcommand())
         .subcommand(cmd_fasr::create::make_subcommand())
         .subcommand(cmd_fasr::filter::make_subcommand())
         .subcommand(cmd_fasr::join::make_subcommand())
@@ -34,7 +33,7 @@ fn main() -> anyhow::Result<()> {
             r###"
 Subcommand groups:
 
-* info: check / cover / link / stat
+* info: check / link / stat
 * creation: create
 * records: separate / split / subset
 * transform: filter / replace / refine
@@ -48,7 +47,6 @@ Subcommand groups:
     match app.get_matches().subcommand() {
         // info
         Some(("check", sub_matches)) => cmd_fasr::check::execute(sub_matches),
-        Some(("cover", sub_matches)) => cmd_fasr::cover::execute(sub_matches),
         Some(("link", sub_matches)) => cmd_fasr::link::execute(sub_matches),
         Some(("stat", sub_matches)) => cmd_fasr::stat::execute(sub_matches),
         // creation

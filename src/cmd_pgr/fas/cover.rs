@@ -18,16 +18,16 @@ Note:
 
 Examples:
 1. Calculate coverage for all species:
-   fasr cover tests/fasr/example.fas
+   pgr fas cover tests/fasr/example.fas
 
 2. Calculate coverage for a specific species:
-   fasr cover tests/fasr/example.fas --name S288c
+   pgr fas cover tests/fasr/example.fas --name S288c
 
 3. Trim alignment borders to avoid overlaps:
-   fasr cover tests/fasr/example.fas --trim 10
+   pgr fas cover tests/fasr/example.fas --trim 10
 
 4. Output results to a file:
-   fasr cover tests/fasr/example.fas -o output.json
+   pgr fas cover tests/fasr/example.fas -o output.json
 
 "###,
         )
@@ -82,7 +82,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     for infile in args.get_many::<String>("infiles").unwrap() {
         let mut reader = intspan::reader(infile);
 
-        while let Ok(block) = pgr::next_fas_block(&mut reader) {
+        while let Ok(block) = pgr::libs::fas::next_fas_block(&mut reader) {
             let block_names = block.names;
 
             if !opt_name.is_empty() {

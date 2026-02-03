@@ -3,7 +3,6 @@
 pub mod check;
 pub mod concat;
 pub mod consensus;
-pub mod cover;
 pub mod create;
 pub mod filter;
 pub mod join;

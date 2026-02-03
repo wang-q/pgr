@@ -34,8 +34,12 @@ fn command_name() -> anyhow::Result<()> {
 
 #[test]
 fn command_cover() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("fasr")?;
-    let output = cmd.arg("cover").arg("tests/fas/example.fas").output()?;
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("fas")
+        .arg("cover")
+        .arg("tests/fas/example.fas")
+        .output()?;
     let stdout = String::from_utf8(output.stdout)?;
 
     assert_eq!(stdout.lines().count(), 16);
@@ -44,8 +48,9 @@ fn command_cover() -> anyhow::Result<()> {
     assert!(stdout.contains("13267-13287"), "runlist");
 
     // --name, --trim
-    let mut cmd = Command::cargo_bin("fasr")?;
+    let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
+        .arg("fas")
         .arg("cover")
         .arg("tests/fas/example.fas")
         .arg("--name")
