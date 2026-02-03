@@ -6,7 +6,7 @@ pub mod ucsc;
 
 pub fn make_subcommand() -> clap::Command {
     clap::Command::new("pl")
-        .about("Pipeline tools")
+        .about("Run integrated pipelines")
         .subcommand_required(true)
         .arg_required_else_help(true)
         .subcommand(p2m::make_subcommand())

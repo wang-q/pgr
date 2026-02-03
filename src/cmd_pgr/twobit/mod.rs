@@ -6,7 +6,7 @@ pub mod to_fa;
 
 pub fn make_subcommand() -> clap::Command {
     clap::Command::new("2bit")
-        .about("2bit tools")
+        .about("Manage 2bit files")
         .after_help(
             r###"Subcommand groups:
 

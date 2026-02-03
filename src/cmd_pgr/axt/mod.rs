@@ -7,7 +7,7 @@ pub mod to_psl;
 
 pub fn make_subcommand() -> Command {
     Command::new("axt")
-        .about("Axt tools")
+        .about("Manipulate AXT alignment files")
         .after_help(
             r###"
 AXT is a format for representing pairwise genomic alignments.

@@ -4,7 +4,7 @@ use clap::{ArgMatches, Command};
 
 pub fn make_subcommand() -> Command {
     Command::new("lav")
-        .about("LAV tools")
+        .about("Manipulate LAV alignment files")
         .subcommand_required(true)
         .subcommand(to_psl::make_subcommand())
 }

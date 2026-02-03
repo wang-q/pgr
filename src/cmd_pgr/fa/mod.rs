@@ -18,7 +18,7 @@ pub mod to_2bit;
 
 pub fn make_subcommand() -> clap::Command {
     clap::Command::new("fa")
-        .about("FASTA tools")
+        .about("Manipulate FASTA files")
         .after_help(
             r###"Subcommand groups:
 

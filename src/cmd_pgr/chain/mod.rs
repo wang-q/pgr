@@ -9,7 +9,7 @@ use clap::{ArgMatches, Command};
 
 pub fn make_subcommand() -> Command {
     Command::new("chain")
-        .about("Chain tools")
+        .about("Manipulate Chain alignment files")
         .subcommand_required(true)
         .subcommand(anti_repeat::make_subcommand())
         .subcommand(split::make_subcommand())

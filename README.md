@@ -43,20 +43,19 @@ cargo build
 Usage: pgr [COMMAND]
 
 Commands:
-  pipeline  UCSC chain/net pipeline
-  ir        Identify interspersed repeats in a genome
-  rept      Identify repetitive regions in a genome
-  trf       Identify tandem repeats in a genome
-  ms2dna    Convert ms output haplotypes (0/1) to DNA sequences (FASTA)
-  axt       Axt tools
-  chain     Chain tools
-  lav       LAV tools
-  net       Net tools
-  psl       Psl tools
-  2bit      2bit tools
-  fa        Fasta tools
-  fq        Fastq tools
-  help      Print this message or the help of the given subcommand(s)
+  ms-to-dna  Convert ms output haplotypes (0/1) to DNA sequences (FASTA)
+  axt        Manipulate AXT alignment files
+  chain      Manipulate Chain alignment files
+  lav        Manipulate LAV alignment files
+  maf        Manipulate MAF alignment files
+  net        Manipulate Net alignment files
+  psl        Manipulate PSL alignment files
+  pl         Run integrated pipelines
+  2bit       Manage 2bit files
+  fa         Manipulate FASTA files
+  fas        Manipulate block FA files
+  fq         Manipulate FASTQ files
+  help       Print this message or the help of the given subcommand(s)
 
 Options:
   -h, --help     Print help
@@ -64,24 +63,22 @@ Options:
 
 Subcommand groups:
 
-* Fasta files
-    * info: size / count / masked / n50
-    * records: one / some / order / split
-    * transform: replace / rc / filter / dedup / mask / sixframe
-    * indexing: gz / range / prefilter
+* Sequences:
+    * 2bit - 2bit query and extraction
+    * fa   - FASTA operations: info, records, transform, indexing
+    * fas  - Block FA operations: info, subset, transform, file, variation
+    * fq   - FASTQ interleaving and conversion
 
 * Genome alignments:
-    * chain
-    * net
-    * axt
-    * lav
-    * psl
-    * 2bit
-    * fa
-    * fq
+    * chain - Chain operations: sort, filter, transform, to-net
+    * net   - Net operations: info, subset, transform, convert
+    * axt   - AXT sorting and conversion
+    * lav   - Convert to PSL
+    * maf   - Convert to Block FA
+    * psl   - PSL statistics, manipulation, and conversion
 
-* Repeats:
-    * ir / rept / trf
+* Pipelines:
+    * pl - Pipeline tools: p2m, trf, ir, rept, ucsc
 
 ```
 
@@ -254,6 +251,42 @@ multiz M=10 tests/multiz/S288cvsRM11_1a.maf     tests/multiz/S288cvsSpar.maf    
 
 ```
 
+
+### FA files
+
+```bash
+pgr fa size tests/fasta/ufasta.fa
+pgr fa count tests/fasta/ufasta.fa.gz
+pgr fa masked tests/fasta/ufasta.fa
+pgr fa n50 tests/fasta/ufasta.fa -N 90 -N 50 -S
+
+pgr fa size tests/genome/mg1655.fa.gz -o tests/genome/mg1655.size.tsv
+
+pgr fa one tests/fasta/ufasta.fa read12
+pgr fa some tests/fasta/ufasta.fa tests/fasta/list.txt
+pgr fa order tests/fasta/ufasta.fa tests/fasta/list.txt
+
+pgr fa filter tests/fasta/ufasta.fa -a 10 -z 50 --uniq
+pgr fa filter tests/fasta/ufasta.fa tests/fasta/ufasta.fa.gz -a 1 --uniq
+pgr fa filter tests/fasta/filter.fa --iupac --upper
+
+pgr fa dedup tests/fasta/dedup.fa
+pgr fa dedup tests/fasta/dedup.fa --seq --both --file stdout
+
+pgr fa mask tests/fasta/ufasta.fa tests/fasta/mask.json --hard
+
+pgr fa replace tests/fasta/ufasta.fa tests/fasta/replace.tsv
+pgr fa rc tests/fasta/ufasta.fa
+
+pgr fa filter tests/fasta/ufasta.fa -a 400 |
+    pgr fa split name stdin -o tmp
+pgr fa split about tests/fasta/ufasta.fa -c 2000 -o tmp
+
+pgr fa six-frame tests/fasta/trans.fa
+pgr fa six-frame tests/fasta/trans.fa --len 3 --start --end
+
+```
+
 ### Block FA files
 
 ```bash
@@ -349,6 +382,27 @@ pgr 子命令所依赖的外部可执行程序：
 - pgr pl rept / pgr pl ir : 依赖 FastK , Profex , spanr 。
 - pgr pl p2m : 依赖 spanr 。
 - pgr fas refine : 依赖 clustalw (默认), 或 muscle , mafft 。
+
+## Help text style guide
+
+* **`about`**: Third-person singular (e.g., "Counts...", "Calculates...").
+* **`after_help`**: Uses raw string `r###"..."###`.
+    * **Description**: Detailed explanation.
+    * **Notes**: Bullet points starting with `*`.
+        * Standard note for `fa`/`fas`: `* Supports both plain text and gzipped (.gz) files`
+        * Standard note for `fa`/`fas`: `* Reads from stdin if input file is 'stdin'`
+        * Standard note for `twobit`: `* 2bit files are binary and require random access (seeking)`
+        * Standard note for `twobit`: `* Does not support stdin or gzipped inputs`
+    * **Examples**: Numbered list (`1.`, `2.`) with code blocks indented by 3 spaces.
+* **Arguments**:
+    * **Input**: `infiles` (multiple) or `infile` (single).
+        * Help: `Input [FASTA|block FA|2bit] file(s) to process`.
+    * **Output**: `outfile` (`-o`, `--outfile`).
+        * Help: `Output filename. [stdout] for screen`.
+* **Terminology**:
+    * `pgr fa` -> "FASTA"
+    * `pgr fas` -> "block FA"
+    * `pgr twobit` -> "2bit"
 
 ## Author
 

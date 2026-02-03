@@ -20,7 +20,7 @@ pub mod filter;
 
 pub fn make_subcommand() -> clap::Command {
     clap::Command::new("fas")
-        .about("Block FA tools")
+        .about("Manipulate block FA files")
         .after_help(
             r###"Subcommand groups:
 

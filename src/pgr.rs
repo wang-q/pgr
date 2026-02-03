@@ -27,21 +27,21 @@ fn main() -> anyhow::Result<()> {
             r###"Subcommand groups:
 
 * Sequences:
-    * 2bit - Random access to .2bit files
-    * fa   - FASTA operations: index, filter, stats
-    * fas  - Block FASTA tools: consensus, variation
-    * fq   - FASTQ operations: interleave, convert
+    * 2bit - 2bit query and extraction
+    * fa   - FASTA operations: info, records, transform, indexing
+    * fas  - Block FA operations: info, subset, transform, file, variation
+    * fq   - FASTQ interleaving and conversion
 
 * Genome alignments:
-    * chain - Chain tools: sort, net, stitch
-    * net   - Net tools: filter, syntenic
-    * axt   - AXT conversion and sorting
-    * lav   - LAV to PSL conversion
-    * maf   - MAF to FASTA conversion
-    * psl   - PSL operations: stats, to-chain
+    * chain - Chain operations: sort, filter, transform, to-net
+    * net   - Net operations: info, subset, transform, convert
+    * axt   - AXT sorting and conversion
+    * lav   - Convert to PSL
+    * maf   - Convert to Block FA
+    * psl   - PSL statistics, manipulation, and conversion
 
 * Pipelines:
-    * pl - Integrated pipelines: UCSC, TRF, etc.
+    * pl - Pipeline tools: p2m, trf, ir, rept, ucsc
 
 "###,
         );
