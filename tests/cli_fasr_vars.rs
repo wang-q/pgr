@@ -11,7 +11,7 @@ fn command_xlsx() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("fasr")?;
     let output = cmd
         .arg("xlsx")
-        .arg("tests/fasr/example.fas")
+        .arg("tests/fas/example.fas")
         .arg("-o")
         .arg(temp_path)
         .output()?;
@@ -42,7 +42,7 @@ fn command_xlsx_indel() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("fasr")?;
     let output = cmd
         .arg("xlsx")
-        .arg("tests/fasr/example.fas")
+        .arg("tests/fas/example.fas")
         .arg("--indel")
         .arg("-o")
         .arg(temp_path)
@@ -73,7 +73,7 @@ fn command_xlsx_nocomplex() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("fasr")?;
     let output = cmd
         .arg("xlsx")
-        .arg("tests/fasr/example.fas")
+        .arg("tests/fas/example.fas")
         .arg("--indel")
         .arg("--nocomplex")
         .arg("-o")
@@ -105,7 +105,7 @@ fn command_xlsx_nosingle() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("fasr")?;
     let output = cmd
         .arg("xlsx")
-        .arg("tests/fasr/example.fas")
+        .arg("tests/fas/example.fas")
         .arg("--indel")
         .arg("--nosingle")
         .arg("-o")
@@ -137,7 +137,7 @@ fn command_xlsx_minmax() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("fasr")?;
     let output = cmd
         .arg("xlsx")
-        .arg("tests/fasr/example.fas")
+        .arg("tests/fas/example.fas")
         .arg("--indel")
         .arg("--min")
         .arg("0.3")
@@ -172,7 +172,7 @@ fn command_xlsx_outgroup() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("fasr")?;
     let output = cmd
         .arg("xlsx")
-        .arg("tests/fasr/example.fas")
+        .arg("tests/fas/example.fas")
         .arg("--indel")
         .arg("--outgroup")
         .arg("-o")

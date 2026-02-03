@@ -13,7 +13,7 @@ fn run_vcf(args: &[&str]) -> anyhow::Result<String> {
 
 #[test]
 fn command_vcf_basic() -> anyhow::Result<()> {
-    let stdout = run_vcf(&["tests/fasr/example.fas"])?;
+    let stdout = run_vcf(&["tests/fas/example.fas"])?;
 
     assert!(stdout.starts_with("##fileformat=VCF"), "vcf header");
     assert!(
@@ -65,7 +65,7 @@ fn command_vcf_ydl_basic() -> anyhow::Result<()> {
 
 #[test]
 fn command_vcf_example_fields() -> anyhow::Result<()> {
-    let stdout = run_vcf(&["tests/fasr/example.fas"])?;
+    let stdout = run_vcf(&["tests/fas/example.fas"])?;
 
     let mut rows: std::collections::HashMap<i32, Vec<String>> = std::collections::HashMap::new();
     for line in stdout.lines() {
