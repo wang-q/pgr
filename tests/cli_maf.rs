@@ -2,11 +2,11 @@ use assert_cmd::prelude::*;
 use std::process::Command;
 
 #[test]
-fn command_maf_tofas() -> anyhow::Result<()> {
+fn command_maf_to_fas() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
         .arg("maf")
-        .arg("tofas")
+        .arg("to-fas")
         .arg("tests/fasr/example.maf")
         .output()
         .unwrap();

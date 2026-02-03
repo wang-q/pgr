@@ -3,7 +3,7 @@ use std::io::Write;
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
-    Command::new("tofas")
+    Command::new("to-fas")
         .about("Convert MAF files to block FA format")
         .after_help(
             r###"
@@ -17,7 +17,7 @@ Note:
 
 Examples:
 1. Convert a MAF file to block FASTA format:
-   pgr maf tofas tests/fasr/example.maf
+   pgr maf to-fas tests/fasr/example.maf
 
 "###,
         )

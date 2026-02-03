@@ -3,7 +3,7 @@ pub mod filter;
 pub mod split;
 pub mod subset;
 pub mod syntenic;
-pub mod toaxt;
+pub mod to_axt;
 
 pub fn make_subcommand() -> clap::Command {
     clap::Command::new("net")
@@ -13,7 +13,7 @@ pub fn make_subcommand() -> clap::Command {
         .subcommand(split::make_subcommand())
         .subcommand(subset::make_subcommand())
         .subcommand(syntenic::make_subcommand())
-        .subcommand(toaxt::make_subcommand())
+        .subcommand(to_axt::make_subcommand())
 }
 
 pub fn execute(matches: &clap::ArgMatches) -> anyhow::Result<()> {
@@ -23,7 +23,7 @@ pub fn execute(matches: &clap::ArgMatches) -> anyhow::Result<()> {
         Some(("split", sub_matches)) => split::execute(sub_matches),
         Some(("subset", sub_matches)) => subset::execute(sub_matches),
         Some(("syntenic", sub_matches)) => syntenic::execute(sub_matches),
-        Some(("to-axt", sub_matches)) => toaxt::execute(sub_matches),
+        Some(("to-axt", sub_matches)) => to_axt::execute(sub_matches),
         _ => Ok(()),
     }
 }

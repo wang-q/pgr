@@ -1,16 +1,16 @@
-pub mod tofas;
+pub mod to_fas;
 
 pub fn make_subcommand() -> clap::Command {
     clap::Command::new("maf")
         .about("Maf tools")
         .subcommand_required(true)
         .arg_required_else_help(true)
-        .subcommand(tofas::make_subcommand())
+        .subcommand(to_fas::make_subcommand())
 }
 
 pub fn execute(matches: &clap::ArgMatches) -> anyhow::Result<()> {
     match matches.subcommand() {
-        Some(("tofas", sub_matches)) => tofas::execute(sub_matches),
+        Some(("to-fas", sub_matches)) => to_fas::execute(sub_matches),
         _ => Ok(()),
     }
 }
