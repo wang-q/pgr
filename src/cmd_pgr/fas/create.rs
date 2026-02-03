@@ -16,14 +16,13 @@ Note:
 - Two styles of FA headers are supported:
   - `>chr` for single-genome self-alignments.
   - `>name.chr` for multiple genomes.
-- Requires `hnsm` to be installed and available in $PATH.
 
 Examples:
 1. Create block FA files for a single genome:
-   fasr create tests/fasr/genome.fa tests/fasr/I.connect.tsv
+   pgr fas create tests/fasr/genome.fa tests/fasr/I.connect.tsv
 
 2. Create block FA files for a specific species:
-   fasr create tests/fasr/genome.fa tests/fasr/I.connect.tsv --name S288c
+   pgr fas create tests/fasr/genome.fa tests/fasr/I.connect.tsv --name S288c
 
 "###,
         )

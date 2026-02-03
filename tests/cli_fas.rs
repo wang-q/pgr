@@ -262,13 +262,9 @@ fn command_check() -> anyhow::Result<()> {
 
 #[test]
 fn command_create() -> anyhow::Result<()> {
-    match which::which("hnsm") {
-        Err(_) => return Ok(()),
-        Ok(_) => {}
-    }
-
-    let mut cmd = Command::cargo_bin("fasr")?;
+    let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
+        .arg("fas")
         .arg("create")
         .arg("tests/fasr/genome.fa")
         .arg("tests/fasr/I.connect.tsv")
