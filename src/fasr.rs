@@ -14,9 +14,7 @@ fn main() -> anyhow::Result<()> {
         .subcommand(cmd_fasr::check::make_subcommand())
         .subcommand(cmd_fasr::create::make_subcommand())
         .subcommand(cmd_fasr::filter::make_subcommand())
-        .subcommand(cmd_fasr::join::make_subcommand())
         .subcommand(cmd_fasr::pl_p2m::make_subcommand())
-        .subcommand(cmd_fasr::slice::make_subcommand())
         .subcommand(cmd_fasr::stat::make_subcommand())
         .subcommand(cmd_fasr::variation::make_subcommand())
         .subcommand(cmd_fasr::vcf::make_subcommand())
@@ -29,7 +27,7 @@ Subcommand groups:
 * creation: create
 * records: (none)
 * transform: filter
-* transmute: join / pl-p2m / slice
+* transmute: pl-p2m
 * variations: variation / vcf / xlsx
 
 "###,
@@ -46,9 +44,7 @@ Subcommand groups:
         // transform
         Some(("filter", sub_matches)) => cmd_fasr::filter::execute(sub_matches),
         // transmute
-         Some(("join", sub_matches)) => cmd_fasr::join::execute(sub_matches),
         Some(("pl-p2m", sub_matches)) => cmd_fasr::pl_p2m::execute(sub_matches),
-        Some(("slice", sub_matches)) => cmd_fasr::slice::execute(sub_matches),
         // variations
         Some(("variation", sub_matches)) => cmd_fasr::variation::execute(sub_matches),
         Some(("vcf", sub_matches)) => cmd_fasr::vcf::execute(sub_matches),

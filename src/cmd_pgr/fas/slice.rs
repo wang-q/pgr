@@ -65,7 +65,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     for infile in args.get_many::<String>("infiles").unwrap() {
         let mut reader = intspan::reader(infile);
 
-        while let Ok(block) = pgr::next_fas_block(&mut reader) {
+        while let Ok(block) = pgr::libs::fas::next_fas_block(&mut reader) {
             // the first name of the first block
             if name.is_empty() {
                 name = block.names.first().unwrap().to_string();
@@ -92,7 +92,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             }
 
             // target sequence intspan
-            let t_ints_seq = pgr::seq_intspan(block.entries.get(idx.unwrap()).unwrap().seq());
+            let t_ints_seq = pgr::libs::alignment::seq_intspan(
+                block.entries.get(idx.unwrap()).unwrap().seq(),
+            );
 
             // every sequence intspans
             let mut ints_seq_of = BTreeMap::new();
@@ -100,18 +102,31 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             let mut indel_ints = intspan::IntSpan::new();
             for (i, name) in block.names.iter().enumerate() {
                 let seq = block.entries.get(i).unwrap().seq();
-                ints_seq_of.insert(name.to_string(), pgr::seq_intspan(seq));
-                indel_ints.merge(&pgr::indel_intspan(seq));
+                ints_seq_of.insert(
+                    name.to_string(),
+                    pgr::libs::alignment::seq_intspan(seq),
+                );
+                indel_ints.merge(&pgr::libs::alignment::indel_intspan(seq));
             }
 
             // there may be more than one subslice intersect this alignment
             let mut sub_slices: Vec<_> = vec![];
             for (lower, upper) in i_ints_chr.spans() {
                 // chr positions to align
-                let ss_start =
-                    pgr::chr_to_align(&t_ints_seq, lower, trange.start, trange.strand()).unwrap();
-                let ss_end =
-                    pgr::chr_to_align(&t_ints_seq, upper, trange.start, trange.strand()).unwrap();
+                let ss_start = pgr::libs::alignment::chr_to_align(
+                    &t_ints_seq,
+                    lower,
+                    trange.start,
+                    trange.strand(),
+                )
+                .unwrap();
+                let ss_end = pgr::libs::alignment::chr_to_align(
+                    &t_ints_seq,
+                    upper,
+                    trange.start,
+                    trange.strand(),
+                )
+                .unwrap();
                 if ss_start >= ss_end {
                     continue;
                 }
@@ -135,14 +150,14 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 // align positions to chromosomes of difference species
                 for (i, name) in block.names.iter().enumerate() {
                     let range = block.entries.get(i).unwrap().range();
-                    let start = pgr::align_to_chr(
+                    let start = pgr::libs::alignment::align_to_chr(
                         ints_seq_of.get(name).unwrap(),
                         ss_start,
                         range.start,
                         range.strand(),
                     )
                     .unwrap();
-                    let end = pgr::align_to_chr(
+                    let end = pgr::libs::alignment::align_to_chr(
                         ints_seq_of.get(name).unwrap(),
                         ss_end,
                         range.start,
