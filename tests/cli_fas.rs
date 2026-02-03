@@ -401,18 +401,23 @@ fn command_consensus() -> anyhow::Result<()> {
         eprintln!("bin = {:#?}", bin);
     }
 
-    let mut cmd = Command::cargo_bin("fasr")?;
-    let output = cmd.arg("consensus").arg("tests/fasr/refine.fas").output()?;
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("fas")
+        .arg("consensus")
+        .arg("tests/fas/refine.fas")
+        .output()?;
     let stdout = String::from_utf8(output.stdout)?;
 
     assert_eq!(stdout.lines().count(), 6);
     assert!(stdout.contains(">consensus\n"), "simple name");
     assert!(stdout.contains(">consensus.I("), "fas name");
 
-    let mut cmd = Command::cargo_bin("fasr")?;
+    let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
+        .arg("fas")
         .arg("consensus")
-        .arg("tests/fasr/refine.fas")
+        .arg("tests/fas/refine.fas")
         .arg("--outgroup")
         .arg("--parallel")
         .arg("2")
@@ -427,8 +432,9 @@ fn command_consensus() -> anyhow::Result<()> {
 
 #[test]
 fn command_refine() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("fasr")?;
+    let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
+        .arg("fas")
         .arg("refine")
         .arg("tests/fas/example.fas")
         .arg("--msa")
@@ -439,8 +445,9 @@ fn command_refine() -> anyhow::Result<()> {
     assert_eq!(stdout.lines().count(), 27);
 
     // --parallel 2
-    let mut cmd = Command::cargo_bin("fasr")?;
+    let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
+        .arg("fas")
         .arg("refine")
         .arg("tests/fas/example.fas")
         .arg("--msa")
@@ -453,10 +460,11 @@ fn command_refine() -> anyhow::Result<()> {
     assert_eq!(stdout.lines().count(), 27);
 
     // --parallel 2
-    let mut cmd = Command::cargo_bin("fasr")?;
+    let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
+        .arg("fas")
         .arg("refine")
-        .arg("tests/fasr/refine2.fas")
+        .arg("tests/fas/refine2.fas")
         .arg("--msa")
         .arg("none")
         .arg("-p")
@@ -467,8 +475,9 @@ fn command_refine() -> anyhow::Result<()> {
     assert_eq!(stdout.lines().count(), 7);
 
     // --chop 10
-    let mut cmd = Command::cargo_bin("fasr")?;
+    let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
+        .arg("fas")
         .arg("refine")
         .arg("tests/fas/example.fas")
         .arg("--msa")
@@ -502,10 +511,11 @@ fn command_refine_msa() -> anyhow::Result<()> {
         eprintln!("bin = {:#?}", bin);
     }
 
-    let mut cmd = Command::cargo_bin("fasr")?;
+    let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
+        .arg("fas")
         .arg("refine")
-        .arg("tests/fasr/refine.fas")
+        .arg("tests/fas/refine.fas")
         .arg("--msa")
         .arg("clustalw")
         .output()?;
@@ -515,10 +525,11 @@ fn command_refine_msa() -> anyhow::Result<()> {
     assert!(stdout.contains("---"), "dashes added");
 
     // --outgroup
-    let mut cmd = Command::cargo_bin("fasr")?;
+    let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
+        .arg("fas")
         .arg("refine")
-        .arg("tests/fasr/refine2.fas")
+        .arg("tests/fas/refine2.fas")
         .arg("--msa")
         .arg("clustalw")
         .arg("--outgroup")
@@ -528,10 +539,11 @@ fn command_refine_msa() -> anyhow::Result<()> {
     assert_eq!(stdout.lines().count(), 7);
     assert!(stdout.contains("CA-GT"), "outgroup trimmed");
 
-    let mut cmd = Command::cargo_bin("fasr")?;
+    let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
+        .arg("fas")
         .arg("refine")
-        .arg("tests/fasr/refine2.fas")
+        .arg("tests/fas/refine2.fas")
         .arg("--msa")
         .arg("clustalw")
         .output()?;
@@ -541,10 +553,11 @@ fn command_refine_msa() -> anyhow::Result<()> {
     assert!(stdout.contains("CA--GT"), "outgroup not trimmed");
 
     // quick
-    let mut cmd = Command::cargo_bin("fasr")?;
+    let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
+        .arg("fas")
         .arg("refine")
-        .arg("tests/fasr/refine2.fas")
+        .arg("tests/fas/refine2.fas")
         .arg("--msa")
         .arg("clustalw")
         .arg("--quick")

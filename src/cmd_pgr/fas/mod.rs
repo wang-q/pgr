@@ -1,7 +1,9 @@
 pub mod concat;
+pub mod consensus;
 pub mod cover;
 pub mod link;
 pub mod name;
+pub mod refine;
 pub mod replace;
 pub mod separate;
 pub mod split;
@@ -13,10 +15,12 @@ pub fn make_subcommand() -> clap::Command {
         .subcommand_required(true)
         .arg_required_else_help(true)
         .subcommand(concat::make_subcommand())
-        .subcommand(cover::make_subcommand())
+                .subcommand(consensus::make_subcommand())
+                .subcommand(cover::make_subcommand())
         .subcommand(link::make_subcommand())
         .subcommand(name::make_subcommand())
-        .subcommand(replace::make_subcommand())
+                .subcommand(refine::make_subcommand())
+                .subcommand(replace::make_subcommand())
         .subcommand(separate::make_subcommand())
         .subcommand(split::make_subcommand())
         .subcommand(subset::make_subcommand())
@@ -25,9 +29,11 @@ pub fn make_subcommand() -> clap::Command {
 pub fn execute(matches: &clap::ArgMatches) -> anyhow::Result<()> {
     match matches.subcommand() {
         Some(("concat", sub_matches)) => concat::execute(sub_matches),
+        Some(("consensus", sub_matches)) => consensus::execute(sub_matches),
         Some(("cover", sub_matches)) => cover::execute(sub_matches),
         Some(("link", sub_matches)) => link::execute(sub_matches),
         Some(("name", sub_matches)) => name::execute(sub_matches),
+        Some(("refine", sub_matches)) => refine::execute(sub_matches),
         Some(("replace", sub_matches)) => replace::execute(sub_matches),
         Some(("separate", sub_matches)) => separate::execute(sub_matches),
         Some(("split", sub_matches)) => split::execute(sub_matches),

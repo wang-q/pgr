@@ -1,5 +1,6 @@
 use clap::*;
 use crossbeam::channel::bounded;
+use std::io::Write;
 use std::string::String;
 
 // Create clap subcommand arguments
@@ -109,7 +110,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
         for infile in args.get_many::<String>("infiles").unwrap() {
             let mut reader = intspan::reader(infile);
-            while let Ok(block) = pgr::next_fas_block(&mut reader) {
+            while let Ok(block) = pgr::libs::fas::next_fas_block(&mut reader) {
                 let out_string = proc_block(&block, args)?;
                 writer.write_all(out_string.as_ref())?;
             }
@@ -121,7 +122,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn proc_block(block: &pgr::FasBlock, args: &ArgMatches) -> anyhow::Result<String> {
+fn proc_block(block: &pgr::libs::fas::FasBlock, args: &ArgMatches) -> anyhow::Result<String> {
     //----------------------------
     // Args
     //----------------------------
@@ -149,23 +150,23 @@ fn proc_block(block: &pgr::FasBlock, args: &ArgMatches) -> anyhow::Result<String
         }
     } else {
         if is_quick {
-            aligned = pgr::align_seqs_quick(&seqs, msa, pad as i32, fill as i32)?;
+            aligned = pgr::libs::alignment::align_seqs_quick(&seqs, msa, pad as i32, fill as i32)?;
         } else {
-            aligned = pgr::align_seqs(&seqs, msa)?;
+            aligned = pgr::libs::alignment::align_seqs(&seqs, msa)?;
         }
     };
 
     //----------------------------
     // Trimming
     //----------------------------
-    pgr::trim_pure_dash(&mut aligned);
+    pgr::libs::alignment::trim_pure_dash(&mut aligned);
     if has_outgroup {
-        pgr::trim_outgroup(&mut aligned);
-        let _ = pgr::trim_complex_indel(&mut aligned);
+        pgr::libs::alignment::trim_outgroup(&mut aligned);
+        let _ = pgr::libs::alignment::trim_complex_indel(&mut aligned);
     }
 
     if chop > 0 {
-        pgr::trim_head_tail(&mut aligned, &mut ranges, chop);
+        pgr::libs::alignment::trim_head_tail(&mut aligned, &mut ranges, chop);
     }
 
     //----------------------------
@@ -189,7 +190,7 @@ fn proc_block_p(args: &ArgMatches) -> anyhow::Result<()> {
     let mut writer = intspan::writer(args.get_one::<String>("outfile").unwrap());
 
     // Channel 1 - Read files to blocks
-    let (snd1, rcv1) = bounded::<pgr::FasBlock>(10);
+    let (snd1, rcv1) = bounded::<pgr::libs::fas::FasBlock>(10);
     // Channel 2 - Results
     let (snd2, rcv2) = bounded(10);
 
@@ -200,7 +201,7 @@ fn proc_block_p(args: &ArgMatches) -> anyhow::Result<()> {
         s.spawn(|_| {
             for infile in args.get_many::<String>("infiles").unwrap() {
                 let mut reader = intspan::reader(infile);
-                while let Ok(block) = pgr::next_fas_block(&mut reader) {
+                while let Ok(block) = pgr::libs::fas::next_fas_block(&mut reader) {
                     snd1.send(block).unwrap();
                 }
             }

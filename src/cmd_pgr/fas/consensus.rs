@@ -1,4 +1,5 @@
 use clap::*;
+use std::io::Write;
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
@@ -20,16 +21,16 @@ Note:
 
 Examples:
 1. Generate consensus sequences from a block FA file:
-   fasr consensus tests/fasr/example.fas
+   pgr fas consensus tests/fas/example.fas
 
 2. Generate consensus sequences with outgroups:
-   fasr consensus tests/fasr/example.fas --outgroup
+   pgr fas consensus tests/fas/example.fas --outgroup
 
 3. Run in parallel with 4 threads:
-   fasr consensus tests/fasr/example.fas --parallel 4
+   pgr fas consensus tests/fas/example.fas --parallel 4
 
 4. Output results to a file:
-   fasr consensus tests/fasr/example.fas -o output.fas
+   pgr fas consensus tests/fas/example.fas -o output.fas
 
 
 "###,
@@ -89,7 +90,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
         for infile in args.get_many::<String>("infiles").unwrap() {
             let mut reader = intspan::reader(infile);
-            while let Ok(block) = pgr::next_fas_block(&mut reader) {
+            while let Ok(block) = pgr::libs::fas::next_fas_block(&mut reader) {
                 let out_string = proc_block(&block, args)?;
                 writer.write_all(out_string.as_ref())?;
             }
@@ -102,7 +103,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn proc_block(block: &pgr::FasBlock, args: &ArgMatches) -> anyhow::Result<String> {
+fn proc_block(block: &pgr::libs::fas::FasBlock, args: &ArgMatches) -> anyhow::Result<String> {
     //----------------------------
     // Args
     //----------------------------
@@ -128,7 +129,7 @@ fn proc_block(block: &pgr::FasBlock, args: &ArgMatches) -> anyhow::Result<String
     }
 
     // Generate consensus sequence
-    let mut cons = pgr::get_consensus_poa(&seqs).unwrap();
+    let mut cons = pgr::libs::alignment::get_consensus_poa(&seqs).unwrap();
     cons = cons.replace('-', "");
 
     let mut range = block.entries.first().unwrap().range().clone();
@@ -159,7 +160,7 @@ fn proc_block_p(args: &ArgMatches) -> anyhow::Result<()> {
     let mut writer = intspan::writer(args.get_one::<String>("outfile").unwrap());
 
     // Channel 1 - Read files to blocks
-    let (snd1, rcv1) = crossbeam::channel::bounded::<pgr::FasBlock>(10);
+    let (snd1, rcv1) = crossbeam::channel::bounded::<pgr::libs::fas::FasBlock>(10);
     // Channel 2 - Results
     let (snd2, rcv2) = crossbeam::channel::bounded(10);
 
@@ -170,7 +171,7 @@ fn proc_block_p(args: &ArgMatches) -> anyhow::Result<()> {
         s.spawn(|_| {
             for infile in args.get_many::<String>("infiles").unwrap() {
                 let mut reader = intspan::reader(infile);
-                while let Ok(block) = pgr::next_fas_block(&mut reader) {
+                while let Ok(block) = pgr::libs::fas::next_fas_block(&mut reader) {
                     snd1.send(block).unwrap();
                 }
             }
