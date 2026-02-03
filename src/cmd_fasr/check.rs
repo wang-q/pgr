@@ -1,4 +1,6 @@
 use clap::*;
+use indexmap::IndexMap;
+use pgr::libs::loc;
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
@@ -69,6 +71,24 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     // Ops
     //----------------------------
+    let is_bgzf = {
+        let path = std::path::Path::new(opt_genome);
+        path.extension() == Some(std::ffi::OsStr::new("gz"))
+    };
+    let loc_file = format!("{}.loc", opt_genome);
+    if !std::path::Path::new(&loc_file).is_file() {
+        loc::create_loc(opt_genome, &loc_file, is_bgzf)?;
+    }
+    let loc_of: IndexMap<String, (u64, usize)> = loc::load_loc(&loc_file)?;
+
+    let mut genome_reader = if is_bgzf {
+        loc::Input::Bgzf(
+            noodles_bgzf::io::indexed_reader::Builder::default().build_from_path(opt_genome)?,
+        )
+    } else {
+        loc::Input::File(std::fs::File::open(std::path::Path::new(opt_genome))?)
+    };
+
     for infile in args.get_many::<String>("infiles").unwrap() {
         let mut reader = intspan::reader(infile);
 
@@ -80,14 +100,14 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 for entry in &block.entries {
                     let entry_name = entry.range().name();
                     if entry_name == opt_name {
-                        let status = check_seq(entry, opt_genome)?;
+                        let status = check_seq(entry, &mut genome_reader, &loc_of)?;
                         writer.write_all(format!("{}\t{}\n", entry.range(), status).as_ref())?;
                     }
                 }
             } else if opt_name.is_empty() {
                 // Check all sequences in the block
                 for entry in &block.entries {
-                    let status = check_seq(entry, opt_genome)?;
+                    let status = check_seq(entry, &mut genome_reader, &loc_of)?;
                     writer.write_all(format!("{}\t{}\n", entry.range(), status).as_ref())?;
                 }
             }
@@ -97,7 +117,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn check_seq(entry: &pgr::FasEntry, genome: &str) -> anyhow::Result<String> {
+fn check_seq(
+    entry: &pgr::FasEntry,
+    reader: &mut loc::Input,
+    loc_of: &IndexMap<String, (u64, usize)>,
+) -> anyhow::Result<String> {
     let range = entry.range();
     let seq = entry.seq().to_vec();
     let seq = std::str::from_utf8(&seq)?
@@ -105,7 +129,11 @@ fn check_seq(entry: &pgr::FasEntry, genome: &str) -> anyhow::Result<String> {
         .to_ascii_uppercase()
         .replace('-', "");
 
-    let gseq = pgr::get_seq_loc(genome, &range.to_string())?.to_ascii_uppercase();
+    let gseq = if loc_of.contains_key(range.chr()) {
+        loc::fetch_range_seq(reader, loc_of, range)?.to_ascii_uppercase()
+    } else {
+        String::new()
+    };
 
     let status = if seq == gseq { "OK" } else { "FAILED" };
 

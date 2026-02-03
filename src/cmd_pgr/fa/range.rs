@@ -166,7 +166,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         }
 
         if !cache.contains(&seq_id) {
-            let record = loc::record_rg(&mut reader, &loc_of, &seq_id)?;
+            let record = loc::fetch_record(&mut reader, &loc_of, &seq_id)?;
             cache.put(seq_id.clone(), record);
         }
 

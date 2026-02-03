@@ -1,7 +1,9 @@
 use anyhow::{anyhow, bail};
 use bio::io::fasta;
+use indexmap::IndexMap;
 use intspan::IntSpan;
 use itertools::Itertools;
+use noodles_bgzf;
 use std::cmp::min;
 use std::collections::{BTreeMap, HashSet};
 use std::fs::File;
@@ -854,51 +856,44 @@ pub fn get_consensus_poa(seqs: &[&[u8]]) -> anyhow::Result<String> {
 }
 
 /// ```
-/// match which::which("hnsm") {
-///     Ok(_) => {
-///         let seq = pgr::get_seq_loc("tests/fasr/NC_000932.fa", "NC_000932:1-10").unwrap();
-///         assert_eq!(seq, "ATGGGCGAAC".to_string());
-///         let seq = pgr::get_seq_loc("tests/fasr/NC_000932.fa", "NC_000932(-):1-10").unwrap();
-///         assert_eq!(seq, "GTTCGCCCAT".to_string());
-///         let res = pgr::get_seq_loc("tests/fasr/NC_000932.fa", "FAKE:1-10");
-///         assert_eq!(res.unwrap(), "".to_string());
-///     }
-///     Err(_) => {}
-/// }
+/// let seq = pgr::get_seq_loc("tests/fasr/NC_000932.fa", "NC_000932:1-10").unwrap();
+/// assert_eq!(seq, "ATGGGCGAAC".to_string());
+/// let seq = pgr::get_seq_loc("tests/fasr/NC_000932.fa", "NC_000932(-):1-10").unwrap();
+/// assert_eq!(seq, "GTTCGCCCAT".to_string());
+/// let res = pgr::get_seq_loc("tests/fasr/NC_000932.fa", "FAKE:1-10");
+/// assert_eq!(res.unwrap(), "".to_string());
 /// ```
 // cargo test --doc alignment::get_seq_loc
 pub fn get_seq_loc(file: &str, range: &str) -> anyhow::Result<String> {
-    let mut bin = String::new();
-    for e in &["hnsm"] {
-        if let Ok(pth) = which::which(e) {
-            bin = pth.to_string_lossy().to_string();
-            break;
-        }
+    let range = intspan::Range::from_str(range);
+    if !range.is_valid() {
+        return Ok("".to_string());
     }
 
-    if bin.is_empty() {
-        return Err(anyhow!("Can't find the external command"));
+    let is_bgzf = {
+        let path = std::path::Path::new(file);
+        path.extension() == Some(std::ffi::OsStr::new("gz"))
+    };
+
+    let loc_file = format!("{}.loc", file);
+    if !std::path::Path::new(&loc_file).is_file() {
+        crate::libs::loc::create_loc(file, &loc_file, is_bgzf)?;
+    }
+    let loc_of: IndexMap<String, (u64, usize)> = crate::libs::loc::load_loc(&loc_file)?;
+
+    if !loc_of.contains_key(range.chr()) {
+        return Ok("".to_string());
     }
 
-    let mut seq = String::new();
-    let output = Command::new(bin)
-        .arg("range")
-        .arg(file)
-        .arg(range)
-        .output()?;
+    let mut reader = if is_bgzf {
+        crate::libs::loc::Input::Bgzf(
+            noodles_bgzf::io::indexed_reader::Builder::default().build_from_path(file)?,
+        )
+    } else {
+        crate::libs::loc::Input::File(std::fs::File::open(std::path::Path::new(file))?)
+    };
 
-    if !output.status.success() {
-        return Err(anyhow!("Command executed with failing error code"));
-    }
-
-    for line in output.stdout.lines().map_while(Result::ok) {
-        // header
-        if line.starts_with('>') {
-            continue;
-        }
-
-        seq += line.as_str();
-    }
+    let seq = crate::libs::loc::fetch_range_seq(&mut reader, &loc_of, &range)?;
 
     Ok(seq)
 }

@@ -1,5 +1,6 @@
 use indexmap::IndexMap;
 use noodles_bgzf as bgzf;
+use noodles_core;
 use noodles_fasta as fasta;
 use std::io::{BufRead, Read, Seek, SeekFrom};
 
@@ -101,12 +102,12 @@ pub fn load_loc(loc_file: &str) -> anyhow::Result<IndexMap<String, (u64, usize)>
     Ok(loc_of)
 }
 
-pub fn record_rg(
+pub fn fetch_record(
     reader: &mut Input,
     loc_of: &IndexMap<String, (u64, usize)>,
-    rg: &str,
+    name: &str,
 ) -> anyhow::Result<fasta::Record> {
-    let (offset, size) = loc_of.get(rg).unwrap();
+    let (offset, size) = loc_of.get(name).unwrap();
 
     let data_buf = read_offset(reader, *offset, *size)?;
     let mut fa_in = fasta::io::Reader::new(&data_buf[..]);
@@ -115,7 +116,7 @@ pub fn record_rg(
     let mut buf = Vec::new();
     fa_in.read_sequence(&mut buf)?;
 
-    let definition = fasta::record::Definition::new(rg, None);
+    let definition = fasta::record::Definition::new(name, None);
     let sequence = fasta::record::Sequence::from(buf);
     let record = fasta::Record::new(definition, sequence);
 
@@ -139,6 +140,46 @@ pub fn records_offset(
     }
 
     Ok(records)
+}
+
+pub fn fetch_range_seq(
+    reader: &mut Input,
+    loc_of: &IndexMap<String, (u64, usize)>,
+    rg: &intspan::Range,
+) -> anyhow::Result<String> {
+    let seq_id = rg.chr();
+    if !loc_of.contains_key(seq_id) {
+        return Err(anyhow::anyhow!(
+            "{} for [{}] not found in the .loc index file",
+            seq_id,
+            rg
+        ));
+    }
+
+    let record = fetch_record(reader, loc_of, seq_id)?;
+
+    // name only
+    if *rg.start() == 0 {
+        let seq = record
+            .sequence()
+            .as_ref()
+            .iter()
+            .map(|&b| b as char)
+            .collect();
+        return Ok(seq);
+    }
+
+    // slice here is 1-based
+    let start = noodles_core::Position::new(*rg.start() as usize).unwrap();
+    let end = noodles_core::Position::new(*rg.end() as usize).unwrap();
+
+    let mut slice = record.sequence().slice(start..=end).unwrap();
+    if rg.strand() == "-" {
+        slice = slice.complement().rev().collect::<Result<_, _>>()?;
+    }
+
+    let seq = slice.as_ref().iter().map(|&b| b as char).collect();
+    Ok(seq)
 }
 
 pub fn read_offset(reader: &mut Input, offset: u64, size: usize) -> anyhow::Result<Vec<u8>> {
