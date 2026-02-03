@@ -1,5 +1,6 @@
 use clap::*;
 use std::collections::BTreeMap;
+use std::io::Write;
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
@@ -17,10 +18,10 @@ Note:
 
 Examples:
 1. Output all species names:
-   fasr name tests/fasr/example.fas
+   pgr fas name tests/fasr/example.fas
 
 2. Output species names with occurrence counts:
-   fasr name tests/fasr/example.fas --count
+   pgr fas name tests/fasr/example.fas --count
 
 "###,
         )
@@ -65,7 +66,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     for infile in args.get_many::<String>("infiles").unwrap() {
         let mut reader = intspan::reader(infile);
 
-        while let Ok(block) = pgr::next_fas_block(&mut reader) {
+        while let Ok(block) = pgr::libs::fas::next_fas_block(&mut reader) {
             for entry in &block.entries {
                 let range = entry.range();
 

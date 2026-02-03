@@ -5,8 +5,8 @@ use tempfile::TempDir;
 
 #[test]
 fn command_invalid() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("fasr")?;
-    cmd.arg("foobar");
+    let mut cmd = Command::cargo_bin("pgr")?;
+    cmd.arg("fas").arg("foobar");
     cmd.assert()
         .failure()
         .stderr(predicate::str::contains("recognized"));
@@ -16,10 +16,11 @@ fn command_invalid() -> anyhow::Result<()> {
 
 #[test]
 fn command_name() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("fasr")?;
+    let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
+        .arg("fas")
         .arg("name")
-        .arg("tests/fasr/example.fas")
+        .arg("tests/fas/example.fas")
         .arg("-c")
         .output()?;
     let stdout = String::from_utf8(output.stdout)?;
@@ -34,7 +35,7 @@ fn command_name() -> anyhow::Result<()> {
 #[test]
 fn command_cover() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("fasr")?;
-    let output = cmd.arg("cover").arg("tests/fasr/example.fas").output()?;
+    let output = cmd.arg("cover").arg("tests/fas/example.fas").output()?;
     let stdout = String::from_utf8(output.stdout)?;
 
     assert_eq!(stdout.lines().count(), 16);
@@ -46,7 +47,7 @@ fn command_cover() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("fasr")?;
     let output = cmd
         .arg("cover")
-        .arg("tests/fasr/example.fas")
+        .arg("tests/fas/example.fas")
         .arg("--name")
         .arg("S288c")
         .arg("--trim")

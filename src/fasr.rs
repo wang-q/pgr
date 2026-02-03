@@ -19,8 +19,6 @@ fn main() -> anyhow::Result<()> {
         .subcommand(cmd_fasr::filter::make_subcommand())
         .subcommand(cmd_fasr::join::make_subcommand())
         .subcommand(cmd_fasr::link::make_subcommand())
-        .subcommand(cmd_fasr::maf2fas::make_subcommand())
-        .subcommand(cmd_fasr::name::make_subcommand())
         .subcommand(cmd_fasr::pl_p2m::make_subcommand())
         .subcommand(cmd_fasr::refine::make_subcommand())
         .subcommand(cmd_fasr::replace::make_subcommand())
@@ -36,8 +34,8 @@ fn main() -> anyhow::Result<()> {
             r###"
 Subcommand groups:
 
-* info: check / cover / link / name / stat
-* creation: maf2fas / create
+* info: check / cover / link / stat
+* creation: create
 * records: separate / split / subset
 * transform: filter / replace / refine
 * transmute: concat / consensus / join / pl-p2m / slice
@@ -52,10 +50,8 @@ Subcommand groups:
         Some(("check", sub_matches)) => cmd_fasr::check::execute(sub_matches),
         Some(("cover", sub_matches)) => cmd_fasr::cover::execute(sub_matches),
         Some(("link", sub_matches)) => cmd_fasr::link::execute(sub_matches),
-        Some(("name", sub_matches)) => cmd_fasr::name::execute(sub_matches),
         Some(("stat", sub_matches)) => cmd_fasr::stat::execute(sub_matches),
         // creation
-        Some(("maf2fas", sub_matches)) => cmd_fasr::maf2fas::execute(sub_matches),
         Some(("create", sub_matches)) => cmd_fasr::create::execute(sub_matches),
         // records
         Some(("separate", sub_matches)) => cmd_fasr::separate::execute(sub_matches),

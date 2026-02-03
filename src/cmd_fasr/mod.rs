@@ -8,8 +8,6 @@ pub mod create;
 pub mod filter;
 pub mod join;
 pub mod link;
-pub mod maf2fas;
-pub mod name;
 pub mod pl_p2m;
 pub mod refine;
 pub mod replace;
