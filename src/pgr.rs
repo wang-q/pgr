@@ -11,7 +11,7 @@ fn main() -> anyhow::Result<()> {
         .propagate_version(true)
         .arg_required_else_help(true)
         .color(ColorChoice::Auto)
-        .subcommand(cmd_pgr::ms2dna::make_subcommand())
+        .subcommand(cmd_pgr::ms_to_dna::make_subcommand())
         .subcommand(cmd_pgr::axt::make_subcommand())
         .subcommand(cmd_pgr::chain::make_subcommand())
         .subcommand(cmd_pgr::lav::make_subcommand())
@@ -48,7 +48,7 @@ fn main() -> anyhow::Result<()> {
 
     // Check which subcomamnd the user ran...
     match app.get_matches().subcommand() {
-        Some(("ms2dna", sub_matches)) => cmd_pgr::ms2dna::execute(sub_matches),
+        Some(("ms-to-dna", sub_matches)) => cmd_pgr::ms_to_dna::execute(sub_matches),
         Some(("axt", sub_matches)) => cmd_pgr::axt::execute(sub_matches),
         Some(("chain", sub_matches)) => cmd_pgr::chain::execute(sub_matches),
         Some(("lav", sub_matches)) => cmd_pgr::lav::execute(sub_matches),

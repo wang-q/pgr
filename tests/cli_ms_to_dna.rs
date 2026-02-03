@@ -2,9 +2,9 @@ use assert_cmd::Command;
 use predicates::prelude::*;
 
 #[test]
-fn command_ms2dna_help() -> anyhow::Result<()> {
+fn command_ms_to_dna_help() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("pgr")?;
-    cmd.arg("ms2dna").arg("--help");
+    cmd.arg("ms-to-dna").arg("--help");
     cmd.assert()
         .success()
         .stdout(predicate::str::contains("Convert ms output haplotypes"));
@@ -12,7 +12,7 @@ fn command_ms2dna_help() -> anyhow::Result<()> {
 }
 
 #[test]
-fn command_ms2dna_basic_stdin() -> anyhow::Result<()> {
+fn command_ms_to_dna_basic_stdin() -> anyhow::Result<()> {
     let input = "\
 ms 2 1 -r 0 4
 //
@@ -22,7 +22,7 @@ positions: 0.25 0.75
 10
 ";
     let mut cmd = Command::cargo_bin("pgr")?;
-    cmd.arg("ms2dna").arg("--seed").arg("42").write_stdin(input);
+    cmd.arg("ms-to-dna").arg("--seed").arg("42").write_stdin(input);
 
     // With seed 42, we expect deterministic output
     // nsite=4.
@@ -49,7 +49,7 @@ positions: 0.25 0.75
 }
 
 #[test]
-fn command_ms2dna_custom_gc() -> anyhow::Result<()> {
+fn command_ms_to_dna_custom_gc() -> anyhow::Result<()> {
     let input = "\
 ms 1 1 -r 0 100
 //
@@ -58,7 +58,7 @@ positions:
 ";
     let mut cmd = Command::cargo_bin("pgr")?;
     // High GC content
-    cmd.arg("ms2dna")
+    cmd.arg("ms-to-dna")
         .arg("-g")
         .arg("1.0")
         .arg("-s")

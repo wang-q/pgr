@@ -6,7 +6,7 @@ use std::io::Write;
 use std::io::{BufRead, BufReader};
 
 pub fn make_subcommand() -> Command {
-    Command::new("ms2dna")
+    Command::new("ms-to-dna")
         .about("Convert ms output haplotypes (0/1) to DNA sequences (FASTA)")
         .arg(
             Arg::new("gc")

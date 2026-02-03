@@ -10,7 +10,7 @@ pub mod order;
 pub mod range;
 pub mod rc;
 pub mod replace;
-pub mod sixframe;
+pub mod six_frame;
 pub mod size;
 pub mod some;
 pub mod split;
@@ -24,7 +24,7 @@ pub fn make_subcommand() -> clap::Command {
 
 * info: size / count / masked / n50
 * records: one / some / order / split
-* transform: replace / rc / filter / dedup / mask / 6frame
+* transform: replace / rc / filter / dedup / mask / six-frame
 * indexing: gz / range
 
 "###,
@@ -44,7 +44,7 @@ pub fn make_subcommand() -> clap::Command {
         .subcommand(size::make_subcommand())
         .subcommand(some::make_subcommand())
         .subcommand(split::make_subcommand())
-        .subcommand(sixframe::make_subcommand())
+        .subcommand(six_frame::make_subcommand())
         .subcommand(to_2bit::make_subcommand())
 }
 
@@ -62,7 +62,7 @@ pub fn execute(matches: &clap::ArgMatches) -> anyhow::Result<()> {
         Some(("range", sub_matches)) => range::execute(sub_matches),
         Some(("rc", sub_matches)) => rc::execute(sub_matches),
         Some(("replace", sub_matches)) => replace::execute(sub_matches),
-        Some(("6frame", sub_matches)) => sixframe::execute(sub_matches),
+        Some(("six-frame", sub_matches)) => six_frame::execute(sub_matches),
         Some(("size", sub_matches)) => size::execute(sub_matches),
         Some(("some", sub_matches)) => some::execute(sub_matches),
         Some(("split", sub_matches)) => split::execute(sub_matches),
