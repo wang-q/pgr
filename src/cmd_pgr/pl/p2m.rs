@@ -5,7 +5,7 @@ use std::{env, fs};
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
-    Command::new("pl-p2m")
+    Command::new("p2m")
         .about("Pipeline - pairwise alignments to multiple alignments")
         .after_help(
             r###"
@@ -18,7 +18,7 @@ pub fn make_subcommand() -> Command {
 
 * All operations are based on the *first* species name of the *first* input file
 
-* This pipeline depends on two binaries, `fasr` and `spanr`
+* This pipeline depends on two binaries, `pgr` and `spanr`
 
 "###,
         )
@@ -49,10 +49,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     fs::create_dir_all(outdir)?;
 
     let curdir = env::current_dir()?;
-    let fasr = env::current_exe().unwrap().display().to_string();
+    let pgr = env::current_exe().unwrap().display().to_string();
 
     run_cmd!(echo "==> Paths")?;
-    run_cmd!(echo "    \"fasr\"   = ${fasr}")?;
+    run_cmd!(echo "    \"pgr\"      = ${pgr}")?;
     run_cmd!(echo "    \"curdir\" = ${curdir:?}")?;
     run_cmd!(echo "    \"outdir\" = ${outdir}")?;
 
@@ -76,12 +76,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     run_cmd!(echo "==> Switch to outdir")?;
     env::set_current_dir(outdir)?;
 
-    run_cmd!(echo "==> fasr name - first")?;
+    run_cmd!(echo "==> pgr fas name - first")?;
     let mut target_name = "".to_string();
     {
         let infile = info_of.first_key_value().unwrap().1.get(0).unwrap();
         run_cmd!(
-            ${fasr} name ${infile} -o name.first.lst
+            ${pgr} fas name ${infile} -o name.first.lst
         )?;
         target_name = run_fun!(cat name.first.lst)
             .unwrap()
@@ -92,11 +92,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         run_cmd!(echo "    \"target_name\" = ${target_name}")?;
     }
 
-    run_cmd!(echo "==> fasr cover")?;
+    run_cmd!(echo "==> pgr fas cover")?;
     for (basename, info) in info_of.iter_mut() {
         let infile = info.get(0).unwrap();
         let outfile = format!("{}.json", basename);
-        run_cmd!(${fasr} cover ${infile} --trim 10 --name ${target_name} -o ${outfile})?;
+        run_cmd!(${pgr} fas cover ${infile} --trim 10 --name ${target_name} -o ${outfile})?;
 
         info.push(outfile.to_string());
     }
@@ -118,33 +118,33 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         )?;
     }
 
-    run_cmd!(echo "==> fasr slice")?;
+    run_cmd!(echo "==> pgr fas slice")?;
     for (basename, info) in info_of.iter_mut() {
         let infile = info.get(0).unwrap();
         let outfile = format!("{}.slice.fas", basename);
-        run_cmd!(${fasr} slice intersect.json ${infile} --name ${target_name} -o ${outfile})?;
+        run_cmd!(${pgr} fas slice intersect.json ${infile} --name ${target_name} -o ${outfile})?;
 
         info.push(outfile.to_string());
     }
 
-    run_cmd!(echo "==> fasr join")?;
+    run_cmd!(echo "==> pgr fas join")?;
     {
         let infiles: Vec<String> = info_of
             .iter()
             .map(|e| e.1.get(2).unwrap().to_string())
             .collect();
         run_cmd!(
-            ${fasr} join $[infiles] --name ${target_name} -o join.raw.fas
+            ${pgr} fas join $[infiles] --name ${target_name} -o join.raw.fas
         )?;
     }
 
-    run_cmd!(echo "==> fasr name && fasr subset")?;
+    run_cmd!(echo "==> pgr fas name && pgr fas subset")?;
     {
         run_cmd!(
-            ${fasr} name join.raw.fas -o name.lst
+            ${pgr} fas name join.raw.fas -o name.lst
         )?;
         run_cmd!(
-            ${fasr} subset name.lst join.raw.fas --required -o join.subset.fas
+            ${pgr} fas subset name.lst join.raw.fas --required -o join.subset.fas
         )?;
     }
 
@@ -157,15 +157,3 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     Ok(())
 }
-
-// fn pause() {
-//     let mut stdin = io::stdin();
-//     let mut stdout = io::stdout();
-//
-//     // We want the cursor to stay at the end of the line, so we print without a newline and flush manually.
-//     write!(stdout, "Press any key to continue...").unwrap();
-//     stdout.flush().unwrap();
-//
-//     // Read a single byte and discard
-//     let _ = stdin.read(&mut [0u8]).unwrap();
-// }

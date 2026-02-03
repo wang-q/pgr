@@ -13,7 +13,6 @@ fn main() -> anyhow::Result<()> {
         .color(ColorChoice::Auto)
         .subcommand(cmd_fasr::check::make_subcommand())
         .subcommand(cmd_fasr::create::make_subcommand())
-        .subcommand(cmd_fasr::pl_p2m::make_subcommand())
         .subcommand(cmd_fasr::variation::make_subcommand())
         .subcommand(cmd_fasr::vcf::make_subcommand())
         .subcommand(cmd_fasr::xlsx::make_subcommand())
@@ -25,7 +24,7 @@ Subcommand groups:
 * creation: create
 * records: (none)
 * transform: (none)
-* transmute: pl-p2m
+* transmute: (none)
 * variations: variation / vcf / xlsx
 
 "###,
@@ -40,7 +39,6 @@ Subcommand groups:
         // records
         // transform
         // transmute
-        Some(("pl-p2m", sub_matches)) => cmd_fasr::pl_p2m::execute(sub_matches),
         // variations
         Some(("variation", sub_matches)) => cmd_fasr::variation::execute(sub_matches),
         Some(("vcf", sub_matches)) => cmd_fasr::vcf::execute(sub_matches),
