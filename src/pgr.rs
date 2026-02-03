@@ -19,6 +19,7 @@ fn main() -> anyhow::Result<()> {
         .subcommand(cmd_pgr::axt::make_subcommand())
         .subcommand(cmd_pgr::chain::make_subcommand())
         .subcommand(cmd_pgr::lav::make_subcommand())
+        .subcommand(cmd_pgr::maf::make_subcommand())
         .subcommand(cmd_pgr::net::make_subcommand())
         .subcommand(cmd_pgr::psl::make_subcommand())
         .subcommand(cmd_pgr::twobit::make_subcommand())
@@ -38,6 +39,7 @@ fn main() -> anyhow::Result<()> {
     * net
     * axt
     * lav
+    * maf
     * psl
     * 2bit
     * fa
@@ -59,6 +61,7 @@ fn main() -> anyhow::Result<()> {
         Some(("axt", sub_matches)) => cmd_pgr::axt::execute(sub_matches),
         Some(("chain", sub_matches)) => cmd_pgr::chain::execute(sub_matches),
         Some(("lav", sub_matches)) => cmd_pgr::lav::execute(sub_matches),
+        Some(("maf", sub_matches)) => cmd_pgr::maf::execute(sub_matches),
         Some(("net", sub_matches)) => cmd_pgr::net::execute(sub_matches),
         Some(("psl", sub_matches)) => cmd_pgr::psl::execute(sub_matches),
         Some(("2bit", sub_matches)) => cmd_pgr::twobit::execute(sub_matches),

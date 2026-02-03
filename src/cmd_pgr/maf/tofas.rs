@@ -1,8 +1,9 @@
 use clap::*;
+use std::io::Write;
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
-    Command::new("maf2fas")
+    Command::new("tofas")
         .about("Convert MAF files to block FA format")
         .after_help(
             r###"
@@ -16,7 +17,7 @@ Note:
 
 Examples:
 1. Convert a MAF file to block FASTA format:
-   fasr maf2fas tests/fasr/example.maf
+   pgr maf tofas tests/fasr/example.maf
 
 "###,
         )
@@ -50,7 +51,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     for infile in args.get_many::<String>("infiles").unwrap() {
         let mut reader = intspan::reader(infile);
 
-        while let Ok(block) = pgr::next_maf_block(&mut reader) {
+        while let Ok(block) = pgr::libs::fas::next_maf_block(&mut reader) {
             // Can't use reference as entry.alignment does not Copy
             for entry in block.entries {
                 let range = entry.to_range();

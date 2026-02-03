@@ -6,6 +6,7 @@ pub mod fa;
 pub mod fq;
 pub mod ir;
 pub mod lav;
+pub mod maf;
 pub mod ms2dna;
 pub mod net;
 pub mod pipeline;
