@@ -8,8 +8,6 @@ pub fn make_subcommand() -> Command {
         .about("Join multiple block fasta files by a common target")
         .after_help(
             r###"
-This subcommand joins multiple block FA files based on a common target sequence.
-
 * <infiles> are paths to block fasta files, .fas.gz is supported
     * infile == stdin means reading from STDIN
 

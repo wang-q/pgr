@@ -7,7 +7,7 @@ pub fn make_subcommand() -> Command {
         .about("Generate consensus sequences using POA")
         .after_help(
             r###"
-This subcommand generates consensus sequences from block FA files using the POA (Partial Order Alignment) algorithm.
+Generates consensus sequences using the POA (Partial Order Alignment) algorithm.
 
 Input files can be gzipped. If the input file is 'stdin', data is read from standard input.
 

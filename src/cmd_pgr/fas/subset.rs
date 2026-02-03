@@ -7,8 +7,6 @@ pub fn make_subcommand() -> Command {
         .about("Extract a subset of species from block FA files")
         .after_help(
             r###"
-Extract a subset of species from block FA files based on a list of names.
-
 * --required <name.lst>: A file containing a list of species names to keep, one per line.
     - The order of species in the output will follow the order in <name.lst>.
 
