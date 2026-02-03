@@ -10,7 +10,7 @@ use pgr::libs::fas::{next_fas_block, FasBlock};
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
-    Command::new("toxlsx")
+    Command::new("to-xlsx")
         .about("List variations (substitutions/indels)")
         .after_help(
             r###"

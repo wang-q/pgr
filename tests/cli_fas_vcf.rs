@@ -3,7 +3,7 @@ use std::process::Command;
 
 fn run_vcf(args: &[&str]) -> anyhow::Result<String> {
     let mut cmd = Command::cargo_bin("pgr")?;
-    cmd.arg("fas").arg("tovcf");
+    cmd.arg("fas").arg("to-vcf");
     for a in args {
         cmd.arg(a);
     }

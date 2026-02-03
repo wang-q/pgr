@@ -14,8 +14,8 @@ pub mod split;
 pub mod stat;
 pub mod subset;
 pub mod variation;
-pub mod toxlsx;
-pub mod tovcf;
+pub mod to_xlsx;
+pub mod to_vcf;
 pub mod filter;
 
 pub fn make_subcommand() -> clap::Command {
@@ -39,8 +39,8 @@ pub fn make_subcommand() -> clap::Command {
         .subcommand(split::make_subcommand())
         .subcommand(stat::make_subcommand())
         .subcommand(variation::make_subcommand())
-        .subcommand(toxlsx::make_subcommand())
-        .subcommand(tovcf::make_subcommand())
+        .subcommand(to_xlsx::make_subcommand())
+        .subcommand(to_vcf::make_subcommand())
         .subcommand(subset::make_subcommand())
 }
 
@@ -62,8 +62,8 @@ pub fn execute(matches: &clap::ArgMatches) -> anyhow::Result<()> {
         Some(("split", sub_matches)) => split::execute(sub_matches),
         Some(("stat", sub_matches)) => stat::execute(sub_matches),
         Some(("variation", sub_matches)) => variation::execute(sub_matches),
-        Some(("toxlsx", sub_matches)) => toxlsx::execute(sub_matches),
-        Some(("tovcf", sub_matches)) => tovcf::execute(sub_matches),
+        Some(("to-xlsx", sub_matches)) => to_xlsx::execute(sub_matches),
+        Some(("to-vcf", sub_matches)) => to_vcf::execute(sub_matches),
         Some(("subset", sub_matches)) => subset::execute(sub_matches),
         _ => unreachable!(),
     }

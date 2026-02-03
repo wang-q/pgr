@@ -31,14 +31,14 @@ fn command_variation() -> anyhow::Result<()> {
 }
 
 #[test]
-fn command_toxlsx() -> anyhow::Result<()> {
+fn command_to_xlsx() -> anyhow::Result<()> {
     let temp_file = NamedTempFile::new()?.into_temp_path();
     let temp_path = temp_file.to_str().unwrap();
 
     let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
         .arg("fas")
-        .arg("toxlsx")
+        .arg("to-xlsx")
         .arg("tests/fas/example.fas")
         .arg("-o")
         .arg(temp_path)
@@ -63,14 +63,14 @@ fn command_toxlsx() -> anyhow::Result<()> {
 }
 
 #[test]
-fn command_toxlsx_indel() -> anyhow::Result<()> {
+fn command_to_xlsx_indel() -> anyhow::Result<()> {
     let temp_file = NamedTempFile::new()?.into_temp_path();
     let temp_path = temp_file.to_str().unwrap();
 
     let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
         .arg("fas")
-        .arg("toxlsx")
+        .arg("to-xlsx")
         .arg("tests/fas/example.fas")
         .arg("--indel")
         .arg("-o")
@@ -95,14 +95,14 @@ fn command_toxlsx_indel() -> anyhow::Result<()> {
 }
 
 #[test]
-fn command_toxlsx_nocomplex() -> anyhow::Result<()> {
+fn command_to_xlsx_nocomplex() -> anyhow::Result<()> {
     let temp_file = NamedTempFile::new()?.into_temp_path();
     let temp_path = temp_file.to_str().unwrap();
 
     let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
         .arg("fas")
-        .arg("toxlsx")
+        .arg("to-xlsx")
         .arg("tests/fas/example.fas")
         .arg("--indel")
         .arg("--nocomplex")
@@ -128,14 +128,14 @@ fn command_toxlsx_nocomplex() -> anyhow::Result<()> {
 }
 
 #[test]
-fn command_toxlsx_nosingle() -> anyhow::Result<()> {
+fn command_to_xlsx_nosingle() -> anyhow::Result<()> {
     let temp_file = NamedTempFile::new()?.into_temp_path();
     let temp_path = temp_file.to_str().unwrap();
 
     let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
         .arg("fas")
-        .arg("toxlsx")
+        .arg("to-xlsx")
         .arg("tests/fas/example.fas")
         .arg("--indel")
         .arg("--nosingle")
@@ -161,14 +161,14 @@ fn command_toxlsx_nosingle() -> anyhow::Result<()> {
 }
 
 #[test]
-fn command_toxlsx_minmax() -> anyhow::Result<()> {
+fn command_to_xlsx_minmax() -> anyhow::Result<()> {
     let temp_file = NamedTempFile::new()?.into_temp_path();
     let temp_path = temp_file.to_str().unwrap();
 
     let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
         .arg("fas")
-        .arg("toxlsx")
+        .arg("to-xlsx")
         .arg("tests/fas/example.fas")
         .arg("--indel")
         .arg("--min")
@@ -197,14 +197,14 @@ fn command_toxlsx_minmax() -> anyhow::Result<()> {
 }
 
 #[test]
-fn command_toxlsx_outgroup() -> anyhow::Result<()> {
+fn command_to_xlsx_outgroup() -> anyhow::Result<()> {
     let temp_file = NamedTempFile::new()?.into_temp_path();
     let temp_path = temp_file.to_str().unwrap();
 
     let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
         .arg("fas")
-        .arg("toxlsx")
+        .arg("to-xlsx")
         .arg("tests/fas/example.fas")
         .arg("--indel")
         .arg("--outgroup")

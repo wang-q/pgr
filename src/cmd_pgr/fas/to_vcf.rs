@@ -7,7 +7,7 @@ use pgr::libs::alignment::{align_to_chr, get_subs, seq_intspan};
 use pgr::libs::fas::next_fas_block;
 
 pub fn make_subcommand() -> Command {
-    Command::new("tovcf")
+    Command::new("to-vcf")
         .about("Output VCF file (substitutions only)")
         .after_help(
             r###"
@@ -22,10 +22,10 @@ Note:
 
 Examples:
 1. Output VCF from a block FASTA:
-   pgr fas tovcf tests/fasr/example.fas
+   pgr fas to-vcf tests/fasr/example.fas
 
 2. Output VCF with contig headers:
-   pgr fas tovcf --sizes tests/fasr/S288c.chr.sizes tests/fasr/YDL184C.fas
+   pgr fas to-vcf --sizes tests/fasr/S288c.chr.sizes tests/fasr/YDL184C.fas
 
 "###,
         )
