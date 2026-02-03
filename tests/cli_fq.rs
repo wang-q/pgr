@@ -2,7 +2,7 @@ use assert_cmd::Command;
 use tempfile::NamedTempFile;
 
 #[test]
-fn command_fq_tofa() -> anyhow::Result<()> {
+fn command_fq_to_fa() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("pgr")?;
     let input = "@SEQ_ID\nGATTTGGGGTTCAAAGCAGTATCGATCAAATAGTAAATCCATTTGTTCAACTCACAGTTT\n+\n!''*((((***+))%%%++)(%%%%).1***-+*''))**55CCF>>>>>>CCCCCCC65\n";
 
@@ -11,7 +11,7 @@ fn command_fq_tofa() -> anyhow::Result<()> {
     file.write_all(input.as_bytes())?;
 
     cmd.arg("fq")
-        .arg("tofa")
+        .arg("to-fa")
         .arg(file.path())
         .assert()
         .success();
@@ -67,7 +67,7 @@ fn command_fq_interleave_coverage_gap() -> anyhow::Result<()> {
 }
 
 #[test]
-fn command_fq_tofa_output() -> anyhow::Result<()> {
+fn command_fq_to_fa_output() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("pgr")?;
     let input = "@SEQ_ID\nGATTTGGGGTTCAAAGCAGTATCGATCAAATAGTAAATCCATTTGTTCAACTCACAGTTT\n+\n!''*((((***+))%%%++)(%%%%).1***-+*''))**55CCF>>>>>>CCCCCCC65\n";
 
@@ -75,7 +75,7 @@ fn command_fq_tofa_output() -> anyhow::Result<()> {
     use std::io::Write;
     file.write_all(input.as_bytes())?;
 
-    let output = cmd.arg("fq").arg("tofa").arg(file.path()).output().unwrap();
+    let output = cmd.arg("fq").arg("to-fa").arg(file.path()).output().unwrap();
 
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(stdout.contains(">SEQ_ID"));
@@ -85,12 +85,12 @@ fn command_fq_tofa_output() -> anyhow::Result<()> {
 }
 
 #[test]
-fn command_fq_tofa_r1() -> anyhow::Result<()> {
+fn command_fq_to_fa_r1() -> anyhow::Result<()> {
     // Basic conversion test
     let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
         .arg("fq")
-        .arg("tofa")
+        .arg("to-fa")
         .arg("tests/fastq/R1.fq.gz")
         .output()?;
     let stdout = String::from_utf8(output.stdout)?;
@@ -107,7 +107,7 @@ fn command_fq_tofa_r1() -> anyhow::Result<()> {
     let temp_path = temp.path();
 
     cmd.arg("fq")
-        .arg("tofa")
+        .arg("to-fa")
         .arg("tests/fastq/R1.fq.gz")
         .arg("-o")
         .arg(temp_path)

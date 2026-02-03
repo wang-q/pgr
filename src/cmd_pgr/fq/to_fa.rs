@@ -2,7 +2,7 @@ use clap::*;
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
-    Command::new("tofa")
+    Command::new("to-fa")
         .about("Convert FASTQ to FASTA format")
         .after_help(
             r###"
@@ -16,13 +16,13 @@ Features:
 
 Examples:
 1. Convert a FASTQ file to FASTA:
-   pgr fq tofa input.fq -o output.fa
+   pgr fq to-fa input.fq -o output.fa
 
 2. Convert multiple FASTQ files to a single FASTA:
-   pgr fq tofa input1.fq input2.fq -o output.fa
+   pgr fq to-fa input1.fq input2.fq -o output.fa
 
 3. Convert and write to stdout:
-   pgr fq tofa input.fq
+   pgr fq to-fa input.fq
 "###,
         )
         .arg(
