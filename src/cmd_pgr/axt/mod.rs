@@ -1,9 +1,9 @@
 use clap::*;
 
 pub mod sort;
-pub mod tofas;
-pub mod tomaf;
-pub mod topsl;
+pub mod to_fas;
+pub mod to_maf;
+pub mod to_psl;
 
 pub fn make_subcommand() -> Command {
     Command::new("axt")
@@ -17,17 +17,17 @@ AXT is a format for representing pairwise genomic alignments.
         .subcommand_required(true)
         .arg_required_else_help(true)
         .subcommand(sort::make_subcommand())
-        .subcommand(tomaf::make_subcommand())
-        .subcommand(tofas::make_subcommand())
-        .subcommand(topsl::make_subcommand())
+        .subcommand(to_maf::make_subcommand())
+        .subcommand(to_fas::make_subcommand())
+        .subcommand(to_psl::make_subcommand())
 }
 
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     match args.subcommand() {
         Some(("sort", sub_matches)) => sort::execute(sub_matches),
-        Some(("tomaf", sub_matches)) => tomaf::execute(sub_matches),
-        Some(("tofas", sub_matches)) => tofas::execute(sub_matches),
-        Some(("topsl", sub_matches)) => topsl::execute(sub_matches),
+        Some(("to-maf", sub_matches)) => to_maf::execute(sub_matches),
+        Some(("to-fas", sub_matches)) => to_fas::execute(sub_matches),
+        Some(("to-psl", sub_matches)) => to_psl::execute(sub_matches),
         _ => unreachable!(),
     }
 }

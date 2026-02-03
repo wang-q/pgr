@@ -7,7 +7,7 @@ use pgr::libs::axt::AxtReader;
 use pgr::libs::psl::Psl;
 
 pub fn make_subcommand() -> Command {
-    Command::new("topsl")
+    Command::new("to-psl")
         .about("Convert from axt to psl format")
         .after_help(
             r###"
@@ -15,7 +15,7 @@ Where tSizes and qSizes are tab-delimited files with <seqName> <size> columns.
 
 Examples:
   # Convert axt to psl
-  pgr axt topsl in.axt -t t.sizes -q q.sizes -o out.psl
+  pgr axt to-psl in.axt -t t.sizes -q q.sizes -o out.psl
 "###,
         )
         .arg(

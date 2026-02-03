@@ -25,9 +25,9 @@ fn command_axt_sort_help() -> anyhow::Result<()> {
 }
 
 #[test]
-fn command_axt_tomaf_help() -> anyhow::Result<()> {
+fn command_axt_to_maf_help() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("pgr")?;
-    cmd.arg("axt").arg("tomaf").arg("--help");
+    cmd.arg("axt").arg("to-maf").arg("--help");
     cmd.assert()
         .success()
         .stdout(predicate::str::contains("Convert from axt to maf format"));
@@ -79,7 +79,7 @@ TTTT
 }
 
 #[test]
-fn command_axt_tomaf_zero_score() -> anyhow::Result<()> {
+fn command_axt_to_maf_zero_score() -> anyhow::Result<()> {
     let dir = tempdir()?;
     let input_path = dir.path().join("zeroScore.axt");
     let t_sizes_path = dir.path().join("rn3.sizes");
@@ -116,7 +116,7 @@ chr19	63790860
 
     let mut cmd = Command::cargo_bin("pgr")?;
     cmd.arg("axt")
-        .arg("tomaf")
+        .arg("to-maf")
         .arg(&input_path)
         .arg("--t-sizes")
         .arg(&t_sizes_path)
@@ -201,7 +201,7 @@ TTTT
 }
 
 #[test]
-fn command_axt_tomaf_basic() -> anyhow::Result<()> {
+fn command_axt_to_maf_basic() -> anyhow::Result<()> {
     let dir = tempdir()?;
     let axt_path = dir.path().join("input.axt");
     let t_sizes_path = dir.path().join("t.sizes");
@@ -228,7 +228,7 @@ ACTG
 
     let mut cmd = Command::cargo_bin("pgr")?;
     cmd.arg("axt")
-        .arg("tomaf")
+        .arg("to-maf")
         .arg(&axt_path)
         .arg("-t")
         .arg(&t_sizes_path)
@@ -252,7 +252,7 @@ ACTG
 }
 
 #[test]
-fn command_axt_tomaf_split() -> anyhow::Result<()> {
+fn command_axt_to_maf_split() -> anyhow::Result<()> {
     let dir = tempdir()?;
     let axt_path = dir.path().join("input.axt");
     let t_sizes_path = dir.path().join("t.sizes");
@@ -283,7 +283,7 @@ ACTG
 
     let mut cmd = Command::cargo_bin("pgr")?;
     cmd.arg("axt")
-        .arg("tomaf")
+        .arg("to-maf")
         .arg("--t-split")
         .arg(&axt_path)
         .arg("-t")
@@ -311,7 +311,7 @@ ACTG
 }
 
 #[test]
-fn command_axt_topsl_blockbug() -> anyhow::Result<()> {
+fn command_axt_to_psl_blockbug() -> anyhow::Result<()> {
     let dir = tempdir()?;
     let input_path = dir.path().join("blockBug.axt");
     let t_sizes_path = dir.path().join("t.sizes");
@@ -348,7 +348,7 @@ MmUn_161829_35\t7971
 
     let mut cmd = Command::cargo_bin("pgr")?;
     cmd.arg("axt")
-        .arg("topsl")
+        .arg("to-psl")
         .arg(&input_path)
         .arg("-t")
         .arg(&t_sizes_path)
@@ -370,7 +370,7 @@ MmUn_161829_35\t7971
 }
 
 #[test]
-fn command_axt_tofas_basic() -> anyhow::Result<()> {
+fn command_axt_to_fas_basic() -> anyhow::Result<()> {
     let dir = tempdir()?;
     let input_path = dir.path().join("input.axt");
     let sizes_path = dir.path().join("q.sizes");
@@ -399,7 +399,7 @@ ACGT
 
     let mut cmd = Command::cargo_bin("pgr")?;
     cmd.arg("axt")
-        .arg("tofas")
+        .arg("to-fas")
         .arg(&sizes_path)
         .arg(&input_path)
         .arg("-o")
@@ -417,11 +417,11 @@ ACGT
 }
 
 #[test]
-fn command_axt_tofas_example() -> anyhow::Result<()> {
+fn command_axt_to_fas_example() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
         .arg("axt")
-        .arg("tofas")
+        .arg("to-fas")
         .arg("tests/axt/RM11_1a.sizes")
         .arg("tests/axt/example.axt")
         .arg("--qname")

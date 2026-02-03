@@ -8,7 +8,7 @@ use pgr::libs::axt::AxtReader;
 use pgr::libs::maf::{MafAli, MafComp, MafWriter};
 
 pub fn make_subcommand() -> Command {
-    Command::new("tomaf")
+    Command::new("to-maf")
         .about("Convert from axt to maf format")
         .after_help(
             r###"
@@ -17,10 +17,10 @@ Very often this will be a chrom.sizes file.
 
 Examples:
   # Convert axt to maf
-  pgr axt tomaf in.axt -t t.sizes -q q.sizes -o out.maf
+  pgr axt to-maf in.axt -t t.sizes -q q.sizes -o out.maf
 
   # Split output by target name
-  pgr axt tomaf in.axt -t t.sizes -q q.sizes --t-split -o out_dir
+  pgr axt to-maf in.axt -t t.sizes -q q.sizes --t-split -o out_dir
 "###,
         )
         .arg(
