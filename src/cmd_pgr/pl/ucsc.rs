@@ -3,7 +3,7 @@ use cmd_lib::*;
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
-    Command::new("pipeline")
+    Command::new("ucsc")
         .about("UCSC chain/net pipeline")
         .after_help(
             r###"
