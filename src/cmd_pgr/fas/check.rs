@@ -14,14 +14,13 @@ Input files can be gzipped. If the input file is 'stdin', data is read from stan
 
 Note:
 - The reference genome must be provided as a multi-FASTA file.
-- `hnsm` must be installed and available in $PATH.
 
 Examples:
 1. Check all sequences in a block FA file:
-   fasr check tests/fasr/NC_000932.fa tests/fasr/A_tha.pair.fas
+   pgr fas check tests/fasr/NC_000932.fa tests/fasr/A_tha.pair.fas
 
 2. Check sequences for a specific species:
-   fasr check tests/fasr/NC_000932.fa tests/fasr/A_tha.pair.fas --name A_tha
+   pgr fas check tests/fasr/NC_000932.fa tests/fasr/A_tha.pair.fas --name A_tha
 
 "###,
         )

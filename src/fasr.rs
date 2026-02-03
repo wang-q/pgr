@@ -11,7 +11,6 @@ fn main() -> anyhow::Result<()> {
         .propagate_version(true)
         .arg_required_else_help(true)
         .color(ColorChoice::Auto)
-        .subcommand(cmd_fasr::check::make_subcommand())
         .subcommand(cmd_fasr::create::make_subcommand())
         .after_help(
             r###"
@@ -29,7 +28,6 @@ Subcommand groups:
     // Check which subcommand the user ran...
     match app.get_matches().subcommand() {
         // info
-        Some(("check", sub_matches)) => cmd_fasr::check::execute(sub_matches),
         // creation
         Some(("create", sub_matches)) => cmd_fasr::create::execute(sub_matches),
         // records

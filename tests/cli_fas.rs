@@ -228,13 +228,9 @@ fn command_replace() -> anyhow::Result<()> {
 
 #[test]
 fn command_check() -> anyhow::Result<()> {
-    match which::which("hnsm") {
-        Err(_) => return Ok(()),
-        Ok(_) => {}
-    }
-
-    let mut cmd = Command::cargo_bin("fasr")?;
+    let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
+        .arg("fas")
         .arg("check")
         .arg("tests/fasr/NC_000932.fa")
         .arg("tests/fasr/A_tha.pair.fas")
@@ -246,8 +242,9 @@ fn command_check() -> anyhow::Result<()> {
     assert!(stdout.lines().last().unwrap().contains("\tFAILED"));
 
     // --name
-    let mut cmd = Command::cargo_bin("fasr")?;
+    let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
+        .arg("fas")
         .arg("check")
         .arg("tests/fasr/NC_000932.fa")
         .arg("tests/fasr/A_tha.pair.fas")

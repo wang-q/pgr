@@ -1,4 +1,5 @@
 pub mod concat;
+pub mod check;
 pub mod consensus;
 pub mod cover;
 pub mod join;
@@ -22,6 +23,7 @@ pub fn make_subcommand() -> clap::Command {
         .subcommand_required(true)
         .arg_required_else_help(true)
         .subcommand(concat::make_subcommand())
+        .subcommand(check::make_subcommand())
         .subcommand(consensus::make_subcommand())
         .subcommand(cover::make_subcommand())
         .subcommand(filter::make_subcommand())
@@ -43,6 +45,7 @@ pub fn make_subcommand() -> clap::Command {
 pub fn execute(matches: &clap::ArgMatches) -> anyhow::Result<()> {
     match matches.subcommand() {
         Some(("concat", sub_matches)) => concat::execute(sub_matches),
+        Some(("check", sub_matches)) => check::execute(sub_matches),
         Some(("consensus", sub_matches)) => consensus::execute(sub_matches),
         Some(("cover", sub_matches)) => cover::execute(sub_matches),
         Some(("filter", sub_matches)) => filter::execute(sub_matches),
