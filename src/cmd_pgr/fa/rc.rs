@@ -4,10 +4,10 @@ use std::collections::HashSet;
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("rc")
-        .about("Reverse complement sequences in FA file(s)")
+        .about("Reverse complements sequences in FASTA file(s)")
         .after_help(
             r###"
-This command reverse complements DNA sequences in FA files.
+This command reverse complements DNA sequences in FASTA files.
 
 Features:
 * Process all sequences or only selected ones
@@ -37,7 +37,7 @@ Examples:
             Arg::new("infile")
                 .required(true)
                 .index(1)
-                .help("Input FA file to process"),
+                .help("Input FASTA file to process"),
         )
         .arg(
             Arg::new("list.txt")

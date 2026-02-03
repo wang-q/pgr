@@ -4,10 +4,10 @@ use std::io::Write;
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("six-frame")
-        .about("Translate DNA sequences in six frames")
+        .about("Translates DNA sequences in six frames")
         .after_help(
             r###"
-This command performs six-frame translation of DNA sequences and identifies ORFs.
+This command translates DNA sequences in six frames and identifies ORFs.
 
 Translation frames:
 * Forward strand: +1, +2, +3 (starting at positions 0, 1, 2)
@@ -45,7 +45,7 @@ Examples:
                 .required(true)
                 .num_args(1)
                 .index(1)
-                .help("Input FA file containing DNA sequences"),
+                .help("Input FASTA file to process"),
         )
         .arg(
             Arg::new("len")

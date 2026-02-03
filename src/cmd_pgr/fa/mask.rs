@@ -3,10 +3,10 @@ use clap::*;
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("mask")
-        .about("Mask regions in FA file(s)")
+        .about("Masks regions in FASTA file(s)")
         .after_help(
             r###"
-This command masks specified regions in FASTA sequences.
+This command masks regions in FASTA files based on a region file (BED/GFF/etc.).
 
 Masking modes:
 * Soft-masking (default): Convert to lowercase
@@ -43,7 +43,7 @@ Examples:
                 .required(true)
                 .num_args(1)
                 .index(1)
-                .help("Input FA file to process"),
+                .help("Input FASTA file to process"),
         )
         .arg(
             Arg::new("runlist")
@@ -56,7 +56,7 @@ Examples:
             Arg::new("hard")
                 .long("hard")
                 .action(ArgAction::SetTrue)
-                .help("Hard-mask regions (replace with N)"),
+                .help("Hard-mask regions (replace with N's)"),
         )
         .arg(
             Arg::new("outfile")

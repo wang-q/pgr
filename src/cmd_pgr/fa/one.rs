@@ -3,30 +3,23 @@ use clap::*;
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("one")
-        .about("Extract one FA record by name")
+        .about("Extracts one FASTA record by name")
         .after_help(
             r###"
-This command extracts a single FA record from an input file based on the provided sequence name.
-
-Notes:
-* Case-sensitive name matching
-* Stops after finding the first match
-* Supports both plain text and gzipped (.gz) files
+This command extracts a single record from a FASTA file by its sequence name (ID).
+If the index file (.fai) exists, it will be used for fast random access.
+Otherwise, the file will be scanned sequentially.
 
 Examples:
 1. Extract a record by name:
-   pgr fa one input.fa seq1
-
-2. Save to a file:
-   pgr fa one input.fa seq1 -o output.fa
-
+   pgr fa one input.fa chr1
 "###,
         )
         .arg(
             Arg::new("infile")
                 .required(true)
                 .index(1)
-                .help("Input FA file to process"),
+                .help("Input FASTA file to process"),
         )
         .arg(
             Arg::new("name")

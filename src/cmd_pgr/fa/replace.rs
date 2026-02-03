@@ -4,10 +4,10 @@ use std::collections::HashMap;
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("replace")
-        .about("Replace headers of a FA file based on a TSV mapping")
+        .about("Replaces headers of a FASTA file based on a TSV mapping")
         .after_help(
             r###"
-This command replaces sequence headers in a FA file based on a TSV mapping file.
+This command replaces sequence headers in a FASTA file based on a TSV mapping file.
 The TSV file should contain two or more columns: the original name and the replacement name.
 If more than two columns are provided, the sequence will be duplicated for each replacement name.
 Multiple lines of the same original_name will also duplicate the record.
@@ -30,7 +30,7 @@ Examples:
             Arg::new("infile")
                 .required(true)
                 .index(1)
-                .help("Input FA file to process"),
+                .help("Input FASTA file to process"),
         )
         .arg(
             Arg::new("replace.tsv")

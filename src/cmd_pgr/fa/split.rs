@@ -5,9 +5,9 @@ use std::io::Write;
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("split")
-        .about("Split FA file(s) into several files")
+        .about("Splits FASTA file(s) into several files")
         .after_help(
-            r#"
+            r###"
 Split FASTA files into multiple smaller files based on different modes:
 
 1. name: Create separate files for each sequence
@@ -36,7 +36,7 @@ Examples:
    pgr fa split about input.fa -c 1000000 -e -o output_dir
 
 
-"#,
+"###,
         )
         .arg(
             Arg::new("mode")
@@ -47,14 +47,14 @@ Examples:
                     builder::PossibleValue::new("name"),
                     builder::PossibleValue::new("about"),
                 ])
-                .help("Set the mode"),
+                .help("Split mode: 'name' or 'about'"),
         )
         .arg(
             Arg::new("infiles")
                 .required(true)
                 .num_args(1..)
                 .index(2)
-                .help("Set the input file to use"),
+                .help("Input FASTA file(s) to process"),
         )
         .arg(
             Arg::new("count")
@@ -62,7 +62,7 @@ Examples:
                 .short('c')
                 .num_args(1)
                 .value_parser(value_parser!(usize))
-                .help("bytes "),
+                .help("Approximate size in bytes (for 'about' mode)"),
         )
         .arg(
             Arg::new("even")
@@ -78,7 +78,7 @@ Examples:
                 .num_args(1)
                 .default_value("999")
                 .value_parser(value_parser!(usize))
-                .help("Max parts"),
+                .help("Maximum number of output files"),
         )
         .arg(
             Arg::new("outdir")
@@ -86,7 +86,7 @@ Examples:
                 .long("outdir")
                 .num_args(1)
                 .default_value("stdout")
-                .help("Output location. [stdout] for screen"),
+                .help("Output directory. [stdout] for screen"),
         )
 }
 

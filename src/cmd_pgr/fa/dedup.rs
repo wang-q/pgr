@@ -4,10 +4,10 @@ use std::collections::HashMap;
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("dedup")
-        .about("Deduplicate records in FA file(s)")
+        .about("Deduplicates records in FASTA file(s)")
         .after_help(
             r###"
-This command removes duplicate records from FA files.
+This command removes duplicate records from FASTA files.
 
 Deduplication modes:
 * By name (default): Compare sequence names only
@@ -53,7 +53,7 @@ Examples:
                 .required(true)
                 .num_args(1..)
                 .index(1)
-                .help("Input FA file(s) to process"),
+                .help("Input FASTA file(s) to process"),
         )
         .arg(
             Arg::new("desc")

@@ -3,10 +3,10 @@ use clap::*;
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("n50")
-        .about("Calculate N50 and other assembly statistics")
+        .about("Calculates N50 and other statistics")
         .after_help(
-            r#"
-This command calculates various assembly statistics from FA files.
+            r###"
+This command calculates various assembly statistics from FASTA files.
 
 Statistics:
 * N50/N90: Length where contigs of this length or longer include 50%/90% of the total
@@ -34,14 +34,14 @@ Examples:
 4. Transpose output for better readability:
    pgr fa n50 input.fa -N 50 -N 90 -S -t
 
-"#,
+"###,
         )
         .arg(
             Arg::new("infiles")
                 .required(true)
                 .num_args(1..)
                 .index(1)
-                .help("Set the input file to use"),
+                .help("Input FASTA file(s) to process"),
         )
         .arg(
             Arg::new("noheader")

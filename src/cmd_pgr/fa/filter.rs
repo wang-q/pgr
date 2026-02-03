@@ -4,10 +4,10 @@ use std::collections::BTreeSet;
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("filter")
-        .about("Filter and format sequences in FA file(s)")
+        .about("Filters and formats sequences in FASTA file(s)")
         .after_help(
             r###"
-This command filters and formats sequences in FA files.
+This command filters and formats sequences in FASTA files.
 
 Filters:
 * --minsize N: Keep sequences >= N bp
@@ -46,7 +46,7 @@ Notes:
                 .required(true)
                 .num_args(1..)
                 .index(1)
-                .help("Input FA file(s) to process"),
+                .help("Input FASTA file(s) to process"),
         )
         .arg(
             Arg::new("minsize")

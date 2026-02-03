@@ -6,7 +6,7 @@ use std::io::BufWriter;
 
 pub fn make_subcommand() -> Command {
     Command::new("to-2bit")
-        .about("Convert FASTA to 2bit")
+        .about("Converts FASTA to 2bit")
         .after_help(
             r###"
 Examples:
@@ -28,7 +28,7 @@ Examples:
                 .short('o')
                 .long("output")
                 .value_name("FILE")
-                .help("Output 2bit file")
+                .help("Output filename")
                 .required(true),
         )
         .arg(

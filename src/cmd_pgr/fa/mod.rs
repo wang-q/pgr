@@ -18,17 +18,19 @@ pub mod to_2bit;
 
 pub fn make_subcommand() -> clap::Command {
     clap::Command::new("fa")
-        .about("Fasta tools")
+        .about("FASTA tools")
         .after_help(
             r###"Subcommand groups:
 
 * info: size / count / masked / n50
 * records: one / some / order / split
-* transform: replace / rc / filter / dedup / mask / six-frame
+* transform: replace / rc / filter / dedup / mask / six-frame / to-2bit
 * indexing: gz / range
 
 "###,
         )
+        .subcommand_required(true)
+        .arg_required_else_help(true)
         .subcommand(count::make_subcommand())
         .subcommand(dedup::make_subcommand())
         .subcommand(filter::make_subcommand())

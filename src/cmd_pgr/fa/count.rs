@@ -3,32 +3,22 @@ use clap::*;
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("count")
-        .about("Count base statistics in FA file(s)")
+        .about("Counts base statistics in FASTA file(s)")
         .after_help(
             r###"
-This command calculates the base statistics (A, C, G, T, N) for each sequence in one or more FA files.
-It outputs a tab-separated table with sequence statistics.
-
-Output format:
-    #seq    len    A    C    G    T    N
-    ...sequence records...
-    total   sum    sumA sumC sumG sumT sumN
-
-Notes:
-* Non-standard bases are counted as N
-* Case-insensitive (both upper and lower case are counted)
-* Supports both plain text and gzipped (.gz) files
+This command calculates the base statistics (A, C, G, T, N) for each sequence in one or more FASTA files.
+It outputs a TSV table with the following columns:
+1. seq: Sequence name
+2. len: Sequence length
+3. A, C, G, T, N: Count of each base
+4. ignored: Count of other characters (e.g., IUPAC codes, gaps)
 
 Examples:
-1. Count base statistics for a single FA file:
+1. Count base statistics for a single FASTA file:
    pgr fa count input.fa
 
-2. Count base statistics for multiple FA files:
-   pgr fa count input1.fa input2.fa.gz
-
-3. Save the output to a file:
-   pgr fa count input.fa -o output.tsv
-
+2. Count base statistics for multiple FASTA files:
+   pgr fa count input1.fa input2.fa
 "###,
         )
         .arg(

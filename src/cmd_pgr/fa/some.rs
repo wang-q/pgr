@@ -4,7 +4,7 @@ use std::collections::HashSet;
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("some")
-        .about("Extract some FA records based on a list of names")
+        .about("Extracts FASTA records based on a list of names")
         .after_help(
             r###"
 This command extracts FASTA records from an input file based on a list of sequence names.
@@ -30,7 +30,7 @@ Examples:
             Arg::new("infile")
                 .required(true)
                 .index(1)
-                .help("Input FA file to process"),
+                .help("Input FASTA file to process"),
         )
         .arg(
             Arg::new("list.txt")

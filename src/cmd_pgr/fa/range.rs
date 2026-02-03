@@ -4,10 +4,10 @@ use pgr::libs::loc;
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("range")
-        .about("Extract sequence regions by coordinates")
+        .about("Extracts sequence regions by coordinates")
         .after_help(
             r###"
-This command extracts sequence regions from FA files using genomic coordinates.
+This command extracts sequence regions from FASTA files using genomic coordinates.
 
 Range format:
     seq_name(strand):start-end
@@ -59,7 +59,7 @@ Examples:
             Arg::new("infile")
                 .required(true)
                 .index(1)
-                .help("Set the input file to use"),
+                .help("Input FASTA file to process"),
         )
         .arg(
             Arg::new("ranges")

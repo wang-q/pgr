@@ -47,7 +47,7 @@ Examples:
             Arg::new("infile")
                 .required(true)
                 .index(1)
-                .help("Input FA file to compress"),
+                .help("Input FASTA file to compress"),
         )
         .arg(
             Arg::new("parallel")

@@ -4,10 +4,10 @@ use std::io::Write;
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("masked")
-        .about("Identify masked regions in FA file(s)")
+        .about("Identifies masked regions in FASTA file(s)")
         .after_help(
             r###"
-This command identifies masked regions in one or more FA files. Masked regions can be:
+This command identifies masked regions in one or more FASTA files. Masked regions can be:
 - Lowercase letters
 - Regions of N/n
 
@@ -37,7 +37,7 @@ Examples:
                 .required(true)
                 .num_args(1..)
                 .index(1)
-                .help("Input FA file(s) to process"),
+                .help("Input FASTA file(s) to process"),
         )
         .arg(
             Arg::new("gap")

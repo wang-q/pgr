@@ -4,10 +4,10 @@ use std::collections::BTreeMap;
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("order")
-        .about("Extract some FA records in the order specified by a list")
+        .about("Extracts FASTA records in the order specified by a list")
         .after_help(
             r###"
-This command extracts FA records from an input file in the order specified by a list of sequence names.
+This command extracts FASTA records from an input file in the order specified by a list of sequence names.
 
 Notes:
 * Case-sensitive name matching
@@ -30,7 +30,7 @@ Examples:
             Arg::new("infile")
                 .required(true)
                 .index(1)
-                .help("Input FA file to process"),
+                .help("Input FASTA file to process"),
         )
         .arg(
             Arg::new("list.txt")
