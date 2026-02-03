@@ -100,7 +100,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                         if i == j {
                             continue;
                         }
-                        let dist = pgr::libs::alignment::pair_d(block.entries[i].seq(), block.entries[j].seq());
+                        let dist = pgr::libs::alignment::pair_d(
+                            block.entries[i].seq(),
+                            block.entries[j].seq(),
+                        );
                         if dist < dist_idx.0 {
                             dist_idx = (dist, j);
                         }

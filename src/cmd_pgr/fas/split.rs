@@ -19,19 +19,19 @@ Note:
 
 Examples:
 1. Split block FA files into per-alignment files:
-   fasr split tests/fasr/example.fas -o output_dir
+   pgr fas split tests/fas/example.fas -o output_dir
 
 2. Split block FA files into per-chromosome files:
-   fasr split tests/fasr/example.fas -o output_dir --chr
+   pgr fas split tests/fas/example.fas -o output_dir --chr
 
 3. Simplify headers in output files:
-   fasr split tests/fasr/example.fas -o output_dir --simple
+   pgr fas split tests/fas/example.fas -o output_dir --simple
 
 4. Use a custom suffix for output files:
-   fasr split tests/fasr/example.fas -o output_dir --suffix .fa
+   pgr fas split tests/fas/example.fas -o output_dir --suffix .fa
 
 5. Output to stdout:
-   fasr split tests/fasr/example.fas
+   pgr fas split tests/fas/example.fas
 
 "###,
         )
@@ -94,7 +94,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     for infile in args.get_many::<String>("infiles").unwrap() {
         let mut reader = intspan::reader(infile);
 
-        while let Ok(block) = pgr::next_fas_block(&mut reader) {
+        while let Ok(block) = pgr::libs::fas::next_fas_block(&mut reader) {
             let filename = if is_chr {
                 let tname = block.entries.first().unwrap().range().name();
                 let tchr = block.entries.first().unwrap().range().chr();

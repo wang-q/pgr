@@ -289,8 +289,9 @@ fn command_create() -> anyhow::Result<()> {
 
 #[test]
 fn command_separate() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("fasr")?;
+    let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
+        .arg("fas")
         .arg("separate")
         .arg("tests/fas/example.fas")
         .arg("--rc")
@@ -314,8 +315,9 @@ fn command_separate_to() -> anyhow::Result<()> {
     let tempdir = TempDir::new()?;
     let tempdir_str = tempdir.path().to_str().unwrap();
 
-    let mut cmd = Command::cargo_bin("fasr")?;
-    cmd.arg("separate")
+    let mut cmd = Command::cargo_bin("pgr")?;
+    cmd.arg("fas")
+        .arg("separate")
         .arg("tests/fas/example.fas")
         .arg("--suffix")
         .arg(".tmp")
@@ -334,14 +336,19 @@ fn command_separate_to() -> anyhow::Result<()> {
 
 #[test]
 fn command_split() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("fasr")?;
-    let output = cmd.arg("split").arg("tests/fas/example.fas").output()?;
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("fas")
+        .arg("split")
+        .arg("tests/fas/example.fas")
+        .output()?;
     let stdout = String::from_utf8(output.stdout)?;
 
     assert_eq!(stdout.lines().count(), 27);
 
-    let mut cmd = Command::cargo_bin("fasr")?;
+    let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
+        .arg("fas")
         .arg("split")
         .arg("tests/fas/example.fas")
         .arg("--simple")
@@ -359,8 +366,9 @@ fn command_split_to() -> anyhow::Result<()> {
     let tempdir = TempDir::new()?;
     let tempdir_str = tempdir.path().to_str().unwrap();
 
-    let mut cmd = Command::cargo_bin("fasr")?;
-    cmd.arg("split")
+    let mut cmd = Command::cargo_bin("pgr")?;
+    cmd.arg("fas")
+        .arg("split")
         .arg("tests/fas/example.fas")
         .arg("--suffix")
         .arg(".tmp")
@@ -630,10 +638,7 @@ fn command_stat() -> anyhow::Result<()> {
 #[test]
 fn command_variation() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("fasr")?;
-    let output = cmd
-        .arg("variation")
-        .arg("tests/fas/example.fas")
-        .output()?;
+    let output = cmd.arg("variation").arg("tests/fas/example.fas").output()?;
     let stdout = String::from_utf8(output.stdout)?;
 
     assert_eq!(stdout.lines().count(), 81);

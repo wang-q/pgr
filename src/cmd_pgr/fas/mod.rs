@@ -3,6 +3,8 @@ pub mod cover;
 pub mod link;
 pub mod name;
 pub mod replace;
+pub mod separate;
+pub mod split;
 pub mod subset;
 
 pub fn make_subcommand() -> clap::Command {
@@ -15,6 +17,8 @@ pub fn make_subcommand() -> clap::Command {
         .subcommand(link::make_subcommand())
         .subcommand(name::make_subcommand())
         .subcommand(replace::make_subcommand())
+        .subcommand(separate::make_subcommand())
+        .subcommand(split::make_subcommand())
         .subcommand(subset::make_subcommand())
 }
 
@@ -25,6 +29,8 @@ pub fn execute(matches: &clap::ArgMatches) -> anyhow::Result<()> {
         Some(("link", sub_matches)) => link::execute(sub_matches),
         Some(("name", sub_matches)) => name::execute(sub_matches),
         Some(("replace", sub_matches)) => replace::execute(sub_matches),
+        Some(("separate", sub_matches)) => separate::execute(sub_matches),
+        Some(("split", sub_matches)) => split::execute(sub_matches),
         Some(("subset", sub_matches)) => subset::execute(sub_matches),
         _ => unreachable!(),
     }

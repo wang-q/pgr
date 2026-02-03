@@ -19,16 +19,16 @@ Note:
 
 Examples:
 1. Separate block FA files by species:
-   fasr separate tests/fasr/example.fas -o output_dir
+   pgr fas separate tests/fas/example.fas -o output_dir
 
 2. Separate block FA files and reverse-complement sequences:
-   fasr separate tests/fasr/example.fas -o output_dir --rc
+   pgr fas separate tests/fas/example.fas -o output_dir --rc
 
 3. Use a custom suffix for output files:
-   fasr separate tests/fasr/example.fas -o output_dir --suffix .fa
+   pgr fas separate tests/fas/example.fas -o output_dir --suffix .fa
 
 4. Output to stdout:
-   fasr separate tests/fasr/example.fas
+   pgr fas separate tests/fas/example.fas
 
 "###,
         )
@@ -83,7 +83,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     for infile in args.get_many::<String>("infiles").unwrap() {
         let mut reader = intspan::reader(infile);
 
-        while let Ok(block) = pgr::next_fas_block(&mut reader) {
+        while let Ok(block) = pgr::libs::fas::next_fas_block(&mut reader) {
             for entry in &block.entries {
                 let entry_name = entry.range().name(); // Don't borrow the following `range`
                 let mut range = entry.range().clone();
