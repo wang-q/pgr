@@ -6,20 +6,22 @@ use std::ops::Range;
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("masked")
-        .about("Identify masked regions in 2bit file(s)")
+        .about("Identifies masked regions in 2bit file(s)")
         .after_help(
             r###"
 This command identifies masked regions in one or more 2bit files. Masked regions can be:
-- Soft-masked regions (lowercase in FASTA, stored as mask blocks in 2bit)
-- Hard-masked regions (N/n in FASTA, stored as N blocks in 2bit)
+* Soft-masked regions (lowercase in FASTA, stored as mask blocks in 2bit)
+* Hard-masked regions (N/n in FASTA, stored as N blocks in 2bit)
 
 The output is a list of regions in the format:
     seq_name:start-end        # For regions spanning multiple positions
-    seq_name:position        # For single positions
+    seq_name:position         # For single positions
 
 Notes:
 * Coordinates are 1-based, inclusive
 * Adjacent masked positions are merged into a single region
+* 2bit files are binary and require random access (seeking)
+* Does not support stdin or gzipped inputs
 
 Examples:
 1. Identify masked regions (soft and hard):

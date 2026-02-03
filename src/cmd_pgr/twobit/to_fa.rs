@@ -4,9 +4,15 @@ use std::io::Write;
 
 pub fn make_subcommand() -> Command {
     Command::new("to-fa")
-        .about("Convert 2bit to FASTA")
+        .about("Converts 2bit to FASTA")
         .after_help(
             r###"
+This command converts 2bit files to FASTA format.
+
+Notes:
+* 2bit files are binary and require random access (seeking)
+* Does not support stdin or gzipped inputs
+
 Examples:
   # Convert entire 2bit file to FASTA
   pgr 2bit to-fa input.2bit -o output.fa
@@ -20,17 +26,17 @@ Examples:
 "###,
         )
         .arg(
-            Arg::new("input")
-                .help("Input 2bit file")
+            Arg::new("infile")
+                .help("Input 2bit file to process")
                 .required(true)
                 .index(1),
         )
         .arg(
-            Arg::new("output")
+            Arg::new("outfile")
                 .short('o')
-                .long("output")
+                .long("outfile")
                 .value_name("FILE")
-                .help("Output FASTA file")
+                .help("Output filename. [stdout] for screen")
                 .default_value("stdout"),
         )
         .arg(
@@ -51,8 +57,8 @@ Examples:
 }
 
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let input_path = args.get_one::<String>("input").unwrap();
-    let output_path = args.get_one::<String>("output").unwrap();
+    let input_path = args.get_one::<String>("infile").unwrap();
+    let output_path = args.get_one::<String>("outfile").unwrap();
     let no_mask = args.get_flag("no_mask");
     let line_width = args.get_one::<usize>("line").copied().unwrap_or(60);
 

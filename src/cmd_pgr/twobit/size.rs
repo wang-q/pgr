@@ -4,10 +4,14 @@ use pgr::libs::twobit::TwoBitFile;
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("size")
-        .about("Get sequence sizes from 2bit file")
+        .about("Counts total bases in 2bit file(s)")
         .after_help(
             r###"
 This command retrieves the sequence sizes from a 2bit file.
+
+Notes:
+* 2bit files are binary and require random access (seeking)
+* Does not support stdin or gzipped inputs
 
 Examples:
 1. Get sizes from a 2bit file:

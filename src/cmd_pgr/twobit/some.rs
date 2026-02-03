@@ -6,7 +6,7 @@ use std::io::Write;
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("some")
-        .about("Extract some records from a 2bit file based on a list of names")
+        .about("Extracts 2bit records based on a list of names")
         .after_help(
             r###"
 This command extracts sequences from a 2bit file based on a list of sequence names
@@ -16,8 +16,9 @@ Notes:
 * Case-sensitive name matching
 * One sequence name per line in the list file
 * Empty lines and lines starting with '#' are ignored
-* Input must be a 2bit file (stdin not supported due to seeking requirements)
 * Output format is FASTA
+* 2bit files are binary and require random access (seeking)
+* Does not support stdin or gzipped inputs
 
 Examples:
 1. Extract sequences listed in list.txt:

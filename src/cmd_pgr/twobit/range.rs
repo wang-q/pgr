@@ -6,7 +6,7 @@ use std::io::Write;
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("range")
-        .about("Extract sequence regions from 2bit file")
+        .about("Extracts sequence regions by coordinates")
         .after_help(
             r###"
 This command extracts sequence regions from 2bit files using genomic coordinates.
@@ -18,21 +18,18 @@ Range format:
 * strand: Optional, + (default) or -
 * start-end: Required, 1-based coordinates
 
-Examples:
-    Mito
-    I:1-100
-    I(+):90-150
-    S288c.I(-):190-200
-    II:21294-22075
-    II:23537-24097
-
-Input methods:
-* Command line: pgr 2bit range input.2bit "chr1:1-1000"
-* Range file: pgr 2bit range input.2bit -r ranges.txt
-
 Notes:
-* All coordinates (<start> and <end>) are based on the positive strand, regardless of the specified strand.
-* 2bit files support efficient random access, so no cache is needed.
+* All coordinates (<start> and <end>) are based on the positive strand, regardless of the specified strand
+* 2bit files support efficient random access, so no cache is needed
+* 2bit files are binary and require random access (seeking)
+* Does not support stdin or gzipped inputs
+
+Examples:
+1. Extract ranges from command line:
+   pgr 2bit range input.2bit "chr1:1-1000" "chr1(+):90-150"
+
+2. Extract ranges from file:
+   pgr 2bit range input.2bit -r ranges.txt
 
 "###,
         )
@@ -40,7 +37,7 @@ Notes:
             Arg::new("infile")
                 .required(true)
                 .index(1)
-                .help("Set the input 2bit file to use"),
+                .help("Input 2bit file to process"),
         )
         .arg(
             Arg::new("ranges")
