@@ -856,11 +856,11 @@ pub fn get_consensus_poa(seqs: &[&[u8]]) -> anyhow::Result<String> {
 }
 
 /// ```
-/// let seq = pgr::get_seq_loc("tests/fasr/NC_000932.fa", "NC_000932:1-10").unwrap();
+/// let seq = pgr::get_seq_loc("tests/fas/NC_000932.fa", "NC_000932:1-10").unwrap();
 /// assert_eq!(seq, "ATGGGCGAAC".to_string());
-/// let seq = pgr::get_seq_loc("tests/fasr/NC_000932.fa", "NC_000932(-):1-10").unwrap();
+/// let seq = pgr::get_seq_loc("tests/fas/NC_000932.fa", "NC_000932(-):1-10").unwrap();
 /// assert_eq!(seq, "GTTCGCCCAT".to_string());
-/// let res = pgr::get_seq_loc("tests/fasr/NC_000932.fa", "FAKE:1-10");
+/// let res = pgr::get_seq_loc("tests/fas/NC_000932.fa", "FAKE:1-10");
 /// assert_eq!(res.unwrap(), "".to_string());
 /// ```
 // cargo test --doc alignment::get_seq_loc
