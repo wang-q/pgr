@@ -119,6 +119,56 @@ fn test_lav_to_psl_redmine12502() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[test]
+fn test_lav_to_psl_lastz_pgr() -> anyhow::Result<()> {
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")?;
+    let tests_pgr = std::path::Path::new(&manifest_dir).join("tests/pgr");
+    let input_path = tests_pgr.join("lastz.lav");
+    let expected_path = tests_pgr.join("lastz.psl");
+
+    if !input_path.exists() || !expected_path.exists() {
+        eprintln!("Skipping test lastz_pgr because files not found");
+        return Ok(());
+    }
+
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let assert = cmd
+        .arg("lav")
+        .arg("to-psl")
+        .arg(&input_path)
+        .assert()
+        .success();
+
+    let output = assert.get_output();
+    let output_str = std::str::from_utf8(&output.stdout)?;
+
+    let expected_content = fs::read_to_string(&expected_path)?;
+
+    let output_lines: Vec<String> = output_str
+        .lines()
+        .filter(|l| !l.starts_with("#") && !l.trim().is_empty())
+        .map(|l| l.to_string())
+        .collect();
+
+    let expected_lines: Vec<String> = expected_content
+        .lines()
+        .filter(|l| !l.starts_with("#") && !l.trim().is_empty())
+        .map(|l| l.to_string())
+        .collect();
+
+    assert_eq!(
+        output_lines.len(),
+        expected_lines.len(),
+        "Line count mismatch for lastz.psl"
+    );
+
+    for (i, (out, exp)) in output_lines.iter().zip(expected_lines.iter()).enumerate() {
+        assert_eq!(out, exp, "Mismatch at line {} for lastz.psl", i + 1);
+    }
+
+    Ok(())
+}
+
 fn run_ucsc_test(name: &str) -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("pgr")?;
     let input_path = PathBuf::from("tests/lav").join(format!("{}.lav", name));

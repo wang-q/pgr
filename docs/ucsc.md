@@ -4,9 +4,10 @@
 
 ```bash
 # Lastz
-lastz tests/pgr/pseudocat.fa tests/pgr/pseudopig.fa |
-    lavToPsl stdin stdout \
-    > tests/pgr/lastz.psl
+lastz tests/pgr/pseudocat.fa tests/pgr/pseudopig.fa \
+    > tests/pgr/lastz.lav
+
+lavToPsl tests/pgr/lastz.lav stdout > tests/pgr/lastz.psl
 
 # Prep
 pgr fa size tests/pgr/pseudocat.fa -o tests/pgr/pseudocat.sizes
