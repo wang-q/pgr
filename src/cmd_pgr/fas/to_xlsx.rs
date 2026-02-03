@@ -11,11 +11,12 @@ use pgr::libs::fas::{next_fas_block, FasBlock};
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("to-xlsx")
-        .about("List variations (substitutions/indels)")
+        .about("Export variations (substitutions/indels) to Excel")
         .after_help(
             r###"
-* <infiles> are paths to block fasta files, .fas.gz is supported
-    * infile == stdin means reading from STDIN
+Exports variations (substitutions and indels) from block FA files to an Excel file.
+
+Input files can be gzipped. If the input file is 'stdin', data is read from standard input.
 
 Examples:
 1. Export variations to an Excel file:
@@ -37,7 +38,7 @@ Examples:
                 .required(true)
                 .num_args(1..)
                 .index(1)
-                .help("Set the input files to use"),
+                .help("Input block FA file(s) to process"),
         )
         .arg(
             Arg::new("wrap")
@@ -57,7 +58,7 @@ Examples:
             Arg::new("outgroup")
                 .long("outgroup")
                 .action(ArgAction::SetTrue)
-                .help("There are outgroups at the end of each block"),
+                .help("Indicates the presence of outgroups at the end of each block"),
         )
         .arg(
             Arg::new("nosingle")

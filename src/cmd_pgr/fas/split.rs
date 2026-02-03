@@ -8,7 +8,7 @@ pub fn make_subcommand() -> Command {
         .about("Split block FA files into per-alignment or per-chromosome FA files")
         .after_help(
             r###"
-This subcommand splits block FA files into individual FA files, either per alignment or per chromosome.
+Splits block FA files into individual FA files, either per alignment or per chromosome.
 
 Input files can be gzipped. If the input file is 'stdin', data is read from standard input.
 

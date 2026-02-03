@@ -7,8 +7,9 @@ pub fn make_subcommand() -> Command {
         .about("Basic statistics of block FA files")
         .after_help(
             r###"
-* <infiles> are paths to block fasta files, .fas.gz is supported
-    * infile == stdin means reading from STDIN
+Calculates basic statistics of block FA files (length, comparable, difference, etc.).
+
+Input files can be gzipped. If the input file is 'stdin', data is read from standard input.
 
 Examples:
 1. Get statistics for block FA files:
@@ -27,13 +28,13 @@ Examples:
                 .required(true)
                 .num_args(1..)
                 .index(1)
-                .help("Set the input files to use"),
+                .help("Input block FA file(s) to process"),
         )
         .arg(
             Arg::new("has_outgroup")
                 .long("outgroup")
                 .action(ArgAction::SetTrue)
-                .help("There are outgroups at the end of each block"),
+                .help("Indicates the presence of outgroups at the end of each block"),
         )
         .arg(
             Arg::new("outfile")

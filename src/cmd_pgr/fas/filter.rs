@@ -7,7 +7,7 @@ pub fn make_subcommand() -> Command {
         .about("Filter blocks and optionally format sequences")
         .after_help(
             r###"
-This subcommand filters blocks in block FA files based on species name and sequence length.
+Filters blocks in block FA files based on species name and sequence length.
 It can also format sequences by converting them to uppercase or removing dashes.
 
 Input files can be gzipped. If the input file is 'stdin', data is read from standard input.

@@ -8,8 +8,9 @@ pub fn make_subcommand() -> Command {
         .about("Join multiple block fasta files by a common target")
         .after_help(
             r###"
-* <infiles> are paths to block fasta files, .fas.gz is supported
-    * infile == stdin means reading from STDIN
+Joins multiple block FA files based on a common target sequence.
+
+Input files can be gzipped. If the input file is 'stdin', data is read from standard input.
 
 Examples:
 1. Join multiple block FA files:
@@ -28,13 +29,13 @@ Examples:
                 .required(true)
                 .num_args(1..)
                 .index(1)
-                .help("Set the input files to use"),
+                .help("Input block FA file(s) to process"),
         )
         .arg(
             Arg::new("name")
                 .long("name")
                 .num_args(1)
-                .help("According to this species. Default is the first one"),
+                .help("Target species name. Default is the first species"),
         )
         .arg(
             Arg::new("outfile")

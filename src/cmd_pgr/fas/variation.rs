@@ -7,14 +7,13 @@ pub fn make_subcommand() -> Command {
         .about("List variations (substitutions/indels)")
         .after_help(
             r###"
-* <infiles> are paths to block fasta files, .fas.gz is supported
-    * infile == stdin means reading from STDIN
+Lists variations (substitutions and indels) from block FA files in TSV format.
 
-* Filter out complex variations
-    * tsv-filter -H --ne freq:-1
+Input files can be gzipped. If the input file is 'stdin', data is read from standard input.
 
-* Filter out singletons
-    * tsv-filter -H --ne freq:1
+Note:
+- Filter out complex variations: `tsv-filter -H --ne freq:-1`
+- Filter out singletons: `tsv-filter -H --ne freq:1`
 
 Examples:
 1. List substitutions from block FA files:
@@ -48,7 +47,7 @@ Examples:
             Arg::new("has_outgroup")
                 .long("outgroup")
                 .action(ArgAction::SetTrue)
-                .help("There are outgroups at the end of each block"),
+                .help("Indicates the presence of outgroups at the end of each block"),
         )
         .arg(
             Arg::new("outfile")

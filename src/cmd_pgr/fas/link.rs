@@ -8,7 +8,7 @@ pub fn make_subcommand() -> Command {
         .about("Output bi/multi-lateral range links from block FA files")
         .after_help(
             r###"
-This subcommand extracts bi/multi-lateral range links from block FA files.
+Extracts bi/multi-lateral range links from block FA files.
 
 Input files can be gzipped. If the input file is 'stdin', data is read from standard input.
 

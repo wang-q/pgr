@@ -7,7 +7,7 @@ pub fn make_subcommand() -> Command {
         .about("Output covered regions on chromosomes")
         .after_help(
             r###"
-This subcommand outputs the coverage of sequences on chromosomes from block FA files.
+Calculates the coverage of sequences on chromosomes from block FA files.
 
 Input files can be gzipped. If the input file is 'stdin', data is read from standard input.
 

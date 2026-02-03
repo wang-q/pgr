@@ -8,14 +8,15 @@ pub fn make_subcommand() -> Command {
         .about("Replace headers in block FA files")
         .after_help(
             r###"
-* --required <replace.tsv>: Path to the TSV file containing replacement rules.
-    - The TSV file should contain one or more fields:
-      - `original_name  replace_name   more_replace_name`
-      - One field: Deletes the entire alignment block for the specified species.
-      - Three or more fields: Duplicates the entire alignment block for each replacement name.
+Replaces headers in block FA files using a TSV file.
 
-* <infiles> are paths to block fasta files, .fas.gz is supported
-    * infile == stdin means reading from STDIN
+Input files can be gzipped. If the input file is 'stdin', data is read from standard input.
+
+Note:
+- The replacement file (--required) should contain one or more fields:
+  - `original_name  replace_name   more_replace_name`
+- One field: Deletes the entire alignment block for the specified species.
+- Three or more fields: Duplicates the entire alignment block for each replacement name.
 
 Examples:
 1. Replace species names in a block FA file:

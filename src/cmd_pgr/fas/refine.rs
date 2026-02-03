@@ -9,20 +9,14 @@ pub fn make_subcommand() -> Command {
         .about("Realign files with external programs and trim unwanted regions")
         .after_help(
             r###"
-* <infiles> are paths to block fasta files, .fas.gz is supported
-    * infile == stdin means reading from STDIN
+Realigns sequences in block FA files using external programs (clustalw, mafft, muscle) and trims unwanted regions.
 
-* List of msa:
-    * mafft
-    * muscle
-    * clustalw
-    * none: means skip realigning
+Input files can be gzipped. If the input file is 'stdin', data is read from standard input.
 
-* For aligned files converted from .axt or .maf, we can use the `--quick` option
-  to align only indel adjacent regions
-
-* Running in parallel mode with 1 reader, 1 writer and the corresponding number of workers
-    * The order of blocks in output may be different from the original
+Note:
+- Supported MSA programs: mafft, muscle, clustalw, none (skip realigning).
+- The `--quick` option aligns only indel-adjacent regions (useful for .axt/.maf conversions).
+- Supports parallel processing. The output order may differ from the original.
 
 Examples:
 1. Realign block FA files using clustalw (default):
@@ -96,7 +90,7 @@ Examples:
                 .value_parser(value_parser!(usize))
                 .num_args(1)
                 .default_value("1")
-                .help("Running in parallel mode, the number of threads"),
+                .help("Number of threads for parallel processing"),
         )
         .arg(
             Arg::new("outfile")

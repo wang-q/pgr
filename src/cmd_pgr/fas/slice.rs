@@ -8,14 +8,12 @@ pub fn make_subcommand() -> Command {
         .about("Extract alignment slices")
         .after_help(
             r###"
-Extract alignment slices from block FA files based on a runlist JSON file.
+Extracts alignment slices from block FA files based on a runlist JSON file.
 
-* --required <runlist.json>: A JSON file describing ranges to extract.
-    - The JSON object keys are chromosome/sequence names.
-    - The values are runlists (e.g., "1-100,200-300").
+Input files can be gzipped. If the input file is 'stdin', data is read from standard input.
 
-* <infiles> are paths to block fasta files, .fas.gz is supported
-    * infile == stdin means reading from STDIN
+Note:
+- The JSON file (--required) keys are chromosome/sequence names, and values are runlists (e.g., "1-100,200-300").
 
 Examples:
 1. Extract slices defined in a JSON file:
@@ -42,13 +40,13 @@ Examples:
                 .required(true)
                 .num_args(1..)
                 .index(1)
-                .help("Set the input files to use"),
+                .help("Input block FA file(s) to process"),
         )
         .arg(
             Arg::new("name")
                 .long("name")
                 .num_args(1)
-                .help("According to this species. Default is the first one"),
+                .help("Reference species name. Default is the first species"),
         )
         .arg(
             Arg::new("outfile")

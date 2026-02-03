@@ -34,7 +34,7 @@ Examples:
                 .required(true)
                 .num_args(1..)
                 .index(1)
-                .help("Input files"),
+                .help("Input block FA file(s) to process"),
         )
         .arg(
             Arg::new("outfile")
@@ -42,7 +42,7 @@ Examples:
                 .short('o')
                 .num_args(1)
                 .default_value("stdout")
-                .help("Output filename. [stdout] prints to screen"),
+                .help("Output filename. [stdout] for screen"),
         )
         .arg(
             Arg::new("sizes")

@@ -7,12 +7,14 @@ pub fn make_subcommand() -> Command {
         .about("Concatenate sequence pieces of the same species")
         .after_help(
             r###"
-* --required <name.lst>: File with a list of species names to keep, one per line.
-    - The order of species in the output follows the order in the <name.lst> file.
-    - Missing sequences are filled with gaps (`-`).
+Concatenates sequence pieces of the same species from block FA files.
 
-* <infiles> are paths to block fasta files, .fas.gz is supported
-    * infile == stdin means reading from STDIN
+Input files can be gzipped. If the input file is 'stdin', data is read from standard input.
+
+Note:
+- The --required file lists species names to keep, one per line.
+- The order of species in the output follows the order in the <name.lst> file.
+- Missing sequences are filled with gaps (`-`).
 
 Examples:
 1. Concatenate sequences and output in FASTA format:

@@ -7,11 +7,13 @@ pub fn make_subcommand() -> Command {
         .about("Extract a subset of species from block FA files")
         .after_help(
             r###"
-* --required <name.lst>: A file containing a list of species names to keep, one per line.
-    - The order of species in the output will follow the order in <name.lst>.
+Extracts a subset of species from block FA files.
 
-* <infiles> are paths to block fasta files, .fas.gz is supported
-    * infile == stdin means reading from STDIN
+Input files can be gzipped. If the input file is 'stdin', data is read from standard input.
+
+Note:
+- The --required file lists species names to keep, one per line.
+- The order of species in the output follows the order in the <name.lst> file.
 
 Examples:
 1. Extract a subset of species:
@@ -38,7 +40,7 @@ Examples:
                 .required(true)
                 .num_args(1..)
                 .index(1)
-                .help("Set the input files to use"),
+                .help("Input block FA file(s) to process"),
         )
         .arg(
             Arg::new("strict")

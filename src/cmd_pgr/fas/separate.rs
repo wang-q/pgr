@@ -8,7 +8,7 @@ pub fn make_subcommand() -> Command {
         .about("Separate block FA files by species")
         .after_help(
             r###"
-This subcommand separates block FA files by species, creating individual output files for each species.
+Separates block FA files by species, creating individual output files for each species.
 
 Input files can be gzipped. If the input file is 'stdin', data is read from standard input.
 
