@@ -62,7 +62,7 @@ impl FasEntry {
     ///
     /// ```
     /// # use intspan::Range;
-    /// # use pgr::FasEntry;
+    /// # use pgr::libs::fas::FasEntry;
     /// let range = Range::from("I", 1, 10);
     /// let seq = "ACAGCTGA-AA".as_bytes().to_vec();
     /// let entry = FasEntry::from(&range, &seq);
@@ -83,7 +83,7 @@ impl FasEntry {
 ///
 /// ```
 /// # use intspan::Range;
-/// # use pgr::FasEntry;
+/// # use pgr::libs::fas::FasEntry;
 /// let range = Range::from("I", 1, 10);
 /// let seq = "ACAGCTGA-AA".as_bytes().to_vec();
 /// let entry = FasEntry::from(&range, &seq);
@@ -204,7 +204,8 @@ GCATATAATATGAACCAATATCTATTTCATGGAGAGACTATGATAT-CCCCGTACTATTTCTA
 GC-TAAAATATGAA-CGATATTTA-CCTGTAGAGGGACTATGGGAT-CCCCATACTACTTT--
 ";
         let mut reader = BufReader::new(str.as_bytes());
-        let block = crate::next_fas_block(&mut reader).unwrap();
+
+        let block = crate::libs::fas::next_fas_block(&mut reader).unwrap();
         assert_eq!(
             block.entries.get(0).unwrap().range.to_string(),
             "S288c.I(+):13267-13287".to_string()
@@ -214,7 +215,7 @@ GC-TAAAATATGAA-CGATATTTA-CCTGTAGAGGGACTATGGGAT-CCCCATACTACTTT--
             "RM11.gi_61385832(-):5590-5610".to_string()
         );
 
-        let block = crate::next_fas_block(&mut reader).unwrap();
+        let block = crate::libs::fas::next_fas_block(&mut reader).unwrap();
         assert_eq!(
             String::from_utf8(block.entries.get(1).unwrap().seq.clone()).unwrap(),
             "GCGTATAATATGAACCAGTATCTTTTTCATGAAG-GGCTATGGTATACTCCATATTACTTCTA".to_string()

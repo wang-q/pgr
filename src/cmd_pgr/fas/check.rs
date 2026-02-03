@@ -84,7 +84,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     for infile in args.get_many::<String>("infiles").unwrap() {
         let mut reader = intspan::reader(infile);
 
-        while let Ok(block) = pgr::next_fas_block(&mut reader) {
+        while let Ok(block) = pgr::libs::fas::next_fas_block(&mut reader) {
             let block_names = block.names;
 
             // Check if a specific species is requested
@@ -110,7 +110,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 }
 
 fn check_seq(
-    entry: &pgr::FasEntry,
+    entry: &pgr::libs::fas::FasEntry,
     reader: &mut loc::Input,
     loc_of: &IndexMap<String, (u64, usize)>,
 ) -> anyhow::Result<String> {
