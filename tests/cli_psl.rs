@@ -112,46 +112,46 @@ fn test_histo_cover_spread() -> anyhow::Result<()> {
 }
 
 //
-// psl tochain
+// psl to-chain
 //
 
 #[test]
-fn test_tochain_fix_strand() -> anyhow::Result<()> {
+fn test_to_chain_fix_strand() -> anyhow::Result<()> {
     let temp = TempDir::new()?;
-    let input = get_path("tochain", "input", "mtor.psl");
-    let expected_output = get_path("tochain", "expected", "example3.chain");
-    let output = temp.path().join("output.chain");
+    let input = get_path("to_chain", "input", "mtor.psl");
+    let expected_output = get_path("to_chain", "expected", "example3.chain");
+    let output = temp.path().join("out.chain");
 
     let mut cmd = Command::cargo_bin("pgr")?;
     cmd.arg("psl")
-        .arg("tochain")
+        .arg("to-chain")
         .arg(&input)
-        .arg("-o")
+        .arg("--output")
         .arg(&output)
         .arg("--fix-strand");
     cmd.assert().success();
 
     let output_content = fs::read_to_string(&output)?;
     let expected_content = fs::read_to_string(&expected_output)?;
-
     assert_eq!(output_content, expected_content);
 
     Ok(())
 }
 
 #[test]
-fn test_tochain_fail_neg_strand() -> anyhow::Result<()> {
+fn test_to_chain_fail_neg_strand() -> anyhow::Result<()> {
     let temp = TempDir::new()?;
-    let input = get_path("tochain", "input", "mtor.psl");
-    let output = temp.path().join("fail.chain");
+    let input = get_path("to_chain", "input", "mtor.psl");
+    let output = temp.path().join("out.chain");
 
     let mut cmd = Command::cargo_bin("pgr")?;
     cmd.arg("psl")
-        .arg("tochain")
+        .arg("to-chain")
         .arg(&input)
         .arg("-o")
         .arg(&output);
-    // Should fail because mtor.psl has negative target strand
+    
+    // Should fail because of negative target strand without --fix-strand
     cmd.assert().failure();
 
     Ok(())

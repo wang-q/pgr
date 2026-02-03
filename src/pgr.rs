@@ -26,23 +26,22 @@ fn main() -> anyhow::Result<()> {
         .after_help(
             r###"Subcommand groups:
 
-* Fasta files
-    * info: size / count / masked / n50
-    * records: one / some / order / split
-    * transform: replace / rc / filter / dedup / mask / sixframe
-    * indexing: gz / range / prefilter
+* Sequences:
+    * 2bit - Random access to .2bit files
+    * fa   - FASTA operations: index, filter, stats
+    * fas  - Block FASTA tools: consensus, variation
+    * fq   - FASTQ operations: interleave, convert
 
 * Genome alignments:
-    * chain
-    * net
-    * axt
-    * lav
-    * maf
-    * psl
-    * pl
-    * 2bit
-    * fa
-    * fq
+    * chain - Chain tools: sort, net, stitch
+    * net   - Net tools: filter, syntenic
+    * axt   - AXT conversion and sorting
+    * lav   - LAV to PSL conversion
+    * maf   - MAF to FASTA conversion
+    * psl   - PSL operations: stats, to-chain
+
+* Pipelines:
+    * pl - Integrated pipelines: UCSC, TRF, etc.
 
 "###,
         );

@@ -4,13 +4,13 @@ use std::io::{BufRead, Write};
 use std::str::FromStr;
 
 pub fn make_subcommand() -> Command {
-    Command::new("tochain")
+    Command::new("to-chain")
         .about("Convert PSL to Chain format")
         .after_help(
             r###"
 Examples:
   # Convert PSL to Chain
-  pgr psl tochain in.psl -o out.chain
+  pgr psl to-chain in.psl -o out.chain
 "###,
         )
         .arg(
