@@ -29,7 +29,7 @@ mkdir -p tests/pgr/pslChain
 # name of a .2bit file
 axtChain -minScore=1000 -linearGap=loose -psl tests/pgr/lastz.psl \
     tests/pgr/pseudocat.2bit tests/pgr/pseudopig.2bit \
-    tests/pgr/pslChain/lastz.tmp
+    tests/pgr/pslChain/lastz.raw.chain
 
 # chainAntiRepeat - Get rid of chains that are primarily the results of
 # repeats and degenerate DNA
@@ -39,7 +39,7 @@ axtChain -minScore=1000 -linearGap=loose -psl tests/pgr/lastz.psl \
 #    -minScore=N - minimum score (after repeat stuff) to pass
 #    -noCheckScore=N - score that will pass without checks (speed tweak)
 chainAntiRepeat tests/pgr/pseudocat.2bit tests/pgr/pseudopig.2bit \
-    tests/pgr/pslChain/lastz.tmp tests/pgr/pslChain/lastz.chain
+    tests/pgr/pslChain/lastz.raw.chain tests/pgr/pslChain/lastz.chain
 
 # Merge & PreNet
 # chainMergeSort - Combine sorted files into larger sorted file
