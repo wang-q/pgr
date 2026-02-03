@@ -14,7 +14,7 @@ pub mod sixframe;
 pub mod size;
 pub mod some;
 pub mod split;
-pub mod to2bit;
+pub mod to_2bit;
 
 pub fn make_subcommand() -> clap::Command {
     clap::Command::new("fa")
@@ -45,7 +45,7 @@ pub fn make_subcommand() -> clap::Command {
         .subcommand(some::make_subcommand())
         .subcommand(split::make_subcommand())
         .subcommand(sixframe::make_subcommand())
-        .subcommand(to2bit::make_subcommand())
+        .subcommand(to_2bit::make_subcommand())
 }
 
 pub fn execute(matches: &clap::ArgMatches) -> anyhow::Result<()> {
@@ -66,7 +66,7 @@ pub fn execute(matches: &clap::ArgMatches) -> anyhow::Result<()> {
         Some(("size", sub_matches)) => size::execute(sub_matches),
         Some(("some", sub_matches)) => some::execute(sub_matches),
         Some(("split", sub_matches)) => split::execute(sub_matches),
-        Some(("to2bit", sub_matches)) => to2bit::execute(sub_matches),
+        Some(("to-2bit", sub_matches)) => to_2bit::execute(sub_matches),
         _ => Ok(()),
     }
 }

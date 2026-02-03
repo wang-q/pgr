@@ -4,7 +4,7 @@ use std::fs;
 use tempfile::TempDir;
 
 #[test]
-fn test_2bit_to2bit() -> anyhow::Result<()> {
+fn test_2bit_to_2bit() -> anyhow::Result<()> {
     let temp = TempDir::new()?;
     let input = temp.path().join("test.fa");
     let output = temp.path().join("out.2bit");
@@ -13,7 +13,7 @@ fn test_2bit_to2bit() -> anyhow::Result<()> {
 
     let mut cmd = Command::cargo_bin("pgr")?;
     cmd.arg("fa")
-        .arg("to2bit")
+        .arg("to-2bit")
         .arg(&input)
         .arg("-o")
         .arg(&output);
@@ -38,7 +38,7 @@ fn test_2bit_to2bit() -> anyhow::Result<()> {
 }
 
 #[test]
-fn test_2bit_to2bit_strip_version() -> anyhow::Result<()> {
+fn test_2bit_to_2bit_strip_version() -> anyhow::Result<()> {
     let temp = TempDir::new()?;
     let input = temp.path().join("test_ver.fa");
     let output = temp.path().join("out_ver.2bit");
@@ -47,7 +47,7 @@ fn test_2bit_to2bit_strip_version() -> anyhow::Result<()> {
 
     let mut cmd = Command::cargo_bin("pgr")?;
     cmd.arg("fa")
-        .arg("to2bit")
+        .arg("to-2bit")
         .arg(&input)
         .arg("-o")
         .arg(&output)
@@ -63,7 +63,7 @@ fn test_2bit_to2bit_strip_version() -> anyhow::Result<()> {
 }
 
 #[test]
-fn test_2bit_to2bit_mask() -> anyhow::Result<()> {
+fn test_2bit_to_2bit_mask() -> anyhow::Result<()> {
     let temp = TempDir::new()?;
     let input = temp.path().join("test_mask.fa");
     let output = temp.path().join("out_mask.2bit");
@@ -72,7 +72,7 @@ fn test_2bit_to2bit_mask() -> anyhow::Result<()> {
 
     let mut cmd = Command::cargo_bin("pgr")?;
     cmd.arg("fa")
-        .arg("to2bit")
+        .arg("to-2bit")
         .arg(&input)
         .arg("-o")
         .arg(&output);
@@ -101,7 +101,7 @@ fn test_2bit_tofa_basic() -> anyhow::Result<()> {
     // Create 2bit first
     let mut cmd = Command::cargo_bin("pgr")?;
     cmd.arg("fa")
-        .arg("to2bit")
+        .arg("to-2bit")
         .arg(&input)
         .arg("-o")
         .arg(&twobit);
@@ -140,7 +140,7 @@ fn test_2bit_range_basic() -> anyhow::Result<()> {
     // Create 2bit
     let mut cmd = Command::cargo_bin("pgr")?;
     cmd.arg("fa")
-        .arg("to2bit")
+        .arg("to-2bit")
         .arg(&input)
         .arg("-o")
         .arg(&twobit);
@@ -195,7 +195,7 @@ fn test_2bit_range_rgfile() -> anyhow::Result<()> {
     // Create 2bit
     let mut cmd = Command::cargo_bin("pgr")?;
     cmd.arg("fa")
-        .arg("to2bit")
+        .arg("to-2bit")
         .arg(&input)
         .arg("-o")
         .arg(&twobit);
@@ -232,7 +232,7 @@ fn test_2bit_tofa_mask() -> anyhow::Result<()> {
     // Create 2bit
     let mut cmd = Command::cargo_bin("pgr")?;
     cmd.arg("fa")
-        .arg("to2bit")
+        .arg("to-2bit")
         .arg(&input)
         .arg("-o")
         .arg(&twobit);
@@ -277,7 +277,7 @@ fn test_2bit_size() -> anyhow::Result<()> {
     // Create 2bit file first
     let mut cmd = Command::cargo_bin("pgr")?;
     cmd.arg("fa")
-        .arg("to2bit")
+        .arg("to-2bit")
         .arg(&input)
         .arg("-o")
         .arg(&twobit);
@@ -307,7 +307,7 @@ fn test_2bit_size_flags() -> anyhow::Result<()> {
     // Create 2bit
     let mut cmd = Command::cargo_bin("pgr")?;
     cmd.arg("fa")
-        .arg("to2bit")
+        .arg("to-2bit")
         .arg(&input)
         .arg("-o")
         .arg(&twobit);
@@ -342,7 +342,7 @@ fn test_2bit_size_multiple() -> anyhow::Result<()> {
     // Create 2bit files
     for (inp, out) in [(&input1, &twobit1), (&input2, &twobit2)] {
         let mut cmd = Command::cargo_bin("pgr")?;
-        cmd.arg("fa").arg("to2bit").arg(inp).arg("-o").arg(out);
+        cmd.arg("fa").arg("to-2bit").arg(inp).arg("-o").arg(out);
         cmd.assert().success();
     }
 
@@ -616,7 +616,7 @@ fn test_2bit_some() -> anyhow::Result<()> {
     // Create 2bit
     let mut cmd = Command::cargo_bin("pgr")?;
     cmd.arg("fa")
-        .arg("to2bit")
+        .arg("to-2bit")
         .arg(&input)
         .arg("-o")
         .arg(&twobit);

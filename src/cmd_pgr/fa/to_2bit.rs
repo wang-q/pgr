@@ -5,15 +5,15 @@ use std::fs::File;
 use std::io::BufWriter;
 
 pub fn make_subcommand() -> Command {
-    Command::new("to2bit")
+    Command::new("to-2bit")
         .about("Convert FASTA to 2bit")
         .after_help(
             r###"
 Examples:
   # Convert FASTA to 2bit
-  pgr fa to2bit in.fa -o out.2bit
-  pgr fa to2bit in1.fa in2.fa -o out.2bit
-  pgr fa to2bit in.fa -o out.2bit --no-mask
+  pgr fa to-2bit in.fa -o out.2bit
+  pgr fa to-2bit in1.fa in2.fa -o out.2bit
+  pgr fa to-2bit in.fa -o out.2bit --no-mask
 "###,
         )
         .arg(

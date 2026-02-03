@@ -69,9 +69,9 @@ hyperfine --warmup 5 --export-markdown gz.md.tmp \
     -n "faToTwoBit" \
     'rm -f tests/index/final.contigs.2bit;
      faToTwoBit tests/index/final.contigs.fa tests/index/final.contigs.2bit' \
-    -n "pgr fa to2bit" \
+    -n "pgr fa to-2bit" \
     'rm -f tests/index/final.contigs.2bit;
-     pgr fa to2bit tests/index/final.contigs.fa -o tests/index/final.contigs.2bit'
+     pgr fa to-2bit tests/index/final.contigs.fa -o tests/index/final.contigs.2bit'
 
 cat gz.md.tmp
 
@@ -84,7 +84,7 @@ cat gz.md.tmp
 | `pgr fa gz`         | 42.2 ± 0.9 |     40.8 |     44.6 | 1.38 ± 0.05 |
 | `pgr fa gz -p 2`    | 32.7 ± 1.3 |     30.7 |     40.5 | 1.07 ± 0.06 |
 | `faToTwoBit`        | 30.5 ± 1.0 |     29.0 |     33.7 |        1.00 |
-| `pgr fa to2bit`     | 31.1 ± 2.4 |     28.1 |     38.3 | 1.02 ± 0.08 |
+| `pgr fa to-2bit`    | 31.1 ± 2.4 |     28.1 |     38.3 | 1.02 ± 0.08 |
 
 ### Create `.loc` and `.fai`
 
