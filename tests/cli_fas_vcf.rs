@@ -39,31 +39,6 @@ fn command_vcf_basic() -> anyhow::Result<()> {
 }
 
 #[test]
-fn command_vcf_ydl_basic() -> anyhow::Result<()> {
-    let stdout = run_vcf(&["tests/fasr/YDL184C.fas"])?;
-
-    assert!(stdout.starts_with("##fileformat=VCF"), "vcf header");
-    assert!(
-        stdout.contains("#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tS288c\twild006\twine003\tbeer050\tbeer007\tSpar"),
-        "samples in header"
-    );
-
-    let first_row = stdout
-        .lines()
-        .find(|l| !l.starts_with('#'))
-        .unwrap()
-        .to_string();
-    assert!(first_row.starts_with("IV\t"), "chrom is target chr IV");
-    assert_eq!(
-        first_row.split('\t').count(),
-        15,
-        "columns including 6 samples"
-    );
-
-    Ok(())
-}
-
-#[test]
 fn command_vcf_example_fields() -> anyhow::Result<()> {
     let stdout = run_vcf(&["tests/fas/example.fas"])?;
 
@@ -87,8 +62,33 @@ fn command_vcf_example_fields() -> anyhow::Result<()> {
 }
 
 #[test]
+fn command_vcf_ydl_basic() -> anyhow::Result<()> {
+    let stdout = run_vcf(&["tests/fas_vcf/YDL184C.fas"])?;
+
+    assert!(stdout.starts_with("##fileformat=VCF"), "vcf header");
+    assert!(
+        stdout.contains("#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tS288c\twild006\twine003\tbeer050\tbeer007\tSpar"),
+        "samples in header"
+    );
+
+    let first_row = stdout
+        .lines()
+        .find(|l| !l.starts_with('#'))
+        .unwrap()
+        .to_string();
+    assert!(first_row.starts_with("IV\t"), "chrom is target chr IV");
+    assert_eq!(
+        first_row.split('\t').count(),
+        15,
+        "columns including 6 samples"
+    );
+
+    Ok(())
+}
+
+#[test]
 fn command_vcf_ydl_fields() -> anyhow::Result<()> {
-    let stdout = run_vcf(&["tests/fasr/YDL184C.fas"])?;
+    let stdout = run_vcf(&["tests/fas_vcf/YDL184C.fas"])?;
 
     let mut rows: std::collections::HashMap<i32, Vec<String>> = std::collections::HashMap::new();
     for line in stdout.lines() {
@@ -113,8 +113,8 @@ fn command_vcf_ydl_fields() -> anyhow::Result<()> {
 fn command_vcf_sizes_contig_real() -> anyhow::Result<()> {
     let stdout = run_vcf(&[
         "--sizes",
-        "tests/fasr/S288c.chr.sizes",
-        "tests/fasr/YDL184C.fas",
+        "tests/fas_vcf/S288c.chr.sizes",
+        "tests/fas_vcf/YDL184C.fas",
     ])?;
 
     assert!(
@@ -127,7 +127,7 @@ fn command_vcf_sizes_contig_real() -> anyhow::Result<()> {
 
 #[test]
 fn command_vcf_ydl_expected_rows() -> anyhow::Result<()> {
-    let stdout = run_vcf(&["tests/fasr/YDL184C.fas"])?;
+    let stdout = run_vcf(&["tests/fas_vcf/YDL184C.fas"])?;
 
     let mut rows: std::collections::HashMap<i32, Vec<String>> = std::collections::HashMap::new();
     for line in stdout.lines() {

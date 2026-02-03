@@ -9,7 +9,6 @@
   * [Install](#install)
   * [Synopsis](#synopsis)
     * [`pgr help`](#pgr-help)
-    * [`fasr help`](#fasr-help)
   * [Examples](#examples)
     * [Genomes](#genomes)
     * [Block FA files](#block-fa-files)
