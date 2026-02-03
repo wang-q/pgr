@@ -4,7 +4,7 @@ use std::io::Write;
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("filter")
-        .about("Filter blocks and optionally format sequences")
+        .about("Filters blocks and optionally formats sequences")
         .after_help(
             r###"
 Filters blocks in block FA files based on species name and sequence length.

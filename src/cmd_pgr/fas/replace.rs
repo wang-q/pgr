@@ -5,7 +5,7 @@ use std::io::Write;
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("replace")
-        .about("Replace headers in block FA files")
+        .about("Replaces headers in block FA files")
         .after_help(
             r###"
 Replaces headers in block FA files using a TSV file.

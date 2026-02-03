@@ -5,10 +5,10 @@ use std::io::Write;
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("slice")
-        .about("Extract alignment slices")
+        .about("Extracts alignment slices")
         .after_help(
             r###"
-Extracts alignment slices from block FA files based on a runlist JSON file.
+Extracts alignment slices from block FA files using a runlist JSON.
 
 Input files can be gzipped. If the input file is 'stdin', data is read from standard input.
 

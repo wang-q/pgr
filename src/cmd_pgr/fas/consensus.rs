@@ -4,10 +4,10 @@ use std::io::Write;
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("consensus")
-        .about("Generate consensus sequences using POA")
+        .about("Generates consensus sequences using POA")
         .after_help(
             r###"
-Generates consensus sequences using the POA (Partial Order Alignment) algorithm.
+Generates consensus sequences using POA (Partial Order Alignment) graph.
 
 Input files can be gzipped. If the input file is 'stdin', data is read from standard input.
 

@@ -4,7 +4,7 @@ use std::io::Write;
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("subset")
-        .about("Extract a subset of species from block FA files")
+        .about("Extracts a subset of species from block FA files")
         .after_help(
             r###"
 Extracts a subset of species from block FA files.

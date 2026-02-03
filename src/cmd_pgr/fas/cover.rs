@@ -4,10 +4,10 @@ use std::collections::BTreeMap;
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("cover")
-        .about("Output covered regions on chromosomes")
+        .about("Outputs covered regions on chromosomes")
         .after_help(
             r###"
-Calculates the coverage of sequences on chromosomes from block FA files.
+Outputs covered regions on chromosomes from block FA files.
 
 Input files can be gzipped. If the input file is 'stdin', data is read from standard input.
 

@@ -5,10 +5,10 @@ use std::io::Write;
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("split")
-        .about("Split block FA files into per-alignment or per-chromosome FA files")
+        .about("Splits block FA files into per-alignment or per-chromosome FA files")
         .after_help(
             r###"
-Splits block FA files into individual FA files, either per alignment or per chromosome.
+Splits block FA files into per-alignment or per-chromosome FA files.
 
 Input files can be gzipped. If the input file is 'stdin', data is read from standard input.
 

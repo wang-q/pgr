@@ -5,7 +5,7 @@ use std::io::Write;
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("name")
-        .about("Output all species names from block FA files")
+        .about("Outputs all species names from block FA files")
         .after_help(
             r###"
 Extracts and outputs all species names from block FA files.

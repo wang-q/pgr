@@ -6,7 +6,7 @@ use std::string::String;
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("refine")
-        .about("Realign files with external programs and trim unwanted regions")
+        .about("Realigns files with external programs and trim unwanted regions")
         .after_help(
             r###"
 Realigns sequences in block FA files using external programs (clustalw, mafft, muscle) and trims unwanted regions.

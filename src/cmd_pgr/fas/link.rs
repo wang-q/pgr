@@ -5,10 +5,10 @@ use std::io::Write;
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("link")
-        .about("Output bi/multi-lateral range links from block FA files")
+        .about("Outputs bi/multi-lateral range links from block FA files")
         .after_help(
             r###"
-Extracts bi/multi-lateral range links from block FA files.
+Outputs bi/multi-lateral range links from block FA files.
 
 Input files can be gzipped. If the input file is 'stdin', data is read from standard input.
 

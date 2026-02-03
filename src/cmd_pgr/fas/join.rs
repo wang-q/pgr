@@ -5,10 +5,10 @@ use std::io::Write;
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("join")
-        .about("Join multiple block fasta files by a common target")
+        .about("Joins multiple block fasta files by a common target")
         .after_help(
             r###"
-Joins multiple block FA files based on a common target sequence.
+Joins multiple block fasta files by a common target sequence.
 
 Input files can be gzipped. If the input file is 'stdin', data is read from standard input.
 

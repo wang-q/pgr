@@ -8,10 +8,10 @@ use pgr::libs::fas::next_fas_block;
 
 pub fn make_subcommand() -> Command {
     Command::new("to-vcf")
-        .about("Output VCF file (substitutions only)")
+        .about("Outputs VCF file (substitutions only)")
         .after_help(
             r###"
-This subcommand converts block FA files into VCF containing SNPs only.
+Outputs VCF file (substitutions only) from block FA files.
 
 Input files can be gzipped. If the input file is 'stdin', data is read from standard input.
 

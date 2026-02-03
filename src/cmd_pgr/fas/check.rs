@@ -5,22 +5,10 @@ use pgr::libs::loc;
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("check")
-        .about("Check genome locations in block FA headers")
+        .about("Checks genome locations in block FA headers")
         .after_help(
             r###"
-Verifies that the sequences in block FA files match the corresponding locations in a reference genome.
-
-Input files can be gzipped. If the input file is 'stdin', data is read from standard input.
-
-Note:
-- The reference genome must be provided as a multi-FASTA file.
-
-Examples:
-1. Check all sequences in a block FA file:
-   pgr fas check tests/fas/A_tha.pair.fas -r tests/fas/NC_000932.fa
-
-2. Check sequences for a specific species:
-   pgr fas check tests/fas/A_tha.pair.fas --name A_tha -r tests/fas/NC_000932.fa
+Checks genome locations in block FA headers against a chrom.sizes file.
 
 "###,
         )

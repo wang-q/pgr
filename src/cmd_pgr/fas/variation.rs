@@ -4,7 +4,7 @@ use std::io::Write;
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("variation")
-        .about("List variations (substitutions/indels)")
+        .about("Lists variations (substitutions/indels)")
         .after_help(
             r###"
 Lists variations (substitutions and indels) from block FA files in TSV format.

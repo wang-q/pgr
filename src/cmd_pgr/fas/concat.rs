@@ -4,7 +4,7 @@ use std::io::Write;
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("concat")
-        .about("Concatenate sequence pieces of the same species")
+        .about("Concatenates sequence pieces of the same species")
         .after_help(
             r###"
 Concatenates sequence pieces of the same species from block FA files.

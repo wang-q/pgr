@@ -4,7 +4,7 @@ use std::io::Write;
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("stat")
-        .about("Basic statistics of block FA files")
+        .about("Calculates basic statistics of block FA files")
         .after_help(
             r###"
 Calculates basic statistics of block FA files (length, comparable, difference, etc.).

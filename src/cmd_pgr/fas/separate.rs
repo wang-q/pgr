@@ -5,7 +5,7 @@ use std::io::Write;
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("separate")
-        .about("Separate block FA files by species")
+        .about("Separates block FA files by species")
         .after_help(
             r###"
 Separates block FA files by species, creating individual output files for each species.
