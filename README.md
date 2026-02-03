@@ -84,6 +84,127 @@ Subcommand groups:
 
 ## Examples
 
+
+### FA files
+
+```bash
+pgr fa size tests/fasta/ufasta.fa
+pgr fa count tests/fasta/ufasta.fa.gz
+pgr fa masked tests/fasta/ufasta.fa
+pgr fa n50 tests/fasta/ufasta.fa -N 90 -N 50 -S
+
+pgr fa size tests/genome/mg1655.fa.gz -o tests/genome/mg1655.size.tsv
+
+pgr fa one tests/fasta/ufasta.fa read12
+pgr fa some tests/fasta/ufasta.fa tests/fasta/list.txt
+pgr fa order tests/fasta/ufasta.fa tests/fasta/list.txt
+
+pgr fa filter tests/fasta/ufasta.fa -a 10 -z 50 --uniq
+pgr fa filter tests/fasta/ufasta.fa tests/fasta/ufasta.fa.gz -a 1 --uniq
+pgr fa filter tests/fasta/filter.fa --iupac --upper
+
+pgr fa dedup tests/fasta/dedup.fa
+pgr fa dedup tests/fasta/dedup.fa --seq --both --file stdout
+
+pgr fa mask tests/fasta/ufasta.fa tests/fasta/mask.json --hard
+
+pgr fa replace tests/fasta/ufasta.fa tests/fasta/replace.tsv
+pgr fa rc tests/fasta/ufasta.fa
+
+pgr fa filter tests/fasta/ufasta.fa -a 400 |
+    pgr fa split name stdin -o tmp
+pgr fa split about tests/fasta/ufasta.fa -c 2000 -o tmp
+
+pgr fa six-frame tests/fasta/trans.fa
+pgr fa six-frame tests/fasta/trans.fa --len 3 --start --end
+
+```
+
+### Block FA files
+
+```bash
+pgr maf to-fas tests/maf/example.maf
+
+pgr axt to-fas tests/fas/RM11_1a.chr.sizes tests/fas/example.axt --qname RM11_1a
+
+pgr fas filter tests/fas/example.fas --ge 10
+
+pgr fas name tests/fas/example.fas --count
+
+pgr fas cover tests/fas/example.fas
+
+pgr fas cover tests/fas/example.fas --name S288c --trim 10
+
+pgr fas concat tests/fas/example.fas -r tests/fas/name.lst
+
+pgr fas subset tests/fas/example.fas -r tests/fas/name.lst
+pgr fas subset tests/fas/refine.fas -r tests/fas/name.lst --strict
+
+pgr fas link tests/fas/example.fas --pair
+pgr fas link tests/fas/example.fas --best
+
+pgr fas replace tests/fas/example.fas -r tests/fas/replace.tsv
+pgr fas replace tests/fas/example.fas -r tests/fas/replace.fail.tsv
+
+pgr fa range tests/fas/NC_000932.fa NC_000932:1-10
+
+pgr fas check tests/fas/A_tha.pair.fas -r tests/fas/NC_000932.fa
+pgr fas check tests/fas/A_tha.pair.fas --name A_tha -r tests/fas/NC_000932.fa
+
+pgr fas create tests/fas/I.connect.tsv -r tests/fas/genome.fa --name S288c
+
+# Create a fasta file containing multiple genomes
+cat tests/fas/genome.fa | sed 's/^>/>S288c./' > tests/fas/genomes.fa
+samtools faidx tests/fas/genomes.fa S288c.I:1-100
+
+cargo run --bin pgr -- fas create tests/fas/I.name.tsv -r tests/fas/genomes.fa --multi
+
+pgr fas separate tests/fas/example.fas -o . --suffix .tmp
+
+spoa tests/fas/refine.fasta -r 1
+
+pgr fas consensus tests/fas/example.fas
+pgr fas consensus tests/fas/refine.fas
+pgr fas consensus tests/fas/refine.fas --outgroup -p 2
+
+pgr fas refine tests/fas/example.fas
+pgr fas refine tests/fas/example.fas --msa none --chop 10
+pgr fas refine tests/fas/refine2.fas --msa clustalw --outgroup
+pgr fas refine tests/fas/example.fas --quick
+
+pgr fas split tests/fas/example.fas --simple
+pgr fas split tests/fas/example.fas -o . --chr --suffix .tmp
+
+pgr fas slice tests/fas/slice.fas -r tests/fas/slice.json --name S288c
+
+cargo run --bin pgr -- fas join tests/fas/S288cvsYJM789.slice.fas --name YJM789
+cargo run --bin pgr -- fas join \
+    tests/fas/S288cvsRM11_1a.slice.fas \
+    tests/fas/S288cvsYJM789.slice.fas \
+    tests/fas/S288cvsSpar.slice.fas
+
+cargo run --bin pgr -- fas stat tests/fas/example.fas --outgroup
+
+cargo run --bin pgr -- fas variation tests/fas/example.fas
+cargo run --bin pgr -- fas variation tests/fas/example.fas --outgroup
+
+# snp-sites -v tests/fas/YDL184C.fas
+cargo run --bin pgr -- fas to-vcf tests/fas/YDL184C.fas
+cargo run --bin pgr -- fas to-vcf tests/fas/example.fas
+cargo run --bin pgr -- fas to-vcf --sizes tests/fas/S288c.chr.sizes tests/fas/YDL184C.fas
+
+#fasops xlsx tests/fas/example.fas -o example.xlsx
+#fasops xlsx tests/fas/example.fas -l 50 --outgroup -o example.outgroup.xlsx
+pgr fas to-xlsx tests/fas/example.fas --indel
+pgr fas to-xlsx tests/fas/example.fas --indel --outgroup
+pgr fas to-xlsx tests/fas/example.fas --nosingle
+pgr fas to-xlsx tests/fas/example.fas --indel --nocomplex
+pgr fas to-xlsx tests/fas/example.fas --indel --min 0.3 --max 0.7
+
+cargo run --bin pgr -- pl p2m tests/fas/S288cvsRM11_1a.slice.fas tests/fas/S288cvsSpar.slice.fas
+
+```
+
 ### 2bit
 
 ```bash
@@ -91,6 +212,18 @@ Subcommand groups:
 faToTwoBit tests/genome/mg1655.fa.gz tests/genome/mg1655.2bit
 
 pgr 2bit size tests/genome/mg1655.2bit
+pgr 2bit size tests/genome/mg1655.2bit --no-ns
+pgr 2bit size tests/genome/mg1655.2bit tests/genome/sakai.2bit
+
+pgr 2bit to-fa tests/genome/mg1655.2bit -o tests/genome/mg1655.fa
+pgr 2bit to-fa tests/genome/mg1655.2bit --no-mask -o tests/genome/mg1655.unmasked.fa
+
+pgr 2bit range tests/genome/mg1655.2bit NC_000913:1-100
+pgr 2bit range tests/genome/mg1655.2bit NC_000913(-):1-100
+# pgr 2bit range tests/genome/mg1655.2bit --rgfile tests/genome/ranges.txt
+
+pgr 2bit masked tests/genome/mg1655.2bit
+pgr 2bit masked tests/genome/mg1655.2bit --gap
 
 ```
 
@@ -248,127 +381,6 @@ pgr chain tests/pgr/pseudocat.fa tests/pgr/pseudopig.fa tests/pgr/lastz.psl
 lastz --self <(gzip -dcf tests/pgr/mg1655.fa.gz)
 
 multiz M=10 tests/multiz/S288cvsRM11_1a.maf     tests/multiz/S288cvsSpar.maf     1 out1 out2
-
-```
-
-
-### FA files
-
-```bash
-pgr fa size tests/fasta/ufasta.fa
-pgr fa count tests/fasta/ufasta.fa.gz
-pgr fa masked tests/fasta/ufasta.fa
-pgr fa n50 tests/fasta/ufasta.fa -N 90 -N 50 -S
-
-pgr fa size tests/genome/mg1655.fa.gz -o tests/genome/mg1655.size.tsv
-
-pgr fa one tests/fasta/ufasta.fa read12
-pgr fa some tests/fasta/ufasta.fa tests/fasta/list.txt
-pgr fa order tests/fasta/ufasta.fa tests/fasta/list.txt
-
-pgr fa filter tests/fasta/ufasta.fa -a 10 -z 50 --uniq
-pgr fa filter tests/fasta/ufasta.fa tests/fasta/ufasta.fa.gz -a 1 --uniq
-pgr fa filter tests/fasta/filter.fa --iupac --upper
-
-pgr fa dedup tests/fasta/dedup.fa
-pgr fa dedup tests/fasta/dedup.fa --seq --both --file stdout
-
-pgr fa mask tests/fasta/ufasta.fa tests/fasta/mask.json --hard
-
-pgr fa replace tests/fasta/ufasta.fa tests/fasta/replace.tsv
-pgr fa rc tests/fasta/ufasta.fa
-
-pgr fa filter tests/fasta/ufasta.fa -a 400 |
-    pgr fa split name stdin -o tmp
-pgr fa split about tests/fasta/ufasta.fa -c 2000 -o tmp
-
-pgr fa six-frame tests/fasta/trans.fa
-pgr fa six-frame tests/fasta/trans.fa --len 3 --start --end
-
-```
-
-### Block FA files
-
-```bash
-pgr maf to-fas tests/maf/example.maf
-
-pgr axt to-fas tests/fas/RM11_1a.chr.sizes tests/fas/example.axt --qname RM11_1a
-
-pgr fas filter tests/fas/example.fas --ge 10
-
-pgr fas name tests/fas/example.fas --count
-
-pgr fas cover tests/fas/example.fas
-
-pgr fas cover tests/fas/example.fas --name S288c --trim 10
-
-pgr fas concat tests/fas/example.fas -r tests/fas/name.lst
-
-pgr fas subset tests/fas/example.fas -r tests/fas/name.lst
-pgr fas subset tests/fas/refine.fas -r tests/fas/name.lst --strict
-
-pgr fas link tests/fas/example.fas --pair
-pgr fas link tests/fas/example.fas --best
-
-pgr fas replace tests/fas/example.fas -r tests/fas/replace.tsv
-pgr fas replace tests/fas/example.fas -r tests/fas/replace.fail.tsv
-
-pgr fa range tests/fas/NC_000932.fa NC_000932:1-10
-
-pgr fas check tests/fas/A_tha.pair.fas -r tests/fas/NC_000932.fa
-pgr fas check tests/fas/A_tha.pair.fas --name A_tha -r tests/fas/NC_000932.fa
-
-pgr fas create tests/fas/I.connect.tsv -r tests/fas/genome.fa --name S288c
-
-# Create a fasta file containing multiple genomes
-cat tests/fas/genome.fa | sed 's/^>/>S288c./' > tests/fas/genomes.fa
-samtools faidx tests/fas/genomes.fa S288c.I:1-100
-
-cargo run --bin pgr -- fas create tests/fas/I.name.tsv -r tests/fas/genomes.fa --multi
-
-pgr fas separate tests/fas/example.fas -o . --suffix .tmp
-
-spoa tests/fas/refine.fasta -r 1
-
-pgr fas consensus tests/fas/example.fas
-pgr fas consensus tests/fas/refine.fas
-pgr fas consensus tests/fas/refine.fas --outgroup -p 2
-
-pgr fas refine tests/fas/example.fas
-pgr fas refine tests/fas/example.fas --msa none --chop 10
-pgr fas refine tests/fas/refine2.fas --msa clustalw --outgroup
-pgr fas refine tests/fas/example.fas --quick
-
-pgr fas split tests/fas/example.fas --simple
-pgr fas split tests/fas/example.fas -o . --chr --suffix .tmp
-
-pgr fas slice tests/fas/slice.fas -r tests/fas/slice.json --name S288c
-
-cargo run --bin pgr -- fas join tests/fas/S288cvsYJM789.slice.fas --name YJM789
-cargo run --bin pgr -- fas join \
-    tests/fas/S288cvsRM11_1a.slice.fas \
-    tests/fas/S288cvsYJM789.slice.fas \
-    tests/fas/S288cvsSpar.slice.fas
-
-cargo run --bin pgr -- fas stat tests/fas/example.fas --outgroup
-
-cargo run --bin pgr -- fas variation tests/fas/example.fas
-cargo run --bin pgr -- fas variation tests/fas/example.fas --outgroup
-
-# snp-sites -v tests/fas/YDL184C.fas
-cargo run --bin pgr -- fas to-vcf tests/fas/YDL184C.fas
-cargo run --bin pgr -- fas to-vcf tests/fas/example.fas
-cargo run --bin pgr -- fas to-vcf --sizes tests/fas/S288c.chr.sizes tests/fas/YDL184C.fas
-
-#fasops xlsx tests/fas/example.fas -o example.xlsx
-#fasops xlsx tests/fas/example.fas -l 50 --outgroup -o example.outgroup.xlsx
-pgr fas to-xlsx tests/fas/example.fas --indel
-pgr fas to-xlsx tests/fas/example.fas --indel --outgroup
-pgr fas to-xlsx tests/fas/example.fas --nosingle
-pgr fas to-xlsx tests/fas/example.fas --indel --nocomplex
-pgr fas to-xlsx tests/fas/example.fas --indel --min 0.3 --max 0.7
-
-cargo run --bin pgr -- pl p2m tests/fas/S288cvsRM11_1a.slice.fas tests/fas/S288cvsSpar.slice.fas
 
 ```
 
