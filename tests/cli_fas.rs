@@ -73,8 +73,8 @@ fn command_concat() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("fasr")?;
     let output = cmd
         .arg("concat")
-        .arg("tests/fasr/name.lst")
-        .arg("tests/fasr/example.fas")
+        .arg("tests/fas/name.lst")
+        .arg("tests/fas/example.fas")
         .output()?;
     let stdout = String::from_utf8(output.stdout)?;
 
@@ -92,8 +92,8 @@ fn command_concat_phylip() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("fasr")?;
     let output = cmd
         .arg("concat")
-        .arg("tests/fasr/name.lst")
-        .arg("tests/fasr/example.fas")
+        .arg("tests/fas/name.lst")
+        .arg("tests/fas/example.fas")
         .arg("--phylip")
         .output()?;
     let stdout = String::from_utf8(output.stdout)?;
@@ -112,8 +112,8 @@ fn command_subset() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("fasr")?;
     let output = cmd
         .arg("subset")
-        .arg("tests/fasr/name.lst")
-        .arg("tests/fasr/example.fas")
+        .arg("tests/fas/name.lst")
+        .arg("tests/fas/example.fas")
         .output()?;
     let stdout = String::from_utf8(output.stdout)?;
 
@@ -123,8 +123,8 @@ fn command_subset() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("fasr")?;
     let output = cmd
         .arg("subset")
-        .arg("tests/fasr/name.lst")
-        .arg("tests/fasr/example.fas")
+        .arg("tests/fas/name.lst")
+        .arg("tests/fas/example.fas")
         .arg("--required")
         .output()?;
     let stdout = String::from_utf8(output.stdout)?;
@@ -138,7 +138,7 @@ fn command_subset() -> anyhow::Result<()> {
 #[test]
 fn command_link() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("fasr")?;
-    let output = cmd.arg("link").arg("tests/fasr/example.fas").output()?;
+    let output = cmd.arg("link").arg("tests/fas/example.fas").output()?;
     let stdout = String::from_utf8(output.stdout)?;
 
     assert_eq!(stdout.lines().count(), 3);
@@ -148,7 +148,7 @@ fn command_link() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("fasr")?;
     let output = cmd
         .arg("link")
-        .arg("tests/fasr/example.fas")
+        .arg("tests/fas/example.fas")
         .arg("--pair")
         .output()?;
     let stdout = String::from_utf8(output.stdout)?;
@@ -160,7 +160,7 @@ fn command_link() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("fasr")?;
     let output = cmd
         .arg("link")
-        .arg("tests/fasr/example.fas")
+        .arg("tests/fas/example.fas")
         .arg("--best")
         .output()?;
     let stdout = String::from_utf8(output.stdout)?;
@@ -177,7 +177,7 @@ fn command_replace() -> anyhow::Result<()> {
     let output = cmd
         .arg("replace")
         .arg("tests/fasr/replace.tsv")
-        .arg("tests/fasr/example.fas")
+        .arg("tests/fas/example.fas")
         .output()?;
     let stdout = String::from_utf8(output.stdout)?;
 
@@ -189,7 +189,7 @@ fn command_replace() -> anyhow::Result<()> {
     let output = cmd
         .arg("replace")
         .arg("tests/fasr/replace.fail.tsv")
-        .arg("tests/fasr/example.fas")
+        .arg("tests/fas/example.fas")
         .output()?;
     let stdout = String::from_utf8(output.stdout)?;
     let stderr = String::from_utf8(output.stderr)?;
@@ -203,7 +203,7 @@ fn command_replace() -> anyhow::Result<()> {
     let output = cmd
         .arg("replace")
         .arg("tests/fasr/replace.remove.tsv")
-        .arg("tests/fasr/example.fas")
+        .arg("tests/fas/example.fas")
         .output()?;
     let stdout = String::from_utf8(output.stdout)?;
 
@@ -279,7 +279,7 @@ fn command_separate() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("fasr")?;
     let output = cmd
         .arg("separate")
-        .arg("tests/fasr/example.fas")
+        .arg("tests/fas/example.fas")
         .arg("--rc")
         .output()?;
     let stdout = String::from_utf8(output.stdout)?;
@@ -303,7 +303,7 @@ fn command_separate_to() -> anyhow::Result<()> {
 
     let mut cmd = Command::cargo_bin("fasr")?;
     cmd.arg("separate")
-        .arg("tests/fasr/example.fas")
+        .arg("tests/fas/example.fas")
         .arg("--suffix")
         .arg(".tmp")
         .arg("-o")
@@ -322,7 +322,7 @@ fn command_separate_to() -> anyhow::Result<()> {
 #[test]
 fn command_split() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("fasr")?;
-    let output = cmd.arg("split").arg("tests/fasr/example.fas").output()?;
+    let output = cmd.arg("split").arg("tests/fas/example.fas").output()?;
     let stdout = String::from_utf8(output.stdout)?;
 
     assert_eq!(stdout.lines().count(), 27);
@@ -330,7 +330,7 @@ fn command_split() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("fasr")?;
     let output = cmd
         .arg("split")
-        .arg("tests/fasr/example.fas")
+        .arg("tests/fas/example.fas")
         .arg("--simple")
         .output()?;
     let stdout = String::from_utf8(output.stdout)?;
@@ -348,7 +348,7 @@ fn command_split_to() -> anyhow::Result<()> {
 
     let mut cmd = Command::cargo_bin("fasr")?;
     cmd.arg("split")
-        .arg("tests/fasr/example.fas")
+        .arg("tests/fas/example.fas")
         .arg("--suffix")
         .arg(".tmp")
         .arg("--chr")
@@ -409,7 +409,7 @@ fn command_refine() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("fasr")?;
     let output = cmd
         .arg("refine")
-        .arg("tests/fasr/example.fas")
+        .arg("tests/fas/example.fas")
         .arg("--msa")
         .arg("none")
         .output()?;
@@ -421,7 +421,7 @@ fn command_refine() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("fasr")?;
     let output = cmd
         .arg("refine")
-        .arg("tests/fasr/example.fas")
+        .arg("tests/fas/example.fas")
         .arg("--msa")
         .arg("none")
         .arg("-p")
@@ -449,7 +449,7 @@ fn command_refine() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("fasr")?;
     let output = cmd
         .arg("refine")
-        .arg("tests/fasr/example.fas")
+        .arg("tests/fas/example.fas")
         .arg("--msa")
         .arg("none")
         .arg("--chop")
@@ -594,7 +594,7 @@ fn command_slice() -> anyhow::Result<()> {
 #[test]
 fn command_stat() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("fasr")?;
-    let output = cmd.arg("stat").arg("tests/fasr/example.fas").output()?;
+    let output = cmd.arg("stat").arg("tests/fas/example.fas").output()?;
     let stdout = String::from_utf8(output.stdout)?;
 
     assert_eq!(stdout.lines().count(), 4);
@@ -603,7 +603,7 @@ fn command_stat() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("fasr")?;
     let output = cmd
         .arg("stat")
-        .arg("tests/fasr/example.fas")
+        .arg("tests/fas/example.fas")
         .arg("--outgroup")
         .output()?;
     let stdout = String::from_utf8(output.stdout)?;
@@ -619,7 +619,7 @@ fn command_variation() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("fasr")?;
     let output = cmd
         .arg("variation")
-        .arg("tests/fasr/example.fas")
+        .arg("tests/fas/example.fas")
         .output()?;
     let stdout = String::from_utf8(output.stdout)?;
 
@@ -628,7 +628,7 @@ fn command_variation() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("fasr")?;
     let output = cmd
         .arg("variation")
-        .arg("tests/fasr/example.fas")
+        .arg("tests/fas/example.fas")
         .arg("--outgroup")
         .output()?;
     let stdout = String::from_utf8(output.stdout)?;
@@ -641,7 +641,7 @@ fn command_variation() -> anyhow::Result<()> {
 #[test]
 fn command_filter() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("fasr")?;
-    let output = cmd.arg("filter").arg("tests/fasr/example.fas").output()?;
+    let output = cmd.arg("filter").arg("tests/fas/example.fas").output()?;
     let stdout = String::from_utf8(output.stdout)?;
 
     assert_eq!(stdout.lines().count(), 27);
@@ -649,7 +649,7 @@ fn command_filter() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("fasr")?;
     let output = cmd
         .arg("filter")
-        .arg("tests/fasr/example.fas")
+        .arg("tests/fas/example.fas")
         .arg("--ge")
         .arg("30")
         .output()?;
@@ -660,7 +660,7 @@ fn command_filter() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("fasr")?;
     let output = cmd
         .arg("filter")
-        .arg("tests/fasr/example.fas")
+        .arg("tests/fas/example.fas")
         .arg("--ge")
         .arg("30")
         .arg("--le")
