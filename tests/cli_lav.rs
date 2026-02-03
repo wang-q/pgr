@@ -24,7 +24,7 @@ a {
 "#;
 
     cmd.arg("lav")
-        .arg("topsl")
+        .arg("to-psl")
         .write_stdin(input)
         .assert()
         .success()
@@ -59,7 +59,7 @@ fn test_lav_to_psl_trim_ends_bug() -> anyhow::Result<()> {
     }
 
     cmd.arg("lav")
-        .arg("topsl")
+        .arg("to-psl")
         .arg(input_path)
         .assert()
         .success();
@@ -92,7 +92,7 @@ fn test_lav_to_psl_redmine12502() -> anyhow::Result<()> {
 
     let assert = cmd
         .arg("lav")
-        .arg("topsl")
+        .arg("to-psl")
         .arg(input_path)
         .assert()
         .success();
@@ -141,7 +141,7 @@ fn run_ucsc_test(name: &str) -> anyhow::Result<()> {
 
     let assert = cmd
         .arg("lav")
-        .arg("topsl")
+        .arg("to-psl")
         .arg(input_path)
         .assert()
         .success();

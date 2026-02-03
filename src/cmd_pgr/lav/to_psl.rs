@@ -2,7 +2,7 @@ use clap::{Arg, ArgMatches, Command};
 use pgr::libs::lav::{blocks_to_psl, LavReader, LavStanza};
 
 pub fn make_subcommand() -> Command {
-    Command::new("topsl")
+    Command::new("to-psl")
         .about("Convert from lav to psl format")
         .after_help(
             r###"
@@ -10,7 +10,7 @@ Convert blastz lav to psl format.
 
 Examples:
   # Convert lav to psl
-  pgr lav topsl in.lav -o out.psl
+  pgr lav to-psl in.lav -o out.psl
 "###,
         )
         .arg(
