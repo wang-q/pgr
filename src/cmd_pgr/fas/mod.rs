@@ -21,6 +21,17 @@ pub mod filter;
 pub fn make_subcommand() -> clap::Command {
     clap::Command::new("fas")
         .about("Block FA tools")
+        .after_help(
+            r###"Subcommand groups:
+
+* info: check / cover / link / name / stat
+* subset: filter / slice / subset
+* transform: concat / consensus / join / refine / replace
+* file: create / separate / split
+* var: to-vcf / to-xlsx / variation
+
+"###,
+        )
         .subcommand_required(true)
         .arg_required_else_help(true)
         .subcommand(concat::make_subcommand())

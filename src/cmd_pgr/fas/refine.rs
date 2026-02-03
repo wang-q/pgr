@@ -38,7 +38,7 @@ Examples:
                 .required(true)
                 .num_args(1..)
                 .index(1)
-                .help("Set the input files to use"),
+                .help("Input block FA file(s) to process"),
         )
         .arg(
             Arg::new("msa")
@@ -51,7 +51,7 @@ Examples:
             Arg::new("has_outgroup")
                 .long("outgroup")
                 .action(ArgAction::SetTrue)
-                .help("There are outgroups at the end of each block"),
+                .help("Indicates the presence of outgroups at the end of each block"),
         )
         .arg(
             Arg::new("chop")
