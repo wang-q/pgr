@@ -5,18 +5,16 @@ use intspan::IntSpan;
 use itertools::Itertools;
 use noodles_bgzf;
 use std::cmp::min;
-use std::collections::{BTreeMap, HashSet};
+use crate::libs::nt::NT_VAL;
+use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::{BufRead, Write};
 use std::process::Command;
 use std::string::String;
 use std::{fmt, fs, str};
 
-lazy_static! {
-    static ref BASES: HashSet<u8> = vec![b'a', b'g', b'c', b't', b'A', b'G', b'C', b'T',]
-        .into_iter()
-        .collect();
-}
+// BASES definition removed
+
 
 /// Divergence (D) between two sequences
 ///
@@ -41,7 +39,7 @@ pub fn pair_d(seq1: &[u8], seq2: &[u8]) -> f32 {
     let mut difference = 0;
 
     for (base1, base2) in seq1.iter().zip(seq2) {
-        if BASES.contains(base1) && BASES.contains(base2) {
+        if NT_VAL[*base1 as usize] <= 3 && NT_VAL[*base2 as usize] <= 3 {
             comparable += 1;
             if !base1.eq_ignore_ascii_case(base2) {
                 difference += 1;
@@ -100,7 +98,7 @@ pub fn alignment_stat(seqs: &[&[u8]]) -> (i32, i32, i32, i32, i32, f32) {
         }
         column = column.into_iter().unique().collect();
 
-        if column.iter().all(|e| BASES.contains(e)) {
+        if column.iter().all(|e| NT_VAL[*e as usize] <= 3) {
             comparable += 1;
             if column.iter().any(|e| *e != column[0]) {
                 difference += 1;
@@ -224,7 +222,7 @@ pub fn get_subs(seqs: &[&[u8]]) -> anyhow::Result<Vec<Substitution>> {
             column.push(seqs[i][pos].to_ascii_uppercase());
         }
 
-        if column.iter().all(|e| BASES.contains(e)) {
+        if column.iter().all(|e| NT_VAL[*e as usize] <= 3) {
             // comparable += 1;
             if column.iter().any(|e| *e != column[0]) {
                 // difference += 1;
@@ -348,7 +346,7 @@ pub fn polarize_subs(subs: &mut Vec<Substitution>, og: &[u8]) {
         if sub.qbase.is_empty() {
             // complex ingroup bases
             sub.obase = obase.clone();
-        } else if BASES.contains(&obase_u8) {
+        } else if NT_VAL[obase_u8 as usize] <= 3 {
             if sub.bases.contains(&obase) {
                 // can polarize subs
                 // ingroup bases have 2 classes
