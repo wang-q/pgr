@@ -422,8 +422,8 @@ fn command_axt_tofas_example() -> anyhow::Result<()> {
     let output = cmd
         .arg("axt")
         .arg("tofas")
-        .arg("tests/fasr/RM11_1a.chr.sizes")
-        .arg("tests/fasr/example.axt")
+        .arg("tests/axt/RM11_1a.sizes")
+        .arg("tests/axt/example.axt")
         .arg("--qname")
         .arg("RM11_1a")
         .output()?;

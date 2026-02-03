@@ -232,8 +232,8 @@ fn command_check() -> anyhow::Result<()> {
     let output = cmd
         .arg("fas")
         .arg("check")
-        .arg("tests/fasr/NC_000932.fa")
-        .arg("tests/fasr/A_tha.pair.fas")
+        .arg("tests/fas/NC_000932.fa")
+        .arg("tests/fas/A_tha.pair.fas")
         .output()?;
     let stdout = String::from_utf8(output.stdout)?;
 
@@ -246,8 +246,8 @@ fn command_check() -> anyhow::Result<()> {
     let output = cmd
         .arg("fas")
         .arg("check")
-        .arg("tests/fasr/NC_000932.fa")
-        .arg("tests/fasr/A_tha.pair.fas")
+        .arg("tests/fas/NC_000932.fa")
+        .arg("tests/fas/A_tha.pair.fas")
         .arg("--name")
         .arg("A_tha")
         .output()?;
@@ -266,8 +266,8 @@ fn command_create() -> anyhow::Result<()> {
     let output = cmd
         .arg("fas")
         .arg("create")
-        .arg("tests/fasr/genome.fa")
-        .arg("tests/fasr/I.connect.tsv")
+        .arg("tests/fas/genome.fa")
+        .arg("tests/fas/I.connect.tsv")
         .arg("--name")
         .arg("S288c")
         .output()?;
