@@ -4,7 +4,7 @@ use std::fs;
 use tempfile::TempDir;
 
 #[test]
-fn test_2bit_to_2bit() -> anyhow::Result<()> {
+fn test_fa_to_2bit() -> anyhow::Result<()> {
     let temp = TempDir::new()?;
     let input = temp.path().join("test.fa");
     let output = temp.path().join("out.2bit");
@@ -38,7 +38,7 @@ fn test_2bit_to_2bit() -> anyhow::Result<()> {
 }
 
 #[test]
-fn test_2bit_to_2bit_strip_version() -> anyhow::Result<()> {
+fn test_fa_to_2bit_strip_version() -> anyhow::Result<()> {
     let temp = TempDir::new()?;
     let input = temp.path().join("test_ver.fa");
     let output = temp.path().join("out_ver.2bit");
@@ -63,7 +63,7 @@ fn test_2bit_to_2bit_strip_version() -> anyhow::Result<()> {
 }
 
 #[test]
-fn test_2bit_to_2bit_mask() -> anyhow::Result<()> {
+fn test_fa_to_2bit_mask() -> anyhow::Result<()> {
     let temp = TempDir::new()?;
     let input = temp.path().join("test_mask.fa");
     let output = temp.path().join("out_mask.2bit");
@@ -655,6 +655,55 @@ fn test_2bit_some() -> anyhow::Result<()> {
     assert!(output_inv_content.contains("TGCA"));
     assert!(!output_inv_content.contains(">seq1"));
     assert!(!output_inv_content.contains(">seq3"));
+
+    Ok(())
+}
+
+#[test]
+fn test_2bit_size_doc_consistency() -> anyhow::Result<()> {
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")?;
+    let tests_pgr = std::path::Path::new(&manifest_dir).join("tests/pgr");
+    let temp = TempDir::new()?;
+
+    for name in ["pseudocat", "pseudopig"] {
+        let fa_path = tests_pgr.join(format!("{}.fa", name));
+        let twobit_path = tests_pgr.join(format!("{}.2bit", name));
+        
+        // Ensure inputs exist
+        assert!(fa_path.exists(), "Test file not found: {:?}", fa_path);
+        assert!(twobit_path.exists(), "Test file not found: {:?}", twobit_path);
+
+        let fa_sizes_path = temp.path().join(format!("{}.fa.sizes", name));
+        let twobit_sizes_path = temp.path().join(format!("{}.2bit.sizes", name));
+
+        // 1. Run pgr fa size
+        let mut cmd_fa = Command::cargo_bin("pgr")?;
+        cmd_fa.arg("fa")
+            .arg("size")
+            .arg(&fa_path)
+            .arg("-o")
+            .arg(&fa_sizes_path);
+        cmd_fa.assert().success();
+
+        // 2. Run pgr 2bit size
+        let mut cmd_2bit = Command::cargo_bin("pgr")?;
+        cmd_2bit.arg("2bit")
+            .arg("size")
+            .arg(&twobit_path)
+            .arg("-o")
+            .arg(&twobit_sizes_path);
+        cmd_2bit.assert().success();
+
+        // 3. Compare
+        let content_fa = fs::read_to_string(&fa_sizes_path)?;
+        let content_2bit = fs::read_to_string(&twobit_sizes_path)?;
+
+        assert_eq!(
+            content_fa, content_2bit,
+            "pgr fa size and pgr 2bit size output should be identical for {}",
+            name
+        );
+    }
 
     Ok(())
 }
