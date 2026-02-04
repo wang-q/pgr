@@ -104,10 +104,10 @@ seedms
 *.tex
 *.pdf
 
-*.tsv
-*.lst
-*.sizes
-*.xlsx
+# *.tsv
+# *.lst
+# *.sizes
+# *.xlsx
 
 PL-*/
 /tmp/
