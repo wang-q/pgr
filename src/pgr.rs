@@ -18,6 +18,7 @@ fn main() -> anyhow::Result<()> {
         .subcommand(cmd_pgr::clust::make_subcommand())
         .subcommand(cmd_pgr::lav::make_subcommand())
         .subcommand(cmd_pgr::maf::make_subcommand())
+        .subcommand(cmd_pgr::mat::make_subcommand())
         .subcommand(cmd_pgr::net::make_subcommand())
         .subcommand(cmd_pgr::psl::make_subcommand())
         .subcommand(cmd_pgr::pl::make_subcommand())
@@ -46,6 +47,9 @@ fn main() -> anyhow::Result<()> {
 * Clustering:
     * clust - Clustering operations: cc
 
+* Matrix:
+    * mat   - Matrix operations: compare, format, pair, phylip, subset
+
 * Pipelines:
     * pl - Pipeline tools: p2m, trf, ir, rept, ucsc
 
@@ -61,6 +65,7 @@ fn main() -> anyhow::Result<()> {
         Some(("clust", sub_matches)) => cmd_pgr::clust::execute(sub_matches),
         Some(("lav", sub_matches)) => cmd_pgr::lav::execute(sub_matches),
         Some(("maf", sub_matches)) => cmd_pgr::maf::execute(sub_matches),
+        Some(("mat", sub_matches)) => cmd_pgr::mat::execute(sub_matches),
         Some(("net", sub_matches)) => cmd_pgr::net::execute(sub_matches),
         Some(("psl", sub_matches)) => cmd_pgr::psl::execute(sub_matches),
         Some(("pl", sub_matches)) => cmd_pgr::pl::execute(sub_matches),

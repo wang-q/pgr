@@ -9,6 +9,7 @@ pub mod fas;
 pub mod fq;
 pub mod lav;
 pub mod maf;
+pub mod mat;
 pub mod ms_to_dna;
 pub mod net;
 pub mod pl;
