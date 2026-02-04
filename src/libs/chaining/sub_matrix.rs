@@ -2,13 +2,17 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use anyhow::Result;
 
-pub struct ScoreMatrix {
+/// A DNA substitution matrix for sequence alignment scoring.
+///
+/// Stores scores for all pairs of bytes (256x256), though typically only ACGTN are used.
+/// Also stores gap open and gap extend penalties.
+pub struct SubMatrix {
     matrix: Vec<i32>,
     pub gap_open: i32,
     pub gap_extend: i32,
 }
 
-impl Default for ScoreMatrix {
+impl Default for SubMatrix {
     fn default() -> Self {
         // Default HoxD70 or similar
         let mut m = vec![0; 256 * 256];
@@ -39,7 +43,7 @@ impl Default for ScoreMatrix {
             m[i * 256 + ('n' as usize)] = -100;
         }
         
-        ScoreMatrix {
+        SubMatrix {
             matrix: m,
             gap_open: 400,
             gap_extend: 30,
@@ -47,11 +51,17 @@ impl Default for ScoreMatrix {
     }
 }
 
-impl ScoreMatrix {
+impl SubMatrix {
+    /// Get the substitution score for two characters.
     pub fn get_score(&self, c1: char, c2: char) -> i32 {
         self.matrix[(c1 as usize) * 256 + (c2 as usize)]
     }
 
+    /// Load a substitution matrix from a file (BLAST format).
+    ///
+    /// The file should contain a header line (e.g., "A C G T") and subsequent rows of scores.
+    /// Lines starting with '#' are comments.
+    /// Optional gap costs can be specified with "O=..." and "E=..." lines.
     pub fn from_file(path: &str) -> Result<Self> {
         let file = File::open(path)?;
         let reader = BufReader::new(file);
@@ -143,10 +153,25 @@ impl ScoreMatrix {
         }
         
         // eprintln!("Debug: Matrix loaded. gap_open={}, gap_extend={}", gap_open, gap_extend);
-        Ok(ScoreMatrix {
+        Ok(SubMatrix {
             matrix,
             gap_open,
             gap_extend,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_sub_matrix_default() {
+        let m = SubMatrix::default();
+        assert_eq!(m.get_score('A', 'A'), 100);
+        assert_eq!(m.get_score('A', 'C'), -100);
+        assert_eq!(m.get_score('a', 'A'), 100);
+        assert_eq!(m.get_score('A', 'a'), 100);
+        assert_eq!(m.get_score('N', 'A'), -100);
     }
 }

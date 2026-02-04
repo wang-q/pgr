@@ -3,10 +3,13 @@ use std::io::{Read, Seek};
 use crate::libs::chaining::record::{Chain, ChainData, ChainHeader};
 use crate::libs::chaining::algo::{ChainItem, KdTree};
 use crate::libs::chaining::gap_calc::GapCalc;
-use crate::libs::chaining::score_matrix::ScoreMatrix;
+use crate::libs::chaining::sub_matrix::SubMatrix;
 use crate::libs::twobit::TwoBitFile;
 use crate::libs::nt;
 
+/// Represents a single alignment block that can be chained.
+///
+/// Contains coordinates in both target and query sequences, as well as a score.
 #[derive(Clone, Debug)]
 pub struct ChainableBlock {
     pub t_start: u64,
@@ -24,10 +27,13 @@ impl ChainItem for ChainableBlock {
     fn score(&self) -> f64 { self.score }
 }
 
+/// Context required for scoring chains based on actual sequence data.
+///
+/// Holds references to 2bit files for target and query, and a substitution matrix.
 pub struct ScoreContext<'a, R> {
     pub t_2bit: &'a mut TwoBitFile<R>,
     pub q_2bit: &'a mut TwoBitFile<R>,
-    pub matrix: &'a ScoreMatrix,
+    pub matrix: &'a SubMatrix,
 }
 
 struct DpEntry {
@@ -36,6 +42,23 @@ struct DpEntry {
     hit: bool,
 }
 
+/// Chains a set of alignment blocks into optimal chains using a KD-tree and dynamic programming.
+///
+/// # Arguments
+///
+/// * `blocks` - A slice of `ChainableBlock`s to chain.
+/// * `gap_calc` - Calculator for gap costs.
+/// * `score_ctx` - Optional context for recalculating scores and trimming overlaps using sequence data.
+/// * `q_name` - Query sequence name.
+/// * `q_size` - Query sequence size.
+/// * `q_strand` - Query sequence strand.
+/// * `t_name` - Target sequence name.
+/// * `t_size` - Target sequence size.
+/// * `chain_id_counter` - Counter for generating unique chain IDs.
+///
+/// # Returns
+///
+/// A vector of `Chain`s sorted by score.
 pub fn chain_blocks<R: Read + Seek>(
     blocks: &[ChainableBlock],
     gap_calc: &GapCalc,
@@ -181,6 +204,9 @@ pub fn chain_blocks<R: Read + Seek>(
     chains
 }
 
+/// Trims overlaps between adjacent blocks in a chain using sequence data.
+///
+/// Adjusts the boundaries of overlapping blocks to maximize the score.
 fn trim_overlaps<R: Read + Seek>(
     blocks: &mut Vec<ChainableBlock>,
     ctx: &mut ScoreContext<R>,
@@ -223,6 +249,9 @@ fn trim_overlaps<R: Read + Seek>(
     }
 }
 
+/// Finds the optimal crossover point for two overlapping blocks.
+///
+/// Returns the best cut position within the overlap and the score adjustment.
 fn find_crossover<R: Read + Seek>(
     left: &ChainableBlock,
     right: &ChainableBlock,
@@ -292,6 +321,10 @@ fn find_crossover<R: Read + Seek>(
     (best_pos, adjustment)
 }
 
+/// Calculates the total score of a chain.
+///
+/// If `score_ctx` is provided, it recalculates block scores and gap costs using sequence data.
+/// Otherwise, it uses the pre-calculated block scores and standard gap costs.
 fn score_chain<R: Read + Seek>(
     blocks: &[ChainableBlock], 
     gap_calc: &GapCalc, 
@@ -352,6 +385,7 @@ fn score_chain<R: Read + Seek>(
     score
 }
 
+/// Calculates the score of a single block using sequence data and the substitution matrix.
 pub fn calc_block_score<R: Read + Seek>(
     b: &ChainableBlock,
     ctx: &mut ScoreContext<R>,
@@ -394,5 +428,57 @@ pub fn calc_block_score<R: Read + Seek>(
         Some(exact_score)
     } else {
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Cursor;
+
+    #[test]
+    fn test_chain_blocks_basic() {
+        // Gap costs in GapCalc::medium() are quite high (e.g., ~750 for length 10).
+        // We need high block scores to justify chaining.
+        let blocks = vec![
+            ChainableBlock { t_start: 0, t_end: 10, q_start: 0, q_end: 10, score: 1000.0 },
+            ChainableBlock { t_start: 20, t_end: 30, q_start: 20, q_end: 30, score: 1000.0 },
+            ChainableBlock { t_start: 5, t_end: 15, q_start: 5, q_end: 15, score: 50.0 }, // Overlapping/conflicting
+        ];
+
+        let gap_calc = GapCalc::medium();
+        // Use Cursor<Vec<u8>> as a dummy reader for ScoreContext since we pass None
+        let mut score_ctx: Option<ScoreContext<Cursor<Vec<u8>>>> = None;
+        let mut chain_id = 0;
+
+        let chains = chain_blocks(
+            &blocks,
+            &gap_calc,
+            &mut score_ctx,
+            "chr1",
+            100,
+            '+',
+            "chr1",
+            100,
+            &mut chain_id,
+        );
+
+        assert!(!chains.is_empty());
+        let best_chain = &chains[0];
+        
+        // Should pick block 1 and block 2 (indices 0 and 1)
+        // Score = 1000 + 1000 - gap_cost (~750) ≈ 1250
+        assert!(best_chain.header.score > 1000.0);
+        
+        // Verify structure
+        // ChainData stores blocks. 
+        // Logic:
+        // Block 1: size=10, dt=10, dq=10 (gap to next)
+        // Block 2: size=10, dt=0, dq=0 (last block)
+        assert_eq!(best_chain.data.len(), 2);
+        assert_eq!(best_chain.data[0].size, 10);
+        assert_eq!(best_chain.data[0].dt, 10);
+        assert_eq!(best_chain.data[0].dq, 10);
+        assert_eq!(best_chain.data[1].size, 10);
     }
 }

@@ -1,4 +1,8 @@
 
+/// A gap cost calculator using linear interpolation for efficient scoring.
+///
+/// It uses pre-calculated tables for small gap sizes and interpolation for larger ones.
+/// Separate costs are maintained for query gaps, target gaps, and simultaneous gaps (both).
 pub struct GapCalc {
     small_size: usize,
     q_small: Vec<i32>,
@@ -8,7 +12,7 @@ pub struct GapCalc {
     q_long: Vec<f64>,
     t_long: Vec<f64>,
     b_long: Vec<f64>,
-    // Last params
+    // Last params for extrapolation
     q_last_pos: i32,
     q_last_pos_val: f64,
     q_last_slope: f64,
@@ -21,6 +25,7 @@ pub struct GapCalc {
 }
 
 impl GapCalc {
+    /// Creates a standard "medium" gap calculator (suitable for mouse/human).
     pub fn medium() -> Self {
         // "medium" (mouse/human)
         // position: 1, 2, 3, 11, 111, 2111, 12111, 32111, 72111, 152111, 252111
@@ -33,6 +38,7 @@ impl GapCalc {
         Self::new(pos, q_gap, t_gap, b_gap)
     }
 
+    /// Creates a "loose" gap calculator (suitable for distant species like chicken/human).
     pub fn loose() -> Self {
         // "loose" (chicken/human)
         // position: 1, 2, 3, 11, 111, 2111, 12111, 32111, 72111, 152111, 252111
@@ -44,6 +50,14 @@ impl GapCalc {
         Self::new(pos, q_gap, t_gap, b_gap)
     }
 
+    /// Creates a new `GapCalc` with custom cost tables.
+    ///
+    /// # Arguments
+    ///
+    /// * `pos` - Positions (gap sizes) for which costs are defined.
+    /// * `q_vals` - Costs for gaps in query sequence.
+    /// * `t_vals` - Costs for gaps in target sequence.
+    /// * `b_vals` - Costs for gaps in both sequences (simultaneous).
     pub fn new(pos: Vec<i32>, q_vals: Vec<f64>, t_vals: Vec<f64>, b_vals: Vec<f64>) -> Self {
         let small_size = 111;
         let mut q_small = vec![0; small_size];
@@ -114,6 +128,7 @@ impl GapCalc {
         v[n - 2] + dv * (x - s[n - 2]) as f64 / ds as f64
     }
 
+    /// Calculates the gap cost for a given distance in query (`dq`) and target (`dt`).
     pub fn calc(&self, dq: i32, dt: i32) -> i32 {
         let dt = if dt < 0 { 0 } else { dt };
         let dq = if dq < 0 { 0 } else { dq };
@@ -147,5 +162,38 @@ impl GapCalc {
                 Self::interpolate(both, &self.long_pos, &self.b_long) as i32
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_gap_calc_medium() {
+        let calc = GapCalc::medium();
+        
+        // Test small values (should be in small table)
+        // pos: 1 -> 325.0
+        assert_eq!(calc.calc(1, 0), 325);
+        assert_eq!(calc.calc(0, 1), 325);
+        
+        // Test interpolation
+        // pos: 1 -> 325, 2 -> 360
+        // 1.5 (not possible for int, but concept applies)
+        // 360 - 325 = 35. slope = 35.
+        // calc(2,0) = 360
+        assert_eq!(calc.calc(2, 0), 360);
+        
+        // Test large values
+        // 252111 -> 56600.0
+        assert_eq!(calc.calc(252111, 0), 56600);
+        
+        // Test extrapolation
+        // slope at end = (56600 - 31600) / (252111 - 152111) = 25000 / 100000 = 0.25
+        // calc(252112, 0) = 56600 + 0.25 = 56600
+        // Let's try a larger step
+        // calc(352111, 0) = 56600 + 0.25 * 100000 = 56600 + 25000 = 81600
+        assert_eq!(calc.calc(352111, 0), 81600);
     }
 }

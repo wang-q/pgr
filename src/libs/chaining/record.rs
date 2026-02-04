@@ -1,37 +1,60 @@
 use std::io::BufRead;
 use std::str::FromStr;
 
+/// Header information for a chain, containing score and sequence details.
 #[derive(Debug, Clone, Default)]
 pub struct ChainHeader {
+    /// Chain score.
     pub score: f64,
+    /// Target sequence name.
     pub t_name: String,
+    /// Target sequence size.
     pub t_size: u64,
+    /// Target strand ('+' or '-').
     pub t_strand: char,
+    /// Target start coordinate (0-based).
     pub t_start: u64,
+    /// Target end coordinate (0-based, exclusive).
     pub t_end: u64,
+    /// Query sequence name.
     pub q_name: String,
+    /// Query sequence size.
     pub q_size: u64,
+    /// Query strand ('+' or '-').
     pub q_strand: char,
+    /// Query start coordinate (0-based).
     pub q_start: u64,
+    /// Query end coordinate (0-based, exclusive).
     pub q_end: u64,
+    /// Chain ID.
     pub id: u64,
 }
 
+/// Data for a single block in a chain (size, and gap to next block).
 #[derive(Debug, Clone, Default)]
 pub struct ChainData {
+    /// Size of the alignment block.
     pub size: u64,
+    /// Gap in target sequence to the next block.
     pub dt: u64,
+    /// Gap in query sequence to the next block.
     pub dq: u64,
 }
 
+/// A simplified representation of an alignment block with absolute coordinates.
 #[derive(Debug, Clone, Default)]
 pub struct Block {
+    /// Target start (0-based).
     pub t_start: u64,
+    /// Target end (0-based, exclusive).
     pub t_end: u64,
+    /// Query start (0-based).
     pub q_start: u64,
+    /// Query end (0-based, exclusive).
     pub q_end: u64,
 }
 
+/// Represents a complete chain with header and data blocks.
 #[derive(Debug, Clone, Default)]
 pub struct Chain {
     pub header: ChainHeader,
@@ -40,6 +63,7 @@ pub struct Chain {
 
 impl Chain {
     /// Convert chain data (relative coordinates) to blocks (absolute coordinates).
+    ///
     /// Note: Coordinates are 0-based, half-open [start, end).
     /// This handles strand logic:
     /// - t_strand is always '+'.
@@ -66,6 +90,7 @@ impl Chain {
     }
 
     /// Reconstruct chain data from blocks.
+    ///
     /// Assumes blocks are sorted by t_start and consistent with the header.
     /// Will update header.t_start, t_end, q_start, q_end based on the blocks.
     pub fn from_blocks(header: &mut ChainHeader, blocks: &[Block]) -> Vec<ChainData> {
@@ -99,6 +124,7 @@ impl Chain {
         data
     }
 
+    /// Write the chain in UCSC Chain format.
     pub fn write<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
         writeln!(
             writer,
@@ -129,6 +155,9 @@ impl Chain {
         Ok(())
     }
 
+    /// Extract a subset of the chain overlapping with the given target range.
+    ///
+    /// Returns `None` if no overlap is found.
     pub fn subset(&self, t_start: u64, t_end: u64) -> Option<Chain> {
         let blocks = self.to_blocks();
         let mut new_blocks = Vec::new();
@@ -186,6 +215,7 @@ impl FromStr for ChainHeader {
     }
 }
 
+/// A reader for UCSC Chain format files.
 pub struct ChainReader<R> {
     reader: std::io::BufReader<R>,
     next_line: Option<String>,
@@ -217,6 +247,7 @@ impl<R: std::io::Read> ChainReader<R> {
     }
 }
 
+/// Reads all chains from a reader into a vector.
 pub fn read_chains<R: std::io::Read>(reader: R) -> anyhow::Result<Vec<Chain>> {
     let mut reader = ChainReader::new(reader);
     let mut chains = Vec::new();
@@ -365,5 +396,49 @@ chain 4900 chrY 58368225 + 25985403 25985638 chr5 151006098 - 43257292 43257528 
         assert_eq!(c.data[2].size, 10);
         assert_eq!(c.data[2].dt, 0);
         assert_eq!(c.data[2].dq, 0);
+    }
+
+    #[test]
+    fn test_chain_block_conversion() {
+        let mut header = ChainHeader {
+            t_start: 100,
+            q_start: 200,
+            ..Default::default()
+        };
+        let data = vec![
+            ChainData { size: 10, dt: 5, dq: 5 },
+            ChainData { size: 20, dt: 0, dq: 0 },
+        ];
+        let chain = Chain {
+            header: header.clone(),
+            data: data.clone(),
+        };
+
+        // To blocks
+        let blocks = chain.to_blocks();
+        assert_eq!(blocks.len(), 2);
+        
+        // Block 1: start at 100/200, size 10
+        assert_eq!(blocks[0].t_start, 100);
+        assert_eq!(blocks[0].t_end, 110);
+        assert_eq!(blocks[0].q_start, 200);
+        assert_eq!(blocks[0].q_end, 210);
+
+        // Gap: 5, 5. Next start: 110+5=115, 210+5=215
+        // Block 2: start at 115/215, size 20
+        assert_eq!(blocks[1].t_start, 115);
+        assert_eq!(blocks[1].t_end, 135);
+        assert_eq!(blocks[1].q_start, 215);
+        assert_eq!(blocks[1].q_end, 235);
+
+        // From blocks
+        let new_data = Chain::from_blocks(&mut header, &blocks);
+        assert_eq!(new_data.len(), 2);
+        assert_eq!(new_data[0].size, 10);
+        assert_eq!(new_data[0].dt, 5);
+        assert_eq!(new_data[0].dq, 5);
+        assert_eq!(new_data[1].size, 20);
+        assert_eq!(new_data[1].dt, 0);
+        assert_eq!(new_data[1].dq, 0);
     }
 }

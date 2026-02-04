@@ -1,6 +1,6 @@
 use pgr::libs::chaining::{calc_block_score, chain_blocks, ChainableBlock, ScoreContext};
 use pgr::libs::chaining::GapCalc;
-use pgr::libs::chaining::ScoreMatrix;
+use pgr::libs::chaining::SubMatrix;
 use pgr::libs::psl::Psl;
 use pgr::libs::twobit::TwoBitFile;
 use anyhow::Result;
@@ -107,10 +107,10 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
     };
 
     let score_matrix = if let Some(path) = score_scheme_path {
-        ScoreMatrix::from_file(path)?
-    } else {
-        ScoreMatrix::default()
-    };
+                SubMatrix::from_file(path)?
+            } else {
+                SubMatrix::default()
+            };
     
     let mut score_context = if t_2bit.is_some() && q_2bit.is_some() {
         Some(ScoreContext {
