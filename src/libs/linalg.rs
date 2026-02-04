@@ -21,7 +21,7 @@ const LANES: usize = 8;
 /// ```
 /// let a = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
 /// let b = [10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.0, 2.0, 1.0];
-/// let distance = hnsm::euclidean_distance(&a, &b);
+/// let distance = pgr::libs::linalg::euclidean_distance(&a, &b);
 /// assert_eq!(format!("{:.4}", distance), "18.1659".to_string());
 /// ```
 pub fn euclidean_distance(a: &[f32], b: &[f32]) -> f32 {
@@ -56,7 +56,7 @@ pub fn euclidean_distance(a: &[f32], b: &[f32]) -> f32 {
 /// ```
 /// let a = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
 /// let b = [10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.0, 2.0, 1.0];
-/// let dot = hnsm::dot_product(&a, &b);
+/// let dot = pgr::libs::linalg::dot_product(&a, &b);
 /// assert_eq!(dot, 220.0);
 /// ```
 pub fn dot_product(a: &[f32], b: &[f32]) -> f32 {
@@ -87,7 +87,7 @@ pub fn dot_product(a: &[f32], b: &[f32]) -> f32 {
 /// # Examples
 /// ```
 /// let a = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
-/// let norm = hnsm::norm_l2(&a);
+/// let norm = pgr::libs::linalg::norm_l2(&a);
 /// assert_eq!(format!("{:.4}", norm), "19.6214".to_string());
 /// ```
 #[inline]
@@ -106,7 +106,7 @@ pub fn norm_l2(a: &[f32]) -> f32 {
 /// # Examples
 /// ```
 /// let a = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
-/// let norm_sq = hnsm::norm_l2_sq(&a);
+/// let norm_sq = pgr::libs::linalg::norm_l2_sq(&a);
 /// assert_eq!(norm_sq, 385.0);
 /// ```
 pub fn norm_l2_sq(a: &[f32]) -> f32 {
@@ -136,7 +136,7 @@ pub fn norm_l2_sq(a: &[f32]) -> f32 {
 /// # Examples
 /// ```
 /// let a = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
-/// let sum_value = hnsm::sum(&a);
+/// let sum_value = pgr::libs::linalg::sum(&a);
 /// assert_eq!(sum_value, 55.0);
 /// ```
 pub fn sum(a: &[f32]) -> f32 {
@@ -166,10 +166,13 @@ pub fn sum(a: &[f32]) -> f32 {
 /// # Examples
 /// ```
 /// let a = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
-/// let mean_value = hnsm::mean(&a);
+/// let mean_value = pgr::libs::linalg::mean(&a);
 /// assert_eq!(mean_value, 5.5);
 /// ```
 pub fn mean(a: &[f32]) -> f32 {
+    if a.is_empty() {
+        return 0.0;
+    }
     sum(a) / a.len() as f32
 }
 
@@ -187,7 +190,7 @@ pub fn mean(a: &[f32]) -> f32 {
 /// ```
 /// let a = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
 /// let b = [10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.0, 2.0, 1.0];
-/// let intersection = hnsm::jaccard_intersection(&a, &b);
+/// let intersection = pgr::libs::linalg::jaccard_intersection(&a, &b);
 /// assert_eq!(intersection, 30.0);
 /// ```
 pub fn jaccard_intersection(a: &[f32], b: &[f32]) -> f32 {
@@ -221,7 +224,7 @@ pub fn jaccard_intersection(a: &[f32], b: &[f32]) -> f32 {
 /// ```
 /// let a = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
 /// let b = [10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.0, 2.0, 1.0];
-/// let union = hnsm::jaccard_union(&a, &b);
+/// let union = pgr::libs::linalg::jaccard_union(&a, &b);
 /// assert_eq!(union, 80.0);
 /// ```
 pub fn jaccard_union(a: &[f32], b: &[f32]) -> f32 {
@@ -270,11 +273,11 @@ pub fn jaccard_union(a: &[f32], b: &[f32]) -> f32 {
 /// ```
 /// let a = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
 /// let b = [10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.0, 2.0, 1.0];
-/// let correlation = hnsm::pearson_correlation(&a, &b);
+/// let correlation = pgr::libs::linalg::pearson_correlation(&a, &b);
 /// assert_eq!(format!("{:.4}", correlation), "-1.0000".to_string()); // Perfect negative correlation
 ///
 /// let empty: [f32; 0] = [];
-/// assert!(hnsm::pearson_correlation(&empty, &empty).is_nan()); // Check handling of empty vectors
+/// assert!(pgr::libs::linalg::pearson_correlation(&empty, &empty).is_nan()); // Check handling of empty vectors
 /// ```
 pub fn pearson_correlation(a: &[f32], b: &[f32]) -> f32 {
     if a.len() != b.len() || a.is_empty() {

@@ -194,7 +194,7 @@ fn hv_norm_l2_sq_serial(hv: &[i32]) -> f32 {
 /// The squared L2 norm of the hypervector as an `f32`.
 pub fn hv_norm_l2_sq(hv: &[i32]) -> f32 {
     let a_f32: Vec<f32> = hv.iter().map(|&x| x as f32).collect();
-    crate::norm_l2_sq(&a_f32)
+    crate::libs::linalg::norm_l2_sq(&a_f32)
 }
 
 /// Computes the cardinality of a set represented by a hypervector.
@@ -230,7 +230,7 @@ pub fn hv_dot(a: &[i32], b: &[i32]) -> f32 {
     let a_f32: Vec<_> = a.iter().map(|&x| x as f32 / hv_d_sqrt).collect();
     let b_f32: Vec<_> = b.iter().map(|&x| x as f32 / hv_d_sqrt).collect();
 
-    crate::dot_product(&a_f32, &b_f32)
+    crate::libs::linalg::dot_product(&a_f32, &b_f32)
 }
 
 #[cfg(test)]

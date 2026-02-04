@@ -37,11 +37,12 @@ rand = { version = "0.9.0" }
 minimizer-iter = "1.2.1"
 
 intspan = "0.8.7"
-noodles = { version = "0.104.0", features = ["core", "fasta", "fastq", "bgzf"] }
+noodles = { version = "0.104.0", features = ["core", "fasta", "fastq", "bgzf", "gff"] }
 noodles-core = "0.18.0"
 noodles-fasta = "0.58.0"
 noodles-fastq = "0.21.0"
 noodles-bgzf = "0.45.0"
+noodles-gff = "0.54.0"
 
 which = "7.0.0"
 tempfile = "3.14.0"
