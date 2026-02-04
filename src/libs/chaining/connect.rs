@@ -181,6 +181,9 @@ pub fn chain_blocks<R: Read + Seek>(
 
         chain_blocks_rev.reverse();
         
+        remove_exact_overlaps(&mut chain_blocks_rev);
+        merge_abutting_blocks(&mut chain_blocks_rev);
+
         // Trim overlaps if we have score context
         if let Some(ctx) = score_ctx {
              trim_overlaps(&mut chain_blocks_rev, ctx, q_name, t_name, q_size, q_strand);
@@ -349,6 +352,65 @@ fn find_crossover<R: Read + Seek>(
     (best_pos, adjustment)
 }
 
+/// Removes duplicate blocks that have exact same coordinates.
+fn remove_exact_overlaps(blocks: &mut Vec<ChainableBlock>) {
+    if blocks.is_empty() {
+        return;
+    }
+    
+    let mut write_idx = 0;
+    for read_idx in 1..blocks.len() {
+        let is_duplicate = {
+            let prev = &blocks[write_idx];
+            let curr = &blocks[read_idx];
+            curr.t_start == prev.t_start && curr.q_start == prev.q_start &&
+            curr.t_end == prev.t_end && curr.q_end == prev.q_end
+        };
+        
+        if is_duplicate {
+            continue;
+        }
+        
+        write_idx += 1;
+        if write_idx != read_idx {
+            blocks[write_idx] = blocks[read_idx].clone();
+        }
+    }
+    blocks.truncate(write_idx + 1);
+}
+
+/// Merges adjacent blocks that abut perfectly.
+fn merge_abutting_blocks(blocks: &mut Vec<ChainableBlock>) {
+    if blocks.len() < 2 {
+        return;
+    }
+    
+    let mut write_idx = 0;
+    for read_idx in 1..blocks.len() {
+        let should_merge = {
+            let prev = &blocks[write_idx];
+            let curr = &blocks[read_idx];
+            curr.t_start == prev.t_end && curr.q_start == prev.q_end
+        };
+        
+        if should_merge {
+             let curr_t_end = blocks[read_idx].t_end;
+             let curr_q_end = blocks[read_idx].q_end;
+             let curr_score = blocks[read_idx].score;
+             
+             blocks[write_idx].t_end = curr_t_end;
+             blocks[write_idx].q_end = curr_q_end;
+             blocks[write_idx].score += curr_score;
+        } else {
+            write_idx += 1;
+            if write_idx != read_idx {
+                blocks[write_idx] = blocks[read_idx].clone();
+            }
+        }
+    }
+    blocks.truncate(write_idx + 1);
+}
+
 /// Calculates the total score of a chain.
 ///
 /// If `score_ctx` is provided, it recalculates block scores and gap costs using sequence data.
@@ -508,5 +570,35 @@ mod tests {
         assert_eq!(best_chain.data[0].dt, 10);
         assert_eq!(best_chain.data[0].dq, 10);
         assert_eq!(best_chain.data[1].size, 10);
+    }
+
+    #[test]
+    fn test_remove_exact_overlaps() {
+        let mut blocks = vec![
+            ChainableBlock { t_start: 0, t_end: 10, q_start: 0, q_end: 10, score: 100.0 },
+            ChainableBlock { t_start: 0, t_end: 10, q_start: 0, q_end: 10, score: 100.0 },
+            ChainableBlock { t_start: 20, t_end: 30, q_start: 20, q_end: 30, score: 100.0 },
+        ];
+        
+        remove_exact_overlaps(&mut blocks);
+        assert_eq!(blocks.len(), 2);
+        assert_eq!(blocks[0].t_start, 0);
+        assert_eq!(blocks[1].t_start, 20);
+    }
+
+    #[test]
+    fn test_merge_abutting_blocks() {
+        let mut blocks = vec![
+            ChainableBlock { t_start: 0, t_end: 10, q_start: 0, q_end: 10, score: 100.0 },
+            ChainableBlock { t_start: 10, t_end: 20, q_start: 10, q_end: 20, score: 100.0 },
+            ChainableBlock { t_start: 25, t_end: 30, q_start: 25, q_end: 30, score: 100.0 },
+        ];
+        
+        merge_abutting_blocks(&mut blocks);
+        assert_eq!(blocks.len(), 2);
+        assert_eq!(blocks[0].t_start, 0);
+        assert_eq!(blocks[0].t_end, 20);
+        assert_eq!(blocks[0].score, 200.0);
+        assert_eq!(blocks[1].t_start, 25);
     }
 }
