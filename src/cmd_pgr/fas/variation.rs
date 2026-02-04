@@ -98,13 +98,15 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
             // target range and sequence intspan
             let trange = block.entries.first().unwrap().range().clone();
-            let t_ints_seq = pgr::libs::alignment::seq_intspan(block.entries.first().unwrap().seq());
+            let t_ints_seq =
+                pgr::libs::alignment::seq_intspan(block.entries.first().unwrap().seq());
 
             // pos, tbase, qbase, bases, mutant_to, freq, pattern, obase
             //   0,     1,     2,     3,         4,    5,       6,     7
             let seq_count = seqs.len();
             let subs = if has_outgroup {
-                let mut unpolarized = pgr::libs::alignment::get_subs(&seqs[..(seq_count - 1)]).unwrap();
+                let mut unpolarized =
+                    pgr::libs::alignment::get_subs(&seqs[..(seq_count - 1)]).unwrap();
                 pgr::libs::alignment::polarize_subs(&mut unpolarized, seqs[seq_count - 1]);
                 unpolarized
             } else {
@@ -114,8 +116,13 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             for s in subs {
                 let chr = trange.chr();
 
-                let chr_pos =
-                    pgr::libs::alignment::align_to_chr(&t_ints_seq, s.pos, trange.start, trange.strand()).unwrap();
+                let chr_pos = pgr::libs::alignment::align_to_chr(
+                    &t_ints_seq,
+                    s.pos,
+                    trange.start,
+                    trange.strand(),
+                )
+                .unwrap();
                 let var_rg = format!("{}:{}", chr, chr_pos);
 
                 writer.write_all(

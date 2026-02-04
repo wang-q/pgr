@@ -32,11 +32,15 @@ impl GapCalc {
         // "medium" (mouse/human)
         // position: 1, 2, 3, 11, 111, 2111, 12111, 32111, 72111, 152111, 252111
         let pos = vec![1, 2, 3, 11, 111, 2111, 12111, 32111, 72111, 152111, 252111];
-        let q_gap = vec![325.0, 360.0, 400.0, 450.0, 600.0, 1100.0, 3600.0, 7600.0, 15600.0, 31600.0, 56600.0];
+        let q_gap = vec![
+            325.0, 360.0, 400.0, 450.0, 600.0, 1100.0, 3600.0, 7600.0, 15600.0, 31600.0, 56600.0,
+        ];
         // tGap same as qGap
         let t_gap = q_gap.clone();
-        let b_gap = vec![625.0, 660.0, 700.0, 750.0, 900.0, 1400.0, 4000.0, 8000.0, 16000.0, 32000.0, 57000.0];
-        
+        let b_gap = vec![
+            625.0, 660.0, 700.0, 750.0, 900.0, 1400.0, 4000.0, 8000.0, 16000.0, 32000.0, 57000.0,
+        ];
+
         Self::new(pos, q_gap, t_gap, b_gap)
     }
 
@@ -45,10 +49,16 @@ impl GapCalc {
         // "loose" (chicken/human)
         // position: 1, 2, 3, 11, 111, 2111, 12111, 32111, 72111, 152111, 252111
         let pos = vec![1, 2, 3, 11, 111, 2111, 12111, 32111, 72111, 152111, 252111];
-        let q_gap = vec![350.0, 425.0, 450.0, 600.0, 900.0, 2900.0, 22900.0, 57900.0, 117900.0, 217900.0, 317900.0];
-        let b_gap = vec![750.0, 825.0, 850.0, 1000.0, 1300.0, 3300.0, 23300.0, 58300.0, 118300.0, 218300.0, 318300.0];
+        let q_gap = vec![
+            350.0, 425.0, 450.0, 600.0, 900.0, 2900.0, 22900.0, 57900.0, 117900.0, 217900.0,
+            317900.0,
+        ];
+        let b_gap = vec![
+            750.0, 825.0, 850.0, 1000.0, 1300.0, 3300.0, 23300.0, 58300.0, 118300.0, 218300.0,
+            318300.0,
+        ];
         let t_gap = q_gap.clone();
-        
+
         Self::new(pos, q_gap, t_gap, b_gap)
     }
 
@@ -60,20 +70,24 @@ impl GapCalc {
     /// * `extend` - Gap extension cost.
     pub fn affine(open: i32, extend: i32) -> Self {
         let pos = vec![1, 2, 3, 11, 111, 2111, 12111, 32111, 72111, 152111, 252111];
-        
+
         let calc_cost = |len: i32| -> f64 {
-             if len <= 0 { 0.0 } else { (open + extend * len) as f64 }
+            if len <= 0 {
+                0.0
+            } else {
+                (open + extend * len) as f64
+            }
         };
 
         let q_gap: Vec<f64> = pos.iter().map(|&x| calc_cost(x)).collect();
         let t_gap = q_gap.clone();
-        
-        // For simultaneous gaps, we can use max(dq, dt) logic in calc(), 
-        // but here we just need a table. 
+
+        // For simultaneous gaps, we can use max(dq, dt) logic in calc(),
+        // but here we just need a table.
         // In affine mode, calc() handles sim gaps by taking max(dq, dt) and looking up single gap cost.
         // So b_gap table should be same as q_gap/t_gap.
-        let b_gap = q_gap.clone(); 
-        
+        let b_gap = q_gap.clone();
+
         Self::new(pos, q_gap, t_gap, b_gap)
     }
 
@@ -97,8 +111,11 @@ impl GapCalc {
             b_small[i] = Self::interpolate(i as i32, &pos, &b_vals) as i32;
         }
 
-        let start_long = pos.iter().position(|&x| x == small_size as i32).unwrap_or(0);
-        
+        let start_long = pos
+            .iter()
+            .position(|&x| x == small_size as i32)
+            .unwrap_or(0);
+
         let long_pos = pos[start_long..].to_vec();
         let q_long = q_vals[start_long..].to_vec();
         let t_long = t_vals[start_long..].to_vec();
@@ -107,15 +124,18 @@ impl GapCalc {
         let n = long_pos.len();
         let q_last_pos = long_pos[n - 1];
         let q_last_pos_val = q_long[n - 1];
-        let q_last_slope = (q_long[n - 1] - q_long[n - 2]) / (long_pos[n - 1] - long_pos[n - 2]) as f64;
+        let q_last_slope =
+            (q_long[n - 1] - q_long[n - 2]) / (long_pos[n - 1] - long_pos[n - 2]) as f64;
 
         let t_last_pos = long_pos[n - 1];
         let t_last_pos_val = t_long[n - 1];
-        let t_last_slope = (t_long[n - 1] - t_long[n - 2]) / (long_pos[n - 1] - long_pos[n - 2]) as f64;
+        let t_last_slope =
+            (t_long[n - 1] - t_long[n - 2]) / (long_pos[n - 1] - long_pos[n - 2]) as f64;
 
         let b_last_pos = long_pos[n - 1];
         let b_last_pos_val = b_long[n - 1];
-        let b_last_slope = (b_long[n - 1] - b_long[n - 2]) / (long_pos[n - 1] - long_pos[n - 2]) as f64;
+        let b_last_slope =
+            (b_long[n - 1] - b_long[n - 2]) / (long_pos[n - 1] - long_pos[n - 2]) as f64;
 
         GapCalc {
             small_size,
@@ -143,7 +163,9 @@ impl GapCalc {
             if x == s[i] {
                 return v[i];
             } else if x < s[i] {
-                if i == 0 { return v[0]; } 
+                if i == 0 {
+                    return v[0];
+                }
                 let ds = s[i] - s[i - 1];
                 let dv = v[i] - v[i - 1];
                 return v[i - 1] + dv * (x - s[i - 1]) as f64 / ds as f64;
@@ -184,7 +206,8 @@ impl GapCalc {
             if (both as usize) < self.small_size {
                 self.b_small[both as usize]
             } else if both >= self.b_last_pos {
-                let cost = self.b_last_pos_val + self.b_last_slope * (both - self.b_last_pos) as f64;
+                let cost =
+                    self.b_last_pos_val + self.b_last_slope * (both - self.b_last_pos) as f64;
                 cost as i32
             } else {
                 Self::interpolate(both, &self.long_pos, &self.b_long) as i32
@@ -200,7 +223,7 @@ mod tests {
     #[test]
     fn test_gap_calc_medium() {
         let calc = GapCalc::medium();
-        
+
         // Test small values (should be in small table)
         // pos: 1 -> 325.0
         assert_eq!(calc.calc(1, 0), 325);

@@ -406,8 +406,16 @@ chain 4900 chrY 58368225 + 25985403 25985638 chr5 151006098 - 43257292 43257528 
             ..Default::default()
         };
         let data = vec![
-            ChainData { size: 10, dt: 5, dq: 5 },
-            ChainData { size: 20, dt: 0, dq: 0 },
+            ChainData {
+                size: 10,
+                dt: 5,
+                dq: 5,
+            },
+            ChainData {
+                size: 20,
+                dt: 0,
+                dq: 0,
+            },
         ];
         let chain = Chain {
             header: header.clone(),
@@ -417,7 +425,7 @@ chain 4900 chrY 58368225 + 25985403 25985638 chr5 151006098 - 43257292 43257528 
         // To blocks
         let blocks = chain.to_blocks();
         assert_eq!(blocks.len(), 2);
-        
+
         // Block 1: start at 100/200, size 10
         assert_eq!(blocks[0].t_start, 100);
         assert_eq!(blocks[0].t_end, 110);

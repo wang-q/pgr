@@ -704,4 +704,3 @@ fn command_filter() -> anyhow::Result<()> {
 
     Ok(())
 }
-

@@ -1,3 +1,4 @@
+use crate::libs::nt::NT_VAL;
 use anyhow::{anyhow, bail};
 use bio::io::fasta;
 use indexmap::IndexMap;
@@ -5,7 +6,6 @@ use intspan::IntSpan;
 use itertools::Itertools;
 use noodles_bgzf;
 use std::cmp::min;
-use crate::libs::nt::NT_VAL;
 use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::{BufRead, Write};
@@ -14,7 +14,6 @@ use std::string::String;
 use std::{fmt, fs, str};
 
 // BASES definition removed
-
 
 /// Divergence (D) between two sequences
 ///

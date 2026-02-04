@@ -577,12 +577,12 @@ fn create_formats() -> BTreeMap<String, Format> {
             format_of.insert(
                 key,
                 Format::new()
-                .set_font_name("Courier New")
-                .set_font_size(10)
-                .set_align(FormatAlign::VerticalCenter)
-                .set_align(FormatAlign::Center)
-                .set_font_color(*sub_fc_of.get(fc).unwrap())
-                .set_background_color(*bg_colors.get(i).unwrap()),
+                    .set_font_name("Courier New")
+                    .set_font_size(10)
+                    .set_align(FormatAlign::VerticalCenter)
+                    .set_align(FormatAlign::Center)
+                    .set_font_color(*sub_fc_of.get(fc).unwrap())
+                    .set_background_color(*bg_colors.get(i).unwrap()),
             );
         }
     }

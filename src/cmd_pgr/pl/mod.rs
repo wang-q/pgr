@@ -1,7 +1,7 @@
-pub mod p2m;
-pub mod trf;
 pub mod ir;
+pub mod p2m;
 pub mod rept;
+pub mod trf;
 pub mod ucsc;
 
 pub fn make_subcommand() -> clap::Command {

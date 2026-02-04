@@ -1,10 +1,10 @@
-use pgr::libs::chain::{calc_block_score, chain_blocks, ChainableBlock, ScoreContext};
-use pgr::libs::chain::GapCalc;
-use pgr::libs::chain::SubMatrix;
-use pgr::libs::psl::Psl;
-use pgr::libs::twobit::TwoBitFile;
 use anyhow::Result;
 use clap::{Arg, ArgMatches, Command};
+use pgr::libs::chain::GapCalc;
+use pgr::libs::chain::SubMatrix;
+use pgr::libs::chain::{calc_block_score, chain_blocks, ChainableBlock, ScoreContext};
+use pgr::libs::psl::Psl;
+use pgr::libs::twobit::TwoBitFile;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::io::{BufRead, Write};
@@ -133,11 +133,11 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
     };
 
     let score_matrix = if let Some(path) = score_scheme_path {
-                SubMatrix::from_name(path)?
-            } else {
-                SubMatrix::default()
+        SubMatrix::from_name(path)?
+    } else {
+        SubMatrix::default()
     };
-    
+
     let mut score_context = if t_2bit.is_some() && q_2bit.is_some() {
         Some(ScoreContext {
             t_2bit: t_2bit.as_mut().unwrap(),
@@ -203,7 +203,7 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
                 let s = psl.q_starts[i] as u64;
                 (s, s + size)
             };
-            
+
             let mut block = ChainableBlock {
                 t_start,
                 t_end,
@@ -213,14 +213,9 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
             };
 
             if let Some(ctx) = &mut score_context {
-                if let Some(exact) = calc_block_score(
-                    &block,
-                    ctx,
-                    &q_name,
-                    &t_name,
-                    psl.q_size as u64,
-                    q_strand,
-                ) {
+                if let Some(exact) =
+                    calc_block_score(&block, ctx, &q_name, &t_name, psl.q_size as u64, q_strand)
+                {
                     block.score = exact;
                 }
             }
@@ -243,7 +238,10 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
         if std::env::var("PGR_DEBUG").is_ok() {
             eprintln!("Group: {} {} {}", t_name, q_name, q_strand);
             for b in &data.blocks {
-                eprintln!("Block: T {}-{} Q {}-{} Score {}", b.t_start, b.t_end, b.q_start, b.q_end, b.score);
+                eprintln!(
+                    "Block: T {}-{} Q {}-{} Score {}",
+                    b.t_start, b.t_end, b.q_start, b.q_end, b.score
+                );
             }
         }
 
@@ -261,7 +259,12 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
         all_chains.extend(chains);
     }
 
-    all_chains.sort_by(|a, b| b.header.score.partial_cmp(&a.header.score).unwrap_or(Ordering::Equal));
+    all_chains.sort_by(|a, b| {
+        b.header
+            .score
+            .partial_cmp(&a.header.score)
+            .unwrap_or(Ordering::Equal)
+    });
 
     for chain in all_chains {
         if chain.header.score < min_score {

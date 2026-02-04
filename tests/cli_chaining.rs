@@ -31,24 +31,25 @@ fn create_2bit(dir: &TempDir, name: &str, content: &str) -> anyhow::Result<std::
 #[test]
 fn test_chaining_psl_basic() -> anyhow::Result<()> {
     let temp = TempDir::new()?;
-    
+
     // Create genomes
     // Target: chr1: 1000bp
     // Query: chr2: 1000bp
     let t_seq = ">chr1\n".to_string() + &"A".repeat(1000);
     let q_seq = ">chr2\n".to_string() + &"A".repeat(1000);
-    
+
     let t_2bit = create_2bit(&temp, "t", &t_seq)?;
     let q_2bit = create_2bit(&temp, "q", &q_seq)?;
-    
+
     // Create PSL
     // match: 100, t: 0-100, q: 0-100
     // Use tabs for PSL fields as required by Psl::from_str
     // qName=chr2 (matches q.2bit), tName=chr1 (matches t.2bit)
-    let psl_content = "100\t0\t0\t0\t0\t0\t0\t0\t+\tchr2\t1000\t0\t100\tchr1\t1000\t0\t100\t1\t100,\t0,\t0,\n";
+    let psl_content =
+        "100\t0\t0\t0\t0\t0\t0\t0\t+\tchr2\t1000\t0\t100\tchr1\t1000\t0\t100\t1\t100,\t0,\t0,\n";
     let psl_path = temp.path().join("in.psl");
     fs::write(&psl_path, psl_content)?;
-    
+
     let output_path = temp.path().join("out.chain");
 
     let mut cmd = Command::cargo_bin("pgr")?;
@@ -67,7 +68,7 @@ fn test_chaining_psl_basic() -> anyhow::Result<()> {
 
     let output = fs::read_to_string(&output_path)?;
     println!("Chain output:\n{}", output);
-    
+
     // chain score tName tSize tStrand tStart tEnd qName qSize qStrand qStart qEnd id
     assert!(output.contains("chain"));
     assert!(output.contains("chr1 1000 + 0 100 chr2 1000 + 0 100"));
@@ -121,12 +122,12 @@ fn test_chaining_psl_new_style_lastz() -> anyhow::Result<()> {
         .arg("loose")
         .arg("--min-score")
         .arg("3000");
-    
+
     cmd.assert().success();
 
     let output_content = fs::read_to_string(&output)?;
     let expected_content = fs::read_to_string(&expected_output)?;
-    
+
     let output_norm = normalize_chain_output(&output_content);
     let expected_norm = normalize_chain_output(&expected_content);
 

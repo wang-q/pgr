@@ -150,7 +150,7 @@ fn test_to_chain_fail_neg_strand() -> anyhow::Result<()> {
         .arg(&input)
         .arg("-o")
         .arg(&output);
-    
+
     // Should fail because of negative target strand without --fix-strand
     cmd.assert().failure();
 

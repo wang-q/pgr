@@ -668,17 +668,22 @@ fn test_2bit_size_doc_consistency() -> anyhow::Result<()> {
     for name in ["pseudocat", "pseudopig"] {
         let fa_path = tests_pgr.join(format!("{}.fa", name));
         let twobit_path = tests_pgr.join(format!("{}.2bit", name));
-        
+
         // Ensure inputs exist
         assert!(fa_path.exists(), "Test file not found: {:?}", fa_path);
-        assert!(twobit_path.exists(), "Test file not found: {:?}", twobit_path);
+        assert!(
+            twobit_path.exists(),
+            "Test file not found: {:?}",
+            twobit_path
+        );
 
         let fa_sizes_path = temp.path().join(format!("{}.fa.sizes", name));
         let twobit_sizes_path = temp.path().join(format!("{}.2bit.sizes", name));
 
         // 1. Run pgr fa size
         let mut cmd_fa = Command::cargo_bin("pgr")?;
-        cmd_fa.arg("fa")
+        cmd_fa
+            .arg("fa")
             .arg("size")
             .arg(&fa_path)
             .arg("-o")
@@ -687,7 +692,8 @@ fn test_2bit_size_doc_consistency() -> anyhow::Result<()> {
 
         // 2. Run pgr 2bit size
         let mut cmd_2bit = Command::cargo_bin("pgr")?;
-        cmd_2bit.arg("2bit")
+        cmd_2bit
+            .arg("2bit")
             .arg("size")
             .arg(&twobit_path)
             .arg("-o")

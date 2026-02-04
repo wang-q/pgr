@@ -75,7 +75,12 @@ fn command_fq_to_fa_output() -> anyhow::Result<()> {
     use std::io::Write;
     file.write_all(input.as_bytes())?;
 
-    let output = cmd.arg("fq").arg("to-fa").arg(file.path()).output().unwrap();
+    let output = cmd
+        .arg("fq")
+        .arg("to-fa")
+        .arg(file.path())
+        .output()
+        .unwrap();
 
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(stdout.contains(">SEQ_ID"));

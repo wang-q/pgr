@@ -3,7 +3,6 @@ use calamine::Reader;
 use std::process::Command;
 use tempfile::NamedTempFile;
 
-
 #[test]
 fn command_variation() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("pgr")?;

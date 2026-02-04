@@ -107,9 +107,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             }
 
             // target sequence intspan
-            let t_ints_seq = pgr::libs::alignment::seq_intspan(
-                block.entries.get(idx.unwrap()).unwrap().seq(),
-            );
+            let t_ints_seq =
+                pgr::libs::alignment::seq_intspan(block.entries.get(idx.unwrap()).unwrap().seq());
 
             // every sequence intspans
             let mut ints_seq_of = BTreeMap::new();
@@ -117,10 +116,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             let mut indel_ints = intspan::IntSpan::new();
             for (i, name) in block.names.iter().enumerate() {
                 let seq = block.entries.get(i).unwrap().seq();
-                ints_seq_of.insert(
-                    name.to_string(),
-                    pgr::libs::alignment::seq_intspan(seq),
-                );
+                ints_seq_of.insert(name.to_string(), pgr::libs::alignment::seq_intspan(seq));
                 indel_ints.merge(&pgr::libs::alignment::indel_intspan(seq));
             }
 

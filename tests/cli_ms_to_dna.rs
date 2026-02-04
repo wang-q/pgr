@@ -22,7 +22,10 @@ positions: 0.25 0.75
 10
 ";
     let mut cmd = Command::cargo_bin("pgr")?;
-    cmd.arg("ms-to-dna").arg("--seed").arg("42").write_stdin(input);
+    cmd.arg("ms-to-dna")
+        .arg("--seed")
+        .arg("42")
+        .write_stdin(input);
 
     // With seed 42, we expect deterministic output
     // nsite=4.

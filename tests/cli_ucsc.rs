@@ -19,7 +19,7 @@ fn normalize_chain_output(content: &str) -> String {
                 let mut parts: Vec<&str> = line.split_whitespace().collect();
                 if parts.len() > 2 {
                     parts[1] = "SCORE"; // Ignore score
-                    parts[12] = "ID";   // Ignore ID
+                    parts[12] = "ID"; // Ignore ID
                 }
                 parts.join(" ")
             } else {
@@ -43,13 +43,16 @@ fn test_2bit_size_pseudocat() -> anyhow::Result<()> {
         .arg(&input)
         .arg("-o")
         .arg(&output);
-    
+
     cmd.assert().success();
 
     let output_content = fs::read_to_string(&output)?;
     let expected_content = fs::read_to_string(&expected_output)?;
-    
-    assert_eq!(output_content.replace("\r\n", "\n"), expected_content.replace("\r\n", "\n"));
+
+    assert_eq!(
+        output_content.replace("\r\n", "\n"),
+        expected_content.replace("\r\n", "\n")
+    );
 
     Ok(())
 }
@@ -67,13 +70,16 @@ fn test_2bit_size_pseudopig() -> anyhow::Result<()> {
         .arg(&input)
         .arg("-o")
         .arg(&output);
-    
+
     cmd.assert().success();
 
     let output_content = fs::read_to_string(&output)?;
     let expected_content = fs::read_to_string(&expected_output)?;
-    
-    assert_eq!(output_content.replace("\r\n", "\n"), expected_content.replace("\r\n", "\n"));
+
+    assert_eq!(
+        output_content.replace("\r\n", "\n"),
+        expected_content.replace("\r\n", "\n")
+    );
 
     Ok(())
 }
@@ -91,7 +97,7 @@ fn test_lav_to_psl_lastz() -> anyhow::Result<()> {
         .arg(&input)
         .arg("-o")
         .arg(&output);
-    
+
     cmd.assert().success();
 
     let output_content = fs::read_to_string(&output)?;
@@ -109,7 +115,11 @@ fn test_lav_to_psl_lastz() -> anyhow::Result<()> {
         .map(|l| l.to_string())
         .collect();
 
-    assert_eq!(output_lines.len(), expected_lines.len(), "Line count mismatch");
+    assert_eq!(
+        output_lines.len(),
+        expected_lines.len(),
+        "Line count mismatch"
+    );
 
     for (i, (out, exp)) in output_lines.iter().zip(expected_lines.iter()).enumerate() {
         assert_eq!(out, exp, "Mismatch at line {}", i + 1);
@@ -152,22 +162,26 @@ fn test_chaining_psl_lastz() -> anyhow::Result<()> {
 
     // Verify chain lines are similar (ignoring score and ID)
     // And block data is present
-    
-    // Note: The order of chains might differ if not sorted. 
+
+    // Note: The order of chains might differ if not sorted.
     // But pgr chaining psl usually outputs in input order or sorted by score/pos.
     // Let's check if we can match normalized content directly or if we need more robust comparison.
     // For now, try direct comparison of normalized strings.
-    
+
     // If direct comparison fails due to ordering, we might need to sort chains.
     // But typically chaining follows input PSL order or specific logic.
-    
+
     // Given the complexity of exact floating point scores or ID generation,
     // we primarily check if the structure and coordinates match.
-    
-    assert_eq!(output_norm.lines().count(), expected_norm.lines().count(), "Line count mismatch");
-    
-    // assert_eq!(output_norm, expected_norm); 
-    // Commented out exact match for now to see if it runs. 
+
+    assert_eq!(
+        output_norm.lines().count(),
+        expected_norm.lines().count(),
+        "Line count mismatch"
+    );
+
+    // assert_eq!(output_norm, expected_norm);
+    // Commented out exact match for now to see if it runs.
     // We might need to handle chain IDs which are usually sequential integers.
     // I added ID masking to normalize function.
 

@@ -22,14 +22,14 @@
 //! 4. **Overlap Handling**: Overlaps between adjacent blocks are trimmed to maximize the total score.
 //! 5. **Output**: Chains passing a minimum score threshold are output.
 
-pub mod gap_calc;
-pub mod sub_matrix;
-pub mod connect;
-pub mod record;
 pub mod algo;
+pub mod connect;
+pub mod gap_calc;
+pub mod record;
+pub mod sub_matrix;
 
+pub use algo::{ChainItem, KdTree};
+pub use connect::{calc_block_score, chain_blocks, ChainableBlock, ScoreContext};
 pub use gap_calc::GapCalc;
+pub use record::{read_chains, Block, Chain, ChainData, ChainHeader, ChainReader};
 pub use sub_matrix::SubMatrix;
-pub use record::{Chain, ChainHeader, ChainData, Block, ChainReader, read_chains};
-pub use algo::{KdTree, ChainItem};
-pub use connect::{chain_blocks, ChainableBlock, ScoreContext, calc_block_score};

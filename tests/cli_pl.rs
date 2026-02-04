@@ -36,11 +36,7 @@ fn command_pl_p2m() -> anyhow::Result<()> {
 #[test]
 fn command_pl_trf_help() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("pgr")?;
-    let output = cmd
-        .arg("pl")
-        .arg("trf")
-        .arg("--help")
-        .output()?;
+    let output = cmd.arg("pl").arg("trf").arg("--help").output()?;
     let stdout = String::from_utf8(output.stdout)?;
 
     assert!(stdout.contains("Identify tandem repeats in a genome"));
@@ -50,11 +46,7 @@ fn command_pl_trf_help() -> anyhow::Result<()> {
 #[test]
 fn command_pl_ir_help() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("pgr")?;
-    let output = cmd
-        .arg("pl")
-        .arg("ir")
-        .arg("--help")
-        .output()?;
+    let output = cmd.arg("pl").arg("ir").arg("--help").output()?;
     let stdout = String::from_utf8(output.stdout)?;
 
     assert!(stdout.contains("Identify interspersed repeats in a genome"));
@@ -64,11 +56,7 @@ fn command_pl_ir_help() -> anyhow::Result<()> {
 #[test]
 fn command_pl_rept_help() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("pgr")?;
-    let output = cmd
-        .arg("pl")
-        .arg("rept")
-        .arg("--help")
-        .output()?;
+    let output = cmd.arg("pl").arg("rept").arg("--help").output()?;
     let stdout = String::from_utf8(output.stdout)?;
 
     assert!(stdout.contains("Identify repetitive regions in a genome"));
@@ -78,11 +66,7 @@ fn command_pl_rept_help() -> anyhow::Result<()> {
 #[test]
 fn command_pl_ucsc_help() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("pgr")?;
-    let output = cmd
-        .arg("pl")
-        .arg("ucsc")
-        .arg("--help")
-        .output()?;
+    let output = cmd.arg("pl").arg("ucsc").arg("--help").output()?;
     let stdout = String::from_utf8(output.stdout)?;
 
     assert!(stdout.contains("UCSC chain/net pipeline"));

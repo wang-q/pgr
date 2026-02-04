@@ -1,8 +1,9 @@
-pub mod concat;
 pub mod check;
+pub mod concat;
 pub mod consensus;
-pub mod create;
 pub mod cover;
+pub mod create;
+pub mod filter;
 pub mod join;
 pub mod link;
 pub mod name;
@@ -13,10 +14,9 @@ pub mod slice;
 pub mod split;
 pub mod stat;
 pub mod subset;
-pub mod variation;
-pub mod to_xlsx;
 pub mod to_vcf;
-pub mod filter;
+pub mod to_xlsx;
+pub mod variation;
 
 pub fn make_subcommand() -> clap::Command {
     clap::Command::new("fas")

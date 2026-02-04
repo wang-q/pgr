@@ -85,7 +85,11 @@ impl KdTree {
         }
     }
 
-    fn build_recursive<T: ChainItem>(indices: &mut [usize], items: &[T], dim: usize) -> Box<KdNode> {
+    fn build_recursive<T: ChainItem>(
+        indices: &mut [usize],
+        items: &[T],
+        dim: usize,
+    ) -> Box<KdNode> {
         if indices.len() == 1 {
             let idx = indices[0];
             let item = &items[idx];
@@ -211,7 +215,7 @@ impl KdTree {
     where
         T: ChainItem,
         F: Fn(usize, usize) -> Option<f64>, // (candidate_idx, target_idx) -> Option<new_total_score>
-        L: Fn(u64, u64) -> f64, // (dq, dt) -> lower_bound_cost
+        L: Fn(u64, u64) -> f64,             // (dq, dt) -> lower_bound_cost
     {
         let mut best_score = current_score;
         let mut best_pred = None;
@@ -250,7 +254,7 @@ impl KdTree {
     {
         let target_item = &items[target_idx];
         let node_max_score = node.max_score();
-        
+
         // Pruning 1: Even with 0 cost, can we beat best_score?
         // score = candidate_total + target_score - cost
         // max_possible = node_max + target_score
@@ -269,7 +273,7 @@ impl KdTree {
         } else {
             0
         };
-        
+
         let cost = lower_bound_func(dq, dt);
         if node_max_score + target_item.score() - cost < best_score {
             return (best_score, best_pred);
@@ -285,7 +289,9 @@ impl KdTree {
                     }
                 }
             }
-            KdNode::Internal { cut_coord, lo, hi, .. } => {
+            KdNode::Internal {
+                cut_coord, lo, hi, ..
+            } => {
                 let dim_coord = if dim == 0 {
                     target_item.q_start()
                 } else {
@@ -293,15 +299,42 @@ impl KdTree {
                 };
 
                 if dim_coord > *cut_coord {
-                    let res = Self::best_recursive(hi, target_idx, items, cost_func, lower_bound_func, 1 - dim, best_score, best_pred);
+                    let res = Self::best_recursive(
+                        hi,
+                        target_idx,
+                        items,
+                        cost_func,
+                        lower_bound_func,
+                        1 - dim,
+                        best_score,
+                        best_pred,
+                    );
                     best_score = res.0;
                     best_pred = res.1;
-                    
-                    let res = Self::best_recursive(lo, target_idx, items, cost_func, lower_bound_func, 1 - dim, best_score, best_pred);
+
+                    let res = Self::best_recursive(
+                        lo,
+                        target_idx,
+                        items,
+                        cost_func,
+                        lower_bound_func,
+                        1 - dim,
+                        best_score,
+                        best_pred,
+                    );
                     best_score = res.0;
                     best_pred = res.1;
                 } else {
-                    let res = Self::best_recursive(lo, target_idx, items, cost_func, lower_bound_func, 1 - dim, best_score, best_pred);
+                    let res = Self::best_recursive(
+                        lo,
+                        target_idx,
+                        items,
+                        cost_func,
+                        lower_bound_func,
+                        1 - dim,
+                        best_score,
+                        best_pred,
+                    );
                     best_score = res.0;
                     best_pred = res.1;
                 }
@@ -324,19 +357,47 @@ mod tests {
     }
 
     impl ChainItem for TestItem {
-        fn q_start(&self) -> u64 { self.q_start }
-        fn q_end(&self) -> u64 { self.q_end }
-        fn t_start(&self) -> u64 { self.t_start }
-        fn t_end(&self) -> u64 { self.t_end }
-        fn score(&self) -> f64 { self.score }
+        fn q_start(&self) -> u64 {
+            self.q_start
+        }
+        fn q_end(&self) -> u64 {
+            self.q_end
+        }
+        fn t_start(&self) -> u64 {
+            self.t_start
+        }
+        fn t_end(&self) -> u64 {
+            self.t_end
+        }
+        fn score(&self) -> f64 {
+            self.score
+        }
     }
 
     #[test]
     fn test_kd_tree_build_and_search() {
         let items = vec![
-            TestItem { q_start: 0, q_end: 10, t_start: 0, t_end: 10, score: 100.0 }, // 0
-            TestItem { q_start: 20, q_end: 30, t_start: 20, t_end: 30, score: 100.0 }, // 1
-            TestItem { q_start: 50, q_end: 60, t_start: 50, t_end: 60, score: 100.0 }, // 2
+            TestItem {
+                q_start: 0,
+                q_end: 10,
+                t_start: 0,
+                t_end: 10,
+                score: 100.0,
+            }, // 0
+            TestItem {
+                q_start: 20,
+                q_end: 30,
+                t_start: 20,
+                t_end: 30,
+                score: 100.0,
+            }, // 1
+            TestItem {
+                q_start: 50,
+                q_end: 60,
+                t_start: 50,
+                t_end: 60,
+                score: 100.0,
+            }, // 2
         ];
 
         let mut indices: Vec<usize> = (0..items.len()).collect();
@@ -349,7 +410,9 @@ mod tests {
         // Now search for predecessor for item 1
         // Cost func: simple distance penalty
         let cost_func = |cand_idx: usize, target_idx: usize| -> Option<f64> {
-            if cand_idx >= target_idx { return None; } // strict order for test
+            if cand_idx >= target_idx {
+                return None;
+            } // strict order for test
             let cand = &items[cand_idx];
             let target = &items[target_idx];
             if cand.q_end > target.q_start || cand.t_end > target.t_start {
@@ -358,16 +421,14 @@ mod tests {
             let dist = (target.q_start - cand.q_end) + (target.t_start - cand.t_end);
             Some(100.0 + target.score - dist as f64) // 100.0 is prev total score
         };
-        let lower_bound_func = |dq: u64, dt: u64| -> f64 {
-            (dq + dt) as f64
-        };
+        let lower_bound_func = |dq: u64, dt: u64| -> f64 { (dq + dt) as f64 };
 
         let (best_score, best_pred) = tree.best_predecessor(
-            1, // target is item 1
+            1,     // target is item 1
             100.0, // base score of item 1
             &items,
             &cost_func,
-            &lower_bound_func
+            &lower_bound_func,
         );
 
         // Dist between 0 and 1:
