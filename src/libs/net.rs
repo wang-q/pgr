@@ -1,4 +1,4 @@
-use crate::libs::chaining::record::{Block, Chain};
+use crate::libs::chain::record::{Block, Chain};
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::collections::HashMap;

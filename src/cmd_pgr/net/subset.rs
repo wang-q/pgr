@@ -1,5 +1,5 @@
 use clap::{Arg, ArgAction, ArgMatches, Command};
-use pgr::libs::chaining::{read_chains, Chain};
+use pgr::libs::chain::{read_chains, Chain};
 use pgr::libs::net::{read_nets, Fill};
 use std::cell::RefCell;
 use std::collections::HashMap;

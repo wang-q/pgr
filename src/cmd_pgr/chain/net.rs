@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::{Arg, ArgAction, ArgMatches, Command};
-use pgr::libs::chaining::ChainReader;
+use pgr::libs::chain::ChainReader;
 use pgr::libs::net::{finalize_net, write_net, ChainNet};
 use std::collections::HashMap;
 use std::fs::File;

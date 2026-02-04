@@ -1,6 +1,6 @@
-use pgr::libs::chaining::{calc_block_score, chain_blocks, ChainableBlock, ScoreContext};
-use pgr::libs::chaining::GapCalc;
-use pgr::libs::chaining::SubMatrix;
+use pgr::libs::chain::{calc_block_score, chain_blocks, ChainableBlock, ScoreContext};
+use pgr::libs::chain::GapCalc;
+use pgr::libs::chain::SubMatrix;
 use pgr::libs::psl::Psl;
 use pgr::libs::twobit::TwoBitFile;
 use anyhow::Result;

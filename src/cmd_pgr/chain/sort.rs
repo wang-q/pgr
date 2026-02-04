@@ -1,5 +1,5 @@
 use clap::{Arg, ArgAction, ArgMatches, Command};
-use pgr::libs::chaining::read_chains;
+use pgr::libs::chain::read_chains;
 use std::cmp::Ordering;
 use std::fs::File;
 use std::io::BufWriter;

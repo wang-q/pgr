@@ -1,9 +1,9 @@
 use std::cmp::Ordering;
 use std::io::{Read, Seek};
-use crate::libs::chaining::record::{Chain, ChainData, ChainHeader};
-use crate::libs::chaining::algo::{ChainItem, KdTree};
-use crate::libs::chaining::gap_calc::GapCalc;
-use crate::libs::chaining::sub_matrix::SubMatrix;
+use crate::libs::chain::record::{Chain, ChainData, ChainHeader};
+use crate::libs::chain::algo::{ChainItem, KdTree};
+use crate::libs::chain::gap_calc::GapCalc;
+use crate::libs::chain::sub_matrix::SubMatrix;
 use crate::libs::twobit::TwoBitFile;
 use crate::libs::nt;
 

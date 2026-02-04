@@ -4,7 +4,7 @@ use std::fs::File;
 use std::io::{BufReader, BufWriter};
 use std::path::Path;
 
-use pgr::libs::chaining::{read_chains, Block, Chain};
+use pgr::libs::chain::{read_chains, Block, Chain};
 
 // Default scores from UCSC chainAntiRepeat.c
 
