@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::{Arg, ArgMatches, Command};
-use pgr::libs::chain::ChainReader;
+use pgr::libs::chaining::ChainReader;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
 use std::fs::{self, File};

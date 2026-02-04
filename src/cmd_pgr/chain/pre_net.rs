@@ -1,6 +1,6 @@
 use anyhow::{bail, Result};
 use clap::{Arg, ArgAction, ArgMatches, Command};
-use pgr::libs::chain::ChainReader;
+use pgr::libs::chaining::ChainReader;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter};

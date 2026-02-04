@@ -1,4 +1,4 @@
-use crate::libs::chain::{Block, Chain};
+use crate::libs::chaining::record::{Block, Chain};
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
@@ -542,8 +542,8 @@ fn add_chain_core(
             }
             last_idx = Some(i);
 
-            let curr_s = b_start.max(space.start);
-            let curr_e = b_end.min(space.end);
+            let curr_s: u64 = b_start.max(space.start);
+            let curr_e: u64 = b_end.min(space.end);
 
             if curr_s < s {
                 s = curr_s;

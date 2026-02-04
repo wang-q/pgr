@@ -1,3 +1,4 @@
+pub mod chain;
 pub mod histo;
 pub mod rc;
 pub mod stats;
@@ -13,6 +14,7 @@ These utilities are primarily provided for cross-validation with the original UC
 ensuring the fidelity of the ported libraries.
 "###,
         )
+        .subcommand(chain::make_subcommand())
         .subcommand(histo::make_subcommand())
         .subcommand(rc::make_subcommand())
         .subcommand(stats::make_subcommand())
@@ -22,6 +24,7 @@ ensuring the fidelity of the ported libraries.
 
 pub fn execute(matches: &clap::ArgMatches) -> anyhow::Result<()> {
     match matches.subcommand() {
+        Some(("chain", sub_matches)) => chain::execute(sub_matches),
         Some(("histo", sub_matches)) => histo::execute(sub_matches),
         Some(("rc", sub_matches)) => rc::execute(sub_matches),
         Some(("stats", sub_matches)) => stats::execute(sub_matches),

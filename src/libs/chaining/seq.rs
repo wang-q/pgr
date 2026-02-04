@@ -1,0 +1,398 @@
+use std::cmp::Ordering;
+use std::io::{Read, Seek};
+use crate::libs::chaining::record::{Chain, ChainData, ChainHeader};
+use crate::libs::chaining::algo::{ChainItem, KdTree};
+use crate::libs::chaining::gap_calc::GapCalc;
+use crate::libs::chaining::score_matrix::ScoreMatrix;
+use crate::libs::twobit::TwoBitFile;
+use crate::libs::nt;
+
+#[derive(Clone, Debug)]
+pub struct ChainableBlock {
+    pub t_start: u64,
+    pub t_end: u64,
+    pub q_start: u64,
+    pub q_end: u64,
+    pub score: f64,
+}
+
+impl ChainItem for ChainableBlock {
+    fn q_start(&self) -> u64 { self.q_start }
+    fn q_end(&self) -> u64 { self.q_end }
+    fn t_start(&self) -> u64 { self.t_start }
+    fn t_end(&self) -> u64 { self.t_end }
+    fn score(&self) -> f64 { self.score }
+}
+
+pub struct ScoreContext<'a, R> {
+    pub t_2bit: &'a mut TwoBitFile<R>,
+    pub q_2bit: &'a mut TwoBitFile<R>,
+    pub matrix: &'a ScoreMatrix,
+}
+
+struct DpEntry {
+    best_pred: Option<usize>,
+    total_score: f64,
+    hit: bool,
+}
+
+pub fn chain_blocks<R: Read + Seek>(
+    blocks: &[ChainableBlock],
+    gap_calc: &GapCalc,
+    score_ctx: &mut Option<ScoreContext<R>>,
+    q_name: &str,
+    q_size: u64,
+    q_strand: char,
+    t_name: &str,
+    t_size: u64,
+    chain_id_counter: &mut usize,
+) -> Vec<Chain> {
+    if blocks.is_empty() {
+        return Vec::new();
+    }
+
+    // 1. Create DP entries
+    let mut dp_entries: Vec<DpEntry> = blocks
+        .iter()
+        .map(|b| DpEntry {
+            best_pred: None,
+            total_score: b.score,
+            hit: false,
+        })
+        .collect();
+
+    // 2. Build KD-tree
+    let mut leaf_indices: Vec<usize> = (0..dp_entries.len()).collect();
+    let mut tree = KdTree::build(&mut leaf_indices, blocks);
+
+    // 3. Find best predecessors
+    for i in 0..dp_entries.len() {
+        let current_score = dp_entries[i].total_score;
+        let cost_func = |cand_idx: usize, target_idx: usize| -> Option<f64> {
+            let cand = &blocks[cand_idx];
+            let target = &blocks[target_idx];
+            if cand.t_end > target.t_start || cand.q_end > target.q_start {
+                return None;
+            }
+            let dt = (target.t_start - cand.t_end) as i32;
+            let dq = (target.q_start - cand.q_end) as i32;
+            let cost = gap_calc.calc(dq, dt) as f64;
+            Some(dp_entries[cand_idx].total_score + target.score - cost)
+        };
+        let lower_bound_func = |dq: u64, dt: u64| -> f64 {
+            gap_calc.calc(dq as i32, dt as i32) as f64
+        };
+
+        let (best_score, best_pred) = tree.best_predecessor(
+            i,
+            current_score,
+            blocks,
+            &cost_func,
+            &lower_bound_func,
+        );
+
+        if best_score > dp_entries[i].total_score {
+            dp_entries[i].total_score = best_score;
+            dp_entries[i].best_pred = best_pred;
+        }
+        tree.update_scores(i, dp_entries[i].total_score, blocks);
+    }
+
+    // 4. Peel chains
+    let mut sorted_indices: Vec<usize> = (0..dp_entries.len()).collect();
+    sorted_indices.sort_by(|&a, &b| {
+        dp_entries[b].total_score.partial_cmp(&dp_entries[a].total_score).unwrap_or(Ordering::Equal)
+    });
+
+    let mut chains = Vec::new();
+
+    for &leaf_idx in &sorted_indices {
+        if dp_entries[leaf_idx].hit {
+            continue;
+        }
+
+        let mut chain_blocks_rev = Vec::new();
+        let mut curr_idx = leaf_idx;
+        
+        loop {
+            dp_entries[curr_idx].hit = true;
+            chain_blocks_rev.push(blocks[curr_idx].clone());
+            
+            if let Some(pred_idx) = dp_entries[curr_idx].best_pred {
+                curr_idx = pred_idx;
+                if dp_entries[curr_idx].hit {
+                    break; 
+                }
+            } else {
+                break;
+            }
+        }
+
+        chain_blocks_rev.reverse();
+        
+        // Trim overlaps if we have score context
+        if let Some(ctx) = score_ctx {
+             trim_overlaps(&mut chain_blocks_rev, ctx, q_name, t_name, q_size, q_strand);
+        }
+
+        let first = &chain_blocks_rev[0];
+        let last = &chain_blocks_rev[chain_blocks_rev.len() - 1];
+
+        // Recalculate score exactly
+        let score = score_chain(&chain_blocks_rev, gap_calc, score_ctx, q_name, t_name, q_size, q_strand);
+
+        if score <= 0.0 {
+            continue; 
+        }
+
+        let mut chain_data = Vec::new();
+        for i in 0..chain_blocks_rev.len() {
+            let b = &chain_blocks_rev[i];
+            let size = b.t_end - b.t_start;
+            let (dt, dq) = if i < chain_blocks_rev.len() - 1 {
+                let next = &chain_blocks_rev[i + 1];
+                (next.t_start - b.t_end, next.q_start - b.q_end)
+            } else {
+                (0, 0)
+            };
+            chain_data.push(ChainData { size, dt, dq });
+        }
+
+        chains.push(Chain {
+            header: ChainHeader {
+                score,
+                t_name: t_name.to_string(),
+                t_size,
+                t_strand: '+',
+                t_start: first.t_start,
+                t_end: last.t_end,
+                q_name: q_name.to_string(),
+                q_size,
+                q_strand,
+                q_start: first.q_start,
+                q_end: last.q_end,
+                id: *chain_id_counter as u64,
+            },
+            data: chain_data,
+        });
+        *chain_id_counter += 1;
+    }
+
+    chains
+}
+
+fn trim_overlaps<R: Read + Seek>(
+    blocks: &mut Vec<ChainableBlock>,
+    ctx: &mut ScoreContext<R>,
+    q_name: &str,
+    t_name: &str,
+    q_size: u64,
+    q_strand: char,
+) {
+    if blocks.len() < 2 {
+        return;
+    }
+    
+    let mut i = 0;
+    while i < blocks.len() - 1 {
+        let curr = &blocks[i];
+        let next = &blocks[i+1];
+        
+        let overlap = if curr.t_end > next.t_start {
+            (curr.t_end - next.t_start) as i64
+        } else {
+            0
+        };
+        
+        if overlap > 0 {
+            let overlap = overlap as usize;
+            let (cut_pos, _) = find_crossover(
+                &blocks[i], &blocks[i+1], overlap, ctx, q_name, t_name, q_size, q_strand
+            );
+            
+            let trim_left = overlap as i64 - cut_pos as i64;
+            let trim_right = cut_pos as i64;
+            
+            blocks[i].t_end -= trim_left as u64;
+            blocks[i].q_end -= trim_left as u64;
+            
+            blocks[i+1].t_start += trim_right as u64;
+            blocks[i+1].q_start += trim_right as u64;
+        }
+        i += 1;
+    }
+}
+
+fn find_crossover<R: Read + Seek>(
+    left: &ChainableBlock,
+    right: &ChainableBlock,
+    overlap: usize,
+    ctx: &mut ScoreContext<R>,
+    q_name: &str,
+    t_name: &str,
+    q_size: u64,
+    q_strand: char,
+) -> (usize, f64) {
+    let l_t_seq = ctx.t_2bit.read_sequence(t_name, Some((left.t_end - overlap as u64) as usize), Some(left.t_end as usize), false).unwrap();
+    let r_t_seq = ctx.t_2bit.read_sequence(t_name, Some(right.t_start as usize), Some((right.t_start + overlap as u64) as usize), false).unwrap();
+    
+    let l_q_seq = if q_strand == '+' {
+        ctx.q_2bit.read_sequence(q_name, Some((left.q_end - overlap as u64) as usize), Some(left.q_end as usize), false).unwrap()
+    } else {
+        let start = (q_size - left.q_end) as usize;
+        let end = (q_size - (left.q_end - overlap as u64)) as usize;
+        let s = ctx.q_2bit.read_sequence(q_name, Some(start), Some(end), false).unwrap();
+        let rc: Vec<u8> = nt::rev_comp(s.as_bytes()).collect();
+        String::from_utf8(rc).unwrap()
+    };
+    
+    let r_q_seq = if q_strand == '+' {
+        ctx.q_2bit.read_sequence(q_name, Some(right.q_start as usize), Some((right.q_start + overlap as u64) as usize), false).unwrap()
+    } else {
+        let start = (q_size - (right.q_start + overlap as u64)) as usize;
+        let end = (q_size - right.q_start) as usize;
+        let s = ctx.q_2bit.read_sequence(q_name, Some(start), Some(end), false).unwrap();
+        let rc: Vec<u8> = nt::rev_comp(s.as_bytes()).collect();
+        String::from_utf8(rc).unwrap()
+    };
+    
+    let mut best_pos = 0;
+    let mut best_score = -1e9;
+    
+    let mut r_score = 0.0;
+    let mut l_score = 0.0;
+    
+    let l_t_chars: Vec<char> = l_t_seq.chars().collect();
+    let l_q_chars: Vec<char> = l_q_seq.chars().collect();
+    let r_t_chars: Vec<char> = r_t_seq.chars().collect();
+    let r_q_chars: Vec<char> = r_q_seq.chars().collect();
+    
+    for i in 0..overlap {
+        l_score += ctx.matrix.get_score(l_t_chars[i], l_q_chars[i]) as f64;
+        r_score += ctx.matrix.get_score(r_t_chars[i], r_q_chars[i]) as f64;
+    }
+    
+    let mut current_l = 0.0;
+    let mut current_r = r_score;
+    
+    for i in 0..=overlap {
+        let score = current_l + current_r;
+        if score > best_score {
+            best_score = score;
+            best_pos = i;
+        }
+        
+        if i < overlap {
+            current_l += ctx.matrix.get_score(l_t_chars[i], l_q_chars[i]) as f64;
+            current_r -= ctx.matrix.get_score(r_t_chars[i], r_q_chars[i]) as f64;
+        }
+    }
+    
+    let adjustment = (r_score + l_score) - best_score;
+    (best_pos, adjustment)
+}
+
+fn score_chain<R: Read + Seek>(
+    blocks: &[ChainableBlock], 
+    gap_calc: &GapCalc, 
+    score_ctx: &mut Option<ScoreContext<R>>,
+    q_name: &str,
+    t_name: &str,
+    q_size: u64,
+    q_strand: char,
+) -> f64 {
+    let mut score = 0.0;
+    for i in 0..blocks.len() {
+        let block_score = if let Some(ctx) = score_ctx {
+            calc_block_score(&blocks[i], ctx, q_name, t_name, q_size, q_strand).unwrap_or(0.0)
+        } else {
+            blocks[i].score
+        };
+        score += block_score;
+
+        if i > 0 {
+            let prev = &blocks[i - 1];
+            let curr = &blocks[i];
+            
+            let dt = if curr.t_start >= prev.t_end {
+                curr.t_start - prev.t_end
+            } else {
+                0 
+            };
+            let dq = if curr.q_start >= prev.q_end {
+                curr.q_start - prev.q_end
+            } else {
+                0
+            };
+            
+            if let Some(_ctx) = score_ctx {
+                // If trimmed, dt >= 0.
+                score -= gap_calc.calc(dq as i32, dt as i32) as f64;
+            } else {
+                score -= gap_calc.calc(dq as i32, dt as i32) as f64;
+            }
+        }
+    }
+    
+    if let Some(ctx) = score_ctx {
+         let mut exact_score = 0.0;
+         for b in blocks {
+             exact_score += calc_block_score(b, ctx, q_name, t_name, q_size, q_strand).unwrap_or(0.0);
+         }
+         for i in 1..blocks.len() {
+             let prev = &blocks[i - 1];
+             let curr = &blocks[i];
+             let dt = (curr.t_start - prev.t_end) as i32;
+             let dq = (curr.q_start - prev.q_end) as i32;
+             exact_score -= gap_calc.calc(dq, dt) as f64;
+         }
+         return exact_score;
+    }
+
+    score
+}
+
+pub fn calc_block_score<R: Read + Seek>(
+    b: &ChainableBlock,
+    ctx: &mut ScoreContext<R>,
+    q_name: &str,
+    t_name: &str,
+    q_size: u64,
+    q_strand: char,
+) -> Option<f64> {
+    let t_seq_res = ctx.t_2bit.read_sequence(
+        t_name, 
+        Some(b.t_start as usize), 
+        Some(b.t_end as usize), 
+        false
+    );
+    
+    let q_seq_res = if q_strand == '+' {
+        ctx.q_2bit.read_sequence(
+            q_name, 
+            Some(b.q_start as usize), 
+            Some(b.q_end as usize), 
+            false
+        )
+    } else {
+        let start_pos = (q_size - b.q_end) as usize;
+        let end_pos = (q_size - b.q_start) as usize;
+        
+        ctx.q_2bit.read_sequence(q_name, Some(start_pos), Some(end_pos), false)
+            .map(|s| {
+                let rc_bytes: Vec<u8> = nt::rev_comp(s.as_bytes()).collect();
+                String::from_utf8(rc_bytes).unwrap()
+            })
+    };
+
+    if let (Ok(t_seq), Ok(q_seq)) = (t_seq_res, q_seq_res) {
+        let mut exact_score = 0.0;
+        for (t, q) in t_seq.chars().zip(q_seq.chars()) {
+            let val = ctx.matrix.get_score(t, q);
+            exact_score += val as f64;
+        }
+        Some(exact_score)
+    } else {
+        None
+    }
+}

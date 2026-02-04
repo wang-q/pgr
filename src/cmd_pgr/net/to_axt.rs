@@ -1,7 +1,7 @@
 use bio::alphabets::dna::revcomp;
 use bio::io::fasta;
 use clap::{Arg, ArgMatches, Command};
-use pgr::libs::chain::{Chain, ChainReader};
+use pgr::libs::chaining::{Chain, ChainReader};
 use pgr::libs::net::{read_nets, Fill, Gap};
 use std::cell::RefCell;
 use std::collections::HashMap;
