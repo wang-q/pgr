@@ -5,7 +5,7 @@ pub mod clust;
 pub mod fas;
 pub mod hash;
 pub mod hv;
-pub mod io;
+pub mod feature;
 pub mod lav;
 pub mod linalg;
 pub mod loc;

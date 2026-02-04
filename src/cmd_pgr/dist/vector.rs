@@ -2,7 +2,7 @@ use clap::*;
 use rayon::prelude::*;
 use std::io::BufRead;
 
-use pgr::libs::io::FeatureVector;
+use pgr::libs::feature::FeatureVector;
 use pgr::libs::linalg;
 
 // Create clap subcommand arguments
