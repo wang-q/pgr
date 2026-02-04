@@ -94,13 +94,41 @@ pub fn chain_blocks<R: Read + Seek>(
         let cost_func = |cand_idx: usize, target_idx: usize| -> Option<f64> {
             let cand = &blocks[cand_idx];
             let target = &blocks[target_idx];
-            if cand.t_end > target.t_start || cand.q_end > target.q_start {
+            
+            // Ensure monotonic order for chaining
+            if cand.t_start > target.t_start {
                 return None;
             }
-            let dt = (target.t_start - cand.t_end) as i32;
-            let dq = (target.q_start - cand.q_end) as i32;
-            let cost = gap_calc.calc(dq, dt) as f64;
-            Some(dp_entries[cand_idx].total_score + target.score - cost)
+            // For q_start, strictly increasing is required for a linear chain
+            if cand.q_start > target.q_start {
+                return None;
+            }
+
+            let dt = target.t_start as i64 - cand.t_end as i64;
+            let dq = target.q_start as i64 - cand.q_end as i64;
+            
+            let mut overlap_penalty = 0.0;
+
+            // Handle overlaps (negative distance)
+            if dt < 0 || dq < 0 {
+                let ov_t = if dt < 0 { -dt } else { 0 };
+                let ov_q = if dq < 0 { -dq } else { 0 };
+                let overlap_len = std::cmp::max(ov_t, ov_q) as f64;
+                
+                // Estimate overlap penalty using score density
+                // We use the maximum density of the two blocks as a conservative estimate
+                let cand_len = (cand.t_end - cand.t_start) as f64;
+                let target_len = (target.t_end - target.t_start) as f64;
+                
+                let cand_density = if cand_len > 0.0 { cand.score / cand_len } else { 0.0 };
+                let target_density = if target_len > 0.0 { target.score / target_len } else { 0.0 };
+                
+                let density = cand_density.max(target_density);
+                overlap_penalty = overlap_len * density;
+            }
+
+            let cost = gap_calc.calc(dq as i32, dt as i32) as f64;
+            Some(dp_entries[cand_idx].total_score + target.score - cost - overlap_penalty)
         };
         let lower_bound_func = |dq: u64, dt: u64| -> f64 {
             gap_calc.calc(dq as i32, dt as i32) as f64

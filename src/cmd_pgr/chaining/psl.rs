@@ -75,6 +75,18 @@ Examples:
                 .help("Minimum score of chain"),
         )
         .arg(
+            Arg::new("gap_open")
+                .long("gap-open")
+                .value_parser(clap::value_parser!(i32))
+                .help("Gap open cost (overrides --linear-gap)"),
+        )
+        .arg(
+            Arg::new("gap_extend")
+                .long("gap-extend")
+                .value_parser(clap::value_parser!(i32))
+                .help("Gap extension cost (overrides --linear-gap)"),
+        )
+        .arg(
             Arg::new("score_scheme")
                 .long("score-scheme")
                 .value_name("FILE")
@@ -122,10 +134,17 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
         None
     };
 
-    let gap_calc = if linear_gap == "loose" {
-        GapCalc::loose()
+    let gap_open = args.get_one::<i32>("gap_open");
+    let gap_extend = args.get_one::<i32>("gap_extend");
+
+    let gap_calc = if let (Some(&open), Some(&extend)) = (gap_open, gap_extend) {
+        GapCalc::affine(open, extend)
     } else {
-        GapCalc::medium()
+        match linear_gap.as_str() {
+            "loose" => GapCalc::loose(),
+            "medium" => GapCalc::medium(),
+            _ => GapCalc::medium(),
+        }
     };
 
     // Group blocks by (t_name, q_name, q_strand)
@@ -163,14 +182,19 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
 
         for i in 0..psl.block_count as usize {
             let size = psl.block_sizes[i] as u64;
-            let q_start = psl.q_starts[i] as u64;
             let t_start = psl.t_starts[i] as u64;
+            let t_end = t_start + size;
+
+            let (q_start, q_end) = {
+                let s = psl.q_starts[i] as u64;
+                (s, s + size)
+            };
             
             let mut block = ChainableBlock {
                 t_start,
-                t_end: t_start + size,
+                t_end,
                 q_start,
-                q_end: q_start + size,
+                q_end,
                 score: size as f64 * 100.0,
             };
 
@@ -201,6 +225,13 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
         }
 
         data.blocks.sort_by(|a, b| a.t_start.cmp(&b.t_start));
+
+        if std::env::var("PGR_DEBUG").is_ok() {
+            eprintln!("Group: {} {} {}", t_name, q_name, q_strand);
+            for b in &data.blocks {
+                eprintln!("Block: T {}-{} Q {}-{} Score {}", b.t_start, b.t_end, b.q_start, b.q_end, b.score);
+            }
+        }
 
         let chains = chain_blocks(
             &data.blocks,
