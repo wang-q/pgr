@@ -390,7 +390,7 @@ multiz M=10 tests/multiz/S288cvsRM11_1a.maf     tests/multiz/S288cvsSpar.maf    
 * Hypervector
 
 ```bash
-hnsm dist hv tests/clust/IBPA.fa
+pgr dist hv tests/clust/IBPA.fa
 #tests/clust/IBPA.fa     tests/clust/IBPA.fa     776     776     776     776     0.0000  1.0000  1.0000
 hnsm dist seq tests/clust/IBPA.fa --merge
 #tests/clust/IBPA.fa     tests/clust/IBPA.fa     763     763     763     763     0.0000  1.0000  1.0000
