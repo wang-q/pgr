@@ -133,7 +133,7 @@ fn test_chaining_psl_lastz() -> anyhow::Result<()> {
         .arg(&t_2bit)
         .arg(&q_2bit)
         .arg(&input)
-        .arg("--output")
+        .arg("--outfile")
         .arg(&output)
         .arg("--score-scheme")
         .arg("hoxd55")

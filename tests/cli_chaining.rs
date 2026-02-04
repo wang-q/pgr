@@ -76,6 +76,7 @@ fn test_chaining_psl_basic() -> anyhow::Result<()> {
     Ok(())
 }
 
+// Normalize chain output by ignoring scores to make comparison robust against minor floating-point differences
 fn normalize_chain_output(content: &str) -> String {
     content
         .lines()
@@ -114,7 +115,7 @@ fn test_chaining_psl_new_style_lastz() -> anyhow::Result<()> {
         .arg(&input)
         .arg("--score-scheme")
         .arg(&score_scheme)
-        .arg("--output")
+        .arg("--outfile")
         .arg(&output)
         .arg("--linear-gap")
         .arg("loose")

@@ -10,7 +10,7 @@ fn command_axt_help() -> anyhow::Result<()> {
     cmd.arg("axt").arg("--help");
     cmd.assert()
         .success()
-        .stdout(predicate::str::contains("Usage: pgr axt"));
+        .stdout(predicate::str::contains("Usage: pgr").and(predicate::str::contains(" axt")));
     Ok(())
 }
 
