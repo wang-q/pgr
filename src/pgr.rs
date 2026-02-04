@@ -14,6 +14,7 @@ fn main() -> anyhow::Result<()> {
         .subcommand(cmd_pgr::ms_to_dna::make_subcommand())
         .subcommand(cmd_pgr::axt::make_subcommand())
         .subcommand(cmd_pgr::chain::make_subcommand())
+        .subcommand(cmd_pgr::chaining::make_subcommand())
         .subcommand(cmd_pgr::lav::make_subcommand())
         .subcommand(cmd_pgr::maf::make_subcommand())
         .subcommand(cmd_pgr::net::make_subcommand())
@@ -33,6 +34,7 @@ fn main() -> anyhow::Result<()> {
     * fq   - FASTQ interleaving and conversion
 
 * Genome alignments:
+    * chaining - Chaining alignments: psl
     * chain - Chain operations: sort, filter, transform, to-net
     * net   - Net operations: info, subset, transform, convert
     * axt   - AXT sorting and conversion
@@ -50,6 +52,7 @@ fn main() -> anyhow::Result<()> {
     match app.get_matches().subcommand() {
         Some(("ms-to-dna", sub_matches)) => cmd_pgr::ms_to_dna::execute(sub_matches),
         Some(("axt", sub_matches)) => cmd_pgr::axt::execute(sub_matches),
+        Some(("chaining", sub_matches)) => cmd_pgr::chaining::execute(sub_matches),
         Some(("chain", sub_matches)) => cmd_pgr::chain::execute(sub_matches),
         Some(("lav", sub_matches)) => cmd_pgr::lav::execute(sub_matches),
         Some(("maf", sub_matches)) => cmd_pgr::maf::execute(sub_matches),

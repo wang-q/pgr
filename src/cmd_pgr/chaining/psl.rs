@@ -11,7 +11,7 @@ use std::io::{BufRead, Write};
 use std::str::FromStr;
 
 pub fn make_subcommand() -> Command {
-    Command::new("chain")
+    Command::new("psl")
         .about("Chain PSL alignments")
         .after_help(
             r###"
@@ -28,7 +28,7 @@ Processing:
 
 Examples:
   # Chain PSL file
-  pgr psl chain t.2bit q.2bit in.psl -o out.chain
+  pgr chaining psl t.2bit q.2bit in.psl -o out.chain
 "###,
         )
         .arg(
@@ -110,7 +110,7 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
                 SubMatrix::from_file(path)?
             } else {
                 SubMatrix::default()
-            };
+    };
     
     let mut score_context = if t_2bit.is_some() && q_2bit.is_some() {
         Some(ScoreContext {
