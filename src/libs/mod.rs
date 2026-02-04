@@ -1,19 +1,21 @@
 pub mod alignment;
-pub mod axt;
 pub mod chain;
 pub mod clust;
-pub mod fas;
+pub mod fmt;
 pub mod hash;
 pub mod hv;
-pub mod feature;
-pub mod lav;
 pub mod linalg;
 pub mod loc;
-pub mod maf;
 pub mod ms;
-pub mod ms2dna;
 pub mod net;
 pub mod nt;
 pub mod psl;
 pub mod seq;
 pub mod twobit;
+
+// Re-export modules moved to fmt for backward compatibility
+pub use fmt::axt;
+pub use fmt::fas;
+pub use fmt::lav;
+pub use fmt::maf;
+pub use fmt::feature;

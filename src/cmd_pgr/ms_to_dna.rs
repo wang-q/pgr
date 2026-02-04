@@ -1,6 +1,8 @@
 use clap::*;
-use pgr::libs::ms::{parse_header, perturb_positions, read_next_sample, system_seed, SimpleRng};
-use pgr::libs::ms2dna::{build_anc_seq, build_mut_seq, map_positions as map_pos, write_fasta};
+use pgr::libs::ms::{
+    build_anc_seq, build_mut_seq, map_positions as map_pos, parse_header, perturb_positions,
+    read_next_sample, system_seed, write_fasta, SimpleRng,
+};
 use std::fs::File;
 use std::io::Write;
 use std::io::{BufRead, BufReader};
