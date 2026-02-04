@@ -15,6 +15,7 @@ fn main() -> anyhow::Result<()> {
         .subcommand(cmd_pgr::axt::make_subcommand())
         .subcommand(cmd_pgr::chain::make_subcommand())
         .subcommand(cmd_pgr::chaining::make_subcommand())
+        .subcommand(cmd_pgr::clust::make_subcommand())
         .subcommand(cmd_pgr::lav::make_subcommand())
         .subcommand(cmd_pgr::maf::make_subcommand())
         .subcommand(cmd_pgr::net::make_subcommand())
@@ -42,6 +43,9 @@ fn main() -> anyhow::Result<()> {
     * maf   - Convert to Block FA
     * psl   - PSL statistics, manipulation, and conversion
 
+* Clustering:
+    * clust - Clustering operations: cc
+
 * Pipelines:
     * pl - Pipeline tools: p2m, trf, ir, rept, ucsc
 
@@ -54,6 +58,7 @@ fn main() -> anyhow::Result<()> {
         Some(("axt", sub_matches)) => cmd_pgr::axt::execute(sub_matches),
         Some(("chaining", sub_matches)) => cmd_pgr::chaining::execute(sub_matches),
         Some(("chain", sub_matches)) => cmd_pgr::chain::execute(sub_matches),
+        Some(("clust", sub_matches)) => cmd_pgr::clust::execute(sub_matches),
         Some(("lav", sub_matches)) => cmd_pgr::lav::execute(sub_matches),
         Some(("maf", sub_matches)) => cmd_pgr::maf::execute(sub_matches),
         Some(("net", sub_matches)) => cmd_pgr::net::execute(sub_matches),

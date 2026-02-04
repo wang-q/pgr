@@ -19,9 +19,15 @@ regex = "1.11.1"
 itertools = "0.14.0"
 
 crossbeam = "0.8.4"
+rayon = "1.10.0"
 
+# data structure
+petgraph = "0.7.1"
 indexmap = "2.13.0"
 lru = "0.13.0"
+
+# hashing
+num-traits = "0.2.19"
 rapidhash = { version = "1.4.0", features = ["rng"] }
 
 intspan = "0.8.7"
@@ -38,6 +44,7 @@ rust_xlsxwriter = "0.83.0"
 bio = "0.30.1"
 cmd_lib = "1.9.6"
 flate2 = "1.1.8"
+rand = "0.9.0"
 
 [[bin]]
 name = "pgr"

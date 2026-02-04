@@ -1,6 +1,7 @@
 pub mod alignment;
 pub mod axt;
 pub mod chain;
+pub mod clust;
 pub mod fas;
 pub mod lav;
 pub mod loc;

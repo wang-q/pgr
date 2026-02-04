@@ -3,6 +3,7 @@
 pub mod axt;
 pub mod chain;
 pub mod chaining;
+pub mod clust;
 pub mod fa;
 pub mod fas;
 pub mod fq;
