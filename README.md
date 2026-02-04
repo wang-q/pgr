@@ -384,6 +384,29 @@ multiz M=10 tests/multiz/S288cvsRM11_1a.maf     tests/multiz/S288cvsSpar.maf    
 
 ```
 
+### Proteomes
+
+
+* Hypervector
+
+```bash
+hnsm dist hv tests/clust/IBPA.fa
+#tests/clust/IBPA.fa     tests/clust/IBPA.fa     776     776     776     776     0.0000  1.0000  1.0000
+hnsm dist seq tests/clust/IBPA.fa --merge
+#tests/clust/IBPA.fa     tests/clust/IBPA.fa     763     763     763     763     0.0000  1.0000  1.0000
+
+hnsm dist hv tests/genome/mg1655.pro.fa.gz
+#tests/genome/mg1655.pro.fa.gz    tests/genome/mg1655.pro.fa.gz    1240734 1240734 1240734 1240734 0.0000  1.0000  1.0000
+hnsm dist seq tests/genome/mg1655.pro.fa.gz --merge
+#tests/genome/mg1655.pro.fa.gz    tests/genome/mg1655.pro.fa.gz    1267403 1267403 1267403 1267403 0.0000  1.0000  1.0000
+
+hnsm dist hv tests/genome/mg1655.pro.fa.gz tests/genome/pao1.pro.fa.gz -k 7 -w 1
+#tests/genome/mg1655.pro.fa.gz    tests/genome/pao1.pro.fa.gz      1240734 1733273 81195   2892811 0.4154  0.0281  0.0654
+hnsm dist seq tests/genome/mg1655.pro.fa.gz tests/genome/pao1.pro.fa.gz -k 7 -w 1 --merge
+#tests/genome/mg1655.pro.fa.gz    tests/genome/pao1.pro.fa.gz      1267403 1770832 60605   2977630 0.4602  0.0204  0.0478
+
+```
+
 ### Matrix commands
 
 ```bash

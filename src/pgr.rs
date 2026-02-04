@@ -16,6 +16,7 @@ fn main() -> anyhow::Result<()> {
         .subcommand(cmd_pgr::chain::make_subcommand())
         .subcommand(cmd_pgr::chaining::make_subcommand())
         .subcommand(cmd_pgr::clust::make_subcommand())
+        .subcommand(cmd_pgr::dist::make_subcommand())
         .subcommand(cmd_pgr::lav::make_subcommand())
         .subcommand(cmd_pgr::maf::make_subcommand())
         .subcommand(cmd_pgr::mat::make_subcommand())
@@ -47,6 +48,9 @@ fn main() -> anyhow::Result<()> {
 * Clustering:
     * clust - Algorithms: cc, dbscan, k-medoids, mcl
 
+* Distance:
+    * dist  - Metrics: hv
+
 * Matrix:
     * mat   - Processing: compare, format, subset, to-pair, to-phylip
 
@@ -63,6 +67,7 @@ fn main() -> anyhow::Result<()> {
         Some(("chaining", sub_matches)) => cmd_pgr::chaining::execute(sub_matches),
         Some(("chain", sub_matches)) => cmd_pgr::chain::execute(sub_matches),
         Some(("clust", sub_matches)) => cmd_pgr::clust::execute(sub_matches),
+        Some(("dist", sub_matches)) => cmd_pgr::dist::execute(sub_matches),
         Some(("lav", sub_matches)) => cmd_pgr::lav::execute(sub_matches),
         Some(("maf", sub_matches)) => cmd_pgr::maf::execute(sub_matches),
         Some(("mat", sub_matches)) => cmd_pgr::mat::execute(sub_matches),
