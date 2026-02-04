@@ -57,6 +57,69 @@ impl SubMatrix {
         self.matrix[(c1 as usize) * 256 + (c2 as usize)]
     }
 
+    /// Load from name (preset) or file.
+    pub fn from_name(name: &str) -> Result<Self> {
+        match name.to_lowercase().as_str() {
+            "hoxd55" => Ok(Self::hoxd55()),
+            _ => Self::from_file(name),
+        }
+    }
+
+    /// HoxD55 matrix (Lastz default).
+    pub fn hoxd55() -> Self {
+        let mut m = vec![0; 256 * 256];
+        let bases = b"ACGT";
+        //     A    C    G    T
+        // A  91 -114  -31 -123
+        // C -114 100 -125  -31
+        // G  -31 -125 100 -114
+        // T -123  -31 -114  91
+        let scores = [
+            [91, -114, -31, -123],
+            [-114, 100, -125, -31],
+            [-31, -125, 100, -114],
+            [-123, -31, -114, 91]
+        ];
+
+        for (i, &b1) in bases.iter().enumerate() {
+            for (j, &b2) in bases.iter().enumerate() {
+                let score = scores[i][j];
+                
+                // Fill matrix for all case combinations
+                let r_upper = b1.to_ascii_uppercase();
+                let c_upper = b2.to_ascii_uppercase();
+                let r_lower = b1.to_ascii_lowercase();
+                let c_lower = b2.to_ascii_lowercase();
+
+                let indices = [
+                    (r_upper, c_upper),
+                    (r_lower, c_lower),
+                    (r_upper, c_lower),
+                    (r_lower, c_upper),
+                ];
+
+                for (r, c) in indices {
+                    m[(r as usize) * 256 + (c as usize)] = score;
+                }
+            }
+        }
+        
+        // Handle N (match default behavior, usually low score)
+        // Here we just set N rows/cols to -100 (same as Default implementation logic)
+        for i in 0..256 {
+            m[('N' as usize) * 256 + i] = -100;
+            m[i * 256 + ('N' as usize)] = -100;
+            m[('n' as usize) * 256 + i] = -100;
+            m[i * 256 + ('n' as usize)] = -100;
+        }
+
+        SubMatrix {
+            matrix: m,
+            gap_open: 400,
+            gap_extend: 30,
+        }
+    }
+
     /// Load a substitution matrix from a file (BLAST format).
     ///
     /// The file should contain a header line (e.g., "A C G T") and subsequent rows of scores.

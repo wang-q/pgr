@@ -22,13 +22,27 @@ Processing:
      - It allows fast range queries to find candidate predecessor blocks that are "before" the current block in both query and target coordinates.
   3. Connect blocks into chains using dynamic programming:
      - Score = BlockScore + Max(PredecessorScore - GapCost).
-     - GapCost depends on distance (linear: loose/medium).
+     - Block Scoring:
+       * Default: Identity matrix (Match: +100, Mismatch: -100).
+       * Custom: Use --score-scheme to load a LASTZ format file or preset (hoxd55).
+     - Gap Cost (Penalty):
+       * Linear (Default): --linear-gap medium (suitable for mouse/human).
+                           --linear-gap loose (suitable for distant species, e.g. chicken/human).
+       * Affine: Use --gap-open and --gap-extend to override linear costs.
+         (Cost = open + extend * length).
      - Overlaps are trimmed by finding the optimal cut point based on exact sequence scores.
-  4. Filter chains by minimum score.
+  4. Filter chains by minimum score (controlled by --min-score).
+     - UCSC axtChain defaults to 1000, but pgr defaults to 0 to keep all chains.
 
 Examples:
-  # Chain PSL file
+  # Chain PSL file with default settings
   pgr chaining psl t.2bit q.2bit in.psl -o out.chain
+
+  # Chain with affine gap costs
+  pgr chaining psl t.2bit q.2bit in.psl -o out.chain --gap-open 400 --gap-extend 30
+
+  # Chain with HoxD55 scoring scheme
+  pgr chaining psl t.2bit q.2bit in.psl -o out.chain --score-scheme hoxd55
 "###,
         )
         .arg(
@@ -53,12 +67,12 @@ Examples:
                 .help("Path to the PSL file"),
         )
         .arg(
-            Arg::new("output")
+            Arg::new("outfile")
                 .short('o')
-                .long("output")
+                .long("outfile")
                 .value_name("FILE")
-                .help("Output Chain file")
-                .default_value("-"),
+                .help("Output filename. [stdout] for screen")
+                .default_value("stdout"),
         )
         .arg(
             Arg::new("linear_gap")
@@ -89,14 +103,14 @@ Examples:
         .arg(
             Arg::new("score_scheme")
                 .long("score-scheme")
-                .value_name("FILE")
-                .help("Score scheme file (LASTZ format)"),
+                .value_name("FILE/PRESET")
+                .help("Score scheme file (LASTZ format) or preset (hoxd55)"),
         )
 }
 
 pub fn execute(args: &ArgMatches) -> Result<()> {
     let input = args.get_one::<String>("psl").unwrap();
-    let output = args.get_one::<String>("output").unwrap();
+    let output = args.get_one::<String>("outfile").unwrap();
     let linear_gap = args.get_one::<String>("linear_gap").unwrap();
     let min_score = *args.get_one::<f64>("min_score").unwrap();
     let target_2bit_path = args.get_one::<String>("target");
@@ -119,7 +133,7 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
     };
 
     let score_matrix = if let Some(path) = score_scheme_path {
-                SubMatrix::from_file(path)?
+                SubMatrix::from_name(path)?
             } else {
                 SubMatrix::default()
     };

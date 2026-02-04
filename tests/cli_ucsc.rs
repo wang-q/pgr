@@ -125,7 +125,6 @@ fn test_chaining_psl_lastz() -> anyhow::Result<()> {
     let t_2bit = get_path("pseudocat.2bit");
     let q_2bit = get_path("pseudopig.2bit");
     let expected_output = get_path("pslChain/lastz.raw.chain");
-    let score_scheme = get_path("lastz.mat");
     let output = temp.path().join("out.chain");
 
     let mut cmd = Command::cargo_bin("pgr")?;
@@ -137,7 +136,7 @@ fn test_chaining_psl_lastz() -> anyhow::Result<()> {
         .arg("--output")
         .arg(&output)
         .arg("--score-scheme")
-        .arg(&score_scheme)
+        .arg("hoxd55")
         .arg("--linear-gap")
         .arg("medium")
         .arg("--min-score")
