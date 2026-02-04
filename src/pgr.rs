@@ -45,13 +45,13 @@ fn main() -> anyhow::Result<()> {
     * psl   - PSL statistics, manipulation, and conversion
 
 * Clustering:
-    * clust - Clustering operations: cc
+    * clust - Algorithms: cc, dbscan, k-medoids, mcl
 
 * Matrix:
-    * mat   - Matrix operations: compare, format, pair, phylip, subset
+    * mat   - Processing: compare, format, subset, to-pair, to-phylip
 
 * Pipelines:
-    * pl - Pipeline tools: p2m, trf, ir, rept, ucsc
+    * pl - Workflows: p2m, trf, ir, rept, ucsc
 
 "###,
         );
@@ -85,3 +85,4 @@ fn main() -> anyhow::Result<()> {
 //  sparsemem -maxmatch -F -l %d -b -n -k 4 -threads 4 %s %s > %s
 //  mummer -maxmatch -F -l %d -b -n %s %s > %s
 //  $exe, $length, $genome, $query, $result
+// TODO: Remove fully contained sequences

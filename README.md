@@ -384,6 +384,34 @@ multiz M=10 tests/multiz/S288cvsRM11_1a.maf     tests/multiz/S288cvsSpar.maf    
 
 ```
 
+### Matrix commands
+
+```bash
+pgr mat to-phylip tests/mat/IBPA.fa.tsv
+
+pgr mat to-pair tests/mat/IBPA.phy
+
+pgr mat format tests/mat/IBPA.phy
+
+pgr mat subset tests/mat/IBPA.phy tests/mat/IBPA.list
+
+hnsm dist seq tests/mat/IBPA.fa -k 7 -w 1 |
+    pgr mat phylip stdin -o tests/mat/IBPA.71.phy
+
+pgr mat compare tests/mat/IBPA.phy tests/mat/IBPA.71.phy --method all
+# Sequences in matrices: 10 and 10
+# Common sequences: 10
+# Method  Score
+# pearson 0.935803
+# spearman        0.919631
+# mae     0.113433
+# cosine  0.978731
+# jaccard 0.759106
+# euclid  1.229844
+
+```
+
+
 ## Deps
 
 pgr 子命令所依赖的外部可执行程序：
