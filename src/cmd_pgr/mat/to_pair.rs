@@ -3,7 +3,7 @@ use std::io::Write;
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> clap::Command {
-    clap::Command::new("pair")
+    clap::Command::new("to-pair")
         .about("Convert a PHYLIP distance matrix to pairwise distances")
         .after_help(
             r###"

@@ -2,11 +2,11 @@ use assert_cmd::prelude::*;
 use std::process::Command;
 
 #[test]
-fn command_mat_phylip() -> anyhow::Result<()> {
+fn command_mat_to_phylip() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
         .arg("mat")
-        .arg("phylip")
+        .arg("to-phylip")
         .arg("tests/mat/IBPA.fa.tsv")
         .output()?;
     let stdout = String::from_utf8(output.stdout)?;
@@ -18,11 +18,11 @@ fn command_mat_phylip() -> anyhow::Result<()> {
 }
 
 #[test]
-fn command_mat_pair() -> anyhow::Result<()> {
+fn command_mat_to_pair() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
         .arg("mat")
-        .arg("pair")
+        .arg("to-pair")
         .arg("tests/mat/IBPA.phy")
         .output()?;
     let stdout = String::from_utf8(output.stdout)?;

@@ -3,7 +3,7 @@ use std::io::Write;
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
-    Command::new("phylip")
+    Command::new("to-phylip")
         .about("Convert pairwise distances to a phylip distance matrix")
         .after_help(
             r###"
@@ -13,7 +13,7 @@ Input format:
 
 Examples:
     1. Convert pairwise distances to PHYLIP matrix:
-       pgr mat phylip input.tsv -o output.phy
+       pgr mat to-phylip input.tsv -o output.phy
 "###,
         )
         .arg(
