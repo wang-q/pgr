@@ -381,3 +381,56 @@ k81_68	700	241
 *   **创建索引**: `create_loc` 函数遍历 FASTA 文件，记录每条序列的偏移量和大小。
 *   **读取记录**: `fetch_record` 函数利用索引中的 `offset` 和 `size`，通过 `seek` 直接定位并读取完整记录，无需解析整个文件。
 *   **BGZF 支持**: 借助 `noodles_bgzf`，该格式同样适用于 BGZF 压缩的 FASTA 文件，实现压缩数据的随机访问。
+
+## phylip 格式 (PHYLIP Format)
+
+PHYLIP 距离矩阵格式是系统发育分析中的通用格式。`pgr` 在 `src/cmd_pgr/mat` 中提供了一系列工具来处理这种格式。
+
+### 结构 (Structure)
+
+`pgr` 支持标准 (Strict) 和宽松 (Relaxed) 的 PHYLIP 格式。
+
+*   **Relaxed PHYLIP (默认输入支持)**:
+    *   第一行（可选）: 序列数量。
+    *   数据行: 序列名称后跟距离数值。
+    *   分隔符: 空白字符（空格或制表符）。
+    *   矩阵形式: 支持全矩阵 (Full Square) 或下三角矩阵 (Lower Triangular)。
+    *   名称长度: 不受限制。
+
+*   **Strict PHYLIP (`strict` 模式输出)**:
+    *   遵循原始 PHYLIP 标准。
+    *   序列名称: 严格截断为 10 个字符，左对齐并用空格填充。
+    *   数值格式: 空格分隔，通常保留 6 位小数。
+
+### `pgr` 实现 (`cmd_pgr/mat`)
+
+`pgr` 通过 `intspan::NamedMatrix` 结构体处理矩阵数据，支持以下操作：
+
+*   **格式转换 (`pgr mat format`)**: 在 `full` (完整 TSV), `lower` (下三角 TSV) 和 `strict` (标准 PHYLIP) 格式之间转换。
+*   **子集提取 (`pgr mat subset`)**: 根据名称列表提取子矩阵。
+*   **比较 (`pgr mat compare`)**: 计算两个矩阵之间的相关性（Pearson, Spearman 等）。
+
+## Pairwise Distance Format
+
+Pairwise 格式是一种简单的三列文本格式，用于表示序列两两之间的距离，常用于作为中间格式或图数据的输入。
+
+### 结构 (Structure)
+
+*   **格式**: 制表符分隔值 (TSV)。
+*   **列定义**:
+    1.  `name1`: 序列 1 名称。
+    2.  `name2`: 序列 2 名称。
+    3.  `distance`: 距离或分值。
+
+### `pgr` 实现
+
+`pgr` 提供了矩阵与 Pairwise 列表的互转功能：
+
+*   **Matrix to Pair (`pgr mat to-pair`)**:
+    *   将 PHYLIP 矩阵展平为 Pairwise 列表。
+    *   输出包含 `name1`, `name2`, `distance`。
+
+*   **Pair to Matrix (`pgr mat to-phylip`)**:
+    *   将 Pairwise 列表组装回 PHYLIP 矩阵。
+    *   自动处理缺失值（通过 `--missing` 参数，默认 1.0）。
+    *   自动设置对角线值（通过 `--same` 参数，默认 0.0）。
