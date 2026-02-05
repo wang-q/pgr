@@ -86,14 +86,14 @@ netSyntenic tests/pgr/pseudocat.chainnet tests/pgr/noClass.net
 #     have been filtered.
 #    -skipMissing - skip chains that are not found instead of generating
 #     an error.  Useful if chains have been filtered.
-#
+netChainSubset -verbose=0 tests/pgr/noClass.net tests/pgr/all.chain tests/pgr/subset.chain
+
 # chainStitchId - Join chain fragments with the same chain ID into a single
 #    chain per ID.  Chain fragments must be from same original chain but
 #    must not overlap.  Chain fragment scores are summed.
 # usage:
 #    chainStitchId in.chain out.chain
-netChainSubset -verbose=0 tests/pgr/noClass.net tests/pgr/all.chain stdout | \
-    chainStitchId stdin tests/pgr/over.chain
+chainStitchId tests/pgr/subset.chain tests/pgr/over.chain
 
 mkdir -p tests/pgr/net
 
