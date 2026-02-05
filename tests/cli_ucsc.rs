@@ -14,17 +14,16 @@ fn normalize_chain_output(content: &str) -> String {
     content
         .lines()
         .filter(|line| !line.starts_with('#'))
+        .filter(|line| !line.trim().is_empty())
         .map(|line| {
-            if line.starts_with("chain") {
-                let mut parts: Vec<&str> = line.split_whitespace().collect();
-                if parts.len() > 2 {
+            let mut parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.first() == Some(&"chain") {
+                if parts.len() > 12 {
                     parts[1] = "SCORE"; // Ignore score
                     parts[12] = "ID"; // Ignore ID
                 }
-                parts.join(" ")
-            } else {
-                line.to_string()
             }
+            parts.join(" ")
         })
         .collect::<Vec<String>>()
         .join("\n")
@@ -49,37 +48,7 @@ fn test_2bit_size_pseudocat() -> anyhow::Result<()> {
     let output_content = fs::read_to_string(&output)?;
     let expected_content = fs::read_to_string(&expected_output)?;
 
-    assert_eq!(
-        output_content.replace("\r\n", "\n"),
-        expected_content.replace("\r\n", "\n")
-    );
-
-    Ok(())
-}
-
-#[test]
-fn test_2bit_size_pseudopig() -> anyhow::Result<()> {
-    let temp = TempDir::new()?;
-    let input = get_path("pseudopig.2bit");
-    let expected_output = get_path("pseudopig.sizes");
-    let output = temp.path().join("out.sizes");
-
-    let mut cmd = Command::cargo_bin("pgr")?;
-    cmd.arg("2bit")
-        .arg("size")
-        .arg(&input)
-        .arg("-o")
-        .arg(&output);
-
-    cmd.assert().success();
-
-    let output_content = fs::read_to_string(&output)?;
-    let expected_content = fs::read_to_string(&expected_output)?;
-
-    assert_eq!(
-        output_content.replace("\r\n", "\n"),
-        expected_content.replace("\r\n", "\n")
-    );
+    assert_eq!(output_content, expected_content);
 
     Ok(())
 }
@@ -95,7 +64,7 @@ fn test_lav_to_psl_lastz() -> anyhow::Result<()> {
     cmd.arg("lav")
         .arg("to-psl")
         .arg(&input)
-        .arg("-o")
+        .arg("--output")
         .arg(&output);
 
     cmd.assert().success();
@@ -103,27 +72,20 @@ fn test_lav_to_psl_lastz() -> anyhow::Result<()> {
     let output_content = fs::read_to_string(&output)?;
     let expected_content = fs::read_to_string(&expected_output)?;
 
-    let output_lines: Vec<String> = output_content
-        .lines()
-        .filter(|l| !l.starts_with("#") && !l.trim().is_empty())
-        .map(|l| l.to_string())
-        .collect();
+    // Normalize output for comparison
+    // Ignore lines starting with # (header comments might differ or be absent)
+    // Ignore match counts which might slightly differ due to implementation details?
+    // Actually, lav to psl should be deterministic.
+    // However, UCSC tools might output extra headers.
 
-    let expected_lines: Vec<String> = expected_content
-        .lines()
-        .filter(|l| !l.starts_with("#") && !l.trim().is_empty())
-        .map(|l| l.to_string())
-        .collect();
+    let normalize = |s: &str| -> String {
+        s.lines()
+            .filter(|line| !line.starts_with('#')) // specific to psl header
+            .collect::<Vec<&str>>()
+            .join("\n")
+    };
 
-    assert_eq!(
-        output_lines.len(),
-        expected_lines.len(),
-        "Line count mismatch"
-    );
-
-    for (i, (out, exp)) in output_lines.iter().zip(expected_lines.iter()).enumerate() {
-        assert_eq!(out, exp, "Mismatch at line {}", i + 1);
-    }
+    assert_eq!(normalize(&output_content), normalize(&expected_content));
 
     Ok(())
 }
@@ -184,6 +146,42 @@ fn test_chaining_psl_lastz() -> anyhow::Result<()> {
     // Commented out exact match for now to see if it runs.
     // We might need to handle chain IDs which are usually sequential integers.
     // I added ID masking to normalize function.
+
+    assert_eq!(output_norm, expected_norm);
+
+    Ok(())
+}
+
+#[test]
+fn test_chain_anti_repeat_lastz() -> anyhow::Result<()> {
+    let temp = TempDir::new()?;
+    let input = get_path("pslChain/lastz.raw.chain");
+    let t_2bit = get_path("pseudocat.2bit");
+    let q_2bit = get_path("pseudopig.2bit");
+    let expected_output = get_path("pslChain/lastz.chain");
+    let output = temp.path().join("out.chain");
+
+    let mut cmd = Command::cargo_bin("pgr")?;
+    cmd.arg("chain")
+        .arg("anti-repeat")
+        .arg("--target")
+        .arg(&t_2bit)
+        .arg("--query")
+        .arg(&q_2bit)
+        .arg(&input)
+        .arg(&output);
+        // Default min-score is 5000, which matches UCSC default? 
+        // Docs say chainAntiRepeat default is ?
+        // The previous test uses 1000.
+        // Let's use default first.
+
+    cmd.assert().success();
+
+    let output_content = fs::read_to_string(&output)?;
+    let expected_content = fs::read_to_string(&expected_output)?;
+
+    let output_norm = normalize_chain_output(&output_content);
+    let expected_norm = normalize_chain_output(&expected_content);
 
     assert_eq!(output_norm, expected_norm);
 

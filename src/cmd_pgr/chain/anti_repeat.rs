@@ -5,6 +5,7 @@ use std::io::{BufReader, BufWriter};
 use std::path::Path;
 
 use pgr::libs::chain::{read_chains, Block, Chain};
+use pgr::libs::twobit::TwoBitFile;
 
 // Default scores from UCSC chainAntiRepeat.c
 
@@ -16,14 +17,14 @@ pub fn make_subcommand() -> Command {
                 .long("target")
                 .short('t')
                 .required(true)
-                .help("Target sequence file (FASTA)"),
+                .help("Target genome 2bit file"),
         )
         .arg(
             Arg::new("query")
                 .long("query")
                 .short('q')
                 .required(true)
-                .help("Query sequence file (FASTA)"),
+                .help("Query genome 2bit file"),
         )
         .arg(Arg::new("input").required(true).help("Input chain file"))
         .arg(Arg::new("output").required(true).help("Output chain file"))
@@ -51,8 +52,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let min_score = *args.get_one::<usize>("min_score").unwrap();
     let no_check_score = *args.get_one::<usize>("no_check_score").unwrap();
 
-    let target_seqs = load_fasta(target_path)?;
-    let query_seqs = load_fasta(query_path)?;
+    let target_seqs = load_twobit(target_path)?;
+    let query_seqs = load_twobit(query_path)?;
 
     let mut reader = BufReader::new(File::open(input_path)?);
     let chains = read_chains(&mut reader)?; // Note: read_chains reads all chains into memory
@@ -73,12 +74,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn load_fasta<P: AsRef<Path>>(path: P) -> anyhow::Result<HashMap<String, Vec<u8>>> {
-    let reader = bio::io::fasta::Reader::from_file(path)?;
+fn load_twobit<P: AsRef<Path>>(path: P) -> anyhow::Result<HashMap<String, Vec<u8>>> {
+    let mut tb = TwoBitFile::open(path)?;
     let mut seqs = HashMap::new();
-    for result in reader.records() {
-        let record = result?;
-        seqs.insert(record.id().to_string(), record.seq().to_vec());
+    for name in tb.get_sequence_names() {
+        let seq = tb.read_sequence(&name, None, None, false)?; // include soft masks
+        seqs.insert(name, seq.into_bytes());
     }
     Ok(seqs)
 }
