@@ -53,6 +53,10 @@ impl<H: Hasher> Minimizer for JumpingMinimizer<H> {
         // Precompute hashes of all k-mers.
         let hashes = self.hasher.hash_kmers(self.k, text);
 
+        if hashes.len() < self.w {
+            return vec![];
+        }
+
         let mut start = 0;
         while start < hashes.len() - self.w {
             // Position_min returns the position of the leftmost minimal hash.

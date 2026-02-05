@@ -68,22 +68,22 @@ This command calculates pairwise distances between sequences in FA file(s) using
 
 Examples:
 1. Calculate distances with default parameters:
-   hnsm dist seq input.fa
+   pgr dist seq input.fa
 
 2. Use Mod-Minimizer for DNA sequences (canonical k-mers):
-   hnsm dist seq input.fa --hasher mod -k 21 -w 5
+   pgr dist seq input.fa --hasher mod -k 21 -w 5
 
 3. Compare two FA files:
-   hnsm dist seq file1.fa file2.fa
+   pgr dist seq file1.fa file2.fa
 
 4. Merge all sequences in a file and compare to another:
-   hnsm dist seq file1.fa file2.fa --merge
+   pgr dist seq file1.fa file2.fa --merge
 
 5. Treat input as a list file and calculate distances:
-   hnsm dist seq list.txt --list
+   pgr dist seq list.txt --list
 
 6. Use 4 threads for parallel processing:
-   hnsm dist seq input.fa --parallel 4
+   pgr dist seq input.fa --parallel 4
 
 "###,
         )

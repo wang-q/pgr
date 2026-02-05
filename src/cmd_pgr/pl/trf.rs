@@ -171,7 +171,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         // repeat_seq
         // 15 fields
         // The last 2 fields were introduced by -ngs
-        // Matched with `hnsm range mg1655.fa NC_000913:198-229`
+        // Matched with `pgr fa range mg1655.fa NC_000913:198-229`
 
         let reader = intspan::reader(&format!("trf.{}.dat", i));
 
