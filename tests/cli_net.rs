@@ -1,7 +1,24 @@
 use assert_cmd::Command;
 use predicates::prelude::*;
+use std::fs;
 use std::io::Write;
-use tempfile::NamedTempFile;
+use tempfile::{NamedTempFile, TempDir};
+
+fn create_2bit(dir: &TempDir, name: &str, content: &str) -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
+    let fa_path = dir.path().join(format!("{}.fa", name));
+    let bit_path = dir.path().join(format!("{}.2bit", name));
+    fs::write(&fa_path, content)?;
+
+    let mut cmd = Command::cargo_bin("pgr")?;
+    cmd.arg("fa")
+        .arg("to-2bit")
+        .arg(&fa_path)
+        .arg("-o")
+        .arg(&bit_path);
+    cmd.assert().success();
+
+    Ok(bit_path)
+}
 
 // --- net syntenic tests ---
 
@@ -92,20 +109,17 @@ fn test_net_syntenic_nested() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 fn test_net_to_axt_basic() -> Result<(), Box<dyn std::error::Error>> {
     let mut cmd = Command::cargo_bin("pgr")?;
+    let temp = TempDir::new()?;
 
-    // Create FASTA files
-    let mut t_fa = NamedTempFile::new()?;
-    writeln!(t_fa, ">chrT")?;
-    writeln!(t_fa, "ACGTACGTAC")?; // 10 bases
-
-    let mut q_fa = NamedTempFile::new()?;
-    writeln!(q_fa, ">chrQ")?;
-    writeln!(q_fa, "ACGTACGTAC")?; // 10 bases
+    // Create 2bit files
+    let t_2bit = create_2bit(&temp, "chrT", ">chrT\nACGTACGTAC")?; // 10 bases
+    let q_2bit = create_2bit(&temp, "chrQ", ">chrQ\nACGTACGTAC")?; // 10 bases
 
     // Create Chain file
     // chain score tName tSize tStrand tStart tEnd qName qSize qStrand qStart qEnd id
     // Match 0-10 on T to 0-10 on Q.
-    let mut chain_file = NamedTempFile::new()?;
+    let chain_path = temp.path().join("in.chain");
+    let mut chain_file = fs::File::create(&chain_path)?;
     writeln!(chain_file, "chain 100 chrT 10 + 0 10 chrQ 10 + 0 10 1")?;
     writeln!(chain_file, "10")?; // block size 10
     writeln!(chain_file)?;
@@ -113,24 +127,24 @@ fn test_net_to_axt_basic() -> Result<(), Box<dyn std::error::Error>> {
     // Create Net file
     // net chrT 10
     //  fill 0 10 chrQ + 0 10 id 1 score 100 ali 10
-    let mut net_file = NamedTempFile::new()?;
+    let net_path = temp.path().join("in.net");
+    let mut net_file = fs::File::create(&net_path)?;
     writeln!(net_file, "net chrT 10")?;
     writeln!(net_file, " fill 0 10 chrQ + 0 10 id 1 score 100 ali 10")?;
 
-    let out_file = NamedTempFile::new()?;
-    let out_path = out_file.path().to_str().unwrap();
+    let out_path = temp.path().join("out.axt");
 
     cmd.arg("net")
         .arg("to-axt")
-        .arg(net_file.path().to_str().unwrap())
-        .arg(chain_file.path().to_str().unwrap())
-        .arg(t_fa.path().to_str().unwrap())
-        .arg(q_fa.path().to_str().unwrap())
-        .arg(out_path)
+        .arg(&net_path)
+        .arg(&chain_path)
+        .arg(&t_2bit)
+        .arg(&q_2bit)
+        .arg(&out_path)
         .assert()
         .success();
 
-    let output = std::fs::read_to_string(out_path)?;
+    let output = fs::read_to_string(&out_path)?;
     println!("Output:\n{}", output);
 
     // Check AXT output
@@ -138,7 +152,7 @@ fn test_net_to_axt_basic() -> Result<(), Box<dyn std::error::Error>> {
     // ACGTACGTAC
     // ACGTACGTAC
 
-    assert!(output.contains("0 chrT 1 10 chrQ 1 10 + 100"));
+    assert!(output.contains("0 chrT 1 10 chrQ 1 10 + 955"));
     assert!(output.contains("ACGTACGTAC"));
 
     Ok(())
@@ -147,6 +161,7 @@ fn test_net_to_axt_basic() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 fn test_net_to_axt_reverse() -> Result<(), Box<dyn std::error::Error>> {
     let mut cmd = Command::cargo_bin("pgr")?;
+    let temp = TempDir::new()?;
 
     // T: ACGT...
     // Q: ACGT...
@@ -157,13 +172,8 @@ fn test_net_to_axt_reverse() -> Result<(), Box<dyn std::error::Error>> {
     // RevComp(Q+): AAAA ACGT AAAA
     // Index 0-4 on - strand is "AAAA".
 
-    let mut t_fa = NamedTempFile::new()?;
-    writeln!(t_fa, ">chrT")?;
-    writeln!(t_fa, "AAAA")?;
-
-    let mut q_fa = NamedTempFile::new()?;
-    writeln!(q_fa, ">chrQ")?;
-    writeln!(q_fa, "TTTTACGTTTTT")?; // 12 bases
+    let t_2bit = create_2bit(&temp, "chrT", ">chrT\nAAAA")?;
+    let q_2bit = create_2bit(&temp, "chrQ", ">chrQ\nTTTTACGTTTTT")?; // 12 bases
 
     // Chain:
     // Match T:0-4 ("AAAA") to Q-:0-4 ("AAAA").
@@ -171,36 +181,37 @@ fn test_net_to_axt_reverse() -> Result<(), Box<dyn std::error::Error>> {
     // Q+: ...TTTT (Wait, last 4 bases of TTTTACGTTTTT is TTTT).
     // RevComp(TTTT) = AAAA. Correct.
 
-    let mut chain_file = NamedTempFile::new()?;
+    let chain_path = temp.path().join("in.chain");
+    let mut chain_file = fs::File::create(&chain_path)?;
     writeln!(chain_file, "chain 100 chrT 4 + 0 4 chrQ 12 - 0 4 1")?;
     writeln!(chain_file, "4")?;
     writeln!(chain_file)?;
 
-    let mut net_file = NamedTempFile::new()?;
+    let net_path = temp.path().join("in.net");
+    let mut net_file = fs::File::create(&net_path)?;
     writeln!(net_file, "net chrT 4")?;
     writeln!(net_file, " fill 0 4 chrQ - 0 4 id 1 score 100 ali 4")?;
 
-    let out_file = NamedTempFile::new()?;
-    let out_path = out_file.path().to_str().unwrap();
+    let out_path = temp.path().join("out.axt");
 
     cmd.arg("net")
         .arg("to-axt")
-        .arg(net_file.path().to_str().unwrap())
-        .arg(chain_file.path().to_str().unwrap())
-        .arg(t_fa.path().to_str().unwrap())
-        .arg(q_fa.path().to_str().unwrap())
-        .arg(out_path)
+        .arg(&net_path)
+        .arg(&chain_path)
+        .arg(&t_2bit)
+        .arg(&q_2bit)
+        .arg(&out_path)
         .assert()
         .success();
 
-    let output = std::fs::read_to_string(out_path)?;
+    let output = fs::read_to_string(&out_path)?;
     println!("Output:\n{}", output);
 
     // 0 chrT 1 4 chrQ 1 4 - 100
     // AAAA
     // AAAA
 
-    assert!(output.contains("0 chrT 1 4 chrQ 1 4 - 100"));
+    assert!(output.contains("0 chrT 1 4 chrQ 1 4 - 364"));
     assert!(output.contains("AAAA"));
     // Should verify it appears twice (sequence lines)
 

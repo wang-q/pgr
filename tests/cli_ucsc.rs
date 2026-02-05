@@ -86,64 +86,6 @@ fn test_2bit_size_pseudocat() -> anyhow::Result<()> {
     Ok(())
 }
 
-// 3. Axt - netToAxt
-#[test]
-fn test_net_to_axt_lastz() -> anyhow::Result<()> {
-    let temp = TempDir::new()?;
-    let net_input = get_path("net/cat.net");
-    let chain_input = get_path("all.pre.chain");
-    let t_2bit = get_path("pseudocat.2bit");
-    let q_2bit = get_path("pseudopig.2bit");
-    let output = temp.path().join("cat.axt.tmp");
-
-    let mut cmd = Command::cargo_bin("pgr")?;
-    cmd.arg("net")
-        .arg("to-axt")
-        .arg(&net_input)
-        .arg(&chain_input)
-        .arg(&t_2bit)
-        .arg(&q_2bit)
-        .arg(&output);
-
-    cmd.assert().success();
-
-    assert!(output.exists());
-    assert!(fs::metadata(&output)?.len() > 0);
-
-    Ok(())
-}
-
-// 3. Axt - axtSort
-#[test]
-fn test_axt_sort_lastz() -> anyhow::Result<()> {
-    let temp = TempDir::new()?;
-    
-    // Use the expected output (already sorted) as input to verify idempotency/format handling
-    // This avoids dependency on net-to-axt command in this test
-    let input_path = get_path("axtNet/cat.axt");
-    let output = temp.path().join("cat.axt");
-
-    let mut cmd_sort = Command::cargo_bin("pgr")?;
-    cmd_sort.arg("axt")
-        .arg("sort")
-        .arg(&input_path)
-        .arg("-o")
-        .arg(&output);
-
-    cmd_sort.assert().success();
-
-    let output_content = fs::read_to_string(&output)?;
-    let expected_content = fs::read_to_string(&input_path)?;
-    
-    // Normalize newlines for cross-platform comparison
-    let output_norm = output_content.replace("\r\n", "\n");
-    let expected_norm = expected_content.replace("\r\n", "\n");
-
-    assert_eq!(output_norm, expected_norm);
-
-    Ok(())
-}
-
 // 2. Chain - axtChain
 #[test]
 fn test_chaining_psl_lastz() -> anyhow::Result<()> {
@@ -411,6 +353,64 @@ fn test_net_split_lastz() -> anyhow::Result<()> {
     let expected_content = fs::read_to_string(&expected_output)?;
 
     assert_eq!(output_content, expected_content);
+
+    Ok(())
+}
+
+// 3. Axt - netToAxt
+#[test]
+fn test_net_to_axt_lastz() -> anyhow::Result<()> {
+    let temp = TempDir::new()?;
+    let net_input = get_path("net/cat.net");
+    let chain_input = get_path("all.pre.chain");
+    let t_2bit = get_path("pseudocat.2bit");
+    let q_2bit = get_path("pseudopig.2bit");
+    let output = temp.path().join("cat.axt.tmp");
+
+    let mut cmd = Command::cargo_bin("pgr")?;
+    cmd.arg("net")
+        .arg("to-axt")
+        .arg(&net_input)
+        .arg(&chain_input)
+        .arg(&t_2bit)
+        .arg(&q_2bit)
+        .arg(&output);
+
+    cmd.assert().success();
+
+    assert!(output.exists());
+    assert!(fs::metadata(&output)?.len() > 0);
+
+    Ok(())
+}
+
+// 3. Axt - axtSort
+#[test]
+fn test_axt_sort_lastz() -> anyhow::Result<()> {
+    let temp = TempDir::new()?;
+    
+    // Use the expected output (already sorted) as input to verify idempotency/format handling
+    // This avoids dependency on net-to-axt command in this test
+    let input_path = get_path("axtNet/cat.axt");
+    let output = temp.path().join("cat.axt");
+
+    let mut cmd_sort = Command::cargo_bin("pgr")?;
+    cmd_sort.arg("axt")
+        .arg("sort")
+        .arg(&input_path)
+        .arg("-o")
+        .arg(&output);
+
+    cmd_sort.assert().success();
+
+    let output_content = fs::read_to_string(&output)?;
+    let expected_content = fs::read_to_string(&input_path)?;
+    
+    // Normalize newlines for cross-platform comparison
+    let output_norm = output_content.replace("\r\n", "\n");
+    let expected_norm = expected_content.replace("\r\n", "\n");
+
+    assert_eq!(output_norm, expected_norm);
 
     Ok(())
 }
