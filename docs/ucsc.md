@@ -122,14 +122,9 @@ for file in tests/pgr/net/*.net; do
     # usage:
     #   axtSort in.axt out.axt
     netToAxt $file tests/pgr/all.pre.chain \
-        tests/pgr/pseudocat.2bit tests/pgr/pseudopig.2bit stdout | \
-        axtSort stdin tests/pgr/axtNet/$stem.axt
+        tests/pgr/pseudocat.2bit tests/pgr/pseudopig.2bit \
+        tests/pgr/axtNet/$stem.axt.tmp
+    axtSort tests/pgr/axtNet/$stem.axt.tmp tests/pgr/axtNet/$stem.axt
 done
 
-# AxtToMaf
-for file in tests/pgr/axtNet/*.axt; do
-    stem=$(basename $file .axt)
-    axtToMaf $file tests/pgr/pseudocat.sizes tests/pgr/pseudopig.sizes \
-        tests/pgr/$stem.maf
-done
 ```
