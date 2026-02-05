@@ -153,6 +153,96 @@ fn test_chaining_psl_lastz() -> anyhow::Result<()> {
 }
 
 #[test]
+fn test_chain_net_lastz() -> anyhow::Result<()> {
+    let temp = TempDir::new()?;
+    let input = get_path("all.pre.chain");
+    let t_sizes = get_path("pseudocat.sizes");
+    let q_sizes = get_path("pseudopig.sizes");
+    let expected_t_net = get_path("pseudocat.chainnet");
+    let expected_q_net = get_path("pseudopig.chainnet");
+
+    let output_t_net = temp.path().join("out.t.net");
+    let output_q_net = temp.path().join("out.q.net");
+
+    let mut cmd = Command::cargo_bin("pgr")?;
+    cmd.arg("chain")
+        .arg("net")
+        .arg(&input)
+        .arg(&t_sizes)
+        .arg(&q_sizes)
+        .arg(&output_t_net)
+        .arg(&output_q_net)
+        .arg("--min-space")
+        .arg("1")
+        .arg("--min-score")
+        .arg("0");
+
+    cmd.assert().success();
+
+    let t_net_content = fs::read_to_string(&output_t_net)?;
+    let expected_t_content = fs::read_to_string(&expected_t_net)?;
+    assert_eq!(t_net_content, expected_t_content);
+
+    let q_net_content = fs::read_to_string(&output_q_net)?;
+    let expected_q_content = fs::read_to_string(&expected_q_net)?;
+    assert_eq!(q_net_content, expected_q_content);
+
+    Ok(())
+}
+
+#[test]
+fn test_net_syntenic_lastz() -> anyhow::Result<()> {
+    let temp = TempDir::new()?;
+    let input = get_path("pseudocat.chainnet");
+    let expected_output = get_path("noClass.net");
+    let output = temp.path().join("out.net");
+
+    let mut cmd = Command::cargo_bin("pgr")?;
+    cmd.arg("net")
+        .arg("syntenic")
+        .arg(&input)
+        .arg(&output);
+
+    cmd.assert().success();
+
+    let output_content = fs::read_to_string(&output)?;
+    let expected_content = fs::read_to_string(&expected_output)?;
+    assert_eq!(output_content, expected_content);
+
+    Ok(())
+}
+
+#[test]
+fn test_chain_pre_net_lastz() -> anyhow::Result<()> {
+    let temp = TempDir::new()?;
+    let input = get_path("all.chain");
+    let t_sizes = get_path("pseudocat.sizes");
+    let q_sizes = get_path("pseudopig.sizes");
+    let expected_output = get_path("all.pre.chain");
+    let output = temp.path().join("out.chain");
+
+    let mut cmd = Command::cargo_bin("pgr")?;
+    cmd.arg("chain")
+        .arg("pre-net")
+        .arg(&input)
+        .arg(&t_sizes)
+        .arg(&q_sizes)
+        .arg(&output);
+
+    cmd.assert().success();
+
+    let output_content = fs::read_to_string(&output)?;
+    let expected_content = fs::read_to_string(&expected_output)?;
+
+    let output_norm = normalize_chain_output(&output_content);
+    let expected_norm = normalize_chain_output(&expected_content);
+
+    assert_eq!(output_norm, expected_norm);
+
+    Ok(())
+}
+
+#[test]
 fn test_chain_sort_lastz() -> anyhow::Result<()> {
     let temp = TempDir::new()?;
     let input = get_path("pslChain/lastz.chain");

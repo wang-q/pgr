@@ -64,14 +64,14 @@ chainPreNet tests/pgr/all.chain \
 # chainNet - Make alignment nets out of chains
 # usage:
 #   chainNet in.chain target.sizes query.sizes target.net query.net
-#
+chainNet -minSpace=1 tests/pgr/all.pre.chain \
+    tests/pgr/pseudocat.sizes tests/pgr/pseudopig.sizes \
+    tests/pgr/pseudocat.chainnet tests/pgr/pseudopig.chainnet
+
 # netSyntenic - Add synteny info to net.
 # usage:
 #   netSyntenic in.net out.net
-chainNet -minSpace=1 tests/pgr/all.pre.chain \
-    tests/pgr/pseudocat.sizes tests/pgr/pseudopig.sizes \
-    stdout tests/pgr/pseudopig.chainnet | \
-    netSyntenic stdin tests/pgr/noClass.net
+netSyntenic tests/pgr/pseudocat.chainnet tests/pgr/noClass.net
 
 # netChainSubset - Create chain file with subset of chains that appear in
 # the net
