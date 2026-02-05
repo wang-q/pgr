@@ -109,25 +109,23 @@ netSplit tests/pgr/noClass.net tests/pgr/net
 ```bash
 # NetToAxt
 mkdir -p tests/pgr/axtNet
-for file in tests/pgr/net/*.net; do
-    stem=$(basename $file .net)
-    # netToAxt - Convert net (and chain) to axt.
-    # usage:
-    #   netToAxt in.net in.chain target.2bit query.2bit out.axt
-    # note:
-    # directories full of .nib files (an older format)
-    # may also be used in place of target.2bit and query.2bit.
-    netToAxt $file tests/pgr/all.pre.chain \
-        tests/pgr/pseudocat.2bit tests/pgr/pseudopig.2bit \
-        tests/pgr/axtNet/$stem.axt.tmp
 
-    # axtSort - Sort axt files
-    # usage:
-    #    axtSort in.axt out.axt
-    # options:
-    #    -query - Sort by query position, not target
-    #    -byScore - Sort by score    
-   axtSort tests/pgr/axtNet/$stem.axt.tmp tests/pgr/axtNet/$stem.axt
-done
+# netToAxt - Convert net (and chain) to axt.
+# usage:
+#   netToAxt in.net in.chain target.2bit query.2bit out.axt
+# note:
+# directories full of .nib files (an older format)
+# may also be used in place of target.2bit and query.2bit.
+netToAxt tests/pgr/net/cat.net tests/pgr/all.pre.chain \
+    tests/pgr/pseudocat.2bit tests/pgr/pseudopig.2bit \
+    tests/pgr/axtNet/cat.tmp.axt
+
+# axtSort - Sort axt files
+# usage:
+#    axtSort in.axt out.axt
+# options:
+#    -query - Sort by query position, not target
+#    -byScore - Sort by score    
+axtSort tests/pgr/axtNet/cat.tmp.axt tests/pgr/axtNet/cat.axt
 
 ```
