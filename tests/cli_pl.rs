@@ -3,6 +3,61 @@ use std::process::Command;
 use tempfile::TempDir;
 
 #[test]
+fn command_pl_prefilter_help() -> anyhow::Result<()> {
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd.arg("pl").arg("prefilter").arg("--help").output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    assert!(stdout.contains("Prefilter genome/metagenome assembly by amino acid minimizers"));
+    Ok(())
+}
+
+#[test]
+fn command_pl_prefilter_run() -> anyhow::Result<()> {
+    let tempdir = TempDir::new()?;
+    let _tempdir_str = tempdir.path().to_str().unwrap();
+
+    let input = "tests/fas/NC_000932.fa";
+    
+    // Generate protein reference
+    let ref_file = tempdir.path().join("ref.pep.fa");
+    let ref_path = ref_file.to_str().unwrap();
+    
+    let mut cmd_gen = Command::cargo_bin("pgr")?;
+    let output_gen = cmd_gen
+        .arg("fa")
+        .arg("six-frame")
+        .arg(input)
+        .arg("--outfile")
+        .arg(ref_path)
+        .output()?;
+    assert!(output_gen.status.success());
+
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("pl")
+        .arg("prefilter")
+        .arg(input)
+        .arg(ref_path)
+        .arg("--chunk")
+        .arg("50000")
+        .output()?;
+    
+    // Check for success
+    if !output.status.success() {
+        let stderr = String::from_utf8(output.stderr)?;
+        println!("stderr: {}", stderr);
+    }
+    assert!(output.status.success());
+
+    let stdout = String::from_utf8(output.stdout)?;
+    // Since we compare the file against its translation, we should get matches.
+    assert!(!stdout.is_empty());
+
+    Ok(())
+}
+
+#[test]
 fn command_pl_p2m() -> anyhow::Result<()> {
     match which::which("spanr") {
         Err(_) => return Ok(()),
