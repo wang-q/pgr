@@ -101,6 +101,7 @@ mkdir -p tests/pgr/net
 # usage:
 #   netSplit in.net outDir
 netSplit tests/pgr/noClass.net tests/pgr/net
+
 ```
 
 ## 3. Format Conversion
