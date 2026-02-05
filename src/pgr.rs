@@ -30,9 +30,6 @@ fn main() -> anyhow::Result<()> {
         .after_help(
             r###"Subcommand groups:
 
-* Simulation:
-    * ms    - Hudson's ms simulator tools: to-dna
-
 * Sequences:
     * 2bit - 2bit query and extraction
     * fa   - FASTA operations: info, records, transform, indexing
@@ -56,6 +53,9 @@ fn main() -> anyhow::Result<()> {
 
 * Matrix:
     * mat   - Processing: compare, format, subset, to-pair, to-phylip
+
+* Simulation:
+    * ms    - Hudson's ms simulator tools: to-dna
 
 * Pipelines:
     * pl - Workflows: p2m, trf, ir, rept, ucsc

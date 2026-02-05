@@ -43,25 +43,32 @@ cargo build
 Usage: pgr [COMMAND]
 
 Commands:
-  ms-to-dna  Convert ms output haplotypes (0/1) to DNA sequences (FASTA)
-  axt        Manipulate AXT alignment files
-  chain      Manipulate Chain alignment files
-  lav        Manipulate LAV alignment files
-  maf        Manipulate MAF alignment files
-  net        Manipulate Net alignment files
-  psl        Manipulate PSL alignment files
-  pl         Run integrated pipelines
-  2bit       Manage 2bit files
-  fa         Manipulate FASTA files
-  fas        Manipulate block FA files
-  fq         Manipulate FASTQ files
-  help       Print this message or the help of the given subcommand(s)
+  ms        Hudson's ms simulator tools
+  axt       Manipulate AXT alignment files
+  chain     Manipulate Chain alignment files
+  chaining  Chaining alignment blocks
+  clust     Clustering operations
+  dist      Distance/Similarity metrics
+  lav       Manipulate LAV alignment files
+  maf       Manipulate MAF alignment files
+  mat       Matrix operations
+  net       Manipulate Net alignment files
+  psl       Manipulate PSL alignment files
+  pl        Run integrated pipelines
+  2bit      Manage 2bit files
+  fa        Manipulate FASTA files
+  fas       Manipulate block FA files
+  fq        Manipulate FASTQ files
+  help      Print this message or the help of the given subcommand(s)
 
 Options:
   -h, --help     Print help
   -V, --version  Print version
 
 Subcommand groups:
+
+* Simulation:
+    * ms    - Hudson's ms simulator tools: to-dna
 
 * Sequences:
     * 2bit - 2bit query and extraction
@@ -70,6 +77,7 @@ Subcommand groups:
     * fq   - FASTQ interleaving and conversion
 
 * Genome alignments:
+    * chaining - Chaining alignments: psl
     * chain - Chain operations: sort, filter, transform, to-net
     * net   - Net operations: info, subset, transform, convert
     * axt   - AXT sorting and conversion
@@ -77,8 +85,17 @@ Subcommand groups:
     * maf   - Convert to Block FA
     * psl   - PSL statistics, manipulation, and conversion
 
+* Clustering:
+    * clust - Algorithms: cc, dbscan, k-medoids, mcl
+
+* Distance:
+    * dist  - Metrics: hv
+
+* Matrix:
+    * mat   - Processing: compare, format, subset, to-pair, to-phylip
+
 * Pipelines:
-    * pl - Pipeline tools: p2m, trf, ir, rept, ucsc
+    * pl - Workflows: p2m, trf, ir, rept, ucsc
 
 ```
 
