@@ -141,7 +141,12 @@ fn test_axt_sort_lastz() -> anyhow::Result<()> {
     let output = temp.path().join("cat.axt");
 
     let mut cmd_sort = Command::cargo_bin("pgr")?;
-    cmd_sort.arg("axt").arg("sort").arg(&intermediate_output).arg("-o").arg(&output);
+    cmd_sort.arg("axt")
+        .arg("sort")
+        .arg(&intermediate_output)
+        .arg("-o")
+        .arg(&output)
+        .arg("--renumber");
 
     cmd_sort.assert().success();
 
@@ -151,12 +156,6 @@ fn test_axt_sort_lastz() -> anyhow::Result<()> {
     // Normalize newlines for cross-platform comparison
     let output_norm = output_content.replace("\r\n", "\n");
     let expected_norm = expected_content.replace("\r\n", "\n");
-
-    if output_norm != expected_norm {
-            println!("Output (first 500 chars): {}", &output_norm.chars().take(500).collect::<String>());
-            println!("Expected (first 500 chars): {}", &expected_norm.chars().take(500).collect::<String>());
-            panic!("Test failed due to content mismatch");
-        }
 
     assert_eq!(output_norm, expected_norm);
 

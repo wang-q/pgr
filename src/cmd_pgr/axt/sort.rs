@@ -47,6 +47,13 @@ Examples:
                 .action(ArgAction::SetTrue)
                 .help("Sort by score"),
         )
+        .arg(
+            Arg::new("renumber")
+                .long("renumber")
+                .short('r')
+                .action(ArgAction::SetTrue)
+                .help("Renumber AXT records"),
+        )
 }
 
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
@@ -54,6 +61,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let output = args.get_one::<String>("output").unwrap();
     let by_query = args.get_flag("query");
     let by_score = args.get_flag("by-score");
+    let renumber = args.get_flag("renumber");
 
     let reader = intspan::reader(input);
     let mut writer = intspan::writer(output);
@@ -77,7 +85,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     }
 
     for (i, axt) in axts.iter_mut().enumerate() {
-        axt.id = i as u64;
+        if renumber {
+            axt.id = i as u64;
+        }
         write_axt(&mut writer, axt)?;
     }
 

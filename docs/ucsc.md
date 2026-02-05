@@ -123,8 +123,11 @@ for file in tests/pgr/net/*.net; do
 
     # axtSort - Sort axt files
     # usage:
-    #   axtSort in.axt out.axt
-    axtSort tests/pgr/axtNet/$stem.axt.tmp tests/pgr/axtNet/$stem.axt
+    #    axtSort in.axt out.axt
+    # options:
+    #    -query - Sort by query position, not target
+    #    -byScore - Sort by score    
+   axtSort tests/pgr/axtNet/$stem.axt.tmp tests/pgr/axtNet/$stem.axt
 done
 
 ```
