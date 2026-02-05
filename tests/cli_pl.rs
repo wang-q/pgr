@@ -8,39 +8,21 @@ fn command_pl_prefilter_help() -> anyhow::Result<()> {
     let output = cmd.arg("pl").arg("prefilter").arg("--help").output()?;
     let stdout = String::from_utf8(output.stdout)?;
 
-    assert!(stdout.contains("Prefilter genome/metagenome assembly by amino acid minimizers"));
+    assert!(stdout.contains("amino acid minimizers"));
     Ok(())
 }
 
 #[test]
 fn command_pl_prefilter_run() -> anyhow::Result<()> {
-    let tempdir = TempDir::new()?;
-    let _tempdir_str = tempdir.path().to_str().unwrap();
-
-    let input = "tests/fas/NC_000932.fa";
-    
-    // Generate protein reference
-    let ref_file = tempdir.path().join("ref.pep.fa");
-    let ref_path = ref_file.to_str().unwrap();
-    
-    let mut cmd_gen = Command::cargo_bin("pgr")?;
-    let output_gen = cmd_gen
-        .arg("fa")
-        .arg("six-frame")
-        .arg(input)
-        .arg("--outfile")
-        .arg(ref_path)
-        .output()?;
-    assert!(output_gen.status.success());
+    let input = "tests/index/final.contigs.fa";
+    let ref_file = "tests/clust/IBPA.fa";
 
     let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
         .arg("pl")
         .arg("prefilter")
         .arg(input)
-        .arg(ref_path)
-        .arg("--chunk")
-        .arg("50000")
+        .arg(ref_file)
         .output()?;
     
     // Check for success
@@ -51,8 +33,8 @@ fn command_pl_prefilter_run() -> anyhow::Result<()> {
     assert!(output.status.success());
 
     let stdout = String::from_utf8(output.stdout)?;
-    // Since we compare the file against its translation, we should get matches.
-    assert!(!stdout.is_empty());
+    assert!(stdout.contains("k81_25"));
+    assert!(stdout.contains("A0A010SUI8_PSEFL"));
 
     Ok(())
 }

@@ -428,16 +428,16 @@ hnsm dist seq tests/genome/mg1655.pro.fa.gz tests/genome/pao1.pro.fa.gz -k 7 -w 
 ### Assemblies
 
 ```bash
-cargo run --bin hnsm prefilter tests/index/final.contigs.fa tests/clust/IBPA.fa
+cargo run --bin pgr pl prefilter tests/index/final.contigs.fa tests/clust/IBPA.fa
 
 # SRR6323163 - APH(3')-IIIa
 # 3300030246 - acrB
-hnsm prefilter tests/metagenome/SRR6323163.fa.gz "tests/metagenome/APH(3')-IIIa.fa"
-hnsm prefilter tests/metagenome/SRR6323163.fa.gz "tests/metagenome/acrB.fa"
+pgr pl prefilter tests/metagenome/SRR6323163.fa.gz "tests/metagenome/APH(3')-IIIa.fa"
+pgr pl prefilter tests/metagenome/SRR6323163.fa.gz "tests/metagenome/acrB.fa"
 
-hnsm range tests/metagenome/SRR6323163.fa.gz "k141_4576(-):285-455|frame=2"
+pgr fa range tests/metagenome/SRR6323163.fa.gz "k141_4576(-):285-455|frame=2"
 
-hnsm prefilter 3300035148.fna.gz "tests/metagenome/APH(3')-IIIa.fa" -c 1000000 -p 8
+pgr pl prefilter tests/metagenome/3300030246.fna.gz "tests/metagenome/APH(3')-IIIa.fa" -c 1000000 -p 8
 
 ```
 
