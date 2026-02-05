@@ -117,6 +117,28 @@ fn test_chain_anti_repeat() -> Result<(), Box<dyn std::error::Error>> {
     let q_seq = ">chr2\nAAAAAAAAAAactgactgacACTGACTGAC\n";
     fs::write(&q_fa_path, q_seq)?;
 
+    // Convert FASTA to 2bit
+    let t_2bit_path = dir.path().join("target.2bit");
+    let q_2bit_path = dir.path().join("query.2bit");
+
+    let mut cmd_2bit = Command::cargo_bin("pgr")?;
+    cmd_2bit
+        .arg("fa")
+        .arg("to-2bit")
+        .arg(t_fa_path.to_str().unwrap())
+        .arg("-o")
+        .arg(t_2bit_path.to_str().unwrap());
+    cmd_2bit.assert().success();
+
+    let mut cmd_2bit = Command::cargo_bin("pgr")?;
+    cmd_2bit
+        .arg("fa")
+        .arg("to-2bit")
+        .arg(q_fa_path.to_str().unwrap())
+        .arg("-o")
+        .arg(q_2bit_path.to_str().unwrap());
+    cmd_2bit.assert().success();
+
     // Chain 1: 0-10 (Low complexity) -> score 1000
     // Chain 2: 10-20 (Repeat) -> score 1000
     // Chain 3: 20-30 (Good) -> score 1000
@@ -135,9 +157,9 @@ fn test_chain_anti_repeat() -> Result<(), Box<dyn std::error::Error>> {
     cmd.arg("chain")
         .arg("anti-repeat")
         .arg("--target")
-        .arg(t_fa_path.to_str().unwrap())
+        .arg(t_2bit_path.to_str().unwrap())
         .arg("--query")
-        .arg(q_fa_path.to_str().unwrap())
+        .arg(q_2bit_path.to_str().unwrap())
         .arg(chain_path.to_str().unwrap())
         .arg(out_path.to_str().unwrap())
         .arg("--min-score")

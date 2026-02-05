@@ -29,52 +29,6 @@ fn normalize_chain_output(content: &str) -> String {
         .join("\n")
 }
 
-fn normalize_net_output(content: &str) -> String {
-    content
-        .lines()
-        .filter(|line| !line.starts_with('#'))
-        .filter(|line| !line.trim().is_empty())
-        .map(|line| {
-            let indent_count = line.chars().take_while(|c| *c == ' ').count();
-            let indent = " ".repeat(indent_count);
-
-            let mut parts: Vec<&str> = line.split_whitespace().collect();
-
-            if parts.first() == Some(&"fill") {
-                // fixed fields: fill start len qName qStrand qStart qLen id chainId score val ali val
-                // 0 1 2 3 4 5 6 7 8 9 10 11 12
-                // Total 13 fixed tokens.
-                if parts.len() > 13 {
-                    let fixed = parts[0..13].to_vec();
-                    let extra = parts[13..].to_vec();
-
-                    let mut pairs: Vec<(&str, &str)> = extra
-                        .chunks(2)
-                        .filter_map(|chunk| {
-                            if chunk.len() == 2 {
-                                Some((chunk[0], chunk[1]))
-                            } else {
-                                None
-                            }
-                        })
-                        .collect();
-
-                    pairs.sort_by_key(|k| k.0);
-
-                    let mut sorted_parts = fixed;
-                    for (k, v) in pairs {
-                        sorted_parts.push(k);
-                        sorted_parts.push(v);
-                    }
-                    return format!("{}{}", indent, sorted_parts.join(" "));
-                }
-            }
-            format!("{}{}", indent, parts.join(" "))
-        })
-        .collect::<Vec<String>>()
-        .join("\n")
-}
-
 // 1. Alignment - lavToPsl
 #[test]
 fn test_lav_to_psl_lastz() -> anyhow::Result<()> {
@@ -408,10 +362,7 @@ fn test_chain_stitch_lastz() -> anyhow::Result<()> {
         let expected_output = get_path("net/cat.net");
         let expected_content = fs::read_to_string(&expected_output)?;
 
-        let output_norm = normalize_net_output(&output_content);
-        let expected_norm = normalize_net_output(&expected_content);
-
-        assert_eq!(output_norm, expected_norm);
+        assert_eq!(output_content, expected_content);
 
         Ok(())
     }

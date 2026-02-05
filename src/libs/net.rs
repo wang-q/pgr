@@ -913,21 +913,23 @@ fn write_fill<W: Write>(
             sub_size
         );
 
+        // Optional fields: type, qDup, qOver, qFar
+        // The order corresponds to UCSC's netSyntenic output (e.g., noClass.net, cat.net),
+        // ensuring binary compatibility with reference files.
+        // Note: This differs from chainNet.c's cnFillWrite which might output in a different order,
+        // but empirical evidence from UCSC tools suggests this is the correct order for these files.
         if !f.class.is_empty() {
             line.push_str(" type ");
             line.push_str(&f.class);
         }
-
         if f.q_dup > 0 {
             line.push_str(" qDup ");
             line.push_str(&f.q_dup.to_string());
         }
-
         if f.q_over > 0 {
             line.push_str(" qOver ");
             line.push_str(&f.q_over.to_string());
         }
-
         if f.q_far != 0 {
             line.push_str(" qFar ");
             line.push_str(&f.q_far.to_string());

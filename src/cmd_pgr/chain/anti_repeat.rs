@@ -1,12 +1,9 @@
 use clap::{Arg, ArgMatches, Command};
-use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufReader, BufWriter};
-use std::path::Path;
 
 use pgr::libs::chain::{read_chains, Block, Chain};
 use pgr::libs::twobit::TwoBitFile;
-
 // Default scores from UCSC chainAntiRepeat.c
 
 pub fn make_subcommand() -> Command {
@@ -52,8 +49,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let min_score = *args.get_one::<usize>("min_score").unwrap();
     let no_check_score = *args.get_one::<usize>("no_check_score").unwrap();
 
-    let target_seqs = load_twobit(target_path)?;
-    let query_seqs = load_twobit(query_path)?;
+    let mut target_2bit = TwoBitFile::open(target_path)?;
+    let mut query_2bit = TwoBitFile::open(query_path)?;
 
     let mut reader = BufReader::new(File::open(input_path)?);
     let chains = read_chains(&mut reader)?; // Note: read_chains reads all chains into memory
@@ -66,7 +63,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             continue;
         }
 
-        if check_chain(&chain, &target_seqs, &query_seqs, min_score) {
+        if check_chain(&chain, &mut target_2bit, &mut query_2bit, min_score) {
             chain.write(&mut writer)?;
         }
     }
@@ -74,54 +71,51 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn load_twobit<P: AsRef<Path>>(path: P) -> anyhow::Result<HashMap<String, Vec<u8>>> {
-    let mut tb = TwoBitFile::open(path)?;
-    let mut seqs = HashMap::new();
-    for name in tb.get_sequence_names() {
-        let seq = tb.read_sequence(&name, None, None, false)?; // include soft masks
-        seqs.insert(name, seq.into_bytes());
-    }
-    Ok(seqs)
-}
-
-fn check_chain(
+fn check_chain<R: std::io::Read + std::io::Seek>(
     chain: &Chain,
-    t_seqs: &HashMap<String, Vec<u8>>,
-    q_seqs: &HashMap<String, Vec<u8>>,
+    t_2bit: &mut TwoBitFile<R>,
+    q_2bit: &mut TwoBitFile<R>,
     min_score: usize,
 ) -> bool {
-    let t_seq = match t_seqs.get(&chain.header.t_name) {
-        Some(s) => s,
-        None => return false,
-    };
-    let q_seq = match q_seqs.get(&chain.header.q_name) {
-        Some(s) => s,
-        None => return false,
-    };
+    // Check if sequences exist
+    if !t_2bit.sequence_offsets.contains_key(&chain.header.t_name)
+        || !q_2bit.sequence_offsets.contains_key(&chain.header.q_name)
+    {
+        return false;
+    }
 
     let blocks = chain.to_blocks();
 
     // 1. Degeneracy Filter (Low complexity check)
-    if !check_degeneracy(chain, &blocks, t_seq, q_seq, min_score) {
+    if !check_degeneracy(chain, &blocks, t_2bit, q_2bit, min_score) {
         return false;
     }
 
     // 2. Repeat Filter (Lowercase check)
-    check_repeat(chain, &blocks, t_seq, q_seq, min_score)
+    check_repeat(chain, &blocks, t_2bit, q_2bit, min_score)
 }
 
-fn get_slices<'a>(
+fn get_slices<R: std::io::Read + std::io::Seek>(
     block: &Block,
-    t_seq: &'a [u8],
-    q_seq: &'a [u8],
+    t_2bit: &mut TwoBitFile<R>,
+    q_2bit: &mut TwoBitFile<R>,
+    t_name: &str,
+    q_name: &str,
     q_strand: char,
     q_size: u64,
-) -> Option<(&'a [u8], &'a [u8])> {
-    if block.t_end as usize > t_seq.len() {
-        return None;
-    }
-    let t_slice = &t_seq[block.t_start as usize..block.t_end as usize];
+) -> Option<(Vec<u8>, Vec<u8>)> {
+    // Read Target Slice
+    let t_seq = match t_2bit.read_sequence(
+        t_name,
+        Some(block.t_start as usize),
+        Some(block.t_end as usize),
+        false, // include soft masks
+    ) {
+        Ok(s) => s.into_bytes(),
+        Err(_) => return None,
+    };
 
+    // Calculate Query Range
     let (q_start, q_end) = if q_strand == '+' {
         (block.q_start as usize, block.q_end as usize)
     } else {
@@ -129,19 +123,25 @@ fn get_slices<'a>(
         (q_len - block.q_end as usize, q_len - block.q_start as usize)
     };
 
-    if q_end > q_seq.len() {
-        return None;
-    }
-    let q_slice = &q_seq[q_start..q_end];
+    // Read Query Slice
+    let q_seq = match q_2bit.read_sequence(
+        q_name,
+        Some(q_start),
+        Some(q_end),
+        false, // include soft masks
+    ) {
+        Ok(s) => s.into_bytes(),
+        Err(_) => return None,
+    };
 
-    Some((t_slice, q_slice))
+    Some((t_seq, q_seq))
 }
 
-fn check_degeneracy(
+fn check_degeneracy<R: std::io::Read + std::io::Seek>(
     chain: &Chain,
     blocks: &[Block],
-    t_seq: &[u8],
-    q_seq: &[u8],
+    t_2bit: &mut TwoBitFile<R>,
+    q_2bit: &mut TwoBitFile<R>,
     min_score: usize,
 ) -> bool {
     let mut counts = [0; 4]; // T, C, A, G
@@ -150,8 +150,10 @@ fn check_degeneracy(
     for block in blocks {
         if let Some((t_slice, q_slice)) = get_slices(
             block,
-            t_seq,
-            q_seq,
+            t_2bit,
+            q_2bit,
+            &chain.header.t_name,
+            &chain.header.q_name,
             chain.header.q_strand,
             chain.header.q_size,
         ) {
@@ -209,11 +211,11 @@ fn check_degeneracy(
     }
 }
 
-fn check_repeat(
+fn check_repeat<R: std::io::Read + std::io::Seek>(
     chain: &Chain,
     blocks: &[Block],
-    t_seq: &[u8],
-    q_seq: &[u8],
+    t_2bit: &mut TwoBitFile<R>,
+    q_2bit: &mut TwoBitFile<R>,
     min_score: usize,
 ) -> bool {
     let mut rep_count = 0;
@@ -222,8 +224,10 @@ fn check_repeat(
     for block in blocks {
         if let Some((t_slice, q_slice)) = get_slices(
             block,
-            t_seq,
-            q_seq,
+            t_2bit,
+            q_2bit,
+            &chain.header.t_name,
+            &chain.header.q_name,
             chain.header.q_strand,
             chain.header.q_size,
         ) {
