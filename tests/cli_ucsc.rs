@@ -153,6 +153,33 @@ fn test_chaining_psl_lastz() -> anyhow::Result<()> {
 }
 
 #[test]
+fn test_chain_sort_lastz() -> anyhow::Result<()> {
+    let temp = TempDir::new()?;
+    let input = get_path("pslChain/lastz.chain");
+    let expected_output = get_path("all.chain");
+    let output = temp.path().join("out.chain");
+
+    let mut cmd = Command::cargo_bin("pgr")?;
+    cmd.arg("chain")
+        .arg("sort")
+        .arg(&input)
+        .arg("--output")
+        .arg(&output);
+
+    cmd.assert().success();
+
+    let output_content = fs::read_to_string(&output)?;
+    let expected_content = fs::read_to_string(&expected_output)?;
+
+    let output_norm = normalize_chain_output(&output_content);
+    let expected_norm = normalize_chain_output(&expected_content);
+
+    assert_eq!(output_norm, expected_norm);
+
+    Ok(())
+}
+
+#[test]
 fn test_chain_anti_repeat_lastz() -> anyhow::Result<()> {
     let temp = TempDir::new()?;
     let input = get_path("pslChain/lastz.raw.chain");
