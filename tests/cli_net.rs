@@ -38,8 +38,8 @@ fn test_net_syntenic_basic() -> Result<(), Box<dyn std::error::Error>> {
     // Fill 1: qDup 100. Type top.
     // Fill 2: qDup 100. Type top.
 
-    assert!(output.contains("fill 100 200 chr2 + 50 200 id 1 score 100 ali 200 type top qDup 100"));
-    assert!(output.contains("fill 500 100 chr2 + 100 100 id 2 score 50 ali 100 type top qDup 100"));
+    assert!(output.contains("fill 100 200 chr2 + 50 200 id 1 score 100 ali 200 qDup 100 type top"));
+    assert!(output.contains("fill 500 100 chr2 + 100 100 id 2 score 50 ali 100 qDup 100 type top"));
 
     Ok(())
 }
@@ -82,7 +82,7 @@ fn test_net_syntenic_nested() -> Result<(), Box<dyn std::error::Error>> {
     let output = std::fs::read_to_string(out_path)?;
     println!("Output:\n{}", output);
 
-    assert!(output.contains("fill 100 100 chr2 + 100 100 id 2 score 50 ali 100 type syn qOver 100"));
+    assert!(output.contains("fill 100 100 chr2 + 100 100 id 2 score 50 ali 100 qOver 100 qFar 0 qDup 0 type syn"));
 
     Ok(())
 }

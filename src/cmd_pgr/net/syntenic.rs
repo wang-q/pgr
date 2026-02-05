@@ -139,10 +139,10 @@ fn r_net_syn_fill(
                 // Check overlap with GAP query range
                 let g_start = pg.o_start;
                 let g_end = pg.o_end;
-                
+
                 let intersection = range_intersection(start, end, g_start, g_end);
                 q_over = Some(intersection);
-                
+
                 if intersection == 0 {
                     // Calculate distance
                     let d1 = if start > g_end { start - g_end } else { 0 };
