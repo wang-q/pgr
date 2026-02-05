@@ -281,7 +281,7 @@ fn syn_filter(fill: &Fill, c: &FilterCriteria) -> bool {
     if fill.class == "nonSyn" {
         return false;
     }
-    if fill.q_far > c.max_far {
+    if fill.q_far.unwrap_or(0) > c.max_far {
         return false;
     }
     true

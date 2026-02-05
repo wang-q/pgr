@@ -39,9 +39,9 @@ pub struct Fill {
     pub score: f64,
     pub ali: u64,
     pub class: String,
-    pub q_dup: u64,
-    pub q_over: u64,
-    pub q_far: i64,
+    pub q_dup: Option<u64>,
+    pub q_over: Option<u64>,
+    pub q_far: Option<i64>,
     pub chain: Option<Rc<Chain>>,
     pub gaps: Vec<Rc<RefCell<Gap>>>,
 }
@@ -122,17 +122,17 @@ impl Fill {
             self.ali
         )?;
 
+        if let Some(val) = self.q_over {
+            write!(writer, " qOver {}", val)?;
+        }
+        if let Some(val) = self.q_far {
+            write!(writer, " qFar {}", val)?;
+        }
+        if let Some(val) = self.q_dup {
+            write!(writer, " qDup {}", val)?;
+        }
         if !self.class.is_empty() {
             write!(writer, " type {}", self.class)?;
-        }
-        if self.q_dup > 0 {
-            write!(writer, " qDup {}", self.q_dup)?;
-        }
-        if self.q_over > 0 {
-            write!(writer, " qOver {}", self.q_over)?;
-        }
-        if self.q_far != 0 {
-            write!(writer, " qFar {}", self.q_far)?;
         }
         writeln!(writer)?;
 
@@ -227,9 +227,9 @@ pub fn read_nets<R: BufRead>(mut reader: R) -> io::Result<Vec<Chrom>> {
                 let ali = parts[12].parse::<u64>().unwrap();
 
                 let mut class = String::new();
-                let mut q_dup = 0;
-                let mut q_over = 0;
-                let mut q_far = 0;
+                let mut q_dup = None;
+                let mut q_over = None;
+                let mut q_far = None;
 
                 let mut i = 13;
                 while i < parts.len() {
@@ -244,7 +244,7 @@ pub fn read_nets<R: BufRead>(mut reader: R) -> io::Result<Vec<Chrom>> {
                         }
                         "qDup" => {
                             if i + 1 < parts.len() {
-                                q_dup = parts[i + 1].parse::<u64>().unwrap_or(0);
+                                q_dup = Some(parts[i + 1].parse::<u64>().unwrap_or(0));
                                 i += 2;
                             } else {
                                 i += 1;
@@ -252,7 +252,7 @@ pub fn read_nets<R: BufRead>(mut reader: R) -> io::Result<Vec<Chrom>> {
                         }
                         "qOver" => {
                             if i + 1 < parts.len() {
-                                q_over = parts[i + 1].parse::<u64>().unwrap_or(0);
+                                q_over = Some(parts[i + 1].parse::<u64>().unwrap_or(0));
                                 i += 2;
                             } else {
                                 i += 1;
@@ -260,7 +260,7 @@ pub fn read_nets<R: BufRead>(mut reader: R) -> io::Result<Vec<Chrom>> {
                         }
                         "qFar" => {
                             if i + 1 < parts.len() {
-                                q_far = parts[i + 1].parse::<i64>().unwrap_or(0);
+                                q_far = Some(parts[i + 1].parse::<i64>().unwrap_or(0));
                                 i += 2;
                             } else {
                                 i += 1;
@@ -652,9 +652,9 @@ fn fill_space(
         score: 0.0,
         ali: 0,
         class: String::new(),
-        q_dup: 0,
-        q_over: 0,
-        q_far: 0,
+        q_dup: None,
+        q_over: None,
+        q_far: None,
         chain: Some(chain.clone()),
         gaps: Vec::new(),
     }));
@@ -913,26 +913,24 @@ fn write_fill<W: Write>(
             sub_size
         );
 
-        // Optional fields: type, qDup, qOver, qFar
-        // The order corresponds to UCSC's netSyntenic output (e.g., noClass.net, cat.net),
-        // ensuring binary compatibility with reference files.
-        // Note: This differs from chainNet.c's cnFillWrite which might output in a different order,
-        // but empirical evidence from UCSC tools suggests this is the correct order for these files.
+        // Optional fields: qOver, qFar, qDup, type
+        // The order corresponds to UCSC's chainNet.c cnFillWrite implementation.
+        // See: src/lib/chainNet.c in UCSC source tree.
+        if let Some(val) = f.q_over {
+            line.push_str(" qOver ");
+            line.push_str(&val.to_string());
+        }
+        if let Some(val) = f.q_far {
+            line.push_str(" qFar ");
+            line.push_str(&val.to_string());
+        }
+        if let Some(val) = f.q_dup {
+            line.push_str(" qDup ");
+            line.push_str(&val.to_string());
+        }
         if !f.class.is_empty() {
             line.push_str(" type ");
             line.push_str(&f.class);
-        }
-        if f.q_dup > 0 {
-            line.push_str(" qDup ");
-            line.push_str(&f.q_dup.to_string());
-        }
-        if f.q_over > 0 {
-            line.push_str(" qOver ");
-            line.push_str(&f.q_over.to_string());
-        }
-        if f.q_far != 0 {
-            line.push_str(" qFar ");
-            line.push_str(&f.q_far.to_string());
         }
 
         writeln!(writer, "{}", line)?;

@@ -98,7 +98,7 @@ fn r_net_syn_gap(
 ) {
     let g = gap.borrow();
     for fill in &g.fills {
-        r_net_syn_fill(fill, map, parent_fill);
+        r_net_syn_fill(fill, map, parent_fill, Some(gap));
     }
 }
 
@@ -106,6 +106,7 @@ fn r_net_syn_fill(
     fill: &Rc<RefCell<Fill>>,
     map: &HashMap<String, DupeTree>,
     parent: Option<&Rc<RefCell<Fill>>>,
+    parent_gap: Option<&Rc<RefCell<Gap>>>,
 ) {
     // Need to borrow_mut to update fields
     // But we also need to pass `fill` (Rc) to children.
@@ -116,14 +117,14 @@ fn r_net_syn_fill(
         (f.o_chrom.clone(), f.o_start, f.o_end, f.o_strand)
     };
 
-    let mut q_dup = 0;
+    let mut q_dup = Some(0);
     if let Some(dt) = map.get(&q_name) {
-        q_dup = dt.count_over(start, end, 2);
+        q_dup = Some(dt.count_over(start, end, 2));
     }
 
     let type_str;
-    let mut q_over = 0;
-    let mut q_far = 0;
+    let mut q_over = None;
+    let mut q_far = None;
 
     if parent.is_none() {
         type_str = "top".to_string();
@@ -132,16 +133,28 @@ fn r_net_syn_fill(
         if q_name != p.o_chrom {
             type_str = "nonSyn".to_string();
         } else {
-            let p_start = p.o_start;
-            let p_end = p.o_end;
-            let intersection = range_intersection(start, end, p_start, p_end);
-
-            if intersection > 0 {
-                q_over = intersection;
-                q_far = 0;
+            // Calculate qOver/qFar relative to parent GAP
+            if let Some(pg_rc) = parent_gap {
+                let pg = pg_rc.borrow();
+                // Check overlap with GAP query range
+                let g_start = pg.o_start;
+                let g_end = pg.o_end;
+                
+                let intersection = range_intersection(start, end, g_start, g_end);
+                q_over = Some(intersection);
+                
+                if intersection == 0 {
+                    // Calculate distance
+                    let d1 = if start > g_end { start - g_end } else { 0 };
+                    let d2 = if end < g_start { g_start - end } else { 0 };
+                    q_far = Some((d1 + d2) as i64);
+                } else {
+                    q_far = Some(0);
+                }
             } else {
-                q_over = 0;
-                q_far = -(intersection as i64); // Always 0 if intersection returns 0
+                // Should not happen for non-top fills
+                q_over = Some(0);
+                q_far = Some(0);
             }
 
             if p.o_strand == strand {
