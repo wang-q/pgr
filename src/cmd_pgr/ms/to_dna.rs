@@ -8,7 +8,7 @@ use std::io::Write;
 use std::io::{BufRead, BufReader};
 
 pub fn make_subcommand() -> Command {
-    Command::new("ms-to-dna")
+    Command::new("to-dna")
         .about("Convert ms output haplotypes (0/1) to DNA sequences (FASTA)")
         .arg(
             Arg::new("gc")
@@ -62,14 +62,14 @@ pub fn make_subcommand() -> Command {
         .after_help(
             r###"
 Examples:
-  # Pipe ms output to pgr ms2dna
-  ms 10 1 -t 5 -r 0 1000 | pgr ms2dna --gc 0.5 > out.fa
+  # Pipe ms output to pgr ms to-dna
+  ms 10 1 -t 5 -r 0 1000 | pgr ms to-dna --gc 0.5 > out.fa
 
   # Read from file and write to output
-  pgr ms2dna input.ms -o out.fa --seed 12345
+  pgr ms to-dna input.ms -o out.fa --seed 12345
 
   # Disable position perturbation (keep original ms positions)
-  pgr ms2dna input.ms --no-perturb
+  pgr ms to-dna input.ms --no-perturb
 
 Output Format:
   FASTA format with single-line sequences.
@@ -87,7 +87,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // Args
     //----------------------------
     if args.get_flag("doc") {
-        println!("{}", include_str!("../../docs/ms2dna.md"));
+        println!("{}", include_str!("../../../docs/ms2dna.md"));
         return Ok(());
     }
     let outfile = args.get_one::<String>("outfile").unwrap();

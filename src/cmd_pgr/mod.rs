@@ -11,7 +11,7 @@ pub mod fq;
 pub mod lav;
 pub mod maf;
 pub mod mat;
-pub mod ms_to_dna;
+pub mod ms;
 pub mod net;
 pub mod pl;
 pub mod psl;

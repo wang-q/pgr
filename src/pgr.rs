@@ -11,7 +11,7 @@ fn main() -> anyhow::Result<()> {
         .propagate_version(true)
         .arg_required_else_help(true)
         .color(ColorChoice::Auto)
-        .subcommand(cmd_pgr::ms_to_dna::make_subcommand())
+        .subcommand(cmd_pgr::ms::make_subcommand())
         .subcommand(cmd_pgr::axt::make_subcommand())
         .subcommand(cmd_pgr::chain::make_subcommand())
         .subcommand(cmd_pgr::chaining::make_subcommand())
@@ -29,6 +29,9 @@ fn main() -> anyhow::Result<()> {
         .subcommand(cmd_pgr::fq::make_subcommand())
         .after_help(
             r###"Subcommand groups:
+
+* Simulation:
+    * ms    - Hudson's ms simulator tools: to-dna
 
 * Sequences:
     * 2bit - 2bit query and extraction
@@ -62,7 +65,7 @@ fn main() -> anyhow::Result<()> {
 
     // Check which subcomamnd the user ran...
     match app.get_matches().subcommand() {
-        Some(("ms-to-dna", sub_matches)) => cmd_pgr::ms_to_dna::execute(sub_matches),
+        Some(("ms", sub_matches)) => cmd_pgr::ms::execute(sub_matches),
         Some(("axt", sub_matches)) => cmd_pgr::axt::execute(sub_matches),
         Some(("chaining", sub_matches)) => cmd_pgr::chaining::execute(sub_matches),
         Some(("chain", sub_matches)) => cmd_pgr::chain::execute(sub_matches),

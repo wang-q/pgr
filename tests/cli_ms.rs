@@ -4,7 +4,7 @@ use predicates::prelude::*;
 #[test]
 fn command_ms_to_dna_help() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("pgr")?;
-    cmd.arg("ms-to-dna").arg("--help");
+    cmd.arg("ms").arg("to-dna").arg("--help");
     cmd.assert()
         .success()
         .stdout(predicate::str::contains("Convert ms output haplotypes"));
@@ -22,7 +22,7 @@ positions: 0.25 0.75
 10
 ";
     let mut cmd = Command::cargo_bin("pgr")?;
-    cmd.arg("ms-to-dna")
+    cmd.arg("ms").arg("to-dna")
         .arg("--seed")
         .arg("42")
         .write_stdin(input);
@@ -61,7 +61,7 @@ positions:
 ";
     let mut cmd = Command::cargo_bin("pgr")?;
     // High GC content
-    cmd.arg("ms-to-dna")
+    cmd.arg("ms").arg("to-dna")
         .arg("-g")
         .arg("1.0")
         .arg("-s")
