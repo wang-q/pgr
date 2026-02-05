@@ -24,7 +24,7 @@ fn command_pl_prefilter_run() -> anyhow::Result<()> {
         .arg(input)
         .arg(ref_file)
         .output()?;
-    
+
     // Check for success
     if !output.status.success() {
         let stderr = String::from_utf8(output.stderr)?;

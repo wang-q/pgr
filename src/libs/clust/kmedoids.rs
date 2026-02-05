@@ -30,7 +30,6 @@
 ///
 /// assert_eq!(clusters.len(), 2);
 /// ```
-
 use rand::prelude::*;
 
 /// K-Medoids Clustering (Lloyd-like algorithm)

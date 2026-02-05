@@ -270,10 +270,7 @@ fn test_net_syntenic_lastz() -> anyhow::Result<()> {
     let output = temp.path().join("out.net");
 
     let mut cmd = Command::cargo_bin("pgr")?;
-    cmd.arg("net")
-        .arg("syntenic")
-        .arg(&input)
-        .arg(&output);
+    cmd.arg("net").arg("syntenic").arg(&input).arg(&output);
 
     cmd.assert().success();
 
@@ -322,10 +319,7 @@ fn test_chain_stitch_lastz() -> anyhow::Result<()> {
     let output = temp.path().join("out.chain");
 
     let mut cmd = Command::cargo_bin("pgr")?;
-    cmd.arg("chain")
-        .arg("stitch")
-        .arg(&input)
-        .arg(&output);
+    cmd.arg("chain").arg("stitch").arg(&input).arg(&output);
 
     cmd.assert().success();
 
@@ -340,29 +334,25 @@ fn test_chain_stitch_lastz() -> anyhow::Result<()> {
     Ok(())
 }
 
-// 3. Net - netSplit
-    #[test]
-    fn test_net_split_lastz() -> anyhow::Result<()> {
-        let temp = TempDir::new()?;
-        let input = get_path("noClass.net");
-        let output_dir = temp.path().join("net");
+#[test]
+fn test_net_split_lastz() -> anyhow::Result<()> {
+    let temp = TempDir::new()?;
+    let input = get_path("noClass.net");
+    let output_dir = temp.path().join("net");
 
-        let mut cmd = Command::cargo_bin("pgr")?;
-        cmd.arg("net")
-            .arg("split")
-            .arg(&input)
-            .arg(&output_dir);
+    let mut cmd = Command::cargo_bin("pgr")?;
+    cmd.arg("net").arg("split").arg(&input).arg(&output_dir);
 
-        cmd.assert().success();
+    cmd.assert().success();
 
-        let output_file = output_dir.join("cat.net");
-        assert!(output_file.exists());
+    let output_file = output_dir.join("cat.net");
+    assert!(output_file.exists());
 
-        let output_content = fs::read_to_string(&output_file)?;
-        let expected_output = get_path("net/cat.net");
-        let expected_content = fs::read_to_string(&expected_output)?;
+    let output_content = fs::read_to_string(&output_file)?;
+    let expected_output = get_path("net/cat.net");
+    let expected_content = fs::read_to_string(&expected_output)?;
 
-        assert_eq!(output_content, expected_content);
+    assert_eq!(output_content, expected_content);
 
-        Ok(())
-    }
+    Ok(())
+}

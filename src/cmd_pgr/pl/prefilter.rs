@@ -1,6 +1,6 @@
-use pgr::libs::loc::Input;
 use clap::*;
 use cmd_lib::*;
+use pgr::libs::loc::Input;
 use rayon::prelude::*;
 use std::io::Write;
 

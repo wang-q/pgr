@@ -16,6 +16,6 @@ pub mod twobit;
 // Re-export modules moved to fmt for backward compatibility
 pub use fmt::axt;
 pub use fmt::fas;
+pub use fmt::feature;
 pub use fmt::lav;
 pub use fmt::maf;
-pub use fmt::feature;

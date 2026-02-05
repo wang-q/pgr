@@ -84,7 +84,6 @@ fn command_clust_dbscan_pair() -> anyhow::Result<()> {
     Ok(())
 }
 
-
 #[test]
 fn command_clust_kmedoids() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("pgr")?;

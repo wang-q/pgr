@@ -297,7 +297,9 @@ fn calc_distances(
     let card1 = pgr::libs::hv::hv_cardinality(s1);
     let card2 = pgr::libs::hv::hv_cardinality(s2);
 
-    let inter = pgr::libs::hv::hv_dot(s1, s2).min(card1 as f32).min(card2 as f32);
+    let inter = pgr::libs::hv::hv_dot(s1, s2)
+        .min(card1 as f32)
+        .min(card2 as f32);
     let union = card1 as f32 + card2 as f32 - inter;
 
     let jaccard = inter / union;
