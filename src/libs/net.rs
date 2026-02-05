@@ -122,11 +122,11 @@ impl Fill {
             self.ali
         )?;
 
-        if self.q_dup > 0 {
-            write!(writer, " qDup {}", self.q_dup)?;
-        }
         if !self.class.is_empty() {
             write!(writer, " type {}", self.class)?;
+        }
+        if self.q_dup > 0 {
+            write!(writer, " qDup {}", self.q_dup)?;
         }
         if self.q_over > 0 {
             write!(writer, " qOver {}", self.q_over)?;
