@@ -117,13 +117,13 @@ for file in tests/pgr/net/*.net; do
     # note:
     # directories full of .nib files (an older format)
     # may also be used in place of target.2bit and query.2bit.
-    #
-    # axtSort - Sort axt files
-    # usage:
-    #   axtSort in.axt out.axt
     netToAxt $file tests/pgr/all.pre.chain \
         tests/pgr/pseudocat.2bit tests/pgr/pseudopig.2bit \
         tests/pgr/axtNet/$stem.axt.tmp
+
+    # axtSort - Sort axt files
+    # usage:
+    #   axtSort in.axt out.axt
     axtSort tests/pgr/axtNet/$stem.axt.tmp tests/pgr/axtNet/$stem.axt
 done
 

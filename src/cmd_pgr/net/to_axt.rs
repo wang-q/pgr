@@ -1,8 +1,8 @@
-use bio::alphabets::dna::revcomp;
-use bio::io::fasta;
 use clap::{Arg, ArgMatches, Command};
+use pgr::libs::chain::sub_matrix::SubMatrix;
 use pgr::libs::chain::{Chain, ChainReader};
 use pgr::libs::net::{read_nets, Fill, Gap};
+use pgr::libs::twobit::TwoBitFile;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fs::File;
@@ -15,24 +15,24 @@ pub fn make_subcommand() -> Command {
         .arg(Arg::new("in_net").required(true).help("Input net file"))
         .arg(Arg::new("in_chain").required(true).help("Input chain file"))
         .arg(
-            Arg::new("target_fa")
+            Arg::new("target")
                 .required(true)
-                .help("Target FASTA file"),
+                .help("Target 2bit file"),
         )
-        .arg(Arg::new("query_fa").required(true).help("Query FASTA file"))
+        .arg(Arg::new("query").required(true).help("Query 2bit file"))
         .arg(Arg::new("out_axt").required(true).help("Output AXT file"))
 }
 
 pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
     let in_net = matches.get_one::<String>("in_net").unwrap();
     let in_chain = matches.get_one::<String>("in_chain").unwrap();
-    let target_fa = matches.get_one::<String>("target_fa").unwrap();
-    let query_fa = matches.get_one::<String>("query_fa").unwrap();
+    let target = matches.get_one::<String>("target").unwrap();
+    let query = matches.get_one::<String>("query").unwrap();
     let out_axt = matches.get_one::<String>("out_axt").unwrap();
 
-    // Load sequences
-    let t_seqs = read_fasta(target_fa)?;
-    let q_seqs = read_fasta(query_fa)?;
+    // Load sequences (TwoBitFile)
+    let mut t_2bit = TwoBitFile::open(target)?;
+    let mut q_2bit = TwoBitFile::open(query)?;
 
     // Load chains
     let mut chains = HashMap::new();
@@ -46,38 +46,42 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
     let reader = BufReader::new(File::open(in_net)?);
     let nets = read_nets(reader)?;
 
+    // Load scoring matrix (default HoxD55)
+    let matrix = SubMatrix::hoxd55();
+
     let mut writer = BufWriter::new(File::create(out_axt)?);
+    let mut counter = 0;
 
     for net in &nets {
-        r_convert(&net.root, &chains, &t_seqs, &q_seqs, &mut writer)?;
+        r_convert(
+            &net.root,
+            &chains,
+            &mut t_2bit,
+            &mut q_2bit,
+            &matrix,
+            &mut writer,
+            &mut counter,
+        )?;
     }
 
     Ok(())
 }
 
-fn read_fasta(path: &str) -> anyhow::Result<HashMap<String, Vec<u8>>> {
-    let reader = fasta::Reader::from_file(path)?;
-    let mut seqs = HashMap::new();
-    for result in reader.records() {
-        let record = result?;
-        seqs.insert(record.id().to_string(), record.seq().to_vec());
-    }
-    Ok(seqs)
-}
-
 fn r_convert<W: Write>(
     gap: &Rc<RefCell<Gap>>,
     chains: &HashMap<u64, Chain>,
-    t_seqs: &HashMap<String, Vec<u8>>,
-    q_seqs: &HashMap<String, Vec<u8>>,
+    t_2bit: &mut TwoBitFile<BufReader<File>>,
+    q_2bit: &mut TwoBitFile<BufReader<File>>,
+    matrix: &SubMatrix,
     writer: &mut W,
+    counter: &mut usize,
 ) -> anyhow::Result<()> {
     let g = gap.borrow();
     for fill in &g.fills {
         let f = fill.borrow();
         if f.chain_id != 0 {
             if let Some(chain) = chains.get(&f.chain_id) {
-                convert_fill(&f, chain, t_seqs, q_seqs, writer)?;
+                convert_fill(&f, chain, t_2bit, q_2bit, matrix, writer, counter)?;
             }
         }
 
@@ -89,7 +93,9 @@ fn r_convert<W: Write>(
             let gaps = f.gaps.clone();
             drop(f); // Drop borrow
             for child_gap in gaps {
-                r_convert(&child_gap, chains, t_seqs, q_seqs, writer)?;
+                r_convert(
+                    &child_gap, chains, t_2bit, q_2bit, matrix, writer, counter,
+                )?;
             }
         }
     }
@@ -99,128 +105,308 @@ fn r_convert<W: Write>(
 fn convert_fill<W: Write>(
     fill: &Fill,
     chain: &Chain,
-    t_seqs: &HashMap<String, Vec<u8>>,
-    q_seqs: &HashMap<String, Vec<u8>>,
+    t_2bit: &mut TwoBitFile<BufReader<File>>,
+    q_2bit: &mut TwoBitFile<BufReader<File>>,
+    matrix: &SubMatrix,
     writer: &mut W,
+    counter: &mut usize,
 ) -> anyhow::Result<()> {
-    // Fill range on target
-    let t_start = fill.start;
-    let t_end = fill.end; // fill.start + fill.len
+    // 2. Iterate valid ranges
+    let mut cur = fill.start;
+    for gap_rc in &fill.gaps {
+        let gap = gap_rc.borrow();
+        // Skip gaps that are filled by lower-level chains OR represent a break in query (q_size > 0)
+        let has_fills = !gap.fills.is_empty();
+        let is_break = gap.o_end > gap.o_start;
+        
+        if has_fills || is_break {
+            let g_start = gap.start;
+            let g_end = gap.end;
 
-    // Get subset of chain
-    // We need to convert chain to blocks and find those overlapping [t_start, t_end)
-    let blocks = chain.to_blocks();
-
-    // Iterate blocks
-    for (i, block) in blocks.iter().enumerate() {
-        // Check overlap
-        let start = block.t_start.max(t_start);
-        let end = block.t_end.min(t_end);
-
-        if start < end {
-            // Calculate offsets
-            let t_offset = start - block.t_start;
-            let len = end - start;
-
-            let q_start_block = block.q_start + t_offset;
-            let q_end_block = q_start_block + len;
-
-            // Extract sequences
-            let t_seq = get_subseq(t_seqs, &chain.header.t_name, start, end, '+')?;
-            let q_seq = get_subseq(
-                q_seqs,
-                &chain.header.q_name,
-                q_start_block,
-                q_end_block,
-                chain.header.q_strand,
-            )?;
-
-            // Check if this is the last block (for AXT header purposes, AXTs are usually per block or per chain?)
-            // AXT format:
-            // id chr1 start end chr2 start end strand score
-            // seq1
-            // seq2
-            //
-            // Usually one AXT entry per continuous alignment block.
-            // But if gaps are small, they might be stitched?
-            // UCSC netToAxt uses `chainToAxt` which handles gaps (inserts).
-            // Here, `blocks` from `chain.to_blocks()` are ungapped alignment blocks.
-            // The gaps (dt, dq) are between blocks.
-            // If I iterate blocks and write AXT for each block, I lose the gap context (score might be wrong if split).
-            // But `net` implies we are at a level where we might want to split or keep together.
-            // `chainToAxt` has `maxGap` parameter.
-            // If I just output one AXT per block, it is "valid" AXT but very fragmented.
-            // For now, I will output one AXT per block for simplicity, or try to merge if gap is small.
-            // Given I am implementing `netToAxt` which is supposed to be "best" alignment,
-            // and `fill` defines a range.
-            // The `chain` might have gaps within this fill.
-
-            // Let's implement simple per-block AXT for MVP.
-
-            writeln!(
-                writer,
-                "{} {} {} {} {} {} {} {} {}",
-                i, // AXT index (should be unique per file? or per chain?)
-                chain.header.t_name,
-                start + 1, // AXT is 1-based
-                end,
-                chain.header.q_name,
-                q_start_block + 1, // AXT 1-based. If strand is -, this needs care.
-                q_end_block,
-                chain.header.q_strand,
-                chain.header.score // This is chain score, not block score.
-            )?;
-
-            writeln!(writer, "{}", std::str::from_utf8(&t_seq).unwrap())?;
-            writeln!(writer, "{}", std::str::from_utf8(&q_seq).unwrap())?;
-            writeln!(writer)?;
+            if g_start > cur {
+                convert_segment(
+                    cur, g_start, chain, t_2bit, q_2bit, matrix, writer, counter,
+                )?;
+            }
+            cur = cur.max(g_end);
         }
+    }
+
+    // Tail
+    if cur < fill.end {
+        convert_segment(
+            cur, fill.end, chain, t_2bit, q_2bit, matrix, writer, counter,
+        )?;
     }
 
     Ok(())
 }
 
-fn get_subseq(
-    seqs: &HashMap<String, Vec<u8>>,
-    name: &str,
-    start: u64,
-    end: u64,
-    strand: char,
-) -> anyhow::Result<Vec<u8>> {
-    let seq = seqs
-        .get(name)
-        .ok_or_else(|| anyhow::anyhow!("Sequence not found: {}", name))?;
-    let len = seq.len() as u64;
+fn convert_segment<W: Write>(
+    t_start: u64,
+    t_end: u64,
+    chain: &Chain,
+    t_2bit: &mut TwoBitFile<BufReader<File>>,
+    q_2bit: &mut TwoBitFile<BufReader<File>>,
+    matrix: &SubMatrix,
+    writer: &mut W,
+    counter: &mut usize,
+) -> anyhow::Result<()> {
+    // Get subset of chain
+    let blocks = chain.to_blocks();
 
-    if start >= len || end > len {
-        return Err(anyhow::anyhow!(
-            "Coordinates out of bounds: {} {}-{} (len {})",
-            name,
-            start,
-            end,
-            len
-        ));
+    // Find blocks overlapping [t_start, t_end)
+    let mut idx_start = None;
+    let mut idx_end = None;
+
+    for (i, block) in blocks.iter().enumerate() {
+        if block.t_end > t_start && block.t_start < t_end {
+            if idx_start.is_none() {
+                idx_start = Some(i);
+            }
+            idx_end = Some(i);
+        }
     }
 
-    // If strand is '+', simple slice.
-    // If strand is '-', the coordinates [start, end) are on the REVERSE strand (if coming from Chain q coords).
-    // Wait, let's verify Chain coordinate system.
-    // Chain qStart/qEnd:
-    // "If strand is -, coordinates are on the reverse strand."
-    // Example: Len 100.
-    // - strand, start 0, end 10.
-    // This corresponds to the last 10 bases of the + strand, reversed and complemented.
-    // + strand range: [100-10, 100-0) = [90, 100).
-    // So we extract + strand [90, 100), then revcomp.
+    if idx_start.is_none() {
+        return Ok(());
+    }
 
-    let sub = if strand == '+' {
-        seq[start as usize..end as usize].to_vec()
-    } else {
-        let p_start = len - end;
-        let p_end = len - start;
-        let s = seq[p_start as usize..p_end as usize].to_vec();
-        revcomp(&s)
+    let idx_start = idx_start.unwrap();
+    let idx_end = idx_end.unwrap();
+
+    let mut t_seq_all = String::new();
+    let mut q_seq_all = String::new();
+
+    // Helper to read Q sequence considering strand
+    let read_q = |start: u64, end: u64, q_2bit: &mut TwoBitFile<BufReader<File>>| -> anyhow::Result<String> {
+        let (r_start, r_end) = if chain.header.q_strand == '-' {
+            (
+                chain.header.q_size - end,
+                chain.header.q_size - start,
+            )
+        } else {
+            (start, end)
+        };
+        let mut seq = q_2bit.read_sequence(
+            &chain.header.q_name,
+            Some(r_start as usize),
+            Some(r_end as usize),
+            false,
+        )?;
+        if chain.header.q_strand == '-' {
+            let rev = pgr::libs::nt::rev_comp(seq.as_bytes()).collect();
+            seq = String::from_utf8(rev).unwrap();
+        }
+        Ok(seq)
     };
 
-    Ok(sub)
+    // Calculate initial q_start for the AXT record
+    let q_start_out_base = if idx_start > 0 && t_start < blocks[idx_start].t_start {
+        // We start in the gap before block[idx_start]
+        let prev = &blocks[idx_start - 1];
+        let gap_start_t = prev.t_end;
+        // Check if we skipped dq
+        if t_start <= gap_start_t {
+            prev.q_end // We include dq
+        } else {
+            // We started inside dt. dq is on Q. dt is on T. They are independent.
+            // If we start at t_start > gap_start_t, we are "late" in T.
+            // Q is stuck at prev.q_end + dq (since dq happened).
+            blocks[idx_start].q_start // which is prev.q_end + dq
+        }
+    } else {
+        // We start in block[idx_start]
+        let b = &blocks[idx_start];
+        let offset = t_start.saturating_sub(b.t_start);
+        b.q_start + offset
+    };
+    
+    // Correct q_start logic:
+    // If we start in a block, easy.
+    // If we start in a gap:
+    //   If we include dq, q_start is prev.q_end.
+    //   If we exclude dq, q_start is prev.q_end + dq (== cur.q_start).
+    
+    // Let's refine inside the loop.
+
+    for i in idx_start..=idx_end {
+        let block = &blocks[i];
+        
+        // 1. Handle gap BEFORE this block (if i > idx_start, OR i == idx_start and we overlap the gap)
+        if i > 0 {
+            let prev = &blocks[i - 1];
+            // Gap range on T: [prev.t_end, block.t_start)
+            // Overlap with Fill: [max(gap_start, t_start), min(gap_end, t_end))
+            let gap_start_t = prev.t_end;
+            let gap_end_t = block.t_start;
+            
+            let overlap_start = gap_start_t.max(t_start);
+            let overlap_end = gap_end_t.min(t_end);
+            
+            if overlap_start < overlap_end {
+                // There is overlap with dt (T gap)
+                // Append T bases
+                let t_chunk = t_2bit.read_sequence(
+                    &chain.header.t_name,
+                    Some(overlap_start as usize),
+                    Some(overlap_end as usize),
+                    false
+                )?;
+                t_seq_all.push_str(&t_chunk);
+                
+                // Append Q dashes
+                for _ in 0..(overlap_end - overlap_start) {
+                    q_seq_all.push('-');
+                }
+            }
+            
+            // Handle dq (Q gap)
+            // It occurs "between" blocks.
+            // If Fill includes the boundary (prev.t_end), we include dq.
+            // "Includes boundary": t_start <= prev.t_end < t_end
+            if t_start <= gap_start_t && gap_start_t < t_end {
+                let dq_len = block.q_start - prev.q_end;
+                if dq_len > 0 {
+                    let q_chunk = read_q(prev.q_end, block.q_start, q_2bit)?;
+                    q_seq_all.push_str(&q_chunk);
+                    
+                    for _ in 0..dq_len {
+                        t_seq_all.push('-');
+                    }
+                }
+            }
+        }
+        
+        // 2. Handle Block
+        let start = block.t_start.max(t_start);
+        let end = block.t_end.min(t_end);
+        
+        if start < end {
+            let t_offset = start - block.t_start;
+            let len = end - start;
+            
+            let t_chunk = t_2bit.read_sequence(
+                &chain.header.t_name,
+                Some(start as usize),
+                Some(end as usize),
+                false
+            )?;
+            t_seq_all.push_str(&t_chunk);
+            
+            let q_start_seg = block.q_start + t_offset;
+            let q_end_seg = q_start_seg + len;
+            let q_chunk = read_q(q_start_seg, q_end_seg, q_2bit)?;
+            q_seq_all.push_str(&q_chunk);
+        }
+        
+        // 3. Handle gap AFTER this block (only if this is the last processed block, check if Fill extends further)
+        if i == idx_end {
+             // Check if Fill extends beyond block.t_end
+             if t_end > block.t_end {
+                 // We might have a gap after this block that is partially covered
+                 if i + 1 < blocks.len() {
+                     let next = &blocks[i + 1];
+                     let gap_start_t = block.t_end;
+                     let gap_end_t = next.t_start;
+                     
+                     let overlap_start = gap_start_t.max(t_start);
+                     let overlap_end = gap_end_t.min(t_end);
+                     
+                     if overlap_start < overlap_end {
+                         let t_chunk = t_2bit.read_sequence(
+                             &chain.header.t_name,
+                             Some(overlap_start as usize),
+                             Some(overlap_end as usize),
+                             false
+                         )?;
+                         t_seq_all.push_str(&t_chunk);
+                         for _ in 0..(overlap_end - overlap_start) {
+                             q_seq_all.push('-');
+                         }
+                     }
+                     
+                     // Handle dq at block.t_end
+                     // If Fill covers block.t_end
+                     if t_start <= gap_start_t && gap_start_t < t_end {
+                         let dq_len = next.q_start - block.q_end;
+                         if dq_len > 0 {
+                             let q_chunk = read_q(block.q_end, next.q_start, q_2bit)?;
+                             q_seq_all.push_str(&q_chunk);
+                             for _ in 0..dq_len {
+                                 t_seq_all.push('-');
+                             }
+                         }
+                     }
+                 }
+             }
+        }
+    }
+    
+    // Calculate final q_end based on q_seq content (bases only)
+    let q_bases_count = q_seq_all.chars().filter(|c| *c != '-').count() as u64;
+    let q_end_out = q_start_out_base + q_bases_count;
+
+    // Calculate score
+    let score = calculate_score(&t_seq_all, &q_seq_all, matrix);
+
+    writeln!(
+        writer,
+        "{} {} {} {} {} {} {} {} {}",
+        *counter,
+        chain.header.t_name,
+        t_start + 1, // AXT 1-based
+        t_end,
+        chain.header.q_name,
+        q_start_out_base + 1, // AXT 1-based
+        q_end_out,
+        chain.header.q_strand,
+        score
+    )?;
+    *counter += 1;
+
+    writeln!(writer, "{}", t_seq_all)?;
+    writeln!(writer, "{}", q_seq_all)?;
+    writeln!(writer)?;
+
+    Ok(())
+}
+
+fn calculate_score(t_seq: &str, q_seq: &str, matrix: &SubMatrix) -> i32 {
+    let mut score = 0;
+    let t_chars: Vec<char> = t_seq.chars().collect();
+    let q_chars: Vec<char> = q_seq.chars().collect();
+    let len = t_chars.len();
+    
+    let mut in_gap_t = false;
+    let mut in_gap_q = false;
+    
+    for i in 0..len {
+        let t = t_chars[i];
+        let q = q_chars[i];
+        
+        if t == '-' {
+            // Gap in T (insertion in Q)
+            if !in_gap_t {
+                score -= matrix.gap_open;
+                in_gap_t = true;
+            }
+            score -= matrix.gap_extend;
+            in_gap_q = false; 
+        } else if q == '-' {
+            // Gap in Q (deletion in Q)
+            if !in_gap_q {
+                score -= matrix.gap_open;
+                in_gap_q = true;
+            }
+            score -= matrix.gap_extend;
+            in_gap_t = false;
+        } else {
+            // Match/Mismatch
+            score += matrix.get_score(t, q);
+            in_gap_t = false;
+            in_gap_q = false;
+        }
+    }
+    score
 }

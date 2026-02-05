@@ -168,7 +168,7 @@ pub fn write_axt<W: std::io::Write>(writer: &mut W, axt: &Axt) -> std::io::Resul
     let q_end = axt.q_end;
 
     let score_str = match axt.score {
-        Some(s) => format!(" {}", s),
+        Some(s) => format!("{}", s),
         None => String::new(),
     };
 

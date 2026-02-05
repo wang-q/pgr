@@ -76,8 +76,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         axts.sort_by(|a, b| a.t_name.cmp(&b.t_name).then(a.t_start.cmp(&b.t_start)));
     }
 
-    for axt in axts {
-        write_axt(&mut writer, &axt)?;
+    for (i, axt) in axts.iter_mut().enumerate() {
+        axt.id = i as u64;
+        write_axt(&mut writer, axt)?;
     }
 
     Ok(())
