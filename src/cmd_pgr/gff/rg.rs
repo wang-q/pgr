@@ -12,16 +12,16 @@ Extract ranges from GFF files.
 
 Examples:
 1. Extract default 'gene' features:
-   pgr gff rg tests/gff_rg/test.gff
+   pgr gff rg tests/gff/test.gff
 
 2. Extract 'mRNA' features with assembly name 'Human':
-   pgr gff rg tests/gff_rg/test.gff --tag mRNA --asm Human -o output.tsv
+   pgr gff rg tests/gff/test.gff --tag mRNA --asm Human -o output.tsv
 
 3. Use 'ID' as the identifier:
-   pgr gff rg tests/gff_rg/test.gff --key ID
+   pgr gff rg tests/gff/test.gff --key ID
 
 4. Simplify sequence IDs:
-   pgr gff rg tests/gff_rg/test.gff --simplify
+   pgr gff rg tests/gff/test.gff --simplify
 
 "###,
         )

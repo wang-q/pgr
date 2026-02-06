@@ -7,7 +7,7 @@ fn command_rg_default() -> anyhow::Result<()> {
     let output = cmd
         .arg("gff")
         .arg("rg")
-        .arg("tests/gff_rg/test.gff")
+        .arg("tests/gff/test.gff")
         .output()?;
     let stdout = String::from_utf8(output.stdout)?;
 
@@ -24,7 +24,7 @@ fn command_rg_tag() -> anyhow::Result<()> {
     let output = cmd
         .arg("gff")
         .arg("rg")
-        .arg("tests/gff_rg/test.gff")
+        .arg("tests/gff/test.gff")
         .arg("--tag")
         .arg("mRNA")
         .output()?;
@@ -42,7 +42,7 @@ fn command_rg_asm() -> anyhow::Result<()> {
     let output = cmd
         .arg("gff")
         .arg("rg")
-        .arg("tests/gff_rg/test.gff")
+        .arg("tests/gff/test.gff")
         .arg("--asm")
         .arg("Human")
         .output()?;
@@ -59,7 +59,7 @@ fn command_rg_simplify() -> anyhow::Result<()> {
     let output = cmd
         .arg("gff")
         .arg("rg")
-        .arg("tests/gff_rg/test.gff")
+        .arg("tests/gff/test.gff")
         .arg("--simplify")
         .output()?;
     let stdout = String::from_utf8(output.stdout)?;
@@ -76,7 +76,7 @@ fn command_rg_simplify_destructive() -> anyhow::Result<()> {
     let output = cmd
         .arg("gff")
         .arg("rg")
-        .arg("tests/gff_rg/test.gff")
+        .arg("tests/gff/test.gff")
         .arg("--tag")
         .arg("CDS")
         .arg("--key")
@@ -99,7 +99,7 @@ fn command_rg_case_insensitive() -> anyhow::Result<()> {
     let output = cmd
         .arg("gff")
         .arg("rg")
-        .arg("tests/gff_rg/test.gff")
+        .arg("tests/gff/test.gff")
         .arg("--tag")
         .arg("MRNA")
         .output()?;
@@ -116,7 +116,7 @@ fn command_rg_key() -> anyhow::Result<()> {
     let output = cmd
         .arg("gff")
         .arg("rg")
-        .arg("tests/gff_rg/test.gff")
+        .arg("tests/gff/test.gff")
         .arg("--key")
         .arg("Name")
         .output()?;
@@ -134,7 +134,7 @@ fn command_rg_key_parent() -> anyhow::Result<()> {
     let output = cmd
         .arg("gff")
         .arg("rg")
-        .arg("tests/gff_rg/test.gff")
+        .arg("tests/gff/test.gff")
         .arg("--tag")
         .arg("mRNA")
         .arg("--key")
@@ -153,7 +153,7 @@ fn command_rg_key_product() -> anyhow::Result<()> {
     let output = cmd
         .arg("gff")
         .arg("rg")
-        .arg("tests/gff_rg/test.gff")
+        .arg("tests/gff/test.gff")
         .arg("--tag")
         .arg("mRNA")
         .arg("--key")
@@ -172,7 +172,7 @@ fn command_rg_ss() -> anyhow::Result<()> {
     let output = cmd
         .arg("gff")
         .arg("rg")
-        .arg("tests/gff_rg/test.gff")
+        .arg("tests/gff/test.gff")
         .arg("--ss")
         .output()?;
     let stdout = String::from_utf8(output.stdout)?;
