@@ -1,3 +1,4 @@
+use crate::libs::poa::{Poa, AlignmentParams, AlignmentType};
 use crate::libs::nt::NT_VAL;
 use anyhow::{anyhow, bail};
 use bio::io::fasta;
@@ -803,6 +804,14 @@ pub fn seq_intspan(seq: &[u8]) -> IntSpan {
 /// ```
 // cargo test --doc alignment::get_consensus_poa
 pub fn get_consensus_poa(seqs: &[&[u8]]) -> anyhow::Result<String> {
+    if let Ok(res) = get_consensus_poa_external(seqs) {
+        Ok(res)
+    } else {
+        get_consensus_poa_builtin(seqs)
+    }
+}
+
+pub fn get_consensus_poa_external(seqs: &[&[u8]]) -> anyhow::Result<String> {
     let mut bin = String::new();
     for e in &["spoa"] {
         if let Ok(pth) = which::which(e) {
@@ -850,6 +859,34 @@ pub fn get_consensus_poa(seqs: &[&[u8]]) -> anyhow::Result<String> {
     }
 
     Ok(seq)
+}
+
+/// ```
+/// let seqs = vec![
+///     b"AAATTTTGG".as_ref(),
+///     b"AAAATTTTT".as_ref(),
+/// ];
+/// let cons = pgr::libs::alignment::get_consensus_poa_builtin(&seqs).unwrap();
+/// assert_eq!(cons, "AAAATTTTGG".to_string());
+///
+/// let seqs = vec![
+///     b"AAAATTTTGG".as_ref(),
+///     b"AAAATTTTTG".as_ref(),
+/// ];
+/// let cons = pgr::libs::alignment::get_consensus_poa_builtin(&seqs).unwrap();
+/// assert_eq!(cons, "AAAATTTTTG".to_string());
+/// ```
+pub fn get_consensus_poa_builtin(seqs: &[&[u8]]) -> anyhow::Result<String> {
+    let params = AlignmentParams::default();
+    let mut poa = Poa::new(params, AlignmentType::Global);
+
+    for seq in seqs {
+        poa.add_sequence(seq);
+    }
+
+    let consensus = poa.consensus();
+    let consensus_str = String::from_utf8(consensus)?;
+    Ok(consensus_str)
 }
 
 /// ```

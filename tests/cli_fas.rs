@@ -14,6 +14,7 @@ fn command_invalid() -> anyhow::Result<()> {
     Ok(())
 }
 
+
 #[test]
 fn command_name() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("pgr")?;
@@ -391,19 +392,6 @@ fn command_split_to() -> anyhow::Result<()> {
 
 #[test]
 fn command_consensus() -> anyhow::Result<()> {
-    let mut bin = String::new();
-    for e in &["spoa"] {
-        if let Ok(pth) = which::which(e) {
-            bin = pth.to_string_lossy().to_string();
-            break;
-        }
-    }
-    if bin.is_empty() {
-        return Ok(());
-    } else {
-        eprintln!("bin = {:#?}", bin);
-    }
-
     let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
         .arg("fas")

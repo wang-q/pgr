@@ -12,8 +12,9 @@ Generates consensus sequences using POA (Partial Order Alignment) graph.
 Notes:
 * Supports both plain text and gzipped (.gz) files
 * Reads from stdin if input file is 'stdin'
-* Requires `spoa` to be installed and available in $PATH
-    * The original `poa` was unstable and sometimes crashed
+* POA Engine:
+    * `--engine builtin` (default): Uses built-in Rust implementation (slower but no dependencies).
+    * `--engine spoa`: Forces use of external `spoa` command.
 * Supports parallel processing for improved performance
     * Running in parallel mode with 1 reader, 1 writer and the corresponding number of workers
     * The order of output may be different from the original
@@ -23,17 +24,26 @@ Examples:
 1. Generate consensus sequences from a block FA file:
    pgr fas consensus tests/fas/example.fas
 
-2. Generate consensus sequences with outgroups:
+2. Generate consensus sequences using built-in engine:
+   pgr fas consensus tests/fas/example.fas --engine builtin
+
+3. Generate consensus sequences with outgroups:
    pgr fas consensus tests/fas/example.fas --outgroup
 
-3. Run in parallel with 4 threads:
+4. Run in parallel with 4 threads:
    pgr fas consensus tests/fas/example.fas --parallel 4
 
-4. Output results to a file:
+5. Output results to a file:
    pgr fas consensus tests/fas/example.fas -o output.fas
 
-
 "###,
+        )
+        .arg(
+            Arg::new("engine")
+                .long("engine")
+                .value_parser(["builtin", "spoa"])
+                .default_value("builtin")
+                .help("POA engine to use"),
         )
         .arg(
             Arg::new("infiles")
@@ -110,6 +120,8 @@ fn proc_block(block: &pgr::libs::fas::FasBlock, args: &ArgMatches) -> anyhow::Re
     let cname = args.get_one::<String>("cname").unwrap();
     let has_outgroup = args.get_flag("has_outgroup");
 
+    let engine = args.get_one::<String>("engine").unwrap();
+
     //----------------------------
     // Ops
     //----------------------------
@@ -129,7 +141,10 @@ fn proc_block(block: &pgr::libs::fas::FasBlock, args: &ArgMatches) -> anyhow::Re
     }
 
     // Generate consensus sequence
-    let mut cons = pgr::libs::alignment::get_consensus_poa(&seqs).unwrap();
+    let mut cons = match engine.as_str() {
+        "spoa" => pgr::libs::alignment::get_consensus_poa_external(&seqs).unwrap(),
+        "builtin" | _ => pgr::libs::alignment::get_consensus_poa_builtin(&seqs).unwrap(),
+    };
     cons = cons.replace('-', "");
 
     let mut range = block.entries.first().unwrap().range().clone();
