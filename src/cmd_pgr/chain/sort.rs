@@ -2,17 +2,22 @@ use clap::{Arg, ArgAction, ArgMatches, Command};
 use pgr::libs::chain::read_chains;
 use std::cmp::Ordering;
 use std::fs::File;
-use std::io::BufWriter;
+use std::io::{BufRead, BufReader, BufWriter};
 
 pub fn make_subcommand() -> Command {
     Command::new("sort")
         .about("Sort chains by score")
         .arg(
             Arg::new("files")
-                .required(true)
+                .required_unless_present("input_list")
                 .num_args(1..)
                 .action(ArgAction::Append)
                 .help("Input chain file(s)"),
+        )
+        .arg(
+            Arg::new("input_list")
+                .long("input-list")
+                .help("File containing a list of input chain files (one per line)"),
         )
         .arg(
             Arg::new("output")
@@ -29,14 +34,30 @@ pub fn make_subcommand() -> Command {
 }
 
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let files: Vec<&String> = args.get_many("files").unwrap().collect();
+    let mut files: Vec<String> = args
+        .get_many::<String>("files")
+        .map(|v| v.cloned().collect())
+        .unwrap_or_default();
+
+    if let Some(list_path) = args.get_one::<String>("input_list") {
+        let file = File::open(list_path)?;
+        let reader = BufReader::new(file);
+        for line in reader.lines() {
+            let line = line?;
+            let trimmed = line.trim();
+            if !trimmed.is_empty() {
+                files.push(trimmed.to_string());
+            }
+        }
+    }
+
     let output = args.get_one::<String>("output");
     let save_id = args.get_flag("save_id");
 
     let mut all_chains = Vec::new();
 
     // Read all chains
-    for file_path in files {
+    for file_path in &files {
         let file = File::open(file_path)?;
         let chains = read_chains(file)?;
         all_chains.extend(chains);

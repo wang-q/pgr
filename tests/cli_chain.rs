@@ -168,3 +168,84 @@ fn test_chain_sort() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
+
+#[test]
+fn test_chain_sort_input_list() -> Result<(), Box<dyn std::error::Error>> {
+    let dir = tempdir()?;
+    let chain1_path = dir.path().join("1.chain");
+    let chain2_path = dir.path().join("2.chain");
+    let list_path = dir.path().join("list.txt");
+    let out_path = dir.path().join("out.chain");
+
+    // Chain 1: score 100
+    let c1 = "chain 100 chr1 100 + 0 10 chr2 100 + 0 10 1\n10\n\n";
+    fs::write(&chain1_path, c1)?;
+
+    // Chain 2: score 200
+    let c2 = "chain 200 chr1 100 + 20 30 chr2 100 + 20 30 2\n10\n\n";
+    fs::write(&chain2_path, c2)?;
+
+    // Create list file
+    // Note: On Windows, paths might contain backslashes. 
+    // The implementation uses simple line reading, which should handle standard paths fine.
+    let list_content = format!("{}\n{}", chain1_path.to_str().unwrap(), chain2_path.to_str().unwrap());
+    fs::write(&list_path, list_content)?;
+
+    let mut cmd = Command::cargo_bin("pgr")?;
+    cmd.arg("chain")
+        .arg("sort")
+        .arg("--input-list")
+        .arg(list_path.to_str().unwrap())
+        .arg("--output")
+        .arg(out_path.to_str().unwrap());
+
+    cmd.assert().success();
+
+    let output = fs::read_to_string(&out_path)?;
+    let lines: Vec<&str> = output.lines().filter(|l| l.starts_with("chain")).collect();
+    assert_eq!(lines.len(), 2);
+    assert!(lines[0].contains("chain 200"));
+    assert!(lines[1].contains("chain 100"));
+
+    Ok(())
+}
+
+#[test]
+fn test_chain_sort_mixed_inputs() -> Result<(), Box<dyn std::error::Error>> {
+    let dir = tempdir()?;
+    let chain1_path = dir.path().join("1.chain");
+    let chain2_path = dir.path().join("2.chain");
+    let list_path = dir.path().join("list.txt");
+    let out_path = dir.path().join("out.chain");
+
+    // Chain 1: score 100
+    let c1 = "chain 100 chr1 100 + 0 10 chr2 100 + 0 10 1\n10\n\n";
+    fs::write(&chain1_path, c1)?;
+
+    // Chain 2: score 200
+    let c2 = "chain 200 chr1 100 + 20 30 chr2 100 + 20 30 2\n10\n\n";
+    fs::write(&chain2_path, c2)?;
+
+    // Create list file with only chain1
+    let list_content = format!("{}\n", chain1_path.to_str().unwrap());
+    fs::write(&list_path, list_content)?;
+
+    let mut cmd = Command::cargo_bin("pgr")?;
+    cmd.arg("chain")
+        .arg("sort")
+        .arg("--input-list")
+        .arg(list_path.to_str().unwrap())
+        .arg(chain2_path.to_str().unwrap()) // Pass chain2 as arg
+        .arg("--output")
+        .arg(out_path.to_str().unwrap());
+
+    cmd.assert().success();
+
+    let output = fs::read_to_string(&out_path)?;
+    let lines: Vec<&str> = output.lines().filter(|l| l.starts_with("chain")).collect();
+    assert_eq!(lines.len(), 2);
+    assert!(lines[0].contains("chain 200"));
+    assert!(lines[1].contains("chain 100"));
+
+    Ok(())
+}
