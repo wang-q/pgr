@@ -50,6 +50,14 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
     let matrix = SubMatrix::hoxd55();
 
     let mut writer = BufWriter::new(File::create(out_axt)?);
+    
+    // Write headers from the first net (if any)
+    if let Some(first_net) = nets.first() {
+        for comment in &first_net.comments {
+            writeln!(writer, "{}", comment)?;
+        }
+    }
+
     let mut counter = 0;
 
     for net in &nets {
@@ -81,21 +89,12 @@ fn r_convert<W: Write>(
         let f = fill.borrow();
         if f.chain_id != 0 {
             if let Some(chain) = chains.get(&f.chain_id) {
-                convert_fill(&f, chain, t_2bit, q_2bit, matrix, writer, counter)?;
+                convert_fill(&f, chain, chains, t_2bit, q_2bit, matrix, writer, counter)?;
             }
-        }
-
-        // Recurse
-        if !f.gaps.is_empty() {
-            // Need to drop borrow of f to recurse if we were passing f, but we pass gaps.
-            // However, f.gaps is Vec<Rc<RefCell<Gap>>>.
-            // We can clone the Vec (cheap, just Rcs)
-            let gaps = f.gaps.clone();
-            drop(f); // Drop borrow
-            for child_gap in gaps {
-                r_convert(
-                    &child_gap, chains, t_2bit, q_2bit, matrix, writer, counter,
-                )?;
+        } else {
+            // If no chain, just recurse into gaps
+            for gap_rc in &f.gaps {
+                r_convert(gap_rc, chains, t_2bit, q_2bit, matrix, writer, counter)?;
             }
         }
     }
@@ -105,34 +104,50 @@ fn r_convert<W: Write>(
 fn convert_fill<W: Write>(
     fill: &Fill,
     chain: &Chain,
+    chains: &HashMap<u64, Chain>,
     t_2bit: &mut TwoBitFile<BufReader<File>>,
     q_2bit: &mut TwoBitFile<BufReader<File>>,
     matrix: &SubMatrix,
     writer: &mut W,
     counter: &mut usize,
 ) -> anyhow::Result<()> {
-    // 2. Iterate valid ranges
     let mut cur = fill.start;
-    for gap_rc in &fill.gaps {
-        let gap = gap_rc.borrow();
-        // Skip gaps that are filled by lower-level chains OR represent a break in query (q_size > 0)
-        let has_fills = !gap.fills.is_empty();
-        let is_break = gap.o_end > gap.o_start;
-        
-        if has_fills || is_break {
-            let g_start = gap.start;
-            let g_end = gap.end;
 
+    // Iterate gaps to interleave segments and children
+    for gap_rc in &fill.gaps {
+        let (g_start, g_end, has_children, q_gap_size) = {
+            let g = gap_rc.borrow();
+            (g.start, g.end, !g.fills.is_empty(), g.o_end - g.o_start)
+        };
+
+        // Decision: Split or Merge?
+        // Split if: has_children OR q_gap_size > 0 (double-sided gap)
+        // Merge if: !has_children AND q_gap_size == 0 (single-sided gap / indel)
+        
+        let should_split = has_children || q_gap_size > 0;
+
+        if should_split {
+            // 1. Segment before gap
             if g_start > cur {
                 convert_segment(
                     cur, g_start, chain, t_2bit, q_2bit, matrix, writer, counter,
                 )?;
             }
+
+            // 2. Recurse into gap
+            r_convert(gap_rc, chains, t_2bit, q_2bit, matrix, writer, counter)?;
+
+            // 3. Update cur to skip this gap
             cur = cur.max(g_end);
+        } else {
+            // Merge: We treat this gap as part of the alignment (indel).
+            // We do NOT call convert_segment here, nor r_convert.
+            // We effectively extend the current segment over this gap.
+            // convert_segment will handle the gap by inserting dashes.
         }
     }
 
-    // Tail
+    // 3. Tail
     if cur < fill.end {
         convert_segment(
             cur, fill.end, chain, t_2bit, q_2bit, matrix, writer, counter,
@@ -315,29 +330,29 @@ fn convert_segment<W: Write>(
                      
                      if overlap_start < overlap_end {
                          let t_chunk = t_2bit.read_sequence(
-                             &chain.header.t_name,
-                             Some(overlap_start as usize),
-                             Some(overlap_end as usize),
-                             false
-                         )?;
-                         t_seq_all.push_str(&t_chunk);
-                         for _ in 0..(overlap_end - overlap_start) {
-                             q_seq_all.push('-');
-                         }
-                     }
-                     
-                     // Handle dq at block.t_end
-                     // If Fill covers block.t_end
-                     if t_start <= gap_start_t && gap_start_t < t_end {
-                         let dq_len = next.q_start - block.q_end;
-                         if dq_len > 0 {
-                             let q_chunk = read_q(block.q_end, next.q_start, q_2bit)?;
-                             q_seq_all.push_str(&q_chunk);
-                             for _ in 0..dq_len {
-                                 t_seq_all.push('-');
-                             }
-                         }
-                     }
+                            &chain.header.t_name,
+                            Some(overlap_start as usize),
+                            Some(overlap_end as usize),
+                            false
+                        )?;
+                        t_seq_all.push_str(&t_chunk);
+                        for _ in 0..(overlap_end - overlap_start) {
+                            q_seq_all.push('-');
+                        }
+                    }
+                    
+                    // Handle dq at block.t_end
+                    // If Fill covers block.t_end
+                    if t_start <= gap_start_t && gap_start_t < t_end {
+                        let dq_len = next.q_start - block.q_end;
+                        if dq_len > 0 {
+                            let q_chunk = read_q(block.q_end, next.q_start, q_2bit)?;
+                            q_seq_all.push_str(&q_chunk.to_ascii_uppercase());
+                            for _ in 0..dq_len {
+                                t_seq_all.push('-');
+                            }
+                        }
+                    }
                  }
              }
         }

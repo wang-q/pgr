@@ -114,6 +114,9 @@ impl Chrom {
     }
 
     pub fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
+        for comment in &self.comments {
+            writeln!(writer, "{}", comment)?;
+        }
         writeln!(writer, "net {} {}", self.name, self.size)?;
         // The root gap contains the top-level fills.
         // We don't write the root gap itself as a "gap" line, but we write its children.
