@@ -133,7 +133,7 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
             if let Some(chrom_cell) = t_net.chroms.get(&name) {
                 let mut chrom = chrom_cell.borrow_mut();
                 finalize_net(&mut chrom, false); // is_q = false
-                write_net(&chrom, &mut writer, false, min_score, min_fill)?;
+                write_net(&chrom, &mut writer, false, 0.0, min_fill)?;
             }
         }
     }
@@ -154,7 +154,7 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
             if let Some(chrom_cell) = q_net.chroms.get(&name) {
                 let mut chrom = chrom_cell.borrow_mut();
                 finalize_net(&mut chrom, true); // is_q = true
-                write_net(&chrom, &mut writer, true, min_score, min_fill)?;
+                write_net(&chrom, &mut writer, true, 0.0, min_fill)?;
             }
         }
     }

@@ -830,7 +830,7 @@ fn fill_space(
     } else {
         &chain.header.q_name
     };
-    let o_strand = if is_q { '+' } else { chain.header.q_strand };
+    let o_strand = chain.header.q_strand;
 
     // Create Fill
     let fill = Rc::new(RefCell::new(Fill {
@@ -899,7 +899,7 @@ fn fill_space(
             let (os, oe) = if !is_q {
                 (b1.q_end, b2.q_start)
             } else if chain.header.q_strand == '-' {
-                (b2.t_end, b1.t_start)
+                (b2.t_start, b1.t_end)
             } else {
                 (b1.t_end, b2.t_start)
             };
