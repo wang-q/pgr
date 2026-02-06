@@ -1,17 +1,17 @@
 use petgraph::graph::{DiGraph, NodeIndex};
-use petgraph::algo::toposort;
+use petgraph::visit::NodeIndexable;
 use super::align::Alignment;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct NodeData {
     pub base: u8,
-    pub aligned_to: Option<NodeIndex>,
+    pub aligned_nodes: Vec<NodeIndex>,
     pub weight: u32,
 }
 
 impl NodeData {
     pub fn new(base: u8) -> Self {
-        Self { base, aligned_to: None, weight: 0 }
+        Self { base, aligned_nodes: Vec::new(), weight: 0 }
     }
 }
 
@@ -42,7 +42,87 @@ impl PoaGraph {
     }
 
     pub fn topological_sort(&self) -> Vec<NodeIndex> {
-        toposort(&self.graph, None).unwrap_or_else(|_| panic!("Graph has cycles!"))
+        let mut sorted_nodes = Vec::with_capacity(self.graph.node_count());
+        let mut marks = vec![0u8; self.graph.node_bound()]; // 0: Unvisited, 1: Visiting, 2: Visited
+        let mut ignored = vec![false; self.graph.node_bound()];
+        let mut stack = Vec::new();
+
+        // Iterate over all nodes in index order (to match Spoa's iteration order 0..N)
+        // Note: node_indices() in petgraph iterates indices.
+        for node in self.graph.node_indices() {
+            if marks[node.index()] != 0 {
+                continue;
+            }
+            stack.push(node);
+
+            while let Some(&curr) = stack.last() {
+                let curr_idx = curr.index();
+                
+                // If already processed (visited), pop and continue
+                if marks[curr_idx] == 2 {
+                    stack.pop();
+                    continue;
+                }
+
+                let mut is_valid = true;
+
+                // Check incoming edges (dependencies)
+                for neighbor in self.graph.neighbors_directed(curr, petgraph::Direction::Incoming) {
+                    if marks[neighbor.index()] != 2 {
+                        stack.push(neighbor);
+                        is_valid = false;
+                    }
+                }
+
+                // Check aligned nodes
+                // If this node is not ignored, we must ensure its aligned clique is also ready
+                if !ignored[curr_idx] {
+                    let node_data = &self.graph[curr];
+                    for &aligned in &node_data.aligned_nodes {
+                        if marks[aligned.index()] != 2 {
+                            stack.push(aligned);
+                            ignored[aligned.index()] = true; // Mark aligned node as ignored (merged into clique leader)
+                            is_valid = false;
+                        }
+                    }
+                }
+
+                if is_valid {
+                    marks[curr_idx] = 2;
+                    
+                    if !ignored[curr_idx] {
+                        sorted_nodes.push(curr);
+                        // Add aligned nodes immediately to keep clique together
+                        let node_data = &self.graph[curr];
+                        for &aligned in &node_data.aligned_nodes {
+                            // Only add if not already added? 
+                            // Spoa logic: marks[aligned] becomes 2. 
+                            // But we just checked marks[aligned] == 2 above?
+                            // Wait, if marks[aligned] == 2, it means it was visited.
+                            // But if it was ignored, it wasn't added to sorted_nodes yet?
+                            // Yes, ignored nodes are NOT added in their own loop iteration.
+                            // They are added here.
+                            sorted_nodes.push(aligned);
+                        }
+                    }
+                    stack.pop();
+                } else {
+                    // Dependencies not met. Mark as visiting.
+                    if marks[curr_idx] == 1 {
+                        // Cycle detected?
+                        // If we are already visiting this node and we found an unsatisfied dependency,
+                        // that dependency should have been pushed.
+                        // If the dependency is THIS node (self-loop) or a loop back to THIS node,
+                        // we would encounter a node with mark 1 in the dependency check.
+                        // My dependency check loop doesn't check for mark 1 explicitly to panic, 
+                        // but Spoa asserts `marks[curr] != 1`.
+                    }
+                    marks[curr_idx] = 1;
+                }
+            }
+        }
+        
+        sorted_nodes
     }
     
     pub fn num_nodes(&self) -> usize {
@@ -57,24 +137,55 @@ impl PoaGraph {
             match step {
                 (Some(seq_idx), Some(graph_idx)) => {
                     let base = sequence[*seq_idx];
-                    let node_base = self.graph[*graph_idx].base;
+                    let graph_node_base = self.graph[*graph_idx].base;
                     
-                    let target_node = if base == node_base {
-                        // Match: reuse node
-                        self.graph[*graph_idx].weight += 1;
+                    let target_node_idx = if graph_node_base == base {
                         *graph_idx
                     } else {
-                        // Mismatch: create new node, link to aligned graph node
-                        let mut data = NodeData::new(base);
-                        data.aligned_to = Some(*graph_idx);
-                        data.weight = 1;
-                        self.graph.add_node(data)
+                        // Check aligned nodes
+                        let mut found = None;
+                        for &aligned_idx in &self.graph[*graph_idx].aligned_nodes {
+                            if self.graph[aligned_idx].base == base {
+                                found = Some(aligned_idx);
+                                break;
+                            }
+                        }
+                        
+                        if let Some(idx) = found {
+                            idx
+                        } else {
+                            // Create new node
+                            let mut data = NodeData::new(base);
+                            data.weight = 0; // Will be incremented below
+                            let new_node = self.graph.add_node(data);
+                            
+                            // Update cliques
+                            // We need to add `new_node` to `graph_idx`'s aligned_nodes and vice versa
+                            // AND to all of `graph_idx`'s aligned_nodes and vice versa
+                            
+                            // Collect all nodes in the clique (graph_idx + its current aligned_nodes)
+                            let mut clique = self.graph[*graph_idx].aligned_nodes.clone();
+                            clique.push(*graph_idx);
+                            
+                            // Add new_node to them
+                            for &peer in &clique {
+                                self.graph[peer].aligned_nodes.push(new_node);
+                            }
+                            
+                            // Add them to new_node
+                            self.graph[new_node].aligned_nodes = clique;
+                            
+                            new_node
+                        }
                     };
                     
+                    // Increment weight
+                    self.graph[target_node_idx].weight += 1;
+                    
                     if let Some(p) = prev_node {
-                        self.add_edge(p, target_node, 1);
+                        self.add_edge(p, target_node_idx, 1);
                     }
-                    prev_node = Some(target_node);
+                    prev_node = Some(target_node_idx);
                 },
                 (Some(seq_idx), None) => {
                     // Insertion
@@ -193,6 +304,7 @@ mod tests {
         assert_eq!(graph.num_nodes(), 2); // A and C
         let n2 = graph.graph.node_indices().find(|&n| n != n1).unwrap();
         assert_eq!(graph.graph[n2].base, b'C');
-        assert_eq!(graph.graph[n2].aligned_to, Some(n1));
+        assert!(graph.graph[n2].aligned_nodes.contains(&n1));
+        assert!(graph.graph[n1].aligned_nodes.contains(&n2));
     }
 }

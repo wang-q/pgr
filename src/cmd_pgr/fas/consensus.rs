@@ -13,8 +13,11 @@ Notes:
 * Supports both plain text and gzipped (.gz) files
 * Reads from stdin if input file is 'stdin'
 * POA Engine:
-    * `--engine builtin` (default): Uses built-in Rust implementation (slower but no dependencies).
+    * `--engine builtin` (default): Uses built-in Rust implementation.
     * `--engine spoa`: Forces use of external `spoa` command.
+* Alignment Parameters:
+    * Configurable via `--match`, `--mismatch`, `--gap-open`, `--gap-extend`, `--algorithm`.
+    * Defaults: Global alignment; Match 5, Mismatch -4, GapOpen -8, GapExtend -6.
 * Supports parallel processing for improved performance
     * Running in parallel mode with 1 reader, 1 writer and the corresponding number of workers
     * The order of output may be different from the original
@@ -44,6 +47,50 @@ Examples:
                 .value_parser(["builtin", "spoa"])
                 .default_value("builtin")
                 .help("POA engine to use"),
+        )
+        .arg(
+            Arg::new("match")
+                .long("match")
+                .short('m')
+                .value_parser(value_parser!(i32))
+                .default_value("5")
+                .allow_negative_numbers(true)
+                .help("Score for matching bases"),
+        )
+        .arg(
+            Arg::new("mismatch")
+                .long("mismatch")
+                .short('n')
+                .value_parser(value_parser!(i32))
+                .default_value("-4")
+                .allow_negative_numbers(true)
+                .help("Score for mismatching bases"),
+        )
+        .arg(
+            Arg::new("gap_open")
+                .long("gap-open")
+                .short('g')
+                .value_parser(value_parser!(i32))
+                .default_value("-8")
+                .allow_negative_numbers(true)
+                .help("Gap opening penalty"),
+        )
+        .arg(
+            Arg::new("gap_extend")
+                .long("gap-extend")
+                .short('e')
+                .value_parser(value_parser!(i32))
+                .default_value("-6")
+                .allow_negative_numbers(true)
+                .help("Gap extension penalty"),
+        )
+        .arg(
+            Arg::new("algorithm")
+                .long("algorithm")
+                .short('l')
+                .value_parser(["local", "global", "semi_global"])
+                .default_value("global") // Default to global for fas consensus
+                .help("Alignment mode"),
         )
         .arg(
             Arg::new("infiles")
@@ -122,6 +169,20 @@ fn proc_block(block: &pgr::libs::fas::FasBlock, args: &ArgMatches) -> anyhow::Re
 
     let engine = args.get_one::<String>("engine").unwrap();
 
+    let match_score = *args.get_one::<i32>("match").unwrap();
+    let mismatch_score = *args.get_one::<i32>("mismatch").unwrap();
+    let gap_open = *args.get_one::<i32>("gap_open").unwrap();
+    let gap_extend = *args.get_one::<i32>("gap_extend").unwrap();
+    let algorithm = args.get_one::<String>("algorithm").unwrap();
+    
+    // Map algorithm string to integer code (0=local, 1=global, 2=semi_global) for internal use/spoa
+    let algo_code = match algorithm.as_str() {
+        "local" => 0,
+        "global" => 1,
+        "semi_global" => 2,
+        _ => 1,
+    };
+
     //----------------------------
     // Ops
     //----------------------------
@@ -142,8 +203,14 @@ fn proc_block(block: &pgr::libs::fas::FasBlock, args: &ArgMatches) -> anyhow::Re
 
     // Generate consensus sequence
     let mut cons = match engine.as_str() {
-        "spoa" => pgr::libs::alignment::get_consensus_poa_external(&seqs).unwrap(),
-        "builtin" | _ => pgr::libs::alignment::get_consensus_poa_builtin(&seqs).unwrap(),
+        "spoa" => pgr::libs::alignment::get_consensus_poa_external(
+            &seqs, 
+            match_score, mismatch_score, gap_open, gap_extend, algo_code
+        ).unwrap(),
+        "builtin" | _ => pgr::libs::alignment::get_consensus_poa_builtin(
+            &seqs,
+            match_score, mismatch_score, gap_open, gap_extend, algo_code
+        ).unwrap(),
     };
     cons = cons.replace('-', "");
 

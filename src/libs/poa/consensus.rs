@@ -14,14 +14,18 @@ pub fn generate_consensus(graph: &PoaGraph) -> Vec<u8> {
         return Vec::new();
     }
 
-    let mut scores: HashMap<NodeIndex, u32> = HashMap::new();
+    // Initialize scores
+    // Spoa strategy: "Heaviest Bundle"
+    // Score[u] = max_edge_weight(v->u) + Score[v]
+    // Prioritizes heavy edges first, then predecessor score.
+    // Score initialized to -1 (implicit in Spoa).
+    // Here we use i64 to allow -1, though weights are u32.
+    let mut scores: HashMap<NodeIndex, i64> = HashMap::new();
     let mut predecessors: HashMap<NodeIndex, NodeIndex> = HashMap::new();
 
-    // Initialize scores
     // Since we process in topological order, predecessors are already processed.
     for &node_idx in &sorted_nodes {
-        let node_weight = graph.graph[node_idx].weight;
-        let mut max_prev_score = 0;
+        let mut best_edge_weight = -1;
         let mut best_prev = None;
 
         // Collect and sort incoming edges to ensure deterministic behavior
@@ -32,31 +36,47 @@ pub fn generate_consensus(graph: &PoaGraph) -> Vec<u8> {
         // Iterate over incoming edges
         for edge_ref in edges {
             let prev_node = edge_ref.source();
-            let edge_weight = *edge_ref.weight();
+            let edge_weight = *edge_ref.weight() as i64;
             
-            // If prev_node is not in scores, it might be unreachable or bug in sort?
-            // Topo sort guarantees we visited prev_node unless graph has cycles (handled by panic in sort).
-            if let Some(&prev_score) = scores.get(&prev_node) {
-                let current_score = prev_score + edge_weight;
-                // Use >= to favor later edges (usually S2/S3...) in ties
-                // This matches spoa behavior where latest sequence wins in internal bubbles
-                if current_score >= max_prev_score {
-                    max_prev_score = current_score;
+            // Get prev score, default to -1 (start node score)
+            let prev_score = *scores.get(&prev_node).unwrap_or(&-1);
+
+            // Spoa Logic:
+            // if (scores[curr] < weight) || (scores[curr] == weight && scores[prev] <= scores[new_prev])
+            // Here scores[curr] tracks the *best edge weight* seen so far for this node loop
+            
+            if best_edge_weight < edge_weight {
+                best_edge_weight = edge_weight;
+                best_prev = Some(prev_node);
+            } else if best_edge_weight == edge_weight {
+                // Tie-breaker: Check predecessor total scores
+                // Spoa uses <= to swap. So it prefers the NEW predecessor if its score is >= OLD best.
+                // We need to compare prev_score vs score_of_best_prev
+                if let Some(curr_best_prev) = best_prev {
+                    let best_prev_score = *scores.get(&curr_best_prev).unwrap_or(&-1);
+                    if best_prev_score <= prev_score {
+                         best_prev = Some(prev_node);
+                    }
+                } else {
                     best_prev = Some(prev_node);
                 }
             }
         }
 
-        let total_score = node_weight + max_prev_score;
-        scores.insert(node_idx, total_score);
+        // Calculate total score for this node
+        let mut total_score = -1;
         if let Some(prev) = best_prev {
-            predecessors.insert(node_idx, prev);
+             predecessors.insert(node_idx, prev);
+             let prev_score = *scores.get(&prev).unwrap_or(&-1);
+             total_score = best_edge_weight + prev_score;
         }
+        
+        scores.insert(node_idx, total_score);
     }
 
     // Find the node with the highest score
     // Iterate sorted_nodes to ensure topological order
-    let mut max_score = 0;
+    let mut max_score = -1; // Spoa init max to nullptr/score -1
     let mut end_node = None;
 
     for &node in &sorted_nodes {
@@ -66,15 +86,23 @@ pub fn generate_consensus(graph: &PoaGraph) -> Vec<u8> {
                 end_node = Some(node);
             } else if score == max_score {
                 // Tie-breaker: Prefer lower node index (usually S1/Backbone)
-                // This handles cases like Case 1 where S1 ends with GG and S2 ends with TT
-                // and we want to preserve the S1 backbone ending.
                 if let Some(curr) = end_node {
                     if node.index() < curr.index() {
-                        end_node = Some(node);
+                         end_node = Some(node);
                     }
                 }
             }
         }
+    }
+
+    // If all scores are -1 (single node graph?), end_node might be None if we init max_score = -1.
+    // But if graph has nodes, scores will be -1.
+    // Spoa: if (!max || scores[max] < scores[it])
+    // If scores[it] is -1.
+    // If max is null, it sets max = it.
+    // So it picks the first node.
+    if end_node.is_none() && !sorted_nodes.is_empty() {
+        end_node = Some(sorted_nodes[0]);
     }
 
     // Backtrack

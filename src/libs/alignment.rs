@@ -772,7 +772,7 @@ pub fn seq_intspan(seq: &[u8]) -> IntSpan {
 ///             b"TTAGCCGCTGAGAAGC".as_ref(),
 ///             b"TTAGCCGCTGA-AAGC".as_ref(),
 ///         ];
-///         let cons = pgr::libs::alignment::get_consensus_poa(&seqs).unwrap();
+///         let cons = pgr::libs::alignment::get_consensus_poa_external(&seqs, 5, -4, -8, -6, 0).unwrap();
 ///         assert_eq!(cons, "TTAGCCGCTGAGAAGC".to_string());
 ///
 ///         let seqs = vec![
@@ -780,7 +780,7 @@ pub fn seq_intspan(seq: &[u8]) -> IntSpan {
 ///             b"AAATTTTGG".as_ref(),
 ///             b"AAAATTTTT".as_ref(),
 ///         ];
-///         let cons = pgr::libs::alignment::get_consensus_poa(&seqs).unwrap();
+///         let cons = pgr::libs::alignment::get_consensus_poa_external(&seqs, 5, -4, -8, -6, 0).unwrap();
 ///         assert_eq!(cons, "AAAATTTTGG".to_string());
 ///
 ///         let seqs = vec![
@@ -788,30 +788,29 @@ pub fn seq_intspan(seq: &[u8]) -> IntSpan {
 ///             b"AAAATTTTGG".as_ref(),
 ///             b"AAAATTTTTG".as_ref(),
 ///         ];
-///         let cons = pgr::libs::alignment::get_consensus_poa(&seqs).unwrap();
+///         let cons = pgr::libs::alignment::get_consensus_poa_external(&seqs, 5, -4, -8, -6, 0).unwrap();
 ///         assert_eq!(cons, "AAAATTTTTG".to_string());
 ///
 ///         let seqs = vec![
 ///         //
 ///             b"AAAATTTTGG".as_ref(),
 ///         ];
-///         let cons = pgr::libs::alignment::get_consensus_poa(&seqs).unwrap();
+///         let cons = pgr::libs::alignment::get_consensus_poa_external(&seqs, 5, -4, -8, -6, 0).unwrap();
 ///         assert_eq!(cons, "AAAATTTTGG".to_string());
 ///
 ///     }
 ///     Err(_) => {}
 /// }
 /// ```
-// cargo test --doc alignment::get_consensus_poa
-pub fn get_consensus_poa(seqs: &[&[u8]]) -> anyhow::Result<String> {
-    if let Ok(res) = get_consensus_poa_external(seqs) {
-        Ok(res)
-    } else {
-        get_consensus_poa_builtin(seqs)
-    }
-}
-
-pub fn get_consensus_poa_external(seqs: &[&[u8]]) -> anyhow::Result<String> {
+// cargo test --doc alignment::get_consensus_poa_external
+pub fn get_consensus_poa_external(
+    seqs: &[&[u8]],
+    match_score: i32,
+    mismatch_score: i32,
+    gap_open: i32,
+    gap_extend: i32,
+    algo_code: i32,
+) -> anyhow::Result<String> {
     let mut bin = String::new();
     for e in &["spoa"] {
         if let Ok(pth) = which::which(e) {
@@ -839,6 +838,16 @@ pub fn get_consensus_poa_external(seqs: &[&[u8]]) -> anyhow::Result<String> {
     let output = Command::new(bin)
         .arg("--result")
         .arg("0")
+        .arg("-m")
+        .arg(match_score.to_string())
+        .arg("-n")
+        .arg(mismatch_score.to_string())
+        .arg("-g")
+        .arg(gap_open.to_string())
+        .arg("-e")
+        .arg(gap_extend.to_string())
+        .arg("-l")
+        .arg(algo_code.to_string())
         .arg(seq_in_path.to_string_lossy().to_string())
         .output()?;
 
@@ -863,22 +872,60 @@ pub fn get_consensus_poa_external(seqs: &[&[u8]]) -> anyhow::Result<String> {
 
 /// ```
 /// let seqs = vec![
+/// //              *
+///     b"TTAGCCGCTGAGAAGC".as_ref(),
+///     b"TTAGCCGCTGAGAAGC".as_ref(),
+///     b"TTAGCCGCTGA-AAGC".as_ref(),
+/// ];
+/// let cons = pgr::libs::alignment::get_consensus_poa_builtin(&seqs, 5, -4, -8, -6, 1).unwrap();
+/// assert_eq!(cons, "TTAGCCGCTGAGAAGC".to_string());
+///
+/// let seqs = vec![
+/// //      *   **
 ///     b"AAATTTTGG".as_ref(),
 ///     b"AAAATTTTT".as_ref(),
 /// ];
-/// let cons = pgr::libs::alignment::get_consensus_poa_builtin(&seqs).unwrap();
+/// let cons = pgr::libs::alignment::get_consensus_poa_builtin(&seqs, 5, -4, -8, -6, 1).unwrap();
 /// assert_eq!(cons, "AAAATTTTGG".to_string());
 ///
 /// let seqs = vec![
+/// //           **
 ///     b"AAAATTTTGG".as_ref(),
 ///     b"AAAATTTTTG".as_ref(),
 /// ];
-/// let cons = pgr::libs::alignment::get_consensus_poa_builtin(&seqs).unwrap();
+/// let cons = pgr::libs::alignment::get_consensus_poa_builtin(&seqs, 5, -4, -8, -6, 1).unwrap();
 /// assert_eq!(cons, "AAAATTTTTG".to_string());
+///
+/// let seqs = vec![
+/// //
+///     b"AAAATTTTGG".as_ref(),
+/// ];
+/// let cons = pgr::libs::alignment::get_consensus_poa_builtin(&seqs, 5, -4, -8, -6, 1).unwrap();
+/// assert_eq!(cons, "AAAATTTTGG".to_string());
 /// ```
-pub fn get_consensus_poa_builtin(seqs: &[&[u8]]) -> anyhow::Result<String> {
-    let params = AlignmentParams::default();
-    let mut poa = Poa::new(params, AlignmentType::Global);
+// cargo test --doc alignment::get_consensus_poa_builtin
+pub fn get_consensus_poa_builtin(
+    seqs: &[&[u8]],
+    match_score: i32,
+    mismatch_score: i32,
+    gap_open: i32,
+    gap_extend: i32,
+    algo_code: i32,
+) -> anyhow::Result<String> {
+    let params = AlignmentParams {
+        match_score,
+        mismatch_score,
+        gap_open,
+        gap_extend,
+    };
+    let align_type = match algo_code {
+        0 => AlignmentType::Local,
+        1 => AlignmentType::Global,
+        2 => AlignmentType::SemiGlobal,
+        _ => AlignmentType::Global,
+    };
+    
+    let mut poa = Poa::new(params, align_type);
 
     for seq in seqs {
         poa.add_sequence(seq);

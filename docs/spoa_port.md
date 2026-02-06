@@ -58,26 +58,50 @@ src/libs/poa/
     *   [x] 仿射空缺罚分 (最常用)。
 *   [x] 使用简单的测试用例对照 Spoa 进行验证。
 
-### 第二阶段：一致性序列生成与集成 (进行中)
+### 第二阶段：一致性序列生成与集成 (已完成)
 *   [x] 实现 `generate_consensus` (重束算法 / heaviest bundle algorithm)。
 *   [x] 封装 `Poa` 结构体以便于调用。
-*   [ ] **集成到 `pgr fas consensus`**:
-    *   [ ] 修改 `src/libs/alignment.rs`，增加 `get_consensus_poa_native`。
-    *   [ ] 修改 `src/cmd_pgr/fas/consensus.rs`，增加 `--engine <spoa|native>` 参数。
-    *   [ ] 默认行为：如果找到外部 `spoa` 则使用它（性能优先），否则回退到 `native`（可移植性）。或者由用户显式指定。
-    *   [ ] 确保支持并行处理 (`--parallel`)。
-*   [ ] 清理:
-    *   [ ] 删除临时的 `src/cmd_pgr/poa/` 模块及子命令。
-    *   [ ] 更新相关测试。
+*   [x] **集成到 `pgr fas consensus`**:
+    *   [x] 修改 `src/libs/alignment.rs`，增加 `get_consensus_poa_builtin`。
+    *   [x] 修改 `src/cmd_pgr/fas/consensus.rs`，增加 `--engine <spoa|builtin>` 参数。
+    *   [x] 默认行为：默认为 `builtin`，但允许用户指定 `spoa`。
+    *   [x] 确保支持并行处理 (`--parallel`)。
+*   [x] 清理:
+    *   [x] 删除临时的 `src/cmd_pgr/poa/` 模块及子命令。
+    *   [x] 更新相关测试。
 
 ### 第三阶段（已移除）：SIMD 优化
 *   本次移植不包含 SIMD 优化部分。
 
 ## 5. 当前状态
 
-*   核心 POA 库 (`src/libs/poa`) 已实现并经过单元测试验证。
-*   正在将 `pgr fas consensus` 更新为支持双引擎（Native Rust / External Spoa）。
+*   核心 POA 库 (`src/libs/poa`) 已完全实现，支持全局、局部、半全局比对及仿射空缺罚分。
+*   `pgr fas consensus` 已集成双引擎支持 (`builtin` 和 `spoa`)。
+*   `builtin` 引擎的输出已验证与 `spoa` 一致。
 
-## 6. 参考资料
+## 6. 使用说明
+
+`pgr fas consensus` 命令用于生成一致性序列。
+
+*   **输入**: Block FA 格式 (`.fas`)，支持 gzip。
+*   **引擎选择**:
+    *   `--engine builtin` (默认): 使用内置 Rust 实现，无需外部依赖。
+    *   `--engine spoa`: 调用外部 `spoa` 命令（需在 PATH 中）。
+*   **并行**: 支持 `--parallel <N>` 多线程加速。
+*   **Outgroup**: 支持 `--outgroup` 选项正确处理外群。
+
+示例:
+```bash
+# 使用内置引擎 (默认)
+pgr fas consensus tests/fas/example.fas
+
+# 使用外部 spoa 引擎
+pgr fas consensus tests/fas/example.fas --engine spoa
+
+# 并行处理
+pgr fas consensus input.fas -p 4 -o output.fas
+```
+
+## 7. 参考资料
 *   [Spoa GitHub](https://github.com/rvaser/spoa)
 *   [Rust SIMD Guide](https://rust-lang.github.io/portable-simd/)

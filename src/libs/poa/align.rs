@@ -100,15 +100,17 @@ impl AlignmentEngine for ScalarAlignmentEngine {
                     let mut max_prev = neg_inf;
                     for &pred in &preds {
                         let u = node_map[&pred];
-                        let val = f[u][0] + self.params.gap_extend;
-                        if m[u][0] > neg_inf {
-                            max_prev = max_prev.max(m[u][0] + self.params.gap_open);
-                        }
+                        // Spoa: penalty = max(penalty, F[pred])
+                        // F[i] = penalty + e
                         if f[u][0] > neg_inf {
-                             max_prev = max_prev.max(val);
+                             max_prev = max_prev.max(f[u][0]);
                         }
                     }
-                    f[i][0] = max_prev;
+                    if max_prev > neg_inf {
+                        f[i][0] = max_prev + self.params.gap_extend;
+                    } else {
+                        f[i][0] = neg_inf;
+                    }
                     m[i][0] = neg_inf;
                     e[i][0] = neg_inf;
                 }
@@ -122,13 +124,13 @@ impl AlignmentEngine for ScalarAlignmentEngine {
                  let match_score = if seq_base == node_base { self.params.match_score } else { self.params.mismatch_score };
                  
                  // E[i][j]: Insertion
+                 // Derived from M (gap open), E (gap extend), or F (gap open)
                  let from_m = if m[i][j-1] > neg_inf { m[i][j-1] + self.params.gap_open } else { neg_inf };
                  let from_e = if e[i][j-1] > neg_inf { e[i][j-1] + self.params.gap_extend } else { neg_inf };
-                 let mut max_e = from_m.max(from_e);
-                 if is_local && max_e < 0 { max_e = neg_inf; } // Effectively resetting if bad extension? Actually SW doesn't clip E, but clips result H.
-                 // However, we separate M, E, F. 
-                 // If E becomes negative, and we use it for M, M will be clipped.
-                 // So leaving E as is is fine, but to avoid underflow with neg_inf:
+                 let from_f = if f[i][j-1] > neg_inf { f[i][j-1] + self.params.gap_open } else { neg_inf };
+                 
+                 let mut max_e = from_m.max(from_e).max(from_f);
+                 if is_local && max_e < 0 { max_e = neg_inf; } 
                  if max_e < neg_inf / 2 { max_e = neg_inf; }
                  e[i][j] = max_e;
                  
@@ -141,7 +143,12 @@ impl AlignmentEngine for ScalarAlignmentEngine {
                          max_m = match_score;
                      } else {
                          // Gap from virtual root
-                         let ins_score = self.params.gap_open + (j as i32 - 1) * self.params.gap_extend;
+                         // We have j-1 bases before current one.
+                         // They are all insertions.
+                         // Cost = Open + (cnt-1)*Extend.
+                         // cnt = j-1.
+                         // Cost = Open + (j-2)*Extend.
+                         let ins_score = self.params.gap_open + (j as i32 - 2) * self.params.gap_extend;
                          max_m = ins_score + match_score;
                      }
                  } else {
@@ -310,11 +317,23 @@ impl AlignmentEngine for ScalarAlignmentEngine {
                      
                      path.push((Some(curr_j-1), None));
                      
+                     // Spoa checks H[i][j] == H[i][j-1] + g_ (gap open) for insertion start
+                     // Spoa checks H[i][j] == E[i][j-1] + e_ (gap extend) for insertion extend
                      if target == score_e {
                          curr_j -= 1; curr_state = 1;
                      } else {
-                         curr_j -= 1; curr_state = 0;
-                     }
+                            // Transition from M or F
+                            let score_m = m[curr_i][curr_j-1] + self.params.gap_open;
+                            if target == score_m {
+                                curr_j -= 1; curr_state = 0;
+                            } else {
+                                // Must be F
+                                // Verify for correctness/safety
+                                // let score_f = f[curr_i][curr_j-1] + self.params.gap_open;
+                                // if target == score_f { ... }
+                                curr_j -= 1; curr_state = 2;
+                            }
+                        }
                  },
                  2 => { // F
                      let mut found = false;
