@@ -1,6 +1,6 @@
-# UCSC chainNet pipeline
+# UCSC chain-net pipeline
 
-## 1. Alignment
+## Pseudocat and pseudopig
 
 ```bash
 # Lastz
@@ -15,11 +15,6 @@ faToTwoBit tests/pgr/pseudocat.fa tests/pgr/pseudocat.2bit
 pgr fa size tests/pgr/pseudopig.fa -o tests/pgr/pseudopig.sizes
 faToTwoBit tests/pgr/pseudopig.fa tests/pgr/pseudopig.2bit
 
-```
-
-## 2. Chain and Net
-
-```bash
 # Chain
 mkdir -p tests/pgr/pslChain
 
@@ -102,11 +97,6 @@ mkdir -p tests/pgr/net
 #   netSplit in.net outDir
 netSplit tests/pgr/noClass.net tests/pgr/net
 
-```
-
-## 3. Format Conversion
-
-```bash
 # NetToAxt
 mkdir -p tests/pgr/axtNet
 
@@ -134,11 +124,10 @@ axtSort tests/pgr/axtNet/cat.tmp.axt tests/pgr/axtNet/cat.axt
 axtToMaf tests/pgr/axtNet/cat.axt \
     tests/pgr/pseudocat.sizes tests/pgr/pseudopig.sizes \
     tests/pgr/axtNet/cat.maf
-```
 
-## 4. Synteny Mode
 
-```bash
+# Synteny Mode
+
 mkdir -p tests/pgr/synNet
 mkdir -p tests/pgr/chain
 
@@ -174,5 +163,3 @@ axtToMaf tests/pgr/synNet/cat.axt \
     tests/pgr/pseudocat.sizes tests/pgr/pseudopig.sizes \
     tests/pgr/synNet/cat.maf
 ```
-
-
