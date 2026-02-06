@@ -26,13 +26,13 @@ Processing:
        * Default: Identity matrix (Match: +100, Mismatch: -100).
        * Custom: Use --score-scheme to load a LASTZ format file or preset (hoxd55).
      - Gap Cost (Penalty):
-       * Linear (Default): --linear-gap medium (suitable for mouse/human).
-                           --linear-gap loose (suitable for distant species, e.g. chicken/human).
+       * Linear (Default): --linear-gap loose (suitable for distant species).
+                           --linear-gap medium (suitable for mouse/human).
        * Affine: Use --gap-open and --gap-extend to override linear costs.
          (Cost = open + extend * length).
      - Overlaps are trimmed by finding the optimal cut point based on exact sequence scores.
   4. Filter chains by minimum score (controlled by --min-score).
-     - UCSC axtChain defaults to 1000, but pgr defaults to 0 to keep all chains.
+     - Default is 1000 to match UCSC axtChain behavior.
 
 Examples:
   # Chain PSL file with default settings
@@ -77,14 +77,14 @@ Examples:
         .arg(
             Arg::new("linear_gap")
                 .long("linear-gap")
-                .default_value("medium")
+                .default_value("loose")
                 .value_parser(["loose", "medium"])
                 .help("Linear gap cost type"),
         )
         .arg(
             Arg::new("min_score")
                 .long("min-score")
-                .default_value("0")
+                .default_value("1000")
                 .value_parser(clap::value_parser!(f64))
                 .help("Minimum score of chain"),
         )
