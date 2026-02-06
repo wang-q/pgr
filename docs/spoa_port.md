@@ -25,7 +25,8 @@ src/libs/poa/
 ├── poa.rs          # Poa 结构体封装
 ├── graph.rs        # Graph 类型定义 (基于 petgraph), NodeData
 ├── align.rs        # AlignmentEngine trait 及标量实现 (SISD)
-└── consensus.rs    # 一致性序列生成逻辑
+├── consensus.rs    # 一致性序列生成逻辑
+└── msa.rs          # 多序列比对 (MSA) 生成逻辑
 ```
 
 ### 3.2 数据结构
@@ -60,6 +61,7 @@ src/libs/poa/
 
 ### 第二阶段：一致性序列生成与集成 (已完成)
 *   [x] 实现 `generate_consensus` (重束算法 / heaviest bundle algorithm)。
+*   [x] 实现 `generate_msa` (从图生成多序列比对)。
 *   [x] 封装 `Poa` 结构体以便于调用。
 *   [x] **集成到 `pgr fas consensus`**:
     *   [x] 修改 `src/libs/alignment.rs`，增加 `get_consensus_poa_builtin`。
@@ -75,7 +77,11 @@ src/libs/poa/
 
 ## 5. 当前状态
 
-*   核心 POA 库 (`src/libs/poa`) 已完全实现，支持全局、局部、半全局比对及仿射空缺罚分。
+*   核心 POA 库 (`src/libs/poa`) 已完全实现，支持：
+    *   全局、局部、半全局比对。
+    *   仿射空缺罚分。
+    *   **一致性序列生成** (Consensus)。
+    *   **多序列比对生成** (MSA)。
 *   `pgr fas consensus` 已集成双引擎支持 (`builtin` 和 `spoa`)。
 *   `builtin` 引擎的输出已验证与 `spoa` 一致。
 
