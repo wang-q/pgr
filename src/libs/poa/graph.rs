@@ -132,11 +132,36 @@ impl PoaGraph {
     /// Adds an alignment to the graph, updating weights and adding new nodes/edges as needed.
     pub fn add_alignment(&mut self, alignment: &Alignment, sequence: &[u8]) {
         let mut prev_node: Option<NodeIndex> = None;
+        let mut current_seq_idx = 0;
         
         for step in &alignment.path {
+            // Get sequence index if present
+            let seq_idx = match step {
+                (Some(idx), _) => *idx,
+                _ => {
+                    // Deletion (None, Some) or (None, None)
+                    // Does not consume sequence, just skip
+                    continue;
+                }
+            };
+
+            // Fill unaligned sequence bases (prefix or gaps)
+            while current_seq_idx < seq_idx {
+                let base = sequence[current_seq_idx];
+                let mut data = NodeData::new(base);
+                data.weight = 1;
+                let new_node = self.graph.add_node(data);
+                
+                if let Some(p) = prev_node {
+                    self.add_edge(p, new_node, 1);
+                }
+                prev_node = Some(new_node);
+                current_seq_idx += 1;
+            }
+
             match step {
-                (Some(seq_idx), Some(graph_idx)) => {
-                    let base = sequence[*seq_idx];
+                (Some(idx), Some(graph_idx)) => {
+                    let base = sequence[*idx];
                     let graph_node_base = self.graph[*graph_idx].base;
                     
                     let target_node_idx = if graph_node_base == base {
@@ -160,19 +185,12 @@ impl PoaGraph {
                             let new_node = self.graph.add_node(data);
                             
                             // Update cliques
-                            // We need to add `new_node` to `graph_idx`'s aligned_nodes and vice versa
-                            // AND to all of `graph_idx`'s aligned_nodes and vice versa
-                            
-                            // Collect all nodes in the clique (graph_idx + its current aligned_nodes)
                             let mut clique = self.graph[*graph_idx].aligned_nodes.clone();
                             clique.push(*graph_idx);
                             
-                            // Add new_node to them
                             for &peer in &clique {
                                 self.graph[peer].aligned_nodes.push(new_node);
                             }
-                            
-                            // Add them to new_node
                             self.graph[new_node].aligned_nodes = clique;
                             
                             new_node
@@ -187,9 +205,9 @@ impl PoaGraph {
                     }
                     prev_node = Some(target_node_idx);
                 },
-                (Some(seq_idx), None) => {
+                (Some(idx), None) => {
                     // Insertion
-                    let base = sequence[*seq_idx];
+                    let base = sequence[*idx];
                     let mut data = NodeData::new(base);
                     data.weight = 1;
                     let new_node = self.graph.add_node(data);
@@ -199,12 +217,24 @@ impl PoaGraph {
                     }
                     prev_node = Some(new_node);
                 },
-                (None, Some(_)) => {
-                    // Deletion: skip
-                    // prev_node remains same
-                },
-                (None, None) => {},
+                _ => {} // Handled above
             }
+            
+            current_seq_idx = seq_idx + 1;
+        }
+
+        // Fill remaining suffix
+        while current_seq_idx < sequence.len() {
+             let base = sequence[current_seq_idx];
+             let mut data = NodeData::new(base);
+             data.weight = 1;
+             let new_node = self.graph.add_node(data);
+             
+             if let Some(p) = prev_node {
+                 self.add_edge(p, new_node, 1);
+             }
+             prev_node = Some(new_node);
+             current_seq_idx += 1;
         }
     }
 }
