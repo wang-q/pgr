@@ -128,4 +128,51 @@ netToAxt tests/pgr/net/cat.net tests/pgr/all.pre.chain \
 #    -byScore - Sort by score    
 axtSort tests/pgr/axtNet/cat.tmp.axt tests/pgr/axtNet/cat.axt
 
+# axtToMaf - Convert axt to maf
+# usage:
+#   axtToMaf in.axt target.sizes query.sizes out.maf
+axtToMaf tests/pgr/axtNet/cat.axt \
+    tests/pgr/pseudocat.sizes tests/pgr/pseudopig.sizes \
+    tests/pgr/axtNet/cat.maf
 ```
+
+## 4. Synteny Mode
+
+```bash
+mkdir -p tests/pgr/synNet
+mkdir -p tests/pgr/chain
+
+# netFilter - Filter out parts of net.  What passes
+# filter goes to standard output.  Note a net is a
+# recursive data structure.  If a parent fails to pass
+# the filter, the children are not even considered.
+# usage:
+#    netFilter in.net(s)
+netFilter -syn tests/pgr/noClass.net > tests/pgr/synNet.net
+netSplit tests/pgr/synNet.net tests/pgr/synNet
+
+# chainSplit - Split chains up by target or query sequence
+# usage:
+#    chainSplit outDir inChain(s)
+# options:
+#    -q  - Split on query (default is on target)
+#    -lump=N  Lump together so have only N split files.
+chainSplit tests/pgr/synNet tests/pgr/all.chain
+
+# Convert each net/chain pair to MAF
+# For each file in synNet/*.net:
+#   netToAxt ${file} ${file}.chain target.2bit query.2bit out.axt
+#   axtSort in.axt out.axt
+#   axtToMaf in.axt target.sizes query.sizes out.maf
+netToAxt tests/pgr/synNet/cat.net tests/pgr/synNet/cat.chain \
+    tests/pgr/pseudocat.2bit tests/pgr/pseudopig.2bit \
+    tests/pgr/synNet/cat.tmp.axt
+
+axtSort tests/pgr/synNet/cat.tmp.axt tests/pgr/synNet/cat.axt
+
+axtToMaf tests/pgr/synNet/cat.axt \
+    tests/pgr/pseudocat.sizes tests/pgr/pseudopig.sizes \
+    tests/pgr/synNet/cat.maf
+```
+
+
