@@ -29,6 +29,14 @@ fn normalize_chain_output(content: &str) -> String {
         .join("\n")
 }
 
+fn normalize_net_output(content: &str) -> String {
+    content
+        .lines()
+        .filter(|line| !line.starts_with('#'))
+        .collect::<Vec<&str>>()
+        .join("\n")
+}
+
 // 1. Alignment - lavToPsl
 #[test]
 fn test_lav_to_psl_lastz() -> anyhow::Result<()> {
@@ -237,18 +245,24 @@ fn test_chain_net_lastz() -> anyhow::Result<()> {
 
     let mut cmd = Command::cargo_bin("pgr")?;
     cmd.arg("chain")
-        .arg("net")
-        .arg(&input)
-        .arg(&t_sizes)
-        .arg(&q_sizes)
-        .arg(&output_t_net)
-        .arg(&output_q_net)
-        .arg("--min-space")
-        .arg("1")
-        .arg("--min-score")
-        .arg("0");
+                .arg("net")
+                .arg(&input)
+                .arg(&t_sizes)
+                .arg(&q_sizes)
+                .arg(&output_t_net)
+                .arg(&output_q_net)
+                .arg("--min-space")
+                .arg("1")
+                .arg("--min-score")
+                .arg("2000");
 
-    cmd.assert().success();
+    let output = cmd.output()?;
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    println!("STDERR: {}", stderr);
+    
+    if !output.status.success() {
+        panic!("Command failed with status: {}", output.status);
+    }
 
     let t_net_content = fs::read_to_string(&output_t_net)?;
     let expected_t_content = fs::read_to_string(&expected_t_net)?;

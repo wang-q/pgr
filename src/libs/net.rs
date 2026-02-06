@@ -25,6 +25,12 @@ pub struct Gap {
     pub o_start: u64,
     pub o_end: u64,
     pub fills: Vec<Rc<RefCell<Fill>>>,
+    pub t_n: Option<u64>,
+    pub q_n: Option<u64>,
+    pub t_r: Option<u64>,
+    pub q_r: Option<u64>,
+    pub t_trf: Option<u64>,
+    pub q_trf: Option<u64>,
 }
 
 #[derive(Debug)]
@@ -44,6 +50,12 @@ pub struct Fill {
     pub q_far: Option<i64>,
     pub chain: Option<Rc<Chain>>,
     pub gaps: Vec<Rc<RefCell<Gap>>>,
+    pub t_n: Option<u64>,
+    pub q_n: Option<u64>,
+    pub t_r: Option<u64>,
+    pub q_r: Option<u64>,
+    pub t_trf: Option<u64>,
+    pub q_trf: Option<u64>,
 }
 
 pub struct Chrom {
@@ -61,6 +73,12 @@ impl Chrom {
             o_start: 0,
             o_end: 0, // Root gap o_range is 0? UCSC sets it to 0,0
             fills: Vec::new(),
+            t_n: None,
+            q_n: None,
+            t_r: None,
+            q_r: None,
+            t_trf: None,
+            q_trf: None,
         }));
 
         let space = Space {
@@ -134,6 +152,24 @@ impl Fill {
         if !self.class.is_empty() {
             write!(writer, " type {}", self.class)?;
         }
+        if let Some(val) = self.t_n {
+            write!(writer, " tN {}", val)?;
+        }
+        if let Some(val) = self.q_n {
+            write!(writer, " qN {}", val)?;
+        }
+        if let Some(val) = self.t_r {
+            write!(writer, " tR {}", val)?;
+        }
+        if let Some(val) = self.q_r {
+            write!(writer, " qR {}", val)?;
+        }
+        if let Some(val) = self.t_trf {
+            write!(writer, " tTrf {}", val)?;
+        }
+        if let Some(val) = self.q_trf {
+            write!(writer, " qTrf {}", val)?;
+        }
         writeln!(writer)?;
 
         for gap in &self.gaps {
@@ -153,7 +189,7 @@ impl Gap {
         o_strand: char,
     ) -> io::Result<()> {
         let indent_str = " ".repeat(indent);
-        writeln!(
+        write!(
             writer,
             "{}gap {} {} {} {} {} {}",
             indent_str,
@@ -164,6 +200,26 @@ impl Gap {
             self.o_start,
             self.o_end - self.o_start
         )?;
+
+        if let Some(val) = self.t_n {
+            write!(writer, " tN {}", val)?;
+        }
+        if let Some(val) = self.q_n {
+            write!(writer, " qN {}", val)?;
+        }
+        if let Some(val) = self.t_r {
+            write!(writer, " tR {}", val)?;
+        }
+        if let Some(val) = self.q_r {
+            write!(writer, " qR {}", val)?;
+        }
+        if let Some(val) = self.t_trf {
+            write!(writer, " tTrf {}", val)?;
+        }
+        if let Some(val) = self.q_trf {
+            write!(writer, " qTrf {}", val)?;
+        }
+        writeln!(writer)?;
 
         for fill in &self.fills {
             fill.borrow().write(writer, indent + 1)?;
@@ -230,6 +286,12 @@ pub fn read_nets<R: BufRead>(mut reader: R) -> io::Result<Vec<Chrom>> {
                 let mut q_dup = None;
                 let mut q_over = None;
                 let mut q_far = None;
+                let mut t_n = None;
+                let mut q_n = None;
+                let mut t_r = None;
+                let mut q_r = None;
+                let mut t_trf = None;
+                let mut q_trf = None;
 
                 let mut i = 13;
                 while i < parts.len() {
@@ -266,6 +328,54 @@ pub fn read_nets<R: BufRead>(mut reader: R) -> io::Result<Vec<Chrom>> {
                                 i += 1;
                             }
                         }
+                        "tN" => {
+                            if i + 1 < parts.len() {
+                                t_n = Some(parts[i + 1].parse::<u64>().unwrap_or(0));
+                                i += 2;
+                            } else {
+                                i += 1;
+                            }
+                        }
+                        "qN" => {
+                            if i + 1 < parts.len() {
+                                q_n = Some(parts[i + 1].parse::<u64>().unwrap_or(0));
+                                i += 2;
+                            } else {
+                                i += 1;
+                            }
+                        }
+                        "tR" => {
+                            if i + 1 < parts.len() {
+                                t_r = Some(parts[i + 1].parse::<u64>().unwrap_or(0));
+                                i += 2;
+                            } else {
+                                i += 1;
+                            }
+                        }
+                        "qR" => {
+                            if i + 1 < parts.len() {
+                                q_r = Some(parts[i + 1].parse::<u64>().unwrap_or(0));
+                                i += 2;
+                            } else {
+                                i += 1;
+                            }
+                        }
+                        "tTrf" => {
+                            if i + 1 < parts.len() {
+                                t_trf = Some(parts[i + 1].parse::<u64>().unwrap_or(0));
+                                i += 2;
+                            } else {
+                                i += 1;
+                            }
+                        }
+                        "qTrf" => {
+                            if i + 1 < parts.len() {
+                                q_trf = Some(parts[i + 1].parse::<u64>().unwrap_or(0));
+                                i += 2;
+                            } else {
+                                i += 1;
+                            }
+                        }
                         _ => {
                             i += 1;
                         }
@@ -288,6 +398,12 @@ pub fn read_nets<R: BufRead>(mut reader: R) -> io::Result<Vec<Chrom>> {
                     q_far,
                     chain: None,
                     gaps: Vec::new(),
+                    t_n,
+                    q_n,
+                    t_r,
+                    q_r,
+                    t_trf,
+                    q_trf,
                 }));
 
                 // Find parent gap
@@ -319,12 +435,82 @@ pub fn read_nets<R: BufRead>(mut reader: R) -> io::Result<Vec<Chrom>> {
                 let q_start = parts[5].parse::<u64>().unwrap();
                 let q_len = parts[6].parse::<u64>().unwrap();
 
+                let mut t_n = None;
+                let mut q_n = None;
+                let mut t_r = None;
+                let mut q_r = None;
+                let mut t_trf = None;
+                let mut q_trf = None;
+
+                let mut i = 7;
+                while i < parts.len() {
+                    match parts[i] {
+                        "tN" => {
+                            if i + 1 < parts.len() {
+                                t_n = Some(parts[i + 1].parse::<u64>().unwrap_or(0));
+                                i += 2;
+                            } else {
+                                i += 1;
+                            }
+                        }
+                        "qN" => {
+                            if i + 1 < parts.len() {
+                                q_n = Some(parts[i + 1].parse::<u64>().unwrap_or(0));
+                                i += 2;
+                            } else {
+                                i += 1;
+                            }
+                        }
+                        "tR" => {
+                            if i + 1 < parts.len() {
+                                t_r = Some(parts[i + 1].parse::<u64>().unwrap_or(0));
+                                i += 2;
+                            } else {
+                                i += 1;
+                            }
+                        }
+                        "qR" => {
+                            if i + 1 < parts.len() {
+                                q_r = Some(parts[i + 1].parse::<u64>().unwrap_or(0));
+                                i += 2;
+                            } else {
+                                i += 1;
+                            }
+                        }
+                        "tTrf" => {
+                            if i + 1 < parts.len() {
+                                t_trf = Some(parts[i + 1].parse::<u64>().unwrap_or(0));
+                                i += 2;
+                            } else {
+                                i += 1;
+                            }
+                        }
+                        "qTrf" => {
+                            if i + 1 < parts.len() {
+                                q_trf = Some(parts[i + 1].parse::<u64>().unwrap_or(0));
+                                i += 2;
+                            } else {
+                                i += 1;
+                            }
+                        }
+                        _ => {
+                            i += 1;
+                        }
+                    }
+                }
+
                 let gap = Rc::new(RefCell::new(Gap {
                     start,
                     end: start + len,
                     o_start: q_start,
                     o_end: q_start + q_len,
                     fills: Vec::new(),
+                    t_n,
+                    q_n,
+                    t_r,
+                    q_r,
+                    t_trf,
+                    q_trf,
                 }));
 
                 // Find parent fill
@@ -369,7 +555,10 @@ impl ChainNet {
         }
     }
 
-    pub fn add_chain(&mut self, chain: Chain, min_space: u64, min_fill: u64) {
+    pub fn add_chain(&mut self, chain: Chain, min_space: u64, min_fill: u64, min_score: f64) {
+        if (chain.header.score as f64) < min_score {
+            return;
+        }
         let chain_rc = Rc::new(chain);
         self.chains.push(chain_rc.clone());
 
@@ -388,7 +577,10 @@ impl ChainNet {
         }
     }
 
-    pub fn add_chain_as_q(&mut self, chain: Chain, min_space: u64, min_fill: u64) {
+    pub fn add_chain_as_q(&mut self, chain: Chain, min_space: u64, min_fill: u64, min_score: f64) {
+        if (chain.header.score as f64) < min_score {
+            return;
+        }
         let chain_rc = Rc::new(chain);
         self.chains.push(chain_rc.clone());
 
@@ -657,6 +849,12 @@ fn fill_space(
         q_far: None,
         chain: Some(chain.clone()),
         gaps: Vec::new(),
+        t_n: None,
+        q_n: None,
+        t_r: None,
+        q_r: None,
+        t_trf: None,
+        q_trf: None,
     }));
 
     // Add Left Space
@@ -712,6 +910,12 @@ fn fill_space(
                 o_start: os,
                 o_end: oe,
                 fills: Vec::new(),
+                t_n: None,
+                q_n: None,
+                t_r: None,
+                q_r: None,
+                t_trf: None,
+                q_trf: None,
             }));
 
             chrom.spaces.insert(
@@ -932,6 +1136,30 @@ fn write_fill<W: Write>(
             line.push_str(" type ");
             line.push_str(&f.class);
         }
+        if let Some(val) = f.t_n {
+            line.push_str(" tN ");
+            line.push_str(&val.to_string());
+        }
+        if let Some(val) = f.q_n {
+            line.push_str(" qN ");
+            line.push_str(&val.to_string());
+        }
+        if let Some(val) = f.t_r {
+            line.push_str(" tR ");
+            line.push_str(&val.to_string());
+        }
+        if let Some(val) = f.q_r {
+            line.push_str(" qR ");
+            line.push_str(&val.to_string());
+        }
+        if let Some(val) = f.t_trf {
+            line.push_str(" tTrf ");
+            line.push_str(&val.to_string());
+        }
+        if let Some(val) = f.q_trf {
+            line.push_str(" qTrf ");
+            line.push_str(&val.to_string());
+        }
 
         writeln!(writer, "{}", line)?;
 
@@ -957,7 +1185,7 @@ fn write_gap<W: Write>(
     let o_strand = p.o_strand;
 
     write_indent(writer, depth)?;
-    writeln!(
+    write!(
         writer,
         "gap {} {} {} {} {} {}",
         g.start,
@@ -967,6 +1195,26 @@ fn write_gap<W: Write>(
         g.o_start,
         g.o_end - g.o_start
     )?;
+
+    if let Some(val) = g.t_n {
+        write!(writer, " tN {}", val)?;
+    }
+    if let Some(val) = g.q_n {
+        write!(writer, " qN {}", val)?;
+    }
+    if let Some(val) = g.t_r {
+        write!(writer, " tR {}", val)?;
+    }
+    if let Some(val) = g.q_r {
+        write!(writer, " qR {}", val)?;
+    }
+    if let Some(val) = g.t_trf {
+        write!(writer, " tTrf {}", val)?;
+    }
+    if let Some(val) = g.q_trf {
+        write!(writer, " qTrf {}", val)?;
+    }
+    writeln!(writer)?;
 
     for fill in &g.fills {
         write_fill(fill, writer, depth + 1, is_q, min_score, min_fill)?;
@@ -979,4 +1227,35 @@ fn write_indent<W: Write>(writer: &mut W, depth: usize) -> io::Result<()> {
         write!(writer, " ")?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_ucsc_net_format_compatibility() {
+        // Example with all fields (tN, qN, tR, qR, tTrf, qTrf)
+        // Note: Field order in output should follow UCSC: qOver, qFar, qDup, type, tN, qN, tR, qR, tTrf, qTrf
+        let net_data = "\
+net chr1 1000
+ fill 0 100 chr2 + 0 100 id 1 score 100 ali 100 qOver 10 qFar 20 qDup 30 type top tN 1 qN 2 tR 3 qR 4 tTrf 5 qTrf 6
+  gap 10 20 chr2 + 10 20 tN 11 qN 12 tR 13 qR 14 tTrf 15 qTrf 16
+   fill 10 10 chr2 + 10 10 id 2 score 50 ali 50
+";
+        let reader = std::io::Cursor::new(net_data);
+        let chroms = read_nets(reader).unwrap();
+
+        assert_eq!(chroms.len(), 1);
+        let chrom = &chroms[0];
+        assert_eq!(chrom.name, "chr1");
+        assert_eq!(chrom.size, 1000);
+
+        let mut writer = Vec::new();
+        chrom.write(&mut writer).unwrap();
+        let output = String::from_utf8(writer).unwrap();
+
+        // Check consistency
+        assert_eq!(output, net_data);
+    }
 }

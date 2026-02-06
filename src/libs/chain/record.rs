@@ -219,6 +219,7 @@ impl FromStr for ChainHeader {
 pub struct ChainReader<R> {
     reader: std::io::BufReader<R>,
     next_line: Option<String>,
+    pub header_comments: Vec<String>,
 }
 
 impl<R: std::io::Read> ChainReader<R> {
@@ -226,6 +227,7 @@ impl<R: std::io::Read> ChainReader<R> {
         Self {
             reader: std::io::BufReader::new(inner),
             next_line: None,
+            header_comments: Vec::new(),
         }
     }
 
@@ -309,7 +311,11 @@ impl<R: std::io::Read> Iterator for ChainReader<R> {
             match self.read_line() {
                 Ok(Some(line)) => {
                     let trimmed = line.trim();
-                    if trimmed.is_empty() || trimmed.starts_with('#') {
+                    if trimmed.is_empty() {
+                        continue;
+                    }
+                    if trimmed.starts_with('#') {
+                        self.header_comments.push(line);
                         continue;
                     }
                     if trimmed.starts_with("chain") {

@@ -4,7 +4,7 @@ use pgr::libs::chain::ChainReader;
 use pgr::libs::net::{finalize_net, write_net, ChainNet};
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{BufRead, BufReader, BufWriter};
+use std::io::{BufRead, BufReader, BufWriter, Write};
 
 pub fn make_subcommand() -> Command {
     Command::new("net")
@@ -71,6 +71,7 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
         .copied()
         .unwrap_or(min_space / 2);
     let min_score = *args.get_one::<f64>("min_score").unwrap();
+    eprintln!("DEBUG: min_space={}, min_score={}", min_space, min_score);
     let incl_hap = args.get_flag("incl_hap");
 
     let t_sizes = load_sizes(target_sizes_path)?;
@@ -86,6 +87,7 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
 
     while let Some(res) = reader.next() {
         let chain = res?;
+        eprintln!("DEBUG: Processing chain id={} score={}", chain.header.id, chain.header.score);
 
         // Sort check (optional but good)
         if (chain.header.score as f64) > last_score {
@@ -105,16 +107,20 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
         }
 
         // Add to T net
-        t_net.add_chain(chain.clone(), min_space, min_fill);
+        t_net.add_chain(chain.clone(), min_space, min_fill, min_score);
 
         // Add to Q net
-        q_net.add_chain_as_q(chain, min_space, min_fill);
+        q_net.add_chain_as_q(chain, min_space, min_fill, min_score);
     }
 
     // Finish and write T net
     {
         let out_file = File::create(target_net_path)?;
         let mut writer = BufWriter::new(out_file);
+
+        for comment in &reader.header_comments {
+            write!(writer, "{}", comment)?;
+        }
 
         // We need to iterate chroms in order? C code iterates chromList (which is reversed from creation? No, preserved order).
         // Hash map iteration is random.
@@ -136,6 +142,10 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
     {
         let out_file = File::create(query_net_path)?;
         let mut writer = BufWriter::new(out_file);
+
+        for comment in &reader.header_comments {
+            write!(writer, "{}", comment)?;
+        }
 
         let mut q_chrom_names: Vec<_> = q_net.chroms.keys().cloned().collect();
         q_chrom_names.sort();
