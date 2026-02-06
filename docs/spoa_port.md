@@ -87,16 +87,25 @@ src/libs/poa/
 *   **引擎选择**:
     *   `--engine builtin` (默认): 使用内置 Rust 实现，无需外部依赖。
     *   `--engine spoa`: 调用外部 `spoa` 命令（需在 PATH 中）。
+*   **比对参数**:
+    *   `--match <int>`: 匹配分 (默认: 5)
+    *   `--mismatch <int>`: 失配罚分 (默认: -4)
+    *   `--gap-open <int>`: Gap 开启罚分 (默认: -8)
+    *   `--gap-extend <int>`: Gap 延伸罚分 (默认: -6)
+    *   `--algorithm <local|global|semi_global>`: 比对模式 (默认: global)
 *   **并行**: 支持 `--parallel <N>` 多线程加速。
 *   **Outgroup**: 支持 `--outgroup` 选项正确处理外群。
 
 示例:
 ```bash
-# 使用内置引擎 (默认)
+# 使用内置引擎 (默认)，全局比对
 pgr fas consensus tests/fas/example.fas
 
-# 使用外部 spoa 引擎
-pgr fas consensus tests/fas/example.fas --engine spoa
+# 使用外部 spoa 引擎，局部比对
+pgr fas consensus tests/fas/example.fas --engine spoa --algorithm local
+
+# 自定义打分矩阵
+pgr fas consensus tests/fas/example.fas -m 2 -n -3 -g -5 -e -1
 
 # 并行处理
 pgr fas consensus input.fas -p 4 -o output.fas
