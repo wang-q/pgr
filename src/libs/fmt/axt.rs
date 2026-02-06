@@ -25,6 +25,7 @@ impl Axt {
 pub struct AxtReader<R> {
     reader: std::io::BufReader<R>,
     line_buf: String,
+    pub headers: Vec<String>,
 }
 
 impl<R: std::io::Read> AxtReader<R> {
@@ -32,6 +33,7 @@ impl<R: std::io::Read> AxtReader<R> {
         Self {
             reader: std::io::BufReader::new(inner),
             line_buf: String::new(),
+            headers: Vec::new(),
         }
     }
 
@@ -51,7 +53,11 @@ impl<R: std::io::Read> Iterator for AxtReader<R> {
                 Ok(0) => return None, // EOF
                 Ok(_) => {
                     let line = self.line_buf.trim();
-                    if line.is_empty() || line.starts_with('#') {
+                    if line.is_empty() {
+                        continue;
+                    }
+                    if line.starts_with('#') {
+                        self.headers.push(line.to_string());
                         continue;
                     }
 

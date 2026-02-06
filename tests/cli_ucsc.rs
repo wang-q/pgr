@@ -411,33 +411,33 @@ fn test_net_to_axt_lastz() -> anyhow::Result<()> {
     Ok(())
 }
 
-// // 3. Axt - axtSort
-// #[test]
-// fn test_axt_sort_lastz() -> anyhow::Result<()> {
-//     let temp = TempDir::new()?;
+// 3. Axt - axtSort
+#[test]
+fn test_axt_sort_lastz() -> anyhow::Result<()> {
+    let temp = TempDir::new()?;
     
-//     // Use the expected output (already sorted) as input to verify idempotency/format handling
-//     // This avoids dependency on net-to-axt command in this test
-//     let input_path = get_path("axtNet/cat.axt");
-//     let output = temp.path().join("cat.axt");
+    // Use the expected output (already sorted) as input to verify idempotency/format handling
+    // This avoids dependency on net-to-axt command in this test
+    let input_path = get_path("axtNet/cat.axt");
+    let output = temp.path().join("cat.axt");
 
-//     let mut cmd_sort = Command::cargo_bin("pgr")?;
-//     cmd_sort.arg("axt")
-//         .arg("sort")
-//         .arg(&input_path)
-//         .arg("-o")
-//         .arg(&output);
+    let mut cmd_sort = Command::cargo_bin("pgr")?;
+    cmd_sort.arg("axt")
+        .arg("sort")
+        .arg(&input_path)
+        .arg("-o")
+        .arg(&output);
 
-//     cmd_sort.assert().success();
+    cmd_sort.assert().success();
 
-//     let output_content = fs::read_to_string(&output)?;
-//     let expected_content = fs::read_to_string(&input_path)?;
+    let output_content = fs::read_to_string(&output)?;
+    let expected_content = fs::read_to_string(&input_path)?;
     
-//     // Normalize newlines for cross-platform comparison
-//     let output_norm = output_content.replace("\r\n", "\n");
-//     let expected_norm = expected_content.replace("\r\n", "\n");
+    // Normalize newlines for cross-platform comparison
+    let output_norm = output_content.replace("\r\n", "\n");
+    let expected_norm = expected_content.replace("\r\n", "\n");
 
-//     assert_eq!(output_norm, expected_norm);
+    assert_eq!(output_norm, expected_norm);
 
-//     Ok(())
-// }
+    Ok(())
+}

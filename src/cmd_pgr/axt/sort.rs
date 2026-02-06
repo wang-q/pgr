@@ -66,12 +66,16 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let reader = intspan::reader(input);
     let mut writer = intspan::writer(output);
 
-    let axt_reader = AxtReader::new(reader);
+    let mut axt_reader = AxtReader::new(reader);
 
     let mut axts = Vec::new();
-    for result in axt_reader {
+    while let Some(result) = axt_reader.next() {
         let axt = result?;
         axts.push(axt);
+    }
+
+    for header in &axt_reader.headers {
+        writeln!(writer, "{}", header)?;
     }
 
     if by_score {
