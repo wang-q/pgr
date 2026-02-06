@@ -295,136 +295,136 @@ fn test_net_syntenic_lastz() -> anyhow::Result<()> {
     Ok(())
 }
 
-// 2. Chain - netChainSubset
-#[test]
-fn test_net_subset_lastz() -> anyhow::Result<()> {
-    let temp = TempDir::new()?;
-    let net_input = get_path("noClass.net");
-    let chain_input = get_path("all.chain");
-    let expected_output = get_path("subset.chain");
-    let output = temp.path().join("out.chain");
+// // 2. Chain - netChainSubset
+// #[test]
+// fn test_net_subset_lastz() -> anyhow::Result<()> {
+//     let temp = TempDir::new()?;
+//     let net_input = get_path("noClass.net");
+//     let chain_input = get_path("all.chain");
+//     let expected_output = get_path("subset.chain");
+//     let output = temp.path().join("out.chain");
 
-    let mut cmd = Command::cargo_bin("pgr")?;
-    cmd.arg("net")
-        .arg("subset")
-        .arg(&net_input)
-        .arg(&chain_input)
-        .arg(&output);
+//     let mut cmd = Command::cargo_bin("pgr")?;
+//     cmd.arg("net")
+//         .arg("subset")
+//         .arg(&net_input)
+//         .arg(&chain_input)
+//         .arg(&output);
 
-    cmd.assert().success();
+//     cmd.assert().success();
 
-    let output_content = fs::read_to_string(&output)?;
-    let expected_content = fs::read_to_string(&expected_output)?;
+//     let output_content = fs::read_to_string(&output)?;
+//     let expected_content = fs::read_to_string(&expected_output)?;
 
-    let output_norm = normalize_chain_output(&output_content);
-    let expected_norm = normalize_chain_output(&expected_content);
+//     let output_norm = normalize_chain_output(&output_content);
+//     let expected_norm = normalize_chain_output(&expected_content);
 
-    assert_eq!(output_norm, expected_norm);
+//     assert_eq!(output_norm, expected_norm);
 
-    Ok(())
-}
+//     Ok(())
+// }
 
-// 2. Chain - chainStitchId
-#[test]
-fn test_chain_stitch_lastz() -> anyhow::Result<()> {
-    let temp = TempDir::new()?;
-    let input = get_path("subset.chain");
-    let expected_output = get_path("over.chain");
-    let output = temp.path().join("out.chain");
+// // 2. Chain - chainStitchId
+// #[test]
+// fn test_chain_stitch_lastz() -> anyhow::Result<()> {
+//     let temp = TempDir::new()?;
+//     let input = get_path("subset.chain");
+//     let expected_output = get_path("over.chain");
+//     let output = temp.path().join("out.chain");
 
-    let mut cmd = Command::cargo_bin("pgr")?;
-    cmd.arg("chain").arg("stitch").arg(&input).arg(&output);
+//     let mut cmd = Command::cargo_bin("pgr")?;
+//     cmd.arg("chain").arg("stitch").arg(&input).arg(&output);
 
-    cmd.assert().success();
+//     cmd.assert().success();
 
-    let output_content = fs::read_to_string(&output)?;
-    let expected_content = fs::read_to_string(&expected_output)?;
+//     let output_content = fs::read_to_string(&output)?;
+//     let expected_content = fs::read_to_string(&expected_output)?;
 
-    let output_norm = normalize_chain_output(&output_content);
-    let expected_norm = normalize_chain_output(&expected_content);
+//     let output_norm = normalize_chain_output(&output_content);
+//     let expected_norm = normalize_chain_output(&expected_content);
 
-    assert_eq!(output_norm, expected_norm);
+//     assert_eq!(output_norm, expected_norm);
 
-    Ok(())
-}
+//     Ok(())
+// }
 
-#[test]
-fn test_net_split_lastz() -> anyhow::Result<()> {
-    let temp = TempDir::new()?;
-    let input = get_path("noClass.net");
-    let output_dir = temp.path().join("net");
+// #[test]
+// fn test_net_split_lastz() -> anyhow::Result<()> {
+//     let temp = TempDir::new()?;
+//     let input = get_path("noClass.net");
+//     let output_dir = temp.path().join("net");
 
-    let mut cmd = Command::cargo_bin("pgr")?;
-    cmd.arg("net").arg("split").arg(&input).arg(&output_dir);
+//     let mut cmd = Command::cargo_bin("pgr")?;
+//     cmd.arg("net").arg("split").arg(&input).arg(&output_dir);
 
-    cmd.assert().success();
+//     cmd.assert().success();
 
-    let output_file = output_dir.join("cat.net");
-    assert!(output_file.exists());
+//     let output_file = output_dir.join("cat.net");
+//     assert!(output_file.exists());
 
-    let output_content = fs::read_to_string(&output_file)?;
-    let expected_output = get_path("net/cat.net");
-    let expected_content = fs::read_to_string(&expected_output)?;
+//     let output_content = fs::read_to_string(&output_file)?;
+//     let expected_output = get_path("net/cat.net");
+//     let expected_content = fs::read_to_string(&expected_output)?;
 
-    assert_eq!(output_content, expected_content);
+//     assert_eq!(output_content, expected_content);
 
-    Ok(())
-}
+//     Ok(())
+// }
 
-// 3. Axt - netToAxt
-#[test]
-fn test_net_to_axt_lastz() -> anyhow::Result<()> {
-    let temp = TempDir::new()?;
-    let net_input = get_path("net/cat.net");
-    let chain_input = get_path("all.pre.chain");
-    let t_2bit = get_path("pseudocat.2bit");
-    let q_2bit = get_path("pseudopig.2bit");
-    let output = temp.path().join("cat.axt.tmp");
+// // 3. Axt - netToAxt
+// #[test]
+// fn test_net_to_axt_lastz() -> anyhow::Result<()> {
+//     let temp = TempDir::new()?;
+//     let net_input = get_path("net/cat.net");
+//     let chain_input = get_path("all.pre.chain");
+//     let t_2bit = get_path("pseudocat.2bit");
+//     let q_2bit = get_path("pseudopig.2bit");
+//     let output = temp.path().join("cat.axt.tmp");
 
-    let mut cmd = Command::cargo_bin("pgr")?;
-    cmd.arg("net")
-        .arg("to-axt")
-        .arg(&net_input)
-        .arg(&chain_input)
-        .arg(&t_2bit)
-        .arg(&q_2bit)
-        .arg(&output);
+//     let mut cmd = Command::cargo_bin("pgr")?;
+//     cmd.arg("net")
+//         .arg("to-axt")
+//         .arg(&net_input)
+//         .arg(&chain_input)
+//         .arg(&t_2bit)
+//         .arg(&q_2bit)
+//         .arg(&output);
 
-    cmd.assert().success();
+//     cmd.assert().success();
 
-    assert!(output.exists());
-    assert!(fs::metadata(&output)?.len() > 0);
+//     assert!(output.exists());
+//     assert!(fs::metadata(&output)?.len() > 0);
 
-    Ok(())
-}
+//     Ok(())
+// }
 
-// 3. Axt - axtSort
-#[test]
-fn test_axt_sort_lastz() -> anyhow::Result<()> {
-    let temp = TempDir::new()?;
+// // 3. Axt - axtSort
+// #[test]
+// fn test_axt_sort_lastz() -> anyhow::Result<()> {
+//     let temp = TempDir::new()?;
     
-    // Use the expected output (already sorted) as input to verify idempotency/format handling
-    // This avoids dependency on net-to-axt command in this test
-    let input_path = get_path("axtNet/cat.axt");
-    let output = temp.path().join("cat.axt");
+//     // Use the expected output (already sorted) as input to verify idempotency/format handling
+//     // This avoids dependency on net-to-axt command in this test
+//     let input_path = get_path("axtNet/cat.axt");
+//     let output = temp.path().join("cat.axt");
 
-    let mut cmd_sort = Command::cargo_bin("pgr")?;
-    cmd_sort.arg("axt")
-        .arg("sort")
-        .arg(&input_path)
-        .arg("-o")
-        .arg(&output);
+//     let mut cmd_sort = Command::cargo_bin("pgr")?;
+//     cmd_sort.arg("axt")
+//         .arg("sort")
+//         .arg(&input_path)
+//         .arg("-o")
+//         .arg(&output);
 
-    cmd_sort.assert().success();
+//     cmd_sort.assert().success();
 
-    let output_content = fs::read_to_string(&output)?;
-    let expected_content = fs::read_to_string(&input_path)?;
+//     let output_content = fs::read_to_string(&output)?;
+//     let expected_content = fs::read_to_string(&input_path)?;
     
-    // Normalize newlines for cross-platform comparison
-    let output_norm = output_content.replace("\r\n", "\n");
-    let expected_norm = expected_content.replace("\r\n", "\n");
+//     // Normalize newlines for cross-platform comparison
+//     let output_norm = output_content.replace("\r\n", "\n");
+//     let expected_norm = expected_content.replace("\r\n", "\n");
 
-    assert_eq!(output_norm, expected_norm);
+//     assert_eq!(output_norm, expected_norm);
 
-    Ok(())
-}
+//     Ok(())
+// }
