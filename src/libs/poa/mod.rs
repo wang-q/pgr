@@ -1,6 +1,7 @@
 pub mod graph;
 pub mod align;
 pub mod consensus;
+pub mod msa;
 pub mod poa;
 
 pub use poa::Poa;

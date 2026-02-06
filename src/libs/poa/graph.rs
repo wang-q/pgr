@@ -130,9 +130,11 @@ impl PoaGraph {
     }
 
     /// Adds an alignment to the graph, updating weights and adding new nodes/edges as needed.
-    pub fn add_alignment(&mut self, alignment: &Alignment, sequence: &[u8]) {
+    /// Returns the path of node indices corresponding to the sequence.
+    pub fn add_alignment(&mut self, alignment: &Alignment, sequence: &[u8]) -> Vec<NodeIndex> {
         let mut prev_node: Option<NodeIndex> = None;
         let mut current_seq_idx = 0;
+        let mut sequence_path = Vec::with_capacity(sequence.len());
         
         for step in &alignment.path {
             // Get sequence index if present
@@ -151,6 +153,7 @@ impl PoaGraph {
                 let mut data = NodeData::new(base);
                 data.weight = 1;
                 let new_node = self.graph.add_node(data);
+                sequence_path.push(new_node);
                 
                 if let Some(p) = prev_node {
                     self.add_edge(p, new_node, 1);
@@ -197,6 +200,8 @@ impl PoaGraph {
                         }
                     };
                     
+                    sequence_path.push(target_node_idx);
+                    
                     // Increment weight
                     self.graph[target_node_idx].weight += 1;
                     
@@ -211,6 +216,7 @@ impl PoaGraph {
                     let mut data = NodeData::new(base);
                     data.weight = 1;
                     let new_node = self.graph.add_node(data);
+                    sequence_path.push(new_node);
                     
                     if let Some(p) = prev_node {
                         self.add_edge(p, new_node, 1);
@@ -229,6 +235,7 @@ impl PoaGraph {
              let mut data = NodeData::new(base);
              data.weight = 1;
              let new_node = self.graph.add_node(data);
+             sequence_path.push(new_node);
              
              if let Some(p) = prev_node {
                  self.add_edge(p, new_node, 1);
@@ -236,6 +243,8 @@ impl PoaGraph {
              prev_node = Some(new_node);
              current_seq_idx += 1;
         }
+
+        sequence_path
     }
 }
 

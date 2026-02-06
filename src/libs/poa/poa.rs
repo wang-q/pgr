@@ -1,10 +1,14 @@
 use super::graph::PoaGraph;
 use super::align::{AlignmentEngine, ScalarAlignmentEngine, AlignmentParams, AlignmentType};
 use super::consensus::generate_consensus;
+use super::msa::generate_msa;
+use petgraph::graph::NodeIndex;
 
 pub struct Poa {
     graph: PoaGraph,
     engine: Box<dyn AlignmentEngine>,
+    sequences: Vec<Vec<u8>>,
+    paths: Vec<Vec<NodeIndex>>,
 }
 
 impl Poa {
@@ -12,16 +16,24 @@ impl Poa {
         Self {
             graph: PoaGraph::new(),
             engine: Box::new(ScalarAlignmentEngine::new(params, mode)),
+            sequences: Vec::new(),
+            paths: Vec::new(),
         }
     }
 
     pub fn add_sequence(&mut self, sequence: &[u8]) {
         let alignment = self.engine.align(sequence, &self.graph);
-        self.graph.add_alignment(&alignment, sequence);
+        let path = self.graph.add_alignment(&alignment, sequence);
+        self.sequences.push(sequence.to_vec());
+        self.paths.push(path);
     }
 
     pub fn consensus(&self) -> Vec<u8> {
         generate_consensus(&self.graph)
+    }
+    
+    pub fn msa(&self) -> Vec<String> {
+        generate_msa(&self.graph, &self.sequences, &self.paths)
     }
 
     pub fn num_nodes(&self) -> usize {
@@ -78,5 +90,28 @@ mod tests {
         poa.add_sequence(b"ACAGT");
         
         assert_eq!(poa.consensus(), b"ACAGT");
+    }
+
+    #[test]
+    fn test_poa_msa() {
+        let params = AlignmentParams::default();
+        let mut poa = Poa::new(params, AlignmentType::Global);
+
+        // 1. ACGT
+        poa.add_sequence(b"ACGT");
+        // 2. AC-T (Deletion of G)
+        poa.add_sequence(b"ACT");
+        // 3. A-GT (Deletion of C)
+        poa.add_sequence(b"AGT");
+        
+        let msa = poa.msa();
+        assert_eq!(msa.len(), 3);
+        // MSA should be:
+        // ACGT
+        // AC-T
+        // A-GT
+        assert_eq!(msa[0], "ACGT");
+        assert_eq!(msa[1], "AC-T");
+        assert_eq!(msa[2], "A-GT");
     }
 }
