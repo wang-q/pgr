@@ -11,11 +11,19 @@ pub fn make_subcommand() -> Command {
         .about("Add synteny info to net")
         .arg(Arg::new("in_net").required(true).help("Input net file"))
         .arg(Arg::new("out_net").required(true).help("Output net file"))
+        .arg(
+            Arg::new("min_score")
+                .long("min-score")
+                .value_parser(clap::value_parser!(f64))
+                .default_value("0.0")
+                .help("Minimum score to output"),
+        )
 }
 
 pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
     let in_file = matches.get_one::<String>("in_net").unwrap();
     let out_file = matches.get_one::<String>("out_net").unwrap();
+    let min_score = *matches.get_one::<f64>("min_score").unwrap();
 
     let reader = BufReader::new(File::open(in_file)?);
     let nets = read_nets(reader)?;
@@ -40,7 +48,7 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
     // Write output
     let mut writer = BufWriter::new(File::create(out_file)?);
     for net in &nets {
-        write_net(net, &mut writer, false, 0.0, 0)?;
+        write_net(net, &mut writer, false, min_score, 0)?;
     }
 
     Ok(())

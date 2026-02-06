@@ -29,14 +29,6 @@ fn normalize_chain_output(content: &str) -> String {
         .join("\n")
 }
 
-fn normalize_net_output(content: &str) -> String {
-    content
-        .lines()
-        .filter(|line| !line.starts_with('#'))
-        .collect::<Vec<&str>>()
-        .join("\n")
-}
-
 // 1. Alignment - lavToPsl
 #[test]
 fn test_lav_to_psl_lastz() -> anyhow::Result<()> {

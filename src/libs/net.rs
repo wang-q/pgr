@@ -63,6 +63,7 @@ pub struct Chrom {
     pub size: u64,
     pub root: Rc<RefCell<Gap>>,
     pub spaces: BTreeMap<u64, Space>, // start -> Space
+    pub comments: Vec<String>,
 }
 
 impl Chrom {
@@ -95,6 +96,7 @@ impl Chrom {
             size,
             root,
             spaces,
+            comments: Vec::new(),
         }
     }
 
@@ -232,10 +234,17 @@ pub fn read_nets<R: BufRead>(mut reader: R) -> io::Result<Vec<Chrom>> {
     let mut chroms = Vec::new();
     let mut current_chrom: Option<Chrom> = None;
     let mut stack: Vec<(usize, NetNode)> = Vec::new();
+    let mut pending_comments = Vec::new();
 
     let mut line = String::new();
     while reader.read_line(&mut line)? > 0 {
         if line.trim().is_empty() {
+            line.clear();
+            continue;
+        }
+
+        if line.starts_with('#') {
+            pending_comments.push(line.trim_end().to_string());
             line.clear();
             continue;
         }
@@ -262,7 +271,10 @@ pub fn read_nets<R: BufRead>(mut reader: R) -> io::Result<Vec<Chrom>> {
                 }
                 let name = parts[1];
                 let size = parts[2].parse::<u64>().unwrap();
-                let chrom = Chrom::new(name, size);
+                let mut chrom = Chrom::new(name, size);
+                if !pending_comments.is_empty() {
+                    chrom.comments = std::mem::take(&mut pending_comments);
+                }
                 stack.clear();
                 stack.push((0, NetNode::Gap(chrom.root.clone())));
                 current_chrom = Some(chrom);
@@ -1007,15 +1019,10 @@ fn calc_other_fill(gap: &Rc<RefCell<Gap>>, is_q: bool) {
 
                 if q_min < q_max {
                     if chain.header.q_strand == '-' {
-                        let mut s = q_min;
-                        let mut e = q_max;
-                        reverse_range(&mut s, &mut e, chain.header.q_size);
-                        fill_borrow.o_start = s;
-                        fill_borrow.o_end = e;
-                    } else {
-                        fill_borrow.o_start = q_min;
-                        fill_borrow.o_end = q_max;
+                        reverse_range(&mut q_min, &mut q_max, chain.header.q_size);
                     }
+                    fill_borrow.o_start = q_min;
+                    fill_borrow.o_end = q_max;
                 }
             } else {
                 let mut t_min = u64::MAX;
@@ -1029,23 +1036,28 @@ fn calc_other_fill(gap: &Rc<RefCell<Gap>>, is_q: bool) {
                     let q_s = q_curr;
                     let q_e = q_curr + d.size;
 
-                    let (c_start, c_end) = if chain.header.q_strand == '-' {
-                        let mut s = clip_start;
-                        let mut e = clip_end;
-                        reverse_range(&mut s, &mut e, chain.header.q_size);
-                        (s, e)
-                    } else {
-                        (clip_start, clip_end)
-                    };
+                    let (c_start, c_end) = (clip_start, clip_end);
 
-                    let start = q_s.max(c_start);
-                    let end = q_e.min(c_end);
+                    let (mut fq_s, mut fq_e) = (q_s, q_e);
+                    if chain.header.q_strand == '-' {
+                        reverse_range(&mut fq_s, &mut fq_e, chain.header.q_size);
+                    }
+
+                    let start = fq_s.max(c_start);
+                    let end = fq_e.min(c_end);
 
                     if start < end {
-                        let offset = start - q_s;
                         let len = end - start;
-                        let ts = t_s + offset;
-                        let te = ts + len;
+                        let (ts, te) = if chain.header.q_strand == '-' {
+                            let rq_s = chain.header.q_size - end;
+                            let offset = rq_s - q_s;
+                            let ts = t_s + offset;
+                            (ts, ts + len)
+                        } else {
+                            let offset = start - q_s;
+                            let ts = t_s + offset;
+                            (ts, ts + len)
+                        };
 
                         if ts < t_min {
                             t_min = ts;
@@ -1083,6 +1095,9 @@ pub fn write_net<W: Write>(
 ) -> io::Result<()> {
     if chrom.root.borrow().fills.is_empty() {
         return Ok(());
+    }
+    for comment in &chrom.comments {
+        writeln!(writer, "{}", comment)?;
     }
     writeln!(writer, "net {} {}", chrom.name, chrom.size)?;
 
