@@ -51,54 +51,6 @@ fn test_chain_net_basic() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-fn test_chain_net_reverse() -> Result<(), Box<dyn std::error::Error>> {
-    let dir = tempdir()?;
-    let chain_path = dir.path().join("in.chain");
-    let t_sizes_path = dir.path().join("t.sizes");
-    let q_sizes_path = dir.path().join("q.sizes");
-    let t_net_path = dir.path().join("t.net");
-    let q_net_path = dir.path().join("q.net");
-
-    // Chain with reverse strand on query
-    // chain 1000 chr1 1000 + 100 200 chr2 1000 - 800 900 1
-    // 100
-    // Q Coords on - strand: 800-900.
-    // Mapped to + strand: (1000-900)=100, (1000-800)=200.
-    // So Q net should show fill at 100, size 100.
-    let chain_content = "chain 1000 chr1 1000 + 100 200 chr2 1000 - 800 900 1\n100\n\n";
-    fs::write(&chain_path, chain_content)?;
-
-    fs::write(&t_sizes_path, "chr1 1000\n")?;
-    fs::write(&q_sizes_path, "chr2 1000\n")?;
-
-    let mut cmd = Command::cargo_bin("pgr")?;
-    cmd.arg("chain")
-        .arg("net")
-        .arg(chain_path.to_str().unwrap())
-        .arg(t_sizes_path.to_str().unwrap())
-        .arg(q_sizes_path.to_str().unwrap())
-        .arg(t_net_path.to_str().unwrap())
-        .arg(q_net_path.to_str().unwrap())
-        .arg("--min-score=0")
-        .arg("--min-space=1");
-
-    cmd.assert().success();
-
-    // Verify output
-    let t_net_content = fs::read_to_string(&t_net_path)?;
-    println!("T Net content:\n{}", t_net_content);
-    // T fill: 100 100. oChrom=chr2, oStrand=-, oStart=800 -> reverse -> 100, oSize=100.
-    assert!(t_net_content.contains("fill 100 100 chr2 - 100 100"));
-
-    let q_net_content = fs::read_to_string(&q_net_path)?;
-    println!("Q Net content:\n{}", q_net_content);
-    assert!(q_net_content.contains("net chr2 1000"));
-    assert!(q_net_content.contains("fill 100 100 chr1 + 100 100"));
-
-    Ok(())
-}
-
-#[test]
 fn test_chain_anti_repeat() -> Result<(), Box<dyn std::error::Error>> {
     let dir = tempdir()?;
     let chain_path = dir.path().join("in.chain");

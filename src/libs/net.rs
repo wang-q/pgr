@@ -793,11 +793,15 @@ fn fill_space(
     let (o_start, o_end) = if !is_q {
         let b1 = &blocks[first_idx];
         let offset1 = fill_start - b1.t_start;
-        let q1 = b1.q_start + offset1;
+        let mut q1 = b1.q_start + offset1;
 
         let b2 = &blocks[last_idx];
         let offset2 = fill_end - b2.t_start;
-        let q2 = b2.q_start + offset2;
+        let mut q2 = b2.q_start + offset2;
+
+        if chain.header.q_strand == '-' {
+            reverse_range(&mut q1, &mut q2, chain.header.q_size);
+        }
 
         (q1, q2)
     } else {
@@ -896,13 +900,17 @@ fn fill_space(
             && gap_end < fill.borrow().end
             && (gap_end - gap_start) >= min_space
         {
-            let (os, oe) = if !is_q {
+            let (mut os, mut oe) = if !is_q {
                 (b1.q_end, b2.q_start)
             } else if chain.header.q_strand == '-' {
                 (b2.t_start, b1.t_end)
             } else {
                 (b1.t_end, b2.t_start)
             };
+
+            if !is_q && chain.header.q_strand == '-' {
+                reverse_range(&mut os, &mut oe, chain.header.q_size);
+            }
 
             let new_gap = Rc::new(RefCell::new(Gap {
                 start: gap_start,
