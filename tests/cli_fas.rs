@@ -391,37 +391,6 @@ fn command_split_to() -> anyhow::Result<()> {
 }
 
 #[test]
-fn command_consensus() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
-    let output = cmd
-        .arg("fas")
-        .arg("consensus")
-        .arg("tests/fas/refine.fas")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
-
-    assert_eq!(stdout.lines().count(), 6);
-    assert!(stdout.contains(">consensus\n"), "simple name");
-    assert!(stdout.contains(">consensus.I("), "fas name");
-
-    let mut cmd = Command::cargo_bin("pgr")?;
-    let output = cmd
-        .arg("fas")
-        .arg("consensus")
-        .arg("tests/fas/refine.fas")
-        .arg("--outgroup")
-        .arg("--parallel")
-        .arg("2")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
-
-    assert_eq!(stdout.lines().count(), 10);
-    assert!(stdout.contains(">Spar"), "outgroup");
-
-    Ok(())
-}
-
-#[test]
 fn command_refine() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd

@@ -83,3 +83,66 @@ fn command_consensus_params() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn command_consensus_comparison() -> anyhow::Result<()> {
+    // Check if spoa is available
+    if which::which("spoa").is_err() {
+        return Ok(());
+    }
+
+    let mut cmd_builtin = Command::cargo_bin("pgr")?;
+    let output_builtin = cmd_builtin
+        .arg("fas")
+        .arg("consensus")
+        .arg("tests/fas/refine.fas")
+        .arg("--engine")
+        .arg("builtin")
+        .output()?;
+    let stdout_builtin = String::from_utf8(output_builtin.stdout)?;
+
+    let mut cmd_spoa = Command::cargo_bin("pgr")?;
+    let output_spoa = cmd_spoa
+        .arg("fas")
+        .arg("consensus")
+        .arg("tests/fas/refine.fas")
+        .arg("--engine")
+        .arg("spoa")
+        .output()?;
+    let stdout_spoa = String::from_utf8(output_spoa.stdout)?;
+
+    assert_eq!(stdout_builtin, stdout_spoa, "Builtin and Spoa outputs should match");
+
+    Ok(())
+}
+
+#[test]
+fn command_consensus_options() -> anyhow::Result<()> {
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("fas")
+        .arg("consensus")
+        .arg("tests/fas/refine.fas")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    assert_eq!(stdout.lines().count(), 6);
+    assert!(stdout.contains(">consensus\n"), "simple name");
+    assert!(stdout.contains(">consensus.I("), "fas name");
+
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("fas")
+        .arg("consensus")
+        .arg("tests/fas/refine.fas")
+        .arg("--outgroup")
+        .arg("--parallel")
+        .arg("2")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    assert_eq!(stdout.lines().count(), 10);
+    assert!(stdout.contains(">Spar"), "outgroup");
+
+    Ok(())
+}
