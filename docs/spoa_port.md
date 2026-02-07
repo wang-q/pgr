@@ -109,8 +109,8 @@ src/libs/poa/
 
 `pgr fas refine` 命令用于重新比对 Block FA 文件中的序列。
 
-*   **使用内置 POA**: `pgr fas refine input.fas --msa poa`
-*   **使用外部 ClustalW**: `pgr fas refine input.fas --msa clustalw` (默认)
+*   **使用内置 POA**: `pgr fas refine input.fas --msa builtin` (默认)
+*   **使用外部 ClustalW**: `pgr fas refine input.fas --msa clustalw`
     *   `--algorithm <local|global|semi_global>`: 比对模式 (默认: global)
 *   **并行**: 支持 `--parallel <N>` 多线程加速。
 *   **Outgroup**: 支持 `--outgroup` 选项正确处理外群。

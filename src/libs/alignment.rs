@@ -1138,7 +1138,7 @@ pub fn align_seqs(seqs: &[String], aligner: &str) -> anyhow::Result<Vec<String>>
                 }
             }
         }
-        "poa" => {
+        "builtin" => {
             let params = AlignmentParams::default();
             let mut poa = Poa::new(params, AlignmentType::Global);
             for seq in seqs {

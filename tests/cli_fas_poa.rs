@@ -102,14 +102,33 @@ fn command_refine_poa() -> anyhow::Result<()> {
         .arg("refine")
         .arg("tests/fas/refine.fas")
         .arg("--msa")
-        .arg("poa")
+        .arg("builtin")
         .output()?;
     let stdout = String::from_utf8(output.stdout)?;
 
     assert_eq!(stdout.lines().count(), 18);
     // The exact alignment might vary, but it should contain dashes
-    assert!(stdout.contains("-"), "dashes added by poa");
+    assert!(stdout.contains("-"), "dashes added by builtin");
     // Check if sequences are still present
+    assert!(stdout.contains(">S288c"));
+    assert!(stdout.contains(">Spar"));
+
+    Ok(())
+}
+
+#[test]
+fn command_refine_default() -> anyhow::Result<()> {
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("fas")
+        .arg("refine")
+        .arg("tests/fas/refine.fas")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    assert_eq!(stdout.lines().count(), 18);
+    // Should be builtin by default, so it should contain dashes
+    assert!(stdout.contains("-"), "dashes added by default builtin");
     assert!(stdout.contains(">S288c"));
     assert!(stdout.contains(">Spar"));
 

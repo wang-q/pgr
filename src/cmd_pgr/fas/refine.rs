@@ -14,12 +14,17 @@ Realigns sequences in block FA files using external programs (clustalw, mafft, m
 Notes:
 * Supports both plain text and gzipped (.gz) files
 * Reads from stdin if input file is 'stdin'
-* Supported MSA programs: mafft, muscle, clustalw, poa, none (skip realigning)
+* Supported MSA programs (`--msa`):
+    * `builtin` (default): Uses built-in Rust implementation (Partial Order Alignment).
+    * `clustalw`: Uses external `clustalw` command.
+    * `mafft`: Uses external `mafft` command.
+    * `muscle`: Uses external `muscle` command.
+    * `none`: Skips realigning (useful for trimming only).
 * The `--quick` option aligns only indel-adjacent regions (useful for .axt/.maf conversions)
 * Supports parallel processing. The output order may differ from the original
 
 Examples:
-1. Realign block FA files using clustalw (default):
+1. Realign block FA files using builtin (default):
    pgr fas refine tests/fas/part1.fas tests/fas/part2.fas
 
 2. Realign using mafft with 4 threads:
@@ -44,7 +49,7 @@ Examples:
             Arg::new("msa")
                 .long("msa")
                 .num_args(1)
-                .default_value("clustalw")
+                .default_value("builtin")
                 .help("Aligning program"),
         )
         .arg(
