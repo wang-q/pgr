@@ -68,6 +68,9 @@ src/libs/poa/
     *   [x] 修改 `src/cmd_pgr/fas/consensus.rs`，增加 `--engine <spoa|builtin>` 参数。
     *   [x] 默认行为：默认为 `builtin`，但允许用户指定 `spoa`。
     *   [x] 确保支持并行处理 (`--parallel`)。
+*   [x] **集成到 `pgr fas refine`**:
+    *   [x] 修改 `src/libs/alignment.rs`，`align_seqs` 支持 `poa`。
+    *   [x] 修改 `src/cmd_pgr/fas/refine.rs`，增加 `--msa poa` 选项。
 *   [x] 清理:
     *   [x] 删除临时的 `src/cmd_pgr/poa/` 模块及子命令。
     *   [x] 更新相关测试。
@@ -83,9 +86,12 @@ src/libs/poa/
     *   **一致性序列生成** (Consensus)。
     *   **多序列比对生成** (MSA)。
 *   `pgr fas consensus` 已集成双引擎支持 (`builtin` 和 `spoa`)。
+*   `pgr fas refine` 已支持 `poa` 选项，生成多序列比对。
 *   `builtin` 引擎的输出已验证与 `spoa` 一致。
 
 ## 6. 使用说明
+
+### 一致性序列生成 (Consensus)
 
 `pgr fas consensus` 命令用于生成一致性序列。
 
@@ -98,6 +104,13 @@ src/libs/poa/
     *   `--mismatch <int>`: 失配罚分 (默认: -4)
     *   `--gap-open <int>`: Gap 开启罚分 (默认: -8)
     *   `--gap-extend <int>`: Gap 延伸罚分 (默认: -6)
+
+### 多序列比对 (MSA)
+
+`pgr fas refine` 命令用于重新比对 Block FA 文件中的序列。
+
+*   **使用内置 POA**: `pgr fas refine input.fas --msa poa`
+*   **使用外部 ClustalW**: `pgr fas refine input.fas --msa clustalw` (默认)
     *   `--algorithm <local|global|semi_global>`: 比对模式 (默认: global)
 *   **并行**: 支持 `--parallel <N>` 多线程加速。
 *   **Outgroup**: 支持 `--outgroup` 选项正确处理外群。

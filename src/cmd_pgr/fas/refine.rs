@@ -14,7 +14,7 @@ Realigns sequences in block FA files using external programs (clustalw, mafft, m
 Notes:
 * Supports both plain text and gzipped (.gz) files
 * Reads from stdin if input file is 'stdin'
-* Supported MSA programs: mafft, muscle, clustalw, none (skip realigning)
+* Supported MSA programs: mafft, muscle, clustalw, poa, none (skip realigning)
 * The `--quick` option aligns only indel-adjacent regions (useful for .axt/.maf conversions)
 * Supports parallel processing. The output order may differ from the original
 

@@ -21,6 +21,102 @@ fn command_consensus_builtin() -> anyhow::Result<()> {
 }
 
 #[test]
+fn command_refine_msa() -> anyhow::Result<()> {
+    let mut bin = String::new();
+    for e in &["clustalw", "clustal-w", "clustalw2"] {
+        if let Ok(pth) = which::which(e) {
+            bin = pth.to_string_lossy().to_string();
+            break;
+        }
+    }
+    if bin.is_empty() {
+        return Ok(());
+    } else {
+        eprintln!("bin = {:#?}", bin);
+    }
+
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("fas")
+        .arg("refine")
+        .arg("tests/fas/refine.fas")
+        .arg("--msa")
+        .arg("clustalw")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    assert_eq!(stdout.lines().count(), 18);
+    assert!(stdout.contains("---"), "dashes added");
+
+    // --outgroup
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("fas")
+        .arg("refine")
+        .arg("tests/fas/refine2.fas")
+        .arg("--msa")
+        .arg("clustalw")
+        .arg("--outgroup")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    assert_eq!(stdout.lines().count(), 7);
+    assert!(stdout.contains("CA-GT"), "outgroup trimmed");
+
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("fas")
+        .arg("refine")
+        .arg("tests/fas/refine2.fas")
+        .arg("--msa")
+        .arg("clustalw")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    assert_eq!(stdout.lines().count(), 7);
+    assert!(stdout.contains("CA--GT"), "outgroup not trimmed");
+
+    // quick
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("fas")
+        .arg("refine")
+        .arg("tests/fas/refine2.fas")
+        .arg("--msa")
+        .arg("clustalw")
+        .arg("--quick")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    assert_eq!(stdout.lines().count(), 7);
+    assert!(stdout.contains("CA--GT"), "outgroup not trimmed");
+
+    Ok(())
+}
+
+#[test]
+fn command_refine_poa() -> anyhow::Result<()> {
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("fas")
+        .arg("refine")
+        .arg("tests/fas/refine.fas")
+        .arg("--msa")
+        .arg("poa")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    assert_eq!(stdout.lines().count(), 18);
+    // The exact alignment might vary, but it should contain dashes
+    assert!(stdout.contains("-"), "dashes added by poa");
+    // Check if sequences are still present
+    assert!(stdout.contains(">S288c"));
+    assert!(stdout.contains(">Spar"));
+
+    Ok(())
+}
+
+#[test]
 fn command_consensus_spoa() -> anyhow::Result<()> {
     let mut bin = String::new();
     for e in &["spoa"] {

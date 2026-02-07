@@ -1138,6 +1138,14 @@ pub fn align_seqs(seqs: &[String], aligner: &str) -> anyhow::Result<Vec<String>>
                 }
             }
         }
+        "poa" => {
+            let params = AlignmentParams::default();
+            let mut poa = Poa::new(params, AlignmentType::Global);
+            for seq in seqs {
+                poa.add_sequence(seq.as_bytes());
+            }
+            return Ok(poa.msa());
+        }
         _ => {
             return Err(anyhow!("Unrecognized aligner: {}", aligner));
         }
