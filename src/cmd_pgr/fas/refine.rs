@@ -6,10 +6,10 @@ use std::string::String;
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("refine")
-        .about("Realigns files with external programs and trim unwanted regions")
+        .about("Realigns files with built-in or external programs and trim unwanted regions")
         .after_help(
             r###"
-Realigns sequences in block FA files using external programs (clustalw, mafft, muscle) and trims unwanted regions.
+Realigns sequences in block FA files using built-in or external programs (clustalw, mafft, muscle, spoa) and trims unwanted regions.
 
 Notes:
 * Supports both plain text and gzipped (.gz) files
@@ -19,6 +19,7 @@ Notes:
     * `clustalw`: Uses external `clustalw` command.
     * `mafft`: Uses external `mafft` command.
     * `muscle`: Uses external `muscle` command.
+    * `spoa`: Uses external `spoa` command (SIMD optimized).
     * `none`: Skips realigning (useful for trimming only).
 * The `--quick` option aligns only indel-adjacent regions (useful for .axt/.maf conversions)
 * Supports parallel processing. The output order may differ from the original

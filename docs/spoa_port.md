@@ -69,8 +69,8 @@ src/libs/poa/
     *   [x] 默认行为：默认为 `builtin`，但允许用户指定 `spoa`。
     *   [x] 确保支持并行处理 (`--parallel`)。
 *   [x] **集成到 `pgr fas refine`**:
-    *   [x] 修改 `src/libs/alignment.rs`，`align_seqs` 支持 `poa`。
-    *   [x] 修改 `src/cmd_pgr/fas/refine.rs`，增加 `--msa poa` 选项。
+    *   [x] 修改 `src/libs/alignment.rs`，`align_seqs` 支持 `builtin` (原 `poa`) 和 `spoa`。
+    *   [x] 修改 `src/cmd_pgr/fas/refine.rs`，增加 `--msa <builtin|spoa>` 选项。
 *   [x] 清理:
     *   [x] 删除临时的 `src/cmd_pgr/poa/` 模块及子命令。
     *   [x] 更新相关测试。
@@ -86,7 +86,7 @@ src/libs/poa/
     *   **一致性序列生成** (Consensus)。
     *   **多序列比对生成** (MSA)。
 *   `pgr fas consensus` 已集成双引擎支持 (`builtin` 和 `spoa`)。
-*   `pgr fas refine` 已支持 `poa` 选项，生成多序列比对。
+*   `pgr fas refine` 已支持 `builtin` (默认) 和 `spoa` 选项，生成多序列比对。也支持 `clustalw`, `mafft`, `muscle`。
 *   `builtin` 引擎的输出已验证与 `spoa` 一致。
 
 ## 6. 使用说明
@@ -110,8 +110,10 @@ src/libs/poa/
 `pgr fas refine` 命令用于重新比对 Block FA 文件中的序列。
 
 *   **使用内置 POA**: `pgr fas refine input.fas --msa builtin` (默认)
+*   **使用外部 Spoa**: `pgr fas refine input.fas --msa spoa`
 *   **使用外部 ClustalW**: `pgr fas refine input.fas --msa clustalw`
-    *   `--algorithm <local|global|semi_global>`: 比对模式 (默认: global)
+*   **使用外部 Mafft**: `pgr fas refine input.fas --msa mafft`
+*   **使用外部 Muscle**: `pgr fas refine input.fas --msa muscle`
 *   **并行**: 支持 `--parallel <N>` 多线程加速。
 *   **Outgroup**: 支持 `--outgroup` 选项正确处理外群。
 

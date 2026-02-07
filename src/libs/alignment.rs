@@ -10,6 +10,7 @@ use std::cmp::min;
 use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::{BufRead, Write};
+use std::path::Path;
 use std::process::Command;
 use std::string::String;
 use std::{fmt, fs, str};
@@ -1138,6 +1139,14 @@ pub fn align_seqs(seqs: &[String], aligner: &str) -> anyhow::Result<Vec<String>>
                 }
             }
         }
+        "spoa" => {
+            for e in &["spoa"] {
+                if let Ok(pth) = which::which(e) {
+                    bin = pth.to_string_lossy().to_string();
+                    break;
+                }
+            }
+        }
         "builtin" => {
             let params = AlignmentParams::default();
             let mut poa = Poa::new(params, AlignmentType::Global);
@@ -1159,7 +1168,7 @@ pub fn align_seqs(seqs: &[String], aligner: &str) -> anyhow::Result<Vec<String>>
     // Create temp in/out files
     let mut seq_in = tempfile::Builder::new()
         .prefix("seq-in-")
-        .suffix("")
+        .suffix(".fa")
         .rand_bytes(8)
         .tempfile()?;
 
@@ -1202,23 +1211,31 @@ pub fn align_seqs(seqs: &[String], aligner: &str) -> anyhow::Result<Vec<String>>
             .arg("--auto")
             .arg(seq_in_path.to_string_lossy().to_string())
             .output()?,
+        "spoa" => Command::new(bin)
+            .arg("-r")
+            .arg("1")
+            .arg(seq_in_path.to_string_lossy().to_string())
+            .output()?,
         _ => unreachable!(),
     };
 
-    // eprintln!("output = {:#?}", output);
-
     if !output.status.success() {
-        return Err(anyhow!("Command executed with failing error code"));
+        return Err(anyhow!("Command executed with failing error code: {}", String::from_utf8_lossy(&output.stderr)));
     }
     // can't use redirect in Command
-    if aligner == "mafft" {
+    if aligner == "mafft" || aligner == "spoa" {
+        if output.stdout.is_empty() {
+             return Err(anyhow!("Command executed but returned empty stdout: {}", String::from_utf8_lossy(&output.stderr)));
+        }
         let mut f = File::create(seq_out_path.to_string_lossy().to_string())?;
         f.write_all(&output.stdout)?;
     }
     // delete .dnd files created by clustalw
     if aligner == "clustalw" {
-        let dnd = seq_in_path.to_string_lossy().to_string() + ".dnd";
-        fs::remove_file(dnd)?;
+        let dnd = Path::new(&seq_in_path).with_extension("dnd");
+        if dnd.exists() {
+             let _ = fs::remove_file(dnd);
+        }
     }
 
     // Load outputs
