@@ -113,13 +113,39 @@ vg 生态系统倾向于同时维护 Schema (Protobuf, 二进制) 和 Text (文�
     *   `vg convert -W -g in.gfa > out.gfa`: 将 GFA 1.1 (W lines) 转换为 GFA 1.0 (P lines)，这对不支持 W line 的工具（如旧版 odgi）很有用。
 
 ### odgi (Optimized Dynamic Genome/Graph Implementation)
-*   专注于 GFA 1.0 的高效处理和可视化。
-*   核心格式 `.og`。
-*   通常需要 GFA 1.0 输入（或者通过 `vg convert` 将 W 转为 P）。
+*   **论文**: "ODGI: understanding pangenome graphs" (Guarracino et al., 2022).
+*   **核心理念**: 提供一套高效的命令行工具，用于操作大规模泛基因组图。
+*   **通用坐标系统**: 利用图中的 Paths 作为通用坐标系统，支持将图操作转换为标准的 BED/PAF 格式，从而与现有的生物信息学工具链（如 SAMtools）互操作。
+*   **核心格式**: `.og` (Optimized Graph)，一种高效的二进制格式，支持快速加载和随机访问。
+*   **常用功能**:
+    *   `odgi build`: GFA -> OG
+    *   `odgi view`: OG -> GFA
+    *   `odgi viz`: 可视化
+    *   `odgi paths`: 提取路径信息
+    *   `odgi stats`: 统计图的指标
+
+### 评估与比较 (Evaluation & Comparison)
 
 ### Gretl
 *   Rust 编写的 GFA 统计评估工具。
 *   需要数值型 Node ID 和拓扑排序。
+
+### pancat
+*   **论文**: "Pairwise graph edit distance characterizes the impact of the construction method on pangenome graphs" (Dubois et al., 2025, Bioinformatics).
+*   **核心功能**: 计算两个泛基因组图之间的**成对图编辑距离 (Pairwise Graph Edit Distance)**。
+*   **原理**: 通过将相同的基因组“穿线” (Threading) 过两个图，来量化由于构建方法（如 Minigraph-Cactus 的参考顺序或 PGGB 的参数）导致的拓扑结构差异。
+*   **应用**: 评估构建偏差，比较不同构建工具的一致性。
+*   **语言**: Rust (`rs-pancat-compare`)。
+
+### PGGB (PanGenome Graph Builder)
+*   **论文**: "Building pangenome graphs" (Garrison et al., 2024, Nature Methods).
+*   **核心理念**: 无偏差（Bias-free）的泛基因组构建。不依赖单一参考基因组，而是使用全对全（All-to-All）比对来构建变异图。
+*   **流程**:
+    1.  **wfmash**: 基于 Wavefront Alignment 算法的高效全对全比对器。
+    2.  **seqwish**: 从比对结果中诱导（Induce）出变异图（Variation Graph）。
+    3.  **smoothxg**: 对图进行平滑（Smoothing）和规范化，通过局部主成分分析（PCA）优化图的拓扑结构，使其更适合可视化和分析。
+*   **特点**: 能够捕捉复杂的结构变异和重组事件，适合构建包含多个高质量基因组的图。
+*   **格式**: 输出 GFA。
 
 ### TwoPaCo
 *   **算法**: 双遍法构建压缩 de Bruijn 图 (cDBG)。
