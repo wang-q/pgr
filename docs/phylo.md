@@ -359,7 +359,7 @@ pub struct Tree {
 
 | Newick Utilities | 功能描述 | pgr 对应子命令 (暂定) | 状态 |
 | :--- | :--- | :--- | :--- |
-| `nw_stats` | 树的统计信息 (节点数, 深度, 类型等) | `pgr nwk stat` | **[x] 已实现** |
+| `nw_stats` | 树的统计信息 (节点数, 深度, 类型等) | `pgr nwk stat` | **[x] 已实现** (支持多树处理, TSV/KV 输出, 统计二叉分枝) |
 | `nw_display` | 树的可视化 (ASCII/SVG/Map) | `pgr nwk display` / `view` | [ ] |
 | `nw_topology` | 仅保留拓扑结构 (去除分支长度) | `pgr nwk topology` | [ ] |
 | `nw_labels` | 提取所有标签 (叶子/内部节点) | `pgr nwk labels` | [ ] |

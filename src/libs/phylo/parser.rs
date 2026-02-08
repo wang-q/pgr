@@ -6,7 +6,7 @@ use nom::{
     bytes::complete::{is_not, take_while},
     character::complete::{char, digit1, multispace0},
     combinator::{cut, map, map_res, opt, recognize},
-    multi::separated_list1,
+    multi::{many1, separated_list1},
     sequence::{delimited, preceded},
     IResult, Parser, Offset,
     error::{ParseError, ContextError, ErrorKind, FromExternalError, context},
@@ -213,42 +213,67 @@ pub fn parse_newick(input: &str) -> Result<Tree, TreeError> {
             tree.set_root(root_id);
             Ok(tree)
         },
-        Err(nom::Err::Error(e)) | Err(nom::Err::Failure(e)) => {
-            // e is DetailedError
-            let (remaining, _) = e.errors.first().unwrap();
-            let offset = input.offset(remaining);
-            
-            // Calculate line/col
-            let prefix = &input[..offset];
-            let line = prefix.chars().filter(|&c| c == '\n').count() + 1;
-            let last_newline = prefix.rfind('\n').map(|p| p + 1).unwrap_or(0);
-            let column = offset - last_newline + 1;
-
-            let mut msg = String::new();
-            for (_, kind) in e.errors.iter().rev() {
-                match kind {
-                    DetailedErrorKind::Context(ctx) => {
-                        msg.push_str(&format!("while parsing {}:\n", ctx));
-                    }
-                    DetailedErrorKind::Nom(k) => {
-                        msg.push_str(&format!("  error: {:?}\n", k));
-                    }
-                }
-            }
-
-            Err(TreeError::ParseError {
-                message: msg,
-                line,
-                column,
-                snippet: remaining.chars().take(50).collect(),
-            })
-        },
+        Err(nom::Err::Error(e)) | Err(nom::Err::Failure(e)) => Err(make_tree_error(input, e)),
         Err(nom::Err::Incomplete(_)) => Err(TreeError::ParseError {
             message: "Incomplete input".to_string(),
             line: 0,
             column: 0,
             snippet: "".to_string(),
         }),
+    }
+}
+
+pub fn parse_newick_multi(input: &str) -> Result<Vec<Tree>, TreeError> {
+    let mut parser = many1((ws(parse_subtree), ws(char(';'))));
+    
+    match parser.parse(input) {
+        Ok((_, trees_data)) => {
+            let mut trees = Vec::new();
+            for (root_node, _) in trees_data {
+                let mut tree = Tree::new();
+                let root_id = root_node.to_tree(&mut tree);
+                tree.set_root(root_id);
+                trees.push(tree);
+            }
+            Ok(trees)
+        },
+        Err(nom::Err::Error(e)) | Err(nom::Err::Failure(e)) => Err(make_tree_error(input, e)),
+        Err(nom::Err::Incomplete(_)) => Err(TreeError::ParseError {
+            message: "Incomplete input".to_string(),
+            line: 0,
+            column: 0,
+            snippet: "".to_string(),
+        }),
+    }
+}
+
+fn make_tree_error(input: &str, e: DetailedError) -> TreeError {
+    let (remaining, _) = e.errors.first().unwrap();
+    let offset = input.offset(remaining);
+    
+    // Calculate line/col
+    let prefix = &input[..offset];
+    let line = prefix.chars().filter(|&c| c == '\n').count() + 1;
+    let last_newline = prefix.rfind('\n').map(|p| p + 1).unwrap_or(0);
+    let column = offset - last_newline + 1;
+
+    let mut msg = String::new();
+    for (_, kind) in e.errors.iter().rev() {
+        match kind {
+            DetailedErrorKind::Context(ctx) => {
+                msg.push_str(&format!("while parsing {}:\n", ctx));
+            }
+            DetailedErrorKind::Nom(k) => {
+                msg.push_str(&format!("  error: {:?}\n", k));
+            }
+        }
+    }
+
+    TreeError::ParseError {
+        message: msg,
+        line,
+        column,
+        snippet: remaining.chars().take(50).collect(),
     }
 }
 
@@ -272,6 +297,10 @@ impl Tree {
     /// ```
     pub fn from_newick(input: &str) -> Result<Self, TreeError> {
         parse_newick(input)
+    }
+
+    pub fn from_newick_multi(input: &str) -> Result<Vec<Self>, TreeError> {
+        parse_newick_multi(input)
     }
 }
 
