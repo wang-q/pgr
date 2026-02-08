@@ -1,3 +1,4 @@
+use pgr::libs::phylo::{algo, reader, writer};
 use clap::*;
 
 // Create clap subcommand arguments
@@ -63,23 +64,28 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     };
 
     let infile = args.get_one::<String>("infile").unwrap();
-    let mut tree = nwr::read_newick(infile);
+    let mut trees = reader::from_file(infile)?;
 
+    let mut names = vec![];
     if args.contains_id("list") {
         let list_file = args.get_one::<String>("list").unwrap();
-        let names: Vec<String> = intspan::read_first_column(list_file);
-        nwr::order_tree_list(&mut tree, &names);
-    }
-    if !opt_an.is_empty() {
-        nwr::order_tree_an(&mut tree, opt_an);
-    }
-    if !opt_nd.is_empty() {
-        nwr::order_tree_nd(&mut tree, opt_nd);
+        names = intspan::read_first_column(list_file);
     }
 
-    // eprintln!("tree = {:#?}", tree.to_newick());
-    let out_string = tree.to_newick().unwrap();
-    writer.write_all((out_string + "\n").as_ref())?;
+    for tree in &mut trees {
+        if !names.is_empty() {
+            algo::sort_by_list(tree, &names);
+        }
+        if !opt_an.is_empty() {
+            algo::sort_by_name(tree, opt_an == "anr");
+        }
+        if !opt_nd.is_empty() {
+            algo::sort_by_descendants(tree, opt_nd == "ndr");
+        }
+
+        let out_string = writer::write_newick(tree);
+        writer.write_all((out_string + "\n").as_ref())?;
+    }
 
     Ok(())
 }

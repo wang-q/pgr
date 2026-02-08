@@ -459,9 +459,9 @@ fn command_topo_compat_bil() -> anyhow::Result<()> {
 
 #[test]
 fn command_order() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("nwr")?;
+    let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
-        .arg("ops")
+        .arg("nwk")
         .arg("order")
         .arg("tests/newick/abc.nwk")
         .arg("--nd")
@@ -470,9 +470,9 @@ fn command_order() -> anyhow::Result<()> {
 
     assert!(stdout.contains("(C,(A,B));"));
 
-    let mut cmd = Command::cargo_bin("nwr")?;
+    let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
-        .arg("ops")
+        .arg("nwk")
         .arg("order")
         .arg("tests/newick/abc.nwk")
         .arg("--ndr")
@@ -481,9 +481,9 @@ fn command_order() -> anyhow::Result<()> {
 
     assert!(stdout.contains("((A,B),C);"));
 
-    let mut cmd = Command::cargo_bin("nwr")?;
+    let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
-        .arg("ops")
+        .arg("nwk")
         .arg("order")
         .arg("tests/newick/abc.nwk")
         .arg("--an")
@@ -492,9 +492,9 @@ fn command_order() -> anyhow::Result<()> {
 
     assert!(stdout.contains("((A,B),C);"));
 
-    let mut cmd = Command::cargo_bin("nwr")?;
+    let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
-        .arg("ops")
+        .arg("nwk")
         .arg("order")
         .arg("tests/newick/abc.nwk")
         .arg("--anr")
@@ -503,9 +503,9 @@ fn command_order() -> anyhow::Result<()> {
 
     assert!(stdout.contains("(C,(B,A));"));
 
-    let mut cmd = Command::cargo_bin("nwr")?;
+    let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
-        .arg("ops")
+        .arg("nwk")
         .arg("order")
         .arg("tests/newick/abc.nwk")
         .arg("--anr")
@@ -520,9 +520,9 @@ fn command_order() -> anyhow::Result<()> {
 
 #[test]
 fn command_order_list() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("nwr")?;
+    let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
-        .arg("ops")
+        .arg("nwk")
         .arg("order")
         .arg("tests/newick/abcde.nwk")
         .arg("--list")
@@ -544,8 +544,8 @@ fn command_order_species() -> anyhow::Result<()> {
     std::fs::copy("tests/newick/species.nwk", temp_path.join("species.nwk"))?;
 
     // Generate a list of labels from the tree
-    let mut cmd = Command::cargo_bin("nwr")?;
-    cmd.arg("data")
+    let mut cmd = Command::cargo_bin("pgr")?;
+    cmd.arg("nwk")
         .arg("label")
         .arg("species.nwk")
         .arg("-o")
@@ -554,9 +554,9 @@ fn command_order_species() -> anyhow::Result<()> {
         .output()?;
 
     // Order the tree using the generated list
-    let mut cmd = Command::cargo_bin("nwr")?;
+    let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
-        .arg("ops")
+        .arg("nwk")
         .arg("order")
         .arg("species.nwk")
         .arg("--list")
@@ -574,9 +574,9 @@ fn command_order_species() -> anyhow::Result<()> {
     std::fs::copy("tests/newick/pmxc.nwk", temp_path.join("pmxc.nwk"))?;
 
     // Order pmxc.nwk using the generated list
-    let mut cmd = Command::cargo_bin("nwr")?;
+    let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
-        .arg("ops")
+        .arg("nwk")
         .arg("order")
         .arg("pmxc.nwk")
         .arg("--list")
