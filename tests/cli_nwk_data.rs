@@ -1,8 +1,13 @@
 use assert_cmd::Command;
+use std::io::Write;
 use tempfile::Builder;
 
+// ================================================================================================
+// pgr nwk stat
+// ================================================================================================
+
 #[test]
-fn command_stat() -> anyhow::Result<()> {
+fn command_stat_basic() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
         .arg("nwk")
@@ -91,24 +96,6 @@ fn command_stat_forest() -> anyhow::Result<()> {
 }
 
 #[test]
-fn command_stat_multi_tree() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
-    let output = cmd
-        .arg("nwk")
-        .arg("stat")
-        .arg("stdin")
-        .write_stdin("(A,B)C;(D,E)F;")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
-
-    // Should appear twice (once for each tree)
-    assert_eq!(stdout.matches("nodes\t3").count(), 2);
-    assert_eq!(stdout.matches("leaves\t2").count(), 2);
-
-    Ok(())
-}
-
-#[test]
 fn command_stat_stdin() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
@@ -122,6 +109,24 @@ fn command_stat_stdin() -> anyhow::Result<()> {
     assert!(stdout.contains("nodes\t5"));
     assert!(stdout.contains("leaves\t3"));
     assert!(stdout.contains("leaf labels\t3"));
+
+    Ok(())
+}
+
+#[test]
+fn command_stat_multi_tree_stdin() -> anyhow::Result<()> {
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("nwk")
+        .arg("stat")
+        .arg("stdin")
+        .write_stdin("(A,B)C;(D,E)F;")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    // Should appear twice (once for each tree)
+    assert_eq!(stdout.matches("nodes\t3").count(), 2);
+    assert_eq!(stdout.matches("leaves\t2").count(), 2);
 
     Ok(())
 }
@@ -147,9 +152,12 @@ fn command_stat_outfile() -> anyhow::Result<()> {
     Ok(())
 }
 
+// ================================================================================================
+// pgr nwk label
+// ================================================================================================
 
 #[test]
-fn command_label() -> anyhow::Result<()> {
+fn command_label_basic() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
         .arg("nwk")
@@ -158,9 +166,57 @@ fn command_label() -> anyhow::Result<()> {
         .output()?;
     let stdout = String::from_utf8(output.stdout)?;
 
+    // hg38.7way.nwk has 7 leaves (Human, Chimp, Rhesus, Mouse, Rat, Dog, Opossum)
+    // and presumably no named internal nodes.
     assert_eq!(stdout.lines().count(), 7);
     assert!(stdout.contains("Human\n"));
 
+    Ok(())
+}
+
+#[test]
+fn command_label_leaf_only() -> anyhow::Result<()> {
+    // -I: Don't print internal labels (so print leaves only)
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("nwk")
+        .arg("label")
+        .arg("tests/newick/catarrhini.nwk")
+        .arg("-I")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    // catarrhini.nwk has 10 leaves and 6 internal labels
+    assert_eq!(stdout.lines().count(), 10);
+    assert!(stdout.contains("Homo"));
+    assert!(!stdout.contains("Hominini")); // Hominini is internal
+
+    Ok(())
+}
+
+#[test]
+fn command_label_internal_only() -> anyhow::Result<()> {
+    // -L: Don't print leaf labels (so print internal only)
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("nwk")
+        .arg("label")
+        .arg("tests/newick/catarrhini.nwk")
+        .arg("-L")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    assert_eq!(stdout.lines().count(), 6);
+    assert!(stdout.contains("Hominini"));
+    assert!(!stdout.contains("Homo"));
+
+    Ok(())
+}
+
+#[test]
+fn command_label_empty_internal() -> anyhow::Result<()> {
+    // Test on a tree with no internal labels using -L
+    // hg38.7way.nwk has no internal labels
     let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
         .arg("nwk")
@@ -172,18 +228,16 @@ fn command_label() -> anyhow::Result<()> {
 
     assert_eq!(stdout.lines().count(), 0);
 
-    let mut cmd = Command::cargo_bin("pgr")?;
-    let output = cmd
-        .arg("nwk")
-        .arg("label")
-        .arg("tests/newick/hg38.7way.nwk")
-        .arg("-r")
-        .arg("^ch")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    Ok(())
+}
 
-    assert_eq!(stdout.lines().count(), 1);
-
+#[test]
+fn command_label_selection_node_monophyly() -> anyhow::Result<()> {
+    // -n selection with -M (monophyly) and -D (descendants)
+    // -n Homininae -n Pongo
+    // In catarrhini.nwk, Homininae is an internal node. Pongo is a leaf (genus).
+    // -D includes descendants.
+    // -M checks monophyly.
     let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
         .arg("nwk")
@@ -197,8 +251,82 @@ fn command_label() -> anyhow::Result<()> {
         .output()?;
     let stdout = String::from_utf8(output.stdout)?;
 
+    // Select Homininae and Pongo, include descendants (-D), and check monophyly (-M).
+    // The output contains the 4 leaf nodes of the Hominidae clade: Gorilla, Pan, Homo, Pongo.
     assert_eq!(stdout.lines().count(), 4);
 
+    Ok(())
+}
+
+#[test]
+fn command_label_selection_file() -> anyhow::Result<()> {
+    // -f file input
+    let mut temp_file = Builder::new().suffix(".txt").tempfile()?;
+    writeln!(temp_file, "Homo")?;
+    writeln!(temp_file, "Pan")?;
+    let list_file = temp_file.path().to_str().unwrap();
+
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("nwk")
+        .arg("label")
+        .arg("tests/newick/catarrhini.nwk")
+        .arg("-f")
+        .arg(list_file)
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    assert_eq!(stdout.lines().count(), 2);
+    assert!(stdout.contains("Homo"));
+    assert!(stdout.contains("Pan"));
+
+    Ok(())
+}
+
+#[test]
+fn command_label_regex() -> anyhow::Result<()> {
+    // -r regex
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("nwk")
+        .arg("label")
+        .arg("tests/newick/hg38.7way.nwk")
+        .arg("-r")
+        .arg("^ch") // Case insensitive by default?
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    // Should match Chimp
+    assert_eq!(stdout.lines().count(), 1);
+    assert!(stdout.contains("Chimp"));
+
+    Ok(())
+}
+
+#[test]
+fn command_label_regex_case_insensitive() -> anyhow::Result<()> {
+    // Verify case insensitivity explicitly
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("nwk")
+        .arg("label")
+        .arg("tests/newick/catarrhini.nwk")
+        .arg("-r")
+        .arg("^homo") // lowercase
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    // Should match Homo
+    // But NOT Hominoidea (starts with Homi, not Homo)
+    assert!(stdout.contains("Homo"));
+    assert!(!stdout.contains("Hominoidea"));
+
+    Ok(())
+}
+
+#[test]
+fn command_label_columns() -> anyhow::Result<()> {
+    // -c columns
     let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
         .arg("nwk")
@@ -209,7 +337,87 @@ fn command_label() -> anyhow::Result<()> {
         .output()?;
     let stdout = String::from_utf8(output.stdout)?;
 
+    // Output format: Label \t Species
+    // Example: Homo \t Homo
+    // We expect a tab
     assert!(stdout.contains("\tHomo\n"));
+
+    Ok(())
+}
+
+#[test]
+fn command_label_formatting_root() -> anyhow::Result<()> {
+    // --root
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("nwk")
+        .arg("label")
+        .arg("tests/newick/root.nwk")
+        .arg("--root")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    assert!(stdout.trim().contains("Root"));
+    assert_eq!(stdout.lines().count(), 1);
+
+    Ok(())
+}
+
+#[test]
+fn command_label_formatting_tab() -> anyhow::Result<()> {
+    // -t (tab separated on one line)
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("nwk")
+        .arg("label")
+        .arg("tests/newick/catarrhini.nwk")
+        .arg("-t")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    assert_eq!(stdout.lines().count(), 1);
+    assert!(stdout.contains("Homo"));
+    assert!(stdout.contains('\t'));
+
+    Ok(())
+}
+
+#[test]
+fn command_label_special_chars() -> anyhow::Result<()> {
+    // Special chars (slash, space)
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("nwk")
+        .arg("label")
+        .arg("tests/newick/slash_and_space.nwk")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    assert!(stdout.contains("B/Washington/05/2009 gi_255529494 gb_GQ451489\n"));
+    assert!(stdout.contains("Swit/1562056/2009_NA\n"));
+    assert!(stdout.lines().count() > 10);
+
+    Ok(())
+}
+
+#[test]
+fn command_label_multi_tree() -> anyhow::Result<()> {
+    // Multiple trees in one file, -t option
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("nwk")
+        .arg("label")
+        .arg("tests/newick/forest.nwk")
+        .arg("-t")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    // forest.nwk has 5 trees, so 5 lines
+    assert_eq!(stdout.lines().count(), 5);
+    assert!(stdout.contains("Pandion")); // Tree 1
+    assert!(stdout.contains("Diomedea")); // Tree 2
+    assert!(stdout.contains("Ticodendraceae")); // Tree 3
+    assert!(stdout.contains("Gorilla")); // Tree 4/5
 
     Ok(())
 }

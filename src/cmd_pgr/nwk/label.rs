@@ -9,30 +9,40 @@ pub fn make_subcommand() -> Command {
         .about("Labels in the Newick file")
         .after_help(
             r###"
-This tool selectively outputs the names of the nodes in the tree
+Extracts the tree's labels.
 
-* Match positions
-    * `-I`, `-L`
-* Match names
-    * The intersection between the nodes in the tree and the provided
-    * Nodes matching the case insensitive regular expression(s)
-    * Prints all named nodes if none of `-n`, `-f` and `-r` are set.
-* Match lineage
-    * Like `nwr restrict`, print descendants of the provided terms
-      in the form of a Taxonomy ID or scientific name
-    * `--mode` - Taxonomy terms in label, taxid (:T=), or species (:S=)
-* Match monophyly
-    * `--monophyly` means the subtree should only contains the nodes passed in
-    * It will check terminal nodes (with names) against the ones provided
-    * With `-D`, a named internal node's descendants will automatically be included
-    * Nodes with the same name CAN cause problems
-    * Activate `-I`
+By default, prints all labels that occur in the tree, in the same order as
+in the Newick, one per line. Empty labels produce no output.
 
-* Set `--column` will output a TSV file with addtional columns
+Notes:
+* The `-t` option prints labels on a single line, separated by tabs.
+* The `-I` and `-L` options filter out internal or leaf nodes.
+* Selection options (`-n`, `-f`, `-r`) can be combined.
+* With `-D`, descendants of selected internal nodes are also included.
+* Monophyly check (`-M`) verifies if the selected nodes form a monophyletic
+  group. It checks terminal nodes against the selection.
+* Warning: Duplicate node names may affect selection/monophyly checks.
+* Extra columns (`-c`) details:
     * `dup` - duplicate the node name
     * `taxid` - `:T=` field in comment
     * `species` - `:S=` field in comment
     * `full` - full comment
+
+Examples:
+1. List all labels:
+   pgr nwk label tree.nwk
+
+2. Count leaves:
+   pgr nwk label tree.nwk -I | wc -l
+
+3. List specific nodes:
+   pgr nwk label tree.nwk -n Human -n Chimp
+
+4. List labels matching regex:
+   pgr nwk label tree.nwk -r "^Homo"
+
+5. Check monophyly:
+   pgr nwk label tree.nwk -n Human -n Chimp -M
 
 "###,
         )
@@ -63,13 +73,14 @@ This tool selectively outputs the names of the nodes in the tree
                 .short('n')
                 .num_args(1)
                 .action(ArgAction::Append)
-                .help("Node name"),
+                .help("Select nodes by exact name"),
         )
         .arg(
             Arg::new("file")
                 .long("file")
+                .short('f')
                 .num_args(1)
-                .help("A file contains node names"),
+                .help("Select nodes from a file"),
         )
         .arg(
             Arg::new("regex")
@@ -77,14 +88,27 @@ This tool selectively outputs the names of the nodes in the tree
                 .short('r')
                 .num_args(1)
                 .action(ArgAction::Append)
-                .help("Nodes match the regular expression"),
+                .help("Select nodes by regular expression (case insensitive)"),
         )
         .arg(
             Arg::new("descendants")
                 .long("descendants")
                 .short('D')
                 .action(ArgAction::SetTrue)
-                .help("Include all descendants of internal nodes"),
+                .help("Include all descendants of selected internal nodes"),
+        )
+        .arg(
+            Arg::new("root")
+                .long("root")
+                .action(ArgAction::SetTrue)
+                .help("Only print the root label"),
+        )
+        .arg(
+            Arg::new("tab")
+                .long("tab")
+                .short('t')
+                .action(ArgAction::SetTrue)
+                .help("Print labels on a single line, separated by tab stops"),
         )
         .arg(
             Arg::new("monophyly")
@@ -104,7 +128,7 @@ This tool selectively outputs the names of the nodes in the tree
                     builder::PossibleValue::new("species"),
                     builder::PossibleValue::new("full"),
                 ])
-                .help("Where we can find taxonomy terms"),
+                .help("Add extra columns to output"),
         )
         .arg(
             Arg::new("outfile")
@@ -128,10 +152,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     if trees.is_empty() {
         return Ok(());
     }
-    let tree = &trees[0];
-
-    let is_monophyly = args.get_flag("monophyly");
-
     let mut columns = vec![];
     if args.contains_id("column") {
         for column in args.get_many::<String>("column").unwrap() {
@@ -139,72 +159,99 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         }
     }
 
-    //----------------------------
-    // Operating
-    //----------------------------
-    // All IDs matching positions
-    let ids_pos = nwr::match_positions(&tree, args);
-
-    // All IDs matching names
-    let ids_name = nwr::match_names(&tree, args);
-
-    let ids: BTreeSet<usize> = ids_pos.intersection(&ids_name).cloned().collect();
-
-    // Print nothing if check_monophyly() failed
-    let ids_vec: Vec<usize> = ids.iter().cloned().collect();
-    if is_monophyly && !tree.is_monophyletic(&ids_vec) {
-        return Ok(());
-    }
-
-    //----------------------------
-    // Output
-    //----------------------------
-    for id in ids.iter() {
-        let node = tree.get_node(*id).unwrap();
-        if let Some(x) = node.name.clone() {
-            let mut out_string: String = x.clone();
-            if !columns.is_empty() {
-                for column in columns.iter() {
-                    match column.as_str() {
-                        "dup" => out_string += format!("\t{}", x).as_str(),
-                        "taxid" => {
-                            out_string += format!(
-                                "\t{}",
-                                node.get_property("T").map(|s: &String| s.as_str()).unwrap_or("")
-                            )
-                            .as_str()
-                        }
-                        "species" => {
-                            out_string += format!(
-                                "\t{}",
-                                node.get_property("S").map(|s: &String| s.as_str()).unwrap_or("")
-                            )
-                            .as_str()
-                        }
-                        "full" => {
-                            let props = node.properties.as_ref().map(|p: &std::collections::BTreeMap<String, String>| {
-                                p.iter().map(|(k,v)| format!(":{}={}", k, v)).collect::<Vec<String>>()
-                            });
-                            
-                            let mut comment = String::new();
-                            if let Some(p) = props {
-                                if !p.is_empty() {
-                                    comment = format!("[{}]", p.join(" "));
-                                }
-                            }
-
-                            out_string += format!(
-                                "\t{}",
-                                comment
-                            )
-                            .as_str()
-                        }
-                        _ => unreachable!(),
-                    }
+    for tree in &trees {
+        // Handle --root option
+        if args.get_flag("root") {
+            let root_id = tree.get_root().unwrap();
+            let root = tree.get_node(root_id).unwrap();
+            if let Some(name) = &root.name {
+                if !name.is_empty() {
+                    writer.write_fmt(format_args!("{}\n", name)).unwrap();
                 }
             }
+            continue;
+        }
 
-            writer.write_fmt(format_args!("{}\n", out_string)).unwrap();
+        let is_monophyly = args.get_flag("monophyly");
+
+        //----------------------------
+        // Operating
+        //----------------------------
+        // All IDs matching positions
+        let ids_pos = nwr::match_positions(&tree, args);
+
+        // All IDs matching names
+        let ids_name = nwr::match_names(&tree, args);
+
+        let ids: BTreeSet<usize> = ids_pos.intersection(&ids_name).cloned().collect();
+
+        // Print nothing if check_monophyly() failed
+        let ids_vec: Vec<usize> = ids.iter().cloned().collect();
+        if is_monophyly && !tree.is_monophyletic(&ids_vec) {
+            continue;
+        }
+
+        //----------------------------
+        // Output
+        //----------------------------
+        let tab_sep = args.get_flag("tab");
+        let mut collected_labels = Vec::new();
+
+        for id in ids.iter() {
+            let node = tree.get_node(*id).unwrap();
+            if let Some(x) = node.name.clone() {
+                let mut out_string: String = x.clone();
+                if !columns.is_empty() {
+                    for column in columns.iter() {
+                        match column.as_str() {
+                            "dup" => out_string += format!("\t{}", x).as_str(),
+                            "taxid" => {
+                                out_string += format!(
+                                    "\t{}",
+                                    node.get_property("T").map(|s: &String| s.as_str()).unwrap_or("")
+                                )
+                                .as_str()
+                            }
+                            "species" => {
+                                out_string += format!(
+                                    "\t{}",
+                                    node.get_property("S").map(|s: &String| s.as_str()).unwrap_or("")
+                                )
+                                .as_str()
+                            }
+                            "full" => {
+                                let props = node.properties.as_ref().map(|p: &std::collections::BTreeMap<String, String>| {
+                                    p.iter().map(|(k,v)| format!(":{}={}", k, v)).collect::<Vec<String>>()
+                                });
+                                
+                                let mut comment = String::new();
+                                if let Some(p) = props {
+                                    if !p.is_empty() {
+                                        comment = format!("[{}]", p.join(" "));
+                                    }
+                                }
+
+                                out_string += format!(
+                                    "\t{}",
+                                    comment
+                                )
+                                .as_str()
+                            }
+                            _ => unreachable!(),
+                        }
+                    }
+                }
+
+                if tab_sep {
+                    collected_labels.push(out_string);
+                } else {
+                    writer.write_fmt(format_args!("{}\n", out_string)).unwrap();
+                }
+            }
+        }
+
+        if tab_sep && !collected_labels.is_empty() {
+            writer.write_fmt(format_args!("{}\n", collected_labels.join("\t"))).unwrap();
         }
     }
 
