@@ -45,6 +45,7 @@ struct rooted_tree {
 
 ---
 
+
 ## 2. Phylotree-rs (Rust)
 
 `phylotree-rs` 采用了 Rust 中处理图和树结构的常见模式：Arena（竞技场） 或 Vector-backed 模式。所有节点存储在一个中心化的向量中，节点间的引用使用整数索引（ID）。
@@ -360,6 +361,7 @@ pub struct Tree {
 | Newick Utilities | 功能描述 | pgr 对应子命令 (暂定) | 状态 |
 | :--- | :--- | :--- | :--- |
 | `nw_stats` | 树的统计信息 (节点数, 深度, 类型等) | `pgr nwk stat` | **[x] 已实现** (支持多树处理, TSV/KV 输出, 统计二叉分枝) |
+| `nw_indent` | 格式化/缩进 Newick 树 | `pgr nwk indent` | **[x] 已实现** (支持紧凑/缩进输出) |
 | `nw_display` | 树的可视化 (ASCII/SVG/Map) | `pgr nwk display` / `view` | [ ] |
 | `nw_topology` | 仅保留拓扑结构 (去除分支长度) | `pgr nwk topology` | [ ] |
 | `nw_labels` | 提取所有标签 (叶子/内部节点) | `pgr nwk labels` | [ ] |
@@ -430,7 +432,7 @@ nom = "8"  # 用于高性能解析
 
 ---
 
-## 7. API 对比与差距分析 (pgr vs phylotree-rs)
+## 8. API 对比与差距分析 (pgr vs phylotree-rs)
 
 以下列表对比了 `phylotree-rs` (参考版本) 提供的公开 API 与 `pgr::phylo` 当前实现的覆盖情况。
 
@@ -489,7 +491,42 @@ nom = "8"  # 用于高性能解析
 *   **Internal Caching**:
     *   `update_depths()`, `matrix`: `phylotree-rs` 缓存了大量中间状态。`pgr` 倾向于按需计算 (On-demand) 以保持轻量化。
 
+---
+
+## 9. 使用示例 (Usage Examples)
+
+### pgr nwk stat
+
+统计 Newick 文件的基本信息（节点数、叶子数、二分歧节点数等）。
+
+```bash
+# 默认输出 (Key-Value 格式)
+pgr nwk stat data.nwk
+
+# 表格输出 (TSV 格式，适合后续处理)
+pgr nwk stat data.nwk --style line
+```
+
+### pgr nwk indent
+
+格式化 Newick 树，使其更易读，或压缩为单行。
+
+```bash
+# 默认缩进 (2个空格)
+pgr nwk indent data.nwk
+
+# 自定义缩进字符 (例如使用4个空格)
+pgr nwk indent data.nwk --text "    "
+
+# 压缩为单行 (Compact)
+pgr nwk indent data.nwk --compact
+```
+
+
+```text
 整合 indent.rs，测试在 `tests/cli_nwk_viz.rs` 中。
 你看看 nw_indent 的代码，有没有什么值得参考的
 把 tests/ 里 nw_stats 的相关测试迁移到本项目，需要的测试材料 可以拷贝到 `tests/newick/` 目录下
 改进帮助文本。 参考 nw_indent 的帮助文本，按我们自己的样式 进行调整。
+phylo.md 根据现在的代码状态，更新文档
+```
