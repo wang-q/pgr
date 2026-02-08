@@ -1,0 +1,13 @@
+(
+  (
+    (
+      (
+        Homo[&&NHX:S=Homo]:0.02,
+        Pan:0.02
+      )Homininae:0.02,
+      Pongo:0.04
+    )Hominidae:0.02,
+    Hylobates:0.06
+  )Hominoidea:0.02,
+  Macaca:0.08
+)Catarrhini;
