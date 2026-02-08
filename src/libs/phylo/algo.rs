@@ -29,7 +29,7 @@ pub fn sort_by_name(tree: &mut Tree, descending: bool) {
     // However, the Tree struct doesn't expose `nodes` directly as pub, but we are in a submodule.
     // `nodes` is private in `tree.rs`. We should use a traversal or public iterator if available.
     // `levelorder` is available.
-    
+
     let ids = match tree.levelorder(&root) {
         Ok(v) => v,
         Err(_) => return,
@@ -98,7 +98,7 @@ pub fn sort_by_descendants(tree: &mut Tree, descending: bool) {
     // the count is simply len() - 1 (if we strictly mean descendants) or len() (subtree size).
     // Subtree size is stable.
     let mut size_map: HashMap<NodeId, usize> = HashMap::new();
-    
+
     // Optimization: Calculate sizes bottom-up (postorder) instead of calling get_subtree for each node.
     // But get_subtree is O(N) per call, making this O(N^2).
     // Let's use postorder to do it in O(N).
@@ -166,7 +166,7 @@ pub fn sort_by_list(tree: &mut Tree, order_list: &[String]) {
     }
 
     let root = tree.get_root().unwrap();
-    
+
     // Map name -> position
     let mut pos_map: HashMap<String, usize> = HashMap::new();
     for (i, name) in order_list.iter().enumerate() {
@@ -237,7 +237,7 @@ mod tests {
         let mut tree = Tree::new();
         let root = tree.add_node();
         tree.set_root(root);
-        
+
         let c1 = tree.add_node();
         tree.get_node_mut(c1).unwrap().name = Some("C".to_string());
         let c2 = tree.add_node();
@@ -251,12 +251,21 @@ mod tests {
 
         // Before sort: C, A, B
         sort_by_name(&mut tree, false);
-        
+
         let children = &tree.get_node(root).unwrap().children;
         assert_eq!(children.len(), 3);
-        assert_eq!(tree.get_node(children[0]).unwrap().name.as_deref(), Some("A"));
-        assert_eq!(tree.get_node(children[1]).unwrap().name.as_deref(), Some("B"));
-        assert_eq!(tree.get_node(children[2]).unwrap().name.as_deref(), Some("C"));
+        assert_eq!(
+            tree.get_node(children[0]).unwrap().name.as_deref(),
+            Some("A")
+        );
+        assert_eq!(
+            tree.get_node(children[1]).unwrap().name.as_deref(),
+            Some("B")
+        );
+        assert_eq!(
+            tree.get_node(children[2]).unwrap().name.as_deref(),
+            Some("C")
+        );
     }
 
     #[test]
@@ -267,7 +276,7 @@ mod tests {
 
         // Child 1: Leaf (Size 1)
         let c1 = tree.add_node();
-        
+
         // Child 2: Has 2 children (Size 3)
         let c2 = tree.add_node();
         let c2_1 = tree.add_node();
@@ -304,7 +313,7 @@ mod tests {
         let n1 = tree.add_node();
         let c = tree.add_node();
         tree.get_node_mut(c).unwrap().name = Some("C".to_string());
-        
+
         tree.add_child(root, n1).unwrap();
         tree.add_child(root, c).unwrap();
 
@@ -312,13 +321,13 @@ mod tests {
         tree.get_node_mut(a).unwrap().name = Some("A".to_string());
         let b = tree.add_node();
         tree.get_node_mut(b).unwrap().name = Some("B".to_string());
-        
+
         tree.add_child(n1, a).unwrap();
         tree.add_child(n1, b).unwrap();
 
         // Current order of root children: n1, c
         // Current order of n1 children: a, b
-        
+
         // Target list: ["C", "B", "A"]
         // Expected:
         // root children: C (pos 0), n1 (pos min(pos(B)=1, pos(A)=2) = 1) -> (C, n1)
@@ -341,19 +350,28 @@ mod tests {
         // Case 1: Simple case with only leaf nodes
         let newick = "(A,B,C);";
         let mut tree = Tree::from_newick(newick).unwrap();
-        sort_by_list(&mut tree, &["C".to_string(), "B".to_string(), "A".to_string()]);
+        sort_by_list(
+            &mut tree,
+            &["C".to_string(), "B".to_string(), "A".to_string()],
+        );
         assert_eq!(tree.to_newick(), "(C,B,A);");
 
         // Case 2: Case with internal nodes
         let newick = "((A,B),(C,D));";
         let mut tree = Tree::from_newick(newick).unwrap();
-        sort_by_list(&mut tree, &["C".to_string(), "B".to_string(), "A".to_string()]);
+        sort_by_list(
+            &mut tree,
+            &["C".to_string(), "B".to_string(), "A".to_string()],
+        );
         assert_eq!(tree.to_newick(), "((C,D),(B,A));");
 
         // Case 3: Case with internal nodes and names
         let newick = "((A,B)X,(C,D)Y);";
         let mut tree = Tree::from_newick(newick).unwrap();
-        sort_by_list(&mut tree, &["C".to_string(), "B".to_string(), "A".to_string()]);
+        sort_by_list(
+            &mut tree,
+            &["C".to_string(), "B".to_string(), "A".to_string()],
+        );
         assert_eq!(tree.to_newick(), "((C,D)Y,(B,A)X);");
 
         // Case 4: Case with unlisted nodes

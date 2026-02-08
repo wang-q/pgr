@@ -174,7 +174,7 @@ fn proc_block(block: &pgr::libs::fas::FasBlock, args: &ArgMatches) -> anyhow::Re
     let gap_open = *args.get_one::<i32>("gap_open").unwrap();
     let gap_extend = *args.get_one::<i32>("gap_extend").unwrap();
     let algorithm = args.get_one::<String>("algorithm").unwrap();
-    
+
     // Map algorithm string to integer code (0=local, 1=global, 2=semi_global) for internal use/spoa
     let algo_code = match algorithm.as_str() {
         "local" => 0,
@@ -204,13 +204,23 @@ fn proc_block(block: &pgr::libs::fas::FasBlock, args: &ArgMatches) -> anyhow::Re
     // Generate consensus sequence
     let mut cons = match engine.as_str() {
         "spoa" => pgr::libs::alignment::get_consensus_poa_external(
-            &seqs, 
-            match_score, mismatch_score, gap_open, gap_extend, algo_code
-        ).unwrap(),
+            &seqs,
+            match_score,
+            mismatch_score,
+            gap_open,
+            gap_extend,
+            algo_code,
+        )
+        .unwrap(),
         "builtin" | _ => pgr::libs::alignment::get_consensus_poa_builtin(
             &seqs,
-            match_score, mismatch_score, gap_open, gap_extend, algo_code
-        ).unwrap(),
+            match_score,
+            mismatch_score,
+            gap_open,
+            gap_extend,
+            algo_code,
+        )
+        .unwrap(),
     };
     cons = cons.replace('-', "");
 

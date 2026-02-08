@@ -74,7 +74,7 @@ fn command_stat_forest() -> anyhow::Result<()> {
 
     // Tree 1: Cladogram, 18 nodes, 11 leaves, 5 dichotomies, 11 leaf labels, 0 inner labels
     assert!(lines[1].contains("cladogram\t18\t11\t5\t11\t0"));
-    
+
     // Tree 2: Cladogram, 13 nodes, 8 leaves, 3 dichotomies, 8 leaf labels, 0 inner labels
     assert!(lines[2].contains("cladogram\t13\t8\t3\t8\t0"));
 
@@ -98,12 +98,12 @@ fn command_stat_multi_tree() -> anyhow::Result<()> {
         .arg("stat")
         .arg("stdin")
         .write_stdin("(A,B)C;(D,E)F;")
-                .output()?;
-            let stdout = String::from_utf8(output.stdout)?;
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
 
-            // Should appear twice (once for each tree)
-            assert_eq!(stdout.matches("nodes\t3").count(), 2);
-            assert_eq!(stdout.matches("leaves\t2").count(), 2);
+    // Should appear twice (once for each tree)
+    assert_eq!(stdout.matches("nodes\t3").count(), 2);
+    assert_eq!(stdout.matches("leaves\t2").count(), 2);
 
     Ok(())
 }

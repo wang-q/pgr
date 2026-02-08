@@ -1,6 +1,6 @@
+use super::align::Alignment;
 use petgraph::graph::{DiGraph, NodeIndex};
 use petgraph::visit::NodeIndexable;
-use super::align::Alignment;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct NodeData {
@@ -11,7 +11,11 @@ pub struct NodeData {
 
 impl NodeData {
     pub fn new(base: u8) -> Self {
-        Self { base, aligned_nodes: Vec::new(), weight: 0 }
+        Self {
+            base,
+            aligned_nodes: Vec::new(),
+            weight: 0,
+        }
     }
 }
 
@@ -57,7 +61,7 @@ impl PoaGraph {
 
             while let Some(&curr) = stack.last() {
                 let curr_idx = curr.index();
-                
+
                 // If already processed (visited), pop and continue
                 if marks[curr_idx] == 2 {
                     stack.pop();
@@ -67,7 +71,10 @@ impl PoaGraph {
                 let mut is_valid = true;
 
                 // Check incoming edges (dependencies)
-                for neighbor in self.graph.neighbors_directed(curr, petgraph::Direction::Incoming) {
+                for neighbor in self
+                    .graph
+                    .neighbors_directed(curr, petgraph::Direction::Incoming)
+                {
                     if marks[neighbor.index()] != 2 {
                         stack.push(neighbor);
                         is_valid = false;
@@ -89,14 +96,14 @@ impl PoaGraph {
 
                 if is_valid {
                     marks[curr_idx] = 2;
-                    
+
                     if !ignored[curr_idx] {
                         sorted_nodes.push(curr);
                         // Add aligned nodes immediately to keep clique together
                         let node_data = &self.graph[curr];
                         for &aligned in &node_data.aligned_nodes {
-                            // Only add if not already added? 
-                            // Spoa logic: marks[aligned] becomes 2. 
+                            // Only add if not already added?
+                            // Spoa logic: marks[aligned] becomes 2.
                             // But we just checked marks[aligned] == 2 above?
                             // Wait, if marks[aligned] == 2, it means it was visited.
                             // But if it was ignored, it wasn't added to sorted_nodes yet?
@@ -114,17 +121,17 @@ impl PoaGraph {
                         // that dependency should have been pushed.
                         // If the dependency is THIS node (self-loop) or a loop back to THIS node,
                         // we would encounter a node with mark 1 in the dependency check.
-                        // My dependency check loop doesn't check for mark 1 explicitly to panic, 
+                        // My dependency check loop doesn't check for mark 1 explicitly to panic,
                         // but Spoa asserts `marks[curr] != 1`.
                     }
                     marks[curr_idx] = 1;
                 }
             }
         }
-        
+
         sorted_nodes
     }
-    
+
     pub fn num_nodes(&self) -> usize {
         self.graph.node_count()
     }
@@ -135,7 +142,7 @@ impl PoaGraph {
         let mut prev_node: Option<NodeIndex> = None;
         let mut current_seq_idx = 0;
         let mut sequence_path = Vec::with_capacity(sequence.len());
-        
+
         for step in &alignment.path {
             // Get sequence index if present
             let seq_idx = match step {
@@ -154,7 +161,7 @@ impl PoaGraph {
                 data.weight = 1;
                 let new_node = self.graph.add_node(data);
                 sequence_path.push(new_node);
-                
+
                 if let Some(p) = prev_node {
                     self.add_edge(p, new_node, 1);
                 }
@@ -166,7 +173,7 @@ impl PoaGraph {
                 (Some(idx), Some(graph_idx)) => {
                     let base = sequence[*idx];
                     let graph_node_base = self.graph[*graph_idx].base;
-                    
+
                     let target_node_idx = if graph_node_base == base {
                         *graph_idx
                     } else {
@@ -178,7 +185,7 @@ impl PoaGraph {
                                 break;
                             }
                         }
-                        
+
                         if let Some(idx) = found {
                             idx
                         } else {
@@ -186,30 +193,30 @@ impl PoaGraph {
                             let mut data = NodeData::new(base);
                             data.weight = 0; // Will be incremented below
                             let new_node = self.graph.add_node(data);
-                            
+
                             // Update cliques
                             let mut clique = self.graph[*graph_idx].aligned_nodes.clone();
                             clique.push(*graph_idx);
-                            
+
                             for &peer in &clique {
                                 self.graph[peer].aligned_nodes.push(new_node);
                             }
                             self.graph[new_node].aligned_nodes = clique;
-                            
+
                             new_node
                         }
                     };
-                    
+
                     sequence_path.push(target_node_idx);
-                    
+
                     // Increment weight
                     self.graph[target_node_idx].weight += 1;
-                    
+
                     if let Some(p) = prev_node {
                         self.add_edge(p, target_node_idx, 1);
                     }
                     prev_node = Some(target_node_idx);
-                },
+                }
                 (Some(idx), None) => {
                     // Insertion
                     let base = sequence[*idx];
@@ -217,31 +224,31 @@ impl PoaGraph {
                     data.weight = 1;
                     let new_node = self.graph.add_node(data);
                     sequence_path.push(new_node);
-                    
+
                     if let Some(p) = prev_node {
                         self.add_edge(p, new_node, 1);
                     }
                     prev_node = Some(new_node);
-                },
+                }
                 _ => {} // Handled above
             }
-            
+
             current_seq_idx = seq_idx + 1;
         }
 
         // Fill remaining suffix
         while current_seq_idx < sequence.len() {
-             let base = sequence[current_seq_idx];
-             let mut data = NodeData::new(base);
-             data.weight = 1;
-             let new_node = self.graph.add_node(data);
-             sequence_path.push(new_node);
-             
-             if let Some(p) = prev_node {
-                 self.add_edge(p, new_node, 1);
-             }
-             prev_node = Some(new_node);
-             current_seq_idx += 1;
+            let base = sequence[current_seq_idx];
+            let mut data = NodeData::new(base);
+            data.weight = 1;
+            let new_node = self.graph.add_node(data);
+            sequence_path.push(new_node);
+
+            if let Some(p) = prev_node {
+                self.add_edge(p, new_node, 1);
+            }
+            prev_node = Some(new_node);
+            current_seq_idx += 1;
         }
 
         sequence_path
@@ -264,7 +271,7 @@ mod tests {
         let n1 = graph.add_node(b'A');
         let n2 = graph.add_node(b'C');
         graph.add_edge(n1, n2, 1);
-        
+
         assert_eq!(graph.graph.node_count(), 2);
         assert_eq!(graph.graph.edge_count(), 1);
     }
@@ -283,12 +290,12 @@ mod tests {
                 (Some(3), None),
             ],
         };
-        
+
         graph.add_alignment(&alignment, sequence);
-        
+
         assert_eq!(graph.num_nodes(), 4);
         assert_eq!(graph.graph.edge_count(), 3); // A->C, C->G, G->T
-        
+
         let sorted = graph.topological_sort();
         assert_eq!(graph.graph[sorted[0]].base, b'A');
         assert_eq!(graph.graph[sorted[3]].base, b'T');
@@ -303,7 +310,7 @@ mod tests {
         let n3 = graph.add_node(b'G');
         graph.add_edge(n1, n2, 1);
         graph.add_edge(n2, n3, 1);
-        
+
         // Second seq: A C G (Identical)
         let sequence = b"ACG";
         let alignment = Alignment {
@@ -314,11 +321,11 @@ mod tests {
                 (Some(2), Some(n3)),
             ],
         };
-        
+
         graph.add_alignment(&alignment, sequence);
-        
+
         assert_eq!(graph.num_nodes(), 3); // No new nodes
-        // Weights should increase
+                                          // Weights should increase
         let e1 = graph.graph.find_edge(n1, n2).unwrap();
         assert_eq!(*graph.graph.edge_weight(e1).unwrap(), 2);
     }
@@ -328,18 +335,16 @@ mod tests {
         // First seq: A
         let mut graph = PoaGraph::new();
         let n1 = graph.add_node(b'A');
-        
+
         // Second seq: C (Mismatch aligned to A)
         let sequence = b"C";
         let alignment = Alignment {
             score: 0,
-            path: vec![
-                (Some(0), Some(n1)),
-            ],
+            path: vec![(Some(0), Some(n1))],
         };
-        
+
         graph.add_alignment(&alignment, sequence);
-        
+
         assert_eq!(graph.num_nodes(), 2); // A and C
         let n2 = graph.graph.node_indices().find(|&n| n != n1).unwrap();
         assert_eq!(graph.graph[n2].base, b'C');

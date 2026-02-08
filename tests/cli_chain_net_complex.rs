@@ -48,10 +48,10 @@ fn test_chain_net_greedy_overlap() -> Result<(), Box<dyn std::error::Error>> {
     // Expectation:
     // Chain 1 (Score 2000) takes 0-1000.
     // Chain 2 (Score 1000) takes 1000-1500 (500-1000 is blocked).
-    
+
     // Check for Chain 1 fill
     assert!(t_net_content.contains("fill 0 1000 chr2 + 0 1000 id 1"));
-    
+
     // Check for Chain 2 fill
     // It should start at 1000, size 500.
     // Corresponding Q coords: Chain 2 maps T:500-1500 to Q:500-1500.
@@ -109,10 +109,10 @@ fn test_chain_net_nested_fill() -> Result<(), Box<dyn std::error::Error>> {
     // Expectation:
     // Level 1: Chain 1 (Fill 0-1000).
     // Level 2: Inside Gap of Chain 1 (Gap 400-200), we see Chain 2 (Fill 450-100).
-    
+
     // Check Chain 1
     assert!(t_net_content.contains("fill 0 1000 chr2 + 0 1000 id 1"));
-    
+
     // Check Chain 2 (nested)
     // Should be indented (checked by structure, but here we just check presence first)
     // fill 450 100 chr2 + 450 100 id 2

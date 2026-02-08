@@ -1,15 +1,15 @@
+use super::error::TreeError;
 use super::node::NodeId;
 use super::tree::Tree;
-use super::error::TreeError;
 use nom::{
     branch::alt,
     bytes::complete::{is_not, take_while},
     character::complete::{char, digit1, multispace0},
     combinator::{cut, map, map_res, opt, recognize},
+    error::{context, ContextError, ErrorKind, FromExternalError, ParseError},
     multi::{many1, separated_list1},
     sequence::{delimited, preceded},
-    IResult, Parser, Offset,
-    error::{ParseError, ContextError, ErrorKind, FromExternalError, context},
+    IResult, Offset, Parser,
 };
 use std::collections::BTreeMap;
 
@@ -144,16 +144,16 @@ fn parse_label(input: &str) -> IResult<&str, String, DetailedError<'_>> {
     // Two single quotes inside represent one single quote: 'O''Brien' -> O'Brien
     let single_quoted = delimited(
         char('\''),
-        map(is_not("'"), |s: &str| s.replace("''", "'")), 
-        char('\'')
+        map(is_not("'"), |s: &str| s.replace("''", "'")),
+        char('\''),
     );
 
     // Double quoted labels: "Homo sapiens"
     // Two double quotes inside represent one double quote: "He said ""Hello""" -> He said "Hello"
     let double_quoted = delimited(
         char('"'),
-        map(is_not("\""), |s: &str| s.replace("\"\"", "\"")), 
-        char('"')
+        map(is_not("\""), |s: &str| s.replace("\"\"", "\"")),
+        char('"'),
     );
 
     // Try quoted formats first, then fall back to unquoted
@@ -164,24 +164,28 @@ fn parse_label(input: &str) -> IResult<&str, String, DetailedError<'_>> {
 // Parses the branch length, which follows a colon (e.g., ":0.123").
 // Supports standard floating point formats including scientific notation.
 fn parse_length(input: &str) -> IResult<&str, f64, DetailedError<'_>> {
-    context("length", preceded(
-        ws(char(':')), // Lengths must start with ':'
-        // Use `cut` to prevent backtracking if we found a ':' but failed to parse the number.
-        // This gives a better error message ("expected float" instead of trying other branches).
-        cut(map_res(
-            recognize((
-                opt(char('-')),
-                digit1,
-                opt((char('.'), digit1)),
-                opt((
-                    alt((char('e'), char('E'))),
-                    opt(alt((char('+'), char('-')))),
+    context(
+        "length",
+        preceded(
+            ws(char(':')), // Lengths must start with ':'
+            // Use `cut` to prevent backtracking if we found a ':' but failed to parse the number.
+            // This gives a better error message ("expected float" instead of trying other branches).
+            cut(map_res(
+                recognize((
+                    opt(char('-')),
                     digit1,
+                    opt((char('.'), digit1)),
+                    opt((
+                        alt((char('e'), char('E'))),
+                        opt(alt((char('+'), char('-')))),
+                        digit1,
+                    )),
                 )),
+                |s: &str| s.parse::<f64>(),
             )),
-            |s: &str| s.parse::<f64>(),
-        )),
-    )).parse(input)
+        ),
+    )
+    .parse(input)
 }
 
 // 4. Comment
@@ -190,32 +194,36 @@ fn parse_length(input: &str) -> IResult<&str, f64, DetailedError<'_>> {
 // Returns:
 // - Some(map) if it's an NHX comment with properties
 // - None if it's a regular comment (ignored)
-fn parse_comment(input: &str) -> IResult<&str, Option<BTreeMap<String, String>>, DetailedError<'_>> {
-    let comment_content = delimited(
-        ws(char('[')),
-        is_not("]"),
-        char(']'),
-    );
+fn parse_comment(
+    input: &str,
+) -> IResult<&str, Option<BTreeMap<String, String>>, DetailedError<'_>> {
+    let comment_content = delimited(ws(char('[')), is_not("]"), char(']'));
 
-    context("comment", map(opt(comment_content), |content: Option<&str>| {
-        if let Some(s) = content {
-            // Check for NHX format signature
-            // Example: [&&NHX:S=human:E=1.5]
-            if s.starts_with("&&NHX") {
-                let mut props = BTreeMap::new();
-                for part in s.split(':') {
-                    if part == "&&NHX" { continue; }
-                    if let Some((k, v)) = part.split_once('=') {
-                        props.insert(k.to_string(), v.to_string());
+    context(
+        "comment",
+        map(opt(comment_content), |content: Option<&str>| {
+            if let Some(s) = content {
+                // Check for NHX format signature
+                // Example: [&&NHX:S=human:E=1.5]
+                if s.starts_with("&&NHX") {
+                    let mut props = BTreeMap::new();
+                    for part in s.split(':') {
+                        if part == "&&NHX" {
+                            continue;
+                        }
+                        if let Some((k, v)) = part.split_once('=') {
+                            props.insert(k.to_string(), v.to_string());
+                        }
+                    }
+                    if !props.is_empty() {
+                        return Some(props);
                     }
                 }
-                if !props.is_empty() {
-                    return Some(props);
-                }
             }
-        }
-        None
-    })).parse(input)
+            None
+        }),
+    )
+    .parse(input)
 }
 
 // 5. Subtree
@@ -224,16 +232,20 @@ fn parse_comment(input: &str) -> IResult<&str, Option<BTreeMap<String, String>>,
 fn parse_subtree(input: &str) -> IResult<&str, ParsedNode, DetailedError<'_>> {
     // 1. Children: optional list of subtrees enclosed in parens
     // Example: (A:0.1, B:0.2)
-    let (input, children) = context("children", opt(delimited(
-        ws(char('(')),
-        separated_list1(ws(char(',')), parse_subtree), // Comma-separated list of subtrees
-        ws(char(')')),
-    ))).parse(input)?;
+    let (input, children) = context(
+        "children",
+        opt(delimited(
+            ws(char('(')),
+            separated_list1(ws(char(',')), parse_subtree), // Comma-separated list of subtrees
+            ws(char(')')),
+        )),
+    )
+    .parse(input)?;
 
     // 2. Label: optional node name
     // Example: Homo_sapiens
     let (input, label) = opt(parse_label).parse(input)?;
-    
+
     // 3. Properties/Comments/Length:
     // Newick allows comments before or after length, so we parse both.
     // Example: :0.1[&&NHX:...] or [&&NHX:..]:0.1
@@ -252,12 +264,16 @@ fn parse_subtree(input: &str) -> IResult<&str, ParsedNode, DetailedError<'_>> {
         }
     }
     node.length = length;
-    
+
     // Merge properties from comments found before and after length
     if comment1.is_some() || comment2.is_some() {
         let mut props = BTreeMap::new();
-        if let Some(p) = comment1 { props.extend(p); }
-        if let Some(p) = comment2 { props.extend(p); }
+        if let Some(p) = comment1 {
+            props.extend(p);
+        }
+        if let Some(p) = comment2 {
+            props.extend(p);
+        }
         node.properties = Some(props);
     }
 
@@ -279,14 +295,14 @@ fn parse_subtree(input: &str) -> IResult<&str, ParsedNode, DetailedError<'_>> {
 /// * `Result<Tree, TreeError>` - The parsed tree or an error.
 pub fn parse_newick(input: &str) -> Result<Tree, TreeError> {
     let mut parser = (ws(parse_subtree), ws(char(';')));
-    
+
     match parser.parse(input) {
         Ok((_, (root_node, _))) => {
             let mut tree = Tree::new();
             let root_id = root_node.to_tree(&mut tree);
             tree.set_root(root_id);
             Ok(tree)
-        },
+        }
         Err(nom::Err::Error(e)) | Err(nom::Err::Failure(e)) => Err(make_tree_error(input, e)),
         Err(nom::Err::Incomplete(_)) => Err(TreeError::ParseError {
             message: "Incomplete input".to_string(),
@@ -306,14 +322,17 @@ pub fn parse_newick(input: &str) -> Result<Tree, TreeError> {
 pub fn parse_newick_multi(input: &str) -> Result<Vec<Tree>, TreeError> {
     // A valid tree is a subtree followed by a semicolon
     let valid_tree = map((ws(parse_subtree), ws(char(';'))), |(root, _)| Some(root));
-    
+
     // "Garbage" blocks are top-level comments [ ... ] that are ignored.
     // Some tree files (like from Nexus) might have headers in comments.
-    let garbage = map(ws(delimited(char('['), take_while(|c| c != ']'), char(']'))), |_| None);
-    
+    let garbage = map(
+        ws(delimited(char('['), take_while(|c| c != ']'), char(']'))),
+        |_| None,
+    );
+
     // Parse many occurrences of either valid trees or garbage
     let mut parser = many1(alt((valid_tree, garbage)));
-    
+
     match parser.parse(input) {
         Ok((_, trees_data)) => {
             let mut trees = Vec::new();
@@ -326,7 +345,7 @@ pub fn parse_newick_multi(input: &str) -> Result<Vec<Tree>, TreeError> {
                 }
             }
             Ok(trees)
-        },
+        }
         Err(nom::Err::Error(e)) | Err(nom::Err::Failure(e)) => Err(make_tree_error(input, e)),
         Err(nom::Err::Incomplete(_)) => Err(TreeError::ParseError {
             message: "Incomplete input".to_string(),
@@ -341,7 +360,7 @@ pub fn parse_newick_multi(input: &str) -> Result<Vec<Tree>, TreeError> {
 fn make_tree_error(input: &str, e: DetailedError) -> TreeError {
     let (remaining, _) = e.errors.first().unwrap();
     let offset = input.offset(remaining);
-    
+
     // Calculate line/col
     let prefix = &input[..offset];
     let line = prefix.chars().filter(|&c| c == '\n').count() + 1;
@@ -374,12 +393,12 @@ impl Tree {
     /// # Example
     /// ```
     /// use pgr::libs::phylo::tree::Tree;
-    /// 
+    ///
     /// // Successful parse
     /// let input = "(A:0.1,B:0.2)Root;";
     /// let tree = Tree::from_newick(input).unwrap();
     /// assert_eq!(tree.len(), 3);
-    /// 
+    ///
     /// // Error handling
     /// let invalid_input = "(A,B:invalid)C;";
     /// let result = Tree::from_newick(invalid_input);
@@ -404,7 +423,7 @@ mod tests {
         let input = "(A,B)C;";
         let tree = Tree::from_newick(input).unwrap();
         assert_eq!(tree.len(), 3);
-        
+
         let root = tree.get_node(tree.get_root().unwrap()).unwrap();
         assert_eq!(root.name.as_deref(), Some("C"));
         assert_eq!(root.children.len(), 2);
@@ -414,11 +433,11 @@ mod tests {
     fn test_parser_lengths() {
         let input = "(A:0.1, B:0.2e-1)Root:100;";
         let tree = Tree::from_newick(input).unwrap();
-        
+
         let root = tree.get_node(tree.get_root().unwrap()).unwrap();
         assert_eq!(root.name.as_deref(), Some("Root"));
         assert_eq!(root.length, Some(100.0));
-        
+
         let child1 = tree.get_node(root.children[0]).unwrap();
         assert_eq!(child1.name.as_deref(), Some("A"));
         assert_eq!(child1.length, Some(0.1));
@@ -432,10 +451,10 @@ mod tests {
     fn test_parser_nhx() {
         let input = "(A:0.1,B:0.2)n1[&&NHX:S=human:E=1.5];";
         let tree = Tree::from_newick(input).unwrap();
-        
+
         let root = tree.get_node(tree.get_root().unwrap()).unwrap();
         assert_eq!(root.name.as_deref(), Some("n1"));
-        
+
         let props = root.properties.as_ref().unwrap();
         assert_eq!(props.get("S").map(|s| s.as_str()), Some("human"));
         assert_eq!(props.get("E").map(|s| s.as_str()), Some("1.5"));
@@ -459,14 +478,14 @@ mod tests {
         ";
         let tree = Tree::from_newick(input).unwrap();
         assert_eq!(tree.len(), 3);
-        
+
         let root = tree.get_node(tree.get_root().unwrap()).unwrap();
         assert_eq!(root.name.as_deref(), Some("Root"));
-        
+
         let c0 = tree.get_node(root.children[0]).unwrap();
         assert_eq!(c0.name.as_deref(), Some("A"));
         assert_eq!(c0.length, Some(0.1));
-        
+
         let c1 = tree.get_node(root.children[1]).unwrap();
         assert_eq!(c1.name.as_deref(), Some("B"));
         assert_eq!(c1.length, Some(0.2));
@@ -475,7 +494,7 @@ mod tests {
     #[test]
     fn test_parser_complex_formatting() {
         // A more complex example with nested structure and comments across lines
-        // Note: Commas must come AFTER the node info (label:length[comment]), 
+        // Note: Commas must come AFTER the node info (label:length[comment]),
         // so [Comment] must be before the comma if it belongs to that node.
         let input = "
         (
@@ -493,14 +512,14 @@ mod tests {
         //  Hominidae      Gorilla
         //    /   \
         // Human Chimp
-        
+
         assert_eq!(tree.len(), 5);
         let root = tree.get_node(tree.get_root().unwrap()).unwrap();
         assert_eq!(root.name.as_deref(), Some("Hominoidea"));
-        
+
         let gorilla = tree.get_node(root.children[1]).unwrap();
         assert_eq!(gorilla.name.as_deref(), Some("Gorilla"));
-        
+
         let hominidae = tree.get_node(root.children[0]).unwrap();
         assert_eq!(hominidae.name.as_deref(), Some("Hominidae"));
         assert_eq!(hominidae.children.len(), 2);
@@ -517,14 +536,14 @@ mod tests {
         assert_eq!(c0.name.as_deref(), Some("A"));
         let c1 = tree.get_node(root.children[1]).unwrap();
         assert_eq!(c1.name.as_deref(), Some("B"));
-        
+
         // Case 2: Spaces inside quoted labels (should be preserved by parser)
         let input = "(' A ', ' B ')Root;";
         let tree = Tree::from_newick(input).unwrap();
         let root = tree.get_node(tree.get_root().unwrap()).unwrap();
         let c0 = tree.get_node(root.children[0]).unwrap();
         let c1 = tree.get_node(root.children[1]).unwrap();
-        
+
         assert_eq!(c0.name.as_deref(), Some(" A "));
         assert_eq!(c1.name.as_deref(), Some(" B "));
 
@@ -534,7 +553,7 @@ mod tests {
         let root = tree.get_node(tree.get_root().unwrap()).unwrap();
         let c0 = tree.get_node(root.children[0]).unwrap();
         let c1 = tree.get_node(root.children[1]).unwrap();
-        
+
         assert_eq!(c0.name.as_deref(), Some("A"));
         assert_eq!(c1.name.as_deref(), Some("B"));
         assert_eq!(root.name.as_deref(), Some("Root"));
@@ -546,36 +565,36 @@ mod tests {
         // but works for quoted if that's what they want.
         let input = "(' A ', B )Root;";
         let mut tree = Tree::from_newick(input).unwrap();
-        
+
         // Before cleaning
         let root = tree.get_node(tree.get_root().unwrap()).unwrap();
         let c0 = tree.get_node(root.children[0]).unwrap(); // ' A '
         let c1 = tree.get_node(root.children[1]).unwrap(); // B
-        
+
         assert_eq!(c0.name.as_deref(), Some(" A "));
         assert_eq!(c1.name.as_deref(), Some("B"));
 
         // User's cleaning logic
         let root_id = tree.get_root().unwrap();
         let traversal = tree.preorder(&root_id).unwrap();
-        
+
         for id in traversal {
-             let node = tree.get_node_mut(id).unwrap(); 
-             if let Some(ref name) = node.name.clone() {
-                 let trimmed = name.trim().to_string();
-                 if trimmed.is_empty() {
-                     node.name = None;
-                 } else {
-                     node.set_name(trimmed);
-                 }
-             }
+            let node = tree.get_node_mut(id).unwrap();
+            if let Some(ref name) = node.name.clone() {
+                let trimmed = name.trim().to_string();
+                if trimmed.is_empty() {
+                    node.name = None;
+                } else {
+                    node.set_name(trimmed);
+                }
+            }
         }
 
         // After cleaning
         let root = tree.get_node(tree.get_root().unwrap()).unwrap();
         let c0 = tree.get_node(root.children[0]).unwrap();
         let c1 = tree.get_node(root.children[1]).unwrap();
-        
+
         assert_eq!(c0.name.as_deref(), Some("A")); // Trimmed!
         assert_eq!(c1.name.as_deref(), Some("B")); // Unchanged
     }
@@ -585,10 +604,10 @@ mod tests {
         let input = "(\"Homo sapiens\":0.1, \"Mus musculus\":0.2);";
         let tree = Tree::from_newick(input).unwrap();
         let root = tree.get_node(tree.get_root().unwrap()).unwrap();
-        
+
         let c1 = tree.get_node(root.children[0]).unwrap();
         assert_eq!(c1.name.as_deref(), Some("Homo sapiens"));
-        
+
         let c2 = tree.get_node(root.children[1]).unwrap();
         assert_eq!(c2.name.as_deref(), Some("Mus musculus"));
     }
@@ -598,10 +617,10 @@ mod tests {
         let input = "('Homo sapiens':0.1, 'Mus musculus':0.2);";
         let tree = Tree::from_newick(input).unwrap();
         let root = tree.get_node(tree.get_root().unwrap()).unwrap();
-        
+
         let c1 = tree.get_node(root.children[0]).unwrap();
         assert_eq!(c1.name.as_deref(), Some("Homo sapiens"));
-        
+
         let c2 = tree.get_node(root.children[1]).unwrap();
         assert_eq!(c2.name.as_deref(), Some("Mus musculus"));
     }
@@ -609,13 +628,13 @@ mod tests {
     #[test]
     fn test_parser_error() {
         // Case 1: Missing semicolon
-        let input = "(A,B)C"; 
+        let input = "(A,B)C";
         let res = Tree::from_newick(input);
         match res {
             Err(TreeError::ParseError { line, column, .. }) => {
                 assert_eq!(line, 1);
                 // (A,B)C -> length 6. Expects ; at col 7.
-                assert_eq!(column, 7); 
+                assert_eq!(column, 7);
             }
             _ => panic!("Expected ParseError, got {:?}", res),
         }
@@ -624,11 +643,11 @@ mod tests {
         let input2 = "(A,B:invalid)C;";
         let res2 = Tree::from_newick(input2);
         match res2 {
-             Err(TreeError::ParseError { line, message, .. }) => {
-                 assert_eq!(line, 1);
-                 assert!(message.contains("length")); 
-             }
-             _ => panic!("Expected ParseError, got {:?}", res2),
+            Err(TreeError::ParseError { line, message, .. }) => {
+                assert_eq!(line, 1);
+                assert!(message.contains("length"));
+            }
+            _ => panic!("Expected ParseError, got {:?}", res2),
         }
     }
 }

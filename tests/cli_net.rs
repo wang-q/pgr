@@ -4,7 +4,11 @@ use std::fs;
 use std::io::Write;
 use tempfile::{NamedTempFile, TempDir};
 
-fn create_2bit(dir: &TempDir, name: &str, content: &str) -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
+fn create_2bit(
+    dir: &TempDir,
+    name: &str,
+    content: &str,
+) -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
     let fa_path = dir.path().join(format!("{}.fa", name));
     let bit_path = dir.path().join(format!("{}.2bit", name));
     fs::write(&fa_path, content)?;
@@ -99,7 +103,9 @@ fn test_net_syntenic_nested() -> Result<(), Box<dyn std::error::Error>> {
     let output = std::fs::read_to_string(out_path)?;
     println!("Output:\n{}", output);
 
-    assert!(output.contains("fill 100 100 chr2 + 100 100 id 2 score 50 ali 100 qOver 100 qFar 0 qDup 0 type syn"));
+    assert!(output.contains(
+        "fill 100 100 chr2 + 100 100 id 2 score 50 ali 100 qOver 100 qFar 0 qDup 0 type syn"
+    ));
 
     Ok(())
 }

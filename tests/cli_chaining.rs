@@ -104,8 +104,8 @@ fn test_chaining_default_score_filtering() -> anyhow::Result<()> {
         .arg(&psl_path)
         .arg("-o")
         .arg(&output_path);
-        // No --min-score arg, so it uses default 1000.
-        // Score 100 < 1000, so it should be filtered out.
+    // No --min-score arg, so it uses default 1000.
+    // Score 100 < 1000, so it should be filtered out.
 
     cmd.assert().success();
 

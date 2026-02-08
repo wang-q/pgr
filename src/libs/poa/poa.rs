@@ -1,6 +1,6 @@
-use super::graph::PoaGraph;
-use super::align::{AlignmentEngine, ScalarAlignmentEngine, AlignmentParams, AlignmentType};
+use super::align::{AlignmentEngine, AlignmentParams, AlignmentType, ScalarAlignmentEngine};
 use super::consensus::generate_consensus;
+use super::graph::PoaGraph;
 use super::msa::generate_msa;
 use petgraph::graph::NodeIndex;
 
@@ -31,7 +31,7 @@ impl Poa {
     pub fn consensus(&self) -> Vec<u8> {
         generate_consensus(&self.graph)
     }
-    
+
     pub fn msa(&self) -> Vec<String> {
         generate_msa(&self.graph, &self.sequences, &self.paths)
     }
@@ -78,7 +78,7 @@ mod tests {
         poa.add_sequence(b"ACGT");
         // Add sequence with insertion: ACAGT
         poa.add_sequence(b"ACAGT");
-        
+
         // Graph should have branched or added node
         // A -> C -> G -> T
         //      |
@@ -88,7 +88,7 @@ mod tests {
         // If we just added 2 sequences, consensus might pick one path.
         // Let's add more weight to one.
         poa.add_sequence(b"ACAGT");
-        
+
         assert_eq!(poa.consensus(), b"ACAGT");
     }
 
@@ -103,7 +103,7 @@ mod tests {
         poa.add_sequence(b"ACT");
         // 3. A-GT (Deletion of C)
         poa.add_sequence(b"AGT");
-        
+
         let msa = poa.msa();
         assert_eq!(msa.len(), 3);
         // MSA should be:

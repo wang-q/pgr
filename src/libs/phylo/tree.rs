@@ -1,12 +1,12 @@
 use super::node::{Node, NodeId};
-use std::collections::{HashMap, BTreeMap};
 use super::writer;
+use std::collections::{BTreeMap, HashMap};
 
 #[derive(Debug, Default, Clone)]
 pub struct Tree {
     /// Arena storage for all nodes
     nodes: Vec<Node>,
-    
+
     /// Optional root ID (a tree might be empty or in construction)
     root: Option<NodeId>,
 }
@@ -78,13 +78,16 @@ impl Tree {
         // Check if child already has a parent
         let child_parent = self.nodes[child_id].parent;
         if let Some(old_parent) = child_parent {
-             return Err(format!("Node {} already has parent {}", child_id, old_parent));
+            return Err(format!(
+                "Node {} already has parent {}",
+                child_id, old_parent
+            ));
         }
 
         // Link
         self.nodes[child_id].parent = Some(parent_id);
         self.nodes[parent_id].children.push(child_id);
-        
+
         Ok(())
     }
 
@@ -142,16 +145,16 @@ impl Tree {
     /// let n1 = tree.add_node();
     /// let n2 = tree.add_node();
     /// tree.set_root(n0);
-    /// 
+    ///
     /// tree.add_child(n0, n1).unwrap();
     /// tree.get_node_mut(n1).unwrap().length = Some(1.0);
-    /// 
+    ///
     /// tree.add_child(n1, n2).unwrap();
     /// tree.get_node_mut(n2).unwrap().length = Some(2.0);
-    /// 
+    ///
     /// // Collapse n1
     /// tree.collapse_node(n1).unwrap();
-    /// 
+    ///
     /// // n0 -> n2 (len 3.0)
     /// let node2 = tree.get_node(n2).unwrap();
     /// assert_eq!(node2.parent, Some(n0));
@@ -184,22 +187,25 @@ impl Tree {
         if self.root == Some(id) {
             return Err("Cannot collapse root node".to_string());
         }
-        
+
         // 1. Get info
         let (parent_id, parent_edge) = {
             let node = self.get_node(id).unwrap();
             // Safety: Checked root above, so parent must exist
-            (node.parent.unwrap(), node.length) 
+            (node.parent.unwrap(), node.length)
         };
-        
+
         let children_info: Vec<(NodeId, Option<f64>)> = {
-             let node = self.get_node(id).unwrap();
-             node.children.iter().map(|&c| {
-                 let child_node = self.nodes.get(c).unwrap();
-                 (c, child_node.length)
-             }).collect()
+            let node = self.get_node(id).unwrap();
+            node.children
+                .iter()
+                .map(|&c| {
+                    let child_node = self.nodes.get(c).unwrap();
+                    (c, child_node.length)
+                })
+                .collect()
         };
-        
+
         // 2. Re-parent children
         for (child_id, child_edge) in children_info {
             let new_edge = match (parent_edge, child_edge) {
@@ -208,31 +214,31 @@ impl Tree {
                 (None, Some(c)) => Some(c),
                 (None, None) => None,
             };
-            
+
             // Update child
             if let Some(child) = self.get_node_mut(child_id) {
                 child.parent = Some(parent_id);
                 child.length = new_edge;
             }
-            
+
             // Add to grandparent
             if let Some(parent) = self.get_node_mut(parent_id) {
                 parent.children.push(child_id);
             }
         }
-        
+
         // 3. Remove self from parent
         if let Some(parent) = self.get_node_mut(parent_id) {
             parent.children.retain(|&x| x != id);
         }
-        
+
         // 4. Mark deleted
         if let Some(node) = self.get_node_mut(id) {
             node.deleted = true;
             node.children.clear();
             node.parent = None;
         }
-        
+
         Ok(())
     }
 
@@ -270,10 +276,12 @@ impl Tree {
 
         // 2. Reconstruct edges using the mapping
         for (old_idx, node) in self.nodes.iter().enumerate() {
-            if node.deleted { continue; }
-            
+            if node.deleted {
+                continue;
+            }
+
             let new_self_idx = *old_to_new.get(&old_idx).unwrap();
-            
+
             // Remap parent
             if let Some(old_parent) = node.parent {
                 if let Some(&new_parent) = old_to_new.get(&old_parent) {
@@ -297,7 +305,7 @@ impl Tree {
         // 4. Swap
         self.nodes = new_nodes;
     }
-    
+
     /// Perform a preorder traversal starting from a given node.
     /// Returns a vector of NodeIds in visitation order.
     ///
@@ -345,10 +353,10 @@ impl Tree {
     /// let n2 = tree.add_node();
     /// tree.add_child(n0, n1);
     /// tree.add_child(n1, n2);
-    /// 
+    ///
     /// let path = tree.get_path_from_root(&n2).unwrap();
     /// assert_eq!(path, vec![n0, n1, n2]);
-    /// 
+    ///
     /// // Error: Node not in tree (e.g., random large ID or deleted)
     /// assert!(tree.get_path_from_root(&9999).is_err());
     /// ```
@@ -359,7 +367,7 @@ impl Tree {
 
         let mut path = Vec::new();
         let mut curr = *target_node;
-        
+
         // Traverse upwards
         loop {
             path.push(curr);
@@ -370,10 +378,10 @@ impl Tree {
                     break;
                 }
             } else {
-                 break; 
+                break;
             }
         }
-        
+
         path.reverse();
         Ok(path)
     }
@@ -398,33 +406,33 @@ impl Tree {
     /// tree.add_child(n0, n2);
     /// tree.add_child(n1, n3);
     /// tree.add_child(n1, n4);
-    /// 
+    ///
     /// assert_eq!(tree.get_common_ancestor(&n3, &n4).unwrap(), n1);
     /// assert_eq!(tree.get_common_ancestor(&n3, &n2).unwrap(), n0);
-    /// 
+    ///
     /// // Error: Nodes in disjoint trees
     /// let mut tree2 = Tree::new();
     /// let m0 = tree2.add_node();
-    /// // Since NodeIds are unique to the Tree instance's arena, we can't easily cross-reference 
+    /// // Since NodeIds are unique to the Tree instance's arena, we can't easily cross-reference
     /// // without merging. But if we simulate a disconnected graph within one Tree:
     /// let orphan = tree.add_node(); // Not connected to n0
     /// assert!(tree.get_common_ancestor(&n3, &orphan).is_err());
     /// ```
     pub fn get_common_ancestor(&self, a: &NodeId, b: &NodeId) -> Result<NodeId, String> {
-         let path_a = self.get_path_from_root(a)?;
-         let path_b = self.get_path_from_root(b)?;
-         
-         let mut lca = None;
-         
-         for (u, v) in path_a.iter().zip(path_b.iter()) {
-             if u == v {
-                 lca = Some(*u);
-             } else {
-                 break;
-             }
-         }
-         
-         lca.ok_or_else(|| "Nodes are not in the same tree (no common ancestor)".to_string())
+        let path_a = self.get_path_from_root(a)?;
+        let path_b = self.get_path_from_root(b)?;
+
+        let mut lca = None;
+
+        for (u, v) in path_a.iter().zip(path_b.iter()) {
+            if u == v {
+                lca = Some(*u);
+            } else {
+                break;
+            }
+        }
+
+        lca.ok_or_else(|| "Nodes are not in the same tree (no common ancestor)".to_string())
     }
 
     /// Calculate the distance between two nodes.
@@ -443,23 +451,23 @@ impl Tree {
     /// tree.get_node_mut(n2).unwrap().length = Some(2.5);
     /// tree.add_child(n0, n1);
     /// tree.add_child(n1, n2);
-    /// 
+    ///
     /// let (w, t) = tree.get_distance(&n0, &n2).unwrap();
     /// assert_eq!(w, 4.0);
     /// assert_eq!(t, 2);
-    /// 
+    ///
     /// // Error: Unreachable nodes
     /// let orphan = tree.add_node();
     /// assert!(tree.get_distance(&n0, &orphan).is_err());
     /// ```
     pub fn get_distance(&self, a: &NodeId, b: &NodeId) -> Result<(f64, usize), String> {
         let lca = self.get_common_ancestor(a, b)?;
-        
+
         let dist_to_lca = |start: &NodeId, end: &NodeId| -> (f64, usize) {
             let mut weighted = 0.0;
             let mut topo = 0;
             let mut curr = *start;
-            
+
             while curr != *end {
                 if let Some(node) = self.get_node(curr) {
                     weighted += node.length.unwrap_or(0.0);
@@ -467,16 +475,16 @@ impl Tree {
                     if let Some(p) = node.parent {
                         curr = p;
                     } else {
-                        break; 
+                        break;
                     }
                 }
             }
             (weighted, topo)
         };
-        
+
         let (w1, t1) = dist_to_lca(a, &lca);
         let (w2, t2) = dist_to_lca(b, &lca);
-        
+
         Ok((w1 + w2, t1 + t2))
     }
 
@@ -495,7 +503,7 @@ impl Tree {
     /// let n2 = tree.add_node();
     /// tree.add_child(n0, n1);
     /// tree.add_child(n0, n2);
-    /// 
+    ///
     /// let traversal = tree.postorder(&n0).unwrap();
     /// assert_eq!(traversal, vec![n1, n2, n0]);
     /// ```
@@ -506,18 +514,18 @@ impl Tree {
 
         let mut result = Vec::new();
         let mut stack = vec![*start_node];
-        
+
         // Using a second stack to reverse the order
         let mut output_stack = Vec::new();
 
         while let Some(curr) = stack.pop() {
             output_stack.push(curr);
-            
+
             if let Some(node) = self.get_node(curr) {
                 // Push children left-to-right, so they are popped right-to-left
                 // But since we are building output_stack to be reversed later,
                 // we want Right child to be pushed to output_stack BEFORE Left child?
-                // Wait. 
+                // Wait.
                 // Preorder: Root, Left, Right. Stack: push Right, push Left. Pop Left, Pop Right.
                 // Postorder: Left, Right, Root.
                 // Reverse Postorder: Root, Right, Left.
@@ -530,11 +538,11 @@ impl Tree {
                 }
             }
         }
-        
+
         while let Some(curr) = output_stack.pop() {
             result.push(curr);
         }
-        
+
         Ok(result)
     }
 
@@ -557,7 +565,7 @@ impl Tree {
     /// tree.add_child(n0, n1);
     /// tree.add_child(n0, n2);
     /// tree.add_child(n1, n3);
-    /// 
+    ///
     /// let traversal = tree.levelorder(&n0).unwrap();
     /// assert_eq!(traversal, vec![n0, n1, n2, n3]);
     /// ```
@@ -621,9 +629,9 @@ impl Tree {
     /// ```
     pub fn get_height(&self, id: &NodeId) -> Result<f64, String> {
         if self.get_node(*id).is_none() {
-             return Err(format!("Node {} not found", id));
+            return Err(format!("Node {} not found", id));
         }
-        
+
         // If leaf, height is 0
         if self.get_node(*id).unwrap().is_leaf() {
             return Ok(0.0);
@@ -633,8 +641,10 @@ impl Tree {
         let mut max_dist = 0.0;
 
         for desc_id in descendants {
-            if desc_id == *id { continue; }
-            
+            if desc_id == *id {
+                continue;
+            }
+
             if let Some(node) = self.get_node(desc_id) {
                 if node.is_leaf() {
                     // Calculate distance
@@ -648,14 +658,14 @@ impl Tree {
                 }
             }
         }
-        
+
         Ok(max_dist)
     }
 
     /// Check if a set of nodes forms a monophyletic group (clade).
     ///
     /// A group is monophyletic if it includes a common ancestor and ALL of its descendants.
-    /// In this implementation, we check if the set of leaf descendants of the 
+    /// In this implementation, we check if the set of leaf descendants of the
     /// lowest common ancestor (LCA) of the input nodes matches the input set exactly.
     /// Note: This assumes the input set consists of leaf nodes (tips).
     ///
@@ -694,7 +704,7 @@ impl Tree {
 
         // Convert input slice to a BTreeSet for final comparison and duplicate handling
         let ids_set: std::collections::BTreeSet<NodeId> = ids.iter().cloned().collect();
-        
+
         let mut nodes: Vec<NodeId> = ids.iter().cloned().collect();
         let mut sub_root = nodes.pop().unwrap(); // Safe due to is_empty check
 
@@ -722,7 +732,7 @@ impl Tree {
         }
 
         // 3. Compare sets
-        // Note: The input `ids` should ideally contain only leaves for strict monophyly definition 
+        // Note: The input `ids` should ideally contain only leaves for strict monophyly definition
         // in this context (based on original implementation logic).
         descendants.eq(&ids_set)
     }
@@ -742,16 +752,20 @@ impl Tree {
 
     /// Get all leaf nodes in the tree.
     pub fn get_leaves(&self) -> Vec<NodeId> {
-        self.nodes.iter()
+        self.nodes
+            .iter()
             .filter(|n| !n.deleted && n.children.is_empty())
             .map(|n| n.id)
             .collect()
     }
 
     /// Find nodes that satisfy a predicate.
-    pub fn find_nodes<F>(&self, predicate: F) -> Vec<NodeId> 
-    where F: Fn(&Node) -> bool {
-        self.nodes.iter()
+    pub fn find_nodes<F>(&self, predicate: F) -> Vec<NodeId>
+    where
+        F: Fn(&Node) -> bool,
+    {
+        self.nodes
+            .iter()
             .filter(|n| !n.deleted && predicate(n))
             .map(|n| n.id)
             .collect()
@@ -759,7 +773,8 @@ impl Tree {
 
     /// Find the first node with the given name.
     pub fn get_node_by_name(&self, name: &str) -> Option<NodeId> {
-        self.nodes.iter()
+        self.nodes
+            .iter()
             .find(|n| !n.deleted && n.name.as_deref() == Some(name))
             .map(|n| n.id)
     }
@@ -785,33 +800,33 @@ impl Tree {
     /// let n1 = tree.add_node();
     /// let n2 = tree.add_node();
     /// let n3 = tree.add_node();
-    /// 
+    ///
     /// tree.set_root(n0);
     /// tree.add_child(n0, n1).unwrap();
     /// tree.add_child(n0, n2).unwrap();
     /// tree.add_child(n1, n3).unwrap();
     /// tree.get_node_mut(n1).unwrap().length = Some(10.0);
     /// tree.get_node_mut(n3).unwrap().length = Some(5.0);
-    /// 
+    ///
     /// // Reroot at 3
     /// tree.reroot_at(n3).unwrap();
-    /// 
+    ///
     /// // New structure:
     /// // 3 (root) -> 1 (len 5.0) -> 0 (len 10.0) -> 2 (len None/Default)
     /// assert_eq!(tree.get_root(), Some(n3));
     /// assert_eq!(tree.get_node(n3).unwrap().parent, None);
     /// assert_eq!(tree.get_node(n3).unwrap().length, None);
-    /// 
+    ///
     /// let node1 = tree.get_node(n1).unwrap();
     /// assert_eq!(node1.parent, Some(n3));
     /// assert_eq!(node1.length, Some(5.0));
     /// assert!(node1.children.contains(&n0));
-    /// 
+    ///
     /// let node0 = tree.get_node(n0).unwrap();
     /// assert_eq!(node0.parent, Some(n1));
     /// assert_eq!(node0.length, Some(10.0));
     /// assert!(node0.children.contains(&n2));
-    /// 
+    ///
     /// // Error: Node not found
     /// assert!(tree.reroot_at(9999).is_err());
     /// ```
@@ -819,7 +834,7 @@ impl Tree {
         if self.get_node(new_root_id).is_none() {
             return Err(format!("Node {} not found", new_root_id));
         }
-        
+
         let old_root_id = self.root.ok_or("Tree has no root")?;
         if old_root_id == new_root_id {
             return Ok(());
@@ -827,7 +842,7 @@ impl Tree {
 
         // 1. Get path from old root to new root
         let path = self.get_path_from_root(&new_root_id)?;
-        
+
         // 2. Collect edge lengths along the path
         // path[i]'s length represents edge (path[i-1] -> path[i])
         let mut lengths = Vec::new();
@@ -838,23 +853,23 @@ impl Tree {
         // 3. Reverse edges
         for i in (1..path.len()).rev() {
             let child_id = path[i];
-            let parent_id = path[i-1];
+            let parent_id = path[i - 1];
             let length = lengths[i];
 
             // a. Remove child from parent's children
             if let Some(parent) = self.nodes.get_mut(parent_id) {
                 parent.children.retain(|&x| x != child_id);
             }
-            
+
             // b. Add parent to child's children
             if let Some(child) = self.nodes.get_mut(child_id) {
                 child.children.push(parent_id);
             }
-            
+
             // c. Update parent's parent pointer and length
             if let Some(parent) = self.nodes.get_mut(parent_id) {
                 parent.parent = Some(child_id);
-                parent.length = length; 
+                parent.length = length;
             }
         }
 
@@ -863,27 +878,31 @@ impl Tree {
             new_root.parent = None;
             new_root.length = None;
         }
-        
+
         self.root = Some(new_root_id);
-        
+
         Ok(())
     }
 
     /// Prune nodes that match a predicate.
     /// Warning: This removes the matching nodes AND their descendants.
-    pub fn prune_where<F>(&mut self, predicate: F) 
-    where F: Fn(&Node) -> bool {
+    pub fn prune_where<F>(&mut self, predicate: F)
+    where
+        F: Fn(&Node) -> bool,
+    {
         // We need to collect IDs first to avoid borrowing issues
-        let to_remove: Vec<NodeId> = self.nodes.iter()
+        let to_remove: Vec<NodeId> = self
+            .nodes
+            .iter()
             .filter(|n| !n.deleted && predicate(n))
             .map(|n| n.id)
             .collect();
-            
+
         for id in to_remove {
             self.remove_node(id, true);
         }
     }
-    
+
     /// Get number of active nodes
     pub fn len(&self) -> usize {
         self.nodes.iter().filter(|n| !n.deleted).count()
@@ -904,7 +923,8 @@ impl Tree {
     /// ```
     pub fn get_names(&self) -> Vec<String> {
         if let Some(root) = self.root {
-            self.preorder(&root).unwrap_or_default()
+            self.preorder(&root)
+                .unwrap_or_default()
                 .iter()
                 .filter_map(|&id| self.get_node(id))
                 .filter_map(|node| node.name.clone())
@@ -947,7 +967,7 @@ impl Tree {
     /// let newick = "((A[&&NHX:S=Human],B),C[&&NHX:S=Chimp]);";
     /// let tree = Tree::from_newick(newick).unwrap();
     /// let species_map = tree.get_property_values("S");
-    /// 
+    ///
     /// let map = tree.get_name_id();
     /// let id_a = *map.get("A").unwrap();
     /// let id_c = *map.get("C").unwrap();
@@ -959,7 +979,7 @@ impl Tree {
     pub fn get_property_values(&self, key: &str) -> BTreeMap<NodeId, String> {
         let mut values = BTreeMap::new();
         if let Some(root) = self.root {
-             for id in self.preorder(&root).unwrap_or_default().iter() {
+            for id in self.preorder(&root).unwrap_or_default().iter() {
                 if let Some(node) = self.get_node(*id) {
                     if let Some(val) = node.get_property(key) {
                         values.insert(*id, val.clone());
@@ -986,9 +1006,9 @@ impl Tree {
     }
 
     /// Serialize the tree to a Newick string with optional indentation.
-    /// 
+    ///
     /// # Arguments
-    /// * `indent` - The string to use for indentation (e.g., "  ", "\t"). 
+    /// * `indent` - The string to use for indentation (e.g., "  ", "\t").
     ///              If empty, output will be compact (no whitespace).
     ///
     /// # Example
@@ -1001,7 +1021,7 @@ impl Tree {
     /// tree.add_child(root, child);
     /// tree.get_node_mut(root).unwrap().set_name("Root");
     /// tree.get_node_mut(child).unwrap().set_name("Child");
-    /// 
+    ///
     /// let expected = "(\n  Child\n)Root;";
     /// assert_eq!(tree.to_newick_with_format("  "), expected);
     /// ```
@@ -1033,22 +1053,22 @@ mod tests {
         let n3 = tree.add_node();
         let n4 = tree.add_node();
         let n5 = tree.add_node();
-        
+
         tree.set_root(n0);
         tree.add_child(n0, n1).unwrap();
         tree.add_child(n0, n2).unwrap();
         tree.add_child(n1, n3).unwrap();
         tree.add_child(n1, n4).unwrap();
         tree.add_child(n2, n5).unwrap();
-        
+
         // Preorder: 0, 1, 3, 4, 2, 5
         let pre = tree.preorder(&n0).unwrap();
         assert_eq!(pre, vec![n0, n1, n3, n4, n2, n5]);
-        
+
         // Postorder: 3, 4, 1, 5, 2, 0
         let post = tree.postorder(&n0).unwrap();
         assert_eq!(post, vec![n3, n4, n1, n5, n2, n0]);
-        
+
         // Levelorder: 0, 1, 2, 3, 4, 5
         let level = tree.levelorder(&n0).unwrap();
         assert_eq!(level, vec![n0, n1, n2, n3, n4, n5]);
@@ -1057,7 +1077,7 @@ mod tests {
     #[test]
     fn test_tree_basic_ops() {
         let mut tree = Tree::new();
-        
+
         // Create nodes
         // 0(root) -> 1, 2
         // 1 -> 3
@@ -1065,19 +1085,19 @@ mod tests {
         let n1 = tree.add_node();
         let n2 = tree.add_node();
         let n3 = tree.add_node();
-        
+
         tree.set_root(n0);
-        
+
         assert_eq!(tree.add_child(n0, n1), Ok(()));
         assert_eq!(tree.add_child(n0, n2), Ok(()));
         assert_eq!(tree.add_child(n1, n3), Ok(()));
-        
+
         assert_eq!(tree.len(), 4);
-        
+
         // Check structure
         let root = tree.get_node(n0).unwrap();
         assert_eq!(root.children, vec![n1, n2]);
-        
+
         let node1 = tree.get_node(n1).unwrap();
         assert_eq!(node1.parent, Some(n0));
         assert_eq!(node1.children, vec![n3]);
@@ -1090,33 +1110,33 @@ mod tests {
         let n0 = tree.add_node();
         let n1 = tree.add_node();
         let n2 = tree.add_node();
-        
+
         tree.add_child(n0, n1).unwrap();
         tree.add_child(n1, n2).unwrap();
         tree.set_root(n0);
-        
+
         // Remove n1 (recursive=false), n2 becomes orphan
         tree.remove_node(n1, false);
-        
+
         assert!(tree.get_node(n1).is_none()); // n1 is logically gone
         assert_eq!(tree.len(), 2); // 0 and 2 remain
-        
+
         let node0 = tree.get_node(n0).unwrap();
         assert!(!node0.children.contains(&n1)); // 0 no longer points to 1
-        
+
         let node2 = tree.get_node(n2).unwrap();
         assert_eq!(node2.parent, None); // 2 is orphaned
-        
+
         // Compact
         // Before: [0:Valid, 1:Deleted, 2:Valid]
         // After:  [0':Old0, 1':Old2]
         tree.compact();
-        
+
         assert_eq!(tree.len(), 2);
         // Old n0 should be at index 0
         let new_n0 = tree.get_node(0).unwrap();
-        assert_eq!(new_n0.children.len(), 0); 
-        
+        assert_eq!(new_n0.children.len(), 0);
+
         // Old n2 should be at index 1
         let new_n1 = tree.get_node(1).unwrap();
         assert_eq!(new_n1.parent, None);
@@ -1135,34 +1155,34 @@ mod tests {
         let n2 = tree.add_node();
         let n3 = tree.add_node();
         let n4 = tree.add_node();
-        
+
         tree.set_root(n0);
         tree.add_child(n0, n1).unwrap();
         tree.add_child(n0, n2).unwrap();
         tree.add_child(n1, n3).unwrap();
         tree.add_child(n1, n4).unwrap();
-        
+
         // Set lengths
         tree.get_node_mut(n1).unwrap().length = Some(1.0);
         tree.get_node_mut(n2).unwrap().length = Some(2.0);
         tree.get_node_mut(n3).unwrap().length = Some(3.0);
         tree.get_node_mut(n4).unwrap().length = Some(4.0);
-        
+
         // Paths
         assert_eq!(tree.get_path_from_root(&n3).unwrap(), vec![n0, n1, n3]);
         assert_eq!(tree.get_path_from_root(&n2).unwrap(), vec![n0, n2]);
-        
+
         // LCA
         assert_eq!(tree.get_common_ancestor(&n3, &n4).unwrap(), n1);
         assert_eq!(tree.get_common_ancestor(&n3, &n2).unwrap(), n0);
         assert_eq!(tree.get_common_ancestor(&n1, &n3).unwrap(), n1);
-        
+
         // Distance
         // n3 -> n4: n3(3.0)->n1 + n1->n4(4.0) = 7.0 (weighted). Steps: n3->n1->n4 = 2 edges.
         let (w, t) = tree.get_distance(&n3, &n4).unwrap();
         assert_eq!(w, 7.0);
         assert_eq!(t, 2);
-        
+
         // n3 -> n2: n3(3.0)->n1(1.0)->n0 + n0->n2(2.0) = 6.0. Steps: n3->n1->n0->n2 = 3 edges.
         let (w, t) = tree.get_distance(&n3, &n2).unwrap();
         assert_eq!(w, 6.0);
@@ -1179,36 +1199,36 @@ mod tests {
         //3 (leaf, name="leaf3")
         let n0 = tree.add_node();
         tree.get_node_mut(n0).unwrap().name = Some("root".to_string());
-        
+
         let n1 = tree.add_node();
-        
+
         let n2 = tree.add_node();
         tree.get_node_mut(n2).unwrap().name = Some("leaf2".to_string());
-        
+
         let n3 = tree.add_node();
         tree.get_node_mut(n3).unwrap().name = Some("leaf3".to_string());
-        
+
         tree.set_root(n0);
         tree.add_child(n0, n1).unwrap();
         tree.add_child(n0, n2).unwrap();
         tree.add_child(n1, n3).unwrap();
-        
+
         // Subtree
         // subtree(1) = [1, 3]
         let sub = tree.get_subtree(&n1).unwrap();
         assert_eq!(sub, vec![n1, n3]);
-        
+
         // Leaves
         // Leaves: 2, 3
         let leaves = tree.get_leaves();
         assert!(leaves.contains(&n2));
         assert!(leaves.contains(&n3));
         assert_eq!(leaves.len(), 2);
-        
+
         // Find nodes
         let named_nodes = tree.find_nodes(|n| n.name.is_some());
         assert_eq!(named_nodes.len(), 3); // 0, 2, 3
-        
+
         // Get by name
         assert_eq!(tree.get_node_by_name("root"), Some(n0));
         assert_eq!(tree.get_node_by_name("leaf2"), Some(n2));
@@ -1226,38 +1246,37 @@ mod tests {
         //3
         let n0 = tree.add_node();
         tree.get_node_mut(n0).unwrap().name = Some("root".to_string());
-        
+
         let n1 = tree.add_node();
         tree.get_node_mut(n1).unwrap().name = Some("n1".to_string());
-        
+
         let n2 = tree.add_node();
         tree.get_node_mut(n2).unwrap().name = Some("remove_me".to_string());
-        
+
         let n3 = tree.add_node();
         tree.get_node_mut(n3).unwrap().name = Some("n3".to_string());
-        
+
         tree.set_root(n0);
         tree.add_child(n0, n1).unwrap();
         tree.add_child(n0, n2).unwrap();
         tree.add_child(n1, n3).unwrap();
-        
+
         assert_eq!(tree.len(), 4);
-        
+
         // Prune node with name "remove_me"
         tree.prune_where(|n| n.name.as_deref() == Some("remove_me"));
-        
+
         assert_eq!(tree.len(), 3);
         assert!(tree.get_node(n2).is_none());
         assert!(tree.get_node(n0).unwrap().children.contains(&n1));
         assert!(!tree.get_node(n0).unwrap().children.contains(&n2));
-        
+
         // Prune n1, should also remove n3
         tree.prune_where(|n| n.id == n1);
-        
+
         assert_eq!(tree.len(), 1); // Only root left
         assert!(tree.get_node(n1).is_none());
         assert!(tree.get_node(n3).is_none());
         assert!(tree.get_node(n0).unwrap().children.is_empty());
     }
-
 }

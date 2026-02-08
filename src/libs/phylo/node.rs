@@ -8,26 +8,25 @@ pub type NodeId = usize;
 pub struct Node {
     /// Unique identifier for the node (index in the arena)
     pub id: NodeId,
-    
+
     /// Parent node ID (None for root)
     pub parent: Option<NodeId>,
-    
+
     /// List of child node IDs
     pub children: Vec<NodeId>,
 
     // --- Payload ---
-
     /// Node name/label (e.g., "human", "internal_1")
     pub name: Option<String>,
-    
+
     /// Branch length to parent
     /// In rooted trees, edge length is an attribute of the child node.
     pub length: Option<f64>,
-    
+
     /// Structured properties (e.g., NHX tags like [&&NHX:S=human])
     /// Using BTreeMap ensures deterministic output order.
     pub properties: Option<BTreeMap<String, String>>,
-    
+
     /// Soft deletion flag.
     /// If true, this node is considered removed.
     /// Use Tree::compact() to permanently remove deleted nodes and reclaim memory.
@@ -109,7 +108,10 @@ impl Node {
         if self.properties.is_none() {
             self.properties = Some(BTreeMap::new());
         }
-        self.properties.as_mut().unwrap().insert(key.into(), value.into());
+        self.properties
+            .as_mut()
+            .unwrap()
+            .insert(key.into(), value.into());
     }
 
     /// Add properties from a string.
@@ -143,7 +145,7 @@ impl Node {
     /// let mut node = Node::new(0);
     /// node.add_property("T", "9606");
     /// node.add_property("S", "Homo sapiens");
-    /// 
+    ///
     /// assert_eq!(node.get_property("T"), Some(&"9606".to_string()));
     /// assert_eq!(node.get_property("S"), Some(&"Homo sapiens".to_string()));
     /// assert_eq!(node.get_property("Missing"), None);
@@ -161,7 +163,7 @@ impl Node {
     /// use pgr::libs::phylo::node::Node;
     /// let mut node = Node::new(1);
     /// assert!(node.is_leaf());
-    /// 
+    ///
     /// // Manually adding a child ID (simulating tree operation)
     /// node.children.push(2);
     /// assert!(!node.is_leaf());

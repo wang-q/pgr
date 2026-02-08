@@ -32,7 +32,7 @@ impl Default for AlignmentParams {
 #[derive(Debug, Clone, Default)]
 pub struct Alignment {
     pub score: i32,
-    pub path: Vec<(Option<usize>, Option<NodeIndex>)>, 
+    pub path: Vec<(Option<usize>, Option<NodeIndex>)>,
 }
 
 pub trait AlignmentEngine {
@@ -55,13 +55,13 @@ impl AlignmentEngine for ScalarAlignmentEngine {
         let sorted_nodes = graph.topological_sort();
         let n_nodes = sorted_nodes.len();
         let n_seq = sequence.len();
-        
+
         if n_nodes == 0 {
-             let mut path = Vec::new();
-             for i in 0..n_seq {
-                 path.push((Some(i), None));
-             }
-             return Alignment { score: 0, path };
+            let mut path = Vec::new();
+            for i in 0..n_seq {
+                path.push((Some(i), None));
+            }
+            return Alignment { score: 0, path };
         }
 
         let node_map: HashMap<NodeIndex, usize> = sorted_nodes
@@ -71,7 +71,7 @@ impl AlignmentEngine for ScalarAlignmentEngine {
             .collect();
 
         let neg_inf = -1_000_000_000;
-        
+
         // Matrices: [node_idx_linear][seq_idx]
         let mut m = vec![vec![neg_inf; n_seq + 1]; n_nodes];
         let mut e = vec![vec![neg_inf; n_seq + 1]; n_nodes];
@@ -82,9 +82,12 @@ impl AlignmentEngine for ScalarAlignmentEngine {
 
         // Initialization
         for (i, &node_idx) in sorted_nodes.iter().enumerate() {
-            let preds: Vec<NodeIndex> = graph.graph.neighbors_directed(node_idx, petgraph::Direction::Incoming).collect();
+            let preds: Vec<NodeIndex> = graph
+                .graph
+                .neighbors_directed(node_idx, petgraph::Direction::Incoming)
+                .collect();
             let is_start_node = preds.is_empty();
-            
+
             // 1. Initialize Column 0 (Sequence Empty)
             if is_local || is_semi {
                 // Free start in graph: 0 cost to reach any node with empty sequence
@@ -93,7 +96,7 @@ impl AlignmentEngine for ScalarAlignmentEngine {
                 e[i][0] = neg_inf;
             } else {
                 if is_start_node {
-                    f[i][0] = self.params.gap_open; 
+                    f[i][0] = self.params.gap_open;
                     m[i][0] = neg_inf;
                     e[i][0] = neg_inf;
                 } else {
@@ -103,7 +106,7 @@ impl AlignmentEngine for ScalarAlignmentEngine {
                         // Spoa: penalty = max(penalty, F[pred])
                         // F[i] = penalty + e
                         if f[u][0] > neg_inf {
-                             max_prev = max_prev.max(f[u][0]);
+                            max_prev = max_prev.max(f[u][0]);
                         }
                     }
                     if max_prev > neg_inf {
@@ -115,101 +118,145 @@ impl AlignmentEngine for ScalarAlignmentEngine {
                     e[i][0] = neg_inf;
                 }
             }
-            
+
             // 2. Fill rest of columns
             let node_base = graph.graph[node_idx].base;
-            
+
             for j in 1..=n_seq {
-                 let seq_base = sequence[j-1];
-                 let match_score = if seq_base == node_base { self.params.match_score } else { self.params.mismatch_score };
-                 
-                 // E[i][j]: Insertion
-                 // Derived from M (gap open), E (gap extend), or F (gap open)
-                 let from_m = if m[i][j-1] > neg_inf { m[i][j-1] + self.params.gap_open } else { neg_inf };
-                 let from_e = if e[i][j-1] > neg_inf { e[i][j-1] + self.params.gap_extend } else { neg_inf };
-                 let from_f = if f[i][j-1] > neg_inf { f[i][j-1] + self.params.gap_open } else { neg_inf };
-                 
-                 let mut max_e = from_m.max(from_e).max(from_f);
-                 if is_local && max_e < 0 { max_e = neg_inf; } 
-                 if max_e < neg_inf / 2 { max_e = neg_inf; }
-                 e[i][j] = max_e;
-                 
-                 // M[i][j]: Match/Mismatch
-                 let mut max_m = neg_inf;
-                 
-                 if is_start_node {
-                     if j == 1 {
-                         // Transition from virtual root
-                         max_m = match_score;
-                     } else {
-                         // Gap from virtual root
-                         // We have j-1 bases before current one.
-                         // They are all insertions.
-                         // Cost = Open + (cnt-1)*Extend.
-                         // cnt = j-1.
-                         // Cost = Open + (j-2)*Extend.
-                         let ins_score = self.params.gap_open + (j as i32 - 2) * self.params.gap_extend;
-                         max_m = ins_score + match_score;
-                     }
-                 } else {
-                     for &pred in &preds {
-                         let u = node_map[&pred];
-                         let src = m[u][j-1].max(e[u][j-1]).max(f[u][j-1]);
-                         if src > neg_inf {
+                let seq_base = sequence[j - 1];
+                let match_score = if seq_base == node_base {
+                    self.params.match_score
+                } else {
+                    self.params.mismatch_score
+                };
+
+                // E[i][j]: Insertion
+                // Derived from M (gap open), E (gap extend), or F (gap open)
+                let from_m = if m[i][j - 1] > neg_inf {
+                    m[i][j - 1] + self.params.gap_open
+                } else {
+                    neg_inf
+                };
+                let from_e = if e[i][j - 1] > neg_inf {
+                    e[i][j - 1] + self.params.gap_extend
+                } else {
+                    neg_inf
+                };
+                let from_f = if f[i][j - 1] > neg_inf {
+                    f[i][j - 1] + self.params.gap_open
+                } else {
+                    neg_inf
+                };
+
+                let mut max_e = from_m.max(from_e).max(from_f);
+                if is_local && max_e < 0 {
+                    max_e = neg_inf;
+                }
+                if max_e < neg_inf / 2 {
+                    max_e = neg_inf;
+                }
+                e[i][j] = max_e;
+
+                // M[i][j]: Match/Mismatch
+                let mut max_m = neg_inf;
+
+                if is_start_node {
+                    if j == 1 {
+                        // Transition from virtual root
+                        max_m = match_score;
+                    } else {
+                        // Gap from virtual root
+                        // We have j-1 bases before current one.
+                        // They are all insertions.
+                        // Cost = Open + (cnt-1)*Extend.
+                        // cnt = j-1.
+                        // Cost = Open + (j-2)*Extend.
+                        let ins_score =
+                            self.params.gap_open + (j as i32 - 2) * self.params.gap_extend;
+                        max_m = ins_score + match_score;
+                    }
+                } else {
+                    for &pred in &preds {
+                        let u = node_map[&pred];
+                        let src = m[u][j - 1].max(e[u][j - 1]).max(f[u][j - 1]);
+                        if src > neg_inf {
                             max_m = max_m.max(src + match_score);
-                         }
-                     }
-                     // For Semi/Local: Free start allows starting here from virtual root
-                     if (is_local || is_semi) && j == 1 {
-                         max_m = max_m.max(match_score);
-                     }
-                 }
-                 
-                 if is_local && max_m < 0 { max_m = 0; }
-                 m[i][j] = max_m;
-                 
-                 // F[i][j]: Deletion
-                 let mut max_f = neg_inf;
-                 if !is_start_node {
-                     for &pred in &preds {
-                         let u = node_map[&pred];
-                         let from_m = if m[u][j] > neg_inf { m[u][j] + self.params.gap_open } else { neg_inf };
-                         let from_f = if f[u][j] > neg_inf { f[u][j] + self.params.gap_extend } else { neg_inf };
-                         let from_e = if e[u][j] > neg_inf { e[u][j] + self.params.gap_open } else { neg_inf };
-                         
-                         max_f = max_f.max(from_m).max(from_f).max(from_e);
-                     }
-                 }
-                 // For Semi/Local, F[i][j] coming from virtual root (skipping nodes) is handled by F[i][0] init and propagation?
-                 // No, F[i][0]=0. F[i][j] means we have consumed seq[0..j].
-                 // If we delete node i, we move from (pred, j) -> (i, j).
-                 // So F[i][j] depends on predecessors at j.
-                 
-                 if is_local && max_f < 0 { max_f = neg_inf; }
-                 if max_f < neg_inf / 2 { max_f = neg_inf; }
-                 f[i][j] = max_f;
+                        }
+                    }
+                    // For Semi/Local: Free start allows starting here from virtual root
+                    if (is_local || is_semi) && j == 1 {
+                        max_m = max_m.max(match_score);
+                    }
+                }
+
+                if is_local && max_m < 0 {
+                    max_m = 0;
+                }
+                m[i][j] = max_m;
+
+                // F[i][j]: Deletion
+                let mut max_f = neg_inf;
+                if !is_start_node {
+                    for &pred in &preds {
+                        let u = node_map[&pred];
+                        let from_m = if m[u][j] > neg_inf {
+                            m[u][j] + self.params.gap_open
+                        } else {
+                            neg_inf
+                        };
+                        let from_f = if f[u][j] > neg_inf {
+                            f[u][j] + self.params.gap_extend
+                        } else {
+                            neg_inf
+                        };
+                        let from_e = if e[u][j] > neg_inf {
+                            e[u][j] + self.params.gap_open
+                        } else {
+                            neg_inf
+                        };
+
+                        max_f = max_f.max(from_m).max(from_f).max(from_e);
+                    }
+                }
+                // For Semi/Local, F[i][j] coming from virtual root (skipping nodes) is handled by F[i][0] init and propagation?
+                // No, F[i][0]=0. F[i][j] means we have consumed seq[0..j].
+                // If we delete node i, we move from (pred, j) -> (i, j).
+                // So F[i][j] depends on predecessors at j.
+
+                if is_local && max_f < 0 {
+                    max_f = neg_inf;
+                }
+                if max_f < neg_inf / 2 {
+                    max_f = neg_inf;
+                }
+                f[i][j] = max_f;
             }
         }
-        
+
         // Find best end score
         let mut best_score = neg_inf;
         let mut best_node_idx = 0;
         let mut best_col = n_seq;
-        let mut best_state = 0; 
-        
+        let mut best_state = 0;
+
         if is_local {
             // Check all cells
-            best_score = 0; 
+            best_score = 0;
             for i in 0..n_nodes {
                 for j in 1..=n_seq {
                     let score = m[i][j].max(e[i][j]).max(f[i][j]);
-                    if score >= best_score { // Use >= to pick last occurrence? or >?
+                    if score >= best_score {
+                        // Use >= to pick last occurrence? or >?
                         best_score = score;
                         best_node_idx = i;
                         best_col = j;
-                        if score == m[i][j] { best_state = 0; }
-                        else if score == e[i][j] { best_state = 1; }
-                        else { best_state = 2; }
+                        if score == m[i][j] {
+                            best_state = 0;
+                        } else if score == e[i][j] {
+                            best_state = 1;
+                        } else {
+                            best_state = 2;
+                        }
                     }
                 }
             }
@@ -221,9 +268,13 @@ impl AlignmentEngine for ScalarAlignmentEngine {
                     best_score = score;
                     best_node_idx = i;
                     best_col = n_seq;
-                    if score == m[i][n_seq] { best_state = 0; }
-                    else if score == e[i][n_seq] { best_state = 1; }
-                    else { best_state = 2; }
+                    if score == m[i][n_seq] {
+                        best_state = 0;
+                    } else if score == e[i][n_seq] {
+                        best_state = 1;
+                    } else {
+                        best_state = 2;
+                    }
                 }
             }
         } else {
@@ -236,146 +287,198 @@ impl AlignmentEngine for ScalarAlignmentEngine {
                     best_score = score;
                     best_node_idx = i;
                     best_col = n_seq;
-                    if score == m[i][n_seq] { best_state = 0; }
-                    else if score == e[i][n_seq] { best_state = 1; }
-                    else { best_state = 2; }
+                    if score == m[i][n_seq] {
+                        best_state = 0;
+                    } else if score == e[i][n_seq] {
+                        best_state = 1;
+                    } else {
+                        best_state = 2;
+                    }
                 }
             }
         }
-        
+
         // Backtracking
         let mut path = Vec::new();
         let mut curr_i = best_node_idx;
         let mut curr_j = best_col;
         let mut curr_state = best_state;
-        
-        while curr_j > 0 || (curr_i > 0) { 
-             let node_idx = sorted_nodes[curr_i];
-             let preds: Vec<NodeIndex> = graph.graph.neighbors_directed(node_idx, petgraph::Direction::Incoming).collect();
-             let is_start = preds.is_empty();
-             
-             // Stop conditions
-             if is_local && best_score == 0 { break; } // If score 0, stop
-             if is_local {
-                 let s = match curr_state { 0 => m[curr_i][curr_j], 1 => e[curr_i][curr_j], _ => f[curr_i][curr_j] };
-                 if s <= 0 { break; }
-             }
-             if is_semi && curr_j == 0 { break; } // Reached start of sequence
-             
-             if curr_j == 0 && is_start { break; }
-             
-             match curr_state {
-                 0 => { // M
-                     let match_score = if curr_j > 0 {
-                         if sequence[curr_j-1] == graph.graph[node_idx].base { self.params.match_score } else { self.params.mismatch_score }
-                     } else { 0 };
 
-                     // If j=1 and Local/Semi, we could have started here
-                     if (is_local || is_semi) && curr_j == 1 {
-                         // Check if we started here (score == match_score)
-                         if m[curr_i][curr_j] == match_score {
-                             path.push((Some(curr_j-1), Some(node_idx)));
-                             curr_j -= 1;
-                             break;
-                         }
-                     }
-                     
-                     if is_start {
-                         if curr_j > 0 {
-                            path.push((Some(curr_j-1), Some(node_idx)));
+        while curr_j > 0 || (curr_i > 0) {
+            let node_idx = sorted_nodes[curr_i];
+            let preds: Vec<NodeIndex> = graph
+                .graph
+                .neighbors_directed(node_idx, petgraph::Direction::Incoming)
+                .collect();
+            let is_start = preds.is_empty();
+
+            // Stop conditions
+            if is_local && best_score == 0 {
+                break;
+            } // If score 0, stop
+            if is_local {
+                let s = match curr_state {
+                    0 => m[curr_i][curr_j],
+                    1 => e[curr_i][curr_j],
+                    _ => f[curr_i][curr_j],
+                };
+                if s <= 0 {
+                    break;
+                }
+            }
+            if is_semi && curr_j == 0 {
+                break;
+            } // Reached start of sequence
+
+            if curr_j == 0 && is_start {
+                break;
+            }
+
+            match curr_state {
+                0 => {
+                    // M
+                    let match_score = if curr_j > 0 {
+                        if sequence[curr_j - 1] == graph.graph[node_idx].base {
+                            self.params.match_score
+                        } else {
+                            self.params.mismatch_score
+                        }
+                    } else {
+                        0
+                    };
+
+                    // If j=1 and Local/Semi, we could have started here
+                    if (is_local || is_semi) && curr_j == 1 {
+                        // Check if we started here (score == match_score)
+                        if m[curr_i][curr_j] == match_score {
+                            path.push((Some(curr_j - 1), Some(node_idx)));
                             curr_j -= 1;
-                         }
-                         break; 
-                     } else {
-                         let mut found = false;
-                         for &pred in &preds {
-                             let u = node_map[&pred];
-                             let target = m[curr_i][curr_j] - match_score;
-                             
-                             if m[u][curr_j-1] == target {
-                                 path.push((Some(curr_j-1), Some(node_idx)));
-                                 curr_i = u; curr_j -= 1; curr_state = 0; found = true; break;
-                             }
-                             if e[u][curr_j-1] == target {
-                                 path.push((Some(curr_j-1), Some(node_idx)));
-                                 curr_i = u; curr_j -= 1; curr_state = 1; found = true; break;
-                             }
-                             if f[u][curr_j-1] == target {
-                                 path.push((Some(curr_j-1), Some(node_idx)));
-                                 curr_i = u; curr_j -= 1; curr_state = 2; found = true; break;
-                             }
-                         }
-                         if !found { 
-                             // Could be start of a branch from virtual source?
-                             break;
-                         }
-                     }
-                 },
-                 1 => { // E
-                     let target = e[curr_i][curr_j];
-                     let score_e = e[curr_i][curr_j-1] + self.params.gap_extend;
-                     
-                     path.push((Some(curr_j-1), None));
-                     
-                     // Spoa checks H[i][j] == H[i][j-1] + g_ (gap open) for insertion start
-                     // Spoa checks H[i][j] == E[i][j-1] + e_ (gap extend) for insertion extend
-                     if target == score_e {
-                         curr_j -= 1; curr_state = 1;
-                     } else {
-                            // Transition from M or F
-                            let score_m = m[curr_i][curr_j-1] + self.params.gap_open;
-                            if target == score_m {
-                                curr_j -= 1; curr_state = 0;
-                            } else {
-                                // Must be F
-                                // Verify for correctness/safety
-                                // let score_f = f[curr_i][curr_j-1] + self.params.gap_open;
-                                // if target == score_f { ... }
-                                curr_j -= 1; curr_state = 2;
+                            break;
+                        }
+                    }
+
+                    if is_start {
+                        if curr_j > 0 {
+                            path.push((Some(curr_j - 1), Some(node_idx)));
+                            curr_j -= 1;
+                        }
+                        break;
+                    } else {
+                        let mut found = false;
+                        for &pred in &preds {
+                            let u = node_map[&pred];
+                            let target = m[curr_i][curr_j] - match_score;
+
+                            if m[u][curr_j - 1] == target {
+                                path.push((Some(curr_j - 1), Some(node_idx)));
+                                curr_i = u;
+                                curr_j -= 1;
+                                curr_state = 0;
+                                found = true;
+                                break;
+                            }
+                            if e[u][curr_j - 1] == target {
+                                path.push((Some(curr_j - 1), Some(node_idx)));
+                                curr_i = u;
+                                curr_j -= 1;
+                                curr_state = 1;
+                                found = true;
+                                break;
+                            }
+                            if f[u][curr_j - 1] == target {
+                                path.push((Some(curr_j - 1), Some(node_idx)));
+                                curr_i = u;
+                                curr_j -= 1;
+                                curr_state = 2;
+                                found = true;
+                                break;
                             }
                         }
-                 },
-                 2 => { // F
-                     let mut found = false;
-                      for &pred in &preds {
-                         let u = node_map[&pred];
-                         let target = f[curr_i][curr_j];
-                         if f[u][curr_j] + self.params.gap_extend == target {
-                              path.push((None, Some(node_idx)));
-                              curr_i = u; curr_state = 2; found = true; break;
-                         }
-                         if m[u][curr_j] + self.params.gap_open == target {
-                              path.push((None, Some(node_idx)));
-                              curr_i = u; curr_state = 0; found = true; break;
-                         }
-                         if e[u][curr_j] + self.params.gap_open == target {
-                              path.push((None, Some(node_idx)));
-                              curr_i = u; curr_state = 1; found = true; break;
-                         }
-                      }
-                      if !found { 
-                          if is_start {
-                              path.push((None, Some(node_idx)));
-                              break;
-                          }
-                          break;
-                      }
-                 }
-                 _ => break,
-             }
+                        if !found {
+                            // Could be start of a branch from virtual source?
+                            break;
+                        }
+                    }
+                }
+                1 => {
+                    // E
+                    let target = e[curr_i][curr_j];
+                    let score_e = e[curr_i][curr_j - 1] + self.params.gap_extend;
+
+                    path.push((Some(curr_j - 1), None));
+
+                    // Spoa checks H[i][j] == H[i][j-1] + g_ (gap open) for insertion start
+                    // Spoa checks H[i][j] == E[i][j-1] + e_ (gap extend) for insertion extend
+                    if target == score_e {
+                        curr_j -= 1;
+                        curr_state = 1;
+                    } else {
+                        // Transition from M or F
+                        let score_m = m[curr_i][curr_j - 1] + self.params.gap_open;
+                        if target == score_m {
+                            curr_j -= 1;
+                            curr_state = 0;
+                        } else {
+                            // Must be F
+                            // Verify for correctness/safety
+                            // let score_f = f[curr_i][curr_j-1] + self.params.gap_open;
+                            // if target == score_f { ... }
+                            curr_j -= 1;
+                            curr_state = 2;
+                        }
+                    }
+                }
+                2 => {
+                    // F
+                    let mut found = false;
+                    for &pred in &preds {
+                        let u = node_map[&pred];
+                        let target = f[curr_i][curr_j];
+                        if f[u][curr_j] + self.params.gap_extend == target {
+                            path.push((None, Some(node_idx)));
+                            curr_i = u;
+                            curr_state = 2;
+                            found = true;
+                            break;
+                        }
+                        if m[u][curr_j] + self.params.gap_open == target {
+                            path.push((None, Some(node_idx)));
+                            curr_i = u;
+                            curr_state = 0;
+                            found = true;
+                            break;
+                        }
+                        if e[u][curr_j] + self.params.gap_open == target {
+                            path.push((None, Some(node_idx)));
+                            curr_i = u;
+                            curr_state = 1;
+                            found = true;
+                            break;
+                        }
+                    }
+                    if !found {
+                        if is_start {
+                            path.push((None, Some(node_idx)));
+                            break;
+                        }
+                        break;
+                    }
+                }
+                _ => break,
+            }
         }
-        
+
         // Fill remaining sequence if any (for Global)
         // For Local/Semi, we stop.
         if !is_local && !is_semi {
             while curr_j > 0 {
-                 path.push((Some(curr_j-1), None));
-                 curr_j -= 1;
+                path.push((Some(curr_j - 1), None));
+                curr_j -= 1;
             }
         }
 
         path.reverse();
-        
+
         Alignment {
             score: best_score,
             path,
@@ -408,7 +511,7 @@ mod tests {
         assert_eq!(alignment.path[1], (Some(1), Some(n2)));
         assert_eq!(alignment.path[2], (Some(2), Some(n3)));
         assert_eq!(alignment.path[3], (Some(3), Some(n4)));
-        
+
         // Score: 4 * 5 = 20
         assert_eq!(alignment.score, 20);
     }
@@ -427,7 +530,7 @@ mod tests {
         assert_eq!(alignment.path.len(), 2);
         assert_eq!(alignment.path[0], (Some(0), Some(n1)));
         assert_eq!(alignment.path[1], (Some(1), Some(n2)));
-        
+
         // Score: 5 (match) + -4 (mismatch) = 1
         assert_eq!(alignment.score, 1);
     }
@@ -476,7 +579,7 @@ mod tests {
         assert_eq!(alignment.path[0], (Some(0), Some(n1)));
         assert!(alignment.path[1].0.is_none()); // Deletion
         assert_eq!(alignment.path[2], (Some(1), Some(n3)));
-        
+
         // Score: 5 (match) - 8 (gap open) + 5 (match) = 2
         // Note: Gap cost is gap_open + (k-1)*gap_extend. For k=1, cost is gap_open (-8).
         assert_eq!(alignment.score, 2);
@@ -497,7 +600,7 @@ mod tests {
         graph.add_edge(n3, n4, 1);
 
         let engine = ScalarAlignmentEngine::new(AlignmentParams::default(), AlignmentType::Global);
-        
+
         // Align ATC -> should pick path A -> T -> C
         let seq = b"ATC";
         let alignment = engine.align(seq, &graph);
@@ -506,7 +609,7 @@ mod tests {
         assert_eq!(alignment.path[0], (Some(0), Some(n1)));
         assert_eq!(alignment.path[1], (Some(1), Some(n3))); // Should pick T
         assert_eq!(alignment.path[2], (Some(2), Some(n4)));
-        
+
         assert_eq!(alignment.score, 15);
     }
 
@@ -527,14 +630,15 @@ mod tests {
         graph.add_edge(n4, n5, 1);
         graph.add_edge(n5, n6, 1);
 
-        let engine = ScalarAlignmentEngine::new(AlignmentParams::default(), AlignmentType::SemiGlobal);
+        let engine =
+            ScalarAlignmentEngine::new(AlignmentParams::default(), AlignmentType::SemiGlobal);
         let seq = b"GT";
         let alignment = engine.align(seq, &graph);
 
         // Should align to G->T (n3 -> n4) with score 10
-        // And path should be just (G, n3), (T, n4). 
+        // And path should be just (G, n3), (T, n4).
         // Semi-Global implies no penalty for start/end of graph.
-        
+
         assert_eq!(alignment.score, 10);
         assert_eq!(alignment.path.len(), 2);
         assert_eq!(alignment.path[0], (Some(0), Some(n3)));
@@ -566,9 +670,9 @@ mod tests {
         let alignment = engine.align(seq, &graph);
 
         // Score: T-T (5), T-T (5) = 10.
-        // C-A mismatch is -4. 
+        // C-A mismatch is -4.
         // Local alignment should pick just TT.
-        
+
         assert_eq!(alignment.score, 10);
         assert_eq!(alignment.path.len(), 2);
         assert_eq!(alignment.path[0], (Some(2), Some(n4))); // T

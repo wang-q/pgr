@@ -80,7 +80,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
         if let Some(root) = tree.get_root() {
             if let Ok(nodes) = tree.preorder(&root) {
-                 for id in nodes {
+                for id in nodes {
                     let node = tree.get_node(id).unwrap();
                     n_node += 1;
                     if node.is_leaf() {
@@ -98,7 +98,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                             n_internal_label += 1;
                         }
                     }
-                    
+
                     if node.length.is_some() {
                         n_edge_w_len += 1;
                     } else {

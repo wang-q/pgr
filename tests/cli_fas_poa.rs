@@ -268,16 +268,23 @@ fn command_refine_comparison() -> anyhow::Result<()> {
     // 1. Spoa might output wrapped lines (pgr uses unwrapped)
     // 2. Header preservation might differ
     // 3. Order of sequences might differ (though usually input order)
-    
+
     // So we check if the sequences are identical after parsing
     let lines_builtin: Vec<&str> = stdout_builtin.lines().collect();
     let lines_spoa: Vec<&str> = stdout_spoa.lines().collect();
 
-    assert_eq!(lines_builtin.len(), lines_spoa.len(), "Line counts should match (assuming unwrapped)");
+    assert_eq!(
+        lines_builtin.len(),
+        lines_spoa.len(),
+        "Line counts should match (assuming unwrapped)"
+    );
 
     // Simple check for now: check if they are identical
     // If this fails, we might need a smarter comparison (e.g. ignore whitespace or parsing)
-    assert_eq!(stdout_builtin, stdout_spoa, "Builtin and Spoa refine outputs should match");
+    assert_eq!(
+        stdout_builtin, stdout_spoa,
+        "Builtin and Spoa refine outputs should match"
+    );
 
     Ok(())
 }
@@ -373,7 +380,10 @@ fn command_consensus_comparison() -> anyhow::Result<()> {
         .output()?;
     let stdout_spoa = String::from_utf8(output_spoa.stdout)?;
 
-    assert_eq!(stdout_builtin, stdout_spoa, "Builtin and Spoa outputs should match");
+    assert_eq!(
+        stdout_builtin, stdout_spoa,
+        "Builtin and Spoa outputs should match"
+    );
 
     Ok(())
 }

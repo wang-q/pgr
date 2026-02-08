@@ -92,5 +92,3 @@ fn command_indent_multiple_optc() -> anyhow::Result<()> {
 
     Ok(())
 }
-
-

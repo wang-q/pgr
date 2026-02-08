@@ -87,7 +87,10 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
 
     while let Some(res) = reader.next() {
         let chain = res?;
-        eprintln!("DEBUG: Processing chain id={} score={}", chain.header.id, chain.header.score);
+        eprintln!(
+            "DEBUG: Processing chain id={} score={}",
+            chain.header.id, chain.header.score
+        );
 
         // Sort check (optional but good)
         if (chain.header.score as f64) > last_score {

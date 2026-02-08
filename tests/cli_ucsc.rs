@@ -237,21 +237,21 @@ fn test_chain_net_lastz() -> anyhow::Result<()> {
 
     let mut cmd = Command::cargo_bin("pgr")?;
     cmd.arg("chain")
-                .arg("net")
-                .arg(&input)
-                .arg(&t_sizes)
-                .arg(&q_sizes)
-                .arg(&output_t_net)
-                .arg(&output_q_net)
-                .arg("--min-space")
-                .arg("1")
-                .arg("--min-score")
-                .arg("2000");
+        .arg("net")
+        .arg(&input)
+        .arg(&t_sizes)
+        .arg(&q_sizes)
+        .arg(&output_t_net)
+        .arg(&output_q_net)
+        .arg("--min-space")
+        .arg("1")
+        .arg("--min-score")
+        .arg("2000");
 
     let output = cmd.output()?;
     let stderr = String::from_utf8_lossy(&output.stderr);
     println!("STDERR: {}", stderr);
-    
+
     if !output.status.success() {
         panic!("Command failed with status: {}", output.status);
     }
@@ -401,7 +401,7 @@ fn test_net_to_axt_lastz() -> anyhow::Result<()> {
     let expected_output = get_path("axtNet/cat.axt");
     let output_content = fs::read_to_string(&output)?;
     let expected_content = fs::read_to_string(&expected_output)?;
-    
+
     // Normalize newlines
     let output_norm = output_content.replace("\r\n", "\n");
     let expected_norm = expected_content.replace("\r\n", "\n");
@@ -415,14 +415,15 @@ fn test_net_to_axt_lastz() -> anyhow::Result<()> {
 #[test]
 fn test_axt_sort_lastz() -> anyhow::Result<()> {
     let temp = TempDir::new()?;
-    
+
     // Use the expected output (already sorted) as input to verify idempotency/format handling
     // This avoids dependency on net-to-axt command in this test
     let input_path = get_path("axtNet/cat.axt");
     let output = temp.path().join("cat.axt");
 
     let mut cmd_sort = Command::cargo_bin("pgr")?;
-    cmd_sort.arg("axt")
+    cmd_sort
+        .arg("axt")
         .arg("sort")
         .arg(&input_path)
         .arg("-o")
@@ -432,7 +433,7 @@ fn test_axt_sort_lastz() -> anyhow::Result<()> {
 
     let output_content = fs::read_to_string(&output)?;
     let expected_content = fs::read_to_string(&input_path)?;
-    
+
     // Normalize newlines for cross-platform comparison
     let output_norm = output_content.replace("\r\n", "\n");
     let expected_norm = expected_content.replace("\r\n", "\n");

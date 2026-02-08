@@ -14,6 +14,8 @@ use std::io::Read;
 pub fn from_file(infile: &str) -> anyhow::Result<Vec<Tree>> {
     let mut reader = intspan::reader(infile);
     let mut newick = String::new();
-    reader.read_to_string(&mut newick).map_err(|e| anyhow::anyhow!("Read error: {}", e))?;
+    reader
+        .read_to_string(&mut newick)
+        .map_err(|e| anyhow::anyhow!("Read error: {}", e))?;
     Ok(Tree::from_newick_multi(newick.as_str())?)
 }

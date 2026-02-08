@@ -186,9 +186,13 @@ fn test_chain_sort_input_list() -> Result<(), Box<dyn std::error::Error>> {
     fs::write(&chain2_path, c2)?;
 
     // Create list file
-    // Note: On Windows, paths might contain backslashes. 
+    // Note: On Windows, paths might contain backslashes.
     // The implementation uses simple line reading, which should handle standard paths fine.
-    let list_content = format!("{}\n{}", chain1_path.to_str().unwrap(), chain2_path.to_str().unwrap());
+    let list_content = format!(
+        "{}\n{}",
+        chain1_path.to_str().unwrap(),
+        chain2_path.to_str().unwrap()
+    );
     fs::write(&list_path, list_content)?;
 
     let mut cmd = Command::cargo_bin("pgr")?;

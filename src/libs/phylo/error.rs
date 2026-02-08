@@ -20,9 +20,17 @@ pub enum TreeError {
 impl fmt::Display for TreeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            TreeError::ParseError { message, line, column, snippet } => {
-                write!(f, "Parse error at line {}, column {}:\n{}\nSnippet: \"{}\"", 
-                    line, column, message, snippet)
+            TreeError::ParseError {
+                message,
+                line,
+                column,
+                snippet,
+            } => {
+                write!(
+                    f,
+                    "Parse error at line {}, column {}:\n{}\nSnippet: \"{}\"",
+                    line, column, message, snippet
+                )
             }
             TreeError::LogicError(msg) => write!(f, "Tree logic error: {}", msg),
         }

@@ -1,5 +1,5 @@
-use crate::libs::poa::{Poa, AlignmentParams, AlignmentType};
 use crate::libs::nt::NT_VAL;
+use crate::libs::poa::{AlignmentParams, AlignmentType, Poa};
 use anyhow::{anyhow, bail};
 use bio::io::fasta;
 use indexmap::IndexMap;
@@ -925,7 +925,7 @@ pub fn get_consensus_poa_builtin(
         2 => AlignmentType::SemiGlobal,
         _ => AlignmentType::Global,
     };
-    
+
     let mut poa = Poa::new(params, align_type);
 
     for seq in seqs {
@@ -1220,12 +1220,18 @@ pub fn align_seqs(seqs: &[String], aligner: &str) -> anyhow::Result<Vec<String>>
     };
 
     if !output.status.success() {
-        return Err(anyhow!("Command executed with failing error code: {}", String::from_utf8_lossy(&output.stderr)));
+        return Err(anyhow!(
+            "Command executed with failing error code: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ));
     }
     // can't use redirect in Command
     if aligner == "mafft" || aligner == "spoa" {
         if output.stdout.is_empty() {
-             return Err(anyhow!("Command executed but returned empty stdout: {}", String::from_utf8_lossy(&output.stderr)));
+            return Err(anyhow!(
+                "Command executed but returned empty stdout: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ));
         }
         let mut f = File::create(seq_out_path.to_string_lossy().to_string())?;
         f.write_all(&output.stdout)?;
@@ -1234,7 +1240,7 @@ pub fn align_seqs(seqs: &[String], aligner: &str) -> anyhow::Result<Vec<String>>
     if aligner == "clustalw" {
         let dnd = Path::new(&seq_in_path).with_extension("dnd");
         if dnd.exists() {
-             let _ = fs::remove_file(dnd);
+            let _ = fs::remove_file(dnd);
         }
     }
 

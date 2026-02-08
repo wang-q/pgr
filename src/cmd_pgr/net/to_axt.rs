@@ -14,11 +14,7 @@ pub fn make_subcommand() -> Command {
         .about("Convert net (and chain) to axt")
         .arg(Arg::new("in_net").required(true).help("Input net file"))
         .arg(Arg::new("in_chain").required(true).help("Input chain file"))
-        .arg(
-            Arg::new("target")
-                .required(true)
-                .help("Target 2bit file"),
-        )
+        .arg(Arg::new("target").required(true).help("Target 2bit file"))
         .arg(Arg::new("query").required(true).help("Query 2bit file"))
         .arg(Arg::new("out_axt").required(true).help("Output AXT file"))
 }
@@ -50,7 +46,7 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
     let matrix = SubMatrix::hoxd55();
 
     let mut writer = BufWriter::new(File::create(out_axt)?);
-    
+
     // Write headers from the first net (if any)
     if let Some(first_net) = nets.first() {
         for comment in &first_net.comments {
@@ -123,15 +119,13 @@ fn convert_fill<W: Write>(
         // Decision: Split or Merge?
         // Split if: has_children OR q_gap_size > 0 (double-sided gap)
         // Merge if: !has_children AND q_gap_size == 0 (single-sided gap / indel)
-        
+
         let should_split = has_children || q_gap_size > 0;
 
         if should_split {
             // 1. Segment before gap
             if g_start > cur {
-                convert_segment(
-                    cur, g_start, chain, t_2bit, q_2bit, matrix, writer, counter,
-                )?;
+                convert_segment(cur, g_start, chain, t_2bit, q_2bit, matrix, writer, counter)?;
             }
 
             // 2. Recurse into gap
@@ -194,12 +188,12 @@ fn convert_segment<W: Write>(
     let mut q_seq_all = String::new();
 
     // Helper to read Q sequence considering strand
-    let read_q = |start: u64, end: u64, q_2bit: &mut TwoBitFile<BufReader<File>>| -> anyhow::Result<String> {
+    let read_q = |start: u64,
+                  end: u64,
+                  q_2bit: &mut TwoBitFile<BufReader<File>>|
+     -> anyhow::Result<String> {
         let (r_start, r_end) = if chain.header.q_strand == '-' {
-            (
-                chain.header.q_size - end,
-                chain.header.q_size - start,
-            )
+            (chain.header.q_size - end, chain.header.q_size - start)
         } else {
             (start, end)
         };
@@ -236,18 +230,18 @@ fn convert_segment<W: Write>(
         let offset = t_start.saturating_sub(b.t_start);
         b.q_start + offset
     };
-    
+
     // Correct q_start logic:
     // If we start in a block, easy.
     // If we start in a gap:
     //   If we include dq, q_start is prev.q_end.
     //   If we exclude dq, q_start is prev.q_end + dq (== cur.q_start).
-    
+
     // Let's refine inside the loop.
 
     for i in idx_start..=idx_end {
         let block = &blocks[i];
-        
+
         // 1. Handle gap BEFORE this block (if i > idx_start, OR i == idx_start and we overlap the gap)
         if i > 0 {
             let prev = &blocks[i - 1];
@@ -255,10 +249,10 @@ fn convert_segment<W: Write>(
             // Overlap with Fill: [max(gap_start, t_start), min(gap_end, t_end))
             let gap_start_t = prev.t_end;
             let gap_end_t = block.t_start;
-            
+
             let overlap_start = gap_start_t.max(t_start);
             let overlap_end = gap_end_t.min(t_end);
-            
+
             if overlap_start < overlap_end {
                 // There is overlap with dt (T gap)
                 // Append T bases
@@ -266,16 +260,16 @@ fn convert_segment<W: Write>(
                     &chain.header.t_name,
                     Some(overlap_start as usize),
                     Some(overlap_end as usize),
-                    false
+                    false,
                 )?;
                 t_seq_all.push_str(&t_chunk);
-                
+
                 // Append Q dashes
                 for _ in 0..(overlap_end - overlap_start) {
                     q_seq_all.push('-');
                 }
             }
-            
+
             // Handle dq (Q gap)
             // It occurs "between" blocks.
             // If Fill includes the boundary (prev.t_end), we include dq.
@@ -285,62 +279,62 @@ fn convert_segment<W: Write>(
                 if dq_len > 0 {
                     let q_chunk = read_q(prev.q_end, block.q_start, q_2bit)?;
                     q_seq_all.push_str(&q_chunk);
-                    
+
                     for _ in 0..dq_len {
                         t_seq_all.push('-');
                     }
                 }
             }
         }
-        
+
         // 2. Handle Block
         let start = block.t_start.max(t_start);
         let end = block.t_end.min(t_end);
-        
+
         if start < end {
             let t_offset = start - block.t_start;
             let len = end - start;
-            
+
             let t_chunk = t_2bit.read_sequence(
                 &chain.header.t_name,
                 Some(start as usize),
                 Some(end as usize),
-                false
+                false,
             )?;
             t_seq_all.push_str(&t_chunk);
-            
+
             let q_start_seg = block.q_start + t_offset;
             let q_end_seg = q_start_seg + len;
             let q_chunk = read_q(q_start_seg, q_end_seg, q_2bit)?;
             q_seq_all.push_str(&q_chunk);
         }
-        
+
         // 3. Handle gap AFTER this block (only if this is the last processed block, check if Fill extends further)
         if i == idx_end {
-             // Check if Fill extends beyond block.t_end
-             if t_end > block.t_end {
-                 // We might have a gap after this block that is partially covered
-                 if i + 1 < blocks.len() {
-                     let next = &blocks[i + 1];
-                     let gap_start_t = block.t_end;
-                     let gap_end_t = next.t_start;
-                     
-                     let overlap_start = gap_start_t.max(t_start);
-                     let overlap_end = gap_end_t.min(t_end);
-                     
-                     if overlap_start < overlap_end {
-                         let t_chunk = t_2bit.read_sequence(
+            // Check if Fill extends beyond block.t_end
+            if t_end > block.t_end {
+                // We might have a gap after this block that is partially covered
+                if i + 1 < blocks.len() {
+                    let next = &blocks[i + 1];
+                    let gap_start_t = block.t_end;
+                    let gap_end_t = next.t_start;
+
+                    let overlap_start = gap_start_t.max(t_start);
+                    let overlap_end = gap_end_t.min(t_end);
+
+                    if overlap_start < overlap_end {
+                        let t_chunk = t_2bit.read_sequence(
                             &chain.header.t_name,
                             Some(overlap_start as usize),
                             Some(overlap_end as usize),
-                            false
+                            false,
                         )?;
                         t_seq_all.push_str(&t_chunk);
                         for _ in 0..(overlap_end - overlap_start) {
                             q_seq_all.push('-');
                         }
                     }
-                    
+
                     // Handle dq at block.t_end
                     // If Fill covers block.t_end
                     if t_start <= gap_start_t && gap_start_t < t_end {
@@ -353,11 +347,11 @@ fn convert_segment<W: Write>(
                             }
                         }
                     }
-                 }
-             }
+                }
+            }
         }
     }
-    
+
     // Calculate final q_end based on q_seq content (bases only)
     let q_bases_count = q_seq_all.chars().filter(|c| *c != '-').count() as u64;
     let q_end_out = q_start_out_base + q_bases_count;
@@ -392,14 +386,14 @@ fn calculate_score(t_seq: &str, q_seq: &str, matrix: &SubMatrix) -> i32 {
     let t_chars: Vec<char> = t_seq.chars().collect();
     let q_chars: Vec<char> = q_seq.chars().collect();
     let len = t_chars.len();
-    
+
     let mut in_gap_t = false;
     let mut in_gap_q = false;
-    
+
     for i in 0..len {
         let t = t_chars[i];
         let q = q_chars[i];
-        
+
         if t == '-' {
             // Gap in T (insertion in Q)
             if !in_gap_t {
@@ -407,7 +401,7 @@ fn calculate_score(t_seq: &str, q_seq: &str, matrix: &SubMatrix) -> i32 {
                 in_gap_t = true;
             }
             score -= matrix.gap_extend;
-            in_gap_q = false; 
+            in_gap_q = false;
         } else if q == '-' {
             // Gap in Q (deletion in Q)
             if !in_gap_q {

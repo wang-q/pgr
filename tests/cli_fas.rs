@@ -14,7 +14,6 @@ fn command_invalid() -> anyhow::Result<()> {
     Ok(())
 }
 
-
 #[test]
 fn command_name() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("pgr")?;
@@ -455,7 +454,6 @@ fn command_refine() -> anyhow::Result<()> {
 
     Ok(())
 }
-
 
 #[test]
 fn command_join() -> anyhow::Result<()> {
