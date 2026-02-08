@@ -313,7 +313,7 @@ pub struct Tree {
 
 #### Phase 2: 解析器实现 (Parsing)
 *   [x] 添加 `nom` 依赖。
-*   [ ] 定义 `TreeError` 枚举，提供详细的解析错误上下文（如出错位置）。
+*   [x] 定义 `TreeError` 枚举，提供详细的解析错误上下文（如出错位置）。
 *   [x] 实现 Newick 语法定义 (BNF 转换)。
     *   [x] 处理 `Label` (支持引号和转义)。
     *   [x] 处理 `Length` (支持科学计数法)。
@@ -322,24 +322,24 @@ pub struct Tree {
 *   [x] 单元测试：覆盖各种 Newick 变体。
 
 #### Phase 3: 遍历与查询 (Traversal & Query) - 参考 phylotree-rs
-*   [ ] 实现迭代器：
-    *   `preorder`: 先序遍历。
-    *   `postorder`: 后序遍历 (适合计算，如 dp)。
-    *   `levelorder`: 层序遍历。
-*   [ ] 实现路径与距离查询：
-    *   `get_path_from_root(node_id)`: 获取从根到节点的路径。
-    *   `get_distance(node_a, node_b)`: 计算两个节点间的距离（边长总和 & 边数量）。
-*   [ ] 实现最近公共祖先 (LCA)：
-    *   `get_common_ancestor(node_a, node_b)`。
-*   [ ] 实现子树与查找：
-    *   `get_subtree(node_id)`: 获取子树所有节点。
-    *   `get_leaves()`: 获取所有叶子节点。
-    *   `search_nodes(predicate)`: 根据条件查找节点。
-    *   `get_by_name(name)`: 根据名称查找节点。
+*   [x] 实现迭代器：
+    *   [x] `preorder`: 先序遍历。
+    *   [x] `postorder`: 后序遍历 (适合计算，如 dp)。
+    *   [x] `levelorder`: 层序遍历。
+*   [x] 实现路径与距离查询：
+    *   [x] `get_path_from_root(node_id)`: 获取从根到节点的路径。
+    *   [x] `get_distance(node_a, node_b)`: 计算两个节点间的距离（边长总和 & 边数量）。
+*   [x] 实现最近公共祖先 (LCA)：
+    *   [x] `get_common_ancestor(node_a, node_b)`。
+*   [x] 实现子树与查找：
+    *   [x] `get_subtree(node_id)`: 获取子树所有节点。
+    *   [x] `get_leaves()`: 获取所有叶子节点。
+    *   [x] `find_nodes(predicate)`: 根据条件查找节点。
+    *   [x] `get_node_by_name(name)`: 根据名称查找节点。
 
 #### Phase 4: 高级算法 (Advanced Algorithms)
-*   [ ] **Reroot**: 实现 `reroot_at(node_id)`，涉及父子关系翻转和边长重新分配。
-*   [ ] **Prune**: 剪掉指定名称或正则匹配的节点。
+*   [x] **Reroot**: 实现 `reroot_at(node_id)`，涉及父子关系翻转和边长重新分配。
+*   [x] **Prune**: 剪掉指定名称或正则匹配的节点。
 
 #### Phase 5: CLI 集成 (Integration)
 *   (用户已有详细规划，此处略过)

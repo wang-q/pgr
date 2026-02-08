@@ -1,16 +1,56 @@
 use super::node::NodeId;
 use super::tree::Tree;
+use super::error::TreeError;
 use nom::{
     branch::alt,
     bytes::complete::{is_not, take_while},
     character::complete::{char, digit1, multispace0},
-    combinator::{map, map_res, opt, recognize},
+    combinator::{cut, map, map_res, opt, recognize},
     multi::separated_list1,
     sequence::{delimited, preceded},
-    IResult, Parser,
-    error::ParseError,
+    IResult, Parser, Offset,
+    error::{ParseError, ContextError, ErrorKind, FromExternalError, context},
 };
 use std::collections::BTreeMap;
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum DetailedErrorKind {
+    Context(&'static str),
+    Nom(ErrorKind),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct DetailedError<'a> {
+    pub errors: Vec<(&'a str, DetailedErrorKind)>,
+}
+
+impl<'a> ParseError<&'a str> for DetailedError<'a> {
+    fn from_error_kind(input: &'a str, kind: ErrorKind) -> Self {
+        DetailedError {
+            errors: vec![(input, DetailedErrorKind::Nom(kind))],
+        }
+    }
+
+    fn append(input: &'a str, kind: ErrorKind, mut other: Self) -> Self {
+        other.errors.push((input, DetailedErrorKind::Nom(kind)));
+        other
+    }
+}
+
+impl<'a> ContextError<&'a str> for DetailedError<'a> {
+    fn add_context(input: &'a str, ctx: &'static str, mut other: Self) -> Self {
+        other.errors.push((input, DetailedErrorKind::Context(ctx)));
+        other
+    }
+}
+
+impl<'a, E> FromExternalError<&'a str, E> for DetailedError<'a> {
+    fn from_external_error(input: &'a str, kind: ErrorKind, _e: E) -> Self {
+        DetailedError {
+            errors: vec![(input, DetailedErrorKind::Nom(kind))],
+        }
+    }
+}
 
 // Intermediate structure
 #[derive(Debug)]
@@ -59,7 +99,7 @@ where
 }
 
 // 2. Label
-fn parse_label(input: &str) -> IResult<&str, String> {
+fn parse_label(input: &str) -> IResult<&str, String, DetailedError<'_>> {
     let unquoted = map(
         take_while(|c: char| !c.is_whitespace() && !"():;,[]".contains(c)),
         |s: &str| s.to_string(),
@@ -77,14 +117,14 @@ fn parse_label(input: &str) -> IResult<&str, String> {
         char('"')
     );
 
-    alt((single_quoted, double_quoted, unquoted)).parse(input)
+    context("label", alt((single_quoted, double_quoted, unquoted))).parse(input)
 }
 
 // 3. Length
-fn parse_length(input: &str) -> IResult<&str, f64> {
-    preceded(
+fn parse_length(input: &str) -> IResult<&str, f64, DetailedError<'_>> {
+    context("length", preceded(
         ws(char(':')),
-        map_res(
+        cut(map_res(
             recognize((
                 opt(char('-')),
                 digit1,
@@ -96,19 +136,19 @@ fn parse_length(input: &str) -> IResult<&str, f64> {
                 )),
             )),
             |s: &str| s.parse::<f64>(),
-        ),
-    ).parse(input)
+        )),
+    )).parse(input)
 }
 
 // 4. Comment
-fn parse_comment(input: &str) -> IResult<&str, Option<BTreeMap<String, String>>> {
+fn parse_comment(input: &str) -> IResult<&str, Option<BTreeMap<String, String>>, DetailedError<'_>> {
     let comment_content = delimited(
         char('['),
         is_not("]"),
         char(']'),
     );
 
-    map(opt(comment_content), |content: Option<&str>| {
+    context("comment", map(opt(comment_content), |content: Option<&str>| {
         if let Some(s) = content {
             if s.starts_with("&&NHX") {
                 let mut props = BTreeMap::new();
@@ -124,16 +164,16 @@ fn parse_comment(input: &str) -> IResult<&str, Option<BTreeMap<String, String>>>
             }
         }
         None
-    }).parse(input)
+    })).parse(input)
 }
 
 // 5. Subtree
-fn parse_subtree(input: &str) -> IResult<&str, ParsedNode> {
-    let (input, children) = opt(delimited(
+fn parse_subtree(input: &str) -> IResult<&str, ParsedNode, DetailedError<'_>> {
+    let (input, children) = context("children", opt(delimited(
         ws(char('(')),
         separated_list1(ws(char(',')), parse_subtree),
         ws(char(')')),
-    )).parse(input)?;
+    ))).parse(input)?;
 
     let (input, label) = opt(parse_label).parse(input)?;
     
@@ -163,7 +203,7 @@ fn parse_subtree(input: &str) -> IResult<&str, ParsedNode> {
 }
 
 // 6. Entry point
-pub fn parse_newick(input: &str) -> Result<Tree, String> {
+pub fn parse_newick(input: &str) -> Result<Tree, TreeError> {
     let mut parser = (ws(parse_subtree), ws(char(';')));
     
     match parser.parse(input) {
@@ -173,7 +213,42 @@ pub fn parse_newick(input: &str) -> Result<Tree, String> {
             tree.set_root(root_id);
             Ok(tree)
         },
-        Err(e) => Err(format!("Parse error: {}", e)),
+        Err(nom::Err::Error(e)) | Err(nom::Err::Failure(e)) => {
+            // e is DetailedError
+            let (remaining, _) = e.errors.first().unwrap();
+            let offset = input.offset(remaining);
+            
+            // Calculate line/col
+            let prefix = &input[..offset];
+            let line = prefix.chars().filter(|&c| c == '\n').count() + 1;
+            let last_newline = prefix.rfind('\n').map(|p| p + 1).unwrap_or(0);
+            let column = offset - last_newline + 1;
+
+            let mut msg = String::new();
+            for (_, kind) in e.errors.iter().rev() {
+                match kind {
+                    DetailedErrorKind::Context(ctx) => {
+                        msg.push_str(&format!("while parsing {}:\n", ctx));
+                    }
+                    DetailedErrorKind::Nom(k) => {
+                        msg.push_str(&format!("  error: {:?}\n", k));
+                    }
+                }
+            }
+
+            Err(TreeError::ParseError {
+                message: msg,
+                line,
+                column,
+                snippet: remaining.chars().take(50).collect(),
+            })
+        },
+        Err(nom::Err::Incomplete(_)) => Err(TreeError::ParseError {
+            message: "Incomplete input".to_string(),
+            line: 0,
+            column: 0,
+            snippet: "".to_string(),
+        }),
     }
 }
 
@@ -187,7 +262,7 @@ impl Tree {
     /// let tree = Tree::from_newick(input).unwrap();
     /// assert_eq!(tree.len(), 3);
     /// ```
-    pub fn from_newick(input: &str) -> Result<Self, String> {
+    pub fn from_newick(input: &str) -> Result<Self, TreeError> {
         parse_newick(input)
     }
 }
@@ -344,5 +419,31 @@ mod tests {
         
         let c2 = tree.get_node(root.children[1]).unwrap();
         assert_eq!(c2.name.as_deref(), Some("Mus musculus"));
+    }
+
+    #[test]
+    fn test_parser_error() {
+        // Case 1: Missing semicolon
+        let input = "(A,B)C"; 
+        let res = Tree::from_newick(input);
+        match res {
+            Err(TreeError::ParseError { line, column, .. }) => {
+                assert_eq!(line, 1);
+                // (A,B)C -> length 6. Expects ; at col 7.
+                assert_eq!(column, 7); 
+            }
+            _ => panic!("Expected ParseError, got {:?}", res),
+        }
+
+        // Case 2: Invalid length
+        let input2 = "(A,B:invalid)C;";
+        let res2 = Tree::from_newick(input2);
+        match res2 {
+             Err(TreeError::ParseError { line, message, .. }) => {
+                 assert_eq!(line, 1);
+                 assert!(message.contains("length")); 
+             }
+             _ => panic!("Expected ParseError, got {:?}", res2),
+        }
     }
 }
