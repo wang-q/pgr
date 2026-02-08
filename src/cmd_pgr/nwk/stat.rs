@@ -13,12 +13,15 @@ Input format:
 * Newick trees filename or 'stdin'
 
 Output format:
-* Key-value pairs (TSV), one field per line:
-  * Type
-  * nodes
-  * leaves
-  * leaf labels
-  * internal labels
+* Key-value pairs (TSV, default):
+  Type	cladogram
+  nodes	18
+  leaves	11
+  ...
+
+* Tab-separated values (--style line):
+  Type	nodes	leaves	dichotomies	leaf labels	internal labels
+  cladogram	18	11	5	11	0
 
 Examples:
 1. Default statistics:
@@ -59,6 +62,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let style = args.get_one::<String>("style").unwrap();
 
     let trees = reader::from_file(infile);
+
+    if style == "line" {
+        writer.write_fmt(format_args!(
+            "Type\tnodes\tleaves\tdichotomies\tleaf labels\tinternal labels\n"
+        ))?;
+    }
 
     for tree in trees {
         let mut n_edge_w_len = 0;

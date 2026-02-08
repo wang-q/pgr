@@ -375,6 +375,41 @@ pub struct Tree {
 | `nw_ed` | 编辑距离 / 树操作脚本 | `pgr nwk ed` | [ ] |
 | `nw_gen` | 生成随机树 | `pgr nwk gen` | [ ] |
 | `nw_duration` | (通常指时间树相关) | `pgr nwk duration` | [ ] |
+
+---
+
+## 7. 测试与验证 (Testing & Verification)
+
+为了确保 `pgr nwk` 模块的正确性和鲁棒性，特别是作为 `newick_utils` 的替代品，我们采取了多层次的测试策略。
+
+### 测试策略
+
+1.  **单元测试 (Unit Tests)**:
+    *   针对 `libs/phylo` 中的核心逻辑（解析、遍历、算法）。
+    *   覆盖各种 Newick 格式变体（引号、注释、无长度、科学计数法等）。
+    *   位于 `src/libs/phylo/` 源码文件中。
+
+2.  **集成测试 (Integration Tests)**:
+    *   针对 CLI 子命令的端到端测试。
+    *   使用 `assert_cmd` 模拟命令行调用，验证标准输出（stdout）和退出代码。
+    *   位于 `tests/cli_nwk_data.rs`。
+
+3.  **兼容性测试 (Compatibility Tests)**:
+    *   直接参考 `newick_utils` 的测试用例 (`tests/test_nw_*_args`)。
+    *   确保 `pgr` 的输出与 `newick_utils` 在关键场景下一致（或语义一致）。
+
+### 兼容性测试状态矩阵
+
+以下列出了参考 `newick_utils` 原生测试套件实现的兼容性测试进度：
+
+#### `nw_stats` -> `pgr nwk stat`
+
+| Test Case (newick_utils) | 描述 | pgr 对应测试 | 状态 | 备注 |
+| :--- | :--- | :--- | :--- | :--- |
+| `def` | 默认输出 (Key-Value) | `command_stat` | **[x] Pass** | 验证节点数、叶子数、二叉分枝数等 |
+| `fl` | Flat Line 输出 (TSV) | `command_stat_style_line` | **[x] Pass** | 对应 `--style line` 参数 |
+| `many` | 多树处理 (Multi-tree) | `command_stat_multi_tree` | **[x] Pass** | 验证单文件多棵树的连续处理 |
+
 | `nw_indent` | 缩进/格式化 Newick 字符串 | `pgr nwk indent` / `fmt` | [ ] |
 | `nw_trim` | 修剪树 (Trim) | `pgr nwk trim` | [ ] |
 
