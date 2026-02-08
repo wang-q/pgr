@@ -14,6 +14,7 @@ pub mod maf;
 pub mod mat;
 pub mod ms;
 pub mod net;
+pub mod nwk;
 pub mod pl;
 pub mod psl;
 pub mod twobit;

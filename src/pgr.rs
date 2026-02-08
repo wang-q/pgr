@@ -21,6 +21,7 @@ fn main() -> anyhow::Result<()> {
         .subcommand(cmd_pgr::maf::make_subcommand())
         .subcommand(cmd_pgr::mat::make_subcommand())
         .subcommand(cmd_pgr::net::make_subcommand())
+        .subcommand(cmd_pgr::nwk::make_subcommand())
         .subcommand(cmd_pgr::psl::make_subcommand())
         .subcommand(cmd_pgr::pl::make_subcommand())
         .subcommand(cmd_pgr::twobit::make_subcommand())
@@ -56,6 +57,9 @@ fn main() -> anyhow::Result<()> {
 * Matrix:
     * mat   - Processing: compare, format, subset, to-pair, to-phylip
 
+* Phylogeny:
+    * nwk   - Newick tools: stat
+
 * Simulation:
     * ms    - Hudson's ms simulator tools: to-dna
 
@@ -77,6 +81,7 @@ fn main() -> anyhow::Result<()> {
         Some(("maf", sub_matches)) => cmd_pgr::maf::execute(sub_matches),
         Some(("mat", sub_matches)) => cmd_pgr::mat::execute(sub_matches),
         Some(("net", sub_matches)) => cmd_pgr::net::execute(sub_matches),
+        Some(("nwk", sub_matches)) => cmd_pgr::nwk::execute(sub_matches),
         Some(("psl", sub_matches)) => cmd_pgr::psl::execute(sub_matches),
         Some(("pl", sub_matches)) => cmd_pgr::pl::execute(sub_matches),
         Some(("2bit", sub_matches)) => cmd_pgr::twobit::execute(sub_matches),

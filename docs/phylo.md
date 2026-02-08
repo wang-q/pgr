@@ -354,8 +354,31 @@ pub struct Tree {
 *   [x] **Reroot**: 实现 `reroot_at(node_id)`，涉及父子关系翻转和边长重新分配。
 *   [x] **Prune**: 剪掉指定名称或正则匹配的节点。
 
-#### Phase 5: CLI 集成 (Integration)
-*   (用户已有详细规划，此处略过)
+#### Phase 5: CLI 集成 (Integration) - 模仿 Newick Utilities
+我们的 CLI 功能将模仿 `newick_utils` 工具集。以下是目标工具列表及其功能映射：
+
+| Newick Utilities | 功能描述 | pgr 对应子命令 (暂定) | 状态 |
+| :--- | :--- | :--- | :--- |
+| `nw_stats` | 树的统计信息 (节点数, 深度, 类型等) | `pgr nwk stat` | **[x] 已实现** |
+| `nw_display` | 树的可视化 (ASCII/SVG/Map) | `pgr nwk display` / `view` | [ ] |
+| `nw_topology` | 仅保留拓扑结构 (去除分支长度) | `pgr nwk topology` | [ ] |
+| `nw_labels` | 提取所有标签 (叶子/内部节点) | `pgr nwk labels` | [ ] |
+| `nw_reroot` | 重定根 (Outgroup, Midpoint) | `pgr nwk reroot` | [ ] |
+| `nw_prune` | 剪枝 (移除指定节点) | `pgr nwk prune` | [ ] |
+| `nw_clade` | 提取子树 (Clade) | `pgr nwk clade` / `subtree` | [ ] |
+| `nw_order` | 节点排序 (Ladderize) | `pgr nwk order` | [ ] |
+| `nw_rename` | 重命名节点 (Map file/Rule) | `pgr nwk rename` | [ ] |
+| `nw_condense` | 压缩树 (合并短枝/多叉化) | `pgr nwk condense` | [ ] |
+| `nw_distance` | 计算节点间距离 / 树间距离 | `pgr nwk dist` | [ ] |
+| `nw_support` | 计算/显示支持率 (Bootstrap) | `pgr nwk support` | [ ] |
+| `nw_match` | 匹配两棵树的节点 | `pgr nwk match` | [ ] |
+| `nw_ed` | 编辑距离 / 树操作脚本 | `pgr nwk ed` | [ ] |
+| `nw_gen` | 生成随机树 | `pgr nwk gen` | [ ] |
+| `nw_duration` | (通常指时间树相关) | `pgr nwk duration` | [ ] |
+| `nw_indent` | 缩进/格式化 Newick 字符串 | `pgr nwk indent` / `fmt` | [ ] |
+| `nw_trim` | 修剪树 (Trim) | `pgr nwk trim` | [ ] |
+
+*注：我们将实现其中大部分功能，具体命令名称可能会根据 `pgr` 的整体风格进行微调（例如使用动词作为子命令）。*
 
 ### 依赖管理 (Dependencies)
 已在 `Cargo.toml` 中添加：
