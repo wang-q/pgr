@@ -148,7 +148,7 @@ fn dist_root(
             let (edge_sum, num_edges) = tree.get_distance(&root, v).unwrap();
             if edge_sum.abs() > 1e-9 { edge_sum } else { num_edges as f64 }
         };
-        writer.write_fmt(format_args!("{}\t{}\n", k, dist)).unwrap();
+        writer.write_fmt(format_args!("{}\t{}\n", k, format_float(dist))).unwrap();
     }
 }
 
@@ -160,6 +160,7 @@ fn dist_parent(
     for (k, v) in id_of.iter() {
         let parent = tree.get_node(*v).unwrap().parent;
         if parent.is_none() {
+            writer.write_fmt(format_args!("{}\t0\n", k)).unwrap();
             continue;
         }
         let parent = parent.unwrap();
@@ -168,7 +169,7 @@ fn dist_parent(
             let (edge_sum, num_edges) = tree.get_distance(&parent, v).unwrap();
             if edge_sum.abs() > 1e-9 { edge_sum } else { num_edges as f64 }
         };
-        writer.write_fmt(format_args!("{}\t{}\n", k, dist)).unwrap();
+        writer.write_fmt(format_args!("{}\t{}\n", k, format_float(dist))).unwrap();
     }
 }
 
@@ -184,7 +185,7 @@ fn dist_pairwise(
                 if edge_sum.abs() > 1e-9 { edge_sum } else { num_edges as f64 }
             };
             writer
-                .write_fmt(format_args!("{}\t{}\t{}\n", k1, k2, dist))
+                .write_fmt(format_args!("{}\t{}\t{}\n", k1, k2, format_float(dist)))
                 .unwrap();
         }
     }
@@ -205,7 +206,13 @@ fn dist_lca(tree: &Tree, id_of: &BTreeMap<String, NodeId>, writer: &mut Box<dyn 
                 if edge_sum.abs() > 1e-9 { edge_sum } else { num_edges as f64 }
             };
             writer
-                .write_fmt(format_args!("{}\t{}\t{}\t{}\n", k1, k2, dist1, dist2))
+                .write_fmt(format_args!(
+                    "{}\t{}\t{}\t{}\n",
+                    k1,
+                    k2,
+                    format_float(dist1),
+                    format_float(dist2)
+                ))
                 .unwrap();
         }
     }
@@ -240,4 +247,9 @@ fn dist_phylip(tree: &Tree, id_of: &BTreeMap<String, NodeId>, writer: &mut Box<d
         }
         writer.write_all(b"\n").unwrap();
     }
+}
+
+fn format_float(val: f64) -> String {
+    let rounded = (val * 1e6).round() / 1e6;
+    format!("{}", rounded)
 }

@@ -550,3 +550,171 @@ fn command_distance_stdin() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[test]
+fn command_distance_reference_dist_root() -> anyhow::Result<()> {
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("nwk")
+        .arg("distance")
+        .arg("tests/newick/dist.nwk")
+        .arg("--mode")
+        .arg("root")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    // Verified against newick_utils test_nw_distance_rh.exp
+    assert!(stdout.contains("A\t4"));
+    assert!(stdout.contains("B\t6"));
+    assert!(stdout.contains("C\t3"));
+    assert!(stdout.contains("D\t6"));
+    assert!(stdout.contains("E\t4"));
+    assert!(stdout.contains("F\t4"));
+
+    Ok(())
+}
+
+#[test]
+fn command_distance_reference_unnamed() -> anyhow::Result<()> {
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("nwk")
+        .arg("distance")
+        .arg("tests/newick/dist_meth_xpl.nwk")
+        .arg("--mode")
+        .arg("root")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    // Verified against newick_utils test_nw_distance_nsf.exp
+    // Unnamed nodes might appear as tabs with no label or internal ID.
+    // Based on my experience, pgr usually outputs label if present.
+    // If empty label, it outputs "\tDist".
+    assert!(stdout.contains("\t3"));
+    assert!(stdout.contains("\t4"));
+    assert!(stdout.contains("A\t5"));
+    assert!(stdout.contains("B\t4"));
+
+    Ok(())
+}
+
+#[test]
+fn command_distance_reference_lca() -> anyhow::Result<()> {
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("nwk")
+        .arg("distance")
+        .arg("tests/newick/dist.nwk")
+        .arg("--mode")
+        .arg("lca")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    // Verified against newick_utils test_nw_distance_an_2.exp (D F -> 4 2)
+    // pgr output: D \t F \t 4 \t 2
+    assert!(stdout.contains("D\tF\t4\t2"));
+
+    Ok(())
+}
+
+#[test]
+fn command_distance_reference_pairwise() -> anyhow::Result<()> {
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("nwk")
+        .arg("distance")
+        .arg("tests/newick/dist.nwk")
+        .arg("--mode")
+        .arg("pairwise")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    // Verified against newick_utils test_nw_distance_pan.exp (F D E B)
+    // Check F-D distance (2+4=6)
+    // Check F-E distance (2+2=4)
+    // Check D-B distance (6+6=12)
+    assert!(stdout.contains("F\tD\t6"));
+    assert!(stdout.contains("F\tE\t4"));
+    assert!(stdout.contains("D\tB\t12"));
+
+    Ok(())
+}
+
+#[test]
+fn command_distance_reference_phylip() -> anyhow::Result<()> {
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("nwk")
+        .arg("distance")
+        .arg("tests/newick/dist.nwk")
+        .arg("--mode")
+        .arg("phylip")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    // Verified against newick_utils test_nw_distance_m.exp
+    // Note: pgr includes all named nodes (leaves + internal) in phylip mode.
+    // dist.nwk has 6 leaves + 5 named internal nodes = 11 nodes.
+    // newick_utils defaults to leaves only for matrix.
+    assert!(stdout.lines().next().unwrap().trim().starts_with("11"));
+    assert!(stdout.contains("A"));
+    assert!(stdout.contains("B"));
+    // Check for some distance values in the output
+    assert!(stdout.contains("6.000000"));
+    assert!(stdout.contains("7.000000"));
+    assert!(stdout.contains("10.000000"));
+
+    Ok(())
+}
+
+#[test]
+fn command_distance_float_noise() -> anyhow::Result<()> {
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("nwk")
+        .arg("distance")
+        .arg("tests/newick/noise.nwk")
+        .arg("--mode")
+        .arg("pairwise")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    // A->B should be 0.1 + 0.2 = 0.3
+    // Without fix: 0.30000000000000004
+    // With fix: 0.3
+    assert!(stdout.contains("A\tB\t0.3\n") || stdout.contains("A\tB\t0.30\n")); // Allow formatted but clean
+    assert!(!stdout.contains("0.30000000000000004"));
+
+    Ok(())
+}
+
+#[test]
+fn command_distance_reference_parent() -> anyhow::Result<()> {
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("nwk")
+        .arg("distance")
+        .arg("tests/newick/dist.nwk")
+        .arg("--mode")
+        .arg("parent")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    // Verified against newick_utils test_nw_distance_par_all_nam.exp
+    // A->g: 2, B->g: 4, g->k: 2
+    // C->j: 2, D->h: 3, E->h: 1
+    // h->i: 1, F->i: 2, i->j: 1
+    // j->k: 1, k->None: 0
+    assert!(stdout.contains("A\t2"));
+    assert!(stdout.contains("B\t4"));
+    assert!(stdout.contains("g\t2"));
+    assert!(stdout.contains("C\t2"));
+    assert!(stdout.contains("D\t3"));
+    assert!(stdout.contains("E\t1"));
+    assert!(stdout.contains("h\t1"));
+    assert!(stdout.contains("F\t2"));
+    assert!(stdout.contains("i\t1"));
+    assert!(stdout.contains("j\t1"));
+    assert!(stdout.contains("k\t0"));
+
+    Ok(())
+}
