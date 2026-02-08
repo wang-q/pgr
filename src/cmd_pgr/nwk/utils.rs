@@ -51,9 +51,8 @@ pub fn match_names(tree: &Tree, args: &ArgMatches) -> BTreeSet<usize> {
     }
 
     // Default is printing all named nodes
-    let is_all = !(args.contains_id("node")
-        || args.contains_id("file")
-        || args.contains_id("regex"));
+    let is_all =
+        !(args.contains_id("node") || args.contains_id("file") || args.contains_id("regex"));
 
     if is_all {
         ids = id_of.values().cloned().collect();
@@ -127,4 +126,3 @@ pub fn match_positions(tree: &Tree, args: &ArgMatches) -> BTreeSet<usize> {
 
     ids
 }
-

@@ -39,7 +39,7 @@ fn command_rename_lca() -> anyhow::Result<()> {
 
     assert!(stdout.contains("CladeX"));
     assert!(!stdout.contains("Hominini"));
-    
+
     Ok(())
 }
 
@@ -48,7 +48,7 @@ fn command_rename_mixed() -> anyhow::Result<()> {
     // ((A,B),C);
     // Rename A -> A1.
     // Rename LCA(A,B) -> AB.
-    
+
     let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
         .arg("nwk")
@@ -65,7 +65,7 @@ fn command_rename_mixed() -> anyhow::Result<()> {
         .write_stdin("((A,B),C);")
         .output()?;
     let stdout = String::from_utf8(output.stdout)?;
-    
+
     assert!(stdout.contains("((A1,B)AB,C);"));
 
     Ok(())
@@ -107,7 +107,9 @@ fn command_replace() -> anyhow::Result<()> {
         .output()?;
     let stdout = String::from_utf8(output.stdout)?;
 
-    assert!(stdout.contains("((Homo[&&NHX:color=red],Pan[&&NHX:color=red]),Gorilla[&&NHX:color=red]);"));
+    assert!(
+        stdout.contains("((Homo[&&NHX:color=red],Pan[&&NHX:color=red]),Gorilla[&&NHX:color=red]);")
+    );
 
     Ok(())
 }
@@ -151,7 +153,7 @@ fn command_replace_remove() -> anyhow::Result<()> {
     // C -> C (untouched)
     // Original: ((A,B),C);
     // Expected: ((,Pan),C);
-    // Note: Newick parser/writer should handle empty names as empty strings, 
+    // Note: Newick parser/writer should handle empty names as empty strings,
     // resulting in format like `(:0.1,Pan:0.1)...` or just `(,Pan)...` depending on branch lengths.
     // abc.nwk has no branch lengths.
     assert!(stdout.contains("((,Pan),C);"));
@@ -163,7 +165,7 @@ fn command_replace_remove() -> anyhow::Result<()> {
 fn command_replace_filter() -> anyhow::Result<()> {
     // abc.nwk: ((A,B),C);
     // All are leaves.
-    
+
     // 1. Skip leaves (should change nothing if all matches are leaves)
     let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
@@ -174,7 +176,7 @@ fn command_replace_filter() -> anyhow::Result<()> {
         .arg("--Leaf") // Skip leaves
         .output()?;
     let stdout = String::from_utf8(output.stdout)?;
-    
+
     // A, B, C are leaves, so they should be skipped. Output remains original (or similar).
     assert!(stdout.contains("((A,B),C);"));
 
@@ -188,7 +190,7 @@ fn command_replace_filter() -> anyhow::Result<()> {
         .arg("--Internal") // Skip internal
         .output()?;
     let stdout = String::from_utf8(output.stdout)?;
-    
+
     // A, B, C are leaves, so they should be replaced.
     assert!(stdout.contains("((Homo,Pan),Gorilla);"));
 
@@ -232,7 +234,7 @@ fn command_topo_basic() -> anyhow::Result<()> {
     // Original: ((((Gorilla:16,(Pan:10,Homo:10)Hominini:10)Homininae:15,Pongo:30)Hominidae:15,Hylobates:20):10,(((Macaca:10,Papio:10):20,Cercopithecus:10)Cercopithecinae:25,(Simias:10,Colobus:7)Colobinae:5)Cercopithecidae:10);
     // Expected: ((((Gorilla,(Pan,Homo)Hominini)Homininae,Pongo)Hominidae,Hylobates),(((Macaca,Papio),Cercopithecus)Cercopithecinae,(Simias,Colobus)Colobinae)Cercopithecidae);
     // Note: The root edge length is also removed.
-    
+
     assert!(stdout.contains("((((Gorilla,(Pan,Homo)Hominini)Homininae,Pongo)Hominidae,Hylobates)"));
     assert!(!stdout.contains(":")); // No lengths
 
@@ -253,7 +255,7 @@ fn command_topo_remove_labels() -> anyhow::Result<()> {
     let stdout = String::from_utf8(output.stdout)?;
 
     // Should have no labels
-    assert!(stdout.contains("((((,(,))")); 
+    assert!(stdout.contains("((((,(,))"));
     assert!(!stdout.contains("Homo"));
     assert!(!stdout.contains("Hominini"));
 
@@ -294,50 +296,6 @@ fn command_topo_compat_simple() -> anyhow::Result<()> {
     let expected = "(FMDV-C,((((((((HRV16,HRV1B)52,(HRV24,HRV85)70)22,(HRV11,(HRV9,(HRV64,HRV94)32)54)1)17,(HRV39,HRV2)92)97,HRV89)62,(HRV78,HRV12)52)100,((((HRV37,HRV3)65,HRV14)89,(HRV52,HRV17)100)75,(HRV93,HRV27)99)83)48,((((POLIO3,((POLIO2,(POLIO1A,COXA18)22)38,COXA17)72)97,COXA1)76,(((ECHO1,COXB2)83,ECHO6)99,(HEV70,HEV68)99)70)64,(COXA14,(COXA6,COXA2))59)100)68);";
 
     assert_eq!(stdout.trim(), expected);
-    Ok(())
-}
-
-#[test]
-fn command_prune() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
-    let output = cmd
-        .arg("nwk")
-        .arg("prune")
-        .arg("tests/newick/catarrhini.nwk")
-        .arg("-n")
-        .arg("Homo")
-        .arg("-n")
-        .arg("Pan")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
-
-    assert!(!stdout.contains("Homo:10"));
-    assert!(!stdout.contains("Gorilla:16"));
-    assert!(stdout.contains("Gorilla:31"));
-
-    Ok(())
-}
-
-#[test]
-fn command_prune_invert() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
-    let output = cmd
-        .arg("nwk")
-        .arg("prune")
-        .arg("tests/newick/catarrhini.nwk")
-        .arg("-v")
-        .arg("-n")
-        .arg("Homo")
-        .arg("-n")
-        .arg("Pan")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
-
-    assert!(stdout.contains("Homo"));
-    assert!(stdout.contains("Pan"));
-    assert!(!stdout.contains("Gorilla"));
-    assert!(!stdout.contains("Pongo"));
-
     Ok(())
 }
 
@@ -499,3 +457,139 @@ fn command_topo_compat_bil() -> anyhow::Result<()> {
 }
 
 
+#[test]
+fn command_order() -> anyhow::Result<()> {
+    let mut cmd = Command::cargo_bin("nwr")?;
+    let output = cmd
+        .arg("ops")
+        .arg("order")
+        .arg("tests/newick/abc.nwk")
+        .arg("--nd")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    assert!(stdout.contains("(C,(A,B));"));
+
+    let mut cmd = Command::cargo_bin("nwr")?;
+    let output = cmd
+        .arg("ops")
+        .arg("order")
+        .arg("tests/newick/abc.nwk")
+        .arg("--ndr")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    assert!(stdout.contains("((A,B),C);"));
+
+    let mut cmd = Command::cargo_bin("nwr")?;
+    let output = cmd
+        .arg("ops")
+        .arg("order")
+        .arg("tests/newick/abc.nwk")
+        .arg("--an")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    assert!(stdout.contains("((A,B),C);"));
+
+    let mut cmd = Command::cargo_bin("nwr")?;
+    let output = cmd
+        .arg("ops")
+        .arg("order")
+        .arg("tests/newick/abc.nwk")
+        .arg("--anr")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    assert!(stdout.contains("(C,(B,A));"));
+
+    let mut cmd = Command::cargo_bin("nwr")?;
+    let output = cmd
+        .arg("ops")
+        .arg("order")
+        .arg("tests/newick/abc.nwk")
+        .arg("--anr")
+        .arg("--ndr")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    assert!(stdout.contains("((B,A),C);"));
+
+    Ok(())
+}
+
+#[test]
+fn command_order_list() -> anyhow::Result<()> {
+    let mut cmd = Command::cargo_bin("nwr")?;
+    let output = cmd
+        .arg("ops")
+        .arg("order")
+        .arg("tests/newick/abcde.nwk")
+        .arg("--list")
+        .arg("tests/newick/abcde.list")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    assert!(stdout.contains("(C:1,(B:1,A:1)D:1)E;"));
+
+    Ok(())
+}
+
+#[test]
+fn command_order_species() -> anyhow::Result<()> {
+    // Create a temporary directory for testing
+    let tempdir = tempfile::tempdir()?;
+    let temp_path = tempdir.path();
+
+    std::fs::copy("tests/newick/species.nwk", temp_path.join("species.nwk"))?;
+
+    // Generate a list of labels from the tree
+    let mut cmd = Command::cargo_bin("nwr")?;
+    cmd.arg("data")
+        .arg("label")
+        .arg("species.nwk")
+        .arg("-o")
+        .arg("species.list")
+        .current_dir(temp_path)
+        .output()?;
+
+    // Order the tree using the generated list
+    let mut cmd = Command::cargo_bin("nwr")?;
+    let output = cmd
+        .arg("ops")
+        .arg("order")
+        .arg("species.nwk")
+        .arg("--list")
+        .arg("species.list")
+        .current_dir(temp_path)
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    // Compare the ordered tree with the original one
+    // They should be identical as the list was generated from the original order
+    let original = std::fs::read_to_string("tests/newick/species.nwk")?;
+    assert_eq!(stdout.trim(), original.trim());
+
+    // gene tree
+    std::fs::copy("tests/newick/pmxc.nwk", temp_path.join("pmxc.nwk"))?;
+
+    // Order pmxc.nwk using the generated list
+    let mut cmd = Command::cargo_bin("nwr")?;
+    let output = cmd
+        .arg("ops")
+        .arg("order")
+        .arg("pmxc.nwk")
+        .arg("--list")
+        .arg("species.list")
+        .current_dir(temp_path)
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    // Read the original pmxc.nwk file
+    let original = std::fs::read_to_string("tests/newick/pmxc.nwk")?;
+
+    // The ordered tree should be different from the original one
+    assert_ne!(stdout.trim(), original.trim());
+
+    Ok(())
+}

@@ -1,7 +1,7 @@
-use clap::*;
-use std::collections::BTreeSet;
 use super::utils as nwr;
+use clap::*;
 use pgr::libs::phylo::reader;
+use std::collections::BTreeSet;
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
@@ -208,22 +208,30 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                             "taxid" => {
                                 out_string += format!(
                                     "\t{}",
-                                    node.get_property("T").map(|s: &String| s.as_str()).unwrap_or("")
+                                    node.get_property("T")
+                                        .map(|s: &String| s.as_str())
+                                        .unwrap_or("")
                                 )
                                 .as_str()
                             }
                             "species" => {
                                 out_string += format!(
                                     "\t{}",
-                                    node.get_property("S").map(|s: &String| s.as_str()).unwrap_or("")
+                                    node.get_property("S")
+                                        .map(|s: &String| s.as_str())
+                                        .unwrap_or("")
                                 )
                                 .as_str()
                             }
                             "full" => {
-                                let props = node.properties.as_ref().map(|p: &std::collections::BTreeMap<String, String>| {
-                                    p.iter().map(|(k,v)| format!(":{}={}", k, v)).collect::<Vec<String>>()
-                                });
-                                
+                                let props = node.properties.as_ref().map(
+                                    |p: &std::collections::BTreeMap<String, String>| {
+                                        p.iter()
+                                            .map(|(k, v)| format!(":{}={}", k, v))
+                                            .collect::<Vec<String>>()
+                                    },
+                                );
+
                                 let mut comment = String::new();
                                 if let Some(p) = props {
                                     if !p.is_empty() {
@@ -231,11 +239,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                                     }
                                 }
 
-                                out_string += format!(
-                                    "\t{}",
-                                    comment
-                                )
-                                .as_str()
+                                out_string += format!("\t{}", comment).as_str()
                             }
                             _ => unreachable!(),
                         }
@@ -251,7 +255,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         }
 
         if tab_sep && !collected_labels.is_empty() {
-            writer.write_fmt(format_args!("{}\n", collected_labels.join("\t"))).unwrap();
+            writer
+                .write_fmt(format_args!("{}\n", collected_labels.join("\t")))
+                .unwrap();
         }
     }
 

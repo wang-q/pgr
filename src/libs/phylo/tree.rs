@@ -207,6 +207,7 @@ impl Tree {
         };
 
         // 2. Re-parent children
+        let mut new_children_ids = Vec::new();
         for (child_id, child_edge) in children_info {
             let new_edge = match (parent_edge, child_edge) {
                 (Some(p), Some(c)) => Some(p + c),
@@ -220,16 +221,14 @@ impl Tree {
                 child.parent = Some(parent_id);
                 child.length = new_edge;
             }
-
-            // Add to grandparent
-            if let Some(parent) = self.get_node_mut(parent_id) {
-                parent.children.push(child_id);
-            }
+            new_children_ids.push(child_id);
         }
 
-        // 3. Remove self from parent
+        // 3. Update parent's children list
         if let Some(parent) = self.get_node_mut(parent_id) {
-            parent.children.retain(|&x| x != id);
+            if let Some(pos) = parent.children.iter().position(|&x| x == id) {
+                parent.children.splice(pos..pos + 1, new_children_ids);
+            }
         }
 
         // 4. Mark deleted

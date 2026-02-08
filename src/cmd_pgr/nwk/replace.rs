@@ -161,16 +161,13 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                     _ => unreachable!(),
                 }
 
-                replaces
-                    .iter()
-                    .skip(1)
-                    .for_each(|e| {
-                        if e.contains('=') {
-                            node.add_property_from_str(e);
-                        } else {
-                            node.add_property(e, "");
-                        }
-                    });
+                replaces.iter().skip(1).for_each(|e| {
+                    if e.contains('=') {
+                        node.add_property_from_str(e);
+                    } else {
+                        node.add_property(e, "");
+                    }
+                });
             }
         }
 

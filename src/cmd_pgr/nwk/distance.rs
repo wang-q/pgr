@@ -101,9 +101,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         }
         _ => std::fs::read_to_string(infile)?,
     };
-    
+
     // Attempt to parse Newick. If it fails, return error.
-    let tree = Tree::from_newick(&input).map_err(|e| anyhow::anyhow!("Failed to parse Newick: {:?}", e))?;
+    let tree = Tree::from_newick(&input)
+        .map_err(|e| anyhow::anyhow!("Failed to parse Newick: {:?}", e))?;
 
     let mode = args.get_one::<String>("mode").unwrap();
 
@@ -137,26 +138,24 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn dist_root(
-    tree: &Tree,
-    id_of: &BTreeMap<String, NodeId>,
-    writer: &mut Box<dyn Write>,
-) {
+fn dist_root(tree: &Tree, id_of: &BTreeMap<String, NodeId>, writer: &mut Box<dyn Write>) {
     let root = tree.get_root().unwrap();
     for (k, v) in id_of.iter() {
         let dist = {
             let (edge_sum, num_edges) = tree.get_distance(&root, v).unwrap();
-            if edge_sum.abs() > 1e-9 { edge_sum } else { num_edges as f64 }
+            if edge_sum.abs() > 1e-9 {
+                edge_sum
+            } else {
+                num_edges as f64
+            }
         };
-        writer.write_fmt(format_args!("{}\t{}\n", k, format_float(dist))).unwrap();
+        writer
+            .write_fmt(format_args!("{}\t{}\n", k, format_float(dist)))
+            .unwrap();
     }
 }
 
-fn dist_parent(
-    tree: &Tree,
-    id_of: &BTreeMap<String, NodeId>,
-    writer: &mut Box<dyn Write>,
-) {
+fn dist_parent(tree: &Tree, id_of: &BTreeMap<String, NodeId>, writer: &mut Box<dyn Write>) {
     for (k, v) in id_of.iter() {
         let parent = tree.get_node(*v).unwrap().parent;
         if parent.is_none() {
@@ -167,22 +166,28 @@ fn dist_parent(
 
         let dist = {
             let (edge_sum, num_edges) = tree.get_distance(&parent, v).unwrap();
-            if edge_sum.abs() > 1e-9 { edge_sum } else { num_edges as f64 }
+            if edge_sum.abs() > 1e-9 {
+                edge_sum
+            } else {
+                num_edges as f64
+            }
         };
-        writer.write_fmt(format_args!("{}\t{}\n", k, format_float(dist))).unwrap();
+        writer
+            .write_fmt(format_args!("{}\t{}\n", k, format_float(dist)))
+            .unwrap();
     }
 }
 
-fn dist_pairwise(
-    tree: &Tree,
-    id_of: &BTreeMap<String, NodeId>,
-    writer: &mut Box<dyn Write>,
-) {
+fn dist_pairwise(tree: &Tree, id_of: &BTreeMap<String, NodeId>, writer: &mut Box<dyn Write>) {
     for (k1, v1) in id_of.iter() {
         for (k2, v2) in id_of.iter() {
             let dist = {
                 let (edge_sum, num_edges) = tree.get_distance(v1, v2).unwrap();
-                if edge_sum.abs() > 1e-9 { edge_sum } else { num_edges as f64 }
+                if edge_sum.abs() > 1e-9 {
+                    edge_sum
+                } else {
+                    num_edges as f64
+                }
             };
             writer
                 .write_fmt(format_args!("{}\t{}\t{}\n", k1, k2, format_float(dist)))
@@ -198,12 +203,20 @@ fn dist_lca(tree: &Tree, id_of: &BTreeMap<String, NodeId>, writer: &mut Box<dyn 
 
             let dist1 = {
                 let (edge_sum, num_edges) = tree.get_distance(&lca, v1).unwrap();
-                if edge_sum.abs() > 1e-9 { edge_sum } else { num_edges as f64 }
+                if edge_sum.abs() > 1e-9 {
+                    edge_sum
+                } else {
+                    num_edges as f64
+                }
             };
 
             let dist2 = {
                 let (edge_sum, num_edges) = tree.get_distance(&lca, v2).unwrap();
-                if edge_sum.abs() > 1e-9 { edge_sum } else { num_edges as f64 }
+                if edge_sum.abs() > 1e-9 {
+                    edge_sum
+                } else {
+                    num_edges as f64
+                }
             };
             writer
                 .write_fmt(format_args!(
@@ -221,28 +234,32 @@ fn dist_lca(tree: &Tree, id_of: &BTreeMap<String, NodeId>, writer: &mut Box<dyn 
 fn dist_phylip(tree: &Tree, id_of: &BTreeMap<String, NodeId>, writer: &mut Box<dyn Write>) {
     let names: Vec<&String> = id_of.keys().collect();
     let n = names.len();
-    
+
     // Phylip header
     writer.write_fmt(format_args!("    {}\n", n)).unwrap();
-    
+
     for (i, name) in names.iter().enumerate() {
         let v1 = id_of.get(*name).unwrap();
-        
+
         // Name padding to 10 chars usually, but let's just print name followed by tab/space
         // Phylip strict format requires 10 chars for name.
         // Relaxed format (which is common) allows longer names separated by whitespace.
         // Let's print name then spaces.
         writer.write_fmt(format_args!("{} ", name)).unwrap();
-        
+
         for (j, other_name) in names.iter().enumerate() {
             let v2 = id_of.get(*other_name).unwrap();
             let dist = if i == j {
                 0.0
             } else {
                 let (edge_sum, num_edges) = tree.get_distance(v1, v2).unwrap();
-                if edge_sum.abs() > 1e-9 { edge_sum } else { num_edges as f64 }
+                if edge_sum.abs() > 1e-9 {
+                    edge_sum
+                } else {
+                    num_edges as f64
+                }
             };
-            
+
             writer.write_fmt(format_args!(" {:.6}", dist)).unwrap();
         }
         writer.write_all(b"\n").unwrap();
