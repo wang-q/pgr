@@ -5,10 +5,10 @@ use std::io::Write;
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("topo")
-        .about("Topological information of the Newick file")
+        .about("Manipulates tree topology and attributes")
         .after_help(
             r###"
-Cleans up the tree structure by optionally removing branch lengths, comments, or labels.
+Modifies tree topology by optionally removing branch lengths, comments, or labels.
 
 Notes:
 * By default, branch lengths and comments are REMOVED.

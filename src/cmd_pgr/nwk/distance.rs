@@ -7,24 +7,24 @@ use std::io::{Read, Write};
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("distance")
-        .about("Output a TSV/phylip file with distances between all named nodes")
+        .about("Calculates distances between nodes")
         .after_help(
             r###"
 Calculates distances between nodes or generates distance matrices.
 
-Modes:
-* root: Distance from each node to the root.
-  Output: Node \t Distance
-* parent: Distance from each node to its parent.
-  Output: Node \t Distance
-* pairwise: Distance between every pair of nodes.
-  Output: Node1 \t Node2 \t Distance
-* lca: Distance from each node in a pair to their Lowest Common Ancestor (LCA).
-  Output: Node1 \t Node2 \t Dist1 \t Dist2
-* phylip: A Phylip-formatted distance matrix.
-  Note: -I and -L are ignored in this mode.
-
 Notes:
+* Modes:
+    * `root`: Distance from each node to the root.
+      Output: Node \t Distance
+    * `parent`: Distance from each node to its parent.
+      Output: Node \t Distance
+    * `pairwise`: Distance between every pair of nodes.
+      Output: Node1 \t Node2 \t Distance
+    * `lca`: Distance from each node in a pair to their Lowest Common Ancestor (LCA).
+      Output: Node1 \t Node2 \t Dist1 \t Dist2
+    * `phylip`: A Phylip-formatted distance matrix.
+      Note: `-I` and `-L` are ignored in this mode.
+
 * The `-I` and `-L` options filter out internal or leaf nodes (except in 'phylip' mode).
 * Input must be a valid Newick file.
 

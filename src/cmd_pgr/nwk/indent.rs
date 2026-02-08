@@ -5,16 +5,16 @@ use std::io::Write;
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("indent")
-        .about("Indents Newick trees for better readability")
+        .about("Formats Newick trees with indentation")
         .after_help(
             r###"
-Indents the Newick tree, making structure more clear.
+Re-formats the Newick tree, making structure more clear.
 
 Notes:
-* By default, prints the input tree indented with two spaces ("  ")
-* The default output is valid Newick
-* Use --compact to remove all indentation (output single line)
-* Using non-whitespace characters for --text may result in invalid Newick
+* By default, prints the input tree indented with two spaces ("  ").
+* The default output is valid Newick.
+* Use `--compact` to remove all indentation (output single line).
+* Using non-whitespace characters for `--text` may result in invalid Newick.
 
 Examples:
 1. Default indentation:

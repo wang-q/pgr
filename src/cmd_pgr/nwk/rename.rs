@@ -6,22 +6,22 @@ use std::io::Write;
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("rename")
-        .about("Rename named/unnamed nodes in a Newick file")
+        .about("Renames nodes in a Newick file")
         .after_help(
             r###"
 Renames nodes in the Newick tree.
 
 Notes:
-* For nodes with names, set `--node` to the name
+* For nodes with names, set `--node` to the name.
 * For nodes without names (e.g., internal nodes), set `--lca` to a combination
-  of two node names, separated by commas
-* The sum of nodes supplied by `--node` and `--lca` should be equal to the number of `--rename`
-* Do not use `--node` and `--lca` alternately
+  of two node names, separated by commas.
+* The sum of nodes supplied by `--node` and `--lca` should be equal to the number of `--rename`.
+* Do not use `--node` and `--lca` alternately.
 
 * This command is not designed to replace names in large batches, but for modifying small amounts
-  of data, and therefore does not provide the ability to read a mapping file
-    * `pgr nwk replace` does this kind of jobs
-    * Or use other tools, such as `sed` or `perl`, to accomplish such tasks
+  of data, and therefore does not provide the ability to read a mapping file.
+    * `pgr nwk replace` does this kind of jobs.
+    * Or use other tools, such as `sed` or `perl`, to accomplish such tasks.
 
 Examples:
 1. Rename a named node:

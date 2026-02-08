@@ -6,15 +6,14 @@ use std::collections::BTreeSet;
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("label")
-        .about("Labels in the Newick file")
+        .about("Extracts labels from a Newick file")
         .after_help(
             r###"
 Extracts the tree's labels.
 
-By default, prints all labels that occur in the tree, in the same order as
-in the Newick, one per line. Empty labels produce no output.
-
 Notes:
+* By default, prints all labels that occur in the tree, in the same order as
+  in the Newick, one per line. Empty labels produce no output.
 * The `-t` option prints labels on a single line, separated by tabs.
 * The `-I` and `-L` options filter out internal or leaf nodes.
 * Selection options (`-n`, `-f`, `-r`) can be combined.
@@ -23,10 +22,10 @@ Notes:
   group. It checks terminal nodes against the selection.
 * Warning: Duplicate node names may affect selection/monophyly checks.
 * Extra columns (`-c`) details:
-    * `dup` - duplicate the node name
-    * `taxid` - `:T=` field in comment
-    * `species` - `:S=` field in comment
-    * `full` - full comment
+    * `dup`: duplicate the node name
+    * `taxid`: `:T=` field in comment
+    * `species`: `:S=` field in comment
+    * `full`: full comment
 
 Examples:
 1. List all labels:

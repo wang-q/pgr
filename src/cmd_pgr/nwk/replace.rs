@@ -6,19 +6,19 @@ use std::io::Write;
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("replace")
-        .about("Replace node names/comments in a Newick file")
+        .about("Replaces node names or comments in a Newick file")
         .after_help(
             r###"
-Replace node names or append annotations in a Newick file using a TSV file.
+Replaces node names or appends annotations in a Newick file using a TSV file.
 
 Notes:
-* <replace.tsv> is a tab-separated file with 2 or more columns:
-  <original_name> <replacement> [additional_annotations...]
-* The behavior of the 2nd column (<replacement>) depends on `--mode`:
-  * label (default): Replaces the node name. Empty string removes the name.
-  * taxid:           Appends as NCBI TaxID (`:T=<replacement>`) in NHX.
-  * species:         Appends as species name (`:S=<replacement>`) in NHX.
-  * asis:            Appends verbatim to comments (e.g. `key=val` or `tag`).
+* `<replace.tsv>` is a tab-separated file with 2 or more columns:
+  `<original_name> <replacement> [additional_annotations...]`
+* The behavior of the 2nd column (`<replacement>`) depends on `--mode`:
+    * `label` (default): Replaces the node name. Empty string removes the name.
+    * `taxid`:           Appends as NCBI TaxID (`:T=<replacement>`) in NHX.
+    * `species`:         Appends as species name (`:S=<replacement>`) in NHX.
+    * `asis`:            Appends verbatim to comments (e.g. `key=val` or `tag`).
 * Columns 3+ are ALWAYS appended to the node's comments/properties.
   Key-value pairs (e.g., `color=red`) are stored as properties.
   Simple tags (e.g., `highlight`) are stored as keys with empty values.

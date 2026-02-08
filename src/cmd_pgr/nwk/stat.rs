@@ -9,19 +9,20 @@ pub fn make_subcommand() -> Command {
             r###"
 Prints information about the trees in the input.
 
-Input format:
-* Newick trees filename or 'stdin'
+Notes:
+* Input format:
+    * Newick trees filename or `stdin`.
 
-Output format:
-* Key-value pairs (TSV, default):
-  Type	cladogram
-  nodes	18
-  leaves	11
-  ...
-
-* Tab-separated values (--style line):
-  Type	nodes	leaves	dichotomies	leaf labels	internal labels
-  cladogram	18	11	5	11	0
+* Output format:
+    * Key-value pairs (TSV, default):
+      Type	cladogram
+      nodes	18
+      leaves	11
+      ...
+    
+    * Tab-separated values (--style line):
+      Type	nodes	leaves	dichotomies	leaf labels	internal labels
+      cladogram	18	11	5	11	0
 
 Examples:
 1. Default statistics:

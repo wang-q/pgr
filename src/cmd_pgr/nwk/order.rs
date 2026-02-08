@@ -21,19 +21,19 @@ Notes:
 
 Examples:
 1. Sort by number of descendants (ladderize):
-   $ pgr nwk order tree.nwk --nd
+   pgr nwk order tree.nwk --nd
 
 2. Sort by alphanumeric order of labels:
-   $ pgr nwk order tree.nwk --an
+   pgr nwk order tree.nwk --an
 
 3. Sort by a list of names:
-   $ pgr nwk order tree.nwk --list names.txt
+   pgr nwk order tree.nwk --list names.txt
 
 4. Sort by alphanumeric order, then by number of descendants (reverse):
-   $ pgr nwk order tree.nwk --an --ndr
+   pgr nwk order tree.nwk --an --ndr
 
 5. De-ladderize (alternate sort direction):
-   $ pgr nwk order tree.nwk --deladderize
+   pgr nwk order tree.nwk --deladderize
 
 "###,
         )

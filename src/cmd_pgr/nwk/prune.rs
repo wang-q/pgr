@@ -7,10 +7,10 @@ use std::io::Write;
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("prune")
-        .about("Remove nodes from the Newick file")
+        .about("Removes nodes from a Newick file")
         .after_help(
             r###"
-This tool removes nodes from the Newick tree based on provided labels or patterns.
+Removes nodes from the Newick tree based on provided labels or patterns.
 
 Notes:
 * Target nodes can be specified by name (`--node`), file (`--file`), or regex (`--regex`).
@@ -21,13 +21,13 @@ Notes:
 
 Examples:
 1. Remove specific nodes by name:
-   $ pgr nwk prune input.nwk -n Homo -n Pan
+   pgr nwk prune input.nwk -n Homo -n Pan
 
 2. Remove nodes using a list in a file:
-   $ pgr nwk prune input.nwk -f remove.txt
+   pgr nwk prune input.nwk -f remove.txt
 
 3. Keep a clade (e.g., Hominidae) and remove everything else (Invert mode):
-   $ pgr nwk prune input.nwk -v -n Hominidae
+   pgr nwk prune input.nwk -v -n Hominidae
 
 "###,
         )
