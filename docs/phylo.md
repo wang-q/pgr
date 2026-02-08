@@ -204,13 +204,14 @@ Phylotree-rs 的 API 更加**面向对象**和**函数式**，利用 Rust 的特
 src/libs/phylo/
 ├── mod.rs          # 模块导出
 ├── node.rs         # 核心数据结构 (Node)
-├── tree.rs         # 核心数据结构 (Tree) 及所有算法 (Traversal, Algo)
+├── tree.rs         # 核心数据结构 (Tree) 及基础操作 (Traversal, Mod)
+├── algo.rs         # 高级算法 (Sort, etc.)
 ├── parser.rs       # Newick 解析器 (基于 Nom)
 └── error.rs        # 错误定义 (TreeError)
 ```
 
 **设计决策说明 (Design Rationale)**:
-*   **整合原因**: 将遍历 (`iter`) 和算法 (`algo`) 整合进 `tree.rs` 是为了保持**高内聚**。这些操作紧密依赖 `Tree` 的内部实现（如 Arena 索引），集中管理可以简化可见性控制，符合 Rust 将方法定义在类型附近的惯例。当前 `tree.rs` 约 800 行，体积适中，无需过早拆分。
+*   **分层设计**: 核心数据结构和基础遍历逻辑保持在 `tree.rs` 中，而具体的应用层算法（如排序）分离至 `algo.rs`，保持代码结构清晰。
 
 #### 核心数据结构 (Data Structures)
 采用 **Arena (Vector-backed)** 模式，参考 `phylotree-rs` 但进行优化。
@@ -364,14 +365,14 @@ pub struct Tree {
 | `nw_indent` | 格式化/缩进 Newick 树 | `pgr nwk indent` | **[x] 已实现** (支持紧凑/缩进输出) |
 | `nw_display` | 树的可视化 (ASCII/SVG/Map) | `pgr nwk display` / `view` | [ ] |
 | `nw_topology` | 仅保留拓扑结构 (去除分支长度) | `pgr nwk topology` | [ ] |
-| `nw_labels` | 提取所有标签 (叶子/内部节点) | `pgr nwk labels` | [ ] |
-| `nw_reroot` | 重定根 (Outgroup, Midpoint) | `pgr nwk reroot` | [ ] |
-| `nw_prune` | 剪枝 (移除指定节点) | `pgr nwk prune` | [ ] |
+| `nw_labels` | 提取所有标签 (叶子/内部节点) | `pgr nwk label` | **[x] 已实现** (支持正则过滤, 内部/叶子筛选, 单行输出) |
+| `nw_reroot` | 重定根 (Outgroup, Midpoint) | `pgr nwk reroot` | [ ] (算法已实现 `reroot_at`) |
+| `nw_prune` | 剪枝 (移除指定节点) | `pgr nwk prune` | [ ] (算法已实现 `prune`) |
 | `nw_clade` | 提取子树 (Clade) | `pgr nwk clade` / `subtree` | [ ] |
-| `nw_order` | 节点排序 (Ladderize) | `pgr nwk order` | [ ] |
+| `nw_order` | 节点排序 (Ladderize) | `pgr nwk order` | [ ] (算法已实现 `sort_by_descendants`) |
 | `nw_rename` | 重命名节点 (Map file/Rule) | `pgr nwk rename` | [ ] |
 | `nw_condense` | 压缩树 (合并短枝/多叉化) | `pgr nwk condense` | [ ] |
-| `nw_distance` | 计算节点间距离 / 树间距离 | `pgr nwk dist` | [ ] |
+| `nw_distance` | 计算节点间距离 / 树间距离 | `pgr nwk distance` | **[x] 已实现** (Modes: root, parent, pairwise, lca, phylip) |
 | `nw_support` | 计算/显示支持率 (Bootstrap) | `pgr nwk support` | [ ] |
 | `nw_match` | 匹配两棵树的节点 | `pgr nwk match` | [ ] |
 | `nw_ed` | 编辑距离 / 树操作脚本 | `pgr nwk ed` | [ ] |
