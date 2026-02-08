@@ -489,3 +489,6 @@ nom = "8"  # 用于高性能解析
 *   **Internal Caching**:
     *   `update_depths()`, `matrix`: `phylotree-rs` 缓存了大量中间状态。`pgr` 倾向于按需计算 (On-demand) 以保持轻量化。
 
+整合 indent.rs，测试在 `tests/cli_nwk_viz.rs` 中。
+你看看 nw_indent 的代码，有没有什么值得参考的
+把里 nw_stats 的相关测试迁移到本项目，需要的测试材料 可以拷贝到 `tests/newick/` 目录下
