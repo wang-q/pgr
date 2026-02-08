@@ -1,5 +1,5 @@
 use super::node::{Node, NodeId};
-use std::collections::HashMap;
+use std::collections::{HashMap, BTreeMap};
 use super::writer;
 
 #[derive(Debug, Default, Clone)]
@@ -632,6 +632,51 @@ impl Tree {
 
     pub fn is_empty(&self) -> bool {
         self.len() == 0
+    }
+
+    /// Get node names
+    ///
+    /// ```
+    /// use pgr::libs::phylo::tree::Tree;
+    ///
+    /// let newick = "((A,B)D,C);";
+    /// let tree = Tree::from_newick(newick).unwrap();
+    /// assert_eq!(tree.get_names(), vec!["D".to_string(),"A".to_string(),"B".to_string(),"C".to_string(), ]);
+    /// ```
+    pub fn get_names(&self) -> Vec<String> {
+        if let Some(root) = self.root {
+            self.preorder(&root).unwrap_or_default()
+                .iter()
+                .filter_map(|&id| self.get_node(id))
+                .filter_map(|node| node.name.clone())
+                .collect()
+        } else {
+            Vec::new()
+        }
+    }
+
+    /// Get hash of name-id
+    ///
+    /// ```
+    /// use pgr::libs::phylo::tree::Tree;
+    ///
+    /// let newick = "((A,B),C);";
+    /// let tree = Tree::from_newick(newick).unwrap();
+    /// let id_of = tree.get_name_id();
+    /// assert_eq!(*id_of.get("A").unwrap(), 2usize);
+    /// ```
+    pub fn get_name_id(&self) -> BTreeMap<String, usize> {
+        let mut id_of = BTreeMap::new();
+        if let Some(root) = self.root {
+            for id in self.preorder(&root).unwrap_or_default().iter() {
+                if let Some(node) = self.get_node(*id) {
+                    if let Some(name) = &node.name {
+                        id_of.insert(name.clone(), *id);
+                    }
+                }
+            }
+        }
+        id_of
     }
 
     /// Serialize the tree to a Newick string (compact format).
