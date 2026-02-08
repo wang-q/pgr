@@ -61,7 +61,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let infile = args.get_one::<String>("infile").unwrap();
     let style = args.get_one::<String>("style").unwrap();
 
-    let trees = reader::from_file(infile);
+    let trees = reader::from_file(infile)?;
 
     if style == "line" {
         writer.write_fmt(format_args!(

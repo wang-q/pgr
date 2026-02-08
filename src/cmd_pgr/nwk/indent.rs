@@ -71,7 +71,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     };
 
     let infile = args.get_one::<String>("infile").unwrap();
-    let trees = reader::from_file(infile);
+    let trees = reader::from_file(infile)?;
 
     for tree in trees {
         let out_string = tree.to_newick_with_format(text);

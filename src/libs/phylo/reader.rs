@@ -9,11 +9,11 @@ use std::io::Read;
 /// # Example
 /// ```
 /// // usage in CLI:
-/// // let trees = pgr::libs::phylo::reader::from_file("path/to/tree.nwk");
+/// // let trees = pgr::libs::phylo::reader::from_file("path/to/tree.nwk")?;
 /// ```
-pub fn from_file(infile: &str) -> Vec<Tree> {
+pub fn from_file(infile: &str) -> anyhow::Result<Vec<Tree>> {
     let mut reader = intspan::reader(infile);
     let mut newick = String::new();
-    reader.read_to_string(&mut newick).expect("Read error");
-    Tree::from_newick_multi(newick.as_str()).unwrap()
+    reader.read_to_string(&mut newick).map_err(|e| anyhow::anyhow!("Read error: {}", e))?;
+    Ok(Tree::from_newick_multi(newick.as_str())?)
 }
