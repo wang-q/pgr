@@ -1,5 +1,6 @@
 use super::node::{Node, NodeId};
 use std::collections::HashMap;
+use super::writer;
 
 #[derive(Debug, Default, Clone)]
 pub struct Tree {
@@ -645,7 +646,7 @@ impl Tree {
     /// assert_eq!(tree.to_newick(), "A;");
     /// ```
     pub fn to_newick(&self) -> String {
-        self.to_newick_with_format("")
+        writer::write_newick(self)
     }
 
     /// Serialize the tree to a Newick string with optional indentation.
@@ -669,73 +670,12 @@ impl Tree {
     /// assert_eq!(tree.to_newick_with_format("  "), expected);
     /// ```
     pub fn to_newick_with_format(&self, indent: &str) -> String {
-        if let Some(root) = self.root {
-            let mut s = self.to_newick_recursive(root, indent, 0);
-            s.push(';');
-            s
-        } else {
-            ";".to_string()
-        }
+        writer::write_newick_with_format(self, indent)
     }
 
-    fn to_newick_recursive(&self, node_id: NodeId, indent: &str, depth: usize) -> String {
-        let node = self.get_node(node_id).unwrap();
-        let is_pretty = !indent.is_empty();
-        
-        // Calculate current indentation string
-        let my_indent = if is_pretty { indent.repeat(depth) } else { String::new() };
-
-        // Format node info: Label + Length + Comment
-        let mut node_info = String::new();
-        
-        if let Some(name) = &node.name {
-            node_info.push_str(&Self::quote_label(name));
-        }
-        
-        if let Some(len) = node.length {
-            node_info.push_str(&format!(":{}", len));
-        }
-        
-        if let Some(props) = &node.properties {
-            if !props.is_empty() {
-                node_info.push_str("[&&NHX");
-                for (k, v) in props {
-                    node_info.push_str(&format!(":{}={}", k, v));
-                }
-                node_info.push(']');
-            }
-        }
-
-        if node.children.is_empty() {
-            // Leaf: Indent + NodeInfo
-            format!("{}{}", my_indent, node_info)
-        } else {
-            // Internal node
-            let children_strs: Vec<String> = node.children.iter()
-                .map(|&child| self.to_newick_recursive(child, indent, depth + 1))
-                .collect();
-            
-            if is_pretty {
-                // (\n children \n)NodeInfo
-                format!("{}(\n{}\n{}){}", 
-                    my_indent, 
-                    children_strs.join(",\n"), 
-                    my_indent, 
-                    node_info
-                )
-            } else {
-                format!("({}){}", children_strs.join(","), node_info)
-            }
-        }
-    }
-
-    fn quote_label(label: &str) -> String {
-        let needs_quote = label.chars().any(|c| "(),:;[] \t\n".contains(c));
-        if needs_quote {
-            format!("'{}'", label)
-        } else {
-            label.to_string()
-        }
+    /// Serialize the tree to Graphviz DOT format.
+    pub fn to_dot(&self) -> String {
+        writer::write_dot(self)
     }
 }
 
@@ -984,89 +924,4 @@ mod tests {
         assert!(tree.get_node(n0).unwrap().children.is_empty());
     }
 
-    #[test]
-    fn test_to_newick() {
-        let mut tree = Tree::new();
-        //    Root
-        //   /    \
-        //  A:0.1  B:0.2
-        let n0 = tree.add_node();
-        let n1 = tree.add_node();
-        let n2 = tree.add_node();
-        
-        tree.set_root(n0);
-        tree.add_child(n0, n1).unwrap();
-        tree.add_child(n0, n2).unwrap();
-        
-        tree.get_node_mut(n0).unwrap().set_name("Root");
-        tree.get_node_mut(n1).unwrap().set_name("A");
-        tree.get_node_mut(n1).unwrap().length = Some(0.1);
-        tree.get_node_mut(n2).unwrap().set_name("B");
-        tree.get_node_mut(n2).unwrap().length = Some(0.2);
-        
-        // Compact output
-        assert_eq!(tree.to_newick(), "(A:0.1,B:0.2)Root;");
-        
-        // Pretty output
-        let expected_pretty = "(\n  A:0.1,\n  B:0.2\n)Root;";
-        assert_eq!(tree.to_newick_with_format("  "), expected_pretty);
-    }
-
-    #[test]
-    fn test_to_newick_complex() {
-        let mut tree = Tree::new();
-        //      Root
-        //     /    \
-        //    I1     C
-        //   /  \
-        //  A    B
-        let root = tree.add_node();
-        let i1 = tree.add_node();
-        let c = tree.add_node();
-        let a = tree.add_node();
-        let b = tree.add_node();
-
-        tree.set_root(root);
-        tree.get_node_mut(root).unwrap().set_name("Root");
-        
-        tree.add_child(root, i1).unwrap();
-        tree.add_child(root, c).unwrap();
-        tree.get_node_mut(i1).unwrap().set_name("I1");
-        tree.get_node_mut(c).unwrap().set_name("C");
-
-        tree.add_child(i1, a).unwrap();
-        tree.add_child(i1, b).unwrap();
-        tree.get_node_mut(a).unwrap().set_name("A");
-        tree.get_node_mut(b).unwrap().set_name("B");
-        
-        // Pretty output with tab indentation
-        let expected = "(\n\t(\n\t\tA,\n\t\tB\n\t)I1,\n\tC\n)Root;";
-        assert_eq!(tree.to_newick_with_format("\t"), expected);
-    }
-
-    #[test]
-    fn test_to_newick_special_chars() {
-        let mut tree = Tree::new();
-        let n0 = tree.add_node();
-        tree.set_root(n0);
-        tree.get_node_mut(n0).unwrap().set_name("Homo sapiens"); 
-        
-        assert_eq!(tree.to_newick(), "'Homo sapiens';");
-        
-        tree.get_node_mut(n0).unwrap().set_name("func(x)");
-        assert_eq!(tree.to_newick(), "'func(x)';");
-    }
-
-    #[test]
-    fn test_to_newick_properties() {
-        let mut tree = Tree::new();
-        let n0 = tree.add_node();
-        tree.set_root(n0);
-        tree.get_node_mut(n0).unwrap().set_name("A");
-        tree.get_node_mut(n0).unwrap().add_property("color", "red");
-        
-        let output = tree.to_newick();
-        // Since BTreeMap order is deterministic (alphabetical keys), but we only have one key here.
-        assert!(output.contains("A[&&NHX:color=red];"));
-    }
 }

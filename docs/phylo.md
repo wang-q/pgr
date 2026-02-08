@@ -384,7 +384,11 @@ nom = "8"  # 用于高性能解析
     *   `Tree::from_newick()`: 解析 Newick 字符串 (支持引号、注释、科学计数法)。
 *   **Serialization**:
     *   `to_newick()`: 紧凑格式输出。
+        *   *注*: `phylotree-rs` 返回 `Result<String>`, `pgr` 返回 `String` (Infallible)。
+        *   *注*: 实现代码位于 `src/libs/phylo/writer.rs`，但通过 `Tree` 方法暴露以保持兼容。
     *   `to_newick_with_format()`: 支持缩进的格式化输出。
+    *   `to_dot()` (Graphviz): 输出 DOT 格式，可用于可视化。
+        *   *注*: 这是 `pgr` 特有的功能，`phylotree-rs` 未直接提供。
 *   **Traversal**:
     *   `preorder`, `postorder`: 深度优先遍历 (迭代器风格)。
     *   `levelorder`: 广度优先遍历。
@@ -403,7 +407,8 @@ nom = "8"  # 用于高性能解析
 
 ### 未实现但需要 (Missing & Planned)
 
-*   暂无核心功能缺失。
+*   **Internal Caching**:
+    *   `get_node_depth()`: 缓存节点深度。
 
 ### 不太需要/低优先级 (Low Priority / Not Needed)
 
@@ -419,7 +424,6 @@ nom = "8"  # 用于高性能解析
     *   `generate_random_tree()` (Yule/Coalescent 模型): 主要用于模拟研究。`pgr` 侧重于处理真实数据，除非用于测试生成，否则优先级较低。
 *   **Complex I/O**:
     *   `from_file()`: `pgr` 通常通过 CLI 处理文件读取，核心库只需处理字符串或 Buffer。
-    *   `to_dot()` (Graphviz): 虽然有用，但 Newick + 外部工具 (如 `nw_display`) 通常足够。
 *   **Internal Caching**:
     *   `update_depths()`, `matrix`: `phylotree-rs` 缓存了大量中间状态。`pgr` 倾向于按需计算 (On-demand) 以保持轻量化。
 
