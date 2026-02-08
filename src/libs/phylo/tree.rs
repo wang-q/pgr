@@ -130,6 +130,112 @@ impl Tree {
         }
     }
 
+    /// Collapse a node, removing it and connecting its children to its parent.
+    /// Edge lengths are summed (parent->node + node->child).
+    ///
+    /// # Example
+    /// ```
+    /// use pgr::libs::phylo::tree::Tree;
+    /// let mut tree = Tree::new();
+    /// // 0 -> 1 -> 2
+    /// let n0 = tree.add_node();
+    /// let n1 = tree.add_node();
+    /// let n2 = tree.add_node();
+    /// tree.set_root(n0);
+    /// 
+    /// tree.add_child(n0, n1).unwrap();
+    /// tree.get_node_mut(n1).unwrap().length = Some(1.0);
+    /// 
+    /// tree.add_child(n1, n2).unwrap();
+    /// tree.get_node_mut(n2).unwrap().length = Some(2.0);
+    /// 
+    /// // Collapse n1
+    /// tree.collapse_node(n1).unwrap();
+    /// 
+    /// // n0 -> n2 (len 3.0)
+    /// let node2 = tree.get_node(n2).unwrap();
+    /// assert_eq!(node2.parent, Some(n0));
+    /// assert_eq!(node2.length, Some(3.0));
+    /// assert!(tree.get_node(n0).unwrap().children.contains(&n2));
+    /// assert!(!tree.get_node(n0).unwrap().children.contains(&n1));
+    ///
+    /// // From Newick
+    /// let newick = "(A,(B)D);";
+    /// let mut tree = Tree::from_newick(newick).unwrap();
+    /// let id = *tree.get_name_id().get("D").unwrap();
+    ///
+    /// tree.collapse_node(id).unwrap();
+    ///
+    /// assert_eq!(tree.to_newick(), "(A,B);");
+    ///
+    /// // Case with edge lengths
+    /// let newick = "(A:1,(B:1)D:2);";
+    /// let mut tree = Tree::from_newick(newick).unwrap();
+    /// let id = *tree.get_name_id().get("D").unwrap();
+    ///
+    /// tree.collapse_node(id).unwrap();
+    ///
+    /// assert_eq!(tree.to_newick(), "(A:1,B:3);");
+    /// ```
+    pub fn collapse_node(&mut self, id: NodeId) -> Result<(), String> {
+        if self.get_node(id).is_none() {
+            return Err(format!("Node {} not found", id));
+        }
+        if self.root == Some(id) {
+            return Err("Cannot collapse root node".to_string());
+        }
+        
+        // 1. Get info
+        let (parent_id, parent_edge) = {
+            let node = self.get_node(id).unwrap();
+            // Safety: Checked root above, so parent must exist
+            (node.parent.unwrap(), node.length) 
+        };
+        
+        let children_info: Vec<(NodeId, Option<f64>)> = {
+             let node = self.get_node(id).unwrap();
+             node.children.iter().map(|&c| {
+                 let child_node = self.nodes.get(c).unwrap();
+                 (c, child_node.length)
+             }).collect()
+        };
+        
+        // 2. Re-parent children
+        for (child_id, child_edge) in children_info {
+            let new_edge = match (parent_edge, child_edge) {
+                (Some(p), Some(c)) => Some(p + c),
+                (Some(p), None) => Some(p),
+                (None, Some(c)) => Some(c),
+                (None, None) => None,
+            };
+            
+            // Update child
+            if let Some(child) = self.get_node_mut(child_id) {
+                child.parent = Some(parent_id);
+                child.length = new_edge;
+            }
+            
+            // Add to grandparent
+            if let Some(parent) = self.get_node_mut(parent_id) {
+                parent.children.push(child_id);
+            }
+        }
+        
+        // 3. Remove self from parent
+        if let Some(parent) = self.get_node_mut(parent_id) {
+            parent.children.retain(|&x| x != id);
+        }
+        
+        // 4. Mark deleted
+        if let Some(node) = self.get_node_mut(id) {
+            node.deleted = true;
+            node.children.clear();
+            node.parent = None;
+        }
+        
+        Ok(())
+    }
+
     /// Compact the tree by removing soft-deleted nodes and remapping IDs.
     /// This invalidates all existing NodeIds held outside!
     ///
@@ -546,7 +652,90 @@ impl Tree {
         Ok(max_dist)
     }
 
-    /// Get all nodes in the subtree rooted at the specified node (inclusive).
+    /// Check if a set of nodes forms a monophyletic group (clade).
+    ///
+    /// A group is monophyletic if it includes a common ancestor and ALL of its descendants.
+    /// In this implementation, we check if the set of leaf descendants of the 
+    /// lowest common ancestor (LCA) of the input nodes matches the input set exactly.
+    /// Note: This assumes the input set consists of leaf nodes (tips).
+    ///
+    /// # Example
+    /// ```
+    /// use pgr::libs::phylo::tree::Tree;
+    ///
+    /// //      Root
+    /// //     /    \
+    /// //    I1     C
+    /// //   /  \
+    /// //  A    B
+    /// let newick = "((A,B)I1,C)Root;";
+    /// let tree = Tree::from_newick(newick).unwrap();
+    /// let map = tree.get_name_id();
+    ///
+    /// let id_a = *map.get("A").unwrap();
+    /// let id_b = *map.get("B").unwrap();
+    /// let id_c = *map.get("C").unwrap();
+    ///
+    /// let group = vec![id_a, id_b];
+    /// assert!(tree.is_monophyletic(&group));
+    ///
+    /// let group_all = vec![id_a, id_b, id_c];
+    /// // {A, B, C} is monophyletic (all descendants of Root)
+    /// assert!(tree.is_monophyletic(&group_all));
+    ///
+    /// let group_ac = vec![id_a, id_c];
+    /// // {A, C} is NOT monophyletic (missing B)
+    /// assert!(!tree.is_monophyletic(&group_ac));
+    /// ```
+    pub fn is_monophyletic(&self, ids: &[NodeId]) -> bool {
+        if ids.is_empty() {
+            return false;
+        }
+
+        // Convert input slice to a BTreeSet for final comparison and duplicate handling
+        let ids_set: std::collections::BTreeSet<NodeId> = ids.iter().cloned().collect();
+        
+        let mut nodes: Vec<NodeId> = ids.iter().cloned().collect();
+        let mut sub_root = nodes.pop().unwrap(); // Safe due to is_empty check
+
+        // 1. Find LCA of all nodes in the set
+        for id in &nodes {
+            match self.get_common_ancestor(&sub_root, id) {
+                Ok(lca) => sub_root = lca,
+                Err(_) => return false, // Disconnected or invalid
+            }
+        }
+
+        // 2. Collect all leaf descendants of the LCA
+        let mut descendants = std::collections::BTreeSet::new();
+        // Use get_subtree (preorder) to find all descendants
+        if let Ok(subtree_nodes) = self.get_subtree(&sub_root) {
+            for id in subtree_nodes {
+                if let Some(node) = self.get_node(id) {
+                    if node.is_leaf() {
+                        descendants.insert(id);
+                    }
+                }
+            }
+        } else {
+            return false;
+        }
+
+        // 3. Compare sets
+        // Note: The input `ids` should ideally contain only leaves for strict monophyly definition 
+        // in this context (based on original implementation logic).
+        descendants.eq(&ids_set)
+    }
+
+    /// Get subtree nodes (including self) in preorder.
+    ///
+    /// # Example
+    /// ```
+    /// use pgr::libs::phylo::tree::Tree;
+    /// let mut tree = Tree::new();
+    /// let root = tree.add_node();
+    /// assert_eq!(tree.get_subtree(&root).unwrap(), vec![root]);
+    /// ```
     pub fn get_subtree(&self, root_id: &NodeId) -> Result<Vec<NodeId>, String> {
         self.preorder(root_id)
     }
