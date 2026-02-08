@@ -9,16 +9,29 @@ pub fn make_subcommand() -> Command {
         .about("Pipeline - pairwise alignments to multiple alignments")
         .after_help(
             r###"
-* <infiles> are paths to block fasta files, .fas.gz is supported
-    * infile can't be stdin
+Pairwise to Multiple (p2m) Pipeline
 
-* The pl-* subcommands
-    * The default --outdir is `PL-*`, not `.`
-    * There is no option to output to the screen
+This pipeline constructs a "core" Multiple Sequence Alignment (MSA) from multiple
+pairwise alignment files (Block FASTA). It identifies the intersection of genomic
+regions covered by all inputs (anchored to the reference) and stitches them together.
 
-* All operations are based on the *first* species name of the *first* input file
+Key Features:
+* Reference-Based: The first species of the first input file is used as the
+  reference target. All inputs must be pairwise alignments against this target.
+* Intersection Logic: Only regions present in ALL input files are retained.
+  This results in a gap-free core alignment.
+* Automation: Runs `fas cover` (range extraction), `spanr intersect`
+  (range intersection), `fas slice` (sequence extraction), and `fas join`
+  (alignment merging).
 
-* This pipeline depends on two binaries, `pgr` and `spanr`
+Dependencies:
+* `pgr`: This binary itself.
+* `spanr`: A range operation tool (must be in $PATH).
+
+Notes:
+* <infiles> can be plain or gzipped (.fas.gz) block fasta files.
+* Input cannot be stdin.
+* Output is written to a directory (default: `PL-p2m`), not stdout.
 
 "###,
         )
