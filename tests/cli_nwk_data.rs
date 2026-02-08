@@ -421,3 +421,132 @@ fn command_label_multi_tree() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+
+// ================================================================================================
+// pgr nwk distance
+// ================================================================================================
+
+#[test]
+fn command_distance_root() -> anyhow::Result<()> {
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("nwk")
+        .arg("distance")
+        .arg("tests/newick/catarrhini.nwk")
+        .arg("-I")
+        .arg("--mode")
+        .arg("root")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    assert_eq!(stdout.lines().count(), 10);
+    assert!(stdout.contains("Homo\t60"));
+
+    Ok(())
+}
+
+#[test]
+fn command_distance_parent() -> anyhow::Result<()> {
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("nwk")
+        .arg("distance")
+        .arg("tests/newick/catarrhini.nwk")
+        .arg("-I")
+        .arg("--mode")
+        .arg("parent")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    assert_eq!(stdout.lines().count(), 10);
+    assert!(stdout.contains("Homo\t10"));
+
+    Ok(())
+}
+
+#[test]
+fn command_distance_pairwise() -> anyhow::Result<()> {
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("nwk")
+        .arg("distance")
+        .arg("tests/newick/catarrhini.nwk")
+        .arg("-I")
+        .arg("--mode")
+        .arg("pairwise")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    assert_eq!(stdout.lines().count(), 100);
+    assert!(stdout.contains("Homo\tPongo\t65"));
+    assert!(stdout.contains("Pongo\tHomo\t65"));
+
+    Ok(())
+}
+
+#[test]
+fn command_distance_lca() -> anyhow::Result<()> {
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("nwk")
+        .arg("distance")
+        .arg("tests/newick/catarrhini.nwk")
+        .arg("-I")
+        .arg("--mode")
+        .arg("lca")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    assert_eq!(stdout.lines().count(), 100);
+    assert!(stdout.contains("Homo\tPongo\t35\t30"));
+    assert!(stdout.contains("Homo\tHomo\t0\t0"));
+
+    Ok(())
+}
+
+#[test]
+fn command_distance_phylip() -> anyhow::Result<()> {
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("nwk")
+        .arg("distance")
+        .arg("tests/newick/catarrhini.nwk")
+        .arg("-I")
+        .arg("--mode")
+        .arg("phylip")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    assert!(stdout.lines().count() >= 11);
+    assert!(stdout.trim().starts_with("10"));
+    assert!(stdout.contains("Homo"));
+    assert!(stdout.contains(" 65.000000"));
+
+    Ok(())
+}
+
+#[test]
+fn command_distance_stdin() -> anyhow::Result<()> {
+    // Topological distance (stdin input)
+    let input = "((A,B)C,D)E;";
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("nwk")
+        .arg("distance")
+        .arg("stdin")
+        .arg("--mode")
+        .arg("root")
+        .write_stdin(input)
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    assert!(stdout.contains("A\t2"));
+    assert!(stdout.contains("B\t2"));
+    assert!(stdout.contains("C\t1"));
+    assert!(stdout.contains("D\t1"));
+    assert!(stdout.contains("E\t0"));
+
+    Ok(())
+}
+
