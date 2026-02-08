@@ -181,3 +181,168 @@ Phylotree-rs 的 API 更加**面向对象**和**函数式**，利用 Rust 的特
 
 *   如果您需要**快速处理**、**绘图**或在 **Shell 脚本**中清洗 Newick 数据，**Newick Utilities** 是不二之选。
 *   如果您需要**开发**高性能的系统发育分析软件，或者需要计算树之间的**拓扑距离**，**Phylotree-rs** 提供了更现代、安全的 Rust 接口。
+
+---
+
+## 6. pgr Newick 模块实施计划
+
+本文档详细规划了在 `pgr` 项目中从零实现 Newick 格式处理模块组的路线图。该实现旨在结合 C 语言 `newick_utils` 的健壮性与 Rust `phylotree-rs` 的安全性。
+
+### 目标 (Goals)
+
+1.  **原生支持**: 在 `pgr` 内部实现完整的 Newick 解析、存储和操作，不依赖外部二进制。
+2.  **高性能**: 采用 Arena 内存模型，避免大量小对象的堆分配。
+3.  **健壮性**: 能够处理带有注释 (`[&NHX...]`)、引号标签、无长度分支等复杂 Newick 变体。
+4.  **功能丰富**: 提供统计、重定根、剪枝、格式化等常用功能。
+
+### 架构设计 (Architecture)
+
+#### 模块位置
+建议在 `src/libs/` 下新建 `phylo` 模块：
+```text
+src/libs/phylo/
+├── mod.rs          # 模块导出
+├── node.rs         # 核心数据结构 (Node)
+├── tree.rs         # 核心数据结构 (Tree)
+├── parser.rs       # Newick 解析器 (Nom 或手写)
+├── iter.rs         # 遍历器 (Preorder, Postorder, Levelorder)
+└── algo.rs         # 算法 (Reroot, LCA, Distance)
+```
+
+#### 核心数据结构 (Data Structures)
+采用 **Arena (Vector-backed)** 模式，参考 `phylotree-rs` 但进行优化。
+
+### 设计思路与对比 (Design Rationale & Comparison)
+
+本模块的设计深受 `phylotree-rs` 启发，但在数据结构和功能侧重上做了以下权衡和改进：
+
+1.  **内存模型 (Memory Model)**:
+    *   **相同点**: 两者均采用 **Arena** 模式（即 `Vec<Node>` 存储所有节点，使用 `usize` 索引代替指针）。这是 Rust 中处理图/树结构的惯用做法，能有效避免引用循环，提高缓存局部性。
+    *   **差异**: `pgr` 的 `Node` 结构更加精简。
+
+2.  **节点设计 (Node Design)**:
+    *   **`phylotree-rs`**:
+        ```rust
+        pub struct Node {
+            // "EdgeLength" 代表进化距离（如碱基替换率或时间）
+            pub parent_edge: Option<EdgeLength>,
+            
+            // 冗余存储：父节点同时也存了一份所有子节点的边长
+            // 场景：在从上往下遍历计算时，无需访问子节点内存即可获取边长
+            pub(crate) child_edges: Option<HashMap<NodeId, EdgeLength>>, 
+            
+            pub(crate) subtree_distances: RefCell<...>, // 内部可变性缓存
+            
+            // 软删除标记
+            // 原因：在 Vec 存储中，真正删除元素会导致后续所有 Index 偏移，破坏树结构。
+            // 做法：标记为 true，保留位置但视为不存在。
+            pub(crate) deleted: bool, 
+            
+            // 原始注释字符串
+            // 存储 Newick 中 [] 内的内容，未做解析。
+            pub comment: Option<String>, 
+            // ...
+        }
+        ```
+        `phylotree-rs` 的设计包含大量**运行时缓存**（如距离矩阵、深度）和**冗余关系**（子节点边长表）。这使得它适合频繁查询的场景，但也增加了内存开销和维护状态一致性的复杂度。
+    *   **`pgr::phylo`**:
+        ```rust
+        pub struct Node {
+            // 核心设计：边长归属于子节点
+            // 解释：在有根树中，每个节点（除根外）只有一条指向父节点的边。
+            pub length: Option<f64>, 
+            
+            // 结构化属性替代原始 comment
+            pub properties: Option<BTreeMap<String, String>>, 
+
+            // 软删除标记 (响应用户建议)
+            // 优点：删除节点时 O(1) 且保持 ID 稳定，避免牵一发而动全身。
+            // 配合 Tree::compact() 方法在需要时进行垃圾回收。
+            pub deleted: bool,
+        }
+        ```
+        *   **去冗余**: 我们只存储 Newick 标准定义的最小信息量。计算属性（如深度、距离）将通过算法按需计算，不存储在节点中。
+        *   **NHX 支持**: `phylotree-rs` 仅将注释视为字符串 (`Option<String>`)。我们将注释升级为 **`BTreeMap`**，原生支持 **NHX (New Hampshire X)** 格式的键值对。这使得 `pgr` 能更方便地处理元数据（如 `&&NHX:S=human`）。
+        *   **确定性**: 使用 `BTreeMap` 而非 `HashMap`，确保在序列化输出时属性顺序固定（按键排序），保证 CLI 工具输出的**确定性 (Determinism)**，便于 diff 和测试。
+
+3.  **解析策略 (Parsing Strategy)**:
+    *   `phylotree-rs` 使用手写状态机，代码较难维护。
+    *   `pgr` 引入 **`nom 8`**，利用 Parser Combinator 构建更健壮、易扩展且高性能的解析器。
+
+```rust
+// src/libs/phylo/node.rs
+use std::collections::BTreeMap;
+
+// 节点索引类型，轻量且安全
+pub type NodeId = usize;
+
+pub struct Node {
+    pub id: NodeId,
+    pub parent: Option<NodeId>,
+    pub children: Vec<NodeId>,
+    
+    // Payload 数据
+    pub name: Option<String>,
+    pub length: Option<f64>,     // 分支长度
+    pub properties: Option<BTreeMap<String, String>>, // 结构化 NHX 注释 (key=value)，按键排序
+    pub deleted: bool,           // 软删除标记
+}
+```
+
+```rust
+// src/libs/phylo/tree.rs
+use super::node::{Node, NodeId};
+
+pub struct Tree {
+    nodes: Vec<Node>,            // Arena 存储
+    root: Option<NodeId>,        // 根节点 ID
+}
+```
+
+#### 解析器选型 (Parsing Strategy)
+建议引入 **`nom`** (Parser Combinator) 库。
+*   **理由**: `phylotree-rs` 的手写状态机难以维护且存在 TODO；`newick_utils` 的 Flex/Bison 难以在 Rust 中集成。`nom` 是 Rust 生态中最成熟的解析库，性能极高且易于处理嵌套结构和转义字符。
+*   **依赖**: 需在 `Cargo.toml` 中添加 `nom = "8"`。
+
+### 实施步骤 (Implementation Roadmap)
+
+#### Phase 1: 基础架构 (Infrastructure)
+*   [ ] 创建 `src/libs/phylo/` 目录结构。
+*   [ ] 实现 `Node` (`node.rs`) 和 `Tree` (`tree.rs`) 结构体。
+*   [ ] 实现基础方法：`add_node`, `add_child`, `get_node`, `remove_node` (soft), `compact` (gc)。
+
+#### Phase 2: 解析器实现 (Parsing)
+*   [ ] 添加 `nom` 依赖。
+*   [ ] 定义 `TreeError` 枚举，提供详细的解析错误上下文（如出错位置）。
+*   [ ] 实现 Newick 语法定义 (BNF 转换)。
+    *   处理 `Label` (支持引号和转义)。
+    *   处理 `Length` (支持科学计数法)。
+    *   处理 `Comment` (方括号内容)。
+*   [ ] 实现 `Tree::from_newick(str) -> Result<Tree>`.
+*   [ ] 单元测试：覆盖各种 Newick 变体。
+
+#### Phase 3: 遍历与输出 (Traversal & I/O)
+*   [ ] 实现 `to_newick()`: 序列化树结构。
+*   [ ] 实现迭代器：
+    *   `preorder`: 先序遍历。
+    *   `postorder`: 后序遍历 (适合计算，如 dp)。
+
+#### Phase 4: 高级算法 (Advanced Algorithms)
+*   [ ] **Reroot**: 实现 `reroot_at(node_id)`，涉及父子关系翻转和边长重新分配。
+*   [ ] **Prune**: 剪掉指定名称或正则匹配的节点。
+*   [ ] **LCA**: 最近公共祖先查询。
+
+#### Phase 5: CLI 集成 (Integration)
+*   (用户已有详细规划，此处略过)
+
+### 依赖管理 (Dependencies)
+需要修改 `Cargo.toml` 添加：
+```toml
+[dependencies]
+nom = "8"  # 用于高性能解析
+```
+
+### 测试计划 (Testing)
+1.  **Unit Tests**: 针对 parser 的每个组件编写测试。
+2.  **Integration Tests**: 使用 `newick_utils` 生成的标准文件作为输入，验证解析结果的一致性。
+3.  **Property Tests**: (可选) 生成随机树并验证 `parse(to_newick(tree)) == tree`。

@@ -10,6 +10,7 @@ pub mod ms;
 pub mod net;
 pub mod nt;
 pub mod poa;
+pub mod phylo;
 pub mod psl;
 pub mod seq;
 pub mod twobit;

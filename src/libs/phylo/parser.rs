@@ -1,0 +1,254 @@
+use super::node::NodeId;
+use super::tree::Tree;
+use nom::{
+    branch::alt,
+    bytes::complete::{is_not, take_while},
+    character::complete::{char, digit1, multispace0},
+    combinator::{map, map_res, opt, recognize},
+    multi::separated_list1,
+    sequence::{delimited, preceded},
+    IResult, Parser,
+    error::ParseError,
+};
+use std::collections::BTreeMap;
+
+// Intermediate structure
+#[derive(Debug)]
+struct ParsedNode {
+    name: Option<String>,
+    length: Option<f64>,
+    properties: Option<BTreeMap<String, String>>,
+    children: Vec<ParsedNode>,
+}
+
+impl ParsedNode {
+    fn new() -> Self {
+        Self {
+            name: None,
+            length: None,
+            properties: None,
+            children: Vec::new(),
+        }
+    }
+
+    fn to_tree(self, tree: &mut Tree) -> NodeId {
+        let id = tree.add_node();
+        for child in self.children {
+            let child_id = child.to_tree(tree);
+            tree.add_child(id, child_id).unwrap();
+        }
+        if let Some(node) = tree.get_node_mut(id) {
+            node.name = self.name;
+            node.length = self.length;
+            node.properties = self.properties;
+        }
+        id
+    }
+}
+
+// --- Parsers ---
+
+// 1. Whitespace eater
+// In nom 8, we return `impl Parser` instead of `impl FnMut`
+fn ws<'a, F, O, E>(inner: F) -> impl Parser<&'a str, Output = O, Error = E>
+where
+    F: Parser<&'a str, Output = O, Error = E>,
+    E: ParseError<&'a str>,
+{
+    delimited(multispace0, inner, multispace0)
+}
+
+// 2. Label
+fn parse_label(input: &str) -> IResult<&str, String> {
+    let unquoted = map(
+        take_while(|c: char| !c.is_whitespace() && !"():;,[]".contains(c)),
+        |s: &str| s.to_string(),
+    );
+
+    let quoted = delimited(
+        char('\''),
+        map(is_not("'"), |s: &str| s.replace("''", "'")), 
+        char('\'')
+    );
+
+    alt((quoted, unquoted)).parse(input)
+}
+
+// 3. Length
+fn parse_length(input: &str) -> IResult<&str, f64> {
+    preceded(
+        ws(char(':')),
+        map_res(
+            recognize((
+                opt(char('-')),
+                digit1,
+                opt((char('.'), digit1)),
+                opt((
+                    alt((char('e'), char('E'))),
+                    opt(alt((char('+'), char('-')))),
+                    digit1,
+                )),
+            )),
+            |s: &str| s.parse::<f64>(),
+        ),
+    ).parse(input)
+}
+
+// 4. Comment
+fn parse_comment(input: &str) -> IResult<&str, Option<BTreeMap<String, String>>> {
+    let comment_content = delimited(
+        char('['),
+        is_not("]"),
+        char(']'),
+    );
+
+    map(opt(comment_content), |content: Option<&str>| {
+        if let Some(s) = content {
+            if s.starts_with("&&NHX") {
+                let mut props = BTreeMap::new();
+                for part in s.split(':') {
+                    if part == "&&NHX" { continue; }
+                    if let Some((k, v)) = part.split_once('=') {
+                        props.insert(k.to_string(), v.to_string());
+                    }
+                }
+                if !props.is_empty() {
+                    return Some(props);
+                }
+            }
+        }
+        None
+    }).parse(input)
+}
+
+// 5. Subtree
+fn parse_subtree(input: &str) -> IResult<&str, ParsedNode> {
+    let (input, children) = opt(delimited(
+        ws(char('(')),
+        separated_list1(ws(char(',')), parse_subtree),
+        ws(char(')')),
+    )).parse(input)?;
+
+    let (input, label) = opt(parse_label).parse(input)?;
+    
+    let (input, comment1) = parse_comment(input)?;
+    let (input, length) = opt(parse_length).parse(input)?;
+    let (input, comment2) = parse_comment(input)?;
+
+    let mut node = ParsedNode::new();
+    if let Some(c) = children {
+        node.children = c;
+    }
+    if let Some(l) = label {
+        if !l.is_empty() {
+            node.name = Some(l);
+        }
+    }
+    node.length = length;
+    
+    if comment1.is_some() || comment2.is_some() {
+        let mut props = BTreeMap::new();
+        if let Some(p) = comment1 { props.extend(p); }
+        if let Some(p) = comment2 { props.extend(p); }
+        node.properties = Some(props);
+    }
+
+    Ok((input, node))
+}
+
+// 6. Entry point
+pub fn parse_newick(input: &str) -> Result<Tree, String> {
+    let mut parser = (ws(parse_subtree), ws(char(';')));
+    
+    match parser.parse(input) {
+        Ok((_, (root_node, _))) => {
+            let mut tree = Tree::new();
+            let root_id = root_node.to_tree(&mut tree);
+            tree.set_root(root_id);
+            Ok(tree)
+        },
+        Err(e) => Err(format!("Parse error: {}", e)),
+    }
+}
+
+impl Tree {
+    /// Parse a Newick string into a Tree.
+    ///
+    /// # Example
+    /// ```
+    /// use pgr::libs::phylo::tree::Tree;
+    /// let input = "(A:0.1,B:0.2)Root;";
+    /// let tree = Tree::from_newick(input).unwrap();
+    /// assert_eq!(tree.len(), 3);
+    /// ```
+    pub fn from_newick(input: &str) -> Result<Self, String> {
+        parse_newick(input)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parser_simple() {
+        let input = "(A,B)C;";
+        let tree = Tree::from_newick(input).unwrap();
+        assert_eq!(tree.len(), 3);
+        
+        let root = tree.get_node(tree.get_root().unwrap()).unwrap();
+        assert_eq!(root.name.as_deref(), Some("C"));
+        assert_eq!(root.children.len(), 2);
+    }
+
+    #[test]
+    fn test_parser_lengths() {
+        let input = "(A:0.1, B:0.2e-1)Root:100;";
+        let tree = Tree::from_newick(input).unwrap();
+        
+        let root = tree.get_node(tree.get_root().unwrap()).unwrap();
+        assert_eq!(root.name.as_deref(), Some("Root"));
+        assert_eq!(root.length, Some(100.0));
+        
+        let child1 = tree.get_node(root.children[0]).unwrap();
+        assert_eq!(child1.name.as_deref(), Some("A"));
+        assert_eq!(child1.length, Some(0.1));
+
+        let child2 = tree.get_node(root.children[1]).unwrap();
+        assert_eq!(child2.name.as_deref(), Some("B"));
+        assert_eq!(child2.length, Some(0.02)); // 0.2e-1
+    }
+
+    #[test]
+    fn test_parser_nhx() {
+        let input = "(A:0.1,B:0.2)n1[&&NHX:S=human:E=1.5];";
+        let tree = Tree::from_newick(input).unwrap();
+        
+        let root = tree.get_node(tree.get_root().unwrap()).unwrap();
+        assert_eq!(root.name.as_deref(), Some("n1"));
+        
+        let props = root.properties.as_ref().unwrap();
+        assert_eq!(props.get("S").map(|s| s.as_str()), Some("human"));
+        assert_eq!(props.get("E").map(|s| s.as_str()), Some("1.5"));
+    }
+
+    #[test]
+    fn test_parser_whitespace() {
+        let input = "  (  A : 0.1 ,  B  )  ;  ";
+        let tree = Tree::from_newick(input).unwrap();
+        assert_eq!(tree.len(), 3);
+    }
+
+    #[test]
+    fn test_parser_quoted() {
+        let input = "('Homo sapiens':0.1, 'Mus musculus':0.2);";
+        let tree = Tree::from_newick(input).unwrap();
+        let root = tree.get_node(tree.get_root().unwrap()).unwrap();
+        
+        let c1 = tree.get_node(root.children[0]).unwrap();
+        assert_eq!(c1.name.as_deref(), Some("Homo sapiens"));
+        
+        let c2 = tree.get_node(root.children[1]).unwrap();
+        assert_eq!(c2.name.as_deref(), Some("Mus musculus"));
+    }
+}
