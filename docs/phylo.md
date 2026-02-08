@@ -304,6 +304,13 @@ pub struct Tree {
 *   **理由**: `phylotree-rs` 的手写状态机难以维护且存在 TODO；`newick_utils` 的 Flex/Bison 难以在 Rust 中集成。`nom` 是 Rust 生态中最成熟的解析库，性能极高且易于处理嵌套结构和转义字符。
 *   **依赖**: 需在 `Cargo.toml` 中添加 `nom = "8"`。
 
+#### 错误处理设计 (Error Handling Design)
+为了提供良好的开发者体验和用户反馈，`phylo` 模块实现了专门的错误处理机制：
+*   **TreeError 枚举**: 定义了 `ParseError` 和 `LogicError` 两类错误。
+    *   `ParseError`: 携带 `line`, `column`, `snippet` 等上下文信息，当 Newick 格式错误时，能够精确指出出错位置（如 "Missing semicolon at line 1, column 15"）。
+    *   `LogicError`: 处理运行时逻辑错误，如访问不存在的节点、在非连通图中查找 LCA 等。
+*   **Doc Tests 覆盖**: 关键 API（如 `Tree::from_newick`, `get_path_from_root`）均包含 "Error handling" 的文档测试示例，明确展示了错误触发条件和处理方式。
+
 ### 实施步骤 (Implementation Roadmap)
 
 #### Phase 1: 基础架构 (Infrastructure)

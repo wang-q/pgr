@@ -143,7 +143,7 @@ fn parse_length(input: &str) -> IResult<&str, f64, DetailedError<'_>> {
 // 4. Comment
 fn parse_comment(input: &str) -> IResult<&str, Option<BTreeMap<String, String>>, DetailedError<'_>> {
     let comment_content = delimited(
-        char('['),
+        ws(char('[')),
         is_not("]"),
         char(']'),
     );
@@ -258,9 +258,17 @@ impl Tree {
     /// # Example
     /// ```
     /// use pgr::libs::phylo::tree::Tree;
+    /// 
+    /// // Successful parse
     /// let input = "(A:0.1,B:0.2)Root;";
     /// let tree = Tree::from_newick(input).unwrap();
     /// assert_eq!(tree.len(), 3);
+    /// 
+    /// // Error handling
+    /// let invalid_input = "(A,B:invalid)C;";
+    /// let result = Tree::from_newick(invalid_input);
+    /// assert!(result.is_err());
+    /// println!("Error: {}", result.err().unwrap());
     /// ```
     pub fn from_newick(input: &str) -> Result<Self, TreeError> {
         parse_newick(input)
@@ -318,6 +326,64 @@ mod tests {
         let input = "  (  A : 0.1 ,  B  )  ;  ";
         let tree = Tree::from_newick(input).unwrap();
         assert_eq!(tree.len(), 3);
+    }
+
+    #[test]
+    fn test_parser_multiline_whitespace() {
+        // User request: support extensive whitespace and newlines for readability
+        let input = "
+        (
+            A : 0.1,
+            B : 0.2
+        ) Root ;
+        ";
+        let tree = Tree::from_newick(input).unwrap();
+        assert_eq!(tree.len(), 3);
+        
+        let root = tree.get_node(tree.get_root().unwrap()).unwrap();
+        assert_eq!(root.name.as_deref(), Some("Root"));
+        
+        let c0 = tree.get_node(root.children[0]).unwrap();
+        assert_eq!(c0.name.as_deref(), Some("A"));
+        assert_eq!(c0.length, Some(0.1));
+        
+        let c1 = tree.get_node(root.children[1]).unwrap();
+        assert_eq!(c1.name.as_deref(), Some("B"));
+        assert_eq!(c1.length, Some(0.2));
+    }
+
+    #[test]
+    fn test_parser_complex_formatting() {
+        // A more complex example with nested structure and comments across lines
+        // Note: Commas must come AFTER the node info (label:length[comment]), 
+        // so [Comment] must be before the comma if it belongs to that node.
+        let input = "
+        (
+            (
+                'Human' : 0.1    [Comment on Human],
+                'Chimp' : 0.12    [Comment on Chimp]
+            )Hominidae : 0.5,
+            'Gorilla' : 0.6
+        )Hominoidea;
+        ";
+        let tree = Tree::from_newick(input).unwrap();
+        // Structure:
+        //        Hominoidea
+        //       /          \
+        //  Hominidae      Gorilla
+        //    /   \
+        // Human Chimp
+        
+        assert_eq!(tree.len(), 5);
+        let root = tree.get_node(tree.get_root().unwrap()).unwrap();
+        assert_eq!(root.name.as_deref(), Some("Hominoidea"));
+        
+        let gorilla = tree.get_node(root.children[1]).unwrap();
+        assert_eq!(gorilla.name.as_deref(), Some("Gorilla"));
+        
+        let hominidae = tree.get_node(root.children[0]).unwrap();
+        assert_eq!(hominidae.name.as_deref(), Some("Hominidae"));
+        assert_eq!(hominidae.children.len(), 2);
     }
 
     #[test]

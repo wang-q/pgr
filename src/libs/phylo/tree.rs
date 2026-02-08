@@ -241,6 +241,9 @@ impl Tree {
     /// 
     /// let path = tree.get_path_from_root(&n2).unwrap();
     /// assert_eq!(path, vec![n0, n1, n2]);
+    /// 
+    /// // Error: Node not in tree (e.g., random large ID or deleted)
+    /// assert!(tree.get_path_from_root(&9999).is_err());
     /// ```
     pub fn get_path_from_root(&self, target_node: &NodeId) -> Result<Vec<NodeId>, String> {
         if self.get_node(*target_node).is_none() {
@@ -291,6 +294,14 @@ impl Tree {
     /// 
     /// assert_eq!(tree.get_common_ancestor(&n3, &n4).unwrap(), n1);
     /// assert_eq!(tree.get_common_ancestor(&n3, &n2).unwrap(), n0);
+    /// 
+    /// // Error: Nodes in disjoint trees
+    /// let mut tree2 = Tree::new();
+    /// let m0 = tree2.add_node();
+    /// // Since NodeIds are unique to the Tree instance's arena, we can't easily cross-reference 
+    /// // without merging. But if we simulate a disconnected graph within one Tree:
+    /// let orphan = tree.add_node(); // Not connected to n0
+    /// assert!(tree.get_common_ancestor(&n3, &orphan).is_err());
     /// ```
     pub fn get_common_ancestor(&self, a: &NodeId, b: &NodeId) -> Result<NodeId, String> {
          let path_a = self.get_path_from_root(a)?;
@@ -329,6 +340,10 @@ impl Tree {
     /// let (w, t) = tree.get_distance(&n0, &n2).unwrap();
     /// assert_eq!(w, 4.0);
     /// assert_eq!(t, 2);
+    /// 
+    /// // Error: Unreachable nodes
+    /// let orphan = tree.add_node();
+    /// assert!(tree.get_distance(&n0, &orphan).is_err());
     /// ```
     pub fn get_distance(&self, a: &NodeId, b: &NodeId) -> Result<(f64, usize), String> {
         let lca = self.get_common_ancestor(a, b)?;
@@ -536,6 +551,9 @@ impl Tree {
     /// assert_eq!(node0.parent, Some(n1));
     /// assert_eq!(node0.length, Some(10.0));
     /// assert!(node0.children.contains(&n2));
+    /// 
+    /// // Error: Node not found
+    /// assert!(tree.reroot_at(9999).is_err());
     /// ```
     pub fn reroot_at(&mut self, new_root_id: NodeId) -> Result<(), String> {
         if self.get_node(new_root_id).is_none() {
