@@ -491,4 +491,5 @@ nom = "8"  # 用于高性能解析
 
 整合 indent.rs，测试在 `tests/cli_nwk_viz.rs` 中。
 你看看 nw_indent 的代码，有没有什么值得参考的
-把里 nw_stats 的相关测试迁移到本项目，需要的测试材料 可以拷贝到 `tests/newick/` 目录下
+把 tests/ 里 nw_stats 的相关测试迁移到本项目，需要的测试材料 可以拷贝到 `tests/newick/` 目录下
+改进帮助文本。 参考 nw_indent 的帮助文本，按我们自己的样式 进行调整。

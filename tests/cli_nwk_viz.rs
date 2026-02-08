@@ -38,4 +38,59 @@ fn command_indent_compact() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[test]
+fn command_indent_simple() -> anyhow::Result<()> {
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("nwk")
+        .arg("indent")
+        .arg("tests/newick/catarrhini_wrong.nwk")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    assert!(stdout.contains("  Homo,"));
+    assert!(stdout.contains("      Gorilla,"));
+    assert_eq!(stdout.lines().count(), 28);
+
+    Ok(())
+}
+
+#[test]
+fn command_indent_optt() -> anyhow::Result<()> {
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("nwk")
+        .arg("indent")
+        .arg("tests/newick/catarrhini_wrong.nwk")
+        .arg("--text")
+        .arg(".  ")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    assert!(stdout.contains(".  Homo,"));
+    assert!(stdout.contains(".  .  .  Gorilla,"));
+    assert_eq!(stdout.lines().count(), 28);
+
+    Ok(())
+}
+
+#[test]
+fn command_indent_multiple_optc() -> anyhow::Result<()> {
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("nwk")
+        .arg("indent")
+        .arg("tests/newick/forest_ind.nwk")
+        .arg("--compact")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    let lines: Vec<&str> = stdout.trim().lines().collect();
+    assert_eq!(lines.len(), 5);
+    assert!(lines[0].starts_with("(Pandion,"));
+    assert!(lines[4].starts_with("(Homo,"));
+
+    Ok(())
+}
+
 
