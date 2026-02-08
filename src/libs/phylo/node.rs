@@ -36,6 +36,15 @@ pub struct Node {
 
 impl Node {
     /// Create a new empty node with a specific ID
+    ///
+    /// # Example
+    /// ```
+    /// use pgr::libs::phylo::node::Node;
+    /// let node = Node::new(1);
+    /// assert_eq!(node.id, 1);
+    /// assert!(node.children.is_empty());
+    /// assert!(node.name.is_none());
+    /// ```
     pub fn new(id: NodeId) -> Self {
         Self {
             id,
@@ -49,23 +58,53 @@ impl Node {
     }
 
     /// Set the name of the node
+    ///
+    /// # Example
+    /// ```
+    /// use pgr::libs::phylo::node::Node;
+    /// let mut node = Node::new(1);
+    /// node.set_name("Node1");
+    /// assert_eq!(node.name, Some("Node1".to_string()));
+    /// ```
     pub fn set_name(&mut self, name: impl Into<String>) {
         self.name = Some(name.into());
     }
 
     /// Set the name of the node (builder pattern)
+    ///
+    /// # Example
+    /// ```
+    /// use pgr::libs::phylo::node::Node;
+    /// let node = Node::new(1).with_name("Node1");
+    /// assert_eq!(node.name, Some("Node1".to_string()));
+    /// ```
     pub fn with_name(mut self, name: impl Into<String>) -> Self {
         self.name = Some(name.into());
         self
     }
 
     /// Set the branch length
+    ///
+    /// # Example
+    /// ```
+    /// use pgr::libs::phylo::node::Node;
+    /// let node = Node::new(1).with_length(0.5);
+    /// assert_eq!(node.length, Some(0.5));
+    /// ```
     pub fn with_length(mut self, length: f64) -> Self {
         self.length = Some(length);
         self
     }
 
     /// Add a property (key-value pair)
+    ///
+    /// # Example
+    /// ```
+    /// use pgr::libs::phylo::node::Node;
+    /// let mut node = Node::new(1);
+    /// node.add_property("color", "blue");
+    /// assert_eq!(node.get_property("color"), Some(&"blue".to_string()));
+    /// ```
     pub fn add_property(&mut self, key: impl Into<String>, value: impl Into<String>) {
         if self.properties.is_none() {
             self.properties = Some(BTreeMap::new());
@@ -73,9 +112,60 @@ impl Node {
         self.properties.as_mut().unwrap().insert(key.into(), value.into());
     }
 
+    /// Add properties from a string.
+    /// Supports single "key=value" or multiple "key1=value1:key2=value2" (NHX style).
+    ///
+    /// # Example
+    /// ```
+    /// use pgr::libs::phylo::node::Node;
+    /// let mut node = Node::new(0);
+    /// node.add_property_from_str("color=red");
+    /// assert_eq!(node.get_property("color"), Some(&"red".to_string()));
+    ///
+    /// // Multiple properties separated by colon
+    /// node.add_property_from_str("S=Homo sapiens:T=9606");
+    /// assert_eq!(node.get_property("S"), Some(&"Homo sapiens".to_string()));
+    /// assert_eq!(node.get_property("T"), Some(&"9606".to_string()));
+    /// ```
+    pub fn add_property_from_str(&mut self, props_str: &str) {
+        for part in props_str.split(':') {
+            if let Some((key, value)) = part.split_once('=') {
+                self.add_property(key, value);
+            }
+        }
+    }
+
+    /// Get the value of a property by key.
+    ///
+    /// # Example
+    /// ```
+    /// use pgr::libs::phylo::node::Node;
+    /// let mut node = Node::new(0);
+    /// node.add_property("T", "9606");
+    /// node.add_property("S", "Homo sapiens");
+    /// 
+    /// assert_eq!(node.get_property("T"), Some(&"9606".to_string()));
+    /// assert_eq!(node.get_property("S"), Some(&"Homo sapiens".to_string()));
+    /// assert_eq!(node.get_property("Missing"), None);
+    /// ```
+    pub fn get_property(&self, key: &str) -> Option<&String> {
+        self.properties.as_ref().and_then(|p| p.get(key))
+    }
+
     /// Check if the node is a leaf (no children)
     /// Note: This ignores soft-deleted children if checked externally,
     /// but strictly speaking a node is a leaf if `children` is empty.
+    ///
+    /// # Example
+    /// ```
+    /// use pgr::libs::phylo::node::Node;
+    /// let mut node = Node::new(1);
+    /// assert!(node.is_leaf());
+    /// 
+    /// // Manually adding a child ID (simulating tree operation)
+    /// node.children.push(2);
+    /// assert!(!node.is_leaf());
+    /// ```
     pub fn is_leaf(&self) -> bool {
         self.children.is_empty()
     }
