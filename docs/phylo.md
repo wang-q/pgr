@@ -67,7 +67,7 @@ pub struct Node {
 }
 ```
 
-树 (`struct Tree`):
+树 (`struct Tree`)**:
 定义在 `src/tree/tree_impl.rs`。
 ```rust
 pub struct Tree {
@@ -112,8 +112,72 @@ pub struct Tree {
     *   Newick Utilities: 运行时 (`void*` hook)
     *   Phylotree-rs: 编译时 (需修改结构体或用泛型)
 
-### 适用场景分析
+---
 
-*   Newick Utilities: 适合作为通用的、底层的文本处理工具。它的指针设计使得对树进行剪枝（Pruning）、重嫁接（Regrafting）等拓扑结构改变操作非常廉价（O(1) 指针修改）。`void*` 设计让它可以被不同的上层应用复用而无需重新编译库。
+## 4. API 设计对比
 
-*   Phylotree-rs: 适合作为高性能计算库。它的紧凑内存布局非常适合进行大规模遍历计算（如距离矩阵计算、似然值计算）。索引方式虽然在删除节点时需要处理“空洞”或重排 ID，但在现代 CPU 架构上，其内存连续性带来的性能优势往往更为显著。
+除了数据结构，两者在 API 设计风格上也大相径庭，反映了 C 和 Rust 语言特性的不同。
+
+### Newick Utilities (C)
+
+Newick Utilities 的 API 更加**过程式**，强调手动管理和灵活性。
+
+*   **遍历 (Traversal)**:
+    *   提供了 `struct rnode_iterator` 对象，用于深度优先遍历。
+    *   提供了 `get_nodes_in_order(struct rnode *)` 函数，返回一个后序遍历的链表 (`struct llist`)。这是大多数操作（如计算）的首选方式，因为线性遍历链表比递归遍历树更快。
+*   **拓扑修改**:
+    *   `reroot_tree(...)`: 重新定根，直接修改指针结构。
+    *   `prune`: 剪枝操作（虽然主要是 CLI 工具，但底层有对应逻辑）。
+*   **克隆 (Cloning)**:
+    *   提供了丰富的克隆函数：`clone_tree`, `clone_subtree`, `clone_tree_cond` (带谓词条件的克隆)。这在需要对树进行破坏性修改前非常有用。
+*   **查询**:
+    *   提供了 `nodes_from_labels` 和基于正则的 `nodes_from_regexp`，这非常强大，允许通过复杂的名称模式匹配节点。
+    *   `is_cladogram`: 检查是否为有根树。
+
+### Phylotree-rs (Rust)
+
+Phylotree-rs 的 API 更加**面向对象**和**函数式**，利用 Rust 的特性提供安全性和易用性。
+
+*   **遍历 (Traversal)**:
+    *   提供了 `preorder`, `inorder`, `postorder`, `levelorder` 等方法，返回 `Vec<NodeId>`。这利用了 Rust 的迭代器模式，使得遍历非常符合直觉。
+    *   `search_nodes(closure)`: 允许传入闭包进行灵活的节点查找。
+*   **拓扑修改**:
+    *   `add(Node)`: 添加节点，返回 ID。
+    *   `add_child(Node, ParentId)`: 添加子节点。由于所有权在 Tree 内部，用户不需要手动 `malloc/free`，且 ID 引用保证了不会出现野指针。
+*   **距离与比较**:
+    *   内置了丰富的距离计算方法：`robinson_foulds`, `robinson_foulds_norm`, `weighted_robinson_foulds`, `kuhner_felsenstein`。这表明它更侧重于**系统发育分析**和**树的比较**，而不仅仅是操作。
+    *   `get_partitions`: 获取树的二分（Bipartitions）集合，这是计算树距离的基础。
+*   **安全性与错误处理**:
+    *   大量使用 `Result<T, TreeError>`。例如，访问不存在的 ID 会返回 `Err(NodeNotFound)`，而不是段错误。
+    *   `Option` 用于处理可选值（如名称、边长），避免了空指针异常。
+
+---
+
+## 5. 其他重要区别
+
+除了核心数据结构和 API，两个项目在生态定位和底层实现上也有显著差异。
+
+### 解析实现 (Parsing)
+
+*   **Newick Utilities**: 采用**形式化语法**方法。
+    *   使用 `Flex` (Lexer) 和 `Bison` (Parser) 进行词法和语法分析。
+    *   这使得它对 Newick 格式的处理极其健壮，能够处理复杂的边缘情况，并且有严格的语法定义 (`newick_parser.y`)。
+*   **Phylotree-rs**: 采用**手写状态机**方法。
+    *   使用手写的字符遍历循环和状态枚举 (`Name`, `Length`, `Comment`) 实现解析。
+    *   优点是零依赖，编译速度快；缺点是可能不如 Bison 生成的解析器严谨（例如源码中留有 `TODO: handle escaped quotes` 的注释），且维护复杂的语法变更更困难。
+
+### 生态定位 (Ecosystem)
+
+*   **Newick Utilities**: **Unix 工具集 (Suite)**。
+    *   它不仅仅是一个库，更是一组功能单一、通过管道组合的命令行工具 (`nw_display`, `nw_stats`, `nw_reroot`, `nw_prune` 等)。
+    *   遵循 Unix 哲学（Do one thing well），适合 Shell 脚本集成和管道处理。
+    *   包含可视化功能（SVG/ASCII 绘图）。
+*   **Phylotree-rs**: **分析库 (Library) + 多功能工具**。
+    *   核心是一个 Rust Crate，旨在被其他 Rust 程序集成。
+    *   提供了一个单一的“瑞士军刀”式 CLI 工具 (`phylotree`)，通过子命令 (`phylotree compare`, `phylotree generate` 等) 调用。
+    *   功能上更侧重于**树的比较**（计算 Robinson-Foulds 距离等）和**随机树生成**，而不是图形化展示或复杂的文本处理。
+
+### 总结建议
+
+*   如果您需要**快速处理**、**绘图**或在 **Shell 脚本**中清洗 Newick 数据，**Newick Utilities** 是不二之选。
+*   如果您需要**开发**高性能的系统发育分析软件，或者需要计算树之间的**拓扑距离**，**Phylotree-rs** 提供了更现代、安全的 Rust 接口。
