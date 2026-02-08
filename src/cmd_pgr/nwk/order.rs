@@ -7,16 +7,33 @@ pub fn make_subcommand() -> Command {
         .about("Order nodes in a Newick file")
         .after_help(
             r###"
-* Traverse the entire tree in a breadth-first order
-* Sort the children of each node without changing the topology
+Sorts the children of each node without changing the topology.
 
-* `--an` and `--nd` can be enabled at the same time, sorted first by `--an` and then by `--nd`
-* `--list` will be processed before `--an` and `--nd`
-
+Notes:
+* Traverses the entire tree in a breadth-first order.
+* `--an` and `--nd` can be enabled at the same time; sorted first by `--an` and then by `--nd`.
+* `--list` is processed before `--an` and `--nd`.
 * Sort orders:
-    * `--list`: By a list of names in the file, one name per line
-    * `--an/--anr`: By alphanumeric order of labels
-    * `--nd/--ndr`: By number of descendants
+    * `--list`: By a list of names in the file, one name per line.
+    * `--an`/`--anr`: By alphanumeric order of labels.
+    * `--nd`/`--ndr`: By number of descendants (ladderize).
+    * `--deladderize`: Alternate sort direction at each level.
+
+Examples:
+1. Sort by number of descendants (ladderize):
+   $ pgr nwk order tree.nwk --nd
+
+2. Sort by alphanumeric order of labels:
+   $ pgr nwk order tree.nwk --an
+
+3. Sort by a list of names:
+   $ pgr nwk order tree.nwk --list names.txt
+
+4. Sort by alphanumeric order, then by number of descendants (reverse):
+   $ pgr nwk order tree.nwk --an --ndr
+
+5. De-ladderize (alternate sort direction):
+   $ pgr nwk order tree.nwk --deladderize
 
 "###,
         )
