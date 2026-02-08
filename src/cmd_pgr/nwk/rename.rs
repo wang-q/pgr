@@ -20,7 +20,7 @@ Notes:
 
 * This command is not designed to replace names in large batches, but for modifying small amounts
   of data, and therefore does not provide the ability to read a mapping file
-    * `nwr replace` does this kind of jobs
+    * `pgr nwk replace` does this kind of jobs
     * Or use other tools, such as `sed` or `perl`, to accomplish such tasks
 
 Examples:

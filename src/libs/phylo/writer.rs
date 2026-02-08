@@ -74,7 +74,11 @@ fn to_newick_recursive(tree: &Tree, node_id: NodeId, indent: &str, depth: usize)
         if !props.is_empty() {
             node_info.push_str("[&&NHX");
             for (k, v) in props {
-                node_info.push_str(&format!(":{}={}", k, v));
+                if v.is_empty() {
+                    node_info.push_str(&format!(":{}", k));
+                } else {
+                    node_info.push_str(&format!(":{}={}", k, v));
+                }
             }
             node_info.push(']');
         }

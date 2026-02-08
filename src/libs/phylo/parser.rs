@@ -207,14 +207,19 @@ fn parse_comment(
                 // Example: [&&NHX:S=human:E=1.5]
                 if s.starts_with("&&NHX") {
                     let mut props = BTreeMap::new();
+
                     for part in s.split(':') {
                         if part == "&&NHX" {
                             continue;
                         }
                         if let Some((k, v)) = part.split_once('=') {
                             props.insert(k.to_string(), v.to_string());
+                        } else if !part.trim().is_empty() {
+                            // Unstructured part in NHX -> key with empty value
+                            props.insert(part.to_string(), String::new());
                         }
                     }
+
                     if !props.is_empty() {
                         return Some(props);
                     }
@@ -222,14 +227,37 @@ fn parse_comment(
                     // Try to parse simple Key=Value properties
                     // Example: [S=Gorilla]
                     let mut props = BTreeMap::new();
-                    for part in s.split_whitespace() {
+                    // First try splitting by whitespace to see if it looks like k=v
+                    let parts: Vec<&str> = s.split_whitespace().collect();
+                    
+                    // If it's just a single word without =, it's definitely not kv unless we force it
+                    // The user wants unstructured comment -> property key, value empty.
+                    // So [SimpleComment] -> {"SimpleComment": ""}
+                    
+                    for part in parts {
                         if let Some((k, v)) = part.split_once('=') {
                             props.insert(k.to_string(), v.to_string());
+                        } else {
+                            props.insert(part.to_string(), String::new());
                         }
                     }
+                    
+                    // If parsing as space-separated tokens yielded something, great.
+                    // But if the comment was "Sentence with spaces", we might not want to split it?
+                    // "Sentence with spaces" -> {"Sentence": "", "with": "", "spaces": ""}
+                    // Or {"Sentence with spaces": ""} ?
+                    // Usually NHX/Newick comments don't have spaces in keys.
+                    // But unstructured comments might.
+                    // If we want to support "Unstructured Comment" as a single key, we shouldn't split by whitespace if it doesn't look like K=V.
+                    
+                    // However, `pgr` previously supported [S=Gorilla T=9606] via split_whitespace.
+                    // So we should stick to that behavior for compatibility.
+                    
                     if !props.is_empty() {
                         return Some(props);
                     }
+                    
+                    // If somehow empty (e.g. whitespace only string), return None
                 }
             }
             None
@@ -280,13 +308,17 @@ fn parse_subtree(input: &str) -> IResult<&str, ParsedNode, DetailedError<'_>> {
     // Merge properties from comments found before and after length
     if comment1.is_some() || comment2.is_some() {
         let mut props = BTreeMap::new();
+
         if let Some(p) = comment1 {
             props.extend(p);
         }
         if let Some(p) = comment2 {
             props.extend(p);
         }
-        node.properties = Some(props);
+
+        if !props.is_empty() {
+            node.properties = Some(props);
+        }
     }
 
     Ok((input, node))
