@@ -218,6 +218,18 @@ fn parse_comment(
                     if !props.is_empty() {
                         return Some(props);
                     }
+                } else {
+                    // Try to parse simple Key=Value properties
+                    // Example: [S=Gorilla]
+                    let mut props = BTreeMap::new();
+                    for part in s.split_whitespace() {
+                        if let Some((k, v)) = part.split_once('=') {
+                            props.insert(k.to_string(), v.to_string());
+                        }
+                    }
+                    if !props.is_empty() {
+                        return Some(props);
+                    }
                 }
             }
             None

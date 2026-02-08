@@ -1,13 +1,1 @@
-(
-  (
-    (
-      (
-        Homo[&&NHX:S=Homo]:0.02,
-        Pan:0.02
-      )Homininae:0.02,
-      Pongo:0.04
-    )Hominidae:0.02,
-    Hylobates:0.06
-  )Hominoidea:0.02,
-  Macaca:0.08
-)Catarrhini;
+((((Gorilla:16[S=Gorilla],(Pan:10[S=Pan],Homo:10[S=Homo]):10)Homininae:15[S=Homininae],Pongo:30[S=Pongo])Hominidae:15[S=Hominidae],Hylobates:20[S=Hylobates]):10,(((Macaca:10[S=Macaca],Papio:10[S=Papio]):20,Cercopithecus:10[S=Cercopithecus])Cercopithecinae:25[S=Cercopithecinae],(Simias:10[S=Simias],Colobus:7[S=Colobus])Colobinae:5[S=Colobinae])Cercopithecidae:10[S=Cercopithecidae]);
