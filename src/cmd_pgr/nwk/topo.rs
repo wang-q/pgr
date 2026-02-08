@@ -38,6 +38,7 @@ Examples:
         .arg(
             Arg::new("bl")
                 .long("bl")
+                .short('b')
                 .action(ArgAction::SetTrue)
                 .help("Keep branch lengths"),
         )
