@@ -191,6 +191,41 @@ impl Tree {
         self.nodes = new_nodes;
     }
     
+    /// Perform a preorder traversal starting from a given node.
+    /// Returns a vector of NodeIds in visitation order.
+    ///
+    /// # Example
+    /// ```
+    /// use pgr::libs::phylo::tree::Tree;
+    /// let mut tree = Tree::new();
+    /// let n0 = tree.add_node();
+    /// let n1 = tree.add_node();
+    /// let n2 = tree.add_node();
+    /// tree.add_child(n0, n1);
+    /// tree.add_child(n0, n2);
+    /// let traversal = tree.preorder(&n0).unwrap();
+    /// assert_eq!(traversal, vec![n0, n1, n2]);
+    /// ```
+    pub fn preorder(&self, start_node: &NodeId) -> Result<Vec<NodeId>, String> {
+        if self.get_node(*start_node).is_none() {
+            return Err(format!("Node {} not found", start_node));
+        }
+
+        let mut result = Vec::new();
+        let mut stack = vec![*start_node];
+
+        while let Some(curr) = stack.pop() {
+            result.push(curr);
+            // Push children in reverse order so they are popped in original order (left-to-right)
+            if let Some(node) = self.get_node(curr) {
+                for &child in node.children.iter().rev() {
+                    stack.push(child);
+                }
+            }
+        }
+        Ok(result)
+    }
+
     /// Get the root node ID
     pub fn get_root(&self) -> Option<NodeId> {
         self.root

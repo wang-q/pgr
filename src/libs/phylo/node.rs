@@ -49,6 +49,11 @@ impl Node {
     }
 
     /// Set the name of the node
+    pub fn set_name(&mut self, name: impl Into<String>) {
+        self.name = Some(name.into());
+    }
+
+    /// Set the name of the node (builder pattern)
     pub fn with_name(mut self, name: impl Into<String>) -> Self {
         self.name = Some(name.into());
         self

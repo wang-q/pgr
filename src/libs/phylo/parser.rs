@@ -65,13 +65,19 @@ fn parse_label(input: &str) -> IResult<&str, String> {
         |s: &str| s.to_string(),
     );
 
-    let quoted = delimited(
+    let single_quoted = delimited(
         char('\''),
         map(is_not("'"), |s: &str| s.replace("''", "'")), 
         char('\'')
     );
 
-    alt((quoted, unquoted)).parse(input)
+    let double_quoted = delimited(
+        char('"'),
+        map(is_not("\""), |s: &str| s.replace("\"\"", "\"")), 
+        char('"')
+    );
+
+    alt((single_quoted, double_quoted, unquoted)).parse(input)
 }
 
 // 3. Length
@@ -237,6 +243,94 @@ mod tests {
         let input = "  (  A : 0.1 ,  B  )  ;  ";
         let tree = Tree::from_newick(input).unwrap();
         assert_eq!(tree.len(), 3);
+    }
+
+    #[test]
+    fn test_parser_whitespace_details() {
+        // Case 1: Spaces around unquoted labels
+        // "( A , B )" -> names should be "A" and "B" without spaces
+        let input = "( A , B )Root;";
+        let tree = Tree::from_newick(input).unwrap();
+        let root = tree.get_node(tree.get_root().unwrap()).unwrap();
+        let c0 = tree.get_node(root.children[0]).unwrap();
+        let c1 = tree.get_node(root.children[1]).unwrap();
+        
+        assert_eq!(c0.name.as_deref(), Some("A"));
+        assert_eq!(c1.name.as_deref(), Some("B"));
+        
+        // Case 2: Spaces inside quoted labels (should be preserved by parser)
+        let input = "(' A ', ' B ')Root;";
+        let tree = Tree::from_newick(input).unwrap();
+        let root = tree.get_node(tree.get_root().unwrap()).unwrap();
+        let c0 = tree.get_node(root.children[0]).unwrap();
+        let c1 = tree.get_node(root.children[1]).unwrap();
+        
+        assert_eq!(c0.name.as_deref(), Some(" A "));
+        assert_eq!(c1.name.as_deref(), Some(" B "));
+
+        // Case 3: Mixed spaces
+        let input = "(  A:0.1  ,  B:0.2  )  Root  ;";
+        let tree = Tree::from_newick(input).unwrap();
+        let root = tree.get_node(tree.get_root().unwrap()).unwrap();
+        let c0 = tree.get_node(root.children[0]).unwrap();
+        let c1 = tree.get_node(root.children[1]).unwrap();
+        
+        assert_eq!(c0.name.as_deref(), Some("A"));
+        assert_eq!(c1.name.as_deref(), Some("B"));
+        assert_eq!(root.name.as_deref(), Some("Root"));
+    }
+
+    #[test]
+    fn test_parser_user_scenario_emulation() {
+        // Emulate the user's cleaning logic to show it's mostly redundant for unquoted,
+        // but works for quoted if that's what they want.
+        let input = "(' A ', B )Root;";
+        let mut tree = Tree::from_newick(input).unwrap();
+        
+        // Before cleaning
+        let root = tree.get_node(tree.get_root().unwrap()).unwrap();
+        let c0 = tree.get_node(root.children[0]).unwrap(); // ' A '
+        let c1 = tree.get_node(root.children[1]).unwrap(); // B
+        
+        assert_eq!(c0.name.as_deref(), Some(" A "));
+        assert_eq!(c1.name.as_deref(), Some("B"));
+
+        // User's cleaning logic
+        let root_id = tree.get_root().unwrap();
+        let traversal = tree.preorder(&root_id).unwrap();
+        
+        for id in traversal {
+             let node = tree.get_node_mut(id).unwrap(); 
+             if let Some(ref name) = node.name.clone() {
+                 let trimmed = name.trim().to_string();
+                 if trimmed.is_empty() {
+                     node.name = None;
+                 } else {
+                     node.set_name(trimmed);
+                 }
+             }
+        }
+
+        // After cleaning
+        let root = tree.get_node(tree.get_root().unwrap()).unwrap();
+        let c0 = tree.get_node(root.children[0]).unwrap();
+        let c1 = tree.get_node(root.children[1]).unwrap();
+        
+        assert_eq!(c0.name.as_deref(), Some("A")); // Trimmed!
+        assert_eq!(c1.name.as_deref(), Some("B")); // Unchanged
+    }
+
+    #[test]
+    fn test_parser_double_quoted() {
+        let input = "(\"Homo sapiens\":0.1, \"Mus musculus\":0.2);";
+        let tree = Tree::from_newick(input).unwrap();
+        let root = tree.get_node(tree.get_root().unwrap()).unwrap();
+        
+        let c1 = tree.get_node(root.children[0]).unwrap();
+        assert_eq!(c1.name.as_deref(), Some("Homo sapiens"));
+        
+        let c2 = tree.get_node(root.children[1]).unwrap();
+        assert_eq!(c2.name.as_deref(), Some("Mus musculus"));
     }
 
     #[test]
