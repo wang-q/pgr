@@ -320,7 +320,7 @@ pub struct Tree {
 *   [x] 实现 `Node` (`node.rs`) 和 `Tree` (`tree.rs`) 结构体。
 *   [x] 实现基础方法：`add_node`, `add_child`, `get_node`, `remove_node` (soft), `compact` (gc)。
 
-#### Phase 2: 解析器实现 (Parsing)
+#### Phase 2: 解析与序列化 (Parsing & Serialization)
 *   [x] 添加 `nom` 依赖。
 *   [x] 定义 `TreeError` 枚举，提供详细的解析错误上下文（如出错位置）。
 *   [x] 实现 Newick 语法定义 (BNF 转换)。
@@ -328,7 +328,11 @@ pub struct Tree {
     *   [x] 处理 `Length` (支持科学计数法)。
     *   [x] 处理 `Comment` (方括号内容)。
 *   [x] 实现 `Tree::from_newick(str) -> Result<Tree>`.
-*   [x] 单元测试：覆盖各种 Newick 变体。
+*   [x] 实现序列化输出：
+    *   [x] `to_newick()`: 紧凑格式。
+    *   [x] `to_newick_with_format(indent)`: 支持缩进和换行的美化输出。
+    *   [x] `to_dot()`: 导出 Graphviz DOT 格式用于可视化。
+*   [x] 单元测试：覆盖各种 Newick 变体及序列化一致性。
 
 #### Phase 3: 遍历与查询 (Traversal & Query) - 参考 phylotree-rs
 *   [x] 实现迭代器：
