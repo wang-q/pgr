@@ -476,6 +476,76 @@ impl Tree {
         Ok(result)
     }
 
+    /// Get the height of a node (maximum distance to its descendant leaves).
+    /// Returns 0.0 if the node is a leaf.
+    ///
+    /// # Example
+    /// ```
+    /// use pgr::libs::phylo::tree::Tree;
+    /// let mut tree = Tree::new();
+    /// let n0 = tree.add_node();
+    /// let n1 = tree.add_node();
+    /// let n2 = tree.add_node();
+    /// tree.add_child(n0, n1).unwrap();
+    /// tree.add_child(n1, n2).unwrap();
+    /// tree.get_node_mut(n1).unwrap().length = Some(1.0);
+    /// tree.get_node_mut(n2).unwrap().length = Some(2.0);
+    ///
+    /// // n0 -> n1 (1.0) -> n2 (2.0)
+    /// // Height of n0 = dist(n0, n2) = 3.0
+    /// assert_eq!(tree.get_height(&n0).unwrap(), 3.0);
+    /// assert_eq!(tree.get_height(&n2).unwrap(), 0.0);
+    ///
+    /// // Simple case
+    /// let newick = "(A:1,(B:2)C:1);";
+    /// let mut tree = Tree::from_newick(newick).unwrap();
+    ///
+    /// let id_c = tree.get_node_by_name("C").unwrap();
+    /// assert_eq!(tree.get_height(&id_c).unwrap(), 2.0);
+    ///
+    /// let id_b = tree.get_node_by_name("B").unwrap();
+    /// assert_eq!(tree.get_height(&id_b).unwrap(), 0.0);
+    ///
+    /// // Case with no edge lengths
+    /// let newick = "(A,(B)C);";
+    /// let mut tree = Tree::from_newick(newick).unwrap();
+    /// let id_c = tree.get_node_by_name("C").unwrap();
+    ///
+    /// assert_eq!(tree.get_height(&id_c).unwrap(), 0.0);
+    /// ```
+    pub fn get_height(&self, id: &NodeId) -> Result<f64, String> {
+        if self.get_node(*id).is_none() {
+             return Err(format!("Node {} not found", id));
+        }
+        
+        // If leaf, height is 0
+        if self.get_node(*id).unwrap().is_leaf() {
+            return Ok(0.0);
+        }
+
+        let descendants = self.get_subtree(id)?;
+        let mut max_dist = 0.0;
+
+        for desc_id in descendants {
+            if desc_id == *id { continue; }
+            
+            if let Some(node) = self.get_node(desc_id) {
+                if node.is_leaf() {
+                    // Calculate distance
+                    // Since desc_id is in subtree of id, id is ancestor of desc_id.
+                    // get_distance should return (dist, steps).
+                    if let Ok((dist, _)) = self.get_distance(id, &desc_id) {
+                        if dist > max_dist {
+                            max_dist = dist;
+                        }
+                    }
+                }
+            }
+        }
+        
+        Ok(max_dist)
+    }
+
     /// Get all nodes in the subtree rooted at the specified node (inclusive).
     pub fn get_subtree(&self, root_id: &NodeId) -> Result<Vec<NodeId>, String> {
         self.preorder(root_id)
