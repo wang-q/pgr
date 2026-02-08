@@ -12,6 +12,17 @@ pub mod utils;
 pub fn make_subcommand() -> Command {
     Command::new("nwk")
         .about("Newick tools")
+        .after_help(
+            r###"Subcommand groups:
+
+* info: stat / label / distance
+* ops:  rename / replace / topo
+* viz:  indent
+
+"###,
+        )
+        .subcommand_required(true)
+        .arg_required_else_help(true)
         .subcommand(distance::make_subcommand())
         .subcommand(indent::make_subcommand())
         .subcommand(label::make_subcommand())
