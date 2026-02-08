@@ -48,6 +48,13 @@ pub fn write_newick_with_format(tree: &Tree, indent: &str) -> String {
     }
 }
 
+/// Serialize a specific subtree to a Newick string.
+pub fn write_subtree(tree: &Tree, root: NodeId, indent: &str) -> String {
+    let mut s = to_newick_recursive(tree, root, indent, 0);
+    s.push(';');
+    s
+}
+
 fn to_newick_recursive(tree: &Tree, node_id: NodeId, indent: &str, depth: usize) -> String {
     let node = tree.get_node(node_id).unwrap();
     let is_pretty = !indent.is_empty();

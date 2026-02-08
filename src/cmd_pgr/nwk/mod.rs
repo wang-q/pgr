@@ -8,6 +8,7 @@ pub mod prune;
 pub mod rename;
 pub mod replace;
 pub mod stat;
+pub mod subtree;
 pub mod topo;
 pub mod utils;
 
@@ -18,7 +19,7 @@ pub fn make_subcommand() -> Command {
             r###"Subcommand groups:
 
 * info: stat / label / distance
-* ops:  prune / rename / replace / topo
+* ops:  prune / rename / replace / subtree / topo
 * viz:  indent
 
 "###,
@@ -33,6 +34,7 @@ pub fn make_subcommand() -> Command {
         .subcommand(rename::make_subcommand())
         .subcommand(replace::make_subcommand())
         .subcommand(stat::make_subcommand())
+        .subcommand(subtree::make_subcommand())
         .subcommand(topo::make_subcommand())
 }
 
@@ -46,6 +48,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         Some(("rename", sub_matches)) => rename::execute(sub_matches),
         Some(("replace", sub_matches)) => replace::execute(sub_matches),
         Some(("stat", sub_matches)) => stat::execute(sub_matches),
+        Some(("subtree", sub_matches)) => subtree::execute(sub_matches),
         Some(("topo", sub_matches)) => topo::execute(sub_matches),
         _ => unreachable!(),
     }
