@@ -938,6 +938,38 @@ impl Tree {
         id_of
     }
 
+    /// Get all values for a specific property key across the tree.
+    /// Returns a map of NodeId -> Property Value.
+    ///
+    /// ```
+    /// use pgr::libs::phylo::tree::Tree;
+    ///
+    /// let newick = "((A[&&NHX:S=Human],B),C[&&NHX:S=Chimp]);";
+    /// let tree = Tree::from_newick(newick).unwrap();
+    /// let species_map = tree.get_property_values("S");
+    /// 
+    /// let map = tree.get_name_id();
+    /// let id_a = *map.get("A").unwrap();
+    /// let id_c = *map.get("C").unwrap();
+    ///
+    /// assert_eq!(species_map.get(&id_a).unwrap(), "Human");
+    /// assert_eq!(species_map.get(&id_c).unwrap(), "Chimp");
+    /// assert!(!species_map.contains_key(map.get("B").unwrap()));
+    /// ```
+    pub fn get_property_values(&self, key: &str) -> BTreeMap<NodeId, String> {
+        let mut values = BTreeMap::new();
+        if let Some(root) = self.root {
+             for id in self.preorder(&root).unwrap_or_default().iter() {
+                if let Some(node) = self.get_node(*id) {
+                    if let Some(val) = node.get_property(key) {
+                        values.insert(*id, val.clone());
+                    }
+                }
+            }
+        }
+        values
+    }
+
     /// Serialize the tree to a Newick string (compact format).
     ///
     /// # Example
