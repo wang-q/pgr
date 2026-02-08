@@ -198,16 +198,18 @@ Phylotree-rs 的 API 更加**面向对象**和**函数式**，利用 Rust 的特
 ### 架构设计 (Architecture)
 
 #### 模块位置
-建议在 `src/libs/` 下新建 `phylo` 模块：
+实际实现采用了更紧凑的结构，将算法和遍历逻辑集成在 `tree.rs` 中：
 ```text
 src/libs/phylo/
 ├── mod.rs          # 模块导出
 ├── node.rs         # 核心数据结构 (Node)
-├── tree.rs         # 核心数据结构 (Tree)
-├── parser.rs       # Newick 解析器 (Nom 或手写)
-├── iter.rs         # 遍历器 (Preorder, Postorder, Levelorder)
-└── algo.rs         # 算法 (Reroot, LCA, Distance)
+├── tree.rs         # 核心数据结构 (Tree) 及所有算法 (Traversal, Algo)
+├── parser.rs       # Newick 解析器 (基于 Nom)
+└── error.rs        # 错误定义 (TreeError)
 ```
+
+**设计决策说明 (Design Rationale)**:
+*   **整合原因**: 将遍历 (`iter`) 和算法 (`algo`) 整合进 `tree.rs` 是为了保持**高内聚**。这些操作紧密依赖 `Tree` 的内部实现（如 Arena 索引），集中管理可以简化可见性控制，符合 Rust 将方法定义在类型附近的惯例。当前 `tree.rs` 约 800 行，体积适中，无需过早拆分。
 
 #### 核心数据结构 (Data Structures)
 采用 **Arena (Vector-backed)** 模式，参考 `phylotree-rs` 但进行优化。
@@ -300,9 +302,9 @@ pub struct Tree {
 ```
 
 #### 解析器选型 (Parsing Strategy)
-建议引入 **`nom`** (Parser Combinator) 库。
+已引入 **`nom`** (Parser Combinator) 库。
 *   **理由**: `phylotree-rs` 的手写状态机难以维护且存在 TODO；`newick_utils` 的 Flex/Bison 难以在 Rust 中集成。`nom` 是 Rust 生态中最成熟的解析库，性能极高且易于处理嵌套结构和转义字符。
-*   **依赖**: 需在 `Cargo.toml` 中添加 `nom = "8"`。
+*   **实现**: 已在 `parser.rs` 中使用 `nom 8` 实现了完整的 Newick 语法解析。
 
 #### 错误处理设计 (Error Handling Design)
 为了提供良好的开发者体验和用户反馈，`phylo` 模块实现了专门的错误处理机制：
@@ -352,13 +354,72 @@ pub struct Tree {
 *   (用户已有详细规划，此处略过)
 
 ### 依赖管理 (Dependencies)
-需要修改 `Cargo.toml` 添加：
+已在 `Cargo.toml` 中添加：
 ```toml
 [dependencies]
 nom = "8"  # 用于高性能解析
 ```
 
 ### 测试计划 (Testing)
-1.  **Unit Tests**: 针对 parser 的每个组件编写测试。
-2.  **Integration Tests**: 使用 `newick_utils` 生成的标准文件作为输入，验证解析结果的一致性。
-3.  **Property Tests**: (可选) 生成随机树并验证 `parse(to_newick(tree)) == tree`。
+1.  **Unit Tests**: 针对 parser 的每个组件编写测试 (已完成)。
+2.  **Doc Tests**: 为关键 API 提供文档测试，覆盖正常用法和错误处理 (已完成)。
+3.  **Integration Tests**: 使用 `newick_utils` 生成的标准文件作为输入，验证解析结果的一致性。
+4.  **Property Tests**: (可选) 生成随机树并验证 `parse(to_newick(tree)) == tree`。
+
+---
+
+## 7. API 对比与差距分析 (pgr vs phylotree-rs)
+
+以下列表对比了 `phylotree-rs` (参考版本) 提供的公开 API 与 `pgr::phylo` 当前实现的覆盖情况。
+
+### 已实现 (Implemented)
+
+这些核心功能已经移植或重构，能够满足基础操作需求。
+
+*   **Tree Structure**:
+    *   `Tree::new()`: 创建空树。
+    *   `Tree::add_node()`, `Tree::add_child()`: 构建树结构。
+    *   `Tree::get_node()`, `Tree::get_root()`: 访问节点。
+*   **Parsing**:
+    *   `Tree::from_newick()`: 解析 Newick 字符串 (支持引号、注释、科学计数法)。
+*   **Serialization**:
+    *   `to_newick()`: 紧凑格式输出。
+    *   `to_newick_with_format()`: 支持缩进的格式化输出。
+*   **Traversal**:
+    *   `preorder`, `postorder`: 深度优先遍历 (迭代器风格)。
+    *   `levelorder`: 广度优先遍历。
+*   **Query**:
+    *   `get_leaves()`: 获取所有叶子节点。
+    *   `get_path_from_root()`: 获取根到节点的路径。
+    *   `get_common_ancestor()` (LCA): 最近公共祖先。
+    *   `get_distance()`: 计算节点间距离 (加权/拓扑)。
+    *   `get_subtree()`: 获取子树节点集合。
+    *   `find_nodes()`, `get_node_by_name()`: 查找节点。
+*   **Modification**:
+    *   `reroot_at()`: 重新定根 (支持边长重分配)。
+    *   `prune_where()`: 剪枝 (删除匹配节点及其子孙)。
+    *   `remove_node()`: 软删除单个节点。
+    *   `compact()`: 物理删除软删除节点并重构树。
+
+### 未实现但需要 (Missing & Planned)
+
+*   暂无核心功能缺失。
+
+### 不太需要/低优先级 (Low Priority / Not Needed)
+
+这些 API 要么用途有限，要么与 `pgr` 的设计哲学不符，或者根据当前需求被认为不重要。
+
+*   **Comparison**:
+    *   `robinson_foulds_distance()`: 计算两棵树的拓扑差异 (RF Distance)。
+    *   `weighted_robinson_foulds()`: 加权 RF 距离。
+    *   `get_partitions()`: 获取树的二分 (Bipartitions) 集合。
+*   **Visualization**:
+    *   `print_entity()` (或类似): 在终端打印 ASCII 树状图，用于快速调试和展示。
+*   **Tree Generation**:
+    *   `generate_random_tree()` (Yule/Coalescent 模型): 主要用于模拟研究。`pgr` 侧重于处理真实数据，除非用于测试生成，否则优先级较低。
+*   **Complex I/O**:
+    *   `from_file()`: `pgr` 通常通过 CLI 处理文件读取，核心库只需处理字符串或 Buffer。
+    *   `to_dot()` (Graphviz): 虽然有用，但 Newick + 外部工具 (如 `nw_display`) 通常足够。
+*   **Internal Caching**:
+    *   `update_depths()`, `matrix`: `phylotree-rs` 缓存了大量中间状态。`pgr` 倾向于按需计算 (On-demand) 以保持轻量化。
+
