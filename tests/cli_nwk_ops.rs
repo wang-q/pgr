@@ -216,3 +216,68 @@ fn command_replace_multi() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn command_topo_basic() -> anyhow::Result<()> {
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("nwk")
+        .arg("topo")
+        .arg("tests/newick/catarrhini.nwk")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    // catarrhini.nwk has lengths and comments.
+    // Default topo removes lengths and comments (properties), keeps labels.
+    // Original: ((((Gorilla:16,(Pan:10,Homo:10)Hominini:10)Homininae:15,Pongo:30)Hominidae:15,Hylobates:20):10,(((Macaca:10,Papio:10):20,Cercopithecus:10)Cercopithecinae:25,(Simias:10,Colobus:7)Colobinae:5)Cercopithecidae:10);
+    // Expected: ((((Gorilla,(Pan,Homo)Hominini)Homininae,Pongo)Hominidae,Hylobates),(((Macaca,Papio),Cercopithecus)Cercopithecinae,(Simias,Colobus)Colobinae)Cercopithecidae);
+    // Note: The root edge length is also removed.
+    
+    assert!(stdout.contains("((((Gorilla,(Pan,Homo)Hominini)Homininae,Pongo)Hominidae,Hylobates)"));
+    assert!(!stdout.contains(":")); // No lengths
+
+    Ok(())
+}
+
+#[test]
+fn command_topo_remove_labels() -> anyhow::Result<()> {
+    // Test with -I (remove internal labels) and -L (remove leaf labels)
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("nwk")
+        .arg("topo")
+        .arg("tests/newick/catarrhini.nwk")
+        .arg("-I")
+        .arg("-L")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    // Should have no labels
+    assert!(stdout.contains("((((,(,))")); 
+    assert!(!stdout.contains("Homo"));
+    assert!(!stdout.contains("Hominini"));
+
+    Ok(())
+}
+
+#[test]
+fn command_topo_keep_bl() -> anyhow::Result<()> {
+    // Test --bl (keep branch lengths)
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("nwk")
+        .arg("topo")
+        .arg("tests/newick/catarrhini.nwk")
+        .arg("-I")
+        .arg("-L")
+        .arg("--bl")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    assert!(stdout.contains(":16")); // Check for specific length
+    assert!(!stdout.contains("Gorilla"));
+
+    Ok(())
+}
+
+

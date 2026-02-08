@@ -6,6 +6,7 @@ pub mod label;
 pub mod rename;
 pub mod replace;
 pub mod stat;
+pub mod topo;
 pub mod utils;
 
 pub fn make_subcommand() -> Command {
@@ -17,6 +18,7 @@ pub fn make_subcommand() -> Command {
         .subcommand(rename::make_subcommand())
         .subcommand(replace::make_subcommand())
         .subcommand(stat::make_subcommand())
+        .subcommand(topo::make_subcommand())
 }
 
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
@@ -27,6 +29,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         Some(("rename", sub_matches)) => rename::execute(sub_matches),
         Some(("replace", sub_matches)) => replace::execute(sub_matches),
         Some(("stat", sub_matches)) => stat::execute(sub_matches),
+        Some(("topo", sub_matches)) => topo::execute(sub_matches),
         _ => unreachable!(),
     }
 }

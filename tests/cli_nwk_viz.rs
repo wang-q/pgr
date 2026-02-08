@@ -1,5 +1,4 @@
-use assert_cmd::prelude::*;
-use std::process::Command;
+use assert_cmd::Command;
 
 #[test]
 fn command_indent() -> anyhow::Result<()> {
@@ -90,5 +89,25 @@ fn command_indent_multiple_optc() -> anyhow::Result<()> {
     assert!(lines[0].starts_with("(Pandion,"));
     assert!(lines[4].starts_with("(Homo,"));
 
+    Ok(())
+}
+
+#[test]
+fn command_indent_stdin() -> anyhow::Result<()> {
+    // 1. Default indentation
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("nwk")
+        .arg("indent")
+        .arg("stdin")
+        .write_stdin("((A,B),C);")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+    
+    // Should have newlines and spaces (default 2 spaces)
+    assert!(stdout.contains("  A"));
+    assert!(stdout.contains("  B"));
+    assert!(stdout.contains("C"));
+    
     Ok(())
 }

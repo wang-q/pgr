@@ -362,16 +362,17 @@ pub struct Tree {
 | Newick Utilities | 功能描述 | pgr 对应子命令 (暂定) | 状态 |
 | :--- | :--- | :--- | :--- |
 | `nw_stats` | 树的统计信息 (节点数, 深度, 类型等) | `pgr nwk stat` | **[x] 已实现** (支持多树处理, TSV/KV 输出, 统计二叉分枝) |
+| `nw_distance` | 计算节点间距离 | `pgr nwk distance` | **[x] 已实现** (支持 root, parent, pairwise, lca, phylip) |
 | `nw_indent` | 格式化/缩进 Newick 树 | `pgr nwk indent` | **[x] 已实现** (支持紧凑/缩进输出) |
-| `nw_display` | 树的可视化 (ASCII/SVG/Map) | `pgr nwk display` / `view` | [ ] |
-| `nw_topology` | 仅保留拓扑结构 (去除分支长度) | `pgr nwk topology` | [ ] |
+| `nw_display` | 树的可视化 (ASCII/SVG/Map) | `pgr nwk display` / `view` | [ ] (支持 `to_dot` / Graphviz 导出) |
+| `nw_topology` | 仅保留拓扑结构 (去除分支长度) | `pgr nwk topo` | **[x] 已实现** (支持 `--bl`, `--comment`, `-I`, `-L`) |
 | `nw_labels` | 提取所有标签 (叶子/内部节点) | `pgr nwk label` | **[x] 已实现** (支持正则过滤, 内部/叶子筛选, 单行输出) |
 | `nw_reroot` | 重定根 (Outgroup, Midpoint) | `pgr nwk reroot` | [ ] (算法已实现 `reroot_at`) |
-| `nw_prune` | 剪枝 (移除指定节点) | `pgr nwk prune` | [ ] (算法已实现 `prune`) |
-| `nw_clade` | 提取子树 (Clade) | `pgr nwk clade` / `subtree` | [ ] |
-| `nw_order` | 节点排序 (Ladderize) | `pgr nwk order` | [ ] (算法已实现 `sort_by_descendants`) |
-| `nw_rename` | 重命名节点 (Map file/Rule) | `pgr nwk rename` | [ ] |
-| `nw_condense` | 压缩树 (合并短枝/多叉化) | `pgr nwk condense` | [ ] |
+| `nw_prune` | 剪枝 (移除指定节点) | `pgr nwk prune` | [ ] (算法已实现 `prune_where`) |
+| `nw_clade` | 提取子树 (Clade) | `pgr nwk clade` / `subtree` | [ ] (算法已实现 `get_subtree`) |
+| `nw_order` | 节点排序 (Ladderize) | `pgr nwk order` | [ ] (算法已实现 `sort_by_descendants` / `sort_by_name`) |
+| `nw_rename` | 重命名节点 (Map file/Rule) | `pgr nwk rename` / `replace` | **[x] 已实现** (Split into `rename` & `replace`) |
+| `nw_condense` | 压缩树 (合并短枝/多叉化) | `pgr nwk condense` | [ ] (算法已实现 `collapse_node`) |
 | `nw_distance` | 计算节点间距离 / 树间距离 | `pgr nwk distance` | **[x] 已实现** (Modes: root, parent, pairwise, lca, phylip) |
 | `nw_support` | 计算/显示支持率 (Bootstrap) | `pgr nwk support` | [ ] |
 | `nw_match` | 匹配两棵树的节点 | `pgr nwk match` | [ ] |
@@ -523,9 +524,8 @@ pgr nwk indent data.nwk --text "    "
 pgr nwk indent data.nwk --compact
 ```
 
-
 ```text
-整合 indent.rs，测试在 `tests/cli_nwk_viz.rs` 中。
+整合 indent.rs，测试在 `tests/cli_nwk_ops.rs` 中。
 你看看 nw_indent 的代码，有没有什么值得参考的
 把 tests/ 里 nw_stats 的相关测试迁移到本项目，需要的测试材料 可以拷贝到 `tests/newick/` 目录下
 改进帮助文本。 参考 nw_indent 的帮助文本，按我们自己的样式 进行调整。
