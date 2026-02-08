@@ -368,7 +368,7 @@ pub struct Tree {
 | `nw_topology` | 仅保留拓扑结构 (去除分支长度) | `pgr nwk topo` | **[x] 已实现** (支持 `--bl`, `--comment`, `-I`, `-L`) |
 | `nw_labels` | 提取所有标签 (叶子/内部节点) | `pgr nwk label` | **[x] 已实现** (支持正则过滤, 内部/叶子筛选, 单行输出) |
 | `nw_reroot` | 重定根 (Outgroup, Midpoint) | `pgr nwk reroot` | [ ] (算法已实现 `reroot_at`) |
-| `nw_prune` | 剪枝 (移除指定节点) | `pgr nwk prune` | [ ] (算法已实现 `prune_where`) |
+| `nw_prune` | 剪枝 (移除指定节点) | `pgr nwk prune` | **[x] 已实现** (支持正则/列表，自动清理，反选) |
 | `nw_clade` | 提取子树 (Clade) | `pgr nwk clade` / `subtree` | [ ] (算法已实现 `get_subtree`) |
 | `nw_order` | 节点排序 (Ladderize) | `pgr nwk order` | [ ] (算法已实现 `sort_by_descendants` / `sort_by_name`) |
 | `nw_rename` | 重命名节点 (Map file/Rule) | `pgr nwk rename` / `replace` | **[x] 已实现** (Split into `rename` & `replace`) |

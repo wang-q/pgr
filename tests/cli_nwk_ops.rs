@@ -298,6 +298,50 @@ fn command_topo_compat_simple() -> anyhow::Result<()> {
 }
 
 #[test]
+fn command_prune() -> anyhow::Result<()> {
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("nwk")
+        .arg("prune")
+        .arg("tests/newick/catarrhini.nwk")
+        .arg("-n")
+        .arg("Homo")
+        .arg("-n")
+        .arg("Pan")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    assert!(!stdout.contains("Homo:10"));
+    assert!(!stdout.contains("Gorilla:16"));
+    assert!(stdout.contains("Gorilla:31"));
+
+    Ok(())
+}
+
+#[test]
+fn command_prune_invert() -> anyhow::Result<()> {
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("nwk")
+        .arg("prune")
+        .arg("tests/newick/catarrhini.nwk")
+        .arg("-v")
+        .arg("-n")
+        .arg("Homo")
+        .arg("-n")
+        .arg("Pan")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    assert!(stdout.contains("Homo"));
+    assert!(stdout.contains("Pan"));
+    assert!(!stdout.contains("Gorilla"));
+    assert!(!stdout.contains("Pongo"));
+
+    Ok(())
+}
+
+#[test]
 fn command_topo_compat_multiple() -> anyhow::Result<()> {
     // multiple:forest.nw
     let mut cmd = Command::cargo_bin("pgr")?;
