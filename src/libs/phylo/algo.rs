@@ -133,10 +133,10 @@ fn get_sort_key(tree: &Tree, name_map: &HashMap<NodeId, String>, id: NodeId) -> 
 /// let mut tree = Tree::from_newick("((A,B),C);").unwrap();
 ///
 /// // Ascending: C (1) < (A,B) (2)
-/// algo::sort_by_descendants(&mut tree, false);
+/// algo::ladderize(&mut tree, false);
 /// assert_eq!(tree.to_newick(), "(C,(A,B));");
 /// ```
-pub fn sort_by_descendants(tree: &mut Tree, descending: bool) {
+pub fn ladderize(tree: &mut Tree, descending: bool) {
     if tree.is_empty() {
         return;
     }
@@ -281,6 +281,68 @@ pub fn sort_by_list(tree: &mut Tree, order_list: &[String]) {
     }
 }
 
+/// Sort the children of each node by the number of descendants, alternating direction at each level.
+///
+/// This produces a "balanced" look for the tree.
+/// Level 0 (Root children): Ascending (Light -> Heavy)
+/// Level 1: Descending (Heavy -> Light)
+/// ...
+pub fn deladderize(tree: &mut Tree) {
+    if tree.is_empty() {
+        return;
+    }
+
+    let root = tree.get_root().unwrap();
+
+    // 1. Calculate descendant counts (same as ladderize)
+    let mut size_map: HashMap<NodeId, usize> = HashMap::new();
+    if let Ok(post_ids) = tree.postorder(&root) {
+        for &id in &post_ids {
+            let mut count = 0;
+            if let Some(node) = tree.get_node(id) {
+                if node.is_leaf() {
+                    count = 1;
+                } else {
+                    count = 1;
+                    for child in &node.children {
+                        count += size_map.get(child).unwrap_or(&0);
+                    }
+                }
+            }
+            size_map.insert(id, count);
+        }
+    }
+
+    // 2. Traversal with state
+    let mut queue = std::collections::VecDeque::new();
+    queue.push_back((root, false)); // Start ascending
+
+    while let Some((id, descending)) = queue.pop_front() {
+        let children_ids = if let Some(node) = tree.get_node_mut(id) {
+            if node.children.is_empty() {
+                continue;
+            }
+
+            node.children.sort_by(|a, b| {
+                let size_a = size_map.get(a).unwrap_or(&0);
+                let size_b = size_map.get(b).unwrap_or(&0);
+                if descending {
+                    size_b.cmp(size_a)
+                } else {
+                    size_a.cmp(size_b)
+                }
+            });
+            node.children.clone()
+        } else {
+            continue;
+        };
+
+        for child in children_ids {
+            queue.push_back((child, !descending));
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -323,7 +385,7 @@ mod tests {
     }
 
     #[test]
-    fn test_sort_by_descendants() {
+    fn test_ladderize() {
         let mut tree = Tree::new();
         let root = tree.add_node();
         tree.set_root(root);
@@ -342,13 +404,13 @@ mod tests {
         tree.add_child(root, c2).unwrap();
 
         // Sort ascending (smallest first) -> c1, c2
-        sort_by_descendants(&mut tree, false);
+        ladderize(&mut tree, false);
         let children = &tree.get_node(root).unwrap().children;
         assert_eq!(children[0], c1);
         assert_eq!(children[1], c2);
 
         // Sort descending (largest first) -> c2, c1
-        sort_by_descendants(&mut tree, true);
+        ladderize(&mut tree, true);
         let children = &tree.get_node(root).unwrap().children;
         assert_eq!(children[0], c2);
         assert_eq!(children[1], c1);

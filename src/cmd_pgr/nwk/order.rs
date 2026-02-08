@@ -34,6 +34,13 @@ pub fn make_subcommand() -> Command {
         .arg(arg!(--anr "By alphanumeric order of labels, reversely"))
         .group(ArgGroup::new("alphanumeric").args(["an", "anr"]))
         .arg(
+            Arg::new("deladderize")
+                .long("deladderize")
+                .alias("dl")
+                .action(ArgAction::SetTrue)
+                .help("De-ladderize (alternate) the tree"),
+        )
+        .arg(
             Arg::new("list")
                 .long("list")
                 .short('l')
@@ -72,15 +79,23 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         names = intspan::read_first_column(list_file);
     }
 
+    let is_deladderize = args.get_flag("deladderize");
+
+    // Default behavior: if no specific sort order is requested, use alphanumeric
+    let default_an = names.is_empty() && opt_an.is_empty() && opt_nd.is_empty() && !is_deladderize;
+
     for tree in &mut trees {
         if !names.is_empty() {
             algo::sort_by_list(tree, &names);
         }
-        if !opt_an.is_empty() {
+        if default_an || !opt_an.is_empty() {
             algo::sort_by_name(tree, opt_an == "anr");
         }
         if !opt_nd.is_empty() {
-            algo::sort_by_descendants(tree, opt_nd == "ndr");
+            algo::ladderize(tree, opt_nd == "ndr");
+        }
+        if is_deladderize {
+            algo::deladderize(tree);
         }
 
         let out_string = writer::write_newick(tree);
