@@ -1,5 +1,5 @@
-use pgr::libs::phylo::{algo, reader, writer};
 use clap::*;
+use pgr::libs::phylo::{algo, reader, writer};
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {

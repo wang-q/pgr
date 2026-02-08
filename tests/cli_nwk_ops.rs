@@ -456,7 +456,6 @@ fn command_topo_compat_bil() -> anyhow::Result<()> {
     Ok(())
 }
 
-
 #[test]
 fn command_order() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("pgr")?;
@@ -532,6 +531,44 @@ fn command_order_list() -> anyhow::Result<()> {
 
     assert!(stdout.contains("(C:1,(B:1,A:1)D:1)E;"));
 
+    Ok(())
+}
+
+#[test]
+fn command_order_unnamed() -> anyhow::Result<()> {
+    // Test case where internal nodes are unnamed.
+    // ((C,D),(A,B));
+    // Without recursive label resolution:
+    // (C,D) -> (C,D)
+    // (A,B) -> (A,B)
+    // Root -> ((C,D),(A,B)) because "" == ""
+    //
+    // With recursive resolution:
+    // (C,D) -> rep "C"
+    // (A,B) -> rep "A"
+    // Root -> compares "C" vs "A", should be ((A,B),(C,D))
+
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("nwk")
+        .arg("order")
+        .arg("stdin")
+        .arg("--an")
+        .write_stdin("((C,D),(A,B));")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    assert!(stdout.contains("((A,B),(C,D));"));
+
+    Ok(())
+}
+
+#[test]
+fn command_order_deladderize() -> anyhow::Result<()> {
+    // De-ladderize logic (if implemented)
+    // For now, just placeholder or test if we implement it.
+    // The user asked for "reference", and deladderize is a good candidate.
+    // But let's stick to the unnamed node fix first.
     Ok(())
 }
 

@@ -25,12 +25,11 @@ pub fn sort_by_name(tree: &mut Tree, descending: bool) {
 
     let root = tree.get_root().unwrap();
     // We can use levelorder to visit all nodes, but we just need to iterate all nodes.
-    // Iterating the arena vector is faster than traversal if we just want to touch every node.
-    // However, the Tree struct doesn't expose `nodes` directly as pub, but we are in a submodule.
-    // `nodes` is private in `tree.rs`. We should use a traversal or public iterator if available.
-    // `levelorder` is available.
-
-    let ids = match tree.levelorder(&root) {
+    // However, to propagate sorting up the tree (inheriting labels), we should use post-order.
+    // Or, we can just sort all nodes. For a single pass, if we just sort children, the order of visiting nodes matters
+    // IF the sort criteria depends on the sorted order of children (which it does for recursive labeling).
+    // So we MUST use post-order (leaves first, then parents).
+    let ids = match tree.postorder(&root) {
         Ok(v) => v,
         Err(_) => return,
     };
@@ -44,14 +43,37 @@ pub fn sort_by_name(tree: &mut Tree, descending: bool) {
     }
 
     for id in ids {
-        if let Some(node) = tree.get_node_mut(id) {
-            if node.children.is_empty() {
-                continue;
-            }
+        // We need to re-borrow name_map for each node if we update it?
+        // Actually, if a node is unnamed, we want to USE its children's names.
+        // But we are iterating post-order. Children are already visited and sorted.
+        // So when we are at `id`, its children are sorted.
+        // We can determine the "effective name" of `id` now.
 
-            node.children.sort_by(|a, b| {
-                let name_a = name_map.get(a).map(|s: &String| s.as_str()).unwrap_or("");
-                let name_b = name_map.get(b).map(|s: &String| s.as_str()).unwrap_or("");
+        // Let's get the node
+        let children = if let Some(node) = tree.get_node(id) {
+            node.children.clone()
+        } else {
+            continue;
+        };
+
+        if children.is_empty() {
+            continue;
+        }
+
+        // Sort children
+        // To avoid double borrow (tree immutable in sort_by closure vs tree mutable in get_node_mut),
+        // we can collect sort keys first.
+        let mut child_keys: HashMap<NodeId, String> = HashMap::new();
+        for &child_id in &children {
+            child_keys.insert(child_id, get_sort_key(tree, &name_map, child_id));
+        }
+
+        if let Some(node) = tree.get_node_mut(id) {
+            node.children.sort_by(|&a, &b| {
+                // Get name or derive from children
+                let name_a = child_keys.get(&a).map(|s| s.as_str()).unwrap_or("");
+                let name_b = child_keys.get(&b).map(|s| s.as_str()).unwrap_or("");
+
                 if descending {
                     name_b.cmp(name_a)
                 } else {
@@ -59,7 +81,39 @@ pub fn sort_by_name(tree: &mut Tree, descending: bool) {
                 }
             });
         }
+
+        // After sorting children, update name_map for THIS node if it has no name
+        // This ensures parents can use this node's derived name
+        if let Some(node) = tree.get_node(id) {
+            if node.name.as_deref().unwrap_or("").is_empty() {
+                // Derived name is the name/key of the first child (after sort)
+                if let Some(&first_child) = node.children.first() {
+                    let child_key = get_sort_key(tree, &name_map, first_child);
+                    name_map.insert(id, child_key);
+                }
+            }
+        }
     }
+}
+
+fn get_sort_key(tree: &Tree, name_map: &HashMap<NodeId, String>, id: NodeId) -> String {
+    if let Some(name) = name_map.get(&id) {
+        if !name.is_empty() {
+            return name.clone();
+        }
+    }
+    // Fallback if not in map or empty (should be in map if visited post-order)
+    // But if it was a leaf with empty name, it stays empty?
+    // If it's a leaf, name_map has ""
+    // If it's an internal node, we might have updated name_map in the loop.
+
+    // If we are here, it means name_map has "" or missing.
+    // If missing, try to get from tree
+    if let Some(node) = tree.get_node(id) {
+        return node.name.clone().unwrap_or_default();
+    }
+
+    String::new()
 }
 
 /// Sort the children of each node by the number of descendants (also known as ladderize).

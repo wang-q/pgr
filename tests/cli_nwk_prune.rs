@@ -300,4 +300,3 @@ fn command_prune_invert() -> anyhow::Result<()> {
 
     Ok(())
 }
-
