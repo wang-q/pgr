@@ -90,9 +90,18 @@ Examples:
         .arg(
             Arg::new("condense")
                 .long("condense")
-                .short('c')
+                .short('C')
                 .num_args(1)
                 .help("Condense the subtree into a single node with this name"),
+        )
+        .arg(
+            Arg::new("context")
+                .long("context")
+                .short('c')
+                .num_args(1)
+                .value_parser(value_parser!(usize))
+                .default_value("0")
+                .help("Extend the subtree by N levels above the LCA"),
         )
         .arg(
             Arg::new("outfile")
@@ -152,10 +161,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             match tree.get_common_ancestor(&sub_root_id, id) {
                 Ok(anc) => sub_root_id = anc,
                 Err(_) => {
-                    // Nodes might be in disjoint parts if tree structure is broken or multiple roots?
-                    // Tree struct assumes single root for `get_common_ancestor` usually?
-                    // Or if they are disconnected.
-                    // If error, we can't find LCA.
                     continue;
                 }
             }
@@ -174,51 +179,24 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 }
             }
 
-            // Check if the selected set matches the set of named descendants
-            // The logic is: the subtree should contain EXACTLY the selected named tips.
-            // If `ids` contains internal nodes, we should probably only compare tips?
-            // Original code:
-            // `if name_of.contains_key(id) && tree.get(id).unwrap().is_tip()`
-            // `ids.ne(&descendants)`
-            // So it compares the set of selected IDs (which presumably are all named, or descendants of named)
-            // with the set of named tips in the subtree.
-
-            // Wait, `match_names` might include internal nodes if `-D` is used.
-            // If `-D` is used, `ids` includes descendants.
-            // The original code used `id_of` (map name->id) to check if a node "has a name" in the original map context?
-            // Actually `nwr::get_name_id` returns map of named nodes.
-            // So `name_of.contains_key(id)` effectively checks `node.name.is_some()`.
-
-            // Let's filter `ids` to tips only for comparison?
-            // Or just compare sets as is.
-            // If I selected an internal node explicitly, it is in `ids`.
-            // But `descendants` collection logic in original code: `is_tip()`.
-            // So original code compares `ids` (which might contain internal nodes?) with `descendants` (tips only).
-            // This implies `ids` should only contain tips for this check to pass?
-            // Unless `match_names` only returns tips? No, it returns whatever matches.
-            // But `match_names` without `-D` returns the named nodes themselves.
-            // If I select an internal node "A", `ids` has "A".
-            // `descendants` has tips of "A".
-            // "A" != tips of "A". So monophyly check fails for internal node selection?
-            // That seems strict.
-            // But if `-D` is used, `ids` includes descendants.
-            // If I use `-n Human -n Chimp`, `ids` = {Human, Chimp}.
-            // LCA is Ancestor. Subtree tips are {Human, Chimp}. Match!
-            // If I use `-n Ancestor`, `ids` = {Ancestor}.
-            // LCA is Ancestor. Subtree tips {Human, Chimp}.
-            // {Ancestor} != {Human, Chimp}. Fails.
-            // This seems to be the intended behavior of the original code.
-
             if ids != descendants_named {
                 if is_condense {
-                    // Even if monophyly fails, if condensing, we output the original tree?
-                    // Original code:
-                    // `if ids.ne(&descendants) { if is_condense { print tree } return Ok(()); }`
-                    // So it aborts the operation and prints the UNMODIFIED tree.
                     let out_string = writer::write_newick(tree);
                     writer.write_fmt(format_args!("{}\n", out_string)).unwrap();
                 }
                 continue;
+            }
+        }
+
+        // Apply context
+        let context_levels = *args.get_one::<usize>("context").unwrap();
+        for _ in 0..context_levels {
+            if let Some(node) = tree.get_node(sub_root_id) {
+                if let Some(parent) = node.parent {
+                    sub_root_id = parent;
+                } else {
+                    break;
+                }
             }
         }
 

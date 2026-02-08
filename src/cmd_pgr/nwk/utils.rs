@@ -38,7 +38,6 @@ pub fn match_names(tree: &Tree, args: &ArgMatches) -> BTreeSet<usize> {
         for regex in args.get_many::<String>("regex").unwrap() {
             let re = RegexBuilder::new(regex)
                 .case_insensitive(true)
-                .unicode(false)
                 .build()
                 .unwrap();
             for name in id_of.keys() {
