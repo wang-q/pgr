@@ -359,26 +359,73 @@ pub struct Tree {
 #### Phase 5: CLI 集成 (Integration) - 模仿 Newick Utilities
 我们的 CLI 功能将模仿 `newick_utils` 工具集。以下是目标工具列表及其功能映射：
 
-| Newick Utilities | 功能描述 | pgr 对应子命令 (暂定) | 状态 |
-| :--- | :--- | :--- | :--- |
-| `nw_stats` | 树的统计信息 (节点数, 深度, 类型等) | `pgr nwk stat` | **[x] 已实现** (支持多树处理, TSV/KV 输出, 统计二叉分枝) |
-| `nw_distance` | 计算节点间距离 | `pgr nwk distance` | **[x] 已实现** (支持 root, parent, pairwise, lca, phylip) |
-| `nw_indent` | 格式化/缩进 Newick 树 | `pgr nwk indent` | **[x] 已实现** (支持紧凑/缩进输出) |
-| `nw_display` | 树的可视化 (ASCII/SVG/Map) | `pgr nwk display` / `view` | [ ] (支持 `to_dot` / Graphviz 导出) |
-| `nw_topology` | 仅保留拓扑结构 (去除分支长度) | `pgr nwk topo` | **[x] 已实现** (支持 `--bl`, `--comment`, `-I`, `-L`) |
-| `nw_labels` | 提取所有标签 (叶子/内部节点) | `pgr nwk label` | **[x] 已实现** (支持正则过滤, 内部/叶子筛选, 单行输出) |
-| `nw_reroot` | 重定根 (Outgroup, Midpoint) | `pgr nwk reroot` | [ ] (算法已实现 `reroot_at`) |
-| `nw_prune` | 剪枝 (移除指定节点) | `pgr nwk prune` | **[x] 已实现** (支持正则/列表，自动清理，反选) |
-| `nw_clade` | 提取子树 (Clade) | `pgr nwk clade` / `subtree` | [ ] (算法已实现 `get_subtree`) |
-| `nw_order` | 节点排序 (Ladderize) | `pgr nwk order` | [ ] (算法已实现 `sort_by_descendants` / `sort_by_name`) |
-| `nw_rename` | 重命名节点 (Map file/Rule) | `pgr nwk rename` / `replace` | **[x] 已实现** (Split into `rename` & `replace`) |
-| `nw_condense` | 压缩树 (合并短枝/多叉化) | `pgr nwk condense` | [ ] (算法已实现 `collapse_node`) |
-| `nw_distance` | 计算节点间距离 / 树间距离 | `pgr nwk distance` | **[x] 已实现** (Modes: root, parent, pairwise, lca, phylip) |
-| `nw_support` | 计算/显示支持率 (Bootstrap) | `pgr nwk support` | [ ] |
-| `nw_match` | 匹配两棵树的节点 | `pgr nwk match` | [ ] |
-| `nw_ed` | 编辑距离 / 树操作脚本 | `pgr nwk ed` | [ ] |
-| `nw_gen` | 生成随机树 | `pgr nwk gen` | [ ] |
-| `nw_duration` | (通常指时间树相关) | `pgr nwk duration` | [ ] |
+*   **`nw_stats`** $\to$ **`pgr nwk stat`**
+    *   **功能**: 树的统计信息 (节点数, 深度, 类型等)
+    *   **状态**: **[x] 已实现** (支持多树处理, TSV/KV 输出, 统计二叉分枝)
+
+*   **`nw_distance`** $\to$ **`pgr nwk distance`**
+    *   **功能**: 计算节点间距离 / 树间距离
+    *   **状态**: **[x] 已实现** (支持 root, parent, pairwise, lca, phylip)
+
+*   **`nw_indent`** $\to$ **`pgr nwk indent`**
+    *   **功能**: 格式化/缩进 Newick 树
+    *   **状态**: **[x] 已实现** (支持紧凑/缩进输出)
+
+*   **`nw_display`** $\to$ **`pgr nwk display` / `view`**
+    *   **功能**: 树的可视化 (ASCII/SVG/Map)
+    *   **状态**: [ ] (支持 `to_dot` / Graphviz 导出)
+
+*   **`nw_topology`** $\to$ **`pgr nwk topo`**
+    *   **功能**: 仅保留拓扑结构 (去除分支长度)
+    *   **状态**: **[x] 已实现** (支持 `--bl`, `--comment`, `-I`, `-L`)
+
+*   **`nw_labels`** $\to$ **`pgr nwk label`**
+    *   **功能**: 提取所有标签 (叶子/内部节点)
+    *   **状态**: **[x] 已实现** (支持正则过滤, 内部/叶子筛选, 单行输出)
+
+*   **`nw_reroot`** $\to$ **`pgr nwk reroot`**
+    *   **功能**: 重定根 (Outgroup, Midpoint)
+    *   **状态**: [ ] (算法已实现 `reroot_at`)
+
+*   **`nw_prune`** $\to$ **`pgr nwk prune`**
+    *   **功能**: 剪枝 (移除指定节点)
+    *   **状态**: **[x] 已实现** (支持正则/列表，自动清理，反选)
+
+*   **`nw_clade`** $\to$ **`pgr nwk subtree`**
+    *   **功能**: 提取子树 (Clade)
+    *   **状态**: **[x] 已实现** (支持 context 扩展、单系群检查、正则匹配)
+
+*   **`nw_order`** $\to$ **`pgr nwk order`**
+    *   **功能**: 节点排序 (Ladderize)
+    *   **状态**: **[x] 已实现** (支持 alphanumeric/descendants/list/deladderize)
+
+*   **`nw_rename`** $\to$ **`pgr nwk rename` / `replace`**
+    *   **功能**: 重命名节点 (Map file/Rule)
+    *   **状态**: **[x] 已实现** (Split into `rename` & `replace`)
+
+*   **`nw_condense`** $\to$ **`pgr nwk condense`**
+    *   **功能**: 压缩树 (合并短枝/多叉化)
+    *   **状态**: [ ] (`subtree` 支持 `-C` condense)
+
+*   **`nw_support`** $\to$ **`pgr nwk support`**
+    *   **功能**: 计算/显示支持率 (Bootstrap)
+    *   **状态**: [ ]
+
+*   **`nw_match`** $\to$ **`pgr nwk match`**
+    *   **功能**: 匹配两棵树的节点
+    *   **状态**: [ ]
+
+*   **`nw_ed`** $\to$ **`pgr nwk ed`**
+    *   **功能**: 编辑距离 / 树操作脚本
+    *   **状态**: [ ]
+
+*   **`nw_gen`** $\to$ **`pgr nwk gen`**
+    *   **功能**: 生成随机树
+    *   **状态**: [ ]
+
+*   **`nw_duration`** $\to$ **`pgr nwk duration`**
+    *   **功能**: (通常指时间树相关)
+    *   **状态**: [ ]
 
 ---
 
@@ -396,7 +443,7 @@ pub struct Tree {
 2.  **集成测试 (Integration Tests)**:
     *   针对 CLI 子命令的端到端测试。
     *   使用 `assert_cmd` 模拟命令行调用，验证标准输出（stdout）和退出代码。
-    *   位于 `tests/cli_nwk_data.rs`。
+    *   位于 `tests/` 目录下的 `cli_nwk_*.rs` 文件 (如 `cli_nwk_subtree.rs`, `cli_nwk_ops.rs` 等)。
 
 3.  **兼容性测试 (Compatibility Tests)**:
     *   直接参考 `newick_utils` 的测试用例 (`tests/test_nw_*_args`)。
@@ -414,8 +461,17 @@ pub struct Tree {
 | `fl` | Flat Line 输出 (TSV) | `command_stat_style_line` | **[x] Pass** | 对应 `--style line` 参数 |
 | `many` | 多树处理 (Multi-tree) | `command_stat_multi_tree` | **[x] Pass** | 验证单文件多棵树的连续处理 |
 
-| `nw_indent` | 缩进/格式化 Newick 字符串 | `pgr nwk indent` / `fmt` | [ ] |
-| `nw_trim` | 修剪树 (Trim) | `pgr nwk trim` | [ ] |
+#### `nw_clade` -> `pgr nwk subtree`
+
+| Test Case (newick_utils) | 描述 | pgr 对应测试 | 状态 | 备注 |
+| :--- | :--- | :--- | :--- | :--- |
+| `def` | 默认提取 | `command_subtree_default` | **[x] Pass** | 基础子树提取 |
+| `regex` | 正则匹配提取 | `command_subtree_regex` | **[x] Pass** | 支持 `-r` 正则匹配 |
+| `context` | 上下文扩展 | `command_subtree_context` | **[x] Pass** | 支持 `-c` 扩展 N 层 |
+| `monop` | 单系群检查 | `command_subtree_monophyly` | **[x] Pass** | 支持 `-M` 单系性验证 |
+
+| `nw_indent` | 缩进/格式化 Newick 字符串 | `pgr nwk indent` / `fmt` | **[x] Pass** | |
+| `nw_trim` | 修剪树 (Trim) | `pgr nwk trim` | [ ] | |
 
 *注：我们将实现其中大部分功能，具体命令名称可能会根据 `pgr` 的整体风格进行微调（例如使用动词作为子命令）。*
 
@@ -446,15 +502,14 @@ nom = "8"  # 用于高性能解析
     *   `Tree::new()`: 创建空树。
     *   `Tree::add_node()`, `Tree::add_child()`: 构建树结构。
     *   `Tree::get_node()`, `Tree::get_root()`: 访问节点。
+    *   `Tree::len()`: 节点总数 (对应 `size()`)。
 *   **Parsing**:
     *   `Tree::from_newick()`: 解析 Newick 字符串 (支持引号、注释、科学计数法)。
 *   **Serialization**:
     *   `to_newick()`: 紧凑格式输出。
         *   *注*: `phylotree-rs` 返回 `Result<String>`, `pgr` 返回 `String` (Infallible)。
-        *   *注*: 实现代码位于 `src/libs/phylo/writer.rs`，但通过 `Tree` 方法暴露以保持兼容。
     *   `to_newick_with_format()`: 支持缩进的格式化输出。
-    *   `to_dot()` (Graphviz): 输出 DOT 格式，可用于可视化。
-        *   *注*: 这是 `pgr` 特有的功能，`phylotree-rs` 未直接提供。
+    *   `to_dot()` (Graphviz): 输出 DOT 格式，可用于可视化 (**pgr 特有**)。
 *   **Traversal**:
     *   `preorder`, `postorder`: 深度优先遍历 (迭代器风格)。
     *   `levelorder`: 广度优先遍历。
@@ -465,25 +520,42 @@ nom = "8"  # 用于高性能解析
     *   `get_distance()`: 计算节点间距离 (加权/拓扑)。
     *   `get_subtree()`: 获取子树节点集合。
     *   `find_nodes()`, `get_node_by_name()`: 查找节点。
+    *   `get_height()`: 计算节点高度 (到最远叶子的距离)。
+    *   `is_monophyletic()`: 判断是否为单系群 (**pgr 特有**)。
 *   **Modification**:
     *   `reroot_at()`: 重新定根 (支持边长重分配)。
     *   `prune_where()`: 剪枝 (删除匹配节点及其子孙)。
     *   `remove_node()`: 软删除单个节点。
-    *   `compact()`: 物理删除软删除节点并重构树。
+    *   `collapse_node()`: 压缩节点 (合并边长)。
+    *   `compact()`: 物理删除软删除节点并重构树 (**pgr 特有**)。
 
-### 未实现但需要 (Missing & Planned)
+### 统计与计算 (Statistics & Calculation)
 
+*   `is_binary()`: 检查是否为二叉树。
+*   `get_leaf_names()`: 获取所有叶子节点的名称列表。
+*   `get_partitions()`: 获取树的二分 (Bipartitions) 集合 (返回 `HashSet<BTreeSet<String>>`)，是计算 RF 距离的基础。
+*   `diameter()`: 树的直径 (最远叶子间距离)。
+*   `robinson_foulds()`: 计算两棵树的 Robinson-Foulds 距离 (拓扑差异)。
+
+### 未实现 (Missing / Differences)
+
+以下功能在 `phylotree-rs` 中存在，但在 `pgr` 中尚未实现或有不同设计。
+
+*   **Tree Statistics (统计指标)**:
+    *   `cherries()`: 计算 Cherry 数量。
+    *   `colless()`, `colless_yule()`, `colless_pda()`: Colless 平衡指数。
+    *   `sackin()`, `sackin_yule()`, `sackin_pda()`: Sackin 平衡指数。
+*   **Tree Comparison (树比较)**:
+    *   `compare_topologies()`: 拓扑结构比较。
 *   **Internal Caching**:
-    *   `get_node_depth()`: 缓存节点深度。
+    *   `get_node_depth()`: 缓存节点深度 (目前需实时计算)。
+*   **Traversal**:
+    *   `inorder`: 中序遍历 (仅适用于二叉树，`pgr` 支持多叉树故未直接实现)。
 
-### 不太需要/低优先级 (Low Priority / Not Needed)
+### 计划中 (Planned)
 
-这些 API 要么用途有限，要么与 `pgr` 的设计哲学不符，或者根据当前需求被认为不重要。
-
-*   **Comparison**:
-    *   `robinson_foulds_distance()`: 计算两棵树的拓扑差异 (RF Distance)。
+*   `robinson_foulds()`:
     *   `weighted_robinson_foulds()`: 加权 RF 距离。
-    *   `get_partitions()`: 获取树的二分 (Bipartitions) 集合。
 *   **Visualization**:
     *   `print_entity()` (或类似): 在终端打印 ASCII 树状图，用于快速调试和展示。
 *   **Tree Generation**:

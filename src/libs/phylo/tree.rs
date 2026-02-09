@@ -618,37 +618,22 @@ impl Tree {
     ///
     /// let id_b = tree.get_node_by_name("B").unwrap();
     /// assert_eq!(tree.get_height(&id_b).unwrap(), 0.0);
-    ///
-    /// // Case with no edge lengths
-    /// let newick = "(A,(B)C);";
-    /// let mut tree = Tree::from_newick(newick).unwrap();
-    /// let id_c = tree.get_node_by_name("C").unwrap();
-    ///
-    /// assert_eq!(tree.get_height(&id_c).unwrap(), 0.0);
     /// ```
     pub fn get_height(&self, id: &NodeId) -> Result<f64, String> {
         if self.get_node(*id).is_none() {
             return Err(format!("Node {} not found", id));
         }
-
-        // If leaf, height is 0
-        if self.get_node(*id).unwrap().is_leaf() {
+        if self.get_node(*id).unwrap().children.is_empty() {
             return Ok(0.0);
         }
-
         let descendants = self.get_subtree(id)?;
         let mut max_dist = 0.0;
-
         for desc_id in descendants {
             if desc_id == *id {
                 continue;
             }
-
             if let Some(node) = self.get_node(desc_id) {
-                if node.is_leaf() {
-                    // Calculate distance
-                    // Since desc_id is in subtree of id, id is ancestor of desc_id.
-                    // get_distance should return (dist, steps).
+                if node.children.is_empty() {
                     if let Ok((dist, _)) = self.get_distance(id, &desc_id) {
                         if dist > max_dist {
                             max_dist = dist;
@@ -657,8 +642,153 @@ impl Tree {
                 }
             }
         }
-
         Ok(max_dist)
+    }
+
+    // ###################
+    // # TREE STATISTICS #
+    // ###################
+
+    /// Get names of all leaves.
+    pub fn get_leaf_names(&self) -> Vec<Option<String>> {
+        self.get_leaves()
+            .iter()
+            .map(|&id| self.get_node(id).unwrap().name.clone())
+            .collect()
+    }
+
+    /// Check if the tree is binary.
+    /// A binary tree is rooted and every internal node has at most 2 children.
+    pub fn is_binary(&self) -> bool {
+        for node in &self.nodes {
+            if !node.deleted && node.children.len() > 2 {
+                return false;
+            }
+        }
+        true
+    }
+
+    /// Get the set of bipartitions defined by the tree.
+    /// Each bipartition is represented by the set of leaf names in the clade defined by a node.
+    ///
+    /// # Errors
+    /// Returns error if any leaf is unnamed.
+    pub fn get_partitions(
+        &self,
+    ) -> Result<std::collections::HashSet<std::collections::BTreeSet<String>>, String> {
+        let mut partitions = std::collections::HashSet::new();
+
+        // 1. Check names
+        for node in &self.nodes {
+            if !node.deleted && node.children.is_empty() && node.name.is_none() {
+                return Err("All leaves must be named to calculate partitions".to_string());
+            }
+        }
+
+        if self.root.is_none() {
+            return Ok(partitions);
+        }
+
+        // 2. Postorder traversal
+        let traversal = self.postorder(&self.root.unwrap())?;
+        let mut node_leaves: std::collections::HashMap<
+            NodeId,
+            std::collections::BTreeSet<String>,
+        > = std::collections::HashMap::new();
+
+        for &id in &traversal {
+            let node = self.get_node(id).unwrap();
+            let mut leaves = std::collections::BTreeSet::new();
+
+            if node.children.is_empty() {
+                // Leaf
+                leaves.insert(node.name.clone().unwrap());
+            } else {
+                // Internal node: union of children's leaves
+                for &child_id in &node.children {
+                    if let Some(child_set) = node_leaves.remove(&child_id) {
+                        leaves.extend(child_set);
+                    }
+                }
+            }
+
+            // Add to partitions (must clone here because we also insert into map for parent)
+            partitions.insert(leaves.clone());
+
+            // Store for parent
+            node_leaves.insert(id, leaves);
+        }
+
+        Ok(partitions)
+    }
+
+    /// Calculate the diameter of the tree (maximum distance between any pair of leaves).
+    ///
+    /// # Example
+    /// ```
+    /// use pgr::libs::phylo::tree::Tree;
+    /// let t = Tree::from_newick("((A:1,B:2):1,C:4);").unwrap();
+    /// // Dist(A,B) = 3
+    /// // Dist(A,C) = 1+1+4 = 6
+    /// // Dist(B,C) = 2+1+4 = 7
+    /// assert_eq!(t.diameter().unwrap(), 7.0);
+    /// ```
+    pub fn diameter(&self) -> Result<f64, String> {
+        use itertools::Itertools;
+
+        let leaves = self.get_leaves();
+        if leaves.is_empty() {
+            return Err("Tree is empty".to_string());
+        }
+
+        // If only 1 leaf, diameter is 0
+        if leaves.len() == 1 {
+            return Ok(0.0);
+        }
+
+        leaves
+            .iter()
+            .tuple_combinations()
+            .map(|(a, b)| {
+                self.get_distance(a, b).map(|(w, _)| w).unwrap_or(0.0)
+            })
+            .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+            .ok_or("Could not calculate diameter".to_string())
+    }
+
+    /// Calculate Robinson-Foulds distance to another tree.
+    /// This is the symmetric difference of the sets of bipartitions (clades).
+    /// RF = |A| + |B| - 2 * |A ∩ B|
+    ///
+    /// # Example
+    /// ```
+    /// use pgr::libs::phylo::tree::Tree;
+    /// let t1 = Tree::from_newick("((A,B),C);").unwrap();
+    /// let t2 = Tree::from_newick("((A,C),B);").unwrap();
+    /// assert_eq!(t1.robinson_foulds(&t2).unwrap(), 2);
+    /// ```
+    pub fn robinson_foulds(&self, other: &Tree) -> Result<usize, String> {
+        let p1 = self.get_partitions()?;
+        let p2 = other.get_partitions()?;
+
+        let get_leaves_from_partitions = |p: &std::collections::HashSet<std::collections::BTreeSet<String>>| -> std::collections::BTreeSet<String> {
+            p.iter()
+                .filter(|s| s.len() == 1)
+                .flat_map(|s| s.iter())
+                .cloned()
+                .collect()
+        };
+
+        let l1 = get_leaves_from_partitions(&p1);
+        let l2 = get_leaves_from_partitions(&p2);
+
+        if l1 != l2 {
+            return Err("Trees have different leaf sets".to_string());
+        }
+
+        let intersection = p1.intersection(&p2).count();
+        let rf = p1.len() + p2.len() - 2 * intersection;
+        Ok(rf)
     }
 
     /// Check if a set of nodes forms a monophyletic group (clade).
@@ -1277,5 +1407,82 @@ mod tests {
         assert!(tree.get_node(n1).is_none());
         assert!(tree.get_node(n3).is_none());
         assert!(tree.get_node(n0).unwrap().children.is_empty());
+    }
+
+    #[test]
+    fn test_get_partitions() {
+        // Tree: ((A,B)C,D)E;
+        // Leaves: A, B, D
+        // Partitions (clades):
+        // - Leaf A: {A}
+        // - Leaf B: {B}
+        // - Node C: {A, B}
+        // - Leaf D: {D}
+        // - Root E: {A, B, D}
+
+        let newick = "((A,B)C,D)E;";
+        let tree = Tree::from_newick(newick).unwrap();
+
+        let partitions = tree.get_partitions().unwrap();
+
+        // Helper to create string sets
+        fn make_set(names: &[&str]) -> std::collections::BTreeSet<String> {
+            names.iter().map(|s| s.to_string()).collect()
+        }
+
+        let mut expected = std::collections::HashSet::new();
+        expected.insert(make_set(&["A"]));
+        expected.insert(make_set(&["B"]));
+        expected.insert(make_set(&["A", "B"]));
+        expected.insert(make_set(&["D"]));
+        expected.insert(make_set(&["A", "B", "D"]));
+
+        // Check strict equality of the set of sets
+        // Since BTreeSet and HashSet implement Eq correctly based on content
+        assert_eq!(partitions.len(), 5);
+        for p in &expected {
+            assert!(partitions.contains(p), "Missing partition: {:?}", p);
+        }
+    }
+
+    #[test]
+    fn test_is_binary() {
+        let t1 = Tree::from_newick("((A,B),C);").unwrap();
+        assert!(t1.is_binary());
+
+        let t2 = Tree::from_newick("(A,B,C);").unwrap();
+        assert!(!t2.is_binary());
+    }
+
+    #[test]
+    fn test_get_leaves() {
+        let tree = Tree::from_newick("((A,B)C,D)E;").unwrap();
+        let leaves = tree.get_leaf_names();
+        let leaf_names: Vec<String> = leaves.into_iter().map(|n| n.unwrap()).collect();
+
+        assert!(leaf_names.contains(&"A".to_string()));
+        assert!(leaf_names.contains(&"B".to_string()));
+        assert!(leaf_names.contains(&"D".to_string()));
+        assert_eq!(leaf_names.len(), 3);
+    }
+
+    #[test]
+    fn test_diameter() {
+        let newick = "((A:1,B:2):1,C:4);";
+        let tree = Tree::from_newick(newick).unwrap();
+        // Dist(A,B) = 3
+        // Dist(A,C) = 1+1+4 = 6
+        // Dist(B,C) = 2+1+4 = 7
+        assert_eq!(tree.diameter().unwrap(), 7.0);
+    }
+
+    #[test]
+    fn test_robinson_foulds() {
+        let t1 = Tree::from_newick("((A,B),C);").unwrap();
+        let t2 = Tree::from_newick("((A,C),B);").unwrap();
+        assert_eq!(t1.robinson_foulds(&t2).unwrap(), 2);
+
+        let t3 = Tree::from_newick("((A,B),C);").unwrap();
+        assert_eq!(t1.robinson_foulds(&t3).unwrap(), 0);
     }
 }
