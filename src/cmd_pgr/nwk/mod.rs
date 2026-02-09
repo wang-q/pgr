@@ -7,6 +7,7 @@ pub mod order;
 pub mod prune;
 pub mod rename;
 pub mod replace;
+pub mod reroot;
 pub mod stat;
 pub mod subtree;
 pub mod topo;
@@ -14,12 +15,14 @@ pub mod utils;
 
 pub fn make_subcommand() -> Command {
     Command::new("nwk")
-        .about("Newick tools")
+        .about("Manipulate, analyze, and visualize Newick trees")
         .after_help(
-            r###"Subcommand groups:
+            r###"
+This suite of tools provides a comprehensive set of operations for phylogenetic trees in Newick format.
 
+Subcommand groups:
 * info: stat / label / distance
-* ops:  prune / rename / replace / subtree / topo
+* ops:  order / prune / rename / replace / reroot / subtree / topo
 * viz:  indent
 
 "###,
@@ -33,6 +36,7 @@ pub fn make_subcommand() -> Command {
         .subcommand(prune::make_subcommand())
         .subcommand(rename::make_subcommand())
         .subcommand(replace::make_subcommand())
+        .subcommand(reroot::make_subcommand())
         .subcommand(stat::make_subcommand())
         .subcommand(subtree::make_subcommand())
         .subcommand(topo::make_subcommand())
@@ -47,6 +51,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         Some(("prune", sub_matches)) => prune::execute(sub_matches),
         Some(("rename", sub_matches)) => rename::execute(sub_matches),
         Some(("replace", sub_matches)) => replace::execute(sub_matches),
+        Some(("reroot", sub_matches)) => reroot::execute(sub_matches),
         Some(("stat", sub_matches)) => stat::execute(sub_matches),
         Some(("subtree", sub_matches)) => subtree::execute(sub_matches),
         Some(("topo", sub_matches)) => topo::execute(sub_matches),

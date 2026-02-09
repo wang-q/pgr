@@ -913,6 +913,20 @@ impl Tree {
         self.root
     }
 
+    /// Find the node with the longest parent edge.
+    /// Used for "Longest Branch" rooting.
+    pub fn get_node_with_longest_edge(&self) -> Option<NodeId> {
+        self.nodes
+            .iter()
+            .filter(|n| !n.deleted && n.parent.is_some())
+            .max_by(|a, b| {
+                let len_a = a.length.unwrap_or(0.0);
+                let len_b = b.length.unwrap_or(0.0);
+                len_a.partial_cmp(&len_b).unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .map(|n| n.id)
+    }
+
     /// Reroot the tree at the specified node.
     /// This reverses the direction of edges along the path from the old root to the new root.
     ///
@@ -938,7 +952,7 @@ impl Tree {
     /// tree.get_node_mut(n3).unwrap().length = Some(5.0);
     ///
     /// // Reroot at 3
-    /// tree.reroot_at(n3).unwrap();
+    /// tree.reroot_at(n3, false).unwrap();
     ///
     /// // New structure:
     /// // 3 (root) -> 1 (len 5.0) -> 0 (len 10.0) -> 2 (len None/Default)
@@ -957,9 +971,9 @@ impl Tree {
     /// assert!(node0.children.contains(&n2));
     ///
     /// // Error: Node not found
-    /// assert!(tree.reroot_at(9999).is_err());
+    /// assert!(tree.reroot_at(9999, false).is_err());
     /// ```
-    pub fn reroot_at(&mut self, new_root_id: NodeId) -> Result<(), String> {
+    pub fn reroot_at(&mut self, new_root_id: NodeId, process_support_values: bool) -> Result<(), String> {
         if self.get_node(new_root_id).is_none() {
             return Err(format!("Node {} not found", new_root_id));
         }
@@ -971,6 +985,43 @@ impl Tree {
 
         // 1. Get path from old root to new root
         let path = self.get_path_from_root(&new_root_id)?;
+
+        // 1.5 Process Support Values (Labels)
+        // Shift internal node labels along the path to align with edge reversals
+        if process_support_values {
+            let new_root_is_leaf = self.get_node(new_root_id).map(|n| n.children.is_empty()).unwrap_or(false);
+            
+            // Capture original names
+            let names: Vec<Option<String>> = path.iter()
+                .map(|&id| self.get_node(id).unwrap().name.clone())
+                .collect();
+
+            for i in 0..path.len() {
+                let node_id = path[i];
+                // Only modify internal nodes (leaves keep Taxon names)
+                // Note: All nodes on path except possibly the last one are ancestors, thus internal.
+                let is_leaf = (i == path.len() - 1) && new_root_is_leaf;
+
+                if !is_leaf {
+                    let new_name = if i < path.len() - 1 {
+                        // Take from next node, UNLESS next node is a leaf (Taxon)
+                        let next_is_leaf = (i + 1 == path.len() - 1) && new_root_is_leaf;
+                        if next_is_leaf {
+                            None
+                        } else {
+                            names[i + 1].clone()
+                        }
+                    } else {
+                        // New root (internal): takes label from old root
+                        names[0].clone()
+                    };
+
+                    if let Some(node) = self.get_node_mut(node_id) {
+                        node.name = new_name;
+                    }
+                }
+            }
+        }
 
         // 2. Collect edge lengths along the path
         // path[i]'s length represents edge (path[i-1] -> path[i])
@@ -1161,6 +1212,163 @@ impl Tree {
     /// Serialize the tree to Graphviz DOT format.
     pub fn to_dot(&self) -> String {
         writer::write_dot(self)
+    }
+}
+
+impl Tree {
+    // #####################
+    // # TREE MANIPULATION #
+    // #####################
+
+    /// Insert a node in the middle of the desired node and its parent.
+    /// Returns the new parent node ID.
+    pub fn insert_parent(&mut self, id: NodeId) -> Result<NodeId, String> {
+        let node = self.get_node(id).ok_or(format!("Node {} not found", id))?;
+        let parent = node.parent.ok_or("Node has no parent")?;
+        let length = node.length;
+        let new_length = length.map(|l| l / 2.0);
+
+        let new_node = self.add_node();
+
+        // Link parent -> new_node
+        self.add_child(parent, new_node)?;
+        if let Some(n) = self.get_node_mut(new_node) {
+            n.length = new_length;
+        }
+
+        // Unlink parent -> id
+        if let Some(p_node) = self.get_node_mut(parent) {
+            p_node.children.retain(|&c| c != id);
+        }
+        // Update id parent
+        if let Some(node) = self.get_node_mut(id) {
+            node.parent = None;
+        }
+
+        // Link new_node -> id
+        self.add_child(new_node, id)?;
+        if let Some(node) = self.get_node_mut(id) {
+            node.length = new_length;
+        }
+
+        Ok(new_node)
+    }
+
+    /// Swap parent-child link of a node.
+    /// This reverses the edge between the node and its parent.
+    pub fn swap_parent(
+        &mut self,
+        id: NodeId,
+        _prev_edge: Option<f64>,
+    ) -> Result<Option<f64>, String> {
+        let node = self.get_node(id).ok_or(format!("Node {} not found", id))?;
+        let parent = node.parent.ok_or("Node has no parent")?;
+
+        // Swap lengths
+        let child_len = node.length;
+        let parent_len = self.get_node(parent).ok_or("Parent not found")?.length;
+
+        if let Some(p_node) = self.get_node_mut(parent) {
+            p_node.length = child_len;
+        }
+        if let Some(node) = self.get_node_mut(id) {
+            node.length = parent_len;
+        }
+
+        // Unlink parent -> id
+        if let Some(p_node) = self.get_node_mut(parent) {
+            p_node.children.retain(|&c| c != id);
+        }
+        // Unlink id -> parent
+        if let Some(node) = self.get_node_mut(id) {
+            node.parent = None;
+        }
+
+        // Link id -> parent (parent becomes child)
+        // We must clear parent's parent pointer to satisfy add_child check (as parent is "moving down")
+        if let Some(p_node) = self.get_node_mut(parent) {
+            p_node.parent = None;
+        }
+
+        self.add_child(id, parent)?;
+
+        Ok(None)
+    }
+
+    /// Insert a new parent node for a pair of nodes (LCA-based).
+    /// Returns the new parent node ID.
+    pub fn insert_parent_pair(&mut self, id1: NodeId, id2: NodeId) -> Result<NodeId, String> {
+        let old = self.get_common_ancestor(&id1, &id2)?;
+
+        // Get original edge lengths
+        let edge1 = self.get_node(id1).ok_or("Node 1 not found")?.length;
+        let edge2 = self.get_node(id2).ok_or("Node 2 not found")?.length;
+
+        // New node with parent (old) has no edge length
+        let new = self.add_node();
+        self.add_child(old, new)?;
+
+        // Move children to new node
+        // 1. Unlink from their current parents
+        let p1 = self.get_node(id1).and_then(|n| n.parent);
+        if let Some(p) = p1 {
+            if let Some(p_node) = self.get_node_mut(p) {
+                p_node.children.retain(|&c| c != id1);
+            }
+        }
+        
+        let p2 = self.get_node(id2).and_then(|n| n.parent);
+        if let Some(p) = p2 {
+            if let Some(p_node) = self.get_node_mut(p) {
+                p_node.children.retain(|&c| c != id2);
+            }
+        }
+
+        if let Some(node) = self.get_node_mut(id1) {
+            node.parent = None;
+        }
+        if let Some(node) = self.get_node_mut(id2) {
+            node.parent = None;
+        }
+
+        // 2. Link to new
+        self.add_child(new, id1)?;
+        if let Some(node) = self.get_node_mut(id1) {
+            node.length = edge1;
+        }
+
+        self.add_child(new, id2)?;
+        if let Some(node) = self.get_node_mut(id2) {
+            node.length = edge2;
+        }
+
+        Ok(new)
+    }
+
+    /// Remove nodes that have a parent and exactly one child (degree 2 nodes).
+    /// This is often used after rerooting to clean up the tree.
+    pub fn remove_degree_two_nodes(&mut self) {
+        loop {
+            // Find a node that is:
+            // 1. Not deleted
+            // 2. Has a parent (not root)
+            // 3. Has exactly 1 child
+            let to_remove = if let Some(_root) = self.get_root() {
+                self.find_nodes(|n| {
+                    n.parent.is_some() && // Not root
+                    n.children.len() == 1 // Degree 2 (1 parent, 1 child)
+                }).first().cloned()
+            } else {
+                None
+            };
+            
+            if let Some(id) = to_remove {
+                // Ignore result, just proceed
+                let _ = self.collapse_node(id);
+            } else {
+                break;
+            }
+        }
     }
 }
 
