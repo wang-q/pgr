@@ -181,7 +181,11 @@ fn to_forest_recursive(tree: &Tree, id: NodeId, height: f64) -> String {
 
     if children.is_empty() {
         let indention = indent.repeat(depth);
-        format!("{}[{}]\n", indention, to_forest_node_props(tree, id, height))
+        format!(
+            "{}[{}]\n",
+            indention,
+            to_forest_node_props(tree, id, height)
+        )
     } else {
         let branch_set = children
             .iter()

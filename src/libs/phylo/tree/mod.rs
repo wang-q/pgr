@@ -94,11 +94,7 @@ impl Tree {
         ops::swap_parent(self, node_id, prev_edge)
     }
 
-    pub fn insert_parent_pair(
-        &mut self,
-        id1: NodeId,
-        id2: NodeId,
-    ) -> Result<NodeId, String> {
+    pub fn insert_parent_pair(&mut self, id1: NodeId, id2: NodeId) -> Result<NodeId, String> {
         ops::insert_parent_pair(self, id1, id2)
     }
 
@@ -110,7 +106,11 @@ impl Tree {
         ops::deroot(self)
     }
 
-    pub fn reroot_at(&mut self, new_root_id: NodeId, process_support_values: bool) -> Result<(), String> {
+    pub fn reroot_at(
+        &mut self,
+        new_root_id: NodeId,
+        process_support_values: bool,
+    ) -> Result<(), String> {
         ops::reroot_at(self, new_root_id, process_support_values)
     }
 

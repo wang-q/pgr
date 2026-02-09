@@ -6,10 +6,10 @@ use std::io::Read;
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("to-tex")
-        .about("Visualize Newick trees as LaTeX Forest")
+        .about("Convert Newick trees to a full LaTeX document")
         .after_help(
             r###"
-Visualize Newick trees as LaTeX Forest code.
+Convert Newick trees to a full LaTeX document.
 
 Notes:
 * Styles are stored in the comments of each node

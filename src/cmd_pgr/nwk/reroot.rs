@@ -1,7 +1,7 @@
 use clap::*;
+use pgr::libs::phylo::tree::Tree;
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
-use pgr::libs::phylo::tree::Tree;
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {

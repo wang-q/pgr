@@ -185,7 +185,10 @@ fn test_tree_queries() {
     assert_eq!(sub.get_node(sub_root).unwrap().name, None); // Old n1
     let children = &sub.get_node(sub_root).unwrap().children;
     assert_eq!(children.len(), 1);
-    assert_eq!(sub.get_node(children[0]).unwrap().name, Some("leaf3".to_string()));
+    assert_eq!(
+        sub.get_node(children[0]).unwrap().name,
+        Some("leaf3".to_string())
+    );
 
     // Leaves
     // Leaves: 2, 3

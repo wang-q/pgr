@@ -33,9 +33,9 @@ pub fn get_leaf_names(tree: &Tree, id: NodeId) -> Vec<Option<String>> {
 /// Note: Root can have degree 2 (bifurcating) or 3 (unrooted representation) or more.
 /// This checks if *children count* is 2 for all internal nodes.
 pub fn is_binary(tree: &Tree) -> bool {
-    tree.nodes.iter().all(|n| {
-        n.deleted || n.children.is_empty() || n.children.len() == 2
-    })
+    tree.nodes
+        .iter()
+        .all(|n| n.deleted || n.children.is_empty() || n.children.len() == 2)
 }
 
 /// Get bipartitions (splits) induced by the tree.
@@ -51,11 +51,11 @@ pub fn get_partitions(tree: &Tree) -> HashSet<std::collections::BTreeSet<String>
     // DFS to get leaves under each node
     // Using explicit stack for postorder simulation to build sets bottom-up?
     // Or just simple recursion.
-    
+
     fn collect_leaves(
-        tree: &Tree, 
-        id: NodeId, 
-        partitions: &mut HashSet<std::collections::BTreeSet<String>>
+        tree: &Tree,
+        id: NodeId,
+        partitions: &mut HashSet<std::collections::BTreeSet<String>>,
     ) -> std::collections::BTreeSet<String> {
         let node = tree.get_node(id).unwrap();
         if node.children.is_empty() {
@@ -70,7 +70,8 @@ pub fn get_partitions(tree: &Tree) -> HashSet<std::collections::BTreeSet<String>
         for &child in &node.children {
             let child_leaves = collect_leaves(tree, child, partitions);
             // Add non-trivial partitions (child edge split)
-            if !child_leaves.is_empty() { // && child_leaves.len() < total_leaves (handled by caller context usually)
+            if !child_leaves.is_empty() {
+                // && child_leaves.len() < total_leaves (handled by caller context usually)
                 partitions.insert(child_leaves.clone());
                 current_leaves.extend(child_leaves);
             }
@@ -82,13 +83,13 @@ pub fn get_partitions(tree: &Tree) -> HashSet<std::collections::BTreeSet<String>
     if !root_leaves.is_empty() {
         partitions.insert(root_leaves);
     }
-    
+
     // Partitions usually imply the split of ALL leaves into (A, B).
     // The set of leaves under a node `S` defines split `{S, All \ S}`.
     // We store `S`. When comparing, we need to handle that `S` and `All \ S` are same split.
     // For RF distance, usually we normalize by storing the smaller set, or ensure rooted trees match.
     // Here we just return the sets of leaves for each branch.
-    
+
     // Filter out trivial partitions (size 0 or size 1 or size ALL) if desired?
     // Usually RF distance excludes trivial splits (leaf edges).
     // partitions.retain(|s| s.len() > 1 && s.len() < all_leaves.len());
@@ -112,7 +113,7 @@ pub fn diameter(tree: &Tree, weighted: bool) -> f64 {
     // 1. Find furthest node from Root (A)
     // 2. Find furthest node from A (B)
     // Dist(A, B) is diameter.
-    
+
     let root = match tree.get_root() {
         Some(r) => r,
         None => return 0.0,
@@ -124,7 +125,7 @@ pub fn diameter(tree: &Tree, weighted: bool) -> f64 {
         let mut furthest_node = start;
         let mut visited = HashMap::new();
         let mut queue = std::collections::VecDeque::new();
-        
+
         visited.insert(start, 0.0);
         queue.push_back(start);
 
@@ -158,7 +159,7 @@ pub fn diameter(tree: &Tree, weighted: bool) -> f64 {
                     } else {
                         1.0
                     };
-                    
+
                     visited.insert(v, d + weight);
                     queue.push_back(v);
                 }
@@ -176,13 +177,7 @@ pub fn diameter(tree: &Tree, weighted: bool) -> f64 {
 pub fn get_names(tree: &Tree) -> Vec<String> {
     tree.nodes
         .iter()
-        .filter_map(|n| {
-            if !n.deleted {
-                n.name.clone()
-            } else {
-                None
-            }
-        })
+        .filter_map(|n| if !n.deleted { n.name.clone() } else { None })
         .collect()
 }
 
@@ -220,6 +215,11 @@ pub fn get_node_with_longest_edge(tree: &Tree) -> Option<NodeId> {
     tree.nodes
         .iter()
         .filter(|n| !n.deleted && n.length.is_some())
-        .max_by(|a, b| a.length.unwrap_or(0.0).partial_cmp(&b.length.unwrap_or(0.0)).unwrap())
+        .max_by(|a, b| {
+            a.length
+                .unwrap_or(0.0)
+                .partial_cmp(&b.length.unwrap_or(0.0))
+                .unwrap()
+        })
         .map(|n| n.id)
 }

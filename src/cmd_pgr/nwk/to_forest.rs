@@ -6,10 +6,10 @@ use std::io::Write;
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("to-forest")
-        .about("Convert Newick trees to LaTeX Forest format")
+        .about("Convert Newick trees to raw LaTeX Forest code")
         .after_help(
             r###"
-Convert Newick trees to LaTeX Forest format for visualization.
+Convert Newick trees to raw LaTeX Forest code.
 
 This command is designed for manually modifying the generated Forest code.
 
