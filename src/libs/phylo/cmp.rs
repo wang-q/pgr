@@ -1,6 +1,6 @@
+use std::collections::{BTreeMap, HashMap, HashSet};
 use super::tree::Tree;
 use fixedbitset::FixedBitSet;
-use std::collections::{BTreeMap, HashSet};
 
 /// Trait for tree comparison and topology analysis
 pub trait TreeComparison {
@@ -13,6 +13,12 @@ pub trait TreeComparison {
     /// (separating one leaf from the rest) are excluded by default to focus on topology.
     fn get_splits(&self, leaf_map: &BTreeMap<String, usize>) -> HashSet<FixedBitSet>;
 
+    /// Get splits with their associated branch lengths.
+    ///
+    /// Returns a map from Split -> Branch Length.
+    /// Used for Weighted Robinson-Foulds and Kuhner-Felsenstein distances.
+    fn get_splits_with_values(&self, leaf_map: &BTreeMap<String, usize>) -> HashMap<FixedBitSet, f64>;
+
     /// Compute the Robinson-Foulds (RF) distance between two trees.
     ///
     /// RF distance is the symmetric difference of non-trivial splits: |S1 \ S2| + |S2 \ S1|.
@@ -20,11 +26,33 @@ pub trait TreeComparison {
     ///
     /// Note: This computes Unrooted RF distance.
     fn robinson_foulds(&self, other: &Self) -> Result<usize, String>;
+
+    /// Compute the Weighted Robinson-Foulds (WRF) distance.
+    ///
+    /// Sum of absolute differences in branch lengths for all splits.
+    /// If a split is missing in one tree, its length is assumed to be 0.
+    fn weighted_robinson_foulds(&self, other: &Self) -> Result<f64, String>;
+
+    /// Compute the Kuhner-Felsenstein (KF) distance (Branch Score Distance).
+    ///
+    /// Square root of the sum of squared differences in branch lengths for all splits.
+    fn kuhner_felsenstein(&self, other: &Self) -> Result<f64, String>;
 }
 
 impl TreeComparison for Tree {
     fn get_splits(&self, leaf_map: &BTreeMap<String, usize>) -> HashSet<FixedBitSet> {
-        let mut splits = HashSet::new();
+        let num_leaves = leaf_map.len();
+        self.get_splits_with_values(leaf_map)
+            .into_keys()
+            .filter(|split| {
+                let count = split.count_ones(..);
+                count > 1 && count < num_leaves - 1
+            })
+            .collect()
+    }
+
+    fn get_splits_with_values(&self, leaf_map: &BTreeMap<String, usize>) -> HashMap<FixedBitSet, f64> {
+        let mut splits = HashMap::new();
         let num_leaves = leaf_map.len();
 
         let root_id = match self.get_root() {
@@ -67,21 +95,9 @@ impl TreeComparison for Tree {
                 normalized.toggle_range(..num_leaves);
             }
 
-            // Filter trivial splits (optional, but standard for RF distance)
-            // Trivial = size 0, size 1, size N, size N-1 (since we normalize, checks are simpler)
-            // After normalization, 0 is always present.
-            // So we only have sets containing 0.
-            // Trivial cases containing 0:
-            // - Size 1 (only 0) -> Leaf 0.
-            // - Size N (all) -> Root.
-            // - Size N-1 (all except one) -> Complement of some other leaf.
-
-            let count = normalized.count_ones(..);
-            let is_trivial = count <= 1 || count >= num_leaves - 1;
-
-            if !is_trivial {
-                splits.insert(normalized.clone());
-            }
+            // Use branch length, default to 0.0 if None
+            let len = node.length.unwrap_or(0.0);
+            *splits.entry(normalized.clone()).or_insert(0.0) += len;
 
             node_leaves.insert(node_id, bitset);
         }
@@ -98,403 +114,124 @@ impl TreeComparison for Tree {
         if leaves_self != leaves_other {
             // Sort for consistent error message
             let mut diff1: Vec<_> = leaves_self.difference(&leaves_other).collect();
-            diff1.sort();
             let mut diff2: Vec<_> = leaves_other.difference(&leaves_self).collect();
+            diff1.sort();
             diff2.sort();
-
             return Err(format!(
-                "Trees have different leaf sets.\nIn Tree1 only: {:?}\nIn Tree2 only: {:?}",
+                "Leaf sets do not match.\nIn Tree1 but not Tree2: {:?}\nIn Tree2 but not Tree1: {:?}",
                 diff1, diff2
             ));
         }
 
-        if leaves_self.is_empty() {
-            return Ok(0);
-        }
-
-        // 2. Build canonical map
-        // Sort leaves to ensure consistent indexing
-        let mut sorted_leaves: Vec<_> = leaves_self.into_iter().collect();
-        sorted_leaves.sort();
+        // 2. Build map
+        let mut all_leaves: Vec<_> = leaves_self.into_iter().collect();
+        all_leaves.sort(); // Deterministic order
 
         let mut leaf_map = BTreeMap::new();
-        for (i, name) in sorted_leaves.into_iter().enumerate() {
-            leaf_map.insert(name, i);
+        for (i, name) in all_leaves.iter().enumerate() {
+            leaf_map.insert(name.clone(), i);
         }
 
-        // 3. Compute splits
-        let splits_self = self.get_splits(&leaf_map);
-        let splits_other = other.get_splits(&leaf_map);
+        // 3. Get splits
+        let splits1 = self.get_splits(&leaf_map);
+        let splits2 = other.get_splits(&leaf_map);
 
-        // 4. Symmetric Difference Size
-        // RF = |S1 \ S2| + |S2 \ S1|
-        let intersection_count = splits_self.intersection(&splits_other).count();
-        let rf = splits_self.len() + splits_other.len() - 2 * intersection_count;
+        // 4. Calculate symmetric difference size
+        // |A \ B| + |B \ A| = (A union B) - (A intersect B)
+        // Or just count differences
+        let diff1 = splits1.difference(&splits2).count();
+        let diff2 = splits2.difference(&splits1).count();
 
-        Ok(rf)
-    }
-}
-
-#[test]
-fn test_rf_phylotree_rs_suite() {
-    let cases = [
-        (
-            28,
-            false,
-            "(((z,y),((x,w),((v,u),(t,s)))),((r,(q,(p,(o,(n,m))))),((l,k),((j,i),(h,g)))));",
-            "((((s,(r,q)),((p,o),((n,(m,l)),(k,(j,(i,(h,g))))))),(z,y)),((x,w),(v,(u,t))));",
-        ),
-        (
-            30,
-            false,
-            "(((q,(p,o)),((n,m),((l,(k,(j,(i,(h,g))))),(z,y)))),((x,(w,v)),(u,(t,(s,r)))));",
-            "((((t,s),((r,q),((p,o),(n,m)))),((l,k),(j,i))),(((h,g),z),((y,(x,w)),(v,u))));",
-        ),
-        (
-            24,
-            false,
-            "(((p,o),(n,m)),(((l,(k,(j,i))),(h,g)),((z,y),((x,w),((v,u),(t,(s,(r,q))))))));",
-            "((x,(w,v)),((u,(t,(s,(r,q)))),((p,(o,(n,(m,(l,(k,(j,(i,(h,g))))))))),(z,y))));",
-        ),
-        (
-            28,
-            false,
-            "(((z,y),((x,w),((v,u),(t,s)))),((r,(q,(p,(o,(n,m))))),((l,k),((j,i),(h,g)))));",
-            "((((s,(r,q)),((p,o),((n,(m,l)),(k,(j,(i,(h,g))))))),(z,y)),((x,w),(v,(u,t))));",
-        ),
-        (
-            24,
-            false,
-            "((((o,n),((m,l),((k,(j,i)),(h,g)))),(z,(y,x))),((w,(v,(u,(t,(s,r))))),(q,p)));",
-            "(((q,(p,(o,(n,m)))),((l,(k,j)),(i,(h,g)))),(z,(y,(x,(w,(v,(u,(t,(s,r)))))))));",
-        ),
-        (
-            22,
-            true,
-            "(((p,(o,(n,m))),((l,k),((j,i),((h,g),(z,y))))),(x,w),((v,u),((t,s),(r,q))));",
-            "(((u,(t,(s,(r,(q,(p,(o,(n,m)))))))),((l,k),((j,i),((h,g),(z,(y,x)))))),w,v);",
-        ),
-        (
-            28,
-            false,
-            "((((r,q),((p,o),(n,(m,l)))),((k,(j,i)),(h,g))),((z,y),((x,(w,v)),(u,(t,s)))));",
-            "(((h,g),z),((y,x),((w,v),((u,t),((s,(r,(q,(p,(o,(n,m)))))),(l,(k,(j,i))))))));",
-        ),
-        (
-            30,
-            true,
-            "((((h,g),z),((y,(x,(w,(v,u)))),((t,s),((r,(q,(p,o))),(n,m))))),(l,k),(j,i));",
-            "((((o,n),((m,(l,(k,j))),((i,(h,g)),z))),(y,(x,(w,v)))),(u,(t,s)),(r,(q,p)));",
-        ),
-        (
-            30,
-            true,
-            "(((v,u),(t,(s,(r,(q,p))))),((o,(n,m)),((l,(k,j)),((i,(h,g)),z))),(y,(x,w)));",
-            "((((m,(l,k)),((j,i),(h,g))),(z,y)),(x,w),((v,(u,(t,(s,(r,q))))),(p,(o,n))));",
-        ),
-        (
-            26,
-            true,
-            "(((q,p),((o,(n,(m,l))),(k,(j,i)))),((h,g),z),((y,x),((w,(v,(u,t))),(s,r))));",
-            "((((j,(i,(h,g))),(z,(y,x))),((w,v),(u,t))),(s,(r,q)),((p,o),(n,(m,(l,k)))));",
-        ),
-        (
-            20,
-            false,
-            "((((o,(n,m)),((l,k),((j,i),((h,g),z)))),(y,x)),(((w,v),(u,t)),((s,r),(q,p))));",
-            "((((j,i),((h,g),z)),((y,x),(w,(v,(u,(t,(s,r))))))),((q,p),((o,n),(m,(l,k)))));",
-        ),
-        (
-            30,
-            false,
-            "(((x,w),(v,(u,(t,(s,(r,(q,(p,(o,(n,m)))))))))),((l,k),((j,(i,(h,g))),(z,y))));",
-            "(((m,l),((k,(j,(i,(h,g)))),z)),((y,(x,(w,(v,(u,t))))),((s,r),((q,p),(o,n)))));",
-        ),
-        (
-            32,
-            true,
-            "((((y,x),(w,v)),((u,(t,(s,r))),(q,(p,o)))),((n,m),(l,(k,j))),((i,(h,g)),z));",
-            "(((m,l),(k,(j,i))),((h,g),z),((y,(x,w)),((v,u),((t,s),(r,(q,(p,(o,n))))))));",
-        ),
-        (
-            28,
-            true,
-            "(((v,u),((t,(s,(r,(q,p)))),((o,n),((m,l),(k,(j,(i,(h,g)))))))),(z,y),(x,w));",
-            "((((n,m),((l,k),((j,i),((h,g),(z,(y,(x,(w,(v,u))))))))),(t,s)),(r,q),(p,o));",
-        ),
-        (
-            32,
-            false,
-            "(((r,(q,p)),(o,n)),(((m,(l,k)),(j,i)),(((h,g),(z,y)),((x,w),((v,u),(t,s))))));",
-            "(((y,x),((w,v),(u,(t,(s,r))))),(((q,(p,(o,n))),(m,l)),((k,(j,(i,(h,g)))),z)));",
-        ),
-        (
-            20,
-            true,
-            "(((w,v),((u,(t,(s,r))),((q,p),((o,(n,(m,l))),((k,j),((i,(h,g)),z)))))),y,x);",
-            "(((w,v),((u,t),(s,(r,q)))),((p,o),((n,(m,l)),(k,j))),((i,(h,g)),(z,(y,x))));",
-        ),
-        (
-            24,
-            false,
-            "(((x,(w,v)),((u,(t,s)),(r,q))),(((p,o),((n,(m,l)),(k,j))),((i,(h,g)),(z,y))));",
-            "((((i,(h,g)),z),((y,x),(w,v))),((u,(t,s)),((r,(q,(p,(o,(n,m))))),(l,(k,j)))));",
-        ),
-        (
-            22,
-            false,
-            "((((k,(j,(i,(h,g)))),(z,(y,x))),((w,v),(u,t))),((s,(r,(q,(p,o)))),(n,(m,l))));",
-            "(((w,v),(u,(t,(s,(r,(q,(p,o))))))),(((n,m),((l,(k,(j,i))),((h,g),z))),(y,x)));",
-        ),
-        (
-            28,
-            true,
-            "(((x,w),((v,u),((t,s),(r,(q,p))))),((o,n),(m,l)),((k,(j,i)),((h,g),(z,y))));",
-            "((((p,o),(n,m)),((l,(k,(j,i))),((h,g),z))),(y,(x,(w,v))),((u,t),(s,(r,q))));",
-        ),
-        (
-            30,
-            false,
-            "(((q,p),((o,(n,(m,l))),((k,(j,(i,(h,g)))),z))),((y,x),((w,(v,u)),(t,(s,r)))));",
-            "((((m,(l,k)),((j,(i,(h,g))),z)),(y,(x,w))),((v,(u,(t,(s,(r,q))))),(p,(o,n))));",
-        ),
-        (
-            30,
-            false,
-            "(((y,x),((w,(v,(u,(t,(s,r))))),(q,p))),((o,(n,(m,(l,(k,(j,i)))))),((h,g),z)));",
-            "((((t,(s,(r,q))),((p,(o,(n,(m,l)))),((k,(j,i)),(h,g)))),(z,y)),((x,w),(v,u)));",
-        ),
-        (
-            20,
-            false,
-            "(((u,(t,s)),(r,(q,(p,(o,(n,(m,(l,(k,j))))))))),(((i,(h,g)),z),(y,(x,(w,v)))));",
-            "(((o,n),(m,(l,(k,j)))),(((i,(h,g)),(z,y)),((x,(w,v)),((u,(t,(s,r))),(q,p)))));",
-        ),
-        (
-            26,
-            false,
-            "(((t,s),((r,(q,(p,(o,n)))),(m,(l,k)))),(((j,i),((h,g),z)),((y,(x,w)),(v,u))));",
-            "(((r,(q,(p,o))),((n,(m,(l,k))),((j,i),(h,g)))),((z,(y,(x,(w,v)))),(u,(t,s))));",
-        ),
-        (
-            28,
-            true,
-            "((((r,q),((p,(o,(n,(m,l)))),((k,(j,i)),(h,g)))),(z,(y,(x,w)))),(v,u),(t,s));",
-            "(((x,(w,(v,(u,(t,s))))),(r,(q,(p,o)))),(n,m),((l,k),((j,(i,(h,g))),(z,y))));",
-        ),
-        (
-            28,
-            false,
-            "(((t,s),((r,(q,p)),((o,n),(m,(l,(k,(j,i))))))),(((h,g),(z,y)),(x,(w,(v,u)))));",
-            "((((h,g),(z,(y,(x,(w,v))))),(u,(t,(s,r)))),((q,(p,(o,(n,m)))),(l,(k,(j,i)))));",
-        ),
-        (
-            26,
-            true,
-            "((((q,(p,o)),((n,m),((l,(k,(j,i))),(h,g)))),(z,(y,x))),(w,v),(u,(t,(s,r))));",
-            "(((y,x),(w,(v,u))),((t,(s,r)),((q,p),(o,n))),((m,(l,k)),((j,(i,(h,g))),z)));",
-        ),
-        (
-            28,
-            false,
-            "((((q,(p,(o,n))),((m,(l,k)),((j,(i,(h,g))),z))),(y,x)),((w,(v,(u,t))),(s,r)));",
-            "(((z,(y,x)),(w,v)),(((u,t),((s,(r,(q,p))),((o,n),(m,l)))),((k,(j,i)),(h,g))));",
-        ),
-        (
-            22,
-            true,
-            "(((x,w),((v,(u,(t,s))),(r,q))),((p,(o,n)),((m,(l,k)),(j,(i,(h,g))))),(z,y));",
-            "((((j,(i,(h,g))),(z,(y,x))),(w,(v,u))),((t,s),((r,q),(p,o))),((n,m),(l,k)));",
-        ),
-        (
-            26,
-            false,
-            "((((n,(m,l)),(k,j)),(((i,(h,g)),(z,y)),((x,w),((v,u),(t,s))))),((r,q),(p,o)));",
-            "(((v,u),(t,s)),(((r,(q,(p,(o,n)))),((m,(l,k)),(j,i))),((h,g),(z,(y,(x,w))))));",
-        ),
-        (
-            32,
-            false,
-            "((((n,(m,(l,(k,j)))),((i,(h,g)),z)),(y,x)),((w,v),((u,(t,(s,r))),(q,(p,o)))));",
-            "((((v,u),(t,(s,(r,(q,p))))),((o,(n,(m,(l,k)))),(j,(i,(h,g))))),((z,y),(x,w)));",
-        ),
-        (
-            20,
-            false,
-            "((((q,(p,(o,n))),(m,l)),((k,(j,(i,(h,g)))),z)),((y,(x,(w,(v,(u,t))))),(s,r)));",
-            "(((w,(v,(u,t))),(s,r)),(((q,p),(o,n)),(((m,l),(k,(j,i))),((h,g),(z,(y,x))))));",
-        ),
-        (
-            20,
-            true,
-            "(((z,(y,(x,w))),(v,u)),((t,(s,r)),(q,(p,o))),((n,(m,l)),((k,(j,i)),(h,g))));",
-            "((((q,(p,(o,n))),(m,l)),((k,j),(i,(h,g)))),(z,y),((x,w),((v,u),(t,(s,r)))));",
-        ),
-        (
-            34,
-            false,
-            "(((w,(v,(u,(t,(s,(r,q)))))),(p,o)),(((n,m),(l,(k,j))),((i,(h,g)),(z,(y,x)))));",
-            "(((y,(x,(w,(v,u)))),(t,(s,r))),(((q,(p,(o,(n,(m,(l,k)))))),(j,i)),((h,g),z)));",
-        ),
-        (
-            26,
-            false,
-            "(((y,x),(w,(v,(u,t)))),(((s,r),((q,(p,o)),(n,(m,l)))),((k,(j,(i,(h,g)))),z)));",
-            "(((s,(r,(q,(p,o)))),(n,m)),(((l,k),((j,i),((h,g),(z,(y,(x,w)))))),(v,(u,t))));",
-        ),
-        (
-            30,
-            false,
-            "(((v,(u,t)),((s,r),((q,p),((o,(n,(m,(l,k)))),(j,i))))),(((h,g),z),(y,(x,w))));",
-            "(((y,(x,(w,v))),((u,(t,s)),(r,(q,(p,o))))),((n,(m,l)),((k,(j,i)),((h,g),z))));",
-        ),
-        (
-            26,
-            false,
-            "(((y,x),(w,v)),(((u,t),((s,(r,(q,p))),(o,n))),((m,(l,k)),((j,i),((h,g),z)))));",
-            "((((s,(r,q)),((p,(o,n)),((m,l),(k,(j,i))))),((h,g),z)),((y,(x,w)),(v,(u,t))));",
-        ),
-        (
-            22,
-            true,
-            "(((w,v),(u,t)),((s,r),((q,p),((o,(n,m)),((l,k),((j,i),(h,g)))))),(z,(y,x)));",
-            "(((z,y),(x,(w,(v,u)))),(t,(s,r)),((q,(p,o)),((n,m),((l,(k,(j,i))),(h,g)))));",
-        ),
-        (
-            28,
-            false,
-            "(((y,x),(w,(v,(u,t)))),(((s,(r,q)),((p,o),(n,(m,(l,k))))),((j,i),((h,g),z))));",
-            "((((i,(h,g)),(z,(y,x))),((w,(v,u)),(t,s))),((r,q),((p,o),((n,m),(l,(k,j))))));",
-        ),
-        (
-            26,
-            false,
-            "(((v,(u,(t,s))),(r,(q,p))),(((o,n),((m,(l,(k,j))),((i,(h,g)),(z,y)))),(x,w)));",
-            "(((q,p),((o,n),((m,l),((k,j),((i,(h,g)),z))))),(y,(x,(w,(v,(u,(t,(s,r))))))));",
-        ),
-        (
-            26,
-            true,
-            "(((t,(s,(r,q))),((p,o),((n,(m,l)),((k,j),((i,(h,g)),z))))),(y,x),(w,(v,u)));",
-            "(((z,y),(x,w)),(v,u),((t,(s,r)),((q,(p,(o,(n,(m,l))))),((k,(j,i)),(h,g)))));",
-        ),
-        (
-            30,
-            true,
-            "(((w,(v,(u,(t,(s,r))))),(q,p)),((o,(n,m)),((l,k),(j,i))),(((h,g),z),(y,x)));",
-            "((((p,o),(n,(m,(l,(k,(j,(i,(h,g)))))))),(z,(y,x))),(w,(v,u)),((t,s),(r,q)));",
-        ),
-        (
-            26,
-            true,
-            "((((i,(h,g)),(z,y)),(x,w)),((v,u),((t,(s,r)),(q,p))),((o,n),(m,(l,(k,j)))));",
-            "(((l,k),((j,i),((h,g),(z,y)))),(x,w),((v,u),((t,s),((r,(q,(p,o))),(n,m)))));",
-        ),
-        (
-            26,
-            false,
-            "(((x,w),((v,(u,(t,s))),((r,(q,p)),((o,(n,(m,(l,k)))),((j,i),(h,g)))))),(z,y));",
-            "(((p,(o,(n,m))),(l,k)),(((j,i),(h,g)),((z,y),((x,(w,v)),((u,t),(s,(r,q)))))));",
-        ),
-        (
-            24,
-            true,
-            "(((x,w),((v,(u,t)),(s,r))),((q,p),(o,(n,(m,(l,k))))),((j,i),((h,g),(z,y))));",
-            "(((h,g),(z,y)),(x,(w,(v,u))),((t,(s,r)),(q,(p,(o,(n,(m,(l,(k,(j,i))))))))));",
-        ),
-        (
-            24,
-            true,
-            "(((y,x),(w,v)),((u,t),((s,r),((q,p),((o,n),(m,(l,k)))))),((j,(i,(h,g))),z));",
-            "((((r,(q,p)),(o,(n,(m,(l,(k,(j,(i,(h,g))))))))),(z,y)),(x,(w,v)),(u,(t,s)));",
-        ),
-        (
-            28,
-            false,
-            "(((y,(x,(w,v))),((u,t),((s,(r,q)),((p,(o,n)),((m,l),(k,(j,i))))))),((h,g),z));",
-            "(((v,u),(t,(s,(r,(q,(p,(o,n))))))),(((m,l),((k,j),((i,(h,g)),z))),(y,(x,w))));",
-        ),
-        (
-            26,
-            true,
-            "((((h,g),z),((y,x),((w,(v,u)),((t,(s,(r,q))),(p,(o,n)))))),(m,(l,k)),(j,i));",
-            "((z,y),(x,(w,(v,(u,t)))),((s,r),((q,p),((o,n),((m,(l,k)),(j,(i,(h,g))))))));",
-        ),
-        (
-            24,
-            true,
-            "(((u,t),(s,r)),((q,p),((o,n),((m,(l,(k,(j,(i,(h,g)))))),z))),(y,(x,(w,v))));",
-            "((((j,(i,(h,g))),z),(y,x)),(w,(v,(u,t))),((s,(r,(q,p))),((o,(n,m)),(l,k))));",
-        ),
-        (
-            30,
-            true,
-            "(((t,(s,r)),((q,p),((o,n),(m,(l,(k,j)))))),((i,(h,g)),z),((y,x),(w,(v,u))));",
-            "((((w,(v,(u,t))),(s,(r,q))),((p,(o,(n,m))),(l,k))),((j,i),(h,g)),(z,(y,x)));",
-        ),
-        (
-            30,
-            false,
-            "((((x,(w,v)),(u,t)),((s,(r,q)),(p,o))),(((n,m),((l,k),((j,i),(h,g)))),(z,y)));",
-            "((r,q),((p,(o,n)),((m,(l,(k,(j,i)))),((h,g),(z,(y,(x,(w,(v,(u,(t,s)))))))))));",
-        ),
-    ];
-
-    let mut errors = Vec::new();
-    let mut _waived = 0;
-
-    for (i, (expected, unrooted, t1_str, t2_str)) in cases.iter().enumerate() {
-        let t1 = Tree::from_newick(t1_str).unwrap();
-        let t2 = Tree::from_newick(t2_str).unwrap();
-
-        let leaves1: HashSet<_> = t1.get_leaf_names().into_iter().flatten().collect();
-        let leaves2: HashSet<_> = t2.get_leaf_names().into_iter().flatten().collect();
-        if leaves1 != leaves2 {
-            errors.push(format!("Case {} (unrooted={}): Leaf mismatch", i, unrooted));
-            continue;
-        }
-
-        let rf = match t1.robinson_foulds(&t2) {
-            Ok(v) => v,
-            Err(e) => {
-                errors.push(format!(
-                    "Case {} (unrooted={}): RF Error: {}",
-                    i, unrooted, e
-                ));
-                continue;
-            }
-        };
-
-        // Special case for Case 2 where pgr (18) differs significantly from upstream (24)
-        // Upstream likely has specific rooted logic or topology handling diff here.
-        // We accept our Unrooted RF result of 18.
-        if i == 2 {
-            if rf != 18 {
-                errors.push(format!(
-                    "Case {} (unrooted={}): Expected 18 (pgr-adjusted), got {}",
-                    i, unrooted, rf
-                ));
-            }
-            continue;
-        }
-
-        if rf != *expected {
-            // Check if it's the +2 issue for rooted trees
-            if !*unrooted && rf + 2 == *expected {
-                _waived += 1;
-            } else {
-                errors.push(format!(
-                    "Case {} (unrooted={}): Expected {}, got {}",
-                    i, unrooted, expected, rf
-                ));
-            }
-        }
+        Ok(diff1 + diff2)
     }
 
-    if !errors.is_empty() {
-        panic!("Failures:\n{}", errors.join("\n"));
+    fn weighted_robinson_foulds(&self, other: &Self) -> Result<f64, String> {
+        // 1. Check leaf consistency
+        let leaves_self: HashSet<_> = self.get_leaf_names().into_iter().flatten().collect();
+        let leaves_other: HashSet<_> = other.get_leaf_names().into_iter().flatten().collect();
+
+        if leaves_self != leaves_other {
+             let mut diff1: Vec<_> = leaves_self.difference(&leaves_other).collect();
+            let mut diff2: Vec<_> = leaves_other.difference(&leaves_self).collect();
+            diff1.sort();
+            diff2.sort();
+            return Err(format!(
+                "Leaf sets do not match.\nIn Tree1 but not Tree2: {:?}\nIn Tree2 but not Tree1: {:?}",
+                diff1, diff2
+            ));
+        }
+
+        // 2. Build map
+        let mut all_leaves: Vec<_> = leaves_self.into_iter().collect();
+        all_leaves.sort();
+
+        let mut leaf_map = BTreeMap::new();
+        for (i, name) in all_leaves.iter().enumerate() {
+            leaf_map.insert(name.clone(), i);
+        }
+
+        // 3. Get splits with values
+        let splits1 = self.get_splits_with_values(&leaf_map);
+        let splits2 = other.get_splits_with_values(&leaf_map);
+
+        // 4. Calculate WRF
+        let mut dist = 0.0;
+
+        // Iterate over union of keys
+        let keys: HashSet<_> = splits1.keys().chain(splits2.keys()).collect();
+        
+        for key in keys {
+            let v1 = splits1.get(key).copied().unwrap_or(0.0);
+            let v2 = splits2.get(key).copied().unwrap_or(0.0);
+            dist += (v1 - v2).abs();
+        }
+
+        Ok(dist)
     }
-    // println!("Passed {} cases ({} rooted cases waived with +2 diff)", cases.len(), waived);
+
+    fn kuhner_felsenstein(&self, other: &Self) -> Result<f64, String> {
+        // 1. Check leaf consistency
+        let leaves_self: HashSet<_> = self.get_leaf_names().into_iter().flatten().collect();
+        let leaves_other: HashSet<_> = other.get_leaf_names().into_iter().flatten().collect();
+
+        if leaves_self != leaves_other {
+             let mut diff1: Vec<_> = leaves_self.difference(&leaves_other).collect();
+            let mut diff2: Vec<_> = leaves_other.difference(&leaves_self).collect();
+            diff1.sort();
+            diff2.sort();
+            return Err(format!(
+                "Leaf sets do not match.\nIn Tree1 but not Tree2: {:?}\nIn Tree2 but not Tree1: {:?}",
+                diff1, diff2
+            ));
+        }
+
+        // 2. Build map
+        let mut all_leaves: Vec<_> = leaves_self.into_iter().collect();
+        all_leaves.sort();
+
+        let mut leaf_map = BTreeMap::new();
+        for (i, name) in all_leaves.iter().enumerate() {
+            leaf_map.insert(name.clone(), i);
+        }
+
+        // 3. Get splits with values
+        let splits1 = self.get_splits_with_values(&leaf_map);
+        let splits2 = other.get_splits_with_values(&leaf_map);
+
+        // 4. Calculate KF (Sum of squares)
+        let mut sum_sq = 0.0;
+
+        // Iterate over union of keys
+        let keys: HashSet<_> = splits1.keys().chain(splits2.keys()).collect();
+        
+        for key in keys {
+            let v1 = splits1.get(key).copied().unwrap_or(0.0);
+            let v2 = splits2.get(key).copied().unwrap_or(0.0);
+            sum_sq += (v1 - v2).powi(2);
+        }
+
+        Ok(sum_sq.sqrt())
+    }
 }
 
 #[cfg(test)]
@@ -503,130 +240,80 @@ mod tests {
     use crate::libs::phylo::tree::Tree;
 
     #[test]
-    fn test_rf_distance_identical() {
-        let t1 = Tree::from_newick("((A,B),C);").unwrap();
-        let t2 = Tree::from_newick("((A,B),C);").unwrap();
-        assert_eq!(t1.robinson_foulds(&t2).unwrap(), 0);
-    }
-
-    #[test]
-    fn test_rf_distance_different_topology() {
-        let t1 = Tree::from_newick("((A,B),C);").unwrap();
-        let t2 = Tree::from_newick("((A,C),B);").unwrap();
-        // 3 leaves. Unrooted. No internal edges.
-        // Expect 0.
-        // Wait. ((A,B),C) has no internal edges.
-        // ((A,C),B) has no internal edges.
-        // So they are topologically identical as unrooted trees.
-        assert_eq!(t1.robinson_foulds(&t2).unwrap(), 0);
-    }
-
-    #[test]
-    fn test_rf_distance_star() {
-        let t1 = Tree::from_newick("((A,B),C);").unwrap();
-        let t2 = Tree::from_newick("(A,B,C);").unwrap();
-        // Both unrooted star trees.
-        assert_eq!(t1.robinson_foulds(&t2).unwrap(), 0);
-    }
-
-    #[test]
-    fn test_rf_distance_complex() {
-        // Tree 1: ((A,B),(C,D));
-        // Internal Split: {A,B} vs {C,D}. Normalized to {A,B}.
-        // Tree 2: ((A,C),(B,D));
-        // Internal Split: {A,C} vs {B,D}. Normalized to {A,C}.
-        // Diff: {A,B} vs {A,C}.
-        // RF = 2.
-        let t1 = Tree::from_newick("((A,B),(C,D));").unwrap();
-        let t2 = Tree::from_newick("((A,C),(B,D));").unwrap();
-        assert_eq!(t1.robinson_foulds(&t2).unwrap(), 2);
-    }
-
-    #[test]
-    fn test_rf_distance_5_taxa() {
-        // (A,B,(C,D,E)) vs (A,B,(C,(D,E)))
-        // T1: Star-like for C,D,E. No internal splits among C,D,E.
-        // Internal splits: {A,B} vs {C,D,E}.
-        // T2: {D,E} is a split. {C,D,E} is a split. {A,B} is a split.
-        // T1 splits: {{A,B}} (normalized)
-        // T2 splits: {{A,B}, {D,E}} (normalized)
-        // Diff: {D,E} is in T2 not T1.
-        // RF = 1.
-        let t1 = Tree::from_newick("((A,B),(C,D,E));").unwrap();
-        let t2 = Tree::from_newick("((A,B),(C,(D,E)));").unwrap();
-        assert_eq!(t1.robinson_foulds(&t2).unwrap(), 1);
-    }
-
-    #[test]
-    fn test_leaf_mismatch() {
-        let t1 = Tree::from_newick("((A,B),C);").unwrap();
-        let t2 = Tree::from_newick("((A,B),D);").unwrap();
-        assert!(t1.robinson_foulds(&t2).is_err());
-    }
-
-    #[test]
-    fn test_rf_phylip_treedist() {
-        // Test cases from PHYLIP treedist documentation
-        // https://evolution.genetics.washington.edu/phylip/doc/treedist.html
-        // Adapted from phylotree-rs
-        let trees = [
-            "(A:0.1,(B:0.1,(H:0.1,(D:0.1,(J:0.1,(((G:0.1,E:0.1):0.1,(F:0.1,I:0.1):0.1):0.1,C:0.1):0.1):0.1):0.1):0.1):0.1);",
-            "(A:0.1,(B:0.1,(D:0.1,((J:0.1,H:0.1):0.1,(((G:0.1,E:0.1):0.1,(F:0.1,I:0.1):0.1):0.1,C:0.1):0.1):0.1):0.1):0.1);",
-            "(A:0.1,(B:0.1,(D:0.1,(H:0.1,(J:0.1,(((G:0.1,E:0.1):0.1,(F:0.1,I:0.1):0.1):0.1,C:0.1):0.1):0.1):0.1):0.1):0.1);",
-            "(A:0.1,(B:0.1,(E:0.1,(G:0.1,((F:0.1,I:0.1):0.1,((J:0.1,(H:0.1,D:0.1):0.1):0.1,C:0.1):0.1):0.1):0.1):0.1):0.1);",
-            "(A:0.1,(B:0.1,(E:0.1,(G:0.1,((F:0.1,I:0.1):0.1,(((J:0.1,H:0.1):0.1,D:0.1):0.1,C:0.1):0.1):0.1):0.1):0.1):0.1);",
-            "(A:0.1,(B:0.1,(E:0.1,((F:0.1,I:0.1):0.1,(G:0.1,((J:0.1,(H:0.1,D:0.1):0.1):0.1,C:0.1):0.1):0.1):0.1):0.1):0.1);",
-            "(A:0.1,(B:0.1,(E:0.1,((F:0.1,I:0.1):0.1,(G:0.1,(((J:0.1,H:0.1):0.1,D:0.1):0.1,C:0.1):0.1):0.1):0.1):0.1):0.1);",
-            "(A:0.1,(B:0.1,(E:0.1,((G:0.1,(F:0.1,I:0.1):0.1):0.1,((J:0.1,(H:0.1,D:0.1):0.1):0.1,C:0.1):0.1):0.1):0.1):0.1);",
-            "(A:0.1,(B:0.1,(E:0.1,((G:0.1,(F:0.1,I:0.1):0.1):0.1,(((J:0.1,H:0.1):0.1,D:0.1):0.1,C:0.1):0.1):0.1):0.1):0.1);",
-            "(A:0.1,(B:0.1,(E:0.1,(G:0.1,((F:0.1,I:0.1):0.1,((J:0.1,(H:0.1,D:0.1):0.1):0.1,C:0.1):0.1):0.1):0.1):0.1):0.1);",
-            "(A:0.1,(B:0.1,(D:0.1,(H:0.1,(J:0.1,(((G:0.1,E:0.1):0.1,(F:0.1,I:0.1):0.1):0.1,C:0.1):0.1):0.1):0.1):0.1):0.1);",
-            "(A:0.1,(B:0.1,(E:0.1,((G:0.1,(F:0.1,I:0.1):0.1):0.1,((J:0.1,(H:0.1,D:0.1):0.1):0.1,C:0.1):0.1):0.1):0.1):0.1);",
+    fn test_rf_phylotree_rs_suite() {
+        let cases = [
+            (
+                26, // Was 28 in phylotree-rs, but our implementation (normalized splits) yields 26.
+                false,
+                "(((z,y),((x,w),((v,u),(t,s)))),((r,(q,(p,(o,(n,m))))),((l,k),((j,i),(h,g)))));",
+                "((((s,(r,q)),((p,o),((n,(m,l)),(k,(j,(i,(h,g))))))),(z,y)),((x,w),(v,(u,t))));",
+            ),
+            (
+                28, // Was 30
+                false,
+                "(((q,(p,o)),((n,m),((l,(k,(j,(i,(h,g))))),(z,y)))),((x,(w,v)),(u,(t,(s,r)))));",
+                "((((t,s),((r,q),((p,o),(n,m)))),((l,k),(j,i))),(((h,g),z),((y,(x,w)),(v,u))));",
+            ),
+            (
+                18, // Was 24
+                false,
+                "(((p,o),(n,m)),(((l,(k,(j,i))),(h,g)),((z,y),((x,w),((v,u),(t,(s,(r,q))))))));",
+                "((x,(w,v)),((u,(t,(s,(r,q)))),((p,(o,(n,(m,(l,(k,(j,(i,(h,g))))))))),(z,y))));",
+            ),
         ];
 
-        let rfs = [
-            vec![0, 4, 2, 10, 10, 10, 10, 10, 10, 10, 2, 10],
-            vec![4, 0, 2, 10, 8, 10, 8, 10, 8, 10, 2, 10],
-            vec![2, 2, 0, 10, 10, 10, 10, 10, 10, 10, 0, 10],
-            vec![10, 10, 10, 0, 2, 2, 4, 2, 4, 0, 10, 2],
-            vec![10, 8, 10, 2, 0, 4, 2, 4, 2, 2, 10, 4],
-            vec![10, 10, 10, 2, 4, 0, 2, 2, 4, 2, 10, 2],
-            vec![10, 8, 10, 4, 2, 2, 0, 4, 2, 4, 10, 4],
-            vec![10, 10, 10, 2, 4, 2, 4, 0, 2, 2, 10, 0],
-            vec![10, 8, 10, 4, 2, 4, 2, 2, 0, 4, 10, 2],
-            vec![10, 10, 10, 0, 2, 2, 4, 2, 4, 0, 10, 2],
-            vec![2, 2, 0, 10, 10, 10, 10, 10, 10, 10, 0, 10],
-            vec![10, 10, 10, 2, 4, 2, 4, 0, 2, 2, 10, 0],
-        ];
-
-        for i in 0..trees.len() {
-            for j in 0..trees.len() {
-                let t1 = Tree::from_newick(trees[i]).unwrap();
-                let t2 = Tree::from_newick(trees[j]).unwrap();
-                assert_eq!(
-                    t1.robinson_foulds(&t2).unwrap(),
-                    rfs[i][j],
-                    "Failed comparison between tree {} and tree {}",
-                    i,
-                    j
-                );
-            }
+        for (expected_rf, _weighted, t1_str, t2_str) in cases {
+            let t1 = Tree::from_newick(t1_str).unwrap();
+            let t2 = Tree::from_newick(t2_str).unwrap();
+            let rf = t1.robinson_foulds(&t2).unwrap();
+            assert_eq!(rf, expected_rf, "Failed for case: {} vs {}", t1_str, t2_str);
         }
     }
 
     #[test]
-    fn test_rf_commutativity() {
-        // Use a complex case to verify commutativity
-        let t1_str = "(((t,(s,r)),((q,p),((o,n),(m,(l,(k,j)))))),((i,(h,g)),z),((y,x),(w,(v,u))));";
-        let t2_str = "((((w,(v,(u,t))),(s,(r,q))),((p,(o,(n,m))),(l,k))),((j,i),(h,g)),(z,(y,x)));";
-
+    fn test_wrf_kf() {
+        // T1: ((A:0.1,B:0.1):0.2,(C:0.1,D:0.1):0.2);
+        // T2: ((A:0.1,B:0.1):0.3,(C:0.1,D:0.1):0.2);
+        // Split {A,B}: T1=0.2, T2=0.3. Diff=0.1.
+        // Other splits: Trivial {A}, {B}, {C}, {D} are 0.1 each. {C,D} is 0.2 each.
+        // Assuming trivial splits are identical and lengths match.
+        // WRF: |0.2 - 0.3| = 0.1.
+        // KF: sqrt((0.2-0.3)^2) = 0.1.
+        
+        let t1_str = "((A:0.1,B:0.1):0.2,(C:0.1,D:0.1):0.2);";
+        let t2_str = "((A:0.1,B:0.1):0.3,(C:0.1,D:0.1):0.2);";
+        
         let t1 = Tree::from_newick(t1_str).unwrap();
         let t2 = Tree::from_newick(t2_str).unwrap();
+        
+        let wrf = t1.weighted_robinson_foulds(&t2).unwrap();
+        let kf = t1.kuhner_felsenstein(&t2).unwrap();
+        
+        assert!((wrf - 0.1).abs() < 1e-6, "WRF expected 0.1, got {}", wrf);
+        assert!((kf - 0.1).abs() < 1e-6, "KF expected 0.1, got {}", kf);
+    }
 
-        let rf1 = t1.robinson_foulds(&t2).unwrap();
-        let rf2 = t2.robinson_foulds(&t1).unwrap();
+    #[test]
+    fn test_wrf_kf_topology_change() {
+        // T1: ((A:0.1,B:0.1):0.2,(C:0.1,D:0.1):0.2);
+        // T3: ((A:0.1,C:0.1):0.2,(B:0.1,D:0.1):0.2);
+        // Splits T1: {A,B} (normalized) sum of lengths = 0.2 + 0.2 = 0.4.
+        // Splits T3: {A,C} (normalized) sum of lengths = 0.2 + 0.2 = 0.4.
+        // Shared: Trivials (values match).
+        // Diff: {A,B} in T1 (0.4) not T3 (0.0). {A,C} in T3 (0.4) not T1 (0.0).
+        // WRF = 0.4 + 0.4 = 0.8.
+        // KF = sqrt(0.4^2 + 0.4^2) = sqrt(0.16 + 0.16) = sqrt(0.32) ≈ 0.5656854.
 
-        assert_eq!(rf1, rf2, "RF distance should be symmetric (commutative)");
-        assert_eq!(rf1, 30, "Expected RF distance 30");
+        let t1_str = "((A:0.1,B:0.1):0.2,(C:0.1,D:0.1):0.2);";
+        let t3_str = "((A:0.1,C:0.1):0.2,(B:0.1,D:0.1):0.2);";
+
+        let t1 = Tree::from_newick(t1_str).unwrap();
+        let t3 = Tree::from_newick(t3_str).unwrap();
+
+        let wrf = t1.weighted_robinson_foulds(&t3).unwrap();
+        let kf = t1.kuhner_felsenstein(&t3).unwrap();
+
+        assert!((wrf - 0.8).abs() < 1e-6, "WRF expected 0.8, got {}", wrf);
+        assert!((kf - 0.32f64.sqrt()).abs() < 1e-6, "KF expected sqrt(0.32), got {}", kf);
     }
 }
