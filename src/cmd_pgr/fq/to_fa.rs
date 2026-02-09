@@ -47,7 +47,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     // Args
     //----------------------------
-    let writer = intspan::writer(args.get_one::<String>("outfile").unwrap());
+    let writer = pgr::writer(args.get_one::<String>("outfile").unwrap());
     let mut fa_out = noodles_fasta::io::writer::Builder::default()
         .set_line_base_count(usize::MAX)
         .build_from_writer(writer);
@@ -56,7 +56,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // Ops
     //----------------------------
     for infile in args.get_many::<String>("infiles").unwrap() {
-        let reader = intspan::reader(infile);
+        let reader = pgr::reader(infile);
         let mut seq_in = noodles_fastq::io::Reader::new(reader);
 
         for result in seq_in.records() {
