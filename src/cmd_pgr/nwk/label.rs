@@ -1,6 +1,6 @@
 use super::utils as nwr;
 use clap::*;
-use pgr::libs::phylo::reader;
+use pgr::libs::phylo::tree::Tree;
 use std::collections::BTreeSet;
 
 // Create clap subcommand arguments
@@ -147,7 +147,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut writer = intspan::writer(args.get_one::<String>("outfile").unwrap());
 
     let infile = args.get_one::<String>("infile").unwrap();
-    let trees = reader::from_file(infile)?;
+    let trees = Tree::from_file(infile)?;
     if trees.is_empty() {
         return Ok(());
     }

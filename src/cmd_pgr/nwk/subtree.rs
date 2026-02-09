@@ -1,7 +1,6 @@
 use super::utils as nwr;
 use clap::*;
-use pgr::libs::phylo::reader;
-use pgr::libs::phylo::writer;
+use pgr::libs::phylo::tree::Tree;
 use std::collections::BTreeSet;
 
 // Create clap subcommand arguments
@@ -125,7 +124,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let is_condense = condense_name.is_some();
 
     let infile = args.get_one::<String>("infile").unwrap();
-    let trees = reader::from_file(infile)?;
+    let trees = Tree::from_file(infile)?;
 
     if trees.is_empty() {
         return Ok(());
@@ -181,7 +180,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
             if ids != descendants_named {
                 if is_condense {
-                    let out_string = writer::write_newick(tree);
+                    let out_string = tree.to_newick();
                     writer.write_fmt(format_args!("{}\n", out_string)).unwrap();
                 }
                 continue;
@@ -230,7 +229,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 tree.add_child(parent_id, new_node_id).unwrap();
 
                 // 5. Output full tree
-                let out_string = writer::write_newick(tree);
+                let out_string = tree.to_newick();
                 writer.write_fmt(format_args!("{}\n", out_string)).unwrap();
             } else {
                 // Subtree root is tree root.
@@ -257,12 +256,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                     node.properties = Some(props);
                 }
 
-                let out_string = writer::write_newick(tree);
+                let out_string = tree.to_newick();
                 writer.write_fmt(format_args!("{}\n", out_string)).unwrap();
             }
         } else {
             // Extract subtree
-            let out_string = writer::write_subtree(tree, sub_root_id, "");
+            let out_string = tree.to_newick_subtree(sub_root_id);
             writer.write_fmt(format_args!("{}\n", out_string)).unwrap();
         }
     }

@@ -1,5 +1,5 @@
 use clap::*;
-use pgr::libs::phylo::reader;
+use pgr::libs::phylo::tree::Tree;
 use std::collections::BTreeMap;
 use std::io::Write;
 
@@ -118,7 +118,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         }
     }
 
-    let mut trees = reader::from_file(infile)?;
+    let mut trees = Tree::from_file(infile)?;
 
     for tree in &mut trees {
         let id_of = tree.get_name_id();

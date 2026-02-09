@@ -1,5 +1,5 @@
 use clap::*;
-use pgr::libs::phylo::reader;
+use pgr::libs::phylo::tree::Tree;
 use std::io::Write;
 
 // Create clap subcommand arguments
@@ -83,7 +83,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let skip_leaf = args.get_flag("Leaf");
 
     let infile = args.get_one::<String>("infile").unwrap();
-    let trees = reader::from_file(infile)?;
+    let trees = Tree::from_file(infile)?;
 
     for mut tree in trees {
         if let Some(root) = tree.get_root() {

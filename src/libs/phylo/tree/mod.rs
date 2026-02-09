@@ -228,8 +228,16 @@ impl Tree {
 
     // --- Delegation to io ---
 
+    pub fn from_file(infile: &str) -> anyhow::Result<Vec<Tree>> {
+        io::from_file(infile)
+    }
+
     pub fn to_newick(&self) -> String {
         io::to_newick(self)
+    }
+
+    pub fn to_newick_subtree(&self, root: NodeId) -> String {
+        io::to_newick_subtree(self, root, "")
     }
 
     pub fn to_newick_with_format(&self, indent: &str) -> String {

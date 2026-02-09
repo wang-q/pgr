@@ -1,6 +1,6 @@
 use super::utils as nwr;
 use clap::*;
-use pgr::libs::phylo::reader;
+use pgr::libs::phylo::tree::Tree;
 use std::collections::HashSet;
 use std::io::Write;
 
@@ -92,8 +92,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     let mut writer = intspan::writer(args.get_one::<String>("outfile").unwrap());
     let infile = args.get_one::<String>("infile").unwrap();
-
-    let trees = reader::from_file(infile)?;
+    let trees = Tree::from_file(infile)?;
 
     for mut tree in trees {
         //----------------------------

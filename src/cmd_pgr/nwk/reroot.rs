@@ -1,6 +1,7 @@
 use clap::*;
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
+use pgr::libs::phylo::tree::Tree;
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
@@ -105,7 +106,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let lax = args.get_flag("lax");
 
     let infile = args.get_one::<String>("infile").unwrap();
-    let mut trees = pgr::libs::phylo::reader::from_file(infile)?;
+    let mut trees = Tree::from_file(infile)?;
 
     // Process only the first tree for now, or loop if we want to support multi-tree
     // Since arguments are node names, it implies a single tree context or consistent naming.

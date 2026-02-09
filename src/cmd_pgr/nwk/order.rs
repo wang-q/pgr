@@ -1,5 +1,5 @@
 use clap::*;
-use pgr::libs::phylo::{algo, reader, writer};
+use pgr::libs::phylo::{algo, tree::Tree};
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
@@ -88,7 +88,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     };
 
     let infile = args.get_one::<String>("infile").unwrap();
-    let mut trees = reader::from_file(infile)?;
+    let mut trees = Tree::from_file(infile)?;
 
     let mut names = vec![];
     if args.contains_id("list") {
@@ -115,7 +115,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             algo::deladderize(tree);
         }
 
-        let out_string = writer::write_newick(tree);
+        let out_string = tree.to_newick();
         writer.write_all((out_string + "\n").as_ref())?;
     }
 

@@ -1,5 +1,5 @@
 use clap::*;
-use pgr::libs::phylo::reader;
+use pgr::libs::phylo::tree::Tree;
 use std::io::Write;
 
 // Create clap subcommand arguments
@@ -154,11 +154,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let opt_tri = args.get_one::<String>("tri");
 
     let infile = args.get_one::<String>("infile").unwrap();
-
-    //----------------------------
-    // Ops
-    //----------------------------
-    let mut trees = reader::from_file(infile)?;
+    let mut trees = Tree::from_file(infile)?;
 
     for tree in &mut trees {
         // ids with names, name => id
