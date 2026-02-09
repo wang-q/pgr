@@ -252,3 +252,70 @@ fn command_to_dot() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn command_to_forest() -> anyhow::Result<()> {
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("nwk")
+        .arg("to-forest")
+        .arg("tests/newick/catarrhini.nwk")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    assert!(stdout.contains("[,, tier="));
+    assert!(stdout.contains("Hominidae"));
+    assert!(stdout.contains("{Homo}"));
+
+    Ok(())
+}
+
+#[test]
+fn command_to_forest_bl() -> anyhow::Result<()> {
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("nwk")
+        .arg("to-forest")
+        .arg("tests/newick/catarrhini.nwk")
+        .arg("--bl")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    assert!(stdout.contains("l=")); // Should have lengths
+    assert!(stdout.contains("Hominidae"));
+    assert!(stdout.contains("{Homo}"));
+
+    Ok(())
+}
+
+#[test]
+fn command_tex() -> anyhow::Result<()> {
+    // 1. Default (Cladogram)
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("nwk")
+        .arg("to-tex")
+        .arg("tests/newick/hg38.7way.nwk")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    assert!(stdout.contains(r"\documentclass"));
+    assert!(stdout.contains(r"\begin{forest}"));
+    assert!(stdout.contains("tier=4"));
+
+    // 2. Phylogram (--bl)
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("nwk")
+        .arg("to-tex")
+        .arg("tests/newick/hg38.7way.nwk")
+        .arg("--bl")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    assert!(stdout.contains(r"\documentclass"));
+    assert!(stdout.contains("l=40mm"));
+    assert!(stdout.contains("l=53mm"));
+
+    Ok(())
+}

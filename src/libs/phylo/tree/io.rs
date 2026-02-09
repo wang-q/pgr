@@ -159,6 +159,180 @@ pub fn to_dot(tree: &Tree) -> String {
     s
 }
 
+/// Serialize tree to LaTeX Forest format.
+///
+/// # Arguments
+/// * `tree` - The tree to serialize.
+/// * `height` - Tree height for scaling branch lengths. If 0.0, uses cladogram mode (tier-based).
+pub fn to_forest(tree: &Tree, height: f64) -> String {
+    if let Some(root) = tree.get_root() {
+        to_forest_recursive(tree, root, height)
+    } else {
+        String::new()
+    }
+}
+
+fn to_forest_recursive(tree: &Tree, id: NodeId, height: f64) -> String {
+    let node = tree.get_node(id).unwrap();
+    let indent = "  ";
+
+    let children = &node.children;
+    let depth = node_depth(tree, id);
+
+    if children.is_empty() {
+        let indention = indent.repeat(depth);
+        format!("{}[{}]\n", indention, to_forest_node_props(tree, id, height))
+    } else {
+        let branch_set = children
+            .iter()
+            .map(|&child| to_forest_recursive(tree, child, height))
+            .collect::<Vec<_>>();
+
+        let indention = indent.repeat(depth);
+        format!(
+            "{}[{}\n{}{}]\n",
+            indention,
+            to_forest_node_props(tree, id, height),
+            branch_set.join(""),
+            indention,
+        )
+    }
+}
+
+// almost all the operations in here
+fn to_forest_node_props(tree: &Tree, id: NodeId, height: f64) -> String {
+    let node = tree.get_node(id).unwrap();
+    let depth = node_depth(tree, id);
+
+    let mut repr = String::new();
+
+    let mut name = node.name.clone().map(|x| x.replace('_', " "));
+    let mut color: Option<String> = None;
+    let mut label: Option<String> = None;
+
+    // internal node's name will be treated as labels and place a dot there
+    if !node.is_leaf() && name.is_some() {
+        label = Some(name.clone().unwrap());
+        name = None;
+        // dot with default color
+        repr += ", dot";
+    }
+
+    if let Some(props) = node.properties.as_ref() {
+        if let Some(v) = props.get("color") {
+            color = Some(v.replace('_', " "));
+        }
+        if let Some(v) = props.get("label") {
+            label = Some(v.replace('_', " "));
+        }
+        for key in ["dot", "bar", "rec", "tri"] {
+            if let Some(v) = props.get(key) {
+                repr += &format!(", {}={{{}}}", key, v.replace('_', " "));
+            }
+        }
+        let mut comment = String::new();
+        for key in ["comment", "T", "S", "rank", "member"] {
+            if let Some(v) = props.get(key) {
+                if !comment.is_empty() {
+                    comment += " ";
+                }
+                comment += &v.replace('_', " ");
+            }
+        }
+        if !comment.is_empty() && node.is_leaf() {
+            repr += &format!(", comment={{{}}}", comment);
+        }
+    }
+
+    if color.is_some() {
+        if name.is_some() {
+            repr = format!(
+                ", \\color{{{}}}{{{}}}",
+                color.clone().unwrap(),
+                name.clone().unwrap()
+            ) + &repr;
+        }
+        if label.is_some() && !label.clone().unwrap().is_empty() {
+            repr += &format!(
+                ", label=\\color{{{}}}{{{}}}",
+                color.clone().unwrap(),
+                label.clone().unwrap()
+            );
+        }
+    } else {
+        if name.is_some() {
+            repr = format!("{{{}}},", name.clone().unwrap()) + &repr;
+        }
+        if label.is_some() && !label.clone().unwrap().is_empty() {
+            repr += &format!(", label={{{}}}", label.clone().unwrap());
+        }
+    }
+
+    if name.is_none() {
+        if node.is_leaf() {
+            repr = "{~},".to_owned() + &repr; // non-breaking space in latex
+        } else {
+            repr = ",".to_owned() + &repr;
+        }
+    }
+
+    if height == 0.0 {
+        let tier = if node.is_leaf() {
+            0
+        } else {
+            branch_depth(tree, id) - depth
+        };
+        repr += &format!(", tier={}", tier);
+    } else {
+        let edge = node.length.unwrap_or(0.0);
+        let bl = calc_length(edge, height);
+        repr += &format!(", l={}mm, l sep=0", bl);
+
+        if node.is_leaf() {
+            // Add an invisible node to the rightmost to occupy spaces
+            repr += ", [{~},tier=0,edge={draw=none}]";
+        }
+    }
+
+    repr
+}
+
+// max depth of this node's children
+fn branch_depth(tree: &Tree, id: NodeId) -> usize {
+    let self_depth = node_depth(tree, id);
+    match tree.get_subtree(&id) {
+        Ok(nodes) => nodes
+            .iter()
+            .map(|nid| node_depth(tree, *nid))
+            .max()
+            .unwrap_or(self_depth),
+        Err(_) => self_depth,
+    }
+}
+
+fn node_depth(tree: &Tree, id: NodeId) -> usize {
+    let mut depth = 0usize;
+    let mut curr = id;
+    loop {
+        let node = match tree.get_node(curr) {
+            Some(n) => n,
+            None => break,
+        };
+        if let Some(p) = node.parent {
+            depth += 1;
+            curr = p;
+        } else {
+            break;
+        }
+    }
+    depth
+}
+
+// relative length
+fn calc_length(edge: f64, height: f64) -> i32 {
+    (edge * 100.0 / height).round() as i32
+}
+
 fn quote_label(label: &str) -> String {
     let needs_quote = label.chars().any(|c| "(),:;[] \t\n".contains(c));
     if needs_quote {
