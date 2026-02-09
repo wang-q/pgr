@@ -110,7 +110,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let is_both = args.get_flag("both");
     let is_insensitive = args.get_flag("case");
 
-    let writer = intspan::writer(args.get_one::<String>("outfile").unwrap());
+    let writer = pgr::writer(args.get_one::<String>("outfile").unwrap());
     let mut fa_out = noodles_fasta::io::writer::Builder::default()
         .set_line_base_count(usize::MAX)
         .build_from_writer(writer);
@@ -121,7 +121,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut subject_map: HashMap<u64, Vec<String>> = HashMap::new();
 
     for infile in args.get_many::<String>("infiles").unwrap() {
-        let reader = intspan::reader(infile);
+        let reader = pgr::reader(infile);
         let mut fa_in = noodles_fasta::io::Reader::new(reader);
 
         for result in fa_in.records() {
@@ -181,7 +181,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     if args.contains_id("file") {
         let opt_file = args.get_one::<String>("file").unwrap();
-        let mut writer = intspan::writer(opt_file);
+        let mut writer = pgr::writer(opt_file);
 
         for v in subject_map.values() {
             if v.len() < 2 {

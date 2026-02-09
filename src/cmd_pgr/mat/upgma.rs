@@ -62,7 +62,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let tree = build::upgma(&matrix)?;
 
     // Output tree
-    let mut writer = intspan::writer(outfile);
+    let mut writer = pgr::writer(outfile);
     writer.write_all((tree.to_newick() + "\n").as_ref())?;
 
     Ok(())

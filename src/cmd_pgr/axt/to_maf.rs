@@ -125,7 +125,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let q_sizes = load_sizes(q_sizes_path)?;
 
     // Open input
-    let reader = intspan::reader(input);
+    let reader = pgr::reader(input);
     let axt_reader = AxtReader::new(reader);
 
     // Prepare output
@@ -137,7 +137,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             fs::create_dir_all(output)?;
         }
     } else {
-        let writer = intspan::writer(output);
+        let writer = pgr::writer(output);
         let mut writer = MafWriter::new(writer);
         writer.write_header("blastz")?; // Default to blastz as in C code
         single_writer = Some(writer);

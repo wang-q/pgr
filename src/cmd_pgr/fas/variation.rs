@@ -64,7 +64,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     // Args
     //----------------------------
-    let mut writer = intspan::writer(args.get_one::<String>("outfile").unwrap());
+    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap());
     let has_outgroup = args.get_flag("has_outgroup");
 
     let field_names = vec![
@@ -88,7 +88,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     writer.write_all(format!("{}\n", field_names.join("\t")).as_ref())?;
 
     for infile in args.get_many::<String>("infiles").unwrap() {
-        let mut reader = intspan::reader(infile);
+        let mut reader = pgr::reader(infile);
 
         while let Ok(block) = pgr::libs::fas::next_fas_block(&mut reader) {
             let mut seqs: Vec<&[u8]> = vec![];

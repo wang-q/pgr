@@ -78,7 +78,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut data = Vec::new();
 
     for infile in infiles {
-        let reader = intspan::reader(infile);
+        let reader = pgr::reader(infile);
         let reader = bio::io::fasta::Reader::new(reader);
         for result in reader.records() {
             let record = result?;

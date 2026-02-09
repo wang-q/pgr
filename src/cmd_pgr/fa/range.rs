@@ -91,7 +91,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let infile = args.get_one::<String>("infile").unwrap();
 
     let mut fa_out = {
-        let writer = intspan::writer(args.get_one::<String>("outfile").unwrap());
+        let writer = pgr::writer(args.get_one::<String>("outfile").unwrap());
         noodles_fasta::io::writer::Builder::default()
             .set_line_base_count(usize::MAX)
             .build_from_writer(writer)

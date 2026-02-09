@@ -196,7 +196,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // Spawn a writer thread
     let output = args.get_one::<String>("outfile").unwrap().to_string();
     let writer_thread = std::thread::spawn(move || {
-        let mut writer = intspan::writer(&output);
+        let mut writer = pgr::writer(&output);
         for result in receiver {
             writer.write_all(result.as_bytes()).unwrap();
         }
@@ -338,7 +338,7 @@ fn load_file(
     opt_window: usize,
     is_merge: bool,
 ) -> anyhow::Result<Vec<MinimizerEntry>> {
-    let reader = intspan::reader(infile);
+    let reader = pgr::reader(infile);
     let mut fa_in = fasta::io::Reader::new(reader);
 
     let mut entries = vec![];

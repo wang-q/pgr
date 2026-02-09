@@ -81,7 +81,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     let mut file_of: BTreeMap<String, std::fs::File> = BTreeMap::new();
     for infile in args.get_many::<String>("infiles").unwrap() {
-        let mut reader = intspan::reader(infile);
+        let mut reader = pgr::reader(infile);
 
         while let Ok(block) = pgr::libs::fas::next_fas_block(&mut reader) {
             for entry in &block.entries {

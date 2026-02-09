@@ -147,7 +147,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let is_dash = args.get_flag("dash");
     let is_simplify = args.get_flag("simplify");
 
-    let writer = intspan::writer(args.get_one::<String>("outfile").unwrap());
+    let writer = pgr::writer(args.get_one::<String>("outfile").unwrap());
     let mut fa_out = noodles_fasta::io::writer::Builder::default()
         .set_line_base_count(opt_line)
         .build_from_writer(writer);
@@ -157,7 +157,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     let mut set_list: BTreeSet<String> = BTreeSet::new();
     for infile in args.get_many::<String>("infiles").unwrap() {
-        let reader = intspan::reader(infile);
+        let reader = pgr::reader(infile);
         let mut fa_in = noodles_fasta::io::Reader::new(reader);
 
         for result in fa_in.records() {

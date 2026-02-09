@@ -72,14 +72,14 @@ Examples:
 
 // command implementation
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let mut writer = intspan::writer(args.get_one::<String>("outfile").unwrap());
+    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap());
     let is_bl = args.get_flag("bl");
     let is_style = args.get_flag("style");
 
     let infile = args.get_one::<String>("infile").unwrap();
 
     let out_string = if args.get_flag("forest") {
-        let mut reader = intspan::reader(infile);
+        let mut reader = pgr::reader(infile);
         let mut s = String::new();
         reader.read_to_string(&mut s).expect("Read error");
 

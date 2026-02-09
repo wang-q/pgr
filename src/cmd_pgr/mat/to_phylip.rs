@@ -56,7 +56,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let infile = args.get_one::<String>("infile").unwrap();
     let opt_same = *args.get_one::<f32>("same").unwrap();
     let opt_missing = *args.get_one::<f32>("missing").unwrap();
-    let mut writer = intspan::writer(args.get_one::<String>("outfile").unwrap());
+    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap());
 
     //----------------------------
     // Ops

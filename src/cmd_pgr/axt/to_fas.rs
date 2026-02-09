@@ -75,7 +75,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     // Args
     //----------------------------
-    let mut writer = intspan::writer(args.get_one::<String>("outfile").unwrap());
+    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap());
     let sizes = intspan::read_sizes(args.get_one::<String>("chr.sizes").unwrap());
 
     let tname = args.get_one::<String>("tname").unwrap();
@@ -85,7 +85,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // Ops
     //----------------------------
     for infile in args.get_many::<String>("infiles").unwrap() {
-        let reader = intspan::reader(infile);
+        let reader = pgr::reader(infile);
         let axt_iter = AxtReader::new(reader);
 
         for axt_res in axt_iter {

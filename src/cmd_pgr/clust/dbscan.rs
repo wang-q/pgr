@@ -93,7 +93,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let opt_eps = *args.get_one::<f32>("eps").unwrap();
     let opt_min_points = *args.get_one::<usize>("min_points").unwrap();
 
-    let mut writer = intspan::writer(args.get_one::<String>("outfile").unwrap());
+    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap());
 
     //----------------------------
     // 2. Load Matrix

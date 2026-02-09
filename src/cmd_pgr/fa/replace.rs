@@ -63,13 +63,13 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     // Args
     //----------------------------
-    let reader = intspan::reader(args.get_one::<String>("infile").unwrap());
+    let reader = pgr::reader(args.get_one::<String>("infile").unwrap());
     let mut fa_in = noodles_fasta::io::Reader::new(reader);
 
     let replace_of = read_replaces(args.get_one::<String>("replace.tsv").unwrap());
     let is_some = args.get_flag("some");
 
-    let writer = intspan::writer(args.get_one::<String>("outfile").unwrap());
+    let writer = pgr::writer(args.get_one::<String>("outfile").unwrap());
     let mut fa_out = noodles_fasta::io::writer::Builder::default()
         .set_line_base_count(usize::MAX)
         .build_from_writer(writer);

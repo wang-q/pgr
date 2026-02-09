@@ -119,10 +119,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // Operating
     //----------------------------
     if parallel == 1 {
-        let mut writer = intspan::writer(args.get_one::<String>("outfile").unwrap());
+        let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap());
 
         for infile in args.get_many::<String>("infiles").unwrap() {
-            let mut reader = intspan::reader(infile);
+            let mut reader = pgr::reader(infile);
             while let Ok(block) = pgr::libs::fas::next_fas_block(&mut reader) {
                 let out_string = proc_block(&block, args)?;
                 writer.write_all(out_string.as_ref())?;
@@ -200,7 +200,7 @@ fn proc_block(block: &pgr::libs::fas::FasBlock, args: &ArgMatches) -> anyhow::Re
 // Adopt from https://rust-lang-nursery.github.io/rust-cookbook/concurrency/threads.html#create-a-parallel-pipeline
 fn proc_block_p(args: &ArgMatches) -> anyhow::Result<()> {
     let parallel = *args.get_one::<usize>("parallel").unwrap();
-    let mut writer = intspan::writer(args.get_one::<String>("outfile").unwrap());
+    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap());
 
     // Channel 1 - Read files to blocks
     let (snd1, rcv1) = bounded::<pgr::libs::fas::FasBlock>(10);
@@ -213,7 +213,7 @@ fn proc_block_p(args: &ArgMatches) -> anyhow::Result<()> {
         //----------------------------
         s.spawn(|_| {
             for infile in args.get_many::<String>("infiles").unwrap() {
-                let mut reader = intspan::reader(infile);
+                let mut reader = pgr::reader(infile);
                 while let Ok(block) = pgr::libs::fas::next_fas_block(&mut reader) {
                     snd1.send(block).unwrap();
                 }

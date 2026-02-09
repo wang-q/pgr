@@ -51,8 +51,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let target_strand = args.get_one::<String>("target_strand");
     // let score_file = args.get_one::<String>("score_file"); // TODO: Implement score file output
 
-    let reader = intspan::reader(input);
-    let mut writer = intspan::writer(output);
+    let reader = pgr::reader(input);
+    let mut writer = pgr::writer(output);
 
     //----------------------------
     // Ops

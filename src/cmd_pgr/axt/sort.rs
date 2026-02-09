@@ -63,8 +63,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let by_score = args.get_flag("by-score");
     let renumber = args.get_flag("renumber");
 
-    let reader = intspan::reader(input);
-    let mut writer = intspan::writer(output);
+    let reader = pgr::reader(input);
+    let mut writer = pgr::writer(output);
 
     let mut axt_reader = AxtReader::new(reader);
 

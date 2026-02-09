@@ -86,11 +86,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let q_sizes = load_sizes(q_sizes_path)?;
 
     // Open input
-    let reader = intspan::reader(input);
+    let reader = pgr::reader(input);
     let reader = AxtReader::new(reader);
 
     // Open output
-    let mut writer = intspan::writer(output);
+    let mut writer = pgr::writer(output);
 
     for result in reader {
         let axt = result?;

@@ -117,8 +117,8 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
     let query_2bit_path = args.get_one::<String>("query");
     let score_scheme_path = args.get_one::<String>("score_scheme");
 
-    let reader = intspan::reader(input);
-    let mut writer = intspan::writer(output);
+    let reader = pgr::reader(input);
+    let mut writer = pgr::writer(output);
 
     let mut t_2bit = if let Some(path) = target_2bit_path {
         Some(TwoBitFile::open(path)?)

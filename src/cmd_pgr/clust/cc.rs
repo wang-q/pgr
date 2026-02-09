@@ -53,7 +53,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     let infile = args.get_one::<String>("infile").unwrap();
     let opt_format = args.get_one::<String>("format").unwrap();
-    let mut writer = intspan::writer(args.get_one::<String>("outfile").unwrap());
+    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap());
 
     //----------------------------
     // 2. Load Graph
@@ -62,7 +62,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let mut graph = petgraph::graphmap::UnGraphMap::<_, ()>::new();
 
-    let reader = intspan::reader(infile);
+    let reader = pgr::reader(infile);
     for line in reader.lines().map_while(Result::ok) {
         let fields: Vec<&str> = line.split('\t').collect();
         if fields.len() >= 2 {

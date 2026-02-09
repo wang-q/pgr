@@ -89,7 +89,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     // Args
     //----------------------------
-    let mut writer = intspan::writer(args.get_one::<String>("outfile").unwrap());
+    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap());
     let opt_name = &args
         .get_one::<String>("name")
         .map(|s| s.as_str())
@@ -105,7 +105,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // Ops
     //----------------------------
     for infile in args.get_many::<String>("infiles").unwrap() {
-        let mut reader = intspan::reader(infile);
+        let mut reader = pgr::reader(infile);
 
         'BLOCK: while let Ok(block) = pgr::libs::fas::next_fas_block(&mut reader) {
             // Determine the index of the species

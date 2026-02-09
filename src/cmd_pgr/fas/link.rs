@@ -66,7 +66,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     // Args
     //----------------------------
-    let mut writer = intspan::writer(args.get_one::<String>("outfile").unwrap());
+    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap());
     let is_pair = args.get_flag("pair");
     let is_best = args.get_flag("best");
 
@@ -74,7 +74,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // Ops
     //----------------------------
     for infile in args.get_many::<String>("infiles").unwrap() {
-        let mut reader = intspan::reader(infile);
+        let mut reader = pgr::reader(infile);
 
         while let Ok(block) = pgr::libs::fas::next_fas_block(&mut reader) {
             let headers: Vec<String> = block

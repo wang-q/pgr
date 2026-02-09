@@ -62,7 +62,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     // Args
     //----------------------------
-    let mut writer = intspan::writer(args.get_one::<String>("outfile").unwrap());
+    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap());
     let opt_genome = args.get_one::<String>("genome.fa").unwrap();
     let opt_name = &args
         .get_one::<String>("name")
@@ -74,7 +74,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // Ops
     //----------------------------
     for infile in args.get_many::<String>("infiles").unwrap() {
-        let reader = intspan::reader(infile);
+        let reader = pgr::reader(infile);
         for line in reader.lines().map_while(Result::ok) {
             let parts: Vec<&str> = line.split('\t').collect();
 
