@@ -6,6 +6,7 @@ pub mod subset;
 pub mod to_pair;
 pub mod to_phylip;
 pub mod upgma;
+pub mod nj;
 
 pub fn make_subcommand() -> Command {
     Command::new("mat")
@@ -17,6 +18,7 @@ pub fn make_subcommand() -> Command {
         .subcommand(to_phylip::make_subcommand())
         .subcommand(subset::make_subcommand())
         .subcommand(upgma::make_subcommand())
+        .subcommand(nj::make_subcommand())
 }
 
 pub fn execute(matches: &clap::ArgMatches) -> anyhow::Result<()> {
@@ -27,6 +29,7 @@ pub fn execute(matches: &clap::ArgMatches) -> anyhow::Result<()> {
         Some(("to-phylip", sub_matches)) => to_phylip::execute(sub_matches),
         Some(("subset", sub_matches)) => subset::execute(sub_matches),
         Some(("upgma", sub_matches)) => upgma::execute(sub_matches),
+        Some(("nj", sub_matches)) => nj::execute(sub_matches),
         _ => unreachable!(),
     }
 }
