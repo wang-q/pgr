@@ -353,7 +353,6 @@ fn command_reroot_nolbl_ingrp() -> anyhow::Result<()> {
     Ok(())
 }
 
-
 #[test]
 fn command_reroot_deroot() -> anyhow::Result<()> {
     // abcde.nwk: ((A:1,B:1)D:1,C:1)E;
@@ -413,7 +412,7 @@ fn command_reroot_default() -> anyhow::Result<()> {
     // Result observed: (C:0.5,(A:1,B:1)D:1.5);
     // C's edge (1.0) split into 0.5.
     // D's edge to E (1.0) + E to NewRoot (0.5) = 1.5.
-    
+
     let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
         .arg("nwk")

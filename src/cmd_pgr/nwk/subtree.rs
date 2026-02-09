@@ -203,12 +203,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         // Output
         if is_condense {
             let name = condense_name.unwrap();
-            
+
             // 1. Get info from sub_root
             let sub_root = tree.get_node(sub_root_id).unwrap();
             let parent_id_opt = sub_root.parent;
             let edge_len = sub_root.length;
-            
+
             if let Some(parent_id) = parent_id_opt {
                 // 2. Create new node
                 let new_node_id = tree.add_node();
@@ -221,14 +221,14 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                     props.insert("tri".to_string(), "white".to_string());
                     node.properties = Some(props);
                 }
-                
+
                 // 3. Remove old subtree
                 tree.remove_node(sub_root_id, true);
-                
+
                 // 4. Link new node to parent
                 // Note: remove_node disconnects sub_root from parent, so we can just add child.
                 tree.add_child(parent_id, new_node_id).unwrap();
-                
+
                 // 5. Output full tree
                 let out_string = writer::write_newick(tree);
                 writer.write_fmt(format_args!("{}\n", out_string)).unwrap();
@@ -240,10 +240,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 // Since we want to output the "condensed tree", which is just one node.
                 // We can just construct a string or modify tree.
                 // Let's modify tree for consistency.
-                
+
                 // Remove root (clears everything basically)
                 tree.remove_node(sub_root_id, true);
-                
+
                 // Add new root
                 let new_root = tree.add_node();
                 tree.set_root(new_root);
@@ -251,16 +251,15 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                     node.set_name(name);
                     // Root usually has no length
                     // Add properties
-                     let mut props = std::collections::BTreeMap::new();
+                    let mut props = std::collections::BTreeMap::new();
                     props.insert("member".to_string(), ids.len().to_string());
                     props.insert("tri".to_string(), "white".to_string());
                     node.properties = Some(props);
                 }
-                
+
                 let out_string = writer::write_newick(tree);
                 writer.write_fmt(format_args!("{}\n", out_string)).unwrap();
             }
-
         } else {
             // Extract subtree
             let out_string = writer::write_subtree(tree, sub_root_id, "");

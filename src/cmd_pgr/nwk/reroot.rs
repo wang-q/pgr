@@ -106,7 +106,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let infile = args.get_one::<String>("infile").unwrap();
     let mut trees = pgr::libs::phylo::reader::from_file(infile)?;
-    
+
     // Process only the first tree for now, or loop if we want to support multi-tree
     // Since arguments are node names, it implies a single tree context or consistent naming.
     // We'll process the first tree to match previous behavior.
@@ -136,7 +136,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 }
 
                 let old_root = tree.get_root().unwrap();
-                
+
                 // Lax mode check
                 if old_root == sub_root_id && lax {
                     // Identify leaves in the "ingroup" (specified nodes)
@@ -204,4 +204,3 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     Ok(())
 }
-

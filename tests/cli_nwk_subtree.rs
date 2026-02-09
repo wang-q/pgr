@@ -161,7 +161,8 @@ fn command_subtree_regex() -> anyhow::Result<()> {
     let stdout = String::from_utf8(output.stdout)?;
 
     // Only checking the structure briefly to avoid super long string matching issues
-    assert!(stdout.contains("(((((HRV85_1:0.114608,(HRV89_1:0.219212,HRV1B_1:0.123339):0.076821):0.043577,"));
+    assert!(stdout
+        .contains("(((((HRV85_1:0.114608,(HRV89_1:0.219212,HRV1B_1:0.123339):0.076821):0.043577,"));
     // pgr formats floats without trailing zeros
     assert!(stdout.contains("HRV39_1:0.044427):0.65675,"));
     assert!(stdout.contains("):0.317738;"));
@@ -182,7 +183,8 @@ fn command_subtree_default() -> anyhow::Result<()> {
     let stdout = String::from_utf8(output.stdout)?;
 
     // Check if it matches def_r (with branch length)
-    assert!(stdout.contains("((Gorilla:16,(Pan:10,Homo:10)Hominini:10)Homininae:15,Pongo:30)Hominidae:15;"));
+    assert!(stdout
+        .contains("((Gorilla:16,(Pan:10,Homo:10)Hominini:10)Homininae:15,Pongo:30)Hominidae:15;"));
 
     Ok(())
 }
