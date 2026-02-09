@@ -1,5 +1,5 @@
 use clap::*;
-use pgr::libs::phylo::tree::Tree;
+use pgr::libs::phylo::tree::{stat, Tree};
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
@@ -19,10 +19,13 @@ Notes:
       nodes	18
       leaves	11
       ...
+      cherries	5
+      sackin	46
+      colless	9
     
     * Tab-separated values (--style line):
-      Type	nodes	leaves	dichotomies	leaf labels	internal labels
-      cladogram	18	11	5	11	0
+      Type	nodes	leaves	dichotomies	leaf labels	internal labels	cherries	sackin	colless
+      cladogram	18	11	5	11	0	5	46	9
 
 Examples:
 1. Default statistics:
@@ -66,7 +69,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     if style == "line" {
         writer.write_fmt(format_args!(
-            "Type\tnodes\tleaves\tdichotomies\tleaf labels\tinternal labels\n"
+            "Type\tnodes\tleaves\tdichotomies\tleaf labels\tinternal labels\tcherries\tsackin\tcolless\n"
         ))?;
     }
 
@@ -109,6 +112,14 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             }
         }
 
+        let cherries = stat::cherries(&tree);
+        let sackin = stat::sackin(&tree);
+        let colless = stat::colless(&tree);
+        let colless_str = match colless {
+            Some(c) => c.to_string(),
+            None => "-".to_string(),
+        };
+
         let tree_type = if n_edge_wo_len == n_node {
             "cladogram"
         } else if n_edge_w_len == n_node || n_edge_w_len == n_node - 1 {
@@ -119,8 +130,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
         if style == "line" {
             writer.write_fmt(format_args!(
-                "{}\t{}\t{}\t{}\t{}\t{}\n",
-                tree_type, n_node, n_leaf, n_dichotomies, n_leaf_label, n_internal_label
+                "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n",
+                tree_type, n_node, n_leaf, n_dichotomies, n_leaf_label, n_internal_label,
+                cherries, sackin, colless_str
             ))?;
         } else {
             writer.write_fmt(format_args!("Type\t{}\n", tree_type))?;
@@ -129,6 +141,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             writer.write_fmt(format_args!("dichotomies\t{}\n", n_dichotomies))?;
             writer.write_fmt(format_args!("leaf labels\t{}\n", n_leaf_label))?;
             writer.write_fmt(format_args!("internal labels\t{}\n", n_internal_label))?;
+            writer.write_fmt(format_args!("cherries\t{}\n", cherries))?;
+            writer.write_fmt(format_args!("sackin\t{}\n", sackin))?;
+            writer.write_fmt(format_args!("colless\t{}\n", colless_str))?;
         }
     }
 

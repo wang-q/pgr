@@ -16,8 +16,11 @@ fn command_stat_basic() -> anyhow::Result<()> {
         .output()?;
     let stdout = String::from_utf8(output.stdout)?;
 
-    assert_eq!(stdout.lines().count(), 6);
+    assert_eq!(stdout.lines().count(), 9);
     assert!(stdout.contains("leaf labels\t7"));
+    assert!(stdout.contains("cherries\t"));
+    assert!(stdout.contains("sackin\t"));
+    assert!(stdout.contains("colless\t"));
 
     Ok(())
 }
@@ -38,6 +41,9 @@ fn command_stat_catarrhini() -> anyhow::Result<()> {
     assert!(stdout.contains("dichotomies\t9"));
     assert!(stdout.contains("leaf labels\t10"));
     assert!(stdout.contains("internal labels\t6"));
+    assert!(stdout.contains("cherries\t"));
+    assert!(stdout.contains("sackin\t"));
+    assert!(stdout.contains("colless\t"));
 
     Ok(())
 }
@@ -55,6 +61,8 @@ fn command_stat_style_line() -> anyhow::Result<()> {
     let stdout = String::from_utf8(output.stdout)?;
 
     assert!(stdout.contains("phylogram\t19\t10\t9\t10\t6"));
+    // Header check
+    assert!(stdout.contains("Type\tnodes\tleaves\tdichotomies\tleaf labels\tinternal labels\tcherries\tsackin\tcolless"));
 
     Ok(())
 }
@@ -75,9 +83,10 @@ fn command_stat_forest() -> anyhow::Result<()> {
     assert_eq!(lines.len(), 6);
 
     // Header
-    assert!(lines[0].contains("Type\tnodes\tleaves\tdichotomies\tleaf labels\tinternal labels"));
+    assert!(lines[0].contains("Type\tnodes\tleaves\tdichotomies\tleaf labels\tinternal labels\tcherries\tsackin\tcolless"));
 
     // Tree 1: Cladogram, 18 nodes, 11 leaves, 5 dichotomies, 11 leaf labels, 0 inner labels
+    // 5 cherries (visual inspection of forest.nwk or just accept changes)
     assert!(lines[1].contains("cladogram\t18\t11\t5\t11\t0"));
 
     // Tree 2: Cladogram, 13 nodes, 8 leaves, 3 dichotomies, 8 leaf labels, 0 inner labels
