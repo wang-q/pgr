@@ -1,4 +1,5 @@
 use assert_cmd::Command;
+use std::process::Stdio;
 
 #[test]
 fn command_indent() -> anyhow::Result<()> {
@@ -159,21 +160,77 @@ fn command_indent_multiple_trees() -> anyhow::Result<()> {
         .output()?;
     let stdout = String::from_utf8(output.stdout)?;
 
-    // forest.nw contains multiple trees.
+    // forest.nwk contains multiple trees (5 lines).
     // pgr should output all of them.
-    // Check for some labels from the first and last tree.
-    // I need to check forest.nw content first to be sure about labels.
-    // But assuming it works like forest_ind.nw (which has Pandion and Homo),
-    // let's check for those if we are unsure.
-    // Wait, let's verify forest.nw content in another tool call or assume similar content.
-    // I'll assume it has standard Newick trees.
-    // Based on previous test `multiple_optc`, forest_ind.nw has Pandion and Homo.
-    // forest.nw is likely the same but unindented?
-    // Let's just check line count or non-empty output for now, or check generic structure.
-    // Better to read forest.nw first? 
-    // I'll skip specific assertions on forest.nw labels until I verify content.
-    // But I can check if it outputs multiple semicolons (one per tree).
-    assert!(stdout.matches(';').count() >= 2);
+    // Verify specific labels from different trees to ensure all are processed.
+    assert!(stdout.contains("Pandion")); // From tree 1
+    assert!(stdout.contains("Diomedea")); // From tree 2
+    assert!(stdout.contains("Ticodendraceae")); // From tree 3
+    assert!(stdout.contains("Gorilla")); // From tree 4
+    assert!(stdout.contains("Cebus")); // From tree 5
+
+    // Verify we have at least 5 semicolons (one per tree)
+    assert!(stdout.matches(';').count() >= 5);
+
+    Ok(())
+}
+
+#[test]
+fn command_comment() -> anyhow::Result<()> {
+    let bin = assert_cmd::cargo::cargo_bin("pgr");
+    let mut cmd_color = std::process::Command::new(&bin);
+    let mut child_color = cmd_color
+        .arg("nwk")
+        .arg("comment")
+        .arg("tests/newick/abc.nwk")
+        .arg("-n")
+        .arg("A")
+        .arg("-n")
+        .arg("C")
+        .arg("--color")
+        .arg("green")
+        .stdout(Stdio::piped())
+        .spawn()?;
+
+    let mut cmd_dot = std::process::Command::new(&bin);
+    let output = cmd_dot
+        .arg("nwk")
+        .arg("comment")
+        .arg("stdin")
+        .arg("-l")
+        .arg("A,B")
+        .arg("--dot")
+        .stdin(Stdio::from(child_color.stdout.take().unwrap()))
+        .stdout(Stdio::piped())
+        .spawn()?
+        .wait_with_output()?;
+
+    let stdout = String::from_utf8(output.stdout)?;
+
+    assert_eq!(
+        stdout.lines().next().unwrap(),
+        "((A[&&NHX:color=green],B)[&&NHX:dot=black],C[&&NHX:color=green]);"
+    );
+
+    Ok(())
+}
+
+#[test]
+fn command_comment_remove() -> anyhow::Result<()> {
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("nwk")
+        .arg("comment")
+        .arg("tests/newick/abc.comment.nwk")
+        .arg("--remove")
+        .arg("color=")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    assert_eq!(
+        stdout.lines().next().unwrap(),
+        "((A,B)[&&NHX:dot=black],C);"
+    );
 
     Ok(())
 }

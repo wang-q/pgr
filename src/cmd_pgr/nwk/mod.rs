@@ -1,5 +1,6 @@
 use clap::*;
 
+pub mod comment;
 pub mod distance;
 pub mod indent;
 pub mod label;
@@ -23,12 +24,13 @@ This suite of tools provides a comprehensive set of operations for phylogenetic 
 Subcommand groups:
 * info: stat / label / distance
 * ops:  order / prune / rename / replace / reroot / subtree / topo
-* viz:  indent
+* viz:  comment / indent
 
 "###,
         )
         .subcommand_required(true)
         .arg_required_else_help(true)
+        .subcommand(comment::make_subcommand())
         .subcommand(distance::make_subcommand())
         .subcommand(indent::make_subcommand())
         .subcommand(label::make_subcommand())
@@ -44,6 +46,7 @@ Subcommand groups:
 
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     match args.subcommand() {
+        Some(("comment", sub_matches)) => comment::execute(sub_matches),
         Some(("distance", sub_matches)) => distance::execute(sub_matches),
         Some(("indent", sub_matches)) => indent::execute(sub_matches),
         Some(("label", sub_matches)) => label::execute(sub_matches),
