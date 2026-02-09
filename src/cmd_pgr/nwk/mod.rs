@@ -1,5 +1,6 @@
 use clap::*;
 
+pub mod cmp;
 pub mod comment;
 pub mod distance;
 pub mod indent;
@@ -33,6 +34,7 @@ Subcommand groups:
         )
         .subcommand_required(true)
         .arg_required_else_help(true)
+        .subcommand(cmp::make_subcommand())
         .subcommand(comment::make_subcommand())
         .subcommand(distance::make_subcommand())
         .subcommand(indent::make_subcommand())
@@ -52,6 +54,7 @@ Subcommand groups:
 
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     match args.subcommand() {
+        Some(("cmp", sub_matches)) => cmp::execute(sub_matches),
         Some(("comment", sub_matches)) => comment::execute(sub_matches),
         Some(("distance", sub_matches)) => distance::execute(sub_matches),
         Some(("indent", sub_matches)) => indent::execute(sub_matches),
