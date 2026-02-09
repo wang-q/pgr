@@ -64,13 +64,13 @@ fn command_nwk_cmp_two_files() -> anyhow::Result<()> {
 #[test]
 fn command_nwk_cmp_branch_lengths() -> anyhow::Result<()> {
     let mut file = Builder::new().suffix(".nwk").tempfile()?;
-    
+
     // T1: Same topology, lengths 0.2
     writeln!(file, "((A:0.1,B:0.1):0.2,(C:0.1,D:0.1):0.2);")?;
-    
+
     // T2: Same topology, one length 0.3 (Diff 0.1)
     writeln!(file, "((A:0.1,B:0.1):0.3,(C:0.1,D:0.1):0.2);")?;
-    
+
     // T3: Diff topology, lengths 0.2
     writeln!(file, "((A:0.1,C:0.1):0.2,(B:0.1,D:0.1):0.2);")?;
 
@@ -80,11 +80,11 @@ fn command_nwk_cmp_branch_lengths() -> anyhow::Result<()> {
 
     // T1 vs T2: RF=0, WRF=0.1, KF=0.1
     // T1 vs T3: RF=2, WRF=0.8, KF=0.4
-    
+
     // Check T1 vs T2
     // 1\t2\t0\t0.1\t0.1
     assert!(stdout.contains("1\t2\t0\t0.1\t0.1"));
-    
+
     // Check T1 vs T3
     // 1\t3\t2\t0.8\t0.565685
     assert!(stdout.contains("1\t3\t2\t0.8\t0.565685"));

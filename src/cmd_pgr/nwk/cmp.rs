@@ -109,7 +109,11 @@ fn compute_metrics(t1: &Tree, t2: &Tree) -> (String, String, String) {
     let leaves2: HashSet<_> = t2.get_leaf_names().into_iter().flatten().collect();
 
     if leaves1 != leaves2 {
-        return ("Error".to_string(), "Error".to_string(), "Error".to_string());
+        return (
+            "Error".to_string(),
+            "Error".to_string(),
+            "Error".to_string(),
+        );
     }
 
     // Build map

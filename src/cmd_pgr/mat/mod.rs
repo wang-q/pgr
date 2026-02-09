@@ -2,11 +2,11 @@ use clap::Command;
 
 pub mod compare;
 pub mod format;
+pub mod nj;
 pub mod subset;
 pub mod to_pair;
 pub mod to_phylip;
 pub mod upgma;
-pub mod nj;
 
 pub fn make_subcommand() -> Command {
     Command::new("mat")

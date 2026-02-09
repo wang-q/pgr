@@ -1,6 +1,6 @@
-use std::collections::{BTreeMap, HashMap, HashSet};
 use super::tree::Tree;
 use fixedbitset::FixedBitSet;
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 /// Trait for tree comparison and topology analysis
 pub trait TreeComparison {
@@ -17,7 +17,10 @@ pub trait TreeComparison {
     ///
     /// Returns a map from Split -> Branch Length.
     /// Used for Weighted Robinson-Foulds and Kuhner-Felsenstein distances.
-    fn get_splits_with_values(&self, leaf_map: &BTreeMap<String, usize>) -> HashMap<FixedBitSet, f64>;
+    fn get_splits_with_values(
+        &self,
+        leaf_map: &BTreeMap<String, usize>,
+    ) -> HashMap<FixedBitSet, f64>;
 
     /// Compute the Robinson-Foulds (RF) distance between two trees.
     ///
@@ -51,7 +54,10 @@ impl TreeComparison for Tree {
             .collect()
     }
 
-    fn get_splits_with_values(&self, leaf_map: &BTreeMap<String, usize>) -> HashMap<FixedBitSet, f64> {
+    fn get_splits_with_values(
+        &self,
+        leaf_map: &BTreeMap<String, usize>,
+    ) -> HashMap<FixedBitSet, f64> {
         let mut splits = HashMap::new();
         let num_leaves = leaf_map.len();
 
@@ -151,7 +157,7 @@ impl TreeComparison for Tree {
         let leaves_other: HashSet<_> = other.get_leaf_names().into_iter().flatten().collect();
 
         if leaves_self != leaves_other {
-             let mut diff1: Vec<_> = leaves_self.difference(&leaves_other).collect();
+            let mut diff1: Vec<_> = leaves_self.difference(&leaves_other).collect();
             let mut diff2: Vec<_> = leaves_other.difference(&leaves_self).collect();
             diff1.sort();
             diff2.sort();
@@ -179,7 +185,7 @@ impl TreeComparison for Tree {
 
         // Iterate over union of keys
         let keys: HashSet<_> = splits1.keys().chain(splits2.keys()).collect();
-        
+
         for key in keys {
             let v1 = splits1.get(key).copied().unwrap_or(0.0);
             let v2 = splits2.get(key).copied().unwrap_or(0.0);
@@ -195,7 +201,7 @@ impl TreeComparison for Tree {
         let leaves_other: HashSet<_> = other.get_leaf_names().into_iter().flatten().collect();
 
         if leaves_self != leaves_other {
-             let mut diff1: Vec<_> = leaves_self.difference(&leaves_other).collect();
+            let mut diff1: Vec<_> = leaves_self.difference(&leaves_other).collect();
             let mut diff2: Vec<_> = leaves_other.difference(&leaves_self).collect();
             diff1.sort();
             diff2.sort();
@@ -223,7 +229,7 @@ impl TreeComparison for Tree {
 
         // Iterate over union of keys
         let keys: HashSet<_> = splits1.keys().chain(splits2.keys()).collect();
-        
+
         for key in keys {
             let v1 = splits1.get(key).copied().unwrap_or(0.0);
             let v2 = splits2.get(key).copied().unwrap_or(0.0);
@@ -279,16 +285,16 @@ mod tests {
         // Assuming trivial splits are identical and lengths match.
         // WRF: |0.2 - 0.3| = 0.1.
         // KF: sqrt((0.2-0.3)^2) = 0.1.
-        
+
         let t1_str = "((A:0.1,B:0.1):0.2,(C:0.1,D:0.1):0.2);";
         let t2_str = "((A:0.1,B:0.1):0.3,(C:0.1,D:0.1):0.2);";
-        
+
         let t1 = Tree::from_newick(t1_str).unwrap();
         let t2 = Tree::from_newick(t2_str).unwrap();
-        
+
         let wrf = t1.weighted_robinson_foulds(&t2).unwrap();
         let kf = t1.kuhner_felsenstein(&t2).unwrap();
-        
+
         assert!((wrf - 0.1).abs() < 1e-6, "WRF expected 0.1, got {}", wrf);
         assert!((kf - 0.1).abs() < 1e-6, "KF expected 0.1, got {}", kf);
     }
@@ -314,6 +320,10 @@ mod tests {
         let kf = t1.kuhner_felsenstein(&t3).unwrap();
 
         assert!((wrf - 0.8).abs() < 1e-6, "WRF expected 0.8, got {}", wrf);
-        assert!((kf - 0.32f64.sqrt()).abs() < 1e-6, "KF expected sqrt(0.32), got {}", kf);
+        assert!(
+            (kf - 0.32f64.sqrt()).abs() < 1e-6,
+            "KF expected sqrt(0.32), got {}",
+            kf
+        );
     }
 }

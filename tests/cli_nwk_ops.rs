@@ -403,15 +403,14 @@ fn command_reroot_lax() -> anyhow::Result<()> {
 
 #[test]
 fn command_reroot_default() -> anyhow::Result<()> {
-    // abcde.nwk: ((A:1,B:0.5)D:1,C:2);
-    // Longest branch is C (len 2).
-    // Default reroot should split C:2 into C:1 and Rest:1.
-    // (C:1, ((A:1,B:0.5)D:1):1);
-    // Note: C:1 and A:1, B:1, D:1 are all length 1.
-    // Tie-breaking seems to pick C (maybe due to iteration order or ID).
-    // Result observed: (C:0.5,(A:1,B:1)D:1.5);
-    // C's edge (1.0) split into 0.5.
-    // D's edge to E (1.0) + E to NewRoot (0.5) = 1.5.
+    // abcde.nwk: ((A:1,B:1)D:1,C:1)E;
+    // Max distance: A-C = 3, B-C = 3.
+    // Midpoint: 1.5 from leaves.
+    // From A: A->D (1) -> (0.5 on D-E edge).
+    // New root is on D-E edge, 0.5 from D.
+    // D branch becomes 0.5.
+    // C branch becomes 0.5 (from new root to E) + 1 (E to C) = 1.5.
+    // Result: ((A:1,B:1)D:0.5,C:1.5);
 
     let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd
@@ -421,9 +420,9 @@ fn command_reroot_default() -> anyhow::Result<()> {
         .output()?;
     let stdout = String::from_utf8(output.stdout)?;
 
-    if !stdout.contains("C:0.5") {
+    if !stdout.contains("C:1.5") {
         println!("Output: {}", stdout);
     }
-    assert!(stdout.contains("C:0.5"));
+    assert!(stdout.contains("C:1.5"));
     Ok(())
 }

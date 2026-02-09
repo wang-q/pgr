@@ -535,7 +535,7 @@ mod tests {
         tree.get_node_mut(e).unwrap().name = Some("E".to_string());
         tree.add_child(de, d).unwrap();
         tree.add_child(de, e).unwrap();
-        
+
         tree.add_child(cde, c).unwrap(); // Add C first
         tree.add_child(cde, de).unwrap(); // Add (D,E) second
 

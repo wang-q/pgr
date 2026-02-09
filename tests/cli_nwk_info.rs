@@ -16,8 +16,9 @@ fn command_stat_basic() -> anyhow::Result<()> {
         .output()?;
     let stdout = String::from_utf8(output.stdout)?;
 
-    assert_eq!(stdout.lines().count(), 9);
+    assert_eq!(stdout.lines().count(), 10);
     assert!(stdout.contains("leaf labels\t7"));
+    assert!(stdout.contains("rooted\tYes"));
     assert!(stdout.contains("cherries\t"));
     assert!(stdout.contains("sackin\t"));
     assert!(stdout.contains("colless\t"));
@@ -38,6 +39,7 @@ fn command_stat_catarrhini() -> anyhow::Result<()> {
     assert!(stdout.contains("Type\tphylogram"));
     assert!(stdout.contains("nodes\t19"));
     assert!(stdout.contains("leaves\t10"));
+    assert!(stdout.contains("rooted\tYes"));
     assert!(stdout.contains("dichotomies\t9"));
     assert!(stdout.contains("leaf labels\t10"));
     assert!(stdout.contains("internal labels\t6"));
@@ -60,10 +62,10 @@ fn command_stat_style_line() -> anyhow::Result<()> {
         .output()?;
     let stdout = String::from_utf8(output.stdout)?;
 
-    assert!(stdout.contains("phylogram\t19\t10\t9\t10\t6"));
+    assert!(stdout.contains("phylogram\t19\t10\tYes\t9\t10\t6"));
     // Header check
     assert!(stdout.contains(
-        "Type\tnodes\tleaves\tdichotomies\tleaf labels\tinternal labels\tcherries\tsackin\tcolless"
+        "Type\tnodes\tleaves\trooted\tdichotomies\tleaf labels\tinternal labels\tcherries\tsackin\tcolless"
     ));
 
     Ok(())
@@ -86,24 +88,24 @@ fn command_stat_forest() -> anyhow::Result<()> {
 
     // Header
     assert!(lines[0].contains(
-        "Type\tnodes\tleaves\tdichotomies\tleaf labels\tinternal labels\tcherries\tsackin\tcolless"
+        "Type\tnodes\tleaves\trooted\tdichotomies\tleaf labels\tinternal labels\tcherries\tsackin\tcolless"
     ));
 
-    // Tree 1: Cladogram, 18 nodes, 11 leaves, 5 dichotomies, 11 leaf labels, 0 inner labels
+    // Tree 1: Cladogram, 18 nodes, 11 leaves, No rooted, 5 dichotomies, 11 leaf labels, 0 inner labels
     // 5 cherries (visual inspection of forest.nwk or just accept changes)
-    assert!(lines[1].contains("cladogram\t18\t11\t5\t11\t0"));
+    assert!(lines[1].contains("cladogram\t18\t11\tNo\t5\t11\t0"));
 
-    // Tree 2: Cladogram, 13 nodes, 8 leaves, 3 dichotomies, 8 leaf labels, 0 inner labels
-    assert!(lines[2].contains("cladogram\t13\t8\t3\t8\t0"));
+    // Tree 2: Cladogram, 13 nodes, 8 leaves, No rooted, 3 dichotomies, 8 leaf labels, 0 inner labels
+    assert!(lines[2].contains("cladogram\t13\t8\tNo\t3\t8\t0"));
 
-    // Tree 3: Phylogram, 10 nodes, 6 leaves, 3 dichotomies, 6 leaf labels, 0 inner labels
-    assert!(lines[3].contains("phylogram\t10\t6\t3\t6\t0"));
+    // Tree 3: Phylogram, 10 nodes, 6 leaves, No rooted, 3 dichotomies, 6 leaf labels, 0 inner labels
+    assert!(lines[3].contains("phylogram\t10\t6\tNo\t3\t6\t0"));
 
     // Tree 4: Phylogram, 19 nodes, 10 leaves, 9 dichotomies, 10 leaf labels, 6 inner labels
-    assert!(lines[4].contains("phylogram\t19\t10\t9\t10\t6"));
+    assert!(lines[4].contains("phylogram\t19\t10\tYes\t9\t10\t6"));
 
     // Tree 5: Cladogram, 19 nodes, 10 leaves, 9 dichotomies, 10 leaf labels, 0 inner labels
-    assert!(lines[5].contains("cladogram\t19\t10\t9\t10\t0"));
+    assert!(lines[5].contains("cladogram\t19\t10\tYes\t9\t10\t0"));
 
     Ok(())
 }
