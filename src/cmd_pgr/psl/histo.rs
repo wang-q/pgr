@@ -69,8 +69,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let multi_only = args.get_flag("multi_only");
     let non_zero = args.get_flag("non_zero");
 
-    let reader = intspan::reader(input);
-    let mut writer = intspan::writer(output);
+    let reader = pgr::reader(input);
+    let mut writer = pgr::writer(output);
 
     // Read all PSLs and group by query
     let mut query_map: HashMap<String, Vec<Psl>> = HashMap::new();

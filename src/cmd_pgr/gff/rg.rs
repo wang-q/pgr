@@ -111,9 +111,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         infile, outfile, opt_tag, opt_asm, is_simplify, opt_key
     );
 
-    let reader = intspan::reader(infile);
+    let reader = pgr::reader(infile);
     let mut reader = gff::io::Reader::new(reader);
-    let mut writer = intspan::writer(outfile);
+    let mut writer = pgr::writer(outfile);
 
     for result in reader.record_bufs() {
         let record = result?;

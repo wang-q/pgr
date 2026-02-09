@@ -63,7 +63,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let line_width = args.get_one::<usize>("line").copied().unwrap_or(60);
 
     let mut tb = TwoBitFile::open(input_path)?;
-    let mut writer = intspan::writer(output_path);
+    let mut writer = pgr::writer(output_path);
 
     let names = tb.get_sequence_names();
     for name in names {

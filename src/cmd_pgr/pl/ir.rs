@@ -160,10 +160,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             Profex -z genome ${sn} > prof.${sn}.txt
         )?;
 
-        let reader = intspan::reader(&format!("prof.{}.txt", sn));
+        let reader = pgr::reader(&format!("prof.{}.txt", sn));
 
         let rg_file = format!("prof.{}.rg", sn);
-        let mut writer = intspan::writer(&rg_file);
+        let mut writer = pgr::writer(&rg_file);
 
         for line in reader.lines().map_while(Result::ok) {
             let Some(caps) = re_prof.captures(&line) else {

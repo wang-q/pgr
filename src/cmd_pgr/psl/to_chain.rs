@@ -41,8 +41,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let output = args.get_one::<String>("output").unwrap();
     let fix_strand = args.get_flag("fix_strand");
 
-    let reader = intspan::reader(input);
-    let mut writer = intspan::writer(output);
+    let reader = pgr::reader(input);
+    let mut writer = pgr::writer(output);
 
     let mut chain_id = 1;
 

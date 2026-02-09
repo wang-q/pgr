@@ -47,7 +47,7 @@ Examples:
 
 // command implementation
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let mut writer = intspan::writer(args.get_one::<String>("outfile").unwrap());
+    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap());
     let no_ns = args.get_flag("no_ns");
 
     for infile in args.get_many::<String>("infiles").unwrap() {

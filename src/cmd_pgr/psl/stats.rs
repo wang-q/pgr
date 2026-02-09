@@ -208,14 +208,14 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let queries_file = args.get_one::<String>("queries");
     let tsv = args.get_flag("tsv");
 
-    let reader = intspan::reader(input);
-    let mut writer = intspan::writer(output);
+    let reader = pgr::reader(input);
+    let mut writer = pgr::writer(output);
 
     let mut query_stats_tbl: HashMap<String, SumStats> = HashMap::new();
 
     // Load queries if provided
     if let Some(q_file) = queries_file {
-        let r = intspan::reader(q_file);
+        let r = pgr::reader(q_file);
         for line in r.lines() {
             let line = line?;
             let parts: Vec<&str> = line.split('\t').collect();

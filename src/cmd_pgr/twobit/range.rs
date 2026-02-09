@@ -89,7 +89,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // Open files
     //----------------------------
     let mut tb = TwoBitFile::open(infile)?;
-    let mut writer = intspan::writer(output_path);
+    let mut writer = pgr::writer(output_path);
 
     //----------------------------
     // Output

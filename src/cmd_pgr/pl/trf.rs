@@ -173,10 +173,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         // The last 2 fields were introduced by -ngs
         // Matched with `pgr fa range mg1655.fa NC_000913:198-229`
 
-        let reader = intspan::reader(&format!("trf.{}.dat", i));
+        let reader = pgr::reader(&format!("trf.{}.dat", i));
 
         let rg_file = format!("trf.{}.rg", i);
-        let mut writer = intspan::writer(&rg_file);
+        let mut writer = pgr::writer(&rg_file);
         for line in reader.lines().map_while(Result::ok) {
             let fields: Vec<&str> = line.split_ascii_whitespace().collect();
             if fields.len() < 15 {

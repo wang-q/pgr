@@ -143,7 +143,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut writer: Box<dyn Write> = if abs_outfile == "stdout" {
         Box::new(std::io::stdout())
     } else {
-        Box::new(intspan::writer(&abs_outfile))
+        Box::new(pgr::writer(&abs_outfile))
     };
 
     // Process inputs (stdin or files)

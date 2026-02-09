@@ -79,7 +79,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut tb = TwoBitFile::open(infile)?;
     let names = tb.get_sequence_names();
 
-    let mut writer = intspan::writer(outfile);
+    let mut writer = pgr::writer(outfile);
 
     for name in names {
         if set_list.contains(&name) != is_invert {
