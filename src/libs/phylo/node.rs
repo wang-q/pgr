@@ -172,3 +172,75 @@ impl Node {
         self.children.is_empty()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_node_creation() {
+        let node = Node::new(10);
+        assert_eq!(node.id, 10);
+        assert!(node.children.is_empty());
+        assert!(node.name.is_none());
+        assert!(node.length.is_none());
+        assert!(node.properties.is_none());
+        assert!(!node.deleted);
+    }
+
+    #[test]
+    fn test_builder_methods() {
+        let node = Node::new(1)
+            .with_name("Species_A")
+            .with_length(0.12345);
+        
+        assert_eq!(node.name, Some("Species_A".to_string()));
+        assert_eq!(node.length, Some(0.12345));
+    }
+
+    #[test]
+    fn test_set_name() {
+        let mut node = Node::new(1);
+        node.set_name("Species_B");
+        assert_eq!(node.name, Some("Species_B".to_string()));
+    }
+
+    #[test]
+    fn test_properties() {
+        let mut node = Node::new(1);
+        
+        // Test add_property
+        node.add_property("key1", "value1");
+        assert_eq!(node.get_property("key1"), Some(&"value1".to_string()));
+        
+        // Test add_property_from_str single
+        node.add_property_from_str("key2=value2");
+        assert_eq!(node.get_property("key2"), Some(&"value2".to_string()));
+        
+        // Test add_property_from_str multiple
+        node.add_property_from_str("key3=value3:key4=value4");
+        assert_eq!(node.get_property("key3"), Some(&"value3".to_string()));
+        assert_eq!(node.get_property("key4"), Some(&"value4".to_string()));
+        
+        // Test overwrite
+        node.add_property("key1", "new_value");
+        assert_eq!(node.get_property("key1"), Some(&"new_value".to_string()));
+        
+        // Test malformed string (should be ignored)
+        node.add_property_from_str("malformed_entry");
+        assert_eq!(node.get_property("malformed_entry"), None);
+        
+        // Test malformed string with only key
+        node.add_property_from_str("onlykey=");
+        assert_eq!(node.get_property("onlykey"), Some(&"".to_string()));
+    }
+
+    #[test]
+    fn test_is_leaf() {
+        let mut node = Node::new(1);
+        assert!(node.is_leaf());
+        
+        node.children.push(2);
+        assert!(!node.is_leaf());
+    }
+}

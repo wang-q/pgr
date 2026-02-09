@@ -496,4 +496,72 @@ mod tests {
         sort_by_list(&mut tree, &["C".to_string(), "B".to_string()]);
         assert_eq!(tree.to_newick(), "((C,E),(B,A));");
     }
+
+    #[test]
+    fn test_deladderize() {
+        let mut tree = Tree::new();
+        let root = tree.add_node();
+        tree.set_root(root);
+
+        // Structure: ((A,B),(C,(D,E)),F)
+        // Sizes:
+        // A,B,C,D,E,F (leaves) = 1
+        // (A,B) = 1 + 1 + 1 = 3
+        // (D,E) = 1 + 1 + 1 = 3
+        // (C,(D,E)) = 1 + 1 + 3 = 5
+        // Root children:
+        // 1. (A,B) - size 3
+        // 2. (C,(D,E)) - size 5
+        // 3. F - size 1
+
+        let f = tree.add_node();
+        tree.get_node_mut(f).unwrap().name = Some("F".to_string());
+
+        let ab = tree.add_node();
+        let a = tree.add_node();
+        tree.get_node_mut(a).unwrap().name = Some("A".to_string());
+        let b = tree.add_node();
+        tree.get_node_mut(b).unwrap().name = Some("B".to_string());
+        tree.add_child(ab, a).unwrap();
+        tree.add_child(ab, b).unwrap();
+
+        let cde = tree.add_node();
+        let c = tree.add_node();
+        tree.get_node_mut(c).unwrap().name = Some("C".to_string());
+        let de = tree.add_node();
+        let d = tree.add_node();
+        tree.get_node_mut(d).unwrap().name = Some("D".to_string());
+        let e = tree.add_node();
+        tree.get_node_mut(e).unwrap().name = Some("E".to_string());
+        tree.add_child(de, d).unwrap();
+        tree.add_child(de, e).unwrap();
+        
+        tree.add_child(cde, c).unwrap(); // Add C first
+        tree.add_child(cde, de).unwrap(); // Add (D,E) second
+
+        tree.add_child(root, ab).unwrap();
+        tree.add_child(root, cde).unwrap();
+        tree.add_child(root, f).unwrap();
+
+        // Run deladderize
+        // Level 0 (Root children): Ascending -> F (1), (A,B) (3), (C,(D,E)) (5)
+        // Level 1 (Children of Level 0 nodes): Descending
+        // - F: no children
+        // - (A,B): A(1), B(1) -> Equal, keep order (A,B)
+        // - (C,(D,E)): C(1), (D,E)(3) -> Descending -> (D,E), C
+        // Level 2 (Children of Level 1 nodes): Ascending
+        // - (D,E): D(1), E(1) -> Equal, keep order (D,E)
+
+        deladderize(&mut tree);
+
+        let root_children = &tree.get_node(root).unwrap().children;
+        assert_eq!(root_children.len(), 3);
+        assert_eq!(root_children[0], f);
+        assert_eq!(root_children[1], ab);
+        assert_eq!(root_children[2], cde);
+
+        let cde_children = &tree.get_node(cde).unwrap().children;
+        assert_eq!(cde_children[0], de); // Larger one first (descending)
+        assert_eq!(cde_children[1], c);
+    }
 }
