@@ -234,3 +234,21 @@ fn command_comment_remove() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn command_to_dot() -> anyhow::Result<()> {
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("nwk")
+        .arg("to-dot")
+        .arg("tests/newick/catarrhini.nwk")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    assert!(stdout.contains("digraph Tree {"));
+    assert!(stdout.contains("node [shape=box];"));
+    assert!(stdout.contains("Hominidae"));
+    assert!(stdout.contains("->"));
+
+    Ok(())
+}

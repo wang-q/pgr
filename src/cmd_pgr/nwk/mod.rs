@@ -11,6 +11,7 @@ pub mod replace;
 pub mod reroot;
 pub mod stat;
 pub mod subtree;
+pub mod to_dot;
 pub mod topo;
 pub mod utils;
 
@@ -41,6 +42,7 @@ Subcommand groups:
         .subcommand(reroot::make_subcommand())
         .subcommand(stat::make_subcommand())
         .subcommand(subtree::make_subcommand())
+        .subcommand(to_dot::make_subcommand())
         .subcommand(topo::make_subcommand())
 }
 
@@ -57,6 +59,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         Some(("reroot", sub_matches)) => reroot::execute(sub_matches),
         Some(("stat", sub_matches)) => stat::execute(sub_matches),
         Some(("subtree", sub_matches)) => subtree::execute(sub_matches),
+        Some(("to-dot", sub_matches)) => to_dot::execute(sub_matches),
         Some(("topo", sub_matches)) => topo::execute(sub_matches),
         _ => unreachable!(),
     }
