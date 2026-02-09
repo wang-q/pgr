@@ -13,7 +13,7 @@ use std::io::Read;
 /// // let trees = pgr::libs::phylo::tree::io::from_file("path/to/tree.nwk")?;
 /// ```
 pub fn from_file(infile: &str) -> anyhow::Result<Vec<Tree>> {
-    let mut reader = intspan::reader(infile);
+    let mut reader = crate::reader(infile);
     let mut newick = String::new();
     reader
         .read_to_string(&mut newick)

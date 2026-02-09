@@ -1250,7 +1250,7 @@ pub fn align_seqs(seqs: &[String], aligner: &str) -> anyhow::Result<Vec<String>>
     for _ in 0..seqs.len() {
         out_seqs.push("".to_string());
     }
-    let reader = intspan::reader(seq_out_path.to_string_lossy().as_ref());
+    let reader = crate::reader(seq_out_path.to_string_lossy().as_ref());
     let fa_in = fasta::Reader::new(reader);
     for result in fa_in.records() {
         // obtain record or fail with error
