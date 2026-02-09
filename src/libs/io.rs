@@ -2,14 +2,14 @@ use std::io::{BufRead, BufReader, BufWriter, Write};
 
 /// ```
 /// use std::io::BufRead;
-/// let reader = pgr::libs::io::reader("tests/mat/IBPA.list");
+/// let reader = pgr::reader("tests/mat/IBPA.list");
 /// let mut lines = vec![];
 /// for line in reader.lines() {
 ///     lines.push(line);
 /// }
 /// assert_eq!(lines.len(), 3);
 ///
-/// let reader = pgr::libs::io::reader("tests/mat/IBPA.list");
+/// let reader = pgr::reader("tests/mat/IBPA.list");
 /// assert_eq!(reader.lines().collect::<Vec<_>>().len(), 3);
 /// ```
 pub fn reader(input: &str) -> Box<dyn BufRead> {
