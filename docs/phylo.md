@@ -715,3 +715,51 @@ pgr nwk indent data.nwk --compact
 改进帮助文本。 参考 nw_indent 的帮助文本，按我们自己的样式 进行调整。
 phylo.md 根据现在的代码状态，更新文档
 ```
+
+---
+
+## 10. 附录：Workflow 参考 (Appendix: Workflow Reference)
+
+### Bootscan Workflow (`bootscan.sh`)
+
+`newick_utils` 源码中的 `bootscan.sh` 展示了一个结合多种生物信息学工具进行重组检测的完整流程。这为 `pgr` 的 CLI 设计提供了实际应用场景参考。
+
+**流程步骤详解：**
+
+1.  **序列比对 (Alignment)**
+    *   **工具**: `mafft`
+    *   **操作**: 对输入的未比对序列文件（FASTA）进行多序列比对。
+    *   **命令**: `mafft --quiet "$INFILE" > "$MUSCLE_OUT"`
+
+2.  **切片 (Slicing)**
+    *   **工具**: `infoalign`, `seqret` (EMBOSS 工具集)
+    *   **操作**:
+        *   获取比对长度 (`infoalign`).
+        *   按指定步长 (`SLICE_STEP`) 和窗口大小 (`SLICE_WIDTH`) 遍历比对结果。
+        *   将每个窗口切片并转换为 PHYLIP 格式 (`seqret`).
+    *   **目的**: 准备滑动窗口数据以构建局部树。
+
+3.  **构建系统发育树 (Tree Building)**
+    *   **工具**: `phyml`
+    *   **操作**: 对每个 PHYLIP 切片文件构建最大似然树 (Maximum Likelihood Tree)。
+    *   **参数**: `-b 0` (无 bootstrap，求速度), `-o n` (不优化拓扑/分支/率参数)。
+    *   **输出**: 生成一系列无根树文件。
+
+4.  **重定根 (Rerooting)**
+    *   **工具**: `nw_reroot` (Newick Utilities)
+    *   **操作**: 使用指定的外群 (`OUTGROUP`) 对每棵树进行定根。
+    *   **命令**: `nw_reroot $unrooted_tree $OUTGROUP > ${unrooted_tree/.txt/.rr.nw}`
+    *   **对应 pgr**: `pgr nwk reroot`
+
+5.  **距离提取 (Distance Extraction)**
+    *   **工具**: `nw_distance`, `nw_clade`, `nw_labels`
+    *   **操作**:
+        *   计算参考序列 (`REFERENCE`) 到树中其他所有节点的距离 (`nw_distance -n`).
+        *   提取相关标签 (`nw_clade`, `nw_labels`).
+        *   生成包含 `(Position, Distance1, Distance2, ...)` 的表格数据。
+    *   **对应 pgr**: `pgr nwk distance`, `pgr nwk subtree`, `pgr nwk label`
+
+6.  **可视化 (Visualization)**
+    *   **工具**: `gnuplot`
+    *   **操作**: 将距离表格绘制成折线图。横轴为序列位置，纵轴为参考序列到其他序列的遗传距离。
+    *   **原理**: 如果参考序列在某个区域与其他序列的距离显著变化（例如最近邻改变），提示可能发生了重组事件。
