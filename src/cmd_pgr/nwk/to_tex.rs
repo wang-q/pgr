@@ -104,20 +104,26 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
         // a bar of unit length
         if is_bl {
-            // Candidate scale values
-            let scales = [10.0, 5.0, 1.0, 0.5, 0.1, 0.05, 0.01, 0.005, 0.001];
+            // Determine scale dynamically
+            let target_scale = height / 5.0; // Target ~20% of tree height
+            let magnitude = target_scale.log10().floor();
+            let base = 10.0_f64.powf(magnitude);
 
-            // Choose appropriate scale: best between 10-20% of tree height
-            let scale = scales
+            // Find the best step: 1x, 2x, or 5x of the base magnitude
+            // e.g., if target is 0.035 (base 0.01), candidates are 0.01, 0.02, 0.05
+            // we want the largest one <= target.
+            let scale = [1.0, 2.0, 5.0]
                 .iter()
-                // Not exceeding 1/5 of tree height
-                .filter(|&&x| x <= height / 5.0)
-                .next()
-                // If all too large, use the smallest
-                .unwrap_or(&scales[scales.len() - 1]);
+                .map(|&x| base * x)
+                .filter(|&x| x <= target_scale)
+                .last()
+                .unwrap_or(base); // Fallback to base (1x) if even 1x is too big? Should not happen if logic is sound.
 
             // Calculate actual length in millimeters
             let bar_mm = (scale * 100.0 / height).round() as i32;
+            
+            // If the bar is too small to see (< 5mm), don't draw it or warn?
+            // Current logic just draws it.
 
             // Draw scale bar
             s += "\\draw[-, grey, line width=1pt]";
