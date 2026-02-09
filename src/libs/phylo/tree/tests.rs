@@ -1,5 +1,5 @@
 use super::*;
-// use crate::libs::phylo::tree::Tree;
+use crate::libs::phylo::TreeComparison;
 
 #[test]
 fn test_tree_traversals() {
@@ -253,32 +253,6 @@ fn test_tree_prune() {
 }
 
 #[test]
-fn test_get_partitions() {
-    // Tree: ((A,B)C,D)E;
-    let newick = "((A,B)C,D)E;";
-    let tree = Tree::from_newick(newick).unwrap();
-
-    let partitions = tree.get_partitions();
-
-    // Helper to create string sets
-    fn make_set(names: &[&str]) -> std::collections::BTreeSet<String> {
-        names.iter().map(|s| s.to_string()).collect()
-    }
-
-    let mut expected = std::collections::HashSet::new();
-    expected.insert(make_set(&["A"]));
-    expected.insert(make_set(&["B"]));
-    expected.insert(make_set(&["A", "B"]));
-    expected.insert(make_set(&["D"]));
-    expected.insert(make_set(&["A", "B", "D"]));
-
-    assert_eq!(partitions.len(), 5);
-    for p in &expected {
-        assert!(partitions.contains(p), "Missing partition: {:?}", p);
-    }
-}
-
-#[test]
 fn test_is_binary() {
     let t1 = Tree::from_newick("((A,B),C);").unwrap();
     assert!(t1.is_binary());
@@ -311,12 +285,18 @@ fn test_diameter() {
 
 #[test]
 fn test_robinson_foulds() {
+    // 3 leaves -> Unrooted RF is always 0 (star topology)
     let t1 = Tree::from_newick("((A,B),C);").unwrap();
     let t2 = Tree::from_newick("((A,C),B);").unwrap();
-    assert_eq!(t1.robinson_foulds(&t2).unwrap(), 2);
+    assert_eq!(t1.robinson_foulds(&t2).unwrap(), 0);
 
     let t3 = Tree::from_newick("((A,B),C);").unwrap();
     assert_eq!(t1.robinson_foulds(&t3).unwrap(), 0);
+
+    // 4 leaves -> Unrooted RF can be non-zero
+    let t4 = Tree::from_newick("((A,B),(C,D));").unwrap();
+    let t5 = Tree::from_newick("((A,C),(B,D));").unwrap();
+    assert_eq!(t4.robinson_foulds(&t5).unwrap(), 2);
 }
 
 #[test]

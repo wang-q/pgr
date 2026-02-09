@@ -7,7 +7,7 @@ pub mod tests;
 pub mod traversal;
 
 use super::node::{Node, NodeId};
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 
 #[derive(Debug, Default, Clone)]
 pub struct Tree {
@@ -196,14 +196,6 @@ impl Tree {
 
     pub fn is_binary(&self) -> bool {
         stat::is_binary(self)
-    }
-
-    pub fn get_partitions(&self) -> HashSet<std::collections::BTreeSet<String>> {
-        stat::get_partitions(self)
-    }
-
-    pub fn robinson_foulds(&self, other: &Tree) -> Result<usize, String> {
-        Ok(stat::robinson_foulds(self, other))
     }
 
     pub fn diameter(&self) -> Result<f64, String> {

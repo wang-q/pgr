@@ -1,6 +1,6 @@
 use super::Tree;
 use crate::libs::phylo::node::NodeId;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap};
 
 /// Get IDs of all leaves in subtree rooted at `id`.
 pub fn get_leaves(tree: &Tree, id: NodeId) -> Vec<NodeId> {
@@ -36,75 +36,6 @@ pub fn is_binary(tree: &Tree) -> bool {
     tree.nodes
         .iter()
         .all(|n| n.deleted || n.children.is_empty() || n.children.len() == 2)
-}
-
-/// Get bipartitions (splits) induced by the tree.
-/// Returns a set of BitSets (represented as sorted vector of leaf names or IDs).
-/// Here we return Set<BTreeSet<String>> for comparison.
-pub fn get_partitions(tree: &Tree) -> HashSet<std::collections::BTreeSet<String>> {
-    let mut partitions = HashSet::new();
-    let root = match tree.get_root() {
-        Some(r) => r,
-        None => return partitions,
-    };
-
-    // DFS to get leaves under each node
-    // Using explicit stack for postorder simulation to build sets bottom-up?
-    // Or just simple recursion.
-
-    fn collect_leaves(
-        tree: &Tree,
-        id: NodeId,
-        partitions: &mut HashSet<std::collections::BTreeSet<String>>,
-    ) -> std::collections::BTreeSet<String> {
-        let node = tree.get_node(id).unwrap();
-        if node.children.is_empty() {
-            let mut set = std::collections::BTreeSet::new();
-            if let Some(name) = &node.name {
-                set.insert(name.clone());
-            }
-            return set;
-        }
-
-        let mut current_leaves = std::collections::BTreeSet::new();
-        for &child in &node.children {
-            let child_leaves = collect_leaves(tree, child, partitions);
-            // Add non-trivial partitions (child edge split)
-            if !child_leaves.is_empty() {
-                // && child_leaves.len() < total_leaves (handled by caller context usually)
-                partitions.insert(child_leaves.clone());
-                current_leaves.extend(child_leaves);
-            }
-        }
-        current_leaves
-    }
-
-    let root_leaves = collect_leaves(tree, root, &mut partitions);
-    if !root_leaves.is_empty() {
-        partitions.insert(root_leaves);
-    }
-
-    // Partitions usually imply the split of ALL leaves into (A, B).
-    // The set of leaves under a node `S` defines split `{S, All \ S}`.
-    // We store `S`. When comparing, we need to handle that `S` and `All \ S` are same split.
-    // For RF distance, usually we normalize by storing the smaller set, or ensure rooted trees match.
-    // Here we just return the sets of leaves for each branch.
-
-    // Filter out trivial partitions (size 0 or size 1 or size ALL) if desired?
-    // Usually RF distance excludes trivial splits (leaf edges).
-    // partitions.retain(|s| s.len() > 1 && s.len() < all_leaves.len());
-
-    partitions
-}
-
-/// Calculate Robinson-Foulds distance to another tree.
-/// (A + B - 2 * Intersection)
-pub fn robinson_foulds(tree: &Tree, other: &Tree) -> usize {
-    let p1 = get_partitions(tree);
-    let p2 = get_partitions(other);
-
-    let intersection = p1.intersection(&p2).count();
-    p1.len() + p2.len() - 2 * intersection
 }
 
 /// Calculate diameter (longest path between any two nodes).
