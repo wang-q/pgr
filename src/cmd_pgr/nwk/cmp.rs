@@ -66,7 +66,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         // but to keep logic uniform, we'll just treat it as a second list.
         // However, Tree::from_file returns Vec<Tree>.
         // For efficiency, let's just use references/indices logic below.
-        Vec::new() 
+        Vec::new()
     };
 
     let self_compare = args.get_one::<String>("compare_file").is_none();
@@ -85,16 +85,16 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     if self_compare {
         // Compare trees1 vs trees1 (All pairs? Or just upper triangle?)
-        // Standard "cmp" usually implies full list or matrix. 
+        // Standard "cmp" usually implies full list or matrix.
         // Let's do full pairwise for now (N^2), consistent with "compare A to B".
         for (i, t1) in trees1.iter().enumerate() {
             for (j, t2) in trees1.iter().enumerate() {
                 // Skip redundant calculations if desired?
                 // But for a full matrix output (even if in list format), users might expect A-B and B-A.
-                // RF is symmetric. 
-                // Let's optimize: if j < i, use result from i,j? 
+                // RF is symmetric.
+                // Let's optimize: if j < i, use result from i,j?
                 // For simplicity: compute all.
-                
+
                 let dist = match t1.robinson_foulds(t2) {
                     Ok(d) => d.to_string(),
                     Err(e) => format!("Error: {}", e), // Handle leaf mismatch gracefully?
@@ -110,7 +110,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                     Ok(d) => d.to_string(),
                     Err(e) => format!("Error: {}", e),
                 };
-                // Use 1-based index, maybe prefix with file? 
+                // Use 1-based index, maybe prefix with file?
                 // Just indices 1..N and 1..M
                 writeln!(writer, "{}\t{}\t{}", i + 1, j + 1, dist)?;
             }

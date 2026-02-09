@@ -55,7 +55,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // We read replicates first to build the leaf map and counts, similar to nw_support logic
     let replicates = tree::io::from_file(replicates_file)?;
     if replicates.is_empty() {
-         return Err(anyhow::anyhow!("No replicate trees found"));
+        return Err(anyhow::anyhow!("No replicate trees found"));
     }
     let total_reps = replicates.len();
 
@@ -64,41 +64,42 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     if targets.is_empty() {
         return Err(anyhow::anyhow!("No target trees found"));
     }
-    
+
     // 3. Build Leaf Map (from first replicate)
     let leaf_map = support::build_leaf_map(&replicates[0]).map_err(|e| anyhow::anyhow!(e))?;
-    
+
     // 4. Count Clades in Replicates
     let counts = support::count_clades(&replicates, &leaf_map).map_err(|e| anyhow::anyhow!(e))?;
-    
+
     // 5. Annotate Target Trees
     for target in &mut targets {
-        let target_bitsets = support::compute_all_bitsets(target, &leaf_map).map_err(|e| anyhow::anyhow!(e))?;
-        
+        let target_bitsets =
+            support::compute_all_bitsets(target, &leaf_map).map_err(|e| anyhow::anyhow!(e))?;
+
         for (id, bs) in target_bitsets {
             let node = target.get_node_mut(id).unwrap();
-            
+
             // Only annotate internal nodes
             if !node.is_leaf() {
                 let count = counts.get(&bs).copied().unwrap_or(0);
-                
+
                 let label = if percent {
-                     if total_reps > 0 {
+                    if total_reps > 0 {
                         format!("{}", (count * 100) / total_reps)
-                     } else {
+                    } else {
                         "0".to_string()
-                     }
+                    }
                 } else {
                     format!("{}", count)
                 };
-                
+
                 // Overwrite existing label
                 node.name = Some(label);
             }
         }
-        
+
         println!("{}", target.to_newick());
     }
-    
+
     Ok(())
 }

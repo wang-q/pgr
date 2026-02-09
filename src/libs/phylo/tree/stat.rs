@@ -122,17 +122,18 @@ pub fn cherries(tree: &Tree) -> usize {
     for node in &tree.nodes {
         if !node.deleted && node.children.len() == 2 {
             // Check if both children are leaves
-            // We need to handle potential deleted children if that's possible, 
+            // We need to handle potential deleted children if that's possible,
             // but tree.nodes iteration includes deleted ones unless checked.
             // node.children contains IDs.
-            
-            let is_cherry = node.children.iter().all(|&child_id| {
-                match tree.get_node(child_id) {
+
+            let is_cherry = node
+                .children
+                .iter()
+                .all(|&child_id| match tree.get_node(child_id) {
                     Some(child) => child.children.is_empty(),
                     None => false,
-                }
-            });
-            
+                });
+
             if is_cherry {
                 count += 1;
             }
@@ -168,7 +169,7 @@ pub fn sackin(tree: &Tree) -> usize {
 }
 
 /// Computes the Colless index.
-/// The Colless index is the sum of absolute differences between the number of leaves 
+/// The Colless index is the sum of absolute differences between the number of leaves
 /// in the left and right subtrees of each internal node.
 /// Only defined for binary trees. Returns None if tree is not binary.
 pub fn colless(tree: &Tree) -> Option<usize> {
@@ -185,13 +186,13 @@ pub fn colless(tree: &Tree) -> Option<usize> {
 
     for id in nodes {
         let node = tree.get_node(id)?;
-        
+
         if node.children.is_empty() {
             leaf_counts.insert(id, 1);
         } else {
             let mut sum_leaves = 0;
             let mut child_leaves = Vec::new();
-            
+
             for &child in &node.children {
                 let c_leaves = *leaf_counts.get(&child).unwrap_or(&0);
                 sum_leaves += c_leaves;

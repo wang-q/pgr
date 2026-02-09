@@ -134,8 +134,16 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         if style == "line" {
             writer.write_fmt(format_args!(
                 "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n",
-                tree_type, n_node, n_leaf, is_rooted, n_dichotomies, n_leaf_label, n_internal_label,
-                cherries, sackin, colless_str
+                tree_type,
+                n_node,
+                n_leaf,
+                is_rooted,
+                n_dichotomies,
+                n_leaf_label,
+                n_internal_label,
+                cherries,
+                sackin,
+                colless_str
             ))?;
         } else {
             writer.write_fmt(format_args!("Type\t{}\n", tree_type))?;

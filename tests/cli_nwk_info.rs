@@ -62,7 +62,9 @@ fn command_stat_style_line() -> anyhow::Result<()> {
 
     assert!(stdout.contains("phylogram\t19\t10\t9\t10\t6"));
     // Header check
-    assert!(stdout.contains("Type\tnodes\tleaves\tdichotomies\tleaf labels\tinternal labels\tcherries\tsackin\tcolless"));
+    assert!(stdout.contains(
+        "Type\tnodes\tleaves\tdichotomies\tleaf labels\tinternal labels\tcherries\tsackin\tcolless"
+    ));
 
     Ok(())
 }
@@ -83,7 +85,9 @@ fn command_stat_forest() -> anyhow::Result<()> {
     assert_eq!(lines.len(), 6);
 
     // Header
-    assert!(lines[0].contains("Type\tnodes\tleaves\tdichotomies\tleaf labels\tinternal labels\tcherries\tsackin\tcolless"));
+    assert!(lines[0].contains(
+        "Type\tnodes\tleaves\tdichotomies\tleaf labels\tinternal labels\tcherries\tsackin\tcolless"
+    ));
 
     // Tree 1: Cladogram, 18 nodes, 11 leaves, 5 dichotomies, 11 leaf labels, 0 inner labels
     // 5 cherries (visual inspection of forest.nwk or just accept changes)
