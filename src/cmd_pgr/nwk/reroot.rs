@@ -72,6 +72,20 @@ Examples:
                 .action(ArgAction::SetTrue)
                 .help("Treat internal node labels as support values and shift them when rerooting"),
         )
+        .arg(
+            Arg::new("deroot")
+                .long("deroot")
+                .short('d')
+                .action(ArgAction::SetTrue)
+                .help("Deroot the tree (splice out the ingroup to create a multifurcating root)"),
+        )
+        .arg(
+            Arg::new("lax")
+                .long("lax")
+                .short('l')
+                .action(ArgAction::SetTrue)
+                .help("Lax mode: if rerooting on specified nodes fails, try the complement (unspecified nodes)"),
+        )
 }
 
 // command implementation
@@ -81,6 +95,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     let mut writer = intspan::writer(args.get_one::<String>("outfile").unwrap());
     let process_support = args.get_flag("support_as_labels");
+    let deroot = args.get_flag("deroot");
+    let lax = args.get_flag("lax");
 
     let infile = args.get_one::<String>("infile").unwrap();
     let mut trees = pgr::libs::phylo::reader::from_file(infile)?;
@@ -89,60 +105,95 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // Since arguments are node names, it implies a single tree context or consistent naming.
     // We'll process the first tree to match previous behavior.
     if let Some(mut tree) = trees.pop() {
-        // ids with names
-        let id_of: BTreeMap<_, _> = tree.get_name_id();
+        if deroot {
+            tree.deroot().map_err(|e| anyhow::anyhow!(e))?;
+        } else {
+            // ids with names
+            let id_of: BTreeMap<_, _> = tree.get_name_id();
 
-        // All IDs matched
-        let mut ids = BTreeSet::new();
-        if let Some(nodes) = args.get_many::<String>("node") {
-            for name in nodes {
-                if let Some(&id) = id_of.get(name) {
-                    ids.insert(id);
+            // All IDs matched
+            let mut ids = BTreeSet::new();
+            if let Some(nodes) = args.get_many::<String>("node") {
+                for name in nodes {
+                    if let Some(&id) = id_of.get(name) {
+                        ids.insert(id);
+                    }
+                }
+            }
+
+            if !ids.is_empty() {
+                let mut nodes: Vec<usize> = ids.iter().cloned().collect();
+                let mut sub_root_id = nodes.pop().unwrap();
+
+                for id in &nodes {
+                    sub_root_id = tree.get_common_ancestor(&sub_root_id, id).unwrap();
+                }
+
+                let old_root = tree.get_root().unwrap();
+                
+                // Lax mode check
+                if old_root == sub_root_id && lax {
+                    // Identify leaves in the "ingroup" (specified nodes)
+                    let mut specified_leaves = BTreeSet::new();
+                    for &id in &ids {
+                        // Find all descendant leaves of this node
+                        if let Ok(subtree) = tree.get_subtree(&id) {
+                            for sub_id in subtree {
+                                if let Some(node) = tree.get_node(sub_id) {
+                                    if node.children.is_empty() {
+                                        specified_leaves.insert(sub_id);
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Identify all leaves in the tree
+                    let all_leaves: BTreeSet<usize> = tree.get_leaves().into_iter().collect();
+
+                    // Complement = All Leaves - Specified Leaves
+                    let complement_leaves: Vec<usize> =
+                        all_leaves.difference(&specified_leaves).cloned().collect();
+
+                    if !complement_leaves.is_empty() {
+                        let mut comp_nodes = complement_leaves.clone();
+                        let mut comp_lca = comp_nodes.pop().unwrap();
+                        for id in &comp_nodes {
+                            comp_lca = tree.get_common_ancestor(&comp_lca, id).unwrap();
+                        }
+
+                        if comp_lca != old_root {
+                            sub_root_id = comp_lca;
+                        }
+                    }
+                }
+
+                if old_root == sub_root_id {
+                    let out_string = tree.to_newick();
+                    writer.write_all((out_string + "\n").as_ref())?;
+                    return Ok(());
+                }
+
+                let new_root = tree.insert_parent(sub_root_id).unwrap();
+
+                // Reroot at the new node
+                tree.reroot_at(new_root, process_support).unwrap();
+
+                // Compress: remove degree-2 nodes (redundant internal nodes)
+                // The old root likely became a degree-2 node.
+                tree.remove_degree_two_nodes();
+            } else {
+                // Default behavior: Root at the middle of the longest branch
+                if let Some(longest_node) = tree.get_node_with_longest_edge() {
+                    let new_root = tree.insert_parent(longest_node).unwrap();
+                    tree.reroot_at(new_root, process_support).unwrap();
+                    tree.remove_degree_two_nodes();
                 }
             }
         }
 
-        if !ids.is_empty() {
-            let mut nodes: Vec<usize> = ids.iter().cloned().collect();
-            let mut sub_root_id = nodes.pop().unwrap();
-
-            for id in &nodes {
-                sub_root_id = tree.get_common_ancestor(&sub_root_id, id).unwrap();
-            }
-
-            let old_root = tree.get_root().unwrap();
-            if old_root == sub_root_id {
-                let out_string = tree.to_newick();
-                writer.write_all((out_string + "\n").as_ref())?;
-                return Ok(());
-            }
-
-            let new_root = tree.insert_parent(sub_root_id).unwrap();
-
-            // Reroot at the new node
-            tree.reroot_at(new_root, process_support).unwrap();
-
-            // Compress: remove degree-2 nodes (redundant internal nodes)
-            // The old root likely became a degree-2 node.
-            tree.remove_degree_two_nodes();
-
-            let out_string = tree.to_newick();
-            writer.write_all((out_string + "\n").as_ref())?;
-        } else {
-            // Default behavior: Root at the middle of the longest branch
-            if let Some(longest_node) = tree.get_node_with_longest_edge() {
-                let new_root = tree.insert_parent(longest_node).unwrap();
-                tree.reroot_at(new_root, process_support).unwrap();
-                tree.remove_degree_two_nodes();
-                
-                let out_string = tree.to_newick();
-                writer.write_all((out_string + "\n").as_ref())?;
-            } else {
-                // No valid edge to split (e.g. single node tree), just print original
-                let out_string = tree.to_newick();
-                writer.write_all((out_string + "\n").as_ref())?;
-            }
-        }
+        let out_string = tree.to_newick();
+        writer.write_all((out_string + "\n").as_ref())?;
     }
 
     Ok(())
