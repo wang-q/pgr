@@ -371,9 +371,9 @@ pub struct Tree {
     *   **功能**: 格式化/缩进 Newick 树
     *   **状态**: **[x] 已实现** (支持紧凑/缩进输出)
 
-*   **`nw_display`** $\to$ **`pgr nwk display` / `view`**
-    *   **功能**: 树的可视化 (ASCII/SVG/Map)
-    *   **状态**: [ ] (支持 `to_dot` / Graphviz 导出)
+*   **`nw_display`** $\to$ **`pgr nwk to-dot` / `to-forest` / `to-tex`**
+    *   **功能**: 树的可视化 (Graphviz/LaTeX Forest)
+    *   **状态**: **[x] 已实现** (支持 Graphviz DOT, LaTeX Forest 代码及完整文档导出)
 
 *   **`nw_topology`** $\to$ **`pgr nwk topo`**
     *   **功能**: 仅保留拓扑结构 (去除分支长度)
@@ -385,7 +385,7 @@ pub struct Tree {
 
 *   **`nw_reroot`** $\to$ **`pgr nwk reroot`**
     *   **功能**: 重定根 (Outgroup, Midpoint)
-    *   **状态**: [ ] (算法已实现 `reroot_at`)
+    *   **状态**: **[x] 已实现** (支持 Midpoint, Outgroup (LCA), Lax mode, Deroot)
 
 *   **`nw_prune`** $\to$ **`pgr nwk prune`**
     *   **功能**: 剪枝 (移除指定节点)
@@ -405,11 +405,11 @@ pub struct Tree {
 
 *   **`nw_condense`** $\to$ **`pgr nwk condense`**
     *   **功能**: 压缩树 (合并短枝/多叉化)
-    *   **状态**: [ ] (`subtree` 支持 `-C` condense)
+    *   **状态**: [ ] (`subtree` 命令支持 `-C` / `--condense` 选项来压缩子树)
 
 *   **`nw_support`** $\to$ **`pgr nwk support`**
     *   **功能**: 计算/显示支持率 (Bootstrap)
-    *   **状态**: [ ]
+    *   **状态**: [ ] (`reroot` 命令支持 `-s` / `--support-as-labels` 处理支持率)
 
 *   **`nw_match`** $\to$ **`pgr nwk match`**
     *   **功能**: 匹配两棵树的节点
@@ -471,7 +471,7 @@ pub struct Tree {
 | `monop` | 单系群检查 | `command_subtree_monophyly` | **[x] Pass** | 支持 `-M` 单系性验证 |
 
 | `nw_indent` | 缩进/格式化 Newick 字符串 | `pgr nwk indent` / `fmt` | **[x] Pass** | |
-| `nw_trim` | 修剪树 (Trim) | `pgr nwk trim` | [ ] | |
+| `nw_trim` | 修剪树 (Trim) | `pgr nwk trim` | [ ] | (部分功能被 `prune` 覆盖) |
 
 *注：我们将实现其中大部分功能，具体命令名称可能会根据 `pgr` 的整体风格进行微调（例如使用动词作为子命令）。*
 
@@ -557,6 +557,8 @@ nom = "8"  # 用于高性能解析
 *   `robinson_foulds()`:
     *   `weighted_robinson_foulds()`: 加权 RF 距离。
 *   **Visualization**:
+    *   **Graphviz DOT**: `to_dot()` 已实现。
+    *   **LaTeX Forest**: `to_forest` (Raw code) 和 `to_tex` (Full document) 已实现。
     *   `print_entity()` (或类似): 在终端打印 ASCII 树状图，用于快速调试和展示。
 *   **Tree Generation**:
     *   `generate_random_tree()` (Yule/Coalescent 模型): 主要用于模拟研究。`pgr` 侧重于处理真实数据，除非用于测试生成，否则优先级较低。
