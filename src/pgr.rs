@@ -55,7 +55,7 @@ fn main() -> anyhow::Result<()> {
     * dist  - Metrics: hv
 
 * Matrix:
-    * mat   - Processing: compare, format, subset, to-pair, to-phylip
+    * mat   - Processing: compare, format, subset, to-pair, to-phylip, upgma
 
 * Phylogeny:
     * nwk   - Newick tools: stat

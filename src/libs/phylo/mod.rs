@@ -1,4 +1,5 @@
 pub mod algo;
+pub mod build;
 pub mod cmp;
 pub mod error;
 pub mod node;
