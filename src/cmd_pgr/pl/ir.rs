@@ -138,7 +138,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     )?;
 
     let mut chrs: Vec<String> = vec![];
-    for line in intspan::read_lines("chr.sizes") {
+    for line in pgr::read_lines("chr.sizes") {
         let fields: Vec<&str> = line.split('\t').collect();
         if fields.len() == 2 {
             chrs.push(fields[0].to_string());

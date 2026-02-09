@@ -60,7 +60,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap());
 
     let mut replace_of: BTreeMap<String, Vec<String>> = BTreeMap::new();
-    for line in intspan::read_lines(args.get_one::<String>("replace.tsv").unwrap()) {
+    for line in pgr::read_lines(args.get_one::<String>("replace.tsv").unwrap()) {
         let rgs: Vec<_> = line.split('\t').collect();
 
         if rgs.is_empty() {

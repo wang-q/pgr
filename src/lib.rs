@@ -2,4 +2,4 @@
 #![feature(portable_simd)]
 
 pub mod libs;
-pub use libs::io::{reader, writer};
+pub use libs::io::{read_lines, reader, writer};

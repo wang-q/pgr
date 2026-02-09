@@ -101,7 +101,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let mut replace_of: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for rfile in args.get_many::<String>("replace.tsv").unwrap() {
-        for line in intspan::read_lines(rfile) {
+        for line in pgr::read_lines(rfile) {
             let parts: Vec<_> = line.split('\t').collect();
 
             if parts.len() < 2 {

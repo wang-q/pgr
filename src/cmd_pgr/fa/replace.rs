@@ -100,7 +100,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 fn read_replaces(input: &str) -> HashMap<String, Vec<String>> {
     let mut replaces: HashMap<String, Vec<String>> = HashMap::new();
 
-    for line in intspan::read_lines(input) {
+    for line in pgr::read_lines(input) {
         let mut fields: Vec<&str> = line.split('\t').collect();
 
         let key = fields[0].to_string();

@@ -32,6 +32,18 @@ pub fn reader(input: &str) -> Box<dyn BufRead> {
     reader
 }
 
+
+/// ```
+/// let lines = pgr::read_lines("tests/mat/IBPA.list");
+/// assert_eq!(lines.len(), 3);
+/// ```
+pub fn read_lines(input: &str) -> Vec<String> {
+    let mut reader = reader(input);
+    let mut s = String::new();
+    reader.read_to_string(&mut s).expect("Read error");
+    s.lines().map(|s| s.to_string()).collect::<Vec<String>>()
+}
+
 pub fn writer(output: &str) -> Box<dyn Write> {
     let writer: Box<dyn Write> = if output == "stdout" {
         Box::new(BufWriter::new(std::io::stdout()))
