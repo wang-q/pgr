@@ -12,6 +12,7 @@ pub mod replace;
 pub mod reroot;
 pub mod stat;
 pub mod subtree;
+pub mod support;
 pub mod to_dot;
 pub mod to_forest;
 pub mod to_tex;
@@ -46,6 +47,7 @@ Subcommand groups:
         .subcommand(reroot::make_subcommand())
         .subcommand(stat::make_subcommand())
         .subcommand(subtree::make_subcommand())
+        .subcommand(support::make_subcommand())
         .subcommand(to_dot::make_subcommand())
         .subcommand(to_forest::make_subcommand())
         .subcommand(to_tex::make_subcommand())
@@ -66,6 +68,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         Some(("reroot", sub_matches)) => reroot::execute(sub_matches),
         Some(("stat", sub_matches)) => stat::execute(sub_matches),
         Some(("subtree", sub_matches)) => subtree::execute(sub_matches),
+        Some(("support", sub_matches)) => support::execute(sub_matches),
         Some(("to-dot", sub_matches)) => to_dot::execute(sub_matches),
         Some(("to-forest", sub_matches)) => to_forest::execute(sub_matches),
         Some(("to-tex", sub_matches)) => to_tex::execute(sub_matches),
