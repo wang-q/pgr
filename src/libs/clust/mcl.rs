@@ -11,7 +11,7 @@
 //!
 //! ```
 //! use pgr::libs::clust::mcl::Mcl;
-//! use intspan::ScoringMatrix;
+//! use pgr::libs::pairmat::ScoringMatrix;
 //!
 //! // Create a matrix for 4 nodes (A, B, C, D)
 //! // Defaults: self-loop=1.0, missing=0.0
@@ -80,7 +80,7 @@ impl Mcl {
     ///
     /// A vector of clusters, where each cluster is a vector of node indices
     /// corresponding to the input `ScoringMatrix`.
-    pub fn perform_clustering(&self, sm: &intspan::ScoringMatrix<f32>) -> Vec<Vec<usize>> {
+    pub fn perform_clustering(&self, sm: &crate::libs::pairmat::ScoringMatrix<f32>) -> Vec<Vec<usize>> {
         let mut matrix = SparseMat::from_scoring_matrix(sm);
         matrix.normalize();
 
@@ -127,7 +127,7 @@ struct SparseMat {
 }
 
 impl SparseMat {
-    fn from_scoring_matrix(sm: &intspan::ScoringMatrix<f32>) -> Self {
+    fn from_scoring_matrix(sm: &crate::libs::pairmat::ScoringMatrix<f32>) -> Self {
         let size = sm.size();
         let mut cols: Vec<Vec<(usize, f64)>> = vec![Vec::new(); size];
 
@@ -231,7 +231,7 @@ impl SparseMat {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use intspan::ScoringMatrix;
+    use crate::libs::pairmat::ScoringMatrix;
 
     #[test]
     fn test_mcl_simple_clusters() {

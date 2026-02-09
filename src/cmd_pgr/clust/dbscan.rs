@@ -100,7 +100,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
 
     // Load matrix from pairwise distances
-    let (matrix, names) = intspan::ScoringMatrix::from_pair_scores(infile, opt_same, opt_missing);
+    let (matrix, names) = pgr::libs::pairmat::ScoringMatrix::from_pair_scores(infile, opt_same, opt_missing);
 
     //----------------------------
     // 3. Clustering

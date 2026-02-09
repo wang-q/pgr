@@ -107,8 +107,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     // 2. Load Matrix
     //----------------------------
-    let (sm, names): (intspan::ScoringMatrix<f32>, Vec<String>) =
-        intspan::ScoringMatrix::from_pair_scores(infile, opt_same, opt_missing);
+    let (sm, names): (pgr::libs::pairmat::ScoringMatrix<f32>, Vec<String>) =
+        pgr::libs::pairmat::ScoringMatrix::from_pair_scores(infile, opt_same, opt_missing);
 
     //----------------------------
     // 3. Clustering

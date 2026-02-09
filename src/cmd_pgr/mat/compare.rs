@@ -74,8 +74,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap());
 
     // Load matrices
-    let matrix1 = intspan::NamedMatrix::from_relaxed_phylip(matrix1_file);
-    let matrix2 = intspan::NamedMatrix::from_relaxed_phylip(matrix2_file);
+    let matrix1 = pgr::libs::pairmat::NamedMatrix::from_relaxed_phylip(matrix1_file);
+    let matrix2 = pgr::libs::pairmat::NamedMatrix::from_relaxed_phylip(matrix2_file);
 
     // Get common sequence names
     let names1 = matrix1.get_names();

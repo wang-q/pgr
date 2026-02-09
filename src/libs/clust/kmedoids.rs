@@ -10,7 +10,7 @@
 ///
 /// ```
 /// use pgr::libs::clust::kmedoids::KMedoids;
-/// use intspan::ScoringMatrix;
+/// use pgr::libs::pairmat::ScoringMatrix;
 ///
 /// // Create a distance matrix for 5 points
 /// let mut sm = ScoringMatrix::<f32>::with_size_and_defaults(5, 0.0, 100.0);
@@ -52,7 +52,7 @@ impl KMedoids {
     }
 
     /// Perform clustering on the given distance matrix
-    pub fn perform_clustering(&self, matrix: &intspan::ScoringMatrix<f32>) -> Vec<Vec<usize>> {
+    pub fn perform_clustering(&self, matrix: &crate::libs::pairmat::ScoringMatrix<f32>) -> Vec<Vec<usize>> {
         let n = matrix.size();
         if n == 0 {
             return vec![];
@@ -158,7 +158,7 @@ impl KMedoids {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use intspan::ScoringMatrix;
+    use crate::libs::pairmat::ScoringMatrix;
 
     #[test]
     fn test_kmedoids_simple() {

@@ -57,7 +57,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     };
 
     // Load matrix
-    let matrix = intspan::NamedMatrix::from_relaxed_phylip(&input_path);
+    let matrix = pgr::libs::pairmat::NamedMatrix::from_relaxed_phylip(&input_path);
 
     // Build tree
     let tree = build::nj(&matrix)?;

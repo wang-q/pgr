@@ -1,6 +1,6 @@
 use crate::libs::phylo::tree::Tree;
 use anyhow::Result;
-use intspan::NamedMatrix;
+use crate::libs::pairmat::NamedMatrix;
 
 /// Build a tree from a distance matrix using the UPGMA algorithm.
 ///
@@ -319,7 +319,7 @@ pub fn nj(matrix: &NamedMatrix) -> Result<Tree> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use intspan::NamedMatrix;
+    use crate::libs::pairmat::NamedMatrix;
     use std::io::Write;
 
     #[test]

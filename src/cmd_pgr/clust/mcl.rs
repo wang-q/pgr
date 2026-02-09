@@ -113,7 +113,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     // ScoringMatrix::from_pair_scores is only implemented for f32
     let (sm, names) =
-        intspan::ScoringMatrix::<f32>::from_pair_scores(infile, opt_same, opt_missing);
+        pgr::libs::pairmat::ScoringMatrix::<f32>::from_pair_scores(infile, opt_same, opt_missing);
 
     //----------------------------
     // 3. Clustering

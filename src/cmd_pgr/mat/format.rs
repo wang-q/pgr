@@ -79,7 +79,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     // Ops
     //----------------------------
-    let matrix = intspan::NamedMatrix::from_relaxed_phylip(infile);
+    let matrix = pgr::libs::pairmat::NamedMatrix::from_relaxed_phylip(infile);
     let names = matrix.get_names();
     let size = matrix.size();
 
