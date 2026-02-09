@@ -25,8 +25,8 @@ Notes:
       colless	9
     
     * Tab-separated values (--style line):
-      Type	nodes	leaves	dichotomies	leaf labels	internal labels	cherries	sackin	colless
-      cladogram	18	11	5	11	0	5	46	9
+      Type	nodes	leaves	rooted	dichotomies	leaf labels	internal labels	cherries	sackin	colless
+      cladogram	18	11	Yes	5	11	0	5	46	9
 
 Examples:
 1. Default statistics:
