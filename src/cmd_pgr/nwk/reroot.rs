@@ -11,21 +11,27 @@ pub fn make_subcommand() -> Command {
 Reroots a phylogenetic tree on a specific branch or node.
 
 Notes:
-* Target Nodes (`--node` / `-n`):
-    * Can be terminal nodes (leaves) or internal nodes.
-    * If multiple nodes are provided, the tree is rerooted on the edge leading to their Lowest Common Ancestor (LCA).
-    * This effectively treats the specified nodes as the "ingroup" and the rest as the "outgroup".
-    * The new root is placed at the midpoint of the parent edge of the LCA.
-    * If the LCA is already the root, the original tree is returned unchanged.
-* Default Behavior:
-    * If NO nodes are specified, the tree is rerooted at the midpoint of the longest branch.
-* Support Values (`--support-as-labels` / `-s`):
-    * Standard Newick format stores support values as internal node labels.
-    * Rerooting changes edge directions, which can misplace these labels.
-    * Use `-s` to shift internal node labels along the path of rerooting to maintain their association with the correct split.
-* Topology Changes:
-    * The parent edge of the original root (if any) is ignored/merged.
-    * Degree-2 nodes (nodes with 1 parent and 1 child) created during the process are automatically removed.
+* Target Selection:
+    * Default: If NO nodes are specified, reroots at the midpoint of the longest branch.
+    * Specified Nodes (`--node` / `-n`):
+        * Reroots on the edge leading to the Lowest Common Ancestor (LCA) of specified nodes.
+        * Treats specified nodes as the "ingroup" and the rest as the "outgroup".
+        * The new root is placed at the midpoint of the parent edge of the LCA.
+    * Lax Mode (`--lax` / `-l`):
+        * If the LCA of specified nodes is already the root, use the *unspecified* nodes (complement) as the ingroup.
+        * Useful for defining an outgroup by exclusion.
+
+* Operations:
+    * Reroot (Default): Creates a bifurcating root at the target edge.
+    * Deroot (`--deroot` / `-d`): Splices out the ingroup to create a multifurcating root.
+
+* Technical Details:
+    * Support Values (`--support-as-labels` / `-s`):
+        * Shifts internal node labels along the rerooting path to maintain split associations.
+        * Necessary because rerooting changes edge directions.
+    * Topology:
+        * The original root's parent edge is merged.
+        * Degree-2 nodes created during the process are removed.
 
 Examples:
 1. Reroot at the longest branch (default):
@@ -77,14 +83,14 @@ Examples:
                 .long("deroot")
                 .short('d')
                 .action(ArgAction::SetTrue)
-                .help("Deroot the tree (splice out the ingroup to create a multifurcating root)"),
+                .help("Deroot the tree (create a multifurcating root) (see Notes)"),
         )
         .arg(
             Arg::new("lax")
                 .long("lax")
                 .short('l')
                 .action(ArgAction::SetTrue)
-                .help("Lax mode: if rerooting on specified nodes fails, try the complement (unspecified nodes)"),
+                .help("Lax mode: Use the complement if the specified nodes form the root (see Notes)"),
         )
 }
 
