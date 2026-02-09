@@ -1,6 +1,6 @@
 use clap::*;
 use pgr::libs::phylo::build;
-use std::io::Write;
+use std::io::{Read, Write};
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
@@ -19,7 +19,7 @@ Examples:
    pgr mat upgma matrix.phy -o tree.nwk
 
 2. Pipe matrix to tree:
-   cat matrix.phy | pgr mat upgma - > tree.nwk
+   cat matrix.phy | pgr mat upgma stdin > tree.nwk
 "###,
         )
         .arg(
@@ -42,8 +42,21 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let infile = args.get_one::<String>("infile").unwrap();
     let outfile = args.get_one::<String>("outfile").unwrap();
 
+    // Handle stdin or file
+    let temp_dir; // Keep temp_dir alive if used
+    let input_path = if infile == "stdin" {
+        temp_dir = tempfile::Builder::new().prefix("pgr_upgma_").tempdir()?;
+        let temp_file = temp_dir.path().join("stdin.phy");
+        let mut buffer = String::new();
+        std::io::stdin().read_to_string(&mut buffer)?;
+        std::fs::write(&temp_file, buffer)?;
+        temp_file.to_string_lossy().to_string()
+    } else {
+        infile.clone()
+    };
+
     // Load matrix
-    let matrix = intspan::NamedMatrix::from_relaxed_phylip(infile);
+    let matrix = intspan::NamedMatrix::from_relaxed_phylip(&input_path);
 
     // Build tree
     let tree = build::upgma(&matrix)?;
