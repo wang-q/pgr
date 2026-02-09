@@ -18,6 +18,7 @@ Notes:
       Type	cladogram
       nodes	18
       leaves	11
+      rooted	Yes
       ...
       cherries	5
       sackin	46
@@ -29,10 +30,10 @@ Notes:
 
 Examples:
 1. Default statistics:
-   pgr nwk stat data/catarrhini.nw
+   pgr nwk stat data/catarrhini.nwk
 
 2. Output to file:
-   pgr nwk stat data/catarrhini.nw -o stats.tsv
+   pgr nwk stat data/catarrhini.nwk -o stats.tsv
 "###,
         )
         .arg(
@@ -69,7 +70,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     if style == "line" {
         writer.write_fmt(format_args!(
-            "Type\tnodes\tleaves\tdichotomies\tleaf labels\tinternal labels\tcherries\tsackin\tcolless\n"
+            "Type\tnodes\tleaves\trooted\tdichotomies\tleaf labels\tinternal labels\tcherries\tsackin\tcolless\n"
         ))?;
     }
 
@@ -120,6 +121,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             None => "-".to_string(),
         };
 
+        let is_rooted = if tree.is_rooted() { "Yes" } else { "No" };
+
         let tree_type = if n_edge_wo_len == n_node {
             "cladogram"
         } else if n_edge_w_len == n_node || n_edge_w_len == n_node - 1 {
@@ -130,14 +133,15 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
         if style == "line" {
             writer.write_fmt(format_args!(
-                "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n",
-                tree_type, n_node, n_leaf, n_dichotomies, n_leaf_label, n_internal_label,
+                "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n",
+                tree_type, n_node, n_leaf, is_rooted, n_dichotomies, n_leaf_label, n_internal_label,
                 cherries, sackin, colless_str
             ))?;
         } else {
             writer.write_fmt(format_args!("Type\t{}\n", tree_type))?;
             writer.write_fmt(format_args!("nodes\t{}\n", n_node))?;
             writer.write_fmt(format_args!("leaves\t{}\n", n_leaf))?;
+            writer.write_fmt(format_args!("rooted\t{}\n", is_rooted))?;
             writer.write_fmt(format_args!("dichotomies\t{}\n", n_dichotomies))?;
             writer.write_fmt(format_args!("leaf labels\t{}\n", n_leaf_label))?;
             writer.write_fmt(format_args!("internal labels\t{}\n", n_internal_label))?;

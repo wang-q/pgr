@@ -38,6 +38,17 @@ pub fn is_binary(tree: &Tree) -> bool {
         .all(|n| n.deleted || n.children.is_empty() || n.children.len() == 2)
 }
 
+/// Check if the tree is rooted (root node has degree 2).
+/// Unrooted trees typically have a trifurcating root (degree >= 3).
+pub fn is_rooted(tree: &Tree) -> bool {
+    if let Some(root_id) = tree.get_root() {
+        if let Some(node) = tree.get_node(root_id) {
+            return node.children.len() == 2;
+        }
+    }
+    false
+}
+
 /// Calculate diameter (longest path between any two nodes).
 pub fn diameter(tree: &Tree, weighted: bool) -> f64 {
     // 2-pass BFS/DFS to find diameter.

@@ -198,6 +198,10 @@ impl Tree {
         stat::is_binary(self)
     }
 
+    pub fn is_rooted(&self) -> bool {
+        stat::is_rooted(self)
+    }
+
     pub fn diameter(&self) -> Result<f64, String> {
         Ok(stat::diameter(self, true))
     }
