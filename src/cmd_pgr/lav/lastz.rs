@@ -111,8 +111,13 @@ It handles:
 *   Directory recursion for target and query inputs.
 *   Adding required modifiers: [multiple][nameparse=darkspace].
 *   Setting output format to LAV.
-*   Setting query depth threshold: --querydepth=N.
-    Alignments extending over N will be discarded to improve speed.
+*   Setting query depth threshold: --querydepth=keep,nowarn:N.
+    N is the depth of coverage threshold (aligned bases / query length).
+    When the threshold is exceeded, processing stops for that query/strand to save time.
+    'keep' ensures alignments found *before* the threshold are reported (unlike default which discards all).
+    'nowarn' suppresses warnings about exceeded depth.
+    Note: Reported alignments are the first found, not necessarily optimal.
+    Default depth 50 allows ~50x coverage.
 
 {}
 Examples:
@@ -138,14 +143,14 @@ Examples:
             Arg::new("query")
                 .required(true)
                 .index(2)
-                .help("Query FASTA file(s) or directory"),
+                .help("Query FASTA file or directory"),
         )
         .arg(
             Arg::new("depth")
                 .long("depth")
-                .default_value("13")
+                .default_value("50")
                 .value_parser(value_parser!(usize))
-                .help("Query depth threshold. Alignments over this depth are discarded (default: 13)"),
+                .help("Query depth threshold"),
         )
         .arg(
             Arg::new("is_self")
@@ -292,9 +297,10 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
 
     // Build common args
     let mut common_args = Vec::new();
-    common_args.push(format!("--querydepth={}", opt_depth));
+    common_args.push(format!("--querydepth=keep,nowarn:{}", opt_depth));
     common_args.push("--format=lav".to_string());
     common_args.push("--markend".to_string());
+    common_args.push("--ambiguous=iupac".to_string());
 
     if let Some(preset_name) = preset {
         if let Some(p) = PRESETS.iter().find(|p| p.name == preset_name) {
@@ -353,9 +359,17 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
             let out_name = format!("[{}]vs[{}].lav", t_base, q_base);
             let out_path = std::path::Path::new(opt_output).join(out_name);
 
-            // [multiple][nameparse=darkspace]
+            // [nameparse=darkspace] is required for correct sequence name parsing.
+            // [multiple] implies that the target file contains multiple sequences.
+            // However, lastz documentation states that --self cannot be used with multiple sequences in the target.
+            // Since we are running in --self mode for repeat masking (or at least supporting it),
+            // and we are feeding single-sequence chunks (or small chunks) in the standard workflow,
+            // we omit [multiple] to avoid conflicts.
+            // If the user provides a multi-sequence file without --self, lastz might complain or process only the first sequence
+            // unless we add [multiple] back conditionally.
+            // But for now, for the "Cactus-style" workflow which splits files, this is safer.
             let target_arg = format!(
-                "{}[multiple][nameparse=darkspace]",
+                "{}[nameparse=darkspace]",
                 target_file.to_string_lossy()
             );
 
