@@ -64,9 +64,17 @@
             *   **注意**: 由于后续的切片（Fragmentation）步骤有 50% 的重叠，实际生成的 Query Fragments 总碱基数会是这个 `chunkSize` 的约 **2 倍**。
         *   **Target**: 取决于 `proportionToSample` 参数（默认 1.0）。
             *   如果是 1.0 (100%)，Target 就是**全基因组**（所有 Chunks 合并）。
-            *   如果 < 1.0 (例如 0.2)，Target 则是包含当前 Query Chunk 在内、及其周边的约 20% 的基因组序列。
-            *   **文件生成**: 程序会将所有选定的 Target Chunks **串联 (concatenate)** 成一个巨大的单 FASTA 文件供 Lastz 使用。
-    *   **Lastz 参数**:
+            *   如果 < 1.0 (例如 0.2)，Target 则是从全基因组的所有**互斥分块（Non-overlapping Chunks）**中，选取包含当前 Query Chunk 在内、以及其他随机选取的合计约 20% 的分块。
+            *   **文件生成**: 程序会将这些**互不重叠**的 Target Chunks **串联 (concatenate)** 成一个巨大的**包含多条序列的 FASTA 文件 (Multi-FASTA)** 供 Lastz 使用。（注：由于 Target Chunks 之间在基因组上是物理分割且互斥的，因此直接串联不会引入人为的重复序列）。
+    *   **Lastz 参数与调用细节**:
+        *   **Target 输入修饰符 `[multiple]`**: 
+            *   默认情况下，Lastz 倾向于将 Target 处理为单条序列。
+            *   为了支持上述的 Multi-FASTA Target，Cactus 在调用 Lastz 时会显式添加 `[multiple]` 修饰符（例如 `target.fa[multiple]`）。
+            *   这强制 Lastz 将输入文件识别为包含多条独立序列的文件，从而正确处理跨序列的比对。
+        *   **序列名解析 `[nameparse=darkspace]`**:
+            *   指定 Lastz 仅使用 FASTA 标题行中**第一个空格之前**的字符串作为序列名称（即截断描述信息）。
+            *   例如，对于 `>seq1 description info`，Lastz 会将其识别为 `seq1`。
+            *   这确保了输出结果（如 CIGAR 或 General 格式）中的序列名简洁且不含空格，避免破坏列格式解析。
         *   `--querydepth=keep,nowarn:N`: **深度截断**。如果查询序列某位置的比对深度超过 N，Lastz 通常会截断或报错。这里设置为 `keep` (保留所有比对) 但 `nowarn` (不报错)，但通过 `:N` 实际上是告诉 Lastz 关注高深度区域。在 Cactus 语境下，结合后续的 `cactus_covered_intervals`，这是为了确保能捕获高拷贝重复，同时防止极度重复（如着丝粒）导致输出文件过大或运行时间过长。
         *   `--format=general:name1,zstart1,end1,name2,zstart2+,end2+`: **输出格式**。
             *   `name1`: Query 片段名称（包含原始坐标信息）。

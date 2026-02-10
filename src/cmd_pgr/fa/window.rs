@@ -121,7 +121,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             let extension = path.extension().unwrap_or_default().to_str().unwrap();
             
             // Simple file splitting: input.fa -> input.001.fa
-            // No special handling for .gz (output is usually uncompressed text for downstream tools or user specifies output name)
             let (stem, ext) = (file_stem, extension.to_string());
 
             let ext_str = if ext.is_empty() { String::new() } else { format!(".{}", ext) };
@@ -136,7 +135,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     
     // Logic:
     // 1. Shuffle ON:
-    //    - Chunked: Buffer one chunk -> Shuffle -> Write to new file -> Clear buffer.
+    //    - Chunked: Buffer chunk -> Shuffle -> Write to new file -> Clear buffer.
     //    - No chunk: Buffer ALL -> Shuffle -> Write to single file.
     // 2. Shuffle OFF:
     //    - Chunked: Stream to file -> Switch file when limit reached.
@@ -251,7 +250,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
              if let Some(writer) = fa_out.take() {
                  writer
              } else {
-                 // Fallback (should not be reached if logic holds)
                  let writer = pgr::writer(outfile);
                  noodles_fasta::io::writer::Builder::default()
                     .set_line_base_count(usize::MAX)
