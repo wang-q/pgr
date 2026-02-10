@@ -54,6 +54,7 @@
 *   **方法**: `alignFastaFragments`
 *   **工具**: `lastz` (CPU)
     *   **注**: 虽然 `FastGA` 等工具速度更快，但 Cactus 目前的代码硬编码了 `lastz` 的调用接口及特定的输出格式（CIGAR/General），暂不支持直接替换。
+    *   **PGR 实现**: 在 `pgr` 中，我们在 `c:\Users\wangq\Scripts\pgr\src\cmd_pgr\lav` 下实现了 `lastz` 的包装器。为了兼容后续的链式比对（Chaining）流程，我们将输出格式调整为 **LAV**。
 *   **逻辑**:
     *   将上一步生成的片段（Query Fragments）与目标序列（Target）进行比对。
     *   **注意**: 目标序列通常是该物种所有分块（Chunks）合并后的全长序列，以确保能检测到全基因组范围内的重复。对于小基因组或未分块的情况，它就是完整的原始染色体。
@@ -77,12 +78,9 @@
             *   例如，对于 `>seq1 description info`，Lastz 会将其识别为 `seq1`。
             *   这确保了输出结果（如 CIGAR 或 General 格式）中的序列名简洁且不含空格，避免破坏列格式解析。
         *   `--querydepth=keep,nowarn:N`: **深度截断**。如果查询序列某位置的比对深度超过 N，Lastz 通常会截断或报错。这里设置为 `keep` (保留所有比对) 但 `nowarn` (不报错)，但通过 `:N` 实际上是告诉 Lastz 关注高深度区域。在 Cactus 语境下，结合后续的 `cactus_covered_intervals`，这是为了确保能捕获高拷贝重复，同时防止极度重复（如着丝粒）导致输出文件过大或运行时间过长。
-        *   `--format=general:name1,zstart1,end1,name2,zstart2+,end2+`: **输出格式**。
-            *   `name1`: Query 片段名称（包含原始坐标信息）。
-            *   `zstart1, end1`: Query 上的匹配区间（0-based）。
-            *   `name2`: Target 序列名称。
-            *   `zstart2+, end2+`: Target 上的匹配区间（正义链坐标）。
-            这种简洁的格式只保留了计算覆盖度所需的坐标信息，丢弃了序列本身，极大地减小了 I/O 开销。
+        *   `--format=lav`: **输出格式**。
+            *   为了支持后续的 Chaining 操作（将片段比对串联成完整比对），我们使用 LAV 格式。
+            *   LAV 格式保留了详细的比对信息，可以被 `axtChain` 或类似的工具处理。
         *   `--markend`: 标记输出结束，用于完整性检查。
 
 ### 步骤 3: 覆盖度计算与屏蔽 (Masking)
@@ -201,6 +199,28 @@ Cactus 采用复杂的 "分块-采样-物理合并" 策略来构建 Target，旨
         *   **天然并行**: 每条染色体一个任务。
         *   **避免边界问题**: 染色体内部连续。
         *   **实现简单**: 无需复杂的随机采样和重组逻辑。
+
+### 7.5 `pgr pl lastz` vs `lastz` (Wrapper)
+
+为了简化上述复杂的 Lastz 调用流程，我们实现了 `pgr pl lastz` 命令：
+
+*   **功能**:
+    *   **自动合并 Target**: 如果提供多个 Target 文件（如分染色体的文件），自动合并为临时文件。
+    *   **参数预设**:
+        *   自动添加 `[multiple][nameparse=darkspace]` 修饰符。
+        *   自动计算 `--querydepth=keep,nowarn:N` (根据 `--period`)。
+        *   自动设置 `--format=general...` 输出格式。
+    *   **参数预设** (`--preset`):
+        *   支持 `near`/`primates` (近缘, `set01`), `medium`/`mammals` (中等, `set03`), `distant`/`vertebrates` (远缘, `set06`) 等预设参数集。
+        *   支持 `--lastz-args "..."` 透传其他高级参数。
+*   **用法示例**:
+    ```bash
+    # 使用预设参数进行哺乳动物间比对
+    pgr pl lastz query.fa target.fa --preset mammals > alignment.cigar
+    
+    # 手动传递额外参数
+    pgr pl lastz query.fa target.fa --lastz-args "--hspthresh=3000" > alignment.cigar
+    ```
 
 ## 8. 附录：Lastz 命令构建实现参考
 
