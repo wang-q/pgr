@@ -54,7 +54,6 @@
 *   **方法**: `alignFastaFragments`
 *   **工具**: `lastz` (CPU)
     *   **注**: 虽然 `FastGA` 等工具速度更快，但 Cactus 目前的代码硬编码了 `lastz` 的调用接口及特定的输出格式（CIGAR/General），暂不支持直接替换。
-    *   **PGR 实现**: 在 `pgr` 中，我们在 `src/cmd_pgr/lav` 下实现了 `lastz` 的包装器。为了兼容后续的链式比对（Chaining）流程，我们将输出格式调整为 **LAV**。
 *   **逻辑**:
     *   将上一步生成的片段（Query Fragments）与目标序列（Target）进行比对。
     *   **注意**: 目标序列通常是该物种所有分块（Chunks）合并后的全长序列，以确保能检测到全基因组范围内的重复。对于小基因组或未分块的情况，它就是完整的原始染色体。
@@ -78,9 +77,6 @@
             *   例如，对于 `>seq1 description info`，Lastz 会将其识别为 `seq1`。
             *   这确保了输出结果（如 CIGAR 或 General 格式）中的序列名简洁且不含空格，避免破坏列格式解析。
         *   `--querydepth=keep,nowarn:N`: **深度截断**。如果查询序列某位置的比对深度超过 N，Lastz 通常会截断或报错。这里设置为 `keep` (保留所有比对) 但 `nowarn` (不报错)，但通过 `:N` 实际上是告诉 Lastz 关注高深度区域。在 Cactus 语境下，结合后续的 `cactus_covered_intervals`，这是为了确保能捕获高拷贝重复，同时防止极度重复（如着丝粒）导致输出文件过大或运行时间过长。
-        *   `--format=lav`: **输出格式**。
-            *   为了支持后续的 Chaining 操作（将片段比对串联成完整比对），我们使用 LAV 格式。
-            *   LAV 格式保留了详细的比对信息，可以被 `axtChain` 或类似的工具处理。
         *   `--markend`: 标记输出结束，用于完整性检查。
 
 ### 步骤 3: 覆盖度计算与屏蔽 (Masking)
@@ -252,7 +248,7 @@ Cactus 采用复杂的 "分块-采样-物理合并" 策略来构建 Target，旨
         # 需提供 Query 的原始染色体大小文件 (chrom.sizes)
         # 可使用 `pgr fa size query.fa > query.chrom.sizes` 生成
         pgr psl lift fragments.psl --q-sizes query.chrom.sizes -o lifted.psl
-        ``````
+        ```
 
 2.  **PSL 转换**: `pgr psl to-range`
     *   将 `lift` 后的 PSL 文件转换为 `.rg` (Range) 格式。
@@ -275,25 +271,6 @@ Cactus 采用复杂的 "分块-采样-物理合并" 策略来构建 Target，旨
         ```bash
         pgr fa mask input.fa mask_regions.json -o masked.fa
         ```
-
-## 8. 附录：Lastz 命令构建实现参考
-
-以下是 `LastzRepeatMaskJob` 中构建比对命令的详细规范，可供实现参考：
-
-1.  **输入准备**:
-    *   **Query**: 上一步生成的切片文件（Fragments）。
-    *   **Target**: 将选中的多个 Target Chunks 文件**物理合并 (cat)** 为一个临时文件。
-2.  **构建 Lastz 命令行**:
-    *   **输入文件修饰符**:
-        *   **Target**: `filename[multiple][nameparse=darkspace]`
-            *   `[multiple]`: 必选。告诉 Lastz 这是一个包含多条序列的文件（即使合并后只有一条，加上也无妨）。
-            *   `[nameparse=darkspace]`: 必选。只取标题行第一个空格前的 ID。
-            *   `[unmask]`: 可选。如果 `unmaskInput=True`，则添加此项，忽略输入序列中的软屏蔽（小写字母）。
-        *   **Query**: `filename[nameparse=darkspace]`
-            *   `[nameparse=darkspace]`: 必选。
-            *   `[unmask]`: 可选。同上。
-    *   **核心参数**:
-        *   `--querydepth=keep,nowarn:<N>`:
             *   `N = period + 3`。其中 `period` 是屏蔽阈值（通常为 10 或根据采样率调整）。
             *   `+3` 是一个经验性的 "Fudge Factor"（修正因子），确保能召回足够多的比对供后续统计。
             *   `keep`: 不丢弃高深度区域的比对。
