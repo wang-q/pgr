@@ -1,7 +1,10 @@
+use clap::builder::PossibleValuesParser;
 use clap::*;
 use rayon::prelude::*;
 use std::io::Write;
 use tempfile::NamedTempFile;
+
+use std::path::{Path, PathBuf};
 
 const MATRIX_DEFAULT: &str = r#"
    A    C    G    T
@@ -36,80 +39,125 @@ const MATRIX_SIMILAR2: &str = r#"
 -356 -236 -330   90
 "#;
 
+struct Preset {
+    name: &'static str,
+    desc: &'static str,
+    params: &'static str,
+    matrix: Option<&'static str>,
+}
+
+const PRESETS: &[Preset] = &[
+    Preset {
+        name: "set01",
+        desc: "Hg17vsPanTro1 (Human vs Chimp)",
+        params: "C=0 E=30 K=3000 L=2200 O=400 Y=3400 Q=similar",
+        matrix: Some(MATRIX_SIMILAR),
+    },
+    Preset {
+        name: "set02",
+        desc: "Hg19vsPanTro2 (Human vs Primate, more sensitive)",
+        params: "C=0 E=150 H=2000 K=4500 L=2200 M=254 O=600 T=2 Y=15000 Q=similar2",
+        matrix: Some(MATRIX_SIMILAR2),
+    },
+    Preset {
+        name: "set03",
+        desc: "Hg17vsMm5 (Human vs Mouse)",
+        params: "C=0 E=30 K=3000 L=2200 O=400 Q=default",
+        matrix: Some(MATRIX_DEFAULT),
+    },
+    Preset {
+        name: "set04",
+        desc: "Hg17vsRheMac2 (Human vs Macaque)",
+        params: "C=0 E=30 H=2000 K=3000 L=2200 O=400 Q=default",
+        matrix: Some(MATRIX_DEFAULT),
+    },
+    Preset {
+        name: "set05",
+        desc: "Hg17vsBosTau2 (Human vs Cow)",
+        params: "C=0 E=30 H=2000 K=3000 L=2200 M=50 O=400 Q=default",
+        matrix: Some(MATRIX_DEFAULT),
+    },
+    Preset {
+        name: "set06",
+        desc: "Hg17vsDanRer3 (Human vs Zebrafish)",
+        params: "C=0 E=30 H=2000 K=2200 L=6000 O=400 Y=3400 Q=distant",
+        matrix: Some(MATRIX_DISTANT),
+    },
+    Preset {
+        name: "set07",
+        desc: "Hg17vsMonDom1 (Human vs Opossum)",
+        params: "C=0 E=30 H=2000 K=2200 L=10000 O=400 Y=3400 Q=distant",
+        matrix: Some(MATRIX_DISTANT),
+    },
+];
+
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
+    let mut preset_help = String::from("Presets from UCSC:\n");
+    let mut preset_names = Vec::new();
+    for p in PRESETS {
+        preset_help.push_str(&format!("    {}: {}\n           {}\n", p.name, p.desc, p.params));
+        preset_names.push(p.name);
+    }
+
     Command::new("lastz")
         .about("Wrapper for lastz alignment (Cactus style)")
-        .after_help(
+        .after_help(format!(
             r###"
 This command wraps lastz to perform alignments suitable for the Cactus RepeatMasking workflow.
 
 It handles:
 *   Parallel execution for multiple target files.
+*   Directory recursion for target and query inputs.
 *   Adding required modifiers: [multiple][nameparse=darkspace].
 *   Setting output format to LAV.
-*   Setting query depth threshold: --querydepth=keep,nowarn:(period+3).
+*   Setting query depth threshold: --querydepth=N.
+    Alignments extending over N will be discarded to improve speed.
 
-Presets from UCSC:
-    set01: Hg17vsPanTro1 (Human vs Chimp)
-           C=0 E=30 K=3000 L=2200 O=400 Y=3400 Q=similar
-    set02: Hg19vsPanTro2 (Human vs Primate, more sensitive)
-           C=0 E=150 H=2000 K=4500 L=2200 M=254 O=600 T=2 Y=15000 Q=similar2
-    set03: Hg17vsMm5 (Human vs Mouse)
-           C=0 E=30 K=3000 L=2200 O=400 Q=default
-    set04: Hg17vsRheMac2 (Human vs Macaque)
-           C=0 E=30 H=2000 K=3000 L=2200 O=400 Q=default
-    set05: Hg17vsBosTau2 (Human vs Cow)
-           C=0 E=30 H=2000 K=3000 L=2200 M=50 O=400 Q=default
-    set06: Hg17vsDanRer3 (Human vs Zebrafish)
-           C=0 E=30 H=2000 K=2200 L=6000 O=400 Y=3400 Q=distant
-    set07: Hg17vsMonDom1 (Human vs Opossum)
-           C=0 E=30 H=2000 K=2200 L=10000 O=400 Y=3400 Q=distant
-
+{}
 Examples:
     # Single target with set01
-    pgr lav lastz query.fa target.fa --preset set01 -o lastz_out
+    pgr lav lastz target.fa query.fa --preset set01 -o lastz_out
 
-    # Multiple targets with set03
-    pgr lav lastz query.fa target_chr1.fa target_chr2.fa --preset set03 -o lastz_out
+    # Directory inputs
+    pgr lav lastz target_dir/ query_dir/ --preset set03 -o lastz_out
 
     # Show parameters and matrix for set01
     pgr lav lastz --preset set01 --show-preset
 
 "###,
+            preset_help
+        ))
+        .arg(
+            Arg::new("target")
+                .required(true)
+                .index(1)
+                .help("Target FASTA file or directory"),
         )
         .arg(
             Arg::new("query")
                 .required(true)
-                .index(1)
-                .help("Query FASTA file (fragments)"),
-        )
-        .arg(
-            Arg::new("target")
-                .required(true)
                 .index(2)
-                .num_args(1..)
-                .help("Target FASTA file(s)"),
+                .help("Query FASTA file(s) or directory"),
         )
         .arg(
-            Arg::new("period")
-                .long("period")
-                .default_value("10")
+            Arg::new("depth")
+                .long("depth")
+                .default_value("13")
                 .value_parser(value_parser!(usize))
-                .help("Period for querydepth calculation (depth = period + 3)"),
+                .help("Query depth threshold. Alignments over this depth are discarded (default: 13)"),
+        )
+        .arg(
+            Arg::new("is_self")
+                .long("self")
+                .action(clap::ArgAction::SetTrue)
+                .help("Self-alignment"),
         )
         .arg(
             Arg::new("preset")
                 .long("preset")
-                .value_parser([
-                    "set01",
-                    "set02",
-                    "set03",
-                    "set04",
-                    "set05",
-                    "set06",
-                    "set07",
-                ])
+                .short('s')
+                .value_parser(PossibleValuesParser::new(preset_names))
                 .help("Use predefined parameter sets (set01..set07)"),
         )
         .arg(
@@ -140,56 +188,55 @@ Examples:
         )
 }
 
+fn find_fasta_files<P: AsRef<Path>>(path: P) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    let path = path.as_ref();
+
+    if path.is_file() {
+        files.push(path.to_path_buf());
+    } else if path.is_dir() {
+        if let Ok(entries) = std::fs::read_dir(path) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    files.extend(find_fasta_files(&path));
+                } else if let Some(ext) = path.extension() {
+                    let ext_str = ext.to_string_lossy().to_lowercase();
+                    // Match .fa and .fa.gz
+                    if ext_str == "fa" {
+                        files.push(path);
+                    } else if ext_str == "gz" {
+                        if let Some(stem) = path.file_stem() {
+                            let stem_path = Path::new(stem);
+                            if let Some(stem_ext) = stem_path.extension() {
+                                if stem_ext.to_string_lossy().to_lowercase() == "fa" {
+                                    files.push(path);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    files
+}
+
 pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
     let preset = matches.get_one::<String>("preset");
-    
+
     // Check if show-preset is requested
     if matches.get_flag("show_preset") {
         if let Some(preset_name) = preset {
-            match preset_name.as_str() {
-                "set01" => {
-                    println!("Preset: set01");
-                    println!("Description: Hg17vsPanTro1 (Human vs Chimp)");
-                    println!("Parameters: C=0 E=30 K=3000 L=2200 O=400 Y=3400 Q=similar");
-                    println!("\nMatrix Content:\n{}", MATRIX_SIMILAR);
+            if let Some(p) = PRESETS.iter().find(|p| p.name == preset_name) {
+                println!("Preset: {}", p.name);
+                println!("Description: {}", p.desc);
+                println!("Parameters: {}", p.params);
+                if let Some(matrix) = p.matrix {
+                    println!("\nMatrix Content:\n{}", matrix);
                 }
-                "set02" => {
-                    println!("Preset: set02");
-                    println!("Description: Hg19vsPanTro2 (Human vs Primate, more sensitive)");
-                    println!("Parameters: C=0 E=150 H=2000 K=4500 L=2200 M=254 O=600 T=2 Y=15000 Q=similar2");
-                    println!("\nMatrix Content:\n{}", MATRIX_SIMILAR2);
-                }
-                "set03" => {
-                    println!("Preset: set03");
-                    println!("Description: Hg17vsMm5 (Human vs Mouse)");
-                    println!("Parameters: C=0 E=30 K=3000 L=2200 O=400 Q=default");
-                    println!("\nMatrix Content:\n{}", MATRIX_DEFAULT);
-                }
-                "set04" => {
-                    println!("Preset: set04");
-                    println!("Description: Hg17vsRheMac2 (Human vs Macaque)");
-                    println!("Parameters: C=0 E=30 H=2000 K=3000 L=2200 O=400 Q=default");
-                    println!("\nMatrix Content:\n{}", MATRIX_DEFAULT);
-                }
-                "set05" => {
-                    println!("Preset: set05");
-                    println!("Description: Hg17vsBosTau2 (Human vs Cow)");
-                    println!("Parameters: C=0 E=30 H=2000 K=3000 L=2200 M=50 O=400 Q=default");
-                    println!("\nMatrix Content:\n{}", MATRIX_DEFAULT);
-                }
-                "set06" => {
-                    println!("Preset: set06");
-                    println!("Description: Hg17vsDanRer3 (Human vs Zebrafish)");
-                    println!("Parameters: C=0 E=30 H=2000 K=2200 L=6000 O=400 Y=3400 Q=distant");
-                    println!("\nMatrix Content:\n{}", MATRIX_DISTANT);
-                }
-                "set07" => {
-                    println!("Preset: set07");
-                    println!("Description: Hg17vsMonDom1 (Human vs Opossum)");
-                    println!("Parameters: C=0 E=30 H=2000 K=2200 L=10000 O=400 Y=3400 Q=distant");
-                    println!("\nMatrix Content:\n{}", MATRIX_DISTANT);
-                }
-                _ => unreachable!(),
+            } else {
+                unreachable!();
             }
             return Ok(());
         } else {
@@ -197,174 +244,131 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
         }
     }
 
-    let query_file = matches.get_one::<String>("query").unwrap();
-    let targets: Vec<_> = matches.get_many::<String>("target").unwrap().collect();
-    let period = *matches.get_one::<usize>("period").unwrap();
-    let lastz_args = matches.get_one::<String>("lastz_args");
-    let output_dir = matches.get_one::<String>("output").unwrap();
-    let parallel = *matches.get_one::<usize>("parallel").unwrap();
+    let arg_query = matches.get_one::<String>("query").unwrap();
+    let arg_target = matches.get_one::<String>("target").unwrap();
+    let opt_depth = *matches.get_one::<usize>("depth").unwrap();
+    let opt_lastz_args = matches.get_one::<String>("lastz_args");
+    let opt_output = matches.get_one::<String>("output").unwrap();
+    let opt_parallel = *matches.get_one::<usize>("parallel").unwrap();
+    let is_self = matches.get_flag("is_self");
 
     // Check if lastz is installed
     if which::which("lastz").is_err() {
         anyhow::bail!("lastz not found in PATH. Please install lastz first.");
     }
 
-    std::fs::create_dir_all(output_dir)?;
+    std::fs::create_dir_all(opt_output)?;
 
-    // Handle targets
-    // Unlike previous version, we process each target separately if they are separate files
-    // But wait, lastz.pm logic was:
-    // "Lastz will take the first sequence in target fasta files... For less confusions, each fasta files should contain only one sequence."
-    // So we should iterate over target files.
+    // Expand files
+    let mut query_files = find_fasta_files(arg_query);
+    query_files.sort();
 
-    // Calculate depth
-    let depth = period + 3;
+    let mut target_files = find_fasta_files(arg_target);
+    target_files.sort();
+
+    if query_files.is_empty() {
+        anyhow::bail!("No query FASTA files found in {}", arg_query);
+    }
+    if target_files.is_empty() {
+        anyhow::bail!("No target FASTA files found in {}", arg_target);
+    }
 
     // Prepare matrix file if needed
     let mut _temp_matrix_handle: Option<NamedTempFile> = None;
-    let mut matrix_arg = String::new();
+    let mut matrix_path = String::new();
 
     if let Some(preset_name) = preset {
         let mut t = NamedTempFile::new()?;
-        match preset_name.as_str() {
-            "set01" => {
-                t.write_all(MATRIX_SIMILAR.as_bytes())?;
+        if let Some(p) = PRESETS.iter().find(|p| p.name == preset_name) {
+            if let Some(matrix) = p.matrix {
+                t.write_all(matrix.as_bytes())?;
             }
-            "set02" => {
-                t.write_all(MATRIX_SIMILAR2.as_bytes())?;
-            }
-            "set03" | "set04" | "set05" => {
-                t.write_all(MATRIX_DEFAULT.as_bytes())?;
-            }
-            "set06" | "set07" => {
-                t.write_all(MATRIX_DISTANT.as_bytes())?;
-            }
-            _ => unreachable!(),
+        } else {
+            unreachable!();
         }
-        let path = t.path().to_string_lossy().to_string();
-        matrix_arg = format!("Q={}", path);
+        matrix_path = t.path().to_string_lossy().to_string();
         _temp_matrix_handle = Some(t);
     }
 
     // Build common args
     let mut common_args = Vec::new();
-    common_args.push(format!("--querydepth=keep,nowarn:{}", depth));
+    common_args.push(format!("--querydepth={}", opt_depth));
     common_args.push("--format=lav".to_string());
     common_args.push("--markend".to_string());
 
     if let Some(preset_name) = preset {
-         match preset_name.as_str() {
-            "set01" => {
-                common_args.push("C=0".to_string());
-                common_args.push("E=30".to_string());
-                common_args.push("K=3000".to_string());
-                common_args.push("L=2200".to_string());
-                common_args.push("O=400".to_string());
-                common_args.push("Y=3400".to_string());
+        if let Some(p) = PRESETS.iter().find(|p| p.name == preset_name) {
+            for arg in p.params.split_whitespace() {
+                if !arg.starts_with("Q=") {
+                    common_args.push(arg.to_string());
+                }
             }
-            "set02" => {
-                common_args.push("C=0".to_string());
-                common_args.push("E=150".to_string());
-                common_args.push("H=2000".to_string());
-                common_args.push("K=4500".to_string());
-                common_args.push("L=2200".to_string());
-                common_args.push("M=254".to_string());
-                common_args.push("O=600".to_string());
-                common_args.push("T=2".to_string());
-                common_args.push("Y=15000".to_string());
-            }
-            "set03" => {
-                common_args.push("C=0".to_string());
-                common_args.push("E=30".to_string());
-                common_args.push("K=3000".to_string());
-                common_args.push("L=2200".to_string());
-                common_args.push("O=400".to_string());
-            }
-            "set04" => {
-                common_args.push("C=0".to_string());
-                common_args.push("E=30".to_string());
-                common_args.push("H=2000".to_string());
-                common_args.push("K=3000".to_string());
-                common_args.push("L=2200".to_string());
-                common_args.push("O=400".to_string());
-            }
-            "set05" => {
-                common_args.push("C=0".to_string());
-                common_args.push("E=30".to_string());
-                common_args.push("H=2000".to_string());
-                common_args.push("K=3000".to_string());
-                common_args.push("L=2200".to_string());
-                common_args.push("M=50".to_string());
-                common_args.push("O=400".to_string());
-            }
-            "set06" => {
-                common_args.push("C=0".to_string());
-                common_args.push("E=30".to_string());
-                common_args.push("H=2000".to_string());
-                common_args.push("K=2200".to_string());
-                common_args.push("L=6000".to_string());
-                common_args.push("O=400".to_string());
-                common_args.push("Y=3400".to_string());
-            }
-            "set07" => {
-                common_args.push("C=0".to_string());
-                common_args.push("E=30".to_string());
-                common_args.push("H=2000".to_string());
-                common_args.push("K=2200".to_string());
-                common_args.push("L=10000".to_string());
-                common_args.push("O=400".to_string());
-                common_args.push("Y=3400".to_string());
-            }
-            _ => unreachable!(),
+        } else {
+            unreachable!();
         }
-        common_args.push(matrix_arg.clone());
+        if !matrix_path.is_empty() {
+            common_args.push(format!("Q={}", matrix_path));
+        }
     }
 
-    if let Some(args) = lastz_args {
+    if let Some(args) = opt_lastz_args {
         for arg in args.split_whitespace() {
             common_args.push(arg.to_string());
         }
     }
 
+    // Create jobs (Cartesian product)
+    let mut jobs = Vec::new();
+    for t in &target_files {
+        for q in &query_files {
+            jobs.push((t, q));
+        }
+    }
+
+    eprintln!("* Target files: [{}]", target_files.len());
+    eprintln!("* Query files:  [{}]", query_files.len());
+    eprintln!("* Total jobs:   [{}]", jobs.len());
+
     // Parallel execution
     let pool = rayon::ThreadPoolBuilder::new()
-        .num_threads(parallel)
+        .num_threads(opt_parallel)
         .build()
         .unwrap();
 
     pool.install(|| {
-        targets.par_iter().for_each(|target_file| {
-             let t_base = std::path::Path::new(target_file)
-                .file_stem()
-                .unwrap()
-                .to_string_lossy();
-            let q_base = std::path::Path::new(query_file)
-                .file_stem()
-                .unwrap()
-                .to_string_lossy();
+        jobs.par_iter().for_each(|(target_file, query_file)| {
+            let get_base_name = |path: &Path| -> String {
+                let stem = path.file_stem().unwrap().to_string_lossy();
+                stem.split('.').next().unwrap().to_string()
+            };
+
+            let t_base = get_base_name(target_file);
+            let q_base = get_base_name(query_file);
+
+            if is_self && t_base != q_base {
+                return;
+            }
 
             // Output filename: [target]vs[query].lav
-            // Note: If multiple targets have same basename, this will overwrite. 
-            // Assuming unique basenames for now as per lastz.pm logic.
             let out_name = format!("[{}]vs[{}].lav", t_base, q_base);
-            let out_path = std::path::Path::new(output_dir).join(out_name);
+            let out_path = std::path::Path::new(opt_output).join(out_name);
 
-            // Note: lastz expects "file[mod]" as a single argument
-            // lastz.pm didn't strictly use [multiple] for single files, but it's safer.
-            // However, if we follow lastz.pm exactly:
-            // "Lastz will take the first sequence in target fasta files and all sequences in query fasta files."
-            // So for target we might want to be careful.
-            // Let's stick to simple "file" for now unless user explicitly wants modifiers.
-            // Wait, Cactus mode REQUIRED modifiers. 
-            // But now we are in "Hybrid" mode.
-            // Let's apply [multiple][nameparse=darkspace] to be safe and consistent with Cactus/general best practices.
-            
-            let target_arg = format!("{}[multiple][nameparse=darkspace]", target_file);
-            let query_arg = format!("{}[nameparse=darkspace]", query_file);
+            // [multiple][nameparse=darkspace]
+            let target_arg = format!(
+                "{}[multiple][nameparse=darkspace]",
+                target_file.to_string_lossy()
+            );
 
             let mut cmd = std::process::Command::new("lastz");
-            cmd.arg(&target_arg).arg(&query_arg);
-            
+            cmd.arg(&target_arg);
+
+            if is_self && target_file == query_file {
+                cmd.arg("--self");
+            } else {
+                let query_arg = format!("{}[nameparse=darkspace]", query_file.to_string_lossy());
+                cmd.arg(&query_arg);
+            }
+
             for arg in &common_args {
                 cmd.arg(arg);
             }
@@ -374,11 +378,11 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
             cmd.stdout(file);
 
             let status = cmd.status().expect("Failed to execute lastz");
-            
+
             if !status.success() {
                 eprintln!("Warning: lastz failed for {} vs {}", t_base, q_base);
             } else {
-                println!("Finished: {} vs {}", t_base, q_base);
+                // println!("Finished: {} vs {}", t_base, q_base);
             }
         });
     });
