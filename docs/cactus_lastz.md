@@ -52,8 +52,8 @@
 
 ### 步骤 2: 序列比对 (Alignment)
 *   **方法**: `alignFastaFragments`
-*   **工具**: `lastz` (CPU) 或 `run_kegalign` (GPU)
-    *   **注**: 虽然 `FastGA` 等工具速度更快，但 Cactus 目前的代码硬编码了 `lastz`/`run_kegalign` 的调用接口及特定的输出格式（CIGAR/General），暂不支持直接替换。
+*   **工具**: `lastz` (CPU)
+    *   **注**: 虽然 `FastGA` 等工具速度更快，但 Cactus 目前的代码硬编码了 `lastz` 的调用接口及特定的输出格式（CIGAR/General），暂不支持直接替换。
 *   **逻辑**:
     *   将上一步生成的片段（Query Fragments）与目标序列（Target）进行比对。
     *   **注意**: 目标序列通常是该物种所有分块（Chunks）合并后的全长序列，以确保能检测到全基因组范围内的重复。对于小基因组或未分块的情况，它就是完整的原始染色体。
@@ -70,6 +70,7 @@
         *   **Target 输入修饰符 `[multiple]`**: 
             *   默认情况下，Lastz 倾向于将 Target 处理为单条序列。
             *   为了支持上述的 Multi-FASTA Target，Cactus 在调用 Lastz 时会显式添加 `[multiple]` 修饰符（例如 `target.fa[multiple]`）。
+            *   **注意**: `[multiple]` 是 Lastz 命令行语法的一部分，**不是文件名的一部分**。磁盘上实际存在的文件仍然是 `target.fa`。Lastz 在读取该文件时会应用此修饰符。
             *   这强制 Lastz 将输入文件识别为包含多条独立序列的文件，从而正确处理跨序列的比对。
         *   **序列名解析 `[nameparse=darkspace]`**:
             *   指定 Lastz 仅使用 FASTA 标题行中**第一个空格之前**的字符串作为序列名称（即截断描述信息）。
@@ -83,7 +84,6 @@
             *   `zstart2+, end2+`: Target 上的匹配区间（正义链坐标）。
             这种简洁的格式只保留了计算覆盖度所需的坐标信息，丢弃了序列本身，极大地减小了 I/O 开销。
         *   `--markend`: 标记输出结束，用于完整性检查。
-    *   **GPU 支持**: 如果启用了 GPU，会调用 `run_kegalign`（SegAlign 的一部分）进行加速。
 
 ### 步骤 3: 覆盖度计算与屏蔽 (Masking)
 *   **方法**: `maskCoveredIntervals`
@@ -125,7 +125,6 @@
 *   `minPeriod` (int, default 10): 最小重复周期/覆盖度阈值。
 *   `proportionSampled` (float, default 1.0): 采样比例，会影响最终的覆盖度阈值计算 (`period = proportionSampled * minPeriod`)。
 *   `lastzOpts` (str): 传递给 `lastz` 的额外参数。
-*   `gpu` (int): 指定使用的 GPU 索引。
 *   `unmaskInput` / `unmaskOutput`: 控制输入输出的屏蔽状态。
 
 ## 5. C 代码细节 (`cactus_covered_intervals.c`)
@@ -161,20 +160,20 @@
 *   **大文件处理与内存优化**:
     *   **Cactus**: 先生成巨大的完整片段文件，再进行 shuffle 和 split，内存消耗极大。
     *   **pgr**: 引入 `--chunk N` 参数，在生成阶段直接切分输出文件。
-        *   `--chunk N --shuffle`: 仅在内存中缓冲 N 条记录，洗牌后写入并清空缓冲区。大幅降低内存峰值。
+        *   `--chunk N --shuffle --seed <S>`: 仅在内存中缓冲 N 条记录，洗牌后写入并清空缓冲区。大幅降低内存峰值。支持确定性随机种子。
         *   `--chunk N` (无 shuffle): 流式处理，内存占用极低。
 *   **全 N 过滤**:
     *   自动跳过仅包含 N 的窗口，减少无效计算。
 *   **1-based 坐标**:
     *   输出 Header 格式 `>name:start-end` 采用 1-based 闭区间，符合人类阅读习惯及下游工具（如 Samtools）标准。
 
-| 功能点 | `cactus_fasta_fragments.py` | `pgr fa window` (设计目标) |
+| 功能点 | `cactus_fasta_fragments.py` | `pgr fa window` (已实现) |
 | :--- | :--- | :--- |
 | **切片方式** | 滑动窗口 (Fragment/Step) | 滑动窗口 (Length/Step) |
 | **输入** | STDIN 流式 | File/STDIN 流式 |
 | **Header 格式** | `>name_start` (Origin-1 default) | `>name:start-end` (1-based Range 风格) |
 | **过滤** | 跳过全 N | 跳过全 N |
-| **随机化** | `--shuffle` (内存密集) | 暂不直接支持内存 Shuffle，建议后续通过 `shuf` 管道处理 |
+| **随机化** | `--shuffle` (内存密集) | `--shuffle` + `--chunk` (低内存) + `--seed` (可复现) |
 
 ### 7.2 用法
 
@@ -183,4 +182,114 @@
 ### 7.3 实现细节
 *   **流式处理**: 类似于 `pgr fa size`，逐条读取 Record，不需要 `.loc` 索引文件，适合处理巨大文件流。
 *   **内存优化**: 仅持有当前 Record 的 Sequence，不加载整个文件。
+
+### 7.4 Target 构建策略 (PGR Design)
+
+Cactus 采用复杂的 "分块-采样-物理合并" 策略来构建 Target，旨在平衡大基因组的覆盖度与计算资源。对于 `pgr`，我们采用更简化的策略：
+
+*   **小基因组 (Bacteria/Fungi/Insects)**:
+    *   直接将**整个基因组文件**作为 Target。
+    *   简单高效，无需拆分。
+*   **大基因组 (Human/Plants)**:
+    *   **按染色体拆分**: 每条染色体（或 Scaffold）作为一个独立的 Target 处理单元。
+    *   **逻辑**: 染色体是自然的生物学单元，且单条染色体（如 Human Chr1 ~250Mb）通常已包含足够的重复序列样本，足以进行有效的 RepeatMasking。
+    *   **注意 (All-vs-All)**: 无论是哪种拆分策略，为了同时检测**重复序列 (Transposons)** 和 **重复基因 (Gene Duplication/Paralogs)**，必须执行 **All-vs-All** 比对（即 Query 的每一部分都要与 Target 的每一部分比对）。
+        *   在按染色体拆分的情况下，这意味着如果我想找 Chr1 上的片段在 Chr2 上的同源拷贝，我需要确保比对空间覆盖了 Chr1 vs Chr2。
+        *   但在 Cactus 的 RepeatMasking 阶段，它主要关注**高拷贝重复**（深度 > 50 或更多）。这种高拷贝元件通常在单条染色体内部就有足够多的拷贝数来触发阈值。因此，对于 RepeatMasking 目的，**Self-Alignment (Chr1 vs Chr1)** 通常是足够的。
+        *   如果您的目标是包含**低拷贝的重复基因**（例如只有 2-3 个拷贝的旁系同源基因），那么确实需要全基因组范围的 All-vs-All。这会显著增加计算量（N^2 复杂度）。
+    *   **优势**:
+        *   **天然并行**: 每条染色体一个任务。
+        *   **避免边界问题**: 染色体内部连续。
+        *   **实现简单**: 无需复杂的随机采样和重组逻辑。
+
+## 8. 附录：Lastz 命令构建实现参考
+
+以下是 `LastzRepeatMaskJob` 中构建比对命令的详细规范，可供实现参考：
+
+1.  **输入准备**:
+    *   **Query**: 上一步生成的切片文件（Fragments）。
+    *   **Target**: 将选中的多个 Target Chunks 文件**物理合并 (cat)** 为一个临时文件。
+2.  **构建 Lastz 命令行**:
+    *   **输入文件修饰符**:
+        *   **Target**: `filename[multiple][nameparse=darkspace]`
+            *   `[multiple]`: 必选。告诉 Lastz 这是一个包含多条序列的文件（即使合并后只有一条，加上也无妨）。
+            *   `[nameparse=darkspace]`: 必选。只取标题行第一个空格前的 ID。
+            *   `[unmask]`: 可选。如果 `unmaskInput=True`，则添加此项，忽略输入序列中的软屏蔽（小写字母）。
+        *   **Query**: `filename[nameparse=darkspace]`
+            *   `[nameparse=darkspace]`: 必选。
+            *   `[unmask]`: 可选。同上。
+    *   **核心参数**:
+        *   `--querydepth=keep,nowarn:<N>`:
+            *   `N = period + 3`。其中 `period` 是屏蔽阈值（通常为 10 或根据采样率调整）。
+            *   `+3` 是一个经验性的 "Fudge Factor"（修正因子），确保能召回足够多的比对供后续统计。
+            *   `keep`: 不丢弃高深度区域的比对。
+            *   `nowarn`: 超过深度时不输出警告。
+        *   `--format=general:name1,zstart1,end1,name2,zstart2+,end2+`:
+            *   输出自定义的表格格式，无 Header。
+            *   `zstart`: 0-based start。
+            *   `end`: 1-based end (open interval)。
+            *   `+`: 强制 Target 坐标始终为正义链（Lastz 默认如果比对到反义链，Start 会大于 End 或使用负坐标，这里强制标准化）。
+        *   `--markend`: 在输出文件末尾写入一行标记，防止因进程崩溃导致的文件截断未被发现。
+3.  **输出**:
+    *   生成 `.cigar` 文件（尽管扩展名是 cigar，实际内容是上述 `general` 格式）。
+
+## 9. 附录：Python 代码详解 (`cactus_lastzRepeatMask.py`)
+
+文件路径: `cactus-master/src/cactus/preprocessor/lastzRepeatMasking/cactus_lastzRepeatMask.py`
+
+### `RepeatMaskOptions` 类
+*   **功能**: 数据类，用于存储重复序列屏蔽的配置选项。
+*   **关键属性**:
+    *   `fragment`: 切片大小（默认 200）。如果为奇数会自动加 1 保证偶数，以便能被 2 整除。
+    *   `minPeriod`: 最小重复周期。
+    *   `proportionSampled`: 采样比例。
+    *   `period`: 实际使用的深度阈值，计算公式 `max(1, round(proportionSampled * minPeriod))`。
+
+### `LastzRepeatMaskJob` 类 (继承自 `RoundedJob`)
+这是 Toil Job 的具体实现，负责执行实际的屏蔽任务。
+
+#### `__init__`
+*   **功能**: 初始化 Job，计算资源需求。
+*   **资源计算**:
+    *   **Memory**: 根据 Target 大小动态计算。
+    *   **Disk**: 预留 4 倍于输入文件大小的空间。
+
+#### `getFragments(self, fileStore, queryFile)`
+*   **功能**: 调用 `cactus_fasta_fragments.py` 对 Query 进行切片。
+*   **输入**: 原始 Query FASTA 文件。
+*   **输出**: 包含重叠片段的 FASTA 文件路径。
+*   **关键调用**:
+    ```python
+    cactus_call(..., parameters=["cactus_fasta_fragments.py", 
+               "--fragment=%s", "--step=%s", "--origin=zero"])
+    ```
+    *   `--step` 被硬编码为 `fragment // 2` (50% 重叠)。
+
+#### `alignFastaFragments(self, fileStore, targetFiles, fragments)`
+*   **功能**: 执行核心的比对步骤。
+*   **流程**:
+    1.  **合并 Target**: 将所有 Target Chunks 合并为一个临时文件 (`catFiles`)。
+    2.  **构建修饰符**: 为 Target 添加 `[multiple][nameparse=darkspace]`，为 Fragments 添加 `[nameparse=darkspace]`。
+    3.  **构建命令**: 组装 `lastz` 命令，包含 `--querydepth=keep,nowarn:N` 和 `--format=general`。
+    4.  **执行**: 调用 `cactus_call` 运行比对。
+*   **输出**: CIGAR (General format) 比对结果文件。
+
+#### `maskCoveredIntervals(self, fileStore, queryFile, alignment)`
+*   **功能**: 根据比对结果计算高深度区间并应用屏蔽。
+*   **流程**:
+    1.  **计算区间**: 调用 C 程序 `cactus_covered_intervals`。
+        *   参数 `M`: 深度阈值，计算为 `period * 2` (因为 50% 重叠导致基准深度翻倍)。
+        *   参数 `--queryoffsets`: 启用 Query 坐标还原。
+    2.  **应用屏蔽**: 调用 `cactus_fasta_softmask_intervals.py`。
+        *   读取原始 Query 和上一步生成的区间文件。
+        *   生成最终的 Soft-masked FASTA 文件。
+
+#### `run(self, fileStore)`
+*   **功能**: Job 的主入口点，串联上述步骤。
+*   **流程**:
+    1.  从 FileStore 读取 Query 和 Target 文件到本地临时目录。
+    2.  调用 `getFragments` 切片。
+    3.  调用 `alignFastaFragments` 比对。
+    4.  调用 `maskCoveredIntervals` 屏蔽。
+    5.  将最终结果写回 FileStore。
 
