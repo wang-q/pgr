@@ -233,6 +233,32 @@ Cactus 采用复杂的 "分块-采样-物理合并" 策略来构建 Target，旨
     pgr lav lastz genome.fa genome.fa --self --preset set01
     ```
 
+### 7.6 `pgr psl to-range` 与深度计算
+
+为了替代 Cactus 中的 `cactus_covered_intervals`，我们采用以下工具链：
+
+1.  **PSL 转换**: `pgr psl to-range`
+    *   将 `lift` 后的 PSL 文件转换为 `.rg` (Range) 格式。
+    *   自动处理正负链坐标，输出 Query 正链上的覆盖区间。
+    *   **命令**:
+        ```bash
+        pgr psl to-range lifted.psl > query_coverage.rg
+        ```
+
+2.  **深度计算**: `spanr coverage`
+    *   利用 `spanr` 工具计算覆盖深度。
+    *   **命令**:
+        ```bash
+        spanr coverage query_coverage.rg -m 10 > mask_regions.json
+        ```
+
+3.  **应用屏蔽**: `pgr fa mask`
+    *   利用生成的 JSON Runlist 屏蔽原始序列。
+    *   **命令**:
+        ```bash
+        pgr fa mask input.fa mask_regions.json -o masked.fa
+        ```
+
 ## 8. 附录：Lastz 命令构建实现参考
 
 以下是 `LastzRepeatMaskJob` 中构建比对命令的详细规范，可供实现参考：

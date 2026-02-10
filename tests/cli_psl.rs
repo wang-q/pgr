@@ -111,6 +111,30 @@ fn test_histo_cover_spread() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[test]
+fn test_histo_id_spread() -> anyhow::Result<()> {
+    let temp = TempDir::new()?;
+    let input = get_path("histo", "input", "basic.psl");
+    let output = temp.path().join("id.histo");
+
+    let mut cmd = Command::cargo_bin("pgr")?;
+    cmd.arg("psl")
+        .arg("histo")
+        .arg("--what")
+        .arg("idSpread")
+        .arg(&input)
+        .arg("-o")
+        .arg(&output);
+    cmd.assert().success();
+
+    let output_content = fs::read_to_string(&output)?;
+    let lines: Vec<&str> = output_content.lines().collect();
+    // basic.psl has 7 unique queries.
+    assert_eq!(lines.len(), 7);
+
+    Ok(())
+}
+
 //
 // psl to-chain
 //
@@ -290,6 +314,69 @@ fn test_lift_target() -> anyhow::Result<()> {
     assert!(output_content.contains(",\t110,"));
     // Second: 810
     assert!(output_content.contains(",\t810,"));
+
+    Ok(())
+}
+
+//
+// psl stats
+//
+
+#[test]
+fn test_stats_basic() -> anyhow::Result<()> {
+    let temp = TempDir::new()?;
+    let input = get_path("stats", "input", "stats_basic.psl");
+    let output = temp.path().join("stats.tsv");
+
+    let mut cmd = Command::cargo_bin("pgr")?;
+    cmd.arg("psl")
+        .arg("stats")
+        .arg(&input)
+        .arg("-o")
+        .arg(&output);
+    cmd.assert().success();
+
+    let output_content = fs::read_to_string(&output)?;
+    let lines: Vec<&str> = output_content.lines().collect();
+    // Default is per-alignment stats.
+    // Input has 31 records. Output should have 32 lines (header + 31).
+    assert_eq!(lines.len(), 32);
+
+    Ok(())
+}
+
+//
+// psl to-range
+//
+
+#[test]
+fn test_to_range_basic() -> anyhow::Result<()> {
+    let temp = TempDir::new()?;
+    let input = get_path("lift", "", "test_fragment.psl");
+    let output = temp.path().join("ranges.rg");
+
+    let mut cmd = Command::cargo_bin("pgr")?;
+    cmd.arg("psl")
+        .arg("to-range")
+        .arg(&input)
+        .arg("-o")
+        .arg(&output);
+    cmd.assert().success();
+
+    let output_content = fs::read_to_string(&output)?;
+    
+    // Check output content
+    // Input:
+    // 1. chr1:101-200 (+), qStart=10, qEnd=20.
+    //    Range: chr1:101-200:11-20
+    // 2. chr1:101-200 (-), qStart=10, qEnd=20.
+    //    qSize=100.
+    //    Range: chr1:101-200:81-90 (as calculated before)
+    
+    let lines: Vec<&str> = output_content.lines().collect();
+    assert_eq!(lines.len(), 2);
+    assert_eq!(lines[0], "chr1:101-200:11-20");
+    assert_eq!(lines[1], "chr1:101-200:81-90");
 
     Ok(())
 }
