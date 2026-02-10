@@ -356,8 +356,31 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
             }
 
             // Output filename: [target]vs[query].lav
-            let out_name = format!("[{}]vs[{}].lav", t_base, q_base);
-            let out_path = std::path::Path::new(opt_output).join(out_name);
+            // Logic ported from lastz.pm to handle potential duplicates
+            let mut i = 0;
+            let out_path;
+            loop {
+                let out_name = if i == 0 {
+                    format!("[{}]vs[{}].lav", t_base, q_base)
+                } else {
+                    format!("[{}]vs[{}].{}.lav", t_base, q_base, i)
+                };
+                let candidate = std::path::Path::new(opt_output).join(out_name);
+
+                // Atomically try to create the file to reserve the name
+                // This prevents race conditions when multiple threads process identically named inputs
+                if std::fs::OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .open(&candidate)
+                    .is_ok()
+                {
+                    out_path = candidate;
+                    break;
+                }
+
+                i += 1;
+            }
 
             // [nameparse=darkspace] is required for correct sequence name parsing.
             // [multiple] implies that the target file contains multiple sequences.

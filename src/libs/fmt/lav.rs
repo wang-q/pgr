@@ -260,9 +260,9 @@ fn parse_header_word(word: &str) -> String {
     }
 
     // Remove range specifiers (e.g., :start-end)
-    if let Some(idx) = s.find(':') {
-        s = &s[..idx];
-    }
+    // if let Some(idx) = s.find(':') {
+    //     s = &s[..idx];
+    // }
 
     // Extract filename from path
     if let Some(idx) = s.rfind('/') {
