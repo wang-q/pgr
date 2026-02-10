@@ -387,10 +387,12 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
                 cmd.arg(arg);
             }
 
-            // Redirect stdout to file
-            let file = std::fs::File::create(&out_path).expect("Failed to create output file");
-            cmd.stdout(file);
+            cmd.arg(format!("--output={}", out_path.to_string_lossy()));
 
+            // Print command for progress tracking
+            eprintln!("{:?}", cmd);
+
+            // Execute lastz and wait for it to complete
             let status = cmd.status().expect("Failed to execute lastz");
 
             if !status.success() {
