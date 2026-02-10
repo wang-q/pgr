@@ -97,8 +97,8 @@ fn test_chaining_psl_lastz() -> anyhow::Result<()> {
     let output = temp.path().join("out.chain");
 
     let mut cmd = Command::cargo_bin("pgr")?;
-    cmd.arg("chaining")
-        .arg("psl")
+    cmd.arg("psl")
+        .arg("chain")
         .arg(&t_2bit)
         .arg(&q_2bit)
         .arg(&input)
