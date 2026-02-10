@@ -2,11 +2,26 @@
 
 本文档详细解析 `src/cactus/preprocessor/lastzRepeatMasking` 目录下的代码逻辑及其在 Cactus 预处理流程中的作用，并介绍了 `pgr` 项目如何通过 Rust 实现高效替代方案。
 
-## 1. 概述
+## 1. 概述与核心概念
 
-`LastzRepeatMasking` 是 Cactus 预处理阶段的一个关键模块，用于通过序列比对（通常是自身比对或与近缘物种比对）来识别和屏蔽重复序列。
+`LastzRepeatMasking` 是 Cactus 预处理阶段的关键模块，其核心思想与传统的 `RepeatMasker`（基于重复序列库）完全不同。它基于**“过度比对”（Over-alignment）**的原理：
 
-与传统的 `RepeatMasker`（基于库）不同，Cactus 的这个模块基于“过度比对”（Over-alignment）的原理：如果查询序列的某个区域能比对到目标序列的很多地方（覆盖深度过高），则该区域被认为是重复序列。
+> 如果基因组中某段序列（Query）能在自身或其他基因组（Target）中找到大量高相似度的比对位置（即覆盖深度极高），那么这段序列很可能就是重复序列（如转座子、简单重复序列）。
+
+### 形象化理解：过度比对 (Over-alignment)
+
+想象一下我们把一条染色体（Query）切成无数小片段，拿其中一个片段去基因组里“搜寻”：
+
+*   **单拷贝基因**: 这个片段只能在基因组里找到 **1个** 完美匹配的位置（它自己）。
+*   **重复元件 (TE)**: 这个片段（比如它是某个 Alu 元件的一部分）能在基因组里找到 **1000个** 匹配位置。
+    *   **结论**: 深度为 1000 -> **这是一个重复序列**。
+    *   **操作**: 我们把这个片段对应的区域标记为“需要屏蔽”。
+
+### 为什么需要这个流程？
+
+虽然 `RepeatMasker` 等基于库的工具很强大，但它们依赖于已知的重复序列库（RepBase/Dfam）。对于很多非模式物种，我们可能没有完善的重复序列库。
+
+Cactus 的这种**从头（De novo）**检测方法不依赖外部数据库，仅靠序列自身的重复性就能工作，因此对新测序的物种非常有效。
 
 ## 2. 目录结构与核心组件
 
@@ -31,7 +46,18 @@
 
 ## 3. 工作流程 (Workflow)
 
-整个流程在 `LastzRepeatMaskJob.run()` 方法中定义，分为三个主要步骤：
+整个流程在 `LastzRepeatMaskJob.run()` 方法中定义。为了方便理解，我们可以将其抽象为以下数据流：
+
+```mermaid
+graph LR
+    A[Query Genome] -->|切片| B(Fragments)
+    B -->|Lastz 比对| C(Alignments)
+    D[Target Genome] -->|作为参考| C
+    C -->|深度统计| E(High Depth Regions)
+    E -->|Soft Masking| F[Masked Genome]
+```
+
+流程分为三个主要步骤：
 
 ### 步骤 1: 序列切片 (Fragmentation)
 *   **方法**: `getFragments`
@@ -115,9 +141,9 @@
 
 在 `cactus_lastzRepeatMask.py` 中，`RepeatMaskOptions` 类定义了控制流程的关键参数：
 
-*   `fragment` (int, default 200): 切片大小。
+*   `fragment` (int, default 200): 切片大小。如果为奇数会自动加 1 保证偶数，以便能被 2 整除。
 *   `minPeriod` (int, default 10): 最小重复周期/覆盖度阈值。
-*   `proportionSampled` (float, default 1.0): 采样比例，会影响最终的覆盖度阈值计算 (`period = proportionSampled * minPeriod`)。
+*   `proportionSampled` (float, default 1.0): 采样比例。实际使用的深度阈值 `period` 计算公式为 `max(1, round(proportionSampled * minPeriod))`。
 *   `lastzOpts` (str): 传递给 `lastz` 的额外参数。
 *   `unmaskInput` / `unmaskOutput`: 控制输入输出的屏蔽状态。
 
@@ -141,7 +167,11 @@
 
 ## 7. PGR 工具链替代方案设计
 
-为了使用 Rust 高效替代现有的 Python 脚本，我们实现了以下工具：
+PGR (Phylogenetics in Rust) 项目提供了一套高效的 Rust 工具链，旨在替代上述复杂的 Python/C 混合流程。我们的目标是：**更快、更省内存、更易于部署和使用**。
+
+与 Cactus 的复杂调度不同，PGR 采用模块化的 CLI 工具设计，用户可以通过标准的 Shell 管道或脚本灵活组合。
+
+以下是各个步骤的替代方案详解：
 
 ### 7.1 `pgr fa window` vs `cactus_fasta_fragments.py`
 
@@ -229,118 +259,62 @@ Cactus 采用复杂的 "分块-采样-物理合并" 策略来构建 Target，旨
     pgr lav lastz genome.fa genome.fa --self --preset set01
     ```
 
-### 7.6 `pgr psl to-range` 与深度计算
+### 7.6 实战指南：从头构建 RepeatMasking 流程
 
-为了替代 Cactus 中的 `cactus_covered_intervals`，我们采用以下工具链。
-这个流程假设你已经完成了序列比对，并拥有了 PSL 格式的比对结果。
+为了替代 Cactus 的 `cactus_covered_intervals` 及其复杂流程，我们可以使用 PGR 工具链构建一个清晰的 Shell 脚本。
 
-完整流程如下：
+**场景假设**: 你有一个新组装的基因组 `genome.fa`，想要对其进行重复序列屏蔽（Soft-masking）。
 
-1.  **格式转换与坐标还原**:
-    *   Lastz 输出通常为 LAV 格式，且基于切片片段（Fragment）坐标。
-    *   需要先转换为 PSL，再利用 `pgr psl lift` 将坐标还原到原始基因组坐标系。
-    *   **命令**:
-        ```bash
-        # LAV -> PSL
-        pgr lav to-psl query_target.lav -o fragments.psl
+**完整脚本示例**:
 
-        # Lift Coordinates (还原 Query 坐标)
-        # 需提供 Query 的原始染色体大小文件 (chrom.sizes)
-        # 可使用 `pgr fa size query.fa > query.chrom.sizes` 生成
-        pgr psl lift fragments.psl --q-sizes query.chrom.sizes -o lifted.psl
-        ```
+```bash
+#!/bin/bash
+set -e
 
-2.  **PSL 转换**: `pgr psl to-range`
-    *   将 `lift` 后的 PSL 文件转换为 `.rg` (Range) 格式。
-    *   自动处理正负链坐标，输出 Query 正链上的覆盖区间。
-    *   **命令**:
-        ```bash
-        pgr psl to-range lifted.psl > query_coverage.rg
-        ```
+# 1. 准备工作
+INPUT_FA="genome.fa"
+WORK_DIR="masking_work"
+mkdir -p $WORK_DIR
 
-3.  **深度计算**: `spanr coverage`
-    *   利用 `spanr` 工具计算覆盖深度。
-    *   **命令**:
-        ```bash
-        spanr coverage query_coverage.rg -m 10 > mask_regions.json
-        ```
+# 获取染色体大小 (用于后续坐标还原)
+pgr fa size $INPUT_FA > $WORK_DIR/genome.sizes
 
-4.  **应用屏蔽**: `pgr fa mask`
-    *   利用生成的 JSON Runlist 屏蔽原始序列。
-    *   **命令**:
-        ```bash
-        pgr fa mask input.fa mask_regions.json -o masked.fa
-        ```
-            *   `N = period + 3`。其中 `period` 是屏蔽阈值（通常为 10 或根据采样率调整）。
-            *   `+3` 是一个经验性的 "Fudge Factor"（修正因子），确保能召回足够多的比对供后续统计。
-            *   `keep`: 不丢弃高深度区域的比对。
-            *   `nowarn`: 超过深度时不输出警告。
-        *   `--format=general:name1,zstart1,end1,name2,zstart2+,end2+`:
-            *   输出自定义的表格格式，无 Header。
-            *   `zstart`: 0-based start。
-            *   `end`: 1-based end (open interval)。
-            *   `+`: 强制 Target 坐标始终为正义链（Lastz 默认如果比对到反义链，Start 会大于 End 或使用负坐标，这里强制标准化）。
-        *   `--markend`: 在输出文件末尾写入一行标记，防止因进程崩溃导致的文件截断未被发现。
-3.  **输出**:
-    *   生成 `.cigar` 文件（尽管扩展名是 cigar，实际内容是上述 `general` 格式）。
+# 2. 切片 (Fragmentation)
+# 将基因组切成 200bp 的片段，步长 100bp (50% 重叠)
+# 这一步对应 Cactus 的 cactus_fasta_fragments.py
+pgr fa window $INPUT_FA --len 200 --step 100 --out $WORK_DIR/fragments.fa
 
-## 9. 附录：Python 代码详解 (`cactus_lastzRepeatMask.py`)
+# 3. 比对 (Alignment)
+# 将切片后的片段比对回原始基因组 (Self-Alignment)
+# 使用 preset set01 (高灵敏度)，输出为 LAV 格式
+# 这一步对应 lastz 的执行
+pgr lav lastz $INPUT_FA $WORK_DIR/fragments.fa --preset set01 --self -o $WORK_DIR/fragments.lav
 
-文件路径: `cactus-master/src/cactus/preprocessor/lastzRepeatMasking/cactus_lastzRepeatMask.py`
+# 4. 格式转换与坐标还原
+# 4.1 LAV -> PSL
+pgr lav to-psl $WORK_DIR/fragments.lav -o $WORK_DIR/fragments.psl
 
-### `RepeatMaskOptions` 类
-*   **功能**: 数据类，用于存储重复序列屏蔽的配置选项。
-*   **关键属性**:
-    *   `fragment`: 切片大小（默认 200）。如果为奇数会自动加 1 保证偶数，以便能被 2 整除。
-    *   `minPeriod`: 最小重复周期。
-    *   `proportionSampled`: 采样比例。
-    *   `period`: 实际使用的深度阈值，计算公式 `max(1, round(proportionSampled * minPeriod))`。
+# 4.2 Lift Coordinates
+# 将 Fragment 内部坐标 (如 seq1:100-300 的第 10bp) 还原为全基因组坐标 (seq1 的第 110bp)
+pgr psl lift $WORK_DIR/fragments.psl --q-sizes $WORK_DIR/genome.sizes -o $WORK_DIR/lifted.psl
 
-### `LastzRepeatMaskJob` 类 (继承自 `RoundedJob`)
-这是 Toil Job 的具体实现，负责执行实际的屏蔽任务。
+# 5. 深度计算与区间提取
+# 5.1 PSL -> Range (.rg)
+# 提取比对到的区间，自动处理正负链
+pgr psl to-range $WORK_DIR/lifted.psl > $WORK_DIR/query_coverage.rg
 
-#### `__init__`
-*   **功能**: 初始化 Job，计算资源需求。
-*   **资源计算**:
-    *   **Memory**: 根据 Target 大小动态计算。
-    *   **Disk**: 预留 4 倍于输入文件大小的空间。
+# 5.2 计算深度 (Depth > 10)
+# 任何深度超过 10 的区域被视为重复序列
+# 对应 cactus_covered_intervals
+spanr coverage $WORK_DIR/query_coverage.rg -m 10 > $WORK_DIR/mask_regions.json
 
-#### `getFragments(self, fileStore, queryFile)`
-*   **功能**: 调用 `cactus_fasta_fragments.py` 对 Query 进行切片。
-*   **输入**: 原始 Query FASTA 文件。
-*   **输出**: 包含重叠片段的 FASTA 文件路径。
-*   **关键调用**:
-    ```python
-    cactus_call(..., parameters=["cactus_fasta_fragments.py", 
-               "--fragment=%s", "--step=%s", "--origin=zero"])
-    ```
-    *   `--step` 被硬编码为 `fragment // 2` (50% 重叠)。
+# 6. 应用屏蔽 (Masking)
+# 将识别出的区域在原基因组中标记为小写 (Soft-masking)
+pgr fa mask $INPUT_FA $WORK_DIR/mask_regions.json -o masked_genome.fa
 
-#### `alignFastaFragments(self, fileStore, targetFiles, fragments)`
-*   **功能**: 执行核心的比对步骤。
-*   **流程**:
-    1.  **合并 Target**: 将所有 Target Chunks 合并为一个临时文件 (`catFiles`)。
-    2.  **构建修饰符**: 为 Target 添加 `[multiple][nameparse=darkspace]`，为 Fragments 添加 `[nameparse=darkspace]`。
-    3.  **构建命令**: 组装 `lastz` 命令，包含 `--querydepth=keep,nowarn:N` 和 `--format=general`。
-    4.  **执行**: 调用 `cactus_call` 运行比对。
-*   **输出**: CIGAR (General format) 比对结果文件。
+echo "Masking completed: masked_genome.fa"
+```
 
-#### `maskCoveredIntervals(self, fileStore, queryFile, alignment)`
-*   **功能**: 根据比对结果计算高深度区间并应用屏蔽。
-*   **流程**:
-    1.  **计算区间**: 调用 C 程序 `cactus_covered_intervals`。
-        *   参数 `M`: 深度阈值，计算为 `period * 2` (因为 50% 重叠导致基准深度翻倍)。
-        *   参数 `--queryoffsets`: 启用 Query 坐标还原。
-    2.  **应用屏蔽**: 调用 `cactus_fasta_softmask_intervals.py`。
-        *   读取原始 Query 和上一步生成的区间文件。
-        *   生成最终的 Soft-masked FASTA 文件。
-
-#### `run(self, fileStore)`
-*   **功能**: Job 的主入口点，串联上述步骤。
-*   **流程**:
-    1.  从 FileStore 读取 Query 和 Target 文件到本地临时目录。
-    2.  调用 `getFragments` 切片。
-    3.  调用 `alignFastaFragments` 比对。
-    4.  调用 `maskCoveredIntervals` 屏蔽。
-    5.  将最终结果写回 FileStore。
+这个流程清晰地展示了数据是如何流动的：
+`Genome` -> `Fragments` -> `Alignments (LAV/PSL)` -> `Coordinates (Lifted)` -> `Depths (Ranges)` -> `Mask (JSON)` -> `Masked Genome`。
 
