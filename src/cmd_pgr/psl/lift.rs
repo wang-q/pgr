@@ -7,14 +7,14 @@ use pgr::libs::psl::Psl;
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("lift")
-        .about("Lift PSL coordinates from query fragments (e.g., chr1:100-200) to genomic coordinates")
+        .about("Lifts PSL coordinates from fragment alignments")
         .after_help(
             r###"
-Lift PSL coordinates from query fragments to genomic coordinates.
+Lifts PSL coordinates from query/target fragments to genomic coordinates.
 
 Notes:
 * The query or target name must be in the format `chr:start-end`.
-* The coordinates in the name are 1-based, inclusive (UCSC format).
+* The coordinates in the name are 1-based, inclusive.
 * Requires a chromosome sizes file for correct negative strand lifting.
 
 Examples:
@@ -46,12 +46,14 @@ Examples:
         .arg(
             Arg::new("q_sizes")
                 .long("q-sizes")
+                .short('q')
                 .num_args(1)
                 .help("File containing query sizes (name <tab> size)"),
         )
         .arg(
             Arg::new("t_sizes")
                 .long("t-sizes")
+                .short('t')
                 .num_args(1)
                 .help("File containing target sizes (name <tab> size)"),
         )
