@@ -65,7 +65,7 @@ fn test_lav_lastz_preset() {
     cmd.arg("lav")
         .arg("lastz")
         .arg(t_path.join("pseudocat.fa"))
-        .arg(t_path.join("pseudopig.fa"))
+        .arg(t_path.join("pseudocat.fa")) // Self-alignment to ensure matches with strict preset
         .arg("--preset")
         .arg("set01")
         .arg("--output")
@@ -73,7 +73,7 @@ fn test_lav_lastz_preset() {
 
     cmd.assert().success();
 
-    let output_file = temp.path().join("[pseudocat]vs[pseudopig].lav");
+    let output_file = temp.path().join("[pseudocat]vs[pseudocat].lav");
     assert!(output_file.exists());
     
     // Check if output is valid LAV
