@@ -11,7 +11,7 @@ use std::io::{BufRead, Write};
 use std::str::FromStr;
 
 pub fn make_subcommand() -> Command {
-    Command::new("psl")
+    Command::new("chain")
         .about("Chain PSL alignments")
         .after_help(
             r###"
@@ -36,13 +36,13 @@ Processing:
 
 Examples:
   # Chain PSL file with default settings
-  pgr chaining psl t.2bit q.2bit in.psl -o out.chain
+  pgr psl chain t.2bit q.2bit in.psl -o out.chain
 
   # Chain with affine gap costs
-  pgr chaining psl t.2bit q.2bit in.psl -o out.chain --gap-open 400 --gap-extend 30
+  pgr psl chain t.2bit q.2bit in.psl -o out.chain --gap-open 400 --gap-extend 30
 
   # Chain with HoxD55 scoring scheme
-  pgr chaining psl t.2bit q.2bit in.psl -o out.chain --score-scheme hoxd55
+  pgr psl chain t.2bit q.2bit in.psl -o out.chain --score-scheme hoxd55
 "###,
         )
         .arg(
