@@ -28,13 +28,11 @@ T -300 -150 -300  100
 ";
 
 #[allow(dead_code)]
-const MATRIX_SIMILAR2: &str = r#"
-   A    C    G    T
-  90 -330 -236 -356
--330  100 -318 -236
--236 -318  100 -330
--356 -236 -330   90
-"#;
+const MATRIX_SIMILAR2: &str = "   A    C    G    T
+A  90 -330 -236 -356
+C -330  100 -318 -236
+G -236 -318  100 -330
+T -356 -236 -330   90
 ";
 
 struct Preset {
