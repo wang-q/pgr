@@ -6,8 +6,26 @@ use tempfile::NamedTempFile;
 
 use std::path::{Path, PathBuf};
 
--300 -150 -300  100
-"#;
+const MATRIX_DEFAULT: &str = "   A    C    G    T
+A  91 -114  -31 -123
+C -114  100 -125  -31
+G  -31 -125  100 -114
+T -123  -31 -114   91
+";
+
+const MATRIX_DISTANT: &str = "   A    C    G    T
+A  91  -90  -25 -100
+C -90  100 -100  -25
+G -25 -100  100  -90
+T -100  -25  -90   91
+";
+
+const MATRIX_SIMILAR: &str = "   A    C    G    T
+A  100 -300 -150 -300
+C -300  100 -300 -150
+G -150 -300  100 -300
+T -300 -150 -300  100
+";
 
 #[allow(dead_code)]
 const MATRIX_SIMILAR2: &str = r#"
