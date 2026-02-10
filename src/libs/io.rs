@@ -53,3 +53,21 @@ pub fn writer(output: &str) -> Box<dyn Write> {
 
     writer
 }
+
+/// ```
+/// let sizes = intspan::read_sizes("tests/pgr/pseudopig.sizes");
+/// assert_eq!(sizes.len(), 2);
+/// assert_eq!(*sizes.get("pig2").unwrap(), 22929);
+/// ```
+pub fn read_sizes(input: &str) -> BTreeMap<String, i32> {
+    let mut sizes: BTreeMap<String, i32> = BTreeMap::new();
+
+    for line in read_lines(input) {
+        let fields: Vec<&str> = line.split('\t').collect();
+        if fields.len() == 2 {
+            sizes.insert(fields[0].to_string(), fields[1].parse::<i32>().unwrap());
+        }
+    }
+
+    sizes
+}

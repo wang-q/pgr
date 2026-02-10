@@ -216,7 +216,7 @@ fn test_lift_basic() -> anyhow::Result<()> {
         .arg(&input)
         .arg("-o")
         .arg(&output)
-        .arg("--sizes")
+        .arg("--q-sizes")
         .arg(&sizes);
     cmd.assert().success();
 
@@ -259,7 +259,7 @@ fn test_lift_target() -> anyhow::Result<()> {
         .arg(&input)
         .arg("-o")
         .arg(&output)
-        .arg("--sizes")
+        .arg("--t-sizes")
         .arg(&sizes);
     cmd.assert().success();
 
