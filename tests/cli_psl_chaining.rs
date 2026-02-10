@@ -53,8 +53,8 @@ fn test_chaining_psl_basic() -> anyhow::Result<()> {
     let output_path = temp.path().join("out.chain");
 
     let mut cmd = Command::cargo_bin("pgr")?;
-    cmd.arg("chaining")
-        .arg("psl")
+    cmd.arg("psl")
+        .arg("chain")
         .arg(&t_2bit)
         .arg(&q_2bit)
         .arg(&psl_path)
@@ -97,8 +97,8 @@ fn test_chaining_default_score_filtering() -> anyhow::Result<()> {
     let output_path = temp.path().join("out.chain");
 
     let mut cmd = Command::cargo_bin("pgr")?;
-    cmd.arg("chaining")
-        .arg("psl")
+    cmd.arg("psl")
+        .arg("chain")
         .arg(&t_2bit)
         .arg(&q_2bit)
         .arg(&psl_path)
@@ -148,8 +148,8 @@ fn test_chaining_psl_new_style_lastz() -> anyhow::Result<()> {
     let output = temp.path().join("out.chain");
 
     let mut cmd = Command::cargo_bin("pgr")?;
-    cmd.arg("chaining")
-        .arg("psl")
+    cmd.arg("psl")
+        .arg("chain")
         .arg(&t_2bit)
         .arg(&q_2bit)
         .arg(&input)
