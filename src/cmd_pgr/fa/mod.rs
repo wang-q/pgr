@@ -15,6 +15,7 @@ pub mod size;
 pub mod some;
 pub mod split;
 pub mod to_2bit;
+pub mod window;
 
 pub fn make_subcommand() -> clap::Command {
     clap::Command::new("fa")
@@ -23,7 +24,7 @@ pub fn make_subcommand() -> clap::Command {
             r###"Subcommand groups:
 
 * info: size / count / masked / n50
-* records: one / some / order / split
+* records: one / some / order / split / window
 * transform: replace / rc / filter / dedup / mask / six-frame / to-2bit
 * indexing: gz / range
 
@@ -48,6 +49,7 @@ pub fn make_subcommand() -> clap::Command {
         .subcommand(split::make_subcommand())
         .subcommand(six_frame::make_subcommand())
         .subcommand(to_2bit::make_subcommand())
+        .subcommand(window::make_subcommand())
 }
 
 pub fn execute(matches: &clap::ArgMatches) -> anyhow::Result<()> {
@@ -69,6 +71,7 @@ pub fn execute(matches: &clap::ArgMatches) -> anyhow::Result<()> {
         Some(("some", sub_matches)) => some::execute(sub_matches),
         Some(("split", sub_matches)) => split::execute(sub_matches),
         Some(("to-2bit", sub_matches)) => to_2bit::execute(sub_matches),
+        Some(("window", sub_matches)) => window::execute(sub_matches),
         _ => Ok(()),
     }
 }

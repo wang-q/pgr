@@ -144,8 +144,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let mut fa_out: Option<noodles_fasta::io::Writer<Box<dyn std::io::Write>>> = None;
     
-    // Initialize writer if not chunking (or if chunking but not splitting files? No, chunk implies split usually)
-    // If chunk_size is None, we just use one writer.
+    // Initialize global writer if not chunking.
     if chunk_size.is_none() {
         let writer = pgr::writer(outfile);
         fa_out = Some(noodles_fasta::io::writer::Builder::default()
@@ -239,10 +238,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         let mut rng = rand::rngs::StdRng::seed_from_u64(chunk_seed);
         records_buffer.shuffle(&mut rng);
 
-        // If chunking was used, this is the last part. 
-        // If chunking was NOT used, chunk_size is None, so we haven't written anything yet.
-        // If chunking NOT used, we use the single global writer (which we need to create if not created, 
-        // but we didn't create it for shuffle case in setup).
+        // Flush remaining records.
+        // If chunking, this goes to a new chunk file.
+        // If not chunking, this goes to the single global file.
         
         let mut final_out = if chunk_size.is_some() {
              let writer = create_writer(current_part);
@@ -250,14 +248,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 .set_line_base_count(usize::MAX)
                 .build_from_writer(writer)
         } else {
-             // If we already have an open writer (fa_out), use it? 
-             // fa_out is Option<Writer>, but we need to move it or borrow it.
-             // But here we are constructing a NEW writer for the final flush.
-             // If fa_out was created at start (chunk_size is None), we should use it.
              if let Some(writer) = fa_out.take() {
                  writer
              } else {
-                 // Should not happen if logic is correct, but safe fallback
+                 // Fallback (should not be reached if logic holds)
                  let writer = pgr::writer(outfile);
                  noodles_fasta::io::writer::Builder::default()
                     .set_line_base_count(usize::MAX)
