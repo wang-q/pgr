@@ -1,5 +1,6 @@
 pub mod chain;
 pub mod histo;
+pub mod lift;
 pub mod rc;
 pub mod stats;
 pub mod swap;
@@ -16,6 +17,7 @@ ensuring the fidelity of the ported libraries.
         )
         .subcommand(chain::make_subcommand())
         .subcommand(histo::make_subcommand())
+        .subcommand(lift::make_subcommand())
         .subcommand(rc::make_subcommand())
         .subcommand(stats::make_subcommand())
         .subcommand(swap::make_subcommand())
@@ -26,6 +28,7 @@ pub fn execute(matches: &clap::ArgMatches) -> anyhow::Result<()> {
     match matches.subcommand() {
         Some(("chain", sub_matches)) => chain::execute(sub_matches),
         Some(("histo", sub_matches)) => histo::execute(sub_matches),
+        Some(("lift", sub_matches)) => lift::execute(sub_matches),
         Some(("rc", sub_matches)) => rc::execute(sub_matches),
         Some(("stats", sub_matches)) => stats::execute(sub_matches),
         Some(("swap", sub_matches)) => swap::execute(sub_matches),

@@ -180,6 +180,59 @@ fn test_rc_mrna() -> anyhow::Result<()> {
     Ok(())
 }
 
+fn get_pgr_path(filename: &str) -> PathBuf {
+    let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    path.push("tests/pgr");
+    path.push(filename);
+    path
+}
+
+//
+// psl lift
+//
+
+#[test]
+fn test_lift_basic() -> anyhow::Result<()> {
+    let temp = TempDir::new()?;
+    let input = get_pgr_path("test_fragment.psl");
+    let sizes = get_pgr_path("chrom.sizes");
+    let output = temp.path().join("lifted.psl");
+
+    let mut cmd = Command::cargo_bin("pgr")?;
+    cmd.arg("psl")
+        .arg("lift")
+        .arg(&input)
+        .arg(&output)
+        .arg("--sizes")
+        .arg(&sizes);
+    cmd.assert().success();
+
+    let output_content = fs::read_to_string(&output)?;
+    
+    // Expected output check
+    // The input file contains two records.
+    // First record: chr1:101-200 (+), qStart=10, qEnd=20 (on fragment).
+    //   Lifted: chr1 (+), qStart=100+10=110, qEnd=100+20=120.
+    // Second record: chr1:101-200 (-), qStart=10, qEnd=20 (on RC fragment).
+    //   Lifted: chr1 (-), qStart=810, qEnd=820.
+    //   Calculation for (-):
+    //     q_size=1000. offset=100.
+    //     new_qStart = 1000 - (100 - 10 + 100) = 810.
+    //     new_qEnd = 1000 - (100 - 20 + 100) = 820.
+    
+    // Check first record
+    assert!(output_content.contains("chr1\t1000\t110\t120"));
+    // Check second record
+    assert!(output_content.contains("chr1\t1000\t810\t820"));
+    // Check that qStarts for blocks are also correct
+    // First record block start: 110
+    assert!(output_content.contains("110,\t500,"));
+    // Second record block start: 810
+    assert!(output_content.contains("810,\t500,"));
+
+    Ok(())
+}
+
 #[test]
 fn test_rc_trans() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("pgr")?;

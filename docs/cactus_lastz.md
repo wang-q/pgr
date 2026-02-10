@@ -1,6 +1,6 @@
 # Cactus Lastz Repeat Masking 模块详解
 
-本文档详细解析 `c:\Users\wangq\Scripts\pgr\cactus-master\preprocessor\lastzRepeatMasking` 目录下的代码逻辑及其在 Cactus 预处理流程中的作用。
+本文档详细解析 `src/cactus/preprocessor/lastzRepeatMasking` 目录下的代码逻辑及其在 Cactus 预处理流程中的作用，并介绍了 `pgr` 项目如何通过 Rust 实现高效替代方案。
 
 ## 1. 概述
 
@@ -54,7 +54,7 @@
 *   **方法**: `alignFastaFragments`
 *   **工具**: `lastz` (CPU)
     *   **注**: 虽然 `FastGA` 等工具速度更快，但 Cactus 目前的代码硬编码了 `lastz` 的调用接口及特定的输出格式（CIGAR/General），暂不支持直接替换。
-    *   **PGR 实现**: 在 `pgr` 中，我们在 `c:\Users\wangq\Scripts\pgr\src\cmd_pgr\lav` 下实现了 `lastz` 的包装器。为了兼容后续的链式比对（Chaining）流程，我们将输出格式调整为 **LAV**。
+    *   **PGR 实现**: 在 `pgr` 中，我们在 `src/cmd_pgr/lav` 下实现了 `lastz` 的包装器。为了兼容后续的链式比对（Chaining）流程，我们将输出格式调整为 **LAV**。
 *   **逻辑**:
     *   将上一步生成的片段（Query Fragments）与目标序列（Target）进行比对。
     *   **注意**: 目标序列通常是该物种所有分块（Chunks）合并后的全长序列，以确保能检测到全基因组范围内的重复。对于小基因组或未分块的情况，它就是完整的原始染色体。
@@ -145,7 +145,7 @@
 
 ## 7. PGR 工具链替代方案设计
 
-为了使用 Rust 高效替代现有的 Python 脚本，计划在 `pgr` 中新增 `fa window` 子命令。
+为了使用 Rust 高效替代现有的 Python 脚本，我们实现了以下工具：
 
 ### 7.1 `pgr fa window` vs `cactus_fasta_fragments.py`
 
@@ -200,26 +200,37 @@ Cactus 采用复杂的 "分块-采样-物理合并" 策略来构建 Target，旨
         *   **避免边界问题**: 染色体内部连续。
         *   **实现简单**: 无需复杂的随机采样和重组逻辑。
 
-### 7.5 `pgr pl lastz` vs `lastz` (Wrapper)
+### 7.5 `pgr lav lastz` vs `lastz` (Wrapper)
 
-为了简化上述复杂的 Lastz 调用流程，我们实现了 `pgr pl lastz` 命令：
+为了简化复杂的 Lastz 调用流程，我们实现了 `pgr lav lastz` 命令：
 
 *   **功能**:
-    *   **自动合并 Target**: 如果提供多个 Target 文件（如分染色体的文件），自动合并为临时文件。
+    *   **目录/文件递归**: 支持对输入目录进行递归搜索，自动识别 `.fa` 和 `.fa.gz` 文件。
     *   **参数预设**:
         *   自动添加 `[multiple][nameparse=darkspace]` 修饰符。
-        *   自动计算 `--querydepth=keep,nowarn:N` (根据 `--period`)。
-        *   自动设置 `--format=general...` 输出格式。
-    *   **参数预设** (`--preset`):
-        *   支持 `near`/`primates` (近缘, `set01`), `medium`/`mammals` (中等, `set03`), `distant`/`vertebrates` (远缘, `set06`) 等预设参数集。
-        *   支持 `--lastz-args "..."` 透传其他高级参数。
+        *   自动添加 `--querydepth` (默认 13)。
+        *   自动设置 `--format=lav` 输出格式（专为 PGR Chaining 流程优化）。
+    *   **预设参数集** (`--preset`):
+        *   支持 `set01` 到 `set07` (来自 UCSC/Cactus 的经典参数集)。
+        *   包含参数配置和打分矩阵 (Matrix)。
+        *   使用 `--show-preset` 可查看详细参数。
+    *   **自定义参数**:
+        *   支持 `--lastz-args "..."` 透传其他高级参数（覆盖预设）。
+    *   **自比对优化**:
+        *   `--self` 参数：当 Target 和 Query 为同一文件时，自动传递 `--self` 给 Lastz，避免冗余计算。
+    *   **并行计算**:
+        *   使用 Rust `rayon` 库实现多线程并行执行 (Task Parallelism)，替代了 Perl 版本中的 MCE 模块。
+
 *   **用法示例**:
     ```bash
-    # 使用预设参数进行哺乳动物间比对
-    pgr pl lastz query.fa target.fa --preset mammals > alignment.cigar
+    # 使用预设参数进行比对 (Human vs Chimp)
+    pgr lav lastz target.fa query.fa --preset set01 -o lastz_out
     
-    # 手动传递额外参数
-    pgr pl lastz query.fa target.fa --lastz-args "--hspthresh=3000" > alignment.cigar
+    # 目录递归与并行执行
+    pgr lav lastz target_dir/ query_dir/ --preset set03 --parallel 8
+    
+    # 自比对
+    pgr lav lastz genome.fa genome.fa --self --preset set01
     ```
 
 ## 8. 附录：Lastz 命令构建实现参考
