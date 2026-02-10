@@ -6,27 +6,6 @@ use tempfile::NamedTempFile;
 
 use std::path::{Path, PathBuf};
 
-const MATRIX_DEFAULT: &str = r#"
-   A    C    G    T
-  91 -114  -31 -123
--114  100 -125  -31
- -31 -125  100 -114
--123  -31 -114   91
-"#;
-
-const MATRIX_DISTANT: &str = r#"
-   A    C    G    T
-  91  -90  -25 -100
- -90  100 -100  -25
- -25 -100  100  -90
--100  -25  -90   91
-"#;
-
-const MATRIX_SIMILAR: &str = r#"
-   A    C    G    T
- 100 -300 -150 -300
--300  100 -300 -150
--150 -300  100 -300
 -300 -150 -300  100
 "#;
 
@@ -38,6 +17,7 @@ const MATRIX_SIMILAR2: &str = r#"
 -236 -318  100 -330
 -356 -236 -330   90
 "#;
+";
 
 struct Preset {
     name: &'static str,
