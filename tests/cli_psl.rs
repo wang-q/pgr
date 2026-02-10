@@ -187,6 +187,13 @@ fn get_pgr_path(filename: &str) -> PathBuf {
     path
 }
 
+fn get_psl_file(filename: &str) -> PathBuf {
+    let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    path.push("tests/psl");
+    path.push(filename);
+    path
+}
+
 //
 // psl lift
 //
@@ -194,7 +201,7 @@ fn get_pgr_path(filename: &str) -> PathBuf {
 #[test]
 fn test_lift_basic() -> anyhow::Result<()> {
     let temp = TempDir::new()?;
-    let input = get_pgr_path("test_fragment.psl");
+    let input = get_psl_file("test_fragment.psl");
     let sizes = get_pgr_path("chrom.sizes");
     let output = temp.path().join("lifted.psl");
 
