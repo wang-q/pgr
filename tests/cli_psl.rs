@@ -199,20 +199,6 @@ fn test_rc_trans() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn get_pgr_path(filename: &str) -> PathBuf {
-    let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    path.push("tests/pgr");
-    path.push(filename);
-    path
-}
-
-fn get_psl_file(filename: &str) -> PathBuf {
-    let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    path.push("tests/psl");
-    path.push(filename);
-    path
-}
-
 //
 // psl lift
 //
@@ -220,14 +206,15 @@ fn get_psl_file(filename: &str) -> PathBuf {
 #[test]
 fn test_lift_basic() -> anyhow::Result<()> {
     let temp = TempDir::new()?;
-    let input = get_psl_file("test_fragment.psl");
-    let sizes = get_pgr_path("chrom.sizes");
+    let input = get_path("lift", "", "test_fragment.psl");
+    let sizes = get_path("lift", "", "chrom.sizes");
     let output = temp.path().join("lifted.psl");
 
     let mut cmd = Command::cargo_bin("pgr")?;
     cmd.arg("psl")
         .arg("lift")
         .arg(&input)
+        .arg("-o")
         .arg(&output)
         .arg("--sizes")
         .arg(&sizes);
@@ -255,6 +242,54 @@ fn test_lift_basic() -> anyhow::Result<()> {
     assert!(output_content.contains("110,\t500,"));
     // Second record block start: 810
     assert!(output_content.contains("810,\t500,"));
+
+    Ok(())
+}
+
+#[test]
+fn test_lift_target() -> anyhow::Result<()> {
+    let temp = TempDir::new()?;
+    let input = get_path("lift", "", "target_lift.psl");
+    let sizes = get_path("lift", "", "chrom.sizes");
+    let output = temp.path().join("target_lifted.psl");
+
+    let mut cmd = Command::cargo_bin("pgr")?;
+    cmd.arg("psl")
+        .arg("lift")
+        .arg(&input)
+        .arg("-o")
+        .arg(&output)
+        .arg("--sizes")
+        .arg(&sizes);
+    cmd.assert().success();
+
+    let output_content = fs::read_to_string(&output)?;
+    
+    // Expected output check
+    // First record: Target chr1:101-200 (+). tStart=10, tEnd=60.
+    //   Lifted: chr1 (+). tStart=110, tEnd=160.
+    // Second record: Target chr1:101-200 (-). tStart=10, tEnd=60.
+    //   Lifted: chr1 (-). tStart=810, tEnd=860. (Size 1000)
+
+    // Check first record
+    // Target name: chr1
+    // Target size: 1000
+    // Target start: 110
+    // Target end: 160
+    assert!(output_content.contains("seq1\t100\t0\t50\tchr1\t1000\t110\t160"));
+    
+    // Check second record
+    // Target name: chr1
+    // Target size: 1000
+    // Target start: 810
+    // Target end: 860
+    assert!(output_content.contains("seq1\t100\t0\t50\tchr1\t1000\t810\t860"));
+
+    // Check tStarts
+    // First: 110
+    assert!(output_content.contains(",\t110,"));
+    // Second: 810
+    assert!(output_content.contains(",\t810,"));
 
     Ok(())
 }
