@@ -180,6 +180,25 @@ fn test_rc_mrna() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[test]
+fn test_rc_trans() -> anyhow::Result<()> {
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("psl")
+        .arg("rc")
+        .arg(get_path("rc", "input", "trans.psl"))
+        .arg("-o")
+        .arg("stdout")
+        .output()
+        .unwrap();
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let expected = std::fs::read_to_string(get_path("rc", "expected", "transTest.psl"))?;
+
+    assert_eq!(stdout.replace("\r\n", "\n"), expected.replace("\r\n", "\n"));
+    Ok(())
+}
+
 fn get_pgr_path(filename: &str) -> PathBuf {
     let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     path.push("tests/pgr");
@@ -237,24 +256,5 @@ fn test_lift_basic() -> anyhow::Result<()> {
     // Second record block start: 810
     assert!(output_content.contains("810,\t500,"));
 
-    Ok(())
-}
-
-#[test]
-fn test_rc_trans() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
-    let output = cmd
-        .arg("psl")
-        .arg("rc")
-        .arg(get_path("rc", "input", "trans.psl"))
-        .arg("-o")
-        .arg("stdout")
-        .output()
-        .unwrap();
-
-    let stdout = String::from_utf8(output.stdout).unwrap();
-    let expected = std::fs::read_to_string(get_path("rc", "expected", "transTest.psl"))?;
-
-    assert_eq!(stdout.replace("\r\n", "\n"), expected.replace("\r\n", "\n"));
     Ok(())
 }
