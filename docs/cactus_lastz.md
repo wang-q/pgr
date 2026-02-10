@@ -235,9 +235,26 @@ Cactus 采用复杂的 "分块-采样-物理合并" 策略来构建 Target，旨
 
 ### 7.6 `pgr psl to-range` 与深度计算
 
-为了替代 Cactus 中的 `cactus_covered_intervals`，我们采用以下工具链：
+为了替代 Cactus 中的 `cactus_covered_intervals`，我们采用以下工具链。
+这个流程假设你已经完成了序列比对，并拥有了 PSL 格式的比对结果。
 
-1.  **PSL 转换**: `pgr psl to-range`
+完整流程如下：
+
+1.  **格式转换与坐标还原**:
+    *   Lastz 输出通常为 LAV 格式，且基于切片片段（Fragment）坐标。
+    *   需要先转换为 PSL，再利用 `pgr psl lift` 将坐标还原到原始基因组坐标系。
+    *   **命令**:
+        ```bash
+        # LAV -> PSL
+        pgr lav to-psl query_target.lav -o fragments.psl
+
+        # Lift Coordinates (还原 Query 坐标)
+        # 需提供 Query 的原始染色体大小文件 (chrom.sizes)
+        # 可使用 `pgr fa size query.fa > query.chrom.sizes` 生成
+        pgr psl lift fragments.psl --q-sizes query.chrom.sizes -o lifted.psl
+        ``````
+
+2.  **PSL 转换**: `pgr psl to-range`
     *   将 `lift` 后的 PSL 文件转换为 `.rg` (Range) 格式。
     *   自动处理正负链坐标，输出 Query 正链上的覆盖区间。
     *   **命令**:
@@ -245,14 +262,14 @@ Cactus 采用复杂的 "分块-采样-物理合并" 策略来构建 Target，旨
         pgr psl to-range lifted.psl > query_coverage.rg
         ```
 
-2.  **深度计算**: `spanr coverage`
+3.  **深度计算**: `spanr coverage`
     *   利用 `spanr` 工具计算覆盖深度。
     *   **命令**:
         ```bash
         spanr coverage query_coverage.rg -m 10 > mask_regions.json
         ```
 
-3.  **应用屏蔽**: `pgr fa mask`
+4.  **应用屏蔽**: `pgr fa mask`
     *   利用生成的 JSON Runlist 屏蔽原始序列。
     *   **命令**:
         ```bash

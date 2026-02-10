@@ -13,7 +13,7 @@ Extract alignment coordinates from PSL files and output in .rg format (chr:start
 This is useful for depth calculation with `spanr coverage`.
 
 Notes:
-* Coordinates are converted to 1-based inclusive (intspan/UCSC format).
+* Coordinates are converted to 1-based inclusive.
 * Supports strand-aware coordinate conversion (outputs positive strand coordinates).
 * Outputs one range per alignment block.
 
