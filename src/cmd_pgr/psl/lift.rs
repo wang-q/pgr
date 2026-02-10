@@ -1,5 +1,4 @@
 use clap::*;
-use std::collections::HashMap;
 use std::io::{BufRead, Write};
 use std::str::FromStr;
 
@@ -75,27 +74,16 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let q_sizes_file = args.get_one::<String>("q_sizes").map(|s| s.as_str());
     let t_sizes_file = args.get_one::<String>("t_sizes").map(|s| s.as_str());
 
-    // Load sizes if provided
-    let load_sizes = |path: Option<&str>| -> HashMap<String, u32> {
-        let mut map = HashMap::new();
-        if let Some(p) = path {
-            let reader = pgr::reader(p);
-            for line in reader.lines() {
-                if let Ok(line) = line {
-                    let parts: Vec<&str> = line.split('\t').collect();
-                    if parts.len() >= 2 {
-                        if let Ok(size) = parts[1].parse::<u32>() {
-                            map.insert(parts[0].to_string(), size);
-                        }
-                    }
-                }
-            }
-        }
-        map
+    let q_sizes_map = if let Some(p) = q_sizes_file {
+        Some(pgr::libs::io::read_sizes(p))
+    } else {
+        None
     };
-
-    let q_sizes_map = if q_sizes_file.is_some() { Some(load_sizes(q_sizes_file)) } else { None };
-    let t_sizes_map = if t_sizes_file.is_some() { Some(load_sizes(t_sizes_file)) } else { None };
+    let t_sizes_map = if let Some(p) = t_sizes_file {
+        Some(pgr::libs::io::read_sizes(p))
+    } else {
+        None
+    };
 
     for line in reader.lines() {
         let line = line?;
@@ -124,7 +112,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 let real_size_opt = sizes_map.get(&name_part).copied();
                 
                 // If sizes provided and match, proceed
-                if let Some(real_size) = real_size_opt {
+                if let Some(real_size_i32) = real_size_opt {
+                    let real_size = real_size_i32 as u32;
                     if end_0based > real_size {
                         eprintln!("Warning: Subrange end {} > sequence size {} for {}. Skipping query lift.", end_0based, real_size, psl.q_name);
                     } else {
@@ -161,7 +150,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 let real_size_opt = sizes_map.get(&name_part).copied();
                 
                 // If sizes provided and match, proceed
-                if let Some(real_size) = real_size_opt {
+                if let Some(real_size_i32) = real_size_opt {
+                    let real_size = real_size_i32 as u32;
                     if end_0based > real_size {
                         eprintln!("Warning: Subrange end {} > sequence size {} for {}. Skipping target lift.", end_0based, real_size, psl.t_name);
                     } else {
