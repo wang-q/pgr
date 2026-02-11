@@ -223,63 +223,99 @@ Cactus 的一个关键步骤是从图结构中重建线性的祖先序列或参�
 2.  任务整合: 将频繁交互的步骤合并（Consolidated），减少中间文件落盘。
 3.  统一配置: 使用 XML 集中管理所有算法参数，便于调优。
 
-## 3. Minigraph-Cactus Pangenome Pipeline
+## 3. Minigraph-Cactus 泛基因组构建架构
 
-基于 `doc/pangenome.md` 整理。
+基于 `doc/pangenome.md` 和相关源码结构整理。
 
-**Minigraph-Cactus** 是一种专为同物种内（Within-species）或近缘物种设计的泛基因组构建流程。它解决了 Progressive Cactus 在处理群体水平数据时过于敏感、难以捕捉结构变异（SV）的问题。
+Minigraph-Cactus 是一种混合型（Hybrid）泛基因组构建流程，专为**同物种（Within-species）**或**近缘物种**群体设计。它结合了两种核心技术的优势：
 
-> 相关格式说明: 关于 Minigraph 和 Cactus 使用的图格式（GFA 1.0, GFA 1.1, rGFA）的详细规范，请参考 [GFA Format](gfa.md)。
+*   **Minigraph**: 擅长快速构建复杂的结构变异（SV）骨架，但忽略细微序列差异。
+*   **Cactus (Progressive)**: 擅长进行高精度的碱基级多重序列比对（MSA），但难以直接处理全基因组规模的复杂重排。
 
-*   适用场景：构建人类、酵母等物种的泛基因组图谱（Pangenome Graph）。
-*   核心理念：结合 `minigraph` 的结构变异构建能力和 `Cactus` 的碱基级比对能力。
+**核心设计哲学**: "先骨架，后细节" (Skeleton First, Details Later)。
+**核心模式**: "分治与映射" (Divide, Map, and Conquer)。
 
-### 2.1 核心流程 (Pipeline)
+### 3.1 核心工作流 (Core Pipeline)
 
-该流程包含五个主要阶段，通常通过 `cactus-pangenome` 命令一键运行，但也支持分步执行：
+整个架构采用经典的 **Map-Reduce** 风格，分为五个主要阶段：
 
-1.  **Minigraph Construction (`cactus-minigraph`)**
-    *   使用 `minigraph` 构建初始的 SV 图（GFA 格式）。
-    *   从参考基因组开始，逐个添加样本，仅保留结构变异（>50bp），忽略细微差异。
-    *   特点：快速构建骨架，但这时的图不包含碱基级的比对细节。
+#### Phase 1: 骨架构建 (Skeleton Construction)
+*   **工具**: `minigraph`
+*   **输入**: 多个样本的基因组组装 (FASTA)。
+*   **过程**: 
+    1.  从参考基因组（Reference）开始。
+    2.  迭代地将其他样本映射到当前的图上。
+    3.  仅当发现大于一定长度（如 >50bp）的结构变异时，才修改图拓扑增加新节点。
+*   **输出**: **rGFA** (Reference GFA) 格式的 SV 图。
+*   **意义**: 确立了泛基因组的整体拓扑结构，解决了最困难的大片段重排和拷贝数变异问题。
 
-2.  **Graph Mapping (`cactus-graphmap`)**
-    *   将所有输入样本的序列重新映射（Map）回上述构建的 SV 图。
-    *   这一步确立了每个样本在图中的大致路径。
+#### Phase 2: 映射定位 (Graph Mapping)
+*   **工具**: `minigraph` (with `-dist` option) 或 `cactus-graphmap` 封装
+*   **过程**: 
+    *   将所有输入样本的序列（包括参考序列）重新映射（Map）回 Phase 1 构建的 SV 骨架图。
+    *   这一步**不进行**详细的比对（Alignment），只进行**定位**（Mapping）。
+*   **输出**: **PAF** (Pairwise Alignment Format)。
+    *   描述了每条输入序列在图上的路径（大致坐标）。
+*   **关键点**: PAF 在这里充当了连接“线性序列世界”和“图世界”的通用胶水。
 
-3.  **Graph Splitting (`cactus-graphmap-split`)**
-    *   分治策略：将全基因组图按染色体拆分成多个子图（Sub-problems）。
-    *   目的：降低内存消耗，实现并行计算。
+#### Phase 3: 图拆分 (Graph Splitting)
+*   **工具**: `cactus-graphmap-split`
+*   **过程**:
+    *   根据 PAF 映射信息，识别出图中的连通分量或染色体级别的独立区域。
+    *   将巨大的全基因组图拆解为多个独立的、较小的**子图 (Sub-problems)**。
+    *   每个子图包含：
+        1.  一部分图的拓扑结构（来自 Minigraph）。
+        2.  所有映射到该区域的序列片段（FASTA序列）。
+*   **意义**: 实现了任务的**并行化**。解决了内存瓶颈，使得处理人类全基因组成为可能。
 
-4.  **Base-level Alignment (`cactus-align`)**
-    *   核心步骤：在每个子图中，使用 Cactus 的算法进行精细的碱基级比对。
-    *   填补细节：填补 `minigraph` 忽略的小变异（SNP、Indel），生成完整的比对图。
+#### Phase 4: 局部精细比对 (Base-level Alignment)
+*   **工具**: `cactus-align` (调用 `cactus` 核心库: Setup -> Caf -> Bar -> Reference)
+*   **过程**:
+    *   对每个拆分后的子图，独立运行标准的 Cactus MSA 流程。
+    *   **约束**: 利用 Minigraph 的拓扑作为“软约束”或“引导”，指导 Cactus 进行比对。
+    *   **填充**: Cactus 会在骨架节点之间，通过 **abPOA** (Adaptive Banded POA) 算法计算细微的 SNP 和 Indel，完善比对细节。
+*   **输出**: 局部的 **HAL** 或 **VG** 格式文件。
 
-5.  **Graph Joining & Indexing (`cactus-graphmap-join`)**
-    *   将各染色体的比对结果合并。
-    *   生成多种下游分析所需的索引和格式（GFA, VCF, GBZ, etc.）。
+#### Phase 5: 合并与索引 (Joining & Indexing)
+*   **工具**: `cactus-graphmap-join`
+*   **过程**:
+    *   将所有子图的比对结果“缝合”回一个完整的泛基因组图。
+    *   处理边界连接问题。
+*   **输出**: 最终的交付格式。
+    *   **GFA 1.1**: 包含 Walk (W-line) 的完整图。
+    *   **GBZ**: 压缩的图索引（供 `vg giraffe` 使用）。
+    *   **VCF**: 导出的变异位点文件。
 
-### 2.2 关键输出格式
+### 3.2 数据流与关键格式 (Data Flow)
 
-Minigraph-Cactus 的强大之处在于其丰富的输出格式，支持各种下游工具：
+架构中各个组件通过标准文本格式进行解耦：
 
-*   **GFA (Graphical Fragment Assembly)**: 标准的图格式（GFA 1.1），包含 Walk 线（W-lines）表示单倍体路径。
-*   **GBZ (GBWTGraph)**: 高度压缩的只读图格式，专为 `vg giraffe` 设计，支持大规模路径存储。
-*   **VCF (Variant Call Format)**: 传统的变异位点格式。支持嵌套变异（Nested Variants），默认使用 `vcfbub` 进行平铺（Flattening）处理。
-*   **ODGI (.og)**: 优化的动态图接口格式，非常适合可视化（`odgi viz`, `odgi draw`）。
+```mermaid
+graph TD
+    FASTA[Input FASTA] --> Minigraph
+    Minigraph -->|rGFA| Skeleton[SV Skeleton Graph]
+    FASTA --> Mapper
+    Skeleton --> Mapper
+    Mapper -->|PAF| MapInfo[Mapping Info]
+    Skeleton --> Splitter
+    MapInfo --> Splitter
+    Splitter -->|Sub-FASTA + Sub-GFA| BatchAlign[Batch Alignment (Cactus)]
+    BatchAlign -->|Local HAL/VG| Joiner
+    Joiner -->|GFA 1.1| FinalGraph
+    Joiner -->|VCF| Variants
+    Joiner -->|GBZ| Index
+```
 
-### 2.3 关键特性
+*   **rGFA**: 用于表示骨架，强调基于参考坐标（Stable Coordinate）。
+*   **PAF**: 用于传递映射信息，极其灵活，易于解析和分割。
+*   **GFA 1.1**: 最终图格式，使用 Walk (W) 表达单倍型，比 Path (P) 更紧凑且适合泛基因组。
 
-*   Reference Handling: 必须指定一个参考样本（Reference Sample），该样本在图中是无环的（Acyclic），作为坐标系统的基准。
-*   Contig Filtering: 默认过滤掉无法归类到特定染色体的小 Contig。可通过 `--permissiveContigFilter` 放宽限制。
-*   Haplotype Sampling: 新版支持通过单倍体采样（Haplotype Sampling）替代传统的频率过滤（Filter graphs），显著提升了稀有变异的保留率和 `vg giraffe` 的比对性能。
-
-## 3. 下游分析实战 (Hackathon 2023 笔记)
+## 4. 下游分析实战 (Hackathon 2023 笔记)
 
 基于 `doc/sa_refgraph_hackathon_2023.md` 整理。
 本节聚焦于利用 Minigraph-Cactus 构建的泛基因组图谱进行下游分析，特别是 Read Mapping 和变异检测。
 
-### 3.1 序列比对 (Mapping Reads to the Graph)
+### 4.1 序列比对 (Mapping Reads to the Graph)
 
 #### Short Read Mapping (`vg giraffe`)
 *   适用性：短读长（Short Reads）比对的首选工具。
@@ -304,7 +340,7 @@ Minigraph-Cactus 的强大之处在于其丰富的输出格式，支持各种下
 *   用途：使泛基因组比对结果兼容现有的线性分析工具（如 DeepVariant, GATK, samtools）。
 *   命令：`vg surject`。也可以在 `vg giraffe` 中直接使用 `-o bam` 一步到位。
 
-### 3.2 变异检测 (Genotyping and Variant Calling)
+### 4.2 变异检测 (Genotyping and Variant Calling)
 
 #### Small Variants (DeepVariant)
 *   流程：
@@ -330,17 +366,17 @@ Minigraph-Cactus 的强大之处在于其丰富的输出格式，支持各种下
     *   原始 Reads (FASTQ)。
 *   优势：速度快，能有效利用图中的单倍体信息。
 
-### 3.3 可视化 (Visualization)
+### 4.3 可视化 (Visualization)
 *   **Panacus**: 用于统计和可视化泛基因组图谱覆盖度的工具（Histgrowth curves），可展示样本多样性。
 *   **Bandage-NG**: 图结构可视化（需要 GFA 格式）。
 *   **ODGI**: 强大的图操作和可视化工具（`odgi viz` 1D 可视化）。
 
-## 4. 动态更新比对 (Updating Alignments)
+## 5. 动态更新比对 (Updating Alignments)
 
 基于 `doc/updating-alignments.md` 和 `doc/cactus-update-prepare.md` 整理。
 Cactus 支持在不重新计算整个比对的情况下，对 HAL 格式的比对结果进行增删改。这对于维护大型比对项目非常有价值。
 
-### 4.1 核心工具: `cactus-update-prepare`
+### 5.1 核心工具: `cactus-update-prepare`
 
 这是官方推荐的高级封装工具，用于生成更新比对所需的一系列命令（Preprocessing -> Alignment -> HAL Update）。它不直接执行，而是输出脚本供用户分步运行。
 
@@ -364,44 +400,59 @@ Cactus 支持在不重新计算整个比对的情况下，对 HAL 格式的比�
 *   原理: 本质是“删除旧版本” + “添加新版本（Add to Node）”。
 *   底层调用: `halRemoveGenome` + `halReplaceGenome`。
 
-### 4.2 底层 HAL 命令详解
+### 5.2 底层 HAL 命令详解
 
 如果需要手动控制或理解 `cactus-update-prepare` 的输出，可以参考以下底层命令：
 
-#### 4.2.1 删除基因组
+#### 5.2.1 删除基因组
 *   命令：`halRemoveGenome <hal file> <genome to delete>`
 *   限制：只能删除叶节点（Leaf Genome）。
 *   注意：HAL 文件大小不会自动减小。若需压缩体积，需使用 `h5repack` 或 `halExtract`。
 
-#### 4.2.2 验证比对
+#### 5.2.2 验证比对
 *   命令：`halValidate --genome <genome> <hal file>`
 *   建议：每次修改 HAL 文件后都应运行验证，确保文件结构完整。
 
-## 5. 对 `pgr` 项目的启示
+## 6. 对 `pgr` 项目的启示
 
-`pgr` 作为一个现代化的基因组分析工具箱，在设计 `join` 和 `refine` 模块时，可以借鉴 Cactus 的以下思想：
+`pgr` 作为一个现代化的基因组分析工具箱，在设计泛基因组模块时，应深入借鉴 Cactus 的架构经验。
 
-### 5.1 关于 `pgr fas join` 的改进方向
-目前 `pgr fas join` 仅仅是基于坐标的线性堆叠。参考 Cactus：
-*   引入树的概念：虽然不需要完整的重建祖先，但在合并多个 Pairwise Alignment 时，应优先合并亲缘关系近的物种。
-*   参考序列引导：`join` 操作本质上就是 Cactus 中的“以参考基因组为锚点”的投影过程。我们需要确保 Gap 的插入不会破坏已有的对齐结构。
+### 6.1 泛基因组架构启示
+1.  **分治是必须的 (Divide & Conquer)**: 处理大规模基因组时，必须设计拆分（Splitting）机制。`pgr` 现有的 Chain/Net 结构天然适合作为拆分依据。
+2.  **分层构建 (Layered Construction)**: 不要试图一步到位。先解决 SV（Structure），再解决 SNP（Sequence）。
+    *   `pgr` 可以考虑引入类似的“骨架图”概念。
+3.  **PAF 的核心地位**: PAF 不仅仅是比对结果，更是流程控制的中间语言。`pgr` 应加强对 PAF 的操作支持（目前已有基础，需强化 split/filter/join 功能）。
+4.  **Minigraph 集成**: 考虑直接调用 `minigraph` 二进制或移植其核心逻辑来构建初始图。
+5.  **图模型**: 逐步从“线性参考中心”模型（Chain/Net/MAF）向“图模型”（GFA/Walks）过渡。
 
-### 5.2 关于 `pgr fas refine` 的改进方向
-`refine` 对应于 Cactus 中的局部比对优化。
-*   引入 POA (Partial Order Alignment)：Cactus 在生成祖先序列时，本质上是在做 MSA。`pgr` 引入 `spoa` (SIMD POA) 正是符合这一趋势的正确路线。
-*   图的视角：线性的 MSA 容易丢失结构变异信息。通过 POA 图，我们可以更准确地处理插入和缺失。
+### 6.2 现有模块改进方向
+1.  **`pgr fas join`**:
+    *   引入树的概念：虽然不需要完整的重建祖先，但在合并多个 Pairwise Alignment 时，应优先合并亲缘关系近的物种。
+    *   参考序列引导：`join` 操作本质上就是 Cactus 中的“以参考基因组为锚点”的投影过程。确保 Gap 的插入不会破坏已有的对齐结构。
+2.  **`pgr fas refine`**:
+    *   对应于 Cactus 中的局部比对优化。
+    *   Cactus 证明了 abPOA 在局部 MSA 中的效率和准确性。`pgr` 引入 `spoa` (SIMD POA) 是正确的路线。通过 POA 图，可以更准确地处理插入和缺失。
+3.  **替代 `multiz` 的完整路径**:
+    *   `pgr` 的演进路线应该是：
+        1.  Pairwise Alignment: 继续完善 `lastz` / `chain` / `net` 模块（基础）。
+        2.  Multiple Alignment: 用 `fas join` + `fas refine (POA)` 来替代 `multiz` 的 `tba` 流程。
+        3.  Graph Alignment: 未来可考虑引入类似 Minigraph 的图构建能力（Pangenome 方向）。
+4.  **图线性化与 Scaffold 排序**:
+    *   `cactus-master/reference` 模块解决的 "Reference Problem" 对于 `pgr` 未来处理更复杂的组装或共识生成非常有启发。
+    *   如果 `pgr` 需要实现 Contig 的排序（Scaffolding）或从泛基因组图中提取新的线性参考序列，Cactus 使用的“最大权重匹配”+“邻接评分”策略是一个标准的算法范式。
 
-### 5.3 替代 `multiz` 的完整路径
-Cactus 明确指出传统的 `multiz` 流程（基于 LastZ -> Chain -> Net）在处理大规模基因组时存在局限。
-`pgr` 的演进路线应该是：
-1.  Pairwise Alignment: 继续完善 `lastz` / `chain` / `net` 模块（基础）。
-2.  Multiple Alignment: 用 `fas join` + `fas refine (POA)` 来替代 `multiz` 的 `tba` 流程。
-3.  Graph Alignment: 未来可考虑引入类似 Minigraph 的图构建能力（Pangenome 方向）。
+### 6.3 目录结构建议
+参考 Cactus，`pgr` 的泛基因组模块可以组织为：
+*   `pgr-skeleton`: 负责骨架构建（调用 minigraph 或类似算法）。
+*   `pgr-map`: 负责序列到骨架的映射。
+*   `pgr-split`: 负责任务拆分。
+*   `pgr-align`: 负责局部精细比对（利用现有的 `fas consensus` / POA 模块）。
+*   `pgr-join`: 负责结果合并。
 
-### 5.4 关于图线性化与 Scaffold 排序
-`cactus-master/reference` 模块解决的 "Reference Problem" 对于 `pgr` 未来处理更复杂的组装或共识生成非常有启发：
-*   不仅仅是 MSA: `pgr fas consensus` 目前更多是基于列的 MSA（如 POA）。但在处理大尺度结构变异或碎片化组装时，我们需要决定 Block 的顺序。
-*   图匹配的应用: 如果 `pgr` 需要实现 Contig 的排序（Scaffolding）或从泛基因组图中提取新的线性参考序列，Cactus 使用的“最大权重匹配”+“邻接评分”策略是一个标准的算法范式。
+## 7. 参考文献
+*   Cactus Documentation: `doc/pangenome.md`
+*   Minigraph Paper: Li, H. et al.
+*   GFA Specification: `doc/gfa.md`
 
 ---
-*文档生成时间：2026-02-07*
+*文档更新时间：2026-02-11*
