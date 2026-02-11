@@ -106,21 +106,63 @@ PAML 是一个工具箱，主要包含以下核心程序：
 3.  **格式支持**:
     *   KaKs_Calculator 对 AXT 的原生支持与 `pgr` (基于 AXT/MAF) 高度契合。`src/AXTConvertor.cpp` 中的逻辑可用于验证 `pgr` 的格式转换模块。
 
-## 4. 迁移与集成计划 (Migration Plan)
+### 迁移与集成计划 (Migration Plan)
 
-### 阶段一：格式兼容与数据准备 (Format Compatibility)
-*   **目标**: 确保 `pgr` 能生成 KaKs_Calculator 和 PAML 所需的高质量输入文件。
+为了在 `pgr` 中集成 Ka/Ks 计算功能，我们将直接基于标准数据结构分阶段实现算法移植。
+
+#### 阶段一：数据准备 (Data Preparation)
+*   **目标**: 直接使用 `pgr` 内部的标准数据结构 (如 UCSC AXT/MAF) 为算法提供输入，不兼容 KaKs_Calculator 的私有格式。
 *   **任务**:
-    1.  **增强 AXT 支持**: 完善 `pgr net to-axt` 和 `pgr axt` 模块，确保生成的 AXT 格式完全兼容 KaKs_Calculator。
-    2.  **新增 PHYLIP 导出**: 实现 `pgr fas to-phylip`，支持 PAML 所需的严格交错/顺序格式 (Interleaved/Sequential)，并处理长序列名截断问题。
-    3.  **CDS 提取与比对**: 开发或集成功能，将基因组比对 (MAF/AXT) 映射回 CDS 坐标，生成密码子比对 (Codon Alignment)。
+    1.  **AXT/MAF 读取**: 利用 `pgr` 现有的解析器读取标准基因组比对文件。
+    2.  **序列预处理**: 从比对记录中提取 CDS 序列，处理 gap 和反向互补，直接转换为算法所需的内存数据结构。
 
-### 阶段二：核心算法移植 (Native Implementation)
+#### 阶段二：核心算法移植 (Native Implementation)
 *   **目标**: 在 Rust 中原生实现轻量级算法，减少外部依赖，直接集成到 `pgr` 二进制中。
+*   **库文件结构设计 (Library Architecture)**:
+    为了保持 `pgr` 的模块化和高性能，我们将采用类似于 KaKs_Calculator 的策略模式，但使用 Rust 的 Trait 系统来实现。
+
+    ```text
+    src/libs/
+    └── kaks/
+        ├── mod.rs          # 模块入口，定义 Trait 和公共结构
+        ├── result.rs       # 定义 KaKsResult 结构体
+        ├── methods/        # 各种算法的具体实现
+        │   ├── mod.rs
+        │   ├── ng86.rs     # NG86 算法
+        │   ├── lwl85.rs    # LWL85 算法
+        │   └── yn00.rs     # YN00 算法 (最大似然法)
+        └── stats/          # 统计学辅助函数
+            ├── mod.rs
+            └── gamma.rs    # Gamma 分布相关计算
+    ```
+
+    *   **核心 Trait 定义 (`src/libs/kaks/mod.rs`)**:
+        ```rust
+        pub trait KaKsEstimator {
+            /// 计算一对序列的 Ka/Ks
+            fn calculate(&self, seq1: &[u8], seq2: &[u8]) -> Result<KaKsResult, KaKsError>;
+            
+            /// 算法名称
+            fn name(&self) -> &'static str;
+        }
+        ```
+
+    *   **结果结构体 (`src/libs/kaks/result.rs`)**:
+        ```rust
+        pub struct KaKsResult {
+            pub ka: f64,
+            pub ks: f64,
+            pub ka_ks_ratio: f64,
+            pub p_value: Option<f64>, // Fisher's exact test or others
+            // 其他统计量...
+        }
+        ```
+
 *   **任务**:
-    1.  **基础统计**: 移植 `KaKs_Calculator` 中的 `NG86` 和 `LWL85` 算法。这些算法计算量小，易于并行化。
-    2.  **YN00 移植**: 参考 `src/YN00.cpp` 和 `src/yn00.c`，在 Rust 中实现 YN00 方法。
-    3.  **数学库集成**: 将 PAML `tools.c` 中的关键概率分布函数 (如 Gamma, Chi2) 移植到 Rust 数学模块中，或使用 Rust 生态中的现成库 (如 `statrs`)。
+    1.  **基础架构**: 建立上述目录结构，定义 Trait 和 Result。
+    2.  **基础统计**: 移植 `KaKs_Calculator` 中的 `NG86` 和 `LWL85` 算法。这些算法计算量小，易于并行化。
+    3.  **YN00 移植**: 参考 `src/YN00.cpp` 和 `src/yn00.c`，在 Rust 中实现 YN00 方法。
+    4.  **数学库集成**: 将 PAML `tools.c` 中的关键概率分布函数 (如 Gamma, Chi2) 移植到 Rust 数学模块中，或使用 Rust 生态中的现成库 (如 `statrs`)。
 
 ### 阶段三：高级功能 (Advanced Features)
 *   **目标**: 支持基因组级扫描。
