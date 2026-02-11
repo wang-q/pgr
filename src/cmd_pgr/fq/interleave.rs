@@ -93,7 +93,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         .unwrap()
         .map(|s| s.as_str())
         .collect::<Vec<_>>();
-    let is_in_fq = pgr::libs::seq::is_fq(infiles[0]);
+    let is_in_fq = pgr::libs::io::is_fq(infiles[0]);
 
     //----------------------------
     // Ops

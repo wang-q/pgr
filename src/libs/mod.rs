@@ -14,7 +14,6 @@ pub mod pairmat;
 pub mod phylo;
 pub mod poa;
 pub mod psl;
-pub mod seq;
 pub mod twobit;
 
 // Re-export modules moved to fmt for backward compatibility
