@@ -391,3 +391,48 @@ Minigraph-Cactus 的一个重大突破是支持**动态更新**，无需重新�
 *   **Paper**: "Progressive Cactus is a multiple-genome aligner for the thousand-genome era" (Nature, 2020).
 *   **Paper**: "Minigraph-Cactus: Constructing the pangenome graph" (Nature Biotechnology, 2023).
 *   **Repo**: https://github.com/ComparativeGenomicsToolkit/cactus
+
+## 8. 深入解析 Caf 模块 (Deep Dive into Caf)
+
+基于 `caf/` 源码 (`caf.c`, `annealing.c`, `melting.c`) 的深度分析。
+
+`caf` 模块的本质是一个 **“拓扑构建器”**。它的任务是将一堆杂乱无章的两两比对（Pairwise Alignments）转化成一个干净、连通且符合生物学逻辑的泛基因组图（Pinch Graph）。它通过一个迭代的 **“退火 (Annealing) - 熔化 (Melting)”** 循环来实现这一目标。
+
+### 8.1 Annealing (退火/捏合) - `annealing.c`
+
+这是“加法”过程，负责将比对信息融入图中。
+
+*   **Pinch (捏合)**: 核心操作是 `stPinchThread_pinch`。将两条序列（Thread）在比对（Alignment）位置“捏”在一起，形成一个节点（Block）。
+*   **Adjacency Component (邻接组件)**: 代码中有一个关键函数 `stCaf_annealBetweenAdjacencyComponents`。它规定：**只有当两个序列片段属于图的“不同连通分量”时，才允许捏合**。这避免了在同一个连通区域内形成复杂的环或死结，保证了图的局部结构尽量简单。
+
+### 8.2 Melting (熔化/松弛) - `melting.c`
+
+这是“减法”过程，负责去除噪音和错误的连接。代码显示熔化是一个多维度的过滤过程：
+
+*   **Trimming (修剪)**: `trimAlignments` 函数切除 Block 两端的一小部分（`blockEndTrim`），去除比对边缘的不可靠区域。
+*   **Filtering (过滤)**: `filterAlignments` 使用 `blockFilterFn` 回调函数进行过滤。
+    *   **Degree (度)**: 过滤包含序列数过少的 Block（噪音）。
+    *   **Tree Coverage (树覆盖度)**: 过滤在进化树上分布稀疏的 Block，确保保留具有进化意义的同源序列。
+*   **Chain Length (链长)**: `stCaf_getBlocksInChainsLessThanGivenLength`。如果一条链的总长度小于阈值（`minimumChainLength`），说明它是一个破碎的短片段，直接熔化（删除）。这是去除碎片化比对最有效的手段。
+
+### 8.3 迭代循环 (The Loop) - `caf.c`
+
+`caf` 主函数展示了一个清晰的循环结构：
+1.  **Anneal**: 引入比对，捏合序列。
+2.  **Remove Megablocks**: 去除支持度极低的“巨型块”。
+3.  **Melt (Progressive)**: 逐步提高链长阈值进行熔化。
+4.  **Filter**: 根据覆盖度和树支持度进行最终过滤。
+
+这个循环由粗到细，逐渐增加约束，最终沉淀出高质量的骨架图。
+
+### 8.4 对 `pgr` 项目的启示
+
+1.  **分层比对策略 (Topology First)**:
+    *   **Phase 1 (Caf)**: 先用快速比对 + `caf` 算法确定**拓扑结构**（去噪）。
+    *   **Phase 2 (Bar)**: 在确定的 Block 内部，运行 POA/SPOA 进行精细的**序列对齐**。
+2.  **动态图数据结构**:
+    *   Cactus 使用 `stPinchGraphs` 支持动态的 `pinch` 和 `split`。`pgr` 若要处理泛基因组构建，需考虑支持动态编辑的图结构。
+3.  **Melting 的价值**:
+    *   在 `pgr` 的 `net` 或 `chain` 模块中引入类似 `Melting` 的步骤：丢弃在进化树上跨度太小或长度太短且孤立的 Chain，净化共线性图。
+4.  **配置化过滤**:
+    *   参考 `FilterArgs` (minimumIngroupDegree, minimumTreeCoverage)，在 CLI 中暴露这些参数，让用户控制“松弛”程度。
