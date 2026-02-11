@@ -402,19 +402,36 @@ Minigraph-Cactus 的一个重大突破是支持**动态更新**，无需重新�
 
 在 Python 代码层 (`src/cactus/pipeline/cactus_workflow.py`) 中，`caf` 不再作为一个独立的进程调度，而是采用了 **"Consolidated" (整合)** 策略：
 
-1.  **整合执行**: Python 调度一个名为 `cactus_consolidated` 的 C 语言二进制程序。该程序在内部依次执行 `setup`, `caf`, `bar`, `reference` 等核心步骤。
+1.  **整合执行**: Python 调度一个名为 `cactus_consolidated` 的 C 语言二进制程序（源码位于 `pipeline/cactus_consolidated.c`）。该程序在内部依次执行 `setup`, `caf`, `bar`, `reference` 等核心步骤。
 2.  **优势**: 数据（Flower/PinchGraph）在内存中直接传递，极大减少了中间文件（XML/HAL）的 I/O 开销。
 3.  **资源管理**: Python 负责“管家”工作。在 `cactus_cons_with_resources` 函数中，根据输入序列大小和 PAF 文件大小，动态估算并申请内存和 CPU 资源。
 4.  **参数传递**: Python 生成临时的 XML 配置文件，`cactus_consolidated` 读取该文件并将参数传递给 C 层的 `caf` 模块。
 
-### 8.2 Annealing (退火/捏合) - `annealing.c`
+### 8.2 调试与验证 (Debugging & Verification)
+
+基于 `pipeline/cactus_consolidated.c` 的源码分析，Cactus 提供了多层级的调试机制，这对于开发 `pgr` 的复杂流程非常有借鉴意义：
+
+1.  **运行时检查 (`--runChecks` / `-t`)**:
+    *   `cactus_consolidated` 提供了一个 `-t` 选项。
+    *   **机制**: 在每个关键阶段（Setup, Caf, Bar）结束后，立即调用 `flower_checkRecursive(flower)`。
+    *   **作用**: 验证图（Flower/PinchGraph）的拓扑一致性（如：Block 是否正确连接，端点是否匹配）。如果某个步骤破坏了图结构，程序会立即报错，而不是等到最后输出垃圾结果。
+
+2.  **开发者钩子 (Developer Hooks)**:
+    *   源码中保留了调试用的代码桩（Stub），如 `//sleep(10);` 或 `//assert(0);`。
+    *   **场景**: 在分布式环境（Toil）中，进程往往跑在不同的节点上。通过取消注释 `sleep`，开发者有时间 SSH 到计算节点并使用 `gdb` 附加到正在运行的 `cactus_consolidated` 进程进行调试。
+
+3.  **日志分级 (`--logLevel`)**:
+    *   使用 `st_setLogLevelFromString` 统一管理。
+    *   记录每个阶段的耗时（`seconds have elapsed`），用于性能分析。
+
+### 8.3 Annealing (退火/捏合) - `annealing.c`
 
 这是“加法”过程，负责将比对信息融入图中。
 
 *   **Pinch (捏合)**: 核心操作是 `stPinchThread_pinch`。将两条序列（Thread）在比对（Alignment）位置“捏”在一起，形成一个节点（Block）。
 *   **Adjacency Component (邻接组件)**: 代码中有一个关键函数 `stCaf_annealBetweenAdjacencyComponents`。它规定：**只有当两个序列片段属于图的“不同连通分量”时，才允许捏合**。这避免了在同一个连通区域内形成复杂的环或死结，保证了图的局部结构尽量简单。
 
-### 8.3 Melting (熔化/松弛) - `melting.c`
+### 8.4 Melting (熔化/松弛) - `melting.c`
 
 这是“减法”过程，负责去除噪音和错误的连接。代码显示熔化是一个多维度的过滤过程：
 
@@ -424,7 +441,7 @@ Minigraph-Cactus 的一个重大突破是支持**动态更新**，无需重新�
     *   **Tree Coverage (树覆盖度)**: 过滤在进化树上分布稀疏的 Block，确保保留具有进化意义的同源序列。
 *   **Chain Length (链长)**: `stCaf_getBlocksInChainsLessThanGivenLength`。如果一条链的总长度小于阈值（`minimumChainLength`），说明它是一个破碎的短片段，直接熔化（删除）。这是去除碎片化比对最有效的手段。
 
-### 8.4 迭代循环 (The Loop) - `caf.c`
+### 8.5 迭代循环 (The Loop) - `caf.c`
 
 `caf` 主函数展示了一个清晰的循环结构：
 1.  **Anneal**: 引入比对，捏合序列。
@@ -434,7 +451,7 @@ Minigraph-Cactus 的一个重大突破是支持**动态更新**，无需重新�
 
 这个循环由粗到细，逐渐增加约束，最终沉淀出高质量的骨架图。
 
-### 8.5 对 `pgr` 项目的启示
+### 8.6 对 `pgr` 项目的启示
 
 1.  **分层比对策略 (Topology First)**:
     *   **Phase 1 (Caf)**: 先用快速比对 + `caf` 算法确定**拓扑结构**（去噪）。
