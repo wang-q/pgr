@@ -147,14 +147,34 @@ PAML 是一个工具箱，主要包含以下核心程序：
         }
         ```
 
+    *   **算法选择依据 (Algorithm Selection Rationale)**:
+        初期仅移植以下三种代表性算法，覆盖了从“极速粗略”到“高精近似”的不同需求：
+        1.  **NG86 (Nei-Gojobori, 1986)**:
+            *   **定位**: 基准算法 (Baseline)。
+            *   **理由**: 计算最简单、速度最快，假设所有替换发生概率相等。适合作为大规模数据的快速初筛工具，也是所有 Ka/Ks 分析的“标尺”。
+        2.  **LWL85 (Li-Wu-Luo, 1985)**:
+            *   **定位**: 进阶近似法。
+            *   **理由**: 区分了转换 (Transition) 和颠换 (Transversion)，比 NG86 更符合生物学实际（转换通常发生频率更高）。在计算量增加不多的情况下提高了准确性。
+        3.  **YN00 (Yang-Nielsen, 2000)**:
+            *   **定位**: 近似法中的“黄金标准”。
+            *   **理由**: 它是 PAML `yn00` 程序的核心算法。除了考虑转换/颠换，还通过迭代方法估算密码子频率，考虑了**密码子使用偏好 (Codon Usage Bias)**。在准确性上接近最大似然法 (ML)，但计算速度远快于 ML，是目前性价比最高的算法。
+        
+        *注意*: 暂不移植 GY94 等最大似然法 (Maximum Likelihood)，因为其涉及复杂的数值优化 (BFGS)，计算成本极高。对于需要 ML 级精度的用户，建议在后续版本中通过调用外部 PAML `codeml` 来实现。
+
+        *   **关于 KaKs_Calculator 的模型选择 (Model Selection)**:
+            `KaKs_Calculator` 的 `MS` 策略会遍历 **14 种核苷酸替换模型** (JC, F81, K2P, HKY, TNEF, TN, K3P, K3PUF, TIMEF, TIM, TVMEF, TVM, SYM, GTR)。
+            *   **选择标准**: 使用 **AICc** (Corrected Akaike Information Criterion, 校正赤池信息量准则) 评估每个模型，选取 AICc 值最小的模型作为最佳模型。
+            *   **实现代价**: 这需要基于 GY94 框架运行 14 次最大似然参数估计，计算量巨大，因此 `pgr` 初期不直接支持此功能。
+
     *   **结果结构体 (`src/libs/kaks/result.rs`)**:
         ```rust
         pub struct KaKsResult {
             pub ka: f64,
             pub ks: f64,
-            pub ka_ks_ratio: f64,
-            pub p_value: Option<f64>, // Fisher's exact test or others
-            // 其他统计量...
+            pub ka_ks: f64,
+            pub p_value: Option<f64>, // 用于 Fisher Exact Test (NG86/LWL85)
+            pub aicc: Option<f64>,    // 用于模型选择 (AICc)
+            pub ln_l: Option<f64>,    // 对数似然值 (ML 方法)
         }
         ```
 
@@ -164,7 +184,26 @@ PAML 是一个工具箱，主要包含以下核心程序：
     3.  **YN00 移植**: 参考 `src/YN00.cpp` 和 `src/yn00.c`，在 Rust 中实现 YN00 方法。
     4.  **数学库集成**: 将 PAML `tools.c` 中的关键概率分布函数 (如 Gamma, Chi2) 移植到 Rust 数学模块中，或使用 Rust 生态中的现成库 (如 `statrs`)。
 
-### 阶段三：高级功能 (Advanced Features)
+### PAML (codeml) 分析
+
+*   **定位**: 此时作为 "Gold Standard" (金标准)，主要用于**假设检验 (Hypothesis Testing)** 和复杂的进化分析，而非简单的 Ka/Ks 计算工具。
+*   **模型体系**:
+    *   **核苷酸模型 (baseml)**: 支持 JC69, K80, F81, F84, HKY85, T92, TN93, REV (GTR) 等几乎所有主流模型。
+    *   **密码子模型 (codeml)**: 基于 GY94 (Goldman & Yang 1994) 和 MG94 框架。
+        *   **频率模型**: F1x4, F3x4, F61 (Codon Table)。
+        *   **位点模型 (NSsites)**: 用于检测正选择位点。
+            *   **M0 (One-ratio)**: 所有位点 $\omega$ 相同。
+            *   **M1a (NearlyNeutral)**: 只有保守 ($\omega<1$) 和中性 ($\omega=1$) 位点。
+            *   **M2a (PositiveSelection)**: 增加正选择类别 ($\omega>1$)。通常与 M1a 比较。
+            *   **M7 (Beta)**: $\omega$ 服从 Beta 分布 (0-1)。
+            *   **M8 (Beta&w)**: Beta 分布 + 一个正选择类别。通常与 M7 比较。
+*   **选择/评估标准**:
+    *   **最大似然法 (Maximum Likelihood, ML)**: 计算给定模型下的参数，使得观测数据的似然值 ($lnL$) 最大。
+    *   **似然比检验 (Likelihood Ratio Test, LRT)**:
+        PAML **不自动选择最佳模型**。用户通常运行一对嵌套模型 (Nested Models，如 M1a vs M2a)，计算 $2\Delta\ell = 2(lnL_1 - lnL_0)$，然后查 $\chi^2$ 分布表来判断复杂模型是否显著优于简单模型（例如检测是否存在正选择）。
+    *   **对比**: `KaKs_Calculator` 倾向于使用 AICc **自动挑选** 最佳拟合模型；而 PAML 倾向于让用户通过 LRT **验证科学假设**。
+
+#### 阶段三：高级功能与优化
 *   **目标**: 支持基因组级扫描。
 *   **任务**:
     1.  **滑窗分析**: 结合 `pgr fas window` 和内置 Ka/Ks 计算，实现全基因组滑窗选择压力扫描。
