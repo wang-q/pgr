@@ -147,25 +147,7 @@ graph LR
 *   `lastzOpts` (str): 传递给 `lastz` 的额外参数。
 *   `unmaskInput` / `unmaskOutput`: 控制输入输出的屏蔽状态。
 
-## 5. C 代码细节 (`cactus_covered_intervals.c`)
-
-这是该模块中唯一的 C 代码，负责核心的深度统计算法。
-
-*   **输入**: 标准输入读取 `lastz` 的 `general` 格式输出。
-*   **数据结构**: 使用位图（Bitmap）或字节数组作为滑动窗口，记录当前窗口内每个位置的覆盖次数。
-*   **特殊处理**:
-    *   `--queryoffsets`: 这是一个关键标志。开启后，程序会解析 Query 序列名（如 `>seq1_1000`），将其视为 `seq1` 从 1000bp 开始的片段，从而正确累加深度到全长序列上。
-
-## 6. 总结
-
-`LastzRepeatMasking` 展示了 Cactus "分而治之" 的设计哲学：
-1.  **Python** 负责工作流编排和文件管理（Toil）。
-2.  **C/C++** (Lastz, cactus_covered_intervals) 负责计算密集型的核心任务。
-3.  通过文件流（Pipes/Files）进行组件间通信。
-
-对于 `pgr` 项目，如果需要实现类似的高灵敏度重复序列屏蔽，该模块的架构（切片 -> 比对 -> 深度阈值 -> 屏蔽）是非常值得参考的范例。
-
-## 7. PGR 工具链替代方案设计
+## 5. PGR 工具链替代方案设计
 
 PGR (Phylogenetics in Rust) 项目提供了一套高效的 Rust 工具链，旨在替代上述复杂的 Python/C 混合流程。我们的目标是：**更快、更省内存、更易于部署和使用**。
 
@@ -173,7 +155,7 @@ PGR (Phylogenetics in Rust) 项目提供了一套高效的 Rust 工具链，旨�
 
 以下是各个步骤的替代方案详解：
 
-### 7.1 `pgr fa window` vs `cactus_fasta_fragments.py`
+### 5.1 `pgr fa window` vs `cactus_fasta_fragments.py`
 
 我们实现了 `pgr fa window` 来替代 Cactus 的切分逻辑，并增强了内存控制和灵活性。
 
@@ -199,15 +181,15 @@ PGR (Phylogenetics in Rust) 项目提供了一套高效的 Rust 工具链，旨�
 | **过滤** | 跳过全 N | 跳过全 N |
 | **随机化** | `--shuffle` (内存密集) | `--shuffle` + `--chunk` (低内存) + `--seed` (可复现) |
 
-### 7.2 用法
+### 5.2 用法
 
 详细用法请参考 `pgr fa window --help`。
 
-### 7.3 实现细节
+### 5.3 实现细节
 *   **流式处理**: 类似于 `pgr fa size`，逐条读取 Record，不需要 `.loc` 索引文件，适合处理巨大文件流。
 *   **内存优化**: 仅持有当前 Record 的 Sequence，不加载整个文件。
 
-### 7.4 Target 构建策略 (PGR Design)
+### 5.4 Target 构建策略 (PGR Design)
 
 Cactus 采用复杂的 "分块-采样-物理合并" 策略来构建 Target，旨在平衡大基因组的覆盖度与计算资源。对于 `pgr`，我们采用更简化的策略：
 
@@ -226,7 +208,7 @@ Cactus 采用复杂的 "分块-采样-物理合并" 策略来构建 Target，旨
         *   **避免边界问题**: 染色体内部连续。
         *   **实现简单**: 无需复杂的随机采样和重组逻辑。
 
-### 7.5 `pgr lav lastz` vs `lastz` (Wrapper)
+### 5.5 `pgr lav lastz` vs `lastz` (Wrapper)
 
 为了简化复杂的 Lastz 调用流程，我们实现了 `pgr lav lastz` 命令：
 
@@ -259,7 +241,8 @@ Cactus 采用复杂的 "分块-采样-物理合并" 策略来构建 Target，旨
     pgr lav lastz genome.fa genome.fa --self --preset set01
     ```
 
-### 7.6 实战指南：从头构建 RepeatMasking 流程
+### 5.6 实战指南：从头构建 RepeatMasking 流程
+
 
 为了替代 Cactus 的 `cactus_covered_intervals` 及其复杂流程，我们可以使用 PGR 工具链构建一个清晰的 Shell 脚本。
 
