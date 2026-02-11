@@ -115,7 +115,15 @@ graph LR
         *   使用滑动窗口算法计算每个碱基的覆盖深度。
         *   如果深度 > 阈值 `M`（由 `period` 参数决定），则输出该区间。
 
-### 思考：为什么不使用 Target 坐标系？
+## 4. 关键参数 (`RepeatMaskOptions`)
+
+在 `cactus_lastzRepeatMask.py` 中，`RepeatMaskOptions` 类定义了控制流程的关键参数：
+
+*   `fragment` (int, default 200): 切片大小。如果为奇数会自动加 1 保证偶数，以便能被 2 整除。
+*   `minPeriod` (int, default 10): 最小重复周期/覆盖度阈值。
+*   `proportionSampled` (float, default 1.0): 采样比例。实际使用的深度阈值 `period` 计算公式为 `max(1, round(proportionSampled * minPeriod))`。
+*   `lastzOpts` (str): 传递给 `lastz` 的额外参数。
+*   `unmaskInput` / `unmaskOutput`: 控制输入输出的屏蔽状态。
 
 你可能会问，既然 Target 通常是全基因组，统计 Target 上的堆积深度岂不是更直观？这里有几个关键考量：
 
@@ -131,21 +139,12 @@ graph LR
     *   在内存中维护一个小片段（如 200kb）的覆盖度数组（Bitmap）非常廉价且高效。
     *   如果要统计 Target（全基因组）的深度，每个小 Job 都需要维护巨大的全基因组数组，或者需要一个昂贵的后处理步骤来合并所有 Job 的结果。
 
-3.  **直接性**: 
-    *   最终目的是修改 Query 的 FASTA 文件（Soft-masking）。直接计算 Query 上的屏蔽区间，可以直接应用。
-    2.  **应用屏蔽**: `cactus_fasta_softmask_intervals.py` 读取原始 Query FASTA 和上一步生成的区间文件。
-        *   将指定区间内的序列转换为小写（Soft-masking）。
-        *   也可以配置为硬屏蔽（Hard-masking）或反向操作（Unmask）。
-
-## 4. 关键参数 (`RepeatMaskOptions`)
-
-在 `cactus_lastzRepeatMask.py` 中，`RepeatMaskOptions` 类定义了控制流程的关键参数：
-
-*   `fragment` (int, default 200): 切片大小。如果为奇数会自动加 1 保证偶数，以便能被 2 整除。
-*   `minPeriod` (int, default 10): 最小重复周期/覆盖度阈值。
-*   `proportionSampled` (float, default 1.0): 采样比例。实际使用的深度阈值 `period` 计算公式为 `max(1, round(proportionSampled * minPeriod))`。
-*   `lastzOpts` (str): 传递给 `lastz` 的额外参数。
-*   `unmaskInput` / `unmaskOutput`: 控制输入输出的屏蔽状态。
+3.  **工具特性 (Lastz Optimization)**:
+    *   Lastz 的 `--querydepth=keep,nowarn:N` 参数。
+    *   **机制**: 当 Query 序列的某位置比对深度超过阈值 N 时，Lastz 会**强制停止**该 Query 区域的后续搜索。
+    *   **性能影响**: 若不设置此参数，运行速度会**大大降低**（Lastz 会试图寻找所有拷贝，导致指数级变慢）。
+    *   **结果**: 这意味着对于高拷贝重复序列，我们**只能找到前 N 个 Target 位置**，而遗漏了剩余所有的拷贝位置（即 Target 上的结果是不完整的）。
+    *   **结论**: 如果试图从 Target 视角统计深度，会因为大量丢失比对而无法正确识别重复。反之，Query 视角只要达到阈值 N，就已有充分证据将其判定为“重复”并进行屏蔽，这与 Lastz 的截断策略完美契合。
 
 ## 5. PGR 工具链替代方案设计
 
