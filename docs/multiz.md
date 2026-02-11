@@ -77,17 +77,40 @@ multiz file1.maf file2.maf v [out1 out2]
     *   **特性**: 支持输出标准 MAF 头信息 (`##maf`) 和对齐块，自动处理列宽对齐。
 
 ### 6.2 数据结构对比
-
-目前读写使用两套略有不同的结构，开发时需注意转换：
-
-| 特性 | 读取 (fas.rs) | 写入 (maf.rs) |
-| :--- | :--- | :--- |
-| **结构体** | `MafEntry` | `MafComp` |
-| **序列存储** | `Vec<u8>` | `String` |
-| **数值类型** | `u64` | `usize` |
-
-### 6.3 总结
-`pgr` 的 MAF 模块已经成熟，具备处理 UCSC MAF 格式的能力，并集成了坐标标准化功能，适合作为后续基因组比对分析的基础组件。
+ 
+ 目前读写使用两套略有不同的结构，开发时需注意转换：
+ 
+ | 特性 | 读取 (fas.rs) | 写入 (maf.rs) |
+ | :--- | :--- | :--- |
+ | **结构体** | `MafEntry` | `MafComp` |
+ | **序列存储** | `Vec<u8>` | `String` |
+ | **数值类型** | `u64` | `usize` |
+ 
+ ### 6.3 MAF 格式实现对比 (pgr vs multiz vs UCSC)
+ 
+ 通过对比 `multiz/maf.c` (mini-maf) 与 `chainnet/src/lib/maf.c` (UCSC完整版)，以及 `pgr` 的实现，可以发现：
+ 
+ 1.  **代码同源性**:
+     *   `multiz` 中的 `maf.c` (header 注明 "version 12") 明确标注了 "Stolen from Jim Kent & seriously abused"。它是一个精简版 (mini-maf)，移除了大量依赖 (如 `linefile.h`, `common.h` 等)，直接使用标准 C 库函数。
+     *   UCSC `chainnet` 中的 `maf.c` 是完整版，依赖于 Kent Source 庞大的基础设施库 (`common.h`, `linefile.h`, `hash.h` 等)。
+ 
+ 2.  **功能差异**:
+     *   **UCSC 完整版**:
+         *   支持 `i` (synteny breaks), `q` (quality), `e` (empty/bridging), `r` (region definition) 等多种扩展行。
+         *   拥有复杂的内存管理 (`AllocVar`, `slAddHead` 等 Kent 库特有宏)。
+         *   包含大量辅助函数，如 `mafSubset` (切片), `mafFlipStrand` (反向互补), `mafScoreMultiz` (打分) 等。
+     *   **multiz 精简版**:
+         *   仅保留核心的 `a` (alignment) 和 `s` (sequence) 行解析，足以支持比对算法。
+         *   内存管理简化为 `ckalloc`。
+         *   去除了大部分与比对算法无关的辅助功能。
+     *   **pgr 实现**:
+         *   **解析策略**: 类似于 `multiz`，专注于核心的 `a` 和 `s` 行，忽略非标准行（但解析器通常具有鲁棒性，能跳过未知行）。
+         *   **坐标系统**: 与 UCSC/multiz 保持一致 (0-based start, 1-based size)，但内部提供了向 `1-based inclusive` (GFF/VCF 风格) 转换的接口，适应现代分析需求。
+         *   **内存模型**: 使用 Rust 的所有权模型 (`String`, `Vec`) 替代 C 指针，杜绝了内存泄漏风险，且无需手动管理 `free`。
+ 
+ ### 6.4 总结
+ 
+ `pgr` 的 MAF 模块已经成熟，具备处理 UCSC MAF 格式的能力，并集成了坐标标准化功能，适合作为后续基因组比对分析的基础组件。
 
 ## 7. pgr 与 multiz 的异同分析
 
