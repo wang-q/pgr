@@ -6,6 +6,9 @@ use tempfile::NamedTempFile;
 
 use std::path::{Path, PathBuf};
 
+// TODO: [multiple] on target
+// TODO: unmask on t/q
+
 const MATRIX_DEFAULT: &str = "   A    C    G    T
 A  91 -114  -31 -123
 C -114  100 -125  -31
