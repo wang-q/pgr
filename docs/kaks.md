@@ -165,14 +165,16 @@ PAML 是一个工具箱，主要包含以下核心程序：
 
 ### 5.4 Godon
 *   **定位**: 基于 Go 语言开发的现代密码子模型分析工具，PAML 的强力竞争者。
+*   **核心文献**:
+    *   **速度优化**: [Davydov et al. (2017) Bioinformatics](https://doi.org/10.1093/bioinformatics/btw632) - 引入**状态聚合 (State Aggregation)** 技术，通过合并相似的马尔可夫链状态，大幅减少似然计算量，实现 10-100 倍加速。
+    *   **模型改进**: [Davydov et al. (2019) MBE](https://doi.org/10.1093/molbev/msz024) - 提出**同义突变速率变异 (Synonymous Rate Variation, SRV)** 模型。传统 PAML 模型假设所有位点的同义突变速率 ($dS$) 恒定，这在存在突变热点或同义选择时会导致严重的假阳性。Godon 的 **BSG 模型** (Branch-Site + Gamma) 允许 $dS$ 随位点变化，显著降低了误报率。
 *   **特点**:
-    *   **现代化架构**: 使用 Go 语言编写，跨平台，提供单一静态编译的二进制文件，部署极简。
-    *   **高性能**: 原生支持多线程 (Go routines) 并行计算，且引入了状态聚合 (State Aggregation) 技术大幅加速似然计算。
-    *   **算法鲁棒性**: 内置多种优化器 (L-BFGS-B, Downhill Simplex, Simulated Annealing, SQP 等)，有效避免陷入局部最优解，这是 PAML 常遇到的问题。
-    *   **模型全面**: 支持 M0, M1a, M2a, M7, M8 以及 Branch-Site (BS) 模型，并独创了支持速率变异的 BSG (Branch-Site + Gamma) 模型。
-    *   **扩展功能**: 除了最大似然法 (ML)，还支持 MCMC 采样 (Metropolis-Hastings) 进行贝叶斯推断。
-*   **适用场景**: 需要高性能、高可靠性且模型复杂的全基因组选择压力分析。
-*   **对 pgr 的借鉴**: Godon 的代码结构 (Model 接口与 Optimizer 分离) 清晰展示了如何用现代语言实现复杂的进化模型，其 Go 代码比 PAML 的 C 代码更易于阅读和移植到 Rust。
+    *   **现代化架构**: 使用 Go 语言编写，跨平台，单一二进制文件，零依赖。
+    *   **高性能**: 原生多线程 + 状态聚合算法。
+    *   **算法鲁棒性**: 内置多种优化器 (L-BFGS-B, Simplex, SA)，避免 PAML 常见的收敛问题。
+    *   **模型全面**: 支持 BSG 等考虑 SRV 的高级模型，以及 MCMC 贝叶斯推断。
+*   **适用场景**: 需要高可靠性（避免假阳性）和高性能的全基因组扫描。
+*   **对 pgr 的借鉴**: Godon 展示了如何通过改进底层算法（状态聚合）和生物学假设（SRV）来超越经典工具。
 
 ### 5.5 FastCodeML
 *   **定位**: `codeml` 分支-位点模型 (Branch-Site Model) 的高性能 C++ 重写版。
