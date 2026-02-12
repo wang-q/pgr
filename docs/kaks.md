@@ -84,14 +84,14 @@ PAML 是一个工具箱，主要包含以下核心程序：
 
 ---
 
-## 3. Bio-Tools-Phylo-PAML (BioPerl 模块) 分析
+## 6. Bio-Tools-Phylo-PAML (BioPerl 模块) 分析
 
-### 3.1 概览
+### 6.1 概览
 *   **定位**: BioPerl 的一部分，专门用于解析 PAML (codeml, baseml, yn00) 的输出结果。
 *   **语言**: Perl
 *   **价值**: 提供了成熟的 PAML 输出解析逻辑，是 `pgr` 实现外部 PAML 调用后结果处理的重要参考。
 
-### 3.2 核心功能
+### 6.2 核心功能
 *   **解析器 (`Bio::Tools::Phylo::PAML`)**:
     *   支持解析 `codeml.mlc` 等主输出文件。
     *   提取 NG86 和 ML 方法生成的 dN/dS 矩阵。
@@ -101,16 +101,16 @@ PAML 是一个工具箱，主要包含以下核心程序：
 
 ---
 
-## 4. 对比与总结
+## 7. 对比与总结
 
-### 4.1 功能重叠点
+### 7.1 功能重叠点
 *   **YN00 算法**:
     *   **PAML**: 原创实现 (`src/yn00.c`)。
     *   **KaKs_Calculator**: 复现/集成实现 (`src/YN00.cpp` & `start_YN00()`)。
 *   **GY94 模型**:
     *   两者均支持，但 PAML 的 `codeml` 提供了基于树的完整 GY94 实现，而 KaKs_Calculator 主要关注成对比较。
 
-### 4.2 关键差异
+### 7.2 关键差异
 *   **核心目标**
     *   **KaKs_Calculator 3.0**: 快速计算成对 Ka/Ks，模型比较
     *   **PAML (codeml/yn00)**: 复杂的进化假设检验，树的构建与参数估算
@@ -130,7 +130,7 @@ PAML 是一个工具箱，主要包含以下核心程序：
     *   **KaKs_Calculator 3.0**: 易于集成新算法 (Strategy Pattern)
     *   **PAML (codeml/yn00)**: 难以修改核心逻辑，但功能极其强大
 
-### 4.3 对 pgr 的借鉴意义
+### 7.3 对 pgr 的借鉴意义
 *   **输出解析逻辑参考**: Bio-Tools-Phylo-PAML 提供了 PAML 输出解析的正则逻辑 (Regex)，可移植到 Rust 中用于 `pgr` 读取 `codeml` 结果（如矩阵提取、LRT 参数提取）。
 *   **算法移植参考**: `KaKs_Calculator` 的 C++ 源码适合作为 Rust 原生实现的蓝本；PAML 的 `tools.c` 适合作为数值计算的参考。
 *   **流程集成建议**:
@@ -139,7 +139,44 @@ PAML 是一个工具箱，主要包含以下核心程序：
 
 ---
 
-## 5. 迁移与集成计划 (Migration Plan)
+## 5. 其他主流 Ka/Ks 计算软件
+
+除了 KaKs_Calculator 和 PAML，目前生物信息学领域还有以下几款主流软件可用于 Ka/Ks 分析，各有其侧重：
+
+### 5.1 HyPhy (Hypothesis Testing using Phylogenies)
+*   **定位**: 现代化的系统发育假设检验工具，常被视为 PAML 的高性能替代者。
+*   **特点**:
+    *   **高性能**: 支持多线程 (OpenMP) 和 MPI 并行，甚至部分支持 GPU 加速，处理大数据集比 PAML 快得多。
+    *   **方法丰富**: 独创了多种检测正选择的方法，如 **FEL** (Fixed Effects Likelihood), **SLAC** (Single-Likelihood Ancestor Counting), **FUBAR** (Fast, Unconstrained Bayesian AppRoximation), **MEME** (Mixed Effects Model of Evolution)。
+    *   **Datamonkey**: 其 Web 版本非常流行。
+*   **适用场景**: 大规模基因组数据的正选择扫描，以及需要利用复杂统计模型检测特定位点/分支选择压力的场景。
+
+### 5.2 MEGA (Molecular Evolutionary Genetics Analysis)
+*   **定位**: 综合性分子进化分析软件，以 GUI (图形界面) 著称。
+*   **特点**:
+    *   **易用性**: 集成了比对 (Muscle/Clustal)、建树 (NJ/ML/MP) 和选择压力分析 (Z-test for Selection)。
+    *   **算法**: 主要支持基于 Nei-Gojobori 等计数法的 Z 检验，用于判断 Ka/Ks 是否显著大于/小于 1。
+*   **适用场景**: 教学、初学者使用，或小规模数据的快速可视化分析。不适合集成到自动化流程中。
+
+### 5.3 paPAML (Parallel PAML)
+*   **定位**: PAML 的并行化封装工具。
+*   **特点**: 使用 Perl 脚本将大的任务拆分，在集群上并行运行 `codeml` 或 `HyPhy`。
+*   **适用场景**: 必须使用 PAML 及其模型结果，但受限于单线程速度的大型项目。
+
+### 5.4 FastCodeML / Godon
+*   **定位**: `codeml` 的高性能重写版本。
+*   **特点**: 旨在复现 `codeml` 的分支-位点模型 (Branch-Site Model)，但通过优化数学库和并行化大幅提升速度。
+*   **适用场景**: 专门针对分支-位点模型的全基因组扫描。
+
+### 5.5 为什么 pgr 仍需自研/移植？
+尽管有上述工具，`pgr` 选择原生移植仍有独特价值：
+*   **零依赖 (Zero Dependency)**: 用户无需安装 PAML/HyPhy/Perl 等复杂的外部环境，`pgr` 单一二进制文件即可运行。
+*   **格式无缝对接**: 直接支持 pgr/UCSC 的 AXT/MAF/2bit 格式，无需中间转换 (如转为 PHYLIP)。
+*   **极速**: 针对 NG86/LWL85/YN00 等常用算法，Rust 实现可以比脚本调用外部工具快几个数量级，且比 PAML 的启动开销小得多。
+
+---
+
+## 8. 迁移与集成计划 (Migration Plan)
 
 为了在 `pgr` 中集成 Ka/Ks 计算功能，我们将直接基于标准数据结构分阶段实现算法移植。
 
