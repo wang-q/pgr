@@ -68,7 +68,7 @@ multiz file1.maf file2.maf v [out1 out2]
 
 *   **读取 (Reader)**: 位于 `src/libs/fmt/fas.rs`
     *   **核心函数**: `next_maf_block`, `parse_maf_block`。
-    *   **特性**: 
+    *   **特性**:
         *   支持 `a` (alignment) 和 `s` (sequence) 行解析。
         *   **坐标转换**: 内置 `to_range()` 方法，将 MAF 的 0-based 坐标转换为 1-based inclusive 格式（如 `chr:start-end`）。
         *   **负链处理**: 自动处理负链坐标，将其转换为相对于正链的坐标范围。
@@ -77,23 +77,23 @@ multiz file1.maf file2.maf v [out1 out2]
     *   **特性**: 支持输出标准 MAF 头信息 (`##maf`) 和对齐块，自动处理列宽对齐。
 
 ### 6.2 数据结构对比
- 
+
  目前读写使用两套略有不同的结构，开发时需注意转换：
- 
+
  | 特性 | 读取 (fas.rs) | 写入 (maf.rs) |
  | :--- | :--- | :--- |
  | **结构体** | `MafEntry` | `MafComp` |
  | **序列存储** | `Vec<u8>` | `String` |
  | **数值类型** | `u64` | `usize` |
- 
+
  ### 6.3 MAF 格式实现对比 (pgr vs multiz vs UCSC)
- 
+
  通过对比 `multiz/maf.c` (mini-maf) 与 `chainnet/src/lib/maf.c` (UCSC完整版)，以及 `pgr` 的实现，可以发现：
- 
+
  1.  **代码同源性**:
      *   `multiz` 中的 `maf.c` (header 注明 "version 12") 明确标注了 "Stolen from Jim Kent & seriously abused"。它是一个精简版 (mini-maf)，移除了大量依赖 (如 `linefile.h`, `common.h` 等)，直接使用标准 C 库函数。
      *   UCSC `chainnet` 中的 `maf.c` 是完整版，依赖于 Kent Source 庞大的基础设施库 (`common.h`, `linefile.h`, `hash.h` 等)。
- 
+
  2.  **功能差异**:
      *   **UCSC 完整版**:
          *   支持 `i` (synteny breaks), `q` (quality), `e` (empty/bridging), `r` (region definition) 等多种扩展行。
@@ -107,9 +107,9 @@ multiz file1.maf file2.maf v [out1 out2]
          *   **解析策略**: 类似于 `multiz`，专注于核心的 `a` 和 `s` 行，忽略非标准行（但解析器通常具有鲁棒性，能跳过未知行）。
          *   **坐标系统**: 与 UCSC/multiz 保持一致 (0-based start, 1-based size)，但内部提供了向 `1-based inclusive` (GFF/VCF 风格) 转换的接口，适应现代分析需求。
          *   **内存模型**: 使用 Rust 的所有权模型 (`String`, `Vec`) 替代 C 指针，杜绝了内存泄漏风险，且无需手动管理 `free`。
- 
+
  ### 6.4 总结
- 
+
  `pgr` 的 MAF 模块已经成熟，具备处理 UCSC MAF 格式的能力，并集成了坐标标准化功能，适合作为后续基因组比对分析的基础组件。
 
 ## 7. pgr 与 multiz 的异同分析
@@ -228,3 +228,38 @@ multiz file1.maf file2.maf v [out1 out2]
     *   输出更偏 union/mesh，适合探索 union pan-genome 或 WGA 风格的结果。
 
 在实现层面，fas-multiz 可以作为一个新的子命令（例如 `pgr fas multiz` 或 `pgr fas merge-mesh`），并明确声明它与 `p2m + join + refine` 的适用场景不同：前者追求覆盖度（union），后者继续服务于一致性（intersection）。
+
+### 8.5 命令行接口草案
+
+*   子命令名称（示例）：
+    *   `pgr fas multiz`
+*   核心参数（示例）：
+*   `-r, --ref <NAME>`：参考物种/序列名称，必须在所有输入 `.fas` 中存在。
+*   `<infiles>...`：位置参数，输入的 block FA 文件，数量 `>= 2`，行为与 `pl p2m` 一致。
+    *   `--radius <INT>`：带状 DP 半径 `R`，类似 multiz 中的 `R`，控制参考坐标附近的搜索宽度。
+    *   `--min-width <INT>`：最小输出 block 宽度，对标 multiz 的 `M`。
+    *   `-o, --out <FILE>`：输出 `.fas` 文件名。
+    *   `--score-matrix <FILE>`：可选，指定替换矩阵（默认可复用 `libs/chain/sub_matrix.rs` 中已有配置）。
+    *   `--mode <core|union>`：模式切换：
+        *   `core`：在交集区域内行为尽量贴近 `p2m + join`，只对 gap 冲突做最小修复。
+        *   `union`：尽量保留所有输入的对齐信息，生成 mesh 风格结果。
+
+### 8.6 约束与实现注意事项
+
+*   **参考骨架一致性**：
+    *   要求所有输入 `.fas` 的参考序列来自同一基因组版本，且建议事先经过相同的 masking/裁剪流程。
+*   **窗口化处理**：
+    *   实现时应采用窗口化策略（例如按固定长度或按 block 切分），避免在超长区间上运行大规模 profile DP。
+    *   每个窗口内的 profile 合并结果可以再交给 `fas refine` 做一次本地 MSA。
+*   **打分与带状 DP**：
+    *   可以重用 `pgr` 中现有的打分矩阵和 gap 参数（如 `libs/chain` 相关代码），避免在 `fas` 层重新定义一套 scoring。
+    *   带状 DP 的半径 `R` 和最小宽度 `M` 建议和 multiz 保持同一数量级，以便结果直观可控。
+*   **失败与降级策略**：
+    *   当某个窗口内 profile DP 无法找到合理路径（打分过低或冲突过多）时，可以退回到简单的 `fas join` 行为，或干脆将该窗口标记为“未合并”，交给上游/下游流程决定如何处理。
+
+### 8.7 与现有模块的集成点
+
+*   **输入准备**：依赖现有的 `pgr axt/maf to-fas` 和 `fas` 系列命令，将所有上游结果规整为块级 `.fas`。
+*   **区间计算**：复用 `fas cover` 和 `spanr` 的区间逻辑，定义候选合并窗口。
+*   **比对与 refine**：在新实现的 fas-multiz 中完成 profile 合并后，调用现有 `pgr fas refine` 作为可选的精修步骤。
+*   **下游分析**：输出 `.fas` 可以继续被 `fas stat`, `fas to-vcf`, `fas split` 等命令消费，与当前 `p2m + join + refine` 的结果处于同一生态。
