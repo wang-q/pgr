@@ -450,5 +450,8 @@ multiz file1.maf file2.maf v [out1 out2]
 *   已提供 CLI 子命令 `pgr fas multiz`（见 8.5 小节），支持 `--mode core|union`、`--radius`、`--min-width`、`--gap-model`、`--gap-open`、`--gap-extend` 以及 `--score-matrix` 等参数；gap 配置风格与 `pgr psl chain` 保持一致，而替换矩阵也不再局限于内置的 HoxD55，可与链化阶段共享同一套 matrix 配置；`libs::fas_multiz` 仍作为底层引擎，便于在 pipeline 或其他子命令中复用。
 *   在 gap 行为上，对端部 gap（leading/trailing gap）增加了简单的“首尾特化”规则：在带状 DP 回溯得到参考物种之间的对齐路径后，会自动裁剪掉首尾连续的单侧 gap 列（即仅一侧为碱基、另一侧为 gap 的前缀/后缀列），使这些端部 gap 在行为上视为 free end gaps，而中间区域仍按标准仿射 gap 计分；若需要更复杂的端部 gap 放宽或偏置策略，可以在这一基础上继续细化。
 *   在上述基础上，仍可以在后续逐步接近 multiz 的完整行为，例如：
-    *   将 progressive DP 升级为真正的多输入 profile–profile sum-of-pairs 动态规划。
+    *   将 progressive DP 升级为真正的多输入 profile–profile sum-of-pairs 动态规划。这里的“真正”并不是指在 K 条序列上做天真的 K 维 DP（那样复杂度是 O(L^K)，在 K 稍大时不可用），而是指在工程上尽量在同一个 DP 决策里综合所有输入对的 sum-of-pairs 打分，减少合并顺序对结果的影响。一个可行的演进路径可以分为三个阶段：
+        1. **全体物种 SP 打分 + 合理的合并次序**：在仍保持当前“以参考为一维”的带状 DP 框架下，把 scoring 从“只看当前两个 block 的共同物种”升级为“在一个窗口内对全体物种做 sum-of-pairs（缺失视为 gap）”，并配合更合理的 merge 次序（例如基于 guide tree 或其他拓扑），这样即便 DP 依然是 pairwise reference–reference，决策时看到的是“全局 profile”的得分，progressive 的顺序敏感会明显减弱。
+        2. **局部的小 K 多输入 DP（K≤3）**：在窗口长度较短、冲突较集中的局部，引入一个只针对少数输入（例如 2–3 条参考轨迹）的 exact 多输入 DP 分支；在这一分支里，状态是 (i,j,k...) 这样的多维索引，每一个 DP 列都按“全体物种的 SP 打分”计分，用来精修最困难的区域，而大多数区域仍然走带状 2D DP 路径，从而在不爆炸复杂度的前提下局部地“接近理想解”。
+        3. **多轨迹但仍是 2D 网格的近似多输入 DP**：在充分掌握前两阶段行为的基础上，可以尝试构建“参考坐标 × 合法状态”的 2D DP 网格：横轴仍然是参考（或参考对）的坐标，纵轴是有限集合的“多物种轨迹状态”（例如用 bitmask 或离散状态表描述某一列中哪些物种前进一步、哪些物种打 gap），通过严格限制合法状态和转移（如必须顺着预先给定的链/轨迹前进，禁止任意插入/删除）来控制状态空间大小，在每个 DP 列上仍按全体物种的 sum-of-pairs 打分。这一层相当于在现有 fas-multiz 参考框架上实现一个工程化的“多输入 SP-DP 近似版”，在不引入完整 K 维 DP 的前提下向 multiz 的行为靠拢。
 *   在 DP 失败时更智能地选择降级策略（退回 `fas join`、标记窗口未合并等）。
