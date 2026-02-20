@@ -35,6 +35,14 @@ fn entry_seq_equal(a: &FasEntry, b: &FasEntry) -> bool {
     a.seq() == b.seq()
 }
 
+fn ungapped_equal(a: &FasEntry, b: &FasEntry) -> bool {
+    let sa = a.seq();
+    let sb = b.seq();
+    let ua: Vec<u8> = sa.iter().copied().filter(|c| *c != b'-').collect();
+    let ub: Vec<u8> = sb.iter().copied().filter(|c| *c != b'-').collect();
+    ua == ub
+}
+
 fn ref_overlaps_window(entry: &FasEntry, window: &Window) -> bool {
     let range = entry.range();
     if range.chr() != &window.chr {
@@ -43,6 +51,252 @@ fn ref_overlaps_window(entry: &FasEntry, window: &Window) -> bool {
     let start = *range.start() as u64;
     let end = *range.end() as u64;
     start < window.end && end > window.start
+}
+
+fn banded_align_refs(a: &FasEntry, b: &FasEntry, radius: usize) -> Option<(Vec<Option<usize>>, Vec<Option<usize>>)> {
+    use std::cmp::min;
+
+    let sa = a.seq();
+    let sb = b.seq();
+
+    let n = sa.len();
+    let m = sb.len();
+
+    if n == 0 || m == 0 {
+        return None;
+    }
+
+    let band = radius.max(((n as isize - m as isize).unsigned_abs()) as usize);
+
+    let mut score = vec![i32::MIN; (n + 1) * (2 * band + 1)];
+    let mut trace = vec![0i8; (n + 1) * (2 * band + 1)];
+
+    let match_score = 2i32;
+    let mismatch_score = -1i32;
+    let gap_score = -2i32;
+
+    let idx = |i: usize, j: usize| -> Option<usize> {
+        let band_start = if i > band { i - band } else { 0 };
+        let band_end = min(m, i + band);
+        if j < band_start || j > band_end {
+            None
+        } else {
+            let offset = j + band - i;
+            Some(i * (2 * band + 1) + offset)
+        }
+    };
+
+    if let Some(k) = idx(0, 0) {
+        score[k] = 0;
+        trace[k] = 0;
+    } else {
+        return None;
+    }
+
+    for i in 0..=n {
+        let band_start = if i > band { i - band } else { 0 };
+        let band_end = min(m, i + band);
+        for j in band_start..=band_end {
+            if i == 0 && j == 0 {
+                continue;
+            }
+            let k = match idx(i, j) {
+                Some(v) => v,
+                None => continue,
+            };
+
+            let mut best = i32::MIN;
+            let mut bt = 0i8;
+
+            if i > 0 && j > 0 {
+                if let Some(pk) = idx(i - 1, j - 1) {
+                    let s = if sa[i - 1] == sb[j - 1] {
+                        match_score
+                    } else {
+                        mismatch_score
+                    };
+                    let cand = score[pk].saturating_add(s);
+                    if cand > best {
+                        best = cand;
+                        bt = 1;
+                    }
+                }
+            }
+
+            if i > 0 {
+                if let Some(pk) = idx(i - 1, j) {
+                    let cand = score[pk].saturating_add(gap_score);
+                    if cand > best {
+                        best = cand;
+                        bt = 2;
+                    }
+                }
+            }
+
+            if j > 0 {
+                if let Some(pk) = idx(i, j - 1) {
+                    let cand = score[pk].saturating_add(gap_score);
+                    if cand > best {
+                        best = cand;
+                        bt = 3;
+                    }
+                }
+            }
+
+            score[k] = best;
+            trace[k] = bt;
+        }
+    }
+
+    let mut i = n;
+    let mut j = m;
+
+    if idx(i, j).is_none() {
+        return None;
+    }
+
+    let mut map_a = Vec::new();
+    let mut map_b = Vec::new();
+
+    while i > 0 || j > 0 {
+        let k = match idx(i, j) {
+            Some(v) => v,
+            None => break,
+        };
+        let bt = trace[k];
+        if bt == 1 {
+            if i == 0 || j == 0 {
+                break;
+            }
+            let pi = i - 1;
+            let pj = j - 1;
+            map_a.push(Some(pi));
+            map_b.push(Some(pj));
+            i -= 1;
+            j -= 1;
+        } else if bt == 2 {
+            if i == 0 {
+                break;
+            }
+            let pi = i - 1;
+            map_a.push(Some(pi));
+            map_b.push(None);
+            i -= 1;
+        } else if bt == 3 {
+            if j == 0 {
+                break;
+            }
+            let pj = j - 1;
+            map_a.push(None);
+            map_b.push(Some(pj));
+            j -= 1;
+        } else {
+            break;
+        }
+    }
+
+    map_a.reverse();
+    map_b.reverse();
+
+    if map_a.len() != map_b.len() || map_a.is_empty() {
+        return None;
+    }
+
+    Some((map_a, map_b))
+}
+
+fn merge_two_blocks_with_dp(
+    ref_name: &str,
+    blocks: [&FasBlock; 2],
+    cfg: &FasMultizConfig,
+) -> Option<FasBlock> {
+    let ref_a = find_ref_entry(blocks[0], ref_name)?;
+    let ref_b = find_ref_entry(blocks[1], ref_name)?;
+
+    if !ungapped_equal(ref_a, ref_b) {
+        return None;
+    }
+
+    let (map_a, map_b) = banded_align_refs(ref_a, ref_b, cfg.radius)?;
+
+    let ref_range = ref_a.range().clone();
+
+    let mut species_map: BTreeMap<String, [Option<&FasEntry>; 2]> = BTreeMap::new();
+
+    for (idx, block) in blocks.iter().enumerate() {
+        for (entry, name) in block.entries.iter().zip(block.names.iter()) {
+            let v = species_map.entry(name.clone()).or_insert([None, None]);
+            v[idx] = Some(entry);
+        }
+    }
+
+    let mut species: Vec<String> = species_map.keys().cloned().collect();
+    species.sort();
+    species.sort_by_key(|n| if n == ref_name { 0 } else { 1 });
+
+    let out_len = map_a.len();
+
+    let mut entries = Vec::new();
+    let mut names = Vec::new();
+    let mut headers = Vec::new();
+
+    for name in species {
+        let group = species_map.get(&name).unwrap();
+
+        if matches!(cfg.mode, FasMultizMode::Core) && (group[0].is_none() || group[1].is_none()) {
+            continue;
+        }
+
+        let mut seq = Vec::with_capacity(out_len);
+
+        for pos in 0..out_len {
+            let mut chosen: Option<u8> = None;
+
+            if let Some(entry) = group[0] {
+                if let Some(idx) = map_a[pos] {
+                    if idx < entry.seq().len() {
+                        chosen = Some(entry.seq()[idx]);
+                    }
+                }
+            }
+
+            if chosen.is_none() {
+                if let Some(entry) = group[1] {
+                    if let Some(idx) = map_b[pos] {
+                        if idx < entry.seq().len() {
+                            chosen = Some(entry.seq()[idx]);
+                        }
+                    }
+                }
+            }
+
+            seq.push(chosen.unwrap_or(b'-'));
+        }
+
+        let range = if name == ref_name {
+            ref_range.clone()
+        } else {
+            let chosen = if group[0].is_some() { group[0] } else { group[1] }.unwrap();
+            chosen.range().clone()
+        };
+
+        let entry = FasEntry::from(&range, &seq);
+        let header = format!("{}", range);
+
+        entries.push(entry);
+        names.push(name.clone());
+        headers.push(header);
+    }
+
+    if entries.is_empty() {
+        None
+    } else {
+        Some(FasBlock {
+            entries,
+            names,
+            headers,
+        })
+    }
 }
 
 pub fn merge_window(
@@ -75,6 +329,12 @@ pub fn merge_window(
 
     if blocks.is_empty() {
         return None;
+    }
+
+    if blocks.len() == 2 {
+        if let Some(block) = merge_two_blocks_with_dp(ref_name, [blocks[0], blocks[1]], cfg) {
+            return Some(block);
+        }
     }
 
     let template = blocks[0];
@@ -183,6 +443,150 @@ pub fn merge_fas_files(
 
     let mut merged_blocks = Vec::new();
     for window in windows {
+        if let Some(block) = merge_window(ref_name, window, &blocks_per_input, cfg) {
+            merged_blocks.push(block);
+        }
+    }
+
+    Ok(merged_blocks)
+}
+
+fn derive_windows_from_blocks(
+    ref_name: &str,
+    blocks_per_input: &[Vec<FasBlock>],
+    cfg: &FasMultizConfig,
+) -> Vec<Window> {
+    use std::cmp::max;
+
+    let mut per_chr: BTreeMap<String, Vec<(u64, u64)>> = BTreeMap::new();
+
+    for group in blocks_per_input {
+        for block in group {
+            if let Some(entry) = find_ref_entry(block, ref_name) {
+                let range = entry.range();
+                let chr = range.chr().to_string();
+                let start = *range.start() as u64;
+                let end = *range.end() as u64;
+                let s = start.saturating_sub(cfg.radius as u64);
+                let e = end + cfg.radius as u64;
+                per_chr.entry(chr).or_default().push((s, e));
+            }
+        }
+    }
+
+    let mut windows = Vec::new();
+
+    for (chr, mut intervals) in per_chr {
+        if intervals.is_empty() {
+            continue;
+        }
+        intervals.sort_by_key(|(s, _)| *s);
+
+        let mut current = intervals[0];
+        for &(s, e) in &intervals[1..] {
+            if s <= current.1 {
+                current.1 = max(current.1, e);
+            } else {
+                if current.1 > current.0 {
+                    let width = current.1 - current.0;
+                    if width >= cfg.min_width as u64 {
+                        windows.push(Window {
+                            chr: chr.clone(),
+                            start: current.0,
+                            end: current.1,
+                        });
+                    }
+                }
+                current = (s, e);
+            }
+        }
+
+        if current.1 > current.0 {
+            let width = current.1 - current.0;
+            if width >= cfg.min_width as u64 {
+                windows.push(Window {
+                    chr,
+                    start: current.0,
+                    end: current.1,
+                });
+            }
+        }
+    }
+
+    if windows.is_empty() {
+        return windows;
+    }
+
+    let total_inputs = blocks_per_input.len();
+    let required_inputs = match cfg.mode {
+        FasMultizMode::Core => total_inputs,
+        FasMultizMode::Union => 1,
+    };
+
+    let mut filtered = Vec::new();
+
+    for window in windows {
+        let mut covered = 0usize;
+        for group in blocks_per_input {
+            let has_overlap = group.iter().any(|block| {
+                find_ref_entry(block, ref_name)
+                    .map(|entry| ref_overlaps_window(entry, &window))
+                    .unwrap_or(false)
+            });
+            if has_overlap {
+                covered += 1;
+            }
+            if covered >= required_inputs {
+                break;
+            }
+        }
+
+        if covered >= required_inputs {
+            filtered.push(window);
+        }
+    }
+
+    filtered
+}
+
+pub fn merge_fas_files_auto_windows(
+    ref_name: &str,
+    infiles: &[impl AsRef<Path>],
+    cfg: &FasMultizConfig,
+) -> anyhow::Result<Vec<FasBlock>> {
+    use std::fs::File;
+    use std::io::BufReader;
+
+    let mut blocks_per_input: Vec<Vec<FasBlock>> = Vec::new();
+
+    for infile in infiles {
+        let file = File::open(infile)?;
+        let mut reader = BufReader::new(file);
+        let mut blocks = Vec::new();
+
+        loop {
+            match crate::libs::fmt::fas::next_fas_block(&mut reader) {
+                Ok(block) => blocks.push(block),
+                Err(e) => {
+                    if e.to_string() == "EOF" {
+                        break;
+                    } else {
+                        return Err(e.into());
+                    }
+                }
+            }
+        }
+
+        blocks_per_input.push(blocks);
+    }
+
+    let windows = derive_windows_from_blocks(ref_name, &blocks_per_input, cfg);
+    if windows.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut merged_blocks = Vec::new();
+    for window in &windows {
         if let Some(block) = merge_window(ref_name, window, &blocks_per_input, cfg) {
             merged_blocks.push(block);
         }
@@ -462,6 +866,73 @@ mod tests {
             let mut names = block.names.clone();
             names.sort();
             assert_eq!(names, vec!["A".to_string(), "B".to_string(), "ref".to_string()]);
+        }
+    }
+
+    #[test]
+    fn merge_fas_files_auto_windows_matches_explicit() {
+        use std::fs::File;
+        use std::io::Write;
+        use intspan::Range;
+
+        let dir = std::env::temp_dir();
+        let path1 = dir.join("pgr_fas_multiz_auto_test1.fas");
+        let path2 = dir.join("pgr_fas_multiz_auto_test2.fas");
+
+        {
+            let mut f1 = File::create(&path1).unwrap();
+            writeln!(f1, ">ref(+):1-4|species=ref").unwrap();
+            writeln!(f1, "ACGT").unwrap();
+            writeln!(f1, ">A(+):1-4|species=A").unwrap();
+            writeln!(f1, "ACGT").unwrap();
+            writeln!(f1).unwrap();
+            writeln!(f1, ">ref(+):21-24|species=ref").unwrap();
+            writeln!(f1, "ACGT").unwrap();
+            writeln!(f1, ">A(+):21-24|species=A").unwrap();
+            writeln!(f1, "ACGT").unwrap();
+            writeln!(f1).unwrap();
+
+            let mut f2 = File::create(&path2).unwrap();
+            writeln!(f2, ">ref(+):1-4|species=ref").unwrap();
+            writeln!(f2, "ACGT").unwrap();
+            writeln!(f2, ">B(+):1-4|species=B").unwrap();
+            writeln!(f2, "ACGT").unwrap();
+            writeln!(f2).unwrap();
+            writeln!(f2, ">ref(+):21-24|species=ref").unwrap();
+            writeln!(f2, "ACGT").unwrap();
+            writeln!(f2, ">B(+):21-24|species=B").unwrap();
+            writeln!(f2, "ACGT").unwrap();
+            writeln!(f2).unwrap();
+        }
+
+        let r1 = Range::from_str("ref(+):1-4|species=ref");
+        let r2 = Range::from_str("ref(+):21-24|species=ref");
+
+        let windows = vec![
+            Window {
+                chr: r1.chr().to_string(),
+                start: *r1.start() as u64,
+                end: *r1.end() as u64,
+            },
+            Window {
+                chr: r2.chr().to_string(),
+                start: *r2.start() as u64,
+                end: *r2.end() as u64,
+            },
+        ];
+
+        let ref_name = "ref".to_string();
+        let mut cfg = default_config(FasMultizMode::Union);
+        cfg.ref_name = ref_name.clone();
+
+        let merged_explicit =
+            merge_fas_files(&ref_name, &[&path1, &path2], &windows, &cfg).expect("merge_fas_files");
+        let merged_auto = merge_fas_files_auto_windows(&ref_name, &[&path1, &path2], &cfg)
+            .expect("merge_fas_files_auto_windows");
+
+        assert_eq!(merged_explicit.len(), merged_auto.len());
+        for (a, b) in merged_explicit.iter().zip(merged_auto.iter()) {
+            assert_eq!(a.names, b.names);
         }
     }
 }
