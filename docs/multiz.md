@@ -167,6 +167,64 @@ multiz file1.maf file2.maf v [out1 out2]
     *   只关注严格交集区域，对边缘和稀有对齐不敏感。
     *   参考骨架事先经过统一处理（同一版本、类似 masking/裁剪策略），大型重排通过 `chain/net` 等流程已先行解决。
     *   `fas refine` 作用在规模适中的窗口上，用于修正机械堆叠引入的局部错位，而不负责重新定义 block 边界。
-*   若未来需要在 `pgr` 中支持接近 multiz 行为的 “Union/Mesh WGA” 模式，可以在现有 MAF 模块基础上新增一个 Rust 版的 profile–profile banded DP：
-    *   以新的子命令（例如 `pgr maf multiz`）实现。
-    *   与现有的 `p2m + join + refine` 并存：前者服务于 union/WGA，后者继续服务于 core/intersection。
+*   若未来需要在 `pgr` 中支持接近 multiz 行为的 “Union/Mesh WGA” 模式，更自然的路径是：**在 `fas` 层实现 multiz 类功能**，而不是在 MAF 解析层再实现一次 `multiz`：
+    *   上游已经可以通过 `pgr axt/maf to-fas` 等命令，将 pairwise 或 MAF 转换为 block FA (`.fas`)。
+    *   在 `.fas` 层进行 profile 合并，可以直接对齐到 `pgr fas` 现有生态（`cover`/`slice`/`join`/`refine`/`stat` 等），避免重复造 MAF 级别的轮子。
+
+## 8. 在 fas 层实现 multiz 类功能的设想
+
+在 `pgr` 现有设计中，`fas` 是“块级多序列比对”的核心抽象：每个 block 表示一段参考坐标下的多物种比对。若要实现 multiz 类功能，更自然的选择是围绕 `fas` 做 profile 合并，而不是在 MAF 文本层面复刻 `multiz`。
+
+### 8.1 目标与输入/输出
+
+*   **目标**：
+    *   给定多个 block FA 文件（例如多个 pairwise-derived `.fas` 或不同 pipeline 生成的 `.fas`），在共享参考物种的坐标系下，将它们合并为一个“union/mesh 风格”的 block FA。
+    *   和现有 `p2m + join + refine` 所产出的 **Core/Intersection** 结果互为补充：一个偏交集（core），一个偏并集（union/mesh）。
+*   **输入**：
+    *   `k` 个 `.fas` 文件（`k >= 2`），它们的 block 中均包含同名的参考序列（例如 `ref`）。
+    *   可选的：一个核心交集区域（来自 `fas cover` + `spanr`），用于限制计算范围。
+*   **输出**：
+    *   一个新的 `.fas` 文件，包含合并后的多序列比对 block：
+        *   在交集区域内，行为应与当前 `p2m + join + refine` 相兼容。
+        *   在边缘/非完全交集区域内，会尽量保留来自不同输入的对齐（union 行为）。
+
+### 8.2 相对于 multiz 的主要差异
+
+*   **工作层级不同**：
+    *   multiz 直接操作 MAF，对齐的是两个 MAF profile。
+    *   `pgr` 中的 fas-multiz 将直接操作 block FA，对齐的是若干 `.fas` profile。
+*   **上游数据准备不同**：
+    *   在 `pgr` 中，pairwise MAF/AXT 等通常已经通过 `pgr maf/axt to-fas` 等步骤规整为更统一的 block FA 表达。
+    *   这意味着 fas-multiz 可以假设输入已经经过一次“标准化”，不需要自己处理复杂的 MAF 语法和扩展行。
+*   **与现有命令的关系**：
+    *   fas-multiz 更像是 `pgr fas join` 的“智能版/DP 版”：
+        *   `fas join`：根据参考坐标“机械堆叠”，不处理 gap 冲突。
+        *   fas-multiz：在堆叠时引入 profile–profile 的 DP/启发式，解决参考 gap 冲突和 block 选择问题。
+    *   输出仍然是 `.fas`，可以直接接上 `fas refine`, `fas stat`, `fas to-vcf` 等命令。
+
+### 8.3 可能的数据流设计（草案）
+
+1.  **标准化输入**：
+    *   所有 upstream 比对结果（MAF/AXT 等）先通过现有命令统一转为 `.fas`。
+    *   如有需要，可加一步 `fas normalize`（对序列名、物种名、参考 ID 做统一）。
+2.  **block 级别的配对与聚类**：
+    *   按参考物种与坐标对 block 做分组，将“位置相近”的 block 视为候选合并单元。
+    *   这一层可以重用 `fas cover` / `spanr` 得到的区间信息。
+3.  **profile 合并（multiz-like）**：
+    *   对每个候选区间内的多个 block profile，执行简化版的 profile–profile DP 或其他启发式：
+        *   在参考坐标附近采用带状 DP（Radius R），解决不同 `.fas` 之间参考 gap 的不一致。
+        *   根据 sum-of-pairs 打分决定保留哪些列/序列，以及如何插入额外 gap。
+    *   输出合并后的单个 block（或少数几个 block）。
+4.  **后处理与 refine**：
+    *   输出的 `.fas` 可以再交给 `pgr fas refine` 做局部 MSA，以获得更“平滑”的 alignment（尤其是在非参考序列上）。
+
+### 8.4 与现有 core 流程的互补关系
+
+*   `p2m + join + refine`：
+    *   假设参考骨架在各数据源中基本一致。
+    *   倾向于“只相信大家都同意的部分”（严格交集），适合构建 core genome。
+*   fas-multiz：
+    *   允许不同数据源在边缘和 gap pattern 上存在一定差异，通过 profile 合并策略尽量“合在一起”。
+    *   输出更偏 union/mesh，适合探索 union pan-genome 或 WGA 风格的结果。
+
+在实现层面，fas-multiz 可以作为一个新的子命令（例如 `pgr fas multiz` 或 `pgr fas merge-mesh`），并明确声明它与 `p2m + join + refine` 的适用场景不同：前者追求覆盖度（union），后者继续服务于一致性（intersection）。
