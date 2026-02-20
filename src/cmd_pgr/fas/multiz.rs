@@ -63,6 +63,13 @@ Examples:
                 .help("Merge mode: core (strict intersection) or union"),
         )
         .arg(
+            Arg::new("gap-model")
+                .long("gap-model")
+                .num_args(1)
+                .default_value("medium")
+                .help("Gap model: constant, medium, or loose"),
+        )
+        .arg(
             Arg::new("outfile")
                 .long("outfile")
                 .short('o')
@@ -77,6 +84,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let radius = *args.get_one::<usize>("radius").unwrap();
     let min_width = *args.get_one::<usize>("min_width").unwrap();
     let mode_str = args.get_one::<String>("mode").unwrap();
+    let gap_model_str = args.get_one::<String>("gap-model").unwrap();
 
     let mode = match mode_str.as_str() {
         "core" => pgr::libs::fas_multiz::FasMultizMode::Core,
@@ -84,6 +92,18 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         other => {
             return Err(anyhow::anyhow!(format!(
                 "Invalid mode '{}', expected 'core' or 'union'",
+                other
+            )))
+        }
+    };
+
+    let gap_model = match gap_model_str.as_str() {
+        "constant" => pgr::libs::fas_multiz::FasMultizGapModel::Constant,
+        "medium" => pgr::libs::fas_multiz::FasMultizGapModel::Medium,
+        "loose" => pgr::libs::fas_multiz::FasMultizGapModel::Loose,
+        other => {
+            return Err(anyhow::anyhow!(format!(
+                "Invalid gap-model '{}', expected 'constant', 'medium', or 'loose'",
                 other
             )))
         }
@@ -97,6 +117,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         match_score: 2,
         mismatch_score: -1,
         gap_score: -2,
+        gap_model,
     };
 
     let infiles: Vec<String> = args
@@ -121,4 +142,3 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     Ok(())
 }
-
