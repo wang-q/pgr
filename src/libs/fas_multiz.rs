@@ -58,14 +58,17 @@ fn ref_overlaps_window(entry: &FasEntry, window: &Window) -> bool {
 }
 
 fn banded_align_refs(
-    a: &FasEntry,
-    b: &FasEntry,
+    blocks: [&FasBlock; 2],
+    ref_name: &str,
     cfg: &FasMultizConfig,
 ) -> Option<(Vec<Option<usize>>, Vec<Option<usize>>)> {
     use std::cmp::min;
 
-    let sa = a.seq();
-    let sb = b.seq();
+    let ref_a = find_ref_entry(blocks[0], ref_name)?;
+    let ref_b = find_ref_entry(blocks[1], ref_name)?;
+
+    let sa = ref_a.seq();
+    let sb = ref_b.seq();
 
     let n = sa.len();
     let m = sb.len();
@@ -99,6 +102,17 @@ fn banded_align_refs(
 
     let submat = SubMatrix::hoxd55();
 
+    let mut profiles: Vec<(&[u8], &[u8])> = Vec::new();
+    let mut map_a: BTreeMap<&str, &FasEntry> = BTreeMap::new();
+    for (entry, name) in blocks[0].entries.iter().zip(blocks[0].names.iter()) {
+        map_a.insert(name.as_str(), entry);
+    }
+    for (entry, name) in blocks[1].entries.iter().zip(blocks[1].names.iter()) {
+        if let Some(ea) = map_a.get(name.as_str()) {
+            profiles.push((ea.seq(), entry.seq()));
+        }
+    }
+
     for i in 0..=n {
         let band_start = if i > band { i - band } else { 0 };
         let band_end = min(m, i + band);
@@ -116,18 +130,19 @@ fn banded_align_refs(
 
             if i > 0 && j > 0 {
                 if let Some(pk) = idx(i - 1, j - 1) {
-                    let ba = sa[i - 1];
-                    let bb = sb[j - 1];
-                    let s = if ba == b'-' || bb == b'-' {
-                        if ba == bb {
-                            cfg.match_score
+                    let mut s = 0;
+                    for (pa, pb) in &profiles {
+                        let ba = pa[i - 1];
+                        let bb = pb[j - 1];
+                        if ba == b'-' && bb == b'-' {
+                            continue;
+                        } else if ba == b'-' || bb == b'-' {
+                            s += cfg.gap_score;
                         } else {
-                            cfg.mismatch_score
+                            let raw = submat.get_score(ba as char, bb as char);
+                            s += raw / 50;
                         }
-                    } else {
-                        let raw = submat.get_score(ba as char, bb as char);
-                        raw / 50
-                    };
+                    }
                     let cand = score[pk].saturating_add(s);
                     if cand > best {
                         best = cand;
@@ -230,7 +245,7 @@ fn merge_two_blocks_with_dp(
         return None;
     }
 
-    let (map_a, map_b) = banded_align_refs(ref_a, ref_b, cfg)?;
+    let (map_a, map_b) = banded_align_refs(blocks, ref_name, cfg)?;
 
     let ref_range = ref_a.range().clone();
 
