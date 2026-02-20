@@ -63,11 +63,31 @@ Examples:
                 .help("Merge mode: core (strict intersection) or union"),
         )
         .arg(
+            Arg::new("score-matrix")
+                .long("score-matrix")
+                .num_args(1)
+                .help("Score matrix file (LASTZ format) or preset name (e.g. hoxd55)"),
+        )
+        .arg(
             Arg::new("gap-model")
                 .long("gap-model")
                 .num_args(1)
                 .default_value("medium")
                 .help("Gap model: constant, medium, or loose"),
+        )
+        .arg(
+            Arg::new("gap-open")
+                .long("gap-open")
+                .value_parser(value_parser!(i32))
+                .num_args(1)
+                .help("Gap open cost (overrides gap-model when used with --gap-extend)"),
+        )
+        .arg(
+            Arg::new("gap-extend")
+                .long("gap-extend")
+                .value_parser(value_parser!(i32))
+                .num_args(1)
+                .help("Gap extension cost (overrides gap-model when used with --gap-open)"),
         )
         .arg(
             Arg::new("outfile")
@@ -85,6 +105,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let min_width = *args.get_one::<usize>("min_width").unwrap();
     let mode_str = args.get_one::<String>("mode").unwrap();
     let gap_model_str = args.get_one::<String>("gap-model").unwrap();
+    let score_matrix = args.get_one::<String>("score-matrix").cloned();
+    let gap_open = args.get_one::<i32>("gap-open").copied();
+    let gap_extend = args.get_one::<i32>("gap-extend").copied();
 
     let mode = match mode_str.as_str() {
         "core" => pgr::libs::fas_multiz::FasMultizMode::Core,
@@ -118,6 +141,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         mismatch_score: -1,
         gap_score: -2,
         gap_model,
+        gap_open,
+        gap_extend,
+        score_matrix,
     };
 
     let infiles: Vec<String> = args

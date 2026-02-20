@@ -174,6 +174,38 @@ multiz file1.maf file2.maf v [out1 out2]
     *   上游已经可以通过 `pgr axt/maf to-fas` 等命令，将 pairwise 或 MAF 转换为 block FA (`.fas`)。
     *   在 `.fas` 层进行 profile 合并，可以直接对齐到 `pgr fas` 现有生态（`cover`/`slice`/`join`/`refine`/`stat` 等），避免重复造 MAF 级别的轮子。
 
+### 7.5 pgr 中 multiz 前置链路：LASTZ 与链化
+
+在 UCSC 的典型 WGA 流程中，`multiz` 位于“pairwise 比对 + 链化 + net + mafFromNet”之后，只消费已经整理好的 MAF。`pgr` 目前在这一前置链路上，也已经有相当完整的 Rust 封装，主要对应到：
+
+*   `pgr lav lastz`：LASTZ 前端
+    *   位置：`src/cmd_pgr/lav/lastz.rs`。
+    *   作用：包装 `lastz`，生成 LAV 格式输出，参数设计对齐 Cactus/UCSC 风格。
+    *   特点：
+        *   内置 UCSC 风格 preset（`set01`..`set07`），包括常见物种组合（Hg vs Pan/Mm/Bos/DanRer 等），每个 preset 绑定一套参数串和一个 4x4 替换矩阵（通过临时文件写给 `Q=` 选项）。
+        *   自动加上 `--format=lav`、`--markend`、`--ambiguous=iupac`、`--querydepth=keep,nowarn:N` 等选项，行为贴近 Cactus repeat-masking 里的 LASTZ 调用约定。
+        *   支持单文件和目录递归：对 target/query 目录做递归扫描（`.fa`/`.fa.gz`），生成笛卡尔积 job 列表。
+        *   使用 `rayon` 并行跑多个 lastz 进程，并为每个 target–query 组合生成类似 `[t]vs[q].lav` 的输出文件名（带冲突规避逻辑）。
+    *   对 multiz 的意义：
+        *   对应于“blastz/lastz pairwise 比对”这一步，为后续链化、net 和 multiz/fas-multiz 提供高质量的成对比对基础。
+
+*   `pgr psl chain`：PSL 链化（axtChain 风格）
+    *   位置：`src/cmd_pgr/psl/chain.rs`，调用 `libs::chain` 中的 DP 引擎。
+    *   作用：把 PSL 对齐 block 链成较长的 syntenic chain，逻辑类似 UCSC 的 `axtChain`/`chainNet` 里的链化步骤。
+    *   打分与 gap 模型：
+        *   使用 `SubMatrix` 作为替换矩阵，默认 Identity（匹配 +100 / 不匹配 -100），也可通过 `--score-scheme` 选择 HoxD55 或读取 LASTZ 格式打分文件。
+        *   gap 成本由 `GapCalc` 驱动：
+            *   线性模式：`--linear-gap loose|medium`，对应 Kent 源码中针对远缘/近缘物种的 quasi-natural gap 曲线。
+            *   仿射模式：`--gap-open` + `--gap-extend` 显式指定 open/extend，内部通过 `GapCalc::affine` 生成 gap 曲线。
+        *   链化 DP 中的评分公式与 UCSC axtChain 一致：`Score = BlockScore + max(PrevScore - GapCost)`。
+    *   结构与实现：
+        *   依据 `(t_name, q_name, strand)` 分组，内部使用 KD-tree 等结构（见 `libs::chain`）加速前驱 block 搜索。
+        *   允许在有 2bit 序列的情况下，用 `ScoreContext` 和 `calc_block_score` 精确重算每个 block 的序列得分，而不是只依赖 PSL 自带分数。
+    *   对 multiz 的意义：
+        *   在 `pgr` 里，这一步提供了与 UCSC 链化阶段等价的“整理过的 syntenic 对齐骨架”，可以作为（通过 AXT/MAF/FA 转换后）fas-multiz 的上游输入。
+
+综上，`pgr lav lastz` + `pgr psl chain` 组合，大致覆盖了 UCSC 链路中 “blastz/lastz 比对 + axtChain 链化” 这两步。它们提供了 multiz/fas-multiz 所需的 pairwise 对齐基础，而 `libs::fas_multiz` 则承担了更上游的 profile 合并角色：在已经有 syntenic 对齐骨架的前提下，对多个 `.fas` profile 做带状 DP 合并，构建 union/mesh 风格的多序列比对。
+
 ## 8. 在 fas 层实现 multiz 类功能的设想
 
 在 `pgr` 现有设计中，`fas` 是“块级多序列比对”的核心抽象：每个 block 表示一段参考坐标下的多物种比对。若要实现 multiz 类功能，更自然的选择是围绕 `fas` 做 profile 合并，而不是在 MAF 文本层面复刻 `multiz`。
@@ -395,7 +427,7 @@ multiz file1.maf file2.maf v [out1 out2]
 *   每一步都要求参与合并的参考 entry 在去掉 `'-'` 后的序列完全相同（ungapped equal），否则这一轮 DP 失败。
 *   在参考坐标网格上调用 `banded_align_refs`：
 *   只在 diagonal ± `radius` 的带内做 DP。
-*   对每个对角单元，使用两个 profile 的物种交集上的 sum-of-pairs 打分：共享物种的 base–base 组合通过 `libs::chain::SubMatrix::hoxd55` 获取替换分数并按固定比例缩放到与 `match_score` 相近的量级，base–gap 组合统一使用 `gap_score` 罚分，gap–gap 不计分；横向/纵向移动仍然只收取一次 `gap_score`。
+*   对每个对角单元，使用两个 profile 的物种交集上的 sum-of-pairs 打分：共享物种的 base–base 组合通过 `libs::chain::SubMatrix::hoxd55` 获取替换分数并按固定比例缩放到与 `match_score` 相近的量级；base–gap 组合收取由 `gap_model` 推导出的统一 gap 罚分（`constant` 模式直接使用 `gap_score`，`medium`/`loose` 模式则从 `GapCalc` 的 quasi-natural 曲线抽取一个与替换分数量级相当的 gap 罚分），gap–gap 不计分；横向/纵向移动同样只收取一次该 gap 罚分。
 *   将 DP 生成的参考轨迹映射到所有物种：
 *   对每一列，优先从前一个累积结果（或第一个输入）的对应位置取碱基，不存在时再从当前输入取；两边都缺失则填 `'-'`。
 *   `Core` 模式下只合并在当前累积结果和新输入中都存在的物种；`Union` 模式下允许物种只存在于其中一边。
@@ -411,9 +443,12 @@ multiz file1.maf file2.maf v [out1 out2]
 
 *   目前 DP 采用 progressive pairwise 策略，对多个输入的合并顺序敏感，尚未实现真正意义上的多维 profile–profile sum-of-pairs 动态规划。
 *   DP 网格仍然只在参考行的坐标上展开，非参考物种没有各自独立的坐标轴，它们通过物种交集上的 profile–profile sum-of-pairs 打分参与评分，但不改变 DP 网格结构，与 multiz/yama 中更完整的多维 DP 仍有差距。
-*   替换分数已经复用 `libs::chain::SubMatrix::hoxd55` 做 base–base 的 sum-of-pairs 打分，并通过简单缩放与当前 `match_score`/`gap_score` 的量级对齐；但 gap 仍然只使用单一的 `gap_score`，尚未引入 quasi-natural gap 或真正的仿射 gap 模型，也没有针对端部 gap 的特殊处理。
-*   CLI 子命令 `pgr fas multiz` 目前尚未实现，`libs::fas_multiz` 仅提供库级 API，适合作为后续 pipeline（或新子命令）的底层引擎。
-*   后续可以在此基础上逐步接近 multiz 的完整行为，例如：
+*   替换分数已经复用 `libs::chain::SubMatrix` 做 base–base 的 sum-of-pairs 打分：默认使用 `hoxd55`，也支持通过 `--score-matrix` 读取 LASTZ 格式文件或预设名称（例如 `hoxd55`），并通过简单缩放与当前 `match_score` 的量级对齐。gap 支持三类模型：`constant`、`medium`/`loose`、以及显式仿射：
+    *   `constant`：直接使用 `gap_score` 作为统一线性 gap 罚分。
+    *   `medium`/`loose`：从 `GapCalc::medium`/`GapCalc::loose` 的 quasi-natural 曲线中取 `len=1,2` 两点，反推出一组近似的仿射参数 `(open, extend)`，再按 HoxD55 的打分尺度和 `match_score` 做线性缩放，在带状 DP 中用“open + extend × length”的形式累积 gap 罚分，从而实现长度依赖的 quasi-natural 近似。
+    *   显式仿射：当通过 `--gap-open`/`--gap-extend` 提供 open/extend 时，fas-multiz 在 DP 中直接使用这一组仿射参数（同样按 `match_score` 缩放）进行三状态的仿射 gap 计分。
+*   已提供 CLI 子命令 `pgr fas multiz`（见 8.5 小节），支持 `--mode core|union`、`--radius`、`--min-width`、`--gap-model`、`--gap-open`、`--gap-extend` 以及 `--score-matrix` 等参数；gap 配置风格与 `pgr psl chain` 保持一致，而替换矩阵也不再局限于内置的 HoxD55，可与链化阶段共享同一套 matrix 配置；`libs::fas_multiz` 仍作为底层引擎，便于在 pipeline 或其他子命令中复用。
+*   在 gap 行为上，仍然没有对端部 gap（leading/trailing gap）做单独的“首尾特化”规则，目前采用的是标准仿射 DP 的处理方式；如有需要，可以在未来再叠加端部 gap 放宽或偏置策略。
+*   在上述基础上，仍可以在后续逐步接近 multiz 的完整行为，例如：
     *   将 progressive DP 升级为真正的多输入 profile–profile sum-of-pairs 动态规划。
-    *   引入可配置的 gap 模型（如 quasi-natural/仿射 gap、端部 gap 特殊处理），并在必要时暴露替换矩阵配置，而不仅仅使用内置的 HoxD55。
-    *   在 DP 失败时更智能地选择降级策略（退回 `fas join`、标记窗口未合并等）。
+*   在 DP 失败时更智能地选择降级策略（退回 `fas join`、标记窗口未合并等）。
