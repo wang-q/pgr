@@ -1,4 +1,5 @@
 use crate::libs::chain::sub_matrix::SubMatrix;
+use crate::libs::chain::GapCalc;
 use crate::libs::fmt::fas::{FasBlock, FasEntry};
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -101,6 +102,9 @@ fn banded_align_refs(
     }
 
     let submat = SubMatrix::hoxd55();
+    let gap_calc = GapCalc::medium();
+    let gap_unit = gap_calc.calc(1, 0).max(1);
+    let gap_penalty = -((gap_unit as f64 / 150.0).round() as i32);
 
     let mut profiles: Vec<(&[u8], &[u8])> = Vec::new();
     let mut map_a: BTreeMap<&str, &FasEntry> = BTreeMap::new();
@@ -137,7 +141,7 @@ fn banded_align_refs(
                         if ba == b'-' && bb == b'-' {
                             continue;
                         } else if ba == b'-' || bb == b'-' {
-                            s += cfg.gap_score;
+                            s += gap_penalty;
                         } else {
                             let raw = submat.get_score(ba as char, bb as char);
                             s += raw / 50;
@@ -153,7 +157,7 @@ fn banded_align_refs(
 
             if i > 0 {
                 if let Some(pk) = idx(i - 1, j) {
-                    let cand = score[pk].saturating_add(cfg.gap_score);
+                    let cand = score[pk].saturating_add(gap_penalty);
                     if cand > best {
                         best = cand;
                         bt = 2;
@@ -163,7 +167,7 @@ fn banded_align_refs(
 
             if j > 0 {
                 if let Some(pk) = idx(i, j - 1) {
-                    let cand = score[pk].saturating_add(cfg.gap_score);
+                    let cand = score[pk].saturating_add(gap_penalty);
                     if cand > best {
                         best = cand;
                         bt = 3;
