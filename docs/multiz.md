@@ -151,3 +151,22 @@ multiz file1.maf file2.maf v [out1 out2]
 ### 7.3 结论
 *   `multiz` 适合构建复杂的、包含大量 Indel 和重排的全基因组比对 (WGA)。
 *   `pgr` 流程适合快速构建**核心基因组 (Core Genome)** 或处理**基于无 Gap 参考骨架**的数据。通过 `refine` 步骤，`pgr` 也能产出高质量的比对，但其依赖于“共同核心”的存在。
+
+### 7.4 在 pgr 中是否需要 Yama DP
+
+结合以上分析，可以给出一个比较实用的结论：
+
+*   对于当前 `pgr` 的主用例（构建严格交集的 core genome，比对区域由 `cover`/`slice` 控制，再由 `fas refine` 精修），**可以不实现 multiz 的 Yama 动态规划引擎**。
+    *   这一路线本质上假设：在共同核心区域内，各个 pairwise/MAF 中的参考序列 gap 模式差异不大，或者差异可以在后续局部 MSA 中被吸收。
+    *   代价是：更偏向“交集/核心”，不会像 multiz 那样追求覆盖所有可能的比对区域（union/mesh）。
+*   Yama DP 主要解决的是两类问题：
+    1.  **参考序列 gap 冲突**：不同 MAF 中参考序列的 gap pattern 不一致时，通过 DP 在合并过程中实时插入/调整 gap，使所有序列在同一参考坐标系下保持一致。
+    2.  **block 级冲突与 unused block 判定**：通过 sum-of-pairs 全局评分决定哪些 block 被合并，哪些落到 `out1`/`out2`。
+    在 `pgr` 当前的“Set Ops + Refine” 模式下，这两类问题分别由“交集窗口的选取”和“后续 MSA 的局部重比对”粗略处理，并不追求与 multiz 完全一致的行为。
+*   因此，**在如下前提下，舍弃 DP 是可接受的工程权衡**：
+    *   只关注严格交集区域，对边缘和稀有对齐不敏感。
+    *   参考骨架事先经过统一处理（同一版本、类似 masking/裁剪策略），大型重排通过 `chain/net` 等流程已先行解决。
+    *   `fas refine` 作用在规模适中的窗口上，用于修正机械堆叠引入的局部错位，而不负责重新定义 block 边界。
+*   若未来需要在 `pgr` 中支持接近 multiz 行为的 “Union/Mesh WGA” 模式，可以在现有 MAF 模块基础上新增一个 Rust 版的 profile–profile banded DP：
+    *   以新的子命令（例如 `pgr maf multiz`）实现。
+    *   与现有的 `p2m + join + refine` 并存：前者服务于 union/WGA，后者继续服务于 core/intersection。
