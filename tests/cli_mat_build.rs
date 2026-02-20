@@ -1,4 +1,4 @@
-use assert_cmd::Command;
+use assert_cmd::cargo::cargo_bin_cmd;
 use tempfile::TempDir;
 
 #[test]
@@ -15,7 +15,7 @@ D 14 9 7 0
 ";
     std::fs::write(&input, content)?;
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("mat")
         .arg("upgma")
         .arg(&input)
@@ -67,7 +67,7 @@ D 14 9 7 0
 ";
     std::fs::write(&input, content)?;
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("mat")
         .arg("nj")
         .arg(&input)
@@ -93,7 +93,7 @@ D 14 9 7 0
     // But we can just check if A and B are grouped together.
 
     // We can also verify via pipe
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let assert = cmd
         .arg("mat")
         .arg("nj")

@@ -1,4 +1,4 @@
-use assert_cmd::Command;
+use assert_cmd::cargo::cargo_bin_cmd;
 use std::fs;
 use std::path::PathBuf;
 use tempfile::TempDir;
@@ -22,7 +22,7 @@ fn test_histo_apq_base() -> anyhow::Result<()> {
     let input = get_path("histo", "input", "basic.psl");
     let output = temp.path().join("apq.histo");
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("psl")
         .arg("histo")
         .arg("--what")
@@ -57,7 +57,7 @@ fn test_histo_apq_multi() -> anyhow::Result<()> {
     let input = get_path("histo", "input", "basic.psl");
     let output = temp.path().join("apq_multi.histo");
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("psl")
         .arg("histo")
         .arg("--what")
@@ -84,7 +84,7 @@ fn test_histo_cover_spread() -> anyhow::Result<()> {
     let input = get_path("histo", "input", "basic.psl");
     let output = temp.path().join("cover.histo");
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("psl")
         .arg("histo")
         .arg("--what")
@@ -117,7 +117,7 @@ fn test_histo_id_spread() -> anyhow::Result<()> {
     let input = get_path("histo", "input", "basic.psl");
     let output = temp.path().join("id.histo");
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("psl")
         .arg("histo")
         .arg("--what")
@@ -146,7 +146,7 @@ fn test_to_chain_fix_strand() -> anyhow::Result<()> {
     let expected_output = get_path("to_chain", "expected", "example3.chain");
     let output = temp.path().join("out.chain");
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("psl")
         .arg("to-chain")
         .arg(&input)
@@ -168,7 +168,7 @@ fn test_to_chain_fail_neg_strand() -> anyhow::Result<()> {
     let input = get_path("to_chain", "input", "mtor.psl");
     let output = temp.path().join("out.chain");
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("psl")
         .arg("to-chain")
         .arg(&input)
@@ -187,7 +187,7 @@ fn test_to_chain_fail_neg_strand() -> anyhow::Result<()> {
 
 #[test]
 fn test_rc_mrna() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("psl")
         .arg("rc")
@@ -206,7 +206,7 @@ fn test_rc_mrna() -> anyhow::Result<()> {
 
 #[test]
 fn test_rc_trans() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("psl")
         .arg("rc")
@@ -234,7 +234,7 @@ fn test_lift_basic() -> anyhow::Result<()> {
     let sizes = get_path("lift", "", "chrom.sizes");
     let output = temp.path().join("lifted.psl");
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("psl")
         .arg("lift")
         .arg(&input)
@@ -277,7 +277,7 @@ fn test_lift_target() -> anyhow::Result<()> {
     let sizes = get_path("lift", "", "chrom.sizes");
     let output = temp.path().join("target_lifted.psl");
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("psl")
         .arg("lift")
         .arg(&input)
@@ -328,7 +328,7 @@ fn test_stats_basic() -> anyhow::Result<()> {
     let input = get_path("stats", "input", "stats_basic.psl");
     let output = temp.path().join("stats.tsv");
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("psl")
         .arg("stats")
         .arg(&input)
@@ -355,7 +355,7 @@ fn test_to_range_basic() -> anyhow::Result<()> {
     let input = get_path("lift", "", "test_fragment.psl");
     let output = temp.path().join("ranges.rg");
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("psl")
         .arg("to-range")
         .arg(&input)

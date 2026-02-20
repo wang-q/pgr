@@ -1,8 +1,8 @@
-use assert_cmd::Command;
+use assert_cmd::cargo::cargo_bin_cmd;
 
 #[test]
 fn command_topo_basic() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("topo")
@@ -25,7 +25,7 @@ fn command_topo_basic() -> anyhow::Result<()> {
 #[test]
 fn command_topo_remove_labels() -> anyhow::Result<()> {
     // Test with -I (remove internal labels) and -L (remove leaf labels)
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("topo")
@@ -46,7 +46,7 @@ fn command_topo_remove_labels() -> anyhow::Result<()> {
 #[test]
 fn command_topo_keep_bl() -> anyhow::Result<()> {
     // Test --bl (keep branch lengths)
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("topo")
@@ -66,7 +66,7 @@ fn command_topo_keep_bl() -> anyhow::Result<()> {
 #[test]
 fn command_topo_compat_simple() -> anyhow::Result<()> {
     // simple:newtree.nw
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("topo")
@@ -83,7 +83,7 @@ fn command_topo_compat_simple() -> anyhow::Result<()> {
 #[test]
 fn command_topo_compat_multiple() -> anyhow::Result<()> {
     // multiple:forest.nw
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("topo")
@@ -104,7 +104,7 @@ fn command_topo_compat_multiple() -> anyhow::Result<()> {
 #[test]
 fn command_topo_compat_rootedge() -> anyhow::Result<()> {
     // rootedge: edged_root.nw
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("topo")
@@ -121,7 +121,7 @@ fn command_topo_compat_rootedge() -> anyhow::Result<()> {
 #[test]
 fn command_topo_compat_i() -> anyhow::Result<()> {
     // I:-I newtree.nw
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("topo")
@@ -139,7 +139,7 @@ fn command_topo_compat_i() -> anyhow::Result<()> {
 #[test]
 fn command_topo_compat_l() -> anyhow::Result<()> {
     // L:-L newtree.nw
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("topo")
@@ -160,7 +160,7 @@ fn command_topo_compat_l() -> anyhow::Result<()> {
 #[test]
 fn command_topo_compat_li() -> anyhow::Result<()> {
     // LI:-LI newtree.nw
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("topo")
@@ -179,7 +179,7 @@ fn command_topo_compat_li() -> anyhow::Result<()> {
 #[test]
 fn command_topo_compat_bi() -> anyhow::Result<()> {
     // bI:-bI newtree.nw
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("topo")
@@ -201,7 +201,7 @@ fn command_topo_compat_bi() -> anyhow::Result<()> {
 #[test]
 fn command_topo_compat_bl() -> anyhow::Result<()> {
     // bL:-bL newtree.nw
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("topo")
@@ -220,7 +220,7 @@ fn command_topo_compat_bl() -> anyhow::Result<()> {
 #[test]
 fn command_topo_compat_bil() -> anyhow::Result<()> {
     // bIL:-bIL newtree.nw
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("topo")

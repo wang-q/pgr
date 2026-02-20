@@ -1,4 +1,4 @@
-use assert_cmd::Command;
+use assert_cmd::cargo::cargo_bin_cmd;
 use std::io::Write;
 use tempfile::Builder;
 
@@ -8,7 +8,7 @@ use tempfile::Builder;
 
 #[test]
 fn command_stat_basic() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("stat")
@@ -28,7 +28,7 @@ fn command_stat_basic() -> anyhow::Result<()> {
 
 #[test]
 fn command_stat_catarrhini() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("stat")
@@ -52,7 +52,7 @@ fn command_stat_catarrhini() -> anyhow::Result<()> {
 
 #[test]
 fn command_stat_style_line() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("stat")
@@ -73,7 +73,7 @@ fn command_stat_style_line() -> anyhow::Result<()> {
 
 #[test]
 fn command_stat_forest() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("stat")
@@ -112,7 +112,7 @@ fn command_stat_forest() -> anyhow::Result<()> {
 
 #[test]
 fn command_stat_stdin() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("stat")
@@ -130,7 +130,7 @@ fn command_stat_stdin() -> anyhow::Result<()> {
 
 #[test]
 fn command_stat_multi_tree_stdin() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("stat")
@@ -151,7 +151,7 @@ fn command_stat_outfile() -> anyhow::Result<()> {
     let temp_file = Builder::new().suffix(".tsv").tempfile()?;
     let outfile = temp_file.path().to_str().unwrap();
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("nwk")
         .arg("stat")
         .arg("tests/newick/catarrhini.nwk")
@@ -173,7 +173,7 @@ fn command_stat_outfile() -> anyhow::Result<()> {
 
 #[test]
 fn command_label_basic() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("label")
@@ -192,7 +192,7 @@ fn command_label_basic() -> anyhow::Result<()> {
 #[test]
 fn command_label_leaf_only() -> anyhow::Result<()> {
     // -I: Don't print internal labels (so print leaves only)
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("label")
@@ -212,7 +212,7 @@ fn command_label_leaf_only() -> anyhow::Result<()> {
 #[test]
 fn command_label_internal_only() -> anyhow::Result<()> {
     // -L: Don't print leaf labels (so print internal only)
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("label")
@@ -232,7 +232,7 @@ fn command_label_internal_only() -> anyhow::Result<()> {
 fn command_label_empty_internal() -> anyhow::Result<()> {
     // Test on a tree with no internal labels using -L
     // hg38.7way.nwk has no internal labels
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("label")
@@ -253,7 +253,7 @@ fn command_label_selection_node_monophyly() -> anyhow::Result<()> {
     // In catarrhini.nwk, Homininae is an internal node. Pongo is a leaf (genus).
     // -D includes descendants.
     // -M checks monophyly.
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("label")
@@ -281,7 +281,7 @@ fn command_label_selection_file() -> anyhow::Result<()> {
     writeln!(temp_file, "Pan")?;
     let list_file = temp_file.path().to_str().unwrap();
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("label")
@@ -301,7 +301,7 @@ fn command_label_selection_file() -> anyhow::Result<()> {
 #[test]
 fn command_label_regex() -> anyhow::Result<()> {
     // -r regex
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("label")
@@ -321,7 +321,7 @@ fn command_label_regex() -> anyhow::Result<()> {
 #[test]
 fn command_label_regex_case_insensitive() -> anyhow::Result<()> {
     // Verify case insensitivity explicitly
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("label")
@@ -342,7 +342,7 @@ fn command_label_regex_case_insensitive() -> anyhow::Result<()> {
 #[test]
 fn command_label_columns() -> anyhow::Result<()> {
     // -c columns
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("label")
@@ -363,7 +363,7 @@ fn command_label_columns() -> anyhow::Result<()> {
 #[test]
 fn command_label_formatting_root() -> anyhow::Result<()> {
     // --root
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("label")
@@ -381,7 +381,7 @@ fn command_label_formatting_root() -> anyhow::Result<()> {
 #[test]
 fn command_label_formatting_tab() -> anyhow::Result<()> {
     // -t (tab separated on one line)
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("label")
@@ -400,7 +400,7 @@ fn command_label_formatting_tab() -> anyhow::Result<()> {
 #[test]
 fn command_label_special_chars() -> anyhow::Result<()> {
     // Special chars (slash, space)
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("label")
@@ -418,7 +418,7 @@ fn command_label_special_chars() -> anyhow::Result<()> {
 #[test]
 fn command_label_multi_tree() -> anyhow::Result<()> {
     // Multiple trees in one file, -t option
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("label")
@@ -443,7 +443,7 @@ fn command_label_multi_tree() -> anyhow::Result<()> {
 
 #[test]
 fn command_distance_root() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("distance")
@@ -462,7 +462,7 @@ fn command_distance_root() -> anyhow::Result<()> {
 
 #[test]
 fn command_distance_parent() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("distance")
@@ -481,7 +481,7 @@ fn command_distance_parent() -> anyhow::Result<()> {
 
 #[test]
 fn command_distance_pairwise() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("distance")
@@ -501,7 +501,7 @@ fn command_distance_pairwise() -> anyhow::Result<()> {
 
 #[test]
 fn command_distance_lca() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("distance")
@@ -521,7 +521,7 @@ fn command_distance_lca() -> anyhow::Result<()> {
 
 #[test]
 fn command_distance_phylip() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("distance")
@@ -544,7 +544,7 @@ fn command_distance_phylip() -> anyhow::Result<()> {
 fn command_distance_stdin() -> anyhow::Result<()> {
     // Topological distance (stdin input)
     let input = "((A,B)C,D)E;";
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("distance")
@@ -566,7 +566,7 @@ fn command_distance_stdin() -> anyhow::Result<()> {
 
 #[test]
 fn command_distance_reference_dist_root() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("distance")
@@ -589,7 +589,7 @@ fn command_distance_reference_dist_root() -> anyhow::Result<()> {
 
 #[test]
 fn command_distance_reference_unnamed() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("distance")
@@ -613,7 +613,7 @@ fn command_distance_reference_unnamed() -> anyhow::Result<()> {
 
 #[test]
 fn command_distance_reference_lca() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("distance")
@@ -632,7 +632,7 @@ fn command_distance_reference_lca() -> anyhow::Result<()> {
 
 #[test]
 fn command_distance_reference_pairwise() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("distance")
@@ -655,7 +655,7 @@ fn command_distance_reference_pairwise() -> anyhow::Result<()> {
 
 #[test]
 fn command_distance_reference_phylip() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("distance")
@@ -682,7 +682,7 @@ fn command_distance_reference_phylip() -> anyhow::Result<()> {
 
 #[test]
 fn command_distance_float_noise() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("distance")
@@ -703,7 +703,7 @@ fn command_distance_float_noise() -> anyhow::Result<()> {
 
 #[test]
 fn command_distance_reference_parent() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("distance")

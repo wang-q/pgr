@@ -1,9 +1,9 @@
-use assert_cmd::Command;
+use assert_cmd::cargo::cargo_bin_cmd;
 use std::process::Stdio;
 
 #[test]
 fn command_indent() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("indent")
@@ -22,7 +22,7 @@ fn command_indent() -> anyhow::Result<()> {
 
 #[test]
 fn command_indent_compact() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("indent")
@@ -40,7 +40,7 @@ fn command_indent_compact() -> anyhow::Result<()> {
 
 #[test]
 fn command_indent_simple() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("indent")
@@ -57,7 +57,7 @@ fn command_indent_simple() -> anyhow::Result<()> {
 
 #[test]
 fn command_indent_optt() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("indent")
@@ -76,7 +76,7 @@ fn command_indent_optt() -> anyhow::Result<()> {
 
 #[test]
 fn command_indent_multiple_optc() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("indent")
@@ -96,7 +96,7 @@ fn command_indent_multiple_optc() -> anyhow::Result<()> {
 #[test]
 fn command_indent_stdin() -> anyhow::Result<()> {
     // 1. Default indentation
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("indent")
@@ -116,7 +116,7 @@ fn command_indent_stdin() -> anyhow::Result<()> {
 #[test]
 fn command_indent_special_chars() -> anyhow::Result<()> {
     // 1. Plus/Minus in labels (plusminus.nw)
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("indent")
@@ -131,7 +131,7 @@ fn command_indent_special_chars() -> anyhow::Result<()> {
     assert!(stdout.contains("HRV-A+A2"));
 
     // 2. Slash and Space (slash_and_space.nw)
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("indent")
@@ -152,7 +152,7 @@ fn command_indent_special_chars() -> anyhow::Result<()> {
 
 #[test]
 fn command_indent_multiple_trees() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("indent")
@@ -177,7 +177,7 @@ fn command_indent_multiple_trees() -> anyhow::Result<()> {
 
 #[test]
 fn command_comment() -> anyhow::Result<()> {
-    let bin = assert_cmd::cargo::cargo_bin("pgr");
+    let bin = assert_cmd::cargo::cargo_bin!("pgr");
     let mut cmd_color = std::process::Command::new(&bin);
     let mut child_color = cmd_color
         .arg("nwk")
@@ -217,7 +217,7 @@ fn command_comment() -> anyhow::Result<()> {
 
 #[test]
 fn command_comment_remove() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("comment")
@@ -237,7 +237,7 @@ fn command_comment_remove() -> anyhow::Result<()> {
 
 #[test]
 fn command_to_dot() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("to-dot")
@@ -255,7 +255,7 @@ fn command_to_dot() -> anyhow::Result<()> {
 
 #[test]
 fn command_to_forest() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("to-forest")
@@ -272,7 +272,7 @@ fn command_to_forest() -> anyhow::Result<()> {
 
 #[test]
 fn command_to_forest_bl() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("to-forest")
@@ -291,7 +291,7 @@ fn command_to_forest_bl() -> anyhow::Result<()> {
 #[test]
 fn command_tex() -> anyhow::Result<()> {
     // 1. Default (Cladogram)
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("to-tex")
@@ -304,7 +304,7 @@ fn command_tex() -> anyhow::Result<()> {
     assert!(stdout.contains("tier=4"));
 
     // 2. Phylogram (--bl)
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("to-tex")

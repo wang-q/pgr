@@ -1,4 +1,4 @@
-use assert_cmd::Command;
+use assert_cmd::cargo::cargo_bin_cmd;
 use predicates::prelude::*;
 use std::fs::File;
 use std::io::Write;
@@ -6,7 +6,7 @@ use tempfile::tempdir;
 
 #[test]
 fn command_axt_help() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("axt").arg("--help");
     cmd.assert()
         .success()
@@ -16,7 +16,7 @@ fn command_axt_help() -> anyhow::Result<()> {
 
 #[test]
 fn command_axt_sort_help() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("axt").arg("sort").arg("--help");
     cmd.assert()
         .success()
@@ -26,7 +26,7 @@ fn command_axt_sort_help() -> anyhow::Result<()> {
 
 #[test]
 fn command_axt_to_maf_help() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("axt").arg("to-maf").arg("--help");
     cmd.assert()
         .success()
@@ -58,7 +58,7 @@ TTTT
         f.write_all(input_content.as_bytes())?;
     }
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("axt")
         .arg("sort")
         .arg(&input_path)
@@ -114,7 +114,7 @@ chr19	63790860
         f.write_all(q_sizes_content.as_bytes())?;
     }
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("axt")
         .arg("to-maf")
         .arg(&input_path)
@@ -179,7 +179,7 @@ TTTT
         f.write_all(input_content.as_bytes())?;
     }
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("axt")
         .arg("sort")
         .arg("--by-score")
@@ -226,7 +226,7 @@ ACTG
         f.write_all(b"chr2 2000\n")?;
     }
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("axt")
         .arg("to-maf")
         .arg(&axt_path)
@@ -281,7 +281,7 @@ ACTG
         f.write_all(b"chr1 2000\nchr2 2000\n")?;
     }
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("axt")
         .arg("to-maf")
         .arg("--t-split")
@@ -346,7 +346,7 @@ MmUn_161829_35\t7971
         f.write_all(sizes_content.as_bytes())?;
     }
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("axt")
         .arg("to-psl")
         .arg(&input_path)
@@ -397,7 +397,7 @@ ACGT
         f.write_all(sizes_content.as_bytes())?;
     }
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("axt")
         .arg("to-fas")
         .arg(&sizes_path)
@@ -418,7 +418,7 @@ ACGT
 
 #[test]
 fn command_axt_to_fas_example() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("axt")
         .arg("to-fas")

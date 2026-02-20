@@ -1,11 +1,11 @@
-use assert_cmd::Command;
+use assert_cmd::cargo::cargo_bin_cmd;
 use predicates::prelude::*;
 use std::fs;
 use std::path::PathBuf;
 
 #[test]
 fn test_lav_to_psl() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let input = r#"#:lav
 s {
     "/path/target.fa" 1 1000
@@ -45,7 +45,7 @@ fn test_lav_to_psl_ucsc_old_style() -> anyhow::Result<()> {
 
 #[test]
 fn test_lav_to_psl_trim_ends_bug() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let input_path = PathBuf::from("tests/lav/trimEndsBug.lav");
 
     if !input_path.exists() {
@@ -77,7 +77,7 @@ fn test_lav_to_psl_lastz_pgr() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let assert = cmd
         .arg("lav")
         .arg("to-psl")
@@ -116,7 +116,7 @@ fn test_lav_to_psl_lastz_pgr() -> anyhow::Result<()> {
 }
 
 fn run_ucsc_test(name: &str) -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let input_path = PathBuf::from("tests/lav").join(format!("{}.lav", name));
     let expected_path = PathBuf::from("tests/lav").join(format!("{}.psl", name));
 

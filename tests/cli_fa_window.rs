@@ -1,10 +1,10 @@
-use assert_cmd::Command;
+use assert_cmd::cargo::cargo_bin_cmd;
 use predicates::prelude::*;
 use tempfile::TempDir;
 
 #[test]
 fn test_fa_window_basic() -> Result<(), Box<dyn std::error::Error>> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let temp_dir = TempDir::new()?;
     let output_file = temp_dir.path().join("output.fa");
 
@@ -50,7 +50,7 @@ fn test_fa_window_basic() -> Result<(), Box<dyn std::error::Error>> {
 
 #[test]
 fn test_fa_window_skip_n() -> Result<(), Box<dyn std::error::Error>> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let temp_dir = TempDir::new()?;
     let output_file = temp_dir.path().join("output.fa");
 
@@ -83,7 +83,7 @@ fn test_fa_window_skip_n() -> Result<(), Box<dyn std::error::Error>> {
 
 #[test]
 fn test_fa_window_chunk() -> Result<(), Box<dyn std::error::Error>> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let temp_dir = TempDir::new()?;
     let output_file = temp_dir.path().join("output.fa");
 
@@ -128,7 +128,7 @@ fn test_fa_window_chunk() -> Result<(), Box<dyn std::error::Error>> {
 
 #[test]
 fn test_fa_window_shuffle_chunk() -> Result<(), Box<dyn std::error::Error>> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let temp_dir = TempDir::new()?;
     let output_file = temp_dir.path().join("output.fa");
 
@@ -170,7 +170,7 @@ fn test_fa_window_shuffle_chunk() -> Result<(), Box<dyn std::error::Error>> {
 
 #[test]
 fn test_fa_window_real_file() -> Result<(), Box<dyn std::error::Error>> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let temp_dir = TempDir::new()?;
     let output_file = temp_dir.path().join("sakai_window.fa");
     
@@ -202,7 +202,7 @@ fn test_fa_window_real_file() -> Result<(), Box<dyn std::error::Error>> {
 
 #[test]
 fn test_fa_window_chunk_stdout_fail() -> Result<(), Box<dyn std::error::Error>> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let temp_dir = TempDir::new()?;
     let input_file = temp_dir.path().join("input.fa");
     std::fs::write(&input_file, ">seq1\nACGT\n")?;

@@ -1,8 +1,8 @@
-use assert_cmd::Command;
+use assert_cmd::cargo::cargo_bin_cmd;
 
 #[test]
 fn command_subtree_basic() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("subtree")
@@ -17,7 +17,7 @@ fn command_subtree_basic() -> anyhow::Result<()> {
 
     assert_eq!(stdout.lines().count(), 0);
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("subtree")
@@ -35,7 +35,7 @@ fn command_subtree_basic() -> anyhow::Result<()> {
     assert_eq!(stdout.lines().count(), 1);
     assert!(stdout.contains("((Human:0.007,Chimp:0.00684):0.027,Rhesus:0.037601):0.11;"));
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("subtree")
@@ -60,7 +60,7 @@ fn command_subtree_basic() -> anyhow::Result<()> {
 
 #[test]
 fn command_subtree_context() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("subtree")
@@ -82,7 +82,7 @@ fn command_subtree_context() -> anyhow::Result<()> {
 
 #[test]
 fn command_subtree_multiple() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("subtree")
@@ -104,7 +104,7 @@ fn command_subtree_multiple() -> anyhow::Result<()> {
 
 #[test]
 fn command_subtree_monophyly() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("subtree")
@@ -128,7 +128,7 @@ fn command_subtree_monophyly() -> anyhow::Result<()> {
 
 #[test]
 fn command_subtree_monophyly_fail() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("subtree")
@@ -150,7 +150,7 @@ fn command_subtree_monophyly_fail() -> anyhow::Result<()> {
 
 #[test]
 fn command_subtree_regex() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("subtree")
@@ -172,7 +172,7 @@ fn command_subtree_regex() -> anyhow::Result<()> {
 
 #[test]
 fn command_subtree_default() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("subtree")

@@ -1,9 +1,9 @@
+use assert_cmd::cargo::cargo_bin_cmd;
 use assert_cmd::prelude::*;
-use std::process::Command;
 
 #[test]
 fn command_rg_default() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("gff")
         .arg("rg")
@@ -20,7 +20,7 @@ fn command_rg_default() -> anyhow::Result<()> {
 
 #[test]
 fn command_rg_tag() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("gff")
         .arg("rg")
@@ -38,7 +38,7 @@ fn command_rg_tag() -> anyhow::Result<()> {
 
 #[test]
 fn command_rg_asm() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("gff")
         .arg("rg")
@@ -55,7 +55,7 @@ fn command_rg_asm() -> anyhow::Result<()> {
 
 #[test]
 fn command_rg_simplify() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("gff")
         .arg("rg")
@@ -72,7 +72,7 @@ fn command_rg_simplify() -> anyhow::Result<()> {
 
 #[test]
 fn command_rg_simplify_destructive() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("gff")
         .arg("rg")
@@ -95,7 +95,7 @@ fn command_rg_simplify_destructive() -> anyhow::Result<()> {
 
 #[test]
 fn command_rg_case_insensitive() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("gff")
         .arg("rg")
@@ -112,7 +112,7 @@ fn command_rg_case_insensitive() -> anyhow::Result<()> {
 
 #[test]
 fn command_rg_key() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("gff")
         .arg("rg")
@@ -130,7 +130,7 @@ fn command_rg_key() -> anyhow::Result<()> {
 
 #[test]
 fn command_rg_key_parent() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("gff")
         .arg("rg")
@@ -149,7 +149,7 @@ fn command_rg_key_parent() -> anyhow::Result<()> {
 
 #[test]
 fn command_rg_key_product() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("gff")
         .arg("rg")
@@ -168,7 +168,7 @@ fn command_rg_key_product() -> anyhow::Result<()> {
 
 #[test]
 fn command_rg_ss() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("gff")
         .arg("rg")

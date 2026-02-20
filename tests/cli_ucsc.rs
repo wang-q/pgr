@@ -1,4 +1,4 @@
-use assert_cmd::Command;
+use assert_cmd::cargo::cargo_bin_cmd;
 use std::fs;
 use std::path::PathBuf;
 use tempfile::TempDir;
@@ -37,7 +37,7 @@ fn test_lav_to_psl_lastz() -> anyhow::Result<()> {
     let expected_output = get_path("lastz.psl");
     let output = temp.path().join("out.psl");
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("lav")
         .arg("to-psl")
         .arg(&input)
@@ -69,7 +69,7 @@ fn test_2bit_size_pseudocat() -> anyhow::Result<()> {
     let expected_output = get_path("pseudocat.sizes");
     let output = temp.path().join("out.sizes");
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("2bit")
         .arg("size")
         .arg(&input)
@@ -96,7 +96,7 @@ fn test_chaining_psl_lastz() -> anyhow::Result<()> {
     let expected_output = get_path("pslChain/lastz.raw.chain");
     let output = temp.path().join("out.chain");
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("psl")
         .arg("chain")
         .arg(&t_2bit)
@@ -140,7 +140,7 @@ fn test_chain_anti_repeat_lastz() -> anyhow::Result<()> {
     let expected_output = get_path("pslChain/lastz.chain");
     let output = temp.path().join("out.chain");
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("chain")
         .arg("anti-repeat")
         .arg("--target")
@@ -171,7 +171,7 @@ fn test_chain_sort_lastz() -> anyhow::Result<()> {
     let expected_output = get_path("all.chain");
     let output = temp.path().join("out.chain");
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("chain")
         .arg("sort")
         .arg(&input)
@@ -201,7 +201,7 @@ fn test_chain_pre_net_lastz() -> anyhow::Result<()> {
     let expected_output = get_path("all.pre.chain");
     let output = temp.path().join("out.chain");
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("chain")
         .arg("pre-net")
         .arg(&input)
@@ -235,7 +235,7 @@ fn test_chain_net_lastz() -> anyhow::Result<()> {
     let output_t_net = temp.path().join("out.t.net");
     let output_q_net = temp.path().join("out.q.net");
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("chain")
         .arg("net")
         .arg(&input)
@@ -275,7 +275,7 @@ fn test_net_syntenic_lastz() -> anyhow::Result<()> {
     let expected_output = get_path("noClass.net");
     let output = temp.path().join("out.net");
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("net").arg("syntenic").arg(&input).arg(&output);
 
     cmd.assert().success();
@@ -296,7 +296,7 @@ fn test_net_subset_lastz() -> anyhow::Result<()> {
     let expected_output = get_path("subset.chain");
     let output = temp.path().join("out.chain");
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("net")
         .arg("subset")
         .arg(&net_input)
@@ -324,7 +324,7 @@ fn test_chain_stitch_lastz() -> anyhow::Result<()> {
     let expected_output = get_path("over.chain");
     let output = temp.path().join("out.chain");
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("chain").arg("stitch").arg(&input).arg(&output);
 
     cmd.assert().success();
@@ -354,7 +354,7 @@ fn test_net_split_lastz() -> anyhow::Result<()> {
     let input = get_path("noClass.net");
     let output_dir = temp.path().join("net");
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("net").arg("split").arg(&input).arg(&output_dir);
 
     cmd.assert().success();
@@ -384,7 +384,7 @@ fn test_net_to_axt_lastz() -> anyhow::Result<()> {
     let q_2bit = get_path("pseudopig.2bit");
     let output = temp.path().join("cat.axt");
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("net")
         .arg("to-axt")
         .arg(&net_input)
@@ -421,7 +421,7 @@ fn test_axt_sort_lastz() -> anyhow::Result<()> {
     let input_path = get_path("axtNet/cat.axt");
     let output = temp.path().join("cat.axt");
 
-    let mut cmd_sort = Command::cargo_bin("pgr")?;
+    let mut cmd_sort = cargo_bin_cmd!("pgr");
     cmd_sort
         .arg("axt")
         .arg("sort")

@@ -1,8 +1,8 @@
-use assert_cmd::Command;
+use assert_cmd::cargo::cargo_bin_cmd;
 
 #[test]
 fn command_order_basic() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("order")
@@ -13,7 +13,7 @@ fn command_order_basic() -> anyhow::Result<()> {
 
     assert!(stdout.contains("(C,(A,B));"));
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("order")
@@ -24,7 +24,7 @@ fn command_order_basic() -> anyhow::Result<()> {
 
     assert!(stdout.contains("((A,B),C);"));
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("order")
@@ -35,7 +35,7 @@ fn command_order_basic() -> anyhow::Result<()> {
 
     assert!(stdout.contains("((A,B),C);"));
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("order")
@@ -46,7 +46,7 @@ fn command_order_basic() -> anyhow::Result<()> {
 
     assert!(stdout.contains("(C,(B,A));"));
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("order")
@@ -63,7 +63,7 @@ fn command_order_basic() -> anyhow::Result<()> {
 
 #[test]
 fn command_order_list() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("order")
@@ -92,7 +92,7 @@ fn command_order_unnamed() -> anyhow::Result<()> {
     // (A,B) -> rep "A"
     // Root -> compares "C" vs "A", should be ((A,B),(C,D))
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("order")
@@ -116,7 +116,7 @@ fn command_order_species() -> anyhow::Result<()> {
     std::fs::copy("tests/newick/species.nwk", temp_path.join("species.nwk"))?;
 
     // Generate a list of labels from the tree
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("nwk")
         .arg("label")
         .arg("species.nwk")
@@ -126,7 +126,7 @@ fn command_order_species() -> anyhow::Result<()> {
         .output()?;
 
     // Order the tree using the generated list
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("order")
@@ -146,7 +146,7 @@ fn command_order_species() -> anyhow::Result<()> {
     std::fs::copy("tests/newick/pmxc.nwk", temp_path.join("pmxc.nwk"))?;
 
     // Order pmxc.nwk using the generated list
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("order")
@@ -172,7 +172,7 @@ fn command_order_default_catarrhini() -> anyhow::Result<()> {
     // Expected: test_nw_order_def.exp
     let expected = "(((Cercopithecus:10,(Macaca:10,Papio:10):20)Cercopithecinae:25,(Colobus:7,Simias:10)Colobinae:5)Cercopithecidae:10,(((Gorilla:16,(Homo:10,Pan:10)Hominini:10)Homininae:15,Pongo:30)Hominidae:15,Hylobates:20):10);";
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("order")
@@ -192,7 +192,7 @@ fn command_order_multiple_trees() -> anyhow::Result<()> {
 ((((((Cebus,((Cercopithecus,(Macaca,Papio)),Simias)),Hylobates),Pongo),Gorilla),Pan),Homo);
 ((((((Cebus,((Cercopithecus,(Macaca,Papio)),Simias)),Hylobates),Pongo),Gorilla),Pan),Homo);"#;
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("order")
@@ -212,7 +212,7 @@ fn command_order_descendants_tetrapoda() -> anyhow::Result<()> {
     // Expected: test_nw_order_num.exp (adjusted for Rust float formatting)
     let expected = "(Tetrao:0.015266,(Bombina:0.269848,(Didelphis:0.007148,((Bradypus:0.020167,(Procavia:0.019702,(Vulpes:0.008083,Orcinus:0.008289)84:0.008124)42:0.003924)16:0,((Sorex:0.01766,(Mesocricetus:0.011181,Tamias:0.049599)88:0.023597)32:0.000744,(Lepus:0.030777,(Homo:0.004051,(Papio:0,Hylobates:0.004076)42:0)99:0.012677)67:0.007717)26:0.006246)78:0.02125)71:0.013125)30:0.006278)100;";
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("order")
@@ -231,7 +231,7 @@ fn command_order_deladderize_verify() -> anyhow::Result<()> {
     // Expected: test_nw_order_dl.exp
     let expected = "(Petromyzon,((Xenopus,((Equus,Homo)Mammalia,Columba)Amniota)Tetrapoda,Carcharodon)Gnathostomata)Vertebrata;";
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("order")

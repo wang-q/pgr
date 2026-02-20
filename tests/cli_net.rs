@@ -1,4 +1,4 @@
-use assert_cmd::Command;
+use assert_cmd::cargo::cargo_bin_cmd;
 use predicates::prelude::*;
 use std::fs;
 use std::io::Write;
@@ -13,7 +13,7 @@ fn create_2bit(
     let bit_path = dir.path().join(format!("{}.2bit", name));
     fs::write(&fa_path, content)?;
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("fa")
         .arg("to-2bit")
         .arg(&fa_path)
@@ -28,7 +28,7 @@ fn create_2bit(
 
 #[test]
 fn test_net_syntenic_basic() -> Result<(), Box<dyn std::error::Error>> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
 
     // Create input net file
     let mut in_file = NamedTempFile::new()?;
@@ -67,7 +67,7 @@ fn test_net_syntenic_basic() -> Result<(), Box<dyn std::error::Error>> {
 
 #[test]
 fn test_net_syntenic_nested() -> Result<(), Box<dyn std::error::Error>> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
 
     // Nested structure to test syn/inv/nonSyn
     let mut in_file = NamedTempFile::new()?;
@@ -114,7 +114,7 @@ fn test_net_syntenic_nested() -> Result<(), Box<dyn std::error::Error>> {
 
 #[test]
 fn test_net_to_axt_basic() -> Result<(), Box<dyn std::error::Error>> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let temp = TempDir::new()?;
 
     // Create 2bit files
@@ -166,7 +166,7 @@ fn test_net_to_axt_basic() -> Result<(), Box<dyn std::error::Error>> {
 
 #[test]
 fn test_net_to_axt_reverse() -> Result<(), Box<dyn std::error::Error>> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let temp = TempDir::new()?;
 
     // T: ACGT...
@@ -228,7 +228,7 @@ fn test_net_to_axt_reverse() -> Result<(), Box<dyn std::error::Error>> {
 
 #[test]
 fn test_net_split() -> Result<(), Box<dyn std::error::Error>> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
 
     // Create input net file with multiple chromosomes
     let mut in_file = NamedTempFile::new()?;
@@ -271,7 +271,7 @@ fn test_net_split() -> Result<(), Box<dyn std::error::Error>> {
 
 #[test]
 fn test_net_subset_basic() -> Result<(), Box<dyn std::error::Error>> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
 
     // Chain: 0-1000.
     let mut chain_file = NamedTempFile::new()?;
@@ -314,7 +314,7 @@ fn test_net_subset_basic() -> Result<(), Box<dyn std::error::Error>> {
 
 #[test]
 fn test_net_subset_split_on_insert() -> Result<(), Box<dyn std::error::Error>> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
 
     // Chain: 0-1000.
     let mut chain_file = NamedTempFile::new()?;
@@ -366,7 +366,7 @@ fn test_net_subset_split_on_insert() -> Result<(), Box<dyn std::error::Error>> {
 
 #[test]
 fn test_net_filter_basic() -> Result<(), Box<dyn std::error::Error>> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
 
     // Create input net file
     let mut in_file = NamedTempFile::new()?;
@@ -392,7 +392,7 @@ fn test_net_filter_basic() -> Result<(), Box<dyn std::error::Error>> {
 
 #[test]
 fn test_net_filter_nested() -> Result<(), Box<dyn std::error::Error>> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
 
     // Nested structure
     let mut in_file = NamedTempFile::new()?;
@@ -423,7 +423,7 @@ fn test_net_filter_nested() -> Result<(), Box<dyn std::error::Error>> {
 
 #[test]
 fn test_net_class_basic() -> Result<(), Box<dyn std::error::Error>> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
 
     // Create input net file
     let mut in_file = NamedTempFile::new()?;

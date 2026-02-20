@@ -1,9 +1,10 @@
+use assert_cmd::cargo::cargo_bin_cmd;
 use assert_cmd::prelude::*;
 use std::process::Command;
 
 #[test]
 fn command_consensus_builtin() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("fas")
         .arg("consensus")
@@ -35,7 +36,7 @@ fn command_refine_msa() -> anyhow::Result<()> {
         eprintln!("bin = {:#?}", bin);
     }
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("fas")
         .arg("refine")
@@ -49,7 +50,7 @@ fn command_refine_msa() -> anyhow::Result<()> {
     assert!(stdout.contains("---"), "dashes added");
 
     // --outgroup
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("fas")
         .arg("refine")
@@ -63,7 +64,7 @@ fn command_refine_msa() -> anyhow::Result<()> {
     assert_eq!(stdout.lines().count(), 7);
     assert!(stdout.contains("CA-GT"), "outgroup trimmed");
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("fas")
         .arg("refine")
@@ -77,7 +78,7 @@ fn command_refine_msa() -> anyhow::Result<()> {
     assert!(stdout.contains("CA--GT"), "outgroup not trimmed");
 
     // quick
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("fas")
         .arg("refine")
@@ -96,7 +97,7 @@ fn command_refine_msa() -> anyhow::Result<()> {
 
 #[test]
 fn command_refine_poa() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("fas")
         .arg("refine")
@@ -118,7 +119,7 @@ fn command_refine_poa() -> anyhow::Result<()> {
 
 #[test]
 fn command_refine_default() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("fas")
         .arg("refine")
@@ -150,7 +151,7 @@ fn command_refine_spoa() -> anyhow::Result<()> {
         eprintln!("bin = {:#?}", bin);
     }
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("fas")
         .arg("refine")
@@ -184,7 +185,7 @@ fn command_refine_mafft() -> anyhow::Result<()> {
         eprintln!("bin = {:#?}", bin);
     }
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("fas")
         .arg("refine")
@@ -218,7 +219,7 @@ fn command_refine_muscle() -> anyhow::Result<()> {
         eprintln!("bin = {:#?}", bin);
     }
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("fas")
         .arg("refine")
@@ -244,7 +245,7 @@ fn command_refine_comparison() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let mut cmd_builtin = Command::cargo_bin("pgr")?;
+    let mut cmd_builtin = cargo_bin_cmd!("pgr");
     let output_builtin = cmd_builtin
         .arg("fas")
         .arg("refine")
@@ -254,7 +255,7 @@ fn command_refine_comparison() -> anyhow::Result<()> {
         .output()?;
     let stdout_builtin = String::from_utf8(output_builtin.stdout)?;
 
-    let mut cmd_spoa = Command::cargo_bin("pgr")?;
+    let mut cmd_spoa = cargo_bin_cmd!("pgr");
     let output_spoa = cmd_spoa
         .arg("fas")
         .arg("refine")
@@ -304,7 +305,7 @@ fn command_consensus_spoa() -> anyhow::Result<()> {
         eprintln!("bin = {:#?}", bin);
     }
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("fas")
         .arg("consensus")
@@ -324,7 +325,7 @@ fn command_consensus_spoa() -> anyhow::Result<()> {
 #[test]
 fn command_consensus_params() -> anyhow::Result<()> {
     // Test with custom parameters
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("fas")
         .arg("consensus")
@@ -360,7 +361,7 @@ fn command_consensus_comparison() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let mut cmd_builtin = Command::cargo_bin("pgr")?;
+    let mut cmd_builtin = cargo_bin_cmd!("pgr");
     let output_builtin = cmd_builtin
         .arg("fas")
         .arg("consensus")
@@ -370,7 +371,7 @@ fn command_consensus_comparison() -> anyhow::Result<()> {
         .output()?;
     let stdout_builtin = String::from_utf8(output_builtin.stdout)?;
 
-    let mut cmd_spoa = Command::cargo_bin("pgr")?;
+    let mut cmd_spoa = cargo_bin_cmd!("pgr");
     let output_spoa = cmd_spoa
         .arg("fas")
         .arg("consensus")
@@ -390,7 +391,7 @@ fn command_consensus_comparison() -> anyhow::Result<()> {
 
 #[test]
 fn command_consensus_options() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("fas")
         .arg("consensus")
@@ -402,7 +403,7 @@ fn command_consensus_options() -> anyhow::Result<()> {
     assert!(stdout.contains(">consensus\n"), "simple name");
     assert!(stdout.contains(">consensus.I("), "fas name");
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("fas")
         .arg("consensus")

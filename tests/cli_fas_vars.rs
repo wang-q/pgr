@@ -1,3 +1,4 @@
+use assert_cmd::cargo::cargo_bin_cmd;
 use assert_cmd::prelude::*;
 use calamine::Reader;
 use std::process::Command;
@@ -5,7 +6,7 @@ use tempfile::NamedTempFile;
 
 #[test]
 fn command_variation() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("fas")
         .arg("variation")
@@ -15,7 +16,7 @@ fn command_variation() -> anyhow::Result<()> {
 
     assert_eq!(stdout.lines().count(), 81);
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("fas")
         .arg("variation")
@@ -34,7 +35,7 @@ fn command_to_xlsx() -> anyhow::Result<()> {
     let temp_file = NamedTempFile::new()?.into_temp_path();
     let temp_path = temp_file.to_str().unwrap();
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("fas")
         .arg("to-xlsx")
@@ -66,7 +67,7 @@ fn command_to_xlsx_indel() -> anyhow::Result<()> {
     let temp_file = NamedTempFile::new()?.into_temp_path();
     let temp_path = temp_file.to_str().unwrap();
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("fas")
         .arg("to-xlsx")
@@ -98,7 +99,7 @@ fn command_to_xlsx_nocomplex() -> anyhow::Result<()> {
     let temp_file = NamedTempFile::new()?.into_temp_path();
     let temp_path = temp_file.to_str().unwrap();
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("fas")
         .arg("to-xlsx")
@@ -131,7 +132,7 @@ fn command_to_xlsx_nosingle() -> anyhow::Result<()> {
     let temp_file = NamedTempFile::new()?.into_temp_path();
     let temp_path = temp_file.to_str().unwrap();
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("fas")
         .arg("to-xlsx")
@@ -164,7 +165,7 @@ fn command_to_xlsx_minmax() -> anyhow::Result<()> {
     let temp_file = NamedTempFile::new()?.into_temp_path();
     let temp_path = temp_file.to_str().unwrap();
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("fas")
         .arg("to-xlsx")
@@ -200,7 +201,7 @@ fn command_to_xlsx_outgroup() -> anyhow::Result<()> {
     let temp_file = NamedTempFile::new()?.into_temp_path();
     let temp_path = temp_file.to_str().unwrap();
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("fas")
         .arg("to-xlsx")

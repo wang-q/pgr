@@ -1,11 +1,11 @@
-use assert_cmd::Command;
+use assert_cmd::cargo::cargo_bin_cmd;
 use predicates::prelude::*;
 use std::fs;
 use tempfile::TempDir;
 
 #[test]
 fn command_invalid() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("fa").arg("foobar");
     cmd.assert()
         .failure()
@@ -16,7 +16,7 @@ fn command_invalid() -> anyhow::Result<()> {
 
 #[test]
 fn file_doesnt_provided() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("fa").arg("size");
     cmd.assert()
         .failure()
@@ -27,7 +27,7 @@ fn file_doesnt_provided() -> anyhow::Result<()> {
 
 #[test]
 fn file_doesnt_exist() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("fa").arg("size").arg("tests/file/doesnt/exist");
     cmd.assert()
         .failure()
@@ -43,7 +43,7 @@ fn command_fa_size() -> anyhow::Result<()> {
 
     fs::write(&input, ">seq1\nACGT\n>seq2\nACGTACGT\n")?;
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd.arg("fa").arg("size").arg(&input).output()?;
 
     let stdout = String::from_utf8(output.stdout)?;
@@ -55,7 +55,7 @@ fn command_fa_size() -> anyhow::Result<()> {
 
 #[test]
 fn command_fa_size_file() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("fa")
         .arg("size")
@@ -81,7 +81,7 @@ fn command_fa_size_file() -> anyhow::Result<()> {
 
 #[test]
 fn command_fa_size_gz() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("fa")
         .arg("size")
@@ -106,7 +106,7 @@ fn command_fa_size_no_ns() -> anyhow::Result<()> {
     // seq2: 4 bases, 0 Ns -> 4 bases
     fs::write(&input, ">seq1\nACGTNNNNACGT\n>seq2\nACGT\n")?;
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("fa")
         .arg("size")
@@ -131,7 +131,7 @@ fn command_fa_some() -> anyhow::Result<()> {
     fs::write(&input, ">seq1\nACGT\n>seq2\nACGTACGT\n>seq3\nTTTT\n")?;
     fs::write(&list, "seq1\nseq3\n")?;
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("fa")
         .arg("some")
         .arg(&input)
@@ -158,7 +158,7 @@ fn command_fa_some_invert() -> anyhow::Result<()> {
     fs::write(&input, ">seq1\nACGT\n>seq2\nACGTACGT\n>seq3\nTTTT\n")?;
     fs::write(&list, "seq1\nseq3\n")?;
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("fa")
         .arg("some")
         .arg(&input)
@@ -178,7 +178,7 @@ fn command_fa_some_invert() -> anyhow::Result<()> {
 
 #[test]
 fn command_order() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("fa")
         .arg("order")
@@ -196,7 +196,7 @@ fn command_order() -> anyhow::Result<()> {
 
 #[test]
 fn command_one() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("fa")
         .arg("one")
@@ -213,7 +213,7 @@ fn command_one() -> anyhow::Result<()> {
 
 #[test]
 fn command_masked() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("fa")
         .arg("masked")
@@ -228,7 +228,7 @@ fn command_masked() -> anyhow::Result<()> {
 
 #[test]
 fn command_mask() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("fa")
         .arg("mask")
@@ -240,7 +240,7 @@ fn command_mask() -> anyhow::Result<()> {
     assert!(stdout.contains("read0\ntcgtttaacccaaatcaagg"), "read0");
     assert!(stdout.contains("read2\natagcaagct"), "read2");
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("fa")
         .arg("mask")
@@ -258,7 +258,7 @@ fn command_mask() -> anyhow::Result<()> {
 
 #[test]
 fn command_rc() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("fa")
         .arg("rc")
@@ -268,7 +268,7 @@ fn command_rc() -> anyhow::Result<()> {
 
     assert!(stdout.contains("GgacTgcggCTagAA"), "read46");
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("fa")
         .arg("rc")
@@ -286,7 +286,7 @@ fn command_rc() -> anyhow::Result<()> {
 
 #[test]
 fn command_count() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("fa")
         .arg("count")
@@ -302,7 +302,7 @@ fn command_count() -> anyhow::Result<()> {
 
 #[test]
 fn command_replace() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("fa")
         .arg("replace")
@@ -315,7 +315,7 @@ fn command_replace() -> anyhow::Result<()> {
     assert!(stdout.contains(">359"), "read0");
     assert!(!stdout.contains(">read0"), "read0");
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("fa")
         .arg("replace")
@@ -336,7 +336,7 @@ fn command_replace() -> anyhow::Result<()> {
 // faops filter -l 0 -a 1 -u <(cat tests/fasta/ufasta.fa tests/fasta/ufasta.fa) stdout
 #[test]
 fn command_filter() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("fa")
         .arg("filter")
@@ -352,7 +352,7 @@ fn command_filter() -> anyhow::Result<()> {
     assert!(!stdout.contains(">read0"), "read0");
     assert!(stdout.contains(">read20"), "read20");
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("fa")
         .arg("filter")
@@ -373,7 +373,7 @@ fn command_filter() -> anyhow::Result<()> {
 fn command_filter_fmt() -> anyhow::Result<()> {
     // faops filter -N tests/fasta/filter.fa stdout
     // faops treats '-' as N, which is incorrect
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("fa")
         .arg("filter")
@@ -386,7 +386,7 @@ fn command_filter_fmt() -> anyhow::Result<()> {
     assert!(stdout.contains(">iupac\nANNG"), "iupac");
     assert!(stdout.contains(">dash\nA-NG"), "dash not changed");
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("fa")
         .arg("filter")
@@ -398,7 +398,7 @@ fn command_filter_fmt() -> anyhow::Result<()> {
     assert!(!stdout.contains(">dash\nA-RG"), "dash");
     assert!(stdout.contains(">dash\nARG"), "dash");
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("fa")
         .arg("filter")
@@ -410,7 +410,7 @@ fn command_filter_fmt() -> anyhow::Result<()> {
     assert!(!stdout.contains(">upper\nAtcG"), "upper");
     assert!(stdout.contains(">upper\nATCG"), "upper");
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("fa")
         .arg("filter")
@@ -427,7 +427,7 @@ fn command_filter_fmt() -> anyhow::Result<()> {
 
 #[test]
 fn command_dedup() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("fa")
         .arg("dedup")
@@ -438,7 +438,7 @@ fn command_dedup() -> anyhow::Result<()> {
     assert_eq!(stdout.lines().count(), 8);
     assert!(!stdout.contains(">read0 some text"));
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("fa")
         .arg("dedup")
@@ -450,7 +450,7 @@ fn command_dedup() -> anyhow::Result<()> {
     assert_eq!(stdout.lines().count(), 10);
     assert!(stdout.contains(">read0 some text"));
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("fa")
         .arg("dedup")
@@ -462,7 +462,7 @@ fn command_dedup() -> anyhow::Result<()> {
     assert_eq!(stdout.lines().count(), 6);
     assert!(!stdout.contains(">read1"));
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("fa")
         .arg("dedup")
@@ -475,7 +475,7 @@ fn command_dedup() -> anyhow::Result<()> {
     assert_eq!(stdout.lines().count(), 4);
     assert!(!stdout.contains(">read2"));
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("fa")
         .arg("dedup")
@@ -488,7 +488,7 @@ fn command_dedup() -> anyhow::Result<()> {
     assert_eq!(stdout.lines().count(), 2);
     assert!(!stdout.contains(">read3"));
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("fa")
         .arg("dedup")
@@ -512,7 +512,7 @@ fn command_split_name() -> anyhow::Result<()> {
     let tempdir = TempDir::new()?;
     let tempdir_str = tempdir.path().to_str().unwrap();
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("fa")
         .arg("split")
         .arg("name")
@@ -535,7 +535,7 @@ fn command_split_about() -> anyhow::Result<()> {
     let tempdir = TempDir::new()?;
     let tempdir_str = tempdir.path().to_str().unwrap();
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("fa")
         .arg("split")
         .arg("about")
@@ -571,7 +571,7 @@ fn command_fa_n50() -> anyhow::Result<()> {
             .replace("N", "N".repeat(100).as_str()),
     )?;
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd.arg("fa").arg("n50").arg(&input).output()?;
 
     let stdout = String::from_utf8(output.stdout)?;
@@ -591,7 +591,7 @@ fn command_fa_n50_stats() -> anyhow::Result<()> {
             .replace("N", "N".repeat(100).as_str()),
     )?;
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("fa")
         .arg("n50")
@@ -618,7 +618,7 @@ fn command_fa_n50_stats() -> anyhow::Result<()> {
 #[test]
 fn command_fa_n50_comprehensive() -> anyhow::Result<()> {
     // display header
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("fa")
         .arg("n50")
@@ -630,7 +630,7 @@ fn command_fa_n50_comprehensive() -> anyhow::Result<()> {
     assert!(stdout.contains("N50\t314"), "line 1");
 
     // doesn't display header
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("fa")
         .arg("n50")
@@ -644,7 +644,7 @@ fn command_fa_n50_comprehensive() -> anyhow::Result<()> {
     assert!(stdout.contains("314"), "line 1");
 
     // set genome size (NG50)
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("fa")
         .arg("n50")
@@ -659,7 +659,7 @@ fn command_fa_n50_comprehensive() -> anyhow::Result<()> {
     assert!(stdout.contains("297"), "line 1");
 
     // sum and average of size
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("fa")
         .arg("n50")
@@ -674,7 +674,7 @@ fn command_fa_n50_comprehensive() -> anyhow::Result<()> {
     assert!(stdout.contains("314\n9317\n186.34"), "line 1,2,3");
 
     // N10, N90, E-size
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("fa")
         .arg("n50")
@@ -692,7 +692,7 @@ fn command_fa_n50_comprehensive() -> anyhow::Result<()> {
     assert!(stdout.contains("516\n112\n314.70\n"), "line 1,2,3");
 
     // transposed
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("fa")
         .arg("n50")
@@ -715,7 +715,7 @@ fn command_fa_n50_comprehensive() -> anyhow::Result<()> {
 
 #[test]
 fn command_six_frame() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("fa")
         .arg("six-frame")
@@ -729,7 +729,7 @@ fn command_six_frame() -> anyhow::Result<()> {
     assert!(stdout.contains(">seq1(-):3-26|frame=2"));
     assert!(stdout.contains("TIYLYPIP"));
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("fa")
         .arg("six-frame")
@@ -741,7 +741,7 @@ fn command_six_frame() -> anyhow::Result<()> {
 
     assert_eq!(stdout.lines().count(), 12);
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("fa")
         .arg("six-frame")
@@ -754,7 +754,7 @@ fn command_six_frame() -> anyhow::Result<()> {
 
     assert_eq!(stdout.lines().count(), 4);
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("fa")
         .arg("six-frame")

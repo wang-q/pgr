@@ -1,4 +1,4 @@
-use assert_cmd::Command;
+use assert_cmd::cargo::cargo_bin_cmd;
 use predicates::prelude::*;
 use std::io::Write;
 
@@ -8,7 +8,7 @@ const CATARRHINI_LABELED: &str = "(((Homo,Pan)Hominini,Gorilla)Homininae,Pongo)H
 
 #[test]
 fn command_prune_remove_single_leaf() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("nwk")
         .arg("prune")
         .arg("stdin")
@@ -23,7 +23,7 @@ fn command_prune_remove_single_leaf() -> anyhow::Result<()> {
 
 #[test]
 fn command_prune_remove_multiple_leaves() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("nwk")
         .arg("prune")
         .arg("stdin")
@@ -40,7 +40,7 @@ fn command_prune_remove_multiple_leaves() -> anyhow::Result<()> {
 
 #[test]
 fn command_prune_remove_all_leaves_in_clade() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("nwk")
         .arg("prune")
         .arg("stdin")
@@ -60,7 +60,7 @@ fn command_prune_remove_all_leaves_in_clade() -> anyhow::Result<()> {
 #[test]
 fn command_prune_remove_all_nodes_bug() -> anyhow::Result<()> {
     // Remove all nodes
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("nwk")
         .arg("prune")
         .arg("stdin")
@@ -82,7 +82,7 @@ fn command_prune_remove_all_nodes_bug() -> anyhow::Result<()> {
 #[test]
 fn command_prune_regex_match() -> anyhow::Result<()> {
     // Regex
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("nwk")
         .arg("prune")
         .arg("stdin")
@@ -97,7 +97,7 @@ fn command_prune_regex_match() -> anyhow::Result<()> {
 
 #[test]
 fn command_prune_keep_single_leaf() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("nwk")
         .arg("prune")
         .arg("stdin")
@@ -114,7 +114,7 @@ fn command_prune_keep_single_leaf() -> anyhow::Result<()> {
 #[test]
 fn command_prune_multiple_trees() -> anyhow::Result<()> {
     let multi = format!("{}\n{}", CATARRHINI, ABCDE_NWK);
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("nwk")
         .arg("prune")
         .arg("stdin")
@@ -139,7 +139,7 @@ fn command_prune_file_remove_single() -> anyhow::Result<()> {
         writeln!(f, "Homo")?;
     }
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("nwk")
         .arg("prune")
         .arg("stdin")
@@ -162,7 +162,7 @@ fn command_prune_file_remove_multiple() -> anyhow::Result<()> {
         writeln!(f, "Pan")?;
     }
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("nwk")
         .arg("prune")
         .arg("stdin")
@@ -186,7 +186,7 @@ fn command_prune_file_remove_all() -> anyhow::Result<()> {
         writeln!(f, "Gorilla")?;
     }
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("nwk")
         .arg("prune")
         .arg("stdin")
@@ -208,7 +208,7 @@ fn command_prune_file_keep_single() -> anyhow::Result<()> {
         writeln!(f, "Homo")?;
     }
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("nwk")
         .arg("prune")
         .arg("stdin")
@@ -224,7 +224,7 @@ fn command_prune_file_keep_single() -> anyhow::Result<()> {
 
 #[test]
 fn command_prune_keep_internal_node_by_label() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("nwk")
         .arg("prune")
         .arg("stdin")
@@ -241,7 +241,7 @@ fn command_prune_keep_internal_node_by_label() -> anyhow::Result<()> {
 #[test]
 fn command_prune_keep_internal_node_by_name() -> anyhow::Result<()> {
     // Keep internal node by name, check descendants
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("nwk")
         .arg("prune")
         .arg("stdin")
@@ -259,7 +259,7 @@ fn command_prune_keep_internal_node_by_name() -> anyhow::Result<()> {
 
 #[test]
 fn command_prune() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("prune")
@@ -280,7 +280,7 @@ fn command_prune() -> anyhow::Result<()> {
 
 #[test]
 fn command_prune_invert() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("nwk")
         .arg("prune")

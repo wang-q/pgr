@@ -1,7 +1,7 @@
+use assert_cmd::cargo::cargo_bin_cmd;
 use assert_cmd::prelude::*;
 use predicates::prelude::*;
 use std::fs;
-use std::process::Command;
 use tempfile::TempDir;
 
 #[test]
@@ -9,7 +9,7 @@ fn command_fa_gz() -> anyhow::Result<()> {
     let tempdir = TempDir::new()?;
     let tempdir_str = tempdir.path().to_str().unwrap();
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("fa")
         .arg("gz")
         .arg("tests/index/final.contigs.fa")
@@ -38,7 +38,7 @@ fn command_fa_gz_consistency() -> anyhow::Result<()> {
     let outfile_base = "cmp.fa";
 
     // Run pgr fa gz
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("fa")
         .arg("gz")
         .arg(infile)
@@ -82,7 +82,7 @@ fn command_fa_gz_level() -> anyhow::Result<()> {
     let out_best = temp.path().join("best.fa.gz");
 
     // Level 1
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("fa")
         .arg("gz")
         .arg(infile)
@@ -94,7 +94,7 @@ fn command_fa_gz_level() -> anyhow::Result<()> {
         .success();
 
     // Level 9
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("fa")
         .arg("gz")
         .arg(infile)
@@ -122,7 +122,7 @@ fn command_fa_gz_reindex() -> anyhow::Result<()> {
     let indexfile = temp.path().join("work.fa.gz.gzi");
 
     // 1. Create a valid BGZF file first
-    let mut cmd_compress = Command::cargo_bin("pgr")?;
+    let mut cmd_compress = cargo_bin_cmd!("pgr");
     cmd_compress
         .arg("fa")
         .arg("gz")
@@ -135,7 +135,7 @@ fn command_fa_gz_reindex() -> anyhow::Result<()> {
     assert!(bgzf_file.exists());
 
     // 2. Run reindex on the generated BGZF file
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("fa")
         .arg("gz")
         .arg(bgzf_file.to_str().unwrap())
@@ -155,7 +155,7 @@ fn command_fa_gz_reindex_fail_not_bgzf() -> anyhow::Result<()> {
     let infile_dst = temp.path().join("ufasta.fa");
     fs::copy(infile_src, &infile_dst)?;
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("fa")
         .arg("gz")
         .arg(&infile_dst)
@@ -169,7 +169,7 @@ fn command_fa_gz_reindex_fail_not_bgzf() -> anyhow::Result<()> {
 
 #[test]
 fn command_range() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("fa")
         .arg("range")
@@ -194,7 +194,7 @@ fn command_range() -> anyhow::Result<()> {
 
 #[test]
 fn command_range_r() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("fa")
         .arg("range")
@@ -222,7 +222,7 @@ fn command_range_update() -> anyhow::Result<()> {
     )?;
 
     // First run, create index
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("fa")
         .arg("range")
         .arg(format!("{}/test.fa", tempdir_str))
@@ -237,7 +237,7 @@ fn command_range_update() -> anyhow::Result<()> {
     std::thread::sleep(std::time::Duration::from_secs(1));
 
     // Force update index with --update
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     let output = cmd
         .arg("fa")
         .arg("range")

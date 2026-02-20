@@ -1,4 +1,4 @@
-use assert_cmd::Command;
+use assert_cmd::cargo::cargo_bin_cmd;
 use std::fs;
 use tempfile::tempdir;
 
@@ -22,7 +22,7 @@ fn test_chain_net_basic() -> Result<(), Box<dyn std::error::Error>> {
     fs::write(&t_sizes_path, "chr1 1000\n")?;
     fs::write(&q_sizes_path, "chr2 1000\n")?;
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("chain")
         .arg("net")
         .arg(chain_path.to_str().unwrap())
@@ -73,7 +73,7 @@ fn test_chain_anti_repeat() -> Result<(), Box<dyn std::error::Error>> {
     let t_2bit_path = dir.path().join("target.2bit");
     let q_2bit_path = dir.path().join("query.2bit");
 
-    let mut cmd_2bit = Command::cargo_bin("pgr")?;
+    let mut cmd_2bit = cargo_bin_cmd!("pgr");
     cmd_2bit
         .arg("fa")
         .arg("to-2bit")
@@ -82,7 +82,7 @@ fn test_chain_anti_repeat() -> Result<(), Box<dyn std::error::Error>> {
         .arg(t_2bit_path.to_str().unwrap());
     cmd_2bit.assert().success();
 
-    let mut cmd_2bit = Command::cargo_bin("pgr")?;
+    let mut cmd_2bit = cargo_bin_cmd!("pgr");
     cmd_2bit
         .arg("fa")
         .arg("to-2bit")
@@ -105,7 +105,7 @@ fn test_chain_anti_repeat() -> Result<(), Box<dyn std::error::Error>> {
 
     fs::write(&chain_path, format!("{}{}{}", c1, c2, c3))?;
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("chain")
         .arg("anti-repeat")
         .arg("--target")
@@ -147,7 +147,7 @@ fn test_chain_sort() -> Result<(), Box<dyn std::error::Error>> {
     let c2 = "chain 200 chr1 100 + 20 30 chr2 100 + 20 30 2\n10\n\n";
     fs::write(&chain2_path, c2)?;
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("chain")
         .arg("sort")
         .arg(chain1_path.to_str().unwrap())
@@ -195,7 +195,7 @@ fn test_chain_sort_input_list() -> Result<(), Box<dyn std::error::Error>> {
     );
     fs::write(&list_path, list_content)?;
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("chain")
         .arg("sort")
         .arg("--input-list")
@@ -234,7 +234,7 @@ fn test_chain_sort_mixed_inputs() -> Result<(), Box<dyn std::error::Error>> {
     let list_content = format!("{}\n", chain1_path.to_str().unwrap());
     fs::write(&list_path, list_content)?;
 
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = cargo_bin_cmd!("pgr");
     cmd.arg("chain")
         .arg("sort")
         .arg("--input-list")
