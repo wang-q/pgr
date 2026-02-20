@@ -263,3 +263,67 @@ multiz file1.maf file2.maf v [out1 out2]
 *   **区间计算**：复用 `fas cover` 和 `spanr` 的区间逻辑，定义候选合并窗口。
 *   **比对与 refine**：在新实现的 fas-multiz 中完成 profile 合并后，调用现有 `pgr fas refine` 作为可选的精修步骤。
 *   **下游分析**：输出 `.fas` 可以继续被 `fas stat`, `fas to-vcf`, `fas split` 等命令消费，与当前 `p2m + join + refine` 的结果处于同一生态。
+
+### 8.8 libs 实现草案
+
+为了方便后续在 Rust 中实现 fas-multiz，这里给出一个初步的 libs 级别设计。
+
+*   **模块位置**：
+    *   新增 `src/libs/fas_multiz.rs`，在 `src/libs/mod.rs` 中通过 `pub mod fas_multiz;` 暴露。
+*   **依赖复用**：
+    *   解析 `.fas`：复用 `libs::fmt::fas` 中的 `FasEntry`、`FasBlock`、`next_fas_block` 等。
+    *   区间坐标：继续使用 `intspan::Range`。
+    *   打分与碱基类型：复用 `libs::nt::NT_VAL` 以及 `libs::chain` 中已有的替换矩阵和 gap 参数。
+    *   简单统计/评估：如有需要，可调用 `libs::alignment::alignment_stat` 做 sanity check。
+*   **核心类型**：
+    *   合并模式：
+        ```rust
+        pub enum FasMultizMode {
+            Core,
+            Union,
+        }
+        ```
+    *   配置结构：
+        ```rust
+        pub struct FasMultizConfig {
+            pub ref_name: String,
+            pub radius: usize,
+            pub min_width: usize,
+            pub mode: FasMultizMode,
+        }
+        ```
+    *   窗口定义：
+        ```rust
+        pub struct Window {
+            pub chr: String,
+            pub start: u64,
+            pub end: u64,
+        }
+        ```
+*   **对外 API 草图**：
+    *   文件级合并（供 CLI 使用）：
+        ```rust
+        pub fn merge_fas_files(
+            ref_name: &str,
+            infiles: &[impl AsRef<Path>],
+            windows: &[Window],
+            cfg: &FasMultizConfig,
+        ) -> anyhow::Result<Vec<FasBlock>>;
+        ```
+        *   读入多个 `.fas` 文件，根据给定窗口把 block 分组，对每个窗口调用 `merge_window`，最终返回按参考坐标排序的一组 `FasBlock`。
+    *   单窗口合并（算法核心）：
+        ```rust
+        pub fn merge_window(
+            ref_name: &str,
+            window: &Window,
+            blocks_per_input: &[Vec<FasBlock>],
+            cfg: &FasMultizConfig,
+        ) -> Option<FasBlock>;
+        ```
+        *   输入是某个窗口内来自多个文件的 block 集合，输出是一个合并后的 block（或在无法合理合并时返回 `None`）。
+*   **merge_window 内部步骤概述**：
+    *   将每个输入中参考物种的 `FasEntry` 映射到统一的参考坐标网格上，得到多条略有差异的参考轨迹。
+    *   在参考轨迹之间执行带状 profile 对齐（只在参考行上做 DP），解决不同输入在参考 gap 上的冲突，得到一条合并后的“共识参考轨迹”。
+    *   按照合并后的参考轨迹，对每个输入的非参考序列进行重采样：在缺失列处插入 gap，在 Union 模式下允许在参考 gap 位置引入新列，在 Core 模式下则尽量丢弃不一致列。
+    *   将重采样后的各物种序列按列拼接，构造新的 `FasBlock`，并为参考 entry 生成合适的 `Range`（可以取窗口的 Range 或交集 Range）。
+    *   如果在某个窗口内 profile 对齐得分过低或冲突过多，则返回 `None`，由调用者决定使用简单 `fas join` 还是跳过该窗口。
