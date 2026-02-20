@@ -299,6 +299,24 @@ fn merge_two_blocks_with_dp(
     }
 }
 
+fn merge_blocks_with_dp(
+    ref_name: &str,
+    blocks: &[&FasBlock],
+    cfg: &FasMultizConfig,
+) -> Option<FasBlock> {
+    if blocks.len() < 2 {
+        return None;
+    }
+
+    let mut acc = merge_two_blocks_with_dp(ref_name, [blocks[0], blocks[1]], cfg)?;
+
+    for block in &blocks[2..] {
+        acc = merge_two_blocks_with_dp(ref_name, [&acc, block], cfg)?;
+    }
+
+    Some(acc)
+}
+
 pub fn merge_window(
     ref_name: &str,
     window: &Window,
@@ -331,8 +349,8 @@ pub fn merge_window(
         return None;
     }
 
-    if blocks.len() == 2 {
-        if let Some(block) = merge_two_blocks_with_dp(ref_name, [blocks[0], blocks[1]], cfg) {
+    if blocks.len() >= 2 {
+        if let Some(block) = merge_blocks_with_dp(ref_name, &blocks, cfg) {
             return Some(block);
         }
     }
@@ -934,5 +952,46 @@ mod tests {
         for (a, b) in merged_explicit.iter().zip(merged_auto.iter()) {
             assert_eq!(a.names, b.names);
         }
+    }
+
+    #[test]
+    fn merge_window_multi_input_dp_progressive() {
+        let (ref_entry1, ref_name1, ref_header1) = make_entry("ref", 1, 4, "AC--GT");
+        let (a_entry1, a_name1, a_header1) = make_entry("A", 1, 4, "AC--GT");
+        let block1 = make_block(vec![
+            (ref_entry1.clone(), ref_name1.clone(), ref_header1.clone()),
+            (a_entry1, a_name1, a_header1),
+        ]);
+
+        let (ref_entry2, ref_name2, ref_header2) = make_entry("ref", 1, 4, "A-C-GT");
+        let (b_entry2, b_name2, b_header2) = make_entry("B", 1, 4, "A-C-GT");
+        let block2 = make_block(vec![
+            (ref_entry2.clone(), ref_name2.clone(), ref_header2.clone()),
+            (b_entry2, b_name2, b_header2),
+        ]);
+
+        let (ref_entry3, ref_name3, ref_header3) = make_entry("ref", 1, 4, "ACG-T-");
+        let (c_entry3, c_name3, c_header3) = make_entry("C", 1, 4, "ACG-T-");
+        let block3 = make_block(vec![
+            (ref_entry3, ref_name3, ref_header3),
+            (c_entry3, c_name3, c_header3),
+        ]);
+
+        let blocks_per_input = vec![vec![block1], vec![block2], vec![block3]];
+
+        let cfg = default_config(FasMultizMode::Union);
+        let window = Window {
+            chr: "ref".to_string(),
+            start: 1,
+            end: 4,
+        };
+
+        let merged = merge_window("ref", &window, &blocks_per_input, &cfg).unwrap();
+        let mut names = merged.names.clone();
+        names.sort();
+        assert_eq!(
+            names,
+            vec!["A".to_string(), "B".to_string(), "C".to_string(), "ref".to_string()]
+        );
     }
 }
