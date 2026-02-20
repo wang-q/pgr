@@ -1,5 +1,4 @@
 use crate::libs::fmt::fas::{FasBlock, FasEntry};
-use intspan::Range;
 use std::collections::BTreeMap;
 use std::path::Path;
 
@@ -195,6 +194,7 @@ pub fn merge_fas_files(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use intspan::Range;
 
     fn make_entry(name: &str, start: i32, end: i32, seq: &str) -> (FasEntry, String, String) {
         let range = Range::from(name, start, end);

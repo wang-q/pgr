@@ -1,5 +1,4 @@
 use assert_cmd::cargo::cargo_bin_cmd;
-use assert_cmd::prelude::*;
 use predicates::prelude::*;
 use std::fs;
 use tempfile::TempDir;

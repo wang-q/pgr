@@ -1,7 +1,4 @@
 use assert_cmd::cargo::cargo_bin_cmd;
-use assert_cmd::prelude::*;
-use std::process::Command;
-
 #[test]
 fn command_consensus_builtin() -> anyhow::Result<()> {
     let mut cmd = cargo_bin_cmd!("pgr");
