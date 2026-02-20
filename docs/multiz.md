@@ -448,7 +448,7 @@ multiz file1.maf file2.maf v [out1 out2]
     *   `medium`/`loose`：从 `GapCalc::medium`/`GapCalc::loose` 的 quasi-natural 曲线中取 `len=1,2` 两点，反推出一组近似的仿射参数 `(open, extend)`，再按 HoxD55 的打分尺度和 `match_score` 做线性缩放，在带状 DP 中用“open + extend × length”的形式累积 gap 罚分，从而实现长度依赖的 quasi-natural 近似。
     *   显式仿射：当通过 `--gap-open`/`--gap-extend` 提供 open/extend 时，fas-multiz 在 DP 中直接使用这一组仿射参数（同样按 `match_score` 缩放）进行三状态的仿射 gap 计分。
 *   已提供 CLI 子命令 `pgr fas multiz`（见 8.5 小节），支持 `--mode core|union`、`--radius`、`--min-width`、`--gap-model`、`--gap-open`、`--gap-extend` 以及 `--score-matrix` 等参数；gap 配置风格与 `pgr psl chain` 保持一致，而替换矩阵也不再局限于内置的 HoxD55，可与链化阶段共享同一套 matrix 配置；`libs::fas_multiz` 仍作为底层引擎，便于在 pipeline 或其他子命令中复用。
-*   在 gap 行为上，仍然没有对端部 gap（leading/trailing gap）做单独的“首尾特化”规则，目前采用的是标准仿射 DP 的处理方式；如有需要，可以在未来再叠加端部 gap 放宽或偏置策略。
+*   在 gap 行为上，对端部 gap（leading/trailing gap）增加了简单的“首尾特化”规则：在带状 DP 回溯得到参考物种之间的对齐路径后，会自动裁剪掉首尾连续的单侧 gap 列（即仅一侧为碱基、另一侧为 gap 的前缀/后缀列），使这些端部 gap 在行为上视为 free end gaps，而中间区域仍按标准仿射 gap 计分；若需要更复杂的端部 gap 放宽或偏置策略，可以在这一基础上继续细化。
 *   在上述基础上，仍可以在后续逐步接近 multiz 的完整行为，例如：
     *   将 progressive DP 升级为真正的多输入 profile–profile sum-of-pairs 动态规划。
 *   在 DP 失败时更智能地选择降级策略（退回 `fas join`、标记窗口未合并等）。

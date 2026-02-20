@@ -175,7 +175,6 @@ fn banded_align_refs(
             let mut best = i32::MIN;
             let mut bt = 0i8;
 
-            let mut m_val = i32::MIN;
             if i > 0 && j > 0 {
                 if let Some(pk) = idx(i - 1, j - 1) {
                     let mut s = 0;
@@ -191,8 +190,8 @@ fn banded_align_refs(
                             s += raw / 50;
                         }
                     }
-                    m_val = score[pk].saturating_add(s);
-                    best = m_val;
+                    let cand = score[pk].saturating_add(s);
+                    best = cand;
                     bt = 1;
                 }
             }
@@ -287,6 +286,34 @@ fn banded_align_refs(
     if map_a.len() != map_b.len() || map_a.is_empty() {
         return None;
     }
+
+    let mut left = 0usize;
+    let mut right = map_a.len();
+
+    while left < right {
+        let a = map_a[left];
+        let b = map_b[left];
+        if a.is_some() && b.is_some() {
+            break;
+        }
+        left += 1;
+    }
+
+    while right > left {
+        let a = map_a[right - 1];
+        let b = map_b[right - 1];
+        if a.is_some() && b.is_some() {
+            break;
+        }
+        right -= 1;
+    }
+
+    if left >= right {
+        return None;
+    }
+
+    let map_a = map_a[left..right].to_vec();
+    let map_b = map_b[left..right].to_vec();
 
     Some((map_a, map_b))
 }
