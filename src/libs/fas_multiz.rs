@@ -14,6 +14,9 @@ pub struct FasMultizConfig {
     pub radius: usize,
     pub min_width: usize,
     pub mode: FasMultizMode,
+    pub match_score: i32,
+    pub mismatch_score: i32,
+    pub gap_score: i32,
 }
 
 #[derive(Clone, Debug)]
@@ -53,7 +56,11 @@ fn ref_overlaps_window(entry: &FasEntry, window: &Window) -> bool {
     start < window.end && end > window.start
 }
 
-fn banded_align_refs(a: &FasEntry, b: &FasEntry, radius: usize) -> Option<(Vec<Option<usize>>, Vec<Option<usize>>)> {
+fn banded_align_refs(
+    a: &FasEntry,
+    b: &FasEntry,
+    cfg: &FasMultizConfig,
+) -> Option<(Vec<Option<usize>>, Vec<Option<usize>>)> {
     use std::cmp::min;
 
     let sa = a.seq();
@@ -66,14 +73,10 @@ fn banded_align_refs(a: &FasEntry, b: &FasEntry, radius: usize) -> Option<(Vec<O
         return None;
     }
 
-    let band = radius.max(((n as isize - m as isize).unsigned_abs()) as usize);
+    let band = cfg.radius.max(((n as isize - m as isize).unsigned_abs()) as usize);
 
     let mut score = vec![i32::MIN; (n + 1) * (2 * band + 1)];
     let mut trace = vec![0i8; (n + 1) * (2 * band + 1)];
-
-    let match_score = 2i32;
-    let mismatch_score = -1i32;
-    let gap_score = -2i32;
 
     let idx = |i: usize, j: usize| -> Option<usize> {
         let band_start = if i > band { i - band } else { 0 };
@@ -111,9 +114,9 @@ fn banded_align_refs(a: &FasEntry, b: &FasEntry, radius: usize) -> Option<(Vec<O
             if i > 0 && j > 0 {
                 if let Some(pk) = idx(i - 1, j - 1) {
                     let s = if sa[i - 1] == sb[j - 1] {
-                        match_score
+                        cfg.match_score
                     } else {
-                        mismatch_score
+                        cfg.mismatch_score
                     };
                     let cand = score[pk].saturating_add(s);
                     if cand > best {
@@ -125,7 +128,7 @@ fn banded_align_refs(a: &FasEntry, b: &FasEntry, radius: usize) -> Option<(Vec<O
 
             if i > 0 {
                 if let Some(pk) = idx(i - 1, j) {
-                    let cand = score[pk].saturating_add(gap_score);
+                    let cand = score[pk].saturating_add(cfg.gap_score);
                     if cand > best {
                         best = cand;
                         bt = 2;
@@ -135,7 +138,7 @@ fn banded_align_refs(a: &FasEntry, b: &FasEntry, radius: usize) -> Option<(Vec<O
 
             if j > 0 {
                 if let Some(pk) = idx(i, j - 1) {
-                    let cand = score[pk].saturating_add(gap_score);
+                    let cand = score[pk].saturating_add(cfg.gap_score);
                     if cand > best {
                         best = cand;
                         bt = 3;
@@ -217,7 +220,7 @@ fn merge_two_blocks_with_dp(
         return None;
     }
 
-    let (map_a, map_b) = banded_align_refs(ref_a, ref_b, cfg.radius)?;
+    let (map_a, map_b) = banded_align_refs(ref_a, ref_b, cfg)?;
 
     let ref_range = ref_a.range().clone();
 
@@ -647,6 +650,9 @@ mod tests {
             radius: 5,
             min_width: 1,
             mode,
+            match_score: 2,
+            mismatch_score: -1,
+            gap_score: -2,
         }
     }
 
