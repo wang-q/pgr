@@ -168,7 +168,19 @@ pub fn parse_fas_block(
 
         let entry = FasEntry::from(&range, &seq);
         block_entries.push(entry);
-        block_names.push(range.name().to_string());
+
+        let name = if let Some(idx) = header.find("|species=") {
+            let species = &header[idx + "|species=".len()..];
+            let species = species
+                .split(|c| c == '|' || c == ' ' || c == '\t')
+                .next()
+                .unwrap_or("")
+                .to_string();
+            species
+        } else {
+            range.name().to_string()
+        };
+        block_names.push(name);
         block_headers.push(header.to_string());
     }
 

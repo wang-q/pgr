@@ -15,6 +15,7 @@ pub mod phylo;
 pub mod poa;
 pub mod psl;
 pub mod twobit;
+pub mod fas_multiz;
 
 // Re-export modules moved to fmt for backward compatibility
 pub use fmt::axt;
