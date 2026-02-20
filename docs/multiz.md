@@ -327,3 +327,29 @@ multiz file1.maf file2.maf v [out1 out2]
     *   按照合并后的参考轨迹，对每个输入的非参考序列进行重采样：在缺失列处插入 gap，在 Union 模式下允许在参考 gap 位置引入新列，在 Core 模式下则尽量丢弃不一致列。
     *   将重采样后的各物种序列按列拼接，构造新的 `FasBlock`，并为参考 entry 生成合适的 `Range`（可以取窗口的 Range 或交集 Range）。
     *   如果在某个窗口内 profile 对齐得分过低或冲突过多，则返回 `None`，由调用者决定使用简单 `fas join` 还是跳过该窗口。
+
+### 8.9 与 multiz-multiz 源码的异同
+
+这里的 fas-multiz 方案是从 `multiz-multiz` 的源码和算法抽象出来的一个 “pgr 版本”，既保留了一些核心思想，也刻意做了简化和调整。
+
+*   **共同点（继承 multiz 的部分）**：
+    *   都是以参考物种坐标为主轴，在参考坐标上定义窗口/段落，再在每个窗口内做 profile 合并。
+    *   都采用带状 DP（或类似思想）限制搜索空间，在参考附近做局部优化，而不是在全空间做 MSA。
+    *   在 union/mesh 场景下，都试图尽可能保留不同输入中的真实比对关系，只在必要时删除或压缩冲突列。
+    *   支持“核心交集 + 扩展区域”的思路：核心部分倾向于各输入一致，边缘部分允许有差异并通过 DP 协调。
+*   **差异（pgr 有意做的调整）**：
+    *   **工作层级不同**：
+        *   multiz-multiz 在 MAF 层操作，直接对齐两个 MAF profile。
+        *   fas-multiz 在 block FA 层操作，输入是多个 `.fas` 文件，链路由 `pgr axt/maf to-fas` 标准化过，因此语法和元数据更简单。
+    *   **DP 引擎复杂度不同**：
+        *   multiz-multiz 的 `yama` 部分实现了一套完整的 profile–profile DP 引擎，并考虑了较丰富的状态与回溯。
+        *   fas-multiz 只在参考轨迹上做简化的带状对齐：重点解决参考 gap 冲突和列选择问题，不追求完全复刻 yama 的所有细节状态。
+    *   **实现位置与职责边界不同**：
+        *   multiz-multiz 是一个专门服务于 MAF/多序列比对构建的独立 C 项目。
+        *   fas-multiz 被设计为 `pgr` 的一个 libs 模块（`libs::fas_multiz`），与现有 `fas cover/slice/join/refine` 等命令协作，而不是独立的 pipeline。
+    *   **输入准备和预处理链路不同**：
+        *   multiz-multiz 直接消费上游链路输出的 MAF（如 blastz/last 等）。
+        *   在 pgr 中，上游的 pairwise 结果通常已经通过若干步骤转换、规范成 `.fas`，fas-multiz 可以假设这些输入已经做过一次清洗/规整。
+    *   **目标偏好与使用场景不同**：
+        *   multiz-multiz 更偏“通用 WGA 引擎”，追求在大范围基因组上做 mesh 式对齐。
+        *   fas-multiz 明确被设计成 pgr 的一个“union/mesh complement”：在 core/intersection 流程之外，提供一个额外的 union 视角，并保持与现有 `p2m + join + refine` 在交集区域内尽量兼容。
