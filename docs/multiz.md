@@ -328,7 +328,7 @@ multiz file1.maf file2.maf v [out1 out2]
         *   输入是某个窗口内来自多个文件的 block 集合，输出是一个合并后的 block（或在无法合理合并时返回 `None`）。
 *   **merge_window 内部步骤概述**：
     *   将每个输入中参考物种的 `FasEntry` 映射到统一的参考坐标网格上，得到多条略有差异的参考轨迹。
-    *   在参考轨迹之间执行带状 profile 对齐（只在参考行上做 DP），解决不同输入在参考 gap 上的冲突，得到一条合并后的“共识参考轨迹”（当前实现只在两个输入时启用，且打分模型较简化，仅依赖参考行匹配/错配和 gap 罚分）。
+    *   在参考轨迹之间执行带状 profile 对齐（只在参考行上做 DP），解决不同输入在参考 gap 上的冲突，得到一条合并后的“共识参考轨迹”（当前实现对两个及以上输入采用 progressive 带状 DP，打分模型为可配置的 match/mismatch/gap 标量分数）。
     *   按照合并后的参考轨迹，对每个输入的非参考序列进行重采样：在缺失列处插入 gap，在 Union 模式下允许在参考 gap 位置引入新列，在 Core 模式下则尽量丢弃不一致列。
     *   将重采样后的各物种序列按列拼接，构造新的 `FasBlock`，并为参考 entry 生成合适的 `Range`（可以取窗口的 Range 或交集 Range）。
     *   如果在某个窗口内 profile 对齐得分过低或冲突过多，则返回 `None`，由调用者决定使用简单 `fas join` 还是跳过该窗口。
@@ -347,8 +347,8 @@ multiz file1.maf file2.maf v [out1 out2]
         *   multiz-multiz 在 MAF 层操作，直接对齐两个 MAF profile。
         *   fas-multiz 在 block FA 层操作，输入是多个 `.fas` 文件，链路由 `pgr axt/maf to-fas` 标准化过，因此语法和元数据更简单。
     *   **DP 引擎复杂度不同**：
-        *   multiz-multiz 的 `yama` 部分实现了一套完整的 profile–profile DP 引擎，并考虑了较丰富的状态与回溯。
-        *   fas-multiz 只在参考轨迹上做简化的带状对齐：重点解决参考 gap 冲突和列选择问题，不追求完全复刻 yama 的所有细节状态。
+        *   multiz-multiz 的 `yama` 部分实现了一套完整的 profile–profile DP 引擎，并考虑了较丰富的状态与回溯（sum-of-pairs + 替换矩阵 + 仿射 gap 模型）。
+        *   fas-multiz 只在参考轨迹上做简化的带状对齐：采用 progressive pairwise DP 和可配置的 match/mismatch/gap 标量打分，重点解决参考 gap 冲突和列选择问题，不追求完全复刻 yama 的所有细节状态。
     *   **实现位置与职责边界不同**：
         *   multiz-multiz 是一个专门服务于 MAF/多序列比对构建的独立 C 项目。
         *   fas-multiz 被设计为 `pgr` 的一个 libs 模块（`libs::fas_multiz`），与现有 `fas cover/slice/join/refine` 等命令协作，而不是独立的 pipeline。
@@ -366,9 +366,9 @@ multiz file1.maf file2.maf v [out1 out2]
 **实现位置与对外 API**
 
 *   模块位置：`src/libs/fas_multiz.rs`，通过 `pub mod fas_multiz;` 暴露为 `pgr::libs::fas_multiz`。
-*   核心类型：与 8.8 草案一致：
+*   核心类型：与 8.8 草案基本一致，并在配置中加入了 DP 打分参数：
     *   `FasMultizMode { Core, Union }`
-    *   `FasMultizConfig { ref_name, radius, min_width, mode }`
+    *   `FasMultizConfig { ref_name, radius, min_width, mode, match_score, mismatch_score, gap_score }`
     *   `Window { chr, start, end }`
 *   对外函数：
     *   `merge_window(ref_name, window, blocks_per_input, cfg) -> Option<FasBlock>`
@@ -385,33 +385,35 @@ multiz file1.maf file2.maf v [out1 out2]
         *   `Core`：只保留“在所有输入中都有参考覆盖”的窗口（严格交集）。
         *   `Union`：只要有任意一个输入在该窗口有参考覆盖即可保留（并集风格）。
 
-**窗口内合并逻辑（两输入时的带状 DP）**
+**窗口内合并逻辑（带状 DP 合并）**
 
 *   一般情况（任意输入个数）：
-    *   对于给定窗口，先从每个输入文件中选出在窗口内与参考重叠的 block。
-    *   若没有 block 或（在 Core 模式下）某些输入找不到参考 block，则直接返回 `None`。
-    *   当未启用 DP 或 DP 失败时，执行“保守合并”：
-        *   要求所有候选 block 的参考 entry 完全相同（包含 gap），否则返回 `None`。
-        *   `Core` 模式下只保留在所有输入中都存在的物种；`Union` 模式下保留物种并集。
-*   特殊情况：**恰好两个输入 `.fas` 时的带状 DP 合并**：
-    *   若窗口内选出的 block 数量为 2，则优先调用内部函数 `merge_two_blocks_with_dp`：
-        *   首先检查两输入的参考 entry 在去掉 `'-'` 后的序列是否完全相同（ungapped equal），否则不尝试 DP。
+    *   对于给定窗口，先从每个输入文件中选出在窗口内与参考重叠的 block，组成 `blocks`。
+    *   若 `blocks` 为空，或（在 Core 模式下）某些输入找不到参考 block，则直接返回 `None`。
+    *   若 `blocks.len() >= 2`，先尝试 progressive 带状 DP 合并：
+        *   使用内部函数 `merge_blocks_with_dp`，按顺序对 `blocks` 做两两 DP 合并。
+        *   每一步都要求参与合并的参考 entry 在去掉 `'-'` 后的序列完全相同（ungapped equal），否则这一轮 DP 失败。
         *   在参考行上调用 `banded_align_refs`：
             *   只在 diagonal ± `radius` 的带内做 DP。
-            *   使用简单的 match/mismatch/gap 打分，并不依赖外部替换矩阵。
+            *   使用来自 `FasMultizConfig` 的 `match_score`/`mismatch_score`/`gap_score` 进行打分（标量模型），并不依赖外部替换矩阵。
         *   将 DP 生成的参考轨迹映射到所有物种：
-            *   对每一列，优先从第一个输入的对应位置取碱基，不存在时再从第二个输入取；两边都缺失则填 `'-'`。
-            *   `Core` 模式下只合并同时出现在两个输入中的物种；`Union` 模式下允许物种只存在于其中一个输入。
-        *   参考物种的 `Range` 继承自第一个输入；其他物种继承其来自的原始 block。
-    *   如果带状 DP 无法在带宽内找到路径或构造出的结果为空，则自动回退到上面所述的“保守合并”逻辑，以保持行为安全可预期。
+            *   对每一列，优先从前一个累积结果（或第一个输入）的对应位置取碱基，不存在时再从当前输入取；两边都缺失则填 `'-'`。
+            *   `Core` 模式下只合并在当前累积结果和新输入中都存在的物种；`Union` 模式下允许物种只存在于其中一边。
+        *   在 Core 模式下，任一步 DP 失败都会导致整个 progressive 合并失败，随后回退到“保守合并”逻辑。
+        *   在 Union 模式下，如果某一步 DP 失败，则跳过该输入，继续尝试将后续输入与当前累积结果进行 DP 合并；成功的部分会被保留，无法对齐的输入则在该窗口中被忽略。
+        *   progressive DP 完成后（无论是否跳过了一些输入），若至少完成了一次成功的 DP 合并，则直接返回最终累积的 block。
+    *   如果 progressive DP 入口阶段就失败（例如前两条参考轨迹 ungapped 不同，或带宽内找不到合理路径），则自动回退到“保守合并”逻辑：
+        *   要求所有候选 block 的参考 entry 完全相同（包含 gap），否则返回 `None`。
+        *   `Core` 模式下只保留在所有输入中都存在的物种；`Union` 模式下保留物种并集。
+        *   参考物种的 `Range` 继承自模板 block；其他物种继承其来自的原始 block。
 
 **当前实现的局限与后续扩展方向**
 
-*   目前 DP 只在**两个输入**时启用，多输入场景仍然采用“严格相同参考 + Core/Union 交并集”的合并策略。
+*   目前 DP 采用 progressive pairwise 策略，对多个输入的合并顺序敏感，尚未实现真正意义上的多维 profile–profile sum-of-pairs 动态规划。
 *   DP 只在参考行上评分与对齐，非参考物种是沿参考轨迹做重采样和选择，尚未实现真正意义上的 full profile–profile sum-of-pairs 打分。
-*   打分模型是固定的简单 match/mismatch/gap，不使用外部替换矩阵或 context-dependent gap 罚分。
+*   打分模型仍是统一的 match/mismatch/gap 标量分数（虽然可通过 `FasMultizConfig` 配置），尚未支持按碱基类型区分的替换矩阵或 context-dependent gap 罚分。
 *   CLI 子命令 `pgr fas multiz` 目前尚未实现，`libs::fas_multiz` 仅提供库级 API，适合作为后续 pipeline（或新子命令）的底层引擎。
 *   后续可以在此基础上逐步接近 multiz 的完整行为，例如：
-    *   将带状 DP 推广到多于两个输入的 progressive profile 合并。
-    *   引入可配置的打分矩阵与 gap 模型。
+    *   将 progressive DP 升级为真正的多输入 profile–profile sum-of-pairs 动态规划。
+    *   引入可配置的替换矩阵与更丰富的 gap 模型（如仿射 gap、端部 gap 特殊处理）。
     *   在 DP 失败时更智能地选择降级策略（退回 `fas join`、标记窗口未合并等）。
