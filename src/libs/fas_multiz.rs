@@ -313,8 +313,23 @@ fn merge_blocks_with_dp(
 
     let mut acc = merge_two_blocks_with_dp(ref_name, [blocks[0], blocks[1]], cfg)?;
 
-    for block in &blocks[2..] {
-        acc = merge_two_blocks_with_dp(ref_name, [&acc, block], cfg)?;
+    if blocks.len() == 2 {
+        return Some(acc);
+    }
+
+    match cfg.mode {
+        FasMultizMode::Core => {
+            for &block in &blocks[2..] {
+                acc = merge_two_blocks_with_dp(ref_name, [&acc, block], cfg)?;
+            }
+        }
+        FasMultizMode::Union => {
+            for &block in &blocks[2..] {
+                if let Some(next) = merge_two_blocks_with_dp(ref_name, [&acc, block], cfg) {
+                    acc = next;
+                }
+            }
+        }
     }
 
     Some(acc)
