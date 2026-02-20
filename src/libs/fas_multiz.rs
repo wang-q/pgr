@@ -1,3 +1,4 @@
+use crate::libs::chain::sub_matrix::SubMatrix;
 use crate::libs::fmt::fas::{FasBlock, FasEntry};
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -96,6 +97,8 @@ fn banded_align_refs(
         return None;
     }
 
+    let submat = SubMatrix::hoxd55();
+
     for i in 0..=n {
         let band_start = if i > band { i - band } else { 0 };
         let band_end = min(m, i + band);
@@ -113,10 +116,17 @@ fn banded_align_refs(
 
             if i > 0 && j > 0 {
                 if let Some(pk) = idx(i - 1, j - 1) {
-                    let s = if sa[i - 1] == sb[j - 1] {
-                        cfg.match_score
+                    let ba = sa[i - 1];
+                    let bb = sb[j - 1];
+                    let s = if ba == b'-' || bb == b'-' {
+                        if ba == bb {
+                            cfg.match_score
+                        } else {
+                            cfg.mismatch_score
+                        }
                     } else {
-                        cfg.mismatch_score
+                        let raw = submat.get_score(ba as char, bb as char);
+                        raw / 50
                     };
                     let cand = score[pk].saturating_add(s);
                     if cand > best {
