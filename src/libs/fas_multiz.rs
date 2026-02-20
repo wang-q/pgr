@@ -10,6 +10,13 @@ pub enum FasMultizMode {
     Union,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FasMultizGapModel {
+    Constant,
+    Medium,
+    Loose,
+}
+
 #[derive(Clone, Debug)]
 pub struct FasMultizConfig {
     pub ref_name: String,
@@ -19,6 +26,7 @@ pub struct FasMultizConfig {
     pub match_score: i32,
     pub mismatch_score: i32,
     pub gap_score: i32,
+    pub gap_model: FasMultizGapModel,
 }
 
 #[derive(Clone, Debug)]
@@ -102,9 +110,19 @@ fn banded_align_refs(
     }
 
     let submat = SubMatrix::hoxd55();
-    let gap_calc = GapCalc::medium();
-    let gap_unit = gap_calc.calc(1, 0).max(1);
-    let gap_penalty = -((gap_unit as f64 / 150.0).round() as i32);
+
+    let gap_penalty = match cfg.gap_model {
+        FasMultizGapModel::Constant => cfg.gap_score,
+        FasMultizGapModel::Medium | FasMultizGapModel::Loose => {
+            let gap_calc = match cfg.gap_model {
+                FasMultizGapModel::Medium => GapCalc::medium(),
+                FasMultizGapModel::Loose => GapCalc::loose(),
+                FasMultizGapModel::Constant => unreachable!(),
+            };
+            let gap_unit = gap_calc.calc(1, 0).max(1);
+            -((gap_unit as f64 / 150.0).round() as i32)
+        }
+    };
 
     let mut profiles: Vec<(&[u8], &[u8])> = Vec::new();
     let mut map_a: BTreeMap<&str, &FasEntry> = BTreeMap::new();
@@ -697,6 +715,7 @@ mod tests {
             match_score: 2,
             mismatch_score: -1,
             gap_score: -2,
+            gap_model: FasMultizGapModel::Medium,
         }
     }
 
