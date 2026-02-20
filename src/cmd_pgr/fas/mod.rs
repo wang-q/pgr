@@ -7,6 +7,7 @@ pub mod filter;
 pub mod join;
 pub mod link;
 pub mod name;
+pub mod multiz;
 pub mod refine;
 pub mod replace;
 pub mod separate;
@@ -43,6 +44,7 @@ pub fn make_subcommand() -> clap::Command {
         .subcommand(join::make_subcommand())
         .subcommand(link::make_subcommand())
         .subcommand(name::make_subcommand())
+        .subcommand(multiz::make_subcommand())
         .subcommand(refine::make_subcommand())
         .subcommand(replace::make_subcommand())
         .subcommand(separate::make_subcommand())
@@ -66,6 +68,7 @@ pub fn execute(matches: &clap::ArgMatches) -> anyhow::Result<()> {
         Some(("join", sub_matches)) => join::execute(sub_matches),
         Some(("link", sub_matches)) => link::execute(sub_matches),
         Some(("name", sub_matches)) => name::execute(sub_matches),
+        Some(("multiz", sub_matches)) => multiz::execute(sub_matches),
         Some(("refine", sub_matches)) => refine::execute(sub_matches),
         Some(("replace", sub_matches)) => replace::execute(sub_matches),
         Some(("separate", sub_matches)) => separate::execute(sub_matches),
