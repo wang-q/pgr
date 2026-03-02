@@ -1,30 +1,36 @@
-use predicates::prelude::*;
+#[macro_use]
+#[path = "common/mod.rs"]
+mod common;
+
+use common::PgrCmd;
 use tempfile::TempDir;
 
 #[test]
-fn test_fa_window_basic() -> Result<(), Box<dyn std::error::Error>> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let temp_dir = TempDir::new()?;
+fn test_fa_window_basic() {
+    let temp_dir = TempDir::new().unwrap();
     let output_file = temp_dir.path().join("output.fa");
 
     // Create a simple test file
     let input_file = temp_dir.path().join("input.fa");
-    std::fs::write(&input_file, ">seq1\nATGCATGCAT\n>seq2\nGGCCGGCCGG\n")?;
+    std::fs::write(&input_file, ">seq1\nATGCATGCAT\n>seq2\nGGCCGGCCGG\n").unwrap();
 
-    cmd.arg("fa")
-        .arg("window")
-        .arg(&input_file)
-        .arg("-l")
-        .arg("4")
-        .arg("-s")
-        .arg("2")
-        .arg("-o")
-        .arg(&output_file);
-
-    cmd.assert().success();
+    PgrCmd::new()
+        .args(&[
+            "fa",
+            "window",
+            input_file.to_str().unwrap(),
+            "-l",
+            "4",
+            "-s",
+            "2",
+            "-o",
+            output_file.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
 
     // Verify output content
-    let content = std::fs::read_to_string(&output_file)?;
+    let content = std::fs::read_to_string(&output_file).unwrap();
     // seq1 (10bp): 1-4, 3-6, 5-8, 7-10, 9-10 -> 5 windows
     // seq2 (10bp): 1-4, 3-6, 5-8, 7-10, 9-10 -> 5 windows
     // Total 10 windows
@@ -40,47 +46,45 @@ fn test_fa_window_basic() -> Result<(), Box<dyn std::error::Error>> {
     // Check last window (partial)
     assert!(content.contains(">seq1:9-10"));
     assert!(content.contains("AT"));
-
-    Ok(())
 }
 
 #[test]
-fn test_fa_window_skip_n() -> Result<(), Box<dyn std::error::Error>> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let temp_dir = TempDir::new()?;
+fn test_fa_window_skip_n() {
+    let temp_dir = TempDir::new().unwrap();
     let output_file = temp_dir.path().join("output.fa");
 
     let input_file = temp_dir.path().join("input.fa");
     std::fs::write(
         &input_file,
         ">seq1\nATGC\nNNNN\nGCAT\n", // ATGC NNNN GCAT
-    )?;
+    )
+    .unwrap();
 
-    cmd.arg("fa")
-        .arg("window")
-        .arg(&input_file)
-        .arg("-l")
-        .arg("4")
-        .arg("-s")
-        .arg("4")
-        .arg("-o")
-        .arg(&output_file);
+    PgrCmd::new()
+        .args(&[
+            "fa",
+            "window",
+            input_file.to_str().unwrap(),
+            "-l",
+            "4",
+            "-s",
+            "4",
+            "-o",
+            output_file.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
 
-    cmd.assert().success();
-
-    let content = std::fs::read_to_string(&output_file)?;
+    let content = std::fs::read_to_string(&output_file).unwrap();
     // Should contain ATGC (1-4) and GCAT (9-12), but skip NNNN (5-8)
     assert!(content.contains(">seq1:1-4"));
     assert!(content.contains(">seq1:9-12"));
     assert!(!content.contains(">seq1:5-8"));
-
-    Ok(())
 }
 
 #[test]
-fn test_fa_window_chunk() -> Result<(), Box<dyn std::error::Error>> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let temp_dir = TempDir::new()?;
+fn test_fa_window_chunk() {
+    let temp_dir = TempDir::new().unwrap();
     let output_file = temp_dir.path().join("output.fa");
 
     let input_file = temp_dir.path().join("input.fa");
@@ -89,23 +93,26 @@ fn test_fa_window_chunk() -> Result<(), Box<dyn std::error::Error>> {
     for i in 0..10 {
         input_content.push_str(&format!(">seq{}\nAAAAAAAAAA\n", i));
     }
-    std::fs::write(&input_file, input_content)?;
+    std::fs::write(&input_file, input_content).unwrap();
 
     // Window size 10, step 10 -> 1 window per sequence -> 10 output records total
     // Chunk size 3 -> Should produce 4 files: .001 (3), .002 (3), .003 (3), .004 (1)
-    cmd.arg("fa")
-        .arg("window")
-        .arg(&input_file)
-        .arg("-l")
-        .arg("10")
-        .arg("-s")
-        .arg("10")
-        .arg("--chunk")
-        .arg("3")
-        .arg("-o")
-        .arg(&output_file);
-
-    cmd.assert().success();
+    PgrCmd::new()
+        .args(&[
+            "fa",
+            "window",
+            input_file.to_str().unwrap(),
+            "-l",
+            "10",
+            "-s",
+            "10",
+            "--chunk",
+            "3",
+            "-o",
+            output_file.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
 
     assert!(temp_dir.path().join("output.001.fa").exists());
     assert!(temp_dir.path().join("output.002.fa").exists());
@@ -113,19 +120,16 @@ fn test_fa_window_chunk() -> Result<(), Box<dyn std::error::Error>> {
     assert!(temp_dir.path().join("output.004.fa").exists());
     assert!(!temp_dir.path().join("output.005.fa").exists());
 
-    let f1 = std::fs::read_to_string(temp_dir.path().join("output.001.fa"))?;
+    let f1 = std::fs::read_to_string(temp_dir.path().join("output.001.fa")).unwrap();
     assert_eq!(f1.matches(">").count(), 3);
 
-    let f4 = std::fs::read_to_string(temp_dir.path().join("output.004.fa"))?;
+    let f4 = std::fs::read_to_string(temp_dir.path().join("output.004.fa")).unwrap();
     assert_eq!(f4.matches(">").count(), 1);
-
-    Ok(())
 }
 
 #[test]
-fn test_fa_window_shuffle_chunk() -> Result<(), Box<dyn std::error::Error>> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let temp_dir = TempDir::new()?;
+fn test_fa_window_shuffle_chunk() {
+    let temp_dir = TempDir::new().unwrap();
     let output_file = temp_dir.path().join("output.fa");
 
     let input_file = temp_dir.path().join("input.fa");
@@ -134,85 +138,84 @@ fn test_fa_window_shuffle_chunk() -> Result<(), Box<dyn std::error::Error>> {
     for i in 0..100 {
         input_content.push_str(&format!(">seq{}\nAAAAAAAAAA\n", i));
     }
-    std::fs::write(&input_file, input_content)?;
+    std::fs::write(&input_file, input_content).unwrap();
 
     // Chunk 20 -> 5 files
-    cmd.arg("fa")
-        .arg("window")
-        .arg(&input_file)
-        .arg("-l")
-        .arg("10")
-        .arg("-s")
-        .arg("10")
-        .arg("--chunk")
-        .arg("20")
-        .arg("--shuffle")
-        .arg("--seed")
-        .arg("42")
-        .arg("-o")
-        .arg(&output_file);
-
-    cmd.assert().success();
+    PgrCmd::new()
+        .args(&[
+            "fa",
+            "window",
+            input_file.to_str().unwrap(),
+            "-l",
+            "10",
+            "-s",
+            "10",
+            "--chunk",
+            "20",
+            "--shuffle",
+            "--seed",
+            "42",
+            "-o",
+            output_file.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
 
     for i in 1..=5 {
         let p = temp_dir.path().join(format!("output.{:03}.fa", i));
         assert!(p.exists(), "File {} should exist", p.display());
-        let c = std::fs::read_to_string(p)?;
+        let c = std::fs::read_to_string(p).unwrap();
         assert_eq!(c.matches(">").count(), 20);
     }
-
-    Ok(())
 }
 
 #[test]
-fn test_fa_window_real_file() -> Result<(), Box<dyn std::error::Error>> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let temp_dir = TempDir::new()?;
+fn test_fa_window_real_file() {
+    let temp_dir = TempDir::new().unwrap();
     let output_file = temp_dir.path().join("sakai_window.fa");
 
     // Use the real sakai.fa.gz file
     let input_file = "tests/genome/sakai.fa.gz";
 
-    cmd.arg("fa")
-        .arg("window")
-        .arg(input_file)
-        .arg("-l")
-        .arg("1000")
-        .arg("-s")
-        .arg("500")
-        .arg("-o")
-        .arg(&output_file);
+    PgrCmd::new()
+        .args(&[
+            "fa",
+            "window",
+            input_file,
+            "-l",
+            "1000",
+            "-s",
+            "500",
+            "-o",
+            output_file.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
 
-    cmd.assert().success();
-
-    let content = std::fs::read_to_string(&output_file)?;
+    let content = std::fs::read_to_string(&output_file).unwrap();
     assert!(content.len() > 0);
     assert!(content.contains(">"));
 
     // Verify 1-based coordinates in header
     // e.g., >NC_002695:1-1000
     assert!(content.contains(":1-1000"));
-
-    Ok(())
 }
 
 #[test]
-fn test_fa_window_chunk_stdout_fail() -> Result<(), Box<dyn std::error::Error>> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let temp_dir = TempDir::new()?;
+fn test_fa_window_chunk_stdout_fail() {
+    let temp_dir = TempDir::new().unwrap();
     let input_file = temp_dir.path().join("input.fa");
-    std::fs::write(&input_file, ">seq1\nACGT\n")?;
+    std::fs::write(&input_file, ">seq1\nACGT\n").unwrap();
 
-    cmd.arg("fa")
-        .arg("window")
-        .arg(&input_file)
-        .arg("--chunk")
-        .arg("10");
-    // Default output is stdout, should fail
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "fa",
+            "window",
+            input_file.to_str().unwrap(),
+            "--chunk",
+            "10",
+        ])
+        .run_fail();
 
-    cmd.assert().failure().stderr(predicate::str::contains(
-        "Cannot use --chunk with stdout output",
-    ));
-
-    Ok(())
+    assert!(stderr.contains("Cannot use --chunk with stdout output"));
 }

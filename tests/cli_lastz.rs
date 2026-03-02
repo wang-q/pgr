@@ -1,3 +1,8 @@
+#[macro_use]
+#[path = "common/mod.rs"]
+mod common;
+
+use common::PgrCmd;
 use std::fs;
 use tempfile::TempDir;
 
@@ -16,15 +21,17 @@ fn test_lav_lastz() {
     let t_path = std::env::current_dir().unwrap().join("tests/pgr");
 
     // Case 1: Run lastz with default settings
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    cmd.arg("lav")
-        .arg("lastz")
-        .arg(t_path.join("pseudocat.fa"))
-        .arg(t_path.join("pseudopig.fa"))
-        .arg("--output")
-        .arg(temp.path());
-
-    cmd.assert().success();
+    PgrCmd::new()
+        .args(&[
+            "lav",
+            "lastz",
+            t_path.join("pseudocat.fa").to_str().unwrap(),
+            t_path.join("pseudopig.fa").to_str().unwrap(),
+            "--output",
+            temp.path().to_str().unwrap(),
+        ])
+        .assert()
+        .success();
 
     let output_file = temp.path().join("[pseudocat]vs[pseudopig].lav");
     assert!(output_file.exists());
@@ -63,17 +70,19 @@ fn test_lav_lastz_preset() {
     let t_path = std::env::current_dir().unwrap().join("tests/pgr");
 
     // Case 2: Run lastz with preset
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    cmd.arg("lav")
-        .arg("lastz")
-        .arg(t_path.join("pseudocat.fa"))
-        .arg(t_path.join("pseudocat.fa")) // Self-alignment to ensure matches with strict preset
-        .arg("--preset")
-        .arg("set01")
-        .arg("--output")
-        .arg(temp.path());
-
-    cmd.assert().success();
+    PgrCmd::new()
+        .args(&[
+            "lav",
+            "lastz",
+            t_path.join("pseudocat.fa").to_str().unwrap(),
+            t_path.join("pseudocat.fa").to_str().unwrap(), // Self-alignment to ensure matches with strict preset
+            "--preset",
+            "set01",
+            "--output",
+            temp.path().to_str().unwrap(),
+        ])
+        .assert()
+        .success();
 
     let output_file = temp.path().join("[pseudocat]vs[pseudocat].lav");
     assert!(output_file.exists());
@@ -88,11 +97,13 @@ fn test_lav_lastz_preset() {
 
 #[test]
 fn test_lav_lastz_missing_inputs() {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    cmd.arg("lav")
-        .arg("lastz")
-        .arg("non_existent_target.fa")
-        .arg("non_existent_query.fa");
-
-    cmd.assert().failure();
+    PgrCmd::new()
+        .args(&[
+            "lav",
+            "lastz",
+            "non_existent_target.fa",
+            "non_existent_query.fa",
+        ])
+        .assert()
+        .failure();
 }

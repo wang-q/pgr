@@ -1,44 +1,32 @@
-use predicates::prelude::*;
+#[macro_use]
+#[path = "common/mod.rs"]
+mod common;
+
+use common::PgrCmd;
 use tempfile::TempDir;
 
 #[test]
-fn command_invalid() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    cmd.arg("fas").arg("foobar");
-    cmd.assert()
-        .failure()
-        .stderr(predicate::str::contains("recognized"));
-
-    Ok(())
+fn command_invalid() {
+    let (_, stderr) = PgrCmd::new().args(&["fas", "foobar"]).run_fail();
+    assert!(stderr.contains("recognized"));
 }
 
 #[test]
-fn command_name() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("fas")
-        .arg("name")
-        .arg("tests/fas/example.fas")
-        .arg("-c")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_name() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&["fas", "name", "tests/fas/example.fas", "-c"])
+        .run();
 
     assert_eq!(stdout.lines().count(), 4);
     assert!(stdout.contains("S288c\t3"), "count");
     assert!(stdout.contains("S288c\t3\nYJM789\t3\nRM11"), "name order");
-
-    Ok(())
 }
 
 #[test]
-fn command_cover() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("fas")
-        .arg("cover")
-        .arg("tests/fas/example.fas")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_cover() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&["fas", "cover", "tests/fas/example.fas"])
+        .run();
 
     assert_eq!(stdout.lines().count(), 16);
     assert!(stdout.contains("S288c"), "name list");
@@ -46,258 +34,225 @@ fn command_cover() -> anyhow::Result<()> {
     assert!(stdout.contains("13267-13287"), "runlist");
 
     // --name, --trim
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("fas")
-        .arg("cover")
-        .arg("tests/fas/example.fas")
-        .arg("--name")
-        .arg("S288c")
-        .arg("--trim")
-        .arg("10")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "fas",
+            "cover",
+            "tests/fas/example.fas",
+            "--name",
+            "S288c",
+            "--trim",
+            "10",
+        ])
+        .run();
 
     assert_eq!(stdout.lines().count(), 3);
     assert!(!stdout.contains("S288c"), "name list");
     assert!(stdout.contains("I"), "chr list");
     assert!(stdout.contains("13277,184906"), "trimmed");
-
-    Ok(())
 }
 
 #[test]
-fn command_concat() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("fas")
-        .arg("concat")
-        .arg("tests/fas/example.fas")
-        .arg("-r")
-        .arg("tests/fas/name.lst")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_concat() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "fas",
+            "concat",
+            "tests/fas/example.fas",
+            "-r",
+            "tests/fas/name.lst",
+        ])
+        .run();
 
     assert_eq!(stdout.lines().count(), 4);
     assert_eq!(stdout.lines().next().unwrap().len(), 5); // >Spar
     assert_eq!(stdout.lines().last().unwrap().len(), 239);
     assert!(stdout.contains("Spar"), "name list");
     assert!(!stdout.contains("S288c"), "name list");
-
-    Ok(())
 }
 
 #[test]
-fn command_concat_phylip() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("fas")
-        .arg("concat")
-        .arg("tests/fas/example.fas")
-        .arg("-r")
-        .arg("tests/fas/name.lst")
-        .arg("--phylip")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_concat_phylip() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "fas",
+            "concat",
+            "tests/fas/example.fas",
+            "-r",
+            "tests/fas/name.lst",
+            "--phylip",
+        ])
+        .run();
 
     assert_eq!(stdout.lines().count(), 3);
     assert_eq!(
         stdout.lines().last().unwrap().len(),
         "YJM789".to_string().len() + 1 + 239
     );
-
-    Ok(())
 }
 
 #[test]
-fn command_subset() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("fas")
-        .arg("subset")
-        .arg("tests/fas/example.fas")
-        .arg("-r")
-        .arg("tests/fas/name.lst")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_subset() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "fas",
+            "subset",
+            "tests/fas/example.fas",
+            "-r",
+            "tests/fas/name.lst",
+        ])
+        .run();
 
     assert_eq!(stdout.lines().count(), 15);
     assert!(stdout.lines().next().unwrap().contains("Spar")); // >Spar.
 
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("fas")
-        .arg("subset")
-        .arg("tests/fas/example.fas")
-        .arg("-r")
-        .arg("tests/fas/name.lst")
-        .arg("--strict")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "fas",
+            "subset",
+            "tests/fas/example.fas",
+            "-r",
+            "tests/fas/name.lst",
+            "--strict",
+        ])
+        .run();
 
     assert_eq!(stdout.lines().count(), 15);
     assert!(stdout.lines().next().unwrap().contains("Spar")); // >Spar.
-
-    Ok(())
 }
 
 #[test]
-fn command_link() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("fas")
-        .arg("link")
-        .arg("tests/fas/example.fas")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_link() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&["fas", "link", "tests/fas/example.fas"])
+        .run();
 
     assert_eq!(stdout.lines().count(), 3);
     assert_eq!(stdout.lines().next().unwrap().split_whitespace().count(), 4);
 
     // --pair
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("fas")
-        .arg("link")
-        .arg("tests/fas/example.fas")
-        .arg("--pair")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&["fas", "link", "tests/fas/example.fas", "--pair"])
+        .run();
 
     assert_eq!(stdout.lines().count(), 18);
     assert_eq!(stdout.lines().next().unwrap().split_whitespace().count(), 2);
 
     // --best
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("fas")
-        .arg("link")
-        .arg("tests/fas/example.fas")
-        .arg("--best")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&["fas", "link", "tests/fas/example.fas", "--best"])
+        .run();
 
     assert_eq!(stdout.lines().count(), 9);
     assert_eq!(stdout.lines().next().unwrap().split_whitespace().count(), 2);
-
-    Ok(())
 }
 
 #[test]
-fn command_replace() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("fas")
-        .arg("replace")
-        .arg("tests/fas/example.fas")
-        .arg("-r")
-        .arg("tests/fas/replace.tsv")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_replace() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "fas",
+            "replace",
+            "tests/fas/example.fas",
+            "-r",
+            "tests/fas/replace.tsv",
+        ])
+        .run();
 
     assert_eq!(stdout.lines().count(), 36);
     assert!(stdout.contains(">query.VIII(+)"));
 
     // fail
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("fas")
-        .arg("replace")
-        .arg("tests/fas/example.fas")
-        .arg("-r")
-        .arg("tests/fas/replace.fail.tsv")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
-    let stderr = String::from_utf8(output.stderr)?;
+    let (stdout, stderr) = PgrCmd::new()
+        .args(&[
+            "fas",
+            "replace",
+            "tests/fas/example.fas",
+            "-r",
+            "tests/fas/replace.fail.tsv",
+        ])
+        .run();
 
     assert_eq!(stdout.lines().count(), 27);
     assert!(!stdout.contains("query"), "not replaced");
-    assert!(stderr.contains("records"), "error message");
+    assert!(
+        stderr.contains("records") || stderr.contains("multiple records"),
+        "error message"
+    );
 
     // remove
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("fas")
-        .arg("replace")
-        .arg("tests/fas/example.fas")
-        .arg("-r")
-        .arg("tests/fas/replace.remove.tsv")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "fas",
+            "replace",
+            "tests/fas/example.fas",
+            "-r",
+            "tests/fas/replace.remove.tsv",
+        ])
+        .run();
 
     assert_eq!(stdout.lines().count(), 18);
     assert!(!stdout.contains("13267-13287"), "block removed");
-
-    Ok(())
 }
 
 #[test]
-fn command_check() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("fas")
-        .arg("check")
-        .arg("tests/fas/A_tha.pair.fas")
-        .arg("-r")
-        .arg("tests/fas/NC_000932.fa")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_check() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "fas",
+            "check",
+            "tests/fas/A_tha.pair.fas",
+            "-r",
+            "tests/fas/NC_000932.fa",
+        ])
+        .run();
 
     assert_eq!(stdout.lines().count(), 3);
     assert!(stdout.lines().next().unwrap().contains("\tOK"));
     assert!(stdout.lines().last().unwrap().contains("\tFAILED"));
 
     // --name
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("fas")
-        .arg("check")
-        .arg("tests/fas/A_tha.pair.fas")
-        .arg("-r")
-        .arg("tests/fas/NC_000932.fa")
-        .arg("--name")
-        .arg("A_tha")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "fas",
+            "check",
+            "tests/fas/A_tha.pair.fas",
+            "-r",
+            "tests/fas/NC_000932.fa",
+            "--name",
+            "A_tha",
+        ])
+        .run();
 
     assert_eq!(stdout.lines().count(), 2);
     assert!(stdout.lines().next().unwrap().contains("\tOK"));
     assert!(stdout.lines().last().unwrap().contains("\tOK"));
-
-    Ok(())
 }
 
 #[test]
-fn command_create() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("fas")
-        .arg("create")
-        .arg("tests/fas/I.connect.tsv")
-        .arg("-r")
-        .arg("tests/fas/genome.fa")
-        .arg("--name")
-        .arg("S288c")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_create() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "fas",
+            "create",
+            "tests/fas/I.connect.tsv",
+            "-r",
+            "tests/fas/genome.fa",
+            "--name",
+            "S288c",
+        ])
+        .run();
 
     assert_eq!(stdout.lines().count(), 10);
     assert!(stdout.contains("tgtgtgggtgtggtgtgg"), "revcom sequences");
     assert!(stdout.lines().next().unwrap().contains(">S288c."));
-
-    Ok(())
 }
 
 #[test]
-fn command_separate() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("fas")
-        .arg("separate")
-        .arg("tests/fas/example.fas")
-        .arg("--rc")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_separate() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&["fas", "separate", "tests/fas/example.fas", "--rc"])
+        .run();
 
     assert_eq!(stdout.lines().count(), 24);
     assert_eq!(
@@ -307,163 +262,144 @@ fn command_separate() -> anyhow::Result<()> {
     );
     assert!(!stdout.contains("(-)"), "all strands are +");
     assert!(!stdout.contains("T-C"), "no dash, line 24");
-
-    Ok(())
 }
 
 #[test]
-fn command_separate_to() -> anyhow::Result<()> {
-    let tempdir = TempDir::new()?;
+fn command_separate_to() {
+    let tempdir = TempDir::new().unwrap();
     let tempdir_str = tempdir.path().to_str().unwrap();
 
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    cmd.arg("fas")
-        .arg("separate")
-        .arg("tests/fas/example.fas")
-        .arg("--suffix")
-        .arg(".tmp")
-        .arg("-o")
-        .arg(tempdir_str)
+    PgrCmd::new()
+        .args(&[
+            "fas",
+            "separate",
+            "tests/fas/example.fas",
+            "--suffix",
+            ".tmp",
+            "-o",
+            tempdir_str,
+        ])
         .assert()
         .success()
-        .stdout(predicate::str::is_empty());
+        .stdout(predicates::str::is_empty());
 
     assert!(&tempdir.path().join("S288c.tmp").is_file());
     assert!(!&tempdir.path().join("YJM789.fasta").exists());
 
-    tempdir.close()?;
-    Ok(())
+    tempdir.close().unwrap();
 }
 
 #[test]
-fn command_split() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("fas")
-        .arg("split")
-        .arg("tests/fas/example.fas")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_split() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&["fas", "split", "tests/fas/example.fas"])
+        .run();
 
     assert_eq!(stdout.lines().count(), 27);
 
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("fas")
-        .arg("split")
-        .arg("tests/fas/example.fas")
-        .arg("--simple")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&["fas", "split", "tests/fas/example.fas", "--simple"])
+        .run();
 
     assert!(stdout.contains(">S288c\n"), "simple headers");
     assert!(!stdout.contains("I(+)"), "no positions");
-
-    Ok(())
 }
 
 #[test]
-fn command_split_to() -> anyhow::Result<()> {
-    let tempdir = TempDir::new()?;
+fn command_split_to() {
+    let tempdir = TempDir::new().unwrap();
     let tempdir_str = tempdir.path().to_str().unwrap();
 
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    cmd.arg("fas")
-        .arg("split")
-        .arg("tests/fas/example.fas")
-        .arg("--suffix")
-        .arg(".tmp")
-        .arg("--chr")
-        .arg("-o")
-        .arg(tempdir_str)
+    PgrCmd::new()
+        .args(&[
+            "fas",
+            "split",
+            "tests/fas/example.fas",
+            "--suffix",
+            ".tmp",
+            "--chr",
+            "-o",
+            tempdir_str,
+        ])
         .assert()
         .success()
-        .stdout(predicate::str::is_empty());
+        .stdout(predicates::str::is_empty());
 
     assert!(&tempdir.path().join("S288c.I.tmp").is_file());
     assert!(!&tempdir.path().join("YJM789.fasta").exists());
 
-    tempdir.close()?;
-    Ok(())
+    tempdir.close().unwrap();
 }
 
 #[test]
-fn command_refine() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("fas")
-        .arg("refine")
-        .arg("tests/fas/example.fas")
-        .arg("--msa")
-        .arg("none")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_refine() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&["fas", "refine", "tests/fas/example.fas", "--msa", "none"])
+        .run();
 
     assert_eq!(stdout.lines().count(), 27);
 
     // --parallel 2
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("fas")
-        .arg("refine")
-        .arg("tests/fas/example.fas")
-        .arg("--msa")
-        .arg("none")
-        .arg("-p")
-        .arg("2")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "fas",
+            "refine",
+            "tests/fas/example.fas",
+            "--msa",
+            "none",
+            "-p",
+            "2",
+        ])
+        .run();
 
     assert_eq!(stdout.lines().count(), 27);
 
     // --parallel 2
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("fas")
-        .arg("refine")
-        .arg("tests/fas/refine2.fas")
-        .arg("--msa")
-        .arg("none")
-        .arg("-p")
-        .arg("2")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "fas",
+            "refine",
+            "tests/fas/refine2.fas",
+            "--msa",
+            "none",
+            "-p",
+            "2",
+        ])
+        .run();
 
     assert_eq!(stdout.lines().count(), 7);
 
     // --chop 10
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("fas")
-        .arg("refine")
-        .arg("tests/fas/example.fas")
-        .arg("--msa")
-        .arg("none")
-        .arg("--chop")
-        .arg("10")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "fas",
+            "refine",
+            "tests/fas/example.fas",
+            "--msa",
+            "none",
+            "--chop",
+            "10",
+        ])
+        .run();
 
     assert_eq!(stdout.lines().count(), 27);
     assert!(stdout.contains("185276-185332"), "new header"); // 185273-185334
     assert!(stdout.contains("156668-156724"), "new header"); // 156665-156726
     assert!(stdout.contains("3670-3727"), "new header"); // (-):3668-3730
     assert!(stdout.contains("2102-2159"), "new header"); // (-):2102-2161
-
-    Ok(())
 }
 
 #[test]
-fn command_join() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("fas")
-        .arg("join")
-        .arg("tests/fas/S288cvsSpar.slice.fas")
-        .arg("--name")
-        .arg("Spar")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_join() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "fas",
+            "join",
+            "tests/fas/S288cvsSpar.slice.fas",
+            "--name",
+            "Spar",
+        ])
+        .run();
 
     assert_eq!(stdout.lines().count(), 5);
     assert!(
@@ -471,116 +407,89 @@ fn command_join() -> anyhow::Result<()> {
         "Selected name first"
     );
 
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("fas")
-        .arg("join")
-        .arg("tests/fas/S288cvsRM11_1a.slice.fas")
-        .arg("tests/fas/S288cvsYJM789.slice.fas")
-        .arg("tests/fas/S288cvsSpar.slice.fas")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "fas",
+            "join",
+            "tests/fas/S288cvsRM11_1a.slice.fas",
+            "tests/fas/S288cvsYJM789.slice.fas",
+            "tests/fas/S288cvsSpar.slice.fas",
+        ])
+        .run();
 
     assert_eq!(stdout.lines().count(), 9);
     assert!(
         stdout.lines().next().unwrap().contains(">S288c."),
         "First name first"
     );
-
-    Ok(())
 }
 
 #[test]
-fn command_slice() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("fas")
-        .arg("slice")
-        .arg("tests/fas/slice.fas")
-        .arg("-r")
-        .arg("tests/fas/slice.json")
-        .arg("--name")
-        .arg("S288c")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_slice() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "fas",
+            "slice",
+            "tests/fas/slice.fas",
+            "-r",
+            "tests/fas/slice.json",
+            "--name",
+            "S288c",
+        ])
+        .run();
 
     assert_eq!(stdout.lines().count(), 7);
     assert!(stdout.contains("13301-13400"), "sliced S288c");
     assert!(stdout.contains("2511-2636"), "sliced Spar");
     assert!(stdout.contains("\nTAGTCATCTCAG"), "sliced S288c seq");
-
-    Ok(())
 }
 
 #[test]
-fn command_stat() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("fas")
-        .arg("stat")
-        .arg("tests/fas/example.fas")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_stat() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&["fas", "stat", "tests/fas/example.fas"])
+        .run();
 
     assert_eq!(stdout.lines().count(), 4);
     assert!(stdout.contains("0.192\t6\n"), "all together");
 
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("fas")
-        .arg("stat")
-        .arg("tests/fas/example.fas")
-        .arg("--outgroup")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&["fas", "stat", "tests/fas/example.fas", "--outgroup"])
+        .run();
 
     assert_eq!(stdout.lines().count(), 4);
     assert!(stdout.contains("0.12\t3\n"), "exclude outgroup");
-
-    Ok(())
 }
 
 #[test]
-fn command_filter() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("fas")
-        .arg("filter")
-        .arg("tests/fas/example.fas")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_filter() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&["fas", "filter", "tests/fas/example.fas"])
+        .run();
 
     assert_eq!(stdout.lines().count(), 27);
 
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("fas")
-        .arg("filter")
-        .arg("tests/fas/example.fas")
-        .arg("--ge")
-        .arg("30")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&["fas", "filter", "tests/fas/example.fas", "--ge", "30"])
+        .run();
 
     assert_eq!(stdout.lines().count(), 18);
 
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("fas")
-        .arg("filter")
-        .arg("tests/fas/example.fas")
-        .arg("--ge")
-        .arg("30")
-        .arg("--le")
-        .arg("100")
-        .arg("--name")
-        .arg("S288c")
-        .arg("--dash")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "fas",
+            "filter",
+            "tests/fas/example.fas",
+            "--ge",
+            "30",
+            "--le",
+            "100",
+            "--name",
+            "S288c",
+            "--dash",
+        ])
+        .run();
 
     assert_eq!(stdout.lines().count(), 9);
     assert!(stdout.contains("\nGCTAAAATATGAACG"), "no dash");
-
-    Ok(())
 }

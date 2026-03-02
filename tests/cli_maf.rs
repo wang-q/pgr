@@ -1,14 +1,14 @@
-#[test]
-fn command_maf_to_fas() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("maf")
-        .arg("to-fas")
-        .arg("tests/maf/example.maf")
-        .output()
-        .unwrap();
+#[macro_use]
+#[path = "common/mod.rs"]
+mod common;
 
-    let stdout = String::from_utf8(output.stdout).unwrap();
+use common::PgrCmd;
+
+#[test]
+fn command_maf_to_fas() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&["maf", "to-fas", "tests/maf/example.maf"])
+        .run();
 
     assert!(stdout.contains(">S288c.VIII(+):13377-13410"));
     assert!(stdout.contains("TTACTCGTCTTGCGGCCAAAACTCGAAGAAAAAC"));
@@ -18,6 +18,4 @@ fn command_maf_to_fas() -> anyhow::Result<()> {
     assert_eq!(stdout.lines().count(), 18);
     assert!(stdout.contains("S288c.VIII"), "name list");
     assert!(stdout.contains(":42072-42168"), "coordinate transformed");
-
-    Ok(())
 }
