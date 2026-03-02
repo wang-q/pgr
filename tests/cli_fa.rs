@@ -1,66 +1,51 @@
-use predicates::prelude::*;
+#[macro_use]
+#[path = "common/mod.rs"]
+mod common;
+
+use common::PgrCmd;
 use std::fs;
 use tempfile::TempDir;
 
 #[test]
-fn command_invalid() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    cmd.arg("fa").arg("foobar");
-    cmd.assert()
-        .failure()
-        .stderr(predicate::str::contains("recognized"));
-
-    Ok(())
+fn command_invalid() {
+    let (_, stderr) = PgrCmd::new().args(&["fa", "foobar"]).run_fail();
+    assert!(stderr.contains("recognized"));
 }
 
 #[test]
-fn file_doesnt_provided() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    cmd.arg("fa").arg("size");
-    cmd.assert()
-        .failure()
-        .stderr(predicate::str::contains("not provided"));
-
-    Ok(())
+fn file_doesnt_provided() {
+    let (_, stderr) = PgrCmd::new().args(&["fa", "size"]).run_fail();
+    assert!(stderr.contains("not provided"));
 }
 
 #[test]
-fn file_doesnt_exist() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    cmd.arg("fa").arg("size").arg("tests/file/doesnt/exist");
-    cmd.assert()
-        .failure()
-        .stderr(predicate::str::contains("could not open"));
-
-    Ok(())
+fn file_doesnt_exist() {
+    let (_, stderr) = PgrCmd::new()
+        .args(&["fa", "size", "tests/file/doesnt/exist"])
+        .run_fail();
+    assert!(stderr.contains("could not open"));
 }
 
 #[test]
-fn command_fa_size() -> anyhow::Result<()> {
-    let temp = TempDir::new()?;
+fn command_fa_size() {
+    let temp = TempDir::new().unwrap();
     let input = temp.path().join("test.fa");
 
-    fs::write(&input, ">seq1\nACGT\n>seq2\nACGTACGT\n")?;
+    fs::write(&input, ">seq1\nACGT\n>seq2\nACGTACGT\n").unwrap();
 
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd.arg("fa").arg("size").arg(&input).output()?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&["fa", "size", input.to_str().unwrap()])
+        .run();
 
-    let stdout = String::from_utf8(output.stdout)?;
     assert!(stdout.contains("seq1\t4\n"));
     assert!(stdout.contains("seq2\t8\n"));
-
-    Ok(())
 }
 
 #[test]
-fn command_fa_size_file() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("fa")
-        .arg("size")
-        .arg("tests/fasta/ufasta.fa")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_fa_size_file() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&["fa", "size", "tests/fasta/ufasta.fa"])
+        .run();
 
     assert_eq!(stdout.lines().count(), 50);
     assert!(stdout.contains("read0\t359"), "read0");
@@ -70,54 +55,36 @@ fn command_fa_size_file() -> anyhow::Result<()> {
     for line in stdout.lines() {
         let fields: Vec<&str> = line.split('\t').collect();
         if fields.len() == 2 {
-            sum += fields[1].parse::<i32>()?;
+            sum += fields[1].parse::<i32>().unwrap();
         }
     }
     assert_eq!(sum, 9317, "sum length");
-
-    Ok(())
 }
 
 #[test]
-fn command_fa_size_gz() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("fa")
-        .arg("size")
-        .arg("tests/fasta/ufasta.fa")
-        .arg("tests/fasta/ufasta.fa.gz")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_fa_size_gz() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "fa",
+            "size",
+            "tests/fasta/ufasta.fa",
+            "tests/fasta/ufasta.fa.gz",
+        ])
+        .run();
 
     assert_eq!(stdout.lines().count(), 100);
     assert!(stdout.contains("read0\t359"), "read0");
     assert!(stdout.contains("read1\t106"), "read1");
-
-    Ok(())
 }
 
 #[test]
-fn command_fa_size_no_ns() -> anyhow::Result<()> {
-    let temp = TempDir::new()?;
-    let input = temp.path().join("test_nons.fa");
+fn command_fa_size_no_ns() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&["fa", "size", "tests/2bit/input/testN.2bit", "--no-ns"])
+        .run();
 
-    // seq1: 12 bases, 4 Ns (ACGT NNNN ACGT) -> 8 bases
-    // seq2: 4 bases, 0 Ns -> 4 bases
-    fs::write(&input, ">seq1\nACGTNNNNACGT\n>seq2\nACGT\n")?;
-
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("fa")
-        .arg("size")
-        .arg(&input)
-        .arg("--no-ns")
-        .output()?;
-
-    let stdout = String::from_utf8(output.stdout)?;
-    assert!(stdout.contains("seq1\t8\n"));
+    assert!(stdout.contains("seq1\t4\n"));
     assert!(stdout.contains("seq2\t4\n"));
-
-    Ok(())
 }
 
 #[test]

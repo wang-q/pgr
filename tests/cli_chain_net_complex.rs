@@ -1,9 +1,14 @@
+#[macro_use]
+#[path = "common/mod.rs"]
+mod common;
+
+use common::PgrCmd;
 use std::fs;
 use tempfile::tempdir;
 
 #[test]
-fn test_chain_net_greedy_overlap() -> Result<(), Box<dyn std::error::Error>> {
-    let dir = tempdir()?;
+fn test_chain_net_greedy_overlap() {
+    let dir = tempdir().unwrap();
     let chain_path = dir.path().join("in.chain");
     let t_sizes_path = dir.path().join("t.sizes");
     let q_sizes_path = dir.path().join("q.sizes");
@@ -11,8 +16,8 @@ fn test_chain_net_greedy_overlap() -> Result<(), Box<dyn std::error::Error>> {
     let q_net_path = dir.path().join("q.net");
 
     // Target: chr1 2000
-    fs::write(&t_sizes_path, "chr1 2000\n")?;
-    fs::write(&q_sizes_path, "chr2 2000\n")?;
+    fs::write(&t_sizes_path, "chr1 2000\n").unwrap();
+    fs::write(&q_sizes_path, "chr2 2000\n").unwrap();
 
     // Chain A: Score 2000. 0-1000.
     // chain score tName tSize tStrand tStart tEnd qName qSize qStrand qStart qEnd id
@@ -26,22 +31,23 @@ fn test_chain_net_greedy_overlap() -> Result<(), Box<dyn std::error::Error>> {
     // but pgr net might expect sorted input or sort internally.
     // The current pgr implementation checks if sorted but doesn't enforce it strictly?
     // Let's provide them sorted by score (2000 then 1000).
-    fs::write(&chain_path, format!("{}{}", c1, c2))?;
+    fs::write(&chain_path, format!("{}{}", c1, c2)).unwrap();
 
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    cmd.arg("chain")
-        .arg("net")
-        .arg(chain_path.to_str().unwrap())
-        .arg(t_sizes_path.to_str().unwrap())
-        .arg(q_sizes_path.to_str().unwrap())
-        .arg(t_net_path.to_str().unwrap())
-        .arg(q_net_path.to_str().unwrap())
-        .arg("--min-score=0")
-        .arg("--min-space=1");
+    PgrCmd::new()
+        .args(&[
+            "chain",
+            "net",
+            chain_path.to_str().unwrap(),
+            t_sizes_path.to_str().unwrap(),
+            q_sizes_path.to_str().unwrap(),
+            t_net_path.to_str().unwrap(),
+            q_net_path.to_str().unwrap(),
+            "--min-score=0",
+            "--min-space=1",
+        ])
+        .run();
 
-    cmd.assert().success();
-
-    let t_net_content = fs::read_to_string(&t_net_path)?;
+    let t_net_content = fs::read_to_string(&t_net_path).unwrap();
     println!("T Net content:\n{}", t_net_content);
 
     // Expectation:
@@ -56,21 +62,19 @@ fn test_chain_net_greedy_overlap() -> Result<(), Box<dyn std::error::Error>> {
     // Corresponding Q coords: Chain 2 maps T:500-1500 to Q:500-1500.
     // So T:1000-1500 maps to Q:1000-1500.
     assert!(t_net_content.contains("fill 1000 500 chr2 + 1000 500 id 2"));
-
-    Ok(())
 }
 
 #[test]
-fn test_chain_net_nested_fill() -> Result<(), Box<dyn std::error::Error>> {
-    let dir = tempdir()?;
+fn test_chain_net_nested_fill() {
+    let dir = tempdir().unwrap();
     let chain_path = dir.path().join("in.chain");
     let t_sizes_path = dir.path().join("t.sizes");
     let q_sizes_path = dir.path().join("q.sizes");
     let t_net_path = dir.path().join("t.net");
     let q_net_path = dir.path().join("q.net");
 
-    fs::write(&t_sizes_path, "chr1 2000\n")?;
-    fs::write(&q_sizes_path, "chr2 2000\n")?;
+    fs::write(&t_sizes_path, "chr1 2000\n").unwrap();
+    fs::write(&q_sizes_path, "chr2 2000\n").unwrap();
 
     // Chain A: Score 2000. 0-1000.
     // Has a gap:
@@ -87,22 +91,23 @@ fn test_chain_net_nested_fill() -> Result<(), Box<dyn std::error::Error>> {
     // chain ... 450 550 ...
     let c2 = "chain 1000 chr1 2000 + 450 550 chr2 2000 + 450 550 2\n100\n\n";
 
-    fs::write(&chain_path, format!("{}{}", c1, c2))?;
+    fs::write(&chain_path, format!("{}{}", c1, c2)).unwrap();
 
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    cmd.arg("chain")
-        .arg("net")
-        .arg(chain_path.to_str().unwrap())
-        .arg(t_sizes_path.to_str().unwrap())
-        .arg(q_sizes_path.to_str().unwrap())
-        .arg(t_net_path.to_str().unwrap())
-        .arg(q_net_path.to_str().unwrap())
-        .arg("--min-score=0")
-        .arg("--min-space=1");
+    PgrCmd::new()
+        .args(&[
+            "chain",
+            "net",
+            chain_path.to_str().unwrap(),
+            t_sizes_path.to_str().unwrap(),
+            q_sizes_path.to_str().unwrap(),
+            t_net_path.to_str().unwrap(),
+            q_net_path.to_str().unwrap(),
+            "--min-score=0",
+            "--min-space=1",
+        ])
+        .run();
 
-    cmd.assert().success();
-
-    let t_net_content = fs::read_to_string(&t_net_path)?;
+    let t_net_content = fs::read_to_string(&t_net_path).unwrap();
     println!("T Net content:\n{}", t_net_content);
 
     // Expectation:
@@ -116,6 +121,4 @@ fn test_chain_net_nested_fill() -> Result<(), Box<dyn std::error::Error>> {
     // Should be indented (checked by structure, but here we just check presence first)
     // fill 450 100 chr2 + 450 100 id 2
     assert!(t_net_content.contains("fill 450 100 chr2 + 450 100 id 2"));
-
-    Ok(())
 }

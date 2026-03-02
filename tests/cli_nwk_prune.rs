@@ -66,7 +66,7 @@ fn command_prune_regex_match() {
 #[test]
 fn command_prune_keep_single_leaf() {
     let (stdout, _) = PgrCmd::new()
-        .args(&["nwk", "prune", "stdin", "-n", "Homo", "--keep"])
+        .args(&["nwk", "prune", "stdin", "-n", "Homo", "--invert"])
         .stdin(CATARRHINI)
         .run();
 
@@ -139,7 +139,7 @@ fn command_prune_file_keep_single() {
             "stdin",
             "-f",
             file.path().to_str().unwrap(),
-            "--keep",
+            "--invert",
         ])
         .stdin(CATARRHINI)
         .run();
@@ -148,80 +148,64 @@ fn command_prune_file_keep_single() {
 }
 
 #[test]
-fn command_prune_keep_internal_node_by_label() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    cmd.arg("nwk")
-        .arg("prune")
-        .arg("stdin")
-        .arg("-v")
-        .arg("-n")
-        .arg("Hominini")
-        .write_stdin(CATARRHINI_LABELED);
-    cmd.assert()
-        .success()
-        .stdout(predicate::str::contains("(Homo,Pan)Hominini;"));
-    Ok(())
+fn command_prune_keep_internal_node_by_label() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&["nwk", "prune", "stdin", "--invert", "-n", "Hominini"])
+        .stdin(CATARRHINI_LABELED)
+        .run();
+
+    assert!(stdout.contains("(Homo,Pan)Hominini;"));
 }
 
 #[test]
-fn command_prune_keep_internal_node_by_name() -> anyhow::Result<()> {
+fn command_prune_keep_internal_node_by_name() {
     // Keep internal node by name, check descendants
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    cmd.arg("nwk")
-        .arg("prune")
-        .arg("stdin")
-        .arg("-v")
-        .arg("-n")
-        .arg("Hominidae")
-        .write_stdin(CATARRHINI_LABELED);
+    let (stdout, _) = PgrCmd::new()
+        .args(&["nwk", "prune", "stdin", "--invert", "-n", "Hominidae"])
+        .stdin(CATARRHINI_LABELED)
+        .run();
+
     // Keep Hominidae. Should keep everything under it?
     // The whole tree is Hominidae.
-    cmd.assert()
-        .success()
-        .stdout(predicate::str::contains(CATARRHINI_LABELED));
-    Ok(())
+    assert!(stdout.contains(CATARRHINI_LABELED));
 }
 
 #[test]
-fn command_prune() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("prune")
-        .arg("tests/newick/catarrhini.nwk")
-        .arg("-n")
-        .arg("Homo")
-        .arg("-n")
-        .arg("Pan")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_prune() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "nwk",
+            "prune",
+            "tests/newick/catarrhini.nwk",
+            "-n",
+            "Homo",
+            "-n",
+            "Pan",
+        ])
+        .run();
 
     assert!(!stdout.contains("Homo:10"));
     assert!(!stdout.contains("Gorilla:16"));
     assert!(stdout.contains("Gorilla:31"));
-
-    Ok(())
 }
 
 #[test]
-fn command_prune_invert() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("prune")
-        .arg("tests/newick/catarrhini.nwk")
-        .arg("-v")
-        .arg("-n")
-        .arg("Homo")
-        .arg("-n")
-        .arg("Pan")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_prune_invert() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "nwk",
+            "prune",
+            "tests/newick/catarrhini.nwk",
+            "--invert",
+            "-n",
+            "Homo",
+            "-n",
+            "Pan",
+        ])
+        .run();
 
     assert!(stdout.contains("Homo"));
     assert!(stdout.contains("Pan"));
     assert!(!stdout.contains("Gorilla"));
     assert!(!stdout.contains("Pongo"));
-
-    Ok(())
 }
