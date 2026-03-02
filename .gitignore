@@ -98,6 +98,7 @@ Cargo.lock
 
 *.tmp
 *.R
+
 seedms
 *.sh
 *.tar.gz
@@ -112,3 +113,6 @@ seedms
 PL-*/
 /tmp/
 tmp.*
+
+# Reference directories (will be deleted)
+nwr-master/
