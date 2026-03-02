@@ -85,10 +85,12 @@ cargo test
 
 ### 测试约定
 
-- 集成测试位于 `tests/` 目录下，命名格式为 `cli_<command>.rs`。
-- 测试数据位于 `tests/` 下对应的子目录中 (e.g., `tests/axt/`, `tests/newick/`)。
-- 推荐使用 `assert_cmd` 进行 CLI 测试。
-- **Newick 测试数据**: 集中在 `tests/newick/`，使用 `.nwk` 扩展名。
+- 集成测试位于 `tests/` 目录下，文件命名为 `cli_<command>.rs`。
+- 测试数据通常放在 `tests/data/<command>/` 目录下。
+- **推荐使用 `PgrCmd` 辅助结构体**（定义在 `tests/common/mod.rs`）来编写集成测试，以简化子进程调用和断言。
+- 必须使用 `assert_cmd` 来定位二进制文件，以兼容自定义构建目录。
+- **稳定性原则 (Zero Panic)**: 任何用户输入（包括畸形数据、二进制文件）都不应导致程序 Panic。必须捕获所有错误并返回友好的错误信息。
+- **基准测试**: 性能敏感的变更必须伴随 `benches/` 下的基准测试结果（使用 `criterion`）。
 
 ## 代码规范
 
