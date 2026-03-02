@@ -1,4 +1,3 @@
-
 #[test]
 fn command_dist_hv() -> anyhow::Result<()> {
     let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();

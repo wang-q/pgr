@@ -1,4 +1,3 @@
-
 #[test]
 fn command_subtree_basic() -> anyhow::Result<()> {
     let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
