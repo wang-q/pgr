@@ -121,7 +121,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
             // Calculate actual length in millimeters
             let bar_mm = (scale * 100.0 / height).round() as i32;
-            
+
             // If the bar is too small to see (< 5mm), don't draw it or warn?
             // Current logic just draws it.
 

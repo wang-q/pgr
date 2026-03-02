@@ -1,9 +1,10 @@
-use assert_cmd::cargo::cargo_bin_cmd;
+use assert_cmd::prelude::*;
+use std::process::Command;
 use tempfile::NamedTempFile;
 
 #[test]
 fn command_fq_to_fa() -> anyhow::Result<()> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let input = "@SEQ_ID\nGATTTGGGGTTCAAAGCAGTATCGATCAAATAGTAAATCCATTTGTTCAACTCACAGTTT\n+\n!''*((((***+))%%%++)(%%%%).1***-+*''))**55CCF>>>>>>CCCCCCC65\n";
 
     let mut file = NamedTempFile::new()?;
@@ -22,7 +23,7 @@ fn command_fq_to_fa() -> anyhow::Result<()> {
 #[test]
 fn command_fq_interleave_coverage_gap() -> anyhow::Result<()> {
     // 1. 1 file (FQ) -> Output FA
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("fq")
         .arg("interleave")
@@ -35,7 +36,7 @@ fn command_fq_interleave_coverage_gap() -> anyhow::Result<()> {
     assert!(!stdout.contains("\n+\n"));
 
     // 2. 2 files (FQ) -> Output FA
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("fq")
         .arg("interleave")
@@ -49,7 +50,7 @@ fn command_fq_interleave_coverage_gap() -> anyhow::Result<()> {
     assert!(!stdout.contains("\n+\n"));
 
     // 3. 2 files (FA) -> Output FQ
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("fq")
         .arg("interleave")
@@ -68,7 +69,7 @@ fn command_fq_interleave_coverage_gap() -> anyhow::Result<()> {
 
 #[test]
 fn command_fq_to_fa_output() -> anyhow::Result<()> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let input = "@SEQ_ID\nGATTTGGGGTTCAAAGCAGTATCGATCAAATAGTAAATCCATTTGTTCAACTCACAGTTT\n+\n!''*((((***+))%%%++)(%%%%).1***-+*''))**55CCF>>>>>>CCCCCCC65\n";
 
     let mut file = NamedTempFile::new()?;
@@ -92,7 +93,7 @@ fn command_fq_to_fa_output() -> anyhow::Result<()> {
 #[test]
 fn command_fq_to_fa_r1() -> anyhow::Result<()> {
     // Basic conversion test
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("fq")
         .arg("to-fa")
@@ -107,7 +108,7 @@ fn command_fq_to_fa_r1() -> anyhow::Result<()> {
     assert_eq!(stdout.lines().filter(|e| *e == "!").count(), 0);
 
     // Test file output
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let temp = tempfile::Builder::new().suffix(".fa").tempfile()?;
     let temp_path = temp.path();
 
@@ -128,7 +129,7 @@ fn command_fq_to_fa_r1() -> anyhow::Result<()> {
 
 #[test]
 fn command_fq_interleave() -> anyhow::Result<()> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("fq")
         .arg("interleave")
@@ -150,7 +151,7 @@ fn command_fq_interleave() -> anyhow::Result<()> {
 #[test]
 fn command_fq_interleave_fa() -> anyhow::Result<()> {
     // count empty seqs
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("fq")
         .arg("interleave")
@@ -162,7 +163,7 @@ fn command_fq_interleave_fa() -> anyhow::Result<()> {
     assert_eq!(stdout.lines().filter(|e| e.is_empty()).count(), 10);
 
     // count empty seqs (single)
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("fq")
         .arg("interleave")
@@ -173,7 +174,7 @@ fn command_fq_interleave_fa() -> anyhow::Result<()> {
     assert_eq!(stdout.lines().filter(|e| e.is_empty()).count(), 5);
 
     // count empty seqs (single)
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("fq")
         .arg("interleave")
@@ -190,7 +191,7 @@ fn command_fq_interleave_fa() -> anyhow::Result<()> {
 #[test]
 fn command_fq_interleave_fq_detailed() -> anyhow::Result<()> {
     // fq
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("fq")
         .arg("interleave")
@@ -206,7 +207,7 @@ fn command_fq_interleave_fq_detailed() -> anyhow::Result<()> {
     assert_eq!(stdout.lines().filter(|e| e.ends_with("/2")).count(), 25);
 
     // fq (single)
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("fq")
         .arg("interleave")

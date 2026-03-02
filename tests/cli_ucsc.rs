@@ -1,4 +1,8 @@
-use assert_cmd::cargo::cargo_bin_cmd;
+#[macro_use]
+#[path = "common/mod.rs"]
+mod common;
+
+use common::PgrCmd;
 use std::fs;
 use std::path::PathBuf;
 use tempfile::TempDir;
@@ -37,14 +41,15 @@ fn test_lav_to_psl_lastz() -> anyhow::Result<()> {
     let expected_output = get_path("lastz.psl");
     let output = temp.path().join("out.psl");
 
-    let mut cmd = cargo_bin_cmd!("pgr");
-    cmd.arg("lav")
-        .arg("to-psl")
-        .arg(&input)
-        .arg("--output")
-        .arg(&output);
-
-    cmd.assert().success();
+    PgrCmd::new()
+        .args(&[
+            "lav",
+            "to-psl",
+            input.to_str().unwrap(),
+            "--output",
+            output.to_str().unwrap(),
+        ])
+        .run();
 
     let output_content = fs::read_to_string(&output)?;
     let expected_content = fs::read_to_string(&expected_output)?;
@@ -69,14 +74,15 @@ fn test_2bit_size_pseudocat() -> anyhow::Result<()> {
     let expected_output = get_path("pseudocat.sizes");
     let output = temp.path().join("out.sizes");
 
-    let mut cmd = cargo_bin_cmd!("pgr");
-    cmd.arg("2bit")
-        .arg("size")
-        .arg(&input)
-        .arg("-o")
-        .arg(&output);
-
-    cmd.assert().success();
+    PgrCmd::new()
+        .args(&[
+            "2bit",
+            "size",
+            input.to_str().unwrap(),
+            "-o",
+            output.to_str().unwrap(),
+        ])
+        .run();
 
     let output_content = fs::read_to_string(&output)?;
     let expected_content = fs::read_to_string(&expected_output)?;
@@ -96,22 +102,23 @@ fn test_chaining_psl_lastz() -> anyhow::Result<()> {
     let expected_output = get_path("pslChain/lastz.raw.chain");
     let output = temp.path().join("out.chain");
 
-    let mut cmd = cargo_bin_cmd!("pgr");
-    cmd.arg("psl")
-        .arg("chain")
-        .arg(&t_2bit)
-        .arg(&q_2bit)
-        .arg(&input)
-        .arg("--outfile")
-        .arg(&output)
-        .arg("--score-scheme")
-        .arg("hoxd55")
-        .arg("--linear-gap")
-        .arg("medium")
-        .arg("--min-score")
-        .arg("1000"); // Matches axtChain -minScore=1000
-
-    cmd.assert().success();
+    PgrCmd::new()
+        .args(&[
+            "psl",
+            "chain",
+            t_2bit.to_str().unwrap(),
+            q_2bit.to_str().unwrap(),
+            input.to_str().unwrap(),
+            "--outfile",
+            output.to_str().unwrap(),
+            "--score-scheme",
+            "hoxd55",
+            "--linear-gap",
+            "medium",
+            "--min-score",
+            "1000",
+        ])
+        .run();
 
     let output_content = fs::read_to_string(&output)?;
     let expected_content = fs::read_to_string(&expected_output)?;
@@ -140,17 +147,18 @@ fn test_chain_anti_repeat_lastz() -> anyhow::Result<()> {
     let expected_output = get_path("pslChain/lastz.chain");
     let output = temp.path().join("out.chain");
 
-    let mut cmd = cargo_bin_cmd!("pgr");
-    cmd.arg("chain")
-        .arg("anti-repeat")
-        .arg("--target")
-        .arg(&t_2bit)
-        .arg("--query")
-        .arg(&q_2bit)
-        .arg(&input)
-        .arg(&output);
-
-    cmd.assert().success();
+    PgrCmd::new()
+        .args(&[
+            "chain",
+            "anti-repeat",
+            "--target",
+            t_2bit.to_str().unwrap(),
+            "--query",
+            q_2bit.to_str().unwrap(),
+            input.to_str().unwrap(),
+            output.to_str().unwrap(),
+        ])
+        .run();
 
     let output_content = fs::read_to_string(&output)?;
     let expected_content = fs::read_to_string(&expected_output)?;
@@ -171,14 +179,15 @@ fn test_chain_sort_lastz() -> anyhow::Result<()> {
     let expected_output = get_path("all.chain");
     let output = temp.path().join("out.chain");
 
-    let mut cmd = cargo_bin_cmd!("pgr");
-    cmd.arg("chain")
-        .arg("sort")
-        .arg(&input)
-        .arg("--output")
-        .arg(&output);
-
-    cmd.assert().success();
+    PgrCmd::new()
+        .args(&[
+            "chain",
+            "sort",
+            input.to_str().unwrap(),
+            "--output",
+            output.to_str().unwrap(),
+        ])
+        .run();
 
     let output_content = fs::read_to_string(&output)?;
     let expected_content = fs::read_to_string(&expected_output)?;
@@ -201,15 +210,16 @@ fn test_chain_pre_net_lastz() -> anyhow::Result<()> {
     let expected_output = get_path("all.pre.chain");
     let output = temp.path().join("out.chain");
 
-    let mut cmd = cargo_bin_cmd!("pgr");
-    cmd.arg("chain")
-        .arg("pre-net")
-        .arg(&input)
-        .arg(&t_sizes)
-        .arg(&q_sizes)
-        .arg(&output);
-
-    cmd.assert().success();
+    PgrCmd::new()
+        .args(&[
+            "chain",
+            "pre-net",
+            input.to_str().unwrap(),
+            t_sizes.to_str().unwrap(),
+            q_sizes.to_str().unwrap(),
+            output.to_str().unwrap(),
+        ])
+        .run();
 
     let output_content = fs::read_to_string(&output)?;
     let expected_content = fs::read_to_string(&expected_output)?;
@@ -235,26 +245,21 @@ fn test_chain_net_lastz() -> anyhow::Result<()> {
     let output_t_net = temp.path().join("out.t.net");
     let output_q_net = temp.path().join("out.q.net");
 
-    let mut cmd = cargo_bin_cmd!("pgr");
-    cmd.arg("chain")
-        .arg("net")
-        .arg(&input)
-        .arg(&t_sizes)
-        .arg(&q_sizes)
-        .arg(&output_t_net)
-        .arg(&output_q_net)
-        .arg("--min-space")
-        .arg("1")
-        .arg("--min-score")
-        .arg("2000");
-
-    let output = cmd.output()?;
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    println!("STDERR: {}", stderr);
-
-    if !output.status.success() {
-        panic!("Command failed with status: {}", output.status);
-    }
+    PgrCmd::new()
+        .args(&[
+            "chain",
+            "net",
+            input.to_str().unwrap(),
+            t_sizes.to_str().unwrap(),
+            q_sizes.to_str().unwrap(),
+            output_t_net.to_str().unwrap(),
+            output_q_net.to_str().unwrap(),
+            "--min-space",
+            "1",
+            "--min-score",
+            "2000",
+        ])
+        .run();
 
     let t_net_content = fs::read_to_string(&output_t_net)?;
     let expected_t_content = fs::read_to_string(&expected_t_net)?;
@@ -275,10 +280,14 @@ fn test_net_syntenic_lastz() -> anyhow::Result<()> {
     let expected_output = get_path("noClass.net");
     let output = temp.path().join("out.net");
 
-    let mut cmd = cargo_bin_cmd!("pgr");
-    cmd.arg("net").arg("syntenic").arg(&input).arg(&output);
-
-    cmd.assert().success();
+    PgrCmd::new()
+        .args(&[
+            "net",
+            "syntenic",
+            input.to_str().unwrap(),
+            output.to_str().unwrap(),
+        ])
+        .run();
 
     let output_content = fs::read_to_string(&output)?;
     let expected_content = fs::read_to_string(&expected_output)?;
@@ -296,14 +305,15 @@ fn test_net_subset_lastz() -> anyhow::Result<()> {
     let expected_output = get_path("subset.chain");
     let output = temp.path().join("out.chain");
 
-    let mut cmd = cargo_bin_cmd!("pgr");
-    cmd.arg("net")
-        .arg("subset")
-        .arg(&net_input)
-        .arg(&chain_input)
-        .arg(&output);
-
-    cmd.assert().success();
+    PgrCmd::new()
+        .args(&[
+            "net",
+            "subset",
+            net_input.to_str().unwrap(),
+            chain_input.to_str().unwrap(),
+            output.to_str().unwrap(),
+        ])
+        .run();
 
     let output_content = fs::read_to_string(&output)?;
     let expected_content = fs::read_to_string(&expected_output)?;
@@ -324,10 +334,14 @@ fn test_chain_stitch_lastz() -> anyhow::Result<()> {
     let expected_output = get_path("over.chain");
     let output = temp.path().join("out.chain");
 
-    let mut cmd = cargo_bin_cmd!("pgr");
-    cmd.arg("chain").arg("stitch").arg(&input).arg(&output);
-
-    cmd.assert().success();
+    PgrCmd::new()
+        .args(&[
+            "chain",
+            "stitch",
+            input.to_str().unwrap(),
+            output.to_str().unwrap(),
+        ])
+        .run();
 
     let output_content = fs::read_to_string(&output)?;
     let expected_content = fs::read_to_string(&expected_output)?;
@@ -354,10 +368,14 @@ fn test_net_split_lastz() -> anyhow::Result<()> {
     let input = get_path("noClass.net");
     let output_dir = temp.path().join("net");
 
-    let mut cmd = cargo_bin_cmd!("pgr");
-    cmd.arg("net").arg("split").arg(&input).arg(&output_dir);
-
-    cmd.assert().success();
+    PgrCmd::new()
+        .args(&[
+            "net",
+            "split",
+            input.to_str().unwrap(),
+            output_dir.to_str().unwrap(),
+        ])
+        .run();
 
     let output_file = output_dir.join("cat.net");
     assert!(output_file.exists());
@@ -384,16 +402,17 @@ fn test_net_to_axt_lastz() -> anyhow::Result<()> {
     let q_2bit = get_path("pseudopig.2bit");
     let output = temp.path().join("cat.axt");
 
-    let mut cmd = cargo_bin_cmd!("pgr");
-    cmd.arg("net")
-        .arg("to-axt")
-        .arg(&net_input)
-        .arg(&chain_input)
-        .arg(&t_2bit)
-        .arg(&q_2bit)
-        .arg(&output);
-
-    cmd.assert().success();
+    PgrCmd::new()
+        .args(&[
+            "net",
+            "to-axt",
+            net_input.to_str().unwrap(),
+            chain_input.to_str().unwrap(),
+            t_2bit.to_str().unwrap(),
+            q_2bit.to_str().unwrap(),
+            output.to_str().unwrap(),
+        ])
+        .run();
 
     assert!(output.exists());
     assert!(fs::metadata(&output)?.len() > 0);
@@ -421,15 +440,15 @@ fn test_axt_sort_lastz() -> anyhow::Result<()> {
     let input_path = get_path("axtNet/cat.axt");
     let output = temp.path().join("cat.axt");
 
-    let mut cmd_sort = cargo_bin_cmd!("pgr");
-    cmd_sort
-        .arg("axt")
-        .arg("sort")
-        .arg(&input_path)
-        .arg("-o")
-        .arg(&output);
-
-    cmd_sort.assert().success();
+    PgrCmd::new()
+        .args(&[
+            "axt",
+            "sort",
+            input_path.to_str().unwrap(),
+            "-o",
+            output.to_str().unwrap(),
+        ])
+        .run();
 
     let output_content = fs::read_to_string(&output)?;
     let expected_content = fs::read_to_string(&input_path)?;

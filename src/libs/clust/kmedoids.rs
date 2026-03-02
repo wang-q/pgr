@@ -52,7 +52,10 @@ impl KMedoids {
     }
 
     /// Perform clustering on the given distance matrix
-    pub fn perform_clustering(&self, matrix: &crate::libs::pairmat::ScoringMatrix<f32>) -> Vec<Vec<usize>> {
+    pub fn perform_clustering(
+        &self,
+        matrix: &crate::libs::pairmat::ScoringMatrix<f32>,
+    ) -> Vec<Vec<usize>> {
         let n = matrix.size();
         if n == 0 {
             return vec![];

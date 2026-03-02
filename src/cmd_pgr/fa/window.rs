@@ -119,11 +119,15 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             let path = std::path::Path::new(outfile);
             let file_stem = path.file_stem().unwrap().to_str().unwrap();
             let extension = path.extension().unwrap_or_default().to_str().unwrap();
-            
+
             // Simple file splitting: input.fa -> input.001.fa
             let (stem, ext) = (file_stem, extension.to_string());
 
-            let ext_str = if ext.is_empty() { String::new() } else { format!(".{}", ext) };
+            let ext_str = if ext.is_empty() {
+                String::new()
+            } else {
+                format!(".{}", ext)
+            };
             let new_filename = format!("{}.{:03}{}", stem, part, ext_str);
             let new_path = path.with_file_name(new_filename);
             pgr::writer(new_path.to_str().unwrap())
@@ -132,7 +136,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let mut current_part = 1;
     let mut record_count = 0;
-    
+
     // Logic:
     // 1. Shuffle ON:
     //    - Chunked: Buffer chunk -> Shuffle -> Write to new file -> Clear buffer.
@@ -142,19 +146,23 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //    - No chunk: Stream to single file.
 
     let mut fa_out: Option<noodles_fasta::io::Writer<Box<dyn std::io::Write>>> = None;
-    
+
     // Initialize global writer if not chunking.
     if chunk_size.is_none() {
         let writer = pgr::writer(outfile);
-        fa_out = Some(noodles_fasta::io::writer::Builder::default()
-            .set_line_base_count(usize::MAX)
-            .build_from_writer(writer));
+        fa_out = Some(
+            noodles_fasta::io::writer::Builder::default()
+                .set_line_base_count(usize::MAX)
+                .build_from_writer(writer),
+        );
     } else if !shuffle {
         // If chunking without shuffle, init first writer
         let writer = create_writer(current_part);
-        fa_out = Some(noodles_fasta::io::writer::Builder::default()
-            .set_line_base_count(usize::MAX)
-            .build_from_writer(writer));
+        fa_out = Some(
+            noodles_fasta::io::writer::Builder::default()
+                .set_line_base_count(usize::MAX)
+                .build_from_writer(writer),
+        );
     }
 
     // Reuse a single buffer to avoid reallocation if not needed, but for shuffle we accumulate.
@@ -169,41 +177,45 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
         for start in (0..seq_len).step_by(step) {
             let end = std::cmp::min(start + len, seq_len);
-            if start >= end { continue; }
+            if start >= end {
+                continue;
+            }
 
             let start_pos = noodles_core::Position::new(start + 1).unwrap();
             let end_pos = noodles_core::Position::new(end).unwrap();
             let slice = seq.slice(start_pos..=end_pos).unwrap();
 
-            if slice.as_ref().iter().all(|&b| pgr::libs::nt::is_n(b)) { continue; }
+            if slice.as_ref().iter().all(|&b| pgr::libs::nt::is_n(b)) {
+                continue;
+            }
 
             let new_name = format!("{}:{}-{}", name, start + 1, end);
             let definition = noodles_fasta::record::Definition::new(new_name, None);
             let new_record = noodles_fasta::Record::new(definition, slice);
-            
+
             if shuffle {
                 records_buffer.push(new_record);
-                
+
                 // If chunk limit reached, flush buffer
                 if let Some(limit) = chunk_size {
                     if records_buffer.len() >= limit {
                         use rand::seq::SliceRandom;
                         use rand::SeedableRng;
                         // Use deterministic seed derived from base seed + chunk index
-                        let chunk_seed = seed + (current_part as u64); 
+                        let chunk_seed = seed + (current_part as u64);
                         let mut rng = rand::rngs::StdRng::seed_from_u64(chunk_seed);
                         records_buffer.shuffle(&mut rng);
-                        
+
                         // Write to current part file
                         let writer = create_writer(current_part);
                         let mut chunk_out = noodles_fasta::io::writer::Builder::default()
                             .set_line_base_count(usize::MAX)
                             .build_from_writer(writer);
-                            
+
                         for r in &records_buffer {
                             chunk_out.write_record(r)?;
                         }
-                        
+
                         records_buffer.clear();
                         current_part += 1;
                     }
@@ -215,12 +227,14 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                         current_part += 1;
                         record_count = 0;
                         let writer = create_writer(current_part);
-                        fa_out = Some(noodles_fasta::io::writer::Builder::default()
-                            .set_line_base_count(usize::MAX)
-                            .build_from_writer(writer));
+                        fa_out = Some(
+                            noodles_fasta::io::writer::Builder::default()
+                                .set_line_base_count(usize::MAX)
+                                .build_from_writer(writer),
+                        );
                     }
                 }
-                
+
                 if let Some(ref mut writer) = fa_out {
                     writer.write_record(&new_record)?;
                     record_count += 1;
@@ -240,23 +254,23 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         // Flush remaining records.
         // If chunking, this goes to a new chunk file.
         // If not chunking, this goes to the single global file.
-        
+
         let mut final_out = if chunk_size.is_some() {
-             let writer = create_writer(current_part);
-             noodles_fasta::io::writer::Builder::default()
+            let writer = create_writer(current_part);
+            noodles_fasta::io::writer::Builder::default()
                 .set_line_base_count(usize::MAX)
                 .build_from_writer(writer)
         } else {
-             if let Some(writer) = fa_out.take() {
-                 writer
-             } else {
-                 let writer = pgr::writer(outfile);
-                 noodles_fasta::io::writer::Builder::default()
+            if let Some(writer) = fa_out.take() {
+                writer
+            } else {
+                let writer = pgr::writer(outfile);
+                noodles_fasta::io::writer::Builder::default()
                     .set_line_base_count(usize::MAX)
                     .build_from_writer(writer)
-             }
+            }
         };
-        
+
         for record in records_buffer {
             final_out.write_record(&record)?;
         }

@@ -1,19 +1,17 @@
-use assert_cmd::cargo::cargo_bin_cmd;
+use assert_cmd::prelude::*;
 use predicates::prelude::*;
+use std::process::Command;
 use tempfile::TempDir;
 
 #[test]
 fn test_fa_window_basic() -> Result<(), Box<dyn std::error::Error>> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let temp_dir = TempDir::new()?;
     let output_file = temp_dir.path().join("output.fa");
 
     // Create a simple test file
     let input_file = temp_dir.path().join("input.fa");
-    std::fs::write(
-        &input_file,
-        ">seq1\nATGCATGCAT\n>seq2\nGGCCGGCCGG\n"
-    )?;
+    std::fs::write(&input_file, ">seq1\nATGCATGCAT\n>seq2\nGGCCGGCCGG\n")?;
 
     cmd.arg("fa")
         .arg("window")
@@ -34,7 +32,7 @@ fn test_fa_window_basic() -> Result<(), Box<dyn std::error::Error>> {
     // Total 10 windows
     assert_eq!(content.matches(">seq1").count(), 5);
     assert_eq!(content.matches(">seq2").count(), 5);
-    
+
     // Check first window
     assert!(content.contains(">seq1:1-4"));
     assert!(content.contains("ATGC"));
@@ -50,14 +48,14 @@ fn test_fa_window_basic() -> Result<(), Box<dyn std::error::Error>> {
 
 #[test]
 fn test_fa_window_skip_n() -> Result<(), Box<dyn std::error::Error>> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let temp_dir = TempDir::new()?;
     let output_file = temp_dir.path().join("output.fa");
 
     let input_file = temp_dir.path().join("input.fa");
     std::fs::write(
         &input_file,
-        ">seq1\nATGC\nNNNN\nGCAT\n" // ATGC NNNN GCAT
+        ">seq1\nATGC\nNNNN\nGCAT\n", // ATGC NNNN GCAT
     )?;
 
     cmd.arg("fa")
@@ -83,7 +81,7 @@ fn test_fa_window_skip_n() -> Result<(), Box<dyn std::error::Error>> {
 
 #[test]
 fn test_fa_window_chunk() -> Result<(), Box<dyn std::error::Error>> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let temp_dir = TempDir::new()?;
     let output_file = temp_dir.path().join("output.fa");
 
@@ -119,7 +117,7 @@ fn test_fa_window_chunk() -> Result<(), Box<dyn std::error::Error>> {
 
     let f1 = std::fs::read_to_string(temp_dir.path().join("output.001.fa"))?;
     assert_eq!(f1.matches(">").count(), 3);
-    
+
     let f4 = std::fs::read_to_string(temp_dir.path().join("output.004.fa"))?;
     assert_eq!(f4.matches(">").count(), 1);
 
@@ -128,7 +126,7 @@ fn test_fa_window_chunk() -> Result<(), Box<dyn std::error::Error>> {
 
 #[test]
 fn test_fa_window_shuffle_chunk() -> Result<(), Box<dyn std::error::Error>> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let temp_dir = TempDir::new()?;
     let output_file = temp_dir.path().join("output.fa");
 
@@ -170,10 +168,10 @@ fn test_fa_window_shuffle_chunk() -> Result<(), Box<dyn std::error::Error>> {
 
 #[test]
 fn test_fa_window_real_file() -> Result<(), Box<dyn std::error::Error>> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let temp_dir = TempDir::new()?;
     let output_file = temp_dir.path().join("sakai_window.fa");
-    
+
     // Use the real sakai.fa.gz file
     let input_file = "tests/genome/sakai.fa.gz";
 
@@ -192,7 +190,7 @@ fn test_fa_window_real_file() -> Result<(), Box<dyn std::error::Error>> {
     let content = std::fs::read_to_string(&output_file)?;
     assert!(content.len() > 0);
     assert!(content.contains(">"));
-    
+
     // Verify 1-based coordinates in header
     // e.g., >NC_002695:1-1000
     assert!(content.contains(":1-1000"));
@@ -202,7 +200,7 @@ fn test_fa_window_real_file() -> Result<(), Box<dyn std::error::Error>> {
 
 #[test]
 fn test_fa_window_chunk_stdout_fail() -> Result<(), Box<dyn std::error::Error>> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let temp_dir = TempDir::new()?;
     let input_file = temp_dir.path().join("input.fa");
     std::fs::write(&input_file, ">seq1\nACGT\n")?;
@@ -211,11 +209,12 @@ fn test_fa_window_chunk_stdout_fail() -> Result<(), Box<dyn std::error::Error>> 
         .arg("window")
         .arg(&input_file)
         .arg("--chunk")
-        .arg("10"); 
-        // Default output is stdout, should fail
+        .arg("10");
+    // Default output is stdout, should fail
 
-    cmd.assert().failure()
-        .stderr(predicate::str::contains("Cannot use --chunk with stdout output"));
+    cmd.assert().failure().stderr(predicate::str::contains(
+        "Cannot use --chunk with stdout output",
+    ));
 
     Ok(())
 }

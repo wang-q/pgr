@@ -80,7 +80,10 @@ impl Mcl {
     ///
     /// A vector of clusters, where each cluster is a vector of node indices
     /// corresponding to the input `ScoringMatrix`.
-    pub fn perform_clustering(&self, sm: &crate::libs::pairmat::ScoringMatrix<f32>) -> Vec<Vec<usize>> {
+    pub fn perform_clustering(
+        &self,
+        sm: &crate::libs::pairmat::ScoringMatrix<f32>,
+    ) -> Vec<Vec<usize>> {
         let mut matrix = SparseMat::from_scoring_matrix(sm);
         matrix.normalize();
 

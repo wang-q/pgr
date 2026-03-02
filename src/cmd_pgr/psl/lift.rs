@@ -109,10 +109,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             if let Some((name_part, start, end)) = parse_subrange(&psl.q_name) {
                 let start_0based = start.saturating_sub(1);
                 let end_0based = end;
-                
+
                 // Check sizes
                 let real_size_opt = sizes_map.get(&name_part).copied();
-                
+
                 // If sizes provided and match, proceed
                 if let Some(real_size_i32) = real_size_opt {
                     let real_size = real_size_i32 as u32;
@@ -120,10 +120,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                         eprintln!("Warning: Subrange end {} > sequence size {} for {}. Skipping query lift.", end_0based, real_size, psl.q_name);
                     } else {
                         let is_neg = psl.strand.starts_with('-');
-                        
+
                         psl.q_name = name_part;
                         psl.q_size = real_size;
-                        
+
                         let offset = if is_neg {
                             real_size - end_0based
                         } else {
@@ -137,7 +137,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                         }
                     }
                 } else {
-                     eprintln!("Warning: No sizes provided for {}. Skipping query lift.", name_part);
+                    eprintln!(
+                        "Warning: No sizes provided for {}. Skipping query lift.",
+                        name_part
+                    );
                 }
             }
         }
@@ -145,12 +148,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         // Try to lift target
         if let Some(sizes_map) = &t_sizes_map {
             if let Some((name_part, start, end)) = parse_subrange(&psl.t_name) {
-                 let start_0based = start.saturating_sub(1);
+                let start_0based = start.saturating_sub(1);
                 let end_0based = end;
-                
+
                 // Check sizes
                 let real_size_opt = sizes_map.get(&name_part).copied();
-                
+
                 // If sizes provided and match, proceed
                 if let Some(real_size_i32) = real_size_opt {
                     let real_size = real_size_i32 as u32;
@@ -166,7 +169,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
                         psl.t_name = name_part;
                         psl.t_size = real_size;
-                        
+
                         let offset = if is_neg {
                             real_size - end_0based
                         } else {
@@ -180,7 +183,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                         }
                     }
                 } else {
-                     eprintln!("Warning: No sizes provided for {}. Skipping target lift.", name_part);
+                    eprintln!(
+                        "Warning: No sizes provided for {}. Skipping target lift.",
+                        name_part
+                    );
                 }
             }
         }

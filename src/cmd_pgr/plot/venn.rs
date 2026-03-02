@@ -115,8 +115,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             let sets_arr = [set_a, set_b, set_c];
             for i in 0..2 {
                 for j in (i + 1)..=2 {
-                    let intersection =
-                        sets_arr[i].intersect(sets_arr[j]).diff(&i_abc).size();
+                    let intersection = sets_arr[i].intersect(sets_arr[j]).diff(&i_abc).size();
                     inter.push(intersection);
                 }
             }

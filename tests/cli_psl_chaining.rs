@@ -1,6 +1,7 @@
-use assert_cmd::cargo::cargo_bin_cmd;
+use assert_cmd::prelude::*;
 use std::fs;
 use std::path::PathBuf;
+use std::process::Command;
 use tempfile::TempDir;
 
 fn get_path(subcommand: &str, dir: &str, filename: &str) -> PathBuf {
@@ -17,7 +18,7 @@ fn create_2bit(dir: &TempDir, name: &str, content: &str) -> anyhow::Result<std::
     let bit_path = dir.path().join(format!("{}.2bit", name));
     fs::write(&fa_path, content)?;
 
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     cmd.arg("fa")
         .arg("to-2bit")
         .arg(&fa_path)
@@ -52,7 +53,7 @@ fn test_chaining_psl_basic() -> anyhow::Result<()> {
 
     let output_path = temp.path().join("out.chain");
 
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     cmd.arg("psl")
         .arg("chain")
         .arg(&t_2bit)
@@ -96,7 +97,7 @@ fn test_chaining_default_score_filtering() -> anyhow::Result<()> {
 
     let output_path = temp.path().join("out.chain");
 
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     cmd.arg("psl")
         .arg("chain")
         .arg(&t_2bit)
@@ -147,7 +148,7 @@ fn test_chaining_psl_new_style_lastz() -> anyhow::Result<()> {
     let expected_output = get_path("psl", "expected", "newStyleLastz.chain");
     let output = temp.path().join("out.chain");
 
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     cmd.arg("psl")
         .arg("chain")
         .arg(&t_2bit)

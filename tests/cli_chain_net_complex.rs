@@ -1,5 +1,6 @@
-use assert_cmd::cargo::cargo_bin_cmd;
+use assert_cmd::prelude::*;
 use std::fs;
+use std::process::Command;
 use tempfile::tempdir;
 
 #[test]
@@ -29,7 +30,7 @@ fn test_chain_net_greedy_overlap() -> Result<(), Box<dyn std::error::Error>> {
     // Let's provide them sorted by score (2000 then 1000).
     fs::write(&chain_path, format!("{}{}", c1, c2))?;
 
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     cmd.arg("chain")
         .arg("net")
         .arg(chain_path.to_str().unwrap())
@@ -90,7 +91,7 @@ fn test_chain_net_nested_fill() -> Result<(), Box<dyn std::error::Error>> {
 
     fs::write(&chain_path, format!("{}{}", c1, c2))?;
 
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     cmd.arg("chain")
         .arg("net")
         .arg(chain_path.to_str().unwrap())

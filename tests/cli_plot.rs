@@ -3,7 +3,7 @@ use std::process::Command;
 
 #[test]
 fn command_plot_venn2() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("plot")
         .arg("venn")
@@ -20,7 +20,7 @@ fn command_plot_venn2() -> anyhow::Result<()> {
 
 #[test]
 fn command_plot_venn3() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("plot")
         .arg("venn")
@@ -38,7 +38,7 @@ fn command_plot_venn3() -> anyhow::Result<()> {
 
 #[test]
 fn command_plot_venn4() -> anyhow::Result<()> {
-    let mut cmd = Command::cargo_bin("pgr")?;
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("plot")
         .arg("venn")

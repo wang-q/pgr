@@ -95,7 +95,10 @@ pub fn make_subcommand() -> Command {
     let mut preset_help = String::from("Presets from UCSC:\n");
     let mut preset_names = Vec::new();
     for p in PRESETS {
-        preset_help.push_str(&format!("    {}: {}\n           {}\n", p.name, p.desc, p.params));
+        preset_help.push_str(&format!(
+            "    {}: {}\n           {}\n",
+            p.name, p.desc, p.params
+        ));
         preset_names.push(p.name);
     }
 
@@ -390,10 +393,7 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
             // If the user provides a multi-sequence file without --self, lastz might complain or process only the first sequence
             // unless we add [multiple] back conditionally.
             // But for now, for the "Cactus-style" workflow which splits files, this is safer.
-            let target_arg = format!(
-                "{}[nameparse=darkspace]",
-                target_file.to_string_lossy()
-            );
+            let target_arg = format!("{}[nameparse=darkspace]", target_file.to_string_lossy());
 
             let mut cmd = std::process::Command::new("lastz");
             cmd.arg(&target_arg);

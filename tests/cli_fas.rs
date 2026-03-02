@@ -1,10 +1,11 @@
-use assert_cmd::cargo::cargo_bin_cmd;
+use assert_cmd::prelude::*;
 use predicates::prelude::*;
+use std::process::Command;
 use tempfile::TempDir;
 
 #[test]
 fn command_invalid() -> anyhow::Result<()> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     cmd.arg("fas").arg("foobar");
     cmd.assert()
         .failure()
@@ -15,7 +16,7 @@ fn command_invalid() -> anyhow::Result<()> {
 
 #[test]
 fn command_name() -> anyhow::Result<()> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("fas")
         .arg("name")
@@ -33,7 +34,7 @@ fn command_name() -> anyhow::Result<()> {
 
 #[test]
 fn command_cover() -> anyhow::Result<()> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("fas")
         .arg("cover")
@@ -47,7 +48,7 @@ fn command_cover() -> anyhow::Result<()> {
     assert!(stdout.contains("13267-13287"), "runlist");
 
     // --name, --trim
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("fas")
         .arg("cover")
@@ -69,7 +70,7 @@ fn command_cover() -> anyhow::Result<()> {
 
 #[test]
 fn command_concat() -> anyhow::Result<()> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("fas")
         .arg("concat")
@@ -90,7 +91,7 @@ fn command_concat() -> anyhow::Result<()> {
 
 #[test]
 fn command_concat_phylip() -> anyhow::Result<()> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("fas")
         .arg("concat")
@@ -112,7 +113,7 @@ fn command_concat_phylip() -> anyhow::Result<()> {
 
 #[test]
 fn command_subset() -> anyhow::Result<()> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("fas")
         .arg("subset")
@@ -125,7 +126,7 @@ fn command_subset() -> anyhow::Result<()> {
     assert_eq!(stdout.lines().count(), 15);
     assert!(stdout.lines().next().unwrap().contains("Spar")); // >Spar.
 
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("fas")
         .arg("subset")
@@ -144,7 +145,7 @@ fn command_subset() -> anyhow::Result<()> {
 
 #[test]
 fn command_link() -> anyhow::Result<()> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("fas")
         .arg("link")
@@ -156,7 +157,7 @@ fn command_link() -> anyhow::Result<()> {
     assert_eq!(stdout.lines().next().unwrap().split_whitespace().count(), 4);
 
     // --pair
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("fas")
         .arg("link")
@@ -169,7 +170,7 @@ fn command_link() -> anyhow::Result<()> {
     assert_eq!(stdout.lines().next().unwrap().split_whitespace().count(), 2);
 
     // --best
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("fas")
         .arg("link")
@@ -186,7 +187,7 @@ fn command_link() -> anyhow::Result<()> {
 
 #[test]
 fn command_replace() -> anyhow::Result<()> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("fas")
         .arg("replace")
@@ -200,7 +201,7 @@ fn command_replace() -> anyhow::Result<()> {
     assert!(stdout.contains(">query.VIII(+)"));
 
     // fail
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("fas")
         .arg("replace")
@@ -216,7 +217,7 @@ fn command_replace() -> anyhow::Result<()> {
     assert!(stderr.contains("records"), "error message");
 
     // remove
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("fas")
         .arg("replace")
@@ -234,7 +235,7 @@ fn command_replace() -> anyhow::Result<()> {
 
 #[test]
 fn command_check() -> anyhow::Result<()> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("fas")
         .arg("check")
@@ -249,7 +250,7 @@ fn command_check() -> anyhow::Result<()> {
     assert!(stdout.lines().last().unwrap().contains("\tFAILED"));
 
     // --name
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("fas")
         .arg("check")
@@ -270,7 +271,7 @@ fn command_check() -> anyhow::Result<()> {
 
 #[test]
 fn command_create() -> anyhow::Result<()> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("fas")
         .arg("create")
@@ -291,7 +292,7 @@ fn command_create() -> anyhow::Result<()> {
 
 #[test]
 fn command_separate() -> anyhow::Result<()> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("fas")
         .arg("separate")
@@ -317,7 +318,7 @@ fn command_separate_to() -> anyhow::Result<()> {
     let tempdir = TempDir::new()?;
     let tempdir_str = tempdir.path().to_str().unwrap();
 
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     cmd.arg("fas")
         .arg("separate")
         .arg("tests/fas/example.fas")
@@ -338,7 +339,7 @@ fn command_separate_to() -> anyhow::Result<()> {
 
 #[test]
 fn command_split() -> anyhow::Result<()> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("fas")
         .arg("split")
@@ -348,7 +349,7 @@ fn command_split() -> anyhow::Result<()> {
 
     assert_eq!(stdout.lines().count(), 27);
 
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("fas")
         .arg("split")
@@ -368,7 +369,7 @@ fn command_split_to() -> anyhow::Result<()> {
     let tempdir = TempDir::new()?;
     let tempdir_str = tempdir.path().to_str().unwrap();
 
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     cmd.arg("fas")
         .arg("split")
         .arg("tests/fas/example.fas")
@@ -390,7 +391,7 @@ fn command_split_to() -> anyhow::Result<()> {
 
 #[test]
 fn command_refine() -> anyhow::Result<()> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("fas")
         .arg("refine")
@@ -403,7 +404,7 @@ fn command_refine() -> anyhow::Result<()> {
     assert_eq!(stdout.lines().count(), 27);
 
     // --parallel 2
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("fas")
         .arg("refine")
@@ -418,7 +419,7 @@ fn command_refine() -> anyhow::Result<()> {
     assert_eq!(stdout.lines().count(), 27);
 
     // --parallel 2
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("fas")
         .arg("refine")
@@ -433,7 +434,7 @@ fn command_refine() -> anyhow::Result<()> {
     assert_eq!(stdout.lines().count(), 7);
 
     // --chop 10
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("fas")
         .arg("refine")
@@ -456,7 +457,7 @@ fn command_refine() -> anyhow::Result<()> {
 
 #[test]
 fn command_join() -> anyhow::Result<()> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("fas")
         .arg("join")
@@ -472,7 +473,7 @@ fn command_join() -> anyhow::Result<()> {
         "Selected name first"
     );
 
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("fas")
         .arg("join")
@@ -493,7 +494,7 @@ fn command_join() -> anyhow::Result<()> {
 
 #[test]
 fn command_slice() -> anyhow::Result<()> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("fas")
         .arg("slice")
@@ -515,7 +516,7 @@ fn command_slice() -> anyhow::Result<()> {
 
 #[test]
 fn command_stat() -> anyhow::Result<()> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("fas")
         .arg("stat")
@@ -526,7 +527,7 @@ fn command_stat() -> anyhow::Result<()> {
     assert_eq!(stdout.lines().count(), 4);
     assert!(stdout.contains("0.192\t6\n"), "all together");
 
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("fas")
         .arg("stat")
@@ -543,7 +544,7 @@ fn command_stat() -> anyhow::Result<()> {
 
 #[test]
 fn command_filter() -> anyhow::Result<()> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("fas")
         .arg("filter")
@@ -553,7 +554,7 @@ fn command_filter() -> anyhow::Result<()> {
 
     assert_eq!(stdout.lines().count(), 27);
 
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("fas")
         .arg("filter")
@@ -565,7 +566,7 @@ fn command_filter() -> anyhow::Result<()> {
 
     assert_eq!(stdout.lines().count(), 18);
 
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("fas")
         .arg("filter")

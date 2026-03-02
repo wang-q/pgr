@@ -89,7 +89,9 @@ fn banded_align_refs(
         return None;
     }
 
-    let band = cfg.radius.max(((n as isize - m as isize).unsigned_abs()) as usize);
+    let band = cfg
+        .radius
+        .max(((n as isize - m as isize).unsigned_abs()) as usize);
 
     let width = 2 * band + 1;
     let mut score = vec![i32::MIN; (n + 1) * width];
@@ -123,31 +125,32 @@ fn banded_align_refs(
         SubMatrix::hoxd55()
     };
 
-    let (gap_open_pen, gap_extend_pen) = if let (Some(open), Some(extend)) = (cfg.gap_open, cfg.gap_extend) {
-        let scale = cfg.match_score as f64 / 100.0;
-        let open_scaled = (open as f64 * scale).round() as i32;
-        let extend_scaled = (extend as f64 * scale).round() as i32;
-        (-open_scaled, -extend_scaled)
-    } else {
-        match cfg.gap_model {
-            FasMultizGapModel::Constant => (cfg.gap_score, cfg.gap_score),
-            FasMultizGapModel::Medium | FasMultizGapModel::Loose => {
-                let gap_calc = match cfg.gap_model {
-                    FasMultizGapModel::Medium => GapCalc::medium(),
-                    FasMultizGapModel::Loose => GapCalc::loose(),
-                    FasMultizGapModel::Constant => unreachable!(),
-                };
-                let c1 = gap_calc.calc(1, 0).max(1);
-                let c2 = gap_calc.calc(2, 0).max(c1 + 1);
-                let open_raw = 2 * c1 - c2;
-                let extend_raw = c2 - c1;
-                let scale = cfg.match_score as f64 / 100.0;
-                let open_scaled = (open_raw as f64 * scale).round() as i32;
-                let extend_scaled = (extend_raw as f64 * scale).round() as i32;
-                (-open_scaled, -extend_scaled)
+    let (gap_open_pen, gap_extend_pen) =
+        if let (Some(open), Some(extend)) = (cfg.gap_open, cfg.gap_extend) {
+            let scale = cfg.match_score as f64 / 100.0;
+            let open_scaled = (open as f64 * scale).round() as i32;
+            let extend_scaled = (extend as f64 * scale).round() as i32;
+            (-open_scaled, -extend_scaled)
+        } else {
+            match cfg.gap_model {
+                FasMultizGapModel::Constant => (cfg.gap_score, cfg.gap_score),
+                FasMultizGapModel::Medium | FasMultizGapModel::Loose => {
+                    let gap_calc = match cfg.gap_model {
+                        FasMultizGapModel::Medium => GapCalc::medium(),
+                        FasMultizGapModel::Loose => GapCalc::loose(),
+                        FasMultizGapModel::Constant => unreachable!(),
+                    };
+                    let c1 = gap_calc.calc(1, 0).max(1);
+                    let c2 = gap_calc.calc(2, 0).max(c1 + 1);
+                    let open_raw = 2 * c1 - c2;
+                    let extend_raw = c2 - c1;
+                    let scale = cfg.match_score as f64 / 100.0;
+                    let open_scaled = (open_raw as f64 * scale).round() as i32;
+                    let extend_scaled = (extend_raw as f64 * scale).round() as i32;
+                    (-open_scaled, -extend_scaled)
+                }
             }
-        }
-    };
+        };
 
     let mut profiles: Vec<(&[u8], &[u8])> = Vec::new();
     let mut map_a: BTreeMap<&str, &FasEntry> = BTreeMap::new();
@@ -389,7 +392,12 @@ fn merge_two_blocks_with_dp(
         let range = if name == ref_name {
             ref_range.clone()
         } else {
-            let chosen = if group[0].is_some() { group[0] } else { group[1] }.unwrap();
+            let chosen = if group[0].is_some() {
+                group[0]
+            } else {
+                group[1]
+            }
+            .unwrap();
             chosen.range().clone()
         };
 
@@ -500,7 +508,9 @@ pub fn merge_window(
 
     for (i, block) in blocks.iter().enumerate() {
         for (entry, name) in block.entries.iter().zip(block.names.iter()) {
-            let v = species_map.entry(name.clone()).or_insert_with(|| vec![None; n]);
+            let v = species_map
+                .entry(name.clone())
+                .or_insert_with(|| vec![None; n]);
             v[i] = Some(entry);
         }
     }
@@ -923,7 +933,15 @@ mod tests {
 
         let mut names: Vec<String> = merged.names.clone();
         names.sort();
-        assert_eq!(names, vec!["A".to_string(), "B".to_string(), "C".to_string(), "ref".to_string()]);
+        assert_eq!(
+            names,
+            vec![
+                "A".to_string(),
+                "B".to_string(),
+                "C".to_string(),
+                "ref".to_string()
+            ]
+        );
     }
 
     #[test]
@@ -957,9 +975,9 @@ mod tests {
 
     #[test]
     fn merge_fas_files_multiple_windows() {
+        use intspan::Range;
         use std::fs::File;
         use std::io::Write;
-        use intspan::Range;
 
         let dir = std::env::temp_dir();
         let path1 = dir.join("pgr_fas_multiz_test1.fas");
@@ -1018,15 +1036,18 @@ mod tests {
         for block in merged {
             let mut names = block.names.clone();
             names.sort();
-            assert_eq!(names, vec!["A".to_string(), "B".to_string(), "ref".to_string()]);
+            assert_eq!(
+                names,
+                vec!["A".to_string(), "B".to_string(), "ref".to_string()]
+            );
         }
     }
 
     #[test]
     fn merge_fas_files_auto_windows_matches_explicit() {
+        use intspan::Range;
         use std::fs::File;
         use std::io::Write;
-        use intspan::Range;
 
         let dir = std::env::temp_dir();
         let path1 = dir.join("pgr_fas_multiz_auto_test1.fas");
@@ -1126,7 +1147,12 @@ mod tests {
         names.sort();
         assert_eq!(
             names,
-            vec!["A".to_string(), "B".to_string(), "C".to_string(), "ref".to_string()]
+            vec![
+                "A".to_string(),
+                "B".to_string(),
+                "C".to_string(),
+                "ref".to_string()
+            ]
         );
     }
 }

@@ -343,12 +343,7 @@ fn test_2bit_size_flags() -> anyhow::Result<()> {
 
     // Test --no-ns
     let (stdout, _) = PgrCmd::new()
-        .args(&[
-            "2bit",
-            "size",
-            twobit.to_str().unwrap(),
-            "--no-ns",
-        ])
+        .args(&["2bit", "size", twobit.to_str().unwrap(), "--no-ns"])
         .run();
     assert!(stdout.contains("seq1\t8"));
     assert!(stdout.contains("seq2\t4"));

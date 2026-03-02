@@ -35,7 +35,6 @@ pub fn reader(input: &str) -> Box<dyn BufRead> {
     reader
 }
 
-
 /// ```
 /// let lines = pgr::read_lines("tests/mat/IBPA.list");
 /// assert_eq!(lines.len(), 3);

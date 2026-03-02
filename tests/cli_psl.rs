@@ -1,6 +1,7 @@
-use assert_cmd::cargo::cargo_bin_cmd;
+use assert_cmd::prelude::*;
 use std::fs;
 use std::path::PathBuf;
+use std::process::Command;
 use tempfile::TempDir;
 
 fn get_path(subcommand: &str, dir: &str, filename: &str) -> PathBuf {
@@ -22,7 +23,7 @@ fn test_histo_apq_base() -> anyhow::Result<()> {
     let input = get_path("histo", "input", "basic.psl");
     let output = temp.path().join("apq.histo");
 
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     cmd.arg("psl")
         .arg("histo")
         .arg("--what")
@@ -57,7 +58,7 @@ fn test_histo_apq_multi() -> anyhow::Result<()> {
     let input = get_path("histo", "input", "basic.psl");
     let output = temp.path().join("apq_multi.histo");
 
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     cmd.arg("psl")
         .arg("histo")
         .arg("--what")
@@ -84,7 +85,7 @@ fn test_histo_cover_spread() -> anyhow::Result<()> {
     let input = get_path("histo", "input", "basic.psl");
     let output = temp.path().join("cover.histo");
 
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     cmd.arg("psl")
         .arg("histo")
         .arg("--what")
@@ -117,7 +118,7 @@ fn test_histo_id_spread() -> anyhow::Result<()> {
     let input = get_path("histo", "input", "basic.psl");
     let output = temp.path().join("id.histo");
 
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     cmd.arg("psl")
         .arg("histo")
         .arg("--what")
@@ -146,7 +147,7 @@ fn test_to_chain_fix_strand() -> anyhow::Result<()> {
     let expected_output = get_path("to_chain", "expected", "example3.chain");
     let output = temp.path().join("out.chain");
 
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     cmd.arg("psl")
         .arg("to-chain")
         .arg(&input)
@@ -168,7 +169,7 @@ fn test_to_chain_fail_neg_strand() -> anyhow::Result<()> {
     let input = get_path("to_chain", "input", "mtor.psl");
     let output = temp.path().join("out.chain");
 
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     cmd.arg("psl")
         .arg("to-chain")
         .arg(&input)
@@ -187,7 +188,7 @@ fn test_to_chain_fail_neg_strand() -> anyhow::Result<()> {
 
 #[test]
 fn test_rc_mrna() -> anyhow::Result<()> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("psl")
         .arg("rc")
@@ -206,7 +207,7 @@ fn test_rc_mrna() -> anyhow::Result<()> {
 
 #[test]
 fn test_rc_trans() -> anyhow::Result<()> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("psl")
         .arg("rc")
@@ -234,7 +235,7 @@ fn test_lift_basic() -> anyhow::Result<()> {
     let sizes = get_path("lift", "", "chrom.sizes");
     let output = temp.path().join("lifted.psl");
 
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     cmd.arg("psl")
         .arg("lift")
         .arg(&input)
@@ -245,7 +246,7 @@ fn test_lift_basic() -> anyhow::Result<()> {
     cmd.assert().success();
 
     let output_content = fs::read_to_string(&output)?;
-    
+
     // Expected output check
     // The input file contains two records.
     // First record: chr1:101-200 (+), qStart=10, qEnd=20 (on fragment).
@@ -256,7 +257,7 @@ fn test_lift_basic() -> anyhow::Result<()> {
     //     q_size=1000. offset=100.
     //     new_qStart = 1000 - (100 - 10 + 100) = 810.
     //     new_qEnd = 1000 - (100 - 20 + 100) = 820.
-    
+
     // Check first record
     assert!(output_content.contains("chr1\t1000\t110\t120"));
     // Check second record
@@ -277,7 +278,7 @@ fn test_lift_target() -> anyhow::Result<()> {
     let sizes = get_path("lift", "", "chrom.sizes");
     let output = temp.path().join("target_lifted.psl");
 
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     cmd.arg("psl")
         .arg("lift")
         .arg(&input)
@@ -288,7 +289,7 @@ fn test_lift_target() -> anyhow::Result<()> {
     cmd.assert().success();
 
     let output_content = fs::read_to_string(&output)?;
-    
+
     // Expected output check
     // First record: Target chr1:101-200 (+). tStart=10, tEnd=60.
     //   Lifted: chr1 (+). tStart=110, tEnd=160.
@@ -301,7 +302,7 @@ fn test_lift_target() -> anyhow::Result<()> {
     // Target start: 110
     // Target end: 160
     assert!(output_content.contains("seq1\t100\t0\t50\tchr1\t1000\t110\t160"));
-    
+
     // Check second record
     // Target name: chr1
     // Target size: 1000
@@ -328,7 +329,7 @@ fn test_stats_basic() -> anyhow::Result<()> {
     let input = get_path("stats", "input", "stats_basic.psl");
     let output = temp.path().join("stats.tsv");
 
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     cmd.arg("psl")
         .arg("stats")
         .arg(&input)
@@ -355,7 +356,7 @@ fn test_to_range_basic() -> anyhow::Result<()> {
     let input = get_path("lift", "", "test_fragment.psl");
     let output = temp.path().join("ranges.rg");
 
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     cmd.arg("psl")
         .arg("to-range")
         .arg(&input)
@@ -364,7 +365,7 @@ fn test_to_range_basic() -> anyhow::Result<()> {
     cmd.assert().success();
 
     let output_content = fs::read_to_string(&output)?;
-    
+
     // Check output content
     // Input:
     // 1. chr1:101-200 (+), qStart=10, qEnd=20.
@@ -372,7 +373,7 @@ fn test_to_range_basic() -> anyhow::Result<()> {
     // 2. chr1:101-200 (-), qStart=10, qEnd=20.
     //    qSize=100.
     //    Range: chr1:101-200:81-90 (as calculated before)
-    
+
     let lines: Vec<&str> = output_content.lines().collect();
     assert_eq!(lines.len(), 2);
     assert_eq!(lines[0], "chr1:101-200:11-20");

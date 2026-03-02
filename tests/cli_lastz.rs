@@ -1,5 +1,6 @@
-use assert_cmd::cargo::cargo_bin_cmd;
+use assert_cmd::prelude::*;
 use std::fs;
+use std::process::Command;
 use tempfile::TempDir;
 
 fn check_lastz_installed() -> bool {
@@ -17,7 +18,7 @@ fn test_lav_lastz() {
     let t_path = std::env::current_dir().unwrap().join("tests/pgr");
 
     // Case 1: Run lastz with default settings
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     cmd.arg("lav")
         .arg("lastz")
         .arg(t_path.join("pseudocat.fa"))
@@ -36,16 +37,19 @@ fn test_lav_lastz() {
         .lines()
         .filter(|l| l.contains(" l ")) // Filter lines containing " l " (alignment lines)
         .collect::<String>();
-    
+
     let actual_content = fs::read_to_string(&output_file)
         .unwrap()
         .lines()
         .filter(|l| l.contains(" l "))
         .collect::<String>();
 
-    // Basic content check - exact match might be tricky due to lastz versions/params, 
+    // Basic content check - exact match might be tricky due to lastz versions/params,
     // but at least we check if we got alignment records
-    assert!(!actual_content.is_empty(), "Generated LAV file should contain alignments");
+    assert!(
+        !actual_content.is_empty(),
+        "Generated LAV file should contain alignments"
+    );
     // If strict matching is required and environment is consistent:
     // assert_eq!(actual_content, expected_content);
 }
@@ -61,7 +65,7 @@ fn test_lav_lastz_preset() {
     let t_path = std::env::current_dir().unwrap().join("tests/pgr");
 
     // Case 2: Run lastz with preset
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     cmd.arg("lav")
         .arg("lastz")
         .arg(t_path.join("pseudocat.fa"))
@@ -75,7 +79,7 @@ fn test_lav_lastz_preset() {
 
     let output_file = temp.path().join("[pseudocat]vs[pseudocat].lav");
     assert!(output_file.exists());
-    
+
     // Check if output is valid LAV
     let content = fs::read_to_string(&output_file).unwrap();
     assert!(content.contains("#:lav"));
@@ -86,7 +90,7 @@ fn test_lav_lastz_preset() {
 
 #[test]
 fn test_lav_lastz_missing_inputs() {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     cmd.arg("lav")
         .arg("lastz")
         .arg("non_existent_target.fa")

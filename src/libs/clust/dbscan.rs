@@ -133,7 +133,11 @@ where
         }
     }
 
-    fn region_query(&self, matrix: &crate::libs::pairmat::ScoringMatrix<T>, point: usize) -> VecDeque<usize> {
+    fn region_query(
+        &self,
+        matrix: &crate::libs::pairmat::ScoringMatrix<T>,
+        point: usize,
+    ) -> VecDeque<usize> {
         let mut neighbors = VecDeque::new();
         for other_point in 0..matrix.size() {
             let dist = matrix.get(point, other_point);
@@ -185,7 +189,10 @@ where
     /// A vector of `(representative_index, member_index)` pairs.
     /// * For clustered points: `(medoid, member)`
     /// * For noise points: `(self, self)`
-    pub fn results_pair(&self, matrix: &crate::libs::pairmat::ScoringMatrix<T>) -> Vec<(usize, usize)> {
+    pub fn results_pair(
+        &self,
+        matrix: &crate::libs::pairmat::ScoringMatrix<T>,
+    ) -> Vec<(usize, usize)> {
         let (cluster_map, noise_points) = self.all_clusters();
 
         // representative point, point

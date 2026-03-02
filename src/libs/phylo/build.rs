@@ -1,6 +1,6 @@
+use crate::libs::pairmat::NamedMatrix;
 use crate::libs::phylo::tree::Tree;
 use anyhow::Result;
-use crate::libs::pairmat::NamedMatrix;
 
 /// Build a tree from a distance matrix using the UPGMA algorithm.
 ///

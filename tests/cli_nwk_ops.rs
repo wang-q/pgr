@@ -1,8 +1,9 @@
-use assert_cmd::cargo::cargo_bin_cmd;
+use assert_cmd::prelude::*;
+use std::process::Command;
 
 #[test]
 fn command_rename_basic() -> anyhow::Result<()> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("nwk")
         .arg("rename")
@@ -25,7 +26,7 @@ fn command_rename_basic() -> anyhow::Result<()> {
 fn command_rename_lca() -> anyhow::Result<()> {
     // In catarrhini.nwk, Homo and Pan are children of Hominini.
     // Rename Hominini (LCA of Homo,Pan) to CladeX
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("nwk")
         .arg("rename")
@@ -49,7 +50,7 @@ fn command_rename_mixed() -> anyhow::Result<()> {
     // Rename A -> A1.
     // Rename LCA(A,B) -> AB.
 
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("nwk")
         .arg("rename")
@@ -73,7 +74,7 @@ fn command_rename_mixed() -> anyhow::Result<()> {
 
 #[test]
 fn command_replace() -> anyhow::Result<()> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("nwk")
         .arg("replace")
@@ -85,7 +86,7 @@ fn command_replace() -> anyhow::Result<()> {
     assert_eq!(stdout.lines().count(), 1);
     assert!(stdout.contains("((Homo,Pan),Gorilla);"));
 
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("nwk")
         .arg("replace")
@@ -98,7 +99,7 @@ fn command_replace() -> anyhow::Result<()> {
 
     assert!(stdout.contains("((A[&&NHX:S=Homo],B[&&NHX:S=Pan]),C[&&NHX:S=Gorilla]);"));
 
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("nwk")
         .arg("replace")
@@ -116,7 +117,7 @@ fn command_replace() -> anyhow::Result<()> {
 
 #[test]
 fn command_replace_comments() -> anyhow::Result<()> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("nwk")
         .arg("replace")
@@ -139,7 +140,7 @@ fn command_replace_comments() -> anyhow::Result<()> {
 
 #[test]
 fn command_replace_remove() -> anyhow::Result<()> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("nwk")
         .arg("replace")
@@ -167,7 +168,7 @@ fn command_replace_filter() -> anyhow::Result<()> {
     // All are leaves.
 
     // 1. Skip leaves (should change nothing if all matches are leaves)
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("nwk")
         .arg("replace")
@@ -181,7 +182,7 @@ fn command_replace_filter() -> anyhow::Result<()> {
     assert!(stdout.contains("((A,B),C);"));
 
     // 2. Skip internal (should change leaves)
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("nwk")
         .arg("replace")
@@ -199,7 +200,7 @@ fn command_replace_filter() -> anyhow::Result<()> {
 
 #[test]
 fn command_replace_multi() -> anyhow::Result<()> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("nwk")
         .arg("replace")
@@ -221,7 +222,7 @@ fn command_replace_multi() -> anyhow::Result<()> {
 
 #[test]
 fn command_reroot() -> anyhow::Result<()> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("nwk")
         .arg("reroot")
@@ -233,7 +234,7 @@ fn command_reroot() -> anyhow::Result<()> {
 
     assert!(stdout.contains("(Cebus,(((Cercopithecus,(Macaca,Papio)),Simias),(Hylobates,(Pongo,(Gorilla,(Pan,Homo))))));"));
 
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("nwk")
         .arg("reroot")
@@ -245,7 +246,7 @@ fn command_reroot() -> anyhow::Result<()> {
 
     assert!(stdout.contains("(B:0.5,(A:1,C:2)D:0.5);"));
 
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("nwk")
         .arg("reroot")
@@ -270,7 +271,7 @@ fn command_reroot_support() -> anyhow::Result<()> {
     // 61 moves to 41. 41 moves to ...
     // Result should show labels in new positions.
     // Just verify execution for now and check consistency.
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("nwk")
         .arg("reroot")
@@ -291,7 +292,7 @@ fn command_reroot_support() -> anyhow::Result<()> {
 
 #[test]
 fn command_reroot_ingroup() -> anyhow::Result<()> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("nwk")
         .arg("reroot")
@@ -315,7 +316,7 @@ fn command_reroot_ingroup() -> anyhow::Result<()> {
 
 #[test]
 fn command_reroot_midlen() -> anyhow::Result<()> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("nwk")
         .arg("reroot")
@@ -330,7 +331,7 @@ fn command_reroot_midlen() -> anyhow::Result<()> {
 
 #[test]
 fn command_reroot_nolbl_ingrp() -> anyhow::Result<()> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("nwk")
         .arg("reroot")
@@ -360,7 +361,7 @@ fn command_reroot_deroot() -> anyhow::Result<()> {
     // D has 2 descendants (A,B). C has 0 (leaf).
     // Deroot should splice out D.
     // Result: (A:2,B:2,C:1)E;
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("nwk")
         .arg("reroot")
@@ -384,7 +385,7 @@ fn command_reroot_lax() -> anyhow::Result<()> {
     // With -l, should try complement (B).
     // Reroot on B.
     // Result: (B:0.5, ...);
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("nwk")
         .arg("reroot")
@@ -412,7 +413,7 @@ fn command_reroot_default() -> anyhow::Result<()> {
     // C branch becomes 0.5 (from new root to E) + 1 (E to C) = 1.5.
     // Result: ((A:1,B:1)D:0.5,C:1.5);
 
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("nwk")
         .arg("reroot")

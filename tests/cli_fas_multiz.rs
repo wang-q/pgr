@@ -1,5 +1,6 @@
-use assert_cmd::cargo::cargo_bin_cmd;
+use assert_cmd::prelude::*;
 use std::fs;
+use std::process::Command;
 use tempfile::TempDir;
 
 #[test]
@@ -8,7 +9,7 @@ fn command_fas_multiz_core() -> anyhow::Result<()> {
     let out_path = tempdir.path().join("merged.fas");
     let out_str = out_path.to_str().unwrap();
 
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("fas")
         .arg("multiz")
@@ -41,7 +42,7 @@ fn command_fas_multiz_affine_gap() -> anyhow::Result<()> {
     let out_path = tempdir.path().join("merged_affine.fas");
     let out_str = out_path.to_str().unwrap();
 
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("fas")
         .arg("multiz")
@@ -78,7 +79,7 @@ fn command_fas_multiz_custom_matrix() -> anyhow::Result<()> {
     let out_path = tempdir.path().join("merged_matrix.fas");
     let out_str = out_path.to_str().unwrap();
 
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("fas")
         .arg("multiz")

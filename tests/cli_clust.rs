@@ -1,8 +1,9 @@
-use assert_cmd::cargo::cargo_bin_cmd;
+use assert_cmd::prelude::*;
+use std::process::Command;
 
 #[test]
 fn command_clust_cc() -> anyhow::Result<()> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("clust")
         .arg("cc")
@@ -18,7 +19,7 @@ fn command_clust_cc() -> anyhow::Result<()> {
 
 #[test]
 fn command_clust_cc_pair() -> anyhow::Result<()> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("clust")
         .arg("cc")
@@ -37,7 +38,7 @@ fn command_clust_cc_pair() -> anyhow::Result<()> {
 
 #[test]
 fn command_clust_dbscan() -> anyhow::Result<()> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("clust")
         .arg("dbscan")
@@ -57,7 +58,7 @@ fn command_clust_dbscan() -> anyhow::Result<()> {
 
 #[test]
 fn command_clust_dbscan_pair() -> anyhow::Result<()> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("clust")
         .arg("dbscan")
@@ -85,7 +86,7 @@ fn command_clust_dbscan_pair() -> anyhow::Result<()> {
 
 #[test]
 fn command_clust_kmedoids() -> anyhow::Result<()> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("clust")
         .arg("km")
@@ -103,7 +104,7 @@ fn command_clust_kmedoids() -> anyhow::Result<()> {
 
 #[test]
 fn command_clust_kmedoids_pair() -> anyhow::Result<()> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("clust")
         .arg("k-medoids")
@@ -124,7 +125,7 @@ fn command_clust_kmedoids_pair() -> anyhow::Result<()> {
 
 #[test]
 fn command_clust_mcl() -> anyhow::Result<()> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("clust")
         .arg("mcl")
@@ -143,7 +144,7 @@ fn command_clust_mcl() -> anyhow::Result<()> {
 
 #[test]
 fn command_clust_mcl_complex() -> anyhow::Result<()> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("clust")
         .arg("mcl")
@@ -164,7 +165,7 @@ fn command_clust_mcl_complex() -> anyhow::Result<()> {
 
 #[test]
 fn command_clust_mcl_args() -> anyhow::Result<()> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("clust")
         .arg("mcl")
@@ -185,7 +186,7 @@ fn command_clust_mcl_args() -> anyhow::Result<()> {
 
 #[test]
 fn command_clust_mcl_pair() -> anyhow::Result<()> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("clust")
         .arg("mcl")

@@ -1,9 +1,10 @@
-use assert_cmd::cargo::cargo_bin_cmd;
+use assert_cmd::prelude::*;
+use std::process::Command;
 use tempfile::TempDir;
 
 #[test]
 fn command_pl_prefilter_help() -> anyhow::Result<()> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd.arg("pl").arg("prefilter").arg("--help").output()?;
     let stdout = String::from_utf8(output.stdout)?;
 
@@ -16,7 +17,7 @@ fn command_pl_prefilter_run() -> anyhow::Result<()> {
     let input = "tests/index/final.contigs.fa";
     let ref_file = "tests/clust/IBPA.fa";
 
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("pl")
         .arg("prefilter")
@@ -48,7 +49,7 @@ fn command_pl_p2m() -> anyhow::Result<()> {
     let tempdir = TempDir::new()?;
     let tempdir_str = tempdir.path().to_str().unwrap();
 
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("pl")
         .arg("p2m")
@@ -71,7 +72,7 @@ fn command_pl_p2m() -> anyhow::Result<()> {
 
 #[test]
 fn command_pl_trf_help() -> anyhow::Result<()> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd.arg("pl").arg("trf").arg("--help").output()?;
     let stdout = String::from_utf8(output.stdout)?;
 
@@ -81,7 +82,7 @@ fn command_pl_trf_help() -> anyhow::Result<()> {
 
 #[test]
 fn command_pl_ir_help() -> anyhow::Result<()> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd.arg("pl").arg("ir").arg("--help").output()?;
     let stdout = String::from_utf8(output.stdout)?;
 
@@ -91,7 +92,7 @@ fn command_pl_ir_help() -> anyhow::Result<()> {
 
 #[test]
 fn command_pl_rept_help() -> anyhow::Result<()> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd.arg("pl").arg("rept").arg("--help").output()?;
     let stdout = String::from_utf8(output.stdout)?;
 
@@ -101,7 +102,7 @@ fn command_pl_rept_help() -> anyhow::Result<()> {
 
 #[test]
 fn command_pl_ucsc_help() -> anyhow::Result<()> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd.arg("pl").arg("ucsc").arg("--help").output()?;
     let stdout = String::from_utf8(output.stdout)?;
 

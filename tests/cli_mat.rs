@@ -1,7 +1,8 @@
-use assert_cmd::cargo::cargo_bin_cmd;
+use assert_cmd::prelude::*;
+use std::process::Command;
 #[test]
 fn command_mat_to_phylip() -> anyhow::Result<()> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("mat")
         .arg("to-phylip")
@@ -17,7 +18,7 @@ fn command_mat_to_phylip() -> anyhow::Result<()> {
 
 #[test]
 fn command_mat_to_pair() -> anyhow::Result<()> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("mat")
         .arg("to-pair")
@@ -34,7 +35,7 @@ fn command_mat_to_pair() -> anyhow::Result<()> {
 
 #[test]
 fn command_mat_format_full() -> anyhow::Result<()> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("mat")
         .arg("format")
@@ -51,7 +52,7 @@ fn command_mat_format_full() -> anyhow::Result<()> {
 
 #[test]
 fn command_mat_format_lower() -> anyhow::Result<()> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("mat")
         .arg("format")
@@ -70,7 +71,7 @@ fn command_mat_format_lower() -> anyhow::Result<()> {
 
 #[test]
 fn command_mat_format_strict() -> anyhow::Result<()> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("mat")
         .arg("format")
@@ -96,7 +97,7 @@ fn command_mat_format_strict() -> anyhow::Result<()> {
 
 #[test]
 fn command_mat_subset() -> anyhow::Result<()> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("mat")
         .arg("subset")
@@ -117,7 +118,7 @@ fn command_mat_subset() -> anyhow::Result<()> {
 #[test]
 fn command_mat_compare() -> anyhow::Result<()> {
     // Test single method
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("mat")
         .arg("compare")
@@ -133,7 +134,7 @@ fn command_mat_compare() -> anyhow::Result<()> {
     assert!(stdout.contains("pearson\t0.93"));
 
     // Test all methods
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("mat")
         .arg("compare")

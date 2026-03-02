@@ -1,5 +1,6 @@
-use assert_cmd::cargo::cargo_bin_cmd;
+use assert_cmd::prelude::*;
 use std::io::Write;
+use std::process::Command;
 use tempfile::Builder;
 
 #[test]
@@ -13,7 +14,7 @@ fn command_nwk_cmp_single_file() -> anyhow::Result<()> {
     writeln!(file, "((A,B),(C,D));")?;
     writeln!(file, "((A,C),(B,D));")?;
 
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd.arg("nwk").arg("cmp").arg(file.path()).output()?;
     let stdout = String::from_utf8(output.stdout)?;
 
@@ -42,7 +43,7 @@ fn command_nwk_cmp_two_files() -> anyhow::Result<()> {
     writeln!(file2, "((A,B),(C,D));")?; // Tree 1 (Same)
     writeln!(file2, "((A,C),(B,D));")?; // Tree 2 (Diff, RF=2)
 
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("nwk")
         .arg("cmp")
@@ -74,7 +75,7 @@ fn command_nwk_cmp_branch_lengths() -> anyhow::Result<()> {
     // T3: Diff topology, lengths 0.2
     writeln!(file, "((A:0.1,C:0.1):0.2,(B:0.1,D:0.1):0.2);")?;
 
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd.arg("nwk").arg("cmp").arg(file.path()).output()?;
     let stdout = String::from_utf8(output.stdout)?;
 

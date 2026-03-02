@@ -1,8 +1,9 @@
-use assert_cmd::cargo::cargo_bin_cmd;
+use assert_cmd::prelude::*;
+use std::process::Command;
 
 #[test]
 fn command_dist_hv() -> anyhow::Result<()> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("dist")
         .arg("hv")
@@ -22,7 +23,7 @@ fn command_dist_hv() -> anyhow::Result<()> {
 
 #[test]
 fn command_dist_hv_pair() -> anyhow::Result<()> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("dist")
         .arg("hv")
@@ -40,7 +41,7 @@ fn command_dist_hv_pair() -> anyhow::Result<()> {
 
 #[test]
 fn command_dist_vector() -> anyhow::Result<()> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("dist")
         .arg("vector")
@@ -60,7 +61,7 @@ fn command_dist_vector() -> anyhow::Result<()> {
 
 #[test]
 fn command_dist_seq() -> anyhow::Result<()> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("dist")
         .arg("seq")
@@ -81,7 +82,7 @@ fn command_dist_seq() -> anyhow::Result<()> {
 
 #[test]
 fn command_dist_seq_sim() -> anyhow::Result<()> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("dist")
         .arg("seq")
@@ -104,7 +105,7 @@ fn command_dist_seq_sim() -> anyhow::Result<()> {
 
 #[test]
 fn command_dist_seq_genome() -> anyhow::Result<()> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("dist")
         .arg("seq")
@@ -128,7 +129,7 @@ fn command_dist_seq_genome() -> anyhow::Result<()> {
 
 #[test]
 fn command_dist_seq_merge() -> anyhow::Result<()> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("dist")
         .arg("seq")

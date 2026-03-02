@@ -1,5 +1,6 @@
-use assert_cmd::cargo::cargo_bin_cmd;
+use assert_cmd::prelude::*;
 use pgr::libs::phylo::tree::Tree;
+use std::process::Command;
 
 // Helper to check support values and branch lengths with delta
 fn check_support_and_length(
@@ -42,7 +43,7 @@ fn check_support_and_length(
 
 #[test]
 fn test_nwk_support_simple() -> anyhow::Result<()> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("nwk")
         .arg("support")
@@ -77,7 +78,7 @@ fn test_nwk_support_simple() -> anyhow::Result<()> {
 
 #[test]
 fn test_nwk_support_percent() -> anyhow::Result<()> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("nwk")
         .arg("support")
@@ -114,7 +115,7 @@ fn test_nwk_support_percent() -> anyhow::Result<()> {
 
 #[test]
 fn test_nwk_support_multi() -> anyhow::Result<()> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("nwk")
         .arg("support")

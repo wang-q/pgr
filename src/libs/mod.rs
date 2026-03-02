@@ -1,6 +1,7 @@
 pub mod alignment;
 pub mod chain;
 pub mod clust;
+pub mod fas_multiz;
 pub mod fmt;
 pub mod hash;
 pub mod hv;
@@ -15,7 +16,6 @@ pub mod phylo;
 pub mod poa;
 pub mod psl;
 pub mod twobit;
-pub mod fas_multiz;
 
 // Re-export modules moved to fmt for backward compatibility
 pub use fmt::axt;

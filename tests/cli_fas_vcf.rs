@@ -1,7 +1,8 @@
-use assert_cmd::cargo::cargo_bin_cmd;
+use assert_cmd::prelude::*;
+use std::process::Command;
 
 fn run_vcf(args: &[&str]) -> anyhow::Result<String> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     cmd.arg("fas").arg("to-vcf");
     for a in args {
         cmd.arg(a);

@@ -1,6 +1,7 @@
-use assert_cmd::cargo::cargo_bin_cmd;
+use assert_cmd::prelude::*;
 use std::fs;
 use std::path::PathBuf;
+use std::process::Command;
 
 fn get_expected_path(filename: &str) -> PathBuf {
     let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -33,7 +34,7 @@ fn assert_sorted_eq(stdout: &str, expected: &str) {
 
 #[test]
 fn untrans_align_test() {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("psl")
         .arg("stats")
@@ -49,7 +50,7 @@ fn untrans_align_test() {
 
 #[test]
 fn untrans_query_test() {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("psl")
         .arg("stats")
@@ -66,7 +67,7 @@ fn untrans_query_test() {
 
 #[test]
 fn untrans_overall_test() {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("psl")
         .arg("stats")
@@ -83,7 +84,7 @@ fn untrans_overall_test() {
 
 #[test]
 fn untrans_align_unaln_test() {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("psl")
         .arg("stats")
@@ -101,7 +102,7 @@ fn untrans_align_unaln_test() {
 
 #[test]
 fn untrans_query_unaln_test() {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("psl")
         .arg("stats")
@@ -120,7 +121,7 @@ fn untrans_query_unaln_test() {
 
 #[test]
 fn untrans_overall_unaln_test() {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("psl")
         .arg("stats")
@@ -139,7 +140,7 @@ fn untrans_overall_unaln_test() {
 
 #[test]
 fn cdna2cdna_align_test() {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("psl")
         .arg("stats")
@@ -157,7 +158,7 @@ fn cdna2cdna_align_test() {
 
 #[test]
 fn cdna2cdna_query_test() {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("psl")
         .arg("stats")
@@ -176,7 +177,7 @@ fn cdna2cdna_query_test() {
 
 #[test]
 fn cdna2cdna_overall_test() {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("psl")
         .arg("stats")
@@ -195,7 +196,7 @@ fn cdna2cdna_overall_test() {
 
 #[test]
 fn tsv_header_test() {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("psl")
         .arg("stats")

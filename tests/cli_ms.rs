@@ -1,9 +1,10 @@
-use assert_cmd::cargo::cargo_bin_cmd;
+use assert_cmd::prelude::*;
 use predicates::prelude::*;
+use std::process::Command;
 
 #[test]
 fn command_ms_to_dna_help() -> anyhow::Result<()> {
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     cmd.arg("ms").arg("to-dna").arg("--help");
     cmd.assert()
         .success()
@@ -21,7 +22,7 @@ positions: 0.25 0.75
 01
 10
 ";
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     cmd.arg("ms")
         .arg("to-dna")
         .arg("--seed")
@@ -60,7 +61,7 @@ ms 1 1 -r 0 100
 segsites: 0
 positions: 
 ";
-    let mut cmd = cargo_bin_cmd!("pgr");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     // High GC content
     cmd.arg("ms")
         .arg("to-dna")
