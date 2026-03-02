@@ -15,5 +15,6 @@ pub mod ms;
 pub mod net;
 pub mod nwk;
 pub mod pl;
+pub mod plot;
 pub mod psl;
 pub mod twobit;

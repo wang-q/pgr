@@ -23,6 +23,7 @@ fn main() -> anyhow::Result<()> {
         .subcommand(cmd_pgr::nwk::make_subcommand())
         .subcommand(cmd_pgr::psl::make_subcommand())
         .subcommand(cmd_pgr::pl::make_subcommand())
+        .subcommand(cmd_pgr::plot::make_subcommand())
         .subcommand(cmd_pgr::twobit::make_subcommand())
         .subcommand(cmd_pgr::fa::make_subcommand())
         .subcommand(cmd_pgr::fas::make_subcommand())
@@ -64,6 +65,9 @@ fn main() -> anyhow::Result<()> {
 * Pipelines:
     * pl - Workflows: p2m, trf, ir, rept, ucsc
 
+* Plotting:
+    * plot - Plotting tools: venn
+
 "###,
         );
 
@@ -81,6 +85,7 @@ fn main() -> anyhow::Result<()> {
         Some(("nwk", sub_matches)) => cmd_pgr::nwk::execute(sub_matches),
         Some(("psl", sub_matches)) => cmd_pgr::psl::execute(sub_matches),
         Some(("pl", sub_matches)) => cmd_pgr::pl::execute(sub_matches),
+        Some(("plot", sub_matches)) => cmd_pgr::plot::execute(sub_matches),
         Some(("2bit", sub_matches)) => cmd_pgr::twobit::execute(sub_matches),
         Some(("fa", sub_matches)) => cmd_pgr::fa::execute(sub_matches),
         Some(("fas", sub_matches)) => cmd_pgr::fas::execute(sub_matches),
