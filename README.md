@@ -1,7 +1,7 @@
 # pgr - Practical Genome Refiner
 
 [![Build](https://github.com/wang-q/pgr/actions/workflows/build.yml/badge.svg)](https://github.com/wang-q/pgr/actions)
-[![codecov](https://codecov.io/gh/wang-q/pgr/branch/master/graph/badge.svg?token=8toyNHCsVU)](https://codecov.io/gh/wang-q/pgr)
+[![codecov](https://codecov.io/gh/wang-q/pgr/branch/master/graph/badge.svg)](https://codecov.io/gh/wang-q/pgr)
 [![license](https://img.shields.io/github/license/wang-q/pgr)](https://github.com//wang-q/pgr)
 
 `pgr` is a command-line toolkit for working with genomes and genome-derived
