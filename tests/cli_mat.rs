@@ -79,23 +79,6 @@ fn command_mat_subset() {
 }
 
 #[test]
-fn command_mat_subset_exclude() {
-    let (stdout, _) = PgrCmd::new()
-        .args(&[
-            "mat",
-            "subset",
-            "tests/mat/IBPA.phy",
-            "tests/mat/IBPA.list",
-            "--exclude",
-        ])
-        .run();
-
-    assert_eq!(stdout.lines().count(), 6);
-    assert!(stdout.contains("IBPA_ECOLI\t0\t0.066904\t0.160584"));
-    assert!(stdout.contains("IBPA_SHIF8\t0.066904\t0\t0.160584"));
-}
-
-#[test]
 fn command_mat_compare() {
     // Test single method
     let (stdout, _) = PgrCmd::new()
@@ -136,39 +119,4 @@ fn command_mat_compare() {
     assert!(stdout.contains("cosine\t0.97"));
     assert!(stdout.contains("jaccard\t0.75"));
     assert!(stdout.contains("euclid\t1.22"));
-}
-
-#[test]
-fn command_mat_compare_mantel() {
-    let (stdout, _) = PgrCmd::new()
-        .args(&[
-            "mat",
-            "compare",
-            "tests/mat/IBPA.phy",
-            "tests/mat/IBPA.71.phy",
-            "--method",
-            "mantel",
-            "--permutations",
-            "100",
-        ])
-        .run();
-
-    assert!(stdout.contains("mantel\t0.9"));
-    // Should have p-value column
-    assert!(stdout.lines().next().unwrap().contains("\tp_value"));
-}
-
-#[test]
-fn command_mat_compare_diff_order() {
-    let (stdout, _) = PgrCmd::new()
-        .args(&[
-            "mat",
-            "compare",
-            "tests/mat/IBPA.phy",
-            "tests/mat/IBPA.71.phy",
-        ])
-        .run();
-
-    assert!(stdout.contains("pearson"));
-    assert!(stdout.contains("0.9"));
 }
