@@ -1,5 +1,3 @@
-use assert_cmd::prelude::*;
-use std::process::Command;
 
 #[test]
 fn command_rg_default() -> anyhow::Result<()> {

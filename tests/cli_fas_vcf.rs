@@ -1,5 +1,3 @@
-use assert_cmd::prelude::*;
-use std::process::Command;
 
 fn run_vcf(args: &[&str]) -> anyhow::Result<String> {
     let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();

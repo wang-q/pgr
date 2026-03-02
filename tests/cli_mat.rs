@@ -1,5 +1,3 @@
-use assert_cmd::prelude::*;
-use std::process::Command;
 #[test]
 fn command_mat_to_phylip() -> anyhow::Result<()> {
     let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();

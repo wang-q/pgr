@@ -1,6 +1,4 @@
-use assert_cmd::prelude::*;
 use pgr::libs::phylo::tree::Tree;
-use std::process::Command;
 
 // Helper to check support values and branch lengths with delta
 fn check_support_and_length(

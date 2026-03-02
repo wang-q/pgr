@@ -1,6 +1,4 @@
-use assert_cmd::prelude::*;
 use predicates::prelude::*;
-use std::process::Command;
 
 #[test]
 fn command_ms_to_dna_help() -> anyhow::Result<()> {

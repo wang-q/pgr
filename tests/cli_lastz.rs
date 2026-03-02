@@ -1,6 +1,4 @@
-use assert_cmd::prelude::*;
 use std::fs;
-use std::process::Command;
 use tempfile::TempDir;
 
 fn check_lastz_installed() -> bool {

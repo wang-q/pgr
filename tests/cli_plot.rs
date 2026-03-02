@@ -1,5 +1,3 @@
-use assert_cmd::prelude::*;
-use std::process::Command;
 
 #[test]
 fn command_plot_venn2() -> anyhow::Result<()> {

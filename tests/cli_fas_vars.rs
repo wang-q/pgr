@@ -1,6 +1,4 @@
-use assert_cmd::prelude::*;
 use calamine::Reader;
-use std::process::Command;
 use tempfile::NamedTempFile;
 
 #[test]

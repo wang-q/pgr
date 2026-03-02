@@ -1,7 +1,5 @@
-use assert_cmd::prelude::*;
 use predicates::prelude::*;
 use std::io::Write;
-use std::process::Command;
 
 const ABCDE_NWK: &str = "((A,B),(C,D),E);";
 const CATARRHINI: &str = "(((Homo,Pan),Gorilla),Pongo);";

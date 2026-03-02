@@ -1,8 +1,6 @@
-use assert_cmd::prelude::*;
 use predicates::prelude::*;
 use std::fs::File;
 use std::io::Write;
-use std::process::Command;
 use tempfile::tempdir;
 
 #[test]

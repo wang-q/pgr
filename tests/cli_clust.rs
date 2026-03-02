@@ -1,6 +1,3 @@
-use assert_cmd::prelude::*;
-use std::process::Command;
-
 #[test]
 fn command_clust_cc() -> anyhow::Result<()> {
     let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
