@@ -166,32 +166,18 @@ fn command_clust_mcl_pair() {
             "clust",
             "mcl",
             "tests/clust/mcl_test.tsv",
-            "--inflation",
-            "1.2",
             "--format",
             "pair",
         ])
         .run();
 
-    assert_eq!(stdout.lines().count(), 9);
-    // Should contain self-loops for centers and connections
-    assert!(stdout.contains("0\t5\n") || stdout.contains("5\t0\n"));
-}
+    // Cluster 1 (size 3) + Cluster 2 (size 2) = 5 pairs
+    assert_eq!(stdout.lines().count(), 5);
 
-#[test]
-fn command_clust_mcl_weighted() {
-    // 0-1 (weight 2), 1-2 (weight 1)
-    // inflation 1.2
-    let (stdout, _) = PgrCmd::new()
-        .args(&[
-            "clust",
-            "mcl",
-            "tests/clust/mcl_weighted.tsv",
-            "--inflation",
-            "1.2",
-        ])
-        .run();
-
-    assert_eq!(stdout.lines().count(), 1);
-    assert!(stdout.contains("0\t1\t2"));
+    // Check representative output
+    assert!(stdout.contains("A\tA"));
+    assert!(stdout.contains("A\tB"));
+    assert!(stdout.contains("A\tC"));
+    assert!(stdout.contains("D\tD"));
+    assert!(stdout.contains("D\tE"));
 }

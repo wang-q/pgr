@@ -79,11 +79,17 @@ fn command_fa_size_gz() {
 
 #[test]
 fn command_fa_size_no_ns() {
+    let temp = TempDir::new().unwrap();
+    let input = temp.path().join("test_nons.fa");
+
+    // seq1: 12 bases, 4 Ns (ACGT NNNN ACGT) -> 8 bases
+    // seq2: 4 bases, 0 Ns -> 4 bases
+    fs::write(&input, ">seq1\nACGTNNNNACGT\n>seq2\nACGT\n").unwrap();
     let (stdout, _) = PgrCmd::new()
-        .args(&["fa", "size", "tests/2bit/input/testN.2bit", "--no-ns"])
+        .args(&["fa", "size", input.to_str().unwrap(), "--no-ns"])
         .run();
 
-    assert!(stdout.contains("seq1\t4\n"));
+    assert!(stdout.contains("seq1\t8\n"));
     assert!(stdout.contains("seq2\t4\n"));
 }
 
