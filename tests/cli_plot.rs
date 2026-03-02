@@ -76,3 +76,27 @@ fn command_plot_hh() {
     assert!(stdout.contains("11   0 0.0600"));
     assert!(stdout.contains("11   1 0.1600"));
 }
+
+#[test]
+fn command_plot_nrps() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&["plot", "nrps", "tests/plot/srf.tsv"])
+        .run();
+
+    assert!(stdout.contains("(-0.4cm,0) -- (\\x1 + 0.2cm,0)"));
+    assert!(!stdout.contains("\\textbf{M}ethyltransferase"));
+
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "plot",
+            "nrps",
+            "tests/plot/srf.tsv",
+            "--legend",
+            "--color",
+            "black",
+        ])
+        .run();
+
+    assert!(stdout.contains("     draw=black,"));
+    assert!(stdout.contains("\\textbf{M}ethyltransferase"));
+}
