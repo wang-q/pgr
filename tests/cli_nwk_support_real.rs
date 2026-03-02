@@ -109,17 +109,15 @@ fn test_nwk_support_percent() {
 }
 
 #[test]
-fn test_nwk_support_multi() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("support")
-        .arg("tests/newick/3_HRV.nwk")
-        .arg("tests/newick/HRV_20reps.nwk")
-        .output()?;
-
-    assert!(output.status.success());
-    let stdout = String::from_utf8(output.stdout)?;
+fn test_nwk_support_multi() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "nwk",
+            "support",
+            "tests/newick/3_HRV.nwk",
+            "tests/newick/HRV_20reps.nwk",
+        ])
+        .run();
 
     let trees = Tree::from_newick_multi(&stdout).expect("Failed to parse output Newick");
     assert_eq!(trees.len(), 3);
@@ -131,6 +129,4 @@ fn test_nwk_support_multi() -> anyhow::Result<()> {
         check_support_and_length(&stdout, "6", 0.076821, epsilon),
         "Failed to find node in multi-tree output"
     );
-
-    Ok(())
 }

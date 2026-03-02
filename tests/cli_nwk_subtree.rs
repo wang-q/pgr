@@ -101,62 +101,52 @@ fn command_subtree_multiple() {
 }
 
 #[test]
-fn command_subtree_monophyly() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("subtree")
-        .arg("tests/newick/catarrhini_wrong.nwk")
-        .arg("-n")
-        .arg("Simias")
-        .arg("-n")
-        .arg("Papio")
-        .arg("-n")
-        .arg("Macaca")
-        .arg("-n")
-        .arg("Cercopithecus")
-        .arg("-M")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_subtree_monophyly() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "nwk",
+            "subtree",
+            "tests/newick/catarrhini_wrong.nwk",
+            "-n",
+            "Simias",
+            "-n",
+            "Papio",
+            "-n",
+            "Macaca",
+            "-n",
+            "Cercopithecus",
+            "-M",
+        ])
+        .run();
 
     assert!(stdout.contains("((Cercopithecus,(Macaca,Papio)),Simias);"));
-
-    Ok(())
 }
 
 #[test]
-fn command_subtree_monophyly_fail() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("subtree")
-        .arg("tests/newick/catarrhini_wrong.nwk")
-        .arg("-n")
-        .arg("Simias")
-        .arg("-n")
-        .arg("Papio")
-        .arg("-n")
-        .arg("Cercopithecus")
-        .arg("-M")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_subtree_monophyly_fail() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "nwk",
+            "subtree",
+            "tests/newick/catarrhini_wrong.nwk",
+            "-n",
+            "Simias",
+            "-n",
+            "Papio",
+            "-n",
+            "Cercopithecus",
+            "-M",
+        ])
+        .run();
 
     assert!(stdout.trim().is_empty());
-
-    Ok(())
 }
 
 #[test]
-fn command_subtree_regex() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("subtree")
-        .arg("tests/newick/HRV.nwk")
-        .arg("-r")
-        .arg("^HRV.*")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_subtree_regex() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&["nwk", "subtree", "tests/newick/HRV.nwk", "-r", "^HRV.*"])
+        .run();
 
     // Only checking the structure briefly to avoid super long string matching issues
     assert!(stdout
@@ -164,25 +154,21 @@ fn command_subtree_regex() -> anyhow::Result<()> {
     // pgr formats floats without trailing zeros
     assert!(stdout.contains("HRV39_1:0.044427):0.65675,"));
     assert!(stdout.contains("):0.317738;"));
-
-    Ok(())
 }
 
 #[test]
-fn command_subtree_default() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("subtree")
-        .arg("tests/newick/catarrhini.nwk")
-        .arg("-n")
-        .arg("Hominidae")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_subtree_default() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "nwk",
+            "subtree",
+            "tests/newick/catarrhini.nwk",
+            "-n",
+            "Hominidae",
+        ])
+        .run();
 
     // Check if it matches def_r (with branch length)
     assert!(stdout
         .contains("((Gorilla:16,(Pan:10,Homo:10)Hominini:10)Homininae:15,Pongo:30)Hominidae:15;"));
-
-    Ok(())
 }

@@ -316,52 +316,31 @@ fn command_reroot_deroot() {
 }
 
 #[test]
-fn command_reroot_lax() -> anyhow::Result<()> {
-    // abcde.nwk: ((A:1,B:1)D:1,C:1)E;
-    // Root is E (LCA of A and C).
-    // Try to reroot on A and C. LCA is E (Root).
-    // With -l, should try complement (B).
-    // Reroot on B.
-    // Result: (B:0.5, ...);
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("reroot")
-        .arg("tests/newick/abcde.nwk")
-        .arg("-n")
-        .arg("A")
-        .arg("-n")
-        .arg("C")
-        .arg("-l")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_reroot_lax() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "nwk",
+            "reroot",
+            "tests/newick/abcde.nwk",
+            "-n",
+            "A",
+            "-n",
+            "C",
+            "-l",
+        ])
+        .run();
 
     assert!(stdout.contains("B:0.5"));
-    Ok(())
 }
 
 #[test]
-fn command_reroot_default() -> anyhow::Result<()> {
-    // abcde.nwk: ((A:1,B:1)D:1,C:1)E;
-    // Max distance: A-C = 3, B-C = 3.
-    // Midpoint: 1.5 from leaves.
-    // From A: A->D (1) -> (0.5 on D-E edge).
-    // New root is on D-E edge, 0.5 from D.
-    // D branch becomes 0.5.
-    // C branch becomes 0.5 (from new root to E) + 1 (E to C) = 1.5.
-    // Result: ((A:1,B:1)D:0.5,C:1.5);
-
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("reroot")
-        .arg("tests/newick/abcde.nwk")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_reroot_default() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&["nwk", "reroot", "tests/newick/abcde.nwk"])
+        .run();
 
     if !stdout.contains("C:1.5") {
         println!("Output: {}", stdout);
     }
     assert!(stdout.contains("C:1.5"));
-    Ok(())
 }

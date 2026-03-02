@@ -89,48 +89,44 @@ fn command_dist_seq_sim() {
 }
 
 #[test]
-fn command_dist_seq_genome() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("dist")
-        .arg("seq")
-        .arg("tests/genome/sakai.fa.gz")
-        .arg("tests/genome/mg1655.fa.gz")
-        .arg("-k")
-        .arg("21")
-        .arg("-w")
-        .arg("5")
-        .arg("--hasher")
-        .arg("mod")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_dist_seq_genome() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "dist",
+            "seq",
+            "tests/genome/sakai.fa.gz",
+            "tests/genome/mg1655.fa.gz",
+            "-k",
+            "21",
+            "-w",
+            "5",
+            "--hasher",
+            "mod",
+        ])
+        .run();
 
     assert_eq!(stdout.lines().count(), 2);
     assert!(stdout.contains("NC_002695\tNC_000913\t0."));
     assert!(stdout.contains("NC_002128\tNC_000913\t0."));
-
-    Ok(())
 }
 
 #[test]
-fn command_dist_seq_merge() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("dist")
-        .arg("seq")
-        .arg("tests/clust/IBPA.fa")
-        .arg("-k")
-        .arg("7")
-        .arg("-w")
-        .arg("1")
-        .arg("--merge")
-        .arg("--hasher")
-        .arg("murmur")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_dist_seq_merge() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "dist",
+            "seq",
+            "tests/clust/IBPA.fa",
+            "-k",
+            "7",
+            "-w",
+            "1",
+            "--merge",
+            "--hasher",
+            "murmur",
+        ])
+        .run();
 
     assert_eq!(stdout.lines().count(), 1);
     assert!(stdout.contains("tests/clust/IBPA.fa\ttests/clust/IBPA.fa\t763"));
-
-    Ok(())
 }

@@ -94,403 +94,315 @@ fn command_fa_size_no_ns() {
 }
 
 #[test]
-fn command_fa_some() -> anyhow::Result<()> {
-    let temp = TempDir::new()?;
+fn command_fa_some() {
+    let temp = TempDir::new().unwrap();
     let input = temp.path().join("test.fa");
     let list = temp.path().join("list.txt");
     let output = temp.path().join("out.fa");
 
-    fs::write(&input, ">seq1\nACGT\n>seq2\nACGTACGT\n>seq3\nTTTT\n")?;
-    fs::write(&list, "seq1\nseq3\n")?;
+    fs::write(&input, ">seq1\nACGT\n>seq2\nACGTACGT\n>seq3\nTTTT\n").unwrap();
+    fs::write(&list, "seq1\nseq3\n").unwrap();
 
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    cmd.arg("fa")
-        .arg("some")
-        .arg(&input)
-        .arg(&list)
-        .arg("-o")
-        .arg(&output);
-    cmd.assert().success();
+    PgrCmd::new()
+        .args(&[
+            "fa",
+            "some",
+            input.to_str().unwrap(),
+            list.to_str().unwrap(),
+            "-o",
+            output.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
 
-    let content = fs::read_to_string(&output)?;
+    let content = fs::read_to_string(&output).unwrap();
     assert!(content.contains(">seq1"));
     assert!(content.contains(">seq3"));
     assert!(!content.contains(">seq2"));
-
-    Ok(())
 }
 
 #[test]
-fn command_fa_some_invert() -> anyhow::Result<()> {
-    let temp = TempDir::new()?;
+fn command_fa_some_invert() {
+    let temp = TempDir::new().unwrap();
     let input = temp.path().join("test.fa");
     let list = temp.path().join("list.txt");
     let output = temp.path().join("out.fa");
 
-    fs::write(&input, ">seq1\nACGT\n>seq2\nACGTACGT\n>seq3\nTTTT\n")?;
-    fs::write(&list, "seq1\nseq3\n")?;
+    fs::write(&input, ">seq1\nACGT\n>seq2\nACGTACGT\n>seq3\nTTTT\n").unwrap();
+    fs::write(&list, "seq1\nseq3\n").unwrap();
 
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    cmd.arg("fa")
-        .arg("some")
-        .arg(&input)
-        .arg(&list)
-        .arg("--invert")
-        .arg("-o")
-        .arg(&output);
-    cmd.assert().success();
+    PgrCmd::new()
+        .args(&[
+            "fa",
+            "some",
+            input.to_str().unwrap(),
+            list.to_str().unwrap(),
+            "--invert",
+            "-o",
+            output.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
 
-    let content = fs::read_to_string(&output)?;
+    let content = fs::read_to_string(&output).unwrap();
     assert!(!content.contains(">seq1"));
     assert!(!content.contains(">seq3"));
     assert!(content.contains(">seq2"));
-
-    Ok(())
 }
 
 #[test]
-fn command_order() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("fa")
-        .arg("order")
-        .arg("tests/fasta/ufasta.fa")
-        .arg("tests/fasta/list.txt")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_order() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "fa",
+            "order",
+            "tests/fasta/ufasta.fa",
+            "tests/fasta/list.txt",
+        ])
+        .run();
 
     assert_eq!(stdout.lines().count(), 4);
     assert!(stdout.contains("read12\n"), "read12");
     assert!(stdout.contains("read0\n"), "read0");
-
-    Ok(())
 }
 
 #[test]
-fn command_one() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("fa")
-        .arg("one")
-        .arg("tests/fasta/ufasta.fa")
-        .arg("read12")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_one() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&["fa", "one", "tests/fasta/ufasta.fa", "read12"])
+        .run();
 
     assert_eq!(stdout.lines().count(), 2);
     assert!(stdout.contains("read12\n"), "read12");
-
-    Ok(())
 }
 
 #[test]
-fn command_masked() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("fa")
-        .arg("masked")
-        .arg("tests/fasta/ufasta.fa")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_masked() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&["fa", "masked", "tests/fasta/ufasta.fa"])
+        .run();
 
     assert!(stdout.contains("read46:3-4"), "read46");
-
-    Ok(())
 }
 
 #[test]
-fn command_mask() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("fa")
-        .arg("mask")
-        .arg("tests/fasta/ufasta.fa")
-        .arg("tests/fasta/mask.json")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_mask() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "fa",
+            "mask",
+            "tests/fasta/ufasta.fa",
+            "tests/fasta/mask.json",
+        ])
+        .run();
 
     assert!(stdout.contains("read0\ntcgtttaacccaaatcaagg"), "read0");
     assert!(stdout.contains("read2\natagcaagct"), "read2");
 
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("fa")
-        .arg("mask")
-        .arg("--hard")
-        .arg("tests/fasta/ufasta.fa")
-        .arg("tests/fasta/mask.json")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "fa",
+            "mask",
+            "--hard",
+            "tests/fasta/ufasta.fa",
+            "tests/fasta/mask.json",
+        ])
+        .run();
 
     assert!(stdout.contains("read0\nNNNNNNNNNNNNNNNNNNNN"), "read0");
     assert!(stdout.contains("read2\nNNNNNNNNNN"), "read2");
-
-    Ok(())
 }
 
 #[test]
-fn command_rc() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("fa")
-        .arg("rc")
-        .arg("tests/fasta/ufasta.fa")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_rc() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&["fa", "rc", "tests/fasta/ufasta.fa"])
+        .run();
 
     assert!(stdout.contains("GgacTgcggCTagAA"), "read46");
 
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("fa")
-        .arg("rc")
-        .arg("tests/fasta/ufasta.fa")
-        .arg("tests/fasta/list.txt")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&["fa", "rc", "tests/fasta/ufasta.fa", "tests/fasta/list.txt"])
+        .run();
 
     assert!(stdout.contains(">RC_read12"), "read12");
     assert!(!stdout.contains(">RC_read46"), "read46");
     assert!(!stdout.contains("GgacTgcggCTagAA"), "read46");
-
-    Ok(())
 }
 
 #[test]
-fn command_count() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("fa")
-        .arg("count")
-        .arg("tests/fasta/ufasta.fa")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_count() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&["fa", "count", "tests/fasta/ufasta.fa"])
+        .run();
 
     assert!(stdout.contains("read45\t0\t0"), "empty");
     assert!(stdout.contains("total\t9317\t2318"), "total");
-
-    Ok(())
 }
 
 #[test]
-fn command_replace() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("fa")
-        .arg("replace")
-        .arg("tests/fasta/ufasta.fa")
-        .arg("tests/fasta/replace.tsv")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_replace() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "fa",
+            "replace",
+            "tests/fasta/ufasta.fa",
+            "tests/fasta/replace.tsv",
+        ])
+        .run();
 
     assert_eq!(stdout.lines().count(), 95);
     assert!(stdout.contains(">359"), "read0");
     assert!(!stdout.contains(">read0"), "read0");
 
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("fa")
-        .arg("replace")
-        .arg("tests/fasta/ufasta.fa")
-        .arg("tests/fasta/replace.tsv")
-        .arg("--some")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "fa",
+            "replace",
+            "tests/fasta/ufasta.fa",
+            "tests/fasta/replace.tsv",
+            "--some",
+        ])
+        .run();
 
     assert_eq!(stdout.lines().count(), 6);
     assert!(stdout.contains(">359"), "read0");
     assert!(!stdout.contains(">read0"), "read0");
-
-    Ok(())
 }
 
-// faops filter -l 0 -a 10 -z 50 tests/fasta/ufasta.fa stdout
-// faops filter -l 0 -a 1 -u <(cat tests/fasta/ufasta.fa tests/fasta/ufasta.fa) stdout
 #[test]
-fn command_filter() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("fa")
-        .arg("filter")
-        .arg("tests/fasta/ufasta.fa")
-        .arg("-a")
-        .arg("10")
-        .arg("-z")
-        .arg("50")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_filter() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "fa",
+            "filter",
+            "tests/fasta/ufasta.fa",
+            "-a",
+            "10",
+            "-z",
+            "50",
+        ])
+        .run();
 
     assert_eq!(stdout.lines().count(), 12);
     assert!(!stdout.contains(">read0"), "read0");
     assert!(stdout.contains(">read20"), "read20");
 
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("fa")
-        .arg("filter")
-        .arg("tests/fasta/ufasta.fa")
-        .arg("tests/fasta/ufasta.fa.gz")
-        .arg("--uniq")
-        .arg("-a")
-        .arg("1")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "fa",
+            "filter",
+            "tests/fasta/ufasta.fa",
+            "tests/fasta/ufasta.fa.gz",
+            "--uniq",
+            "-a",
+            "1",
+        ])
+        .run();
 
     assert_eq!(stdout.lines().count(), 90);
-
-    Ok(())
 }
 
 #[test]
-fn command_filter_fmt() -> anyhow::Result<()> {
-    // faops filter -N tests/fasta/filter.fa stdout
-    // faops treats '-' as N, which is incorrect
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("fa")
-        .arg("filter")
-        .arg("tests/fasta/filter.fa")
-        .arg("--iupac")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_filter_fmt() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&["fa", "filter", "tests/fasta/filter.fa", "--iupac"])
+        .run();
 
     assert!(!stdout.contains(">iupac\nAMRG"), "iupac");
     assert!(stdout.contains(">iupac\nANNG"), "iupac");
     assert!(stdout.contains(">dash\nA-NG"), "dash not changed");
 
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("fa")
-        .arg("filter")
-        .arg("tests/fasta/filter.fa")
-        .arg("--dash")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&["fa", "filter", "tests/fasta/filter.fa", "--dash"])
+        .run();
 
     assert!(!stdout.contains(">dash\nA-RG"), "dash");
     assert!(stdout.contains(">dash\nARG"), "dash");
 
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("fa")
-        .arg("filter")
-        .arg("tests/fasta/filter.fa")
-        .arg("--upper")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&["fa", "filter", "tests/fasta/filter.fa", "--upper"])
+        .run();
 
     assert!(!stdout.contains(">upper\nAtcG"), "upper");
     assert!(stdout.contains(">upper\nATCG"), "upper");
 
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("fa")
-        .arg("filter")
-        .arg("tests/fasta/filter.fa")
-        .arg("--simplify")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&["fa", "filter", "tests/fasta/filter.fa", "--simplify"])
+        .run();
 
     assert!(!stdout.contains(">read.1 simplify\nAGGG"), "simplify");
     assert!(stdout.contains(">read\nAGGG"), "simplify");
-
-    Ok(())
 }
 
 #[test]
-fn command_dedup() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("fa")
-        .arg("dedup")
-        .arg("tests/fasta/dedup.fa")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_dedup() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&["fa", "dedup", "tests/fasta/dedup.fa"])
+        .run();
 
     assert_eq!(stdout.lines().count(), 8);
     assert!(!stdout.contains(">read0 some text"));
 
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("fa")
-        .arg("dedup")
-        .arg("tests/fasta/dedup.fa")
-        .arg("--desc")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&["fa", "dedup", "tests/fasta/dedup.fa", "--desc"])
+        .run();
 
     assert_eq!(stdout.lines().count(), 10);
     assert!(stdout.contains(">read0 some text"));
 
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("fa")
-        .arg("dedup")
-        .arg("tests/fasta/dedup.fa")
-        .arg("--seq")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&["fa", "dedup", "tests/fasta/dedup.fa", "--seq"])
+        .run();
 
     assert_eq!(stdout.lines().count(), 6);
     assert!(!stdout.contains(">read1"));
 
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("fa")
-        .arg("dedup")
-        .arg("tests/fasta/dedup.fa")
-        .arg("--seq")
-        .arg("--case")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&["fa", "dedup", "tests/fasta/dedup.fa", "--seq", "--case"])
+        .run();
 
     assert_eq!(stdout.lines().count(), 4);
     assert!(!stdout.contains(">read2"));
 
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("fa")
-        .arg("dedup")
-        .arg("tests/fasta/dedup.fa")
-        .arg("--seq")
-        .arg("--both")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&["fa", "dedup", "tests/fasta/dedup.fa", "--seq", "--both"])
+        .run();
 
     assert_eq!(stdout.lines().count(), 2);
     assert!(!stdout.contains(">read3"));
 
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("fa")
-        .arg("dedup")
-        .arg("tests/fasta/dedup.fa")
-        .arg("--seq")
-        .arg("--both")
-        .arg("--file")
-        .arg("stdout")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "fa",
+            "dedup",
+            "tests/fasta/dedup.fa",
+            "--seq",
+            "--both",
+            "--file",
+            "stdout",
+        ])
+        .run();
 
     assert_eq!(stdout.lines().count(), 7);
     assert!(stdout.contains(">read0"));
     assert!(stdout.contains("read0\tread3"));
-
-    Ok(())
 }
 
 #[test]
-fn command_split_name() -> anyhow::Result<()> {
-    let tempdir = TempDir::new()?;
+fn command_split_name() {
+    let tempdir = TempDir::new().unwrap();
     let tempdir_str = tempdir.path().to_str().unwrap();
 
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    cmd.arg("fa")
-        .arg("split")
-        .arg("name")
-        .arg("tests/fasta/ufasta.fa")
-        .arg("-o")
-        .arg(tempdir_str)
+    PgrCmd::new()
+        .args(&[
+            "fa",
+            "split",
+            "name",
+            "tests/fasta/ufasta.fa",
+            "-o",
+            tempdir_str,
+        ])
         .assert()
         .success()
         .stdout(predicates::str::is_empty());
@@ -498,24 +410,25 @@ fn command_split_name() -> anyhow::Result<()> {
     assert!(&tempdir.path().join("read0.fa").is_file());
     assert!(!&tempdir.path().join("000.fa").exists());
 
-    tempdir.close()?;
-    Ok(())
+    tempdir.close().unwrap();
 }
 
 #[test]
-fn command_split_about() -> anyhow::Result<()> {
-    let tempdir = TempDir::new()?;
+fn command_split_about() {
+    let tempdir = TempDir::new().unwrap();
     let tempdir_str = tempdir.path().to_str().unwrap();
 
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    cmd.arg("fa")
-        .arg("split")
-        .arg("about")
-        .arg("tests/fasta/ufasta.fa")
-        .arg("-c")
-        .arg("2000")
-        .arg("-o")
-        .arg(tempdir_str)
+    PgrCmd::new()
+        .args(&[
+            "fa",
+            "split",
+            "about",
+            "tests/fasta/ufasta.fa",
+            "-c",
+            "2000",
+            "-o",
+            tempdir_str,
+        ])
         .assert()
         .success()
         .stdout(predicates::str::is_empty());
@@ -525,175 +438,128 @@ fn command_split_about() -> anyhow::Result<()> {
     assert!(&tempdir.path().join("004.fa").exists());
     assert!(!&tempdir.path().join("005.fa").exists());
 
-    tempdir.close()?;
-    Ok(())
+    tempdir.close().unwrap();
 }
 
 #[test]
-fn command_fa_n50() -> anyhow::Result<()> {
-    let temp = TempDir::new()?;
+fn command_fa_n50() {
+    let temp = TempDir::new().unwrap();
     let input = temp.path().join("test.fa");
 
-    // 100, 100, 200, 200, 400
-    // Total = 1000
-    // N50 = 200 (at 500, we have 400+200 >= 500)
     fs::write(
         &input,
         ">seq1\nN\n>seq2\nN\n>seq3\nNN\n>seq4\nNN\n>seq5\nNNNN\n"
             .replace("N", "N".repeat(100).as_str()),
-    )?;
+    )
+    .unwrap();
 
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd.arg("fa").arg("n50").arg(&input).output()?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&["fa", "n50", input.to_str().unwrap()])
+        .run();
 
-    let stdout = String::from_utf8(output.stdout)?;
     assert!(stdout.contains("N50\t200\n"));
-
-    Ok(())
 }
 
 #[test]
-fn command_fa_n50_stats() -> anyhow::Result<()> {
-    let temp = TempDir::new()?;
+fn command_fa_n50_stats() {
+    let temp = TempDir::new().unwrap();
     let input = temp.path().join("test.fa");
 
     fs::write(
         &input,
         ">seq1\nN\n>seq2\nN\n>seq3\nNN\n>seq4\nNN\n>seq5\nNNNN\n"
             .replace("N", "N".repeat(100).as_str()),
-    )?;
+    )
+    .unwrap();
 
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("fa")
-        .arg("n50")
-        .arg(&input)
-        .arg("-S")
-        .arg("-A")
-        .arg("-C")
-        .arg("-H")
-        .output()?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&["fa", "n50", input.to_str().unwrap(), "-S", "-A", "-C", "-H"])
+        .run();
 
-    let stdout = String::from_utf8(output.stdout)?;
-    // N50
     assert!(stdout.contains("200\n"));
-    // Sum
     assert!(stdout.contains("1000\n"));
-    // Avg
     assert!(stdout.contains("200.00\n"));
-    // Count
     assert!(stdout.contains("5\n"));
-
-    Ok(())
 }
 
 #[test]
-fn command_fa_n50_comprehensive() -> anyhow::Result<()> {
+fn command_fa_n50_comprehensive() {
     // display header
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("fa")
-        .arg("n50")
-        .arg("tests/fasta/ufasta.fa")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&["fa", "n50", "tests/fasta/ufasta.fa"])
+        .run();
 
     assert_eq!(stdout.lines().count(), 1);
     assert!(stdout.contains("N50\t314"), "line 1");
 
     // doesn't display header
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("fa")
-        .arg("n50")
-        .arg("tests/fasta/ufasta.fa")
-        .arg("-H")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&["fa", "n50", "tests/fasta/ufasta.fa", "-H"])
+        .run();
 
     assert_eq!(stdout.lines().count(), 1);
     assert!(!stdout.contains("N50\t314"), "line 1");
     assert!(stdout.contains("314"), "line 1");
 
     // set genome size (NG50)
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("fa")
-        .arg("n50")
-        .arg("tests/fasta/ufasta.fa")
-        .arg("-H")
-        .arg("-g")
-        .arg("10000")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&["fa", "n50", "tests/fasta/ufasta.fa", "-H", "-g", "10000"])
+        .run();
 
     assert_eq!(stdout.lines().count(), 1);
     assert!(stdout.contains("297"), "line 1");
 
     // sum and average of size
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("fa")
-        .arg("n50")
-        .arg("tests/fasta/ufasta.fa")
-        .arg("-H")
-        .arg("-S")
-        .arg("-A")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&["fa", "n50", "tests/fasta/ufasta.fa", "-H", "-S", "-A"])
+        .run();
 
     assert_eq!(stdout.lines().count(), 3);
     assert!(stdout.contains("314\n9317\n186.34"), "line 1,2,3");
 
     // N10, N90, E-size
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("fa")
-        .arg("n50")
-        .arg("tests/fasta/ufasta.fa")
-        .arg("-H")
-        .arg("-E")
-        .arg("-N")
-        .arg("10")
-        .arg("-N")
-        .arg("90")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "fa",
+            "n50",
+            "tests/fasta/ufasta.fa",
+            "-H",
+            "-E",
+            "-N",
+            "10",
+            "-N",
+            "90",
+        ])
+        .run();
 
     assert_eq!(stdout.lines().count(), 3);
     assert!(stdout.contains("516\n112\n314.70\n"), "line 1,2,3");
 
     // transposed
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("fa")
-        .arg("n50")
-        .arg("tests/fasta/ufasta.fa")
-        .arg("-E")
-        .arg("-N")
-        .arg("10")
-        .arg("-N")
-        .arg("90")
-        .arg("-t")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "fa",
+            "n50",
+            "tests/fasta/ufasta.fa",
+            "-E",
+            "-N",
+            "10",
+            "-N",
+            "90",
+            "-t",
+        ])
+        .run();
 
     assert_eq!(stdout.lines().count(), 2);
     assert!(stdout.contains("N10\tN90\tE\n"), "line 1");
     assert!(stdout.contains("516\t112\t314.70\n"), "line 2");
-
-    Ok(())
 }
 
 #[test]
-fn command_six_frame() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("fa")
-        .arg("six-frame")
-        .arg("tests/fasta/trans.fa")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_six_frame() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&["fa", "six-frame", "tests/fasta/trans.fa"])
+        .run();
 
     assert_eq!(stdout.lines().count(), 16);
     assert!(stdout.contains(">seq1(+):1-15|frame=0"));
@@ -701,44 +567,36 @@ fn command_six_frame() -> anyhow::Result<()> {
     assert!(stdout.contains(">seq1(-):3-26|frame=2"));
     assert!(stdout.contains("TIYLYPIP"));
 
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("fa")
-        .arg("six-frame")
-        .arg("tests/fasta/trans.fa")
-        .arg("--len")
-        .arg("3")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&["fa", "six-frame", "tests/fasta/trans.fa", "--len", "3"])
+        .run();
 
     assert_eq!(stdout.lines().count(), 12);
 
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("fa")
-        .arg("six-frame")
-        .arg("tests/fasta/trans.fa")
-        .arg("--len")
-        .arg("3")
-        .arg("--end")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "fa",
+            "six-frame",
+            "tests/fasta/trans.fa",
+            "--len",
+            "3",
+            "--end",
+        ])
+        .run();
 
     assert_eq!(stdout.lines().count(), 4);
 
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("fa")
-        .arg("six-frame")
-        .arg("tests/fasta/trans.fa")
-        .arg("--len")
-        .arg("3")
-        .arg("--start")
-        .arg("--end")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "fa",
+            "six-frame",
+            "tests/fasta/trans.fa",
+            "--len",
+            "3",
+            "--start",
+            "--end",
+        ])
+        .run();
 
     assert_eq!(stdout.lines().count(), 2);
-
-    Ok(())
 }

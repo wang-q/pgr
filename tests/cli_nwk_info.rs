@@ -93,60 +93,42 @@ fn command_stat_forest() {
 }
 
 #[test]
-fn command_stat_stdin() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("stat")
-        .arg("stdin")
-        .write_stdin("((A:1,B:1):1,C:2);")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_stat_stdin() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&["nwk", "stat", "stdin"])
+        .stdin("((A:1,B:1):1,C:2);")
+        .run();
 
     assert!(stdout.contains("nodes\t5"));
     assert!(stdout.contains("leaves\t3"));
     assert!(stdout.contains("leaf labels\t3"));
-
-    Ok(())
 }
 
 #[test]
-fn command_stat_multi_tree_stdin() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("stat")
-        .arg("stdin")
-        .write_stdin("(A,B)C;(D,E)F;")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_stat_multi_tree_stdin() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&["nwk", "stat", "stdin"])
+        .stdin("(A,B)C;(D,E)F;")
+        .run();
 
     // Should appear twice (once for each tree)
     assert_eq!(stdout.matches("nodes\t3").count(), 2);
     assert_eq!(stdout.matches("leaves\t2").count(), 2);
-
-    Ok(())
 }
 
 #[test]
-fn command_stat_outfile() -> anyhow::Result<()> {
-    let temp_file = Builder::new().suffix(".tsv").tempfile()?;
+fn command_stat_outfile() {
+    let temp_file = Builder::new().suffix(".tsv").tempfile().unwrap();
     let outfile = temp_file.path().to_str().unwrap();
 
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    cmd.arg("nwk")
-        .arg("stat")
-        .arg("tests/newick/catarrhini.nwk")
-        .arg("-o")
-        .arg(outfile)
+    PgrCmd::new()
+        .args(&["nwk", "stat", "tests/newick/catarrhini.nwk", "-o", outfile])
         .assert()
         .success();
 
-    let content = std::fs::read_to_string(outfile)?;
+    let content = std::fs::read_to_string(outfile).unwrap();
     assert!(content.contains("nodes\t19"));
     assert!(content.contains("leaves\t10"));
-
-    Ok(())
 }
 
 // ================================================================================================
@@ -154,260 +136,198 @@ fn command_stat_outfile() -> anyhow::Result<()> {
 // ================================================================================================
 
 #[test]
-fn command_label_basic() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("label")
-        .arg("tests/newick/hg38.7way.nwk")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_label_basic() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&["nwk", "label", "tests/newick/hg38.7way.nwk"])
+        .run();
 
     // hg38.7way.nwk has 7 leaves (Human, Chimp, Rhesus, Mouse, Rat, Dog, Opossum)
     // and presumably no named internal nodes.
     assert_eq!(stdout.lines().count(), 7);
     assert!(stdout.contains("Human\n"));
-
-    Ok(())
 }
 
 #[test]
-fn command_label_leaf_only() -> anyhow::Result<()> {
+fn command_label_leaf_only() {
     // -I: Don't print internal labels (so print leaves only)
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("label")
-        .arg("tests/newick/catarrhini.nwk")
-        .arg("-I")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&["nwk", "label", "tests/newick/catarrhini.nwk", "-I"])
+        .run();
 
     // catarrhini.nwk has 10 leaves and 6 internal labels
     assert_eq!(stdout.lines().count(), 10);
     assert!(stdout.contains("Homo"));
     assert!(!stdout.contains("Hominini")); // Hominini is internal
-
-    Ok(())
 }
 
 #[test]
-fn command_label_internal_only() -> anyhow::Result<()> {
+fn command_label_internal_only() {
     // -L: Don't print leaf labels (so print internal only)
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("label")
-        .arg("tests/newick/catarrhini.nwk")
-        .arg("-L")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&["nwk", "label", "tests/newick/catarrhini.nwk", "-L"])
+        .run();
 
     assert_eq!(stdout.lines().count(), 6);
     assert!(stdout.contains("Hominini"));
     assert!(!stdout.contains("Homo"));
-
-    Ok(())
 }
 
 #[test]
-fn command_label_empty_internal() -> anyhow::Result<()> {
+fn command_label_empty_internal() {
     // Test on a tree with no internal labels using -L
     // hg38.7way.nwk has no internal labels
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("label")
-        .arg("tests/newick/hg38.7way.nwk")
-        .arg("-L")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&["nwk", "label", "tests/newick/hg38.7way.nwk", "-L"])
+        .run();
 
     assert_eq!(stdout.lines().count(), 0);
-
-    Ok(())
 }
 
 #[test]
-fn command_label_selection_node_monophyly() -> anyhow::Result<()> {
+fn command_label_selection_node_monophyly() {
     // -n selection with -M (monophyly) and -D (descendants)
     // -n Homininae -n Pongo
     // In catarrhini.nwk, Homininae is an internal node. Pongo is a leaf (genus).
     // -D includes descendants.
     // -M checks monophyly.
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("label")
-        .arg("tests/newick/catarrhini.nwk")
-        .arg("-n")
-        .arg("Homininae")
-        .arg("-n")
-        .arg("Pongo")
-        .arg("-DM")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "nwk",
+            "label",
+            "tests/newick/catarrhini.nwk",
+            "-n",
+            "Homininae",
+            "-n",
+            "Pongo",
+            "-DM",
+        ])
+        .run();
 
     // Select Homininae and Pongo, include descendants (-D), and check monophyly (-M).
     // The output contains the 4 leaf nodes of the Hominidae clade: Gorilla, Pan, Homo, Pongo.
     assert_eq!(stdout.lines().count(), 4);
-
-    Ok(())
 }
 
 #[test]
-fn command_label_selection_file() -> anyhow::Result<()> {
+fn command_label_selection_file() {
     // -f file input
-    let mut temp_file = Builder::new().suffix(".txt").tempfile()?;
-    writeln!(temp_file, "Homo")?;
-    writeln!(temp_file, "Pan")?;
+    let mut temp_file = Builder::new().suffix(".txt").tempfile().unwrap();
+    writeln!(temp_file, "Homo").unwrap();
+    writeln!(temp_file, "Pan").unwrap();
     let list_file = temp_file.path().to_str().unwrap();
 
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("label")
-        .arg("tests/newick/catarrhini.nwk")
-        .arg("-f")
-        .arg(list_file)
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "nwk",
+            "label",
+            "tests/newick/catarrhini.nwk",
+            "-f",
+            list_file,
+        ])
+        .run();
 
     assert_eq!(stdout.lines().count(), 2);
     assert!(stdout.contains("Homo"));
     assert!(stdout.contains("Pan"));
-
-    Ok(())
 }
 
 #[test]
-fn command_label_regex() -> anyhow::Result<()> {
+fn command_label_regex() {
     // -r regex
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("label")
-        .arg("tests/newick/hg38.7way.nwk")
-        .arg("-r")
-        .arg("^ch") // Case insensitive by default?
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "nwk",
+            "label",
+            "tests/newick/hg38.7way.nwk",
+            "-r",
+            "^ch", // Case insensitive by default?
+        ])
+        .run();
 
     // Should match Chimp
     assert_eq!(stdout.lines().count(), 1);
     assert!(stdout.contains("Chimp"));
-
-    Ok(())
 }
 
 #[test]
-fn command_label_regex_case_insensitive() -> anyhow::Result<()> {
+fn command_label_regex_case_insensitive() {
     // Verify case insensitivity explicitly
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("label")
-        .arg("tests/newick/catarrhini.nwk")
-        .arg("-r")
-        .arg("^homo") // lowercase
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "nwk",
+            "label",
+            "tests/newick/catarrhini.nwk",
+            "-r",
+            "^homo", // lowercase
+        ])
+        .run();
 
     // Should match Homo
     // But NOT Hominoidea (starts with Homi, not Homo)
     assert!(stdout.contains("Homo"));
     assert!(!stdout.contains("Hominoidea"));
-
-    Ok(())
 }
 
 #[test]
-fn command_label_columns() -> anyhow::Result<()> {
+fn command_label_columns() {
     // -c columns
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("label")
-        .arg("tests/newick/catarrhini.comment.nwk")
-        .arg("-c")
-        .arg("species")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "nwk",
+            "label",
+            "tests/newick/catarrhini.comment.nwk",
+            "-c",
+            "species",
+        ])
+        .run();
 
     // Output format: Label \t Species
     // Example: Homo \t Homo
     // We expect a tab
     assert!(stdout.contains("\tHomo\n"));
-
-    Ok(())
 }
 
 #[test]
-fn command_label_formatting_root() -> anyhow::Result<()> {
+fn command_label_formatting_root() {
     // --root
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("label")
-        .arg("tests/newick/root.nwk")
-        .arg("--root")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&["nwk", "label", "tests/newick/root.nwk", "--root"])
+        .run();
 
     assert!(stdout.trim().contains("Root"));
     assert_eq!(stdout.lines().count(), 1);
-
-    Ok(())
 }
 
 #[test]
-fn command_label_formatting_tab() -> anyhow::Result<()> {
+fn command_label_formatting_tab() {
     // -t (tab separated on one line)
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("label")
-        .arg("tests/newick/catarrhini.nwk")
-        .arg("-t")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&["nwk", "label", "tests/newick/catarrhini.nwk", "-t"])
+        .run();
 
     assert_eq!(stdout.lines().count(), 1);
     assert!(stdout.contains("Homo"));
     assert!(stdout.contains('\t'));
-
-    Ok(())
 }
 
 #[test]
-fn command_label_special_chars() -> anyhow::Result<()> {
+fn command_label_special_chars() {
     // Special chars (slash, space)
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("label")
-        .arg("tests/newick/slash_and_space.nwk")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&["nwk", "label", "tests/newick/slash_and_space.nwk"])
+        .run();
 
     assert!(stdout.contains("B/Washington/05/2009 gi_255529494 gb_GQ451489\n"));
     assert!(stdout.contains("Swit/1562056/2009_NA\n"));
     assert!(stdout.lines().count() > 10);
-
-    Ok(())
 }
 
 #[test]
-fn command_label_multi_tree() -> anyhow::Result<()> {
+fn command_label_multi_tree() {
     // Multiple trees in one file, -t option
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("label")
-        .arg("tests/newick/forest.nwk")
-        .arg("-t")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&["nwk", "label", "tests/newick/forest.nwk", "-t"])
+        .run();
 
     // forest.nwk has 5 trees, so 5 lines
     assert_eq!(stdout.lines().count(), 5);
@@ -415,8 +335,6 @@ fn command_label_multi_tree() -> anyhow::Result<()> {
     assert!(stdout.contains("Diomedea")); // Tree 2
     assert!(stdout.contains("Ticodendraceae")); // Tree 3
     assert!(stdout.contains("Gorilla")); // Tree 4/5
-
-    Ok(())
 }
 
 // ================================================================================================
@@ -424,139 +342,115 @@ fn command_label_multi_tree() -> anyhow::Result<()> {
 // ================================================================================================
 
 #[test]
-fn command_distance_root() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("distance")
-        .arg("tests/newick/catarrhini.nwk")
-        .arg("-I")
-        .arg("--mode")
-        .arg("root")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_distance_root() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "nwk",
+            "distance",
+            "tests/newick/catarrhini.nwk",
+            "-I",
+            "--mode",
+            "root",
+        ])
+        .run();
 
     assert_eq!(stdout.lines().count(), 10);
     assert!(stdout.contains("Homo\t60"));
-
-    Ok(())
 }
 
 #[test]
-fn command_distance_parent() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("distance")
-        .arg("tests/newick/catarrhini.nwk")
-        .arg("-I")
-        .arg("--mode")
-        .arg("parent")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_distance_parent() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "nwk",
+            "distance",
+            "tests/newick/catarrhini.nwk",
+            "-I",
+            "--mode",
+            "parent",
+        ])
+        .run();
 
     assert_eq!(stdout.lines().count(), 10);
     assert!(stdout.contains("Homo\t10"));
-
-    Ok(())
 }
 
 #[test]
-fn command_distance_pairwise() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("distance")
-        .arg("tests/newick/catarrhini.nwk")
-        .arg("-I")
-        .arg("--mode")
-        .arg("pairwise")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_distance_pairwise() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "nwk",
+            "distance",
+            "tests/newick/catarrhini.nwk",
+            "-I",
+            "--mode",
+            "pairwise",
+        ])
+        .run();
 
     assert_eq!(stdout.lines().count(), 100);
     assert!(stdout.contains("Homo\tPongo\t65"));
     assert!(stdout.contains("Pongo\tHomo\t65"));
-
-    Ok(())
 }
 
 #[test]
-fn command_distance_lca() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("distance")
-        .arg("tests/newick/catarrhini.nwk")
-        .arg("-I")
-        .arg("--mode")
-        .arg("lca")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_distance_lca() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "nwk",
+            "distance",
+            "tests/newick/catarrhini.nwk",
+            "-I",
+            "--mode",
+            "lca",
+        ])
+        .run();
 
     assert_eq!(stdout.lines().count(), 100);
     assert!(stdout.contains("Homo\tPongo\t35\t30"));
     assert!(stdout.contains("Homo\tHomo\t0\t0"));
-
-    Ok(())
 }
 
 #[test]
-fn command_distance_phylip() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("distance")
-        .arg("tests/newick/catarrhini.nwk")
-        .arg("-I")
-        .arg("--mode")
-        .arg("phylip")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_distance_phylip() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "nwk",
+            "distance",
+            "tests/newick/catarrhini.nwk",
+            "-I",
+            "--mode",
+            "phylip",
+        ])
+        .run();
 
     assert!(stdout.lines().count() >= 11);
     assert!(stdout.trim().starts_with("10"));
     assert!(stdout.contains("Homo"));
     assert!(stdout.contains(" 65.000000"));
-
-    Ok(())
 }
 
 #[test]
-fn command_distance_stdin() -> anyhow::Result<()> {
+fn command_distance_stdin() {
     // Topological distance (stdin input)
     let input = "((A,B)C,D)E;";
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("distance")
-        .arg("stdin")
-        .arg("--mode")
-        .arg("root")
-        .write_stdin(input)
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&["nwk", "distance", "stdin", "--mode", "root"])
+        .stdin(input)
+        .run();
 
     assert!(stdout.contains("A\t2"));
     assert!(stdout.contains("B\t2"));
     assert!(stdout.contains("C\t1"));
     assert!(stdout.contains("D\t1"));
     assert!(stdout.contains("E\t0"));
-
-    Ok(())
 }
 
 #[test]
-fn command_distance_reference_dist_root() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("distance")
-        .arg("tests/newick/dist.nwk")
-        .arg("--mode")
-        .arg("root")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_distance_reference_dist_root() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&["nwk", "distance", "tests/newick/dist.nwk", "--mode", "root"])
+        .run();
 
     // Verified against newick_utils test_nw_distance_rh.exp
     assert!(stdout.contains("A\t4"));
@@ -565,21 +459,19 @@ fn command_distance_reference_dist_root() -> anyhow::Result<()> {
     assert!(stdout.contains("D\t6"));
     assert!(stdout.contains("E\t4"));
     assert!(stdout.contains("F\t4"));
-
-    Ok(())
 }
 
 #[test]
-fn command_distance_reference_unnamed() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("distance")
-        .arg("tests/newick/dist_meth_xpl.nwk")
-        .arg("--mode")
-        .arg("root")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_distance_reference_unnamed() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "nwk",
+            "distance",
+            "tests/newick/dist_meth_xpl.nwk",
+            "--mode",
+            "root",
+        ])
+        .run();
 
     // Verified against newick_utils test_nw_distance_nsf.exp
     // Unnamed nodes might appear as tabs with no label or internal ID.
@@ -589,40 +481,30 @@ fn command_distance_reference_unnamed() -> anyhow::Result<()> {
     assert!(stdout.contains("\t4"));
     assert!(stdout.contains("A\t5"));
     assert!(stdout.contains("B\t4"));
-
-    Ok(())
 }
 
 #[test]
-fn command_distance_reference_lca() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("distance")
-        .arg("tests/newick/dist.nwk")
-        .arg("--mode")
-        .arg("lca")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_distance_reference_lca() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&["nwk", "distance", "tests/newick/dist.nwk", "--mode", "lca"])
+        .run();
 
     // Verified against newick_utils test_nw_distance_an_2.exp (D F -> 4 2)
     // pgr output: D \t F \t 4 \t 2
     assert!(stdout.contains("D\tF\t4\t2"));
-
-    Ok(())
 }
 
 #[test]
-fn command_distance_reference_pairwise() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("distance")
-        .arg("tests/newick/dist.nwk")
-        .arg("--mode")
-        .arg("pairwise")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_distance_reference_pairwise() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "nwk",
+            "distance",
+            "tests/newick/dist.nwk",
+            "--mode",
+            "pairwise",
+        ])
+        .run();
 
     // Verified against newick_utils test_nw_distance_pan.exp (F D E B)
     // Check F-D distance (2+4=6)
@@ -631,21 +513,19 @@ fn command_distance_reference_pairwise() -> anyhow::Result<()> {
     assert!(stdout.contains("F\tD\t6"));
     assert!(stdout.contains("F\tE\t4"));
     assert!(stdout.contains("D\tB\t12"));
-
-    Ok(())
 }
 
 #[test]
-fn command_distance_reference_phylip() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("distance")
-        .arg("tests/newick/dist.nwk")
-        .arg("--mode")
-        .arg("phylip")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_distance_reference_phylip() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "nwk",
+            "distance",
+            "tests/newick/dist.nwk",
+            "--mode",
+            "phylip",
+        ])
+        .run();
 
     // Verified against newick_utils test_nw_distance_m.exp
     // Note: pgr includes all named nodes (leaves + internal) in phylip mode.
@@ -658,42 +538,38 @@ fn command_distance_reference_phylip() -> anyhow::Result<()> {
     assert!(stdout.contains("6.000000"));
     assert!(stdout.contains("7.000000"));
     assert!(stdout.contains("10.000000"));
-
-    Ok(())
 }
 
 #[test]
-fn command_distance_float_noise() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("distance")
-        .arg("tests/newick/noise.nwk")
-        .arg("--mode")
-        .arg("pairwise")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_distance_float_noise() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "nwk",
+            "distance",
+            "tests/newick/noise.nwk",
+            "--mode",
+            "pairwise",
+        ])
+        .run();
 
     // A->B should be 0.1 + 0.2 = 0.3
     // Without fix: 0.30000000000000004
     // With fix: 0.3
     assert!(stdout.contains("A\tB\t0.3\n") || stdout.contains("A\tB\t0.30\n")); // Allow formatted but clean
     assert!(!stdout.contains("0.30000000000000004"));
-
-    Ok(())
 }
 
 #[test]
-fn command_distance_reference_parent() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("distance")
-        .arg("tests/newick/dist.nwk")
-        .arg("--mode")
-        .arg("parent")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_distance_reference_parent() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "nwk",
+            "distance",
+            "tests/newick/dist.nwk",
+            "--mode",
+            "parent",
+        ])
+        .run();
 
     // Verified against newick_utils test_nw_distance_par_all_nam.exp
     // A->g: 2, B->g: 4, g->k: 2
@@ -711,6 +587,4 @@ fn command_distance_reference_parent() -> anyhow::Result<()> {
     assert!(stdout.contains("i\t1"));
     assert!(stdout.contains("j\t1"));
     assert!(stdout.contains("k\t0"));
-
-    Ok(())
 }
