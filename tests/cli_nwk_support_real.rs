@@ -1,3 +1,8 @@
+#[macro_use]
+#[path = "common/mod.rs"]
+mod common;
+
+use common::PgrCmd;
 use pgr::libs::phylo::tree::Tree;
 
 // Helper to check support values and branch lengths with delta
@@ -40,17 +45,15 @@ fn check_support_and_length(
 }
 
 #[test]
-fn test_nwk_support_simple() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("support")
-        .arg("tests/newick/HRV.nwk")
-        .arg("tests/newick/HRV_20reps.nwk")
-        .output()?;
-
-    assert!(output.status.success());
-    let stdout = String::from_utf8(output.stdout)?;
+fn test_nwk_support_simple() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "nwk",
+            "support",
+            "tests/newick/HRV.nwk",
+            "tests/newick/HRV_20reps.nwk",
+        ])
+        .run();
 
     // Check for some known support values from test_nw_support_simple.exp
     // e.g., ...HRV1B_1:0.123339)6:0.076821... (support 6, length 0.076821)
@@ -70,23 +73,19 @@ fn test_nwk_support_simple() -> anyhow::Result<()> {
         check_support_and_length(&stdout, "20", 0.227116, epsilon),
         "Failed to find node with support 20 and length 0.227116"
     );
-
-    Ok(())
 }
 
 #[test]
-fn test_nwk_support_percent() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("support")
-        .arg("tests/newick/HRV.nwk")
-        .arg("tests/newick/HRV_20reps.nwk")
-        .arg("--percent")
-        .output()?;
-
-    assert!(output.status.success());
-    let stdout = String::from_utf8(output.stdout)?;
+fn test_nwk_support_percent() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "nwk",
+            "support",
+            "tests/newick/HRV.nwk",
+            "tests/newick/HRV_20reps.nwk",
+            "--percent",
+        ])
+        .run();
 
     // Check for some known support values from test_nw_support_percent.exp
     // 6/20 * 100 = 30
@@ -107,8 +106,6 @@ fn test_nwk_support_percent() -> anyhow::Result<()> {
         check_support_and_length(&stdout, "100", 0.227116, epsilon),
         "Failed to find node with support 100 and length 0.227116"
     );
-
-    Ok(())
 }
 
 #[test]

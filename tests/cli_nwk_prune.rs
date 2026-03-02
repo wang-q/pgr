@@ -1,4 +1,8 @@
-use predicates::prelude::*;
+#[macro_use]
+#[path = "common/mod.rs"]
+mod common;
+
+use common::PgrCmd;
 use std::io::Write;
 
 const ABCDE_NWK: &str = "((A,B),(C,D),E);";
@@ -6,219 +10,141 @@ const CATARRHINI: &str = "(((Homo,Pan),Gorilla),Pongo);";
 const CATARRHINI_LABELED: &str = "(((Homo,Pan)Hominini,Gorilla)Homininae,Pongo)Hominidae;";
 
 #[test]
-fn command_prune_remove_single_leaf() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    cmd.arg("nwk")
-        .arg("prune")
-        .arg("stdin")
-        .arg("-n")
-        .arg("Homo")
-        .write_stdin(CATARRHINI);
-    cmd.assert()
-        .success()
-        .stdout(predicate::str::contains("((Pan,Gorilla),Pongo);"));
-    Ok(())
+fn command_prune_remove_single_leaf() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&["nwk", "prune", "stdin", "-n", "Homo"])
+        .stdin(CATARRHINI)
+        .run();
+
+    assert!(stdout.contains("((Pan,Gorilla),Pongo);"));
 }
 
 #[test]
-fn command_prune_remove_multiple_leaves() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    cmd.arg("nwk")
-        .arg("prune")
-        .arg("stdin")
-        .arg("-n")
-        .arg("Homo")
-        .arg("-n")
-        .arg("Pan")
-        .write_stdin(CATARRHINI);
-    cmd.assert()
-        .success()
-        .stdout(predicate::str::contains("(Gorilla,Pongo);"));
-    Ok(())
+fn command_prune_remove_multiple_leaves() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&["nwk", "prune", "stdin", "-n", "Homo", "-n", "Pan"])
+        .stdin(CATARRHINI)
+        .run();
+
+    assert!(stdout.contains("(Gorilla,Pongo);"));
 }
 
 #[test]
-fn command_prune_remove_all_leaves_in_clade() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    cmd.arg("nwk")
-        .arg("prune")
-        .arg("stdin")
-        .arg("-n")
-        .arg("Homo")
-        .arg("-n")
-        .arg("Pan")
-        .arg("-n")
-        .arg("Gorilla")
-        .write_stdin(CATARRHINI);
-    cmd.assert()
-        .success()
-        .stdout(predicate::str::contains("Pongo;"));
-    Ok(())
+fn command_prune_remove_all_leaves_in_clade() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "nwk", "prune", "stdin", "-n", "Homo", "-n", "Pan", "-n", "Gorilla",
+        ])
+        .stdin(CATARRHINI)
+        .run();
+
+    assert!(stdout.contains("Pongo;"));
 }
 
 #[test]
-fn command_prune_remove_all_nodes_bug() -> anyhow::Result<()> {
+fn command_prune_remove_all_nodes_bug() {
     // Remove all nodes
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    cmd.arg("nwk")
-        .arg("prune")
-        .arg("stdin")
-        .arg("-n")
-        .arg("A")
-        .arg("-n")
-        .arg("B")
-        .arg("-n")
-        .arg("C")
-        .arg("-n")
-        .arg("D")
-        .arg("-n")
-        .arg("E")
-        .write_stdin(ABCDE_NWK);
-    cmd.assert().success(); // Just ensure it doesn't crash
-    Ok(())
+    PgrCmd::new()
+        .args(&[
+            "nwk", "prune", "stdin", "-n", "A", "-n", "B", "-n", "C", "-n", "D", "-n", "E",
+        ])
+        .stdin(ABCDE_NWK)
+        .run(); // Just ensure it doesn't crash
 }
 
 #[test]
-fn command_prune_regex_match() -> anyhow::Result<()> {
+fn command_prune_regex_match() {
     // Regex
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    cmd.arg("nwk")
-        .arg("prune")
-        .arg("stdin")
-        .arg("--regex")
-        .arg("^H")
-        .write_stdin(CATARRHINI);
-    cmd.assert()
-        .success()
-        .stdout(predicate::str::contains("((Pan,Gorilla),Pongo);"));
-    Ok(())
+    let (stdout, _) = PgrCmd::new()
+        .args(&["nwk", "prune", "stdin", "--regex", "^H"])
+        .stdin(CATARRHINI)
+        .run();
+
+    assert!(stdout.contains("((Pan,Gorilla),Pongo);"));
 }
 
 #[test]
-fn command_prune_keep_single_leaf() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    cmd.arg("nwk")
-        .arg("prune")
-        .arg("stdin")
-        .arg("-v")
-        .arg("-n")
-        .arg("Homo")
-        .write_stdin(CATARRHINI);
-    cmd.assert()
-        .success()
-        .stdout(predicate::str::contains("Homo;"));
-    Ok(())
+fn command_prune_keep_single_leaf() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&["nwk", "prune", "stdin", "-n", "Homo", "--keep"])
+        .stdin(CATARRHINI)
+        .run();
+
+    assert!(stdout.contains("Homo;"));
 }
 
 #[test]
-fn command_prune_multiple_trees() -> anyhow::Result<()> {
+fn command_prune_multiple_trees() {
     let multi = format!("{}\n{}", CATARRHINI, ABCDE_NWK);
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    cmd.arg("nwk")
-        .arg("prune")
-        .arg("stdin")
-        .arg("-n")
-        .arg("Homo")
-        .arg("-n")
-        .arg("A")
-        .write_stdin(multi);
-    cmd.assert()
-        .success()
-        .stdout(predicate::str::contains("((Pan,Gorilla),Pongo);"))
-        .stdout(predicate::str::contains("(B,(C,D),E);"));
-    Ok(())
+    let (stdout, _) = PgrCmd::new()
+        .args(&["nwk", "prune", "stdin", "-n", "Homo", "-n", "A"])
+        .stdin(multi)
+        .run();
+
+    assert!(stdout.contains("((Pan,Gorilla),Pongo);"));
+    assert!(stdout.contains("(B,(C,D),E);"));
 }
 
 #[test]
-fn command_prune_file_remove_single() -> anyhow::Result<()> {
-    let dir = tempfile::tempdir()?;
-    let file_path = dir.path().join("list.txt");
-    {
-        let mut f = std::fs::File::create(&file_path)?;
-        writeln!(f, "Homo")?;
-    }
+fn command_prune_file_remove_single() {
+    let mut file = tempfile::Builder::new().suffix(".txt").tempfile().unwrap();
+    writeln!(file, "Homo").unwrap();
 
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    cmd.arg("nwk")
-        .arg("prune")
-        .arg("stdin")
-        .arg("-f")
-        .arg(&file_path)
-        .write_stdin(CATARRHINI);
-    cmd.assert()
-        .success()
-        .stdout(predicate::str::contains("((Pan,Gorilla),Pongo);"));
-    Ok(())
+    let (stdout, _) = PgrCmd::new()
+        .args(&["nwk", "prune", "stdin", "-f", file.path().to_str().unwrap()])
+        .stdin(CATARRHINI)
+        .run();
+
+    assert!(stdout.contains("((Pan,Gorilla),Pongo);"));
 }
 
 #[test]
-fn command_prune_file_remove_multiple() -> anyhow::Result<()> {
-    let dir = tempfile::tempdir()?;
-    let file_path = dir.path().join("list.txt");
-    {
-        let mut f = std::fs::File::create(&file_path)?;
-        writeln!(f, "Homo")?;
-        writeln!(f, "Pan")?;
-    }
+fn command_prune_file_remove_multiple() {
+    let mut file = tempfile::Builder::new().suffix(".txt").tempfile().unwrap();
+    writeln!(file, "Homo").unwrap();
+    writeln!(file, "Pan").unwrap();
 
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    cmd.arg("nwk")
-        .arg("prune")
-        .arg("stdin")
-        .arg("-f")
-        .arg(&file_path)
-        .write_stdin(CATARRHINI);
-    cmd.assert()
-        .success()
-        .stdout(predicate::str::contains("(Gorilla,Pongo);"));
-    Ok(())
+    let (stdout, _) = PgrCmd::new()
+        .args(&["nwk", "prune", "stdin", "-f", file.path().to_str().unwrap()])
+        .stdin(CATARRHINI)
+        .run();
+
+    assert!(stdout.contains("(Gorilla,Pongo);"));
 }
 
 #[test]
-fn command_prune_file_remove_all() -> anyhow::Result<()> {
-    let dir = tempfile::tempdir()?;
-    let file_path = dir.path().join("list.txt");
-    {
-        let mut f = std::fs::File::create(&file_path)?;
-        writeln!(f, "Homo")?;
-        writeln!(f, "Pan")?;
-        writeln!(f, "Gorilla")?;
-    }
+fn command_prune_file_remove_all() {
+    let mut file = tempfile::Builder::new().suffix(".txt").tempfile().unwrap();
+    writeln!(file, "Homo").unwrap();
+    writeln!(file, "Pan").unwrap();
+    writeln!(file, "Gorilla").unwrap();
 
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    cmd.arg("nwk")
-        .arg("prune")
-        .arg("stdin")
-        .arg("-f")
-        .arg(&file_path)
-        .write_stdin(CATARRHINI);
-    cmd.assert()
-        .success()
-        .stdout(predicate::str::contains("Pongo;"));
-    Ok(())
+    let (stdout, _) = PgrCmd::new()
+        .args(&["nwk", "prune", "stdin", "-f", file.path().to_str().unwrap()])
+        .stdin(CATARRHINI)
+        .run();
+
+    assert!(stdout.contains("Pongo;"));
 }
 
 #[test]
-fn command_prune_file_keep_single() -> anyhow::Result<()> {
-    let dir = tempfile::tempdir()?;
-    let file_path = dir.path().join("list.txt");
-    {
-        let mut f = std::fs::File::create(&file_path)?;
-        writeln!(f, "Homo")?;
-    }
+fn command_prune_file_keep_single() {
+    let mut file = tempfile::Builder::new().suffix(".txt").tempfile().unwrap();
+    writeln!(file, "Homo").unwrap();
 
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    cmd.arg("nwk")
-        .arg("prune")
-        .arg("stdin")
-        .arg("-v")
-        .arg("-f")
-        .arg(&file_path)
-        .write_stdin(CATARRHINI);
-    cmd.assert()
-        .success()
-        .stdout(predicate::str::contains("Homo;"));
-    Ok(())
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "nwk",
+            "prune",
+            "stdin",
+            "-f",
+            file.path().to_str().unwrap(),
+            "--keep",
+        ])
+        .stdin(CATARRHINI)
+        .run();
+
+    assert!(stdout.contains("Homo;"));
 }
 
 #[test]

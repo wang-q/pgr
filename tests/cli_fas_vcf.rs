@@ -100,24 +100,22 @@ fn command_vcf_ydl_fields() {
 }
 
 #[test]
-fn command_vcf_sizes_contig_real() -> anyhow::Result<()> {
+fn command_vcf_sizes_contig_real() {
     let stdout = run_vcf(&[
         "--sizes",
         "tests/fas_vcf/S288c.chr.sizes",
         "tests/fas_vcf/YDL184C.fas",
-    ])?;
+    ]);
 
     assert!(
         stdout.contains("##contig=<ID=IV,length=1531933>"),
         "contig header contains IV from sizes"
     );
-
-    Ok(())
 }
 
 #[test]
-fn command_vcf_ydl_expected_rows() -> anyhow::Result<()> {
-    let stdout = run_vcf(&["tests/fas_vcf/YDL184C.fas"])?;
+fn command_vcf_ydl_expected_rows() {
+    let stdout = run_vcf(&["tests/fas_vcf/YDL184C.fas"]);
 
     let mut rows: std::collections::HashMap<i32, Vec<String>> = std::collections::HashMap::new();
     for line in stdout.lines() {
@@ -149,6 +147,4 @@ fn command_vcf_ydl_expected_rows() -> anyhow::Result<()> {
     assert!(r3[4].contains('G'));
     let gt3 = &r3[9..];
     assert_eq!(gt3, ["0", "0", "0", "0", "1", "0"]);
-
-    Ok(())
 }

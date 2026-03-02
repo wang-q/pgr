@@ -92,7 +92,7 @@ fn command_replace() {
             "tests/newick/abc.nwk",
             "tests/newick/abc.replace.tsv",
             "--mode",
-            "comment",
+            "asis",
         ])
         .run();
 
@@ -100,17 +100,17 @@ fn command_replace() {
 }
 
 #[test]
-fn command_replace_comments() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("replace")
-        .arg("tests/newick/abc.nwk")
-        .arg("tests/newick/mixed_comments.replace.tsv")
-        .arg("--mode")
-        .arg("species")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_replace_comments() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "nwk",
+            "replace",
+            "tests/newick/abc.nwk",
+            "tests/newick/mixed_comments.replace.tsv",
+            "--mode",
+            "species",
+        ])
+        .run();
 
     // A -> Homo [UnstructuredComment]
     // B -> Pan [&&NHX:key=value]
@@ -118,20 +118,18 @@ fn command_replace_comments() -> anyhow::Result<()> {
     assert!(stdout.contains("A[&&NHX:S=Homo:UnstructuredComment]"));
     assert!(stdout.contains("B[&&NHX:S=Pan:key=value]"));
     assert!(stdout.contains("C[&&NHX:S=Gorilla:tag]"));
-
-    Ok(())
 }
 
 #[test]
-fn command_replace_remove() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("replace")
-        .arg("tests/newick/abc.nwk")
-        .arg("tests/newick/replace_remove.tsv")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_replace_remove() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "nwk",
+            "replace",
+            "tests/newick/abc.nwk",
+            "tests/newick/replace_remove.tsv",
+        ])
+        .run();
 
     // A -> "" (removed)
     // B -> Pan
@@ -142,56 +140,52 @@ fn command_replace_remove() -> anyhow::Result<()> {
     // resulting in format like `(:0.1,Pan:0.1)...` or just `(,Pan)...` depending on branch lengths.
     // abc.nwk has no branch lengths.
     assert!(stdout.contains("((,Pan),C);"));
-
-    Ok(())
 }
 
 #[test]
-fn command_replace_filter() -> anyhow::Result<()> {
+fn command_replace_filter() {
     // abc.nwk: ((A,B),C);
     // All are leaves.
 
     // 1. Skip leaves (should change nothing if all matches are leaves)
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("replace")
-        .arg("tests/newick/abc.nwk")
-        .arg("tests/newick/abc.replace.tsv")
-        .arg("--Leaf") // Skip leaves
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "nwk",
+            "replace",
+            "tests/newick/abc.nwk",
+            "tests/newick/abc.replace.tsv",
+            "--Leaf", // Skip leaves
+        ])
+        .run();
 
     // A, B, C are leaves, so they should be skipped. Output remains original (or similar).
     assert!(stdout.contains("((A,B),C);"));
 
     // 2. Skip internal (should change leaves)
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("replace")
-        .arg("tests/newick/abc.nwk")
-        .arg("tests/newick/abc.replace.tsv")
-        .arg("--Internal") // Skip internal
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "nwk",
+            "replace",
+            "tests/newick/abc.nwk",
+            "tests/newick/abc.replace.tsv",
+            "--Internal", // Skip internal
+        ])
+        .run();
 
     // A, B, C are leaves, so they should be replaced.
     assert!(stdout.contains("((Homo,Pan),Gorilla);"));
-
-    Ok(())
 }
 
 #[test]
-fn command_replace_multi() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("replace")
-        .arg("tests/newick/forest.nwk")
-        .arg("tests/newick/forest.replace.tsv")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_replace_multi() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "nwk",
+            "replace",
+            "tests/newick/forest.nwk",
+            "tests/newick/forest.replace.tsv",
+        ])
+        .run();
 
     // Check line count (should be 5 trees)
     assert_eq!(stdout.lines().count(), 5);
@@ -200,53 +194,37 @@ fn command_replace_multi() -> anyhow::Result<()> {
     // Original: (Homo,(Pan,...
     // Expected: (Human,(Chimp,...
     assert!(stdout.contains("(Human,(Chimp,"));
-
-    Ok(())
 }
 
 #[test]
-fn command_reroot() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("reroot")
-        .arg("tests/newick/catarrhini_wrong.nwk")
-        .arg("-n")
-        .arg("Cebus")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_reroot() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "nwk",
+            "reroot",
+            "tests/newick/catarrhini_wrong.nwk",
+            "-n",
+            "Cebus",
+        ])
+        .run();
 
     assert!(stdout.contains("(Cebus,(((Cercopithecus,(Macaca,Papio)),Simias),(Hylobates,(Pongo,(Gorilla,(Pan,Homo))))));"));
 
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("reroot")
-        .arg("tests/newick/abcde.nwk")
-        .arg("-n")
-        .arg("B")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&["nwk", "reroot", "tests/newick/abcde.nwk", "-n", "B"])
+        .run();
 
     assert!(stdout.contains("(B:0.5,(A:1,C:2)D:0.5);"));
 
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("reroot")
-        .arg("tests/newick/bs.nwk")
-        .arg("-n")
-        .arg("C")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&["nwk", "reroot", "tests/newick/bs.nwk", "-n", "C"])
+        .run();
 
     assert!(stdout.contains("(C,(B,(A,(((D,E)86,F)93,(G,(H,I))100)100)41)61);"));
-
-    Ok(())
 }
 
 #[test]
-fn command_reroot_support() -> anyhow::Result<()> {
+fn command_reroot_support() {
     // bs.nwk: (((((A,(B,C)61)41,((D,E)86,F)93)100,G)100,H,I);
     // Reroot at C with -s.
     // Labels should shift.
@@ -255,39 +233,31 @@ fn command_reroot_support() -> anyhow::Result<()> {
     // 61 moves to 41. 41 moves to ...
     // Result should show labels in new positions.
     // Just verify execution for now and check consistency.
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("reroot")
-        .arg("tests/newick/bs.nwk")
-        .arg("-n")
-        .arg("C")
-        .arg("-s")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&["nwk", "reroot", "tests/newick/bs.nwk", "-n", "C", "-s"])
+        .run();
 
     // We expect the tree structure to be rerooted at C.
     // And labels shifted.
     // (C, (B, (A, ...)))
     assert!(stdout.contains("(C,"));
     assert!(stdout.contains("(B,(A,(((D,E)86,F)93,(G,(H,I)100)100)41)61)"));
-    Ok(())
 }
 
 #[test]
-fn command_reroot_ingroup() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("reroot")
-        .arg("-l")
-        .arg("tests/newick/tetrapoda.nwk")
-        .arg("-n")
-        .arg("Bombina")
-        .arg("-n")
-        .arg("Tetrao")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_reroot_ingroup() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "nwk",
+            "reroot",
+            "-l",
+            "tests/newick/tetrapoda.nwk",
+            "-n",
+            "Bombina",
+            "-n",
+            "Tetrao",
+        ])
+        .run();
 
     println!("Output: {}", stdout);
     // Expected: ((((Procavia:0.019702...
@@ -295,38 +265,32 @@ fn command_reroot_ingroup() -> anyhow::Result<()> {
     // (((((Procavia:0.019702,(Vulpes:0.008083,Orcinus:0.008289)84:0.008124)42:0.003924,Bradypus:0.020167)16:0.000000,(((Mesocricetus:0.011181,Tamias:0.049599)88:0.023597,Sorex:0.017660)32:0.000744,((Homo:0.004051,(Papio:0.000000,Hylobates:0.004076)42:0.000000)99:0.012677,Lepus:0.030777)67:0.007717)26:0.006246)78:0.021250,Didelphis:0.007148)71:0.0065625,(Bombina:0.269848,Tetrao:0.021544)30:0.0065625);
     assert!(stdout.contains("(((((Procavia:0.019702"));
     assert!(stdout.contains("(Bombina:0.269848,Tetrao:0.021544)30:0.0065625);"));
-    Ok(())
 }
 
 #[test]
-fn command_reroot_midlen() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("reroot")
-        .arg("tests/newick/catarrhini.nwk")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_reroot_midlen() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&["nwk", "reroot", "tests/newick/catarrhini.nwk"])
+        .run();
 
     // Expected: (Pongo:15,((Gorilla:16...
     assert!(stdout.contains("(Pongo:15,((Gorilla:16"));
-    Ok(())
 }
 
 #[test]
-fn command_reroot_nolbl_ingrp() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("reroot")
-        .arg("-l")
-        .arg("tests/newick/nolbl_ingrp.nwk")
-        .arg("-n")
-        .arg("a")
-        .arg("-n")
-        .arg("b")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_reroot_nolbl_ingrp() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "nwk",
+            "reroot",
+            "-l",
+            "tests/newick/nolbl_ingrp.nwk",
+            "-n",
+            "a",
+            "-n",
+            "b",
+        ])
+        .run();
 
     // Input: ((a,b),c);
     // Reroot on a,b (ingroup). LCA is parent of (a,b).
@@ -335,30 +299,20 @@ fn command_reroot_nolbl_ingrp() -> anyhow::Result<()> {
     // test_nw_reroot_nolbl_ingrp.exp: ((a,b),c);
     // So it should just return the same tree or equivalent.
     assert!(stdout.contains("((a,b),c);"));
-    Ok(())
 }
 
 #[test]
-fn command_reroot_deroot() -> anyhow::Result<()> {
+fn command_reroot_deroot() {
     // abcde.nwk: ((A:1,B:1)D:1,C:1)E;
     // Root is E (bifurcating, children D and C).
     // D has 2 descendants (A,B). C has 0 (leaf).
     // Deroot should splice out D.
     // Result: (A:2,B:2,C:1)E;
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("reroot")
-        .arg("tests/newick/abcde.nwk")
-        .arg("-d")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&["nwk", "reroot", "tests/newick/abcde.nwk", "-d"])
+        .run();
 
-    assert!(stdout.contains("A:2"));
-    assert!(stdout.contains("B:2"));
-    assert!(stdout.contains("C:1"));
-    assert!(stdout.contains(")E;"));
-    Ok(())
+    assert!(stdout.contains("(A:2,B:2,C:1)E;"));
 }
 
 #[test]

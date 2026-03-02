@@ -1,3 +1,8 @@
+#[macro_use]
+#[path = "common/mod.rs"]
+mod common;
+
+use common::PgrCmd;
 use std::io::Write;
 use tempfile::Builder;
 
@@ -6,14 +11,10 @@ use tempfile::Builder;
 // ================================================================================================
 
 #[test]
-fn command_stat_basic() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("stat")
-        .arg("tests/newick/hg38.7way.nwk")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_stat_basic() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&["nwk", "stat", "tests/newick/hg38.7way.nwk"])
+        .run();
 
     assert_eq!(stdout.lines().count(), 10);
     assert!(stdout.contains("leaf labels\t7"));
@@ -21,19 +22,13 @@ fn command_stat_basic() -> anyhow::Result<()> {
     assert!(stdout.contains("cherries\t"));
     assert!(stdout.contains("sackin\t"));
     assert!(stdout.contains("colless\t"));
-
-    Ok(())
 }
 
 #[test]
-fn command_stat_catarrhini() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("stat")
-        .arg("tests/newick/catarrhini.nwk")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_stat_catarrhini() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&["nwk", "stat", "tests/newick/catarrhini.nwk"])
+        .run();
 
     assert!(stdout.contains("Type\tphylogram"));
     assert!(stdout.contains("nodes\t19"));
@@ -45,42 +40,32 @@ fn command_stat_catarrhini() -> anyhow::Result<()> {
     assert!(stdout.contains("cherries\t"));
     assert!(stdout.contains("sackin\t"));
     assert!(stdout.contains("colless\t"));
-
-    Ok(())
 }
 
 #[test]
-fn command_stat_style_line() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("stat")
-        .arg("tests/newick/catarrhini.nwk")
-        .arg("--style")
-        .arg("line")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_stat_style_line() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "nwk",
+            "stat",
+            "tests/newick/catarrhini.nwk",
+            "--style",
+            "line",
+        ])
+        .run();
 
     assert!(stdout.contains("phylogram\t19\t10\tYes\t9\t10\t6"));
     // Header check
     assert!(stdout.contains(
         "Type\tnodes\tleaves\trooted\tdichotomies\tleaf labels\tinternal labels\tcherries\tsackin\tcolless"
     ));
-
-    Ok(())
 }
 
 #[test]
-fn command_stat_forest() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("stat")
-        .arg("tests/newick/forest.nwk")
-        .arg("--style")
-        .arg("line")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_stat_forest() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&["nwk", "stat", "tests/newick/forest.nwk", "--style", "line"])
+        .run();
 
     let lines: Vec<&str> = stdout.lines().collect();
     assert_eq!(lines.len(), 6);
@@ -105,8 +90,6 @@ fn command_stat_forest() -> anyhow::Result<()> {
 
     // Tree 5: Cladogram, 19 nodes, 10 leaves, 9 dichotomies, 10 leaf labels, 0 inner labels
     assert!(lines[5].contains("cladogram\t19\t10\tYes\t9\t10\t0"));
-
-    Ok(())
 }
 
 #[test]

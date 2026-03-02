@@ -110,33 +110,33 @@ fn test_histo_cover_spread() {
     //
     // Just checking it runs and produces output. Precise float matching is tricky.
     // I will check if output contains "0.2140"
-    let output_content = fs::read_to_string(&output)?;
+    let output_content = fs::read_to_string(&output).unwrap();
     assert!(output_content.contains("0.2140"));
     assert!(output_content.contains("0.0000")); // Singletons or identicals
 }
 
 #[test]
-fn test_histo_id_spread() -> anyhow::Result<()> {
-    let temp = TempDir::new()?;
+fn test_histo_id_spread() {
+    let temp = TempDir::new().unwrap();
     let input = get_path("histo", "input", "basic.psl");
     let output = temp.path().join("id.histo");
 
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    cmd.arg("psl")
-        .arg("histo")
-        .arg("--what")
-        .arg("idSpread")
-        .arg(&input)
-        .arg("-o")
-        .arg(&output);
-    cmd.assert().success();
+    PgrCmd::new()
+        .args(&[
+            "psl",
+            "histo",
+            "--what",
+            "idSpread",
+            input.to_str().unwrap(),
+            "-o",
+            output.to_str().unwrap(),
+        ])
+        .run();
 
-    let output_content = fs::read_to_string(&output)?;
+    let output_content = fs::read_to_string(&output).unwrap();
     let lines: Vec<&str> = output_content.lines().collect();
     // basic.psl has 7 unique queries.
     assert_eq!(lines.len(), 7);
-
-    Ok(())
 }
 
 //
@@ -144,45 +144,43 @@ fn test_histo_id_spread() -> anyhow::Result<()> {
 //
 
 #[test]
-fn test_to_chain_fix_strand() -> anyhow::Result<()> {
-    let temp = TempDir::new()?;
+fn test_to_chain_fix_strand() {
+    let temp = TempDir::new().unwrap();
     let input = get_path("to_chain", "input", "mtor.psl");
     let expected_output = get_path("to_chain", "expected", "example3.chain");
     let output = temp.path().join("out.chain");
 
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    cmd.arg("psl")
-        .arg("to-chain")
-        .arg(&input)
-        .arg("--output")
-        .arg(&output)
-        .arg("--fix-strand");
-    cmd.assert().success();
+    PgrCmd::new()
+        .args(&[
+            "psl",
+            "to-chain",
+            input.to_str().unwrap(),
+            "--output",
+            output.to_str().unwrap(),
+            "--fix-strand",
+        ])
+        .run();
 
-    let output_content = fs::read_to_string(&output)?;
-    let expected_content = fs::read_to_string(&expected_output)?;
+    let output_content = fs::read_to_string(&output).unwrap();
+    let expected_content = fs::read_to_string(&expected_output).unwrap();
     assert_eq!(output_content, expected_content);
-
-    Ok(())
 }
 
 #[test]
-fn test_to_chain_fail_neg_strand() -> anyhow::Result<()> {
-    let temp = TempDir::new()?;
+fn test_to_chain_fail_neg_strand() {
+    let temp = TempDir::new().unwrap();
     let input = get_path("to_chain", "input", "mtor.psl");
     let output = temp.path().join("out.chain");
 
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    cmd.arg("psl")
-        .arg("to-chain")
-        .arg(&input)
-        .arg("-o")
-        .arg(&output);
-
-    // Should fail because of negative target strand without --fix-strand
-    cmd.assert().failure();
-
-    Ok(())
+    PgrCmd::new()
+        .args(&[
+            "psl",
+            "to-chain",
+            input.to_str().unwrap(),
+            "-o",
+            output.to_str().unwrap(),
+        ])
+        .run_fail();
 }
 
 //
@@ -190,41 +188,35 @@ fn test_to_chain_fail_neg_strand() -> anyhow::Result<()> {
 //
 
 #[test]
-fn test_rc_mrna() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("psl")
-        .arg("rc")
-        .arg(get_path("rc", "input", "mrna.psl"))
-        .arg("-o")
-        .arg("stdout")
-        .output()
-        .unwrap();
+fn test_rc_mrna() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "psl",
+            "rc",
+            get_path("rc", "input", "mrna.psl").to_str().unwrap(),
+            "-o",
+            "stdout",
+        ])
+        .run();
 
-    let stdout = String::from_utf8(output.stdout).unwrap();
-    let expected = std::fs::read_to_string(get_path("rc", "expected", "mrnaTest.psl"))?;
-
+    let expected = std::fs::read_to_string(get_path("rc", "expected", "mrnaTest.psl")).unwrap();
     assert_eq!(stdout.replace("\r\n", "\n"), expected.replace("\r\n", "\n"));
-    Ok(())
 }
 
 #[test]
-fn test_rc_trans() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("psl")
-        .arg("rc")
-        .arg(get_path("rc", "input", "trans.psl"))
-        .arg("-o")
-        .arg("stdout")
-        .output()
-        .unwrap();
+fn test_rc_trans() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "psl",
+            "rc",
+            get_path("rc", "input", "trans.psl").to_str().unwrap(),
+            "-o",
+            "stdout",
+        ])
+        .run();
 
-    let stdout = String::from_utf8(output.stdout).unwrap();
-    let expected = std::fs::read_to_string(get_path("rc", "expected", "transTest.psl"))?;
-
+    let expected = std::fs::read_to_string(get_path("rc", "expected", "transTest.psl")).unwrap();
     assert_eq!(stdout.replace("\r\n", "\n"), expected.replace("\r\n", "\n"));
-    Ok(())
 }
 
 //
@@ -275,23 +267,25 @@ fn test_lift_basic() {
 }
 
 #[test]
-fn test_lift_target() -> anyhow::Result<()> {
-    let temp = TempDir::new()?;
+fn test_lift_target() {
+    let temp = TempDir::new().unwrap();
     let input = get_path("lift", "", "target_lift.psl");
     let sizes = get_path("lift", "", "chrom.sizes");
     let output = temp.path().join("target_lifted.psl");
 
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    cmd.arg("psl")
-        .arg("lift")
-        .arg(&input)
-        .arg("-o")
-        .arg(&output)
-        .arg("--t-sizes")
-        .arg(&sizes);
-    cmd.assert().success();
+    PgrCmd::new()
+        .args(&[
+            "psl",
+            "lift",
+            input.to_str().unwrap(),
+            "-o",
+            output.to_str().unwrap(),
+            "--t-sizes",
+            sizes.to_str().unwrap(),
+        ])
+        .run();
 
-    let output_content = fs::read_to_string(&output)?;
+    let output_content = fs::read_to_string(&output).unwrap();
 
     // Expected output check
     // First record: Target chr1:101-200 (+). tStart=10, tEnd=60.
@@ -318,8 +312,6 @@ fn test_lift_target() -> anyhow::Result<()> {
     assert!(output_content.contains(",\t110,"));
     // Second: 810
     assert!(output_content.contains(",\t810,"));
-
-    Ok(())
 }
 
 #[test]
@@ -333,26 +325,26 @@ fn test_lift_fail() {
 //
 
 #[test]
-fn test_stats_basic() -> anyhow::Result<()> {
-    let temp = TempDir::new()?;
+fn test_stats_basic() {
+    let temp = TempDir::new().unwrap();
     let input = get_path("stats", "input", "stats_basic.psl");
     let output = temp.path().join("stats.tsv");
 
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    cmd.arg("psl")
-        .arg("stats")
-        .arg(&input)
-        .arg("-o")
-        .arg(&output);
-    cmd.assert().success();
+    PgrCmd::new()
+        .args(&[
+            "psl",
+            "stats",
+            input.to_str().unwrap(),
+            "-o",
+            output.to_str().unwrap(),
+        ])
+        .run();
 
-    let output_content = fs::read_to_string(&output)?;
+    let output_content = fs::read_to_string(&output).unwrap();
     let lines: Vec<&str> = output_content.lines().collect();
     // Default is per-alignment stats.
     // Input has 31 records. Output should have 32 lines (header + 31).
     assert_eq!(lines.len(), 32);
-
-    Ok(())
 }
 
 //
@@ -360,20 +352,22 @@ fn test_stats_basic() -> anyhow::Result<()> {
 //
 
 #[test]
-fn test_to_range_basic() -> anyhow::Result<()> {
-    let temp = TempDir::new()?;
+fn test_to_range_basic() {
+    let temp = TempDir::new().unwrap();
     let input = get_path("lift", "", "test_fragment.psl");
     let output = temp.path().join("ranges.rg");
 
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    cmd.arg("psl")
-        .arg("to-range")
-        .arg(&input)
-        .arg("-o")
-        .arg(&output);
-    cmd.assert().success();
+    PgrCmd::new()
+        .args(&[
+            "psl",
+            "to-range",
+            input.to_str().unwrap(),
+            "-o",
+            output.to_str().unwrap(),
+        ])
+        .run();
 
-    let output_content = fs::read_to_string(&output)?;
+    let output_content = fs::read_to_string(&output).unwrap();
 
     // Check output content
     // Input:
@@ -387,6 +381,4 @@ fn test_to_range_basic() -> anyhow::Result<()> {
     assert_eq!(lines.len(), 2);
     assert_eq!(lines[0], "chr1:101-200:11-20");
     assert_eq!(lines[1], "chr1:101-200:81-90");
-
-    Ok(())
 }
