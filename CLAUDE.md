@@ -8,6 +8,8 @@
 
 **语言约定**: 为了便于指导，本文件 (`CLAUDE.md`) 使用中文编写，且**与用户交流时请使用中文**。但项目代码中的**所有文档注释 (doc comments)**、**行内注释**以及**提交信息**必须使用**英文**。
 
+**目录约定**: 任何被 `.gitignore` 完全忽略的目录，均仅作为参考资料，**不是本项目的一部分**。
+
 `pgr` (Practical Genome Refiner) 是一个多功能的基因组数据处理工具集。它旨在提供一套高效、易用的命令行工具，用于处理各种生物信息学格式（FASTA, FASTQ, AXT, MAF, PSL, Chain, Net, Newick 等）以及执行常见的基因组分析任务。
 
 ## 构建命令
@@ -94,12 +96,6 @@ cargo test
 - 使用 `cargo clippy` 检查潜在问题。
 - 优先使用标准库和项目中已引入的 crate。
 - 保持代码简洁，注重性能。
-
-### Hash 算法选择
-
-- **HashMap**: 使用 `ahash` (默认) 或 `fxhash` 用于高性能内存哈希。
-- **One-shot Hashing**: 使用 `rapidhash` 用于非加密的高速哈希 (如去重)。
-- **Stable/Crypto**: 使用 `SipHash` 或 `SHA-256` 当需要稳定或安全哈希时。
 
 ## 帮助文本规范 (Help Text Style Guide)
 
