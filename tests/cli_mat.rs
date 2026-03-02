@@ -1,83 +1,57 @@
+#[macro_use]
+#[path = "common/mod.rs"]
+mod common;
+
+use common::PgrCmd;
+
 #[test]
-fn command_mat_to_phylip() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("mat")
-        .arg("to-phylip")
-        .arg("tests/mat/IBPA.fa.tsv")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_mat_to_phylip() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&["mat", "to-phylip", "tests/mat/IBPA.fa.tsv"])
+        .run();
 
     assert_eq!(stdout.lines().count(), 11);
     assert!(stdout.contains("IBPA_ECOLI\t0\t0.0669"));
-
-    Ok(())
 }
 
 #[test]
-fn command_mat_to_pair() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("mat")
-        .arg("to-pair")
-        .arg("tests/mat/IBPA.phy")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_mat_to_pair() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&["mat", "to-pair", "tests/mat/IBPA.phy"])
+        .run();
 
     assert_eq!(stdout.lines().count(), 55);
     assert!(stdout.contains("IBPA_ECOLI\tIBPA_ECOLI\t0\n"));
     assert!(stdout.contains("IBPA_ECOLI\tIBPA_ECOLI_GA\t0.058"));
-
-    Ok(())
 }
 
 #[test]
-fn command_mat_format_full() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("mat")
-        .arg("format")
-        .arg("tests/mat/IBPA.phy")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_mat_format_full() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&["mat", "format", "tests/mat/IBPA.phy"])
+        .run();
 
     assert_eq!(stdout.lines().count(), 11);
     assert!(stdout.contains("IBPA_ECOLI\t0\t0.058394\t0.160584"));
     assert!(stdout.contains("IBPA_ECOLI_GA\t0.058394\t0\t0.10219"));
-
-    Ok(())
 }
 
 #[test]
-fn command_mat_format_lower() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("mat")
-        .arg("format")
-        .arg("tests/mat/IBPA.phy")
-        .arg("--mode")
-        .arg("lower")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_mat_format_lower() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&["mat", "format", "tests/mat/IBPA.phy", "--mode", "lower"])
+        .run();
 
     assert_eq!(stdout.lines().count(), 11);
     assert!(stdout.contains("IBPA_ECOLI\n"));
     assert!(stdout.contains("IBPA_ECOLI_GA\t0.058394\n"));
-
-    Ok(())
 }
 
 #[test]
-fn command_mat_format_strict() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("mat")
-        .arg("format")
-        .arg("tests/mat/IBPA.phy")
-        .arg("--mode")
-        .arg("strict")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_mat_format_strict() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&["mat", "format", "tests/mat/IBPA.phy", "--mode", "strict"])
+        .run();
 
     assert_eq!(stdout.lines().count(), 11);
 
@@ -89,60 +63,67 @@ fn command_mat_format_strict() -> anyhow::Result<()> {
     assert!(first_seq.starts_with("IBPA_ECOLI"));
     assert_eq!(first_seq.chars().take(10).count(), 10); // Name length limit
     assert!(first_seq.contains(" 0.000000")); // Formatted distance value
-
-    Ok(())
 }
 
 #[test]
-fn command_mat_subset() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("mat")
-        .arg("subset")
-        .arg("tests/mat/IBPA.phy")
-        .arg("tests/mat/IBPA.list")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_mat_subset() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&["mat", "subset", "tests/mat/IBPA.phy", "tests/mat/IBPA.list"])
+        .run();
 
     // Verify output
     let lines: Vec<&str> = stdout.lines().collect();
     assert_eq!(lines[0].trim(), "3"); // Number of sequences
     assert!(lines[1].starts_with("IBPA_ECOLI_GA\t0\t0.10219\t0.058394"));
     assert!(lines[3].starts_with("IBPA_ESCF3\t0.058394"));
-
-    Ok(())
 }
 
 #[test]
-fn command_mat_compare() -> anyhow::Result<()> {
+fn command_mat_subset_exclude() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "mat",
+            "subset",
+            "tests/mat/IBPA.phy",
+            "tests/mat/IBPA.list",
+            "--exclude",
+        ])
+        .run();
+
+    assert_eq!(stdout.lines().count(), 6);
+    assert!(stdout.contains("IBPA_ECOLI\t0\t0.066904\t0.160584"));
+    assert!(stdout.contains("IBPA_SHIF8\t0.066904\t0\t0.160584"));
+}
+
+#[test]
+fn command_mat_compare() {
     // Test single method
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("mat")
-        .arg("compare")
-        .arg("tests/mat/IBPA.phy")
-        .arg("tests/mat/IBPA.71.phy")
-        .arg("--method")
-        .arg("pearson")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "mat",
+            "compare",
+            "tests/mat/IBPA.phy",
+            "tests/mat/IBPA.71.phy",
+            "--method",
+            "pearson",
+        ])
+        .run();
 
     // Verify output format and approximate value
     assert!(stdout.contains("Method\tScore"));
     assert!(stdout.contains("pearson\t0.93"));
 
     // Test all methods
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("mat")
-        .arg("compare")
-        .arg("tests/mat/IBPA.phy")
-        .arg("tests/mat/IBPA.71.phy")
-        .arg("--method")
-        .arg("all")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
-    let stderr = String::from_utf8(output.stderr)?;
+    let (stdout, stderr) = PgrCmd::new()
+        .args(&[
+            "mat",
+            "compare",
+            "tests/mat/IBPA.phy",
+            "tests/mat/IBPA.71.phy",
+            "--method",
+            "all",
+        ])
+        .run();
 
     // Verify matrix information in stderr
     assert!(stderr.contains("Sequences in matrices: 10 and 10"));
@@ -155,6 +136,39 @@ fn command_mat_compare() -> anyhow::Result<()> {
     assert!(stdout.contains("cosine\t0.97"));
     assert!(stdout.contains("jaccard\t0.75"));
     assert!(stdout.contains("euclid\t1.22"));
+}
 
-    Ok(())
+#[test]
+fn command_mat_compare_mantel() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "mat",
+            "compare",
+            "tests/mat/IBPA.phy",
+            "tests/mat/IBPA.71.phy",
+            "--method",
+            "mantel",
+            "--permutations",
+            "100",
+        ])
+        .run();
+
+    assert!(stdout.contains("mantel\t0.9"));
+    // Should have p-value column
+    assert!(stdout.lines().next().unwrap().contains("\tp_value"));
+}
+
+#[test]
+fn command_mat_compare_diff_order() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "mat",
+            "compare",
+            "tests/mat/IBPA.phy",
+            "tests/mat/IBPA.71.phy",
+        ])
+        .run();
+
+    assert!(stdout.contains("pearson"));
+    assert!(stdout.contains("0.9"));
 }
