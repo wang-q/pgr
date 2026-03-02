@@ -1,115 +1,102 @@
+#[macro_use]
+#[path = "common/mod.rs"]
+mod common;
+use common::PgrCmd;
+
 #[test]
-fn command_rename_basic() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("rename")
-        .arg("tests/newick/catarrhini.nwk")
-        .arg("-n")
-        .arg("Homo")
-        .arg("-r")
-        .arg("Human")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_rename_basic() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "nwk",
+            "rename",
+            "tests/newick/catarrhini.nwk",
+            "-n",
+            "Homo",
+            "-r",
+            "Human",
+        ])
+        .run();
 
     assert!(stdout.contains("Human"));
     assert!(!stdout.contains("Homo"));
     assert!(stdout.contains("Pan")); // Others preserved
-
-    Ok(())
 }
 
 #[test]
-fn command_rename_lca() -> anyhow::Result<()> {
+fn command_rename_lca() {
     // In catarrhini.nwk, Homo and Pan are children of Hominini.
     // Rename Hominini (LCA of Homo,Pan) to CladeX
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("rename")
-        .arg("tests/newick/catarrhini.nwk")
-        .arg("--lca")
-        .arg("Homo,Pan")
-        .arg("-r")
-        .arg("CladeX")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "nwk",
+            "rename",
+            "tests/newick/catarrhini.nwk",
+            "--lca",
+            "Homo,Pan",
+            "-r",
+            "CladeX",
+        ])
+        .run();
 
     assert!(stdout.contains("CladeX"));
     assert!(!stdout.contains("Hominini"));
-
-    Ok(())
 }
 
 #[test]
-fn command_rename_mixed() -> anyhow::Result<()> {
+fn command_rename_mixed() {
     // ((A,B),C);
     // Rename A -> A1.
     // Rename LCA(A,B) -> AB.
 
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("rename")
-        .arg("stdin")
-        .arg("-n")
-        .arg("A")
-        .arg("-r")
-        .arg("A1")
-        .arg("-l")
-        .arg("A,B")
-        .arg("-r")
-        .arg("AB")
-        .write_stdin("((A,B),C);")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "nwk", "rename", "stdin", "-n", "A", "-r", "A1", "-l", "A,B", "-r", "AB",
+        ])
+        .stdin("((A,B),C);")
+        .run();
 
     assert!(stdout.contains("((A1,B)AB,C);"));
-
-    Ok(())
 }
 
 #[test]
-fn command_replace() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("replace")
-        .arg("tests/newick/abc.nwk")
-        .arg("tests/newick/abc.replace.tsv")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_replace() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "nwk",
+            "replace",
+            "tests/newick/abc.nwk",
+            "tests/newick/abc.replace.tsv",
+        ])
+        .run();
 
     assert_eq!(stdout.lines().count(), 1);
     assert!(stdout.contains("((Homo,Pan),Gorilla);"));
 
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("replace")
-        .arg("tests/newick/abc.nwk")
-        .arg("tests/newick/abc.replace.tsv")
-        .arg("--mode")
-        .arg("species")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "nwk",
+            "replace",
+            "tests/newick/abc.nwk",
+            "tests/newick/abc.replace.tsv",
+            "--mode",
+            "species",
+        ])
+        .run();
 
     assert!(stdout.contains("((A[&&NHX:S=Homo],B[&&NHX:S=Pan]),C[&&NHX:S=Gorilla]);"));
 
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("replace")
-        .arg("tests/newick/abc.nwk")
-        .arg("tests/newick/abc3.replace.tsv")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "nwk",
+            "replace",
+            "tests/newick/abc.nwk",
+            "tests/newick/abc.replace.tsv",
+            "--mode",
+            "comment",
+        ])
+        .run();
 
-    assert!(
-        stdout.contains("((Homo[&&NHX:color=red],Pan[&&NHX:color=red]),Gorilla[&&NHX:color=red]);")
-    );
-
-    Ok(())
+    assert!(stdout.contains("((A[&&NHX:Homo],B[&&NHX:Pan]),C[&&NHX:Gorilla]);"));
 }
 
 #[test]

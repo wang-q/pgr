@@ -1,103 +1,103 @@
+#[macro_use]
+#[path = "common/mod.rs"]
+mod common;
+
+use common::PgrCmd;
+
 #[test]
-fn command_subtree_basic() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("subtree")
-        .arg("tests/newick/hg38.7way.nwk")
-        .arg("-n")
-        .arg("Human")
-        .arg("-n")
-        .arg("Rhesus")
-        .arg("-M")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_subtree_basic() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "nwk",
+            "subtree",
+            "tests/newick/hg38.7way.nwk",
+            "-n",
+            "Human",
+            "-n",
+            "Rhesus",
+            "-M",
+        ])
+        .run();
 
     assert_eq!(stdout.lines().count(), 0);
 
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("subtree")
-        .arg("tests/newick/hg38.7way.nwk")
-        .arg("-n")
-        .arg("Human")
-        .arg("-n")
-        .arg("Rhesus")
-        .arg("-r")
-        .arg("^ch")
-        .arg("-M")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "nwk",
+            "subtree",
+            "tests/newick/hg38.7way.nwk",
+            "-n",
+            "Human",
+            "-n",
+            "Rhesus",
+            "-r",
+            "^ch",
+            "-M",
+        ])
+        .run();
 
     assert_eq!(stdout.lines().count(), 1);
     assert!(stdout.contains("((Human:0.007,Chimp:0.00684):0.027,Rhesus:0.037601):0.11;"));
 
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("subtree")
-        .arg("tests/newick/hg38.7way.nwk")
-        .arg("-n")
-        .arg("Human")
-        .arg("-n")
-        .arg("Rhesus")
-        .arg("-r")
-        .arg("^ch")
-        .arg("-M")
-        .arg("-C")
-        .arg("Primates")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "nwk",
+            "subtree",
+            "tests/newick/hg38.7way.nwk",
+            "-n",
+            "Human",
+            "-n",
+            "Rhesus",
+            "-r",
+            "^ch",
+            "-M",
+            "-C",
+            "Primates",
+        ])
+        .run();
 
     // pgr outputs NHX style comments
     assert!(stdout.contains("Primates:0.11[&&NHX:member=3:tri=white]"));
-
-    Ok(())
 }
 
 #[test]
-fn command_subtree_context() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("subtree")
-        .arg("tests/newick/hg38.7way.nwk")
-        .arg("-n")
-        .arg("Human")
-        .arg("-n")
-        .arg("Chimp")
-        .arg("-c")
-        .arg("1")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_subtree_context() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "nwk",
+            "subtree",
+            "tests/newick/hg38.7way.nwk",
+            "-n",
+            "Human",
+            "-n",
+            "Chimp",
+            "-c",
+            "1",
+        ])
+        .run();
 
     // Context 1 should include Rhesus
     assert!(stdout.contains("Rhesus"));
-
-    Ok(())
 }
 
 #[test]
-fn command_subtree_multiple() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("subtree")
-        .arg("tests/newick/catarrhini_wrong_mult.nwk")
-        .arg("-n")
-        .arg("Cebus")
-        .arg("-n")
-        .arg("Papio")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_subtree_multiple() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "nwk",
+            "subtree",
+            "tests/newick/catarrhini_wrong_mult.nwk",
+            "-n",
+            "Cebus",
+            "-n",
+            "Papio",
+        ])
+        .run();
 
     assert_eq!(stdout.lines().count(), 3);
     for line in stdout.lines() {
         assert!(line.contains("(((Cercopithecus,(Macaca,Papio)),Simias),Cebus);"));
     }
-
-    Ok(())
 }
 
 #[test]

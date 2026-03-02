@@ -1,12 +1,14 @@
+#[macro_use]
+#[path = "common/mod.rs"]
+mod common;
+
+use common::PgrCmd;
+
 #[test]
-fn command_topo_basic() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("topo")
-        .arg("tests/newick/catarrhini.nwk")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_topo_basic() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&["nwk", "topo", "tests/newick/catarrhini.nwk"])
+        .run();
 
     // catarrhini.nwk has lengths and comments.
     // Default topo removes lengths and comments (properties), keeps labels.
@@ -16,78 +18,57 @@ fn command_topo_basic() -> anyhow::Result<()> {
 
     assert!(stdout.contains("((((Gorilla,(Pan,Homo)Hominini)Homininae,Pongo)Hominidae,Hylobates)"));
     assert!(!stdout.contains(":")); // No lengths
-
-    Ok(())
 }
 
 #[test]
-fn command_topo_remove_labels() -> anyhow::Result<()> {
+fn command_topo_remove_labels() {
     // Test with -I (remove internal labels) and -L (remove leaf labels)
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("topo")
-        .arg("tests/newick/catarrhini.nwk")
-        .arg("-I")
-        .arg("-L")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&["nwk", "topo", "tests/newick/catarrhini.nwk", "-I", "-L"])
+        .run();
 
     // Should have no labels
     assert!(stdout.contains("((((,(,))"));
     assert!(!stdout.contains("Homo"));
     assert!(!stdout.contains("Hominini"));
-
-    Ok(())
 }
 
 #[test]
-fn command_topo_keep_bl() -> anyhow::Result<()> {
+fn command_topo_keep_bl() {
     // Test --bl (keep branch lengths)
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("topo")
-        .arg("tests/newick/catarrhini.nwk")
-        .arg("-I")
-        .arg("-L")
-        .arg("--bl")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "nwk",
+            "topo",
+            "tests/newick/catarrhini.nwk",
+            "-I",
+            "-L",
+            "--bl",
+        ])
+        .run();
 
     assert!(stdout.contains(":16")); // Check for specific length
     assert!(!stdout.contains("Gorilla"));
-
-    Ok(())
 }
 
 #[test]
-fn command_topo_compat_simple() -> anyhow::Result<()> {
+fn command_topo_compat_simple() {
     // simple:newtree.nw
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("topo")
-        .arg("tests/newick/newtree.nwk")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&["nwk", "topo", "tests/newick/newtree.nwk"])
+        .run();
 
     let expected = "(FMDV-C,((((((((HRV16,HRV1B)52,(HRV24,HRV85)70)22,(HRV11,(HRV9,(HRV64,HRV94)32)54)1)17,(HRV39,HRV2)92)97,HRV89)62,(HRV78,HRV12)52)100,((((HRV37,HRV3)65,HRV14)89,(HRV52,HRV17)100)75,(HRV93,HRV27)99)83)48,((((POLIO3,((POLIO2,(POLIO1A,COXA18)22)38,COXA17)72)97,COXA1)76,(((ECHO1,COXB2)83,ECHO6)99,(HEV70,HEV68)99)70)64,(COXA14,(COXA6,COXA2))59)100)68);";
 
     assert_eq!(stdout.trim(), expected);
-    Ok(())
 }
 
 #[test]
-fn command_topo_compat_multiple() -> anyhow::Result<()> {
+fn command_topo_compat_multiple() {
     // multiple:forest.nw
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("topo")
-        .arg("tests/newick/forest.nwk")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&["nwk", "topo", "tests/newick/forest.nwk"])
+        .run();
 
     let expected = r#"(Pandion,((Buteo,Aquila,Haliaeetus),(Milvus,Elanus)),Sagittarius,((Micrastur,Falco),(Polyborus,Milvagus)));
 ((Diomedea,Daption),(Fregata,Phalacrocorax,Sula),(Larus,(Fratercula,Uria)));
@@ -96,7 +77,6 @@ fn command_topo_compat_multiple() -> anyhow::Result<()> {
 (Homo,(Pan,(Gorilla,(Pongo,(Hylobates,(((Cercopithecus,(Macaca,Papio)),Simias),Cebus))))));"#;
 
     assert_eq!(stdout.trim(), expected);
-    Ok(())
 }
 
 #[test]

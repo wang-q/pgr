@@ -1,83 +1,58 @@
+#[macro_use]
+#[path = "common/mod.rs"]
+mod common;
+use common::PgrCmd;
+
 #[test]
-fn command_order_basic() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("order")
-        .arg("tests/newick/abc.nwk")
-        .arg("--nd")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_order_basic() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&["nwk", "order", "tests/newick/abc.nwk", "--nd"])
+        .run();
 
     assert!(stdout.contains("(C,(A,B));"));
 
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("order")
-        .arg("tests/newick/abc.nwk")
-        .arg("--ndr")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&["nwk", "order", "tests/newick/abc.nwk", "--ndr"])
+        .run();
 
     assert!(stdout.contains("((A,B),C);"));
 
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("order")
-        .arg("tests/newick/abc.nwk")
-        .arg("--an")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&["nwk", "order", "tests/newick/abc.nwk", "--an"])
+        .run();
 
     assert!(stdout.contains("((A,B),C);"));
 
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("order")
-        .arg("tests/newick/abc.nwk")
-        .arg("--anr")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&["nwk", "order", "tests/newick/abc.nwk", "--anr"])
+        .run();
 
     assert!(stdout.contains("(C,(B,A));"));
 
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("order")
-        .arg("tests/newick/abc.nwk")
-        .arg("--anr")
-        .arg("--ndr")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&["nwk", "order", "tests/newick/abc.nwk", "--anr", "--ndr"])
+        .run();
 
     assert!(stdout.contains("((B,A),C);"));
-
-    Ok(())
 }
 
 #[test]
-fn command_order_list() -> anyhow::Result<()> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("order")
-        .arg("tests/newick/abcde.nwk")
-        .arg("--list")
-        .arg("tests/newick/abcde.list")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+fn command_order_list() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "nwk",
+            "order",
+            "tests/newick/abcde.nwk",
+            "--list",
+            "tests/newick/abcde.list",
+        ])
+        .run();
 
     assert!(stdout.contains("(C:1,(B:1,A:1)D:1)E;"));
-
-    Ok(())
 }
 
 #[test]
-fn command_order_unnamed() -> anyhow::Result<()> {
+fn command_order_unnamed() {
     // Test case where internal nodes are unnamed.
     // ((C,D),(A,B));
     // Without recursive label resolution:
@@ -90,19 +65,13 @@ fn command_order_unnamed() -> anyhow::Result<()> {
     // (A,B) -> rep "A"
     // Root -> compares "C" vs "A", should be ((A,B),(C,D))
 
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    let output = cmd
-        .arg("nwk")
-        .arg("order")
-        .arg("stdin")
-        .arg("--an")
-        .write_stdin("((C,D),(A,B));")
-        .output()?;
-    let stdout = String::from_utf8(output.stdout)?;
+    let (stdout, _) = PgrCmd::new()
+        .args(&["nwk", "order", "stdin", "--an"])
+        .stdin("((C,D),(A,B));")
+        .run();
 
+    // With --an, it should be sorted
     assert!(stdout.contains("((A,B),(C,D));"));
-
-    Ok(())
 }
 
 #[test]

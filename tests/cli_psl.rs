@@ -1,3 +1,8 @@
+#[macro_use]
+#[path = "common/mod.rs"]
+mod common;
+
+use common::PgrCmd;
 use std::fs;
 use std::path::PathBuf;
 use tempfile::TempDir;
@@ -16,22 +21,24 @@ fn get_path(subcommand: &str, dir: &str, filename: &str) -> PathBuf {
 //
 
 #[test]
-fn test_histo_apq_base() -> anyhow::Result<()> {
-    let temp = TempDir::new()?;
+fn test_histo_apq_base() {
+    let temp = TempDir::new().unwrap();
     let input = get_path("histo", "input", "basic.psl");
     let output = temp.path().join("apq.histo");
 
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    cmd.arg("psl")
-        .arg("histo")
-        .arg("--what")
-        .arg("alignsPerQuery")
-        .arg(&input)
-        .arg("-o")
-        .arg(&output);
-    cmd.assert().success();
+    PgrCmd::new()
+        .args(&[
+            "psl",
+            "histo",
+            "--what",
+            "alignsPerQuery",
+            input.to_str().unwrap(),
+            "-o",
+            output.to_str().unwrap(),
+        ])
+        .run();
 
-    let output_content = fs::read_to_string(&output)?;
+    let output_content = fs::read_to_string(&output).unwrap();
     // Check for expected counts.
     // NM_033178.1: 2
     // NM_173571.1: 3
@@ -46,52 +53,52 @@ fn test_histo_apq_base() -> anyhow::Result<()> {
     // Counts: 1, 1, 4, 2, 1, 3, 2
     let expected = "1\n1\n4\n2\n1\n3\n2\n";
     assert_eq!(output_content, expected);
-
-    Ok(())
 }
 
 #[test]
-fn test_histo_apq_multi() -> anyhow::Result<()> {
-    let temp = TempDir::new()?;
+fn test_histo_apq_multi() {
+    let temp = TempDir::new().unwrap();
     let input = get_path("histo", "input", "basic.psl");
     let output = temp.path().join("apq_multi.histo");
 
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    cmd.arg("psl")
-        .arg("histo")
-        .arg("--what")
-        .arg("alignsPerQuery")
-        .arg(&input)
-        .arg("-o")
-        .arg(&output)
-        .arg("--multi-only");
-    cmd.assert().success();
+    PgrCmd::new()
+        .args(&[
+            "psl",
+            "histo",
+            "--what",
+            "alignsPerQuery",
+            input.to_str().unwrap(),
+            "-o",
+            output.to_str().unwrap(),
+            "--multi-only",
+        ])
+        .run();
 
-    let output_content = fs::read_to_string(&output)?;
+    let output_content = fs::read_to_string(&output).unwrap();
     // Multi only: NM_005577.1 (4), NM_033178.1 (2), NM_173571.1 (3), NM_FAKE.1 (2)
     // Order: NM_005577.1, NM_033178.1, NM_173571.1, NM_FAKE.1
     // Counts: 4, 2, 3, 2
     let expected = "4\n2\n3\n2\n";
     assert_eq!(output_content, expected);
-
-    Ok(())
 }
 
 #[test]
-fn test_histo_cover_spread() -> anyhow::Result<()> {
-    let temp = TempDir::new()?;
+fn test_histo_cover_spread() {
+    let temp = TempDir::new().unwrap();
     let input = get_path("histo", "input", "basic.psl");
     let output = temp.path().join("cover.histo");
 
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    cmd.arg("psl")
-        .arg("histo")
-        .arg("--what")
-        .arg("coverSpread")
-        .arg(&input)
-        .arg("-o")
-        .arg(&output);
-    cmd.assert().success();
+    PgrCmd::new()
+        .args(&[
+            "psl",
+            "histo",
+            "--what",
+            "coverSpread",
+            input.to_str().unwrap(),
+            "-o",
+            output.to_str().unwrap(),
+        ])
+        .run();
 
     // NM_000014.3: 1 align. Spread = 0.
     // NM_005577.1: 4 aligns.
@@ -106,8 +113,6 @@ fn test_histo_cover_spread() -> anyhow::Result<()> {
     let output_content = fs::read_to_string(&output)?;
     assert!(output_content.contains("0.2140"));
     assert!(output_content.contains("0.0000")); // Singletons or identicals
-
-    Ok(())
 }
 
 #[test]
@@ -227,23 +232,25 @@ fn test_rc_trans() -> anyhow::Result<()> {
 //
 
 #[test]
-fn test_lift_basic() -> anyhow::Result<()> {
-    let temp = TempDir::new()?;
+fn test_lift_basic() {
+    let temp = TempDir::new().unwrap();
     let input = get_path("lift", "", "test_fragment.psl");
     let sizes = get_path("lift", "", "chrom.sizes");
     let output = temp.path().join("lifted.psl");
 
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    cmd.arg("psl")
-        .arg("lift")
-        .arg(&input)
-        .arg("-o")
-        .arg(&output)
-        .arg("--q-sizes")
-        .arg(&sizes);
-    cmd.assert().success();
+    PgrCmd::new()
+        .args(&[
+            "psl",
+            "lift",
+            input.to_str().unwrap(),
+            "-o",
+            output.to_str().unwrap(),
+            "--q-sizes",
+            sizes.to_str().unwrap(),
+        ])
+        .run();
 
-    let output_content = fs::read_to_string(&output)?;
+    let output_content = fs::read_to_string(&output).unwrap();
 
     // Expected output check
     // The input file contains two records.
@@ -265,8 +272,6 @@ fn test_lift_basic() -> anyhow::Result<()> {
     assert!(output_content.contains("110,\t500,"));
     // Second record block start: 810
     assert!(output_content.contains("810,\t500,"));
-
-    Ok(())
 }
 
 #[test]
@@ -315,6 +320,12 @@ fn test_lift_target() -> anyhow::Result<()> {
     assert!(output_content.contains(",\t810,"));
 
     Ok(())
+}
+
+#[test]
+fn test_lift_fail() {
+    // Missing arguments
+    PgrCmd::new().args(&["psl", "lift"]).run_fail();
 }
 
 //

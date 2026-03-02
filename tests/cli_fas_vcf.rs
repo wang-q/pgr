@@ -1,16 +1,17 @@
-fn run_vcf(args: &[&str]) -> anyhow::Result<String> {
-    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
-    cmd.arg("fas").arg("to-vcf");
-    for a in args {
-        cmd.arg(a);
-    }
-    let output = cmd.output()?;
-    Ok(String::from_utf8(output.stdout)?)
+#[macro_use]
+#[path = "common/mod.rs"]
+mod common;
+
+use common::PgrCmd;
+
+fn run_vcf(args: &[&str]) -> String {
+    let (stdout, _) = PgrCmd::new().args(&["fas", "to-vcf"]).args(args).run();
+    stdout
 }
 
 #[test]
-fn command_vcf_basic() -> anyhow::Result<()> {
-    let stdout = run_vcf(&["tests/fas/example.fas"])?;
+fn command_vcf_basic() {
+    let stdout = run_vcf(&["tests/fas/example.fas"]);
 
     assert!(stdout.starts_with("##fileformat=VCF"), "vcf header");
     assert!(
@@ -31,13 +32,11 @@ fn command_vcf_basic() -> anyhow::Result<()> {
         13,
         "columns including 4 samples"
     );
-
-    Ok(())
 }
 
 #[test]
-fn command_vcf_example_fields() -> anyhow::Result<()> {
-    let stdout = run_vcf(&["tests/fas/example.fas"])?;
+fn command_vcf_example_fields() {
+    let stdout = run_vcf(&["tests/fas/example.fas"]);
 
     let mut rows: std::collections::HashMap<i32, Vec<String>> = std::collections::HashMap::new();
     for line in stdout.lines() {
@@ -54,13 +53,11 @@ fn command_vcf_example_fields() -> anyhow::Result<()> {
     assert_eq!(r[6], ".", "FILTER is '.'");
     assert_eq!(r[7], ".", "INFO is '.'");
     assert_ne!(r[4], ".", "ALT is not '.'");
-
-    Ok(())
 }
 
 #[test]
-fn command_vcf_ydl_basic() -> anyhow::Result<()> {
-    let stdout = run_vcf(&["tests/fas_vcf/YDL184C.fas"])?;
+fn command_vcf_ydl_basic() {
+    let stdout = run_vcf(&["tests/fas_vcf/YDL184C.fas"]);
 
     assert!(stdout.starts_with("##fileformat=VCF"), "vcf header");
     assert!(
@@ -79,13 +76,11 @@ fn command_vcf_ydl_basic() -> anyhow::Result<()> {
         15,
         "columns including 6 samples"
     );
-
-    Ok(())
 }
 
 #[test]
-fn command_vcf_ydl_fields() -> anyhow::Result<()> {
-    let stdout = run_vcf(&["tests/fas_vcf/YDL184C.fas"])?;
+fn command_vcf_ydl_fields() {
+    let stdout = run_vcf(&["tests/fas_vcf/YDL184C.fas"]);
 
     let mut rows: std::collections::HashMap<i32, Vec<String>> = std::collections::HashMap::new();
     for line in stdout.lines() {
@@ -102,8 +97,6 @@ fn command_vcf_ydl_fields() -> anyhow::Result<()> {
     assert_eq!(r[6], ".", "FILTER is '.'");
     assert_eq!(r[7], ".", "INFO is '.'");
     assert_ne!(r[4], ".", "ALT is not '.'");
-
-    Ok(())
 }
 
 #[test]
