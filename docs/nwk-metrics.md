@@ -22,6 +22,7 @@
 - 分组文件：TSV，两列：
   - `SequenceName`：叶子标签。
   - `ClusterNumber`：簇编号；单例可为 `-1`（与 TreeCluster 约定一致）。
+- 原始距离矩阵（可选，用于 cophenetic）：PHYLIP 距离矩阵（文件或 stdin），参数 `--dist <matrix.phy>`
 
 可选参数（规划）：
 - 仅评估指定簇：`--clusters <id1,id2,...>`
@@ -30,6 +31,7 @@
 ### 输出
 
 - 全局指标（单行或少量行）：整体 silhouette 平均值、簇内直径的均值/最大值、最近簇间距离的均值/最小值、非单例簇数、单例数等。
+- 全局拟合度（可选）：`CopheneticCorrelation`（当提供 `--dist` 时输出）
 - 每簇指标（多行）：簇大小、簇内平均两两距离、簇直径、该簇到其他簇的最近距离、该簇的 silhouette 均值/中位数。
 - 格式：TSV，字段固定，便于与其它命令串联。
 
@@ -58,6 +60,14 @@
 - 每簇 silhouette：均值与中位数
 - 单例处理：单例的 `a(x)=0`；其 `s(x)` 仅由 `b(x)` 决定。可通过 `--exclude-singleton` 在全局统计中剔除。
 
+### Cophenetic 相关系数（树拟合度）
+
+衡量树对原始距离矩阵的保真度。给定原始距离矩阵 `D(i,j)` 与从树派生的 cophenetic 距离 `C(i,j)`，计算两者的皮尔逊相关系数：
+
+- `C(i,j)`：树的 cophenetic 距离（在层次树上等价于两样本首次合并的高度；在一般 Newick/非超度量场景下，采用树上路径距离作为近似）
+- 输出：`CopheneticCorrelation`（`r ∈ [-1, 1]`，实践中期望接近 1）
+- 依赖：需要提供原始 PHYLIP 距离矩阵 `--dist <matrix.phy>`
+
 ## 计算流程（概述）
 
 1. 解析树与分组；建立叶名到节点的映射。
@@ -66,7 +76,8 @@
    - 计算与其他簇的最近簇间距离（最小跨簇叶-叶距离）。
 3. 为每个样本：
    - 计算 `a(x)` 与 `b(x)` 并得到 `s(x)`；聚合为全局与每簇的 silhouette。
-4. 输出 TSV：全局指标 + 每簇指标；数值统一格式化（六位小数，去除尾随零）。
+4. 若提供 `--dist`：计算 `CopheneticCorrelation` 并输出。
+5. 输出 TSV：全局指标 + 每簇指标；数值统一格式化（六位小数，去除尾随零）。
 
 ## 典型用法（规划）
 
@@ -76,6 +87,9 @@ pgr nwk metrics tree.nwk --part clusters.tsv --exclude-singleton > metrics.tsv
 
 # 仅评估指定簇，并输出 silhouette 相关列
 pgr nwk metrics tree.nwk --part clusters.tsv --clusters 1,3,5 --metrics silhouette > sil.tsv
+
+# 计算 cophenetic 相关系数（需原始 PHYLIP 距离矩阵）
+pgr nwk metrics tree.nwk --dist matrix.phy --metrics cophenet > fit.tsv
 ```
 
 ## 与工具链协作（推荐工作流）
@@ -91,4 +105,4 @@ pgr nwk metrics tree.nwk --part clusters.tsv --clusters 1,3,5 --metrics silhouet
 - 距离来源：复用 `Tree::get_distance`，当长度为 0 时以边数替代（参见 [distance.rs](file:///c:/Users/wangq/Scripts/pgr/src/cmd_pgr/nwk/distance.rs) 中的约定）。
 - 性能策略：小规模直接查询；中大规模按簇内叶集做批量/缓存；必要时引入并行。
 - 数值格式：统一到六位小数，移除尾随零，便于比较与可视化。
-
+- cophenetic 计算：在层次树/超度量树上取首次合并高度；在一般 Newick/非超度量场景下采用树上路径距离近似，输出相关系数以衡量保真度。
