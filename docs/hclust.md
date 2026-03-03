@@ -144,6 +144,17 @@ pgr mat hclust matrix.phy --method average > tree.nwk
   - Python: `c, dists = cophenet(Z, Y)`
   - pgr（规划）：`pgr nwk metrics tree.nwk --metrics cophenet --dist matrix.phy > metrics.tsv`
 
+### scikit-learn 映射
+- AgglomerativeClustering (Ward):
+  - Python: `model = AgglomerativeClustering(linkage='ward').fit(X)`
+  - pgr: `pgr mat hclust matrix.phy --method ward > tree.nwk`（需先计算距离矩阵）
+- AgglomerativeClustering (Average/Complete/Single):
+  - Python: `model = AgglomerativeClustering(linkage='average').fit(X)`
+  - pgr: `pgr mat hclust matrix.phy --method average > tree.nwk`
+- 差异说明:
+  - scikit-learn 侧重于直接输出聚类标签（`labels_`），`pgr` 侧重于生成树结构（Newick）。
+  - 若需在 `pgr` 中获得标签，请配合 `nwk cut` 使用。
+
 ### 与工具链协作
 - 构树：`pgr mat hclust` → 生成 dendrogram
 - 切分：`pgr nwk cut --height H` → 导出分组（也可用 TreeCluster 风格约束方法）

@@ -228,6 +228,7 @@ pgr nwk cut tree.nwk --method max-clade -t 0.045 --support 70 > clusters.tsv
 
 ### 推荐工作流示例
 
+#### 1. 经典系统发育分析
 ```bash
 # 1. 扫描不同参数，生成多个聚类结果
 pgr nwk cut input.nwk --method max-clade --scan 0.01,0.05,0.10 > partitions.tsv
@@ -240,4 +241,22 @@ pgr nwk cut input.nwk --method max-clade -t 0.05 > final_cluster.tsv
 
 # 4. 可视化或提取子树
 pgr nwk subset input.nwk --list final_cluster.tsv --cluster-id 1 > cluster1.nwk
+```
+
+#### 2. 层次聚类（hclust）接入
+从距离矩阵出发，经由 hclust 生成树，再进行切分与评估（参见 [hclust.md](file:///c:/Users/wangq/Scripts/pgr/docs/hclust.md)）。
+
+```bash
+# 1. 准备 PHYLIP 距离矩阵 (若有 pair TSV，先转为 phylip)
+pgr mat to-phylip pairs.tsv -o matrix.phy
+
+# 2. 生成层次聚类树 (Ward 方法，启用叶序优化)
+pgr mat hclust matrix.phy --method ward --optimal-ordering > tree.nwk
+
+# 3. 切分 (按高度阈值切，或按 K 切)
+pgr nwk cut tree.nwk --height 0.05 > clusters.tsv
+
+# 4. 评估 (计算 Cophenetic 相关系数与 Silhouette)
+pgr nwk metrics tree.nwk --metrics cophenet --dist matrix.phy > fit.tsv
+pgr nwk metrics tree.nwk --part clusters.tsv --metrics silhouette > sil.tsv
 ```
