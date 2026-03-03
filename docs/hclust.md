@@ -121,10 +121,28 @@ pgr mat hclust matrix.phy --method average > tree.nwk
 ## 与 SciPy 的映射与差异
 - 方法映射：与 SciPy `linkage` 的 `method` 集合对齐，`ward` 等价 `ward.D2`（内部按平方距离更新）；`average` 等价 UPGMA，`weighted` 等价 WPGMA，`centroid/median` 等价 UPGMC/WPGMC。
 - 输入差异：SciPy 接受“condensed 距离向量”或“观测矩阵”，pgr 统一使用 PHYLIP 距离矩阵；如需从 pair TSV 转换，请使用 `pgr mat to-phylip`。
-- 输出差异：SciPy 返回 `(n-1)×4` 的 linkage 矩阵 Z；pgr 输出 Newick 树，便于与 `nwk cut / to-dot / to-forest` 直接联动。
+- 输出差异：SciPy 返回 `(n-1)×4` 的 linkage 矩阵 Z；pgr 输出 Newick 树，直接用于 `nwk cut / to-dot / to-forest`。普通用户无需关心 Z；若需与 SciPy 互操作，请在 Python 端继续使用 Z 与 `fcluster/cophenet`。
 - 叶序优化：`--optimal-ordering` 对齐 SciPy 的 `optimal_ordering` 行为，仅影响叶子顺序，保持拓扑与分支长度不变。
 - 平切（flat clustering）：SciPy 的 `fcluster` 提供 `criterion='distance'|'maxclust'|...`；在 pgr 中分别对应 `nwk cut --height H` 与 `nwk cut --k K`，其它 `monocrit/inconsistent` 等准则暂不引入。
 - 评估指标：SciPy 有 `cophenet`（共生相关系数）；pgr 建议在 `nwk metrics` 中加入 cophenetic 相关系数作为树质量评估的补充（与 silhouette/直径/最近簇间距并列）。
+
+### 用户提示
+- 新手路径（推荐）：`mat to-phylip → mat hclust --method ward → nwk cut --height → nwk metrics → nwk 可视化`
+- 互操作与审计：若需要逐步核对合并过程或在 Python 端进一步平切/统计，请使用 SciPy 的 linkage 矩阵与工具；pgr 侧保持 Newick 为主，减少心智负担。
+
+### 示例映射
+- SciPy linkage（Ward）:
+  - Python: `Z = linkage(y, method='ward', optimal_ordering=True)`
+  - pgr: `pgr mat to-phylip pairs.tsv -o matrix.phy` → `pgr mat hclust matrix.phy --method ward --optimal-ordering > tree.nwk`
+- SciPy fcluster（按距离平切）:
+  - Python: `labels = fcluster(Z, t=0.05, criterion='distance')`
+  - pgr: `pgr nwk cut tree.nwk --height 0.05 > clusters.tsv`
+- SciPy fcluster（按簇数平切）:
+  - Python: `labels = fcluster(Z, t=20, criterion='maxclust')`
+  - pgr: `pgr nwk cut tree.nwk --k 20 > clusters.tsv`
+- SciPy cophenet:
+  - Python: `c, dists = cophenet(Z, Y)`
+  - pgr（规划）：`pgr nwk metrics tree.nwk --metrics cophenet --dist matrix.phy > metrics.tsv`
 
 ### 与工具链协作
 - 构树：`pgr mat hclust` → 生成 dendrogram
