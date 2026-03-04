@@ -163,6 +163,36 @@ pgr clust gmm input.tsv --k 5 --cov full > clusters.tsv
 
 通过与 scikit-learn 的源码对比，总结 `pgr` 当前实现的特点与未来优化方向。
 
+### 内存数据布局 (Memory Layout)
+
+根据输入数据的特性和算法需求，`pgr` 采用三种不同的内存布局策略。
+
+#### 1. 构树类 (Tree-building)
+- **命令**：`hier`, `upgma`, `nj`
+- **输入**：PHYLIP 矩阵 (Dense)
+- **数据结构**：`NamedMatrix` (内部封装 `CondensedMatrix`)
+- **特点**：
+  - **全连接/稠密 (Dense)**：存储上三角矩阵，内存占用 $O(N^2)$。
+  - **内存瓶颈**：当 $N=100k$ 时，`f32` 矩阵需占用约 **18.6 GiB** 内存。这是单机内存处理全连接矩阵的实用极限。
+  - **原因**：PHYLIP 格式本身就是全矩阵格式，且传统构树算法基于全距离矩阵。
+
+#### 2. 扁平聚类 (Flat Clustering)
+- **命令**：`k-medoids`, `mcl`, `dbscan`
+- **输入**：Pair Scores TSV (Sparse-like)
+- **数据结构**：`ScoringMatrix` (内部封装 `HashMap<(usize, usize), f32>`)
+- **特点**：
+  - **稀疏 (Sparse-ish)**：仅存储输入文件中存在的边。
+  - **开销**：虽然不分配 $N^2$ 数组，但 `HashMap` 的每个 Entry 内存开销较大（Key+Value+Overhead），且查找速度不如数组索引。
+  - **适用性**：适合边数 $E \ll N^2$ 的稀疏场景。
+
+#### 3. 图连通分量 (Graph Components)
+- **命令**：`cc`
+- **输入**：Pair TSV (Graph edges)
+- **数据结构**：`petgraph::graphmap::UnGraphMap`
+- **特点**：
+  - **稀疏图 (Sparse Graph)**：基于邻接表/图结构，内存效率高。
+  - **适用性**：专注于图拓扑结构分析，适合超大规模网络。
+
 ### DBSCAN
 
 - **scikit-learn 实现**：
@@ -197,6 +227,37 @@ pgr clust gmm input.tsv --k 5 --cov full > clusters.tsv
   - **实现**：目前为朴素 $O(N^3)$ (MVP)，规划引入 NN-chain 优化至 $O(N^2)$。
   - **与 UPGMA 的关系**：`hier` 是更底层的通用计算引擎；但 `upgma` 作为一个独立、直观且生物学语义明确的实现将被**长期保留**，作为算法学习和基准参考。
 - **未来方向**：实现通用的 `clust hier` 时，应参考 sklearn 的 Heap 优化思路。
+
+## 大规模数据策略 (Two-stage / Representative Strategy)
+
+对于 $N > 20,000$ 的大规模数据，全连接层次聚类的内存 ($O(N^2)$) 和计算 ($O(N^2)$) 开销急剧增加。
+
+**内存估算 (f32 Condensed Matrix)**:
+- **1 GiB**: ~23,000 点
+- **10 GiB**: ~73,000 点
+- **32 GiB**: ~130,000 点
+- **64 GiB**: ~185,000 点
+
+**结论**: 即使在 64G 内存的高配服务器上，处理 $N=200k$ 也已接近极限。
+
+**推荐策略**：采用“两步法”，结合快速聚类与精细构树。
+1.  **预聚类/压缩**: 使用线性或近线性算法（如 `pgr clust k-medoids`、`pgr clust mcl` 或外部工具 `mmseqs2`）将数据压缩为 $K$ 个代表点（$K \approx 5000 \sim 10000$）。
+2.  **层次聚类**: 提取代表点之间的距离矩阵，运行 `pgr clust hier` 构建骨架树。
+
+**工作流示例**:
+```bash
+# 1. 快速聚类选出代表点 (k=5000)
+pgr clust k-medoids all_data.tsv --k 5000 --format pair > clusters.tsv
+```
+# 2. 提取代表点列表
+cut -f1 clusters.tsv | sort -u > representatives.list
+
+# 3. 提取代表点的子矩阵
+pgr mat subset all_data.tsv --list representatives.list -o sub_matrix.phy
+
+# 4. 对代表点构树
+pgr clust hier sub_matrix.phy --method ward > backbone.nwk
+```
 
 ## 推荐工作流
 
