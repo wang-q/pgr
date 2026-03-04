@@ -2,13 +2,14 @@ use clap::*;
 use std::io::Write;
 use std::str::FromStr;
 
-use pgr::libs::clust::hier::{Method, linkage, to_tree};
+use pgr::libs::clust::hier::{Method, linkage_inplace, to_tree};
 use pgr::libs::pairmat::NamedMatrix;
 use pgr::libs::phylo::tree::io::to_newick;
 
 pub fn make_subcommand() -> Command {
     Command::new("hier")
-        .about("Performs hierarchical clustering on a distance matrix")
+        .about("Hierarchical clustering (dendrogram)")
+        .visible_alias("hclust")
         .after_help(
             r#"
 This command performs hierarchical clustering (agglomerative) on a distance matrix.
@@ -66,10 +67,10 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
     let matrix = NamedMatrix::from_relaxed_phylip(infile);
 
     // Perform clustering
-    let steps = linkage(&matrix, method);
+    let (names, condensed) = matrix.into_parts();
+    let steps = linkage_inplace(condensed, method);
 
     // Convert to tree
-    let names = matrix.get_names().iter().map(|s: &&String| s.to_string()).collect::<Vec<_>>();
     let tree = to_tree(&steps, &names);
 
     // Format output

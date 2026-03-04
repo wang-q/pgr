@@ -108,22 +108,34 @@
     - 单元测试验证了 NN-chain 与 Primitive 算法输出的一致性（包括 ID 映射和拓扑）。
     - 基准测试证明了显著的性能提升。
 
-**Benchmark Results (Average Linkage):**
+**Benchmark Results (Average & Ward):**
 
-| N (Nodes) | Primitive $O(N^3)$ | NN-Chain $O(N^2)$ | Speedup |
-|---|---|---|---|
-| 100 | ~256 µs | ~63 µs | ~4x |
-| 200 | ~2.3 ms | ~249 µs | ~9x |
-| 400 | ~16 ms | ~953 µs | ~16x |
+| N | Method | Primitive $O(N^3)$ | NN-Chain $O(N^2)$ | Speedup |
+|---|---|---|---|---|
+| 100 | Average | ~300 µs | ~63 µs | ~4.7x |
+| 200 | Average | ~2.1 ms | ~248 µs | ~8.5x |
+| 400 | Average | ~15.6 ms | ~975 µs | ~16x |
+| | | | | |
+| 100 | Ward | ~315 µs | ~70 µs | ~4.5x |
+| 200 | Ward | ~2.3 ms | ~266 µs | ~8.6x |
+| 400 | Ward | ~15.8 ms | ~1.0 ms | ~15.8x |
 
-#### Phase 3: 大规模扩展 (Sparse/Linear) - **待办 (Planned)**
-- **目标**：支持超大规模数据 ($N > 10000$)。
-- **策略**：
-  - **稀疏输入**：不再构建全/压缩矩阵，直接基于邻接表 (`HashMap<usize, Vec<(usize, f32)>>`) 进行计算。
-  - **算法**：
-    - Single Linkage: 使用 MST (Prim/Kruskal) + Union-Find。
-    - 其他 Linkage: 引入 Connectivity Constraints，仅计算稀疏图上的连通分量。
-  - **内存优化**：实现 $O(N)$ 内存的 SLINK/CLINK 算法。
+*注：Ward Linkage 在优化后（平方距离更新）性能与 Average Linkage 几乎持平。*
+
+#### Phase 3: 大规模数据策略 (Two-stage / Representative) - **推荐 (Recommended)**
+参见 `docs/clust.md` 中的“大规模数据策略”章节。
+
+#### Phase 4: 性能与正确性优化 (Pending)
+通过分析 `kodama` 和 `scikit-learn` 实现，确定以下优化方向：
+1.  **Ward/Centroid 平方距离优化 (已完成)**:
+    - 改进：在算法开始时一次性将距离矩阵平方，使用简化版 Lance-Williams 更新，仅在输出时开方。
+    - 效果：消除了每次迭代中的 `sqrt` 调用，使得 Ward Linkage 的性能与 Average Linkage 持平（基准测试证实）。
+2.  **Chain 循环优化**:
+    - 当前 NN-chain 实现每次合并后丢弃了 Chain 末尾两个元素，但剩余部分仍然有效。
+    - 改进：重用剩余 Chain，避免重复搜索最近邻。
+3.  **In-place 接口**:
+    - 引入 `linkage_inplace`，允许消耗输入的 `CondensedMatrix`（避免克隆），节省 $O(N^2)$ 内存复制开销。
+
 
 ## CLI 设计
 

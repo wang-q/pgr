@@ -12,6 +12,14 @@ pub enum Method {
     Ward,
 }
 
+impl Method {
+    /// Returns true if the method works in squared Euclidean space.
+    /// These methods (Ward, Centroid, Median) require squared distances for linear updates.
+    pub fn is_euclidean_squared(&self) -> bool {
+        matches!(self, Method::Ward | Method::Centroid | Method::Median)
+    }
+}
+
 impl std::str::FromStr for Method {
     type Err = String;
 
@@ -54,15 +62,30 @@ pub fn linkage(matrix: &NamedMatrix, method: Method) -> Vec<Step> {
 
 /// Perform hierarchical clustering with explicit algorithm selection.
 pub fn linkage_with_algo(matrix: &NamedMatrix, method: Method, algo: Algorithm) -> Vec<Step> {
+    // Create a mutable copy of the condensed matrix
+    let mut condensed = CondensedMatrix::from_vec(matrix.size(), matrix.values().to_vec());
+    
+    linkage_core(&mut condensed, method, algo)
+}
+
+/// Perform hierarchical clustering in-place (consuming the distance matrix).
+///
+/// This avoids cloning the distance matrix, saving memory.
+/// The input matrix will be modified (distances updated during merging).
+pub fn linkage_inplace(mut matrix: CondensedMatrix, method: Method) -> Vec<Step> {
+    linkage_core(&mut matrix, method, Algorithm::Auto)
+}
+
+fn linkage_core(condensed: &mut CondensedMatrix, method: Method, algo: Algorithm) -> Vec<Step> {
     match algo {
-        Algorithm::Primitive => linkage_primitive(matrix, method),
-        Algorithm::NnChain => linkage_nn_chain(matrix, method),
+        Algorithm::Primitive => linkage_primitive(condensed, method),
+        Algorithm::NnChain => linkage_nn_chain(condensed, method),
         Algorithm::Auto => match method {
             // Primitive O(N^3) is safest for Centroid/Median which don't satisfy reducibility
-            Method::Centroid | Method::Median => linkage_primitive(matrix, method),
+            Method::Centroid | Method::Median => linkage_primitive(condensed, method),
             
             // NN-chain O(N^2) for reducible metrics
-            _ => linkage_nn_chain(matrix, method),
+            _ => linkage_nn_chain(condensed, method),
         },
     }
 }
@@ -75,14 +98,20 @@ pub fn linkage_with_algo(matrix: &NamedMatrix, method: Method, algo: Algorithm) 
 /// Only valid for methods satisfying the reducibility property:
 /// Single, Complete, Average, Weighted, Ward.
 /// (Centroid and Median are NOT reducible and may cause infinite loops or incorrect results with NN-chain).
-fn linkage_nn_chain(matrix: &NamedMatrix, method: Method) -> Vec<Step> {
-    let n = matrix.size();
+fn linkage_nn_chain(condensed: &mut CondensedMatrix, method: Method) -> Vec<Step> {
+    let n = condensed.size();
     if n < 2 {
         return vec![];
     }
 
-    // Mutable copy of distances
-    let mut condensed = CondensedMatrix::from_vec(n, matrix.values().to_vec());
+    // Optimization: Square the distances for Ward/Centroid/Median
+    // This allows O(1) Lance-Williams updates without sqrt calls.
+    let is_squared = method.is_euclidean_squared();
+    if is_squared {
+        for x in condensed.data_mut() {
+            *x = *x * *x;
+        }
+    }
     
     // Cluster sizes
     let mut size = vec![1; n];
@@ -151,6 +180,7 @@ fn linkage_nn_chain(matrix: &NamedMatrix, method: Method) -> Vec<Step> {
             
             // Distance between u and v
             let d_uv = min_dist;
+            let dist_out = if is_squared { d_uv.sqrt() } else { d_uv };
 
             // Record step
             let id1 = cluster_ids[u];
@@ -163,7 +193,7 @@ fn linkage_nn_chain(matrix: &NamedMatrix, method: Method) -> Vec<Step> {
             steps.push(Step {
                 cluster1: id1,
                 cluster2: id2,
-                distance: d_uv,
+                distance: dist_out,
                 size: new_size,
             });
 
@@ -287,7 +317,6 @@ pub fn to_tree(steps: &[Step], names: &[String]) -> Tree {
 
     for (step_idx, step) in steps.iter().enumerate() {
         let new_cluster_id = n + step_idx;
-        let h_parent = step.distance;
 
         // Create parent node
         let parent_node_id = tree.add_node();
@@ -334,14 +363,19 @@ pub fn to_tree(steps: &[Step], names: &[String]) -> Tree {
 ///
 /// This serves as the MVP implementation (Phase 1) and a baseline for testing.
 /// It maintains a mutable copy of the distance matrix and iteratively finds the minimum.
-fn linkage_primitive(matrix: &NamedMatrix, method: Method) -> Vec<Step> {
-    let n = matrix.size();
+fn linkage_primitive(condensed: &mut CondensedMatrix, method: Method) -> Vec<Step> {
+    let n = condensed.size();
     if n < 2 {
         return vec![];
     }
 
-    // Work on a mutable copy of distances
-    let mut condensed = CondensedMatrix::from_vec(n, matrix.values().to_vec());
+    // Optimization: Square the distances for Ward/Centroid/Median
+    let is_squared = method.is_euclidean_squared();
+    if is_squared {
+        for x in condensed.data_mut() {
+            *x = *x * *x;
+        }
+    }
 
     // Track cluster sizes and status
     let mut size = vec![1; n];
@@ -383,11 +417,13 @@ fn linkage_primitive(matrix: &NamedMatrix, method: Method) -> Vec<Step> {
         let size1 = size[u];
         let size2 = size[v];
         let new_size = size1 + size2;
+        
+        let dist_out = if is_squared { min_dist.sqrt() } else { min_dist };
 
         steps.push(Step {
             cluster1: id1,
             cluster2: id2,
-            distance: min_dist,
+            distance: dist_out,
             size: new_size,
         });
 
@@ -441,34 +477,26 @@ fn lance_williams(
         Method::Weighted => 0.5 * (d_uk + d_vk),
         Method::Centroid => {
             // UPGMC (Unweighted Pair Group Method with Centroid Averaging)
+            // Inputs are already squared distances.
             // d(u+v, k)^2 = (n_u * d(u,k)^2 + n_v * d(v,k)^2 - n_u*n_v*d(u,v)^2 / n_uv) / n_uv
-            // Implemented using squared distances logic for consistency with Ward/Median.
             
-            let d2_uk = d_uk * d_uk;
-            let d2_vk = d_vk * d_vk;
-            let d2_uv = d_uv * d_uv;
-            
-            let d2_new = (n_u * d2_uk + n_v * d2_vk - (n_u * n_v * d2_uv) / n_uv) / n_uv;
-            if d2_new < 0.0 { 0.0 } else { d2_new.sqrt() }
+            let d_new = (n_u * d_uk + n_v * d_vk - (n_u * n_v * d_uv) / n_uv) / n_uv;
+            d_new.max(0.0)
         }
         Method::Median => {
             // WPGMC (Weighted Pair Group Method with Centroid Averaging)
-            // d_new = 0.5*d_uk + 0.5*d_vk - 0.25*d_uv (Squared)
-            let d2_uk = d_uk * d_uk;
-            let d2_vk = d_vk * d_vk;
-            let d2_uv = d_uv * d_uv;
-            let d2_new = 0.5 * d2_uk + 0.5 * d2_vk - 0.25 * d2_uv;
-            if d2_new < 0.0 { 0.0 } else { d2_new.sqrt() }
+            // Inputs are already squared distances.
+            // d_new^2 = 0.5*d_uk^2 + 0.5*d_vk^2 - 0.25*d_uv^2
+            let d_new = 0.5 * d_uk + 0.5 * d_vk - 0.25 * d_uv;
+            d_new.max(0.0)
         }
         Method::Ward => {
             // Ward's method (minimal variance) - specifically Ward.D2
+            // Inputs are already squared distances.
             // d_new^2 = ((n_u+n_k)*d_uk^2 + (n_v+n_k)*d_vk^2 - n_k*d_uv^2) / n_uvk
-            let d2_uk = d_uk * d_uk;
-            let d2_vk = d_vk * d_vk;
-            let d2_uv = d_uv * d_uv;
             
-            let d2_new = ((n_u + n_k) * d2_uk + (n_v + n_k) * d2_vk - n_k * d2_uv) / n_uvk;
-            if d2_new < 0.0 { 0.0 } else { d2_new.sqrt() }
+            let d_new = ((n_u + n_k) * d_uk + (n_v + n_k) * d_vk - n_k * d_uv) / n_uvk;
+            d_new.max(0.0)
         }
     }
 }
@@ -590,8 +618,8 @@ mod tests {
         m.set(3, 4, 1.0); // min
 
         // Test with Average linkage (Reducible)
-        let steps_prim = linkage_primitive(&m, Method::Average);
-        let steps_nn = linkage_nn_chain(&m, Method::Average);
+        let steps_prim = linkage_with_algo(&m, Method::Average, Algorithm::Primitive);
+        let steps_nn = linkage_with_algo(&m, Method::Average, Algorithm::NnChain);
 
         assert_eq!(steps_prim.len(), 4);
         assert_eq!(steps_nn.len(), 4);

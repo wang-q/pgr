@@ -218,6 +218,11 @@ impl CondensedMatrix {
         &self.data
     }
 
+    /// Get the underlying data vector as mutable slice.
+    pub fn data_mut(&mut self) -> &mut [f32] {
+        &mut self.data
+    }
+
     /// Get value at (row, col).
     /// Returns 0.0 if row == col.
     pub fn get(&self, row: usize, col: usize) -> f32 {
@@ -289,6 +294,12 @@ impl NamedMatrix {
 
     pub fn size(&self) -> usize {
         self.matrix.size()
+    }
+
+    /// Consume the NamedMatrix and return its parts (names, condensed matrix).
+    pub fn into_parts(self) -> (Vec<String>, CondensedMatrix) {
+        let names = self.names.into_keys().collect();
+        (names, self.matrix)
     }
 
     /// Access the underlying CondensedMatrix

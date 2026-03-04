@@ -37,6 +37,20 @@ fn bench_hier(c: &mut Criterion) {
         });
     }
     group.finish();
+
+    let mut group = c.benchmark_group("Hierarchical Clustering (Ward Linkage)");
+    for size in [100, 200, 400].iter() {
+        let matrix = create_random_matrix(*size);
+        
+        group.bench_with_input(BenchmarkId::new("Primitive", size), size, |b, &_| {
+            b.iter(|| linkage_with_algo(black_box(&matrix), black_box(Method::Ward), black_box(Algorithm::Primitive)))
+        });
+        
+        group.bench_with_input(BenchmarkId::new("NN-Chain", size), size, |b, &_| {
+            b.iter(|| linkage_with_algo(black_box(&matrix), black_box(Method::Ward), black_box(Algorithm::NnChain)))
+        });
+    }
+    group.finish();
 }
 
 criterion_group!(benches, bench_hier);
