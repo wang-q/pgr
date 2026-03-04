@@ -31,6 +31,7 @@ impl PgrCmd {
         self
     }
 
+    #[allow(dead_code)]
     pub fn run(mut self) -> (String, String) {
         if let Some(input) = self.stdin {
             self.cmd.write_stdin(input);
