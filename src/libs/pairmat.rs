@@ -157,7 +157,25 @@ impl ScoringMatrix<f32> {
 /// A condensed distance matrix (upper triangle only, no diagonal).
 ///
 /// Stores only the upper triangular part of a symmetric matrix, reducing memory usage
-/// from N^2 to N(N-1)/2.
+/// from N^2 to N(N-1)/2. This format is required by some hierarchical clustering algorithms
+/// (like `kodama`'s linkage) and is the core storage engine for `NamedMatrix`.
+///
+/// # Storage Layout
+/// For N=3, indices (0,1), (0,2), (1,2) are stored at 0, 1, 2.
+/// The diagonal is implicitly 0.0. The matrix is symmetric.
+///
+/// # Examples
+/// ```
+/// # use pgr::libs::pairmat::CondensedMatrix;
+/// let mut m = CondensedMatrix::new(3);
+/// m.set(0, 1, 0.5);
+/// m.set(0, 2, 0.8);
+/// m.set(1, 2, 0.3);
+///
+/// assert_eq!(m.get(0, 1), 0.5);
+/// assert_eq!(m.get(1, 0), 0.5); // Symmetric
+/// assert_eq!(m.get(0, 0), 0.0); // Diagonal is always 0
+/// ```
 #[derive(Debug, Clone)]
 pub struct CondensedMatrix {
     size: usize,
@@ -428,6 +446,62 @@ pub fn get_condensed_index(size: usize, row: usize, col: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_condensed_matrix_indexing() {
+        // N=4
+        // (0,1) -> 0
+        // (0,2) -> 1
+        // (0,3) -> 2
+        // (1,2) -> 3
+        // (1,3) -> 4
+        // (2,3) -> 5
+        let m = CondensedMatrix::new(4);
+        assert_eq!(get_condensed_index(m.size(), 0, 1), 0);
+        assert_eq!(get_condensed_index(m.size(), 0, 2), 1);
+        assert_eq!(get_condensed_index(m.size(), 0, 3), 2);
+        assert_eq!(get_condensed_index(m.size(), 1, 2), 3);
+        assert_eq!(get_condensed_index(m.size(), 1, 3), 4);
+        assert_eq!(get_condensed_index(m.size(), 2, 3), 5);
+    }
+
+    #[test]
+    fn test_condensed_matrix_rw() {
+        let mut m = CondensedMatrix::new(3);
+        m.set(0, 1, 1.0);
+        m.set(2, 0, 2.0); // set (0,2) via swap
+        m.set(1, 2, 3.0);
+
+        assert_eq!(m.get(0, 1), 1.0);
+        assert_eq!(m.get(1, 0), 1.0);
+        assert_eq!(m.get(0, 2), 2.0);
+        assert_eq!(m.get(2, 0), 2.0);
+        assert_eq!(m.get(1, 2), 3.0);
+        assert_eq!(m.get(0, 0), 0.0);
+        
+        // Test underlying data access
+        let data = m.data();
+        assert_eq!(data.len(), 3); // 3*2/2 = 3
+        // Order: (0,1), (0,2), (1,2) -> 1.0, 2.0, 3.0
+        assert_eq!(data[0], 1.0);
+        assert_eq!(data[1], 2.0);
+        assert_eq!(data[2], 3.0);
+    }
+
+    #[test]
+    fn test_condensed_matrix_from_vec() {
+        let data = vec![1.0, 2.0, 3.0];
+        let m = CondensedMatrix::from_vec(3, data);
+        assert_eq!(m.get(0, 1), 1.0);
+        assert_eq!(m.get(0, 2), 2.0);
+        assert_eq!(m.get(1, 2), 3.0);
+    }
+
+    #[test]
+    #[should_panic(expected = "Data length 2 does not match expected length 3 for size 3")]
+    fn test_condensed_matrix_from_vec_invalid_len() {
+        CondensedMatrix::from_vec(3, vec![1.0, 2.0]);
+    }
 
     #[test]
     fn test_scoring_matrix_basic() {
