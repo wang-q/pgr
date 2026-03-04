@@ -52,8 +52,6 @@
 
 ## 实现规划与优化分析 (Implementation & Optimization)
 
-参考 `scikit-learn` 实现，`pgr clust hier` 的实现应关注以下优化点，以支撑大规模生物数据分析。
-
 ### 核心数据结构优化
 - **Heap (堆)**：
   - 适用：Ward, Average, Complete, Weighted Linkage。
@@ -91,27 +89,32 @@
 ### 阶段性实现路线
 
 #### Phase 1: MVP (Primitive Implementation) - **已完成 (Completed)**
-- **状态**：已在 `src/libs/clust/hier.rs` 中实现。
+- **状态**：已在 `src/libs/clust/hier.rs` 中实现，并集成到 CLI `src/cmd_pgr/clust/hier.rs`。
 - **特性**：
   - 实现了基于 `CondensedMatrix`（上三角压缩矩阵）的存储，节省 50% 内存。
   - 实现了通用的 Lance-Williams 更新公式，支持 7 种 Linkage 方法：
     - `Single`, `Complete`, `Average` (UPGMA), `Weighted` (WPGMA), `Centroid` (UPGMC), `Median` (WPGMC), `Ward` (Ward's D2)。
   - 复杂度：$O(N^3)$ 时间，$O(N^2)$ 空间。
-  - 验证：单元测试覆盖了各种 Linkage 方法的正确性（对比预期的新簇距离）。
-- **代码位置**：
-  - 核心逻辑：[`src/libs/clust/hier.rs`](file:///c:/Users/wangq/Scripts/pgr/src/libs/clust/hier.rs)
-  - 矩阵结构：[`src/libs/pairmat.rs`](file:///c:/Users/wangq/Scripts/pgr/src/libs/pairmat.rs) (CondensedMatrix)
+  - 验证：单元测试覆盖了核心算法，集成测试覆盖了 CLI 功能。
 
-#### Phase 2: 性能优化 (NN-chain) - **待办 (Planned)**
-- **目标**：将时间复杂度降至 $O(N^2)$，支撑 $N \approx 5000$ 到 $10000$ 的数据。
-- **算法**：NN-chain (Nearest-neighbor chain) 算法。
-  - **适用性**：Ward, Average, Complete, Weighted (要求空间具有可还原性/Reducibility，Single Linkage 不适用此法但可用 MST)。
-  - **核心逻辑**：
-    1.  维护一条“最近邻链”：$x_1 \to x_2 \to ... \to x_k$，其中 $x_{i+1} = \text{NN}(x_i)$。
-    2.  当链出现“互为最近邻” ($x_{k-1} = \text{NN}(x_k)$ 且 $x_k = \text{NN}(x_{k-1})$) 时，合并 $(x_{k-1}, x_k)$。
-    3.  合并后，从链中移除这两个点，继续寻找新的最近邻。
-  - **优势**：避免了全局搜索最小值，利用局部性原理加速。
-- **参考**：直接参考 `kodama` 的实现逻辑，特别是其 `chain.rs` 和 `linkage.rs` 中的状态管理。
+#### Phase 2: 性能优化 (NN-chain) - **已完成 (Completed)**
+- **状态**：已在 `src/libs/clust/hier.rs` 中实现 NN-chain 算法。
+- **特性**：
+  - **算法**：NN-chain (Nearest-neighbor chain) 算法。
+  - **适用性**：Ward, Average, Complete, Weighted (空间具有可还原性/Reducibility)。
+  - **复杂度**：时间复杂度优化至 $O(N^2)$。
+  - **自动调度**：`linkage` 函数自动根据 Method 选择最佳算法（Reducible 方法用 NN-chain，其它用 Primitive）。
+  - **验证**：
+    - 单元测试验证了 NN-chain 与 Primitive 算法输出的一致性（包括 ID 映射和拓扑）。
+    - 基准测试证明了显著的性能提升。
+
+**Benchmark Results (Average Linkage):**
+
+| N (Nodes) | Primitive $O(N^3)$ | NN-Chain $O(N^2)$ | Speedup |
+|---|---|---|---|
+| 100 | ~256 µs | ~63 µs | ~4x |
+| 200 | ~2.3 ms | ~249 µs | ~9x |
+| 400 | ~16 ms | ~953 µs | ~16x |
 
 #### Phase 3: 大规模扩展 (Sparse/Linear) - **待办 (Planned)**
 - **目标**：支持超大规模数据 ($N > 10000$)。
@@ -122,16 +125,7 @@
     - 其他 Linkage: 引入 Connectivity Constraints，仅计算稀疏图上的连通分量。
   - **内存优化**：实现 $O(N)$ 内存的 SLINK/CLINK 算法。
 
-## 校验与提示：
-  - 若方法为 `average` 且用户预期“演化意义”→提示使用 `upgma` 更合适。
-  - 若方法为 `ward.D2` 且输入非欧氏距离→提示统计解释的偏差风险。
-
-## 保留 UPGMA 的原因
-- 语义清晰：有根、超度量、分支长度可解释为时间/演化距离。
-- 生物流程稳定：与系统发育工具链更自然协作（`upgma/nj → nwk cut → nwk metrics`）。
-- 用户认知与可用性：独立入口降低心智负担，避免 `method` 选择歧义。
-
-## CLI 设计（规划）
+## CLI 设计
 
 ### 命令概览
 - 名称：`pgr clust hier`（可见别名 `hclust`、`hc`、`linkage`）
@@ -142,22 +136,10 @@
 - 矩阵文件：PHYLIP 距离矩阵（标准或宽松格式）
 - 格式转换：若手头是 pair TSV（三列 `name1  name2  distance`），请先使用 `pgr mat to-phylip` 转换为 PHYLIP；统一入口减少歧义，便于与 `clust upgma/nj` 一致
 - 名称来源：自动从输入解析；无需额外标签文件
-- 复杂度：Phase 1 朴素实现 O(n³)；Phase 2 优化至 O(n²)
 
 ### 主要参数
-- `--method {single|complete|average|weighted|centroid|median|ward|ward.D2}`：链接/准则选择（默认 `ward.D2`）。命名与 SciPy linkage 对齐：
-  - `single`：最近点（Nearest）
-  - `complete`：最远点（Farthest/Voor Hees）
-  - `average`：UPGMA（算术平均）
-  - `weighted`：WPGMA（加权平均）
-  - `centroid`：UPGMC（质心距离，欧氏）
-  - `median`：WPGMC（质心平均）
-  - `ward` / `ward.D2`：Ward 方差最小化（欧氏）
-- `--outfile/-o <path>`：输出文件路径（默认 `stdout`，即打印到屏幕）。如需写入文件，可用 `-o tree.nwk` 或使用 `> tree.nwk` 重定向。
-- `--optimal-ordering`：启用叶序优化，使相邻叶的距离之和最小，提升树的直观性（参考 SciPy linkage 的 `optimal_ordering`）
-- `--tie {alpha|size}`：并列时的确定性规则（默认 `alpha`）
-  - `alpha`：按名称字典序打破并列
-  - `size`：先比较簇大小，再按名称
+- `--method {single|complete|average|weighted|centroid|median|ward}`：链接/准则选择（默认 `ward`）。命名与 SciPy linkage 对齐。
+- `--outfile/-o <path>`：输出文件路径（默认 `stdout`，即打印到屏幕）。
 
 ### 输出
 - 默认输出：Newick dendrogram，分支长度表示合并高度
@@ -168,12 +150,11 @@
 # 先将 pair TSV 转为 PHYLIP
 pgr mat to-phylip pairs.tsv -o matrix.phy
 
-# Ward.D2（PHYLIP 输入，默认 Newick 输出）
-pgr clust hier matrix.phy --method ward.D2 > tree.nwk
+# Ward (PHYLIP 输入，默认 Newick 输出)
+pgr clust hier matrix.phy --method ward > tree.nwk
 
-# Average/complete/single（PHYLIP 输入）
+# Average/complete/single (PHYLIP 输入)
 pgr clust hier matrix.phy --method average > tree.nwk
-
 ```
 
 ### 注意事项

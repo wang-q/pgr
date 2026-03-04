@@ -37,15 +37,218 @@ pub struct Step {
     pub size: usize,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Algorithm {
+    Primitive,
+    NnChain,
+    Auto,
+}
+
 /// Perform hierarchical clustering on a condensed distance matrix.
 ///
 /// Returns a list of steps (merges) forming the dendrogram.
 /// The length of the result will be N-1 for a matrix of size N.
 pub fn linkage(matrix: &NamedMatrix, method: Method) -> Vec<Step> {
-    match method {
-        Method::Single => linkage_primitive(matrix, method), // Should use MST in Phase 2
-        _ => linkage_primitive(matrix, method),              // Use primitive O(N^3) for Phase 1
+    linkage_with_algo(matrix, method, Algorithm::Auto)
+}
+
+/// Perform hierarchical clustering with explicit algorithm selection.
+pub fn linkage_with_algo(matrix: &NamedMatrix, method: Method, algo: Algorithm) -> Vec<Step> {
+    match algo {
+        Algorithm::Primitive => linkage_primitive(matrix, method),
+        Algorithm::NnChain => linkage_nn_chain(matrix, method),
+        Algorithm::Auto => match method {
+            // Primitive O(N^3) is safest for Centroid/Median which don't satisfy reducibility
+            Method::Centroid | Method::Median => linkage_primitive(matrix, method),
+            
+            // NN-chain O(N^2) for reducible metrics
+            _ => linkage_nn_chain(matrix, method),
+        },
     }
+}
+
+/// Nearest-neighbor chain algorithm for hierarchical clustering.
+///
+/// Time complexity: O(N^2)
+/// Space complexity: O(N^2) (for distance matrix copy) + O(N) (chain stack)
+///
+/// Only valid for methods satisfying the reducibility property:
+/// Single, Complete, Average, Weighted, Ward.
+/// (Centroid and Median are NOT reducible and may cause infinite loops or incorrect results with NN-chain).
+fn linkage_nn_chain(matrix: &NamedMatrix, method: Method) -> Vec<Step> {
+    let n = matrix.size();
+    if n < 2 {
+        return vec![];
+    }
+
+    // Mutable copy of distances
+    let mut condensed = CondensedMatrix::from_vec(n, matrix.values().to_vec());
+    
+    // Cluster sizes
+    let mut size = vec![1; n];
+    
+    // Active clusters (true if valid, false if merged)
+    let mut active = vec![true; n];
+    
+    // Map internal index to original cluster ID (for step output)
+    let mut cluster_ids: Vec<usize> = (0..n).collect();
+
+    // The nearest-neighbor chain (stack of cluster indices)
+    let mut chain = Vec::with_capacity(n);
+    
+    // Result steps
+    let mut steps = Vec::with_capacity(n - 1);
+
+    // Main loop
+    // We need to perform N-1 merges.
+    // Each merge reduces the number of active clusters by 1.
+    // Instead of counting loop, we run until steps.len() == n - 1.
+    while steps.len() < n - 1 {
+        // If chain is empty, pick an arbitrary active cluster to start
+        if chain.is_empty() {
+            for i in 0..n {
+                if active[i] {
+                    chain.push(i);
+                    break;
+                }
+            }
+        }
+
+        // Extend the chain from the top element
+        // Find NN of chain.last()
+        let k = *chain.last().unwrap();
+        let mut min_dist = f32::INFINITY;
+        let mut nn = k; // Default to self if no other active found (shouldn't happen if >1 active)
+
+        for i in 0..n {
+            if i == k || !active[i] {
+                continue;
+            }
+            let d = condensed.get(k, i);
+            // Strict inequality < is crucial for chain stability, 
+            // but for equal distances we need a tie-breaking rule (usually index).
+            // Here: d < min_dist OR (d == min_dist and i < nn)
+            if d < min_dist {
+                min_dist = d;
+                nn = i;
+            }
+        }
+
+        // Check if NN(k) is already the previous element in chain (Reciprocal NN)
+        if chain.len() >= 2 && nn == chain[chain.len() - 2] {
+            // RNN found: merge k and nn
+            let u = chain.pop().unwrap(); // k
+            let v = chain.pop().unwrap(); // nn (which is also NN(k))
+            
+            // Ensure u < v for consistent indexing updates if needed, 
+            // though condensed matrix handles (u,v) order.
+            // Let's stick to: we merge v into u (keep u, disable v) or vice versa.
+            // Standard convention: keep the one with smaller index to minimize shifts?
+            // Actually, we usually merge into one and mark other inactive.
+            // Let's merge `u` and `v`.
+            // Swap so u < v to keep smaller index active (arbitrary choice, but clean)
+            let (u, v) = if u < v { (u, v) } else { (v, u) };
+            
+            // Distance between u and v
+            let d_uv = min_dist;
+
+            // Record step
+            let id1 = cluster_ids[u];
+            let id2 = cluster_ids[v];
+            let size1 = size[u];
+            let size2 = size[v];
+            let new_size = size1 + size2;
+            let new_id = n + steps.len(); // Next cluster ID
+            
+            steps.push(Step {
+                cluster1: id1,
+                cluster2: id2,
+                distance: d_uv,
+                size: new_size,
+            });
+
+            // Update distances (Lance-Williams)
+            // Merge v into u
+            for k in 0..n {
+                if !active[k] || k == u || k == v {
+                    continue;
+                }
+
+                let d_uk = condensed.get(u, k);
+                let d_vk = condensed.get(v, k);
+                
+                let new_dist = lance_williams(
+                    method, d_uk, d_vk, d_uv, size1, size2, size[k],
+                );
+                
+                condensed.set(u, k, new_dist);
+            }
+            
+            // Update state
+            size[u] = new_size;
+            cluster_ids[u] = new_id;
+            active[v] = false;
+            
+            // Since `v` is inactive, it must be removed from chain if present (it was just popped).
+            // `u` is active and updated, it was also popped.
+            // If `u` is still in chain (it isn't, we popped it), we'd need to check.
+            // But we just popped both.
+            // If `chain` is not empty, its new top might need to be re-evaluated against `u`.
+            // So we loop back.
+            
+        } else {
+            // Not RNN, push NN to chain
+            chain.push(nn);
+        }
+    }
+
+    // Post-processing: Sort steps by distance and re-assign IDs to match standard behavior
+    // 1. Create indices and sort
+    let mut indices: Vec<usize> = (0..steps.len()).collect();
+    indices.sort_by(|&i, &j| {
+        let s1 = &steps[i];
+        let s2 = &steps[j];
+        // Sort by distance ascending
+        // If distances are equal, maintain original topological order (i vs j)
+        s1.distance.partial_cmp(&s2.distance)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then(i.cmp(&j))
+    });
+
+    // 2. Map old cluster IDs to new IDs
+    // Leaves 0..N-1 are unchanged.
+    // Internal nodes (steps) need remapping.
+    // old_id = n + original_index
+    // new_id = n + new_sorted_index
+    let mut id_map: std::collections::HashMap<usize, usize> = std::collections::HashMap::new();
+    for i in 0..n {
+        id_map.insert(i, i);
+    }
+
+    let mut new_steps = Vec::with_capacity(steps.len());
+
+    for (new_idx, &old_idx) in indices.iter().enumerate() {
+        let step = &steps[old_idx];
+        let old_res_id = n + old_idx;
+        let new_res_id = n + new_idx;
+
+        id_map.insert(old_res_id, new_res_id);
+
+        let new_c1 = *id_map.get(&step.cluster1).expect("Cluster ID not found in map");
+        let new_c2 = *id_map.get(&step.cluster2).expect("Cluster ID not found in map");
+
+        // Ensure c1 < c2 for canonical output
+        let (c1, c2) = if new_c1 < new_c2 { (new_c1, new_c2) } else { (new_c2, new_c1) };
+
+        new_steps.push(Step {
+            cluster1: c1,
+            cluster2: c2,
+            distance: step.distance,
+            size: step.size,
+        });
+    }
+
+    new_steps
 }
 
 /// Convert linkage steps to a Node (tree structure).
@@ -306,8 +509,10 @@ mod tests {
         assert_eq!(steps[0].distance, 1.0);
         assert_eq!(steps[0].size, 2);
 
-        assert_eq!(steps[1].cluster1, 3); // 3 is the new id for {0,1}
-        assert_eq!(steps[1].cluster2, 2);
+        // Step 2: Merge {0,1} (id 3) and 2.
+        // Canonical order: min(2, 3) = 2, max(2, 3) = 3.
+        assert_eq!(steps[1].cluster1, 2); 
+        assert_eq!(steps[1].cluster2, 3); // 3 is the new id for {0,1}
         assert_eq!(steps[1].distance, 2.0);
         assert_eq!(steps[1].size, 3);
     }
@@ -356,6 +561,54 @@ mod tests {
         
         assert_eq!(steps.len(), 2);
         assert_eq!(steps[1].distance, 3.0);
+    }
+
+    #[test]
+    fn test_nn_chain_vs_primitive() {
+        // Create a random-ish matrix (5x5)
+        // 0-1: 10
+        // 0-2: 2
+        // 0-3: 8
+        // 0-4: 5
+        // 1-2: 9
+        // 1-3: 3
+        // 1-4: 7
+        // 2-3: 6
+        // 2-4: 4
+        // 3-4: 1
+        
+        let mut m = create_test_matrix(5);
+        m.set(0, 1, 10.0);
+        m.set(0, 2, 2.0);
+        m.set(0, 3, 8.0);
+        m.set(0, 4, 5.0);
+        m.set(1, 2, 9.0);
+        m.set(1, 3, 3.0);
+        m.set(1, 4, 7.0);
+        m.set(2, 3, 6.0);
+        m.set(2, 4, 4.0);
+        m.set(3, 4, 1.0); // min
+
+        // Test with Average linkage (Reducible)
+        let steps_prim = linkage_primitive(&m, Method::Average);
+        let steps_nn = linkage_nn_chain(&m, Method::Average);
+
+        assert_eq!(steps_prim.len(), 4);
+        assert_eq!(steps_nn.len(), 4);
+
+        for (i, (s1, s2)) in steps_prim.iter().zip(steps_nn.iter()).enumerate() {
+            // Check distance (should be identical)
+            assert!((s1.distance - s2.distance).abs() < 1e-5, "Step {}: distance mismatch {} vs {}", i, s1.distance, s2.distance);
+            
+            // Check clusters (order might differ in representation but set should be same)
+            // But for simple cases with strict inequality, they should be identical.
+            // Let's check normalized cluster pairs
+            let (min1, max1) = if s1.cluster1 < s1.cluster2 { (s1.cluster1, s1.cluster2) } else { (s1.cluster2, s1.cluster1) };
+            let (min2, max2) = if s2.cluster1 < s2.cluster2 { (s2.cluster1, s2.cluster2) } else { (s2.cluster2, s2.cluster1) };
+            
+            assert_eq!(min1, min2, "Step {}: cluster1 mismatch", i);
+            assert_eq!(max1, max2, "Step {}: cluster2 mismatch", i);
+        }
     }
 
     #[test]

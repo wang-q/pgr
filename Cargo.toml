@@ -59,6 +59,10 @@ csv = "1.4.0"
 name = "pgr"
 path = "src/pgr.rs"
 
+[[bench]]
+name = "hier_benchmark"
+harness = false
+
 [build-dependencies]
 
 [dev-dependencies]
