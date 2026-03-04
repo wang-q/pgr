@@ -276,7 +276,7 @@ impl NamedMatrix {
     pub fn new_from_values(names: Vec<String>, values: Vec<f32>) -> Self {
         let size = names.len();
         let matrix = CondensedMatrix::from_vec(size, values);
-        
+
         let names: indexmap::IndexMap<_, _> = names
             .into_iter()
             .enumerate()
@@ -489,11 +489,11 @@ mod tests {
         assert_eq!(m.get(2, 0), 2.0);
         assert_eq!(m.get(1, 2), 3.0);
         assert_eq!(m.get(0, 0), 0.0);
-        
+
         // Test underlying data access
         let data = m.data();
         assert_eq!(data.len(), 3); // 3*2/2 = 3
-        // Order: (0,1), (0,2), (1,2) -> 1.0, 2.0, 3.0
+                                   // Order: (0,1), (0,2), (1,2) -> 1.0, 2.0, 3.0
         assert_eq!(data[0], 1.0);
         assert_eq!(data[1], 2.0);
         assert_eq!(data[2], 3.0);
@@ -524,7 +524,7 @@ mod tests {
         assert_eq!(m.get(0, 1), 5.0);
         assert_eq!(m.get(1, 0), 5.0);
         assert_eq!(m.get(1, 2), 10.0);
-        
+
         // Check diagonal default
         assert_eq!(m.get(0, 0), 0.0);
         assert_eq!(m.get(3, 3), 0.0);
@@ -538,23 +538,23 @@ mod tests {
     fn test_named_matrix_basic() {
         let names = vec!["A".to_string(), "B".to_string()];
         let mut m = NamedMatrix::new(names);
-        
+
         m.set(0, 1, 0.5);
         assert_eq!(m.get(0, 1), 0.5);
         assert_eq!(m.get(1, 0), 0.5);
         assert_eq!(m.get(0, 0), 0.0);
-        
+
         assert_eq!(m.get_by_name("A", "B"), Some(0.5));
     }
-    
+
     #[test]
     fn test_named_matrix_indexing() {
         let names = vec!["A".to_string(), "B".to_string(), "C".to_string()];
         let m = NamedMatrix::new(names);
-        
+
         // Size 3 -> len 3
         assert_eq!(m.values().len(), 3);
-        
+
         // Index check
         // (0,1) -> 0
         // (0,2) -> 1

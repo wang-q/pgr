@@ -124,7 +124,7 @@ D 14 9 7 0
         ])
         .assert()
         .success();
-    
+
     // Just verify it runs and produces output
     let nwk_single = std::fs::read_to_string(&output_single).unwrap();
     assert!(nwk_single.starts_with("("));
@@ -142,7 +142,7 @@ D 14 9 7 0
         ])
         .assert()
         .success();
-    
+
     let nwk_ward = std::fs::read_to_string(&output_ward).unwrap();
     assert!(nwk_ward.len() > 0);
 }

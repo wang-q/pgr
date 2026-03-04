@@ -2,7 +2,7 @@ use clap::*;
 use std::io::Write;
 use std::str::FromStr;
 
-use pgr::libs::clust::hier::{Method, linkage_inplace, to_tree};
+use pgr::libs::clust::hier::{linkage_inplace, to_tree, Method};
 use pgr::libs::pairmat::NamedMatrix;
 use pgr::libs::phylo::tree::io::to_newick;
 
@@ -60,8 +60,7 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
     let outfile = matches.get_one::<String>("outfile").unwrap();
 
     // Parse method
-    let method = Method::from_str(method_str)
-        .map_err(|e: String| anyhow::anyhow!(e))?;
+    let method = Method::from_str(method_str).map_err(|e: String| anyhow::anyhow!(e))?;
 
     // Read matrix
     let matrix = NamedMatrix::from_relaxed_phylip(infile);

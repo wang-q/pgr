@@ -64,7 +64,7 @@ pub fn linkage(matrix: &NamedMatrix, method: Method) -> Vec<Step> {
 pub fn linkage_with_algo(matrix: &NamedMatrix, method: Method, algo: Algorithm) -> Vec<Step> {
     // Create a mutable copy of the condensed matrix
     let mut condensed = CondensedMatrix::from_vec(matrix.size(), matrix.values().to_vec());
-    
+
     linkage_core(&mut condensed, method, algo)
 }
 
@@ -83,7 +83,7 @@ fn linkage_core(condensed: &mut CondensedMatrix, method: Method, algo: Algorithm
         Algorithm::Auto => match method {
             // Primitive O(N^3) is safest for Centroid/Median which don't satisfy reducibility
             Method::Centroid | Method::Median => linkage_primitive(condensed, method),
-            
+
             // NN-chain O(N^2) for reducible metrics
             _ => linkage_nn_chain(condensed, method),
         },
@@ -112,19 +112,19 @@ fn linkage_nn_chain(condensed: &mut CondensedMatrix, method: Method) -> Vec<Step
             *x = *x * *x;
         }
     }
-    
+
     // Cluster sizes
     let mut size = vec![1; n];
-    
+
     // Active clusters (true if valid, false if merged)
     let mut active = vec![true; n];
-    
+
     // Map internal index to original cluster ID (for step output)
     let mut cluster_ids: Vec<usize> = (0..n).collect();
 
     // The nearest-neighbor chain (stack of cluster indices)
     let mut chain = Vec::with_capacity(n);
-    
+
     // Result steps
     let mut steps = Vec::with_capacity(n - 1);
 
@@ -154,7 +154,7 @@ fn linkage_nn_chain(condensed: &mut CondensedMatrix, method: Method) -> Vec<Step
                 continue;
             }
             let d = condensed.get(k, i);
-            // Strict inequality < is crucial for chain stability, 
+            // Strict inequality < is crucial for chain stability,
             // but for equal distances we need a tie-breaking rule (usually index).
             // Here: d < min_dist OR (d == min_dist and i < nn)
             if d < min_dist {
@@ -168,8 +168,8 @@ fn linkage_nn_chain(condensed: &mut CondensedMatrix, method: Method) -> Vec<Step
             // RNN found: merge k and nn
             let u = chain.pop().unwrap(); // k
             let v = chain.pop().unwrap(); // nn (which is also NN(k))
-            
-            // Ensure u < v for consistent indexing updates if needed, 
+
+            // Ensure u < v for consistent indexing updates if needed,
             // though condensed matrix handles (u,v) order.
             // Let's stick to: we merge v into u (keep u, disable v) or vice versa.
             // Standard convention: keep the one with smaller index to minimize shifts?
@@ -177,7 +177,7 @@ fn linkage_nn_chain(condensed: &mut CondensedMatrix, method: Method) -> Vec<Step
             // Let's merge `u` and `v`.
             // Swap so u < v to keep smaller index active (arbitrary choice, but clean)
             let (u, v) = if u < v { (u, v) } else { (v, u) };
-            
+
             // Distance between u and v
             let d_uv = min_dist;
             let dist_out = if is_squared { d_uv.sqrt() } else { d_uv };
@@ -189,7 +189,7 @@ fn linkage_nn_chain(condensed: &mut CondensedMatrix, method: Method) -> Vec<Step
             let size2 = size[v];
             let new_size = size1 + size2;
             let new_id = n + steps.len(); // Next cluster ID
-            
+
             steps.push(Step {
                 cluster1: id1,
                 cluster2: id2,
@@ -206,26 +206,23 @@ fn linkage_nn_chain(condensed: &mut CondensedMatrix, method: Method) -> Vec<Step
 
                 let d_uk = condensed.get(u, k);
                 let d_vk = condensed.get(v, k);
-                
-                let new_dist = lance_williams(
-                    method, d_uk, d_vk, d_uv, size1, size2, size[k],
-                );
-                
+
+                let new_dist = lance_williams(method, d_uk, d_vk, d_uv, size1, size2, size[k]);
+
                 condensed.set(u, k, new_dist);
             }
-            
+
             // Update state
             size[u] = new_size;
             cluster_ids[u] = new_id;
             active[v] = false;
-            
+
             // Since `v` is inactive, it must be removed from chain if present (it was just popped).
             // `u` is active and updated, it was also popped.
             // If `u` is still in chain (it isn't, we popped it), we'd need to check.
             // But we just popped both.
             // If `chain` is not empty, its new top might need to be re-evaluated against `u`.
             // So we loop back.
-            
         } else {
             // Not RNN, push NN to chain
             chain.push(nn);
@@ -240,7 +237,8 @@ fn linkage_nn_chain(condensed: &mut CondensedMatrix, method: Method) -> Vec<Step
         let s2 = &steps[j];
         // Sort by distance ascending
         // If distances are equal, maintain original topological order (i vs j)
-        s1.distance.partial_cmp(&s2.distance)
+        s1.distance
+            .partial_cmp(&s2.distance)
             .unwrap_or(std::cmp::Ordering::Equal)
             .then(i.cmp(&j))
     });
@@ -264,11 +262,19 @@ fn linkage_nn_chain(condensed: &mut CondensedMatrix, method: Method) -> Vec<Step
 
         id_map.insert(old_res_id, new_res_id);
 
-        let new_c1 = *id_map.get(&step.cluster1).expect("Cluster ID not found in map");
-        let new_c2 = *id_map.get(&step.cluster2).expect("Cluster ID not found in map");
+        let new_c1 = *id_map
+            .get(&step.cluster1)
+            .expect("Cluster ID not found in map");
+        let new_c2 = *id_map
+            .get(&step.cluster2)
+            .expect("Cluster ID not found in map");
 
         // Ensure c1 < c2 for canonical output
-        let (c1, c2) = if new_c1 < new_c2 { (new_c1, new_c2) } else { (new_c2, new_c1) };
+        let (c1, c2) = if new_c1 < new_c2 {
+            (new_c1, new_c2)
+        } else {
+            (new_c2, new_c1)
+        };
 
         new_steps.push(Step {
             cluster1: c1,
@@ -288,15 +294,16 @@ fn linkage_nn_chain(condensed: &mut CondensedMatrix, method: Method) -> Vec<Step
 pub fn to_tree(steps: &[Step], names: &[String]) -> Tree {
     let mut tree = Tree::new();
     let n = names.len();
-    
+
     if n == 0 {
         return tree;
     }
-    
+
     // Map original cluster ID to Tree NodeId
     // IDs 0..n-1 are leaves (original sequences)
     // IDs n..n+steps.len()-1 are internal nodes (merges)
-    let mut cluster_to_node: std::collections::HashMap<usize, usize> = std::collections::HashMap::new();
+    let mut cluster_to_node: std::collections::HashMap<usize, usize> =
+        std::collections::HashMap::new();
 
     // Create leaf nodes
     for (i, name) in names.iter().enumerate() {
@@ -321,27 +328,27 @@ pub fn to_tree(steps: &[Step], names: &[String]) -> Tree {
         // Create parent node
         let parent_node_id = tree.add_node();
         cluster_to_node.insert(new_cluster_id, parent_node_id);
-        
+
         // Process children
         for &child_cluster_id in &[step.cluster1, step.cluster2] {
             if let Some(&child_node_id) = cluster_to_node.get(&child_cluster_id) {
                 let h_child = *heights.get(&child_cluster_id).unwrap_or(&0.0);
-                
+
                 // Calculate branch length
                 // Use distance/2.0 as node height for ultrametric-like appearance
                 let node_height = step.distance / 2.0;
                 let len = (node_height - h_child).max(0.0); // Prevent negative length
-                
+
                 // Set length on child and link to parent
                 if let Some(child_node) = tree.get_node_mut(child_node_id) {
                     child_node.length = Some(len as f64);
                 }
-                
+
                 // Link in tree structure
                 let _ = tree.add_child(parent_node_id, child_node_id);
             }
         }
-        
+
         heights.insert(new_cluster_id, step.distance / 2.0);
         root_cluster_id = new_cluster_id;
     }
@@ -380,7 +387,7 @@ fn linkage_primitive(condensed: &mut CondensedMatrix, method: Method) -> Vec<Ste
     // Track cluster sizes and status
     let mut size = vec![1; n];
     let mut active = vec![true; n];
-    
+
     // Map internal index to original cluster ID
     let mut cluster_ids: Vec<usize> = (0..n).collect();
 
@@ -417,8 +424,12 @@ fn linkage_primitive(condensed: &mut CondensedMatrix, method: Method) -> Vec<Ste
         let size1 = size[u];
         let size2 = size[v];
         let new_size = size1 + size2;
-        
-        let dist_out = if is_squared { min_dist.sqrt() } else { min_dist };
+
+        let dist_out = if is_squared {
+            min_dist.sqrt()
+        } else {
+            min_dist
+        };
 
         steps.push(Step {
             cluster1: id1,
@@ -438,10 +449,8 @@ fn linkage_primitive(condensed: &mut CondensedMatrix, method: Method) -> Vec<Ste
             let d_vk = condensed.get(v, k);
             let d_uv = min_dist;
 
-            let new_dist = lance_williams(
-                method, d_uk, d_vk, d_uv, size1, size2, size[k],
-            );
-            
+            let new_dist = lance_williams(method, d_uk, d_vk, d_uv, size1, size2, size[k]);
+
             condensed.set(u, k, new_dist);
         }
 
@@ -479,7 +488,7 @@ fn lance_williams(
             // UPGMC (Unweighted Pair Group Method with Centroid Averaging)
             // Inputs are already squared distances.
             // d(u+v, k)^2 = (n_u * d(u,k)^2 + n_v * d(v,k)^2 - n_u*n_v*d(u,v)^2 / n_uv) / n_uv
-            
+
             let d_new = (n_u * d_uk + n_v * d_vk - (n_u * n_v * d_uv) / n_uv) / n_uv;
             d_new.max(0.0)
         }
@@ -494,7 +503,7 @@ fn lance_williams(
             // Ward's method (minimal variance) - specifically Ward.D2
             // Inputs are already squared distances.
             // d_new^2 = ((n_u+n_k)*d_uk^2 + (n_v+n_k)*d_vk^2 - n_k*d_uv^2) / n_uvk
-            
+
             let d_new = ((n_u + n_k) * d_uk + (n_v + n_k) * d_vk - n_k * d_uv) / n_uvk;
             d_new.max(0.0)
         }
@@ -522,16 +531,16 @@ mod tests {
         // 1. Merge 0-1 (d=1.0). New cluster 3 = {0,1}.
         //    Update dist(3, 2) = min(d(0,2), d(1,2)) = min(4, 2) = 2.0
         // 2. Merge 3-2 (d=2.0).
-        
+
         let mut m = create_test_matrix(3);
         m.set(0, 1, 1.0);
         m.set(0, 2, 4.0);
         m.set(1, 2, 2.0);
 
         let steps = linkage(&m, Method::Single);
-        
+
         assert_eq!(steps.len(), 2);
-        
+
         assert_eq!(steps[0].cluster1, 0);
         assert_eq!(steps[0].cluster2, 1);
         assert_eq!(steps[0].distance, 1.0);
@@ -539,7 +548,7 @@ mod tests {
 
         // Step 2: Merge {0,1} (id 3) and 2.
         // Canonical order: min(2, 3) = 2, max(2, 3) = 3.
-        assert_eq!(steps[1].cluster1, 2); 
+        assert_eq!(steps[1].cluster1, 2);
         assert_eq!(steps[1].cluster2, 3); // 3 is the new id for {0,1}
         assert_eq!(steps[1].distance, 2.0);
         assert_eq!(steps[1].size, 3);
@@ -556,18 +565,18 @@ mod tests {
         // 1. Merge 0-1 (d=1.0). New cluster 3 = {0,1}.
         //    Update dist(3, 2) = max(d(0,2), d(1,2)) = max(4, 2) = 4.0
         // 2. Merge 3-2 (d=4.0).
-        
+
         let mut m = create_test_matrix(3);
         m.set(0, 1, 1.0);
         m.set(0, 2, 4.0);
         m.set(1, 2, 2.0);
 
         let steps = linkage(&m, Method::Complete);
-        
+
         assert_eq!(steps.len(), 2);
         assert_eq!(steps[1].distance, 4.0);
     }
-    
+
     #[test]
     fn test_linkage_average() {
         // Distances:
@@ -579,14 +588,14 @@ mod tests {
         // 1. Merge 0-1 (d=1.0). Size=2.
         //    Update dist(3, 2) = (1*4.0 + 1*2.0) / 2 = 3.0
         // 2. Merge 3-2 (d=3.0).
-        
+
         let mut m = create_test_matrix(3);
         m.set(0, 1, 1.0);
         m.set(0, 2, 4.0);
         m.set(1, 2, 2.0);
 
         let steps = linkage(&m, Method::Average);
-        
+
         assert_eq!(steps.len(), 2);
         assert_eq!(steps[1].distance, 3.0);
     }
@@ -604,7 +613,7 @@ mod tests {
         // 2-3: 6
         // 2-4: 4
         // 3-4: 1
-        
+
         let mut m = create_test_matrix(5);
         m.set(0, 1, 10.0);
         m.set(0, 2, 2.0);
@@ -626,17 +635,142 @@ mod tests {
 
         for (i, (s1, s2)) in steps_prim.iter().zip(steps_nn.iter()).enumerate() {
             // Check distance (should be identical)
-            assert!((s1.distance - s2.distance).abs() < 1e-5, "Step {}: distance mismatch {} vs {}", i, s1.distance, s2.distance);
-            
+            assert!(
+                (s1.distance - s2.distance).abs() < 1e-5,
+                "Step {}: distance mismatch {} vs {}",
+                i,
+                s1.distance,
+                s2.distance
+            );
+
             // Check clusters (order might differ in representation but set should be same)
             // But for simple cases with strict inequality, they should be identical.
             // Let's check normalized cluster pairs
-            let (min1, max1) = if s1.cluster1 < s1.cluster2 { (s1.cluster1, s1.cluster2) } else { (s1.cluster2, s1.cluster1) };
-            let (min2, max2) = if s2.cluster1 < s2.cluster2 { (s2.cluster1, s2.cluster2) } else { (s2.cluster2, s2.cluster1) };
-            
+            let (min1, max1) = if s1.cluster1 < s1.cluster2 {
+                (s1.cluster1, s1.cluster2)
+            } else {
+                (s1.cluster2, s1.cluster1)
+            };
+            let (min2, max2) = if s2.cluster1 < s2.cluster2 {
+                (s2.cluster1, s2.cluster2)
+            } else {
+                (s2.cluster2, s2.cluster1)
+            };
+
             assert_eq!(min1, min2, "Step {}: cluster1 mismatch", i);
             assert_eq!(max1, max2, "Step {}: cluster2 mismatch", i);
         }
+    }
+
+    // Helper to create a random matrix for testing
+    fn create_random_matrix_local(size: usize) -> NamedMatrix {
+        // Use a simple pseudo-random generator to avoid external deps or complexity
+        let mut seed: u64 = 12345;
+        let mut rng = || {
+            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
+            (seed >> 33) as f32 / 2147483648.0
+        };
+
+        // Let's just create names and fill CondensedMatrix manually
+        let names: Vec<String> = (0..size).map(|i| i.to_string()).collect();
+        let mut m = NamedMatrix::new(names);
+
+        for i in 0..size {
+            for j in (i + 1)..size {
+                m.set(i, j, rng());
+            }
+        }
+        m
+    }
+
+    #[test]
+    fn test_nn_chain_fuzzing() {
+        // Run multiple random tests to ensure stability and correctness
+        for i in 0..20 {
+            let size = 10 + i * 5; // Sizes: 10, 15, ..., 105
+            let m = create_random_matrix_local(size);
+
+            // Test Average
+            let steps_prim = linkage_with_algo(&m, Method::Average, Algorithm::Primitive);
+            let steps_nn = linkage_with_algo(&m, Method::Average, Algorithm::NnChain);
+
+            assert_eq!(steps_prim.len(), size - 1);
+            assert_eq!(steps_nn.len(), size - 1);
+
+            for (j, (s1, s2)) in steps_prim.iter().zip(steps_nn.iter()).enumerate() {
+                assert!(
+                    (s1.distance - s2.distance).abs() < 1e-5,
+                    "Iter {}, Size {}, Step {}: Average distance mismatch {} vs {}",
+                    i,
+                    size,
+                    j,
+                    s1.distance,
+                    s2.distance
+                );
+            }
+
+            // Test Ward (which uses squared optimization)
+            let steps_prim_ward = linkage_with_algo(&m, Method::Ward, Algorithm::Primitive);
+            let steps_nn_ward = linkage_with_algo(&m, Method::Ward, Algorithm::NnChain);
+
+            for (j, (s1, s2)) in steps_prim_ward.iter().zip(steps_nn_ward.iter()).enumerate() {
+                assert!(
+                    (s1.distance - s2.distance).abs() < 1e-5,
+                    "Iter {}, Size {}, Step {}: Ward distance mismatch {} vs {}",
+                    i,
+                    size,
+                    j,
+                    s1.distance,
+                    s2.distance
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_monotonicity() {
+        // Check if merge heights are non-decreasing for monotonic methods
+        let m = create_random_matrix_local(30);
+
+        let methods = [
+            Method::Single,
+            Method::Complete,
+            Method::Average,
+            Method::Weighted,
+            Method::Ward,
+        ];
+
+        for method in methods {
+            let steps = linkage(&m, method);
+            for i in 0..steps.len() - 1 {
+                assert!(
+                    steps[i].distance <= steps[i + 1].distance + 1e-6,
+                    "Method {:?} is not monotonic at step {}: {} > {}",
+                    method,
+                    i,
+                    steps[i].distance,
+                    steps[i + 1].distance
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_edge_cases() {
+        // N=0
+        let m0 = NamedMatrix::new(vec![]);
+        assert!(linkage(&m0, Method::Average).is_empty());
+
+        // N=1
+        let m1 = NamedMatrix::new(vec!["A".to_string()]);
+        assert!(linkage(&m1, Method::Average).is_empty());
+
+        // N=2
+        let mut m2 = NamedMatrix::new(vec!["A".to_string(), "B".to_string()]);
+        m2.set(0, 1, 0.5);
+        let steps = linkage(&m2, Method::Average);
+        assert_eq!(steps.len(), 1);
+        assert_eq!(steps[0].distance, 0.5);
     }
 
     #[test]
@@ -645,13 +779,23 @@ mod tests {
         // 1. Merge 0-1 (d=1.0).
         // 2. Merge 3-2 (d=2.0).
         let steps = vec![
-            Step { cluster1: 0, cluster2: 1, distance: 1.0, size: 2 },
-            Step { cluster1: 3, cluster2: 2, distance: 2.0, size: 3 },
+            Step {
+                cluster1: 0,
+                cluster2: 1,
+                distance: 1.0,
+                size: 2,
+            },
+            Step {
+                cluster1: 3,
+                cluster2: 2,
+                distance: 2.0,
+                size: 3,
+            },
         ];
         let names = vec!["A".to_string(), "B".to_string(), "C".to_string()];
-        
+
         let tree = to_tree(&steps, &names);
-        
+
         // Root is the last created node
         assert!(tree.get_root().is_some());
         assert_eq!(tree.len(), 5); // 3 leaves + 2 internal
@@ -659,18 +803,27 @@ mod tests {
         // Check topology
         // Root should have children 3 and 2
         // Node 3 should have children 0 and 1
-        
+
         // Find leaf nodes by name
         // Use traversal to find nodes
-        let leaf_a_id = tree.get_leaves().iter().find(|&&id| {
-            tree.get_node(id).unwrap().name.as_deref() == Some("A")
-        }).copied().unwrap();
-        let leaf_b_id = tree.get_leaves().iter().find(|&&id| {
-            tree.get_node(id).unwrap().name.as_deref() == Some("B")
-        }).copied().unwrap();
-        let leaf_c_id = tree.get_leaves().iter().find(|&&id| {
-            tree.get_node(id).unwrap().name.as_deref() == Some("C")
-        }).copied().unwrap();
+        let leaf_a_id = tree
+            .get_leaves()
+            .iter()
+            .find(|&&id| tree.get_node(id).unwrap().name.as_deref() == Some("A"))
+            .copied()
+            .unwrap();
+        let leaf_b_id = tree
+            .get_leaves()
+            .iter()
+            .find(|&&id| tree.get_node(id).unwrap().name.as_deref() == Some("B"))
+            .copied()
+            .unwrap();
+        let leaf_c_id = tree
+            .get_leaves()
+            .iter()
+            .find(|&&id| tree.get_node(id).unwrap().name.as_deref() == Some("C"))
+            .copied()
+            .unwrap();
 
         let leaf_a = tree.get_node(leaf_a_id).unwrap();
         let leaf_b = tree.get_node(leaf_b_id).unwrap();
@@ -680,14 +833,14 @@ mod tests {
         // Leaf height = 0
         // Node 3 height = 1.0 / 2 = 0.5
         // Root height = 2.0 / 2 = 1.0
-        
+
         // Length A -> 3: 0.5 - 0 = 0.5
         assert_eq!(leaf_a.length, Some(0.5));
         assert_eq!(leaf_b.length, Some(0.5));
-        
+
         // Length C -> Root: 1.0 - 0 = 1.0
         assert_eq!(leaf_c.length, Some(1.0));
-        
+
         // Node 3 -> Root: 1.0 - 0.5 = 0.5
         // We need to find Node 3 (parent of A and B)
         let parent_a = tree.get_node(leaf_a.parent.unwrap()).unwrap();
