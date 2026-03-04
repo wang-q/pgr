@@ -7,37 +7,92 @@
 ## 核心定位
 
 - **输入**：相似度矩阵、距离矩阵、图结构（边列表）、或高维向量（embeddings）。
-- **输出**：样本的分组（Partition）或软聚类概率（Soft Clustering）。
+- **输出**：
+  - **扁平分组 (Flat Partition)**：如 `clusters.tsv`，每行一个样本及其所属簇 ID。
+  - **树状结构 (Hierarchy/Tree)**：如 `tree.nwk`，通过 Newick 格式表达样本间的层级关系（仅 `hier`/`hdbscan` 支持）。
 - **目标**：发现数据中的自然结构（Structure Discovery），不依赖预先存在的树。
 
-## 功能规划
+## 算法概览与实现状态 (Overview & Status)
 
-## 功能概览
+本节汇总 `pgr` 支持或规划中的聚类算法，按实现状态分类说明。
 
-### 1. 基于图的聚类 (Graph Clustering)
+### ✅ 已实现 (Implemented)
 
-适用于稀疏相似度网络（如 sequence similarity network, SSN）。
+这些算法已在 `pgr clust` 中可用，适合直接投入生产流程。
 
-- **MCL (Markov Cluster Algorithm)** [已实现]：基于流模拟的图聚类，适合发现紧密连接的模块（蛋白家族检测标准方法）。
-  - 命令：`pgr clust mcl`
-- **Connected Components (CC)** [已实现]：最基础的连通分量，适合极高阈值下的快速去重。
-  - 命令：`pgr clust cc`
-- **Louvain / Leiden** [规划中]：社区发现算法，适合大规模网络的层次化结构探索。
+- **MCL (Markov Cluster Algorithm)**
+  - **命令**：`pgr clust mcl`
+  - **特点**：基于流模拟的图聚类。
+  - **适用场景**：**生物网络**（如 SSN）、蛋白家族检测、模块发现。
+  - **优势**：对噪声鲁棒，能处理复杂的网络结构。
 
-### 2. 基于距离/向量的统计聚类 (Statistical Clustering)
+- **Connected Components (CC)**
+  - **命令**：`pgr clust cc`
+  - **特点**：最基础的连通分量。
+  - **适用场景**：极高相似度阈值下的快速去重。
+  - **优势**：极快（线性复杂度）。
 
-当数据以连续坐标（如 k-mer profile, embedding）或稠密距离矩阵存在时，统计聚类提供基于分布的建模能力。
+- **K-Medoids**
+  - **命令**：`pgr clust k-medoids`
+  - **特点**：类似 K-Means，但中心点必须是实际样本（Medoid）。
+  - **适用场景**：抗噪声需求，或仅有**距离矩阵**（非欧氏空间）的情况。
+  - **优势**：对异常值鲁棒，结果可解释（中心是真实样本）。
 
-- **Hierarchical Clustering** [规划中]：层次聚类，支持 Ward/Average/Complete 等方法，输出 dendrogram 树。
-  - 命令：`pgr clust hier`（别名 `hclust`）
-  - 详情：参见 [clust-hier.md](file:///c:/Users/wangq/Scripts/pgr/docs/clust-hier.md)
-- **K-Medoids** [已实现]：类似于 K-Means，但中心点必须是实际样本（Medoid），对噪声更鲁棒，支持任意距离矩阵。
-  - 命令：`pgr clust k-medoids`
-- **DBSCAN** [已实现]：基于密度的聚类，能发现任意形状的簇并识别噪声点。
-  - 命令：`pgr clust dbscan`
-- **K-Means** [规划中]：最基础的欧氏空间聚类，适合大规模向量数据。
+- **DBSCAN**
+  - **命令**：`pgr clust dbscan`
+  - **特点**：基于密度的聚类，需指定邻域半径 `eps` 和最小点数 `min_samples`。
+  - **适用场景**：**非凸形状**簇，密度不均匀分布，需**离群点检测**。
+  - **优势**：不需要指定簇数 K，能识别噪声。
 
-#### GMM (Gaussian Mixture Models) [规划中]
+### 📅 计划中 (Planned)
+
+这些算法已列入路线图，旨在补全统计聚类与大规模向量分析能力。
+
+- **Hierarchical Clustering**
+  - **命令**：`pgr clust hier` (别名 `hclust`)
+  - **计划内容**：支持 `ward`, `average` (UPGMA), `complete` 等 linkage 方法，输出 Newick 树。
+  - **价值**：提供层级结构视图，配合 `nwk cut` 可灵活获取不同粒度的分组。
+
+- **GMM (Gaussian Mixture Models)**
+  - **命令**：`pgr clust gmm`
+  - **计划内容**：支持**软聚类**（概率输出）与 **BIC** 模型选择。
+  - **价值**：适合**椭球形簇**与密度估计，解决 K-Means 仅适应球形簇的限制；BIC 可辅助确定最佳 K。
+
+- **HDBSCAN**
+  - **命令**：`pgr clust hdbscan`
+  - **scikit-learn 对应**：`HDBSCAN`
+  - **计划内容**：层次化 DBSCAN，无需手动指定 `eps`。
+  - **价值**：DBSCAN 的现代高级版，**自动适应不同密度的簇**，参数更少且更稳健。
+
+- **K-Means**
+  - **命令**：`pgr clust kmeans`
+  - **计划内容**：经典的欧氏空间硬聚类。
+  - **价值**：**大规模向量**聚类的基准算法，速度快，适合均匀球形簇。
+
+- **Louvain / Leiden**
+  - **命令**：(待定)
+  - **计划内容**：社区发现算法。
+  - **价值**：比 MCL 更适合**超大规模网络**的层次化结构探索。
+
+### 🚫 不建议实现 / 暂无计划 (Not Planned)
+
+这些算法虽然经典，但在生物大数据场景下存在局限性，暂不作为核心功能引入。
+
+- **Affinity Propagation (AP)**
+  - **原因**：时间与空间复杂度较高 ($O(N^2)$)，难以处理大规模生物序列数据（如 >1万条序列）。
+  - **替代**：对于小规模数据寻找代表点，推荐使用 `K-Medoids`；对于自动确定簇数，推荐 `DBSCAN` 或 `MCL`。
+
+- **Spectral Clustering (谱聚类)**
+  - **原因**：这就涉及构建拉普拉斯矩阵并进行特征分解，计算开销大 ($O(N^3)$)。
+  - **替代**：`MCL` 在生物网络聚类中通常能提供类似甚至更好的效果，且扩展性更好。
+
+- **Mean Shift**
+  - **原因**：计算复杂度高，且带宽参数（bandwidth）难以自适应选择。
+  - **替代**：`DBSCAN` 或 `GMM` 通常能覆盖其密度估计的需求。
+
+## 算法详细说明 (Detailed Descriptions)
+
+### GMM (Gaussian Mixture Models) [规划中]
 
 引入 GMM 的动机：
 - **软聚类 (Soft Clustering)**：不同于 K-means 的硬划分，GMM 给出样本属于某簇的概率，适合处理边界模糊的生物学分类（如亚种、基因家族过渡态）。
@@ -52,28 +107,14 @@ pgr clust gmm input.tsv --k 5 --cov full > clusters.tsv
 # 输出包含：ID, Cluster, PosteriorProb (后验概率)
 ```
 
-### 3. 模型选择 (Model Selection)
+### 模型选择 (Model Selection)
 
 如何确定聚类的簇数（K）或最佳模型复杂度？
 
 - **BIC (Bayesian Information Criterion)** [规划中]：
-  - 在 GMM 中，BIC 权衡了对数似然（拟合度）与参数数量（复杂度），是选择 GMM 组件数的标准方法。
-  - 对于 K-Means，也可通过假设簇内分布为高斯来近似计算 BIC（X-Means 算法思路）。
-  - **注意**：BIC 不直接适用于 K-Medoids（因其缺乏明确的概率似然函数），除非强行假设簇内分布。
-- **Silhouette / Calinski-Harabasz** [部分支持]：基于几何距离的评估指标。
-  - **推荐用于 K-Medoids**：对于 K-Medoids，建议优先使用 Silhouette 系数或 Elbow Method（手肘法）来评估 K，而非 BIC。
-  - `nwk metrics` 已支持树上 Silhouette；后续可扩展至向量/距离矩阵的 Silhouette 计算。
-
-## scikit-learn 映射与参考
-
-| pgr 命令 | 状态 | scikit-learn 对应 | 适用场景 | 备注 |
-| :--- | :--- | :--- | :--- | :--- |
-| `clust cc` | ✅ 已实现 | `connected_components` (scipy) | 简单连通分量 | 快速去重 |
-| `clust mcl` | ✅ 已实现 | (无直接对应) | 图/网络聚类 | 马尔可夫流模拟 |
-| `clust k-medoids` | ✅ 已实现 | `KMedoids` (sklearn-extra) | 任意距离矩阵 | 抗噪 |
-| `clust dbscan` | ✅ 已实现 | `DBSCAN` | 密度聚类, 噪声识别 | 需调参 eps/min_samples |
-| `clust gmm` | 📅 规划中 | `GaussianMixture` | 连续向量, 软聚类 | 需处理协方差矩阵奇异性 |
-| `clust kmeans` | 📅 规划中 | `KMeans` | 欧氏空间, 硬聚类 | 基础基准 |
+  - 在 GMM 中，BIC 权衡了对数似然（拟合度）与参数数量（复杂度）。
+  - `pgr` 可提供 `clust gmm --scan-k 2..20`，自动计算并输出 BIC 曲线，辅助用户选择最佳 K（通常是 BIC 最低点或手肘点）。
+- **Silhouette / Calinski-Harabasz** [部分支持]：基于几何距离的评估指标，适用于 K-means 或一般距离聚类（`nwk metrics` 已支持树上 Silhouette）。
 
 ## 推荐工作流
 
