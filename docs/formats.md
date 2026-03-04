@@ -437,9 +437,10 @@ PHYLIP 距离矩阵格式是系统发育分析中的通用格式。`pgr` 在 `sr
 ### NamedMatrix
 
 *   **用途**：稠密且带有行列名称的距离矩阵（如 PHYLIP 格式的内存表示）。
-*   **底层存储**：`IndexMap<String, usize>` (Name Index) + `CondensedMatrix`。
+*   **底层存储**：`IndexMap<String, usize>` (Name Index) + `CondensedMatrix` + `Option<Vec<f32>>` (Diagonal)。
 *   **特点**：
     *   **组合封装**：内部持有一个 `CondensedMatrix`，通过名称索引访问底层数据。
+    *   **对角线支持**：虽然底层 `CondensedMatrix` 不存对角线，但 `NamedMatrix` 额外增加了一个 `Option<Vec<f32>>` 字段来可选地存储对角线元素（这对 `mat transform --normalize` 等操作至关重要）。
     *   **内存开销**：$O(N^2/2)$。对于 $N=10,000$，仅需存储约 5000 万个浮点数（约 200MB），适合更大规模分析。
     *   **序列名称**：使用 `IndexMap` 维护名称到索引的映射，支持 $O(1)$ 的名称查找。
 

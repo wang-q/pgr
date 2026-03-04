@@ -40,7 +40,7 @@ Examples:
             Arg::new("infile")
                 .required(true)
                 .index(1)
-                .help("Input PHYLIP matrix file"),
+                .help("Input PHYLIP matrix or pairwise TSV file"),
         )
         .arg(
             Arg::new("op")
@@ -84,6 +84,16 @@ Examples:
                 .help("Normalize based on diagonal values"),
         )
         .arg(
+            Arg::new("format")
+                .long("format")
+                .default_value("phylip")
+                .value_parser([
+                    builder::PossibleValue::new("phylip"),
+                    builder::PossibleValue::new("pair"),
+                ])
+                .help("Input format"),
+        )
+        .arg(
             Arg::new("outfile")
                 .long("outfile")
                 .short('o')
@@ -103,22 +113,36 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let scale = *args.get_one::<f32>("scale").unwrap();
     let offset = *args.get_one::<f32>("offset").unwrap();
     let normalize = args.get_flag("normalize");
+    let format = args.get_one::<String>("format").unwrap().as_str();
     let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap());
 
     //----------------------------
     // Load and Process
     //----------------------------
-    let (mut matrix, diags) =
-        pgr::libs::pairmat::NamedMatrix::from_relaxed_phylip_with_diags(infile);
+    let mut matrix = if format == "pair" {
+        pgr::libs::pairmat::NamedMatrix::from_pair_scores(infile, 0.0, 1.0)
+    } else {
+        pgr::libs::pairmat::NamedMatrix::from_relaxed_phylip(infile)
+    };
+
+    // Get diagonals if needed
+    // We always try to get diagonals because transform operations might apply to diagonal elements too
+    // (e.g. inv-linear: max - x, if x=1.0 then 0.0)
+    // NamedMatrix stores diagonals internally now.
+    let diags = matrix.get_diags().cloned().unwrap_or_default();
     let size = matrix.size();
     // We clone names here to avoid borrowing matrix while we mutate it later
     let names: Vec<String> = matrix.get_names().iter().map(|n| n.to_string()).collect();
 
     // Warn if normalize is requested but diagonals are missing (all zero)
     if normalize {
-        let max_diag = diags.iter().fold(0.0f32, |a, &b| a.max(b));
-        if max_diag == 0.0 {
-            eprintln!("Warning: --normalize requested but all diagonal values are 0.0. Result will be Inf/NaN.");
+        if diags.is_empty() {
+            eprintln!("Warning: --normalize requested but no diagonal values found. Result will be Inf/NaN.");
+        } else {
+            let max_diag = diags.iter().fold(0.0f32, |a, &b| a.max(b));
+            if max_diag == 0.0 {
+                eprintln!("Warning: --normalize requested but all diagonal values are 0.0. Result will be Inf/NaN.");
+            }
         }
     }
 
@@ -185,20 +209,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     for i in 0..size {
         writer.write_fmt(format_args!("{}", names[i]))?;
         for j in 0..size {
-            // For diagonal:
-            // If we transformed it, what should it be?
-            // Usually distance matrix diagonal is 0.0.
-            // If we converted Similarity -> Distance, diagonal should become 0.
-            // But if we did `square`, diagonal (0) stays 0.
-            // If we did `log` (Distance -> ?), diagonal (0) -> Inf.
-            //
-            // We should probably recalculate diagonal too using the same logic?
-            // But NamedMatrix doesn't store diagonal.
-            // And `matrix.get(i, i)` returns 0.0.
-
             let val = if i == j {
                 // Handle diagonal specially
-                let mut d = diags[i];
+                // We need to calculate the transformed diagonal value here because
+                // the main transformation loop only updated off-diagonal elements.
+                let mut d = if !diags.is_empty() { diags[i] } else { 0.0 };
                 if normalize {
                     // x_norm(i,i) = x(i,i) / sqrt(x(i,i)*x(i,i)) = 1.0
                     if d > 1e-9 {

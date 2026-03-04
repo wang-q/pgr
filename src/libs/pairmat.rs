@@ -257,6 +257,7 @@ impl CondensedMatrix {
 pub struct NamedMatrix {
     names: indexmap::IndexMap<String, usize>,
     matrix: CondensedMatrix,
+    diags: Option<Vec<f32>>,
 }
 
 impl NamedMatrix {
@@ -269,7 +270,11 @@ impl NamedMatrix {
             .map(|(i, name)| (name, i))
             .collect();
 
-        NamedMatrix { names, matrix }
+        NamedMatrix {
+            names,
+            matrix,
+            diags: None,
+        }
     }
 
     /// Create from existing names and values (condensed upper triangle).
@@ -283,7 +288,11 @@ impl NamedMatrix {
             .map(|(i, name)| (name, i))
             .collect();
 
-        NamedMatrix { names, matrix }
+        NamedMatrix {
+            names,
+            matrix,
+            diags: None,
+        }
     }
 
     /// Create with numeric names ("0", "1", ...).
@@ -308,11 +317,22 @@ impl NamedMatrix {
     }
 
     pub fn get(&self, row: usize, col: usize) -> f32 {
+        if row == col {
+            if let Some(ref diags) = self.diags {
+                return diags[row];
+            }
+        }
         self.matrix.get(row, col)
     }
 
     pub fn set(&mut self, row: usize, col: usize, value: f32) {
-        self.matrix.set(row, col, value)
+        if row == col {
+            if let Some(ref mut diags) = self.diags {
+                diags[row] = value;
+            }
+        } else {
+            self.matrix.set(row, col, value)
+        }
     }
 
     pub fn index(&self, row: usize, col: usize) -> usize {
@@ -322,6 +342,16 @@ impl NamedMatrix {
 
     pub fn get_names(&self) -> Vec<&String> {
         self.names.keys().collect()
+    }
+
+    pub fn set_diags(&mut self, diags: Vec<f32>) {
+        if diags.len() == self.size() {
+            self.diags = Some(diags);
+        }
+    }
+
+    pub fn get_diags(&self) -> Option<&Vec<f32>> {
+        self.diags.as_ref()
     }
 
     /// Get the underlying condensed data vector.
@@ -374,11 +404,15 @@ impl NamedMatrix {
 
         // Create NamedMatrix from ScoringMatrix
         let mut matrix = NamedMatrix::new(index_name.into_iter().collect());
+        let mut diags = vec![same; size];
+
         for i in 0..size {
+            diags[i] = scoring_matrix.get(i, i);
             for j in (i + 1)..size {
                 matrix.set(i, j, scoring_matrix.get(i, j));
             }
         }
+        matrix.set_diags(diags);
         matrix
     }
 
@@ -389,11 +423,6 @@ impl NamedMatrix {
     /// let matrix = NamedMatrix::from_relaxed_phylip("input.phy");
     /// ```
     pub fn from_relaxed_phylip(infile: &str) -> Self {
-        Self::from_relaxed_phylip_with_diags(infile).0
-    }
-
-    /// Creates a new matrix and returns diagonals from a relaxed PHYLIP format file
-    pub fn from_relaxed_phylip_with_diags(infile: &str) -> (Self, Vec<f32>) {
         let mut names = Vec::new();
         let mut raw_values = Vec::new();
 
@@ -433,8 +462,8 @@ impl NamedMatrix {
                 }
             }
         }
-
-        (matrix, diags)
+        matrix.set_diags(diags);
+        matrix
     }
 
     fn process_phylip_line(line: &str, names: &mut Vec<String>, values: &mut Vec<f32>) {

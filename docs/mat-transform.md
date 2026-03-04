@@ -1,52 +1,8 @@
-# pgr mat transform: 相似度到距离的转换方案
+# pgr mat transform
 
 `pgr mat transform` 命令用于对矩阵中的数值进行数学变换。
 
 这是将**相似度矩阵 (Similarity Matrix)** 转换为 **距离矩阵 (Distance Matrix)** 的核心工具，也支持归一化和其他数值调整。
-
-## 背景 (Context)
-
-聚类算法（如 UPGMA, NJ, Ward）和多维尺度分析（MDS）通常要求输入 **距离矩阵 (Distance Matrix)** 或 **相异度矩阵 (Dissimilarity Matrix)**，满足：
-- $D(x, x) = 0$
-- $D(x, y) \ge 0$
-- $D(x, y)$ 越小表示越相似
-
-然而，生物信息学上游工具（如 BLAST, MMseqs2, Diamond）或统计分析通常输出 **相似度 (Similarity)**，满足：
-- $S(x, x) = Max$ (如 1.0 或 100)
-- $S(x, y)$ 越大表示越相似
-
-目前用户需要使用 `awk` 或外部脚本进行转换（例如 `100 - identity`），这不方便且容易出错（如未处理缺失值或自比对）。
-
-## 常见转换模型 (Transformation Models)
-
-我们支持以下几种常见的转换模式：
-
-### 1. 线性反转 (Linear Inversion)
-适用于有固定上限的相似度（如 Identity, Percent Similarity）。
-$$D = Max - S$$
-- **场景**: BLAST Identity (0-100) $\rightarrow$ $D = 100 - S$
-- **场景**: Fraction (0-1) $\rightarrow$ $D = 1 - S$
-
-### 2. 归一化线性反转 (Normalized Linear Inversion)
-如果 $S$ 没有固定上限（如 Alignment Score），需先归一化。
-$$D = 1 - \frac{S(x, y)}{\sqrt{S(x, x) \cdot S(y, y)}}$$
-或者简单的:
-$$D = 1 - \frac{S(x, y)}{Max(S)}$$
-
-### 3. 对数转换 (Logarithmic)
-适用于概率或乘性模型（类似于 Jukes-Cantor 校正）。
-$$D = -\ln(S)$$
-或者归一化后：
-$$D = -\ln(\frac{S(x, y)}{\sqrt{S(x, x) \cdot S(y, y)}})$$
-- **场景**: 序列一致性概率 $\rightarrow$ 进化距离
-
-### 4. 倒数转换 (Reciprocal)
-$$D = \frac{1}{S} - \frac{1}{Max}$$
-- **场景**: 很少见，用于某些物理量的转换。
-
-### 5. 特殊转换
-- **Cosine Similarity**: $D = 1 - \cos(\theta)$
-- **Correlation**: $D = \sqrt{2(1 - r)}$ 或 $D = 1 - r$
 
 ## 用法 (Usage)
 
@@ -56,10 +12,12 @@ pgr mat transform [OPTIONS] <infile>
 
 ### 参数 (Arguments)
 
-- `<infile>`: 输入 PHYLIP 矩阵文件。
+- `<infile>`: 输入 PHYLIP 矩阵或 Pairwise TSV 文件。
 
 ### 选项 (Options)
 
+- `--format <FORMAT>`: 输入格式 (默认: `phylip`, 可选: `pair`)。
+  - 显式指定 `--format pair` 可用于处理管道输入 (STDIN) 的 TSV 数据。
 - `--op <METHOD>`: 变换操作 (默认: `linear`)。
   - `linear`: $val = val \times scale + offset$
   - `inv-linear`: $val = max - val$
@@ -72,6 +30,9 @@ pgr mat transform [OPTIONS] <infile>
 - `--offset <FLOAT>`: 用于 `linear` 的偏移量 (默认: 0.0)。
 - `--normalize`: 是否在变换前基于对角线元素进行归一化 (需矩阵包含对角线数据)。
   - 归一化公式: $x_{norm}(i, j) = \frac{x(i, j)}{\sqrt{x(i, i) \times x(j, j)}}$
+  - **为何需要归一化？**
+    - 原始得分（Raw Score）通常受序列长度影响，不可直接比较（如长序列得分 1000 可能不如短序列得分 100 显著）。
+    - 归一化利用对角线（自比对得分）将其转换为相对相似度（0-1 范围），从而使后续的距离转换（如 $1-S$）具有数学意义。
 - `-o, --outfile <outfile>`: 输出文件名 (默认: stdout)。
 
 ## 常见场景 (Examples)
@@ -128,6 +89,50 @@ pgr mat transform input.phy --op log -o dist.phy
 # 2. Transform: D = 1.0 - S_norm
 pgr mat transform raw_scores.phy --normalize --op inv-linear --max 1.0 -o dist.phy
 ```
+
+## 背景与原理 (Background)
+
+聚类算法（如 UPGMA, NJ, Ward）和多维尺度分析（MDS）通常要求输入 **距离矩阵 (Distance Matrix)** 或 **相异度矩阵 (Dissimilarity Matrix)**，满足：
+- $D(x, x) = 0$
+- $D(x, y) \ge 0$
+- $D(x, y)$ 越小表示越相似
+
+然而，生物信息学上游工具（如 BLAST, MMseqs2, Diamond）或统计分析通常输出 **相似度 (Similarity)**，满足：
+- $S(x, x) = Max$ (如 1.0 或 100)
+- $S(x, y)$ 越大表示越相似
+
+目前用户需要使用 `awk` 或外部脚本进行转换（例如 `100 - identity`），这不方便且容易出错（如未处理缺失值或自比对）。
+
+### 转换模型 (Transformation Models)
+
+`pgr mat transform` 支持以下几种常见的转换模式，用于将相似度转换为距离或进行其他数学处理：
+
+#### 1. 线性反转 (Linear Inversion)
+适用于有固定上限的相似度（如 Identity, Percent Similarity）。
+$$D = Max - S$$
+- **场景**: BLAST Identity (0-100) $\rightarrow$ $D = 100 - S$
+- **场景**: Fraction (0-1) $\rightarrow$ $D = 1 - S$
+
+#### 2. 归一化线性反转 (Normalized Linear Inversion)
+如果 $S$ 没有固定上限（如 Alignment Score），需先归一化。
+$$D = 1 - \frac{S(x, y)}{\sqrt{S(x, x) \cdot S(y, y)}}$$
+或者简单的:
+$$D = 1 - \frac{S(x, y)}{Max(S)}$$
+
+#### 3. 对数转换 (Logarithmic)
+适用于概率或乘性模型（类似于 Jukes-Cantor 校正）。
+$$D = -\ln(S)$$
+或者归一化后：
+$$D = -\ln(\frac{S(x, y)}{\sqrt{S(x, x) \cdot S(y, y)}})$$
+- **场景**: 序列一致性概率 $\rightarrow$ 进化距离
+
+#### 4. 倒数转换 (Reciprocal)
+$$D = \frac{1}{S} - \frac{1}{Max}$$
+- **场景**: 很少见，用于某些物理量的转换。
+
+#### 5. 特殊转换
+- **Cosine Similarity**: $D = 1 - \cos(\theta)$
+- **Correlation**: $D = \sqrt{2(1 - r)}$ 或 $D = 1 - r$
 
 ## 注意事项
 

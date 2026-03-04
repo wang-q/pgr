@@ -230,3 +230,55 @@ fn command_mat_transform_normalize_inv() {
     assert!(stdout.contains("0.750000")); // 1 - 0.25
     assert!(stdout.contains("0.000000")); // Diagonals: 1 - 1.0
 }
+
+#[test]
+fn command_mat_transform_pairwise_stdin() {
+    // Input: Pairwise TSV via STDIN
+    // A B 0.1
+    // A C 0.5
+    // B C 0.2
+
+    let input = "A\tB\t0.1\nA\tC\t0.5\nB\tC\t0.2\n";
+
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "mat",
+            "transform",
+            "stdin",
+            "--format",
+            "pair",
+            "--op",
+            "linear",
+            "--scale",
+            "2.0",
+        ])
+        .stdin(input)
+        .run();
+
+    // A-B=0.1 -> 0.2
+    // A-C=0.5 -> 1.0
+    // B-C=0.2 -> 0.4
+    assert!(stdout.contains("0.200000"));
+    assert!(stdout.contains("1.000000"));
+    assert!(stdout.contains("0.400000"));
+}
+
+#[test]
+fn command_mat_transform_tsv_explicit() {
+    // Should NOT auto-detect .tsv extension, must specify --format pair
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "mat",
+            "transform",
+            "tests/mat/IBPA.fa.tsv", // Using existing TSV file
+            "--format",
+            "pair",
+        ])
+        .run();
+
+    // IBPA.fa.tsv contains: IBPA_ECOLI IBPA_ECOLI 0.0
+    // IBPA_ECOLI IBPA_ECOLI_GA 0.0669
+    // Default op is linear (x * 1 + 0), so values should be unchanged
+    assert!(stdout.contains("0.0669"));
+    assert!(stdout.lines().count() > 1); // Should output full matrix
+}
