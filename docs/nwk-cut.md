@@ -21,6 +21,30 @@
 - **对齐 TreeCluster**：在系统发生树上按生物学常用约束得到分组。
 - **与 `pgr clust` 区分**：`pgr clust` 主要是从相似度/距离矩阵或图结构“构建聚类”；而 `pgr nwk cut` 是从“已有树”导出分组。
 
+## 功能对照表
+
+为了方便从其他工具迁移，以下是 `pgr` 与主流工具的功能对照：
+
+### vs SciPy (`cluster.hierarchy`)
+
+| SciPy Criterion (`fcluster`) | `pgr nwk cut` 参数 | 说明 | 状态 |
+| :--- | :--- | :--- | :--- |
+| `maxclust` | `--k <N>` | 指定生成的簇数量 | ✅ 已实现 |
+| `distance` | `--height <N>` | 指定切割的高度/距离阈值 | ✅ 已实现 |
+| `inconsistent` | `--inconsistent <T>` | 基于不一致系数切割（需配合深度参数） | ✅ 已实现 |
+| `monocrit` | - | 基于自定义单调统计量切割 | ❌ 未计划 |
+
+> 注：SciPy 的 `cut_tree` 函数主要对应 `maxclust` (n_clusters) 和 `distance` (height)。
+
+### vs TreeCluster
+
+| TreeCluster Method | `pgr nwk cut` 参数 | 说明 | 状态 |
+| :--- | :--- | :--- | :--- |
+| `max_clade` | `--max-clade <N>` | 簇内最大两两距离（直径） | ✅ 已实现 |
+| `root_dist` | `--root-dist <N>` | 根到叶子的最大距离 | ✅ 已实现 |
+| `single_linkage` | `--height <N>` | 等同于按高度切割 | ✅ 已实现 |
+| `avg_clade` | - | 簇内平均两两距离 | ❌ 未计划 |
+
 ## 输入与输出
 
 ### 输入
@@ -33,13 +57,21 @@
 
 输出建议采用与 `pgr clust dbscan` 相同的格式（便于与既有工具互操作）：
 
-    * cluster: Each line contains points of one cluster.
-    * pair: Each line contains a (representative point, cluster member) pair.
+```text
+* cluster: Each line contains points of one cluster. The first point is the representative.
+* pair: Each line contains a (representative point, cluster member) pair.
+```
 
 - `pair` 格式：每行包含 (Representative, Member)。
-  - Representative：簇的代表点（对于树，通常是距离根最近的叶子，或字典序最小的叶子）。
+  - Representative：簇的代表点。
   - Member：簇成员。
   - 单例簇（singleton）：自己是自己的代表点。
+
+**代表点选择 (`--rep`)**：
+适用于 `cluster` 和 `pair` 两种格式：
+- `root` (默认)：距离根节点最近的成员（字母序作为 Tie-break）。
+- `medoid`：Medoid，即到簇内其他成员距离之和最小的成员。
+- `first`：字母序第一个成员。
 
 ## 核心概念：切树并导出 partition
 
@@ -127,13 +159,27 @@
 - **算法**：采用高效的自底向上（Bottom-Up）直径计算与自顶向下（Top-Down）贪心选择，避免了 $O(N^2)$ 的全距离矩阵计算。
 - **适用场景**：病毒分型、OTU 划分等需要严格控制簇内差异度的场景。
 
-### 5. 更多 TreeCluster 变体 [规划中]
+### 5. SciPy 风格：按不一致系数切 (`--inconsistent <T>`) [已实现]
+
+这是 SciPy `fcluster(..., criterion='inconsistent')` 的默认方法。
+
+- **逻辑**：不一致系数（Inconsistent Coefficient）用于检测某个合并事件（节点）是否比其子树内的合并事件显著更“突兀”。
+- **计算公式**：
+  对于树上每个非叶子节点 $i$，考虑它以及它下方 $d$ 层（`--deep`，默认 2）内的所有子节点的合并高度集合 $H$。
+  $$ I_i = \frac{height(i) - \text{mean}(H)}{\text{std}(H)} $$
+  如果 $I_i > T$，则认为该节点是聚类边界，予以切断。
+- **参数**：
+  - `--inconsistent <T>`: 阈值，通常在 0.8 ~ 3.0 之间。
+  - `--deep <D>`: 计算系数时的回溯深度，SciPy 默认为 2。
+- **适用场景**：当树的整体演化速率不均匀，或者你想寻找“自然”聚类边界而不是强制切断时。
+
+### 6. 更多 TreeCluster 变体 [规划中]
 
 - **`avg_clade`**：簇内平均成对距离不超过阈值。
 - **`med_clade`**：簇内中位数成对距离不超过阈值。
 - **`single_linkage`**：树上的单链接聚类。
 
-### 6. 支持度过滤 (`--support <S>`) [规划中]
+### 7. 支持度过滤 (`--support <S>`) [规划中]
 
 - **逻辑**：当某条边（或节点）支持度低于阈值时，视为“不可跨越”，相当于强制切断。
 - **用途**：防止聚类跨越不可靠的进化分支。
@@ -144,8 +190,7 @@
 
 ### 1. 生成 (Generation)
 
-使用 `pgr nwk cut` 专注于从树生成分组（Partition）。
-
+使用 `pgr nwk cut`：
 - 它只负责“切”，不负责“评”。
 - 支持多种策略（k, height, max_clade 等）和参数扫描。
 - 输出标准 TSV 格式。
@@ -207,3 +252,25 @@ pgr nwk cut tree.nwk --height 0.05 > clusters.tsv
 - **不同点**：
   - TreeCluster 是 Python 工具；`pgr` 是 Rust 实现，速度更快，且无外部依赖。
   - `pgr nwk cut` 融入了 `pgr` 工具链，可直接与 `prune`, `reroot` 等命令配合。
+
+## 开发计划 (Roadmap)
+
+### 第一阶段：核心功能完善 [✅ 已完成]
+- [x] 实现基础切割：`--k`, `--height`, `--root-dist`.
+- [x] 实现 TreeCluster 核心：`--max-clade` (diameter).
+- [x] 输出格式对齐：支持 `cluster` (一行一簇) 和 `pair` (代表点-成员) 格式。
+- [x] 代表点选择：支持 `root` (距离根最近), `medoid` (中心点), `first` (字母序).
+
+### 第二阶段：高级准则与 SciPy 对齐 [✅ 部分完成]
+- [x] **Inconsistent Coefficient**:
+    - 实现 `calculate_inconsistency(node, depth)` 算法。
+    - 添加 `--inconsistent <T>` 和 `--deep <D>` 参数。
+    - 验证与 SciPy `fcluster(..., criterion='inconsistent')` 的结果一致性（因 Tie-breaking 略有差异，已添加回归测试）。
+- [ ] **扫描模式 (Scan Mode)**:
+    - 实现 `--scan <start,end,step>` 参数。
+    - 输出包含 (Threshold, ClusterCount, SingletonCount) 的摘要表。
+
+### 第三阶段：评估与整合 [📅 待定]
+- [ ] 支持度过滤：`--support <S>`。
+- [ ] 更多 TreeCluster 变体：`avg_clade`, `med_clade`.
+- [ ] 整合到 `pgr clust` 统一评估流程。

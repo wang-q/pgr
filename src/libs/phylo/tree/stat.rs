@@ -1,6 +1,6 @@
 use super::Tree;
 use crate::libs::phylo::node::NodeId;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 
 /// Get IDs of all leaves in subtree rooted at `id`.
 pub fn get_leaves(tree: &Tree, id: NodeId) -> Vec<NodeId> {
@@ -176,42 +176,38 @@ pub fn colless(tree: &Tree) -> Option<usize> {
     if !is_binary(tree) {
         return None;
     }
-
     let root = tree.get_root()?;
-    let mut leaf_counts: HashMap<NodeId, usize> = HashMap::new();
-    let mut colless_sum = 0;
 
-    // Post-order traversal ensures we process children before parents
-    let nodes = tree.postorder(&root).ok()?;
+    // Post-order to compute leaf counts
+    let post_order = crate::libs::phylo::tree::traversal::postorder(tree, root);
+    let mut leaf_counts = HashMap::new();
+    let mut index = 0;
 
-    for id in nodes {
-        let node = tree.get_node(id)?;
+    for id in post_order {
+        if let Some(node) = tree.get_node(id) {
+            if node.children.is_empty() {
+                leaf_counts.insert(id, 1);
+            } else {
+                let mut count = 0;
+                let mut children_counts = Vec::new();
+                for &child in &node.children {
+                    let c = *leaf_counts.get(&child).unwrap_or(&0);
+                    count += c;
+                    children_counts.push(c);
+                }
+                leaf_counts.insert(id, count);
 
-        if node.children.is_empty() {
-            leaf_counts.insert(id, 1);
-        } else {
-            let mut sum_leaves = 0;
-            let mut child_leaves = Vec::new();
-
-            for &child in &node.children {
-                let c_leaves = *leaf_counts.get(&child).unwrap_or(&0);
-                sum_leaves += c_leaves;
-                child_leaves.push(c_leaves);
-            }
-            leaf_counts.insert(id, sum_leaves);
-
-            // Since we checked is_binary, internal nodes should have 2 children
-            if node.children.len() == 2 {
-                let diff = (child_leaves[0] as isize - child_leaves[1] as isize).abs();
-                colless_sum += diff as usize;
+                if children_counts.len() == 2 {
+                    let diff = (children_counts[0] as isize - children_counts[1] as isize).abs();
+                    index += diff as usize;
+                }
             }
         }
     }
-
-    Some(colless_sum)
+    Some(index)
 }
 
-/// Get names of all nodes in the tree (that have names).
+/// Get all node names.
 pub fn get_names(tree: &Tree) -> Vec<String> {
     tree.nodes
         .iter()
@@ -220,7 +216,7 @@ pub fn get_names(tree: &Tree) -> Vec<String> {
         .collect()
 }
 
-/// Get a map of node name to NodeId.
+/// Get mapping from name to NodeId.
 pub fn get_name_id(tree: &Tree) -> BTreeMap<String, NodeId> {
     let mut map = BTreeMap::new();
     for node in &tree.nodes {
@@ -233,19 +229,18 @@ pub fn get_name_id(tree: &Tree) -> BTreeMap<String, NodeId> {
     map
 }
 
-/// Get a map of NodeId to property value for a given key.
+/// Get values for a specific property key for all nodes.
 pub fn get_property_values(tree: &Tree, key: &str) -> BTreeMap<NodeId, String> {
-    let mut map = BTreeMap::new();
-    for node in &tree.nodes {
-        if !node.deleted {
-            if let Some(props) = &node.properties {
-                if let Some(val) = props.get(key) {
-                    map.insert(node.id, val.clone());
-                }
-            }
-        }
-    }
-    map
+    tree.nodes
+        .iter()
+        .filter(|n| !n.deleted)
+        .filter_map(|n| {
+            n.properties
+                .as_ref()
+                .and_then(|p| p.get(key))
+                .map(|val| (n.id, val.clone()))
+        })
+        .collect()
 }
 
 /// Find the node with the longest edge length.
@@ -264,4 +259,117 @@ pub fn get_node_with_longest_edge(tree: &Tree) -> Option<NodeId> {
         }
     }
     max_node
+}
+
+/// Compute node heights (distance from leaves).
+/// Assumes ultrametric-like tree (takes max distance to leaves).
+pub fn compute_node_heights(tree: &Tree) -> HashMap<NodeId, f64> {
+    let mut heights = HashMap::new();
+    if let Some(root) = tree.get_root() {
+        let ids = super::traversal::postorder(tree, root);
+
+        for id in ids {
+            if let Some(node) = tree.get_node(id) {
+                if node.children.is_empty() {
+                    heights.insert(id, 0.0);
+                } else {
+                    let mut max_h = 0.0;
+                    for &child in &node.children {
+                        let child_h = *heights.get(&child).unwrap_or(&0.0);
+                        let len = tree.get_node(child).and_then(|n| n.length).unwrap_or(0.0);
+                        let h = child_h + len;
+                        if h > max_h {
+                            max_h = h;
+                        }
+                    }
+                    heights.insert(id, max_h);
+                }
+            }
+        }
+    }
+    heights
+}
+
+/// Calculate inconsistent coefficients for all internal nodes.
+/// Returns a map from NodeId to coefficient.
+///
+/// Coefficient = (height(u) - mean(heights in subtree)) / std(heights in subtree)
+/// Subtree includes u and descendants up to depth `d`.
+pub fn calculate_inconsistency(
+    tree: &Tree,
+    node_heights: &HashMap<NodeId, f64>,
+    depth: usize,
+) -> HashMap<NodeId, f64> {
+    let mut coeffs = HashMap::new();
+
+    // We only care about internal nodes
+    for (&id, &h) in node_heights {
+        if let Some(node) = tree.get_node(id) {
+            if node.children.is_empty() {
+                continue;
+            }
+
+            // Collect heights in subtree up to depth
+            let mut collected = Vec::new();
+            let mut queue = VecDeque::new();
+            queue.push_back((id, 0)); // (node_id, current_depth)
+
+            while let Some((curr, d)) = queue.pop_front() {
+                // Only include internal nodes (links)
+                let is_internal = tree
+                    .get_node(curr)
+                    .map(|n| !n.children.is_empty())
+                    .unwrap_or(false);
+
+                if is_internal {
+                    if let Some(&curr_h) = node_heights.get(&curr) {
+                        collected.push(curr_h);
+                    }
+                }
+
+                if d < depth {
+                    if let Some(curr_node) = tree.get_node(curr) {
+                        for &child in &curr_node.children {
+                            let child_internal = tree
+                                .get_node(child)
+                                .map(|n| !n.children.is_empty())
+                                .unwrap_or(false);
+                            if child_internal {
+                                queue.push_back((child, d + 1));
+                            }
+                        }
+                    }
+                }
+            }
+
+            if collected.is_empty() {
+                coeffs.insert(id, 0.0);
+                continue;
+            }
+
+            let n = collected.len() as f64;
+            let mean = collected.iter().sum::<f64>() / n;
+
+            if n <= 1.0 {
+                coeffs.insert(id, 0.0);
+                continue;
+            }
+
+            // Use sample variance (ddof=1) to match likely SciPy behavior (which passes 0.8 threshold for n=2)
+            let variance = collected.iter().map(|&x| (x - mean).powi(2)).sum::<f64>() / (n - 1.0);
+
+            let std = if variance > 1e-9 {
+                variance.sqrt()
+            } else {
+                0.0
+            };
+
+            if std == 0.0 {
+                coeffs.insert(id, 0.0);
+            } else {
+                coeffs.insert(id, (h - mean) / std);
+            }
+        }
+    }
+    coeffs
 }

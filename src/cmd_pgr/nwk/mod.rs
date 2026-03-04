@@ -2,6 +2,7 @@ use clap::*;
 
 pub mod cmp;
 pub mod comment;
+pub mod cut;
 pub mod distance;
 pub mod indent;
 pub mod label;
@@ -27,9 +28,9 @@ pub fn make_subcommand() -> Command {
 This suite of tools provides a comprehensive set of operations for phylogenetic trees in Newick format.
 
 Subcommand groups:
-* info: stat / label / distance
-* ops:  order / prune / rename / replace / reroot / subtree / topo
-* viz:  comment / indent
+* info: stat / label / distance / support
+* ops:  cut / order / prune / rename / replace / reroot / subtree / topo
+* viz:  comment / indent / to-dot / to-forest / to-tex
 
 "###,
         )
@@ -37,6 +38,7 @@ Subcommand groups:
         .arg_required_else_help(true)
         .subcommand(cmp::make_subcommand())
         .subcommand(comment::make_subcommand())
+        .subcommand(cut::make_subcommand())
         .subcommand(distance::make_subcommand())
         .subcommand(indent::make_subcommand())
         .subcommand(label::make_subcommand())
@@ -58,6 +60,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     match args.subcommand() {
         Some(("cmp", sub_matches)) => cmp::execute(sub_matches),
         Some(("comment", sub_matches)) => comment::execute(sub_matches),
+        Some(("cut", sub_matches)) => cut::execute(sub_matches),
         Some(("distance", sub_matches)) => distance::execute(sub_matches),
         Some(("indent", sub_matches)) => indent::execute(sub_matches),
         Some(("label", sub_matches)) => label::execute(sub_matches),
