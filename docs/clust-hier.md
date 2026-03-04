@@ -50,10 +50,81 @@
   - 切分：[nwk-cut.md](file:///c:/Users/wangq/Scripts/pgr/docs/nwk-cut.md)
   - 评估：[nwk-metrics.md](file:///c:/Users/wangq/Scripts/pgr/docs/nwk-metrics.md)
 
-## 实现规划（草案）
-- CLI：`clust hier`，`--method {single,complete,average,ward.D2}`，输入矩阵（pair TSV/Phylip），输出 Newick。
-- 复杂度：朴素 O(n³)，先实现纯 CPU 版本；后续视规模优化（剪枝/并行/稀疏矩阵）。
-- 校验与提示：
+## 实现规划与优化分析 (Implementation & Optimization)
+
+参考 `scikit-learn` 实现，`pgr clust hier` 的实现应关注以下优化点，以支撑大规模生物数据分析。
+
+### 核心数据结构优化
+- **Heap (堆)**：
+  - 适用：Ward, Average, Complete, Weighted Linkage。
+  - 原理：与其在每次迭代中 $O(N^2)$ 扫描距离矩阵寻找最小值，不如维护一个优先队列（Min-Heap）。虽然更新距离仍需 $O(N)$，但查找最小值降为 $O(1)$，总体性能在稀疏或受限场景下更优。
+  - `scikit-learn` 参考：[`scikit-learn-main/sklearn/cluster/_hierarchical_fast.pyx`](file:///c:/Users/wangq/Scripts/pgr/scikit-learn-main/sklearn/cluster/_hierarchical_fast.pyx) 中的堆实现。
+- **MST (最小生成树)**：
+  - 适用：**Single Linkage** (最近邻)。
+  - 原理：Single Linkage 聚类等价于求最小生成树（MST）。使用 Prim 或 Kruskal 算法可在 $O(N^2)$ (稠密) 或 $O(E \log E)$ (稀疏) 内完成，显著快于通用 Linkage 的 $O(N^3)$。
+  - `scikit-learn` 参考：[`scikit-learn-main/sklearn/cluster/_agglomerative.py`](file:///c:/Users/wangq/Scripts/pgr/scikit-learn-main/sklearn/cluster/_agglomerative.py) 中的 `_single_linkage_tree` 函数。
+- **Union-Find (并查集)**：
+  - 配合 MST 使用，用于快速合并簇和标记标签。
+
+### 空间与时间复杂度权衡
+- **稠密矩阵 (Dense Matrix)**：
+  - 现状：`pgr` 目前主要处理 PHYLIP 距离矩阵，属于稠密矩阵。
+  - 策略：对于 $N < 10,000$，朴素的 $O(N^2)$ 存储和 $O(N^3)$ 计算是可接受的（且利于 SIMD 优化）。
+  - 优化：对于更大规模，必须避免全矩阵存储。
+- **稀疏/受限连接 (Connectivity Constraints)**：
+  - 场景：图像像素聚类或基于 KNN 图的聚类。
+  - `scikit-learn` 特性：支持 `connectivity` 参数（稀疏矩阵），限制只有相邻节点可以合并。这能将复杂度从 $O(N^3)$ 降至 $O(N \log N)$ 甚至 $O(N)$。
+  - `pgr` 规划：未来可支持从 `pair.tsv`（稀疏边列表）直接构建 Linkage，而不强制转为全距离矩阵，从而支持超大规模序列聚类。
+
+## 现有 Rust 生态参考
+- **kodama** ([`kodama-master/`](file:///c:/Users/wangq/Scripts/pgr/kodama-master/))：
+  - 实现了现代层次聚类算法（NN-chain），性能对标 `fastcluster`。
+  - 核心接口 `linkage` 接受 Condensed Matrix（上三角压缩），输出 Stepwise Dendrogram。
+  - 提供了完整的 `Method` 枚举（Single, Complete, Average, Ward 等）。
+  - **决策**：`pgr` 将参考 `kodama` 的 NN-chain 算法实现自己的逻辑，保持对核心数据结构的完全控制（如适配稀疏输入）。
+  - **价值**：利用 `kodama` 的测试用例（[`kodama-master/tests/`](file:///c:/Users/wangq/Scripts/pgr/kodama-master/tests/)）和基准测试（[`kodama-master/benches/`](file:///c:/Users/wangq/Scripts/pgr/kodama-master/benches/)）来验证 `pgr` 实现的正确性与性能。
+- **linfa-hierarchical** ([`linfa-master/algorithms/linfa-hierarchical/`](file:///c:/Users/wangq/Scripts/pgr/linfa-master/algorithms/linfa-hierarchical/))：
+  - 提供了符合 `linfa` 生态的 `Transformer` 接口。
+  - 内部直接调用 `kodama`，并增加了对 Similarity Kernel 的支持（自动转为 Distance）。
+  - **借鉴**：参考其清晰的参数校验（`ParamGuard`）和从 Stepwise Dendrogram 到 Flat Clusters 的后处理逻辑（[`linfa-hierarchical/src/lib.rs`](file:///c:/Users/wangq/Scripts/pgr/linfa-master/algorithms/linfa-hierarchical/src/lib.rs) 中的 `clusters` HashMap 维护）。
+
+### 阶段性实现路线
+
+#### Phase 1: MVP (Primitive Implementation)
+- **目标**：快速打通从 PHYLIP/Pair 到 Newick 的流程，验证接口与正确性。
+- **算法**：朴素的 Agglomerative 聚类 ($O(N^3)$)。
+  1.  **输入**：构建 `CondensedMatrix`。
+  2.  **初始化**：所有样本视为独立簇，活跃簇集合 $C = \{0, 1, ..., N-1\}$。
+  3.  **迭代** (共 $N-1$ 次)：
+      - 扫描距离矩阵，找到最小距离对 $(u, v)$。
+      - 合并 $u, v$ 为新簇 $w$。
+      - 更新距离：使用 Lance-Williams 公式计算 $w$ 与其他活跃簇 $k$ 的距离 $d(w, k)$，更新到矩阵中。
+      - 标记 $u, v$ 为非活跃，加入 $w$。
+      - 记录合并步骤（Stepwise Dendrogram）。
+  4.  **输出**：将记录的合并步骤转换为 Newick 格式。
+- **关键点**：优先支持 `ward.D2` 和 `average`。虽然慢，但逻辑简单，是 Phase 2 的测试基准。
+
+#### Phase 2: 性能优化 (NN-chain)
+- **目标**：将时间复杂度降至 $O(N^2)$，支撑 $N \approx 5000$ 到 $10000$ 的数据。
+- **算法**：NN-chain (Nearest-neighbor chain) 算法。
+  - **适用性**：Ward, Average, Complete, Weighted (要求空间具有可还原性/Reducibility，Single Linkage 不适用此法但可用 MST)。
+  - **核心逻辑**：
+    1.  维护一条“最近邻链”：$x_1 \to x_2 \to ... \to x_k$，其中 $x_{i+1} = \text{NN}(x_i)$。
+    2.  当链出现“互为最近邻” ($x_{k-1} = \text{NN}(x_k)$ 且 $x_k = \text{NN}(x_{k-1})$) 时，合并 $(x_{k-1}, x_k)$。
+    3.  合并后，从链中移除这两个点，继续寻找新的最近邻。
+  - **优势**：避免了全局搜索最小值，利用局部性原理加速。
+- **参考**：直接参考 `kodama` 的实现逻辑，特别是其 `chain.rs` 和 `linkage.rs` 中的状态管理。
+
+#### Phase 3: 大规模扩展 (Sparse/Linear)
+- **目标**：支持超大规模数据 ($N > 10000$)。
+- **策略**：
+  - **稀疏输入**：不再构建全/压缩矩阵，直接基于邻接表 (`HashMap<usize, Vec<(usize, f32)>>`) 进行计算。
+  - **算法**：
+    - Single Linkage: 使用 MST (Prim/Kruskal) + Union-Find。
+    - 其他 Linkage: 引入 Connectivity Constraints，仅计算稀疏图上的连通分量。
+  - **内存优化**：实现 $O(N)$ 内存的 SLINK/CLINK 算法。
+
+## 校验与提示：
   - 若方法为 `average` 且用户预期“演化意义”→提示使用 `upgma` 更合适。
   - 若方法为 `ward.D2` 且输入非欧氏距离→提示统计解释的偏差风险。
 
@@ -73,7 +144,7 @@
 - 矩阵文件：PHYLIP 距离矩阵（标准或宽松格式）
 - 格式转换：若手头是 pair TSV（三列 `name1  name2  distance`），请先使用 `pgr mat to-phylip` 转换为 PHYLIP；统一入口减少歧义，便于与 `clust upgma/nj` 一致
 - 名称来源：自动从输入解析；无需额外标签文件
-- 复杂度：朴素实现 O(n³)；后续视规模优化
+- 复杂度：Phase 1 朴素实现 O(n³)；Phase 2 优化至 O(n²)
 
 ### 主要参数
 - `--method {single|complete|average|weighted|centroid|median|ward|ward.D2}`：链接/准则选择（默认 `ward.D2`）。命名与 SciPy linkage 对齐：
@@ -92,7 +163,7 @@
 
 ### 输出
 - 默认输出：Newick dendrogram，分支长度表示合并高度
-- 数值格式：统一六位小数、移除尾随零；与 `nwk distance` 的约定一致（见 [distance.rs](file:///c:/Users/wangq/Scripts/pgr/src/cmd_pgr/nwk/distance.rs)）
+- 数值格式：统一六位小数、移除尾随零；与 `nwk distance` 的约定一致（见 [`src/cmd_pgr/nwk/distance.rs`](file:///c:/Users/wangq/Scripts/pgr/src/cmd_pgr/nwk/distance.rs)）
 
 ### 示例
 ```bash
