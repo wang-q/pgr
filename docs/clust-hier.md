@@ -6,7 +6,7 @@
 - **归属**：`clust` 模块，与 `k-medoids`、`mcl` 等并列。
 - **目标**：统计意义的 dendrogram（合并高度表达链接准则的代价），不强制“演化/分子钟”语义。
 - **与 pgr 现有能力协同**：
-  - 构树：`mat upgma`（有根、超度量）与 `mat nj`（加性、无根）已存在
+  - 构树：`clust upgma`（有根、超度量）与 `clust nj`（加性、无根）已存在
   - 切分：`docs/nwk-cut.md` 的切树分组
   - 评估：`docs/nwk-metrics.md` 的树上指标（silhouette/直径/最近簇间距）
 
@@ -19,7 +19,7 @@
 - 与 NJ 的关系：
   - NJ（Neighbor-Joining）通过 Q 矩阵最小化总树长，生成“加性最短树”，不属于链接更新范式，输出通常为无根树。
   - 在一般加性距离下，NJ比UPGMA更鲁棒；若距离是超度量，UPGMA/hclust-average与NJ在拓扑上通常一致（无根视角）。
-  - 参考实现：CLI [nj](file:///c:/Users/wangq/Scripts/pgr/src/cmd_pgr/mat/nj.rs)，库 [clust::nj](file:///c:/Users/wangq/Scripts/pgr/src/libs/clust/nj.rs)
+  - 参考实现：CLI [nj](file:///c:/Users/wangq/Scripts/pgr/src/cmd_pgr/clust/nj.rs)，库 [clust::nj](file:///c:/Users/wangq/Scripts/pgr/src/libs/clust/nj.rs)
 
 ## 方法与算法要点
 - `single/complete/average`：标准链接更新（Lance–Williams 框架），合并高度为链接准则对应的距离/代价。
@@ -39,8 +39,8 @@
 
 ## 推荐工作流
 - 生成树：
-  - 近分子钟/超度量场景：`mat upgma` 输出有根超度量树
-  - 一般加性距离场景：`mat nj`
+  - 近分子钟/超度量场景：`clust upgma` 输出有根超度量树
+  - 一般加性距离场景：`clust nj`
   - 通用层次聚类分析或需要 `ward.D2`：`clust hier --method ward.D2`
 - 切分与评估：
   - 切分：`pgr nwk cut --height H` 或按 TreeCluster 风格阈值/约束
@@ -60,7 +60,7 @@
 ## 保留 UPGMA 的原因
 - 语义清晰：有根、超度量、分支长度可解释为时间/演化距离。
 - 生物流程稳定：与系统发育工具链更自然协作（`upgma/nj → nwk cut → nwk metrics`）。
-- 用户认知与可用性：独立入口降低心智负担，避免 method 选择歧义。
+- 用户认知与可用性：独立入口降低心智负担，避免 `method` 选择歧义。
 
 ## CLI 设计（规划）
 
@@ -71,7 +71,7 @@
 
 ### 输入
 - 矩阵文件：PHYLIP 距离矩阵（标准或宽松格式）
-- 格式转换：若手头是 pair TSV（三列 `name1  name2  distance`），请先使用 `pgr mat to-phylip` 转换为 PHYLIP；统一入口减少歧义，便于与 `upgma/nj` 一致
+- 格式转换：若手头是 pair TSV（三列 `name1  name2  distance`），请先使用 `pgr mat to-phylip` 转换为 PHYLIP；统一入口减少歧义，便于与 `clust upgma/nj` 一致
 - 名称来源：自动从输入解析；无需额外标签文件
 - 复杂度：朴素实现 O(n³)；后续视规模优化
 
@@ -111,7 +111,7 @@ pgr clust hier matrix.phy --method average > tree.nwk
 - 距离前提：Ward.D2 理论依赖欧氏或近欧氏距离；在一般生物学距离上可用，但“最小总类内方差”的统计解释会减弱
 - 语义差异：
   - hier 的合并高度是链接/准则的代价；不保证 ultrametric（除非数据满足相应条件）
-  - 若需要“有根、超度量、演化意义”的分支长度，请使用 `mat upgma`；一般加性距离建议使用 `mat nj`
+  - 若需要“有根、超度量、演化意义”的分支长度，请使用 `clust upgma`；一般加性距离建议使用 `clust nj`
 - 稳定性：并列合并通过 `--tie` 选项保证确定性；名称字典序作为默认 Tie-break
 - 实现约定：`ward.D2` 内部自动按“平方距离”完成更新并返回“距离量纲”的分支长度；用户无需提供或区分 `D` 与 `D^2`
 - 方法特性：
