@@ -373,3 +373,57 @@ pub fn calculate_inconsistency(
     }
     coeffs
 }
+
+/// Compute average pairwise distance between leaves for each cluster (subtree).
+/// Returns a map from NodeId to average distance.
+pub fn compute_avg_clade_distances(tree: &Tree) -> HashMap<NodeId, f64> {
+    let mut avg_dists = HashMap::new();
+    // Helper stats: (num_leaves, sum_leaf_dist_to_node, sum_pair_dist)
+    let mut stats: HashMap<NodeId, (usize, f64, f64)> = HashMap::new();
+
+    if let Some(root) = tree.get_root() {
+        let post_order = super::traversal::postorder(tree, root);
+        for id in post_order {
+            if let Some(node) = tree.get_node(id) {
+                if node.children.is_empty() {
+                    stats.insert(id, (1, 0.0, 0.0));
+                    avg_dists.insert(id, 0.0);
+                } else {
+                    let mut num_leaves = 0;
+                    let mut sum_leaf_dist = 0.0;
+                    let mut sum_pair_dist = 0.0;
+
+                    let mut child_stats = Vec::new();
+
+                    for &child in &node.children {
+                        let (c_n, c_leaf_dist, c_pair_dist) =
+                            *stats.get(&child).unwrap_or(&(0, 0.0, 0.0));
+                        let len = tree.get_node(child).and_then(|n| n.length).unwrap_or(0.0);
+                        let c_leaf_dist_to_u = c_leaf_dist + (c_n as f64) * len;
+
+                        child_stats.push((c_n, c_leaf_dist_to_u));
+
+                        num_leaves += c_n;
+                        sum_leaf_dist += c_leaf_dist_to_u;
+                        sum_pair_dist += c_pair_dist;
+                    }
+
+                    // Add cross-cluster pairs
+                    for (c_n, c_leaf_dist_to_u) in child_stats {
+                        sum_pair_dist += c_leaf_dist_to_u * (num_leaves - c_n) as f64;
+                    }
+
+                    stats.insert(id, (num_leaves, sum_leaf_dist, sum_pair_dist));
+
+                    if num_leaves > 1 {
+                        let pairs = (num_leaves * (num_leaves - 1)) as f64 / 2.0;
+                        avg_dists.insert(id, sum_pair_dist / pairs);
+                    } else {
+                        avg_dists.insert(id, 0.0);
+                    }
+                }
+            }
+        }
+    }
+    avg_dists
+}

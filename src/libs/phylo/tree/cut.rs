@@ -19,6 +19,10 @@
 //! *   **MaxClade**: Ensure the maximum pairwise distance (diameter) within any cluster
 //!     does not exceed a threshold. This corresponds to the `MaxClade` criterion in TreeCluster.
 //!
+//! *   **Inconsistent**: Cut based on the inconsistency coefficient of nodes.
+//!     A node forms a cluster if it and all its descendants have an inconsistency coefficient
+//!     less than or equal to the threshold. Corresponds to SciPy's `inconsistent` criterion.
+//!
 
 use super::Tree;
 use crate::libs::phylo::node::NodeId;
@@ -47,6 +51,9 @@ pub enum Method {
     /// Ensures that for every cluster, the maximum distance between any two leaves
     /// in that cluster is at most `threshold`.
     MaxClade(f64),
+
+    /// TreeCluster: Average pairwise distance in clade <= threshold.
+    AvgClade(f64),
 
     /// SciPy: Inconsistent coefficient <= threshold.
     ///
@@ -86,6 +93,29 @@ impl Partition {
         }
         clusters
     }
+
+    /// Compute summary statistics for the partition.
+    /// Returns (num_clusters, num_singletons, num_non_singletons, max_cluster_size).
+    pub fn get_stats(&self) -> (usize, usize, usize, usize) {
+        let mut sizes = HashMap::new();
+        for &cluster_id in self.assignment.values() {
+            *sizes.entry(cluster_id).or_insert(0) += 1;
+        }
+        let mut singletons = 0;
+        let mut non_singletons = 0;
+        let mut max_size = 0;
+        for &size in sizes.values() {
+            if size == 1 {
+                singletons += 1;
+            } else {
+                non_singletons += 1;
+            }
+            if size > max_size {
+                max_size = size;
+            }
+        }
+        (self.num_clusters, singletons, non_singletons, max_size)
+    }
 }
 
 impl Default for Partition {
@@ -124,6 +154,7 @@ pub fn cut(tree: &Tree, method: Method) -> Result<Partition, String> {
         Method::Height(h) => cut_height(tree, h),
         Method::RootDist(d) => cut_root_dist(tree, d),
         Method::MaxClade(t) => cut_max_clade(tree, t),
+        Method::AvgClade(t) => cut_avg_clade(tree, t),
         Method::Inconsistent(t, d) => cut_inconsistent(tree, t, d),
     }
 }
@@ -367,6 +398,39 @@ fn cut_max_clade(tree: &Tree, threshold: f64) -> Result<Partition, String> {
     }
 
     assign_clusters(tree, cluster_roots)
+}
+
+/// Cut tree where average pairwise distance in cluster <= threshold.
+pub fn cut_avg_clade(tree: &Tree, threshold: f64) -> Result<Partition, String> {
+    let root = tree.get_root().ok_or("Tree has no root")?;
+
+    // 1. Compute avg distances
+    let avg_dists = crate::libs::phylo::tree::stat::compute_avg_clade_distances(tree);
+
+    // 2. Top-down greedy cut
+    let mut clusters = Vec::new();
+    let mut stack = vec![root];
+
+    while let Some(node_id) = stack.pop() {
+        let avg_dist = *avg_dists.get(&node_id).unwrap_or(&0.0);
+
+        if avg_dist <= threshold {
+            clusters.push(node_id);
+        } else {
+            // Split
+            if let Some(node) = tree.get_node(node_id) {
+                if node.children.is_empty() {
+                    clusters.push(node_id);
+                } else {
+                    for &child in &node.children {
+                        stack.push(child);
+                    }
+                }
+            }
+        }
+    }
+
+    assign_clusters(tree, clusters)
 }
 
 /// Cut tree based on inconsistent coefficient threshold.

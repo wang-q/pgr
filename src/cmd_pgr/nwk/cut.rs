@@ -14,6 +14,8 @@ Criteria:
 * `--height <H>`: Cut at specific height (max distance to leaves).
 * `--root-dist <D>`: Cut at specific distance from root.
 * `--max-clade <T>`: TreeCluster style (max pairwise distance in clade <= T).
+* `--avg-clade <T>`: TreeCluster style (avg pairwise distance in clade <= T).
+* `--inconsistent <T>`: SciPy style (inconsistent coefficient <= T).
 
 Output formats:
     * cluster: Each line contains points of one cluster. The first point is the representative.
@@ -79,6 +81,12 @@ Examples:
                 .help("Max pairwise distance in cluster threshold"),
         )
         .arg(
+            Arg::new("avg-clade")
+                .long("avg-clade")
+                .value_parser(value_parser!(f64))
+                .help("Average pairwise distance in cluster threshold"),
+        )
+        .arg(
             Arg::new("rep")
                 .long("rep")
                 .value_parser([
@@ -109,9 +117,21 @@ Examples:
                 .default_value("2")
                 .help("Depth for inconsistent coefficient calculation (default: 2)"),
         )
+        .arg(
+            Arg::new("scan")
+                .long("scan")
+                .help("Scan thresholds (format: start,end,step)"),
+        )
         .group(
             ArgGroup::new("method")
-                .args(["k", "height", "root-dist", "max-clade", "inconsistent"])
+                .args([
+                    "k",
+                    "height",
+                    "root-dist",
+                    "max-clade",
+                    "avg-clade",
+                    "inconsistent",
+                ])
                 .required(true),
         )
 }
@@ -143,8 +163,59 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
     let deep = *matches.get_one::<usize>("deep").unwrap();
 
     let trees = Tree::from_file(infile)?;
+    if trees.len() > 1 {
+        anyhow::bail!("Input file contains multiple trees. Only single tree input is supported.");
+    }
 
     let mut writer = pgr::writer(outfile);
+
+    if let Some(scan_str) = matches.get_one::<String>("scan") {
+        let parts: Vec<&str> = scan_str.split(',').collect();
+        if parts.len() != 3 {
+            anyhow::bail!("--scan format must be start,end,step");
+        }
+        let start: f64 = parts[0].parse()?;
+        let end: f64 = parts[1].parse()?;
+        let step: f64 = parts[2].parse()?;
+
+        if step <= 0.0 {
+            anyhow::bail!("Scan step must be positive");
+        }
+
+        writer.write_all(b"Threshold\tClusters\tSingletons\tNon-Singletons\tMaxSize\n")?;
+
+        let tree = &trees[0];
+        let mut val = start;
+
+        while val <= end + 1e-9 {
+            let method = if matches.contains_id("k") {
+                cut::Method::K(val as usize)
+            } else if matches.contains_id("height") {
+                cut::Method::Height(val)
+            } else if matches.contains_id("root-dist") {
+                cut::Method::RootDist(val)
+            } else if matches.contains_id("max-clade") {
+                cut::Method::MaxClade(val)
+            } else if matches.contains_id("avg-clade") {
+                cut::Method::AvgClade(val)
+            } else if matches.contains_id("inconsistent") {
+                cut::Method::Inconsistent(val, deep)
+            } else {
+                unreachable!("ArgGroup requires one method");
+            };
+
+            let partition = cut::cut(tree, method).map_err(|e| anyhow::anyhow!(e))?;
+            let (n_clusters, n_single, n_non_single, max_size) = partition.get_stats();
+
+            writer.write_fmt(format_args!(
+                "{}\t{}\t{}\t{}\t{}\n",
+                val, n_clusters, n_single, n_non_single, max_size
+            ))?;
+
+            val += step;
+        }
+        return Ok(());
+    }
 
     let method = if let Some(&k) = matches.get_one::<usize>("k") {
         cut::Method::K(k)
@@ -154,6 +225,8 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
         cut::Method::RootDist(d)
     } else if let Some(&t) = matches.get_one::<f64>("max-clade") {
         cut::Method::MaxClade(t)
+    } else if let Some(&t) = matches.get_one::<f64>("avg-clade") {
+        cut::Method::AvgClade(t)
     } else if let Some(&t) = matches.get_one::<f64>("inconsistent") {
         cut::Method::Inconsistent(t, deep)
     } else {
