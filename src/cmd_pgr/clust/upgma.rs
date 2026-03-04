@@ -1,5 +1,5 @@
 use clap::*;
-use pgr::libs::phylo::build;
+use pgr::libs::clust::upgma;
 use std::io::Write;
 
 // Create clap subcommand arguments
@@ -16,10 +16,10 @@ Notes:
 
 Examples:
 1. Build tree from matrix:
-   pgr mat upgma matrix.phy -o tree.nwk
+   pgr clust upgma matrix.phy -o tree.nwk
 
 2. Pipe matrix to tree:
-   cat matrix.phy | pgr mat upgma stdin > tree.nwk
+   cat matrix.phy | pgr clust upgma stdin > tree.nwk
 "###,
         )
         .arg(
@@ -46,7 +46,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let matrix = pgr::libs::pairmat::NamedMatrix::from_relaxed_phylip(infile);
 
     // Build tree
-    let tree = build::upgma(&matrix)?;
+    let tree = upgma::upgma(&matrix)?;
 
     // Output tree
     let mut writer = pgr::writer(outfile);

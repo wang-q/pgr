@@ -2,6 +2,7 @@ pub mod cc;
 pub mod dbscan;
 pub mod kmedoids;
 pub mod mcl;
+pub mod upgma;
 
 pub fn make_subcommand() -> clap::Command {
     clap::Command::new("clust")
@@ -9,7 +10,7 @@ pub fn make_subcommand() -> clap::Command {
         .after_help(
             r###"Subcommand groups:
 
-* clustering: cc, dbscan, k-medoids, mcl
+* clustering: cc, dbscan, k-medoids, mcl, upgma
 
 "###,
         )
@@ -19,6 +20,7 @@ pub fn make_subcommand() -> clap::Command {
         .subcommand(dbscan::make_subcommand())
         .subcommand(kmedoids::make_subcommand())
         .subcommand(mcl::make_subcommand())
+        .subcommand(upgma::make_subcommand())
 }
 
 pub fn execute(matches: &clap::ArgMatches) -> anyhow::Result<()> {
@@ -27,6 +29,7 @@ pub fn execute(matches: &clap::ArgMatches) -> anyhow::Result<()> {
         Some(("dbscan", sub_matches)) => dbscan::execute(sub_matches),
         Some(("k-medoids", sub_matches)) => kmedoids::execute(sub_matches),
         Some(("mcl", sub_matches)) => mcl::execute(sub_matches),
+        Some(("upgma", sub_matches)) => upgma::execute(sub_matches),
         _ => Ok(()),
     }
 }

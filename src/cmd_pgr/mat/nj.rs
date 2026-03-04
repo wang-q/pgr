@@ -1,5 +1,5 @@
 use clap::*;
-use pgr::libs::phylo::build;
+use pgr::libs::clust::nj;
 use std::io::Write;
 
 // Create clap subcommand arguments
@@ -47,7 +47,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let matrix = pgr::libs::pairmat::NamedMatrix::from_relaxed_phylip(infile);
 
     // Build tree
-    let tree = build::nj(&matrix)?;
+    let tree = nj::nj(&matrix)?;
 
     // Output tree
     let mut writer = pgr::writer(outfile);
