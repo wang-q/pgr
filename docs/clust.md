@@ -190,7 +190,13 @@ pgr clust gmm input.tsv --k 5 --cov full > clusters.tsv
     - **NJ**：经典的 Neighbor-Joining 实现，计算净发散度与 Q 矩阵，输出无根树。
   - **优势**：逻辑直观，原生支持生物学所需的枝长计算与树操作。
   - **局限**：未采用 Heap 优化，在大规模数据（>5000 序列）上速度慢于优化过的 Linkage 算法。
-- **未来方向**：实现通用的 `clust hier` 时，应参考 sklearn 的 Heap 优化思路，而非简单复用 UPGMA 的 $O(N^3)$ 逻辑。
+- **pgr (clust hier)**：
+  - **定位**：通用统计聚类底层引擎，类似 SciPy/scikit-learn。
+  - **输入**：`CondensedMatrix` (压缩上三角矩阵，节省 50% 内存)。
+  - **输出**：`Vec<Step>` (Linkage Matrix)，记录合并步骤，不直接生成 Tree 对象。
+  - **实现**：目前为朴素 $O(N^3)$ (MVP)，规划引入 NN-chain 优化至 $O(N^2)$。
+  - **与 UPGMA 的关系**：`hier` 是更底层的通用计算引擎；但 `upgma` 作为一个独立、直观且生物学语义明确的实现将被**长期保留**，作为算法学习和基准参考。
+- **未来方向**：实现通用的 `clust hier` 时，应参考 sklearn 的 Heap 优化思路。
 
 ## 推荐工作流
 
