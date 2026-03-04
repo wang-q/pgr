@@ -384,7 +384,7 @@ k81_68	700	241
 
 ## phylip 格式 (PHYLIP Format)
 
-PHYLIP 距离矩阵格式是系统发育分析中的通用格式。`pgr` 在 `src/cmd_pgr/mat` 中提供了一系列工具来处理这种格式。
+PHYLIP 距离矩阵格式是系统发育分析中的通用格式。`pgr` 在 `src/cmd_pgr/mat` 和 `src/libs/pairmat.rs` 中提供了一系列工具来处理这种格式。
 
 ### 结构 (Structure)
 
@@ -402,13 +402,42 @@ PHYLIP 距离矩阵格式是系统发育分析中的通用格式。`pgr` 在 `sr
     *   序列名称: 严格截断为 10 个字符，左对齐并用空格填充。
     *   数值格式: 空格分隔，通常保留 6 位小数。
 
-### `pgr` 实现 (`cmd_pgr/mat`)
+### `pgr` 实现 (`cmd_pgr/mat`, `libs/pairmat.rs`)
 
-`pgr` 通过 `intspan::NamedMatrix` 结构体处理矩阵数据，支持以下操作：
+`pgr` 通过 `libs::pairmat::NamedMatrix` 结构体处理矩阵数据，支持以下操作：
 
 *   **格式转换 (`pgr mat format`)**: 在 `full` (完整 TSV), `lower` (下三角 TSV) 和 `strict` (标准 PHYLIP) 格式之间转换。
 *   **子集提取 (`pgr mat subset`)**: 根据名称列表提取子矩阵。
 *   **比较 (`pgr mat compare`)**: 计算两个矩阵之间的相关性（Pearson, Spearman 等）。
+
+## Matrix Structures (内部矩阵结构)
+
+`pgr` 在 `src/libs/pairmat.rs` 中定义了两种核心的矩阵结构，用于处理聚类和距离分析。
+
+### ScoringMatrix
+
+*   **用途**：稀疏或按需构建的评分/距离矩阵。
+*   **底层存储**：`HashMap<(usize, usize), T>`。
+*   **特点**：
+    *   **稀疏存储**：仅存储显式设置的值。
+    *   **默认值**：支持为对角线 (`same`) 和非对角线 (`missing`) 设置默认值，未存储的键将返回默认值。
+    *   **对称性**：逻辑上是对称的，`set(i, j)` 会自动处理存储顺序（通常存为 `row <= col`），`get(i, j)` 与 `get(j, i)` 等价。
+
+### NamedMatrix
+
+*   **用途**：稠密且带有行列名称的距离矩阵（如 PHYLIP 格式的内存表示）。
+*   **底层存储**：`Vec<f32>` (Flattened Array) + `IndexMap<String, usize>` (Name Index)。
+*   **特点**：
+    *   **全矩阵存储 (Full Matrix)**：使用一维数组存储 $N \times N$ 个元素。索引映射为 `row * size + col`。
+    *   **对称性维护**：虽然存储了全矩阵，但在 `set` 时会显式更新 `(i, j)` 和 `(j, i)` 两个位置，保持数据对称。
+    *   **内存开销**：$O(N^2)$。对于 $N=10,000$，需要存储 1 亿个浮点数（约 400MB），适合中小规模分析。
+    *   **序列名称**：使用 `IndexMap` 维护名称到索引的映射，支持 $O(1)$ 的名称查找。
+
+### Condensed Matrix (规划中)
+
+*   **用途**：用于高效的层次聚类（如 `clust hier`），以支持更大规模数据。
+*   **特点**：仅存储上三角（不含对角线）元素，内存占用为 $N(N-1)/2$，即全矩阵的 $50\%$。
+*   **存储顺序**：行优先压缩，即 `(0,1), (0,2)...(0,n-1), (1,2)...`。
 
 ## Pairwise Distance Format
 
