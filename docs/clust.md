@@ -28,6 +28,9 @@
 
 当数据以连续坐标（如 k-mer profile, embedding）或稠密距离矩阵存在时，统计聚类提供基于分布的建模能力。
 
+- **Hierarchical Clustering** [规划中]：层次聚类，支持 Ward/Average/Complete 等方法，输出 dendrogram 树。
+  - 命令：`pgr clust hier`（别名 `hclust`）
+  - 详情：参见 [clust-hier.md](file:///c:/Users/wangq/Scripts/pgr/docs/clust-hier.md)
 - **K-Medoids** [已实现]：类似于 K-Means，但中心点必须是实际样本（Medoid），对噪声更鲁棒，支持任意距离矩阵。
   - 命令：`pgr clust k-medoids`
 - **DBSCAN** [已实现]：基于密度的聚类，能发现任意形状的簇并识别噪声点。
