@@ -50,14 +50,31 @@
   - 切分：[nwk-cut.md](file:///c:/Users/wangq/Scripts/pgr/docs/nwk-cut.md)
   - 评估：[nwk-metrics.md](file:///c:/Users/wangq/Scripts/pgr/docs/nwk-metrics.md)
 
+## SciPy 实现借鉴与对比 (Insights from SciPy)
+通过深入分析 `scipy.cluster.hierarchy` 源码（基于 Cython 的高性能实现），`pgr` 吸收了以下关键设计思想：
+
+1.  **Generic Clustering Algorithm (Heap 优化)**:
+    - **背景**: NN-Chain 算法仅适用于可归约方法（Ward, Average, Complete, Single, Weighted），无法处理 Centroid 和 Median。
+    - **SciPy 方案**: 在 `fast_linkage` (`_hierarchy.pyx`) 中实现了 Daniel Müllner (2011) 的算法。该算法结合 `neighbor` 数组和 Binary Heap，将所有方法的复杂度统一优化至 $O(N^2 \log N)$ 甚至 $O(N^2)$。
+    - **pgr 借鉴**: 目前 `pgr` 对 Centroid/Median 使用 $O(N^3)$ 朴素实现。未来计划移植该 Heap 算法，消除性能短板。
+
+2.  **Ward 方法的数值稳定性与效率**:
+    - **SciPy 实现**: `ward` 更新公式在内部计算时涉及平方和开方（`sqrt`），这在大量迭代中可能积累浮点误差，且计算开销较大。
+    - **pgr 优化**: `pgr` 采用全程平方距离运算（Internal Squared Euclidean），仅在最终输出时开方。这避免了中间步骤的精度损失和 `sqrt` 开销，使得 Ward 方法的性能与 Average 方法完全持平（而在许多其他库中 Ward 通常更慢）。
+
+3.  **生态一致性**:
+    - **Flat Clustering**: `pgr nwk cut` 的设计与 SciPy `fcluster` 的 `criterion='distance'|'maxclust'` 保持概念一致。
+    - **Cophenetic Correlation**: 确认将 `cophenet` 引入 `pgr nwk metrics`，作为衡量树对原始距离矩阵拟合优度的核心指标。
+
 ## 实现规划与优化分析 (Implementation & Optimization)
 
 ### 核心数据结构优化
-- **Heap (堆)**：
-  - 适用：Ward, Average, Complete, Weighted Linkage。
-  - 原理：与其在每次迭代中 $O(N^2)$ 扫描距离矩阵寻找最小值，不如维护一个优先队列（Min-Heap）。虽然更新距离仍需 $O(N)$，但查找最小值降为 $O(1)$，总体性能在稀疏或受限场景下更优。
-  - `scikit-learn` 参考：[`scikit-learn-main/sklearn/cluster/_hierarchical_fast.pyx`](file:///c:/Users/wangq/Scripts/pgr/scikit-learn-main/sklearn/cluster/_hierarchical_fast.pyx) 中的堆实现。
-- **MST (最小生成树)**：
+- **Heap (堆) - Generic Clustering Algorithm**:
+  - 适用：所有方法，特别是 **Centroid** 和 **Median**（不可归约，无法使用 NN-chain）。
+  - 原理：维护一个距离最近邻的优先队列。这是 Daniel Müllner (2011) 提出的 "Generic Clustering Algorithm"。
+  - SciPy 参考：`fast_linkage` in `_hierarchy.pyx`。
+  - `pgr` 规划：作为 Phase 4 的一部分，替换目前的 Primitive $O(N^3)$ 实现，统一所有方法的性能基线。
+- **MST (最小生成树)**:
   - 适用：**Single Linkage** (最近邻)。
   - 原理：Single Linkage 聚类等价于求最小生成树（MST）。使用 Prim 或 Kruskal 算法可在 $O(N^2)$ (稠密) 或 $O(E \log E)$ (稀疏) 内完成，显著快于通用 Linkage 的 $O(N^3)$。
   - `scikit-learn` 参考：[`scikit-learn-main/sklearn/cluster/_agglomerative.py`](file:///c:/Users/wangq/Scripts/pgr/scikit-learn-main/sklearn/cluster/_agglomerative.py) 中的 `_single_linkage_tree` 函数。
@@ -126,8 +143,12 @@
 参见 `docs/clust.md` 中的“大规模数据策略”章节。
 
 #### Phase 4: 性能与正确性优化 (Pending)
-通过分析 `kodama` 和 `scikit-learn` 实现，确定以下优化方向：
-1.  **Ward/Centroid 平方距离优化 (已完成)**:
+通过分析 `kodama`、`scikit-learn` 和 `scipy` 实现，确定以下优化方向：
+1.  **Generic Clustering Algorithm (Heap)**:
+    - 目标：优化 **Centroid** 和 **Median** 方法。
+    - 方案：参考 SciPy 的 `fast_linkage` 实现（基于 Müllner 2011），引入 Binary Heap 维护最近邻距离。这将把这两个方法的复杂度从 $O(N^3)$ 降至 $O(N^2 \log N)$。
+    - 优先级：中（除非用户有大量 Centroid/Median 聚类需求）。
+2.  **Ward/Centroid 平方距离优化 (已完成)**:
     - 改进：在算法开始时一次性将距离矩阵平方，使用简化版 Lance-Williams 更新，仅在输出时开方。
     - 效果：消除了每次迭代中的 `sqrt` 调用，使得 Ward Linkage 的性能与 Average Linkage 持平（基准测试证实）。
 2.  **In-place 接口 (已完成)**:
@@ -232,9 +253,12 @@ pgr clust hier matrix.phy --method average > tree.nwk
 - 方法映射：与 SciPy `linkage` 的 `method` 集合对齐，`ward` 等价 `ward.D2`（内部按平方距离更新）；`average` 等价 UPGMA，`weighted` 等价 WPGMA，`centroid/median` 等价 UPGMC/WPGMC。
 - 输入差异：SciPy 接受“condensed 距离向量”或“观测矩阵”，pgr 统一使用 PHYLIP 距离矩阵；如需从 pair TSV 转换，请使用 `pgr mat to-phylip`。
 - 输出差异：SciPy 返回 `(n-1)×4` 的 linkage 矩阵 Z；pgr 输出 Newick 树，直接用于 `nwk cut / to-dot / to-forest`。普通用户无需关心 Z；若需与 SciPy 互操作，请在 Python 端继续使用 Z 与 `fcluster/cophenet`。
-- 叶序优化：`--optimal-ordering` 对齐 SciPy 的 `optimal_ordering` 行为，仅影响叶子顺序，保持拓扑与分支长度不变。
+- 叶序优化：`pgr` 推荐 `pgr nwk order --nd` (Ladderize) 以换取极高的性能，且可视化效果通常足够好。
 - 平切（flat clustering）：SciPy 的 `fcluster` 提供 `criterion='distance'|'maxclust'|...`；在 pgr 中分别对应 `nwk cut --height H` 与 `nwk cut --k K`，其它 `monocrit/inconsistent` 等准则暂不引入。
 - 评估指标：SciPy 有 `cophenet`（共生相关系数）；pgr 建议在 `nwk metrics` 中加入 cophenetic 相关系数作为树质量评估的补充（与 silhouette/直径/最近簇间距并列）。
+- 内部实现细节：
+  - SciPy 的 `ward` 更新公式在内部进行平方和开方（`sqrt`）；`pgr` 采用全程平方距离运算（仅输出时开方），避免了中间步骤的精度损失和开方开销，理论上更高效。
+  - SciPy 的 `fast_linkage` 使用了 Heap 优化；`pgr` 目前对非 NN-chain 方法使用朴素实现，未来可借鉴此优化。
 
 ### 用户提示
 - 新手路径（推荐）：`mat to-phylip → clust hier --method ward → nwk cut --height → nwk metrics → nwk 可视化`
@@ -243,7 +267,7 @@ pgr clust hier matrix.phy --method average > tree.nwk
 ### 示例映射
 - SciPy linkage（Ward）:
   - Python: `Z = linkage(y, method='ward', optimal_ordering=True)`
-  - pgr: `pgr mat to-phylip pairs.tsv -o matrix.phy` → `pgr clust hier matrix.phy --method ward --optimal-ordering > tree.nwk`（`--optimal-ordering` 规划中）
+  - pgr: `pgr mat to-phylip pairs.tsv -o matrix.phy` → `pgr clust hier matrix.phy --method ward > tree.nwk` → `pgr nwk order tree.nwk --nd > ordered.nwk`
 - SciPy fcluster（按距离平切）:
   - Python: `labels = fcluster(Z, t=0.05, criterion='distance')`
   - pgr: `pgr nwk cut tree.nwk --height 0.05 > clusters.tsv`（`nwk cut` 规划中）
