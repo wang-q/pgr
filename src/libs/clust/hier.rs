@@ -1,4 +1,5 @@
 use crate::libs::pairmat::{CondensedMatrix, NamedMatrix};
+use crate::libs::phylo::tree::Tree;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Method {
@@ -9,6 +10,23 @@ pub enum Method {
     Centroid,
     Median,
     Ward,
+}
+
+impl std::str::FromStr for Method {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "single" => Ok(Method::Single),
+            "complete" => Ok(Method::Complete),
+            "average" | "upgma" => Ok(Method::Average),
+            "weighted" | "wpgma" => Ok(Method::Weighted),
+            "centroid" | "upgmc" => Ok(Method::Centroid),
+            "median" | "wpgmc" => Ok(Method::Median),
+            "ward" | "ward.d2" => Ok(Method::Ward),
+            _ => Err(format!("Unknown linkage method: {}", s)),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -28,6 +46,85 @@ pub fn linkage(matrix: &NamedMatrix, method: Method) -> Vec<Step> {
         Method::Single => linkage_primitive(matrix, method), // Should use MST in Phase 2
         _ => linkage_primitive(matrix, method),              // Use primitive O(N^3) for Phase 1
     }
+}
+
+/// Convert linkage steps to a Node (tree structure).
+///
+/// The resulting tree is rooted at the last merge.
+/// Branch lengths are derived from merge heights.
+pub fn to_tree(steps: &[Step], names: &[String]) -> Tree {
+    let mut tree = Tree::new();
+    let n = names.len();
+    
+    if n == 0 {
+        return tree;
+    }
+    
+    // Map original cluster ID to Tree NodeId
+    // IDs 0..n-1 are leaves (original sequences)
+    // IDs n..n+steps.len()-1 are internal nodes (merges)
+    let mut cluster_to_node: std::collections::HashMap<usize, usize> = std::collections::HashMap::new();
+
+    // Create leaf nodes
+    for (i, name) in names.iter().enumerate() {
+        let node_id = tree.add_node();
+        if let Some(node) = tree.get_node_mut(node_id) {
+            node.set_name(name.clone());
+        }
+        cluster_to_node.insert(i, node_id);
+    }
+
+    // Track height of each cluster (original ID -> height)
+    let mut heights: std::collections::HashMap<usize, f32> = std::collections::HashMap::new();
+    for i in 0..n {
+        heights.insert(i, 0.0);
+    }
+
+    let mut root_cluster_id = 0;
+
+    for (step_idx, step) in steps.iter().enumerate() {
+        let new_cluster_id = n + step_idx;
+        let h_parent = step.distance;
+
+        // Create parent node
+        let parent_node_id = tree.add_node();
+        cluster_to_node.insert(new_cluster_id, parent_node_id);
+        
+        // Process children
+        for &child_cluster_id in &[step.cluster1, step.cluster2] {
+            if let Some(&child_node_id) = cluster_to_node.get(&child_cluster_id) {
+                let h_child = *heights.get(&child_cluster_id).unwrap_or(&0.0);
+                
+                // Calculate branch length
+                // Use distance/2.0 as node height for ultrametric-like appearance
+                let node_height = step.distance / 2.0;
+                let len = (node_height - h_child).max(0.0); // Prevent negative length
+                
+                // Set length on child and link to parent
+                if let Some(child_node) = tree.get_node_mut(child_node_id) {
+                    child_node.length = Some(len as f64);
+                }
+                
+                // Link in tree structure
+                let _ = tree.add_child(parent_node_id, child_node_id);
+            }
+        }
+        
+        heights.insert(new_cluster_id, step.distance / 2.0);
+        root_cluster_id = new_cluster_id;
+    }
+
+    // Set root of the tree
+    if let Some(&root_node_id) = cluster_to_node.get(&root_cluster_id) {
+        tree.set_root(root_node_id);
+    } else if n == 1 {
+        // Single leaf case
+        if let Some(&root_node_id) = cluster_to_node.get(&0) {
+            tree.set_root(root_node_id);
+        }
+    }
+
+    tree
 }
 
 /// Primitive O(N^3) implementation of agglomerative clustering.
@@ -161,7 +258,7 @@ fn lance_williams(
             if d2_new < 0.0 { 0.0 } else { d2_new.sqrt() }
         }
         Method::Ward => {
-            // Ward's method (minimal variance)
+            // Ward's method (minimal variance) - specifically Ward.D2
             // d_new^2 = ((n_u+n_k)*d_uk^2 + (n_v+n_k)*d_vk^2 - n_k*d_uv^2) / n_uvk
             let d2_uk = d_uk * d_uk;
             let d2_vk = d_vk * d_vk;
@@ -259,5 +356,60 @@ mod tests {
         
         assert_eq!(steps.len(), 2);
         assert_eq!(steps[1].distance, 3.0);
+    }
+
+    #[test]
+    fn test_to_tree() {
+        // Steps from Single Linkage:
+        // 1. Merge 0-1 (d=1.0).
+        // 2. Merge 3-2 (d=2.0).
+        let steps = vec![
+            Step { cluster1: 0, cluster2: 1, distance: 1.0, size: 2 },
+            Step { cluster1: 3, cluster2: 2, distance: 2.0, size: 3 },
+        ];
+        let names = vec!["A".to_string(), "B".to_string(), "C".to_string()];
+        
+        let tree = to_tree(&steps, &names);
+        
+        // Root is the last created node
+        assert!(tree.get_root().is_some());
+        assert_eq!(tree.len(), 5); // 3 leaves + 2 internal
+
+        // Check topology
+        // Root should have children 3 and 2
+        // Node 3 should have children 0 and 1
+        
+        // Find leaf nodes by name
+        // Use traversal to find nodes
+        let leaf_a_id = tree.get_leaves().iter().find(|&&id| {
+            tree.get_node(id).unwrap().name.as_deref() == Some("A")
+        }).copied().unwrap();
+        let leaf_b_id = tree.get_leaves().iter().find(|&&id| {
+            tree.get_node(id).unwrap().name.as_deref() == Some("B")
+        }).copied().unwrap();
+        let leaf_c_id = tree.get_leaves().iter().find(|&&id| {
+            tree.get_node(id).unwrap().name.as_deref() == Some("C")
+        }).copied().unwrap();
+
+        let leaf_a = tree.get_node(leaf_a_id).unwrap();
+        let leaf_b = tree.get_node(leaf_b_id).unwrap();
+        let leaf_c = tree.get_node(leaf_c_id).unwrap();
+
+        // Check heights/lengths
+        // Leaf height = 0
+        // Node 3 height = 1.0 / 2 = 0.5
+        // Root height = 2.0 / 2 = 1.0
+        
+        // Length A -> 3: 0.5 - 0 = 0.5
+        assert_eq!(leaf_a.length, Some(0.5));
+        assert_eq!(leaf_b.length, Some(0.5));
+        
+        // Length C -> Root: 1.0 - 0 = 1.0
+        assert_eq!(leaf_c.length, Some(1.0));
+        
+        // Node 3 -> Root: 1.0 - 0.5 = 0.5
+        // We need to find Node 3 (parent of A and B)
+        let parent_a = tree.get_node(leaf_a.parent.unwrap()).unwrap();
+        assert_eq!(parent_a.length, Some(0.5));
     }
 }

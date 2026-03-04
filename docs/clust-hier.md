@@ -82,7 +82,7 @@
   - 核心接口 `linkage` 接受 Condensed Matrix（上三角压缩），输出 Stepwise Dendrogram。
   - 提供了完整的 `Method` 枚举（Single, Complete, Average, Ward 等）。
   - **决策**：`pgr` 将参考 `kodama` 的 NN-chain 算法实现自己的逻辑，保持对核心数据结构的完全控制（如适配稀疏输入）。
-  - **价值**：利用 `kodama` 的测试用例（[`kodama-master/tests/`](file:///c:/Users/wangq/Scripts/pgr/kodama-master/tests/)）和基准测试（[`kodama-master/benches/`](file:///c:/Users/wangq/Scripts/pgr/kodama-master/benches/)）来验证 `pgr` 实现的正确性与性能。
+  - **价值**：利用 `kodama` 的测试用例（[`kodama-master/tests/`](file:///C:\Users\wangq\Scripts\pgr\kodama-master\src\test.rs)）和基准测试（[`kodama-master/benches/`](file:///c:/Users/wangq/Scripts/pgr/kodama-master/benches/)）来验证 `pgr` 实现的正确性与性能。
 - **linfa-hierarchical** ([`linfa-master/algorithms/linfa-hierarchical/`](file:///c:/Users/wangq/Scripts/pgr/linfa-master/algorithms/linfa-hierarchical/))：
   - 提供了符合 `linfa` 生态的 `Transformer` 接口。
   - 内部直接调用 `kodama`，并增加了对 Similarity Kernel 的支持（自动转为 Distance）。
