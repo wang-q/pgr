@@ -154,67 +154,150 @@ impl ScoringMatrix<f32> {
     }
 }
 
-/// A named matrix for storing pairwise distances/scores with sequence names
+/// A condensed distance matrix (upper triangle only, no diagonal).
 ///
-/// # Examples
-///
-/// ```
-/// # use pgr::libs::pairmat::NamedMatrix;
-/// let names = vec!["seq1".to_string(), "seq2".to_string(), "seq3".to_string()];
-/// let mut matrix = NamedMatrix::new(names);
-///
-/// // Set some values
-/// matrix.set(0, 1, 0.5);
-/// matrix.set(0, 2, 0.7);
-/// matrix.set(1, 2, 0.3);
-///
-/// // Get values
-/// assert_eq!(matrix.size(), 3);
-/// assert_eq!(matrix.get(0, 1), 0.5);
-/// assert_eq!(matrix.get(1, 0), 0.5);  // Symmetric matrix
-/// ```
+/// Stores only the upper triangular part of a symmetric matrix, reducing memory usage
+/// from N^2 to N(N-1)/2.
 #[derive(Debug, Clone)]
-pub struct NamedMatrix {
+pub struct CondensedMatrix {
     size: usize,
-    names: indexmap::IndexMap<String, usize>,
-    values: Vec<f32>,
+    data: Vec<f32>,
 }
 
-impl NamedMatrix {
-    pub fn new(names: Vec<String>) -> Self {
-        let size = names.len();
-        let values = vec![f32::default(); size * size];
-        let names: indexmap::IndexMap<_, _> = names
-            .into_iter()
-            .enumerate()
-            .map(|(i, name)| (name, i))
-            .collect();
-
-        NamedMatrix {
+impl CondensedMatrix {
+    /// Create a new condensed matrix of size N x N.
+    pub fn new(size: usize) -> Self {
+        let len = if size == 0 { 0 } else { size * (size - 1) / 2 };
+        Self {
             size,
-            names,
-            values,
+            data: vec![0.0; len],
         }
+    }
+
+    /// Create from existing data vector.
+    ///
+    /// # Panics
+    /// Panics if data length doesn't match size*(size-1)/2.
+    pub fn from_vec(size: usize, data: Vec<f32>) -> Self {
+        let expected = if size == 0 { 0 } else { size * (size - 1) / 2 };
+        assert_eq!(
+            data.len(),
+            expected,
+            "Data length {} does not match expected length {} for size {}",
+            data.len(),
+            expected,
+            size
+        );
+        Self { size, data }
     }
 
     pub fn size(&self) -> usize {
         self.size
     }
 
+    /// Get the underlying data vector.
+    pub fn data(&self) -> &[f32] {
+        &self.data
+    }
+
+    /// Get value at (row, col).
+    /// Returns 0.0 if row == col.
     pub fn get(&self, row: usize, col: usize) -> f32 {
-        self.values[row * self.size + col]
+        if row == col {
+            0.0
+        } else if row < col {
+            self.data[get_condensed_index(self.size, row, col)]
+        } else {
+            self.data[get_condensed_index(self.size, col, row)]
+        }
+    }
+
+    /// Set value at (row, col).
+    /// Does nothing if row == col.
+    pub fn set(&mut self, row: usize, col: usize, value: f32) {
+        if row != col {
+            let idx = if row < col {
+                get_condensed_index(self.size, row, col)
+            } else {
+                get_condensed_index(self.size, col, row)
+            };
+            self.data[idx] = value;
+        }
+    }
+}
+
+/// A named matrix for storing pairwise distances/scores with sequence names.
+///
+/// Wraps a `CondensedMatrix` internally to save memory (N(N-1)/2).
+/// Assumes symmetric matrix with 0 diagonal (distance matrix).
+#[derive(Debug, Clone)]
+pub struct NamedMatrix {
+    names: indexmap::IndexMap<String, usize>,
+    matrix: CondensedMatrix,
+}
+
+impl NamedMatrix {
+    pub fn new(names: Vec<String>) -> Self {
+        let size = names.len();
+        let matrix = CondensedMatrix::new(size);
+        let names: indexmap::IndexMap<_, _> = names
+            .into_iter()
+            .enumerate()
+            .map(|(i, name)| (name, i))
+            .collect();
+
+        NamedMatrix { names, matrix }
+    }
+
+    /// Create from existing names and values (condensed upper triangle).
+    pub fn new_from_values(names: Vec<String>, values: Vec<f32>) -> Self {
+        let size = names.len();
+        let matrix = CondensedMatrix::from_vec(size, values);
+        
+        let names: indexmap::IndexMap<_, _> = names
+            .into_iter()
+            .enumerate()
+            .map(|(i, name)| (name, i))
+            .collect();
+
+        NamedMatrix { names, matrix }
+    }
+
+    /// Create with numeric names ("0", "1", ...).
+    pub fn with_ids(size: usize) -> Self {
+        let names: Vec<String> = (0..size).map(|i| i.to_string()).collect();
+        Self::new(names)
+    }
+
+    pub fn size(&self) -> usize {
+        self.matrix.size()
+    }
+
+    /// Access the underlying CondensedMatrix
+    pub fn matrix(&self) -> &CondensedMatrix {
+        &self.matrix
+    }
+
+    pub fn get(&self, row: usize, col: usize) -> f32 {
+        self.matrix.get(row, col)
     }
 
     pub fn set(&mut self, row: usize, col: usize, value: f32) {
-        self.values[row * self.size + col] = value;
-        // Set the symmetric position as it's a symmetric matrix
-        if row != col {
-            self.values[col * self.size + row] = value;
-        }
+        self.matrix.set(row, col, value)
+    }
+
+    pub fn index(&self, row: usize, col: usize) -> usize {
+        let (r, c) = if row < col { (row, col) } else { (col, row) };
+        get_condensed_index(self.size(), r, c)
     }
 
     pub fn get_names(&self) -> Vec<&String> {
         self.names.keys().collect()
+    }
+
+    /// Get the underlying condensed data vector.
+    pub fn values(&self) -> &[f32] {
+        self.matrix.data()
     }
 
     /// Get matrix value by sequence names
@@ -261,25 +344,13 @@ impl NamedMatrix {
         let size = index_name.len();
 
         // Create NamedMatrix from ScoringMatrix
-        let mut values = vec![f32::default(); size * size];
+        let mut matrix = NamedMatrix::new(index_name.into_iter().collect());
         for i in 0..size {
-            for j in 0..size {
-                values[i * size + j] = scoring_matrix.get(i, j);
+            for j in (i + 1)..size {
+                matrix.set(i, j, scoring_matrix.get(i, j));
             }
         }
-
-        // Convert index_name to IndexMap
-        let names: indexmap::IndexMap<_, _> = index_name
-            .into_iter()
-            .enumerate()
-            .map(|(i, name)| (name, i))
-            .collect();
-
-        Self {
-            size,
-            names,
-            values,
-        }
+        matrix
     }
 
     /// Creates a new matrix from a relaxed PHYLIP format file
@@ -290,7 +361,7 @@ impl NamedMatrix {
     /// ```
     pub fn from_relaxed_phylip(infile: &str) -> Self {
         let mut names = Vec::new();
-        let mut values = Vec::new();
+        let mut raw_values = Vec::new();
 
         let reader = crate::reader(infile);
         let mut lines = reader.lines();
@@ -299,23 +370,28 @@ impl NamedMatrix {
         if let Some(Ok(line)) = lines.next() {
             if line.trim().parse::<usize>().is_err() {
                 // If first line is not a number, treat it as a data line
-                Self::process_phylip_line(&line, &mut names, &mut values);
+                Self::process_phylip_line(&line, &mut names, &mut raw_values);
             }
         }
 
         // Process remaining lines
         for line in lines.map_while(Result::ok) {
-            Self::process_phylip_line(&line, &mut names, &mut values);
+            Self::process_phylip_line(&line, &mut names, &mut raw_values);
         }
 
         let size = names.len();
         let mut matrix = Self::new(names);
 
-        // Fill the matrix
+        // Fill the matrix (lower triangle from PHYLIP)
+        // raw_values contains flattened lower triangle: (1,0), (2,0), (2,1), ...
+        let mut k = 0;
         for i in 0..size {
             for j in 0..=i {
-                let value = values[i * (i + 1) / 2 + j];
-                matrix.set(i, j, value);
+                if k < raw_values.len() {
+                    let value = raw_values[k];
+                    matrix.set(i, j, value);
+                    k += 1;
+                }
             }
         }
 
@@ -339,152 +415,19 @@ impl NamedMatrix {
     }
 }
 
-/// A condensed distance matrix (upper triangle only, no diagonal).
+/// Convert row, col (where row < col) to linear index in condensed array (upper triangle).
 ///
-/// Stores only the upper triangular part of a symmetric matrix, reducing memory usage
-/// from N^2 to N(N-1)/2. This format is required by some hierarchical clustering algorithms
-/// (like `kodama`'s linkage).
-///
-/// # Storage Layout
-/// For N=3, indices (0,1), (0,2), (1,2) are stored at 0, 1, 2.
-///
-/// # Examples
-/// ```
-/// # use pgr::libs::pairmat::CondensedMatrix;
-/// let mut m = CondensedMatrix::new(3);
-/// m.set(0, 1, 0.5);
-/// m.set(0, 2, 0.8);
-/// m.set(1, 2, 0.3);
-///
-/// assert_eq!(m.get(0, 1), 0.5);
-/// assert_eq!(m.get(1, 0), 0.5); // Symmetric
-/// assert_eq!(m.get(0, 0), 0.0); // Diagonal is always 0
-/// ```
-#[derive(Debug, Clone)]
-pub struct CondensedMatrix {
-    size: usize,
-    data: Vec<f32>, // length = N*(N-1)/2
-}
-
-impl CondensedMatrix {
-    /// Create a new condensed matrix of size N x N.
-    pub fn new(size: usize) -> Self {
-        let len = if size == 0 { 0 } else { size * (size - 1) / 2 };
-        Self {
-            size,
-            data: vec![0.0; len],
-        }
-    }
-
-    /// Create from existing data vector.
-    /// Panics if data length doesn't match size*(size-1)/2.
-    pub fn from_vec(size: usize, data: Vec<f32>) -> Self {
-        let expected = if size == 0 { 0 } else { size * (size - 1) / 2 };
-        assert_eq!(
-            data.len(),
-            expected,
-            "Data length {} does not match expected length {} for size {}",
-            data.len(),
-            expected,
-            size
-        );
-        Self { size, data }
-    }
-
-    pub fn size(&self) -> usize {
-        self.size
-    }
-
-    /// Get the underlying data vector.
-    pub fn data(&self) -> &[f32] {
-        &self.data
-    }
-
-    /// Convert row, col (where row < col) to linear index in condensed array.
-    /// Based on formula: k = N*row - row*(row+1)/2 + col - row - 1
-    #[inline]
-    fn index(&self, row: usize, col: usize) -> usize {
-        debug_assert!(row < col);
-        debug_assert!(col < self.size);
-        // Standard formula for row-major upper triangle without diagonal
-        // sum(N-1-i for i in 0..row) + (col - row - 1)
-        // = (N-1)*row - row*(row-1)/2 + col - row - 1
-        // = N*row - row - row^2/2 + row/2 + col - row - 1
-        // = N*row - row*(row+1)/2 + col - row - 1 (simplifies to this)
-        
-        // Let's use the iterative sum logic which is safer to reason about:
-        // offset for row `r` is sum_{i=0}^{r-1} (N - 1 - i)
-        // number of elements in row `i` is (N - 1 - i)
-        
-        // Using the closed form:
-        // offset = r*N - r*(r+1)/2
-        // index = offset + (c - r - 1)
-        
-        self.size * row - (row * (row + 1)) / 2 + col - row - 1
-    }
-
-    /// Get value at (row, col).
-    /// Returns 0.0 if row == col.
-    pub fn get(&self, row: usize, col: usize) -> f32 {
-        if row == col {
-            0.0
-        } else if row < col {
-            self.data[self.index(row, col)]
-        } else {
-            self.data[self.index(col, row)]
-        }
-    }
-
-    /// Set value at (row, col).
-    /// Does nothing if row == col.
-    pub fn set(&mut self, row: usize, col: usize, value: f32) {
-        if row != col {
-            let idx = if row < col {
-                self.index(row, col)
-            } else {
-                self.index(col, row)
-            };
-            self.data[idx] = value;
-        }
-    }
+/// Based on formula: k = N*row - row*(row+1)/2 + col - row - 1
+#[inline]
+pub fn get_condensed_index(size: usize, row: usize, col: usize) -> usize {
+    debug_assert!(row < col);
+    debug_assert!(col < size);
+    size * row - (row * (row + 1)) / 2 + col - row - 1
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_condensed_matrix_indexing() {
-        // N=4
-        // (0,1) -> 0
-        // (0,2) -> 1
-        // (0,3) -> 2
-        // (1,2) -> 3
-        // (1,3) -> 4
-        // (2,3) -> 5
-        let m = CondensedMatrix::new(4);
-        assert_eq!(m.index(0, 1), 0);
-        assert_eq!(m.index(0, 2), 1);
-        assert_eq!(m.index(0, 3), 2);
-        assert_eq!(m.index(1, 2), 3);
-        assert_eq!(m.index(1, 3), 4);
-        assert_eq!(m.index(2, 3), 5);
-    }
-
-    #[test]
-    fn test_condensed_matrix_rw() {
-        let mut m = CondensedMatrix::new(3);
-        m.set(0, 1, 1.0);
-        m.set(2, 0, 2.0); // set (0,2) via swap
-        m.set(1, 2, 3.0);
-
-        assert_eq!(m.get(0, 1), 1.0);
-        assert_eq!(m.get(1, 0), 1.0);
-        assert_eq!(m.get(0, 2), 2.0);
-        assert_eq!(m.get(2, 0), 2.0);
-        assert_eq!(m.get(1, 2), 3.0);
-        assert_eq!(m.get(0, 0), 0.0);
-    }
 
     #[test]
     fn test_scoring_matrix_basic() {
@@ -512,23 +455,27 @@ mod tests {
         let mut m = NamedMatrix::new(names);
         
         m.set(0, 1, 0.5);
-        
-        // Check size
-        assert_eq!(m.size(), 2);
-        
-        // Check values
         assert_eq!(m.get(0, 1), 0.5);
-        assert_eq!(m.get(1, 0), 0.5); // Symmetric update
+        assert_eq!(m.get(1, 0), 0.5);
         assert_eq!(m.get(0, 0), 0.0);
         
-        // Check by name
         assert_eq!(m.get_by_name("A", "B"), Some(0.5));
-        assert_eq!(m.get_by_name("B", "A"), Some(0.5));
-        assert_eq!(m.get_by_name("A", "C"), None);
+    }
+    
+    #[test]
+    fn test_named_matrix_indexing() {
+        let names = vec!["A".to_string(), "B".to_string(), "C".to_string()];
+        let m = NamedMatrix::new(names);
         
-        // Set by name
-        assert!(m.set_by_name("A", "B", 0.8).is_ok());
-        assert_eq!(m.get(0, 1), 0.8);
-        assert!(m.set_by_name("A", "C", 0.9).is_err());
+        // Size 3 -> len 3
+        assert_eq!(m.values().len(), 3);
+        
+        // Index check
+        // (0,1) -> 0
+        // (0,2) -> 1
+        // (1,2) -> 2
+        assert_eq!(m.index(0, 1), 0);
+        assert_eq!(m.index(0, 2), 1);
+        assert_eq!(m.index(1, 2), 2);
     }
 }

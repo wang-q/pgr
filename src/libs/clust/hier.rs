@@ -1,4 +1,4 @@
-use crate::libs::pairmat::CondensedMatrix;
+use crate::libs::pairmat::{CondensedMatrix, NamedMatrix};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Method {
@@ -23,7 +23,7 @@ pub struct Step {
 ///
 /// Returns a list of steps (merges) forming the dendrogram.
 /// The length of the result will be N-1 for a matrix of size N.
-pub fn linkage(matrix: &CondensedMatrix, method: Method) -> Vec<Step> {
+pub fn linkage(matrix: &NamedMatrix, method: Method) -> Vec<Step> {
     match method {
         Method::Single => linkage_primitive(matrix, method), // Should use MST in Phase 2
         _ => linkage_primitive(matrix, method),              // Use primitive O(N^3) for Phase 1
@@ -34,30 +34,20 @@ pub fn linkage(matrix: &CondensedMatrix, method: Method) -> Vec<Step> {
 ///
 /// This serves as the MVP implementation (Phase 1) and a baseline for testing.
 /// It maintains a mutable copy of the distance matrix and iteratively finds the minimum.
-fn linkage_primitive(matrix: &CondensedMatrix, method: Method) -> Vec<Step> {
+fn linkage_primitive(matrix: &NamedMatrix, method: Method) -> Vec<Step> {
     let n = matrix.size();
     if n < 2 {
         return vec![];
     }
 
     // Work on a mutable copy of distances
-    // We will update distances in-place as we merge clusters.
-    // In condensed matrix, index(i, j) gives the distance between i and j.
-    // When we merge u and v into w, we can reuse one of the rows (say u) to represent w,
-    // and mark v as inactive.
-    let mut dists = matrix.data().to_vec();
-    let mut condensed = CondensedMatrix::from_vec(n, dists.clone());
+    let mut condensed = CondensedMatrix::from_vec(n, matrix.values().to_vec());
 
     // Track cluster sizes and status
     let mut size = vec![1; n];
     let mut active = vec![true; n];
     
     // Map internal index to original cluster ID
-    // Initially i -> i. When merging u and v, we create a new cluster ID (n + step_idx).
-    // But for distance matrix updates, we reuse the index of the first merged cluster.
-    // Wait, standard linkage output (like scipy) uses original indices 0..N-1
-    // and new indices N..2N-2 for merged clusters.
-    // Here we map current active indices to these logical IDs.
     let mut cluster_ids: Vec<usize> = (0..n).collect();
 
     let mut steps = Vec::with_capacity(n - 1);
@@ -187,6 +177,12 @@ fn lance_williams(
 mod tests {
     use super::*;
 
+    // Helper to create a NamedMatrix for testing
+    fn create_test_matrix(size: usize) -> NamedMatrix {
+        let names: Vec<String> = (0..size).map(|i| i.to_string()).collect();
+        NamedMatrix::new(names)
+    }
+
     #[test]
     fn test_linkage_single() {
         // Distances:
@@ -199,7 +195,7 @@ mod tests {
         //    Update dist(3, 2) = min(d(0,2), d(1,2)) = min(4, 2) = 2.0
         // 2. Merge 3-2 (d=2.0).
         
-        let mut m = CondensedMatrix::new(3);
+        let mut m = create_test_matrix(3);
         m.set(0, 1, 1.0);
         m.set(0, 2, 4.0);
         m.set(1, 2, 2.0);
@@ -231,7 +227,7 @@ mod tests {
         //    Update dist(3, 2) = max(d(0,2), d(1,2)) = max(4, 2) = 4.0
         // 2. Merge 3-2 (d=4.0).
         
-        let mut m = CondensedMatrix::new(3);
+        let mut m = create_test_matrix(3);
         m.set(0, 1, 1.0);
         m.set(0, 2, 4.0);
         m.set(1, 2, 2.0);
@@ -254,7 +250,7 @@ mod tests {
         //    Update dist(3, 2) = (1*4.0 + 1*2.0) / 2 = 3.0
         // 2. Merge 3-2 (d=3.0).
         
-        let mut m = CondensedMatrix::new(3);
+        let mut m = create_test_matrix(3);
         m.set(0, 1, 1.0);
         m.set(0, 2, 4.0);
         m.set(1, 2, 2.0);
