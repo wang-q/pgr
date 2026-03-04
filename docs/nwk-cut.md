@@ -1,4 +1,4 @@
-# nwk cut
+# pgr nwk cut
 
 `pgr nwk cut` 的目标是：给定一棵 Newick 树（系统发生树 / 层次聚类树），按照用户指定的规则把叶子节点切分成一组互不重叠的分组（partition），并以稳定、可复用的表格格式输出。
 
@@ -16,36 +16,30 @@
 
 `pgr nwk cut` 旨在提供一套与现有生态对齐但更“树友好”的切割方式：
 
-- 对齐 R 的 `cutree()`（在 dendrogram 上切一刀得到分组）。
-- 对齐 TreeCluster（在系统发生树上按生物学常用约束得到分组）。
-- 与 `pgr clust` 区分：`pgr clust` 主要是从相似度/距离矩阵或图结构“构建聚类”；而 `pgr nwk cut` 是从“已有树”导出分组。
+- **对齐 R `cutree()`**：在 dendrogram 上切一刀得到分组。
+- **对齐 SciPy `fcluster()`**：支持按距离 `distance` 或簇数 `maxclust` 导出扁平聚类。
+- **对齐 TreeCluster**：在系统发生树上按生物学常用约束得到分组。
+- **与 `pgr clust` 区分**：`pgr clust` 主要是从相似度/距离矩阵或图结构“构建聚类”；而 `pgr nwk cut` 是从“已有树”导出分组。
 
 ## 输入与输出
 
 ### 输入
 
-- 输入树：Newick 格格式（建议与 `pgr nwk` 其它命令一致，支持文件或 stdin）。
-- 分支长度：用于距离/高度相关方法（例如按 root distance、max pairwise distance 等）。
-- 分支支持度（可选）：若树节点/边上携带支持度（例如 bootstrap），可作为“不可跨越”的约束条件。
+- **输入树**：Newick 格式（支持多棵树）。
+- **分支长度**：用于距离/高度相关方法（例如按 root distance、max pairwise distance 等）。
+- **分支支持度（可选/规划中）**：若树节点/边上携带支持度（例如 bootstrap），可作为“不可跨越”的约束条件。
 
 ### 输出
 
-输出建议采用 TreeCluster 风格的 TSV（便于与既有工具互操作）：
+输出建议采用与 `pgr clust dbscan` 相同的格式（便于与既有工具互操作）：
 
-```
-SequenceName	ClusterNumber
-leafA	        1
-leafB	        1
-leafC	        -1
-...
-```
+    * cluster: Each line contains points of one cluster.
+    * pair: Each line contains a (representative point, cluster member) pair.
 
-- `SequenceName`：叶子标签（leaf label）。
-- `ClusterNumber`：簇编号。
-  - 非单例簇：从 1 开始递增编号。
-  - 单例簇（singleton）：输出 `-1`（与 TreeCluster 一致，便于下游约定）。
-
-也可以考虑提供替代输出格式（例如 `--format list|pair`），但默认 TSV 最通用。
+- `pair` 格式：每行包含 (Representative, Member)。
+  - Representative：簇的代表点（对于树，通常是距离根最近的叶子，或字典序最小的叶子）。
+  - Member：簇成员。
+  - 单例簇（singleton）：自己是自己的代表点。
 
 ## 核心概念：切树并导出 partition
 
@@ -66,22 +60,19 @@ leafC	        -1
 
 当你不确定 `K` 或 `t` 应该取多少时，更稳妥的策略通常是“扫描 + 选点”，而不是一次性拍脑袋给出某个值。
 
-### 扫描（scan）
+### 扫描（Scan）
 
 建议提供（或在实现时优先考虑）一种扫描输出的能力：给定一组候选 `t` 或 `K`，对每个候选值计算并输出摘要指标，便于画曲线或人工挑选。
 
 常见摘要指标包括：
-
 - 簇数（总簇数 / 非单例簇数）
 - 单例数量（singleton count）
 - 最大簇大小、簇大小分布分位数
 - 由支持度阈值导致的强制切断数量（若启用 `--support`）
 
-直观用法是：先扫描得到一张表，再结合领域知识（例如期望簇规模、希望减少单例、或更保守地对待低支持区域）选择折中点。
+### 选择准则（Criterion）
 
-### 选择准则（criterion）
-
-如果需要自动选点，可以把“选择准则”显式做成一个可选项，并明确它与 `mclust` 这类模型选择的区别：
+如果需要自动选点，可以把“选择准则”显式做成一个可选项：
 
 - `mclust` 的 BIC 依赖显式概率模型（高斯混合）与可计算的参数复杂度；`cut` 是在既定树上导出 partition，不天然对应同一个 BIC 语义。
 - 因此在 `cut` 中，更合适的是提供若干“规则驱动/统计摘要驱动”的准则，例如：
@@ -107,98 +98,45 @@ leafC	        -1
 - 先扫描得到一张表（包含 `t/K`、簇数、非单例簇数、单例数、簇大小分布等）。
 - 画出 `非单例簇数` 或 `单例数` 的曲线，优先找“平台开始处”，并结合业务期望（例如希望减少单例但不希望出现过大的超级簇）选择最终参数。
 
-## 计划支持的模式与算法（设计稿）
+## 支持的模式与算法
 
-这里列出与 TreeCluster / `cutree()` 对齐的常见模式，作为 `pgr nwk cut` 的设计目标。具体参数命名可在实现时再统一到 `pgr` 的命令风格中。
+### 1. 按簇数切 (`--k <K>`) [已实现]
 
-### 1) 按簇数切：`--k <K>`
+等价于 R 的 `cutree(hc, k=K)` 或 SciPy 的 `fcluster(..., criterion='maxclust')`。
 
-等价于 R 的 `cutree(hc, k=K)`：
+- **逻辑**：从根开始，优先分割高度（距最远叶子的距离）最大的节点，直到树被分割成 `K` 个子树。
+- **适用场景**：你不关心阈值是多少，只想要固定数量的分组。
 
-- 从根开始，逐步把某些内部节点“展开”，直到得到 K 个子树。
-- 输出这 K 个子树的叶子集合。
+### 2. 按高度切 (`--height <H>`) [已实现]
 
-直观解释：你不关心阈值是多少，只想要固定数量的分组。
+等价于 R 的 `cutree(hc, h=H)` 或 SciPy 的 `fcluster(..., criterion='distance')`。
 
-### 2) 按高度/距离切：`--height <H>` 或 `--root-dist <D>`
+- **逻辑**：任何高度（距最远叶子的距离）大于 `H` 的节点都会被切断；高度小于等于 `H` 的节点形成簇。
+- **适用场景**：适用于超度量树（Ultrametric Tree），其中高度代表时间或遗传距离。
 
-等价于 R 的 `cutree(hc, h=H)`（对于 `hclust`，高度是合并高度；对于系统发生树，更自然的是 root distance 或 branch length）。
+### 3. 按根距离切 (`--root-dist <D>`) [已实现]
 
-- 对系统发生树：可以定义为“从根向下累计分支长度，到达阈值就切断”。
-- 对 dendrogram：可直接对应合并高度。
+- **逻辑**：模拟在时间轴上的切割。从根节点出发，累积路径长度，一旦分支距离根节点的距离超过 `D` 则切断。
+- **适用场景**：系统发生树分析，定义从共同祖先（根）演化特定时间后的分化群。
 
-### 3) TreeCluster 风格：按簇内约束切（距离/直径/单系）
+### 4. TreeCluster 风格：按最大簇内直径切 (`--max-clade <T>`) [已实现]
 
-TreeCluster 的核心价值在于：除了“横向切一刀”，还支持“簇必须满足某种约束”。
+这是 **TreeCluster** 的核心算法（`Method: max_clade`）。
 
-典型方法包括：
+- **逻辑**：确保每个簇内的**最大成对距离（直径）**不超过阈值 `T`。同时隐含了单系群（Clade）约束（即簇必须是树上的完整子树）。
+- **算法**：采用高效的自底向上（Bottom-Up）直径计算与自顶向下（Top-Down）贪心选择，避免了 $O(N^2)$ 的全距离矩阵计算。
+- **适用场景**：病毒分型、OTU 划分等需要严格控制簇内差异度的场景。
 
-- **max / max_clade**：每个簇内叶子两两距离的最大值（直径）不超过阈值。
-  - `max_clade` 额外要求簇必须是 clade（即某个内部节点的整棵子树）。
-- **avg_clade / med_clade**：簇内叶子两两距离的平均值/中位数不超过阈值，并要求 clade。
-- **single_linkage_cut / single_linkage_union**：单链接思想在树上的变体。
-- **length / length_clade**：切断所有长度大于阈值的边（或约束每个簇内最大边长）。
-- **root_dist / leaf_dist_{min,max,avg}**：以根到叶的距离统计量为基准切树。
+### 5. 更多 TreeCluster 变体 [规划中]
 
-这些方法的共同点：仍然输出叶子的分组，但“切断策略”不再是单纯的水平线，而是根据树拓扑和距离统计量自适应决定。
+- **`avg_clade`**：簇内平均成对距离不超过阈值。
+- **`med_clade`**：簇内中位数成对距离不超过阈值。
+- **`single_linkage`**：树上的单链接聚类。
 
-### 4) 支持度约束：`--support <S>`
+### 6. 支持度过滤 (`--support <S>`) [规划中]
 
-TreeCluster 的做法是：当某条边（或节点）支持度低于阈值时，视为“不可跨越”，相当于强制切断（或者把该边长度视为无限大）。
-
-在 `pgr nwk cut` 中也建议提供类似选项：
-
-- 使聚类结果对低支持区域更保守。
-- 对下游解释更友好（不会把低支持连接当作可靠证据）。
-
-## 与相关工具的关系与区别
-
-### 与 R `hclust + cutree()`
-
-- **相同点**：都是“树 → 叶子分组”。
-- **不同点**：
-  - `cutree()` 面向的是 `hclust` 产生的 dendrogram；`pgr nwk cut` 面向 Newick 树（系统发生树或一般 Newick）。
-  - `pgr nwk cut` 计划支持 TreeCluster 风格的生物树约束（clade、支持度阈值、树上单链接等），这超出了 `cutree()` 的常规用法。
-
-### 与 TreeCluster
-
-- **相同点**：目标与输出格式高度一致（叶子 → 簇，单例为 -1 的约定也可沿用）。
-- **不同点**：
-  - TreeCluster 是独立工具；`pgr nwk cut` 将融入 `pgr` 的 Newick 工具链，便于与 `pgr nwk prune/reroot/subtree/...` 串联。
-  - `pgr` 复用自己的树数据结构与遍历/查询能力，便于后续扩展（例如与 `pgr nwk stat/distance/topo` 联动）。
-
-### 与 `pgr clust`
-
-- **`pgr clust`**（例如 [clust/mod.rs](file:///c:/Users/wangq/Scripts/pgr/src/cmd_pgr/clust/mod.rs)、[mcl.rs](file:///c:/Users/wangq/Scripts/pgr/src/cmd_pgr/clust/mcl.rs)）更偏“从数据/图出发做聚类”：
-  - 输入往往是相似度/距离表或图。
-  - 输出是簇或簇对关系。
-- **`pgr nwk cut`** 是“从树出发导出分组”：
-  - 输入是 Newick 树。
-  - 输出是叶子分组。
-
-两者可以互补：例如先用某种方法构树，再用 `nwk cut` 导出不同阈值下的分组；或用 `clust` 在图上聚类后与树切割结果对比。
-
-## 典型用法（建议）
-
-下面示例为“拟定接口”，最终以实现时的参数为准：
-
-```bash
-# 1) 固定簇数（类比 R cutree(k=...)）
-pgr nwk cut tree.nwk --k 20 > clusters.tsv
-
-# 2) 按 root distance 切割
-pgr nwk cut tree.nwk --root-dist 0.03 > clusters.tsv
-
-# 3) TreeCluster 风格（max_clade），并启用支持度阈值
-pgr nwk cut tree.nwk --method max-clade -t 0.045 --support 70 > clusters.tsv
-```
-
-## 与 `pgr nwk` 工具链的协作
-
-`pgr nwk` 已包含大量对树的操作与分析（见 [nwk/mod.rs](file:///c:/Users/wangq/Scripts/pgr/src/cmd_pgr/nwk/mod.rs)）。`cut` 的定位是 “analysis/ops 的桥梁”：
-
-- 你可以先用 `reroot/prune/subtree/replace/...` 规范化树，再 `cut` 导出分组。
-- 也可以先 `cut` 得到分组，再回到 `nwk` 其它命令进行统计、对比或可视化。
+- **逻辑**：当某条边（或节点）支持度低于阈值时，视为“不可跨越”，相当于强制切断。
+- **用途**：防止聚类跨越不可靠的进化分支。
 
 ## 工作流与工具链协作
 
@@ -218,45 +156,54 @@ pgr nwk cut tree.nwk --method max-clade -t 0.045 --support 70 > clusters.tsv
 
 - **通用指标 (`pgr clust eval` / `compare`)**：
   - 输入：两个聚类结果 TSV（或一个结果 + 一个参考）。
-  - 输出：ARI (Adjusted Rand Index), AMI (Adjusted Mutual Information), V-Measure, Fowlkes-Mallows 等。
+  - 输出：ARI (Adjusted Rand Index), AMI (Adjusted Mutual Information), V-Measure 等。
   - 适用场景：当你已知样本的真实分类，或者想比较两种切割参数的差异度时。
 
 - **树相关指标 (`pgr nwk metrics`)**：
   - 输入：树文件 + 聚类结果。
-  - 输出：Parsimony score, Likelihood (需配合序列), Silhouette score (基于树上距离矩阵) 等。
+  - 输出：Parsimony score, Silhouette score (基于树上距离矩阵) 等。
   - 适用场景：没有真实分类，需要评估聚类在树结构上的紧密性或分离度。
 
 ### 推荐工作流示例
 
 #### 1. 经典系统发育分析
 ```bash
-# 1. 扫描不同参数，生成多个聚类结果
-pgr nwk cut input.nwk --method max-clade --scan 0.01,0.05,0.10 > partitions.tsv
+# 1. 扫描不同参数，生成多个聚类结果 (规划中支持 --scan)
+# pgr nwk cut input.nwk --method max-clade --scan 0.01,0.05,0.10 > partitions.tsv
 
-# 2. (可选) 如果有真实分类 metadata.tsv，评估哪个阈值最好
-pgr clust eval partitions.tsv metadata.tsv --metric ari
-
-# 3. 选定最佳阈值，生成最终聚类
+# 2. 选定最佳阈值，生成最终聚类
 pgr nwk cut input.nwk --method max-clade -t 0.05 > final_cluster.tsv
 
-# 4. 可视化或提取子树
+# 3. 可视化或提取子树
 pgr nwk subset input.nwk --list final_cluster.tsv --cluster-id 1 > cluster1.nwk
 ```
 
 #### 2. 层次聚类（hclust）接入
-从距离矩阵出发，经由 hclust 生成树，再进行切分与评估（参见 [hclust.md](file:///c:/Users/wangq/Scripts/pgr/docs/hclust.md)）。
+从距离矩阵出发，经由 hclust 生成树，再进行切分与评估。
 
 ```bash
-# 1. 准备 PHYLIP 距离矩阵 (若有 pair TSV，先转为 phylip)
-pgr mat to-phylip pairs.tsv -o matrix.phy
+# 1. 生成层次聚类树
+pgr clust hier matrix.phy --method ward > tree.nwk
 
-# 2. 生成层次聚类树 (Ward 方法，启用叶序优化)
-pgr mat hclust matrix.phy --method ward --optimal-ordering > tree.nwk
-
-# 3. 切分 (按高度阈值切，或按 K 切)
+# 2. 切分 (按高度阈值切)
 pgr nwk cut tree.nwk --height 0.05 > clusters.tsv
 
-# 4. 评估 (计算 Cophenetic 相关系数与 Silhouette)
-pgr nwk metrics tree.nwk --metrics cophenet --dist matrix.phy > fit.tsv
-pgr nwk metrics tree.nwk --part clusters.tsv --metrics silhouette > sil.tsv
+# 3. 评估 (计算 Cophenetic 相关系数与 Silhouette)
+# pgr nwk metrics tree.nwk --part clusters.tsv --metrics silhouette > sil.tsv
 ```
+
+## 与相关工具的关系与区别
+
+### 与 R `hclust + cutree()`
+
+- **相同点**：都是“树 → 叶子分组”。
+- **不同点**：
+  - `cutree()` 面向 `hclust` 产生的 dendrogram；`pgr nwk cut` 面向 Newick 树。
+  - `pgr` 支持 TreeCluster 风格的生物树约束（直径、单系），性能更高。
+
+### 与 TreeCluster
+
+- **相同点**：目标与输出格式高度一致（叶子 → 簇）。
+- **不同点**：
+  - TreeCluster 是 Python 工具；`pgr` 是 Rust 实现，速度更快，且无外部依赖。
+  - `pgr nwk cut` 融入了 `pgr` 工具链，可直接与 `prune`, `reroot` 等命令配合。
