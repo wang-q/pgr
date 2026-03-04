@@ -338,3 +338,197 @@ impl NamedMatrix {
         }
     }
 }
+
+/// A condensed distance matrix (upper triangle only, no diagonal).
+///
+/// Stores only the upper triangular part of a symmetric matrix, reducing memory usage
+/// from N^2 to N(N-1)/2. This format is required by some hierarchical clustering algorithms
+/// (like `kodama`'s linkage).
+///
+/// # Storage Layout
+/// For N=3, indices (0,1), (0,2), (1,2) are stored at 0, 1, 2.
+///
+/// # Examples
+/// ```
+/// # use pgr::libs::pairmat::CondensedMatrix;
+/// let mut m = CondensedMatrix::new(3);
+/// m.set(0, 1, 0.5);
+/// m.set(0, 2, 0.8);
+/// m.set(1, 2, 0.3);
+///
+/// assert_eq!(m.get(0, 1), 0.5);
+/// assert_eq!(m.get(1, 0), 0.5); // Symmetric
+/// assert_eq!(m.get(0, 0), 0.0); // Diagonal is always 0
+/// ```
+#[derive(Debug, Clone)]
+pub struct CondensedMatrix {
+    size: usize,
+    data: Vec<f32>, // length = N*(N-1)/2
+}
+
+impl CondensedMatrix {
+    /// Create a new condensed matrix of size N x N.
+    pub fn new(size: usize) -> Self {
+        let len = if size == 0 { 0 } else { size * (size - 1) / 2 };
+        Self {
+            size,
+            data: vec![0.0; len],
+        }
+    }
+
+    /// Create from existing data vector.
+    /// Panics if data length doesn't match size*(size-1)/2.
+    pub fn from_vec(size: usize, data: Vec<f32>) -> Self {
+        let expected = if size == 0 { 0 } else { size * (size - 1) / 2 };
+        assert_eq!(
+            data.len(),
+            expected,
+            "Data length {} does not match expected length {} for size {}",
+            data.len(),
+            expected,
+            size
+        );
+        Self { size, data }
+    }
+
+    pub fn size(&self) -> usize {
+        self.size
+    }
+
+    /// Get the underlying data vector.
+    pub fn data(&self) -> &[f32] {
+        &self.data
+    }
+
+    /// Convert row, col (where row < col) to linear index in condensed array.
+    /// Based on formula: k = N*row - row*(row+1)/2 + col - row - 1
+    #[inline]
+    fn index(&self, row: usize, col: usize) -> usize {
+        debug_assert!(row < col);
+        debug_assert!(col < self.size);
+        // Standard formula for row-major upper triangle without diagonal
+        // sum(N-1-i for i in 0..row) + (col - row - 1)
+        // = (N-1)*row - row*(row-1)/2 + col - row - 1
+        // = N*row - row - row^2/2 + row/2 + col - row - 1
+        // = N*row - row*(row+1)/2 + col - row - 1 (simplifies to this)
+        
+        // Let's use the iterative sum logic which is safer to reason about:
+        // offset for row `r` is sum_{i=0}^{r-1} (N - 1 - i)
+        // number of elements in row `i` is (N - 1 - i)
+        
+        // Using the closed form:
+        // offset = r*N - r*(r+1)/2
+        // index = offset + (c - r - 1)
+        
+        self.size * row - (row * (row + 1)) / 2 + col - row - 1
+    }
+
+    /// Get value at (row, col).
+    /// Returns 0.0 if row == col.
+    pub fn get(&self, row: usize, col: usize) -> f32 {
+        if row == col {
+            0.0
+        } else if row < col {
+            self.data[self.index(row, col)]
+        } else {
+            self.data[self.index(col, row)]
+        }
+    }
+
+    /// Set value at (row, col).
+    /// Does nothing if row == col.
+    pub fn set(&mut self, row: usize, col: usize, value: f32) {
+        if row != col {
+            let idx = if row < col {
+                self.index(row, col)
+            } else {
+                self.index(col, row)
+            };
+            self.data[idx] = value;
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_condensed_matrix_indexing() {
+        // N=4
+        // (0,1) -> 0
+        // (0,2) -> 1
+        // (0,3) -> 2
+        // (1,2) -> 3
+        // (1,3) -> 4
+        // (2,3) -> 5
+        let m = CondensedMatrix::new(4);
+        assert_eq!(m.index(0, 1), 0);
+        assert_eq!(m.index(0, 2), 1);
+        assert_eq!(m.index(0, 3), 2);
+        assert_eq!(m.index(1, 2), 3);
+        assert_eq!(m.index(1, 3), 4);
+        assert_eq!(m.index(2, 3), 5);
+    }
+
+    #[test]
+    fn test_condensed_matrix_rw() {
+        let mut m = CondensedMatrix::new(3);
+        m.set(0, 1, 1.0);
+        m.set(2, 0, 2.0); // set (0,2) via swap
+        m.set(1, 2, 3.0);
+
+        assert_eq!(m.get(0, 1), 1.0);
+        assert_eq!(m.get(1, 0), 1.0);
+        assert_eq!(m.get(0, 2), 2.0);
+        assert_eq!(m.get(2, 0), 2.0);
+        assert_eq!(m.get(1, 2), 3.0);
+        assert_eq!(m.get(0, 0), 0.0);
+    }
+
+    #[test]
+    fn test_scoring_matrix_basic() {
+        let mut m = ScoringMatrix::with_defaults(0.0, -1.0);
+        m.set(0, 1, 5.0);
+        m.set(2, 1, 10.0);
+
+        // Check set values (symmetric)
+        assert_eq!(m.get(0, 1), 5.0);
+        assert_eq!(m.get(1, 0), 5.0);
+        assert_eq!(m.get(1, 2), 10.0);
+        
+        // Check diagonal default
+        assert_eq!(m.get(0, 0), 0.0);
+        assert_eq!(m.get(3, 3), 0.0);
+
+        // Check missing default
+        assert_eq!(m.get(0, 2), -1.0);
+        assert_eq!(m.get(3, 4), -1.0);
+    }
+
+    #[test]
+    fn test_named_matrix_basic() {
+        let names = vec!["A".to_string(), "B".to_string()];
+        let mut m = NamedMatrix::new(names);
+        
+        m.set(0, 1, 0.5);
+        
+        // Check size
+        assert_eq!(m.size(), 2);
+        
+        // Check values
+        assert_eq!(m.get(0, 1), 0.5);
+        assert_eq!(m.get(1, 0), 0.5); // Symmetric update
+        assert_eq!(m.get(0, 0), 0.0);
+        
+        // Check by name
+        assert_eq!(m.get_by_name("A", "B"), Some(0.5));
+        assert_eq!(m.get_by_name("B", "A"), Some(0.5));
+        assert_eq!(m.get_by_name("A", "C"), None);
+        
+        // Set by name
+        assert!(m.set_by_name("A", "B", 0.8).is_ok());
+        assert_eq!(m.get(0, 1), 0.8);
+        assert!(m.set_by_name("A", "C", 0.9).is_err());
+    }
+}
