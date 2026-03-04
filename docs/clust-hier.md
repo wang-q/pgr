@@ -130,12 +130,58 @@
 1.  **Ward/Centroid 平方距离优化 (已完成)**:
     - 改进：在算法开始时一次性将距离矩阵平方，使用简化版 Lance-Williams 更新，仅在输出时开方。
     - 效果：消除了每次迭代中的 `sqrt` 调用，使得 Ward Linkage 的性能与 Average Linkage 持平（基准测试证实）。
-2.  **Chain 循环优化**:
-    - 当前 NN-chain 实现每次合并后丢弃了 Chain 末尾两个元素，但剩余部分仍然有效。
-    - 改进：重用剩余 Chain，避免重复搜索最近邻。
-3.  **In-place 接口**:
+2.  **In-place 接口 (已完成)**:
     - 引入 `linkage_inplace`，允许消耗输入的 `CondensedMatrix`（避免克隆），节省 $O(N^2)$ 内存复制开销。
+3.  **Chain 循环优化 (已分析)**:
+    - 分析：`kodama` 使用了高效的 `ActiveList` (双向链表) 来跳过非活跃节点。
+    - 结论：虽然这能将寻找最近邻的复杂度从 $O(N)$ 降至 $O(K)$，但鉴于 Condensed Matrix 的顺序访问对 CPU 缓存非常友好，且当前实现在 $N=400$ 时仅需 ~1ms，引入链表的跳跃访问可能收益有限甚至负优化（对于中小规模数据）。
+    - 决策：暂不实施，直至 profiling 显示 NN 搜索成为显著瓶颈。
+4.  **MST 算法 (已分析)**:
+    - 分析：`scikit-learn` 和 `kodama` 对 Single Linkage 使用 MST 算法。
+    - 结论：对于稠密矩阵，NN-Chain 和 Prim MST 都是 $O(N^2)$。当前的 NN-Chain 实现通用且足够高效。MST 主要优势在于处理稀疏图输入（Phase 3 范畴）。
+    - 决策：维持现状。
 
+
+#### Phase 5: 测试覆盖率增强 (已完成)
+参考 `kodama` 和 `scikit-learn` 的测试策略，已增加以下测试以提升稳健性：
+1.  **Fuzzing / Randomized Testing (Kodama)**:
+    - 目标：验证 NN-Chain 算法与 Primitive 算法在大量随机输入下的一致性。
+    - 状态：已实现 `test_nn_chain_fuzzing`，循环测试 20 个不同大小（$N=10 \sim 105$）的随机矩阵，验证输出 Step 数量和合并距离的一致性（包括 Ward 方法）。
+2.  **Monotonicity Check (Sklearn)**:
+    - 目标：验证生成的 Dendrogram 是否满足单调性（除了 Centroid/Median 方法）。
+    - 状态：已实现 `test_monotonicity`，断言所有单调方法的 `steps[i].distance <= steps[i+1].distance`。
+3.  **Edge Cases (Kodama)**:
+    - 目标：验证极小输入的处理 ($N=0, 1, 2$)。
+    - 状态：已实现 `test_edge_cases`，确保空输入或单点输入正确返回空结果。
+
+#### Phase 6: 基准测试增强 (已完成)
+参考 `kodama` 和 `scikit-learn` 的基准测试策略，已实施了以下测试：
+1.  **多尺度性能曲线 (Scalability)**:
+    - 验证了 NN-Chain 算法在 $N=1000 \sim 4000$ 范围内的 $O(N^2)$ 扩展性。
+    - **Ward** 与 **Average** 的性能曲线几乎重合，证明了平方距离优化的有效性。
+    - $N=4000$ 时耗时约 0.18s，推算 $N=20000$ 时约需 5s，完全可接受。
+2.  **方法间对比 (Method Comparison)**:
+    - 在 $N=1000$ 时，所有方法（Single, Complete, Average, Weighted, Ward）的耗时高度一致（~6.0ms）。
+    - 表明核心算法框架的效率主导了计算，具体距离公式的差异对性能影响微乎其微。
+
+**最新 Benchmark 数据 (Average & Ward):**
+
+| N | Primitive $O(N^3)$ | NN-Chain $O(N^2)$ |
+|---|---|---|
+| 100 | ~0.3 ms | ~0.06 ms |
+| 400 | ~16 ms | ~0.9 ms |
+| 1000 | (未测) | ~5.3 ms |
+| 2000 | (未测) | ~29.0 ms |
+| 4000 | (未测) | ~174 ms |
+
+#### Phase 7: 真实分布与效果验证 (Planned)
+参考 `linfa-hierarchical` 的 `test_blobs` 测试，计划增加以下内容以验证算法的统计有效性：
+1.  **真实分布测试 (Blobs Test)**:
+    - 目标：验证算法能否正确聚类具有明显几何结构的合成数据（Statistical Correctness）。
+    - 计划：在 `tests/` 中添加集成测试，生成两个高斯分布的簇（Blob A 和 Blob B），计算距离矩阵，运行 `clust hier`，验证生成的 Newick 树是否将两个簇的点分在不同的主分支上。
+2.  **输入预处理文档**:
+    - 目标：澄清输入要求。
+    - 计划：在文档中明确指出 `clust hier` 需要**距离矩阵**。如果用户有相似度矩阵（如 BLAST bitscore），需先转换为距离（如 `neg-log` 变换）。
 
 ## CLI 设计
 
