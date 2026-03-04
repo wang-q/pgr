@@ -179,9 +179,10 @@
 1.  **真实分布测试 (Blobs Test)**:
     - 目标：验证算法能否正确聚类具有明显几何结构的合成数据（Statistical Correctness）。
     - 计划：在 `tests/` 中添加集成测试，生成两个高斯分布的簇（Blob A 和 Blob B），计算距离矩阵，运行 `clust hier`，验证生成的 Newick 树是否将两个簇的点分在不同的主分支上。
-2.  **输入预处理文档**:
+    - **注意**：由于 `pgr nwk cut` 命令尚未实现，该测试目前无法完全自动化验证（需要切树来检查分组），因此暂时推迟。
+2.  **输入预处理文档 (已完成)**:
     - 目标：澄清输入要求。
-    - 计划：在文档中明确指出 `clust hier` 需要**距离矩阵**。如果用户有相似度矩阵（如 BLAST bitscore），需先转换为距离（如 `neg-log` 变换）。
+    - 状态：已在 `mat-transform.md` 和 `clust-hier.md` 中更新，并增强了 `pgr mat transform` 功能（支持对角线归一化），确保用户能正确地将相似度转换为距离。
 
 ## CLI 设计
 
@@ -192,7 +193,8 @@
 
 ### 输入
 - 矩阵文件：PHYLIP 距离矩阵（标准或宽松格式）
-- 格式转换：若手头是 pair TSV（三列 `name1  name2  distance`），请先使用 `pgr mat to-phylip` 转换为 PHYLIP；统一入口减少歧义，便于与 `clust upgma/nj` 一致
+- 格式转换：若手头是 pair TSV（三列 `name1  name2  distance`），请先使用 `pgr mat to-phylip` 转换为 PHYLIP；统一入口减少歧义，便于与 `clust upgma/nj` 一致。
+- 距离/相似度转换：`clust hier` 仅接受**距离矩阵**（越小越相似）。如果输入是相似度矩阵（如 BLAST Identity, Alignment Score），请先使用 `pgr mat transform` 进行转换（如 `--op inv-linear --max 100` 或 `--op log`）。
 - 名称来源：自动从输入解析；无需额外标签文件
 
 ### 主要参数
@@ -241,16 +243,16 @@ pgr clust hier matrix.phy --method average > tree.nwk
 ### 示例映射
 - SciPy linkage（Ward）:
   - Python: `Z = linkage(y, method='ward', optimal_ordering=True)`
-  - pgr: `pgr mat to-phylip pairs.tsv -o matrix.phy` → `pgr clust hier matrix.phy --method ward --optimal-ordering > tree.nwk`
+  - pgr: `pgr mat to-phylip pairs.tsv -o matrix.phy` → `pgr clust hier matrix.phy --method ward --optimal-ordering > tree.nwk`（`--optimal-ordering` 规划中）
 - SciPy fcluster（按距离平切）:
   - Python: `labels = fcluster(Z, t=0.05, criterion='distance')`
-  - pgr: `pgr nwk cut tree.nwk --height 0.05 > clusters.tsv`
+  - pgr: `pgr nwk cut tree.nwk --height 0.05 > clusters.tsv`（`nwk cut` 规划中）
 - SciPy fcluster（按簇数平切）:
   - Python: `labels = fcluster(Z, t=20, criterion='maxclust')`
-  - pgr: `pgr nwk cut tree.nwk --k 20 > clusters.tsv`
+  - pgr: `pgr nwk cut tree.nwk --k 20 > clusters.tsv`（`nwk cut` 规划中）
 - SciPy cophenet:
   - Python: `c, dists = cophenet(Z, Y)`
-  - pgr（规划）：`pgr nwk metrics tree.nwk --metrics cophenet --dist matrix.phy > metrics.tsv`
+  - pgr: `pgr nwk metrics tree.nwk --metrics cophenet --dist matrix.phy > metrics.tsv`（`nwk metrics` 规划中）
 
 ### scikit-learn 映射
 - AgglomerativeClustering (Ward):
@@ -261,12 +263,12 @@ pgr clust hier matrix.phy --method average > tree.nwk
   - pgr: `pgr clust hier matrix.phy --method average > tree.nwk`
 - 差异说明:
   - scikit-learn 侧重于直接输出聚类标签（`labels_`），`pgr` 侧重于生成树结构（Newick）。
-  - 若需在 `pgr` 中获得标签，请配合 `nwk cut` 使用。
+  - 若需在 `pgr` 中获得标签，请配合 `nwk cut`（规划中）使用。
 
 ### 与工具链协作
 - 构树：`pgr clust hier` → 生成 dendrogram
-- 切分：`pgr nwk cut --height H` → 导出分组（也可用 TreeCluster 风格约束方法）
+- 切分：`pgr nwk cut --height H` → 导出分组（规划中）
 - 评估：
-  - 无 Ground Truth：`pgr nwk metrics`（silhouette、簇内直径、最近簇间距）
-  - 有 Ground Truth：`pgr clust eval/compare`（ARI/AMI/V-Measure）
+  - 无 Ground Truth：`pgr nwk metrics`（silhouette、簇内直径、最近簇间距）（规划中）
+  - 有 Ground Truth：`pgr clust eval/compare`（ARI/AMI/V-Measure）（规划中）
 - 可视化：`pgr nwk to-dot/to-forest` → 图形/LaTeX 展示
