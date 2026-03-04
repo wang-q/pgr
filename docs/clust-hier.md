@@ -15,11 +15,11 @@
 - 与 UPGMA 的关系：
   - R `hclust(method="average")` 等价“平均链接”；UPGMA 是在“超度量（分子钟）”假设下的专用版本，输出有根且严格超度量的树，分支长度具有“时间/演化”意义。
   - 结论：两者链接更新一致，但语义不同；UPGMA 更偏系统发育场景，`clust hier` 更偏统计聚类。
-  - 参考实现：CLI [upgma](file:///c:/Users/wangq/Scripts/pgr/src/cmd_pgr/mat/upgma.rs)，库 [build::upgma](file:///c:/Users/wangq/Scripts/pgr/src/libs/phylo/build.rs#L1-L43)
+  - 参考实现：CLI [upgma](file:///c:/Users/wangq/Scripts/pgr/src/cmd_pgr/clust/upgma.rs)，库 [clust::upgma](file:///c:/Users/wangq/Scripts/pgr/src/libs/clust/upgma.rs)
 - 与 NJ 的关系：
   - NJ（Neighbor-Joining）通过 Q 矩阵最小化总树长，生成“加性最短树”，不属于链接更新范式，输出通常为无根树。
   - 在一般加性距离下，NJ比UPGMA更鲁棒；若距离是超度量，UPGMA/hclust-average与NJ在拓扑上通常一致（无根视角）。
-  - 参考实现：CLI [nj](file:///c:/Users/wangq/Scripts/pgr/src/cmd_pgr/mat/nj.rs)
+  - 参考实现：CLI [nj](file:///c:/Users/wangq/Scripts/pgr/src/cmd_pgr/mat/nj.rs)，库 [clust::nj](file:///c:/Users/wangq/Scripts/pgr/src/libs/clust/nj.rs)
 
 ## 方法与算法要点
 - `single/complete/average`：标准链接更新（Lance–Williams 框架），合并高度为链接准则对应的距离/代价。
