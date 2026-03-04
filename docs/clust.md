@@ -62,15 +62,16 @@
   - **适用场景**：一般加性距离（无需分子钟假设），构建进化树。
   - **优势**：速度快，对不同演化速率鲁棒。
 
-### 📅 计划中 (Planned)
-
-这些算法已列入路线图，旨在补全统计聚类与大规模向量分析能力。
-
 - **Hierarchical Clustering**
   - **原理**：通用的自底向上（Agglomerative）聚类框架。通过不同的链接准则（如 Ward 最小方差、Complete 最远距离）合并簇，构建完整的树状层级。
   - **命令**：`pgr clust hier` (别名 `hclust`)
-  - **计划内容**：支持 `ward`, `complete` 等 linkage 方法，输出 Newick 树。
+  - **特点**：通用层次聚类，支持 `single`, `complete`, `average`, `ward` 等方法。
+  - **实现状态**：✅ 已实现（$O(N^2)$ NN-Chain 优化）。
   - **价值**：提供通用层级结构视图（不限于生物演化），配合 `nwk cut` 可灵活获取不同粒度的分组。
+
+### 📅 计划中 (Planned)
+
+这些算法已列入路线图，旨在补全统计聚类与大规模向量分析能力。
 
 - **GMM (Gaussian Mixture Models)**
   - **原理**：假设数据由 $K$ 个高斯分布混合而成。使用 EM（期望最大化）算法迭代估计每个高斯分量的参数（均值、协方差）及每个样本属于各分量的后验概率。
@@ -224,9 +225,9 @@ pgr clust gmm input.tsv --k 5 --cov full > clusters.tsv
   - **定位**：通用统计聚类底层引擎，类似 SciPy/scikit-learn。
   - **输入**：`CondensedMatrix` (压缩上三角矩阵，节省 50% 内存)。
   - **输出**：`Vec<Step>` (Linkage Matrix)，记录合并步骤，不直接生成 Tree 对象。
-  - **实现**：目前为朴素 $O(N^3)$ (MVP)，规划引入 NN-chain 优化至 $O(N^2)$。
+  - **实现**：已实现 **NN-chain** 算法，时间复杂度优化至 $O(N^2)$，且对 Ward 方法进行了平方距离优化。支持 In-place 操作以减少内存复制。
   - **与 UPGMA 的关系**：`hier` 是更底层的通用计算引擎；但 `upgma` 作为一个独立、直观且生物学语义明确的实现将被**长期保留**，作为算法学习和基准参考。
-- **未来方向**：实现通用的 `clust hier` 时，应参考 sklearn 的 Heap 优化思路。
+- **未来方向**：探索针对超大规模数据的近似算法（如 Representative Strategy 已被推荐）。
 
 ## 大规模数据策略 (Two-stage / Representative Strategy)
 
