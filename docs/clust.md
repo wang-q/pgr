@@ -85,12 +85,6 @@
   - **计划内容**：层次化 DBSCAN，无需手动指定 `eps`。
   - **价值**：DBSCAN 的现代高级版，**自动适应不同密度的簇**，参数更少且更稳健。
 
-- **K-Means**
-  - **原理**：通过迭代将 $N$ 个样本划分到 $K$ 个簇中，使得每个样本到其簇中心（质心）的平方距离之和（Inertia）最小。
-  - **命令**：`pgr clust kmeans`
-  - **计划内容**：经典的欧氏空间硬聚类。
-  - **价值**：**大规模向量**聚类的基准算法，速度快，适合均匀球形簇。
-
 - **Louvain / Leiden**
   - **原理**：基于模块度（Modularity）优化的社区发现算法。Louvain 贪心地最大化模块度；Leiden 改进了 Louvain 的局部合并策略，保证连通性并加速收敛。
   - **命令**：(待定)
@@ -100,6 +94,15 @@
 ### 🚫 不建议实现 / 暂无计划 (Not Planned)
 
 这些算法虽然经典，但在生物大数据场景下存在局限性，暂不作为核心功能引入。
+
+- **K-Means**
+  - **原因**：虽然速度快，但假设簇是球形且方差相等，且质心（Centroid）通常不是真实的样本点，缺乏生物学解释性（如无法直接作为代表序列）。
+  - **替代**：`K-Medoids`（已实现），其中心点（Medoid）必须是真实样本，且支持任意距离矩阵，更适合生物序列分析。
+
+- **Bisecting K-Means**
+  - **原理**：自顶向下的分裂式聚类。初始将所有点视为一簇，每次选择 SSE 最大的簇进行二分 K-Means 分裂，直到达到 K 个簇。
+  - **原因**：虽然能生成树状结构（二叉树），但继承了 K-Means 的局限性（需欧氏距离、质心非真实样本）。生物学构树通常偏好自底向上的 Agglomerative 方法（如 UPGMA/NJ）。
+  - **替代**：`clust hier` (Hierarchical Clustering) 或 `HDBSCAN`。
 
 - **Affinity Propagation (AP)**
   - **原理**：基于消息传递机制，所有点相互竞争成为代表点（Exemplar）。不需要指定簇数，但计算复杂度高。
@@ -116,9 +119,19 @@
   - **原因**：计算复杂度高，且带宽参数（bandwidth）难以自适应选择。
   - **替代**：`DBSCAN` 或 `GMM` 通常能覆盖其密度估计的需求。
 
+- **OPTICS**
+  - **原理**：通过生成一个可达距离图（Reachability Plot），对数据点进行排序，从而在一次运行中捕获所有可能的密度层级。解决了 DBSCAN 对全局 `eps` 敏感的问题。
+  - **原因**：其核心思想（层级密度聚类）已被 **HDBSCAN** 更好地继承和自动化；OPTICS 的结果（可达距离图）需要复杂的后处理才能得到明确的簇。
+  - **替代**：推荐使用更现代、参数更少且自动化程度更高的 `HDBSCAN`。
+
 - **Biclustering (双聚类)**
   - **原因**：同时对行和列进行聚类（如 Spectral Co-Clustering），主要用于基因表达谱分析等特定矩阵子块挖掘场景，与 `pgr` 当前专注的“样本分组”目标差异较大。
   - **替代**：若需对特征（列）进行聚类，可转置矩阵后使用标准聚类；若需寻找共表达模块，建议使用专门的表达谱分析工具（如 WGCNA）。
+
+- **BIRCH**
+  - **原理**：基于聚类特征树（CF Tree）的增量聚类。通过单次扫描构建一棵高度压缩的树，树节点存储簇的统计摘要（Sum, SquareSum），极适合超大规模数据集。
+  - **原因**：强依赖于欧氏空间的统计特性（计算质心和半径），不适用于生物序列的复杂距离度量（如 Edit Distance）；且对簇形状有限制。
+  - **替代**：对于大规模向量，`K-Means (MiniBatch)` 是更通用的选择；对于大规模序列，推荐 `MCL`（图聚类）或 `CD-HIT/MMseqs2`（贪心聚类）。
 
 ## 算法详细说明 (Detailed Descriptions)
 
@@ -145,6 +158,39 @@ pgr clust gmm input.tsv --k 5 --cov full > clusters.tsv
   - 在 GMM 中，BIC 权衡了对数似然（拟合度）与参数数量（复杂度）。
   - `pgr` 可提供 `clust gmm --scan-k 2..20`，自动计算并输出 BIC 曲线，辅助用户选择最佳 K（通常是 BIC 最低点或手肘点）。
 - **Silhouette / Calinski-Harabasz** [部分支持]：基于几何距离的评估指标，适用于 K-means 或一般距离聚类（`nwk metrics` 已支持树上 Silhouette）。
+
+## 实现分析与对比 (Implementation Analysis)
+
+通过与 scikit-learn 的源码对比，总结 `pgr` 当前实现的特点与未来优化方向。
+
+### DBSCAN
+
+- **scikit-learn 实现**：
+  - **核心**：使用 `NearestNeighbors` 模块（基于 BallTree/KDTree）加速邻域查询。
+  - **优化**：支持稀疏矩阵；通过 `n_jobs` 并行化；核心逻辑部分使用 Cython 加速。
+  - **适用性**：能处理数百万量级的数据（如果维度不高）。
+- **pgr 实现**：
+  - **核心**：基于 `ScoringMatrix` 的朴素 $O(N^2)$ 距离遍历；`region_query` 为线性扫描。
+  - **特点**：代码简洁，无需额外空间索引库；输出包含“代表点对”等生物学便利功能。
+  - **局限**：缺乏空间索引，在大规模（>1万点）或高维数据上性能不如 sklearn。
+- **未来方向**：对于大规模向量输入，需引入空间索引（如 R-tree/KD-tree）或并行化邻域搜索。
+
+### 层次聚类 (UPGMA / NJ vs Agglomerative)
+
+- **scikit-learn (AgglomerativeClustering)**：
+  - **定位**：通用统计聚类，输出 Linkage Matrix（$N-1$ 次合并记录）。
+  - **优化**：
+    - 使用 **MST (最小生成树)** 加速 Single Linkage ($O(N^2)$)。
+    - 使用 **Heap (堆)** 结构加速 Ward/Average/Complete Linkage 的最近邻查找。
+  - **输出**：不直接生成 Newick 树，需转换。
+- **pgr (UPGMA / NJ)**：
+  - **定位**：生物系统发育构树，直接输出 **Tree** 对象和 **Newick** 格式。
+  - **实现**：
+    - **UPGMA**：动态维护距离矩阵（HashMap），每次迭代寻找最小值，复杂度 $O(N^3)$。
+    - **NJ**：经典的 Neighbor-Joining 实现，计算净发散度与 Q 矩阵，输出无根树。
+  - **优势**：逻辑直观，原生支持生物学所需的枝长计算与树操作。
+  - **局限**：未采用 Heap 优化，在大规模数据（>5000 序列）上速度慢于优化过的 Linkage 算法。
+- **未来方向**：实现通用的 `clust hier` 时，应参考 sklearn 的 Heap 优化思路，而非简单复用 UPGMA 的 $O(N^3)$ 逻辑。
 
 ## 推荐工作流
 
