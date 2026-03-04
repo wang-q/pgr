@@ -104,8 +104,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let xmm = args
         .get_one::<String>("xmm")
         .map(|s| {
-            let parts: Vec<f64> =
-                s.split(',').filter_map(|x| x.trim().parse().ok()).collect();
+            let parts: Vec<f64> = s.split(',').filter_map(|x| x.trim().parse().ok()).collect();
             if parts.len() == 2 {
                 Some((parts[0], parts[1]))
             } else {
@@ -118,8 +117,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let unit = args
         .get_one::<String>("unit")
         .map(|s| {
-            let parts: Vec<f64> =
-                s.split(',').filter_map(|x| x.trim().parse().ok()).collect();
+            let parts: Vec<f64> = s.split(',').filter_map(|x| x.trim().parse().ok()).collect();
             (parts[0], parts[1])
         })
         .unwrap();

@@ -156,8 +156,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             } else {
                 let last_domain = domains.last().unwrap();
                 let last_pos: f64 = last_domain.get("pos").unwrap().parse().unwrap();
-                let last_dx_after: f64 =
-                    last_domain.get("dx_after").unwrap().parse().unwrap();
+                let last_dx_after: f64 = last_domain.get("dx_after").unwrap().parse().unwrap();
                 format!("{:.1}", last_pos + last_dx_after + dx_before)
                     .parse()
                     .unwrap()
@@ -208,10 +207,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn gen_module(
-    info: &HashMap<String, String>,
-    domains: &Vec<HashMap<String, String>>,
-) -> String {
+fn gen_module(info: &HashMap<String, String>, domains: &Vec<HashMap<String, String>>) -> String {
     let mut context = tera::Context::new();
     context.insert("info", &info);
     context.insert("domains", &domains);
