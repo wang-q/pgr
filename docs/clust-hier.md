@@ -90,21 +90,19 @@
 
 ### 阶段性实现路线
 
-#### Phase 1: MVP (Primitive Implementation)
-- **目标**：快速打通从 PHYLIP/Pair 到 Newick 的流程，验证接口与正确性。
-- **算法**：朴素的 Agglomerative 聚类 ($O(N^3)$)。
-  1.  **输入**：构建 `CondensedMatrix`。
-  2.  **初始化**：所有样本视为独立簇，活跃簇集合 $C = \{0, 1, ..., N-1\}$。
-  3.  **迭代** (共 $N-1$ 次)：
-      - 扫描距离矩阵，找到最小距离对 $(u, v)$。
-      - 合并 $u, v$ 为新簇 $w$。
-      - 更新距离：使用 Lance-Williams 公式计算 $w$ 与其他活跃簇 $k$ 的距离 $d(w, k)$，更新到矩阵中。
-      - 标记 $u, v$ 为非活跃，加入 $w$。
-      - 记录合并步骤（Stepwise Dendrogram）。
-  4.  **输出**：将记录的合并步骤转换为 Newick 格式。
-- **关键点**：优先支持 `ward.D2` 和 `average`。虽然慢，但逻辑简单，是 Phase 2 的测试基准。
+#### Phase 1: MVP (Primitive Implementation) - **已完成 (Completed)**
+- **状态**：已在 `src/libs/clust/hier.rs` 中实现。
+- **特性**：
+  - 实现了基于 `CondensedMatrix`（上三角压缩矩阵）的存储，节省 50% 内存。
+  - 实现了通用的 Lance-Williams 更新公式，支持 7 种 Linkage 方法：
+    - `Single`, `Complete`, `Average` (UPGMA), `Weighted` (WPGMA), `Centroid` (UPGMC), `Median` (WPGMC), `Ward` (Ward's D2)。
+  - 复杂度：$O(N^3)$ 时间，$O(N^2)$ 空间。
+  - 验证：单元测试覆盖了各种 Linkage 方法的正确性（对比预期的新簇距离）。
+- **代码位置**：
+  - 核心逻辑：[`src/libs/clust/hier.rs`](file:///c:/Users/wangq/Scripts/pgr/src/libs/clust/hier.rs)
+  - 矩阵结构：[`src/libs/pairmat.rs`](file:///c:/Users/wangq/Scripts/pgr/src/libs/pairmat.rs) (CondensedMatrix)
 
-#### Phase 2: 性能优化 (NN-chain)
+#### Phase 2: 性能优化 (NN-chain) - **待办 (Planned)**
 - **目标**：将时间复杂度降至 $O(N^2)$，支撑 $N \approx 5000$ 到 $10000$ 的数据。
 - **算法**：NN-chain (Nearest-neighbor chain) 算法。
   - **适用性**：Ward, Average, Complete, Weighted (要求空间具有可还原性/Reducibility，Single Linkage 不适用此法但可用 MST)。
@@ -115,7 +113,7 @@
   - **优势**：避免了全局搜索最小值，利用局部性原理加速。
 - **参考**：直接参考 `kodama` 的实现逻辑，特别是其 `chain.rs` 和 `linkage.rs` 中的状态管理。
 
-#### Phase 3: 大规模扩展 (Sparse/Linear)
+#### Phase 3: 大规模扩展 (Sparse/Linear) - **待办 (Planned)**
 - **目标**：支持超大规模数据 ($N > 10000$)。
 - **策略**：
   - **稀疏输入**：不再构建全/压缩矩阵，直接基于邻接表 (`HashMap<usize, Vec<(usize, f32)>>`) 进行计算。
