@@ -389,6 +389,11 @@ impl NamedMatrix {
     /// let matrix = NamedMatrix::from_relaxed_phylip("input.phy");
     /// ```
     pub fn from_relaxed_phylip(infile: &str) -> Self {
+        Self::from_relaxed_phylip_with_diags(infile).0
+    }
+
+    /// Creates a new matrix and returns diagonals from a relaxed PHYLIP format file
+    pub fn from_relaxed_phylip_with_diags(infile: &str) -> (Self, Vec<f32>) {
         let mut names = Vec::new();
         let mut raw_values = Vec::new();
 
@@ -410,6 +415,7 @@ impl NamedMatrix {
 
         let size = names.len();
         let mut matrix = Self::new(names);
+        let mut diags = vec![0.0; size];
 
         // Fill the matrix (lower triangle from PHYLIP)
         // raw_values contains flattened lower triangle: (1,0), (2,0), (2,1), ...
@@ -418,13 +424,17 @@ impl NamedMatrix {
             for j in 0..=i {
                 if k < raw_values.len() {
                     let value = raw_values[k];
-                    matrix.set(i, j, value);
+                    if i == j {
+                        diags[i] = value;
+                    } else {
+                        matrix.set(i, j, value);
+                    }
                     k += 1;
                 }
             }
         }
 
-        matrix
+        (matrix, diags)
     }
 
     fn process_phylip_line(line: &str, names: &mut Vec<String>, values: &mut Vec<f32>) {

@@ -48,13 +48,13 @@ fn main() -> anyhow::Result<()> {
     * psl   - PSL statistics, manipulation, and conversion
 
 * Clustering:
-    * clust - Algorithms: cc, dbscan, k-medoids, mcl
+    * clust - Algorithms: cc, dbscan, hier, k-medoids, mcl, nj, upgma
 
 * Distance:
     * dist  - Metrics: hv
 
 * Matrix:
-    * mat   - Processing: compare, format, subset, to-pair, to-phylip, upgma, nj
+    * mat   - Processing: compare, format, subset, to-pair, to-phylip, transform
 
 * Phylogeny:
     * nwk   - Newick tools: stat
