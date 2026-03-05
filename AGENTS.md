@@ -141,9 +141,21 @@ cargo test
 
 ## 帮助文本规范 (Help Text Style Guide)
 
-- **About**: 第三人称单数动词 (e.g., "Calculates...", "Converts...").
-- **Args**:
-    - Input: `infile` / `infiles`.
-    - Output: `outfile` (`-o`).
-- **Description**: 简明扼要，解释命令的核心功能。
-- **Examples**: 提供典型的使用示例。
+- **`about`**: Third-person singular (e.g., "Counts...", "Calculates...").
+- **`after_help`**: Uses raw string `r###"..."###`.
+    - **Description**: Detailed explanation.
+    - **Notes**: Bullet points starting with `*`.
+        - Standard note for `fa`/`fas`: `* Supports both plain text and gzipped (.gz) files`
+        - Standard note for `fa`/`fas`: `* Reads from stdin if input file is 'stdin'`
+        - Standard note for `twobit`: `* 2bit files are binary and require random access (seeking)`
+        - Standard note for `twobit`: `* Does not support stdin or gzipped inputs`
+    - **Examples**: Numbered list (`1.`, `2.`) with code blocks indented by 3 spaces.
+- **Arguments**:
+    - **Input**: `infiles` (multiple) or `infile` (single).
+        - Help: `Input [FASTA|block FA|2bit] file(s) to process`.
+    - **Output**: `outfile` (`-o`, `--outfile`).
+        - Help: `Output filename. [stdout] for screen`.
+- **Terminology**:
+    - `pgr fa` -> "FASTA"
+    - `pgr fas` -> "block FA"
+    - `pgr twobit` -> "2bit"

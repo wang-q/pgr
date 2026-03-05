@@ -116,6 +116,28 @@
 - **Non-Singletons**: 即 TreeCluster `argmax_clusters` 试图最大化的指标。
 - **MaxSize**: 辅助判断是否存在“超级大簇”（under-clustering）。
 
+### 与 `pgr clust eval` 的联动（有 Ground Truth 时）
+
+`--scan` 输出的是“阈值 → 摘要指标”的表格，用于缩小候选阈值范围；它不会把每个阈值对应的完整分区都展开输出（否则输出会非常大）。
+
+如果你手头有 Ground Truth（或想把不同阈值下的分区与某个参考分区比较），推荐的用法是：
+
+1. 先用 `--scan` 快速定位几个有意义的候选阈值区间（例如手肘点附近）。
+2. 对少数候选阈值，分别运行一次 `pgr nwk cut` 生成分区，再用 `pgr clust eval` 计算 ARI/AMI/V-Measure 等外部一致性指标。
+
+示例：
+
+```bash
+# 1) 扫描阈值，先看摘要趋势
+pgr nwk cut tree.nwk --max-clade 0.5 --scan 0,0.5,0.01 > scan.tsv
+
+# 2) 选定阈值后生成分区
+pgr nwk cut tree.nwk --max-clade 0.12 > pred.tsv
+
+# 3) 与 ground truth 对比（Partition vs Partition）
+pgr clust eval pred.tsv truth.tsv -o eval.tsv
+```
+
 ### 自动选点与 TreeCluster 策略
 
 TreeCluster 提供了一种“无阈值”（Threshold-Free）模式（通过 `-tf argmax_clusters` 启用），其本质是基于扫描的自动选点。

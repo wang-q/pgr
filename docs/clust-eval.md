@@ -24,6 +24,17 @@
   - 对簇大小不平衡鲁棒。
 - **RI (Rand Index)**: 基础的一致性比例（未校正随机性）。
 
+#### 与 ROC/PR 的关系（为什么这里不画“曲线”）
+
+不少用户会把 “同簇/不同簇” 的配对指标联想到 ROC/PR 曲线：把每个样本对 `(i, j)` 当成二分类（同簇=正类），然后随阈值变化画出曲线。
+
+这里需要区分两种输入类型：
+
+- **Partition（分区结果）**：输入是一个固定的聚类划分（`cluster` 或 `pair`）。它对每个样本对只给出 0/1（同簇或不同簇），没有可调阈值，因此只能对应 ROC/PR 空间中的一个点，而不是一条曲线。
+- **Scored pairs / 可扫阈值的过程**：如果你对每个样本对还有一个连续分数（相似度/距离/共聚类概率），或者聚类过程本身可随阈值连续切分（例如层次聚类的 cut height），才会自然产生 ROC/PR 曲线与 AUC。
+
+`pgr clust eval` 的定位是 “Partition vs Partition” 的一致性评估，因此核心输出是 ARI/AMI/V-Measure 这类对两个分区的整体比较；若你确实需要 ROC/PR 的曲线视角，通常意味着要从“带阈值”的来源（距离阈值、树高阈值、或相似度阈值）生成一系列分区，再逐点计算对应的 TP/FP 等统计量。
+
 ### 2. 基于信息论 (Information Theoretic)
 *关注两个分区所共享的信息量。*
 
@@ -45,11 +56,17 @@
 ## 输入与输出约定
 
 ### 输入
-- **Partition 1 (`-1` / `--p1`)**: 第一个分组文件（TSV）。
-- **Partition 2 (`-2` / `--p2`)**: 第二个分组文件（TSV）。
-  - 格式：`Item <tab> ClusterID`。
-  - 支持 `pgr` 标准的 `cluster` 格式（每行一个簇）或 `pair` 格式（每行一个成员）。
-- **Merge Strategy**: 自动取两个文件样本的交集进行评估。
+- **Partition 1 (`<p1>`)**: 第一个分组文件（TSV，位置参数 1）。
+- **Partition 2 (`<p2>`)**: 第二个分组文件（TSV，位置参数 2）。
+  - 支持与其他命令一致的两种分组表示（`cluster` / `pair`）：
+    ```text
+    * cluster: Each line contains points of one cluster. The first point is the representative.
+    * pair: Each line contains a (representative point, cluster member) pair.
+    ```
+  - 评估内部会将输入统一规整为 “每个样本一个标签” 的映射：`Item -> Label`。
+    - 对于 `cluster` / `pair` 输入，`Label` 取 `representative`（实现上也可以再重映射为紧凑整数）。
+    - 注意 `pair` 文件本身通常是 `Label <tab> Item`（即 `Representative <tab> Member`），规整后会转为 `Item -> Label` 以便做样本对齐与交集。
+- 样本对齐：默认取两个文件样本的交集进行评估。
 
 ### 输出
 - **TSV 格式**，包含所有计算的指标。
@@ -58,11 +75,11 @@
 
 ```bash
 # 比较聚类结果与 Ground Truth
-pgr clust eval --p1 clustering_result.tsv --p2 ground_truth.tsv > eval.tsv
+pgr clust eval clustering_result.tsv ground_truth.tsv -o eval.tsv
 # 输出: ARI, AMI, Homogeneity, Completeness, V-Measure
 
 # 比较两个算法的结果
-pgr clust eval --p1 mcl_clusters.tsv --p2 dbscan_clusters.tsv
+pgr clust eval mcl_clusters.tsv dbscan_clusters.tsv
 ```
 
 ## 现有工具参考 (Prior Art)
