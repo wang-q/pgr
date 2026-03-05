@@ -150,3 +150,27 @@ fn test_clust_eval_internal_silhouette() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_clust_eval_internal_db() -> anyhow::Result<()> {
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("clust")
+        .arg("eval")
+        .arg("tests/clust/eval/db.pair")
+        .arg("--coords")
+        .arg("tests/clust/eval/db.coords.tsv")
+        .output()?;
+
+    let stdout = String::from_utf8(output.stdout)?;
+    assert!(output.status.success());
+
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert_eq!(lines[0], "davies_bouldin");
+    
+    let score = lines[1].parse::<f64>()?;
+    let expected = 0.2;
+    assert!((score - expected).abs() < 1e-4, "Score was {}, expected {}", score, expected);
+
+    Ok(())
+}

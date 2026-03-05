@@ -473,6 +473,165 @@ pub fn silhouette_score<D: DistanceMatrix>(partition: &Partition, dist_mat: &D) 
     total_s / n as f64
 }
 
+/// Represents a set of coordinates for items: Item -> Vector
+#[derive(Debug, Clone)]
+pub struct Coordinates {
+    pub data: HashMap<String, Vec<f64>>,
+    pub dim: usize,
+}
+
+impl Coordinates {
+    /// Load coordinates from a TSV file.
+    /// Format: Item <tab> Dim1 <tab> Dim2 ...
+    pub fn from_path<P: AsRef<Path>>(path: P) -> anyhow::Result<Self> {
+        let file = File::open(path)?;
+        let reader = BufReader::new(file);
+        let mut data = HashMap::new();
+        let mut dim = 0;
+
+        for (i, line) in reader.lines().enumerate() {
+            let line = line?;
+            if line.trim().is_empty() || line.starts_with('#') {
+                continue;
+            }
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() < 2 {
+                continue;
+            }
+
+            let item = parts[0].to_string();
+            let vec: Result<Vec<f64>, _> = parts[1..].iter().map(|&s| s.parse()).collect();
+            let vec = vec?;
+
+            if i == 0 {
+                dim = vec.len();
+            } else if vec.len() != dim {
+                return Err(anyhow::anyhow!(
+                    "Inconsistent dimensions at line {}: expected {}, got {}",
+                    i + 1,
+                    dim,
+                    vec.len()
+                ));
+            }
+
+            data.insert(item, vec);
+        }
+
+        if data.is_empty() {
+            return Err(anyhow::anyhow!("No coordinate data found"));
+        }
+
+        Ok(Coordinates { data, dim })
+    }
+}
+
+/// Calculate Davies-Bouldin Index
+///
+/// The score is defined as the average similarity measure of each cluster with its most similar cluster,
+/// where similarity is the ratio of within-cluster distances to between-cluster distances.
+///
+/// The minimum score is zero, with lower values indicating better clustering.
+pub fn davies_bouldin_score(partition: &Partition, coords: &Coordinates) -> f64 {
+    // 1. Group items by cluster
+    let mut clusters: HashMap<u32, Vec<&String>> = HashMap::new();
+    for (item, &cluster_id) in partition {
+        if coords.data.contains_key(item) {
+            clusters.entry(cluster_id).or_default().push(item);
+        }
+    }
+
+    let n_clusters = clusters.len();
+    if n_clusters < 2 {
+        // DB Index is not defined for < 2 clusters. Sklearn behavior is not explicitly documented for this edge case in simple terms,
+        // but typically returns 0 or error. We return 0.0 similar to Silhouette for consistency?
+        // Actually, if n_clusters < 2, we can't calculate max(R_ij) for j != i.
+        // Let's return f64::NAN or 0.0. Let's return 0.0 for now, but usually it implies "undefined".
+        return 0.0;
+    }
+
+    // 2. Calculate Centroids and Scatter (Average Intra-cluster Distance)
+    struct ClusterStat {
+        centroid: Vec<f64>,
+        scatter: f64,
+    }
+
+    let mut stats: HashMap<u32, ClusterStat> = HashMap::new();
+
+    for (&cluster_id, members) in &clusters {
+        let n_members = members.len();
+        if n_members == 0 {
+            continue;
+        }
+        
+        // Calculate Centroid
+        let mut centroid = vec![0.0; coords.dim];
+        for item in members {
+            let vec = coords.data.get(*item).unwrap();
+            for (d, val) in vec.iter().enumerate() {
+                centroid[d] += val;
+            }
+        }
+        for val in centroid.iter_mut() {
+            *val /= n_members as f64;
+        }
+
+        // Calculate Scatter (Average distance to centroid)
+        let mut sum_dist = 0.0;
+        for item in members {
+            let vec = coords.data.get(*item).unwrap();
+            sum_dist += euclidean_dist(vec, &centroid);
+        }
+        let scatter = sum_dist / n_members as f64;
+
+        stats.insert(cluster_id, ClusterStat { centroid, scatter });
+    }
+
+    // 3. Calculate DB Index
+    // DB = 1/k * sum_{i} max_{j!=i} ( (s_i + s_j) / d(c_i, c_j) )
+    let mut total_db = 0.0;
+
+    for &i in stats.keys() {
+        let mut max_r = 0.0; // R_ij is always >= 0
+        let stat_i = stats.get(&i).unwrap();
+
+        for &j in stats.keys() {
+            if i == j {
+                continue;
+            }
+            let stat_j = stats.get(&j).unwrap();
+            
+            let dist_centroids = euclidean_dist(&stat_i.centroid, &stat_j.centroid);
+            
+            // If centroids overlap perfectly, R_ij -> infinity. 
+            // We should handle this. If scatter is 0, it's 0. If scatter > 0, it's inf.
+            let r_ij = if dist_centroids == 0.0 {
+                if stat_i.scatter + stat_j.scatter == 0.0 {
+                    0.0
+                } else {
+                    1e10 // Large number proxy for infinity? Or just keep it large.
+                }
+            } else {
+                (stat_i.scatter + stat_j.scatter) / dist_centroids
+            };
+
+            if r_ij > max_r {
+                max_r = r_ij;
+            }
+        }
+        total_db += max_r;
+    }
+
+    total_db / stats.len() as f64
+}
+
+fn euclidean_dist(v1: &[f64], v2: &[f64]) -> f64 {
+    v1.iter()
+        .zip(v2.iter())
+        .map(|(a, b)| (a - b).powi(2))
+        .sum::<f64>()
+        .sqrt()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -534,7 +693,7 @@ mod tests {
         p.insert("0".to_string(), 0);
         p.insert("1".to_string(), 1);
         p.insert("2".to_string(), 2);
-
+        
         let names = vec!["0".to_string(), "1".to_string(), "2".to_string()];
         let mut dist_mat = NamedMatrix::new(names);
         dist_mat.set_by_name("0", "1", 1.0).unwrap();
@@ -543,5 +702,31 @@ mod tests {
 
         let score = silhouette_score(&p, &dist_mat);
         assert_eq!(score, 0.0);
+    }
+
+    #[test]
+    fn test_davies_bouldin_score_simple() {
+        // Cluster 1: A(0,0), B(0,1) -> Centroid (0, 0.5), Scatter = 0.5
+        // Cluster 2: C(5,0), D(5,1) -> Centroid (5, 0.5), Scatter = 0.5
+        // M12 = 5.0
+        // R12 = (0.5+0.5)/5.0 = 0.2
+        // DB = (0.2 + 0.2)/2 = 0.2
+        
+        let mut p = Partition::new();
+        p.insert("A".to_string(), 1);
+        p.insert("B".to_string(), 1);
+        p.insert("C".to_string(), 2);
+        p.insert("D".to_string(), 2);
+
+        let mut data = HashMap::new();
+        data.insert("A".to_string(), vec![0.0, 0.0]);
+        data.insert("B".to_string(), vec![0.0, 1.0]);
+        data.insert("C".to_string(), vec![5.0, 0.0]);
+        data.insert("D".to_string(), vec![5.0, 1.0]);
+        
+        let coords = Coordinates { data, dim: 2 };
+        
+        let score = davies_bouldin_score(&p, &coords);
+        assert!((score - 0.2).abs() < 1e-6, "Score was {}", score);
     }
 }

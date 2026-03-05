@@ -1,5 +1,7 @@
 use clap::{Arg, ArgMatches, Command};
-use pgr::libs::clust::eval::{evaluate, load_partition, silhouette_score, PartitionFormat};
+use pgr::libs::clust::eval::{
+    davies_bouldin_score, evaluate, load_partition, silhouette_score, Coordinates, PartitionFormat,
+};
 use pgr::libs::pairmat::NamedMatrix;
 use std::fs::File;
 use std::io::{self, Write};
@@ -43,7 +45,13 @@ Examples:
             Arg::new("matrix")
                 .long("matrix")
                 .num_args(1)
-                .help("Distance matrix file (for internal evaluation)"),
+                .help("Distance matrix file (for internal evaluation: Silhouette)"),
+        )
+        .arg(
+            Arg::new("coords")
+                .long("coords")
+                .num_args(1)
+                .help("Coordinate matrix file (for internal evaluation: Davies-Bouldin)"),
         )
         .arg(
             Arg::new("format")
@@ -93,9 +101,15 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
 
         writeln!(writer, "silhouette")?;
         writeln!(writer, "{:.6}", score)?;
+    } else if let Some(coords_path) = matches.get_one::<String>("coords") {
+        let coords = Coordinates::from_path(coords_path)?;
+        let score = davies_bouldin_score(&p1, &coords);
+
+        writeln!(writer, "davies_bouldin")?;
+        writeln!(writer, "{:.6}", score)?;
     } else {
         anyhow::bail!(
-            "Either <p2> (for external eval) or --matrix (for internal eval) must be provided."
+            "Either <p2> (for external eval), --matrix, or --coords (for internal eval) must be provided."
         );
     }
 
