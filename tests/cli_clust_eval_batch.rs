@@ -25,7 +25,7 @@ D 1.0 1.0 0.2 0.0
 "
     )?;
 
-    // 3. Run nwk cut --scan
+    // 3. Run clust cut --scan
     // Scan range: 0.05 (below 0.1), 0.2 (between 0.1 and 0.5), 0.6 (above 0.5)
     // Actually scan logic: start, end, step.
     // 0.0, 0.6, 0.2 -> 0.0, 0.2, 0.4, 0.6
@@ -36,7 +36,7 @@ D 1.0 1.0 0.2 0.0
 
     let mut cmd_cut = Command::cargo_bin("pgr")?;
     let output_cut = cmd_cut
-        .arg("nwk")
+        .arg("clust")
         .arg("cut")
         .arg(tree_file.path())
         .arg("--height")

@@ -57,7 +57,7 @@ fn create_expected_clusters(groups: Vec<Vec<&str>>) -> Vec<HashSet<String>> {
 #[test]
 fn test_nwk_cut_k() {
     let (stdout, stderr) = PgrCmd::new()
-        .args(&["nwk", "cut", "tests/newick/abcde.nwk", "--k", "2"])
+        .args(&["clust", "cut", "tests/newick/abcde.nwk", "--k", "2"])
         .run();
 
     if !stderr.is_empty() {
@@ -86,7 +86,7 @@ fn test_nwk_cut_leaf_dist_max() {
 
     let (stdout, stderr) = PgrCmd::new()
         .args(&[
-            "nwk",
+            "clust",
             "cut",
             "tests/newick/abcde.nwk",
             "--leaf-dist-max",
@@ -111,7 +111,13 @@ fn test_nwk_cut_max_edge() {
     // Cut at max-edge 0.5 -> All edges cut. {A}, {B}, {C}.
 
     let (stdout, _) = PgrCmd::new()
-        .args(&["nwk", "cut", "tests/newick/abcde.nwk", "--max-edge", "0.5"])
+        .args(&[
+            "clust",
+            "cut",
+            "tests/newick/abcde.nwk",
+            "--max-edge",
+            "0.5",
+        ])
         .run();
 
     let lines: Vec<&str> = stdout.lines().collect();
@@ -132,7 +138,7 @@ fn test_nwk_cut_pair_rep() {
     // Cluster {C}: C(1). -> C.
     let (stdout, _) = PgrCmd::new()
         .args(&[
-            "nwk",
+            "clust",
             "cut",
             "tests/newick/abcde.nwk",
             "--k",
@@ -157,7 +163,7 @@ fn test_nwk_cut_pair_rep() {
     // Same result.
     let (stdout, _) = PgrCmd::new()
         .args(&[
-            "nwk",
+            "clust",
             "cut",
             "tests/newick/abcde.nwk",
             "--k",
@@ -191,7 +197,7 @@ fn test_nwk_cut_cluster_rep() {
     // But we can verify that output format is correct (rep first).
 
     let (stdout, _) = PgrCmd::new()
-        .args(&["nwk", "cut", "tests/newick/abcde.nwk", "--k", "2"])
+        .args(&["clust", "cut", "tests/newick/abcde.nwk", "--k", "2"])
         .run();
     let lines: Vec<_> = stdout.lines().collect();
     // A\tB -> A is rep.
@@ -202,7 +208,7 @@ fn test_nwk_cut_cluster_rep() {
 fn test_nwk_cut_height_pair() {
     let (stdout, _stderr) = PgrCmd::new()
         .args(&[
-            "nwk",
+            "clust",
             "cut",
             "tests/newick/abcde.nwk",
             "--height",
@@ -229,7 +235,13 @@ fn test_nwk_cut_height_pair() {
 #[test]
 fn test_nwk_cut_root_dist() {
     let (stdout, _stderr) = PgrCmd::new()
-        .args(&["nwk", "cut", "tests/newick/abcde.nwk", "--root-dist", "0.5"])
+        .args(&[
+            "clust",
+            "cut",
+            "tests/newick/abcde.nwk",
+            "--root-dist",
+            "0.5",
+        ])
         .run();
 
     // Root dist 0.5 -> {A,B}, {C}.
@@ -246,7 +258,13 @@ fn test_nwk_cut_root_dist() {
 #[test]
 fn test_nwk_cut_max_clade() {
     let (stdout, _stderr) = PgrCmd::new()
-        .args(&["nwk", "cut", "tests/newick/abcde.nwk", "--max-clade", "2.5"])
+        .args(&[
+            "clust",
+            "cut",
+            "tests/newick/abcde.nwk",
+            "--max-clade",
+            "2.5",
+        ])
         .run();
 
     // Max clade 2.5 -> {A,B} (diam 2), {C} (diam 0).
@@ -282,7 +300,7 @@ fn test_avg_clade() {
     // 1. Max clade 0.8 -> Split ((A,B),C) because 1.0 > 0.8
     // Expect: {A,B}, {C} (2 clusters)
     let (out_max, _) = PgrCmd::new()
-        .args(&["nwk", "cut", nwk_file, "--max-clade", "0.8"])
+        .args(&["clust", "cut", nwk_file, "--max-clade", "0.8"])
         .run();
     let clusters_max = parse_clusters(&out_max);
     assert_eq!(clusters_max.len(), 2, "Max clade should split");
@@ -290,7 +308,7 @@ fn test_avg_clade() {
     // 2. Avg clade 0.8 -> Keep ((A,B),C) because 0.733 < 0.8
     // Expect: {A,B,C} (1 cluster)
     let (out_avg, _) = PgrCmd::new()
-        .args(&["nwk", "cut", nwk_file, "--avg-clade", "0.8"])
+        .args(&["clust", "cut", nwk_file, "--avg-clade", "0.8"])
         .run();
     let clusters_avg = parse_clusters(&out_avg);
     assert_eq!(clusters_avg.len(), 1, "Avg clade should keep");
@@ -316,7 +334,7 @@ fn test_scan_height() {
 
     let (stdout, _) = PgrCmd::new()
         .args(&[
-            "nwk",
+            "clust",
             "cut",
             nwk_file,
             "--height",
@@ -420,7 +438,7 @@ fn test_scipy_workflow() {
     ]);
 
     let (cut_out, stderr) = PgrCmd::new()
-        .args(&["nwk", "cut", nwk_file, "--height", "0.3"])
+        .args(&["clust", "cut", nwk_file, "--height", "0.3"])
         .run();
 
     if cut_out.trim().is_empty() {
@@ -447,7 +465,7 @@ fn test_scipy_workflow() {
     ]);
 
     let (cut_out_k4, _) = PgrCmd::new()
-        .args(&["nwk", "cut", nwk_file, "--k", "4"])
+        .args(&["clust", "cut", nwk_file, "--k", "4"])
         .run();
 
     let actual_maxclust_4 = parse_clusters(&cut_out_k4);
@@ -490,7 +508,7 @@ fn test_scipy_workflow() {
     ]);
 
     let (cut_out_k8, _) = PgrCmd::new()
-        .args(&["nwk", "cut", nwk_file, "--k", "8"])
+        .args(&["clust", "cut", nwk_file, "--k", "8"])
         .run();
 
     let actual_maxclust_8 = parse_clusters(&cut_out_k8);
@@ -524,7 +542,7 @@ fn test_scipy_workflow() {
     ]);
 
     let (cut_out_inc, _stderr) = PgrCmd::new()
-        .args(&["nwk", "cut", nwk_file, "--inconsistent", "0.8"])
+        .args(&["clust", "cut", nwk_file, "--inconsistent", "0.8"])
         .run();
 
     let actual_inc_0_8 = parse_clusters(&cut_out_inc);
@@ -551,7 +569,7 @@ fn test_cut_support_filter() {
     // Result: 1 cluster {A,B,C}.
     let (stdout, _) = PgrCmd::new()
         .args(&[
-            "nwk",
+            "clust",
             "cut",
             nwk_file,
             "--max-clade",
@@ -580,7 +598,7 @@ fn test_cut_support_filter() {
     // Result: {A,B}, {C}.
     let (stdout, _) = PgrCmd::new()
         .args(&[
-            "nwk",
+            "clust",
             "cut",
             nwk_file,
             "--max-clade",

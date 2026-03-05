@@ -93,11 +93,11 @@ fn test_clust_pipeline_full() {
     assert!(stderr.is_empty(), "clust hier failed: {}", stderr);
     assert!(fs::metadata(&tree_file).is_ok(), "tree file not created");
 
-    // 5. Cut Tree (pgr nwk cut)
+    // 5. Cut Tree (pgr clust cut)
     // We know there are 3 clusters, so use --k 3
     let (_stdout, stderr) = PgrCmd::new()
         .args(&[
-            "nwk", "cut", &tree_file, "--k", "3", "--format",
+            "clust", "cut", &tree_file, "--k", "3", "--format",
             "pair", // Output: Rep \t Member (compatible with eval)
             "-o", &cut_file,
         ])
