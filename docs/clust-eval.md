@@ -97,6 +97,22 @@ pgr clust eval mcl_clusters.tsv dbscan_clusters.tsv
 - **特点**：专为大规模生物聚类设计，强调处理数百万序列的能力。
 - **启示**：对于生物数据（如 Gene Families），簇的数量可能极大（>10k）。`pgr` 在实现列联表时需采用稀疏策略（HashMap），避免 $O(K^2)$ 的内存消耗。
 
+#### ClustEval 组件概览与行为
+- `silhouette.fit`: 针对聚类数 `k` 做网格搜索，计算每个 `k` 的 Silhouette 得分并取最大值；输出 `labx`（最佳 k 的标签）和 `score` 表（`cluster_threshold`, `clusters`, `score`）。
+- `dbindex.fit`: 计算 Davies–Bouldin Index（越小越好），对不同 `k` 取最小值；输出最佳 `labx` 和 `score` 表（`clusters`, `score`）。
+- `derivative.fit`: 基于层次聚类的合并高度二阶差分（Elbow），选择加速度最大的 `k`；输出 `labx`（无显式评分）。
+- `dbscan.fit`: 对 `eps` 扫描（默认 0.1..5，指定分辨率），用 Silhouette 选最优 `eps`；输出 `labx` 和扫描曲线（`eps`, `silscores`, `sillclust`）。
+- `hdbscan.fit`: 调用 `hdbscan`，输出 `labels_`、`probabilities_`、`cluster_persistence_`、`outlier_scores_` 等信息；提供树/凝缩树绘图。
+- `coord2density`: 用 `KernelDensity` 计算坐标密度（可视化辅助手段）。
+- `plot_dendrogram`/`bubblegrid`: 绘图辅助（树切线、矩阵气泡图）。
+
+#### 与 `pgr` 的差异与可采纳点
+- 输入约定差异：ClustEval 偏向“坐标/观测矩阵”作为输入；`pgr` 当前 `clust eval` 偏向“Partition vs Partition”外部有效性评估。两类评估应该并存：
+  - 外部有效性（当前主线）：`ARI/AMI/V-Measure`，输入为两个分区。
+  - 内部有效性（可作为补充）：`Silhouette/DBIndex`，输入为坐标或距离矩阵 + 单个分区（或直接做 k/eps 网格搜索）。
+- 扫描与评分：ClustEval 把“扫描 + 评分 + 选最优”打包在一起；`pgr` 更推荐“扫描（生成表）”与“决策/评估（独立命令）”解耦，便于组合与审计。
+- HDBSCAN/DBSCAN：算法本身属于“聚类”范畴，评分是“评估”。`pgr` 侧更适合在 `clust` 命令里实现算法，在 `clust eval`/`nwk metrics` 里补内外部指标。
+
 ## 实现备注（技术细节）
 
 - **Scikit-learn 借鉴**:
@@ -117,6 +133,20 @@ pgr clust eval mcl_clusters.tsv dbscan_clusters.tsv
 - **性能策略**:
   - **输入对齐**: 两个输入文件可能包含不完全重叠的样本。第一步必须是**取交集**并**按样本名排序**，生成对齐的 Label 数组。
   - **算法复杂度**: 构建列联表为 $O(N)$。基于列联表的指标计算通常为 $O(K_1 \times K_2)$（稀疏情况下为 $O(\text{NonZero})$）。
+
+## 采纳计划（与 ClustEval 的融合）
+
+- 外部有效性（现有主线）：
+  - 实现并默认输出：`ARI/AMI/V-Measure`（Partition vs Partition）。
+  - 继续保持与 `nwk cut --scan` 的联动，用于 Ground Truth 条件下的阈值选取。
+- 内部有效性（补充）
+  - 增加可选评估方法：`--method silhouette|dbindex`，输入需要坐标或距离矩阵 + 单分区（或扫描 `k/eps`）。
+  - Silhouette：支持按 `k` 扫描并输出 `k→score` 表（不强制选最优）。
+  - DBIndex（Davies–Bouldin）：支持按 `k` 扫描并输出 `k→score` 表。
+- 算法整合
+  - 将 `DBSCAN/HDBSCAN` 算法保留在 `pgr clust` 模块；评估指标在 `clust eval` 或 `nwk metrics` 中统一。
+- 可视化
+  - 在文档中保留 `Silhouette`/`Dendrogram` 的绘图参考；命令行仅输出 TSV（曲线点表），不直接绘图。
 
 ## 实施计划
 
