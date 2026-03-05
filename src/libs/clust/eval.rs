@@ -1,3 +1,4 @@
+use crate::libs::pairmat::NamedMatrix;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
@@ -386,5 +387,161 @@ fn lgamma(x: f64) -> f64 {
             sum += v / (x + (i as f64) + 1.0);
         }
         0.5 * (2.0 * std::f64::consts::PI).ln() + (x + 0.5) * t.ln() - t + sum.ln()
+    }
+}
+
+/// Trait for distance matrix access
+pub trait DistanceMatrix {
+    fn get_distance(&self, id1: &str, id2: &str) -> f64;
+}
+
+impl DistanceMatrix for NamedMatrix {
+    fn get_distance(&self, id1: &str, id2: &str) -> f64 {
+        self.get_by_name(id1, id2).unwrap_or(0.0) as f64
+    }
+}
+
+/// Calculate Silhouette Coefficient
+///
+/// The Silhouette Coefficient is calculated using the mean intra-cluster distance (a)
+/// and the mean nearest-cluster distance (b) for each sample.
+/// The Silhouette Coefficient for a sample is (b - a) / max(a, b).
+/// To clarify, b is the distance between a sample and the nearest cluster that the sample is not a part of.
+/// Note that Silhouette Coefficient is only defined if number of labels is 2 <= n_labels <= n_samples - 1.
+///
+/// This implementation follows scikit-learn's convention:
+/// - s(i) = 0 if the cluster size is 1.
+pub fn silhouette_score<D: DistanceMatrix>(partition: &Partition, dist_mat: &D) -> f64 {
+    // 1. Group items by cluster ID for faster access
+    let mut clusters: HashMap<u32, Vec<&String>> = HashMap::new();
+    for (item, &cluster_id) in partition {
+        clusters.entry(cluster_id).or_default().push(item);
+    }
+
+    let n_clusters = clusters.len();
+    if n_clusters < 2 || n_clusters >= partition.len() {
+        return 0.0;
+    }
+
+    let mut total_s = 0.0;
+    let n = partition.len();
+
+    for (item_i, &cluster_i) in partition {
+        let cluster_i_members = clusters.get(&cluster_i).unwrap();
+
+        // Sklearn convention: s(i) = 0 if |C_i| == 1
+        if cluster_i_members.len() == 1 {
+            continue; // s_i is 0.0, so just skip adding
+        }
+
+        // Calculate a(i): mean distance to other items in the same cluster
+        let sum_dist_a: f64 = cluster_i_members
+            .iter()
+            .filter(|&&item_j| item_j != item_i)
+            .map(|&item_j| dist_mat.get_distance(item_i, item_j))
+            .sum();
+        let a_i = sum_dist_a / (cluster_i_members.len() - 1) as f64;
+
+        // Calculate b(i): min mean distance to items in other clusters
+        let mut min_mean_dist_other = f64::MAX;
+
+        for (&cluster_j, cluster_j_members) in &clusters {
+            if cluster_j == cluster_i {
+                continue;
+            }
+            let sum_dist_b: f64 = cluster_j_members
+                .iter()
+                .map(|&item_j| dist_mat.get_distance(item_i, item_j))
+                .sum();
+            let mean_dist_b = sum_dist_b / cluster_j_members.len() as f64;
+            if mean_dist_b < min_mean_dist_other {
+                min_mean_dist_other = mean_dist_b;
+            }
+        }
+        let b_i = min_mean_dist_other;
+
+        // Calculate s(i)
+        let s_i = if a_i == 0.0 && b_i == 0.0 {
+            0.0
+        } else {
+            (b_i - a_i) / a_i.max(b_i)
+        };
+
+        total_s += s_i;
+    }
+
+    total_s / n as f64
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_silhouette_score_simple() {
+        // Data:
+        // 0: 0.0 (C0)
+        // 1: 1.0 (C1)
+        // 2: 1.0 (C1)
+        // 3: 2.0 (C1)
+        // 4: 3.0 (C2)
+        // 5: 3.0 (C2)
+
+        let mut p = Partition::new();
+        p.insert("0".to_string(), 0);
+        p.insert("1".to_string(), 1);
+        p.insert("2".to_string(), 1);
+        p.insert("3".to_string(), 1);
+        p.insert("4".to_string(), 2);
+        p.insert("5".to_string(), 2);
+
+        let names: Vec<String> = (0..6).map(|i| i.to_string()).collect();
+        let mut dist_mat = NamedMatrix::new(names);
+        let points: Vec<f32> = vec![0.0, 1.0, 1.0, 2.0, 3.0, 3.0];
+
+        for i in 0..6 {
+            for j in i + 1..6 {
+                let d = (points[i] - points[j]).abs();
+                let n1 = i.to_string();
+                let n2 = j.to_string();
+                dist_mat.set_by_name(&n1, &n2, d).unwrap();
+            }
+        }
+
+        let score = silhouette_score(&p, &dist_mat);
+        assert!((score - 0.5).abs() < 1e-6, "Score was {}", score);
+    }
+
+    #[test]
+    fn test_silhouette_score_single_cluster() {
+        let mut p = Partition::new();
+        p.insert("0".to_string(), 0);
+        p.insert("1".to_string(), 0);
+
+        let names = vec!["0".to_string(), "1".to_string()];
+        let mut dist_mat = NamedMatrix::new(names);
+        dist_mat.set_by_name("0", "1", 1.0).unwrap();
+
+        let score = silhouette_score(&p, &dist_mat);
+        assert_eq!(score, 0.0);
+    }
+
+    #[test]
+    fn test_silhouette_score_all_singletons() {
+        // Sklearn behavior for all singletons is not strictly defined in docs but usually handled.
+        // Our implementation returns 0.0 if n_clusters == n_samples
+        let mut p = Partition::new();
+        p.insert("0".to_string(), 0);
+        p.insert("1".to_string(), 1);
+        p.insert("2".to_string(), 2);
+
+        let names = vec!["0".to_string(), "1".to_string(), "2".to_string()];
+        let mut dist_mat = NamedMatrix::new(names);
+        dist_mat.set_by_name("0", "1", 1.0).unwrap();
+        dist_mat.set_by_name("0", "2", 1.0).unwrap();
+        dist_mat.set_by_name("1", "2", 1.0).unwrap();
+
+        let score = silhouette_score(&p, &dist_mat);
+        assert_eq!(score, 0.0);
     }
 }

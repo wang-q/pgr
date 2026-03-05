@@ -117,3 +117,36 @@ fn test_clust_eval_pair_format() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_clust_eval_internal_silhouette() -> anyhow::Result<()> {
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("clust")
+        .arg("eval")
+        .arg("tests/clust/eval/simple.pair")
+        .arg("--matrix")
+        .arg("tests/clust/eval/simple.matrix.phy")
+        .output()?;
+
+    let stdout = String::from_utf8(output.stdout)?;
+    assert!(output.status.success());
+
+    // Output format:
+    // silhouette
+    // 0.5167
+
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert_eq!(lines[0], "silhouette");
+
+    let score = lines[1].parse::<f64>()?;
+    let expected = 1.55 / 3.0;
+    assert!(
+        (score - expected).abs() < 1e-4,
+        "Score was {}, expected {}",
+        score,
+        expected
+    );
+
+    Ok(())
+}

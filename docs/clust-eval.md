@@ -58,15 +58,15 @@
 ### 输入
 - **Partition 1 (`<p1>`)**: 第一个分组文件（TSV，位置参数 1）。
 - **Partition 2 (`<p2>`)**: 第二个分组文件（TSV，位置参数 2）。
-  - 支持与其他命令一致的两种分组表示（`cluster` / `pair`）：
+  - 支持与其他命令一致的两种分组表示（`cluster` / `pair`），需通过 `--format` 参数指定（默认为 `pair`）：
     ```text
-    * cluster: Each line contains points of one cluster. The first point is the representative.
-    * pair: Each line contains a (representative point, cluster member) pair.
+    * cluster: Each line contains points of one cluster. items separated by tabs.
+    * pair: Each line is "Representative/Label <tab> Member".
     ```
   - 评估内部会将输入统一规整为 “每个样本一个标签” 的映射：`Item -> Label`。
-    - 对于 `cluster` / `pair` 输入，`Label` 取 `representative`（实现上也可以再重映射为紧凑整数）。
-    - 注意 `pair` 文件本身通常是 `Label <tab> Item`（即 `Representative <tab> Member`），规整后会转为 `Item -> Label` 以便做样本对齐与交集。
-- 样本对齐：默认取两个文件样本的交集进行评估。
+    - 对于 `pair` 输入，第一列（Representative/Label）作为标签。
+    - 对于 `cluster` 输入，行号（自增整数）作为标签。
+- 样本对齐：取两个文件样本的交集进行评估。
 
 ### 输出
 - **TSV 格式**，包含所有计算的指标。
@@ -123,11 +123,17 @@ pgr clust eval mcl_clusters.tsv dbscan_clusters.tsv
   - ARI 高效计算：用列联表求同簇对（∑ C(n_ij,2)），避免 $O(N^2)$
   - 数值稳定性：处理 `x*log(x)` 的零值；使用 `f64`
   - EMI 实施：移植 `_expected_mutual_info_fast` 的核心逻辑
+  - **Silhouette**：采用分块计算（Chunking）策略，避免生成全量 $N \times N$ 距离矩阵，降低内存消耗；支持预计算距离矩阵（Precomputed）。
+  - **Davies-Bouldin**：仅在提供坐标矩阵时启用，或者实现基于 Medoid 的变体以支持距离矩阵。
 - 性能策略：
   - 对齐输入样本（交集 + 排序）；列联表构建 $O(N)$；指标计算稀疏下按非零计
+  - 内部有效性指标（Silhouette）利用 Rayon 并行计算各样本的 $a(i)$ 和 $b(i)$。
 - 采纳方案（clusteval 融合）：
   - 外部有效性：默认输出 `ARI/AMI/V-Measure`，与 `nwk cut --scan` 联动选阈值
-  - 内部有效性：提供 `--method silhouette|dbindex`，支持 `--scan <start>,<end>,<steps>` 按 `k/eps` 输出曲线表
+  - 内部有效性：
+    - 不再试图构建一个万能的 `clust eval` 命令。
+    - **基础评估**：`pgr clust eval` 增加 `--matrix` 或 `--coords` 参数，计算单分区指标。
+    - **扫描集成**：在 `pgr nwk cut --scan` 和 `pgr clust dbscan --scan` 中直接集成评估逻辑，输出含指标的扫描表。
   - 算法整合：`DBSCAN/HDBSCAN` 保留在 `pgr clust`，评估统一在 `clust eval`/`nwk metrics`
   - 可视化：文档保留参考，CLI 仅输出 TSV
 - 代码参考：
@@ -196,63 +202,42 @@ pgr clust eval mcl_clusters.tsv dbscan_clusters.tsv
 - **DBSCAN 噪声**:
   - 验证噪声点（通常标记为 -1 或 Unclassified）在评估时的处理方式（作为独立簇还是忽略）。`sklearn` 通常将噪声视为独立簇或忽略，需明确 `pgr` 策略（建议：视为独立单例或统一为一个特殊簇，需在文档中明确）。
 
-## 实施计划
-
-### 阶段 1：外部有效性 MVP
-- CLI：`pgr clust eval <p1> <p2> -o eval.tsv`（位置参数 + 统一 `-o`）
-- 算法：构建列联表（交集对齐），实现 `ARI/AMI/V-Measure/Homogeneity/Completeness`
-- 输入兼容：`cluster/pair` 两种格式，规整为 `Item -> Label`
-- 输出：TSV 列包含上述指标，列名与顺序固定
-
-### 阶段 2：内部有效性（可选）
-- 方法开关：`--method silhouette|dbindex`（需要坐标或距离矩阵 + 单分区）
-- 扫描支持：`--scan <start>,<end>,<steps>` 输出 `k→score` 表（不强制选最优）
-- 距离矩阵版实现：Silhouette、Davies–Bouldin（DBIndex）
-
-#### 如何扫描（内部有效性）
-
-内部扫描的意义是：在不同的聚类数 `k`（或算法主参数）下，计算内部有效性指标的曲线，便于选参。此处的“扫描”不比较两个分区，而是针对同一数据在不同 `k` 下的表现。
-
-示例（规划中的 CLI 形式，与 `nwk cut --scan` 风格一致）：
-
-```bash
-# 1) 层次聚类 + Silhouette（按 k 扫描）
-pgr clust eval --method silhouette \
-  --cluster agglomerative --linkage ward \
-  --matrix matrix.phy \
-  --scan 2,50,1 \
-  -o k_silhouette.tsv
-
-# 2) KMeans + DBIndex（按 k 扫描）
-pgr clust eval --method dbindex \
-  --cluster kmeans \
-  --coords coords.tsv \
-  --scan 2,50,1 \
-  -o k_dbindex.tsv
-```
-
-- 输入
-  - `--matrix`: PHYLIP 距离矩阵（距离越小越相似）
-  - `--coords`: 二维或高维坐标（观测矩阵）。若为高维，指标会基于该空间计算。
-- 参数
-  - `--cluster`: 选择用于生成不同 `k` 的聚类方法（如 agglomerative/kmeans）
-  - `--linkage`: 层次聚类的链接准则（single/complete/average/ward 等）
-  - `--scan`: 扫描的 `k` 范围与步长（如 `2,50,1`）
-- 输出
-  - `k_silhouette.tsv`/`k_dbindex.tsv` 为 TSV 曲线点表（`k`, `score` 等），不强制选最优；后续可在外部依据手肘规则或业务约束选点
-
-### 阶段 3：联动与曲线
-- 与 `nwk cut --scan` 联动：对每个阈值的分区计算外部一致性指标，生成“阈值→指标”表
-- 与 `clust dbscan --scan` 联动：对每个 `eps` 的分区输出内部/外部指标列，便于选参与比较
-
-### 阶段 4：数值与性能
-- 稀疏策略：`HashMap<(u32,u32),u32>` 或 CSR，避免大规模下的内存爆炸
-- 浮点稳定：处理 `x*log(x)` 的 `x=0` 情况；使用 `f64`
-- 大样本计数：使用 `u64/usize`，避免溢出；提供 N~10k 规模的耗时/内存基准
-
-### 验证
+### 6. 验证清单 (Verification Checklist)
 - Perfect Matches：ID 变更不影响结果（ARI=1.0）
 - Non-consecutive Labels：非连续 ID 不影响结果
 - Homogeneity/Completeness：单侧完美情况验证（H=1 vs C=1）
 - Random Baseline：随机分区的 Adjusted 指标接近 0
 - 与 sklearn 对齐：在小规模数据上交叉验证 ARI/AMI/V-Measure 的一致性
+
+## 实施计划
+
+### 阶段 1：外部有效性 MVP [已完成]
+- CLI：`pgr clust eval <p1> <p2> -o eval.tsv`（位置参数 + 统一 `-o`）
+- 算法：构建列联表（交集对齐），实现 `ARI/AMI/V-Measure/Homogeneity/Completeness`
+- 输入兼容：`cluster/pair` 两种格式，需通过 `--format` 显式指定（默认 `pair`）
+- 输出：TSV 列包含上述指标，列名与顺序固定
+
+### 阶段 2：内部有效性（指标库） [进行中]
+- **核心算法 (`libs/clust/eval.rs`)**：
+  - [x] 实现 `silhouette_score(partition, distance_matrix)`：支持 NamedMatrix。
+  - [ ] 实现 `davies_bouldin_score(partition, coordinates)`：支持坐标输入。
+- **CLI 增强 (`pgr clust eval`)**：
+  - [x] 新增参数：
+    - `--matrix <file>`: 输入距离矩阵（PHYLIP）。
+  - [ ] 新增参数：
+    - `--coords <file>`: 输入坐标矩阵（TSV，用于 DBIndex）。
+    - `--methods <list>`: 指定计算指标（默认 `ari,ami`，可选 `silhouette,dbindex`）。
+  - 逻辑：
+    - 若提供 `<p1>` 和 `<p2>`：计算外部指标（ARI/AMI）。
+    - 若提供 `<p1>` 和 `--matrix`：计算内部指标（Silhouette）。
+
+### 阶段 3：扫描与集成（各命令独立支持）
+- **层次聚类 (`pgr nwk cut`)**：
+  - 增强 `--scan` 模式，支持 `--eval-matrix <file>` 和 `--eval-methods silhouette`。
+  - 在遍历阈值切分树时，直接计算指标并追加到输出 TSV 的列中。
+- **扁平聚类 (`pgr clust dbscan`)**：
+  - 实现 `--scan <eps_range>`。
+  - 集成内部指标计算，输出“参数-指标”扫描表。
+
+### 阶段 4：数值与性能
+- **内存优化**：对于大规模矩阵，避免全量加载，支持流式读取或分块计算。
