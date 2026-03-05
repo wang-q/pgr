@@ -80,9 +80,9 @@
   - **文档**：[docs/nwk-eval.md](file:///c:/Users/wangq/Scripts/pgr/docs/nwk-eval.md)
 
 - **Partition-based Evaluation**
-  - **命令**：`pgr clust eval` (规划中)
-  - **定位**：通用聚类质量评估（有 Ground Truth 或对比）。
-  - **功能**：ARI, AMI, V-Measure。借鉴 Scikit-learn 的稀疏列联表实现。
+  - **命令**：`pgr clust eval`
+  - **定位**：通用聚类质量评估（支持有/无 Ground Truth）。
+  - **功能**：ARI, AMI, V-Measure (外部); Silhouette, Davies-Bouldin (内部)。
   - **文档**：[docs/clust-eval.md](file:///c:/Users/wangq/Scripts/pgr/docs/clust-eval.md)
 
 ### � 计划中 (Planned)

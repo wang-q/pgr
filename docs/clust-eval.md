@@ -1,4 +1,4 @@
-# clust eval [设计中]
+# clust eval [部分实现]
 
 `pgr clust eval` 提供通用的聚类质量评估与比较功能。它主要关注**外部有效性（External Validity）**，即通过与 Ground Truth 或其他聚类结果的对比来量化一致性。
 
@@ -6,52 +6,98 @@
 
 - **定位**：通用聚类评估工具，不依赖树结构。
 - **互补**：
-  - `pgr nwk eval`：关注树结构与分组的一致性（几何/演化）。
-  - `pgr clust eval`：关注两个分组（Partition）之间的一致性（统计/信息论）。
+  - `pgr nwk eval` [计划中]：关注树结构与分组的一致性（几何/演化）。
+  - `pgr clust eval`：关注分组的统计有效性，支持外部（两分组对比）与内部（单分组+矩阵）评估。
 - **场景**：
   - **算法对比**：比较 MCL 与 K-Medoids 在同一数据集上的结果差异。
   - **基准测试**：将聚类结果与已知的标准分类（Ground Truth）对比，计算准确性。
   - **参数调优**：比较不同参数（如 `eps` 或 `inflation`）下聚类结果的稳定性。
 
-## 核心指标
+## 核心指标 (Core Metrics)
 
-### 1. 基于配对 (Pair-counting)
+聚类评估指标通常分为两类：**外部有效性**（依赖 Ground Truth 或参考分区）和**内部有效性**（仅依赖数据本身的几何/统计特性）。
+
+### 1. 外部有效性 (External Validity)
+*用于比较两个聚类结果的一致性，或评估聚类结果与真实分类的吻合度。*
+
+#### 1.1 基于配对 (Pair-counting)
 *关注样本对在两个分区中是否保持同组/异组关系。*
 
-- **ARI (Adjusted Rand Index)**:
-  - 最常用的聚类一致性指标。
-  - 范围 `[-1, 1]`，0 表示随机，1 表示完全一致。
-  - 对簇大小不平衡鲁棒。
-- **RI (Rand Index)**: 基础的一致性比例（未校正随机性）。
+- **ARI (Adjusted Rand Index)**
+  - **定义**：校正了随机性的 Rand Index。
+  - **原理**：统计同时在两个分区中属于同组或异组的样本对数量，并减去随机分配下的期望值。
+  - **范围**：`[-1, 1]`。1 表示完全一致，0 表示随机水平，负值表示比随机更差。
+  - **优点**：
+    - **可解释性强**：0 为随机基线，直观。
+    - **对称性**：`ARI(A, B) == ARI(B, A)`。
+  - **缺点**：对簇的内部结构（如形状）不敏感。
+  - **适用**：簇大小不平衡、簇数量较多的通用场景。
 
-#### 与 ROC/PR 的关系（为什么这里不画“曲线”）
+- **RI (Rand Index)**
+  - **定义**：正确分类的样本对比例。
+  - **范围**：`[0, 1]`。
+  - **缺点**：未校正随机性。随着簇数量增加，随机分区的 RI 也会趋近于 1，导致区分度降低。通常**不推荐**单独使用。
 
-不少用户会把 “同簇/不同簇” 的配对指标联想到 ROC/PR 曲线：把每个样本对 `(i, j)` 当成二分类（同簇=正类），然后随阈值变化画出曲线。
+#### 1.2 基于信息论 (Information Theoretic)
+*关注两个分区所共享的信息量（熵）。*
 
-这里需要区分两种输入类型：
+- **AMI (Adjusted Mutual Information)**
+  - **定义**：校正了随机性的互信息 (Mutual Information)。
+  - **原理**：基于熵（Entropy）计算两个分区的共享信息，并减去随机期望。
+  - **范围**：`[0, 1]`。1 表示完全一致，0 表示随机。
+  - **优点**：
+    - 对簇数量极多（甚至接近样本数）的情况更鲁棒。
+    - 能捕捉非线性的复杂关系。
+  - **适用**：小样本、多簇（Large K）场景。
 
-- **Partition（分区结果）**：输入是一个固定的聚类划分（`cluster` 或 `pair`）。它对每个样本对只给出 0/1（同簇或不同簇），没有可调阈值，因此只能对应 ROC/PR 空间中的一个点，而不是一条曲线。
-- **Scored pairs / 可扫阈值的过程**：如果你对每个样本对还有一个连续分数（相似度/距离/共聚类概率），或者聚类过程本身可随阈值连续切分（例如层次聚类的 cut height），才会自然产生 ROC/PR 曲线与 AUC。
+- **V-Measure**
+  - **定义**：同质性 (Homogeneity) 和完整性 (Completeness) 的调和平均。
+  - **分项指标**：
+    - **Homogeneity**: 每个簇是否只包含某一个类的成员？（类似 Precision，要求簇够“纯”）
+    - **Completeness**: 某一个类的所有成员是否都被分到了同一个簇？（类似 Recall，要求簇够“全”）
+  - **范围**：`[0, 1]`。
+  - **缺点**：未校正随机性。在样本量小或簇数量多时，得分偏高。
+  - **适用**：需要分析聚类误差来源（是分得太碎还是混得太杂）时。
 
-`pgr clust eval` 的定位是 “Partition vs Partition” 的一致性评估，因此核心输出是 ARI/AMI/V-Measure 这类对两个分区的整体比较；若你确实需要 ROC/PR 的曲线视角，通常意味着要从“带阈值”的来源（距离阈值、树高阈值、或相似度阈值）生成一系列分区，再逐点计算对应的 TP/FP 等统计量。
+#### 1.3 基于集合匹配 (Set Matching)
+*关注簇与类之间的最佳匹配关系。*
 
-### 2. 基于信息论 (Information Theoretic)
-*关注两个分区所共享的信息量。*
+- **Jaccard Index**: 两个集合交集与并集的比率。用于衡量特定簇的重叠度。
+- **F1 Score**: Precision 和 Recall 的调和平均。常用于二分类聚类评估。
 
-- **AMI (Adjusted Mutual Information)**:
-  - 校正了随机性的互信息。
-  - 范围 `[0, 1]`。
-  - 相比 ARI，更适合簇数量较多或簇大小极度不平衡的场景。
-- **V-Measure**:
-  - **Homogeneity (同质性)**: 每个簇是否只包含某一个类的成员？（类似 Precision）
-  - **Completeness (完整性)**: 某一个类的所有成员是否都被分到了同一个簇？（类似 Recall）
-  - V-Measure 是两者的调和平均。
+---
 
-### 3. 基于集合匹配 (Set Matching)
-*关注簇与类之间的最佳匹配。*
+### 2. 内部有效性 (Internal Validity)
+*用于在没有 Ground Truth 的情况下，评估聚类结果本身的质量（紧密度与分离度）。*
 
-- **Jaccard Index**: 集合重叠度。
-- **F1 Score**: 基于 Precision 和 Recall 的综合指标。
+- **Silhouette Coefficient (轮廓系数)**
+  - **原理**：对每个样本 $i$，计算其与同簇样本的平均距离 $a(i)$ 和与最近异簇样本的平均距离 $b(i)$。$s(i) = (b - a) / \max(a, b)$。
+  - **范围**：`[-1, 1]`。
+    - 接近 1：样本聚类良好（离同簇近，离异簇远）。
+    - 0：样本位于簇边界。
+    - 负值：样本可能分错簇了。
+  - **优点**：直观，兼顾凝聚度和分离度。
+  - **缺点**：
+    - 计算复杂度高 ($O(N^2)$)，大规模数据需优化。
+    - 倾向于球形簇，对非凸形状（如环形）评估不准确。
+  - **适用**：评估基于距离的聚类算法（如 K-Means, Hierarchical）。
+
+- **Davies-Bouldin Index (DBI)**
+  - **原理**：计算每对簇的“相似度”（簇内散度之和 / 簇心距离），取每个簇最差（最大）相似度的均值。
+  - **范围**：`[0, +∞)`。**越小越好**。
+  - **优点**：计算比 Silhouette 快。
+  - **缺点**：同样倾向于凸形簇。
+  - **适用**：评估基于质心的聚类算法。
+
+### 3. 指标选择指南
+
+| 场景 | 推荐指标 | 理由 |
+| :--- | :--- | :--- |
+| **有 Ground Truth** | ARI, AMI | 校正了随机性，结果可信。 |
+| **关注聚类纯度** | V-Measure | 可以分别查看 Homogeneity（纯度）和 Completeness（完整性）。 |
+| **无 Ground Truth** | Silhouette | 直观反映几何质量。 |
+| **大规模数据 (无 GT)** | Davies-Bouldin | 计算效率稍高。 |
+| **簇数量极大** | AMI | 比 ARI 更稳定。 |
 
 ## 输入与输出约定
 
@@ -220,16 +266,17 @@ pgr clust eval mcl_clusters.tsv dbscan_clusters.tsv
 ### 阶段 2：内部有效性（指标库） [进行中]
 - **核心算法 (`libs/clust/eval.rs`)**：
   - [x] 实现 `silhouette_score(partition, distance_matrix)`：支持 NamedMatrix。
-  - [ ] 实现 `davies_bouldin_score(partition, coordinates)`：支持坐标输入。
+  - [x] 实现 `davies_bouldin_score(partition, coordinates)`：支持坐标输入。
 - **CLI 增强 (`pgr clust eval`)**：
   - [x] 新增参数：
     - `--matrix <file>`: 输入距离矩阵（PHYLIP）。
-  - [ ] 新增参数：
+  - [x] 新增参数：
     - `--coords <file>`: 输入坐标矩阵（TSV，用于 DBIndex）。
-    - `--methods <list>`: 指定计算指标（默认 `ari,ami`，可选 `silhouette,dbindex`）。
+    - [ ] `--methods <list>`: 指定计算指标（默认 `ari,ami`，可选 `silhouette,dbindex`）。
   - 逻辑：
     - 若提供 `<p1>` 和 `<p2>`：计算外部指标（ARI/AMI）。
     - 若提供 `<p1>` 和 `--matrix`：计算内部指标（Silhouette）。
+    - 若提供 `<p1>` 和 `--coords`：计算内部指标（DBIndex）。
 
 ### 阶段 3：扫描与集成（各命令独立支持）
 - **层次聚类 (`pgr nwk cut`)**：
