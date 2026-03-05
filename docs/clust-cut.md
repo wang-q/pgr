@@ -145,9 +145,9 @@
 - **定义**：参考 R 语言 `dynamicTreeCut` 包的 `cutreeHybrid` 算法。
 - **原理**：自底向上的两阶段算法。
   1.  **Core Detection (核心检测)**:
-      - R 原版：自底向上遍历树，识别满足紧密度（Core Scatter）和分离度（Gap）要求的“基本簇”。
-      - `pgr` 实现：目前采用 **Dynamic Tree Cut** (自顶向下) 作为核心检测的替代方案。这在大多数场景下能提供相似的拓扑分割效果。
+      - 实现 R `cutreeHybrid` 的自底向上（Bottom-Up）算法，识别满足紧密度（Core Scatter）和分离度（Gap）要求的“基本簇”。
   2.  **PAM-like Reassignment (二次分配)**: 利用原始距离矩阵，将第一阶段未分配的对象（Outliers/Singletons）尝试吸附到最近的核心簇中（Medoid-based assignment）。
+      - 默认行为与 R 保持一致 (`pamStage=TRUE`, `pamRespectsDendro=TRUE`, `respectSmallClusters=TRUE`)。
 - **输入**：必须提供树结构 + 原始距离矩阵 (`--matrix`)。
 - **参数**：
   - `--dynamic-hybrid <N>`: 启用混合切割，N 为最小簇大小。
@@ -157,14 +157,6 @@
   - 对聚类边界的准确性要求极高。
   - 需要利用距离矩阵信息来修正树结构中可能存在的微小误差或不确定性。
   - 能够有效识别并处理离群点（Outliers）。
-
-> **关于与 R `dynamicTreeCut` 实现的对比**：
->
-> `pgr` 的 `dynamic-hybrid` 实现采用了与 R 类似的**自底向上 (Bottom-Up)** 核心检测策略：
-> 1.  **Core Detection**: 遍历树的合并节点，计算每个分支的核心紧密度 (Core Scatter) 和分离度 (Gap)。如果不满足条件（如太松散或与父节点太近），则将其合并或标记为非独立簇。这能有效识别并排除噪声。
-> 2.  **PAM Reassignment**: 利用距离矩阵将未分配的节点（Cluster 0）重新分配给最近的核心簇。
->
-> 这确保了算法对噪声和离群点的鲁棒性，同时利用了树拓扑和距离矩阵的信息。
 
 ### 13. 支持度过滤 (`--support <S>`)
 
@@ -385,7 +377,7 @@ pgr clust eval pred.tsv truth.tsv -o eval.tsv
 - **R (`dynamicTreeCut`)**:
   - 提供了 `cutreeDynamic` (Tree) 和 `cutreeHybrid` (Hybrid) 方法。
   - 引入了“自适应递归切割”和“核心检测+二次分配”的思路。
-  - `pgr` 计划借鉴其 `Dynamic Tree` 算法以增强自动化能力。
+  - `pgr` 完整实现了其 `Dynamic Tree` 和 `Hybrid` 算法，提供了高性能的 Rust 版本。
 
 - **TreeCluster**:
   - 专为系统发生树设计，引入了 `Max Clade` (直径)、`Avg Clade` 等约束。

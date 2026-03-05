@@ -79,6 +79,16 @@
 - **Monophyly Check**: 基因树上的簇成员，在物种树上是否也聚集成单系群？
   - 若基因树聚类但物种树分散 -> 可能暗示 HGT 或 LBA（长枝吸引）。
 
+### 4. 高级树比较 (Advanced Tree Comparison) [计划中]
+*参考 R `dendextend` 包的功能，支持更深入的树结构比较。*
+
+- **Tanglegram**: 可视化两棵树的对应关系（通常用于比较基因树与物种树，或不同聚类方法的树）。虽然 `pgr` 是 CLI 工具，但可以输出用于绘图的匹配表（link file）。
+- **Baker's Gamma Index**: 类似于 Cophenetic 相关系数，但基于秩（Rank），对非线性关系更鲁棒。
+- **Tree Distance**:
+  - **Robinson-Foulds (RF)**: 拓扑差异（已在 Phase 3 提及）。
+  - **Weighted RF**: 考虑枝长的 RF 距离。
+  - **Branch Score Distance (Kuhner-Felsenstein)**: 基于枝长的距离。
+
 ## 典型用法 (Use Cases)
 
 ```bash

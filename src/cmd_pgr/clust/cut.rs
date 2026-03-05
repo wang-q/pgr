@@ -211,6 +211,12 @@ Examples:
                 .help("Maximum distance to medoid for PAM reassignment"),
         )
         .arg(
+            Arg::new("no-pam-dendro")
+                .long("no-pam-dendro")
+                .action(ArgAction::SetTrue)
+                .help("Disable dendrogram respect in PAM stage (allow assigning to clusters across high branches)"),
+        )
+        .arg(
             Arg::new("deep-split")
                 .long("deep-split")
                 .action(ArgAction::SetTrue)
@@ -481,8 +487,9 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
                 max_core_scatter: None,
                 min_gap: None,
                 pam_stage: true, // Default to true
-                pam_respects_dendro: false,
+                pam_respects_dendro: !matches.get_flag("no-pam-dendro"), // Default to true to match R
                 max_pam_dist,
+                respect_small_clusters: true, // Default to true to match R
             };
 
             cutree_hybrid(tree, options)?

@@ -74,10 +74,12 @@ E 0.5 0.5 1.0 1.0 0.0
 ";
     fs::write(&mat_file, mat_content).unwrap();
 
-    // 1. PAM is enabled by default. E should be assigned to {A,B} if distance allows.
-    // Dynamic tree assigns 0 to singletons. Our output logic skips 0?
-    // No, Partition.get_clusters() groups all values. If 0 is present, it's a cluster.
-    // But usually dynamic tree outputs 0 for noise.
+    // 1. PAM is enabled by default.
+    // In this case, E is a singleton (initially unassigned, cluster 0).
+    // However, E is close to {A,B} (dist=0.5).
+    // With PAM enabled, E should be reassigned to the {A,B} cluster.
+    // We use --no-pam-dendro because in the tree, E is far from A/B (root split),
+    // and standard PAM logic would prevent crossing such a high branch.
 
     let (stdout, stderr) = PgrCmd::new()
         .args(&[
@@ -88,6 +90,7 @@ E 0.5 0.5 1.0 1.0 0.0
             "2",
             "--matrix",
             mat_file.to_str().unwrap(),
+            "--no-pam-dendro", // Needed because E is far in tree
         ])
         .run();
 
@@ -95,9 +98,7 @@ E 0.5 0.5 1.0 1.0 0.0
         println!("STDERR: {}", stderr);
     }
 
-    // With PAM, E should be assigned to {A,B}.
-    // So we expect a cluster {A,B,E} and {C,D}.
-
+    // Verify that E is grouped with A and B
     let lines: Vec<&str> = stdout.lines().collect();
     let has_abe = lines
         .iter()
@@ -106,7 +107,7 @@ E 0.5 0.5 1.0 1.0 0.0
 
     assert!(
         has_abe,
-        "Cluster {{A,B,E}} missing (PAM failed):\n{}",
+        "Cluster {{A,B,E}} missing (PAM failed to reassign E):\n{}",
         stdout
     );
     assert!(has_cd, "Cluster {{C,D}} missing:\n{}", stdout);

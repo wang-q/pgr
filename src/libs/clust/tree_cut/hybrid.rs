@@ -15,6 +15,7 @@ pub struct HybridOptions {
     pub pam_stage: bool,
     pub pam_respects_dendro: bool,
     pub max_pam_dist: Option<f64>,
+    pub respect_small_clusters: bool,
 }
 
 struct BranchInfo {
@@ -90,6 +91,7 @@ pub fn cutree_hybrid(tree: &Tree, options: HybridOptions) -> anyhow::Result<Part
     // 4. Bottom-Up Traversal (Core Detection)
     let mut branch_infos: HashMap<usize, BranchInfo> = HashMap::new();
     let mut final_clusters: Vec<Vec<usize>> = Vec::new();
+    let mut small_clusters: Vec<Vec<usize>> = Vec::new(); // Clusters that failed size check but passed shape
 
     let root_id = match tree.get_root() {
         Some(r) => r,
@@ -156,27 +158,27 @@ pub fn cutree_hybrid(tree: &Tree, options: HybridOptions) -> anyhow::Result<Part
                     all_basic = false;
                 } else {
                     let gap = node_height - info.scatter;
-                    let fail = info.members.len() < min_size
-                        || info.scatter > abs_max_scatter
-                        || gap < abs_min_gap;
-                    if fail {
+                    let fail_shape = info.scatter > abs_max_scatter || gap < abs_min_gap;
+                    let fail_size = info.members.len() < min_size;
+
+                    if fail_shape || fail_size {
                         any_fail = true;
                     }
                 }
             }
 
             if all_basic {
-                // If all children are basic, we merge if ANY of them fails.
+                // If all children are basic, we merge if ANY of them fails (size or shape).
+                // This logic tries to grow clusters up until they break criteria.
                 if any_fail {
                     do_merge = true;
                 } else {
-                    // All satisfy criteria -> Keep separate
+                    // If all children satisfy criteria, we do NOT merge, effectively stopping
+                    // at the smallest valid clusters (matches R's bottom-up behavior).
                     do_merge = false;
                 }
             } else {
                 // Mixed Basic and Composite.
-                // We cannot form a new Basic Cluster from Composite parts easily (in simplified logic).
-                // So we become Composite.
                 do_merge = false;
             }
         }
@@ -197,12 +199,15 @@ pub fn cutree_hybrid(tree: &Tree, options: HybridOptions) -> anyhow::Result<Part
             for info in child_infos {
                 if info.is_basic {
                     let gap = node_height - info.scatter;
-                    let fail = info.members.len() < min_size
-                        || info.scatter > abs_max_scatter
-                        || gap < abs_min_gap;
+                    let fail_shape = info.scatter > abs_max_scatter || gap < abs_min_gap;
+                    let fail_size = info.members.len() < min_size;
 
-                    if !fail {
-                        final_clusters.push(info.members);
+                    if !fail_shape {
+                        if !fail_size {
+                            final_clusters.push(info.members);
+                        } else if options.respect_small_clusters {
+                            small_clusters.push(info.members);
+                        }
                     }
                 }
                 // Composite children are already handled (their sub-clusters finalized).
@@ -223,8 +228,15 @@ pub fn cutree_hybrid(tree: &Tree, options: HybridOptions) -> anyhow::Result<Part
     if let Some(root_id) = tree.get_root() {
         if let Some(info) = branch_infos.remove(&root_id) {
             if info.is_basic {
-                if info.members.len() >= min_size && info.scatter <= abs_max_scatter {
-                    final_clusters.push(info.members);
+                let fail_shape = info.scatter > abs_max_scatter; // Gap is undefined at root/top? Or check against cut_height?
+                let fail_size = info.members.len() < min_size;
+
+                if !fail_shape {
+                    if !fail_size {
+                        final_clusters.push(info.members);
+                    } else if options.respect_small_clusters {
+                        small_clusters.push(info.members);
+                    }
                 }
             }
         }
@@ -233,6 +245,7 @@ pub fn cutree_hybrid(tree: &Tree, options: HybridOptions) -> anyhow::Result<Part
     // 5. Initial Assignment & Medoid Calculation
     let mut assignment = HashMap::new();
     let mut medoids: HashMap<usize, usize> = HashMap::new(); // ClusterID -> MedoidIdx
+    let mut medoid_node_ids: HashMap<usize, usize> = HashMap::new(); // ClusterID -> NodeId (for LCA check)
 
     // Assign initial clusters
     for (i, members) in final_clusters.iter().enumerate() {
@@ -255,6 +268,9 @@ pub fn cutree_hybrid(tree: &Tree, options: HybridOptions) -> anyhow::Result<Part
             }
         }
         medoids.insert(cid, best_medoid);
+        if let Some(&nid) = mat_idx_to_node.get(&best_medoid) {
+            medoid_node_ids.insert(cid, nid);
+        }
 
         for &idx in members {
             if let Some(&node_id) = mat_idx_to_node.get(&idx) {
@@ -265,31 +281,107 @@ pub fn cutree_hybrid(tree: &Tree, options: HybridOptions) -> anyhow::Result<Part
 
     // 6. PAM Stage
     if options.pam_stage && !medoids.is_empty() {
-        let all_indices: Vec<usize> = node_to_mat_idx.values().cloned().collect();
         let max_pam_dist = options.max_pam_dist.unwrap_or(cut_height);
 
+        // Identify unassigned nodes (Cluster 0).
+        // If respect_small_clusters is true, we first try to assign small clusters as blocks
+        // before handling individual objects.
+
+        // If respect_small_clusters is true, we first try to assign small_clusters as blocks
+        if options.respect_small_clusters {
+            for members in &small_clusters {
+                // Find best cluster for this block
+                let mut best_cid = 0;
+                let mut min_avg_dist = f64::MAX;
+
+                for (&cid, &medoid_idx) in &medoids {
+                    let mut total_dist = 0.0;
+                    for &m in members {
+                        total_dist += matrix.get(m, medoid_idx) as f64;
+                    }
+                    let avg_dist = total_dist / members.len() as f64;
+
+                    if avg_dist < min_avg_dist {
+                        // Check dendro constraint
+                        let mut valid = true;
+                        if options.pam_respects_dendro {
+                            if let Some(&medoid_node) = medoid_node_ids.get(&cid) {
+                                // Check LCA for all members? Or just one?
+                                // R says "an object". For a cluster, maybe check representative?
+                                // Let's check the first member (approximation) or all.
+                                // Strict: All members must be compatible.
+                                for &m in members {
+                                    if let Some(&m_node) = mat_idx_to_node.get(&m) {
+                                        if let Ok(lca) =
+                                            tree.get_common_ancestor(&m_node, &medoid_node)
+                                        {
+                                            let h = *node_heights.get(&lca).unwrap_or(&0.0);
+                                            if h > cut_height {
+                                                valid = false;
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        if valid {
+                            min_avg_dist = avg_dist;
+                            best_cid = cid;
+                        }
+                    }
+                }
+
+                if min_avg_dist <= max_pam_dist {
+                    for &idx in members {
+                        if let Some(&node_id) = mat_idx_to_node.get(&idx) {
+                            assignment.insert(node_id, best_cid);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Now assign remaining individual objects (singleton outliers).
+        // If respect_small_clusters is TRUE, we skip objects already assigned as part of a block.
+        // This ensures we don't break the structure of small clusters identified in the first stage.
+
+        let all_indices: Vec<usize> = node_to_mat_idx.values().cloned().collect();
         for &idx in &all_indices {
-            // Only reassign if unassigned (Cluster 0) OR we want to reassign everything (Standard PAM)
-            // R's default is reassign everything (unless respectSmallClusters restricts it).
-            // Let's reassign everything to closest medoid.
+            let node_id = *mat_idx_to_node.get(&idx).unwrap();
+            if assignment.contains_key(&node_id) {
+                continue;
+            }
 
             let mut best_cid = 0;
             let mut min_dist = f64::MAX;
 
             for (&cid, &medoid_idx) in &medoids {
                 let d = matrix.get(idx, medoid_idx) as f64;
+
                 if d < min_dist {
-                    min_dist = d;
-                    best_cid = cid;
+                    // Check dendro constraint
+                    let mut valid = true;
+                    if options.pam_respects_dendro {
+                        if let Some(&medoid_node) = medoid_node_ids.get(&cid) {
+                            if let Ok(lca) = tree.get_common_ancestor(&node_id, &medoid_node) {
+                                let h = *node_heights.get(&lca).unwrap_or(&0.0);
+                                if h > cut_height {
+                                    valid = false;
+                                }
+                            }
+                        }
+                    }
+
+                    if valid {
+                        min_dist = d;
+                        best_cid = cid;
+                    }
                 }
             }
 
-            if min_dist > max_pam_dist {
-                best_cid = 0;
-            }
-
-            // Note: If best_cid is 0, we effectively "unassign" it.
-            if let Some(&node_id) = mat_idx_to_node.get(&idx) {
+            if min_dist <= max_pam_dist {
                 assignment.insert(node_id, best_cid);
             }
         }
