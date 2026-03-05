@@ -1,10 +1,17 @@
 # clust eval
 
-`pgr clust eval` 提供通用的聚类质量评估与比较功能。它主要关注**外部有效性（External Validity）**，即通过与 Ground Truth 或其他聚类结果的对比来量化一致性。
+`pgr clust eval` 提供通用的聚类质量评估与比较功能。它支持**外部有效性（External Validity）**（与 Ground Truth 对比）和**内部有效性（Internal Validity）**（基于数据本身的几何/统计特性）。
 
-## 定位与场景
+## 设计哲学
 
-- **定位**：通用聚类评估工具，不依赖树结构。
+`pgr` 采用**组件化**的设计哲学，将聚类的**生成（Generation）**与**评估（Evaluation）**分离。这与 Python 包 `clusteval` 的一体化设计不同：
+
+*   **Python `clusteval`**: `fit()` 方法内部自动执行 Grid Search（尝试不同的 $k$ 或 $\epsilon$），计算内部指标（如 Silhouette），并返回最优结果。
+*   **`pgr` Workflow**:
+    1.  **生成**: 使用 `pgr nwk cut --scan` 或 `pgr clust dbscan --scan` 生成一系列候选聚类方案（Partitions）。
+    2.  **评估**: 使用 `pgr clust eval` 批量计算这些方案的评估指标。
+    3.  **决策**: 用户根据指标（如 Silhouette 峰值、Elbow 点）选择最优参数。
+
 - **互补**：
   - `pgr nwk eval` [计划中]：关注树结构与分组的一致性（几何/演化）。
   - `pgr clust eval`：关注分组的统计有效性，支持外部（两分组对比）与内部（单分组+矩阵）评估。
@@ -12,6 +19,8 @@
   - **算法对比**：比较 MCL 与 K-Medoids 在同一数据集上的结果差异。
   - **基准测试**：将聚类结果与已知的标准分类（Ground Truth）对比，计算准确性。
   - **参数调优**：比较不同参数（如 `eps` 或 `inflation`）下聚类结果的稳定性。
+
+这种设计使得评估工具可以独立于聚类算法存在，支持任意来源的聚类结果。
 
 ## 核心指标 (Core Metrics)
 
@@ -38,6 +47,20 @@
   - **范围**：`[0, 1]`。
   - **缺点**：未校正随机性。随着簇数量增加，随机分区的 RI 也会趋近于 1，导致区分度降低。通常**不推荐**单独使用。
 
+- **Homogeneity (同质性)**
+  - **定义**：每个簇是否只包含某一个类的成员？（类似 Precision，要求簇够“纯”）。
+  - **范围**：`[0, 1]`。
+
+- **Completeness (完整性)**
+  - **定义**：某一个类的所有成员是否都被分到了同一个簇？（类似 Recall，要求簇够“全”）。
+  - **范围**：`[0, 1]`。
+
+- **V-Measure**
+  - **定义**：同质性 (Homogeneity) 和完整性 (Completeness) 的调和平均。
+  - **范围**：`[0, 1]`。
+  - **缺点**：未校正随机性。在样本量小或簇数量多时，得分偏高。
+  - **适用**：需要分析聚类误差来源（是分得太碎还是混得太杂）时。
+
 - **FMI (Fowlkes-Mallows Index)**
   - **定义**：Precision 和 Recall 的几何平均数。
   - **原理**：$FMI = \sqrt{\frac{TP}{TP+FP} \times \frac{TP}{TP+FN}}$。
@@ -55,15 +78,6 @@
     - 对簇数量极多（甚至接近样本数）的情况更鲁棒。
     - 能捕捉非线性的复杂关系。
   - **适用**：小样本、多簇（Large K）场景。
-
-- **V-Measure**
-  - **定义**：同质性 (Homogeneity) 和完整性 (Completeness) 的调和平均。
-  - **分项指标**：
-    - **Homogeneity**: 每个簇是否只包含某一个类的成员？（类似 Precision，要求簇够“纯”）
-    - **Completeness**: 某一个类的所有成员是否都被分到了同一个簇？（类似 Recall，要求簇够“全”）
-  - **范围**：`[0, 1]`。
-  - **缺点**：未校正随机性。在样本量小或簇数量多时，得分偏高。
-  - **适用**：需要分析聚类误差来源（是分得太碎还是混得太杂）时。
 
 - **NMI (Normalized Mutual Information)**
   - **定义**：标准化的互信息。
@@ -114,7 +128,8 @@
 
 - **混淆矩阵优化**：借鉴 `sklearn.metrics.cluster.pair_confusion_matrix`，计划在未来引入基于稀疏矩阵或排序的列联表构建算法，以优化大规模数据下的 ARI/AMI 计算性能。
 - **加权支持**：计划借鉴 `sklearn` 的 `sample_weight` 设计，支持对不同样本（如不同长度的序列）赋予不同权重，使评估结果更符合生物学意义。
-- **距离计算**：虽然 `clust eval` 主要处理标签，但内部指标（如 Silhouette）依赖距离。`pgr` 计划引入类似 `sklearn.metrics.pairwise` 的分块计算策略，以支持超大规模数据集的内部评估。
+- **距离计算**：虽然 `clust eval` 主要处理标签，但内部指标（如 Silhouette）依赖距离。`pgr` 计划引入类似 `sklearn.metrics.pairwise` 的分块计算 (Chunking) 策略，以支持超大规模数据集的内部评估。
+    > 目前的实现尚未包含分块优化，对于超大规模数据集（>10k 序列）可能会消耗大量内存。
 
 ### 4. 指标选择指南
 
@@ -133,6 +148,43 @@
   - **适用场景**：Ground Truth 包含大量未分类或独特的样本（Singletons），而聚类算法主要关注识别群组结构。如果不排除这些单例，可能会因为算法将它们合并或拆分而导致评分不合理地降低。
   - **对齐**：此选项与 `TreeCluster` 的 `score_clusters.py` 中的 `-ns` / `--no_singletons` 功能一致。
 
+## 典型工作流 (Workflows)
+
+### 场景 A: 有 Ground Truth（外部评估）
+
+比较算法生成的聚类结果与已知分类：
+
+```bash
+# 比较 result.tsv 和 truth.tsv
+pgr clust eval result.tsv truth.tsv
+# 输出: ARI, AMI, NMI, FMI, V-Measure...
+```
+
+### 场景 B: 无 Ground Truth（自动寻优/内部评估）
+
+这是 `clusteval` (Python) 的典型用例。在 `pgr` 中通过管道实现：
+
+1.  **准备距离矩阵** (用于 Silhouette):
+    ```bash
+    pgr nwk distance tree.nwk --mode phylip > dist.mat
+    ```
+
+2.  **扫描参数并评估**:
+    使用 `nwk cut --scan` 生成多种阈值下的聚类结果，并通过 `clust eval` 批量计算 Silhouette。
+
+    ```bash
+    # 1. 扫描树切割阈值，输出长表 (Group, Cluster, ID)
+    pgr nwk cut tree.nwk --scan 0.01,1.0,0.01 --mode leaf-dist-min > partitions.tsv
+
+    # 2. 批量评估内部指标 (Silhouette)
+    pgr clust eval partitions.tsv --format long --matrix dist.mat > scores.tsv
+
+    # 3. 查看结果 (找出 Silhouette 最高的阈值)
+    cat scores.tsv | sort -k2 -nr | head
+    ```
+
+    *注：`--format long` 指示输入文件包含多组聚类方案。在 Batch 模式下，如果同时提供 `--matrix` 和 `<p2>` (Ground Truth)，输出表将包含所有指标（Internal + External）。*
+
 ## 输入与输出约定
 
 ### 输入
@@ -147,17 +199,25 @@
   - **Partition (`<p1>`)**: 包含多个分组方案的长表文件（TSV）。
   - 必须指定 `--format long`。
   - **列定义**：
-    1. `Group/Threshold`: 分组标识（如阈值、参数）。
+    1. `Group`: 分组标识（如阈值、参数）。
     2. `ClusterID`: 簇 ID。
     3. `SampleID`: 样本 ID。
   - 数据必须按 `Group` 列排序或聚集（程序会按 Group 逐块处理）。
   - 通常与 `pgr nwk cut --scan` 的输出直接对接。
+  - 支持 `Group` 列包含 `Method=Value` 格式的元数据（如 `height=0.01`）。
 
 ### 输出
 - **TSV 格式**，包含所有计算的指标。
-- **单次模式**：一行表头 + 一行数据。
-- **批量模式**：一行表头 + 多行数据（每组一行）。
-  - 第一列为 `Group`，后续为指标列。
+- **单次模式 (External)**：
+  - 只有一行表头 + 一行数据。
+  - 列顺序：`ari`, `ami`, `homogeneity`, `completeness`, `v_measure`, `fmi`, `nmi`, `mi`。
+- **单次模式 (Internal)**：
+  - 两行：Metric Name + Value。
+  - 例如 `silhouette \n 0.5`。
+- **批量模式 (Batch)**：
+  - 一行表头 + 多行数据（每组一行）。
+  - 第一列为 `Group`，后续为指标列（取决于是否提供了 Ground Truth 或 Matrix）。
+  - 如果同时提供了 `--matrix` 和 `<p2>`，则包含所有指标。
 
 ## 典型用法
 
@@ -174,6 +234,10 @@ pgr clust eval clustering_result.tsv --coords vectors.tsv
 # 4. 批量评估：评估 nwk cut 扫描产生的所有阈值
 pgr nwk cut tree.nwk --scan 0,1,0.01 | \
     pgr clust eval - --format long --matrix dist.phy > batch_eval.tsv
+
+# 5. 批量评估（外部有效性）：结合 Ground Truth
+pgr nwk cut tree.nwk --scan 0,1,0.01 | \
+    pgr clust eval - --format long ground_truth.tsv > batch_external.tsv
 ```
 
 ## 现有工具参考 (Prior Art)
@@ -206,6 +270,7 @@ pgr nwk cut tree.nwk --scan 0,1,0.01 | \
   - 内部有效性（可作为补充）：`Silhouette/DBIndex`，输入为坐标或距离矩阵 + 单个分区（或直接做 k/eps 网格搜索）。
 - 扫描与评分：ClustEval 把“扫描 + 评分 + 选最优”打包在一起；`pgr` 更推荐“扫描（生成表）”与“决策/评估（独立命令）”解耦，便于组合与审计。
 - HDBSCAN/DBSCAN：算法本身属于“聚类”范畴，评分是“评估”。`pgr` 侧更适合在 `clust` 命令里实现算法，在 `clust eval`/`nwk metrics` 里补内外部指标。
+- 可视化：文档保留参考，CLI 仅输出 TSV
 
 ## 实现与采纳要点
 
@@ -331,7 +396,7 @@ pgr nwk cut tree.nwk --scan 0,1,0.01 | \
   - `pgr nwk cut --scan` 仅输出多组分区方案（Multi-column TSV 或 Multi-files）。
   - `pgr clust eval` 增强为支持“批处理模式”，接受包含多个分区的输入文件。
 - **层次聚类 (`pgr nwk cut`)**：
-  - 输出格式：支持输出长表（Threshold, ClusterID, SampleID）。
+  - 输出格式：支持输出长表（Group, ClusterID, SampleID）。
 - **批量评估 (`pgr clust eval`)**：
   - 增强 `--format`：支持 `long` 格式（长表，包含多个分区方案）。
   - 输入：
