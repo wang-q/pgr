@@ -63,10 +63,23 @@ pub fn get_node_with_longest_edge(tree: &Tree) -> Option<NodeId> {
         .iter()
         .filter(|n| !n.deleted)
         .max_by(|a, b| {
-            a.length
-                .unwrap_or(0.0)
-                .partial_cmp(&b.length.unwrap_or(0.0))
-                .unwrap()
+            let len_a = a.length.unwrap_or(0.0);
+            let len_b = b.length.unwrap_or(0.0);
+            match len_a.partial_cmp(&len_b).unwrap() {
+                std::cmp::Ordering::Equal => {
+                    // Tie-breaking: prefer internal nodes over leaves
+                    let a_internal = !a.children.is_empty();
+                    let b_internal = !b.children.is_empty();
+                    if a_internal && !b_internal {
+                        std::cmp::Ordering::Greater
+                    } else if !a_internal && b_internal {
+                        std::cmp::Ordering::Less
+                    } else {
+                        std::cmp::Ordering::Equal
+                    }
+                }
+                ord => ord,
+            }
         })
         .map(|n| n.id)
 }
@@ -282,8 +295,10 @@ pub fn calculate_inconsistency(
                 inconsistency.insert(id, 0.0);
             } else {
                 let mean = sub_heights.iter().sum::<f64>() / n as f64;
+                // Use sample variance (divisor n-1) to match SciPy/standard stats
+                let divisor = if n > 1 { (n - 1) as f64 } else { 1.0 };
                 let variance =
-                    sub_heights.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / n as f64;
+                    sub_heights.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / divisor;
                 let std = variance.sqrt();
                 if std == 0.0 {
                     inconsistency.insert(id, 0.0);

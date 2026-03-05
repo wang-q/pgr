@@ -3,7 +3,7 @@ use crate::libs::pairmat::NamedMatrix;
 use crate::libs::phylo::tree::stat::compute_node_heights;
 use crate::libs::phylo::tree::traversal::postorder;
 use crate::libs::phylo::tree::Tree;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 pub struct HybridOptions {
     pub min_cluster_size: usize,
@@ -143,7 +143,7 @@ pub fn cutree_hybrid(tree: &Tree, options: HybridOptions) -> anyhow::Result<Part
         };
 
         // Determine Merge Logic
-        let mut do_merge = false;
+        let do_merge;
 
         if node_height > cut_height {
             do_merge = false;
@@ -266,6 +266,7 @@ pub fn cutree_hybrid(tree: &Tree, options: HybridOptions) -> anyhow::Result<Part
     // 6. PAM Stage
     if options.pam_stage && !medoids.is_empty() {
         let all_indices: Vec<usize> = node_to_mat_idx.values().cloned().collect();
+        let max_pam_dist = options.max_pam_dist.unwrap_or(cut_height);
 
         for &idx in &all_indices {
             // Only reassign if unassigned (Cluster 0) OR we want to reassign everything (Standard PAM)
@@ -283,10 +284,8 @@ pub fn cutree_hybrid(tree: &Tree, options: HybridOptions) -> anyhow::Result<Part
                 }
             }
 
-            if let Some(max_d) = options.max_pam_dist {
-                if min_dist > max_d {
-                    best_cid = 0;
-                }
+            if min_dist > max_pam_dist {
+                best_cid = 0;
             }
 
             // Note: If best_cid is 0, we effectively "unassign" it.
@@ -301,8 +300,8 @@ pub fn cutree_hybrid(tree: &Tree, options: HybridOptions) -> anyhow::Result<Part
         assignment.entry(node_id).or_insert(0);
     }
 
-    let num_clusters = medoids.keys().len(); // Approximate, some might be empty now?
-                                             // Recalculate strict num_clusters
+    let _num_clusters = medoids.keys().len(); // Approximate, some might be empty now?
+                                              // Recalculate strict num_clusters
     let max_cid = assignment
         .values()
         .filter(|&&v| v > 0)

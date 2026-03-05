@@ -74,11 +74,10 @@ E 0.5 0.5 1.0 1.0 0.0
 ";
     fs::write(&mat_file, mat_content).unwrap();
 
-    // 1. Without PAM: E should be missing (or unassigned/singleton depending on output format)
+    // 1. PAM is enabled by default. E should be assigned to {A,B} if distance allows.
     // Dynamic tree assigns 0 to singletons. Our output logic skips 0?
     // No, Partition.get_clusters() groups all values. If 0 is present, it's a cluster.
     // But usually dynamic tree outputs 0 for noise.
-    // Let's check with PAM stage.
 
     let (stdout, stderr) = PgrCmd::new()
         .args(&[
@@ -89,7 +88,6 @@ E 0.5 0.5 1.0 1.0 0.0
             "2",
             "--matrix",
             mat_file.to_str().unwrap(),
-            "--pam-stage",
         ])
         .run();
 

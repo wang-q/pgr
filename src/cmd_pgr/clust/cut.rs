@@ -205,12 +205,6 @@ Examples:
                 .help("Distance matrix file (required for --dynamic-hybrid)"),
         )
         .arg(
-            Arg::new("pam-stage")
-                .long("pam-stage")
-                .action(ArgAction::SetTrue)
-                .help("Enable PAM-like reassignment stage for hybrid cut"),
-        )
-        .arg(
             Arg::new("max-pam-dist")
                 .long("max-pam-dist")
                 .value_parser(value_parser!(f64))
@@ -476,9 +470,7 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
                 .ok_or_else(|| anyhow::anyhow!("--matrix is required for dynamic-hybrid"))?;
             let dist_matrix = pgr::libs::pairmat::NamedMatrix::from_relaxed_phylip(matrix_file);
 
-            let deep_split = matches.get_flag("deep-split");
             let max_tree_height = matches.get_one::<f64>("max-tree-height").copied();
-            let pam_stage = matches.get_flag("pam-stage");
             let max_pam_dist = matches.get_one::<f64>("max-pam-dist").copied();
 
             let options = HybridOptions {
@@ -488,7 +480,7 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
                 deep_split: if matches.get_flag("deep-split") { 1 } else { 0 },
                 max_core_scatter: None,
                 min_gap: None,
-                pam_stage,
+                pam_stage: true, // Default to true
                 pam_respects_dendro: false,
                 max_pam_dist,
             };
