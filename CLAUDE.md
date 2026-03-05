@@ -74,7 +74,22 @@ cargo test
 - **`docs/multiz.md`**: Multiz 多序列比对格式处理。
 
 ### General
+- **`docs/axt.md`**: AXT 格式操作与转换。
+- **`docs/chain.md`**: Chain 格式高级处理。
+- **`docs/fa.md`**: FASTA 格式全能操作。
+- **`docs/fas.md`**: Block FASTA (FAS) 格式操作与转换。
 - **`docs/formats.md`**: 支持的文件格式概览。
+- **`docs/fq.md`**: FASTQ 格式操作。
+- **`docs/gff.md`**: GFF 格式操作。
+- **`docs/lav.md`**: LAV 格式操作与转换。
+- **`docs/maf.md`**: MAF 格式操作与转换。
+- **`docs/ms.md`**: Hudson's ms 模拟器数据处理。
+- **`docs/net.md`**: Net 格式操作与转换。
+- **`docs/nwk.md`**: Newick 系统发育树操作与可视化。
+- **`docs/pl.md`**: 集成分析流程 (Pipelines)。
+- **`docs/plot.md`**: 各种生物数据可视化工具。
+- **`docs/psl.md`**: PSL 格式操作与转换。
+- **`docs/twobit.md`**: 2bit 格式操作。
 
 ## 命令结构 (Command Structure)
 
