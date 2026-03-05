@@ -76,6 +76,52 @@ fn test_nwk_cut_k() {
 }
 
 #[test]
+fn test_nwk_cut_leaf_dist_max() {
+    // Tree: ((A:1,B:1)D:1,C:1)E;
+    // Depths: C=1, A=2, B=2. Max=2.
+    // Cut at leaf-dist-max 1.5 => Cutoff = 2 - 1.5 = 0.5.
+    // C(1) > 0.5 -> Cut {C}.
+    // D(1) > 0.5 -> Cut {A, B}.
+    // Result: {A, B}, {C}.
+
+    let (stdout, stderr) = PgrCmd::new()
+        .args(&[
+            "nwk",
+            "cut",
+            "tests/newick/abcde.nwk",
+            "--leaf-dist-max",
+            "1.5",
+        ])
+        .run();
+
+    if !stderr.is_empty() {
+        println!("STDERR: {}", stderr);
+    }
+
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert_eq!(lines.len(), 2);
+    assert_eq!(lines[0], "A\tB");
+    assert_eq!(lines[1], "C");
+}
+
+#[test]
+fn test_nwk_cut_max_edge() {
+    // Tree: ((A:1,B:1)D:1,C:1)E;
+    // Edges are all 1.
+    // Cut at max-edge 0.5 -> All edges cut. {A}, {B}, {C}.
+
+    let (stdout, _) = PgrCmd::new()
+        .args(&["nwk", "cut", "tests/newick/abcde.nwk", "--max-edge", "0.5"])
+        .run();
+
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert_eq!(lines.len(), 3);
+    assert_eq!(lines[0], "A");
+    assert_eq!(lines[1], "B");
+    assert_eq!(lines[2], "C");
+}
+
+#[test]
 fn test_nwk_cut_pair_rep() {
     // K=2 -> {A, B}, {C}
     // Tree: ((A:1,B:1)D:1,C:1)E;
