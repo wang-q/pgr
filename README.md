@@ -7,14 +7,20 @@
 `pgr` is a command-line toolkit for working with genomes and genome-derived
 data: sequences, alignments, variation, phylogenies, and related formats.
 
-<!-- TOC -->
-* [pgr - Practical Genome Refiner](#pgr---practical-genome-refiner)
-  * [Install](#install)
-  * [Usage](#usage)
-  * [Synopsis](#synopsis)
-    * [`pgr help`](#pgr-help)
-  * [Examples](#examples)
-<!-- TOC -->
+It is designed as a practical “Swiss Army knife” for day-to-day bioinformatics
+workflows, with a focus on:
+
+- Format-aware utilities for common genomics file types (FASTA/FASTQ/2bit, AXT/PSL/Chain/Net/MAF, GFF, Newick)
+- Interoperable outputs (tabular `cluster` / `pair` conventions, Newick for trees)
+- Pipeline-friendly behavior (stdin/stdout where possible, predictable output, composable subcommands)
+- Performance and robustness (Rust implementation, zero-panic policy for malformed inputs)
+
+High-level capabilities include:
+
+- Sequences: FASTA/FASTQ inspection, filtering, slicing, conversion, and 2bit querying
+- Alignments: sorting, filtering, conversion, and coordinate/range utilities across UCSC formats
+- Clustering & trees: distance/matrix processing, multiple clustering algorithms, tree cutting and visualization
+- Pipelines & plots: integrated workflows (optionally using external tools) and LaTeX/TikZ figure generation
 
 ## Install
 
