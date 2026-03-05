@@ -517,7 +517,11 @@ fn test_cut_support_filter() {
 
     let out_lines: Vec<&str> = stdout.lines().collect();
     // Expect 1 line (1 cluster)
-    assert_eq!(out_lines.len(), 1, "Expected 1 cluster without support filter");
+    assert_eq!(
+        out_lines.len(),
+        1,
+        "Expected 1 cluster without support filter"
+    );
     assert_eq!(out_lines[0], "A\tB\tC");
 
     // Case 2: High support threshold
@@ -543,7 +547,11 @@ fn test_cut_support_filter() {
     let mut out_lines: Vec<&str> = stdout.lines().collect();
     out_lines.sort(); // Ensure deterministic order for assertion
                       // Expected: "A\tB", "C"
-    assert_eq!(out_lines.len(), 2, "Expected 2 clusters with support filter");
+    assert_eq!(
+        out_lines.len(),
+        2,
+        "Expected 2 clusters with support filter"
+    );
     assert_eq!(out_lines[0], "A\tB");
     assert_eq!(out_lines[1], "C");
 

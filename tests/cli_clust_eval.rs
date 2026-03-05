@@ -19,20 +19,24 @@ fn test_clust_eval_perfect_match() -> anyhow::Result<()> {
     assert!(output.status.success());
 
     // Check header
-    assert!(stdout.contains("ari\tami\thomogeneity\tcompleteness\tv_measure"));
+    assert!(stdout.contains("ari\tami\thomogeneity\tcompleteness\tv_measure\tfmi\tnmi\tmi"));
 
     // Check values (should be 1.0)
     // The second line should be numbers
     let lines: Vec<&str> = stdout.lines().collect();
     let values: Vec<&str> = lines[1].split_whitespace().collect();
 
-    assert_eq!(values.len(), 5);
+    assert_eq!(values.len(), 8);
     // ARI
     assert!((values[0].parse::<f64>()? - 1.0).abs() < 1e-6);
     // AMI
     assert!((values[1].parse::<f64>()? - 1.0).abs() < 1e-6);
     // V-Measure
     assert!((values[4].parse::<f64>()? - 1.0).abs() < 1e-6);
+    // FMI
+    assert!((values[5].parse::<f64>()? - 1.0).abs() < 1e-6);
+    // NMI
+    assert!((values[6].parse::<f64>()? - 1.0).abs() < 1e-6);
 
     Ok(())
 }
@@ -115,13 +119,13 @@ fn test_clust_eval_pair_format() -> anyhow::Result<()> {
     assert!(output.status.success());
 
     // Check header
-    assert!(stdout.contains("ari\tami\thomogeneity\tcompleteness\tv_measure"));
+    assert!(stdout.contains("ari\tami\thomogeneity\tcompleteness\tv_measure\tfmi\tnmi\tmi"));
 
     // Check values (should be 1.0)
     let lines: Vec<&str> = stdout.lines().collect();
     let values: Vec<&str> = lines[1].split_whitespace().collect();
 
-    assert_eq!(values.len(), 5);
+    assert_eq!(values.len(), 8);
     // ARI
     assert!((values[0].parse::<f64>()? - 1.0).abs() < 1e-6);
     // AMI

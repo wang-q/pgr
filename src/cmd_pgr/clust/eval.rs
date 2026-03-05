@@ -123,7 +123,16 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
         // Write Header
         let mut header = vec!["Group"];
         if p2.is_some() {
-            header.extend_from_slice(&["ari", "ami", "homogeneity", "completeness", "v_measure"]);
+            header.extend_from_slice(&[
+                "ari",
+                "ami",
+                "homogeneity",
+                "completeness",
+                "v_measure",
+                "fmi",
+                "nmi",
+                "mi",
+            ]);
         }
         if matrix.is_some() {
             header.push("silhouette");
@@ -144,6 +153,9 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
                 row.push(format!("{:.6}", metrics.homogeneity));
                 row.push(format!("{:.6}", metrics.completeness));
                 row.push(format!("{:.6}", metrics.v_measure));
+                row.push(format!("{:.6}", metrics.fmi));
+                row.push(format!("{:.6}", metrics.nmi));
+                row.push(format!("{:.6}", metrics.mi));
             }
 
             if let Some(ref m) = matrix {
@@ -169,11 +181,21 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
         let p2 = load_partition(p2_path, format)?;
         let metrics = evaluate(&p1, &p2);
 
-        writeln!(writer, "ari\tami\thomogeneity\tcompleteness\tv_measure")?;
         writeln!(
             writer,
-            "{:.6}\t{:.6}\t{:.6}\t{:.6}\t{:.6}",
-            metrics.ari, metrics.ami, metrics.homogeneity, metrics.completeness, metrics.v_measure
+            "ari\tami\thomogeneity\tcompleteness\tv_measure\tfmi\tnmi\tmi"
+        )?;
+        writeln!(
+            writer,
+            "{:.6}\t{:.6}\t{:.6}\t{:.6}\t{:.6}\t{:.6}\t{:.6}\t{:.6}",
+            metrics.ari,
+            metrics.ami,
+            metrics.homogeneity,
+            metrics.completeness,
+            metrics.v_measure,
+            metrics.fmi,
+            metrics.nmi,
+            metrics.mi
         )?;
     } else if let Some(matrix_path) = matches.get_one::<String>("matrix") {
         let matrix = NamedMatrix::from_relaxed_phylip(matrix_path);

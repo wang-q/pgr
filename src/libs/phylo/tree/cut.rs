@@ -1140,21 +1140,21 @@ mod tests {
     #[test]
     fn test_cut_sum_branch() {
         let tree = create_test_tree();
-        
+
         // Tree:
         //      Root(E)
         //     /    \
         //    D(1)   C(1)
         //   / \
         //  A(1)B(1)
-        
+
         // Lengths:
         // A, B, C are leaves. Sum=0.
         // D: children A, B. D->A len 1, D->B len 1.
         // Sum(D) = Sum(A) + len(A) + Sum(B) + len(B) = 0 + 1 + 0 + 1 = 2.
         // Root(E): children D, C. E->D len 1, E->C len 1.
         // Sum(E) = Sum(D) + len(D) + Sum(C) + len(C) = 2 + 1 + 0 + 1 = 4.
-        
+
         // Threshold 3.0
         // Root sum 4 > 3 -> Split
         // D sum 2 <= 3 -> Cluster {A, B}
@@ -1167,7 +1167,7 @@ mod tests {
         let c = 2;
         assert_eq!(p.assignment[&a], p.assignment[&b]);
         assert_ne!(p.assignment[&a], p.assignment[&c]);
-        
+
         // Threshold 5.0
         // Root sum 4 <= 5 -> Cluster {A, B, C}
         let p2 = cut(&tree, Method::SumBranch(5.0)).unwrap();

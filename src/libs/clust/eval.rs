@@ -161,11 +161,22 @@ pub fn load_batch_partitions<P: AsRef<Path>>(path: P) -> anyhow::Result<Vec<(Str
 
 #[derive(Debug, Default)]
 pub struct Metrics {
+    /// Adjusted Rand Index
     pub ari: f64,
+    /// Adjusted Mutual Information
     pub ami: f64,
+    /// Homogeneity (each cluster contains only members of a single class)
     pub homogeneity: f64,
+    /// Completeness (all members of a given class are assigned to the same cluster)
     pub completeness: f64,
+    /// V-Measure (harmonic mean of homogeneity and completeness)
     pub v_measure: f64,
+    /// Fowlkes-Mallows Index (geometric mean of precision and recall)
+    pub fmi: f64,
+    /// Normalized Mutual Information
+    pub nmi: f64,
+    /// Mutual Information
+    pub mi: f64,
 }
 
 pub fn evaluate(p1: &Partition, p2: &Partition) -> Metrics {
@@ -200,9 +211,10 @@ pub fn evaluate(p1: &Partition, p2: &Partition) -> Metrics {
 
     // 4. Calculate Metrics
     let ari = calculate_ari(&table, &a_counts, &b_counts, n);
-    let (homogeneity, completeness, v_measure) =
-        calculate_v_measure(&table, &a_counts, &b_counts, n);
+    let (homogeneity, completeness, v_measure, mi, nmi) =
+        calculate_v_measure_and_mi(&table, &a_counts, &b_counts, n);
     let ami = calculate_ami(&table, &a_counts, &b_counts, n);
+    let fmi = calculate_fmi(&table, &a_counts, &b_counts, n);
 
     Metrics {
         ari,
@@ -210,6 +222,9 @@ pub fn evaluate(p1: &Partition, p2: &Partition) -> Metrics {
         homogeneity,
         completeness,
         v_measure,
+        fmi,
+        nmi,
+        mi,
     }
 }
 
@@ -269,14 +284,14 @@ fn calculate_ari(
     (index - expected_index) / (max_index - expected_index)
 }
 
-fn calculate_v_measure(
+fn calculate_v_measure_and_mi(
     table: &HashMap<(u32, u32), usize>,
     a_counts: &[usize],
     b_counts: &[usize],
     n: usize,
-) -> (f64, f64, f64) {
+) -> (f64, f64, f64, f64, f64) {
     if n == 0 {
-        return (0.0, 0.0, 0.0);
+        return (0.0, 0.0, 0.0, 0.0, 0.0);
     }
     let n_f = n as f64;
 
@@ -298,6 +313,14 @@ fn calculate_v_measure(
         mi += term;
     }
 
+    // Normalized Mutual Information (NMI)
+    // NMI = MI / sqrt(H(U) * H(V))
+    let nmi = if h_a * h_b == 0.0 {
+        0.0
+    } else {
+        mi / (h_a * h_b).sqrt()
+    };
+
     // Homogeneity = 1 - H(U|V) / H(U) = MI(U,V) / H(U)
     // Completeness = 1 - H(V|U) / H(V) = MI(U,V) / H(V)
 
@@ -310,7 +333,7 @@ fn calculate_v_measure(
         2.0 * homogeneity * completeness / (homogeneity + completeness)
     };
 
-    (homogeneity, completeness, v_measure)
+    (homogeneity, completeness, v_measure, mi, nmi)
 }
 
 fn entropy(counts: &[usize], n: f64) -> f64 {
@@ -325,6 +348,45 @@ fn entropy(counts: &[usize], n: f64) -> f64 {
     h
 }
 
+/// Calculate Fowlkes-Mallows Index (FMI)
+/// FMI = TP / sqrt((TP + FP) * (TP + FN))
+///
+/// Where:
+/// - TP: True Positives (pairs in same cluster in both P1 and P2)
+/// - FP: False Positives (pairs in same cluster in P1 but different in P2)
+/// - FN: False Negatives (pairs in different cluster in P1 but same in P2)
+fn calculate_fmi(
+    table: &HashMap<(u32, u32), usize>,
+    a_counts: &[usize],
+    b_counts: &[usize],
+    _n: usize,
+) -> f64 {
+    fn binom2(x: usize) -> f64 {
+        if x < 2 {
+            0.0
+        } else {
+            (x as f64 * (x as f64 - 1.0)) / 2.0
+        }
+    }
+
+    let tp: f64 = table.values().map(|&count| binom2(count)).sum();
+    let sum_a_2: f64 = a_counts.iter().map(|&count| binom2(count)).sum();
+    let sum_b_2: f64 = b_counts.iter().map(|&count| binom2(count)).sum();
+
+    // FP = sum_a_2 - TP
+    // FN = sum_b_2 - TP
+    // FMI = TP / sqrt( (TP + FP) * (TP + FN) )
+    //     = TP / sqrt( sum_a_2 * sum_b_2 )
+
+    if sum_a_2 == 0.0 || sum_b_2 == 0.0 {
+        return 0.0;
+    }
+
+    tp / (sum_a_2 * sum_b_2).sqrt()
+}
+
+/// Calculate Adjusted Mutual Information (AMI)
+/// AMI = (MI - E[MI]) / (mean(H(U), H(V)) - E[MI])
 fn calculate_ami(
     table: &HashMap<(u32, u32), usize>,
     a_counts: &[usize],
@@ -791,5 +853,69 @@ mod tests {
 
         let score = davies_bouldin_score(&p, &coords);
         assert!((score - 0.2).abs() < 1e-6, "Score was {}", score);
+    }
+
+    #[test]
+    fn test_evaluate_perfect() {
+        let mut p1 = Partition::new();
+        p1.insert("A".to_string(), 1);
+        p1.insert("B".to_string(), 1);
+        p1.insert("C".to_string(), 2);
+
+        let mut p2 = Partition::new();
+        p2.insert("A".to_string(), 10);
+        p2.insert("B".to_string(), 10);
+        p2.insert("C".to_string(), 20);
+
+        let m = evaluate(&p1, &p2);
+        assert_eq!(m.ari, 1.0);
+        assert_eq!(m.ami, 1.0);
+        assert_eq!(m.homogeneity, 1.0);
+        assert_eq!(m.completeness, 1.0);
+        assert_eq!(m.v_measure, 1.0);
+        assert_eq!(m.fmi, 1.0);
+        assert_eq!(m.nmi, 1.0);
+    }
+
+    #[test]
+    fn test_evaluate_disjoint() {
+        // P1: {A,B}, {C,D} -> Labels: 1, 1, 2, 2
+        // P2: {A,C}, {B,D} -> Labels: 1, 2, 1, 2
+        // Contingency table is uniform:
+        //      P2_1(AC) P2_2(BD)
+        // P1_1(AB)  1(A)     1(B)
+        // P1_2(CD)  1(C)     1(D)
+        //
+        // This is perfectly independent (orthogonal).
+        // MI = 0.0
+        // NMI = 0.0
+        // ARI = -0.5 (Worse than random?) Let's check calculation:
+        // sum_nij_2 = 0
+        // sum_a_2 = 1 + 1 = 2
+        // sum_b_2 = 1 + 1 = 2
+        // n_2 = binom(4, 2) = 6
+        // E[Index] = (2 * 2) / 6 = 4/6 = 0.666
+        // Max[Index] = (2 + 2) / 2 = 2
+        // Index = 0
+        // ARI = (0 - 0.666) / (2 - 0.666) = -0.666 / 1.333 = -0.5
+        // FMI = TP / sqrt(2 * 2) = 0 / 2 = 0.0
+
+        let mut p1 = Partition::new();
+        p1.insert("A".to_string(), 1);
+        p1.insert("B".to_string(), 1);
+        p1.insert("C".to_string(), 2);
+        p1.insert("D".to_string(), 2);
+
+        let mut p2 = Partition::new();
+        p2.insert("A".to_string(), 1);
+        p2.insert("C".to_string(), 1);
+        p2.insert("B".to_string(), 2);
+        p2.insert("D".to_string(), 2);
+
+        let m = evaluate(&p1, &p2);
+        assert!((m.ari + 0.5).abs() < 1e-6);
+        assert!(m.mi.abs() < 1e-6);
+        assert!(m.nmi.abs() < 1e-6);
+        assert!(m.fmi.abs() < 1e-6);
     }
 }
