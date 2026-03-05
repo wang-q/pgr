@@ -65,6 +65,7 @@ cargo test
 - **`docs/clust.md`**: 聚类模块总体规划。
 - **`docs/clust-hier.md`**: 层次聚类算法与实现细节。
 - **`docs/clust-eval.md`**: 通用聚类评估（设计中）。
+- **`docs/dist.md`**: 距离计算与度量。
 - **`docs/mat.md`**: 距离矩阵操作与转换。
 
 ### Algorithms & Ports

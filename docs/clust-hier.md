@@ -64,7 +64,13 @@
 
 3.  **生态一致性**:
     - **Flat Clustering**: `pgr nwk cut` 的设计与 SciPy `fcluster` 的 `criterion='distance'|'maxclust'` 保持概念一致。
-    - **Cophenetic Correlation**: 确认将 `cophenet` 引入 `pgr nwk metrics`，作为衡量树对原始距离矩阵拟合优度的核心指标。
+    - **Cophenetic Correlation**: 确认将 `cophenet` 引入 `pgr nwk eval`，作为衡量树对原始距离矩阵拟合优度的核心指标。
+
+4.  **Optimal Leaf Ordering (OLO)**:
+    - **背景**: 标准层次聚类算法生成的树，左右子树的顺序是任意的。这导致在绘制热图（Heatmap）时，相似的行/列可能不相邻，视觉效果杂乱。
+    - **SciPy 方案**: `scipy.cluster.hierarchy.optimal_leaf_ordering`。
+    - **算法**: Bar-Joseph et al. (2001) 的动态规划算法。在不改变树拓扑结构的前提下，通过旋转内部节点，最小化相邻叶子之间的距离之和。
+    - **pgr 借鉴**: 计划在 `pgr nwk order` 中实现此功能（`--olo` 或 `--optimal`），作为聚类后的标准优化步骤，显著提升下游可视化（`pgr mat plot` 或外部工具）的效果。
 
 ## 实现规划与优化分析 (Implementation & Optimization)
 
