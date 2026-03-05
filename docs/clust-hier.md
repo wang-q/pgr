@@ -72,6 +72,16 @@
     - **算法**: Bar-Joseph et al. (2001) 的动态规划算法。在不改变树拓扑结构的前提下，通过旋转内部节点，最小化相邻叶子之间的距离之和。
     - **pgr 借鉴**: 计划在 `pgr nwk order` 中实现此功能（`--olo` 或 `--optimal`），作为聚类后的标准优化步骤，显著提升下游可视化（`pgr mat plot` 或外部工具）的效果。
 
+5.  **Cophenetic Correlation Coefficient**:
+    - **背景**: 如何量化生成的树是否真实反映了原始距离矩阵？
+    - **SciPy 方案**: `scipy.cluster.hierarchy.cophenet`。
+    - **原理**: 计算树上两点间的距离（cophenetic distance，即最近共同祖先的高度）与原始距离矩阵之间的 Pearson 相关系数。
+    - **pgr 借鉴**: 在 `pgr nwk eval` 中实现此指标，帮助用户评估不同 Linkage 方法（如 UPGMA vs Ward）对数据的拟合优度。
+
+6.  **Distance Metric Architecture**:
+    - **背景**: SciPy/Scikit-learn 的距离计算模块架构清晰，支持稀疏矩阵和多种度量。
+    - **pgr 借鉴**: 计划参考 `DistanceMetric` 类设计，统一 `pgr dist` 接口，并在未来支持稀疏距离矩阵计算（Phase 3）。
+
 ## 实现规划与优化分析 (Implementation & Optimization)
 
 ### 核心数据结构优化
