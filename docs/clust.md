@@ -69,7 +69,23 @@
   - **实现状态**：✅ 已实现（$O(N^2)$ NN-Chain 优化）。
   - **价值**：提供通用层级结构视图（不限于生物演化），配合 `nwk cut` 可灵活获取不同粒度的分组。
 
-### 📅 计划中 (Planned)
+### � 评估与分析 (Evaluation)
+
+这些命令不产生聚类，而是评估聚类或树的质量。
+
+- **Tree-based Evaluation**
+  - **命令**：`pgr nwk eval` (规划中)
+  - **定位**：树结构的多维度评估。
+  - **功能**：几何紧密性（Silhouette）、分类纯度（Purity）、演化一致性（Discordance）。
+  - **文档**：[docs/nwk-eval.md](file:///c:/Users/wangq/Scripts/pgr/docs/nwk-eval.md)
+
+- **Partition-based Evaluation**
+  - **命令**：`pgr clust eval` (规划中)
+  - **定位**：通用聚类质量评估（有 Ground Truth 或对比）。
+  - **功能**：ARI, AMI, V-Measure。借鉴 Scikit-learn 的稀疏列联表实现。
+  - **文档**：[docs/clust-eval.md](file:///c:/Users/wangq/Scripts/pgr/docs/clust-eval.md)
+
+### � 计划中 (Planned)
 
 这些算法已列入路线图，旨在补全统计聚类与大规模向量分析能力。
 
@@ -284,7 +300,8 @@ pgr clust gmm vectors.tsv --k 8 --out-prob > soft_clusters.tsv
 ## 实现路线图
 
 1. **基础图聚类**：已完成 MCL、CC、DBSCAN、K-Medoids。
-2. **系统发育构树**：已完成 UPGMA、NJ。
-3. **向量支持**：建立读取稠密向量/矩阵的基础设施（进行中）。
-4. **统计聚类**：引入 GMM 实现，支持 BIC 模型选择（规划中）。
-5. **层次聚类扩展**：实现通用的 Hierarchical Clustering (hclust) 和 HDBSCAN（规划中）。
+2. **系统发育构树**：已完成 UPGMA、NJ、Hierarchical Clustering (hier)。
+3. **评估体系**：设计完成 `nwk eval` (Tree) 和 `clust eval` (Partition)。
+4. **向量支持**：建立读取稠密向量/矩阵的基础设施（进行中）。
+5. **统计聚类**：引入 GMM 实现，支持 BIC 模型选择（规划中）。
+6. **层次聚类扩展**：实现 HDBSCAN（规划中）。

@@ -65,14 +65,41 @@ pgr clust eval --p1 clustering_result.tsv --p2 ground_truth.tsv > eval.tsv
 pgr clust eval --p1 mcl_clusters.tsv --p2 dbscan_clusters.tsv
 ```
 
+## 现有工具参考 (Prior Art)
+
+### 1. Scikit-learn (`sklearn.metrics`)
+- **地位**：Python 数据科学事实标准。
+- **支持**：ARI, AMI, V-Measure, Fowlkes-Mallows, Silhouette。
+- **特点**：API 设计简洁（`metric(labels_true, labels_pred)`），所有 Adjusted 指标均为默认配置。`pgr` 的核心算法逻辑将与 sklearn 对齐以确保结果可比性。
+
+### 2. R (`mclust`, `fpc`)
+- **地位**：统计学与生物信息学常用。
+- **特点**：`mclust` 专注于 ARI；`fpc` 混合了内部有效性（距离统计）和外部有效性。
+
+### 3. ClustEval (Bioinformatics)
+- **特点**：专为大规模生物聚类设计，强调处理数百万序列的能力。
+- **启示**：对于生物数据（如 Gene Families），簇的数量可能极大（>10k）。`pgr` 在实现列联表时需采用稀疏策略（HashMap），避免 $O(K^2)$ 的内存消耗。
+
 ## 实现备注（技术细节）
 
-- **列联表 (Contingency Table)**:
-  - 所有指标的基础是构建 $R \times C$ 的列联表（混淆矩阵），其中 $n_{ij}$ 表示同时属于 Partition 1 的第 $i$ 簇和 Partition 2 的第 $j$ 簇的样本数。
-  - 稀疏优化：对于大数量簇，列联表应使用稀疏矩阵或 Hash Map 存储。
+- **Scikit-learn 借鉴**:
+  - **参考路径**:
+    - 核心指标逻辑：[sklearn/metrics/cluster/_supervised.py](file:///c:/Users/wangq/Scripts/pgr/scikit-learn-main/sklearn/metrics/cluster/_supervised.py)
+    - EMI 算法：[sklearn/metrics/cluster/_expected_mutual_info_fast.pyx](file:///c:/Users/wangq/Scripts/pgr/scikit-learn-main/sklearn/metrics/cluster/_expected_mutual_info_fast.pyx)
+  - **列联表 (Contingency Table)**: 
+    - 核心实现：利用稀疏矩阵（COO/CSR）构建二维直方图。
+    - 逻辑：统计 `(true_label, pred_label)` 对的频次。
+    - Rust 方案：`HashMap<(u32, u32), u32>`（最通用）或 CSR（Compressed Sparse Row，若 ID 已映射为紧凑整数，可大幅节省内存）。
+  - **ARI 高效计算**:
+    - 避免 $O(N^2)$ 遍历所有样本对。
+    - 利用列联表：$ \sum_{ij} \binom{n_{ij}}{2} $ 计算同簇对数量。
+  - **数值稳定性**: 计算 Entropy 和 MI 时，需处理 `x * log(x)` 当 `x=0` 的情况（应为 0），并使用 `f64` 避免精度溢出。
+  - **EMI (Expected Mutual Information)**:
+    - AMI 的核心难点。涉及超几何分布的期望值。需仔细移植 `_expected_mutual_info_fast` 的逻辑。
+
 - **性能策略**:
-  - 核心算法复杂度通常为 $O(N)$（构建列联表）。
-  - AMI 计算涉及大量对数运算，需注意数值稳定性。
+  - **输入对齐**: 两个输入文件可能包含不完全重叠的样本。第一步必须是**取交集**并**按样本名排序**，生成对齐的 Label 数组。
+  - **算法复杂度**: 构建列联表为 $O(N)$。基于列联表的指标计算通常为 $O(K_1 \times K_2)$（稀疏情况下为 $O(\text{NonZero})$）。
 
 ## 实施计划
 
@@ -81,4 +108,8 @@ pgr clust eval --p1 mcl_clusters.tsv --p2 dbscan_clusters.tsv
     - 实现列联表构建。
     - 实现 ARI, AMI, Homogeneity, Completeness, V-Measure。
 - [ ] **验证**:
-    - 对比 `scikit-learn.metrics` 的结果。
+    - [ ] **Perfect Matches**: ID 重命名不影响结果（ARI=1.0）。
+    - [ ] **Non-consecutive Labels**: 非连续 ID（如 `0, 4`）不影响结果。
+    - [ ] **Homogeneity/Completeness**: 验证单侧完美情况（H=1 vs C=1）。
+    - [ ] **Integer Overflow**: 确保在大样本（N > 65536）下计数器不溢出（使用 `u64/usize`）。
+    - [ ] **Random Baseline**: 随机分区的 Adjusted 指标应接近 0。
