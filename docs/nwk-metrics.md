@@ -1,4 +1,4 @@
-# nwk metrics
+# nwk metrics [设计中]
 
 `pgr nwk metrics` 的目标是：在已有 Newick 树与分组（partition）的基础上，计算“树结构友好”的聚类质量指标，用于评估分组的紧密性与分离度，补全 `pgr nwk cut` 的下游分析链。
 
@@ -19,9 +19,9 @@
 ### 输入
 
 - 树文件：Newick 格式（文件或 stdin）。
-- 分组文件：TSV，两列：
-  - `SequenceName`：叶子标签。
-  - `ClusterNumber`：簇编号；单例可为 `-1`（与 TreeCluster 约定一致）。
+- 分组文件（Partition）：支持多种格式（推荐 `cluster` 格式）：
+  - **Cluster List (`cluster`)**：`pgr` 标准格式。每行代表一个簇，包含该簇所有成员的 Label（制表符分隔）。这是 `pgr nwk cut` 的默认输出。
+  - **Pair List (`pair`)**：`pgr` 标准格式。每行一对 `(Representative, Member)`。
 - 原始距离矩阵（可选，用于 cophenetic）：PHYLIP 距离矩阵（文件或 stdin），参数 `--dist <matrix.phy>`
 
 可选参数（规划）：
@@ -102,7 +102,11 @@ pgr nwk metrics tree.nwk --dist matrix.phy --metrics cophenet > fit.tsv
 
 ## 实现备注（规划）
 
-- 距离来源：复用 `Tree::get_distance`，当长度为 0 时以边数替代（参见 [distance.rs](file:///c:/Users/wangq/Scripts/pgr/src/cmd_pgr/nwk/distance.rs) 中的约定）。
-- 性能策略：小规模直接查询；中大规模按簇内叶集做批量/缓存；必要时引入并行。
-- 数值格式：统一到六位小数，移除尾随零，便于比较与可视化。
-- cophenetic 计算：在层次树/超度量树上取首次合并高度；在一般 Newick/非超度量场景下采用树上路径距离近似，输出相关系数以衡量保真度。
+- **距离计算**：
+  - 基础：复用 `Tree::get_distance`。
+  - 优化：对于 `avg_clade` 等簇内指标，可参考 `src/libs/phylo/tree/stat.rs` 中的 `compute_avg_clade_distances` 逻辑（$O(N)$ 自底向上）。注意：该算法假设簇是单系群（Subtree）；对于非单系簇（如 `k-means` 结果），可能需要回退到 LCA 查询或全距离矩阵。
+- **性能策略**：
+  - 优先使用基于遍历的聚合算法，避免构建 $O(N^2)$ 全距离矩阵。
+  - 对于 Silhouette 这种必须依赖全对距离的指标，考虑支持采样或并行化。
+- **数值格式**：统一到六位小数，移除尾随零。
+- **Cophenetic**：复用 `distance` 模块逻辑生成树上距离，与输入矩阵计算 Pearson 相关。

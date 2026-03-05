@@ -200,7 +200,7 @@
 1.  **真实分布测试 (Blobs Test)**:
     - 目标：验证算法能否正确聚类具有明显几何结构的合成数据（Statistical Correctness）。
     - 计划：在 `tests/` 中添加集成测试，生成两个高斯分布的簇（Blob A 和 Blob B），计算距离矩阵，运行 `clust hier`，验证生成的 Newick 树是否将两个簇的点分在不同的主分支上。
-    - **注意**：由于 `pgr nwk cut` 命令尚未实现，该测试目前无法完全自动化验证（需要切树来检查分组），因此暂时推迟。
+    - **注意**：由于 `pgr nwk cut` 命令已实现，该测试可以被激活。
 2.  **输入预处理文档 (已完成)**:
     - 目标：澄清输入要求。
     - 状态：已在 `mat-transform.md` 和 `clust-hier.md` 中更新，并增强了 `pgr mat transform` 功能（支持对角线归一化），确保用户能正确地将相似度转换为距离。
@@ -270,13 +270,13 @@ pgr clust hier matrix.phy --method average > tree.nwk
   - pgr: `pgr mat to-phylip pairs.tsv -o matrix.phy` → `pgr clust hier matrix.phy --method ward > tree.nwk` → `pgr nwk order tree.nwk --nd > ordered.nwk`
 - SciPy fcluster（按距离平切）:
   - Python: `labels = fcluster(Z, t=0.05, criterion='distance')`
-  - pgr: `pgr nwk cut tree.nwk --height 0.05 > clusters.tsv`（`nwk cut` 规划中）
+  - pgr: `pgr nwk cut tree.nwk --height 0.05 > clusters.tsv`
 - SciPy fcluster（按簇数平切）:
   - Python: `labels = fcluster(Z, t=20, criterion='maxclust')`
-  - pgr: `pgr nwk cut tree.nwk --k 20 > clusters.tsv`（`nwk cut` 规划中）
+  - pgr: `pgr nwk cut tree.nwk --k 20 > clusters.tsv`
 - SciPy cophenet:
   - Python: `c, dists = cophenet(Z, Y)`
-  - pgr: `pgr nwk metrics tree.nwk --metrics cophenet --dist matrix.phy > metrics.tsv`（`nwk metrics` 规划中）
+  - pgr: `pgr nwk metrics tree.nwk --dist matrix.phy > metrics.tsv`（`nwk metrics` 设计中）
 
 ### scikit-learn 映射
 - AgglomerativeClustering (Ward):
@@ -287,12 +287,12 @@ pgr clust hier matrix.phy --method average > tree.nwk
   - pgr: `pgr clust hier matrix.phy --method average > tree.nwk`
 - 差异说明:
   - scikit-learn 侧重于直接输出聚类标签（`labels_`），`pgr` 侧重于生成树结构（Newick）。
-  - 若需在 `pgr` 中获得标签，请配合 `nwk cut`（规划中）使用。
+  - 若需在 `pgr` 中获得标签，请配合 `nwk cut` 使用。
 
 ### 与工具链协作
 - 构树：`pgr clust hier` → 生成 dendrogram
-- 切分：`pgr nwk cut --height H` → 导出分组（规划中）
+- 切分：`pgr nwk cut --height H` → 导出分组
 - 评估：
-  - 无 Ground Truth：`pgr nwk metrics`（silhouette、簇内直径、最近簇间距）（规划中）
+  - 无 Ground Truth：`pgr nwk metrics`（silhouette、簇内直径、最近簇间距）（设计中）
   - 有 Ground Truth：`pgr clust eval/compare`（ARI/AMI/V-Measure）（规划中）
 - 可视化：`pgr nwk to-dot/to-forest` → 图形/LaTeX 展示
