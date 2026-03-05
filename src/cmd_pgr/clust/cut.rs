@@ -1,5 +1,7 @@
 use clap::*;
-use pgr::libs::phylo::tree::{cut, Tree};
+use pgr::libs::clust::tree_cut::dynamic::{cutree_dynamic_tree, DynamicTreeOptions};
+use pgr::libs::clust::tree_cut::{self as cut, Method};
+use pgr::libs::phylo::tree::Tree;
 use std::io::Write;
 
 pub fn make_subcommand() -> Command {
@@ -22,6 +24,7 @@ Criteria:
 * `--leaf-dist-avg <T>`: TreeCluster style (avg distance from cluster root to leaves <= T).
 * `--max-edge <T>` / `--single-linkage <T>`: Cut branches longer than threshold.
 * `--inconsistent <T>`: SciPy style (inconsistent coefficient <= T).
+* `--dynamic-tree`: Dynamic Tree Cut (top-down adaptive).
 
 Output formats:
     * cluster: Each line contains points of one cluster. The first point is the representative.
@@ -40,8 +43,8 @@ Examples:
 2. Cut at height 0.5:
    pgr nwk cut tree.nwk --height 0.5
 
-3. Cut where max pairwise distance in cluster <= 0.1:
-   pgr nwk cut tree.nwk --max-clade 0.1
+3. Dynamic Tree Cut with min cluster size 20:
+   pgr nwk cut tree.nwk --dynamic-tree --min-cluster-size 20
 "###,
         )
         .arg(
@@ -178,6 +181,31 @@ Examples:
                 .value_parser(value_parser!(f64))
                 .help("Branch support threshold (edges with support < S will be treated as infinite length)"),
         )
+        .arg(
+            Arg::new("dynamic-tree")
+                .long("dynamic-tree")
+                .action(ArgAction::SetTrue)
+                .help("Use dynamic tree cut method (adaptive top-down)"),
+        )
+        .arg(
+            Arg::new("min-cluster-size")
+                .long("min-cluster-size")
+                .value_parser(value_parser!(usize))
+                .default_value("20")
+                .help("Minimum cluster size for dynamic tree cut"),
+        )
+        .arg(
+            Arg::new("deep-split")
+                .long("deep-split")
+                .action(ArgAction::SetTrue)
+                .help("Enable deep split for dynamic tree cut (default: false)"),
+        )
+        .arg(
+            Arg::new("max-tree-height")
+                .long("max-tree-height")
+                .value_parser(value_parser!(f64))
+                .help("Maximum joining height for dynamic tree cut (default: 99% of tree height)"),
+        )
         .group(
             ArgGroup::new("method")
                 .args([
@@ -193,6 +221,7 @@ Examples:
                     "leaf-dist-avg",
                     "max-edge",
                     "inconsistent",
+                    "dynamic-tree",
                 ])
                 .required(true),
         )
@@ -324,29 +353,29 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
 
         while val <= end + 1e-9 {
             let (method, method_name) = if matches.contains_id("k") {
-                (cut::Method::K(val as usize), "k")
+                (Method::K(val as usize), "k")
             } else if matches.contains_id("height") {
-                (cut::Method::Height(val), "height")
+                (Method::Height(val), "height")
             } else if matches.contains_id("root-dist") {
-                (cut::Method::RootDist(val), "root-dist")
+                (Method::RootDist(val), "root-dist")
             } else if matches.contains_id("max-clade") {
-                (cut::Method::MaxClade(val), "max-clade")
+                (Method::MaxClade(val), "max-clade")
             } else if matches.contains_id("avg-clade") {
-                (cut::Method::AvgClade(val), "avg-clade")
+                (Method::AvgClade(val), "avg-clade")
             } else if matches.contains_id("med-clade") {
-                (cut::Method::MedClade(val), "med-clade")
+                (Method::MedClade(val), "med-clade")
             } else if matches.contains_id("sum-branch") {
-                (cut::Method::SumBranch(val), "sum-branch")
+                (Method::SumBranch(val), "sum-branch")
             } else if matches.contains_id("leaf-dist-max") {
-                (cut::Method::RootDist(max_depth - val), "leaf-dist-max")
+                (Method::RootDist(max_depth - val), "leaf-dist-max")
             } else if matches.contains_id("leaf-dist-min") {
-                (cut::Method::RootDist(min_depth - val), "leaf-dist-min")
+                (Method::RootDist(min_depth - val), "leaf-dist-min")
             } else if matches.contains_id("leaf-dist-avg") {
-                (cut::Method::RootDist(avg_depth - val), "leaf-dist-avg")
+                (Method::RootDist(avg_depth - val), "leaf-dist-avg")
             } else if matches.contains_id("max-edge") {
-                (cut::Method::SingleLinkage(val), "max-edge")
+                (Method::SingleLinkage(val), "max-edge")
             } else if matches.contains_id("inconsistent") {
-                (cut::Method::Inconsistent(val, deep), "inconsistent")
+                (Method::Inconsistent(val, deep), "inconsistent")
             } else {
                 unreachable!("ArgGroup requires one method");
             };
@@ -395,38 +424,52 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
     }
 
     for tree in trees.iter() {
-        let method = if let Some(&k) = matches.get_one::<usize>("k") {
-            cut::Method::K(k)
-        } else if let Some(&h) = matches.get_one::<f64>("height") {
-            cut::Method::Height(h)
-        } else if let Some(&d) = matches.get_one::<f64>("root-dist") {
-            cut::Method::RootDist(d)
-        } else if let Some(&t) = matches.get_one::<f64>("max-clade") {
-            cut::Method::MaxClade(t)
-        } else if let Some(&t) = matches.get_one::<f64>("avg-clade") {
-            cut::Method::AvgClade(t)
-        } else if let Some(&t) = matches.get_one::<f64>("med-clade") {
-            cut::Method::MedClade(t)
-        } else if let Some(&t) = matches.get_one::<f64>("sum-branch") {
-            cut::Method::SumBranch(t)
-        } else if let Some(&t) = matches.get_one::<f64>("leaf-dist-max") {
-            let (_, max_depth, _) = get_leaf_depth_stats(tree);
-            cut::Method::RootDist(max_depth - t)
-        } else if let Some(&t) = matches.get_one::<f64>("leaf-dist-min") {
-            let (min_depth, _, _) = get_leaf_depth_stats(tree);
-            cut::Method::RootDist(min_depth - t)
-        } else if let Some(&t) = matches.get_one::<f64>("leaf-dist-avg") {
-            let (_, _, avg_depth) = get_leaf_depth_stats(tree);
-            cut::Method::RootDist(avg_depth - t)
-        } else if let Some(&t) = matches.get_one::<f64>("max-edge") {
-            cut::Method::SingleLinkage(t)
-        } else if let Some(&t) = matches.get_one::<f64>("inconsistent") {
-            cut::Method::Inconsistent(t, deep)
+        let partition = if matches.get_flag("dynamic-tree") {
+            let min_cluster_size = *matches.get_one::<usize>("min-cluster-size").unwrap();
+            let deep_split = matches.get_flag("deep-split");
+            let max_tree_height = matches.get_one::<f64>("max-tree-height").copied();
+
+            let options = DynamicTreeOptions {
+                min_module_size: min_cluster_size,
+                deep_split,
+                max_tree_height,
+            };
+
+            cutree_dynamic_tree(tree, options)?
         } else {
-            unreachable!("ArgGroup requires one method");
+            let method = if let Some(&k) = matches.get_one::<usize>("k") {
+                Method::K(k)
+            } else if let Some(&h) = matches.get_one::<f64>("height") {
+                Method::Height(h)
+            } else if let Some(&d) = matches.get_one::<f64>("root-dist") {
+                Method::RootDist(d)
+            } else if let Some(&t) = matches.get_one::<f64>("max-clade") {
+                Method::MaxClade(t)
+            } else if let Some(&t) = matches.get_one::<f64>("avg-clade") {
+                Method::AvgClade(t)
+            } else if let Some(&t) = matches.get_one::<f64>("med-clade") {
+                Method::MedClade(t)
+            } else if let Some(&t) = matches.get_one::<f64>("sum-branch") {
+                Method::SumBranch(t)
+            } else if let Some(&t) = matches.get_one::<f64>("leaf-dist-max") {
+                let (_, max_depth, _) = get_leaf_depth_stats(tree);
+                Method::RootDist(max_depth - t)
+            } else if let Some(&t) = matches.get_one::<f64>("leaf-dist-min") {
+                let (min_depth, _, _) = get_leaf_depth_stats(tree);
+                Method::RootDist(min_depth - t)
+            } else if let Some(&t) = matches.get_one::<f64>("leaf-dist-avg") {
+                let (_, _, avg_depth) = get_leaf_depth_stats(tree);
+                Method::RootDist(avg_depth - t)
+            } else if let Some(&t) = matches.get_one::<f64>("max-edge") {
+                Method::SingleLinkage(t)
+            } else if let Some(&t) = matches.get_one::<f64>("inconsistent") {
+                Method::Inconsistent(t, deep)
+            } else {
+                unreachable!("ArgGroup requires one method");
+            };
+            cut::cut(tree, method).map_err(|e| anyhow::anyhow!(e))?
         };
 
-        let partition = cut::cut(tree, method).map_err(|e| anyhow::anyhow!(e))?;
         let root_dists = compute_root_distances(tree);
 
         let clusters_map = partition.get_clusters();

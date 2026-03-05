@@ -1,4 +1,3 @@
-pub mod cut;
 pub mod io;
 pub mod ops;
 pub mod query;

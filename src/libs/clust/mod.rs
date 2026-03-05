@@ -4,4 +4,5 @@ pub mod hier;
 pub mod kmedoids;
 pub mod mcl;
 pub mod nj;
+pub mod tree_cut;
 pub mod upgma;
