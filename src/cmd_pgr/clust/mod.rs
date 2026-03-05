@@ -1,5 +1,6 @@
 pub mod cc;
 pub mod dbscan;
+pub mod eval;
 pub mod hier;
 pub mod kmedoids;
 pub mod mcl;
@@ -14,6 +15,7 @@ pub fn make_subcommand() -> clap::Command {
 
 * Tree: hier, nj, upgma
 * Flat: cc, dbscan, k-medoids, mcl
+* Eval: eval
 
 "###,
         )
@@ -21,6 +23,7 @@ pub fn make_subcommand() -> clap::Command {
         .arg_required_else_help(true)
         .subcommand(cc::make_subcommand())
         .subcommand(dbscan::make_subcommand())
+        .subcommand(eval::make_subcommand())
         .subcommand(hier::make_subcommand())
         .subcommand(kmedoids::make_subcommand())
         .subcommand(mcl::make_subcommand())
@@ -32,6 +35,7 @@ pub fn execute(matches: &clap::ArgMatches) -> anyhow::Result<()> {
     match matches.subcommand() {
         Some(("cc", sub_matches)) => cc::execute(sub_matches),
         Some(("dbscan", sub_matches)) => dbscan::execute(sub_matches),
+        Some(("eval", sub_matches)) => eval::execute(sub_matches),
         Some(("hier", sub_matches)) => hier::execute(sub_matches),
         Some(("k-medoids", sub_matches)) => kmedoids::execute(sub_matches),
         Some(("mcl", sub_matches)) => mcl::execute(sub_matches),

@@ -70,6 +70,8 @@
 
 ### 输出
 - **TSV 格式**，包含所有计算的指标。
+  - 列名约定：`ari`, `ami`, `homogeneity`, `completeness`, `v_measure`
+  - 若后续增加指标（如 `ri`, `jaccard`, `f1`），将以新增列的方式扩充，保持现有列不变
 
 ## 典型用法
 
@@ -113,50 +115,144 @@ pgr clust eval mcl_clusters.tsv dbscan_clusters.tsv
 - 扫描与评分：ClustEval 把“扫描 + 评分 + 选最优”打包在一起；`pgr` 更推荐“扫描（生成表）”与“决策/评估（独立命令）”解耦，便于组合与审计。
 - HDBSCAN/DBSCAN：算法本身属于“聚类”范畴，评分是“评估”。`pgr` 侧更适合在 `clust` 命令里实现算法，在 `clust eval`/`nwk metrics` 里补内外部指标。
 
-## 实现备注（技术细节）
+## 实现与采纳要点
 
-- **Scikit-learn 借鉴**:
-  - **参考路径**:
-    - 核心指标逻辑：[sklearn/metrics/cluster/_supervised.py](file:///c:/Users/wangq/Scripts/pgr/scikit-learn-main/sklearn/metrics/cluster/_supervised.py)
-    - EMI 算法：[sklearn/metrics/cluster/_expected_mutual_info_fast.pyx](file:///c:/Users/wangq/Scripts/pgr/scikit-learn-main/sklearn/metrics/cluster/_expected_mutual_info_fast.pyx)
-  - **列联表 (Contingency Table)**: 
-    - 核心实现：利用稀疏矩阵（COO/CSR）构建二维直方图。
-    - 逻辑：统计 `(true_label, pred_label)` 对的频次。
-    - Rust 方案：`HashMap<(u32, u32), u32>`（最通用）或 CSR（Compressed Sparse Row，若 ID 已映射为紧凑整数，可大幅节省内存）。
-  - **ARI 高效计算**:
-    - 避免 $O(N^2)$ 遍历所有样本对。
-    - 利用列联表：$ \sum_{ij} \binom{n_{ij}}{2} $ 计算同簇对数量。
-  - **数值稳定性**: 计算 Entropy 和 MI 时，需处理 `x * log(x)` 当 `x=0` 的情况（应为 0），并使用 `f64` 避免精度溢出。
-  - **EMI (Expected Mutual Information)**:
-    - AMI 的核心难点。涉及超几何分布的期望值。需仔细移植 `_expected_mutual_info_fast` 的逻辑。
+- 技术基线（sklearn）：
+  - 指标与算法参考路径：[sklearn/metrics/cluster/_supervised.py](file:///c:/Users/wangq/Scripts/pgr/scikit-learn-main/sklearn/metrics/cluster/_supervised.py)，EMI：[expected_mutual_info_fast.pyx](file:///c:/Users/wangq/Scripts/pgr/scikit-learn-main/sklearn/metrics/cluster/_expected_mutual_info_fast.pyx)
+  - 列联表：COO/CSR 构建二维直方图；Rust 侧用 `HashMap<(u32,u32),u32>` 或 CSR
+  - ARI 高效计算：用列联表求同簇对（∑ C(n_ij,2)），避免 $O(N^2)$
+  - 数值稳定性：处理 `x*log(x)` 的零值；使用 `f64`
+  - EMI 实施：移植 `_expected_mutual_info_fast` 的核心逻辑
+- 性能策略：
+  - 对齐输入样本（交集 + 排序）；列联表构建 $O(N)$；指标计算稀疏下按非零计
+- 采纳方案（clusteval 融合）：
+  - 外部有效性：默认输出 `ARI/AMI/V-Measure`，与 `nwk cut --scan` 联动选阈值
+  - 内部有效性：提供 `--method silhouette|dbindex`，支持 `--scan <start>,<end>,<steps>` 按 `k/eps` 输出曲线表
+  - 算法整合：`DBSCAN/HDBSCAN` 保留在 `pgr clust`，评估统一在 `clust eval`/`nwk metrics`
+  - 可视化：文档保留参考，CLI 仅输出 TSV
+- 代码参考：
+  - Silhouette：[silhouette.py](file:///c:/Users/wangq/Scripts/pgr/clusteval-2.2.7/clusteval/silhouette.py)
+  - DBIndex：[dbindex.py](file:///c:/Users/wangq/Scripts/pgr/clusteval-2.2.7/clusteval/dbindex.py)
+  - DBSCAN 扫描与评分：[dbscan.py](file:///c:/Users/wangq/Scripts/pgr/clusteval-2.2.7/clusteval/dbscan.py)
+  - HDBSCAN：[hdbscan.py](file:///c:/Users/wangq/Scripts/pgr/clusteval-2.2.7/clusteval/hdbscan.py)
 
-- **性能策略**:
-  - **输入对齐**: 两个输入文件可能包含不完全重叠的样本。第一步必须是**取交集**并**按样本名排序**，生成对齐的 Label 数组。
-  - **算法复杂度**: 构建列联表为 $O(N)$。基于列联表的指标计算通常为 $O(K_1 \times K_2)$（稀疏情况下为 $O(\text{NonZero})$）。
+## 测试策略 (Testing Strategy)
 
-## 采纳计划（与 ClustEval 的融合）
+参考 `scikit-learn` 和 `clusteval` 的测试方法，我们将采用以下策略确保 `pgr clust eval` 的正确性与鲁棒性。
 
-- 外部有效性（现有主线）：
-  - 实现并默认输出：`ARI/AMI/V-Measure`（Partition vs Partition）。
-  - 继续保持与 `nwk cut --scan` 的联动，用于 Ground Truth 条件下的阈值选取。
-- 内部有效性（补充）
-  - 增加可选评估方法：`--method silhouette|dbindex`，输入需要坐标或距离矩阵 + 单分区（或扫描 `k/eps`）。
-  - Silhouette：支持按 `k` 扫描并输出 `k→score` 表（不强制选最优）。
-  - DBIndex（Davies–Bouldin）：支持按 `k` 扫描并输出 `k→score` 表。
-- 算法整合
-  - 将 `DBSCAN/HDBSCAN` 算法保留在 `pgr clust` 模块；评估指标在 `clust eval` 或 `nwk metrics` 中统一。
-- 可视化
-  - 在文档中保留 `Silhouette`/`Dendrogram` 的绘图参考；命令行仅输出 TSV（曲线点表），不直接绘图。
+### 1. 对照测试 (Exactness against Reference)
+*目标：确保核心算法实现与业界标准（scikit-learn）完全一致。*
+
+- **测试数据生成**：
+  - 使用 Python 脚本生成多组典型聚类结果（包括高一致性、随机、完全不一致）。
+  - 调用 `sklearn.metrics` 计算预期指标（ARI, AMI, V-Measure, Silhouette, DBIndex）。
+  - 将输入分区与预期分数保存为测试用例（JSON/TSV）。
+- **Rust 集成测试**：
+  - 读取测试用例，运行 `pgr clust eval`。
+  - 断言计算结果与 `sklearn` 的误差在 `1e-10` 范围内。
+  - *注意*：AMI 的计算依赖于 `log` 底数（通常为 `e` 或 `2`）和列联表构建方式，需确保参数对齐（sklearn 默认 `log_e`）。
+
+### 2. 不变性测试 (Invariance)
+*目标：确保指标仅依赖于分区的数学结构，而非表达形式。*
+
+- **标签置换 (Label Permutation)**：
+  - 将分区中的 Cluster ID 随机重命名（如 `1->A, 2->B` 变为 `1->B, 2->A`）。
+  - 断言 ARI/AMI/V-Measure 等指标结果**完全不变**。
+- **样本顺序 (Sample Order)**：
+  - 打乱输入文件的行顺序（保持 ID 对应关系）。
+  - 结果应完全不变。
+- **标签缩放 (Label Scaling)**：
+  - 使用非连续整数或大整数作为 Cluster ID（如 `1, 100, 10000`）。
+  - 结果应完全不变。
+
+### 3. 边界条件 (Boundary Conditions)
+*目标：处理极端情况，避免 Panic 或 NaN。*
+
+- **完全一致 (Perfect Match)**：
+  - 输入两个完全相同的分区。
+  - 预期：ARI=1.0, AMI=1.0, V-Measure=1.0。
+- **单簇 (Single Cluster)**：
+  - 所有样本都属于同一个簇。
+  - 预期：ARI=0.0, AMI=0.0。
+- **全单例 (All Singletons)**：
+  - 每个样本自成一簇（簇数 = 样本数）。
+  - 预期：ARI=0.0, AMI 视归一化方法而定（通常接近 0 或 1，需查阅 sklearn 定义）。
+- **空输入 (Empty Input)**：
+  - 0 个样本。
+  - 预期：返回错误提示或特定的空值，不应 Panic。
+
+### 4. 随机基线 (Random Baseline)
+*目标：验证 Adjusted 指标的归一化特性。*
+
+- **随机分区**：
+  - 生成两个完全独立的随机分区（样本量 N > 1000）。
+  - 预期：ARI 和 AMI 应接近 0.0（允许微小正负波动）。
+  - *注意*：非 Adjusted 指标（如 RI, V-Measure）在随机情况下通常 > 0。
+
+### 5. 内部有效性特有测试
+- **Silhouette**:
+  - 验证单样本簇（Cluster size = 1）的处理（通常定义为 0）。
+  - 验证距离矩阵对角线为 0。
+- **DBSCAN 噪声**:
+  - 验证噪声点（通常标记为 -1 或 Unclassified）在评估时的处理方式（作为独立簇还是忽略）。`sklearn` 通常将噪声视为独立簇或忽略，需明确 `pgr` 策略（建议：视为独立单例或统一为一个特殊簇，需在文档中明确）。
 
 ## 实施计划
 
-- [ ] **CLI 搭建**: 支持读取两个 Partition 文件并对齐样本。
-- [ ] **核心算法**:
-    - 实现列联表构建。
-    - 实现 ARI, AMI, Homogeneity, Completeness, V-Measure。
-- [ ] **验证**:
-    - [ ] **Perfect Matches**: ID 重命名不影响结果（ARI=1.0）。
-    - [ ] **Non-consecutive Labels**: 非连续 ID（如 `0, 4`）不影响结果。
-    - [ ] **Homogeneity/Completeness**: 验证单侧完美情况（H=1 vs C=1）。
-    - [ ] **Integer Overflow**: 确保在大样本（N > 65536）下计数器不溢出（使用 `u64/usize`）。
-    - [ ] **Random Baseline**: 随机分区的 Adjusted 指标应接近 0。
+### 阶段 1：外部有效性 MVP
+- CLI：`pgr clust eval <p1> <p2> -o eval.tsv`（位置参数 + 统一 `-o`）
+- 算法：构建列联表（交集对齐），实现 `ARI/AMI/V-Measure/Homogeneity/Completeness`
+- 输入兼容：`cluster/pair` 两种格式，规整为 `Item -> Label`
+- 输出：TSV 列包含上述指标，列名与顺序固定
+
+### 阶段 2：内部有效性（可选）
+- 方法开关：`--method silhouette|dbindex`（需要坐标或距离矩阵 + 单分区）
+- 扫描支持：`--scan <start>,<end>,<steps>` 输出 `k→score` 表（不强制选最优）
+- 距离矩阵版实现：Silhouette、Davies–Bouldin（DBIndex）
+
+#### 如何扫描（内部有效性）
+
+内部扫描的意义是：在不同的聚类数 `k`（或算法主参数）下，计算内部有效性指标的曲线，便于选参。此处的“扫描”不比较两个分区，而是针对同一数据在不同 `k` 下的表现。
+
+示例（规划中的 CLI 形式，与 `nwk cut --scan` 风格一致）：
+
+```bash
+# 1) 层次聚类 + Silhouette（按 k 扫描）
+pgr clust eval --method silhouette \
+  --cluster agglomerative --linkage ward \
+  --matrix matrix.phy \
+  --scan 2,50,1 \
+  -o k_silhouette.tsv
+
+# 2) KMeans + DBIndex（按 k 扫描）
+pgr clust eval --method dbindex \
+  --cluster kmeans \
+  --coords coords.tsv \
+  --scan 2,50,1 \
+  -o k_dbindex.tsv
+```
+
+- 输入
+  - `--matrix`: PHYLIP 距离矩阵（距离越小越相似）
+  - `--coords`: 二维或高维坐标（观测矩阵）。若为高维，指标会基于该空间计算。
+- 参数
+  - `--cluster`: 选择用于生成不同 `k` 的聚类方法（如 agglomerative/kmeans）
+  - `--linkage`: 层次聚类的链接准则（single/complete/average/ward 等）
+  - `--scan`: 扫描的 `k` 范围与步长（如 `2,50,1`）
+- 输出
+  - `k_silhouette.tsv`/`k_dbindex.tsv` 为 TSV 曲线点表（`k`, `score` 等），不强制选最优；后续可在外部依据手肘规则或业务约束选点
+
+### 阶段 3：联动与曲线
+- 与 `nwk cut --scan` 联动：对每个阈值的分区计算外部一致性指标，生成“阈值→指标”表
+- 与 `clust dbscan --scan` 联动：对每个 `eps` 的分区输出内部/外部指标列，便于选参与比较
+
+### 阶段 4：数值与性能
+- 稀疏策略：`HashMap<(u32,u32),u32>` 或 CSR，避免大规模下的内存爆炸
+- 浮点稳定：处理 `x*log(x)` 的 `x=0` 情况；使用 `f64`
+- 大样本计数：使用 `u64/usize`，避免溢出；提供 N~10k 规模的耗时/内存基准
+
+### 验证
+- Perfect Matches：ID 变更不影响结果（ARI=1.0）
+- Non-consecutive Labels：非连续 ID 不影响结果
+- Homogeneity/Completeness：单侧完美情况验证（H=1 vs C=1）
+- Random Baseline：随机分区的 Adjusted 指标接近 0
+- 与 sklearn 对齐：在小规模数据上交叉验证 ARI/AMI/V-Measure 的一致性
