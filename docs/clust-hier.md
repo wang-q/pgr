@@ -44,8 +44,8 @@
   - 通用层次聚类分析或需要 `ward.D2`：`clust hier --method ward.D2`
 - 切分与评估：
   - 切分：`pgr nwk cut --height H` 或按 TreeCluster 风格阈值/约束
-  - 无 Ground Truth：`pgr nwk eval` [计划中]（几何/分类/演化/地理多维度评估）
-  - 有 Ground Truth：`pgr clust eval`（ARI/AMI/V-Measure）
+  - 内部评估（无 Ground Truth）：`pgr clust eval --matrix ...` (Silhouette) 或 `pgr nwk eval` (树结构评估)
+  - 外部评估（有 Ground Truth）：`pgr clust eval` (ARI/AMI/V-Measure)
 - 参考文档：
   - 切分：[nwk-cut.md](file:///c:/Users/wangq/Scripts/pgr/docs/nwk-cut.md)
   - 评估：[nwk-eval.md](file:///c:/Users/wangq/Scripts/pgr/docs/nwk-eval.md)

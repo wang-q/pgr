@@ -102,32 +102,44 @@
 ## 输入与输出约定
 
 ### 输入
-- **Partition 1 (`<p1>`)**: 第一个分组文件（TSV，位置参数 1）。
-- **Partition 2 (`<p2>`)**: 第二个分组文件（TSV，位置参数 2）。
-  - 支持与其他命令一致的两种分组表示（`cluster` / `pair`），需通过 `--format` 参数指定（默认为 `pair`）：
-    ```text
-    * cluster: Each line contains points of one cluster. items separated by tabs.
-    * pair: Each line is "Representative/Label <tab> Member".
-    ```
-  - 评估内部会将输入统一规整为 “每个样本一个标签” 的映射：`Item -> Label`。
-    - 对于 `pair` 输入，第一列（Representative/Label）作为标签。
-    - 对于 `cluster` 输入，行号（自增整数）作为标签。
-- 样本对齐：取两个文件样本的交集进行评估。
+- **单次比较模式**：
+  - **Partition 1 (`<p1>`)**: 第一个分组文件（TSV）。
+  - **Partition 2 (`<p2>`)**: 第二个分组文件（TSV，可选）。
+  - 若提供 `<p2>`，计算外部指标（ARI/AMI）。
+  - 若不提供 `<p2>` 且提供了 `--matrix/--coords`，计算内部指标（Silhouette/DBI）。
+  - 支持 `cluster` / `pair` 格式（通过 `--format` 指定）。
+
+- **批量评估模式 (Batch Mode)**：
+  - **Partition (`<p1>`)**: 包含多个分组方案的长表文件（TSV）。
+  - 必须指定 `--format long`。
+  - **列定义**：
+    1. `Group/Threshold`: 分组标识（如阈值、参数）。
+    2. `ClusterID`: 簇 ID。
+    3. `SampleID`: 样本 ID。
+  - 数据必须按 `Group` 列排序或聚集（程序会按 Group 逐块处理）。
+  - 通常与 `pgr nwk cut --scan` 的输出直接对接。
 
 ### 输出
 - **TSV 格式**，包含所有计算的指标。
-  - 列名约定：`ari`, `ami`, `homogeneity`, `completeness`, `v_measure`
-  - 若后续增加指标（如 `ri`, `jaccard`, `f1`），将以新增列的方式扩充，保持现有列不变
+- **单次模式**：一行表头 + 一行数据。
+- **批量模式**：一行表头 + 多行数据（每组一行）。
+  - 第一列为 `Group`，后续为指标列。
 
 ## 典型用法
 
 ```bash
-# 比较聚类结果与 Ground Truth
+# 1. 外部有效性：比较聚类结果与 Ground Truth
 pgr clust eval clustering_result.tsv ground_truth.tsv -o eval.tsv
-# 输出: ARI, AMI, Homogeneity, Completeness, V-Measure
 
-# 比较两个算法的结果
-pgr clust eval mcl_clusters.tsv dbscan_clusters.tsv
+# 2. 内部有效性：计算 Silhouette (需距离矩阵)
+pgr clust eval clustering_result.tsv --matrix dist.phy
+
+# 3. 内部有效性：计算 Davies-Bouldin (需坐标矩阵)
+pgr clust eval clustering_result.tsv --coords vectors.tsv
+
+# 4. 批量评估：评估 nwk cut 扫描产生的所有阈值
+pgr nwk cut tree.nwk --scan 0,1,0.01 | \
+    pgr clust eval - --format long --matrix dist.phy > batch_eval.tsv
 ```
 
 ## 现有工具参考 (Prior Art)
@@ -263,7 +275,7 @@ pgr clust eval mcl_clusters.tsv dbscan_clusters.tsv
 - 输入兼容：`cluster/pair` 两种格式，需通过 `--format` 显式指定（默认 `pair`）
 - 输出：TSV 列包含上述指标，列名与顺序固定
 
-### 阶段 2：内部有效性（指标库） [进行中]
+### 阶段 2：内部有效性（指标库） [已完成]
 - **核心算法 (`libs/clust/eval.rs`)**：
   - [x] 实现 `silhouette_score(partition, distance_matrix)`：支持 NamedMatrix。
   - [x] 实现 `davies_bouldin_score(partition, coordinates)`：支持坐标输入。
@@ -271,20 +283,44 @@ pgr clust eval mcl_clusters.tsv dbscan_clusters.tsv
   - [x] 新增参数：
     - `--matrix <file>`: 输入距离矩阵（PHYLIP）。
   - [x] 新增参数：
-    - `--coords <file>`: 输入坐标矩阵（TSV，用于 DBIndex）。
-    - [ ] `--methods <list>`: 指定计算指标（默认 `ari,ami`，可选 `silhouette,dbindex`）。
+    - `--coords <file>`: 输入坐标矩阵（用于 DBIndex）。
+      - 格式：`ID <tab> Val1,Val2...` (兼容 `pgr dist vector` 输入)。
+      - 说明：即计算距离所用的**原始特征向量**。用于计算质心（Centroid）。
   - 逻辑：
     - 若提供 `<p1>` 和 `<p2>`：计算外部指标（ARI/AMI）。
     - 若提供 `<p1>` 和 `--matrix`：计算内部指标（Silhouette）。
     - 若提供 `<p1>` 和 `--coords`：计算内部指标（DBIndex）。
 
 ### 阶段 3：扫描与集成（各命令独立支持）
+- **策略调整**：
+  - 坚持“生成”与“评估”解耦的原则。
+  - `pgr nwk cut --scan` 仅输出多组分区方案（Multi-column TSV 或 Multi-files）。
+  - `pgr clust eval` 增强为支持“批处理模式”，接受包含多个分区的输入文件。
 - **层次聚类 (`pgr nwk cut`)**：
-  - 增强 `--scan` 模式，支持 `--eval-matrix <file>` 和 `--eval-methods silhouette`。
-  - 在遍历阈值切分树时，直接计算指标并追加到输出 TSV 的列中。
-- **扁平聚类 (`pgr clust dbscan`)**：
-  - 实现 `--scan <eps_range>`。
-  - 集成内部指标计算，输出“参数-指标”扫描表。
+  - 输出格式：支持输出长表（Threshold, ClusterID, SampleID）。
+- **批量评估 (`pgr clust eval`)**：
+  - 增强 `--format`：支持 `long` 格式（长表，包含多个分区方案）。
+  - 输入：
+    - 列 1：Group ID (分组/参数)
+    - 列 2：Cluster ID (聚类标签)
+    - 列 3：Sample ID (样本)
+    - 说明：按 Group ID 分组（数据需预先排序或聚集），对每一组计算指标。
+  - 输出：
+    - Group ID：对应输入的 Group ID。
+    - 指标列：各项评估指标。
+  - 示例：
+      ```bash
+      # partitions.tsv: Eps, Cluster, SampleID
+      # 0.1, 1, A
+      # 0.1, 1, B
+      # 0.2, 1, A
+      # 0.2, 2, B
+      pgr clust eval partitions.tsv --format long --matrix dist.phy
+      # 输出:
+      # Group    Silhouette
+      # 0.1      0.45
+      # 0.2      0.52
+      ```
 
 ### 阶段 4：数值与性能
 - **内存优化**：对于大规模矩阵，避免全量加载，支持流式读取或分块计算。

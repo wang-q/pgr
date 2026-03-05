@@ -1,3 +1,4 @@
+use crate::libs::fmt::feature::FeatureVector;
 use crate::libs::pairmat::NamedMatrix;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
@@ -11,6 +12,7 @@ pub type Partition = HashMap<String, u32>;
 pub enum PartitionFormat {
     Cluster,
     Pair,
+    Long,
 }
 
 impl std::str::FromStr for PartitionFormat {
@@ -20,6 +22,7 @@ impl std::str::FromStr for PartitionFormat {
         match s.to_lowercase().as_str() {
             "cluster" => Ok(PartitionFormat::Cluster),
             "pair" => Ok(PartitionFormat::Pair),
+            "long" => Ok(PartitionFormat::Long),
             _ => Err(format!("Unknown format: {}", s)),
         }
     }
@@ -30,8 +33,9 @@ impl std::str::FromStr for PartitionFormat {
 /// 1. Cluster-based: Each line is a cluster, items separated by whitespace.
 ///    The first item is treated as the cluster representative/ID.
 /// 2. Pair-based: Two columns.
-///    - If 2 columns: Item <tab> ClusterID
+///    - If 2 columns: ClusterID <tab> Item
 ///    - If > 2 columns: Treated as Cluster-based.
+/// 3. Long-based: Treated as Batch Partition (returns empty map here, use load_batch_partitions).
 pub fn load_partition<P: AsRef<Path>>(
     path: P,
     format: PartitionFormat,
@@ -53,6 +57,9 @@ pub fn load_partition<P: AsRef<Path>>(
     match format {
         PartitionFormat::Cluster => parse_cluster_format(&lines),
         PartitionFormat::Pair => parse_pair_format(&lines),
+        PartitionFormat::Long => Err(anyhow::anyhow!(
+            "Long format is for batch processing. Use load_batch_partitions instead."
+        )),
     }
 }
 
@@ -95,6 +102,61 @@ fn parse_cluster_format(lines: &[String]) -> anyhow::Result<Partition> {
         }
     }
     Ok(partition)
+}
+
+/// Load batch partitions from a file in Long format.
+/// Format: GroupID <tab> ClusterID <tab> SampleID
+/// Returns a list of (GroupID, Partition).
+pub fn load_batch_partitions<P: AsRef<Path>>(path: P) -> anyhow::Result<Vec<(String, Partition)>> {
+    let file = File::open(path)?;
+    let reader = BufReader::new(file);
+
+    let mut groups: Vec<String> = Vec::new();
+    let mut group_indices: HashMap<String, usize> = HashMap::new();
+    let mut partitions: Vec<Partition> = Vec::new();
+
+    for line in reader.lines() {
+        let line = line?;
+        if line.trim().is_empty()
+            || line.starts_with('#')
+            || line.starts_with("Threshold")
+            || line.starts_with("Group")
+        {
+            continue;
+        }
+
+        let parts: Vec<&str> = line.split('\t').collect();
+        if parts.len() < 3 {
+            continue; // Skip invalid lines
+        }
+
+        let group_id = parts[0].to_string();
+        let cluster_id_str = parts[1];
+        let sample_id = parts[2].to_string();
+
+        let cluster_id = cluster_id_str.parse::<u32>().unwrap_or_else(|_| {
+            use std::collections::hash_map::DefaultHasher;
+            use std::hash::{Hash, Hasher};
+            let mut s = DefaultHasher::new();
+            cluster_id_str.hash(&mut s);
+            (s.finish() % 1000000) as u32
+        });
+
+        let idx = if let Some(&idx) = group_indices.get(&group_id) {
+            idx
+        } else {
+            let idx = groups.len();
+            groups.push(group_id.clone());
+            group_indices.insert(group_id, idx);
+            partitions.push(HashMap::new());
+            idx
+        };
+
+        partitions[idx].insert(sample_id, cluster_id);
+    }
+
+    let result = groups.into_iter().zip(partitions.into_iter()).collect();
+    Ok(result)
 }
 
 #[derive(Debug, Default)]
@@ -481,8 +543,8 @@ pub struct Coordinates {
 }
 
 impl Coordinates {
-    /// Load coordinates from a TSV file.
-    /// Format: Item <tab> Dim1 <tab> Dim2 ...
+    /// Load coordinates from a FeatureVector file.
+    /// Format: Name <tab> Val1,Val2,Val3...
     pub fn from_path<P: AsRef<Path>>(path: P) -> anyhow::Result<Self> {
         let file = File::open(path)?;
         let reader = BufReader::new(file);
@@ -494,27 +556,28 @@ impl Coordinates {
             if line.trim().is_empty() || line.starts_with('#') {
                 continue;
             }
-            let parts: Vec<&str> = line.split_whitespace().collect();
-            if parts.len() < 2 {
-                continue;
-            }
 
-            let item = parts[0].to_string();
-            let vec: Result<Vec<f64>, _> = parts[1..].iter().map(|&s| s.parse()).collect();
-            let vec = vec?;
-
-            if i == 0 {
-                dim = vec.len();
-            } else if vec.len() != dim {
+            // Only support FeatureVector format: name \t v1,v2,v3
+            let fv = FeatureVector::parse(&line);
+            if !fv.name().is_empty() {
+                let vec: Vec<f64> = fv.list().iter().map(|&v| v as f64).collect();
+                if i == 0 {
+                    dim = vec.len();
+                } else if vec.len() != dim {
+                    return Err(anyhow::anyhow!(
+                        "Inconsistent dimensions at line {}: expected {}, got {}",
+                        i + 1,
+                        dim,
+                        vec.len()
+                    ));
+                }
+                data.insert(fv.name().clone(), vec);
+            } else {
                 return Err(anyhow::anyhow!(
-                    "Inconsistent dimensions at line {}: expected {}, got {}",
-                    i + 1,
-                    dim,
-                    vec.len()
+                    "Invalid FeatureVector format at line {}: expected 'Name<tab>Val1,Val2...'",
+                    i + 1
                 ));
             }
-
-            data.insert(item, vec);
         }
 
         if data.is_empty() {
@@ -562,7 +625,7 @@ pub fn davies_bouldin_score(partition: &Partition, coords: &Coordinates) -> f64 
         if n_members == 0 {
             continue;
         }
-        
+
         // Calculate Centroid
         let mut centroid = vec![0.0; coords.dim];
         for item in members {
@@ -599,10 +662,10 @@ pub fn davies_bouldin_score(partition: &Partition, coords: &Coordinates) -> f64 
                 continue;
             }
             let stat_j = stats.get(&j).unwrap();
-            
+
             let dist_centroids = euclidean_dist(&stat_i.centroid, &stat_j.centroid);
-            
-            // If centroids overlap perfectly, R_ij -> infinity. 
+
+            // If centroids overlap perfectly, R_ij -> infinity.
             // We should handle this. If scatter is 0, it's 0. If scatter > 0, it's inf.
             let r_ij = if dist_centroids == 0.0 {
                 if stat_i.scatter + stat_j.scatter == 0.0 {
@@ -693,7 +756,7 @@ mod tests {
         p.insert("0".to_string(), 0);
         p.insert("1".to_string(), 1);
         p.insert("2".to_string(), 2);
-        
+
         let names = vec!["0".to_string(), "1".to_string(), "2".to_string()];
         let mut dist_mat = NamedMatrix::new(names);
         dist_mat.set_by_name("0", "1", 1.0).unwrap();
@@ -711,7 +774,7 @@ mod tests {
         // M12 = 5.0
         // R12 = (0.5+0.5)/5.0 = 0.2
         // DB = (0.2 + 0.2)/2 = 0.2
-        
+
         let mut p = Partition::new();
         p.insert("A".to_string(), 1);
         p.insert("B".to_string(), 1);
@@ -723,9 +786,9 @@ mod tests {
         data.insert("B".to_string(), vec![0.0, 1.0]);
         data.insert("C".to_string(), vec![5.0, 0.0]);
         data.insert("D".to_string(), vec![5.0, 1.0]);
-        
+
         let coords = Coordinates { data, dim: 2 };
-        
+
         let score = davies_bouldin_score(&p, &coords);
         assert!((score - 0.2).abs() < 1e-6, "Score was {}", score);
     }

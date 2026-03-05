@@ -13,6 +13,9 @@ fn test_clust_eval_perfect_match() -> anyhow::Result<()> {
         .output()?;
 
     let stdout = String::from_utf8(output.stdout)?;
+    if !output.status.success() {
+        eprintln!("STDERR:\n{}", String::from_utf8_lossy(&output.stderr));
+    }
     assert!(output.status.success());
 
     // Check header
@@ -47,6 +50,9 @@ fn test_clust_eval_disjoint() -> anyhow::Result<()> {
         .output()?;
 
     let stdout = String::from_utf8(output.stdout)?;
+    if !output.status.success() {
+        eprintln!("STDERR:\n{}", String::from_utf8_lossy(&output.stderr));
+    }
     assert!(output.status.success());
 
     let lines: Vec<&str> = stdout.lines().collect();
@@ -76,6 +82,9 @@ fn test_clust_eval_single_vs_singletons() -> anyhow::Result<()> {
         .output()?;
 
     let stdout = String::from_utf8(output.stdout)?;
+    if !output.status.success() {
+        eprintln!("STDERR:\n{}", String::from_utf8_lossy(&output.stderr));
+    }
     assert!(output.status.success());
 
     let lines: Vec<&str> = stdout.lines().collect();
@@ -100,6 +109,9 @@ fn test_clust_eval_pair_format() -> anyhow::Result<()> {
         .output()?;
 
     let stdout = String::from_utf8(output.stdout)?;
+    if !output.status.success() {
+        eprintln!("STDERR:\n{}", String::from_utf8_lossy(&output.stderr));
+    }
     assert!(output.status.success());
 
     // Check header
@@ -167,10 +179,15 @@ fn test_clust_eval_internal_db() -> anyhow::Result<()> {
 
     let lines: Vec<&str> = stdout.lines().collect();
     assert_eq!(lines[0], "davies_bouldin");
-    
+
     let score = lines[1].parse::<f64>()?;
     let expected = 0.2;
-    assert!((score - expected).abs() < 1e-4, "Score was {}, expected {}", score, expected);
+    assert!(
+        (score - expected).abs() < 1e-4,
+        "Score was {}, expected {}",
+        score,
+        expected
+    );
 
     Ok(())
 }

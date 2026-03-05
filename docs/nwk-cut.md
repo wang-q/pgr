@@ -42,8 +42,13 @@
 | :--- | :--- | :--- | :--- |
 | `max_clade` | `--max-clade <N>` | 簇内最大两两距离（直径） | ✅ 已实现 |
 | `root_dist` | `--root-dist <N>` | 根到叶子的最大距离 | ✅ 已实现 |
-| `single_linkage` | `--height <N>` | 等同于按高度切割 | ✅ 已实现 |
+| `length` | `--single-linkage <N>` | 单链接聚类（切断长枝） | ✅ 已实现 |
+| `leaf_dist_max` | `--height <N>` | 等同于按高度切割 | ✅ 已实现 |
 | `avg_clade` | `--avg-clade <N>` | 簇内平均两两距离 | ✅ 已实现 |
+| `med_clade` | `--med-clade <N>` | 簇内中位数两两距离 | ✅ 已实现 |
+| `sum_branch` | - | 簇内总枝长 | ❌ 不计划 |
+
+> 注：TreeCluster 的 `single_linkage` 方法在算法上等价于 `length`（即切断所有长度大于阈值的边），`pgr` 统一命名为 `--single-linkage`。
 
 ## 输入与输出
 
@@ -107,20 +112,49 @@
 - `step = <T> / 1000` (或自定义步长，1000 是 TreeCluster 的硬编码默认值)
 
 **输出指标表（示例）**：
-| Threshold | Clusters | Singletons | Non-Singletons | MaxSize |
+| Group | Clusters | Singletons | Non-Singletons | MaxSize |
 | :--- | :--- | :--- | :--- | :--- |
-| 0.01 | 500 | 480 | 20 | 5 |
-| 0.02 | 300 | 200 | 100 | 15 |
+| height=0.01 | 500 | 480 | 20 | 5 |
+| height=0.02 | 300 | 200 | 100 | 15 |
 | ... | ... | ... | ... | ... |
 
 - **Non-Singletons**: 即 TreeCluster `argmax_clusters` 试图最大化的指标。
 - **MaxSize**: 辅助判断是否存在“超级大簇”（under-clustering）。
 
-### 与 `pgr clust eval` 的联动（有 Ground Truth 时）
+### 扫描模式的输出格式
 
-`--scan` 输出的是“阈值 → 摘要指标”的表格，用于缩小候选阈值范围；它不会把每个阈值对应的完整分区都展开输出（否则输出会非常大）。
+当启用 `--scan` 时，`--format` 参数将被忽略。输出行为如下：
 
-如果你手头有 Ground Truth（或想把不同阈值下的分区与某个参考分区比较），推荐的用法是：
+1.  **标准输出 (`stdout` 或 `-o`)**：始终输出详细的分区表（Long format / Tidy Data）。
+    - 列定义：`Group`, `ClusterID`, `SampleID`。
+    - `Group` 列格式为 `Method=Value`（例如 `height=0.5`, `max-clade=0.02`），便于区分不同的切割参数。
+    - 这种格式可以直接作为 `pgr clust eval --format long` 的输入进行批量评估。
+2.  **统计输出 (`--stats-out`)**：若指定，将摘要统计表（阈值, 簇数, 单例数, 非单例数, 最大簇大小）写入该文件。
+
+示例：
+```bash
+# 1. 仅输出详细分区表（用于后续分析或评估）
+pgr nwk cut tree.nwk --max-clade 0.5 --scan 0,0.5,0.01 > partitions.tsv
+
+# 2. 同时保存统计信息（用于快速检视）
+pgr nwk cut tree.nwk --max-clade 0.5 --scan 0,0.5,0.01 -o partitions.tsv --stats-out stats.tsv
+```
+
+### 与 `pgr clust eval` 的联动
+
+`pgr nwk cut` 与 `pgr clust eval` 通过 Long Format 完美配合，支持两种评估模式：
+
+#### 1. 批量内部评估 (Batch Internal Evaluation)
+不需要 Ground Truth，使用距离矩阵或坐标评估所有扫描生成的阈值。
+
+```bash
+# 生成所有阈值的分区，并直接通过管道传给 eval 进行 Silhouette 评估
+pgr nwk cut tree.nwk --max-clade 0.5 --scan 0,0.5,0.01 | \
+    pgr clust eval - --format long --matrix dist.phy > evaluation.tsv
+```
+
+#### 2. 针对性外部评估 (Targeted External Evaluation)
+如果你手头有 Ground Truth，通常不需要评估所有阈值（计算量大且无必要）。推荐流程：
 
 1. 先用 `--scan` 快速定位几个有意义的候选阈值区间（例如手肘点附近）。
 2. 对少数候选阈值，分别运行一次 `pgr nwk cut` 生成分区，再用 `pgr clust eval` 计算 ARI/AMI/V-Measure 等外部一致性指标。
@@ -201,7 +235,26 @@ TreeCluster 提供了一种“无阈值”（Threshold-Free）模式（通过 `-
 - **算法**：采用高效的自底向上（Bottom-Up）直径计算与自顶向下（Top-Down）贪心选择，避免了 $O(N^2)$ 的全距离矩阵计算。
 - **适用场景**：病毒分型、OTU 划分等需要严格控制簇内差异度的场景。
 
-### 5. SciPy 风格：按不一致系数切 (`--inconsistent <T>`) [已实现]
+### 5. TreeCluster 风格：按平均簇内距离切 (`--avg-clade <T>`) [已实现]
+
+这是 **TreeCluster** 的 `avg_clade` 算法。
+
+- **逻辑**：确保每个簇内的**平均成对距离**不超过阈值 `T`。
+- **算法**：类似于 `max_clade`，自底向上计算子树内的平均距离。
+- **适用场景**：相比最大距离，平均距离对个别离群点（Outlier）更鲁棒。
+
+### 6. TreeCluster 风格：按中位数簇内距离切 (`--med-clade <T>`) [已实现]
+
+这是 **TreeCluster** 的 `med_clade` 算法。
+
+- **逻辑**：确保每个簇内的**中位数成对距离**不超过阈值 `T`。
+- **算法**：采用自底向上合并排序列表的方式计算中位数。
+- **注意**：相比 `max_clade` (直径) 和 `avg_clade` (平均值)，`med_clade` 的计算开销显著更大。
+    - 中位数计算需要维护完整的成对距离分布，无法像平均值那样仅维护 `sum` 和 `count`。
+    - 最坏情况下时间复杂度可能退化，不建议用于超大规模树。
+    - 对于鲁棒性需求，通常 `avg_clade` 已足够。
+
+### 7. SciPy 风格：按不一致系数切 (`--inconsistent <T>`) [已实现]
 
 这是 SciPy `fcluster(..., criterion='inconsistent')` 的默认方法。
 
@@ -215,13 +268,20 @@ TreeCluster 提供了一种“无阈值”（Threshold-Free）模式（通过 `-
   - `--deep <D>`: 计算系数时的回溯深度，SciPy 默认为 2。
 - **适用场景**：当树的整体演化速率不均匀，或者你想寻找“自然”聚类边界而不是强制切断时。
 
-### 6. 更多 TreeCluster 变体 [规划中]
+### 7. 单链接聚类 (`--single-linkage <T>`) [已实现]
 
-- **`avg_clade`**：簇内平均成对距离不超过阈值。
-- **`med_clade`**：簇内中位数成对距离不超过阈值。
-- **`single_linkage`**：树上的单链接聚类。
+这是 TreeCluster 的 `length` 算法。
 
-### 7. 支持度过滤 (`--support <S>`) [规划中]
+- **逻辑**：切断树上所有长度大于阈值 `T` 的边（branches）。
+- **效果**：将树分割成若干连通分量，每个分量内的任意两点之间都有一条由“短边”（<= T）构成的路径。
+- **适用场景**：识别由长枝分隔的离散群组，类似于图论中的连通分量分析。
+
+### 8. 更多 TreeCluster 变体 [规划中]
+
+- **`sum_branch`**：簇内总枝长不超过阈值。**（不计划实现）**
+    - **原因**：虽然总枝长在生物学上对应 **Phylogenetic Diversity (PD)**，代表进化历史总量，具有重要意义，但它是一个**广延量**（随样本数增加而累积）。将其作为切割阈值会导致大簇（即使很紧密）因累积枝长过大而被切碎，而稀疏的小簇却能保留。它更适合作为评估指标（Metrics）而非切割标准。
+
+### 9. 支持度过滤 (`--support <S>`) [规划中]
 
 - **逻辑**：当某条边（或节点）支持度低于阈值时，视为“不可跨越”，相当于强制切断。
 - **用途**：防止聚类跨越不可靠的进化分支。

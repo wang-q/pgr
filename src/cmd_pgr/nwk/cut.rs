@@ -15,6 +15,8 @@ Criteria:
 * `--root-dist <D>`: Cut at specific distance from root.
 * `--max-clade <T>`: TreeCluster style (max pairwise distance in clade <= T).
 * `--avg-clade <T>`: TreeCluster style (avg pairwise distance in clade <= T).
+* `--med-clade <T>`: TreeCluster style (median pairwise distance in clade <= T).
+* `--single-linkage <T>`: Single Linkage style (cut branches > T).
 * `--inconsistent <T>`: SciPy style (inconsistent coefficient <= T).
 
 Output formats:
@@ -53,7 +55,7 @@ Examples:
                     builder::PossibleValue::new("pair"),
                 ])
                 .default_value("cluster")
-                .help("Output format for clustering results"),
+                .help("Output format for clustering results (ignored in --scan mode)"),
         )
         .arg(
             Arg::new("k")
@@ -85,6 +87,18 @@ Examples:
                 .long("avg-clade")
                 .value_parser(value_parser!(f64))
                 .help("Average pairwise distance in cluster threshold"),
+        )
+        .arg(
+            Arg::new("med-clade")
+                .long("med-clade")
+                .value_parser(value_parser!(f64))
+                .help("Median pairwise distance in cluster threshold"),
+        )
+        .arg(
+            Arg::new("single-linkage")
+                .long("single-linkage")
+                .value_parser(value_parser!(f64))
+                .help("Cut branches longer than threshold (Single Linkage)"),
         )
         .arg(
             Arg::new("rep")
@@ -122,6 +136,12 @@ Examples:
                 .long("scan")
                 .help("Scan thresholds (format: start,end,step)"),
         )
+        .arg(
+            Arg::new("stats-out")
+                .long("stats-out")
+                .value_name("FILE")
+                .help("Output statistics to a separate file (useful when format is 'long')"),
+        )
         .group(
             ArgGroup::new("method")
                 .args([
@@ -130,6 +150,8 @@ Examples:
                     "root-dist",
                     "max-clade",
                     "avg-clade",
+                    "med-clade",
+                    "single-linkage",
                     "inconsistent",
                 ])
                 .required(true),
@@ -182,35 +204,78 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
             anyhow::bail!("Scan step must be positive");
         }
 
-        writer.write_all(b"Threshold\tClusters\tSingletons\tNon-Singletons\tMaxSize\n")?;
+        let mut stats_writer: Option<Box<dyn Write>> =
+            if let Some(stats_file) = matches.get_one::<String>("stats-out") {
+                let mut w = Box::new(std::fs::File::create(stats_file)?) as Box<dyn Write>;
+                w.write_all(b"Group\tClusters\tSingletons\tNon-Singletons\tMaxSize\n")?;
+                Some(w)
+            } else {
+                None
+            };
+
+        writer.write_all(b"Group\tClusterID\tSampleID\n")?;
 
         let tree = &trees[0];
         let mut val = start;
 
         while val <= end + 1e-9 {
-            let method = if matches.contains_id("k") {
-                cut::Method::K(val as usize)
+            let (method, method_name) = if matches.contains_id("k") {
+                (cut::Method::K(val as usize), "k")
             } else if matches.contains_id("height") {
-                cut::Method::Height(val)
+                (cut::Method::Height(val), "height")
             } else if matches.contains_id("root-dist") {
-                cut::Method::RootDist(val)
+                (cut::Method::RootDist(val), "root-dist")
             } else if matches.contains_id("max-clade") {
-                cut::Method::MaxClade(val)
+                (cut::Method::MaxClade(val), "max-clade")
             } else if matches.contains_id("avg-clade") {
-                cut::Method::AvgClade(val)
+                (cut::Method::AvgClade(val), "avg-clade")
+            } else if matches.contains_id("med-clade") {
+                (cut::Method::MedClade(val), "med-clade")
+            } else if matches.contains_id("single-linkage") {
+                (cut::Method::SingleLinkage(val), "single-linkage")
             } else if matches.contains_id("inconsistent") {
-                cut::Method::Inconsistent(val, deep)
+                (cut::Method::Inconsistent(val, deep), "inconsistent")
             } else {
                 unreachable!("ArgGroup requires one method");
             };
 
             let partition = cut::cut(tree, method).map_err(|e| anyhow::anyhow!(e))?;
-            let (n_clusters, n_single, n_non_single, max_size) = partition.get_stats();
+            let group_label = format!("{}={}", method_name, val);
 
-            writer.write_fmt(format_args!(
-                "{}\t{}\t{}\t{}\t{}\n",
-                val, n_clusters, n_single, n_non_single, max_size
-            ))?;
+            if let Some(w) = &mut stats_writer {
+                let (n_clusters, n_single, n_non_single, max_size) = partition.get_stats();
+                w.write_fmt(format_args!(
+                    "{}\t{}\t{}\t{}\t{}\n",
+                    group_label, n_clusters, n_single, n_non_single, max_size
+                ))?;
+            }
+
+            let clusters_map = partition.get_clusters();
+            // Sort cluster IDs (NodeIDs) for deterministic output
+            let mut cluster_ids: Vec<_> = clusters_map.keys().collect();
+            cluster_ids.sort();
+
+            for (i, &cid) in cluster_ids.iter().enumerate() {
+                let cluster_label = i + 1;
+                let members = clusters_map.get(cid).unwrap();
+
+                // Get names and sort
+                let mut member_names: Vec<String> = Vec::new();
+                for &mid in members {
+                    if let Some(node) = tree.get_node(mid) {
+                        let name = node.name.clone().unwrap_or_else(|| format!("Leaf_{}", mid));
+                        member_names.push(name);
+                    }
+                }
+                member_names.sort();
+
+                for name in member_names {
+                    writer.write_fmt(format_args!(
+                        "{}\t{}\t{}\n",
+                        group_label, cluster_label, name
+                    ))?;
+                }
+            }
 
             val += step;
         }
@@ -227,6 +292,10 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
         cut::Method::MaxClade(t)
     } else if let Some(&t) = matches.get_one::<f64>("avg-clade") {
         cut::Method::AvgClade(t)
+    } else if let Some(&t) = matches.get_one::<f64>("med-clade") {
+        cut::Method::MedClade(t)
+    } else if let Some(&t) = matches.get_one::<f64>("single-linkage") {
+        cut::Method::SingleLinkage(t)
     } else if let Some(&t) = matches.get_one::<f64>("inconsistent") {
         cut::Method::Inconsistent(t, deep)
     } else {

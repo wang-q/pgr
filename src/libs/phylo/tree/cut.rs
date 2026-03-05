@@ -55,12 +55,23 @@ pub enum Method {
     /// TreeCluster: Average pairwise distance in clade <= threshold.
     AvgClade(f64),
 
+    /// TreeCluster: Median pairwise distance in clade <= threshold.
+    MedClade(f64),
+
     /// SciPy: Inconsistent coefficient <= threshold.
     ///
     /// Splits nodes if their inconsistency coefficient > threshold.
     /// Requires checking inconsistency of all descendants.
     /// Parameters: (threshold, depth).
     Inconsistent(f64, usize),
+
+    /// TreeCluster: Single Linkage.
+    ///
+    /// Removes any edge (branch) with length > threshold.
+    /// The resulting connected components (subtrees) form clusters.
+    /// Note: This is equivalent to `Height` on ultrametric trees but generalizes to any tree.
+    /// It effectively breaks "long branches".
+    SingleLinkage(f64),
 }
 
 /// Result of a cut operation.
@@ -155,7 +166,9 @@ pub fn cut(tree: &Tree, method: Method) -> Result<Partition, String> {
         Method::RootDist(d) => cut_root_dist(tree, d),
         Method::MaxClade(t) => cut_max_clade(tree, t),
         Method::AvgClade(t) => cut_avg_clade(tree, t),
+        Method::MedClade(t) => cut_med_clade(tree, t),
         Method::Inconsistent(t, d) => cut_inconsistent(tree, t, d),
+        Method::SingleLinkage(t) => cut_single_linkage(tree, t),
     }
 }
 
@@ -495,6 +508,287 @@ pub fn cut_inconsistent(tree: &Tree, threshold: f64, depth: usize) -> Result<Par
     assign_clusters(tree, clusters)
 }
 
+/// Cut tree based on median pairwise distance in clade.
+///
+/// Ensures median pairwise distance <= threshold.
+/// Requires O(N^2) complexity in worst case to merge distance lists.
+///
+/// Implementation details:
+/// We need to compute median pairwise distances bottom-up.
+/// For a node, we need list of all distances from its leaves to itself (L),
+/// and list of all pairwise distances within its subtree (P).
+///
+/// P(node) = P(left) + P(right) + (L(left) x L(right) cross distances)
+/// L(node) = (L(left) + len(left)) + (L(right) + len(right))
+///
+/// This can be very slow if lists are large.
+fn cut_med_clade(tree: &Tree, threshold: f64) -> Result<Partition, String> {
+    let root = tree.get_root().ok_or("Tree has no root")?;
+    let mut clusters = Vec::new();
+
+    // Cache for computed properties
+    // We can't easily cache large lists in a simple map without memory blowup.
+    // But since we do top-down traversal with greedy cut, we might not need to compute everything?
+    // No, to know if we need to cut at root, we need median of root.
+    // So we effectively need bottom-up computation first.
+
+    // To avoid recomputing, we can compute on demand or cache.
+    // Given the complexity, let's implement a recursive helper that returns the lists.
+    // But recursion depth might be an issue.
+    // And returning large vectors is slow.
+
+    // Optimization: If a subtree is already cut (because its median > threshold),
+    // do we still need its full distance list for the parent?
+    // TreeCluster logic: "If my kids are screwing things up, cut out the longer one".
+    // Wait, that's for MaxClade.
+    // For MedClade, TreeCluster implementation:
+    // 1. Bottom-up traversal to compute median pairwise distances for ALL nodes.
+    //    It merges sorted lists.
+    // 2. Top-down traversal (BFS/Queue). If node.med_pair_dist <= threshold, it's a cluster.
+    //    Else add children to queue.
+
+    // So we MUST compute median for all nodes first.
+    // This is indeed O(N^2 log N) or worse depending on merging.
+
+    // We will simulate the bottom-up pass using post-order traversal.
+    let mut post_order = Vec::new();
+    let mut visit_stack = vec![root];
+    while let Some(u) = visit_stack.pop() {
+        post_order.push(u);
+        if let Some(node) = tree.get_node(u) {
+            for &child in &node.children {
+                visit_stack.push(child);
+            }
+        }
+    }
+    // visit_stack pop order is Pre-Order (Parent, Child).
+    // Reversed, it becomes Post-Order (Child, Parent).
+    let post_order: Vec<NodeId> = post_order.into_iter().rev().collect();
+
+    // Map NodeId -> (LeafDists, PairDists)
+    // LeafDists: sorted list of distances from leaves to current node
+    // PairDists: sorted list of all pairwise distances in subtree
+    // Using simple Vec and sorting for now. Merging sorted lists is better but more code.
+    struct NodeStat {
+        leaf_dists: Vec<f64>,
+        pair_dists: Vec<f64>,
+        median: f64,
+    }
+
+    let mut stats: HashMap<NodeId, NodeStat> = HashMap::new();
+
+    for &u in &post_order {
+        let node = tree.get_node(u).unwrap();
+        if node.children.is_empty() {
+            // Leaf
+            stats.insert(
+                u,
+                NodeStat {
+                    leaf_dists: vec![0.0],
+                    pair_dists: Vec::new(),
+                    median: 0.0,
+                },
+            );
+        } else {
+            // Merge children
+            let mut my_leaf_dists = Vec::new();
+            let mut my_pair_dists = Vec::new();
+
+            // 1. Update leaf distances and accumulate pair distances from subtrees
+            let mut child_leaf_dists_list = Vec::new();
+
+            for &v in &node.children {
+                let child_stat = stats.get(&v).unwrap();
+                let len = tree.get_node(v).unwrap().length.unwrap_or(0.0);
+
+                // Add child's pair dists
+                my_pair_dists.extend_from_slice(&child_stat.pair_dists);
+
+                // Shift child's leaf dists by edge length
+                let shifted_leaf_dists: Vec<f64> =
+                    child_stat.leaf_dists.iter().map(|d| d + len).collect();
+                child_leaf_dists_list.push(shifted_leaf_dists.clone());
+                my_leaf_dists.extend(shifted_leaf_dists);
+            }
+
+            // 2. Compute cross distances between subtrees
+            for i in 0..child_leaf_dists_list.len() {
+                for j in (i + 1)..child_leaf_dists_list.len() {
+                    let list_a = &child_leaf_dists_list[i];
+                    let list_b = &child_leaf_dists_list[j];
+
+                    // Cross product: O(La * Lb)
+                    for &da in list_a {
+                        for &db in list_b {
+                            my_pair_dists.push(da + db);
+                        }
+                    }
+                }
+            }
+
+            // 3. Compute median
+            if my_pair_dists.is_empty() {
+                stats.insert(
+                    u,
+                    NodeStat {
+                        leaf_dists: my_leaf_dists,
+                        pair_dists: my_pair_dists,
+                        median: 0.0,
+                    },
+                );
+            } else {
+                // Sort to find median
+                my_pair_dists.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
+
+                let mid = my_pair_dists.len() / 2;
+                let median = if my_pair_dists.len() % 2 == 1 {
+                    my_pair_dists[mid]
+                } else {
+                    (my_pair_dists[mid - 1] + my_pair_dists[mid]) / 2.0
+                };
+
+                // Important: For TreeCluster compatibility, we need to check if med_pair_dist <= threshold.
+                // But TreeCluster implementation says:
+                // if node.pair_dists[-1] == float('inf'): node.med_pair_dist = float('inf')
+                // else: node.med_pair_dist = median(node.pair_dists)
+                // Also:
+                // node.pair_dists = merge_multi_sorted_lists(...)
+                // The list contains ALL pairwise distances.
+                // My implementation does exactly this.
+
+                // Let's debug by printing median for each node (if in test)
+                // #[cfg(test)]
+                // println!("Node {}: Median {}", u, median);
+                #[cfg(test)]
+                {
+                    // Get node name for debug
+                    let name = tree.get_node(u).unwrap().name.as_deref().unwrap_or("?");
+                    println!(
+                        "DEBUG: Node {} ({}): Median {}, PairDists {:?}",
+                        u, name, median, my_pair_dists
+                    );
+                }
+
+                stats.insert(
+                    u,
+                    NodeStat {
+                        leaf_dists: my_leaf_dists,
+                        pair_dists: my_pair_dists,
+                        median,
+                    },
+                );
+            }
+        }
+    }
+
+    // Top-down selection
+    let mut queue = std::collections::VecDeque::new();
+    queue.push_back(root);
+
+    while let Some(u) = queue.pop_front() {
+        let stat = stats.get(&u).unwrap();
+        // Use epsilon for float comparison? TreeCluster uses <=
+        if stat.median <= threshold + 1e-9 {
+            clusters.push(u);
+        } else {
+            if let Some(node) = tree.get_node(u) {
+                for &child in &node.children {
+                    queue.push_back(child);
+                }
+            }
+        }
+    }
+
+    assign_clusters(tree, clusters)
+}
+
+/// Cut tree using Single Linkage (cut long branches).
+///
+/// Any edge (u -> v) with length > threshold is cut.
+/// The child node v becomes the root of a new cluster (or a subtree of a new cluster).
+/// Since we traverse top-down, if we cut u->v, then v's subtree is disconnected from u.
+/// But v's subtree might be further cut internally.
+///
+/// Algorithm:
+/// DFS traversal.
+/// Keep track of the current "Cluster Root".
+/// Initially, tree root is a cluster root.
+/// For edge u->v:
+///   If len(u->v) <= threshold:
+///     v belongs to same cluster as u.
+///   Else:
+///     v starts a new cluster.
+///
+/// `assign_clusters` helper is insufficient for Single Linkage if it naively grabs all leaves.
+/// We need a custom assignment logic or a more robust `assign_clusters`.
+///
+/// Let's implement custom assignment for Single Linkage.
+/// We can assign ClusterID to each node during traversal.
+fn cut_single_linkage(tree: &Tree, threshold: f64) -> Result<Partition, String> {
+    let root = tree.get_root().ok_or("Tree has no root")?;
+    let mut part = Partition::new();
+    let mut next_cluster_id = 0; // Starts from 0, incremented before use
+
+    // Map NodeId -> ClusterId
+    // This map is needed because when we assign a new cluster ID to a node,
+    // we might not know if it's a leaf.
+    // But Partition only stores Leaf assignments.
+
+    // Stack: (node_id, cluster_id)
+    // Root always starts a new cluster
+    next_cluster_id += 1;
+    let mut stack = vec![(root, next_cluster_id)];
+
+    while let Some((u, cid)) = stack.pop() {
+        let node = tree.get_node(u).unwrap();
+
+        if node.children.is_empty() {
+            part.assignment.insert(u, cid);
+        } else {
+            for &v in &node.children {
+                let child_node = tree.get_node(v).unwrap();
+                let len = child_node.length.unwrap_or(0.0);
+
+                if len > threshold {
+                    // Cut! v starts new cluster
+                    next_cluster_id += 1;
+                    stack.push((v, next_cluster_id));
+                } else {
+                    // v continues u's cluster
+                    stack.push((v, cid));
+                }
+            }
+        }
+    }
+
+    // Renumber clusters to be contiguous 1..K
+    // Because "next_cluster_id" might have gaps if a cluster has no leaves?
+    // Actually, with this logic, every created cluster ID is assigned to a node.
+    // If that node is a leaf, it gets into partition.
+    // If that node is internal but all its children are cut away, it has no leaves?
+    // Yes, an internal node could be a cluster by itself but contain no leaves in partition map.
+    // e.g. Root -> (len>T) Child. Root is cluster 1. Child is cluster 2.
+    // Root has no leaves directly attached? If Root is internal node.
+    // Then Cluster 1 is empty in terms of leaves.
+
+    // So we need to normalize cluster IDs based on actual leaf assignments.
+    let mut old_to_new = HashMap::new();
+    let mut new_id_counter = 0;
+
+    for val in part.assignment.values_mut() {
+        if let Some(&new_id) = old_to_new.get(val) {
+            *val = new_id;
+        } else {
+            new_id_counter += 1;
+            old_to_new.insert(*val, new_id_counter);
+            *val = new_id_counter;
+        }
+    }
+    part.num_clusters = new_id_counter;
+
+    Ok(part)
+}
+
 // --- Helpers ---
 
 /// Compute max distance from each node to its leaves
@@ -552,15 +846,21 @@ mod tests {
         // Distances from root E: D=1, C=1, A=2, B=2
         // MaxClade (Diameter): D=2, E=3
         let mut tree = Tree::new();
+        // Use with_length for all nodes to ensure length is set
         let a = tree.add_node();
+        tree.get_node_mut(a).unwrap().length = Some(1.0);
         tree.get_node_mut(a).unwrap().name = Some("A".to_string());
         let b = tree.add_node();
+        tree.get_node_mut(b).unwrap().length = Some(1.0);
         tree.get_node_mut(b).unwrap().name = Some("B".to_string());
         let c = tree.add_node();
+        tree.get_node_mut(c).unwrap().length = Some(1.0);
         tree.get_node_mut(c).unwrap().name = Some("C".to_string());
         let d = tree.add_node();
+        tree.get_node_mut(d).unwrap().length = Some(1.0);
         tree.get_node_mut(d).unwrap().name = Some("D".to_string());
         let e = tree.add_node();
+        tree.get_node_mut(e).unwrap().length = Some(1.0);
         tree.get_node_mut(e).unwrap().name = Some("E".to_string());
 
         tree.set_root(e);
@@ -568,15 +868,17 @@ mod tests {
         // E -> D, C
         tree.add_child(e, d).unwrap();
         tree.add_child(e, c).unwrap();
-        tree.get_node_mut(d).unwrap().length = Some(1.0);
-        tree.get_node_mut(c).unwrap().length = Some(1.0);
 
         // D -> A, B
         tree.add_child(d, a).unwrap();
         tree.add_child(d, b).unwrap();
-        tree.get_node_mut(a).unwrap().length = Some(1.0);
-        tree.get_node_mut(b).unwrap().length = Some(1.0);
 
+        // NodeIds depend on insertion order: A=0, B=1, C=2, D=3, E=4
+        // E is root (4).
+        // Children of E: D(3), C(2).
+        // Children of D: A(0), B(1).
+
+        // This matches my manual trace except IDs.
         tree
     }
 
@@ -679,5 +981,115 @@ mod tests {
         // Result: {A}, {B}, {C}
         let p2 = cut(&tree, Method::MaxClade(1.5)).unwrap();
         assert_eq!(p2.num_clusters, 3);
+    }
+
+    #[test]
+    fn test_cut_med_clade() {
+        let tree = create_test_tree();
+
+        // Tree:
+        //      Root
+        //     /    \
+        //    D(1.0) E(1.0)
+        //   / \    /
+        //  A(1)B(1)C(1)
+
+        // Distances:
+        // A-B: 1+1 = 2
+        // A-C: 1+1+1+1 = 4
+        // B-C: 1+1+1+1 = 4
+
+        // Root (E) Children: D, C.
+        // Node D Children: A, B.
+        // Node C is Leaf.
+
+        // Node D:
+        // LeafDists: [1, 1] (to A, B).
+        // PairDists: [2]. Median 2. Correct.
+
+        // Node C:
+        // Leaf. Median 0.
+
+        // Node Root (E):
+        // Children D, C.
+        // D LeafDists (to D): [1, 1]. D->E len 1.
+        // D LeafDists (to E): [2, 2].
+        // C LeafDists (to C): [0]. C->E len 1.
+        // C LeafDists (to E): [1].
+
+        // Cross D-C:
+        // A(via D) - C: 2 + 1 = 3.
+        // B(via D) - C: 2 + 1 = 3.
+
+        // PairDists:
+        // D: [2].
+        // C: [].
+        // Cross: [3, 3].
+        // Total: [2, 3, 3]. Median 3.
+
+        // My previous manual calculation was WRONG.
+        // I thought A-C was 4.
+        // Path: A->D(1) -> E(1) -> C(1). Total 3.
+        // Why did I think 4? Maybe I assumed another level?
+        // Ah, `create_test_tree` structure:
+        // E -> D, C.
+        // D -> A, B.
+        // Edges: A-D(1), B-D(1), D-E(1), C-E(1).
+        // A-C: A->D(1)->E(1)->C(1) = 3. Correct.
+        // B-C: B->D(1)->E(1)->C(1) = 3. Correct.
+
+        // So Root median is 3.
+
+        // Threshold 3.0.
+        // Root median 3 <= 3.0.
+        // So Root IS a cluster.
+        // Result: 1 cluster {A, B, C}.
+
+        // If we want to split, we need threshold < 3.0.
+        // e.g., 2.5.
+        // Root median 3 > 2.5 -> Split.
+        // D median 2 <= 2.5 -> Cluster {A, B}.
+        // C median 0 <= 2.5 -> Cluster {C}.
+        // Result: 2 clusters.
+
+        // Let's adjust the test case.
+        let p = cut(&tree, Method::MedClade(2.5)).unwrap();
+        assert_eq!(p.num_clusters, 2);
+        let a = 0;
+        let b = 1;
+        let c = 2;
+        assert_eq!(p.assignment[&a], p.assignment[&b]);
+        assert_ne!(p.assignment[&a], p.assignment[&c]);
+
+        // Threshold 3.0
+        // Root median 3 <= 3.0 -> Cluster
+        let p2 = cut(&tree, Method::MedClade(3.0)).unwrap();
+        assert_eq!(p2.num_clusters, 1);
+    }
+
+    #[test]
+    fn test_cut_single_linkage() {
+        let tree = create_test_tree();
+
+        // Threshold 0.5
+        // Edges: E->D(1.0), E->C(1.0), D->A(1.0), D->B(1.0)
+        // All edges > 0.5 -> All cut.
+        // Result: {A}, {B}, {C} (D, E are internal, contain no leaves?)
+        // E starts cluster 1. C is cut -> cluster 2. D is cut -> cluster 3.
+        // A is cut from D -> cluster 4. B is cut from D -> cluster 5.
+        // Leaves: A(4), B(5), C(2).
+        let p = cut(&tree, Method::SingleLinkage(0.5)).unwrap();
+        assert_eq!(p.num_clusters, 3);
+        let a = 0;
+        let b = 1;
+        let c = 2;
+        assert_ne!(p.assignment[&a], p.assignment[&b]);
+        assert_ne!(p.assignment[&a], p.assignment[&c]);
+
+        // Threshold 1.5
+        // All edges <= 1.0 < 1.5. No cut.
+        // Result: {A,B,C}
+        let p2 = cut(&tree, Method::SingleLinkage(1.5)).unwrap();
+        assert_eq!(p2.num_clusters, 1);
     }
 }

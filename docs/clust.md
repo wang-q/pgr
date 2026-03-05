@@ -1,75 +1,72 @@
-# clust
+# pgr clust - Clustering Algorithms
 
-`pgr clust` 模块专注于“从数据/图出发构建聚类”，与 `pgr nwk cut`（从树导出聚类）互补。
+## 概述 (Overview)
 
-本文档规划 `pgr clust` 的核心能力、适用场景、以及引入 GMM（高斯混合模型）等高级统计聚类方法的思路，并探讨模型选择（Model Selection）在生物序列分析中的应用。
+`pgr clust` 模块提供了一系列用于序列、基因组特征和一般数据的聚类算法。这些工具旨在处理生物信息学中常见的距离矩阵、相似性网络和特征向量。
 
-## 核心定位
+命令按输入数据类型分为两类：
+1.  **Tree-based**: 基于距离矩阵构建系统发育树或层级结构 (`hier`, `nj`, `upgma`)。
+2.  **Flat**: 基于图或向量直接生成分组 (`cc`, `mcl`, `k-medoids`, `dbscan`)。
 
-- **输入**：相似度矩阵、距离矩阵、图结构（边列表）、或高维向量（embeddings）。
-- **输出**：
-  - **扁平分组 (Flat Partition)**：如 `clusters.tsv`，每行一个样本及其所属簇 ID。
-  - **树状结构 (Hierarchy/Tree)**：如 `tree.nwk`，通过 Newick 格式表达样本间的层级关系（仅 `hier`/`hdbscan` 支持）。
-- **目标**：发现数据中的自然结构（Structure Discovery），不依赖预先存在的树。
+## 算法列表 (Algorithms)
 
-## 算法概览与实现状态 (Overview & Status)
+### MCL (Markov Cluster Algorithm)
 
-本节汇总 `pgr` 支持或规划中的聚类算法，按实现状态分类说明。
+- **原理**：通过在图上模拟随机游走（Random Walk），通过交替执行“扩展（Expansion）”和“膨胀（Inflation）”操作，使强连接区域内的流更加集中，弱连接区域的流逐渐消失，最终自然分割出模块。
+- **命令**：`pgr clust mcl`
+- **特点**：基于流模拟的图聚类。
+- **适用场景**：**生物网络**（如 SSN）、蛋白家族检测、模块发现。
+- **优势**：对噪声鲁棒，能处理复杂的网络结构。
 
-### ✅ 已实现 (Implemented)
+### Connected Components (CC)
 
-这些算法已在 `pgr clust` 中可用，适合直接投入生产流程。
+- **原理**：图论中的基础概念，寻找图中所有互相可达的节点集合。相当于在给定阈值下，将所有直接或间接相连的样本归为一个簇。
+- **命令**：`pgr clust cc`
+- **特点**：最基础的连通分量。
+- **适用场景**：极高相似度阈值下的快速去重。
+- **优势**：极快（线性复杂度）。
 
-- **MCL (Markov Cluster Algorithm)**
-  - **原理**：通过在图上模拟随机游走（Random Walk），通过交替执行“扩展（Expansion）”和“膨胀（Inflation）”操作，使强连接区域内的流更加集中，弱连接区域的流逐渐消失，最终自然分割出模块。
-  - **命令**：`pgr clust mcl`
-  - **特点**：基于流模拟的图聚类。
-  - **适用场景**：**生物网络**（如 SSN）、蛋白家族检测、模块发现。
-  - **优势**：对噪声鲁棒，能处理复杂的网络结构。
+### K-Medoids
 
-- **Connected Components (CC)**
-  - **原理**：图论中的基础概念，寻找图中所有互相可达的节点集合。相当于在给定阈值下，将所有直接或间接相连的样本归为一个簇。
-  - **命令**：`pgr clust cc`
-  - **特点**：最基础的连通分量。
-  - **适用场景**：极高相似度阈值下的快速去重。
-  - **优势**：极快（线性复杂度）。
+- **原理**：类似 K-Means 的迭代优化，但中心点（Medoid）必须是数据集中的实际样本。通过最小化所有点到其最近中心点的距离之和（Dissimilarity）来更新中心。
+- **命令**：`pgr clust k-medoids`
+- **特点**：类似 K-Means，但中心点必须是实际样本（Medoid）。
+- **适用场景**：抗噪声需求，或仅有**距离矩阵**（非欧氏空间）的情况。
+- **优势**：对异常值鲁棒，结果可解释（中心是真实样本）。
 
-- **K-Medoids**
-  - **原理**：类似 K-Means 的迭代优化，但中心点（Medoid）必须是数据集中的实际样本。通过最小化所有点到其最近中心点的距离之和（Dissimilarity）来更新中心。
-  - **命令**：`pgr clust k-medoids`
-  - **特点**：类似 K-Means，但中心点必须是实际样本（Medoid）。
-  - **适用场景**：抗噪声需求，或仅有**距离矩阵**（非欧氏空间）的情况。
-  - **优势**：对异常值鲁棒，结果可解释（中心是真实样本）。
+### DBSCAN
 
-- **DBSCAN**
-  - **原理**：基于密度的聚类。从任意点出发，若其 $\epsilon$ 邻域内的点数超过 `min_samples`，则形成核心点并扩展簇；密度不足的区域被视为噪声。
-  - **命令**：`pgr clust dbscan`
-  - **特点**：基于密度的聚类，需指定邻域半径 `eps` 和最小点数 `min_samples`。
-  - **适用场景**：**非凸形状**簇，密度不均匀分布，需**离群点检测**。
-  - **优势**：不需要指定簇数 K，能识别噪声。
+- **原理**：基于密度的聚类。从任意点出发，若其 $\epsilon$ 邻域内的点数超过 `min_samples`，则形成核心点并扩展簇；密度不足的区域被视为噪声。
+- **命令**：`pgr clust dbscan`
+- **特点**：基于密度的聚类，需指定邻域半径 `eps` 和最小点数 `min_samples`。
+- **适用场景**：**非凸形状**簇，密度不均匀分布，需**离群点检测**。
+- **优势**：不需要指定簇数 K，能识别噪声。
 
-- **UPGMA**
-  - **原理**：非加权组平均法。一种自底向上的层次聚类，每次合并距离最近的两个簇，新簇与其他簇的距离计算为所有成员间距离的算术平均。假设进化速率恒定（分子钟）。
-  - **命令**：`pgr clust upgma`
-  - **特点**：层次聚类（平均链接），输出**有根树**。
-  - **适用场景**：假设**分子钟**（超度量）的系统发育分析。
-  - **优势**：生成层级结构，树高有明确的距离意义。
+### UPGMA
 
-- **NJ (Neighbor-Joining)**
-  - **原理**：邻接法。通过最小化树的总枝长（基于 Q 矩阵校正距离），迭代地合并“净发散度”最小的节点对。不假设分子钟，允许不同分支有不同的进化速率。
-  - **命令**：`pgr clust nj`
-  - **特点**：基于距离矩阵的构树算法，输出**无根树**。
-  - **适用场景**：一般加性距离（无需分子钟假设），构建进化树。
-  - **优势**：速度快，对不同演化速率鲁棒。
+- **原理**：非加权组平均法。一种自底向上的层次聚类，每次合并距离最近的两个簇，新簇与其他簇的距离计算为所有成员间距离的算术平均。假设进化速率恒定（分子钟）。
+- **命令**：`pgr clust upgma`
+- **特点**：层次聚类（平均链接），输出**有根树**。
+- **适用场景**：假设**分子钟**（超度量）的系统发育分析。
+- **优势**：生成层级结构，树高有明确的距离意义。
 
-- **Hierarchical Clustering**
-  - **原理**：通用的自底向上（Agglomerative）聚类框架。通过不同的链接准则（如 Ward 最小方差、Complete 最远距离）合并簇，构建完整的树状层级。
-  - **命令**：`pgr clust hier` (别名 `hclust`)
-  - **特点**：通用层次聚类，支持 `single`, `complete`, `average`, `ward` 等方法。
-  - **实现状态**：✅ 已实现（$O(N^2)$ NN-Chain 优化）。
-  - **价值**：提供通用层级结构视图（不限于生物演化），配合 `nwk cut` 可灵活获取不同粒度的分组。
+### NJ (Neighbor-Joining)
 
-### � 评估与分析 (Evaluation)
+- **原理**：邻接法。通过最小化树的总枝长（基于 Q 矩阵校正距离），迭代地合并“净发散度”最小的节点对。不假设分子钟，允许不同分支有不同的进化速率。
+- **命令**：`pgr clust nj`
+- **特点**：基于距离矩阵的构树算法，输出**无根树**。
+- **适用场景**：一般加性距离（无需分子钟假设），构建进化树。
+- **优势**：速度快，对不同演化速率鲁棒。
+
+### Hierarchical Clustering
+
+- **原理**：通用的自底向上（Agglomerative）聚类框架。通过不同的链接准则（如 Ward 最小方差、Complete 最远距离）合并簇，构建完整的树状层级。
+- **命令**：`pgr clust hier` (别名 `hclust`)
+- **特点**：通用层次聚类，支持 `single`, `complete`, `average`, `ward` 等方法。
+- **实现状态**：✅ 已实现（$O(N^2)$ NN-Chain 优化）。
+- **价值**：提供通用层级结构视图（不限于生物演化），配合 `nwk cut` 可灵活获取不同粒度的分组。
+
+## 评估与分析 (Evaluation)
 
 这些命令不产生聚类，而是评估聚类或树的质量。
 
@@ -85,7 +82,7 @@
   - **功能**：ARI, AMI, V-Measure (外部); Silhouette, Davies-Bouldin (内部)。
   - **文档**：[docs/clust-eval.md](file:///c:/Users/wangq/Scripts/pgr/docs/clust-eval.md)
 
-### � 计划中 (Planned)
+## 计划中 (Planned)
 
 这些算法已列入路线图，旨在补全统计聚类与大规模向量分析能力。
 
@@ -108,7 +105,7 @@
   - **计划内容**：社区发现算法。
   - **价值**：比 MCL 更适合**超大规模网络**的层次化结构探索。
 
-### 🚫 不建议实现 / 暂无计划 (Not Planned)
+## 不建议实现 / 暂无计划 (Not Planned)
 
 这些算法虽然经典，但在生物大数据场景下存在局限性，暂不作为核心功能引入。
 
@@ -119,7 +116,6 @@
 - **Bisecting K-Means**
   - **原理**：自顶向下的分裂式聚类。初始将所有点视为一簇，每次选择 SSE 最大的簇进行二分 K-Means 分裂，直到达到 K 个簇。
   - **原因**：虽然能生成树状结构（二叉树），但继承了 K-Means 的局限性（需欧氏距离、质心非真实样本）。生物学构树通常偏好自底向上的 Agglomerative 方法（如 UPGMA/NJ）。
-  - **替代**：`clust hier` (Hierarchical Clustering) 或 `HDBSCAN`。
 
 - **Affinity Propagation (AP)**
   - **原理**：基于消息传递机制，所有点相互竞争成为代表点（Exemplar）。不需要指定簇数，但计算复杂度高。
@@ -265,7 +261,7 @@ pgr clust gmm input.tsv --k 5 --cov full > clusters.tsv
 ```bash
 # 1. 快速聚类选出代表点 (k=5000)
 pgr clust k-medoids all_data.tsv --k 5000 --format pair > clusters.tsv
-```
+
 # 2. 提取代表点列表
 cut -f1 clusters.tsv | sort -u > representatives.list
 
@@ -286,15 +282,22 @@ pgr clust hier sub_matrix.phy --method ward > backbone.nwk
 pgr clust mcl pairs.tsv --inflation 2.0 > families.tsv
 ```
 
-### 场景 B：基于 Embedding 的亚型分类 (Vector-based)
+### 场景 C: 层次聚类参数扫描与评估 (Workflow)
+
+结合 `nwk cut` 的扫描能力与 `clust eval` 的批量评估，寻找最佳切分阈值。
 
 ```bash
-# 1. 计算序列 embedding (如 k-mer profile 或 ESM) -> vectors.tsv
-# 2. GMM 聚类并扫描最佳 K (基于 BIC)
-pgr clust gmm vectors.tsv --scan-k 2..15 --cov diag > bic_scores.tsv
+# 1. 生成层次聚类树
+pgr clust hier matrix.phy --method ward > tree.nwk
 
-# 3. 选定 K=8 进行聚类
-pgr clust gmm vectors.tsv --k 8 --out-prob > soft_clusters.tsv
+# 2. 扫描阈值并评估内部指标 (Silhouette)
+# nwk cut 在 scan 模式下输出长表，直接传给 clust eval
+pgr nwk cut tree.nwk --height 1.0 --scan 0,1.0,0.05 | \
+    pgr clust eval - --format long --matrix matrix.phy > evaluation.tsv
+
+# 3. 分析 evaluation.tsv 选择最佳阈值 (如 Silhouette 最大处)
+# 假设最佳阈值为 0.45
+pgr nwk cut tree.nwk --height 0.45 > final_clusters.tsv
 ```
 
 ## 实现路线图
@@ -305,3 +308,82 @@ pgr clust gmm vectors.tsv --k 8 --out-prob > soft_clusters.tsv
 4. **向量支持**：建立读取稠密向量/矩阵的基础设施（进行中）。
 5. **统计聚类**：引入 GMM 实现，支持 BIC 模型选择（规划中）。
 6. **层次聚类扩展**：实现 HDBSCAN（规划中）。
+
+## 输入输出格式约定 (File Formats)
+
+`pgr clust` 系列命令涉及多种数据格式，为了便于与其他工具交互，约定如下标准格式。
+
+### 1. 分区文件 (Partition File)
+
+用于表示聚类结果（即样本到簇的映射）。支持三种格式，通过 `--format` 参数指定。
+
+#### Pair Format (默认, `--format pair`)
+最通用的长表格式，每行表示一个样本所属的簇。
+- **结构**：`ClusterID <tab> Item`
+- **特点**：易于解析，支持流式处理。
+- **示例**：
+  ```text
+  # Numeric ID
+  1	GeneA
+  1	GeneB
+  2	GeneC
+
+  # Representative as ID
+  GeneA	GeneA
+  GeneA	GeneB
+  GeneC	GeneC
+  ```
+
+#### Cluster Format (`--format cluster`)
+宽表格式，每行代表一个簇，包含该簇的所有成员。
+- **结构**：`Item1 <space/tab> Item2 ...`
+- **特点**：人类可读性好，适合查看聚类结果。行号（1-based）即为 ClusterID。
+- **示例**：
+  ```text
+  GeneA GeneB
+  GeneC
+  ```
+
+#### Long Format (Batch, `--format long`)
+用于批量评估的专用格式，通常由 `pgr nwk cut --scan` 生成。
+- **结构**：`Group <tab> ClusterID <tab> Item`
+- **Group 列**：用于标识不同的参数组合或切割方法。格式通常为 `Method=Value`（如 `height=0.5`）。
+  - `pgr clust eval` 会保留此列作为评估结果的标识符。
+- **示例**：
+  ```text
+  height=0.1	1	GeneA
+  height=0.1	2	GeneC
+  height=0.2	1	GeneA
+  height=0.2	1	GeneC
+  ```
+
+### 2. 距离矩阵 (Distance Matrix)
+
+用于 `clust hier`, `nj`, `upgma` 以及 `eval --matrix`。
+
+#### PHYLIP Format (Relaxed)
+- **结构**：
+  - 第一行：样本数量 $N$。
+  - 后续 $N$ 行：`Name <space> Dist1 <space> Dist2 ...`
+- **特点**：标准生物信息学格式。`pgr` 支持“宽松”格式（名字与数据间可有任意空白）。
+- **示例**：
+  ```text
+  3
+  A  0.0 0.1 0.5
+  B  0.1 0.0 0.5
+  C  0.5 0.5 0.0
+  ```
+
+### 3. 坐标/特征向量 (Coordinates / Feature Vector)
+
+用于 `clust eval --coords` (Davies-Bouldin Index) 或未来可能的 `kmeans/gmm`。
+
+#### FeatureVector Format
+- **结构**：`Name <tab> Val1,Val2,Val3...`
+- **分隔符**：名字与向量间用 **制表符**，向量数值间用 **逗号**。
+- **示例**：
+  ```text
+  GeneA	1.2,0.5,3.3
+  GeneB	1.1,0.6,3.1
+  ```
+- **兼容性**：此格式与 `pgr dist vector` 的输出一致。

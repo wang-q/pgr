@@ -14,6 +14,8 @@ fn test_scan_height() {
     let nwk_file = "tests/mat/scan_test.nwk";
     fs::write(nwk_file, nwk).expect("Failed to write nwk");
 
+    let stats_file = "tests/mat/scan_stats.tsv";
+
     let (stdout, _) = PgrCmd::new()
         .args(&[
             "nwk",
@@ -23,20 +25,30 @@ fn test_scan_height() {
             "0",
             "--scan",
             "0,0.2,0.1",
+            "--stats-out",
+            stats_file,
         ])
         .run();
 
-    let lines: Vec<&str> = stdout.lines().collect();
+    // Verify stdout (Long Format)
+    let out_lines: Vec<&str> = stdout.lines().collect();
+    assert!(out_lines.len() > 1);
+    assert_eq!(out_lines[0], "Group\tClusterID\tSampleID");
+
+    // Verify stats file
+    let stats_content = fs::read_to_string(stats_file).expect("Failed to read stats file");
+    let lines: Vec<&str> = stats_content.lines().collect();
+
     // Header + 3 rows
-    assert_eq!(lines.len(), 4, "Expected 4 lines output");
+    assert_eq!(lines.len(), 4, "Expected 4 lines output in stats file");
     assert_eq!(
         lines[0],
-        "Threshold\tClusters\tSingletons\tNon-Singletons\tMaxSize"
+        "Group\tClusters\tSingletons\tNon-Singletons\tMaxSize"
     );
 
     // t=0
     let row0: Vec<&str> = lines[1].split('\t').collect();
-    assert_eq!(row0[0], "0");
+    assert_eq!(row0[0], "height=0");
     assert_eq!(row0[1], "3"); // Clusters
     assert_eq!(row0[2], "3"); // Singletons
     assert_eq!(row0[3], "0"); // Non-Single
@@ -44,7 +56,7 @@ fn test_scan_height() {
 
     // t=0.1
     let row1: Vec<&str> = lines[2].split('\t').collect();
-    assert_eq!(row1[0], "0.1");
+    assert_eq!(row1[0], "height=0.1");
     assert_eq!(row1[1], "2");
     assert_eq!(row1[2], "1"); // {C}
     assert_eq!(row1[3], "1"); // {A,B}
@@ -52,9 +64,13 @@ fn test_scan_height() {
 
     // t=0.2
     let row2: Vec<&str> = lines[3].split('\t').collect();
-    assert_eq!(row2[0], "0.2");
+    assert_eq!(row2[0], "height=0.2");
     assert_eq!(row2[1], "1");
     assert_eq!(row2[2], "0");
     assert_eq!(row2[3], "1"); // {A,B,C}
     assert_eq!(row2[4], "3");
+
+    // Cleanup
+    let _ = fs::remove_file(nwk_file);
+    let _ = fs::remove_file(stats_file);
 }
