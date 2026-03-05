@@ -125,7 +125,7 @@ cargo test
 ### 测试约定
 
 - 集成测试位于 `tests/` 目录下，文件命名为 `cli_<command>.rs`。
-- 测试数据通常放在 `tests/data/<command>/` 目录下。
+- 测试数据通常放在 `tests/<command>/` 目录下。
 - **推荐使用 `PgrCmd` 辅助结构体**（定义在 `tests/common/mod.rs`）来编写集成测试，以简化子进程调用和断言。
 - 测试函数**不需要**返回 `anyhow::Result<()>`，也不需要以 `Ok(())` 结尾。直接在函数体中执行断言即可。
 - 必须使用 `assert_cmd` 来定位二进制文件，以兼容自定义构建目录。
