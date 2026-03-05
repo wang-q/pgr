@@ -58,6 +58,9 @@ pub enum Method {
     /// TreeCluster: Median pairwise distance in clade <= threshold.
     MedClade(f64),
 
+    /// TreeCluster: Sum of branch lengths in clade <= threshold.
+    SumBranch(f64),
+
     /// SciPy: Inconsistent coefficient <= threshold.
     ///
     /// Splits nodes if their inconsistency coefficient > threshold.
@@ -167,6 +170,7 @@ pub fn cut(tree: &Tree, method: Method) -> Result<Partition, String> {
         Method::MaxClade(t) => cut_max_clade(tree, t),
         Method::AvgClade(t) => cut_avg_clade(tree, t),
         Method::MedClade(t) => cut_med_clade(tree, t),
+        Method::SumBranch(t) => cut_sum_branch(tree, t),
         Method::Inconsistent(t, d) => cut_inconsistent(tree, t, d),
         Method::SingleLinkage(t) => cut_single_linkage(tree, t),
     }
@@ -702,6 +706,72 @@ fn cut_med_clade(tree: &Tree, threshold: f64) -> Result<Partition, String> {
     assign_clusters(tree, clusters)
 }
 
+/// Cut tree based on sum of branch lengths in clade.
+///
+/// Ensures sum of branch lengths in the subtree <= threshold.
+/// This corresponds to Phylogenetic Diversity (PD) of the clade.
+///
+/// Algorithm:
+/// Bottom-up calculation of subtree branch length sum.
+/// Sum(node) = sum(Sum(child) + len(child))
+/// If Sum(node) <= threshold, node is a candidate cluster.
+fn cut_sum_branch(tree: &Tree, threshold: f64) -> Result<Partition, String> {
+    let root = tree.get_root().ok_or("Tree has no root")?;
+    let mut clusters = Vec::new();
+
+    // Map NodeId -> Subtree Sum Branch Length
+    let mut sums: HashMap<NodeId, f64> = HashMap::new();
+
+    // Post-order traversal for bottom-up calculation
+    let mut post_order = Vec::new();
+    let mut visit_stack = vec![root];
+    while let Some(u) = visit_stack.pop() {
+        post_order.push(u);
+        if let Some(node) = tree.get_node(u) {
+            for &child in &node.children {
+                visit_stack.push(child);
+            }
+        }
+    }
+    let post_order: Vec<NodeId> = post_order.into_iter().rev().collect();
+
+    for &u in &post_order {
+        let node = tree.get_node(u).unwrap();
+        if node.children.is_empty() {
+            // Leaf has 0 internal branch length
+            sums.insert(u, 0.0);
+        } else {
+            let mut sum = 0.0;
+            for &v in &node.children {
+                let child_sum = sums.get(&v).unwrap();
+                let len = tree.get_node(v).unwrap().length.unwrap_or(0.0);
+                sum += child_sum + len;
+            }
+            sums.insert(u, sum);
+        }
+    }
+
+    // Top-down selection
+    let mut queue = std::collections::VecDeque::new();
+    queue.push_back(root);
+
+    while let Some(u) = queue.pop_front() {
+        let sum = sums.get(&u).unwrap();
+        // Use epsilon?
+        if *sum <= threshold + 1e-9 {
+            clusters.push(u);
+        } else {
+            if let Some(node) = tree.get_node(u) {
+                for &child in &node.children {
+                    queue.push_back(child);
+                }
+            }
+        }
+    }
+
+    assign_clusters(tree, clusters)
+}
+
 /// Cut tree using Single Linkage (cut long branches).
 ///
 /// Any edge (u -> v) with length > threshold is cut.
@@ -1064,6 +1134,43 @@ mod tests {
         // Threshold 3.0
         // Root median 3 <= 3.0 -> Cluster
         let p2 = cut(&tree, Method::MedClade(3.0)).unwrap();
+        assert_eq!(p2.num_clusters, 1);
+    }
+
+    #[test]
+    fn test_cut_sum_branch() {
+        let tree = create_test_tree();
+        
+        // Tree:
+        //      Root(E)
+        //     /    \
+        //    D(1)   C(1)
+        //   / \
+        //  A(1)B(1)
+        
+        // Lengths:
+        // A, B, C are leaves. Sum=0.
+        // D: children A, B. D->A len 1, D->B len 1.
+        // Sum(D) = Sum(A) + len(A) + Sum(B) + len(B) = 0 + 1 + 0 + 1 = 2.
+        // Root(E): children D, C. E->D len 1, E->C len 1.
+        // Sum(E) = Sum(D) + len(D) + Sum(C) + len(C) = 2 + 1 + 0 + 1 = 4.
+        
+        // Threshold 3.0
+        // Root sum 4 > 3 -> Split
+        // D sum 2 <= 3 -> Cluster {A, B}
+        // C sum 0 <= 3 -> Cluster {C}
+        // Result: 2 clusters
+        let p = cut(&tree, Method::SumBranch(3.0)).unwrap();
+        assert_eq!(p.num_clusters, 2);
+        let a = 0;
+        let b = 1;
+        let c = 2;
+        assert_eq!(p.assignment[&a], p.assignment[&b]);
+        assert_ne!(p.assignment[&a], p.assignment[&c]);
+        
+        // Threshold 5.0
+        // Root sum 4 <= 5 -> Cluster {A, B, C}
+        let p2 = cut(&tree, Method::SumBranch(5.0)).unwrap();
         assert_eq!(p2.num_clusters, 1);
     }
 

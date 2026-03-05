@@ -322,5 +322,23 @@ pgr nwk cut tree.nwk --scan 0,1,0.01 | \
       # 0.2      0.52
       ```
 
-### 阶段 4：数值与性能
+### 阶段 4：树结构整合与统一流程
+- **目标**：消除 `nwk cut` 与 `clust eval` 之间的“矩阵断层”，实现无中间文件的流式评估。
+- **痛点**：目前计算 Silhouette 需要 $O(N^2)$ 的距离矩阵文件，对于大树（>10k 叶子）生成和存储矩阵极其昂贵。
+- **方案**：
+  - 增强 `pgr clust eval`，新增 `--tree <FILE>` 参数。
+  - **参数互斥**：用户可选择 `--matrix`（查表）或 `--tree`（实时计算）之一作为距离源。
+  - **优势**：当提供 `--tree` 时，评估器直接在树上按需计算节点间距离（基于 LCA 算法），无需预先生成全量矩阵。
+  - 定义统一的 `DistanceProvider` 接口，底层适配 `Matrix` 或 `Tree`。
+- **最终工作流**：
+    ```bash
+    # 之前（需生成巨大矩阵）：
+    # pgr phylo dist tree.nwk > dist.mat
+    # pgr nwk cut tree.nwk ... | pgr clust eval - --matrix dist.mat
+
+    # 之后（直接支持树，零中间文件）：
+    pgr nwk cut tree.nwk ... | pgr clust eval - --tree tree.nwk
+    ```
+
+### 阶段 5：数值与性能
 - **内存优化**：对于大规模矩阵，避免全量加载，支持流式读取或分块计算。

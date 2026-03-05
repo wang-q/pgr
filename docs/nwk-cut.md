@@ -1,54 +1,95 @@
 # pgr nwk cut
 
-`pgr nwk cut` 的目标是：给定一棵 Newick 树（系统发生树 / 层次聚类树），按照用户指定的规则把叶子节点切分成一组互不重叠的分组（partition），并以稳定、可复用的表格格式输出。
+`pgr nwk cut` 用于将 Newick 树（系统发生树或层次聚类树）切分为扁平的聚类分组（Partition）。
 
-它关注的是“从树导出扁平聚类结果”，而不是“从数据构建树”。因此命名为 `cut` 比 `cluster` 更准确：树本身已经表达了层次结构，我们要做的是在树上选取一条切割规则并导出分组。
+与 `pgr clust`（从数据构建聚类）不同，`cut` 关注于“从已有树结构导出分组”。它支持多种生物学与统计学切割规则，并提供稳定、可复用的表格输出。
 
-本文偏设计稿：描述 `pgr nwk cut` 的背景、输入输出约定、算法模式与选参思路，并对比相关生态工具。
+本文描述该命令的算法模式、选参思路及输入输出约定。
 
-## 适用场景
+## 适用场景与设计理念
 
-在实际分析中，经常会遇到这样的需求：
+在实际分析中，我们经常已经有一棵树（系统发生树或层次聚类树），并希望在某个阈值下把叶子切分为不同的分组（Partition）。切割规则可能不止一种：按高度、按簇数、按簇内最大距离（直径）、要求单系群（clade）等。
 
-- 已经有一棵树（例如系统发生树、基于距离矩阵的层次聚类树、或某种推断得到的 dendrogram）。
-- 希望在某个阈值下把叶子分组（比如得到“簇”用于下游统计、注释、画图、或与其他方法比较）。
-- 切割规则可能不止一种：按高度切、按簇数切、按簇内最大两两距离（直径）切、要求每个簇必须是单系群（clade）、或者禁止跨越低支持度的边等。
+`pgr nwk cut` 旨在提供一套高效、规范且功能全面的切割工具：
 
-`pgr nwk cut` 旨在提供一套与现有生态对齐但更“树友好”的切割方式：
+- **算法核心**：
+  实现了基于簇数 (`--k`) 和高度 (`--height`) 的基础切割，逻辑与 `SciPy.cluster.hierarchy` 及 R `cutree` 保持一致；同时完整移植了 TreeCluster 的生物学约束算法（如 `--max-clade`, `--med-clade` 等），专为系统发生树优化。
 
-- **对齐 R `cutree()`**：在 dendrogram 上切一刀得到分组。
-- **对齐 SciPy `fcluster()`**：支持按距离 `distance` 或簇数 `maxclust` 导出扁平聚类。
-- **对齐 TreeCluster**：在系统发生树上按生物学常用约束得到分组。
-- **与 `pgr clust` 区分**：`pgr clust` 主要是从相似度/距离矩阵或图结构“构建聚类”；而 `pgr nwk cut` 是从“已有树”导出分组。
+- **性能与体验升级**：
+  - **高性能**：基于 Rust 实现，无外部依赖，处理大规模树更高效。
+  - **标准化**：统一了不同来源算法的术语差异（例如统一使用 `--height`, `--single-linkage`），降低认知负担。
+  - **可组合**：作为 `pgr` 工具链的一部分，可直接与 `clust eval` 等命令配合进行聚类评估。
 
-## 功能对照表
+## 支持的模式与算法
 
-为了方便从其他工具迁移，以下是 `pgr` 与主流工具的功能对照：
+### 1. 按簇数切 (`--k <K>`)
 
-### vs SciPy (`cluster.hierarchy`)
+- **逻辑**：从根开始，优先分割高度（距最远叶子的距离）最大的节点，直到树被分割成 `K` 个子树。
+- **适用场景**：你不关心阈值是多少，只想要固定数量的分组。
 
-| SciPy Criterion (`fcluster`) | `pgr nwk cut` 参数 | 说明 | 状态 |
-| :--- | :--- | :--- | :--- |
-| `maxclust` | `--k <N>` | 指定生成的簇数量 | ✅ 已实现 |
-| `distance` | `--height <N>` | 指定切割的高度/距离阈值 | ✅ 已实现 |
-| `inconsistent` | `--inconsistent <T>` | 基于不一致系数切割（需配合深度参数） | ✅ 已实现 |
-| `monocrit` | - | 基于自定义单调统计量切割 | ❌ 未计划 |
+### 2. 按高度切 (`--height <H>`)
 
-> 注：SciPy 的 `cut_tree` 函数主要对应 `maxclust` (n_clusters) 和 `distance` (height)。
+- **逻辑**：任何高度（距最远叶子的距离）大于 `H` 的节点都会被切断；高度小于等于 `H` 的节点形成簇。
+- **适用场景**：适用于超度量树（Ultrametric Tree），其中高度代表时间或遗传距离。
 
-### vs TreeCluster
+### 3. 按根距离切 (`--root-dist <D>`)
 
-| TreeCluster Method | `pgr nwk cut` 参数 | 说明 | 状态 |
-| :--- | :--- | :--- | :--- |
-| `max_clade` | `--max-clade <N>` | 簇内最大两两距离（直径） | ✅ 已实现 |
-| `root_dist` | `--root-dist <N>` | 根到叶子的最大距离 | ✅ 已实现 |
-| `length` | `--single-linkage <N>` | 单链接聚类（切断长枝） | ✅ 已实现 |
-| `leaf_dist_max` | `--height <N>` | 等同于按高度切割 | ✅ 已实现 |
-| `avg_clade` | `--avg-clade <N>` | 簇内平均两两距离 | ✅ 已实现 |
-| `med_clade` | `--med-clade <N>` | 簇内中位数两两距离 | ✅ 已实现 |
-| `sum_branch` | - | 簇内总枝长 | ❌ 不计划 |
+- **逻辑**：模拟在时间轴上的切割。从根节点出发，累积路径长度，一旦分支距离根节点的距离超过 `D` 则切断。
+- **适用场景**：系统发生树分析，定义从共同祖先（根）演化特定时间后的分化群。
 
-> 注：TreeCluster 的 `single_linkage` 方法在算法上等价于 `length`（即切断所有长度大于阈值的边），`pgr` 统一命名为 `--single-linkage`。
+### 4. 按最大簇内直径切 (`--max-clade <T>`)
+
+- **逻辑**：确保每个簇内的**最大成对距离（直径）**不超过阈值 `T`。同时隐含了单系群（Clade）约束（即簇必须是树上的完整子树）。
+- **算法**：采用高效的自底向上（Bottom-Up）直径计算与自顶向下（Top-Down）贪心选择，避免了 $O(N^2)$ 的全距离矩阵计算。
+- **适用场景**：病毒分型、OTU 划分等需要严格控制簇内差异度的场景。
+
+### 5. 按平均簇内距离切 (`--avg-clade <T>`)
+
+- **逻辑**：确保每个簇内的**平均成对距离**不超过阈值 `T`。
+- **算法**：类似于 `max_clade`，自底向上计算子树内的平均距离。
+- **适用场景**：相比最大距离，平均距离对个别离群点（Outlier）更鲁棒。
+
+### 6. 按中位数簇内距离切 (`--med-clade <T>`)
+
+- **逻辑**：确保每个簇内的**中位数成对距离**不超过阈值 `T`。
+- **算法**：采用自底向上合并排序列表的方式计算中位数。
+- **注意**：相比 `max_clade` (直径) 和 `avg_clade` (平均值)，`med_clade` 的计算开销显著更大。
+    - 中位数计算需要维护完整的成对距离分布，无法像平均值那样仅维护 `sum` 和 `count`。
+    - 最坏情况下时间复杂度可能退化，不建议用于超大规模树。
+    - 对于鲁棒性需求，通常 `avg_clade` 已足够。
+
+### 7. 按簇内总枝长切 (`--sum-branch <T>`)
+
+- **逻辑**：确保每个簇内的**总枝长（Sum of Branch Lengths）**不超过阈值 `T`。
+- **生物学意义**：总枝长对应 **Phylogenetic Diversity (PD)**，代表该簇所包含的进化历史总量。
+- **注意**：
+    - PD 是一个**广延量**（随样本数增加而单调增加），不像直径或平均距离那样是“强度量”。
+    - 因此，作为切割阈值时，它倾向于把紧密的大簇切碎（因为累积枝长很容易超标），而保留松散的小簇。
+    - 除非有特定的生物学理由（如“限制每个 OTU 的最大进化潜能”），否则通常不建议作为首选切割标准。
+
+### 8. 按不一致系数切 (`--inconsistent <T>`)
+
+- **逻辑**：不一致系数（Inconsistent Coefficient）用于检测某个合并事件（节点）是否比其子树内的合并事件显著更“突兀”。
+- **计算公式**：
+  对于树上每个非叶子节点 $i$，考虑它以及它下方 $d$ 层（`--deep`，默认 2）内的所有子节点的合并高度集合 $H$。
+  $$ I_i = \frac{height(i) - \text{mean}(H)}{\text{std}(H)} $$
+  如果 $I_i > T$，则认为该节点是聚类边界，予以切断。
+- **参数**：
+  - `--inconsistent <T>`: 阈值，通常在 0.8 ~ 3.0 之间。
+  - `--deep <D>`: 计算系数时的回溯深度，默认为 2。
+- **适用场景**：当树的整体演化速率不均匀，或者你想寻找“自然”聚类边界而不是强制切断时。
+
+### 9. 单链接聚类 (`--single-linkage <T>`)
+
+- **逻辑**：切断树上所有长度大于阈值 `T` 的边（branches）。
+- **效果**：将树分割成若干连通分量，每个分量内的任意两点之间都有一条由“短边”（<= T）构成的路径。
+- **适用场景**：识别由长枝分隔的离散群组，类似于图论中的连通分量分析。
+
+### 10. 支持度过滤 (`--support <S>`)
+
+- **逻辑**：当某条边（或节点）支持度低于阈值时，视为“不可跨越”，相当于强制切断。
+- **用途**：防止聚类跨越不可靠的进化分支。
+- **默认行为**：对于没有明确支持度值的节点（例如由多叉树解析产生的内部节点），`pgr` 默认其支持度为 100（即完全可信），能有效避免因缺乏信息而错误切断高度相似的序列簇。
 
 ## 输入与输出
 
@@ -56,7 +97,7 @@
 
 - **输入树**：Newick 格式（单棵树）。
 - **分支长度**：用于距离/高度相关方法（例如按 root distance、max pairwise distance 等）。
-- **分支支持度（可选/规划中）**：若树节点/边上携带支持度（例如 bootstrap），可作为“不可跨越”的约束条件。
+- **分支支持度（可选）**：若树节点/边上携带支持度（例如 bootstrap），可作为“不可跨越”的约束条件。
 
 ### 输出
 
@@ -78,15 +119,66 @@
 - `medoid`：Medoid，即到簇内其他成员距离之和最小的成员。
 - `first`：字母序第一个成员。
 
-## 核心概念：切树并导出 partition
+## 工作流与工具链协作
 
-不管采用何种规则，`cut` 的结果都可以理解为：
+为了保持命令的专注与正交性，我们推荐以下“生成-评估”分离的工作流：
 
-1. 在树上选择一组“切断点”（cut edges / cut nodes）。
-2. 切断后，树被分成若干个互不相交的连通分量（component）。
-3. 每个连通分量包含若干叶子；这些叶子构成一个输出簇。
+### 1. 生成 (Generation)
 
-不同算法的差异主要在于“切断点如何确定”。
+使用 `pgr nwk cut`：
+- 它只负责“切”，不负责“评”。
+- 支持多种策略（k, height, max_clade 等）和参数扫描。
+- 输出标准 TSV 格式。
+
+### 2. 评估 (Evaluation)
+
+评估聚类质量通常需要参考标准（Ground Truth）或与其他聚类结果对比。这部分逻辑放入独立的 `pgr clust` 或 `pgr nwk` 命令中：
+
+- **通用指标 (`pgr clust eval` / `compare`)**：
+  - 输入：两个聚类结果 TSV（或一个结果 + 一个参考）。
+  - 输出：ARI (Adjusted Rand Index), AMI (Adjusted Mutual Information), V-Measure 等。
+  - 适用场景：当你已知样本的真实分类，或者想比较两种切割参数的差异度时。
+
+- **树相关指标 (`pgr nwk metrics`)**：
+  - 输入：树文件 + 聚类结果。
+  - 输出：Parsimony score, Silhouette score (基于树上距离矩阵) 等。
+  - 适用场景：没有真实分类，需要评估聚类在树结构上的紧密性或分离度。
+
+### 推荐工作流示例
+
+#### 1. 经典系统发育分析
+```bash
+# 1. 扫描不同参数，生成多个聚类结果
+# pgr nwk cut input.nwk --method max-clade --scan 0.01,0.05,0.10 > partitions.tsv
+
+# 2. 选定最佳阈值，生成最终聚类
+pgr nwk cut input.nwk --method max-clade -t 0.05 > final_cluster.tsv
+
+# 3. 可视化或提取子树
+pgr nwk subset input.nwk --list final_cluster.tsv --cluster-id 1 > cluster1.nwk
+```
+
+#### 2. 层次聚类（hclust）接入
+从距离矩阵出发，经由 hclust 生成树，再进行切分与评估。
+
+```bash
+# 1. 生成层次聚类树
+pgr clust hier matrix.phy --method ward > tree.nwk
+
+# 2. 切分 (按高度阈值切)
+pgr nwk cut tree.nwk --height 0.05 > clusters.tsv
+
+# 3. 评估 (计算 Cophenetic 相关系数与 Silhouette)
+# pgr nwk metrics tree.nwk --part clusters.tsv --metrics silhouette > sil.tsv
+```
+
+#### 3. SciPy 风格分析 (不一致系数)
+对于演化速率不均匀的树，使用不一致系数可以找到更自然的聚类边界。
+
+```bash
+# 使用不一致系数切割 (默认 depth=2)
+pgr nwk cut tree.nwk --inconsistent 1.5 > clusters.tsv
+```
 
 ## 选择阈值/簇数：扫描与准则
 
@@ -99,9 +191,9 @@
 
 ### 扫描（Scan）
 
-`pgr` 计划提供显式的扫描能力：适用于所有基于数值参数的方法（如 `--k`, `--height`, `--max-clade`, `--inconsistent` 等）。它将遍历一组候选值，对每个值计算并输出摘要指标。
+`pgr` 提供显式的扫描能力：适用于所有基于数值参数的方法（如 `--k`, `--height`, `--max-clade`, `--inconsistent` 等）。它将遍历一组候选值，对每个值计算并输出摘要指标。
 
-**用法规划**：
+**用法**：
 `pgr nwk cut ... --scan <start>,<end>,<steps>`
 （注：扫描仅针对方法的**主阈值参数**。例如对于 `--inconsistent`，扫描的是系数阈值 `T`，而深度 `--deep` 保持固定为用户指定值或默认值）
 
@@ -172,217 +264,40 @@ pgr nwk cut tree.nwk --max-clade 0.12 > pred.tsv
 pgr clust eval pred.tsv truth.tsv -o eval.tsv
 ```
 
-### 自动选点与 TreeCluster 策略
+### 选点策略参考
 
-TreeCluster 提供了一种“无阈值”（Threshold-Free）模式（通过 `-tf argmax_clusters` 启用），其本质是基于扫描的自动选点。
+当你不确定最佳阈值时，可以使用 `--scan` 生成数据，并参考以下两种常用策略进行决策：
 
-**TreeCluster `argmax_clusters` 的实现细节**：
-1.  **输入**：用户指定一个上限阈值 $T_{max}$（即 `-t` 参数）。
-2.  **扫描**：在 $[0, T_{max}]$ 区间内均匀取 `NUM_THRESH` (默认为 1000) 个点作为候选阈值。
-3.  **评估**：对每个候选阈值执行聚类，计算 **非单例簇（Non-Singleton Clusters）的数量**。
-4.  **决策**：选择该指标最大的阈值作为最佳阈值；若有多个，取第一个。
+#### 策略 1：最大化非单例簇 (Max Non-Singletons)
 
-**`pgr` 的设计思路**：
-`pgr` 计划将这一过程解耦为“扫描”与“决策”两步：
-1.  **扫描 (`--scan`)**：显式输出区间内各阈值的指标表（TSV）。
-2.  **决策**：用户既可以复刻 TreeCluster 的策略（选非单例簇最多的点），也可以结合“手肘法”或业务约束（如最大簇大小限制）选择更优的点。
+- **原理**：寻找一个阈值，使得生成的簇中“非单例簇（Non-Singleton Clusters）”的数量最多。
+- **适用性**：当你期望得到尽可能多有意义的（包含 >1 个成员）聚类结果，同时避免过度切碎（导致大量单例）或欠切分（导致巨大簇）时。
+- **操作**：观察扫描结果表中的 `Non-Singletons` 列，选择其最大值对应的阈值。
 
-### 手肘规则（Elbow Rule）与选点建议
+#### 策略 2：手肘规则 (Elbow Rule)
+这是数据分析中的通用策略。
 
-当你不确定最佳阈值时，可以使用 `--scan` 生成数据，然后利用“手肘规则”进行辅助决策。
+- **原理**：观察阈值与簇数量（或单例数）的变化曲线，寻找“拐点”。
+  - **陡峭下降期**：随着阈值放松，簇数量迅速减少（大量微小簇合并）。
+  - **平缓平台期**：簇数量变化趋于稳定。
+  - **拐点（手肘）**：即从“陡峭”转变为“平缓”的点，通常对应着数据内在的自然结构。
+- **操作**：
+  1. 运行扫描：`pgr nwk cut ... --scan ... > scan.tsv`
+  2. 观察变化率：若阈值从 $T_1$ 增至 $T_2$ 时簇数剧烈变化，而从 $T_2$ 增至 $T_3$ 时变化平缓，则 $T_2$ 可能是最佳切点。
+  3. 可视化：将 `scan.tsv` 导入绘图工具辅助判断。
 
-**什么是手肘点？**
-想象你绘制一条曲线，横轴是阈值（或 K），纵轴是某个关键指标（如“簇数量”）。曲线通常呈现“L”型：
-1.  **陡峭下降期**：随着阈值放松，指标迅速下降（例如大量微小的簇合并）。
-2.  **平缓平台期**：指标变化很小，甚至不再变化。
-3.  **拐点（手肘）**：即从“陡峭”转变为“平缓”的那个点。这个点通常对应着数据内在的自然结构。
+#### 策略 3：基于评估指标 (Evaluation Metrics)
+这是最严谨的策略，通过 `pgr clust eval` 计算聚类质量指标。
 
-**实战操作**：
-1.  **运行扫描**：
-    `pgr nwk cut tree.nwk --max-clade 0.5 --scan 0,0.5,0.01 > scan.tsv`
-2.  **观察变化率**：
-    - 假设 `Threshold` 从 0.05 增至 0.06 时，`Clusters` 减少了 100 个（变化剧烈）。
-    - 而从 0.06 增至 0.07 时，只减少了 5 个（变化平缓）。
-    - 那么 `0.06` 很可能就是最佳切点。
-3.  **可视化**：将 `scan.tsv` 导入 Excel 或使用 Python/R 绘图，能更直观地识别拐点。
-
-## 支持的模式与算法
-
-### 1. 按簇数切 (`--k <K>`) [已实现]
-
-等价于 R 的 `cutree(hc, k=K)` 或 SciPy 的 `fcluster(..., criterion='maxclust')`。
-
-- **逻辑**：从根开始，优先分割高度（距最远叶子的距离）最大的节点，直到树被分割成 `K` 个子树。
-- **适用场景**：你不关心阈值是多少，只想要固定数量的分组。
-
-### 2. 按高度切 (`--height <H>`) [已实现]
-
-等价于 R 的 `cutree(hc, h=H)` 或 SciPy 的 `fcluster(..., criterion='distance')`。
-
-- **逻辑**：任何高度（距最远叶子的距离）大于 `H` 的节点都会被切断；高度小于等于 `H` 的节点形成簇。
-- **适用场景**：适用于超度量树（Ultrametric Tree），其中高度代表时间或遗传距离。
-
-### 3. 按根距离切 (`--root-dist <D>`) [已实现]
-
-- **逻辑**：模拟在时间轴上的切割。从根节点出发，累积路径长度，一旦分支距离根节点的距离超过 `D` 则切断。
-- **适用场景**：系统发生树分析，定义从共同祖先（根）演化特定时间后的分化群。
-
-### 4. TreeCluster 风格：按最大簇内直径切 (`--max-clade <T>`) [已实现]
-
-这是 **TreeCluster** 的核心算法（`Method: max_clade`）。
-
-- **逻辑**：确保每个簇内的**最大成对距离（直径）**不超过阈值 `T`。同时隐含了单系群（Clade）约束（即簇必须是树上的完整子树）。
-- **算法**：采用高效的自底向上（Bottom-Up）直径计算与自顶向下（Top-Down）贪心选择，避免了 $O(N^2)$ 的全距离矩阵计算。
-- **适用场景**：病毒分型、OTU 划分等需要严格控制簇内差异度的场景。
-
-### 5. TreeCluster 风格：按平均簇内距离切 (`--avg-clade <T>`) [已实现]
-
-这是 **TreeCluster** 的 `avg_clade` 算法。
-
-- **逻辑**：确保每个簇内的**平均成对距离**不超过阈值 `T`。
-- **算法**：类似于 `max_clade`，自底向上计算子树内的平均距离。
-- **适用场景**：相比最大距离，平均距离对个别离群点（Outlier）更鲁棒。
-
-### 6. TreeCluster 风格：按中位数簇内距离切 (`--med-clade <T>`) [已实现]
-
-这是 **TreeCluster** 的 `med_clade` 算法。
-
-- **逻辑**：确保每个簇内的**中位数成对距离**不超过阈值 `T`。
-- **算法**：采用自底向上合并排序列表的方式计算中位数。
-- **注意**：相比 `max_clade` (直径) 和 `avg_clade` (平均值)，`med_clade` 的计算开销显著更大。
-    - 中位数计算需要维护完整的成对距离分布，无法像平均值那样仅维护 `sum` 和 `count`。
-    - 最坏情况下时间复杂度可能退化，不建议用于超大规模树。
-    - 对于鲁棒性需求，通常 `avg_clade` 已足够。
-
-### 7. SciPy 风格：按不一致系数切 (`--inconsistent <T>`) [已实现]
-
-这是 SciPy `fcluster(..., criterion='inconsistent')` 的默认方法。
-
-- **逻辑**：不一致系数（Inconsistent Coefficient）用于检测某个合并事件（节点）是否比其子树内的合并事件显著更“突兀”。
-- **计算公式**：
-  对于树上每个非叶子节点 $i$，考虑它以及它下方 $d$ 层（`--deep`，默认 2）内的所有子节点的合并高度集合 $H$。
-  $$ I_i = \frac{height(i) - \text{mean}(H)}{\text{std}(H)} $$
-  如果 $I_i > T$，则认为该节点是聚类边界，予以切断。
-- **参数**：
-  - `--inconsistent <T>`: 阈值，通常在 0.8 ~ 3.0 之间。
-  - `--deep <D>`: 计算系数时的回溯深度，SciPy 默认为 2。
-- **适用场景**：当树的整体演化速率不均匀，或者你想寻找“自然”聚类边界而不是强制切断时。
-
-### 7. 单链接聚类 (`--single-linkage <T>`) [已实现]
-
-这是 TreeCluster 的 `length` 算法。
-
-- **逻辑**：切断树上所有长度大于阈值 `T` 的边（branches）。
-- **效果**：将树分割成若干连通分量，每个分量内的任意两点之间都有一条由“短边”（<= T）构成的路径。
-- **适用场景**：识别由长枝分隔的离散群组，类似于图论中的连通分量分析。
-
-### 8. 更多 TreeCluster 变体 [规划中]
-
-- **`sum_branch`**：簇内总枝长不超过阈值。**（不计划实现）**
-    - **原因**：虽然总枝长在生物学上对应 **Phylogenetic Diversity (PD)**，代表进化历史总量，具有重要意义，但它是一个**广延量**（随样本数增加而累积）。将其作为切割阈值会导致大簇（即使很紧密）因累积枝长过大而被切碎，而稀疏的小簇却能保留。它更适合作为评估指标（Metrics）而非切割标准。
-
-### 9. 支持度过滤 (`--support <S>`) [规划中]
-
-- **逻辑**：当某条边（或节点）支持度低于阈值时，视为“不可跨越”，相当于强制切断。
-- **用途**：防止聚类跨越不可靠的进化分支。
-
-## 工作流与工具链协作
-
-为了保持命令的专注与正交性，我们推荐以下“生成-评估”分离的工作流：
-
-### 1. 生成 (Generation)
-
-使用 `pgr nwk cut`：
-- 它只负责“切”，不负责“评”。
-- 支持多种策略（k, height, max_clade 等）和参数扫描。
-- 输出标准 TSV 格式。
-
-### 2. 评估 (Evaluation)
-
-评估聚类质量通常需要参考标准（Ground Truth）或与其他聚类结果对比。这部分逻辑放入独立的 `pgr clust` 或 `pgr nwk` 命令中：
-
-- **通用指标 (`pgr clust eval` / `compare`)**：
-  - 输入：两个聚类结果 TSV（或一个结果 + 一个参考）。
-  - 输出：ARI (Adjusted Rand Index), AMI (Adjusted Mutual Information), V-Measure 等。
-  - 适用场景：当你已知样本的真实分类，或者想比较两种切割参数的差异度时。
-
-- **树相关指标 (`pgr nwk metrics`)**：
-  - 输入：树文件 + 聚类结果。
-  - 输出：Parsimony score, Silhouette score (基于树上距离矩阵) 等。
-  - 适用场景：没有真实分类，需要评估聚类在树结构上的紧密性或分离度。
-
-### 推荐工作流示例
-
-#### 1. 经典系统发育分析
-```bash
-# 1. 扫描不同参数，生成多个聚类结果 (规划中支持 --scan)
-# pgr nwk cut input.nwk --method max-clade --scan 0.01,0.05,0.10 > partitions.tsv
-
-# 2. 选定最佳阈值，生成最终聚类
-pgr nwk cut input.nwk --method max-clade -t 0.05 > final_cluster.tsv
-
-# 3. 可视化或提取子树
-pgr nwk subset input.nwk --list final_cluster.tsv --cluster-id 1 > cluster1.nwk
-```
-
-#### 2. 层次聚类（hclust）接入
-从距离矩阵出发，经由 hclust 生成树，再进行切分与评估。
-
-```bash
-# 1. 生成层次聚类树
-pgr clust hier matrix.phy --method ward > tree.nwk
-
-# 2. 切分 (按高度阈值切)
-pgr nwk cut tree.nwk --height 0.05 > clusters.tsv
-
-# 3. 评估 (计算 Cophenetic 相关系数与 Silhouette)
-# pgr nwk metrics tree.nwk --part clusters.tsv --metrics silhouette > sil.tsv
-```
-
-#### 3. SciPy 风格分析 (不一致系数)
-对于演化速率不均匀的树，使用不一致系数可以找到更自然的聚类边界。
-
-```bash
-# 使用不一致系数切割 (默认 depth=2)
-pgr nwk cut tree.nwk --inconsistent 1.5 > clusters.tsv
-```
-
-## 与相关工具的关系与区别
-
-### 与 R `hclust + cutree()`
-
-- **相同点**：都是“树 → 叶子分组”。
-- **不同点**：
-  - `cutree()` 面向 `hclust` 产生的 dendrogram；`pgr nwk cut` 面向 Newick 树。
-  - `pgr` 支持 TreeCluster 风格的生物树约束（直径、单系），性能更高。
-
-### 与 TreeCluster
-
-- **相同点**：目标与输出格式高度一致（叶子 → 簇）。
-- **不同点**：
-  - TreeCluster 是 Python 工具；`pgr` 是 Rust 实现，速度更快，且无外部依赖。
-  - `pgr nwk cut` 融入了 `pgr` 工具链，可直接与 `prune`, `reroot` 等命令配合。
-
-## 开发计划 (Roadmap)
-
-### 第一阶段：核心功能完善 [✅ 已完成]
-- [x] 实现基础切割：`--k`, `--height`, `--root-dist`.
-- [x] 实现 TreeCluster 核心：`--max-clade` (diameter).
-- [x] 输出格式对齐：支持 `cluster` (一行一簇) 和 `pair` (代表点-成员) 格式。
-- [x] 代表点选择：支持 `root` (距离根最近), `medoid` (中心点), `first` (字母序).
-
-### 第二阶段：高级准则与 SciPy 对齐 [✅ 部分完成]
-- [x] **Inconsistent Coefficient**:
-    - 实现 `calculate_inconsistency(node, depth)` 算法。
-    - 添加 `--inconsistent <T>` 和 `--deep <D>` 参数。
-    - 验证与 SciPy `fcluster(..., criterion='inconsistent')` 的结果一致性（因 Tie-breaking 略有差异，已添加回归测试）。
-- [x] **扫描模式 (Scan Mode)**:
-    - 实现 `--scan <start,end,step>` 参数。
-    - 输出包含 (Threshold, ClusterCount, SingletonCount) 的摘要表。
-
-### 第三阶段：评估与整合 [📅 待定]
-- [x] 更多 TreeCluster 变体：`avg_clade` [已实现], `med_clade` [跳过].
-- [ ] 整合到 `pgr clust` 统一评估流程。
-
-### 已取消特性
-- **支持度过滤 (`--support`)**：聚类树通常不带支持度信息，系统发生树场景暂不作为 MVP 核心。
+- **原理**：直接计算分区的内部有效性（如 Silhouette）或外部一致性（如 ARI，如果有 Ground Truth）。
+- **操作**：
+  1. 生成所有候选分区的详细列表（Long format）：
+     ```bash
+     pgr nwk cut ... --scan ... > partitions.tsv
+     ```
+  2. 使用 `pgr clust eval` 批量评估：
+     ```bash
+     # 计算 Silhouette (无需 Ground Truth，需距离矩阵或树文件)
+     pgr clust eval partitions.tsv --format long --tree input.nwk
+     ```
+  3. 选择指标最优的阈值。

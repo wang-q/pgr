@@ -16,6 +16,7 @@ Criteria:
 * `--max-clade <T>`: TreeCluster style (max pairwise distance in clade <= T).
 * `--avg-clade <T>`: TreeCluster style (avg pairwise distance in clade <= T).
 * `--med-clade <T>`: TreeCluster style (median pairwise distance in clade <= T).
+* `--sum-branch <T>`: TreeCluster style (sum of branch lengths in clade <= T).
 * `--single-linkage <T>`: Single Linkage style (cut branches > T).
 * `--inconsistent <T>`: SciPy style (inconsistent coefficient <= T).
 
@@ -95,6 +96,12 @@ Examples:
                 .help("Median pairwise distance in cluster threshold"),
         )
         .arg(
+            Arg::new("sum-branch")
+                .long("sum-branch")
+                .value_parser(value_parser!(f64))
+                .help("Sum of branch lengths in cluster threshold"),
+        )
+        .arg(
             Arg::new("single-linkage")
                 .long("single-linkage")
                 .value_parser(value_parser!(f64))
@@ -142,6 +149,13 @@ Examples:
                 .value_name("FILE")
                 .help("Output statistics to a separate file (useful when format is 'long')"),
         )
+        .arg(
+            Arg::new("support")
+                .long("support")
+                .short('s')
+                .value_parser(value_parser!(f64))
+                .help("Branch support threshold (edges with support < S will be treated as infinite length)"),
+        )
         .group(
             ArgGroup::new("method")
                 .args([
@@ -151,6 +165,7 @@ Examples:
                     "max-clade",
                     "avg-clade",
                     "med-clade",
+                    "sum-branch",
                     "single-linkage",
                     "inconsistent",
                 ])
@@ -177,6 +192,35 @@ fn compute_root_distances(
     dists
 }
 
+fn apply_support_filter(tree: &mut Tree, threshold: f64) {
+    let len = tree.len();
+    for i in 0..len {
+        let should_mask = {
+            if let Some(node) = tree.get_node(i) {
+                // Only filter internal nodes, matching TreeCluster logic
+                if !node.children.is_empty() {
+                    let support = node
+                        .name
+                        .as_ref()
+                        .and_then(|n| n.parse::<f64>().ok())
+                        .unwrap_or(100.0);
+                    support < threshold
+                } else {
+                    false
+                }
+            } else {
+                false
+            }
+        };
+
+        if should_mask {
+            if let Some(node) = tree.get_node_mut(i) {
+                node.length = Some(f64::INFINITY);
+            }
+        }
+    }
+}
+
 pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
     let infile = matches.get_one::<String>("infile").unwrap();
     let outfile = matches.get_one::<String>("outfile").unwrap();
@@ -184,9 +228,15 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
     let rep_method = matches.get_one::<String>("rep").unwrap().as_str();
     let deep = *matches.get_one::<usize>("deep").unwrap();
 
-    let trees = Tree::from_file(infile)?;
+    let mut trees = Tree::from_file(infile)?;
     if trees.len() > 1 {
         anyhow::bail!("Input file contains multiple trees. Only single tree input is supported.");
+    }
+
+    if let Some(&support_threshold) = matches.get_one::<f64>("support") {
+        for tree in &mut trees {
+            apply_support_filter(tree, support_threshold);
+        }
     }
 
     let mut writer = pgr::writer(outfile);
@@ -231,6 +281,8 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
                 (cut::Method::AvgClade(val), "avg-clade")
             } else if matches.contains_id("med-clade") {
                 (cut::Method::MedClade(val), "med-clade")
+            } else if matches.contains_id("sum-branch") {
+                (cut::Method::SumBranch(val), "sum-branch")
             } else if matches.contains_id("single-linkage") {
                 (cut::Method::SingleLinkage(val), "single-linkage")
             } else if matches.contains_id("inconsistent") {
@@ -294,6 +346,8 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
         cut::Method::AvgClade(t)
     } else if let Some(&t) = matches.get_one::<f64>("med-clade") {
         cut::Method::MedClade(t)
+    } else if let Some(&t) = matches.get_one::<f64>("sum-branch") {
+        cut::Method::SumBranch(t)
     } else if let Some(&t) = matches.get_one::<f64>("single-linkage") {
         cut::Method::SingleLinkage(t)
     } else if let Some(&t) = matches.get_one::<f64>("inconsistent") {
