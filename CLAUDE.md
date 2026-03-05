@@ -45,14 +45,37 @@ cargo test
     - **Analysis**: `clust` (Clustering), `dist` (Distance), `mat` (Matrix), `nwk` (Phylogeny/Newick).
     - **Misc**: `ms` (Simulation), `pl` (Pipelines).
 - **`src/libs/`** - 共享工具库和核心逻辑。
-  - **`phylo/`** - 系统发育分析核心库 (Tree, Node, Algo)。
+  - **`phylo/`** - 系统发育分析核心库。
+    - **`tree/`**: 树结构定义、遍历、I/O、统计 (`stat.rs`)、切分 (`cut.rs`)。
+    - **`algo/`**: 树操作算法（排序、reroot 等）。
   - **`poa/`** - 偏序比对 (Partial Order Alignment) 实现。
   - **`chain/`** - 基因组比对链 (Chain/Net) 处理逻辑。
-  - **`clust/`** - 聚类算法 (DBSCAN, MCL, K-Medoids)。
+  - **`clust/`** - 聚类算法实现。
+    - **`hier.rs`**: 层次聚类 (NN-chain 算法)。
+    - **`dbscan.rs`, `mcl.rs`, `k_medoids.rs`**: 其他聚类算法。
   - **`io.rs`** - I/O 辅助函数。
   - **`alignment.rs`**, **`fas_multiz.rs`**, **`psl.rs`** 等 - 特定格式处理逻辑。
 
-### 命令结构 (Command Structure)
+## 关键设计文档
+
+### Analysis (Phylogeny, Clustering, Matrix)
+- **`docs/phylo.md`**: 系统发育树核心数据结构设计 (Arena vs Pointer)。
+- **`docs/nwk-cut.md`**: 树切分与 Scan 模式。
+- **`docs/nwk-eval.md`**: 树结构多维度评估（设计中）。
+- **`docs/clust.md`**: 聚类模块总体规划。
+- **`docs/clust-hier.md`**: 层次聚类算法与实现细节。
+- **`docs/clust-eval.md`**: 通用聚类评估（设计中）。
+- **`docs/mat.md`**: 距离矩阵操作与转换。
+
+### Algorithms & Ports
+- **`docs/spoa_port.md`**: SPOA (SIMD POA) 移植笔记。
+- **`docs/ms2dna_port.md`**: MS 模拟器移植笔记。
+- **`docs/multiz.md`**: Multiz 多序列比对格式处理。
+
+### General
+- **`docs/formats.md`**: 支持的文件格式概览。
+
+## 命令结构 (Command Structure)
 
 每个命令在 `src/cmd_pgr/` 下作为一个独立的模块实现，通常包含两个公开函数：
 
