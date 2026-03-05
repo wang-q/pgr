@@ -115,6 +115,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
         let cherries = stat::cherries(&tree);
         let sackin = stat::sackin(&tree);
+        let sackin_str = match sackin {
+            Some(s) => s.to_string(),
+            None => "-".to_string(),
+        };
         let colless = stat::colless(&tree);
         let colless_str = match colless {
             Some(c) => c.to_string(),
@@ -142,7 +146,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 n_leaf_label,
                 n_internal_label,
                 cherries,
-                sackin,
+                sackin_str,
                 colless_str
             ))?;
         } else {
@@ -154,7 +158,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             writer.write_fmt(format_args!("leaf labels\t{}\n", n_leaf_label))?;
             writer.write_fmt(format_args!("internal labels\t{}\n", n_internal_label))?;
             writer.write_fmt(format_args!("cherries\t{}\n", cherries))?;
-            writer.write_fmt(format_args!("sackin\t{}\n", sackin))?;
+            writer.write_fmt(format_args!("sackin\t{}\n", sackin_str))?;
             writer.write_fmt(format_args!("colless\t{}\n", colless_str))?;
         }
     }

@@ -1,5 +1,6 @@
 use clap::*;
 use pgr::libs::clust::tree_cut::dynamic::{cutree_dynamic_tree, DynamicTreeOptions};
+use pgr::libs::clust::tree_cut::hybrid::{cutree_hybrid, HybridOptions};
 use pgr::libs::clust::tree_cut::{self as cut, Method};
 use pgr::libs::phylo::tree::Tree;
 use std::io::Write;
@@ -24,7 +25,8 @@ Criteria:
 * `--leaf-dist-avg <T>`: TreeCluster style (avg distance from cluster root to leaves <= T).
 * `--max-edge <T>` / `--single-linkage <T>`: Cut branches longer than threshold.
 * `--inconsistent <T>`: SciPy style (inconsistent coefficient <= T).
-* `--dynamic-tree`: Dynamic Tree Cut (top-down adaptive).
+* `--dynamic-tree <N>`: Dynamic Tree Cut (top-down adaptive, N=min cluster size).
+* `--dynamic-hybrid <N>`: Hybrid Cut (Dynamic Tree + PAM, N=min cluster size).
 
 Output formats:
     * cluster: Each line contains points of one cluster. The first point is the representative.
@@ -38,13 +40,16 @@ The representative point is determined by `--rep` (applies to both 'cluster' and
 
 Examples:
 1. Cut into 5 clusters:
-   pgr nwk cut tree.nwk --k 5
+   pgr clust cut tree.nwk --k 5
 
 2. Cut at height 0.5:
-   pgr nwk cut tree.nwk --height 0.5
+   pgr clust cut tree.nwk --height 0.5
 
 3. Dynamic Tree Cut with min cluster size 20:
-   pgr nwk cut tree.nwk --dynamic-tree --min-cluster-size 20
+   pgr clust cut tree.nwk --dynamic-tree 20
+
+4. Hybrid Cut with PAM (needs distance matrix):
+   pgr clust cut tree.nwk --dynamic-hybrid 20 --matrix dist.phy --pam-stage
 "###,
         )
         .arg(
@@ -184,15 +189,32 @@ Examples:
         .arg(
             Arg::new("dynamic-tree")
                 .long("dynamic-tree")
-                .action(ArgAction::SetTrue)
-                .help("Use dynamic tree cut method (adaptive top-down)"),
+                .value_parser(value_parser!(usize))
+                .help("Use dynamic tree cut method (value: min cluster size)"),
         )
         .arg(
-            Arg::new("min-cluster-size")
-                .long("min-cluster-size")
+            Arg::new("dynamic-hybrid")
+                .long("dynamic-hybrid")
                 .value_parser(value_parser!(usize))
-                .default_value("20")
-                .help("Minimum cluster size for dynamic tree cut"),
+                .help("Use dynamic hybrid cut method (value: min cluster size)"),
+        )
+        .arg(
+            Arg::new("matrix")
+                .long("matrix")
+                .value_name("FILE")
+                .help("Distance matrix file (required for --dynamic-hybrid)"),
+        )
+        .arg(
+            Arg::new("pam-stage")
+                .long("pam-stage")
+                .action(ArgAction::SetTrue)
+                .help("Enable PAM-like reassignment stage for hybrid cut"),
+        )
+        .arg(
+            Arg::new("max-pam-dist")
+                .long("max-pam-dist")
+                .value_parser(value_parser!(f64))
+                .help("Maximum distance to medoid for PAM reassignment"),
         )
         .arg(
             Arg::new("deep-split")
@@ -222,6 +244,7 @@ Examples:
                     "max-edge",
                     "inconsistent",
                     "dynamic-tree",
+                    "dynamic-hybrid",
                 ])
                 .required(true),
         )
@@ -352,35 +375,47 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
         };
 
         while val <= end + 1e-9 {
-            let (method, method_name) = if matches.contains_id("k") {
-                (Method::K(val as usize), "k")
-            } else if matches.contains_id("height") {
-                (Method::Height(val), "height")
-            } else if matches.contains_id("root-dist") {
-                (Method::RootDist(val), "root-dist")
-            } else if matches.contains_id("max-clade") {
-                (Method::MaxClade(val), "max-clade")
-            } else if matches.contains_id("avg-clade") {
-                (Method::AvgClade(val), "avg-clade")
-            } else if matches.contains_id("med-clade") {
-                (Method::MedClade(val), "med-clade")
-            } else if matches.contains_id("sum-branch") {
-                (Method::SumBranch(val), "sum-branch")
-            } else if matches.contains_id("leaf-dist-max") {
-                (Method::RootDist(max_depth - val), "leaf-dist-max")
-            } else if matches.contains_id("leaf-dist-min") {
-                (Method::RootDist(min_depth - val), "leaf-dist-min")
-            } else if matches.contains_id("leaf-dist-avg") {
-                (Method::RootDist(avg_depth - val), "leaf-dist-avg")
-            } else if matches.contains_id("max-edge") {
-                (Method::SingleLinkage(val), "max-edge")
-            } else if matches.contains_id("inconsistent") {
-                (Method::Inconsistent(val, deep), "inconsistent")
+            let (partition, method_name) = if matches.contains_id("dynamic-tree") {
+                let min_size = val as usize;
+                let options = DynamicTreeOptions {
+                    min_module_size: min_size,
+                    deep_split: matches.get_flag("deep-split"),
+                    max_tree_height: matches.get_one::<f64>("max-tree-height").copied(),
+                };
+                let p = cutree_dynamic_tree(tree, options).map_err(|e| anyhow::anyhow!(e))?;
+                (p, "dynamic-tree")
             } else {
-                unreachable!("ArgGroup requires one method");
+                let (method, method_name) = if matches.contains_id("k") {
+                    (Method::K(val as usize), "k")
+                } else if matches.contains_id("height") {
+                    (Method::Height(val), "height")
+                } else if matches.contains_id("root-dist") {
+                    (Method::RootDist(val), "root-dist")
+                } else if matches.contains_id("max-clade") {
+                    (Method::MaxClade(val), "max-clade")
+                } else if matches.contains_id("avg-clade") {
+                    (Method::AvgClade(val), "avg-clade")
+                } else if matches.contains_id("med-clade") {
+                    (Method::MedClade(val), "med-clade")
+                } else if matches.contains_id("sum-branch") {
+                    (Method::SumBranch(val), "sum-branch")
+                } else if matches.contains_id("leaf-dist-max") {
+                    (Method::RootDist(max_depth - val), "leaf-dist-max")
+                } else if matches.contains_id("leaf-dist-min") {
+                    (Method::RootDist(min_depth - val), "leaf-dist-min")
+                } else if matches.contains_id("leaf-dist-avg") {
+                    (Method::RootDist(avg_depth - val), "leaf-dist-avg")
+                } else if matches.contains_id("max-edge") {
+                    (Method::SingleLinkage(val), "max-edge")
+                } else if matches.contains_id("inconsistent") {
+                    (Method::Inconsistent(val, deep), "inconsistent")
+                } else {
+                    unreachable!("ArgGroup requires one method");
+                };
+                let p = cut::cut(tree, method).map_err(|e| anyhow::anyhow!(e))?;
+                (p, method_name)
             };
 
-            let partition = cut::cut(tree, method).map_err(|e| anyhow::anyhow!(e))?;
             let group_label = format!("{}={}", method_name, val);
 
             if let Some(w) = &mut stats_writer {
@@ -424,8 +459,7 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
     }
 
     for tree in trees.iter() {
-        let partition = if matches.get_flag("dynamic-tree") {
-            let min_cluster_size = *matches.get_one::<usize>("min-cluster-size").unwrap();
+        let partition = if let Some(&min_cluster_size) = matches.get_one::<usize>("dynamic-tree") {
             let deep_split = matches.get_flag("deep-split");
             let max_tree_height = matches.get_one::<f64>("max-tree-height").copied();
 
@@ -436,6 +470,30 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
             };
 
             cutree_dynamic_tree(tree, options)?
+        } else if let Some(&min_cluster_size) = matches.get_one::<usize>("dynamic-hybrid") {
+            let matrix_file = matches
+                .get_one::<String>("matrix")
+                .ok_or_else(|| anyhow::anyhow!("--matrix is required for dynamic-hybrid"))?;
+            let dist_matrix = pgr::libs::pairmat::NamedMatrix::from_relaxed_phylip(matrix_file);
+
+            let deep_split = matches.get_flag("deep-split");
+            let max_tree_height = matches.get_one::<f64>("max-tree-height").copied();
+            let pam_stage = matches.get_flag("pam-stage");
+            let max_pam_dist = matches.get_one::<f64>("max-pam-dist").copied();
+
+            let options = HybridOptions {
+                min_cluster_size,
+                dist_matrix,
+                cut_height: max_tree_height,
+                deep_split: if matches.get_flag("deep-split") { 1 } else { 0 },
+                max_core_scatter: None,
+                min_gap: None,
+                pam_stage,
+                pam_respects_dendro: false,
+                max_pam_dist,
+            };
+
+            cutree_hybrid(tree, options)?
         } else {
             let method = if let Some(&k) = matches.get_one::<usize>("k") {
                 Method::K(k)

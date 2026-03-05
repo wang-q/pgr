@@ -344,6 +344,10 @@ impl NamedMatrix {
         self.names.keys().collect()
     }
 
+    pub fn get_index(&self, name: &str) -> Option<usize> {
+        self.names.get(name).copied()
+    }
+
     pub fn set_diags(&mut self, diags: Vec<f32>) {
         if diags.len() == self.size() {
             self.diags = Some(diags);

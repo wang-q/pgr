@@ -1,6 +1,6 @@
-# pgr nwk cut
+# pgr clust cut
 
-`pgr nwk cut` 用于将 Newick 树（系统发生树或层次聚类树）切分为扁平的聚类分组（Partition）。
+`pgr clust cut` 用于将 Newick 树（系统发生树或层次聚类树）切分为扁平的聚类分组（Partition）。
 
 与 `pgr clust`（从数据构建聚类）不同，`cut` 关注于“从已有树结构导出分组”。它支持多种生物学与统计学切割规则，并提供稳定、可复用的表格输出。
 
@@ -10,7 +10,7 @@
 
 在实际分析中，我们经常已经有一棵树（系统发生树或层次聚类树），并希望在某个阈值下把叶子切分为不同的分组（Partition）。切割规则可能不止一种：按高度、按簇数、按簇内最大距离（直径）、要求单系群（clade）等。
 
-`pgr nwk cut` 旨在提供一套高效、规范且功能全面的切割工具：
+`pgr clust cut` 旨在提供一套高效、规范且功能全面的切割工具：
 
 - **算法核心**：
   实现了基于簇数 (`--k`) 和高度 (`--height`) 的基础切割，逻辑与 `SciPy.cluster.hierarchy` 及 R `cutree` 保持一致；同时完整移植了 TreeCluster 的生物学约束算法（如 `--max-clade`, `--med-clade` 等），专为系统发生树优化。
@@ -22,7 +22,7 @@
 
 ## 支持的模式与算法
 
-`pgr nwk cut` 提供了丰富的切割算法，涵盖了从简单的阈值切割到复杂的生物学约束聚类。以下是详细的算法定义与复杂度分析。
+`pgr clust cut` 提供了丰富的切割算法，涵盖了从简单的阈值切割到复杂的生物学约束聚类。以下是详细的算法定义与复杂度分析。
 
 ### 1. 按簇数切 (`--k <K>`)
 
@@ -140,21 +140,32 @@
   - 只需要树结构，追求快速、自动化的切割。
   - 适合处理那些“大簇里套小簇”的嵌套结构。
 
-### 12. 混合动态切割 (`--dynamic-hybrid`) [计划中]
+### 12. 混合动态切割 (`--dynamic-hybrid`) [已实现]
 
-- **定义**：参考 R 语言 `dynamicTreeCut` 包的 `cutreeHybrid` 算法 ([dynamicTreeCut/R/treeCut.R](file:///c:/Users/wangq/Scripts/pgr/dynamicTreeCut/R/treeCut.R))。
+- **定义**：参考 R 语言 `dynamicTreeCut` 包的 `cutreeHybrid` 算法。
 - **原理**：自底向上的两阶段算法。
-  1.  **Core Detection (核心检测)**: 自底向上遍历树，识别满足紧密度（Core Scatter）和分离度（Gap）要求的“基本簇”。这避免了将松散连接的点错误地归入簇中。
-  2.  **PAM-like Reassignment (二次分配)**: 利用原始距离矩阵，将第一阶段未分配的对象（Outliers/Singletons）尝试吸附到最近的核心簇中（类似 K-Medoids 的逻辑）。
-- **输入**：必须提供树结构 + 原始距离矩阵。
+  1.  **Core Detection (核心检测)**:
+      - R 原版：自底向上遍历树，识别满足紧密度（Core Scatter）和分离度（Gap）要求的“基本簇”。
+      - `pgr` 实现：目前采用 **Dynamic Tree Cut** (自顶向下) 作为核心检测的替代方案。这在大多数场景下能提供相似的拓扑分割效果。
+  2.  **PAM-like Reassignment (二次分配)**: 利用原始距离矩阵，将第一阶段未分配的对象（Outliers/Singletons）尝试吸附到最近的核心簇中（Medoid-based assignment）。
+- **输入**：必须提供树结构 + 原始距离矩阵 (`--matrix`)。
+- **参数**：
+  - `--dynamic-hybrid <N>`: 启用混合切割，N 为最小簇大小。
+  - `--matrix <FILE>`: 距离矩阵文件（PHYLIP 格式）。
+  - `--pam-stage`: 启用 PAM 阶段（强烈推荐）。
+  - `--max-pam-dist <D>`: PAM 分配的最大距离阈值。
 - **适用场景**：
   - 对聚类边界的准确性要求极高。
   - 需要利用距离矩阵信息来修正树结构中可能存在的微小误差或不确定性。
   - 能够有效识别并处理离群点（Outliers）。
-- **测试借鉴**：
-  - 验证 `Core Detection`：构造一个由紧密簇和松散噪声组成的数据集，测试算法能否识别出核心簇并排除噪声。
-  - 验证 `PAM Stage`：验证当 `pamStage=TRUE` 时，离群点是否被正确吸附到最近的簇；以及 `respectSmallClusters` 参数对小簇保留的影响。
-  - 边界测试：`minClusterSize` 阈值测试，确保小于该大小的分支被标记为 0 (unassigned)。
+
+> **关于与 R `dynamicTreeCut` 实现的对比**：
+>
+> `pgr` 的 `dynamic-hybrid` 实现采用了与 R 类似的**自底向上 (Bottom-Up)** 核心检测策略：
+> 1.  **Core Detection**: 遍历树的合并节点，计算每个分支的核心紧密度 (Core Scatter) 和分离度 (Gap)。如果不满足条件（如太松散或与父节点太近），则将其合并或标记为非独立簇。这能有效识别并排除噪声。
+> 2.  **PAM Reassignment**: 利用距离矩阵将未分配的节点（Cluster 0）重新分配给最近的核心簇。
+>
+> 这确保了算法对噪声和离群点的鲁棒性，同时利用了树拓扑和距离矩阵的信息。
 
 ### 13. 支持度过滤 (`--support <S>`)
 
@@ -197,7 +208,7 @@
 
 ### 1. 生成 (Generation)
 
-使用 `pgr nwk cut`：
+使用 `pgr clust cut`：
 - 它只负责“切”，不负责“评”。
 - 支持多种策略（k, height, max_clade 等）和参数扫描。
 - 输出标准 TSV 格式。
@@ -221,10 +232,10 @@
 #### 1. 经典系统发育分析
 ```bash
 # 1. 扫描不同参数，生成多个聚类结果
-# pgr nwk cut input.nwk --method max-clade --scan 0.01,0.05,0.10 > partitions.tsv
+# pgr clust cut input.nwk --method max-clade --scan 0.01,0.05,0.10 > partitions.tsv
 
 # 2. 选定最佳阈值，生成最终聚类
-pgr nwk cut input.nwk --method max-clade -t 0.05 > final_cluster.tsv
+pgr clust cut input.nwk --method max-clade -t 0.05 > final_cluster.tsv
 
 # 3. 可视化或提取子树
 pgr nwk subset input.nwk --list final_cluster.tsv --cluster-id 1 > cluster1.nwk
@@ -238,7 +249,7 @@ pgr nwk subset input.nwk --list final_cluster.tsv --cluster-id 1 > cluster1.nwk
 pgr clust hier matrix.phy --method ward > tree.nwk
 
 # 2. 切分 (按高度阈值切)
-pgr nwk cut tree.nwk --height 0.05 > clusters.tsv
+pgr clust cut tree.nwk --height 0.05 > clusters.tsv
 
 # 3. 评估 (计算 Cophenetic 相关系数与 Silhouette)
 # pgr nwk metrics tree.nwk --part clusters.tsv --metrics silhouette > sil.tsv
@@ -249,7 +260,7 @@ pgr nwk cut tree.nwk --height 0.05 > clusters.tsv
 
 ```bash
 # 使用不一致系数切割 (默认 depth=2)
-pgr nwk cut tree.nwk --inconsistent 1.5 > clusters.tsv
+pgr clust cut tree.nwk --inconsistent 1.5 > clusters.tsv
 ```
 
 ## 选择阈值/簇数：扫描与准则
@@ -266,7 +277,7 @@ pgr nwk cut tree.nwk --inconsistent 1.5 > clusters.tsv
 `pgr` 提供显式的扫描能力：适用于所有基于数值参数的方法（如 `--k`, `--height`, `--max-clade`, `--inconsistent` 等）。
 
 **用法**：
-`pgr nwk cut ... --scan <start>,<end>,<steps>`
+`pgr clust cut ... --scan <start>,<end>,<steps>`
 （注：扫描仅针对方法的**主阈值参数**。例如对于 `--inconsistent`，扫描的是系数阈值 `T`，而深度 `--deep` 保持固定为用户指定值或默认值）
 
 **输出指标表**：
@@ -292,22 +303,22 @@ pgr nwk cut tree.nwk --inconsistent 1.5 > clusters.tsv
 示例：
 ```bash
 # 1. 仅输出详细分区表（用于后续分析或评估）
-pgr nwk cut tree.nwk --max-clade 0.5 --scan 0,0.5,0.01 > partitions.tsv
+pgr clust cut tree.nwk --max-clade 0.5 --scan 0,0.5,0.01 > partitions.tsv
 
 # 2. 同时保存统计信息（用于快速检视）
-pgr nwk cut tree.nwk --max-clade 0.5 --scan 0,0.5,0.01 -o partitions.tsv --stats-out stats.tsv
+pgr clust cut tree.nwk --max-clade 0.5 --scan 0,0.5,0.01 -o partitions.tsv --stats-out stats.tsv
 ```
 
 ### 与 `pgr clust eval` 的联动
 
-`pgr nwk cut` 与 `pgr clust eval` 通过 Long Format 完美配合，支持两种评估模式：
+`pgr clust cut` 与 `pgr clust eval` 通过 Long Format 完美配合，支持两种评估模式：
 
 #### 1. 批量内部评估 (Batch Internal Evaluation)
 不需要 Ground Truth，使用距离矩阵或坐标评估所有扫描生成的阈值。
 
 ```bash
 # 生成所有阈值的分区，并直接通过管道传给 eval 进行 Silhouette 评估
-pgr nwk cut tree.nwk --max-clade 0.5 --scan 0,0.5,0.01 | \
+pgr clust cut tree.nwk --max-clade 0.5 --scan 0,0.5,0.01 | \
     pgr clust eval - --format long --matrix dist.phy > evaluation.tsv
 ```
 
@@ -315,16 +326,16 @@ pgr nwk cut tree.nwk --max-clade 0.5 --scan 0,0.5,0.01 | \
 如果你手头有 Ground Truth，通常不需要评估所有阈值（计算量大且无必要）。推荐流程：
 
 1. 先用 `--scan` 快速定位几个有意义的候选阈值区间（例如手肘点附近）。
-2. 对少数候选阈值，分别运行一次 `pgr nwk cut` 生成分区，再用 `pgr clust eval` 计算 ARI/AMI/V-Measure 等外部一致性指标。
+2. 对少数候选阈值，分别运行一次 `pgr clust cut` 生成分区，再用 `pgr clust eval` 计算 ARI/AMI/V-Measure 等外部一致性指标。
 
 示例：
 
 ```bash
 # 1) 扫描阈值，先看摘要趋势
-pgr nwk cut tree.nwk --max-clade 0.5 --scan 0,0.5,0.01 > scan.tsv
+pgr clust cut tree.nwk --max-clade 0.5 --scan 0,0.5,0.01 > scan.tsv
 
 # 2) 选定阈值后生成分区
-pgr nwk cut tree.nwk --max-clade 0.12 > pred.tsv
+pgr clust cut tree.nwk --max-clade 0.12 > pred.tsv
 
 # 3) 与 ground truth 对比（Partition vs Partition）
 pgr clust eval pred.tsv truth.tsv -o eval.tsv
@@ -348,7 +359,7 @@ pgr clust eval pred.tsv truth.tsv -o eval.tsv
   - **平缓平台期**：簇数量变化趋于稳定。
   - **拐点（手肘）**：即从“陡峭”转变为“平缓”的点，通常对应着数据内在的自然结构。
 - **操作**：
-  1. 运行扫描：`pgr nwk cut ... --scan ... > scan.tsv`
+  1. 运行扫描：`pgr clust cut ... --scan ... > scan.tsv`
   2. 观察变化率：若阈值从 $T_1$ 增至 $T_2$ 时簇数剧烈变化，而从 $T_2$ 增至 $T_3$ 时变化平缓，则 $T_2$ 可能是最佳切点。
   3. 可视化：将 `scan.tsv` 导入绘图工具辅助判断。
 
@@ -359,14 +370,14 @@ pgr clust eval pred.tsv truth.tsv -o eval.tsv
 - **操作**：结合 `pgr clust eval` 使用。
   ```bash
   # 生成所有候选分区的详细列表
-  pgr nwk cut ... --scan ... > partitions.tsv
+  pgr clust cut ... --scan ... > partitions.tsv
   # 批量评估
   pgr clust eval partitions.tsv --format long --matrix dist.phy
   ```
 
 ## 现有工具参考 (Prior Art)
 
-`pgr nwk cut` 的设计吸收了多个领域的最佳实践：
+`pgr clust cut` 的设计吸收了多个领域的最佳实践：
 
 - **SciPy (`scipy.cluster.hierarchy`)**:
   - 提供了 `fcluster` 函数，支持按高度 (`distance`)、簇数 (`maxclust`) 和不一致系数 (`inconsistent`) 切割。

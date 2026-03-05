@@ -18,7 +18,6 @@ fn test_dynamic_tree_cut_basic() {
             "cut",
             tree_file.to_str().unwrap(),
             "--dynamic-tree",
-            "--min-cluster-size",
             "2",
         ])
         .run();
@@ -64,7 +63,6 @@ fn test_dynamic_tree_cut_unassigned() {
             "cut",
             tree_file.to_str().unwrap(),
             "--dynamic-tree",
-            "--min-cluster-size",
             "5",
             "--format",
             "pair", // Easier to check IDs

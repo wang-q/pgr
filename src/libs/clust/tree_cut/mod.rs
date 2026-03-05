@@ -4,6 +4,7 @@ use std::collections::HashMap;
 
 pub mod clade;
 pub mod dynamic;
+pub mod hybrid;
 pub mod inconsistent;
 pub mod link;
 pub mod method;
