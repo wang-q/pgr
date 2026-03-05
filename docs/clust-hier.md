@@ -8,7 +8,7 @@
 - **与 pgr 现有能力协同**：
   - 构树：`clust upgma`（有根、超度量）与 `clust nj`（加性、无根）已存在
   - 切分：`docs/nwk-cut.md` 的切树分组
-  - 评估：`docs/nwk-metrics.md` 的树上指标（silhouette/直径/最近簇间距）
+  - 评估：`docs/nwk-eval.md` 的树上指标（几何/分类/演化/地理多维度评估）
 
 ## 与 UPGMA/NJ 的关系
 - 共同点：都以距离矩阵为输入，输出树状结构；均可配合 `nwk cut` 得到扁平分组。
@@ -44,11 +44,11 @@
   - 通用层次聚类分析或需要 `ward.D2`：`clust hier --method ward.D2`
 - 切分与评估：
   - 切分：`pgr nwk cut --height H` 或按 TreeCluster 风格阈值/约束
-  - 无 Ground Truth：`pgr nwk metrics`（silhouette/直径/最近簇间距）
-  - 有 Ground Truth：`pgr clust eval/compare`（ARI/AMI/V-Measure）
+  - 无 Ground Truth：`pgr nwk eval`（几何/分类/演化/地理多维度评估）
+  - 有 Ground Truth：`pgr clust eval`（ARI/AMI/V-Measure）
 - 参考文档：
   - 切分：[nwk-cut.md](file:///c:/Users/wangq/Scripts/pgr/docs/nwk-cut.md)
-  - 评估：[nwk-metrics.md](file:///c:/Users/wangq/Scripts/pgr/docs/nwk-metrics.md)
+  - 评估：[nwk-eval.md](file:///c:/Users/wangq/Scripts/pgr/docs/nwk-eval.md)
 
 ## SciPy 实现借鉴与对比 (Insights from SciPy)
 通过深入分析 `scipy.cluster.hierarchy` 源码（基于 Cython 的高性能实现），`pgr` 吸收了以下关键设计思想：
@@ -255,7 +255,7 @@ pgr clust hier matrix.phy --method average > tree.nwk
 - 输出差异：SciPy 返回 `(n-1)×4` 的 linkage 矩阵 Z；pgr 输出 Newick 树，直接用于 `nwk cut / to-dot / to-forest`。普通用户无需关心 Z；若需与 SciPy 互操作，请在 Python 端继续使用 Z 与 `fcluster/cophenet`。
 - 叶序优化：`pgr` 推荐 `pgr nwk order --nd` (Ladderize) 以换取极高的性能，且可视化效果通常足够好。
 - 平切（flat clustering）：SciPy 的 `fcluster` 提供 `criterion='distance'|'maxclust'|...`；在 pgr 中分别对应 `nwk cut --height H` 与 `nwk cut --k K`，其它 `monocrit/inconsistent` 等准则暂不引入。
-- 评估指标：SciPy 有 `cophenet`（共生相关系数）；pgr 建议在 `nwk metrics` 中加入 cophenetic 相关系数作为树质量评估的补充（与 silhouette/直径/最近簇间距并列）。
+- 评估指标：SciPy 有 `cophenet`（共生相关系数）；pgr 建议在 `nwk eval` 中加入 cophenetic 相关系数作为树质量评估的补充。
 - 内部实现细节：
   - SciPy 的 `ward` 更新公式在内部进行平方和开方（`sqrt`）；`pgr` 采用全程平方距离运算（仅输出时开方），避免了中间步骤的精度损失和开方开销，理论上更高效。
   - SciPy 的 `fast_linkage` 使用了 Heap 优化；`pgr` 目前对非 NN-chain 方法使用朴素实现，未来可借鉴此优化。
@@ -276,7 +276,7 @@ pgr clust hier matrix.phy --method average > tree.nwk
   - pgr: `pgr nwk cut tree.nwk --k 20 > clusters.tsv`
 - SciPy cophenet:
   - Python: `c, dists = cophenet(Z, Y)`
-  - pgr: `pgr nwk metrics tree.nwk --dist matrix.phy > metrics.tsv`（`nwk metrics` 设计中）
+  - pgr: `pgr nwk eval tree.nwk --dist matrix.phy > metrics.tsv`
 
 ### scikit-learn 映射
 - AgglomerativeClustering (Ward):
@@ -293,6 +293,6 @@ pgr clust hier matrix.phy --method average > tree.nwk
 - 构树：`pgr clust hier` → 生成 dendrogram
 - 切分：`pgr nwk cut --height H` → 导出分组
 - 评估：
-  - 无 Ground Truth：`pgr nwk metrics`（silhouette、簇内直径、最近簇间距）（设计中）
-  - 有 Ground Truth：`pgr clust eval/compare`（ARI/AMI/V-Measure）（规划中）
+  - 无 Ground Truth：`pgr nwk eval`（几何/分类/演化/地理多维度评估）
+  - 有 Ground Truth：`pgr clust eval`（ARI/AMI/V-Measure）
 - 可视化：`pgr nwk to-dot/to-forest` → 图形/LaTeX 展示
