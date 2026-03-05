@@ -124,7 +124,39 @@
 - **复杂度**：$O(N)$。
 - **适用场景**：当树的整体演化速率不均匀，寻找“自然”聚类边界。
 
-### 11. 支持度过滤 (`--support <S>`)
+### 11. 动态树切割 (`--dynamic-tree`) [已实现]
+
+- **定义**：参考 R 语言 `dynamicTreeCut` 包的 `cutreeDynamicTree` 算法 ([dynamicTreeCut/R/cutreeDynamic.R](file:///c:/Users/wangq/Scripts/pgr/dynamicTreeCut/R/cutreeDynamic.R))。
+- **原理**：自顶向下的递归算法。
+  1.  首先基于全局高度进行初步切割。
+  2.  对每个初步簇，分析其内部结构（高度分布）。
+  3.  如果一个簇内部包含显著的子结构（即存在“高度差”和“子簇大小”满足条件的分割点），则将其进一步递归拆分。
+- **参数**：
+  - `--min-cluster-size <N>` (默认 20): 最小簇大小。
+  - `--deep-split`: 启用更激进的拆分（对应 R 中的 `deepSplit=TRUE`）。
+  - `--max-tree-height <H>` (可选): 最大合并高度（默认 99% 树高）。
+- **输入**：仅需树结构（Dendrogram），无需距离矩阵。
+- **适用场景**：
+  - 只需要树结构，追求快速、自动化的切割。
+  - 适合处理那些“大簇里套小簇”的嵌套结构。
+
+### 12. 混合动态切割 (`--dynamic-hybrid`) [计划中]
+
+- **定义**：参考 R 语言 `dynamicTreeCut` 包的 `cutreeHybrid` 算法 ([dynamicTreeCut/R/treeCut.R](file:///c:/Users/wangq/Scripts/pgr/dynamicTreeCut/R/treeCut.R))。
+- **原理**：自底向上的两阶段算法。
+  1.  **Core Detection (核心检测)**: 自底向上遍历树，识别满足紧密度（Core Scatter）和分离度（Gap）要求的“基本簇”。这避免了将松散连接的点错误地归入簇中。
+  2.  **PAM-like Reassignment (二次分配)**: 利用原始距离矩阵，将第一阶段未分配的对象（Outliers/Singletons）尝试吸附到最近的核心簇中（类似 K-Medoids 的逻辑）。
+- **输入**：必须提供树结构 + 原始距离矩阵。
+- **适用场景**：
+  - 对聚类边界的准确性要求极高。
+  - 需要利用距离矩阵信息来修正树结构中可能存在的微小误差或不确定性。
+  - 能够有效识别并处理离群点（Outliers）。
+- **测试借鉴**：
+  - 验证 `Core Detection`：构造一个由紧密簇和松散噪声组成的数据集，测试算法能否识别出核心簇并排除噪声。
+  - 验证 `PAM Stage`：验证当 `pamStage=TRUE` 时，离群点是否被正确吸附到最近的簇；以及 `respectSmallClusters` 参数对小簇保留的影响。
+  - 边界测试：`minClusterSize` 阈值测试，确保小于该大小的分支被标记为 0 (unassigned)。
+
+### 13. 支持度过滤 (`--support <S>`)
 
 - **定义**：作为上述所有方法的**预处理步骤**。
   - 遍历树中所有边，若某条边的支持度值 $< S$，则将其长度视为 $+\infty$（无限长）。
@@ -331,3 +363,24 @@ pgr clust eval pred.tsv truth.tsv -o eval.tsv
   # 批量评估
   pgr clust eval partitions.tsv --format long --matrix dist.phy
   ```
+
+## 现有工具参考 (Prior Art)
+
+`pgr nwk cut` 的设计吸收了多个领域的最佳实践：
+
+- **SciPy (`scipy.cluster.hierarchy`)**:
+  - 提供了 `fcluster` 函数，支持按高度 (`distance`)、簇数 (`maxclust`) 和不一致系数 (`inconsistent`) 切割。
+  - `pgr` 复用了其 `height` 和 `inconsistent` 的定义。
+
+- **R (`dynamicTreeCut`)**:
+  - 提供了 `cutreeDynamic` (Tree) 和 `cutreeHybrid` (Hybrid) 方法。
+  - 引入了“自适应递归切割”和“核心检测+二次分配”的思路。
+  - `pgr` 计划借鉴其 `Dynamic Tree` 算法以增强自动化能力。
+
+- **TreeCluster**:
+  - 专为系统发生树设计，引入了 `Max Clade` (直径)、`Avg Clade` 等约束。
+  - 解决了非超度量树的切割问题。
+  - `pgr` 完整实现了其核心算法集。
+
+- **R (`cutree`)**:
+  - 提供了最基础的 `h` (高度) 和 `k` (簇数) 切割。
