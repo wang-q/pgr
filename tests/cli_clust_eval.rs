@@ -42,6 +42,65 @@ fn test_clust_eval_perfect_match() -> anyhow::Result<()> {
 }
 
 #[test]
+fn test_clust_eval_no_singletons() -> anyhow::Result<()> {
+    // Create temporary files
+    // Truth: {A, B, C} (Cluster 1), {D} (Singleton), {E} (Singleton)
+    // Pred: {A, B, C} (Cluster 1), {D, E} (Cluster 2)
+    // Format: ClusterID <tab> Item
+
+    let truth_content = "1\tA\n1\tB\n1\tC\n2\tD\n3\tE\n";
+    let pred_content = "1\tA\n1\tB\n1\tC\n2\tD\n2\tE\n";
+
+    let truth_path = "tests/clust/eval_ns_truth.tsv";
+    let pred_path = "tests/clust/eval_ns_pred.tsv";
+
+    std::fs::write(truth_path, truth_content)?;
+    std::fs::write(pred_path, pred_content)?;
+
+    // 1. Run WITHOUT --no-singletons
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("clust")
+        .arg("eval")
+        .arg(pred_path)
+        .arg(truth_path)
+        .output()?;
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout)?;
+    let lines: Vec<&str> = stdout.lines().collect();
+    let values: Vec<&str> = lines[1].split_whitespace().collect();
+    let ari = values[0].parse::<f64>()?;
+    // ARI should be < 1.0
+    assert!(ari < 0.99, "ARI was {} (expected < 0.99)", ari);
+
+    // 2. Run WITH --no-singletons
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("clust")
+        .arg("eval")
+        .arg(pred_path)
+        .arg(truth_path)
+        .arg("--no-singletons")
+        .output()?;
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout)?;
+    let lines: Vec<&str> = stdout.lines().collect();
+    let values: Vec<&str> = lines[1].split_whitespace().collect();
+    let ari = values[0].parse::<f64>()?;
+
+    // ARI should be 1.0
+    assert!((ari - 1.0).abs() < 1e-6, "ARI was {}", ari);
+
+    // Cleanup
+    std::fs::remove_file(truth_path)?;
+    std::fs::remove_file(pred_path)?;
+
+    Ok(())
+}
+
+#[test]
 fn test_clust_eval_disjoint() -> anyhow::Result<()> {
     let mut cmd = Command::cargo_bin("pgr")?;
     let output = cmd

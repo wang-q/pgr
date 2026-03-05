@@ -1,7 +1,7 @@
 use clap::{Arg, ArgMatches, Command};
 use pgr::libs::clust::eval::{
     davies_bouldin_score, evaluate, load_batch_partitions, load_partition, silhouette_score,
-    Coordinates, PartitionFormat,
+    Coordinates, Partition, PartitionFormat,
 };
 use pgr::libs::pairmat::NamedMatrix;
 use std::fs::File;
@@ -76,6 +76,12 @@ Examples:
                 .default_value("stdout")
                 .help("Output filename. [stdout] for screen"),
         )
+        .arg(
+            Arg::new("no-singletons")
+                .long("no-singletons")
+                .action(clap::ArgAction::SetTrue)
+                .help("Exclude true singletons (from Reference/Ground Truth) from evaluation"),
+        )
 }
 
 pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
@@ -91,13 +97,19 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
         Box::new(File::create(outfile)?)
     };
 
+    let remove_singletons_flag = matches.get_flag("no-singletons");
+
     if format == PartitionFormat::Long {
         // Batch Mode
         let batches = load_batch_partitions(p1_path)?;
 
         // Prepare resources
         let p2 = if let Some(p2_path) = matches.get_one::<String>("p2") {
-            Some(load_partition(p2_path, PartitionFormat::Pair)?)
+            let mut truth = load_partition(p2_path, PartitionFormat::Pair)?;
+            if remove_singletons_flag {
+                remove_singletons(&mut truth);
+            }
+            Some(truth)
         } else {
             None
         };
@@ -178,7 +190,10 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
     let p1 = load_partition(p1_path, format)?;
 
     if let Some(p2_path) = matches.get_one::<String>("p2") {
-        let p2 = load_partition(p2_path, format)?;
+        let mut p2 = load_partition(p2_path, format)?;
+        if remove_singletons_flag {
+            remove_singletons(&mut p2);
+        }
         let metrics = evaluate(&p1, &p2);
 
         writeln!(
@@ -216,4 +231,12 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+fn remove_singletons(partition: &mut Partition) {
+    let mut counts = std::collections::HashMap::new();
+    for cid in partition.values() {
+        *counts.entry(*cid).or_insert(0) += 1;
+    }
+    partition.retain(|_, cid| counts[cid] > 1);
 }

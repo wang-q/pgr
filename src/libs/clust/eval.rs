@@ -251,6 +251,9 @@ fn calculate_ari(
     b_counts: &[usize],
     n: usize,
 ) -> f64 {
+    // DEBUG
+    // eprintln!("ARI Debug: n={}, a_counts={:?}, b_counts={:?}", n, a_counts, b_counts);
+
     if a_counts.len() <= 1 || b_counts.len() <= 1 {
         // Special case: If both partitions have only 1 cluster, it's a perfect match (ARI=1.0).
         // If only one partition has 1 cluster, ARI is 0.0.

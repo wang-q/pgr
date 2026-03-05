@@ -1,4 +1,4 @@
-# clust eval [部分实现]
+# clust eval
 
 `pgr clust eval` 提供通用的聚类质量评估与比较功能。它主要关注**外部有效性（External Validity）**，即通过与 Ground Truth 或其他聚类结果的对比来量化一致性。
 
@@ -38,6 +38,12 @@
   - **范围**：`[0, 1]`。
   - **缺点**：未校正随机性。随着簇数量增加，随机分区的 RI 也会趋近于 1，导致区分度降低。通常**不推荐**单独使用。
 
+- **FMI (Fowlkes-Mallows Index)**
+  - **定义**：Precision 和 Recall 的几何平均数。
+  - **原理**：$FMI = \sqrt{\frac{TP}{TP+FP} \times \frac{TP}{TP+FN}}$。
+  - **范围**：`[0, 1]`。
+  - **适用**：当对 Precision 和 Recall 均有要求时。
+
 #### 1.2 基于信息论 (Information Theoretic)
 *关注两个分区所共享的信息量（熵）。*
 
@@ -58,6 +64,19 @@
   - **范围**：`[0, 1]`。
   - **缺点**：未校正随机性。在样本量小或簇数量多时，得分偏高。
   - **适用**：需要分析聚类误差来源（是分得太碎还是混得太杂）时。
+
+- **NMI (Normalized Mutual Information)**
+  - **定义**：标准化的互信息。
+  - **原理**：$NMI = \frac{MI(U, V)}{\sqrt{H(U) \cdot H(V)}}$（几何平均）或 $\frac{2 \cdot MI}{H(U) + H(V)}$（算术平均）。`pgr` 采用算术平均。
+  - **范围**：`[0, 1]`。
+  - **缺点**：未校正随机性。
+  - **适用**：簇大小分布均衡的场景。
+
+- **MI (Mutual Information)**
+  - **定义**：两个分区之间的互信息量。
+  - **原理**：$MI(U, V) = \sum \sum P(u,v) \log \frac{P(u,v)}{P(u)P(v)}$。
+  - **范围**：`[0, +∞)`。
+  - **缺点**：难以直接解释，受分区熵影响大。通常作为 AMI/NMI 的中间计算步骤。
 
 #### 1.3 基于集合匹配 (Set Matching)
 *关注簇与类之间的最佳匹配关系。*
@@ -98,6 +117,13 @@
 | **无 Ground Truth** | Silhouette | 直观反映几何质量。 |
 | **大规模数据 (无 GT)** | Davies-Bouldin | 计算效率稍高。 |
 | **簇数量极大** | AMI | 比 ARI 更稳定。 |
+
+### 4. 高级选项 (Advanced Options)
+
+- **`--no-singletons`**
+  - **功能**：在评估时，排除 Ground Truth (P2) 中的单例（Singleton，即簇大小为 1 的样本）。
+  - **适用场景**：Ground Truth 包含大量未分类或独特的样本（Singletons），而聚类算法主要关注识别群组结构。如果不排除这些单例，可能会因为算法将它们合并或拆分而导致评分不合理地降低。
+  - **对齐**：此选项与 `TreeCluster` 的 `score_clusters.py` 中的 `-ns` / `--no_singletons` 功能一致。
 
 ## 输入与输出约定
 
