@@ -14,7 +14,7 @@
 
 - **互补**：
   - `pgr nwk eval` [计划中]：关注树结构与分组的一致性（几何/演化）。
-  - `pgr clust eval`：关注分组的统计有效性，支持外部（两分组对比）与内部（单分组+矩阵）评估。
+  - `pgr clust eval`：关注分组的统计有效性，支持外部（两分组对比）与内部（单分组+矩阵/坐标/树）评估。
 - **场景**：
   - **算法对比**：比较 MCL 与 K-Medoids 在同一数据集上的结果差异。
   - **基准测试**：将聚类结果与已知的标准分类（Ground Truth）对比，计算准确性。
@@ -96,12 +96,15 @@
 *关注簇与类之间的最佳匹配关系。*
 
 - **Jaccard Index**: 两个集合交集与并集的比率。用于衡量特定簇的重叠度。
-- **F1 Score**: Precision 和 Recall 的调和平均。常用于二分类聚类评估。
+- **Precision/Recall**: 基于对（Pair-wise）的精确率与召回率。
 
 ---
 
 ### 2. 内部有效性 (Internal Validity)
 *用于在没有 Ground Truth 的情况下，评估聚类结果本身的质量（紧密度与分离度）。*
+
+#### 2.1 基于距离 (Distance-based)
+*需要距离矩阵 (`--matrix`) 或系统发育树 (`--tree`)。*
 
 - **Silhouette Coefficient (轮廓系数)**
   - **原理**：对每个样本 $i$，计算其与同簇样本的平均距离 $a(i)$ 和与最近异簇样本的平均距离 $b(i)$。$s(i) = (b - a) / \max(a, b)$。
@@ -110,26 +113,63 @@
     - 0：样本位于簇边界。
     - 负值：样本可能分错簇了。
   - **优点**：直观，兼顾凝聚度和分离度。
-  - **缺点**：
-    - 计算复杂度高 ($O(N^2)$)，大规模数据需优化。
-    - 倾向于球形簇，对非凸形状（如环形）评估不准确。
-  - **适用**：评估基于距离的聚类算法（如 K-Means, Hierarchical）。
+  - **缺点**：计算复杂度高 ($O(N^2)$)，大规模数据需优化。
+
+- **Dunn Index**
+  - **原理**：最小簇间距离与最大簇内直径之比。
+  - **范围**：`[0, +∞)`。**越大越好**。
+  - **优点**：简单直观。
+  - **缺点**：对噪声极其敏感（因为基于 min/max）。
+
+- **C-Index**
+  - **原理**：比较簇内距离之和与整个数据集中最小的 $N_W$ 个距离之和（$N_W$ 为簇内对数）。
+  - **范围**：`[0, 1]`。**越小越好**。
+  - **缺点**：计算复杂度高 ($O(N^2 \log N)$)，需要对所有成对距离排序。
+
+- **Hubert's Gamma**
+  - **原理**：距离矩阵与二值聚类矩阵（0=同簇，1=异簇）之间的相关性。
+  - **范围**：`[-1, 1]`。**越大越好**（注意定义中 Y=1 为异簇，通常需根据具体实现确认符号方向，`pgr` 实现中越大表示区分度越好）。
+
+- **Kendall's Tau**
+  - **原理**：距离矩阵与聚类矩阵的秩相关系数。
+  - **范围**：`[-1, 1]`。**越大越好**。
+
+#### 2.2 基于坐标 (Coordinate-based)
+*需要坐标矩阵 (`--coords`)。适用于欧几里得空间数据。*
 
 - **Davies-Bouldin Index (DBI)**
   - **原理**：计算每对簇的“相似度”（簇内散度之和 / 簇心距离），取每个簇最差（最大）相似度的均值。
   - **范围**：`[0, +∞)`。**越小越好**。
   - **优点**：计算比 Silhouette 快。
-  - **缺点**：同样倾向于凸形簇。
   - **适用**：评估基于质心的聚类算法。
+
+- **Calinski-Harabasz Index (CH)**
+  - **原理**：簇间离散度 (BGSS) 与簇内离散度 (WGSS) 之比。
+  - **范围**：`[0, +∞)`。**越大越好**。
+  - **优点**：计算快。
+
+- **PBM Index**
+  - **原理**：基于总离散度、簇内离散度和簇心最大距离的组合指标。
+  - **范围**：`[0, +∞)`。**越大越好**。
+
+- **Ball-Hall Index**
+  - **原理**：各簇平均离散度的均值。
+  - **范围**：`[0, +∞)`。**越小越好**（越紧凑）。
+
+- **Xie-Beni Index**
+  - **原理**：簇内紧凑度与簇间分离度（最小簇心距离）的比值。
+  - **范围**：`[0, +∞)`。**越小越好**。
+
+- **Wemmert-Gancarski Index**
+  - **原理**：基于相对距离（点到所属簇心距离 / 点到最近其他簇心距离）的紧凑度指标。
+  - **范围**：`[0, 1]`。**越大越好**。
 
 ### 3. SciPy/Scikit-learn 兼容性与借鉴
 
 `pgr` 的评估指标设计深度借鉴了 `scikit-learn.metrics` 模块，力求在概念和数值上与其保持一致，同时针对生物信息学场景进行优化。
 
-- **混淆矩阵优化**：借鉴 `sklearn.metrics.cluster.pair_confusion_matrix`，计划在未来引入基于稀疏矩阵或排序的列联表构建算法，以优化大规模数据下的 ARI/AMI 计算性能。
-- **加权支持**：计划借鉴 `sklearn` 的 `sample_weight` 设计，支持对不同样本（如不同长度的序列）赋予不同权重，使评估结果更符合生物学意义。
-- **距离计算**：虽然 `clust eval` 主要处理标签，但内部指标（如 Silhouette）依赖距离。`pgr` 计划引入类似 `sklearn.metrics.pairwise` 的分块计算 (Chunking) 策略，以支持超大规模数据集的内部评估。
-    > 目前的实现尚未包含分块优化，对于超大规模数据集（>10k 序列）可能会消耗大量内存。
+- **混淆矩阵优化**：借鉴 `sklearn.metrics.cluster.pair_confusion_matrix`。
+- **距离计算**：支持 PHYLIP 距离矩阵和直接基于 Newick 树的距离计算（Patristic Distance）。
 
 ### 4. 指标选择指南
 
@@ -137,11 +177,11 @@
 | :--- | :--- | :--- |
 | **有 Ground Truth** | ARI, AMI | 校正了随机性，结果可信。 |
 | **关注聚类纯度** | V-Measure | 可以分别查看 Homogeneity（纯度）和 Completeness（完整性）。 |
-| **无 Ground Truth** | Silhouette | 直观反映几何质量。 |
-| **大规模数据 (无 GT)** | Davies-Bouldin | 计算效率稍高。 |
+| **无 Ground Truth (距离)** | Silhouette | 直观反映几何质量。 |
+| **无 Ground Truth (坐标)** | Davies-Bouldin, CH | 计算效率较高。 |
 | **簇数量极大** | AMI | 比 ARI 更稳定。 |
 
-### 4. 高级选项 (Advanced Options)
+### 5. 高级选项 (Advanced Options)
 
 - **`--no-singletons`**
   - **功能**：在评估时，排除 Ground Truth (P2) 中的单例（Singleton，即簇大小为 1 的样本）。
@@ -160,30 +200,43 @@ pgr clust eval result.tsv truth.tsv
 # 输出: ARI, AMI, NMI, FMI, V-Measure...
 ```
 
-### 场景 B: 无 Ground Truth（自动寻优/内部评估）
+### 场景 B: 无 Ground Truth（内部评估）
 
-这是 `clusteval` (Python) 的典型用例。在 `pgr` 中通过管道实现：
+#### 1. 使用距离矩阵 (Silhouette, Dunn, etc.)
+```bash
+# 1. 准备距离矩阵
+pgr nwk distance tree.nwk --mode phylip > dist.mat
 
-1.  **准备距离矩阵** (用于 Silhouette):
-    ```bash
-    pgr nwk distance tree.nwk --mode phylip > dist.mat
-    ```
+# 2. 评估
+pgr clust eval result.tsv --matrix dist.mat
+```
 
-2.  **扫描参数并评估**:
-    使用 `nwk cut --scan` 生成多种阈值下的聚类结果，并通过 `clust eval` 批量计算 Silhouette。
+#### 2. 直接使用树文件 (无需生成矩阵)
+```bash
+# 直接基于树计算距离 (Patristic Distance)
+pgr clust eval result.tsv --tree tree.nwk
+```
 
-    ```bash
-    # 1. 扫描树切割阈值，输出长表 (Group, Cluster, ID)
-    pgr nwk cut tree.nwk --scan 0.01,1.0,0.01 --mode leaf-dist-min > partitions.tsv
+#### 3. 使用坐标/向量 (Davies-Bouldin, CH, etc.)
+```bash
+# 输入特征向量
+pgr clust eval result.tsv --coords vectors.tsv
+```
 
-    # 2. 批量评估内部指标 (Silhouette)
-    pgr clust eval partitions.tsv --format long --matrix dist.mat > scores.tsv
+### 场景 C: 批量扫描与评估
 
-    # 3. 查看结果 (找出 Silhouette 最高的阈值)
-    cat scores.tsv | sort -k2 -nr | head
-    ```
+结合 `nwk cut --scan` 生成多组阈值结果并批量评估。
 
-    *注：`--format long` 指示输入文件包含多组聚类方案。在 Batch 模式下，如果同时提供 `--matrix` 和 `<p2>` (Ground Truth)，输出表将包含所有指标（Internal + External）。*
+```bash
+# 1. 扫描树切割阈值，输出长表 (Group, Cluster, ID)
+pgr nwk cut tree.nwk --scan 0.01,1.0,0.01 --mode leaf-dist-min > partitions.tsv
+
+# 2. 批量评估内部指标 (直接传入树文件)
+pgr clust eval partitions.tsv --format long --tree tree.nwk > scores.tsv
+
+# 3. 查看结果 (找出 Silhouette 最高的阈值)
+cat scores.tsv | sort -k2 -nr | head
+```
 
 ## 输入与输出约定
 
@@ -192,7 +245,7 @@ pgr clust eval result.tsv truth.tsv
   - **Partition 1 (`<p1>`)**: 第一个分组文件（TSV）。
   - **Partition 2 (`<p2>`)**: 第二个分组文件（TSV，可选）。
   - 若提供 `<p2>`，计算外部指标（ARI/AMI）。
-  - 若不提供 `<p2>` 且提供了 `--matrix/--coords`，计算内部指标（Silhouette/DBI）。
+  - 若不提供 `<p2>` 且提供了 `--matrix/--tree/--coords`，计算内部指标。
   - 支持 `cluster` / `pair` 格式（通过 `--format` 指定）。
 
 - **批量评估模式 (Batch Mode)**：
@@ -210,35 +263,11 @@ pgr clust eval result.tsv truth.tsv
 - **TSV 格式**，包含所有计算的指标。
 - **单次模式 (External)**：
   - 只有一行表头 + 一行数据。
-  - 列顺序：`ari`, `ami`, `homogeneity`, `completeness`, `v_measure`, `fmi`, `nmi`, `mi`。
 - **单次模式 (Internal)**：
   - 两行：Metric Name + Value。
-  - 例如 `silhouette \n 0.5`。
 - **批量模式 (Batch)**：
   - 一行表头 + 多行数据（每组一行）。
-  - 第一列为 `Group`，后续为指标列（取决于是否提供了 Ground Truth 或 Matrix）。
-  - 如果同时提供了 `--matrix` 和 `<p2>`，则包含所有指标。
-
-## 典型用法
-
-```bash
-# 1. 外部有效性：比较聚类结果与 Ground Truth
-pgr clust eval clustering_result.tsv ground_truth.tsv -o eval.tsv
-
-# 2. 内部有效性：计算 Silhouette (需距离矩阵)
-pgr clust eval clustering_result.tsv --matrix dist.phy
-
-# 3. 内部有效性：计算 Davies-Bouldin (需坐标矩阵)
-pgr clust eval clustering_result.tsv --coords vectors.tsv
-
-# 4. 批量评估：评估 nwk cut 扫描产生的所有阈值
-pgr nwk cut tree.nwk --scan 0,1,0.01 | \
-    pgr clust eval - --format long --matrix dist.phy > batch_eval.tsv
-
-# 5. 批量评估（外部有效性）：结合 Ground Truth
-pgr nwk cut tree.nwk --scan 0,1,0.01 | \
-    pgr clust eval - --format long ground_truth.tsv > batch_external.tsv
-```
+  - 第一列为 `Group`，后续为指标列。
 
 ## 现有工具参考 (Prior Art)
 
@@ -369,75 +398,28 @@ pgr nwk cut tree.nwk --scan 0,1,0.01 | \
 ## 实施计划
 
 ### 阶段 1：外部有效性 MVP [已完成]
-- CLI：`pgr clust eval <p1> <p2> -o eval.tsv`（位置参数 + 统一 `-o`）
-- 算法：构建列联表（交集对齐），实现 `ARI/AMI/V-Measure/Homogeneity/Completeness`
-- 输入兼容：`cluster/pair` 两种格式，需通过 `--format` 显式指定（默认 `pair`）
-- 输出：TSV 列包含上述指标，列名与顺序固定
+- [x] CLI：`pgr clust eval <p1> <p2> -o eval.tsv`
+- [x] 算法：ARI, AMI, V-Measure, FMI, NMI, MI, RI, Jaccard, Precision, Recall。
 
 ### 阶段 2：内部有效性（指标库） [已完成]
-- **核心算法 (`libs/clust/eval.rs`)**：
-  - [x] 实现 `silhouette_score(partition, distance_matrix)`：支持 NamedMatrix。
-  - [x] 实现 `davies_bouldin_score(partition, coordinates)`：支持坐标输入。
-- **CLI 增强 (`pgr clust eval`)**：
-  - [x] 新增参数：
-    - `--matrix <file>`: 输入距离矩阵（PHYLIP）。
-  - [x] 新增参数：
-    - `--coords <file>`: 输入坐标矩阵（用于 DBIndex）。
-      - 格式：`ID <tab> Val1,Val2...` (兼容 `pgr dist vector` 输入)。
-      - 说明：即计算距离所用的**原始特征向量**。用于计算质心（Centroid）。
-  - 逻辑：
-    - 若提供 `<p1>` 和 `<p2>`：计算外部指标（ARI/AMI）。
-    - 若提供 `<p1>` 和 `--matrix`：计算内部指标（Silhouette）。
-    - 若提供 `<p1>` 和 `--coords`：计算内部指标（DBIndex）。
+- **基于距离 (`--matrix`, `--tree`)**：
+  - [x] Silhouette Coefficient
+  - [x] Dunn Index
+  - [x] C-Index
+  - [x] Hubert's Gamma
+  - [x] Kendall's Tau
+- **基于坐标 (`--coords`)**：
+  - [x] Davies-Bouldin Index
+  - [x] Calinski-Harabasz Index
+  - [x] PBM Index
+  - [x] Ball-Hall Index
+  - [x] Xie-Beni Index
+  - [x] Wemmert-Gancarski Index
 
-### 阶段 3：扫描与集成（各命令独立支持）
-- **策略调整**：
-  - 坚持“生成”与“评估”解耦的原则。
-  - `pgr nwk cut --scan` 仅输出多组分区方案（Multi-column TSV 或 Multi-files）。
-  - `pgr clust eval` 增强为支持“批处理模式”，接受包含多个分区的输入文件。
-- **层次聚类 (`pgr nwk cut`)**：
-  - 输出格式：支持输出长表（Group, ClusterID, SampleID）。
-- **批量评估 (`pgr clust eval`)**：
-  - 增强 `--format`：支持 `long` 格式（长表，包含多个分区方案）。
-  - 输入：
-    - 列 1：Group ID (分组/参数)
-    - 列 2：Cluster ID (聚类标签)
-    - 列 3：Sample ID (样本)
-    - 说明：按 Group ID 分组（数据需预先排序或聚集），对每一组计算指标。
-  - 输出：
-    - Group ID：对应输入的 Group ID。
-    - 指标列：各项评估指标。
-  - 示例：
-      ```bash
-      # partitions.tsv: Eps, Cluster, SampleID
-      # 0.1, 1, A
-      # 0.1, 1, B
-      # 0.2, 1, A
-      # 0.2, 2, B
-      pgr clust eval partitions.tsv --format long --matrix dist.phy
-      # 输出:
-      # Group    Silhouette
-      # 0.1      0.45
-      # 0.2      0.52
-      ```
+### 阶段 3：扫描与集成 [已完成]
+- [x] 批量评估模式：`--format long` 支持读取多组分区。
+- [x] 输入兼容：与 `pgr nwk cut --scan` 输出直接对接。
 
-### 阶段 4：树结构整合与统一流程
-- **目标**：消除 `nwk cut` 与 `clust eval` 之间的“矩阵断层”，实现无中间文件的流式评估。
-- **痛点**：目前计算 Silhouette 需要 $O(N^2)$ 的距离矩阵文件，对于大树（>10k 叶子）生成和存储矩阵极其昂贵。
-- **方案**：
-  - 增强 `pgr clust eval`，新增 `--tree <FILE>` 参数。
-  - **参数互斥**：用户可选择 `--matrix`（查表）或 `--tree`（实时计算）之一作为距离源。
-  - **优势**：当提供 `--tree` 时，评估器直接在树上按需计算节点间距离（基于 LCA 算法），无需预先生成全量矩阵。
-  - 定义统一的 `DistanceProvider` 接口，底层适配 `Matrix` 或 `Tree`。
-- **最终工作流**：
-    ```bash
-    # 之前（需生成巨大矩阵）：
-    # pgr phylo dist tree.nwk > dist.mat
-    # pgr nwk cut tree.nwk ... | pgr clust eval - --matrix dist.mat
-
-    # 之后（直接支持树，零中间文件）：
-    pgr nwk cut tree.nwk ... | pgr clust eval - --tree tree.nwk
-    ```
-
-### 阶段 5：数值与性能
-- **内存优化**：对于大规模矩阵，避免全量加载，支持流式读取或分块计算。
+### 阶段 4：树结构整合 [已完成]
+- [x] 直接树支持：`--tree <FILE>` 参数，无需预先生成距离矩阵。
+- [x] 统一接口：`DistanceMatrix` trait 适配 PHYLIP 矩阵和 Newick 树。
