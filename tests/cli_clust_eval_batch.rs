@@ -82,16 +82,16 @@ D 1.0 1.0 0.2 0.0
     let stdout_eval = String::from_utf8(output_eval.stdout)?;
 
     // Output:
-    // Group\tsilhouette
-    // height=0\t0.000000
-    // height=0.2\t0.800000
-    // height=0.4\t0.800000
-    // height=0.6\t0.000000 (or NaN/0 for single cluster? Sklearn says error if <2 clusters. My impl returns 0.0)
+    // Group\tsilhouette\tdunn\tc_index\tgamma\ttau
+    // height=0\t0.000000\t...\t...
+    // height=0.2\t0.800000\t...\t...
+    // height=0.4\t0.800000\t...\t...
+    // height=0.6\t0.000000\t...\t...
 
     let lines: Vec<&str> = stdout_eval.lines().collect();
     // Parse output
     // Header
-    assert_eq!(lines[0], "Group\tsilhouette");
+    assert_eq!(lines[0], "Group\tsilhouette\tdunn\tc_index\tgamma\ttau");
 
     // Rows
     for line in &lines[1..] {

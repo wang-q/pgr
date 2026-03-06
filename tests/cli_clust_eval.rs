@@ -19,14 +19,14 @@ fn test_clust_eval_perfect_match() -> anyhow::Result<()> {
     assert!(output.status.success());
 
     // Check header
-    assert!(stdout.contains("ari\tami\thomogeneity\tcompleteness\tv_measure\tfmi\tnmi\tmi"));
+    assert!(stdout.contains("ari\tami\thomogeneity\tcompleteness\tv_measure\tfmi\tnmi\tmi\tri\tjaccard\tprecision\trecall"));
 
     // Check values (should be 1.0)
     // The second line should be numbers
     let lines: Vec<&str> = stdout.lines().collect();
     let values: Vec<&str> = lines[1].split_whitespace().collect();
 
-    assert_eq!(values.len(), 8);
+    assert_eq!(values.len(), 12);
     // ARI
     assert!((values[0].parse::<f64>()? - 1.0).abs() < 1e-6);
     // AMI
@@ -178,13 +178,13 @@ fn test_clust_eval_pair_format() -> anyhow::Result<()> {
     assert!(output.status.success());
 
     // Check header
-    assert!(stdout.contains("ari\tami\thomogeneity\tcompleteness\tv_measure\tfmi\tnmi\tmi"));
+    assert!(stdout.contains("ari\tami\thomogeneity\tcompleteness\tv_measure\tfmi\tnmi\tmi\tri\tjaccard\tprecision\trecall"));
 
     // Check values (should be 1.0)
     let lines: Vec<&str> = stdout.lines().collect();
     let values: Vec<&str> = lines[1].split_whitespace().collect();
 
-    assert_eq!(values.len(), 8);
+    assert_eq!(values.len(), 12);
     // ARI
     assert!((values[0].parse::<f64>()? - 1.0).abs() < 1e-6);
     // AMI
@@ -208,13 +208,14 @@ fn test_clust_eval_internal_silhouette() -> anyhow::Result<()> {
     assert!(output.status.success());
 
     // Output format:
-    // silhouette
-    // 0.5167
+    // silhouette   dunn    c_index   gamma   tau
+    // 0.5167   4.0000  0.0  0.9707  0.8165
 
     let lines: Vec<&str> = stdout.lines().collect();
-    assert_eq!(lines[0], "silhouette");
+    assert_eq!(lines[0], "silhouette\tdunn\tc_index\tgamma\ttau");
 
-    let score = lines[1].parse::<f64>()?;
+    let values: Vec<&str> = lines[1].split_whitespace().collect();
+    let score = values[0].parse::<f64>()?;
     let expected = 1.55 / 3.0;
     assert!(
         (score - expected).abs() < 1e-4,
@@ -222,6 +223,24 @@ fn test_clust_eval_internal_silhouette() -> anyhow::Result<()> {
         score,
         expected
     );
+
+    let dunn = values[1].parse::<f64>()?;
+    assert!((dunn - 4.0).abs() < 1e-4, "Dunn was {}", dunn);
+
+    let c_index = values[2].parse::<f64>()?;
+    // Simple dataset: 3 points. A-B in C1, C in C2.
+    // Dists: A-B=0.5, A-C=2.0, B-C=2.5.
+    // N_W = 1 (A-B). S_W = 0.5.
+    // S_min (sum of smallest 1) = 0.5.
+    // S_max (sum of largest 1) = 2.5.
+    // C = (0.5-0.5)/(2.5-0.5) = 0.
+    assert!((c_index - 0.0).abs() < 1e-4, "C-index was {}", c_index);
+
+    let gamma = values[3].parse::<f64>()?;
+    assert!((gamma - 0.970725).abs() < 1e-4, "Gamma was {}", gamma);
+
+    let tau = values[4].parse::<f64>()?;
+    assert!((tau - 0.816497).abs() < 1e-4, "Tau was {}", tau);
 
     Ok(())
 }
@@ -241,9 +260,10 @@ fn test_clust_eval_internal_db() -> anyhow::Result<()> {
     assert!(output.status.success());
 
     let lines: Vec<&str> = stdout.lines().collect();
-    assert_eq!(lines[0], "davies_bouldin");
+    assert_eq!(lines[0], "davies_bouldin\tcalinski_harabasz\tpbm\tball_hall\txie_beni\twemmert_gancarski");
 
-    let score = lines[1].parse::<f64>()?;
+    let values: Vec<&str> = lines[1].split_whitespace().collect();
+    let score = values[0].parse::<f64>()?;
     let expected = 0.2;
     assert!(
         (score - expected).abs() < 1e-4,
@@ -251,6 +271,12 @@ fn test_clust_eval_internal_db() -> anyhow::Result<()> {
         score,
         expected
     );
+
+    let ch = values[1].parse::<f64>()?;
+    assert!((ch - 50.0).abs() < 1e-4, "CH was {}", ch);
+
+    // Verify other indices exist (values depend on exact impl details, simple check for now)
+    assert_eq!(values.len(), 6);
 
     Ok(())
 }
