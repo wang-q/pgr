@@ -31,22 +31,32 @@ fn test_clust_eval_tree_internal() -> anyhow::Result<()> {
 
     let stdout = String::from_utf8(output.stdout)?;
     let lines: Vec<&str> = stdout.lines().collect();
-    
+
     // Check Header
     assert_eq!(lines[0], "silhouette\tdunn\tc_index\tgamma\ttau");
-    
+
     // Values
     let values: Vec<&str> = lines[1].split('\t').collect();
-    
+
     // Silhouette: 0.494949
     let s_score = values[0].parse::<f64>()?;
     let expected_s = 49.0 / 99.0;
-    assert!((s_score - expected_s).abs() < 1e-4, "Silhouette was {}, expected {}", s_score, expected_s);
+    assert!(
+        (s_score - expected_s).abs() < 1e-4,
+        "Silhouette was {}, expected {}",
+        s_score,
+        expected_s
+    );
 
     // Dunn: 1.3333
     let d_score = values[1].parse::<f64>()?;
     let expected_d = 4.0 / 3.0;
-    assert!((d_score - expected_d).abs() < 1e-4, "Dunn was {}, expected {}", d_score, expected_d);
+    assert!(
+        (d_score - expected_d).abs() < 1e-4,
+        "Dunn was {}, expected {}",
+        d_score,
+        expected_d
+    );
 
     // C-Index: 0.0
     let c_score = values[2].parse::<f64>()?;

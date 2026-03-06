@@ -260,7 +260,10 @@ fn test_clust_eval_internal_db() -> anyhow::Result<()> {
     assert!(output.status.success());
 
     let lines: Vec<&str> = stdout.lines().collect();
-    assert_eq!(lines[0], "davies_bouldin\tcalinski_harabasz\tpbm\tball_hall\txie_beni\twemmert_gancarski");
+    assert_eq!(
+        lines[0],
+        "davies_bouldin\tcalinski_harabasz\tpbm\tball_hall\txie_beni\twemmert_gancarski"
+    );
 
     let values: Vec<&str> = lines[1].split_whitespace().collect();
     let score = values[0].parse::<f64>()?;
@@ -277,6 +280,123 @@ fn test_clust_eval_internal_db() -> anyhow::Result<()> {
 
     // Verify other indices exist (values depend on exact impl details, simple check for now)
     assert_eq!(values.len(), 6);
+
+    Ok(())
+}
+
+// Invariance Tests
+#[test]
+fn test_clust_eval_invariance_sample_order() -> anyhow::Result<()> {
+    // Original: 1 A, 1 B, 2 C
+    // Shuffled: 1 B, 2 C, 1 A
+    // Both should yield ARI=1.0 when compared to self
+
+    let path_orig = "tests/clust/pair_1.tsv";
+    let path_shuffled = "tests/clust/pair_1_shuffled.tsv";
+
+    // Create shuffled file manually since we can't assume sort order in `pgr`.
+    // pair_1.tsv content (assumed):
+    // 1 A
+    // 1 B
+    // 2 C
+    // ... (actual content from previous tests implies A,B in 1, C in 2, etc.)
+    // Let's create new temp files to be sure.
+    let content_orig = "1\tA\n1\tB\n2\tC\n2\tD\n";
+    let content_shuffled = "1\tB\n2\tD\n1\tA\n2\tC\n"; // Different order
+
+    let temp_orig = "tests/clust/inv_order_orig.tsv";
+    let temp_shuffled = "tests/clust/inv_order_shuffled.tsv";
+
+    std::fs::write(temp_orig, content_orig)?;
+    std::fs::write(temp_shuffled, content_shuffled)?;
+
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("clust")
+        .arg("eval")
+        .arg(temp_orig)
+        .arg(temp_shuffled)
+        .output()?;
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout)?;
+    let lines: Vec<&str> = stdout.lines().collect();
+    let values: Vec<&str> = lines[1].split_whitespace().collect();
+
+    // ARI should be 1.0 because sets are identical despite order
+    assert!((values[0].parse::<f64>()? - 1.0).abs() < 1e-6);
+
+    std::fs::remove_file(temp_orig)?;
+    std::fs::remove_file(temp_shuffled)?;
+
+    Ok(())
+}
+
+#[test]
+fn test_clust_eval_invariance_label_scaling() -> anyhow::Result<()> {
+    // Labels 1,2 vs Labels 100,200
+    // Content: {A,B}, {C,D}
+
+    let content_small = "1\tA\n1\tB\n2\tC\n2\tD\n";
+    let content_large = "100\tA\n100\tB\n200\tC\n200\tD\n";
+
+    let temp_small = "tests/clust/inv_label_small.tsv";
+    let temp_large = "tests/clust/inv_label_large.tsv";
+
+    std::fs::write(temp_small, content_small)?;
+    std::fs::write(temp_large, content_large)?;
+
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("clust")
+        .arg("eval")
+        .arg(temp_small)
+        .arg(temp_large)
+        .output()?;
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout)?;
+    let lines: Vec<&str> = stdout.lines().collect();
+    let values: Vec<&str> = lines[1].split_whitespace().collect();
+
+    // ARI should be 1.0
+    assert!((values[0].parse::<f64>()? - 1.0).abs() < 1e-6);
+
+    std::fs::remove_file(temp_small)?;
+    std::fs::remove_file(temp_large)?;
+
+    Ok(())
+}
+
+// Boundary Condition Tests
+#[test]
+fn test_clust_eval_empty_input() -> anyhow::Result<()> {
+    let temp_empty = "tests/clust/empty.tsv";
+    std::fs::write(temp_empty, "")?;
+
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("clust")
+        .arg("eval")
+        .arg(temp_empty)
+        .arg(temp_empty) // Compare empty with empty
+        .output()?;
+
+    // Should verify it doesn't panic.
+    // Current implementation returns default Metrics (all 0.0) or handles gracefully.
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout)?;
+    let lines: Vec<&str> = stdout.lines().collect();
+
+    // Header + 1 line of zeros? or just header?
+    // Implementation: if n==0, returns default Metrics.
+    // Default metrics are all 0.0.
+    if lines.len() > 1 {
+        let values: Vec<&str> = lines[1].split_whitespace().collect();
+        assert_eq!(values[0], "0.000000"); // ARI
+    }
+
+    std::fs::remove_file(temp_empty)?;
 
     Ok(())
 }

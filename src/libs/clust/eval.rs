@@ -115,7 +115,7 @@ pub fn load_batch_partitions<P: AsRef<Path>>(path: P) -> anyhow::Result<Vec<(Str
     let mut groups: Vec<String> = Vec::new();
     let mut group_indices: HashMap<String, usize> = HashMap::new();
     let mut partitions: Vec<Partition> = Vec::new();
-    
+
     // Per-group label mapping to handle non-numeric cluster IDs consistently
     let mut group_label_maps: Vec<HashMap<String, u32>> = Vec::new();
     let mut group_next_ids: Vec<u32> = Vec::new();
@@ -1071,13 +1071,13 @@ pub fn pbm_score(partition: &Partition, coords: &Coordinates) -> f64 {
         for val in cluster_centroid.iter_mut() {
             *val /= n_members as f64;
         }
-        
+
         // E_W contribution
         for item in members {
             let vec = coords.data.get(*item).unwrap();
             e_w += euclidean_dist(vec, &cluster_centroid);
         }
-        
+
         centroids.push(cluster_centroid);
     }
 
@@ -1212,13 +1212,13 @@ pub fn xie_beni_score(partition: &Partition, coords: &Coordinates) -> f64 {
         for val in cluster_centroid.iter_mut() {
             *val /= n_members as f64;
         }
-        
+
         // WGSS contribution
         for item in members {
             let vec = coords.data.get(*item).unwrap();
             wgss += euclidean_dist(vec, &cluster_centroid).powi(2);
         }
-        
+
         centroids.push(cluster_centroid);
     }
 
@@ -1234,7 +1234,7 @@ pub fn xie_beni_score(partition: &Partition, coords: &Coordinates) -> f64 {
     }
 
     if min_sq_dist == 0.0 {
-         return f64::INFINITY;
+        return f64::INFINITY;
     }
 
     // XB = WGSS / (N * min_sq_dist)
@@ -1270,7 +1270,7 @@ pub fn wemmert_gancarski_score(partition: &Partition, coords: &Coordinates) -> f
     // 2. Calculate Centroids
     // Map cluster ID to centroid vector
     let mut centroids: HashMap<u32, Vec<f64>> = HashMap::new();
-    
+
     for (&cid, members) in &clusters {
         let n_members = members.len();
         if n_members == 0 {
@@ -1288,7 +1288,7 @@ pub fn wemmert_gancarski_score(partition: &Partition, coords: &Coordinates) -> f
         }
         centroids.insert(cid, cluster_centroid);
     }
-    
+
     // 3. Calculate J
     let mut weighted_j_sum = 0.0;
 
@@ -1297,14 +1297,14 @@ pub fn wemmert_gancarski_score(partition: &Partition, coords: &Coordinates) -> f
         if n_members == 0 {
             continue;
         }
-        
+
         let current_centroid = centroids.get(&cid).unwrap();
         let mut sum_r = 0.0;
 
         for item in members {
             let vec = coords.data.get(*item).unwrap();
             let dist_intra = euclidean_dist(vec, current_centroid);
-            
+
             // Find min dist to other centroids
             let mut min_dist_inter = f64::INFINITY;
             for (&other_cid, other_centroid) in &centroids {
@@ -1316,18 +1316,18 @@ pub fn wemmert_gancarski_score(partition: &Partition, coords: &Coordinates) -> f
                     min_dist_inter = d;
                 }
             }
-            
+
             if min_dist_inter > 0.0 {
                 sum_r += dist_intra / min_dist_inter;
             } else {
-                 // Point coincides with another centroid (bad separation).
-                 sum_r += 10.0; // Large penalty
+                // Point coincides with another centroid (bad separation).
+                sum_r += 10.0; // Large penalty
             }
         }
-        
+
         let mean_r = sum_r / n_members as f64;
         let j_k = (1.0 - mean_r).max(0.0);
-        
+
         weighted_j_sum += (n_members as f64 / n_samples as f64) * j_k;
     }
 
@@ -1352,7 +1352,7 @@ pub fn c_index_score(partition: &Partition, dist_mat: &dyn DistanceMatrix) -> f6
     let mut s_w = 0.0;
     let items: Vec<&String> = partition.keys().collect();
     let n = items.len();
-    
+
     if n < 2 {
         return 0.0;
     }
@@ -1363,7 +1363,7 @@ pub fn c_index_score(partition: &Partition, dist_mat: &dyn DistanceMatrix) -> f6
         for j in i + 1..n {
             let d = dist_mat.get_distance(items[i], items[j]);
             all_distances.push(d);
-            
+
             if partition[items[i]] == partition[items[j]] {
                 s_w += d;
                 n_w += 1;
@@ -1375,7 +1375,7 @@ pub fn c_index_score(partition: &Partition, dist_mat: &dyn DistanceMatrix) -> f6
         // C-index is not defined for singletons (no within-cluster pairs).
         return 0.0;
     }
-    
+
     if n_w == all_distances.len() {
         // Single cluster containing all points.
         return 0.0;
@@ -1413,7 +1413,7 @@ pub fn gamma_score(partition: &Partition, dist_mat: &dyn DistanceMatrix) -> f64 
     }
 
     let n_t = (n * (n - 1) / 2) as f64;
-    
+
     let mut sum_x = 0.0; // Sum of distances
     let mut sum_x_sq = 0.0; // Sum of squared distances
     let mut sum_y = 0.0; // Sum of binary values (count of diff pairs)
@@ -1422,8 +1422,12 @@ pub fn gamma_score(partition: &Partition, dist_mat: &dyn DistanceMatrix) -> f64 
     for i in 0..n {
         for j in i + 1..n {
             let d = dist_mat.get_distance(items[i], items[j]);
-            let is_diff = if partition[items[i]] != partition[items[j]] { 1.0 } else { 0.0 };
-            
+            let is_diff = if partition[items[i]] != partition[items[j]] {
+                1.0
+            } else {
+                0.0
+            };
+
             sum_x += d;
             sum_x_sq += d * d;
             sum_y += is_diff;
@@ -1436,15 +1440,15 @@ pub fn gamma_score(partition: &Partition, dist_mat: &dyn DistanceMatrix) -> f64 
     // Pearson Correlation
     // numerator = N * sum(xy) - sum(x) * sum(y)
     // denominator = sqrt(N * sum(x^2) - sum(x)^2) * sqrt(N * sum(y^2) - sum(y)^2)
-    
+
     let numerator = n_t * sum_xy - sum_x * sum_y;
     let var_x = n_t * sum_x_sq - sum_x * sum_x;
-    let var_y = n_t * sum_y - sum_y * sum_y; 
-    
+    let var_y = n_t * sum_y - sum_y * sum_y;
+
     if var_x <= 0.0 || var_y <= 0.0 {
         return 0.0;
     }
-    
+
     numerator / (var_x.sqrt() * var_y.sqrt())
 }
 
@@ -1481,10 +1485,10 @@ pub fn tau_score(partition: &Partition, dist_mat: &dyn DistanceMatrix) -> f64 {
     // 3. Calculate Concordant (S+) and Discordant (S-)
     let mut s_plus = 0.0;
     let mut s_minus = 0.0;
-    
+
     let mut cum_same = 0;
     let mut cum_diff = 0;
-    
+
     let mut i = 0;
     while i < pairs.len() {
         // Find block of identical distances
@@ -1492,11 +1496,11 @@ pub fn tau_score(partition: &Partition, dist_mat: &dyn DistanceMatrix) -> f64 {
         while j < pairs.len() && (pairs[j].dist - pairs[i].dist).abs() < 1e-10 {
             j += 1;
         }
-        
+
         // Process block i..j
         let mut block_same = 0;
         let mut block_diff = 0;
-        
+
         for k in i..j {
             if pairs[k].is_diff {
                 // This pair is DIFF.
@@ -1512,20 +1516,20 @@ pub fn tau_score(partition: &Partition, dist_mat: &dyn DistanceMatrix) -> f64 {
                 block_same += 1;
             }
         }
-        
+
         cum_same += block_same;
         cum_diff += block_diff;
-        
+
         i = j;
     }
-    
+
     let n_pairs = pairs.len() as f64;
     let n0 = n_pairs * (n_pairs - 1.0) / 2.0;
-    
+
     let n_w = cum_same as f64;
     let n_b = cum_diff as f64;
     let n2 = n_w * (n_w - 1.0) / 2.0 + n_b * (n_b - 1.0) / 2.0;
-    
+
     // Ties in X: Blocks of equal distance
     let mut n1 = 0.0;
     let mut i = 0;
@@ -1538,9 +1542,9 @@ pub fn tau_score(partition: &Partition, dist_mat: &dyn DistanceMatrix) -> f64 {
         n1 += block_len * (block_len - 1.0) / 2.0;
         i = j;
     }
-    
+
     let denom = ((n0 - n1) * (n0 - n2)).sqrt();
-    
+
     if denom == 0.0 {
         0.0
     } else {
@@ -1563,32 +1567,32 @@ mod tests {
         // Let's assume we can parse it.
         // But Tree::from_file is available.
         // Let's create a dummy tree manually.
-        
+
         let mut tree = Tree::new();
         let root = tree.add_node(); // k
         tree.set_root(root);
-        
+
         let g = tree.add_node();
         let j = tree.add_node();
         tree.add_child(root, g).unwrap();
         tree.add_child(root, j).unwrap();
-        
+
         let a = tree.add_node();
         let b = tree.add_node();
         tree.get_node_mut(a).unwrap().name = Some("A".to_string());
         tree.get_node_mut(b).unwrap().name = Some("B".to_string());
         tree.add_child(g, a).unwrap();
         tree.add_child(g, b).unwrap();
-        
+
         // Set lengths
         // A:2, B:4. g:2 (to k?)
         // If we treat edges as parent->child length.
         tree.get_node_mut(a).unwrap().length = Some(2.0);
         tree.get_node_mut(b).unwrap().length = Some(4.0);
         tree.get_node_mut(g).unwrap().length = Some(2.0);
-        
+
         let td = TreeDistance::new(tree);
-        
+
         // Distance A-B = 2+4 = 6.
         assert_eq!(td.get_distance("A", "B"), 6.0);
     }
@@ -1755,7 +1759,7 @@ mod tests {
     fn test_internal_indices_simple() {
         // Cluster 1: A(0,0), B(1,0) -> Centroid (0.5, 0)
         // Cluster 2: C(5,0), D(6,0) -> Centroid (5.5, 0)
-        
+
         let mut p = Partition::new();
         p.insert("A".to_string(), 1);
         p.insert("B".to_string(), 1);
@@ -1769,9 +1773,14 @@ mod tests {
         data.insert("D".to_string(), vec![6.0, 0.0]);
 
         let coords = Coordinates { data, dim: 2 };
-        
+
         // Construct Distance Matrix for C-index
-        let names = vec!["A".to_string(), "B".to_string(), "C".to_string(), "D".to_string()];
+        let names = vec![
+            "A".to_string(),
+            "B".to_string(),
+            "C".to_string(),
+            "D".to_string(),
+        ];
         let mut dist_mat = NamedMatrix::new(names);
         // Distances:
         // A-B: 1.0 (Intra)
@@ -1792,14 +1801,14 @@ mod tests {
         dist_mat.set_by_name("A", "D", 6.0).unwrap();
         dist_mat.set_by_name("B", "C", 4.0).unwrap();
         dist_mat.set_by_name("B", "D", 5.0).unwrap();
-        
+
         let c_index = c_index_score(&p, &dist_mat);
         assert_eq!(c_index, 0.0);
 
         // PBM:
         // Global Centroid: (12/4, 0) = (3, 0)
         // E_T: |0-3| + |1-3| + |5-3| + |6-3| = 3 + 2 + 2 + 3 = 10
-        // E_W: 
+        // E_W:
         //   C1: |0-0.5| + |1-0.5| = 0.5 + 0.5 = 1.0
         //   C2: |5-5.5| + |6-5.5| = 0.5 + 0.5 = 1.0
         //   Total E_W = 2.0
@@ -1808,14 +1817,14 @@ mod tests {
         // PBM = ( 1/2 * 10 / 2.0 * 5.0 )^2 = ( 0.5 * 5 * 5 )^2 = (12.5)^2 = 156.25
         let pbm = pbm_score(&p, &coords);
         assert!((pbm - 156.25).abs() < 1e-6, "PBM was {}", pbm);
-        
+
         // Ball-Hall:
         // C1 mean dispersion: (|0-0.5|^2 + |1-0.5|^2) / 2 = (0.25+0.25)/2 = 0.25
         // C2 mean dispersion: (|5-5.5|^2 + |6-5.5|^2) / 2 = (0.25+0.25)/2 = 0.25
         // BH = (0.25 + 0.25) / 2 = 0.25
         let bh = ball_hall_score(&p, &coords);
         assert!((bh - 0.25).abs() < 1e-6, "Ball-Hall was {}", bh);
-        
+
         // Xie-Beni:
         // WGSS = (0.25+0.25) + (0.25+0.25) = 1.0
         // min_sq_dist = (5.0)^2 = 25.0
@@ -1823,7 +1832,7 @@ mod tests {
         // XB = 1.0 / (4 * 25.0) = 0.01
         let xb = xie_beni_score(&p, &coords);
         assert!((xb - 0.01).abs() < 1e-6, "Xie-Beni was {}", xb);
-        
+
         // Wemmert-Gancarski:
         // C1 centroid G1=(0.5,0), C2 centroid G2=(5.5,0)
         // A(0,0): ||A-G1||=0.5, ||A-G2||=5.5. R(A)=0.5/5.5 = 1/11
@@ -1837,6 +1846,11 @@ mod tests {
         // J = (2/4)*J1 + (2/4)*J2 = 0.5*J1 + 0.5*J2 = 89/99 = 0.898989...
         let wg = wemmert_gancarski_score(&p, &coords);
         let expected_wg = 89.0 / 99.0;
-        assert!((wg - expected_wg).abs() < 1e-6, "WG was {}, expected {}", wg, expected_wg);
+        assert!(
+            (wg - expected_wg).abs() < 1e-6,
+            "WG was {}, expected {}",
+            wg,
+            expected_wg
+        );
     }
 }
