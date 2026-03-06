@@ -8,38 +8,56 @@
 
 ## 1. 背景与概念
 
+多尺度 bootstrap 为树上的“簇”（内部节点）提供的是一种稳定性度量：在“可重采样的观测单元”扰动下，这个簇是否反复出现。它并不直接提升聚类树的准确性，也不保证“出现频率高”的簇就一定等价于真实分群；它更像是一个诊断工具，用来区分对数据扰动敏感的分支（不稳定、可能受噪声/参数影响）与相对稳健的分支（在当前数据与距离/链接策略下可重复）。
+
+对进化树的适用性取决于重采样单元是否符合系统发育 bootstrap 的假设：若输入矩阵的列是近似独立同分布的位点/特征（例如对齐序列的位点、SNP 位点或可近似为独立的基因家族特征），则对列进行重采样并在每次重采样下重建树，得到的支持度可作为“类 bootstrap”支持；但若列特征强相关、或树的构建依赖显式进化模型（如 ML/贝叶斯），则该方法更适合作为聚类树稳定性评估，而不应直接解读为严格的系统发育分支支持度。
+
 ### 1.1 输入数据的方向（非常关键）
 
-`pvclust` 假设输入是一个数值矩阵 `data`，形状为 `(n × p)`：
+`pvclust` 默认假设输入矩阵为 `(n × p)`，即 `Features × Items`：
+- **行 (n)**：特征/属性（Attributes/Variables），如基因表达量、SNP 位点。`pvclust` 默认对行进行重采样（Bootstrap）。
+- **列 (p)**：样本/条目（Samples/Items），如物种、病人。`pvclust` 计算列与列之间的距离并对列进行聚类。
 
-- `n`：观测数（bootstrap 重采样的单位，`pvclust` 默认对 **行** 做重采样）
-- `p`：被聚类的对象数（树的叶子，`pvclust` 实际聚类的是 **列**）
+这与许多生物学数据矩阵（如 `Genome × Domain`，行是物种，列是功能域特征）的方向恰好相反。
 
-因此它适合典型“样本 × 特征”的表（如：样本是重复实验/观测，列是物种/基因/变量），并通过对观测行做 bootstrap 来评估列聚类结果的稳定性。
+为了适配两种场景并避免额外的转置操作，`pgr clust boot` 将提供 `--along` 参数来指定聚类方向：
 
-### 1.2 输入数据的方向（pgr 侧适配）
+-   `--along row` (**默认**，推荐用于 `domain.tsv` 等)：
+    -   **聚类方向**：行（如物种、基因组）。
+    -   **重采样方向**：列（如功能域、特征）。
+    -   符合多数生物学特征矩阵的直觉（Samples × Features）。
+-   `--along col` (复刻 `pvclust` 原生行为)：
+    -   **聚类方向**：列。
+    -   **重采样方向**：行。
 
-`pgr` 处理的生物学数据（如 `domain.tsv`）通常以 **行** 为聚类对象（如物种/基因组），而 **列** 为特征（如功能域计数）。这与 `pvclust` 默认的“聚类列”相反。
+### 1.3 核心算法流程：多尺度 Bootstrap
 
-为了避免在输入前必须执行矩阵转置，`pgr clust boot` 将提供 `--along` 参数来指定聚类方向：
+`pvclust` 采用 **多尺度 Bootstrap (Multiscale Bootstrap)**，这是其区别于传统 Bootstrap（如 PHYLIP `seqboot`，固定 $r=1.0$）的核心特征。它在每一次 bootstrap 迭代中都会执行完整的流水线：
 
--   `--along row` (默认)：聚类行，重采样列。
-    -   适用于 `domain.tsv` 这种 `Genome x Domain` 的矩阵。
-    -   符合多数生物学数据（Feature 为列）的直觉。
--   `--along col`：复刻 `pvclust` 行为。聚类列，重采样行。
+1. 重采样（默认对行；在 `pgr clust boot --along row` 模式下对应对列重采样）
+    - **默认采样比例 ($r$)**：`0.5, 0.6, ..., 1.4` (共10个尺度)。
+    - **每个尺度的 bootstrap 次数**：默认 `1000` 次。
+    - **总 bootstrap 次数**：`10 (scales) * 1000 (nboot) = 10000` 次。
+2. 基于重采样后的数据重新计算 `dist`
+    - `pvclust` 会根据 `method.dist`（如 correlation, abscor, uncentered）和 `use.cor`（缺失值处理策略）在重采样后的数据矩阵上重新计算距离。
+    - `pgr` 也将复刻此行为，确保每次重采样后的距离计算与原始数据使用相同的度量标准。
+3. 基于新的距离矩阵重新做 `hclust`
+    - `pvclust` 的实现强依赖于层次聚类（调用 R 的 `hclust`），它通过 `method.hclust` 参数支持 `average/ward/single/complete` 等标准方法，但不支持非层次聚类（如 K-means、DBSCAN）。
+    - `pgr clust boot` 也将遵循这一设计，主要支持层次聚类方法（与 `pgr clust hier` 对齐）。
+4. 统计簇的出现频率
+    - `pvclust` 不直接比较树的拓扑结构，而是将树分解为一组“簇”（Split/Cluster，即内部节点所包含的叶子集合）。
+    - 对每棵 Bootstrap 树，将其所有内部节点转换为“成员 Pattern”（例如叶子索引的 0/1 向量或哈希）。
+    - 检查原始树中的每个簇（Pattern）是否出现在 Bootstrap 树中，并累加计数。这避免了节点顺序或旋转带来的干扰，只关注“成员集合”的一致性。
+5. 拟合得到最终值（BP/AU/SI）
+    - 对于原始树中的每个簇，我们得到了一组数据 `(r, BP_r)`，即在不同采样比例 $r$ 下的 Bootstrap 出现频率。
+    - 使用加权最小二乘法拟合曲线（模型：$z = -qnorm(BP_r) \approx v\sqrt{r} + c/\sqrt{r}$），源码见 [pvclust-internal.R:L350-L407](file:///c:/Users/wangq/Scripts/pgr/pvclust/R/pvclust-internal.R#L350-L407)。
+    - 根据拟合得到的参数 $v$ 和 $c$，计算出最终的三类数值：
+        - **AU (Approximately Unbiased)**：**推荐使用**。通过多尺度拟合修正了 BP 的偏差，更接近真实的 p-value。
+        - **BP (Bootstrap Probability)**：传统 Bootstrap 值（对应 $r=1.0$），通常有偏差（偏保守）。
+        - **SI (Selective Inference)**：选择性推断 p-value。
+    - **注意**：如果用户仅指定了一个采样尺度（如 $r=1.0$），则无法进行曲线拟合，此时**无法计算 AU 值**，仅能输出 BP 值（即标准的 Bootstrap 支持度）。
 
-### 1.3 三类数值：BP / AU / SI
-
-`pvclust` 采用 **多尺度 Bootstrap (Multiscale Bootstrap)**，这是其区别于传统 Bootstrap（如 PHYLIP `seqboot`，固定 $r=1.0$）的核心特征。
-
-- **默认采样比例 ($r$)**：`0.5, 0.6, ..., 1.4` (共10个尺度)。
-    - 通过在不同 $r$ 下观察 BP 值的变化趋势，拟合曲线计算无偏估计量。
-- **输出值**：
-    - **AU (Approximately Unbiased)**：**推荐使用**。通过多尺度拟合修正了 BP 的偏差，更接近真实的 p-value。
-    - **BP (Bootstrap Probability)**：传统 Bootstrap 值（对应 $r=1.0$），通常有偏差（偏保守）。
-    - **SI (Selective Inference)**：选择性推断 p-value。
-
-源码中三者由 `msfit()` 计算（见 [pvclust-internal.R:L350-L407](file:///c:/Users/wangq/Scripts/pgr/pvclust/R/pvclust-internal.R#L350-L407)）。
+因此 `clust boot` 不适合以“先算一次 PHYLIP 距离矩阵、再反复聚类”的方式实现；为了得到正确的 BP/AU/SI，必须在每次重采样后用同一套距离口径重新计算距离，再构树并统计簇的出现频率。
 
 ---
 
@@ -202,4 +220,3 @@ pgr clust boot data.tsv --dist correlation --method average --nboot 1000 -o boot
   - `pvclust.merge()`：[pvclust-internal.R:L281-L332](file:///c:/Users/wangq/Scripts/pgr/pvclust/R/pvclust-internal.R#L281-L332)
   - `msfit()`：[pvclust-internal.R:L350-L407](file:///c:/Users/wangq/Scripts/pgr/pvclust/R/pvclust-internal.R#L350-L407)
   - `seplot()`：[pvclust-internal.R:L458-L481](file:///c:/Users/wangq/Scripts/pgr/pvclust/R/pvclust-internal.R#L458-L481)
-
