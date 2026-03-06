@@ -263,11 +263,18 @@ cat scores.tsv | sort -k2 -nr | head
 - **TSV 格式**，包含所有计算的指标。
 - **单次模式 (External)**：
   - 只有一行表头 + 一行数据。
+  - 列顺序：`ari`, `ami`, `homogeneity`, `completeness`, `v_measure`, `fmi`, `nmi`, `mi`, `ri`, `jaccard`, `precision`, `recall`。
 - **单次模式 (Internal)**：
   - 两行：Metric Name + Value。
+  - 若提供 `--matrix`/`--tree`，列顺序：`silhouette`, `dunn`, `c_index`, `gamma`, `tau`。
+  - 若提供 `--coords`，列顺序：`davies_bouldin`, `calinski_harabasz`, `pbm`, `ball_hall`, `xie_beni`, `wemmert_gancarski`。
 - **批量模式 (Batch)**：
   - 一行表头 + 多行数据（每组一行）。
-  - 第一列为 `Group`，后续为指标列。
+  - 第一列为 `Group`。
+  - 后续列取决于提供的参数（如果同时提供多种参数，列将按以下顺序拼接）：
+    1. 有 `<p2>`：包含所有 External 指标。
+    2. 有 `--matrix`/`--tree`：包含所有基于距离的 Internal 指标。
+    3. 有 `--coords`：包含所有基于坐标的 Internal 指标。
 
 ## 现有工具参考 (Prior Art)
 
