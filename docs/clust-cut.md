@@ -329,7 +329,7 @@ pgr clust cut tree.nwk --max-clade 0.5 --scan 0,0.5,0.01 > scan.tsv
 pgr clust cut tree.nwk --max-clade 0.12 > pred.tsv
 
 # 3) 与 ground truth 对比（Partition vs Partition）
-pgr clust eval pred.tsv truth.tsv -o eval.tsv
+pgr clust eval pred.tsv --other truth.tsv -o eval.tsv
 ```
 
 ### 选点策略参考

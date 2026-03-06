@@ -7,6 +7,7 @@ fn test_clust_eval_perfect_match() -> anyhow::Result<()> {
         .arg("clust")
         .arg("eval")
         .arg("tests/clust/perfect_1.tsv")
+        .arg("--other")
         .arg("tests/clust/perfect_2.tsv")
         .arg("--format")
         .arg("cluster")
@@ -63,6 +64,7 @@ fn test_clust_eval_no_singletons() -> anyhow::Result<()> {
         .arg("clust")
         .arg("eval")
         .arg(pred_path)
+        .arg("--other")
         .arg(truth_path)
         .output()?;
 
@@ -80,6 +82,7 @@ fn test_clust_eval_no_singletons() -> anyhow::Result<()> {
         .arg("clust")
         .arg("eval")
         .arg(pred_path)
+        .arg("--other")
         .arg(truth_path)
         .arg("--no-singletons")
         .output()?;
@@ -107,6 +110,7 @@ fn test_clust_eval_disjoint() -> anyhow::Result<()> {
         .arg("clust")
         .arg("eval")
         .arg("tests/clust/perfect_1.tsv")
+        .arg("--other")
         .arg("tests/clust/disjoint_2.tsv")
         .arg("--format")
         .arg("cluster")
@@ -139,6 +143,7 @@ fn test_clust_eval_single_vs_singletons() -> anyhow::Result<()> {
         .arg("clust")
         .arg("eval")
         .arg("tests/clust/single_1.tsv")
+        .arg("--other")
         .arg("tests/clust/singletons.tsv")
         .arg("--format")
         .arg("cluster")
@@ -168,6 +173,7 @@ fn test_clust_eval_pair_format() -> anyhow::Result<()> {
         .arg("clust")
         .arg("eval")
         .arg("tests/clust/pair_1.tsv")
+        .arg("--other")
         .arg("tests/clust/pair_2.tsv")
         .output()?;
 
@@ -278,31 +284,15 @@ fn test_clust_eval_internal_db() -> anyhow::Result<()> {
     let ch = values[1].parse::<f64>()?;
     assert!((ch - 50.0).abs() < 1e-4, "CH was {}", ch);
 
-    // Verify other indices exist (values depend on exact impl details, simple check for now)
     assert_eq!(values.len(), 6);
 
     Ok(())
 }
 
-// Invariance Tests
 #[test]
 fn test_clust_eval_invariance_sample_order() -> anyhow::Result<()> {
-    // Original: 1 A, 1 B, 2 C
-    // Shuffled: 1 B, 2 C, 1 A
-    // Both should yield ARI=1.0 when compared to self
-
-    let path_orig = "tests/clust/pair_1.tsv";
-    let path_shuffled = "tests/clust/pair_1_shuffled.tsv";
-
-    // Create shuffled file manually since we can't assume sort order in `pgr`.
-    // pair_1.tsv content (assumed):
-    // 1 A
-    // 1 B
-    // 2 C
-    // ... (actual content from previous tests implies A,B in 1, C in 2, etc.)
-    // Let's create new temp files to be sure.
     let content_orig = "1\tA\n1\tB\n2\tC\n2\tD\n";
-    let content_shuffled = "1\tB\n2\tD\n1\tA\n2\tC\n"; // Different order
+    let content_shuffled = "1\tB\n2\tD\n1\tA\n2\tC\n";
 
     let temp_orig = "tests/clust/inv_order_orig.tsv";
     let temp_shuffled = "tests/clust/inv_order_shuffled.tsv";
@@ -315,6 +305,7 @@ fn test_clust_eval_invariance_sample_order() -> anyhow::Result<()> {
         .arg("clust")
         .arg("eval")
         .arg(temp_orig)
+        .arg("--other")
         .arg(temp_shuffled)
         .output()?;
 
@@ -323,7 +314,6 @@ fn test_clust_eval_invariance_sample_order() -> anyhow::Result<()> {
     let lines: Vec<&str> = stdout.lines().collect();
     let values: Vec<&str> = lines[1].split_whitespace().collect();
 
-    // ARI should be 1.0 because sets are identical despite order
     assert!((values[0].parse::<f64>()? - 1.0).abs() < 1e-6);
 
     std::fs::remove_file(temp_orig)?;
@@ -334,9 +324,6 @@ fn test_clust_eval_invariance_sample_order() -> anyhow::Result<()> {
 
 #[test]
 fn test_clust_eval_invariance_label_scaling() -> anyhow::Result<()> {
-    // Labels 1,2 vs Labels 100,200
-    // Content: {A,B}, {C,D}
-
     let content_small = "1\tA\n1\tB\n2\tC\n2\tD\n";
     let content_large = "100\tA\n100\tB\n200\tC\n200\tD\n";
 
@@ -351,6 +338,7 @@ fn test_clust_eval_invariance_label_scaling() -> anyhow::Result<()> {
         .arg("clust")
         .arg("eval")
         .arg(temp_small)
+        .arg("--other")
         .arg(temp_large)
         .output()?;
 
@@ -359,7 +347,6 @@ fn test_clust_eval_invariance_label_scaling() -> anyhow::Result<()> {
     let lines: Vec<&str> = stdout.lines().collect();
     let values: Vec<&str> = lines[1].split_whitespace().collect();
 
-    // ARI should be 1.0
     assert!((values[0].parse::<f64>()? - 1.0).abs() < 1e-6);
 
     std::fs::remove_file(temp_small)?;
@@ -368,7 +355,6 @@ fn test_clust_eval_invariance_label_scaling() -> anyhow::Result<()> {
     Ok(())
 }
 
-// Boundary Condition Tests
 #[test]
 fn test_clust_eval_empty_input() -> anyhow::Result<()> {
     let temp_empty = "tests/clust/empty.tsv";
@@ -379,21 +365,17 @@ fn test_clust_eval_empty_input() -> anyhow::Result<()> {
         .arg("clust")
         .arg("eval")
         .arg(temp_empty)
-        .arg(temp_empty) // Compare empty with empty
+        .arg("--other")
+        .arg(temp_empty)
         .output()?;
 
-    // Should verify it doesn't panic.
-    // Current implementation returns default Metrics (all 0.0) or handles gracefully.
     assert!(output.status.success());
     let stdout = String::from_utf8(output.stdout)?;
     let lines: Vec<&str> = stdout.lines().collect();
 
-    // Header + 1 line of zeros? or just header?
-    // Implementation: if n==0, returns default Metrics.
-    // Default metrics are all 0.0.
     if lines.len() > 1 {
         let values: Vec<&str> = lines[1].split_whitespace().collect();
-        assert_eq!(values[0], "0.000000"); // ARI
+        assert_eq!(values[0], "0.000000");
     }
 
     std::fs::remove_file(temp_empty)?;

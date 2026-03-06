@@ -112,8 +112,9 @@ fn test_clust_pipeline_full() {
         .args(&[
             "clust",
             "eval",
+            &cut_file, // Prediction
+            "--other",
             &truth_file, // Ground Truth
-            &cut_file,   // Prediction
             "--format",
             "pair", // Both are in pair format (or at least compatible)
         ])

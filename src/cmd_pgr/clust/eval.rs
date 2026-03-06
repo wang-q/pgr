@@ -31,7 +31,7 @@ Modes:
 
 Examples:
 1. Compare result with ground truth:
-   $ pgr clust eval result.tsv truth.tsv -o eval.tsv
+   $ pgr clust eval result.tsv --other other.tsv -o eval.tsv
 
 2. Evaluate result using distance matrix:
    $ pgr clust eval result.tsv --matrix dist.phy
@@ -47,10 +47,11 @@ Examples:
                 .help("Partition file"),
         )
         .arg(
-            Arg::new("p2")
-                .required(false)
-                .index(2)
-                .help("Second partition file (Ground Truth). If p1 is batch/long, p2 is assumed to be in 'pair' format."),
+            Arg::new("other")
+                .long("other")
+                .alias("truth")
+                .num_args(1)
+                .help("Other partition file (for external evaluation)"),
         )
         .arg(
             Arg::new("matrix")
@@ -113,7 +114,7 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
         let batches = load_batch_partitions(p1_path)?;
 
         // Prepare resources
-        let p2 = if let Some(p2_path) = matches.get_one::<String>("p2") {
+        let p2 = if let Some(p2_path) = matches.get_one::<String>("other") {
             let mut truth = load_partition(p2_path, PartitionFormat::Pair)?;
             if remove_singletons_flag {
                 remove_singletons(&mut truth);
@@ -146,7 +147,7 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
 
         if p2.is_none() && dist_provider.is_none() && coords.is_none() {
             anyhow::bail!(
-                "Batch mode requires at least one evaluation target: <p2>, --matrix, --tree, or --coords."
+                "Batch mode requires at least one evaluation target: --other/--truth, --matrix, --tree, or --coords."
             );
         }
 
@@ -242,7 +243,7 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
     // Single Mode
     let p1 = load_partition(p1_path, format)?;
 
-    if let Some(p2_path) = matches.get_one::<String>("p2") {
+    if let Some(p2_path) = matches.get_one::<String>("other") {
         let mut p2 = load_partition(p2_path, format)?;
         if remove_singletons_flag {
             remove_singletons(&mut p2);
@@ -321,7 +322,7 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
         )?;
     } else {
         anyhow::bail!(
-            "Either <p2> (for external eval), --matrix, --tree, or --coords (for internal eval) must be provided."
+            "Either --other/--truth (for external eval), --matrix, --tree, or --coords (for internal eval) must be provided."
         );
     }
 
