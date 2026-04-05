@@ -2,6 +2,8 @@
 
 ## Unreleased - ReleaseDate
 
+## 0.2.0 - 2026-04-05
+
 ### New Features
 
 #### Sequence Manipulation
