@@ -51,7 +51,9 @@ jobs:
           MACOSX_DEPLOYMENT_TARGET: 10.12
         run: cargo build --verbose --release
       - name: Create tarball
-        run: tar cvfz pgr.tar.gz target/release/pgr
+        run: |
+          cd target/release
+          tar cvfz ../../pgr.tar.gz pgr
         shell: bash
       - name: Upload binaries to releases
         uses: svenstaro/upload-release-action@v2
