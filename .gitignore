@@ -1,4 +1,11 @@
 #----------------------------#
+# IDE
+#----------------------------#
+.idea
+.vscode
+.trae
+
+#----------------------------#
 # macOS
 #----------------------------#
 
@@ -76,12 +83,6 @@ $RECYCLE.BIN/
 *.lnk
 
 #----------------------------#
-# IDE
-#----------------------------#
-.idea
-.zed
-
-#----------------------------#
 # This project
 #----------------------------#
 
@@ -97,22 +98,19 @@ Cargo.lock
 **/*.rs.bk
 
 *.tmp
-*.R
 
-seedms
-*.sh
-*.tar.gz
-*.tex
-*.pdf
+# mdBook output directory
+/book/
 
-# *.tsv
-# *.lst
-# *.sizes
-# *.xlsx
+# Coverage directory
+/coverage-*/
+/coverage_*/
+coverge-*
+coverge_*
+coverage.*
 
-PL-*/
-/tmp/
-tmp.*
+# Temporary markdown files
+*.tmp.md
 
-# Reference directories (will be deleted)
-nwr-master/
+# Temporary git log and diff files
+git*.txt
