@@ -2,14 +2,6 @@
 
 ## Unreleased - ReleaseDate
 
-## 0.1.0 - 2025-04-05
-
-### Overview
-
-This is the first official release of `pgr` (Practical Genome Refiner), a command-line toolkit for working with genomes and genome-derived data.
-
-`pgr` provides format-aware utilities for common genomics file types, interoperable outputs, pipeline-friendly behavior, and focuses on performance and robustness through Rust implementation.
-
 ### New Features
 
 #### Sequence Manipulation
@@ -221,3 +213,7 @@ This is the first official release of `pgr` (Practical Genome Refiner), a comman
 * Some subcommands depend on external executables (UCSC Kent tools, clustalw/muscle/mafft, trf, FastK, etc.)
 * Supports both plain text and gzipped (.gz) files for most text-based formats
 * 2bit files require random access and do not support stdin or gzipped inputs
+
+## 0.1.0 - 2025-02-08
+
+* New binary `pgr`
