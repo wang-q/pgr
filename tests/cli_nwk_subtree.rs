@@ -172,3 +172,33 @@ fn command_subtree_default() {
     assert!(stdout
         .contains("((Gorilla:16,(Pan:10,Homo:10)Hominini:10)Homininae:15,Pongo:30)Hominidae:15;"));
 }
+
+#[test]
+fn command_subtree_condense_basic() {
+    // Create a tree with species annotations and condense
+    // Use a simpler approach - condense by node name first to verify the mechanism works
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "nwk",
+            "subtree",
+            "tests/newick/catarrhini.nwk",
+            "-n",
+            "Gorilla",
+            "-n",
+            "Pan",
+            "-n",
+            "Homo",
+            "-M",
+            "--condense",
+            "Homininae",
+        ])
+        .run();
+
+    // Should condense Gorilla, Pan, Homo into Homininae
+    assert!(stdout.contains("Homininae"));
+    // Check NHX annotations
+    assert!(stdout.contains("member=3"));
+    assert!(stdout.contains("tri=white"));
+    // Pongo should still be there (not in the condensed group)
+    assert!(stdout.contains("Pongo"));
+}

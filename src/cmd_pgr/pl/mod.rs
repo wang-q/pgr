@@ -1,3 +1,4 @@
+pub mod condense;
 pub mod ir;
 pub mod p2m;
 pub mod prefilter;
@@ -10,6 +11,7 @@ pub fn make_subcommand() -> clap::Command {
         .about("Run integrated pipelines")
         .subcommand_required(true)
         .arg_required_else_help(true)
+        .subcommand(condense::make_subcommand())
         .subcommand(p2m::make_subcommand())
         .subcommand(prefilter::make_subcommand())
         .subcommand(trf::make_subcommand())
@@ -20,6 +22,7 @@ pub fn make_subcommand() -> clap::Command {
 
 pub fn execute(matches: &clap::ArgMatches) -> anyhow::Result<()> {
     match matches.subcommand() {
+        Some(("condense", sub_matches)) => condense::execute(sub_matches),
         Some(("p2m", sub_matches)) => p2m::execute(sub_matches),
         Some(("prefilter", sub_matches)) => prefilter::execute(sub_matches),
         Some(("trf", sub_matches)) => trf::execute(sub_matches),

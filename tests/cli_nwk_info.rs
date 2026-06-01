@@ -300,9 +300,9 @@ fn command_label_formatting_root() {
 
 #[test]
 fn command_label_formatting_tab() {
-    // -t (tab separated on one line)
+    // --tab (tab separated on one line)
     let (stdout, _) = PgrCmd::new()
-        .args(&["nwk", "label", "tests/newick/catarrhini.nwk", "-t"])
+        .args(&["nwk", "label", "tests/newick/catarrhini.nwk", "--tab"])
         .run();
 
     assert_eq!(stdout.lines().count(), 1);
@@ -324,9 +324,9 @@ fn command_label_special_chars() {
 
 #[test]
 fn command_label_multi_tree() {
-    // Multiple trees in one file, -t option
+    // Multiple trees in one file, --tab option
     let (stdout, _) = PgrCmd::new()
-        .args(&["nwk", "label", "tests/newick/forest.nwk", "-t"])
+        .args(&["nwk", "label", "tests/newick/forest.nwk", "--tab"])
         .run();
 
     // forest.nwk has 5 trees, so 5 lines
