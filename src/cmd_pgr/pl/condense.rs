@@ -1,6 +1,7 @@
 use clap::*;
 use cmd_lib::*;
 use itertools::Itertools;
+use std::collections::BTreeMap;
 use std::env;
 use std::fs;
 use std::io::Write;
@@ -121,87 +122,129 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     run_cmd!(info "==> Switch to tempdir")?;
     env::set_current_dir(tempdir_str)?;
 
-    run_cmd!(info "==> Start")?;
-    run_cmd!(
-        ${exe} nwk indent ${abs_infile} -o start.nwk
-    )?;
-
-    run_cmd!(info "==> Labels in the file")?;
-    run_cmd!(
-        ${exe} nwk label start.nwk -o labels.lst
-    )?;
-
-    run_cmd!(info "==> Create replace.tsv from taxon.tsv")?;
-    let mut writer = pgr::writer("replace.tsv");
+    //----------------------------
+    // Read taxonomy TSV
+    //----------------------------
+    run_cmd!(info "==> Read taxonomy TSV")?;
+    
+    // taxon_map: node_name -> Vec of terms (one per rank)
+    let mut taxon_map: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    // groups: all unique terms for each rank
+    let mut all_groups: Vec<Vec<String>> = vec![vec![]; ranks.len()];
+    
     for line in pgr::read_lines(&abs_taxon) {
         let parts: Vec<&str> = line.split('\t').collect();
         if parts.len() < 2 {
             continue;
         }
-        let node_name = parts[0];
-        // Write all specified ranks as additional columns
-        let mut row = vec![node_name.to_string()];
-        for rank_col in &ranks {
+        let node_name = parts[0].to_string();
+        let mut terms = vec![];
+        
+        for (i, rank_col) in ranks.iter().enumerate() {
             let rank_idx = rank_col.saturating_sub(1);
             if let Some(term) = parts.get(rank_idx) {
-                row.push(newick_safe(term));
+                let term = newick_safe(term);
+                terms.push(term.clone());
+                all_groups[i].push(term);
             }
         }
-        if row.len() > 1 {
-            writer.write_all(format!("{}\n", row.join("\t")).as_ref())?;
+        
+        if !terms.is_empty() {
+            taxon_map.insert(node_name, terms);
         }
     }
-    writer.flush()?;
+    
+    // Deduplicate groups and filter NA
+    for groups in &mut all_groups {
+        *groups = groups.clone().into_iter().unique().filter(|s| s.ne("NA")).collect();
+    }
+    
+    let _taxon_count = taxon_map.len();
+    run_cmd!(info "    Loaded {} taxonomy entries", _taxon_count)?;
 
-    run_cmd!(info "==> Add taxonomy info to the tree")?;
+    //----------------------------
+    // Start - copy input tree
+    //----------------------------
+    run_cmd!(info "==> Start")?;
     run_cmd!(
-        ${exe} nwk replace start.nwk replace.tsv --mode label -o commented.nwk
+        ${exe} nwk indent ${abs_infile} -o start.nwk
     )?;
 
-    run_cmd!(info "==> Build groups")?;
-    let mut groups = vec![];
-    for line in pgr::read_lines("replace.tsv") {
-        let parts: Vec<&str> = line.split('\t').collect();
-        // Collect all taxonomic terms from columns 1+ (skip column 0 which is node_name)
-        for i in 1..parts.len() {
-            groups.push(parts[i].to_string());
-        }
-    }
-    groups = groups.into_iter().unique().filter(|s| s.ne("NA")).collect();
-
+    //----------------------------
+    // Condensing - process each rank
+    //----------------------------
     run_cmd!(info "==> Condensing")?;
-    let mut cur_tree = "commented.nwk".to_string();
-    let mut condensed = vec![];
-    for group in groups.iter() {
-        let labels: Vec<String> = run_fun!(
-            ${exe} nwk label ${cur_tree} -n ${group} -M
-        )
-        .unwrap()
-        .split('\n')
-        .map(|s| s.to_string())
-        .filter(|s| !s.is_empty())
-        .collect();
+    let mut cur_tree = "start.nwk".to_string();
+    let mut condensed: Vec<String> = vec![];
 
-        if labels.is_empty() {
-            continue;
+    for (rank_idx, groups) in all_groups.iter().enumerate() {
+        let rank_num = ranks[rank_idx];
+        run_cmd!(info "    Processing rank {}", rank_num)?;
+        
+        for group in groups.iter() {
+            // Find all original nodes that belong to this group at this rank
+            let nodes_in_group: Vec<String> = taxon_map
+                .iter()
+                .filter(|(_, terms)| terms.get(rank_idx).map(|t| t == group).unwrap_or(false))
+                .map(|(name, _)| name.clone())
+                .collect();
+
+            if nodes_in_group.len() < 2 {
+                continue;
+            }
+
+            // Build node list file for subtree command
+            let node_list_file = format!("nodes.{}.txt", group);
+            let mut writer = pgr::writer(&node_list_file);
+            for node in &nodes_in_group {
+                writer.write_all(format!("{}\n", node).as_ref())?;
+            }
+            writer.flush()?;
+
+            // Check if these nodes form a monophyletic group and get labels
+            let labels_result = run_fun!(
+                ${exe} nwk label ${cur_tree} -f ${node_list_file} -M
+            );
+            
+            let labels_output = match labels_result {
+                Ok(output) => output,
+                Err(_) => continue, // Not monophyletic or error
+            };
+
+            let labels: Vec<String> = labels_output
+                .split('\n')
+                .map(|s: &str| s.to_string())
+                .filter(|s: &String| !s.is_empty())
+                .collect();
+
+            if labels.is_empty() {
+                // Not monophyletic, skip
+                continue;
+            }
+
+            let new_label = format!("{}___{}", group, labels.len());
+
+            // Record mapping: original node name -> condensed label
+            for node in &nodes_in_group {
+                condensed.push(format!("{}\t{}", node, new_label));
+            }
+
+            // Condense the subtree
+            let new_tree = format!("condense.{}.nwk", group);
+            run_cmd!(
+                ${exe} nwk subtree ${cur_tree} -f ${node_list_file} -M --condense ${new_label} -o ${new_tree}
+            )?;
+
+            cur_tree = new_tree;
         }
-
-        let new_label = format!("{}___{}", group, labels.len());
-
-        labels
-            .iter()
-            .for_each(|e| condensed.push(format!("{}\t{}", e, new_label)));
-
-        run_cmd!(
-            ${exe} nwk subtree ${cur_tree} -n ${group} -M --condense ${new_label} -o condense.${group}.nwk
-        )?;
-
-        cur_tree = format!("condense.{}.nwk", group);
     }
 
+    //----------------------------
+    // Results
+    //----------------------------
     run_cmd!(info "==> Results")?;
     fs::copy(
-        tempdir.path().join(cur_tree.clone()).to_str().unwrap(),
+        tempdir.path().join(&cur_tree).to_str().unwrap(),
         "result.nwk",
     )?;
 
@@ -215,7 +258,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // Done
     //----------------------------
     if outfile == "stdout" {
-        run_cmd!(cat ${cur_tree})?;
+        let result_content = fs::read_to_string("result.nwk")?;
+        print!("{}", result_content);
         env::set_current_dir(&curdir)?;
     } else {
         env::set_current_dir(&curdir)?;
