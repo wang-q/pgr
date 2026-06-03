@@ -1,7 +1,8 @@
 use clap::*;
 use cmd_lib::*;
 use itertools::Itertools;
-use std::collections::BTreeMap;
+use pgr::libs::phylo::tree::Tree;
+use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::fs;
 use std::io::Write;
@@ -123,21 +124,34 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     env::set_current_dir(tempdir_str)?;
 
     //----------------------------
+    // Read tree leaf names for filtering
+    //----------------------------
+    let trees = Tree::from_file(&abs_infile)?;
+    let leaf_names: BTreeSet<String> = if let Some(tree) = trees.first() {
+        tree.get_leaf_names().into_iter().flatten().collect()
+    } else {
+        BTreeSet::new()
+    };
+
+    //----------------------------
     // Read taxonomy TSV
     //----------------------------
     run_cmd!(info "==> Read taxonomy TSV")?;
-    
+
     // taxon_map: node_name -> Vec of terms (one per rank)
     let mut taxon_map: BTreeMap<String, Vec<String>> = BTreeMap::new();
     // groups: all unique terms for each rank
     let mut all_groups: Vec<Vec<String>> = vec![vec![]; ranks.len()];
-    
+
     for line in pgr::read_lines(&abs_taxon) {
         let parts: Vec<&str> = line.split('\t').collect();
         if parts.len() < 2 {
             continue;
         }
         let node_name = parts[0].to_string();
+        if !leaf_names.contains(&node_name) {
+            continue;
+        }
         let mut terms = vec![];
         
         for (i, rank_col) in ranks.iter().enumerate() {
