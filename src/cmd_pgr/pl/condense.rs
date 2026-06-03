@@ -180,6 +180,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     run_cmd!(info "==> Condensing")?;
     let mut cur_tree = "start.nwk".to_string();
     let mut condensed: Vec<String> = vec![];
+    let mut toggle = false;
 
     for (rank_idx, groups) in all_groups.iter().enumerate() {
         let rank_num = ranks[rank_idx];
@@ -197,9 +198,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 continue;
             }
 
-            // Build node list file for subtree command
-            let node_list_file = format!("nodes.{}.txt", group);
-            let mut writer = pgr::writer(&node_list_file);
+            // Write node list to a reusable file
+            let mut writer = pgr::writer("nodes.txt");
             for node in &nodes_in_group {
                 writer.write_all(format!("{}\n", node).as_ref())?;
             }
@@ -207,7 +207,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
             // Check if these nodes form a monophyletic group and get labels
             let labels_result = run_fun!(
-                ${exe} nwk label ${cur_tree} -f ${node_list_file} -M
+                ${exe} nwk label ${cur_tree} -f nodes.txt -M
             );
             
             let labels_output = match labels_result {
@@ -233,10 +233,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 condensed.push(format!("{}\t{}", node, new_label));
             }
 
-            // Condense the subtree
-            let new_tree = format!("condense.{}.nwk", group);
+            // Condense the subtree; use alternating output files to avoid clobbering
+            toggle = !toggle;
+            let new_tree = if toggle { "temp_a.nwk".to_string() } else { "temp_b.nwk".to_string() };
             run_cmd!(
-                ${exe} nwk subtree ${cur_tree} -f ${node_list_file} -M --condense ${new_label} -o ${new_tree}
+                ${exe} nwk subtree ${cur_tree} -f nodes.txt -M --condense ${new_label} -o ${new_tree}
             )?;
 
             cur_tree = new_tree;
@@ -283,7 +284,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 fn newick_safe(s: &str) -> String {
     s.chars()
         .map(|c| match c {
-            '(' | ')' | '[' | ']' | ',' | ':' | ';' | ' ' => '_',
+            '(' | ')' | '[' | ']' | ',' | ':' | ';' | ' ' | '/' | '\\' => '_',
             _ => c,
         })
         .collect()
