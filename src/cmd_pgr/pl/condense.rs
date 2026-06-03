@@ -132,6 +132,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     } else {
         BTreeSet::new()
     };
+    let leaf_count = leaf_names.len();
+    run_cmd!(info "    Tree leaf count: ${leaf_count}")?;
 
     //----------------------------
     // Read taxonomy TSV
