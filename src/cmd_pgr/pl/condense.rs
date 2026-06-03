@@ -204,6 +204,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 writer.write_all(format!("{}\n", node).as_ref())?;
             }
             writer.flush()?;
+            drop(writer);
 
             // Check if these nodes form a monophyletic group and get labels
             let labels_result = run_fun!(
@@ -226,7 +227,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 continue;
             }
 
-            let new_label = format!("{}___{}", group, labels.len());
+            let new_label = format!("{}___{}", group, nodes_in_group.len());
 
             // Record mapping: original node name -> condensed label
             for node in &nodes_in_group {
