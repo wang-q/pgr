@@ -156,11 +156,15 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     
     // Deduplicate groups and filter NA
     for groups in &mut all_groups {
-        *groups = groups.clone().into_iter().unique().filter(|s| s.ne("NA")).collect();
+        *groups = groups.clone().into_iter().sorted().unique().filter(|s| s.ne("NA")).collect();
     }
     
-    let _taxon_count = taxon_map.len();
-    run_cmd!(info "    Loaded {} taxonomy entries", _taxon_count)?;
+    let taxon_count = taxon_map.len();
+    run_cmd!(info "    Loaded ${taxon_count} taxonomy entries")?;
+    for (i, rank) in ranks.iter().enumerate() {
+        let rank_groups = all_groups[i].len();
+        run_cmd!(info "    Rank ${rank}: ${rank_groups} groups")?;
+    }
 
     //----------------------------
     // Start - copy input tree
@@ -179,7 +183,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     for (rank_idx, groups) in all_groups.iter().enumerate() {
         let rank_num = ranks[rank_idx];
-        run_cmd!(info "    Processing rank {}", rank_num)?;
+        run_cmd!(info "    Processing rank ${rank_num}")?;
         
         for group in groups.iter() {
             // Find all original nodes that belong to this group at this rank
