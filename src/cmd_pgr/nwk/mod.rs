@@ -15,6 +15,7 @@ pub mod subtree;
 pub mod support;
 pub mod to_dot;
 pub mod to_forest;
+pub mod to_svg;
 pub mod to_tex;
 pub mod topo;
 pub mod utils;
@@ -29,7 +30,7 @@ This suite of tools provides a comprehensive set of operations for phylogenetic 
 Subcommand groups:
 * info: stat / label / distance / support
 * ops:  order / prune / rename / replace / reroot / subtree / topo
-* viz:  comment / indent / to-dot / to-forest / to-tex
+* viz:  comment / indent / to-dot / to-forest / to-svg / to-tex
 
 "###,
         )
@@ -50,6 +51,7 @@ Subcommand groups:
         .subcommand(support::make_subcommand())
         .subcommand(to_dot::make_subcommand())
         .subcommand(to_forest::make_subcommand())
+        .subcommand(to_svg::make_subcommand())
         .subcommand(to_tex::make_subcommand())
         .subcommand(topo::make_subcommand())
 }
@@ -71,6 +73,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         Some(("support", sub_matches)) => support::execute(sub_matches),
         Some(("to-dot", sub_matches)) => to_dot::execute(sub_matches),
         Some(("to-forest", sub_matches)) => to_forest::execute(sub_matches),
+        Some(("to-svg", sub_matches)) => to_svg::execute(sub_matches),
         Some(("to-tex", sub_matches)) => to_tex::execute(sub_matches),
         Some(("topo", sub_matches)) => topo::execute(sub_matches),
         _ => unreachable!(),

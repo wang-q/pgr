@@ -1,5 +1,6 @@
 use super::Tree;
 use crate::libs::phylo::node::NodeId;
+use std::collections::HashMap;
 use std::io::Read;
 
 /// Read a Newick tree from a file.
@@ -157,6 +158,308 @@ pub fn to_dot(tree: &Tree) -> String {
 
     s.push_str("}\n");
     s
+}
+
+/// Serialize tree to SVG format.
+///
+/// # Arguments
+/// * `tree` - The tree to serialize.
+/// * `height` - Tree height for scaling branch lengths. If 0.0, uses cladogram mode.
+/// * `vskip` - Vertical spacing between leaf nodes in pixels.
+/// * `width` - SVG width in pixels.
+pub fn to_svg(tree: &Tree, height: f64, vskip: f64, width: f64) -> String {
+    let root = match tree.get_root() {
+        Some(r) => r,
+        None => return String::new(),
+    };
+
+    let positions = compute_svg_positions(tree, root, height, vskip, width);
+
+    // Calculate bounding box
+    let mut max_x = 0.0_f64;
+    let mut max_y = 0.0_f64;
+    for (_, (x, y)) in &positions {
+        max_x = max_x.max(*x);
+        max_y = max_y.max(*y);
+    }
+
+    // Add margins for labels
+    let margin_left = 10.0;
+    let margin_right = 120.0; // space for leaf labels
+    let margin_top = 20.0; // space for internal node labels
+    let margin_bottom = 30.0; // space for scale bar
+
+    let svg_width = max_x + margin_left + margin_right;
+    let svg_height = max_y + margin_top + margin_bottom;
+
+    let mut s = String::new();
+
+    // SVG header
+    s.push_str(&format!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
+         <svg xmlns=\"http://www.w3.org/2000/svg\" \
+         width=\"{}\" height=\"{}\" viewBox=\"0 0 {} {}\">\n",
+        svg_width, svg_height, svg_width, svg_height
+    ));
+
+    // Embedded styles matching template.tex
+    s.push_str(
+        "<style>\n\
+         \tline { stroke: rgb(129,130,132); stroke-width: 1pt; }\n\
+         \ttext { font-family: sans-serif; font-size: 12px; }\n\
+         \t.dot { fill: rgb(26,25,25); }\n\
+         \t.label { font-size: 11px; }\n\
+         \t.scale-text { font-size: 10px; }\n\
+         </style>\n",
+    );
+
+    let ox = margin_left;
+    let oy = margin_top;
+
+    // Draw tree edges and nodes
+    if let Ok(nodes) = tree.preorder(&root) {
+        for &id in &nodes {
+            let node = match tree.get_node(id) {
+                Some(n) => n,
+                None => continue,
+            };
+            if node.deleted {
+                continue;
+            }
+
+            let (nx, ny) = positions[&id];
+
+            // Draw vertical branch line (from parent to this node)
+            if let Some(parent_id) = node.parent {
+                let (_px, _py) = positions[&parent_id];
+                // Vertical line from parent's y to this node's y, at this node's x
+                s.push_str(&format!(
+                    "\t<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\"/>\n",
+                    ox + nx,
+                    oy + _py,
+                    ox + nx,
+                    oy + ny
+                ));
+            }
+
+            // Draw horizontal connector line between children
+            if node.children.len() >= 2 {
+                let first_child = node.children[0];
+                let last_child = *node.children.last().unwrap();
+                let (_, first_y) = positions[&first_child];
+                let (_, last_y) = positions[&last_child];
+                // Horizontal line at parent's y, from first child's y to last child's y
+                s.push_str(&format!(
+                    "\t<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\"/>\n",
+                    ox + nx,
+                    oy + first_y,
+                    ox + nx,
+                    oy + last_y
+                ));
+            }
+
+            // Draw internal node dot and label
+            if !node.is_leaf() {
+                s.push_str(&format!(
+                    "\t<circle cx=\"{}\" cy=\"{}\" r=\"2\" class=\"dot\"/>\n",
+                    ox + nx,
+                    oy + ny
+                ));
+                if let Some(name) = &node.name {
+                    let label = name.replace('_', " ");
+                    s.push_str(&format!(
+                        "\t<text x=\"{}\" y=\"{}\" text-anchor=\"middle\" class=\"label\">{}</text>\n",
+                        ox + nx,
+                        oy + ny - 6.0,
+                        xml_escape(&label)
+                    ));
+                }
+            }
+        }
+
+        // Draw leaf labels (separate pass to ensure they're on top)
+        for &id in &nodes {
+            let node = match tree.get_node(id) {
+                Some(n) => n,
+                None => continue,
+            };
+            if node.deleted || !node.is_leaf() {
+                continue;
+            }
+            let (nx, ny) = positions[&id];
+            let label = node.name.as_deref().unwrap_or("").replace('_', " ");
+            if !label.is_empty() {
+                s.push_str(&format!(
+                    "\t<text x=\"{}\" y=\"{}\" text-anchor=\"start\" dominant-baseline=\"middle\">{}</text>\n",
+                    ox + nx + 6.0,
+                    oy + ny,
+                    xml_escape(&label)
+                ));
+            }
+        }
+    }
+
+    // Scale bar (phylogram mode only)
+    if height > 0.0 {
+        let target_scale = height / 5.0;
+        let magnitude = target_scale.log10().floor();
+        let base = 10.0_f64.powf(magnitude);
+
+        let scale = [1.0, 2.0, 5.0]
+            .iter()
+            .map(|&x| base * x)
+            .filter(|&x| x <= target_scale)
+            .last()
+            .unwrap_or(base);
+
+        let scale_px = scale * (max_y / height);
+
+        let bar_x = svg_width - margin_right;
+        let bar_y = svg_height - 10.0;
+
+        s.push_str(&format!(
+            "\t<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\"/>\n",
+            bar_x,
+            bar_y,
+            bar_x - scale_px,
+            bar_y
+        ));
+        s.push_str(&format!(
+            "\t<text x=\"{}\" y=\"{}\" text-anchor=\"middle\" class=\"scale-text\">{}</text>\n",
+            bar_x - scale_px / 2.0,
+            bar_y + 14.0,
+            scale
+        ));
+    }
+
+    s.push_str("</svg>\n");
+    s
+}
+
+/// Compute (x, y) positions for all nodes in the tree.
+///
+/// Layout: top-to-bottom (root at top, leaves at bottom).
+/// - X: leaves are evenly spaced horizontally; internal nodes are centered over their children.
+/// - Y: cladogram uses depth * vskip; phylogram uses cumulative branch length * scale.
+fn compute_svg_positions(
+    tree: &Tree,
+    root: NodeId,
+    height: f64,
+    vskip: f64,
+    width: f64,
+) -> HashMap<NodeId, (f64, f64)> {
+    let mut positions = HashMap::new();
+
+    // Get leaves in order
+    let leaves: Vec<NodeId> = if let Ok(nodes) = tree.preorder(&root) {
+        nodes
+            .iter()
+            .filter(|&&id| {
+                tree.get_node(id).map(|n| n.is_leaf()).unwrap_or(false)
+            })
+            .copied()
+            .collect()
+    } else {
+        return positions;
+    };
+
+    let leaf_count = leaves.len();
+    if leaf_count == 0 {
+        return positions;
+    }
+
+    let x_step = width / (leaf_count + 1) as f64;
+
+    // Assign x positions to leaves
+    for (i, &leaf_id) in leaves.iter().enumerate() {
+        let x = x_step * (i + 1) as f64;
+        positions.insert(leaf_id, (x, 0.0)); // y will be set later
+    }
+
+    // Compute cumulative branch length from root for phylogram mode
+    let cum_length = if height > 0.0 {
+        let mut cl = HashMap::new();
+        cl.insert(root, 0.0);
+        if let Ok(nodes) = tree.preorder(&root) {
+            for &id in &nodes {
+                let node = match tree.get_node(id) {
+                    Some(n) => n,
+                    None => continue,
+                };
+                let parent_len = *cl.get(&id).unwrap_or(&0.0);
+                for &child_id in &node.children {
+                    let child = tree.get_node(child_id).unwrap();
+                    let edge = child.length.unwrap_or(0.0);
+                    cl.insert(child_id, parent_len + edge);
+                }
+            }
+        }
+        cl
+    } else {
+        HashMap::new()
+    };
+
+    // Post-order traversal to compute x (center over children) and y
+    if let Ok(postorder) = tree.postorder(&root) {
+        for &id in &postorder {
+            let node = match tree.get_node(id) {
+                Some(n) => n,
+                None => continue,
+            };
+
+            if node.is_leaf() {
+                // y position for leaves
+                let y = if height > 0.0 {
+                    let cl = cum_length.get(&id).copied().unwrap_or(0.0);
+                    let scale = if height > 0.0 {
+                        (leaf_count as f64 * vskip) / height
+                    } else {
+                        1.0
+                    };
+                    cl * scale
+                } else {
+                    node_depth(tree, id) as f64 * vskip
+                };
+                if let Some(pos) = positions.get_mut(&id) {
+                    pos.1 = y;
+                }
+            } else {
+                // Internal node: x = center of children, y from depth or branch length
+                let children = &node.children;
+                if children.is_empty() {
+                    continue;
+                }
+
+                let x_sum: f64 = children
+                    .iter()
+                    .filter_map(|&c| positions.get(&c).map(|p| p.0))
+                    .sum();
+                let x_count = children.len() as f64;
+                let x = x_sum / x_count;
+
+                let y = if height > 0.0 {
+                    let cl = cum_length.get(&id).copied().unwrap_or(0.0);
+                    let scale = (leaf_count as f64 * vskip) / height;
+                    cl * scale
+                } else {
+                    node_depth(tree, id) as f64 * vskip
+                };
+
+                positions.insert(id, (x, y));
+            }
+        }
+    }
+
+    positions
+}
+
+/// Escape special XML characters in text content.
+fn xml_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&apos;")
 }
 
 /// Serialize tree to LaTeX Forest format.

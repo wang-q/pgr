@@ -231,3 +231,56 @@ fn command_tex() {
     assert!(stdout.contains("l=40mm"));
     assert!(stdout.contains("l=53mm"));
 }
+
+#[test]
+fn command_to_svg() {
+    // 1. Default (Cladogram)
+    let (stdout, _) = PgrCmd::new()
+        .args(&["nwk", "to-svg", "tests/newick/catarrhini.nwk"])
+        .run();
+
+    assert!(stdout.contains("<?xml version=\"1.0\""));
+    assert!(stdout.contains("<svg xmlns=\"http://www.w3.org/2000/svg\""));
+    assert!(stdout.contains("<style>"));
+    assert!(stdout.contains("Hominidae"));
+    assert!(stdout.contains("Homo"));
+    assert!(stdout.contains("class=\"dot\""));
+    // No scale bar in cladogram mode
+    assert!(!stdout.contains("class=\"scale-text\""));
+}
+
+#[test]
+fn command_to_svg_bl() {
+    // Phylogram with branch lengths
+    let (stdout, _) = PgrCmd::new()
+        .args(&["nwk", "to-svg", "tests/newick/catarrhini.nwk", "--bl"])
+        .run();
+
+    assert!(stdout.contains("<?xml version=\"1.0\""));
+    assert!(stdout.contains("<svg xmlns=\"http://www.w3.org/2000/svg\""));
+    assert!(stdout.contains("Hominidae"));
+    assert!(stdout.contains("Homo"));
+    // Scale bar should be present in phylogram mode
+    assert!(stdout.contains("class=\"scale-text\""));
+}
+
+#[test]
+fn command_to_svg_width_vskip() {
+    // Custom width and vskip
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "nwk",
+            "to-svg",
+            "tests/newick/abc.nwk",
+            "-w",
+            "400",
+            "-v",
+            "30",
+        ])
+        .run();
+
+    assert!(stdout.contains("<svg xmlns=\"http://www.w3.org/2000/svg\""));
+    assert!(stdout.contains("A"));
+    assert!(stdout.contains("B"));
+    assert!(stdout.contains("C"));
+}

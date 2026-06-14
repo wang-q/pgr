@@ -244,4 +244,8 @@ impl Tree {
     pub fn to_dot(&self) -> String {
         io::to_dot(self)
     }
+
+    pub fn to_svg(&self, height: f64, vskip: f64, width: f64) -> String {
+        io::to_svg(self, height, vskip, width)
+    }
 }
