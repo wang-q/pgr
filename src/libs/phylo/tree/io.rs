@@ -183,10 +183,25 @@ pub fn to_svg(tree: &Tree, height: f64, vskip: f64, width: f64) -> String {
         max_y = max_y.max(*y);
     }
 
+    // Estimate the longest leaf label width (rough: ~7px per char at 12px sans-serif)
+    let max_label_width = if let Ok(nodes) = tree.preorder(&root) {
+        nodes
+            .iter()
+            .filter_map(|&id| {
+                tree.get_node(id)
+                    .filter(|n| n.is_leaf() && !n.deleted)
+                    .and_then(|n| n.name.as_ref())
+                    .map(|name| name.replace('_', " ").len() as f64 * 7.0 + 6.0)
+            })
+            .fold(0.0_f64, f64::max)
+    } else {
+        0.0
+    };
+
     // Add margins for labels
-    let margin_left = 10.0;
-    let margin_right = 120.0; // space for leaf labels
-    let margin_top = 20.0; // space for internal node labels
+    let margin_left = 20.0;
+    let margin_right = max_label_width.max(60.0); // at least 60px for short labels
+    let margin_top = 10.0;
     let margin_bottom = 30.0; // space for scale bar
 
     let svg_width = max_x + margin_left + margin_right;
@@ -216,7 +231,7 @@ pub fn to_svg(tree: &Tree, height: f64, vskip: f64, width: f64) -> String {
     let ox = margin_left;
     let oy = margin_top;
 
-    // Draw tree edges and nodes
+    // Layer 1: Draw all edges first (so labels render on top)
     if let Ok(nodes) = tree.preorder(&root) {
         for &id in &nodes {
             let node = match tree.get_node(id) {
@@ -226,72 +241,90 @@ pub fn to_svg(tree: &Tree, height: f64, vskip: f64, width: f64) -> String {
             if node.deleted {
                 continue;
             }
-
             let (nx, ny) = positions[&id];
 
-            // Draw vertical branch line (from parent to this node)
+            // Horizontal branch line (from parent to this node)
             if let Some(parent_id) = node.parent {
-                let (_px, _py) = positions[&parent_id];
-                // Vertical line from parent's y to this node's y, at this node's x
-                s.push_str(&format!(
-                    "\t<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\"/>\n",
-                    ox + nx,
-                    oy + _py,
-                    ox + nx,
-                    oy + ny
-                ));
+                if let Some(&(px, _)) = positions.get(&parent_id) {
+                    s.push_str(&format!(
+                        "\t<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\"/>\n",
+                        ox + px,
+                        oy + ny,
+                        ox + nx,
+                        oy + ny
+                    ));
+                }
             }
 
-            // Draw horizontal connector line between children
+            // Vertical connector line between children
             if node.children.len() >= 2 {
                 let first_child = node.children[0];
                 let last_child = *node.children.last().unwrap();
-                let (_, first_y) = positions[&first_child];
-                let (_, last_y) = positions[&last_child];
-                // Horizontal line at parent's y, from first child's y to last child's y
-                s.push_str(&format!(
-                    "\t<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\"/>\n",
-                    ox + nx,
-                    oy + first_y,
-                    ox + nx,
-                    oy + last_y
-                ));
-            }
-
-            // Draw internal node dot and label
-            if !node.is_leaf() {
-                s.push_str(&format!(
-                    "\t<circle cx=\"{}\" cy=\"{}\" r=\"2\" class=\"dot\"/>\n",
-                    ox + nx,
-                    oy + ny
-                ));
-                if let Some(name) = &node.name {
-                    let label = name.replace('_', " ");
+                if let (Some(&(_, first_y)), Some(&(_, last_y))) =
+                    (positions.get(&first_child), positions.get(&last_child))
+                {
                     s.push_str(&format!(
-                        "\t<text x=\"{}\" y=\"{}\" text-anchor=\"middle\" class=\"label\">{}</text>\n",
+                        "\t<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\"/>\n",
                         ox + nx,
-                        oy + ny - 6.0,
-                        xml_escape(&label)
+                        oy + first_y,
+                        ox + nx,
+                        oy + last_y
                     ));
                 }
             }
         }
 
-        // Draw leaf labels (separate pass to ensure they're on top)
+        // Layer 2: Draw dots and shapes
         for &id in &nodes {
             let node = match tree.get_node(id) {
                 Some(n) => n,
                 None => continue,
             };
-            if node.deleted || !node.is_leaf() {
+            if node.deleted {
                 continue;
             }
             let (nx, ny) = positions[&id];
-            let label = node.name.as_deref().unwrap_or("").replace('_', " ");
-            if !label.is_empty() {
+
+            if !node.is_leaf() {
+                // Only draw dot if node has a name (matching Forest behavior)
+                if node.name.is_some() {
+                    s.push_str(&format!(
+                        "\t<circle cx=\"{}\" cy=\"{}\" r=\"2\" class=\"dot\"/>\n",
+                        ox + nx,
+                        oy + ny
+                    ));
+                }
+            }
+        }
+
+        // Layer 3: Draw all text labels
+        for &id in &nodes {
+            let node = match tree.get_node(id) {
+                Some(n) => n,
+                None => continue,
+            };
+            if node.deleted {
+                continue;
+            }
+            let (nx, ny) = positions[&id];
+
+            if node.is_leaf() {
+                // Leaf label: right of node
+                let label = node.name.as_deref().unwrap_or("").replace('_', " ");
+                if !label.is_empty() {
+                    s.push_str(&format!(
+                        "\t<text x=\"{}\" y=\"{}\" text-anchor=\"start\" dominant-baseline=\"middle\">{}</text>\n",
+                        ox + nx + 6.0,
+                        oy + ny,
+                        xml_escape(&label)
+                    ));
+                }
+            } else if let Some(name) = &node.name {
+                // Internal node label: left of node
+                let label = name.replace('_', " ");
                 s.push_str(&format!(
-                    "\t<text x=\"{}\" y=\"{}\" text-anchor=\"start\" dominant-baseline=\"middle\">{}</text>\n",
-                    ox + nx + 6.0,
+                    "\t<text x=\"{}\" y=\"{}\" text-anchor=\"end\" dominant-baseline=\"middle\" class=\"label\">{}</text>\n",
+                    ox + nx - 6.0,
                     oy + ny,
                     xml_escape(&label)
                 ));
@@ -312,21 +345,21 @@ pub fn to_svg(tree: &Tree, height: f64, vskip: f64, width: f64) -> String {
             .last()
             .unwrap_or(base);
 
-        let scale_px = scale * (max_y / height);
+        let scale_px = scale * (max_x / height);
 
-        let bar_x = svg_width - margin_right;
-        let bar_y = svg_height - 10.0;
+        let bar_x = ox;
+        let bar_y = svg_height - 20.0;
 
         s.push_str(&format!(
             "\t<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\"/>\n",
             bar_x,
             bar_y,
-            bar_x - scale_px,
+            bar_x + scale_px,
             bar_y
         ));
         s.push_str(&format!(
             "\t<text x=\"{}\" y=\"{}\" text-anchor=\"middle\" class=\"scale-text\">{}</text>\n",
-            bar_x - scale_px / 2.0,
+            bar_x + scale_px / 2.0,
             bar_y + 14.0,
             scale
         ));
@@ -338,9 +371,9 @@ pub fn to_svg(tree: &Tree, height: f64, vskip: f64, width: f64) -> String {
 
 /// Compute (x, y) positions for all nodes in the tree.
 ///
-/// Layout: top-to-bottom (root at top, leaves at bottom).
-/// - X: leaves are evenly spaced horizontally; internal nodes are centered over their children.
-/// - Y: cladogram uses depth * vskip; phylogram uses cumulative branch length * scale.
+/// Layout: left-to-right (root at left, leaves at right).
+/// - Y: leaves are evenly spaced vertically; internal nodes are centered over their children.
+/// - X: cladogram uses tier-based alignment (all leaves at same x); phylogram uses cumulative branch length * scale.
 fn compute_svg_positions(
     tree: &Tree,
     root: NodeId,
@@ -350,12 +383,14 @@ fn compute_svg_positions(
 ) -> HashMap<NodeId, (f64, f64)> {
     let mut positions = HashMap::new();
 
-    // Get leaves in order
+    // Get non-deleted leaves in order
     let leaves: Vec<NodeId> = if let Ok(nodes) = tree.preorder(&root) {
         nodes
             .iter()
             .filter(|&&id| {
-                tree.get_node(id).map(|n| n.is_leaf()).unwrap_or(false)
+                tree.get_node(id)
+                    .map(|n| n.is_leaf() && !n.deleted)
+                    .unwrap_or(false)
             })
             .copied()
             .collect()
@@ -368,12 +403,12 @@ fn compute_svg_positions(
         return positions;
     }
 
-    let x_step = width / (leaf_count + 1) as f64;
+    let y_step = vskip;
 
-    // Assign x positions to leaves
+    // Assign y positions to leaves
     for (i, &leaf_id) in leaves.iter().enumerate() {
-        let x = x_step * (i + 1) as f64;
-        positions.insert(leaf_id, (x, 0.0)); // y will be set later
+        let y = y_step * (i + 1) as f64;
+        positions.insert(leaf_id, (0.0, y)); // x will be set later
     }
 
     // Compute cumulative branch length from root for phylogram mode
@@ -386,11 +421,18 @@ fn compute_svg_positions(
                     Some(n) => n,
                     None => continue,
                 };
+                if node.deleted {
+                    continue;
+                }
                 let parent_len = *cl.get(&id).unwrap_or(&0.0);
                 for &child_id in &node.children {
-                    let child = tree.get_node(child_id).unwrap();
-                    let edge = child.length.unwrap_or(0.0);
-                    cl.insert(child_id, parent_len + edge);
+                    if let Some(child) = tree.get_node(child_id) {
+                        if child.deleted {
+                            continue;
+                        }
+                        let edge = child.length.unwrap_or(0.0);
+                        cl.insert(child_id, parent_len + edge);
+                    }
                 }
             }
         }
@@ -399,50 +441,76 @@ fn compute_svg_positions(
         HashMap::new()
     };
 
-    // Post-order traversal to compute x (center over children) and y
+    // Compute max depth for cladogram alignment
+    let max_depth = if height == 0.0 {
+        leaves
+            .iter()
+            .filter_map(|&id| {
+                let d = node_depth(tree, id);
+                if d > 0 {
+                    Some(d)
+                } else {
+                    None
+                }
+            })
+            .max()
+            .unwrap_or(1)
+    } else {
+        0
+    };
+
+    // Scale factor: map tree width to the requested SVG width
+    let hskip = if height > 0.0 {
+        width / height // pixels per unit of branch length
+    } else {
+        width / (max_depth as f64 + 1.0) // pixels per depth level
+    };
+
+    // Post-order traversal to compute y (center over children) and x
     if let Ok(postorder) = tree.postorder(&root) {
         for &id in &postorder {
             let node = match tree.get_node(id) {
                 Some(n) => n,
                 None => continue,
             };
+            if node.deleted {
+                continue;
+            }
 
             if node.is_leaf() {
-                // y position for leaves
-                let y = if height > 0.0 {
+                // x position for leaves
+                let x = if height > 0.0 {
                     let cl = cum_length.get(&id).copied().unwrap_or(0.0);
-                    let scale = if height > 0.0 {
-                        (leaf_count as f64 * vskip) / height
-                    } else {
-                        1.0
-                    };
-                    cl * scale
+                    cl * hskip
                 } else {
-                    node_depth(tree, id) as f64 * vskip
+                    // Cladogram: all leaves aligned at max_depth * hskip
+                    max_depth as f64 * hskip
                 };
                 if let Some(pos) = positions.get_mut(&id) {
-                    pos.1 = y;
+                    pos.0 = x;
                 }
             } else {
-                // Internal node: x = center of children, y from depth or branch length
+                // Internal node: y = center of children, x from depth or branch length
                 let children = &node.children;
                 if children.is_empty() {
                     continue;
                 }
 
-                let x_sum: f64 = children
+                let y_sum: f64 = children
                     .iter()
-                    .filter_map(|&c| positions.get(&c).map(|p| p.0))
+                    .filter_map(|&c| positions.get(&c).map(|p| p.1))
                     .sum();
-                let x_count = children.len() as f64;
-                let x = x_sum / x_count;
+                let y_count = children.len() as f64;
+                let y = y_sum / y_count;
 
-                let y = if height > 0.0 {
+                let x = if height > 0.0 {
                     let cl = cum_length.get(&id).copied().unwrap_or(0.0);
-                    let scale = (leaf_count as f64 * vskip) / height;
-                    cl * scale
+                    cl * hskip
                 } else {
-                    node_depth(tree, id) as f64 * vskip
+                    // Cladogram: use subtree height (like Forest's tier system)
+                    // tier = max_depth - branch_depth + 1
+                    let bd = branch_depth(tree, id);
+                    (max_depth - bd + 1) as f64 * hskip
                 };
 
                 positions.insert(id, (x, y));

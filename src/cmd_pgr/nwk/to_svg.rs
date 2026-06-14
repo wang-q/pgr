@@ -81,14 +81,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     // Auto-detect: if any node has a branch length, draw phylogram
     let has_bl = if let Some(root) = tree.get_root() {
-        tree.preorder(&root)
-            .unwrap_or_default()
-            .iter()
-            .any(|&id| {
-                tree.get_node(id)
-                    .map(|n| n.length.is_some())
-                    .unwrap_or(false)
-            })
+        tree.preorder(&root).unwrap_or_default().iter().any(|&id| {
+            tree.get_node(id)
+                .map(|n| n.length.is_some())
+                .unwrap_or(false)
+        })
     } else {
         false
     };

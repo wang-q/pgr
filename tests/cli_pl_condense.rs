@@ -14,13 +14,23 @@ fn command_pl_condense_basic() {
     let stdout = String::from_utf8_lossy(&output.stdout);
 
     // Should succeed
-    assert!(output.status.success(), "Command failed: {}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "Command failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 
     // Check that condensed labels are present (format: term___count)
-    assert!(stdout.contains("___"), "No condensed labels found in output");
+    assert!(
+        stdout.contains("___"),
+        "No condensed labels found in output"
+    );
 
     // Check that output is a valid Newick tree
-    assert!(stdout.starts_with('(') || stdout.starts_with("Sa_cer"), "Output is not a valid Newick tree");
+    assert!(
+        stdout.starts_with('(') || stdout.starts_with("Sa_cer"),
+        "Output is not a valid Newick tree"
+    );
 }
 
 #[test]
@@ -113,15 +123,28 @@ fn command_pl_condense_with_map() {
 
     // Check condensed.tsv exists in current directory (where command was run)
     let map_path = std::env::current_dir().unwrap().join("condensed.tsv");
-    assert!(map_path.exists(), "condensed.tsv not found at {:?}", map_path);
+    assert!(
+        map_path.exists(),
+        "condensed.tsv not found at {:?}",
+        map_path
+    );
     let map_content = fs::read_to_string(&map_path).unwrap();
     assert!(!map_content.is_empty(), "condensed.tsv is empty");
 
     // Check format: original_name<TAB>condensed_label
     for line in map_content.lines() {
         let parts: Vec<&str> = line.split('\t').collect();
-        assert_eq!(parts.len(), 2, "condensed.tsv line should have 2 columns: {}", line);
-        assert!(parts[1].contains("___"), "condensed label should contain ___: {}", parts[1]);
+        assert_eq!(
+            parts.len(),
+            2,
+            "condensed.tsv line should have 2 columns: {}",
+            line
+        );
+        assert!(
+            parts[1].contains("___"),
+            "condensed label should contain ___: {}",
+            parts[1]
+        );
     }
 
     // Clean up
