@@ -205,10 +205,10 @@ pub fn to_svg(tree: &Tree, height: f64, vskip: f64, width: f64) -> String {
     // Embedded styles matching template.tex
     s.push_str(
         "<style>\n\
-         \tline { stroke: rgb(129,130,132); stroke-width: 1pt; }\n\
-         \ttext { font-family: sans-serif; font-size: 12px; }\n\
+         \tline { stroke: rgb(129,130,132); stroke-width: 1pt; stroke-linecap: round; }\n\
+         \ttext { font-family: sans-serif; font-size: 12px; fill: rgb(26,25,25); }\n\
          \t.dot { fill: rgb(26,25,25); }\n\
-         \t.label { font-size: 11px; }\n\
+         \t.label { font-size: 10px; }\n\
          \t.scale-text { font-size: 10px; }\n\
          </style>\n",
     );

@@ -26,6 +26,7 @@ The subcommands are organized into the following categories:
     *   `indent`: Reformat Newick with indentation.
     *   `to-dot`: Convert to Graphviz DOT format.
     *   `to-forest`: Convert to LaTeX Forest code.
+    *   `to-svg`: Convert to SVG format.
     *   `to-tex`: Convert to a full LaTeX document.
 
 ---
@@ -256,6 +257,18 @@ pgr nwk to-forest [OPTIONS] <infile>
 ```
 
 *   `--bl`: Include branch lengths.
+
+### to-svg
+
+Converts Newick trees to SVG format for visualization.
+
+```bash
+pgr nwk to-svg [OPTIONS] <infile>
+```
+
+*   Automatically draws a phylogram if branch lengths are present, otherwise a cladogram.
+*   `-w, --width <N>`: SVG width in pixels (default: 800).
+*   `-v, --vskip <N>`: Vertical spacing between leaf nodes in pixels (default: 20).
 
 ### to-tex
 

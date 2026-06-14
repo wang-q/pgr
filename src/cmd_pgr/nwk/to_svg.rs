@@ -11,20 +11,16 @@ pub fn make_subcommand() -> Command {
 Convert Newick trees to SVG format for visualization.
 
 Notes:
-* Draws a cladogram by default
-* Set `--bl` to draw a phylogenetic tree with scaled branch lengths
+* Automatically draws a phylogram if branch lengths are present, otherwise a cladogram
 * Underscore `_` in names will be replaced as spaces " "
 * Default styles match the LaTeX Forest template (grey branches, black dots)
 * Scale bar is drawn in phylogram mode
 
 Examples:
-1. Convert to SVG (cladogram):
+1. Convert to SVG:
    pgr nwk to-svg tests/newick/catarrhini.nwk -o tree.svg
 
-2. Convert with branch lengths (phylogram):
-   pgr nwk to-svg tests/newick/catarrhini.nwk --bl -o tree.svg
-
-3. Custom width and spacing:
+2. Custom width and spacing:
    pgr nwk to-svg tests/newick/catarrhini.nwk -w 1200 -v 30 -o tree.svg
 "###,
         )
@@ -34,12 +30,6 @@ Examples:
                 .num_args(1)
                 .index(1)
                 .help("Input filename. [stdin] for standard input"),
-        )
-        .arg(
-            Arg::new("bl")
-                .long("bl")
-                .action(ArgAction::SetTrue)
-                .help("Draw a phylogram with scaled branch lengths instead of a cladogram"),
         )
         .arg(
             Arg::new("width")
@@ -70,7 +60,6 @@ Examples:
 // command implementation
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap());
-    let is_bl = args.get_flag("bl");
 
     let width: f64 = args
         .get_one::<String>("width")
@@ -90,7 +79,20 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         .next()
         .unwrap_or(Tree::new());
 
-    let height = if is_bl {
+    // Auto-detect: if any node has a branch length, draw phylogram
+    let has_bl = if let Some(root) = tree.get_root() {
+        tree.preorder(&root)
+            .unwrap_or_default()
+            .iter()
+            .any(|&id| {
+                tree.get_node(id)
+                    .map(|n| n.length.is_some())
+                    .unwrap_or(false)
+            })
+    } else {
+        false
+    };
+    let height = if has_bl {
         tree.get_root()
             .map(|r| tree.get_height(r, true))
             .unwrap_or(0.0)

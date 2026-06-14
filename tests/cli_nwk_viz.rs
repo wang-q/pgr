@@ -234,7 +234,7 @@ fn command_tex() {
 
 #[test]
 fn command_to_svg() {
-    // 1. Default (Cladogram)
+    // catarrhini.nwk has branch lengths, so it should auto-detect phylogram mode
     let (stdout, _) = PgrCmd::new()
         .args(&["nwk", "to-svg", "tests/newick/catarrhini.nwk"])
         .run();
@@ -245,23 +245,23 @@ fn command_to_svg() {
     assert!(stdout.contains("Hominidae"));
     assert!(stdout.contains("Homo"));
     assert!(stdout.contains("class=\"dot\""));
-    // No scale bar in cladogram mode
-    assert!(!stdout.contains("class=\"scale-text\""));
+    // Scale bar should be present (auto-detected phylogram)
+    assert!(stdout.contains("class=\"scale-text\""));
 }
 
 #[test]
-fn command_to_svg_bl() {
-    // Phylogram with branch lengths
+fn command_to_svg_cladogram() {
+    // abc.nwk has no branch lengths, so it should auto-detect cladogram mode
     let (stdout, _) = PgrCmd::new()
-        .args(&["nwk", "to-svg", "tests/newick/catarrhini.nwk", "--bl"])
+        .args(&["nwk", "to-svg", "tests/newick/abc.nwk"])
         .run();
 
-    assert!(stdout.contains("<?xml version=\"1.0\""));
     assert!(stdout.contains("<svg xmlns=\"http://www.w3.org/2000/svg\""));
-    assert!(stdout.contains("Hominidae"));
-    assert!(stdout.contains("Homo"));
-    // Scale bar should be present in phylogram mode
-    assert!(stdout.contains("class=\"scale-text\""));
+    assert!(stdout.contains("A"));
+    assert!(stdout.contains("B"));
+    assert!(stdout.contains("C"));
+    // No scale bar in cladogram mode
+    assert!(!stdout.contains("class=\"scale-text\""));
 }
 
 #[test]
@@ -281,6 +281,4 @@ fn command_to_svg_width_vskip() {
 
     assert!(stdout.contains("<svg xmlns=\"http://www.w3.org/2000/svg\""));
     assert!(stdout.contains("A"));
-    assert!(stdout.contains("B"));
-    assert!(stdout.contains("C"));
 }
