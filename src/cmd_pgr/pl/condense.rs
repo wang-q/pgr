@@ -155,7 +155,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             continue;
         }
         let mut terms = vec![];
-        
+
         for (i, rank_col) in ranks.iter().enumerate() {
             let rank_idx = rank_col.saturating_sub(1);
             if let Some(term) = parts.get(rank_idx) {
@@ -164,17 +164,23 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 all_groups[i].push(term);
             }
         }
-        
+
         if !terms.is_empty() {
             taxon_map.insert(node_name, terms);
         }
     }
-    
+
     // Deduplicate groups and filter NA
     for groups in &mut all_groups {
-        *groups = groups.clone().into_iter().sorted().unique().filter(|s| s.ne("NA")).collect();
+        *groups = groups
+            .clone()
+            .into_iter()
+            .sorted()
+            .unique()
+            .filter(|s| s.ne("NA"))
+            .collect();
     }
-    
+
     let taxon_count = taxon_map.len();
     run_cmd!(info "    Loaded ${taxon_count} taxonomy entries")?;
     for (i, rank) in ranks.iter().enumerate() {
@@ -201,7 +207,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     for (rank_idx, groups) in all_groups.iter().enumerate() {
         let rank_num = ranks[rank_idx];
         run_cmd!(info "    Processing rank ${rank_num}")?;
-        
+
         for group in groups.iter() {
             // Find all original nodes that belong to this group at this rank
             let nodes_in_group: Vec<String> = taxon_map
@@ -226,7 +232,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             let labels_result = run_fun!(
                 ${exe} nwk label ${cur_tree} -f nodes.txt -M
             );
-            
+
             let labels_output = match labels_result {
                 Ok(output) => output,
                 Err(_) => continue, // Not monophyletic or error
@@ -252,7 +258,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
             // Condense the subtree; use alternating output files to avoid clobbering
             toggle = !toggle;
-            let new_tree = if toggle { "temp_a.nwk".to_string() } else { "temp_b.nwk".to_string() };
+            let new_tree = if toggle {
+                "temp_a.nwk".to_string()
+            } else {
+                "temp_b.nwk".to_string()
+            };
             run_cmd!(
                 ${exe} nwk subtree ${cur_tree} -f nodes.txt -M --condense ${new_label} -o ${new_tree}
             )?;
