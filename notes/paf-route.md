@@ -38,7 +38,7 @@ pgr 走向泛基因组的核心目标是：
 ### 0.2 能力栈与当前进度
 
 ```
-索引层 ✅  |  查询层 ✅  |  图构建层 ← 设计阶段（[[graph-design.md]]） |  应用层 ← 远期
+索引层 ✅  |  查询层 ✅  |  图构建层 V4a ✅（[[graph-design.md]] §4.3.1）|  应用层 ← 远期
 ```
 
 impg 的四层能力栈（[[impg.md]] §1.1.3）在 pgr 的现状：pairwise 比对层资产比 impg 更成熟，
@@ -51,7 +51,7 @@ impg 的四层能力栈（[[impg.md]] §1.1.3）在 pgr 的现状：pairwise 比
 | **V1**  | `pgr paf query -o paf`（默认）+ `-o bed` + `-b regions.bed` 批查 + `--min-degree`/`--min-chain-length` 后处理过滤 | ✅ 已完成 |
 | **V2**  | `-o fasta`（未比对序列，需 `-f`）                                      | 待实现 |
 | **V3**  | `-o maf`（POA MSA，需 `-f`）+ `-o fasta-aln`                           | 待实现 |
-| **V4a** | 粗全局 GFA（`pgr paf graph -o gfa --min-var-len 100`，minigraph 风格） | 待评估 |
+| **V4a** | 粗全局 GFA（`pgr paf graph -f refs.fa --min-var-len 100`，seqwish DSU 风格） | ✅ 已完成 |
 | **V4b** | 区域精细 GFA（`pgr paf query -o gfa -r region`，impg 风格）            | 待评估 |
 | **V5**  | 区域 GFA → MAF/VCF（精细分析输出）                                     | 待评估 |
 
@@ -119,7 +119,7 @@ impg 的四层能力栈（[[impg.md]] §1.1.3）在 pgr 的现状：
 ```
 索引层 — ✅ pgr paf index + build_multi（多文件合并）
 查询层 — ✅ pgr paf query + --transitive BFS
-图构建层 — 见 [[graph-design.md]]（设计阶段）
+图构建层 V4a — 已实现（[[graph-design.md]] §4.3.1，seqwish DSU 风格）
 应用层 — 远期
 ```
 

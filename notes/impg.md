@@ -1070,7 +1070,7 @@ PAF 行 with `=`/`X` CIGAR）。这是 pgr 复用已有 pairwise 基础设施的
 >
 > **输出格式差距**：impg `query` 支持 11 种输出（bed/bedpe/paf/gfa/vcf/maf/fasta/fasta+paf/fasta-aln/gbwt/auto，
 > 默认 `bed`，见 [main.rs#L4873](file:///Volumes/ExtHome/Scripts/pgr/impg-0.4.1/src/main.rs#L4873)）。
-> pgr V1 已补 BED（`-o bed` 可选）与批查（`-b`），**默认输出保持 PAF**（与 impg 的 BED 默认不同，理由见 [[graph-design.md]] §3.1）。按 [[graph-design.md]] §4 路线：V2 补 fasta，V3 补 maf，V4a 物化粗全局 GFA（minigraph 风格），V4b 区域精细 GFA（impg 风格），V5 补 MAF/VCF 输出。
+> pgr V1 已补 BED（`-o bed` 可选）与批查（`-b`），**默认输出保持 PAF**（与 impg 的 BED 默认不同，理由见 [[graph-design.md]] §3.1）。**V4a 已实现** `pgr paf graph -f refs.fa --min-var-len 100`，输出 GFA v1.0（S/L/P），seqwish DSU 风格（详见 [[graph-design.md]] §4.3.1、[[seqwish.md]] §6.2）。下一步：V2 补 fasta，V3 补 maf，V4b 区域精细 GFA（impg 风格），V5 补 MAF/VCF 输出。
 
 具体目标：
 

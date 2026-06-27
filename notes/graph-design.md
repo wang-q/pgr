@@ -166,7 +166,7 @@ CIGAR 适合需要比对记录的场景。
 | **V1**（当前缺失） | `-o paf`（默认）+ `-o bed`（轻量坐标）+ `-b regions.bed` 批查 | impg 默认 `-o bed` + `-b`（pgr 选 PAF 默认，见 §3.1） | ~65 |
 | **V2** | `-o fasta`（未比对序列，需 `-f`）| impg `-o fasta` | ~60 |
 | **V3** | `-o maf`（POA MSA，需 `-f`）+ `-o fasta-aln` | impg `-o maf`/`-o fasta-aln` | ~150 |
-| **V4a** | 粗全局 GFA（`pgr paf graph -o gfa --min-var-len 100`，minigraph 风格）| minigraph `ggen` | 待评估 |
+| **V4a** | 粗全局 GFA（`pgr paf graph -f refs.fa --min-var-len 100`，seqwish DSU 风格）| seqwish `sds`+`links` | ✅ 已完成 |
 | **V4b** | 区域精细 GFA（`pgr paf query -o gfa -r region`，impg 风格）| impg `query -o gfa` | 待评估 |
 | **V5** | 区域 GFA → MAF/VCF（精细分析输出）+ EKG @tags | impg `-o maf`/`-o vcf` | 待评估 |
 
@@ -201,16 +201,24 @@ V4 采用**两段式 GFA**——粗全局 + 区域精细，混合 minigraph 和 
 | **impg** | ❌（不物化全局图）| ✅（`query -o gfa`）| ✅（`query -o maf/vcf`）|
 | **pgr V4** | ✅（V4a）| ✅（V4b）| ✅（V5）|
 
-#### 4.3.1 V4a：粗全局 GFA（minigraph 风格）
+#### 4.3.1 V4a：粗全局 GFA（seqwish DSU 风格，✅ 已实现）
 
-- **输入**：PAF 索引（已有，无需重新比对——这是 pgr 相对 minigraph 的核心优势）
+- **输入**：PAF 文件 + FASTA 文件（`-f`）
 - **过滤**：`--min-var-len 100`（对齐 minigraph，只保留 ≥100bp SV）
-- **输出**：rGFA，含 SN/SO/SR tag（稳定坐标系，见 [[minigraph.md]] §3.2）
+- **输出**：GFA v1.0（S/L/P 三类行，节点 1-based）
 - **用途**：可视化（Bandage/odgi）、SV 概览、作为后续 query 的坐标锚
 - **数据源**：PAF 索引的显式投影，不引入新的真实源
-- **算法骨架**：直接复用 seqwish 的 6 阶段流程（spanning tree → BFS discovery → DSU union-find
-  → compact → links → GFA），详见 [[seqwish.md]] §6.2。pgr 输入是 PAF，与 seqwish 一致，
-  相对 minigraph（需自跑 minimizer chaining）更天然适配。
+- **实现**：`src/libs/paf/graph.rs`（470 行）+ `src/cmd_pgr/paf/graph.rs`（CLI 包装），
+  5 单元测试 + 7 集成测试，覆盖正向/反向/大 indel 切分/小 indel 不切/min_var_len 阈值过滤
+- **算法骨架**：seqwish 风格的段级 DSU（CIGAR 切分 → 段对链接 → DSU 传递闭包 → 节点序列
+  → 路径构建 + novel 段补全 → 边派生 → GFA 输出）。详见 [[seqwish.md]] §6.2。
+- **简化项**（相对 seqwish）：
+  - 无 disk-backed interval tree（pgr 内存型，足够 PAF 规模）
+  - 无 SparseBitVec（直接用 `Vec<u8>`）
+  - 无 lock-free DSU（单线程足够）
+  - 路径方向恒为 `+`（反向链段已翻转坐标到正链，rGFA orientation 待 V4b+）
+- **rGFA tag 暂缺**：当前输出 GFA v1.0 的 S/L/P，未含 SN/SO/SR（稳定坐标系 tag），
+  作为后续可选增强（与 minigraph 兼容性需要时再加）。
 
 #### 4.3.2 V4b：区域精细 GFA（impg 风格）
 

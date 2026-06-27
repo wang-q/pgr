@@ -298,15 +298,18 @@ pgr 的传递闭包是**局部、按需**的——每次查询从一个区间出
 - **SparseBitVec**：pgr 处理 4 万大肠杆菌时，序列边界用 `SparseBitVec`（只存 1-bit 位置）
   比位向量省内存且 select O(1)。
 
-### 6.2 V4a（粗全局 GFA）
+### 6.2 V4a（粗全局 GFA，✅ 已实现）
 
-- **直接复用 seqwish 算法骨架**：spanning tree → BFS discovery → DSU union-find →
-  compact → links → GFA，这套流程对 pgr V4a 完全适用。
-- **`--min-var-len 100` 过滤**：对应 seqwish 的 `--repeat-max` 思路，但维度不同——
-  seqwish 过滤的是重复拷贝数，pgr 要过滤的是 SV 长度。可在 `write_graph_chunk` 阶段
-  加一层"长度 < 100bp 的变异不写进图"的过滤，类似 minigraph 的粗框架哲学（见 [[minigraph.md]]）。
-- **磁盘后端兜底**：4 万大肠杆菌全图可能超 RAM，`AdaptiveTree` 的 disk-backed 模式
-  是现成的兜底方案。
+- **已实现**：`pgr paf graph -f refs.fa --min-var-len 100`，输出 GFA v1.0（S/L/P）。
+  `src/libs/paf/graph.rs` 470 行引擎 + `src/cmd_pgr/paf/graph.rs` CLI 包装，5 单元 + 7 集成测试。
+- **算法骨架**：seqwish 风格段级 DSU（CIGAR 切分 → 段对 → DSU 传递闭包 → 节点序列 → 路径
+  + novel 段补全 → 边派生 → GFA 输出），简化版（无 spanning tree 优化，等价类规模小）。
+- **`--min-var-len 100` 过滤**：在 CIGAR 切分阶段即过滤（indel < 阈值不切分），
+  比 seqwish 在 `write_graph_chunk` 后过滤更早，避免无效段产生。对应 minigraph 的粗框架哲学。
+- **简化项**（相对 seqwish）：无 disk-backed interval tree / SparseBitVec / lock-free DSU，
+  路径方向恒 `+`（反向已翻转坐标到正链），rGFA SN/SO/SR tag 暂缺。
+- **磁盘后端兜底（未启用）**：4 万大肠杆菌全图可能超 RAM，`AdaptiveTree` 的 disk-backed 模式
+  是现成的兜底方案，待规模验证后再引入。
 
 ### 6.3 V4b（局部精细 GFA）
 
