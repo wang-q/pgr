@@ -1060,17 +1060,17 @@ PAF 行 with `=`/`X` CIGAR）。这是 pgr 复用已有 pairwise 基础设施的
 
 > **实现状态**（2026-06-28 核对）：目标 1-4 已实现并通过测试（见
 > [pairwise-selection.md](file:///Volumes/ExtHome/Scripts/pgr/notes/pairwise-selection.md)，
-> 98 个测试通过）：
+> 104 个测试通过）：
 > - ✅ `pgr maf to-paf`（[src/cmd_pgr/maf/to_paf.rs](file:///Volumes/ExtHome/Scripts/pgr/src/cmd_pgr/maf/to_paf.rs)）
 > - ✅ `pgr paf index`（[src/cmd_pgr/paf/index.rs](file:///Volumes/ExtHome/Scripts/pgr/src/cmd_pgr/paf/index.rs)）
 > - ✅ `pgr paf query`（[src/cmd_pgr/paf/query.rs](file:///Volumes/ExtHome/Scripts/pgr/src/cmd_pgr/paf/query.rs)）
 > - ✅ `--transitive` BFS 传递闭包（[src/libs/paf/index.rs](file:///Volumes/ExtHome/Scripts/pgr/src/libs/paf/index.rs)）
 > - ✅ 查询层过滤参数 `--min-identity`/`--min-output-length`/`--merge-distance`/`--max-depth`
-> - ⏳ V1 待实现：`pgr paf query -o bed`（默认）+ `-b regions.bed` 批查（见 [[graph-design.md]] §3，~60 行）
+> - ✅ V1 已实现：`pgr paf query -o bed`（可选，PAF 默认）+ `-b regions.bed` 批查（见 [[graph-design.md]] §3，+6 tests）
 >
 > **输出格式差距**：impg `query` 支持 11 种输出（bed/bedpe/paf/gfa/vcf/maf/fasta/fasta+paf/fasta-aln/gbwt/auto，
 > 默认 `bed`，见 [main.rs#L4873](file:///Volumes/ExtHome/Scripts/pgr/impg-0.4.1/src/main.rs#L4873)）。
-> pgr 当前只输出 PAF，缺 impg 的默认 BED。按 [[graph-design.md]] §4 路线：V1 补 bed+批查，V2 补 fasta，V3 补 maf，V4a 物化粗全局 GFA（minigraph 风格），V4b 区域精细 GFA（impg 风格），V5 补 MAF/VCF 输出。
+> pgr V1 已补 BED（`-o bed` 可选）与批查（`-b`），**默认输出保持 PAF**（与 impg 的 BED 默认不同，理由见 [[graph-design.md]] §3.1）。按 [[graph-design.md]] §4 路线：V2 补 fasta，V3 补 maf，V4a 物化粗全局 GFA（minigraph 风格），V4b 区域精细 GFA（impg 风格），V5 补 MAF/VCF 输出。
 
 具体目标：
 

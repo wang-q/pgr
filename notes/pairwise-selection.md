@@ -7,12 +7,12 @@
 
 ## 1. 完成后状态
 
-三个命令全部实现，98 个测试通过：
+三个命令全部实现，104 个测试通过：
 
 ```
 pgr maf to-paf          ✅ MAF → PAF 转换
 pgr paf index           ✅ 区间树索引（支持多文件合并 build_multi）
-pgr paf query <region>  ✅ 坐标投影 + --transitive BFS
+pgr paf query <region>  ✅ 坐标投影 + --transitive BFS + -o bed/paf + -b 批查
 ```
 
 对应 impg 的能力栈：
@@ -30,7 +30,9 @@ pgr paf query <region>  ✅ 坐标投影 + --transitive BFS
 | CIGAR 存储 | `Vec<CigarOp>` 全量存入节点 | MAF 转换产物规模可控 |
 | PAF 解析 | 手写 tab 分割 | pgr 已有 csv 依赖但手写更轻 |
 | 多文件索引 | `build_multi` 直接合并 | 不需要 impg 的 ForestMap/RwLock/ImpgIndex |
-| 不输出 FAS/MAF | 只输出 PAF | Fas/MAF 是 MSA 产物，不是坐标投影产物 |
+| 不输出 FAS/MAF | 只输出 PAF/BED | Fas/MAF 是 MSA 产物，不是坐标投影产物 |
+| 默认输出 | PAF（非 impg 的 BED 默认） | 既有测试断言 PAF；PAF 含完整 CIGAR 更直接；BED 是轻量坐标用 `-o bed` 切换。见 [[graph-design.md]] §3.1 |
+| 批查 | `-b regions.bed`（BED3 格式） | 对齐 impg `-b`，单/批 region 互斥 |
 
 ## 3. 源码结构
 
@@ -61,8 +63,8 @@ src/cmd_pgr/maf/
 | `paf::index` | 16 |
 | `paf::persist` | 12 |
 | `cli_maf` | 5 |
-| `cli_paf` | 23 |
-| **总计** | **98** |
+| `cli_paf` | 29 |
+| **总计** | **104** |
 
 ## 5. 变更日志
 
@@ -78,3 +80,4 @@ src/cmd_pgr/maf/
 | 2026-06-28 | 文档整合：精简为实施记录 |
 | 2026-06-28 | BED/TSV 删除，只输出 PAF；覆盖率补充（+4 tests） |
 | 2026-06-28 | 决策修订：BED 删除有误（impg 默认即 BED），待恢复为默认输出；见 [[graph-design.md]] §3 |
+| 2026-06-28 | V1 实现：`-o bed` 可选 + `-b regions.bed` 批查（+6 tests，共 29）。**默认输出保持 PAF**（非 impg 的 BED 默认），理由：既有 23 测试断言 PAF、PAF 含完整 CIGAR 更直接、BED 是轻量坐标产物用 `-o bed` 显式切换。见 [[graph-design.md]] §3.1 |

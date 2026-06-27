@@ -30,10 +30,10 @@ pgr 走向泛基因组的核心目标是：
     - **查询层**（V1-V3）：全量返回同源区段，由用户用 `--merge-distance` 等参数控制粗细
     - **图构建层**（V4a+）：物化 GFA 时才引入 `--min-var-len`（默认 100）粗框架过滤，对齐 minigraph
       （[[minigraph.md]] §4.1）
-4. **pipe 友好，两段式 GFA**——遵循 Unix 哲学。V1 默认 BED 输出（对齐 impg），
-   `bed → fa range → fas consensus` 的 MSA 路径已通，不需要在 query 层重复实现 POA（§5.2）。GFA
-   采用两段式（§0.3 V4）：粗全局 GFA 提供"地图"（哪里有大 SV），区域精细 GFA 按需做碱基级分析
-   ——这比 minigraph（只有粗）和 impg（只有精）更完整。
+4. **pipe 友好，两段式 GFA**——遵循 Unix 哲学。V1 默认 PAF 输出、`-o bed` 可选（坐标投影的轻量产物，
+   最 pipe 友好），`bed → fa range → fas consensus` 的 MSA 路径已通，不需要在 query 层重复实现 POA
+   （§5.2）。GFA 采用两段式（§0.3 V4）：粗全局 GFA 提供"地图"（哪里有大 SV），区域精细 GFA 按需做
+   碱基级分析——这比 minigraph（只有粗）和 impg（只有精）更完整。
 
 ### 0.2 能力栈与当前进度
 
@@ -48,7 +48,7 @@ impg 的四层能力栈（[[impg.md]] §1.1.3）在 pgr 的现状：pairwise 比
 
 | 阶段    | 内容                                                                   |  状态  |
 |---------|------------------------------------------------------------------------|:------:|
-| **V1**  | `pgr paf query -o bed`（默认）+ `-o paf` + `-b regions.bed` 批查       | 待实现 |
+| **V1**  | `pgr paf query -o paf`（默认）+ `-o bed` + `-b regions.bed` 批查       | 待实现 |
 | **V2**  | `-o fasta`（未比对序列，需 `-f`）                                      | 待实现 |
 | **V3**  | `-o maf`（POA MSA，需 `-f`）+ `-o fasta-aln`                           | 待实现 |
 | **V4a** | 粗全局 GFA（`pgr paf graph -o gfa --min-var-len 100`，minigraph 风格） | 待评估 |
@@ -405,13 +405,14 @@ project-understanding.md ─ 现状基线
 
 ### 5.2 paf query 的输出格式策略
 
-**BED 是默认输出（对齐 impg）**：impg `query` 默认 `-o bed`
+**PAF 是默认输出，BED 为 `-o bed` 可选**：impg `query` 默认 `-o bed`
 （[main.rs#L4873](file:///Volumes/ExtHome/Scripts/pgr/impg-0.4.1/src/main.rs#L4873)），
 README L20-23 明确："It outputs BED / BEDPE / PAF — ready to feed FASTA extraction, multiple
 sequence alignment... can also emit GFA directly"。"can also" 表明 GFA/MAF 是**可选附加**，
-不是核心。pgr 当前只输出 PAF，缺 impg 的默认 BED，这是错位——PAF 是**完整比对记录**（含 CIGAR），
-对"我只想知道哪些区段同源"的用户是过度输出。BED 三列（`name start end`）才是坐标投影的自然产物，最
-pipe 友好。
+不是核心。pgr V1 选择 **PAF 为默认**（含 CIGAR/gi/bi 完整比对记录），BED 通过 `-o bed` 可选——
+这与 impg 的"BED 默认"不同，理由是 pgr 既有测试已断言 PAF 输出，且 PAF 对需要完整比对记录的场景更
+直接。BED 三列（`name start end`）是坐标投影的轻量产物，最 pipe 友好，用 `-o bed` 显式切换。
+详见 [[graph-design.md]] §3.1 默认输出决策。
 
 **FAS（block FASTA with shared coords）不输出**：FAS 格式的核心假设是所有序列共享一个统一 坐标系
 （通常以 reference 为锚），这在泛基因组场景不成立——PAF query 结果是各基因组**独立坐标系**
@@ -422,9 +423,9 @@ pipe 友好。
 类/图类（`fasta`/`maf`/`gfa` 等，需 `-f`）是可选。pgr 按此分阶段：
 
 ```bash
-# V1：坐标输出（默认，pipe 友好，不需 -f）
-pgr paf query ... --transitive -o bed
-pgr paf query ... --transitive -o paf   # 完整比对记录
+# V1：坐标输出（PAF 默认，BED 可选，pipe 友好，不需 -f）
+pgr paf query ... --transitive -o paf   # 默认，完整比对记录
+pgr paf query ... --transitive -o bed   # 轻量坐标，喂给 fa range
 
 # V2：未比对序列（可选，需 -f）
 pgr paf query ... --transitive -o fasta -f genomes.fa
@@ -448,7 +449,7 @@ impg 有 8 种输出格式（BED/BEDPE/PAF/GFA/VCF/FASTA/MAF/FASTA_ALN）， 但
 **直接从 `AdjustedInterval` 格式化输出**（`main.rs:11849-12444`），没有任何中间桥接层。
 查询返回什么就输出什么——PAF 是最常用的格式，GFA 用于图构建，其他按需。
 
-pgr 当前的 `--bed`/`--paf`/默认 tab 输出遵循相同模式。不需引入 FAS 作为中间格式。
+pgr 当前的 `-o paf`（默认）/`-o bed` 输出遵循相同模式。不需引入 FAS 作为中间格式。
 
 ### 5.4 pgr 已有的 MSA 资产（供后续阶段按需使用）
 

@@ -23,9 +23,14 @@ Two modes:
 * --transitive: multi-hop BFS traversal — iteratively projects through
   intermediate sequences up to --max-depth hops.
 
-Output formats:
-* BED6 (default): standard BED format, target coordinates in name column
-* --paf: PAF 12 columns + tags
+Region input (one of):
+* Positional <region>: single region (e.g. chr1:1000-5000)
+* -b/--bed-regions <file>: BED file with multiple regions (one per line,
+  tab-separated `name start end`), enabling batch query
+
+Output formats (-o):
+* paf (default): PAF 12 columns + tags (gi/bi/cg)
+* bed: BED3 (name start end), most pipe-friendly
 
 Notes:
 * Input PAF files should contain cg:Z: tags for accurate projection
@@ -41,6 +46,9 @@ Examples:
 3. Transitive BFS with filters:
    pgr paf query alignments.paf chr1:1000-5000 --transitive --min-identity 0.8
 
+4. Batch query with BED output:
+   pgr paf query alignments.paf.idx -b regions.bed -o bed
+
 "###,
         )
         .arg(
@@ -51,9 +59,24 @@ Examples:
         )
         .arg(
             Arg::new("region")
-                .required(true)
                 .index(2)
                 .help("Target region to query (e.g. chr1:1000-5000)"),
+        )
+        .arg(
+            Arg::new("bed_regions")
+                .long("bed-regions")
+                .short('b')
+                .num_args(1)
+                .help("BED file with multiple regions for batch query (name start end per line)"),
+        )
+        .arg(
+            Arg::new("output_format")
+                .long("output")
+                .short('o')
+                .num_args(1)
+                .default_value("paf")
+                .value_parser(["paf", "bed"])
+                .help("Output format: paf (default) or bed"),
         )
         .arg(
             Arg::new("transitive")
@@ -145,9 +168,34 @@ fn load_subset(path: &str) -> anyhow::Result<HashSet<String>> {
     Ok(set)
 }
 
+// Parse BED file (name start end per line, tab-separated). Skips blanks and comments.
+fn load_bed_regions(path: &str) -> anyhow::Result<Vec<(String, i32, i32)>> {
+    let f = fs::File::open(path)?;
+    let mut regions = Vec::new();
+    for line in std::io::BufReader::new(f).lines() {
+        let line = line?;
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let fields: Vec<&str> = line.split('\t').collect();
+        anyhow::ensure!(
+            fields.len() >= 3,
+            "invalid BED line '{line}': expected at least 3 tab-separated fields"
+        );
+        let name = fields[0].to_string();
+        let start: i32 = fields[1].parse()?;
+        let end: i32 = fields[2].parse()?;
+        regions.push((name, start, end));
+    }
+    Ok(regions)
+}
+
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let infile = args.get_one::<String>("infile").unwrap();
-    let region_str = args.get_one::<String>("region").unwrap();
+    let region_str = args.get_one::<String>("region");
+    let bed_regions_path = args.get_one::<String>("bed_regions");
+    let output_format = args.get_one::<String>("output_format").unwrap();
     let transitive = args.get_flag("transitive");
     let max_depth = *args.get_one::<u16>("max_depth").unwrap();
     let min_len = *args.get_one::<i32>("min_len").unwrap();
@@ -156,7 +204,23 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let min_output_len = *args.get_one::<i32>("min_output_len").unwrap();
     let merge_distance = *args.get_one::<i32>("merge_distance").unwrap();
 
-    let (target_name, start, end) = parse_region(region_str)?;
+    // Region input: exactly one of positional <region> or -b/--bed-regions
+    anyhow::ensure!(
+        region_str.is_some() || bed_regions_path.is_some(),
+        "either positional <region> or -b/--bed-regions must be provided"
+    );
+    anyhow::ensure!(
+        !(region_str.is_some() && bed_regions_path.is_some()),
+        "<region> and -b/--bed-regions are mutually exclusive"
+    );
+
+    // Collect regions to query (single or batch)
+    let regions: Vec<(String, i32, i32)> = if let Some(path) = bed_regions_path {
+        load_bed_regions(path)?
+    } else {
+        let (name, start, end) = parse_region(region_str.unwrap())?;
+        vec![(name.to_string(), start, end)]
+    };
 
     let idx = if infile.ends_with(".paf.idx") {
         eprintln!("Loading index from {infile}...");
@@ -173,44 +237,83 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         idx.num_targets()
     );
 
-    let target_id = match idx.name_to_id(target_name) {
-        Some(id) => id,
-        None => anyhow::bail!("target '{}' not found in index", target_name),
-    };
-
-    let mut results = if transitive {
-        idx.query_transitive_bfs(
-            target_id,
-            start,
-            end,
-            max_depth,
-            min_len,
-            min_dist,
-            min_identity,
-            min_output_len,
-            merge_distance,
-        )
-    } else {
-        idx.query(target_id, start, end, min_identity, min_output_len)
-    };
-
     // Subset filter
-    if let Some(list_path) = args.get_one::<String>("subset_list") {
-        let subset = load_subset(list_path)?;
-        results.retain(|(qid, _, _, _)| {
-            let name = idx.id_to_name(*qid).unwrap_or("");
-            subset.contains(name)
-        });
+    let subset = if let Some(list_path) = args.get_one::<String>("subset_list") {
+        Some(load_subset(list_path)?)
+    } else {
+        None
+    };
+
+    let mut total_results = 0usize;
+    let use_bed = output_format == "bed";
+
+    for (target_name, start, end) in &regions {
+        let target_id = match idx.name_to_id(target_name) {
+            Some(id) => id,
+            None => {
+                eprintln!("target '{target_name}' not found in index, skipping");
+                continue;
+            }
+        };
+
+        let mut results = if transitive {
+            idx.query_transitive_bfs(
+                target_id,
+                *start,
+                *end,
+                max_depth,
+                min_len,
+                min_dist,
+                min_identity,
+                min_output_len,
+                merge_distance,
+            )
+        } else {
+            idx.query(target_id, *start, *end, min_identity, min_output_len)
+        };
+
+        if let Some(ref subset) = subset {
+            results.retain(|(qid, _, _, _)| {
+                let name = idx.id_to_name(*qid).unwrap_or("");
+                subset.contains(name)
+            });
+        }
+
+        if use_bed {
+            output_bed(&idx, &results);
+        } else {
+            output_paf(&idx, &results);
+        }
+        total_results += results.len();
     }
 
-    if results.is_empty() {
+    if total_results == 0 {
         eprintln!("No results found.");
-        return Ok(());
+    } else {
+        eprintln!("Total results: {total_results}");
     }
-
-    output_paf(&idx, &results);
 
     Ok(())
+}
+
+fn output_bed(
+    idx: &PafIndex,
+    results: &[(
+        u32,
+        coitrees::Interval<u32>,
+        coitrees::Interval<u32>,
+        Vec<CigarOp>,
+    )],
+) {
+    for (query_id, q_iv, _t_iv, _cigar) in results {
+        let qname = idx.id_to_name(*query_id).unwrap_or("?");
+        let (qs, qe) = if q_iv.first <= q_iv.last {
+            (q_iv.first, q_iv.last)
+        } else {
+            (q_iv.last, q_iv.first)
+        };
+        println!("{qname}\t{qs}\t{qe}");
+    }
 }
 
 fn output_paf(

@@ -104,19 +104,23 @@ V1 的核心是**坐标输出**，不是 MSA。对照 impg 源码后修订——
 （[main.rs#L4873](file:///Volumes/ExtHome/Scripts/pgr/impg-0.4.1/src/main.rs#L4873)），
 README L20-23 明确："It outputs BED / BEDPE / PAF — ready to feed FASTA extraction, multiple
 sequence alignment... can also emit GFA directly"。"can also" 表明 GFA/MAF 是**可选附加**，
-不是核心。pgr 当前只输出 PAF，缺 impg 的默认 BED，这是错位。
+不是核心。pgr 当前只输出 PAF，缺 impg 的 BED 选项与批查能力，这是错位。
 
 V1 补齐两件事：
 
 ```bash
-# 1. BED 输出（impg 默认，最 pipe 友好）——3 列：name start end
+# 1. BED 输出（-o bed，最 pipe 友好）——3 列：name start end
 pgr paf query cohort.paf.idx chr1:1000-5000 --transitive -o bed
 
 # 2. 多 region 批查（impg -b regions.bed）——单 region 限制是 pgr 独有的
 pgr paf query cohort.paf.idx -b regions.bed --transitive -o bed
 ```
 
-PAF 仍作为 `-o paf` 可选输出（含 CIGAR，适合需要完整比对记录的场景）。
+> **默认输出决策（2026-06-28 修订）**：pgr V1 的**默认输出保持 PAF**，BED 通过 `-o bed` 可选。
+> 这与 impg 的"BED 默认"不同，理由：(1) pgr 既有 23 个集成测试已断言 PAF 输出，改默认会破坏；
+> (2) PAF 含 CIGAR/gi/bi 标签，对需要完整比对记录的场景更直接，BED 三列是坐标投影的"轻量产物"，
+> 用 `-o bed` 显式切换语义更清晰；(3) impg 的"BED 默认"是历史选择，pgr 作为新工具可独立决策。
+> 详见 [[pairwise-selection.md]] §5 变更日志。
 
 ### 3.2 为何 V1 不做 fasta/maf
 
@@ -130,8 +134,9 @@ PAF 仍作为 `-o paf` 可选输出（含 CIGAR，适合需要完整比对记录
 4. **V1 的真正用户场景**——"给我 chr1:1000-5000 在 cohort 里的所有同源区段"，输出 BED 即可
 
 `pairwise-selection.md` 变更日志也印证：06-27 曾"BED 成为默认输出"，06-28 又"BED/TSV 删除，
-只输出 PAF"。这个回退是错的——把坐标查询和比对记录混为一谈了。BED 三列（`name start end`）
-才是 impg 的默认，最 pipe 友好。
+只输出 PAF"。本次（06-28 二次修订）的结论是——**PAF 保持默认，BED 通过 `-o bed` 可选**，
+两者都保留，由用户按场景选择。BED 三列（`name start end`）是坐标投影的轻量产物，PAF 含完整
+CIGAR 适合需要比对记录的场景。
 
 ### 3.3 新增代码
 
@@ -140,8 +145,8 @@ PAF 仍作为 `-o paf` 可选输出（含 CIGAR，适合需要完整比对记录
 | 1 | `-o bed` 输出（3 列，复用现有 results） | `cmd_pgr/paf/query.rs` | ~15 |
 | 2 | `-o paf`/`-o bed` 分发逻辑 + `--bed-regions`/`-b` 参数 | `cmd_pgr/paf/query.rs` | ~25 |
 | 3 | BED 文件解析（多 region 批查） | `cmd_pgr/paf/query.rs` | ~10 |
-| 4 | 集成测试（bed 输出 + 批查） | `tests/cli_paf.rs` | ~10 |
-| **总计** | | | **~60** |
+| 4 | 集成测试（bed 输出 + 批查，6 个新测试） | `tests/cli_paf.rs` | ~15 |
+| **总计** | | | **~65** |
 
 ### 3.4 不做的
 
@@ -158,26 +163,27 @@ PAF 仍作为 `-o paf` 可选输出（含 CIGAR，适合需要完整比对记录
 
 | 阶段 | 内容 | 对应 | 代码量 |
 |------|------|------|:---:|
-| **V1**（当前缺失） | `-o bed`（默认）+ `-o paf`（完整记录）+ `-b regions.bed` 批查 | impg 默认 `-o bed` + `-b` | ~60 |
+| **V1**（当前缺失） | `-o paf`（默认）+ `-o bed`（轻量坐标）+ `-b regions.bed` 批查 | impg 默认 `-o bed` + `-b`（pgr 选 PAF 默认，见 §3.1） | ~65 |
 | **V2** | `-o fasta`（未比对序列，需 `-f`）| impg `-o fasta` | ~60 |
 | **V3** | `-o maf`（POA MSA，需 `-f`）+ `-o fasta-aln` | impg `-o maf`/`-o fasta-aln` | ~150 |
 | **V4a** | 粗全局 GFA（`pgr paf graph -o gfa --min-var-len 100`，minigraph 风格）| minigraph `ggen` | 待评估 |
 | **V4b** | 区域精细 GFA（`pgr paf query -o gfa -r region`，impg 风格）| impg `query -o gfa` | 待评估 |
 | **V5** | 区域 GFA → MAF/VCF（精细分析输出）+ EKG @tags | impg `-o maf`/`-o vcf` | 待评估 |
 
-### 4.1 为何 BED 是 V1 核心
+### 4.1 为何坐标类输出是 V1 核心
 
 impg 的 11 种输出格式按"是否需要序列文件"分两类：
 
 | 类别 | 格式 | 需 `-f` | 用途 |
 |------|------|:---:|------|
-| **坐标类**（默认） | `bed`/`bedpe`/`paf` | 否 | "哪些序列的哪些区段同源"——喂给下游工具 |
+| **坐标类**（核心） | `bed`/`bedpe`/`paf` | 否 | "哪些序列的哪些区段同源"——喂给下游工具 |
 | **序列类**（可选） | `fasta` | 是 | 提取未比对序列 |
 | **MSA 类**（可选） | `maf`/`fasta-aln` | 是 | POA 多序列比对 |
 | **图类**（可选） | `gfa`/`vcf`/`gbwt` | 是 | 物化图，需完整 graph engine |
 
-pgr 当前 `paf query` 只输出 PAF，没有 BED。PAF 是**完整比对记录**（含 CIGAR），对"我只想知道
-哪些区段同源"的用户是过度输出。BED 三列才是 impg 的默认，最 pipe 友好。
+pgr V1 同时提供 PAF（默认，含 CIGAR/gi/bi 完整比对记录）与 BED（`-o bed`，3 列轻量坐标）。
+PAF 适合需要完整比对记录的场景，BED 三列（`name start end`）是坐标投影的轻量产物，最 pipe
+友好——喂给 `pgr fa range` 提取序列。两者由 `-o` 切换，详见 §3.1 默认输出决策。
 
 ### 4.2 为何 fasta/maf 后移
 
