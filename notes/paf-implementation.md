@@ -426,3 +426,26 @@ Chain/Net syntenic 过滤器。
 | staleness 检测              | `multi_impg.rs` | V1 跳过  | V2 加 mtime 比较                               |
 | `ImpgIndex` trait + wrapper | `impg_index.rs` | V1 跳过  | 单实现，V2 多文件时按需引入                    |
 
+## 12. impg 源码关键位置速查
+
+以下位置经精读 impg-0.4.1 源码核验，供实现时快速跳转对照。
+
+| 组件 | 文件 | 行号 | 说明 |
+|------|------|------|------|
+| `CigarOp` bit-packing | `src/impg.rs` | 73 | 3 位 op + 29 位 len → u32 |
+| `QueryMetadata` | `src/impg.rs` | 165 | 区间树节点元数据（8 字段，38 字节） |
+| `TreeMap` | `src/impg.rs` | 226 | `FxHashMap<u32, Arc<BasicCOITree<...>>>` |
+| `SortedRanges` | `src/impg.rs` | 242 | BFS 去重核心 |
+| `Impg` struct | `src/impg.rs` | 394 | 7 字段 |
+| CIGAR 懒加载 | `src/impg.rs` | 494 | `get_cigar_ops()` — PAF/1ALN/TPA 三路 dispatch |
+| 坐标投影 | `src/impg.rs` | 1100 | `project_overlapping_interval()` |
+| 索引构建 | `src/impg.rs` | 1549 | `from_multi_alignment_records()` — rayon 并行 |
+| 单跳查询 | `src/impg.rs` | 1848 | `Impg::query()` |
+| 传递闭包 BFS | `src/impg.rs` | 2291 | `Impg::query_transitive_bfs()` — 核心参考 |
+| `ImpgIndex` trait | `src/impg.rs` | 2584 | 单/多文件统一抽象 |
+| CIGAR 懒加载 seek | `src/paf.rs` | 68 | `read_cigar_data()` |
+| PAF 行解析 | `src/paf.rs` | 118 | `parse_paf_line()` — 含 CIGAR 偏移量计算 |
+| 统一解析入口 | `src/paf.rs` | 306 | `parse_paf_file()` — 3 模式自动检测 |
+| 索引初始化 | `src/main.rs` | 11043 | `initialize_index()` |
+| 查询执行 | `src/main.rs` | 11605 | `perform_query()` — 传递/非传递 dispatch |
+

@@ -220,6 +220,14 @@ clustalw/muscle/mafft），充当工作流 glue。这与 `chain`/`net` 模块的
 最近重构过：原先在 `libs/` 根目录下的 `axt.rs`、`fas.rs` 等移入 `libs/fmt/`，
 通过 `pub use fmt::*` re-export 保持向后兼容。
 
+> **MAF 支持现状**（2026-06 确认）：
+> - `maf.rs`（53 行）：仅有 `MafWriter`，不支持读取
+> - `fas.rs`（548 行）：`MafEntry`（line 242）解析 `s` 行含 alignment 向量，
+>   `MafBlock`（line 292）汇聚 block 内所有 entry，`next_maf_block()`（line 298）
+>   流式读取下一个 block
+> - **缺失**：`a` 行 score 解析、对齐串→CIGAR 展开、坐标投影（ref→query）
+> - `cmd_pgr/maf/` 仅 `to-fas` 一个子命令
+
 ### 4.6 其他库
 
 - `libs/io.rs`：I/O 辅助（`read_lines`、`reader`、`writer`）
