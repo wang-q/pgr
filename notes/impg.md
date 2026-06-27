@@ -1059,11 +1059,11 @@ PAF 行 with `=`/`X` CIGAR）。这是 pgr 复用已有 pairwise 基础设施的
 > - ✅ `pgr paf query`（[src/cmd_pgr/paf/query.rs](file:///Volumes/ExtHome/Scripts/pgr/src/cmd_pgr/paf/query.rs)）
 > - ✅ `--transitive` BFS 传递闭包（[src/libs/paf/index.rs](file:///Volumes/ExtHome/Scripts/pgr/src/libs/paf/index.rs)）
 > - ✅ 查询层过滤参数 `--min-identity`/`--min-output-length`/`--merge-distance`/`--max-depth`
-> - ⏳ 目标 5（`-o maf` 输出）尚未实现——当前 `pgr paf query` 只支持 PAF 输出
+> - ⏳ V1 待实现：`pgr paf query -o bed`（默认）+ `-b regions.bed` 批查（见 [[graph-design.md]] §3，~60 行）
 >
 > **输出格式差距**：impg `query` 支持 11 种输出（bed/bedpe/paf/gfa/vcf/maf/fasta/fasta+paf/fasta-aln/gbwt/auto，
-> 见 [main.rs#L4892](file:///Volumes/ExtHome/Scripts/pgr/impg-0.4.1/src/main.rs#L4892)）。
-> pgr V1 只输出 PAF，BED/MAF/GFA 输出是后续工作。
+> 默认 `bed`，见 [main.rs#L4873](file:///Volumes/ExtHome/Scripts/pgr/impg-0.4.1/src/main.rs#L4873)）。
+> pgr 当前只输出 PAF，缺 impg 的默认 BED。按 [[graph-design.md]] §4 路线：V1 补 bed+批查，V2 补 fasta，V3 补 maf，V4 评估 GFA/VCF。
 
 具体目标：
 

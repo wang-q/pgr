@@ -214,7 +214,7 @@ AVL 树 + Dijkstra 的 K 最短路径实现：
 - 节点去重（`gfa_aux_update_cv`/`gfa_sort_ref_arc`）
 - 自环/重复处理（`mg_gchain_set_parent`）
 
-工作量远超 100 行，且 V1 只需 MSA 不需 GFA。**结论：V1 不物化 GFA，推迟到 V3**。
+工作量远超 100 行，且 V1 只需坐标输出不需 GFA。**结论：V1 不物化 GFA，推迟到 V4**。
 
 ### 5.2 pgr 不复用 minigraph 的映射算法
 
@@ -261,8 +261,8 @@ while (1) {
 ```
 
 [[graph-design.md §1.2]] 已指出这启示 pgr：当 cohort 有明确 reference 时，
-**reference-guided 线性 MSA 比 POA 更快且无分支膨胀**。pgr 可在 `pgr paf msa` 中根据是否有
-`--reference`参数选择后端：
+**reference-guided 线性 MSA 比 POA 更快且无分支膨胀**。pgr 可在 `pgr paf query -o maf` 中根据是否有
+`--reference` 参数选择后端：
 
 - 有 reference → `fas multiz`（banded DP，reference-guided）
 - 无 reference → `fas consensus`（SPOA，无参考）
@@ -339,9 +339,9 @@ minigraph 值得借鉴的是**算法思想**而非具体实现：
 
 ### 7.2 行动建议
 
-对 pgr V1（`pgr paf msa`）的影响：
+对 pgr V3（`pgr paf query -o maf`）的影响：
 
-- **不影响**：V1 继续走 PAF → POA → MSA 路线（[[graph-design.md §3]]），约 120 行新代码
+- **不影响**：V3 继续走 PAF → POA → MSA 路线（[[graph-design.md §3]]），约 150 行新代码
 - **可借鉴**：`pgr paf query` 输出格式可参考 GAF 紧凑路径编码
 - **可借鉴**：`pgr paf query --transitive` 的后处理过滤可参考 minigraph bubble 指标
 

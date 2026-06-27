@@ -64,8 +64,8 @@ MAF → PAF → PafIndex → BFS 传递闭包 → 提取序列 → POA (纯 Rust
 
 - **pgr 独特起点**：已有 PAF index + BFS 查询，不需要重新做比对
 - **pgr 的 POA**（`libs/poa/poa.rs`）是纯 Rust，无外部依赖
-- **输出**：block FASTA/MAF（多序列比对），不是 GFA
-- **优势**：零新依赖、代码量少（~100 行）、立即可用
+- **输出**：未比对 FASTA / MAF（POA MSA），不是 GFA
+- **优势**：零新依赖、代码量少（V1 ~60 行 / V3 ~150 行）、立即可用
 - **劣势**：不输出 GFA（不能直接入 vg/odgi 管道）
 
 ---
@@ -93,50 +93,100 @@ MAF → PAF → PafIndex → BFS 传递闭包 → 提取序列 → POA (纯 Rust
 - 不需要定义 node/edge/path 语义
 - 不需要外部依赖
 
-**GFA 推迟到 V3**，届时评估 pgr 是否需要引入 rGFA 标准。
+**GFA 推迟到 V4**，届时评估 pgr 是否需要引入 rGFA 标准。
 
 ---
-## 3. 最小可行实现（V1）：`pgr paf msa`
+## 3. 最小可行实现（V1）：`pgr paf query -o bed` + 批查
 
 ### 3.1 功能
 
+V1 的核心是**坐标输出**，不是 MSA。对照 impg 源码后修订——impg `query` 默认输出 `bed`
+（[main.rs#L4873](file:///Volumes/ExtHome/Scripts/pgr/impg-0.4.1/src/main.rs#L4873)），
+README L20-23 明确："It outputs BED / BEDPE / PAF — ready to feed FASTA extraction, multiple
+sequence alignment... can also emit GFA directly"。"can also" 表明 GFA/MAF 是**可选附加**，
+不是核心。pgr 当前只输出 PAF，缺 impg 的默认 BED，这是错位。
+
+V1 补齐两件事：
+
 ```bash
-# 从 PAF 索引直接生成 MSA
-pgr paf msa cohort.paf.idx chr1:1000-5000 -f genomes.fa --transitive -o out.fas
+# 1. BED 输出（impg 默认，最 pipe 友好）——3 列：name start end
+pgr paf query cohort.paf.idx chr1:1000-5000 --transitive -o bed
+
+# 2. 多 region 批查（impg -b regions.bed）——单 region 限制是 pgr 独有的
+pgr paf query cohort.paf.idx -b regions.bed --transitive -o bed
 ```
 
-内部流程：
+PAF 仍作为 `-o paf` 可选输出（含 CIGAR，适合需要完整比对记录的场景）。
 
-```
-1. 加载 PAF 索引（.paf.idx 或 .paf）
-2. BFS 传递闭包（或单跳）
-3. 从 BFS 结果收集所有 query 坐标区间
-4. 从 FASTA 提取序列（按坐标切片）
-5. POA 多序列比对
-6. 输出 block FASTA
-```
+### 3.2 为何 V1 不做 fasta/maf
 
-### 3.2 新增代码
+上一轮把 impg 的**可选项**当成了 pgr 的**下一步**，是误判。重新审视：
 
-| # | 任务 | 文件 | 行数 | |---|------|------|:--:| | 1 | `collect_intervals()` |
-`libs/paf/graph.rs` | ~30 || 2 | `reverse_complement()` | `libs/paf/graph.rs` | ~20 || 3 |
-FASTA 序列提取（noodles_fasta） | `cmd_pgr/paf/msa.rs` | ~30 || 4 | POA 调用 + MSA 输出 |
-`cmd_pgr/paf/msa.rs` | ~40 || 5 | 集成测试 | `tests/cli_paf.rs` | ~3 || **总计**| | | **~120**|
+1. **impg 的 MAF 是可选项**，不是核心——核心是坐标投影 + 传递闭包
+2. **pgr 已有 `pgr fas consensus`**——用户要 MSA 时，`pgr paf query -o bed` → `pgr fa range`
+   → `pgr fas consensus` 的 pipe 路径已通，不需要在 query 层重复 POA
+3. **POA MSA 是图构建层的产物**——按 [[paf-route.md]] §2.4，图遍历和 MSA 是正交步骤，
+   不应耦合进 query
+4. **V1 的真正用户场景**——"给我 chr1:1000-5000 在 cohort 里的所有同源区段"，输出 BED 即可
 
-### 3.3 不做的
+`pairwise-selection.md` 变更日志也印证：06-27 曾"BED 成为默认输出"，06-28 又"BED/TSV 删除，
+只输出 PAF"。这个回退是错的——把坐标查询和比对记录混为一谈了。BED 三列（`name start end`）
+才是 impg 的默认，最 pipe 友好。
 
-- ❌ GFA 输出（推迟到 V3）
+### 3.3 新增代码
+
+| # | 任务 | 文件 | 行数 |
+|---|------|------|:--:|
+| 1 | `-o bed` 输出（3 列，复用现有 results） | `cmd_pgr/paf/query.rs` | ~15 |
+| 2 | `-o paf`/`-o bed` 分发逻辑 + `--bed-regions`/`-b` 参数 | `cmd_pgr/paf/query.rs` | ~25 |
+| 3 | BED 文件解析（多 region 批查） | `cmd_pgr/paf/query.rs` | ~10 |
+| 4 | 集成测试（bed 输出 + 批查） | `tests/cli_paf.rs` | ~10 |
+| **总计** | | | **~60** |
+
+### 3.4 不做的
+
+- ❌ `-o fasta`（推迟到 V2，需 `-f` 序列文件）
+- ❌ `-o maf`（推迟到 V3，POA 是图构建层产物）
+- ❌ GFA/VCF 输出（推迟到 V4，需完整 graph engine）
 - ❌ gfasort/gfaffix（pgr 不做 GFA，不需要）
-- ❌ Banded DP post-processing
-- ❌ Rayon 并行化
 - ❌ minigraph 的 `gfa_t` 在 Rust 中的对应实现
 
 ---
-## 4. V2/V3 展望
+## 4. V1/V2/V3/V4/V5 路线
 
-| 阶段 | 内容                                                                 |
-|------|----------------------------------------------------------------------|
-| V2   | MSA 后处理（裁剪、extract consensus、convert to MAF）                |
-| V3   | 评估后决定是否引入 rGFA（参考 minigraph 的 `gfa_t` + `mg_path2seq`） |
-| V4   | EKG 的 @tags（`@node_length`、`@align_length`、`IntSpan`）           |
+按 impg 各输出格式的依赖链与核心性递进：
+
+| 阶段 | 内容 | 对应 impg | 代码量 |
+|------|------|-----------|:---:|
+| **V1**（当前缺失） | `-o bed`（默认）+ `-o paf`（完整记录）+ `-b regions.bed` 批查 | impg 默认 `-o bed` + `-b` | ~60 |
+| **V2** | `-o fasta`（未比对序列，需 `-f`）| impg `-o fasta` | ~60 |
+| **V3** | `-o maf`（POA MSA，需 `-f`）+ `-o fasta-aln` | impg `-o maf`/`-o fasta-aln` | ~150 |
+| **V4** | GFA/VCF 物化评估（参考 minigraph `gfa_t` + `mg_path2seq`） | impg `-o gfa`/`-o vcf` | 待评估 |
+| **V5** | EKG @tags（`@node_length`、`@align_length`、`IntSpan`） | — | 待评估 |
+
+### 4.1 为何 BED 是 V1 核心
+
+impg 的 11 种输出格式按"是否需要序列文件"分两类：
+
+| 类别 | 格式 | 需 `-f` | 用途 |
+|------|------|:---:|------|
+| **坐标类**（默认） | `bed`/`bedpe`/`paf` | 否 | "哪些序列的哪些区段同源"——喂给下游工具 |
+| **序列类**（可选） | `fasta` | 是 | 提取未比对序列 |
+| **MSA 类**（可选） | `maf`/`fasta-aln` | 是 | POA 多序列比对 |
+| **图类**（可选） | `gfa`/`vcf`/`gbwt` | 是 | 物化图，需完整 graph engine |
+
+pgr 当前 `paf query` 只输出 PAF，没有 BED。PAF 是**完整比对记录**（含 CIGAR），对"我只想知道
+哪些区段同源"的用户是过度输出。BED 三列才是 impg 的默认，最 pipe 友好。
+
+### 4.2 为何 fasta/maf 后移
+
+- **fasta 推到 V2**：impg 也是可选项，需 `-f` 序列文件，依赖 noodles_fasta 索引
+- **maf 推到 V3**：POA MSA 是图构建层产物，按 [[paf-route.md]] §2.4 不应耦合进 query 的核心路径。
+  `pgr fas consensus` 已提供成熟 POA 后端，`bed → fa range → fas consensus` 的 pipe 路径已通
+
+### 4.3 V4 的能力跃迁
+
+GFA/VCF 需要完整 graph engine（impg 的 `dispatch_gfa_engine` + seqwish + crush + gfaffix +
+gfasort），是真正的能力跃迁，不是格式化变种。V4 需要评估是否引入 rGFA 标准（参考
+minigraph 的 `gfa_t` + `mg_path2seq`，见 [[minigraph.md]]）。
 
