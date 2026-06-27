@@ -202,6 +202,9 @@ V4 采用**两段式 GFA**——粗全局 + 区域精细，混合 minigraph 和 
 - **输出**：rGFA，含 SN/SO/SR tag（稳定坐标系，见 [[minigraph.md]] §3.2）
 - **用途**：可视化（Bandage/odgi）、SV 概览、作为后续 query 的坐标锚
 - **数据源**：PAF 索引的显式投影，不引入新的真实源
+- **算法骨架**：直接复用 seqwish 的 6 阶段流程（spanning tree → BFS discovery → DSU union-find
+  → compact → links → GFA），详见 [[seqwish.md]] §6.2。pgr 输入是 PAF，与 seqwish 一致，
+  相对 minigraph（需自跑 minimizer chaining）更天然适配。
 
 #### 4.3.2 V4b：区域精细 GFA（impg 风格）
 
@@ -210,6 +213,8 @@ V4 采用**两段式 GFA**——粗全局 + 区域精细，混合 minigraph 和 
 - **输出**：局部 GFA（含 base-level 变异）
 - **用途**：特定基因座的精细分析
 - **对应**：impg `query -o gfa`
+- **完整性保证**：借鉴 seqwish 的 phase 1b orphan recovery 思路——BFS 发现的等价类可能只覆盖部分
+  序列，按序列查区间树补漏直到收敛，保证局部 GFA 的等价类完整性。详见 [[seqwish.md]] §3.3、§6.3。
 
 #### 4.3.3 两段衔接
 
@@ -251,6 +256,14 @@ V4a 物化粗 GFA 时必须加 `--min-var-len`（默认 100）过滤，只把长
 2. minigraph 的 minimizer 索引会失败（pgr 用区间树，但图遍历仍会退化）
 3. 小变体用标准方法（VCF/MAF）更易分析
 4. 无算法能为数百基因组构建全变体图
+
+**两种正交的过滤维度**（pgr V4a 需同时考虑）：
+
+- **变异长度**（`--min-var-len`，minigraph 风格）— 过滤 < 100bp 的小变体，避免碱基级碎片
+- **重复拷贝数**（`--repeat-max` / `--min-repeat-dist`，seqwish 风格）— 限制同一序列在图同一位置
+  的拷贝数，避免高拷贝重复把图吹爆。详见 [[seqwish.md]] §3.5 的 `write_graph_chunk` 实现。
+
+两者维度不同：前者按变异长度过滤，后者按重复拷贝数过滤，pgr V4a 可同时启用。
 
 **V4b 不受此约束**——区域精细 GFA 只处理单个区段，序列数通常 < 50，不会爆炸。
 
