@@ -162,8 +162,8 @@ q2\t300\t10\t60\t-\tt1\t200\t10\t60\t45\t50\t255\tcg:Z:50M
         assert_eq!(loaded.num_targets(), idx.num_targets());
 
         let t1 = loaded.name_to_id("t1").unwrap();
-        let before = idx.query(t1, 0, 50);
-        let after = loaded.query(t1, 0, 50);
+        let before = idx.query(t1, 0, 50, 0.0, 0);
+        let after = loaded.query(t1, 0, 50, 0.0, 0);
         assert_eq!(before.len(), after.len());
         for (b, a) in before.iter().zip(after.iter()) {
             assert_eq!(b.0, a.0);
@@ -179,7 +179,7 @@ q2\t300\t10\t60\t-\tt1\t200\t10\t60\t45\t50\t255\tcg:Z:50M
         let tmp = "/tmp/pgr_test_rt_cigar.paf.idx";
         idx.save(tmp).unwrap();
         let loaded = PafIndex::load(tmp).unwrap();
-        let res = loaded.query(loaded.name_to_id("B").unwrap(), 0, 100);
+        let res = loaded.query(loaded.name_to_id("B").unwrap(), 0, 100, 0.0, 0);
         assert_eq!(res.len(), 1);
     }
 
@@ -202,7 +202,7 @@ C\t100\t0\t50\t+\tZ\t200\t0\t50\t45\t50\t255\tcg:Z:50M
 
         for tname in &["X", "Y", "Z"] {
             let tid = loaded.name_to_id(tname).unwrap();
-            let res = loaded.query(tid, 0, 50);
+            let res = loaded.query(tid, 0, 50, 0.0, 0);
             assert_eq!(res.len(), 1);
         }
     }
@@ -219,7 +219,7 @@ C\t100\t0\t100\t+\tA\t100\t0\t100\t90\t100\t255\tcg:Z:100M
         let loaded = PafIndex::load(tmp).unwrap();
 
         let b = loaded.name_to_id("B").unwrap();
-        let res = loaded.query_transitive_bfs(b, 0, 100, 2, 10, 10);
+        let res = loaded.query_transitive_bfs(b, 0, 100, 2, 10, 10, 0.0, 0, 0);
         let a = loaded.name_to_id("A").unwrap();
         let c = loaded.name_to_id("C").unwrap();
         assert!(res.iter().any(|(q, _, _)| *q == a));
@@ -260,7 +260,7 @@ C\t100\t0\t100\t+\tA\t100\t0\t100\t90\t100\t255\tcg:Z:100M
         let restored = from_data(data).unwrap();
 
         let t1 = restored.name_to_id("t1").unwrap();
-        let res = restored.query(t1, 0, 50);
+        let res = restored.query(t1, 0, 50, 0.0, 0);
         assert_eq!(res.len(), 2);
     }
 
@@ -316,6 +316,6 @@ C\t100\t0\t100\t+\tA\t100\t0\t100\t90\t100\t255\tcg:Z:100M
         let loaded2 = PafIndex::load(tmp2).unwrap();
 
         let t1 = loaded2.name_to_id("t1").unwrap();
-        assert_eq!(loaded2.query(t1, 0, 50).len(), 2);
+        assert_eq!(loaded2.query(t1, 0, 50, 0.0, 0).len(), 2);
     }
 }

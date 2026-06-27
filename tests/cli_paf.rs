@@ -349,20 +349,18 @@ fn command_paf_index_multiple_files() {
     .unwrap();
     fs::write(
         p2,
-        "B\t100\t0\t50\t+\tY\t200\t0\t50\t45\t50\t255\tcg:Z:50M\n",
+        "B\t100\t0\t50\t+\tX\t200\t50\t100\t45\t50\t255\tcg:Z:50M\n",
     )
     .unwrap();
     let (_, stderr) = PgrCmd::new()
         .args(&["paf", "index", p1, p2, "-o", idx])
         .run();
+    assert!(stderr.contains("Building PAF index from 2 file"));
     assert!(stderr.contains("saved to"));
-    // V1: multi-file processes sequentially; last file wins when -o is used.
-    // Query Y (from p2, the last file) — must be in the saved index.
-    let (stdout, _) = PgrCmd::new().args(&["paf", "query", idx, "Y:0-50"]).run();
-    assert!(
-        stdout.contains("B\t0\t50\tY"),
-        "B (from p2) should be in saved index"
-    );
+    // Both files map to shared target X → merged index has both A and B
+    let (stdout, _) = PgrCmd::new().args(&["paf", "query", idx, "X:0-100"]).run();
+    assert!(stdout.contains("A\t0\t50\tX"), "A not found");
+    assert!(stdout.contains("B\t0\t50\tX"), "B not found");
     let _ = fs::remove_file(p1);
     let _ = fs::remove_file(p2);
     let _ = fs::remove_file(idx);
@@ -388,4 +386,52 @@ fn command_paf_query_max_depth_1() {
         !stdout.contains("C\t"),
         "C should NOT appear: max-depth=1 stops before 2nd hop"
     );
+}
+
+#[test]
+fn command_paf_query_bed_format() {
+    let paf = "A\t100\t0\t100\t+\tB\t100\t0\t100\t95\t100\t255\tcg:Z:100M\n";
+    let (stdout, _) = PgrCmd::new()
+        .args(&["paf", "query", "stdin", "B:0-100", "--bed"])
+        .stdin(paf)
+        .run();
+    let fields: Vec<&str> = stdout.trim().split('\t').collect();
+    assert_eq!(fields.len(), 6, "BED6 format");
+    assert_eq!(fields[0], "A");
+    assert_eq!(fields[3], "B:0-100", "name column = target coords");
+}
+
+#[test]
+fn command_paf_query_paf_format() {
+    let paf = "A\t100\t0\t100\t+\tB\t100\t0\t100\t95\t100\t255\tcg:Z:100M\n";
+    let (stdout, _) = PgrCmd::new()
+        .args(&["paf", "query", "stdin", "B:0-100", "--paf"])
+        .stdin(paf)
+        .run();
+    let fields: Vec<&str> = stdout.trim().split('\t').collect();
+    assert!(fields.len() >= 12, "PAF 12+ columns");
+    assert_eq!(fields[0], "A");
+    assert_eq!(fields[4], "+");
+}
+
+#[test]
+fn command_paf_query_subset_filter() {
+    use std::fs;
+    let paf = "A\t100\t0\t100\t+\tB\t100\t0\t100\t95\t100\t255\tcg:Z:100M\nC\t100\t0\t50\t+\tB\t100\t50\t100\t45\t50\t255\tcg:Z:50M\n";
+    let list = "/tmp/pgr_subset.txt";
+    fs::write(list, "A\n").unwrap();
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "paf",
+            "query",
+            "stdin",
+            "B:0-100",
+            "--subset-sequence-list",
+            list,
+        ])
+        .stdin(paf)
+        .run();
+    assert!(stdout.contains("A"), "A should be included");
+    assert!(!stdout.contains("C"), "C should be excluded");
+    let _ = fs::remove_file(list);
 }

@@ -1,5 +1,5 @@
 /// PAF interval-tree index and query engine.
-use super::cigar::{parse_cigar, CigarOp};
+use super::cigar::{gap_compressed_identity, parse_cigar, CigarOp};
 use super::parser::parse_paf;
 use coitrees::{BasicCOITree, Interval, IntervalNode, IntervalTree};
 use indexmap::IndexMap;
@@ -63,6 +63,44 @@ impl PafIndex {
         Ok(PafIndex { names, trees })
     }
 
+    pub fn build_multi<R: BufRead>(readers: Vec<R>) -> std::io::Result<Self> {
+        let mut names = IndexMap::new();
+        let mut by_target: HashMap<u32, Vec<Interval<PafMetadata>>> = HashMap::new();
+
+        for reader in readers {
+            for rec in &parse_paf(reader)? {
+                let next_id = names.len() as u32;
+                names.entry(rec.target_name.clone()).or_insert(next_id);
+                let target_id = names[&rec.target_name];
+
+                let next_id = names.len() as u32;
+                names.entry(rec.query_name.clone()).or_insert(next_id);
+                let query_id = names[&rec.query_name];
+
+                let cigar = extract_cigar(&rec.tags);
+                by_target.entry(target_id).or_default().push(Interval::new(
+                    rec.target_start as i32,
+                    rec.target_end as i32,
+                    PafMetadata {
+                        query_id,
+                        target_start: rec.target_start as i32,
+                        target_end: rec.target_end as i32,
+                        query_start: rec.query_start as i32,
+                        query_end: rec.query_end as i32,
+                        cigar,
+                    },
+                ));
+            }
+        }
+
+        let mut trees = HashMap::new();
+        for (tid, mut intervals) in by_target {
+            intervals.sort_by(|a, b| a.first.cmp(&b.first));
+            trees.insert(tid, Arc::new(BasicCOITree::new(&intervals)));
+        }
+        Ok(PafIndex { names, trees })
+    }
+
     pub fn num_targets(&self) -> usize {
         self.trees.len()
     }
@@ -77,12 +115,25 @@ impl PafIndex {
             .map(|(name, _)| name.as_str())
     }
 
-    pub fn query(&self, target_id: u32, start: i32, end: i32) -> Vec<QueryResult> {
+    pub fn query(
+        &self,
+        target_id: u32,
+        start: i32,
+        end: i32,
+        min_identity: f64,
+        min_output_len: i32,
+    ) -> Vec<QueryResult> {
         let mut results = Vec::new();
         if let Some(tree) = self.trees.get(&target_id) {
             tree.query(start, end, |iv: &IntervalNode<PafMetadata, u32>| {
                 let m = &iv.metadata;
+                if gap_compressed_identity(&m.cigar) < min_identity {
+                    return;
+                }
                 if let Some((qs, qe, ts, te)) = project(start, end, m) {
+                    if (qe - qs).abs() < min_output_len {
+                        return;
+                    }
                     results.push((
                         m.query_id,
                         Interval::new(qs, qe, m.query_id),
@@ -102,6 +153,9 @@ impl PafIndex {
         max_depth: u16,
         min_len: i32,
         min_dist: i32,
+        min_identity: f64,
+        min_output_len: i32,
+        merge_distance: i32,
     ) -> Vec<QueryResult> {
         let mut results = Vec::new();
         let mut visited: HashMap<u32, SortedRanges> = HashMap::new();
@@ -128,7 +182,13 @@ impl PafIndex {
                         if os >= oe {
                             return;
                         }
+                        if gap_compressed_identity(&m.cigar) < min_identity {
+                            return;
+                        }
                         if let Some((qs, qe, ts, te)) = project(os, oe, m) {
+                            if (qe - qs).abs() < min_output_len {
+                                return;
+                            }
                             results.push((
                                 m.query_id,
                                 Interval::new(qs, qe, m.query_id),
@@ -150,6 +210,9 @@ impl PafIndex {
             }
             current = next;
             depth += 1;
+        }
+        if merge_distance > 0 {
+            merge_results(&mut results, merge_distance);
         }
         results
     }
@@ -197,6 +260,39 @@ fn project(ts: i32, te: i32, m: &PafMetadata) -> Option<(i32, i32, i32, i32)> {
         cq += qd;
     }
     None
+}
+
+fn merge_results(results: &mut Vec<QueryResult>, max_gap: i32) {
+    // Group by query_id, sort by query_start, merge adjacent within max_gap
+    let mut groups: HashMap<u32, Vec<(usize, i32, i32)>> = HashMap::new();
+    for (i, &(qid, q_iv, _t_iv)) in results.iter().enumerate() {
+        groups
+            .entry(qid)
+            .or_default()
+            .push((i, q_iv.first, q_iv.last));
+    }
+    let mut to_remove = Vec::new();
+    for (_qid, mut items) in groups {
+        if items.len() <= 1 {
+            continue;
+        }
+        items.sort_by_key(|&(_, s, _)| s);
+        let mut prev = items[0];
+        for &curr in &items[1..] {
+            if (curr.1 - prev.2).abs() <= max_gap {
+                // Merge: keep the one with earlier target
+                results[prev.0].1.last = results[prev.0].1.last.max(curr.2);
+                to_remove.push(curr.0);
+            } else {
+                prev = curr;
+            }
+        }
+    }
+    to_remove.sort_unstable();
+    to_remove.dedup();
+    for &idx in to_remove.iter().rev() {
+        results.remove(idx);
+    }
 }
 
 struct SortedRanges {
@@ -311,7 +407,7 @@ q3\t400\t0\t40\t+\tt2\t500\t0\t40\t38\t40\t255\tcg:Z:40M
     fn test_query() {
         let idx = PafIndex::build(BufReader::new(paf_data().as_bytes())).unwrap();
         let t1 = idx.name_to_id("t1").unwrap();
-        let res = idx.query(t1, 0, 50);
+        let res = idx.query(t1, 0, 50, 0.0, 0);
         assert_eq!(res.len(), 2, "expected 2 overlapping records for t1:[0,50)");
         let qids: Vec<u32> = res.iter().map(|(q, _, _)| *q).collect();
         assert!(
@@ -329,7 +425,7 @@ q3\t400\t0\t40\t+\tt2\t500\t0\t40\t38\t40\t255\tcg:Z:40M
     fn test_query_no_overlap() {
         let idx = PafIndex::build(BufReader::new(paf_data().as_bytes())).unwrap();
         let t1 = idx.name_to_id("t1").unwrap();
-        assert!(idx.query(t1, 100, 150).is_empty());
+        assert!(idx.query(t1, 100, 150, 0.0, 0).is_empty());
     }
 
     #[test]
@@ -340,7 +436,7 @@ C\t100\t0\t100\t+\tA\t100\t0\t100\t90\t100\t255\tcg:Z:100M
 ";
         let idx = PafIndex::build(BufReader::new(paf.as_bytes())).unwrap();
         let b = idx.name_to_id("B").unwrap();
-        let res = idx.query_transitive_bfs(b, 0, 100, 2, 10, 10);
+        let res = idx.query_transitive_bfs(b, 0, 100, 2, 10, 10, 0.0, 0, 0);
         let a = idx.name_to_id("A").unwrap();
         let c = idx.name_to_id("C").unwrap();
         assert!(res.iter().any(|(q, _, _)| *q == a), "A not found");
@@ -379,6 +475,23 @@ C\t100\t0\t100\t+\tA\t100\t0\t100\t90\t100\t255\tcg:Z:100M
     #[test]
     fn test_extract_cigar_empty() {
         assert!(extract_cigar(&["gi:f:0.9".into()]).is_empty());
+    }
+
+    #[test]
+    fn test_build_multi_merges_targets() {
+        let paf1 = "A\t100\t0\t50\t+\tX\t200\t0\t50\t45\t50\t255\tcg:Z:50M\n";
+        let paf2 = "B\t100\t0\t50\t+\tX\t200\t50\t100\t45\t50\t255\tcg:Z:50M\n";
+        let idx = PafIndex::build_multi(vec![
+            BufReader::new(paf1.as_bytes()),
+            BufReader::new(paf2.as_bytes()),
+        ])
+        .unwrap();
+        // X is shared target across both files → 1 target
+        assert_eq!(idx.num_targets(), 1);
+        assert_eq!(idx.names.len(), 3); // A, B, X
+        let x = idx.name_to_id("X").unwrap();
+        let res = idx.query(x, 0, 100, 0.0, 0);
+        assert_eq!(res.len(), 2);
     }
 
     // ── project() edge cases ──────────────────────────────────
@@ -427,5 +540,45 @@ C\t100\t0\t100\t+\tA\t100\t0\t100\t90\t100\t255\tcg:Z:100M
         };
         let (qs, qe, ts, te) = project(11, 16, &m).unwrap();
         assert_eq!((qs, qe, ts, te), (16, 21, 11, 16));
+    }
+
+    #[test]
+    fn test_query_min_identity_filters() {
+        let idx = PafIndex::build(BufReader::new(paf_data().as_bytes())).unwrap();
+        let t1 = idx.name_to_id("t1").unwrap();
+        let res = idx.query(t1, 0, 50, 0.95, 0);
+        assert_eq!(res.len(), 2);
+        let res = idx.query(t1, 0, 50, 1.01, 0);
+        assert_eq!(res.len(), 0);
+    }
+
+    #[test]
+    fn test_merge_adjacent_intervals() {
+        let mut results = vec![
+            (0u32, Interval::new(0, 50, 0u32), Interval::new(0, 50, 1u32)),
+            (
+                0u32,
+                Interval::new(55, 100, 0u32),
+                Interval::new(55, 100, 1u32),
+            ),
+        ];
+        merge_results(&mut results, 10);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].1.first, 0);
+        assert_eq!(results[0].1.last, 100);
+    }
+
+    #[test]
+    fn test_merge_no_merge_when_far() {
+        let mut results = vec![
+            (0u32, Interval::new(0, 50, 0u32), Interval::new(0, 50, 1u32)),
+            (
+                0u32,
+                Interval::new(100, 150, 0u32),
+                Interval::new(100, 150, 1u32),
+            ),
+        ];
+        merge_results(&mut results, 10);
+        assert_eq!(results.len(), 2);
     }
 }

@@ -8,8 +8,8 @@ pub fn make_subcommand() -> Command {
             r###"
 Builds a per-target interval-tree index from one or more PAF files.
 
-The index can be used by `pgr paf query` for fast coordinate projection
-and transitive closure traversal.
+Multiple input files are merged into a single unified index:
+sequences with the same name across files share the same internal ID.
 
 Use -o to persist the index to a .paf.idx file for reusable queries.
 
@@ -24,8 +24,8 @@ Examples:
 2. Index and save for later queries:
    pgr paf index alignments.paf -o alignments.paf.idx
 
-3. Index multiple PAF files:
-   pgr paf index *.paf -o cohort.paf.idx
+3. Merge multiple PAF files into one index:
+   pgr paf index a.paf b.paf -o merged.paf.idx
 
 "###,
         )
@@ -46,20 +46,20 @@ Examples:
 }
 
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    eprintln!("Building PAF index...");
+    let infiles: Vec<&String> = args.get_many::<String>("infiles").unwrap().collect();
+    let count = infiles.len();
 
-    for infile in args.get_many::<String>("infiles").unwrap() {
-        let reader = pgr::reader(infile);
-        let idx = PafIndex::build(reader)?;
+    eprintln!("Building PAF index from {count} file(s)...");
 
-        eprintln!("{}", infile);
-        eprintln!("  sequences: {}", idx.names.len());
-        eprintln!("  targets:   {}", idx.num_targets());
+    let readers: Vec<_> = infiles.iter().map(|f| pgr::reader(f)).collect();
+    let idx = PafIndex::build_multi(readers)?;
 
-        if let Some(outfile) = args.get_one::<String>("outfile") {
-            idx.save(outfile)?;
-            eprintln!("  saved to {}", outfile);
-        }
+    eprintln!("  sequences: {}", idx.names.len());
+    eprintln!("  targets:   {}", idx.num_targets());
+
+    if let Some(outfile) = args.get_one::<String>("outfile") {
+        idx.save(outfile)?;
+        eprintln!("  saved to {}", outfile);
     }
 
     Ok(())

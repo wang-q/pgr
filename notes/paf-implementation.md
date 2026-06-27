@@ -470,6 +470,188 @@ Chain/Net syntenic 过滤器。
 是另一个 Rust 实现的全基因组比对工具集，支持 MAF/PAF/Chain/SAM 互转。
 其 PAF/CIGAR 处理与 pgr 有高度重叠，以下是可借鉴的设计。
 
+---
+
+## 14. impg 多文件索引架构分析
+
+本节基于 `impg-0.4.1/src/multi_impg.rs`（1093 行）、`impg_index.rs`（392 行）、
+`forest_map.rs`（47 行）的精读，梳理 impg 的多文件索引架构，并给出 pgr 的简化方案。
+
+### 14.1 三层架构总览
+
+impg 的多文件支持分三层，从磁盘格式到查询接口逐层抽象：
+
+```
+第三层：ImpgIndex trait + ImpgWrapper enum（接口统一）
+     ↓  单文件和多文件对外透明
+第二层：MultiImpg（协调器）
+     ├── unified seq_index（全局 name↔ID）
+     ├── unified forest_map（全局 target→子索引列表）
+     ├── local_to_unified 翻译表（每子索引一份）
+     └── sub_indices 懒加载缓存（RwLock<Vec<Option<Arc<Impg>>>>）
+     ↓  并行跨文件查询
+第一层：Impg（单文件持久化）
+     ├── 文件格式：[magic:8B][version][forest_map_offset:8B][seq_index][tree_data]
+     ├── ForestMap: FxHashMap<u32, u64>（target_id → 树在文件中的字节偏移量）
+     └── 树数据按 target 独立存储，支持 per-target 懒加载
+```
+
+### 14.2 第一层：单文件持久化
+
+`Impg` 的 `.impg` 文件不是整体序列化，而是**结构化二进制**：
+
+```
+[IMPGIDX1 or IMPGIDX2: 8B]
+[forest_map_offset: 8B u64 LE]
+[SequenceIndex: bincode]
+[...padding...]
+[tree for target_0: bincode]
+[tree for target_1: bincode]
+...
+```
+
+`ForestMap`（`forest_map.rs:11-14`）是 `FxHashMap<u32, u64>`——每个 target_id
+到其树数据起始位置的字节偏移量。设计目的：
+
+- **加载 header 时不读树**：`load_header()` 只需读 magic + forest_map_offset +
+  seq_index + forest_map，树数据完全跳过
+- **按需 seek 到特定树**：`get_or_load_tree(target_id)` → `forest_map[target_id]`
+  → `seek(offset)` → `bincode::decode` 一棵树
+- **支持 MultiImpg 的懒加载策略**：同一个文件可能有几百个 target，
+  但一次查询只涉及少数几个
+
+### 14.3 第二层：MultiImpg 协调器
+
+**构建流程**（`multi_impg.rs:140-216`）：
+
+1. **并行读 N 个 `.impg` header**（`par_iter` + `load_header`），只拿 seq_index + forest_map
+2. **建统一名字表**：遍历所有子索引的 seq_index，每条序列 `get_or_insert_id(name, len)` →
+   新的 unified_id。同时建 `local_to_unified: Vec<Vec<u32>>` 翻译表
+3. **建统一森林图**：遍历所有子索引的 forest_map，`local_target_id → unified_id` 翻译后
+   插入 `FxHashMap<u32, Vec<TreeLocation>>`
+4. `sub_indices` 初始化为 `vec![None; N]`——**树数据全部懒加载**
+
+**查询流程**（`query_all_indices`，`multi_impg.rs:495-595`）：
+
+1. `self.forest_map.get(&unified_target_id)` → 拿到 `Vec<TreeLocation>`
+2. **并行查各子索引**（rayon `par_iter`）：
+   - `self.get_sub_index(loc.index_idx)` → 拿到 `Arc<Impg>`
+   - `impg.query(loc.local_target_id, ...)` → 拿到本地结果
+   - `self.translate_to_unified(result, index_idx)` → local→unified ID 翻译
+3. 合并去重：self-interval 只保留一份
+4. 排序（按 query_id, query_start, query_end, target_start, target_end）
+
+**`get_sub_index` 的二级缓存**（`multi_impg.rs:423-459`）：
+
+```rust
+fn get_sub_index(&self, index_idx: usize) -> io::Result<Arc<Impg>> {
+    // Fast path: RwLock read check
+    {
+        let indices = self.sub_indices.read().unwrap();
+        if let Some(ref impg) = indices[index_idx] {
+            return Ok(Arc::clone(impg));
+        }
+    }
+    // Slow path: load from disk
+    let impg = Impg::load_from_file(reader, ...)?;
+    // Store in cache
+    {
+        let mut indices = self.sub_indices.write().unwrap();
+        indices[index_idx] = Some(Arc::clone(&impg));
+    }
+    Ok(impg)
+}
+```
+
+`RwLock` 允许并发读（多线程同时访问已加载的索引），只在加载新索引时 briefly 持写锁。
+
+**ID 翻译**（`translate_to_unified`，`multi_impg.rs:462-492`）：
+
+```rust
+let unified_query_id = local_to_unified[index_idx][query_id];
+let unified_target_id = local_to_unified[index_idx][target_id];
+// Check for sentinel (u32::MAX = invalid)
+```
+
+### 14.4 第三层：trait 抽象
+
+`ImpgIndex` trait（`impg_index.rs:21-121`）定义 13 个方法：
+
+| 方法 | 用途 |
+|------|------|
+| `seq_index` | 获取统一名字表 |
+| `query` | 单跳查询 |
+| `query_with_cache` | 带 CIGAR 缓存的查询 |
+| `populate_cigar_cache` | 批量预热 CIGAR |
+| `query_transitive_dfs` | DFS 传递闭包 |
+| `query_transitive_bfs` | BFS 传递闭包 |
+| `get_or_load_tree` | 按需加载区间树 |
+| `target_ids` | 所有有树的 target 列表 |
+| `remove_cached_tree` | 显式释放内存 |
+| `num_targets` | target 数 |
+| `sequence_files` | 关联的 FASTA 文件 |
+| `syng_index_ref` | syng 后端专用 |
+
+`ImpgWrapper` enum（`impg_index.rs:127-151`）：
+
+```rust
+pub enum ImpgWrapper {
+    Single(Impg),
+    Multi(MultiImpg),
+}
+impl ImpgIndex for ImpgWrapper { ... } // match dispatch
+```
+
+CLI 只面对 `ImpgWrapper`，单文件 vs 多文件的区别对调用方完全透明。
+
+### 14.5 MultiImpg 缓存
+
+`MultiImpgCache`（`multi_impg.rs:76-91`）序列化 unified 映射 +
+`Vec<FileEntry>`（path/size/mtime），通过 staleness 检测（mtime + size 比较）
+决定是否重用。缓存文件路径为 `{list_file}.multi_impg`。
+
+### 14.6 pgr 的简化方案
+
+impg 三层设计的**每层动机在 pgr V1 都不成立**：
+
+| impg 动机 | pgr 现状 | 结论 |
+|-----------|---------|:----:|
+| 每个 `.impg` 可独立使用 | `.paf.idx` 仅 100+ bytes | 不需要 per-file 索引 |
+| 树数据懒加载（大文件内存压力） | PAF 来自 MAF 转换，规模可控 | 不需要 per-target 懒加载 |
+| `ForestMap` + per-tree 偏移量 | pgr 用 bincode 整体序列化 | 不需要 seek 到单棵树 |
+| Rayon 并行 | 单文件构建已够快 | V2 再加 |
+| 缓存层 | 重建 unified 映射成本极低 | 不需要 `.multi_impg` 缓存 |
+
+**pgr V1 多文件方案：直接合并索引**
+
+```rust
+impl PafIndex {
+    /// Build a merged index from multiple PAF files.
+    pub fn build_multi<R: BufRead>(readers: Vec<R>) -> io::Result<Self> {
+        // 1. Collect all PafRecords from all readers
+        // 2. Unified IndexMap<String, u32> for names (reuse existing pattern)
+        // 3. Unified per-target interval map (merge across files)
+        // 4. Build coitrees as usual
+        // 5. Return single PafIndex
+    }
+}
+```
+
+不需要 `ForestMap`、`TreeLocation`、`local_to_unified` 翻译、`RwLock` 缓存、
+`ImpgIndex` trait。用户使用方式不变：
+
+```bash
+pgr paf index a.paf b.paf -o merged.paf.idx
+pgr paf query merged.paf.idx region --transitive
+```
+
+**代码量预估**：改 `build()` 为接受多 reader（~20 行），改 CLI index 命令（~10 行），
+新测试 3-4 个。
+
+---
+
+## 13. wgatools 参考
+
 ### 13.1 与 impg 的关键差异
 
 | 维度 | impg | wgatools |
