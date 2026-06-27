@@ -959,42 +959,53 @@ SPOA 移植（`Poa` struct，`add_sequence`/`consensus`/`msa`），被 `fas cons
 
 ### 9.1 路线选择：隐式图 vs 物化图
 
-**答：pgr 应走"Chain/Net 即隐式图"的路线，而非重新构建 PAF-based 隐式图，也非先物化 GFA。**
+**答：pgr 应走 PAF-based 隐式图路线（对齐 impg），不是 Chain-based，也非先物化 GFA。**
 
-impg 的隐式图以 PAF/1ALN/TPA all-vs-all 比对为边集；pgr 的强项是 UCSC Chain/Net 体系，
-**Chain 本身就是隐式图的边**——一条 Chain = 一条 A↔B 边集（含 indel gap）。pgr 无需引入 PAF/wfmash，
-可直接 在 Chain/Net 上构建区间索引，复用已有的 pairwise 成熟基础设施（见 §9.2）。
+impg 的隐式图以 PAF/1ALN/TPA all-vs-all 比对为边集。pgr 不应改用 Chain 作边集，原因：
+- **Chain 是 star topology**（ref↔query_i），不是 all-vs-all——要做传递闭包必须跨多条 Chain，
+  ref 成为必经枢纽，ref 缺失区段会断开间接同源路径。
+- **Chain 已被 UCSC 流程过滤**（score 阈值、syntenic 净化）——不是原始比对，丢失了 paralog/
+  低质量区间，无法做"全量装入、查询层挑选"（impg §1.1.3 哲学）。
+- **Chain 结构不友好**——gap-less tBlock + indel gap 的分段结构，不是 PAF 的连续 CIGAR 块，
+  转换会丢信息且无收益。
+
+**pgr 的正确路线**：用 PAF 作隐式图边集（对齐 impg），但 PAF 的来源不必是 wfmash——pgr 已有
+**两序列 MAF → PAF** 的转换路径（每个 MAF block = 一条 pairwise alignment，可直接序列化为
+PAF 行 with `=`/`X` CIGAR）。这是 pgr 复用已有 pairwise 基础设施的天然桥梁，无需引入 wfmash。
 
 物化图（pggb/Minigraph-Cactus 路线）的代价是"即使用户只关心一个位点，也要先构建整张图"。pgr 当前
 没有 GFA 构建管道（[docs/gfa.md](file:///Volumes/ExtHome/Scripts/pgr/docs/gfa.md) 是规划文档），
 **"先物化再分析"对 pgr 是过载的**——应优先实现按需投影，把物化推迟到用户显式要求 `gfa`/`maf`输出时。
 
-§1.1.2 的适用边界表给出判断依据：pgr 的典型场景（UCSC 风格的 locus 查询、cohort 区间投影）落在
-"隐式图赢"的区域；只有未来需要全图统计（coverage/layout/variant calling）时才考虑物化。
+§1.1.2 的适用边界表给出判断依据：pgr 的典型场景（locus 查询、cohort 区间投影）落在"隐式图赢"
+的区域；只有未来需要全图统计（coverage/layout/variant calling）时才考虑物化。
 
-### 9.2 Chain/Net 体系如何与隐式图结合
+### 9.2 PAF/MAF 作为隐式图的边集来源
 
-**答：把 Chain 索引到 coitrees，复用 impg 的传递闭包 BFS，实现 cohort 级"找全所有同源片段"。**
+**答：用 PAF 作边集（对齐 impg），PAF 由已有的两序列 MAF 转换而来，复用 impg 的传递闭包 BFS。**
 
 具体路径：
 
-1. **Chain → 区间树** — 一条 Chain 的每个 block（匹配段）是一条 A[start-end]↔B[start-end] 边。
-   把所有 cohort 的 Chain 文件解析后，按 target seq 建立区间树（可直接复用 `coitrees` crate），
-   节点 metadata 用 `QueryMetadata` 风格的 bit-packing（§3.2）：query_id/target_start/target_end/
-   query_start/query_end/strand/data_offset。Chain 的 CIGAR 信息（match/insertion/deletion run）
-   可懒加载，只存文件偏移量。
-2. **`chain lift` 升级为传递闭包** — 当前 `pgr chain lift` 是单条 Chain 的线性投影。可在区间树
-   之上实现 `chain lift --transitive`（对应 impg `-x`）：从目标区间出发做 BFS，自动发现所有直接
-   和间接同源片段，包括通过第三序列的间接同源。`-m` 控制深度，`-d` 控制 hop 内最大 gap。
-3. **Net 作为 syntenic 过滤器** — Net 编码了 syntenic 关系（top-level vs alignmentNet vs classNet），
-   可作为传递闭包 BFS 的剪枝依据：只在 syntenic Net 内扩展，避免 paralog 横跳引入 噪声。这是 pgr
-   相对 impg 的潜在优势——impg 的 PAF 没有 syntenic 注释，只能靠 `-d` 硬阈值。
-4. **输出格式** — 复用 impg 的输出矩阵（bed/bedpe/paf/gfa/vcf/maf/fasta），但 pgr 的 MAF 输出
+1. **MAF → PAF** — pgr 已有生成两序列 MAF 的能力。每个 MAF block 就是一条 pairwise alignment，
+   可序列化为 PAF 行（target/query 名称 + 起止坐标 + 链向 + `=`/`X` CIGAR）。这是 pgr 已有
+   pairwise 基础设施通往 PAF-based 隐式图的天然桥梁，无需引入 wfmash。
+2. **PAF → 区间树** — 把全 cohort 的 PAF（含直接 MAF→PAF 转换 + 跨 sample 比对）按 target seq
+   建立区间树（直接复用 `coitrees` crate），节点 metadata 用 `QueryMetadata` 风格的 bit-packing
+   （§3.2）：query_id/target_start/target_end/query_start/query_end/strand/data_offset。
+   CIGAR 的 indel delta 懒加载，只存文件偏移量。
+3. **`pgr maf query`/`pgr paf query` 升级为传递闭包** — 在区间树之上实现 `--transitive`
+   （对应 impg `-x`）：从目标区间出发做 BFS，自动发现所有直接和间接同源片段。`-m` 控制深度，
+   `-d` 控制 hop 内最大 gap。
+4. **输出格式** — 复用 impg 的输出矩阵（bed/bedpe/paf/gfa/vcf/maf/fasta），pgr 的 MAF 输出
    可直接复用 `libs/fas_multiz.rs` 的 banded DP 合并（`FasMultizMode::Core`），比 impg 的
    per-bubble POA 更适合 core 区段。
 
-**前提设施**：当前 `pgr` 的 Chain 处理是流式的，缺少随机访问能力。第一步需引入 Chain 索引格式
-（类似 `.impg` 但基于 Chain），把全 cohort 的 Chain 装进内存区间树。
+**为何不用 Chain**：见 §9.1。Chain 是 star topology 的过滤产物，不适合做图边集。Chain 适合
+做**查询层过滤**（syntenic 净化、低质量剪枝），但不适合做图边集本身。
+
+**前提设施**：
+- pgr 当前 `maf` 子命令只有 `to_fas`，需要新增 `maf to-paf`（或 `maf2paf`）。
+- Chain 的 syntenic 注释可作为查询层的可选过滤器，而非边集来源。
 
 ### 9.3 crush 算法的必要性
 
@@ -1015,37 +1026,37 @@ impg 的隐式图以 PAF/1ALN/TPA all-vs-all 比对为边集；pgr 的强项是 
 
 ### 9.4 第一步最小原型
 
-**答：`pgr chain query` —— Chain 索引 + 区间投影 + 传递闭包，输出 BED/MAF。**
+**答：`pgr paf query` —— PAF 索引 + 区间投影 + 传递闭包，输出 BED/MAF。**
 
 具体目标：
 
-1. **Chain 索引格式**（`.pgr.chain.idx`）— 把多个 Chain 文件解析后按 target seq 建立区间树，
-   序列化为单文件索引。参考 impg 的 `Index` 命令与 `.impg` 格式，但 metadata 用 Chain block 而非
-   PAF record。**索引层不过滤**（遵循 impg §1.1.3 的设计：全量装入，挑选推迟到查询层）。
-2. **`pgr chain query <region>`** — 在区间树上查找所有重叠 Chain block，把目标坐标 lift
-   到查询 序列，输出 BED（最简输出）。查询参数暴露过滤：`--merge-distance`/`--min-identity`/
+1. **`pgr maf to-paf`** — 新增子命令，把已有的两序列 MAF 转成 PAF（`=`/`X` CIGAR）。这是 pgr
+   pairwise 基础设施通往 PAF-based 隐式图的桥梁。**索引层不过滤**（遵循 impg §1.1.3 的设计：
+   全量装入，挑选推迟到查询层）。
+2. **PAF 索引格式**（`.pgr.paf.idx`）— 把 PAF 文件解析后按 target seq 建立区间树，
+   序列化为单文件索引。参考 impg 的 `Index` 命令与 `.impg` 格式，metadata 用 PAF record。
+3. **`pgr paf query <region>`** — 在区间树上查找所有重叠 PAF record，把目标坐标 lift
+   到查询序列，输出 BED（最简输出）。查询参数暴露过滤：`--merge-distance`/`--min-identity`/
    `--min-output-length`/`--subset-sequence-list`（对应 impg `QueryOpts` 的 `-d`/
    `--min-result-identity`/`-l`/`--subset-sequence-list`）。
-3. **`pgr chain query <region> --transitive`** — 实现传递闭包 BFS（对应 impg `-x`），找全所有
+4. **`pgr paf query <region> --transitive`** — 实现传递闭包 BFS（对应 impg `-x`），找全所有
    同源片段。`--max-depth`/`--max-gap` 控制遍历（对应 impg `-m`/`-d`）。
-4. **`pgr chain query <region> --transitive -o maf`** — 传递闭包结果 + 局部 MSA，复用
+5. **`pgr paf query <region> --transitive -o maf`** — 传递闭包结果 + 局部 MSA，复用
    `libs/fas_multiz.rs` 输出 MAF。这是"隐式图 + 按需物化"的最小闭环。
 
 **验证标准**：
 
-- 在已知 Chain 文件上，`chain query --transitive` 的结果应包含所有手动挑选 Chain 的 `chain lift`
-  结果，且额外包含间接同源片段。
+- 在已知 PAF 文件上，`paf query --transitive` 的结果应包含所有单跳投影结果，且额外包含间接同源片段。
 - MAF 输出的序列与源基因组 FASTA 逐字节一致（path 保真不变量）。
-- Zero Panic：畸形/二进制 Chain 输入返回友好错误而非 panic。
+- Zero Panic：畸形/二进制 PAF 输入返回友好错误而非 panic。
 
 **暂不实现**：GFA 物化、crush、partitioned 模式、partition/lace/refine 子命令。这些是"按需物化"
 路径上的后续步骤，待最小原型验证后再决定是否需要。
 
 **为何 pgr 不需要 `--sparsify`**：impg 的 `--sparsify auto`（§6.4）是为了在**没有现成比对**时 避免
-all-vs-all 比对——用 Mash KNN 选对再跑 wfmash。pgr 的场景是**已有 UCSC Chain**（已经过 syntenic
-净化），天然避开了 all-vs-all 问题。pgr 的"挑选"发生在查询层（`chain query` 的 `--merge-distance`
-等参数），而非比对层。这是 pgr 相对 impg 的根本优势：复用成熟的 pairwise 基础设施，不重新跑
-all-vs-all。
+all-vs-all 比对——用 Mash KNN 选对再跑 wfmash。pgr 的场景是**已有两序列 MAF**（可转 PAF），
+天然避开了 all-vs-all 问题。pgr 的"挑选"发生在查询层（`paf query` 的 `--merge-distance` 等参数），
+而非比对层。这是 pgr 相对 impg 的根本优势：复用成熟的 pairwise 基础设施，不重新跑 all-vs-all。
 
 ### 9.5 工程层借鉴要点
 
