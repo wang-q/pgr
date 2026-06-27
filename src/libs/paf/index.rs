@@ -17,7 +17,7 @@ pub struct PafMetadata {
     pub cigar: Vec<CigarOp>,
 }
 
-pub type QueryResult = (u32, Interval<u32>, Interval<u32>);
+pub type QueryResult = (u32, Interval<u32>, Interval<u32>, Vec<CigarOp>);
 
 pub struct PafIndex {
     pub names: IndexMap<String, u32>,
@@ -138,6 +138,7 @@ impl PafIndex {
                         m.query_id,
                         Interval::new(qs, qe, m.query_id),
                         Interval::new(ts, te, target_id),
+                        m.cigar.clone(),
                     ));
                 }
             });
@@ -193,6 +194,7 @@ impl PafIndex {
                                 m.query_id,
                                 Interval::new(qs, qe, m.query_id),
                                 Interval::new(ts, te, tid),
+                                m.cigar.clone(),
                             ));
                             if m.query_id != tid {
                                 let sr = visited
@@ -265,7 +267,7 @@ fn project(ts: i32, te: i32, m: &PafMetadata) -> Option<(i32, i32, i32, i32)> {
 fn merge_results(results: &mut Vec<QueryResult>, max_gap: i32) {
     // Group by query_id, sort by query_start, merge adjacent within max_gap
     let mut groups: HashMap<u32, Vec<(usize, i32, i32)>> = HashMap::new();
-    for (i, &(qid, q_iv, _t_iv)) in results.iter().enumerate() {
+    for (i, &(qid, q_iv, _t_iv, _)) in results.iter().enumerate() {
         groups
             .entry(qid)
             .or_default()
@@ -409,7 +411,7 @@ q3\t400\t0\t40\t+\tt2\t500\t0\t40\t38\t40\t255\tcg:Z:40M
         let t1 = idx.name_to_id("t1").unwrap();
         let res = idx.query(t1, 0, 50, 0.0, 0);
         assert_eq!(res.len(), 2, "expected 2 overlapping records for t1:[0,50)");
-        let qids: Vec<u32> = res.iter().map(|(q, _, _)| *q).collect();
+        let qids: Vec<u32> = res.iter().map(|(q, _, _, _)| *q).collect();
         assert!(
             qids.contains(&idx.name_to_id("q1").unwrap()),
             "q1 not found"
@@ -439,8 +441,8 @@ C\t100\t0\t100\t+\tA\t100\t0\t100\t90\t100\t255\tcg:Z:100M
         let res = idx.query_transitive_bfs(b, 0, 100, 2, 10, 10, 0.0, 0, 0);
         let a = idx.name_to_id("A").unwrap();
         let c = idx.name_to_id("C").unwrap();
-        assert!(res.iter().any(|(q, _, _)| *q == a), "A not found");
-        assert!(res.iter().any(|(q, _, _)| *q == c), "C not found");
+        assert!(res.iter().any(|(q, _, _, _)| *q == a), "A not found");
+        assert!(res.iter().any(|(q, _, _, _)| *q == c), "C not found");
     }
 
     #[test]
@@ -555,11 +557,17 @@ C\t100\t0\t100\t+\tA\t100\t0\t100\t90\t100\t255\tcg:Z:100M
     #[test]
     fn test_merge_adjacent_intervals() {
         let mut results = vec![
-            (0u32, Interval::new(0, 50, 0u32), Interval::new(0, 50, 1u32)),
+            (
+                0u32,
+                Interval::new(0, 50, 0u32),
+                Interval::new(0, 50, 1u32),
+                vec![],
+            ),
             (
                 0u32,
                 Interval::new(55, 100, 0u32),
                 Interval::new(55, 100, 1u32),
+                vec![],
             ),
         ];
         merge_results(&mut results, 10);
@@ -571,11 +579,17 @@ C\t100\t0\t100\t+\tA\t100\t0\t100\t90\t100\t255\tcg:Z:100M
     #[test]
     fn test_merge_no_merge_when_far() {
         let mut results = vec![
-            (0u32, Interval::new(0, 50, 0u32), Interval::new(0, 50, 1u32)),
+            (
+                0u32,
+                Interval::new(0, 50, 0u32),
+                Interval::new(0, 50, 1u32),
+                vec![],
+            ),
             (
                 0u32,
                 Interval::new(100, 150, 0u32),
                 Interval::new(100, 150, 1u32),
+                vec![],
             ),
         ];
         merge_results(&mut results, 10);

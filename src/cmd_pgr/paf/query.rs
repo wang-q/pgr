@@ -1,4 +1,5 @@
 use clap::*;
+use pgr::libs::paf::cigar::CigarOp;
 use pgr::libs::paf::index::PafIndex;
 use std::collections::HashSet;
 use std::fs;
@@ -115,12 +116,6 @@ Examples:
                 .num_args(1)
                 .help("File with sequence names to include (one per line)"),
         )
-        .arg(
-            Arg::new("paf")
-                .long("paf")
-                .num_args(0)
-                .help("Output in PAF format instead of BED (default)"),
-        )
 }
 
 fn parse_region(s: &str) -> anyhow::Result<(&str, i32, i32)> {
@@ -160,7 +155,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let min_identity = *args.get_one::<f64>("min_identity").unwrap();
     let min_output_len = *args.get_one::<i32>("min_output_len").unwrap();
     let merge_distance = *args.get_one::<i32>("merge_distance").unwrap();
-    let paf = args.get_flag("paf");
 
     let (target_name, start, end) = parse_region(region_str)?;
 
@@ -203,7 +197,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // Subset filter
     if let Some(list_path) = args.get_one::<String>("subset_list") {
         let subset = load_subset(list_path)?;
-        results.retain(|(qid, _, _)| {
+        results.retain(|(qid, _, _, _)| {
             let name = idx.id_to_name(*qid).unwrap_or("");
             subset.contains(name)
         });
@@ -214,32 +208,42 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         return Ok(());
     }
 
-    if paf {
-        output_paf(&idx, &results);
-    } else {
-        output_bed(&idx, &results);
-    }
+    output_paf(&idx, &results);
 
     Ok(())
 }
 
-fn output_bed(idx: &PafIndex, results: &[(u32, coitrees::Interval<u32>, coitrees::Interval<u32>)]) {
-    for (query_id, q_iv, t_iv) in results {
+fn output_paf(
+    idx: &PafIndex,
+    results: &[(
+        u32,
+        coitrees::Interval<u32>,
+        coitrees::Interval<u32>,
+        Vec<CigarOp>,
+    )],
+) {
+    for (query_id, q_iv, t_iv, cigar) in results {
         let qname = idx.id_to_name(*query_id).unwrap_or("?");
         let tname = idx.id_to_name(t_iv.metadata).unwrap_or("?");
-        let name = format!("{}:{}-{}", tname, t_iv.first, t_iv.last);
-        println!("{}\t{}\t{}\t{}\t0\t.", qname, q_iv.first, q_iv.last, name);
-    }
-}
-
-fn output_paf(idx: &PafIndex, results: &[(u32, coitrees::Interval<u32>, coitrees::Interval<u32>)]) {
-    for (query_id, q_iv, t_iv) in results {
-        let qname = idx.id_to_name(*query_id).unwrap_or("?");
-        let tname = idx.id_to_name(t_iv.metadata).unwrap_or("?");
-        let block_len = (q_iv.last - q_iv.first).max(1) as u32;
+        let block_len = (q_iv.last - q_iv.first).abs().max(1) as u32;
+        let matches = pgr::libs::paf::cigar::cigar_stats(cigar).matches;
+        let gi = pgr::libs::paf::cigar::gap_compressed_identity(cigar);
+        let bi = pgr::libs::paf::cigar::block_identity(cigar);
+        let cg = pgr::libs::paf::cigar::format_cigar(cigar);
+        let strand = if q_iv.first <= q_iv.last { '+' } else { '-' };
+        let (qs, qe) = if q_iv.first <= q_iv.last {
+            (q_iv.first, q_iv.last)
+        } else {
+            (q_iv.last, q_iv.first)
+        };
+        let (ts, te) = if t_iv.first <= t_iv.last {
+            (t_iv.first, t_iv.last)
+        } else {
+            (t_iv.last, t_iv.first)
+        };
         println!(
-            "{}\t0\t{}\t{}\t+\t{}\t0\t{}\t{}\t0\t{}\t255\tgi:f:1.0",
-            qname, q_iv.first, q_iv.last, tname, t_iv.first, t_iv.last, block_len
+            "{}\t0\t{}\t{}\t{}\t{}\t0\t{}\t{}\t{}\t{}\t255\tgi:f:{:.6}\tbi:f:{:.6}\tcg:Z:{}",
+            qname, qs, qe, strand, tname, ts, te, matches, block_len, gi, bi, cg
         );
     }
 }
