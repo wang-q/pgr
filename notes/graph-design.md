@@ -156,13 +156,14 @@ PAF 仍作为 `-o paf` 可选输出（含 CIGAR，适合需要完整比对记录
 
 按 impg 各输出格式的依赖链与核心性递进：
 
-| 阶段 | 内容 | 对应 impg | 代码量 |
-|------|------|-----------|:---:|
+| 阶段 | 内容 | 对应 | 代码量 |
+|------|------|------|:---:|
 | **V1**（当前缺失） | `-o bed`（默认）+ `-o paf`（完整记录）+ `-b regions.bed` 批查 | impg 默认 `-o bed` + `-b` | ~60 |
 | **V2** | `-o fasta`（未比对序列，需 `-f`）| impg `-o fasta` | ~60 |
 | **V3** | `-o maf`（POA MSA，需 `-f`）+ `-o fasta-aln` | impg `-o maf`/`-o fasta-aln` | ~150 |
-| **V4** | GFA/VCF 物化评估（参考 minigraph `gfa_t` + `mg_path2seq`） | impg `-o gfa`/`-o vcf` | 待评估 |
-| **V5** | EKG @tags（`@node_length`、`@align_length`、`IntSpan`） | — | 待评估 |
+| **V4a** | 粗全局 GFA（`pgr paf graph -o gfa --min-var-len 100`，minigraph 风格）| minigraph `ggen` | 待评估 |
+| **V4b** | 区域精细 GFA（`pgr paf query -o gfa -r region`，impg 风格）| impg `query -o gfa` | 待评估 |
+| **V5** | 区域 GFA → MAF/VCF（精细分析输出）+ EKG @tags | impg `-o maf`/`-o vcf` | 待评估 |
 
 ### 4.1 为何 BED 是 V1 核心
 
@@ -184,9 +185,92 @@ pgr 当前 `paf query` 只输出 PAF，没有 BED。PAF 是**完整比对记录*
 - **maf 推到 V3**：POA MSA 是图构建层产物，按 [[paf-route.md]] §2.4 不应耦合进 query 的核心路径。
   `pgr fas consensus` 已提供成熟 POA 后端，`bed → fa range → fas consensus` 的 pipe 路径已通
 
-### 4.3 V4 的能力跃迁
+### 4.3 V4 的能力跃迁：两段式 GFA
 
-GFA/VCF 需要完整 graph engine（impg 的 `dispatch_gfa_engine` + seqwish + crush + gfaffix +
-gfasort），是真正的能力跃迁，不是格式化变种。V4 需要评估是否引入 rGFA 标准（参考
-minigraph 的 `gfa_t` + `mg_path2seq`，见 [[minigraph.md]]）。
+V4 采用**两段式 GFA**——粗全局 + 区域精细，混合 minigraph 和 impg 各自所长：
+
+| 工具 | 全局粗 GFA | 区域精细 GFA | 区域 → MSA/VCF |
+|------|:---:|:---:|:---:|
+| **minigraph** | ✅（≥100bp SV，rGFA）| ❌（不做）| ❌（小变体用标准工具）|
+| **impg** | ❌（不物化全局图）| ✅（`query -o gfa`）| ✅（`query -o maf/vcf`）|
+| **pgr V4** | ✅（V4a）| ✅（V4b）| ✅（V5）|
+
+#### 4.3.1 V4a：粗全局 GFA（minigraph 风格）
+
+- **输入**：PAF 索引（已有，无需重新比对——这是 pgr 相对 minigraph 的核心优势）
+- **过滤**：`--min-var-len 100`（对齐 minigraph，只保留 ≥100bp SV）
+- **输出**：rGFA，含 SN/SO/SR tag（稳定坐标系，见 [[minigraph.md]] §3.2）
+- **用途**：可视化（Bandage/odgi）、SV 概览、作为后续 query 的坐标锚
+- **数据源**：PAF 索引的显式投影，不引入新的真实源
+
+#### 4.3.2 V4b：区域精细 GFA（impg 风格）
+
+- **输入**：PAF 索引 + 用户指定 region（或粗 GFA 上定位的区段）
+- **流程**：BFS 传递闭包 → 提取序列 → POA/外部 aligner → 局部 GFA
+- **输出**：局部 GFA（含 base-level 变异）
+- **用途**：特定基因座的精细分析
+- **对应**：impg `query -o gfa`
+
+#### 4.3.3 两段衔接
+
+粗 GFA 提供"地图"（哪里有大 SV），用户在粗 GFA 上定位感兴趣的区段，再调用精细 GFA 做碱基级
+分析。这比 minigraph（只有粗）和 impg（只有精）更完整。V4a 与 V4b 可独立实现，互不依赖。
+
+#### 4.3.4 局部 GFA 不合并回全局
+
+**设计决策**：V4b 产出的多个局部精细 GFA **独立存在，不合并回全局 GFA**。这是 pgr 与
+minigraph 的边界——保持"粗全局 GFA 是不可变投影"的语义，不滑向"可变全局图"。
+
+**为什么不合并**：
+
+1. **哲学一致性** — [[paf-route.md]] §0.1 原则 1 规定"粗 GFA 作为可选投影"。合并局部 GFA
+   意味着全局图可变，等于重新实现 minigraph 的 `gfa_t` + augment（[gfa-aug.c](file:///Volumes/ExtHome/Scripts/pgr/minigraph-master/gfa-aug.c)），
+   超出 pgr 的边界。
+2. **技术难度高** — GFA 合并需解决四个挑战：坐标对齐、边界衔接、节点 ID 冲突、路径完整性。
+   无成熟先例，工作量大。
+3. **替代方案更优** — 需要"全局精细视图"的场景，用 V4a 粗全局 GFA + 各 region 局部 GFA 配合
+   查看即可；需要"合并输出"的场景走 V5 的 VCF/MAF（天然可 concat），不走 GFA 合并。
+
+**按输出格式分治**：
+
+| 输出 | 合并机制 | 说明 |
+|------|----------|------|
+| **VCF** | `bcftools concat`（按坐标）| VCF 天然按 region 独立 calling，concat 即可 |
+| **MAF** | 按坐标拼接 | MAF 本就是分块的，按 region 排序拼接 |
+| **GFA** | **不合并** | 需要全局精细 GFA 的用户应直接用 minigraph |
+
+**V4b 的边界**：每个局部 GFA 是独立的、自包含的产物，对应一个用户指定的 region。多个 region
+的局部 GFA 之间无依赖、无引用，不形成全局图。
+
+#### 4.3.5 V4 必须引入粗框架过滤（对齐 minigraph）
+
+V4a 物化粗 GFA 时必须加 `--min-var-len`（默认 100）过滤，只把长度差 ≥ 阈值的变异变成图节点。
+理由见 [[minigraph.md]] §4.1 引用的论文 L601-609：
+
+1. 不加过滤的图会爆炸——"millions of short segments"
+2. minigraph 的 minimizer 索引会失败（pgr 用区间树，但图遍历仍会退化）
+3. 小变体用标准方法（VCF/MAF）更易分析
+4. 无算法能为数百基因组构建全变体图
+
+**V4b 不受此约束**——区域精细 GFA 只处理单个区段，序列数通常 < 50，不会爆炸。
+
+#### 4.3.6 边冲突问题
+
+minigraph 用 `mg_ggsimple` 的过滤逻辑（[ggsimple.c:213](file:///Volumes/ExtHome/Scripts/pgr/minigraph-master/ggsimple.c#L213)）
+解决"同一区间多个比对"——只保留最优比对，避免图变成一团乱麻。
+
+pgr 从 PAF 索引物化粗 GFA（V4a）时同样面临：
+- 同一 query 区间有多个 target 比对（paralog）
+- 需要选最优比对（by identity / by length）
+- 这就是 impg 的 `--sparsify` 和 minigraph 的"primary chain > 20kb"过滤
+
+**pgr 的解决方案**：复用查询层的 `--min-identity` 等参数，在物化时做同等过滤。不需要新算法，
+只是把查询层的过滤逻辑应用到全局物化。
+
+#### 4.3.7 关键区分：查询层 vs 图构建层
+
+粗框架是**图构建层**（V4a）的过滤，不是查询层。V1-V3 查询层全量返回同源区段
+（[[paf-route.md]] §2.3），由用户用 `--merge-distance` 等参数控制粗细。V4 物化时才在
+graph engine 内部做 `min_var_len` 过滤。这两个层次不能混淆——查询层全量是"让用户决定粗细"，
+图构建层粗框架是"避免图爆炸"。
 

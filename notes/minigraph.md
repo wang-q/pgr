@@ -131,6 +131,19 @@ for each input assembly:
 **关键点**：每加入一个 assembly 都要**重建索引**（因为图变了）。这是 minigraph 线性但
 非增量的代价——索引不能复用。pgr 的 PAF 索引是静态的（构建一次查询多次），无此问题。
 
+**粗框架哲学（≥100bp SV 过滤）**：minigraph 在第 3 步 `mg_ggsimple` 只把长度差 ≥ `min_var_len`
+的变异插入图（[ggsimple.c#L213](file:///Volumes/ExtHome/Scripts/pgr/minigraph-master/ggsimple.c#L213)，
+源码默认 50，论文 L153/L384 称 100bp）。论文 L601-609 给了四条理由：
+
+1. 图会爆炸——"composed of millions of short segments"
+2. minigraph 会失败——"Not indexing minimizers across segments, minigraph will fail to seed"
+3. 小变体用标准方法更易分析——"small variants are easier to analyze with the standard methods"
+4. 无算法能为数百人类基因组构建这种复杂图
+
+**关键区分**：这是**图构建层**的过滤，不是查询层。minigraph **保留**完整比对（base-level CIGAR），
+只是不把小变体变成图节点。pgr 的隐式图天然避开这个问题——V1-V3 查询层全量返回同源区段
+（[[paf-route.md]] §2.3），V4 GFA 物化时才需引入同等过滤（[[graph-design.md]] §4.3）。
+
 ### 4.2 序列到图映射（`mg_map_frag`，map-algo.c）
 
 ```

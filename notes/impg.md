@@ -1063,7 +1063,7 @@ PAF 行 with `=`/`X` CIGAR）。这是 pgr 复用已有 pairwise 基础设施的
 >
 > **输出格式差距**：impg `query` 支持 11 种输出（bed/bedpe/paf/gfa/vcf/maf/fasta/fasta+paf/fasta-aln/gbwt/auto，
 > 默认 `bed`，见 [main.rs#L4873](file:///Volumes/ExtHome/Scripts/pgr/impg-0.4.1/src/main.rs#L4873)）。
-> pgr 当前只输出 PAF，缺 impg 的默认 BED。按 [[graph-design.md]] §4 路线：V1 补 bed+批查，V2 补 fasta，V3 补 maf，V4 评估 GFA/VCF。
+> pgr 当前只输出 PAF，缺 impg 的默认 BED。按 [[graph-design.md]] §4 路线：V1 补 bed+批查，V2 补 fasta，V3 补 maf，V4a 物化粗全局 GFA（minigraph 风格），V4b 区域精细 GFA（impg 风格），V5 补 MAF/VCF 输出。
 
 具体目标：
 
