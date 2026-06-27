@@ -265,3 +265,127 @@ C\t100\t0\t100\t+\tA\t100\t0\t100\t90\t100\t255\tcg:Z:100M
     let _ = fs::remove_file(paf_path);
     let _ = fs::remove_file(idx_path);
 }
+
+// ── real-data validation ────────────────────────────────────────
+
+#[test]
+fn command_maf_to_paf_real_multiz_spar() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&["maf", "to-paf", "tests/multiz/S288cvsSpar.maf"])
+        .run();
+    let fields: Vec<&str> = stdout.trim().split('\t').collect();
+    assert_eq!(fields[0], "Spar.gi_29362594", "query name");
+    assert_eq!(fields[4], "-", "reverse strand");
+    assert_eq!(fields[5], "S288c.I", "target name");
+    assert_eq!(fields[11], "255", "mapq");
+}
+
+#[test]
+fn command_maf_to_paf_real_multiz_rm11() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&["maf", "to-paf", "tests/multiz/S288cvsRM11_1a.maf"])
+        .run();
+    let fields: Vec<&str> = stdout.trim().split('\t').collect();
+    assert_eq!(fields[0], "RM11_1a.scaffold_17", "query name");
+    assert_eq!(fields[4], "+", "forward strand");
+    assert_eq!(fields[5], "S288c.I", "target name");
+    assert_eq!(fields[9], "456", "all 456 bases match");
+}
+
+#[test]
+fn command_paf_query_real_multiz_transitive() {
+    use std::fs;
+    use std::process::Command;
+    let paf_path = "/tmp/pgr_real_test_merged.paf";
+    let idx_path = "/tmp/pgr_real_test_merged.paf.idx";
+
+    // Build merged PAF from two MAF files
+    let spar_out = Command::new(std::env::current_dir().unwrap().join("target/debug/pgr"))
+        .args(["maf", "to-paf", "tests/multiz/S288cvsSpar.maf"])
+        .output()
+        .unwrap();
+    let rm11_out = Command::new(std::env::current_dir().unwrap().join("target/debug/pgr"))
+        .args(["maf", "to-paf", "tests/multiz/S288cvsRM11_1a.maf"])
+        .output()
+        .unwrap();
+    let mut merged = spar_out.stdout.clone();
+    merged.extend_from_slice(&rm11_out.stdout);
+    fs::write(paf_path, &merged).unwrap();
+
+    // Index
+    let (_, stderr) = PgrCmd::new()
+        .args(&["paf", "index", paf_path, "-o", idx_path])
+        .run();
+    assert!(stderr.contains("saved to"));
+
+    // Transitive query
+    let (stdout, stderr) = PgrCmd::new()
+        .args(&[
+            "paf",
+            "query",
+            idx_path,
+            "S288c.I:26000-30000",
+            "--transitive",
+        ])
+        .run();
+    assert!(stderr.contains("Loading index"));
+    assert!(stdout.contains("Spar.gi_29362594"), "Spar not found");
+    assert!(stdout.contains("RM11_1a.scaffold_17"), "RM11 not found");
+
+    let _ = fs::remove_file(paf_path);
+    let _ = fs::remove_file(idx_path);
+}
+
+#[test]
+fn command_paf_index_multiple_files() {
+    use std::fs;
+    let p1 = "/tmp/pgr_multi_a.paf";
+    let p2 = "/tmp/pgr_multi_b.paf";
+    let idx = "/tmp/pgr_multi.paf.idx";
+    fs::write(
+        p1,
+        "A\t100\t0\t50\t+\tX\t200\t0\t50\t45\t50\t255\tcg:Z:50M\n",
+    )
+    .unwrap();
+    fs::write(
+        p2,
+        "B\t100\t0\t50\t+\tY\t200\t0\t50\t45\t50\t255\tcg:Z:50M\n",
+    )
+    .unwrap();
+    let (_, stderr) = PgrCmd::new()
+        .args(&["paf", "index", p1, p2, "-o", idx])
+        .run();
+    assert!(stderr.contains("saved to"));
+    // V1: multi-file processes sequentially; last file wins when -o is used.
+    // Query Y (from p2, the last file) — must be in the saved index.
+    let (stdout, _) = PgrCmd::new().args(&["paf", "query", idx, "Y:0-50"]).run();
+    assert!(
+        stdout.contains("B\t0\t50\tY"),
+        "B (from p2) should be in saved index"
+    );
+    let _ = fs::remove_file(p1);
+    let _ = fs::remove_file(p2);
+    let _ = fs::remove_file(idx);
+}
+
+#[test]
+fn command_paf_query_max_depth_1() {
+    let paf = "A\t100\t0\t100\t+\tB\t100\t0\t100\t95\t100\t255\tcg:Z:100M\nC\t100\t0\t100\t+\tA\t100\t0\t100\t90\t100\t255\tcg:Z:100M\n";
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "paf",
+            "query",
+            "stdin",
+            "B:0-100",
+            "--transitive",
+            "--max-depth",
+            "1",
+        ])
+        .stdin(paf)
+        .run();
+    assert!(stdout.contains("A\t0\t100\tB"), "A (1-hop) not found");
+    assert!(
+        !stdout.contains("C\t"),
+        "C should NOT appear: max-depth=1 stops before 2nd hop"
+    );
+}

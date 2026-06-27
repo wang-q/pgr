@@ -380,4 +380,52 @@ C\t100\t0\t100\t+\tA\t100\t0\t100\t90\t100\t255\tcg:Z:100M
     fn test_extract_cigar_empty() {
         assert!(extract_cigar(&["gi:f:0.9".into()]).is_empty());
     }
+
+    // ── project() edge cases ──────────────────────────────────
+
+    #[test]
+    fn test_project_empty_cigar_outside() {
+        let m = PafMetadata {
+            query_id: 0,
+            target_start: 0,
+            target_end: 50,
+            query_start: 0,
+            query_end: 50,
+            cigar: vec![],
+        };
+        assert!(project(100, 200, &m).is_none());
+    }
+
+    #[test]
+    fn test_project_cigar_no_overlap() {
+        let m = PafMetadata {
+            query_id: 0,
+            target_start: 0,
+            target_end: 50,
+            query_start: 0,
+            query_end: 50,
+            cigar: vec![CigarOp::new(50, 'M')],
+        };
+        assert!(project(100, 200, &m).is_none());
+    }
+
+    #[test]
+    fn test_project_cigar_with_insertion_offset() {
+        // CIGAR: 10M5I10M. Query [11,16) on target lands in the trailing M segment,
+        // but query coordinates are shifted by the 5-base insertion.
+        let m = PafMetadata {
+            query_id: 0,
+            target_start: 0,
+            target_end: 25,
+            query_start: 0,
+            query_end: 25,
+            cigar: vec![
+                CigarOp::new(10, 'M'),
+                CigarOp::new(5, 'I'),
+                CigarOp::new(10, 'M'),
+            ],
+        };
+        let (qs, qe, ts, te) = project(11, 16, &m).unwrap();
+        assert_eq!((qs, qe, ts, te), (16, 21, 11, 16));
+    }
 }
