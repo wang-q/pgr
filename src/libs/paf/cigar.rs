@@ -1,9 +1,7 @@
 /// CIGAR (Compact Idiosyncratic Gapped Alignment Report) operations.
 ///
 /// Implements bit-packed CIGAR storage, coordinate projection, and
-/// statistical summaries.  Modeled after impg's `CigarOp`
-/// (`impg-0.4.1/src/impg.rs:73-138`) with additional statistics
-/// inspired by wgatools' `Cigar` struct.
+/// statistical summaries.
 ///
 /// # Bit-packing
 ///
@@ -96,8 +94,6 @@ impl fmt::Display for CigarOp {
 // ── String ↔ Vec<CigarOp> ────────────────────────────────────────
 
 /// Parse a CIGAR string into a vector of `CigarOp`.
-///
-/// Mirrors impg's `parse_cigar_to_delta` (`impg.rs:2884-2898`).
 ///
 /// # Panics
 ///
@@ -302,7 +298,6 @@ mod tests {
 
     #[test]
     fn test_parse_cigar_basic() {
-        // mirrors impg test_parse_cigar_to_delta_basic
         let ops = parse_cigar("10=5I5D");
         assert_eq!(ops.len(), 3);
         assert_eq!(ops[0], CigarOp::new(10, '='));
