@@ -256,26 +256,29 @@ pgr paf index *.paf -o cohort.paf.idx
 
 ### 索引结构
 
-参考 impg 的 `Impg` struct（[[impg.md]] §3.1），对应 impg 源码 `QueryMetadata` (`impg-0.4.1/src/impg.rs:165`) 和
-`TreeMap` (`impg-0.4.1/src/impg.rs:226`)：
+名字映射采用 pgr 现有模式——`IndexMap<String, u32>`（与 `libs/loc.rs` 和
+`libs/phylo/tree.rs` 的整数索引风格一致），而非 impg 的独立 `SequenceIndex`。
 
-```
-PafIndex {
-    seq_index: SequenceIndex,           // name ↔ u32 ID 双向映射
-    trees: FxHashMap<u32, Arc<Coitree<PafRecord>>>,  // target_id → 区间树
-    source_files: Vec<String>,          // 源 PAF 文件列表（用于 CIGAR 懒加载）
+```rust
+pub struct PafIndex {
+    /// Name → internal ID mapping (reuses pgr's IndexMap pattern).
+    pub names: IndexMap<String, u32>,
+    /// Per-target interval trees (coitrees).
+    pub trees: FxHashMap<u32, Arc<BasicCOITree<PafMetadata, u32>>>,
 }
+// V1: 纯内存，不序列化；V2: bincode 整体持久化
 ```
 
 - 每个 target 序列一棵独立的区间树——查询时 O(log n + k) 找到所有重叠 PAF 记录
 - 索引时**不过滤**——每个 PAF 行都装入，不论质量（[[paf-route.md]] §2.3）
-- 多文件索引：参考 impg 的 `ImpgIndex` trait + `MultiImpg`（[[impg.md]] §3.4），
-  通过 `ForestMap` 实现全局 target_id → 子索引的翻译
+- 区间树节点 `PafMetadata` 只存 `u32` 坐标和 CIGAR 引用，不存序列名——
+  为后续大 cohort / 显式图阶段预留升级空间
+- 多文件索引：V1 不做。V2 参考 impg 的 `ImpgIndex` trait + `MultiImpg`
+  （[[impg.md]] §3.4），通过 `ForestMap` 实现全局 target_id → 子索引的翻译
 
 ### 验证标准
 
 - 索引后，用已知 region 查询，返回的 PAF 记录与 `grep` 原文件一致
-- 多文件索引的 seq_index 中无重复序列名
 - Zero Panic：空 PAF、重复行、超长行均不 panic
 
 ---

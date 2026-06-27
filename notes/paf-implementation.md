@@ -236,7 +236,7 @@ pub enum PafParseError {
 | P0     | `CigarOp` bit-packing + `parse_cigar` + `format_cigar` | `libs/paf/cigar.rs` | ✅ 已完成 |
 | P0     | `write_paf_record`                                 | `libs/paf/writer.rs` | ✅ 已完成 |
 | P0     | `cigar_from_alignment` + identity 计算             | `libs/paf/cigar.rs`  | ✅ 已完成 |
-| P0     | `SequenceIndex`                                    | `libs/seqidx.rs`     | 待实现 |
+| P0     | `SequenceIndex`                                    | `libs/seqidx.rs`     | ⏭️ 不需要（用 IndexMap 替代） |
 | P0     | PAF 解析器（`parse_paf_line` + `parse_paf`）       | `libs/paf/parser.rs` | 待实现 |
 | P0     | `PafIndex`：`build` + `query` + `query_transitive` | `libs/paf/index.rs`  | 待实现 |
 
@@ -349,13 +349,20 @@ staleness 检测——`.impg` 比源 PAF 旧时警告。
 
 ```rust
 pub struct PafIndex {
-    pub seq_index: SequenceIndex,           // name ↔ u32
-    trees: FxHashMap<u32, Coitree<PafRecord>>,  // target_id → tree (owned, not Arc)
-    source_files: Vec<PathBuf>,             // for CIGAR lazy loading
+    /// Name → internal ID (pgr uses IndexMap, same pattern as loc.rs and phylo tree).
+    pub names: IndexMap<String, u32>,
+    /// Per-target interval trees.
+    pub trees: FxHashMap<u32, Coitree<PafMetadata>>,
 }
+// V1: 纯内存，不序列化；V2: bincode 整体持久化
 ```
 
-对比 impg，pgr 的数据结构有六处简化：
+> **设计决策**（2026-06）：名字映射使用 pgr 已有的 `IndexMap<String, u32>` 模式
+> 而非 impg 的独立 `SequenceIndex`——与 `libs/loc.rs` 和 `libs/phylo/tree.rs` 的
+> 整数索引风格一致。`PafMetadata` 只存 `u32` 坐标和 CIGAR 引用，不存序列名，
+> 为后续大 cohort / 显式图阶段预留升级空间。
+
+对比 impg，pgr 的数据结构有七处简化：
 
 - **`trees` 不用 `RwLock` 包裹**。impg 用 `RwLock<TreeMap>` 是为了支持构建时独占写入、
   查询时共享读取的多线程模式。pgr V1 单线程构建+查询，不需要锁。V2 rayon 化时再包一层
