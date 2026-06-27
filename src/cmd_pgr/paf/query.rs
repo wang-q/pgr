@@ -34,6 +34,7 @@ Output formats (-o):
 
 Notes:
 * Input PAF files should contain cg:Z: tags for accurate projection
+* Supports both plain text and gzipped (.gz) files (including BGZF)
 * Reads from stdin if input file is 'stdin'
 
 Examples:
@@ -245,8 +246,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         PafIndex::load(infile)?
     } else {
         eprintln!("Building index from {infile}...");
-        let reader = pgr::reader(infile);
-        PafIndex::build(reader)?
+        // Use build_from_path to enable lazy CIGAR loading for BGZF files.
+        PafIndex::build_from_path(infile)?
     };
 
     eprintln!(
@@ -254,6 +255,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         idx.names.len(),
         idx.num_targets()
     );
+    if idx.is_lazy() {
+        eprintln!("  mode: lazy (BGZF virtual-position CIGAR)");
+    }
 
     // Subset filter
     let subset = if let Some(list_path) = args.get_one::<String>("subset_list") {

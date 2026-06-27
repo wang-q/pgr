@@ -82,6 +82,43 @@ virtual positions。好处是多线程 BGZF 解压（`MultithreadedReader`），
 （`is_bgzf`，`paf.rs:50-66`）→ 有 `.gzi` 走模式 3，无 `.gzi` 走模式 2，否则模式 1。普通 gzip
 撞上检测会报错："Convert with: zcat file.paf.gz | bgzip > output.paf.gz"。
 
+### pgr 实现说明
+
+pgr 的 BGZF 支持采用**双路径**设计，依据输入文件类型自动 dispatch：
+
+- **Plain text / 普通 gzip**：走 `pgr::reader`（`src/libs/io.rs`）的 `flate2::read::MultiGzDecoder`
+  路径，透明处理 plain gzip、multi-member gzip 和 BGZF（BGZF 本质是 multi-member gzip 的子集）。
+  此路径下 CIGAR 全量驻留内存（`CigarStore::Owned`），适合中小规模数据。
+- **BGZF（lazy CIGAR）**：`PafIndex::build_from_path`（`src/libs/paf/index.rs`）在 `.gz` 输入
+  上调用 `is_bgzf()`（18 字节头检测：`1f 8b 08 04` + `BC` BC subfield）判定为 BGZF 时，走
+  `build_lazy_bgzf()` 路径，用 `noodles_bgzf::io::Reader<File>` 读取。每条 PAF 行的
+  **BGZF virtual position**（u64，高 33 位块偏移 + 低 16 位块内偏移）记录在区间树节点的
+  `CigarStore::Lazy(vpos)` 中；CIGAR 字符串在查询时按需 seek + parse（`fetch_cigar`）。
+
+**为何不用 `pgr::reader` 一统到底**：`MultiGzDecoder` 不暴露 virtual position，无法支持
+CIGAR 懒加载。`noodles_bgzf::io::Reader` 自带 BGZF 块索引，seek 时直接定位到 BGZF 块边界，
+比 impg 的外部 `.gzi` 索引方案更简洁（无需二进制索引文件、无需 `VirtualPosition::from(offset)`
+转换）。pgr 已在 `src/libs/loc.rs` 使用 `IndexedReader`，本实现复用同一依赖。
+
+**生命周期**：`PafIndex` 持有 `lazy_source: Option<Mutex<bgzf::io::Reader<File>>>` 和
+`lazy_source_path: Option<String>`。查询时通过 `resolve_cigar(&CigarStore)` 统一分发：Owned
+直接 clone，Lazy 走 `fetch_cigar`。索引持久化时 `lazy_source_path` 一并写入 `.paf.idx`
+（`FlatCigar::Lazy(vpos)` + `lazy_source_path`），加载时 `reopen_lazy_source()` 重新打开 BGZF
+文件恢复懒加载能力。
+
+**CLI 集成**：`paf index` 和 `paf query` 命令在单文件输入时统一走 `build_from_path`，
+自动检测 BGZF 并启用懒加载。`paf graph` 仍走 `pgr::reader`（不需要 CIGAR 懒加载，
+因为 GFA 构建是一次性遍历所有 PAF 记录）。多文件输入走 `build_multi`（in-memory 合并）。
+
+**已覆盖**：`paf index` / `paf query` / `paf graph` 三个命令均支持 `.gz` 输入。集成测试
+`command_paf_index_gzipped` / `command_paf_index_bgzf` / `command_paf_query_gzipped` /
+`command_paf_query_bgzf` / `command_paf_graph_gzipped` / `command_paf_index_gz_save_and_query`
+覆盖 plain gzip + BGZF 两种格式。新增的 lazy 专用测试
+`command_paf_index_bgzf_lazy_mode_reported` / `command_paf_index_bgzf_plain_gzip_not_lazy` /
+`command_paf_query_bgzf_lazy_cigar_resolved` / `command_paf_bgzf_lazy_persist_and_reload` /
+`command_paf_bgzf_lazy_vs_plain_text_same_result` / `command_paf_bgzf_lazy_transitive_bfs`
+覆盖懒加载模式识别、CIGAR 按需解析、持久化重载、与纯文本结果一致性、传递 BFS 跨多跳解析。
+
 ---
 ## 4. CIGAR 编解码
 
@@ -111,15 +148,45 @@ impl CigarOp {
 
 ### CIGAR 懒加载
 
+pgr 已实现 BGZF 虚拟位置驱动的 CIGAR 懒加载（参考 impg `read_cigar_data` 思路，
+但用 `noodles_bgzf::io::Reader` 替代 impg 的外部 `.gzi` 索引方案）。核心数据结构：
+
 ```rust
-pub fn read_cigar_data(
-    paf_path: &str, offset: u64, byte_len: usize,
-) -> Result<Vec<CigarOp>, CigarReadError>;
+/// CIGAR storage: in-memory or lazy-loaded from a BGZF virtual position.
+#[derive(Debug, Clone)]
+pub enum CigarStore {
+    /// CIGAR ops held in memory (in-memory build mode or after persistence).
+    Owned(Vec<CigarOp>),
+    /// Virtual position of the PAF line in a BGZF file (lazy fetch on demand).
+    Lazy(u64),
+}
+
+pub struct PafIndex {
+    pub names: IndexMap<String, u32>,
+    pub(crate) trees: HashMap<u32, Arc<BasicCOITree<PafMetadata, u32>>>,
+    /// Lazy CIGAR source: BGZF reader (None for in-memory mode).
+    pub(crate) lazy_source: Option<Mutex<bgzf::io::Reader<File>>>,
+    /// Original BGZF file path (for persistence + reopen on load).
+    pub(crate) lazy_source_path: Option<String>,
+}
 ```
 
-根据扩展名 dispatch：纯文本走 `File::seek(Start(offset))`，BGZF 走
-`bgzf::Reader::seek(virtual_position)`。读出来的字节就是 `cg:Z:` 的原始值，再调 `parse_cigar` 解析。
-impg 内部维护 `thread_local!` CIGAR cache 避免重复 seek（[[impg.md]] §9.5），pgr 后续可借鉴。
+**构建**（`build_lazy_bgzf`）：逐行读 BGZF，每行读取前记录 `vpos = u64::from(reader.virtual_position())`，
+解析后把 `CigarStore::Lazy(vpos)` 存入 `PafMetadata`。CIGAR 字符串**不**在构建时解析。
+
+**查询**（`fetch_cigar`）：seek 到 vpos → 读一行 → `parse_paf_line` → `extract_cigar`。
+`resolve_cigar(&CigarStore)` 是统一入口，Owned 直接 clone，Lazy 走 `fetch_cigar`。
+查询路径（`query` / `query_transitive_bfs`）只调 `resolve_cigar`，无需关心存储方式。
+
+**持久化**：`FlatCigar` 是 `CigarStore` 的可序列化镜像（`Owned(Vec<u32>)` bit-pack 或
+`Lazy(u64)`）。`lazy_source_path` 写入 `PafIndexData`，加载时 `from_data` 调
+`reopen_lazy_source()` 重新打开 BGZF 文件，恢复懒加载能力。`.paf.idx` 因此**包含**了
+重开 BGZF 文件所需的全部信息，无需外部 `.gzi`。
+
+**未做**：impg 的 `thread_local!` CIGAR cache（`impg.rs:495-548`）避免重复 seek 同一 vpos。
+pgr 当前每次查询都重新 seek + parse——对单次查询无影响（同一区间通常只查一次），
+若未来出现"反复查询同一区间"的场景（如 `populate_cigar_cache` 批量预热），可再加 LRU
+cache。
 
 ---
 ## 5. SequenceIndex — 序列名↔ID 双向映射
@@ -205,16 +272,16 @@ pub enum PafParseError {
 | P0     | PAF 解析器（`parse_paf_line` + `parse_paf`）           | `libs/paf/parser.rs` | ✅ 已完成                     |
 | P0     | `PafIndex`：`build` + `query` + `query_transitive`     | `libs/paf/index.rs`  | ✅ 已完成                     |
 | P0     | CLI 命令注册（`pgr paf index` + `pgr paf query`）      | `cmd_pgr/paf/`       | ✅ 已完成                     |
-| P0     | 集成测试（`tests/cli_paf.rs`）                         | `tests/`             | ✅ 已完成（23 tests）         |
+| P0     | 集成测试（`tests/cli_paf.rs`）                         | `tests/`             | ✅ 已完成（52 tests）         |
 
 ### 第二期 — 大 cohort 场景
 
 | 优先级 | 组件                         | 说明                        | 状态                       |
 |--------|------------------------------|-----------------------------|----------------------------|
-| P1     | `parse_paf_bgzf`             | BGZF 压缩 PAF 支持          | 待实现                     |
-| P1     | `read_cigar_data`（懒加载）  | 区间树节点不存完整 CIGAR    | 暂不需要（见 §2 实现更新） |
-| P2     | `parse_paf_file`（自动检测） | 统一入口，dispatch 三种模式 | 待实现                     |
-| P3     | `parse_paf_bgzf_with_gzi`    | 多线程 BGZF 解压            | 待实现                     |
+| P1     | `parse_paf_bgzf`             | BGZF 压缩 PAF 支持          | ✅ 已完成（双路径：flate2 MultiGzDecoder + noodles-bgzf IndexedReader，见 §3） |
+| P1     | `read_cigar_data`（懒加载）  | 区间树节点不存完整 CIGAR    | ✅ 已完成（CigarStore::Lazy(vpos) + fetch_cigar，见 §4） |
+| P2     | `parse_paf_file`（自动检测） | 统一入口，dispatch 三种模式 | ⏭️ 不需要（`build_from_path` 已统一入口，见 §3） |
+| P3     | `parse_paf_bgzf_with_gzi`    | 多线程 BGZF 解压            | 待实现（V2 性能优化时考虑） |
 
 ### 第三期 — 查询层增强
 
@@ -252,23 +319,27 @@ pgr 的实现更简洁（11 行 match + 2 行 I/O vs impg 的 46 行分支）。
 `.gzi` 索引文件 + 显式 `VirtualPosition::from(offset)` 转换；pgr 的 `IndexedReader` 在内部处理
 vpos，调用者只需传字节偏移量。这意味着 pgr 的 BGZF PAF 支持可以跳过 impg 的模式 3。
 
-**需要小幅增强 `Input`**：加一个 `read_line` 方法统一三种变体的行读取（目前只在 `create_loc`
-内部匹配），以及在 `Bgzf` 变体上暴露 `virtual_position()`（CIGAR 懒加载需要记 vpos）。
+**最终实现路径**（2026-06-28 已落地）：没有走"增强 `Input` enum"的路线，而是在 `libs/paf/index.rs`
+中独立实现 `build_lazy_bgzf`，直接用 `noodles_bgzf::io::Reader<File>`（`io::Reader` 而非
+`indexed_reader::IndexedReader`，因为 PAF 是行结构、不需要块级随机访问，只需行级 vpos）。
+这样 `libs/paf` 自包含 BGZF 处理逻辑，不污染 `libs/loc.rs` 的 FASTA 专用 `Input` enum。
+`virtual_position()` 通过 `u64::from(reader.virtual_position())` 在行首直接获取，无需暴露
+`Input` 内部方法。
 
 **完全缺失、必须新增的三样**：区间树（`coitrees`）、PAF 行解析、CIGAR 编解码。其余都是复用或薄封装。
 汇总：
 
 | loc.rs 组件               | PAF 角色                               |        状态        |
 |---------------------------|----------------------------------------|:------------------:|
-| `Input` enum              | 多格式输入抽象（plain/BGZF/stdin）     |      直接复用      |
-| `read_offset()`           | CIGAR 懒加载的 seek+read 基础          |       薄封装       |
-| `IndexedReader`           | BGZF seek（自带索引，无需外部 .gzi）   |      直接复用      |
-| `reader_buf()`            | 纯文本 PAF 的 BufRead 创建             |      直接复用      |
-| `Input::read_line`        | BGZF 行迭代读取                        |     需新增方法     |
-| `virtual_position()` 暴露 | CIGAR 懒加载的 vpos 记录               |       需暴露       |
-| 区间树                    | "chr1:1000-5000 与哪些 PAF 记录重叠？" | 需新增（coitrees） |
-| PAF 行解析                | 12 列 tab split → PafRecord            |       需新增       |
-| CIGAR 编解码              | CigarOp bit-packing + identity 计算    |       需新增       |
+| `Input` enum              | 多格式输入抽象（plain/BGZF/stdin）     | ⏭️ 未复用（paf 自带 BGZF 路径） |
+| `read_offset()`           | CIGAR 懒加载的 seek+read 基础          | ⏭️ 未复用（`fetch_cigar` 内联） |
+| `IndexedReader`           | BGZF seek（自带索引，无需外部 .gzi）   | ✅ 复用（`io::Reader` 变体） |
+| `reader_buf()`            | 纯文本 PAF 的 BufRead 创建             | ✅ 复用（`pgr::reader`） |
+| `Input::read_line`        | BGZF 行迭代读取                        | ⏭️ 不需要（paf 直接用 `io::Reader::read_line`） |
+| `virtual_position()` 暴露 | CIGAR 懒加载的 vpos 记录               | ✅ 内联实现 |
+| 区间树                    | "chr1:1000-5000 与哪些 PAF 记录重叠？" | ✅ 新增（coitrees） |
+| PAF 行解析                | 12 列 tab split → PafRecord            | ✅ 新增 |
+| CIGAR 编解码              | CigarOp bit-packing + identity 计算    | ✅ 新增 |
 
 ---
 ## 11. PAF 索引设计
@@ -324,8 +395,12 @@ pub struct PafIndex {
     pub names: IndexMap<String, u32>,
     /// Per-target interval trees (Arc 包装，便于查询回调借用).
     pub(crate) trees: HashMap<u32, Arc<BasicCOITree<PafMetadata, u32>>>,
+    /// Lazy CIGAR source: BGZF reader (None for in-memory mode).
+    pub(crate) lazy_source: Option<Mutex<bgzf::io::Reader<File>>>,
+    /// Original BGZF file path (for persistence + reopen on load).
+    pub(crate) lazy_source_path: Option<String>,
 }
-// V1: 纯内存，不序列化；V2: bincode 整体持久化
+// V1: bincode 整体持久化（含 lazy_source_path）；V2: rayon 化 + 可选 LRU CIGAR cache
 ```
 
 > **设计决策**（2026-06）：名字映射使用 pgr 已有的 `IndexMap<String, u32>` 模式 而非 impg 的独立
@@ -335,6 +410,11 @@ pub struct PafIndex {
 > **更新**（2026-06-28）：实际 V1 实现中 `trees` 用 `Arc<BasicCOITree<...>>` 而非 初版设计的裸
 > `BasicCOITree`，原因是 `BasicCOITree::query` 的回调闭包需要借用 tree，`Arc` 让闭包捕获更灵活。
 > 用标准库 `HashMap` 而非 `FxHashMap`，避免引入 fxhash 依赖。
+
+> **更新**（2026-06-28，lazy CIGAR 落地）：`PafIndex` 新增 `lazy_source` + `lazy_source_path`
+> 两个字段以支持 BGZF 虚拟位置驱动的 CIGAR 懒加载（见 §3、§4）。这是 V1 期间唯一超出"纯内存"
+> 原始设计的扩展，动机是大 cohort 场景下 CIGAR 全量驻留内存的成本过高（4 万大肠杆菌 ×
+> 平均 5K 比对/基因组 × 平均 100bp CIGAR ≈ 数 GB）。`.paf.idx` 持久化已同步支持（v2 格式）。
 
 对比 impg，pgr 的数据结构有七处简化：
 

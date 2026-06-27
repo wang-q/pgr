@@ -23,6 +23,7 @@ variations. For base-level regional graphs, see V4b (future work).
 
 Notes:
 * Input PAF files should contain cg:Z: tags for accurate splitting
+* Supports both plain text and gzipped (.gz) files (including BGZF)
 * Reads PAF from stdin if input file is 'stdin'
 * FASTA files (-f) are required to populate node sequences and lengths
 * GFA node ids are 1-based; node 1 is the earliest segment by (seq, start)

@@ -1,11 +1,32 @@
 /// PAF interval-tree index and query engine.
 use super::cigar::{gap_compressed_identity, parse_cigar, CigarOp};
-use super::parser::parse_paf;
+use super::parser::{parse_paf, parse_paf_line};
+use super::record::PafRecord;
 use coitrees::{BasicCOITree, Interval, IntervalNode, IntervalTree};
 use indexmap::IndexMap;
+use noodles_bgzf as bgzf;
 use std::collections::HashMap;
+use std::fs::File;
 use std::io::BufRead;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+
+/// CIGAR storage: in-memory or lazy-loaded from a BGZF virtual position.
+#[derive(Debug, Clone)]
+pub enum CigarStore {
+    /// CIGAR ops held in memory (in-memory build mode or after persistence).
+    Owned(Vec<CigarOp>),
+    /// Virtual position of the PAF line in a BGZF file (lazy fetch on demand).
+    Lazy(u64),
+}
+
+impl CigarStore {
+    fn owned(cigar: Vec<CigarOp>) -> Self {
+        Self::Owned(cigar)
+    }
+    fn lazy(vpos: u64) -> Self {
+        Self::Lazy(vpos)
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct PafMetadata {
@@ -14,7 +35,7 @@ pub struct PafMetadata {
     pub target_end: i32,
     pub query_start: i32,
     pub query_end: i32,
-    pub cigar: Vec<CigarOp>,
+    pub cigar: CigarStore,
 }
 
 pub type QueryResult = (u32, Interval<u32>, Interval<u32>, Vec<CigarOp>);
@@ -22,6 +43,9 @@ pub type QueryResult = (u32, Interval<u32>, Interval<u32>, Vec<CigarOp>);
 pub struct PafIndex {
     pub names: IndexMap<String, u32>,
     pub(crate) trees: HashMap<u32, Arc<BasicCOITree<PafMetadata, u32>>>,
+    /// Lazy CIGAR source: BGZF reader + original file path (for persistence).
+    pub(crate) lazy_source: Option<Mutex<bgzf::io::Reader<File>>>,
+    pub(crate) lazy_source_path: Option<String>,
 }
 
 impl PafIndex {
@@ -46,7 +70,7 @@ impl PafIndex {
                 target_end: rec.target_end as i32,
                 query_start: rec.query_start as i32,
                 query_end: rec.query_end as i32,
-                cigar,
+                cigar: CigarStore::owned(cigar),
             };
             by_target.entry(target_id).or_default().push(Interval::new(
                 rec.target_start as i32,
@@ -60,7 +84,12 @@ impl PafIndex {
             intervals.sort_by(|a, b| a.first.cmp(&b.first));
             trees.insert(tid, Arc::new(BasicCOITree::new(&intervals)));
         }
-        Ok(PafIndex { names, trees })
+        Ok(PafIndex {
+            names,
+            trees,
+            lazy_source: None,
+            lazy_source_path: None,
+        })
     }
 
     pub fn build_multi<R: BufRead>(readers: Vec<R>) -> std::io::Result<Self> {
@@ -87,7 +116,7 @@ impl PafIndex {
                         target_end: rec.target_end as i32,
                         query_start: rec.query_start as i32,
                         query_end: rec.query_end as i32,
-                        cigar,
+                        cigar: CigarStore::owned(cigar),
                     },
                 ));
             }
@@ -98,11 +127,125 @@ impl PafIndex {
             intervals.sort_by(|a, b| a.first.cmp(&b.first));
             trees.insert(tid, Arc::new(BasicCOITree::new(&intervals)));
         }
-        Ok(PafIndex { names, trees })
+        Ok(PafIndex {
+            names,
+            trees,
+            lazy_source: None,
+            lazy_source_path: None,
+        })
+    }
+
+    /// Build an index from a file path, using lazy CIGAR loading for BGZF files.
+    ///
+    /// For `.gz` files that are BGZF-compressed: records the BGZF virtual position
+    /// of each PAF line and stores `CigarStore::Lazy(vpos)`. CIGAR is fetched
+    /// on-demand during queries, reducing memory at build time.
+    ///
+    /// For non-BGZF files (plain text, regular gzip): falls back to in-memory
+    /// build (`CigarStore::Owned`).
+    pub fn build_from_path(path: &str) -> std::io::Result<Self> {
+        if path == "stdin" {
+            return Self::build(crate::libs::io::reader(path));
+        }
+
+        let p = std::path::Path::new(path);
+        if p.extension() == Some(std::ffi::OsStr::new("gz")) && is_bgzf(path)? {
+            Self::build_lazy_bgzf(path)
+        } else {
+            Self::build(crate::libs::io::reader(path))
+        }
+    }
+
+    fn build_lazy_bgzf(path: &str) -> std::io::Result<Self> {
+        let file = File::open(path)?;
+        let mut reader = bgzf::io::Reader::new(file);
+
+        let mut names = IndexMap::new();
+        let mut by_target: HashMap<u32, Vec<Interval<PafMetadata>>> = HashMap::new();
+        let mut line = String::new();
+
+        loop {
+            let vpos = u64::from(reader.virtual_position());
+            line.clear();
+            let n = reader.read_line(&mut line)?;
+            if n == 0 {
+                break;
+            }
+            let trimmed = line.trim_end_matches('\n');
+            if trimmed.is_empty() || trimmed.starts_with('#') {
+                continue;
+            }
+            let rec = match parse_paf_line(trimmed) {
+                Ok(r) => r,
+                Err(e) => {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        format!("{}: {}", e, trimmed),
+                    ));
+                }
+            };
+            insert_record(&rec, &mut names, &mut by_target, CigarStore::lazy(vpos));
+        }
+
+        let mut trees = HashMap::new();
+        for (tid, mut intervals) in by_target {
+            intervals.sort_by(|a, b| a.first.cmp(&b.first));
+            trees.insert(tid, Arc::new(BasicCOITree::new(&intervals)));
+        }
+        Ok(PafIndex {
+            names,
+            trees,
+            lazy_source: Some(Mutex::new(bgzf::io::Reader::new(File::open(path)?))),
+            lazy_source_path: Some(path.to_string()),
+        })
+    }
+
+    /// Fetch CIGAR ops for a lazy record by seeking to its BGZF virtual position.
+    pub fn fetch_cigar(&self, vpos: u64) -> Vec<CigarOp> {
+        if let Some(ref src) = self.lazy_source {
+            let mut reader = src.lock().expect("lazy_source mutex poisoned");
+            if reader.seek(bgzf::VirtualPosition::from(vpos)).is_err() {
+                return vec![];
+            }
+            let mut line = String::new();
+            if reader.read_line(&mut line).is_err() {
+                return vec![];
+            }
+            // Parse tags from the line and extract CIGAR.
+            let trimmed = line.trim_end_matches('\n');
+            if let Ok(rec) = parse_paf_line(trimmed) {
+                return extract_cigar(&rec.tags);
+            }
+            vec![]
+        } else {
+            vec![]
+        }
+    }
+
+    /// Resolve a `CigarStore` to owned CIGAR ops (clone if owned, fetch if lazy).
+    fn resolve_cigar(&self, store: &CigarStore) -> Vec<CigarOp> {
+        match store {
+            CigarStore::Owned(c) => c.clone(),
+            CigarStore::Lazy(vpos) => self.fetch_cigar(*vpos),
+        }
+    }
+
+    /// Reopen the lazy source file (used after `load` to restore lazy mode).
+    pub(crate) fn reopen_lazy_source(&mut self) -> std::io::Result<()> {
+        if let Some(ref path) = self.lazy_source_path {
+            let file = File::open(path)?;
+            self.lazy_source = Some(Mutex::new(bgzf::io::Reader::new(file)));
+        }
+        Ok(())
     }
 
     pub fn num_targets(&self) -> usize {
         self.trees.len()
+    }
+
+    /// Returns true if the index uses lazy CIGAR loading from a BGZF file.
+    pub fn is_lazy(&self) -> bool {
+        self.lazy_source.is_some()
     }
 
     pub fn name_to_id(&self, name: &str) -> Option<u32> {
@@ -127,10 +270,11 @@ impl PafIndex {
         if let Some(tree) = self.trees.get(&target_id) {
             tree.query(start, end, |iv: &IntervalNode<PafMetadata, u32>| {
                 let m = &iv.metadata;
-                if gap_compressed_identity(&m.cigar) < min_identity {
+                let cigar = self.resolve_cigar(&m.cigar);
+                if gap_compressed_identity(&cigar) < min_identity {
                     return;
                 }
-                if let Some((qs, qe, ts, te)) = project(start, end, m) {
+                if let Some((qs, qe, ts, te)) = project(start, end, m, &cigar) {
                     if (qe - qs).abs() < min_output_len {
                         return;
                     }
@@ -138,7 +282,7 @@ impl PafIndex {
                         m.query_id,
                         Interval::new(qs, qe, m.query_id),
                         Interval::new(ts, te, target_id),
-                        m.cigar.clone(),
+                        cigar,
                     ));
                 }
             });
@@ -183,10 +327,11 @@ impl PafIndex {
                         if os >= oe {
                             return;
                         }
-                        if gap_compressed_identity(&m.cigar) < min_identity {
+                        let cigar = self.resolve_cigar(&m.cigar);
+                        if gap_compressed_identity(&cigar) < min_identity {
                             return;
                         }
-                        if let Some((qs, qe, ts, te)) = project(os, oe, m) {
+                        if let Some((qs, qe, ts, te)) = project(os, oe, m, &cigar) {
                             if (qe - qs).abs() < min_output_len {
                                 return;
                             }
@@ -194,7 +339,7 @@ impl PafIndex {
                                 m.query_id,
                                 Interval::new(qs, qe, m.query_id),
                                 Interval::new(ts, te, tid),
-                                m.cigar.clone(),
+                                cigar,
                             ));
                             if m.query_id != tid {
                                 let sr = visited
@@ -229,8 +374,61 @@ fn extract_cigar(tags: &[String]) -> Vec<CigarOp> {
     vec![]
 }
 
-fn project(ts: i32, te: i32, m: &PafMetadata) -> Option<(i32, i32, i32, i32)> {
-    if m.cigar.is_empty() {
+/// Insert a parsed PAF record into the name map and target-grouped intervals.
+fn insert_record(
+    rec: &PafRecord,
+    names: &mut IndexMap<String, u32>,
+    by_target: &mut HashMap<u32, Vec<Interval<PafMetadata>>>,
+    cigar_store: CigarStore,
+) {
+    let next_id = names.len() as u32;
+    names.entry(rec.target_name.clone()).or_insert(next_id);
+    let target_id = names[&rec.target_name];
+
+    let next_id = names.len() as u32;
+    names.entry(rec.query_name.clone()).or_insert(next_id);
+    let query_id = names[&rec.query_name];
+
+    let meta = PafMetadata {
+        query_id,
+        target_start: rec.target_start as i32,
+        target_end: rec.target_end as i32,
+        query_start: rec.query_start as i32,
+        query_end: rec.query_end as i32,
+        cigar: cigar_store,
+    };
+    by_target.entry(target_id).or_default().push(Interval::new(
+        rec.target_start as i32,
+        rec.target_end as i32,
+        meta,
+    ));
+}
+
+/// Check whether a file is BGZF-compressed by inspecting the header bytes.
+fn is_bgzf(path: &str) -> std::io::Result<bool> {
+    use std::io::Read;
+    let mut f = File::open(path)?;
+    let mut hdr = [0u8; 18];
+    match f.read_exact(&mut hdr) {
+        Ok(()) => {
+            // BGZF: gzip magic (1f 8b 08 04), XLEN=6 at [10..12], "BC" at [12..14], SLEN=2 at [14..16]
+            Ok(hdr[0] == 0x1f
+                && hdr[1] == 0x8b
+                && hdr[2] == 0x08
+                && hdr[3] == 0x04
+                && hdr[10] == 0x06
+                && hdr[11] == 0x00
+                && hdr[12] == b'B'
+                && hdr[13] == b'C'
+                && hdr[14] == 0x02
+                && hdr[15] == 0x00)
+        }
+        Err(_) => Ok(false),
+    }
+}
+
+fn project(ts: i32, te: i32, m: &PafMetadata, cigar: &[CigarOp]) -> Option<(i32, i32, i32, i32)> {
+    if cigar.is_empty() {
         let off = (ts - m.target_start).max(0);
         let len = (te - ts).min((m.target_end - m.target_start) - off);
         if len <= 0 {
@@ -245,7 +443,7 @@ fn project(ts: i32, te: i32, m: &PafMetadata) -> Option<(i32, i32, i32, i32)> {
     }
     let mut ct = m.target_start;
     let mut cq = m.query_start;
-    for op in &m.cigar {
+    for op in cigar {
         let td = op.target_delta() as i32;
         let qd = op.query_delta() as i32;
         let ss = ct;
@@ -506,41 +704,43 @@ C\t100\t0\t100\t+\tA\t100\t0\t100\t90\t100\t255\tcg:Z:100M
             target_end: 50,
             query_start: 0,
             query_end: 50,
-            cigar: vec![],
+            cigar: CigarStore::owned(vec![]),
         };
-        assert!(project(100, 200, &m).is_none());
+        assert!(project(100, 200, &m, &[]).is_none());
     }
 
     #[test]
     fn test_project_cigar_no_overlap() {
+        let cigar = vec![CigarOp::new(50, 'M')];
         let m = PafMetadata {
             query_id: 0,
             target_start: 0,
             target_end: 50,
             query_start: 0,
             query_end: 50,
-            cigar: vec![CigarOp::new(50, 'M')],
+            cigar: CigarStore::owned(cigar.clone()),
         };
-        assert!(project(100, 200, &m).is_none());
+        assert!(project(100, 200, &m, &cigar).is_none());
     }
 
     #[test]
     fn test_project_cigar_with_insertion_offset() {
         // CIGAR: 10M5I10M. Query [11,16) on target lands in the trailing M segment,
         // but query coordinates are shifted by the 5-base insertion.
+        let cigar = vec![
+            CigarOp::new(10, 'M'),
+            CigarOp::new(5, 'I'),
+            CigarOp::new(10, 'M'),
+        ];
         let m = PafMetadata {
             query_id: 0,
             target_start: 0,
             target_end: 25,
             query_start: 0,
             query_end: 25,
-            cigar: vec![
-                CigarOp::new(10, 'M'),
-                CigarOp::new(5, 'I'),
-                CigarOp::new(10, 'M'),
-            ],
+            cigar: CigarStore::owned(cigar.clone()),
         };
-        let (qs, qe, ts, te) = project(11, 16, &m).unwrap();
+        let (qs, qe, ts, te) = project(11, 16, &m, &cigar).unwrap();
         assert_eq!((qs, qe, ts, te), (16, 21, 11, 16));
     }
 

@@ -15,6 +15,7 @@ Use -o to persist the index to a .paf.idx file for reusable queries.
 
 Notes:
 * Input PAF files should contain `cg:Z:` tags for accurate coordinate projection
+* Supports both plain text and gzipped (.gz) files (including BGZF)
 * Reads from stdin if input file is 'stdin'
 
 Examples:
@@ -51,11 +52,21 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     eprintln!("Building PAF index from {count} file(s)...");
 
-    let readers: Vec<_> = infiles.iter().map(|f| pgr::reader(f)).collect();
-    let idx = PafIndex::build_multi(readers)?;
+    // For single-file input: use build_from_path (enables lazy CIGAR for BGZF).
+    // For multi-file input: use build_multi (in-memory merge).
+    let idx = if count == 1 {
+        PafIndex::build_from_path(infiles[0])?
+    } else {
+        let readers: Vec<_> = infiles.iter().map(|f| pgr::reader(f)).collect();
+        PafIndex::build_multi(readers)?
+    };
 
+    let lazy = idx.is_lazy();
     eprintln!("  sequences: {}", idx.names.len());
     eprintln!("  targets:   {}", idx.num_targets());
+    if lazy {
+        eprintln!("  mode:      lazy (BGZF virtual-position CIGAR)");
+    }
 
     if let Some(outfile) = args.get_one::<String>("outfile") {
         idx.save(outfile)?;

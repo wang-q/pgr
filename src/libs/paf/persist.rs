@@ -1,6 +1,6 @@
 /// Disk persistence for PafIndex.
 use super::cigar::CigarOp;
-use super::index::{PafIndex, PafMetadata};
+use super::index::{CigarStore, PafIndex, PafMetadata};
 use coitrees::{Interval, IntervalNode, IntervalTree};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -12,11 +12,18 @@ use std::sync::Arc;
 /// File format identifier: "PGRI" = pgr index.
 const MAGIC: [u8; 4] = *b"PGRI";
 /// Format version (incremented on breaking changes).
-const VERSION: u32 = 1;
+const VERSION: u32 = 2;
 
 // ── Serializable types ───────────────────────────────────────────
 
-/// CIGAR stored as bit-packed u32 values (CigarOp.0).
+/// CIGAR storage on disk: either owned (bit-packed u32 ops) or lazy (vpos).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum FlatCigar {
+    Owned(Vec<u32>),
+    Lazy(u64),
+}
+
+/// Per-record metadata stored on disk.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct FlatMeta {
     pub query_id: u32,
@@ -24,7 +31,7 @@ pub struct FlatMeta {
     pub target_end: i32,
     pub query_start: i32,
     pub query_end: i32,
-    pub cigar: Vec<u32>,
+    pub cigar: FlatCigar,
 }
 
 /// Disk-persistable snapshot of a PafIndex.
@@ -33,6 +40,8 @@ pub struct PafIndexData {
     pub names: Vec<(String, u32)>,
     /// Per-target: (target_id, Vec<(first, last, FlatMeta)>)
     pub intervals: Vec<(u32, Vec<(i32, i32, FlatMeta)>)>,
+    /// Original BGZF file path for lazy CIGAR loading (None for in-memory mode).
+    pub lazy_source_path: Option<String>,
 }
 
 // ── PafIndex serialization ───────────────────────────────────────
@@ -83,6 +92,10 @@ pub fn to_data(idx: &PafIndex) -> PafIndexData {
         let mut ivs: Vec<(i32, i32, FlatMeta)> = Vec::new();
         (&**tree_ref).query(i32::MIN, i32::MAX, |iv: &IntervalNode<PafMetadata, u32>| {
             let m = &iv.metadata;
+            let flat_cigar = match &m.cigar {
+                CigarStore::Owned(c) => FlatCigar::Owned(c.iter().map(|op| op.0).collect()),
+                CigarStore::Lazy(vpos) => FlatCigar::Lazy(*vpos),
+            };
             ivs.push((
                 iv.first,
                 iv.last,
@@ -92,13 +105,17 @@ pub fn to_data(idx: &PafIndex) -> PafIndexData {
                     target_end: m.target_end,
                     query_start: m.query_start,
                     query_end: m.query_end,
-                    cigar: m.cigar.iter().map(|op| op.0).collect(),
+                    cigar: flat_cigar,
                 },
             ));
         });
         intervals.push((tid, ivs));
     }
-    PafIndexData { names, intervals }
+    PafIndexData {
+        names,
+        intervals,
+        lazy_source_path: idx.lazy_source_path.clone(),
+    }
 }
 
 /// Reconstruct index from serializable form.
@@ -116,13 +133,19 @@ pub fn from_data(data: PafIndexData) -> io::Result<PafIndex> {
         let mut raw_intervals: Vec<Interval<PafMetadata>> = ivs
             .iter()
             .map(|(first, last, flat)| {
+                let cigar = match &flat.cigar {
+                    FlatCigar::Owned(vals) => {
+                        CigarStore::Owned(vals.iter().map(|&v| CigarOp::from_raw(v)).collect())
+                    }
+                    FlatCigar::Lazy(vpos) => CigarStore::Lazy(*vpos),
+                };
                 let meta = PafMetadata {
                     query_id: flat.query_id,
                     target_start: flat.target_start,
                     target_end: flat.target_end,
                     query_start: flat.query_start,
                     query_end: flat.query_end,
-                    cigar: flat.cigar.iter().map(|&v| CigarOp::from_raw(v)).collect(),
+                    cigar,
                 };
                 Interval::new(*first, *last, meta)
             })
@@ -131,7 +154,15 @@ pub fn from_data(data: PafIndexData) -> io::Result<PafIndex> {
         trees.insert(*tid, Arc::new(BasicCOITree::new(&raw_intervals)));
     }
 
-    Ok(PafIndex { names, trees })
+    let mut idx = PafIndex {
+        names,
+        trees,
+        lazy_source: None,
+        lazy_source_path: data.lazy_source_path,
+    };
+    // Reopen the BGZF file if a lazy source path was persisted.
+    idx.reopen_lazy_source()?;
+    Ok(idx)
 }
 
 // ── Tests ─────────────────────────────────────────────────────────
@@ -246,6 +277,7 @@ C\t100\t0\t100\t+\tA\t100\t0\t100\t90\t100\t255\tcg:Z:100M
         let data = PafIndexData {
             names: vec![],
             intervals: vec![],
+            lazy_source_path: None,
         };
         let idx = from_data(data).unwrap();
         assert_eq!(idx.names.len(), 0);
