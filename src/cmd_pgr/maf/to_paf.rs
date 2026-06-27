@@ -1,6 +1,6 @@
 use clap::*;
 use pgr::libs::paf::cigar::{
-    block_identity, cigar_from_alignment, format_cigar, gap_compressed_identity,
+    block_identity, cigar_from_alignment, cigar_stats, format_cigar, gap_compressed_identity,
 };
 use pgr::libs::paf::record::PafRecord;
 use pgr::libs::paf::writer::write_paf_record;
@@ -50,6 +50,18 @@ Examples:
         )
 }
 
+fn build_tags(gi: f64, bi: f64, cigar: &str, score: Option<f64>) -> Vec<String> {
+    let mut tags = vec![
+        format!("gi:f:{gi:.6}"),
+        format!("bi:f:{bi:.6}"),
+        format!("cg:Z:{cigar}"),
+    ];
+    if let Some(s) = score {
+        tags.push(format!("ms:i:{}", s as u64));
+    }
+    tags
+}
+
 // command implementation
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap());
@@ -62,7 +74,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 continue;
             }
             if block.entries.len() > 2 {
-                // Multi-sequence block — skip with warning
                 eprintln!(
                     "Warning: skipping block with {} sequences (only two-sequence blocks are supported)",
                     block.entries.len()
@@ -73,15 +84,13 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             let ref_entry = &block.entries[0];
             let qry_entry = &block.entries[1];
 
-            // Generate CIGAR from alignment vectors
             let cigar_ops = cigar_from_alignment(&ref_entry.alignment, &qry_entry.alignment);
+            let stats = cigar_stats(&cigar_ops);
+            let gi = gap_compressed_identity(&cigar_ops);
+            let bi = block_identity(&cigar_ops);
             let cigar_str = format_cigar(&cigar_ops);
+            let tags = build_tags(gi, bi, &cigar_str, block.score);
 
-            // Match counts
-            let (matches, _mismatches, _ins, _del) = count_cigar_stats(&cigar_ops);
-            let block_len = qry_entry.alignment.len() as u32;
-
-            // Build PAF record
             let rec = PafRecord {
                 query_name: qry_entry.src.clone(),
                 query_length: qry_entry.src_size as u32,
@@ -92,39 +101,15 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 target_length: ref_entry.src_size as u32,
                 target_start: ref_entry.start as u32,
                 target_end: (ref_entry.start + ref_entry.size) as u32,
-                matches,
-                block_length: block_len,
+                matches: stats.matches,
+                block_length: pgr::libs::paf::cigar::block_length(&stats),
                 mapq: 255,
+                tags,
             };
 
-            let gi = gap_compressed_identity(&cigar_ops);
-            let bi = block_identity(&cigar_ops);
-            let score = block.score.map(|s| s as u64);
-
-            write_paf_record(&mut writer, &rec, gi, bi, &cigar_str, score)?;
+            write_paf_record(&mut writer, &rec)?;
         }
     }
 
     Ok(())
-}
-
-/// Count matches, mismatches, insertions, and deletions from CIGAR ops.
-///
-/// Note: M is counted as matches; X as mismatches; I/D as per their type.
-fn count_cigar_stats(ops: &[pgr::libs::paf::cigar::CigarOp]) -> (u32, u32, u32, u32) {
-    let mut m = 0u32;
-    let mut x = 0u32;
-    let mut i = 0u32;
-    let mut d = 0u32;
-    for op in ops {
-        let len = op.len();
-        match op.op() {
-            'M' | '=' => m += len,
-            'X' => x += len,
-            'I' => i += len,
-            'D' => d += len,
-            _ => {}
-        }
-    }
-    (m, x, i, d)
 }

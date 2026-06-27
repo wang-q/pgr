@@ -34,21 +34,25 @@ fn command_maf_to_paf_basic() {
 
     // 12 mandatory columns
     let fields: Vec<&str> = stdout.trim().split('\t').collect();
-    assert_eq!(fields.len(), 16, "PAF should have 12 cols + 4 tags = 16 fields");
+    assert_eq!(
+        fields.len(),
+        16,
+        "PAF should have 12 cols + 4 tags = 16 fields"
+    );
 
     // Column checks
-    assert_eq!(fields[0], "qry");           // query name
-    assert_eq!(fields[1], "500");           // query length
-    assert_eq!(fields[2], "50");            // query start
-    assert_eq!(fields[3], "60");            // query end (50 + 10)
-    assert_eq!(fields[4], "+");             // strand
-    assert_eq!(fields[5], "ref");           // target name
-    assert_eq!(fields[6], "1000");          // target length
-    assert_eq!(fields[7], "100");           // target start
-    assert_eq!(fields[8], "110");           // target end (100 + 10)
-    assert_eq!(fields[9], "8");             // matches (8M)
-    assert_eq!(fields[10], "10");           // block length
-    assert_eq!(fields[11], "255");          // mapq
+    assert_eq!(fields[0], "qry"); // query name
+    assert_eq!(fields[1], "500"); // query length
+    assert_eq!(fields[2], "50"); // query start
+    assert_eq!(fields[3], "60"); // query end (50 + 10)
+    assert_eq!(fields[4], "+"); // strand
+    assert_eq!(fields[5], "ref"); // target name
+    assert_eq!(fields[6], "1000"); // target length
+    assert_eq!(fields[7], "100"); // target start
+    assert_eq!(fields[8], "110"); // target end (100 + 10)
+    assert_eq!(fields[9], "8"); // matches (8M)
+    assert_eq!(fields[10], "10"); // block length
+    assert_eq!(fields[11], "255"); // mapq
 
     // Custom tags
     assert!(stdout.contains("gi:f:"), "gi tag missing");
@@ -71,7 +75,10 @@ fn command_maf_to_paf_multi_sequence_skipped() {
         .stdin(maf)
         .run();
 
-    assert!(stdout.trim().is_empty(), "multi-seq should produce no output");
+    assert!(
+        stdout.trim().is_empty(),
+        "multi-seq should produce no output"
+    );
     assert!(stderr.contains("skipping"), "should warn about skipping");
     assert!(stderr.contains("3 sequences"), "should mention count");
 }

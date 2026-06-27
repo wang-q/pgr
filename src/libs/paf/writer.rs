@@ -1,15 +1,10 @@
 use super::record::PafRecord;
 use std::io::{self, Write};
 
-/// Write a PAF record with standard tags (`gi`, `bi`, `cg`, optional `ms`).
-pub fn write_paf_record<W: Write>(
-    writer: &mut W,
-    rec: &PafRecord,
-    gi: f64,
-    bi: f64,
-    cigar: &str,
-    score: Option<u64>,
-) -> io::Result<()> {
+/// Write a PAF record with all tags.
+///
+/// Tags are written tab-separated after the 12 mandatory columns.
+pub fn write_paf_record<W: Write>(writer: &mut W, rec: &PafRecord) -> io::Result<()> {
     write!(
         writer,
         "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
@@ -26,9 +21,8 @@ pub fn write_paf_record<W: Write>(
         rec.block_length,
         rec.mapq,
     )?;
-    write!(writer, "\tgi:f:{:.6}\tbi:f:{:.6}\tcg:Z:{}", gi, bi, cigar)?;
-    if let Some(s) = score {
-        write!(writer, "\tms:i:{}", s)?;
+    for tag in &rec.tags {
+        write!(writer, "\t{}", tag)?;
     }
     writeln!(writer)
 }

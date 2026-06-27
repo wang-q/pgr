@@ -1,7 +1,9 @@
 /// CIGAR (Compact Idiosyncratic Gapped Alignment Report) operations.
 ///
-/// Implements bit-packed CIGAR storage and coordinate projection,
-/// modeled after impg's `CigarOp` (`impg-0.4.1/src/impg.rs:73-138`).
+/// Implements bit-packed CIGAR storage, coordinate projection, and
+/// statistical summaries.  Modeled after impg's `CigarOp`
+/// (`impg-0.4.1/src/impg.rs:73-138`) with additional statistics
+/// inspired by wgatools' `Cigar` struct.
 ///
 /// # Bit-packing
 ///
@@ -105,8 +107,6 @@ pub fn parse_cigar(s: &str) -> Vec<CigarOp> {
                 .saturating_mul(10)
                 .saturating_add((c as u8 - b'0') as u32);
         } else {
-            // Only push if length > 0 or if we want to keep zero-length ops.
-            // impg always pushes; we follow suit for fidelity.
             ops.push(CigarOp::new(len, c));
             len = 0;
         }
@@ -125,7 +125,56 @@ pub fn format_cigar(ops: &[CigarOp]) -> String {
     s
 }
 
-// ── Identity calculation ──────────────────────────────────────────
+// ── Statistics ───────────────────────────────────────────────────
+
+/// Summary statistics computed from a CIGAR operation list.
+///
+/// Provides both per‑event and per‑base counts for insertions and
+/// deletions, matching the two identity metrics (gi / bi).
+#[derive(Debug, Clone, Default)]
+pub struct CigarStats {
+    /// Matching bases (`M` and `=`).
+    pub matches: u32,
+    /// Mismatching bases (`X`).
+    pub mismatches: u32,
+    /// Insertion events (one per `I` op).
+    pub ins_events: u32,
+    /// Insertion bases (sum of `I` op lengths).
+    pub ins_bp: u32,
+    /// Deletion events (one per `D` op).
+    pub del_events: u32,
+    /// Deletion bases (sum of `D` op lengths).
+    pub del_bp: u32,
+}
+
+/// Compute `CigarStats` from a slice of `CigarOp`.
+pub fn cigar_stats(ops: &[CigarOp]) -> CigarStats {
+    let mut s = CigarStats::default();
+    for op in ops {
+        let len = op.len();
+        match op.op() {
+            'M' | '=' => s.matches += len,
+            'X' => s.mismatches += len,
+            'I' => {
+                s.ins_events += 1;
+                s.ins_bp += len;
+            }
+            'D' => {
+                s.del_events += 1;
+                s.del_bp += len;
+            }
+            _ => {}
+        }
+    }
+    s
+}
+
+/// Total alignment block length (all bases including indels).
+pub fn block_length(stats: &CigarStats) -> u32 {
+    stats.matches + stats.mismatches + stats.ins_bp + stats.del_bp
+}
+
+// ── Identity ──────────────────────────────────────────────────────
 
 /// Gap-compressed identity.
 ///
@@ -134,12 +183,12 @@ pub fn format_cigar(ops: &[CigarOp]) -> String {
 /// Each indel counts as **one event** regardless of its length,
 /// making this metric lenient toward long indels (evaluates homology).
 pub fn gap_compressed_identity(ops: &[CigarOp]) -> f64 {
-    let (matches, mismatches, ins_events, del_events) = fold_ops(ops, true);
-    let total = matches + mismatches + ins_events + del_events;
+    let s = cigar_stats(ops);
+    let total = s.matches + s.mismatches + s.ins_events + s.del_events;
     if total == 0 {
         0.0
     } else {
-        matches as f64 / total as f64
+        s.matches as f64 / total as f64
     }
 }
 
@@ -150,47 +199,13 @@ pub fn gap_compressed_identity(ops: &[CigarOp]) -> f64 {
 /// Each indel base counts as a difference, making this metric strict
 /// (evaluates sequence identity).
 pub fn block_identity(ops: &[CigarOp]) -> f64 {
-    let (matches, mismatches, ins_bp, del_bp) = fold_ops(ops, false);
-    let total = matches + mismatches + ins_bp + del_bp;
+    let s = cigar_stats(ops);
+    let total = s.matches + s.mismatches + s.ins_bp + s.del_bp;
     if total == 0 {
         0.0
     } else {
-        matches as f64 / total as f64
+        s.matches as f64 / total as f64
     }
-}
-
-/// Fold CIGAR ops into (matches, mismatches, ins, del).
-///
-/// When `per_event` is true, insertions and deletions are counted
-/// per event (1 per op); otherwise per base (sum of op lengths).
-fn fold_ops(ops: &[CigarOp], per_event: bool) -> (u32, u32, u32, u32) {
-    let mut m = 0u32;
-    let mut x = 0u32;
-    let mut i = 0u32;
-    let mut d = 0u32;
-    for op in ops {
-        let len = op.len();
-        match op.op() {
-            'M' | '=' => m += len,
-            'X' => x += len,
-            'I' => {
-                if per_event {
-                    i += 1
-                } else {
-                    i += len
-                }
-            }
-            'D' => {
-                if per_event {
-                    d += 1
-                } else {
-                    d += len
-                }
-            }
-            _ => {}
-        }
-    }
-    (m, x, i, d)
 }
 
 // ── MAF alignment → CIGAR (pgr‑specific) ─────────────────────────
@@ -222,7 +237,6 @@ pub fn cigar_from_alignment(r#ref: &[u8], qry: &[u8]) -> Vec<CigarOp> {
 
         match ops.last_mut() {
             Some(last) if last.op() == op_char => {
-                // Merge: create new op with incremented length
                 let new_len = last.len() + 1;
                 *last = CigarOp::new(new_len, op_char);
             }
@@ -299,7 +313,6 @@ mod tests {
 
     #[test]
     fn test_parse_cigar_digits_only() {
-        // trailing digits without op are silently dropped (impg behavior)
         let ops = parse_cigar("10");
         assert!(ops.is_empty());
     }
@@ -322,6 +335,48 @@ mod tests {
         }
     }
 
+    // ── Statistics ────────────────────────────────────────────
+
+    #[test]
+    fn test_cigar_stats_basic() {
+        let ops = parse_cigar("10=5I3D");
+        let s = cigar_stats(&ops);
+        assert_eq!(s.matches, 10);
+        assert_eq!(s.mismatches, 0);
+        assert_eq!(s.ins_events, 1);
+        assert_eq!(s.ins_bp, 5);
+        assert_eq!(s.del_events, 1);
+        assert_eq!(s.del_bp, 3);
+    }
+
+    #[test]
+    fn test_cigar_stats_with_mismatch() {
+        let ops = parse_cigar("5=2X3I");
+        let s = cigar_stats(&ops);
+        assert_eq!(s.matches, 5);
+        assert_eq!(s.mismatches, 2);
+        assert_eq!(s.ins_events, 1);
+        assert_eq!(s.ins_bp, 3);
+    }
+
+    #[test]
+    fn test_cigar_stats_multiple_events() {
+        let ops = parse_cigar("3I5=2D4=1I");
+        let s = cigar_stats(&ops);
+        assert_eq!(s.matches, 9);
+        assert_eq!(s.ins_events, 2);
+        assert_eq!(s.ins_bp, 4);
+        assert_eq!(s.del_events, 1);
+        assert_eq!(s.del_bp, 2);
+    }
+
+    #[test]
+    fn test_block_length() {
+        let ops = parse_cigar("10=5I3D");
+        let s = cigar_stats(&ops);
+        assert_eq!(block_length(&s), 18); // 10 + 0 + 5 + 3
+    }
+
     // ── Identity ──────────────────────────────────────────────
 
     #[test]
@@ -334,7 +389,7 @@ mod tests {
     fn test_gi_with_insertion() {
         let ops = parse_cigar("10=5I");
         let gi = gap_compressed_identity(&ops);
-        let expected = 10.0 / (10.0 + 0.0 + 1.0); // 0.909...
+        let expected = 10.0 / (10.0 + 0.0 + 1.0);
         assert!((gi - expected).abs() < 1e-6);
     }
 
@@ -350,7 +405,7 @@ mod tests {
     fn test_gi_mixed() {
         let ops = parse_cigar("10=2X3I4D");
         let gi = gap_compressed_identity(&ops);
-        let expected = 10.0 / (10.0 + 2.0 + 2.0); // 0.714...
+        let expected = 10.0 / (10.0 + 2.0 + 2.0);
         assert!((gi - expected).abs() < 1e-6);
     }
 
@@ -363,7 +418,7 @@ mod tests {
     fn test_bi_with_insertion() {
         let ops = parse_cigar("10=5I");
         let bi = block_identity(&ops);
-        let expected = 10.0 / (10.0 + 0.0 + 5.0); // 0.667...
+        let expected = 10.0 / (10.0 + 0.0 + 5.0);
         assert!((bi - expected).abs() < 1e-6);
     }
 
@@ -382,16 +437,14 @@ mod tests {
 
     #[test]
     fn test_cigar_from_alignment_ref_gap() {
-        // ref gap = insertion in query → I
         let ops = cigar_from_alignment(b"ACG-", b"ACGT");
-        assert_eq!(ops, vec![CigarOp::new(3, 'M'), CigarOp::new(1, 'I'),]);
+        assert_eq!(ops, vec![CigarOp::new(3, 'M'), CigarOp::new(1, 'I')]);
     }
 
     #[test]
     fn test_cigar_from_alignment_qry_gap() {
-        // qry gap = deletion in query → D
         let ops = cigar_from_alignment(b"ACGT", b"ACG-");
-        assert_eq!(ops, vec![CigarOp::new(3, 'M'), CigarOp::new(1, 'D'),]);
+        assert_eq!(ops, vec![CigarOp::new(3, 'M'), CigarOp::new(1, 'D')]);
     }
 
     #[test]
@@ -431,7 +484,6 @@ mod tests {
 
     #[test]
     fn test_cigar_from_alignment_merge_consecutive() {
-        // ACG--T vs ACGTT-  → M M M I I D  → merged to 3M2I1D
         let ops = cigar_from_alignment(b"ACG--T", b"ACGTT-");
         assert_eq!(
             ops,

@@ -449,3 +449,65 @@ Chain/Net syntenic 过滤器。
 | 索引初始化 | `src/main.rs` | 11043 | `initialize_index()` |
 | 查询执行 | `src/main.rs` | 11605 | `perform_query()` — 传递/非传递 dispatch |
 
+## 13. wgatools 参考
+
+[wgatools](https://github.com/wjwei-handsome/wgatools) (v1.1.0, Bioinformatics 2025)
+是另一个 Rust 实现的全基因组比对工具集，支持 MAF/PAF/Chain/SAM 互转。
+其 PAF/CIGAR 处理与 pgr 有高度重叠，以下是可借鉴的设计。
+
+### 13.1 与 impg 的关键差异
+
+| 维度 | impg | wgatools |
+|------|------|----------|
+| CIGAR 存储 | bit-packed `u32`（紧凑，4B/op） | `Cigar` struct（含 inv_* 倒位字段，信息丰富但内存更大） |
+| PAF 解析 | 手写 `split('\t')` + 字段解析 | `csv::Reader` flexible 模式（更健壮，自动处理可变列数） |
+| CIGAR 来源 | `cg:Z:` tag（PAF）或 tracepoint 解码（1ALN/TPA） | `cg:Z:` 或 `cs:Z:`（自动转换） |
+| 格式统一 | `ImpgIndex` trait（索引层） | `AlignRecord` trait（记录层，统一 PAF/MAF/Chain 的字段访问） |
+| MAF→PAF | 无（impg 直接从 PAF 启动） | `MAFRecord::convert2paf()` — 含 `query_name` 参数选 query |
+
+### 13.2 pgr 可借鉴的设计
+
+**`csv` crate flexible reader**（`parser/paf.rs:22-30`）：
+
+wgatools 用 `csv::ReaderBuilder::flexible(true)` 解析 PAF，好处是自动处理
+可变列数（12 列 + 可选 tags），同时过滤 `#` 注释行。pgr 手写 `split('\t')`
+解析也可以，但如果后续需要支持 BGZF 流式读取，csv crate 的 Reader 更稳定。
+
+**`AlignRecord` trait**（`parser/common.rs`）：
+
+统一 PAF/MAF/Chain 三种格式的字段访问接口（`query_name`、`query_start`、
+`target_end` 等）。pgr 目前只有 PAF，但后续做 Chain↔PAF 互转时需要类似抽象。
+可以先不做 trait，但在 `PafRecord` 上预留类似方法签名。
+
+**PAF 校验 `validate`**（`tools/validate.rs`）：
+
+用 CIGAR 校验 `query_end` 和 `target_end` 是否与 CIGAR 推导值一致，
+不一致时自动修正。pgr 的 `to-paf` 输出可以作为输入再验证一次，
+或提供给用户做数据质量检查。
+
+**`parse_maf_seq_to_trim`**（`parser/cigar.rs:155-199`）：
+
+从 MAF 对齐串分析首尾 indel（用于裁剪链的块边界）。pgr 在做
+MAF→Chain 转换时可以参考（后续）。
+
+**`cs:Z:` → CIGAR 转换**（`parser/paf.rs:159-200`）：
+
+部分工具（如 minimap2）输出 `cs:Z:` 而非 `cg:Z:`。wgatools 自动检测并转换。
+pgr 后续如果要直接消费 minimap2 输出的 PAF，可以考虑支持。
+
+### 13.3 wgatools CIGAR 统计维度（比 impg 更丰富）
+
+`Cigar` struct（`parser/cigar.rs:16-29`）：
+
+| 字段 | 含义 |
+|------|------|
+| `match_count` / `mismatch_count` | 匹配/错配碱基数 |
+| `ins_event` / `ins_count` | 插入事件数 / 碱基数 |
+| `del_event` / `del_count` | 删除事件数 / 碱基数 |
+| `inv_ins_event` / `inv_ins_count` | 倒位区域的插入事件数 / 碱基数 |
+| `inv_del_event` / `inv_del_count` | 倒位区域的删除事件数 / 碱基数 |
+| `inv_event` | 倒位事件数 |
+
+pgr V1 不需要 `inv_*` 字段（两序列 MAF 不涉及倒位），但 `match/mismatch/ins/del`
+的事件数 vs 碱基数的区分在计算 gi/bi 时已经用到。
+

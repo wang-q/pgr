@@ -1,4 +1,5 @@
-/// A single PAF (Pairwise mApping Format) record with 12 mandatory columns.
+/// A single PAF (Pairwise mApping Format) record with 12 mandatory columns
+/// and optional SAM-like tags.
 ///
 /// Follows the [lh3/miniasm PAF specification](https://github.com/lh3/miniasm/blob/master/PAF.md).
 #[derive(Debug, Clone)]
@@ -27,4 +28,6 @@ pub struct PafRecord {
     pub block_length: u32,
     /// Column 12: Mapping quality (255 if unavailable).
     pub mapq: u8,
+    /// Optional SAM-like tags (e.g. `gi:f:0.95`, `cg:Z:10M`).
+    pub tags: Vec<String>,
 }
