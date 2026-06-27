@@ -7,7 +7,7 @@
 
 ## 1. 完成后状态
 
-三个命令全部实现，95 个测试通过：
+三个命令全部实现，98 个测试通过：
 
 ```
 pgr maf to-paf          ✅ MAF → PAF 转换
@@ -30,7 +30,7 @@ pgr paf query <region>  ✅ 坐标投影 + --transitive BFS
 | CIGAR 存储 | `Vec<CigarOp>` 全量存入节点 | MAF 转换产物规模可控 |
 | PAF 解析 | 手写 tab 分割 | pgr 已有 csv 依赖但手写更轻 |
 | 多文件索引 | `build_multi` 直接合并 | 不需要 impg 的 ForestMap/RwLock/ImpgIndex |
-| 不输出 FAS/MAF | BED 默认，可选 --paf | FAS 是 MSA 产物，不是坐标投影产物 |
+| 不输出 FAS/MAF | 只输出 PAF | Fas/MAF 是 MSA 产物，不是坐标投影产物 |
 
 ## 3. 源码结构
 
@@ -45,7 +45,7 @@ src/libs/paf/
 
 src/cmd_pgr/paf/
 ├── index.rs        # pgr paf index（含 -o 输出）
-├── query.rs        # pgr paf query（--transitive/--bed/--paf）
+├── query.rs        # pgr paf query（--transitive）
 └── mod.rs
 
 src/cmd_pgr/maf/
@@ -61,8 +61,8 @@ src/cmd_pgr/maf/
 | `paf::index` | 16 |
 | `paf::persist` | 12 |
 | `cli_maf` | 5 |
-| `cli_paf` | 24 |
-| **总计** | **95** |
+| `cli_paf` | 23 |
+| **总计** | **98** |
 
 ## 5. 变更日志
 
@@ -76,3 +76,4 @@ src/cmd_pgr/maf/
 | 2026-06-27 | 查询层打磨：--min-identity/--min-output-len/--merge-distance/--subset-sequence-list/--bed/--paf |
 | 2026-06-27 | BED 成为默认输出，删除 TSV |
 | 2026-06-28 | 文档整合：精简为实施记录 |
+| 2026-06-28 | BED/TSV 删除，只输出 PAF；覆盖率补充（+4 tests） |
