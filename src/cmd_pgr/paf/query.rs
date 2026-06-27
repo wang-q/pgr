@@ -23,9 +23,8 @@ Two modes:
   intermediate sequences up to --max-depth hops.
 
 Output formats:
-* Default: query_name, query_start, query_end, target_name, target_start, target_end
-* --bed: BED6 format with target annotation in name column
-* --paf: standard PAF 12 columns + tags
+* BED6 (default): standard BED format, target coordinates in name column
+* --paf: PAF 12 columns + tags
 
 Notes:
 * Input PAF files should contain cg:Z: tags for accurate projection
@@ -39,7 +38,7 @@ Examples:
    pgr paf query alignments.paf.idx chr1:1000-5000
 
 3. Transitive BFS with filters:
-   pgr paf query alignments.paf chr1:1000-5000 --transitive --min-identity 0.8 --bed
+   pgr paf query alignments.paf chr1:1000-5000 --transitive --min-identity 0.8
 
 "###,
         )
@@ -117,17 +116,10 @@ Examples:
                 .help("File with sequence names to include (one per line)"),
         )
         .arg(
-            Arg::new("bed")
-                .long("bed")
-                .num_args(0)
-                .help("Output in BED6 format"),
-        )
-        .arg(
             Arg::new("paf")
                 .long("paf")
                 .num_args(0)
-                .conflicts_with("bed")
-                .help("Output in PAF format (12 columns + tags)"),
+                .help("Output in PAF format instead of BED (default)"),
         )
 }
 
@@ -168,7 +160,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let min_identity = *args.get_one::<f64>("min_identity").unwrap();
     let min_output_len = *args.get_one::<i32>("min_output_len").unwrap();
     let merge_distance = *args.get_one::<i32>("merge_distance").unwrap();
-    let bed = args.get_flag("bed");
     let paf = args.get_flag("paf");
 
     let (target_name, start, end) = parse_region(region_str)?;
@@ -223,29 +214,13 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         return Ok(());
     }
 
-    if bed {
-        output_bed(&idx, &results);
-    } else if paf {
+    if paf {
         output_paf(&idx, &results);
     } else {
-        output_default(&idx, &results);
+        output_bed(&idx, &results);
     }
 
     Ok(())
-}
-
-fn output_default(
-    idx: &PafIndex,
-    results: &[(u32, coitrees::Interval<u32>, coitrees::Interval<u32>)],
-) {
-    for (query_id, q_iv, t_iv) in results {
-        let qname = idx.id_to_name(*query_id).unwrap_or("?");
-        let tname = idx.id_to_name(t_iv.metadata).unwrap_or("?");
-        println!(
-            "{}\t{}\t{}\t{}\t{}\t{}",
-            qname, q_iv.first, q_iv.last, tname, t_iv.first, t_iv.last
-        );
-    }
 }
 
 fn output_bed(idx: &PafIndex, results: &[(u32, coitrees::Interval<u32>, coitrees::Interval<u32>)]) {

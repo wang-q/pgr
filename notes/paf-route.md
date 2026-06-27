@@ -317,6 +317,47 @@ project-understanding.md ─ 现状基线
 | stage DSL | 单命令不需要管道化 | 出现三个以上 stage 串联 |
 | 基因分型（genotype/infer） | 能力栈顶端，依赖图构建层（[[impg.md]] §7） | 图构建层就绪后 |
 
+### 5.2 为什么 paf query 不输出 FAS/MAF
+
+FAS（block FA）格式的核心假设是——所有序列共享一个统一坐标系（通常以 reference
+为锚）。这在泛基因组场景中不成立：PAF query 结果是各基因组**独立坐标系**下的同源区段
+列表。从坐标投影到 MSA 需要三个步骤：
+
+```
+pgr paf query --transitive   →  坐标投影（"哪些序列的哪些区段同源"）
+pgr fa range                 →  提取序列（需要各基因组的 FASTA 文件）
+pgr fas consensus            →  POA → 共识序列 / MSA
+```
+
+三个步骤通过 Unix pipe 组合，不耦合进 query 命令。这遵循 Unix 哲学：每个工具做一件事。
+`pgr fas consensus` 已支持 builtin POA + 外部 spoa、可配分矩阵、并行处理、outgroup 支持——
+作为 MSA 后端已足够成熟，不需要在 query 层重复实现。
+
+这与 §2.4 的决策一致："传递闭包是图遍历，不是多序列比对"。
+
+### 5.3 impg 的做法：查询输出即最终输出
+
+impg 有 8 种输出格式（BED/BEDPE/PAF/GFA/VCF/FASTA/MAF/FASTA_ALN），
+但它们都是**直接从 `AdjustedInterval` 格式化输出**（`main.rs:11849-12444`），
+没有任何中间桥接层。查询返回什么就输出什么——PAF 是最常用的格式，
+GFA 用于图构建，其他按需。
+
+pgr 当前的 `--bed`/`--paf`/默认 tab 输出遵循相同模式。不需引入 FAS 作为中间格式。
+
+### 5.4 pgr 已有的 MSA 资产（供后续阶段按需使用）
+
+以下组件不在查询层使用，但在方向 D（图构建）或下游分析中可以直接调用：
+
+| 组件 | 源码 | 后续用途 |
+|------|------|---------|
+| POA 引擎 | `libs/poa/poa.rs` | 图构建阶段的 per-bubble 共识/比对 |
+| Banded DP | `libs/fas_multiz.rs` | partition 内多 pairwise 合并（比 impg POA 更精确） |
+| `get_subs` | `libs/alignment.rs:214` | MSA 上的变体检测 |
+| 裁剪函数 | `libs/alignment.rs:1351-1687` | BFS 结果边界清理 |
+| crossbeam 并行管道 | `consensus.rs:250` | `build_multi` 并行化 |
+
+但这些都是**独立的 CLI 命令或库函数**，通过 Unix pipe 组合，不与 `paf query` 耦合。
+
 ---
 
 ## 6. 附录：与其他文档的对照

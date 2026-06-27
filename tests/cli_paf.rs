@@ -105,8 +105,8 @@ C\t100\t0\t50\t+\tB\t100\t50\t100\t45\t50\t255\tcg:Z:50M
         .args(&["paf", "query", "stdin", "B:0-100"])
         .stdin(paf)
         .run();
-    assert!(stdout.contains("A\t0\t100\tB\t0\t100"));
-    assert!(stdout.contains("C\t0\t50\tB\t50\t100"));
+    assert!(stdout.contains("A\t0\t100\tB:0-100"));
+    assert!(stdout.contains("C\t0\t50\tB:50-100"));
 }
 
 #[test]
@@ -119,8 +119,8 @@ C\t100\t0\t100\t+\tA\t100\t0\t100\t90\t100\t255\tcg:Z:100M
         .args(&["paf", "query", "stdin", "B:0-100", "--transitive"])
         .stdin(paf)
         .run();
-    assert!(stdout.contains("A\t0\t100\tB"), "A (1-hop) not found");
-    assert!(stdout.contains("C\t0\t100\tA"), "C (2-hop) not found");
+    assert!(stdout.contains("A\t0\t100\tB:0-100"), "A (1-hop) not found");
+    assert!(stdout.contains("C\t0\t100\tA:0-100"), "C (2-hop) not found");
 }
 
 #[test]
@@ -178,8 +178,8 @@ C\t100\t0\t50\t+\tB\t100\t50\t100\t45\t50\t255\tcg:Z:50M
         .args(&["paf", "query", idx_path, "B:0-100"])
         .run();
     assert!(stderr.contains("Loading index"), "should load from idx");
-    assert!(stdout.contains("A\t0\t100\tB\t0\t100"), "A not found");
-    assert!(stdout.contains("C\t0\t50\tB\t50\t100"), "C not found");
+    assert!(stdout.contains("A\t0\t100\tB:0-100"), "A not found");
+    assert!(stdout.contains("C\t0\t50\tB:50-100"), "C not found");
 
     let _ = fs::remove_file(paf_path);
     let _ = fs::remove_file(idx_path);
@@ -259,8 +259,8 @@ C\t100\t0\t100\t+\tA\t100\t0\t100\t90\t100\t255\tcg:Z:100M
         .args(&["paf", "query", idx_path, "B:0-100", "--transitive"])
         .run();
     assert!(stderr.contains("Loading index"));
-    assert!(stdout.contains("A\t0\t100\tB"), "A (1-hop) not found");
-    assert!(stdout.contains("C\t0\t100\tA"), "C (2-hop) not found");
+    assert!(stdout.contains("A\t0\t100\tB:0-100"), "A (1-hop) not found");
+    assert!(stdout.contains("C\t0\t100\tA:0-100"), "C (2-hop) not found");
 
     let _ = fs::remove_file(paf_path);
     let _ = fs::remove_file(idx_path);
@@ -359,7 +359,7 @@ fn command_paf_index_multiple_files() {
     assert!(stderr.contains("saved to"));
     // Both files map to shared target X → merged index has both A and B
     let (stdout, _) = PgrCmd::new().args(&["paf", "query", idx, "X:0-100"]).run();
-    assert!(stdout.contains("A\t0\t50\tX"), "A not found");
+    assert!(stdout.contains("A\t0\t50\tX:0-50"), "A not found");
     assert!(stdout.contains("B\t0\t50\tX"), "B not found");
     let _ = fs::remove_file(p1);
     let _ = fs::remove_file(p2);
@@ -381,24 +381,11 @@ fn command_paf_query_max_depth_1() {
         ])
         .stdin(paf)
         .run();
-    assert!(stdout.contains("A\t0\t100\tB"), "A (1-hop) not found");
+    assert!(stdout.contains("A\t0\t100\tB:0-100"), "A (1-hop) not found");
     assert!(
         !stdout.contains("C\t"),
         "C should NOT appear: max-depth=1 stops before 2nd hop"
     );
-}
-
-#[test]
-fn command_paf_query_bed_format() {
-    let paf = "A\t100\t0\t100\t+\tB\t100\t0\t100\t95\t100\t255\tcg:Z:100M\n";
-    let (stdout, _) = PgrCmd::new()
-        .args(&["paf", "query", "stdin", "B:0-100", "--bed"])
-        .stdin(paf)
-        .run();
-    let fields: Vec<&str> = stdout.trim().split('\t').collect();
-    assert_eq!(fields.len(), 6, "BED6 format");
-    assert_eq!(fields[0], "A");
-    assert_eq!(fields[3], "B:0-100", "name column = target coords");
 }
 
 #[test]

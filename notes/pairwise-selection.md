@@ -328,28 +328,33 @@ Caf 维度留作第二期的后处理过滤。
 
 ### 输出格式
 
-**BED**（默认，最简输出）：
+**TAB**（默认）：
 ```
-ref_name  1000  5000  query_name:50-450  gi:0.95
-```
-
-**PAF**（12 列 + 标签，对齐 impg `output_results_paf`）：
-```
-query_name  500  50  50  +  ref_name  1000  100  50  50  50  500  255
-  gi:f:0.9500  bi:f:0.9200  cg:Z:10=5X2I3D
+query_name  query_start  query_end  target_name  target_start  target_end
 ```
 
-identity 计算（impg `main.rs:12042-12061`）：
+**BED**（`--bed`）：
 ```
-gap_compressed_identity = matches / (matches + mismatches + #indel_events)
-block_identity         = matches / (matches + mismatches + indel_bp_total)
+query_name  query_start  query_end  target_name:target_start-target_end  0  .
 ```
-- `gi`（gap-compressed）：每个 indel **事件**计 1 个差异——评估"同源性"
-- `bi`（block）：每个 indel **碱基**计入差异——评估"序列一致性"
 
-**MAF**（`--output-format maf`）：
-- 对传递闭包结果调用 `fas consensus`（`libs/poa/` SPOA）做局部 MSA
-- 输出标准 MAF 格式（复用 `libs/fas_multiz.rs`）
+**PAF**（`--paf`）：
+```
+query_name  0  query_start  query_end  +  target_name  0  target_start  target_end  0  block_len  255  gi:f:1.0
+```
+
+> **不输出 FAS/MAF**。FAS（block FA）格式假设所有序列已在统一坐标系中对齐——它是
+> MSA 的**产物**，不是坐标投影的**输出**。PAF query 的结果是各基因组独立坐标系下的
+> 同源区段列表，要得到 MSA 需要三个独立步骤：
+>
+> ```
+> pgr paf query --transitive   →  坐标投影（"哪些序列的哪些区段同源"）
+> pgr fa range                 →  提取序列（需要 FASTA 文件）
+> pgr fas consensus            →  POA 生成 MSA
+> ```
+>
+> 三者通过 Unix pipe 组合，不耦合进 query 命令。这与 `paf-route.md` §2.4 的
+> "传递闭包是图遍历，不是多序列比对"一致。详见 [[paf-route.md]] §5.2。
 
 ### 验证标准
 
