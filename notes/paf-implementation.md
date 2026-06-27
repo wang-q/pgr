@@ -237,8 +237,10 @@ pub enum PafParseError {
 | P0     | `write_paf_record`                                 | `libs/paf/writer.rs` | ✅ 已完成 |
 | P0     | `cigar_from_alignment` + identity 计算             | `libs/paf/cigar.rs`  | ✅ 已完成 |
 | P0     | `SequenceIndex`                                    | `libs/seqidx.rs`     | ⏭️ 不需要（用 IndexMap 替代） |
-| P0     | PAF 解析器（`parse_paf_line` + `parse_paf`）       | `libs/paf/parser.rs` | 待实现 |
-| P0     | `PafIndex`：`build` + `query` + `query_transitive` | `libs/paf/index.rs`  | 待实现 |
+| P0     | PAF 解析器（`parse_paf_line` + `parse_paf`）       | `libs/paf/parser.rs` | ✅ 已完成 |
+| P0     | `PafIndex`：`build` + `query` + `query_transitive` | `libs/paf/index.rs`  | ✅ 已完成 |
+| P0     | CLI 命令注册（`pgr paf index` + `pgr paf query`）   | `cmd_pgr/paf/`       | ✅ 已完成 |
+| P0     | 集成测试（`tests/cli_paf.rs`）                      | `tests/`             | ✅ 已完成（13 tests） |
 
 ### 第二期 — 大 cohort 场景
 
