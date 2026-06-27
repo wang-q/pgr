@@ -142,8 +142,8 @@ cargo test
 
 ### Analysis (Phylogeny, Clustering, Matrix)
 - **`docs/phylo.md`**: 系统发育树核心数据结构设计 (Arena vs Pointer)。
-- **`docs/nwk-cut.md`**: 树切分与 Scan 模式。
 - **`docs/nwk-eval.md`**: 树结构多维度评估（设计中）。
+- **`docs/clust-cut.md`**: 树切分与 Scan 模式。
 - **`docs/clust.md`**: 聚类模块总体规划。
 - **`docs/clust-hier.md`**: 层次聚类算法与实现细节。
 - **`docs/clust-eval.md`**: 通用聚类评估（设计中）。
