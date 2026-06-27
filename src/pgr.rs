@@ -21,6 +21,7 @@ fn main() -> anyhow::Result<()> {
         .subcommand(cmd_pgr::mat::make_subcommand())
         .subcommand(cmd_pgr::net::make_subcommand())
         .subcommand(cmd_pgr::nwk::make_subcommand())
+        .subcommand(cmd_pgr::paf::make_subcommand())
         .subcommand(cmd_pgr::psl::make_subcommand())
         .subcommand(cmd_pgr::pl::make_subcommand())
         .subcommand(cmd_pgr::plot::make_subcommand())
@@ -45,6 +46,7 @@ fn main() -> anyhow::Result<()> {
     * axt   - AXT sorting and conversion
     * lav   - Convert to PSL
     * maf   - Convert to Block FA
+    * paf   - PAF indexing and querying
     * psl   - PSL statistics, manipulation, and conversion
 
 * Clustering:
@@ -83,6 +85,7 @@ fn main() -> anyhow::Result<()> {
         Some(("mat", sub_matches)) => cmd_pgr::mat::execute(sub_matches),
         Some(("net", sub_matches)) => cmd_pgr::net::execute(sub_matches),
         Some(("nwk", sub_matches)) => cmd_pgr::nwk::execute(sub_matches),
+        Some(("paf", sub_matches)) => cmd_pgr::paf::execute(sub_matches),
         Some(("psl", sub_matches)) => cmd_pgr::psl::execute(sub_matches),
         Some(("pl", sub_matches)) => cmd_pgr::pl::execute(sub_matches),
         Some(("plot", sub_matches)) => cmd_pgr::plot::execute(sub_matches),
