@@ -199,6 +199,64 @@ impg 的依赖反映其能力栈，按**能力维度**可分为五组：
   `rust-htslib`（BIO 格式/BAM/CRAM）+ `ragc-core`（AGC 序列归档）+ `onecode`/`tpa`/`tracepoints`
   （1ALN/TPA 格式与 tracepoint 编解码）。
 
+### 1.5 主要子 crate 作用清单
+
+§1.4 按能力维度分组，本节列出每个 git 依赖的具体作用与调用方式，便于评估 pgr 是否需要引入等价物。
+impg 的子 crate 全部来自 Erik Garrison/Andrea Guarracino 团队的 pangenome 生态，**除 gfaffix 外
+均作为库直接嵌入**（与 §1.4 "工具链库化"一致）。
+
+15 个 git/vendor 依赖按能力分组（前 14 个库嵌入，最后 1 个子进程）：
+
+- **图构建生态（6 个，pangenome 团队）**
+    - **sweepga**（pangenome/sweepga）— wfmash/FastGA 集成 + KNN sparsification + PAF filter。
+      模块：[`pansn`](file:///Volumes/ExtHome/Scripts/pgr/impg-0.4.1/src/lib.rs#L875)、
+      [`knn_graph`](file:///Volumes/ExtHome/Scripts/pgr/impg-0.4.1/src/syng_graph.rs#L600)、
+      [`paf_filter`](file:///Volumes/ExtHome/Scripts/pgr/impg-0.4.1/src/syng_graph.rs#L825)。
+      调用位置：`graph`/`align`/`syng2gfa`。
+    - **seqwish**（pangenome/seqwish）— 从 PAF 诱导 GFA。
+      入口：[`generate_gfa_seqwish_from_intervals`](file:///Volumes/ExtHome/Scripts/pgr/impg-0.4.1/src/graph.rs#L1036)。
+      调用位置：`graph` 的 Seqwish engine。
+    - **allwave**（pangenome/allwave）— crush 的
+      [`Allwave` ResolutionMethod](file:///Volumes/ExtHome/Scripts/pgr/impg-0.4.1/src/resolution.rs#L8685)
+      + syng-native BiWFA pair sparsification。调用位置：`crush`/`syng`。
+    - **gfasort**（pangenome/gfasort）— GFA 排序（Ygs pipeline：path-guided SGD + grooming + 拓扑排序）。
+      调用位置：`graph` 的 sort 阶段（[graph.rs#L423](file:///Volumes/ExtHome/Scripts/pgr/impg-0.4.1/src/commands/graph.rs#L423)）。
+    - **bluntg**（pangenome/bluntg）— GFA bluntify（把 link/path overlap 转 0M）。
+      调用位置：`syng2gfa --gfa-mode blunt`（[syng2gfa.rs#L3660](file:///Volumes/ExtHome/Scripts/pgr/impg-0.4.1/src/commands/syng2gfa.rs#L3660)）。
+    - **povu**（povu-rs，pangenome/povu）— GFA 解析（`NativeGfa`）+ flubble 检测。
+      调用位置：`graph report`（[graph_report.rs#L2135](file:///Volumes/ExtHome/Scripts/pgr/impg-0.4.1/src/graph_report.rs#L2135)）。
+- **比对能力（3 个）**
+    - **lib_wfa2**（ekg/lib_wfa2）— WFA 仿射比对（crush 边界精修 + syng-native BiWFA）。
+      调用位置：`crush`/`syng`。
+    - **spoa_rs**（AndreaGuarracino/spoa-rs）— SPOA POA MSA 引擎。
+      调用位置：`gfa:poa` + crush 阶段。
+    - **poasta**（crates.io）— POASTA POA MSA 引擎（新算法）。调用位置：crush 路由选项。
+- **图抽象（1 个）**
+    - **handlegraph**（chfi/rs-handlegraph）— handlegraph 抽象（handle/edge/path 统一接口）。
+      调用位置：`lace`/`crush` 图操作基础。
+- **格式支持（4 个）**
+    - **ragc-core**（AndreaGuarracino/ragc）— AGC 序列归档格式（syng 后端输入）。
+    - **onecode**（pangenome/onecode-rs）— 1ALN 比对格式解析（AlignmentRecord 后端之一）。
+    - **tpa**（AndreaGuarracino/tpa）— TPA 比对格式解析（AlignmentRecord 后端之一）。
+    - **tracepoints**（AndreaGuarracino/tracepoints）— 1ALN/TPA tracepoint 编解码。
+- **子进程调用（1 个）**
+    - **gfaffix**（vendor/gfaffix）— **唯一子进程调用**（其余 14 个都是库嵌入）。
+      通过 [`run_gfaffix`](file:///Volumes/ExtHome/Scripts/pgr/impg-0.4.1/src/graph.rs#L974) 用
+      `current_exe().with_file_name("gfaffix")` 定位 sibling 二进制。
+      作用：GFA 归一化（图构建后的 normalize 阶段）。
+
+**关键认识**：
+
+- **库化 vs 子进程的不一致** — 14 个 git 依赖中 13 个库化嵌入，唯独 gfaffix 走子进程
+  （[`run_gfaffix`](file:///Volumes/ExtHome/Scripts/pgr/impg-0.4.1/src/graph.rs#L974) 定位 sibling
+  二进制）。原因可能是 gfaffix 用了不同的 handlegraph 版本，库化会引入 API 冲突。pgr 若引入类似
+  生态，应优先全库化，避免二进制分发复杂度。
+- **sweepga 是最重的依赖** — 它同时提供 aligner 集成（wfmash/FastGA）、sparsification（KNN graph）、
+  PAF filter、PanSN 命名抽象，是 impg 图构建层的核心。pgr 若借鉴 pair-selection，sweepga 的
+  `knn_graph` 模块是参考点（impg.md §6.4）。
+- **pgr 可暂不引入整个生态** — pgr 第一步聚焦 Chain 传递闭包（pairwise-selection.md §3.1），
+  只需 coitrees 等价物（区间树）。sweepga/seqwish/gfasort 等图构建生态是后续阶段的需求。
+
 ## 2. main.rs — 命令分发与参数解析（重点）
 
 `src/main.rs` 是 `impg` 二进制的入口，单文件约**613 KB / 1.5 万行+**， 承担了所有 clap 命令定义、
