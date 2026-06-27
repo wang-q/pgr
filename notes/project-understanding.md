@@ -225,7 +225,9 @@ clustalw/muscle/mafft），充当工作流 glue。这与 `chain`/`net` 模块的
 - `libs/io.rs`：I/O 辅助（`read_lines`、`reader`、`writer`）
 - `libs/hash.rs`：哈希工具
 - `libs/linalg.rs`：线性代数
-- `libs/loc.rs`：位置/坐标类型
+- **`libs/loc.rs`**：FASTA 随机访问索引模块。`Input` enum（Buf/File/Bgzf）+ `create_loc`（建 `.loc` 索引）+
+  `read_offset`（seek+read）。**2026-06 发现：此 IO 抽象层可直接支撑 PAF 模块的 CIGAR 懒加载和
+  BGZF 随机访问，比 impg 的 `paf.rs` IO 层更成熟**。见 [[paf-implementation.md]] §10。
 - `libs/nt.rs`：核苷酸类型
 - `libs/pairmat.rs`：pair 矩阵
 - `libs/hv.rs`：hypervariable 区域
@@ -233,7 +235,7 @@ clustalw/muscle/mafft），充当工作流 glue。这与 `chain`/`net` 模块的
 - `libs/twobit.rs`：2bit 格式读写
 - `libs/psl.rs`：PSL 格式
 - `libs/alignment.rs`：比对通用逻辑
-- `libs/fas_multiz.rs`：Multiz 多序列比对处理
+- `libs/fas_multiz.rs`：Multiz 多序列比对处理（banded DP 合并）
 - `libs/ms/`：Hudson's ms 模拟器（解析器 + DNA 生成）
 
 ## 5. 设计模式与约定
@@ -303,8 +305,10 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
 
 ### 6.2 进行中的（活跃开发）
 
-- **泛基因组方向**（impg 分析在 `notes/impg.md`）：正在研究如何在已有的 pairwise 基础上
-  构建"隐式图"能力。参见 `notes/pairwise-selection.md` 的"三层挑选问题"分析。
+- **泛基因组方向**：已形成完整路线图。路线决策在 `notes/paf-route.md`，第一步行动计划在
+  `notes/pairwise-selection.md`，PAF 模块实现参考在 `notes/paf-implementation.md`。
+  **2026-06 发现：`libs/loc.rs` 的 IO 抽象层可直接支撑 PAF 的 CIGAR 懒加载和 BGZF 访问，
+  实际实现量比最初估计少约 30%**。
 - **`pl` 流程模块**：`ucsc`、`trf`、`rept`、`ir` 等 pipeline 在补充。
 
 ### 6.3 待补全的（TODO / 设计阶段）
@@ -312,7 +316,11 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
 - `pgr.rs` 末尾注释的 TODO：paralog、fas variation --indel、fas match、去完全包含序列
 - `docs/clust-eval.md`：聚类评估（设计中）
 - `docs/nwk-eval.md`：树结构多维度评估（设计中）
-- MAF 的 `to-paf` 子命令（泛基因组第一步的关键需求，见 `notes/pairwise-selection.md`）
+- **PAF 子命令群**：`pgr maf to-paf` + `pgr paf index` + `pgr paf query` — 泛基因组第一步
+  最小原型。需新增的代码：区间树索引、PAF 行解析、CIGAR 编解码。IO 层可复用 `libs/loc.rs`。
+  唯一需新增的依赖：`coitrees`。
+- **`libs/io.rs` / `libs/loc.rs` 小幅增强**：`Input::read_line` 方法抽象 + `Input::Bgzf`
+  暴露 `virtual_position()`
 
 ### 6.4 不做 / 不适合做的
 
