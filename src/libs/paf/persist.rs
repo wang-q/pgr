@@ -277,8 +277,8 @@ C\t100\t0\t100\t+\tA\t100\t0\t100\t90\t100\t255\tcg:Z:100M
         let res = loaded.query_transitive_bfs(b, 0, 100, 2, 10, 10, 0.0, 0, 0);
         let a = loaded.name_to_id("A").unwrap();
         let c = loaded.name_to_id("C").unwrap();
-        assert!(res.iter().any(|(q, _, _, _)| *q == a));
-        assert!(res.iter().any(|(q, _, _, _)| *q == c));
+        assert!(res.iter().any(|(q, _, _, _, _, _)| *q == a));
+        assert!(res.iter().any(|(q, _, _, _, _, _)| *q == c));
     }
 
     // ── Edge cases ────────────────────────────────────────────

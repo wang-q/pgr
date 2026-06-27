@@ -468,8 +468,9 @@ pub struct Impg {
 **bidirectional 索引**（`--unidirectional` 反向开关）：`from_multi_alignment_records` 默认对每条
 A→B record 额外生成一条 B→A entry（[main.rs#L11094](file:///Volumes/ExtHome/Scripts/pgr/impg-0.4.1/src/main.rs#L11094)），
 使"query_A 在 target_B 树上"与"query_B 在 target_A 树上"各有一条记录，查询时无需反向计算。
-代价是索引大小翻倍。`--unidirectional` 关闭此行为，索引减半但反向查询需额外扫描。pgr V1 不做双向
-（见 [paf-implementation.md §11.2](file:///Volumes/ExtHome/Scripts/pgr/notes/paf-implementation.md)）。
+代价是索引大小翻倍。`--unidirectional` 关闭此行为，索引减半但反向查询需额外扫描。pgr V1 已借鉴此设计
+落地 `reverse_trees` 双向索引（仅 `+` 链建 mirror，负链不建；见
+[paf-implementation.md §11.2](file:///Volumes/ExtHome/Scripts/pgr/notes/paf-implementation.md)）。
 
 ### 3.2 `QueryMetadata` 与 `CigarOp` 紧凑编码
 

@@ -110,16 +110,16 @@ fn command_paf_query_subset_filter() {
     let _ = fs::remove_file(list);
 }
 
-// ── paf query -o bed (BED3 output) ───────────────────────────────
+// ── paf to-bed (BED3 output) ─────────────────────────────────────
 
 #[test]
-fn command_paf_query_bed_output() {
+fn command_paf_to_bed_output() {
     let paf = "\
 A\t100\t0\t100\t+\tB\t100\t0\t100\t95\t100\t255\tcg:Z:100M
 C\t100\t0\t50\t+\tB\t100\t50\t100\t45\t50\t255\tcg:Z:50M
 ";
     let (stdout, _) = PgrCmd::new()
-        .args(&["paf", "query", "stdin", "B:0-100", "-o", "bed"])
+        .args(&["paf", "to-bed", "stdin", "B:0-100"])
         .stdin(paf)
         .run();
     // BED3: name start end (tab-separated), no strand/cigar/gi
@@ -135,11 +135,11 @@ C\t100\t0\t50\t+\tB\t100\t50\t100\t45\t50\t255\tcg:Z:50M
 }
 
 #[test]
-fn command_paf_query_bed_output_reverse_strand() {
+fn command_paf_to_bed_output_reverse_strand() {
     // Reverse-strand alignment: query coords should still be emitted as (min, max)
     let paf = "A\t100\t0\t100\t-\tB\t100\t0\t100\t95\t100\t255\tcg:Z:100M\n";
     let (stdout, _) = PgrCmd::new()
-        .args(&["paf", "query", "stdin", "B:0-100", "-o", "bed"])
+        .args(&["paf", "to-bed", "stdin", "B:0-100"])
         .stdin(paf)
         .run();
     assert!(
@@ -160,7 +160,7 @@ C\t100\t0\t50\t+\tD\t100\t50\t100\t45\t50\t255\tcg:Z:50M
     let bed = "/tmp/pgr_batch_regions.bed";
     fs::write(bed, "B\t0\t100\nD\t50\t100\n# comment line\n\n").unwrap();
     let (stdout, stderr) = PgrCmd::new()
-        .args(&["paf", "query", "stdin", "-b", bed, "-o", "bed"])
+        .args(&["paf", "to-bed", "stdin", "-b", bed])
         .stdin(paf)
         .run();
     assert!(stdout.contains("A\t0\t100"), "A (from region B) missing");
@@ -176,7 +176,7 @@ fn command_paf_query_batch_bed_skips_unknown_target() {
     let bed = "/tmp/pgr_batch_unknown.bed";
     fs::write(bed, "B\t0\t100\nZ\t0\t100\n").unwrap();
     let (_, stderr) = PgrCmd::new()
-        .args(&["paf", "query", "stdin", "-b", bed, "-o", "bed"])
+        .args(&["paf", "to-bed", "stdin", "-b", bed])
         .stdin(paf)
         .run();
     assert!(
@@ -224,16 +224,7 @@ A\t100\t0\t100\t+\tB\t100\t0\t100\t95\t100\t255\tcg:Z:100M
 C\t100\t0\t50\t+\tB\t100\t50\t100\t45\t50\t255\tcg:Z:50M
 ";
     let (stdout, _) = PgrCmd::new()
-        .args(&[
-            "paf",
-            "query",
-            "stdin",
-            "B:0-100",
-            "--min-degree",
-            "2",
-            "-o",
-            "bed",
-        ])
+        .args(&["paf", "to-bed", "stdin", "B:0-100", "--min-degree", "2"])
         .stdin(paf)
         .run();
     assert!(
@@ -254,16 +245,7 @@ A\t100\t0\t100\t+\tB\t100\t0\t100\t95\t100\t255\tcg:Z:100M
 C\t100\t0\t50\t+\tB\t100\t50\t100\t45\t50\t255\tcg:Z:50M
 ";
     let (stdout, stderr) = PgrCmd::new()
-        .args(&[
-            "paf",
-            "query",
-            "stdin",
-            "B:0-100",
-            "--min-degree",
-            "3",
-            "-o",
-            "bed",
-        ])
+        .args(&["paf", "to-bed", "stdin", "B:0-100", "--min-degree", "3"])
         .stdin(paf)
         .run();
     assert!(
@@ -290,13 +272,11 @@ C\t100\t0\t30\t+\tB\t100\t0\t30\t25\t30\t255\tcg:Z:30M
     let (stdout, _) = PgrCmd::new()
         .args(&[
             "paf",
-            "query",
+            "to-bed",
             "stdin",
             "B:0-100",
             "--min-chain-length",
             "50",
-            "-o",
-            "bed",
         ])
         .stdin(paf)
         .run();
@@ -320,13 +300,11 @@ C\t100\t0\t30\t+\tB\t100\t0\t30\t25\t30\t255\tcg:Z:30M
     let (stdout, _) = PgrCmd::new()
         .args(&[
             "paf",
-            "query",
+            "to-bed",
             "stdin",
             "B:0-100",
             "--min-chain-length",
             "0",
-            "-o",
-            "bed",
         ])
         .stdin(paf)
         .run();
@@ -446,4 +424,203 @@ fn command_paf_query_bidirectional_persists_across_save_load() {
     );
     let _ = fs::remove_file(paf_path);
     let _ = fs::remove_file(idx_path);
+}
+
+// ── paf to-maf (pairwise MAF from CIGAR) ─────────────────────────
+
+/// Write `content` to a plain `path`, then BGZF-compress it via `pgr fa gz`
+/// (which also creates the .gzi index required for random access).
+fn write_bgzf_fa(path_no_gz: &str, content: &str) -> String {
+    use std::fs;
+    fs::write(path_no_gz, content).unwrap();
+    let (out, _) = PgrCmd::new().args(&["fa", "gz", path_no_gz]).run();
+    let _ = out;
+    let gz_path = format!("{path_no_gz}.gz");
+    // Sanity: compression produced the .gz file
+    assert!(
+        std::path::Path::new(&gz_path).exists(),
+        "pgr fa gz failed to produce {gz_path}"
+    );
+    gz_path
+}
+
+#[test]
+fn command_paf_to_maf_strict_name_validation() {
+    use std::fs;
+    // PAF references A and B; TSV only has A.
+    let paf = "A\t10\t0\t10\t+\tB\t10\t0\t10\t10\t10\t255\tcg:Z:10=\n";
+    let a_fa = write_bgzf_fa("/tmp/pgr_maf_strict_A.fa", ">A\nACGTACGTAC\n");
+    let tsv = "/tmp/pgr_maf_strict.tsv";
+    fs::write(tsv, format!("A\t{a_fa}\n")).unwrap();
+
+    let (_, stderr) = PgrCmd::new()
+        .args(&["paf", "to-maf", "stdin", "B:0-10", "-f", tsv])
+        .stdin(paf)
+        .run_fail();
+    assert!(
+        stderr.contains("FASTA TSV is missing") && stderr.contains("B"),
+        "missing strict validation error for B"
+    );
+    let _ = fs::remove_file("/tmp/pgr_maf_strict_A.fa");
+    let _ = fs::remove_file(&a_fa);
+    let _ = fs::remove_file(format!("{a_fa}.gzi"));
+    let _ = fs::remove_file(tsv);
+    let _ = fs::remove_file(format!("{a_fa}.loc"));
+}
+
+#[test]
+fn command_paf_to_maf_perfect_match() {
+    use std::fs;
+    let paf = "A\t10\t0\t10\t+\tB\t10\t0\t10\t10\t10\t255\tcg:Z:10=\n";
+    let a_fa = write_bgzf_fa("/tmp/pgr_maf_perfect_A.fa", ">A\nACGTACGTAC\n");
+    let b_fa = write_bgzf_fa("/tmp/pgr_maf_perfect_B.fa", ">B\nACGTACGTAC\n");
+    let tsv = "/tmp/pgr_maf_perfect.tsv";
+    fs::write(tsv, format!("A\t{a_fa}\nB\t{b_fa}\n")).unwrap();
+
+    let (stdout, stderr) = PgrCmd::new()
+        .args(&["paf", "to-maf", "stdin", "B:0-10", "-f", tsv])
+        .stdin(paf)
+        .run();
+    assert!(stderr.contains("Total results: 1"), "expected 1 result");
+    assert!(stdout.contains("##maf version=1"), "missing MAF header");
+    assert!(stdout.contains("a"), "missing alignment header");
+    // target line first, query line second
+    assert!(
+        stdout.contains("s\tB\t0\t10\t+\t10\tACGTACGTAC"),
+        "missing/incorrect target line"
+    );
+    assert!(
+        stdout.contains("s\tA\t0\t10\t+\t10\tACGTACGTAC"),
+        "missing/incorrect query line"
+    );
+    let _ = fs::remove_file("/tmp/pgr_maf_perfect_A.fa");
+    let _ = fs::remove_file("/tmp/pgr_maf_perfect_B.fa");
+    let _ = fs::remove_file(&a_fa);
+    let _ = fs::remove_file(&b_fa);
+    let _ = fs::remove_file(format!("{a_fa}.gzi"));
+    let _ = fs::remove_file(format!("{b_fa}.gzi"));
+    let _ = fs::remove_file(tsv);
+    let _ = fs::remove_file(format!("{a_fa}.loc"));
+    let _ = fs::remove_file(format!("{b_fa}.loc"));
+}
+
+#[test]
+fn command_paf_to_maf_with_insertion() {
+    use std::fs;
+    // CIGAR: 4= 3I 3= → target 0-7, query 0-10
+    // target: ACGT---ACG  (4 match + 3 gaps + 3 match)
+    // query:  ACGTACGTAC  (4 match + 3 bases + 3 match)
+    // But query[7..10] should be "TAC" (query = ACGTACGTAC, idx 7,8,9 = T,A,C)
+    // and query[4..7] = "ACG"
+    // So query alignment = ACGT + ACG + TAC = ACGTACGTAC
+    // target alignment = ACGT + --- + ACG = ACGT---ACG
+    let paf = "A\t10\t0\t10\t+\tB\t10\t0\t7\t7\t10\t255\tcg:Z:4=3I3=\n";
+    let a_fa = write_bgzf_fa("/tmp/pgr_maf_ins_A.fa", ">A\nACGTACGTAC\n");
+    let b_fa = write_bgzf_fa("/tmp/pgr_maf_ins_B.fa", ">B\nACGTACGTAC\n");
+    let tsv = "/tmp/pgr_maf_ins.tsv";
+    fs::write(tsv, format!("A\t{a_fa}\nB\t{b_fa}\n")).unwrap();
+
+    let (stdout, stderr) = PgrCmd::new()
+        .args(&["paf", "to-maf", "stdin", "B:0-7", "-f", tsv])
+        .stdin(paf)
+        .run();
+    assert!(stderr.contains("Total results: 1"), "expected 1 result");
+    // target has gaps where query inserted
+    assert!(
+        stdout.contains("ACGT---ACG"),
+        "target alignment should contain gaps for insertion"
+    );
+    assert!(
+        stdout.contains("ACGTACGTAC"),
+        "query alignment should contain full sequence"
+    );
+    // sizes: target 7 non-gap, query 10 non-gap
+    assert!(
+        stdout.contains("s\tB\t0\t7\t+\t10\tACGT---ACG"),
+        "target size should be 7"
+    );
+    assert!(
+        stdout.contains("s\tA\t0\t10\t+\t10\tACGTACGTAC"),
+        "query size should be 10"
+    );
+    let _ = fs::remove_file("/tmp/pgr_maf_ins_A.fa");
+    let _ = fs::remove_file("/tmp/pgr_maf_ins_B.fa");
+    let _ = fs::remove_file(&a_fa);
+    let _ = fs::remove_file(&b_fa);
+    let _ = fs::remove_file(format!("{a_fa}.gzi"));
+    let _ = fs::remove_file(format!("{b_fa}.gzi"));
+    let _ = fs::remove_file(tsv);
+    let _ = fs::remove_file(format!("{a_fa}.loc"));
+    let _ = fs::remove_file(format!("{b_fa}.loc"));
+}
+
+#[test]
+fn command_paf_to_maf_with_deletion() {
+    use std::fs;
+    // CIGAR: 4= 3D 3= → target 0-10, query 0-7
+    // target: ACGTACGTAC (4 match + 3 bases + 3 match)
+    // query:  ACGT---ACG (4 match + 3 gaps + 3 match)
+    let paf = "A\t7\t0\t7\t+\tB\t10\t0\t10\t7\t10\t255\tcg:Z:4=3D3=\n";
+    let a_fa = write_bgzf_fa("/tmp/pgr_maf_del_A.fa", ">A\nACGTACG\n");
+    let b_fa = write_bgzf_fa("/tmp/pgr_maf_del_B.fa", ">B\nACGTACGTAC\n");
+    let tsv = "/tmp/pgr_maf_del.tsv";
+    fs::write(tsv, format!("A\t{a_fa}\nB\t{b_fa}\n")).unwrap();
+
+    let (stdout, stderr) = PgrCmd::new()
+        .args(&["paf", "to-maf", "stdin", "B:0-10", "-f", tsv])
+        .stdin(paf)
+        .run();
+    assert!(stderr.contains("Total results: 1"), "expected 1 result");
+    assert!(
+        stdout.contains("ACGTACGTAC"),
+        "target alignment should contain full sequence"
+    );
+    assert!(
+        stdout.contains("ACGT---ACG"),
+        "query alignment should contain gaps for deletion"
+    );
+    let _ = fs::remove_file("/tmp/pgr_maf_del_A.fa");
+    let _ = fs::remove_file("/tmp/pgr_maf_del_B.fa");
+    let _ = fs::remove_file(&a_fa);
+    let _ = fs::remove_file(&b_fa);
+    let _ = fs::remove_file(format!("{a_fa}.gzi"));
+    let _ = fs::remove_file(format!("{b_fa}.gzi"));
+    let _ = fs::remove_file(tsv);
+    let _ = fs::remove_file(format!("{a_fa}.loc"));
+    let _ = fs::remove_file(format!("{b_fa}.loc"));
+}
+
+#[test]
+fn command_paf_to_maf_trimmed_subregion() {
+    use std::fs;
+    // Full alignment 10= over B:0-10. Query B:2-8 should trim CIGAR to 6=.
+    let paf = "A\t10\t0\t10\t+\tB\t10\t0\t10\t10\t10\t255\tcg:Z:10=\n";
+    let a_fa = write_bgzf_fa("/tmp/pgr_maf_trim_A.fa", ">A\nACGTACGTAC\n");
+    let b_fa = write_bgzf_fa("/tmp/pgr_maf_trim_B.fa", ">B\nACGTACGTAC\n");
+    let tsv = "/tmp/pgr_maf_trim.tsv";
+    fs::write(tsv, format!("A\t{a_fa}\nB\t{b_fa}\n")).unwrap();
+
+    let (stdout, stderr) = PgrCmd::new()
+        .args(&["paf", "to-maf", "stdin", "B:2-8", "-f", tsv])
+        .stdin(paf)
+        .run();
+    assert!(stderr.contains("Total results: 1"), "expected 1 result");
+    // B[2..8) = GTACGT, A[2..8) = GTACGT
+    assert!(
+        stdout.contains("s\tB\t2\t6\t+\t10\tGTACGT"),
+        "target should be trimmed to B:2-8"
+    );
+    assert!(
+        stdout.contains("s\tA\t2\t6\t+\t10\tGTACGT"),
+        "query should be trimmed to A:2-8"
+    );
+    let _ = fs::remove_file("/tmp/pgr_maf_trim_A.fa");
+    let _ = fs::remove_file("/tmp/pgr_maf_trim_B.fa");
+    let _ = fs::remove_file(&a_fa);
+    let _ = fs::remove_file(&b_fa);
+    let _ = fs::remove_file(format!("{a_fa}.gzi"));
+    let _ = fs::remove_file(format!("{b_fa}.gzi"));
+    let _ = fs::remove_file(tsv);
+    let _ = fs::remove_file(format!("{a_fa}.loc"));
+    let _ = fs::remove_file(format!("{b_fa}.loc"));
 }

@@ -43,7 +43,12 @@ pub struct PafMetadata {
     pub cigar: CigarStore,
 }
 
-pub type QueryResult = (u32, Interval<u32>, Interval<u32>, Vec<CigarOp>);
+/// Query result tuple:
+/// `(query_id, query_iv, target_iv, cigar, record_target_start, record_query_start)`
+///
+/// `record_target_start` / `record_query_start` are the original PAF record's
+/// coordinates (CIGAR origin), needed for CIGAR trimming in MAF output.
+pub type QueryResult = (u32, Interval<u32>, Interval<u32>, Vec<CigarOp>, i32, i32);
 
 pub struct PafIndex {
     pub names: IndexMap<String, u32>,
@@ -249,6 +254,8 @@ impl PafIndex {
                         Interval::new(qs, qe, m.query_id),
                         Interval::new(ts, te, target_id),
                         cigar,
+                        m.target_start,
+                        m.query_start,
                     ));
                 }
             });
@@ -313,6 +320,8 @@ impl PafIndex {
                                 Interval::new(qs, qe, m.query_id),
                                 Interval::new(ts, te, tid),
                                 cigar,
+                                m.target_start,
+                                m.query_start,
                             ));
                             if m.query_id != tid {
                                 let sr = visited
@@ -466,31 +475,70 @@ fn project(ts: i32, te: i32, m: &PafMetadata, cigar: &[CigarOp]) -> Option<(i32,
             (ts + len).min(m.target_end),
         ));
     }
+    // Walk all CIGAR ops; accumulate the union of query/target intervals that
+    // overlap [ts, te). Returning at the first overlap would truncate the
+    // projection when the query spans indels (e.g. 4=3I3= over [0,7) must
+    // project to query [0,10), not [0,4)).
     let mut ct = m.target_start;
     let mut cq = m.query_start;
+    let mut q_min = i32::MAX;
+    let mut q_max = i32::MIN;
+    let mut t_min = i32::MAX;
+    let mut t_max = i32::MIN;
+    let mut found = false;
     for op in cigar {
         let td = op.target_delta() as i32;
         let qd = op.query_delta() as i32;
         let ss = ct;
         let se = ct + td;
-        let os = ts.max(ss);
-        let oe = te.min(se);
-        if os < oe {
-            let off = os - ss;
-            let len = oe - os;
-            let qoff = if op.op() == 'I' { 0 } else { off };
-            return Some((cq + qoff, cq + qoff + len, os, oe));
+        match op.op() {
+            '=' | 'X' | 'M' => {
+                let os = ts.max(ss);
+                let oe = te.min(se);
+                if os < oe {
+                    let off = os - ss;
+                    let len = oe - os;
+                    q_min = q_min.min(cq + off);
+                    q_max = q_max.max(cq + off + len);
+                    t_min = t_min.min(os);
+                    t_max = t_max.max(oe);
+                    found = true;
+                }
+            }
+            'I' => {
+                // Insertion in query at target position ct.
+                // Include when ct lies within the queried target span.
+                if ct >= ts && ct < te {
+                    q_min = q_min.min(cq);
+                    q_max = q_max.max(cq + qd);
+                    found = true;
+                }
+            }
+            'D' => {
+                let os = ts.max(ss);
+                let oe = te.min(se);
+                if os < oe {
+                    t_min = t_min.min(os);
+                    t_max = t_max.max(oe);
+                    found = true;
+                }
+            }
+            _ => {}
         }
         ct = se;
         cq += qd;
     }
-    None
+    if found {
+        Some((q_min, q_max, t_min, t_max))
+    } else {
+        None
+    }
 }
 
 fn merge_results(results: &mut Vec<QueryResult>, max_gap: i32) {
     // Group by query_id, sort by query_start, merge adjacent within max_gap
     let mut groups: HashMap<u32, Vec<(usize, i32, i32)>> = HashMap::new();
-    for (i, &(qid, q_iv, _t_iv, _)) in results.iter().enumerate() {
+    for (i, &(qid, q_iv, _t_iv, _, _, _)) in results.iter().enumerate() {
         groups
             .entry(qid)
             .or_default()
@@ -634,7 +682,7 @@ q3\t400\t0\t40\t+\tt2\t500\t0\t40\t38\t40\t255\tcg:Z:40M
         let t1 = idx.name_to_id("t1").unwrap();
         let res = idx.query(t1, 0, 50, 0.0, 0);
         assert_eq!(res.len(), 2, "expected 2 overlapping records for t1:[0,50)");
-        let qids: Vec<u32> = res.iter().map(|(q, _, _, _)| *q).collect();
+        let qids: Vec<u32> = res.iter().map(|(q, _, _, _, _, _)| *q).collect();
         assert!(
             qids.contains(&idx.name_to_id("q1").unwrap()),
             "q1 not found"
@@ -664,8 +712,8 @@ C\t100\t0\t100\t+\tA\t100\t0\t100\t90\t100\t255\tcg:Z:100M
         let res = idx.query_transitive_bfs(b, 0, 100, 2, 10, 10, 0.0, 0, 0);
         let a = idx.name_to_id("A").unwrap();
         let c = idx.name_to_id("C").unwrap();
-        assert!(res.iter().any(|(q, _, _, _)| *q == a), "A not found");
-        assert!(res.iter().any(|(q, _, _, _)| *q == c), "C not found");
+        assert!(res.iter().any(|(q, _, _, _, _, _)| *q == a), "A not found");
+        assert!(res.iter().any(|(q, _, _, _, _, _)| *q == c), "C not found");
     }
 
     #[test]
@@ -787,12 +835,16 @@ C\t100\t0\t100\t+\tA\t100\t0\t100\t90\t100\t255\tcg:Z:100M
                 Interval::new(0, 50, 0u32),
                 Interval::new(0, 50, 1u32),
                 vec![],
+                0,
+                0,
             ),
             (
                 0u32,
                 Interval::new(55, 100, 0u32),
                 Interval::new(55, 100, 1u32),
                 vec![],
+                55,
+                55,
             ),
         ];
         merge_results(&mut results, 10);
@@ -809,12 +861,16 @@ C\t100\t0\t100\t+\tA\t100\t0\t100\t90\t100\t255\tcg:Z:100M
                 Interval::new(0, 50, 0u32),
                 Interval::new(0, 50, 1u32),
                 vec![],
+                0,
+                0,
             ),
             (
                 0u32,
                 Interval::new(100, 150, 0u32),
                 Interval::new(100, 150, 1u32),
                 vec![],
+                100,
+                100,
             ),
         ];
         merge_results(&mut results, 10);
