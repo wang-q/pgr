@@ -292,6 +292,129 @@ fn command_paf_query_no_region_no_bed_fails() {
     );
 }
 
+// ── paf query --min-degree / --min-chain-length ─────────────────
+
+#[test]
+fn command_paf_query_min_degree_passes() {
+    // 2 distinct queries (A, C) align to B; --min-degree 2 keeps both
+    let paf = "\
+A\t100\t0\t100\t+\tB\t100\t0\t100\t95\t100\t255\tcg:Z:100M
+C\t100\t0\t50\t+\tB\t100\t50\t100\t45\t50\t255\tcg:Z:50M
+";
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "paf",
+            "query",
+            "stdin",
+            "B:0-100",
+            "--min-degree",
+            "2",
+            "-o",
+            "bed",
+        ])
+        .stdin(paf)
+        .run();
+    assert!(
+        stdout.contains("A\t0\t100"),
+        "A should be kept (degree 2 == 2)"
+    );
+    assert!(
+        stdout.contains("C\t0\t50"),
+        "C should be kept (degree 2 == 2)"
+    );
+}
+
+#[test]
+fn command_paf_query_min_degree_skips_region() {
+    // Only 2 distinct queries; --min-degree 3 skips the whole region
+    let paf = "\
+A\t100\t0\t100\t+\tB\t100\t0\t100\t95\t100\t255\tcg:Z:100M
+C\t100\t0\t50\t+\tB\t100\t50\t100\t45\t50\t255\tcg:Z:50M
+";
+    let (stdout, stderr) = PgrCmd::new()
+        .args(&[
+            "paf",
+            "query",
+            "stdin",
+            "B:0-100",
+            "--min-degree",
+            "3",
+            "-o",
+            "bed",
+        ])
+        .stdin(paf)
+        .run();
+    assert!(
+        stderr.contains("skipped") && stderr.contains("min-degree 3"),
+        "missing degree-skip warning"
+    );
+    assert!(
+        !stdout.contains("A\t0\t100") && !stdout.contains("C\t0\t50"),
+        "no BED lines should be emitted when region is skipped"
+    );
+    assert!(
+        stderr.contains("No results found"),
+        "missing no-results notice"
+    );
+}
+
+#[test]
+fn command_paf_query_min_chain_length_filters_short() {
+    // A: 100bp chain; C: 30bp chain. --min-chain-length 50 drops C
+    let paf = "\
+A\t100\t0\t100\t+\tB\t100\t0\t100\t95\t100\t255\tcg:Z:100M
+C\t100\t0\t30\t+\tB\t100\t0\t30\t25\t30\t255\tcg:Z:30M
+";
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "paf",
+            "query",
+            "stdin",
+            "B:0-100",
+            "--min-chain-length",
+            "50",
+            "-o",
+            "bed",
+        ])
+        .stdin(paf)
+        .run();
+    assert!(
+        stdout.contains("A\t0\t100"),
+        "A (100bp >= 50) should be kept"
+    );
+    assert!(
+        !stdout.contains("C\t"),
+        "C (30bp < 50) should be filtered out"
+    );
+}
+
+#[test]
+fn command_paf_query_min_chain_length_noop_when_zero() {
+    // --min-chain-length 0 (default) keeps everything
+    let paf = "\
+A\t100\t0\t100\t+\tB\t100\t0\t100\t95\t100\t255\tcg:Z:100M
+C\t100\t0\t30\t+\tB\t100\t0\t30\t25\t30\t255\tcg:Z:30M
+";
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "paf",
+            "query",
+            "stdin",
+            "B:0-100",
+            "--min-chain-length",
+            "0",
+            "-o",
+            "bed",
+        ])
+        .stdin(paf)
+        .run();
+    assert!(
+        stdout.contains("A\t0\t100"),
+        "A should be kept (filter off)"
+    );
+    assert!(stdout.contains("C\t0\t30"), "C should be kept (filter off)");
+}
+
 // ── persist roundtrip ────────────────────────────────────────────
 
 #[test]

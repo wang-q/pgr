@@ -1,7 +1,7 @@
 use clap::*;
 use pgr::libs::paf::cigar::CigarOp;
 use pgr::libs::paf::index::PafIndex;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::BufRead;
 
@@ -134,6 +134,22 @@ Examples:
                 .help("Merge adjacent output intervals within this distance (default: 0 = off)"),
         )
         .arg(
+            Arg::new("min_degree")
+                .long("min-degree")
+                .num_args(1)
+                .default_value("0")
+                .value_parser(clap::value_parser!(usize))
+                .help("Minimum distinct query sequences per region (default: 0 = off)"),
+        )
+        .arg(
+            Arg::new("min_chain_length")
+                .long("min-chain-length")
+                .num_args(1)
+                .default_value("0")
+                .value_parser(clap::value_parser!(i32))
+                .help("Minimum total aligned length per query (default: 0 = off)"),
+        )
+        .arg(
             Arg::new("subset_list")
                 .long("subset-sequence-list")
                 .num_args(1)
@@ -203,6 +219,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let min_identity = *args.get_one::<f64>("min_identity").unwrap();
     let min_output_len = *args.get_one::<i32>("min_output_len").unwrap();
     let merge_distance = *args.get_one::<i32>("merge_distance").unwrap();
+    let min_degree = *args.get_one::<usize>("min_degree").unwrap();
+    let min_chain_length = *args.get_one::<i32>("min_chain_length").unwrap();
 
     // Region input: exactly one of positional <region> or -b/--bed-regions
     anyhow::ensure!(
@@ -279,6 +297,23 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             });
         }
 
+        // Per-query chain-length filter: drop queries whose total aligned length < threshold
+        if min_chain_length > 0 {
+            filter_by_chain_length(&mut results, min_chain_length);
+        }
+
+        // Per-region degree filter: skip region if distinct query count < threshold
+        if min_degree > 0 {
+            let distinct: HashSet<u32> = results.iter().map(|(qid, _, _, _)| *qid).collect();
+            if distinct.len() < min_degree {
+                eprintln!(
+                    "region {target_name}:{start}-{end} skipped (degree {} < min-degree {min_degree})",
+                    distinct.len()
+                );
+                continue;
+            }
+        }
+
         if use_bed {
             output_bed(&idx, &results);
         } else {
@@ -294,6 +329,25 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+// Drop queries whose total aligned length (summed across all result intervals
+// for that query_id) is below `min_chain_length`. Operates in place.
+fn filter_by_chain_length(
+    results: &mut Vec<(
+        u32,
+        coitrees::Interval<u32>,
+        coitrees::Interval<u32>,
+        Vec<CigarOp>,
+    )>,
+    min_chain_length: i32,
+) {
+    let mut totals: HashMap<u32, i32> = HashMap::new();
+    for (qid, q_iv, _, _) in results.iter() {
+        let len = (q_iv.last - q_iv.first).abs();
+        *totals.entry(*qid).or_insert(0) += len;
+    }
+    results.retain(|(qid, _, _, _)| totals.get(qid).copied().unwrap_or(0) >= min_chain_length);
 }
 
 fn output_bed(

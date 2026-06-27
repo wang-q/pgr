@@ -218,11 +218,13 @@ pub enum PafParseError {
 
 ### 第三期 — 查询层增强
 
-| 优先级 | 组件                       | 说明                                               | 状态   |
-|--------|----------------------------|----------------------------------------------------|--------|
-| P2     | `PafRecord` 瘦身（8 字段） | 区间树节点用单独的紧凑 struct，`PafRecord` 不变    | 规划中 |
-| P2     | Caf 后处理过滤参数         | `--min-degree`、`--min-chain-length`、`--end-trim` | 待实现 |
-| P3     | Chain/Net syntenic 过滤器  | `--syntenic-filter` 参数                           | 待实现 |
+| 优先级 | 组件                       | 说明                                               | 状态                          |
+|--------|----------------------------|----------------------------------------------------|-------------------------------|
+| P2     | `PafRecord` 瘦身（8 字段） | 区间树节点用单独的紧凑 struct，`PafRecord` 不变    | 规划中                        |
+| P2     | `--min-degree N`           | 过滤支持序列数 < N 的区间（per-region distinct）   | ✅ 已完成                     |
+| P2     | `--min-chain-length N`     | 过滤总长 < N bp 的传递链（per-query_id 累加）      | ✅ 已完成                     |
+| P2     | `--end-trim N`             | 切除比对边缘不可靠的 N bp                           | ⏭️ 推迟（需 per-interval 修剪） |
+| P3     | Chain/Net syntenic 过滤器  | `--syntenic-filter` 参数                           | 待实现                        |
 
 ---
 ## 9. 新增依赖

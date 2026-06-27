@@ -81,3 +81,4 @@ src/cmd_pgr/maf/
 | 2026-06-28 | BED/TSV 删除，只输出 PAF；覆盖率补充（+4 tests） |
 | 2026-06-28 | 决策修订：BED 删除有误（impg 默认即 BED），待恢复为默认输出；见 [[graph-design.md]] §3 |
 | 2026-06-28 | V1 实现：`-o bed` 可选 + `-b regions.bed` 批查（+6 tests，共 29）。**默认输出保持 PAF**（非 impg 的 BED 默认），理由：既有 23 测试断言 PAF、PAF 含完整 CIGAR 更直接、BED 是轻量坐标产物用 `-o bed` 显式切换。见 [[graph-design.md]] §3.1 |
+| 2026-06-28 | V1 后处理过滤：`--min-degree N`（per-region distinct query 数）+ `--min-chain-length N`（per-query_id 累加对齐长度），+4 tests 共 33。`--end-trim` 推迟（需 per-interval CIGAR 修剪，与区间投影模型不兼容，待 V2）。见 [[paf-implementation.md]] §8、[[paf-route.md]] §4.4 |
