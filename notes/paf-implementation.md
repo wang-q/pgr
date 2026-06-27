@@ -1,76 +1,41 @@
 # PAF 模块实现参考
-
-本文档基于 impg-0.4.1 源码，梳理 pgr 需要实现的 PAF 相关组件的代码级设计。 这是纯实现参考，
-不涉及路线决策（见 [[paf-route.md]]）或第一步行动计划（见 [[pairwise-selection.md]]）。
-
-参考源码：`paf.rs`（417 行）、`alignment_record.rs`（138 行）、`seqidx.rs`（56 行）、 `main.rs` 的
-`output_results_paf` 函数（`main.rs:11989-12101`）。
-
----
-## 1. 模块结构
+## 1. 模块结构（pgr 实际实现）
 
 ```
 src/libs/paf/
 ├── mod.rs          # 模块导出
-├── record.rs       # PafRecord struct — PAF 行在内存中的表示
-├── parser.rs       # PAF 解析 — 纯文本 / BGZF / GZI 三种模式
-├── cigar.rs        # CigarOp bit-packing + 字符串互转
-├── writer.rs       # PAF 行格式化输出
-├── lazy.rs         # CIGAR 懒加载（从源文件按偏移量读取）
-└── index.rs        # PafIndex — 区间树索引 + 查询 + 传递闭包 BFS
+├── record.rs       # PafRecord — String 字段 + tags
+├── parser.rs       # 纯文本 PAF 解析
+├── cigar.rs        # CigarOp bit-packing + stats + identity
+├── writer.rs       # PAF 行格式化
+├── index.rs        # PafIndex + PafMetadata + SortedRanges
+└── persist.rs      # .paf.idx 磁盘持久化（bincode）
 
-src/libs/seqidx.rs  # SequenceIndex — 序列名↔ID 双向映射（paf 的前置依赖）
-```
+名字映射使用 pgr 的 IndexMap<String, u32> 模式（与 libs/loc.rs、libs/phylo/tree.rs
+一致），不需要独立的 SequenceIndex。
 
 ---
-## 2. PafRecord — 核心数据结构
 
-参考 impg 的 `AlignmentRecord`（`alignment_record.rs:12-21`）。
+## 2. PafRecord
+
+pgr 采用 string-based 设计（src/libs/paf/record.rs）：
 
 ```rust
-#[derive(Debug, Clone)]
 pub struct PafRecord {
-    pub query_id: u32,             // col 1: query sequence ID (from SequenceIndex)
-    pub query_start: u32,          // col 3: query start (0-based)
-    pub query_end: u32,            // col 4: query end
-    pub target_id: u32,            // col 6: target sequence ID
-    pub target_start: u32,         // col 8: target start
-    pub target_end: u32,           // col 9: target end
-    pub strand_and_offset: u64,    // MSB=strand, bits[62:0]=file offset to cg:Z:
-    pub cigar_bytes: u16,          // byte length of CIGAR string (0 if absent)
-    pub matches: u32,              // col 10: matching bases
-    pub block_len: u32,            // col 11: alignment block length
-    pub mapq: u8,                  // col 12: mapping quality (0-255)
+    pub query_name: String,   pub query_length: u32,
+    pub query_start: u32,     pub query_end: u32,
+    pub strand: char,
+    pub target_name: String,  pub target_length: u32,
+    pub target_start: u32,    pub target_end: u32,
+    pub matches: u32,         pub block_length: u32,
+    pub mapq: u8,
+    pub tags: Vec<String>,    // gi:f:..., cg:Z:... 等
 }
-// Total: 48 bytes
 ```
 
-### 设计要点
-
-**strand 编码在 MSB**（impg `alignment_record.rs:34`）。
-`const STRAND_BIT: u64 = 0x8000000000000000`——MSB=0 为 Forward，MSB=1 为 Reverse。`strand()`/
-`set_strand()` 封装位操作。
-
-**CIGAR 懒加载**。`strand_and_offset` 的低 63 位是源 PAF 文件中 `cg:Z:` tag 的字节偏移量，查询时通过
-`read_cigar_data()` 按需读取。区间树节点只存坐标和指针，不存 CIGAR 字符串——这是把全基因组 PAF
-装入内存的关键优化（[[impg.md]] §3.2）。
-
-**序列 ID 化**。`query_id`/`target_id` 是 `SequenceIndex` 中的 `u32`，区间树用整数 key 而非字符串，
-大幅减少内存和比较开销。
-
-**字段全部 `u32` 而非 `usize`**，跨平台一致，更紧凑。超过 4Gbp 的染色体可升级 `u64`。
-
-### 与 impg 的差异
-
-impg 的 `AlignmentRecord` 只有 8 个字段——`matches`/`block_len`/`mapq` 不存，需要时从原文件重读。
-这是为了把区间树节点压到最小（cache 命中率优先）。pgr 第一步存 12 个完整字段，先用起来；
-后续内存成瓶颈时再瘦身到 8 字段，内部改动不影响下游。
-
-> **实现更新**（2026-06）：pgr 的实际 `PafRecord`（`src/libs/paf/record.rs`）采用了更接近
-> wgatools 的简化设计——`String` 字段代替 `u32` 序列 ID、`tags: Vec<String>` 存额外标签。
-> 这与 impg 的紧凑 48 字节设计不同，但对于从 MAF 转换的 PAF（比对数远小于 all-vs-all），
-> 内存压力可控。后续若做 all-vs-all 场景的 `PafIndex`，区间树节点会使用单独的紧凑 struct
-> 而非此 `PafRecord`。
+与 impg 的紧凑 48 字节设计不同——pgr 的 PAF 来自 MAF 转换（规模可控）。
+区间树节点使用独立紧凑 struct PafMetadata（u32 坐标 + Vec<CigarOp>）。
+详见 §11.2。
 
 ---
 ## 3. PAF 解析器
@@ -649,8 +614,6 @@ pgr paf query merged.paf.idx region --transitive
 新测试 3-4 个。
 
 ---
-
-## 13. wgatools 参考
 
 ### 13.1 与 impg 的关键差异
 
