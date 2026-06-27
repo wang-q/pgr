@@ -289,9 +289,11 @@ impl MafEntry {
 }
 
 /// A MAF alignment block.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq)]
 pub struct MafBlock {
     pub entries: Vec<MafEntry>,
+    /// Score extracted from the `a` line (`score=` field).
+    pub score: Option<f64>,
 }
 
 /// Get the next MafBlock out of the input.
@@ -383,11 +385,18 @@ pub fn parse_maf_block(
         block_lines.push(line);
     }
     let mut block_entries: Vec<MafEntry> = vec![];
+    let mut score: Option<f64> = None;
 
     for line in block_lines {
         let mut fields: Vec<_> = line.split_whitespace().collect();
         match fields[0] {
-            "a" => (),
+            "a" => {
+                for f in &fields[1..] {
+                    if let Some(val) = f.strip_prefix("score=") {
+                        score = val.parse::<f64>().ok();
+                    }
+                }
+            }
             "s" => parse_s_line(&mut fields, &mut block_entries)?,
             "i" => (),
             "e" => (),
@@ -399,6 +408,7 @@ pub fn parse_maf_block(
 
     Ok(MafBlock {
         entries: block_entries,
+        score,
     })
 }
 
@@ -448,7 +458,13 @@ mod maf_tests {
         let mut reader = BufReader::new(str.as_bytes());
         match next_maf_block(&mut reader) {
             Err(e) => assert!(false, "Got error {:?}", e),
-            Ok(val) => assert_eq!(val, MafBlock { entries: vec![] }),
+            Ok(val) => assert_eq!(
+                val,
+                MafBlock {
+                    entries: vec![],
+                    score: Some(23262.0)
+                }
+            ),
         }
     }
 
@@ -458,7 +474,13 @@ mod maf_tests {
         let mut reader = BufReader::new(str.as_bytes());
         match next_maf_block(&mut reader) {
             Err(e) => assert!(false, "Got error {:?}", e),
-            Ok(val) => assert_eq!(val, MafBlock { entries: vec![] }),
+            Ok(val) => assert_eq!(
+                val,
+                MafBlock {
+                    entries: vec![],
+                    score: None
+                }
+            ),
         }
     }
 
@@ -504,6 +526,7 @@ this line is a canary to ensure it stops after a 'paragraph'";
                             alignment: "ACAGCTGA-AATA".as_bytes().to_vec(),
                         },
                     ],
+                    score: None,
                 }
             ),
         }
