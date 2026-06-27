@@ -11,15 +11,14 @@
 ///
 /// This is alignment-friendly, memory-efficient (4 bytes per op), and
 /// enables branch-free coordinate projection via `target_delta`/`query_delta`.
-
 use std::fmt;
 
 // ── Op code constants ────────────────────────────────────────────
 const OP_EQ: u32 = 0; // '='
-const OP_X:  u32 = 1; // 'X'
-const OP_I:  u32 = 2; // 'I'
-const OP_D:  u32 = 3; // 'D'
-const OP_M:  u32 = 4; // 'M'
+const OP_X: u32 = 1; // 'X'
+const OP_I: u32 = 2; // 'I'
+const OP_D: u32 = 3; // 'D'
+const OP_M: u32 = 4; // 'M'
 
 /// Bit-packed CIGAR operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -45,10 +44,10 @@ impl CigarOp {
     pub fn op(self) -> char {
         match self.0 >> 29 {
             OP_EQ => '=',
-            OP_X  => 'X',
-            OP_I  => 'I',
-            OP_D  => 'D',
-            OP_M  => 'M',
+            OP_X => 'X',
+            OP_I => 'I',
+            OP_D => 'D',
+            OP_M => 'M',
             _ => unreachable!(),
         }
     }
@@ -65,7 +64,7 @@ impl CigarOp {
     pub fn target_delta(self) -> u32 {
         match self.op() {
             'I' => 0,
-            _   => self.len(),
+            _ => self.len(),
         }
     }
 
@@ -76,7 +75,7 @@ impl CigarOp {
     pub fn query_delta(self) -> u32 {
         match self.op() {
             'D' => 0,
-            _   => self.len(),
+            _ => self.len(),
         }
     }
 }
@@ -102,7 +101,9 @@ pub fn parse_cigar(s: &str) -> Vec<CigarOp> {
 
     for c in s.chars() {
         if c.is_ascii_digit() {
-            len = len.saturating_mul(10).saturating_add((c as u8 - b'0') as u32);
+            len = len
+                .saturating_mul(10)
+                .saturating_add((c as u8 - b'0') as u32);
         } else {
             // Only push if length > 0 or if we want to keep zero-length ops.
             // impg always pushes; we follow suit for fidelity.
@@ -172,8 +173,20 @@ fn fold_ops(ops: &[CigarOp], per_event: bool) -> (u32, u32, u32, u32) {
         match op.op() {
             'M' | '=' => m += len,
             'X' => x += len,
-            'I' => if per_event { i += 1 } else { i += len },
-            'D' => if per_event { d += 1 } else { d += len },
+            'I' => {
+                if per_event {
+                    i += 1
+                } else {
+                    i += len
+                }
+            }
+            'D' => {
+                if per_event {
+                    d += 1
+                } else {
+                    d += len
+                }
+            }
             _ => {}
         }
     }
@@ -191,16 +204,20 @@ fn fold_ops(ops: &[CigarOp], per_event: bool) -> (u32, u32, u32, u32) {
 ///
 /// Consecutive identical ops are merged.
 pub fn cigar_from_alignment(r#ref: &[u8], qry: &[u8]) -> Vec<CigarOp> {
-    assert_eq!(r#ref.len(), qry.len(), "alignment vectors must have equal length");
+    assert_eq!(
+        r#ref.len(),
+        qry.len(),
+        "alignment vectors must have equal length"
+    );
 
     let mut ops: Vec<CigarOp> = Vec::new();
 
     for (&rc, &qc) in r#ref.iter().zip(qry.iter()) {
         let op_char = match (rc, qc) {
             (b'-', b'-') => continue, // both gaps — degenerate, skip
-            (b'-', _)    => 'I',
-            (_, b'-')    => 'D',
-            _            => 'M',
+            (b'-', _) => 'I',
+            (_, b'-') => 'D',
+            _ => 'M',
         };
 
         match ops.last_mut() {
@@ -367,43 +384,43 @@ mod tests {
     fn test_cigar_from_alignment_ref_gap() {
         // ref gap = insertion in query → I
         let ops = cigar_from_alignment(b"ACG-", b"ACGT");
-        assert_eq!(ops, vec![
-            CigarOp::new(3, 'M'),
-            CigarOp::new(1, 'I'),
-        ]);
+        assert_eq!(ops, vec![CigarOp::new(3, 'M'), CigarOp::new(1, 'I'),]);
     }
 
     #[test]
     fn test_cigar_from_alignment_qry_gap() {
         // qry gap = deletion in query → D
         let ops = cigar_from_alignment(b"ACGT", b"ACG-");
-        assert_eq!(ops, vec![
-            CigarOp::new(3, 'M'),
-            CigarOp::new(1, 'D'),
-        ]);
+        assert_eq!(ops, vec![CigarOp::new(3, 'M'), CigarOp::new(1, 'D'),]);
     }
 
     #[test]
     fn test_cigar_from_alignment_interleaved() {
         // AC-TG vs ACGT- →  M M I M D
         let ops = cigar_from_alignment(b"AC-TG", b"ACGT-");
-        assert_eq!(ops, vec![
-            CigarOp::new(2, 'M'),
-            CigarOp::new(1, 'I'),
-            CigarOp::new(1, 'M'),
-            CigarOp::new(1, 'D'),
-        ]);
+        assert_eq!(
+            ops,
+            vec![
+                CigarOp::new(2, 'M'),
+                CigarOp::new(1, 'I'),
+                CigarOp::new(1, 'M'),
+                CigarOp::new(1, 'D'),
+            ]
+        );
     }
 
     #[test]
     fn test_cigar_from_alignment_terminal_gaps() {
         // -ACGT- vs TACGTA →  I M M M M I
         let ops = cigar_from_alignment(b"-ACGT-", b"TACGTA");
-        assert_eq!(ops, vec![
-            CigarOp::new(1, 'I'),
-            CigarOp::new(4, 'M'),
-            CigarOp::new(1, 'I'),
-        ]);
+        assert_eq!(
+            ops,
+            vec![
+                CigarOp::new(1, 'I'),
+                CigarOp::new(4, 'M'),
+                CigarOp::new(1, 'I'),
+            ]
+        );
     }
 
     #[test]
@@ -416,10 +433,13 @@ mod tests {
     fn test_cigar_from_alignment_merge_consecutive() {
         // ACG--T vs ACGTT-  → M M M I I D  → merged to 3M2I1D
         let ops = cigar_from_alignment(b"ACG--T", b"ACGTT-");
-        assert_eq!(ops, vec![
-            CigarOp::new(3, 'M'),
-            CigarOp::new(2, 'I'),
-            CigarOp::new(1, 'D'),
-        ]);
+        assert_eq!(
+            ops,
+            vec![
+                CigarOp::new(3, 'M'),
+                CigarOp::new(2, 'I'),
+                CigarOp::new(1, 'D'),
+            ]
+        );
     }
 }
