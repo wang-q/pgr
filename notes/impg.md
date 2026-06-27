@@ -458,6 +458,12 @@ pub struct Impg {
 其中 `TreeMap = FxHashMap<u32, Arc<BasicCOITree<QueryMetadata, u32>>>` — 每个 target 序列一棵区间树，
 节点 metadata 是 `QueryMetadata`。`RwLock` + `Arc`允许查询时无锁共享。
 
+**bidirectional 索引**（`--unidirectional` 反向开关）：`from_multi_alignment_records` 默认对每条
+A→B record 额外生成一条 B→A entry（[main.rs#L11094](file:///Volumes/ExtHome/Scripts/pgr/impg-0.4.1/src/main.rs#L11094)），
+使"query_A 在 target_B 树上"与"query_B 在 target_A 树上"各有一条记录，查询时无需反向计算。
+代价是索引大小翻倍。`--unidirectional` 关闭此行为，索引减半但反向查询需额外扫描。pgr V1 不做双向
+（见 [paf-implementation.md §11.2](file:///Volumes/ExtHome/Scripts/pgr/notes/paf-implementation.md)）。
+
 ### 3.2 `QueryMetadata` 与 `CigarOp` 紧凑编码
 
 [impg.rs#L165](file:///Volumes/ExtHome/Scripts/pgr/impg-0.4.1/src/impg.rs#L165) 的 `QueryMetadata`
@@ -494,22 +500,26 @@ pub struct QueryMetadata {
 ### 3.4 `ImpgIndex` trait 与 `MultiImpg`
 
 [impg_index.rs](file:///Volumes/ExtHome/Scripts/pgr/impg-0.4.1/src/impg_index.rs) 定义了 `ImpgIndex`
-trait：
+trait，**共 12 个方法（10 必需 + 2 默认实现）**，统一 `Impg`（单文件）与 `MultiImpg`（多文件）接口：
 
-```rust
-pub trait ImpgIndex: Send + Sync {
-    fn seq_index(&self) -> &SequenceIndex;
-    fn query(&self, ...) -> io::Result<Vec<AdjustedInterval>>;
-    fn query_with_cache(&self, ..., cigar_cache: &FxHashMap<...>) -> io::Result<...>;
-    fn populate_cigar_cache(&self, ...);
-    fn query_transitive_dfs(&self, ...) -> io::Result<...>;
-    fn query_transitive_bfs(&self, ...) -> io::Result<...>;
-    // ...
-}
-```
+| # | 方法 | 类型 | 用途 |
+|---|------|------|------|
+| 1 | `seq_index` | 必需 | 获取统一名字表 |
+| 2 | `query` | 必需 | 单跳查询 |
+| 3 | `query_with_cache` | 必需 | 带 CIGAR 缓存的查询 |
+| 4 | `populate_cigar_cache` | 必需 | 批量预热 CIGAR |
+| 5 | `query_transitive_dfs` | 必需 | DFS 传递闭包 |
+| 6 | `query_transitive_bfs` | 必需 | BFS 传递闭包 |
+| 7 | `get_or_load_tree` | 必需 | 按需加载区间树 |
+| 8 | `target_ids` | 必需 | 所有有树的 target 列表 |
+| 9 | `remove_cached_tree` | 必需 | 显式释放内存 |
+| 10 | `sequence_files` | 必需 | 关联的 FASTA 文件 |
+| 11 | `num_targets` | 默认 | target 数（基于 `target_ids().len()`） |
+| 12 | `syng_index_ref` | 默认 | syng 后端专用（默认返回 `None`） |
 
-`Impg`（单文件）与 `MultiImpg`（多文件）都实现这个 trait。`MultiImpg` 内部维护
-`TreeLocation { index_idx, local_target_id }` 把全局 `target_id`翻译到子索引的本地 ID。`main.rs`
+另有独立的 `ImpgWrapper` enum（`Single(Impg)` / `Multi(MultiImpg)`）做 match dispatch，
+本身不是 trait 方法。`MultiImpg` 内部维护
+`TreeLocation { index_idx, local_target_id }` 把全局 `target_id` 翻译到子索引的本地 ID。`main.rs`
 中的命令代码只与 `&dyn ImpgIndex` 打交道，从而对单/多文件透明。
 
 `MultiImpg` 还实现了 staleness 检测：当 `.impg` 索引比源比对文件旧时， 警告并要求 `--force-reindex`。
@@ -525,6 +535,19 @@ pub trait ImpgIndex: Send + Sync {
 **区间投影**是查询层的基础模式：给定一个目标区间 `[target, start, end]`，在区间树上查找所有
 与之重叠的比对记录，把目标区间投影到查询序列坐标。这等价于"单跳同源查找"——只找直接比对到
 目标区间的片段，不沿比对网络遍历。
+
+impg 在 [impg.rs](file:///Volumes/ExtHome/Scripts/pgr/impg-0.4.1/src/impg.rs) 中提供**两个版本的投影函数**，
+由 `query` 的 `approximate_mode` 参数切换：
+
+- **`project_overlapping_interval`**（[L1098](file:///Volumes/ExtHome/Scripts/pgr/impg-0.4.1/src/impg.rs#L1098)）—
+  完整模式：计算完整 CIGAR + 序列 I/O，产出精确的 query 侧坐标与 `AdjustedInterval`。
+  PAF 走 `cg:Z:` 解析，1ALN/TPA 走 tracepoint 解码 + BiWFA。
+- **`project_overlapping_interval_fast`**（[L1313](file:///Volumes/ExtHome/Scripts/pgr/impg-0.4.1/src/impg.rs#L1313)）—
+  快速近似模式：**仅基于 tracepoint 统计做近似投影**，无 CIGAR 计算、无序列 I/O，
+  identity 从 tracepoint 统计估算。仅 1ALN/TPA 文件可用，PAF 无 tracepoint 退回完整模式。
+
+这种"完整 vs 近似"双模式是 impg 处理大 cohort 时的性能开关——`--approximate` 在 fastga
+`trace_spacing` 配合下可跳过 BiWFA 重建。pgr 只支持 PAF（无 tracepoint），V1 不需要这个分叉。
 
 `pgr chain lift` 本质上就是单条 Chain 的区间投影：通过 Chain 的坐标映射把目标区间 lift 到查询 序列。
 区别在于 impg 在 all-vs-all 比对网络的并集上做区间树查找，而 pgr chain lift 在用户手动 指定的单条
@@ -1027,6 +1050,20 @@ PAF 行 with `=`/`X` CIGAR）。这是 pgr 复用已有 pairwise 基础设施的
 ### 9.4 第一步最小原型
 
 **答：`pgr paf query` —— PAF 索引 + 区间投影 + 传递闭包，输出 BED/MAF。**
+
+> **实现状态**（2026-06-28 核对）：目标 1-4 已实现并通过测试（见
+> [pairwise-selection.md](file:///Volumes/ExtHome/Scripts/pgr/notes/pairwise-selection.md)，
+> 98 个测试通过）：
+> - ✅ `pgr maf to-paf`（[src/cmd_pgr/maf/to_paf.rs](file:///Volumes/ExtHome/Scripts/pgr/src/cmd_pgr/maf/to_paf.rs)）
+> - ✅ `pgr paf index`（[src/cmd_pgr/paf/index.rs](file:///Volumes/ExtHome/Scripts/pgr/src/cmd_pgr/paf/index.rs)）
+> - ✅ `pgr paf query`（[src/cmd_pgr/paf/query.rs](file:///Volumes/ExtHome/Scripts/pgr/src/cmd_pgr/paf/query.rs)）
+> - ✅ `--transitive` BFS 传递闭包（[src/libs/paf/index.rs](file:///Volumes/ExtHome/Scripts/pgr/src/libs/paf/index.rs)）
+> - ✅ 查询层过滤参数 `--min-identity`/`--min-output-length`/`--merge-distance`/`--max-depth`
+> - ⏳ 目标 5（`-o maf` 输出）尚未实现——当前 `pgr paf query` 只支持 PAF 输出
+>
+> **输出格式差距**：impg `query` 支持 11 种输出（bed/bedpe/paf/gfa/vcf/maf/fasta/fasta+paf/fasta-aln/gbwt/auto，
+> 见 [main.rs#L4892](file:///Volumes/ExtHome/Scripts/pgr/impg-0.4.1/src/main.rs#L4892)）。
+> pgr V1 只输出 PAF，BED/MAF/GFA 输出是后续工作。
 
 具体目标：
 

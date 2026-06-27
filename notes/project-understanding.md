@@ -12,24 +12,24 @@ pgr 是一个**生物信息学 CLI 工具集**，定位是"基因组数据处理
 
 ### 1.1 与同类工具的差异
 
-| 工具        | 定位                           | pgr 的区别                         |
-|-------------|--------------------------------|------------------------------------|
-| UCSC kent   | C 工具集，UCSC 格式权威实现     | Rust 实现，更安全的错误处理，无 panic |
-| samtools    | SAM/BAM/CRAM 专用             | pgr 不做 SAM/BAM，focus on UCSC 链 |
-| bedtools    | BED/VCF/GFF 区间操作           | pgr 有 2bit/Chain/Net/Newick 等独特覆盖 |
-| seqtk       | FASTA/FASTQ 轻量处理           | pgr 的 fa/fas 子命令更多更全         |
-| pggb/odgi   | 泛基因组图构建与分析            | pgr 目前是 pairwise 工具，泛基因组在路上 |
+| 工具      | 定位                        | pgr 的区别                               |
+|-----------|-----------------------------|------------------------------------------|
+| UCSC kent | C 工具集，UCSC 格式权威实现 | Rust 实现，更安全的错误处理，无 panic    |
+| samtools  | SAM/BAM/CRAM 专用           | pgr 不做 SAM/BAM，focus on UCSC 链       |
+| bedtools  | BED/VCF/GFF 区间操作        | pgr 有 2bit/Chain/Net/Newick 等独特覆盖  |
+| seqtk     | FASTA/FASTQ 轻量处理        | pgr 的 fa/fas 子命令更多更全             |
+| pggb/odgi | 泛基因组图构建与分析        | pgr 目前是 pairwise 工具，泛基因组在路上 |
 
 ### 1.2 核心优势
 
-- **格式覆盖广**：从序列 (FASTA/FASTQ/2bit) 到比对 (AXT/PSL/Chain/Net/MAF/LAV) 再到
-  系统发育 (Newick) 和聚类，覆盖了生信日常的大多数格式。
-- **UCSC Chain/Net 体系深耕**：`chain`/`net`/`axt`/`psl`/`lav`/`maf` 六个模块形成了
-  一套完整的 pairwise 比对处理链，从 lastz 原始输出到 net 再到 multiz MAF。
+- **格式覆盖广**：从序列 (FASTA/FASTQ/2bit) 到比对 (AXT/PSL/Chain/Net/MAF/LAV) 再到 系统发育 (Newick)
+  和聚类，覆盖了生信日常的大多数格式。
+- **UCSC Chain/Net 体系深耕**：`chain`/`net`/`axt`/`psl`/`lav`/`maf` 六个模块形成了 一套完整的
+  pairwise 比对处理链，从 lastz 原始输出到 net 再到 multiz MAF。
 - **Rust 实现的健壮性**：零 panic 策略，畸形输入返回友好错误而非崩溃。
 - **Pipeline-friendly**：stdin/stdout 支持，可组合子命令。
-- **已有 pairwise 比对基础设施成熟**：这是 pgr 最大的存量资产，也是走向泛基因组时
-  区别于 impg/pggb 的独特起点。
+- **已有 pairwise 比对基础设施成熟**：这是 pgr 最大的存量资产，也是走向泛基因组时 区别于 impg/pggb
+  的独特起点。
 
 ## 2. 架构全景
 
@@ -73,8 +73,8 @@ src/
 3. 在 `src/pgr.rs` 中注册顶层子命令并 dispatch
 
 **两跳 dispatch**：`pgr.rs` (第一跳: `fa`) → `cmd_pgr/fa/mod.rs` (第二跳: `size`) →
-`cmd_pgr/fa/size.rs` (实际执行)。这种模式在 clap 中常见，优点是每个叶子命令独立文件、
-易于维护；缺点是新增命令需要改三处。
+`cmd_pgr/fa/size.rs` (实际执行)。这种模式在 clap 中常见，优点是每个叶子命令独立文件、易于维护；
+缺点是新增命令需要改三处。
 
 ### 2.3 依赖策略
 
@@ -104,87 +104,87 @@ src/
 
 ### 3.1 序列 (Sequences)
 
-| 模块     | 子命令数 | 核心能力                                               |
-|----------|---------|--------------------------------------------------------|
-| `fa`     | 18      | FASTA 全能操作：统计、筛选、切分、转换、mask、索引     |
-| `fas`    | 21      | Block FA (多序列比对块)：统计、筛选、subset、变异检测   |
-| `fq`     | 2       | FASTQ 交叉合并、转 FASTA                               |
-| `twobit` | 5       | 2bit 二进制格式查询：range、sequence、masked 统计       |
-| `gff`    | 1       | GFF 注释：rg (read group)                              |
+| 模块     | 子命令数 | 核心能力                                              |
+|----------|----------|-------------------------------------------------------|
+| `fa`     | 18       | FASTA 全能操作：统计、筛选、切分、转换、mask、索引    |
+| `fas`    | 21       | Block FA (多序列比对块)：统计、筛选、subset、变异检测 |
+| `fq`     | 2        | FASTQ 交叉合并、转 FASTA                              |
+| `twobit` | 5        | 2bit 二进制格式查询：range、sequence、masked 统计     |
+| `gff`    | 1        | GFF 注释：rg (read group)                             |
 
-**fa 和 fas 是序列模块的核心**，子命令最多、功能最全。`fas` 的 `multiz`、`variation`、
-`refine`、`to_vcf` 已经触及多序列比对和变异检测。
+**fa 和 fas 是序列模块的核心**，子命令最多、功能最全。`fas` 的 `multiz`、`variation`、 `refine`、
+`to_vcf` 已经触及多序列比对和变异检测。
 
 ### 3.2 基因组比对 (Alignments)
 
 | 模块    | 子命令数 | 核心能力                                             |
-|---------|---------|------------------------------------------------------|
-| `chain` | 7       | Chain 排序、过滤、split、stitch、反重复、转 net 准备 |
-| `net`   | 6       | Net 分类、过滤、split、subset、syntenic、转 AXT      |
-| `axt`   | 4       | AXT 排序、转 FAS/MAF/PSL                             |
-| `psl`   | 7       | PSL 统计、直方图、lift、swap、转 chain、转 range      |
-| `lav`   | 2       | LAV (lastz 原生输出) 转 PSL、lastz 调用封装          |
-| `maf`   | 1       | MAF (multiple alignment format) 转 Block FA           |
+|---------|----------|------------------------------------------------------|
+| `chain` | 7        | Chain 排序、过滤、split、stitch、反重复、转 net 准备 |
+| `net`   | 6        | Net 分类、过滤、split、subset、syntenic、转 AXT      |
+| `axt`   | 4        | AXT 排序、转 FAS/MAF/PSL                             |
+| `psl`   | 7        | PSL 统计、直方图、lift、swap、转 chain、转 range     |
+| `lav`   | 2        | LAV (lastz 原生输出) 转 PSL、lastz 调用封装          |
+| `maf`   | 1        | MAF (multiple alignment format) 转 Block FA          |
 
 **这是 pgr 最成熟的模块群**。完整覆盖了 UCSC 的 lastz → axtChain → chainAntiRepeat →
 chainMergeSort → chainPreNet → chainNet → netSyntenic → netChainSubset → netToAxt →
-axtToMaf 标准化流程中的大部分步骤。`chain`/`net` 模块在功能上可以替代 kent-tools 的
-核心步骤（虽然部分高级功能仍依赖外部工具）。
+axtToMaf 标准化流程中的大部分步骤。`chain`/`net` 模块在功能上可以替代 kent-tools 的 核心步骤
+（虽然部分高级功能仍依赖外部工具）。
 
 ### 3.3 聚类 (Clustering)
 
-| 子命令     | 算法                          |
-|-----------|-------------------------------|
-| `cc`      | 连通分量 (Connected Components) |
-| `dbscan`  | DBSCAN 密度聚类               |
-| `hier`    | 层次聚类 (NN-chain 算法)       |
-| `kmedoids`| K-medoids 划分聚类             |
-| `mcl`     | Markov Cluster Algorithm      |
-| `nj`      | Neighbor-Joining 建树          |
-| `upgma`   | UPGMA 建树                    |
+| 子命令     | 算法                            |
+|------------|---------------------------------|
+| `cc`       | 连通分量 (Connected Components) |
+| `dbscan`   | DBSCAN 密度聚类                 |
+| `hier`     | 层次聚类 (NN-chain 算法)        |
+| `kmedoids` | K-medoids 划分聚类              |
+| `mcl`      | Markov Cluster Algorithm        |
+| `nj`       | Neighbor-Joining 建树           |
+| `upgma`    | UPGMA 建树                      |
 
-聚类模块算法覆盖广：基于密度的 (DBSCAN)、划分的 (k-medoids)、层次的 (hier/NJ/UPGMA)、
-图的 (MCL)、简单的 (CC)。评估子命令 (`eval`) 在设计阶段。
+聚类模块算法覆盖广：基于密度的 (DBSCAN)、划分的 (k-medoids)、层次的 (hier/NJ/UPGMA)、 图的 (MCL)、
+简单的 (CC)。评估子命令 (`eval`) 在设计阶段。
 
 ### 3.4 距离与矩阵 (Distance & Matrix)
 
 | 模块   | 子命令数 | 核心能力                                    |
-|--------|---------|---------------------------------------------|
-| `dist` | 3       | 距离计算：hv (hypervariable)、seq、vector   |
-| `mat`  | 6       | 矩阵操作：compare、format、subset、转换格式  |
+|--------|----------|---------------------------------------------|
+| `dist` | 3        | 距离计算：hv (hypervariable)、seq、vector   |
+| `mat`  | 6        | 矩阵操作：compare、format、subset、转换格式 |
 
-`mat` 充当聚类流程的"数据预处理"环节：`mat to-pair` 把矩阵转成 pair 格式供聚类使用，
-`mat to-phylip` 转 PHYLIP 格式供外部工具。
+`mat` 充当聚类流程的"数据预处理"环节：`mat to-pair` 把矩阵转成 pair 格式供聚类使用， `mat to-phylip`
+转 PHYLIP 格式供外部工具。
 
 ### 3.5 系统发育 (Phylogeny)
 
-| 模块  | 子命令数 | 核心能力                                              |
-|-------|---------|-------------------------------------------------------|
-| `nwk` | 18      | Newick 树全能操作：统计、比较、剪枝、reroot、可视化   |
+| 模块  | 子命令数 | 核心能力                                            |
+|-------|----------|-----------------------------------------------------|
+| `nwk` | 18       | Newick 树全能操作：统计、比较、剪枝、reroot、可视化 |
 
 `nwk` 模块功能非常丰富：树拓扑比较 (`cmp`、`topo`)、切分 (`prune`、`subtree`、`to-forest`)、
 重标 (`rename`、`label`、`comment`)、重根 (`reroot`)、可视化 (`to-svg`、`to-dot`、`to-tex`)、
-统计 (`stat`、`distance`、`support`)。底层 `libs/phylo/` 使用 Arena 树结构（非 Rc/RefCell
-指针树），参考了 `docs/phylo.md` 的设计讨论。
+统计 (`stat`、`distance`、`support`)。底层 `libs/phylo/` 使用 Arena 树结构（非 Rc/RefCell 指针树），
+参考了 `docs/phylo.md` 的设计讨论。
 
 ### 3.6 模拟、流程、可视化 (Simulation, Pipelines, Plot)
 
-| 模块   | 子命令数 | 核心能力                                    |
-|--------|---------|---------------------------------------------|
-| `ms`   | 1       | Hudson's ms 模拟器输出转 DNA 序列           |
-| `pl`   | 7       | 集成流程：p2m、trf、ir、rept、ucsc、prefilter、condense |
-| `plot` | 3       | TikZ/LaTeX 图：Venn、HH (hedgehog)、NRPS    |
+| 模块   | 子命令数 | 核心能力                                                |
+|--------|----------|---------------------------------------------------------|
+| `ms`   | 1        | Hudson's ms 模拟器输出转 DNA 序列                       |
+| `pl`   | 7        | 集成流程：p2m、trf、ir、rept、ucsc、prefilter、condense |
+| `plot` | 3        | TikZ/LaTeX 图：Venn、HH (hedgehog)、NRPS                |
 
 `pl` (pipelines) 模块定位特殊——它**编排外部工具**（UCSC kent-tools、trf、FastK、Profex、
-clustalw/muscle/mafft），充当工作流 glue。这与 `chain`/`net` 模块的纯 Rust 实现形成互补：
-能用 Rust 就自己实现，复杂/成熟的用外部工具。
+clustalw/muscle/mafft），充当工作流 glue。这与 `chain`/`net` 模块的纯 Rust 实现形成互补：能用 Rust
+就自己实现，复杂/成熟的用外部工具。
 
 ## 4. 核心库层详解
 
 ### 4.1 `libs/phylo/` — 系统发育核心
 
-- **Arena 树结构** (`node.rs`)：所有节点存储在 `Arena` 中，通过 `NodeId` 索引引用。
-  避免了 Rust 中树结构的自引用问题（不用 `Rc<RefCell<>>`)。
+- **Arena 树结构** (`node.rs`)：所有节点存储在 `Arena` 中，通过 `NodeId` 索引引用。 避免了 Rust
+  中树结构的自引用问题（不用 `Rc<RefCell<>>`)。
 - **Newick 解析** (`parser.rs`)：用 `nom` 手写解析器。
 - **树比较** (`cmp.rs`)：Robinson-Foulds 距离等。
 - **树算法** (`algo.rs`)：排序、reroot 等操作。
@@ -215,16 +215,17 @@ clustalw/muscle/mafft），充当工作流 glue。这与 `chain`/`net` 模块的
 ### 4.5 `libs/fmt/` — 格式解析
 
 统一管理生物信息学格式的解析逻辑：
+
 - `axt.rs`、`fas.rs`、`lav.rs`、`maf.rs`、`feature.rs`
 
-最近重构过：原先在 `libs/` 根目录下的 `axt.rs`、`fas.rs` 等移入 `libs/fmt/`，
-通过 `pub use fmt::*` re-export 保持向后兼容。
+最近重构过：原先在 `libs/` 根目录下的 `axt.rs`、`fas.rs` 等移入 `libs/fmt/`， 通过 `pub use fmt::*`
+re-export 保持向后兼容。
 
 > **MAF 支持现状**（2026-06 确认）：
+
 > - `maf.rs`（53 行）：仅有 `MafWriter`，不支持读取
-> - `fas.rs`（548 行）：`MafEntry`（line 242）解析 `s` 行含 alignment 向量，
->   `MafBlock`（line 292）汇聚 block 内所有 entry，`next_maf_block()`（line 298）
->   流式读取下一个 block
+> - `fas.rs`（548 行）：`MafEntry`（line 242）解析 `s` 行含 alignment 向量， `MafBlock`（line 292）
+  汇聚 block 内所有 entry，`next_maf_block()`（line 298）流式读取下一个 block
 > - **缺失**：`a` 行 score 解析、对齐串→CIGAR 展开、坐标投影（ref→query）
 > - `cmd_pgr/maf/` 仅 `to-fas` 一个子命令
 
@@ -233,9 +234,10 @@ clustalw/muscle/mafft），充当工作流 glue。这与 `chain`/`net` 模块的
 - `libs/io.rs`：I/O 辅助（`read_lines`、`reader`、`writer`）
 - `libs/hash.rs`：哈希工具
 - `libs/linalg.rs`：线性代数
-- **`libs/loc.rs`**：FASTA 随机访问索引模块。`Input` enum（Buf/File/Bgzf）+ `create_loc`（建 `.loc` 索引）+
-  `read_offset`（seek+read）。**2026-06 发现：此 IO 抽象层可直接支撑 PAF 模块的 CIGAR 懒加载和
-  BGZF 随机访问，比 impg 的 `paf.rs` IO 层更成熟**。见 [[paf-implementation.md]] §10。
+- **`libs/loc.rs`**：FASTA 随机访问索引模块。`Input` enum（Buf/File/Bgzf）+
+  `create_loc`（建 `.loc` 索引）+`read_offset`（seek+read）。
+  **2026-06 发现：此 IO 抽象层可直接支撑 PAF 模块的 CIGAR 懒加载和 BGZF 随机访问，比 impg 的 `paf.rs` IO 层更成熟**。
+  见 [[paf-implementation.md]] §10。
 - `libs/nt.rs`：核苷酸类型
 - `libs/pairmat.rs`：pair 矩阵
 - `libs/hv.rs`：hypervariable 区域
@@ -279,9 +281,8 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
 
 ### 5.2 零 Panic 策略
 
-所有用户输入（畸形数据、二进制文件、错误的命令行参数）必须返回友好错误，不能 panic。
-这贯穿了 `nom` 解析器（返回 `Result`）、文件 I/O（`anyhow::Context` 附加错误上下文）、
-索引越界检查等所有层面。
+所有用户输入（畸形数据、二进制文件、错误的命令行参数）必须返回友好错误，不能 panic。 这贯穿了 `nom`
+解析器（返回 `Result`）、文件 I/O（`anyhow::Context` 附加错误上下文）、索引越界检查等所有层面。
 
 ### 5.3 测试约定
 
@@ -295,7 +296,7 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
 
 - `about`: 第三人称单数
 - `after_help`: 用 raw string `r###"..."###`
-  - Description → Notes (bullet `*`) → Examples (numbered `1.`)
+    - Description → Notes (bullet `*`) → Examples (numbered `1.`)
 - 标准 note (fa/fas): `* Supports both plain text and gzipped (.gz) files`
 - 标准 note (twobit): `* 2bit files are binary and require random access (seeking)`
 
@@ -303,8 +304,8 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
 
 ### 6.1 已完成的（成熟）
 
-- **pairwise 比对全链路**：lastz → chain → net → axt → maf 的工具链在 `chain`/`net`/
-  `axt`/`psl`/`lav`/`maf` 六个模块中基本完整，且是纯 Rust 实现（不依赖 kent-tools）。
+- **pairwise 比对全链路**：lastz → chain → net → axt → maf 的工具链在 `chain`/`net`/ `axt`/`psl`/
+  `lav`/`maf` 六个模块中基本完整，且是纯 Rust 实现（不依赖 kent-tools）。
 - **FASTA/FASTQ/2bit 处理**：`fa`(18 子命令) + `fas`(21 子命令) + `fq`(2) + `twobit`(5)，
   日常序列操作需求基本覆盖。
 - **系统发育树操作**：`nwk`(18 子命令) 功能丰富，可视化 (SVG/DOT/TikZ) 也已有。
@@ -315,8 +316,8 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
 
 - **泛基因组方向**：已形成完整路线图。路线决策在 `notes/paf-route.md`，第一步行动计划在
   `notes/pairwise-selection.md`，PAF 模块实现参考在 `notes/paf-implementation.md`。
-  **2026-06 发现：`libs/loc.rs` 的 IO 抽象层可直接支撑 PAF 的 CIGAR 懒加载和 BGZF 访问，
-  实际实现量比最初估计少约 30%**。
+  **2026-06 发现：`libs/loc.rs` 的 IO 抽象层可直接支撑 PAF 的 CIGAR 懒加载和 BGZF 访问， 实际实现量比最初估计少约 30%**。
+
 - **`pl` 流程模块**：`ucsc`、`trf`、`rept`、`ir` 等 pipeline 在补充。
 
 ### 6.3 待补全的（TODO / 设计阶段）
@@ -324,11 +325,11 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
 - `pgr.rs` 末尾注释的 TODO：paralog、fas variation --indel、fas match、去完全包含序列
 - `docs/clust-eval.md`：聚类评估（设计中）
 - `docs/nwk-eval.md`：树结构多维度评估（设计中）
-- **PAF 子命令群**：`pgr maf to-paf` + `pgr paf index` + `pgr paf query` — 泛基因组第一步
-  最小原型。需新增的代码：区间树索引、PAF 行解析、CIGAR 编解码。IO 层可复用 `libs/loc.rs`。
-  唯一需新增的依赖：`coitrees`。
-- **`libs/io.rs` / `libs/loc.rs` 小幅增强**：`Input::read_line` 方法抽象 + `Input::Bgzf`
-  暴露 `virtual_position()`
+- **PAF 子命令群**：`pgr maf to-paf` + `pgr paf index` + `pgr paf query` — 泛基因组第一步 最小原型。
+  需新增的代码：区间树索引、PAF 行解析、CIGAR 编解码。IO 层可复用 `libs/loc.rs`。唯一需新增的依赖：
+  `coitrees`。
+- **`libs/io.rs` / `libs/loc.rs` 小幅增强**：`Input::read_line` 方法抽象 + `Input::Bgzf` 暴露
+  `virtual_position()`
 
 ### 6.4 不做 / 不适合做的
 
@@ -342,11 +343,10 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
 
 ### 7.1 UCSC kent-tools 的关系
 
-pgr 的 `chain`/`net`/`axt`/`psl` 模块是 UCSC kent-tools 对应功能的 **Rust 重实现**，
-但并非完全替代：
+pgr 的 `chain`/`net`/`axt`/`psl` 模块是 UCSC kent-tools 对应功能的**Rust 重实现**， 但并非完全替代：
 
-- **pgr 自己实现的**：chain sort/split/stitch、net filter/split/subset/class、axt sort/to_fas、
-  psl stats/lift/swap
+- **pgr 自己实现的**：chain sort/split/stitch、net filter/split/subset/class、axt sort/to_fas、 psl
+  stats/lift/swap
 - **仍依赖 kent-tools 的**（通过 `pgr pl ucsc` 编排）：chainAntiRepeat、chainMergeSort、
   chainPreNet、chainNet、netSyntenic、netChainSubset 等复杂步骤
 
@@ -360,20 +360,20 @@ pgr 的 `chain`/`net`/`axt`/`psl` 模块是 UCSC kent-tools 对应功能的 **Ru
 
 ### 7.3 Cactus 的关系
 
-参见 `notes/cactus.md` 和 `notes/cactus_lastz.md`。pgr 的 `pgr lav lastz` 子命令封装了
-lastz 调用，采用了 Cactus 风格的参数。Cactus 的 transitive alignment 机制对 pgr 泛基因组
-方向有参考价值。
+参见 `notes/cactus.md` 和 `notes/cactus_lastz.md`。pgr 的 `pgr lav lastz` 子命令封装了 lastz 调用，
+采用了 Cactus 风格的参数。Cactus 的 transitive alignment 机制对 pgr 泛基因组 方向有参考价值。
 
 ## 8. 关键风险与技术债
 
-1. **nightly 依赖**：`#![feature(portable_simd)]` 是 nightly-only，锁死了编译器版本。
-   如果 portable_simd 迟迟不稳定，可能成为包袱。
-2. **maf 模块单薄**：`maf` 目前只有 `to_fas` 一个子命令（而 MAF 是泛基因组管道中的关键格式）。
-   需要 `to-paf`、`filter`、`subset` 等扩展。
+1. **nightly 依赖**：`#![feature(portable_simd)]` 是 nightly-only，锁死了编译器版本。 如果
+   portable_simd 迟迟不稳定，可能成为包袱。
+2. **maf 模块单薄**：`maf` 目前只有 `to_fas` 一个子命令（而 MAF 是泛基因组管道中的关键格式）。 需要
+   `to-paf`、`filter`、`subset` 等扩展。
 3. **命令树深度嵌套**：三跳 dispatch (`pgr.rs` → `mod.rs` → `leaf.rs`) 在新增命令时容易遗漏
    某一层的注册。可以考虑宏简化。
-4. **测试覆盖不均衡**：`fa`、`nwk` 等大模块有较全的集成测试，但 `chain`/`net`/`pl` 的覆盖
-   可能不足（`pl` 依赖外部工具，测试困难）。
+4. **测试覆盖不均衡**：`fa`、`nwk` 等大模块有较全的集成测试，但 `chain`/`net`/`pl` 的覆盖 可能不足
+   （`pl` 依赖外部工具，测试困难）。
 5. **外部工具依赖的文档化**：`pl ucsc` 需要安装一整套 kent-tools，但错误提示不够友好。
 6. **`fas` 模块职责过重**：21 个子命令塞在一个模块下，`fas multiz` 等复杂逻辑可能需要
    拆分为独立顶层命令。
+
