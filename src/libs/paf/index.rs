@@ -1,5 +1,5 @@
 /// PAF interval-tree index and query engine.
-use super::cigar::{gap_compressed_identity, parse_cigar, CigarOp};
+use super::cigar::{gap_compressed_identity, parse_cigar, reverse_cigar, CigarOp};
 use super::parser::{parse_paf, parse_paf_line};
 use super::record::PafRecord;
 use coitrees::{BasicCOITree, Interval, IntervalNode, IntervalTree};
@@ -17,6 +17,8 @@ pub enum CigarStore {
     Owned(Vec<CigarOp>),
     /// Virtual position of the PAF line in a BGZF file (lazy fetch on demand).
     Lazy(u64),
+    /// Virtual position; fetch then reverse+swap I/D (mirror entry in reverse_trees).
+    LazyReversed(u64),
 }
 
 impl CigarStore {
@@ -25,6 +27,9 @@ impl CigarStore {
     }
     fn lazy(vpos: u64) -> Self {
         Self::Lazy(vpos)
+    }
+    fn lazy_reversed(vpos: u64) -> Self {
+        Self::LazyReversed(vpos)
     }
 }
 
@@ -43,6 +48,10 @@ pub type QueryResult = (u32, Interval<u32>, Interval<u32>, Vec<CigarOp>);
 pub struct PafIndex {
     pub names: IndexMap<String, u32>,
     pub(crate) trees: HashMap<u32, Arc<BasicCOITree<PafMetadata, u32>>>,
+    /// Mirror index: for each `+` strand record, a reversed entry is inserted
+    /// into `reverse_trees[query_id]` so BFS can traverse from query → target
+    /// without requiring a second PAF record with swapped roles.
+    pub(crate) reverse_trees: HashMap<u32, Arc<BasicCOITree<PafMetadata, u32>>>,
     /// Lazy CIGAR source: BGZF reader + original file path (for persistence).
     pub(crate) lazy_source: Option<Mutex<bgzf::io::Reader<File>>>,
     pub(crate) lazy_source_path: Option<String>,
@@ -53,40 +62,18 @@ impl PafIndex {
         let records = parse_paf(reader)?;
         let mut names = IndexMap::new();
         let mut by_target: HashMap<u32, Vec<Interval<PafMetadata>>> = HashMap::new();
+        let mut by_query: HashMap<u32, Vec<Interval<PafMetadata>>> = HashMap::new();
 
         for rec in &records {
-            let next_id = names.len() as u32;
-            names.entry(rec.target_name.clone()).or_insert(next_id);
-            let target_id = names[&rec.target_name];
-
-            let next_id = names.len() as u32;
-            names.entry(rec.query_name.clone()).or_insert(next_id);
-            let query_id = names[&rec.query_name];
-
-            let cigar = extract_cigar(&rec.tags);
-            let meta = PafMetadata {
-                query_id,
-                target_start: rec.target_start as i32,
-                target_end: rec.target_end as i32,
-                query_start: rec.query_start as i32,
-                query_end: rec.query_end as i32,
-                cigar: CigarStore::owned(cigar),
-            };
-            by_target.entry(target_id).or_default().push(Interval::new(
-                rec.target_start as i32,
-                rec.target_end as i32,
-                meta,
-            ));
+            insert_record(rec, &mut names, &mut by_target, &mut by_query, None);
         }
 
-        let mut trees = HashMap::new();
-        for (tid, mut intervals) in by_target {
-            intervals.sort_by(|a, b| a.first.cmp(&b.first));
-            trees.insert(tid, Arc::new(BasicCOITree::new(&intervals)));
-        }
+        let trees = build_trees(by_target);
+        let reverse_trees = build_trees(by_query);
         Ok(PafIndex {
             names,
             trees,
+            reverse_trees,
             lazy_source: None,
             lazy_source_path: None,
         })
@@ -95,41 +82,20 @@ impl PafIndex {
     pub fn build_multi<R: BufRead>(readers: Vec<R>) -> std::io::Result<Self> {
         let mut names = IndexMap::new();
         let mut by_target: HashMap<u32, Vec<Interval<PafMetadata>>> = HashMap::new();
+        let mut by_query: HashMap<u32, Vec<Interval<PafMetadata>>> = HashMap::new();
 
         for reader in readers {
             for rec in &parse_paf(reader)? {
-                let next_id = names.len() as u32;
-                names.entry(rec.target_name.clone()).or_insert(next_id);
-                let target_id = names[&rec.target_name];
-
-                let next_id = names.len() as u32;
-                names.entry(rec.query_name.clone()).or_insert(next_id);
-                let query_id = names[&rec.query_name];
-
-                let cigar = extract_cigar(&rec.tags);
-                by_target.entry(target_id).or_default().push(Interval::new(
-                    rec.target_start as i32,
-                    rec.target_end as i32,
-                    PafMetadata {
-                        query_id,
-                        target_start: rec.target_start as i32,
-                        target_end: rec.target_end as i32,
-                        query_start: rec.query_start as i32,
-                        query_end: rec.query_end as i32,
-                        cigar: CigarStore::owned(cigar),
-                    },
-                ));
+                insert_record(rec, &mut names, &mut by_target, &mut by_query, None);
             }
         }
 
-        let mut trees = HashMap::new();
-        for (tid, mut intervals) in by_target {
-            intervals.sort_by(|a, b| a.first.cmp(&b.first));
-            trees.insert(tid, Arc::new(BasicCOITree::new(&intervals)));
-        }
+        let trees = build_trees(by_target);
+        let reverse_trees = build_trees(by_query);
         Ok(PafIndex {
             names,
             trees,
+            reverse_trees,
             lazy_source: None,
             lazy_source_path: None,
         })
@@ -162,6 +128,7 @@ impl PafIndex {
 
         let mut names = IndexMap::new();
         let mut by_target: HashMap<u32, Vec<Interval<PafMetadata>>> = HashMap::new();
+        let mut by_query: HashMap<u32, Vec<Interval<PafMetadata>>> = HashMap::new();
         let mut line = String::new();
 
         loop {
@@ -184,17 +151,15 @@ impl PafIndex {
                     ));
                 }
             };
-            insert_record(&rec, &mut names, &mut by_target, CigarStore::lazy(vpos));
+            insert_record(&rec, &mut names, &mut by_target, &mut by_query, Some(vpos));
         }
 
-        let mut trees = HashMap::new();
-        for (tid, mut intervals) in by_target {
-            intervals.sort_by(|a, b| a.first.cmp(&b.first));
-            trees.insert(tid, Arc::new(BasicCOITree::new(&intervals)));
-        }
+        let trees = build_trees(by_target);
+        let reverse_trees = build_trees(by_query);
         Ok(PafIndex {
             names,
             trees,
+            reverse_trees,
             lazy_source: Some(Mutex::new(bgzf::io::Reader::new(File::open(path)?))),
             lazy_source_path: Some(path.to_string()),
         })
@@ -227,6 +192,7 @@ impl PafIndex {
         match store {
             CigarStore::Owned(c) => c.clone(),
             CigarStore::Lazy(vpos) => self.fetch_cigar(*vpos),
+            CigarStore::LazyReversed(vpos) => reverse_cigar(&self.fetch_cigar(*vpos)),
         }
     }
 
@@ -290,6 +256,7 @@ impl PafIndex {
         results
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn query_transitive_bfs(
         &self,
         target_id: u32,
@@ -319,7 +286,13 @@ impl PafIndex {
         while !current.is_empty() && (max_depth == 0 || depth < max_depth) {
             let mut next = vec![];
             for &(tid, cs, ce) in &current {
-                if let Some(tree) = self.trees.get(&tid) {
+                // Query both the forward index (`trees`) and the mirror index
+                // (`reverse_trees`) so BFS can traverse from any sequence in
+                // both directions. Arc clones are cheap (refcount bump) and
+                // release the borrow on `self` before the closure captures it.
+                let fwd = self.trees.get(&tid).cloned();
+                let rev = self.reverse_trees.get(&tid).cloned();
+                for tree in fwd.into_iter().chain(rev) {
                     tree.query(cs, ce, |iv: &IntervalNode<PafMetadata, u32>| {
                         let m = &iv.metadata;
                         let os = cs.max(iv.first);
@@ -374,12 +347,35 @@ fn extract_cigar(tags: &[String]) -> Vec<CigarOp> {
     vec![]
 }
 
-/// Insert a parsed PAF record into the name map and target-grouped intervals.
+/// Build sorted interval trees from a per-sequence interval map.
+fn build_trees(
+    by_seq: HashMap<u32, Vec<Interval<PafMetadata>>>,
+) -> HashMap<u32, Arc<BasicCOITree<PafMetadata, u32>>> {
+    let mut trees = HashMap::new();
+    for (tid, mut intervals) in by_seq {
+        intervals.sort_by_key(|iv| iv.first);
+        trees.insert(tid, Arc::new(BasicCOITree::new(&intervals)));
+    }
+    trees
+}
+
+/// Insert a parsed PAF record into the name map, forward index (`by_target`),
+/// and — for `+` strand records — the mirror index (`by_query`).
+///
+/// The mirror entry swaps query/target roles: it is stored in
+/// `by_query[query_id]` with the query interval as the tree key, the
+/// original target as `query_id` in metadata, and a reversed+I/D-swapped
+/// CIGAR. This lets `query_transitive_bfs` traverse from any sequence in
+/// both directions without requiring a second PAF record with swapped roles.
+///
+/// `vpos`: `Some(v)` for BGZF lazy mode (CIGAR fetched on demand),
+/// `None` for in-memory mode (CIGAR stored as `Owned`).
 fn insert_record(
     rec: &PafRecord,
     names: &mut IndexMap<String, u32>,
     by_target: &mut HashMap<u32, Vec<Interval<PafMetadata>>>,
-    cigar_store: CigarStore,
+    by_query: &mut HashMap<u32, Vec<Interval<PafMetadata>>>,
+    vpos: Option<u64>,
 ) {
     let next_id = names.len() as u32;
     names.entry(rec.target_name.clone()).or_insert(next_id);
@@ -389,19 +385,48 @@ fn insert_record(
     names.entry(rec.query_name.clone()).or_insert(next_id);
     let query_id = names[&rec.query_name];
 
-    let meta = PafMetadata {
+    let cigar = extract_cigar(&rec.tags);
+    let (fwd_store, rev_store) = match vpos {
+        Some(v) => (CigarStore::lazy(v), CigarStore::lazy_reversed(v)),
+        None => (
+            CigarStore::owned(cigar.clone()),
+            CigarStore::owned(reverse_cigar(&cigar)),
+        ),
+    };
+
+    // Forward entry: target interval → query metadata.
+    let fwd_meta = PafMetadata {
         query_id,
         target_start: rec.target_start as i32,
         target_end: rec.target_end as i32,
         query_start: rec.query_start as i32,
         query_end: rec.query_end as i32,
-        cigar: cigar_store,
+        cigar: fwd_store,
     };
     by_target.entry(target_id).or_default().push(Interval::new(
         rec.target_start as i32,
         rec.target_end as i32,
-        meta,
+        fwd_meta,
     ));
+
+    // Mirror entry (reverse index): only for '+' strand records.
+    // Interval is on the query coordinates; metadata.query_id is the
+    // original target; query_start/end hold the original target coordinates.
+    if rec.strand == '+' {
+        let rev_meta = PafMetadata {
+            query_id: target_id,
+            target_start: rec.query_start as i32,
+            target_end: rec.query_end as i32,
+            query_start: rec.target_start as i32,
+            query_end: rec.target_end as i32,
+            cigar: rev_store,
+        };
+        by_query.entry(query_id).or_default().push(Interval::new(
+            rec.query_start as i32,
+            rec.query_end as i32,
+            rev_meta,
+        ));
+    }
 }
 
 /// Check whether a file is BGZF-compressed by inspecting the header bytes.

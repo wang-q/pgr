@@ -336,3 +336,114 @@ C\t100\t0\t30\t+\tB\t100\t0\t30\t25\t30\t255\tcg:Z:30M
     );
     assert!(stdout.contains("C\t0\t30"), "C should be kept (filter off)");
 }
+
+// ── paf query bidirectional index (mirror in reverse_trees) ──────
+
+#[test]
+fn command_paf_query_bidirectional_mirror_finds_target() {
+    // Only A→B record (A is query, B is target). Without mirror index,
+    // querying A would find nothing (trees[A] is empty). With mirror index,
+    // reverse_trees[A] contains B, so BFS from A finds B.
+    let paf = "A\t100\t0\t100\t+\tB\t100\t0\t100\t95\t100\t255\tcg:Z:100M\n";
+    let (stdout, _) = PgrCmd::new()
+        .args(&["paf", "query", "stdin", "A:0-100", "--transitive"])
+        .stdin(paf)
+        .run();
+    assert!(
+        stdout.contains("B\t0\t0\t100\t+\tA"),
+        "B should be found via mirror index when querying from A"
+    );
+}
+
+#[test]
+fn command_paf_query_single_hop_does_not_use_mirror() {
+    // Same PAF as above, but without --transitive. Single-hop query only
+    // searches `trees[A]`, which is empty, so no results.
+    let paf = "A\t100\t0\t100\t+\tB\t100\t0\t100\t95\t100\t255\tcg:Z:100M\n";
+    let (_, stderr) = PgrCmd::new()
+        .args(&["paf", "query", "stdin", "A:0-100"])
+        .stdin(paf)
+        .run();
+    assert!(
+        stderr.contains("No results found"),
+        "single-hop should not use mirror index"
+    );
+}
+
+#[test]
+fn command_paf_query_bidirectional_multi_hop_via_mirror() {
+    // A→B and C→B (both target B). Query from A should find B (via mirror
+    // in reverse_trees[A]) and then C (via trees[B]). Without mirror index,
+    // query from A would find nothing.
+    let paf = "\
+A\t100\t0\t100\t+\tB\t100\t0\t100\t95\t100\t255\tcg:Z:100M
+C\t100\t0\t100\t+\tB\t100\t0\t100\t90\t100\t255\tcg:Z:100M
+";
+    let (stdout, _) = PgrCmd::new()
+        .args(&["paf", "query", "stdin", "A:0-100", "--transitive"])
+        .stdin(paf)
+        .run();
+    assert!(
+        stdout.contains("B\t0\t0\t100\t+\tA"),
+        "B should be found via mirror (1-hop)"
+    );
+    assert!(
+        stdout.contains("C\t"),
+        "C should be found via trees[B] (2-hop)"
+    );
+}
+
+#[test]
+fn command_paf_query_mirror_cigar_reversed() {
+    // A has 200bp insertion relative to B. Original CIGAR: 50M200I50M.
+    // Mirror entry reverses CIGAR and swaps I/D: 50M200D50M.
+    let paf = "A\t300\t0\t300\t+\tB\t100\t0\t100\t95\t300\t255\tcg:Z:50M200I50M\n";
+    let (stdout, _) = PgrCmd::new()
+        .args(&["paf", "query", "stdin", "A:0-300", "--transitive"])
+        .stdin(paf)
+        .run();
+    assert!(
+        stdout.contains("cg:Z:50M200D50M"),
+        "mirror entry should have reversed CIGAR with I/D swapped"
+    );
+}
+
+#[test]
+fn command_paf_query_reverse_strand_no_mirror() {
+    // Minus-strand records do not get mirror entries (coordinate transform
+    // is non-trivial). Query from A should find nothing via mirror.
+    let paf = "A\t100\t0\t100\t-\tB\t100\t0\t100\t95\t100\t255\tcg:Z:100M\n";
+    let (_, stderr) = PgrCmd::new()
+        .args(&["paf", "query", "stdin", "A:0-100", "--transitive"])
+        .stdin(paf)
+        .run();
+    assert!(
+        stderr.contains("No results found"),
+        "minus-strand should not have mirror entry"
+    );
+}
+
+#[test]
+fn command_paf_query_bidirectional_persists_across_save_load() {
+    use std::fs;
+    let paf_path = "/tmp/pgr_cli_test_bidir.paf";
+    let idx_path = "/tmp/pgr_cli_test_bidir.paf.idx";
+    fs::write(
+        paf_path,
+        "A\t100\t0\t100\t+\tB\t100\t0\t100\t95\t100\t255\tcg:Z:100M\n",
+    )
+    .unwrap();
+    PgrCmd::new()
+        .args(&["paf", "index", paf_path, "-o", idx_path])
+        .run();
+    // Query from A — only works if reverse_trees persisted across save/load.
+    let (stdout, _) = PgrCmd::new()
+        .args(&["paf", "query", idx_path, "A:0-100", "--transitive"])
+        .run();
+    assert!(
+        stdout.contains("B\t0\t0\t100\t+\tA"),
+        "bidirectional index should persist across save/load"
+    );
+    let _ = fs::remove_file(paf_path);
+    let _ = fs::remove_file(idx_path);
+}

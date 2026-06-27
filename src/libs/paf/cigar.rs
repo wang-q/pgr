@@ -58,6 +58,10 @@ impl CigarOp {
     }
 
     /// Decode the length.
+    ///
+    /// Note: `CigarOp` represents a single op (not a collection), so there is
+    /// no meaningful `is_empty` — length is always >= 1 by construction.
+    #[allow(clippy::len_without_is_empty)]
     pub fn len(self) -> u32 {
         self.0 & 0x1FFF_FFFF
     }
@@ -124,6 +128,28 @@ pub fn format_cigar(ops: &[CigarOp]) -> String {
         write!(&mut s, "{op}").unwrap();
     }
     s
+}
+
+// ── Reversal (for bidirectional index) ───────────────────────────
+
+/// Reverse a CIGAR operation list, swapping `I` and `D`.
+///
+/// When an alignment is viewed from the query's perspective (instead of the
+/// target's), the CIGAR must be read backwards and insertions/deletions
+/// swapped: an insertion in the original query becomes a deletion in the
+/// mirrored record (and vice versa). `=`/`X`/`M` ops are unchanged.
+pub fn reverse_cigar(ops: &[CigarOp]) -> Vec<CigarOp> {
+    ops.iter()
+        .rev()
+        .map(|&op| {
+            let new_op = match op.op() {
+                'I' => 'D',
+                'D' => 'I',
+                c => c,
+            };
+            CigarOp::new(op.len(), new_op)
+        })
+        .collect()
 }
 
 // ── Statistics ───────────────────────────────────────────────────
@@ -333,6 +359,59 @@ mod tests {
             let formatted = format_cigar(&ops);
             assert_eq!(formatted, case, "roundtrip failed for '{case}'");
         }
+    }
+
+    // ── reverse_cigar ────────────────────────────────────────
+
+    #[test]
+    fn test_reverse_cigar_basic() {
+        // 10M5I3D → reversed: 3I5D10M
+        let ops = parse_cigar("10M5I3D");
+        let rev = reverse_cigar(&ops);
+        assert_eq!(format_cigar(&rev), "3I5D10M");
+    }
+
+    #[test]
+    fn test_reverse_cigar_no_indels() {
+        // 10=2X8= → reversed: 8=2X10= (no I/D swap, just order reversed)
+        let ops = parse_cigar("10=2X8=");
+        let rev = reverse_cigar(&ops);
+        assert_eq!(format_cigar(&rev), "8=2X10=");
+    }
+
+    #[test]
+    fn test_reverse_cigar_empty() {
+        let rev = reverse_cigar(&[]);
+        assert!(rev.is_empty());
+    }
+
+    #[test]
+    fn test_reverse_cigar_double_reversal() {
+        // reverse(reverse(x)) == x (I↔D swapped twice = identity)
+        let ops = parse_cigar("5M3I2D7=");
+        let rev2 = reverse_cigar(&reverse_cigar(&ops));
+        assert_eq!(format_cigar(&rev2), format_cigar(&ops));
+    }
+
+    #[test]
+    fn test_reverse_cigar_only_indels() {
+        // 5I3D → reversed: 3I5D
+        let ops = parse_cigar("5I3D");
+        let rev = reverse_cigar(&ops);
+        assert_eq!(format_cigar(&rev), "3I5D");
+    }
+
+    #[test]
+    fn test_reverse_cigar_preserves_lengths() {
+        let ops = parse_cigar("100M1I99M1D200=");
+        let rev = reverse_cigar(&ops);
+        // Total length consumed should be preserved per-axis
+        let orig_query: u32 = ops.iter().map(|o| o.query_delta()).sum();
+        let rev_query: u32 = rev.iter().map(|o| o.query_delta()).sum();
+        assert_eq!(orig_query, rev_query, "query-axis length changed");
+        let orig_target: u32 = ops.iter().map(|o| o.target_delta()).sum();
+        let rev_target: u32 = rev.iter().map(|o| o.target_delta()).sum();
+        assert_eq!(orig_target, rev_target, "target-axis length changed");
     }
 
     // ── Statistics ────────────────────────────────────────────

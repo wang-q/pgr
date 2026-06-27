@@ -1,7 +1,7 @@
 /// Disk persistence for PafIndex.
 use super::cigar::CigarOp;
 use super::index::{CigarStore, PafIndex, PafMetadata};
-use coitrees::{Interval, IntervalNode, IntervalTree};
+use coitrees::{BasicCOITree, Interval, IntervalNode, IntervalTree};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::File;
@@ -12,15 +12,18 @@ use std::sync::Arc;
 /// File format identifier: "PGRI" = pgr index.
 const MAGIC: [u8; 4] = *b"PGRI";
 /// Format version (incremented on breaking changes).
-const VERSION: u32 = 2;
+/// v3: bidirectional index — adds `reverse_intervals` and `LazyReversed`.
+const VERSION: u32 = 3;
 
 // ── Serializable types ───────────────────────────────────────────
 
-/// CIGAR storage on disk: either owned (bit-packed u32 ops) or lazy (vpos).
+/// CIGAR storage on disk: owned (bit-packed u32 ops), lazy (vpos), or
+/// lazy-reversed (vpos + reverse/swap I/D on fetch).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum FlatCigar {
     Owned(Vec<u32>),
     Lazy(u64),
+    LazyReversed(u64),
 }
 
 /// Per-record metadata stored on disk.
@@ -34,12 +37,17 @@ pub struct FlatMeta {
     pub cigar: FlatCigar,
 }
 
+/// Flat interval list keyed by sequence id: `(seq_id, Vec<(first, last, FlatMeta)>)`.
+pub type FlatTree = Vec<(u32, Vec<(i32, i32, FlatMeta)>)>;
+
 /// Disk-persistable snapshot of a PafIndex.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PafIndexData {
     pub names: Vec<(String, u32)>,
-    /// Per-target: (target_id, Vec<(first, last, FlatMeta)>)
-    pub intervals: Vec<(u32, Vec<(i32, i32, FlatMeta)>)>,
+    /// Per-target forward intervals.
+    pub intervals: FlatTree,
+    /// Mirror index (reverse_trees): per-query intervals for bidirectional BFS.
+    pub reverse_intervals: FlatTree,
     /// Original BGZF file path for lazy CIGAR loading (None for in-memory mode).
     pub lazy_source_path: Option<String>,
 }
@@ -50,8 +58,7 @@ impl PafIndex {
     /// Save the index to a `.paf.idx` file.
     pub fn save<P: AsRef<Path>>(&self, path: P) -> io::Result<()> {
         let data = to_data(self);
-        let encoded =
-            bincode::serialize(&data).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        let encoded = bincode::serialize(&data).map_err(io::Error::other)?;
         let mut f = File::create(path)?;
         f.write_all(&MAGIC)?;
         f.write_all(&VERSION.to_le_bytes())?;
@@ -75,26 +82,24 @@ impl PafIndex {
         let _version = u32::from_le_bytes(ver_buf);
         let mut buf = Vec::new();
         f.read_to_end(&mut buf)?;
-        let data: PafIndexData =
-            bincode::deserialize(&buf).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        let data: PafIndexData = bincode::deserialize(&buf).map_err(io::Error::other)?;
         from_data(data)
     }
 }
 
 // ── Conversion helpers ───────────────────────────────────────────
 
-/// Export index to serializable form.
-pub fn to_data(idx: &PafIndex) -> PafIndexData {
-    let names: Vec<(String, u32)> = idx.names.iter().map(|(n, id)| (n.clone(), *id)).collect();
-
-    let mut intervals: Vec<(u32, Vec<(i32, i32, FlatMeta)>)> = Vec::new();
-    for (&tid, tree_ref) in &idx.trees {
+/// Serialize a tree map into the flat `(seq_id, Vec<(first, last, FlatMeta)>)` form.
+fn serialize_trees(trees: &HashMap<u32, Arc<BasicCOITree<PafMetadata, u32>>>) -> FlatTree {
+    let mut out: FlatTree = Vec::new();
+    for (&tid, tree_ref) in trees {
         let mut ivs: Vec<(i32, i32, FlatMeta)> = Vec::new();
-        (&**tree_ref).query(i32::MIN, i32::MAX, |iv: &IntervalNode<PafMetadata, u32>| {
+        (**tree_ref).query(i32::MIN, i32::MAX, |iv: &IntervalNode<PafMetadata, u32>| {
             let m = &iv.metadata;
             let flat_cigar = match &m.cigar {
                 CigarStore::Owned(c) => FlatCigar::Owned(c.iter().map(|op| op.0).collect()),
                 CigarStore::Lazy(vpos) => FlatCigar::Lazy(*vpos),
+                CigarStore::LazyReversed(vpos) => FlatCigar::LazyReversed(*vpos),
             };
             ivs.push((
                 iv.first,
@@ -109,27 +114,17 @@ pub fn to_data(idx: &PafIndex) -> PafIndexData {
                 },
             ));
         });
-        intervals.push((tid, ivs));
+        out.push((tid, ivs));
     }
-    PafIndexData {
-        names,
-        intervals,
-        lazy_source_path: idx.lazy_source_path.clone(),
-    }
+    out
 }
 
-/// Reconstruct index from serializable form.
-pub fn from_data(data: PafIndexData) -> io::Result<PafIndex> {
+/// Deserialize a flat interval list into sorted interval trees.
+fn deserialize_trees(flat: &FlatTree) -> HashMap<u32, Arc<BasicCOITree<PafMetadata, u32>>> {
     use coitrees::BasicCOITree;
-    use indexmap::IndexMap;
-
-    let mut names = IndexMap::new();
-    for (name, id) in &data.names {
-        names.insert(name.clone(), *id);
-    }
 
     let mut trees = HashMap::new();
-    for (tid, ivs) in &data.intervals {
+    for (tid, ivs) in flat {
         let mut raw_intervals: Vec<Interval<PafMetadata>> = ivs
             .iter()
             .map(|(first, last, flat)| {
@@ -138,6 +133,7 @@ pub fn from_data(data: PafIndexData) -> io::Result<PafIndex> {
                         CigarStore::Owned(vals.iter().map(|&v| CigarOp::from_raw(v)).collect())
                     }
                     FlatCigar::Lazy(vpos) => CigarStore::Lazy(*vpos),
+                    FlatCigar::LazyReversed(vpos) => CigarStore::LazyReversed(*vpos),
                 };
                 let meta = PafMetadata {
                     query_id: flat.query_id,
@@ -150,13 +146,41 @@ pub fn from_data(data: PafIndexData) -> io::Result<PafIndex> {
                 Interval::new(*first, *last, meta)
             })
             .collect();
-        raw_intervals.sort_by(|a, b| a.first.cmp(&b.first));
+        raw_intervals.sort_by_key(|iv| iv.first);
         trees.insert(*tid, Arc::new(BasicCOITree::new(&raw_intervals)));
     }
+    trees
+}
+
+/// Export index to serializable form.
+pub fn to_data(idx: &PafIndex) -> PafIndexData {
+    let names: Vec<(String, u32)> = idx.names.iter().map(|(n, id)| (n.clone(), *id)).collect();
+    let intervals = serialize_trees(&idx.trees);
+    let reverse_intervals = serialize_trees(&idx.reverse_trees);
+    PafIndexData {
+        names,
+        intervals,
+        reverse_intervals,
+        lazy_source_path: idx.lazy_source_path.clone(),
+    }
+}
+
+/// Reconstruct index from serializable form.
+pub fn from_data(data: PafIndexData) -> io::Result<PafIndex> {
+    use indexmap::IndexMap;
+
+    let mut names = IndexMap::new();
+    for (name, id) in &data.names {
+        names.insert(name.clone(), *id);
+    }
+
+    let trees = deserialize_trees(&data.intervals);
+    let reverse_trees = deserialize_trees(&data.reverse_intervals);
 
     let mut idx = PafIndex {
         names,
         trees,
+        reverse_trees,
         lazy_source: None,
         lazy_source_path: data.lazy_source_path,
     };
@@ -277,6 +301,7 @@ C\t100\t0\t100\t+\tA\t100\t0\t100\t90\t100\t255\tcg:Z:100M
         let data = PafIndexData {
             names: vec![],
             intervals: vec![],
+            reverse_intervals: vec![],
             lazy_source_path: None,
         };
         let idx = from_data(data).unwrap();
