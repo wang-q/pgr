@@ -66,6 +66,12 @@ impg 的 `AlignmentRecord` 只有 8 个字段——`matches`/`block_len`/`mapq` 
 这是为了把区间树节点压到最小（cache 命中率优先）。pgr 第一步存 12 个完整字段，先用起来；
 后续内存成瓶颈时再瘦身到 8 字段，内部改动不影响下游。
 
+> **实现更新**（2026-06）：pgr 的实际 `PafRecord`（`src/libs/paf/record.rs`）采用了更接近
+> wgatools 的简化设计——`String` 字段代替 `u32` 序列 ID、`tags: Vec<String>` 存额外标签。
+> 这与 impg 的紧凑 48 字节设计不同，但对于从 MAF 转换的 PAF（比对数远小于 all-vs-all），
+> 内存压力可控。后续若做 all-vs-all 场景的 `PafIndex`，区间树节点会使用单独的紧凑 struct
+> 而非此 `PafRecord`。
+
 ---
 ## 3. PAF 解析器
 
@@ -224,32 +230,32 @@ pub enum PafParseError {
 
 ### 第一期 — 支撑 `pgr maf to-paf` + `pgr paf index` + `pgr paf query`
 
-| 优先级 | 组件                                               | 文件                 |
-|--------|----------------------------------------------------|----------------------|
-| P0     | `PafRecord` struct                                 | `libs/paf/record.rs` |
-| P0     | `SequenceIndex`                                    | `libs/seqidx.rs`     |
-| P0     | `parse_paf_line` + `parse_paf`（纯文本）           | `libs/paf/parser.rs` |
-| P0     | `parse_cigar` + `format_cigar`                     | `libs/paf/cigar.rs`  |
-| P0     | `write_paf_record`                                 | `libs/paf/writer.rs` |
-| P0     | `PafIndex`：`build` + `query` + `query_transitive` | `libs/paf/index.rs`  |
-| P1     | `CigarOp` bit-packing                              | `libs/paf/cigar.rs`  |
+| 优先级 | 组件                                               | 文件                 | 状态 |
+|--------|----------------------------------------------------|----------------------|------|
+| P0     | `PafRecord` struct                                 | `libs/paf/record.rs` | ✅ 已完成 |
+| P0     | `CigarOp` bit-packing + `parse_cigar` + `format_cigar` | `libs/paf/cigar.rs` | ✅ 已完成 |
+| P0     | `write_paf_record`                                 | `libs/paf/writer.rs` | ✅ 已完成 |
+| P0     | `cigar_from_alignment` + identity 计算             | `libs/paf/cigar.rs`  | ✅ 已完成 |
+| P0     | `SequenceIndex`                                    | `libs/seqidx.rs`     | 待实现 |
+| P0     | PAF 解析器（`parse_paf_line` + `parse_paf`）       | `libs/paf/parser.rs` | 待实现 |
+| P0     | `PafIndex`：`build` + `query` + `query_transitive` | `libs/paf/index.rs`  | 待实现 |
 
 ### 第二期 — 大 cohort 场景
 
-| 优先级 | 组件                         | 说明                             |
-|--------|------------------------------|----------------------------------|
-| P1     | `parse_paf_bgzf`             | 模式 2，支持 `.paf.gz`           |
-| P1     | `read_cigar_data`（懒加载）  | 索引层不存 CIGAR，查询时按需读取 |
-| P2     | `parse_paf_file`（自动检测） | 统一入口，dispatch 三种模式      |
-| P3     | `parse_paf_bgzf_with_gzi`    | 模式 3，多线程 BGZF 解压         |
+| 优先级 | 组件                         | 说明                             | 状态 |
+|--------|------------------------------|----------------------------------|------|
+| P1     | `parse_paf_bgzf`             | BGZF 压缩 PAF 支持               | 待实现 |
+| P1     | `read_cigar_data`（懒加载）  | 区间树节点不存完整 CIGAR          | 暂不需要（见 §2 实现更新） |
+| P2     | `parse_paf_file`（自动检测） | 统一入口，dispatch 三种模式      | 待实现 |
+| P3     | `parse_paf_bgzf_with_gzi`    | 多线程 BGZF 解压                 | 待实现 |
 
 ### 第三期 — 查询层增强
 
-| 优先级 | 组件                       | 说明                                               |
-|--------|----------------------------|----------------------------------------------------|
-| P2     | `PafRecord` 瘦身（8 字段） | 去掉 matches/block_len/mapq，回退到懒加载          |
-| P2     | Caf 后处理过滤参数         | `--min-degree`、`--min-chain-length`、`--end-trim` |
-| P3     | Chain/Net syntenic 过滤器  | `--syntenic-filter` 参数                           |
+| 优先级 | 组件                       | 说明                                               | 状态 |
+|--------|----------------------------|----------------------------------------------------|------|
+| P2     | `PafRecord` 瘦身（8 字段） | 区间树节点用单独的紧凑 struct，`PafRecord` 不变    | 规划中 |
+| P2     | Caf 后处理过滤参数         | `--min-degree`、`--min-chain-length`、`--end-trim` | 待实现 |
+| P3     | Chain/Net syntenic 过滤器  | `--syntenic-filter` 参数                           | 待实现 |
 
 ---
 ## 9. 新增依赖
@@ -510,4 +516,161 @@ pgr 后续如果要直接消费 minimap2 输出的 PAF，可以考虑支持。
 
 pgr V1 不需要 `inv_*` 字段（两序列 MAF 不涉及倒位），但 `match/mismatch/ins/del`
 的事件数 vs 碱基数的区分在计算 gi/bi 时已经用到。
+
+### 13.4 wgatools 解析器模块设计（可借鉴的架构模式）
+
+通读 `parser/` 全部 6 个文件后的关键发现：
+
+**`AlignRecord` trait — 多格式统一抽象**（`parser/common.rs:142-176`）：
+
+wgatools 的 `AlignRecord` trait 定义了 16 个方法，PAF/MAF/Chain 三种格式各自实现。
+默认方法提供 fallback（如 `get_cigar_string()` 返回 `"*"`、`convert2paf()` 返回 default）。
+pgr 当前只有 `PafRecord`，但后续做 Chain↔PAF 时可直接借鉴此模式。
+
+```rust
+pub trait AlignRecord {
+    fn query_name(&self) -> &str;
+    fn query_length(&self) -> u64;
+    fn query_start(&self) -> u64;
+    fn query_end(&self) -> u64;
+    fn query_strand(&self) -> Strand;
+    fn target_name(&self) -> &str;
+    fn target_length(&self) -> u64;
+    fn target_start(&self) -> u64;
+    fn target_end(&self) -> u64;
+    fn target_strand(&self) -> Strand;
+    fn target_align_size(&self) -> u64;
+    fn get_cigar_string(&self) -> Result<String, WGAError> { Ok("*".to_string()) }
+    fn convert2paf(&mut self, _query_name: Option<&str>) -> Result<PafRecord, WGAError> { Ok(PafRecord::default()) }
+    fn convert2maf(&self) -> Result<MAFRecord, WGAError> { Ok(MAFRecord::default()) }
+    fn query_seq(&self) -> &str { "" }
+    fn target_seq(&self) -> &str { "" }
+    fn get_stat(&self) -> Result<RecStat, WGAError> { Ok(RecStat::default()) }
+}
+```
+
+**`SeqInfo` — 统一坐标容器**（`parser/common.rs:32-39`）：
+
+```rust
+pub struct SeqInfo {
+    pub name: String,
+    pub size: u64,
+    pub strand: Strand,
+    pub start: u64,
+    pub end: u64,
+}
+```
+
+`ChainHeader` 中 target 和 query 各是一个 `SeqInfo`，替代了平铺的 8 个字段。
+pgr 后续如果重构成此模式，`PafRecord` 可以用 `(query: SeqInfo, target: SeqInfo)`
+替代当前 10 个独立坐标字段。
+
+**`Strand` 枚举**（`parser/common.rs:41-69`）：
+
+用 `enum Strand { Positive, Negative }` 替代 `char`，配合 serde 的
+`#[serde(rename = "+")]` 实现自动序列化。pgr 当前用 `char`（`+`/`-`），
+使用 enum 更安全——编译期防止非法值。
+
+**`RecStat` — 统计信息从 CIGAR 派生**（`parser/common.rs:116-140`）：
+
+```rust
+impl From<Cigar> for RecStat { ... }
+```
+
+pgr 的 `CigarStats` 与此等价，但 wgatools 额外提供了 `inv_*` 倒位统计和
+`aligned_size` / `query_align_size` 推导。pgr V1 不需要倒位字段，
+但如果后续支持全基因组比对的结构变异，需要类似维度。
+
+**`ChainHeader::TryFrom` 模式**（`parser/chain.rs:103-183`）：
+
+```rust
+impl TryFrom<&MAFRecord> for ChainHeader { ... }
+impl TryFrom<&PafRecord> for ChainHeader { ... }
+```
+
+利用 Rust 标准 trait 实现格式间转换，调用方只需 `ChainHeader::try_from(&maf_rec)?`。
+这比 impg 的独立转换函数更符合 Rust 惯用法。pgr 做 Chain↔PAF 时建议采用。
+
+**Chain 解析策略**（`parser/chain.rs:16-73`）：
+
+wgatools 将整个 Chain 文件读入一个 `String`，然后用 nom 逐个解析 record
+（返回剩余字符串作为下一次迭代的输入）。这种 "read-all + nom iterate" 的策略
+避免了复杂的流式状态管理，适用于 Chain 文件通常不太大的场景。
+
+pgr 已有自己的 Chain 解析器（`libs/chain/record.rs`），不需要移植此策略，
+但 nom 解析 Chain data line 的方式可供参考。
+
+**parser 模块结构**（`parser/mod.rs`）：
+
+```
+parser/
+├── mod.rs      // pub mod chain; pub mod cigar; pub mod common; pub mod maf; pub mod paf;
+├── common.rs   // AlignRecord trait, Strand, SeqInfo, Block, RecStat, FileFormat
+├── chain.rs    // ChainReader, ChainRecord, ChainHeader, nom parser
+├── cigar.rs    // Cigar, CigarUnit, parse/compact/trim operations
+├── maf.rs      // MAFReader, MAFRecord, MAFSLine, convert2paf
+└── paf.rs      // PAFReader, PafRecord, cs_to_cigar
+```
+
+pgr 的 `libs/paf/` 和 `libs/fmt/` 可以逐渐向此结构靠拢——
+将 CIGAR 放入 `paf/` 而不是独立 top-level 模块（pgr 已经这样做了），
+将 MAF/PSL/Chain 等各格式的 `AlignRecord` trait 抽象到 `common` 中。
+
+### 13.5 工具层设计模式
+
+通读 `tools/` 全部 15 个文件和 `utils.rs`、`errors.rs`、`cli.rs` 后的关键发现。
+
+**并行聚合模式**（`tools/stat.rs:67-105`）：
+
+```rust
+reader.records()
+    .par_bridge()
+    .try_fold(Vec::new, |mut acc, rec| {
+        acc.push(stat_rec(&rec?)?);
+        Ok::<Vec<PairStat>, WGAError>(acc)
+    })
+    .try_reduce(Vec::new, |mut acc, mut vec| {
+        acc.append(&mut vec);
+        Ok(acc)
+    })?;
+```
+
+`par_bridge` + `try_fold` + `try_reduce` 是 rayon 下流式迭代器并行化的标准模式。
+pgr 的 `paf query` 在处理多区间查询时可直接借鉴——每个 target 区间独立投影，
+结果在 reduce 阶段合并去重。
+
+**通用过滤器**（`tools/filter.rs`）：
+
+```rust
+fn filter_alignrec<T: AlignRecord>(rec: &T, min_block_size, min_query_size) -> Option<&T>
+```
+
+利用 `AlignRecord` trait 实现多格式通用过滤。pgr 如果后续引入 `AlignRecord` trait，
+`paf query` 的 `--min-identity` / `--min-output-length` 过滤可以写成泛型。
+
+**MAF 索引**（`tools/index.rs`）：
+
+wgatools 的 MAF 索引用 `HashMap<String, Vec<IvP>>`（序列名 → 区间列表），
+序列化为 JSON。这比 impg 的 coitrees 简单得多，但也不支持高效区间重叠查询
+（需要遍历整个区间列表）。pgr 的 PAF 索引需要真正的区间树，不能采用此简化方案。
+
+**IO 工具**（`utils.rs`）：
+
+- **多压缩格式支持**：通过 magic number 检测 gz/bz2/xz，自动选择解压器
+- **`stdin_reader()`**：用 `atty` crate 检测 stdin 是否来自管道，
+  避免在交互终端下无输入时挂起（pgr 可以用类似方式改进 `reader("stdin")`）
+- **`reverse_complement()`**：完整实现（含大小写），pgr 已有 `libs/nt.rs`，
+  但 wgatools 的错误处理更细致（对非法碱基返回 Err）
+
+**错误处理**（`errors.rs`）：
+
+用 `thiserror` derive macro 定义 30+ 种错误变体，结构清晰。
+`#[error(transparent)]` 桥接 `anyhow::Error`。pgr 直接使用 `anyhow` 对 CLI 工具
+已足够，但后续如果 lib 层需要可编程的错误类型，可以考虑引入 `thiserror`。
+
+**CLI 组织**（`cli.rs`）：
+
+wgatools 用 clap derive 模式，全局标志（`-o`/`-r`/`-t`/`-v`）通过
+`#[arg(global = true)]` 在所有子命令间共享。pgr 使用 builder 模式，
+全局参数需要每个子命令独立定义——这是两种模式的固有差异，不影响功能。
 
