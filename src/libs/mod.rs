@@ -12,6 +12,7 @@ pub mod ms;
 pub mod net;
 pub mod nt;
 pub mod pairmat;
+pub mod paf;
 pub mod phylo;
 pub mod poa;
 pub mod psl;
