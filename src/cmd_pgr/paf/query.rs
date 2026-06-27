@@ -6,8 +6,11 @@ pub fn make_subcommand() -> Command {
         .about("Query PAF index for coordinate projection")
         .after_help(
             r###"
-Queries a PAF file for intervals overlapping a target region and projects
-them to query coordinates via CIGAR.
+Queries a PAF file or saved index for intervals overlapping a target
+region and projects them to query coordinates via CIGAR.
+
+Accepts either a PAF file (built on-the-fly) or a .paf.idx index
+(loaded from disk, instant startup).
 
 Two modes:
 * Default: single-hop projection — finds all PAF records whose target
@@ -24,10 +27,13 @@ Notes:
 * Reads from stdin if input file is 'stdin'
 
 Examples:
-1. Single-hop projection:
+1. Single-hop projection from a PAF file:
    pgr paf query alignments.paf chr1:1000-5000
 
-2. Transitive BFS up to 3 hops:
+2. Query from a saved index (faster):
+   pgr paf query alignments.paf.idx chr1:1000-5000
+
+3. Transitive BFS up to 3 hops:
    pgr paf query alignments.paf chr1:1000-5000 --transitive --max-depth 3
 
 "###,
@@ -36,7 +42,7 @@ Examples:
             Arg::new("infile")
                 .required(true)
                 .index(1)
-                .help("Input PAF file to query"),
+                .help("Input PAF file or .paf.idx index to query"),
         )
         .arg(
             Arg::new("region")
@@ -101,9 +107,15 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let (target_name, start, end) = parse_region(region_str)?;
 
-    eprintln!("Building index from {infile}...");
-    let reader = pgr::reader(infile);
-    let idx = PafIndex::build(reader)?;
+    let idx = if infile.ends_with(".paf.idx") {
+        eprintln!("Loading index from {infile}...");
+        PafIndex::load(infile)?
+    } else {
+        eprintln!("Building index from {infile}...");
+        let reader = pgr::reader(infile);
+        PafIndex::build(reader)?
+    };
+
     eprintln!(
         "  sequences: {}, targets: {}",
         idx.names.len(),

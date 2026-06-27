@@ -105,9 +105,7 @@ C\t100\t0\t50\t+\tB\t100\t50\t100\t45\t50\t255\tcg:Z:50M
         .args(&["paf", "query", "stdin", "B:0-100"])
         .stdin(paf)
         .run();
-    // A maps to B:[0,100) -- fully overlapping
     assert!(stdout.contains("A\t0\t100\tB\t0\t100"));
-    // C maps to B:[50,100) -- overlaps query [0,100)
     assert!(stdout.contains("C\t0\t50\tB\t50\t100"));
 }
 
@@ -152,4 +150,53 @@ fn command_paf_query_missing_target() {
         .stdin("A\t100\t0\t50\t+\tB\t100\t0\t50\t45\t50\t255\n")
         .run();
     assert!(stderr.contains("not found"));
+}
+
+// ── persist roundtrip ────────────────────────────────────────────
+
+#[test]
+fn command_paf_index_save_and_query() {
+    use std::fs;
+    let paf_path = "/tmp/pgr_cli_test_persist.paf";
+    let idx_path = "/tmp/pgr_cli_test_persist.paf.idx";
+
+    fs::write(
+        paf_path,
+        "\
+A\t100\t0\t100\t+\tB\t100\t0\t100\t95\t100\t255\tcg:Z:100M
+C\t100\t0\t50\t+\tB\t100\t50\t100\t45\t50\t255\tcg:Z:50M
+",
+    )
+    .unwrap();
+
+    // Build and save index
+    let (_, stderr) = PgrCmd::new()
+        .args(&["paf", "index", paf_path, "-o", idx_path])
+        .run();
+    assert!(stderr.contains("saved to"), "index save failed");
+
+    // Query from saved index
+    let (stdout, stderr) = PgrCmd::new()
+        .args(&["paf", "query", idx_path, "B:0-100"])
+        .run();
+    assert!(stderr.contains("Loading index"), "should load from idx");
+    assert!(stdout.contains("A\t0\t100\tB\t0\t100"), "A not found");
+    assert!(stdout.contains("C\t0\t50\tB\t50\t100"), "C not found");
+
+    // Clean up
+    let _ = fs::remove_file(paf_path);
+    let _ = fs::remove_file(idx_path);
+}
+
+#[test]
+fn command_paf_query_bad_idx_magic() {
+    use std::fs;
+    let bad_path = "/tmp/pgr_cli_test_bad.paf.idx";
+    fs::write(bad_path, "garbage data\n").unwrap();
+
+    PgrCmd::new()
+        .args(&["paf", "query", bad_path, "B:0-100"])
+        .run_fail();
+
+    let _ = fs::remove_file(bad_path);
 }

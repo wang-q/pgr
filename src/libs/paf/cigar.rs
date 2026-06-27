@@ -24,7 +24,7 @@ const OP_M: u32 = 4; // 'M'
 
 /// Bit-packed CIGAR operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct CigarOp(u32);
+pub struct CigarOp(pub(crate) u32);
 
 impl CigarOp {
     /// Create a new `CigarOp` from length and op character.
@@ -40,6 +40,11 @@ impl CigarOp {
             _ => panic!("invalid CIGAR op: '{op}'"),
         };
         Self((code << 29) | (len & 0x1FFF_FFFF))
+    }
+
+    /// Reconstruct from a raw bit-packed u32 (deserialization).
+    pub fn from_raw(val: u32) -> Self {
+        Self(val)
     }
 
     /// Decode the op character.
