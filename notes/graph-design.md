@@ -236,7 +236,7 @@ ref        /data/cohort/ref.fa.gz
    ```
    - `t_start`/`q_start`: 0-based，对齐区段在原序列的起点
    - `t_size`/`q_size`: 不含 gap 的对齐长度（即原序列区段长度）
-   - `strand`: `+` 或 `-`（target 恒为 `+`，query 按 PAF record；当前实现未做 `-` 链 RC，见已知限制）
+   - `strand`: `+` 或 `-`（target 恒为 `+`，query 按 PAF record）
    - `t_total`/`q_total`: 原序列总长（从 `loc_of` 或 FASTA record 取）
 
 **与 `pgr fa range` 的关系**：复用 [libs/loc.rs](file:///Volumes/ExtHome/Scripts/pgr/src/libs/loc.rs) 的
@@ -249,11 +249,21 @@ ref        /data/cohort/ref.fa.gz
 - ❌ 不做 refine（比对已由上游 chain/net 优化）
 - ❌ 不做 `to-fasta`（裸序列提取，用户场景不需要；`pgr fa range` 已提供）
 
+**`-` 链 MAF 处理（V2 已实现）**：
+- `PafMetadata` 增加 `strand: char` 字段，`insert_record` 从 `PafRecord` 填充，mirror entry 恒为 `+`
+- `QueryResult` 元组第 7 元素为 `strand`，沿 `query` / `query_transitive_bfs` 传出
+- `output_maf` 对 `-` 链 record：
+  1. 取 forward query[qs:qe]
+  2. `reverse_complement` 得到对齐方向序列（CIGAR 列从左到右匹配 RC(query)）
+  3. CIGAR 从 offset 0 走（`rec_qs_eff = 0, qs_eff = 0`）
+  4. `s` 行 strand 标 `-`，`q_start = q_src_size - qe`（MAF 规范：负链 start 为正向坐标 srcSize - qe）
+- 索引版本 bump v3→v4，旧索引需 `pgr paf index` 重建
+
 **已知限制（V2 当前实现）**：
-- `-` 链 record 的 MAF 输出未做反向互补：当前 `output_maf` 对 query/target 均输出 `+` 链
-  原始序列，未按 PAF record 的 strand 对 query 做反向互补。`-` 链场景需后续补齐
-  （在 `build_maf_block` 前对 `q_seq` 做 RC，并在 `s` 行 strand 字段标 `-`）。
 - `M` op 按原样输出两条碱基（MAF 格式本就不区分 `=`/`X`，靠下游逐位比较即可）。
+- `-` 链 sub-interval 查询的坐标投影仍有 bug：`project()` 对 `-` 链把 `cq` 当作 forward 坐标递增，
+  但实际应是 RC 对齐坐标。全比对（query 区间 == PAF record 区间）不受影响，sub-interval
+  会取错 query 子段。后续需在 `project()` 中按 strand 区分坐标语义。
 
 ### 4.3 V4 的能力跃迁：两段式 GFA
 

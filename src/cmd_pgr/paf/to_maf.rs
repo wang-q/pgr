@@ -123,6 +123,25 @@ impl FastaStore {
     }
 }
 
+// Reverse-complement a DNA byte slice (ACGTN-aware, case-preserving).
+// Non-ACGTN bytes are passed through unchanged.
+fn reverse_complement(seq: &[u8]) -> Vec<u8> {
+    fn comp(b: u8) -> u8 {
+        match b {
+            b'A' => b'T',
+            b'T' => b'A',
+            b'C' => b'G',
+            b'G' => b'C',
+            b'a' => b't',
+            b't' => b'a',
+            b'c' => b'g',
+            b'g' => b'c',
+            other => other,
+        }
+    }
+    seq.iter().rev().map(|&b| comp(b)).collect()
+}
+
 // Build aligned strings (query, target) by walking CIGAR over [ts, te).
 // `q_seq` covers query[qs..qe), `t_seq` covers target[ts..te).
 // CIGAR origin is (rec_ts, rec_qs). Ops before `ts` are skipped (with partial
@@ -213,7 +232,7 @@ fn output_maf(
 ) -> anyhow::Result<()> {
     println!("##maf version=1");
     for (_, results) in all_results {
-        for (query_id, q_iv, t_iv, cigar, rec_ts, rec_qs) in results {
+        for (query_id, q_iv, t_iv, cigar, rec_ts, rec_qs, strand) in results {
             let qname = idx.id_to_name(*query_id).unwrap_or("?");
             let tname = idx.id_to_name(t_iv.metadata).unwrap_or("?");
 
@@ -228,11 +247,33 @@ fn output_maf(
                 (t_iv.last, t_iv.first)
             };
 
-            let (q_seq, q_src_size) = fasta_store.fetch_range(qname, qs, qe)?;
+            let (q_seq_fwd, q_src_size) = fasta_store.fetch_range(qname, qs, qe)?;
             let (t_seq, t_src_size) = fasta_store.fetch_range(tname, ts, te)?;
 
-            let (q_aln, t_aln) =
-                build_maf_block(cigar, *rec_ts, *rec_qs, ts, te, qs, &q_seq, &t_seq);
+            // For '-' strand records: PAF query coords are on the forward
+            // strand, but CIGAR describes alignment columns against the
+            // reverse-complemented query. RC the fetched forward sequence
+            // and walk CIGAR from offset 0 so column order matches.
+            //
+            // MAF `start` for '-' strand = srcSize - qe (position on forward
+            // strand of the first displayed base, per MAF spec).
+            let (q_seq_for_aln, rec_qs_eff, qs_eff, q_strand, q_start_maf) = if *strand == '-' {
+                let rc = reverse_complement(&q_seq_fwd);
+                (rc, 0, 0, '-', q_src_size as i32 - qe)
+            } else {
+                (q_seq_fwd, *rec_qs, qs, '+', qs)
+            };
+
+            let (q_aln, t_aln) = build_maf_block(
+                cigar,
+                *rec_ts,
+                rec_qs_eff,
+                ts,
+                te,
+                qs_eff,
+                &q_seq_for_aln,
+                &t_seq,
+            );
 
             // size = number of non-gap bases
             let q_size = q_aln.chars().filter(|c| *c != '-').count();
@@ -240,7 +281,7 @@ fn output_maf(
 
             println!("a");
             println!("s\t{tname}\t{ts}\t{t_size}\t+\t{t_src_size}\t{t_aln}");
-            println!("s\t{qname}\t{qs}\t{q_size}\t+\t{q_src_size}\t{q_aln}");
+            println!("s\t{qname}\t{q_start_maf}\t{q_size}\t{q_strand}\t{q_src_size}\t{q_aln}");
             println!();
         }
     }

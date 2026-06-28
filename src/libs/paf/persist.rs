@@ -13,7 +13,10 @@ use std::sync::Arc;
 const MAGIC: [u8; 4] = *b"PGRI";
 /// Format version (incremented on breaking changes).
 /// v3: bidirectional index — adds `reverse_intervals` and `LazyReversed`.
-const VERSION: u32 = 3;
+/// v4: per-record strand — `FlatMeta.strand` for minus-strand MAF output.
+const VERSION: u32 = 4;
+/// Supported format versions for deserialization.
+const SUPPORTED_VERSIONS: &[u32] = &[4];
 
 // ── Serializable types ───────────────────────────────────────────
 
@@ -34,6 +37,7 @@ pub struct FlatMeta {
     pub target_end: i32,
     pub query_start: i32,
     pub query_end: i32,
+    pub strand: char,
     pub cigar: FlatCigar,
 }
 
@@ -79,7 +83,17 @@ impl PafIndex {
         }
         let mut ver_buf = [0u8; 4];
         f.read_exact(&mut ver_buf)?;
-        let _version = u32::from_le_bytes(ver_buf);
+        let version = u32::from_le_bytes(ver_buf);
+        if !SUPPORTED_VERSIONS.contains(&version) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "unsupported index version {version}: supported versions are {:?}; \
+                     rebuild the index with `pgr paf index`",
+                    SUPPORTED_VERSIONS
+                ),
+            ));
+        }
         let mut buf = Vec::new();
         f.read_to_end(&mut buf)?;
         let data: PafIndexData = bincode::deserialize(&buf).map_err(io::Error::other)?;
@@ -110,6 +124,7 @@ fn serialize_trees(trees: &HashMap<u32, Arc<BasicCOITree<PafMetadata, u32>>>) ->
                     target_end: m.target_end,
                     query_start: m.query_start,
                     query_end: m.query_end,
+                    strand: m.strand,
                     cigar: flat_cigar,
                 },
             ));
@@ -141,6 +156,7 @@ fn deserialize_trees(flat: &FlatTree) -> HashMap<u32, Arc<BasicCOITree<PafMetada
                     target_end: flat.target_end,
                     query_start: flat.query_start,
                     query_end: flat.query_end,
+                    strand: flat.strand,
                     cigar,
                 };
                 Interval::new(*first, *last, meta)
@@ -277,8 +293,8 @@ C\t100\t0\t100\t+\tA\t100\t0\t100\t90\t100\t255\tcg:Z:100M
         let res = loaded.query_transitive_bfs(b, 0, 100, 2, 10, 10, 0.0, 0, 0);
         let a = loaded.name_to_id("A").unwrap();
         let c = loaded.name_to_id("C").unwrap();
-        assert!(res.iter().any(|(q, _, _, _, _, _)| *q == a));
-        assert!(res.iter().any(|(q, _, _, _, _, _)| *q == c));
+        assert!(res.iter().any(|(q, _, _, _, _, _, _)| *q == a));
+        assert!(res.iter().any(|(q, _, _, _, _, _, _)| *q == c));
     }
 
     // ── Edge cases ────────────────────────────────────────────

@@ -624,3 +624,89 @@ fn command_paf_to_maf_trimmed_subregion() {
     let _ = fs::remove_file(format!("{a_fa}.loc"));
     let _ = fs::remove_file(format!("{b_fa}.loc"));
 }
+
+#[test]
+fn command_paf_to_maf_reverse_strand_perfect_match() {
+    use std::fs;
+    // '-' strand perfect match: target B forward == RC(query A forward).
+    // A forward = GTACGTACGT, RC = ACGTACGTAC = B forward.
+    // CIGAR 10= describes 10 alignment columns of target vs RC(query).
+    let paf = "A\t10\t0\t10\t-\tB\t10\t0\t10\t10\t10\t255\tcg:Z:10=\n";
+    let a_fa = write_bgzf_fa("/tmp/pgr_maf_rev_A.fa", ">A\nGTACGTACGT\n");
+    let b_fa = write_bgzf_fa("/tmp/pgr_maf_rev_B.fa", ">B\nACGTACGTAC\n");
+    let tsv = "/tmp/pgr_maf_rev.tsv";
+    fs::write(tsv, format!("A\t{a_fa}\nB\t{b_fa}\n")).unwrap();
+
+    let (stdout, stderr) = PgrCmd::new()
+        .args(&["paf", "to-maf", "stdin", "B:0-10", "-f", tsv])
+        .stdin(paf)
+        .run();
+    assert!(stderr.contains("Total results: 1"), "expected 1 result");
+    assert!(stdout.contains("##maf version=1"), "missing MAF header");
+    // Target line: forward strand, original sequence.
+    assert!(
+        stdout.contains("s\tB\t0\t10\t+\t10\tACGTACGTAC"),
+        "missing/incorrect target line for '-' strand record"
+    );
+    // Query line: '-' strand, displayed sequence is RC of A forward.
+    // q_start_maf = srcSize - qe = 10 - 10 = 0; q_size = 10.
+    assert!(
+        stdout.contains("s\tA\t0\t10\t-\t10\tACGTACGTAC"),
+        "missing/incorrect query line for '-' strand record (RC not applied)"
+    );
+    let _ = fs::remove_file("/tmp/pgr_maf_rev_A.fa");
+    let _ = fs::remove_file("/tmp/pgr_maf_rev_B.fa");
+    let _ = fs::remove_file(&a_fa);
+    let _ = fs::remove_file(&b_fa);
+    let _ = fs::remove_file(format!("{a_fa}.gzi"));
+    let _ = fs::remove_file(format!("{b_fa}.gzi"));
+    let _ = fs::remove_file(tsv);
+    let _ = fs::remove_file(format!("{a_fa}.loc"));
+    let _ = fs::remove_file(format!("{b_fa}.loc"));
+}
+
+#[test]
+fn command_paf_to_maf_reverse_strand_with_insertion() {
+    use std::fs;
+    // '-' strand alignment with insertion: CIGAR 4=3I3= (7 target, 10 query cols).
+    // A forward = GTACGTACGT, RC(A) = ACGTACGTAC.
+    // target B = ACGT (RC(A)[0:4]) + TAC (RC(A)[7:10]) = ACGTTAC (7 bp).
+    // Expected alignment columns:
+    //   target: ACGT---TAC  (4 match + 3 gaps + 3 match)
+    //   query:  ACGTACGTAC  (RC of A forward, walked left-to-right)
+    let paf = "A\t10\t0\t10\t-\tB\t7\t0\t7\t7\t7\t255\tcg:Z:4=3I3=\n";
+    let a_fa = write_bgzf_fa("/tmp/pgr_maf_revins_A.fa", ">A\nGTACGTACGT\n");
+    let b_fa = write_bgzf_fa("/tmp/pgr_maf_revins_B.fa", ">B\nACGTTAC\n");
+    let tsv = "/tmp/pgr_maf_revins.tsv";
+    fs::write(tsv, format!("A\t{a_fa}\nB\t{b_fa}\n")).unwrap();
+
+    let (stdout, stderr) = PgrCmd::new()
+        .args(&["paf", "to-maf", "stdin", "B:0-7", "-f", tsv])
+        .stdin(paf)
+        .run();
+    assert!(stderr.contains("Total results: 1"), "expected 1 result");
+    // Target has gaps where query inserted.
+    assert!(
+        stdout.contains("ACGT---TAC"),
+        "target alignment should contain gaps for insertion on '-' strand"
+    );
+    // Query alignment is RC of A forward, walked left-to-right.
+    assert!(
+        stdout.contains("ACGTACGTAC"),
+        "query alignment should be RC of A forward on '-' strand"
+    );
+    // Query line should be '-' strand with q_start = srcSize - qe = 0.
+    assert!(
+        stdout.contains("s\tA\t0\t10\t-\t10\tACGTACGTAC"),
+        "missing/incorrect query s-line for '-' strand with insertion"
+    );
+    let _ = fs::remove_file("/tmp/pgr_maf_revins_A.fa");
+    let _ = fs::remove_file("/tmp/pgr_maf_revins_B.fa");
+    let _ = fs::remove_file(&a_fa);
+    let _ = fs::remove_file(&b_fa);
+    let _ = fs::remove_file(format!("{a_fa}.gzi"));
+    let _ = fs::remove_file(format!("{b_fa}.gzi"));
+    let _ = fs::remove_file(tsv);
+    let _ = fs::remove_file(format!("{a_fa}.loc"));
+    let _ = fs::remove_file(format!("{b_fa}.loc"));
+}

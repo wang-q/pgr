@@ -192,7 +192,7 @@ pub fn run_query(
         };
 
         if let Some(ref subset) = subset {
-            results.retain(|(qid, _, _, _, _, _)| {
+            results.retain(|(qid, _, _, _, _, _, _)| {
                 let name = idx.id_to_name(*qid).unwrap_or("");
                 subset.contains(name)
             });
@@ -203,7 +203,8 @@ pub fn run_query(
         }
 
         if min_degree > 0 {
-            let distinct: HashSet<u32> = results.iter().map(|(qid, _, _, _, _, _)| *qid).collect();
+            let distinct: HashSet<u32> =
+                results.iter().map(|(qid, _, _, _, _, _, _)| *qid).collect();
             if distinct.len() < min_degree {
                 eprintln!(
                     "region {target_name}:{start}-{end} skipped (degree {} < min-degree {min_degree})",
@@ -280,17 +281,18 @@ fn load_bed_regions(path: &str) -> anyhow::Result<Vec<(String, i32, i32)>> {
 // for that query_id) is below `min_chain_length`. Operates in place.
 fn filter_by_chain_length(results: &mut Vec<QueryResult>, min_chain_length: i32) {
     let mut totals: HashMap<u32, i32> = HashMap::new();
-    for (qid, q_iv, _, _, _, _) in results.iter() {
+    for (qid, q_iv, _, _, _, _, _) in results.iter() {
         let len = (q_iv.last - q_iv.first).abs();
         *totals.entry(*qid).or_insert(0) += len;
     }
-    results
-        .retain(|(qid, _, _, _, _, _)| totals.get(qid).copied().unwrap_or(0) >= min_chain_length);
+    results.retain(|(qid, _, _, _, _, _, _)| {
+        totals.get(qid).copied().unwrap_or(0) >= min_chain_length
+    });
 }
 
 // Output PAF: 12 columns + gi/bi/cg tags.
 fn output_paf(idx: &PafIndex, results: &[QueryResult]) {
-    for (query_id, q_iv, t_iv, cigar, _, _) in results {
+    for (query_id, q_iv, t_iv, cigar, _, _, strand) in results {
         let qname = idx.id_to_name(*query_id).unwrap_or("?");
         let tname = idx.id_to_name(t_iv.metadata).unwrap_or("?");
         let block_len = (q_iv.last - q_iv.first).abs().max(1) as u32;
@@ -298,7 +300,6 @@ fn output_paf(idx: &PafIndex, results: &[QueryResult]) {
         let gi = pgr::libs::paf::cigar::gap_compressed_identity(cigar);
         let bi = pgr::libs::paf::cigar::block_identity(cigar);
         let cg = pgr::libs::paf::cigar::format_cigar(cigar);
-        let strand = if q_iv.first <= q_iv.last { '+' } else { '-' };
         let (qs, qe) = if q_iv.first <= q_iv.last {
             (q_iv.first, q_iv.last)
         } else {

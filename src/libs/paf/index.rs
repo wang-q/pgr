@@ -40,15 +40,26 @@ pub struct PafMetadata {
     pub target_end: i32,
     pub query_start: i32,
     pub query_end: i32,
+    pub strand: char,
     pub cigar: CigarStore,
 }
 
 /// Query result tuple:
-/// `(query_id, query_iv, target_iv, cigar, record_target_start, record_query_start)`
+/// `(query_id, query_iv, target_iv, cigar, record_target_start, record_query_start, strand)`
 ///
 /// `record_target_start` / `record_query_start` are the original PAF record's
 /// coordinates (CIGAR origin), needed for CIGAR trimming in MAF output.
-pub type QueryResult = (u32, Interval<u32>, Interval<u32>, Vec<CigarOp>, i32, i32);
+/// `strand` is the original PAF record strand ('+' or '-'); needed for MAF
+/// output to reverse-complement query sequences on minus-strand records.
+pub type QueryResult = (
+    u32,
+    Interval<u32>,
+    Interval<u32>,
+    Vec<CigarOp>,
+    i32,
+    i32,
+    char,
+);
 
 pub struct PafIndex {
     pub names: IndexMap<String, u32>,
@@ -256,6 +267,7 @@ impl PafIndex {
                         cigar,
                         m.target_start,
                         m.query_start,
+                        m.strand,
                     ));
                 }
             });
@@ -322,6 +334,7 @@ impl PafIndex {
                                 cigar,
                                 m.target_start,
                                 m.query_start,
+                                m.strand,
                             ));
                             if m.query_id != tid {
                                 let sr = visited
@@ -404,12 +417,15 @@ fn insert_record(
     };
 
     // Forward entry: target interval → query metadata.
+    // Strand is the original PAF record strand ('+' or '-'); needed for MAF
+    // output to reverse-complement query sequences on minus-strand records.
     let fwd_meta = PafMetadata {
         query_id,
         target_start: rec.target_start as i32,
         target_end: rec.target_end as i32,
         query_start: rec.query_start as i32,
         query_end: rec.query_end as i32,
+        strand: rec.strand,
         cigar: fwd_store,
     };
     by_target.entry(target_id).or_default().push(Interval::new(
@@ -421,6 +437,8 @@ fn insert_record(
     // Mirror entry (reverse index): only for '+' strand records.
     // Interval is on the query coordinates; metadata.query_id is the
     // original target; query_start/end hold the original target coordinates.
+    // Mirror strand is '+' because the mirror represents the query-side view
+    // of an originally '+' record (query ↔ target swap preserves orientation).
     if rec.strand == '+' {
         let rev_meta = PafMetadata {
             query_id: target_id,
@@ -428,6 +446,7 @@ fn insert_record(
             target_end: rec.query_end as i32,
             query_start: rec.target_start as i32,
             query_end: rec.target_end as i32,
+            strand: '+',
             cigar: rev_store,
         };
         by_query.entry(query_id).or_default().push(Interval::new(
@@ -538,7 +557,7 @@ fn project(ts: i32, te: i32, m: &PafMetadata, cigar: &[CigarOp]) -> Option<(i32,
 fn merge_results(results: &mut Vec<QueryResult>, max_gap: i32) {
     // Group by query_id, sort by query_start, merge adjacent within max_gap
     let mut groups: HashMap<u32, Vec<(usize, i32, i32)>> = HashMap::new();
-    for (i, &(qid, q_iv, _t_iv, _, _, _)) in results.iter().enumerate() {
+    for (i, &(qid, q_iv, _t_iv, _, _, _, _)) in results.iter().enumerate() {
         groups
             .entry(qid)
             .or_default()
@@ -682,7 +701,7 @@ q3\t400\t0\t40\t+\tt2\t500\t0\t40\t38\t40\t255\tcg:Z:40M
         let t1 = idx.name_to_id("t1").unwrap();
         let res = idx.query(t1, 0, 50, 0.0, 0);
         assert_eq!(res.len(), 2, "expected 2 overlapping records for t1:[0,50)");
-        let qids: Vec<u32> = res.iter().map(|(q, _, _, _, _, _)| *q).collect();
+        let qids: Vec<u32> = res.iter().map(|(q, _, _, _, _, _, _)| *q).collect();
         assert!(
             qids.contains(&idx.name_to_id("q1").unwrap()),
             "q1 not found"
@@ -712,8 +731,14 @@ C\t100\t0\t100\t+\tA\t100\t0\t100\t90\t100\t255\tcg:Z:100M
         let res = idx.query_transitive_bfs(b, 0, 100, 2, 10, 10, 0.0, 0, 0);
         let a = idx.name_to_id("A").unwrap();
         let c = idx.name_to_id("C").unwrap();
-        assert!(res.iter().any(|(q, _, _, _, _, _)| *q == a), "A not found");
-        assert!(res.iter().any(|(q, _, _, _, _, _)| *q == c), "C not found");
+        assert!(
+            res.iter().any(|(q, _, _, _, _, _, _)| *q == a),
+            "A not found"
+        );
+        assert!(
+            res.iter().any(|(q, _, _, _, _, _, _)| *q == c),
+            "C not found"
+        );
     }
 
     #[test]
@@ -777,6 +802,7 @@ C\t100\t0\t100\t+\tA\t100\t0\t100\t90\t100\t255\tcg:Z:100M
             target_end: 50,
             query_start: 0,
             query_end: 50,
+            strand: '+',
             cigar: CigarStore::owned(vec![]),
         };
         assert!(project(100, 200, &m, &[]).is_none());
@@ -791,6 +817,7 @@ C\t100\t0\t100\t+\tA\t100\t0\t100\t90\t100\t255\tcg:Z:100M
             target_end: 50,
             query_start: 0,
             query_end: 50,
+            strand: '+',
             cigar: CigarStore::owned(cigar.clone()),
         };
         assert!(project(100, 200, &m, &cigar).is_none());
@@ -811,6 +838,7 @@ C\t100\t0\t100\t+\tA\t100\t0\t100\t90\t100\t255\tcg:Z:100M
             target_end: 25,
             query_start: 0,
             query_end: 25,
+            strand: '+',
             cigar: CigarStore::owned(cigar.clone()),
         };
         let (qs, qe, ts, te) = project(11, 16, &m, &cigar).unwrap();
@@ -837,6 +865,7 @@ C\t100\t0\t100\t+\tA\t100\t0\t100\t90\t100\t255\tcg:Z:100M
                 vec![],
                 0,
                 0,
+                '+',
             ),
             (
                 0u32,
@@ -845,6 +874,7 @@ C\t100\t0\t100\t+\tA\t100\t0\t100\t90\t100\t255\tcg:Z:100M
                 vec![],
                 55,
                 55,
+                '+',
             ),
         ];
         merge_results(&mut results, 10);
@@ -863,6 +893,7 @@ C\t100\t0\t100\t+\tA\t100\t0\t100\t90\t100\t255\tcg:Z:100M
                 vec![],
                 0,
                 0,
+                '+',
             ),
             (
                 0u32,
@@ -871,6 +902,7 @@ C\t100\t0\t100\t+\tA\t100\t0\t100\t90\t100\t255\tcg:Z:100M
                 vec![],
                 100,
                 100,
+                '+',
             ),
         ];
         merge_results(&mut results, 10);
