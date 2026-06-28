@@ -1128,3 +1128,168 @@ C\t10\t0\t10\t+\tA\t10\t0\t10\t10\t10\t255\tcg:Z:10=\n";
     let _ = fs::remove_file(format!("{b_fa}.loc"));
     let _ = fs::remove_file(format!("{c_fa}.loc"));
 }
+
+#[test]
+fn command_paf_to_gfa_identical() {
+    use std::fs;
+    // Two identical sequences -> linear graph, 10 nodes, 9 edges, 2 paths
+    // traversing the same nodes.
+    let paf = "A\t10\t0\t10\t+\tB\t10\t0\t10\t10\t10\t255\tcg:Z:10=\n";
+    let a_fa = write_bgzf_fa("/tmp/pgr_gfa_id_A.fa", ">A\nACGTACGTAC\n");
+    let b_fa = write_bgzf_fa("/tmp/pgr_gfa_id_B.fa", ">B\nACGTACGTAC\n");
+    let tsv = "/tmp/pgr_gfa_id.tsv";
+    fs::write(tsv, format!("A\t{a_fa}\nB\t{b_fa}\n")).unwrap();
+
+    let (stdout, _stderr) = PgrCmd::new()
+        .args(&["paf", "to-gfa", "stdin", "B:0-10", "-t", "-f", tsv])
+        .stdin(paf)
+        .run();
+
+    let s_lines: Vec<&str> = stdout.lines().filter(|l| l.starts_with("S\t")).collect();
+    let l_lines: Vec<&str> = stdout.lines().filter(|l| l.starts_with("L\t")).collect();
+    let p_lines: Vec<&str> = stdout.lines().filter(|l| l.starts_with("P\t")).collect();
+
+    // 10 bases -> 10 nodes (identical sequences share all nodes).
+    assert_eq!(
+        s_lines.len(),
+        10,
+        "expected 10 S lines, got {}",
+        s_lines.len()
+    );
+    // 9 edges (linear chain of 10 nodes).
+    assert_eq!(
+        l_lines.len(),
+        9,
+        "expected 9 L lines, got {}",
+        l_lines.len()
+    );
+    // 2 paths (A and B), both traversing all 10 nodes.
+    assert_eq!(
+        p_lines.len(),
+        2,
+        "expected 2 P lines, got {}",
+        p_lines.len()
+    );
+
+    // Verify each S line has a single-base sequence.
+    for s in &s_lines {
+        let fields: Vec<&str> = s.split('\t').collect();
+        assert_eq!(fields.len(), 3, "S line should have 3 fields: {s}");
+        assert_eq!(fields[2].len(), 1, "S sequence should be 1 base: {s}");
+    }
+
+    // Verify P lines reference 10 nodes and have 9 overlaps.
+    for p in &p_lines {
+        let fields: Vec<&str> = p.split('\t').collect();
+        assert_eq!(fields.len(), 4, "P line should have 4 fields: {p}");
+        let path_nodes: Vec<&str> = fields[2].split(',').collect();
+        assert_eq!(path_nodes.len(), 10, "P path should visit 10 nodes: {p}");
+        let overlaps: Vec<&str> = fields[3].split(',').collect();
+        assert_eq!(overlaps.len(), 9, "P should have 9 overlaps: {p}");
+    }
+
+    let _ = fs::remove_file("/tmp/pgr_gfa_id_A.fa");
+    let _ = fs::remove_file("/tmp/pgr_gfa_id_B.fa");
+    let _ = fs::remove_file(&a_fa);
+    let _ = fs::remove_file(&b_fa);
+    let _ = fs::remove_file(format!("{a_fa}.gzi"));
+    let _ = fs::remove_file(format!("{b_fa}.gzi"));
+    let _ = fs::remove_file(tsv);
+    let _ = fs::remove_file(format!("{a_fa}.loc"));
+    let _ = fs::remove_file(format!("{b_fa}.loc"));
+}
+
+#[test]
+fn command_paf_to_gfa_with_snp() {
+    use std::fs;
+    // B = ACGTACGTAC (target)
+    // A = ACGTACGTAC (identical to B)
+    // C = ACGTTCGTAC (SNP at pos 4: A->T)
+    // The SNP creates a bubble: pos 4 has two nodes (A and T).
+    // B and A traverse the A node; C traverses the T node.
+    let paf = "\
+A\t10\t0\t10\t+\tB\t10\t0\t10\t10\t10\t255\tcg:Z:10=\n\
+C\t10\t0\t10\t+\tA\t10\t0\t10\t9\t10\t255\tcg:Z:10M\n";
+    let a_fa = write_bgzf_fa("/tmp/pgr_gfa_snp_A.fa", ">A\nACGTACGTAC\n");
+    let b_fa = write_bgzf_fa("/tmp/pgr_gfa_snp_B.fa", ">B\nACGTACGTAC\n");
+    let c_fa = write_bgzf_fa("/tmp/pgr_gfa_snp_C.fa", ">C\nACGTTCGTAC\n");
+    let tsv = "/tmp/pgr_gfa_snp.tsv";
+    fs::write(tsv, format!("A\t{a_fa}\nB\t{b_fa}\nC\t{c_fa}\n")).unwrap();
+
+    let (stdout, _stderr) = PgrCmd::new()
+        .args(&["paf", "to-gfa", "stdin", "B:0-10", "-t", "-f", tsv])
+        .stdin(paf)
+        .run();
+
+    let s_lines: Vec<&str> = stdout.lines().filter(|l| l.starts_with("S\t")).collect();
+    let p_lines: Vec<&str> = stdout.lines().filter(|l| l.starts_with("P\t")).collect();
+
+    // 3 paths (B, A, C).
+    assert_eq!(
+        p_lines.len(),
+        3,
+        "expected 3 P lines, got {}",
+        p_lines.len()
+    );
+
+    // The SNP at pos 4 creates an extra node (11 nodes instead of 10).
+    let bases: Vec<char> = s_lines
+        .iter()
+        .map(|s| s.split('\t').nth(2).unwrap().chars().next().unwrap())
+        .collect();
+    // Key invariant: there is a 'T' node that only C visits (the SNP ALT).
+    let t_count = bases.iter().filter(|&&b| b == 'T').count();
+    assert!(
+        t_count >= 3,
+        "expected at least 3 T nodes (2 shared + 1 SNP ALT), got {t_count}: {bases:?}"
+    );
+
+    // B and C paths should differ at exactly one node (the SNP), gap-free.
+    let b_path: Vec<&str> = p_lines
+        .iter()
+        .find(|p| p.starts_with("P\tB\t"))
+        .unwrap()
+        .split('\t')
+        .nth(2)
+        .unwrap()
+        .split(',')
+        .collect();
+    let c_path: Vec<&str> = p_lines
+        .iter()
+        .find(|p| p.starts_with("P\tC\t"))
+        .unwrap()
+        .split('\t')
+        .nth(2)
+        .unwrap()
+        .split(',')
+        .collect();
+
+    assert_eq!(
+        b_path.len(),
+        c_path.len(),
+        "B and C paths should have equal length (gap-free SNP)"
+    );
+    let diffs: usize = b_path
+        .iter()
+        .zip(c_path.iter())
+        .filter(|(a, b)| a != b)
+        .count();
+    assert_eq!(
+        diffs, 1,
+        "B and C paths should differ at 1 node (SNP), got {diffs}"
+    );
+
+    let _ = fs::remove_file("/tmp/pgr_gfa_snp_A.fa");
+    let _ = fs::remove_file("/tmp/pgr_gfa_snp_B.fa");
+    let _ = fs::remove_file("/tmp/pgr_gfa_snp_C.fa");
+    let _ = fs::remove_file(&a_fa);
+    let _ = fs::remove_file(&b_fa);
+    let _ = fs::remove_file(&c_fa);
+    let _ = fs::remove_file(format!("{a_fa}.gzi"));
+    let _ = fs::remove_file(format!("{b_fa}.gzi"));
+    let _ = fs::remove_file(format!("{c_fa}.gzi"));
+    let _ = fs::remove_file(tsv);
+    let _ = fs::remove_file(format!("{a_fa}.loc"));
+    let _ = fs::remove_file(format!("{b_fa}.loc"));
+    let _ = fs::remove_file(format!("{c_fa}.loc"));
+}

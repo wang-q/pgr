@@ -39,6 +39,22 @@ impl Poa {
     pub fn num_nodes(&self) -> usize {
         self.graph.num_nodes()
     }
+
+    /// Borrow the underlying POA graph (nodes = bases, edges = adjacencies).
+    pub fn graph(&self) -> &PoaGraph {
+        &self.graph
+    }
+
+    /// Borrow the per-sequence paths (each is a Vec of NodeIndex the sequence
+    /// traverses through the graph).
+    pub fn paths(&self) -> &[Vec<NodeIndex>] {
+        &self.paths
+    }
+
+    /// Borrow the input sequences.
+    pub fn sequences(&self) -> &[Vec<u8>] {
+        &self.sequences
+    }
 }
 
 #[cfg(test)]

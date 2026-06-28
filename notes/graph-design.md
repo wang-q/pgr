@@ -168,7 +168,7 @@ pgr paf to-bed cohort.paf.idx -b regions.bed --transitive
 | **V2** ✅ 已完成 | `pgr paf to-maf`（pairwise MAF，按 CIGAR 直接还原，需 `-f TSV`）| impg `-o maf` 的 pairwise 子集 | ~120 |
 | **V3** ✅ 已完成 | `pgr paf to-maf --msa`（POA MSA，多序列合并，需 `--transitive` + POA）| impg `-o maf` 的 multi-way | ~150 |
 | **V4a** | 粗全局 GFA（`pgr paf graph -f refs.fa --min-var-len 100`，seqwish DSU 风格）| seqwish `sds`+`links` | ✅ 已完成 |
-| **V4b** | 区域精细 GFA（`pgr paf to-gfa -r region`，impg 风格）| impg `query -o gfa` | 待评估 |
+| **V4b** ✅ 已完成 | 区域精细 GFA（`pgr paf to-gfa`，impg 风格）| impg `query -o gfa` | ~180 |
 | **V5** ✅ 已完成（substitution） | `pgr paf to-vcf`（POA MSA→VCF，substitution-only）| impg `-o vcf` 的子集 | ~120 |
 
 ### 4.1 为何坐标类输出是 V1 核心
@@ -367,13 +367,21 @@ V4 采用**两段式 GFA**——粗全局 + 区域精细，混合 minigraph 和 
 - **rGFA tag 暂缺**：当前输出 GFA v1.0 的 S/L/P，未含 SN/SO/SR（稳定坐标系 tag），
   作为后续可选增强（与 minigraph 兼容性需要时再加）。
 
-#### 4.3.2 V4b：区域精细 GFA（impg 风格）
+#### 4.3.2 V4b：区域精细 GFA（impg 风格，✅ 已实现）
 
 - **输入**：PAF 索引 + 用户指定 region（或粗 GFA 上定位的区段）
-- **流程**：BFS 传递闭包 → 提取序列 → POA/外部 aligner → 局部 GFA
+- **流程**：BFS 传递闭包 → 提取序列 → POA → 局部 GFA
 - **输出**：局部 GFA（含 base-level 变异）
 - **用途**：特定基因座的精细分析
 - **对应**：impg `query -o gfa`
+- **实现**（`src/cmd_pgr/paf/to_gfa.rs`）：
+  - 复用 `to-maf` 的 `build_msa_entries` 收集 target/query 序列
+  - 调用 `Poa` 生成对齐图，通过 `graph()`/`paths()`/`sequences()` 访问器取得内部结构
+  - 直接把 POA 图导出为 GFA：节点（碱基）→ S 行，边（邻接）→ L 行（`0M` overlap），
+    每条序列的遍历路径 → P 行
+  - SNP/indel 天然形成 bubble（POA 图结构直接表达），无需 MSA→GFA 转换
+- **多 region 处理**：每个 region 独立产出 GFA 块（节点 ID 从 1 重启），
+  多 region 用 `# region: <name>` 注释行分隔
 - **完整性保证**：借鉴 seqwish 的 phase 1b orphan recovery 思路——BFS 发现的等价类可能只覆盖部分
   序列，按序列查区间树补漏直到收敛，保证局部 GFA 的等价类完整性。详见 [[seqwish.md]] §3.3、§6.3。
 
