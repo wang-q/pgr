@@ -239,7 +239,7 @@ fn command_paf_graph_rgfa_tags() {
             "missing SO:i tag in S line: {line}"
         );
         assert!(
-            tags.iter().any(|t| *t == "SR:i:0"),
+            tags.contains(&"SR:i:0"),
             "missing SR:i:0 tag in S line: {line}"
         );
     }
@@ -249,7 +249,7 @@ fn command_paf_graph_rgfa_tags() {
         .iter()
         .find(|l| {
             let f: Vec<&str> = l.split('\t').collect();
-            f.iter().any(|t| *t == "SN:Z:B") && f.iter().any(|t| *t == "SO:i:0")
+            f.contains(&"SN:Z:B") && f.contains(&"SO:i:0")
         })
         .expect("missing shared node with SN:Z:B and SO:i:0");
     let _ = shared_line;
