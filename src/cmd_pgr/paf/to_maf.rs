@@ -14,7 +14,7 @@ use super::query;
 
 // Load TSV mapping genome_name -> bgzf_fasta_path.
 // Lines starting with '#' are comments; blank lines are skipped.
-fn load_fasta_tsv(path: &str) -> anyhow::Result<IndexMap<String, String>> {
+pub(crate) fn load_fasta_tsv(path: &str) -> anyhow::Result<IndexMap<String, String>> {
     let f = fs::File::open(path)?;
     let mut map = IndexMap::new();
     for line in std::io::BufReader::new(f).lines() {
@@ -38,7 +38,7 @@ fn load_fasta_tsv(path: &str) -> anyhow::Result<IndexMap<String, String>> {
 }
 
 // One opened BGZF FASTA file with its .loc index and a per-name record cache.
-struct FastaEntry {
+pub(crate) struct FastaEntry {
     reader: loc::Input,
     loc_of: IndexMap<String, (u64, usize)>,
     cache: lru::LruCache<String, fasta::Record>,
@@ -46,13 +46,13 @@ struct FastaEntry {
 
 // Manages multiple BGZF FASTA files keyed by file path, with a name -> file
 // mapping so multiple genome names can share one file (multi-chrom).
-struct FastaStore {
+pub(crate) struct FastaStore {
     files: HashMap<String, FastaEntry>,
     name_to_file: HashMap<String, String>,
 }
 
 impl FastaStore {
-    fn new(seq_to_file: &IndexMap<String, String>) -> anyhow::Result<Self> {
+    pub(crate) fn new(seq_to_file: &IndexMap<String, String>) -> anyhow::Result<Self> {
         let mut files = HashMap::new();
         let name_to_file: HashMap<String, String> = seq_to_file
             .iter()
@@ -89,7 +89,7 @@ impl FastaStore {
 
     // Fetch sequence [start, end) (0-based, half-open) and the total sequence
     // length. Caches the underlying FASTA record keyed by `name`.
-    fn fetch_range(
+    pub(crate) fn fetch_range(
         &mut self,
         name: &str,
         start: i32,
@@ -125,7 +125,7 @@ impl FastaStore {
 
 // Reverse-complement a DNA byte slice (ACGTN-aware, case-preserving).
 // Non-ACGTN bytes are passed through unchanged.
-fn reverse_complement(seq: &[u8]) -> Vec<u8> {
+pub(crate) fn reverse_complement(seq: &[u8]) -> Vec<u8> {
     fn comp(b: u8) -> u8 {
         match b {
             b'A' => b'T',
@@ -301,12 +301,70 @@ fn output_maf(
 }
 
 // One entry to feed into POA: aligned sequence plus metadata for the MAF `s` line.
-struct MsaEntry {
-    name: String,
-    start: i32,      // MAF start (forward-strand coordinate)
-    strand: char,    // '+' or '-'
-    src_size: usize, // total sequence length
-    seq: Vec<u8>,    // sequence in alignment orientation (already RC if '-')
+pub(crate) struct MsaEntry {
+    pub name: String,
+    pub start: i32,      // MAF start (forward-strand coordinate)
+    pub strand: char,    // '+' or '-'
+    pub src_size: usize, // total sequence length
+    pub seq: Vec<u8>,    // sequence in alignment orientation (already RC if '-')
+}
+
+// Collect target + query sequences for one region into MsaEntry list.
+// Target is taken from the first result's t_iv; queries are RC'd if '-' strand.
+// Skips a query that duplicates the target (BFS self-loop via mirror index).
+pub(crate) fn build_msa_entries(
+    idx: &PafIndex,
+    tname_region: &str,
+    results: &[QueryResult],
+    fasta_store: &mut FastaStore,
+) -> anyhow::Result<Vec<MsaEntry>> {
+    let mut entries: Vec<MsaEntry> = Vec::with_capacity(results.len() + 1);
+
+    // Target entry from the first result.
+    let (_, _, t_iv_first, _, _, _, _) = &results[0];
+    let tname = idx.id_to_name(t_iv_first.metadata).unwrap_or(tname_region);
+    let (ts, te) = if t_iv_first.first <= t_iv_first.last {
+        (t_iv_first.first, t_iv_first.last)
+    } else {
+        (t_iv_first.last, t_iv_first.first)
+    };
+    let (t_seq, t_src_size) = fasta_store.fetch_range(tname, ts, te)?;
+    entries.push(MsaEntry {
+        name: tname.to_string(),
+        start: ts,
+        strand: '+',
+        src_size: t_src_size,
+        seq: t_seq,
+    });
+
+    // Query entries. Skip a query that duplicates the target entry.
+    let t_key = (tname.to_string(), ts, '+', t_src_size);
+    for (query_id, q_iv, _t_iv, _cigar, _rec_ts, _rec_qs, strand) in results {
+        let qname = idx.id_to_name(*query_id).unwrap_or("?");
+        let (qs, qe) = if q_iv.first <= q_iv.last {
+            (q_iv.first, q_iv.last)
+        } else {
+            (q_iv.last, q_iv.first)
+        };
+        let (q_seq_fwd, q_src_size) = fasta_store.fetch_range(qname, qs, qe)?;
+        let (seq, start, strand_char) = if *strand == '-' {
+            (reverse_complement(&q_seq_fwd), q_src_size as i32 - qe, '-')
+        } else {
+            (q_seq_fwd, qs, '+')
+        };
+        let q_key = (qname.to_string(), start, strand_char, q_src_size);
+        if q_key == t_key {
+            continue;
+        }
+        entries.push(MsaEntry {
+            name: qname.to_string(),
+            start,
+            strand: strand_char,
+            src_size: q_src_size,
+            seq,
+        });
+    }
+    Ok(entries)
 }
 
 // Output multi-way MAF blocks via POA. For each region, collect target +
@@ -335,61 +393,7 @@ fn output_maf_msa(
             continue;
         }
 
-        // Build entries: target first (from the first result's t_iv), then
-        // each query. The target interval is taken from the first result;
-        // all results in this region share the same target by construction
-        // (run_query filters by one target_id per region).
-        let mut entries: Vec<MsaEntry> = Vec::with_capacity(results.len() + 1);
-
-        // Target entry from the first result.
-        let (_, _, t_iv_first, _, _, _, _) = &results[0];
-        let tname = idx
-            .id_to_name(t_iv_first.metadata)
-            .unwrap_or(tname_region.as_str());
-        let (ts, te) = if t_iv_first.first <= t_iv_first.last {
-            (t_iv_first.first, t_iv_first.last)
-        } else {
-            (t_iv_first.last, t_iv_first.first)
-        };
-        let (t_seq, t_src_size) = fasta_store.fetch_range(tname, ts, te)?;
-        entries.push(MsaEntry {
-            name: tname.to_string(),
-            start: ts,
-            strand: '+',
-            src_size: t_src_size,
-            seq: t_seq,
-        });
-
-        // Query entries. Skip a query that duplicates the target entry
-        // (same name, start, strand, length) — this happens when BFS
-        // traverses the mirror index and returns the target as a query of
-        // itself.
-        let t_key = (tname.to_string(), ts, '+', t_src_size);
-        for (query_id, q_iv, _t_iv, _cigar, _rec_ts, _rec_qs, strand) in results {
-            let qname = idx.id_to_name(*query_id).unwrap_or("?");
-            let (qs, qe) = if q_iv.first <= q_iv.last {
-                (q_iv.first, q_iv.last)
-            } else {
-                (q_iv.last, q_iv.first)
-            };
-            let (q_seq_fwd, q_src_size) = fasta_store.fetch_range(qname, qs, qe)?;
-            let (seq, start, strand_char) = if *strand == '-' {
-                (reverse_complement(&q_seq_fwd), q_src_size as i32 - qe, '-')
-            } else {
-                (q_seq_fwd, qs, '+')
-            };
-            let q_key = (qname.to_string(), start, strand_char, q_src_size);
-            if q_key == t_key {
-                continue;
-            }
-            entries.push(MsaEntry {
-                name: qname.to_string(),
-                start,
-                strand: strand_char,
-                src_size: q_src_size,
-                seq,
-            });
-        }
+        let entries = build_msa_entries(idx, tname_region, results, fasta_store)?;
 
         // Run POA MSA.
         let mut poa =

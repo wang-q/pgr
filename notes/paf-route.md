@@ -53,7 +53,7 @@ impg 的四层能力栈（[[impg.md]] §1.1.3）在 pgr 的现状：pairwise 比
 | **V3**  | `pgr paf to-maf --msa`（POA MSA，多序列合并，需 `--transitive` + POA） | ✅ 已完成 |
 | **V4a** | 粗全局 GFA（`pgr paf graph -f refs.fa --min-var-len 100`，seqwish DSU 风格） | ✅ 已完成 |
 | **V4b** | 区域精细 GFA（`pgr paf query -o gfa -r region`，impg 风格）            | 待评估 |
-| **V5**  | 区域 GFA → MAF/VCF（精细分析输出）                                     | 待评估 |
+| **V5**  | `pgr paf to-vcf`（POA MSA→VCF，substitution-only，跳过 GFA 物化）      | ✅ 已完成（substitution） |
 
 注：早期规划中的 `-o fasta`（未比对序列提取）经评估不做——`pgr fa range` 已提供独立提取能力，
 用户场景不需要在 query 路径耦合裸序列输出（见 [[graph-design.md]] §4.2）。

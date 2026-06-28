@@ -1009,3 +1009,122 @@ fn command_paf_to_maf_msa_reverse_strand_query() {
     let _ = fs::remove_file(format!("{a_fa}.loc"));
     let _ = fs::remove_file(format!("{b_fa}.loc"));
 }
+
+#[test]
+fn command_paf_to_vcf_with_snp() {
+    use std::fs;
+    // B = ACGTACGTAC (target, REF)
+    // A = ACGTACGTAC (identical to B)
+    // C = ACGTTCGTAC (SNP at position 4 (0-indexed): A->T)
+    // A-B and A-C alignments, query B:0-10 --transitive.
+    // VCF should emit one row: CHROM=B, POS=5 (1-based), REF=A, ALT=T,
+    // GT: B=0, A=0, C=1.
+    let paf = "\
+A\t10\t0\t10\t+\tB\t10\t0\t10\t10\t10\t255\tcg:Z:10=\n\
+C\t10\t0\t10\t+\tA\t10\t0\t10\t9\t10\t255\tcg:Z:10M\n";
+    let a_fa = write_bgzf_fa("/tmp/pgr_vcf_snp_A.fa", ">A\nACGTACGTAC\n");
+    let b_fa = write_bgzf_fa("/tmp/pgr_vcf_snp_B.fa", ">B\nACGTACGTAC\n");
+    let c_fa = write_bgzf_fa("/tmp/pgr_vcf_snp_C.fa", ">C\nACGTTCGTAC\n");
+    let tsv = "/tmp/pgr_vcf_snp.tsv";
+    fs::write(tsv, format!("A\t{a_fa}\nB\t{b_fa}\nC\t{c_fa}\n")).unwrap();
+
+    let (stdout, _stderr) = PgrCmd::new()
+        .args(&["paf", "to-vcf", "stdin", "B:0-10", "-t", "-f", tsv])
+        .stdin(paf)
+        .run();
+
+    // Header lines.
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert!(
+        lines.iter().any(|l| l.starts_with("##fileformat=VCFv4.2")),
+        "missing VCF fileformat header: {stdout}"
+    );
+    let header = lines
+        .iter()
+        .find(|l| l.starts_with("#CHROM"))
+        .expect("missing #CHROM header");
+    assert!(
+        header.contains("\tB\tA\tC"),
+        "sample columns should be B A C (target first): {header}"
+    );
+
+    // Body rows: exactly one SNP at pos 5 (1-based), REF=A, ALT=T.
+    let body: Vec<&str> = lines
+        .iter()
+        .filter(|l| !l.starts_with('#') && !l.is_empty())
+        .copied()
+        .collect();
+    assert_eq!(
+        body.len(),
+        1,
+        "expected 1 variant row, got {}: {body:?}",
+        body.len()
+    );
+    let fields: Vec<&str> = body[0].split('\t').collect();
+    assert_eq!(fields[0], "B", "CHROM");
+    assert_eq!(fields[1], "5", "POS (1-based)");
+    assert_eq!(fields[3], "A", "REF");
+    assert_eq!(fields[4], "T", "ALT");
+    // FORMAT = GT, then 3 samples in order B, A, C.
+    assert_eq!(fields[8], "GT", "FORMAT");
+    assert_eq!(fields.len(), 12, "8 fixed + 3 samples = 12 columns");
+    assert_eq!(fields[9], "0", "B (target=REF) -> GT 0");
+    assert_eq!(fields[10], "0", "A (identical to REF) -> GT 0");
+    assert_eq!(fields[11], "1", "C (ALT T) -> GT 1");
+
+    let _ = fs::remove_file("/tmp/pgr_vcf_snp_A.fa");
+    let _ = fs::remove_file("/tmp/pgr_vcf_snp_B.fa");
+    let _ = fs::remove_file("/tmp/pgr_vcf_snp_C.fa");
+    let _ = fs::remove_file(&a_fa);
+    let _ = fs::remove_file(&b_fa);
+    let _ = fs::remove_file(&c_fa);
+    let _ = fs::remove_file(format!("{a_fa}.gzi"));
+    let _ = fs::remove_file(format!("{b_fa}.gzi"));
+    let _ = fs::remove_file(format!("{c_fa}.gzi"));
+    let _ = fs::remove_file(tsv);
+    let _ = fs::remove_file(format!("{a_fa}.loc"));
+    let _ = fs::remove_file(format!("{b_fa}.loc"));
+    let _ = fs::remove_file(format!("{c_fa}.loc"));
+}
+
+#[test]
+fn command_paf_to_vcf_no_variant() {
+    use std::fs;
+    // All three genomes identical -> no substitution -> body empty (header only).
+    let paf = "\
+A\t10\t0\t10\t+\tB\t10\t0\t10\t10\t10\t255\tcg:Z:10=\n\
+C\t10\t0\t10\t+\tA\t10\t0\t10\t10\t10\t255\tcg:Z:10=\n";
+    let a_fa = write_bgzf_fa("/tmp/pgr_vcf_novar_A.fa", ">A\nACGTACGTAC\n");
+    let b_fa = write_bgzf_fa("/tmp/pgr_vcf_novar_B.fa", ">B\nACGTACGTAC\n");
+    let c_fa = write_bgzf_fa("/tmp/pgr_vcf_novar_C.fa", ">C\nACGTACGTAC\n");
+    let tsv = "/tmp/pgr_vcf_novar.tsv";
+    fs::write(tsv, format!("A\t{a_fa}\nB\t{b_fa}\nC\t{c_fa}\n")).unwrap();
+
+    let (stdout, _stderr) = PgrCmd::new()
+        .args(&["paf", "to-vcf", "stdin", "B:0-10", "-t", "-f", tsv])
+        .stdin(paf)
+        .run();
+
+    let body: Vec<&str> = stdout
+        .lines()
+        .filter(|l| !l.starts_with('#') && !l.is_empty())
+        .collect();
+    assert!(
+        body.is_empty(),
+        "expected no variants for identical sequences, got: {body:?}"
+    );
+
+    let _ = fs::remove_file("/tmp/pgr_vcf_novar_A.fa");
+    let _ = fs::remove_file("/tmp/pgr_vcf_novar_B.fa");
+    let _ = fs::remove_file("/tmp/pgr_vcf_novar_C.fa");
+    let _ = fs::remove_file(&a_fa);
+    let _ = fs::remove_file(&b_fa);
+    let _ = fs::remove_file(&c_fa);
+    let _ = fs::remove_file(format!("{a_fa}.gzi"));
+    let _ = fs::remove_file(format!("{b_fa}.gzi"));
+    let _ = fs::remove_file(format!("{c_fa}.gzi"));
+    let _ = fs::remove_file(tsv);
+    let _ = fs::remove_file(format!("{a_fa}.loc"));
+    let _ = fs::remove_file(format!("{b_fa}.loc"));
+    let _ = fs::remove_file(format!("{c_fa}.loc"));
+}
