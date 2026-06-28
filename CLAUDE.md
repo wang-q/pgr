@@ -168,6 +168,7 @@ cargo test
 - **`docs/ms.md`**: Hudson's ms 模拟器数据处理。
 - **`docs/net.md`**: Net 格式操作与转换。
 - **`docs/nwk.md`**: Newick 系统发育树操作与可视化。
+- **`docs/paf.md`**: PAF 格式操作与隐式泛基因组图。
 - **`docs/pl.md`**: 集成分析流程 (Pipelines)。
 - **`docs/plot.md`**: 各种生物数据可视化工具。
 - **`docs/psl.md`**: PSL 格式操作与转换。
