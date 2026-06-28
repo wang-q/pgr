@@ -255,11 +255,21 @@ fn output_maf(
             // reverse-complemented query. RC the fetched forward sequence
             // and walk CIGAR from offset 0 so column order matches.
             //
+            // `q_seq_for_aln` is RC(forward[qs..qe)) and covers RC offset
+            // [rec_qe - qe, rec_qe - qs) where rec_qe = rec_qs + aligned_q_len.
+            // `build_maf_block` indexes q_seq via `(cq + skip_t) - qs_eff`, so
+            // qs_eff must be the RC offset of the sub-interval start
+            // (rec_qe - qe), not 0 — otherwise sub-interval queries index
+            // past the end of q_seq. Full-overlap queries have qs_eff = 0.
+            //
             // MAF `start` for '-' strand = srcSize - qe (position on forward
             // strand of the first displayed base, per MAF spec).
             let (q_seq_for_aln, rec_qs_eff, qs_eff, q_strand, q_start_maf) = if *strand == '-' {
                 let rc = reverse_complement(&q_seq_fwd);
-                (rc, 0, 0, '-', q_src_size as i32 - qe)
+                let aligned_q_len: i32 = cigar.iter().map(|op| op.query_delta() as i32).sum();
+                let rec_qe = *rec_qs + aligned_q_len;
+                let rc_sub_start = rec_qe - qe;
+                (rc, 0, rc_sub_start, '-', q_src_size as i32 - qe)
             } else {
                 (q_seq_fwd, *rec_qs, qs, '+', qs)
             };

@@ -252,18 +252,21 @@ ref        /data/cohort/ref.fa.gz
 **`-` 链 MAF 处理（V2 已实现）**：
 - `PafMetadata` 增加 `strand: char` 字段，`insert_record` 从 `PafRecord` 填充，mirror entry 恒为 `+`
 - `QueryResult` 元组第 7 元素为 `strand`，沿 `query` / `query_transitive_bfs` 传出
+- `project()` 对 `-` 链把 CIGAR query offset 当作 RC offset，通过 `rc_to_forward()`
+  转换回 forward 坐标：RC offset `[rc_lo, rc_hi)` → forward `[query_end - rc_hi, query_end - rc_lo)`。
+  全比对时 RC offset = `[0, aligned_q_len)` → forward = `[query_start, query_end)`（与 `+` 链一致）；
+  sub-interval 时正确返回 forward 子段。
 - `output_maf` 对 `-` 链 record：
   1. 取 forward query[qs:qe]
   2. `reverse_complement` 得到对齐方向序列（CIGAR 列从左到右匹配 RC(query)）
-  3. CIGAR 从 offset 0 走（`rec_qs_eff = 0, qs_eff = 0`）
+  3. CIGAR 从 offset 0 走（`rec_qs_eff = 0`），`qs_eff = rec_qe - qe`（sub-interval 在 RC
+     offset 中的起点；`rec_qe = rec_qs + aligned_q_len`）。这保证 `build_maf_block` 索引
+     `q_seq[(cq + skip_t) - qs_eff]` 落在 `[0, qe - qs)` 内，sub-interval 不会越界。
   4. `s` 行 strand 标 `-`，`q_start = q_src_size - qe`（MAF 规范：负链 start 为正向坐标 srcSize - qe）
 - 索引版本 bump v3→v4，旧索引需 `pgr paf index` 重建
 
 **已知限制（V2 当前实现）**：
 - `M` op 按原样输出两条碱基（MAF 格式本就不区分 `=`/`X`，靠下游逐位比较即可）。
-- `-` 链 sub-interval 查询的坐标投影仍有 bug：`project()` 对 `-` 链把 `cq` 当作 forward 坐标递增，
-  但实际应是 RC 对齐坐标。全比对（query 区间 == PAF record 区间）不受影响，sub-interval
-  会取错 query 子段。后续需在 `project()` 中按 strand 区分坐标语义。
 
 ### 4.3 V4 的能力跃迁：两段式 GFA
 

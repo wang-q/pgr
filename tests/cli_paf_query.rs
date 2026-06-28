@@ -710,3 +710,138 @@ fn command_paf_to_maf_reverse_strand_with_insertion() {
     let _ = fs::remove_file(format!("{a_fa}.loc"));
     let _ = fs::remove_file(format!("{b_fa}.loc"));
 }
+
+#[test]
+fn command_paf_to_maf_reverse_strand_subinterval_first_half() {
+    use std::fs;
+    // '-' strand perfect match, sub-interval query on the first half.
+    // A forward = GTACGTACGT (G0 T1 A2 C3 G4 T5 A6 C7 G8 T9), RC = ACGTACGTAC = B.
+    // PAF CIGAR 10= aligns RC(A) vs B left-to-right.
+    // Query B:0-5 → CIGAR first 5 query bases = RC(A)[0:5] = ACGTA, which
+    // corresponds to forward A[5:10) = TACGT (RC = ACGTA).
+    // Before the project() fix this returned forward A[0:5) = GTACG
+    // (RC = CGTAC), which is wrong.
+    let paf = "A\t10\t0\t10\t-\tB\t10\t0\t10\t10\t10\t255\tcg:Z:10=\n";
+    let a_fa = write_bgzf_fa("/tmp/pgr_maf_revsub1_A.fa", ">A\nGTACGTACGT\n");
+    let b_fa = write_bgzf_fa("/tmp/pgr_maf_revsub1_B.fa", ">B\nACGTACGTAC\n");
+    let tsv = "/tmp/pgr_maf_revsub1.tsv";
+    fs::write(tsv, format!("A\t{a_fa}\nB\t{b_fa}\n")).unwrap();
+
+    let (stdout, stderr) = PgrCmd::new()
+        .args(&["paf", "to-maf", "stdin", "B:0-5", "-f", tsv])
+        .stdin(paf)
+        .run();
+    assert!(stderr.contains("Total results: 1"), "expected 1 result");
+    // Target sub-interval B[0:5] = ACGTA, +strand, start 0, size 5, srcSize 10.
+    assert!(
+        stdout.contains("s\tB\t0\t5\t+\t10\tACGTA"),
+        "missing/incorrect target line for '-' strand sub-interval (first half)"
+    );
+    // Query: forward A[5:10] RC'd = ACGTA. q_start_maf = srcSize - qe = 10-10 = 0.
+    assert!(
+        stdout.contains("s\tA\t0\t5\t-\t10\tACGTA"),
+        "missing/incorrect query line for '-' strand sub-interval (first half); \
+         this verifies project() maps RC offset back to forward [5,10)"
+    );
+    // Sanity: the buggy forward A[0:5] mapping must NOT appear.
+    assert!(
+        !stdout.contains("CGTAC"),
+        "regression: query sequence looks like RC of forward A[0:5] — project() \
+         did not convert RC offset to forward coordinates on '-' strand"
+    );
+    let _ = fs::remove_file("/tmp/pgr_maf_revsub1_A.fa");
+    let _ = fs::remove_file("/tmp/pgr_maf_revsub1_B.fa");
+    let _ = fs::remove_file(&a_fa);
+    let _ = fs::remove_file(&b_fa);
+    let _ = fs::remove_file(format!("{a_fa}.gzi"));
+    let _ = fs::remove_file(format!("{b_fa}.gzi"));
+    let _ = fs::remove_file(tsv);
+    let _ = fs::remove_file(format!("{a_fa}.loc"));
+    let _ = fs::remove_file(format!("{b_fa}.loc"));
+}
+
+#[test]
+fn command_paf_to_maf_reverse_strand_subinterval_second_half() {
+    use std::fs;
+    // Same setup as the first-half test, but query B:5-10.
+    // CIGAR last 5 query bases = RC(A)[5:10] = CGTAC, corresponding to
+    // forward A[0:5) = GTACG (RC = CGTAC).
+    // q_start_maf = srcSize - qe = 10 - 5 = 5.
+    let paf = "A\t10\t0\t10\t-\tB\t10\t0\t10\t10\t10\t255\tcg:Z:10=\n";
+    let a_fa = write_bgzf_fa("/tmp/pgr_maf_revsub2_A.fa", ">A\nGTACGTACGT\n");
+    let b_fa = write_bgzf_fa("/tmp/pgr_maf_revsub2_B.fa", ">B\nACGTACGTAC\n");
+    let tsv = "/tmp/pgr_maf_revsub2.tsv";
+    fs::write(tsv, format!("A\t{a_fa}\nB\t{b_fa}\n")).unwrap();
+
+    let (stdout, stderr) = PgrCmd::new()
+        .args(&["paf", "to-maf", "stdin", "B:5-10", "-f", tsv])
+        .stdin(paf)
+        .run();
+    assert!(stderr.contains("Total results: 1"), "expected 1 result");
+    // Target sub-interval B[5:10] = CGTAC.
+    assert!(
+        stdout.contains("s\tB\t5\t5\t+\t10\tCGTAC"),
+        "missing/incorrect target line for '-' strand sub-interval (second half)"
+    );
+    // Query: forward A[0:5] RC'd = CGTAC. q_start_maf = srcSize - qe = 10-5 = 5.
+    assert!(
+        stdout.contains("s\tA\t5\t5\t-\t10\tCGTAC"),
+        "missing/incorrect query line for '-' strand sub-interval (second half); \
+         this verifies project() maps RC offset back to forward [0,5)"
+    );
+    let _ = fs::remove_file("/tmp/pgr_maf_revsub2_A.fa");
+    let _ = fs::remove_file("/tmp/pgr_maf_revsub2_B.fa");
+    let _ = fs::remove_file(&a_fa);
+    let _ = fs::remove_file(&b_fa);
+    let _ = fs::remove_file(format!("{a_fa}.gzi"));
+    let _ = fs::remove_file(format!("{b_fa}.gzi"));
+    let _ = fs::remove_file(tsv);
+    let _ = fs::remove_file(format!("{a_fa}.loc"));
+    let _ = fs::remove_file(format!("{b_fa}.loc"));
+}
+
+#[test]
+fn command_paf_to_maf_reverse_strand_subinterval_with_insertion() {
+    use std::fs;
+    // '-' strand with insertion, sub-interval query on the trailing target
+    // segment (which spans op2 3I + op3 2=).
+    // A forward = GTACGTACGT (G0 T1 A2 C3 G4 T5 A6 C7 G8 T9), RC = ACGTACGTAC.
+    // CIGAR 5=3I2= aligns RC(A) vs B (7 bp): B[0:5]=ACGTA, B[5:7]=AC, with
+    // RC(A)[5:8]=CGT inserted between them.
+    // Query B:5-7 → project returns forward A[0,5) (union of op2 RC[5,8)→fwd
+    // [2,5) and op3 RC[8,10)→fwd [0,2)).
+    // q_seq = RC(A[0:5]) = RC(GTACG) = CGTAC. qs_eff = rec_qe - qe = 10-5 = 5.
+    // Alignment columns: op2 3I at ct=5 emits q_seq[0..3]=CGT with target
+    // gaps; op3 2= at ct=[5,7) emits q_seq[3..5]=AC paired with B[5:7]=AC.
+    let paf = "A\t10\t0\t10\t-\tB\t7\t0\t7\t7\t7\t255\tcg:Z:5=3I2=\n";
+    let a_fa = write_bgzf_fa("/tmp/pgr_maf_revsubi_A.fa", ">A\nGTACGTACGT\n");
+    let b_fa = write_bgzf_fa("/tmp/pgr_maf_revsubi_B.fa", ">B\nACGTAAC\n");
+    let tsv = "/tmp/pgr_maf_revsubi.tsv";
+    fs::write(tsv, format!("A\t{a_fa}\nB\t{b_fa}\n")).unwrap();
+
+    let (stdout, stderr) = PgrCmd::new()
+        .args(&["paf", "to-maf", "stdin", "B:5-7", "-f", tsv])
+        .stdin(paf)
+        .run();
+    assert!(stderr.contains("Total results: 1"), "expected 1 result");
+    // Target sub-interval B[5:7] = AC, with 3 gap columns before it from the
+    // insertion op (which sits at target position 5, inside [5,7)).
+    assert!(
+        stdout.contains("s\tB\t5\t2\t+\t7\t---AC"),
+        "missing/incorrect target line for '-' strand sub-interval with insertion"
+    );
+    // Query: RC(A[0:5]) = CGTAC. q_start_maf = srcSize - qe = 10-5 = 5.
+    assert!(
+        stdout.contains("s\tA\t5\t5\t-\t10\tCGTAC"),
+        "missing/incorrect query line for '-' strand sub-interval with insertion"
+    );
+    let _ = fs::remove_file("/tmp/pgr_maf_revsubi_A.fa");
+    let _ = fs::remove_file("/tmp/pgr_maf_revsubi_B.fa");
+    let _ = fs::remove_file(&a_fa);
+    let _ = fs::remove_file(&b_fa);
+    let _ = fs::remove_file(format!("{a_fa}.gzi"));
+    let _ = fs::remove_file(format!("{b_fa}.gzi"));
+    let _ = fs::remove_file(tsv);
+    let _ = fs::remove_file(format!("{a_fa}.loc"));
+    let _ = fs::remove_file(format!("{b_fa}.loc"));
+}

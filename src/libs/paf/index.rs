@@ -498,13 +498,29 @@ fn project(ts: i32, te: i32, m: &PafMetadata, cigar: &[CigarOp]) -> Option<(i32,
     // overlap [ts, te). Returning at the first overlap would truncate the
     // projection when the query spans indels (e.g. 4=3I3= over [0,7) must
     // project to query [0,10), not [0,4)).
+    //
+    // `cq` is the CIGAR query offset (0-based from the start of the aligned
+    // query region). For '+' strand records this maps directly to forward
+    // query coordinates (`query_start + cq`). For '-' strand records the
+    // CIGAR describes RC(query) vs target, so RC offset `[rc_lo, rc_hi)` maps
+    // to forward query `[query_end - rc_hi, query_end - rc_lo)`. PAF stores
+    // `query_start`/`query_end` as forward-strand coordinates regardless of
+    // strand, so this conversion is needed for sub-interval queries.
     let mut ct = m.target_start;
-    let mut cq = m.query_start;
+    let mut cq: i32 = 0;
     let mut q_min = i32::MAX;
     let mut q_max = i32::MIN;
     let mut t_min = i32::MAX;
     let mut t_max = i32::MIN;
     let mut found = false;
+    // Convert RC offset interval [rc_lo, rc_hi) to forward query coordinates.
+    let rc_to_forward = |rc_lo: i32, rc_hi: i32| -> (i32, i32) {
+        if m.strand == '-' {
+            (m.query_end - rc_hi, m.query_end - rc_lo)
+        } else {
+            (m.query_start + rc_lo, m.query_start + rc_hi)
+        }
+    };
     for op in cigar {
         let td = op.target_delta() as i32;
         let qd = op.query_delta() as i32;
@@ -517,8 +533,9 @@ fn project(ts: i32, te: i32, m: &PafMetadata, cigar: &[CigarOp]) -> Option<(i32,
                 if os < oe {
                     let off = os - ss;
                     let len = oe - os;
-                    q_min = q_min.min(cq + off);
-                    q_max = q_max.max(cq + off + len);
+                    let (qs, qe) = rc_to_forward(cq + off, cq + off + len);
+                    q_min = q_min.min(qs);
+                    q_max = q_max.max(qe);
                     t_min = t_min.min(os);
                     t_max = t_max.max(oe);
                     found = true;
@@ -528,8 +545,9 @@ fn project(ts: i32, te: i32, m: &PafMetadata, cigar: &[CigarOp]) -> Option<(i32,
                 // Insertion in query at target position ct.
                 // Include when ct lies within the queried target span.
                 if ct >= ts && ct < te {
-                    q_min = q_min.min(cq);
-                    q_max = q_max.max(cq + qd);
+                    let (qs, qe) = rc_to_forward(cq, cq + qd);
+                    q_min = q_min.min(qs);
+                    q_max = q_max.max(qe);
                     found = true;
                 }
             }
@@ -843,6 +861,99 @@ C\t100\t0\t100\t+\tA\t100\t0\t100\t90\t100\t255\tcg:Z:100M
         };
         let (qs, qe, ts, te) = project(11, 16, &m, &cigar).unwrap();
         assert_eq!((qs, qe, ts, te), (16, 21, 11, 16));
+    }
+
+    // ── project() on '-' strand sub-intervals ────────────────
+    //
+    // PAF '-' strand: query_start/query_end are forward-strand coordinates,
+    // but CIGAR describes RC(query) vs target. RC offset [rc_lo, rc_hi) maps
+    // to forward [query_end - rc_hi, query_end - rc_lo). Full-overlap queries
+    // return the entire forward region (strand-agnostic), but sub-intervals
+    // must reverse the offset mapping.
+
+    fn minus_metadata(qs: i32, qe: i32, ts: i32, te: i32) -> PafMetadata {
+        PafMetadata {
+            query_id: 0,
+            target_start: ts,
+            target_end: te,
+            query_start: qs,
+            query_end: qe,
+            strand: '-',
+            cigar: CigarStore::owned(vec![]),
+        }
+    }
+
+    #[test]
+    fn test_project_minus_strand_full_overlap() {
+        // 10= over forward query [0,10); query the full target [0,10).
+        // RC offset [0,10) → forward [10-10, 10-0) = [0,10) — same as full
+        // record, so '+' and '-' strand agree here.
+        let cigar = vec![CigarOp::new(10, '=')];
+        let m = minus_metadata(0, 10, 0, 10);
+        let (qs, qe, ts, te) = project(0, 10, &m, &cigar).unwrap();
+        assert_eq!((qs, qe, ts, te), (0, 10, 0, 10));
+    }
+
+    #[test]
+    fn test_project_minus_strand_subinterval_first_half() {
+        // 10= over forward query [0,10). Query target [0,5) overlaps the
+        // first 5 CIGAR query bases = RC(query)[0..5] = complement of
+        // query[5..10] reversed → forward [5,10).
+        let cigar = vec![CigarOp::new(10, '=')];
+        let m = minus_metadata(0, 10, 0, 10);
+        let (qs, qe, ts, te) = project(0, 5, &m, &cigar).unwrap();
+        assert_eq!((qs, qe, ts, te), (5, 10, 0, 5));
+    }
+
+    #[test]
+    fn test_project_minus_strand_subinterval_second_half() {
+        // 10= over forward query [0,10). Query target [5,10) overlaps the
+        // last 5 CIGAR query bases = RC(query)[5..10] = complement of
+        // query[0..5] reversed → forward [0,5).
+        let cigar = vec![CigarOp::new(10, '=')];
+        let m = minus_metadata(0, 10, 0, 10);
+        let (qs, qe, ts, te) = project(5, 10, &m, &cigar).unwrap();
+        assert_eq!((qs, qe, ts, te), (0, 5, 5, 10));
+    }
+
+    #[test]
+    fn test_project_minus_strand_with_query_offset() {
+        // 10= over forward query [100,110). Full overlap → forward [100,110).
+        let cigar = vec![CigarOp::new(10, '=')];
+        let m = minus_metadata(100, 110, 0, 10);
+        let (qs, qe, _ts, _te) = project(0, 10, &m, &cigar).unwrap();
+        assert_eq!((qs, qe), (100, 110));
+        // Sub-interval target [0,5) → forward [105,110).
+        let (qs, qe, _, _) = project(0, 5, &m, &cigar).unwrap();
+        assert_eq!((qs, qe), (105, 110));
+        // Sub-interval target [5,10) → forward [100,105).
+        let (qs, qe, _, _) = project(5, 10, &m, &cigar).unwrap();
+        assert_eq!((qs, qe), (100, 105));
+    }
+
+    #[test]
+    fn test_project_minus_strand_with_insertion() {
+        // CIGAR: 5=3I2= over forward query [0,10). Target span = 7.
+        // RC offset walk: op1 5= covers RC[0,5); op2 3I at RC[5,8); op3 2=
+        // covers RC[8,10).
+        // Query target [0,5) hits op1 only (op2 sits at target pos 5, outside
+        // the half-open [0,5)) → forward [10-5, 10-0) = [5,10).
+        // Query target [5,7) hits op2 (insertion at target pos 5) AND op3:
+        //   op2 RC[5,8) → forward [2,5); op3 RC[8,10) → forward [0,2)
+        //   union = forward [0,5).
+        // Query target [0,7) hits all three ops → forward [0,10).
+        let cigar = vec![
+            CigarOp::new(5, '='),
+            CigarOp::new(3, 'I'),
+            CigarOp::new(2, '='),
+        ];
+        let m = minus_metadata(0, 10, 0, 7);
+        let (qs, qe, _, _) = project(0, 5, &m, &cigar).unwrap();
+        assert_eq!((qs, qe), (5, 10));
+        let (qs, qe, _, _) = project(5, 7, &m, &cigar).unwrap();
+        assert_eq!((qs, qe), (0, 5));
+        let (qs, qe, _, _) = project(0, 7, &m, &cigar).unwrap();
+        assert_eq!((qs, qe), (0, 10));
     }
 
     #[test]
