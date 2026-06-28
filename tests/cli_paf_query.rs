@@ -1409,7 +1409,7 @@ fn command_paf_to_gfa_identical() {
     assert_eq!(s_fields[1], "1", "segment id should be 1");
     assert_eq!(s_fields[2], "ACGTACGTAC", "segment sequence mismatch");
     assert!(
-        s_fields.iter().any(|f| *f == "LN:i:10"),
+        s_fields.contains(&"LN:i:10"),
         "missing LN:i:10 tag in S line: {}",
         s_lines[0]
     );
