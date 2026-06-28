@@ -237,7 +237,7 @@ re-export 保持向后兼容。
 - **`libs/loc.rs`**：FASTA 随机访问索引模块。`Input` enum（Buf/File/Bgzf）+
   `create_loc`（建 `.loc` 索引）+`read_offset`（seek+read）。
   **2026-06 发现：此 IO 抽象层可直接支撑 PAF 模块的 CIGAR 懒加载和 BGZF 随机访问，比 impg 的 `paf.rs` IO 层更成熟**。
-  见 [[paf-implementation.md]] §10。
+  见 [[paf-pangenome.md]] §6.1。
 - `libs/nt.rs`：核苷酸类型
 - `libs/pairmat.rs`：pair 矩阵
 - `libs/hv.rs`：hypervariable 区域
@@ -314,8 +314,8 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
 
 ### 6.2 进行中的（活跃开发）
 
-- **泛基因组方向**：已形成完整路线图。路线决策在 `notes/paf-route.md`，第一步行动计划在
-  `notes/pairwise-selection.md`，PAF 模块实现参考在 `notes/paf-implementation.md`。
+- **泛基因组方向**：已形成完整路线图，整合在 `notes/paf-pangenome.md`（路线决策 + 已实现能力 +
+  代码结构 + 后续规划）。V1-V5 已全部完成。
   **2026-06 发现：`libs/loc.rs` 的 IO 抽象层可直接支撑 PAF 的 CIGAR 懒加载和 BGZF 访问， 实际实现量比最初估计少约 30%**。
 
 - **`pl` 流程模块**：`ucsc`、`trf`、`rept`、`ir` 等 pipeline 在补充。

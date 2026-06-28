@@ -101,7 +101,7 @@ pgr V4a 的直接借鉴来源（见 [[minigraph.md]]）。
 - **pgr**: 保持**隐式**，按需查询/物化，目标是避免全局图爆炸
 
 差异化的边界：pgr 不产出全局 GFA，只在查询时走 BFS 传递闭包，在 V4b 按需产出局部 GFA。
-这一点 [[graph-design.md]] §4.3.4 已明确"局部 GFA 不合并回全局"。
+这一点 [[paf-pangenome.md]] §4.3.4 已明确"局部 GFA 不合并回全局"。
 
 **粒度差异**是核心：seqwish 的传递闭包是**全局、一次性**的——一次性算出全部等价类再写图
 （[transclosure.rs](file:///Volumes/ExtHome/Scripts/pgr/seqwish-master/src/transclosure.rs) 的
@@ -116,7 +116,7 @@ PGGB 的 all-vs-all 是 pgr 的**反面教材**：
 - PGGB: 90 单倍型已是 HPRC 上限，all-vs-all 比对 + smoothxg 归一化成本极高
 - pgr: 用**Mash KNN sparsify**把 N² 降到 N×K，靠**传递闭包**补全稀疏比对的缺口
 
-这条路径在 [[paf-route.md]] §1.2 已确立，[[ecoli-cohort.md]] 给出了 4 万 E. coli 的具体落地（27000²
+这条路径在 [[paf-pangenome.md]] §1.2 已确立，[[ecoli-cohort.md]] 给出了 4 万 E. coli 的具体落地（27000²
 → 27000×50）。
 
 ### 3.3 护城河：相对 mdbg 的碱基级优势
@@ -146,7 +146,7 @@ pgr 查碱基级细节。当前路线不纳入，但记录为远期可能。
    传递闭包 → 节点压缩 → 边派生 → GFA 输出），明确 pgr V4a 可直接复用其算法骨架（spanning tree →
    BFS → DSU → compact → links → GFA），V1 可借鉴 `PosT` 编码与 `SparseBitVec`，V4b 可借鉴
    orphan recovery，查询层可考虑预计算生成树优化 BFS。
-2. **PGGB 是 sparsify 动机的最佳反例** — [[paf-route.md]] §1.2 已写大 cohort 场景，可把 PGGB 的
+2. **PGGB 是 sparsify 动机的最佳反例** — [[paf-pangenome.md]] §1.2 已写大 cohort 场景，可把 PGGB 的
    O(N²) 作为显式对照。
 3. **mdbg 定义了扩展性上限** — pgr 在 4 万 E. coli 场景护城河清晰，但百万级需警惕，可考虑 k-mer
    预处理作为远期 fallback。

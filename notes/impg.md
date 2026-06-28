@@ -261,7 +261,7 @@ impg 的子 crate 全部来自 Erik Garrison/Andrea Guarracino 团队的 pangeno
 - **sweepga 是最重的依赖** — 它同时提供 aligner 集成（wfmash/FastGA）、sparsification（KNN graph）、
   PAF filter、PanSN 命名抽象，是 impg 图构建层的核心。pgr 若借鉴 pair-selection，sweepga 的
   `knn_graph` 模块是参考点（impg.md §6.4）。
-- **pgr 可暂不引入整个生态** — pgr 第一步聚焦 Chain 传递闭包（pairwise-selection.md §3.1），
+- **pgr 可暂不引入整个生态** — pgr 第一步聚焦 Chain 传递闭包（paf-pangenome.md §3.1），
   只需 coitrees 等价物（区间树）。sweepga/seqwish/gfasort 等图构建生态是后续阶段的需求。
 
 ## 2. main.rs — 命令分发与参数解析（重点）
@@ -470,7 +470,7 @@ A→B record 额外生成一条 B→A entry（[main.rs#L11094](file:///Volumes/E
 使"query_A 在 target_B 树上"与"query_B 在 target_A 树上"各有一条记录，查询时无需反向计算。
 代价是索引大小翻倍。`--unidirectional` 关闭此行为，索引减半但反向查询需额外扫描。pgr V1 已借鉴此设计
 落地 `reverse_trees` 双向索引（仅 `+` 链建 mirror，负链不建；见
-[paf-implementation.md §11.2](file:///Volumes/ExtHome/Scripts/pgr/notes/paf-implementation.md)）。
+[paf-pangenome.md §11.2](file:///Volumes/ExtHome/Scripts/pgr/notes/paf-pangenome.md)）。
 
 ### 3.2 `QueryMetadata` 与 `CigarOp` 紧凑编码
 
@@ -504,7 +504,7 @@ pub struct QueryMetadata {
 转换为 B 视角。两步变换：(1) `I`↔`D` 交换（query 的 insertion 变成 target 的 deletion）；
 (2) 仅当 `strand == Reverse` 时反转 CIGAR 数组（负链比对在反向互补坐标上读取，op 顺序需逆序）。
 `=`/`X`/`M` 保持不变。这是 pgr mirror index 设计可借鉴的细节——pgr V1 的 `reverse_trees`
-仅 `+` 链建 mirror（见 [[paf-implementation.md]] §11.2），若未来扩展到负链 mirror 需实现等价变换。
+仅 `+` 链建 mirror（见 [[paf-pangenome.md]] §11.2），若未来扩展到负链 mirror 需实现等价变换。
 
 ### 3.3 `SortedRanges` 与区间合并
 
@@ -570,7 +570,7 @@ pub struct AlignmentRecord {
 编码方案。
 
 **格式自动探测** — `AlignmentFormat::from_path` 按扩展名判定（`.paf`/`.paf.gz`/`.paf.bgz` → PAF，
-`.1aln` → OneAln，`.tpa` → Tpa）。pgr 当前只支持 PAF（见 [[paf-implementation.md]]），无需此抽象层；
+`.1aln` → OneAln，`.tpa` → Tpa）。pgr 当前只支持 PAF（见 [[paf-pangenome.md]]），无需此抽象层；
 若未来扩展到 1ALN/TPA，此 8 字段 + strand-bit 编码是可借鉴的最小设计。
 
 <!-- crush 算法原 §3.5 内容已移至 §6 图构建层 -->
@@ -1211,18 +1211,18 @@ PAF 行 with `=`/`X` CIGAR）。这是 pgr 复用已有 pairwise 基础设施的
 **答：`pgr paf query` —— PAF 索引 + 区间投影 + 传递闭包，输出 BED/MAF。**
 
 > **实现状态**（2026-06-28 核对）：目标 1-4 已实现并通过测试（见
-> [pairwise-selection.md](file:///Volumes/ExtHome/Scripts/pgr/notes/pairwise-selection.md)，
+> [paf-pangenome.md](file:///Volumes/ExtHome/Scripts/pgr/notes/paf-pangenome.md)，
 > 104 个测试通过）：
 > - ✅ `pgr maf to-paf`（[src/cmd_pgr/maf/to_paf.rs](file:///Volumes/ExtHome/Scripts/pgr/src/cmd_pgr/maf/to_paf.rs)）
 > - ✅ `pgr paf index`（[src/cmd_pgr/paf/index.rs](file:///Volumes/ExtHome/Scripts/pgr/src/cmd_pgr/paf/index.rs)）
 > - ✅ `pgr paf query`（[src/cmd_pgr/paf/query.rs](file:///Volumes/ExtHome/Scripts/pgr/src/cmd_pgr/paf/query.rs)）
 > - ✅ `--transitive` BFS 传递闭包（[src/libs/paf/index.rs](file:///Volumes/ExtHome/Scripts/pgr/src/libs/paf/index.rs)）
 > - ✅ 查询层过滤参数 `--min-identity`/`--min-output-length`/`--merge-distance`/`--max-depth`
-> - ✅ V1 已实现：`pgr paf query -o bed`（可选，PAF 默认）+ `-b regions.bed` 批查（见 [[graph-design.md]] §3，+6 tests）
+> - ✅ V1 已实现：`pgr paf query -o bed`（可选，PAF 默认）+ `-b regions.bed` 批查（见 [[paf-pangenome.md]] §3，+6 tests）
 >
 > **输出格式差距**：impg `query` 支持 11 种输出（bed/bedpe/paf/gfa/vcf/maf/fasta/fasta+paf/fasta-aln/gbwt/auto，
 > 默认 `bed`，见 [main.rs#L4873](file:///Volumes/ExtHome/Scripts/pgr/impg-0.4.1/src/main.rs#L4873)）。
-> pgr V1 已补 BED（`-o bed` 可选）与批查（`-b`），**默认输出保持 PAF**（与 impg 的 BED 默认不同，理由见 [[graph-design.md]] §3.1）。**V4a 已实现** `pgr paf graph -f refs.fa --min-var-len 100`，输出 GFA v1.0（S/L/P），seqwish DSU 风格（详见 [[graph-design.md]] §4.3.1、[[seqwish.md]] §6.2）。下一步：V2 补 fasta，V3 补 maf，V4b 区域精细 GFA（impg 风格），V5 补 MAF/VCF 输出。
+> pgr V1 已补 BED（`-o bed` 可选）与批查（`-b`），**默认输出保持 PAF**（与 impg 的 BED 默认不同，理由见 [[paf-pangenome.md]] §3.1）。**V4a 已实现** `pgr paf graph -f refs.fa --min-var-len 100`，输出 GFA v1.0（S/L/P），seqwish DSU 风格（详见 [[paf-pangenome.md]] §4.3.1、[[seqwish.md]] §6.2）。下一步：V2 补 fasta，V3 补 maf，V4b 区域精细 GFA（impg 风格），V5 补 MAF/VCF 输出。
 
 具体目标：
 
