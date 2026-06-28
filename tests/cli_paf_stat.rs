@@ -4,7 +4,7 @@ mod common;
 
 use common::PgrCmd;
 
-// ── paf graph-report (V6 graph quality) ───────────────────────
+// ── paf stat (V6 graph quality) ───────────────────────
 
 fn write_temp_fasta(dir: &std::path::Path, name: &str, records: &[(&str, &str)]) -> String {
     use std::fs;
@@ -22,15 +22,15 @@ fn write_temp_fasta(dir: &std::path::Path, name: &str, records: &[(&str, &str)])
 }
 
 #[test]
-fn command_paf_graph_report_help() {
-    let (stdout, _) = PgrCmd::new().args(&["paf", "graph-report", "--help"]).run();
-    assert!(stdout.contains("Reports coarse GFA topology metrics"));
+fn command_paf_stat_help() {
+    let (stdout, _) = PgrCmd::new().args(&["paf", "stat", "--help"]).run();
+    assert!(stdout.contains("Reports coarse pangenome graph topology metrics"));
     assert!(stdout.contains("--min-var-len"));
     assert!(stdout.contains("--fasta"));
 }
 
 #[test]
-fn command_paf_graph_report_basic_forward() {
+fn command_paf_stat_basic_forward() {
     // A and B share a 100bp alignment → one shared node + trailing novel segments.
     let paf = "A\t100\t0\t100\t+\tB\t100\t0\t100\t95\t100\t255\tcg:Z:100M\n";
     let temp = tempfile::TempDir::new().unwrap();
@@ -40,7 +40,7 @@ fn command_paf_graph_report_basic_forward() {
         &[("A", &"ACGT".repeat(25)), ("B", &"TGCA".repeat(25))],
     );
     let (stdout, _stderr) = PgrCmd::new()
-        .args(&["paf", "graph-report", "stdin", "-f", &fa])
+        .args(&["paf", "stat", "stdin", "-f", &fa])
         .stdin(paf)
         .run();
 
@@ -73,7 +73,7 @@ fn command_paf_graph_report_basic_forward() {
 }
 
 #[test]
-fn command_paf_graph_report_split_at_large_indel() {
+fn command_paf_stat_split_at_large_indel() {
     // 50M 200I 50M: 200I >= 100 → split. B has an insertion (novel node in B path).
     let paf = "A\t300\t0\t100\t+\tB\t300\t0\t300\t95\t300\t255\tcg:Z:50M200I50M\n";
     let temp = tempfile::TempDir::new().unwrap();
@@ -83,15 +83,7 @@ fn command_paf_graph_report_split_at_large_indel() {
         &[("A", &"A".repeat(300)), ("B", &"G".repeat(300))],
     );
     let (stdout, _stderr) = PgrCmd::new()
-        .args(&[
-            "paf",
-            "graph-report",
-            "stdin",
-            "-f",
-            &fa,
-            "--min-var-len",
-            "100",
-        ])
+        .args(&["paf", "stat", "stdin", "-f", &fa, "--min-var-len", "100"])
         .stdin(paf)
         .run();
 
@@ -120,7 +112,7 @@ fn command_paf_graph_report_split_at_large_indel() {
 }
 
 #[test]
-fn command_paf_graph_report_small_indel_no_split() {
+fn command_paf_stat_small_indel_no_split() {
     // 50M 30I 50M: 30I < 100 → no split. A and B share exactly one aligned node.
     let paf = "A\t200\t0\t130\t+\tB\t200\t0\t160\t95\t160\t255\tcg:Z:50M30I50M\n";
     let temp = tempfile::TempDir::new().unwrap();
@@ -130,15 +122,7 @@ fn command_paf_graph_report_small_indel_no_split() {
         &[("A", &"A".repeat(200)), ("B", &"G".repeat(200))],
     );
     let (stdout, _stderr) = PgrCmd::new()
-        .args(&[
-            "paf",
-            "graph-report",
-            "stdin",
-            "-f",
-            &fa,
-            "--min-var-len",
-            "100",
-        ])
+        .args(&["paf", "stat", "stdin", "-f", &fa, "--min-var-len", "100"])
         .stdin(paf)
         .run();
 
@@ -161,7 +145,7 @@ fn command_paf_graph_report_small_indel_no_split() {
 }
 
 #[test]
-fn command_paf_graph_report_threshold_comparison() {
+fn command_paf_stat_threshold_comparison() {
     // Same alignment, different thresholds: stricter threshold yields fewer splits.
     // 50M 200I 50M
     let paf = "A\t300\t0\t100\t+\tB\t300\t0\t300\t95\t300\t255\tcg:Z:50M200I50M\n";
@@ -174,28 +158,12 @@ fn command_paf_graph_report_threshold_comparison() {
 
     // Threshold 100: 200I >= 100 → split.
     let (out_strict, _) = PgrCmd::new()
-        .args(&[
-            "paf",
-            "graph-report",
-            "stdin",
-            "-f",
-            &fa,
-            "--min-var-len",
-            "100",
-        ])
+        .args(&["paf", "stat", "stdin", "-f", &fa, "--min-var-len", "100"])
         .stdin(paf)
         .run();
     // Threshold 500: 200I < 500 → no split.
     let (out_loose, _) = PgrCmd::new()
-        .args(&[
-            "paf",
-            "graph-report",
-            "stdin",
-            "-f",
-            &fa,
-            "--min-var-len",
-            "500",
-        ])
+        .args(&["paf", "stat", "stdin", "-f", &fa, "--min-var-len", "500"])
         .stdin(paf)
         .run();
 
@@ -220,7 +188,7 @@ fn command_paf_graph_report_threshold_comparison() {
 }
 
 #[test]
-fn command_paf_graph_report_no_alignment() {
+fn command_paf_stat_no_alignment() {
     // Empty PAF → each sequence becomes one isolated novel node.
     let paf = "";
     let temp = tempfile::TempDir::new().unwrap();
@@ -230,7 +198,7 @@ fn command_paf_graph_report_no_alignment() {
         &[("A", &"ACGT".repeat(10)), ("B", &"TGCA".repeat(10))],
     );
     let (stdout, _stderr) = PgrCmd::new()
-        .args(&["paf", "graph-report", "stdin", "-f", &fa])
+        .args(&["paf", "stat", "stdin", "-f", &fa])
         .stdin(paf)
         .run();
 

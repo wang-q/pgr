@@ -1,7 +1,7 @@
 pub mod graph;
-pub mod graph_report;
 pub mod index;
 pub mod query;
+pub mod stat;
 pub mod to_bed;
 pub mod to_gfa;
 pub mod to_maf;
@@ -19,7 +19,7 @@ pub fn make_subcommand() -> clap::Command {
         .subcommand(to_vcf::make_subcommand())
         .subcommand(to_gfa::make_subcommand())
         .subcommand(graph::make_subcommand())
-        .subcommand(graph_report::make_subcommand())
+        .subcommand(stat::make_subcommand())
 }
 
 pub fn execute(matches: &clap::ArgMatches) -> anyhow::Result<()> {
@@ -31,7 +31,7 @@ pub fn execute(matches: &clap::ArgMatches) -> anyhow::Result<()> {
         Some(("to-vcf", sub_matches)) => to_vcf::execute(sub_matches),
         Some(("to-gfa", sub_matches)) => to_gfa::execute(sub_matches),
         Some(("graph", sub_matches)) => graph::execute(sub_matches),
-        Some(("graph-report", sub_matches)) => graph_report::execute(sub_matches),
+        Some(("stat", sub_matches)) => stat::execute(sub_matches),
         _ => Ok(()),
     }
 }

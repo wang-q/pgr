@@ -3,8 +3,8 @@ use pgr::libs::paf::graph::PafGraph;
 use std::collections::HashMap;
 
 pub fn make_subcommand() -> Command {
-    Command::new("graph-report")
-        .about("Reports coarse GFA topology metrics from PAF alignments")
+    Command::new("stat")
+        .about("Reports coarse pangenome graph topology metrics from PAF alignments")
         .after_help(
             r###"
 Computes a topology report (TSV: key<TAB>value) over the coarse pangenome
@@ -31,11 +31,11 @@ Notes:
 
 Examples:
 1. Report with default SV threshold (100bp):
-   pgr paf graph-report alignments.paf -f refs.fa -o report.tsv
+   pgr paf stat alignments.paf -f refs.fa -o report.tsv
 
 2. Compare thresholds:
-   pgr paf graph-report aln.paf -f refs.fa --min-var-len 50  -o r50.tsv
-   pgr paf graph-report aln.paf -f refs.fa --min-var-len 500 -o r500.tsv
+   pgr paf stat aln.paf -f refs.fa --min-var-len 50  -o r50.tsv
+   pgr paf stat aln.paf -f refs.fa --min-var-len 500 -o r500.tsv
 
 "###,
         )
