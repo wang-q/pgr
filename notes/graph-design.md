@@ -149,13 +149,21 @@ pgr paf to-bed cohort.paf.idx -b regions.bed --transitive
 | 4 | 共享查询逻辑 `add_query_args` + `run_query`（供 to-bed/to-maf 复用） | `cmd_pgr/paf/query.rs` |
 | 5 | 集成测试（PAF + BED + 批查 + 过滤） | `tests/cli_paf_query.rs` |
 
-### 3.4 不做的
+### 3.4 不做的（V1 时定的边界，部分后续阶段已实现）
 
-- ❌ `to-fasta`（未比对序列提取——用户场景是直接看比对，不需要裸序列；`pgr fa range` 已提供）
+V1 立项时定的边界：
+
+- ❌ `to-fasta`（未比对序列提取——`pgr fa range` 已提供独立提取能力）
 - ❌ `to-maf` POA MSA（推迟到 V3，pairwise MAF 在 V2 已覆盖大部分需求）
-- ❌ GFA/VCF 输出（推迟到 V4，需完整 graph engine）
-- ❌ gfasort/gfaffix（pgr 不做 GFA，不需要）
+- ❌ GFA/VCF 输出（推迟到 V4/V5，需完整 graph engine）
+- ❌ gfasort/gfaffix（pgr 自带 unchop/crush 替代，见 §4.3.2）
 - ❌ minigraph 的 `gfa_t` 在 Rust 中的对应实现
+
+V2-V5 已分别实现，下列边界维持：
+
+- ❌ `to-fasta`（用户场景不需要，`pgr fa range` 已提供）
+- ❌ indel VCF（V5 仅 substitution，indel VCF 见 §4.3.6 后续）
+- ❌ 全局精细 GFA 合并（V4b 产出的局部 GFA 独立，不合并回全局，见 §4.3.4）
 
 ---
 ## 4. V1/V2/V3/V4/V5 路线
@@ -164,12 +172,12 @@ pgr paf to-bed cohort.paf.idx -b regions.bed --transitive
 
 | 阶段 | 内容 | 对应 | 代码量 |
 |------|------|------|:---:|
-| **V1** ✅ 已完成 | `pgr paf query`（默认 PAF）+ `pgr paf to-bed`（轻量坐标）+ `-b regions.bed` 批查 | impg 默认 `-o bed` + `-b`（pgr 选 PAF 默认，见 §3.1） | ~65 |
-| **V2** ✅ 已完成 | `pgr paf to-maf`（pairwise MAF，按 CIGAR 直接还原，需 `-f TSV`）| impg `-o maf` 的 pairwise 子集 | ~120 |
-| **V3** ✅ 已完成 | `pgr paf to-maf --msa`（POA MSA，多序列合并，需 `--transitive` + POA）| impg `-o maf` 的 multi-way | ~150 |
-| **V4a** | 粗全局 GFA（`pgr paf graph -f refs.fa --min-var-len 100`，seqwish DSU 风格）| seqwish `sds`+`links` | ✅ 已完成 |
-| **V4b** ✅ 已完成 | 区域精细 GFA（`pgr paf to-gfa`，impg 风格）| impg `query -o gfa` | ~180 |
-| **V5** ✅ 已完成（substitution） | `pgr paf to-vcf`（POA MSA→VCF，substitution-only）| impg `-o vcf` 的子集 | ~120 |
+| **V1** ✅ | `pgr paf query`（默认 PAF）+ `pgr paf to-bed`（轻量坐标）+ `-b regions.bed` 批查 | impg 默认 `-o bed` + `-b`（pgr 选 PAF 默认，见 §3.1） | ~480 |
+| **V2** ✅ | `pgr paf to-maf`（pairwise MAF，按 CIGAR 直接还原，需 `-f TSV`）| impg `-o maf` 的 pairwise 子集 | ~560 |
+| **V3** ✅ | `pgr paf to-maf --msa`（POA MSA，多序列合并，需 `--transitive` + POA）| impg `-o maf` 的 multi-way | （并入 V2 文件）|
+| **V4a** ✅ | 粗全局 GFA（`pgr paf graph -f refs.fa --min-var-len 100`，seqwish DSU 风格）| seqwish `sds`+`links` | ~720（CLI 112 + 引擎 608）|
+| **V4b** ✅ | 区域精细 GFA（`pgr paf to-gfa`，impg 风格，含 unchop + LN tag + `--crush`）| impg `query -o gfa` + `crush` | ~500 |
+| **V5** ✅ | `pgr paf to-vcf`（POA MSA→VCF，substitution-only）| impg `-o vcf` 的子集 | ~290 |
 
 ### 4.1 为何坐标类输出是 V1 核心
 
@@ -460,4 +468,92 @@ pgr 从 PAF 索引物化粗 GFA（V4a）时同样面临：
 （[[paf-route.md]] §2.3），由用户用 `--merge-distance` 等参数控制粗细。V4 物化时才在
 graph engine 内部做 `min_var_len` 过滤。这两个层次不能混淆——查询层全量是"让用户决定粗细"，
 图构建层粗框架是"避免图爆炸"。
+
+---
+## 5. 后续计划（V6-V8 与增量增强）
+
+V1-V5 已完成索引→查询→图构建三层的最小可用闭环。后续按"规模扩展 → 图质量 → 应用层"递进，
+对照 impg 与 seqwish 仍可借鉴的能力，结合 pgr 独有优势（UCSC Chain/Net 体系、纯 Rust POA）。
+
+### 5.1 V6：规模扩展（4 万大肠杆菌级）
+
+当前 V4a 在小 cohort（数十基因组）上验证通过。扩到 [[ecoli-cohort.md]] 的 4 万大肠杆菌时，
+需引入 seqwish 的工程优化（按收益/复杂度排序）：
+
+| 优化 | 来源 | 何时引入 | 估计收益 |
+|------|------|----------|----------|
+| **spanning tree 剪枝** | [[seqwish.md]] §3.1 | BFS 边遍历数成为瓶颈时 | N²→N-1 边遍历，BFS 提速 10×+ |
+| **lock-free DSU**（`portable_atomic::AtomicU128`） | [[seqwish.md]] §2.4 | V4a rayon 化时 | 并行 union-find，无锁竞争 |
+| **`--repeat-max` / `--min-repeat-dist`** | [[seqwish.md]] §3.5 | 高拷贝重复区把图吹爆时 | 限制同序列在同节点的拷贝数 |
+| **disk-backed interval tree** | [[seqwish.md]] §2.3 | 全图超 RAM 时 | 兜底可跑性，牺牲速度 |
+| **SparseBitVec 序列边界** | [[seqwish.md]] §2.2 | HPRC 规模（数百单倍型、Gb 级） | 边界索引内存 O(m) 而非 O(N) |
+| **PosT 单 u64 编码** | [[seqwish.md]] §2.1 | 反链投影成为热点时 | 单棵树同时表达正反链 |
+
+**判断标准**：先跑 4 万大肠杆菌基准测试（无优化版本），按实际瓶颈选 1-2 项引入。不做"预防性优化"。
+
+### 5.2 V7：图质量与归一化（impg graph_report + smoothxg 风格）
+
+V4b 的 `--crush` 是 impg crush 8 阶段流程的最小子集（仅"邻居集合相同的节点合并"）。
+完整 crush 有 15 种 ResolutionMethod（[[impg.md]] §6.5），覆盖 median 路由、indel 平滑、
+超长 bubble 拆分等。pgr 不打算全抄——按需挑选：
+
+| 能力 | 来源 | pgr 价值 | 优先级 |
+|------|------|----------|--------|
+| **`pgr paf graph-report`** | impg `graph report`（15+ 维度） | 图质量评估，为参数调优提供依据 | 高（不依赖新算法） |
+| **`--smooth`**（smoothxg 风格块归一化） | impg `smooth.rs` + smoothxg | 合并相邻 bubble、填充 gap 列 | 中（需 POA 块分解） |
+| **`--gfaffix`**（图归一化） | impg `run_gfaffix` | 重复 bubble 标准化 | 低（外部 binary，pgr 倾向纯 Rust） |
+| **完整 crush 8 阶段** | impg `resolution.rs` | 复杂 bubble 处理 | 低（V4b `--crush` 已覆盖主要场景） |
+
+**判断标准**：`graph-report` 优先做（无新算法，纯统计），`--smooth` 视用户需求评估。完整 crush 不做——
+V4b 的简化版已覆盖 SNP/简单 indel bubble，复杂 bubble 让用户走 impg/smoothxg 管道。
+
+### 5.3 V8：应用层 — genotyping（impg Genotype/Infer）
+
+impg 能力栈顶端是 `Genotype` / `Infer`（[[impg.md]] §7）。pgr 当前无应用层。基因分型的核心抽象
+是 impg 的 **graph feature evidence**：候选 haplotype 编码为特征向量（节点/边/路径 presence），
+既可来自物化 GFA，也可来自隐式图查询。
+
+**pgr 的路径**：复用 V4a 粗全局 GFA + V5 VCF，加 `pgr paf genotype`：
+
+```
+pgr paf graph cohort.paf -f refs.fa --min-var-len 100 -o graph.gfa  # V4a 物化
+pgr paf genotype graph.gfa sample.fa  # 在图上基因分型
+```
+
+**为何推迟**：genotyping 需要稳定的图构建（V4-V7）作为前置，且需要真实数据验证。
+当前 pgr 的核心价值在"图构建 + 区域查询"，应用层让位于 minigraph-cactus / vg 等成熟工具。
+
+### 5.4 增量增强（不单独成版本）
+
+| 增强 | 当前状态 | 目标 | 优先级 |
+|------|----------|------|--------|
+| **indel VCF** | V5 仅 substitution | 合并连续 gap 为 indel 事件，左对齐规范化 | 高（用户场景常见） |
+| **`--syntenic-filter`** | 无 | 用 UCSC Chain/Net 验证 PAF 边，标低置信度 | 中（pgr 独有优势） |
+| **`-m/--max-depth`** | BFS 默认无界 | 控制传递闭包深度（impg 默认 2） | 中（大 cohort 防爆炸） |
+| **`--min-transitive-len`** | 无 | 过滤短传递片段（impg 默认 101） | 中（同上） |
+| **rGFA tag**（SN/SO/SR） | V4a 缺失 | 给参考路径加 rGFA anchor tag | 低（与 minigraph 工具链互操作时再加） |
+| **stage 化管道** | 单命令 | impg `gfa:crush:sort` 风格字符串 | 低（CLAUDE.md "三次相似再抽象"原则，当前单命令够用） |
+
+### 5.5 不做清单（明确边界）
+
+按 CLAUDE.md "不写半成品 / 三次相似再抽象"原则，下列能力**明确不做**：
+
+- ❌ **完整 crush 8 阶段 + 15 ResolutionMethod** — V4b `--crush` 已覆盖主要场景，复杂 bubble 走外部工具
+- ❌ **`--sparsify auto`（Mash KNN）** — pgr 走"已有 PAF 覆盖度先验"路线（[[paf-route.md]] §3.2），不引入 mash 依赖
+- ❌ **syng 后端（syncmer 免比对）** — pgr 已有 `pgr lav lastz` 全套，不需要免比对后端
+- ❌ **1ALN/TPA 格式支持** — pgr 用 PAF/MAF，不需要第三种比对格式
+- ❌ **全局精细 GFA 合并** — 见 §4.3.4，保持"粗全局 GFA 是不可变投影"语义
+- ❌ **minigraph 的 `gfa_t` 在 Rust 中的对应实现** — pgr 走 seqwish DSU 路线（V4a），不重建 minigraph 数据结构
+
+### 5.6 优先级路线图
+
+```
+当前 (V1-V5) → 增量增强 (indel VCF / --syntenic-filter / -m)
+            → V6 规模扩展 (4 万大肠杆菌基准 → 选 1-2 项 seqwish 优化)
+            → V7 图质量 (graph-report → --smooth 评估)
+            → V8 应用层 (genotyping，远期)
+```
+
+**近期焦点**：indel VCF（用户场景最直接）+ 4 万大肠杆菌基准测试（验证 V4a/V4b 可扩展性）。
+V7/V8 视用户反馈与真实数据验证后再启动，不预先实现。
 
