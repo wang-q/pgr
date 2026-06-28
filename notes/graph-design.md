@@ -166,7 +166,7 @@ pgr paf to-bed cohort.paf.idx -b regions.bed --transitive
 |------|------|------|:---:|
 | **V1** ✅ 已完成 | `pgr paf query`（默认 PAF）+ `pgr paf to-bed`（轻量坐标）+ `-b regions.bed` 批查 | impg 默认 `-o bed` + `-b`（pgr 选 PAF 默认，见 §3.1） | ~65 |
 | **V2** ✅ 已完成 | `pgr paf to-maf`（pairwise MAF，按 CIGAR 直接还原，需 `-f TSV`）| impg `-o maf` 的 pairwise 子集 | ~120 |
-| **V3** | `pgr paf to-maf --msa`（POA MSA，多序列合并，需 `--transitive` + POA）| impg `-o maf` 的 multi-way | ~150 |
+| **V3** ✅ 已完成 | `pgr paf to-maf --msa`（POA MSA，多序列合并，需 `--transitive` + POA）| impg `-o maf` 的 multi-way | ~150 |
 | **V4a** | 粗全局 GFA（`pgr paf graph -f refs.fa --min-var-len 100`，seqwish DSU 风格）| seqwish `sds`+`links` | ✅ 已完成 |
 | **V4b** | 区域精细 GFA（`pgr paf to-gfa -r region`，impg 风格）| impg `query -o gfa` | 待评估 |
 | **V5** | 区域 GFA → MAF/VCF（精细分析输出）+ EKG @tags | impg `-o maf`/`-o vcf` | 待评估 |
@@ -267,6 +267,40 @@ ref        /data/cohort/ref.fa.gz
 
 **已知限制（V2 当前实现）**：
 - `M` op 按原样输出两条碱基（MAF 格式本就不区分 `=`/`X`，靠下游逐位比较即可）。
+
+### 4.2.2 V3 `pgr paf to-maf --msa` 设计（multi-way MSA via POA）
+
+**核心思路**：`--transitive` BFS 收集一个 region 的所有同源片段后，用 POA 把它们合并成
+**单个多序列 MAF block**（而非 V2 的每条 result 一个 pairwise block）。CIGAR 在此模式下被
+忽略——MSA 列由 POA 重新决定。
+
+**入口**：`pgr paf to-maf ... -t --msa -f genomes.tsv`（`--msa` 隐含建议配合 `--transitive`）
+
+**序列准备**（每个 region 一个 block）：
+1. **target 序列**：取该 region 第一条 result 的 `t_iv`，作为 block 的第一条 `s` 行（strand `+`）。
+2. **query 序列**：遍历所有 result，按 `q_iv` 提取；`-` 链先 `reverse_complement`，使其与 target
+   同向进入 POA。MAF `start` 字段：`+` 链为 `qs`，`-` 链为 `srcSize - qe`（与 V2 一致）。
+3. **去重**：BFS 经 mirror index 可能返回 target 自身作为 query（自环），用
+   `(name, start, strand, src_size)` 元组比对 target key，相同则跳过，避免重复序列进入 POA。
+
+**POA 引擎**：直接复用 [libs/poa/](file:///Volumes/ExtHome/Scripts/pgr/src/libs/poa) 的 `Poa::new` →
+`add_sequence` × N → `msa()`。打分参数通过 `--match`/`--mismatch`/`--gap-open`/`--gap-extend` 暴露
+（默认 5/-4/-8/-6，与 `fas consensus` 一致）。AlignmentType 固定 Global。
+
+**输出**：一个 `a` block，含 N 条 `s` 行（target 第一，其余按 result 顺序）。每行 `size` =
+该行非 gap 字符数。
+
+**与 impg 的差异**：impg 的 multi-way MSA 走 per-bubble POA（先物化 GFA 再平滑），pgr 直接在
+BFS 等价类上做 POA，省去图物化步骤。代价是失去 bubble 结构信息——适合"看一眼同源区段的多序列
+比对"，不适合全图 genotyping（后者走 V4a→V5 路径）。
+
+**已知限制（V3 当前实现）**：
+- POA 不处理循环移位（circular shift）——若两条序列是旋转关系，POA 可能产生末端 gap。
+  真实场景中 `-` 链已 RC，循环移位较少见；若确需处理，参考 `fas multiz` 的 banded DP。
+- target 序列取自第一条 result 的 `t_iv`——所有 result 共享同一 target_id（run_query 按
+  target_id 过滤），但 `t_iv` 可能因 result 不同而区间略异（sub-interval projection）。
+  当前取第一条的区间作为 target 序列，与 V2 pairwise 模式下每条 result 各自取 `t_iv` 的行为
+  略有不同；多序列场景下统一 target 是必要简化。
 
 ### 4.3 V4 的能力跃迁：两段式 GFA
 

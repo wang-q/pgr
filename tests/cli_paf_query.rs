@@ -845,3 +845,167 @@ fn command_paf_to_maf_reverse_strand_subinterval_with_insertion() {
     let _ = fs::remove_file(format!("{a_fa}.loc"));
     let _ = fs::remove_file(format!("{b_fa}.loc"));
 }
+
+// ── paf to-maf --msa (multi-way MSA via POA) ─────────────────────
+
+#[test]
+fn command_paf_to_maf_msa_three_genomes_transitive() {
+    use std::fs;
+    // Three genomes A/B/C, all 10 bp, identical sequence ACGTACGTAC.
+    // A-B and A-C alignments → query B:0-10 with --transitive gathers
+    // {B(target), A, C} into one region. --msa merges them into a single
+    // 3-sequence MAF block via POA. Since all sequences are identical, the
+    // MSA columns should be gap-free and all three `s` lines equal.
+    let paf = "\
+A\t10\t0\t10\t+\tB\t10\t0\t10\t10\t10\t255\tcg:Z:10=\n\
+C\t10\t0\t10\t+\tA\t10\t0\t10\t10\t10\t255\tcg:Z:10=\n";
+    let a_fa = write_bgzf_fa("/tmp/pgr_maf_msa_A.fa", ">A\nACGTACGTAC\n");
+    let b_fa = write_bgzf_fa("/tmp/pgr_maf_msa_B.fa", ">B\nACGTACGTAC\n");
+    let c_fa = write_bgzf_fa("/tmp/pgr_maf_msa_C.fa", ">C\nACGTACGTAC\n");
+    let tsv = "/tmp/pgr_maf_msa.tsv";
+    fs::write(tsv, format!("A\t{a_fa}\nB\t{b_fa}\nC\t{c_fa}\n")).unwrap();
+
+    let (stdout, stderr) = PgrCmd::new()
+        .args(&["paf", "to-maf", "stdin", "B:0-10", "-t", "--msa", "-f", tsv])
+        .stdin(paf)
+        .run();
+    assert!(
+        stderr.contains("Total results:") && !stderr.contains("Total results: 0"),
+        "expected non-zero results"
+    );
+    assert!(stdout.contains("##maf version=1"), "missing MAF header");
+    // Exactly one `a` block (multi-way).
+    let a_count = stdout.matches("\na\n").count() + if stdout.starts_with("a\n") { 1 } else { 0 };
+    assert_eq!(a_count, 1, "expected exactly one MAF block, got {a_count}");
+    // Three `s` lines (target B + queries A, C).
+    let s_count = stdout.lines().filter(|l| l.starts_with("s\t")).count();
+    assert_eq!(s_count, 3, "expected 3 s-lines, got {s_count}");
+    // All identical → each s-line should end with ACGTACGTAC (no gaps).
+    for line in stdout.lines().filter(|l| l.starts_with("s\t")) {
+        assert!(
+            line.ends_with("ACGTACGTAC"),
+            "expected gap-free ACGTACGTAC in s-line: {line}"
+        );
+    }
+    // Target B should appear first.
+    let first_s = stdout.lines().find(|l| l.starts_with("s\t")).unwrap();
+    assert!(
+        first_s.starts_with("s\tB\t"),
+        "target B should be first: {first_s}"
+    );
+
+    let _ = fs::remove_file("/tmp/pgr_maf_msa_A.fa");
+    let _ = fs::remove_file("/tmp/pgr_maf_msa_B.fa");
+    let _ = fs::remove_file("/tmp/pgr_maf_msa_C.fa");
+    let _ = fs::remove_file(&a_fa);
+    let _ = fs::remove_file(&b_fa);
+    let _ = fs::remove_file(&c_fa);
+    let _ = fs::remove_file(format!("{a_fa}.gzi"));
+    let _ = fs::remove_file(format!("{b_fa}.gzi"));
+    let _ = fs::remove_file(format!("{c_fa}.gzi"));
+    let _ = fs::remove_file(tsv);
+    let _ = fs::remove_file(format!("{a_fa}.loc"));
+    let _ = fs::remove_file(format!("{b_fa}.loc"));
+    let _ = fs::remove_file(format!("{c_fa}.loc"));
+}
+
+#[test]
+fn command_paf_to_maf_msa_with_snp() {
+    use std::fs;
+    // B = ACGTACGTAC (target)
+    // A = ACGTACGTAC (identical to B)
+    // C = ACGTTCGTAC (SNP at position 4: A→T)
+    // A-B and A-C alignments, query B:0-10 --transitive --msa.
+    // POA should produce a 3-sequence MSA with one SNP column.
+    let paf = "\
+A\t10\t0\t10\t+\tB\t10\t0\t10\t10\t10\t255\tcg:Z:10=\n\
+C\t10\t0\t10\t+\tA\t10\t0\t10\t9\t10\t255\tcg:Z:10M\n";
+    let a_fa = write_bgzf_fa("/tmp/pgr_maf_msa_snp_A.fa", ">A\nACGTACGTAC\n");
+    let b_fa = write_bgzf_fa("/tmp/pgr_maf_msa_snp_B.fa", ">B\nACGTACGTAC\n");
+    let c_fa = write_bgzf_fa("/tmp/pgr_maf_msa_snp_C.fa", ">C\nACGTTCGTAC\n");
+    let tsv = "/tmp/pgr_maf_msa_snp.tsv";
+    fs::write(tsv, format!("A\t{a_fa}\nB\t{b_fa}\nC\t{c_fa}\n")).unwrap();
+
+    let (stdout, _stderr) = PgrCmd::new()
+        .args(&["paf", "to-maf", "stdin", "B:0-10", "-t", "--msa", "-f", tsv])
+        .stdin(paf)
+        .run();
+    let s_count = stdout.lines().filter(|l| l.starts_with("s\t")).count();
+    assert_eq!(s_count, 3, "expected 3 s-lines, got {s_count}");
+    // All three s-lines should have length 10 (no gaps introduced for a SNP).
+    for line in stdout.lines().filter(|l| l.starts_with("s\t")) {
+        let aln = line.split('\t').next_back().unwrap();
+        assert_eq!(aln.len(), 10, "expected 10-char alignment, got '{aln}'");
+    }
+    // C should differ from B at position 4 (0-indexed).
+    let b_line = stdout.lines().find(|l| l.starts_with("s\tB\t")).unwrap();
+    let c_line = stdout.lines().find(|l| l.starts_with("s\tC\t")).unwrap();
+    let b_aln = b_line.split('\t').next_back().unwrap();
+    let c_aln = c_line.split('\t').next_back().unwrap();
+    let diffs: Vec<usize> = b_aln
+        .chars()
+        .zip(c_aln.chars())
+        .enumerate()
+        .filter_map(|(i, (a, b))| if a != b { Some(i) } else { None })
+        .collect();
+    assert_eq!(
+        diffs,
+        vec![4],
+        "expected single SNP at pos 4, got {diffs:?}"
+    );
+
+    let _ = fs::remove_file("/tmp/pgr_maf_msa_snp_A.fa");
+    let _ = fs::remove_file("/tmp/pgr_maf_msa_snp_B.fa");
+    let _ = fs::remove_file("/tmp/pgr_maf_msa_snp_C.fa");
+    let _ = fs::remove_file(&a_fa);
+    let _ = fs::remove_file(&b_fa);
+    let _ = fs::remove_file(&c_fa);
+    let _ = fs::remove_file(format!("{a_fa}.gzi"));
+    let _ = fs::remove_file(format!("{b_fa}.gzi"));
+    let _ = fs::remove_file(format!("{c_fa}.gzi"));
+    let _ = fs::remove_file(tsv);
+    let _ = fs::remove_file(format!("{a_fa}.loc"));
+    let _ = fs::remove_file(format!("{b_fa}.loc"));
+    let _ = fs::remove_file(format!("{c_fa}.loc"));
+}
+
+#[test]
+fn command_paf_to_maf_msa_reverse_strand_query() {
+    use std::fs;
+    // B = ACGTACGTAC (target, forward)
+    // A = GTACGTACGT, aligned to B on '-' strand. RC(A) = ACGTACGTAC = B,
+    // so after reverse-complementation A's aligned sequence equals B.
+    // Query B:0-10 --transitive --msa: A is RC'd before POA, then both
+    // sequences are identical → gap-free MSA.
+    let paf = "A\t10\t0\t10\t-\tB\t10\t0\t10\t10\t10\t255\tcg:Z:10=\n";
+    let a_fa = write_bgzf_fa("/tmp/pgr_maf_msa_rev_A.fa", ">A\nGTACGTACGT\n");
+    let b_fa = write_bgzf_fa("/tmp/pgr_maf_msa_rev_B.fa", ">B\nACGTACGTAC\n");
+    let tsv = "/tmp/pgr_maf_msa_rev.tsv";
+    fs::write(tsv, format!("A\t{a_fa}\nB\t{b_fa}\n")).unwrap();
+
+    let (stdout, _stderr) = PgrCmd::new()
+        .args(&["paf", "to-maf", "stdin", "B:0-10", "-t", "--msa", "-f", tsv])
+        .stdin(paf)
+        .run();
+    let s_count = stdout.lines().filter(|l| l.starts_with("s\t")).count();
+    assert_eq!(s_count, 2, "expected 2 s-lines (B + A), got {s_count}");
+    // A should be emitted with strand '-'.
+    let a_line = stdout.lines().find(|l| l.starts_with("s\tA\t")).unwrap();
+    assert!(
+        a_line.contains("\t-\t"),
+        "A should be on '-' strand: {a_line}"
+    );
+    // A's aligned sequence should be RC(GTACGTACGT) = ACGTACGTAC, gap-free.
+    let a_aln = a_line.split('\t').next_back().unwrap();
+    assert_eq!(a_aln, "ACGTACGTAC", "expected RC(A) gap-free: {a_aln}");
+
+    let _ = fs::remove_file("/tmp/pgr_maf_msa_rev_A.fa");
+    let _ = fs::remove_file("/tmp/pgr_maf_msa_rev_B.fa");
+    let _ = fs::remove_file(&a_fa);
+    let _ = fs::remove_file(&b_fa);
+    let _ = fs::remove_file(format!("{a_fa}.gzi"));
+    let _ = fs::remove_file(format!("{b_fa}.gzi"));
+    let _ = fs::remove_file(tsv);
+    let _ = fs::remove_file(format!("{a_fa}.loc"));
+    let _ = fs::remove_file(format!("{b_fa}.loc"));
+}

@@ -300,26 +300,188 @@ fn output_maf(
     Ok(())
 }
 
+// One entry to feed into POA: aligned sequence plus metadata for the MAF `s` line.
+struct MsaEntry {
+    name: String,
+    start: i32,      // MAF start (forward-strand coordinate)
+    strand: char,    // '+' or '-'
+    src_size: usize, // total sequence length
+    seq: Vec<u8>,    // sequence in alignment orientation (already RC if '-')
+}
+
+// Output multi-way MAF blocks via POA. For each region, collect target +
+// all query sequences (queries RC'd if '-' strand), feed them into the POA
+// engine, and emit one `a` block with N `s` lines. CIGAR is ignored.
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+fn output_maf_msa(
+    idx: &PafIndex,
+    all_results: &[((String, i32, i32), Vec<QueryResult>)],
+    fasta_store: &mut FastaStore,
+    match_score: i32,
+    mismatch_score: i32,
+    gap_open: i32,
+    gap_extend: i32,
+) -> anyhow::Result<()> {
+    let params = pgr::libs::poa::AlignmentParams {
+        match_score,
+        mismatch_score,
+        gap_open,
+        gap_extend,
+    };
+
+    println!("##maf version=1");
+    for ((tname_region, _, _), results) in all_results {
+        if results.is_empty() {
+            continue;
+        }
+
+        // Build entries: target first (from the first result's t_iv), then
+        // each query. The target interval is taken from the first result;
+        // all results in this region share the same target by construction
+        // (run_query filters by one target_id per region).
+        let mut entries: Vec<MsaEntry> = Vec::with_capacity(results.len() + 1);
+
+        // Target entry from the first result.
+        let (_, _, t_iv_first, _, _, _, _) = &results[0];
+        let tname = idx
+            .id_to_name(t_iv_first.metadata)
+            .unwrap_or(tname_region.as_str());
+        let (ts, te) = if t_iv_first.first <= t_iv_first.last {
+            (t_iv_first.first, t_iv_first.last)
+        } else {
+            (t_iv_first.last, t_iv_first.first)
+        };
+        let (t_seq, t_src_size) = fasta_store.fetch_range(tname, ts, te)?;
+        entries.push(MsaEntry {
+            name: tname.to_string(),
+            start: ts,
+            strand: '+',
+            src_size: t_src_size,
+            seq: t_seq,
+        });
+
+        // Query entries. Skip a query that duplicates the target entry
+        // (same name, start, strand, length) — this happens when BFS
+        // traverses the mirror index and returns the target as a query of
+        // itself.
+        let t_key = (tname.to_string(), ts, '+', t_src_size);
+        for (query_id, q_iv, _t_iv, _cigar, _rec_ts, _rec_qs, strand) in results {
+            let qname = idx.id_to_name(*query_id).unwrap_or("?");
+            let (qs, qe) = if q_iv.first <= q_iv.last {
+                (q_iv.first, q_iv.last)
+            } else {
+                (q_iv.last, q_iv.first)
+            };
+            let (q_seq_fwd, q_src_size) = fasta_store.fetch_range(qname, qs, qe)?;
+            let (seq, start, strand_char) = if *strand == '-' {
+                (reverse_complement(&q_seq_fwd), q_src_size as i32 - qe, '-')
+            } else {
+                (q_seq_fwd, qs, '+')
+            };
+            let q_key = (qname.to_string(), start, strand_char, q_src_size);
+            if q_key == t_key {
+                continue;
+            }
+            entries.push(MsaEntry {
+                name: qname.to_string(),
+                start,
+                strand: strand_char,
+                src_size: q_src_size,
+                seq,
+            });
+        }
+
+        // Run POA MSA.
+        let mut poa =
+            pgr::libs::poa::Poa::new(params.clone(), pgr::libs::poa::AlignmentType::Global);
+        for e in &entries {
+            poa.add_sequence(&e.seq);
+        }
+        let msa = poa.msa();
+
+        // Emit the MAF block.
+        println!("a");
+        for (e, aln) in entries.iter().zip(msa.iter()) {
+            let size = aln.chars().filter(|c| *c != '-').count();
+            println!(
+                "s\t{}\t{}\t{}\t{}\t{}\t{}",
+                e.name, e.start, size, e.strand, e.src_size, aln
+            );
+        }
+        println!();
+    }
+    Ok(())
+}
+
 pub fn make_subcommand() -> Command {
     query::add_query_args(
-        Command::new("to-maf").arg(
-            Arg::new("fasta_tsv")
-                .long("fasta-tsv")
-                .short('f')
-                .required(true)
-                .num_args(1)
-                .help("TSV file: genome_name <tab> bgzf_fasta_path"),
-        ),
+        Command::new("to-maf")
+            .arg(
+                Arg::new("fasta_tsv")
+                    .long("fasta-tsv")
+                    .short('f')
+                    .required(true)
+                    .num_args(1)
+                    .help("TSV file: genome_name <tab> bgzf_fasta_path"),
+            )
+            .arg(
+                Arg::new("msa")
+                    .long("msa")
+                    .num_args(0)
+                    .help("Merge results per region into a multi-way MAF block via POA"),
+            )
+            .arg(
+                Arg::new("match_score")
+                    .long("match")
+                    .num_args(1)
+                    .default_value("5")
+                    .value_parser(clap::value_parser!(i32))
+                    .allow_negative_numbers(true)
+                    .help("POA match score (default: 5)"),
+            )
+            .arg(
+                Arg::new("mismatch_score")
+                    .long("mismatch")
+                    .num_args(1)
+                    .default_value("-4")
+                    .value_parser(clap::value_parser!(i32))
+                    .allow_negative_numbers(true)
+                    .help("POA mismatch score (default: -4)"),
+            )
+            .arg(
+                Arg::new("gap_open")
+                    .long("gap-open")
+                    .num_args(1)
+                    .default_value("-8")
+                    .value_parser(clap::value_parser!(i32))
+                    .allow_negative_numbers(true)
+                    .help("POA gap open penalty (default: -8)"),
+            )
+            .arg(
+                Arg::new("gap_extend")
+                    .long("gap-extend")
+                    .num_args(1)
+                    .default_value("-6")
+                    .value_parser(clap::value_parser!(i32))
+                    .allow_negative_numbers(true)
+                    .help("POA gap extend penalty (default: -6)"),
+            ),
     )
-    .about("Query PAF index and output pairwise MAF from CIGAR")
+    .about("Query PAF index and output pairwise or multi-way MAF")
     .after_help(
         r###"
 Queries a PAF file or saved index (same logic as `pgr paf query`) and
-outputs pairwise MAF blocks restored directly from CIGAR.
+outputs MAF blocks.
 
-Alignments are assumed to be already refined by chain/net or other
-upstream tools — no POA refinement is performed. Each query result
-becomes one 2-sequence MAF block (target first, query second).
+Default mode (pairwise): each query result becomes one 2-sequence MAF
+block restored directly from CIGAR. Alignments are assumed to be
+already refined by chain/net — no POA refinement is performed.
+
+--msa mode (multi-way): merge all query results of each region into a
+single multi-sequence MAF block via POA. Sequences (target first, then
+each query, '-' strand reverse-complemented) are fed into the POA
+engine; CIGAR is ignored. Best used with --transitive to gather all
+homologous fragments of a region.
 
 -f/--fasta-tsv (required):
   TSV with two columns: genome_name <tab> bgzf_fasta_path
@@ -334,14 +496,14 @@ Notes:
 * Reads from stdin if input file is 'stdin'
 
 Examples:
-1. Single region to MAF:
+1. Single region to pairwise MAF:
    pgr paf to-maf alignments.paf chr1:1000-5000 -f genomes.tsv
 
-2. Batch query from BED regions:
-   pgr paf to-maf alignments.paf.idx -b regions.bed -f genomes.tsv
+2. Multi-way MSA with transitive BFS:
+   pgr paf to-maf alignments.paf chr1:1000-5000 -t --msa -f genomes.tsv
 
-3. With transitive BFS:
-   pgr paf to-maf alignments.paf chr1:1000-5000 -t -f genomes.tsv
+3. Batch query from BED regions:
+   pgr paf to-maf alignments.paf.idx -b regions.bed -f genomes.tsv
 
 "###,
     )
@@ -370,6 +532,22 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     }
 
     let mut fasta_store = FastaStore::new(&seq_to_file)?;
-    output_maf(&idx, &all_results, &mut fasta_store)?;
+    if args.get_flag("msa") {
+        let match_score = *args.get_one::<i32>("match_score").unwrap();
+        let mismatch_score = *args.get_one::<i32>("mismatch_score").unwrap();
+        let gap_open = *args.get_one::<i32>("gap_open").unwrap();
+        let gap_extend = *args.get_one::<i32>("gap_extend").unwrap();
+        output_maf_msa(
+            &idx,
+            &all_results,
+            &mut fasta_store,
+            match_score,
+            mismatch_score,
+            gap_open,
+            gap_extend,
+        )?;
+    } else {
+        output_maf(&idx, &all_results, &mut fasta_store)?;
+    }
     Ok(())
 }

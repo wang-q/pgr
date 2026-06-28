@@ -49,11 +49,14 @@ impg 的四层能力栈（[[impg.md]] §1.1.3）在 pgr 的现状：pairwise 比
 | 阶段    | 内容                                                                   |  状态  |
 |---------|------------------------------------------------------------------------|:------:|
 | **V1**  | `pgr paf query -o paf`（默认）+ `-o bed` + `-b regions.bed` 批查 + `--min-degree`/`--min-chain-length` 后处理过滤 | ✅ 已完成 |
-| **V2**  | `-o fasta`（未比对序列，需 `-f`）                                      | 待实现 |
-| **V3**  | `-o maf`（POA MSA，需 `-f`）+ `-o fasta-aln`                           | 待实现 |
+| **V2**  | `pgr paf to-maf`（pairwise MAF，按 CIGAR 直接还原，需 `-f TSV`）       | ✅ 已完成 |
+| **V3**  | `pgr paf to-maf --msa`（POA MSA，多序列合并，需 `--transitive` + POA） | ✅ 已完成 |
 | **V4a** | 粗全局 GFA（`pgr paf graph -f refs.fa --min-var-len 100`，seqwish DSU 风格） | ✅ 已完成 |
 | **V4b** | 区域精细 GFA（`pgr paf query -o gfa -r region`，impg 风格）            | 待评估 |
 | **V5**  | 区域 GFA → MAF/VCF（精细分析输出）                                     | 待评估 |
+
+注：早期规划中的 `-o fasta`（未比对序列提取）经评估不做——`pgr fa range` 已提供独立提取能力，
+用户场景不需要在 query 路径耦合裸序列输出（见 [[graph-design.md]] §4.2）。
 
 详细路线与代码量估计见 [[graph-design.md]] §4。V4 采用两段式（粗全局 + 区域精细）， V4a 与 V4b
 可独立实现，互不依赖。
