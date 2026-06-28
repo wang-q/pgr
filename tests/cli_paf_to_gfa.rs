@@ -495,3 +495,56 @@ C\t12\t0\t12\t+\tA\t10\t0\t10\t10\t12\t255\tcg:Z:6=2I4=\n";
         "path C should spell ACGTACGGGTAC (2bp insertion preserved)"
     );
 }
+
+#[test]
+fn command_paf_to_gfa_lowercase_roundtrip() {
+    use std::collections::BTreeMap;
+    use std::fs;
+    // Inspired by seqwish `test/HLA/01_seqwish.t` masked-sequence test.
+    // Unlike seqwish, pgr's POA does NOT normalize case (poa/align.rs
+    // compares bases by strict equality), so an all-lowercase input yields
+    // a different topology (more segments: lowercase a/c/g/t are distinct
+    // nodes from each other just like uppercase A/C/G/T, but the SNP
+    // bubble shape differs). We verify the round-trip invariant that still
+    // holds: each path spells back its original (lowercase) sequence.
+    let temp = tempfile::TempDir::new().unwrap();
+    let dir = temp.path();
+    let paf = "\
+A\t10\t0\t10\t+\tB\t10\t0\t10\t10\t10\t255\tcg:Z:10=\n\
+C\t10\t0\t10\t+\tA\t10\t0\t10\t9\t10\t255\tcg:Z:10M\n";
+    let a_fa = write_bgzf_fa(dir, "A", ">A\nacgtacgtac\n");
+    let b_fa = write_bgzf_fa(dir, "B", ">B\nacgtacgtac\n");
+    let c_fa = write_bgzf_fa(dir, "C", ">C\nacgtttcgtac\n");
+    let tsv = dir.join("in.tsv");
+    fs::write(&tsv, format!("A\t{a_fa}\nB\t{b_fa}\nC\t{c_fa}\n")).unwrap();
+
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "paf",
+            "to-gfa",
+            "stdin",
+            "B:0-10",
+            "-t",
+            "-f",
+            tsv.to_str().unwrap(),
+        ])
+        .stdin(paf)
+        .run();
+
+    let spelled: BTreeMap<String, String> = spell_gfa_paths(&stdout).into_iter().collect();
+    assert_eq!(
+        spelled.get("A"),
+        Some(&"acgtacgtac".to_string()),
+        "path A should spell back the lowercase input sequence"
+    );
+    assert_eq!(
+        spelled.get("B"),
+        Some(&"acgtacgtac".to_string()),
+        "path B should spell back the lowercase input sequence"
+    );
+    assert_eq!(
+        spelled.get("C"),
+        Some(&"acgtttcgtac".to_string()),
+        "path C should spell back the lowercase input sequence (SNP allele preserved)"
+    );
+}
