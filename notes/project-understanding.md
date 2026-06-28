@@ -325,11 +325,9 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
 - `pgr.rs` 末尾注释的 TODO：paralog、fas variation --indel、fas match、去完全包含序列
 - `docs/clust-eval.md`：聚类评估（设计中）
 - `docs/nwk-eval.md`：树结构多维度评估（设计中）
-- **PAF 子命令群**：`pgr maf to-paf` + `pgr paf index` + `pgr paf query` — 泛基因组第一步 最小原型。
-  需新增的代码：区间树索引、PAF 行解析、CIGAR 编解码。IO 层可复用 `libs/loc.rs`。唯一需新增的依赖：
-  `coitrees`。
-- **`libs/io.rs` / `libs/loc.rs` 小幅增强**：`Input::read_line` 方法抽象 + `Input::Bgzf` 暴露
-  `virtual_position()`
+
+PAF 泛基因组方向（V1-V5）已全部完成，后续规划见 [[paf-pangenome.md]] §5（V6 规模扩展 / V7 图质量 /
+V8 应用层）。
 
 ### 6.4 不做 / 不适合做的
 

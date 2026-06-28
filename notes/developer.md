@@ -5,8 +5,10 @@
 ## changelog
 
 ```bash
-git log v0.3.2..HEAD > gitlog.txt
-git diff v0.3.2 HEAD -- "*.rs" "*.md" > gitdiff.txt
+# 用最新的 tag 作为起点（当前为 v0.2.0）
+git tag | sort -V | tail -1   # 查看最新 tag
+git log v0.2.0..HEAD > gitlog.txt
+git diff v0.2.0 HEAD -- "*.rs" "*.md" > gitdiff.txt
 ```
 
 ## code coverage
