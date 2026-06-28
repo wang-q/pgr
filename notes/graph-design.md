@@ -377,8 +377,13 @@ V4 采用**两段式 GFA**——粗全局 + 区域精细，混合 minigraph 和 
 - **实现**（`src/cmd_pgr/paf/to_gfa.rs`）：
   - 复用 `to-maf` 的 `build_msa_entries` 收集 target/query 序列
   - 调用 `Poa` 生成对齐图，通过 `graph()`/`paths()`/`sequences()` 访问器取得内部结构
-  - 直接把 POA 图导出为 GFA：节点（碱基）→ S 行，边（邻接）→ L 行（`0M` overlap），
-    每条序列的遍历路径 → P 行
+  - **Unchop（默认开启）**：合并无分支的连续单碱基节点为多碱基段（节点 v 合并到前驱 p，
+    当 p.out_degree=1 且 v.in_degree=1）。节点数减少约一个数量级，bubble 结构保留。
+    拓扑序遍历计算段头（segment head），段序列按拓扑序拼接碱基，边/路径映射到段 id 去重。
+  - **GFA header + LN tag**：输出 `H\tVN:Z:1.0`；S 行带 `LN:i:<len>` tag
+  - **`--crush` 可选**：impg `crush` 风格 bubble 压缩。把 in/out 邻居集合相同的节点组
+    合并成一个，保留 weight 最大的 allele。**丢失 base-level ALT 信息**——
+    经过 ALT 的路径被改写到保留的 allele。默认关闭，仅用于 SV 概览图
   - SNP/indel 天然形成 bubble（POA 图结构直接表达），无需 MSA→GFA 转换
 - **多 region 处理**：每个 region 独立产出 GFA 块（节点 ID 从 1 重启），
   多 region 用 `# region: <name>` 注释行分隔
