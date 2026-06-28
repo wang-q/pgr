@@ -27,6 +27,7 @@ Notes:
 * Reads PAF from stdin if input file is 'stdin'
 * FASTA files (-f) are required to populate node sequences and lengths
 * GFA node ids are 1-based; node 1 is the earliest segment by (seq, start)
+* S lines carry rGFA tags: SN:Z (source seq), SO:i (0-based start), SR:i:0
 
 Examples:
 1. Build a coarse graph with default SV threshold (100bp):

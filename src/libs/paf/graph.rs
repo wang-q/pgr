@@ -81,6 +81,8 @@ pub struct PathStep {
 pub struct PafGraph {
     /// Node sequences (one per DSU class), indexed by node id.
     pub node_seqs: Vec<Vec<u8>>,
+    /// Per-node rGFA origin: (source sequence name, 0-based start offset).
+    pub node_origins: Vec<(String, i32)>,
     /// Edges (deduplicated).
     pub edges: Vec<Edge>,
     /// Paths: (sequence name, steps).
@@ -172,6 +174,7 @@ impl PafGraph {
 
         // ── Stage 3: node sequences (first-seen segment's forward strand) ──
         let mut node_seqs: Vec<Vec<u8>> = vec![Vec::new(); num_nodes as usize];
+        let mut node_origins: Vec<(String, i32)> = vec![(String::new(), 0); num_nodes as usize];
         let mut node_filled: Vec<bool> = vec![false; num_nodes as usize];
         // Walk segments in sorted order (same sort as node assignment) for stability.
         for &(_, _, _, seg_idx) in &root_info {
@@ -186,6 +189,7 @@ impl PafGraph {
                     let e = (seg.end as usize).min(seq_bytes.len());
                     if s < e {
                         node_seqs[node] = seq_bytes[s..e].to_vec();
+                        node_origins[node] = (name.to_string(), seg.start);
                         node_filled[node] = true;
                     }
                 }
@@ -217,8 +221,15 @@ impl PafGraph {
             for &(seg_idx, seg) in &segs_on_seq {
                 // Novel segment for the gap before this aligned segment.
                 if seg.start > cursor {
-                    let novel_node =
-                        novel_node_for(&mut node_seqs, sid, cursor, seg.start, seqs, &name_to_id);
+                    let novel_node = novel_node_for(
+                        &mut node_seqs,
+                        &mut node_origins,
+                        sid,
+                        cursor,
+                        seg.start,
+                        seqs,
+                        &name_to_id,
+                    );
                     steps.push(PathStep {
                         node: novel_node,
                         orient: '+',
@@ -236,8 +247,15 @@ impl PafGraph {
             }
             // Trailing novel segment.
             if cursor < seq_len {
-                let novel_node =
-                    novel_node_for(&mut node_seqs, sid, cursor, seq_len, seqs, &name_to_id);
+                let novel_node = novel_node_for(
+                    &mut node_seqs,
+                    &mut node_origins,
+                    sid,
+                    cursor,
+                    seq_len,
+                    seqs,
+                    &name_to_id,
+                );
                 steps.push(PathStep {
                     node: novel_node,
                     orient: '+',
@@ -261,7 +279,15 @@ impl PafGraph {
                 paths.push((name, steps));
             } else if seq_len > 0 {
                 // No alignments at all: whole sequence is one novel node.
-                let novel_node = novel_node_for(&mut node_seqs, sid, 0, seq_len, seqs, &name_to_id);
+                let novel_node = novel_node_for(
+                    &mut node_seqs,
+                    &mut node_origins,
+                    sid,
+                    0,
+                    seq_len,
+                    seqs,
+                    &name_to_id,
+                );
                 paths.push((
                     name,
                     vec![PathStep {
@@ -274,18 +300,25 @@ impl PafGraph {
 
         Ok(PafGraph {
             node_seqs,
+            node_origins,
             edges,
             paths,
         })
     }
 
-    /// Write GFA v1.0 to a writer (S + L + P lines).
+    /// Write GFA v1.0 (rGFA with SN/SO/SR tags on S lines) to a writer.
     pub fn write_gfa<W: std::io::Write>(&self, mut w: W) -> std::io::Result<()> {
-        // S lines (1-based node ids in GFA convention).
+        // S lines (1-based node ids in GFA convention) with rGFA SN/SO/SR tags.
+        // SN: source sequence name; SO: 0-based start offset; SR: rank (0 = primary).
         for (i, seq) in self.node_seqs.iter().enumerate() {
             let id = (i + 1) as u32;
             let s = String::from_utf8_lossy(seq);
-            writeln!(w, "S\t{id}\t{s}")?;
+            let (sn, so) = &self.node_origins[i];
+            if sn.is_empty() {
+                writeln!(w, "S\t{id}\t{s}")?;
+            } else {
+                writeln!(w, "S\t{id}\t{s}\tSN:Z:{sn}\tSO:i:{so}\tSR:i:0")?;
+            }
         }
         // L lines.
         for e in &self.edges {
@@ -695,6 +728,7 @@ fn fwd_query_coords(qs: i32, qe: i32, q_size: i32, reverse: bool) -> (i32, i32) 
 /// Create a novel (unaligned) node for a gap region, return its node id.
 fn novel_node_for(
     node_seqs: &mut Vec<Vec<u8>>,
+    node_origins: &mut Vec<(String, i32)>,
     sid: u32,
     start: i32,
     end: i32,
@@ -712,6 +746,7 @@ fn novel_node_for(
     };
     let node_id = node_seqs.len() as u32;
     node_seqs.push(bytes);
+    node_origins.push((name.to_string(), start));
     node_id
 }
 

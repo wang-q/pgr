@@ -209,3 +209,72 @@ fn command_paf_graph_missing_fasta_fails() {
         "expected file-not-found error, got: {stderr}"
     );
 }
+
+#[test]
+fn command_paf_graph_rgfa_tags() {
+    // PAF: query=A, target=B. Target is registered first → B has seq_id 0.
+    // Shared aligned node originates from B (target) at offset 0.
+    let paf = "A\t100\t0\t100\t+\tB\t100\t0\t100\t95\t100\t255\tcg:Z:100M\n";
+    let fa = "/tmp/pgr_graph_rgfa.fa";
+    write_temp_fasta(fa, &[("A", &"ACGT".repeat(25)), ("B", &"TGCA".repeat(25))]);
+    let (stdout, _stderr) = PgrCmd::new()
+        .args(&["paf", "graph", "stdin", "-f", fa])
+        .stdin(paf)
+        .run();
+
+    // Every S line should carry SN:Z, SO:i, SR:i tags.
+    let s_lines: Vec<&str> = stdout.lines().filter(|l| l.starts_with("S\t")).collect();
+    assert!(!s_lines.is_empty(), "expected at least one S line");
+    for line in &s_lines {
+        let fields: Vec<&str> = line.split('\t').collect();
+        // S\tid\tseq\tSN:Z:name\tSO:i:pos\tSR:i:0
+        assert!(fields.len() >= 6, "S line missing rGFA tags: {line}");
+        let tags = &fields[3..];
+        assert!(
+            tags.iter().any(|t| t.starts_with("SN:Z:")),
+            "missing SN:Z tag in S line: {line}"
+        );
+        assert!(
+            tags.iter().any(|t| t.starts_with("SO:i:")),
+            "missing SO:i tag in S line: {line}"
+        );
+        assert!(
+            tags.iter().any(|t| *t == "SR:i:0"),
+            "missing SR:i:0 tag in S line: {line}"
+        );
+    }
+
+    // The shared aligned node originates from B (target, seq_id 0) at offset 0.
+    let shared_line = s_lines
+        .iter()
+        .find(|l| {
+            let f: Vec<&str> = l.split('\t').collect();
+            f.iter().any(|t| *t == "SN:Z:B") && f.iter().any(|t| *t == "SO:i:0")
+        })
+        .expect("missing shared node with SN:Z:B and SO:i:0");
+    let _ = shared_line;
+    let _ = std::fs::remove_file(fa);
+}
+
+#[test]
+fn command_paf_graph_rgfa_novel_node_origin() {
+    // PAF: query=A, target=B. CIGAR 50M200I50M → A (query) has 200bp insertion.
+    // The novel insertion node in A's path spans A:50-250, origin SN:Z:A SO:i:50.
+    let paf = "A\t300\t0\t100\t+\tB\t300\t0\t300\t95\t300\t255\tcg:Z:50M200I50M\n";
+    let fa = "/tmp/pgr_graph_rgfa_novel.fa";
+    write_temp_fasta(fa, &[("A", &"A".repeat(300)), ("B", &"G".repeat(300))]);
+    let (stdout, _stderr) = PgrCmd::new()
+        .args(&["paf", "graph", "stdin", "-f", fa, "--min-var-len", "100"])
+        .stdin(paf)
+        .run();
+
+    // Novel insertion node in A's path: SN:Z:A and SO:i:50 (gap 50-250 in A).
+    let has_novel_a = stdout
+        .lines()
+        .any(|l| l.starts_with("S\t") && l.contains("SN:Z:A") && l.contains("SO:i:50"));
+    assert!(
+        has_novel_a,
+        "expected a novel node with SN:Z:A and SO:i:50 (A's 200bp insertion at offset 50)"
+    );
+    let _ = std::fs::remove_file(fa);
+}
