@@ -131,7 +131,7 @@ pub fn diameter(tree: &Tree, weighted: bool) -> f64 {
             }
 
             for v in neighbors {
-                if !visited.contains_key(&v) {
+                if let std::collections::hash_map::Entry::Vacant(e) = visited.entry(v) {
                     let weight = if weighted {
                         let v_node = tree.get_node(v).unwrap();
                         let u_node = tree.get_node(u).unwrap();
@@ -143,7 +143,7 @@ pub fn diameter(tree: &Tree, weighted: bool) -> f64 {
                     } else {
                         1.0
                     };
-                    visited.insert(v, d + weight);
+                    e.insert(d + weight);
                     queue.push_back(v);
                 }
             }

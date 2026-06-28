@@ -349,7 +349,7 @@ mod tests {
 
     #[test]
     fn test_hv_norm_l2_sq_serial_vs_simd() {
-        let hv: Vec<_> = (1..=32).map(|x| x as i32).collect();
+        let hv: Vec<_> = (1..=32).collect();
 
         let result_scalar = hv_norm_l2_sq_serial(&hv);
         let result_simd = hv_norm_l2_sq(&hv);

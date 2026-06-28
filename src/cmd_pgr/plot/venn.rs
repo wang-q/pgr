@@ -144,7 +144,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 for j in (i + 1)..=3 {
                     let mut i_temp = sets_arr[i].intersect(sets_arr[j]);
                     // Subtract all higher-order intersections containing these two sets
-                    for k in 0..4 {
+                    for (k, _) in sets_arr.iter().enumerate() {
                         if k != i && k != j {
                             i_temp.subtract(sets_arr[k]);
                         }

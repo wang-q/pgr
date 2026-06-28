@@ -170,38 +170,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     }
     Ok(())
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::io::BufReader;
-
-    #[test]
-    fn test_convert_stream_warning_and_output() {
-        // Header: nsam=2, howmany=1, nsite=2
-        // Sample: segsites=3 (> nsite) to trigger warning; haplotypes length=3
-        let input = "\
-ms 2 1 -r 0 2
-//
-segsites: 3
-positions: 0.1000 0.5000 0.8000
-010
-001
-";
-        let mut out = Vec::new();
-        let reader = BufReader::new(input.as_bytes());
-        convert_stream(reader, 0.5, Some(123), &mut out, true).unwrap();
-        let s = String::from_utf8(out).unwrap();
-        let lines: Vec<&str> = s.lines().collect();
-        assert!(lines[0].starts_with("#WARNING: number of segregating sites"));
-        assert!(lines[1].starts_with("#Hint: input may come from macs"));
-        // Next should be headers and sequences for two samples
-        assert!(lines[2].starts_with('>'));
-        assert_eq!(lines[3].len(), 2);
-        assert!(lines[4].starts_with('>'));
-        assert_eq!(lines[5].len(), 2);
-    }
-}
 fn convert_stream<R: BufRead>(
     mut reader: R,
     gc: f64,
@@ -265,4 +233,36 @@ fn convert_stream<R: BufRead>(
         )?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::BufReader;
+
+    #[test]
+    fn test_convert_stream_warning_and_output() {
+        // Header: nsam=2, howmany=1, nsite=2
+        // Sample: segsites=3 (> nsite) to trigger warning; haplotypes length=3
+        let input = "\
+ms 2 1 -r 0 2
+//
+segsites: 3
+positions: 0.1000 0.5000 0.8000
+010
+001
+";
+        let mut out = Vec::new();
+        let reader = BufReader::new(input.as_bytes());
+        convert_stream(reader, 0.5, Some(123), &mut out, true).unwrap();
+        let s = String::from_utf8(out).unwrap();
+        let lines: Vec<&str> = s.lines().collect();
+        assert!(lines[0].starts_with("#WARNING: number of segregating sites"));
+        assert!(lines[1].starts_with("#Hint: input may come from macs"));
+        // Next should be headers and sequences for two samples
+        assert!(lines[2].starts_with('>'));
+        assert_eq!(lines[3].len(), 2);
+        assert!(lines[4].starts_with('>'));
+        assert_eq!(lines[5].len(), 2);
+    }
 }

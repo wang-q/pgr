@@ -149,7 +149,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut builder =
         bgzf::io::multithreaded_writer::Builder::default().set_worker_count(opt_parallel);
 
-    if compress_level >= 0 && compress_level <= 9 {
+    if (0..=9).contains(&compress_level) {
         use noodles_bgzf::io::writer::CompressionLevel;
         builder =
             builder.set_compression_level(CompressionLevel::new(compress_level as u8).unwrap());

@@ -162,7 +162,7 @@ pub fn load_batch_partitions<P: AsRef<Path>>(path: P) -> anyhow::Result<Vec<(Str
         partitions[idx].insert(sample_id, cluster_id);
     }
 
-    let result = groups.into_iter().zip(partitions.into_iter()).collect();
+    let result = groups.into_iter().zip(partitions).collect();
     Ok(result)
 }
 
@@ -562,7 +562,7 @@ fn lgamma(x: f64) -> f64 {
         676.5203681218851,
         -1259.1392167224028,
         771.323_428_777_653,
-        -176.61502916214059,
+        -176.615_029_162_140_6,
         12.507343278686905,
         -0.13857109526572012,
         9.984369578019572e-6,
@@ -975,8 +975,8 @@ pub fn dunn_score(partition: &Partition, dist_mat: &dyn DistanceMatrix) -> f64 {
         let cid_i = cluster_ids[i];
         let members_i = clusters.get(&cid_i).unwrap();
 
-        for j in i + 1..cluster_ids.len() {
-            let cid_j = cluster_ids[j];
+        for cid_j in cluster_ids.iter().skip(i + 1) {
+            let cid_j = *cid_j;
             let members_j = clusters.get(&cid_j).unwrap();
 
             // Find min dist between C_i and C_j
@@ -1501,8 +1501,8 @@ pub fn tau_score(partition: &Partition, dist_mat: &dyn DistanceMatrix) -> f64 {
         let mut block_same = 0;
         let mut block_diff = 0;
 
-        for k in i..j {
-            if pairs[k].is_diff {
+        for p in pairs.iter().take(j).skip(i) {
+            if p.is_diff {
                 // This pair is DIFF.
                 // Compared to previous SAME pairs (which have strictly smaller distance):
                 // Concordant: Previous Same < Current Diff

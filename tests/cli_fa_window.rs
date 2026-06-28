@@ -193,7 +193,7 @@ fn test_fa_window_real_file() {
         .success();
 
     let content = std::fs::read_to_string(&output_file).unwrap();
-    assert!(content.len() > 0);
+    assert!(!content.is_empty());
     assert!(content.contains(">"));
 
     // Verify 1-based coordinates in header

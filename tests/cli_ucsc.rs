@@ -21,11 +21,9 @@ fn normalize_chain_output(content: &str) -> String {
         .filter(|line| !line.trim().is_empty())
         .map(|line| {
             let mut parts: Vec<&str> = line.split_whitespace().collect();
-            if parts.first() == Some(&"chain") {
-                if parts.len() > 12 {
-                    parts[1] = "SCORE"; // Ignore score
-                    parts[12] = "ID"; // Ignore ID
-                }
+            if parts.first() == Some(&"chain") && parts.len() > 12 {
+                parts[1] = "SCORE"; // Ignore score
+                parts[12] = "ID"; // Ignore ID
             }
             parts.join(" ")
         })

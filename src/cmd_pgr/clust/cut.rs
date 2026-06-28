@@ -628,7 +628,7 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
                 for c in clusters {
                     let (best_rep_name, best_rep_idx) = find_rep(&c);
 
-                    if let Some(_) = best_rep_name {
+                    if best_rep_name.is_some() {
                         let mut names: Vec<&str> =
                             c.iter().map(|(_, name)| name.as_str()).collect();
                         if best_rep_idx != 0 {

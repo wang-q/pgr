@@ -73,9 +73,9 @@ impl std::fmt::Display for FeatureVector {
     /// assert_eq!(entry.to_string(), "Es_coli_005008_GCF_013426115_1\t1,5,2,7,6,6\n");
     /// ```
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(
+        writeln!(
             f,
-            "{}\t{}\n",
+            "{}\t{}",
             self.name(),
             self.list
                 .iter()

@@ -426,7 +426,7 @@ m {
             } => {
                 assert_eq!(t_name, "target");
                 assert_eq!(q_name, "query");
-                assert_eq!(is_rc, false);
+                assert!(!is_rc);
             }
             _ => panic!("Expected Header stanza, got {:?}", stanza),
         }

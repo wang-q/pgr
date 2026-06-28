@@ -136,6 +136,7 @@ impl SparseMat {
 
         // Iterating N^2 is required as ScoringMatrix is generic
         // Assuming reasonably sparse or small N
+        #[allow(clippy::needless_range_loop)]
         for i in 0..size {
             for j in 0..size {
                 let val = sm.get(i, j) as f64;
@@ -167,7 +168,7 @@ impl SparseMat {
 
         // M_new = M * M
         // Col j of M_new = M * col_j(M)
-        for j in 0..self.size {
+        for (j, new_col) in new_cols.iter_mut().enumerate().take(self.size) {
             let mut accumulator: HashMap<usize, f64> = HashMap::new();
 
             // For each non-zero entry (k, val_k) in col j of M
@@ -184,7 +185,7 @@ impl SparseMat {
             let mut col: Vec<(usize, f64)> = accumulator.into_iter().collect();
             // Sort by row index
             col.sort_by_key(|(r, _)| *r);
-            new_cols[j] = col;
+            *new_col = col;
         }
         Self {
             size: self.size,

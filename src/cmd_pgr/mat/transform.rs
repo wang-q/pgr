@@ -160,7 +160,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 let d_j = diags[j];
                 // Avoid division by zero
                 if d_i > 1e-9 && d_j > 1e-9 {
-                    val = val / (d_i * d_j).sqrt();
+                    val /= (d_i * d_j).sqrt();
                 } else {
                     // If diagonal is 0, similarity is undefined or 0?
                     // Assuming 0 if undefined.

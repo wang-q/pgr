@@ -92,7 +92,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     run_cmd!(echo "==> pgr fas name - first")?;
     let mut target_name = "".to_string();
     {
-        let infile = info_of.first_key_value().unwrap().1.get(0).unwrap();
+        let infile = info_of.first_key_value().unwrap().1.first().unwrap();
         run_cmd!(
             ${pgr} fas name ${infile} -o name.first.lst
         )?;
@@ -107,7 +107,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     run_cmd!(echo "==> pgr fas cover")?;
     for (basename, info) in info_of.iter_mut() {
-        let infile = info.get(0).unwrap();
+        let infile = info.first().unwrap();
         let outfile = format!("{}.json", basename);
         run_cmd!(${pgr} fas cover ${infile} --trim 10 --name ${target_name} -o ${outfile})?;
 
@@ -133,7 +133,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     run_cmd!(echo "==> pgr fas slice")?;
     for (basename, info) in info_of.iter_mut() {
-        let infile = info.get(0).unwrap();
+        let infile = info.first().unwrap();
         let outfile = format!("{}.slice.fas", basename);
         run_cmd!(${pgr} fas slice ${infile} --required intersect.json --name ${target_name} -o ${outfile})?;
 

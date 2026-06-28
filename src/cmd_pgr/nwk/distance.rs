@@ -119,9 +119,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         let node = tree.get_node(id).unwrap();
         let is_leaf = node.children.is_empty();
 
-        if is_leaf && !skip_leaf {
-            id_of.insert(name, id);
-        } else if !is_leaf && !skip_internal {
+        if (is_leaf && !skip_leaf) || (!is_leaf && !skip_internal) {
             id_of.insert(name, id);
         }
     }

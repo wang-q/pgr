@@ -154,10 +154,8 @@ impl KdTree {
                 max_score,
                 ..
             } => {
-                if *leaf_idx == target_idx {
-                    if score > *max_score {
-                        *max_score = score;
-                    }
+                if *leaf_idx == target_idx && score > *max_score {
+                    *max_score = score;
                 }
             }
             KdNode::Internal {
@@ -237,6 +235,7 @@ impl KdTree {
         (best_score, best_pred)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn best_recursive<T, F, L>(
         node: &KdNode,
         target_idx: usize,

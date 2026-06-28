@@ -85,7 +85,7 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
 
     let mut last_score = f64::MAX;
 
-    while let Some(res) = reader.next() {
+    for res in reader.by_ref() {
         let chain = res?;
         eprintln!(
             "DEBUG: Processing chain id={} score={}",
@@ -93,15 +93,15 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
         );
 
         // Sort check (optional but good)
-        if (chain.header.score as f64) > last_score {
+        if chain.header.score > last_score {
             // In C code, it doesn't strictly abort, but expects sorted.
             // We can just warn or proceed. The greedy algorithm relies on score sorting.
             // Let's bail if strict, or just log.
             // bail!("Input not sorted by score");
         }
-        last_score = chain.header.score as f64;
+        last_score = chain.header.score;
 
-        if (chain.header.score as f64) < min_score {
+        if chain.header.score < min_score {
             continue;
         }
 

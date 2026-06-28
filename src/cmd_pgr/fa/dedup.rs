@@ -165,11 +165,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 }
             };
 
-            if subject_map.contains_key(&subject) {
+            if let std::collections::hash_map::Entry::Vacant(e) = subject_map.entry(subject) {
+                e.insert(vec![name_str]);
+            } else {
                 flag_pass = false;
                 subject_map.get_mut(&subject).unwrap().push(name_str);
-            } else {
-                subject_map.insert(subject, vec![name_str]);
             }
 
             if !flag_pass {

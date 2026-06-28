@@ -132,8 +132,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 let ref_base = char::from(seqs[0][pos_idx]).to_ascii_uppercase();
 
                 let mut alt_bases: Vec<char> = vec![];
-                for i in 0..seq_count {
-                    let b = char::from(seqs[i][pos_idx]).to_ascii_uppercase();
+                for seq in seqs.iter().take(seq_count) {
+                    let b = char::from(seq[pos_idx]).to_ascii_uppercase();
                     if matches!(b, 'A' | 'C' | 'G' | 'T') && b != ref_base {
                         alt_bases.push(b);
                     }
@@ -157,9 +157,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 row.push_str(&alt_str);
                 row.push_str("\t.\t.\t.\tGT");
 
-                for i in 0..seq_count {
+                for seq in seqs.iter().take(seq_count) {
                     row.push('\t');
-                    let b = char::from(seqs[i][pos_idx]).to_ascii_uppercase();
+                    let b = char::from(seq[pos_idx]).to_ascii_uppercase();
                     let gt = if !matches!(b, 'A' | 'C' | 'G' | 'T') {
                         ".".to_string()
                     } else if b == ref_base {

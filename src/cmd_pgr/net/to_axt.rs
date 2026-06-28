@@ -97,6 +97,7 @@ fn r_convert<W: Write>(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn convert_fill<W: Write>(
     fill: &Fill,
     chain: &Chain,
@@ -151,6 +152,7 @@ fn convert_fill<W: Write>(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn convert_segment<W: Write>(
     t_start: u64,
     t_end: u64,

@@ -135,7 +135,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     // Ops
     //----------------------------
-    let entries = load_file(infiles.get(0).unwrap(), is_bin);
+    let entries = load_file(infiles.first().unwrap(), is_bin);
     let others = if infiles.len() == 2 {
         load_file(infiles.get(1).unwrap(), is_bin)
     } else {

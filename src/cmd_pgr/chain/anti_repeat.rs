@@ -274,5 +274,5 @@ fn nt_val(base: u8) -> i8 {
 }
 
 fn is_lower(base: u8) -> bool {
-    base >= b'a' && base <= b'z'
+    base.is_ascii_lowercase()
 }

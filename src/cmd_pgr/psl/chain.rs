@@ -138,14 +138,13 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
         SubMatrix::default()
     };
 
-    let mut score_context = if t_2bit.is_some() && q_2bit.is_some() {
-        Some(ScoreContext {
-            t_2bit: t_2bit.as_mut().unwrap(),
-            q_2bit: q_2bit.as_mut().unwrap(),
+    let mut score_context = match (t_2bit.as_mut(), q_2bit.as_mut()) {
+        (Some(t), Some(q)) => Some(ScoreContext {
+            t_2bit: t,
+            q_2bit: q,
             matrix: &score_matrix,
-        })
-    } else {
-        None
+        }),
+        _ => None,
     };
 
     let gap_open = args.get_one::<i32>("gap_open");
@@ -177,7 +176,7 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
 
         let t_name = psl.t_name.clone();
         let q_name = psl.q_name.clone();
-        let q_strand = psl.strand.chars().nth(0).unwrap_or('+');
+        let q_strand = psl.strand.chars().next().unwrap_or('+');
 
         let key = (t_name.clone(), q_name.clone(), q_strand);
         let entry = groups.entry(key).or_insert_with(|| GroupData {
@@ -233,7 +232,7 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
             continue;
         }
 
-        data.blocks.sort_by(|a, b| a.t_start.cmp(&b.t_start));
+        data.blocks.sort_by_key(|a| a.t_start);
 
         if std::env::var("PGR_DEBUG").is_ok() {
             eprintln!("Group: {} {} {}", t_name, q_name, q_strand);
@@ -271,9 +270,9 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
             continue;
         }
 
-        write!(
+        writeln!(
             writer,
-            "chain {:.0} {} {} {} {} {} {} {} {} {} {} {}\n",
+            "chain {:.0} {} {} {} {} {} {} {} {} {} {} {}",
             chain.header.score,
             chain.header.t_name,
             chain.header.t_size,
@@ -290,12 +289,12 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
 
         for (i, d) in chain.data.iter().enumerate() {
             if i == chain.data.len() - 1 {
-                write!(writer, "{}\n", d.size)?;
+                writeln!(writer, "{}", d.size)?;
             } else {
-                write!(writer, "{}\t{}\t{}\n", d.size, d.dt, d.dq)?;
+                writeln!(writer, "{}\t{}\t{}", d.size, d.dt, d.dq)?;
             }
         }
-        write!(writer, "\n")?;
+        writeln!(writer)?;
     }
 
     Ok(())

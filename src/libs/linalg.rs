@@ -249,10 +249,10 @@ pub fn jaccard_union(a: &[f32], b: &[f32]) -> f32 {
 /// Two equivalent formulas:
 ///
 /// 1. Using deviations from mean (implemented here for better numerical stability):
-/// `$r = \frac{\sum(x - \bar{x})(y - \bar{y})}{\sqrt{\sum(x - \bar{x})^2\sum(y - \bar{y})^2}}$`
+///    `$r = \frac{\sum(x - \bar{x})(y - \bar{y})}{\sqrt{\sum(x - \bar{x})^2\sum(y - \bar{y})^2}}$`
 ///
 /// 2. Direct computation:
-/// `$r = \frac{n\sum xy - \sum x\sum y}{\sqrt{(n\sum x^2 - (\sum x)^2)(n\sum y^2 - (\sum y)^2)}}$`
+///    `$r = \frac{n\sum xy - \sum x\sum y}{\sqrt{(n\sum x^2 - (\sum x)^2)(n\sum y^2 - (\sum y)^2)}}$`
 ///
 /// where `$\bar{x}$` and `$\bar{y}$` are the means of vectors `$x$` and `$y$` respectively,
 /// and `$n$` is the length of the vectors.

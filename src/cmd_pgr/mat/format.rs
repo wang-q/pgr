@@ -86,16 +86,16 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // Write sequence count
     writer.write_fmt(format_args!("{:>4}\n", size))?;
 
-    for i in 0..size {
+    for (i, name) in names.iter().enumerate().take(size) {
         match opt_mode.as_str() {
             "full" => {
-                writer.write_fmt(format_args!("{}", names[i]))?;
+                writer.write_fmt(format_args!("{}", name))?;
                 for j in 0..size {
                     writer.write_fmt(format_args!("\t{}", matrix.get(i, j)))?;
                 }
             }
             "lower" => {
-                writer.write_fmt(format_args!("{}", names[i]))?;
+                writer.write_fmt(format_args!("{}", name))?;
                 for j in 0..i {
                     writer.write_fmt(format_args!("\t{}", matrix.get(i, j)))?;
                 }
@@ -103,7 +103,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             "strict" => {
                 writer.write_fmt(format_args!(
                     "{:<10}",
-                    names[i].chars().take(10).collect::<String>()
+                    name.chars().take(10).collect::<String>()
                 ))?;
                 for j in 0..size {
                     writer.write_fmt(format_args!(" {:.6}", matrix.get(i, j)))?;

@@ -115,8 +115,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             let scale = [1.0, 2.0, 5.0]
                 .iter()
                 .map(|&x| base * x)
-                .filter(|&x| x <= target_scale)
-                .last()
+                .rfind(|&x| x <= target_scale)
                 .unwrap_or(base); // Fallback to base (1x) if even 1x is too big? Should not happen if logic is sound.
 
             // Calculate actual length in millimeters

@@ -106,6 +106,7 @@ pub fn add_query_args(cmd: Command) -> Command {
 
 /// Shared query logic: parse args, build/load index, run queries, apply filters.
 /// Returns the index and a list of (region, results) pairs.
+#[allow(clippy::type_complexity)]
 pub fn run_query(
     args: &ArgMatches,
 ) -> anyhow::Result<(PafIndex, Vec<((String, i32, i32), Vec<QueryResult>)>)> {

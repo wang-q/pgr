@@ -70,8 +70,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     writer.write_fmt(format_args!("{:>4}\n", size))?;
 
     // Output full matrix
-    for i in 0..size {
-        writer.write_fmt(format_args!("{}", names[i]))?;
+    for (i, name) in names.iter().enumerate().take(size) {
+        writer.write_fmt(format_args!("{}", name))?;
         for j in 0..size {
             writer.write_fmt(format_args!("\t{}", matrix.get(i, j)))?;
         }

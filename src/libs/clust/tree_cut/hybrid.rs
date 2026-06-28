@@ -61,7 +61,7 @@ pub fn cutree_hybrid(tree: &Tree, options: HybridOptions) -> anyhow::Result<Part
 
     let cut_height = options
         .cut_height
-        .unwrap_or_else(|| 0.99 * (max_height - ref_height) + ref_height);
+        .unwrap_or(0.99 * (max_height - ref_height) + ref_height);
 
     // 2. Calculate Absolute Thresholds
     let deep_split = options.deep_split.clamp(0, 4);

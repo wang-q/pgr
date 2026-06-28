@@ -69,7 +69,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut axt_reader = AxtReader::new(reader);
 
     let mut axts = Vec::new();
-    while let Some(result) = axt_reader.next() {
+    for result in axt_reader.by_ref() {
         let axt = result?;
         axts.push(axt);
     }
@@ -80,7 +80,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     if by_score {
         // Sort by score. Assuming higher score is better (descending).
-        axts.sort_by(|a, b| b.score.unwrap_or(0).cmp(&a.score.unwrap_or(0)));
+        axts.sort_by_key(|b| std::cmp::Reverse(b.score.unwrap_or(0)));
     } else if by_query {
         axts.sort_by(|a, b| a.q_name.cmp(&b.q_name).then(a.q_start.cmp(&b.q_start)));
     } else {

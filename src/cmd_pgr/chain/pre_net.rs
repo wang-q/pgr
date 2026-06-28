@@ -48,7 +48,7 @@ struct BitMap {
 
 impl BitMap {
     fn new(size: u64) -> Self {
-        let num_words = (size + 63) / 64;
+        let num_words = size.div_ceil(64);
         Self {
             size,
             bits: vec![0; num_words as usize],
@@ -178,33 +178,31 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
     let mut q_hash = load_sizes(query_sizes_path)?;
 
     let f = File::open(input_path)?;
-    let mut reader = ChainReader::new(BufReader::new(f));
+    let reader = ChainReader::new(BufReader::new(f));
 
     let out_file = File::create(output_path)?;
     let mut writer = BufWriter::new(out_file);
 
     let mut last_score = f64::MAX;
-    let mut count = 0;
 
-    while let Some(res) = reader.next() {
+    for (count, res) in reader.enumerate() {
         let chain = res?;
 
         // Check sort order
-        if chain.header.score as f64 > last_score {
+        if chain.header.score > last_score {
             bail!(
                 "Input not sorted by score: {} > {}",
                 chain.header.score,
                 last_score
             );
         }
-        last_score = chain.header.score as f64;
+        last_score = chain.header.score;
 
         if let Some(d) = dots {
             if count > 0 && count % d == 0 {
                 eprint!(".");
             }
         }
-        count += 1;
 
         // Filter haplotype
         if !incl_hap && is_haplotype(&chain.header.q_name) {

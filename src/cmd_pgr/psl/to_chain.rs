@@ -85,7 +85,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         let t_end = psl.t_end;
         let q_name = &psl.q_name;
         let q_size = psl.q_size;
-        let q_strand_char = psl.strand.chars().nth(0).unwrap_or('+');
+        let q_strand_char = psl.strand.chars().next().unwrap_or('+');
 
         // Handle query strand for Chain format
         // Chain format: tStrand is always +, qStrand can be + or -

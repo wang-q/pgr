@@ -178,7 +178,7 @@ pub fn to_svg(tree: &Tree, height: f64, vskip: f64, width: f64) -> String {
     // Calculate bounding box
     let mut max_x = 0.0_f64;
     let mut max_y = 0.0_f64;
-    for (_, (x, y)) in &positions {
+    for (x, y) in positions.values() {
         max_x = max_x.max(*x);
         max_y = max_y.max(*y);
     }
@@ -341,8 +341,7 @@ pub fn to_svg(tree: &Tree, height: f64, vskip: f64, width: f64) -> String {
         let scale = [1.0, 2.0, 5.0]
             .iter()
             .map(|&x| base * x)
-            .filter(|&x| x <= target_scale)
-            .last()
+            .rfind(|&x| x <= target_scale)
             .unwrap_or(base);
 
         let scale_px = scale * (max_x / height);
@@ -688,16 +687,13 @@ fn branch_depth(tree: &Tree, id: NodeId) -> usize {
 fn node_depth(tree: &Tree, id: NodeId) -> usize {
     let mut depth = 0usize;
     let mut curr = id;
-    loop {
-        let node = match tree.get_node(curr) {
-            Some(n) => n,
+    while let Some(node) = tree.get_node(curr) {
+        match node.parent {
+            Some(p) => {
+                depth += 1;
+                curr = p;
+            }
             None => break,
-        };
-        if let Some(p) = node.parent {
-            depth += 1;
-            curr = p;
-        } else {
-            break;
         }
     }
     depth

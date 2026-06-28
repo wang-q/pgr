@@ -85,7 +85,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             }
 
             // Sort by start position
-            blocks.sort_by(|a, b| a.start.cmp(&b.start));
+            blocks.sort_by_key(|a| a.start);
 
             // Merge adjacent or overlapping blocks
             let mut merged: Vec<Range<usize>> = Vec::new();

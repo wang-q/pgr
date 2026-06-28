@@ -105,9 +105,7 @@ D 1.0 1.0 0.2 0.0
 
         if (val - 0.0).abs() < 1e-6 {
             assert!((sil - 0.0).abs() < 1e-6);
-        } else if (val - 0.2).abs() < 1e-6 {
-            assert!((sil - 0.8).abs() < 1e-6);
-        } else if (val - 0.4).abs() < 1e-6 {
+        } else if (val - 0.2).abs() < 1e-6 || (val - 0.4).abs() < 1e-6 {
             assert!((sil - 0.8).abs() < 1e-6);
         } else if (val - 0.6).abs() < 1e-6 {
             assert!((sil - 0.0).abs() < 1e-6);

@@ -92,10 +92,11 @@ pub fn alignment_stat(seqs: &[&[u8]]) -> (i32, i32, i32, i32, i32, f32) {
     let mut ambiguous = 0;
 
     // For each position, search for polymorphic sites
+    #[allow(clippy::needless_range_loop)]
     for pos in 0..length {
         let mut column = vec![];
-        for i in 0..seq_count {
-            column.push(seqs[i][pos].to_ascii_uppercase());
+        for seq in seqs.iter().take(seq_count) {
+            column.push(seq[pos].to_ascii_uppercase());
         }
         column = column.into_iter().unique().collect();
 
@@ -217,10 +218,11 @@ pub fn get_subs(seqs: &[&[u8]]) -> anyhow::Result<Vec<Substitution>> {
 
     // For each position, search for polymorphic sites
     let mut bases_of: BTreeMap<usize, Vec<u8>> = BTreeMap::new();
+    #[allow(clippy::needless_range_loop)]
     for pos in 0..length {
         let mut column = vec![];
-        for i in 0..seq_count {
-            column.push(seqs[i][pos].to_ascii_uppercase());
+        for seq in seqs.iter().take(seq_count) {
+            column.push(seq[pos].to_ascii_uppercase());
         }
 
         if column.iter().all(|e| NT_VAL[*e as usize] <= 3) {
@@ -1271,7 +1273,7 @@ pub fn align_seqs(seqs: &[String], aligner: &str) -> anyhow::Result<Vec<String>>
 }
 
 pub fn align_seqs_quick(
-    seqs: &Vec<String>,
+    seqs: &[String],
     aligner: &str,
     pad: i32,
     fill: i32,
@@ -1285,8 +1287,8 @@ pub fn align_seqs_quick(
     realign_ints.add_pair(1, pad);
     realign_ints.add_pair(align_len - pad, align_len);
 
-    for i in 0..count {
-        let mut ints = indel_intspan(seqs[i].as_bytes().to_vec().as_ref());
+    for seq in seqs.iter().take(count) {
+        let mut ints = indel_intspan(seq.as_bytes().to_vec().as_ref());
         ints = ints.pad(pad);
         realign_ints.merge(&ints);
     }
@@ -1295,25 +1297,22 @@ pub fn align_seqs_quick(
     realign_ints = realign_ints.intersect(&IntSpan::from_pair(1, align_len));
 
     // all segments
-    let mut aligned: Vec<String> = seqs.clone();
+    let mut aligned: Vec<String> = seqs.to_owned();
     for (lower, upper) in realign_ints.spans().iter().rev() {
         let mut subseqs = vec![];
         let start = *lower as usize - 1;
         let end = *upper as usize;
 
         // extract subseqs
-        for i in 0..count {
-            let subseq = &aligned[i][start..end];
+        for a in aligned.iter().take(count) {
+            let subseq = &a[start..end];
             subseqs.push(subseq.to_string());
         }
         let subseqs = align_seqs(&subseqs, aligner)?;
 
         // put aligned subseqs back
-        for i in 0..count {
-            aligned
-                .get_mut(i)
-                .unwrap()
-                .replace_range(start..end, subseqs[i].as_str());
+        for (a, s) in aligned.iter_mut().take(count).zip(subseqs.iter()) {
+            a.replace_range(start..end, s.as_str());
         }
     }
 
@@ -1348,7 +1347,7 @@ pub fn align_seqs_quick(
 /// assert_eq!(seqs[0].len(), 9);
 ///
 /// ```
-pub fn trim_pure_dash(seqs: &mut Vec<String>) {
+pub fn trim_pure_dash(seqs: &mut [String]) {
     let mut trim_region = IntSpan::new();
     let seq_count = seqs.len();
 
@@ -1365,18 +1364,18 @@ pub fn trim_pure_dash(seqs: &mut Vec<String>) {
 
     // trim all segments in trim_region
     for (lower, upper) in trim_region.spans().iter().rev() {
-        for i in 0..seq_count {
-            seqs[i].replace_range((*lower as usize - 1)..*upper as usize, "");
+        for seq in seqs.iter_mut().take(seq_count) {
+            seq.replace_range((*lower as usize - 1)..*upper as usize, "");
         }
     }
 }
 
-fn align_indel_ints(seqs: &mut Vec<String>, count: usize) -> (IntSpan, IntSpan) {
+fn align_indel_ints(seqs: &mut [String], count: usize) -> (IntSpan, IntSpan) {
     let mut union_ints = IntSpan::new();
     let mut intersect_ints = IntSpan::new();
 
-    for i in 0..count {
-        let ints = indel_intspan(seqs[i].as_bytes().to_vec().as_ref());
+    for (i, seq) in seqs.iter().enumerate().take(count) {
+        let ints = indel_intspan(seq.as_bytes().to_vec().as_ref());
 
         if i == 0 {
             union_ints.merge(&ints);
@@ -1439,7 +1438,7 @@ fn align_indel_ints(seqs: &mut Vec<String>, count: usize) -> (IntSpan, IntSpan) 
 /// assert_eq!(seqs[0].len(), 8);
 ///
 /// ```
-pub fn trim_outgroup(seqs: &mut Vec<String>) {
+pub fn trim_outgroup(seqs: &mut [String]) {
     let seq_count = seqs.len();
 
     assert!(seq_count >= 3, "Need three or more sequences");
@@ -1458,8 +1457,8 @@ pub fn trim_outgroup(seqs: &mut Vec<String>) {
 
     // trim all segments in trim_region
     for (lower, upper) in trim_region.spans().iter().rev() {
-        for i in 0..seq_count {
-            seqs[i].replace_range((*lower as usize - 1)..*upper as usize, "");
+        for seq in seqs.iter_mut().take(seq_count) {
+            seq.replace_range((*lower as usize - 1)..*upper as usize, "");
         }
     }
 }
@@ -1558,7 +1557,7 @@ pub fn trim_outgroup(seqs: &mut Vec<String>) {
 /// assert_eq!(complex.to_string(), "3");
 ///
 /// ```
-pub fn trim_complex_indel(seqs: &mut Vec<String>) -> String {
+pub fn trim_complex_indel(seqs: &mut [String]) -> String {
     let seq_count = seqs.len();
 
     assert!(seq_count >= 3, "Need three or more sequences");
@@ -1572,8 +1571,8 @@ pub fn trim_complex_indel(seqs: &mut Vec<String>) -> String {
         let sub_intersect_ints = IntSpan::from_pair(*lower, *upper);
 
         // trim sequences, including outgroup
-        for i in 0..seq_count {
-            seqs[i].replace_range((*lower as usize - 1)..*upper as usize, "");
+        for seq in seqs.iter_mut().take(seq_count) {
+            seq.replace_range((*lower as usize - 1)..*upper as usize, "");
         }
 
         // add to complex_region
@@ -1684,7 +1683,7 @@ pub fn trim_complex_indel(seqs: &mut Vec<String>) -> String {
 /// assert_eq!(rangec[3].end, 19);
 ///
 /// ```
-pub fn trim_head_tail(seqs: &mut Vec<String>, ranges: &mut Vec<intspan::Range>, chop: usize) {
+pub fn trim_head_tail(seqs: &mut [String], ranges: &mut [intspan::Range], chop: usize) {
     let seq_count = seqs.len();
 
     if chop == 0 {

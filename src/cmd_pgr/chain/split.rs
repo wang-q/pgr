@@ -65,9 +65,9 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
 
     for file_path in chain_files {
         let f = File::open(file_path)?;
-        let mut reader = ChainReader::new(BufReader::new(f));
+        let reader = ChainReader::new(BufReader::new(f));
 
-        while let Some(res) = reader.next() {
+        for res in reader {
             let chain = res?;
 
             let raw_name = if split_on_q {

@@ -150,7 +150,7 @@ impl SubMatrix {
 
             if has_o || has_e {
                 let parts: Vec<&str> = line
-                    .split(|c| c == ',' || c == ' ' || c == '=')
+                    .split([',', ' ', '='])
                     .filter(|s| !s.is_empty())
                     .collect();
                 for i in 0..parts.len() {

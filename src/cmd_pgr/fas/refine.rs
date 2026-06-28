@@ -157,7 +157,7 @@ fn proc_block(block: &pgr::libs::fas::FasBlock, args: &ArgMatches) -> anyhow::Re
     }
 
     let mut aligned = vec![];
-    if *msa == "none".to_string() {
+    if msa.as_str() == "none" {
         for seq in seqs {
             aligned.push(seq.clone());
         }

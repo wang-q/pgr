@@ -10,6 +10,15 @@ pub struct ScoringMatrix<T> {
     data: HashMap<(usize, usize), T>,
 }
 
+impl<T> Default for ScoringMatrix<T>
+where
+    T: Default + Copy,
+{
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T> ScoringMatrix<T>
 where
     T: Default + Copy,
@@ -113,13 +122,13 @@ where
             self.data
                 .get(&(row, col))
                 .copied()
-                .unwrap_or_else(|| self.same.unwrap_or(T::default()))
+                .unwrap_or_else(|| self.same.unwrap_or_default())
         } else {
             let (r, c) = if row < col { (row, col) } else { (col, row) };
             self.data
                 .get(&(r, c))
                 .copied()
-                .unwrap_or_else(|| self.missing.unwrap_or(T::default()))
+                .unwrap_or_else(|| self.missing.unwrap_or_default())
         }
     }
 }
@@ -410,8 +419,8 @@ impl NamedMatrix {
         let mut matrix = NamedMatrix::new(index_name.into_iter().collect());
         let mut diags = vec![same; size];
 
-        for i in 0..size {
-            diags[i] = scoring_matrix.get(i, i);
+        for (i, d) in diags.iter_mut().enumerate().take(size) {
+            *d = scoring_matrix.get(i, i);
             for j in (i + 1)..size {
                 matrix.set(i, j, scoring_matrix.get(i, j));
             }
@@ -453,12 +462,12 @@ impl NamedMatrix {
         // Fill the matrix (lower triangle from PHYLIP)
         // raw_values contains flattened lower triangle: (1,0), (2,0), (2,1), ...
         let mut k = 0;
-        for i in 0..size {
+        for (i, d) in diags.iter_mut().enumerate().take(size) {
             for j in 0..=i {
                 if k < raw_values.len() {
                     let value = raw_values[k];
                     if i == j {
-                        diags[i] = value;
+                        *d = value;
                     } else {
                         matrix.set(i, j, value);
                     }
@@ -471,7 +480,7 @@ impl NamedMatrix {
     }
 
     fn process_phylip_line(line: &str, names: &mut Vec<String>, values: &mut Vec<f32>) {
-        let parts: Vec<&str> = line.trim().split_whitespace().collect();
+        let parts: Vec<&str> = line.split_whitespace().collect();
         if !parts.is_empty() {
             let name = parts[0].to_string();
             names.push(name);

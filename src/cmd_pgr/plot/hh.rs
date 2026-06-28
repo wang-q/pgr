@@ -101,17 +101,14 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let ylabel = args.get_one::<String>("yl").map(|s| s.to_string());
 
     // Parse X min,max if provided
-    let xmm = args
-        .get_one::<String>("xmm")
-        .map(|s| {
-            let parts: Vec<f64> = s.split(',').filter_map(|x| x.trim().parse().ok()).collect();
-            if parts.len() == 2 {
-                Some((parts[0], parts[1]))
-            } else {
-                None
-            }
-        })
-        .flatten();
+    let xmm = args.get_one::<String>("xmm").and_then(|s| {
+        let parts: Vec<f64> = s.split(',').filter_map(|x| x.trim().parse().ok()).collect();
+        if parts.len() == 2 {
+            Some((parts[0], parts[1]))
+        } else {
+            None
+        }
+    });
 
     // Parse unit
     let unit = args
@@ -137,8 +134,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // Axis section
     //----------------------------
     // Use column names if labels are not specified
-    let xlabel = xlabel.unwrap_or_else(|| col_name);
-    let ylabel = ylabel.unwrap_or_else(|| group_name);
+    let xlabel = xlabel.unwrap_or(col_name);
+    let ylabel = ylabel.unwrap_or(group_name);
 
     // Width unit per bin
     let width = (*bins as f64) * unit.0;
@@ -229,13 +226,14 @@ fn load_data(
             };
 
             // Add value to corresponding group
-            data.entry(group_name).or_insert_with(Vec::new).push(val);
+            data.entry(group_name).or_default().push(val);
         }
     }
 
     Ok((data, xlabel, ylabel))
 }
 
+#[allow(clippy::type_complexity)]
 fn calc_hist(
     data: &IndexMap<String, Vec<f64>>,
     bins: usize,
@@ -317,12 +315,12 @@ fn create_table(density_data: &IndexMap<String, Vec<f64>>) -> String {
     // Iterate through each group
     for (y, (_, densities)) in density_data.iter().enumerate() {
         // Iterate through each bin
-        for x in 0..bins {
+        for (x, &d) in densities.iter().enumerate().take(bins) {
             table.push_str(&format!(
                 "    {:3} {:3} {:.4}\n",
-                x,            // x coordinate (3 digits)
-                y,            // y coordinate (3 digits)
-                densities[x]  // density value (4 decimal places)
+                x, // x coordinate (3 digits)
+                y, // y coordinate (3 digits)
+                d  // density value (4 decimal places)
             ));
         }
         table.push('\n');
@@ -368,7 +366,7 @@ y tick label style={
         // Section axis
         let begin = template.find("%AXIS_BEGIN").unwrap();
         let end = template.find("%AXIS_END").unwrap();
-        template.replace_range(begin..end, &out_string);
+        template.replace_range(begin..end, out_string);
     }
 
     {

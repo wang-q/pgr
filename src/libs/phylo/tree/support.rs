@@ -34,8 +34,8 @@ pub fn build_leaf_map(tree: &Tree) -> Result<HashMap<String, usize>, String> {
     leaf_names.sort();
 
     for name in leaf_names {
-        if !map.contains_key(&name) {
-            map.insert(name, index);
+        if let std::collections::hash_map::Entry::Vacant(e) = map.entry(name) {
+            e.insert(index);
             index += 1;
         }
     }

@@ -15,15 +15,10 @@ pub fn make_subcommand() -> Command {
     )
 }
 
+#[derive(Default)]
 struct Stats {
     count: u64,
     bases: u64,
-}
-
-impl Default for Stats {
-    fn default() -> Self {
-        Self { count: 0, bases: 0 }
-    }
 }
 
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
@@ -55,7 +50,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         .map(|(k, v)| (k, v.count, v.bases))
         .collect();
 
-    results.sort_by(|a, b| b.2.cmp(&a.2)); // Sort by bases descending
+    results.sort_by_key(|b| std::cmp::Reverse(b.2)); // Sort by bases descending
 
     println!(
         "{:<20} {:>10} {:>15} {:>10}",

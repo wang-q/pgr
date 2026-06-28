@@ -69,6 +69,7 @@ fn ref_overlaps_window(entry: &FasEntry, window: &Window) -> bool {
     start < window.end && end > window.start
 }
 
+#[allow(clippy::type_complexity)]
 fn banded_align_refs(
     blocks: [&FasBlock; 2],
     ref_name: &str,
@@ -100,7 +101,7 @@ fn banded_align_refs(
     let mut trace = vec![0i8; (n + 1) * width];
 
     let idx = |i: usize, j: usize| -> Option<usize> {
-        let band_start = if i > band { i - band } else { 0 };
+        let band_start = i.saturating_sub(band);
         let band_end = min(m, i + band);
         if j < band_start || j > band_end {
             None
@@ -164,7 +165,7 @@ fn banded_align_refs(
     }
 
     for i in 0..=n {
-        let band_start = if i > band { i - band } else { 0 };
+        let band_start = i.saturating_sub(band);
         let band_end = min(m, i + band);
         for j in band_start..=band_end {
             let k = match idx(i, j) {
@@ -239,9 +240,7 @@ fn banded_align_refs(
     let mut i = n;
     let mut j = m;
 
-    if idx(i, j).is_none() {
-        return None;
-    }
+    idx(i, j)?;
 
     let mut map_a = Vec::new();
     let mut map_b = Vec::new();

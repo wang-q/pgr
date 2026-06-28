@@ -17,12 +17,12 @@ pub fn execute(args: &clap::ArgMatches) -> Result<()> {
     let output_path = args.get_one::<String>("output").unwrap();
 
     let f = File::open(input_path)?;
-    let mut reader = ChainReader::new(BufReader::new(f));
+    let reader = ChainReader::new(BufReader::new(f));
 
     // Store chains by ID
     let mut chains: HashMap<u64, Chain> = HashMap::new();
 
-    while let Some(res) = reader.next() {
+    for res in reader {
         let chain = res?;
 
         chains
@@ -49,7 +49,7 @@ pub fn execute(args: &clap::ArgMatches) -> Result<()> {
                 blocks.extend(new_blocks);
 
                 // Sort blocks by t_start (and q_start for stability if needed)
-                blocks.sort_by(|a, b| a.t_start.cmp(&b.t_start));
+                blocks.sort_by_key(|a| a.t_start);
 
                 // Reconstruct data from blocks
                 // This updates header ranges automatically

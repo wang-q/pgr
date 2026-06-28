@@ -172,7 +172,7 @@ pub fn parse_fas_block(
         let name = if let Some(idx) = header.find("|species=") {
             let species = &header[idx + "|species=".len()..];
             let species = species
-                .split(|c| c == '|' || c == ' ' || c == '\t')
+                .split(['|', ' ', '\t'])
                 .next()
                 .unwrap_or("")
                 .to_string();
@@ -219,7 +219,7 @@ GC-TAAAATATGAA-CGATATTTA-CCTGTAGAGGGACTATGGGAT-CCCCATACTACTTT--
 
         let block = crate::libs::fas::next_fas_block(&mut reader).unwrap();
         assert_eq!(
-            block.entries.get(0).unwrap().range.to_string(),
+            block.entries.first().unwrap().range.to_string(),
             "S288c.I(+):13267-13287".to_string()
         );
         assert_eq!(
@@ -457,7 +457,7 @@ mod maf_tests {
         let str = "#\na score=23262.0 pass=2";
         let mut reader = BufReader::new(str.as_bytes());
         match next_maf_block(&mut reader) {
-            Err(e) => assert!(false, "Got error {:?}", e),
+            Err(e) => panic!("Got error {:?}", e),
             Ok(val) => assert_eq!(
                 val,
                 MafBlock {
@@ -473,7 +473,7 @@ mod maf_tests {
         let str = "#\na";
         let mut reader = BufReader::new(str.as_bytes());
         match next_maf_block(&mut reader) {
-            Err(e) => assert!(false, "Got error {:?}", e),
+            Err(e) => panic!("Got error {:?}", e),
             Ok(val) => assert_eq!(
                 val,
                 MafBlock {
@@ -496,7 +496,7 @@ this line is a canary to ensure it stops after a 'paragraph'";
         let mut lines = BufReader::new(str.as_bytes()).lines();
         let header = lines.next().unwrap().unwrap();
         match parse_maf_block(header, lines) {
-            Err(e) => assert!(false, "got error {:?}", e),
+            Err(e) => panic!("got error {:?}", e),
             Ok(val) => assert_eq!(
                 val,
                 MafBlock {
@@ -550,7 +550,7 @@ s Spar.gi_29362604    100946  97 - 143114 CG--ACATAGTTTTTTCCAGGCACTTTCAGCTGCGG--
         let mut reader = BufReader::new(str.as_bytes());
         let block = next_maf_block(&mut reader).unwrap();
         assert_eq!(
-            block.entries.get(0).unwrap().to_range(),
+            block.entries.first().unwrap().to_range(),
             "S288c.VIII(+):13377-13410".to_string()
         );
         assert_eq!(

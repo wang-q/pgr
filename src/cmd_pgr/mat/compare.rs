@@ -103,8 +103,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     for i in 0..common_names.len() {
         for j in 0..i {
             if let (Some(v1), Some(v2)) = (
-                matrix1.get_by_name(&common_names[i], &common_names[j]),
-                matrix2.get_by_name(&common_names[i], &common_names[j]),
+                matrix1.get_by_name(common_names[i], common_names[j]),
+                matrix2.get_by_name(common_names[i], common_names[j]),
             ) {
                 values1.push(v1);
                 values2.push(v2);

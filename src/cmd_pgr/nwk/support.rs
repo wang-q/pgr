@@ -84,10 +84,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 let count = counts.get(&bs).copied().unwrap_or(0);
 
                 let label = if percent {
-                    if total_reps > 0 {
-                        format!("{}", (count * 100) / total_reps)
-                    } else {
-                        "0".to_string()
+                    match (count * 100).checked_div(total_reps) {
+                        Some(v) => format!("{}", v),
+                        None => "0".to_string(),
                     }
                 } else {
                     format!("{}", count)

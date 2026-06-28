@@ -41,13 +41,13 @@ pub fn cut_k(tree: &Tree, k: usize) -> Result<Partition, String> {
 
     impl PartialOrd for NodeHeight {
         fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-            self.h.partial_cmp(&other.h)
+            Some(self.cmp(other))
         }
     }
 
     impl Ord for NodeHeight {
         fn cmp(&self, other: &Self) -> Ordering {
-            self.partial_cmp(other).unwrap_or(Ordering::Equal)
+            self.h.partial_cmp(&other.h).unwrap_or(Ordering::Equal)
         }
     }
 

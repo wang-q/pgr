@@ -69,6 +69,7 @@ struct DpEntry {
 /// # Returns
 ///
 /// A vector of `Chain`s sorted by score.
+#[allow(clippy::too_many_arguments)]
 pub fn chain_blocks<R: Read + Seek>(
     blocks: &[ChainableBlock],
     gap_calc: &GapCalc,
@@ -262,7 +263,7 @@ pub fn chain_blocks<R: Read + Seek>(
 ///
 /// Adjusts the boundaries of overlapping blocks to maximize the score.
 fn trim_overlaps<R: Read + Seek>(
-    blocks: &mut Vec<ChainableBlock>,
+    blocks: &mut [ChainableBlock],
     ctx: &mut ScoreContext<R>,
     q_name: &str,
     t_name: &str,
@@ -313,6 +314,7 @@ fn trim_overlaps<R: Read + Seek>(
 /// Finds the optimal crossover point for two overlapping blocks.
 ///
 /// Returns the best cut position within the overlap and the score adjustment.
+#[allow(clippy::too_many_arguments)]
 fn find_crossover<R: Read + Seek>(
     left: &ChainableBlock,
     right: &ChainableBlock,
@@ -505,16 +507,8 @@ fn score_chain<R: Read + Seek>(
             let prev = &blocks[i - 1];
             let curr = &blocks[i];
 
-            let dt = if curr.t_start >= prev.t_end {
-                curr.t_start - prev.t_end
-            } else {
-                0
-            };
-            let dq = if curr.q_start >= prev.q_end {
-                curr.q_start - prev.q_end
-            } else {
-                0
-            };
+            let dt = curr.t_start.saturating_sub(prev.t_end);
+            let dq = curr.q_start.saturating_sub(prev.q_end);
 
             if let Some(_ctx) = score_ctx {
                 // If trimmed, dt >= 0.

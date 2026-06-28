@@ -103,10 +103,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                     continue;
                 }
 
-                if !opt_name.is_empty() {
-                    if opt_name != range.name() {
-                        continue;
-                    }
+                if !opt_name.is_empty() && opt_name != range.name() {
+                    continue;
                 }
 
                 let res = res_of.get_mut(entry.range().name()).unwrap();

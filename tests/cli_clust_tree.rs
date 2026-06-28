@@ -144,7 +144,7 @@ D 14 9 7 0
         .success();
 
     let nwk_ward = std::fs::read_to_string(&output_ward).unwrap();
-    assert!(nwk_ward.len() > 0);
+    assert!(!nwk_ward.is_empty());
 }
 
 #[test]

@@ -135,8 +135,8 @@ fn linkage_nn_chain(condensed: &mut CondensedMatrix, method: Method) -> Vec<Step
     while steps.len() < n - 1 {
         // If chain is empty, pick an arbitrary active cluster to start
         if chain.is_empty() {
-            for i in 0..n {
-                if active[i] {
+            for (i, &a) in active.iter().enumerate().take(n) {
+                if a {
                     chain.push(i);
                     break;
                 }
@@ -149,8 +149,8 @@ fn linkage_nn_chain(condensed: &mut CondensedMatrix, method: Method) -> Vec<Step
         let mut min_dist = f32::INFINITY;
         let mut nn = k; // Default to self if no other active found (shouldn't happen if >1 active)
 
-        for i in 0..n {
-            if i == k || !active[i] {
+        for (i, &a) in active.iter().enumerate().take(n) {
+            if i == k || !a {
                 continue;
             }
             let d = condensed.get(k, i);
@@ -399,12 +399,12 @@ fn linkage_primitive(condensed: &mut CondensedMatrix, method: Method) -> Vec<Ste
         let mut u = 0;
         let mut v = 0;
 
-        for i in 0..n {
-            if !active[i] {
+        for (i, &ai) in active.iter().enumerate().take(n) {
+            if !ai {
                 continue;
             }
-            for j in (i + 1)..n {
-                if !active[j] {
+            for (j, &aj) in active.iter().enumerate().take(n).skip(i + 1) {
+                if !aj {
                     continue;
                 }
                 let d = condensed.get(i, j);

@@ -146,6 +146,7 @@ fn reverse_complement(seq: &[u8]) -> Vec<u8> {
 // `q_seq` covers query[qs..qe), `t_seq` covers target[ts..te).
 // CIGAR origin is (rec_ts, rec_qs). Ops before `ts` are skipped (with partial
 // skip for =/X/M/D); ops at/after `te` are stopped.
+#[allow(clippy::too_many_arguments)]
 fn build_maf_block(
     cigar: &[CigarOp],
     rec_ts: i32,
@@ -225,6 +226,7 @@ fn build_maf_block(
 // Output pairwise MAF blocks. Each QueryResult becomes one `a` block with two
 // `s` lines (target first, query second). Sequences are fetched on demand via
 // FastaStore; CIGAR is walked directly (no POA refinement).
+#[allow(clippy::type_complexity)]
 fn output_maf(
     idx: &PafIndex,
     all_results: &[((String, i32, i32), Vec<QueryResult>)],

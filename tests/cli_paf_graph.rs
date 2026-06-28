@@ -10,7 +10,7 @@ fn write_temp_fasta(path: &str, records: &[(&str, &str)]) {
     use std::fs;
     let mut content = String::new();
     for (name, seq) in records {
-        content.push_str(">");
+        content.push('>');
         content.push_str(name);
         content.push('\n');
         content.push_str(seq);

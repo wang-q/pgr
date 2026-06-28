@@ -139,7 +139,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     // Create workbook and worksheet objects
     let mut workbook = Workbook::new();
-    let mut worksheet = workbook.add_worksheet();
+    let worksheet = workbook.add_worksheet();
 
     let format_of: BTreeMap<String, Format> = create_formats();
     // eprintln!("format_of = {:#?}", format_of.keys());
@@ -181,7 +181,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
             // each section
             // Write names
-            paint_name(&mut worksheet, &format_of.clone(), &mut opt, &block)?;
+            paint_name(worksheet, &format_of.clone(), &mut opt, &block)?;
 
             if opt.is_outgroup {
                 opt.seq_count -= 1;
@@ -192,10 +192,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             for (_, var) in vars {
                 match var {
                     Variation::Substitution(sub) => {
-                        paint_sub(&mut worksheet, &format_of.clone(), &mut opt, &sub).unwrap()
+                        paint_sub(worksheet, &format_of.clone(), &mut opt, &sub).unwrap()
                     }
                     Variation::Indel(indel) => {
-                        paint_indel(&mut worksheet, format_of.clone(), &mut opt, &indel)?
+                        paint_indel(worksheet, format_of.clone(), &mut opt, &indel)?
                     } // Indel
                 } // Match
 

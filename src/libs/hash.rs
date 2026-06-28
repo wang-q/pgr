@@ -94,25 +94,25 @@ pub fn seq_mins(
             k: opt_kmer,
             hasher: RapidHash,
         }
-        .mins(&seq[..]),
+        .mins(seq),
         "fx" => JumpingMinimizer {
             w: opt_window,
             k: opt_kmer,
             hasher: FxHash,
         }
-        .mins(&seq[..]),
+        .mins(seq),
         "murmur" => JumpingMinimizer {
             w: opt_window,
             k: opt_kmer,
             hasher: MurmurHash3,
         }
-        .mins(&seq[..]),
+        .mins(seq),
         "mod" => {
             let min_iter = minimizer_iter::MinimizerBuilder::<u64, _>::new_mod()
                 .canonical()
                 .minimizer_size(opt_kmer)
                 .width(opt_window as u16)
-                .iter(&seq[..]);
+                .iter(seq);
 
             min_iter.map(|(min, _, _)| min).collect()
         }
@@ -138,9 +138,7 @@ struct FilterBuildHasher<'a, F> {
 
 impl<'a, F> Clone for FilterBuildHasher<'a, F> {
     fn clone(&self) -> Self {
-        FilterBuildHasher {
-            filter: self.filter,
-        }
+        *self
     }
 }
 

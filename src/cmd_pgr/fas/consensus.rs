@@ -212,7 +212,7 @@ fn proc_block(block: &pgr::libs::fas::FasBlock, args: &ArgMatches) -> anyhow::Re
             algo_code,
         )
         .unwrap(),
-        "builtin" | _ => pgr::libs::alignment::get_consensus_poa_builtin(
+        _ => pgr::libs::alignment::get_consensus_poa_builtin(
             &seqs,
             match_score,
             mismatch_score,
@@ -236,8 +236,8 @@ fn proc_block(block: &pgr::libs::fas::FasBlock, args: &ArgMatches) -> anyhow::Re
     } else {
         out_string += format!(">{}\n{}\n", cname, cons).as_ref();
     }
-    if outgroup.is_some() {
-        out_string += outgroup.unwrap().to_string().as_ref();
+    if let Some(og) = outgroup {
+        out_string += og.to_string().as_ref();
     }
 
     // end of a block

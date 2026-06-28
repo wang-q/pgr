@@ -125,53 +125,54 @@ fn r_net_syn_fill(
         (f.o_chrom.clone(), f.o_start, f.o_end, f.o_strand)
     };
 
-    let mut q_dup = Some(0);
-    if let Some(dt) = map.get(&q_name) {
-        q_dup = Some(dt.count_over(start, end, 2));
-    }
+    let q_dup = if let Some(dt) = map.get(&q_name) {
+        Some(dt.count_over(start, end, 2))
+    } else {
+        Some(0)
+    };
 
-    let type_str;
     let mut q_over = None;
     let mut q_far = None;
 
-    if parent.is_none() {
-        type_str = "top".to_string();
-    } else {
-        let p = parent.unwrap().borrow();
-        if q_name != p.o_chrom {
-            type_str = "nonSyn".to_string();
-        } else {
-            // Calculate qOver/qFar relative to parent GAP
-            if let Some(pg_rc) = parent_gap {
-                let pg = pg_rc.borrow();
-                // Check overlap with GAP query range
-                let g_start = pg.o_start;
-                let g_end = pg.o_end;
+    let type_str = match parent {
+        None => "top".to_string(),
+        Some(p_rc) => {
+            let p = p_rc.borrow();
+            if q_name != p.o_chrom {
+                "nonSyn".to_string()
+            } else {
+                // Calculate qOver/qFar relative to parent GAP
+                if let Some(pg_rc) = parent_gap {
+                    let pg = pg_rc.borrow();
+                    // Check overlap with GAP query range
+                    let g_start = pg.o_start;
+                    let g_end = pg.o_end;
 
-                let intersection = range_intersection(start, end, g_start, g_end);
-                q_over = Some(intersection);
+                    let intersection = range_intersection(start, end, g_start, g_end);
+                    q_over = Some(intersection);
 
-                if intersection == 0 {
-                    // Calculate distance
-                    let d1 = if start > g_end { start - g_end } else { 0 };
-                    let d2 = if end < g_start { g_start - end } else { 0 };
-                    q_far = Some((d1 + d2) as i64);
+                    if intersection == 0 {
+                        // Calculate distance
+                        let d1 = start.saturating_sub(g_end);
+                        let d2 = g_start.saturating_sub(end);
+                        q_far = Some((d1 + d2) as i64);
+                    } else {
+                        q_far = Some(0);
+                    }
                 } else {
+                    // Should not happen for non-top fills
+                    q_over = Some(0);
                     q_far = Some(0);
                 }
-            } else {
-                // Should not happen for non-top fills
-                q_over = Some(0);
-                q_far = Some(0);
-            }
 
-            if p.o_strand == strand {
-                type_str = "syn".to_string();
-            } else {
-                type_str = "inv".to_string();
+                if p.o_strand == strand {
+                    "syn".to_string()
+                } else {
+                    "inv".to_string()
+                }
             }
         }
-    }
+    };
 
     {
         let mut f = fill.borrow_mut();
@@ -234,7 +235,7 @@ impl DupeTree {
         }
         // Sort by position, then by delta (to process all updates at same pos)
         // Actually, order of processing at same position doesn't matter for final segments between positions.
-        events.sort_by(|a, b| a.0.cmp(&b.0));
+        events.sort_by_key(|a| a.0);
 
         let mut current_depth = 0;
         let mut segments = Vec::new();

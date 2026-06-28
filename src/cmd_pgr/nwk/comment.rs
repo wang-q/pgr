@@ -238,7 +238,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                         let mut to_remove = vec![];
                         for (k, v) in props.iter() {
                             let entry = if v.is_empty() {
-                                format!("{}", k)
+                                k.to_string()
                             } else {
                                 format!("{}={}", k, v)
                             };

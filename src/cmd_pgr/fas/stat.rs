@@ -56,7 +56,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap());
     let has_outgroup = args.get_flag("has_outgroup");
 
-    let field_names = vec![
+    let field_names = [
         "target",
         "length",
         "comparable",

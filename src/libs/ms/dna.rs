@@ -82,6 +82,7 @@ pub fn build_mut_seq(
     seq_mut
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn write_fasta(
     writer: &mut dyn Write,
     nsam: usize,

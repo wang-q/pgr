@@ -571,7 +571,7 @@ impl ChainNet {
     }
 
     pub fn add_chain(&mut self, chain: Chain, min_space: u64, min_fill: u64, min_score: f64) {
-        if (chain.header.score as f64) < min_score {
+        if chain.header.score < min_score {
             return;
         }
         let chain_rc = Rc::new(chain);
@@ -593,7 +593,7 @@ impl ChainNet {
     }
 
     pub fn add_chain_as_q(&mut self, chain: Chain, min_space: u64, min_fill: u64, min_score: f64) {
-        if (chain.header.score as f64) < min_score {
+        if chain.header.score < min_score {
             return;
         }
         let chain_rc = Rc::new(chain);
@@ -729,8 +729,7 @@ fn add_chain_core(
         let mut s = u64::MAX;
         let mut e = 0;
 
-        for i in start_block_idx..blocks.len() {
-            let b = &blocks[i];
+        for (i, b) in blocks.iter().enumerate().skip(start_block_idx) {
             let (b_start, b_end) = if is_q {
                 (b.q_start, b.q_end)
             } else {
@@ -789,6 +788,7 @@ fn add_chain_core(
 // For now, let's assume we use add_chain_t for both, by constructing a "proxy" chain with swapped coords if needed.
 // Or we implement add_chain_q separately.
 
+#[allow(clippy::too_many_arguments)]
 fn fill_space(
     chrom: &mut Chrom,
     space: Space,

@@ -83,7 +83,7 @@ impl KMedoids {
                 let mut changed = false;
 
                 // 2. Assignment step
-                for i in 0..n {
+                for (i, a) in assignment.iter_mut().enumerate().take(n) {
                     let mut min_dist = f32::MAX;
                     let mut closest_c_idx = 0;
 
@@ -94,8 +94,8 @@ impl KMedoids {
                             closest_c_idx = c_idx;
                         }
                     }
-                    if assignment[i] != closest_c_idx {
-                        assignment[i] = closest_c_idx;
+                    if *a != closest_c_idx {
+                        *a = closest_c_idx;
                         changed = true;
                     }
                 }

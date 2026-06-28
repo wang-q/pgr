@@ -31,6 +31,7 @@ impl Psl {
         Default::default()
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn from_align(
         q_name: &str,
         q_size: u32,
@@ -496,6 +497,7 @@ impl fmt::Display for Psl {
 }
 
 #[cfg(test)]
+#[allow(clippy::field_reassign_with_default)]
 mod tests {
     use super::*;
 
