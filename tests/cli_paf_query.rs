@@ -274,6 +274,128 @@ fn command_paf_to_bed_output_reverse_strand() {
     );
 }
 
+// ── indel coordinate accuracy at query layer ─────────────────────
+// Borrowed from impg test_transitive_integrity.rs::test_indel_coordinate_accuracy
+// (Test 6): with indels in the CIGAR, the query layer must project target
+// sub-intervals onto the query without coordinate drift. pgr's indel
+// coordinate tests were all at the to-maf layer; this covers the to-bed
+// (query) layer.
+
+#[test]
+fn command_paf_to_bed_insertion_coordinate_accuracy() {
+    // CIGAR: 50= 10I 50= → A:0-110 (query) → B:0-100 (target).
+    //   - 50= : A:0-50  ↔ B:0-50
+    //   - 10I : A:50-60 (insertion in A, no B consumption)
+    //   - 50= : A:60-110 ↔ B:50-100
+    // Query B:0-50 (before insertion) → A:0-50.
+    // Query B:50-100 (after insertion) → A:60-110 (skip the 10bp insertion).
+    let paf = "A\t110\t0\t110\t+\tB\t100\t0\t100\t100\t110\t60\tcg:Z:50=10I50=\n";
+
+    // Query B:0-50 — should project to A:0-50 (before the insertion).
+    let (stdout, _) = PgrCmd::new()
+        .args(&["paf", "to-bed", "stdin", "B:0-50", "--min-len", "0"])
+        .stdin(paf)
+        .run();
+    let a_line = stdout
+        .lines()
+        .find(|l| l.starts_with("A\t"))
+        .unwrap_or_else(|| panic!("missing A line in BED output:\n{stdout}"));
+    let fields: Vec<&str> = a_line.split('\t').collect();
+    let start: i64 = fields[1].parse().unwrap();
+    let end: i64 = fields[2].parse().unwrap();
+    assert!(
+        (0..=5).contains(&start) && (45..=55).contains(&end),
+        "B:0-50 (before insertion) should map to A:~0-50, got A:{start}-{end}"
+    );
+
+    // Query B:50-100 — should project to A:60-110 (after the insertion).
+    // Note: querying exactly at the insertion boundary (B:50) may include the
+    // adjacent insertion bases (A:50-60) in the projected range; the end
+    // coordinate (110) is the strong invariant. Query B:60-100 (well inside
+    // the post-insertion region) for a clean start-coordinate check.
+    let (stdout, _) = PgrCmd::new()
+        .args(&["paf", "to-bed", "stdin", "B:50-100", "--min-len", "0"])
+        .stdin(paf)
+        .run();
+    let a_line = stdout
+        .lines()
+        .find(|l| l.starts_with("A\t"))
+        .unwrap_or_else(|| panic!("missing A line in BED output:\n{stdout}"));
+    let fields: Vec<&str> = a_line.split('\t').collect();
+    let end: i64 = fields[2].parse().unwrap();
+    assert!(
+        end >= 105,
+        "B:50-100 (after insertion) should map end near 110, got A end={end}"
+    );
+
+    // Query B:60-100 (10bp inside the post-insertion region) — start should
+    // be ~70 (60 + 10), cleanly after the insertion with no boundary effect.
+    let (stdout, _) = PgrCmd::new()
+        .args(&["paf", "to-bed", "stdin", "B:60-100", "--min-len", "0"])
+        .stdin(paf)
+        .run();
+    let a_line = stdout
+        .lines()
+        .find(|l| l.starts_with("A\t"))
+        .unwrap_or_else(|| panic!("missing A line in BED output:\n{stdout}"));
+    let fields: Vec<&str> = a_line.split('\t').collect();
+    let start: i64 = fields[1].parse().unwrap();
+    let end: i64 = fields[2].parse().unwrap();
+    assert!(
+        (65..=75).contains(&start),
+        "B:60-100 (inside post-insertion) should map start near 70, got A:{start}"
+    );
+    assert!(
+        end >= 105,
+        "B:60-100 (inside post-insertion) should map end near 110, got A:{end}"
+    );
+}
+
+#[test]
+fn command_paf_to_bed_deletion_coordinate_accuracy() {
+    // CIGAR: 50= 10D 50= → A:0-100 (query) → B:0-110 (target).
+    //   - 50= : A:0-50   ↔ B:0-50
+    //   - 10D : B:50-60  (deletion in A, 10bp in B not in A)
+    //   - 50= : A:50-100 ↔ B:60-110
+    // Query B:0-50 (before deletion) → A:0-50.
+    // Query B:60-110 (after deletion) → A:50-100.
+    let paf = "A\t100\t0\t100\t+\tB\t110\t0\t110\t100\t100\t60\tcg:Z:50=10D50=\n";
+
+    // Query B:0-50 — should project to A:0-50 (before the deletion).
+    let (stdout, _) = PgrCmd::new()
+        .args(&["paf", "to-bed", "stdin", "B:0-50", "--min-len", "0"])
+        .stdin(paf)
+        .run();
+    let a_line = stdout
+        .lines()
+        .find(|l| l.starts_with("A\t"))
+        .unwrap_or_else(|| panic!("missing A line in BED output:\n{stdout}"));
+    let fields: Vec<&str> = a_line.split('\t').collect();
+    let start: i64 = fields[1].parse().unwrap();
+    let end: i64 = fields[2].parse().unwrap();
+    assert!(
+        (0..=5).contains(&start) && (45..=55).contains(&end),
+        "B:0-50 (before deletion) should map to A:~0-50, got A:{start}-{end}"
+    );
+
+    // Query B:60-110 — should project to A:50-100 (after the deletion).
+    let (stdout, _) = PgrCmd::new()
+        .args(&["paf", "to-bed", "stdin", "B:60-110", "--min-len", "0"])
+        .stdin(paf)
+        .run();
+    let a_line = stdout
+        .lines()
+        .find(|l| l.starts_with("A\t"))
+        .unwrap_or_else(|| panic!("missing A line in BED output:\n{stdout}"));
+    let fields: Vec<&str> = a_line.split('\t').collect();
+    let start: i64 = fields[1].parse().unwrap();
+    let end: i64 = fields[2].parse().unwrap();
+    assert!(
+        (45..=55).contains(&start) && end >= 95,
+        "B:60-110 (after deletion) should map to A:~50-100, got A:{start}-{end}"
+    );
+}
+
 // ── paf query -b (batch BED regions) ─────────────────────────────
 
 #[test]
@@ -1739,4 +1861,449 @@ C\t10\t0\t10\t+\tA\t10\t0\t10\t9\t10\t255\tcg:Z:10M\n";
     let _ = fs::remove_file(format!("{a_fa}.loc"));
     let _ = fs::remove_file(format!("{b_fa}.loc"));
     let _ = fs::remove_file(format!("{c_fa}.loc"));
+}
+
+// ── GFA path spelling round-trip ─────────────────────────────────
+// Borrowed from impg `test_graph_poa.rs::assert_gfa_paths_match_records`:
+// parse GFA P lines, concatenate segment sequences along each path
+// (respecting orientation), and verify the spelled sequence matches the
+// input FASTA record byte-for-byte. This is the strongest correctness
+// invariant for graph construction — every path must reconstruct its
+// original sequence.
+
+/// Parse GFA and spell each path's sequence by concatenating visited
+/// segments (reverse-complementing for `-` steps). Returns
+/// `Vec<(path_name, spelled_sequence)>`.
+fn spell_gfa_paths(gfa: &str) -> Vec<(String, String)> {
+    use std::collections::HashMap;
+    let mut seg_seq: HashMap<String, String> = HashMap::new();
+    let mut paths: Vec<(String, Vec<(String, char)>)> = Vec::new();
+
+    for line in gfa.lines() {
+        if line.is_empty() {
+            continue;
+        }
+        let fields: Vec<&str> = line.split('\t').collect();
+        if fields[0] == "S" && fields.len() >= 3 {
+            seg_seq.insert(fields[1].to_string(), fields[2].to_string());
+        } else if fields[0] == "P" && fields.len() >= 3 {
+            let name = fields[1].to_string();
+            let steps: Vec<(String, char)> = fields[2]
+                .split(',')
+                .filter(|s| !s.is_empty())
+                .map(|s| {
+                    let orient = s.chars().last().unwrap_or('+');
+                    let id = s.trim_end_matches(['+', '-']).to_string();
+                    (id, orient)
+                })
+                .collect();
+            paths.push((name, steps));
+        }
+    }
+
+    paths
+        .into_iter()
+        .map(|(name, steps)| {
+            let mut spelled = String::new();
+            for (id, orient) in steps {
+                let seq = seg_seq.get(&id).cloned().unwrap_or_default();
+                if orient == '-' {
+                    spelled.push_str(&revcomp(&seq));
+                } else {
+                    spelled.push_str(&seq);
+                }
+            }
+            (name, spelled)
+        })
+        .collect()
+}
+
+/// Reverse-complement a DNA string (ACGTN, case-insensitive).
+fn revcomp(s: &str) -> String {
+    s.chars()
+        .rev()
+        .map(|c| match c {
+            'A' => 'T',
+            'T' => 'A',
+            'C' => 'G',
+            'G' => 'C',
+            'a' => 't',
+            't' => 'a',
+            'c' => 'g',
+            'g' => 'c',
+            other => other,
+        })
+        .collect()
+}
+
+#[test]
+fn command_paf_to_gfa_roundtrip_identical() {
+    use std::collections::BTreeMap;
+    use std::fs;
+    // Two identical sequences -> one segment, two paths. Each path must
+    // spell back the original 10-bp sequence.
+    let paf = "A\t10\t0\t10\t+\tB\t10\t0\t10\t10\t10\t255\tcg:Z:10=\n";
+    let a_fa = write_bgzf_fa("/tmp/pgr_gfa_rt_id_A.fa", ">A\nACGTACGTAC\n");
+    let b_fa = write_bgzf_fa("/tmp/pgr_gfa_rt_id_B.fa", ">B\nACGTACGTAC\n");
+    let tsv = "/tmp/pgr_gfa_rt_id.tsv";
+    fs::write(tsv, format!("A\t{a_fa}\nB\t{b_fa}\n")).unwrap();
+
+    let (stdout, _stderr) = PgrCmd::new()
+        .args(&["paf", "to-gfa", "stdin", "B:0-10", "-t", "-f", tsv])
+        .stdin(paf)
+        .run();
+
+    let spelled: BTreeMap<String, String> = spell_gfa_paths(&stdout).into_iter().collect();
+    assert_eq!(
+        spelled.get("A"),
+        Some(&"ACGTACGTAC".to_string()),
+        "path A should spell back the original sequence"
+    );
+    assert_eq!(
+        spelled.get("B"),
+        Some(&"ACGTACGTAC".to_string()),
+        "path B should spell back the original sequence"
+    );
+
+    let _ = fs::remove_file("/tmp/pgr_gfa_rt_id_A.fa");
+    let _ = fs::remove_file("/tmp/pgr_gfa_rt_id_B.fa");
+    let _ = fs::remove_file(&a_fa);
+    let _ = fs::remove_file(&b_fa);
+    let _ = fs::remove_file(format!("{a_fa}.gzi"));
+    let _ = fs::remove_file(format!("{b_fa}.gzi"));
+    let _ = fs::remove_file(tsv);
+    let _ = fs::remove_file(format!("{a_fa}.loc"));
+    let _ = fs::remove_file(format!("{b_fa}.loc"));
+}
+
+#[test]
+fn command_paf_to_gfa_roundtrip_snp_bubble() {
+    use std::collections::BTreeMap;
+    use std::fs;
+    // B = ACGTACGTAC, A = ACGTACGTAC, C = ACGTTCGTAC (SNP at pos 4).
+    // The SNP forms a bubble; each path must still spell its own sequence.
+    let paf = "\
+A\t10\t0\t10\t+\tB\t10\t0\t10\t10\t10\t255\tcg:Z:10=\n\
+C\t10\t0\t10\t+\tA\t10\t0\t10\t9\t10\t255\tcg:Z:10M\n";
+    let a_fa = write_bgzf_fa("/tmp/pgr_gfa_rt_snp_A.fa", ">A\nACGTACGTAC\n");
+    let b_fa = write_bgzf_fa("/tmp/pgr_gfa_rt_snp_B.fa", ">B\nACGTACGTAC\n");
+    let c_fa = write_bgzf_fa("/tmp/pgr_gfa_rt_snp_C.fa", ">C\nACGTTCGTAC\n");
+    let tsv = "/tmp/pgr_gfa_rt_snp.tsv";
+    fs::write(tsv, format!("A\t{a_fa}\nB\t{b_fa}\nC\t{c_fa}\n")).unwrap();
+
+    let (stdout, _stderr) = PgrCmd::new()
+        .args(&["paf", "to-gfa", "stdin", "B:0-10", "-t", "-f", tsv])
+        .stdin(paf)
+        .run();
+
+    let spelled: BTreeMap<String, String> = spell_gfa_paths(&stdout).into_iter().collect();
+    assert_eq!(
+        spelled.get("A"),
+        Some(&"ACGTACGTAC".to_string()),
+        "path A should spell ACGTACGTAC"
+    );
+    assert_eq!(
+        spelled.get("B"),
+        Some(&"ACGTACGTAC".to_string()),
+        "path B should spell ACGTACGTAC"
+    );
+    assert_eq!(
+        spelled.get("C"),
+        Some(&"ACGTTCGTAC".to_string()),
+        "path C should spell ACGTTCGTAC (SNP allele preserved)"
+    );
+
+    let _ = fs::remove_file("/tmp/pgr_gfa_rt_snp_A.fa");
+    let _ = fs::remove_file("/tmp/pgr_gfa_rt_snp_B.fa");
+    let _ = fs::remove_file("/tmp/pgr_gfa_rt_snp_C.fa");
+    let _ = fs::remove_file(&a_fa);
+    let _ = fs::remove_file(&b_fa);
+    let _ = fs::remove_file(&c_fa);
+    let _ = fs::remove_file(format!("{a_fa}.gzi"));
+    let _ = fs::remove_file(format!("{b_fa}.gzi"));
+    let _ = fs::remove_file(format!("{c_fa}.gzi"));
+    let _ = fs::remove_file(tsv);
+    let _ = fs::remove_file(format!("{a_fa}.loc"));
+    let _ = fs::remove_file(format!("{b_fa}.loc"));
+    let _ = fs::remove_file(format!("{c_fa}.loc"));
+}
+
+#[test]
+fn command_paf_to_gfa_roundtrip_indel_bubble() {
+    use std::collections::BTreeMap;
+    use std::fs;
+    // B = ACGTACGTAC (10bp)
+    // A = ACGTACGTAC (10bp, identical to B)
+    // C = ACGTGGGTAC (10bp, 2bp substitution) — keep simple, indels in POA
+    //   are harder to predict; use a 2bp insertion instead:
+    // C = ACGTACGGGTAC (12bp, 2bp insertion after pos 6)
+    // C-A alignment: 6= 2I 4= (C has 2bp insertion relative to A)
+    let paf = "\
+A\t10\t0\t10\t+\tB\t10\t0\t10\t10\t10\t255\tcg:Z:10=\n\
+C\t12\t0\t12\t+\tA\t10\t0\t10\t10\t12\t255\tcg:Z:6=2I4=\n";
+    let a_fa = write_bgzf_fa("/tmp/pgr_gfa_rt_indel_A.fa", ">A\nACGTACGTAC\n");
+    let b_fa = write_bgzf_fa("/tmp/pgr_gfa_rt_indel_B.fa", ">B\nACGTACGTAC\n");
+    let c_fa = write_bgzf_fa("/tmp/pgr_gfa_rt_indel_C.fa", ">C\nACGTACGGGTAC\n");
+    let tsv = "/tmp/pgr_gfa_rt_indel.tsv";
+    fs::write(tsv, format!("A\t{a_fa}\nB\t{b_fa}\nC\t{c_fa}\n")).unwrap();
+
+    let (stdout, _stderr) = PgrCmd::new()
+        .args(&["paf", "to-gfa", "stdin", "B:0-10", "-t", "-f", tsv])
+        .stdin(paf)
+        .run();
+
+    let spelled: BTreeMap<String, String> = spell_gfa_paths(&stdout).into_iter().collect();
+    assert_eq!(
+        spelled.get("A"),
+        Some(&"ACGTACGTAC".to_string()),
+        "path A should spell ACGTACGTAC (no insertion)"
+    );
+    assert_eq!(
+        spelled.get("B"),
+        Some(&"ACGTACGTAC".to_string()),
+        "path B should spell ACGTACGTAC (no insertion)"
+    );
+    assert_eq!(
+        spelled.get("C"),
+        Some(&"ACGTACGGGTAC".to_string()),
+        "path C should spell ACGTACGGGTAC (2bp insertion preserved)"
+    );
+
+    let _ = fs::remove_file("/tmp/pgr_gfa_rt_indel_A.fa");
+    let _ = fs::remove_file("/tmp/pgr_gfa_rt_indel_B.fa");
+    let _ = fs::remove_file("/tmp/pgr_gfa_rt_indel_C.fa");
+    let _ = fs::remove_file(&a_fa);
+    let _ = fs::remove_file(&b_fa);
+    let _ = fs::remove_file(&c_fa);
+    let _ = fs::remove_file(format!("{a_fa}.gzi"));
+    let _ = fs::remove_file(format!("{b_fa}.gzi"));
+    let _ = fs::remove_file(format!("{c_fa}.gzi"));
+    let _ = fs::remove_file(tsv);
+    let _ = fs::remove_file(format!("{a_fa}.loc"));
+    let _ = fs::remove_file(format!("{b_fa}.loc"));
+    let _ = fs::remove_file(format!("{c_fa}.loc"));
+}
+
+// ── transitive closure invariants ────────────────────────────────
+// Borrowed from impg test_transitive_integrity.rs: each test uses a tiny
+// 2-4 line PAF to construct a precise graph topology and assert that the
+// BFS transitive closure preserves the expected invariants.
+
+#[test]
+fn command_paf_transitive_non_overlapping_regions_stay_separate() {
+    use std::collections::HashSet;
+    // A:0-100 → B:0-100 and A:500-600 → C:0-100 (two non-overlapping A regions).
+    // Query A:0-100 should find B but NOT C; query A:500-600 should find C but NOT B.
+    let paf = "\
+A\t1000\t0\t100\t+\tB\t1000\t0\t100\t100\t100\t60\tcg:Z:100=
+A\t1000\t500\t600\t+\tC\t1000\t0\t100\t100\t100\t60\tcg:Z:100=";
+
+    // Query A:0-100 — should find B only
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "paf",
+            "to-bed",
+            "stdin",
+            "A:0-100",
+            "--transitive",
+            "--min-len",
+            "0",
+        ])
+        .stdin(paf)
+        .run();
+    let names: HashSet<&str> = stdout
+        .lines()
+        .filter(|l| !l.is_empty())
+        .map(|l| l.split('\t').next().unwrap())
+        .collect();
+    assert!(names.contains("B"), "query A:0-100 should find B");
+    assert!(
+        !names.contains("C"),
+        "query A:0-100 should NOT find C (non-overlapping)"
+    );
+
+    // Query A:500-600 — should find C only
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "paf",
+            "to-bed",
+            "stdin",
+            "A:500-600",
+            "--transitive",
+            "--min-len",
+            "0",
+        ])
+        .stdin(paf)
+        .run();
+    let names: HashSet<&str> = stdout
+        .lines()
+        .filter(|l| !l.is_empty())
+        .map(|l| l.split('\t').next().unwrap())
+        .collect();
+    assert!(names.contains("C"), "query A:500-600 should find C");
+    assert!(
+        !names.contains("B"),
+        "query A:500-600 should NOT find B (non-overlapping)"
+    );
+}
+
+#[test]
+fn command_paf_transitive_coordinate_accuracy_subregion() {
+    // A:0-100 → B:0-100 → C:0-100 (transitive chain).
+    // Query A:25-75 should project to B:25-75 and C:25-75, not the full 0-100.
+    let paf = "\
+A\t1000\t0\t100\t+\tB\t1000\t0\t100\t100\t100\t60\tcg:Z:100=
+B\t1000\t0\t100\t+\tC\t1000\t0\t100\t100\t100\t60\tcg:Z:100=";
+
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "paf",
+            "to-bed",
+            "stdin",
+            "A:25-75",
+            "--transitive",
+            "--min-len",
+            "0",
+        ])
+        .stdin(paf)
+        .run();
+
+    let mut found_b = false;
+    let mut found_c = false;
+    for line in stdout.lines().filter(|l| !l.is_empty()) {
+        let fields: Vec<&str> = line.split('\t').collect();
+        let name = fields[0];
+        let start: i64 = fields[1].parse().unwrap();
+        let end: i64 = fields[2].parse().unwrap();
+        // Coordinates should be roughly 25-75, not 0-100
+        assert!(
+            (20..=30).contains(&start),
+            "start on {name} should be ~25, got {start}"
+        );
+        assert!(
+            (70..=80).contains(&end),
+            "end on {name} should be ~75, got {end}"
+        );
+        if name == "B" {
+            found_b = true;
+        }
+        if name == "C" {
+            found_c = true;
+        }
+    }
+    assert!(found_b, "should find B via transitive chain");
+    assert!(found_c, "should find C via transitive chain");
+}
+
+#[test]
+fn command_paf_transitive_distant_regions_no_collapse() {
+    // A:0-100 → B:0-100 → D:0-100
+    // A:1000-1100 → C:0-100 → D:500-600
+    // Query A:0-100 should find D:0-100 (via B), NOT D:500-600.
+    // Query A:1000-1100 should find D:500-600 (via C), NOT D:0-100.
+    let paf = "\
+A\t2000\t0\t100\t+\tB\t1000\t0\t100\t100\t100\t60\tcg:Z:100=
+A\t2000\t1000\t1100\t+\tC\t1000\t0\t100\t100\t100\t60\tcg:Z:100=
+B\t1000\t0\t100\t+\tD\t1000\t0\t100\t100\t100\t60\tcg:Z:100=
+C\t1000\t0\t100\t+\tD\t1000\t500\t600\t100\t100\t60\tcg:Z:100=";
+
+    // Query A:0-100 — D should be near 0, not 500
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "paf",
+            "to-bed",
+            "stdin",
+            "A:0-100",
+            "--transitive",
+            "--max-depth",
+            "3",
+            "--min-len",
+            "0",
+        ])
+        .stdin(paf)
+        .run();
+    let d_lines: Vec<&str> = stdout
+        .lines()
+        .filter(|l| !l.is_empty() && l.starts_with("D\t"))
+        .collect();
+    assert!(!d_lines.is_empty(), "should find D via transitive path");
+    for line in d_lines {
+        let start: i64 = line.split('\t').nth(1).unwrap().parse().unwrap();
+        assert!(
+            start < 200,
+            "D from A:0-100 path should be near 0, got {start}"
+        );
+    }
+
+    // Query A:1000-1100 — D should be near 500, not 0
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "paf",
+            "to-bed",
+            "stdin",
+            "A:1000-1100",
+            "--transitive",
+            "--max-depth",
+            "3",
+            "--min-len",
+            "0",
+        ])
+        .stdin(paf)
+        .run();
+    let d_lines: Vec<&str> = stdout
+        .lines()
+        .filter(|l| !l.is_empty() && l.starts_with("D\t"))
+        .collect();
+    assert!(!d_lines.is_empty(), "should find D via transitive path");
+    for line in d_lines {
+        let start: i64 = line.split('\t').nth(1).unwrap().parse().unwrap();
+        assert!(
+            start >= 400,
+            "D from A:1000-1100 path should be near 500, got {start}"
+        );
+    }
+}
+
+#[test]
+fn command_paf_transitive_multiple_alignments_to_same_target_stay_separate() {
+    use std::collections::HashSet;
+    // A:0-100 → B:0-100 and A:0-100 → B:500-600 (two alignments from same A region
+    // to different B regions). Query A:0-100 should report TWO separate B results,
+    // not one merged.
+    let paf = "\
+A\t1000\t0\t100\t+\tB\t1000\t0\t100\t100\t100\t60\tcg:Z:100=
+A\t1000\t0\t100\t+\tB\t1000\t500\t600\t100\t100\t60\tcg:Z:100=";
+
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "paf",
+            "to-bed",
+            "stdin",
+            "A:0-100",
+            "--transitive",
+            "--min-len",
+            "0",
+        ])
+        .stdin(paf)
+        .run();
+    let b_lines: Vec<&str> = stdout
+        .lines()
+        .filter(|l| !l.is_empty() && l.starts_with("B\t"))
+        .collect();
+    assert_eq!(
+        b_lines.len(),
+        2,
+        "should have 2 separate B results, got {}",
+        b_lines.len()
+    );
+    // The two B results should be at different positions
+    let starts: HashSet<i64> = b_lines
+        .iter()
+        .map(|l| l.split('\t').nth(1).unwrap().parse::<i64>().unwrap())
+        .collect();
+    assert_eq!(
+        starts.len(),
+        2,
+        "the two B results should be at different positions"
+    );
 }

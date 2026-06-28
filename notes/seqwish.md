@@ -421,7 +421,7 @@ pgr 的传递闭包是**局部、按需**的——每次查询从一个区间出
 - **`--min-var-len 100` 过滤**：在 CIGAR 切分阶段即过滤（indel < 阈值不切分），
   比 seqwish 在 `write_graph_chunk` 后过滤更早，避免无效段产生。对应 minigraph 的粗框架哲学。
 - **简化项**（相对 seqwish）：无 disk-backed interval tree / SparseBitVec / lock-free DSU，
-  路径方向恒 `+`（反向已翻转坐标到正链），rGFA SN/SO/SR tag 暂缺。
+  路径方向恒 `+`（反向已翻转坐标到正链），rGFA SN/SO/SR tag 已补全（见 [[paf-pangenome.md]] §3.3）。
 - **磁盘后端兜底（未启用）**：4 万大肠杆菌全图可能超 RAM，`AdaptiveTree` 的 disk-backed 模式
   是现成的兜底方案，待规模验证后再引入。
 
