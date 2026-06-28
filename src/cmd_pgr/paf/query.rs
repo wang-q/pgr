@@ -1,4 +1,5 @@
 use clap::*;
+use pgr::libs::chain::record::read_chains;
 use pgr::libs::paf::index::{PafIndex, QueryResult};
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -103,6 +104,12 @@ pub fn add_query_args(cmd: Command) -> Command {
             .num_args(1)
             .help("File with sequence names to include (one per line)"),
     )
+    .arg(
+        Arg::new("syntenic_filter")
+            .long("syntenic-filter")
+            .num_args(1)
+            .help("UCSC chain file; drop query results whose query interval is not covered by any chain's query span (chain-level, both target and query name must match)"),
+    )
 }
 
 /// Shared query logic: parse args, build/load index, run queries, apply filters.
@@ -123,6 +130,7 @@ pub fn run_query(
     let merge_distance = *args.get_one::<i32>("merge_distance").unwrap();
     let min_degree = *args.get_one::<usize>("min_degree").unwrap();
     let min_chain_length = *args.get_one::<i32>("min_chain_length").unwrap();
+    let syntenic_filter_path = args.get_one::<String>("syntenic_filter");
 
     // Region input: exactly one of positional <region> or -b/--bed-regions
     anyhow::ensure!(
@@ -165,6 +173,30 @@ pub fn run_query(
         None
     };
 
+    // Optional syntenic filter: load UCSC chain file and build
+    // (t_name, q_name) -> Vec<(q_start, q_end)> map for chain-level query coverage check.
+    let syntenic_map: Option<HashMap<(String, String), Vec<(u64, u64)>>> =
+        if let Some(path) = syntenic_filter_path {
+            eprintln!("Loading syntenic chains from {path}...");
+            let f = fs::File::open(path)?;
+            let chains = read_chains(f)?;
+            let mut map: HashMap<(String, String), Vec<(u64, u64)>> = HashMap::new();
+            for c in &chains {
+                let key = (c.header.t_name.clone(), c.header.q_name.clone());
+                map.entry(key)
+                    .or_default()
+                    .push((c.header.q_start, c.header.q_end));
+            }
+            eprintln!(
+                "  loaded {} chains ({} unique name pairs)",
+                chains.len(),
+                map.len()
+            );
+            Some(map)
+        } else {
+            None
+        };
+
     let mut all_results: Vec<((String, i32, i32), Vec<QueryResult>)> = Vec::new();
     let mut total_results = 0usize;
 
@@ -198,6 +230,26 @@ pub fn run_query(
                 let name = idx.id_to_name(*qid).unwrap_or("");
                 subset.contains(name)
             });
+        }
+
+        if let Some(ref syntenic) = syntenic_map {
+            let before = results.len();
+            results.retain(|(qid, qiv, _, _, _, _, _)| {
+                let q_name = idx.id_to_name(*qid).unwrap_or("");
+                let key = (target_name.clone(), q_name.to_string());
+                match syntenic.get(&key) {
+                    None => false,
+                    Some(spans) => {
+                        let qs = qiv.first as u64;
+                        let qe = qiv.last as u64;
+                        spans.iter().any(|&(cs, ce)| qs < ce && qe > cs)
+                    }
+                }
+            });
+            let dropped = before - results.len();
+            if dropped > 0 {
+                eprintln!("  syntenic-filter: dropped {dropped} non-syntenic results for {target_name}:{start}-{end}");
+            }
         }
 
         if min_chain_length > 0 {

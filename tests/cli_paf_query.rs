@@ -135,6 +135,86 @@ A\t100\t0\t100\t+\tB\t100\t0\t100\t90\t100\t255\tcg:Z:100M\n";
 }
 
 #[test]
+fn command_paf_query_syntenic_filter() {
+    use std::fs;
+    // PAF: A-B and C-B alignments, target B:0-100.
+    // Chain: only B->A (covers A's 0-100). No B->C chain.
+    // Without filter: A and C both present.
+    // With filter: only A present (C dropped, no syntenic chain B->C).
+    let paf = "A\t100\t0\t100\t+\tB\t100\t0\t100\t95\t100\t255\tcg:Z:100M\n\
+C\t100\t0\t100\t+\tB\t100\t0\t100\t90\t100\t255\tcg:Z:100M\n";
+    // chain header: chain score tName tSize tStrand tStart tEnd qName qSize qStrand qStart qEnd id
+    // then one block line "100" (size 100, no gap), then blank line.
+    let chain = "chain 100 B 100 + 0 100 A 100 + 0 100 1\n100\n\n";
+    let chain_path = "/tmp/pgr_syntenic.chain";
+    fs::write(chain_path, chain).unwrap();
+
+    // Without filter: both A and C.
+    let (stdout_no, _) = PgrCmd::new()
+        .args(&["paf", "query", "stdin", "B:0-100"])
+        .stdin(paf)
+        .run();
+    assert!(stdout_no.contains("A\t0\t0\t100\t+\tB"), "A without filter");
+    assert!(stdout_no.contains("C\t0\t0\t100\t+\tB"), "C without filter");
+
+    // With filter: only A (C has no B->C chain).
+    let (stdout_f, stderr) = PgrCmd::new()
+        .args(&[
+            "paf",
+            "query",
+            "stdin",
+            "B:0-100",
+            "--syntenic-filter",
+            chain_path,
+        ])
+        .stdin(paf)
+        .run();
+    assert!(
+        stdout_f.contains("A\t0\t0\t100\t+\tB"),
+        "A should be syntenic"
+    );
+    assert!(
+        !stdout_f.contains("C\t"),
+        "C should be dropped by syntenic-filter"
+    );
+    assert!(
+        stderr.contains("syntenic-filter: dropped"),
+        "should log dropped count"
+    );
+
+    let _ = fs::remove_file(chain_path);
+}
+
+#[test]
+fn command_paf_query_syntenic_filter_no_overlap() {
+    use std::fs;
+    // Chain B->A exists but query span (200-300) does NOT overlap A's query interval (0-100).
+    // With filter: A also dropped (no chain covers its query interval).
+    let paf = "A\t100\t0\t100\t+\tB\t100\t0\t100\t95\t100\t255\tcg:Z:100M\n";
+    let chain = "chain 100 B 100 + 0 100 A 1000 + 200 300 1\n100\n\n";
+    let chain_path = "/tmp/pgr_syntenic_nooverlap.chain";
+    fs::write(chain_path, chain).unwrap();
+
+    let (stdout, _stderr) = PgrCmd::new()
+        .args(&[
+            "paf",
+            "query",
+            "stdin",
+            "B:0-100",
+            "--syntenic-filter",
+            chain_path,
+        ])
+        .stdin(paf)
+        .run();
+    assert!(
+        !stdout.contains("A\t0\t0\t100\t+\tB"),
+        "A should be dropped: chain query span 200-300 does not overlap A's 0-100"
+    );
+
+    let _ = fs::remove_file(chain_path);
+}
+
+#[test]
 fn command_paf_query_subset_filter() {
     use std::fs;
     let paf = "A\t100\t0\t100\t+\tB\t100\t0\t100\t95\t100\t255\tcg:Z:100M\nC\t100\t0\t50\t+\tB\t100\t50\t100\t45\t50\t255\tcg:Z:50M\n";
