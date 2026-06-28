@@ -556,7 +556,7 @@ pgr paf genotype graph.gfa sample.fa  # 在图上基因分型
 |------|----------|------|--------|
 | **indel VCF** | ✅ 已实现（SNP + INS/DEL，1bp anchor，无左对齐） | `bcftools norm` 后处理规范化 | — 已完成 |
 | **`--syntenic-filter`** | 无 | 用 UCSC Chain/Net 验证 PAF 边，标低置信度；作为查询层可选装饰器（impg `with_chain_filter` 模式，见 [[impg.md]] §6.8.4），不启用时直通原始区间 | 中（pgr 独有优势） |
-| **`-m/--max-depth`** | BFS 默认无界 | 控制传递闭包深度（impg 默认 2） | 中（大 cohort 防爆炸） |
+| **`-m/--max-depth`** | ✅ 已实现（`add_query_args` 共享，默认 2，0=unlimited，5 子命令均暴露） | — | — 已完成 |
 | **`--min-transitive-len`** | 无 | 过滤短传递片段（impg 默认 101） | 中（同上） |
 | **rGFA tag**（SN/SO/SR） | V4a 缺失 | 给参考路径加 rGFA anchor tag | 低（与 minigraph 工具链互操作时再加） |
 | **stage 化管道** | 单命令 | impg `gfa:crush:sort` 风格字符串 | 低（CLAUDE.md "三次相似再抽象"原则，当前单命令够用） |
@@ -575,12 +575,12 @@ pgr paf genotype graph.gfa sample.fa  # 在图上基因分型
 ### 5.6 优先级路线图
 
 ```
-当前 (V1-V5) → 增量增强 (✅ indel VCF / --syntenic-filter / -m)
+当前 (V1-V5) → 增量增强 (✅ indel VCF / ✅ -m/--max-depth / --syntenic-filter)
             → V6 规模扩展 (4 万大肠杆菌基准 → 选 1-2 项 seqwish 优化)
             → V7 图质量 (graph-report → --smooth 评估)
             → V8 应用层 (genotyping，远期)
 ```
 
-**近期焦点**：indel VCF 已落地；下一项为 4 万大肠杆菌基准测试（验证 V4a/V4b 可扩展性）+ `--syntenic-filter` / `-m` 两项增量增强。
+**近期焦点**：indel VCF 与 `-m/--max-depth` 已落地；下一项为 4 万大肠杆菌基准测试（验证 V4a/V4b 可扩展性）+ `--syntenic-filter` 增量增强。
 V7/V8 视用户反馈与真实数据验证后再启动，不预先实现。
 

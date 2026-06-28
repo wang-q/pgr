@@ -89,6 +89,52 @@ fn command_paf_query_max_depth_1() {
 }
 
 #[test]
+fn command_paf_query_max_depth_short_m() {
+    // 3-hop chain: D(target) <- C <- B <- A. `-m 1` == `--max-depth 1`
+    // -> only 1-hop neighbor C reaches; B (2-hop) and A (3-hop) excluded.
+    let paf = "C\t100\t0\t100\t+\tD\t100\t0\t100\t90\t100\t255\tcg:Z:100M\n\
+B\t100\t0\t100\t+\tC\t100\t0\t100\t90\t100\t255\tcg:Z:100M\n\
+A\t100\t0\t100\t+\tB\t100\t0\t100\t90\t100\t255\tcg:Z:100M\n";
+    let (stdout, _) = PgrCmd::new()
+        .args(&["paf", "query", "stdin", "D:0-100", "-t", "-m", "1"])
+        .stdin(paf)
+        .run();
+    assert!(stdout.contains("C\t0\t0\t100\t+\tD"), "C (1-hop) not found");
+    assert!(!stdout.contains("B\t"), "B (2-hop) should NOT appear: -m 1");
+    assert!(!stdout.contains("A\t"), "A (3-hop) should NOT appear: -m 1");
+}
+
+#[test]
+fn command_paf_query_max_depth_unlimited() {
+    // 3-hop chain: D(target) <- C <- B <- A.
+    // Default --max-depth 2 reaches C (1-hop) and B (2-hop) but NOT A (3-hop).
+    // --max-depth 0 (unlimited) reaches A.
+    let paf = "C\t100\t0\t100\t+\tD\t100\t0\t100\t90\t100\t255\tcg:Z:100M\n\
+B\t100\t0\t100\t+\tC\t100\t0\t100\t90\t100\t255\tcg:Z:100M\n\
+A\t100\t0\t100\t+\tB\t100\t0\t100\t90\t100\t255\tcg:Z:100M\n";
+    // Default depth 2: A (3-hop) excluded.
+    let (stdout_default, _) = PgrCmd::new()
+        .args(&["paf", "query", "stdin", "D:0-100", "-t"])
+        .stdin(paf)
+        .run();
+    assert!(stdout_default.contains("C\t0\t0\t100\t+\tD"), "C (1-hop)");
+    assert!(stdout_default.contains("B\t0\t0\t100\t+\tC"), "B (2-hop)");
+    assert!(
+        !stdout_default.contains("A\t"),
+        "A (3-hop) should NOT appear at default max-depth=2"
+    );
+    // Unlimited: A (3-hop) included.
+    let (stdout_unlim, _) = PgrCmd::new()
+        .args(&["paf", "query", "stdin", "D:0-100", "-t", "-m", "0"])
+        .stdin(paf)
+        .run();
+    assert!(
+        stdout_unlim.contains("A\t0\t0\t100\t+\tB"),
+        "A (3-hop) at -m 0"
+    );
+}
+
+#[test]
 fn command_paf_query_subset_filter() {
     use std::fs;
     let paf = "A\t100\t0\t100\t+\tB\t100\t0\t100\t95\t100\t255\tcg:Z:100M\nC\t100\t0\t50\t+\tB\t100\t50\t100\t45\t50\t255\tcg:Z:50M\n";

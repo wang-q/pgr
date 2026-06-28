@@ -35,6 +35,7 @@ pub fn add_query_args(cmd: Command) -> Command {
     .arg(
         Arg::new("max_depth")
             .long("max-depth")
+            .short('m')
             .num_args(1)
             .default_value("2")
             .value_parser(clap::value_parser!(u16))
