@@ -32,8 +32,9 @@ fn command_maf_to_paf_real_multiz_rm11() {
 fn command_paf_query_real_multiz_transitive() {
     use std::fs;
     use std::process::Command;
-    let paf_path = "/tmp/pgr_real_test_merged.paf";
-    let idx_path = "/tmp/pgr_real_test_merged.paf.idx";
+    let temp = tempfile::TempDir::new().unwrap();
+    let paf_path = temp.path().join("merged.paf");
+    let idx_path = temp.path().join("merged.paf.idx");
     let pgr = std::env::current_dir().unwrap().join("target/debug/pgr");
     let spar_out = Command::new(&pgr)
         .args(["maf", "to-paf", "tests/multiz/S288cvsSpar.maf"])
@@ -45,16 +46,22 @@ fn command_paf_query_real_multiz_transitive() {
         .unwrap();
     let mut merged = spar_out.stdout.clone();
     merged.extend_from_slice(&rm11_out.stdout);
-    fs::write(paf_path, &merged).unwrap();
+    fs::write(&paf_path, &merged).unwrap();
     let (_, stderr) = PgrCmd::new()
-        .args(&["paf", "index", paf_path, "-o", idx_path])
+        .args(&[
+            "paf",
+            "index",
+            paf_path.to_str().unwrap(),
+            "-o",
+            idx_path.to_str().unwrap(),
+        ])
         .run();
     assert!(stderr.contains("saved to"));
     let (stdout, stderr) = PgrCmd::new()
         .args(&[
             "paf",
             "query",
-            idx_path,
+            idx_path.to_str().unwrap(),
             "S288c.I:26000-30000",
             "--transitive",
         ])
@@ -62,6 +69,4 @@ fn command_paf_query_real_multiz_transitive() {
     assert!(stderr.contains("Loading index"));
     assert!(stdout.contains("Spar.gi_29362594"), "Spar not found");
     assert!(stdout.contains("RM11_1a.scaffold_17"), "RM11 not found");
-    let _ = fs::remove_file(paf_path);
-    let _ = fs::remove_file(idx_path);
 }

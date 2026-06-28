@@ -6,14 +6,17 @@ use common::PgrCmd;
 
 // ── helper ───────────────────────────────────────────────────────
 
-/// Write `content` to a plain `path`, then BGZF-compress it via `pgr fa gz`
-/// (which also creates the .gzi index required for random access).
-fn write_bgzf_fa(path_no_gz: &str, content: &str) -> String {
+/// Write `content` to `<dir>/<name>.fa`, then BGZF-compress it via `pgr fa gz`
+/// (which also creates the .gzi index required for random access). Returns
+/// the path to the produced `.fa.gz` file.
+fn write_bgzf_fa(dir: &std::path::Path, name: &str, content: &str) -> String {
     use std::fs;
-    fs::write(path_no_gz, content).unwrap();
-    let (out, _) = PgrCmd::new().args(&["fa", "gz", path_no_gz]).run();
+    let fa_path = dir.join(format!("{name}.fa"));
+    fs::write(&fa_path, content).unwrap();
+    let fa_str = fa_path.to_string_lossy().into_owned();
+    let (out, _) = PgrCmd::new().args(&["fa", "gz", &fa_str]).run();
     let _ = out;
-    let gz_path = format!("{path_no_gz}.gz");
+    let gz_path = format!("{fa_str}.gz");
     assert!(
         std::path::Path::new(&gz_path).exists(),
         "pgr fa gz failed to produce {gz_path}"
@@ -32,17 +35,27 @@ fn command_paf_to_vcf_with_snp() {
     // A-B and A-C alignments, query B:0-10 --transitive.
     // VCF should emit one row: CHROM=B, POS=5 (1-based), REF=A, ALT=T,
     // GT: B=0, A=0, C=1.
+    let temp = tempfile::TempDir::new().unwrap();
+    let dir = temp.path();
     let paf = "\
 A\t10\t0\t10\t+\tB\t10\t0\t10\t10\t10\t255\tcg:Z:10=\n\
 C\t10\t0\t10\t+\tA\t10\t0\t10\t9\t10\t255\tcg:Z:10M\n";
-    let a_fa = write_bgzf_fa("/tmp/pgr_vcf_snp_A.fa", ">A\nACGTACGTAC\n");
-    let b_fa = write_bgzf_fa("/tmp/pgr_vcf_snp_B.fa", ">B\nACGTACGTAC\n");
-    let c_fa = write_bgzf_fa("/tmp/pgr_vcf_snp_C.fa", ">C\nACGTTCGTAC\n");
-    let tsv = "/tmp/pgr_vcf_snp.tsv";
-    fs::write(tsv, format!("A\t{a_fa}\nB\t{b_fa}\nC\t{c_fa}\n")).unwrap();
+    let a_fa = write_bgzf_fa(dir, "A", ">A\nACGTACGTAC\n");
+    let b_fa = write_bgzf_fa(dir, "B", ">B\nACGTACGTAC\n");
+    let c_fa = write_bgzf_fa(dir, "C", ">C\nACGTTCGTAC\n");
+    let tsv = dir.join("in.tsv");
+    fs::write(&tsv, format!("A\t{a_fa}\nB\t{b_fa}\nC\t{c_fa}\n")).unwrap();
 
     let (stdout, _stderr) = PgrCmd::new()
-        .args(&["paf", "to-vcf", "stdin", "B:0-10", "-t", "-f", tsv])
+        .args(&[
+            "paf",
+            "to-vcf",
+            "stdin",
+            "B:0-10",
+            "-t",
+            "-f",
+            tsv.to_str().unwrap(),
+        ])
         .stdin(paf)
         .run();
 
@@ -84,37 +97,33 @@ C\t10\t0\t10\t+\tA\t10\t0\t10\t9\t10\t255\tcg:Z:10M\n";
     assert_eq!(fields[9], "0", "B (target=REF) -> GT 0");
     assert_eq!(fields[10], "0", "A (identical to REF) -> GT 0");
     assert_eq!(fields[11], "1", "C (ALT T) -> GT 1");
-
-    let _ = fs::remove_file("/tmp/pgr_vcf_snp_A.fa");
-    let _ = fs::remove_file("/tmp/pgr_vcf_snp_B.fa");
-    let _ = fs::remove_file("/tmp/pgr_vcf_snp_C.fa");
-    let _ = fs::remove_file(&a_fa);
-    let _ = fs::remove_file(&b_fa);
-    let _ = fs::remove_file(&c_fa);
-    let _ = fs::remove_file(format!("{a_fa}.gzi"));
-    let _ = fs::remove_file(format!("{b_fa}.gzi"));
-    let _ = fs::remove_file(format!("{c_fa}.gzi"));
-    let _ = fs::remove_file(tsv);
-    let _ = fs::remove_file(format!("{a_fa}.loc"));
-    let _ = fs::remove_file(format!("{b_fa}.loc"));
-    let _ = fs::remove_file(format!("{c_fa}.loc"));
 }
 
 #[test]
 fn command_paf_to_vcf_no_variant() {
     use std::fs;
     // All three genomes identical -> no substitution -> body empty (header only).
+    let temp = tempfile::TempDir::new().unwrap();
+    let dir = temp.path();
     let paf = "\
 A\t10\t0\t10\t+\tB\t10\t0\t10\t10\t10\t255\tcg:Z:10=\n\
 C\t10\t0\t10\t+\tA\t10\t0\t10\t10\t10\t255\tcg:Z:10=\n";
-    let a_fa = write_bgzf_fa("/tmp/pgr_vcf_novar_A.fa", ">A\nACGTACGTAC\n");
-    let b_fa = write_bgzf_fa("/tmp/pgr_vcf_novar_B.fa", ">B\nACGTACGTAC\n");
-    let c_fa = write_bgzf_fa("/tmp/pgr_vcf_novar_C.fa", ">C\nACGTACGTAC\n");
-    let tsv = "/tmp/pgr_vcf_novar.tsv";
-    fs::write(tsv, format!("A\t{a_fa}\nB\t{b_fa}\nC\t{c_fa}\n")).unwrap();
+    let a_fa = write_bgzf_fa(dir, "A", ">A\nACGTACGTAC\n");
+    let b_fa = write_bgzf_fa(dir, "B", ">B\nACGTACGTAC\n");
+    let c_fa = write_bgzf_fa(dir, "C", ">C\nACGTACGTAC\n");
+    let tsv = dir.join("in.tsv");
+    fs::write(&tsv, format!("A\t{a_fa}\nB\t{b_fa}\nC\t{c_fa}\n")).unwrap();
 
     let (stdout, _stderr) = PgrCmd::new()
-        .args(&["paf", "to-vcf", "stdin", "B:0-10", "-t", "-f", tsv])
+        .args(&[
+            "paf",
+            "to-vcf",
+            "stdin",
+            "B:0-10",
+            "-t",
+            "-f",
+            tsv.to_str().unwrap(),
+        ])
         .stdin(paf)
         .run();
 
@@ -126,20 +135,6 @@ C\t10\t0\t10\t+\tA\t10\t0\t10\t10\t10\t255\tcg:Z:10=\n";
         body.is_empty(),
         "expected no variants for identical sequences, got: {body:?}"
     );
-
-    let _ = fs::remove_file("/tmp/pgr_vcf_novar_A.fa");
-    let _ = fs::remove_file("/tmp/pgr_vcf_novar_B.fa");
-    let _ = fs::remove_file("/tmp/pgr_vcf_novar_C.fa");
-    let _ = fs::remove_file(&a_fa);
-    let _ = fs::remove_file(&b_fa);
-    let _ = fs::remove_file(&c_fa);
-    let _ = fs::remove_file(format!("{a_fa}.gzi"));
-    let _ = fs::remove_file(format!("{b_fa}.gzi"));
-    let _ = fs::remove_file(format!("{c_fa}.gzi"));
-    let _ = fs::remove_file(tsv);
-    let _ = fs::remove_file(format!("{a_fa}.loc"));
-    let _ = fs::remove_file(format!("{b_fa}.loc"));
-    let _ = fs::remove_file(format!("{c_fa}.loc"));
 }
 
 #[test]
@@ -152,17 +147,27 @@ fn command_paf_to_vcf_with_del() {
     // POA MSA: B/A = ACGTACGTAC, C = ACGT-CGTAC (gap at col 4).
     // DEL variant: anchor=T (col 3), REF="TA", ALT="T", POS=4 (1-based).
     // GT: B=0, A=0, C=1.
+    let temp = tempfile::TempDir::new().unwrap();
+    let dir = temp.path();
     let paf = "\
 A\t10\t0\t10\t+\tB\t10\t0\t10\t10\t10\t255\tcg:Z:10=\n\
 C\t9\t0\t9\t+\tA\t10\t0\t10\t9\t10\t255\tcg:Z:4=1D5=\n";
-    let a_fa = write_bgzf_fa("/tmp/pgr_vcf_del_A.fa", ">A\nACGTACGTAC\n");
-    let b_fa = write_bgzf_fa("/tmp/pgr_vcf_del_B.fa", ">B\nACGTACGTAC\n");
-    let c_fa = write_bgzf_fa("/tmp/pgr_vcf_del_C.fa", ">C\nACGTCGTAC\n");
-    let tsv = "/tmp/pgr_vcf_del.tsv";
-    fs::write(tsv, format!("A\t{a_fa}\nB\t{b_fa}\nC\t{c_fa}\n")).unwrap();
+    let a_fa = write_bgzf_fa(dir, "A", ">A\nACGTACGTAC\n");
+    let b_fa = write_bgzf_fa(dir, "B", ">B\nACGTACGTAC\n");
+    let c_fa = write_bgzf_fa(dir, "C", ">C\nACGTCGTAC\n");
+    let tsv = dir.join("in.tsv");
+    fs::write(&tsv, format!("A\t{a_fa}\nB\t{b_fa}\nC\t{c_fa}\n")).unwrap();
 
     let (stdout, _stderr) = PgrCmd::new()
-        .args(&["paf", "to-vcf", "stdin", "B:0-10", "-t", "-f", tsv])
+        .args(&[
+            "paf",
+            "to-vcf",
+            "stdin",
+            "B:0-10",
+            "-t",
+            "-f",
+            tsv.to_str().unwrap(),
+        ])
         .stdin(paf)
         .run();
 
@@ -180,20 +185,6 @@ C\t9\t0\t9\t+\tA\t10\t0\t10\t9\t10\t255\tcg:Z:4=1D5=\n";
     assert_eq!(fields[9], "0", "B (target=REF) -> GT 0");
     assert_eq!(fields[10], "0", "A (identical to REF) -> GT 0");
     assert_eq!(fields[11], "1", "C (deletion) -> GT 1");
-
-    let _ = fs::remove_file("/tmp/pgr_vcf_del_A.fa");
-    let _ = fs::remove_file("/tmp/pgr_vcf_del_B.fa");
-    let _ = fs::remove_file("/tmp/pgr_vcf_del_C.fa");
-    let _ = fs::remove_file(&a_fa);
-    let _ = fs::remove_file(&b_fa);
-    let _ = fs::remove_file(&c_fa);
-    let _ = fs::remove_file(format!("{a_fa}.gzi"));
-    let _ = fs::remove_file(format!("{b_fa}.gzi"));
-    let _ = fs::remove_file(format!("{c_fa}.gzi"));
-    let _ = fs::remove_file(tsv);
-    let _ = fs::remove_file(format!("{a_fa}.loc"));
-    let _ = fs::remove_file(format!("{b_fa}.loc"));
-    let _ = fs::remove_file(format!("{c_fa}.loc"));
 }
 
 #[test]
@@ -206,17 +197,27 @@ fn command_paf_to_vcf_with_ins() {
     // POA MSA: B/A = ACGTA-CGTAC, C = ACGTAGCGTAC (gap in target at col 5).
     // INS variant: anchor=A (col 4), REF="A", ALT="AG", POS=5 (1-based).
     // GT: B=0, A=0, C=1.
+    let temp = tempfile::TempDir::new().unwrap();
+    let dir = temp.path();
     let paf = "\
 A\t10\t0\t10\t+\tB\t10\t0\t10\t10\t10\t255\tcg:Z:10=\n\
 C\t11\t0\t11\t+\tA\t10\t0\t10\t10\t11\t255\tcg:Z:5=1I5=\n";
-    let a_fa = write_bgzf_fa("/tmp/pgr_vcf_ins_A.fa", ">A\nACGTACGTAC\n");
-    let b_fa = write_bgzf_fa("/tmp/pgr_vcf_ins_B.fa", ">B\nACGTACGTAC\n");
-    let c_fa = write_bgzf_fa("/tmp/pgr_vcf_ins_C.fa", ">C\nACGTAGCGTAC\n");
-    let tsv = "/tmp/pgr_vcf_ins.tsv";
-    fs::write(tsv, format!("A\t{a_fa}\nB\t{b_fa}\nC\t{c_fa}\n")).unwrap();
+    let a_fa = write_bgzf_fa(dir, "A", ">A\nACGTACGTAC\n");
+    let b_fa = write_bgzf_fa(dir, "B", ">B\nACGTACGTAC\n");
+    let c_fa = write_bgzf_fa(dir, "C", ">C\nACGTAGCGTAC\n");
+    let tsv = dir.join("in.tsv");
+    fs::write(&tsv, format!("A\t{a_fa}\nB\t{b_fa}\nC\t{c_fa}\n")).unwrap();
 
     let (stdout, _stderr) = PgrCmd::new()
-        .args(&["paf", "to-vcf", "stdin", "B:0-10", "-t", "-f", tsv])
+        .args(&[
+            "paf",
+            "to-vcf",
+            "stdin",
+            "B:0-10",
+            "-t",
+            "-f",
+            tsv.to_str().unwrap(),
+        ])
         .stdin(paf)
         .run();
 
@@ -234,20 +235,6 @@ C\t11\t0\t11\t+\tA\t10\t0\t10\t10\t11\t255\tcg:Z:5=1I5=\n";
     assert_eq!(fields[9], "0", "B (target=REF) -> GT 0");
     assert_eq!(fields[10], "0", "A (identical to REF) -> GT 0");
     assert_eq!(fields[11], "1", "C (insertion) -> GT 1");
-
-    let _ = fs::remove_file("/tmp/pgr_vcf_ins_A.fa");
-    let _ = fs::remove_file("/tmp/pgr_vcf_ins_B.fa");
-    let _ = fs::remove_file("/tmp/pgr_vcf_ins_C.fa");
-    let _ = fs::remove_file(&a_fa);
-    let _ = fs::remove_file(&b_fa);
-    let _ = fs::remove_file(&c_fa);
-    let _ = fs::remove_file(format!("{a_fa}.gzi"));
-    let _ = fs::remove_file(format!("{b_fa}.gzi"));
-    let _ = fs::remove_file(format!("{c_fa}.gzi"));
-    let _ = fs::remove_file(tsv);
-    let _ = fs::remove_file(format!("{a_fa}.loc"));
-    let _ = fs::remove_file(format!("{b_fa}.loc"));
-    let _ = fs::remove_file(format!("{c_fa}.loc"));
 }
 
 #[test]
@@ -261,17 +248,27 @@ fn command_paf_to_vcf_left_align_ins() {
     // Anchor = C (col 2). left_align_indels cannot shift further left
     //   (preceding base A != inserted base T). So POS=3, REF=C, ALT=CT.
     // GT: B=0, A=0, C=1.
+    let temp = tempfile::TempDir::new().unwrap();
+    let dir = temp.path();
     let paf = "\
 A\t14\t0\t14\t+\tB\t14\t0\t14\t14\t14\t255\tcg:Z:14=\n\
 C\t15\t0\t15\t+\tA\t14\t0\t14\t14\t15\t255\tcg:Z:11=1I3=\n";
-    let a_fa = write_bgzf_fa("/tmp/pgr_vcf_la_ins_A.fa", ">A\nGACTTTTTTTTCAC\n");
-    let b_fa = write_bgzf_fa("/tmp/pgr_vcf_la_ins_B.fa", ">B\nGACTTTTTTTTCAC\n");
-    let c_fa = write_bgzf_fa("/tmp/pgr_vcf_la_ins_C.fa", ">C\nGACTTTTTTTTTCAC\n");
-    let tsv = "/tmp/pgr_vcf_la_ins.tsv";
-    fs::write(tsv, format!("A\t{a_fa}\nB\t{b_fa}\nC\t{c_fa}\n")).unwrap();
+    let a_fa = write_bgzf_fa(dir, "A", ">A\nGACTTTTTTTTCAC\n");
+    let b_fa = write_bgzf_fa(dir, "B", ">B\nGACTTTTTTTTCAC\n");
+    let c_fa = write_bgzf_fa(dir, "C", ">C\nGACTTTTTTTTTCAC\n");
+    let tsv = dir.join("in.tsv");
+    fs::write(&tsv, format!("A\t{a_fa}\nB\t{b_fa}\nC\t{c_fa}\n")).unwrap();
 
     let (stdout, _stderr) = PgrCmd::new()
-        .args(&["paf", "to-vcf", "stdin", "B:0-14", "-t", "-f", tsv])
+        .args(&[
+            "paf",
+            "to-vcf",
+            "stdin",
+            "B:0-14",
+            "-t",
+            "-f",
+            tsv.to_str().unwrap(),
+        ])
         .stdin(paf)
         .run();
 
@@ -289,20 +286,6 @@ C\t15\t0\t15\t+\tA\t14\t0\t14\t14\t15\t255\tcg:Z:11=1I3=\n";
     assert_eq!(fields[9], "0", "B (target=REF) -> GT 0");
     assert_eq!(fields[10], "0", "A (identical to REF) -> GT 0");
     assert_eq!(fields[11], "1", "C (insertion) -> GT 1");
-
-    let _ = fs::remove_file("/tmp/pgr_vcf_la_ins_A.fa");
-    let _ = fs::remove_file("/tmp/pgr_vcf_la_ins_B.fa");
-    let _ = fs::remove_file("/tmp/pgr_vcf_la_ins_C.fa");
-    let _ = fs::remove_file(&a_fa);
-    let _ = fs::remove_file(&b_fa);
-    let _ = fs::remove_file(&c_fa);
-    let _ = fs::remove_file(format!("{a_fa}.gzi"));
-    let _ = fs::remove_file(format!("{b_fa}.gzi"));
-    let _ = fs::remove_file(format!("{c_fa}.gzi"));
-    let _ = fs::remove_file(tsv);
-    let _ = fs::remove_file(format!("{a_fa}.loc"));
-    let _ = fs::remove_file(format!("{b_fa}.loc"));
-    let _ = fs::remove_file(format!("{c_fa}.loc"));
 }
 
 #[test]
@@ -316,17 +299,27 @@ fn command_paf_to_vcf_left_align_del() {
     // Anchor = C (col 2). left_align_indels cannot shift further left
     //   (preceding base A != deleted base T). So POS=3, REF=CT, ALT=C.
     // GT: B=0, A=0, C=1.
+    let temp = tempfile::TempDir::new().unwrap();
+    let dir = temp.path();
     let paf = "\
 A\t15\t0\t15\t+\tB\t15\t0\t15\t15\t15\t255\tcg:Z:15=\n\
 C\t14\t0\t14\t+\tA\t15\t0\t15\t14\t15\t255\tcg:Z:11=1D3=\n";
-    let a_fa = write_bgzf_fa("/tmp/pgr_vcf_la_del_A.fa", ">A\nGACTTTTTTTTTCAC\n");
-    let b_fa = write_bgzf_fa("/tmp/pgr_vcf_la_del_B.fa", ">B\nGACTTTTTTTTTCAC\n");
-    let c_fa = write_bgzf_fa("/tmp/pgr_vcf_la_del_C.fa", ">C\nGACTTTTTTTTCAC\n");
-    let tsv = "/tmp/pgr_vcf_la_del.tsv";
-    fs::write(tsv, format!("A\t{a_fa}\nB\t{b_fa}\nC\t{c_fa}\n")).unwrap();
+    let a_fa = write_bgzf_fa(dir, "A", ">A\nGACTTTTTTTTTCAC\n");
+    let b_fa = write_bgzf_fa(dir, "B", ">B\nGACTTTTTTTTTCAC\n");
+    let c_fa = write_bgzf_fa(dir, "C", ">C\nGACTTTTTTTTCAC\n");
+    let tsv = dir.join("in.tsv");
+    fs::write(&tsv, format!("A\t{a_fa}\nB\t{b_fa}\nC\t{c_fa}\n")).unwrap();
 
     let (stdout, _stderr) = PgrCmd::new()
-        .args(&["paf", "to-vcf", "stdin", "B:0-15", "-t", "-f", tsv])
+        .args(&[
+            "paf",
+            "to-vcf",
+            "stdin",
+            "B:0-15",
+            "-t",
+            "-f",
+            tsv.to_str().unwrap(),
+        ])
         .stdin(paf)
         .run();
 
@@ -344,18 +337,4 @@ C\t14\t0\t14\t+\tA\t15\t0\t15\t14\t15\t255\tcg:Z:11=1D3=\n";
     assert_eq!(fields[9], "0", "B (target=REF) -> GT 0");
     assert_eq!(fields[10], "0", "A (identical to REF) -> GT 0");
     assert_eq!(fields[11], "1", "C (deletion) -> GT 1");
-
-    let _ = fs::remove_file("/tmp/pgr_vcf_la_del_A.fa");
-    let _ = fs::remove_file("/tmp/pgr_vcf_la_del_B.fa");
-    let _ = fs::remove_file("/tmp/pgr_vcf_la_del_C.fa");
-    let _ = fs::remove_file(&a_fa);
-    let _ = fs::remove_file(&b_fa);
-    let _ = fs::remove_file(&c_fa);
-    let _ = fs::remove_file(format!("{a_fa}.gzi"));
-    let _ = fs::remove_file(format!("{b_fa}.gzi"));
-    let _ = fs::remove_file(format!("{c_fa}.gzi"));
-    let _ = fs::remove_file(tsv);
-    let _ = fs::remove_file(format!("{a_fa}.loc"));
-    let _ = fs::remove_file(format!("{b_fa}.loc"));
-    let _ = fs::remove_file(format!("{c_fa}.loc"));
 }

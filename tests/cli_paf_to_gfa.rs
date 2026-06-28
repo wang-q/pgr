@@ -6,14 +6,17 @@ use common::PgrCmd;
 
 // ── helper ───────────────────────────────────────────────────────
 
-/// Write `content` to a plain `path`, then BGZF-compress it via `pgr fa gz`
-/// (which also creates the .gzi index required for random access).
-fn write_bgzf_fa(path_no_gz: &str, content: &str) -> String {
+/// Write `content` to `<dir>/<name>.fa`, then BGZF-compress it via `pgr fa gz`
+/// (which also creates the .gzi index required for random access). Returns
+/// the path to the produced `.fa.gz` file.
+fn write_bgzf_fa(dir: &std::path::Path, name: &str, content: &str) -> String {
     use std::fs;
-    fs::write(path_no_gz, content).unwrap();
-    let (out, _) = PgrCmd::new().args(&["fa", "gz", path_no_gz]).run();
+    let fa_path = dir.join(format!("{name}.fa"));
+    fs::write(&fa_path, content).unwrap();
+    let fa_str = fa_path.to_string_lossy().into_owned();
+    let (out, _) = PgrCmd::new().args(&["fa", "gz", &fa_str]).run();
     let _ = out;
-    let gz_path = format!("{path_no_gz}.gz");
+    let gz_path = format!("{fa_str}.gz");
     assert!(
         std::path::Path::new(&gz_path).exists(),
         "pgr fa gz failed to produce {gz_path}"
@@ -28,14 +31,24 @@ fn command_paf_to_gfa_identical() {
     use std::fs;
     // Two identical sequences -> unchopped to a single 10-bp segment, no
     // edges, 2 paths traversing that one segment.
+    let temp = tempfile::TempDir::new().unwrap();
+    let dir = temp.path();
     let paf = "A\t10\t0\t10\t+\tB\t10\t0\t10\t10\t10\t255\tcg:Z:10=\n";
-    let a_fa = write_bgzf_fa("/tmp/pgr_gfa_id_A.fa", ">A\nACGTACGTAC\n");
-    let b_fa = write_bgzf_fa("/tmp/pgr_gfa_id_B.fa", ">B\nACGTACGTAC\n");
-    let tsv = "/tmp/pgr_gfa_id.tsv";
-    fs::write(tsv, format!("A\t{a_fa}\nB\t{b_fa}\n")).unwrap();
+    let a_fa = write_bgzf_fa(dir, "A", ">A\nACGTACGTAC\n");
+    let b_fa = write_bgzf_fa(dir, "B", ">B\nACGTACGTAC\n");
+    let tsv = dir.join("in.tsv");
+    fs::write(&tsv, format!("A\t{a_fa}\nB\t{b_fa}\n")).unwrap();
 
     let (stdout, _stderr) = PgrCmd::new()
-        .args(&["paf", "to-gfa", "stdin", "B:0-10", "-t", "-f", tsv])
+        .args(&[
+            "paf",
+            "to-gfa",
+            "stdin",
+            "B:0-10",
+            "-t",
+            "-f",
+            tsv.to_str().unwrap(),
+        ])
         .stdin(paf)
         .run();
 
@@ -80,16 +93,6 @@ fn command_paf_to_gfa_identical() {
         assert_eq!(fields[2], "1+", "path should visit only segment 1: {p}");
         assert!(fields[3].is_empty(), "path should have no overlaps: {p}");
     }
-
-    let _ = fs::remove_file("/tmp/pgr_gfa_id_A.fa");
-    let _ = fs::remove_file("/tmp/pgr_gfa_id_B.fa");
-    let _ = fs::remove_file(&a_fa);
-    let _ = fs::remove_file(&b_fa);
-    let _ = fs::remove_file(format!("{a_fa}.gzi"));
-    let _ = fs::remove_file(format!("{b_fa}.gzi"));
-    let _ = fs::remove_file(tsv);
-    let _ = fs::remove_file(format!("{a_fa}.loc"));
-    let _ = fs::remove_file(format!("{b_fa}.loc"));
 }
 
 #[test]
@@ -100,17 +103,27 @@ fn command_paf_to_gfa_with_snp() {
     // C = ACGTTCGTAC (SNP at pos 4: A->T)
     // After unchopping: 4 segments (ACGT, A, T, CGTAC), 4 edges, 3 paths.
     // The SNP forms a bubble: seg2(A) and seg3(T) share in={1}, out={4}.
+    let temp = tempfile::TempDir::new().unwrap();
+    let dir = temp.path();
     let paf = "\
 A\t10\t0\t10\t+\tB\t10\t0\t10\t10\t10\t255\tcg:Z:10=\n\
 C\t10\t0\t10\t+\tA\t10\t0\t10\t9\t10\t255\tcg:Z:10M\n";
-    let a_fa = write_bgzf_fa("/tmp/pgr_gfa_snp_A.fa", ">A\nACGTACGTAC\n");
-    let b_fa = write_bgzf_fa("/tmp/pgr_gfa_snp_B.fa", ">B\nACGTACGTAC\n");
-    let c_fa = write_bgzf_fa("/tmp/pgr_gfa_snp_C.fa", ">C\nACGTTCGTAC\n");
-    let tsv = "/tmp/pgr_gfa_snp.tsv";
-    fs::write(tsv, format!("A\t{a_fa}\nB\t{b_fa}\nC\t{c_fa}\n")).unwrap();
+    let a_fa = write_bgzf_fa(dir, "A", ">A\nACGTACGTAC\n");
+    let b_fa = write_bgzf_fa(dir, "B", ">B\nACGTACGTAC\n");
+    let c_fa = write_bgzf_fa(dir, "C", ">C\nACGTTCGTAC\n");
+    let tsv = dir.join("in.tsv");
+    fs::write(&tsv, format!("A\t{a_fa}\nB\t{b_fa}\nC\t{c_fa}\n")).unwrap();
 
     let (stdout, _stderr) = PgrCmd::new()
-        .args(&["paf", "to-gfa", "stdin", "B:0-10", "-t", "-f", tsv])
+        .args(&[
+            "paf",
+            "to-gfa",
+            "stdin",
+            "B:0-10",
+            "-t",
+            "-f",
+            tsv.to_str().unwrap(),
+        ])
         .stdin(paf)
         .run();
 
@@ -195,20 +208,6 @@ C\t10\t0\t10\t+\tA\t10\t0\t10\t9\t10\t255\tcg:Z:10M\n";
         c_path.iter().any(|s| s.starts_with("3+")),
         "C should traverse segment 3 (T allele): {c_path:?}"
     );
-
-    let _ = fs::remove_file("/tmp/pgr_gfa_snp_A.fa");
-    let _ = fs::remove_file("/tmp/pgr_gfa_snp_B.fa");
-    let _ = fs::remove_file("/tmp/pgr_gfa_snp_C.fa");
-    let _ = fs::remove_file(&a_fa);
-    let _ = fs::remove_file(&b_fa);
-    let _ = fs::remove_file(&c_fa);
-    let _ = fs::remove_file(format!("{a_fa}.gzi"));
-    let _ = fs::remove_file(format!("{b_fa}.gzi"));
-    let _ = fs::remove_file(format!("{c_fa}.gzi"));
-    let _ = fs::remove_file(tsv);
-    let _ = fs::remove_file(format!("{a_fa}.loc"));
-    let _ = fs::remove_file(format!("{b_fa}.loc"));
-    let _ = fs::remove_file(format!("{c_fa}.loc"));
 }
 
 #[test]
@@ -218,18 +217,27 @@ fn command_paf_to_gfa_crush() {
     // The SNP bubble (seg2=A, seg3=T) collapses to one segment (A, the
     // higher-weight allele: B+A=2 vs C=1). Paths through T are rewritten
     // to A, losing base-level ALT info.
+    let temp = tempfile::TempDir::new().unwrap();
+    let dir = temp.path();
     let paf = "\
 A\t10\t0\t10\t+\tB\t10\t0\t10\t10\t10\t255\tcg:Z:10=\n\
 C\t10\t0\t10\t+\tA\t10\t0\t10\t9\t10\t255\tcg:Z:10M\n";
-    let a_fa = write_bgzf_fa("/tmp/pgr_gfa_crush_A.fa", ">A\nACGTACGTAC\n");
-    let b_fa = write_bgzf_fa("/tmp/pgr_gfa_crush_B.fa", ">B\nACGTACGTAC\n");
-    let c_fa = write_bgzf_fa("/tmp/pgr_gfa_crush_C.fa", ">C\nACGTTCGTAC\n");
-    let tsv = "/tmp/pgr_gfa_crush.tsv";
-    fs::write(tsv, format!("A\t{a_fa}\nB\t{b_fa}\nC\t{c_fa}\n")).unwrap();
+    let a_fa = write_bgzf_fa(dir, "A", ">A\nACGTACGTAC\n");
+    let b_fa = write_bgzf_fa(dir, "B", ">B\nACGTACGTAC\n");
+    let c_fa = write_bgzf_fa(dir, "C", ">C\nACGTTCGTAC\n");
+    let tsv = dir.join("in.tsv");
+    fs::write(&tsv, format!("A\t{a_fa}\nB\t{b_fa}\nC\t{c_fa}\n")).unwrap();
 
     let (stdout, _stderr) = PgrCmd::new()
         .args(&[
-            "paf", "to-gfa", "stdin", "B:0-10", "-t", "-f", tsv, "--crush",
+            "paf",
+            "to-gfa",
+            "stdin",
+            "B:0-10",
+            "-t",
+            "-f",
+            tsv.to_str().unwrap(),
+            "--crush",
         ])
         .stdin(paf)
         .run();
@@ -275,20 +283,6 @@ C\t10\t0\t10\t+\tA\t10\t0\t10\t9\t10\t255\tcg:Z:10M\n";
         paths.iter().all(|p| *p == first),
         "all paths should be identical after crush: {paths:?}"
     );
-
-    let _ = fs::remove_file("/tmp/pgr_gfa_crush_A.fa");
-    let _ = fs::remove_file("/tmp/pgr_gfa_crush_B.fa");
-    let _ = fs::remove_file("/tmp/pgr_gfa_crush_C.fa");
-    let _ = fs::remove_file(&a_fa);
-    let _ = fs::remove_file(&b_fa);
-    let _ = fs::remove_file(&c_fa);
-    let _ = fs::remove_file(format!("{a_fa}.gzi"));
-    let _ = fs::remove_file(format!("{b_fa}.gzi"));
-    let _ = fs::remove_file(format!("{c_fa}.gzi"));
-    let _ = fs::remove_file(tsv);
-    let _ = fs::remove_file(format!("{a_fa}.loc"));
-    let _ = fs::remove_file(format!("{b_fa}.loc"));
-    let _ = fs::remove_file(format!("{c_fa}.loc"));
 }
 
 // ── GFA path spelling round-trip ─────────────────────────────────
@@ -370,14 +364,24 @@ fn command_paf_to_gfa_roundtrip_identical() {
     use std::fs;
     // Two identical sequences -> one segment, two paths. Each path must
     // spell back the original 10-bp sequence.
+    let temp = tempfile::TempDir::new().unwrap();
+    let dir = temp.path();
     let paf = "A\t10\t0\t10\t+\tB\t10\t0\t10\t10\t10\t255\tcg:Z:10=\n";
-    let a_fa = write_bgzf_fa("/tmp/pgr_gfa_rt_id_A.fa", ">A\nACGTACGTAC\n");
-    let b_fa = write_bgzf_fa("/tmp/pgr_gfa_rt_id_B.fa", ">B\nACGTACGTAC\n");
-    let tsv = "/tmp/pgr_gfa_rt_id.tsv";
-    fs::write(tsv, format!("A\t{a_fa}\nB\t{b_fa}\n")).unwrap();
+    let a_fa = write_bgzf_fa(dir, "A", ">A\nACGTACGTAC\n");
+    let b_fa = write_bgzf_fa(dir, "B", ">B\nACGTACGTAC\n");
+    let tsv = dir.join("in.tsv");
+    fs::write(&tsv, format!("A\t{a_fa}\nB\t{b_fa}\n")).unwrap();
 
     let (stdout, _stderr) = PgrCmd::new()
-        .args(&["paf", "to-gfa", "stdin", "B:0-10", "-t", "-f", tsv])
+        .args(&[
+            "paf",
+            "to-gfa",
+            "stdin",
+            "B:0-10",
+            "-t",
+            "-f",
+            tsv.to_str().unwrap(),
+        ])
         .stdin(paf)
         .run();
 
@@ -392,16 +396,6 @@ fn command_paf_to_gfa_roundtrip_identical() {
         Some(&"ACGTACGTAC".to_string()),
         "path B should spell back the original sequence"
     );
-
-    let _ = fs::remove_file("/tmp/pgr_gfa_rt_id_A.fa");
-    let _ = fs::remove_file("/tmp/pgr_gfa_rt_id_B.fa");
-    let _ = fs::remove_file(&a_fa);
-    let _ = fs::remove_file(&b_fa);
-    let _ = fs::remove_file(format!("{a_fa}.gzi"));
-    let _ = fs::remove_file(format!("{b_fa}.gzi"));
-    let _ = fs::remove_file(tsv);
-    let _ = fs::remove_file(format!("{a_fa}.loc"));
-    let _ = fs::remove_file(format!("{b_fa}.loc"));
 }
 
 #[test]
@@ -410,17 +404,27 @@ fn command_paf_to_gfa_roundtrip_snp_bubble() {
     use std::fs;
     // B = ACGTACGTAC, A = ACGTACGTAC, C = ACGTTCGTAC (SNP at pos 4).
     // The SNP forms a bubble; each path must still spell its own sequence.
+    let temp = tempfile::TempDir::new().unwrap();
+    let dir = temp.path();
     let paf = "\
 A\t10\t0\t10\t+\tB\t10\t0\t10\t10\t10\t255\tcg:Z:10=\n\
 C\t10\t0\t10\t+\tA\t10\t0\t10\t9\t10\t255\tcg:Z:10M\n";
-    let a_fa = write_bgzf_fa("/tmp/pgr_gfa_rt_snp_A.fa", ">A\nACGTACGTAC\n");
-    let b_fa = write_bgzf_fa("/tmp/pgr_gfa_rt_snp_B.fa", ">B\nACGTACGTAC\n");
-    let c_fa = write_bgzf_fa("/tmp/pgr_gfa_rt_snp_C.fa", ">C\nACGTTCGTAC\n");
-    let tsv = "/tmp/pgr_gfa_rt_snp.tsv";
-    fs::write(tsv, format!("A\t{a_fa}\nB\t{b_fa}\nC\t{c_fa}\n")).unwrap();
+    let a_fa = write_bgzf_fa(dir, "A", ">A\nACGTACGTAC\n");
+    let b_fa = write_bgzf_fa(dir, "B", ">B\nACGTACGTAC\n");
+    let c_fa = write_bgzf_fa(dir, "C", ">C\nACGTTCGTAC\n");
+    let tsv = dir.join("in.tsv");
+    fs::write(&tsv, format!("A\t{a_fa}\nB\t{b_fa}\nC\t{c_fa}\n")).unwrap();
 
     let (stdout, _stderr) = PgrCmd::new()
-        .args(&["paf", "to-gfa", "stdin", "B:0-10", "-t", "-f", tsv])
+        .args(&[
+            "paf",
+            "to-gfa",
+            "stdin",
+            "B:0-10",
+            "-t",
+            "-f",
+            tsv.to_str().unwrap(),
+        ])
         .stdin(paf)
         .run();
 
@@ -440,20 +444,6 @@ C\t10\t0\t10\t+\tA\t10\t0\t10\t9\t10\t255\tcg:Z:10M\n";
         Some(&"ACGTTCGTAC".to_string()),
         "path C should spell ACGTTCGTAC (SNP allele preserved)"
     );
-
-    let _ = fs::remove_file("/tmp/pgr_gfa_rt_snp_A.fa");
-    let _ = fs::remove_file("/tmp/pgr_gfa_rt_snp_B.fa");
-    let _ = fs::remove_file("/tmp/pgr_gfa_rt_snp_C.fa");
-    let _ = fs::remove_file(&a_fa);
-    let _ = fs::remove_file(&b_fa);
-    let _ = fs::remove_file(&c_fa);
-    let _ = fs::remove_file(format!("{a_fa}.gzi"));
-    let _ = fs::remove_file(format!("{b_fa}.gzi"));
-    let _ = fs::remove_file(format!("{c_fa}.gzi"));
-    let _ = fs::remove_file(tsv);
-    let _ = fs::remove_file(format!("{a_fa}.loc"));
-    let _ = fs::remove_file(format!("{b_fa}.loc"));
-    let _ = fs::remove_file(format!("{c_fa}.loc"));
 }
 
 #[test]
@@ -464,17 +454,27 @@ fn command_paf_to_gfa_roundtrip_indel_bubble() {
     // A = ACGTACGTAC (10bp, identical to B)
     // C = ACGTACGGGTAC (12bp, 2bp insertion after pos 6)
     // C-A alignment: 6= 2I 4= (C has 2bp insertion relative to A)
+    let temp = tempfile::TempDir::new().unwrap();
+    let dir = temp.path();
     let paf = "\
 A\t10\t0\t10\t+\tB\t10\t0\t10\t10\t10\t255\tcg:Z:10=\n\
 C\t12\t0\t12\t+\tA\t10\t0\t10\t10\t12\t255\tcg:Z:6=2I4=\n";
-    let a_fa = write_bgzf_fa("/tmp/pgr_gfa_rt_indel_A.fa", ">A\nACGTACGTAC\n");
-    let b_fa = write_bgzf_fa("/tmp/pgr_gfa_rt_indel_B.fa", ">B\nACGTACGTAC\n");
-    let c_fa = write_bgzf_fa("/tmp/pgr_gfa_rt_indel_C.fa", ">C\nACGTACGGGTAC\n");
-    let tsv = "/tmp/pgr_gfa_rt_indel.tsv";
-    fs::write(tsv, format!("A\t{a_fa}\nB\t{b_fa}\nC\t{c_fa}\n")).unwrap();
+    let a_fa = write_bgzf_fa(dir, "A", ">A\nACGTACGTAC\n");
+    let b_fa = write_bgzf_fa(dir, "B", ">B\nACGTACGTAC\n");
+    let c_fa = write_bgzf_fa(dir, "C", ">C\nACGTACGGGTAC\n");
+    let tsv = dir.join("in.tsv");
+    fs::write(&tsv, format!("A\t{a_fa}\nB\t{b_fa}\nC\t{c_fa}\n")).unwrap();
 
     let (stdout, _stderr) = PgrCmd::new()
-        .args(&["paf", "to-gfa", "stdin", "B:0-10", "-t", "-f", tsv])
+        .args(&[
+            "paf",
+            "to-gfa",
+            "stdin",
+            "B:0-10",
+            "-t",
+            "-f",
+            tsv.to_str().unwrap(),
+        ])
         .stdin(paf)
         .run();
 
@@ -494,18 +494,4 @@ C\t12\t0\t12\t+\tA\t10\t0\t10\t10\t12\t255\tcg:Z:6=2I4=\n";
         Some(&"ACGTACGGGTAC".to_string()),
         "path C should spell ACGTACGGGTAC (2bp insertion preserved)"
     );
-
-    let _ = fs::remove_file("/tmp/pgr_gfa_rt_indel_A.fa");
-    let _ = fs::remove_file("/tmp/pgr_gfa_rt_indel_B.fa");
-    let _ = fs::remove_file("/tmp/pgr_gfa_rt_indel_C.fa");
-    let _ = fs::remove_file(&a_fa);
-    let _ = fs::remove_file(&b_fa);
-    let _ = fs::remove_file(&c_fa);
-    let _ = fs::remove_file(format!("{a_fa}.gzi"));
-    let _ = fs::remove_file(format!("{b_fa}.gzi"));
-    let _ = fs::remove_file(format!("{c_fa}.gzi"));
-    let _ = fs::remove_file(tsv);
-    let _ = fs::remove_file(format!("{a_fa}.loc"));
-    let _ = fs::remove_file(format!("{b_fa}.loc"));
-    let _ = fs::remove_file(format!("{c_fa}.loc"));
 }

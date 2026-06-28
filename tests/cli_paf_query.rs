@@ -146,8 +146,9 @@ C\t100\t0\t100\t+\tB\t100\t0\t100\t90\t100\t255\tcg:Z:100M\n";
     // chain header: chain score tName tSize tStrand tStart tEnd qName qSize qStrand qStart qEnd id
     // then one block line "100" (size 100, no gap), then blank line.
     let chain = "chain 100 B 100 + 0 100 A 100 + 0 100 1\n100\n\n";
-    let chain_path = "/tmp/pgr_syntenic.chain";
-    fs::write(chain_path, chain).unwrap();
+    let temp = tempfile::TempDir::new().unwrap();
+    let chain_path = temp.path().join("syn.chain");
+    fs::write(&chain_path, chain).unwrap();
 
     // Without filter: both A and C.
     let (stdout_no, _) = PgrCmd::new()
@@ -165,7 +166,7 @@ C\t100\t0\t100\t+\tB\t100\t0\t100\t90\t100\t255\tcg:Z:100M\n";
             "stdin",
             "B:0-100",
             "--syntenic-filter",
-            chain_path,
+            chain_path.to_str().unwrap(),
         ])
         .stdin(paf)
         .run();
@@ -181,8 +182,6 @@ C\t100\t0\t100\t+\tB\t100\t0\t100\t90\t100\t255\tcg:Z:100M\n";
         stderr.contains("syntenic-filter: dropped"),
         "should log dropped count"
     );
-
-    let _ = fs::remove_file(chain_path);
 }
 
 #[test]
@@ -192,8 +191,9 @@ fn command_paf_query_syntenic_filter_no_overlap() {
     // With filter: A also dropped (no chain covers its query interval).
     let paf = "A\t100\t0\t100\t+\tB\t100\t0\t100\t95\t100\t255\tcg:Z:100M\n";
     let chain = "chain 100 B 100 + 0 100 A 1000 + 200 300 1\n100\n\n";
-    let chain_path = "/tmp/pgr_syntenic_nooverlap.chain";
-    fs::write(chain_path, chain).unwrap();
+    let temp = tempfile::TempDir::new().unwrap();
+    let chain_path = temp.path().join("syn_nooverlap.chain");
+    fs::write(&chain_path, chain).unwrap();
 
     let (stdout, _stderr) = PgrCmd::new()
         .args(&[
@@ -202,7 +202,7 @@ fn command_paf_query_syntenic_filter_no_overlap() {
             "stdin",
             "B:0-100",
             "--syntenic-filter",
-            chain_path,
+            chain_path.to_str().unwrap(),
         ])
         .stdin(paf)
         .run();
@@ -210,16 +210,15 @@ fn command_paf_query_syntenic_filter_no_overlap() {
         !stdout.contains("A\t0\t0\t100\t+\tB"),
         "A should be dropped: chain query span 200-300 does not overlap A's 0-100"
     );
-
-    let _ = fs::remove_file(chain_path);
 }
 
 #[test]
 fn command_paf_query_subset_filter() {
     use std::fs;
     let paf = "A\t100\t0\t100\t+\tB\t100\t0\t100\t95\t100\t255\tcg:Z:100M\nC\t100\t0\t50\t+\tB\t100\t50\t100\t45\t50\t255\tcg:Z:50M\n";
-    let list = "/tmp/pgr_subset.txt";
-    fs::write(list, "A\n").unwrap();
+    let temp = tempfile::TempDir::new().unwrap();
+    let list = temp.path().join("subset.txt");
+    fs::write(&list, "A\n").unwrap();
     let (stdout, _) = PgrCmd::new()
         .args(&[
             "paf",
@@ -227,13 +226,12 @@ fn command_paf_query_subset_filter() {
             "stdin",
             "B:0-100",
             "--subset-sequence-list",
-            list,
+            list.to_str().unwrap(),
         ])
         .stdin(paf)
         .run();
     assert!(stdout.contains("A"), "A should be included");
     assert!(!stdout.contains("C"), "C should be excluded");
-    let _ = fs::remove_file(list);
 }
 
 // ── paf query -b (batch BED regions) ─────────────────────────────
@@ -245,49 +243,56 @@ fn command_paf_query_batch_bed() {
 A\t100\t0\t100\t+\tB\t100\t0\t100\t95\t100\t255\tcg:Z:100M
 C\t100\t0\t50\t+\tD\t100\t50\t100\t45\t50\t255\tcg:Z:50M
 ";
-    let bed = "/tmp/pgr_batch_regions.bed";
-    fs::write(bed, "B\t0\t100\nD\t50\t100\n# comment line\n\n").unwrap();
+    let temp = tempfile::TempDir::new().unwrap();
+    let bed = temp.path().join("regions.bed");
+    fs::write(&bed, "B\t0\t100\nD\t50\t100\n# comment line\n\n").unwrap();
     let (stdout, stderr) = PgrCmd::new()
-        .args(&["paf", "to-bed", "stdin", "-b", bed])
+        .args(&["paf", "to-bed", "stdin", "-b", bed.to_str().unwrap()])
         .stdin(paf)
         .run();
     assert!(stdout.contains("A\t0\t100"), "A (from region B) missing");
     assert!(stdout.contains("C\t0\t50"), "C (from region D) missing");
     assert!(stderr.contains("Total results: 2"), "total count missing");
-    let _ = fs::remove_file(bed);
 }
 
 #[test]
 fn command_paf_query_batch_bed_skips_unknown_target() {
     use std::fs;
     let paf = "A\t100\t0\t100\t+\tB\t100\t0\t100\t95\t100\t255\tcg:Z:100M\n";
-    let bed = "/tmp/pgr_batch_unknown.bed";
-    fs::write(bed, "B\t0\t100\nZ\t0\t100\n").unwrap();
+    let temp = tempfile::TempDir::new().unwrap();
+    let bed = temp.path().join("unknown.bed");
+    fs::write(&bed, "B\t0\t100\nZ\t0\t100\n").unwrap();
     let (_, stderr) = PgrCmd::new()
-        .args(&["paf", "to-bed", "stdin", "-b", bed])
+        .args(&["paf", "to-bed", "stdin", "-b", bed.to_str().unwrap()])
         .stdin(paf)
         .run();
     assert!(
         stderr.contains("not found in index, skipping"),
         "missing skip warning for unknown target"
     );
-    let _ = fs::remove_file(bed);
 }
 
 #[test]
 fn command_paf_query_region_and_bed_mutually_exclusive() {
     use std::fs;
-    let bed = "/tmp/pgr_mutex.bed";
-    fs::write(bed, "B\t0\t100\n").unwrap();
+    let temp = tempfile::TempDir::new().unwrap();
+    let bed = temp.path().join("mutex.bed");
+    fs::write(&bed, "B\t0\t100\n").unwrap();
     let (_, stderr) = PgrCmd::new()
-        .args(&["paf", "query", "stdin", "B:0-100", "-b", bed])
+        .args(&[
+            "paf",
+            "query",
+            "stdin",
+            "B:0-100",
+            "-b",
+            bed.to_str().unwrap(),
+        ])
         .stdin("A\t100\t0\t100\t+\tB\t100\t0\t100\t95\t100\t255\tcg:Z:100M\n")
         .run_fail();
     assert!(
         stderr.contains("mutually exclusive"),
         "missing mutual-exclusion error"
     );
-    let _ = fs::remove_file(bed);
 }
 
 #[test]

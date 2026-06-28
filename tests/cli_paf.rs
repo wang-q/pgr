@@ -89,30 +89,37 @@ fn command_paf_index_invalid() {
 #[test]
 fn command_paf_index_multiple_files() {
     use std::fs;
-    let p1 = "/tmp/pgr_multi_a.paf";
-    let p2 = "/tmp/pgr_multi_b.paf";
-    let idx = "/tmp/pgr_multi.paf.idx";
+    let temp = tempfile::TempDir::new().unwrap();
+    let p1 = temp.path().join("multi_a.paf");
+    let p2 = temp.path().join("multi_b.paf");
+    let idx = temp.path().join("multi.paf.idx");
     fs::write(
-        p1,
+        &p1,
         "A\t100\t0\t50\t+\tX\t200\t0\t50\t45\t50\t255\tcg:Z:50M\n",
     )
     .unwrap();
     fs::write(
-        p2,
+        &p2,
         "B\t100\t0\t50\t+\tX\t200\t50\t100\t45\t50\t255\tcg:Z:50M\n",
     )
     .unwrap();
     let (_, stderr) = PgrCmd::new()
-        .args(&["paf", "index", p1, p2, "-o", idx])
+        .args(&[
+            "paf",
+            "index",
+            p1.to_str().unwrap(),
+            p2.to_str().unwrap(),
+            "-o",
+            idx.to_str().unwrap(),
+        ])
         .run();
     assert!(stderr.contains("Building PAF index from 2 file"));
     assert!(stderr.contains("saved to"));
-    let (stdout, _) = PgrCmd::new().args(&["paf", "query", idx, "X:0-100"]).run();
+    let (stdout, _) = PgrCmd::new()
+        .args(&["paf", "query", idx.to_str().unwrap(), "X:0-100"])
+        .run();
     assert!(stdout.contains("A\t0\t0\t50\t+\tX"), "A not found");
     assert!(stdout.contains("B\t0\t0\t50\t+\tX"), "B not found");
-    let _ = fs::remove_file(p1);
-    let _ = fs::remove_file(p2);
-    let _ = fs::remove_file(idx);
 }
 
 // ── persist roundtrip (index save → query load) ─────────────────
@@ -120,10 +127,11 @@ fn command_paf_index_multiple_files() {
 #[test]
 fn command_paf_index_save_and_query() {
     use std::fs;
-    let paf_path = "/tmp/pgr_cli_test_persist.paf";
-    let idx_path = "/tmp/pgr_cli_test_persist.paf.idx";
+    let temp = tempfile::TempDir::new().unwrap();
+    let paf_path = temp.path().join("persist.paf");
+    let idx_path = temp.path().join("persist.paf.idx");
     fs::write(
-        paf_path,
+        &paf_path,
         "\
 A\t100\t0\t100\t+\tB\t100\t0\t100\t95\t100\t255\tcg:Z:100M
 C\t100\t0\t50\t+\tB\t100\t50\t100\t45\t50\t255\tcg:Z:50M
@@ -131,37 +139,42 @@ C\t100\t0\t50\t+\tB\t100\t50\t100\t45\t50\t255\tcg:Z:50M
     )
     .unwrap();
     let (_, stderr) = PgrCmd::new()
-        .args(&["paf", "index", paf_path, "-o", idx_path])
+        .args(&[
+            "paf",
+            "index",
+            paf_path.to_str().unwrap(),
+            "-o",
+            idx_path.to_str().unwrap(),
+        ])
         .run();
     assert!(stderr.contains("saved to"));
     let (stdout, stderr) = PgrCmd::new()
-        .args(&["paf", "query", idx_path, "B:0-100"])
+        .args(&["paf", "query", idx_path.to_str().unwrap(), "B:0-100"])
         .run();
     assert!(stderr.contains("Loading index"));
     assert!(stdout.contains("A\t0\t0\t100\t+\tB"), "A not found");
     assert!(stdout.contains("C\t0\t0\t50\t+\tB"), "C not found");
-    let _ = fs::remove_file(paf_path);
-    let _ = fs::remove_file(idx_path);
 }
 
 #[test]
 fn command_paf_query_bad_idx_magic() {
     use std::fs;
-    let bad_path = "/tmp/pgr_cli_test_bad.paf.idx";
-    fs::write(bad_path, "garbage data\n").unwrap();
+    let temp = tempfile::TempDir::new().unwrap();
+    let bad_path = temp.path().join("bad.paf.idx");
+    fs::write(&bad_path, "garbage data\n").unwrap();
     PgrCmd::new()
-        .args(&["paf", "query", bad_path, "B:0-100"])
+        .args(&["paf", "query", bad_path.to_str().unwrap(), "B:0-100"])
         .run_fail();
-    let _ = fs::remove_file(bad_path);
 }
 
 #[test]
 fn command_paf_query_direct_vs_idx_same_result() {
     use std::fs;
-    let paf_path = "/tmp/pgr_cli_test_compare.paf";
-    let idx_path = "/tmp/pgr_cli_test_compare.paf.idx";
+    let temp = tempfile::TempDir::new().unwrap();
+    let paf_path = temp.path().join("compare.paf");
+    let idx_path = temp.path().join("compare.paf.idx");
     fs::write(
-        paf_path,
+        &paf_path,
         "\
 A\t100\t0\t100\t+\tB\t100\t0\t100\t95\t100\t255\tcg:Z:100M
 C\t100\t0\t50\t+\tB\t100\t50\t100\t45\t50\t255\tcg:Z:50M
@@ -169,28 +182,33 @@ C\t100\t0\t50\t+\tB\t100\t50\t100\t45\t50\t255\tcg:Z:50M
     )
     .unwrap();
     let (direct_out, _) = PgrCmd::new()
-        .args(&["paf", "query", paf_path, "B:0-100"])
+        .args(&["paf", "query", paf_path.to_str().unwrap(), "B:0-100"])
         .run();
     let (_, stderr) = PgrCmd::new()
-        .args(&["paf", "index", paf_path, "-o", idx_path])
+        .args(&[
+            "paf",
+            "index",
+            paf_path.to_str().unwrap(),
+            "-o",
+            idx_path.to_str().unwrap(),
+        ])
         .run();
     assert!(stderr.contains("saved to"));
     let (idx_out, stderr) = PgrCmd::new()
-        .args(&["paf", "query", idx_path, "B:0-100"])
+        .args(&["paf", "query", idx_path.to_str().unwrap(), "B:0-100"])
         .run();
     assert!(stderr.contains("Loading index"));
     assert_eq!(direct_out, idx_out, "PAF direct vs .idx results differ");
-    let _ = fs::remove_file(paf_path);
-    let _ = fs::remove_file(idx_path);
 }
 
 #[test]
 fn command_paf_query_transitive_from_idx() {
     use std::fs;
-    let paf_path = "/tmp/pgr_cli_test_bfs_idx.paf";
-    let idx_path = "/tmp/pgr_cli_test_bfs_idx.paf.idx";
+    let temp = tempfile::TempDir::new().unwrap();
+    let paf_path = temp.path().join("bfs_idx.paf");
+    let idx_path = temp.path().join("bfs_idx.paf.idx");
     fs::write(
-        paf_path,
+        &paf_path,
         "\
 A\t100\t0\t100\t+\tB\t100\t0\t100\t95\t100\t255\tcg:Z:100M
 C\t100\t0\t100\t+\tA\t100\t0\t100\t90\t100\t255\tcg:Z:100M
@@ -198,14 +216,24 @@ C\t100\t0\t100\t+\tA\t100\t0\t100\t90\t100\t255\tcg:Z:100M
     )
     .unwrap();
     let _ = PgrCmd::new()
-        .args(&["paf", "index", paf_path, "-o", idx_path])
+        .args(&[
+            "paf",
+            "index",
+            paf_path.to_str().unwrap(),
+            "-o",
+            idx_path.to_str().unwrap(),
+        ])
         .run();
     let (stdout, stderr) = PgrCmd::new()
-        .args(&["paf", "query", idx_path, "B:0-100", "--transitive"])
+        .args(&[
+            "paf",
+            "query",
+            idx_path.to_str().unwrap(),
+            "B:0-100",
+            "--transitive",
+        ])
         .run();
     assert!(stderr.contains("Loading index"));
     assert!(stdout.contains("A\t0\t0\t100\t+\tB"), "A (1-hop) not found");
     assert!(stdout.contains("C\t0\t0\t100\t+\tA"), "C (2-hop) not found");
-    let _ = fs::remove_file(paf_path);
-    let _ = fs::remove_file(idx_path);
 }

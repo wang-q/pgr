@@ -96,26 +96,37 @@ fn command_paf_query_reverse_strand_no_mirror() {
 #[test]
 fn command_paf_query_bidirectional_persists_across_save_load() {
     use std::fs;
-    let paf_path = "/tmp/pgr_cli_test_bidir.paf";
-    let idx_path = "/tmp/pgr_cli_test_bidir.paf.idx";
+    let temp = tempfile::TempDir::new().unwrap();
+    let paf_path = temp.path().join("bidir.paf");
+    let idx_path = temp.path().join("bidir.paf.idx");
     fs::write(
-        paf_path,
+        &paf_path,
         "A\t100\t0\t100\t+\tB\t100\t0\t100\t95\t100\t255\tcg:Z:100M\n",
     )
     .unwrap();
     PgrCmd::new()
-        .args(&["paf", "index", paf_path, "-o", idx_path])
+        .args(&[
+            "paf",
+            "index",
+            paf_path.to_str().unwrap(),
+            "-o",
+            idx_path.to_str().unwrap(),
+        ])
         .run();
     // Query from A — only works if reverse_trees persisted across save/load.
     let (stdout, _) = PgrCmd::new()
-        .args(&["paf", "query", idx_path, "A:0-100", "--transitive"])
+        .args(&[
+            "paf",
+            "query",
+            idx_path.to_str().unwrap(),
+            "A:0-100",
+            "--transitive",
+        ])
         .run();
     assert!(
         stdout.contains("B\t0\t0\t100\t+\tA"),
         "bidirectional index should persist across save/load"
     );
-    let _ = fs::remove_file(paf_path);
-    let _ = fs::remove_file(idx_path);
 }
 
 // ── transitive closure invariants ────────────────────────────────

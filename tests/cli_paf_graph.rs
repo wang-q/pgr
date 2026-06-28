@@ -6,17 +6,19 @@ use common::PgrCmd;
 
 // ── paf graph (V4a coarse GFA induction) ──────────────────────
 
-fn write_temp_fasta(path: &str, records: &[(&str, &str)]) {
+fn write_temp_fasta(dir: &std::path::Path, name: &str, records: &[(&str, &str)]) -> String {
     use std::fs;
     let mut content = String::new();
-    for (name, seq) in records {
+    for (rec_name, seq) in records {
         content.push('>');
-        content.push_str(name);
+        content.push_str(rec_name);
         content.push('\n');
         content.push_str(seq);
         content.push('\n');
     }
-    fs::write(path, content).unwrap();
+    let path = dir.join(format!("{name}.fa"));
+    fs::write(&path, content).unwrap();
+    path.to_string_lossy().into_owned()
 }
 
 #[test]
@@ -31,10 +33,14 @@ fn command_paf_graph_help() {
 fn command_paf_graph_basic_forward() {
     // A and B share a 100bp alignment → one shared node + trailing novel segments.
     let paf = "A\t100\t0\t100\t+\tB\t100\t0\t100\t95\t100\t255\tcg:Z:100M\n";
-    let fa = "/tmp/pgr_graph_basic.fa";
-    write_temp_fasta(fa, &[("A", &"ACGT".repeat(25)), ("B", &"TGCA".repeat(25))]);
+    let temp = tempfile::TempDir::new().unwrap();
+    let fa = write_temp_fasta(
+        temp.path(),
+        "basic",
+        &[("A", &"ACGT".repeat(25)), ("B", &"TGCA".repeat(25))],
+    );
     let (stdout, _stderr) = PgrCmd::new()
-        .args(&["paf", "graph", "stdin", "-f", fa])
+        .args(&["paf", "graph", "stdin", "-f", &fa])
         .stdin(paf)
         .run();
     // At least one S line, one P line for each sequence.
@@ -44,17 +50,20 @@ fn command_paf_graph_basic_forward() {
     assert_eq!(p_count, 2, "expected 2 P lines (A, B), got {p_count}");
     assert!(stdout.contains("\nP\tA\t"), "missing P line for A");
     assert!(stdout.contains("\nP\tB\t"), "missing P line for B");
-    let _ = std::fs::remove_file(fa);
 }
 
 #[test]
 fn command_paf_graph_split_at_large_indel() {
     // 50M 200I 50M: 200I >= 100 → split. B has an insertion (novel node in B path).
     let paf = "A\t300\t0\t100\t+\tB\t300\t0\t300\t95\t300\t255\tcg:Z:50M200I50M\n";
-    let fa = "/tmp/pgr_graph_split.fa";
-    write_temp_fasta(fa, &[("A", &"A".repeat(300)), ("B", &"G".repeat(300))]);
+    let temp = tempfile::TempDir::new().unwrap();
+    let fa = write_temp_fasta(
+        temp.path(),
+        "split",
+        &[("A", &"A".repeat(300)), ("B", &"G".repeat(300))],
+    );
     let (stdout, _stderr) = PgrCmd::new()
-        .args(&["paf", "graph", "stdin", "-f", fa, "--min-var-len", "100"])
+        .args(&["paf", "graph", "stdin", "-f", &fa, "--min-var-len", "100"])
         .stdin(paf)
         .run();
     // B path should have >= 3 steps (aligned, novel insertion, aligned).
@@ -69,17 +78,20 @@ fn command_paf_graph_split_at_large_indel() {
         step_count >= 3,
         "B path should have >= 3 steps (aligned, novel, aligned), got {step_count}: {path_field}"
     );
-    let _ = std::fs::remove_file(fa);
 }
 
 #[test]
 fn command_paf_graph_small_indel_no_split() {
     // 50M 30I 50M: 30I < 100 → no split. A and B share exactly one aligned node.
     let paf = "A\t200\t0\t130\t+\tB\t200\t0\t160\t95\t160\t255\tcg:Z:50M30I50M\n";
-    let fa = "/tmp/pgr_graph_nosplit.fa";
-    write_temp_fasta(fa, &[("A", &"A".repeat(200)), ("B", &"G".repeat(200))]);
+    let temp = tempfile::TempDir::new().unwrap();
+    let fa = write_temp_fasta(
+        temp.path(),
+        "nosplit",
+        &[("A", &"A".repeat(200)), ("B", &"G".repeat(200))],
+    );
     let (stdout, _stderr) = PgrCmd::new()
-        .args(&["paf", "graph", "stdin", "-f", fa, "--min-var-len", "100"])
+        .args(&["paf", "graph", "stdin", "-f", &fa, "--min-var-len", "100"])
         .stdin(paf)
         .run();
     // Find shared nodes between A and B paths.
@@ -112,17 +124,20 @@ fn command_paf_graph_small_indel_no_split() {
         1,
         "expected exactly 1 shared node (no split), got {shared:?}"
     );
-    let _ = std::fs::remove_file(fa);
 }
 
 #[test]
 fn command_paf_graph_reverse_strand() {
     // Reverse strand alignment: query coords flipped, but A and B still share a node.
     let paf = "A\t100\t0\t100\t-\tB\t100\t0\t100\t95\t100\t255\tcg:Z:100M\n";
-    let fa = "/tmp/pgr_graph_rc.fa";
-    write_temp_fasta(fa, &[("A", &"ACGT".repeat(25)), ("B", &"TGCA".repeat(25))]);
+    let temp = tempfile::TempDir::new().unwrap();
+    let fa = write_temp_fasta(
+        temp.path(),
+        "rc",
+        &[("A", &"ACGT".repeat(25)), ("B", &"TGCA".repeat(25))],
+    );
     let (stdout, _stderr) = PgrCmd::new()
-        .args(&["paf", "graph", "stdin", "-f", fa])
+        .args(&["paf", "graph", "stdin", "-f", &fa])
         .stdin(paf)
         .run();
     let a_line = stdout
@@ -156,7 +171,6 @@ fn command_paf_graph_reverse_strand() {
         !shared.is_empty(),
         "reverse-strand alignment should still produce a shared node"
     );
-    let _ = std::fs::remove_file(fa);
 }
 
 #[test]
@@ -164,12 +178,16 @@ fn command_paf_graph_min_var_len_filter() {
     // 50M 150I 50M with --min-var-len 200: 150I < 200 → no split.
     // Same alignment with --min-var-len 100: 150I >= 100 → split.
     let paf = "A\t300\t0\t100\t+\tB\t300\t0\t250\t95\t250\t255\tcg:Z:50M150I50M\n";
-    let fa = "/tmp/pgr_graph_filter.fa";
-    write_temp_fasta(fa, &[("A", &"A".repeat(300)), ("B", &"G".repeat(300))]);
+    let temp = tempfile::TempDir::new().unwrap();
+    let fa = write_temp_fasta(
+        temp.path(),
+        "filter",
+        &[("A", &"A".repeat(300)), ("B", &"G".repeat(300))],
+    );
 
     // With threshold 200: no split, B path has 1 shared node + trailing novel.
     let (stdout_no_split, _) = PgrCmd::new()
-        .args(&["paf", "graph", "stdin", "-f", fa, "--min-var-len", "200"])
+        .args(&["paf", "graph", "stdin", "-f", &fa, "--min-var-len", "200"])
         .stdin(paf)
         .run();
     let b_line = stdout_no_split
@@ -180,7 +198,7 @@ fn command_paf_graph_min_var_len_filter() {
 
     // With threshold 100: split, B path has >= 3 steps.
     let (stdout_split, _) = PgrCmd::new()
-        .args(&["paf", "graph", "stdin", "-f", fa, "--min-var-len", "100"])
+        .args(&["paf", "graph", "stdin", "-f", &fa, "--min-var-len", "100"])
         .stdin(paf)
         .run();
     let b_line = stdout_split
@@ -193,7 +211,6 @@ fn command_paf_graph_min_var_len_filter() {
         steps_split > steps_no_split,
         "split path ({steps_split}) should have more steps than no-split ({steps_no_split})"
     );
-    let _ = std::fs::remove_file(fa);
 }
 
 #[test]
@@ -215,10 +232,14 @@ fn command_paf_graph_rgfa_tags() {
     // PAF: query=A, target=B. Target is registered first → B has seq_id 0.
     // Shared aligned node originates from B (target) at offset 0.
     let paf = "A\t100\t0\t100\t+\tB\t100\t0\t100\t95\t100\t255\tcg:Z:100M\n";
-    let fa = "/tmp/pgr_graph_rgfa.fa";
-    write_temp_fasta(fa, &[("A", &"ACGT".repeat(25)), ("B", &"TGCA".repeat(25))]);
+    let temp = tempfile::TempDir::new().unwrap();
+    let fa = write_temp_fasta(
+        temp.path(),
+        "rgfa",
+        &[("A", &"ACGT".repeat(25)), ("B", &"TGCA".repeat(25))],
+    );
     let (stdout, _stderr) = PgrCmd::new()
-        .args(&["paf", "graph", "stdin", "-f", fa])
+        .args(&["paf", "graph", "stdin", "-f", &fa])
         .stdin(paf)
         .run();
 
@@ -253,7 +274,6 @@ fn command_paf_graph_rgfa_tags() {
         })
         .expect("missing shared node with SN:Z:B and SO:i:0");
     let _ = shared_line;
-    let _ = std::fs::remove_file(fa);
 }
 
 #[test]
@@ -261,10 +281,14 @@ fn command_paf_graph_rgfa_novel_node_origin() {
     // PAF: query=A, target=B. CIGAR 50M200I50M → A (query) has 200bp insertion.
     // The novel insertion node in A's path spans A:50-250, origin SN:Z:A SO:i:50.
     let paf = "A\t300\t0\t100\t+\tB\t300\t0\t300\t95\t300\t255\tcg:Z:50M200I50M\n";
-    let fa = "/tmp/pgr_graph_rgfa_novel.fa";
-    write_temp_fasta(fa, &[("A", &"A".repeat(300)), ("B", &"G".repeat(300))]);
+    let temp = tempfile::TempDir::new().unwrap();
+    let fa = write_temp_fasta(
+        temp.path(),
+        "rgfa_novel",
+        &[("A", &"A".repeat(300)), ("B", &"G".repeat(300))],
+    );
     let (stdout, _stderr) = PgrCmd::new()
-        .args(&["paf", "graph", "stdin", "-f", fa, "--min-var-len", "100"])
+        .args(&["paf", "graph", "stdin", "-f", &fa, "--min-var-len", "100"])
         .stdin(paf)
         .run();
 
@@ -276,5 +300,4 @@ fn command_paf_graph_rgfa_novel_node_origin() {
         has_novel_a,
         "expected a novel node with SN:Z:A and SO:i:50 (A's 200bp insertion at offset 50)"
     );
-    let _ = std::fs::remove_file(fa);
 }

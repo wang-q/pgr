@@ -6,17 +6,19 @@ use common::PgrCmd;
 
 // ── paf graph-report (V6 graph quality) ───────────────────────
 
-fn write_temp_fasta(path: &str, records: &[(&str, &str)]) {
+fn write_temp_fasta(dir: &std::path::Path, name: &str, records: &[(&str, &str)]) -> String {
     use std::fs;
     let mut content = String::new();
-    for (name, seq) in records {
+    for (rec_name, seq) in records {
         content.push('>');
-        content.push_str(name);
+        content.push_str(rec_name);
         content.push('\n');
         content.push_str(seq);
         content.push('\n');
     }
-    fs::write(path, content).unwrap();
+    let path = dir.join(format!("{name}.fa"));
+    fs::write(&path, content).unwrap();
+    path.to_string_lossy().into_owned()
 }
 
 #[test]
@@ -31,10 +33,14 @@ fn command_paf_graph_report_help() {
 fn command_paf_graph_report_basic_forward() {
     // A and B share a 100bp alignment → one shared node + trailing novel segments.
     let paf = "A\t100\t0\t100\t+\tB\t100\t0\t100\t95\t100\t255\tcg:Z:100M\n";
-    let fa = "/tmp/pgr_grep_basic.fa";
-    write_temp_fasta(fa, &[("A", &"ACGT".repeat(25)), ("B", &"TGCA".repeat(25))]);
+    let temp = tempfile::TempDir::new().unwrap();
+    let fa = write_temp_fasta(
+        temp.path(),
+        "basic",
+        &[("A", &"ACGT".repeat(25)), ("B", &"TGCA".repeat(25))],
+    );
     let (stdout, _stderr) = PgrCmd::new()
-        .args(&["paf", "graph-report", "stdin", "-f", fa])
+        .args(&["paf", "graph-report", "stdin", "-f", &fa])
         .stdin(paf)
         .run();
 
@@ -64,22 +70,25 @@ fn command_paf_graph_report_basic_forward() {
         path_steps >= 2,
         "expected >= 2 path_steps, got {path_steps}"
     );
-    let _ = std::fs::remove_file(fa);
 }
 
 #[test]
 fn command_paf_graph_report_split_at_large_indel() {
     // 50M 200I 50M: 200I >= 100 → split. B has an insertion (novel node in B path).
     let paf = "A\t300\t0\t100\t+\tB\t300\t0\t300\t95\t300\t255\tcg:Z:50M200I50M\n";
-    let fa = "/tmp/pgr_grep_split.fa";
-    write_temp_fasta(fa, &[("A", &"A".repeat(300)), ("B", &"G".repeat(300))]);
+    let temp = tempfile::TempDir::new().unwrap();
+    let fa = write_temp_fasta(
+        temp.path(),
+        "split",
+        &[("A", &"A".repeat(300)), ("B", &"G".repeat(300))],
+    );
     let (stdout, _stderr) = PgrCmd::new()
         .args(&[
             "paf",
             "graph-report",
             "stdin",
             "-f",
-            fa,
+            &fa,
             "--min-var-len",
             "100",
         ])
@@ -108,22 +117,25 @@ fn command_paf_graph_report_split_at_large_indel() {
         segments >= 3,
         "expected >= 3 segments after split, got {segments}"
     );
-    let _ = std::fs::remove_file(fa);
 }
 
 #[test]
 fn command_paf_graph_report_small_indel_no_split() {
     // 50M 30I 50M: 30I < 100 → no split. A and B share exactly one aligned node.
     let paf = "A\t200\t0\t130\t+\tB\t200\t0\t160\t95\t160\t255\tcg:Z:50M30I50M\n";
-    let fa = "/tmp/pgr_grep_nosplit.fa";
-    write_temp_fasta(fa, &[("A", &"A".repeat(200)), ("B", &"G".repeat(200))]);
+    let temp = tempfile::TempDir::new().unwrap();
+    let fa = write_temp_fasta(
+        temp.path(),
+        "nosplit",
+        &[("A", &"A".repeat(200)), ("B", &"G".repeat(200))],
+    );
     let (stdout, _stderr) = PgrCmd::new()
         .args(&[
             "paf",
             "graph-report",
             "stdin",
             "-f",
-            fa,
+            &fa,
             "--min-var-len",
             "100",
         ])
@@ -146,7 +158,6 @@ fn command_paf_graph_report_small_indel_no_split() {
         reused, 1,
         "expected exactly 1 cross-path reused node (no split), got {reused}"
     );
-    let _ = std::fs::remove_file(fa);
 }
 
 #[test]
@@ -154,8 +165,12 @@ fn command_paf_graph_report_threshold_comparison() {
     // Same alignment, different thresholds: stricter threshold yields fewer splits.
     // 50M 200I 50M
     let paf = "A\t300\t0\t100\t+\tB\t300\t0\t300\t95\t300\t255\tcg:Z:50M200I50M\n";
-    let fa = "/tmp/pgr_grep_thr.fa";
-    write_temp_fasta(fa, &[("A", &"A".repeat(300)), ("B", &"G".repeat(300))]);
+    let temp = tempfile::TempDir::new().unwrap();
+    let fa = write_temp_fasta(
+        temp.path(),
+        "thr",
+        &[("A", &"A".repeat(300)), ("B", &"G".repeat(300))],
+    );
 
     // Threshold 100: 200I >= 100 → split.
     let (out_strict, _) = PgrCmd::new()
@@ -164,7 +179,7 @@ fn command_paf_graph_report_threshold_comparison() {
             "graph-report",
             "stdin",
             "-f",
-            fa,
+            &fa,
             "--min-var-len",
             "100",
         ])
@@ -177,7 +192,7 @@ fn command_paf_graph_report_threshold_comparison() {
             "graph-report",
             "stdin",
             "-f",
-            fa,
+            &fa,
             "--min-var-len",
             "500",
         ])
@@ -202,17 +217,20 @@ fn command_paf_graph_report_threshold_comparison() {
         seg_strict > seg_loose,
         "stricter threshold should yield more segments: strict={seg_strict} loose={seg_loose}"
     );
-    let _ = std::fs::remove_file(fa);
 }
 
 #[test]
 fn command_paf_graph_report_no_alignment() {
     // Empty PAF → each sequence becomes one isolated novel node.
     let paf = "";
-    let fa = "/tmp/pgr_grep_empty.fa";
-    write_temp_fasta(fa, &[("A", &"ACGT".repeat(10)), ("B", &"TGCA".repeat(10))]);
+    let temp = tempfile::TempDir::new().unwrap();
+    let fa = write_temp_fasta(
+        temp.path(),
+        "empty",
+        &[("A", &"ACGT".repeat(10)), ("B", &"TGCA".repeat(10))],
+    );
     let (stdout, _stderr) = PgrCmd::new()
-        .args(&["paf", "graph-report", "stdin", "-f", fa])
+        .args(&["paf", "graph-report", "stdin", "-f", &fa])
         .stdin(paf)
         .run();
 
@@ -235,5 +253,4 @@ fn command_paf_graph_report_no_alignment() {
     );
     assert_eq!(metrics["isolated_nodes"], "2");
     assert_eq!(metrics["tips"], "0");
-    let _ = std::fs::remove_file(fa);
 }
