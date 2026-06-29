@@ -111,13 +111,13 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // Calculate and output metrics
     for method in methods.split(',') {
         let result = match method {
-            "pearson" => intspan::pearson_correlation(&values1, &values2),
+            "pearson" => pgr::libs::linalg::pearson_correlation(&values1, &values2),
             "spearman" => spearman_correlation(&values1, &values2),
             "mae" => mean_absolute_error(&values1, &values2),
-            "cosine" => intspan::cosine_similarity(&values1, &values2),
-            "jaccard" => intspan::weighted_jaccard_similarity(&values1, &values2),
-            "euclid" => intspan::euclidean_distance(&values1, &values2),
-            _ => unreachable!(),
+            "cosine" => pgr::libs::linalg::cosine_similarity(&values1, &values2),
+            "jaccard" => pgr::libs::linalg::weighted_jaccard_similarity(&values1, &values2),
+            "euclid" => pgr::libs::linalg::euclidean_distance(&values1, &values2),
+            _ => anyhow::bail!("unknown method: {}", method),
         };
         writer.write_fmt(format_args!("{}\t{:.6}\n", method, result))?;
     }
@@ -143,7 +143,7 @@ fn spearman_correlation(x: &[f32], y: &[f32]) -> f32 {
         y_ranks[i] = rank as f32;
     }
 
-    intspan::pearson_correlation(&x_ranks, &y_ranks)
+    pgr::libs::linalg::pearson_correlation(&x_ranks, &y_ranks)
 }
 
 // Calculate mean absolute error

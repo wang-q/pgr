@@ -3,9 +3,8 @@ use pgr::libs::ms::{
     build_anc_seq, build_mut_seq, map_positions as map_pos, parse_header, perturb_positions,
     read_next_sample, system_seed, write_fasta, SimpleRng,
 };
-use std::fs::File;
+use std::io::BufRead;
 use std::io::Write;
-use std::io::{BufRead, BufReader};
 
 pub fn make_subcommand() -> Command {
     Command::new("to-dna")
@@ -126,24 +125,13 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         println!("    using = {}", seed_final);
     }
 
-    let abs_outfile = if outfile == "stdout" {
-        outfile.to_string()
-    } else {
-        intspan::absolute_path(outfile)?.display().to_string()
-    };
-
     // Writer
-    let mut writer: Box<dyn Write> = if abs_outfile == "stdout" {
-        Box::new(std::io::stdout())
-    } else {
-        Box::new(pgr::writer(&abs_outfile)?)
-    };
+    let mut writer: Box<dyn Write> = pgr::writer(outfile)?;
 
     // Process inputs (stdin or files)
     if abs_files.is_empty() {
-        let stdin = std::io::stdin();
         convert_stream(
-            BufReader::new(stdin.lock()),
+            pgr::reader("stdin")?,
             gc,
             Some(seed_final),
             &mut writer,
@@ -151,9 +139,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         )?;
     } else {
         for path in abs_files {
-            let fp = File::open(&path)?;
             convert_stream(
-                BufReader::new(fp),
+                pgr::reader(&path)?,
                 gc,
                 Some(seed_final),
                 &mut writer,

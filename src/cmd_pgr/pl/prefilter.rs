@@ -137,33 +137,40 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let pgr = std::env::current_exe()?.display().to_string();
 
-    chunks.par_iter().for_each_init(
-        || {
-            // Init reader for each chunk
-            if is_bgzf {
-                Input::Bgzf(
-                    noodles_bgzf::io::indexed_reader::Builder::default()
-                        .build_from_path(infile)
-                        .unwrap(),
-                )
+    let results: Vec<anyhow::Result<()>> = chunks
+        .par_iter()
+        .map(|(_, offset, size)| {
+            // Init reader for this chunk
+            let mut reader = if is_bgzf {
+                let r =
+                    noodles_bgzf::io::indexed_reader::Builder::default().build_from_path(infile)?;
+                Input::Bgzf(r)
             } else {
-                Input::File(std::fs::File::open(std::path::Path::new(infile)).unwrap())
-            }
-        },
-        |reader, (_, offset, size)| {
-            let chunk = pgr::libs::loc::read_offset(reader, *offset, *size).unwrap();
+                let f = std::fs::File::open(std::path::Path::new(infile))?;
+                Input::File(f)
+            };
 
-            let mut temp_file = tempfile::NamedTempFile::new().unwrap();
-            temp_file.write_all(&chunk).unwrap();
-            let temp_path = temp_file.path().to_str().unwrap().to_string();
+            let chunk = pgr::libs::loc::read_offset(&mut reader, *offset, *size)?;
+
+            let mut temp_file = tempfile::NamedTempFile::new()?;
+            temp_file.write_all(&chunk)?;
+            let temp_path = temp_file
+                .path()
+                .to_str()
+                .ok_or_else(|| anyhow::anyhow!("temp file path is not valid UTF-8"))?
+                .to_string();
 
             run_cmd!(
                 ${pgr} fa six-frame ${temp_path} --len ${opt_len} |
                     ${pgr} dist seq stdin ${match_file} -k ${opt_kmer} -w ${opt_window}
-            )
-            .unwrap();
-        },
-    );
+            )?;
+            Ok(())
+        })
+        .collect();
+
+    for result in results {
+        result?;
+    }
 
     Ok(())
 }

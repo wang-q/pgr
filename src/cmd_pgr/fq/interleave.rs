@@ -136,8 +136,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 opt_start += 1;
             }
         } else {
-            let reader = pgr::reader(infiles[0])?;
-            let mut seq_in = noodles_fasta::io::Reader::new(reader);
+            let mut seq_in = pgr::libs::fmt::fa::reader(infiles[0])?;
             for result in seq_in.records() {
                 // obtain record or fail with error
                 let record = result?;
@@ -226,10 +225,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 opt_start += 1;
             }
         } else {
-            let reader = pgr::reader(infiles[0])?;
-            let mut seq1_in = noodles_fasta::io::Reader::new(reader);
-            let reader = pgr::reader(infiles[1])?;
-            let mut seq2_in = noodles_fasta::io::Reader::new(reader);
+            let mut seq1_in = pgr::libs::fmt::fa::reader(infiles[0])?;
+            let mut seq2_in = pgr::libs::fmt::fa::reader(infiles[1])?;
 
             let zipped = std::iter::zip(seq1_in.records(), seq2_in.records());
 

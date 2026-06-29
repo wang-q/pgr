@@ -1,8 +1,6 @@
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use std::cell::{Ref, RefCell};
 use std::collections::HashSet;
-use std::fs::File;
-use std::io::{self, BufReader, BufWriter};
 use std::rc::Rc;
 
 use pgr::libs::fmt::net::{read_nets, Chrom, Fill, Gap};
@@ -14,7 +12,7 @@ pub fn make_subcommand() -> Command {
             Arg::new("input")
                 .index(1)
                 .required(true)
-                .help("Input net file (or stdin if '-')"),
+                .help("Input net file (or stdin if 'stdin')"),
         )
         .arg(
             Arg::new("min_score")
@@ -108,6 +106,7 @@ pub fn make_subcommand() -> Command {
                 .action(ArgAction::SetTrue)
                 .help("Only pass gaps, not fills"),
         )
+        .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
 struct FilterCriteria {
@@ -213,15 +212,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     criteria.fill_only = args.get_flag("fill_only");
     criteria.gap_only = args.get_flag("gap_only");
 
-    let reader: Box<dyn io::BufRead> = if input_path == "-" {
-        Box::new(BufReader::new(io::stdin()))
-    } else {
-        Box::new(BufReader::new(File::open(input_path)?))
-    };
+    let reader = pgr::reader(input_path)?;
 
     let chroms = read_nets(reader)?;
 
-    let mut writer = BufWriter::new(io::stdout());
+    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap())?;
 
     for chrom in chroms {
         if !filter_chrom(&chrom, &criteria) {
