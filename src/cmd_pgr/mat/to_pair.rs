@@ -44,13 +44,13 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // Args
     //----------------------------
     let infile = args.get_one::<String>("infile").unwrap();
-    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap());
+    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap())?;
 
     //----------------------------
     // Ops
     //----------------------------
     // Load matrix from PHYLIP format
-    let matrix = pgr::libs::pairmat::NamedMatrix::from_relaxed_phylip(infile);
+    let matrix = pgr::libs::pairmat::NamedMatrix::from_relaxed_phylip(infile)?;
     let names = matrix.get_names();
 
     // Output pairwise distances (lower triangle only)

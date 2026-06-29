@@ -140,18 +140,15 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let is_dash = args.get_flag("dash");
     let is_simplify = args.get_flag("simplify");
 
-    let writer = pgr::writer(args.get_one::<String>("outfile").unwrap());
-    let mut fa_out = noodles_fasta::io::writer::Builder::default()
-        .set_line_base_count(opt_line)
-        .build_from_writer(writer);
+    let mut fa_out =
+        pgr::libs::fmt::fa::writer_with_wrap(args.get_one::<String>("outfile").unwrap(), opt_line)?;
 
     //----------------------------
     // Process
     //----------------------------
     let mut set_list: BTreeSet<String> = BTreeSet::new();
     for infile in args.get_many::<String>("infiles").unwrap() {
-        let reader = pgr::reader(infile);
-        let mut fa_in = noodles_fasta::io::Reader::new(reader);
+        let mut fa_in = pgr::libs::fmt::fa::reader(infile)?;
 
         for result in fa_in.records() {
             // obtain record or fail with error
@@ -199,9 +196,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 }
             } // end of each nt
 
-            let definition = noodles_fasta::record::Definition::new(&*name, None);
-            let seq_out = noodles_fasta::record::Sequence::from(seq_out.as_bytes().to_vec());
-            let record_out = noodles_fasta::Record::new(definition, seq_out);
+            let record_out = pgr::libs::fmt::fa::new_record(&name, seq_out.as_bytes());
             fa_out.write_record(&record_out)?;
         }
     }

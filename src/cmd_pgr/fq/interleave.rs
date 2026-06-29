@@ -75,7 +75,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     // Args
     //----------------------------
-    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap());
+    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap())?;
 
     let is_out_fq = args.get_flag("fq");
     let opt_prefix = args.get_one::<String>("prefix").unwrap();
@@ -86,14 +86,14 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         .unwrap()
         .map(|s| s.as_str())
         .collect::<Vec<_>>();
-    let is_in_fq = pgr::libs::io::is_fq(infiles[0]);
+    let is_in_fq = pgr::libs::io::is_fq(infiles[0])?;
 
     //----------------------------
     // Ops
     //----------------------------
     if infiles.len() == 1 {
         if is_in_fq {
-            let reader = pgr::reader(infiles[0]);
+            let reader = pgr::reader(infiles[0])?;
             let mut seq_in = noodles_fastq::io::Reader::new(reader);
             for result in seq_in.records() {
                 // obtain record or fail with error
@@ -136,7 +136,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 opt_start += 1;
             }
         } else {
-            let reader = pgr::reader(infiles[0]);
+            let reader = pgr::reader(infiles[0])?;
             let mut seq_in = noodles_fasta::io::Reader::new(reader);
             for result in seq_in.records() {
                 // obtain record or fail with error
@@ -177,9 +177,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         }
     } else {
         if is_in_fq {
-            let reader = pgr::reader(infiles[0]);
+            let reader = pgr::reader(infiles[0])?;
             let mut seq1_in = noodles_fastq::io::Reader::new(reader);
-            let reader = pgr::reader(infiles[1]);
+            let reader = pgr::reader(infiles[1])?;
             let mut seq2_in = noodles_fastq::io::Reader::new(reader);
 
             let zipped = std::iter::zip(seq1_in.records(), seq2_in.records());
@@ -226,9 +226,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 opt_start += 1;
             }
         } else {
-            let reader = pgr::reader(infiles[0]);
+            let reader = pgr::reader(infiles[0])?;
             let mut seq1_in = noodles_fasta::io::Reader::new(reader);
-            let reader = pgr::reader(infiles[1]);
+            let reader = pgr::reader(infiles[1])?;
             let mut seq2_in = noodles_fasta::io::Reader::new(reader);
 
             let zipped = std::iter::zip(seq1_in.records(), seq2_in.records());

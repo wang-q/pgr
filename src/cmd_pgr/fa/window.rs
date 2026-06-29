@@ -101,13 +101,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         return Err(anyhow::anyhow!("Cannot use --chunk with stdout output"));
     }
 
-    let reader = pgr::reader(infile);
-    let mut fa_in = noodles_fasta::io::Reader::new(reader);
+    let mut fa_in = pgr::libs::fmt::fa::reader(infile)?;
 
     // Helper to create writer for a specific part
     let create_writer = |part: usize| -> Box<dyn std::io::Write> {
         if outfile == "stdout" {
-            pgr::writer("stdout")
+            pgr::writer("stdout").unwrap()
         } else {
             let path = std::path::Path::new(outfile);
             let file_stem = path.file_stem().unwrap().to_str().unwrap();
@@ -123,7 +122,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             };
             let new_filename = format!("{}.{:03}{}", stem, part, ext_str);
             let new_path = path.with_file_name(new_filename);
-            pgr::writer(new_path.to_str().unwrap())
+            pgr::writer(new_path.to_str().unwrap()).unwrap()
         }
     };
 
@@ -142,20 +141,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     // Initialize global writer if not chunking.
     if chunk_size.is_none() {
-        let writer = pgr::writer(outfile);
-        fa_out = Some(
-            noodles_fasta::io::writer::Builder::default()
-                .set_line_base_count(usize::MAX)
-                .build_from_writer(writer),
-        );
+        fa_out = Some(pgr::libs::fmt::fa::writer(outfile)?);
     } else if !shuffle {
         // If chunking without shuffle, init first writer
         let writer = create_writer(current_part);
-        fa_out = Some(
-            noodles_fasta::io::writer::Builder::default()
-                .set_line_base_count(usize::MAX)
-                .build_from_writer(writer),
-        );
+        fa_out = Some(pgr::libs::fmt::fa::writer_from_writer(writer));
     }
 
     // Reuse a single buffer to avoid reallocation if not needed, but for shuffle we accumulate.
@@ -201,9 +191,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
                         // Write to current part file
                         let writer = create_writer(current_part);
-                        let mut chunk_out = noodles_fasta::io::writer::Builder::default()
-                            .set_line_base_count(usize::MAX)
-                            .build_from_writer(writer);
+                        let mut chunk_out = pgr::libs::fmt::fa::writer_from_writer(writer);
 
                         for r in &records_buffer {
                             chunk_out.write_record(r)?;
@@ -220,11 +208,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                         current_part += 1;
                         record_count = 0;
                         let writer = create_writer(current_part);
-                        fa_out = Some(
-                            noodles_fasta::io::writer::Builder::default()
-                                .set_line_base_count(usize::MAX)
-                                .build_from_writer(writer),
-                        );
+                        fa_out = Some(pgr::libs::fmt::fa::writer_from_writer(writer));
                     }
                 }
 
@@ -250,17 +234,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
         let mut final_out = if chunk_size.is_some() {
             let writer = create_writer(current_part);
-            noodles_fasta::io::writer::Builder::default()
-                .set_line_base_count(usize::MAX)
-                .build_from_writer(writer)
+            pgr::libs::fmt::fa::writer_from_writer(writer)
         } else {
             if let Some(writer) = fa_out.take() {
                 writer
             } else {
-                let writer = pgr::writer(outfile);
-                noodles_fasta::io::writer::Builder::default()
-                    .set_line_base_count(usize::MAX)
-                    .build_from_writer(writer)
+                pgr::libs::fmt::fa::writer(outfile)?
             }
         };
 

@@ -67,12 +67,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     let infile = args.get_one::<String>("infile").unwrap();
     let opt_mode = args.get_one::<String>("mode").unwrap();
-    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap());
+    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap())?;
 
     //----------------------------
     // Ops
     //----------------------------
-    let matrix = pgr::libs::pairmat::NamedMatrix::from_relaxed_phylip(infile);
+    let matrix = pgr::libs::pairmat::NamedMatrix::from_relaxed_phylip(infile)?;
     let names = matrix.get_names();
     let size = matrix.size();
 

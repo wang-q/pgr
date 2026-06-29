@@ -144,7 +144,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // Spawn a writer thread
     let output = args.get_one::<String>("outfile").unwrap().to_string();
     let writer_thread = std::thread::spawn(move || {
-        let mut writer = pgr::writer(&output);
+        let mut writer = pgr::writer(&output).unwrap();
         for result in receiver {
             writer.write_all(result.as_bytes()).unwrap();
         }
@@ -255,7 +255,7 @@ fn load_file(
     opt_window: usize,
     opt_dim: usize,
 ) -> anyhow::Result<Vec<HvEntry>> {
-    let reader = pgr::reader(infile);
+    let reader = pgr::reader(infile)?;
     let mut fa_in = fasta::io::Reader::new(reader);
 
     let mut file_set = rapidhash::RapidHashSet::default();

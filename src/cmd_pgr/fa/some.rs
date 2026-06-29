@@ -57,13 +57,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     let is_invert = args.get_flag("invert");
 
-    let reader = pgr::reader(args.get_one::<String>("infile").unwrap());
-    let mut fa_in = noodles_fasta::io::Reader::new(reader);
+    let mut fa_in = pgr::libs::fmt::fa::reader(args.get_one::<String>("infile").unwrap())?;
 
-    let writer = pgr::writer(args.get_one::<String>("outfile").unwrap());
-    let mut fa_out = noodles_fasta::io::writer::Builder::default()
-        .set_line_base_count(usize::MAX)
-        .build_from_writer(writer);
+    let mut fa_out = pgr::libs::fmt::fa::writer(args.get_one::<String>("outfile").unwrap())?;
 
     //----------------------------
     // Load list

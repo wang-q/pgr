@@ -83,12 +83,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     let infile = args.get_one::<String>("infile").unwrap();
 
-    let mut fa_out = {
-        let writer = pgr::writer(args.get_one::<String>("outfile").unwrap());
-        noodles_fasta::io::writer::Builder::default()
-            .set_line_base_count(usize::MAX)
-            .build_from_writer(writer)
-    };
+    let mut fa_out = pgr::libs::fmt::fa::writer(args.get_one::<String>("outfile").unwrap())?;
 
     let mut ranges = if args.contains_id("ranges") {
         args.get_many::<String>("ranges")

@@ -72,14 +72,13 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     // Args
     //----------------------------
-    let reader = pgr::reader(args.get_one::<String>("infile").unwrap());
-    let mut fa_in = noodles_fasta::io::Reader::new(reader);
+    let mut fa_in = pgr::libs::fmt::fa::reader(args.get_one::<String>("infile").unwrap())?;
 
     let opt_len = *args.get_one::<usize>("len").unwrap();
     let is_start = args.get_flag("start");
     let is_end = args.get_flag("end");
 
-    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap());
+    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap())?;
 
     //----------------------------
     // Ops

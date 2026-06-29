@@ -45,7 +45,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     // Args
     //----------------------------
-    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap());
+    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap())?;
     let opt_genome = args.get_one::<String>("genome.fa").unwrap();
     let opt_name = &args
         .get_one::<String>("name")
@@ -59,7 +59,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let (mut genome_reader, loc_of) = loc::open_indexed(opt_genome, false)?;
 
     for infile in args.get_many::<String>("infiles").unwrap() {
-        let mut reader = pgr::reader(infile);
+        let mut reader = pgr::reader(infile)?;
 
         while let Ok(block) = pgr::libs::fmt::fas::next_fas_block(&mut reader) {
             let block_names = block.names;

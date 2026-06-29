@@ -2,22 +2,22 @@ use indexmap::IndexMap;
 use noodles_bgzf as bgzf;
 use noodles_core;
 use noodles_fasta as fasta;
-use std::io::{BufRead, Read, Seek, SeekFrom};
+use std::io::{Read, Seek, SeekFrom};
 
+/// Random-access reader for indexed FASTA files (plain or BGZF-compressed).
 pub enum Input {
-    Buf(Box<dyn BufRead>),
     File(std::fs::File),
     Bgzf(bgzf::io::IndexedReader<std::fs::File>),
 }
 
 pub fn create_loc(infile: &str, locfile: &str, is_bgzf: bool) -> anyhow::Result<()> {
-    let mut reader = if is_bgzf {
+    let mut reader: Box<dyn std::io::BufRead> = if is_bgzf {
         // http://www.htslib.org/doc/bgzip.html
         // Bgzip will attempt to ensure BGZF blocks end on a newline when the input is a text file.
         // The exception to this is where a single line is larger than a BGZF block (64Kb).
-        Input::Bgzf(bgzf::io::indexed_reader::Builder::default().build_from_path(infile)?)
+        Box::new(bgzf::io::indexed_reader::Builder::default().build_from_path(infile)?)
     } else {
-        Input::Buf(crate::libs::io::reader(infile))
+        crate::libs::io::reader(infile)?
     };
 
     let mut writer: Box<dyn std::io::Write> =
@@ -27,11 +27,8 @@ pub fn create_loc(infile: &str, locfile: &str, is_bgzf: bool) -> anyhow::Result<
     let mut record_size = 0; // including header, sequence, newlines
     let mut offset = 0;
     let mut line = String::new();
-    while let Ok(num) = match &mut reader {
-        Input::Buf(rdr) => rdr.read_line(&mut line),
-        Input::Bgzf(rdr) => rdr.read_line(&mut line),
-        &mut Input::File(_) => unreachable!(),
-    } {
+    loop {
+        let num = reader.read_line(&mut line)?;
         if num == 0 {
             break;
         }
@@ -48,7 +45,7 @@ pub fn create_loc(infile: &str, locfile: &str, is_bgzf: bool) -> anyhow::Result<
             let name = stripped
                 .split(|c: char| c.is_ascii_whitespace())
                 .next()
-                .unwrap();
+                .unwrap_or("");
             writer.write_fmt(format_args!("{}\t{}", name, offset))?;
         }
 
@@ -86,7 +83,7 @@ pub fn open_indexed(
 }
 
 pub fn load_loc(loc_file: &str) -> anyhow::Result<IndexMap<String, (u64, usize)>> {
-    let mut reader = crate::libs::io::reader(loc_file);
+    let mut reader = crate::libs::io::reader(loc_file)?;
 
     let mut loc_of: IndexMap<String, (u64, usize)> = IndexMap::new();
     let mut line = String::new();
@@ -115,7 +112,9 @@ pub fn fetch_record(
     loc_of: &IndexMap<String, (u64, usize)>,
     name: &str,
 ) -> anyhow::Result<fasta::Record> {
-    let (offset, size) = loc_of.get(name).unwrap();
+    let (offset, size) = loc_of
+        .get(name)
+        .ok_or_else(|| anyhow::anyhow!("{} not found in the .loc index file", name))?;
 
     let data_buf = read_offset(reader, *offset, *size)?;
     let mut fa_in = fasta::io::Reader::new(&data_buf[..]);
@@ -178,10 +177,15 @@ pub fn fetch_range_seq(
     }
 
     // slice here is 1-based
-    let start = noodles_core::Position::new(*rg.start() as usize).unwrap();
-    let end = noodles_core::Position::new(*rg.end() as usize).unwrap();
+    let start = noodles_core::Position::new(*rg.start() as usize)
+        .ok_or_else(|| anyhow::anyhow!("invalid start position: {}", *rg.start()))?;
+    let end = noodles_core::Position::new(*rg.end() as usize)
+        .ok_or_else(|| anyhow::anyhow!("invalid end position: {}", *rg.end()))?;
 
-    let mut slice = record.sequence().slice(start..=end).unwrap();
+    let mut slice = record
+        .sequence()
+        .slice(start..=end)
+        .ok_or_else(|| anyhow::anyhow!("slice error for [{}]", rg))?;
     if rg.strand() == "-" {
         slice = slice.complement().rev().collect::<Result<_, _>>()?;
     }
@@ -202,7 +206,6 @@ pub fn read_offset(reader: &mut Input, offset: u64, size: usize) -> anyhow::Resu
             rdr.seek(SeekFrom::Start(offset))?;
             rdr.read_exact(&mut data_buf)?;
         }
-        Input::Buf(_) => unreachable!(),
     }
 
     Ok(data_buf)

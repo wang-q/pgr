@@ -337,7 +337,7 @@ fn create_table(density_data: &IndexMap<String, Vec<f64>>) -> String {
 
 fn gen_hh(context: &tera::Context) -> anyhow::Result<()> {
     let outfile = context.get("outfile").unwrap().as_str().unwrap();
-    let mut writer = pgr::writer(outfile);
+    let mut writer = pgr::writer(outfile)?;
 
     static FILE_TEMPLATE: &str = include_str!("../../../docs/heatmap.tex");
     let mut template = FILE_TEMPLATE.to_string();

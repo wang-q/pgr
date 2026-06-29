@@ -84,7 +84,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     // Args
     //----------------------------
-    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap());
+    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap())?;
 
     let infile = args.get_one::<String>("infile").unwrap();
     let mode = args.get_one::<String>("mode").unwrap();
@@ -94,7 +94,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let mut replace_of: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for rfile in args.get_many::<String>("replace.tsv").unwrap() {
-        for line in pgr::read_lines(rfile) {
+        for line in pgr::read_lines(rfile)? {
             let parts: Vec<_> = line.split('\t').collect();
 
             if parts.len() < 2 {

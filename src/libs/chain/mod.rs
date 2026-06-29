@@ -25,6 +25,7 @@
 pub mod algo;
 pub mod connect;
 pub mod gap_calc;
+pub mod net;
 pub mod record;
 pub mod sub_matrix;
 

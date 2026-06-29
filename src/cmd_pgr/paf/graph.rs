@@ -87,7 +87,7 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
     let mut seqs: HashMap<String, Vec<u8>> = HashMap::new();
     if let Some(paths) = &fasta_files {
         for fa_path in paths {
-            let reader = pgr::reader(fa_path);
+            let reader = pgr::reader(fa_path)?;
             let mut fa_in = noodles_fasta::io::Reader::new(reader);
             for result in fa_in.records() {
                 let record = result?;
@@ -99,14 +99,14 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
     }
 
     // Read PAF.
-    let paf_reader = pgr::reader(infile);
+    let paf_reader = pgr::reader(infile)?;
 
     // Build the graph.
     let seqs_ref = if seqs.is_empty() { None } else { Some(&seqs) };
     let graph = PafGraph::build(paf_reader, seqs_ref, min_var_len)?;
 
     // Write GFA.
-    let writer = pgr::writer(outfile);
+    let writer = pgr::writer(outfile)?;
     graph.write_gfa(writer)?;
 
     Ok(())

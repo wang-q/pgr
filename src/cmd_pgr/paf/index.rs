@@ -57,7 +57,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let idx = if count == 1 {
         PafIndex::build_from_path(infiles[0])?
     } else {
-        let readers: Vec<_> = infiles.iter().map(|f| pgr::reader(f)).collect();
+        let readers: Vec<_> = infiles
+            .iter()
+            .map(|f| pgr::reader(f))
+            .collect::<Result<Vec<_>, _>>()?;
         PafIndex::build_multi(readers)?
     };
 

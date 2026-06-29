@@ -236,7 +236,7 @@ fn gen_module(info: &HashMap<String, String>, domains: &Vec<HashMap<String, Stri
 fn gen_nrps(context: &tera::Context) -> anyhow::Result<()> {
     let outfile = context.get("outfile").unwrap().as_str().unwrap();
     let all_tex = context.get("all_tex").unwrap().as_str().unwrap();
-    let mut writer = pgr::writer(outfile);
+    let mut writer = pgr::writer(outfile)?;
 
     static FILE_TEMPLATE: &str = include_str!("../../../docs/nrps.tex");
     let mut template = FILE_TEMPLATE.to_string();

@@ -83,7 +83,7 @@ Examples:
 
 // command implementation
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap());
+    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap())?;
 
     let infile = args.get_one::<String>("infile").unwrap();
     let input = match infile.as_str() {

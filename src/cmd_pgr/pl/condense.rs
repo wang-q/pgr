@@ -138,7 +138,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // groups: all unique terms for each rank
     let mut all_groups: Vec<Vec<String>> = vec![vec![]; ranks.len()];
 
-    for line in pgr::read_lines(&abs_taxon) {
+    for line in pgr::read_lines(&abs_taxon)? {
         let parts: Vec<&str> = line.split('\t').collect();
         if parts.len() < 2 {
             continue;
@@ -214,7 +214,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             }
 
             // Write node list to a reusable file
-            let mut writer = pgr::writer("nodes.txt");
+            let mut writer = pgr::writer("nodes.txt")?;
             for node in &nodes_in_group {
                 writer.write_all(format!("{}\n", node).as_ref())?;
             }
@@ -273,7 +273,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         "result.nwk",
     )?;
 
-    let mut writer = pgr::writer("condensed.tsv");
+    let mut writer = pgr::writer("condensed.tsv")?;
     for line in condensed.iter() {
         writer.write_all(format!("{}\n", line).as_ref())?;
     }

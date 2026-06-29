@@ -110,8 +110,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     if mode == "name" {
         for infile in args.get_many::<String>("infiles").unwrap() {
-            let reader = pgr::reader(infile);
-            let mut fa_in = noodles_fasta::io::Reader::new(reader);
+            let mut fa_in = pgr::libs::fmt::fa::reader(infile)?;
 
             for result in fa_in.records() {
                 // obtain record or fail with error
@@ -151,8 +150,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         let part_width = (opt_maxpart.checked_ilog10().unwrap_or(0) + 1) as usize;
 
         'outer: for infile in args.get_many::<String>("infiles").unwrap() {
-            let reader = pgr::reader(infile);
-            let mut fa_in = noodles_fasta::io::Reader::new(reader);
+            let mut fa_in = pgr::libs::fmt::fa::reader(infile)?;
 
             for result in fa_in.records() {
                 if file_sn > opt_maxpart {

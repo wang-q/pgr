@@ -56,7 +56,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     // Args
     //----------------------------
-    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap());
+    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap())?;
     let is_strict = args.get_flag("strict");
 
     let needed = intspan::read_first_column(args.get_one::<String>("name.lst").unwrap());
@@ -65,7 +65,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // Operating
     //----------------------------
     for infile in args.get_many::<String>("infiles").unwrap() {
-        let mut reader = pgr::reader(infile);
+        let mut reader = pgr::reader(infile)?;
 
         'BLOCK: while let Ok(block) = pgr::libs::fmt::fas::next_fas_block(&mut reader) {
             let block_names = block.names;

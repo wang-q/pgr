@@ -125,16 +125,16 @@ impl PafIndex {
     ///
     /// For non-BGZF files (plain text, regular gzip): falls back to in-memory
     /// build (`CigarStore::Owned`).
-    pub fn build_from_path(path: &str) -> std::io::Result<Self> {
+    pub fn build_from_path(path: &str) -> anyhow::Result<Self> {
         if path == "stdin" {
-            return Self::build(crate::libs::io::reader(path));
+            return Ok(Self::build(crate::libs::io::reader(path)?)?);
         }
 
         let p = std::path::Path::new(path);
         if p.extension() == Some(std::ffi::OsStr::new("gz")) && crate::is_bgzf(path) {
-            Self::build_lazy_bgzf(path)
+            Ok(Self::build_lazy_bgzf(path)?)
         } else {
-            Self::build(crate::libs::io::reader(path))
+            Ok(Self::build(crate::libs::io::reader(path)?)?)
         }
     }
 

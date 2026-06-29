@@ -67,18 +67,14 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     // Args
     //----------------------------
-    let reader = pgr::reader(args.get_one::<String>("infile").unwrap());
-    let mut fa_in = noodles_fasta::io::Reader::new(reader);
+    let mut fa_in = pgr::libs::fmt::fa::reader(args.get_one::<String>("infile").unwrap())?;
 
     let json = intspan::read_json(args.get_one::<String>("runlist").unwrap());
     let runlists = intspan::json2set(&json);
 
     let is_hard = args.get_flag("hard");
 
-    let writer = pgr::writer(args.get_one::<String>("outfile").unwrap());
-    let mut fa_out = noodles_fasta::io::writer::Builder::default()
-        .set_line_base_count(usize::MAX)
-        .build_from_writer(writer);
+    let mut fa_out = pgr::libs::fmt::fa::writer(args.get_one::<String>("outfile").unwrap())?;
 
     //----------------------------
     // Process
@@ -112,9 +108,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         //----------------------------
         // Output
         //----------------------------
-        let definition = noodles_fasta::record::Definition::new(&*name, None);
-        let seq_out = noodles_fasta::record::Sequence::from(seq_out.as_bytes().to_vec());
-        let record_out = noodles_fasta::Record::new(definition, seq_out);
+        let record_out = pgr::libs::fmt::fa::new_record(&name, seq_out.as_bytes());
         fa_out.write_record(&record_out)?;
     }
 

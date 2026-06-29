@@ -194,7 +194,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
 fn gen_venn_2(context: &tera::Context) -> anyhow::Result<()> {
     let outfile = context.get("outfile").unwrap().as_str().unwrap();
-    let mut writer = pgr::writer(outfile);
+    let mut writer = pgr::writer(outfile)?;
 
     static FILE_TEMPLATE: &str = include_str!("../../../docs/venn.tex");
     let mut template = FILE_TEMPLATE.to_string();
@@ -242,7 +242,7 @@ fn gen_venn_2(context: &tera::Context) -> anyhow::Result<()> {
 
 fn gen_venn_3(context: &tera::Context) -> anyhow::Result<()> {
     let outfile = context.get("outfile").unwrap().as_str().unwrap();
-    let mut writer = pgr::writer(outfile);
+    let mut writer = pgr::writer(outfile)?;
 
     static FILE_TEMPLATE: &str = include_str!("../../../docs/venn.tex");
     let mut template = FILE_TEMPLATE.to_string();
@@ -302,7 +302,7 @@ fn gen_venn_3(context: &tera::Context) -> anyhow::Result<()> {
 
 fn gen_venn_4(context: &tera::Context) -> anyhow::Result<()> {
     let outfile = context.get("outfile").unwrap().as_str().unwrap();
-    let mut writer = pgr::writer(outfile);
+    let mut writer = pgr::writer(outfile)?;
 
     static FILE_TEMPLATE: &str = include_str!("../../../docs/venn.tex");
     let mut template = FILE_TEMPLATE.to_string();

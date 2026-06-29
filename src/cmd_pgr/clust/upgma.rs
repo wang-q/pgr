@@ -36,13 +36,13 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let outfile = args.get_one::<String>("outfile").unwrap();
 
     // Load matrix
-    let matrix = pgr::libs::pairmat::NamedMatrix::from_relaxed_phylip(infile);
+    let matrix = pgr::libs::pairmat::NamedMatrix::from_relaxed_phylip(infile)?;
 
     // Build tree
     let tree = upgma::upgma(&matrix)?;
 
     // Output tree
-    let mut writer = pgr::writer(outfile);
+    let mut writer = pgr::writer(outfile)?;
     writer.write_all((tree.to_newick() + "\n").as_ref())?;
 
     Ok(())

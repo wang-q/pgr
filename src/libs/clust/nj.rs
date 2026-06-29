@@ -185,7 +185,7 @@ D 14 9 7 0
         let mut file = std::fs::File::create(filename).unwrap();
         file.write_all(content.as_bytes()).unwrap();
 
-        let mat = NamedMatrix::from_relaxed_phylip(filename);
+        let mat = NamedMatrix::from_relaxed_phylip(filename).unwrap();
         std::fs::remove_file(filename).unwrap(); // Cleanup
 
         let tree = nj(&mat).unwrap();

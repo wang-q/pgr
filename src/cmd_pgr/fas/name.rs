@@ -47,7 +47,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     // Args
     //----------------------------
-    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap());
+    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap())?;
     let is_count = args.get_flag("count");
 
     //----------------------------
@@ -57,7 +57,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut count_of: BTreeMap<String, i32> = BTreeMap::new();
 
     for infile in args.get_many::<String>("infiles").unwrap() {
-        let mut reader = pgr::reader(infile);
+        let mut reader = pgr::reader(infile)?;
 
         while let Ok(block) = pgr::libs::fmt::fas::next_fas_block(&mut reader) {
             for entry in &block.entries {

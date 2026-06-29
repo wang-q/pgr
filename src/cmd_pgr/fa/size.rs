@@ -43,12 +43,11 @@ Examples:
 
 // command implementation
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap());
+    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap())?;
     let no_ns = args.get_flag("no_ns");
 
     for infile in args.get_many::<String>("infiles").unwrap() {
-        let reader = pgr::reader(infile);
-        let mut fa_in = noodles_fasta::io::Reader::new(reader);
+        let mut fa_in = pgr::libs::fmt::fa::reader(infile)?;
 
         for result in fa_in.records() {
             let record = result?;

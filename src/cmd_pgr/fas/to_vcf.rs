@@ -46,7 +46,7 @@ Examples:
 }
 
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap());
+    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap())?;
     let sizes_path = args
         .get_one::<String>("sizes")
         .map(|s| s.to_string())
@@ -67,7 +67,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 if infile.to_lowercase() == "stdin" {
                     continue;
                 }
-                let mut reader = pgr::reader(infile);
+                let mut reader = pgr::reader(infile)?;
                 while let Ok(block) = next_fas_block(&mut reader) {
                     let chr = block.entries.first().unwrap().range().chr().to_string();
                     contigs.insert(chr);
@@ -77,7 +77,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     }
 
     for infile in args.get_many::<String>("infiles").unwrap() {
-        let mut reader = pgr::reader(infile);
+        let mut reader = pgr::reader(infile)?;
 
         while let Ok(block) = next_fas_block(&mut reader) {
             if !header_written {

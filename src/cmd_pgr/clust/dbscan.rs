@@ -86,7 +86,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let opt_eps = *args.get_one::<f32>("eps").unwrap();
     let opt_min_points = *args.get_one::<usize>("min_points").unwrap();
 
-    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap());
+    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap())?;
 
     //----------------------------
     // 2. Load Matrix
@@ -94,7 +94,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     // Load matrix from pairwise distances
     let (matrix, names) =
-        pgr::libs::pairmat::ScoringMatrix::from_pair_scores(infile, opt_same, opt_missing);
+        pgr::libs::pairmat::ScoringMatrix::from_pair_scores(infile, opt_same, opt_missing)?;
 
     //----------------------------
     // 3. Clustering

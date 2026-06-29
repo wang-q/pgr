@@ -73,7 +73,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut res_of: BTreeMap<String, BTreeMap<String, intspan::IntSpan>> = BTreeMap::new();
 
     for infile in args.get_many::<String>("infiles").unwrap() {
-        let mut reader = pgr::reader(infile);
+        let mut reader = pgr::reader(infile)?;
 
         while let Ok(block) = pgr::libs::fmt::fas::next_fas_block(&mut reader) {
             let block_names = block.names;

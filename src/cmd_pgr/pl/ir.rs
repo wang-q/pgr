@@ -131,7 +131,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     )?;
 
     let mut chrs: Vec<String> = vec![];
-    for line in pgr::read_lines("chr.sizes") {
+    for line in pgr::read_lines("chr.sizes")? {
         let fields: Vec<&str> = line.split('\t').collect();
         if fields.len() == 2 {
             chrs.push(fields[0].to_string());
@@ -153,10 +153,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             Profex -z genome ${sn} > prof.${sn}.txt
         )?;
 
-        let reader = pgr::reader(&format!("prof.{}.txt", sn));
+        let reader = pgr::reader(&format!("prof.{}.txt", sn))?;
 
         let rg_file = format!("prof.{}.rg", sn);
-        let mut writer = pgr::writer(&rg_file);
+        let mut writer = pgr::writer(&rg_file)?;
 
         for line in reader.lines().map_while(Result::ok) {
             let Some(caps) = re_prof.captures(&line) else {

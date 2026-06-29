@@ -124,7 +124,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         .get_one::<usize>("genome")
         .copied()
         .unwrap_or(usize::MAX);
-    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap());
+    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap())?;
 
     //----------------------------
     // Process
@@ -134,8 +134,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut total_size = 0;
 
     for infile in args.get_many::<String>("infiles").unwrap() {
-        let reader = pgr::reader(infile);
-        let mut fa_in = noodles_fasta::io::Reader::new(reader);
+        let mut fa_in = pgr::libs::fmt::fa::reader(infile)?;
 
         for result in fa_in.records() {
             // obtain record or fail with error

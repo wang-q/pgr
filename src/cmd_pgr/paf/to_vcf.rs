@@ -88,7 +88,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let gap_open = *args.get_one::<i32>("gap_open").unwrap();
     let gap_extend = *args.get_one::<i32>("gap_extend").unwrap();
 
-    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap());
+    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap())?;
 
     output_vcf(
         &mut writer,

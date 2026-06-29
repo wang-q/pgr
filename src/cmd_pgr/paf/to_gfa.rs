@@ -105,7 +105,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let gap_extend = *args.get_one::<i32>("gap_extend").unwrap();
     let crush = args.get_flag("crush");
 
-    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap());
+    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap())?;
 
     output_gfa(
         &mut writer,

@@ -56,7 +56,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     // Args
     //----------------------------
-    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap());
+    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap())?;
 
     let json = intspan::read_json(args.get_one::<String>("runlist.json").unwrap());
     let set = intspan::json2set(&json);
@@ -71,7 +71,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // Operating
     //----------------------------
     for infile in args.get_many::<String>("infiles").unwrap() {
-        let mut reader = pgr::reader(infile);
+        let mut reader = pgr::reader(infile)?;
 
         while let Ok(block) = pgr::libs::fmt::fas::next_fas_block(&mut reader) {
             // the first name of the first block

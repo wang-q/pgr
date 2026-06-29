@@ -38,14 +38,14 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     let infile = args.get_one::<String>("infile").unwrap();
     let list_file = args.get_one::<String>("list").unwrap();
-    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap());
+    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap())?;
 
     let wanted_names = intspan::read_first_column(list_file);
 
     //----------------------------
     // Load and process matrix
     //----------------------------
-    let matrix = pgr::libs::pairmat::NamedMatrix::from_relaxed_phylip(infile);
+    let matrix = pgr::libs::pairmat::NamedMatrix::from_relaxed_phylip(infile)?;
     let all_names = matrix.get_names();
     let mut indices = Vec::new();
 

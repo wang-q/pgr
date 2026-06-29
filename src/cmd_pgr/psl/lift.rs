@@ -62,15 +62,15 @@ fn parse_subrange(name: &str) -> Option<(String, u32, u32)> {
 
 // command implementation
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap());
+    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap())?;
     let infile = args.get_one::<String>("infile").unwrap();
-    let reader = pgr::reader(infile);
+    let reader = pgr::reader(infile)?;
 
     let q_sizes_file = args.get_one::<String>("q_sizes").map(|s| s.as_str());
     let t_sizes_file = args.get_one::<String>("t_sizes").map(|s| s.as_str());
 
-    let q_sizes_map = q_sizes_file.map(pgr::libs::io::read_sizes);
-    let t_sizes_map = t_sizes_file.map(pgr::libs::io::read_sizes);
+    let q_sizes_map = q_sizes_file.map(pgr::libs::io::read_sizes).transpose()?;
+    let t_sizes_map = t_sizes_file.map(pgr::libs::io::read_sizes).transpose()?;
 
     for line in reader.lines() {
         let line = line?;

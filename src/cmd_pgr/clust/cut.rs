@@ -335,7 +335,7 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
         }
     }
 
-    let mut writer = pgr::writer(outfile);
+    let mut writer = pgr::writer(outfile)?;
 
     if let Some(scan_str) = matches.get_one::<String>("scan") {
         let parts: Vec<&str> = scan_str.split(',').collect();
@@ -474,7 +474,7 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
             let matrix_file = matches
                 .get_one::<String>("matrix")
                 .ok_or_else(|| anyhow::anyhow!("--matrix is required for dynamic-hybrid"))?;
-            let dist_matrix = pgr::libs::pairmat::NamedMatrix::from_relaxed_phylip(matrix_file);
+            let dist_matrix = pgr::libs::pairmat::NamedMatrix::from_relaxed_phylip(matrix_file)?;
 
             let max_tree_height = matches.get_one::<f64>("max-tree-height").copied();
             let max_pam_dist = matches.get_one::<f64>("max-pam-dist").copied();

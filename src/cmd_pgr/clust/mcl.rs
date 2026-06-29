@@ -99,14 +99,14 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let max_iter = *args.get_one::<usize>("max_iter").unwrap();
     let outfile = args.get_one::<String>("outfile").unwrap();
 
-    let mut writer = pgr::writer(outfile);
+    let mut writer = pgr::writer(outfile)?;
 
     //----------------------------
     // 2. Load Matrix
     //----------------------------
     // ScoringMatrix::from_pair_scores is only implemented for f32
     let (sm, names) =
-        pgr::libs::pairmat::ScoringMatrix::<f32>::from_pair_scores(infile, opt_same, opt_missing);
+        pgr::libs::pairmat::ScoringMatrix::<f32>::from_pair_scores(infile, opt_same, opt_missing)?;
 
     //----------------------------
     // 3. Clustering

@@ -107,15 +107,15 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let offset = *args.get_one::<f32>("offset").unwrap();
     let normalize = args.get_flag("normalize");
     let format = args.get_one::<String>("format").unwrap().as_str();
-    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap());
+    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap())?;
 
     //----------------------------
     // Load and Process
     //----------------------------
     let mut matrix = if format == "pair" {
-        pgr::libs::pairmat::NamedMatrix::from_pair_scores(infile, 0.0, 1.0)
+        pgr::libs::pairmat::NamedMatrix::from_pair_scores(infile, 0.0, 1.0)?
     } else {
-        pgr::libs::pairmat::NamedMatrix::from_relaxed_phylip(infile)
+        pgr::libs::pairmat::NamedMatrix::from_relaxed_phylip(infile)?
     };
 
     // Get diagonals if needed

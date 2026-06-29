@@ -135,11 +135,15 @@ where
 
 // Add a separate implementation for f32 specifically for from_pair_scores
 impl ScoringMatrix<f32> {
-    pub fn from_pair_scores(infile: &str, same: f32, missing: f32) -> (Self, Vec<String>) {
+    pub fn from_pair_scores(
+        infile: &str,
+        same: f32,
+        missing: f32,
+    ) -> anyhow::Result<(Self, Vec<String>)> {
         let mut names = indexmap::IndexSet::new();
         let mut matrix = Self::with_defaults(same, missing);
 
-        let reader = crate::reader(infile);
+        let reader = crate::reader(infile)?;
         for line in reader.lines().map_while(Result::ok) {
             let fields: Vec<&str> = line.split('\t').collect();
             if fields.len() >= 3 {
@@ -159,7 +163,7 @@ impl ScoringMatrix<f32> {
         }
 
         matrix.set_size(names.len());
-        (matrix, names.into_iter().collect())
+        Ok((matrix, names.into_iter().collect()))
     }
 }
 
@@ -411,8 +415,8 @@ impl NamedMatrix {
         }
     }
 
-    pub fn from_pair_scores(infile: &str, same: f32, missing: f32) -> Self {
-        let (scoring_matrix, index_name) = ScoringMatrix::from_pair_scores(infile, same, missing);
+    pub fn from_pair_scores(infile: &str, same: f32, missing: f32) -> anyhow::Result<Self> {
+        let (scoring_matrix, index_name) = ScoringMatrix::from_pair_scores(infile, same, missing)?;
         let size = index_name.len();
 
         // Create NamedMatrix from ScoringMatrix
@@ -426,20 +430,20 @@ impl NamedMatrix {
             }
         }
         matrix.set_diags(diags);
-        matrix
+        Ok(matrix)
     }
 
     /// Creates a new matrix from a relaxed PHYLIP format file
     ///
     /// ```no_run
     /// # use pgr::libs::pairmat::NamedMatrix;
-    /// let matrix = NamedMatrix::from_relaxed_phylip("input.phy");
+    /// let matrix = NamedMatrix::from_relaxed_phylip("input.phy").unwrap();
     /// ```
-    pub fn from_relaxed_phylip(infile: &str) -> Self {
+    pub fn from_relaxed_phylip(infile: &str) -> anyhow::Result<Self> {
         let mut names = Vec::new();
         let mut raw_values = Vec::new();
 
-        let reader = crate::reader(infile);
+        let reader = crate::reader(infile)?;
         let mut lines = reader.lines();
 
         // Skip the optional sequence count line
@@ -476,7 +480,7 @@ impl NamedMatrix {
             }
         }
         matrix.set_diags(diags);
-        matrix
+        Ok(matrix)
     }
 
     fn process_phylip_line(line: &str, names: &mut Vec<String>, values: &mut Vec<f32>) {

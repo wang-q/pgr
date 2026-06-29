@@ -119,7 +119,7 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
 
         let dist_provider: Option<Box<dyn DistanceMatrix>> =
             if let Some(matrix_path) = matches.get_one::<String>("matrix") {
-                Some(Box::new(NamedMatrix::from_relaxed_phylip(matrix_path)))
+                Some(Box::new(NamedMatrix::from_relaxed_phylip(matrix_path)?))
             } else if let Some(tree_path) = matches.get_one::<String>("tree") {
                 let trees = Tree::from_file(tree_path)?;
                 if trees.len() != 1 {
@@ -264,7 +264,7 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
             metrics.recall
         )?;
     } else if let Some(matrix_path) = matches.get_one::<String>("matrix") {
-        let matrix = NamedMatrix::from_relaxed_phylip(matrix_path);
+        let matrix = NamedMatrix::from_relaxed_phylip(matrix_path)?;
         let s_score = silhouette_score(&p1, &matrix);
         let d_score = dunn_score(&p1, &matrix);
         let c_score = c_index_score(&p1, &matrix);

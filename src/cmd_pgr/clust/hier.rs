@@ -63,7 +63,7 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
     let method = Method::from_str(method_str).map_err(|e: String| anyhow::anyhow!(e))?;
 
     // Read matrix
-    let matrix = NamedMatrix::from_relaxed_phylip(infile);
+    let matrix = NamedMatrix::from_relaxed_phylip(infile)?;
 
     // Perform clustering
     let (names, condensed) = matrix.into_parts();
@@ -76,7 +76,7 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
     let newick = to_newick(&tree);
 
     // Write output
-    let mut writer = pgr::writer(outfile);
+    let mut writer = pgr::writer(outfile)?;
     writer.write_all((newick + "\n").as_ref())?;
 
     Ok(())

@@ -50,10 +50,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     // Args
     //----------------------------
-    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap());
+    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap())?;
 
     let mut replace_of: BTreeMap<String, Vec<String>> = BTreeMap::new();
-    for line in pgr::read_lines(args.get_one::<String>("replace.tsv").unwrap()) {
+    for line in pgr::read_lines(args.get_one::<String>("replace.tsv").unwrap())? {
         let rgs: Vec<_> = line.split('\t').collect();
 
         if rgs.is_empty() {
@@ -73,7 +73,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // Operating
     //----------------------------
     for infile in args.get_many::<String>("infiles").unwrap() {
-        let mut reader = pgr::reader(infile);
+        let mut reader = pgr::reader(infile)?;
 
         while let Ok(block) = pgr::libs::fmt::fas::next_fas_block(&mut reader) {
             let originals = block.headers.clone();
