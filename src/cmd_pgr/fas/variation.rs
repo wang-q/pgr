@@ -90,9 +90,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             }
 
             // target range and sequence intspan
-            let trange = block.entries.first().unwrap().range().clone();
-            let t_ints_seq =
-                pgr::libs::alignment::seq_intspan(block.entries.first().unwrap().seq());
+            let first = match block.entries.first() {
+                Some(e) => e,
+                None => continue,
+            };
+            let trange = first.range().clone();
+            let t_ints_seq = pgr::libs::alignment::seq_intspan(first.seq());
 
             // pos, tbase, qbase, bases, mutant_to, freq, pattern, obase
             //   0,     1,     2,     3,         4,    5,       6,     7

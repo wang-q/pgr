@@ -1,4 +1,8 @@
-use std::io::{Read, Write};
+//! Feature vector for distance-based clustering.
+//!
+//! A `FeatureVector` pairs a name with a list of float coordinates, used
+//! by `cmd_pgr/dist/vector.rs` and `libs/clust/eval.rs` for distance
+//! computation and cluster evaluation.
 
 //----------------------------
 // FeatureVector
@@ -28,7 +32,7 @@ impl FeatureVector {
     /// Constructed from range and seq
     ///
     /// ```
-    /// # use pgr::libs::fmt::feature::FeatureVector;
+    /// # use pgr::libs::clust::feature::FeatureVector;
     /// let name = "Es_coli_005008_GCF_013426115_1".to_string();
     /// let list : Vec<f32> = vec![1.0,5.0,2.0,7.0,6.0,6.0];
     /// let entry = FeatureVector::from(&name, &list);
@@ -43,7 +47,7 @@ impl FeatureVector {
     }
 
     /// ```
-    /// # use pgr::libs::fmt::feature::FeatureVector;
+    /// # use pgr::libs::clust::feature::FeatureVector;
     /// let line = "Es_coli_005008_GCF_013426115_1\t1,5,2,7,6,6".to_string();
     /// let entry = FeatureVector::parse(&line);
     /// # assert_eq!(*entry.name(), "Es_coli_005008_GCF_013426115_1");
@@ -66,7 +70,7 @@ impl std::fmt::Display for FeatureVector {
     /// To string
     ///
     /// ```
-    /// # use pgr::libs::fmt::feature::FeatureVector;
+    /// # use pgr::libs::clust::feature::FeatureVector;
     /// let name = "Es_coli_005008_GCF_013426115_1".to_string();
     /// let list : Vec<f32> = vec![1.0,5.0,2.0,7.0,6.0,6.0];
     /// let entry = FeatureVector::from(&name, &list);
@@ -85,16 +89,4 @@ impl std::fmt::Display for FeatureVector {
         )?;
         Ok(())
     }
-}
-
-pub fn pause() {
-    let mut stdin = std::io::stdin();
-    let mut stdout = std::io::stdout();
-
-    // We want the cursor to stay at the end of the line, so we print without a newline and flush manually.
-    write!(stdout, "Press any key to continue...").unwrap();
-    stdout.flush().unwrap();
-
-    // Read a single byte and discard
-    let _ = stdin.read(&mut [0u8]).unwrap();
 }

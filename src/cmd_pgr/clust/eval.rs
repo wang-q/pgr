@@ -2,7 +2,7 @@ use clap::{Arg, ArgMatches, Command};
 use pgr::libs::clust::eval::{
     ball_hall_score, c_index_score, calinski_harabasz_score, davies_bouldin_score, dunn_score,
     evaluate, gamma_score, load_batch_partitions, load_partition, pbm_score, silhouette_score,
-    tau_score, wemmert_gancarski_score, xie_beni_score, Coordinates, DistanceMatrix, Partition,
+    tau_score, wemmert_gancarski_score, xie_beni_score, Coordinates, DistanceMatrix, LabelMap,
     PartitionFormat, TreeDistance,
 };
 use pgr::libs::pairmat::NamedMatrix;
@@ -322,7 +322,7 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn remove_singletons(partition: &mut Partition) {
+fn remove_singletons(partition: &mut LabelMap) {
     let mut counts = std::collections::HashMap::new();
     for cid in partition.values() {
         *counts.entry(*cid).or_insert(0) += 1;

@@ -1,4 +1,4 @@
-use crate::libs::fmt::feature::FeatureVector;
+use crate::libs::clust::feature::FeatureVector;
 use crate::libs::pairmat::NamedMatrix;
 use crate::libs::phylo::tree::Tree;
 use std::collections::{HashMap, HashSet};
@@ -7,7 +7,7 @@ use std::io::{BufRead, BufReader};
 use std::path::Path;
 
 /// Represents a clustering partition: Item -> ClusterID
-pub type Partition = HashMap<String, u32>;
+pub type LabelMap = HashMap<String, u32>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PartitionFormat {
@@ -36,11 +36,11 @@ impl std::str::FromStr for PartitionFormat {
 /// 2. Pair-based: Two columns.
 ///    - If 2 columns: ClusterID <tab> Item
 ///    - If > 2 columns: Treated as Cluster-based.
-/// 3. Long-based: Treated as Batch Partition (returns empty map here, use load_batch_partitions).
+/// 3. Long-based: Treated as Batch LabelMap (returns empty map here, use load_batch_partitions).
 pub fn load_partition<P: AsRef<Path>>(
     path: P,
     format: PartitionFormat,
-) -> anyhow::Result<Partition> {
+) -> anyhow::Result<LabelMap> {
     let file = File::open(path)?;
     let reader = BufReader::new(file);
     let mut lines = Vec::new();
@@ -64,7 +64,7 @@ pub fn load_partition<P: AsRef<Path>>(
     }
 }
 
-fn parse_pair_format(lines: &[String]) -> anyhow::Result<Partition> {
+fn parse_pair_format(lines: &[String]) -> anyhow::Result<LabelMap> {
     let mut partition = HashMap::new();
     // We need to map string labels to u32 IDs
     let mut label_map: HashMap<String, u32> = HashMap::new();
@@ -88,7 +88,7 @@ fn parse_pair_format(lines: &[String]) -> anyhow::Result<Partition> {
     Ok(partition)
 }
 
-fn parse_cluster_format(lines: &[String]) -> anyhow::Result<Partition> {
+fn parse_cluster_format(lines: &[String]) -> anyhow::Result<LabelMap> {
     let mut partition = HashMap::new();
     let mut cluster_id = 0;
 
@@ -107,14 +107,14 @@ fn parse_cluster_format(lines: &[String]) -> anyhow::Result<Partition> {
 
 /// Load batch partitions from a file in Long format.
 /// Format: GroupID <tab> ClusterID <tab> SampleID
-/// Returns a list of (GroupID, Partition).
-pub fn load_batch_partitions<P: AsRef<Path>>(path: P) -> anyhow::Result<Vec<(String, Partition)>> {
+/// Returns a list of (GroupID, LabelMap).
+pub fn load_batch_partitions<P: AsRef<Path>>(path: P) -> anyhow::Result<Vec<(String, LabelMap)>> {
     let file = File::open(path)?;
     let reader = BufReader::new(file);
 
     let mut groups: Vec<String> = Vec::new();
     let mut group_indices: HashMap<String, usize> = HashMap::new();
-    let mut partitions: Vec<Partition> = Vec::new();
+    let mut partitions: Vec<LabelMap> = Vec::new();
 
     // Per-group label mapping to handle non-numeric cluster IDs consistently
     let mut group_label_maps: Vec<HashMap<String, u32>> = Vec::new();
@@ -194,7 +194,7 @@ pub struct Metrics {
     pub recall: f64,
 }
 
-pub fn evaluate(p1: &Partition, p2: &Partition) -> Metrics {
+pub fn evaluate(p1: &LabelMap, p2: &LabelMap) -> Metrics {
     // 1. Find intersection of keys
     let keys1: HashSet<_> = p1.keys().collect();
     let keys2: HashSet<_> = p2.keys().collect();
@@ -371,7 +371,7 @@ fn calculate_ari_from_concordance(c: &ConcordanceMatrix) -> f64 {
     (index - expected_index) / (max_index - expected_index)
 }
 
-fn normalize_labels(p: &Partition, keys: &[&String]) -> (Vec<u32>, usize) {
+fn normalize_labels(p: &LabelMap, keys: &[&String]) -> (Vec<u32>, usize) {
     let mut label_map = HashMap::new();
     let mut new_labels = Vec::with_capacity(keys.len());
     let mut next_id = 0;
@@ -630,7 +630,7 @@ impl DistanceMatrix for TreeDistance {
 ///
 /// This implementation follows scikit-learn's convention:
 /// - s(i) = 0 if the cluster size is 1.
-pub fn silhouette_score(partition: &Partition, dist_mat: &dyn DistanceMatrix) -> f64 {
+pub fn silhouette_score(partition: &LabelMap, dist_mat: &dyn DistanceMatrix) -> f64 {
     // 1. Group items by cluster ID for faster access
     let mut clusters: HashMap<u32, Vec<&String>> = HashMap::new();
     for (item, &cluster_id) in partition {
@@ -751,7 +751,7 @@ impl Coordinates {
 /// where similarity is the ratio of within-cluster distances to between-cluster distances.
 ///
 /// The minimum score is zero, with lower values indicating better clustering.
-pub fn davies_bouldin_score(partition: &Partition, coords: &Coordinates) -> f64 {
+pub fn davies_bouldin_score(partition: &LabelMap, coords: &Coordinates) -> f64 {
     // 1. Group items by cluster
     let mut clusters: HashMap<u32, Vec<&String>> = HashMap::new();
     for (item, &cluster_id) in partition {
@@ -853,7 +853,7 @@ pub fn davies_bouldin_score(partition: &Partition, coords: &Coordinates) -> f64 
 /// - WGSS: Within-Group Sum of Squares (dispersion of points from their cluster centroids)
 ///
 /// Higher values indicate better clustering.
-pub fn calinski_harabasz_score(partition: &Partition, coords: &Coordinates) -> f64 {
+pub fn calinski_harabasz_score(partition: &LabelMap, coords: &Coordinates) -> f64 {
     // 1. Group items by cluster
     let mut clusters: HashMap<u32, Vec<&String>> = HashMap::new();
     let mut all_items = Vec::new();
@@ -936,7 +936,7 @@ pub fn calinski_harabasz_score(partition: &Partition, coords: &Coordinates) -> f
 /// - intra_cluster_diameter: max distance between points in same cluster (Complete Linkage / Diameter)
 ///
 /// Higher values indicate better clustering.
-pub fn dunn_score(partition: &Partition, dist_mat: &dyn DistanceMatrix) -> f64 {
+pub fn dunn_score(partition: &LabelMap, dist_mat: &dyn DistanceMatrix) -> f64 {
     // 1. Group items by cluster ID for faster access
     let mut clusters: HashMap<u32, Vec<&String>> = HashMap::new();
     for (item, &cluster_id) in partition {
@@ -1013,7 +1013,7 @@ pub fn dunn_score(partition: &Partition, dist_mat: &dyn DistanceMatrix) -> f64 {
 /// - D_B: Max distance between cluster centroids
 ///
 /// Higher values indicate better clustering.
-pub fn pbm_score(partition: &Partition, coords: &Coordinates) -> f64 {
+pub fn pbm_score(partition: &LabelMap, coords: &Coordinates) -> f64 {
     // 1. Group items by cluster
     let mut clusters: HashMap<u32, Vec<&String>> = HashMap::new();
     let mut all_items = Vec::new();
@@ -1108,7 +1108,7 @@ pub fn pbm_score(partition: &Partition, coords: &Coordinates) -> f64 {
 /// This is the mean of the mean dispersion of each cluster.
 /// Lower values indicate more compact clusters.
 /// Often used with Elbow method (looking for large difference).
-pub fn ball_hall_score(partition: &Partition, coords: &Coordinates) -> f64 {
+pub fn ball_hall_score(partition: &LabelMap, coords: &Coordinates) -> f64 {
     // 1. Group items by cluster
     let mut clusters: HashMap<u32, Vec<&String>> = HashMap::new();
     for (item, &cluster_id) in partition {
@@ -1173,7 +1173,7 @@ fn euclidean_dist(v1: &[f64], v2: &[f64]) -> f64 {
 /// - N: Total number of points
 ///
 /// Lower values indicate better clustering.
-pub fn xie_beni_score(partition: &Partition, coords: &Coordinates) -> f64 {
+pub fn xie_beni_score(partition: &LabelMap, coords: &Coordinates) -> f64 {
     // 1. Group items by cluster
     let mut clusters: HashMap<u32, Vec<&String>> = HashMap::new();
     let mut all_items = Vec::new();
@@ -1249,7 +1249,7 @@ pub fn xie_beni_score(partition: &Partition, coords: &Coordinates) -> f64 {
 ///
 /// Measures compactness relative to separation for each point.
 /// Higher values indicate better clustering (range [0, 1]).
-pub fn wemmert_gancarski_score(partition: &Partition, coords: &Coordinates) -> f64 {
+pub fn wemmert_gancarski_score(partition: &LabelMap, coords: &Coordinates) -> f64 {
     // 1. Group items by cluster
     let mut clusters: HashMap<u32, Vec<&String>> = HashMap::new();
     let mut all_items = Vec::new();
@@ -1346,7 +1346,7 @@ pub fn wemmert_gancarski_score(partition: &Partition, coords: &Coordinates) -> f
 ///
 /// Lower values indicate better clustering (0 to 1).
 /// Note: This index is computationally expensive O(N^2 log N) because it requires sorting all pairwise distances.
-pub fn c_index_score(partition: &Partition, dist_mat: &dyn DistanceMatrix) -> f64 {
+pub fn c_index_score(partition: &LabelMap, dist_mat: &dyn DistanceMatrix) -> f64 {
     // 1. Calculate N_W and S_W
     let mut n_w = 0;
     let mut s_w = 0.0;
@@ -1405,7 +1405,7 @@ pub fn c_index_score(partition: &Partition, dist_mat: &dyn DistanceMatrix) -> f6
 /// High Gamma indicates that distances between different clusters are generally larger
 /// than distances within the same cluster.
 /// Range: [-1, 1]. Higher is better.
-pub fn gamma_score(partition: &Partition, dist_mat: &dyn DistanceMatrix) -> f64 {
+pub fn gamma_score(partition: &LabelMap, dist_mat: &dyn DistanceMatrix) -> f64 {
     let items: Vec<&String> = partition.keys().collect();
     let n = items.len();
     if n < 2 {
@@ -1457,7 +1457,7 @@ pub fn gamma_score(partition: &Partition, dist_mat: &dyn DistanceMatrix) -> f64 
 /// Measures the ordinal association between the distance matrix and the cluster membership.
 /// Like Gamma, we assume Y=0 (same), Y=1 (diff).
 /// Range: [-1, 1]. Higher is better.
-pub fn tau_score(partition: &Partition, dist_mat: &dyn DistanceMatrix) -> f64 {
+pub fn tau_score(partition: &LabelMap, dist_mat: &dyn DistanceMatrix) -> f64 {
     let items: Vec<&String> = partition.keys().collect();
     let n = items.len();
     if n < 2 {
@@ -1607,7 +1607,7 @@ mod tests {
         // 4: 3.0 (C2)
         // 5: 3.0 (C2)
 
-        let mut p = Partition::new();
+        let mut p = LabelMap::new();
         p.insert("0".to_string(), 0);
         p.insert("1".to_string(), 1);
         p.insert("2".to_string(), 1);
@@ -1634,7 +1634,7 @@ mod tests {
 
     #[test]
     fn test_silhouette_score_single_cluster() {
-        let mut p = Partition::new();
+        let mut p = LabelMap::new();
         p.insert("0".to_string(), 0);
         p.insert("1".to_string(), 0);
 
@@ -1650,7 +1650,7 @@ mod tests {
     fn test_silhouette_score_all_singletons() {
         // Sklearn behavior for all singletons is not strictly defined in docs but usually handled.
         // Our implementation returns 0.0 if n_clusters == n_samples
-        let mut p = Partition::new();
+        let mut p = LabelMap::new();
         p.insert("0".to_string(), 0);
         p.insert("1".to_string(), 1);
         p.insert("2".to_string(), 2);
@@ -1673,7 +1673,7 @@ mod tests {
         // R12 = (0.5+0.5)/5.0 = 0.2
         // DB = (0.2 + 0.2)/2 = 0.2
 
-        let mut p = Partition::new();
+        let mut p = LabelMap::new();
         p.insert("A".to_string(), 1);
         p.insert("B".to_string(), 1);
         p.insert("C".to_string(), 2);
@@ -1693,12 +1693,12 @@ mod tests {
 
     #[test]
     fn test_evaluate_perfect() {
-        let mut p1 = Partition::new();
+        let mut p1 = LabelMap::new();
         p1.insert("A".to_string(), 1);
         p1.insert("B".to_string(), 1);
         p1.insert("C".to_string(), 2);
 
-        let mut p2 = Partition::new();
+        let mut p2 = LabelMap::new();
         p2.insert("A".to_string(), 10);
         p2.insert("B".to_string(), 10);
         p2.insert("C".to_string(), 20);
@@ -1736,13 +1736,13 @@ mod tests {
         // ARI = (0 - 0.666) / (2 - 0.666) = -0.666 / 1.333 = -0.5
         // FMI = TP / sqrt(2 * 2) = 0 / 2 = 0.0
 
-        let mut p1 = Partition::new();
+        let mut p1 = LabelMap::new();
         p1.insert("A".to_string(), 1);
         p1.insert("B".to_string(), 1);
         p1.insert("C".to_string(), 2);
         p1.insert("D".to_string(), 2);
 
-        let mut p2 = Partition::new();
+        let mut p2 = LabelMap::new();
         p2.insert("A".to_string(), 1);
         p2.insert("C".to_string(), 1);
         p2.insert("B".to_string(), 2);
@@ -1760,7 +1760,7 @@ mod tests {
         // Cluster 1: A(0,0), B(1,0) -> Centroid (0.5, 0)
         // Cluster 2: C(5,0), D(6,0) -> Centroid (5.5, 0)
 
-        let mut p = Partition::new();
+        let mut p = LabelMap::new();
         p.insert("A".to_string(), 1);
         p.insert("B".to_string(), 1);
         p.insert("C".to_string(), 2);

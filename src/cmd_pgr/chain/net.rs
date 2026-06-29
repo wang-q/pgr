@@ -71,7 +71,6 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
         .copied()
         .unwrap_or(min_space / 2);
     let min_score = *args.get_one::<f64>("min_score").unwrap();
-    eprintln!("DEBUG: min_space={}, min_score={}", min_space, min_score);
     let incl_hap = args.get_flag("incl_hap");
 
     let t_sizes = pgr::read_sizes::<u64>(target_sizes_path)?;
@@ -87,10 +86,6 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
 
     for res in reader.by_ref() {
         let chain = res?;
-        eprintln!(
-            "DEBUG: Processing chain id={} score={}",
-            chain.header.id, chain.header.score
-        );
 
         // Sort check (optional but good)
         if chain.header.score > last_score {

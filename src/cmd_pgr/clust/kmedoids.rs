@@ -150,7 +150,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 }
             }
         }
-        _ => unreachable!(),
+        _ => anyhow::bail!("unknown output format: {}", opt_format),
     }
 
     Ok(())
