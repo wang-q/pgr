@@ -1,3 +1,4 @@
+use crate::cmd_pgr::plot::common::{context_get_str, render_and_write, replace_section};
 use clap::*;
 use indexmap::IndexMap;
 
@@ -335,7 +336,7 @@ fn create_table(density_data: &IndexMap<String, Vec<f64>>) -> String {
 }
 
 fn gen_hh(context: &tera::Context) -> anyhow::Result<()> {
-    let outfile = context.get("outfile").unwrap().as_str().unwrap();
+    let outfile = context_get_str(context, "outfile")?;
     let mut writer = pgr::writer(outfile)?;
 
     static FILE_TEMPLATE: &str = include_str!("../../../docs/heatmap.tex");
@@ -354,26 +355,11 @@ y tick label style={
     text width={{ label_len }}ex,
 },
     "###;
-    {
-        // Section axis
-        let begin = template.find("%AXIS_BEGIN").unwrap();
-        let end = template.find("%AXIS_END").unwrap();
-        template.replace_range(begin..end, out_string);
-    }
+    replace_section(&mut template, "%AXIS_BEGIN", "%AXIS_END", out_string)?;
 
-    {
-        // Section table
-        let begin = template.find("%TABLE_BEGIN").unwrap();
-        let end = template.find("%TABLE_END").unwrap();
-        let table = context.get("table").unwrap().as_str().unwrap();
-        template.replace_range(begin..end, table);
-    }
+    let table = context_get_str(context, "table")?;
+    replace_section(&mut template, "%TABLE_BEGIN", "%TABLE_END", table)?;
 
-    let mut tera = tera::Tera::default();
-    tera.add_raw_templates(vec![("t", template)])?;
-
-    let rendered = tera.render("t", context)?;
-    writer.write_all(rendered.as_ref())?;
-
+    render_and_write(&template, context, &mut writer)?;
     Ok(())
 }

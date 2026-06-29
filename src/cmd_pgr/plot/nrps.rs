@@ -1,3 +1,4 @@
+use crate::cmd_pgr::plot::common::{context_get_str, render_and_write, replace_section};
 use anyhow::{anyhow, bail, Context, Result};
 use clap::*;
 use indexmap::IndexMap;
@@ -270,74 +271,36 @@ fn gen_nrps(context: &tera::Context) -> Result<()> {
     static FILE_TEMPLATE: &str = include_str!("../../../docs/nrps.tex");
     let mut template = FILE_TEMPLATE.to_string();
 
-    {
-        // Section color
-        let default_color = context_get_str(context, "default_color")?;
-        let color_section = format!(
-            r###"%
+    // Section color
+    let default_color = context_get_str(context, "default_color")?;
+    let color_section = format!(
+        r###"%
         draw={},
         fill={},
         text=white,
         "###,
-            default_color, default_color
-        );
+        default_color, default_color
+    );
+    replace_section(
+        &mut template,
+        "%COLOR_BEGIN%",
+        "%COLOR_END%",
+        &color_section,
+    )?;
 
-        let begin = template
-            .find("%COLOR_BEGIN%")
-            .ok_or_else(|| anyhow!("nrps template anchor %COLOR_BEGIN% not found"))?;
-        let end = template
-            .find("%COLOR_END%")
-            .ok_or_else(|| anyhow!("nrps template anchor %COLOR_END% not found"))?;
-        template.replace_range(begin..end, &color_section);
+    // Section module
+    replace_section(&mut template, "%MODULE_BEGIN%", "%MODULE_END%", all_tex)?;
+
+    // Section legend
+    let is_legend = context
+        .get("is_legend")
+        .ok_or_else(|| anyhow!("missing context key: is_legend"))?
+        .as_bool()
+        .ok_or_else(|| anyhow!("context key is_legend is not a bool"))?;
+    if !is_legend {
+        replace_section(&mut template, "%LEGEND_BEGIN%", "%LEGEND_END%", "")?;
     }
 
-    {
-        // Section module
-        let begin = template
-            .find("%MODULE_BEGIN%")
-            .ok_or_else(|| anyhow!("nrps template anchor %MODULE_BEGIN% not found"))?;
-        let end = template
-            .find("%MODULE_END%")
-            .ok_or_else(|| anyhow!("nrps template anchor %MODULE_END% not found"))?;
-        template.replace_range(begin..end, all_tex);
-    }
-
-    {
-        // Section legend
-        let is_legend = context
-            .get("is_legend")
-            .ok_or_else(|| anyhow!("missing context key: is_legend"))?
-            .as_bool()
-            .ok_or_else(|| anyhow!("context key is_legend is not a bool"))?;
-        let begin = template
-            .find("%LEGEND_BEGIN%")
-            .ok_or_else(|| anyhow!("nrps template anchor %LEGEND_BEGIN% not found"))?;
-        let end = template
-            .find("%LEGEND_END%")
-            .ok_or_else(|| anyhow!("nrps template anchor %LEGEND_END% not found"))?;
-        if !is_legend {
-            template.replace_range(begin..end, "");
-        }
-    }
-
-    let mut tera = tera::Tera::default();
-    tera.add_raw_templates(vec![("t", template)])
-        .context("failed to register nrps template")?;
-
-    let rendered = tera
-        .render("t", context)
-        .context("failed to render nrps template")?;
-    writer.write_all(rendered.as_ref())?;
-
+    render_and_write(&template, context, &mut writer)?;
     Ok(())
-}
-
-// Helper: get a string value from tera::Context, replacing the common
-// `context.get(k).unwrap().as_str().unwrap()` pattern with a friendly error.
-fn context_get_str<'a>(context: &'a tera::Context, key: &str) -> Result<&'a str> {
-    context
-        .get(key)
-        .ok_or_else(|| anyhow!("missing context key: {}", key))?
-        .as_str()
-        .ok_or_else(|| anyhow!("context key {} is not a string", key))
 }

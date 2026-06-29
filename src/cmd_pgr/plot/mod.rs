@@ -1,5 +1,6 @@
 use clap::Command;
 
+pub mod common;
 pub mod hh;
 pub mod nrps;
 pub mod venn;

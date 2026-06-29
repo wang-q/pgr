@@ -1,5 +1,6 @@
 use crate::cmd_pgr::args::outfile_arg;
-use anyhow::{anyhow, Context, Result};
+use crate::cmd_pgr::plot::common::{context_get_str, render_and_write, replace_section};
+use anyhow::{anyhow, Result};
 use clap::*;
 use indexmap::IndexMap;
 use std::path::Path;
@@ -215,25 +216,18 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
     context.insert("excls", &excls);
     context.insert("inter", &inter);
 
-    if ints_of.len() == 2 {
-        gen_venn_2(&context)?;
-    } else if ints_of.len() == 3 {
-        gen_venn_3(&context)?;
-    } else if ints_of.len() == 4 {
-        gen_venn_4(&context)?;
-    }
+    let out_string: &str = match ints_of.len() {
+        2 => VENN_2,
+        3 => VENN_3,
+        4 => VENN_4,
+        _ => return Ok(()),
+    };
+    gen_venn(&context, out_string)?;
 
     Ok(())
 }
 
-fn gen_venn_2(context: &tera::Context) -> Result<()> {
-    let outfile = context_get_str(context, "outfile")?;
-    let mut writer = pgr::writer(outfile)?;
-
-    static FILE_TEMPLATE: &str = include_str!("../../../docs/venn.tex");
-    let mut template = FILE_TEMPLATE.to_string();
-
-    let out_string = r###"
+const VENN_2: &str = r###"
 % Basic parameters for circles
 \def\radius{2cm}
 \def\overlap{1.2cm}
@@ -258,37 +252,7 @@ fn gen_venn_2(context: &tera::Context) -> Result<()> {
 \node[text centered] at (0,     0) { {{ inter.0 }} };
     "###;
 
-    {
-        // Section venn
-        let begin = template
-            .find("%VENN_BEGIN")
-            .ok_or_else(|| anyhow!("venn template anchor %VENN_BEGIN not found"))?;
-        let end = template
-            .find("%VENN_END")
-            .ok_or_else(|| anyhow!("venn template anchor %VENN_END not found"))?;
-        template.replace_range(begin..end, out_string);
-    }
-
-    let mut tera = tera::Tera::default();
-    tera.add_raw_templates(vec![("t", template)])
-        .context("failed to register venn template")?;
-
-    let rendered = tera
-        .render("t", context)
-        .context("failed to render venn template")?;
-    writer.write_all(rendered.as_ref())?;
-
-    Ok(())
-}
-
-fn gen_venn_3(context: &tera::Context) -> Result<()> {
-    let outfile = context_get_str(context, "outfile")?;
-    let mut writer = pgr::writer(outfile)?;
-
-    static FILE_TEMPLATE: &str = include_str!("../../../docs/venn.tex");
-    let mut template = FILE_TEMPLATE.to_string();
-
-    let out_string = r###"
+const VENN_3: &str = r###"
 % Basic parameters for circles
 \def\radius{2cm}
 \def\xshift{1.2cm}
@@ -325,37 +289,7 @@ fn gen_venn_3(context: &tera::Context) -> Result<()> {
 \node[text centered] at (0,     0.6) { {{ inter.3 }} }; % ABC
     "###;
 
-    {
-        // Section venn
-        let begin = template
-            .find("%VENN_BEGIN")
-            .ok_or_else(|| anyhow!("venn template anchor %VENN_BEGIN not found"))?;
-        let end = template
-            .find("%VENN_END")
-            .ok_or_else(|| anyhow!("venn template anchor %VENN_END not found"))?;
-        template.replace_range(begin..end, out_string);
-    }
-
-    let mut tera = tera::Tera::default();
-    tera.add_raw_templates(vec![("t", template)])
-        .context("failed to register venn template")?;
-
-    let rendered = tera
-        .render("t", context)
-        .context("failed to render venn template")?;
-    writer.write_all(rendered.as_ref())?;
-
-    Ok(())
-}
-
-fn gen_venn_4(context: &tera::Context) -> Result<()> {
-    let outfile = context_get_str(context, "outfile")?;
-    let mut writer = pgr::writer(outfile)?;
-
-    static FILE_TEMPLATE: &str = include_str!("../../../docs/venn.tex");
-    let mut template = FILE_TEMPLATE.to_string();
-
-    let out_string = r###"
+const VENN_4: &str = r###"
 % Basic parameters for ellipses
 \def\xradius{3.5cm}
 \def\yradius{2cm}
@@ -408,35 +342,15 @@ fn gen_venn_4(context: &tera::Context) -> Result<()> {
 \node[text centered] at (0,    -0.2) { {{ inter.10 }} }; % ABCD
     "###;
 
-    {
-        // Section venn
-        let begin = template
-            .find("%VENN_BEGIN")
-            .ok_or_else(|| anyhow!("venn template anchor %VENN_BEGIN not found"))?;
-        let end = template
-            .find("%VENN_END")
-            .ok_or_else(|| anyhow!("venn template anchor %VENN_END not found"))?;
-        template.replace_range(begin..end, out_string);
-    }
+fn gen_venn(context: &tera::Context, out_string: &str) -> Result<()> {
+    let outfile = context_get_str(context, "outfile")?;
+    let mut writer = pgr::writer(outfile)?;
 
-    let mut tera = tera::Tera::default();
-    tera.add_raw_templates(vec![("t", template)])
-        .context("failed to register venn template")?;
+    static FILE_TEMPLATE: &str = include_str!("../../../docs/venn.tex");
+    let mut template = FILE_TEMPLATE.to_string();
 
-    let rendered = tera
-        .render("t", context)
-        .context("failed to render venn template")?;
-    writer.write_all(rendered.as_ref())?;
+    replace_section(&mut template, "%VENN_BEGIN", "%VENN_END", out_string)?;
 
+    render_and_write(&template, context, &mut writer)?;
     Ok(())
-}
-
-// Helper: get a string value from tera::Context, replacing the common
-// `context.get(k).unwrap().as_str().unwrap()` pattern with a friendly error.
-fn context_get_str<'a>(context: &'a tera::Context, key: &str) -> Result<&'a str> {
-    context
-        .get(key)
-        .ok_or_else(|| anyhow!("missing context key: {}", key))?
-        .as_str()
-        .ok_or_else(|| anyhow!("context key {} is not a string", key))
 }

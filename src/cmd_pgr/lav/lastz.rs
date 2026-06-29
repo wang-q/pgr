@@ -4,104 +4,13 @@ use rayon::prelude::*;
 use std::io::Write;
 use tempfile::NamedTempFile;
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 // TODO: [multiple] on target
 // TODO: unmask on t/q
 
-const MATRIX_DEFAULT: &str = "   A    C    G    T
-A  91 -114  -31 -123
-C -114  100 -125  -31
-G  -31 -125  100 -114
-T -123  -31 -114   91
-";
-
-const MATRIX_DISTANT: &str = "   A    C    G    T
-A  91  -90  -25 -100
-C -90  100 -100  -25
-G -25 -100  100  -90
-T -100  -25  -90   91
-";
-
-const MATRIX_SIMILAR: &str = "   A    C    G    T
-A  100 -300 -150 -300
-C -300  100 -300 -150
-G -150 -300  100 -300
-T -300 -150 -300  100
-";
-
-#[allow(dead_code)]
-const MATRIX_SIMILAR2: &str = "   A    C    G    T
-A  90 -330 -236 -356
-C -330  100 -318 -236
-G -236 -318  100 -330
-T -356 -236 -330   90
-";
-
-struct Preset {
-    name: &'static str,
-    desc: &'static str,
-    params: &'static str,
-    matrix: Option<&'static str>,
-}
-
-const PRESETS: &[Preset] = &[
-    Preset {
-        name: "set01",
-        desc: "Hg17vsPanTro1 (Human vs Chimp)",
-        params: "C=0 E=30 K=3000 L=2200 O=400 Y=3400 Q=similar",
-        matrix: Some(MATRIX_SIMILAR),
-    },
-    Preset {
-        name: "set02",
-        desc: "Hg19vsPanTro2 (Human vs Primate, more sensitive)",
-        params: "C=0 E=150 H=2000 K=4500 L=2200 M=254 O=600 T=2 Y=15000 Q=similar2",
-        matrix: Some(MATRIX_SIMILAR2),
-    },
-    Preset {
-        name: "set03",
-        desc: "Hg17vsMm5 (Human vs Mouse)",
-        params: "C=0 E=30 K=3000 L=2200 O=400 Q=default",
-        matrix: Some(MATRIX_DEFAULT),
-    },
-    Preset {
-        name: "set04",
-        desc: "Hg17vsRheMac2 (Human vs Macaque)",
-        params: "C=0 E=30 H=2000 K=3000 L=2200 O=400 Q=default",
-        matrix: Some(MATRIX_DEFAULT),
-    },
-    Preset {
-        name: "set05",
-        desc: "Hg17vsBosTau2 (Human vs Cow)",
-        params: "C=0 E=30 H=2000 K=3000 L=2200 M=50 O=400 Q=default",
-        matrix: Some(MATRIX_DEFAULT),
-    },
-    Preset {
-        name: "set06",
-        desc: "Hg17vsDanRer3 (Human vs Zebrafish)",
-        params: "C=0 E=30 H=2000 K=2200 L=6000 O=400 Y=3400 Q=distant",
-        matrix: Some(MATRIX_DISTANT),
-    },
-    Preset {
-        name: "set07",
-        desc: "Hg17vsMonDom1 (Human vs Opossum)",
-        params: "C=0 E=30 H=2000 K=2200 L=10000 O=400 Y=3400 Q=distant",
-        matrix: Some(MATRIX_DISTANT),
-    },
-];
-
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
-    let mut preset_help = String::from("Presets from UCSC:\n");
-    let mut preset_names = Vec::new();
-    for p in PRESETS {
-        preset_help.push_str(&format!(
-            "    {}: {}\n           {}\n",
-            p.name, p.desc, p.params
-        ));
-        preset_names.push(p.name);
-    }
-
     Command::new("lastz")
         .about("Wrapper for lastz alignment (Cactus style)")
         .after_help(format!(
@@ -133,7 +42,7 @@ Examples:
     pgr lav lastz --preset set01 --show-preset
 
 "###,
-            preset_help
+            pgr::libs::lastz::preset_help()
         ))
         .arg(
             Arg::new("target")
@@ -164,7 +73,7 @@ Examples:
             Arg::new("preset")
                 .long("preset")
                 .short('s')
-                .value_parser(PossibleValuesParser::new(preset_names))
+                .value_parser(PossibleValuesParser::new(pgr::libs::lastz::preset_names()))
                 .help("Use predefined parameter sets (set01..set07)"),
         )
         .arg(
@@ -195,60 +104,22 @@ Examples:
         )
 }
 
-fn find_fasta_files<P: AsRef<Path>>(path: P) -> Vec<PathBuf> {
-    let mut files = Vec::new();
-    let path = path.as_ref();
-
-    if path.is_file() {
-        files.push(path.to_path_buf());
-    } else if path.is_dir() {
-        if let Ok(entries) = std::fs::read_dir(path) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_dir() {
-                    files.extend(find_fasta_files(&path));
-                } else if let Some(ext) = path.extension() {
-                    let ext_str = ext.to_string_lossy().to_lowercase();
-                    // Match .fa and .fa.gz
-                    if ext_str == "fa" {
-                        files.push(path);
-                    } else if ext_str == "gz" {
-                        if let Some(stem) = path.file_stem() {
-                            let stem_path = Path::new(stem);
-                            if let Some(stem_ext) = stem_path.extension() {
-                                if stem_ext.to_string_lossy().to_lowercase() == "fa" {
-                                    files.push(path);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    files
-}
-
 pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
     let preset = matches.get_one::<String>("preset");
 
     // Check if show-preset is requested
     if matches.get_flag("show_preset") {
-        if let Some(preset_name) = preset {
-            if let Some(p) = PRESETS.iter().find(|p| p.name == preset_name) {
-                println!("Preset: {}", p.name);
-                println!("Description: {}", p.desc);
-                println!("Parameters: {}", p.params);
-                if let Some(matrix) = p.matrix {
-                    println!("\nMatrix Content:\n{}", matrix);
-                }
-            } else {
-                unreachable!();
-            }
-            return Ok(());
-        } else {
-            anyhow::bail!("--show-preset requires --preset to be specified.");
+        let preset_name = preset
+            .ok_or_else(|| anyhow::anyhow!("--show-preset requires --preset to be specified."))?;
+        let p = pgr::libs::lastz::find_preset(preset_name)
+            .ok_or_else(|| anyhow::anyhow!("unknown preset: {}", preset_name))?;
+        println!("Preset: {}", p.name);
+        println!("Description: {}", p.desc);
+        println!("Parameters: {}", p.params);
+        if let Some(matrix) = p.matrix {
+            println!("\nMatrix Content:\n{}", matrix);
         }
+        return Ok(());
     }
 
     let arg_query = matches.get_one::<String>("query").unwrap();
@@ -267,10 +138,10 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
     std::fs::create_dir_all(opt_output)?;
 
     // Expand files
-    let mut query_files = find_fasta_files(arg_query);
+    let mut query_files = pgr::libs::io::find_fasta_files(arg_query);
     query_files.sort();
 
-    let mut target_files = find_fasta_files(arg_target);
+    let mut target_files = pgr::libs::io::find_fasta_files(arg_target);
     target_files.sort();
 
     if query_files.is_empty() {
@@ -285,16 +156,14 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
     let mut matrix_path = String::new();
 
     if let Some(preset_name) = preset {
-        let mut t = NamedTempFile::new()?;
-        if let Some(p) = PRESETS.iter().find(|p| p.name == preset_name) {
-            if let Some(matrix) = p.matrix {
-                t.write_all(matrix.as_bytes())?;
-            }
-        } else {
-            unreachable!();
+        let p = pgr::libs::lastz::find_preset(preset_name)
+            .ok_or_else(|| anyhow::anyhow!("unknown preset: {}", preset_name))?;
+        if let Some(matrix) = p.matrix {
+            let mut t = NamedTempFile::new()?;
+            t.write_all(matrix.as_bytes())?;
+            matrix_path = t.path().to_string_lossy().to_string();
+            _temp_matrix_handle = Some(t);
         }
-        matrix_path = t.path().to_string_lossy().to_string();
-        _temp_matrix_handle = Some(t);
     }
 
     // Build common args
@@ -305,14 +174,12 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
     common_args.push("--ambiguous=iupac".to_string());
 
     if let Some(preset_name) = preset {
-        if let Some(p) = PRESETS.iter().find(|p| p.name == preset_name) {
-            for arg in p.params.split_whitespace() {
-                if !arg.starts_with("Q=") {
-                    common_args.push(arg.to_string());
-                }
+        let p = pgr::libs::lastz::find_preset(preset_name)
+            .ok_or_else(|| anyhow::anyhow!("unknown preset: {}", preset_name))?;
+        for arg in p.params.split_whitespace() {
+            if !arg.starts_with("Q=") {
+                common_args.push(arg.to_string());
             }
-        } else {
-            unreachable!();
         }
         if !matrix_path.is_empty() {
             common_args.push(format!("Q={}", matrix_path));
@@ -340,8 +207,7 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
     // Parallel execution
     let pool = rayon::ThreadPoolBuilder::new()
         .num_threads(opt_parallel)
-        .build()
-        .unwrap();
+        .build()?;
 
     pool.install(|| {
         jobs.par_iter().for_each(|(target_file, query_file)| {

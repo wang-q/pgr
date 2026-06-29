@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 use std::ops::Sub;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use anyhow::{bail, Context};
@@ -214,6 +214,42 @@ pub fn reverse_range_1based(start: &mut usize, end: &mut usize, size: usize) {
     let e = *end;
     *start = size - e + 1;
     *end = size - s + 1;
+}
+
+/// Recursively collect FASTA files (`.fa` and `.fa.gz`) under `path`.
+/// A file input is returned as a single-element vec. Directory inputs are
+/// walked recursively, matching `.fa` and `.fa.gz` extensions.
+pub fn find_fasta_files<P: AsRef<Path>>(path: P) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    let path = path.as_ref();
+
+    if path.is_file() {
+        files.push(path.to_path_buf());
+    } else if path.is_dir() {
+        if let Ok(entries) = std::fs::read_dir(path) {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p.is_dir() {
+                    files.extend(find_fasta_files(&p));
+                } else if let Some(ext) = p.extension() {
+                    let ext_str = ext.to_string_lossy().to_lowercase();
+                    if ext_str == "fa" {
+                        files.push(p);
+                    } else if ext_str == "gz" {
+                        if let Some(stem) = p.file_stem() {
+                            let stem_path = Path::new(stem);
+                            if let Some(stem_ext) = stem_path.extension() {
+                                if stem_ext.to_string_lossy().to_lowercase() == "fa" {
+                                    files.push(p);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    files
 }
 
 /// Borrowed line iterator over a `BufRead`, yielding `String` with the

@@ -7,6 +7,7 @@ pub mod fmt;
 pub mod hash;
 pub mod hv;
 pub mod io;
+pub mod lastz;
 pub mod linalg;
 pub mod loc;
 pub mod ms;
