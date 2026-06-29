@@ -147,3 +147,32 @@ pub(crate) fn assign_clusters(
     part.num_clusters = cluster_id;
     Ok(part)
 }
+
+/// Mask low-support internal nodes by setting branch length to infinity (TreeCluster semantics).
+pub fn apply_support_filter(tree: &mut Tree, threshold: f64) {
+    let len = tree.len();
+    for i in 0..len {
+        let should_mask = {
+            if let Some(node) = tree.get_node(i) {
+                if !node.children.is_empty() {
+                    let support = node
+                        .name
+                        .as_ref()
+                        .and_then(|n| n.parse::<f64>().ok())
+                        .unwrap_or(100.0);
+                    support < threshold
+                } else {
+                    false
+                }
+            } else {
+                false
+            }
+        };
+
+        if should_mask {
+            if let Some(node) = tree.get_node_mut(i) {
+                node.length = Some(f64::INFINITY);
+            }
+        }
+    }
+}

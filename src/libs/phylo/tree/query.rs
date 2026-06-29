@@ -187,3 +187,32 @@ pub fn get_node_by_name(tree: &Tree, name: &str) -> Option<NodeId> {
 pub fn get_root(tree: &Tree) -> Option<NodeId> {
     tree.root
 }
+
+/// Find the medoid index among `ids` (min sum of pairwise branch-length distances).
+pub fn tree_medoid(tree: &Tree, ids: &[NodeId]) -> Option<usize> {
+    if ids.is_empty() {
+        return None;
+    }
+    if ids.len() == 1 {
+        return Some(0);
+    }
+    let mut min_sum_dist = f64::MAX;
+    let mut best_idx = 0;
+    for i in 0..ids.len() {
+        let mut current_sum = 0.0;
+        for j in 0..ids.len() {
+            if i == j {
+                continue;
+            }
+            let dist = get_distance(tree, &ids[i], &ids[j])
+                .map(|(d, _)| d)
+                .unwrap_or(f64::MAX);
+            current_sum += dist;
+        }
+        if current_sum < min_sum_dist {
+            min_sum_dist = current_sum;
+            best_idx = i;
+        }
+    }
+    Some(best_idx)
+}

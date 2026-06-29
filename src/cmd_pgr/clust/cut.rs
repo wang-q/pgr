@@ -250,73 +250,6 @@ Examples:
         )
 }
 
-fn compute_root_distances(
-    tree: &Tree,
-) -> std::collections::HashMap<pgr::libs::phylo::node::NodeId, f64> {
-    let mut dists = std::collections::HashMap::new();
-    if let Some(root) = tree.get_root() {
-        let mut stack = vec![(root, 0.0)];
-        while let Some((node_id, d)) = stack.pop() {
-            dists.insert(node_id, d);
-            if let Some(node) = tree.get_node(node_id) {
-                for &child in &node.children {
-                    let len = tree.get_node(child).and_then(|n| n.length).unwrap_or(0.0);
-                    stack.push((child, d + len));
-                }
-            }
-        }
-    }
-    dists
-}
-
-fn get_leaf_depth_stats(tree: &Tree) -> (f64, f64, f64) {
-    let root_dists = compute_root_distances(tree);
-    let mut depths = Vec::new();
-    for (id, dist) in root_dists {
-        if let Some(node) = tree.get_node(id) {
-            if node.children.is_empty() {
-                depths.push(dist);
-            }
-        }
-    }
-    if depths.is_empty() {
-        return (0.0, 0.0, 0.0);
-    }
-    let min = depths.iter().fold(f64::INFINITY, |a, &b| a.min(b));
-    let max = depths.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
-    let avg = depths.iter().sum::<f64>() / depths.len() as f64;
-    (min, max, avg)
-}
-
-fn apply_support_filter(tree: &mut Tree, threshold: f64) {
-    let len = tree.len();
-    for i in 0..len {
-        let should_mask = {
-            if let Some(node) = tree.get_node(i) {
-                // Only filter internal nodes, matching TreeCluster logic
-                if !node.children.is_empty() {
-                    let support = node
-                        .name
-                        .as_ref()
-                        .and_then(|n| n.parse::<f64>().ok())
-                        .unwrap_or(100.0);
-                    support < threshold
-                } else {
-                    false
-                }
-            } else {
-                false
-            }
-        };
-
-        if should_mask {
-            if let Some(node) = tree.get_node_mut(i) {
-                node.length = Some(f64::INFINITY);
-            }
-        }
-    }
-}
-
 pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
     let infile = matches.get_one::<String>("infile").unwrap();
     let outfile = matches.get_one::<String>("outfile").unwrap();
@@ -331,7 +264,7 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
 
     if let Some(&support_threshold) = matches.get_one::<f64>("support") {
         for tree in &mut trees {
-            apply_support_filter(tree, support_threshold);
+            pgr::libs::clust::tree_cut::apply_support_filter(tree, support_threshold);
         }
     }
 
@@ -369,7 +302,7 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
             || matches.contains_id("leaf-dist-min")
             || matches.contains_id("leaf-dist-avg")
         {
-            get_leaf_depth_stats(tree)
+            pgr::libs::phylo::tree::stat::get_leaf_depth_stats(tree)
         } else {
             (0.0, 0.0, 0.0)
         };
@@ -509,13 +442,13 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
             } else if let Some(&t) = matches.get_one::<f64>("sum-branch") {
                 Method::SumBranch(t)
             } else if let Some(&t) = matches.get_one::<f64>("leaf-dist-max") {
-                let (_, max_depth, _) = get_leaf_depth_stats(tree);
+                let (_, max_depth, _) = pgr::libs::phylo::tree::stat::get_leaf_depth_stats(tree);
                 Method::RootDist(max_depth - t)
             } else if let Some(&t) = matches.get_one::<f64>("leaf-dist-min") {
-                let (min_depth, _, _) = get_leaf_depth_stats(tree);
+                let (min_depth, _, _) = pgr::libs::phylo::tree::stat::get_leaf_depth_stats(tree);
                 Method::RootDist(min_depth - t)
             } else if let Some(&t) = matches.get_one::<f64>("leaf-dist-avg") {
-                let (_, _, avg_depth) = get_leaf_depth_stats(tree);
+                let (_, _, avg_depth) = pgr::libs::phylo::tree::stat::get_leaf_depth_stats(tree);
                 Method::RootDist(avg_depth - t)
             } else if let Some(&t) = matches.get_one::<f64>("max-edge") {
                 Method::SingleLinkage(t)
@@ -527,7 +460,7 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
             cut::cut(tree, method).map_err(|e| anyhow::anyhow!(e))?
         };
 
-        let root_dists = compute_root_distances(tree);
+        let root_dists = pgr::libs::phylo::tree::stat::compute_root_distances(tree);
 
         let clusters_map = partition.get_clusters();
 
@@ -587,36 +520,10 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
                         }
                     }
                     "medoid" => {
-                        if c.len() <= 1 {
-                            if let Some(first) = c.first() {
-                                (Some(first.1.clone()), 0)
-                            } else {
-                                (None, 0)
-                            }
-                        } else {
-                            let ids: Vec<_> = c.iter().map(|(id, _)| *id).collect();
-                            let mut min_sum_dist = f64::MAX;
-                            let mut best_idx = 0;
-
-                            for i in 0..ids.len() {
-                                let mut current_sum = 0.0;
-                                for j in 0..ids.len() {
-                                    if i == j {
-                                        continue;
-                                    }
-                                    let dist = pgr::libs::phylo::tree::query::get_distance(
-                                        tree, &ids[i], &ids[j],
-                                    )
-                                    .map(|(d, _)| d)
-                                    .unwrap_or(f64::MAX);
-                                    current_sum += dist;
-                                }
-                                if current_sum < min_sum_dist {
-                                    min_sum_dist = current_sum;
-                                    best_idx = i;
-                                }
-                            }
-                            (Some(c[best_idx].1.clone()), best_idx)
+                        let ids: Vec<_> = c.iter().map(|(id, _)| *id).collect();
+                        match pgr::libs::phylo::tree::query::tree_medoid(tree, &ids) {
+                            Some(best_idx) => (Some(c[best_idx].1.clone()), best_idx),
+                            None => (None, 0),
                         }
                     }
                     _ => unreachable!(),

@@ -381,3 +381,41 @@ pub fn colless(tree: &Tree) -> Option<f64> {
     }
     Some(sum_diff)
 }
+
+/// Compute cumulative branch-length distance from root to each node.
+pub fn compute_root_distances(tree: &Tree) -> HashMap<NodeId, f64> {
+    let mut dists = HashMap::new();
+    if let Some(root) = tree.get_root() {
+        let mut stack = vec![(root, 0.0)];
+        while let Some((node_id, d)) = stack.pop() {
+            dists.insert(node_id, d);
+            if let Some(node) = tree.get_node(node_id) {
+                for &child in &node.children {
+                    let len = tree.get_node(child).and_then(|n| n.length).unwrap_or(0.0);
+                    stack.push((child, d + len));
+                }
+            }
+        }
+    }
+    dists
+}
+
+/// Return (min, max, avg) root-to-leaf distances. Empty tree returns (0, 0, 0).
+pub fn get_leaf_depth_stats(tree: &Tree) -> (f64, f64, f64) {
+    let root_dists = compute_root_distances(tree);
+    let mut depths = Vec::new();
+    for (id, dist) in root_dists {
+        if let Some(node) = tree.get_node(id) {
+            if node.children.is_empty() {
+                depths.push(dist);
+            }
+        }
+    }
+    if depths.is_empty() {
+        return (0.0, 0.0, 0.0);
+    }
+    let min = depths.iter().fold(f64::INFINITY, |a, &b| a.min(b));
+    let max = depths.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
+    let avg = depths.iter().sum::<f64>() / depths.len() as f64;
+    (min, max, avg)
+}
