@@ -1,12 +1,11 @@
 use clap::*;
 use pgr::libs::nt;
-use pgr::libs::paf::fasta::{load_fasta_tsv, FastaStore};
-use pgr::libs::paf::index::{PafIndex, QueryResult};
+use pgr::libs::paf::fasta::FastaStore;
+use pgr::libs::paf::index::PafIndex;
 use pgr::libs::paf::msa::{build_maf_block, build_msa_entries};
 
+use super::common::{self, QueryGroup};
 use super::query;
-
-type QueryGroup = ((String, i32, i32), Vec<QueryResult>);
 
 fn output_fas_pairwise(
     idx: &PafIndex,
@@ -179,27 +178,17 @@ Examples:
 }
 
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let tsv_path = args.get_one::<String>("fasta_tsv").unwrap();
-    let seq_to_file = load_fasta_tsv(tsv_path)?;
-
-    let (idx, all_results) = query::run_query(args)?;
-
-    pgr::libs::paf::fasta::validate_tsv_covers_index(&seq_to_file, &idx)?;
-
-    let mut fasta_store = FastaStore::new(&seq_to_file)?;
+    let (idx, all_results, mut fasta_store) = common::prepare_query(args)?;
     if args.get_flag("msa") {
-        let match_score = *args.get_one::<i32>("match_score").unwrap();
-        let mismatch_score = *args.get_one::<i32>("mismatch_score").unwrap();
-        let gap_open = *args.get_one::<i32>("gap_open").unwrap();
-        let gap_extend = *args.get_one::<i32>("gap_extend").unwrap();
+        let params = common::get_poa_params(args);
         output_fas_msa(
             &idx,
             &all_results,
             &mut fasta_store,
-            match_score,
-            mismatch_score,
-            gap_open,
-            gap_extend,
+            params.match_score,
+            params.mismatch_score,
+            params.gap_open,
+            params.gap_extend,
         )
     } else {
         output_fas_pairwise(&idx, &all_results, &mut fasta_store)

@@ -5,7 +5,7 @@
 //! derives graph nodes (DSU classes) + edges (path adjacencies) + novel
 //! segments (unaligned gaps), and emits GFA v1.0 (S/L/P).
 
-use super::cigar::CigarOp;
+use super::cigar::{extract_cigar, CigarOp};
 use super::parser::parse_paf;
 use std::collections::HashMap;
 use std::io::BufRead;
@@ -631,15 +631,6 @@ fn median_sorted(sorted: &[usize]) -> usize {
 }
 
 // ── Helpers ──────────────────────────────────────────────────────
-
-fn extract_cigar(tags: &[String]) -> Vec<CigarOp> {
-    for tag in tags {
-        if let Some(s) = tag.strip_prefix("cg:Z:") {
-            return super::cigar::parse_cigar(s);
-        }
-    }
-    Vec::new()
-}
 
 /// Walk a CIGAR and split at indels >= `min_var_len`, emitting segment pairs.
 #[allow(clippy::too_many_arguments)]

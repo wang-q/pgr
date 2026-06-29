@@ -130,6 +130,16 @@ pub fn format_cigar(ops: &[CigarOp]) -> String {
     s
 }
 
+/// Extract and parse the `cg:Z:` tag from a PAF tag list. Empty if absent.
+pub fn extract_cigar(tags: &[String]) -> Vec<CigarOp> {
+    for tag in tags {
+        if let Some(s) = tag.strip_prefix("cg:Z:") {
+            return parse_cigar(s);
+        }
+    }
+    Vec::new()
+}
+
 // ── Reversal (for bidirectional index) ───────────────────────────
 
 /// Reverse a CIGAR operation list, swapping `I` and `D`.

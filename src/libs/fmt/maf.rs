@@ -1,6 +1,6 @@
 use std::io::{self, Write};
 
-use super::fas::LinesRef;
+use crate::libs::io::LinesRef;
 
 // MAF
 // https://genome.ucsc.edu/FAQ/FAQformat.html#format5

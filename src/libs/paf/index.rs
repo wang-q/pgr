@@ -1,5 +1,5 @@
 /// PAF interval-tree index and query engine.
-use super::cigar::{gap_compressed_identity, parse_cigar, reverse_cigar, CigarOp};
+use super::cigar::{extract_cigar, gap_compressed_identity, reverse_cigar, CigarOp};
 use super::parser::{parse_paf, parse_paf_line};
 use super::record::PafRecord;
 use coitrees::{BasicCOITree, Interval, IntervalNode, IntervalTree};
@@ -358,15 +358,6 @@ impl PafIndex {
         }
         results
     }
-}
-
-fn extract_cigar(tags: &[String]) -> Vec<CigarOp> {
-    for tag in tags {
-        if let Some(s) = tag.strip_prefix("cg:Z:") {
-            return parse_cigar(s);
-        }
-    }
-    vec![]
 }
 
 /// Build sorted interval trees from a per-sequence interval map.

@@ -168,6 +168,34 @@ pub fn reverse_range<T: Copy + Sub<Output = T>>(start: &mut T, end: &mut T, size
     *end = size - s;
 }
 
+/// Borrowed line iterator over a `BufRead`, yielding `String` with the
+/// trailing `\n` (and `\r`) stripped. Unlike `BufRead::lines`, the reader
+/// is borrowed for the lifetime of the iterator (zero-allocation handle).
+pub struct LinesRef<'a, B: 'a> {
+    pub(crate) buf: &'a mut B,
+}
+
+impl<'a, B: BufRead> Iterator for LinesRef<'a, B> {
+    type Item = std::io::Result<String>;
+
+    fn next(&mut self) -> Option<std::io::Result<String>> {
+        let mut buf = String::new();
+        match self.buf.read_line(&mut buf) {
+            Ok(0) => None,
+            Ok(_n) => {
+                if buf.ends_with('\n') {
+                    buf.pop();
+                    if buf.ends_with('\r') {
+                        buf.pop();
+                    }
+                }
+                Some(Ok(buf))
+            }
+            Err(e) => Some(Err(e)),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

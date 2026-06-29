@@ -2,30 +2,7 @@ use intspan::Range;
 use std::collections::VecDeque;
 use std::{fmt, io, str};
 
-pub struct LinesRef<'a, B: 'a> {
-    pub(crate) buf: &'a mut B,
-}
-
-impl<'a, B: io::BufRead> Iterator for LinesRef<'a, B> {
-    type Item = io::Result<String>;
-
-    fn next(&mut self) -> Option<io::Result<String>> {
-        let mut buf = String::new();
-        match self.buf.read_line(&mut buf) {
-            Ok(0) => None,
-            Ok(_n) => {
-                if buf.ends_with('\n') {
-                    buf.pop();
-                    if buf.ends_with('\r') {
-                        buf.pop();
-                    }
-                }
-                Some(Ok(buf))
-            }
-            Err(e) => Some(Err(e)),
-        }
-    }
-}
+use crate::libs::io::LinesRef;
 
 #[derive(Default, Clone)]
 pub struct FasEntry {
