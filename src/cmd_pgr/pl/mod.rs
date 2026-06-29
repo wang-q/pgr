@@ -29,6 +29,6 @@ pub fn execute(matches: &clap::ArgMatches) -> anyhow::Result<()> {
         Some(("ir", sub_matches)) => ir::execute(sub_matches),
         Some(("rept", sub_matches)) => rept::execute(sub_matches),
         Some(("ucsc", sub_matches)) => ucsc::execute(sub_matches),
-        _ => unreachable!(),
+        _ => Ok(()),
     }
 }

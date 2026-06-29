@@ -1,3 +1,5 @@
+use crate::cmd_pgr::args::outfile_arg;
+use anyhow::{anyhow, Context, Result};
 use clap::*;
 use indexmap::IndexMap;
 use std::path::Path;
@@ -30,17 +32,17 @@ Examples:
                 .index(1)
                 .help("Input list files (2-4 files)"),
         )
-        .arg(crate::cmd_pgr::args::outfile_arg())
+        .arg(outfile_arg())
 }
 
 // command implementation
-pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
+pub fn execute(args: &ArgMatches) -> Result<()> {
     //----------------------------
     // Args
     //----------------------------
     let infiles: Vec<String> = args
         .get_many::<String>("infiles")
-        .unwrap()
+        .ok_or_else(|| anyhow!("missing infiles"))?
         .map(|s| s.to_string())
         .collect();
 
@@ -54,12 +56,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         // Get filename as label
         let mut basename = Path::new(file)
             .file_name()
-            .unwrap()
+            .ok_or_else(|| anyhow!("invalid filename: {}", file))?
             .to_str()
-            .unwrap()
+            .ok_or_else(|| anyhow!("invalid UTF-8 in filename: {}", file))?
             .split('.')
             .next()
-            .unwrap()
+            .ok_or_else(|| anyhow!("empty filename after splitting: {}", file))?
             .to_string();
 
         // Handle duplicate names
@@ -73,7 +75,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
         for e in &vec {
             all_elems.insert(e.clone());
-            let idx = all_elems.get_index_of(e).unwrap();
+            let idx = all_elems
+                .get_index_of(e)
+                .ok_or_else(|| anyhow!("element not found after insert: {}", e))?;
             ints.add_n(idx as i32);
         }
         ints_of.insert(basename, ints);
@@ -84,8 +88,14 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     match ints_of.len() {
         2 => {
-            let set_a = ints_of.get_index(0).unwrap().1;
-            let set_b = ints_of.get_index(1).unwrap().1;
+            let set_a = ints_of
+                .get_index(0)
+                .ok_or_else(|| anyhow!("missing set 0"))?
+                .1;
+            let set_b = ints_of
+                .get_index(1)
+                .ok_or_else(|| anyhow!("missing set 1"))?
+                .1;
 
             // A ∩ B
             let i_ab = set_a.intersect(set_b).size();
@@ -97,9 +107,18 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             excls.push(set_b.diff(set_a).size());
         }
         3 => {
-            let set_a = ints_of.get_index(0).unwrap().1;
-            let set_b = ints_of.get_index(1).unwrap().1;
-            let set_c = ints_of.get_index(2).unwrap().1;
+            let set_a = ints_of
+                .get_index(0)
+                .ok_or_else(|| anyhow!("missing set 0"))?
+                .1;
+            let set_b = ints_of
+                .get_index(1)
+                .ok_or_else(|| anyhow!("missing set 1"))?
+                .1;
+            let set_c = ints_of
+                .get_index(2)
+                .ok_or_else(|| anyhow!("missing set 2"))?
+                .1;
 
             // A ∩ B ∩ C
             let i_abc = set_a.intersect(set_b).intersect(set_c);
@@ -123,10 +142,22 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             excls.push(set_c.diff(set_a).diff(set_b).size());
         }
         4 => {
-            let set_a = ints_of.get_index(0).unwrap().1;
-            let set_b = ints_of.get_index(1).unwrap().1;
-            let set_c = ints_of.get_index(2).unwrap().1;
-            let set_d = ints_of.get_index(3).unwrap().1;
+            let set_a = ints_of
+                .get_index(0)
+                .ok_or_else(|| anyhow!("missing set 0"))?
+                .1;
+            let set_b = ints_of
+                .get_index(1)
+                .ok_or_else(|| anyhow!("missing set 1"))?
+                .1;
+            let set_c = ints_of
+                .get_index(2)
+                .ok_or_else(|| anyhow!("missing set 2"))?
+                .1;
+            let set_d = ints_of
+                .get_index(3)
+                .ok_or_else(|| anyhow!("missing set 3"))?
+                .1;
 
             // Quadruple intersection
             let i_abcd = set_a.intersect(set_b).intersect(set_c).intersect(set_d);
@@ -176,7 +207,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     let mut context = tera::Context::new();
 
-    context.insert("outfile", args.get_one::<String>("outfile").unwrap());
+    let outfile = args
+        .get_one::<String>("outfile")
+        .ok_or_else(|| anyhow!("missing outfile"))?;
+    context.insert("outfile", outfile);
     context.insert("label", &ints_of.keys().collect::<Vec<&String>>());
     context.insert("excls", &excls);
     context.insert("inter", &inter);
@@ -192,8 +226,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn gen_venn_2(context: &tera::Context) -> anyhow::Result<()> {
-    let outfile = context.get("outfile").unwrap().as_str().unwrap();
+fn gen_venn_2(context: &tera::Context) -> Result<()> {
+    let outfile = context_get_str(context, "outfile")?;
     let mut writer = pgr::writer(outfile)?;
 
     static FILE_TEMPLATE: &str = include_str!("../../../docs/venn.tex");
@@ -226,22 +260,29 @@ fn gen_venn_2(context: &tera::Context) -> anyhow::Result<()> {
 
     {
         // Section venn
-        let begin = template.find("%VENN_BEGIN").unwrap();
-        let end = template.find("%VENN_END").unwrap();
+        let begin = template
+            .find("%VENN_BEGIN")
+            .ok_or_else(|| anyhow!("venn template anchor %VENN_BEGIN not found"))?;
+        let end = template
+            .find("%VENN_END")
+            .ok_or_else(|| anyhow!("venn template anchor %VENN_END not found"))?;
         template.replace_range(begin..end, out_string);
     }
 
     let mut tera = tera::Tera::default();
-    tera.add_raw_templates(vec![("t", template)]).unwrap();
+    tera.add_raw_templates(vec![("t", template)])
+        .context("failed to register venn template")?;
 
-    let rendered = tera.render("t", context).unwrap();
+    let rendered = tera
+        .render("t", context)
+        .context("failed to render venn template")?;
     writer.write_all(rendered.as_ref())?;
 
     Ok(())
 }
 
-fn gen_venn_3(context: &tera::Context) -> anyhow::Result<()> {
-    let outfile = context.get("outfile").unwrap().as_str().unwrap();
+fn gen_venn_3(context: &tera::Context) -> Result<()> {
+    let outfile = context_get_str(context, "outfile")?;
     let mut writer = pgr::writer(outfile)?;
 
     static FILE_TEMPLATE: &str = include_str!("../../../docs/venn.tex");
@@ -286,22 +327,29 @@ fn gen_venn_3(context: &tera::Context) -> anyhow::Result<()> {
 
     {
         // Section venn
-        let begin = template.find("%VENN_BEGIN").unwrap();
-        let end = template.find("%VENN_END").unwrap();
+        let begin = template
+            .find("%VENN_BEGIN")
+            .ok_or_else(|| anyhow!("venn template anchor %VENN_BEGIN not found"))?;
+        let end = template
+            .find("%VENN_END")
+            .ok_or_else(|| anyhow!("venn template anchor %VENN_END not found"))?;
         template.replace_range(begin..end, out_string);
     }
 
     let mut tera = tera::Tera::default();
-    tera.add_raw_templates(vec![("t", template)]).unwrap();
+    tera.add_raw_templates(vec![("t", template)])
+        .context("failed to register venn template")?;
 
-    let rendered = tera.render("t", context).unwrap();
+    let rendered = tera
+        .render("t", context)
+        .context("failed to render venn template")?;
     writer.write_all(rendered.as_ref())?;
 
     Ok(())
 }
 
-fn gen_venn_4(context: &tera::Context) -> anyhow::Result<()> {
-    let outfile = context.get("outfile").unwrap().as_str().unwrap();
+fn gen_venn_4(context: &tera::Context) -> Result<()> {
+    let outfile = context_get_str(context, "outfile")?;
     let mut writer = pgr::writer(outfile)?;
 
     static FILE_TEMPLATE: &str = include_str!("../../../docs/venn.tex");
@@ -362,16 +410,33 @@ fn gen_venn_4(context: &tera::Context) -> anyhow::Result<()> {
 
     {
         // Section venn
-        let begin = template.find("%VENN_BEGIN").unwrap();
-        let end = template.find("%VENN_END").unwrap();
+        let begin = template
+            .find("%VENN_BEGIN")
+            .ok_or_else(|| anyhow!("venn template anchor %VENN_BEGIN not found"))?;
+        let end = template
+            .find("%VENN_END")
+            .ok_or_else(|| anyhow!("venn template anchor %VENN_END not found"))?;
         template.replace_range(begin..end, out_string);
     }
 
     let mut tera = tera::Tera::default();
-    tera.add_raw_templates(vec![("t", template)]).unwrap();
+    tera.add_raw_templates(vec![("t", template)])
+        .context("failed to register venn template")?;
 
-    let rendered = tera.render("t", context).unwrap();
+    let rendered = tera
+        .render("t", context)
+        .context("failed to render venn template")?;
     writer.write_all(rendered.as_ref())?;
 
     Ok(())
+}
+
+// Helper: get a string value from tera::Context, replacing the common
+// `context.get(k).unwrap().as_str().unwrap()` pattern with a friendly error.
+fn context_get_str<'a>(context: &'a tera::Context, key: &str) -> Result<&'a str> {
+    context
+        .get(key)
+        .ok_or_else(|| anyhow!("missing context key: {}", key))?
+        .as_str()
+        .ok_or_else(|| anyhow!("context key {} is not a string", key))
 }

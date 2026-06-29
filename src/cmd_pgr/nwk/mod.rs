@@ -76,6 +76,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         Some(("to-svg", sub_matches)) => to_svg::execute(sub_matches),
         Some(("to-tex", sub_matches)) => to_tex::execute(sub_matches),
         Some(("topo", sub_matches)) => topo::execute(sub_matches),
-        _ => unreachable!(),
+        _ => Ok(()),
     }
 }

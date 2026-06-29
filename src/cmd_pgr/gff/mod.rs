@@ -14,6 +14,6 @@ pub fn make_subcommand() -> Command {
 pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
     match matches.subcommand() {
         Some(("rg", sub_matches)) => rg::execute(sub_matches),
-        _ => unreachable!(),
+        _ => Ok(()),
     }
 }

@@ -79,6 +79,6 @@ pub fn execute(matches: &clap::ArgMatches) -> anyhow::Result<()> {
         Some(("to-xlsx", sub_matches)) => to_xlsx::execute(sub_matches),
         Some(("to-vcf", sub_matches)) => to_vcf::execute(sub_matches),
         Some(("subset", sub_matches)) => subset::execute(sub_matches),
-        _ => unreachable!(),
+        _ => Ok(()),
     }
 }

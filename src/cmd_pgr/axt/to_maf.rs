@@ -1,7 +1,7 @@
 use clap::*;
 use std::collections::HashMap;
 use std::fs::{self, File};
-use std::io::{BufRead, BufReader, BufWriter};
+use std::io::BufWriter;
 use std::path::Path;
 
 use pgr::libs::fmt::axt::AxtReader;
@@ -87,24 +87,6 @@ Examples:
         )
 }
 
-fn load_sizes(path: &str) -> anyhow::Result<HashMap<String, usize>> {
-    let file = File::open(path)?;
-    let reader = BufReader::new(file);
-    let mut sizes = HashMap::new();
-
-    for line in reader.lines() {
-        let line = line?;
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() >= 2 {
-            let name = parts[0].to_string();
-            let size = parts[1].parse::<usize>()?;
-            sizes.insert(name, size);
-        }
-    }
-
-    Ok(sizes)
-}
-
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let input = args.get_one::<String>("input").unwrap();
     let t_sizes_path = args.get_one::<String>("t_sizes").unwrap();
@@ -121,8 +103,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let t_split = args.get_flag("t_split");
 
     // Load sizes
-    let t_sizes = load_sizes(t_sizes_path)?;
-    let q_sizes = load_sizes(q_sizes_path)?;
+    let t_sizes = pgr::read_sizes::<usize>(t_sizes_path)?;
+    let q_sizes = pgr::read_sizes::<usize>(q_sizes_path)?;
 
     // Open input
     let reader = pgr::reader(input)?;

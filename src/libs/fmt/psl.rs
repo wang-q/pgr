@@ -109,7 +109,7 @@ impl Psl {
         let mut qs = psl.q_start;
         let mut qe = psl.q_end;
         if strand.starts_with('-') {
-            Self::reverse_range(&mut qs, &mut qe, psl.q_size);
+            crate::libs::io::reverse_range(&mut qs, &mut qe, psl.q_size as i32);
         }
 
         let mut ts = psl.t_start;
@@ -121,7 +121,7 @@ impl Psl {
         };
 
         if t_strand_rev {
-            Self::reverse_range(&mut ts, &mut te, psl.t_size);
+            crate::libs::io::reverse_range(&mut ts, &mut te, psl.t_size as i32);
         }
 
         let mut either_insert = false;
@@ -170,13 +170,6 @@ impl Psl {
 
     fn is_del_char(c: u8) -> bool {
         matches!(c, b'-' | b'.' | b'=' | b'_')
-    }
-
-    fn reverse_range(start: &mut i32, end: &mut i32, size: u32) {
-        let s = *start;
-        let e = *end;
-        *start = size as i32 - e;
-        *end = size as i32 - s;
     }
 
     fn add_block(&mut self, qs: i32, qe: i32, ts: i32, _te: i32) {

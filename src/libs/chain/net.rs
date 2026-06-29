@@ -4,9 +4,10 @@
 //! each chain's alignment blocks into the target/query chromosome gap trees.
 
 use crate::libs::chain::record::{Block, Chain};
-use crate::libs::fmt::net::{reverse_range, Chrom, Fill, Gap, Space};
+use crate::libs::fmt::net::{Chrom, Fill, Gap, Space};
+use crate::libs::io::reverse_range;
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::rc::Rc;
 
 pub struct ChainNet {
@@ -15,7 +16,7 @@ pub struct ChainNet {
 }
 
 impl ChainNet {
-    pub fn new(target_sizes: &HashMap<String, u64>) -> Self {
+    pub fn new(target_sizes: &BTreeMap<String, u64>) -> Self {
         let mut chroms = HashMap::new();
         for (name, size) in target_sizes {
             chroms.insert(name.clone(), RefCell::new(Chrom::new(name, *size)));

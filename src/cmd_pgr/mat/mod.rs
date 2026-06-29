@@ -27,6 +27,6 @@ pub fn execute(matches: &clap::ArgMatches) -> anyhow::Result<()> {
         Some(("to-phylip", sub_matches)) => to_phylip::execute(sub_matches),
         Some(("subset", sub_matches)) => subset::execute(sub_matches),
         Some(("transform", sub_matches)) => transform::execute(sub_matches),
-        _ => unreachable!(),
+        _ => Ok(()),
     }
 }

@@ -3,9 +3,8 @@ use clap::{Arg, ArgAction, ArgMatches, Command};
 use pgr::libs::chain::net::ChainNet;
 use pgr::libs::chain::ChainReader;
 use pgr::libs::fmt::net::{finalize_net, write_net};
-use std::collections::HashMap;
 use std::fs::File;
-use std::io::{BufRead, BufReader, BufWriter, Write};
+use std::io::{BufReader, BufWriter, Write};
 
 pub fn make_subcommand() -> Command {
     Command::new("net")
@@ -75,8 +74,8 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
     eprintln!("DEBUG: min_space={}, min_score={}", min_space, min_score);
     let incl_hap = args.get_flag("incl_hap");
 
-    let t_sizes = load_sizes(target_sizes_path)?;
-    let q_sizes = load_sizes(query_sizes_path)?;
+    let t_sizes = pgr::read_sizes::<u64>(target_sizes_path)?;
+    let q_sizes = pgr::read_sizes::<u64>(query_sizes_path)?;
 
     let mut t_net = ChainNet::new(&t_sizes);
     let mut q_net = ChainNet::new(&q_sizes);
@@ -164,23 +163,6 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
     }
 
     Ok(())
-}
-
-fn load_sizes(path: &str) -> Result<HashMap<String, u64>> {
-    let file = File::open(path)?;
-    let reader = BufReader::new(file);
-    let mut sizes = HashMap::new();
-
-    for line in reader.lines() {
-        let line = line?;
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() >= 2 {
-            let name = parts[0].to_string();
-            let size = parts[1].parse::<u64>()?;
-            sizes.insert(name, size);
-        }
-    }
-    Ok(sizes)
 }
 
 fn is_haplotype(name: &str) -> bool {

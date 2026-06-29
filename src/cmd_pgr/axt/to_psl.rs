@@ -1,7 +1,4 @@
 use clap::*;
-use std::collections::HashMap;
-use std::fs::File;
-use std::io::{BufRead, BufReader};
 
 use pgr::libs::fmt::axt::AxtReader;
 use pgr::libs::fmt::psl::Psl;
@@ -50,31 +47,6 @@ Examples:
         )
 }
 
-fn load_sizes(path: &str) -> anyhow::Result<HashMap<String, usize>> {
-    let file = File::open(path)?;
-    let reader = BufReader::new(file);
-    let mut sizes = HashMap::new();
-
-    for line in reader.lines() {
-        let line = line?;
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() >= 2 {
-            let name = parts[0].to_string();
-            let size = parts[1].parse::<usize>()?;
-            sizes.insert(name, size);
-        }
-    }
-
-    Ok(sizes)
-}
-
-fn reverse_range(start: &mut i32, end: &mut i32, size: u32) {
-    let s = *start;
-    let e = *end;
-    *start = size as i32 - e;
-    *end = size as i32 - s;
-}
-
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let input = args.get_one::<String>("input").unwrap();
     let t_sizes_path = args.get_one::<String>("t_sizes").unwrap();
@@ -82,8 +54,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let output = args.get_one::<String>("output").unwrap();
 
     // Load sizes
-    let t_sizes = load_sizes(t_sizes_path)?;
-    let q_sizes = load_sizes(q_sizes_path)?;
+    let t_sizes = pgr::read_sizes::<usize>(t_sizes_path)?;
+    let q_sizes = pgr::read_sizes::<usize>(q_sizes_path)?;
 
     // Open input
     let reader = pgr::reader(input)?;
@@ -112,7 +84,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         // This converts strand-relative coordinates (as in AXT) to positive strand coordinates
         // which pslFromAlign expects (so it can reverse them back internally).
         if axt.q_strand == '-' {
-            reverse_range(&mut q_start, &mut q_end, q_size as u32);
+            pgr::reverse_range(&mut q_start, &mut q_end, q_size as i32);
         }
 
         // Construct strand string for PSL (e.g. "-")

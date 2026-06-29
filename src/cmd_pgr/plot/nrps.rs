@@ -1,3 +1,4 @@
+use anyhow::{anyhow, bail, Context, Result};
 use clap::*;
 use indexmap::IndexMap;
 use std::collections::HashMap;
@@ -56,12 +57,17 @@ pub fn make_subcommand() -> Command {
 }
 
 // command implementation
-pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
+pub fn execute(args: &ArgMatches) -> Result<()> {
     //----------------------------
     // Args
     //----------------------------
-    let infile = args.get_one::<String>("infile").unwrap();
-    let default_color = args.get_one::<String>("color").unwrap();
+    let infile = args
+        .get_one::<String>("infile")
+        .ok_or_else(|| anyhow!("missing infile"))?;
+    let default_color = args
+        .get_one::<String>("color")
+        .ok_or_else(|| anyhow!("missing color"))?
+        .clone();
     let is_legend = args.get_flag("legend");
 
     //----------------------------
@@ -134,7 +140,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             "C" | "E" | "CE" | "M" => (0.4, 0.4),
             "T" => (0.2, 0.2),
             "Te" | "R" => (0.3, 0.3),
-            _ => unreachable!(),
+            other => bail!("unknown domain type: {}", other),
         };
 
         let domain_id = if let Some(domains) = modules.get(&current_module) {
@@ -147,12 +153,20 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             if domains.is_empty() {
                 0.0
             } else {
-                let last_domain = domains.last().unwrap();
-                let last_pos: f64 = last_domain.get("pos").unwrap().parse().unwrap();
-                let last_dx_after: f64 = last_domain.get("dx_after").unwrap().parse().unwrap();
-                format!("{:.1}", last_pos + last_dx_after + dx_before)
+                let last_domain = domains
+                    .last()
+                    .ok_or_else(|| anyhow!("empty domains while computing pos"))?;
+                let last_pos: f64 = last_domain
+                    .get("pos")
+                    .ok_or_else(|| anyhow!("missing pos in last domain"))?
                     .parse()
-                    .unwrap()
+                    .context("failed to parse last domain pos")?;
+                let last_dx_after: f64 = last_domain
+                    .get("dx_after")
+                    .ok_or_else(|| anyhow!("missing dx_after in last domain"))?
+                    .parse()
+                    .context("failed to parse last domain dx_after")?;
+                last_pos + last_dx_after + dx_before
             }
         } else {
             0.0
@@ -176,8 +190,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // Generate all modules
     let mut all_tex = String::new();
     for (module_name, domains) in &modules {
-        let info = module_info.get(module_name).unwrap();
-        let module_tex = gen_module(info, domains);
+        let info = module_info
+            .get(module_name)
+            .ok_or_else(|| anyhow!("missing module info: {}", module_name))?;
+        let module_tex = gen_module(info, domains)?;
         all_tex.push_str(&module_tex);
         all_tex.push('\n');
     }
@@ -187,7 +203,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     let mut context = tera::Context::new();
 
-    context.insert("outfile", args.get_one::<String>("outfile").unwrap());
+    let outfile = args
+        .get_one::<String>("outfile")
+        .ok_or_else(|| anyhow!("missing outfile"))?;
+    context.insert("outfile", outfile);
     context.insert("all_tex", &all_tex);
     context.insert("is_legend", &is_legend);
     context.insert("default_color", &default_color);
@@ -197,12 +216,21 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn gen_module(info: &HashMap<String, String>, domains: &Vec<HashMap<String, String>>) -> String {
+fn gen_module(
+    info: &HashMap<String, String>,
+    domains: &Vec<HashMap<String, String>>,
+) -> Result<String> {
     let mut context = tera::Context::new();
-    context.insert("info", &info);
-    context.insert("domains", &domains);
-    context.insert("last_domain", domains.last().unwrap());
-    context.insert("first_domain", domains.first().unwrap());
+    context.insert("info", info);
+    context.insert("domains", domains);
+    let last_domain = domains
+        .last()
+        .ok_or_else(|| anyhow!("empty domains in gen_module"))?;
+    let first_domain = domains
+        .first()
+        .ok_or_else(|| anyhow!("empty domains in gen_module"))?;
+    context.insert("last_domain", last_domain);
+    context.insert("first_domain", first_domain);
 
     let template = r###"
     \begin{scope}[shift={([shift={({{ first_domain.dx_before }}cm,0)}]{{ info.prev }}.east)}]
@@ -225,14 +253,18 @@ fn gen_module(info: &HashMap<String, String>, domains: &Vec<HashMap<String, Stri
     \end{scope}"###;
 
     let mut tera = tera::Tera::default();
-    tera.add_raw_templates(vec![("t", template)]).unwrap();
+    tera.add_raw_templates(vec![("t", template)])
+        .context("failed to register nrps module template")?;
 
-    tera.render("t", &context).unwrap()
+    let rendered = tera
+        .render("t", &context)
+        .context("failed to render nrps module template")?;
+    Ok(rendered)
 }
 
-fn gen_nrps(context: &tera::Context) -> anyhow::Result<()> {
-    let outfile = context.get("outfile").unwrap().as_str().unwrap();
-    let all_tex = context.get("all_tex").unwrap().as_str().unwrap();
+fn gen_nrps(context: &tera::Context) -> Result<()> {
+    let outfile = context_get_str(context, "outfile")?;
+    let all_tex = context_get_str(context, "all_tex")?;
     let mut writer = pgr::writer(outfile)?;
 
     static FILE_TEMPLATE: &str = include_str!("../../../docs/nrps.tex");
@@ -240,7 +272,7 @@ fn gen_nrps(context: &tera::Context) -> anyhow::Result<()> {
 
     {
         // Section color
-        let default_color = context.get("default_color").unwrap().as_str().unwrap();
+        let default_color = context_get_str(context, "default_color")?;
         let color_section = format!(
             r###"%
         draw={},
@@ -250,33 +282,62 @@ fn gen_nrps(context: &tera::Context) -> anyhow::Result<()> {
             default_color, default_color
         );
 
-        let begin = template.find("%COLOR_BEGIN%").unwrap();
-        let end = template.find("%COLOR_END%").unwrap();
+        let begin = template
+            .find("%COLOR_BEGIN%")
+            .ok_or_else(|| anyhow!("nrps template anchor %COLOR_BEGIN% not found"))?;
+        let end = template
+            .find("%COLOR_END%")
+            .ok_or_else(|| anyhow!("nrps template anchor %COLOR_END% not found"))?;
         template.replace_range(begin..end, &color_section);
     }
 
     {
         // Section module
-        let begin = template.find("%MODULE_BEGIN%").unwrap();
-        let end = template.find("%MODULE_END%").unwrap();
+        let begin = template
+            .find("%MODULE_BEGIN%")
+            .ok_or_else(|| anyhow!("nrps template anchor %MODULE_BEGIN% not found"))?;
+        let end = template
+            .find("%MODULE_END%")
+            .ok_or_else(|| anyhow!("nrps template anchor %MODULE_END% not found"))?;
         template.replace_range(begin..end, all_tex);
     }
 
     {
         // Section legend
-        let is_legend = context.get("is_legend").unwrap().as_bool().unwrap();
-        let begin = template.find("%LEGEND_BEGIN%").unwrap();
-        let end = template.find("%LEGEND_END%").unwrap();
+        let is_legend = context
+            .get("is_legend")
+            .ok_or_else(|| anyhow!("missing context key: is_legend"))?
+            .as_bool()
+            .ok_or_else(|| anyhow!("context key is_legend is not a bool"))?;
+        let begin = template
+            .find("%LEGEND_BEGIN%")
+            .ok_or_else(|| anyhow!("nrps template anchor %LEGEND_BEGIN% not found"))?;
+        let end = template
+            .find("%LEGEND_END%")
+            .ok_or_else(|| anyhow!("nrps template anchor %LEGEND_END% not found"))?;
         if !is_legend {
             template.replace_range(begin..end, "");
         }
     }
 
     let mut tera = tera::Tera::default();
-    tera.add_raw_templates(vec![("t", template)])?;
+    tera.add_raw_templates(vec![("t", template)])
+        .context("failed to register nrps template")?;
 
-    let rendered = tera.render("t", context)?;
+    let rendered = tera
+        .render("t", context)
+        .context("failed to render nrps template")?;
     writer.write_all(rendered.as_ref())?;
 
     Ok(())
+}
+
+// Helper: get a string value from tera::Context, replacing the common
+// `context.get(k).unwrap().as_str().unwrap()` pattern with a friendly error.
+fn context_get_str<'a>(context: &'a tera::Context, key: &str) -> Result<&'a str> {
+    context
+        .get(key)
+        .ok_or_else(|| anyhow!("missing context key: {}", key))?
+        .as_str()
+        .ok_or_else(|| anyhow!("context key {} is not a string", key))
 }

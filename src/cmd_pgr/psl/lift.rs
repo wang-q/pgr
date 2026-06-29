@@ -69,8 +69,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let q_sizes_file = args.get_one::<String>("q_sizes").map(|s| s.as_str());
     let t_sizes_file = args.get_one::<String>("t_sizes").map(|s| s.as_str());
 
-    let q_sizes_map = q_sizes_file.map(pgr::libs::io::read_sizes).transpose()?;
-    let t_sizes_map = t_sizes_file.map(pgr::libs::io::read_sizes).transpose()?;
+    let q_sizes_map = q_sizes_file
+        .map(pgr::libs::io::read_sizes::<i32>)
+        .transpose()?;
+    let t_sizes_map = t_sizes_file
+        .map(pgr::libs::io::read_sizes::<i32>)
+        .transpose()?;
 
     for line in reader.lines() {
         let line = line?;

@@ -15,6 +15,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     match args.subcommand() {
         Some(("lastz", sub_matches)) => lastz::execute(sub_matches),
         Some(("to-psl", sub_matches)) => to_psl::execute(sub_matches),
-        _ => unreachable!(),
+        _ => Ok(()),
     }
 }

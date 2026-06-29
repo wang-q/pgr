@@ -18,6 +18,6 @@ pub fn execute(matches: &clap::ArgMatches) -> anyhow::Result<()> {
         Some(("hh", sub_matches)) => hh::execute(sub_matches),
         Some(("nrps", sub_matches)) => nrps::execute(sub_matches),
         Some(("venn", sub_matches)) => venn::execute(sub_matches),
-        _ => unreachable!(),
+        _ => Ok(()),
     }
 }

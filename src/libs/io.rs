@@ -1,7 +1,9 @@
 use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter, Read, Write};
+use std::ops::Sub;
 use std::path::Path;
+use std::str::FromStr;
 
 use anyhow::{bail, Context};
 
@@ -59,20 +61,26 @@ pub fn writer(output: &str) -> anyhow::Result<Box<dyn Write>> {
     Ok(Box::new(BufWriter::new(file)))
 }
 
-/// Read a `name<TAB>size` sizes file into a map.
+/// Read a `name<TAB>size` sizes file into a map with the requested value type.
+///
+/// Lines are split on whitespace; lines with fewer than 2 fields are skipped.
 ///
 /// ```
-/// let sizes = pgr::read_sizes("tests/pgr/pseudopig.sizes").unwrap();
+/// let sizes = pgr::read_sizes::<u64>("tests/pgr/pseudopig.sizes").unwrap();
 /// assert_eq!(sizes.len(), 2);
 /// assert_eq!(*sizes.get("pig2").unwrap(), 22929);
 /// ```
-pub fn read_sizes(input: &str) -> anyhow::Result<BTreeMap<String, i32>> {
-    let mut sizes: BTreeMap<String, i32> = BTreeMap::new();
+pub fn read_sizes<T>(input: &str) -> anyhow::Result<BTreeMap<String, T>>
+where
+    T: FromStr,
+    T::Err: std::error::Error + Send + Sync + 'static,
+{
+    let mut sizes: BTreeMap<String, T> = BTreeMap::new();
 
     for line in read_lines(input)? {
-        let fields: Vec<&str> = line.split('\t').collect();
-        if fields.len() == 2 {
-            let size: i32 = fields[1]
+        let fields: Vec<&str> = line.split_whitespace().collect();
+        if fields.len() >= 2 {
+            let size: T = fields[1]
                 .parse()
                 .with_context(|| format!("invalid size value: {}", fields[1]))?;
             sizes.insert(fields[0].to_string(), size);
@@ -139,6 +147,25 @@ pub fn is_fq<P: AsRef<Path>>(path: P) -> anyhow::Result<bool> {
         '@' => Ok(true),
         c => bail!("unknown file format, leading byte: {:?}", c),
     }
+}
+
+/// Reverse a `[start, end]` range against a total `size`, in place.
+///
+/// Both endpoints are mapped as `new = size - old`, so a forward range
+/// becomes a reverse-strand range (and vice versa).
+///
+/// ```
+/// let mut s = 10;
+/// let mut e = 20;
+/// pgr::reverse_range(&mut s, &mut e, 100);
+/// assert_eq!(s, 80);
+/// assert_eq!(e, 90);
+/// ```
+pub fn reverse_range<T: Copy + Sub<Output = T>>(start: &mut T, end: &mut T, size: T) {
+    let s = *start;
+    let e = *end;
+    *start = size - e;
+    *end = size - s;
 }
 
 #[cfg(test)]

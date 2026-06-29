@@ -27,6 +27,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         Some(("sort", sub_matches)) => sort::execute(sub_matches),
         Some(("pre-net", sub_matches)) => pre_net::execute(sub_matches),
         Some(("net", sub_matches)) => net::execute(sub_matches),
-        _ => unreachable!(),
+        _ => Ok(()),
     }
 }

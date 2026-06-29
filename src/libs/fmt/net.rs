@@ -559,12 +559,6 @@ pub fn range_intersection(start1: u64, end1: u64, start2: u64, end2: u64) -> u64
     e.saturating_sub(s)
 }
 
-pub(crate) fn reverse_range(start: &mut u64, end: &mut u64, size: u64) {
-    let tmp = *start;
-    *start = size - *end;
-    *end = size - tmp;
-}
-
 fn chain_base_count_sub_t(chain: &Chain, t_min: u64, t_max: u64) -> u64 {
     let mut total = 0;
     // We need block list. chain.to_blocks() returns blocks with absolute coords.
@@ -610,7 +604,7 @@ fn subchain_info(chain: &Chain, start: u64, end: u64, is_q: bool) -> (u64, f64) 
         let mut s = start;
         let mut e = end;
         if chain.header.q_strand == '-' {
-            reverse_range(&mut s, &mut e, chain.header.q_size);
+            crate::libs::io::reverse_range(&mut s, &mut e, chain.header.q_size);
         }
         if s <= chain.header.q_start && e >= chain.header.q_end {
             full_ali_size
@@ -691,7 +685,7 @@ fn calc_other_fill(gap: &Rc<RefCell<Gap>>, is_q: bool) {
 
                 if q_min < q_max {
                     if chain.header.q_strand == '-' {
-                        reverse_range(&mut q_min, &mut q_max, chain.header.q_size);
+                        crate::libs::io::reverse_range(&mut q_min, &mut q_max, chain.header.q_size);
                     }
                     fill_borrow.o_start = q_min;
                     fill_borrow.o_end = q_max;
@@ -712,7 +706,7 @@ fn calc_other_fill(gap: &Rc<RefCell<Gap>>, is_q: bool) {
 
                     let (mut fq_s, mut fq_e) = (q_s, q_e);
                     if chain.header.q_strand == '-' {
-                        reverse_range(&mut fq_s, &mut fq_e, chain.header.q_size);
+                        crate::libs::io::reverse_range(&mut fq_s, &mut fq_e, chain.header.q_size);
                     }
 
                     let start = fq_s.max(c_start);

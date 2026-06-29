@@ -3,7 +3,7 @@ use clap::{Arg, ArgAction, ArgMatches, Command};
 use pgr::libs::chain::ChainReader;
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{BufRead, BufReader, BufWriter};
+use std::io::{BufReader, BufWriter};
 
 pub fn make_subcommand() -> Command {
     Command::new("pre-net")
@@ -132,23 +132,6 @@ impl BitMap {
     }
 }
 
-fn load_sizes(path: &str) -> Result<HashMap<String, BitMap>> {
-    let file = File::open(path)?;
-    let reader = BufReader::new(file);
-    let mut map = HashMap::new();
-
-    for line in reader.lines() {
-        let line = line?;
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() >= 2 {
-            let name = parts[0].to_string();
-            let size: u64 = parts[1].parse()?;
-            map.insert(name, BitMap::new(size));
-        }
-    }
-    Ok(map)
-}
-
 fn is_haplotype(name: &str) -> bool {
     name.ends_with("_hap")
         || name.ends_with("_alt")
@@ -174,8 +157,14 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
     let pad = args.get_one::<u64>("pad").copied().unwrap_or(1);
     let incl_hap = args.get_flag("incl_hap");
 
-    let mut t_hash = load_sizes(target_sizes_path)?;
-    let mut q_hash = load_sizes(query_sizes_path)?;
+    let mut t_hash: HashMap<String, BitMap> = pgr::read_sizes::<u64>(target_sizes_path)?
+        .into_iter()
+        .map(|(k, v)| (k, BitMap::new(v)))
+        .collect();
+    let mut q_hash: HashMap<String, BitMap> = pgr::read_sizes::<u64>(query_sizes_path)?
+        .into_iter()
+        .map(|(k, v)| (k, BitMap::new(v)))
+        .collect();
 
     let f = File::open(input_path)?;
     let reader = ChainReader::new(BufReader::new(f));
