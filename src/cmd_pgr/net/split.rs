@@ -1,5 +1,5 @@
 use clap::{Arg, ArgMatches, Command};
-use pgr::libs::fmt::net::read_nets;
+use pgr::libs::chain::net::read_nets;
 use std::fs::{self, File};
 use std::io::{self, BufReader};
 use std::path::Path;

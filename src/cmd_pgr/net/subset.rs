@@ -1,6 +1,6 @@
 use clap::{Arg, ArgAction, ArgMatches, Command};
+use pgr::libs::chain::net::{read_nets, Fill};
 use pgr::libs::chain::{read_chains, Chain};
-use pgr::libs::fmt::net::{read_nets, Fill};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fs::File;
@@ -87,7 +87,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 }
 
 fn process_gap(
-    gap: &Rc<RefCell<pgr::libs::fmt::net::Gap>>,
+    gap: &Rc<RefCell<pgr::libs::chain::net::Gap>>,
     chains_map: &HashMap<u64, Chain>,
     writer: &mut impl std::io::Write,
     whole_chains: bool,

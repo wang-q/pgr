@@ -3,7 +3,7 @@ use std::cell::{Ref, RefCell};
 use std::collections::HashSet;
 use std::rc::Rc;
 
-use pgr::libs::fmt::net::{read_nets, Chrom, Fill, Gap};
+use pgr::libs::chain::net::{read_nets, Chrom, Fill, Gap};
 
 pub fn make_subcommand() -> Command {
     Command::new("filter")

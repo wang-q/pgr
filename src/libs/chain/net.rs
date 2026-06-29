@@ -1,14 +1,246 @@
-//! Chain-to-Net construction logic.
+//! Chain-to-Net construction logic and Net format I/O.
 //!
 //! Builds a Net (hierarchical gap-fill tree) from a set of Chains by inserting
 //! each chain's alignment blocks into the target/query chromosome gap trees.
+//! Also provides readers/writers for the UCSC Net text format.
 
 use crate::libs::chain::record::{Block, Chain};
-use crate::libs::fmt::net::{Chrom, Fill, Gap, Space};
 use crate::libs::io::reverse_range;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
+use std::io::{self, BufRead, Write};
 use std::rc::Rc;
+
+// ---------------------------------------------------------------------------
+// Data structures
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, Debug)]
+pub enum NetNode {
+    Gap(Rc<RefCell<Gap>>),
+    Fill(Rc<RefCell<Fill>>),
+}
+
+#[derive(Clone, Debug)]
+pub struct Space {
+    pub start: u64,
+    pub end: u64,
+    pub gap: Rc<RefCell<Gap>>,
+}
+
+#[derive(Debug)]
+pub struct Gap {
+    pub start: u64,
+    pub end: u64,
+    pub o_start: u64,
+    pub o_end: u64,
+    pub fills: Vec<Rc<RefCell<Fill>>>,
+    pub t_n: Option<u64>,
+    pub q_n: Option<u64>,
+    pub t_r: Option<u64>,
+    pub q_r: Option<u64>,
+    pub t_trf: Option<u64>,
+    pub q_trf: Option<u64>,
+}
+
+#[derive(Debug)]
+pub struct Fill {
+    pub start: u64,
+    pub end: u64,
+    pub o_start: u64,
+    pub o_end: u64,
+    pub o_chrom: String,
+    pub o_strand: char,
+    pub chain_id: u64,
+    pub score: f64,
+    pub ali: u64,
+    pub class: String,
+    pub q_dup: Option<u64>,
+    pub q_over: Option<u64>,
+    pub q_far: Option<i64>,
+    pub chain: Option<Rc<Chain>>,
+    pub gaps: Vec<Rc<RefCell<Gap>>>,
+    pub t_n: Option<u64>,
+    pub q_n: Option<u64>,
+    pub t_r: Option<u64>,
+    pub q_r: Option<u64>,
+    pub t_trf: Option<u64>,
+    pub q_trf: Option<u64>,
+}
+
+pub struct Chrom {
+    pub name: String,
+    pub size: u64,
+    pub root: Rc<RefCell<Gap>>,
+    pub spaces: BTreeMap<u64, Space>, // start -> Space
+    pub comments: Vec<String>,
+}
+
+impl Chrom {
+    pub fn new(name: &str, size: u64) -> Self {
+        let root = Rc::new(RefCell::new(Gap {
+            start: 0,
+            end: size,
+            o_start: 0,
+            o_end: 0, // Root gap o_range is 0? UCSC sets it to 0,0
+            fills: Vec::new(),
+            t_n: None,
+            q_n: None,
+            t_r: None,
+            q_r: None,
+            t_trf: None,
+            q_trf: None,
+        }));
+
+        let space = Space {
+            start: 0,
+            end: size,
+            gap: root.clone(),
+        };
+
+        let mut spaces = BTreeMap::new();
+        spaces.insert(0, space);
+
+        Chrom {
+            name: name.to_string(),
+            size,
+            root,
+            spaces,
+            comments: Vec::new(),
+        }
+    }
+
+    pub fn find_spaces(&self, start: u64, end: u64) -> Vec<Space> {
+        let mut result = Vec::new();
+        for (_, space) in self.spaces.range(..end) {
+            if space.end > start {
+                result.push(space.clone());
+            }
+        }
+        result
+    }
+
+    pub fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
+        for comment in &self.comments {
+            writeln!(writer, "{}", comment)?;
+        }
+        writeln!(writer, "net {} {}", self.name, self.size)?;
+        for fill in &self.root.borrow().fills {
+            fill.borrow().write(&mut writer, 1)?;
+        }
+        Ok(())
+    }
+}
+
+impl Fill {
+    pub fn write<W: Write>(&self, writer: &mut W, indent: usize) -> io::Result<()> {
+        let indent_str = " ".repeat(indent);
+        write!(
+            writer,
+            "{}fill {} {} {} {} {} {} id {} score {} ali {}",
+            indent_str,
+            self.start,
+            self.end - self.start,
+            self.o_chrom,
+            self.o_strand,
+            self.o_start,
+            self.o_end - self.o_start,
+            self.chain_id,
+            self.score,
+            self.ali
+        )?;
+
+        if let Some(val) = self.q_over {
+            write!(writer, " qOver {}", val)?;
+        }
+        if let Some(val) = self.q_far {
+            write!(writer, " qFar {}", val)?;
+        }
+        if let Some(val) = self.q_dup {
+            write!(writer, " qDup {}", val)?;
+        }
+        if !self.class.is_empty() {
+            write!(writer, " type {}", self.class)?;
+        }
+        if let Some(val) = self.t_n {
+            write!(writer, " tN {}", val)?;
+        }
+        if let Some(val) = self.q_n {
+            write!(writer, " qN {}", val)?;
+        }
+        if let Some(val) = self.t_r {
+            write!(writer, " tR {}", val)?;
+        }
+        if let Some(val) = self.q_r {
+            write!(writer, " qR {}", val)?;
+        }
+        if let Some(val) = self.t_trf {
+            write!(writer, " tTrf {}", val)?;
+        }
+        if let Some(val) = self.q_trf {
+            write!(writer, " qTrf {}", val)?;
+        }
+        writeln!(writer)?;
+
+        for gap in &self.gaps {
+            gap.borrow()
+                .write(writer, indent + 1, &self.o_chrom, self.o_strand)?;
+        }
+        Ok(())
+    }
+}
+
+impl Gap {
+    pub fn write<W: Write>(
+        &self,
+        writer: &mut W,
+        indent: usize,
+        o_chrom: &str,
+        o_strand: char,
+    ) -> io::Result<()> {
+        let indent_str = " ".repeat(indent);
+        write!(
+            writer,
+            "{}gap {} {} {} {} {} {}",
+            indent_str,
+            self.start,
+            self.end - self.start,
+            o_chrom,
+            o_strand,
+            self.o_start,
+            self.o_end - self.o_start
+        )?;
+
+        if let Some(val) = self.t_n {
+            write!(writer, " tN {}", val)?;
+        }
+        if let Some(val) = self.q_n {
+            write!(writer, " qN {}", val)?;
+        }
+        if let Some(val) = self.t_r {
+            write!(writer, " tR {}", val)?;
+        }
+        if let Some(val) = self.q_r {
+            write!(writer, " qR {}", val)?;
+        }
+        if let Some(val) = self.t_trf {
+            write!(writer, " tTrf {}", val)?;
+        }
+        if let Some(val) = self.q_trf {
+            write!(writer, " qTrf {}", val)?;
+        }
+        writeln!(writer)?;
+
+        for fill in &self.fills {
+            fill.borrow().write(writer, indent + 1)?;
+        }
+        Ok(())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// ChainNet builder
+// ---------------------------------------------------------------------------
 
 pub struct ChainNet {
     pub chroms: HashMap<String, RefCell<Chrom>>,
@@ -334,4 +566,691 @@ fn fill_space(
 
     // Add fill to parent gap
     space.gap.borrow_mut().fills.push(fill);
+}
+
+// ---------------------------------------------------------------------------
+// Net format reader
+// ---------------------------------------------------------------------------
+
+pub fn read_nets<R: BufRead>(mut reader: R) -> io::Result<Vec<Chrom>> {
+    let mut chroms = Vec::new();
+    let mut current_chrom: Option<Chrom> = None;
+    let mut stack: Vec<(usize, NetNode)> = Vec::new();
+    let mut pending_comments = Vec::new();
+
+    let mut line = String::new();
+    while reader.read_line(&mut line)? > 0 {
+        if line.trim().is_empty() {
+            line.clear();
+            continue;
+        }
+
+        if line.starts_with('#') {
+            pending_comments.push(line.trim_end().to_string());
+            line.clear();
+            continue;
+        }
+
+        let mut indent = 0;
+        for c in line.chars() {
+            if c == ' ' {
+                indent += 1;
+            } else {
+                break;
+            }
+        }
+
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.is_empty() {
+            line.clear();
+            continue;
+        }
+
+        match parts[0] {
+            "net" => {
+                if let Some(c) = current_chrom {
+                    chroms.push(c);
+                }
+                let name = parts[1];
+                let size = parts[2].parse::<u64>().unwrap();
+                let mut chrom = Chrom::new(name, size);
+                if !pending_comments.is_empty() {
+                    chrom.comments = std::mem::take(&mut pending_comments);
+                }
+                stack.clear();
+                stack.push((0, NetNode::Gap(chrom.root.clone())));
+                current_chrom = Some(chrom);
+            }
+            "fill" => {
+                // fill tStart tLength qName qStrand qStart qLength id chainId score ali [type class]
+                let start = parts[1].parse::<u64>().unwrap();
+                let len = parts[2].parse::<u64>().unwrap();
+                let q_name = parts[3].to_string();
+                let q_strand = parts[4].chars().next().unwrap();
+                let q_start = parts[5].parse::<u64>().unwrap();
+                let q_len = parts[6].parse::<u64>().unwrap();
+                // parts[7] is "id"
+                let chain_id = parts[8].parse::<u64>().unwrap();
+                // parts[9] is "score"
+                let score = parts[10].parse::<f64>().unwrap();
+                // parts[11] is "ali"
+                let ali = parts[12].parse::<u64>().unwrap();
+
+                let mut class = String::new();
+                let mut q_dup = None;
+                let mut q_over = None;
+                let mut q_far = None;
+                let mut t_n = None;
+                let mut q_n = None;
+                let mut t_r = None;
+                let mut q_r = None;
+                let mut t_trf = None;
+                let mut q_trf = None;
+
+                let mut i = 13;
+                while i < parts.len() {
+                    match parts[i] {
+                        "type" => {
+                            if i + 1 < parts.len() {
+                                class = parts[i + 1].to_string();
+                                i += 2;
+                            } else {
+                                i += 1;
+                            }
+                        }
+                        "qDup" => {
+                            let (v, ni) = parse_opt_u64(&parts, i);
+                            q_dup = v;
+                            i = ni;
+                        }
+                        "qOver" => {
+                            let (v, ni) = parse_opt_u64(&parts, i);
+                            q_over = v;
+                            i = ni;
+                        }
+                        "qFar" => {
+                            let (v, ni) = parse_opt_i64(&parts, i);
+                            q_far = v;
+                            i = ni;
+                        }
+                        "tN" => {
+                            let (v, ni) = parse_opt_u64(&parts, i);
+                            t_n = v;
+                            i = ni;
+                        }
+                        "qN" => {
+                            let (v, ni) = parse_opt_u64(&parts, i);
+                            q_n = v;
+                            i = ni;
+                        }
+                        "tR" => {
+                            let (v, ni) = parse_opt_u64(&parts, i);
+                            t_r = v;
+                            i = ni;
+                        }
+                        "qR" => {
+                            let (v, ni) = parse_opt_u64(&parts, i);
+                            q_r = v;
+                            i = ni;
+                        }
+                        "tTrf" => {
+                            let (v, ni) = parse_opt_u64(&parts, i);
+                            t_trf = v;
+                            i = ni;
+                        }
+                        "qTrf" => {
+                            let (v, ni) = parse_opt_u64(&parts, i);
+                            q_trf = v;
+                            i = ni;
+                        }
+                        _ => {
+                            i += 1;
+                        }
+                    }
+                }
+
+                let fill = Rc::new(RefCell::new(Fill {
+                    start,
+                    end: start + len,
+                    o_start: q_start,
+                    o_end: q_start + q_len,
+                    o_chrom: q_name,
+                    o_strand: q_strand,
+                    chain_id,
+                    score,
+                    ali,
+                    class,
+                    q_dup,
+                    q_over,
+                    q_far,
+                    chain: None,
+                    gaps: Vec::new(),
+                    t_n,
+                    q_n,
+                    t_r,
+                    q_r,
+                    t_trf,
+                    q_trf,
+                }));
+
+                // Find parent gap
+                while let Some((parent_indent, parent_node)) = stack.last() {
+                    if indent > *parent_indent {
+                        if let NetNode::Gap(gap) = parent_node {
+                            gap.borrow_mut().fills.push(fill.clone());
+                            stack.push((indent, NetNode::Fill(fill)));
+                            break;
+                        } else {
+                            stack.pop();
+                        }
+                    } else {
+                        stack.pop();
+                    }
+                }
+            }
+            "gap" => {
+                // gap tStart tLength qName qStrand qStart qLength
+                let start = parts[1].parse::<u64>().unwrap();
+                let len = parts[2].parse::<u64>().unwrap();
+                let _q_name = parts[3].to_string();
+                let _q_strand = parts[4].chars().next().unwrap();
+                let q_start = parts[5].parse::<u64>().unwrap();
+                let q_len = parts[6].parse::<u64>().unwrap();
+
+                let mut t_n = None;
+                let mut q_n = None;
+                let mut t_r = None;
+                let mut q_r = None;
+                let mut t_trf = None;
+                let mut q_trf = None;
+
+                let mut i = 7;
+                while i < parts.len() {
+                    match parts[i] {
+                        "tN" => {
+                            let (v, ni) = parse_opt_u64(&parts, i);
+                            t_n = v;
+                            i = ni;
+                        }
+                        "qN" => {
+                            let (v, ni) = parse_opt_u64(&parts, i);
+                            q_n = v;
+                            i = ni;
+                        }
+                        "tR" => {
+                            let (v, ni) = parse_opt_u64(&parts, i);
+                            t_r = v;
+                            i = ni;
+                        }
+                        "qR" => {
+                            let (v, ni) = parse_opt_u64(&parts, i);
+                            q_r = v;
+                            i = ni;
+                        }
+                        "tTrf" => {
+                            let (v, ni) = parse_opt_u64(&parts, i);
+                            t_trf = v;
+                            i = ni;
+                        }
+                        "qTrf" => {
+                            let (v, ni) = parse_opt_u64(&parts, i);
+                            q_trf = v;
+                            i = ni;
+                        }
+                        _ => {
+                            i += 1;
+                        }
+                    }
+                }
+
+                let gap = Rc::new(RefCell::new(Gap {
+                    start,
+                    end: start + len,
+                    o_start: q_start,
+                    o_end: q_start + q_len,
+                    fills: Vec::new(),
+                    t_n,
+                    q_n,
+                    t_r,
+                    q_r,
+                    t_trf,
+                    q_trf,
+                }));
+
+                // Find parent fill
+                while let Some((parent_indent, parent_node)) = stack.last() {
+                    if indent > *parent_indent {
+                        if let NetNode::Fill(fill) = parent_node {
+                            fill.borrow_mut().gaps.push(gap.clone());
+                            stack.push((indent, NetNode::Gap(gap)));
+                            break;
+                        } else {
+                            stack.pop();
+                        }
+                    } else {
+                        stack.pop();
+                    }
+                }
+            }
+            _ => {}
+        }
+        line.clear();
+    }
+    if let Some(c) = current_chrom {
+        chroms.push(c);
+    }
+    Ok(chroms)
+}
+
+// ---------------------------------------------------------------------------
+// Net format writer
+// ---------------------------------------------------------------------------
+
+pub fn write_net<W: Write>(
+    chrom: &Chrom,
+    writer: &mut W,
+    is_q: bool,
+    min_score: f64,
+    min_fill: u64,
+) -> io::Result<()> {
+    if chrom.root.borrow().fills.is_empty() {
+        return Ok(());
+    }
+    for comment in &chrom.comments {
+        writeln!(writer, "{}", comment)?;
+    }
+    writeln!(writer, "net {} {}", chrom.name, chrom.size)?;
+
+    for fill in &chrom.root.borrow().fills {
+        write_fill(fill, writer, 1, is_q, min_score, min_fill)?;
+    }
+    Ok(())
+}
+
+fn write_fill<W: Write>(
+    fill: &Rc<RefCell<Fill>>,
+    writer: &mut W,
+    depth: usize,
+    is_q: bool,
+    min_score: f64,
+    min_fill: u64,
+) -> io::Result<()> {
+    let f = fill.borrow();
+
+    // Calculate subscore/subsize if chain is available, otherwise use stored
+    let (sub_size, sub_score) = if let Some(chain) = &f.chain {
+        subchain_info(chain, f.start, f.end, is_q)
+    } else {
+        (f.ali, f.score)
+    };
+
+    if sub_score >= min_score && sub_size >= min_fill {
+        write_indent(writer, depth)?;
+
+        let mut line = format!(
+            "fill {} {} {} {} {} {} id {} score {:.0} ali {}",
+            f.start,
+            f.end - f.start,
+            f.o_chrom,
+            f.o_strand,
+            f.o_start,
+            f.o_end - f.o_start,
+            f.chain_id,
+            sub_score,
+            sub_size
+        );
+
+        // Optional fields: qOver, qFar, qDup, type
+        // The order corresponds to UCSC's chainNet.c cnFillWrite implementation.
+        push_opt_u64(&mut line, "qOver", f.q_over);
+        push_opt_i64(&mut line, "qFar", f.q_far);
+        push_opt_u64(&mut line, "qDup", f.q_dup);
+        if !f.class.is_empty() {
+            line.push_str(" type ");
+            line.push_str(&f.class);
+        }
+        push_opt_u64(&mut line, "tN", f.t_n);
+        push_opt_u64(&mut line, "qN", f.q_n);
+        push_opt_u64(&mut line, "tR", f.t_r);
+        push_opt_u64(&mut line, "qR", f.q_r);
+        push_opt_u64(&mut line, "tTrf", f.t_trf);
+        push_opt_u64(&mut line, "qTrf", f.q_trf);
+
+        writeln!(writer, "{}", line)?;
+
+        for gap in &f.gaps {
+            write_gap(gap, fill, writer, depth + 1, is_q, min_score, min_fill)?;
+        }
+    }
+    Ok(())
+}
+
+fn write_gap<W: Write>(
+    gap: &Rc<RefCell<Gap>>,
+    parent: &Rc<RefCell<Fill>>,
+    writer: &mut W,
+    depth: usize,
+    is_q: bool,
+    min_score: f64,
+    min_fill: u64,
+) -> io::Result<()> {
+    let g = gap.borrow();
+    let p = parent.borrow();
+    let o_chrom = &p.o_chrom;
+    let o_strand = p.o_strand;
+
+    let mut line = format!(
+        "gap {} {} {} {} {} {}",
+        g.start,
+        g.end - g.start,
+        o_chrom,
+        o_strand,
+        g.o_start,
+        g.o_end - g.o_start
+    );
+    push_opt_u64(&mut line, "tN", g.t_n);
+    push_opt_u64(&mut line, "qN", g.q_n);
+    push_opt_u64(&mut line, "tR", g.t_r);
+    push_opt_u64(&mut line, "qR", g.q_r);
+    push_opt_u64(&mut line, "tTrf", g.t_trf);
+    push_opt_u64(&mut line, "qTrf", g.q_trf);
+
+    write_indent(writer, depth)?;
+    writeln!(writer, "{}", line)?;
+
+    for fill in &g.fills {
+        write_fill(fill, writer, depth + 1, is_q, min_score, min_fill)?;
+    }
+    Ok(())
+}
+
+fn write_indent<W: Write>(writer: &mut W, depth: usize) -> io::Result<()> {
+    for _ in 0..depth {
+        write!(writer, " ")?;
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// finalize_net: sort and recalculate o_start/o_end from chain data
+// ---------------------------------------------------------------------------
+
+pub fn finalize_net(chrom: &mut Chrom, is_q: bool) {
+    sort_net(&chrom.root);
+    calc_other_fill(&chrom.root, is_q);
+}
+
+fn sort_net(gap: &Rc<RefCell<Gap>>) {
+    let mut gap_borrow = gap.borrow_mut();
+    gap_borrow.fills.sort_by_key(|f| f.borrow().start);
+
+    for fill in &gap_borrow.fills {
+        let mut fill_borrow = fill.borrow_mut();
+        fill_borrow.gaps.sort_by_key(|g| g.borrow().start);
+        for g in &fill_borrow.gaps {
+            sort_net(g);
+        }
+    }
+}
+
+fn calc_other_fill(gap: &Rc<RefCell<Gap>>, is_q: bool) {
+    let gap_borrow = gap.borrow();
+    for fill in &gap_borrow.fills {
+        let mut fill_borrow = fill.borrow_mut();
+
+        if let Some(chain) = fill_borrow.chain.clone() {
+            let clip_start = fill_borrow.start;
+            let clip_end = fill_borrow.end;
+
+            if !is_q {
+                let mut q_min = u64::MAX;
+                let mut q_max = 0;
+
+                let mut t_curr = chain.header.t_start;
+                let mut q_curr = chain.header.q_start;
+
+                for d in &chain.data {
+                    let t_s = t_curr;
+                    let t_e = t_curr + d.size;
+                    let q_s = q_curr;
+
+                    let start = t_s.max(clip_start);
+                    let end = t_e.min(clip_end);
+
+                    if start < end {
+                        let offset = start - t_s;
+                        let len = end - start;
+                        let qs = q_s + offset;
+                        let qe = qs + len;
+
+                        if qs < q_min {
+                            q_min = qs;
+                        }
+                        if qe > q_max {
+                            q_max = qe;
+                        }
+                    }
+
+                    t_curr += d.size + d.dt;
+                    q_curr += d.size + d.dq;
+                }
+
+                if q_min < q_max {
+                    if chain.header.q_strand == '-' {
+                        reverse_range(&mut q_min, &mut q_max, chain.header.q_size);
+                    }
+                    fill_borrow.o_start = q_min;
+                    fill_borrow.o_end = q_max;
+                }
+            } else {
+                let mut t_min = u64::MAX;
+                let mut t_max = 0;
+
+                let mut t_curr = chain.header.t_start;
+                let mut q_curr = chain.header.q_start;
+
+                for d in &chain.data {
+                    let t_s = t_curr;
+                    let q_s = q_curr;
+                    let q_e = q_curr + d.size;
+
+                    let (c_start, c_end) = (clip_start, clip_end);
+
+                    let (mut fq_s, mut fq_e) = (q_s, q_e);
+                    if chain.header.q_strand == '-' {
+                        reverse_range(&mut fq_s, &mut fq_e, chain.header.q_size);
+                    }
+
+                    let start = fq_s.max(c_start);
+                    let end = fq_e.min(c_end);
+
+                    if start < end {
+                        let len = end - start;
+                        let (ts, te) = if chain.header.q_strand == '-' {
+                            let rq_s = chain.header.q_size - end;
+                            let offset = rq_s - q_s;
+                            let ts = t_s + offset;
+                            (ts, ts + len)
+                        } else {
+                            let offset = start - q_s;
+                            let ts = t_s + offset;
+                            (ts, ts + len)
+                        };
+
+                        if ts < t_min {
+                            t_min = ts;
+                        }
+                        if te > t_max {
+                            t_max = te;
+                        }
+                    }
+
+                    t_curr += d.size + d.dt;
+                    q_curr += d.size + d.dq;
+                }
+
+                if t_min < t_max {
+                    fill_borrow.o_start = t_min;
+                    fill_borrow.o_end = t_max;
+                }
+            }
+        }
+
+        drop(fill_borrow);
+        for g in &fill.borrow().gaps {
+            calc_other_fill(g, is_q);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+pub fn range_intersection(start1: u64, end1: u64, start2: u64, end2: u64) -> u64 {
+    let s = start1.max(start2);
+    let e = end1.min(end2);
+    e.saturating_sub(s)
+}
+
+// Parse an optional `name <value>` pair at position `i` in `parts` as u64.
+fn parse_opt_u64(parts: &[&str], i: usize) -> (Option<u64>, usize) {
+    if i + 1 < parts.len() {
+        (Some(parts[i + 1].parse::<u64>().unwrap_or(0)), i + 2)
+    } else {
+        (None, i + 1)
+    }
+}
+
+// Parse an optional `name <value>` pair at position `i` in `parts` as i64.
+fn parse_opt_i64(parts: &[&str], i: usize) -> (Option<i64>, usize) {
+    if i + 1 < parts.len() {
+        (Some(parts[i + 1].parse::<i64>().unwrap_or(0)), i + 2)
+    } else {
+        (None, i + 1)
+    }
+}
+
+// Append `" name value"` to `line` if `val` is Some.
+fn push_opt_u64(line: &mut String, name: &str, val: Option<u64>) {
+    if let Some(v) = val {
+        line.push(' ');
+        line.push_str(name);
+        line.push(' ');
+        line.push_str(&v.to_string());
+    }
+}
+
+// Append `" name value"` to `line` if `val` is Some.
+fn push_opt_i64(line: &mut String, name: &str, val: Option<i64>) {
+    if let Some(v) = val {
+        line.push(' ');
+        line.push_str(name);
+        line.push(' ');
+        line.push_str(&v.to_string());
+    }
+}
+
+fn chain_base_count_sub_t(chain: &Chain, t_min: u64, t_max: u64) -> u64 {
+    let mut total = 0;
+    let mut t_curr = chain.header.t_start;
+    for d in &chain.data {
+        let t_start = t_curr;
+        let t_end = t_curr + d.size;
+        total += range_intersection(t_start, t_end, t_min, t_max);
+        t_curr += d.size + d.dt;
+    }
+    total
+}
+
+fn chain_base_count_sub_q(chain: &Chain, q_min: u64, q_max: u64) -> u64 {
+    let mut total = 0;
+    let mut q_curr = chain.header.q_start;
+    for d in &chain.data {
+        let q_start = q_curr;
+        let q_end = q_curr + d.size;
+        total += range_intersection(q_start, q_end, q_min, q_max);
+        q_curr += d.size + d.dq;
+    }
+    total
+}
+
+fn subchain_info(chain: &Chain, start: u64, end: u64, is_q: bool) -> (u64, f64) {
+    let mut full_ali_size = 0;
+    for d in &chain.data {
+        full_ali_size += d.size;
+    }
+
+    if full_ali_size == 0 {
+        return (0, 0.0);
+    }
+
+    let sub_size = if is_q {
+        let mut s = start;
+        let mut e = end;
+        if chain.header.q_strand == '-' {
+            reverse_range(&mut s, &mut e, chain.header.q_size);
+        }
+        if s <= chain.header.q_start && e >= chain.header.q_end {
+            full_ali_size
+        } else {
+            chain_base_count_sub_q(chain, s, e)
+        }
+    } else if start <= chain.header.t_start && end >= chain.header.t_end {
+        full_ali_size
+    } else {
+        chain_base_count_sub_t(chain, start, end)
+    };
+
+    let sub_score = chain.header.score * (sub_size as f64) / (full_ali_size as f64);
+    (sub_size, sub_score)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_ucsc_net_format_compatibility() {
+        let net_data = "\
+net chr2L 23011544
+ fill 6004 3278 chrXR_group3a - 1396397 2164 id 25606 score 23114 ali 782 qDup 576 type top tN 0 qN 0 tR 36 qR 0 tTrf 0 qTrf 0
+  gap 6065 2 chrXR_group3a - 1398498 0 tN 0 qN 0 tR 0 qR 0 tTrf 0 qTrf 0
+  gap 6096 1485 chrXR_group3a - 1397572 897 tN 0 qN 0 tR 36 qR 0 tTrf 0 qTrf 0
+   fill 6096 513 chrU - 5570675 533 id 48675 score 4435 ali 465 qDup 533 type nonSyn tN 0 qN 0 tR 0 qR 13 tTrf 0 qTrf 0
+    gap 6116 8 chrU - 5571188 0 tN 0 qN 0 tR 0 qR 0 tTrf 0 qTrf 0
+    gap 6156 5 chrU - 5571156 0 tN 0 qN 0 tR 0 qR 0 tTrf 0 qTrf 0
+    gap 6184 3 chrU - 5571133 0 tN 0 qN 0 tR 0 qR 0 tTrf 0 qTrf 0
+    gap 6212 18 chrU - 5571106 0 tN 0 qN 0 tR 0 qR 0 tTrf 0 qTrf 0
+    gap 6244 9 chrU - 5571092 0 tN 0 qN 0 tR 0 qR 0 tTrf 0 qTrf 0
+    gap 6340 2 chrU - 5570996 0 tN 0 qN 0 tR 0 qR 0 tTrf 0 qTrf 0
+    gap 6515 3 chrU - 5570771 0 tN 0 qN 0 tR 0 qR 0 tTrf 0 qTrf 0
+  gap 7623 1 chrXR_group3a - 1397530 0 tN 0 qN 0 tR 0 qR 0 tTrf 0 qTrf 0
+  gap 7664 1007 chrXR_group3a - 1397008 482 tN 0 qN 0 tR 0 qR 0 tTrf 0 qTrf 0
+   fill 7664 382 chrXL_group1e - 8262003 506 id 25608 score 10609 ali 364 qDup 506 type nonSyn tN 0 qN 0 tR 0 qR 0 tTrf 0 qTrf 0
+    gap 7784 4 chrXL_group1e - 8262361 0 tN 0 qN 0 tR 0 qR 0 tTrf 0 qTrf 0
+    gap 7792 3 chrXL_group1e - 8262357 0 tN 0 qN 0 tR 0 qR 0 tTrf 0 qTrf 0
+    gap 7921 2 chrXL_group1e - 8262126 0 tN 0 qN 0 tR 0 qR 0 tTrf 0 qTrf 0
+    gap 7949 9 chrXL_group1e - 8262092 0 tN 0 qN 0 tR 0 qR 0 tTrf 0 qTrf 0
+  gap 8693 1 chrXR_group3a - 1396985 0 tN 0 qN 0 tR 0 qR 0 tTrf 0 qTrf 0
+ fill 9833 1251 chrU - 5562980 1239 id 48675 score 10720 ali 1124 qDup 1094 type top tN 0 qN 0 tR 22 qR 88 tTrf 0 qTrf 0
+  gap 9966 7 chrU - 5564075 0 tN 0 qN 0 tR 0 qR 0 tTrf 0 qTrf 0
+  gap 10015 3 chrU - 5564030 0 tN 0 qN 0 tR 0 qR 0 tTrf 0 qTrf 0
+  gap 10088 2 chrU - 5563957 0 tN 0 qN 0 tR 0 qR 0 tTrf 0 qTrf 0
+  gap 10101 8 chrU - 5563946 0 tN 0 qN 0 tR 0 qR 0 tTrf 0 qTrf 0
+";
+        let reader = std::io::Cursor::new(net_data);
+        let chroms = read_nets(reader).unwrap();
+
+        assert_eq!(chroms.len(), 1);
+        let chrom = &chroms[0];
+        assert_eq!(chrom.name, "chr2L");
+        assert_eq!(chrom.size, 23011544);
+
+        let mut writer = Vec::new();
+        chrom.write(&mut writer).unwrap();
+        let output = String::from_utf8(writer).unwrap();
+
+        assert_eq!(output, net_data);
+    }
 }

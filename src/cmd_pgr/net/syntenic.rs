@@ -1,5 +1,5 @@
 use clap::{Arg, ArgMatches, Command};
-use pgr::libs::fmt::net::{range_intersection, read_nets, write_net, Chrom, Fill, Gap};
+use pgr::libs::chain::net::{range_intersection, read_nets, write_net, Chrom, Fill, Gap};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fs::File;

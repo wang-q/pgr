@@ -5,7 +5,7 @@ use std::fs::File;
 use std::io::{self, BufReader};
 use std::rc::Rc;
 
-use pgr::libs::fmt::net::{read_nets, Fill, Gap};
+use pgr::libs::chain::net::{read_nets, Fill, Gap};
 
 pub fn make_subcommand() -> Command {
     Command::new("class").about("Show stats of net").arg(
