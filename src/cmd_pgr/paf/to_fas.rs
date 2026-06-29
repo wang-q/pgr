@@ -1,7 +1,8 @@
 use clap::*;
+use pgr::libs::nt;
 use pgr::libs::paf::fasta::{load_fasta_tsv, FastaStore};
 use pgr::libs::paf::index::{PafIndex, QueryResult};
-use pgr::libs::paf::msa::{build_maf_block, build_msa_entries, reverse_complement};
+use pgr::libs::paf::msa::{build_maf_block, build_msa_entries};
 
 use super::query;
 
@@ -30,7 +31,7 @@ fn output_fas_pairwise(
             let (t_seq, _t_src_size) = fasta_store.fetch_range(tname, ts, te)?;
 
             let (q_seq_for_aln, rec_qs_eff, qs_eff, q_strand, _) = if *strand == '-' {
-                let rc = reverse_complement(&q_seq_fwd);
+                let rc = nt::rev_comp(&q_seq_fwd).collect::<Vec<u8>>();
                 let aligned_q_len: i32 = cigar.iter().map(|op| op.query_delta() as i32).sum();
                 let rec_qe = *rec_qs + aligned_q_len;
                 let rc_sub_start = rec_qe - qe;

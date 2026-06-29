@@ -1,25 +1,7 @@
+use crate::libs::nt;
 use crate::libs::paf::cigar::CigarOp;
 use crate::libs::paf::fasta::FastaStore;
 use crate::libs::paf::index::{PafIndex, QueryResult};
-
-/// Reverse-complement a DNA byte slice (ACGTN-aware, case-preserving).
-/// Non-ACGTN bytes are passed through unchanged.
-pub fn reverse_complement(seq: &[u8]) -> Vec<u8> {
-    fn comp(b: u8) -> u8 {
-        match b {
-            b'A' => b'T',
-            b'T' => b'A',
-            b'C' => b'G',
-            b'G' => b'C',
-            b'a' => b't',
-            b't' => b'a',
-            b'c' => b'g',
-            b'g' => b'c',
-            other => other,
-        }
-    }
-    seq.iter().rev().map(|&b| comp(b)).collect()
-}
 
 /// Build aligned strings (query, target) by walking CIGAR over [ts, te).
 /// `q_seq` covers query[qs..qe), `t_seq` covers target[ts..te).
@@ -150,7 +132,7 @@ pub fn build_msa_entries(
         };
         let (q_seq_fwd, q_src_size) = fasta_store.fetch_range(qname, qs, qe)?;
         let (seq, start, strand_char) = if *strand == '-' {
-            (reverse_complement(&q_seq_fwd), q_src_size as i32 - qe, '-')
+            (nt::rev_comp(&q_seq_fwd).collect::<Vec<u8>>(), q_src_size as i32 - qe, '-')
         } else {
             (q_seq_fwd, qs, '+')
         };
