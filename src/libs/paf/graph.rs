@@ -80,7 +80,10 @@ pub struct PathStep {
 /// Induced coarse graph, ready for GFA emission.
 pub struct PafGraph {
     /// Node sequences (one per DSU class), indexed by node id.
+    /// Empty when built without FASTA (topology-only mode).
     pub node_seqs: Vec<Vec<u8>>,
+    /// Node lengths (bp). Populated even in topology-only mode from segment coords.
+    pub node_lens: Vec<usize>,
     /// Per-node rGFA origin: (source sequence name, 0-based start offset).
     pub node_origins: Vec<(String, i32)>,
     /// Edges (deduplicated).
@@ -96,7 +99,7 @@ impl PafGraph {
     /// minimum indel length to split at (smaller indels stay within a segment).
     pub fn build<R: BufRead>(
         paf_reader: R,
-        seqs: &HashMap<String, Vec<u8>>,
+        seqs: Option<&HashMap<String, Vec<u8>>>,
         min_var_len: i32,
     ) -> anyhow::Result<Self> {
         let records = parse_paf(paf_reader)?;
@@ -116,8 +119,10 @@ impl PafGraph {
             register(&r.target_name, &mut name_to_id);
             register(&r.query_name, &mut name_to_id);
         }
-        for name in seqs.keys() {
-            register(name, &mut name_to_id);
+        if let Some(seqs_map) = seqs {
+            for name in seqs_map.keys() {
+                register(name, &mut name_to_id);
+            }
         }
 
         // ── Stage 1: split alignments at SV breakpoints → segments + links ──
@@ -184,7 +189,7 @@ impl PafGraph {
             }
             let seg = &segments[seg_idx];
             if let Some(name) = id_to_name_local(&name_to_id, seg.seq_id) {
-                if let Some(seq_bytes) = seqs.get(name) {
+                if let Some(seq_bytes) = seqs.and_then(|m| m.get(name)) {
                     let s = seg.start.max(0) as usize;
                     let e = (seg.end as usize).min(seq_bytes.len());
                     if s < e {
@@ -213,14 +218,15 @@ impl PafGraph {
                 .collect();
             segs_on_seq.sort_by_key(|(_, s)| s.start);
 
-            let seq_len = seqs.get(&name).map(|v| v.len()).unwrap_or(0) as i32;
+            let seq_len = seqs.and_then(|m| m.get(&name)).map(|v| v.len()).unwrap_or(0) as i32;
+            let has_seqs = seqs.is_some();
 
             let mut steps: Vec<PathStep> = Vec::new();
             let mut cursor = 0i32;
 
             for &(seg_idx, seg) in &segs_on_seq {
                 // Novel segment for the gap before this aligned segment.
-                if seg.start > cursor {
+                if has_seqs && seg.start > cursor {
                     let novel_node = novel_node_for(
                         &mut node_seqs,
                         &mut node_origins,
@@ -246,7 +252,7 @@ impl PafGraph {
                 cursor = seg.end.max(cursor);
             }
             // Trailing novel segment.
-            if cursor < seq_len {
+            if has_seqs && cursor < seq_len {
                 let novel_node = novel_node_for(
                     &mut node_seqs,
                     &mut node_origins,
@@ -277,7 +283,7 @@ impl PafGraph {
 
             if !steps.is_empty() {
                 paths.push((name, steps));
-            } else if seq_len > 0 {
+            } else if has_seqs && seq_len > 0 {
                 // No alignments at all: whole sequence is one novel node.
                 let novel_node = novel_node_for(
                     &mut node_seqs,
@@ -298,8 +304,31 @@ impl PafGraph {
             }
         }
 
+        // Compute node lengths from segment coords (works even without FASTA).
+        let mut node_lens: Vec<usize> = vec![0; num_nodes as usize];
+        for &(_, _, _, seg_idx) in &root_info {
+            let node = seg_node[seg_idx] as usize;
+            if node_lens[node] == 0 {
+                let seg = &segments[seg_idx];
+                node_lens[node] = (seg.end - seg.start).max(0) as usize;
+            }
+        }
+        // Extend for novel nodes added during path construction.
+        while node_lens.len() < node_seqs.len() {
+            let i = node_lens.len();
+            let len = node_seqs.get(i).map(|s| s.len()).unwrap_or(0);
+            node_lens.push(len);
+        }
+        // Override with actual sequence lengths when available.
+        for (i, seq) in node_seqs.iter().enumerate() {
+            if !seq.is_empty() {
+                node_lens[i] = seq.len();
+            }
+        }
+
         Ok(PafGraph {
             node_seqs,
+            node_lens,
             node_origins,
             edges,
             paths,
@@ -312,12 +341,22 @@ impl PafGraph {
         // SN: source sequence name; SO: 0-based start offset; SR: rank (0 = primary).
         for (i, seq) in self.node_seqs.iter().enumerate() {
             let id = (i + 1) as u32;
-            let s = String::from_utf8_lossy(seq);
+            let len = self.node_lens[i];
             let (sn, so) = &self.node_origins[i];
-            if sn.is_empty() {
-                writeln!(w, "S\t{id}\t{s}")?;
+            if seq.is_empty() {
+                // Topology-only mode: emit '*' with LN:i: tag.
+                if sn.is_empty() {
+                    writeln!(w, "S\t{id}\t*\tLN:i:{len}")?;
+                } else {
+                    writeln!(w, "S\t{id}\t*\tLN:i:{len}\tSN:Z:{sn}\tSO:i:{so}\tSR:i:0")?;
+                }
             } else {
-                writeln!(w, "S\t{id}\t{s}\tSN:Z:{sn}\tSO:i:{so}\tSR:i:0")?;
+                let s = String::from_utf8_lossy(seq);
+                if sn.is_empty() {
+                    writeln!(w, "S\t{id}\t{s}")?;
+                } else {
+                    writeln!(w, "S\t{id}\t{s}\tSN:Z:{sn}\tSO:i:{so}\tSR:i:0")?;
+                }
             }
         }
         // L lines.
@@ -354,10 +393,10 @@ impl PafGraph {
         let links = self.edges.len();
         let paths = self.paths.len();
         let path_steps: usize = self.paths.iter().map(|(_, s)| s.len()).sum();
-        let total_segment_bp: usize = self.node_seqs.iter().map(|s| s.len()).sum();
+        let total_segment_bp: usize = self.node_lens.iter().sum();
 
         // Segment length distribution.
-        let mut seg_lens: Vec<usize> = self.node_seqs.iter().map(|s| s.len()).collect();
+        let mut seg_lens: Vec<usize> = self.node_lens.clone();
         seg_lens.sort_unstable();
         let segment_len_min = seg_lens.first().copied().unwrap_or(0);
         let segment_len_max = seg_lens.last().copied().unwrap_or(0);
@@ -732,15 +771,19 @@ fn novel_node_for(
     sid: u32,
     start: i32,
     end: i32,
-    seqs: &HashMap<String, Vec<u8>>,
+    seqs: Option<&HashMap<String, Vec<u8>>>,
     name_to_id: &HashMap<String, u32>,
 ) -> u32 {
     let name = id_to_name_local(name_to_id, sid).unwrap_or("?");
-    let seq_bytes = seqs.get(name).map(|v| v.as_slice()).unwrap_or(&[]);
-    let s = start.max(0) as usize;
-    let e = (end as usize).min(seq_bytes.len());
-    let bytes = if s < e {
-        seq_bytes[s..e].to_vec()
+    let bytes = if let Some(seqs_map) = seqs {
+        let seq_bytes = seqs_map.get(name).map(|v| v.as_slice()).unwrap_or(&[]);
+        let s = start.max(0) as usize;
+        let e = (end as usize).min(seq_bytes.len());
+        if s < e {
+            seq_bytes[s..e].to_vec()
+        } else {
+            Vec::new()
+        }
     } else {
         Vec::new()
     };
@@ -772,7 +815,7 @@ mod tests {
         // 100M, no indels → one node shared by both sequences.
         let paf = "A\t100\t0\t100\t+\tB\t100\t0\t100\t95\t100\t255\tcg:Z:100M\n";
         let seqs = seqs_map(&[("A", &"A".repeat(100)), ("B", &"C".repeat(100))]);
-        let g = PafGraph::build(paf.as_bytes(), &seqs, 100).unwrap();
+        let g = PafGraph::build(paf.as_bytes(), Some(&seqs), 100).unwrap();
         // One aligned node + possible novel trailing segments.
         // A and B should share at least one node.
         let a_nodes: Vec<u32> = g
@@ -802,7 +845,7 @@ mod tests {
         // 50M 200I 50M: 200I >= 100 → split into two aligned nodes + one novel (insertion).
         let paf = "A\t300\t0\t100\t+\tB\t300\t0\t300\t95\t300\t255\tcg:Z:50M200I50M\n";
         let seqs = seqs_map(&[("A", &"A".repeat(300)), ("B", &"G".repeat(300))]);
-        let g = PafGraph::build(paf.as_bytes(), &seqs, 100).unwrap();
+        let g = PafGraph::build(paf.as_bytes(), Some(&seqs), 100).unwrap();
         // B has an insertion of 200bp → B's path should have a novel node between aligned nodes.
         let b_path = g.paths.iter().find(|(n, _)| n == "B").unwrap();
         assert!(
@@ -817,7 +860,7 @@ mod tests {
         // 50M 30I 50M: 30I < 100 → no split, one aligned node.
         let paf = "A\t200\t0\t130\t+\tB\t200\t0\t160\t95\t160\t255\tcg:Z:50M30I50M\n";
         let seqs = seqs_map(&[("A", &"A".repeat(200)), ("B", &"G".repeat(200))]);
-        let g = PafGraph::build(paf.as_bytes(), &seqs, 100).unwrap();
+        let g = PafGraph::build(paf.as_bytes(), Some(&seqs), 100).unwrap();
         // Both A and B share exactly one aligned node for the match region.
         let a_path = g.paths.iter().find(|(n, _)| n == "A").unwrap();
         // A path: [novel 0..0? , aligned, novel trailing]. Aligned nodes should be 1.
@@ -841,7 +884,7 @@ mod tests {
         // Reverse strand: query coords flipped to forward. Segments should be forward.
         let paf = "A\t100\t0\t100\t-\tB\t100\t0\t100\t95\t100\t255\tcg:Z:100M\n";
         let seqs = seqs_map(&[("A", &"A".repeat(100)), ("B", &"C".repeat(100))]);
-        let g = PafGraph::build(paf.as_bytes(), &seqs, 100).unwrap();
+        let g = PafGraph::build(paf.as_bytes(), Some(&seqs), 100).unwrap();
         // Both sequences still share a node despite reverse strand.
         let a_nodes: Vec<u32> = g
             .paths
@@ -872,7 +915,7 @@ mod tests {
     fn test_gfa_output_format() {
         let paf = "A\t100\t0\t100\t+\tB\t100\t0\t100\t95\t100\t255\tcg:Z:100M\n";
         let seqs = seqs_map(&[("A", &"ACGT".repeat(25)), ("B", &"TGCA".repeat(25))]);
-        let g = PafGraph::build(paf.as_bytes(), &seqs, 100).unwrap();
+        let g = PafGraph::build(paf.as_bytes(), Some(&seqs), 100).unwrap();
         let mut buf = Vec::new();
         g.write_gfa(&mut buf).unwrap();
         let out = String::from_utf8(buf).unwrap();
