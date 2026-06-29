@@ -81,7 +81,8 @@ impl PafIndex {
         let mut by_query: HashMap<u32, Vec<Interval<PafMetadata>>> = HashMap::new();
 
         for rec in &records {
-            insert_record(rec, &mut names, &mut by_target, &mut by_query, None);
+            insert_record(rec, &mut names, &mut by_target, &mut by_query, None)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?;
         }
 
         let trees = build_trees(by_target);
@@ -102,7 +103,9 @@ impl PafIndex {
 
         for reader in readers {
             for rec in &parse_paf(reader)? {
-                insert_record(rec, &mut names, &mut by_target, &mut by_query, None);
+                insert_record(rec, &mut names, &mut by_target, &mut by_query, None).map_err(
+                    |e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()),
+                )?;
             }
         }
 
@@ -167,7 +170,8 @@ impl PafIndex {
                     ));
                 }
             };
-            insert_record(&rec, &mut names, &mut by_target, &mut by_query, Some(vpos));
+            insert_record(&rec, &mut names, &mut by_target, &mut by_query, Some(vpos))
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?;
         }
 
         let trees = build_trees(by_target);
@@ -195,7 +199,7 @@ impl PafIndex {
             // Parse tags from the line and extract CIGAR.
             let trimmed = line.trim_end_matches('\n');
             if let Ok(rec) = parse_paf_line(trimmed) {
-                return extract_cigar(&rec.tags);
+                return extract_cigar(&rec.tags).unwrap_or_default();
             }
             vec![]
         } else {
@@ -389,7 +393,7 @@ fn insert_record(
     by_target: &mut HashMap<u32, Vec<Interval<PafMetadata>>>,
     by_query: &mut HashMap<u32, Vec<Interval<PafMetadata>>>,
     vpos: Option<u64>,
-) {
+) -> anyhow::Result<()> {
     let next_id = names.len() as u32;
     names.entry(rec.target_name.clone()).or_insert(next_id);
     let target_id = names[&rec.target_name];
@@ -398,7 +402,7 @@ fn insert_record(
     names.entry(rec.query_name.clone()).or_insert(next_id);
     let query_id = names[&rec.query_name];
 
-    let cigar = extract_cigar(&rec.tags);
+    let cigar = extract_cigar(&rec.tags)?;
     let (fwd_store, rev_store) = match vpos {
         Some(v) => (CigarStore::lazy(v), CigarStore::lazy_reversed(v)),
         None => (
@@ -446,6 +450,8 @@ fn insert_record(
             rev_meta,
         ));
     }
+
+    Ok(())
 }
 
 fn project(ts: i32, te: i32, m: &PafMetadata, cigar: &[CigarOp]) -> Option<(i32, i32, i32, i32)> {
@@ -752,13 +758,13 @@ C\t100\t0\t100\t+\tA\t100\t0\t100\t90\t100\t255\tcg:Z:100M
 
     #[test]
     fn test_extract_cigar() {
-        let c = extract_cigar(&["cg:Z:10=5I3D".into(), "gi:f:0.9".into()]);
+        let c = extract_cigar(&["cg:Z:10=5I3D".into(), "gi:f:0.9".into()]).unwrap();
         assert_eq!(c.len(), 3);
     }
 
     #[test]
     fn test_extract_cigar_empty() {
-        assert!(extract_cigar(&["gi:f:0.9".into()]).is_empty());
+        assert!(extract_cigar(&["gi:f:0.9".into()]).unwrap().is_empty());
     }
 
     #[test]

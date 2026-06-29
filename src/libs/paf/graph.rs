@@ -133,7 +133,7 @@ impl PafGraph {
             let tid = name_to_id[&rec.target_name];
             let qid = name_to_id[&rec.query_name];
             let reverse = rec.strand == '-';
-            let cigar = extract_cigar(&rec.tags);
+            let cigar = extract_cigar(&rec.tags)?;
             split_alignment(
                 tid,
                 rec.target_start as i32,

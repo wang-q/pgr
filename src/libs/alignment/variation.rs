@@ -449,7 +449,7 @@ pub fn get_indels(seqs: &[&[u8]]) -> anyhow::Result<Vec<Indel>> {
 ///     b"AAAATTTTGGGG".as_ref(),
 /// ];
 /// let mut indels = pgr::libs::alignment::get_indels(&seqs[0..2]).unwrap();
-/// pgr::libs::alignment::polarize_indels(&mut indels, &seqs[2]);
+/// pgr::libs::alignment::polarize_indels(&mut indels, &seqs[2]).unwrap();
 /// let indel = indels.first().unwrap();
 /// assert_eq!(indel.start, 9);
 /// assert_eq!(indel.end, 12);
@@ -468,7 +468,7 @@ pub fn get_indels(seqs: &[&[u8]]) -> anyhow::Result<Vec<Indel>> {
 ///     b"----TTTTGGGG".as_ref(),
 /// ];
 /// let mut indels = pgr::libs::alignment::get_indels(&seqs[0..2]).unwrap();
-/// pgr::libs::alignment::polarize_indels(&mut indels, &seqs[2]);
+/// pgr::libs::alignment::polarize_indels(&mut indels, &seqs[2]).unwrap();
 /// let indel = indels.first().unwrap();
 /// assert_eq!(indel.start, 1);
 /// assert_eq!(indel.end, 4);
@@ -487,7 +487,7 @@ pub fn get_indels(seqs: &[&[u8]]) -> anyhow::Result<Vec<Indel>> {
 ///     b"GTAGCCGCTGA--GGC".as_ref(),
 /// ];
 /// let mut indels = pgr::libs::alignment::get_indels(&seqs[0..2]).unwrap();
-/// pgr::libs::alignment::polarize_indels(&mut indels, &seqs[2]);
+/// pgr::libs::alignment::polarize_indels(&mut indels, &seqs[2]).unwrap();
 /// let indel = indels.first().unwrap();
 /// assert_eq!(indel.start, 5);
 /// assert_eq!(indel.end, 6);
@@ -512,7 +512,7 @@ pub fn get_indels(seqs: &[&[u8]]) -> anyhow::Result<Vec<Indel>> {
 ///
 /// ```
 // cargo test --doc alignment::polarize_indels
-pub fn polarize_indels(indels: &mut Vec<Indel>, og: &[u8]) {
+pub fn polarize_indels(indels: &mut Vec<Indel>, og: &[u8]) -> anyhow::Result<()> {
     let og_indel_set = indel_intspan(og);
 
     for indel in indels {
@@ -536,7 +536,7 @@ pub fn polarize_indels(indels: &mut Vec<Indel>, og: &[u8]) {
             .clone();
 
         if uniq_indel_seqs.len() < 2 {
-            panic!("No indel found at position {}..{}", indel.start, indel.end);
+            anyhow::bail!("No indel found at position {}..{}", indel.start, indel.end);
         } else if uniq_indel_seqs.len() > 2 || indel_seq.contains('-') {
             indel.itype = "C".to_string(); // Complex indel
         } else {
@@ -575,9 +575,10 @@ pub fn polarize_indels(indels: &mut Vec<Indel>, og: &[u8]) {
                 // og NNNN
                 indel.itype = "D".to_string(); // Deletion
             } else {
-                panic!(
+                anyhow::bail!(
                     "Errors when polarizing indel at position {}..{}",
-                    indel.start, indel.end
+                    indel.start,
+                    indel.end
                 );
             }
         }
@@ -601,4 +602,6 @@ pub fn polarize_indels(indels: &mut Vec<Indel>, og: &[u8]) {
             indel.occurred = occurred;
         }
     }
+
+    Ok(())
 }

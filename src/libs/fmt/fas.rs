@@ -132,7 +132,16 @@ pub fn parse_fas_block(
             false => h.as_str(),
         };
         let range = Range::from_str(header);
-        let seq = block_lines.pop_front().unwrap().as_bytes().to_vec();
+        let seq = block_lines
+            .pop_front()
+            .ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "FAS block missing sequence line",
+                )
+            })?
+            .as_bytes()
+            .to_vec();
 
         let entry = FasEntry::from(&range, &seq);
         block_entries.push(entry);

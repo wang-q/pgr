@@ -78,7 +78,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             let qry_entry = &block.components[1];
 
             let cigar_ops =
-                cigar_from_alignment(ref_entry.text.as_bytes(), qry_entry.text.as_bytes());
+                cigar_from_alignment(ref_entry.text.as_bytes(), qry_entry.text.as_bytes())?;
             let stats = cigar_stats(&cigar_ops);
             let gi = gap_compressed_identity(&cigar_ops);
             let bi = block_identity(&cigar_ops);

@@ -129,8 +129,10 @@ impl FastaStore {
         let total_len = record.sequence().len();
 
         // noodles Position is 1-based inclusive; our coords are 0-based half-open.
-        let start_pos = Position::new(start as usize + 1).unwrap();
-        let end_pos = Position::new(end as usize).unwrap();
+        let start_pos = Position::new(start as usize + 1)
+            .ok_or_else(|| anyhow::anyhow!("invalid start position {start}"))?;
+        let end_pos = Position::new(end as usize)
+            .ok_or_else(|| anyhow::anyhow!("invalid end position {end}"))?;
         let slice = record
             .sequence()
             .slice(start_pos..=end_pos)

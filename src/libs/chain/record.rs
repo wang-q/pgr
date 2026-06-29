@@ -202,12 +202,18 @@ impl FromStr for ChainHeader {
             score: parts[1].parse()?,
             t_name: parts[2].to_string(),
             t_size: parts[3].parse()?,
-            t_strand: parts[4].chars().next().unwrap(),
+            t_strand: parts[4]
+                .chars()
+                .next()
+                .ok_or_else(|| anyhow::anyhow!("empty t_strand field"))?,
             t_start: parts[5].parse()?,
             t_end: parts[6].parse()?,
             q_name: parts[7].to_string(),
             q_size: parts[8].parse()?,
-            q_strand: parts[9].chars().next().unwrap(),
+            q_strand: parts[9]
+                .chars()
+                .next()
+                .ok_or_else(|| anyhow::anyhow!("empty q_strand field"))?,
             q_start: parts[10].parse()?,
             q_end: parts[11].parse()?,
             id: parts[12].parse()?,

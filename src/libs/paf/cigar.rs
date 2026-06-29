@@ -99,10 +99,8 @@ impl fmt::Display for CigarOp {
 
 /// Parse a CIGAR string into a vector of `CigarOp`.
 ///
-/// # Panics
-///
-/// Panics if the string contains an invalid op character.
-pub fn parse_cigar(s: &str) -> Vec<CigarOp> {
+/// Returns an error if the string contains an invalid op character.
+pub fn parse_cigar(s: &str) -> anyhow::Result<Vec<CigarOp>> {
     let mut ops = Vec::new();
     let mut len: u32 = 0;
 
@@ -112,12 +110,15 @@ pub fn parse_cigar(s: &str) -> Vec<CigarOp> {
                 .saturating_mul(10)
                 .saturating_add((c as u8 - b'0') as u32);
         } else {
+            if !matches!(c, '=' | 'X' | 'I' | 'D' | 'M') {
+                anyhow::bail!("invalid CIGAR op: '{c}'");
+            }
             ops.push(CigarOp::new(len, c));
             len = 0;
         }
     }
 
-    ops
+    Ok(ops)
 }
 
 /// Format a slice of `CigarOp` into a CIGAR string.
@@ -131,13 +132,13 @@ pub fn format_cigar(ops: &[CigarOp]) -> String {
 }
 
 /// Extract and parse the `cg:Z:` tag from a PAF tag list. Empty if absent.
-pub fn extract_cigar(tags: &[String]) -> Vec<CigarOp> {
+pub fn extract_cigar(tags: &[String]) -> anyhow::Result<Vec<CigarOp>> {
     for tag in tags {
         if let Some(s) = tag.strip_prefix("cg:Z:") {
             return parse_cigar(s);
         }
     }
-    Vec::new()
+    Ok(Vec::new())
 }
 
 // ── Reversal (for bidirectional index) ───────────────────────────
@@ -255,12 +256,10 @@ pub fn block_identity(ops: &[CigarOp]) -> f64 {
 /// - otherwise → `M` (match/mismatch, not distinguished in v1)
 ///
 /// Consecutive identical ops are merged.
-pub fn cigar_from_alignment(r#ref: &[u8], qry: &[u8]) -> Vec<CigarOp> {
-    assert_eq!(
-        r#ref.len(),
-        qry.len(),
-        "alignment vectors must have equal length"
-    );
+pub fn cigar_from_alignment(r#ref: &[u8], qry: &[u8]) -> anyhow::Result<Vec<CigarOp>> {
+    if r#ref.len() != qry.len() {
+        anyhow::bail!("alignment vectors must have equal length");
+    }
 
     let mut ops: Vec<CigarOp> = Vec::new();
 
@@ -281,7 +280,7 @@ pub fn cigar_from_alignment(r#ref: &[u8], qry: &[u8]) -> Vec<CigarOp> {
         }
     }
 
-    ops
+    Ok(ops)
 }
 
 // ── Tests ─────────────────────────────────────────────────────────
@@ -334,7 +333,7 @@ mod tests {
 
     #[test]
     fn test_parse_cigar_basic() {
-        let ops = parse_cigar("10=5I5D");
+        let ops = parse_cigar("10=5I5D").unwrap();
         assert_eq!(ops.len(), 3);
         assert_eq!(ops[0], CigarOp::new(10, '='));
         assert_eq!(ops[1], CigarOp::new(5, 'I'));
@@ -343,19 +342,19 @@ mod tests {
 
     #[test]
     fn test_parse_cigar_empty() {
-        let ops = parse_cigar("");
+        let ops = parse_cigar("").unwrap();
         assert!(ops.is_empty());
     }
 
     #[test]
     fn test_parse_cigar_digits_only() {
-        let ops = parse_cigar("10");
+        let ops = parse_cigar("10").unwrap();
         assert!(ops.is_empty());
     }
 
     #[test]
     fn test_parse_cigar_zero_len() {
-        let ops = parse_cigar("0=5I");
+        let ops = parse_cigar("0=5I").unwrap();
         assert_eq!(ops.len(), 2);
         assert_eq!(ops[0], CigarOp::new(0, '='));
         assert_eq!(ops[1], CigarOp::new(5, 'I'));
@@ -365,7 +364,7 @@ mod tests {
     fn test_format_cigar_roundtrip() {
         let cases = ["10=5I5D", "3M1I2D", "", "100="];
         for case in cases {
-            let ops = parse_cigar(case);
+            let ops = parse_cigar(case).unwrap();
             let formatted = format_cigar(&ops);
             assert_eq!(formatted, case, "roundtrip failed for '{case}'");
         }
@@ -376,7 +375,7 @@ mod tests {
     #[test]
     fn test_reverse_cigar_basic() {
         // 10M5I3D → reversed: 3I5D10M
-        let ops = parse_cigar("10M5I3D");
+        let ops = parse_cigar("10M5I3D").unwrap();
         let rev = reverse_cigar(&ops);
         assert_eq!(format_cigar(&rev), "3I5D10M");
     }
@@ -384,7 +383,7 @@ mod tests {
     #[test]
     fn test_reverse_cigar_no_indels() {
         // 10=2X8= → reversed: 8=2X10= (no I/D swap, just order reversed)
-        let ops = parse_cigar("10=2X8=");
+        let ops = parse_cigar("10=2X8=").unwrap();
         let rev = reverse_cigar(&ops);
         assert_eq!(format_cigar(&rev), "8=2X10=");
     }
@@ -398,7 +397,7 @@ mod tests {
     #[test]
     fn test_reverse_cigar_double_reversal() {
         // reverse(reverse(x)) == x (I↔D swapped twice = identity)
-        let ops = parse_cigar("5M3I2D7=");
+        let ops = parse_cigar("5M3I2D7=").unwrap();
         let rev2 = reverse_cigar(&reverse_cigar(&ops));
         assert_eq!(format_cigar(&rev2), format_cigar(&ops));
     }
@@ -406,14 +405,14 @@ mod tests {
     #[test]
     fn test_reverse_cigar_only_indels() {
         // 5I3D → reversed: 3I5D
-        let ops = parse_cigar("5I3D");
+        let ops = parse_cigar("5I3D").unwrap();
         let rev = reverse_cigar(&ops);
         assert_eq!(format_cigar(&rev), "3I5D");
     }
 
     #[test]
     fn test_reverse_cigar_preserves_lengths() {
-        let ops = parse_cigar("100M1I99M1D200=");
+        let ops = parse_cigar("100M1I99M1D200=").unwrap();
         let rev = reverse_cigar(&ops);
         // Total length consumed should be preserved per-axis
         let orig_query: u32 = ops.iter().map(|o| o.query_delta()).sum();
@@ -428,7 +427,7 @@ mod tests {
 
     #[test]
     fn test_cigar_stats_basic() {
-        let ops = parse_cigar("10=5I3D");
+        let ops = parse_cigar("10=5I3D").unwrap();
         let s = cigar_stats(&ops);
         assert_eq!(s.matches, 10);
         assert_eq!(s.mismatches, 0);
@@ -440,7 +439,7 @@ mod tests {
 
     #[test]
     fn test_cigar_stats_with_mismatch() {
-        let ops = parse_cigar("5=2X3I");
+        let ops = parse_cigar("5=2X3I").unwrap();
         let s = cigar_stats(&ops);
         assert_eq!(s.matches, 5);
         assert_eq!(s.mismatches, 2);
@@ -450,7 +449,7 @@ mod tests {
 
     #[test]
     fn test_cigar_stats_multiple_events() {
-        let ops = parse_cigar("3I5=2D4=1I");
+        let ops = parse_cigar("3I5=2D4=1I").unwrap();
         let s = cigar_stats(&ops);
         assert_eq!(s.matches, 9);
         assert_eq!(s.ins_events, 2);
@@ -461,7 +460,7 @@ mod tests {
 
     #[test]
     fn test_block_length() {
-        let ops = parse_cigar("10=5I3D");
+        let ops = parse_cigar("10=5I3D").unwrap();
         let s = cigar_stats(&ops);
         assert_eq!(block_length(&s), 18); // 10 + 0 + 5 + 3
     }
@@ -470,13 +469,13 @@ mod tests {
 
     #[test]
     fn test_gi_pure_match() {
-        let ops = parse_cigar("10=");
+        let ops = parse_cigar("10=").unwrap();
         assert!((gap_compressed_identity(&ops) - 1.0).abs() < 1e-9);
     }
 
     #[test]
     fn test_gi_with_insertion() {
-        let ops = parse_cigar("10=5I");
+        let ops = parse_cigar("10=5I").unwrap();
         let gi = gap_compressed_identity(&ops);
         let expected = 10.0 / (10.0 + 0.0 + 1.0);
         assert!((gi - expected).abs() < 1e-6);
@@ -484,7 +483,7 @@ mod tests {
 
     #[test]
     fn test_gi_with_deletion() {
-        let ops = parse_cigar("10=5D");
+        let ops = parse_cigar("10=5D").unwrap();
         let gi = gap_compressed_identity(&ops);
         let expected = 10.0 / (10.0 + 0.0 + 1.0);
         assert!((gi - expected).abs() < 1e-6);
@@ -492,7 +491,7 @@ mod tests {
 
     #[test]
     fn test_gi_mixed() {
-        let ops = parse_cigar("10=2X3I4D");
+        let ops = parse_cigar("10=2X3I4D").unwrap();
         let gi = gap_compressed_identity(&ops);
         let expected = 10.0 / (10.0 + 2.0 + 2.0);
         assert!((gi - expected).abs() < 1e-6);
@@ -505,7 +504,7 @@ mod tests {
 
     #[test]
     fn test_bi_with_insertion() {
-        let ops = parse_cigar("10=5I");
+        let ops = parse_cigar("10=5I").unwrap();
         let bi = block_identity(&ops);
         let expected = 10.0 / (10.0 + 0.0 + 5.0);
         assert!((bi - expected).abs() < 1e-6);
@@ -520,26 +519,26 @@ mod tests {
 
     #[test]
     fn test_cigar_from_alignment_all_match() {
-        let ops = cigar_from_alignment(b"ACGT", b"ACGT");
+        let ops = cigar_from_alignment(b"ACGT", b"ACGT").unwrap();
         assert_eq!(ops, vec![CigarOp::new(4, 'M')]);
     }
 
     #[test]
     fn test_cigar_from_alignment_ref_gap() {
-        let ops = cigar_from_alignment(b"ACG-", b"ACGT");
+        let ops = cigar_from_alignment(b"ACG-", b"ACGT").unwrap();
         assert_eq!(ops, vec![CigarOp::new(3, 'M'), CigarOp::new(1, 'I')]);
     }
 
     #[test]
     fn test_cigar_from_alignment_qry_gap() {
-        let ops = cigar_from_alignment(b"ACGT", b"ACG-");
+        let ops = cigar_from_alignment(b"ACGT", b"ACG-").unwrap();
         assert_eq!(ops, vec![CigarOp::new(3, 'M'), CigarOp::new(1, 'D')]);
     }
 
     #[test]
     fn test_cigar_from_alignment_interleaved() {
         // AC-TG vs ACGT- →  M M I M D
-        let ops = cigar_from_alignment(b"AC-TG", b"ACGT-");
+        let ops = cigar_from_alignment(b"AC-TG", b"ACGT-").unwrap();
         assert_eq!(
             ops,
             vec![
@@ -554,7 +553,7 @@ mod tests {
     #[test]
     fn test_cigar_from_alignment_terminal_gaps() {
         // -ACGT- vs TACGTA →  I M M M M I
-        let ops = cigar_from_alignment(b"-ACGT-", b"TACGTA");
+        let ops = cigar_from_alignment(b"-ACGT-", b"TACGTA").unwrap();
         assert_eq!(
             ops,
             vec![
@@ -567,13 +566,13 @@ mod tests {
 
     #[test]
     fn test_cigar_from_alignment_all_gaps() {
-        let ops = cigar_from_alignment(b"---", b"---");
+        let ops = cigar_from_alignment(b"---", b"---").unwrap();
         assert!(ops.is_empty());
     }
 
     #[test]
     fn test_cigar_from_alignment_merge_consecutive() {
-        let ops = cigar_from_alignment(b"ACG--T", b"ACGTT-");
+        let ops = cigar_from_alignment(b"ACG--T", b"ACGTT-").unwrap();
         assert_eq!(
             ops,
             vec![
@@ -594,7 +593,7 @@ mod tests {
     #[test]
     fn test_cigar_stats_all_ops() {
         // Cover all five CIGAR op types
-        let ops = parse_cigar("5M3=2X4I1D");
+        let ops = parse_cigar("5M3=2X4I1D").unwrap();
         let s = cigar_stats(&ops);
         assert_eq!(s.matches, 8); // 5M + 3=
         assert_eq!(s.mismatches, 2);
@@ -607,7 +606,7 @@ mod tests {
     #[test]
     fn test_cigar_from_alignment_mixed_gaps() {
         // ref: A-CG--T, qry: A-CGTT-, col 2 both-gap skipped
-        let ops = cigar_from_alignment(b"A-CG--T", b"A-CGTT-");
+        let ops = cigar_from_alignment(b"A-CG--T", b"A-CGTT-").unwrap();
         assert_eq!(
             ops,
             vec![
@@ -619,8 +618,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "alignment vectors must have equal length")]
     fn test_cigar_from_alignment_length_mismatch() {
-        cigar_from_alignment(b"ACG", b"ACGT");
+        assert!(cigar_from_alignment(b"ACG", b"ACGT").is_err());
     }
 }

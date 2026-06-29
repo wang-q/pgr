@@ -338,7 +338,7 @@ fn get_vars(
     if is_indel {
         let indels = if is_outgroup {
             let mut unpolarized = get_indels(&seqs[..seq_count])?;
-            polarize_indels(&mut unpolarized, out_seq.unwrap());
+            polarize_indels(&mut unpolarized, out_seq.unwrap())?;
             unpolarized
         } else {
             get_indels(seqs)?
