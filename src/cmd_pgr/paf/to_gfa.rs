@@ -4,15 +4,7 @@ use super::common;
 
 pub fn make_subcommand() -> Command {
     common::add_poa_args(common::add_query_args(
-        Command::new("to-gfa")
-            .arg(
-                Arg::new("fasta_tsv")
-                    .long("fasta-tsv")
-                    .short('f')
-                    .required(true)
-                    .num_args(1)
-                    .help("TSV file: genome_name <tab> bgzf_fasta_path"),
-            )
+        common::add_fasta_tsv_arg(Command::new("to-gfa"))
             .arg(
                 Arg::new("crush")
                     .long("crush")

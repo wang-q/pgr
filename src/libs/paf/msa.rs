@@ -2,6 +2,18 @@ use crate::libs::nt;
 use crate::libs::paf::cigar::CigarOp;
 use crate::libs::paf::fasta::FastaStore;
 use crate::libs::paf::index::{PafIndex, QueryResult};
+use crate::libs::poa::{self, AlignmentParams};
+
+/// Return `(start, end)` with `start <= end` from an oriented interval.
+/// PAF intervals may be stored as `(first, last)` in either order; this
+/// normalizes them to ascending half-open ranges used by all emitters.
+pub fn orient_interval(first: i32, last: i32) -> (i32, i32) {
+    if first <= last {
+        (first, last)
+    } else {
+        (last, first)
+    }
+}
 
 /// Build aligned strings (query, target) by walking CIGAR over [ts, te).
 /// `q_seq` covers query[qs..qe), `t_seq` covers target[ts..te).
@@ -107,11 +119,7 @@ pub fn build_msa_entries(
     // Target entry from the first result.
     let (_, _, t_iv_first, _, _, _, _) = &results[0];
     let tname = idx.id_to_name(t_iv_first.metadata).unwrap_or(tname_region);
-    let (ts, te) = if t_iv_first.first <= t_iv_first.last {
-        (t_iv_first.first, t_iv_first.last)
-    } else {
-        (t_iv_first.last, t_iv_first.first)
-    };
+    let (ts, te) = orient_interval(t_iv_first.first, t_iv_first.last);
     let (t_seq, t_src_size) = fasta_store.fetch_range(tname, ts, te)?;
     entries.push(MsaEntry {
         name: tname.to_string(),
@@ -125,11 +133,7 @@ pub fn build_msa_entries(
     let t_key = (tname.to_string(), ts, '+', t_src_size);
     for (query_id, q_iv, _t_iv, _cigar, _rec_ts, _rec_qs, strand) in results {
         let qname = idx.id_to_name(*query_id).unwrap_or("?");
-        let (qs, qe) = if q_iv.first <= q_iv.last {
-            (q_iv.first, q_iv.last)
-        } else {
-            (q_iv.last, q_iv.first)
-        };
+        let (qs, qe) = orient_interval(q_iv.first, q_iv.last);
         let (q_seq_fwd, q_src_size) = fasta_store.fetch_range(qname, qs, qe)?;
         let (seq, start, strand_char) = if *strand == '-' {
             (
@@ -153,4 +157,95 @@ pub fn build_msa_entries(
         });
     }
     Ok(entries)
+}
+
+/// One pairwise alignment record restored from a CIGAR.
+/// Carries aligned strings plus the metadata needed by MAF / FAS emitters.
+pub struct PairwiseBlock {
+    pub qname: String,
+    pub tname: String,
+    pub q_aln: String,
+    pub t_aln: String,
+    /// Forward-strand start (qs in PAF coords). Used by FAS emitter.
+    pub q_start_fwd: i32,
+    /// Forward-strand end (qe in PAF coords). Used by FAS emitter.
+    pub q_end_fwd: i32,
+    /// MAF `start` field: forward-strand coord of first displayed base.
+    /// '+' strand: == q_start_fwd. '-' strand: src_size - q_end_fwd.
+    pub q_start_maf: i32,
+    pub q_strand: char,
+    pub q_src_size: usize,
+    pub t_start: i32,
+    pub t_end: i32,
+    pub t_src_size: usize,
+}
+
+/// Project one `QueryResult` through its CIGAR and fetch sequences,
+/// returning alignment strings plus metadata for both MAF and FAS emitters.
+///
+/// For `-` strand records: PAF query coords are on the forward strand, but
+/// CIGAR describes alignment columns against the reverse-complemented query.
+/// We RC the fetched forward sequence and walk CIGAR from offset 0 so column
+/// order matches. `q_start_maf` is set to `src_size - qe` per MAF spec.
+pub fn build_pairwise_block(
+    idx: &PafIndex,
+    result: &QueryResult,
+    fasta_store: &mut FastaStore,
+) -> anyhow::Result<PairwiseBlock> {
+    let (query_id, q_iv, t_iv, cigar, rec_ts, rec_qs, strand) = result;
+    let qname = idx.id_to_name(*query_id).unwrap_or("?").to_string();
+    let tname = idx.id_to_name(t_iv.metadata).unwrap_or("?").to_string();
+
+    let (qs, qe) = orient_interval(q_iv.first, q_iv.last);
+    let (ts, te) = orient_interval(t_iv.first, t_iv.last);
+
+    let (q_seq_fwd, q_src_size) = fasta_store.fetch_range(&qname, qs, qe)?;
+    let (t_seq, t_src_size) = fasta_store.fetch_range(&tname, ts, te)?;
+
+    let (q_seq_for_aln, rec_qs_eff, qs_eff, q_strand, q_start_maf) = if *strand == '-' {
+        let rc = nt::rev_comp(&q_seq_fwd).collect::<Vec<u8>>();
+        let aligned_q_len: i32 = cigar.iter().map(|op| op.query_delta() as i32).sum();
+        let rec_qe = *rec_qs + aligned_q_len;
+        let rc_sub_start = rec_qe - qe;
+        (rc, 0, rc_sub_start, '-', q_src_size as i32 - qe)
+    } else {
+        (q_seq_fwd, *rec_qs, qs, '+', qs)
+    };
+
+    let (q_aln, t_aln) = build_maf_block(
+        cigar,
+        *rec_ts,
+        rec_qs_eff,
+        ts,
+        te,
+        qs_eff,
+        &q_seq_for_aln,
+        &t_seq,
+    );
+
+    Ok(PairwiseBlock {
+        qname,
+        tname,
+        q_aln,
+        t_aln,
+        q_start_fwd: qs,
+        q_end_fwd: qe,
+        q_start_maf,
+        q_strand,
+        q_src_size,
+        t_start: ts,
+        t_end: te,
+        t_src_size,
+    })
+}
+
+/// Run POA global MSA on a slice of `MsaEntry` and return one aligned string
+/// per entry (parallel order). Thin wrapper around `Poa::new` + `add_sequence`
+/// + `msa()` used by both `to-fas --msa` and `to-maf --msa`.
+pub fn run_poa_msa(entries: &[MsaEntry], params: AlignmentParams) -> Vec<String> {
+    let mut poa = poa::Poa::new(params, poa::AlignmentType::Global);
+    for e in entries {
+        poa.add_sequence(&e.seq);
+    }
+    poa.msa()
 }

@@ -4,16 +4,7 @@ use super::common;
 
 pub fn make_subcommand() -> Command {
     common::add_poa_args(common::add_query_args(
-        Command::new("to-vcf")
-            .arg(
-                Arg::new("fasta_tsv")
-                    .long("fasta-tsv")
-                    .short('f')
-                    .required(true)
-                    .num_args(1)
-                    .help("TSV file: genome_name <tab> bgzf_fasta_path"),
-            )
-            .arg(crate::cmd_pgr::args::outfile_arg()),
+        common::add_fasta_tsv_arg(Command::new("to-vcf")).arg(crate::cmd_pgr::args::outfile_arg()),
     ))
     .about("Query PAF index and output multi-way VCF via POA MSA")
     .after_help(
@@ -74,16 +65,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap())?;
 
-    pgr::libs::paf::vcf::output_vcf(
-        &mut writer,
-        &idx,
-        &all_results,
-        &mut fasta_store,
-        params.match_score,
-        params.mismatch_score,
-        params.gap_open,
-        params.gap_extend,
-    )?;
+    pgr::libs::paf::vcf::output_vcf(&mut writer, &idx, &all_results, &mut fasta_store, params)?;
 
     writer.flush()?;
     Ok(())

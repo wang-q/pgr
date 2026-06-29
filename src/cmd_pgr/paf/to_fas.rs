@@ -1,60 +1,29 @@
 use clap::*;
-use pgr::libs::nt;
-use pgr::libs::paf::fasta::FastaStore;
+
 use pgr::libs::paf::index::PafIndex;
-use pgr::libs::paf::msa::{build_maf_block, build_msa_entries};
+use pgr::libs::paf::msa::{build_msa_entries, build_pairwise_block, run_poa_msa};
+use pgr::libs::poa::AlignmentParams;
 
 use super::common::{self, QueryGroup};
 
 fn output_fas_pairwise(
     idx: &PafIndex,
     all_results: &[QueryGroup],
-    fasta_store: &mut FastaStore,
+    fasta_store: &mut pgr::libs::paf::fasta::FastaStore,
 ) -> anyhow::Result<()> {
     for (_, results) in all_results {
-        for (query_id, q_iv, t_iv, cigar, rec_ts, rec_qs, strand) in results {
-            let qname = idx.id_to_name(*query_id).unwrap_or("?");
-            let tname = idx.id_to_name(t_iv.metadata).unwrap_or("?");
-
-            let (qs, qe) = if q_iv.first <= q_iv.last {
-                (q_iv.first, q_iv.last)
-            } else {
-                (q_iv.last, q_iv.first)
-            };
-            let (ts, te) = if t_iv.first <= t_iv.last {
-                (t_iv.first, t_iv.last)
-            } else {
-                (t_iv.last, t_iv.first)
-            };
-
-            let (q_seq_fwd, q_src_size) = fasta_store.fetch_range(qname, qs, qe)?;
-            let (t_seq, _t_src_size) = fasta_store.fetch_range(tname, ts, te)?;
-
-            let (q_seq_for_aln, rec_qs_eff, qs_eff, q_strand, _) = if *strand == '-' {
-                let rc = nt::rev_comp(&q_seq_fwd).collect::<Vec<u8>>();
-                let aligned_q_len: i32 = cigar.iter().map(|op| op.query_delta() as i32).sum();
-                let rec_qe = *rec_qs + aligned_q_len;
-                let rc_sub_start = rec_qe - qe;
-                (rc, 0, rc_sub_start, '-', q_src_size as i32 - qe)
-            } else {
-                (q_seq_fwd, *rec_qs, qs, '+', qs)
-            };
-
-            let (q_aln, t_aln) = build_maf_block(
-                cigar,
-                *rec_ts,
-                rec_qs_eff,
-                ts,
-                te,
-                qs_eff,
-                &q_seq_for_aln,
-                &t_seq,
+        for result in results {
+            let blk = build_pairwise_block(idx, result, fasta_store)?;
+            println!(">{0}(+):{1}-{2}", blk.tname, blk.t_start + 1, blk.t_end);
+            println!("{}", blk.t_aln);
+            println!(
+                ">{0}({1}):{2}-{3}",
+                blk.qname,
+                blk.q_strand,
+                blk.q_start_fwd + 1,
+                blk.q_end_fwd
             );
-
-            println!(">{tname}(+):{}-{}", ts + 1, te);
-            println!("{}", t_aln);
-            println!(">{qname}({}):{}-{}", q_strand, qs + 1, qe);
-            println!("{}", q_aln);
+            println!("{}", blk.q_aln);
             println!();
         }
     }
@@ -64,11 +33,8 @@ fn output_fas_pairwise(
 fn output_fas_msa(
     idx: &PafIndex,
     all_results: &[QueryGroup],
-    fasta_store: &mut FastaStore,
-    match_score: i32,
-    mismatch_score: i32,
-    gap_open: i32,
-    gap_extend: i32,
+    fasta_store: &mut pgr::libs::paf::fasta::FastaStore,
+    params: AlignmentParams,
 ) -> anyhow::Result<()> {
     for ((tname_region, _, _), results) in all_results {
         let entries = build_msa_entries(idx, tname_region, results, fasta_store)?;
@@ -76,17 +42,7 @@ fn output_fas_msa(
             continue;
         }
 
-        let params = pgr::libs::poa::AlignmentParams {
-            match_score,
-            mismatch_score,
-            gap_open,
-            gap_extend,
-        };
-        let mut poa = pgr::libs::poa::Poa::new(params, pgr::libs::poa::AlignmentType::Global);
-        for e in &entries {
-            poa.add_sequence(&e.seq);
-        }
-        let msa = poa.msa();
+        let msa = run_poa_msa(&entries, params.clone());
 
         for (e, aln) in entries.iter().zip(msa.iter()) {
             let size = aln.chars().filter(|c| *c != '-').count() as i32;
@@ -105,23 +61,9 @@ fn output_fas_msa(
 }
 
 pub fn make_subcommand() -> Command {
-    common::add_poa_args(common::add_query_args(
-        Command::new("to-fas")
-            .arg(
-                Arg::new("fasta_tsv")
-                    .long("fasta-tsv")
-                    .short('f')
-                    .required(true)
-                    .num_args(1)
-                    .help("TSV file: genome_name <tab> bgzf_fasta_path"),
-            )
-            .arg(
-                Arg::new("msa")
-                    .long("msa")
-                    .num_args(0)
-                    .help("Merge results per region into a multi-way block FASTA via POA"),
-            ),
-    ))
+    common::add_poa_args(common::add_query_args(common::add_msa_flag(
+        common::add_fasta_tsv_arg(Command::new("to-fas")),
+    )))
     .about("Query PAF index and output pairwise or multi-way block FASTA")
     .after_help(
         r###"
@@ -180,15 +122,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let (idx, all_results, mut fasta_store) = common::prepare_query(args)?;
     if args.get_flag("msa") {
         let params = common::get_poa_params(args);
-        output_fas_msa(
-            &idx,
-            &all_results,
-            &mut fasta_store,
-            params.match_score,
-            params.mismatch_score,
-            params.gap_open,
-            params.gap_extend,
-        )
+        output_fas_msa(&idx, &all_results, &mut fasta_store, params)
     } else {
         output_fas_pairwise(&idx, &all_results, &mut fasta_store)
     }

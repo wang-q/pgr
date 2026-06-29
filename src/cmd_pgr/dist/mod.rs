@@ -1,3 +1,4 @@
+pub mod common;
 pub mod hv;
 pub mod seq;
 pub mod vector;

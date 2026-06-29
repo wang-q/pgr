@@ -1,5 +1,5 @@
-use clap::*;
-use rayon::prelude::*;
+use super::common;
+use clap::{builder, Arg, ArgAction, ArgMatches, Command};
 use std::io::BufRead;
 
 use pgr::libs::clust::feature::FeatureVector;
@@ -94,55 +94,21 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let opt_parallel = *args.get_one::<usize>("parallel").unwrap();
 
-    let infiles = args
-        .get_many::<String>("infiles")
-        .unwrap()
-        .map(|s| s.as_str())
-        .collect::<Vec<_>>();
+    let infiles = common::collect_infiles(args);
 
-    // Create a channel for sending results to the writer thread
-    let (sender, receiver) = crossbeam::channel::bounded::<String>(256);
-
-    // Spawn a writer thread
-    let output = args.get_one::<String>("outfile").unwrap().to_string();
-    let writer_thread = std::thread::spawn(move || {
-        let mut writer = pgr::writer(&output).unwrap();
-        for result in receiver {
-            writer.write_all(result.as_bytes()).unwrap();
-        }
-    });
-
-    // Set the number of threads for rayon
-    rayon::ThreadPoolBuilder::new()
-        .num_threads(opt_parallel)
-        .build_global()?;
+    let (sender, writer_thread) =
+        common::spawn_writer_and_pool(args.get_one::<String>("outfile").unwrap(), opt_parallel)?;
 
     //----------------------------
     // Ops
     //----------------------------
-    let entries = load_file(infiles.first().unwrap(), is_bin);
-    let others = if infiles.len() == 2 {
-        load_file(infiles.get(1).unwrap(), is_bin)
-    } else {
-        entries.clone()
-    };
+    let (entries1, entries2) =
+        common::load_two_sets(&infiles, false, |paths| load_file(&paths[0], is_bin))?;
 
-    // Use rayon to parallelize the outer loop
-    entries.par_iter().for_each(|e1: &FeatureVector| {
-        let mut lines = "".to_string();
-        for (i, e2) in others.iter().enumerate() {
-            let score = calc(e1.list(), e2.list(), opt_mode, is_sim, is_dis);
-            let out_string = format!("{}\t{}\t{:.4}\n", e1.name(), e2.name(), score);
-
-            lines.push_str(&out_string);
-            if i > 1 && i % 1000 == 0 {
-                sender.send(lines.clone()).unwrap();
-                lines.clear();
-            }
-        }
-        if !lines.is_empty() {
-            sender.send(lines).unwrap();
-        }
+    common::par_run_pairs(&entries1, &entries2, &sender, |e1, e2| {
+        let score = calc(e1.list(), e2.list(), opt_mode, is_sim, is_dis);
+        let line = format!("{}\t{}\t{:.4}\n", e1.name(), e2.name(), score);
+        Some(line)
     });
 
     // Drop the sender to signal the writer thread to exit
@@ -153,9 +119,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn load_file(infile: &str, is_bin: bool) -> Vec<FeatureVector> {
+fn load_file(infile: &str, is_bin: bool) -> anyhow::Result<Vec<FeatureVector>> {
     let mut entries = vec![];
-    let reader = pgr::reader(infile).unwrap();
+    let reader = pgr::reader(infile)?;
     'LINE: for line in reader.lines().map_while(Result::ok) {
         let mut entry = FeatureVector::parse(&line);
         if entry.name().is_empty() {
@@ -171,7 +137,7 @@ fn load_file(infile: &str, is_bin: bool) -> Vec<FeatureVector> {
         }
         entries.push(entry);
     }
-    entries
+    Ok(entries)
 }
 
 fn calc(l1: &[f32], l2: &[f32], mode: &str, is_sim: bool, is_dis: bool) -> f32 {

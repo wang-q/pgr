@@ -1,6 +1,7 @@
 use clap::*;
 use pgr::libs::chain::record::read_chains;
 use pgr::libs::paf::index::{PafIndex, QueryResult};
+use pgr::libs::paf::msa::orient_interval;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::BufRead;
@@ -237,16 +238,8 @@ fn output_paf(idx: &PafIndex, results: &[QueryResult]) {
         let gi = pgr::libs::paf::cigar::gap_compressed_identity(cigar);
         let bi = pgr::libs::paf::cigar::block_identity(cigar);
         let cg = pgr::libs::paf::cigar::format_cigar(cigar);
-        let (qs, qe) = if q_iv.first <= q_iv.last {
-            (q_iv.first, q_iv.last)
-        } else {
-            (q_iv.last, q_iv.first)
-        };
-        let (ts, te) = if t_iv.first <= t_iv.last {
-            (t_iv.first, t_iv.last)
-        } else {
-            (t_iv.last, t_iv.first)
-        };
+        let (qs, qe) = orient_interval(q_iv.first, q_iv.last);
+        let (ts, te) = orient_interval(t_iv.first, t_iv.last);
         println!(
             "{}\t0\t{}\t{}\t{}\t{}\t0\t{}\t{}\t{}\t{}\t255\tgi:f:{:.6}\tbi:f:{:.6}\tcg:Z:{}",
             qname, qs, qe, strand, tname, ts, te, matches, block_len, gi, bi, cg

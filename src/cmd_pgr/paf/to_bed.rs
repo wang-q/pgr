@@ -1,5 +1,6 @@
 use clap::*;
 use pgr::libs::paf::index::QueryResult;
+use pgr::libs::paf::msa::orient_interval;
 
 use super::{common, query};
 
@@ -7,11 +8,7 @@ use super::{common, query};
 fn output_bed(idx: &pgr::libs::paf::index::PafIndex, results: &[QueryResult]) {
     for (query_id, q_iv, _t_iv, _cigar, _, _, _) in results {
         let qname = idx.id_to_name(*query_id).unwrap_or("?");
-        let (qs, qe) = if q_iv.first <= q_iv.last {
-            (q_iv.first, q_iv.last)
-        } else {
-            (q_iv.last, q_iv.first)
-        };
+        let (qs, qe) = orient_interval(q_iv.first, q_iv.last);
         println!("{qname}\t{qs}\t{qe}");
     }
 }

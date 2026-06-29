@@ -158,6 +158,30 @@ pub fn add_poa_args(cmd: Command) -> Command {
     )
 }
 
+/// Add the required `-f/--fasta-tsv` argument.
+/// Shared by `paf to-gfa`, `paf to-vcf`, `paf to-fas`, and `paf to-maf`.
+pub fn add_fasta_tsv_arg(cmd: Command) -> Command {
+    cmd.arg(
+        Arg::new("fasta_tsv")
+            .long("fasta-tsv")
+            .short('f')
+            .required(true)
+            .num_args(1)
+            .help("TSV file: genome_name <tab> bgzf_fasta_path"),
+    )
+}
+
+/// Add the `--msa` flag for POA-based multi-way output.
+/// Shared by `paf to-fas` and `paf to-maf`.
+pub fn add_msa_flag(cmd: Command) -> Command {
+    cmd.arg(
+        Arg::new("msa")
+            .long("msa")
+            .num_args(0)
+            .help("Merge results per region into a multi-way block via POA"),
+    )
+}
+
 /// Load fasta TSV, run query, validate TSV covers the index, build FastaStore.
 /// Shared by `to-fas`, `to-gfa`, `to-maf`, `to-vcf`.
 #[allow(clippy::type_complexity)]

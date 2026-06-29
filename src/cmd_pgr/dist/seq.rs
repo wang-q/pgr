@@ -1,7 +1,6 @@
-use clap::*;
+use super::common;
+use clap::Command;
 use noodles_fasta as fasta;
-use rayon::prelude::*;
-use std::io::Write;
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
@@ -87,69 +86,24 @@ Examples:
 
 "###,
         )
+        .arg(common::infiles_arg())
+        .arg(common::hasher_arg())
+        .arg(common::kmer_arg())
+        .arg(common::window_arg())
+        .arg(common::sim_arg())
         .arg(
-            Arg::new("infiles")
-                .required(true)
-                .num_args(1..=2)
-                .index(1)
-                .required(true)
-                .help("Input FA/list file(s). [stdin] for standard input"),
-        )
-        .arg(
-            Arg::new("hasher")
-                .long("hasher")
-                .action(ArgAction::Set)
-                .value_parser([
-                    builder::PossibleValue::new("rapid"),
-                    builder::PossibleValue::new("fx"),
-                    builder::PossibleValue::new("murmur"),
-                    builder::PossibleValue::new("mod"),
-                ])
-                .default_value("rapid")
-                .help("Hash algorithm to use"),
-        )
-        .arg(
-            Arg::new("kmer")
-                .long("kmer")
-                .short('k')
-                .num_args(1)
-                .default_value("7")
-                .value_parser(value_parser!(usize))
-                .help("K-mer size"),
-        )
-        .arg(
-            Arg::new("window")
-                .long("window")
-                .short('w')
-                .num_args(1)
-                .default_value("1")
-                .value_parser(value_parser!(usize))
-                .help("Window size for minimizers"),
-        )
-        .arg(
-            Arg::new("sim")
-                .long("sim")
-                .action(ArgAction::SetTrue)
-                .help("Convert distance to similarity (1 - distance)"),
-        )
-        .arg(
-            Arg::new("zero")
+            clap::Arg::new("zero")
                 .long("zero")
-                .action(ArgAction::SetTrue)
+                .action(clap::ArgAction::SetTrue)
                 .help("Also write results with zero Jaccard index"),
         )
         .arg(
-            Arg::new("merge")
+            clap::Arg::new("merge")
                 .long("merge")
-                .action(ArgAction::SetTrue)
+                .action(clap::ArgAction::SetTrue)
                 .help("Merge all sequences within a file into a single set for comparison"),
         )
-        .arg(
-            Arg::new("list")
-                .long("list")
-                .action(ArgAction::SetTrue)
-                .help("Treat infiles as list files, where each line is a path to a sequence file"),
-        )
+        .arg(common::list_arg())
         .arg(crate::cmd_pgr::args::parallel_arg())
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
@@ -161,7 +115,7 @@ struct MinimizerEntry {
 }
 
 // command implementation
-pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
+pub fn execute(args: &clap::ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     // Args
     //----------------------------
@@ -171,123 +125,49 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let is_sim = args.get_flag("sim");
     let is_zero = args.get_flag("zero");
-    let is_merge = args.get_flag("merge"); // Whether to merge all sequences within a file
-    let is_list = args.get_flag("list"); // Whether to treat infiles as list files
+    let is_merge = args.get_flag("merge");
+    let is_list = args.get_flag("list");
     let opt_parallel = *args.get_one::<usize>("parallel").unwrap();
 
-    // Create a channel for sending results to the writer thread
-    let (sender, receiver) = crossbeam::channel::bounded::<String>(256);
+    let infiles = common::collect_infiles(args);
 
-    // Spawn a writer thread
-    let output = args.get_one::<String>("outfile").unwrap().to_string();
-    let writer_thread = std::thread::spawn(move || {
-        let mut writer = pgr::writer(&output).unwrap();
-        for result in receiver {
-            writer.write_all(result.as_bytes()).unwrap();
-        }
-    });
-
-    // Set the number of threads for rayon
-    rayon::ThreadPoolBuilder::new()
-        .num_threads(opt_parallel)
-        .build_global()?;
-
-    let infiles = args
-        .get_many::<String>("infiles")
-        .unwrap()
-        .map(|s| s.as_str())
-        .collect::<Vec<_>>();
+    let (sender, writer_thread) =
+        common::spawn_writer_and_pool(args.get_one::<String>("outfile").unwrap(), opt_parallel)?;
 
     //----------------------------
     // Ops
     //----------------------------
-    // Load data based on the number of input files and the --list flag
-    let (entries1, entries2) = if infiles.len() == 1 {
-        // Single file
-        let paths = if is_list {
-            intspan::read_first_column(infiles[0])
-        } else {
-            vec![infiles[0].to_string()] // Treat the input as a sequence file
-        };
-        let entries = load_entries(&paths, opt_hasher, opt_kmer, opt_window, is_merge)?;
-        (entries.clone(), entries) // Calculate pairwise distances within the same set
-    } else {
-        // Two files
-        let paths1 = if is_list {
-            intspan::read_first_column(infiles[0])
-        } else {
-            vec![infiles[0].to_string()]
-        };
-        let paths2 = if is_list {
-            intspan::read_first_column(infiles[1])
-        } else {
-            vec![infiles[1].to_string()]
-        };
-        let entries1 = load_entries(&paths1, opt_hasher, opt_kmer, opt_window, is_merge)?;
-        let entries2 = load_entries(&paths2, opt_hasher, opt_kmer, opt_window, is_merge)?;
-        (entries1, entries2) // Calculate pairwise distances between the two sets
-    };
+    let (entries1, entries2) = common::load_two_sets(&infiles, is_list, |paths| {
+        common::load_entries(paths, |p| {
+            load_file(p, opt_hasher, opt_kmer, opt_window, is_merge)
+        })
+    })?;
 
-    // Use rayon to parallelize the outer loop
-    entries1.par_iter().for_each(|e1| {
-        let mut lines = String::with_capacity(1024);
-        for (i, e2) in entries2.iter().enumerate() {
-            let (total1, total2, inter, union, mash, jaccard, containment) =
-                calc_distances(&e1.set, &e2.set, opt_kmer);
+    // Distance -> similarity converter for mash distance.
+    let to_sim = |mash: f64| if mash > 1.0 { 0.0 } else { 1.0 - mash };
 
-            if !is_zero && jaccard == 0. {
-                continue;
-            }
+    common::par_run_pairs(&entries1, &entries2, &sender, |e1, e2| {
+        let (total1, total2, inter, union, mash, jaccard, containment) =
+            calc_distances(&e1.set, &e2.set, opt_kmer);
 
-            let out_string = if is_merge {
-                format!(
-                    "{}\t{}\t{}\t{}\t{}\t{}\t{:.4}\t{:.4}\t{:.4}\n",
-                    e1.name,
-                    e2.name,
-                    total1,
-                    total2,
-                    inter,
-                    union,
-                    if is_sim {
-                        if mash > 1.0 {
-                            0.0
-                        } else {
-                            1.0 - mash
-                        }
-                    } else {
-                        mash
-                    },
-                    jaccard,
-                    containment
-                )
-            } else {
-                format!(
-                    "{}\t{}\t{:.4}\t{:.4}\t{:.4}\n",
-                    e1.name,
-                    e2.name,
-                    if is_sim {
-                        if mash > 1.0 {
-                            0.0
-                        } else {
-                            1.0 - mash
-                        }
-                    } else {
-                        mash
-                    },
-                    jaccard,
-                    containment
-                )
-            };
-
-            lines.push_str(&out_string);
-            if i > 1 && i % 1000 == 0 {
-                sender.send(lines.clone()).unwrap();
-                lines.clear();
-            }
+        if !is_zero && jaccard == 0. {
+            return None;
         }
-        if !lines.is_empty() {
-            sender.send(lines).unwrap();
-        }
+
+        let dist = if is_sim { to_sim(mash) } else { mash };
+
+        let line = if is_merge {
+            format!(
+                "{}\t{}\t{}\t{}\t{}\t{}\t{:.4}\t{:.4}\t{:.4}\n",
+                e1.name, e2.name, total1, total2, inter, union, dist, jaccard, containment
+            )
+        } else {
+            format!(
+                "{}\t{}\t{:.4}\t{:.4}\t{:.4}\n",
+                e1.name, e2.name, dist, jaccard, containment
+            )
+        };
+        Some(line)
     });
 
     // Drop the sender to signal the writer thread to exit
@@ -296,24 +176,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     writer_thread.join().unwrap();
 
     Ok(())
-}
-
-// Load entries from a list of paths
-fn load_entries(
-    paths: &[String],
-    opt_hasher: &str,
-    opt_kmer: usize,
-    opt_window: usize,
-    is_merge: bool,
-) -> anyhow::Result<Vec<MinimizerEntry>> {
-    let mut entries = Vec::new();
-
-    for path in paths {
-        let mut loaded = load_file(path, opt_hasher, opt_kmer, opt_window, is_merge)?;
-        entries.append(&mut loaded);
-    }
-
-    Ok(entries)
 }
 
 fn load_file(

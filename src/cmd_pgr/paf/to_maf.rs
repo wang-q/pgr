@@ -1,8 +1,8 @@
 use clap::*;
-use pgr::libs::nt;
-use pgr::libs::paf::fasta::FastaStore;
+
 use pgr::libs::paf::index::{PafIndex, QueryResult};
-use pgr::libs::paf::msa::{build_maf_block, build_msa_entries};
+use pgr::libs::paf::msa::{build_msa_entries, build_pairwise_block, run_poa_msa};
+use pgr::libs::poa::AlignmentParams;
 
 use super::common;
 
@@ -13,70 +13,26 @@ use super::common;
 fn output_maf(
     idx: &PafIndex,
     all_results: &[((String, i32, i32), Vec<QueryResult>)],
-    fasta_store: &mut FastaStore,
+    fasta_store: &mut pgr::libs::paf::fasta::FastaStore,
 ) -> anyhow::Result<()> {
     println!("##maf version=1");
     for (_, results) in all_results {
-        for (query_id, q_iv, t_iv, cigar, rec_ts, rec_qs, strand) in results {
-            let qname = idx.id_to_name(*query_id).unwrap_or("?");
-            let tname = idx.id_to_name(t_iv.metadata).unwrap_or("?");
-
-            let (qs, qe) = if q_iv.first <= q_iv.last {
-                (q_iv.first, q_iv.last)
-            } else {
-                (q_iv.last, q_iv.first)
-            };
-            let (ts, te) = if t_iv.first <= t_iv.last {
-                (t_iv.first, t_iv.last)
-            } else {
-                (t_iv.last, t_iv.first)
-            };
-
-            let (q_seq_fwd, q_src_size) = fasta_store.fetch_range(qname, qs, qe)?;
-            let (t_seq, t_src_size) = fasta_store.fetch_range(tname, ts, te)?;
-
-            // For '-' strand records: PAF query coords are on the forward
-            // strand, but CIGAR describes alignment columns against the
-            // reverse-complemented query. RC the fetched forward sequence
-            // and walk CIGAR from offset 0 so column order matches.
-            //
-            // `q_seq_for_aln` is RC(forward[qs..qe)) and covers RC offset
-            // [rec_qe - qe, rec_qe - qs) where rec_qe = rec_qs + aligned_q_len.
-            // `build_maf_block` indexes q_seq via `(cq + skip_t) - qs_eff`, so
-            // qs_eff must be the RC offset of the sub-interval start
-            // (rec_qe - qe), not 0 — otherwise sub-interval queries index
-            // past the end of q_seq. Full-overlap queries have qs_eff = 0.
-            //
-            // MAF `start` for '-' strand = srcSize - qe (position on forward
-            // strand of the first displayed base, per MAF spec).
-            let (q_seq_for_aln, rec_qs_eff, qs_eff, q_strand, q_start_maf) = if *strand == '-' {
-                let rc = nt::rev_comp(&q_seq_fwd).collect::<Vec<u8>>();
-                let aligned_q_len: i32 = cigar.iter().map(|op| op.query_delta() as i32).sum();
-                let rec_qe = *rec_qs + aligned_q_len;
-                let rc_sub_start = rec_qe - qe;
-                (rc, 0, rc_sub_start, '-', q_src_size as i32 - qe)
-            } else {
-                (q_seq_fwd, *rec_qs, qs, '+', qs)
-            };
-
-            let (q_aln, t_aln) = build_maf_block(
-                cigar,
-                *rec_ts,
-                rec_qs_eff,
-                ts,
-                te,
-                qs_eff,
-                &q_seq_for_aln,
-                &t_seq,
-            );
+        for result in results {
+            let blk = build_pairwise_block(idx, result, fasta_store)?;
 
             // size = number of non-gap bases
-            let q_size = q_aln.chars().filter(|c| *c != '-').count();
-            let t_size = t_aln.chars().filter(|c| *c != '-').count();
+            let q_size = blk.q_aln.chars().filter(|c| *c != '-').count();
+            let t_size = blk.t_aln.chars().filter(|c| *c != '-').count();
 
             println!("a");
-            println!("s\t{tname}\t{ts}\t{t_size}\t+\t{t_src_size}\t{t_aln}");
-            println!("s\t{qname}\t{q_start_maf}\t{q_size}\t{q_strand}\t{q_src_size}\t{q_aln}");
+            println!(
+                "s\t{0}\t{1}\t{2}\t+\t{3}\t{4}",
+                blk.tname, blk.t_start, t_size, blk.t_src_size, blk.t_aln
+            );
+            println!(
+                "s\t{0}\t{1}\t{2}\t{3}\t{4}\t{5}",
+                blk.qname, blk.q_start_maf, q_size, blk.q_strand, blk.q_src_size, blk.q_aln
+            );
             println!();
         }
     }
@@ -86,23 +42,13 @@ fn output_maf(
 // Output multi-way MAF blocks via POA. For each region, collect target +
 // all query sequences (queries RC'd if '-' strand), feed them into the POA
 // engine, and emit one `a` block with N `s` lines. CIGAR is ignored.
-#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+#[allow(clippy::type_complexity)]
 fn output_maf_msa(
     idx: &PafIndex,
     all_results: &[((String, i32, i32), Vec<QueryResult>)],
-    fasta_store: &mut FastaStore,
-    match_score: i32,
-    mismatch_score: i32,
-    gap_open: i32,
-    gap_extend: i32,
+    fasta_store: &mut pgr::libs::paf::fasta::FastaStore,
+    params: AlignmentParams,
 ) -> anyhow::Result<()> {
-    let params = pgr::libs::poa::AlignmentParams {
-        match_score,
-        mismatch_score,
-        gap_open,
-        gap_extend,
-    };
-
     println!("##maf version=1");
     for ((tname_region, _, _), results) in all_results {
         if results.is_empty() {
@@ -110,14 +56,7 @@ fn output_maf_msa(
         }
 
         let entries = build_msa_entries(idx, tname_region, results, fasta_store)?;
-
-        // Run POA MSA.
-        let mut poa =
-            pgr::libs::poa::Poa::new(params.clone(), pgr::libs::poa::AlignmentType::Global);
-        for e in &entries {
-            poa.add_sequence(&e.seq);
-        }
-        let msa = poa.msa();
+        let msa = run_poa_msa(&entries, params.clone());
 
         // Emit the MAF block.
         println!("a");
@@ -134,23 +73,9 @@ fn output_maf_msa(
 }
 
 pub fn make_subcommand() -> Command {
-    common::add_poa_args(common::add_query_args(
-        Command::new("to-maf")
-            .arg(
-                Arg::new("fasta_tsv")
-                    .long("fasta-tsv")
-                    .short('f')
-                    .required(true)
-                    .num_args(1)
-                    .help("TSV file: genome_name <tab> bgzf_fasta_path"),
-            )
-            .arg(
-                Arg::new("msa")
-                    .long("msa")
-                    .num_args(0)
-                    .help("Merge results per region into a multi-way MAF block via POA"),
-            ),
-    ))
+    common::add_poa_args(common::add_query_args(common::add_msa_flag(
+        common::add_fasta_tsv_arg(Command::new("to-maf")),
+    )))
     .about("Query PAF index and output pairwise or multi-way MAF")
     .after_help(
         r###"
@@ -197,15 +122,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let (idx, all_results, mut fasta_store) = common::prepare_query(args)?;
     if args.get_flag("msa") {
         let params = common::get_poa_params(args);
-        output_maf_msa(
-            &idx,
-            &all_results,
-            &mut fasta_store,
-            params.match_score,
-            params.mismatch_score,
-            params.gap_open,
-            params.gap_extend,
-        )?;
+        output_maf_msa(&idx, &all_results, &mut fasta_store, params)?;
     } else {
         output_maf(&idx, &all_results, &mut fasta_store)?;
     }

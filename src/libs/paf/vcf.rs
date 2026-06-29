@@ -2,8 +2,8 @@
 
 use crate::libs::paf::fasta::FastaStore;
 use crate::libs::paf::index::{PafIndex, QueryResult};
-use crate::libs::paf::msa::build_msa_entries;
-use crate::libs::poa;
+use crate::libs::paf::msa::{build_msa_entries, run_poa_msa};
+use crate::libs::poa::AlignmentParams;
 use std::io::Write;
 
 // Emit one VCF row. ref_allele is REF; alt_alleles are distinct non-REF
@@ -105,24 +105,14 @@ fn left_align_indels(
 // sample gets ALT = anchor). INS and DEL are left-aligned against the
 // reference: the anchor position shifts leftward while the reference base
 // before the anchor equals the last base of every non-empty indel seq.
-#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+#[allow(clippy::type_complexity)]
 pub fn output_vcf<W: Write>(
     writer: &mut W,
     idx: &PafIndex,
     all_results: &[((String, i32, i32), Vec<QueryResult>)],
     fasta_store: &mut FastaStore,
-    match_score: i32,
-    mismatch_score: i32,
-    gap_open: i32,
-    gap_extend: i32,
+    params: AlignmentParams,
 ) -> anyhow::Result<()> {
-    let params = poa::AlignmentParams {
-        match_score,
-        mismatch_score,
-        gap_open,
-        gap_extend,
-    };
-
     let mut header_written = false;
 
     for ((tname_region, _, _), results) in all_results {
@@ -133,11 +123,7 @@ pub fn output_vcf<W: Write>(
         let entries = build_msa_entries(idx, tname_region, results, fasta_store)?;
 
         // Run POA MSA.
-        let mut poa = poa::Poa::new(params.clone(), poa::AlignmentType::Global);
-        for e in &entries {
-            poa.add_sequence(&e.seq);
-        }
-        let msa = poa.msa();
+        let msa = run_poa_msa(&entries, params.clone());
 
         if msa.is_empty() {
             continue;
