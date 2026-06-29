@@ -14,6 +14,3 @@ pub mod paf;
 pub mod pairmat;
 pub mod phylo;
 pub mod poa;
-
-// Re-export modules moved to fmt for backward compatibility
-pub use fmt::{axt, fas, feature, lav, maf, net, psl, twobit};

@@ -121,14 +121,7 @@ Examples:
                 .default_value("1")
                 .help("Number of threads for parallel processing"),
         )
-        .arg(
-            Arg::new("outfile")
-                .long("outfile")
-                .short('o')
-                .num_args(1)
-                .default_value("stdout")
-                .help("Output filename. [stdout] for screen"),
-        )
+        .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
 // command implementation
@@ -147,7 +140,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
         for infile in args.get_many::<String>("infiles").unwrap() {
             let mut reader = pgr::reader(infile);
-            while let Ok(block) = pgr::libs::fas::next_fas_block(&mut reader) {
+            while let Ok(block) = pgr::libs::fmt::fas::next_fas_block(&mut reader) {
                 let out_string = proc_block(&block, args)?;
                 writer.write_all(out_string.as_ref())?;
             }
@@ -160,7 +153,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn proc_block(block: &pgr::libs::fas::FasBlock, args: &ArgMatches) -> anyhow::Result<String> {
+fn proc_block(block: &pgr::libs::fmt::fas::FasBlock, args: &ArgMatches) -> anyhow::Result<String> {
     //----------------------------
     // Args
     //----------------------------
@@ -252,7 +245,7 @@ fn proc_block_p(args: &ArgMatches) -> anyhow::Result<()> {
     let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap());
 
     // Channel 1 - Read files to blocks
-    let (snd1, rcv1) = crossbeam::channel::bounded::<pgr::libs::fas::FasBlock>(10);
+    let (snd1, rcv1) = crossbeam::channel::bounded::<pgr::libs::fmt::fas::FasBlock>(10);
     // Channel 2 - Results
     let (snd2, rcv2) = crossbeam::channel::bounded(10);
 
@@ -263,7 +256,7 @@ fn proc_block_p(args: &ArgMatches) -> anyhow::Result<()> {
         s.spawn(|_| {
             for infile in args.get_many::<String>("infiles").unwrap() {
                 let mut reader = pgr::reader(infile);
-                while let Ok(block) = pgr::libs::fas::next_fas_block(&mut reader) {
+                while let Ok(block) = pgr::libs::fmt::fas::next_fas_block(&mut reader) {
                     snd1.send(block).unwrap();
                 }
             }

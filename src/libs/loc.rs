@@ -63,6 +63,28 @@ pub fn create_loc(infile: &str, locfile: &str, is_bgzf: bool) -> anyhow::Result<
     Ok(())
 }
 
+/// Open a FASTA file with .loc index for random access.
+/// Creates the .loc index if it doesn't exist (or if `force_update` is true).
+/// Returns the Input reader and the loaded .loc index.
+#[allow(clippy::type_complexity)]
+pub fn open_indexed(
+    infile: &str,
+    force_update: bool,
+) -> anyhow::Result<(Input, IndexMap<String, (u64, usize)>)> {
+    let is_bgzf = crate::is_bgzf(infile);
+    let loc_file = format!("{}.loc", infile);
+    if !std::path::Path::new(&loc_file).is_file() || force_update {
+        create_loc(infile, &loc_file, is_bgzf)?;
+    }
+    let loc_of = load_loc(&loc_file)?;
+    let reader = if is_bgzf {
+        Input::Bgzf(bgzf::io::indexed_reader::Builder::default().build_from_path(infile)?)
+    } else {
+        Input::File(std::fs::File::open(std::path::Path::new(infile))?)
+    };
+    Ok((reader, loc_of))
+}
+
 pub fn load_loc(loc_file: &str) -> anyhow::Result<IndexMap<String, (u64, usize)>> {
     let mut reader = crate::libs::io::reader(loc_file);
 

@@ -5,7 +5,7 @@ use std::fs::File;
 use std::io::{self, BufReader, BufWriter};
 use std::rc::Rc;
 
-use pgr::libs::net::{read_nets, Chrom, Fill, Gap};
+use pgr::libs::fmt::net::{read_nets, Chrom, Fill, Gap};
 
 pub fn make_subcommand() -> Command {
     Command::new("filter")

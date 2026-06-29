@@ -39,14 +39,7 @@ Examples:
                 .index(2)
                 .help("File containing one sequence name per line"),
         )
-        .arg(
-            Arg::new("outfile")
-                .long("outfile")
-                .short('o')
-                .num_args(1)
-                .default_value("stdout")
-                .help("Output filename. [stdout] for screen"),
-        )
+        .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
 // command implementation

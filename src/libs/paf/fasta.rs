@@ -32,6 +32,28 @@ pub fn load_fasta_tsv(path: &str) -> anyhow::Result<IndexMap<String, String>> {
     Ok(map)
 }
 
+/// Validate that every name in the PAF index is present in the TSV mapping.
+pub fn validate_tsv_covers_index(
+    seq_to_file: &IndexMap<String, String>,
+    idx: &crate::libs::paf::index::PafIndex,
+) -> anyhow::Result<()> {
+    let mut missing: Vec<&str> = idx
+        .names
+        .keys()
+        .filter(|n| !seq_to_file.contains_key(*n))
+        .map(|n| n.as_str())
+        .collect();
+    missing.sort_unstable();
+    if !missing.is_empty() {
+        anyhow::bail!(
+            "FASTA TSV is missing {} genome(s) present in PAF index: {}",
+            missing.len(),
+            missing.join(", ")
+        );
+    }
+    Ok(())
+}
+
 /// One opened BGZF FASTA file with its .loc index and a per-name record cache.
 pub struct FastaEntry {
     reader: loc::Input,

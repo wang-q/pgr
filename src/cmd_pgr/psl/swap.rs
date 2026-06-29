@@ -2,7 +2,7 @@ use clap::{Arg, Command};
 use intspan::*;
 use std::io::BufRead;
 
-use pgr::libs::psl::Psl;
+use pgr::libs::fmt::psl::Psl;
 
 pub fn make_subcommand() -> Command {
     Command::new("swap")

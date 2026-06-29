@@ -35,14 +35,7 @@ Examples:
                 .index(1)
                 .help("Input file containing a PHYLIP distance matrix"),
         )
-        .arg(
-            Arg::new("outfile")
-                .long("outfile")
-                .short('o')
-                .num_args(1)
-                .default_value("stdout")
-                .help("Output filename. [stdout] for screen"),
-        )
+        .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
 // command implementation

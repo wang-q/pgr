@@ -1,5 +1,5 @@
 use clap::{Arg, ArgMatches, Command};
-use pgr::libs::psl::Psl;
+use pgr::libs::fmt::psl::Psl;
 use std::io::{BufRead, Write};
 use std::str::FromStr;
 

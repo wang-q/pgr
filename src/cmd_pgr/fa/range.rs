@@ -66,14 +66,7 @@ Examples:
                 .default_value("1")
                 .help("Set the capacity of the LRU cache"),
         )
-        .arg(
-            Arg::new("outfile")
-                .long("outfile")
-                .short('o')
-                .num_args(1)
-                .default_value("stdout")
-                .help("Output filename. [stdout] for screen"),
-        )
+        .arg(crate::cmd_pgr::args::outfile_arg())
         .arg(
             Arg::new("update")
                 .long("update")
@@ -97,8 +90,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             .build_from_writer(writer)
     };
 
-    let is_bgzf = pgr::is_bgzf(infile);
-
     let mut ranges = if args.contains_id("ranges") {
         args.get_many::<String>("ranges")
             .unwrap()
@@ -119,19 +110,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     // Open files
     //----------------------------
-    let loc_file = format!("{}.loc", infile);
-    if !std::path::Path::new(&loc_file).is_file() || args.get_flag("update") {
-        loc::create_loc(infile, &loc_file, is_bgzf)?;
-    }
-    let loc_of: indexmap::IndexMap<String, (u64, usize)> = loc::load_loc(&loc_file)?;
-
-    let mut reader = if is_bgzf {
-        loc::Input::Bgzf(
-            noodles_bgzf::io::indexed_reader::Builder::default().build_from_path(infile)?,
-        )
-    } else {
-        loc::Input::File(std::fs::File::open(std::path::Path::new(infile))?)
-    };
+    let force_update = args.get_flag("update");
+    let (mut reader, loc_of) = loc::open_indexed(infile, force_update)?;
 
     //----------------------------
     // Output

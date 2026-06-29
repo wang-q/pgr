@@ -78,14 +78,7 @@ Examples:
                 .default_value("pair")
                 .help("Input format for partition files"),
         )
-        .arg(
-            Arg::new("outfile")
-                .long("outfile")
-                .short('o')
-                .num_args(1)
-                .default_value("stdout")
-                .help("Output filename. [stdout] for screen"),
-        )
+        .arg(crate::cmd_pgr::args::outfile_arg())
         .arg(
             Arg::new("no-singletons")
                 .long("no-singletons")

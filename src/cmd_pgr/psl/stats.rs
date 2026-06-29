@@ -2,7 +2,7 @@ use clap::{Arg, ArgMatches, Command};
 use std::collections::HashMap;
 use std::io::{BufRead, Write};
 
-use pgr::libs::psl::Psl;
+use pgr::libs::fmt::psl::Psl;
 
 pub fn make_subcommand() -> Command {
     Command::new("stats")

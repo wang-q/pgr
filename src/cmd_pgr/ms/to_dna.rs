@@ -46,14 +46,7 @@ pub fn make_subcommand() -> Command {
                 .action(clap::ArgAction::SetTrue)
                 .help("Print the full documentation (markdown)"),
         )
-        .arg(
-            Arg::new("outfile")
-                .long("outfile")
-                .short('o')
-                .num_args(1)
-                .default_value("stdout")
-                .help("Output filename. [stdout] for screen"),
-        )
+        .arg(crate::cmd_pgr::args::outfile_arg())
         .arg(
             Arg::new("files")
                 .num_args(0..)

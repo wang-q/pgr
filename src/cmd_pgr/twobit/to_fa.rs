@@ -1,5 +1,5 @@
 use clap::{value_parser, Arg, ArgAction, ArgMatches, Command};
-use pgr::libs::twobit::TwoBitFile;
+use pgr::libs::fmt::twobit::TwoBitFile;
 use std::io::Write;
 
 pub fn make_subcommand() -> Command {

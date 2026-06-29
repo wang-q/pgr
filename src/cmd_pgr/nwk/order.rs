@@ -64,14 +64,7 @@ Examples:
                 .num_args(1)
                 .help("Order by a list of names in the file"),
         )
-        .arg(
-            Arg::new("outfile")
-                .short('o')
-                .long("outfile")
-                .num_args(1)
-                .default_value("stdout")
-                .help("Output filename. [stdout] for screen"),
-        )
+        .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
 // command implementation

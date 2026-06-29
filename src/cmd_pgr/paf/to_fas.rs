@@ -107,7 +107,7 @@ fn output_fas_msa(
 }
 
 pub fn make_subcommand() -> Command {
-    query::add_query_args(
+    query::add_poa_args(query::add_query_args(
         Command::new("to-fas")
             .arg(
                 Arg::new("fasta_tsv")
@@ -122,44 +122,8 @@ pub fn make_subcommand() -> Command {
                     .long("msa")
                     .num_args(0)
                     .help("Merge results per region into a multi-way block FASTA via POA"),
-            )
-            .arg(
-                Arg::new("match_score")
-                    .long("match")
-                    .num_args(1)
-                    .default_value("5")
-                    .value_parser(clap::value_parser!(i32))
-                    .allow_negative_numbers(true)
-                    .help("POA match score (default: 5)"),
-            )
-            .arg(
-                Arg::new("mismatch_score")
-                    .long("mismatch")
-                    .num_args(1)
-                    .default_value("-4")
-                    .value_parser(clap::value_parser!(i32))
-                    .allow_negative_numbers(true)
-                    .help("POA mismatch score (default: -4)"),
-            )
-            .arg(
-                Arg::new("gap_open")
-                    .long("gap-open")
-                    .num_args(1)
-                    .default_value("-8")
-                    .value_parser(clap::value_parser!(i32))
-                    .allow_negative_numbers(true)
-                    .help("POA gap open penalty (default: -8)"),
-            )
-            .arg(
-                Arg::new("gap_extend")
-                    .long("gap-extend")
-                    .num_args(1)
-                    .default_value("-6")
-                    .value_parser(clap::value_parser!(i32))
-                    .allow_negative_numbers(true)
-                    .help("POA gap extend penalty (default: -6)"),
             ),
-    )
+    ))
     .about("Query PAF index and output pairwise or multi-way block FASTA")
     .after_help(
         r###"
@@ -220,20 +184,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let (idx, all_results) = query::run_query(args)?;
 
-    let mut missing: Vec<&str> = idx
-        .names
-        .keys()
-        .filter(|n| !seq_to_file.contains_key(*n))
-        .map(|n| n.as_str())
-        .collect();
-    missing.sort_unstable();
-    if !missing.is_empty() {
-        anyhow::bail!(
-            "FASTA TSV is missing {} genome(s) present in PAF index: {}",
-            missing.len(),
-            missing.join(", ")
-        );
-    }
+    pgr::libs::paf::fasta::validate_tsv_covers_index(&seq_to_file, &idx)?;
 
     let mut fasta_store = FastaStore::new(&seq_to_file)?;
     if args.get_flag("msa") {

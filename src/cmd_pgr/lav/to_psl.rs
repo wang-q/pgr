@@ -1,6 +1,6 @@
 use clap::{Arg, ArgMatches, Command};
-use pgr::libs::lav::{Block, LavReader, LavStanza};
-use pgr::libs::psl::Psl;
+use pgr::libs::fmt::lav::{Block, LavReader, LavStanza};
+use pgr::libs::fmt::psl::Psl;
 
 pub fn make_subcommand() -> Command {
     Command::new("to-psl")

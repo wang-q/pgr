@@ -70,14 +70,7 @@ If there are ties, the alphabetically first member is chosen.
                 .value_parser(value_parser!(usize))
                 .help("Minimum number of points to form a dense region in DBSCAN"),
         )
-        .arg(
-            Arg::new("outfile")
-                .long("outfile")
-                .short('o')
-                .num_args(1)
-                .default_value("stdout")
-                .help("Output filename. [stdout] for screen"),
-        )
+        .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
 // command implementation

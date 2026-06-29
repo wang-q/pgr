@@ -2,8 +2,8 @@ use crate::libs::chain::algo::{ChainItem, KdTree};
 use crate::libs::chain::gap_calc::GapCalc;
 use crate::libs::chain::record::{Chain, ChainData, ChainHeader};
 use crate::libs::chain::sub_matrix::SubMatrix;
+use crate::libs::fmt::twobit::TwoBitFile;
 use crate::libs::nt;
-use crate::libs::twobit::TwoBitFile;
 use std::cmp::Ordering;
 use std::io::{Read, Seek};
 

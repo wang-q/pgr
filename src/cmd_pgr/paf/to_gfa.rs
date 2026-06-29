@@ -15,7 +15,7 @@ use pgr::libs::paf::fasta::{load_fasta_tsv, FastaStore};
 use pgr::libs::paf::msa::{build_msa_entries, MsaEntry};
 
 pub fn make_subcommand() -> Command {
-    query::add_query_args(
+    query::add_poa_args(query::add_query_args(
         Command::new("to-gfa")
             .arg(
                 Arg::new("fasta_tsv")
@@ -26,56 +26,13 @@ pub fn make_subcommand() -> Command {
                     .help("TSV file: genome_name <tab> bgzf_fasta_path"),
             )
             .arg(
-                Arg::new("match_score")
-                    .long("match")
-                    .num_args(1)
-                    .default_value("5")
-                    .value_parser(clap::value_parser!(i32))
-                    .allow_negative_numbers(true)
-                    .help("POA match score (default: 5)"),
-            )
-            .arg(
-                Arg::new("mismatch_score")
-                    .long("mismatch")
-                    .num_args(1)
-                    .default_value("-4")
-                    .value_parser(clap::value_parser!(i32))
-                    .allow_negative_numbers(true)
-                    .help("POA mismatch score (default: -4)"),
-            )
-            .arg(
-                Arg::new("gap_open")
-                    .long("gap-open")
-                    .num_args(1)
-                    .default_value("-8")
-                    .value_parser(clap::value_parser!(i32))
-                    .allow_negative_numbers(true)
-                    .help("POA gap open penalty (default: -8)"),
-            )
-            .arg(
-                Arg::new("gap_extend")
-                    .long("gap-extend")
-                    .num_args(1)
-                    .default_value("-6")
-                    .value_parser(clap::value_parser!(i32))
-                    .allow_negative_numbers(true)
-                    .help("POA gap extend penalty (default: -6)"),
-            )
-            .arg(
                 Arg::new("crush")
                     .long("crush")
                     .action(ArgAction::SetTrue)
                     .help("Compress SNP bubbles (impg `crush` style; loses base-level ALT info)"),
             )
-            .arg(
-                Arg::new("outfile")
-                    .long("outfile")
-                    .short('o')
-                    .num_args(1)
-                    .default_value("stdout")
-                    .help("Output filename. [stdout] for screen"),
-            ),
-    )
+            .arg(crate::cmd_pgr::args::outfile_arg()),
+    ))
     .about("Query PAF index and output local GFA via POA graph")
     .after_help(
         r###"
@@ -138,21 +95,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let (idx, all_results) = query::run_query(args)?;
 
-    // Validate: every name in the PAF index must be present in the TSV.
-    let mut missing: Vec<&str> = idx
-        .names
-        .keys()
-        .filter(|n| !seq_to_file.contains_key(*n))
-        .map(|n| n.as_str())
-        .collect();
-    missing.sort_unstable();
-    if !missing.is_empty() {
-        anyhow::bail!(
-            "FASTA TSV is missing {} genome(s) present in PAF index: {}",
-            missing.len(),
-            missing.join(", ")
-        );
-    }
+    pgr::libs::paf::fasta::validate_tsv_covers_index(&seq_to_file, &idx)?;
 
     let mut fasta_store = FastaStore::new(&seq_to_file)?;
 

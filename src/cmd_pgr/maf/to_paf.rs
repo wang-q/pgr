@@ -40,14 +40,7 @@ Examples:
                 .index(1)
                 .help("Input MAF file(s) to process"),
         )
-        .arg(
-            Arg::new("outfile")
-                .long("outfile")
-                .short('o')
-                .num_args(1)
-                .default_value("stdout")
-                .help("Output filename. [stdout] for screen"),
-        )
+        .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
 fn build_tags(gi: f64, bi: f64, cigar: &str, score: Option<f64>) -> Vec<String> {
@@ -69,22 +62,23 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     for infile in args.get_many::<String>("infiles").unwrap() {
         let mut reader = pgr::reader(infile);
 
-        while let Ok(block) = pgr::libs::fmt::fas::next_maf_block(&mut reader) {
-            if block.entries.len() < 2 {
+        while let Ok(block) = pgr::libs::fmt::maf::next_maf_block(&mut reader) {
+            if block.components.len() < 2 {
                 continue;
             }
-            if block.entries.len() > 2 {
+            if block.components.len() > 2 {
                 eprintln!(
                     "Warning: skipping block with {} sequences (only two-sequence blocks are supported)",
-                    block.entries.len()
+                    block.components.len()
                 );
                 continue;
             }
 
-            let ref_entry = &block.entries[0];
-            let qry_entry = &block.entries[1];
+            let ref_entry = &block.components[0];
+            let qry_entry = &block.components[1];
 
-            let cigar_ops = cigar_from_alignment(&ref_entry.alignment, &qry_entry.alignment);
+            let cigar_ops =
+                cigar_from_alignment(ref_entry.text.as_bytes(), qry_entry.text.as_bytes());
             let stats = cigar_stats(&cigar_ops);
             let gi = gap_compressed_identity(&cigar_ops);
             let bi = block_identity(&cigar_ops);
@@ -96,7 +90,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 query_length: qry_entry.src_size as u32,
                 query_start: qry_entry.start as u32,
                 query_end: (qry_entry.start + qry_entry.size) as u32,
-                strand: qry_entry.strand.chars().next().unwrap_or('+'),
+                strand: qry_entry.strand,
                 target_name: ref_entry.src.clone(),
                 target_length: ref_entry.src_size as u32,
                 target_start: ref_entry.start as u32,

@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use pgr::libs::alignment::{
     get_indels, get_subs, polarize_indels, polarize_subs, Indel, Substitution,
 };
-use pgr::libs::fas::{next_fas_block, FasBlock};
+use pgr::libs::fmt::fas::{next_fas_block, FasBlock};
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {

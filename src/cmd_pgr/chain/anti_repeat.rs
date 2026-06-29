@@ -3,7 +3,7 @@ use std::fs::File;
 use std::io::{BufReader, BufWriter};
 
 use pgr::libs::chain::{read_chains, Block, Chain};
-use pgr::libs::twobit::TwoBitFile;
+use pgr::libs::fmt::twobit::TwoBitFile;
 // Default scores from UCSC chainAntiRepeat.c
 
 pub fn make_subcommand() -> Command {

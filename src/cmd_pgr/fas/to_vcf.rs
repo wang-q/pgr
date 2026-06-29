@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::io::Write;
 
 use pgr::libs::alignment::{align_to_chr, get_subs, seq_intspan};
-use pgr::libs::fas::next_fas_block;
+use pgr::libs::fmt::fas::next_fas_block;
 
 pub fn make_subcommand() -> Command {
     Command::new("to-vcf")
@@ -36,14 +36,7 @@ Examples:
                 .index(1)
                 .help("Input block FA file(s) to process"),
         )
-        .arg(
-            Arg::new("outfile")
-                .long("outfile")
-                .short('o')
-                .num_args(1)
-                .default_value("stdout")
-                .help("Output filename. [stdout] for screen"),
-        )
+        .arg(crate::cmd_pgr::args::outfile_arg())
         .arg(
             Arg::new("sizes")
                 .long("sizes")

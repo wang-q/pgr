@@ -1,5 +1,5 @@
 use clap::*;
-use pgr::libs::twobit::TwoBitFile;
+use pgr::libs::fmt::twobit::TwoBitFile;
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
@@ -29,14 +29,7 @@ Examples:
                 .index(1)
                 .help("Input 2bit file(s) to process"),
         )
-        .arg(
-            Arg::new("outfile")
-                .long("outfile")
-                .short('o')
-                .num_args(1)
-                .default_value("stdout")
-                .help("Output filename. [stdout] for screen"),
-        )
+        .arg(crate::cmd_pgr::args::outfile_arg())
         .arg(
             Arg::new("no_ns")
                 .long("no-ns")

@@ -89,14 +89,7 @@ Examples:
                 .num_args(1)
                 .help("Gap extension cost (overrides gap-model when used with --gap-open)"),
         )
-        .arg(
-            Arg::new("outfile")
-                .long("outfile")
-                .short('o')
-                .num_args(1)
-                .default_value("stdout")
-                .help("Output filename. [stdout] for screen"),
-        )
+        .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {

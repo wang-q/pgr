@@ -1,8 +1,8 @@
 use clap::{Arg, ArgMatches, Command};
 use pgr::libs::chain::sub_matrix::SubMatrix;
 use pgr::libs::chain::{Chain, ChainReader};
-use pgr::libs::net::{read_nets, Fill, Gap};
-use pgr::libs::twobit::TwoBitFile;
+use pgr::libs::fmt::net::{read_nets, Fill, Gap};
+use pgr::libs::fmt::twobit::TwoBitFile;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fs::File;

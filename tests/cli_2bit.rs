@@ -3,7 +3,7 @@
 mod common;
 
 use common::PgrCmd;
-use pgr::libs::twobit::TwoBitFile;
+use pgr::libs::fmt::twobit::TwoBitFile;
 use std::fs;
 use tempfile::TempDir;
 

@@ -2,7 +2,7 @@ use clap::*;
 use std::io::{BufRead, Write};
 use std::str::FromStr;
 
-use pgr::libs::psl::Psl;
+use pgr::libs::fmt::psl::Psl;
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
@@ -35,14 +35,7 @@ Examples:
                 .index(1)
                 .help("Input PSL file. [stdin] for standard input"),
         )
-        .arg(
-            Arg::new("outfile")
-                .short('o')
-                .long("outfile")
-                .num_args(1)
-                .default_value("stdout")
-                .help("Output filename. [stdout] for screen"),
-        )
+        .arg(crate::cmd_pgr::args::outfile_arg())
         .arg(
             Arg::new("q_sizes")
                 .long("q-sizes")

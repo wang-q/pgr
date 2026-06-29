@@ -30,14 +30,7 @@ Examples:
                 .index(1)
                 .help("Input MAF file(s) to process"),
         )
-        .arg(
-            Arg::new("outfile")
-                .long("outfile")
-                .short('o')
-                .num_args(1)
-                .default_value("stdout")
-                .help("Output filename. [stdout] for screen"),
-        )
+        .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
 // command implementation
@@ -53,16 +46,14 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     for infile in args.get_many::<String>("infiles").unwrap() {
         let mut reader = pgr::reader(infile);
 
-        while let Ok(block) = pgr::libs::fas::next_maf_block(&mut reader) {
-            // Can't use reference as entry.alignment does not Copy
-            for entry in block.entries {
-                let range = entry.to_range();
-                let seq = String::from_utf8(entry.alignment).unwrap();
+        while let Ok(block) = pgr::libs::fmt::maf::next_maf_block(&mut reader) {
+            for comp in block.components {
+                let range = comp.to_range();
 
                 //----------------------------
                 // Output
                 //----------------------------
-                writer.write_all(format!(">{}\n{}\n", range, seq).as_ref())?;
+                writer.write_all(format!(">{}\n{}\n", range, comp.text).as_ref())?;
             }
 
             // end of a block

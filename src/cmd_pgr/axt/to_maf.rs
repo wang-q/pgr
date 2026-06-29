@@ -4,8 +4,8 @@ use std::fs::{self, File};
 use std::io::{BufRead, BufReader, BufWriter};
 use std::path::Path;
 
-use pgr::libs::axt::AxtReader;
-use pgr::libs::maf::{MafAli, MafComp, MafWriter};
+use pgr::libs::fmt::axt::AxtReader;
+use pgr::libs::fmt::maf::{MafAli, MafComp, MafWriter};
 
 pub fn make_subcommand() -> Command {
     Command::new("to-maf")

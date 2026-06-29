@@ -112,6 +112,47 @@ pub fn add_query_args(cmd: Command) -> Command {
     )
 }
 
+/// Add POA scoring arguments to a clap Command.
+/// Shared by `paf to-gfa`, `paf to-vcf`, `paf to-fas`, and `paf to-maf`.
+pub fn add_poa_args(cmd: Command) -> Command {
+    cmd.arg(
+        Arg::new("match_score")
+            .long("match")
+            .num_args(1)
+            .default_value("5")
+            .value_parser(clap::value_parser!(i32))
+            .allow_negative_numbers(true)
+            .help("POA match score (default: 5)"),
+    )
+    .arg(
+        Arg::new("mismatch_score")
+            .long("mismatch")
+            .num_args(1)
+            .default_value("-4")
+            .value_parser(clap::value_parser!(i32))
+            .allow_negative_numbers(true)
+            .help("POA mismatch score (default: -4)"),
+    )
+    .arg(
+        Arg::new("gap_open")
+            .long("gap-open")
+            .num_args(1)
+            .default_value("-8")
+            .value_parser(clap::value_parser!(i32))
+            .allow_negative_numbers(true)
+            .help("POA gap open penalty (default: -8)"),
+    )
+    .arg(
+        Arg::new("gap_extend")
+            .long("gap-extend")
+            .num_args(1)
+            .default_value("-6")
+            .value_parser(clap::value_parser!(i32))
+            .allow_negative_numbers(true)
+            .help("POA gap extend penalty (default: -6)"),
+    )
+}
+
 /// Shared query logic: parse args, build/load index, run queries, apply filters.
 /// Returns the index and a list of (region, results) pairs.
 #[allow(clippy::type_complexity)]

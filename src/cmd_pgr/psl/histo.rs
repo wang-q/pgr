@@ -1,5 +1,5 @@
 use clap::*;
-use pgr::libs::psl::Psl;
+use pgr::libs::fmt::psl::Psl;
 use std::collections::HashMap;
 use std::io::BufRead;
 use std::str::FromStr;

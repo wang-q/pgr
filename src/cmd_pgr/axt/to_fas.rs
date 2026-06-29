@@ -1,7 +1,7 @@
 use clap::*;
 use intspan::Range;
-use pgr::libs::axt::AxtReader;
-use pgr::libs::fas::FasEntry;
+use pgr::libs::fmt::axt::AxtReader;
+use pgr::libs::fmt::fas::FasEntry;
 use std::io::Write;
 
 // Create clap subcommand arguments
@@ -60,14 +60,7 @@ Examples:
                 .default_value("query")
                 .help("Query name"),
         )
-        .arg(
-            Arg::new("outfile")
-                .long("outfile")
-                .short('o')
-                .num_args(1)
-                .default_value("stdout")
-                .help("Output filename. [stdout] for screen"),
-        )
+        .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
 // command implementation

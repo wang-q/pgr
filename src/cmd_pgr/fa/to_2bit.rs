@@ -1,5 +1,5 @@
 use clap::{Arg, ArgAction, ArgMatches, Command};
-use pgr::libs::twobit::TwoBitWriter;
+use pgr::libs::fmt::twobit::TwoBitWriter;
 use std::collections::HashSet;
 use std::fs::File;
 use std::io::BufWriter;

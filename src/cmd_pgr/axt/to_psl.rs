@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 
-use pgr::libs::axt::AxtReader;
-use pgr::libs::psl::Psl;
+use pgr::libs::fmt::axt::AxtReader;
+use pgr::libs::fmt::psl::Psl;
 
 pub fn make_subcommand() -> Command {
     Command::new("to-psl")

@@ -1,7 +1,7 @@
 use anyhow::Result;
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use pgr::libs::chain::ChainReader;
-use pgr::libs::net::{finalize_net, write_net, ChainNet};
+use pgr::libs::fmt::net::{finalize_net, write_net, ChainNet};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter, Write};

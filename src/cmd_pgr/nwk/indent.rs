@@ -42,14 +42,7 @@ Examples:
                 .default_value("  ")
                 .help("Use this text instead of the default two spaces"),
         )
-        .arg(
-            Arg::new("outfile")
-                .short('o')
-                .long("outfile")
-                .num_args(1)
-                .default_value("stdout")
-                .help("Output filename. [stdout] for screen"),
-        )
+        .arg(crate::cmd_pgr::args::outfile_arg())
         .arg(
             Arg::new("compact")
                 .long("compact")

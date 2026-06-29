@@ -51,14 +51,7 @@ Examples:
                 .action(ArgAction::SetTrue)
                 .help("Output best-to-best bilateral links"),
         )
-        .arg(
-            Arg::new("outfile")
-                .long("outfile")
-                .short('o')
-                .num_args(1)
-                .default_value("stdout")
-                .help("Output filename. [stdout] for screen"),
-        )
+        .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
 // command implementation
@@ -76,7 +69,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     for infile in args.get_many::<String>("infiles").unwrap() {
         let mut reader = pgr::reader(infile);
 
-        while let Ok(block) = pgr::libs::fas::next_fas_block(&mut reader) {
+        while let Ok(block) = pgr::libs::fmt::fas::next_fas_block(&mut reader) {
             let headers: Vec<String> = block
                 .entries
                 .iter()

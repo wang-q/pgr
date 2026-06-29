@@ -64,14 +64,7 @@ Examples:
                 .action(ArgAction::Append)
                 .help("Node name"),
         )
-        .arg(
-            Arg::new("outfile")
-                .short('o')
-                .long("outfile")
-                .num_args(1)
-                .default_value("stdout")
-                .help("Output filename. [stdout] for screen"),
-        )
+        .arg(crate::cmd_pgr::args::outfile_arg())
         .arg(
             Arg::new("support_as_labels")
                 .long("support-as-labels")

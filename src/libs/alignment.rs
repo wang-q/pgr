@@ -2,10 +2,8 @@ use crate::libs::nt::NT_VAL;
 use crate::libs::poa::{AlignmentParams, AlignmentType, Poa};
 use anyhow::{anyhow, bail};
 use bio::io::fasta;
-use indexmap::IndexMap;
 use intspan::IntSpan;
 use itertools::Itertools;
-use noodles_bgzf;
 use std::cmp::min;
 use std::collections::BTreeMap;
 use std::fs::File;
@@ -954,25 +952,11 @@ pub fn get_seq_loc(file: &str, range: &str) -> anyhow::Result<String> {
         return Ok("".to_string());
     }
 
-    let is_bgzf = crate::is_bgzf(file);
-
-    let loc_file = format!("{}.loc", file);
-    if !std::path::Path::new(&loc_file).is_file() {
-        crate::libs::loc::create_loc(file, &loc_file, is_bgzf)?;
-    }
-    let loc_of: IndexMap<String, (u64, usize)> = crate::libs::loc::load_loc(&loc_file)?;
+    let (mut reader, loc_of) = crate::libs::loc::open_indexed(file, false)?;
 
     if !loc_of.contains_key(range.chr()) {
         return Ok("".to_string());
     }
-
-    let mut reader = if is_bgzf {
-        crate::libs::loc::Input::Bgzf(
-            noodles_bgzf::io::indexed_reader::Builder::default().build_from_path(file)?,
-        )
-    } else {
-        crate::libs::loc::Input::File(std::fs::File::open(std::path::Path::new(file))?)
-    };
 
     let seq = crate::libs::loc::fetch_range_seq(&mut reader, &loc_of, &range)?;
 

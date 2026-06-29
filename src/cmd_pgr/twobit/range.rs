@@ -1,6 +1,6 @@
 use clap::*;
+use pgr::libs::fmt::twobit::TwoBitFile;
 use pgr::libs::nt;
-use pgr::libs::twobit::TwoBitFile;
 use std::io::Write;
 
 // Create clap subcommand arguments
@@ -53,14 +53,7 @@ Examples:
                 .num_args(1)
                 .help("File of regions, one per line"),
         )
-        .arg(
-            Arg::new("outfile")
-                .long("outfile")
-                .short('o')
-                .num_args(1)
-                .default_value("stdout")
-                .help("Output filename. [stdout] for screen"),
-        )
+        .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
 // command implementation

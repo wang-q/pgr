@@ -48,14 +48,7 @@ Examples:
                 .action(ArgAction::SetTrue)
                 .help("Skip blocks not containing all the names"),
         )
-        .arg(
-            Arg::new("outfile")
-                .long("outfile")
-                .short('o')
-                .num_args(1)
-                .default_value("stdout")
-                .help("Output filename. [stdout] for screen"),
-        )
+        .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
 // command implementation
@@ -74,7 +67,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     for infile in args.get_many::<String>("infiles").unwrap() {
         let mut reader = pgr::reader(infile);
 
-        'BLOCK: while let Ok(block) = pgr::libs::fas::next_fas_block(&mut reader) {
+        'BLOCK: while let Ok(block) = pgr::libs::fmt::fas::next_fas_block(&mut reader) {
             let block_names = block.names;
 
             if is_strict {

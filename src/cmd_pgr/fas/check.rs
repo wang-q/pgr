@@ -37,14 +37,7 @@ Notes:
                 .num_args(1)
                 .help("Check sequences for a specific species"),
         )
-        .arg(
-            Arg::new("outfile")
-                .long("outfile")
-                .short('o')
-                .num_args(1)
-                .default_value("stdout")
-                .help("Output filename. [stdout] for screen"),
-        )
+        .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
 // command implementation
@@ -63,25 +56,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     // Ops
     //----------------------------
-    let is_bgzf = pgr::is_bgzf(opt_genome);
-    let loc_file = format!("{}.loc", opt_genome);
-    if !std::path::Path::new(&loc_file).is_file() {
-        loc::create_loc(opt_genome, &loc_file, is_bgzf)?;
-    }
-    let loc_of: IndexMap<String, (u64, usize)> = loc::load_loc(&loc_file)?;
-
-    let mut genome_reader = if is_bgzf {
-        loc::Input::Bgzf(
-            noodles_bgzf::io::indexed_reader::Builder::default().build_from_path(opt_genome)?,
-        )
-    } else {
-        loc::Input::File(std::fs::File::open(std::path::Path::new(opt_genome))?)
-    };
+    let (mut genome_reader, loc_of) = loc::open_indexed(opt_genome, false)?;
 
     for infile in args.get_many::<String>("infiles").unwrap() {
         let mut reader = pgr::reader(infile);
 
-        while let Ok(block) = pgr::libs::fas::next_fas_block(&mut reader) {
+        while let Ok(block) = pgr::libs::fmt::fas::next_fas_block(&mut reader) {
             let block_names = block.names;
 
             // Check if a specific species is requested
@@ -107,7 +87,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 }
 
 fn check_seq(
-    entry: &pgr::libs::fas::FasEntry,
+    entry: &pgr::libs::fmt::fas::FasEntry,
     reader: &mut loc::Input,
     loc_of: &IndexMap<String, (u64, usize)>,
 ) -> anyhow::Result<String> {

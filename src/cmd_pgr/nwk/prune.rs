@@ -75,14 +75,7 @@ Examples:
                 .action(ArgAction::SetTrue)
                 .help("Invert pruning: keep specified nodes, their ancestors and descendants"),
         )
-        .arg(
-            Arg::new("outfile")
-                .short('o')
-                .long("outfile")
-                .num_args(1)
-                .default_value("stdout")
-                .help("Output filename. [stdout] for screen"),
-        )
+        .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
 // command implementation
