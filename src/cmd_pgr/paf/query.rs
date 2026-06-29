@@ -167,11 +167,11 @@ pub fn run_query(
         eprintln!("  mode: lazy (BGZF virtual-position CIGAR)");
     }
 
-    let subset = if let Some(list_path) = args.get_one::<String>("subset_list") {
-        Some(load_subset(list_path)?)
-    } else {
-        None
-    };
+    let subset = args.get_one::<String>("subset_list").map(|list_path| {
+        intspan::read_first_column(list_path)
+            .into_iter()
+            .collect::<HashSet<String>>()
+    });
 
     // Optional syntenic filter: load UCSC chain file and build
     // (t_name, q_name) -> Vec<(q_start, q_end)> map for chain-level query coverage check.
@@ -281,6 +281,7 @@ pub fn run_query(
     Ok((idx, all_results))
 }
 
+// Parse a region string "name:start-end" (0-based, PAF convention).
 fn parse_region(s: &str) -> anyhow::Result<(&str, i32, i32)> {
     let parts: Vec<&str> = s.split(':').collect();
     anyhow::ensure!(
@@ -293,19 +294,6 @@ fn parse_region(s: &str) -> anyhow::Result<(&str, i32, i32)> {
     let start: i32 = range[0].parse()?;
     let end: i32 = range[1].parse()?;
     Ok((name, start, end))
-}
-
-fn load_subset(path: &str) -> anyhow::Result<HashSet<String>> {
-    let f = fs::File::open(path)?;
-    let mut set = HashSet::new();
-    for line in std::io::BufReader::new(f).lines() {
-        let line = line?;
-        let name = line.trim().to_string();
-        if !name.is_empty() {
-            set.insert(name);
-        }
-    }
-    Ok(set)
 }
 
 // Parse BED file (name start end per line, tab-separated). Skips blanks and comments.

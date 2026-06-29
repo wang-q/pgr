@@ -116,7 +116,7 @@ pub fn seq_mins(
 
             min_iter.map(|(min, _, _)| min).collect()
         }
-        _ => unreachable!(),
+        _ => anyhow::bail!("unknown hasher: {}", opt_hasher),
     };
     let hashset: rapidhash::RapidHashSet<u64> = rapidhash::RapidHashSet::from_iter(minimizers);
 

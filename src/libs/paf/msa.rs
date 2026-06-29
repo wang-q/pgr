@@ -132,7 +132,11 @@ pub fn build_msa_entries(
         };
         let (q_seq_fwd, q_src_size) = fasta_store.fetch_range(qname, qs, qe)?;
         let (seq, start, strand_char) = if *strand == '-' {
-            (nt::rev_comp(&q_seq_fwd).collect::<Vec<u8>>(), q_src_size as i32 - qe, '-')
+            (
+                nt::rev_comp(&q_seq_fwd).collect::<Vec<u8>>(),
+                q_src_size as i32 - qe,
+                '-',
+            )
         } else {
             (q_seq_fwd, qs, '+')
         };

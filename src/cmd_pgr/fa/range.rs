@@ -97,10 +97,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             .build_from_writer(writer)
     };
 
-    let is_bgzf = {
-        let path = std::path::Path::new(infile);
-        path.extension() == Some(std::ffi::OsStr::new("gz"))
-    };
+    let is_bgzf = pgr::is_bgzf(infile);
 
     let mut ranges = if args.contains_id("ranges") {
         args.get_many::<String>("ranges")

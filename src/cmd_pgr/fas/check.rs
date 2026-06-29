@@ -63,10 +63,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     // Ops
     //----------------------------
-    let is_bgzf = {
-        let path = std::path::Path::new(opt_genome);
-        path.extension() == Some(std::ffi::OsStr::new("gz"))
-    };
+    let is_bgzf = pgr::is_bgzf(opt_genome);
     let loc_file = format!("{}.loc", opt_genome);
     if !std::path::Path::new(&loc_file).is_file() {
         loc::create_loc(opt_genome, &loc_file, is_bgzf)?;

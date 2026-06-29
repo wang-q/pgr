@@ -131,7 +131,7 @@ impl PafIndex {
         }
 
         let p = std::path::Path::new(path);
-        if p.extension() == Some(std::ffi::OsStr::new("gz")) && is_bgzf(path)? {
+        if p.extension() == Some(std::ffi::OsStr::new("gz")) && crate::is_bgzf(path) {
             Self::build_lazy_bgzf(path)
         } else {
             Self::build(crate::libs::io::reader(path))
@@ -454,29 +454,6 @@ fn insert_record(
             rec.query_end as i32,
             rev_meta,
         ));
-    }
-}
-
-/// Check whether a file is BGZF-compressed by inspecting the header bytes.
-fn is_bgzf(path: &str) -> std::io::Result<bool> {
-    use std::io::Read;
-    let mut f = File::open(path)?;
-    let mut hdr = [0u8; 18];
-    match f.read_exact(&mut hdr) {
-        Ok(()) => {
-            // BGZF: gzip magic (1f 8b 08 04), XLEN=6 at [10..12], "BC" at [12..14], SLEN=2 at [14..16]
-            Ok(hdr[0] == 0x1f
-                && hdr[1] == 0x8b
-                && hdr[2] == 0x08
-                && hdr[3] == 0x04
-                && hdr[10] == 0x06
-                && hdr[11] == 0x00
-                && hdr[12] == b'B'
-                && hdr[13] == b'C'
-                && hdr[14] == 0x02
-                && hdr[15] == 0x00)
-        }
-        Err(_) => Ok(false),
     }
 }
 

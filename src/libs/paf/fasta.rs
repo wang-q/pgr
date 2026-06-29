@@ -1,7 +1,7 @@
+use crate::libs::loc;
 use indexmap::IndexMap;
 use noodles_core::Position;
 use noodles_fasta as fasta;
-use crate::libs::loc;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::BufRead;

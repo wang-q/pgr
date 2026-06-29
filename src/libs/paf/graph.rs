@@ -218,7 +218,10 @@ impl PafGraph {
                 .collect();
             segs_on_seq.sort_by_key(|(_, s)| s.start);
 
-            let seq_len = seqs.and_then(|m| m.get(&name)).map(|v| v.len()).unwrap_or(0) as i32;
+            let seq_len = seqs
+                .and_then(|m| m.get(&name))
+                .map(|v| v.len())
+                .unwrap_or(0) as i32;
             let has_seqs = seqs.is_some();
 
             let mut steps: Vec<PathStep> = Vec::new();

@@ -17,7 +17,7 @@ pub fn create_loc(infile: &str, locfile: &str, is_bgzf: bool) -> anyhow::Result<
         // The exception to this is where a single line is larger than a BGZF block (64Kb).
         Input::Bgzf(bgzf::io::indexed_reader::Builder::default().build_from_path(infile)?)
     } else {
-        Input::Buf(reader_buf(infile))
+        Input::Buf(crate::libs::io::reader(infile))
     };
 
     let mut writer: Box<dyn std::io::Write> =
@@ -63,22 +63,8 @@ pub fn create_loc(infile: &str, locfile: &str, is_bgzf: bool) -> anyhow::Result<
     Ok(())
 }
 
-pub fn reader_buf(infile: &str) -> Box<dyn BufRead> {
-    let reader: Box<dyn BufRead> = {
-        let path = std::path::Path::new(infile);
-        let file = match std::fs::File::open(path) {
-            Err(why) => panic!("could not open {}: {}", path.display(), why),
-            Ok(file) => file,
-        };
-
-        Box::new(std::io::BufReader::new(file))
-    };
-
-    reader
-}
-
 pub fn load_loc(loc_file: &str) -> anyhow::Result<IndexMap<String, (u64, usize)>> {
-    let mut reader = reader_buf(loc_file);
+    let mut reader = crate::libs::io::reader(loc_file);
 
     let mut loc_of: IndexMap<String, (u64, usize)> = IndexMap::new();
     let mut line = String::new();

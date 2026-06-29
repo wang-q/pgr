@@ -954,10 +954,7 @@ pub fn get_seq_loc(file: &str, range: &str) -> anyhow::Result<String> {
         return Ok("".to_string());
     }
 
-    let is_bgzf = {
-        let path = std::path::Path::new(file);
-        path.extension() == Some(std::ffi::OsStr::new("gz"))
-    };
+    let is_bgzf = crate::is_bgzf(file);
 
     let loc_file = format!("{}.loc", file);
     if !std::path::Path::new(&loc_file).is_file() {

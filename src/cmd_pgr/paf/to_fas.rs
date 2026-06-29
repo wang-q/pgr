@@ -6,9 +6,11 @@ use pgr::libs::paf::msa::{build_maf_block, build_msa_entries};
 
 use super::query;
 
+type QueryGroup = ((String, i32, i32), Vec<QueryResult>);
+
 fn output_fas_pairwise(
     idx: &PafIndex,
-    all_results: &[((String, i32, i32), Vec<QueryResult>)],
+    all_results: &[QueryGroup],
     fasta_store: &mut FastaStore,
 ) -> anyhow::Result<()> {
     for (_, results) in all_results {
@@ -63,7 +65,7 @@ fn output_fas_pairwise(
 
 fn output_fas_msa(
     idx: &PafIndex,
-    all_results: &[((String, i32, i32), Vec<QueryResult>)],
+    all_results: &[QueryGroup],
     fasta_store: &mut FastaStore,
     match_score: i32,
     mismatch_score: i32,
@@ -90,7 +92,13 @@ fn output_fas_msa(
 
         for (e, aln) in entries.iter().zip(msa.iter()) {
             let size = aln.chars().filter(|c| *c != '-').count() as i32;
-            println!(">{0}({3}):{1}-{2}", e.name, e.start + 1, e.start + size, e.strand);
+            println!(
+                ">{0}({3}):{1}-{2}",
+                e.name,
+                e.start + 1,
+                e.start + size,
+                e.strand
+            );
             println!("{}", aln);
         }
         println!();

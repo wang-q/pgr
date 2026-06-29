@@ -46,7 +46,12 @@ fn command_paf_to_fas_strict_name_validation() {
 
     let (_, stderr) = PgrCmd::new()
         .args(&[
-            "paf", "to-fas", "stdin", "B:0-10", "-f", tsv.to_str().unwrap(),
+            "paf",
+            "to-fas",
+            "stdin",
+            "B:0-10",
+            "-f",
+            tsv.to_str().unwrap(),
         ])
         .stdin(paf)
         .run_fail();
@@ -69,7 +74,12 @@ fn command_paf_to_fas_perfect_match() {
 
     let (stdout, stderr) = PgrCmd::new()
         .args(&[
-            "paf", "to-fas", "stdin", "B:0-10", "-f", tsv.to_str().unwrap(),
+            "paf",
+            "to-fas",
+            "stdin",
+            "B:0-10",
+            "-f",
+            tsv.to_str().unwrap(),
         ])
         .stdin(paf)
         .run();
@@ -100,7 +110,12 @@ fn command_paf_to_fas_with_insertion() {
 
     let (stdout, stderr) = PgrCmd::new()
         .args(&[
-            "paf", "to-fas", "stdin", "B:0-7", "-f", tsv.to_str().unwrap(),
+            "paf",
+            "to-fas",
+            "stdin",
+            "B:0-7",
+            "-f",
+            tsv.to_str().unwrap(),
         ])
         .stdin(paf)
         .run();
@@ -131,7 +146,12 @@ fn command_paf_to_fas_with_deletion() {
 
     let (stdout, stderr) = PgrCmd::new()
         .args(&[
-            "paf", "to-fas", "stdin", "B:0-10", "-f", tsv.to_str().unwrap(),
+            "paf",
+            "to-fas",
+            "stdin",
+            "B:0-10",
+            "-f",
+            tsv.to_str().unwrap(),
         ])
         .stdin(paf)
         .run();
@@ -161,7 +181,12 @@ fn command_paf_to_fas_reverse_strand_perfect_match() {
 
     let (stdout, stderr) = PgrCmd::new()
         .args(&[
-            "paf", "to-fas", "stdin", "B:0-10", "-f", tsv.to_str().unwrap(),
+            "paf",
+            "to-fas",
+            "stdin",
+            "B:0-10",
+            "-f",
+            tsv.to_str().unwrap(),
         ])
         .stdin(paf)
         .run();
@@ -197,7 +222,14 @@ C\t10\t0\t10\t+\tA\t10\t0\t10\t10\t10\t255\tcg:Z:10=\n";
 
     let (stdout, stderr) = PgrCmd::new()
         .args(&[
-            "paf", "to-fas", "stdin", "B:0-10", "-t", "--msa", "-f", tsv.to_str().unwrap(),
+            "paf",
+            "to-fas",
+            "stdin",
+            "B:0-10",
+            "-t",
+            "--msa",
+            "-f",
+            tsv.to_str().unwrap(),
         ])
         .stdin(paf)
         .run();
@@ -206,10 +238,7 @@ C\t10\t0\t10\t+\tA\t10\t0\t10\t10\t10\t255\tcg:Z:10=\n";
         "expected non-zero results"
     );
     // Three records (target B + queries A, C), all identical.
-    let records: Vec<&str> = stdout
-        .lines()
-        .filter(|l| l.starts_with('>'))
-        .collect();
+    let records: Vec<&str> = stdout.lines().filter(|l| l.starts_with('>')).collect();
     assert_eq!(records.len(), 3, "expected 3 records, got {records:?}");
     // Target B should appear first.
     assert!(
@@ -243,14 +272,18 @@ C\t10\t0\t10\t+\tA\t10\t0\t10\t9\t10\t255\tcg:Z:10M\n";
 
     let (stdout, _stderr) = PgrCmd::new()
         .args(&[
-            "paf", "to-fas", "stdin", "B:0-10", "-t", "--msa", "-f", tsv.to_str().unwrap(),
+            "paf",
+            "to-fas",
+            "stdin",
+            "B:0-10",
+            "-t",
+            "--msa",
+            "-f",
+            tsv.to_str().unwrap(),
         ])
         .stdin(paf)
         .run();
-    let records: Vec<&str> = stdout
-        .lines()
-        .filter(|l| l.starts_with('>'))
-        .collect();
+    let records: Vec<&str> = stdout.lines().filter(|l| l.starts_with('>')).collect();
     assert_eq!(records.len(), 3, "expected 3 records");
     // All alignment lines should have length 10 (no gaps for a SNP).
     let seqs: Vec<&str> = stdout
@@ -261,14 +294,8 @@ C\t10\t0\t10\t+\tA\t10\t0\t10\t9\t10\t255\tcg:Z:10M\n";
         assert_eq!(s.len(), 10, "expected 10-char alignment, got '{s}'");
     }
     // C should differ from B at position 4 (0-indexed).
-    let b_idx = records
-        .iter()
-        .position(|r| r.contains(">B("))
-        .unwrap();
-    let c_idx = records
-        .iter()
-        .position(|r| r.contains(">C("))
-        .unwrap();
+    let b_idx = records.iter().position(|r| r.contains(">B(")).unwrap();
+    let c_idx = records.iter().position(|r| r.contains(">C(")).unwrap();
     let b_aln = seqs[b_idx];
     let c_aln = seqs[c_idx];
     let diffs: Vec<usize> = b_aln
@@ -277,7 +304,11 @@ C\t10\t0\t10\t+\tA\t10\t0\t10\t9\t10\t255\tcg:Z:10M\n";
         .enumerate()
         .filter_map(|(i, (a, b))| if a != b { Some(i) } else { None })
         .collect();
-    assert_eq!(diffs, vec![4], "expected single SNP at pos 4, got {diffs:?}");
+    assert_eq!(
+        diffs,
+        vec![4],
+        "expected single SNP at pos 4, got {diffs:?}"
+    );
 }
 
 #[test]
@@ -295,14 +326,18 @@ fn command_paf_to_fas_msa_reverse_strand_query() {
 
     let (stdout, _stderr) = PgrCmd::new()
         .args(&[
-            "paf", "to-fas", "stdin", "B:0-10", "-t", "--msa", "-f", tsv.to_str().unwrap(),
+            "paf",
+            "to-fas",
+            "stdin",
+            "B:0-10",
+            "-t",
+            "--msa",
+            "-f",
+            tsv.to_str().unwrap(),
         ])
         .stdin(paf)
         .run();
-    let records: Vec<&str> = stdout
-        .lines()
-        .filter(|l| l.starts_with('>'))
-        .collect();
+    let records: Vec<&str> = stdout.lines().filter(|l| l.starts_with('>')).collect();
     assert_eq!(records.len(), 2, "expected 2 records (B + A)");
     // A should be emitted with strand '-'.
     assert!(
@@ -310,10 +345,7 @@ fn command_paf_to_fas_msa_reverse_strand_query() {
         "A should be on '-' strand: {records:?}"
     );
     // A's aligned sequence should be RC(GTACGTACGT) = ACGTACGTAC, gap-free.
-    let a_idx = records
-        .iter()
-        .position(|r| r.contains(">A("))
-        .unwrap();
+    let a_idx = records.iter().position(|r| r.contains(">A(")).unwrap();
     let seqs: Vec<&str> = stdout
         .lines()
         .filter(|l| !l.is_empty() && !l.starts_with('>'))
@@ -343,14 +375,18 @@ C\t10\t0\t10\t+\tA\t10\t0\t10\t9\t10\t255\tcg:Z:10M\n";
     // Step 1: paf to-fas --msa → block FASTA
     let (fas_stdout, _stderr) = PgrCmd::new()
         .args(&[
-            "paf", "to-fas", "stdin", "B:0-10", "-t", "--msa", "-f", tsv.to_str().unwrap(),
+            "paf",
+            "to-fas",
+            "stdin",
+            "B:0-10",
+            "-t",
+            "--msa",
+            "-f",
+            tsv.to_str().unwrap(),
         ])
         .stdin(paf)
         .run();
-    assert!(
-        !fas_stdout.is_empty(),
-        "to-fas output should not be empty"
-    );
+    assert!(!fas_stdout.is_empty(), "to-fas output should not be empty");
 
     // Step 2: fas to-vcf ← block FASTA from step 1
     let (vcf_stdout, _stderr) = PgrCmd::new()

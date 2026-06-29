@@ -122,10 +122,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         .num_threads(opt_parallel)
         .build_global()?;
 
-    let is_bgzf = {
-        let path = std::path::Path::new(infile);
-        path.extension() == Some(std::ffi::OsStr::new("gz"))
-    };
+    let is_bgzf = pgr::is_bgzf(infile);
 
     //----------------------------
     // Open files

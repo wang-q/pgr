@@ -82,17 +82,6 @@ Examples:
 }
 
 // command implementation
-fn is_bgzf(path: &str) -> bool {
-    if let Ok(mut file) = std::fs::File::open(path) {
-        let mut header = [0u8; 4];
-        if file.read_exact(&mut header).is_ok() {
-            // Check GZIP magic (0x1f 0x8b) and FEXTRA flag (4) in FLG (byte 3)
-            return header[0] == 0x1f && header[1] == 0x8b && (header[3] & 4) != 0;
-        }
-    }
-    false
-}
-
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     // Args
@@ -103,7 +92,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         if !std::path::Path::new(infile).exists() {
             return Err(anyhow::anyhow!("Input file not found: {}", infile));
         }
-        if !is_bgzf(infile) {
+        if !pgr::is_bgzf(infile) {
             return Err(anyhow::anyhow!(
                 "Input file is not a valid BGZF file: {}",
                 infile
