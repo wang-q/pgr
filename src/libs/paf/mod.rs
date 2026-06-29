@@ -5,6 +5,7 @@ pub mod index;
 pub mod msa;
 pub mod parser;
 pub mod persist;
+pub mod poa_graph;
 pub mod record;
 pub mod vcf;
 pub mod writer;

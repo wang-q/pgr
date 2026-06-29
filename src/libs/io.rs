@@ -7,6 +7,23 @@ use std::str::FromStr;
 
 use anyhow::{bail, Context};
 
+/// Random-access reader for subsequence extraction by name and 0-based range.
+///
+/// Implementors provide `read_sequence(name, start, end)` returning the
+/// substring `[start, end)` of sequence `name`. Used by chain/net algorithms
+/// to decouple from any specific on-disk format (e.g. 2bit, indexed FASTA).
+pub trait SequenceReader {
+    /// Read `[start, end)` from sequence `name`. `None` means "from start" /
+    /// "to end". Returns the sequence as a `String` (DNA bases, possibly
+    /// soft-masked).
+    fn read_sequence(
+        &mut self,
+        name: &str,
+        start: Option<usize>,
+        end: Option<usize>,
+    ) -> anyhow::Result<String>;
+}
+
 /// Open a buffered reader for `input` (`stdin` or a file path, `.gz` supported).
 ///
 /// ```

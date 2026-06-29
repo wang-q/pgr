@@ -497,6 +497,18 @@ impl<R: Read + Seek> TwoBitFile<R> {
     }
 }
 
+impl<R: Read + Seek> crate::libs::io::SequenceReader for TwoBitFile<R> {
+    fn read_sequence(
+        &mut self,
+        name: &str,
+        start: Option<usize>,
+        end: Option<usize>,
+    ) -> anyhow::Result<String> {
+        // Delegate to the inherent 5-arg form, masking kept on (no_mask=false).
+        TwoBitFile::read_sequence(self, name, start, end, false)
+    }
+}
+
 fn read_u32<R: Read>(reader: &mut R, is_swapped: bool) -> Result<u32> {
     let mut buf = [0u8; 4];
     reader.read_exact(&mut buf)?;

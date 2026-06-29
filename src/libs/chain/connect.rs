@@ -2,10 +2,9 @@ use crate::libs::chain::algo::{ChainItem, KdTree};
 use crate::libs::chain::gap_calc::GapCalc;
 use crate::libs::chain::record::{Chain, ChainData, ChainHeader};
 use crate::libs::chain::sub_matrix::SubMatrix;
-use crate::libs::fmt::twobit::TwoBitFile;
+use crate::libs::io::SequenceReader;
 use crate::libs::nt;
 use std::cmp::Ordering;
-use std::io::{Read, Seek};
 
 /// Represents a single alignment block that can be chained.
 ///
@@ -39,10 +38,10 @@ impl ChainItem for ChainableBlock {
 
 /// Context required for scoring chains based on actual sequence data.
 ///
-/// Holds references to 2bit files for target and query, and a substitution matrix.
-pub struct ScoreContext<'a, R> {
-    pub t_2bit: &'a mut TwoBitFile<R>,
-    pub q_2bit: &'a mut TwoBitFile<R>,
+/// Holds references to sequence readers for target and query, and a substitution matrix.
+pub struct ScoreContext<'a, S: SequenceReader> {
+    pub t_2bit: &'a mut S,
+    pub q_2bit: &'a mut S,
     pub matrix: &'a SubMatrix,
 }
 
@@ -70,10 +69,10 @@ struct DpEntry {
 ///
 /// A vector of `Chain`s sorted by score.
 #[allow(clippy::too_many_arguments)]
-pub fn chain_blocks<R: Read + Seek>(
+pub fn chain_blocks<S: SequenceReader>(
     blocks: &[ChainableBlock],
     gap_calc: &GapCalc,
-    score_ctx: &mut Option<ScoreContext<R>>,
+    score_ctx: &mut Option<ScoreContext<S>>,
     q_name: &str,
     q_size: u64,
     q_strand: char,
@@ -262,9 +261,9 @@ pub fn chain_blocks<R: Read + Seek>(
 /// Trims overlaps between adjacent blocks in a chain using sequence data.
 ///
 /// Adjusts the boundaries of overlapping blocks to maximize the score.
-fn trim_overlaps<R: Read + Seek>(
+fn trim_overlaps<S: SequenceReader>(
     blocks: &mut [ChainableBlock],
-    ctx: &mut ScoreContext<R>,
+    ctx: &mut ScoreContext<S>,
     q_name: &str,
     t_name: &str,
     q_size: u64,
@@ -315,11 +314,11 @@ fn trim_overlaps<R: Read + Seek>(
 ///
 /// Returns the best cut position within the overlap and the score adjustment.
 #[allow(clippy::too_many_arguments)]
-fn find_crossover<R: Read + Seek>(
+fn find_crossover<S: SequenceReader>(
     left: &ChainableBlock,
     right: &ChainableBlock,
     overlap: usize,
-    ctx: &mut ScoreContext<R>,
+    ctx: &mut ScoreContext<S>,
     q_name: &str,
     t_name: &str,
     q_size: u64,
@@ -331,7 +330,6 @@ fn find_crossover<R: Read + Seek>(
             t_name,
             Some((left.t_end - overlap as u64) as usize),
             Some(left.t_end as usize),
-            false,
         )
         .unwrap();
     let r_t_seq = ctx
@@ -340,7 +338,6 @@ fn find_crossover<R: Read + Seek>(
             t_name,
             Some(right.t_start as usize),
             Some((right.t_start + overlap as u64) as usize),
-            false,
         )
         .unwrap();
 
@@ -350,7 +347,6 @@ fn find_crossover<R: Read + Seek>(
                 q_name,
                 Some((left.q_end - overlap as u64) as usize),
                 Some(left.q_end as usize),
-                false,
             )
             .unwrap()
     } else {
@@ -358,7 +354,7 @@ fn find_crossover<R: Read + Seek>(
         let end = (q_size - (left.q_end - overlap as u64)) as usize;
         let s = ctx
             .q_2bit
-            .read_sequence(q_name, Some(start), Some(end), false)
+            .read_sequence(q_name, Some(start), Some(end))
             .unwrap();
         let rc: Vec<u8> = nt::rev_comp(s.as_bytes()).collect();
         String::from_utf8(rc).unwrap()
@@ -370,7 +366,6 @@ fn find_crossover<R: Read + Seek>(
                 q_name,
                 Some(right.q_start as usize),
                 Some((right.q_start + overlap as u64) as usize),
-                false,
             )
             .unwrap()
     } else {
@@ -378,7 +373,7 @@ fn find_crossover<R: Read + Seek>(
         let end = (q_size - right.q_start) as usize;
         let s = ctx
             .q_2bit
-            .read_sequence(q_name, Some(start), Some(end), false)
+            .read_sequence(q_name, Some(start), Some(end))
             .unwrap();
         let rc: Vec<u8> = nt::rev_comp(s.as_bytes()).collect();
         String::from_utf8(rc).unwrap()
@@ -485,10 +480,10 @@ fn merge_abutting_blocks(blocks: &mut Vec<ChainableBlock>) {
 ///
 /// If `score_ctx` is provided, it recalculates block scores and gap costs using sequence data.
 /// Otherwise, it uses the pre-calculated block scores and standard gap costs.
-fn score_chain<R: Read + Seek>(
+fn score_chain<S: SequenceReader>(
     blocks: &[ChainableBlock],
     gap_calc: &GapCalc,
-    score_ctx: &mut Option<ScoreContext<R>>,
+    score_ctx: &mut Option<ScoreContext<S>>,
     q_name: &str,
     t_name: &str,
     q_size: u64,
@@ -539,34 +534,27 @@ fn score_chain<R: Read + Seek>(
 }
 
 /// Calculates the score of a single block using sequence data and the substitution matrix.
-pub fn calc_block_score<R: Read + Seek>(
+pub fn calc_block_score<S: SequenceReader>(
     b: &ChainableBlock,
-    ctx: &mut ScoreContext<R>,
+    ctx: &mut ScoreContext<S>,
     q_name: &str,
     t_name: &str,
     q_size: u64,
     q_strand: char,
 ) -> Option<f64> {
-    let t_seq_res = ctx.t_2bit.read_sequence(
-        t_name,
-        Some(b.t_start as usize),
-        Some(b.t_end as usize),
-        false,
-    );
+    let t_seq_res =
+        ctx.t_2bit
+            .read_sequence(t_name, Some(b.t_start as usize), Some(b.t_end as usize));
 
     let q_seq_res = if q_strand == '+' {
-        ctx.q_2bit.read_sequence(
-            q_name,
-            Some(b.q_start as usize),
-            Some(b.q_end as usize),
-            false,
-        )
+        ctx.q_2bit
+            .read_sequence(q_name, Some(b.q_start as usize), Some(b.q_end as usize))
     } else {
         let start_pos = (q_size - b.q_end) as usize;
         let end_pos = (q_size - b.q_start) as usize;
 
         ctx.q_2bit
-            .read_sequence(q_name, Some(start_pos), Some(end_pos), false)
+            .read_sequence(q_name, Some(start_pos), Some(end_pos))
             .map(|s| {
                 let rc_bytes: Vec<u8> = nt::rev_comp(s.as_bytes()).collect();
                 String::from_utf8(rc_bytes).unwrap()
@@ -588,6 +576,7 @@ pub fn calc_block_score<R: Read + Seek>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::libs::fmt::twobit::TwoBitFile;
     use std::io::Cursor;
 
     #[test]
@@ -619,8 +608,8 @@ mod tests {
         ];
 
         let gap_calc = GapCalc::medium();
-        // Use Cursor<Vec<u8>> as a dummy reader for ScoreContext since we pass None
-        let mut score_ctx: Option<ScoreContext<Cursor<Vec<u8>>>> = None;
+        // Pass None for score_ctx — type must implement SequenceReader but is never constructed.
+        let mut score_ctx: Option<ScoreContext<TwoBitFile<Cursor<Vec<u8>>>>> = None;
         let mut chain_id = 0;
 
         let chains = chain_blocks(

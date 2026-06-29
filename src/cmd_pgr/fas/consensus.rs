@@ -1,5 +1,6 @@
 use clap::*;
-use std::io::Write;
+
+use super::common;
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
@@ -126,31 +127,8 @@ Examples:
 
 // command implementation
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    //----------------------------
-    // Args
-    //----------------------------
-    let opt_parallel = *args.get_one::<usize>("parallel").unwrap();
-
-    //----------------------------
-    // Operating
-    //----------------------------
-    if opt_parallel == 1 {
-        // Single-threaded mode
-        let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap())?;
-
-        for infile in args.get_many::<String>("infiles").unwrap() {
-            let mut reader = pgr::reader(infile)?;
-            while let Ok(block) = pgr::libs::fmt::fas::next_fas_block(&mut reader) {
-                let out_string = proc_block(&block, args)?;
-                writer.write_all(out_string.as_ref())?;
-            }
-        }
-    } else {
-        // Parallel mode
-        proc_block_p(args)?;
-    }
-
-    Ok(())
+    let parallel = *args.get_one::<usize>("parallel").unwrap();
+    common::run_pipeline(args, parallel, |block| proc_block(block, args))
 }
 
 fn proc_block(block: &pgr::libs::fmt::fas::FasBlock, args: &ArgMatches) -> anyhow::Result<String> {
@@ -237,59 +215,4 @@ fn proc_block(block: &pgr::libs::fmt::fas::FasBlock, args: &ArgMatches) -> anyho
     out_string += "\n";
 
     Ok(out_string)
-}
-
-// Adopt from https://rust-lang-nursery.github.io/rust-cookbook/concurrency/threads.html#create-a-parallel-pipeline
-fn proc_block_p(args: &ArgMatches) -> anyhow::Result<()> {
-    let parallel = *args.get_one::<usize>("parallel").unwrap();
-    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap())?;
-
-    // Channel 1 - Read files to blocks
-    let (snd1, rcv1) = crossbeam::channel::bounded::<pgr::libs::fmt::fas::FasBlock>(10);
-    // Channel 2 - Results
-    let (snd2, rcv2) = crossbeam::channel::bounded(10);
-
-    crossbeam::scope(|s| {
-        //----------------------------
-        // Reader thread
-        //----------------------------
-        s.spawn(|_| {
-            for infile in args.get_many::<String>("infiles").unwrap() {
-                let mut reader = pgr::reader(infile).unwrap();
-                while let Ok(block) = pgr::libs::fmt::fas::next_fas_block(&mut reader) {
-                    snd1.send(block).unwrap();
-                }
-            }
-            // Close the channel - this is necessary to exit the for-loop in the worker
-            drop(snd1);
-        });
-
-        //----------------------------
-        // Worker threads
-        //----------------------------
-        for _ in 0..parallel {
-            // Send to sink, receive from source
-            let (sendr, recvr) = (snd2.clone(), rcv1.clone());
-            // Spawn workers in separate threads
-            s.spawn(move |_| {
-                // Receive until channel closes
-                for block in recvr.iter() {
-                    let out_string = proc_block(&block, args).unwrap();
-                    sendr.send(out_string).unwrap();
-                }
-            });
-        }
-        // Close the channel, otherwise sink will never exit the for-loop
-        drop(snd2);
-
-        //----------------------------
-        // Writer thread
-        //----------------------------
-        for out_string in rcv2.iter() {
-            writer.write_all(out_string.as_ref()).unwrap();
-        }
-    })
-    .unwrap();
-
-    Ok(())
 }
