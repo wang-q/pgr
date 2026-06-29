@@ -5,7 +5,8 @@ use pgr::libs::paf::index::PafIndex;
 use pgr::libs::paf::index::QueryResult;
 
 use super::query;
-use super::to_maf::{build_msa_entries, load_fasta_tsv, FastaStore};
+use pgr::libs::paf::fasta::{load_fasta_tsv, FastaStore};
+use pgr::libs::paf::msa::build_msa_entries;
 
 pub fn make_subcommand() -> Command {
     query::add_query_args(

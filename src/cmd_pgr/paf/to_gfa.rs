@@ -11,7 +11,8 @@ use pgr::libs::paf::index::QueryResult;
 use pgr::libs::poa::Poa;
 
 use super::query;
-use super::to_maf::{build_msa_entries, load_fasta_tsv, FastaStore};
+use pgr::libs::paf::fasta::{load_fasta_tsv, FastaStore};
+use pgr::libs::paf::msa::{build_msa_entries, MsaEntry};
 
 pub fn make_subcommand() -> Command {
     query::add_query_args(
@@ -460,7 +461,7 @@ fn crush_bubbles(graph: CompactedGraph) -> CompactedGraph {
 fn write_compacted_gfa<W: Write>(
     writer: &mut W,
     graph: &CompactedGraph,
-    entries: &[super::to_maf::MsaEntry],
+    entries: &[MsaEntry],
 ) -> anyhow::Result<()> {
     // S lines.
     for (i, seq) in graph.segments.iter().enumerate() {

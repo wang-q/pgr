@@ -1,6 +1,8 @@
 pub mod cigar;
+pub mod fasta;
 pub mod graph;
 pub mod index;
+pub mod msa;
 pub mod parser;
 pub mod persist;
 pub mod record;
