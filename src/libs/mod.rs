@@ -2,6 +2,7 @@ pub mod alignment;
 pub mod chain;
 pub mod clust;
 pub mod fas_multiz;
+pub mod fas_xlsx;
 pub mod fmt;
 pub mod hash;
 pub mod hv;

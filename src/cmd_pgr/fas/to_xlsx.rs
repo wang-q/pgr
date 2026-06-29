@@ -106,7 +106,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         .cloned()
         .collect();
 
-    pgr::libs::fmt::fas_xlsx::export_to_xlsx(
+    pgr::libs::fas_xlsx::export_to_xlsx(
         &infiles,
         outfile,
         opt_wrap,

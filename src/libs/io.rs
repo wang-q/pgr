@@ -185,6 +185,37 @@ pub fn reverse_range<T: Copy + Sub<Output = T>>(start: &mut T, end: &mut T, size
     *end = size - s;
 }
 
+/// Reverse a 0-based half-open `[start, end)` against `size`, returning the
+/// reversed range as a tuple `(size - end, size - start)`. Non-mutating
+/// counterpart of [`reverse_range`].
+///
+/// ```
+/// let (s, e) = pgr::libs::io::reverse_range_pair(10, 20, 100);
+/// assert_eq!(s, 80);
+/// assert_eq!(e, 90);
+/// ```
+pub fn reverse_range_pair<T: Copy + Sub<Output = T>>(start: T, end: T, size: T) -> (T, T) {
+    (size - end, size - start)
+}
+
+/// Reverse a 1-based inclusive `[start, end]` range against a total `size`,
+/// in place. The forward 1-based inclusive range becomes a reverse-strand
+/// 1-based inclusive range: `start -> size - end + 1`, `end -> size - start + 1`.
+///
+/// ```
+/// let mut s = 11;
+/// let mut e = 20;
+/// pgr::libs::io::reverse_range_1based(&mut s, &mut e, 100);
+/// assert_eq!(s, 81);
+/// assert_eq!(e, 90);
+/// ```
+pub fn reverse_range_1based(start: &mut usize, end: &mut usize, size: usize) {
+    let s = *start;
+    let e = *end;
+    *start = size - e + 1;
+    *end = size - s + 1;
+}
+
 /// Borrowed line iterator over a `BufRead`, yielding `String` with the
 /// trailing `\n` (and `\r`) stripped. Unlike `BufRead::lines`, the reader
 /// is borrowed for the lifetime of the iterator (zero-allocation handle).

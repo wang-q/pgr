@@ -162,7 +162,7 @@ fn convert_segment<S: SequenceReader, W: Write>(
     // Helper to read Q sequence considering strand
     let read_q = |start: u64, end: u64, q_2bit: &mut S| -> anyhow::Result<String> {
         let (r_start, r_end) = if chain.header.q_strand == '-' {
-            (chain.header.q_size - end, chain.header.q_size - start)
+            crate::libs::io::reverse_range_pair(start, end, chain.header.q_size)
         } else {
             (start, end)
         };
