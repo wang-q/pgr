@@ -47,14 +47,7 @@ Examples:
                 .index(2)
                 .help("Second input filename (optional)"),
         )
-        .arg(
-            Arg::new("outfile")
-                .short('o')
-                .long("outfile")
-                .num_args(1)
-                .default_value("stdout")
-                .help("Output filename"),
-        )
+        .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {

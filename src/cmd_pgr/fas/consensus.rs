@@ -113,15 +113,7 @@ Examples:
                 .action(ArgAction::SetTrue)
                 .help("Indicates the presence of outgroups at the end of each block"),
         )
-        .arg(
-            Arg::new("parallel")
-                .long("parallel")
-                .short('p')
-                .value_parser(value_parser!(usize))
-                .num_args(1)
-                .default_value("1")
-                .help("Number of threads for parallel processing"),
-        )
+        .arg(crate::cmd_pgr::args::parallel_arg())
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 

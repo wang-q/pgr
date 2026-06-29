@@ -1,7 +1,7 @@
 use clap::*;
 use pgr::libs::paf::index::QueryResult;
 
-use super::query;
+use super::{common, query};
 
 // Output BED3 (name start end), one line per query result.
 fn output_bed(idx: &pgr::libs::paf::index::PafIndex, results: &[QueryResult]) {
@@ -17,7 +17,7 @@ fn output_bed(idx: &pgr::libs::paf::index::PafIndex, results: &[QueryResult]) {
 }
 
 pub fn make_subcommand() -> Command {
-    query::add_query_args(Command::new("to-bed"))
+    common::add_query_args(Command::new("to-bed"))
         .about("Query PAF index and output BED3 coordinates")
         .after_help(
             r###"

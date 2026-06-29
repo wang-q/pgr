@@ -1,10 +1,9 @@
 use clap::*;
 
 use super::common;
-use super::query;
 
 pub fn make_subcommand() -> Command {
-    query::add_poa_args(query::add_query_args(
+    common::add_poa_args(common::add_query_args(
         Command::new("to-vcf")
             .arg(
                 Arg::new("fasta_tsv")

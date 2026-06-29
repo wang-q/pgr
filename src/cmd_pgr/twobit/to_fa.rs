@@ -31,14 +31,7 @@ Examples:
                 .required(true)
                 .index(1),
         )
-        .arg(
-            Arg::new("outfile")
-                .short('o')
-                .long("outfile")
-                .value_name("FILE")
-                .help("Output filename. [stdout] for screen")
-                .default_value("stdout"),
-        )
+        .arg(crate::cmd_pgr::args::outfile_arg())
         .arg(
             Arg::new("line")
                 .long("line")

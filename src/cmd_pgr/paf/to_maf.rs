@@ -5,7 +5,6 @@ use pgr::libs::paf::index::{PafIndex, QueryResult};
 use pgr::libs::paf::msa::{build_maf_block, build_msa_entries};
 
 use super::common;
-use super::query;
 
 // Output pairwise MAF blocks. Each QueryResult becomes one `a` block with two
 // `s` lines (target first, query second). Sequences are fetched on demand via
@@ -135,7 +134,7 @@ fn output_maf_msa(
 }
 
 pub fn make_subcommand() -> Command {
-    query::add_poa_args(query::add_query_args(
+    common::add_poa_args(common::add_query_args(
         Command::new("to-maf")
             .arg(
                 Arg::new("fasta_tsv")

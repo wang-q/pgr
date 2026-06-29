@@ -88,15 +88,7 @@ Examples:
                 .default_value("50")
                 .help("In quick mode, fill holes between indel"),
         )
-        .arg(
-            Arg::new("parallel")
-                .long("parallel")
-                .short('p')
-                .value_parser(value_parser!(usize))
-                .num_args(1)
-                .default_value("1")
-                .help("Number of threads for parallel processing"),
-        )
+        .arg(crate::cmd_pgr::args::parallel_arg())
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 

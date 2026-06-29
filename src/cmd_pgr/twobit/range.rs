@@ -46,13 +46,7 @@ Examples:
                 .num_args(0..)
                 .help("Ranges of interest"),
         )
-        .arg(
-            Arg::new("rgfile")
-                .long("rgfile")
-                .short('r')
-                .num_args(1)
-                .help("File of regions, one per line"),
-        )
+        .arg(crate::cmd_pgr::args::rgfile_arg())
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 

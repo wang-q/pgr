@@ -67,14 +67,7 @@ Examples:
                 .value_parser(clap::value_parser!(i32))
                 .help("Minimum indel length to split at (default: 100)"),
         )
-        .arg(
-            Arg::new("outfile")
-                .long("outfile")
-                .short('o')
-                .num_args(1)
-                .default_value("stdout")
-                .help("Output TSV report filename. [stdout] for screen"),
-        )
+        .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
 pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {

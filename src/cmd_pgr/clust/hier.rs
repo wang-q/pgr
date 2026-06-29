@@ -45,13 +45,7 @@ Examples:
                 .default_value("ward")
                 .help("Clustering method (single, complete, average, weighted, centroid, median, ward)"),
         )
-        .arg(
-            Arg::new("outfile")
-                .long("outfile")
-                .short('o')
-                .default_value("stdout")
-                .help("Output file path. [stdout] for screen"),
-        )
+        .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
 pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {

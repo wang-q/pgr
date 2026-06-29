@@ -5,7 +5,6 @@ use pgr::libs::paf::index::PafIndex;
 use pgr::libs::paf::msa::{build_maf_block, build_msa_entries};
 
 use super::common::{self, QueryGroup};
-use super::query;
 
 fn output_fas_pairwise(
     idx: &PafIndex,
@@ -106,7 +105,7 @@ fn output_fas_msa(
 }
 
 pub fn make_subcommand() -> Command {
-    query::add_poa_args(query::add_query_args(
+    common::add_poa_args(common::add_query_args(
         Command::new("to-fas")
             .arg(
                 Arg::new("fasta_tsv")

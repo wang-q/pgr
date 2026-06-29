@@ -92,15 +92,7 @@ Examples:
                 .value_parser(value_parser!(usize))
                 .help("Window size for minimizers"),
         )
-        .arg(
-            Arg::new("parallel")
-                .long("parallel")
-                .short('p')
-                .num_args(1)
-                .default_value("1")
-                .value_parser(value_parser!(usize))
-                .help("Number of threads for parallel processing"),
-        )
+        .arg(crate::cmd_pgr::args::parallel_arg())
 }
 
 // command implementation

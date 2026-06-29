@@ -148,13 +148,7 @@ Examples:
                 .default_value("root")
                 .help("Representative selection method"),
         )
-        .arg(
-            Arg::new("outfile")
-                .long("outfile")
-                .short('o')
-                .default_value("stdout")
-                .help("Output file path"),
-        )
+        .arg(crate::cmd_pgr::args::outfile_arg())
         .arg(
             Arg::new("inconsistent")
                 .long("inconsistent")

@@ -106,15 +106,7 @@ Examples:
                 .action(ArgAction::SetTrue)
                 .help("Treat infiles as list files, where each line is a path to a sequence file"),
         )
-        .arg(
-            Arg::new("parallel")
-                .long("parallel")
-                .short('p')
-                .num_args(1)
-                .default_value("1")
-                .value_parser(value_parser!(usize))
-                .help("Number of threads for parallel processing"),
-        )
+        .arg(crate::cmd_pgr::args::parallel_arg())
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
