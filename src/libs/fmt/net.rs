@@ -319,76 +319,49 @@ pub fn read_nets<R: BufRead>(mut reader: R) -> io::Result<Vec<Chrom>> {
                             }
                         }
                         "qDup" => {
-                            if i + 1 < parts.len() {
-                                q_dup = Some(parts[i + 1].parse::<u64>().unwrap_or(0));
-                                i += 2;
-                            } else {
-                                i += 1;
-                            }
+                            let (v, ni) = parse_opt_u64(&parts, i);
+                            q_dup = v;
+                            i = ni;
                         }
                         "qOver" => {
-                            if i + 1 < parts.len() {
-                                q_over = Some(parts[i + 1].parse::<u64>().unwrap_or(0));
-                                i += 2;
-                            } else {
-                                i += 1;
-                            }
+                            let (v, ni) = parse_opt_u64(&parts, i);
+                            q_over = v;
+                            i = ni;
                         }
                         "qFar" => {
-                            if i + 1 < parts.len() {
-                                q_far = Some(parts[i + 1].parse::<i64>().unwrap_or(0));
-                                i += 2;
-                            } else {
-                                i += 1;
-                            }
+                            let (v, ni) = parse_opt_i64(&parts, i);
+                            q_far = v;
+                            i = ni;
                         }
                         "tN" => {
-                            if i + 1 < parts.len() {
-                                t_n = Some(parts[i + 1].parse::<u64>().unwrap_or(0));
-                                i += 2;
-                            } else {
-                                i += 1;
-                            }
+                            let (v, ni) = parse_opt_u64(&parts, i);
+                            t_n = v;
+                            i = ni;
                         }
                         "qN" => {
-                            if i + 1 < parts.len() {
-                                q_n = Some(parts[i + 1].parse::<u64>().unwrap_or(0));
-                                i += 2;
-                            } else {
-                                i += 1;
-                            }
+                            let (v, ni) = parse_opt_u64(&parts, i);
+                            q_n = v;
+                            i = ni;
                         }
                         "tR" => {
-                            if i + 1 < parts.len() {
-                                t_r = Some(parts[i + 1].parse::<u64>().unwrap_or(0));
-                                i += 2;
-                            } else {
-                                i += 1;
-                            }
+                            let (v, ni) = parse_opt_u64(&parts, i);
+                            t_r = v;
+                            i = ni;
                         }
                         "qR" => {
-                            if i + 1 < parts.len() {
-                                q_r = Some(parts[i + 1].parse::<u64>().unwrap_or(0));
-                                i += 2;
-                            } else {
-                                i += 1;
-                            }
+                            let (v, ni) = parse_opt_u64(&parts, i);
+                            q_r = v;
+                            i = ni;
                         }
                         "tTrf" => {
-                            if i + 1 < parts.len() {
-                                t_trf = Some(parts[i + 1].parse::<u64>().unwrap_or(0));
-                                i += 2;
-                            } else {
-                                i += 1;
-                            }
+                            let (v, ni) = parse_opt_u64(&parts, i);
+                            t_trf = v;
+                            i = ni;
                         }
                         "qTrf" => {
-                            if i + 1 < parts.len() {
-                                q_trf = Some(parts[i + 1].parse::<u64>().unwrap_or(0));
-                                i += 2;
-                            } else {
-                                i += 1;
-                            }
+                            let (v, ni) = parse_opt_u64(&parts, i);
+                            q_trf = v;
+                            i = ni;
                         }
                         _ => {
                             i += 1;
@@ -460,52 +433,34 @@ pub fn read_nets<R: BufRead>(mut reader: R) -> io::Result<Vec<Chrom>> {
                 while i < parts.len() {
                     match parts[i] {
                         "tN" => {
-                            if i + 1 < parts.len() {
-                                t_n = Some(parts[i + 1].parse::<u64>().unwrap_or(0));
-                                i += 2;
-                            } else {
-                                i += 1;
-                            }
+                            let (v, ni) = parse_opt_u64(&parts, i);
+                            t_n = v;
+                            i = ni;
                         }
                         "qN" => {
-                            if i + 1 < parts.len() {
-                                q_n = Some(parts[i + 1].parse::<u64>().unwrap_or(0));
-                                i += 2;
-                            } else {
-                                i += 1;
-                            }
+                            let (v, ni) = parse_opt_u64(&parts, i);
+                            q_n = v;
+                            i = ni;
                         }
                         "tR" => {
-                            if i + 1 < parts.len() {
-                                t_r = Some(parts[i + 1].parse::<u64>().unwrap_or(0));
-                                i += 2;
-                            } else {
-                                i += 1;
-                            }
+                            let (v, ni) = parse_opt_u64(&parts, i);
+                            t_r = v;
+                            i = ni;
                         }
                         "qR" => {
-                            if i + 1 < parts.len() {
-                                q_r = Some(parts[i + 1].parse::<u64>().unwrap_or(0));
-                                i += 2;
-                            } else {
-                                i += 1;
-                            }
+                            let (v, ni) = parse_opt_u64(&parts, i);
+                            q_r = v;
+                            i = ni;
                         }
                         "tTrf" => {
-                            if i + 1 < parts.len() {
-                                t_trf = Some(parts[i + 1].parse::<u64>().unwrap_or(0));
-                                i += 2;
-                            } else {
-                                i += 1;
-                            }
+                            let (v, ni) = parse_opt_u64(&parts, i);
+                            t_trf = v;
+                            i = ni;
                         }
                         "qTrf" => {
-                            if i + 1 < parts.len() {
-                                q_trf = Some(parts[i + 1].parse::<u64>().unwrap_or(0));
-                                i += 2;
-                            } else {
-                                i += 1;
-                            }
+                            let (v, ni) = parse_opt_u64(&parts, i);
+                            q_trf = v;
+                            i = ni;
                         }
                         _ => {
                             i += 1;
@@ -557,6 +512,46 @@ pub fn range_intersection(start1: u64, end1: u64, start2: u64, end2: u64) -> u64
     let s = start1.max(start2);
     let e = end1.min(end2);
     e.saturating_sub(s)
+}
+
+// Parse an optional `name <value>` pair at position `i` in `parts` as u64.
+// Returns (parsed_value, next_index). On missing value or parse failure
+// returns (None, i+1) / (Some(0), i+2).
+fn parse_opt_u64(parts: &[&str], i: usize) -> (Option<u64>, usize) {
+    if i + 1 < parts.len() {
+        (Some(parts[i + 1].parse::<u64>().unwrap_or(0)), i + 2)
+    } else {
+        (None, i + 1)
+    }
+}
+
+// Parse an optional `name <value>` pair at position `i` in `parts` as i64.
+fn parse_opt_i64(parts: &[&str], i: usize) -> (Option<i64>, usize) {
+    if i + 1 < parts.len() {
+        (Some(parts[i + 1].parse::<i64>().unwrap_or(0)), i + 2)
+    } else {
+        (None, i + 1)
+    }
+}
+
+// Append `" name value"` to `line` if `val` is Some.
+fn push_opt_u64(line: &mut String, name: &str, val: Option<u64>) {
+    if let Some(v) = val {
+        line.push(' ');
+        line.push_str(name);
+        line.push(' ');
+        line.push_str(&v.to_string());
+    }
+}
+
+// Append `" name value"` to `line` if `val` is Some.
+fn push_opt_i64(line: &mut String, name: &str, val: Option<i64>) {
+    if let Some(v) = val {
+        line.push(' ');
+        line.push_str(name);
+        line.push(' ');
+        line.push_str(&v.to_string());
+    }
 }
 
 fn chain_base_count_sub_t(chain: &Chain, t_min: u64, t_max: u64) -> u64 {
@@ -809,46 +804,19 @@ fn write_fill<W: Write>(
         // Optional fields: qOver, qFar, qDup, type
         // The order corresponds to UCSC's chainNet.c cnFillWrite implementation.
         // See: src/lib/chainNet.c in UCSC source tree.
-        if let Some(val) = f.q_over {
-            line.push_str(" qOver ");
-            line.push_str(&val.to_string());
-        }
-        if let Some(val) = f.q_far {
-            line.push_str(" qFar ");
-            line.push_str(&val.to_string());
-        }
-        if let Some(val) = f.q_dup {
-            line.push_str(" qDup ");
-            line.push_str(&val.to_string());
-        }
+        push_opt_u64(&mut line, "qOver", f.q_over);
+        push_opt_i64(&mut line, "qFar", f.q_far);
+        push_opt_u64(&mut line, "qDup", f.q_dup);
         if !f.class.is_empty() {
             line.push_str(" type ");
             line.push_str(&f.class);
         }
-        if let Some(val) = f.t_n {
-            line.push_str(" tN ");
-            line.push_str(&val.to_string());
-        }
-        if let Some(val) = f.q_n {
-            line.push_str(" qN ");
-            line.push_str(&val.to_string());
-        }
-        if let Some(val) = f.t_r {
-            line.push_str(" tR ");
-            line.push_str(&val.to_string());
-        }
-        if let Some(val) = f.q_r {
-            line.push_str(" qR ");
-            line.push_str(&val.to_string());
-        }
-        if let Some(val) = f.t_trf {
-            line.push_str(" tTrf ");
-            line.push_str(&val.to_string());
-        }
-        if let Some(val) = f.q_trf {
-            line.push_str(" qTrf ");
-            line.push_str(&val.to_string());
-        }
+        push_opt_u64(&mut line, "tN", f.t_n);
+        push_opt_u64(&mut line, "qN", f.q_n);
+        push_opt_u64(&mut line, "tR", f.t_r);
+        push_opt_u64(&mut line, "qR", f.q_r);
+        push_opt_u64(&mut line, "tTrf", f.t_trf);
+        push_opt_u64(&mut line, "qTrf", f.q_trf);
 
         writeln!(writer, "{}", line)?;
 
@@ -873,9 +841,7 @@ fn write_gap<W: Write>(
     let o_chrom = &p.o_chrom;
     let o_strand = p.o_strand;
 
-    write_indent(writer, depth)?;
-    write!(
-        writer,
+    let mut line = format!(
         "gap {} {} {} {} {} {}",
         g.start,
         g.end - g.start,
@@ -883,27 +849,16 @@ fn write_gap<W: Write>(
         o_strand,
         g.o_start,
         g.o_end - g.o_start
-    )?;
+    );
+    push_opt_u64(&mut line, "tN", g.t_n);
+    push_opt_u64(&mut line, "qN", g.q_n);
+    push_opt_u64(&mut line, "tR", g.t_r);
+    push_opt_u64(&mut line, "qR", g.q_r);
+    push_opt_u64(&mut line, "tTrf", g.t_trf);
+    push_opt_u64(&mut line, "qTrf", g.q_trf);
 
-    if let Some(val) = g.t_n {
-        write!(writer, " tN {}", val)?;
-    }
-    if let Some(val) = g.q_n {
-        write!(writer, " qN {}", val)?;
-    }
-    if let Some(val) = g.t_r {
-        write!(writer, " tR {}", val)?;
-    }
-    if let Some(val) = g.q_r {
-        write!(writer, " qR {}", val)?;
-    }
-    if let Some(val) = g.t_trf {
-        write!(writer, " tTrf {}", val)?;
-    }
-    if let Some(val) = g.q_trf {
-        write!(writer, " qTrf {}", val)?;
-    }
-    writeln!(writer)?;
+    write_indent(writer, depth)?;
+    writeln!(writer, "{}", line)?;
 
     for fill in &g.fills {
         write_fill(fill, writer, depth + 1, is_q, min_score, min_fill)?;

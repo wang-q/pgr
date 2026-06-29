@@ -135,22 +135,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         }
         "pair" => {
             for component in clusters {
-                // Find medoid
-                let mut best_rep = *component.first().unwrap();
-                let mut min_sum = f32::MAX;
-
-                for &candidate in &component {
-                    let mut current_sum = 0.0;
-                    for &member in &component {
-                        current_sum += matrix.get(candidate, member);
-                    }
-                    if current_sum < min_sum {
-                        min_sum = current_sum;
-                        best_rep = candidate;
-                    }
-                    // Implicit tie-break (first one wins, which is alphabetical)
-                }
-
+                // Find medoid (min distance sum; component is sorted by name)
+                let best_rep =
+                    pgr::libs::clust::medoid::find_medoid(&matrix, &component, false).unwrap();
                 let rep_name = &names[best_rep];
                 for &member_idx in &component {
                     writer.write_fmt(format_args!("{}\t{}\n", rep_name, names[member_idx]))?;

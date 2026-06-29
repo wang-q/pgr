@@ -144,27 +144,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         }
         "pair" => {
             for component in clusters {
-                // Find representative (medoid) based on max similarity sum
-                let mut best_rep = *component.first().unwrap();
-                let mut max_sum = f32::NEG_INFINITY;
-
-                for &candidate in &component {
-                    let mut current_sum = 0.0;
-                    for &member in &component {
-                        current_sum += sm.get(candidate, member);
-                    }
-
-                    if current_sum > max_sum {
-                        max_sum = current_sum;
-                        best_rep = candidate;
-                    } else if (current_sum - max_sum).abs() < 1e-5 {
-                        // Tie-break by name
-                        if names[candidate] < names[best_rep] {
-                            best_rep = candidate;
-                        }
-                    }
-                }
-
+                // Find medoid (max similarity sum; component is sorted by name)
+                let best_rep =
+                    pgr::libs::clust::medoid::find_medoid(&sm, &component, true).unwrap();
                 let rep_name = &names[best_rep];
                 let members: Vec<&str> = component.iter().map(|&idx| names[idx].as_str()).collect();
 

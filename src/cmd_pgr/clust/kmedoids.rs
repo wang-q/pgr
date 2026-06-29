@@ -138,29 +138,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         }
         "pair" => {
             for component in clusters {
-                // Find medoid
-                let mut best_rep = *component.first().unwrap();
-                let mut min_sum = f32::MAX;
-
-                for &candidate in &component {
-                    let mut current_sum = 0.0;
-                    for &member in &component {
-                        current_sum += sm.get(candidate, member);
-                    }
-                    if current_sum < min_sum {
-                        min_sum = current_sum;
-                        best_rep = candidate;
-                    }
-                    // Since component is sorted, the first one with min_sum is alphabetically first.
-                    // No need for explicit tie-break if we use strict <.
-                    // But floating point equality...
-                    else if (current_sum - min_sum).abs() < 1e-5 {
-                        // Tie-break: Since we iterate in sorted order, current candidate is > best_rep.
-                        // We want the smallest name. best_rep is already smaller.
-                        // So do nothing.
-                    }
-                }
-
+                // Find medoid (min distance sum; component is sorted by name)
+                let best_rep =
+                    pgr::libs::clust::medoid::find_medoid(&sm, &component, false).unwrap();
                 let rep_name = &names[best_rep];
                 let members: Vec<&str> = component.iter().map(|&idx| names[idx].as_str()).collect();
                 // Already sorted
