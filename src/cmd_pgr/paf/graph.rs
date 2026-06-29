@@ -17,9 +17,9 @@ Algorithm:
 * Derives graph nodes (DSU classes) + edges (path adjacencies) + novel
   segments (unaligned gaps), then emits S/L/P lines.
 
-This implements V4a (coarse global GFA): only large structural variations
+This builds a coarse global GFA: only large structural variations
 (>= --min-var-len) split nodes; small indels stay within a node as
-variations. For base-level regional graphs, see V4b (future work).
+variations. For base-level regional graphs, see `pgr paf to-gfa`.
 
 Notes:
 * Input PAF files should contain cg:Z: tags for accurate splitting

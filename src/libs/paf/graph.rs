@@ -348,7 +348,7 @@ impl PafGraph {
         Ok(())
     }
 
-    /// Compute a topology report over the induced graph (V6 graph quality).
+    /// Compute a topology report over the induced graph.
     pub fn report(&self) -> GraphReport {
         let segments = self.node_seqs.len();
         let links = self.edges.len();
@@ -493,7 +493,7 @@ impl PafGraph {
     }
 }
 
-/// Coarse GFA topology report (V6 graph quality baseline).
+/// Coarse GFA topology report.
 #[derive(Debug)]
 pub struct GraphReport {
     pub segments: usize,

@@ -315,7 +315,7 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
 ### 6.2 进行中的（活跃开发）
 
 - **泛基因组方向**：已形成完整路线图，整合在 `notes/paf-pangenome.md`（路线决策 + 已实现能力 +
-  代码结构 + 后续规划）。V1-V5 已全部完成。
+  代码结构 + 后续规划）。query-to-vcf 已全部完成。
   **2026-06 发现：`libs/loc.rs` 的 IO 抽象层可直接支撑 PAF 的 CIGAR 懒加载和 BGZF 访问， 实际实现量比最初估计少约 30%**。
 
 - **`pl` 流程模块**：`ucsc`、`trf`、`rept`、`ir` 等 pipeline 在补充。
@@ -326,7 +326,7 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
 - `docs/clust-eval.md`：聚类评估（设计中）
 - `docs/nwk-eval.md`：树结构多维度评估（设计中）
 
-PAF 泛基因组方向（V1-V5）已全部完成，后续规划见 [[paf-pangenome.md]] §5（V6 规模扩展 / V7 图质量 /
+PAF 泛基因组方向（query-to-vcf）已全部完成，后续规划见 [[paf-pangenome.md]] §5（stat 规模扩展 / V7 图质量 /
 V8 应用层）。
 
 ### 6.4 不做 / 不适合做的

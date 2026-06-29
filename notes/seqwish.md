@@ -7,12 +7,12 @@
 
 `seqwish`（"sequence wish"）是 PGGB 流水线中的**图物化器**（variation graph inducer）：
 输入一组序列 + 它们的 all-vs-all PAF 比对，输出 GFA v1.0 变异图。它在 PGGB 中的位置是
-`wfmash`（比对）→ **`seqwish`**（诱导图）→ `smoothxg`（归一化）。
+`wfmash`（比对）→ **`seqwish`**（诱导图）→ `smoothxg`（归一化，详见 [[smoothxg.md]]）。
 
 一句话概括其本质：
 **把 pairwise 比对蕴含的"同源等价类"通过传递闭包物化成图节点，再沿输入 序列的邻接关系派生出图边。**
 与 pgr/impg 的"隐式图"路线（不物化、按需 BFS）相对，seqwish 是"显式物化"路线的代表。
-本文档既是对其算法的拆解，也是 pgr V4（GFA 物化阶段）的直接参考。
+本文档既是对其算法的拆解，也是 pgr graph / to-gfa（GFA 物化阶段）的直接参考。
 
 ## 1. 整体流程（6 阶段）
 
@@ -164,7 +164,7 @@ loop {
 没做这个优化。
 
 **对 pgr 的启示**：pgr 现在的 BFS 传递闭包是**查询时**按需做，规模小，普通 `HashSet` 就够。 但若
-pgr V4a 要做"粗全局 GFA"（4 万大肠杆菌全图物化），等价类规模会到 Gbp 级，此时无锁并查集是必备。
+pgr graph 要做"粗全局 GFA"（4 万大肠杆菌全图物化），等价类规模会到 Gbp 级，此时无锁并查集是必备。
 选型建议：
 
 - **首选 `DisjointSets`（dset64.rs）**：`portable_atomic::AtomicU128` 在 x86_64 上自动用
@@ -368,7 +368,7 @@ Level 2 最贵（逐碱基比对），但因为 Level 1 已保证 overlap 唯一
 这 4 级校验共同保证：**输出的 GFA P 路径 walk 过的节点序列，逐碱基 reconstruct 回输入序列**，是
 seqwish 作为"图物化器"的正确性契约。
 
-**对 pgr 的启示**：pgr 的 `pgr paf graph`（V4a）目前只在 `emit_gfa` 里做 Level 2 的等价检查
+**对 pgr 的启示**：pgr 的 `pgr paf graph` 目前只在 `emit_gfa` 里做 Level 2 的等价检查
 （节点序列与输入序列比对），Level 1/3/4 缺失。建议补齐：
 
 - Level 1：在 `compact_nodes` 阶段加 overlap 唯一性断言（用 `bail!` 不用 panic），早于 Level 2
@@ -386,7 +386,7 @@ seqwish 作为"图物化器"的正确性契约。
 | 传递闭包   | **一次性全图** DSU                   | **查询时** BFS，按需局部         |
 | 等价类表达 | 图序列的一个碱基                     | 不物化，对齐区间即隐式等价类     |
 | 数据结构   | iitree + DSU + 位向量                | coitrees + HashSet/Vec           |
-| 输出       | GFA（S+L+P）                         | BED/PAF（V1），GFA（V4）         |
+| 输出       | GFA（S+L+P）                         | BED/PAF（query），GFA（graph / to-gfa） |
 | 适用场景   | 全图分析、归一化、可视化             | 单 locus 查询、区域 MSA          |
 | 规模上限   | 受图序列长度限制（Gbp 级）           | 受对齐索引大小限制（可分片）     |
 | 重复处理   | `--repeat-max` / `--min-repeat-dist` | `--min-len` / `--merge-distance` |
@@ -402,16 +402,16 @@ seqwish 作为"图物化器"的正确性契约。
 
 ## 6. 对 pgr 各版本的启示
 
-### 6.1 V1（坐标输出 bed/paf）
+### 6.1 query / to-bed（坐标输出）
 
 - **PosT 编码**：pgr 的 `pgr paf query` 若要支持反链投影，可借鉴 `make_pos_t` 把方向 打包进 u64，
   单棵区间树同时存正反链对齐。
 - **SparseBitVec**：pgr 处理 4 万大肠杆菌时，序列边界用 `SparseBitVec`（只存 1-bit 位置）
   比位向量省内存且 select O(1)。
 
-### 6.2 V4a（粗全局 GFA，✅ 已实现）
+### 6.2 graph（粗全局 GFA，✅ 已实现）
 
-- **已实现**：`pgr paf graph -f refs.fa --min-var-len 100`，输出 GFA v1.0（S/L/P）。
+- **已实现**：`pgr paf graph [-f refs.fa] --min-var-len 100`，输出 GFA v1.0（S/L/P）；`-f` 可选，拓扑模式零序列依赖。
   `src/libs/paf/graph.rs` 470 行引擎 + `src/cmd_pgr/paf/graph.rs` CLI 包装，5 单元 + 7 集成测试。
 - **算法骨架**：seqwish 风格段级 DSU（CIGAR 切分 → 段对 → DSU 传递闭包 → 节点序列 → 路径
     - novel 段补全 → 边派生 → GFA 输出），简化版（无 spanning tree 优化，等价类规模小）。
@@ -419,10 +419,15 @@ seqwish 作为"图物化器"的正确性契约。
   `write_graph_chunk` 后过滤更早，避免无效段产生。对应 minigraph 的粗框架哲学。
 - **简化项**（相对 seqwish）：无 disk-backed interval tree / SparseBitVec / lock-free DSU，
   路径方向恒 `+`（反向已翻转坐标到正链），rGFA SN/SO/SR tag 已补全（见 [[paf-pangenome.md]] §3.3）。
+- **与 seqwish 的关键差异——零序列依赖**：seqwish 的 GFA 输出中每个节点序列（S 行）对应传递闭包
+  的一个碱基等价类，必须从 `seqidx.at(offset)` 取原始碱基，因此**必须**有序列索引。pgr graph 的节点
+  是段级（segment-level，CIGAR `=`/`X`/`M` 的累计长度），拓扑（边界、边、路径）完全从 PAF 坐标推断；
+  S 行序列可填 `*` 并标注 `LN:i:` 长度，实现**拓扑模式零序列依赖**。这是 pgr 粗图能快速构建（无需
+  加载 GB 级 FASTA）而 seqwish 必须先建序列索引的根本原因。
 - **磁盘后端兜底（未启用）**：4 万大肠杆菌全图可能超 RAM，`AdaptiveTree` 的 disk-backed 模式
   是现成的兜底方案，待规模验证后再引入。
 
-### 6.3 V4b（局部精细 GFA）
+### 6.3 to-gfa（局部精细 GFA）
 
 - **phase 1b orphan recovery 的思路**：pgr 的局部 GFA 从一个 region 出发，BFS 发现的 等价类可能不完整
   （只覆盖部分序列）。seqwish 的 orphan recovery 循环（按序列查 iitree 补漏）可直接用于 pgr 的局部
@@ -522,7 +527,7 @@ FFI 层是 `unsafe` 的集中地，但遵循三条纪律：
   graph build 后调）。
 - **`keep_temp` 调试开关**：`--keep-temp` 设 true 后 Drop 不删文件，便于调试中间产物。
 
-**对 pgr 的启示**：pgr 的 `pgr paf` 若产生大中间文件（如 V4a 的 `seq_v`、`node_iitree`），
+**对 pgr 的启示**：pgr 的 `pgr paf` 若产生大中间文件（如 graph 的 `seq_v`、`node_iitree`），
 可借鉴这个模式——全局 `Lazy<Mutex<State>>` + `mkdtemp` 隔离 + `/dev/shm` 优先。但 pgr 现用
 `tempfile` crate（标准库生态）已够用，seqwish 自己造轮子是 C++ 遗产，不必照搬。
 
@@ -642,7 +647,7 @@ seqwish 的 transclosure 主循环是经典的 manager-worker 流水线：
 - **`write_graph_chunk` 独立线程**：phase 2 算完等价类后，`write_graph_chunk` 在独立 线程写图序列 +
   区间树，主线程同时处理下一个 chunk，实现 I/O 与计算重叠。
 
-**对 pgr 的启示**：pgr 的 V4b 局部 GFA 若处理大区域 MSA，可借鉴此模式——BFS 发现和
+**对 pgr 的启示**：pgr 的 to-gfa 局部 GFA 若处理大区域 MSA，可借鉴此模式——BFS 发现和
 等价类写出用双线程流水线，避免单线程的 I/O 等待。`crossbeam_queue::ArrayQueue` 是 Rust
 生态成熟的无锁队列，比手写 `Mutex<VecDeque>` + `Condvar` 好。
 
@@ -724,5 +729,5 @@ seqwish 的错误处理分三层，对应不同严重性：
 - 源码：[seqwish-master/src/](file:///Volumes/ExtHome/Scripts/pgr/seqwish-master/src/)
 - 关联文档：[[pangenome-tools.md]] §3.2（PGGB 流水线中 seqwish 的位置）、 [[impg.md]] §1.1.2
   （隐式图 vs 物化图适用边界）、[[minigraph.md]]（粗框架过滤哲学）、[[paf-pangenome.md]]（pgr
-  V4a/V4b 路线）、[[paf-pangenome.md]]（pgr 隐式图核心原则）。
+  graph / to-gfa 路线）、[[paf-pangenome.md]]（pgr 隐式图核心原则）。
 
