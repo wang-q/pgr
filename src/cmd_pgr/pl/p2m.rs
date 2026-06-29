@@ -161,8 +161,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         )?;
     }
 
-    // eprintln!("info_of = {:#?}", info_of);
-
     //----------------------------
     // Done
     //----------------------------

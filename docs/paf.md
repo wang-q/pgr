@@ -126,10 +126,10 @@ pgr paf to-bed aln.paf.idx A:0-30 -t
 
 ```bash
 # 粗粒度泛基因组 GFA（默认 < 100bp 的 indel 留在节点内部）
-pgr paf graph aln.paf -f refs.fa -o graph.gfa
+pgr paf graph aln.paf -f genomes.tsv -o graph.gfa
 
 # 拓扑报告（约 25 个维度，TSV）
-pgr paf stat aln.paf -f refs.fa
+pgr paf stat aln.paf -f genomes.tsv
 ```
 
 ## 子命令
@@ -259,7 +259,7 @@ pgr paf to-gfa aln.paf A:0-30 -t -f genomes.tsv --crush
 ### `graph` — 构建粗粒度全局 GFA
 
 ```bash
-pgr paf graph <infile> -f <fasta>... [--min-var-len <n>] [-o <gfa>]
+pgr paf graph <infile> -f <tsv> [--min-var-len <n>] [-o <gfa>]
 ```
 
 采用 seqwish 风格的 segment 级 DSU 算法，从所有 PAF 比对和一组 FASTA 序列构建粗粒度泛基因组图（GFA
@@ -272,18 +272,21 @@ v1.0）：
 只有大的结构变异（≥ `--min-var-len`，默认 100）会切分节点；小 indel 留在节点内部。S 行带 rGFA tag
 （`SN:Z` 源序列, `SO:i` 0-based 起点, `SR:i:0`）。
 
+`-f/--fasta-tsv`（可选）为两列 TSV，即 `genome_name<TAB>bgzf_fasta_path`。省略时进入 topology-only
+模式（S 行输出 `*` 并附 `LN:i:` 长度 tag）。要求 BGZF 格式（由 `pgr fa gz` 产出），以便随机访问。
+
 ```bash
 # 默认 SV 阈值（100bp）
-pgr paf graph aln.paf -f refs.fa -o graph.gfa
+pgr paf graph aln.paf -f genomes.tsv -o graph.gfa
 
 # 更严格阈值（只有 ≥500bp 的 SV 才切分节点）
-pgr paf graph aln.paf -f refs.fa --min-var-len 500 -o graph.gfa
+pgr paf graph aln.paf -f genomes.tsv --min-var-len 500 -o graph.gfa
 ```
 
 ### `stat` — 报告图拓扑指标
 
 ```bash
-pgr paf stat <infile> -f <fasta>... [--min-var-len <n>] [-o <tsv>]
+pgr paf stat <infile> -f <tsv> [--min-var-len <n>] [-o <tsv>]
 ```
 
 在 PAF 比对诱导出的粗粒度泛基因组图上计算拓扑报告（TSV: `key<TAB>value`），构建路径与
@@ -295,14 +298,15 @@ pgr paf stat <infile> -f <fasta>... [--min-var-len <n>] [-o <tsv>]
 - **结构**：components, largest_component_nodes, tips, isolated_nodes, self_loop_edges
 - **路径长度分布**：min/median/max（按步数和按 bp）
 
-可在不物化 GFA 的情况下评估图质量，或对比不同 `--min-var-len` 阈值下构建的图。
+可在不物化 GFA 的情况下评估图质量，或对比不同 `--min-var-len` 阈值下构建的图。`-f/--fasta-tsv`
+参数与 `graph` 相同（可选，省略时进入 topology-only 模式）。
 
 ```bash
-pgr paf stat aln.paf -f refs.fa -o report.tsv
+pgr paf stat aln.paf -f genomes.tsv -o report.tsv
 
 # 对比不同阈值
-pgr paf stat aln.paf -f refs.fa --min-var-len 50  -o r50.tsv
-pgr paf stat aln.paf -f refs.fa --min-var-len 500 -o r500.tsv
+pgr paf stat aln.paf -f genomes.tsv --min-var-len 50  -o r50.tsv
+pgr paf stat aln.paf -f genomes.tsv --min-var-len 500 -o r500.tsv
 ```
 
 ## 通用 query 选项
@@ -351,7 +355,7 @@ C    /data/genomes/C.fa.gz
 - 输入 PAF 文件应包含 `cg:Z:` tag，以便准确做坐标投影和图切分。缺少 CIGAR 时部分子命令会降级或报错。
 - `index` / `query` / `to-bed` 支持 PAF 与 `.paf.idx` 输入；`to-maf` / `to-vcf` / `to-gfa`
   同样支持两种输入，但都额外要求 `-f/--fasta-tsv` 提供 BGZF FASTA。
-- `graph` / `stat` 的 `-f` 参数直接接一个或多个 FASTA 文件（不是 TSV），用于提供节点序列和长度。
+- `graph` / `stat` 的 `-f` 参数与 query 类子命令相同，均为 TSV 文件（`genome_name<TAB>bgzf_fasta_path`），用于提供节点序列和长度。两者均可省略 `-f` 进入 topology-only 模式。
 - 支持纯文本和 gzip（`.gz`）文件（含 BGZF）。BGZF 输入启用 CIGAR 懒加载，降低内存占用。
 - 输入文件为 `stdin` 时从 stdin 读取 PAF。
 

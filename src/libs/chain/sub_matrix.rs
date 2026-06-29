@@ -182,7 +182,6 @@ impl SubMatrix {
                     .all(|s| s.len() == 1 && "ACGTN".contains(s.chars().next().unwrap_or('?')))
             {
                 chars = parts.iter().map(|s| s.chars().next().unwrap()).collect();
-                // eprintln!("Debug: Found header: {:?}", chars);
                 continue;
             }
 
@@ -219,12 +218,10 @@ impl SubMatrix {
                 }
                 if row_ok {
                     matrix_rows_read += 1;
-                    // eprintln!("Debug: Read row {}, values: {:?}", row_char, parts);
                 }
             }
         }
 
-        // eprintln!("Debug: Matrix loaded. gap_open={}, gap_extend={}", gap_open, gap_extend);
         Ok(SubMatrix {
             matrix,
             gap_open,

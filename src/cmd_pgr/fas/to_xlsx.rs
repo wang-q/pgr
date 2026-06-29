@@ -142,7 +142,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let worksheet = workbook.add_worksheet();
 
     let format_of: BTreeMap<String, Format> = create_formats();
-    // eprintln!("format_of = {:#?}", format_of.keys());
 
     let mut opt = Opt {
         sec_cursor: 1,

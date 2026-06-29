@@ -1,4 +1,5 @@
 use clap::*;
+use pgr::libs::paf::fasta::{load_fasta_tsv, FastaStore};
 use pgr::libs::paf::graph::PafGraph;
 use std::collections::HashMap;
 
@@ -23,19 +24,23 @@ Metrics (~25 dimensions):
 Use this to assess graph quality without materializing GFA, or to compare
 graphs built with different --min-var-len thresholds.
 
+-f/--fasta-tsv (optional):
+  TSV with two columns: genome_name <tab> bgzf_fasta_path
+  Each genome_name must match a query/target name in the PAF index.
+  Omit for topology-only mode (node lengths inferred from segment coords).
+
 Notes:
 * Input PAF files should contain cg:Z: tags for accurate splitting
 * Supports both plain text and gzipped (.gz) files (including BGZF)
 * Reads PAF from stdin if input file is 'stdin'
-* FASTA files (-f) are optional; omit for topology-only mode (node lengths inferred from segment coords)
 
 Examples:
 1. Report with default SV threshold (100bp):
-   pgr paf stat alignments.paf -f refs.fa -o report.tsv
+   pgr paf stat alignments.paf -f genomes.tsv -o report.tsv
 
 2. Compare thresholds:
-   pgr paf stat aln.paf -f refs.fa --min-var-len 50  -o r50.tsv
-   pgr paf stat aln.paf -f refs.fa --min-var-len 500 -o r500.tsv
+   pgr paf stat aln.paf -f genomes.tsv --min-var-len 50  -o r50.tsv
+   pgr paf stat aln.paf -f genomes.tsv --min-var-len 500 -o r500.tsv
 
 "###,
         )
@@ -46,11 +51,13 @@ Examples:
                 .help("Input PAF file (or 'stdin' for piped input)"),
         )
         .arg(
-            Arg::new("fasta")
-                .long("fasta")
+            Arg::new("fasta_tsv")
+                .long("fasta-tsv")
                 .short('f')
-                .num_args(1..)
-                .help("FASTA file(s) providing sequence content and lengths (optional for topology-only mode)"),
+                .num_args(1)
+                .help(
+                    "TSV file: genome_name <tab> bgzf_fasta_path (optional for topology-only mode)",
+                ),
         )
         .arg(
             Arg::new("min_var_len")
@@ -72,29 +79,25 @@ Examples:
 
 pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
     let infile = matches.get_one::<String>("infile").unwrap();
-    let fasta_files: Option<Vec<String>> = matches
-        .get_many::<String>("fasta")
-        .map(|v| v.cloned().collect());
+    let tsv_path = matches.get_one::<String>("fasta_tsv");
     let min_var_len = matches
         .get_one::<i32>("min_var_len")
         .copied()
         .unwrap_or(100);
     let outfile = matches.get_one::<String>("outfile").unwrap();
 
-    // Load FASTA sequences into a name -> bytes map (optional for topology-only mode).
-    let mut seqs: HashMap<String, Vec<u8>> = HashMap::new();
-    if let Some(paths) = &fasta_files {
-        for fa_path in paths {
-            let reader = pgr::reader(fa_path)?;
-            let mut fa_in = noodles_fasta::io::Reader::new(reader);
-            for result in fa_in.records() {
-                let record = result?;
-                let name = String::from_utf8(record.name().into())?;
-                let seq_bytes: Vec<u8> = record.sequence()[..].to_vec();
-                seqs.insert(name, seq_bytes);
-            }
+    // Load FASTA sequences via TSV + FastaStore (optional for topology-only mode).
+    let seqs: HashMap<String, Vec<u8>> = if let Some(tsv) = tsv_path {
+        let seq_to_file = load_fasta_tsv(tsv)?;
+        let mut store = FastaStore::new(&seq_to_file)?;
+        let mut map = HashMap::new();
+        for name in seq_to_file.keys() {
+            map.insert(name.clone(), store.fetch_full(name)?);
         }
-    }
+        map
+    } else {
+        HashMap::new()
+    };
 
     // Read PAF and build the graph.
     let paf_reader = pgr::reader(infile)?;

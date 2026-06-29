@@ -43,8 +43,6 @@ pub fn trim_pure_dash(seqs: &mut [String]) {
         }
     }
 
-    // eprintln!("trim_region = {:#?}", trim_region.to_string());
-
     // trim all segments in trim_region
     for (lower, upper) in trim_region.spans().iter().rev() {
         for seq in seqs.iter_mut().take(seq_count) {

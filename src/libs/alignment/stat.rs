@@ -34,8 +34,6 @@ pub fn pair_d(seq1: &[u8], seq2: &[u8]) -> f32 {
 
     assert_ne!(comparable, 0, "Comparable bases shouldn't be zero");
 
-    // eprintln!("{} {}", difference, comparable);
-
     difference as f32 / comparable as f32
 }
 

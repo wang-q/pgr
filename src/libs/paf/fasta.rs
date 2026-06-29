@@ -138,4 +138,23 @@ impl FastaStore {
 
         Ok((slice.as_ref().to_vec(), total_len))
     }
+
+    /// Fetch the full sequence bytes for a name.
+    pub fn fetch_full(&mut self, name: &str) -> anyhow::Result<Vec<u8>> {
+        let path = self
+            .name_to_file
+            .get(name)
+            .ok_or_else(|| anyhow::anyhow!("sequence '{name}' not in FASTA store"))?;
+        let entry = self
+            .files
+            .get_mut(path)
+            .ok_or_else(|| anyhow::anyhow!("file '{path}' not opened"))?;
+
+        if !entry.cache.contains(name) {
+            let record = loc::fetch_record(&mut entry.reader, &entry.loc_of, name)?;
+            entry.cache.put(name.to_string(), record);
+        }
+        let record = entry.cache.get(name).unwrap();
+        Ok(record.sequence()[..].to_vec())
+    }
 }

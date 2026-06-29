@@ -90,13 +90,19 @@ fn command_paf_graph_gzipped() {
         "A\t100\t0\t100\t+\tB\t100\t0\t100\t95\t100\t255\tcg:Z:100M\n",
     );
     fs::write(&fa_path, ">A\nACGTACGTAC\n>B\nACGTACGTAC\n").unwrap();
+    // BGZF-compress the FASTA and build a TSV (required by -f).
+    let fa_str = fa_path.to_string_lossy().into_owned();
+    let (_out, _) = PgrCmd::new().args(&["fa", "gz", &fa_str]).run();
+    let gz_path = format!("{fa_str}.gz");
+    let tsv_path = temp.path().join("gz_graph.tsv");
+    fs::write(&tsv_path, format!("A\t{gz_path}\nB\t{gz_path}\n")).unwrap();
     let (stdout, _) = PgrCmd::new()
         .args(&[
             "paf",
             "graph",
             paf_path.to_str().unwrap(),
             "-f",
-            fa_path.to_str().unwrap(),
+            tsv_path.to_str().unwrap(),
         ])
         .run();
     assert!(stdout.contains("S\t1\t"), "missing S line");

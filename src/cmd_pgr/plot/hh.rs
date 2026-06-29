@@ -119,7 +119,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     // Calculate histogram for each group
     let (hist_data, bin_edges) = calc_hist(&data, *bins, xmm)?;
-    // eprintln!("hist_data = {:#?}", hist_data);
     let density_data = calc_density(&hist_data);
     let table = create_table(&density_data);
 

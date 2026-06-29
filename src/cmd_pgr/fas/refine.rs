@@ -180,7 +180,6 @@ fn proc_block(block: &pgr::libs::fmt::fas::FasBlock, args: &ArgMatches) -> anyho
     //----------------------------
     let mut out_string = "".to_string();
     for (range, seq) in ranges.iter().zip(aligned) {
-        // eprintln!("range = {:#?}", range.to_string());
         out_string += format!(">{}\n{}\n", range, seq).as_ref();
     }
 

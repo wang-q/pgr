@@ -173,9 +173,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         }
     }
 
-    // eprintln!("modules = {:#?}", modules);
-    // eprintln!("module_info = {:#?}", module_info);
-
     // Generate all modules
     let mut all_tex = String::new();
     for (module_name, domains) in &modules {

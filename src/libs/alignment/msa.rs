@@ -252,7 +252,6 @@ pub fn align_seqs(seqs: &[String], aligner: &str) -> anyhow::Result<Vec<String>>
             return Err(anyhow!("Unrecognized aligner: {}", aligner));
         }
     };
-    // eprintln!("bin = {:#?}", bin);
 
     if bin.is_empty() {
         return Err(anyhow!("Can't find the external command: {}", aligner));
@@ -278,8 +277,6 @@ pub fn align_seqs(seqs: &[String], aligner: &str) -> anyhow::Result<Vec<String>>
         .rand_bytes(8)
         .tempfile()?;
     let seq_out_path = seq_out.into_temp_path();
-
-    // eprintln!("seq_in_path = {:#?}", seq_in_path);
 
     // Run
     let output = match aligner {

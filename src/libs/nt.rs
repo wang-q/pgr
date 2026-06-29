@@ -379,8 +379,6 @@ pub fn find_orfs(protein: &str) -> Vec<(String, usize, usize)> {
         }
     }
 
-    // eprintln!("orfs = {:#?}", orfs);
-
     orfs
 }
 

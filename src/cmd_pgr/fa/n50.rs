@@ -148,7 +148,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         }
     }
     lens.sort_unstable_by(|a, b| b.cmp(a));
-    // eprintln!("lens = {:#?}", lens);
 
     // reach n_given% of total_size or genome_size
     let mut goals = vec![];

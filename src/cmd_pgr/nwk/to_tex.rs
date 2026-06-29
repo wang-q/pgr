@@ -90,9 +90,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         } else {
             0.0
         };
-        // eprintln!("height = {:#?}", tree.height().unwrap());
-        // eprintln!("diameter = {:#?}", tree.diameter().unwrap());
-
         let mut s = to_forest(&tree, height);
 
         // a bar of unit length

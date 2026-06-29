@@ -6,7 +6,10 @@ use common::PgrCmd;
 
 // ── paf graph (V4a coarse GFA induction) ──────────────────────
 
-fn write_temp_fasta(dir: &std::path::Path, name: &str, records: &[(&str, &str)]) -> String {
+/// Write `records` to `<dir>/<name>.fa`, BGZF-compress via `pgr fa gz`,
+/// then emit a TSV mapping each record name to the same .fa.gz path.
+/// Returns the TSV path (suitable for `-f`).
+fn write_bgzf_fasta_tsv(dir: &std::path::Path, name: &str, records: &[(&str, &str)]) -> String {
     use std::fs;
     let mut content = String::new();
     for (rec_name, seq) in records {
@@ -16,9 +19,26 @@ fn write_temp_fasta(dir: &std::path::Path, name: &str, records: &[(&str, &str)])
         content.push_str(seq);
         content.push('\n');
     }
-    let path = dir.join(format!("{name}.fa"));
-    fs::write(&path, content).unwrap();
-    path.to_string_lossy().into_owned()
+    let fa_path = dir.join(format!("{name}.fa"));
+    fs::write(&fa_path, content).unwrap();
+    let fa_str = fa_path.to_string_lossy().into_owned();
+    let (out, _) = PgrCmd::new().args(&["fa", "gz", &fa_str]).run();
+    let _ = out;
+    let gz_path = format!("{fa_str}.gz");
+    assert!(
+        std::path::Path::new(&gz_path).exists(),
+        "pgr fa gz failed to produce {gz_path}"
+    );
+    let tsv_path = dir.join(format!("{name}.tsv"));
+    let mut tsv = String::new();
+    for (rec_name, _) in records {
+        tsv.push_str(rec_name);
+        tsv.push('\t');
+        tsv.push_str(&gz_path);
+        tsv.push('\n');
+    }
+    fs::write(&tsv_path, tsv).unwrap();
+    tsv_path.to_string_lossy().into_owned()
 }
 
 #[test]
@@ -26,7 +46,7 @@ fn command_paf_graph_help() {
     let (stdout, _) = PgrCmd::new().args(&["paf", "graph", "--help"]).run();
     assert!(stdout.contains("Induces a coarse GFA graph"));
     assert!(stdout.contains("--min-var-len"));
-    assert!(stdout.contains("--fasta"));
+    assert!(stdout.contains("--fasta-tsv"));
 }
 
 #[test]
@@ -34,13 +54,13 @@ fn command_paf_graph_basic_forward() {
     // A and B share a 100bp alignment → one shared node + trailing novel segments.
     let paf = "A\t100\t0\t100\t+\tB\t100\t0\t100\t95\t100\t255\tcg:Z:100M\n";
     let temp = tempfile::TempDir::new().unwrap();
-    let fa = write_temp_fasta(
+    let tsv = write_bgzf_fasta_tsv(
         temp.path(),
         "basic",
         &[("A", &"ACGT".repeat(25)), ("B", &"TGCA".repeat(25))],
     );
     let (stdout, _stderr) = PgrCmd::new()
-        .args(&["paf", "graph", "stdin", "-f", &fa])
+        .args(&["paf", "graph", "stdin", "-f", &tsv])
         .stdin(paf)
         .run();
     // At least one S line, one P line for each sequence.
@@ -57,13 +77,13 @@ fn command_paf_graph_split_at_large_indel() {
     // 50M 200I 50M: 200I >= 100 → split. B has an insertion (novel node in B path).
     let paf = "A\t300\t0\t100\t+\tB\t300\t0\t300\t95\t300\t255\tcg:Z:50M200I50M\n";
     let temp = tempfile::TempDir::new().unwrap();
-    let fa = write_temp_fasta(
+    let tsv = write_bgzf_fasta_tsv(
         temp.path(),
         "split",
         &[("A", &"A".repeat(300)), ("B", &"G".repeat(300))],
     );
     let (stdout, _stderr) = PgrCmd::new()
-        .args(&["paf", "graph", "stdin", "-f", &fa, "--min-var-len", "100"])
+        .args(&["paf", "graph", "stdin", "-f", &tsv, "--min-var-len", "100"])
         .stdin(paf)
         .run();
     // B path should have >= 3 steps (aligned, novel insertion, aligned).
@@ -85,13 +105,13 @@ fn command_paf_graph_small_indel_no_split() {
     // 50M 30I 50M: 30I < 100 → no split. A and B share exactly one aligned node.
     let paf = "A\t200\t0\t130\t+\tB\t200\t0\t160\t95\t160\t255\tcg:Z:50M30I50M\n";
     let temp = tempfile::TempDir::new().unwrap();
-    let fa = write_temp_fasta(
+    let tsv = write_bgzf_fasta_tsv(
         temp.path(),
         "nosplit",
         &[("A", &"A".repeat(200)), ("B", &"G".repeat(200))],
     );
     let (stdout, _stderr) = PgrCmd::new()
-        .args(&["paf", "graph", "stdin", "-f", &fa, "--min-var-len", "100"])
+        .args(&["paf", "graph", "stdin", "-f", &tsv, "--min-var-len", "100"])
         .stdin(paf)
         .run();
     // Find shared nodes between A and B paths.
@@ -131,13 +151,13 @@ fn command_paf_graph_reverse_strand() {
     // Reverse strand alignment: query coords flipped, but A and B still share a node.
     let paf = "A\t100\t0\t100\t-\tB\t100\t0\t100\t95\t100\t255\tcg:Z:100M\n";
     let temp = tempfile::TempDir::new().unwrap();
-    let fa = write_temp_fasta(
+    let tsv = write_bgzf_fasta_tsv(
         temp.path(),
         "rc",
         &[("A", &"ACGT".repeat(25)), ("B", &"TGCA".repeat(25))],
     );
     let (stdout, _stderr) = PgrCmd::new()
-        .args(&["paf", "graph", "stdin", "-f", &fa])
+        .args(&["paf", "graph", "stdin", "-f", &tsv])
         .stdin(paf)
         .run();
     let a_line = stdout
@@ -179,7 +199,7 @@ fn command_paf_graph_min_var_len_filter() {
     // Same alignment with --min-var-len 100: 150I >= 100 → split.
     let paf = "A\t300\t0\t100\t+\tB\t300\t0\t250\t95\t250\t255\tcg:Z:50M150I50M\n";
     let temp = tempfile::TempDir::new().unwrap();
-    let fa = write_temp_fasta(
+    let tsv = write_bgzf_fasta_tsv(
         temp.path(),
         "filter",
         &[("A", &"A".repeat(300)), ("B", &"G".repeat(300))],
@@ -187,7 +207,7 @@ fn command_paf_graph_min_var_len_filter() {
 
     // With threshold 200: no split, B path has 1 shared node + trailing novel.
     let (stdout_no_split, _) = PgrCmd::new()
-        .args(&["paf", "graph", "stdin", "-f", &fa, "--min-var-len", "200"])
+        .args(&["paf", "graph", "stdin", "-f", &tsv, "--min-var-len", "200"])
         .stdin(paf)
         .run();
     let b_line = stdout_no_split
@@ -198,7 +218,7 @@ fn command_paf_graph_min_var_len_filter() {
 
     // With threshold 100: split, B path has >= 3 steps.
     let (stdout_split, _) = PgrCmd::new()
-        .args(&["paf", "graph", "stdin", "-f", &fa, "--min-var-len", "100"])
+        .args(&["paf", "graph", "stdin", "-f", &tsv, "--min-var-len", "100"])
         .stdin(paf)
         .run();
     let b_line = stdout_split
@@ -217,7 +237,7 @@ fn command_paf_graph_min_var_len_filter() {
 fn command_paf_graph_missing_fasta_fails() {
     let paf = "A\t100\t0\t100\t+\tB\t100\t0\t100\t95\t100\t255\tcg:Z:100M\n";
     let (_stdout, stderr) = PgrCmd::new()
-        .args(&["paf", "graph", "stdin", "-f", "/nonexistent/path.fa"])
+        .args(&["paf", "graph", "stdin", "-f", "/nonexistent/path.tsv"])
         .stdin(paf)
         .run_fail();
     // Should fail with a friendly error, not panic.
@@ -233,13 +253,13 @@ fn command_paf_graph_rgfa_tags() {
     // Shared aligned node originates from B (target) at offset 0.
     let paf = "A\t100\t0\t100\t+\tB\t100\t0\t100\t95\t100\t255\tcg:Z:100M\n";
     let temp = tempfile::TempDir::new().unwrap();
-    let fa = write_temp_fasta(
+    let tsv = write_bgzf_fasta_tsv(
         temp.path(),
         "rgfa",
         &[("A", &"ACGT".repeat(25)), ("B", &"TGCA".repeat(25))],
     );
     let (stdout, _stderr) = PgrCmd::new()
-        .args(&["paf", "graph", "stdin", "-f", &fa])
+        .args(&["paf", "graph", "stdin", "-f", &tsv])
         .stdin(paf)
         .run();
 
@@ -282,13 +302,13 @@ fn command_paf_graph_rgfa_novel_node_origin() {
     // The novel insertion node in A's path spans A:50-250, origin SN:Z:A SO:i:50.
     let paf = "A\t300\t0\t100\t+\tB\t300\t0\t300\t95\t300\t255\tcg:Z:50M200I50M\n";
     let temp = tempfile::TempDir::new().unwrap();
-    let fa = write_temp_fasta(
+    let tsv = write_bgzf_fasta_tsv(
         temp.path(),
         "rgfa_novel",
         &[("A", &"A".repeat(300)), ("B", &"G".repeat(300))],
     );
     let (stdout, _stderr) = PgrCmd::new()
-        .args(&["paf", "graph", "stdin", "-f", &fa, "--min-var-len", "100"])
+        .args(&["paf", "graph", "stdin", "-f", &tsv, "--min-var-len", "100"])
         .stdin(paf)
         .run();
 

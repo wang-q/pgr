@@ -84,9 +84,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 .map(|e| e.to_string())
                 .collect();
 
-            // eprintln!("originals = {:#?}", originals);
-            // eprintln!("matched = {:#?}", matched);
-
             if matched.is_empty() || matched.len() > 1 {
                 // block untouched
 
