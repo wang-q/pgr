@@ -158,6 +158,11 @@ impl Tree {
         query::get_distance(self, a, b)
     }
 
+    /// Distance between two nodes. Uses branch lengths if non-zero, else edge count.
+    pub fn node_distance(&self, a: &NodeId, b: &NodeId) -> Result<f64, String> {
+        query::node_distance(self, a, b)
+    }
+
     pub fn find_nodes<F>(&self, predicate: F) -> Vec<NodeId>
     where
         F: Fn(&Node) -> bool,

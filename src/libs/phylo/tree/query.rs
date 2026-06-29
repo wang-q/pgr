@@ -79,6 +79,16 @@ pub fn get_distance(tree: &Tree, a: &NodeId, b: &NodeId) -> Result<(f64, usize),
     Ok((w1 + w2, t1 + t2))
 }
 
+/// Distance between two nodes. Uses branch lengths if non-zero, else edge count.
+pub fn node_distance(tree: &Tree, a: &NodeId, b: &NodeId) -> Result<f64, String> {
+    let (edge_sum, num_edges) = get_distance(tree, a, b)?;
+    Ok(if edge_sum.abs() > 1e-9 {
+        edge_sum
+    } else {
+        num_edges as f64
+    })
+}
+
 /// Check if a set of nodes is monophyletic.
 /// A set is monophyletic if the set of leaves in the subtree of their LCA
 /// is exactly the same as the set of leaves reachable from the input nodes.

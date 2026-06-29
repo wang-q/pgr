@@ -1,7 +1,6 @@
 use clap::*;
 use pgr::libs::phylo::tree::Tree;
 use pgr::libs::phylo::TreeComparison;
-use std::collections::{BTreeMap, HashSet};
 use std::io::{self, Write};
 
 // Create clap subcommand arguments
@@ -104,47 +103,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 }
 
 fn compute_metrics(t1: &Tree, t2: &Tree) -> (String, String, String) {
-    // Check leaves
-    let leaves1: HashSet<_> = t1.get_leaf_names().into_iter().flatten().collect();
-    let leaves2: HashSet<_> = t2.get_leaf_names().into_iter().flatten().collect();
-
-    if leaves1 != leaves2 {
-        return (
-            "Error".to_string(),
-            "Error".to_string(),
-            "Error".to_string(),
-        );
-    }
-
-    // Build map
-    let mut all_leaves: Vec<_> = leaves1.into_iter().collect();
-    all_leaves.sort(); // Deterministic order
-    let mut leaf_map = BTreeMap::new();
-    for (i, name) in all_leaves.iter().enumerate() {
-        leaf_map.insert(name.clone(), i);
-    }
-
-    // Get splits
-    let s1 = t1.get_splits_with_values(&leaf_map);
-    let s2 = t2.get_splits_with_values(&leaf_map);
-
-    // RF: symmetric difference count
-    let keys1: HashSet<_> = s1.keys().collect();
-    let keys2: HashSet<_> = s2.keys().collect();
-    let rf = keys1.symmetric_difference(&keys2).count();
-
-    // WRF & KF
-    let all_keys: HashSet<_> = s1.keys().chain(s2.keys()).collect();
-    let mut wrf = 0.0;
-    let mut kf_sq = 0.0;
-
-    for key in all_keys {
-        let v1 = s1.get(key).copied().unwrap_or(0.0);
-        let v2 = s2.get(key).copied().unwrap_or(0.0);
-        let diff = v1 - v2;
-        wrf += diff.abs();
-        kf_sq += diff.powi(2);
-    }
+    let rf = t1.robinson_foulds(t2);
+    let wrf = t1.weighted_robinson_foulds(t2);
+    let kf = t1.kuhner_felsenstein(t2);
 
     let format_float = |v: f64| -> String {
         let s = format!("{:.6}", v);
@@ -156,9 +117,12 @@ fn compute_metrics(t1: &Tree, t2: &Tree) -> (String, String, String) {
         }
     };
 
-    (
-        rf.to_string(),
-        format_float(wrf),
-        format_float(kf_sq.sqrt()),
-    )
+    match (rf, wrf, kf) {
+        (Ok(rf), Ok(wrf), Ok(kf)) => (rf.to_string(), format_float(wrf), format_float(kf)),
+        _ => (
+            "Error".to_string(),
+            "Error".to_string(),
+            "Error".to_string(),
+        ),
+    }
 }

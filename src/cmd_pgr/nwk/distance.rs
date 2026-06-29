@@ -1,3 +1,4 @@
+use anyhow::{anyhow, Result};
 use clap::*;
 use pgr::libs::phylo::node::NodeId;
 use pgr::libs::phylo::tree::Tree;
@@ -82,7 +83,7 @@ Examples:
 }
 
 // command implementation
-pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
+pub fn execute(args: &ArgMatches) -> Result<()> {
     let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap())?;
 
     let infile = args.get_one::<String>("infile").unwrap();
@@ -96,8 +97,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     };
 
     // Attempt to parse Newick. If it fails, return error.
-    let tree = Tree::from_newick(&input)
-        .map_err(|e| anyhow::anyhow!("Failed to parse Newick: {:?}", e))?;
+    let tree = Tree::from_newick(&input).map_err(|e| anyhow!("Failed to parse Newick: {:?}", e))?;
 
     let mode = args.get_one::<String>("mode").unwrap();
 
@@ -109,7 +109,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let name_id_map = tree.get_name_id();
 
     for (name, id) in name_id_map {
-        let node = tree.get_node(id).unwrap();
+        let node = tree
+            .get_node(id)
+            .ok_or_else(|| anyhow!("node {} not found in tree", id))?;
         let is_leaf = node.children.is_empty();
 
         if (is_leaf && !skip_leaf) || (!is_leaf && !skip_internal) {
@@ -118,143 +120,127 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     }
 
     match mode.as_str() {
-        "root" => dist_root(&tree, &id_of, &mut writer),
-        "parent" => dist_parent(&tree, &id_of, &mut writer),
-        "pairwise" => dist_pairwise(&tree, &id_of, &mut writer),
-        "lca" => dist_lca(&tree, &id_of, &mut writer),
-        "phylip" => dist_phylip(&tree, &id_of, &mut writer),
-        _ => unreachable!(),
+        "root" => dist_root(&tree, &id_of, &mut writer)?,
+        "parent" => dist_parent(&tree, &id_of, &mut writer)?,
+        "pairwise" => dist_pairwise(&tree, &id_of, &mut writer)?,
+        "lca" => dist_lca(&tree, &id_of, &mut writer)?,
+        "phylip" => dist_phylip(&tree, &id_of, &mut writer)?,
+        _ => {}
     }
 
     Ok(())
 }
 
-fn dist_root(tree: &Tree, id_of: &BTreeMap<String, NodeId>, writer: &mut Box<dyn Write>) {
-    let root = tree.get_root().unwrap();
+fn dist_root(
+    tree: &Tree,
+    id_of: &BTreeMap<String, NodeId>,
+    writer: &mut Box<dyn Write>,
+) -> Result<()> {
+    let root = tree.get_root().ok_or_else(|| anyhow!("tree has no root"))?;
     for (k, v) in id_of.iter() {
-        let dist = {
-            let (edge_sum, num_edges) = tree.get_distance(&root, v).unwrap();
-            if edge_sum.abs() > 1e-9 {
-                edge_sum
-            } else {
-                num_edges as f64
+        let dist = tree.node_distance(&root, v).map_err(anyhow::Error::msg)?;
+        writer.write_fmt(format_args!("{}\t{}\n", k, format_float(dist)))?;
+    }
+    Ok(())
+}
+
+fn dist_parent(
+    tree: &Tree,
+    id_of: &BTreeMap<String, NodeId>,
+    writer: &mut Box<dyn Write>,
+) -> Result<()> {
+    for (k, v) in id_of.iter() {
+        let node = tree
+            .get_node(*v)
+            .ok_or_else(|| anyhow!("node {} not found in tree", v))?;
+        let parent = match node.parent {
+            Some(p) => p,
+            None => {
+                writer.write_fmt(format_args!("{}\t0\n", k))?;
+                continue;
             }
         };
-        writer
-            .write_fmt(format_args!("{}\t{}\n", k, format_float(dist)))
-            .unwrap();
+        let dist = tree.node_distance(&parent, v).map_err(anyhow::Error::msg)?;
+        writer.write_fmt(format_args!("{}\t{}\n", k, format_float(dist)))?;
     }
+    Ok(())
 }
 
-fn dist_parent(tree: &Tree, id_of: &BTreeMap<String, NodeId>, writer: &mut Box<dyn Write>) {
-    for (k, v) in id_of.iter() {
-        let parent = tree.get_node(*v).unwrap().parent;
-        if parent.is_none() {
-            writer.write_fmt(format_args!("{}\t0\n", k)).unwrap();
-            continue;
-        }
-        let parent = parent.unwrap();
-
-        let dist = {
-            let (edge_sum, num_edges) = tree.get_distance(&parent, v).unwrap();
-            if edge_sum.abs() > 1e-9 {
-                edge_sum
-            } else {
-                num_edges as f64
-            }
-        };
-        writer
-            .write_fmt(format_args!("{}\t{}\n", k, format_float(dist)))
-            .unwrap();
-    }
-}
-
-fn dist_pairwise(tree: &Tree, id_of: &BTreeMap<String, NodeId>, writer: &mut Box<dyn Write>) {
+fn dist_pairwise(
+    tree: &Tree,
+    id_of: &BTreeMap<String, NodeId>,
+    writer: &mut Box<dyn Write>,
+) -> Result<()> {
     for (k1, v1) in id_of.iter() {
         for (k2, v2) in id_of.iter() {
-            let dist = {
-                let (edge_sum, num_edges) = tree.get_distance(v1, v2).unwrap();
-                if edge_sum.abs() > 1e-9 {
-                    edge_sum
-                } else {
-                    num_edges as f64
-                }
-            };
-            writer
-                .write_fmt(format_args!("{}\t{}\t{}\n", k1, k2, format_float(dist)))
-                .unwrap();
+            let dist = tree.node_distance(v1, v2).map_err(anyhow::Error::msg)?;
+            writer.write_fmt(format_args!("{}\t{}\t{}\n", k1, k2, format_float(dist)))?;
         }
     }
+    Ok(())
 }
 
-fn dist_lca(tree: &Tree, id_of: &BTreeMap<String, NodeId>, writer: &mut Box<dyn Write>) {
+fn dist_lca(
+    tree: &Tree,
+    id_of: &BTreeMap<String, NodeId>,
+    writer: &mut Box<dyn Write>,
+) -> Result<()> {
     for (k1, v1) in id_of.iter() {
         for (k2, v2) in id_of.iter() {
-            let lca = tree.get_common_ancestor(v1, v2).unwrap();
-
-            let dist1 = {
-                let (edge_sum, num_edges) = tree.get_distance(&lca, v1).unwrap();
-                if edge_sum.abs() > 1e-9 {
-                    edge_sum
-                } else {
-                    num_edges as f64
-                }
-            };
-
-            let dist2 = {
-                let (edge_sum, num_edges) = tree.get_distance(&lca, v2).unwrap();
-                if edge_sum.abs() > 1e-9 {
-                    edge_sum
-                } else {
-                    num_edges as f64
-                }
-            };
-            writer
-                .write_fmt(format_args!(
-                    "{}\t{}\t{}\t{}\n",
-                    k1,
-                    k2,
-                    format_float(dist1),
-                    format_float(dist2)
-                ))
-                .unwrap();
+            let lca = tree
+                .get_common_ancestor(v1, v2)
+                .map_err(anyhow::Error::msg)?;
+            let dist1 = tree.node_distance(&lca, v1).map_err(anyhow::Error::msg)?;
+            let dist2 = tree.node_distance(&lca, v2).map_err(anyhow::Error::msg)?;
+            writer.write_fmt(format_args!(
+                "{}\t{}\t{}\t{}\n",
+                k1,
+                k2,
+                format_float(dist1),
+                format_float(dist2)
+            ))?;
         }
     }
+    Ok(())
 }
 
-fn dist_phylip(tree: &Tree, id_of: &BTreeMap<String, NodeId>, writer: &mut Box<dyn Write>) {
+fn dist_phylip(
+    tree: &Tree,
+    id_of: &BTreeMap<String, NodeId>,
+    writer: &mut Box<dyn Write>,
+) -> Result<()> {
     let names: Vec<&String> = id_of.keys().collect();
     let n = names.len();
 
     // Phylip header
-    writer.write_fmt(format_args!("    {}\n", n)).unwrap();
+    writer.write_fmt(format_args!("    {}\n", n))?;
 
     for (i, name) in names.iter().enumerate() {
-        let v1 = id_of.get(*name).unwrap();
+        let v1 = id_of
+            .get(*name)
+            .ok_or_else(|| anyhow!("node {} not found in id_of", name))?;
 
         // Name padding to 10 chars usually, but let's just print name followed by tab/space
         // Phylip strict format requires 10 chars for name.
         // Relaxed format (which is common) allows longer names separated by whitespace.
         // Let's print name then spaces.
-        writer.write_fmt(format_args!("{} ", name)).unwrap();
+        writer.write_fmt(format_args!("{} ", name))?;
 
         for (j, other_name) in names.iter().enumerate() {
-            let v2 = id_of.get(*other_name).unwrap();
+            let v2 = id_of
+                .get(*other_name)
+                .ok_or_else(|| anyhow!("node {} not found in id_of", other_name))?;
             let dist = if i == j {
                 0.0
             } else {
-                let (edge_sum, num_edges) = tree.get_distance(v1, v2).unwrap();
-                if edge_sum.abs() > 1e-9 {
-                    edge_sum
-                } else {
-                    num_edges as f64
-                }
+                tree.node_distance(v1, v2).map_err(anyhow::Error::msg)?
             };
 
-            writer.write_fmt(format_args!(" {:.6}", dist)).unwrap();
+            writer.write_fmt(format_args!(" {:.6}", dist))?;
         }
-        writer.write_all(b"\n").unwrap();
+        writer.write_all(b"\n")?;
     }
+    Ok(())
 }
 
 fn format_float(val: f64) -> String {
