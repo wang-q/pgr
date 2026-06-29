@@ -1,10 +1,10 @@
 # pgr paf
 
 `pgr paf` 用于处理**PAF** (Pairwise mApping Format) 文件。它把成对比对当作一张隐式泛基因组图，
-将目标区间通过比对网络投影出去，回答"哪些序列的哪些区域与该位点同源"这一问题。查询类子命令
-（`query` / `to-bed` / `to-maf` / `to-vcf` / `to-gfa`）按需遍历这张隐式图，不物化整张图；而
-`graph` 和 `stat` 子命令会物化一张**粗粒度**的全基因组图，只在 ≥ `--min-var-len`（默认 100 bp）
-的结构变异处切分节点，小 indel 留在节点内部。
+将目标区间通过比对网络投影出去，回答"哪些序列的哪些区域与该位点同源"这一问题。查询类子命令 （`query`
+/ `to-bed` / `to-maf` / `to-vcf` / `to-gfa`）按需遍历这张隐式图，不物化整张图；而 `graph` 和 `stat`
+子命令会物化一张**粗粒度**的全基因组图，只在 ≥ `--min-var-len`（默认 100 bp）的结构变异处切分节点，
+小 indel 留在节点内部。
 
 ## 为什么在泛基因组场景使用 PAF
 
@@ -32,15 +32,15 @@
 PAF 适合这一角色的其他原因：
 
 - **多个主流比对器都能直接输出 PAF**，无需格式转换即可作为 `pgr paf` 的输入：
-
     - **minimap2**（`minimap2 -c --eqx`）：泛基因组与读长比对事实上的标准工具，输出带 `cg:Z:` CIGAR
       的 PAF。
     - **wfmash**：seqwish / PGGB / impg 流程的默认 aligner，由 MashMap 找同源块、WFA 做碱基级比对，
       常用于 all-vs-all 场景。
     - **FastGA**：impg 支持的备选 aligner，磁盘占用更低，适合内存受限场景。
     - **MashMap / MashMap2 / MashMap3**：基于 k-mer 距离定位加间隙式比对，输出 PAF-like 格式。
-    - **paftools.js**（minimap2 自带）：用于后处理和过滤 minimap2 的 PAF。注：`pgr paf` 本身不绑定任何 aligner，只要 PAF 行带 `cg:Z:` CIGAR 且 `=`/`X` 操作符齐全即可
-  （`minimap2 --eqx` 与 `wfmash` 均满足此要求）。
+    - **paftools.js**（minimap2 自带）：用于后处理和过滤 minimap2 的 PAF。注：`pgr paf`
+      本身不绑定任何 aligner，只要 PAF 行带 `cg:Z:` CIGAR 且 `=`/`X` 操作符齐全即可
+      （`minimap2 --eqx` 与 `wfmash` 均满足此要求）。
 - **Tab 分隔、流式友好**：无 header，不需要 seek，易于管道化、切分和并行。
 - **`cg:Z:` CIGAR 足以按需重建任意成对比对**（`pgr paf to-maf` 默认模式即采用此方式），
   因此不存序列也不会丢失信息。
