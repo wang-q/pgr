@@ -74,7 +74,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let out_string = if args.get_flag("forest") {
         let mut reader = pgr::reader(infile)?;
         let mut s = String::new();
-        reader.read_to_string(&mut s).expect("Read error");
+        reader.read_to_string(&mut s)?;
 
         s
     } else {

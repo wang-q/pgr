@@ -98,7 +98,7 @@ fn main() -> anyhow::Result<()> {
         Some(("fas", sub_matches)) => cmd_pgr::fas::execute(sub_matches),
         Some(("fq", sub_matches)) => cmd_pgr::fq::execute(sub_matches),
         Some(("gff", sub_matches)) => cmd_pgr::gff::execute(sub_matches),
-        _ => unreachable!(),
+        _ => anyhow::bail!("unknown subcommand"),
     }?;
 
     Ok(())

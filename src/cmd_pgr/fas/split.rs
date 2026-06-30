@@ -82,20 +82,21 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         let mut reader = pgr::reader(infile)?;
 
         while let Ok(block) = pgr::libs::fmt::fas::next_fas_block(&mut reader) {
+            let first = match block.entries.first() {
+                Some(e) => e,
+                None => continue,
+            };
             let filename = if is_chr {
-                let tname = block.entries.first().unwrap().range().name();
-                let tchr = block.entries.first().unwrap().range().chr();
-                format!("{}.{}", tname, tchr)
+                format!("{}.{}", first.range().name(), first.range().chr())
             } else {
-                let trange = &block.entries.first().unwrap().range().clone();
-                trange.to_string()
+                first.range().to_string()
             }
             .replace(['(', ')', ':'], "_")
             .replace("__", "_");
 
             for entry in &block.entries {
                 let range = entry.range().clone();
-                let seq = std::str::from_utf8(entry.seq()).unwrap();
+                let seq = std::str::from_utf8(entry.seq())?;
 
                 //----------------------------
                 // Output
@@ -117,7 +118,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                             .open(path)?;
                         file_of.insert(filename.clone(), file);
                     }
-                    write!(file_of.get(&filename).unwrap(), ">{}\n{}\n", range, seq)?;
+                    let file = file_of.get_mut(&filename).unwrap();
+                    write!(file, ">{}\n{}\n", range, seq)?;
                 }
             }
 
@@ -125,7 +127,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             if outdir == "stdout" {
                 println!();
             } else {
-                writeln!(file_of.get(&filename).unwrap())?;
+                let file = file_of.get_mut(&filename).unwrap();
+                writeln!(file)?;
             }
         }
     }

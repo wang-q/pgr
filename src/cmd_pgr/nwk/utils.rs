@@ -15,8 +15,7 @@ pub fn match_names(tree: &Tree, args: &ArgMatches) -> anyhow::Result<BTreeSet<us
     // ids supplied by --node
     if args.contains_id("node") {
         for name in args.get_many::<String>("node").unwrap() {
-            if id_of.contains_key(name) {
-                let id = id_of.get(name).unwrap();
+            if let Some(id) = id_of.get(name) {
                 ids.insert(*id);
             }
         }
@@ -26,8 +25,7 @@ pub fn match_names(tree: &Tree, args: &ArgMatches) -> anyhow::Result<BTreeSet<us
     if args.contains_id("file") {
         let file = args.get_one::<String>("file").unwrap();
         for name in pgr::libs::io::read_names::<Vec<String>>(file)?.iter() {
-            if id_of.contains_key(name) {
-                let id = id_of.get(name).unwrap();
+            if let Some(id) = id_of.get(name) {
                 ids.insert(*id);
             }
         }
@@ -36,14 +34,12 @@ pub fn match_names(tree: &Tree, args: &ArgMatches) -> anyhow::Result<BTreeSet<us
     // ids matched with --regex
     if args.contains_id("regex") {
         for regex in args.get_many::<String>("regex").unwrap() {
-            let re = RegexBuilder::new(regex)
-                .case_insensitive(true)
-                .build()
-                .unwrap();
+            let re = RegexBuilder::new(regex).case_insensitive(true).build()?;
             for name in id_of.keys() {
                 if re.is_match(name) {
-                    let id = id_of.get(name).unwrap();
-                    ids.insert(*id);
+                    if let Some(id) = id_of.get(name) {
+                        ids.insert(*id);
+                    }
                 }
             }
         }
@@ -67,13 +63,19 @@ pub fn match_names(tree: &Tree, args: &ArgMatches) -> anyhow::Result<BTreeSet<us
     if is_descendants {
         let nodes: Vec<Node> = ids
             .iter()
-            .map(|e| tree.get_node(*e).unwrap().clone())
+            .filter_map(|e| tree.get_node(*e).cloned())
             .collect();
         for node in &nodes {
             if !node.is_leaf() {
-                for id in &tree.get_subtree(&node.id).unwrap() {
-                    if tree.get_node(*id).unwrap().name.is_some() {
-                        ids.insert(*id);
+                let subtree_ids = match tree.get_subtree(&node.id) {
+                    Ok(v) => v,
+                    Err(e) => anyhow::bail!(e),
+                };
+                for id in &subtree_ids {
+                    if let Some(n) = tree.get_node(*id) {
+                        if n.name.is_some() {
+                            ids.insert(*id);
+                        }
                     }
                 }
             }
@@ -109,19 +111,23 @@ pub fn match_positions(tree: &Tree, args: &ArgMatches) -> BTreeSet<usize> {
     // all matched IDs
     let mut ids = BTreeSet::new();
 
-    // inorder needs IsBinary
-    tree.preorder(&tree.get_root().unwrap())
-        .unwrap()
-        .iter()
-        .for_each(|id| {
-            let node = tree.get_node(*id).unwrap();
+    let Some(root_id) = tree.get_root() else {
+        return ids;
+    };
+    let Ok(preorder_ids) = tree.preorder(&root_id) else {
+        return ids;
+    };
+
+    preorder_ids.iter().for_each(|id| {
+        if let Some(node) = tree.get_node(*id) {
             if node.is_leaf() && !skip_leaf {
                 ids.insert(*id);
             }
             if !node.is_leaf() && !skip_internal {
                 ids.insert(*id);
             }
-        });
+        }
+    });
 
     ids
 }

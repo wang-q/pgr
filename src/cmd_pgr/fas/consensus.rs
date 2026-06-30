@@ -116,7 +116,7 @@ fn proc_block(block: &pgr::libs::fmt::fas::FasBlock, args: &ArgMatches) -> anyho
     let mut seqs = vec![];
 
     let outgroup = if has_outgroup {
-        Some(block.entries.iter().last().unwrap())
+        block.entries.iter().last()
     } else {
         None
     };
@@ -125,7 +125,7 @@ fn proc_block(block: &pgr::libs::fmt::fas::FasBlock, args: &ArgMatches) -> anyho
         seqs.push(entry.seq().as_ref());
     }
     if outgroup.is_some() {
-        seqs.pop().unwrap(); // Remove the outgroup sequence
+        seqs.pop(); // Remove the outgroup sequence
     }
 
     // Generate consensus sequence
@@ -137,8 +137,7 @@ fn proc_block(block: &pgr::libs::fmt::fas::FasBlock, args: &ArgMatches) -> anyho
             params.gap_open,
             params.gap_extend,
             algo_code,
-        )
-        .unwrap(),
+        )?,
         _ => pgr::libs::alignment::get_consensus_poa_builtin(
             &seqs,
             params.match_score,
@@ -146,12 +145,14 @@ fn proc_block(block: &pgr::libs::fmt::fas::FasBlock, args: &ArgMatches) -> anyho
             params.gap_open,
             params.gap_extend,
             algo_code,
-        )
-        .unwrap(),
+        )?,
     };
     cons = cons.replace('-', "");
 
-    let mut range = block.entries.first().unwrap().range().clone();
+    let mut range = match block.entries.first() {
+        Some(e) => e.range().clone(),
+        None => anyhow::bail!("empty block"),
+    };
 
     //----------------------------
     // Output

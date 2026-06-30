@@ -123,6 +123,17 @@ pub fn seq_mins(
     Ok(hashset)
 }
 
+/// Compute the Mash distance from a Jaccard index and k-mer size.
+///
+/// See <https://mash.readthedocs.io/en/latest/distances.html#mash-distance-formulation>.
+pub fn mash_distance(jaccard: f64, kmer: usize) -> f64 {
+    if jaccard == 0.0 {
+        1.0
+    } else {
+        ((-1.0 / kmer as f64) * ((2.0 * jaccard) / (1.0 + jaccard)).ln()).abs()
+    }
+}
+
 /// Distance metrics between two minimizer sets.
 pub struct SetDistances {
     /// Cardinality of the first set.

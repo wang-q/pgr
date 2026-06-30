@@ -88,7 +88,10 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
     let outfile = crate::cmd_pgr::args::get_outfile(matches);
 
     let format_str = matches.get_one::<String>("format").unwrap();
-    let format: PartitionFormat = format_str.parse().expect("Invalid format");
+    let format: PartitionFormat = match format_str.parse() {
+        Ok(f) => f,
+        Err(e) => anyhow::bail!("Invalid format: {}", e),
+    };
 
     let mut writer = pgr::writer(outfile)?;
 

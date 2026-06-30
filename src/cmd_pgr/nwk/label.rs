@@ -1,4 +1,5 @@
 use super::utils as nwr;
+use anyhow::Context;
 use clap::*;
 use pgr::libs::phylo::tree::Tree;
 use std::collections::BTreeSet;
@@ -154,11 +155,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     for tree in &trees {
         // Handle --root option
         if args.get_flag("root") {
-            let root_id = tree.get_root().unwrap();
-            let root = tree.get_node(root_id).unwrap();
+            let root_id = tree.get_root().context("tree has no root")?;
+            let root = tree.get_node(root_id).context("root node not found")?;
             if let Some(name) = &root.name {
                 if !name.is_empty() {
-                    writer.write_fmt(format_args!("{}\n", name)).unwrap();
+                    writer.write_fmt(format_args!("{}\n", name))?;
                 }
             }
             continue;
@@ -190,7 +191,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         let mut collected_labels = Vec::new();
 
         for id in ids.iter() {
-            let node = tree.get_node(*id).unwrap();
+            let node = tree.get_node(*id).context("node not found")?;
             if let Some(x) = node.name.clone() {
                 let out_string =
                     pgr::libs::phylo::tree::query::format_label_columns(node, &x, &columns);
@@ -198,15 +199,13 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 if tab_sep {
                     collected_labels.push(out_string);
                 } else {
-                    writer.write_fmt(format_args!("{}\n", out_string)).unwrap();
+                    writer.write_fmt(format_args!("{}\n", out_string))?;
                 }
             }
         }
 
         if tab_sep && !collected_labels.is_empty() {
-            writer
-                .write_fmt(format_args!("{}\n", collected_labels.join("\t")))
-                .unwrap();
+            writer.write_fmt(format_args!("{}\n", collected_labels.join("\t")))?;
         }
     }
 

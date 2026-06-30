@@ -101,8 +101,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                     s.pos,
                     trange.start,
                     trange.strand(),
-                )
-                .unwrap();
+                )?;
                 let var_rg = format!("{}:{}", chr, chr_pos);
 
                 writer.write_all(

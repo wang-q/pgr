@@ -109,7 +109,7 @@ fn proc_block(block: &pgr::libs::fmt::fas::FasBlock, args: &ArgMatches) -> anyho
     let mut seqs: Vec<String> = vec![];
     let mut ranges = vec![];
     for entry in &block.entries {
-        seqs.push(String::from_utf8(entry.seq().to_vec()).unwrap());
+        seqs.push(String::from_utf8(entry.seq().to_vec())?);
         ranges.push(entry.range().clone());
     }
 
