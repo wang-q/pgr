@@ -18,7 +18,6 @@ pub mod to_forest;
 pub mod to_svg;
 pub mod to_tex;
 pub mod topo;
-pub mod utils;
 
 pub fn make_subcommand() -> Command {
     Command::new("nwk")

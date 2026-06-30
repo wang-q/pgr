@@ -168,11 +168,7 @@ pub fn set_distances(
 
     let jaccard = inter as f64 / union as f64;
     let containment = inter as f64 / total1 as f64;
-    let mash = if jaccard == 0.0 {
-        1.0
-    } else {
-        ((-1.0 / kmer as f64) * ((2.0 * jaccard) / (1.0 + jaccard)).ln()).abs()
-    };
+    let mash = mash_distance(jaccard, kmer);
 
     SetDistances {
         total1,

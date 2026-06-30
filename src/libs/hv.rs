@@ -229,12 +229,7 @@ pub fn calc_distances(s1: &[i32], s2: &[i32], kmer: usize) -> HvDistances {
 
     let jaccard = inter / union;
     let containment = inter / card1 as f32;
-    // https://mash.readthedocs.io/en/latest/distances.html#mash-distance-formulation
-    let mash = if jaccard == 0.0 {
-        1.0
-    } else {
-        ((-1.0 / kmer as f32) * ((2.0f32 * jaccard) / (1.0f32 + jaccard)).ln()).abs()
-    };
+    let mash = crate::libs::hash::mash_distance(jaccard as f64, kmer) as f32;
 
     HvDistances {
         card1,

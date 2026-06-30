@@ -5,9 +5,7 @@ use rust_xlsxwriter::*;
 use std::cmp::max;
 use std::collections::BTreeMap;
 
-use crate::libs::alignment::{
-    get_indels, get_subs, polarize_indels, polarize_subs, Indel, Substitution,
-};
+use crate::libs::alignment::{collect_indels, collect_subs, Indel, Substitution};
 use crate::libs::fmt::fas::{next_fas_block, FasBlock};
 
 /// Export variations from FAS blocks to an Excel xlsx file.
@@ -301,16 +299,7 @@ fn get_vars(
         None
     };
 
-    let subs = if is_outgroup {
-        let mut unpolarized = get_subs(&seqs[..seq_count])?;
-        polarize_subs(
-            &mut unpolarized,
-            out_seq.ok_or_else(|| anyhow!("outgroup sequence missing"))?,
-        )?;
-        unpolarized
-    } else {
-        get_subs(seqs)?
-    };
+    let subs = collect_subs(seqs, out_seq)?;
 
     for sub in subs {
         if no_single && sub.freq <= 1 {
@@ -334,16 +323,7 @@ fn get_vars(
     }
 
     if is_indel {
-        let indels = if is_outgroup {
-            let mut unpolarized = get_indels(&seqs[..seq_count])?;
-            polarize_indels(
-                &mut unpolarized,
-                out_seq.ok_or_else(|| anyhow!("outgroup sequence missing"))?,
-            )?;
-            unpolarized
-        } else {
-            get_indels(seqs)?
-        };
+        let indels = collect_indels(seqs, out_seq)?;
 
         for indel in indels {
             if no_single && indel.freq <= 1 {

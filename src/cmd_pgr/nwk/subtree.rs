@@ -1,5 +1,5 @@
-use super::utils as nwr;
 use clap::*;
+use pgr::libs::phylo::tree::query as nwr;
 use pgr::libs::phylo::tree::Tree;
 
 // Create clap subcommand arguments
