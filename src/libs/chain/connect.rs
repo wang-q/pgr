@@ -2,7 +2,7 @@ use crate::libs::chain::algo::{ChainItem, KdTree};
 use crate::libs::chain::gap_calc::GapCalc;
 use crate::libs::chain::record::{Chain, ChainData, ChainHeader};
 use crate::libs::chain::sub_matrix::SubMatrix;
-use crate::libs::io::SequenceReader;
+use crate::libs::io::{reverse_range_pair, SequenceReader};
 use crate::libs::nt;
 use std::cmp::Ordering;
 
@@ -350,8 +350,8 @@ fn find_crossover<S: SequenceReader>(
             )
             .unwrap()
     } else {
-        let start = (q_size - left.q_end) as usize;
-        let end = (q_size - (left.q_end - overlap as u64)) as usize;
+        let (start, end) = reverse_range_pair(left.q_end - overlap as u64, left.q_end, q_size);
+        let (start, end) = (start as usize, end as usize);
         let s = ctx
             .q_2bit
             .read_sequence(q_name, Some(start), Some(end))
@@ -369,8 +369,9 @@ fn find_crossover<S: SequenceReader>(
             )
             .unwrap()
     } else {
-        let start = (q_size - (right.q_start + overlap as u64)) as usize;
-        let end = (q_size - right.q_start) as usize;
+        let (start, end) =
+            reverse_range_pair(right.q_start, right.q_start + overlap as u64, q_size);
+        let (start, end) = (start as usize, end as usize);
         let s = ctx
             .q_2bit
             .read_sequence(q_name, Some(start), Some(end))
@@ -550,8 +551,8 @@ pub fn calc_block_score<S: SequenceReader>(
         ctx.q_2bit
             .read_sequence(q_name, Some(b.q_start as usize), Some(b.q_end as usize))
     } else {
-        let start_pos = (q_size - b.q_end) as usize;
-        let end_pos = (q_size - b.q_start) as usize;
+        let (start_pos, end_pos) = reverse_range_pair(b.q_start, b.q_end, q_size);
+        let (start_pos, end_pos) = (start_pos as usize, end_pos as usize);
 
         ctx.q_2bit
             .read_sequence(q_name, Some(start_pos), Some(end_pos))

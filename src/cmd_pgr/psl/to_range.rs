@@ -1,5 +1,6 @@
 use clap::*;
 use pgr::libs::fmt::psl::Psl;
+use pgr::libs::io::reverse_range_1based_pair;
 use std::io::{BufRead, Write};
 use std::str::FromStr;
 
@@ -82,15 +83,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
             // Convert to 1-based inclusive range on positive strand
             let (final_start, final_end) = if is_neg {
-                // Reverse complement coordinates
-                // 0-based: [size - end, size - start)
-                // 1-based: size - end + 1, size - start
-                (size - end + 1, size - start)
+                reverse_range_1based_pair((start + 1) as usize, end as usize, size as usize)
             } else {
-                // Positive strand coordinates
-                // 0-based: [start, end)
-                // 1-based: start + 1, end
-                (start + 1, end)
+                ((start + 1) as usize, end as usize)
             };
 
             writer.write_fmt(format_args!("{}:{}-{}\n", name, final_start, final_end))?;

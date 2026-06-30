@@ -149,16 +149,18 @@ impl ScoringMatrix<f32> {
             if fields.len() >= 3 {
                 let n1 = fields[0].to_string();
                 let n2 = fields[1].to_string();
-                let score = fields[2].parse().unwrap();
+                let score: f32 = fields[2].parse()?;
 
                 names.insert(n1.clone());
                 names.insert(n2.clone());
 
-                matrix.set(
-                    names.get_index_of(&n1).unwrap(),
-                    names.get_index_of(&n2).unwrap(),
-                    score,
-                );
+                let i1 = names
+                    .get_index_of(&n1)
+                    .ok_or_else(|| anyhow::anyhow!("name not found: {n1}"))?;
+                let i2 = names
+                    .get_index_of(&n2)
+                    .ok_or_else(|| anyhow::anyhow!("name not found: {n2}"))?;
+                matrix.set(i1, i2, score);
             }
         }
 
@@ -450,13 +452,13 @@ impl NamedMatrix {
         if let Some(Ok(line)) = lines.next() {
             if line.trim().parse::<usize>().is_err() {
                 // If first line is not a number, treat it as a data line
-                Self::process_phylip_line(&line, &mut names, &mut raw_values);
+                Self::process_phylip_line(&line, &mut names, &mut raw_values)?;
             }
         }
 
         // Process remaining lines
         for line in lines.map_while(Result::ok) {
-            Self::process_phylip_line(&line, &mut names, &mut raw_values);
+            Self::process_phylip_line(&line, &mut names, &mut raw_values)?;
         }
 
         let size = names.len();
@@ -483,7 +485,11 @@ impl NamedMatrix {
         Ok(matrix)
     }
 
-    fn process_phylip_line(line: &str, names: &mut Vec<String>, values: &mut Vec<f32>) {
+    fn process_phylip_line(
+        line: &str,
+        names: &mut Vec<String>,
+        values: &mut Vec<f32>,
+    ) -> anyhow::Result<()> {
         let parts: Vec<&str> = line.split_whitespace().collect();
         if !parts.is_empty() {
             let name = parts[0].to_string();
@@ -492,11 +498,15 @@ impl NamedMatrix {
             // Read lower-triangle distances
             let distances: Vec<f32> = parts[1..=names.len()]
                 .iter()
-                .map(|&s| s.parse().unwrap())
-                .collect();
+                .map(|&s| {
+                    s.parse::<f32>()
+                        .map_err(|e| anyhow::anyhow!("parse error: {e}"))
+                })
+                .collect::<anyhow::Result<Vec<f32>>>()?;
 
             values.extend(distances);
         }
+        Ok(())
     }
 }
 

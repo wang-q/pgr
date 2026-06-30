@@ -133,7 +133,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                     writeln!(writer, "{:.4}", diff)?;
                 }
             }
-            _ => unreachable!(),
+            _ => anyhow::bail!("unsupported stat type"),
         }
     }
 

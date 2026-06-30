@@ -337,7 +337,7 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
                 } else if matches.contains_id("inconsistent") {
                     (Method::Inconsistent(val, deep), "inconsistent")
                 } else {
-                    unreachable!("ArgGroup requires one method");
+                    anyhow::bail!("no cut method specified");
                 };
                 let p = cut::cut(tree, method).map_err(|e| anyhow::anyhow!(e))?;
                 (p, method_name)
@@ -449,7 +449,7 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
             } else if let Some(&t) = matches.get_one::<f64>("inconsistent") {
                 Method::Inconsistent(t, deep)
             } else {
-                unreachable!("ArgGroup requires one method");
+                anyhow::bail!("no cut method specified");
             };
             cut::cut(tree, method).map_err(|e| anyhow::anyhow!(e))?
         };
@@ -520,7 +520,7 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
                             None => (None, 0),
                         }
                     }
-                    _ => unreachable!(),
+                    _ => (None, 0), // unsupported rep method, treated as empty
                 }
             };
 
@@ -556,7 +556,7 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
                     }
                 }
             }
-            _ => unreachable!(),
+            _ => anyhow::bail!("unsupported output format"),
         }
     }
 

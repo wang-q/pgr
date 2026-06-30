@@ -27,15 +27,35 @@ pub struct CigarOp(pub(crate) u32);
 impl CigarOp {
     /// Create a new `CigarOp` from length and op character.
     ///
-    /// Panics on invalid op (internal invariant — callers must validate).
-    pub fn new(len: u32, op: char) -> Self {
+    /// Returns an error if the op character is invalid.
+    pub fn try_new(len: u32, op: char) -> anyhow::Result<Self> {
         let code = match op {
             '=' => OP_EQ,
             'X' => OP_X,
             'I' => OP_I,
             'D' => OP_D,
             'M' => OP_M,
-            _ => panic!("invalid CIGAR op: '{op}'"),
+            _ => anyhow::bail!("invalid CIGAR op: '{op}'"),
+        };
+        Ok(Self((code << 29) | (len & 0x1FFF_FFFF)))
+    }
+
+    /// Create a new `CigarOp` from length and op character (unchecked).
+    ///
+    /// # Panics
+    /// Panics in debug mode if `op` is not one of '=', 'X', 'I', 'D', 'M'.
+    /// In release mode, invalid ops are treated as 'M' (match/mismatch).
+    pub(crate) fn new(len: u32, op: char) -> Self {
+        let code = match op {
+            '=' => OP_EQ,
+            'X' => OP_X,
+            'I' => OP_I,
+            'D' => OP_D,
+            'M' => OP_M,
+            _ => {
+                debug_assert!(false, "invalid CIGAR op: '{op}'");
+                OP_M // safe fallback in release mode
+            }
         };
         Self((code << 29) | (len & 0x1FFF_FFFF))
     }
@@ -46,6 +66,8 @@ impl CigarOp {
     }
 
     /// Decode the op character.
+    ///
+    /// Returns '?' for invalid op codes (from corrupted `from_raw` inputs).
     pub fn op(self) -> char {
         match self.0 >> 29 {
             OP_EQ => '=',
@@ -53,7 +75,7 @@ impl CigarOp {
             OP_I => 'I',
             OP_D => 'D',
             OP_M => 'M',
-            _ => unreachable!(),
+            _ => '?', // invalid op code from corrupted raw value
         }
     }
 

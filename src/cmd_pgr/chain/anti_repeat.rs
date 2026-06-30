@@ -4,6 +4,7 @@ use std::io::{BufReader, BufWriter};
 
 use pgr::libs::chain::{read_chains, Block, Chain};
 use pgr::libs::fmt::twobit::TwoBitFile;
+use pgr::libs::io::reverse_range_pair;
 // Default scores from UCSC chainAntiRepeat.c
 
 pub fn make_subcommand() -> Command {
@@ -119,8 +120,8 @@ fn get_slices<R: std::io::Read + std::io::Seek>(
     let (q_start, q_end) = if q_strand == '+' {
         (block.q_start as usize, block.q_end as usize)
     } else {
-        let q_len = q_size as usize;
-        (q_len - block.q_end as usize, q_len - block.q_start as usize)
+        let (s, e) = reverse_range_pair(block.q_start as i32, block.q_end as i32, q_size as i32);
+        (s as usize, e as usize)
     };
 
     // Read Query Slice

@@ -306,7 +306,7 @@ pub fn align_seqs(seqs: &[String], aligner: &str) -> anyhow::Result<Vec<String>>
             .arg("1")
             .arg(seq_in_path.to_string_lossy().to_string())
             .output()?,
-        _ => unreachable!(),
+        _ => anyhow::bail!("unsupported aligner: {aligner}"),
     };
 
     if !output.status.success() {

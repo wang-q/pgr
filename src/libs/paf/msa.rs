@@ -1,3 +1,4 @@
+use crate::libs::io;
 use crate::libs::nt;
 use crate::libs::paf::cigar::CigarOp;
 use crate::libs::paf::fasta::FastaStore;
@@ -138,7 +139,7 @@ pub fn build_msa_entries(
         let (seq, start, strand_char) = if *strand == '-' {
             (
                 nt::rev_comp(&q_seq_fwd).collect::<Vec<u8>>(),
-                q_src_size as i32 - qe,
+                io::reverse_range_pair(qs, qe, q_src_size as i32).0,
                 '-',
             )
         } else {
@@ -207,7 +208,13 @@ pub fn build_pairwise_block(
         let aligned_q_len: i32 = cigar.iter().map(|op| op.query_delta() as i32).sum();
         let rec_qe = *rec_qs + aligned_q_len;
         let rc_sub_start = rec_qe - qe;
-        (rc, 0, rc_sub_start, '-', q_src_size as i32 - qe)
+        (
+            rc,
+            0,
+            rc_sub_start,
+            '-',
+            io::reverse_range_pair(qs, qe, q_src_size as i32).0,
+        )
     } else {
         (q_seq_fwd, *rec_qs, qs, '+', qs)
     };

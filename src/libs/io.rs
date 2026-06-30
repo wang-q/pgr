@@ -216,6 +216,19 @@ pub fn reverse_range_1based(start: &mut usize, end: &mut usize, size: usize) {
     *end = size - s + 1;
 }
 
+/// Reverse a 1-based inclusive `[start, end]` range against `size`, returning the
+/// reversed range as a tuple `(size - end + 1, size - start + 1)`. Non-mutating
+/// counterpart of [`reverse_range_1based`].
+///
+/// ```
+/// let (s, e) = pgr::libs::io::reverse_range_1based_pair(11, 20, 100);
+/// assert_eq!(s, 81);
+/// assert_eq!(e, 90);
+/// ```
+pub fn reverse_range_1based_pair(start: usize, end: usize, size: usize) -> (usize, usize) {
+    (size - end + 1, size - start + 1)
+}
+
 /// Recursively collect FASTA files (`.fa` and `.fa.gz`) under `path`.
 /// A file input is returned as a single-element vec. Directory inputs are
 /// walked recursively, matching `.fa` and `.fa.gz` extensions.

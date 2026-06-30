@@ -102,7 +102,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                     writer.write_fmt(format_args!(" {:.6}", matrix.get(i, j)))?;
                 }
             }
-            _ => unreachable!(),
+            _ => anyhow::bail!("unsupported output format"),
         }
         writer.write_fmt(format_args!("\n"))?;
     }
