@@ -46,7 +46,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
     let is_strict = args.get_flag("strict");
 
-    let needed = pgr::libs::io::read_names_as_vec(args.get_one::<String>("required").unwrap())?;
+    let needed =
+        pgr::libs::io::read_names::<Vec<String>>(args.get_one::<String>("required").unwrap())?;
 
     //----------------------------
     // Operating

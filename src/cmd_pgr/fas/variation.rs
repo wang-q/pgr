@@ -95,12 +95,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             //   0,     1,     2,     3,         4,    5,       6,     7
             let seq_count = seqs.len();
             let subs = if has_outgroup {
-                let mut unpolarized =
-                    pgr::libs::alignment::get_subs(&seqs[..(seq_count - 1)]).unwrap();
+                let mut unpolarized = pgr::libs::alignment::get_subs(&seqs[..(seq_count - 1)])?;
                 pgr::libs::alignment::polarize_subs(&mut unpolarized, seqs[seq_count - 1])?;
                 unpolarized
             } else {
-                pgr::libs::alignment::get_subs(&seqs).unwrap()
+                pgr::libs::alignment::get_subs(&seqs)?
             };
 
             for s in subs {

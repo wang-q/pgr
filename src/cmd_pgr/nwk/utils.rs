@@ -25,7 +25,7 @@ pub fn match_names(tree: &Tree, args: &ArgMatches) -> anyhow::Result<BTreeSet<us
     // ids supplied by --file
     if args.contains_id("file") {
         let file = args.get_one::<String>("file").unwrap();
-        for name in pgr::libs::io::read_names_as_vec(file)?.iter() {
+        for name in pgr::libs::io::read_names::<Vec<String>>(file)?.iter() {
             if id_of.contains_key(name) {
                 let id = id_of.get(name).unwrap();
                 ids.insert(*id);

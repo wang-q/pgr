@@ -135,7 +135,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     run_cmd!(
         ${pgr} fa size ${abs_infile} -o chr.sizes
     )?;
-    let chrs = crate::cmd_pgr::pl::common::read_chr_names("chr.sizes")?;
+    let chrs = pgr::libs::io::read_names::<Vec<String>>("chr.sizes")?;
 
     let mut rg_files = vec![];
     for (i, chr) in chrs.iter().enumerate() {

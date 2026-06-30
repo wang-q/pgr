@@ -162,29 +162,17 @@ pub fn get_basename(file_path: &str) -> Option<String> {
         .map(|s| s.split('.').next().unwrap_or(s).to_string())
 }
 
-/// Read the first column of `path` (one name per line) into a `HashSet`.
+/// Read the first column of `path` (one name per line) into a collection.
 ///
 /// Lines are split on whitespace; only the first field is kept. Empty lines
-/// are skipped.
-pub fn read_names_as_set(path: &str) -> anyhow::Result<std::collections::HashSet<String>> {
-    Ok(read_lines(path)?
-        .into_iter()
-        .filter_map(|line| {
-            let line = line.trim();
-            if line.is_empty() {
-                None
-            } else {
-                line.split_whitespace().next().map(|s| s.to_string())
-            }
-        })
-        .collect())
-}
-
-/// Read the first column of `path` (one name per line) into a `Vec`.
+/// are skipped. Order is preserved. Use `read_names::<Vec<String>>` for a
+/// vector or `read_names::<HashSet<String>>` for a set.
 ///
-/// Lines are split on whitespace; only the first field is kept. Empty lines
-/// are skipped. Order is preserved.
-pub fn read_names_as_vec(path: &str) -> anyhow::Result<Vec<String>> {
+/// ```
+/// let names: Vec<String> = pgr::libs::io::read_names("tests/mat/IBPA.list").unwrap();
+/// assert_eq!(names.len(), 3);
+/// ```
+pub fn read_names<T: FromIterator<String>>(path: &str) -> anyhow::Result<T> {
     Ok(read_lines(path)?
         .into_iter()
         .filter_map(|line| {

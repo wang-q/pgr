@@ -66,7 +66,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut fa_out = pgr::libs::fmt::fa::writer(crate::cmd_pgr::args::get_outfile(args))?;
 
     let set_list: HashSet<String> = if args.contains_id("list.txt") {
-        pgr::libs::io::read_names_as_set(args.get_one::<String>("list.txt").unwrap())?
+        pgr::libs::io::read_names::<std::collections::HashSet<String>>(
+            args.get_one::<String>("list.txt").unwrap(),
+        )?
     } else {
         HashSet::new()
     };
@@ -89,13 +91,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             format!("RC_{}", name)
         };
 
-        let definition = noodles_fasta::record::Definition::new(&*new_name, None);
-        let seq_rc: noodles_fasta::record::Sequence = record
+        let seq_rc: Vec<u8> = record
             .sequence()
             .complement()
             .rev()
             .collect::<Result<_, _>>()?;
-        let record_rc = noodles_fasta::Record::new(definition, seq_rc);
+        let record_rc = pgr::libs::fmt::fa::new_record(&new_name, &seq_rc);
         fa_out.write_record(&record_rc)?;
     }
 

@@ -86,14 +86,8 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
     let mut writer: Box<dyn Write> = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
 
     let infile = args.get_one::<String>("infile").unwrap();
-    let input = match infile.as_str() {
-        "stdin" => {
-            let mut buffer = String::new();
-            std::io::stdin().read_to_string(&mut buffer)?;
-            buffer
-        }
-        _ => std::fs::read_to_string(infile)?,
-    };
+    let mut input = String::new();
+    pgr::reader(infile)?.read_to_string(&mut input)?;
 
     // Attempt to parse Newick. If it fails, return error.
     let tree = Tree::from_newick(&input).map_err(|e| anyhow!("Failed to parse Newick: {:?}", e))?;

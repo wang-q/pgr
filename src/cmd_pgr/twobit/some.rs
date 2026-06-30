@@ -63,7 +63,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     // Load list
     //----------------------------
-    let set_list = pgr::libs::io::read_names_as_set(list_file)?;
+    let set_list = pgr::libs::io::read_names::<std::collections::HashSet<String>>(list_file)?;
 
     //----------------------------
     // Process

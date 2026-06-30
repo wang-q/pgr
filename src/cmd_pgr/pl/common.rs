@@ -3,14 +3,6 @@
 use cmd_lib::*;
 use std::io::BufRead;
 
-/// Read chromosome names from a `chr.sizes` file (lines of `<chr>\t<size>`).
-///
-/// Returns the first column in file order. Supports stdin and `.gz` via
-/// [`pgr::libs::io::read_names_as_vec`].
-pub fn read_chr_names(sizes_file: &str) -> anyhow::Result<Vec<String>> {
-    pgr::libs::io::read_names_as_vec(sizes_file)
-}
-
 /// Resolve `path` to an absolute path string. `stdout` is passed through as-is.
 pub fn abs_path_or_stdout(path: &str) -> anyhow::Result<String> {
     if path == "stdout" {
@@ -178,7 +170,7 @@ pub fn run_repeat_pipeline(opts: &RepeatOpts) -> anyhow::Result<()> {
     run_cmd!(
         ${pgr} fa size ${abs_infile} -o chr.sizes
     )?;
-    let chrs = read_chr_names("chr.sizes")?;
+    let chrs = pgr::libs::io::read_names::<Vec<String>>("chr.sizes")?;
 
     let rg_files = run_profex_per_chr(&chrs, &opts.re_prof, opts.min_depth)?;
 

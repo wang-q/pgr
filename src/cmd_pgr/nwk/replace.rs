@@ -151,7 +151,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                             node.add_property(&first, "");
                         }
                     }
-                    _ => unreachable!(),
+                    other => anyhow::bail!("unknown property mode: {}", other),
                 }
 
                 replaces.iter().skip(1).for_each(|e| {

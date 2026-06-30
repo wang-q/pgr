@@ -317,8 +317,7 @@ pub fn load_minimizers(
     opt_window: usize,
     is_merge: bool,
 ) -> anyhow::Result<Vec<MinimizerEntry>> {
-    let reader = crate::reader(infile)?;
-    let mut fa_in = fasta::io::Reader::new(reader);
+    let mut fa_in = crate::libs::fmt::fa::reader(infile)?;
 
     let mut entries = vec![];
     // Set to merge all minimizers if --merge is true

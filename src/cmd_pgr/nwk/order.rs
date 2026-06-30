@@ -86,7 +86,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut names = vec![];
     if args.contains_id("list") {
         let list_file = args.get_one::<String>("list").unwrap();
-        names = pgr::libs::io::read_names_as_vec(list_file)?;
+        names = pgr::libs::io::read_names::<Vec<String>>(list_file)?;
     }
 
     let is_deladderize = args.get_flag("deladderize");

@@ -105,7 +105,8 @@ pub fn collect_ranges(args: &ArgMatches) -> anyhow::Result<Vec<String>> {
         Vec::new()
     };
     if args.contains_id("rgfile") {
-        let mut rgs = pgr::libs::io::read_names_as_vec(args.get_one::<String>("rgfile").unwrap())?;
+        let mut rgs =
+            pgr::libs::io::read_names::<Vec<String>>(args.get_one::<String>("rgfile").unwrap())?;
         ranges.append(&mut rgs);
     }
     Ok(ranges)

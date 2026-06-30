@@ -25,7 +25,7 @@ pub fn build_venn_sets_from_files(infiles: &[String]) -> anyhow::Result<IndexMap
             basename = format!("cat{}", i + 1);
         }
 
-        let vec = crate::libs::io::read_names_as_vec(file)?;
+        let vec = crate::libs::io::read_names::<Vec<String>>(file)?;
         let mut ints = IntSpan::new();
 
         for e in &vec {

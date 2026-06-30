@@ -47,7 +47,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
     let is_phylip = args.get_flag("phylip");
 
-    let needed = pgr::libs::io::read_names_as_vec(args.get_one::<String>("required").unwrap())?;
+    let needed =
+        pgr::libs::io::read_names::<Vec<String>>(args.get_one::<String>("required").unwrap())?;
 
     let mut seq_of: BTreeMap<String, String> = BTreeMap::new();
     for name in &needed {

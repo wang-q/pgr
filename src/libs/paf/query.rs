@@ -91,7 +91,9 @@ pub fn run_query(
     let subset = opts
         .subset_list
         .as_ref()
-        .map(|list_path| crate::libs::io::read_names_as_set(list_path))
+        .map(|list_path| {
+            crate::libs::io::read_names::<std::collections::HashSet<String>>(list_path)
+        })
         .transpose()?;
 
     // Optional syntenic filter: load UCSC chain file and build

@@ -35,7 +35,7 @@ pub fn spawn_writer_and_pool(
 /// as a one-path-per-line list; otherwise treat `infile` itself as the path.
 pub fn resolve_paths(infile: &str, is_list: bool) -> anyhow::Result<Vec<String>> {
     if is_list {
-        crate::libs::io::read_names_as_vec(infile)
+        crate::libs::io::read_names::<Vec<String>>(infile)
     } else {
         Ok(vec![infile.to_string()])
     }

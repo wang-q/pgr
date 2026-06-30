@@ -144,15 +144,16 @@ cargo test
     - **Misc**: `ms` (Simulation), `pl` (Pipelines).
 - **`src/libs/`** - 共享工具库和核心逻辑。
   - **`phylo/`** - 系统发育分析核心库。
-    - **`tree/`**: 树结构定义、遍历、I/O、统计 (`stat.rs`)、切分 (`cut.rs`)。
-    - **`algo/`**: 树操作算法（排序、reroot 等）。
+    - **`tree/`**: 树结构定义、遍历、I/O、统计 (`stat.rs`)。
+    - **`algo.rs`/`ops.rs`**: 树操作算法（排序、reroot 等）。
   - **`poa/`** - 偏序比对 (Partial Order Alignment) 实现。
   - **`chain/`** - 基因组比对链 (Chain/Net) 处理逻辑。
   - **`clust/`** - 聚类算法实现。
     - **`hier.rs`**: 层次聚类 (NN-chain 算法)。
     - **`dbscan.rs`, `mcl.rs`, `k_medoids.rs`**: 其他聚类算法。
+    - **`tree_cut/`**: 树切分算法。
   - **`io.rs`** - I/O 辅助函数。
-  - **`alignment.rs`**, **`fas_multiz.rs`**, **`psl.rs`** 等 - 特定格式处理逻辑。
+  - **`alignment/`**, **`fas_multiz/`**, **`fmt/psl.rs`** 等 - 特定格式处理逻辑。
 
 ## 关键设计文档
 
