@@ -100,7 +100,8 @@ impl ParsedNode {
         for child in self.children {
             let child_id = child.to_tree(tree);
             // The unwrap here is safe because `id` was just created and exists in the tree.
-            tree.add_child(id, child_id).unwrap();
+            tree.add_child(id, child_id)
+                .expect("internal: freshly created node can be linked");
         }
         if let Some(node) = tree.get_node_mut(id) {
             node.name = self.name;
@@ -401,7 +402,14 @@ pub fn parse_newick_multi(input: &str) -> Result<Vec<Tree>, TreeError> {
 
 // Helper to convert nom errors into friendly TreeError
 fn make_tree_error(input: &str, e: DetailedError) -> TreeError {
-    let (remaining, _) = e.errors.first().unwrap();
+    let Some((remaining, _)) = e.errors.first() else {
+        return TreeError::ParseError {
+            message: "unknown parse error".to_string(),
+            line: 0,
+            column: 0,
+            snippet: "".to_string(),
+        };
+    };
     let offset = input.offset(remaining);
 
     // Calculate line/col

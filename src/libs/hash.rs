@@ -1,5 +1,6 @@
 use itertools::Itertools;
 use minimizer_iter::MinimizerBuilder;
+use noodles_fasta as fasta;
 use std::iter::FromIterator;
 
 // These codes were adapted from https://curiouscoding.nl/posts/fast-minimizers/
@@ -299,6 +300,57 @@ where
             }
         })
         .collect()
+}
+
+/// A named minimizer set, the basic unit compared by `pgr dist seq`.
+#[derive(Debug, Default, Clone)]
+pub struct MinimizerEntry {
+    pub name: String,
+    pub set: rapidhash::RapidHashSet<u64>,
+}
+
+/// Read a FASTA file and build a `MinimizerEntry` per record (or one merged entry with `is_merge`).
+pub fn load_minimizers(
+    infile: &str,
+    opt_hasher: &str,
+    opt_kmer: usize,
+    opt_window: usize,
+    is_merge: bool,
+) -> anyhow::Result<Vec<MinimizerEntry>> {
+    let reader = crate::reader(infile)?;
+    let mut fa_in = fasta::io::Reader::new(reader);
+
+    let mut entries = vec![];
+    // Set to merge all minimizers if --merge is true
+    let mut all_set: rapidhash::RapidHashSet<u64> = rapidhash::RapidHashSet::default();
+
+    for result in fa_in.records() {
+        // obtain record or fail with error
+        let record = result?;
+
+        let name = String::from_utf8(record.name().into())?;
+        let seq = record.sequence();
+
+        let set: rapidhash::RapidHashSet<u64> =
+            seq_mins(&seq[..], opt_hasher, opt_kmer, opt_window)?;
+
+        if is_merge {
+            all_set.extend(set);
+        } else {
+            let entry = MinimizerEntry { name, set };
+            entries.push(entry);
+        }
+    }
+
+    if is_merge {
+        let entry = MinimizerEntry {
+            name: infile.to_string(),
+            set: all_set,
+        };
+        entries.push(entry);
+    }
+
+    Ok(entries)
 }
 
 #[cfg(test)]

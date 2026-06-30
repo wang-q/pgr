@@ -69,7 +69,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // Args
     //----------------------------
     let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap())?;
-    let sizes = intspan::read_sizes(args.get_one::<String>("chr.sizes").unwrap());
+    let sizes = pgr::read_sizes::<i32>(args.get_one::<String>("chr.sizes").unwrap())?;
 
     let tname = args.get_one::<String>("tname").unwrap();
     let qname = args.get_one::<String>("qname").unwrap();

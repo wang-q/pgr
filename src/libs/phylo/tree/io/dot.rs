@@ -12,7 +12,9 @@ pub fn to_dot(tree: &Tree) -> String {
         // Preorder is good.
         if let Ok(nodes) = tree.preorder(&root) {
             for &node_id in &nodes {
-                let node = tree.get_node(node_id).unwrap();
+                let Some(node) = tree.get_node(node_id) else {
+                    continue;
+                };
                 if node.deleted {
                     continue;
                 }
@@ -29,7 +31,9 @@ pub fn to_dot(tree: &Tree) -> String {
 
                 // 2. Define Edges to children
                 for &child_id in &node.children {
-                    let child = tree.get_node(child_id).unwrap();
+                    let Some(child) = tree.get_node(child_id) else {
+                        continue;
+                    };
                     let mut edge_attrs = Vec::new();
                     if let Some(len) = child.length {
                         edge_attrs.push(format!("label=\"{}\"", len));

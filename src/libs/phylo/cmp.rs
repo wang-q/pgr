@@ -77,7 +77,9 @@ impl TreeComparison for Tree {
 
         for node_id in nodes {
             let mut bitset = FixedBitSet::with_capacity(num_leaves);
-            let node = self.get_node(node_id).unwrap();
+            let Some(node) = self.get_node(node_id) else {
+                continue;
+            };
 
             if node.is_leaf() {
                 if let Some(name) = &node.name {

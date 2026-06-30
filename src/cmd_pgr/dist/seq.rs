@@ -1,6 +1,5 @@
 use super::common;
 use clap::Command;
-use noodles_fasta as fasta;
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
@@ -108,12 +107,6 @@ Examples:
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
-#[derive(Debug, Default, Clone)]
-struct MinimizerEntry {
-    name: String,
-    set: rapidhash::RapidHashSet<u64>,
-}
-
 // command implementation
 pub fn execute(args: &clap::ArgMatches) -> anyhow::Result<()> {
     //----------------------------
@@ -139,7 +132,7 @@ pub fn execute(args: &clap::ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     let (entries1, entries2) = common::load_two_sets(&infiles, is_list, |paths| {
         common::load_entries(paths, |p| {
-            load_file(p, opt_hasher, opt_kmer, opt_window, is_merge)
+            pgr::libs::hash::load_minimizers(p, opt_hasher, opt_kmer, opt_window, is_merge)
         })
     })?;
 
@@ -183,47 +176,4 @@ pub fn execute(args: &clap::ArgMatches) -> anyhow::Result<()> {
     writer_thread.join().unwrap();
 
     Ok(())
-}
-
-fn load_file(
-    infile: &str,
-    opt_hasher: &str,
-    opt_kmer: usize,
-    opt_window: usize,
-    is_merge: bool,
-) -> anyhow::Result<Vec<MinimizerEntry>> {
-    let reader = pgr::reader(infile)?;
-    let mut fa_in = fasta::io::Reader::new(reader);
-
-    let mut entries = vec![];
-    // Set to merge all minimizers if --merge is true
-    let mut all_set = rapidhash::RapidHashSet::default();
-
-    for result in fa_in.records() {
-        // obtain record or fail with error
-        let record = result?;
-
-        let name = String::from_utf8(record.name().into())?;
-        let seq = record.sequence();
-
-        let set: rapidhash::RapidHashSet<u64> =
-            pgr::libs::hash::seq_mins(&seq[..], opt_hasher, opt_kmer, opt_window)?;
-
-        if is_merge {
-            all_set.extend(set);
-        } else {
-            let entry = MinimizerEntry { name, set };
-            entries.push(entry);
-        }
-    }
-
-    if is_merge {
-        let entry = MinimizerEntry {
-            name: infile.to_string(),
-            set: all_set,
-        };
-        entries.push(entry);
-    }
-
-    Ok(entries)
 }

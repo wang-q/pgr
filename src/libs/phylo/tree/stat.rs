@@ -65,7 +65,10 @@ pub fn get_node_with_longest_edge(tree: &Tree) -> Option<NodeId> {
         .max_by(|a, b| {
             let len_a = a.length.unwrap_or(0.0);
             let len_b = b.length.unwrap_or(0.0);
-            match len_a.partial_cmp(&len_b).unwrap() {
+            match len_a
+                .partial_cmp(&len_b)
+                .unwrap_or(std::cmp::Ordering::Equal)
+            {
                 std::cmp::Ordering::Equal => {
                     // Tie-breaking: prefer internal nodes over leaves
                     let a_internal = !a.children.is_empty();
@@ -118,13 +121,15 @@ pub fn diameter(tree: &Tree, weighted: bool) -> f64 {
         queue.push_back(start);
 
         while let Some(u) = queue.pop_front() {
-            let d = *visited.get(&u).unwrap();
+            let d = *visited
+                .get(&u)
+                .expect("internal: BFS node was inserted before pop");
             if d > max_dist {
                 max_dist = d;
                 furthest_node = u;
             }
 
-            let node = tree.get_node(u).unwrap();
+            let node = tree.get_node(u).expect("internal: BFS node exists in tree");
             let mut neighbors = node.children.clone();
             if let Some(p) = node.parent {
                 neighbors.push(p);
@@ -133,8 +138,8 @@ pub fn diameter(tree: &Tree, weighted: bool) -> f64 {
             for v in neighbors {
                 if let std::collections::hash_map::Entry::Vacant(e) = visited.entry(v) {
                     let weight = if weighted {
-                        let v_node = tree.get_node(v).unwrap();
-                        let u_node = tree.get_node(u).unwrap();
+                        let v_node = tree.get_node(v).expect("internal: neighbor exists in tree");
+                        let u_node = tree.get_node(u).expect("internal: BFS node exists in tree");
                         if v_node.parent == Some(u) {
                             v_node.length.unwrap_or(0.0)
                         } else {
@@ -320,8 +325,13 @@ pub fn cherries(tree: &Tree) -> usize {
         }
         // Cherry: internal node with 2 leaf children
         if node.children.len() == 2 {
-            let c1 = tree.get_node(node.children[0]).unwrap();
-            let c2 = tree.get_node(node.children[1]).unwrap();
+            // Children may point to deleted nodes in malformed trees; skip those.
+            let Some(c1) = tree.get_node(node.children[0]) else {
+                continue;
+            };
+            let Some(c2) = tree.get_node(node.children[1]) else {
+                continue;
+            };
             if c1.children.is_empty() && c2.children.is_empty() {
                 count += 1;
             }
@@ -418,4 +428,106 @@ pub fn get_leaf_depth_stats(tree: &Tree) -> (f64, f64, f64) {
     let max = depths.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
     let avg = depths.iter().sum::<f64>() / depths.len() as f64;
     (min, max, avg)
+}
+
+/// Coarse classification of a tree by its branch-length decoration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TreeType {
+    /// No edge has a length (all edges undecorated).
+    Cladogram,
+    /// All (or all-but-one, for the root) edges have a length.
+    Phylogram,
+    /// Mixed decorated/undecorated edges.
+    Neither,
+}
+
+impl TreeType {
+    /// Lowercase label used in `pgr nwk stat` output.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            TreeType::Cladogram => "cladogram",
+            TreeType::Phylogram => "phylogram",
+            TreeType::Neither => "neither",
+        }
+    }
+}
+
+/// Aggregate statistics for a single tree, as reported by `pgr nwk stat`.
+#[derive(Debug, Clone)]
+pub struct TreeSummary {
+    pub nodes: usize,
+    pub leaves: usize,
+    pub dichotomies: usize,
+    pub leaf_labels: usize,
+    pub internal_labels: usize,
+    pub edges_with_length: usize,
+    pub edges_without_length: usize,
+    pub cherries: usize,
+    pub sackin: Option<f64>,
+    pub colless: Option<f64>,
+    pub is_rooted: bool,
+    pub tree_type: TreeType,
+}
+
+/// Compute the full `pgr nwk stat` summary for `tree`.
+pub fn tree_summary(tree: &Tree) -> TreeSummary {
+    let mut nodes = 0usize;
+    let mut leaves = 0usize;
+    let mut dichotomies = 0usize;
+    let mut leaf_labels = 0usize;
+    let mut internal_labels = 0usize;
+    let mut edges_with_length = 0usize;
+    let mut edges_without_length = 0usize;
+
+    if let Some(root) = tree.get_root() {
+        if let Ok(ids) = tree.preorder(&root) {
+            for id in ids {
+                let Some(node) = tree.get_node(id) else {
+                    continue;
+                };
+                nodes += 1;
+                if node.is_leaf() {
+                    leaves += 1;
+                }
+                if node.children.len() == 2 {
+                    dichotomies += 1;
+                }
+                if node.name.is_some() {
+                    if node.is_leaf() {
+                        leaf_labels += 1;
+                    } else {
+                        internal_labels += 1;
+                    }
+                }
+                if node.length.is_some() {
+                    edges_with_length += 1;
+                } else {
+                    edges_without_length += 1;
+                }
+            }
+        }
+    }
+
+    let tree_type = if edges_without_length == nodes {
+        TreeType::Cladogram
+    } else if edges_with_length == nodes || edges_with_length == nodes.saturating_sub(1) {
+        TreeType::Phylogram
+    } else {
+        TreeType::Neither
+    };
+
+    TreeSummary {
+        nodes,
+        leaves,
+        dichotomies,
+        leaf_labels,
+        internal_labels,
+        edges_with_length,
+        edges_without_length,
+        cherries: cherries(tree),
+        sackin: sackin(tree),
+        colless: colless(tree),
+        is_rooted: is_rooted(tree),
+        tree_type,
+    }
 }

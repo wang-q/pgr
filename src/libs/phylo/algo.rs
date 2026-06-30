@@ -23,7 +23,9 @@ pub fn sort_by_name(tree: &mut Tree, descending: bool) {
         return;
     }
 
-    let root = tree.get_root().unwrap();
+    let root = tree
+        .get_root()
+        .expect("internal: non-empty tree has a root");
     // We can use levelorder to visit all nodes, but we just need to iterate all nodes.
     // However, to propagate sorting up the tree (inheriting labels), we should use post-order.
     // Or, we can just sort all nodes. For a single pass, if we just sort children, the order of visiting nodes matters
@@ -141,7 +143,9 @@ pub fn ladderize(tree: &mut Tree, descending: bool) {
         return;
     }
 
-    let root = tree.get_root().unwrap();
+    let root = tree
+        .get_root()
+        .expect("internal: non-empty tree has a root");
     let ids = match tree.levelorder(&root) {
         Ok(v) => v,
         Err(_) => return,
@@ -219,7 +223,9 @@ pub fn sort_by_list(tree: &mut Tree, order_list: &[String]) {
         return;
     }
 
-    let root = tree.get_root().unwrap();
+    let root = tree
+        .get_root()
+        .expect("internal: non-empty tree has a root");
 
     // Map name -> position
     let mut pos_map: HashMap<String, usize> = HashMap::new();
@@ -292,7 +298,9 @@ pub fn deladderize(tree: &mut Tree) {
         return;
     }
 
-    let root = tree.get_root().unwrap();
+    let root = tree
+        .get_root()
+        .expect("internal: non-empty tree has a root");
 
     // 1. Calculate descendant counts (same as ladderize)
     let mut size_map: HashMap<NodeId, usize> = HashMap::new();

@@ -1,7 +1,6 @@
 use anyhow::{anyhow, Result};
 use clap::*;
-use pgr::libs::phylo::node::NodeId;
-use pgr::libs::phylo::tree::Tree;
+use pgr::libs::phylo::tree::{distance, Tree};
 use std::collections::BTreeMap;
 use std::io::{Read, Write};
 
@@ -84,7 +83,7 @@ Examples:
 
 // command implementation
 pub fn execute(args: &ArgMatches) -> Result<()> {
-    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap())?;
+    let mut writer: Box<dyn Write> = pgr::writer(args.get_one::<String>("outfile").unwrap())?;
 
     let infile = args.get_one::<String>("infile").unwrap();
     let input = match infile.as_str() {
@@ -120,130 +119,13 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
     }
 
     match mode.as_str() {
-        "root" => dist_root(&tree, &id_of, &mut writer)?,
-        "parent" => dist_parent(&tree, &id_of, &mut writer)?,
-        "pairwise" => dist_pairwise(&tree, &id_of, &mut writer)?,
-        "lca" => dist_lca(&tree, &id_of, &mut writer)?,
-        "phylip" => dist_phylip(&tree, &id_of, &mut writer)?,
+        "root" => distance::dist_root(&tree, &id_of, &mut writer)?,
+        "parent" => distance::dist_parent(&tree, &id_of, &mut writer)?,
+        "pairwise" => distance::dist_pairwise(&tree, &id_of, &mut writer)?,
+        "lca" => distance::dist_lca(&tree, &id_of, &mut writer)?,
+        "phylip" => distance::dist_phylip(&tree, &id_of, &mut writer)?,
         _ => {}
     }
 
     Ok(())
-}
-
-fn dist_root(
-    tree: &Tree,
-    id_of: &BTreeMap<String, NodeId>,
-    writer: &mut Box<dyn Write>,
-) -> Result<()> {
-    let root = tree.get_root().ok_or_else(|| anyhow!("tree has no root"))?;
-    for (k, v) in id_of.iter() {
-        let dist = tree.node_distance(&root, v).map_err(anyhow::Error::msg)?;
-        writer.write_fmt(format_args!("{}\t{}\n", k, format_float(dist)))?;
-    }
-    Ok(())
-}
-
-fn dist_parent(
-    tree: &Tree,
-    id_of: &BTreeMap<String, NodeId>,
-    writer: &mut Box<dyn Write>,
-) -> Result<()> {
-    for (k, v) in id_of.iter() {
-        let node = tree
-            .get_node(*v)
-            .ok_or_else(|| anyhow!("node {} not found in tree", v))?;
-        let parent = match node.parent {
-            Some(p) => p,
-            None => {
-                writer.write_fmt(format_args!("{}\t0\n", k))?;
-                continue;
-            }
-        };
-        let dist = tree.node_distance(&parent, v).map_err(anyhow::Error::msg)?;
-        writer.write_fmt(format_args!("{}\t{}\n", k, format_float(dist)))?;
-    }
-    Ok(())
-}
-
-fn dist_pairwise(
-    tree: &Tree,
-    id_of: &BTreeMap<String, NodeId>,
-    writer: &mut Box<dyn Write>,
-) -> Result<()> {
-    for (k1, v1) in id_of.iter() {
-        for (k2, v2) in id_of.iter() {
-            let dist = tree.node_distance(v1, v2).map_err(anyhow::Error::msg)?;
-            writer.write_fmt(format_args!("{}\t{}\t{}\n", k1, k2, format_float(dist)))?;
-        }
-    }
-    Ok(())
-}
-
-fn dist_lca(
-    tree: &Tree,
-    id_of: &BTreeMap<String, NodeId>,
-    writer: &mut Box<dyn Write>,
-) -> Result<()> {
-    for (k1, v1) in id_of.iter() {
-        for (k2, v2) in id_of.iter() {
-            let lca = tree
-                .get_common_ancestor(v1, v2)
-                .map_err(anyhow::Error::msg)?;
-            let dist1 = tree.node_distance(&lca, v1).map_err(anyhow::Error::msg)?;
-            let dist2 = tree.node_distance(&lca, v2).map_err(anyhow::Error::msg)?;
-            writer.write_fmt(format_args!(
-                "{}\t{}\t{}\t{}\n",
-                k1,
-                k2,
-                format_float(dist1),
-                format_float(dist2)
-            ))?;
-        }
-    }
-    Ok(())
-}
-
-fn dist_phylip(
-    tree: &Tree,
-    id_of: &BTreeMap<String, NodeId>,
-    writer: &mut Box<dyn Write>,
-) -> Result<()> {
-    let names: Vec<&String> = id_of.keys().collect();
-    let n = names.len();
-
-    // Phylip header
-    writer.write_fmt(format_args!("    {}\n", n))?;
-
-    for (i, name) in names.iter().enumerate() {
-        let v1 = id_of
-            .get(*name)
-            .ok_or_else(|| anyhow!("node {} not found in id_of", name))?;
-
-        // Name padding to 10 chars usually, but let's just print name followed by tab/space
-        // Phylip strict format requires 10 chars for name.
-        // Relaxed format (which is common) allows longer names separated by whitespace.
-        // Let's print name then spaces.
-        writer.write_fmt(format_args!("{} ", name))?;
-
-        for (j, other_name) in names.iter().enumerate() {
-            let v2 = id_of
-                .get(*other_name)
-                .ok_or_else(|| anyhow!("node {} not found in id_of", other_name))?;
-            let dist = if i == j {
-                0.0
-            } else {
-                tree.node_distance(v1, v2).map_err(anyhow::Error::msg)?
-            };
-
-            writer.write_fmt(format_args!(" {:.6}", dist))?;
-        }
-        writer.write_all(b"\n")?;
-    }
-    Ok(())
-}
-
-fn format_float(val: f64) -> String {
-    let rounded = (val * 1e6).round() / 1e6;
-    format!("{}", rounded)
 }

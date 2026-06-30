@@ -18,7 +18,9 @@ pub fn to_forest(tree: &Tree, height: f64) -> String {
 }
 
 fn to_forest_recursive(tree: &Tree, id: NodeId, height: f64) -> String {
-    let node = tree.get_node(id).unwrap();
+    let node = tree
+        .get_node(id)
+        .expect("internal: traversal only visits existing nodes");
     let indent = "  ";
 
     let children = &node.children;
@@ -50,7 +52,9 @@ fn to_forest_recursive(tree: &Tree, id: NodeId, height: f64) -> String {
 
 // almost all the operations in here
 fn to_forest_node_props(tree: &Tree, id: NodeId, height: f64) -> String {
-    let node = tree.get_node(id).unwrap();
+    let node = tree
+        .get_node(id)
+        .expect("internal: caller ensures node exists");
     let depth = node_depth(tree, id);
 
     let mut repr = String::new();

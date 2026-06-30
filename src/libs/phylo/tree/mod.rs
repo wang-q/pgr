@@ -1,3 +1,4 @@
+pub mod distance;
 pub mod io;
 pub mod ops;
 pub mod query;

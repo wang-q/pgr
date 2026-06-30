@@ -84,17 +84,27 @@ pub fn collapse_node(tree: &mut Tree, id: NodeId) -> Result<(), String> {
 
     // 1. Get info
     let (parent_id, parent_edge) = {
-        let node = tree.get_node(id).unwrap();
+        let node = tree
+            .get_node(id)
+            .expect("internal: node existence checked above");
         // Safety: Checked root above, so parent must exist
-        (node.parent.unwrap(), node.length)
+        (
+            node.parent.expect("internal: non-root node has a parent"),
+            node.length,
+        )
     };
 
     let children_info: Vec<(NodeId, Option<f64>)> = {
-        let node = tree.get_node(id).unwrap();
+        let node = tree
+            .get_node(id)
+            .expect("internal: node existence checked above");
         node.children
             .iter()
             .map(|&c| {
-                let child_node = tree.nodes.get(c).unwrap();
+                let child_node = tree
+                    .nodes
+                    .get(c)
+                    .expect("internal: child exists in node vector");
                 (c, child_node.length)
             })
             .collect()
@@ -347,7 +357,11 @@ pub fn remove_degree_two_nodes(tree: &mut Tree) {
 /// The "heavier" child (with more descendants) is the one collapsed into the root.
 pub fn deroot(tree: &mut Tree) -> Result<(), String> {
     let root = tree.root.ok_or("Empty tree")?;
-    let children = tree.get_node(root).unwrap().children.clone();
+    let children = tree
+        .get_node(root)
+        .expect("internal: root id points to a valid node")
+        .children
+        .clone();
 
     if children.len() != 2 {
         return Err("Root is not bifurcating (degree != 2)".to_string());
@@ -396,7 +410,12 @@ pub fn reroot_at(
         // Capture original names
         let names: Vec<Option<String>> = path
             .iter()
-            .map(|&id| tree.get_node(id).unwrap().name.clone())
+            .map(|&id| {
+                tree.get_node(id)
+                    .expect("internal: path nodes exist")
+                    .name
+                    .clone()
+            })
             .collect();
 
         for i in 0..path.len() {
@@ -430,7 +449,11 @@ pub fn reroot_at(
     // path[i]'s length represents edge (path[i-1] -> path[i])
     let mut lengths = Vec::new();
     for &id in &path {
-        lengths.push(tree.get_node(id).unwrap().length);
+        lengths.push(
+            tree.get_node(id)
+                .expect("internal: path nodes exist")
+                .length,
+        );
     }
 
     // 3. Reverse edges

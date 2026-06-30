@@ -52,7 +52,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         .map(|s| s.to_string())
         .unwrap_or_default();
     let sizes: BTreeMap<String, i32> = if !sizes_path.is_empty() {
-        intspan::read_sizes(&sizes_path)
+        pgr::read_sizes(&sizes_path)?
     } else {
         BTreeMap::new()
     };

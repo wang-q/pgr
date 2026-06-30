@@ -1,7 +1,7 @@
 //! Lastz aligner presets and scoring matrices ported from UCSC.
 
 use rayon::prelude::*;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 /// Default scoring matrix for lastz (Human vs Mouse / Macaque / Cow).
 pub const MATRIX_DEFAULT: &str = "   A    C    G    T
@@ -166,13 +166,10 @@ pub fn run_lastz(
 
     pool.install(move || {
         jobs.par_iter().for_each(|(target_file, query_file)| {
-            let get_base_name = |path: &Path| -> String {
-                let stem = path.file_stem().unwrap().to_string_lossy();
-                stem.split('.').next().unwrap().to_string()
-            };
-
-            let t_base = get_base_name(target_file);
-            let q_base = get_base_name(query_file);
+            let t_base =
+                crate::libs::io::get_basename(&target_file.to_string_lossy()).unwrap_or_default();
+            let q_base =
+                crate::libs::io::get_basename(&query_file.to_string_lossy()).unwrap_or_default();
 
             if is_self && t_base != q_base {
                 return;

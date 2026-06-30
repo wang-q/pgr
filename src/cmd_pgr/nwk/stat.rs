@@ -23,7 +23,7 @@ Notes:
       cherries	5
       sackin	46
       colless	9
-    
+
     * Tab-separated values (--style line):
       Type	nodes	leaves	rooted	dichotomies	leaf labels	internal labels	cherries	sackin	colless
       cladogram	18	11	Yes	5	11	0	5	46	9
@@ -68,89 +68,41 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     }
 
     for tree in trees {
-        let mut n_edge_w_len = 0;
-        let mut n_edge_wo_len = 0;
-        let mut n_node = 0;
-        let mut n_leaf = 0;
-        let mut n_dichotomies = 0;
-        let mut n_leaf_label = 0;
-        let mut n_internal_label = 0;
-
-        if let Some(root) = tree.get_root() {
-            if let Ok(nodes) = tree.preorder(&root) {
-                for id in nodes {
-                    let node = tree.get_node(id).unwrap();
-                    n_node += 1;
-                    if node.is_leaf() {
-                        n_leaf += 1;
-                    }
-
-                    if node.children.len() == 2 {
-                        n_dichotomies += 1;
-                    }
-
-                    if node.name.is_some() {
-                        if node.is_leaf() {
-                            n_leaf_label += 1;
-                        } else {
-                            n_internal_label += 1;
-                        }
-                    }
-
-                    if node.length.is_some() {
-                        n_edge_w_len += 1;
-                    } else {
-                        n_edge_wo_len += 1;
-                    }
-                }
-            }
-        }
-
-        let cherries = stat::cherries(&tree);
-        let sackin = stat::sackin(&tree);
-        let sackin_str = match sackin {
-            Some(s) => s.to_string(),
+        let s = stat::tree_summary(&tree);
+        let is_rooted = if s.is_rooted { "Yes" } else { "No" };
+        let sackin_str = match s.sackin {
+            Some(v) => v.to_string(),
             None => "-".to_string(),
         };
-        let colless = stat::colless(&tree);
-        let colless_str = match colless {
-            Some(c) => c.to_string(),
+        let colless_str = match s.colless {
+            Some(v) => v.to_string(),
             None => "-".to_string(),
         };
-
-        let is_rooted = if tree.is_rooted() { "Yes" } else { "No" };
-
-        let tree_type = if n_edge_wo_len == n_node {
-            "cladogram"
-        } else if n_edge_w_len == n_node || n_edge_w_len == n_node - 1 {
-            "phylogram"
-        } else {
-            "neither"
-        };
+        let tree_type = s.tree_type.as_str();
 
         if style == "line" {
             writer.write_fmt(format_args!(
                 "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n",
                 tree_type,
-                n_node,
-                n_leaf,
+                s.nodes,
+                s.leaves,
                 is_rooted,
-                n_dichotomies,
-                n_leaf_label,
-                n_internal_label,
-                cherries,
+                s.dichotomies,
+                s.leaf_labels,
+                s.internal_labels,
+                s.cherries,
                 sackin_str,
                 colless_str
             ))?;
         } else {
             writer.write_fmt(format_args!("Type\t{}\n", tree_type))?;
-            writer.write_fmt(format_args!("nodes\t{}\n", n_node))?;
-            writer.write_fmt(format_args!("leaves\t{}\n", n_leaf))?;
+            writer.write_fmt(format_args!("nodes\t{}\n", s.nodes))?;
+            writer.write_fmt(format_args!("leaves\t{}\n", s.leaves))?;
             writer.write_fmt(format_args!("rooted\t{}\n", is_rooted))?;
-            writer.write_fmt(format_args!("dichotomies\t{}\n", n_dichotomies))?;
-            writer.write_fmt(format_args!("leaf labels\t{}\n", n_leaf_label))?;
-            writer.write_fmt(format_args!("internal labels\t{}\n", n_internal_label))?;
-            writer.write_fmt(format_args!("cherries\t{}\n", cherries))?;
+            writer.write_fmt(format_args!("dichotomies\t{}\n", s.dichotomies))?;
+            writer.write_fmt(format_args!("leaf labels\t{}\n", s.leaf_labels))?;
+            writer.write_fmt(format_args!("internal labels\t{}\n", s.internal_labels))?;
+            writer.write_fmt(format_args!("cherries\t{}\n", s.cherries))?;
             writer.write_fmt(format_args!("sackin\t{}\n", sackin_str))?;
             writer.write_fmt(format_args!("colless\t{}\n", colless_str))?;
         }

@@ -1,6 +1,5 @@
 use clap::*;
 use cmd_lib::*;
-use pgr::libs::loc::Input;
 use rayon::prelude::*;
 use std::io::Write;
 
@@ -133,14 +132,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         .par_iter()
         .map(|(_, offset, size)| {
             // Init reader for this chunk
-            let mut reader = if is_bgzf {
-                let r =
-                    noodles_bgzf::io::indexed_reader::Builder::default().build_from_path(infile)?;
-                Input::Bgzf(r)
-            } else {
-                let f = std::fs::File::open(std::path::Path::new(infile))?;
-                Input::File(f)
-            };
+            let mut reader = pgr::libs::loc::open_input(infile, is_bgzf)?;
 
             let chunk = pgr::libs::loc::read_offset(&mut reader, *offset, *size)?;
 

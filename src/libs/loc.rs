@@ -61,6 +61,19 @@ pub fn create_loc(infile: &str, locfile: &str, is_bgzf: bool) -> anyhow::Result<
     Ok(())
 }
 
+/// Open a FASTA file as `Input` (plain `File` or BGZF `IndexedReader`).
+pub fn open_input(infile: &str, is_bgzf: bool) -> anyhow::Result<Input> {
+    if is_bgzf {
+        Ok(Input::Bgzf(
+            bgzf::io::indexed_reader::Builder::default().build_from_path(infile)?,
+        ))
+    } else {
+        Ok(Input::File(std::fs::File::open(std::path::Path::new(
+            infile,
+        ))?))
+    }
+}
+
 /// Open a FASTA file with .loc index for random access.
 /// Creates the .loc index if it doesn't exist (or if `force_update` is true).
 /// Returns the Input reader and the loaded .loc index.
@@ -75,11 +88,7 @@ pub fn open_indexed(
         create_loc(infile, &loc_file, is_bgzf)?;
     }
     let loc_of = load_loc(&loc_file)?;
-    let reader = if is_bgzf {
-        Input::Bgzf(bgzf::io::indexed_reader::Builder::default().build_from_path(infile)?)
-    } else {
-        Input::File(std::fs::File::open(std::path::Path::new(infile))?)
-    };
+    let reader = open_input(infile, is_bgzf)?;
     Ok((reader, loc_of))
 }
 

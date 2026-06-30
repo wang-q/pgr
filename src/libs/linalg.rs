@@ -331,8 +331,8 @@ pub fn spearman_correlation(a: &[f32], b: &[f32]) -> f32 {
     let mut x_ranked: Vec<_> = a.iter().enumerate().collect();
     let mut y_ranked: Vec<_> = b.iter().enumerate().collect();
 
-    x_ranked.sort_by(|a, b| a.1.partial_cmp(b.1).unwrap());
-    y_ranked.sort_by(|a, b| a.1.partial_cmp(b.1).unwrap());
+    x_ranked.sort_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal));
+    y_ranked.sort_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal));
 
     let mut x_ranks = vec![0.0; a.len()];
     let mut y_ranks = vec![0.0; b.len()];
