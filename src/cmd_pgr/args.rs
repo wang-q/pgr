@@ -34,6 +34,24 @@ pub fn parallel_arg() -> Arg {
         .help("Number of threads for parallel processing")
 }
 
+/// Standard `infile` argument (single input file, defaults to stdin).
+#[allow(dead_code)]
+pub fn infile_arg() -> Arg {
+    Arg::new("infile")
+        .index(1)
+        .default_value("stdin")
+        .help("Input file. [stdin] for standard input")
+}
+
+/// Standard `infiles` argument (multiple input files).
+#[allow(dead_code)]
+pub fn infiles_arg() -> Arg {
+    Arg::new("infiles")
+        .index(1)
+        .num_args(1..)
+        .help("Input file(s) to process")
+}
+
 /// Add POA scoring arguments (`--match`, `--mismatch`, `--gap-open`,
 /// `--gap-extend`) to `cmd`. When `with_shorts` is true, also registers the
 /// `-m`/`-n`/`-g`/`-e` short flags (used by `fas consensus`; paf commands

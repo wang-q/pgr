@@ -489,6 +489,150 @@ impl fmt::Display for Psl {
     }
 }
 
+/// Accumulated statistics for PSL alignments.
+#[derive(Debug, Clone, Default)]
+pub struct SumStats {
+    pub q_name: String,
+    pub query_cnt: u32,
+    pub min_q_size: u32,
+    pub max_q_size: u32,
+    pub total_q_size: u64,
+    pub aln_cnt: u32,
+    pub total_align: u64,
+    pub total_match: u64,
+    pub total_rep_match: u64,
+    pub min_ident: f32,
+    pub max_ident: f32,
+    pub min_q_cover: f32,
+    pub max_q_cover: f32,
+    pub min_t_cover: f32,
+    pub max_t_cover: f32,
+    pub min_rep_match: f32,
+    pub max_rep_match: f32,
+}
+
+impl SumStats {
+    pub fn new(q_name: &str, q_size: u32) -> Self {
+        Self {
+            q_name: q_name.to_string(),
+            query_cnt: 1,
+            min_q_size: q_size,
+            max_q_size: q_size,
+            total_q_size: 0,
+            aln_cnt: 0,
+            ..Default::default()
+        }
+    }
+
+    pub fn accumulate(&mut self, psl: &Psl) {
+        let ident = psl.calc_ident();
+        let q_cover = psl.calc_q_cover();
+        let t_cover = psl.calc_t_cover();
+        let rep_match = psl.calc_rep_match();
+
+        self.total_q_size += psl.q_size as u64;
+
+        if self.aln_cnt == 0 {
+            self.min_ident = ident;
+            self.max_ident = ident;
+            self.min_q_cover = q_cover;
+            self.max_q_cover = q_cover;
+            self.min_t_cover = t_cover;
+            self.max_t_cover = t_cover;
+            self.min_rep_match = rep_match;
+            self.max_rep_match = rep_match;
+
+            self.min_q_size = self.min_q_size.min(psl.q_size);
+            self.max_q_size = self.max_q_size.max(psl.q_size);
+        } else {
+            self.min_q_size = self.min_q_size.min(psl.q_size);
+            self.max_q_size = self.max_q_size.max(psl.q_size);
+
+            self.min_ident = self.min_ident.min(ident);
+            self.max_ident = self.max_ident.max(ident);
+
+            self.min_q_cover = self.min_q_cover.min(q_cover);
+            self.max_q_cover = self.max_q_cover.max(q_cover);
+
+            self.min_t_cover = self.min_t_cover.min(t_cover);
+            self.max_t_cover = self.max_t_cover.max(t_cover);
+
+            self.min_rep_match = self.min_rep_match.min(rep_match);
+            self.max_rep_match = self.max_rep_match.max(rep_match);
+        }
+
+        self.total_align += psl.calc_aligned() as u64;
+        self.total_match += psl.calc_match() as u64;
+        self.total_rep_match += psl.rep_match as u64;
+        self.aln_cnt += 1;
+    }
+
+    pub fn merge(&mut self, other: &SumStats) {
+        if self.aln_cnt == 0 {
+            self.min_q_size = other.min_q_size;
+            self.max_q_size = other.max_q_size;
+            self.min_ident = other.min_ident;
+            self.max_ident = other.max_ident;
+            self.min_q_cover = other.min_q_cover;
+            self.max_q_cover = other.max_q_cover;
+            self.min_t_cover = other.min_t_cover;
+            self.max_t_cover = other.max_t_cover;
+            self.min_rep_match = other.min_rep_match;
+            self.max_rep_match = other.max_rep_match;
+        } else if other.aln_cnt > 0 {
+            self.min_q_size = self.min_q_size.min(other.min_q_size);
+            self.max_q_size = self.max_q_size.max(other.max_q_size);
+            self.min_ident = self.min_ident.min(other.min_ident);
+            self.max_ident = self.max_ident.max(other.max_ident);
+            self.min_q_cover = self.min_q_cover.min(other.min_q_cover);
+            self.max_q_cover = self.max_q_cover.max(other.max_q_cover);
+            self.min_t_cover = self.min_t_cover.min(other.min_t_cover);
+            self.max_t_cover = self.max_t_cover.max(other.max_t_cover);
+            self.min_rep_match = self.min_rep_match.min(other.min_rep_match);
+            self.max_rep_match = self.max_rep_match.max(other.max_rep_match);
+        }
+
+        self.query_cnt += other.query_cnt;
+        self.total_q_size += other.total_q_size;
+        self.total_align += other.total_align;
+        self.total_match += other.total_match;
+        self.total_rep_match += other.total_rep_match;
+        self.aln_cnt += other.aln_cnt;
+    }
+
+    pub fn mean_ident(&self) -> f32 {
+        if self.total_align == 0 {
+            0.0
+        } else {
+            self.total_match as f32 / self.total_align as f32
+        }
+    }
+
+    pub fn mean_q_size(&self) -> u32 {
+        if self.query_cnt == 0 {
+            0
+        } else {
+            (self.total_q_size / self.query_cnt as u64) as u32
+        }
+    }
+
+    pub fn mean_q_cover(&self) -> f32 {
+        if self.total_q_size == 0 {
+            0.0
+        } else {
+            self.total_align as f32 / self.total_q_size as f32
+        }
+    }
+
+    pub fn mean_rep_match(&self) -> f32 {
+        if self.total_align == 0 {
+            0.0
+        } else {
+            self.total_rep_match as f32 / self.total_align as f32
+        }
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::field_reassign_with_default)]
 mod tests {
