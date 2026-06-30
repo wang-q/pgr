@@ -36,20 +36,8 @@ Examples:
                 .help("Input PSL file. [stdin] for standard input"),
         )
         .arg(crate::cmd_pgr::args::outfile_arg())
-        .arg(
-            Arg::new("q_sizes")
-                .long("q-sizes")
-                .short('q')
-                .num_args(1)
-                .help("File containing query sizes (name <tab> size)"),
-        )
-        .arg(
-            Arg::new("t_sizes")
-                .long("t-sizes")
-                .short('t')
-                .num_args(1)
-                .help("File containing target sizes (name <tab> size)"),
-        )
+        .arg(crate::cmd_pgr::args::q_sizes_arg())
+        .arg(crate::cmd_pgr::args::t_sizes_arg())
 }
 
 // command implementation

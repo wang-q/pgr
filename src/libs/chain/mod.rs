@@ -5,7 +5,7 @@
 //!
 //! # Core Components
 //!
-//! * [`algo`] - Data structures for efficient predecessor search (KD-tree).
+//! * [`kdtree`] - Data structures for efficient predecessor search (KD-tree).
 //! * [`gap_calc`] - Gap cost calculation (linear and affine penalties).
 //! * [`sub_matrix`] - DNA substitution matrices (e.g., HoxD55).
 //! * [`connect`] - Core chaining logic (dynamic programming, overlap trimming).
@@ -22,17 +22,17 @@
 //! 4. **Overlap Handling**: Overlaps between adjacent blocks are trimmed to maximize the total score.
 //! 5. **Output**: Chains passing a minimum score threshold are output.
 
-pub mod algo;
 pub mod anti_repeat;
 pub mod bitmap;
 pub mod connect;
 pub mod gap_calc;
+pub mod kdtree;
 pub mod net;
 pub mod psl_chain;
 pub mod record;
 pub mod sub_matrix;
 
-pub use algo::{ChainItem, KdTree};
+pub use kdtree::{ChainItem, KdTree};
 pub use bitmap::BitMap;
 pub use connect::{calc_block_score, chain_blocks, ChainableBlock, ScoreContext};
 pub use gap_calc::GapCalc;

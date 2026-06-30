@@ -82,7 +82,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap())?;
 
-    pgr::libs::paf::poa_graph::output_gfa(
+    pgr::libs::paf::poa_compact::output_gfa(
         &mut writer,
         &idx,
         &all_results,

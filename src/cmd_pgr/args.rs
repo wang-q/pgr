@@ -42,6 +42,24 @@ pub fn rgfile_arg() -> Arg {
         .help("File of regions, one per line")
 }
 
+/// Standard `-t/--t-sizes` argument (target chromosome sizes file).
+pub fn t_sizes_arg() -> Arg {
+    Arg::new("t_sizes")
+        .long("t-sizes")
+        .short('t')
+        .num_args(1)
+        .help("Target sizes file")
+}
+
+/// Standard `-q/--q-sizes` argument (query chromosome sizes file).
+pub fn q_sizes_arg() -> Arg {
+    Arg::new("q_sizes")
+        .long("q-sizes")
+        .short('q')
+        .num_args(1)
+        .help("Query sizes file")
+}
+
 /// Standard `-p/--parallel` argument (number of threads, usize, default 1).
 pub fn parallel_arg() -> Arg {
     Arg::new("parallel")

@@ -16,22 +16,8 @@ Examples:
 "###,
         )
         .arg(crate::cmd_pgr::args::infile_arg().help("Input AXT file"))
-        .arg(
-            Arg::new("t_sizes")
-                .long("t-sizes")
-                .short('t')
-                .value_name("FILE")
-                .help("Target sizes file")
-                .required(true),
-        )
-        .arg(
-            Arg::new("q_sizes")
-                .long("q-sizes")
-                .short('q')
-                .value_name("FILE")
-                .help("Query sizes file")
-                .required(true),
-        )
+        .arg(crate::cmd_pgr::args::t_sizes_arg().required(true))
+        .arg(crate::cmd_pgr::args::q_sizes_arg().required(true))
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
