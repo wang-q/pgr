@@ -3,16 +3,21 @@ use clap::*;
 use super::common;
 
 pub fn make_subcommand() -> Command {
-    common::add_poa_args(common::add_query_args(
-        common::add_fasta_tsv_arg(Command::new("to-gfa"))
-            .arg(
-                Arg::new("crush")
-                    .long("crush")
-                    .action(ArgAction::SetTrue)
-                    .help("Compress SNP bubbles (impg `crush` style; loses base-level ALT info)"),
-            )
-            .arg(crate::cmd_pgr::args::outfile_arg()),
-    ))
+    common::add_poa_args(
+        common::add_query_args(
+            common::add_fasta_tsv_arg(Command::new("to-gfa"))
+                .arg(
+                    Arg::new("crush")
+                        .long("crush")
+                        .action(ArgAction::SetTrue)
+                        .help(
+                            "Compress SNP bubbles (impg `crush` style; loses base-level ALT info)",
+                        ),
+                )
+                .arg(crate::cmd_pgr::args::outfile_arg()),
+        ),
+        false,
+    )
     .about("Query PAF index and output local GFA via POA graph")
     .after_help(
         r###"

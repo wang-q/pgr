@@ -3,9 +3,13 @@ use clap::*;
 use super::common;
 
 pub fn make_subcommand() -> Command {
-    common::add_poa_args(common::add_query_args(
-        common::add_fasta_tsv_arg(Command::new("to-vcf")).arg(crate::cmd_pgr::args::outfile_arg()),
-    ))
+    common::add_poa_args(
+        common::add_query_args(
+            common::add_fasta_tsv_arg(Command::new("to-vcf"))
+                .arg(crate::cmd_pgr::args::outfile_arg()),
+        ),
+        false,
+    )
     .about("Query PAF index and output multi-way VCF via POA MSA")
     .after_help(
         r###"

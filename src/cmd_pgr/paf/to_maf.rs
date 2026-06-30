@@ -73,9 +73,12 @@ fn output_maf_msa(
 }
 
 pub fn make_subcommand() -> Command {
-    common::add_poa_args(common::add_query_args(common::add_msa_flag(
-        common::add_fasta_tsv_arg(Command::new("to-maf")),
-    )))
+    common::add_poa_args(
+        common::add_query_args(common::add_msa_flag(common::add_fasta_tsv_arg(
+            Command::new("to-maf"),
+        ))),
+        false,
+    )
     .about("Query PAF index and output pairwise or multi-way MAF")
     .after_help(
         r###"

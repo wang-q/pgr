@@ -61,9 +61,12 @@ fn output_fas_msa(
 }
 
 pub fn make_subcommand() -> Command {
-    common::add_poa_args(common::add_query_args(common::add_msa_flag(
-        common::add_fasta_tsv_arg(Command::new("to-fas")),
-    )))
+    common::add_poa_args(
+        common::add_query_args(common::add_msa_flag(common::add_fasta_tsv_arg(
+            Command::new("to-fas"),
+        ))),
+        false,
+    )
     .about("Query PAF index and output pairwise or multi-way block FASTA")
     .after_help(
         r###"

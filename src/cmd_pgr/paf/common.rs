@@ -2,9 +2,11 @@ use clap::{Arg, ArgMatches, Command};
 
 use pgr::libs::paf::fasta::{load_fasta_tsv, validate_tsv_covers_index, FastaStore};
 use pgr::libs::paf::index::{PafIndex, QueryResult};
-use pgr::libs::poa::AlignmentParams;
 
 use super::query;
+
+// Re-export shared POA argument builder and extractor from `cmd_pgr::args`.
+pub use crate::cmd_pgr::args::{add_poa_args, get_poa_params};
 
 /// A region paired with its query results.
 pub type QueryGroup = ((String, i32, i32), Vec<QueryResult>);
@@ -117,47 +119,6 @@ pub fn add_query_args(cmd: Command) -> Command {
     )
 }
 
-/// Add POA scoring arguments to a clap Command.
-/// Shared by `paf to-gfa`, `paf to-vcf`, `paf to-fas`, and `paf to-maf`.
-pub fn add_poa_args(cmd: Command) -> Command {
-    cmd.arg(
-        Arg::new("match_score")
-            .long("match")
-            .num_args(1)
-            .default_value("5")
-            .value_parser(clap::value_parser!(i32))
-            .allow_negative_numbers(true)
-            .help("POA match score (default: 5)"),
-    )
-    .arg(
-        Arg::new("mismatch_score")
-            .long("mismatch")
-            .num_args(1)
-            .default_value("-4")
-            .value_parser(clap::value_parser!(i32))
-            .allow_negative_numbers(true)
-            .help("POA mismatch score (default: -4)"),
-    )
-    .arg(
-        Arg::new("gap_open")
-            .long("gap-open")
-            .num_args(1)
-            .default_value("-8")
-            .value_parser(clap::value_parser!(i32))
-            .allow_negative_numbers(true)
-            .help("POA gap open penalty (default: -8)"),
-    )
-    .arg(
-        Arg::new("gap_extend")
-            .long("gap-extend")
-            .num_args(1)
-            .default_value("-6")
-            .value_parser(clap::value_parser!(i32))
-            .allow_negative_numbers(true)
-            .help("POA gap extend penalty (default: -6)"),
-    )
-}
-
 /// Add the required `-f/--fasta-tsv` argument.
 /// Shared by `paf to-gfa`, `paf to-vcf`, `paf to-fas`, and `paf to-maf`.
 pub fn add_fasta_tsv_arg(cmd: Command) -> Command {
@@ -196,14 +157,4 @@ pub fn prepare_query(args: &ArgMatches) -> anyhow::Result<(PafIndex, Vec<QueryGr
     let fasta_store = FastaStore::new(&seq_to_file)?;
 
     Ok((idx, all_results, fasta_store))
-}
-
-/// Extract POA scoring parameters from ArgMatches.
-pub fn get_poa_params(args: &ArgMatches) -> AlignmentParams {
-    AlignmentParams {
-        match_score: *args.get_one::<i32>("match_score").unwrap(),
-        mismatch_score: *args.get_one::<i32>("mismatch_score").unwrap(),
-        gap_open: *args.get_one::<i32>("gap_open").unwrap(),
-        gap_extend: *args.get_one::<i32>("gap_extend").unwrap(),
-    }
 }

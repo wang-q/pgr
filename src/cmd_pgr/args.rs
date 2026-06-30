@@ -1,6 +1,8 @@
 //! Shared clap argument builders for subcommands.
 
-use clap::Arg;
+use clap::{Arg, ArgMatches, Command};
+
+use pgr::libs::poa::AlignmentParams;
 
 /// Standard `-o/--outfile` argument defaulting to stdout.
 pub fn outfile_arg() -> Arg {
@@ -30,4 +32,69 @@ pub fn parallel_arg() -> Arg {
         .default_value("1")
         .value_parser(clap::value_parser!(usize))
         .help("Number of threads for parallel processing")
+}
+
+/// Add POA scoring arguments (`--match`, `--mismatch`, `--gap-open`,
+/// `--gap-extend`) to `cmd`. When `with_shorts` is true, also registers the
+/// `-m`/`-n`/`-g`/`-e` short flags (used by `fas consensus`; paf commands
+/// pass false because `-m` collides with `--max-depth`).
+pub fn add_poa_args(cmd: Command, with_shorts: bool) -> Command {
+    let mut match_arg = Arg::new("match")
+        .long("match")
+        .num_args(1)
+        .default_value("5")
+        .value_parser(clap::value_parser!(i32))
+        .allow_negative_numbers(true)
+        .help("POA match score (default: 5)");
+    if with_shorts {
+        match_arg = match_arg.short('m');
+    }
+
+    let mut mismatch_arg = Arg::new("mismatch")
+        .long("mismatch")
+        .num_args(1)
+        .default_value("-4")
+        .value_parser(clap::value_parser!(i32))
+        .allow_negative_numbers(true)
+        .help("POA mismatch score (default: -4)");
+    if with_shorts {
+        mismatch_arg = mismatch_arg.short('n');
+    }
+
+    let mut gap_open_arg = Arg::new("gap_open")
+        .long("gap-open")
+        .num_args(1)
+        .default_value("-8")
+        .value_parser(clap::value_parser!(i32))
+        .allow_negative_numbers(true)
+        .help("POA gap open penalty (default: -8)");
+    if with_shorts {
+        gap_open_arg = gap_open_arg.short('g');
+    }
+
+    let mut gap_extend_arg = Arg::new("gap_extend")
+        .long("gap-extend")
+        .num_args(1)
+        .default_value("-6")
+        .value_parser(clap::value_parser!(i32))
+        .allow_negative_numbers(true)
+        .help("POA gap extend penalty (default: -6)");
+    if with_shorts {
+        gap_extend_arg = gap_extend_arg.short('e');
+    }
+
+    cmd.arg(match_arg)
+        .arg(mismatch_arg)
+        .arg(gap_open_arg)
+        .arg(gap_extend_arg)
+}
+
+/// Extract POA scoring parameters from `ArgMatches` into `AlignmentParams`.
+pub fn get_poa_params(args: &ArgMatches) -> AlignmentParams {
+    AlignmentParams {
+        match_score: *args.get_one::<i32>("match").unwrap(),
+        mismatch_score: *args.get_one::<i32>("mismatch").unwrap(),
+        gap_open: *args.get_one::<i32>("gap_open").unwrap(),
+        gap_extend: *args.get_one::<i32>("gap_extend").unwrap(),
+    }
 }

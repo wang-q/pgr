@@ -4,10 +4,11 @@ use super::common;
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
-    Command::new("consensus")
-        .about("Generates consensus sequences using POA")
-        .after_help(
-            r###"
+    crate::cmd_pgr::args::add_poa_args(
+        Command::new("consensus")
+            .about("Generates consensus sequences using POA")
+            .after_help(
+                r###"
 Generates consensus sequences using POA (Partial Order Alignment) graph.
 
 Notes:
@@ -41,80 +42,46 @@ Examples:
    pgr fas consensus tests/fas/example.fas -o output.fas
 
 "###,
-        )
-        .arg(
-            Arg::new("engine")
-                .long("engine")
-                .value_parser(["builtin", "spoa"])
-                .default_value("builtin")
-                .help("POA engine to use"),
-        )
-        .arg(
-            Arg::new("match")
-                .long("match")
-                .short('m')
-                .value_parser(value_parser!(i32))
-                .default_value("5")
-                .allow_negative_numbers(true)
-                .help("Score for matching bases"),
-        )
-        .arg(
-            Arg::new("mismatch")
-                .long("mismatch")
-                .short('n')
-                .value_parser(value_parser!(i32))
-                .default_value("-4")
-                .allow_negative_numbers(true)
-                .help("Score for mismatching bases"),
-        )
-        .arg(
-            Arg::new("gap_open")
-                .long("gap-open")
-                .short('g')
-                .value_parser(value_parser!(i32))
-                .default_value("-8")
-                .allow_negative_numbers(true)
-                .help("Gap opening penalty"),
-        )
-        .arg(
-            Arg::new("gap_extend")
-                .long("gap-extend")
-                .short('e')
-                .value_parser(value_parser!(i32))
-                .default_value("-6")
-                .allow_negative_numbers(true)
-                .help("Gap extension penalty"),
-        )
-        .arg(
-            Arg::new("algorithm")
-                .long("algorithm")
-                .short('l')
-                .value_parser(["local", "global", "semi_global"])
-                .default_value("global") // Default to global for fas consensus
-                .help("Alignment mode"),
-        )
-        .arg(
-            Arg::new("infiles")
-                .required(true)
-                .num_args(1..)
-                .index(1)
-                .help("Input block FA file(s) to process"),
-        )
-        .arg(
-            Arg::new("cname")
-                .long("cname")
-                .num_args(1)
-                .default_value("consensus")
-                .help("Name of the consensus"),
-        )
-        .arg(
-            Arg::new("has_outgroup")
-                .long("outgroup")
-                .action(ArgAction::SetTrue)
-                .help("Indicates the presence of outgroups at the end of each block"),
-        )
-        .arg(crate::cmd_pgr::args::parallel_arg())
-        .arg(crate::cmd_pgr::args::outfile_arg())
+            )
+            .arg(
+                Arg::new("engine")
+                    .long("engine")
+                    .value_parser(["builtin", "spoa"])
+                    .default_value("builtin")
+                    .help("POA engine to use"),
+            )
+            .arg(
+                Arg::new("algorithm")
+                    .long("algorithm")
+                    .short('l')
+                    .value_parser(["local", "global", "semi_global"])
+                    .default_value("global") // Default to global for fas consensus
+                    .help("Alignment mode"),
+            )
+            .arg(
+                Arg::new("infiles")
+                    .required(true)
+                    .num_args(1..)
+                    .index(1)
+                    .help("Input block FA file(s) to process"),
+            )
+            .arg(
+                Arg::new("cname")
+                    .long("cname")
+                    .num_args(1)
+                    .default_value("consensus")
+                    .help("Name of the consensus"),
+            )
+            .arg(
+                Arg::new("has_outgroup")
+                    .long("outgroup")
+                    .action(ArgAction::SetTrue)
+                    .help("Indicates the presence of outgroups at the end of each block"),
+            )
+            .arg(crate::cmd_pgr::args::parallel_arg())
+            .arg(crate::cmd_pgr::args::outfile_arg()),
+        true,
+    )
 }
 
 // command implementation
@@ -132,10 +99,7 @@ fn proc_block(block: &pgr::libs::fmt::fas::FasBlock, args: &ArgMatches) -> anyho
 
     let engine = args.get_one::<String>("engine").unwrap();
 
-    let match_score = *args.get_one::<i32>("match").unwrap();
-    let mismatch_score = *args.get_one::<i32>("mismatch").unwrap();
-    let gap_open = *args.get_one::<i32>("gap_open").unwrap();
-    let gap_extend = *args.get_one::<i32>("gap_extend").unwrap();
+    let params = crate::cmd_pgr::args::get_poa_params(args);
     let algorithm = args.get_one::<String>("algorithm").unwrap();
 
     // Map algorithm string to integer code (0=local, 1=global, 2=semi_global) for internal use/spoa
@@ -168,19 +132,19 @@ fn proc_block(block: &pgr::libs::fmt::fas::FasBlock, args: &ArgMatches) -> anyho
     let mut cons = match engine.as_str() {
         "spoa" => pgr::libs::alignment::get_consensus_poa_external(
             &seqs,
-            match_score,
-            mismatch_score,
-            gap_open,
-            gap_extend,
+            params.match_score,
+            params.mismatch_score,
+            params.gap_open,
+            params.gap_extend,
             algo_code,
         )
         .unwrap(),
         _ => pgr::libs::alignment::get_consensus_poa_builtin(
             &seqs,
-            match_score,
-            mismatch_score,
-            gap_open,
-            gap_extend,
+            params.match_score,
+            params.mismatch_score,
+            params.gap_open,
+            params.gap_extend,
             algo_code,
         )
         .unwrap(),
