@@ -91,7 +91,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     // Args
     //----------------------------
-    let outfile = args.get_one::<String>("outfile").unwrap();
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
 
     let opt_match = *args.get_one::<usize>("match").unwrap();
     let opt_mismatch = *args.get_one::<usize>("mismatch").unwrap();
@@ -118,11 +118,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let abs_infile = intspan::absolute_path(args.get_one::<String>("infile").unwrap())?
         .display()
         .to_string();
-    let abs_outfile = if outfile == "stdout" {
-        outfile.to_string()
-    } else {
-        intspan::absolute_path(outfile)?.display().to_string()
-    };
+    let abs_outfile = crate::cmd_pgr::pl::common::abs_path_or_stdout(outfile)?;
 
     //----------------------------
     // Ops

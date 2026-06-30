@@ -58,7 +58,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let is_invert = args.get_flag("invert");
     let infile = args.get_one::<String>("infile").unwrap();
     let list_file = args.get_one::<String>("list.txt").unwrap();
-    let outfile = args.get_one::<String>("outfile").unwrap();
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
 
     //----------------------------
     // Load list

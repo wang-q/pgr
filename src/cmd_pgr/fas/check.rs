@@ -45,7 +45,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     // Args
     //----------------------------
-    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap())?;
+    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
     let opt_genome = args.get_one::<String>("genome.fa").unwrap();
     let opt_name = &args
         .get_one::<String>("name")

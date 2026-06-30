@@ -133,7 +133,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     // Args
     //----------------------------
-    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap())?;
+    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
 
     let opt_string = args.get_one::<String>("string");
 

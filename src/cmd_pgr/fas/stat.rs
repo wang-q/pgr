@@ -46,7 +46,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     // Args
     //----------------------------
-    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap())?;
+    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
     let has_outgroup = args.get_flag("has_outgroup");
 
     let field_names = [

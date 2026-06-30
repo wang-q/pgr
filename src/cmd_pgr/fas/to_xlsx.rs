@@ -92,7 +92,7 @@ Examples:
 
 // command implementation
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let outfile = args.get_one::<String>("outfile").unwrap();
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
     let opt_wrap = *args.get_one::<u16>("wrap").unwrap();
     let is_indel = args.get_flag("indel");
     let is_outgroup = args.get_flag("outgroup");

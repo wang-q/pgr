@@ -77,7 +77,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     let infile = args.get_one::<String>("infile").unwrap();
 
-    let mut fa_out = pgr::libs::fmt::fa::writer(args.get_one::<String>("outfile").unwrap())?;
+    let mut fa_out = pgr::libs::fmt::fa::writer(crate::cmd_pgr::args::get_outfile(args))?;
 
     let ranges = crate::cmd_pgr::args::collect_ranges(args)?;
 

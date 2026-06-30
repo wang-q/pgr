@@ -71,7 +71,7 @@ Examples:
 
 // command implementation
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap())?;
+    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
 
     let is_out_fq = args.get_flag("fq");
     let opt_prefix = args.get_one::<String>("prefix").unwrap();

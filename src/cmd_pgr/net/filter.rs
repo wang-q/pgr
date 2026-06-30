@@ -156,7 +156,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let reader = pgr::reader(input_path)?;
     let chroms = read_nets(reader)?;
 
-    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap())?;
+    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
 
     for chrom in chroms {
         if !filter_chrom(&chrom, &criteria) {

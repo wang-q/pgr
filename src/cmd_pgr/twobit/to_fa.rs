@@ -50,7 +50,7 @@ Examples:
 
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let input_path = args.get_one::<String>("infile").unwrap();
-    let output_path = args.get_one::<String>("outfile").unwrap();
+    let output_path = crate::cmd_pgr::args::get_outfile(args);
     let no_mask = args.get_flag("no_mask");
     let line_width = args.get_one::<usize>("line").copied().unwrap_or(60);
 

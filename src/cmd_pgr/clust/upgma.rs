@@ -33,7 +33,7 @@ Examples:
 
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let infile = args.get_one::<String>("infile").unwrap();
-    let outfile = args.get_one::<String>("outfile").unwrap();
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
 
     // Load matrix
     let matrix = pgr::libs::pairmat::NamedMatrix::from_relaxed_phylip(infile)?;

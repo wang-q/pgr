@@ -63,7 +63,7 @@ Examples:
 
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let infiles = args.get_many::<String>("infiles").unwrap();
-    let output = args.get_one::<String>("outfile").unwrap();
+    let output = crate::cmd_pgr::args::get_outfile(args);
     let no_mask = args.get_flag("no_mask");
     let strip_version = args.get_flag("strip_version");
     let ignore_dups = args.get_flag("ignore_dups");

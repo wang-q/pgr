@@ -79,7 +79,7 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
         .get_one::<i32>("min_var_len")
         .copied()
         .unwrap_or(100);
-    let outfile = matches.get_one::<String>("outfile").unwrap();
+    let outfile = crate::cmd_pgr::args::get_outfile(matches);
 
     // Load FASTA sequences via TSV + FastaStore (optional for topology-only mode).
     let seqs: HashMap<String, Vec<u8>> = if let Some(tsv) = tsv_path {

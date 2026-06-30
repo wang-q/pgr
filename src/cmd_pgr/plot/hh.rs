@@ -172,7 +172,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     let mut context = tera::Context::new();
 
-    context.insert("outfile", args.get_one::<String>("outfile").unwrap());
+    context.insert("outfile", crate::cmd_pgr::args::get_outfile(args));
     context.insert("table", &table);
     context.insert("xlabel", &xlabel);
     context.insert("ylabel", &ylabel);

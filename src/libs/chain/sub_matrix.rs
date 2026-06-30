@@ -1,6 +1,5 @@
 use anyhow::Result;
-use std::fs::File;
-use std::io::{BufRead, BufReader};
+use std::io::BufRead;
 
 /// A DNA substitution matrix for sequence alignment scoring.
 ///
@@ -126,8 +125,7 @@ impl SubMatrix {
     /// Lines starting with '#' are comments.
     /// Optional gap costs can be specified with "O=..." and "E=..." lines.
     pub fn from_file(path: &str) -> Result<Self> {
-        let file = File::open(path)?;
-        let reader = BufReader::new(file);
+        let reader = crate::libs::io::reader(path)?;
         let mut matrix = vec![0; 256 * 256];
         let mut gap_open = 400;
         let mut gap_extend = 30;

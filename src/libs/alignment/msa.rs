@@ -3,7 +3,6 @@ use anyhow::anyhow;
 use bio::io::fasta;
 use intspan::IntSpan;
 use std::fs;
-use std::fs::File;
 use std::io::{BufRead, Write};
 use std::path::Path;
 use std::process::Command;
@@ -323,7 +322,7 @@ pub fn align_seqs(seqs: &[String], aligner: &str) -> anyhow::Result<Vec<String>>
                 String::from_utf8_lossy(&output.stderr)
             ));
         }
-        let mut f = File::create(seq_out_path.to_string_lossy().to_string())?;
+        let mut f = crate::libs::io::writer(&seq_out_path.to_string_lossy())?;
         f.write_all(&output.stdout)?;
     }
     // delete .dnd files created by clustalw

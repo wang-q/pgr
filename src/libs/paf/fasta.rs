@@ -3,16 +3,15 @@ use indexmap::IndexMap;
 use noodles_core::Position;
 use noodles_fasta as fasta;
 use std::collections::{HashMap, HashSet};
-use std::fs;
 use std::io::BufRead;
 use std::num::NonZeroUsize;
 
 /// Load TSV mapping genome_name -> bgzf_fasta_path.
 /// Lines starting with '#' are comments; blank lines are skipped.
 pub fn load_fasta_tsv(path: &str) -> anyhow::Result<IndexMap<String, String>> {
-    let f = fs::File::open(path)?;
+    let reader = crate::libs::io::reader(path)?;
     let mut map = IndexMap::new();
-    for line in std::io::BufReader::new(f).lines() {
+    for line in reader.lines() {
         let line = line?;
         let line = line.trim();
         if line.is_empty() || line.starts_with('#') {

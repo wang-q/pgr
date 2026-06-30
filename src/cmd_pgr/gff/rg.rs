@@ -82,7 +82,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // Args
     //----------------------------
     let infile = args.get_one::<String>("infile").unwrap();
-    let outfile = args.get_one::<String>("outfile").unwrap();
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
     let opt_tag = args.get_one::<String>("tag").unwrap();
     let opt_key = args.get_one::<String>("key").unwrap();
     let is_simplify = args.get_flag("simplify");

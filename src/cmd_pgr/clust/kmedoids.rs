@@ -93,7 +93,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let opt_missing = *args.get_one::<f32>("missing").unwrap();
     let runs = *args.get_one::<usize>("runs").unwrap();
     let max_iter = *args.get_one::<usize>("max_iter").unwrap();
-    let outfile = args.get_one::<String>("outfile").unwrap();
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
 
     let mut writer = pgr::writer(outfile)?;
 

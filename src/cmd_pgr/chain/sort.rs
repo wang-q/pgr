@@ -70,7 +70,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     }
 
     // Write output
-    let out_path = args.get_one::<String>("outfile").unwrap();
+    let out_path = crate::cmd_pgr::args::get_outfile(args);
     let mut writer = pgr::writer(out_path)?;
     for chain in all_chains {
         chain.write(&mut writer)?;

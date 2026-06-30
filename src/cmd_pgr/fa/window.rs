@@ -94,7 +94,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let shuffle = args.get_flag("shuffle");
     let seed = *args.get_one::<u64>("seed").unwrap();
     let chunk_size = args.get_one::<usize>("chunk").copied();
-    let outfile = args.get_one::<String>("outfile").unwrap();
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
 
     // Check for conflict: chunk + stdout is not allowed because we can't split stdout into files
     if chunk_size.is_some() && outfile == "stdout" {

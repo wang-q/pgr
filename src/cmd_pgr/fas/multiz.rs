@@ -147,7 +147,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let blocks = pgr::libs::fas_multiz::merge_fas_files_auto_windows(&ref_name, &infiles, &cfg)?;
 
-    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap())?;
+    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
 
     for block in blocks {
         for entry in &block.entries {

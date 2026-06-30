@@ -57,7 +57,7 @@ fn build_tags(gi: f64, bi: f64, cigar: &str, score: Option<f64>) -> Vec<String> 
 
 // command implementation
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap())?;
+    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
 
     for infile in args.get_many::<String>("infiles").unwrap() {
         let mut reader = pgr::reader(infile)?;

@@ -179,11 +179,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         vec![abs_psl]
     };
 
-    let abs_outdir = if outdir == "stdout" {
-        outdir.to_string()
-    } else {
-        intspan::absolute_path(outdir)?.display().to_string()
-    };
+    let abs_outdir = crate::cmd_pgr::pl::common::abs_path_or_stdout(outdir)?;
 
     //----------------------------
     // Ops

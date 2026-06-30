@@ -144,7 +144,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let is_simplify = args.get_flag("simplify");
 
     let mut fa_out =
-        pgr::libs::fmt::fa::writer_with_wrap(args.get_one::<String>("outfile").unwrap(), opt_line)?;
+        pgr::libs::fmt::fa::writer_with_wrap(crate::cmd_pgr::args::get_outfile(args), opt_line)?;
 
     //----------------------------
     // Process

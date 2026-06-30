@@ -1,6 +1,5 @@
 use clap::*;
 use cmd_lib::*;
-use std::io::BufRead;
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
@@ -68,7 +67,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     // Args
     //----------------------------
-    let outfile = args.get_one::<String>("outfile").unwrap();
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
 
     let opt_kmer = *args.get_one::<usize>("kmer").unwrap();
     let opt_fk = *args.get_one::<usize>("fk").unwrap();
@@ -92,11 +91,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let abs_infile = intspan::absolute_path(args.get_one::<String>("infile").unwrap())?
         .display()
         .to_string();
-    let abs_outfile = if outfile == "stdout" {
-        outfile.to_string()
-    } else {
-        intspan::absolute_path(outfile)?.display().to_string()
-    };
+    let abs_outfile = crate::cmd_pgr::pl::common::abs_path_or_stdout(outfile)?;
 
     //----------------------------
     // Ops
@@ -126,34 +121,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             ",
     )?;
 
-    let mut rg_files = vec![];
-    for (i, chr) in chrs.iter().enumerate() {
-        let sn = i + 1;
-        run_cmd!(
-            Profex -z genome ${sn} > prof.${sn}.txt
-        )?;
-
-        let reader = pgr::reader(&format!("prof.{}.txt", sn))?;
-
-        let rg_file = format!("prof.{}.rg", sn);
-        let mut writer = pgr::writer(&rg_file)?;
-
-        for line in reader.lines().map_while(Result::ok) {
-            let Some(caps) = re_prof.captures(&line) else {
-                continue;
-            };
-
-            let depth = caps["depth"].parse::<usize>()?;
-            if depth < 2 {
-                continue;
-            }
-            let start = caps["start"].parse::<usize>()? + 1;
-            let end = caps["end"].parse::<usize>()? + 1;
-
-            writer.write_fmt(format_args!("{}:{}-{}\n", chr, start, end))?;
-        }
-        rg_files.push(rg_file);
-    }
+    let rg_files = crate::cmd_pgr::pl::common::run_profex_per_chr(&chrs, &re_prof, Some(2))?;
 
     run_cmd!(info "==> Outputs")?;
     run_cmd!(

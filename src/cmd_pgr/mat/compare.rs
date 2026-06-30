@@ -64,7 +64,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     } else {
         args.get_one::<String>("method").unwrap()
     };
-    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap())?;
+    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
 
     // Load matrices
     let matrix1 = pgr::libs::pairmat::NamedMatrix::from_relaxed_phylip(matrix1_file)?;

@@ -82,7 +82,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         println!("{}", include_str!("../../../docs/ms2dna.md"));
         return Ok(());
     }
-    let outfile = args.get_one::<String>("outfile").unwrap();
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
     let gc = *args.get_one::<f64>("gc").unwrap_or(&0.5);
     let seed = args.get_one::<u64>("seed").copied();
     let no_perturb = args.get_flag("no_perturb");

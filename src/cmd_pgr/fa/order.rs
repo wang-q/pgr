@@ -49,7 +49,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     let mut fa_in = pgr::libs::fmt::fa::reader(args.get_one::<String>("infile").unwrap())?;
 
-    let mut fa_out = pgr::libs::fmt::fa::writer(args.get_one::<String>("outfile").unwrap())?;
+    let mut fa_out = pgr::libs::fmt::fa::writer(crate::cmd_pgr::args::get_outfile(args))?;
 
     let list: indexmap::IndexSet<_> =
         pgr::libs::io::read_names_as_vec(args.get_one::<String>("list.txt").unwrap())?

@@ -63,7 +63,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let is_consistent = args.get_flag("consistent");
 
-    let mut fa_out = pgr::libs::fmt::fa::writer(args.get_one::<String>("outfile").unwrap())?;
+    let mut fa_out = pgr::libs::fmt::fa::writer(crate::cmd_pgr::args::get_outfile(args))?;
 
     let set_list: HashSet<String> = if args.contains_id("list.txt") {
         pgr::libs::io::read_names_as_set(args.get_one::<String>("list.txt").unwrap())?

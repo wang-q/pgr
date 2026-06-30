@@ -110,7 +110,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         is_insensitive,
     };
 
-    let mut fa_out = pgr::libs::fmt::fa::writer(args.get_one::<String>("outfile").unwrap())?;
+    let mut fa_out = pgr::libs::fmt::fa::writer(crate::cmd_pgr::args::get_outfile(args))?;
 
     //----------------------------
     // Process

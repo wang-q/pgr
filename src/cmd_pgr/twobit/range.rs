@@ -56,7 +56,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // Args
     //----------------------------
     let infile = args.get_one::<String>("infile").unwrap();
-    let output_path = args.get_one::<String>("outfile").unwrap();
+    let output_path = crate::cmd_pgr::args::get_outfile(args);
 
     let ranges = crate::cmd_pgr::args::collect_ranges(args)?;
 

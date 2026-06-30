@@ -122,7 +122,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let opt_nx: Vec<_> = args.get_many::<usize>("nx").unwrap().copied().collect();
     let opt_genome = args.get_one::<usize>("genome").copied();
-    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap())?;
+    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
 
     //----------------------------
     // Process

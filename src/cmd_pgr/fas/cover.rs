@@ -123,7 +123,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         intspan::set2json_m(&res_of)
     };
     // Write the JSON output to the specified file or stdout
-    intspan::write_json(args.get_one::<String>("outfile").unwrap(), &out_json)?;
+    intspan::write_json(crate::cmd_pgr::args::get_outfile(args), &out_json)?;
 
     Ok(())
 }

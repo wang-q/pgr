@@ -46,7 +46,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     let infile = args.get_one::<String>("infile").unwrap();
     let opt_format = args.get_one::<String>("format").unwrap();
-    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap())?;
+    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
 
     //----------------------------
     // 2. Load Graph

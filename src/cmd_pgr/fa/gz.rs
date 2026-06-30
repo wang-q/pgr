@@ -101,7 +101,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let compress_level = *args.get_one::<i32>("compress-level").unwrap();
 
     let outfile = if args.contains_id("outfile") {
-        args.get_one::<String>("outfile").unwrap().to_string()
+        crate::cmd_pgr::args::get_outfile(args).to_string()
     } else {
         format!("{}.gz", infile)
     };

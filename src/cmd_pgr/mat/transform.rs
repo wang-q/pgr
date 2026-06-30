@@ -107,7 +107,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let offset = *args.get_one::<f32>("offset").unwrap();
     let normalize = args.get_flag("normalize");
     let format = args.get_one::<String>("format").unwrap().as_str();
-    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap())?;
+    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
 
     //----------------------------
     // Load and Transform

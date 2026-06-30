@@ -75,7 +75,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     // Args
     //----------------------------
-    let outfile = args.get_one::<String>("outfile").unwrap();
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
     let taxon_file = args.get_one::<String>("taxon").unwrap();
 
     let ranks: Vec<usize> = if args.contains_id("rank") {

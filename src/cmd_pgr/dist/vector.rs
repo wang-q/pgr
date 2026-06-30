@@ -97,7 +97,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let infiles = common::collect_infiles(args);
 
     let (sender, writer_thread) =
-        common::spawn_writer_and_pool(args.get_one::<String>("outfile").unwrap(), opt_parallel)?;
+        common::spawn_writer_and_pool(crate::cmd_pgr::args::get_outfile(args), opt_parallel)?;
 
     //----------------------------
     // Ops

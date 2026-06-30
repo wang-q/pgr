@@ -78,7 +78,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let is_start = args.get_flag("start");
     let is_end = args.get_flag("end");
 
-    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap())?;
+    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
 
     //----------------------------
     // Ops

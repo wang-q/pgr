@@ -65,7 +65,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let self_compare = args.get_one::<String>("compare_file").is_none();
 
     // 3. Output writer
-    let outfile = args.get_one::<String>("outfile").unwrap();
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
     let mut writer = pgr::writer(outfile)?;
 
     // 4. Compare

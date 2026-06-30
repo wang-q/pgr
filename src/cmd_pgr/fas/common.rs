@@ -32,7 +32,7 @@ pub fn run_pipeline<F>(
 where
     F: Fn(&FasBlock) -> anyhow::Result<String> + Sync,
 {
-    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap())?;
+    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
 
     if parallel <= 1 {
         for infile in args.get_many::<String>("infiles").unwrap() {

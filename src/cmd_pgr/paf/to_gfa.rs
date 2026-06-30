@@ -80,7 +80,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let params = common::get_poa_params(args);
     let crush = args.get_flag("crush");
 
-    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap())?;
+    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
 
     pgr::libs::paf::poa_compact::output_gfa(
         &mut writer,

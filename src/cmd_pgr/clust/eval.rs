@@ -1,12 +1,10 @@
 use clap::{Arg, ArgMatches, Command};
 use pgr::libs::clust::eval::format::{
-    external_metric_values, format_metrics_row, COORD_METRIC_NAMES, DISTANCE_METRIC_NAMES,
-    EXTERNAL_METRIC_NAMES,
+    coord_metric_values, distance_metric_values, external_metric_values, format_metrics_row,
+    COORD_METRIC_NAMES, DISTANCE_METRIC_NAMES, EXTERNAL_METRIC_NAMES,
 };
 use pgr::libs::clust::eval::{
-    ball_hall_score, c_index_score, calinski_harabasz_score, davies_bouldin_score, dunn_score,
-    evaluate, gamma_score, load_batch_partitions, load_partition, pbm_score, remove_singletons,
-    silhouette_score, tau_score, wemmert_gancarski_score, xie_beni_score, Coordinates,
+    evaluate, load_batch_partitions, load_partition, remove_singletons, Coordinates,
     DistanceMatrix, PartitionFormat, TreeDistance,
 };
 use pgr::libs::pairmat::NamedMatrix;
@@ -92,7 +90,7 @@ Examples:
 
 pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
     let p1_path = matches.get_one::<String>("p1").unwrap();
-    let outfile = matches.get_one::<String>("outfile").unwrap();
+    let outfile = crate::cmd_pgr::args::get_outfile(matches);
 
     let format_str = matches.get_one::<String>("format").unwrap();
     let format: PartitionFormat = format_str.parse().expect("Invalid format");
@@ -166,25 +164,12 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
             }
 
             if let Some(ref d) = dist_provider {
-                let values = vec![
-                    silhouette_score(&p1, d.as_ref()),
-                    dunn_score(&p1, d.as_ref()),
-                    c_index_score(&p1, d.as_ref()),
-                    gamma_score(&p1, d.as_ref()),
-                    tau_score(&p1, d.as_ref()),
-                ];
+                let values = distance_metric_values(&p1, d.as_ref());
                 row.push(format_metrics_row(&values));
             }
 
             if let Some(ref c) = coords {
-                let values = vec![
-                    davies_bouldin_score(&p1, c),
-                    calinski_harabasz_score(&p1, c),
-                    pbm_score(&p1, c),
-                    ball_hall_score(&p1, c),
-                    xie_beni_score(&p1, c),
-                    wemmert_gancarski_score(&p1, c),
-                ];
+                let values = coord_metric_values(&p1, c);
                 row.push(format_metrics_row(&values));
             }
 
@@ -212,13 +197,7 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
         )?;
     } else if let Some(matrix_path) = matches.get_one::<String>("matrix") {
         let matrix = NamedMatrix::from_relaxed_phylip(matrix_path)?;
-        let values = vec![
-            silhouette_score(&p1, &matrix),
-            dunn_score(&p1, &matrix),
-            c_index_score(&p1, &matrix),
-            gamma_score(&p1, &matrix),
-            tau_score(&p1, &matrix),
-        ];
+        let values = distance_metric_values(&p1, &matrix);
 
         writeln!(writer, "{}", DISTANCE_METRIC_NAMES.join("\t"))?;
         writeln!(writer, "{}", format_metrics_row(&values))?;
@@ -228,26 +207,13 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
             anyhow::bail!("Tree file must contain exactly one tree.");
         }
         let dist = TreeDistance::new(trees.into_iter().next().unwrap());
-        let values = vec![
-            silhouette_score(&p1, &dist),
-            dunn_score(&p1, &dist),
-            c_index_score(&p1, &dist),
-            gamma_score(&p1, &dist),
-            tau_score(&p1, &dist),
-        ];
+        let values = distance_metric_values(&p1, &dist);
 
         writeln!(writer, "{}", DISTANCE_METRIC_NAMES.join("\t"))?;
         writeln!(writer, "{}", format_metrics_row(&values))?;
     } else if let Some(coords_path) = matches.get_one::<String>("coords") {
         let coords = Coordinates::from_path(coords_path)?;
-        let values = vec![
-            davies_bouldin_score(&p1, &coords),
-            calinski_harabasz_score(&p1, &coords),
-            pbm_score(&p1, &coords),
-            ball_hall_score(&p1, &coords),
-            xie_beni_score(&p1, &coords),
-            wemmert_gancarski_score(&p1, &coords),
-        ];
+        let values = coord_metric_values(&p1, &coords);
 
         writeln!(writer, "{}", COORD_METRIC_NAMES.join("\t"))?;
         writeln!(writer, "{}", format_metrics_row(&values))?;

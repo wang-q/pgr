@@ -46,7 +46,7 @@ Examples:
 }
 
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap())?;
+    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
     let sizes_path = args
         .get_one::<String>("sizes")
         .map(|s| s.to_string())

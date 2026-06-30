@@ -67,7 +67,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let params = common::get_poa_params(args);
 
-    let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap())?;
+    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
 
     pgr::libs::paf::vcf::output_vcf(&mut writer, &idx, &all_results, &mut fasta_store, params)?;
 

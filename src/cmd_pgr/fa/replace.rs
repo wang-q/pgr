@@ -61,7 +61,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         pgr::libs::io::read_replace_tsv(args.get_one::<String>("replace.tsv").unwrap())?;
     let is_some = args.get_flag("some");
 
-    let mut fa_out = pgr::libs::fmt::fa::writer(args.get_one::<String>("outfile").unwrap())?;
+    let mut fa_out = pgr::libs::fmt::fa::writer(crate::cmd_pgr::args::get_outfile(args))?;
 
     //----------------------------
     // Process

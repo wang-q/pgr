@@ -97,7 +97,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let inflation = *args.get_one::<f64>("inflation").unwrap();
     let prune = *args.get_one::<f64>("prune").unwrap();
     let max_iter = *args.get_one::<usize>("max_iter").unwrap();
-    let outfile = args.get_one::<String>("outfile").unwrap();
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
 
     let mut writer = pgr::writer(outfile)?;
 

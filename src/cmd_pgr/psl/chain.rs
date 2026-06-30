@@ -98,7 +98,7 @@ Examples:
 
 pub fn execute(args: &ArgMatches) -> Result<()> {
     let input = args.get_one::<String>("psl").unwrap();
-    let output = args.get_one::<String>("outfile").unwrap();
+    let output = crate::cmd_pgr::args::get_outfile(args);
     let linear_gap = args.get_one::<String>("linear_gap").unwrap();
     let min_score = *args.get_one::<f64>("min_score").unwrap();
     let target_2bit_path = args.get_one::<String>("target");
