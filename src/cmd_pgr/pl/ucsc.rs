@@ -158,7 +158,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             format!("{}.", tname)
         }
     } else {
-        format!("{}.", get_basename(&abs_target).unwrap())
+        format!("{}.", pgr::libs::io::get_basename(&abs_target).unwrap())
     };
     let opt_qname = if let Some(qname) = args.get_one::<String>("qname") {
         if qname.is_empty() {
@@ -167,14 +167,14 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             format!("{}.", qname)
         }
     } else {
-        format!("{}.", get_basename(&abs_query).unwrap())
+        format!("{}.", pgr::libs::io::get_basename(&abs_query).unwrap())
     };
 
     let abs_psl = intspan::absolute_path(args.get_one::<String>("psl").unwrap())?
         .display()
         .to_string();
     let infiles = if std::path::Path::new(&abs_psl).is_dir() {
-        list_files_ext(&abs_psl, "psl")?
+        pgr::libs::io::list_files_ext(&abs_psl, "psl")
     } else {
         vec![abs_psl]
     };
@@ -218,7 +218,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //    -noCheckScore=N - score that will pass without checks (speed tweak)
     std::fs::create_dir_all("pslChain")?;
     for infile in infiles {
-        let stem = get_basename(&infile).unwrap();
+        let stem = pgr::libs::io::get_basename(&infile).unwrap();
         run_cmd!(
             axtChain -minScore=${opt_minscore} -linearGap=${opt_lineargap} -psl ${infile} target.chr.2bit query.chr.2bit pslChain/${stem}.tmp
         )?;
@@ -240,7 +240,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         //    -saveId - keep the existing chain ids.
         //    -inputList=somefile - somefile contains list of input chain files.
         //    -tempDir=somedir/ - somedir has space for temporary sorting data, default ./
-        let mut files = list_files_ext("pslChain", "chain")?;
+        let mut files = pgr::libs::io::list_files_ext("pslChain", "chain");
         let mut sn = 1;
         let mut merge_files = vec![];
         while !files.is_empty() {
@@ -324,7 +324,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     {
         std::fs::create_dir_all("axtNet")?;
 
-        let files = list_files_ext("net", "net")?;
+        let files = pgr::libs::io::list_files_ext("net", "net");
 
         // netToAxt - Convert net (and chain) to axt.
         // usage:
@@ -337,7 +337,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         // usage:
         //   axtSort in.axt out.axt
         for file in files {
-            let stem = get_basename(&file).unwrap();
+            let stem = pgr::libs::io::get_basename(&file).unwrap();
             run_cmd!(
                 netToAxt ${file} all.pre.chain target.chr.2bit query.chr.2bit stdout |
                     axtSort stdin axtNet/${stem}.axt
@@ -349,9 +349,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     if !is_syn {
         run_cmd!(info "==> axtToMaf")?;
 
-        let files = list_files_ext("axtNet", "axt")?;
+        let files = pgr::libs::io::list_files_ext("axtNet", "axt");
         for file in files {
-            let stem = get_basename(&file).unwrap();
+            let stem = pgr::libs::io::get_basename(&file).unwrap();
             if abs_outdir == "stdout" {
                 if opt_tname.is_empty() {
                     run_cmd!(
@@ -401,9 +401,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             chainSplit synNet all.chain
         )?;
 
-        let files = list_files_ext("synNet", "net")?;
+        let files = pgr::libs::io::list_files_ext("synNet", "net");
         for file in files {
-            let stem = get_basename(&file).unwrap();
+            let stem = pgr::libs::io::get_basename(&file).unwrap();
             let chain_file = format!("{}.chain", file.strip_suffix(".net").unwrap());
             if abs_outdir == "stdout" {
                 if opt_tname.is_empty() {
@@ -443,36 +443,4 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     std::env::set_current_dir(&curdir)?;
 
     Ok(())
-}
-
-fn list_files_ext(dir: &str, extension: &str) -> Result<Vec<String>, std::io::Error> {
-    let mut files = Vec::new();
-    let dir_path = std::path::Path::new(dir);
-
-    if dir_path.is_dir() {
-        for entry in std::fs::read_dir(dir_path)? {
-            let entry = entry?;
-            let path = entry.path();
-
-            if path.is_file() {
-                if let Some(ext) = path.extension() {
-                    if ext == extension {
-                        files.push(path.to_string_lossy().into_owned());
-                    }
-                }
-            }
-        }
-    }
-
-    Ok(files)
-}
-
-fn get_basename(file_path: &str) -> Option<String> {
-    let path = std::path::Path::new(file_path);
-
-    if let Some(file_name) = path.file_stem().and_then(std::ffi::OsStr::to_str) {
-        return Some(file_name.split('.').next().unwrap().to_string());
-    }
-
-    None
 }

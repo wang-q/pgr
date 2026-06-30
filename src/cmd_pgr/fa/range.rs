@@ -79,7 +79,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let mut fa_out = pgr::libs::fmt::fa::writer(args.get_one::<String>("outfile").unwrap())?;
 
-    let ranges = crate::cmd_pgr::args::collect_ranges(args);
+    let ranges = crate::cmd_pgr::args::collect_ranges(args)?;
 
     let opt_cache = *args.get_one::<std::num::NonZeroUsize>("cache").unwrap();
     let mut cache: lru::LruCache<String, noodles_fasta::Record> = lru::LruCache::new(opt_cache);

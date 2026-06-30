@@ -106,9 +106,16 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         common::load_two_sets(&infiles, false, |paths| load_file(&paths[0], is_bin))?;
 
     common::par_run_pairs(&entries1, &entries2, &sender, |e1, e2| {
-        let score = calc(e1.list(), e2.list(), opt_mode, is_sim, is_dis);
-        let line = format!("{}\t{}\t{:.4}\n", e1.name(), e2.name(), score);
-        Some(line)
+        match calc(e1.list(), e2.list(), opt_mode, is_sim, is_dis) {
+            Ok(score) => {
+                let line = format!("{}\t{}\t{:.4}\n", e1.name(), e2.name(), score);
+                Some(line)
+            }
+            Err(e) => {
+                log::error!("{}", e);
+                None
+            }
+        }
     });
 
     // Drop the sender to signal the writer thread to exit
@@ -140,31 +147,20 @@ fn load_file(infile: &str, is_bin: bool) -> anyhow::Result<Vec<FeatureVector>> {
     Ok(entries)
 }
 
-fn calc(l1: &[f32], l2: &[f32], mode: &str, is_sim: bool, is_dis: bool) -> f32 {
+fn calc(l1: &[f32], l2: &[f32], mode: &str, is_sim: bool, is_dis: bool) -> anyhow::Result<f32> {
     let mut score = match mode {
         "euclid" => linalg::euclidean_distance(l1, l2),
         "cosine" => linalg::cosine_similarity(l1, l2),
         "jaccard" => linalg::weighted_jaccard_similarity(l1, l2),
-        _ => unreachable!(),
+        _ => anyhow::bail!("unknown mode: {}", mode),
     };
 
     if is_sim {
-        score = d2s(score);
+        score = linalg::distance_to_similarity(score);
     }
     if is_dis {
-        score = dis(score);
+        score = linalg::to_dissimilarity(score);
     }
 
-    score
-}
-
-// Schölkopf, B. (2000). The kernel trick for distances. In Neural Information Processing Systems, pages 301-307.
-// https://stats.stackexchange.com/questions/146309/turn-a-distance-measure-into-a-kernel-function
-// https://stats.stackexchange.com/questions/158279/how-i-can-convert-distance-euclidean-to-similarity-score
-fn d2s(dist: f32) -> f32 {
-    1.0 / dist.abs().exp()
-}
-
-fn dis(dist: f32) -> f32 {
-    1.0 - dist
+    Ok(score)
 }

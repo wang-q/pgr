@@ -1,6 +1,5 @@
 use clap::{value_parser, Arg, ArgAction, ArgMatches, Command};
 use pgr::libs::fmt::twobit::TwoBitFile;
-use std::io::Write;
 
 pub fn make_subcommand() -> Command {
     Command::new("to-fa")
@@ -56,25 +55,17 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let line_width = args.get_one::<usize>("line").copied().unwrap_or(60);
 
     let mut tb = TwoBitFile::open(input_path)?;
-    let mut writer = pgr::writer(output_path)?;
+    let mut writer = if line_width == 0 {
+        pgr::libs::fmt::fa::writer(output_path)?
+    } else {
+        pgr::libs::fmt::fa::writer_with_wrap(output_path, line_width)?
+    };
 
     let names = tb.get_sequence_names();
     for name in names {
         let seq = tb.read_sequence(&name, None, None, no_mask)?;
-
-        writeln!(writer, ">{}", name)?;
-
-        if line_width == 0 {
-            writeln!(writer, "{}", seq)?;
-        } else {
-            let mut idx = 0;
-            let len = seq.len();
-            while idx < len {
-                let next_idx = (idx + line_width).min(len);
-                writeln!(writer, "{}", &seq[idx..next_idx])?;
-                idx = next_idx;
-            }
-        }
+        let record = pgr::libs::fmt::fa::new_record(&name, seq.as_bytes());
+        writer.write_record(&record)?;
     }
 
     Ok(())

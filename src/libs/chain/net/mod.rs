@@ -13,6 +13,7 @@
 //! * [`syntenic`] — DupeTree for query-side duplication depth classification.
 
 pub mod builder;
+pub mod class;
 pub mod filter;
 pub mod finalize;
 pub mod reader;
@@ -22,6 +23,7 @@ pub mod types;
 pub mod writer;
 
 pub use builder::ChainNet;
+pub use class::{collect_stats_fill, collect_stats_gap, Stats};
 pub use filter::{filter_chrom, prune_gap, FilterCriteria};
 pub use finalize::finalize_net;
 pub use reader::read_nets;

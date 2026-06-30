@@ -112,8 +112,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     for method in methods.split(',') {
         let result = match method {
             "pearson" => pgr::libs::linalg::pearson_correlation(&values1, &values2),
-            "spearman" => spearman_correlation(&values1, &values2),
-            "mae" => mean_absolute_error(&values1, &values2),
+            "spearman" => pgr::libs::linalg::spearman_correlation(&values1, &values2),
+            "mae" => pgr::libs::linalg::mean_absolute_error(&values1, &values2),
             "cosine" => pgr::libs::linalg::cosine_similarity(&values1, &values2),
             "jaccard" => pgr::libs::linalg::weighted_jaccard_similarity(&values1, &values2),
             "euclid" => pgr::libs::linalg::euclidean_distance(&values1, &values2),
@@ -123,34 +123,4 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     }
 
     Ok(())
-}
-
-// Calculate Spearman rank correlation coefficient
-fn spearman_correlation(x: &[f32], y: &[f32]) -> f32 {
-    let mut x_ranked: Vec<_> = x.iter().enumerate().collect();
-    let mut y_ranked: Vec<_> = y.iter().enumerate().collect();
-
-    x_ranked.sort_by(|a, b| a.1.partial_cmp(b.1).unwrap());
-    y_ranked.sort_by(|a, b| a.1.partial_cmp(b.1).unwrap());
-
-    let mut x_ranks = vec![0.0; x.len()];
-    let mut y_ranks = vec![0.0; y.len()];
-
-    for (rank, &(i, _)) in x_ranked.iter().enumerate() {
-        x_ranks[i] = rank as f32;
-    }
-    for (rank, &(i, _)) in y_ranked.iter().enumerate() {
-        y_ranks[i] = rank as f32;
-    }
-
-    pgr::libs::linalg::pearson_correlation(&x_ranks, &y_ranks)
-}
-
-// Calculate mean absolute error
-fn mean_absolute_error(x: &[f32], y: &[f32]) -> f32 {
-    x.iter()
-        .zip(y.iter())
-        .map(|(a, b)| (a - b).abs())
-        .sum::<f32>()
-        / x.len() as f32
 }

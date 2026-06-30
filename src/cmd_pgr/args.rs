@@ -46,7 +46,7 @@ pub fn parallel_arg() -> Arg {
 
 /// Collect region strings from `ranges` (positional, optional) and `rgfile`
 /// (`-r/--rgfile`) arguments. Returns the combined list.
-pub fn collect_ranges(args: &ArgMatches) -> Vec<String> {
+pub fn collect_ranges(args: &ArgMatches) -> anyhow::Result<Vec<String>> {
     let mut ranges: Vec<String> = if args.contains_id("ranges") {
         args.get_many::<String>("ranges")
             .unwrap()
@@ -56,10 +56,10 @@ pub fn collect_ranges(args: &ArgMatches) -> Vec<String> {
         Vec::new()
     };
     if args.contains_id("rgfile") {
-        let mut rgs = intspan::read_first_column(args.get_one::<String>("rgfile").unwrap());
+        let mut rgs = pgr::libs::io::read_names_as_vec(args.get_one::<String>("rgfile").unwrap())?;
         ranges.append(&mut rgs);
     }
-    ranges
+    Ok(ranges)
 }
 
 /// Add POA scoring arguments (`--match`, `--mismatch`, `--gap-open`,

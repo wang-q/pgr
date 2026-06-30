@@ -58,7 +58,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let infile = args.get_one::<String>("infile").unwrap();
     let output_path = args.get_one::<String>("outfile").unwrap();
 
-    let ranges = crate::cmd_pgr::args::collect_ranges(args);
+    let ranges = crate::cmd_pgr::args::collect_ranges(args)?;
 
     //----------------------------
     // Open files

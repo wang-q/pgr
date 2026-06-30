@@ -201,6 +201,37 @@ pub fn find_fasta_files<P: AsRef<Path>>(path: P) -> Vec<PathBuf> {
     files
 }
 
+/// List files in `dir` with the given `extension` (non-recursive).
+pub fn list_files_ext(dir: &str, extension: &str) -> Vec<String> {
+    let mut files = Vec::new();
+    let dir_path = Path::new(dir);
+
+    if dir_path.is_dir() {
+        if let Ok(entries) = std::fs::read_dir(dir_path) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_file() {
+                    if let Some(ext) = path.extension() {
+                        if ext == extension {
+                            files.push(path.to_string_lossy().into_owned());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    files
+}
+
+/// Get the basename of `file_path` (the part before the first `.`).
+pub fn get_basename(file_path: &str) -> Option<String> {
+    let path = Path::new(file_path);
+    path.file_stem()
+        .and_then(std::ffi::OsStr::to_str)
+        .map(|s| s.split('.').next().unwrap_or(s).to_string())
+}
+
 /// Read the first column of `path` (one name per line) into a `HashSet`.
 ///
 /// Lines are split on whitespace; only the first field is kept. Empty lines

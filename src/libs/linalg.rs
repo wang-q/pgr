@@ -322,3 +322,49 @@ pub fn weighted_jaccard_similarity(a: &[f32], b: &[f32]) -> f32 {
         numerator / denominator
     }
 }
+
+/// Computes the Spearman rank correlation coefficient between two vectors.
+///
+/// Ranks each vector, then computes the Pearson correlation of the ranks.
+/// Returns `NaN` if the vectors are empty or have different lengths.
+pub fn spearman_correlation(a: &[f32], b: &[f32]) -> f32 {
+    let mut x_ranked: Vec<_> = a.iter().enumerate().collect();
+    let mut y_ranked: Vec<_> = b.iter().enumerate().collect();
+
+    x_ranked.sort_by(|a, b| a.1.partial_cmp(b.1).unwrap());
+    y_ranked.sort_by(|a, b| a.1.partial_cmp(b.1).unwrap());
+
+    let mut x_ranks = vec![0.0; a.len()];
+    let mut y_ranks = vec![0.0; b.len()];
+
+    for (rank, &(i, _)) in x_ranked.iter().enumerate() {
+        x_ranks[i] = rank as f32;
+    }
+    for (rank, &(i, _)) in y_ranked.iter().enumerate() {
+        y_ranks[i] = rank as f32;
+    }
+
+    pearson_correlation(&x_ranks, &y_ranks)
+}
+
+/// Computes the mean absolute error between two vectors.
+pub fn mean_absolute_error(a: &[f32], b: &[f32]) -> f32 {
+    a.iter()
+        .zip(b.iter())
+        .map(|(a, b)| (a - b).abs())
+        .sum::<f32>()
+        / a.len() as f32
+}
+
+/// Convert a distance to a similarity score via the Schölkopf kernel trick.
+///
+/// Reference: Schölkopf, B. (2000). The kernel trick for distances.
+/// In Neural Information Processing Systems, pages 301-307.
+pub fn distance_to_similarity(dist: f32) -> f32 {
+    1.0 / dist.abs().exp()
+}
+
+/// Convert a similarity to a dissimilarity (1 - similarity).
+pub fn to_dissimilarity(sim: f32) -> f32 {
+    1.0 - sim
+}
