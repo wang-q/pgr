@@ -85,47 +85,17 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     // Paths
     //----------------------------
-    let curdir = std::env::current_dir()?;
-    let pgr = std::env::current_exe()?.display().to_string();
-    let tempdir = tempfile::Builder::new().prefix("pgr_rm_").tempdir()?;
-    let tempdir_str = tempdir.path().to_str().unwrap();
-
-    run_cmd!(info "==> Paths")?;
-    run_cmd!(info "    \"pgr\"     = ${pgr}")?;
-    run_cmd!(info "    \"curdir\"  = ${curdir:?}")?;
-    run_cmd!(info "    \"tempdir\" = ${tempdir_str}")?;
+    let ctx = crate::cmd_pgr::pl::common::PipelineCtx::new("pgr_rm_")?;
 
     run_cmd!(info "==> Absolute paths")?;
-    let abs_repeat = intspan::absolute_path(args.get_one::<String>("repeat").unwrap())?
-        .display()
-        .to_string();
-    let abs_infile = intspan::absolute_path(args.get_one::<String>("infile").unwrap())?
-        .display()
-        .to_string();
+    let abs_repeat = ctx.abs_path(args.get_one::<String>("repeat").unwrap())?;
+    let abs_infile = ctx.abs_path(args.get_one::<String>("infile").unwrap())?;
     let abs_outfile = crate::cmd_pgr::pl::common::abs_path_or_stdout(outfile)?;
 
     //----------------------------
     // Ops
     //----------------------------
-    run_cmd!(info "==> Switch to tempdir")?;
-    std::env::set_current_dir(tempdir_str)?;
-
-    run_cmd!(info "==> FastK on repeat")?;
-    run_cmd!(
-        FastK -t -k${opt_kmer} -Nrepeat ${abs_repeat}
-    )?;
-
-    run_cmd!(info "==> FastK on genome")?;
-    run_cmd!(
-        FastK -p:repeat -k${opt_kmer} -Ngenome ${abs_infile}
-    )?;
-
-    run_cmd!(info "==> Process each chromosome")?;
-    run_cmd!(
-        ${pgr} fa size ${abs_infile} -o chr.sizes
-    )?;
-
-    let chrs = crate::cmd_pgr::pl::common::read_chr_names("chr.sizes")?;
+    ctx.enter()?;
 
     let re_prof: regex::Regex = regex::Regex::new(
         r"(?xi)
@@ -135,20 +105,25 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             ",
     )?;
 
-    let rg_files = crate::cmd_pgr::pl::common::run_profex_per_chr(&chrs, &re_prof, None)?;
+    let opts = crate::cmd_pgr::pl::common::RepeatOpts {
+        pgr: ctx.pgr.clone(),
+        abs_infile,
+        abs_outfile,
+        opt_kmer,
+        opt_fk,
+        opt_min,
+        opt_ff,
+        abs_repeat: Some(abs_repeat),
+        re_prof,
+        min_depth: None,
+    };
 
-    run_cmd!(info "==> Outputs")?;
-    run_cmd!(
-        spanr cover $[rg_files] |
-            spanr span --op fill -n ${opt_fk} stdin |
-            spanr span --op excise -n ${opt_min} stdin |
-            spanr span --op fill -n ${opt_ff} stdin -o ${abs_outfile}
-    )?;
+    crate::cmd_pgr::pl::common::run_repeat_pipeline(&opts)?;
 
     //----------------------------
     // Done
     //----------------------------
-    std::env::set_current_dir(&curdir)?;
+    ctx.leave()?;
 
     Ok(())
 }

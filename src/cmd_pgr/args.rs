@@ -33,6 +33,18 @@ pub fn infile_arg() -> Arg {
         .help("Input filename. [stdin] for standard input")
 }
 
+/// Standard positional `infiles` argument (one or more, required).
+///
+/// `label` is the format name used in the help text (e.g. `"FASTA"`,
+/// `"block FA"`, `"2bit"`).
+pub fn infiles_arg(label: &str) -> Arg {
+    Arg::new("infiles")
+        .required(true)
+        .num_args(1..)
+        .index(1)
+        .help(format!("Input {label} file(s) to process"))
+}
+
 /// Standard `-r/--rgfile` argument (file of regions, one per line).
 pub fn rgfile_arg() -> Arg {
     Arg::new("rgfile")

@@ -115,16 +115,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         }
 
         let definition = noodles_fasta::record::Definition::new(rg.to_string(), None);
-
-        // slice here is 1-based
-        let start = noodles_core::Position::new(*rg.start() as usize).unwrap();
-        let end = noodles_core::Position::new(*rg.end() as usize).unwrap();
-
-        let mut slice = record.sequence().slice(start..=end).unwrap();
-        if rg.strand() == "-" {
-            slice = slice.complement().rev().collect::<Result<_, _>>()?;
-        }
-        let record_rg = noodles_fasta::Record::new(definition, slice);
+        let sequence = loc::slice_record(record, &rg)?;
+        let record_rg = noodles_fasta::Record::new(definition, sequence);
 
         fa_out.write_record(&record_rg)?;
     }

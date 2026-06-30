@@ -4,16 +4,11 @@ use cmd_lib::*;
 use std::io::BufRead;
 
 /// Read chromosome names from a `chr.sizes` file (lines of `<chr>\t<size>`).
+///
+/// Returns the first column in file order. Supports stdin and `.gz` via
+/// [`pgr::libs::io::read_names_as_vec`].
 pub fn read_chr_names(sizes_file: &str) -> anyhow::Result<Vec<String>> {
-    let mut chrs: Vec<String> = Vec::new();
-    for line in std::io::BufReader::new(std::fs::File::open(sizes_file)?).lines() {
-        let line = line?;
-        let fields: Vec<&str> = line.split('\t').collect();
-        if fields.len() == 2 {
-            chrs.push(fields[0].to_string());
-        }
-    }
-    Ok(chrs)
+    pgr::libs::io::read_names_as_vec(sizes_file)
 }
 
 /// Resolve `path` to an absolute path string. `stdout` is passed through as-is.
@@ -75,4 +70,143 @@ pub fn run_profex_per_chr(
         rg_files.push(rg_file);
     }
     Ok(rg_files)
+}
+
+/// Shared pipeline context: current dir, pgr executable, and tempdir.
+///
+/// Created at the start of a pipeline; call [`PipelineCtx::enter`] to switch
+/// into the tempdir and [`PipelineCtx::leave`] to restore the original cwd.
+pub struct PipelineCtx {
+    /// Original working directory, restored by `leave()`.
+    pub curdir: std::path::PathBuf,
+    /// Absolute path to the current `pgr` executable.
+    pub pgr: String,
+    /// Owned tempdir; dropped when the ctx is dropped.
+    pub tempdir: tempfile::TempDir,
+}
+
+impl PipelineCtx {
+    /// Create a new context with a tempdir using `prefix` (e.g. `"pgr_rm_"`).
+    ///
+    /// Prints the `==> Paths` info block.
+    pub fn new(prefix: &str) -> anyhow::Result<Self> {
+        let curdir = std::env::current_dir()?;
+        let pgr = std::env::current_exe()?.display().to_string();
+        let tempdir = tempfile::Builder::new().prefix(prefix).tempdir()?;
+        let tempdir_str = tempdir.path().to_str().unwrap();
+
+        run_cmd!(info "==> Paths")?;
+        run_cmd!(info "    \"pgr\"     = ${pgr}")?;
+        run_cmd!(info "    \"curdir\"  = ${curdir:?}")?;
+        run_cmd!(info "    \"tempdir\" = ${tempdir_str}")?;
+
+        Ok(Self {
+            curdir,
+            pgr,
+            tempdir,
+        })
+    }
+
+    /// Resolve `p` to an absolute path string.
+    pub fn abs_path(&self, p: &str) -> anyhow::Result<String> {
+        Ok(intspan::absolute_path(p)?.display().to_string())
+    }
+
+    /// Switch the current working directory into the tempdir.
+    pub fn enter(&self) -> anyhow::Result<()> {
+        let tempdir_str = self.tempdir.path().to_str().unwrap();
+        run_cmd!(info "==> Switch to tempdir")?;
+        std::env::set_current_dir(tempdir_str)?;
+        Ok(())
+    }
+
+    /// Restore the original working directory.
+    pub fn leave(&self) -> anyhow::Result<()> {
+        std::env::set_current_dir(&self.curdir)?;
+        Ok(())
+    }
+}
+
+/// Options for the shared repeat-identification pipeline (ir/rept).
+pub struct RepeatOpts {
+    /// Absolute path to the `pgr` executable.
+    pub pgr: String,
+    /// Absolute path to the genome FASTA.
+    pub abs_infile: String,
+    /// Absolute path to the output (or `stdout`).
+    pub abs_outfile: String,
+    pub opt_kmer: usize,
+    pub opt_fk: usize,
+    pub opt_min: usize,
+    pub opt_ff: usize,
+    /// For `ir`: absolute path to the repeat database. `None` for `rept`.
+    pub abs_repeat: Option<String>,
+    /// Profex output regex (captures `start`/`end`, optionally `depth`).
+    pub re_prof: regex::Regex,
+    /// Minimum depth filter; `None` to skip. `Some(2)` for `rept`.
+    pub min_depth: Option<usize>,
+}
+
+/// Run the shared FastK → Profex → spanr repeat pipeline.
+///
+/// When `opts.abs_repeat` is set, runs FastK twice (repeat + genome with
+/// `-p:repeat`); otherwise runs FastK once on the genome (`-p`). Then
+/// generates `chr.sizes`, runs Profex per chromosome, and finally the
+/// spanr cover/fill/excise/fill pipeline.
+pub fn run_repeat_pipeline(opts: &RepeatOpts) -> anyhow::Result<()> {
+    let pgr = &opts.pgr;
+    let abs_infile = &opts.abs_infile;
+    let opt_kmer = opts.opt_kmer;
+
+    if let Some(abs_repeat) = &opts.abs_repeat {
+        run_cmd!(info "==> FastK on repeat")?;
+        run_cmd!(
+            FastK -t -k${opt_kmer} -Nrepeat ${abs_repeat}
+        )?;
+        run_cmd!(info "==> FastK on genome")?;
+        run_cmd!(
+            FastK -p:repeat -k${opt_kmer} -Ngenome ${abs_infile}
+        )?;
+    } else {
+        run_cmd!(info "==> FastK")?;
+        run_cmd!(
+            FastK -p -k${opt_kmer} -Ngenome ${abs_infile}
+        )?;
+    }
+
+    run_cmd!(info "==> Process each chromosome")?;
+    run_cmd!(
+        ${pgr} fa size ${abs_infile} -o chr.sizes
+    )?;
+    let chrs = read_chr_names("chr.sizes")?;
+
+    let rg_files = run_profex_per_chr(&chrs, &opts.re_prof, opts.min_depth)?;
+
+    run_repeat_spanr_pipeline(
+        &rg_files,
+        opts.opt_fk,
+        opts.opt_min,
+        opts.opt_ff,
+        &opts.abs_outfile,
+    )?;
+
+    Ok(())
+}
+
+/// Run the spanr cover → fill → excise → fill pipeline on `rg_files`.
+pub fn run_repeat_spanr_pipeline(
+    rg_files: &[String],
+    fk: usize,
+    min: usize,
+    ff: usize,
+    abs_outfile: &str,
+) -> anyhow::Result<()> {
+    run_cmd!(info "==> Outputs")?;
+    run_cmd!(
+        spanr cover $[rg_files] |
+            spanr span --op fill -n ${fk} stdin |
+            spanr span --op excise -n ${min} stdin |
+            spanr span --op fill -n ${ff} stdin -o ${abs_outfile}
+    )?;
+    Ok(())
 }

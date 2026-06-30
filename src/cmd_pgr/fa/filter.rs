@@ -41,13 +41,7 @@ Notes:
 
         "###,
         )
-        .arg(
-            Arg::new("infiles")
-                .required(true)
-                .num_args(1..)
-                .index(1)
-                .help("Input FASTA file(s) to process"),
-        )
+        .arg(crate::cmd_pgr::args::infiles_arg("FASTA"))
         .arg(
             Arg::new("minsize")
                 .long("minsize")

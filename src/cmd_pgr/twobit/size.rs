@@ -22,13 +22,7 @@ Examples:
 
 "###,
         )
-        .arg(
-            Arg::new("infiles")
-                .required(true)
-                .num_args(1..)
-                .index(1)
-                .help("Input 2bit file(s) to process"),
-        )
+        .arg(crate::cmd_pgr::args::infiles_arg("2bit"))
         .arg(crate::cmd_pgr::args::outfile_arg())
         .arg(
             Arg::new("no_ns")

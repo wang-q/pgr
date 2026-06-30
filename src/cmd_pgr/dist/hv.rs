@@ -1,6 +1,5 @@
 use super::common;
 use clap::Command;
-use noodles_fasta as fasta;
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
@@ -126,8 +125,7 @@ fn load_file(
     opt_window: usize,
     opt_dim: usize,
 ) -> anyhow::Result<Vec<HvEntry>> {
-    let reader = pgr::reader(infile)?;
-    let mut fa_in = fasta::io::Reader::new(reader);
+    let mut fa_in = pgr::libs::fmt::fa::reader(infile)?;
 
     let mut file_set = rapidhash::RapidHashSet::default();
 

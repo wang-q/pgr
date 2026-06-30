@@ -21,8 +21,7 @@ pub fn create_loc(infile: &str, locfile: &str, is_bgzf: bool) -> anyhow::Result<
         crate::libs::io::reader(infile)?
     };
 
-    let mut writer: Box<dyn std::io::Write> =
-        Box::new(std::io::BufWriter::new(std::fs::File::create(locfile)?));
+    let mut writer = crate::libs::io::writer(locfile)?;
 
     // https://www.ginkgobioworks.com/2023/03/17/even-more-rapid-retrieval-from-very-large-files-with-rust/
     let mut record_size = 0; // including header, sequence, newlines
@@ -159,6 +158,27 @@ pub fn records_offset(
     Ok(records)
 }
 
+/// Slice a subsequence from `record` by 1-based `rg`, applying reverse
+/// complement for `-` strand. Returns the resulting owned sequence.
+pub fn slice_record(
+    record: &fasta::Record,
+    rg: &intspan::Range,
+) -> anyhow::Result<fasta::record::Sequence> {
+    let start = noodles_core::Position::new(*rg.start() as usize)
+        .ok_or_else(|| anyhow::anyhow!("invalid start position: {}", *rg.start()))?;
+    let end = noodles_core::Position::new(*rg.end() as usize)
+        .ok_or_else(|| anyhow::anyhow!("invalid end position: {}", *rg.end()))?;
+
+    let mut slice = record
+        .sequence()
+        .slice(start..=end)
+        .ok_or_else(|| anyhow::anyhow!("slice error for [{}]", rg))?;
+    if rg.strand() == "-" {
+        slice = slice.complement().rev().collect::<Result<_, _>>()?;
+    }
+    Ok(slice)
+}
+
 pub fn fetch_range_seq(
     reader: &mut Input,
     loc_of: &IndexMap<String, (u64, usize)>,
@@ -186,20 +206,7 @@ pub fn fetch_range_seq(
         return Ok(seq);
     }
 
-    // slice here is 1-based
-    let start = noodles_core::Position::new(*rg.start() as usize)
-        .ok_or_else(|| anyhow::anyhow!("invalid start position: {}", *rg.start()))?;
-    let end = noodles_core::Position::new(*rg.end() as usize)
-        .ok_or_else(|| anyhow::anyhow!("invalid end position: {}", *rg.end()))?;
-
-    let mut slice = record
-        .sequence()
-        .slice(start..=end)
-        .ok_or_else(|| anyhow::anyhow!("slice error for [{}]", rg))?;
-    if rg.strand() == "-" {
-        slice = slice.complement().rev().collect::<Result<_, _>>()?;
-    }
-
+    let slice = slice_record(&record, rg)?;
     let seq = slice.as_ref().iter().map(|&b| b as char).collect();
     Ok(seq)
 }

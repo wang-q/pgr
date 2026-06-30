@@ -25,13 +25,7 @@ Examples:
 
 "###,
         )
-        .arg(
-            Arg::new("infiles")
-                .required(true)
-                .num_args(1..)
-                .index(1)
-                .help("Input block FA file(s) to process"),
-        )
+        .arg(crate::cmd_pgr::args::infiles_arg("block FA"))
         .arg(
             Arg::new("count")
                 .long("count")
