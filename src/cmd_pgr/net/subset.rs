@@ -1,9 +1,7 @@
 use clap::{Arg, ArgAction, ArgMatches, Command};
-use pgr::libs::chain::net::{read_nets, Fill};
+use pgr::libs::chain::net::{read_nets, subset_nets, SubsetOptions};
 use pgr::libs::chain::{read_chains, Chain};
-use std::cell::RefCell;
 use std::collections::HashMap;
-use std::rc::Rc;
 
 pub fn make_subcommand() -> Command {
     Command::new("subset")
@@ -68,120 +66,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let mut writer = pgr::writer(chain_out)?;
 
-    for chrom in chroms {
-        // Traverse net structure
-        // Root is a Gap
-        process_gap(
-            &chrom.root,
-            &chains_map,
-            &mut writer,
-            whole_chains,
-            split_on_insert,
-            type_filter,
-        )?;
-    }
-
-    Ok(())
-}
-
-fn process_gap(
-    gap: &Rc<RefCell<pgr::libs::chain::net::Gap>>,
-    chains_map: &HashMap<u64, Chain>,
-    writer: &mut impl std::io::Write,
-    whole_chains: bool,
-    split_on_insert: bool,
-    type_filter: Option<&String>,
-) -> anyhow::Result<()> {
-    let gap = gap.borrow();
-    for fill in &gap.fills {
-        process_fill(
-            fill,
-            chains_map,
-            writer,
-            whole_chains,
-            split_on_insert,
-            type_filter,
-        )?;
-    }
-    Ok(())
-}
-
-fn process_fill(
-    fill_rc: &Rc<RefCell<Fill>>,
-    chains_map: &HashMap<u64, Chain>,
-    writer: &mut impl std::io::Write,
-    whole_chains: bool,
-    split_on_insert: bool,
-    type_filter: Option<&String>,
-) -> anyhow::Result<()> {
-    let fill = fill_rc.borrow();
-
-    // Check type filter
-    if let Some(t) = type_filter {
-        if &fill.class != t {
-            return Ok(()); // Skip but continue traversal?
-                           // In C: if (!sameString(type, fill->type)) return;
-                           // It returns from convertFill, but then it continues recursion in rConvert.
-                           // Wait, in C rConvert calls convertFill THEN recurses.
-                           // So if type doesn't match, we don't output this fill, but do we recurse?
-                           // C code:
-                           // if (fill->chainId) { ... convertFill ... }
-                           // if (fill->children) rConvert(...);
-                           //
-                           // convertFill checks type and returns if mismatch.
-                           // So yes, we should still recurse.
-        }
-    }
-
-    // Process current fill
-    if fill.chain_id != 0 {
-        if let Some(chain) = chains_map.get(&fill.chain_id) {
-            if whole_chains {
-                chain.write(writer)?;
-            } else if split_on_insert {
-                // Split on insert logic
-                let mut t_start = fill.start;
-
-                // Iterate over gaps to find inserts
-                for gap_rc in &fill.gaps {
-                    let gap = gap_rc.borrow();
-                    if !gap.fills.is_empty() {
-                        // This gap has inserts (children fills)
-                        // Output chain part from t_start to gap.start
-                        if gap.start > t_start {
-                            if let Some(sub) = chain.subset(t_start, gap.start) {
-                                sub.write(writer)?;
-                            }
-                        }
-                        t_start = gap.end;
-                    }
-                }
-                // Output remaining part
-                if fill.end > t_start {
-                    if let Some(sub) = chain.subset(t_start, fill.end) {
-                        sub.write(writer)?;
-                    }
-                }
-            } else {
-                // Default: subset to fill range
-                if let Some(sub) = chain.subset(fill.start, fill.end) {
-                    sub.write(writer)?;
-                }
-            }
-        }
-    }
-
-    // Recurse into children gaps
-    for gap in &fill.gaps {
-        process_gap(
-            gap,
-            chains_map,
-            writer,
-            whole_chains,
-            split_on_insert,
-            type_filter,
-        )?;
-    }
+    let opts = SubsetOptions {
+        whole_chains,
+        split_on_insert,
+    };
+    subset_nets(&chroms, &chains_map, &mut writer, opts, type_filter)?;
 
     Ok(())
 }

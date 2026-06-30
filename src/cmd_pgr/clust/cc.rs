@@ -1,5 +1,4 @@
 use clap::*;
-use std::io::BufRead;
 use std::io::Write;
 
 // Create clap subcommand arguments
@@ -49,36 +48,14 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
 
     //----------------------------
-    // 2. Load Graph
+    // 2. Load Graph & Clustering
     //----------------------------
-    let mut names = indexmap::IndexSet::new();
-
-    let mut graph = petgraph::graphmap::UnGraphMap::<_, ()>::new();
-
     let reader = pgr::reader(infile)?;
-    for line in reader.lines().map_while(Result::ok) {
-        let fields: Vec<&str> = line.split('\t').collect();
-        if fields.len() >= 2 {
-            names.insert(fields[0].to_string());
-            names.insert(fields[1].to_string());
-        }
-
-        graph.add_edge(
-            names.get_index_of(fields[0]).unwrap(),
-            names.get_index_of(fields[1]).unwrap(),
-            (),
-        );
-    }
+    let (names_vec, mut scc) = pgr::libs::clust::connected_components(reader)?;
 
     //----------------------------
-    // 3. Clustering
+    // 3. Output
     //----------------------------
-    let mut scc = petgraph::algo::tarjan_scc(&graph);
-
-    //----------------------------
-    // 4. Output
-    //----------------------------
-    let names_vec: Vec<String> = names.iter().cloned().collect();
     let out =
         pgr::libs::clust::format::format_flat_clusters(&mut scc, &names_vec, opt_format, |c| {
             c.first().copied()

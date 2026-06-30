@@ -88,7 +88,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 }
             }
             "coverSpread" => {
-                let (min, max) = calc_spread(psls, calc_cover);
+                let (min, max) = pgr::libs::fmt::psl::calc_spread(psls, |p| p.cover());
                 let diff = max - min;
                 if !non_zero || diff != 0.0 {
                     // Using same format as C: %.4g
@@ -100,7 +100,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 }
             }
             "idSpread" => {
-                let (min, max) = calc_spread(psls, calc_ident);
+                let (min, max) = pgr::libs::fmt::psl::calc_spread(psls, |p| p.ident());
                 let diff = max - min;
                 if !non_zero || diff != 0.0 {
                     writeln!(writer, "{:.4}", diff)?;
@@ -111,47 +111,4 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     }
 
     Ok(())
-}
-
-fn calc_cover(psl: &Psl) -> f32 {
-    let aligned = psl.match_count + psl.mismatch_count + psl.rep_match;
-    if aligned == 0 {
-        0.0
-    } else {
-        aligned as f32 / psl.q_size as f32
-    }
-}
-
-fn calc_ident(psl: &Psl) -> f32 {
-    let aligned = psl.match_count + psl.mismatch_count + psl.rep_match;
-    if aligned == 0 {
-        0.0
-    } else {
-        (psl.match_count + psl.rep_match) as f32 / aligned as f32
-    }
-}
-
-fn calc_spread<F>(psls: &[Psl], func: F) -> (f32, f32)
-where
-    F: Fn(&Psl) -> f32,
-{
-    let mut min_val = f32::MAX;
-    let mut max_val = f32::MIN;
-
-    for psl in psls {
-        let val = func(psl);
-        if val < min_val {
-            min_val = val;
-        }
-        if val > max_val {
-            max_val = val;
-        }
-    }
-
-    // Handle case where psls is empty (shouldn't happen here)
-    if min_val == f32::MAX {
-        (0.0, 0.0)
-    } else {
-        (min_val, max_val)
-    }
 }

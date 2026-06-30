@@ -1,8 +1,5 @@
 use clap::*;
-use pgr::libs::paf::cigar::{
-    block_identity, cigar_from_alignment, cigar_stats, format_cigar, gap_compressed_identity,
-};
-use pgr::libs::paf::record::PafRecord;
+
 use pgr::libs::paf::writer::write_paf_record;
 
 // Create clap subcommand arguments
@@ -43,18 +40,6 @@ Examples:
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
-fn build_tags(gi: f64, bi: f64, cigar: &str, score: Option<f64>) -> Vec<String> {
-    let mut tags = vec![
-        format!("gi:f:{gi:.6}"),
-        format!("bi:f:{bi:.6}"),
-        format!("cg:Z:{cigar}"),
-    ];
-    if let Some(s) = score {
-        tags.push(format!("ms:i:{}", s as u64));
-    }
-    tags
-}
-
 // command implementation
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
@@ -63,9 +48,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         let mut reader = pgr::reader(infile)?;
 
         while let Ok(block) = pgr::libs::fmt::maf::next_maf_block(&mut reader) {
-            if block.components.len() < 2 {
-                continue;
-            }
             if block.components.len() > 2 {
                 log::warn!(
                     "skipping block with {} sequences (only two-sequence blocks are supported)",
@@ -74,34 +56,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 continue;
             }
 
-            let ref_entry = &block.components[0];
-            let qry_entry = &block.components[1];
-
-            let cigar_ops =
-                cigar_from_alignment(ref_entry.text.as_bytes(), qry_entry.text.as_bytes())?;
-            let stats = cigar_stats(&cigar_ops);
-            let gi = gap_compressed_identity(&cigar_ops);
-            let bi = block_identity(&cigar_ops);
-            let cigar_str = format_cigar(&cigar_ops);
-            let tags = build_tags(gi, bi, &cigar_str, block.score);
-
-            let rec = PafRecord {
-                query_name: qry_entry.src.clone(),
-                query_length: qry_entry.src_size as u32,
-                query_start: qry_entry.start as u32,
-                query_end: (qry_entry.start + qry_entry.size) as u32,
-                strand: qry_entry.strand,
-                target_name: ref_entry.src.clone(),
-                target_length: ref_entry.src_size as u32,
-                target_start: ref_entry.start as u32,
-                target_end: (ref_entry.start + ref_entry.size) as u32,
-                matches: stats.matches,
-                block_length: pgr::libs::paf::cigar::block_length(&stats),
-                mapq: 255,
-                tags,
-            };
-
-            write_paf_record(&mut writer, &rec)?;
+            if let Some(rec) = pgr::libs::fmt::maf::maf_block_to_paf(&block)? {
+                write_paf_record(&mut writer, &rec)?;
+            }
         }
     }
 

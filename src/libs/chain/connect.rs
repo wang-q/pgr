@@ -1,4 +1,3 @@
-use anyhow::Context;
 use crate::libs::alignment::coords::reverse_range_pair;
 use crate::libs::chain::gap_calc::GapCalc;
 use crate::libs::chain::kdtree::{ChainItem, KdTree};
@@ -6,6 +5,7 @@ use crate::libs::chain::record::{Chain, ChainData, ChainHeader};
 use crate::libs::chain::sub_matrix::SubMatrix;
 use crate::libs::io::SequenceReader;
 use crate::libs::nt;
+use anyhow::Context;
 use std::cmp::Ordering;
 
 /// Represents a single alignment block that can be chained.
@@ -594,9 +594,7 @@ pub fn calc_block_score<S: SequenceReader>(
     let q_seq = if q_strand == '+' {
         ctx.q_2bit
             .read_sequence(q_name, Some(b.q_start as usize), Some(b.q_end as usize))
-            .with_context(|| {
-                format!("failed to read query {}:{}-{}", q_name, b.q_start, b.q_end)
-            })?
+            .with_context(|| format!("failed to read query {}:{}-{}", q_name, b.q_start, b.q_end))?
     } else {
         let (start_pos, end_pos) = reverse_range_pair(b.q_start, b.q_end, q_size);
         let (start_pos, end_pos) = (start_pos as usize, end_pos as usize);

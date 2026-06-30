@@ -1,7 +1,5 @@
 use anyhow::Result;
 use clap::{Arg, Command};
-use pgr::libs::chain::{Chain, ChainReader};
-use std::collections::HashMap;
 
 pub fn make_subcommand() -> Command {
     Command::new("stitch")
@@ -13,64 +11,7 @@ pub fn make_subcommand() -> Command {
 pub fn execute(args: &clap::ArgMatches) -> Result<()> {
     let input_path = args.get_one::<String>("input").unwrap();
     let output_path = args.get_one::<String>("output").unwrap();
-
-    let reader = ChainReader::new(pgr::reader(input_path)?);
-
-    // Store chains by ID
-    let mut chains: HashMap<u64, Chain> = HashMap::new();
-
-    for res in reader {
-        let chain = res?;
-
-        chains
-            .entry(chain.header.id)
-            .and_modify(|existing| {
-                // Merge logic: tackOnFrag
-                // Check consistency
-                if existing.header.t_name != chain.header.t_name
-                    || existing.header.q_name != chain.header.q_name
-                    || existing.header.q_strand != chain.header.q_strand
-                {
-                    log::warn!(
-                        "Inconsistent chain info for ID {}: skipping fragment",
-                        chain.header.id
-                    );
-                    return;
-                }
-
-                // Convert both to blocks
-                let mut blocks = existing.to_blocks();
-                let new_blocks = chain.to_blocks();
-
-                // Append new blocks
-                blocks.extend(new_blocks);
-
-                // Sort blocks by t_start (and q_start for stability if needed)
-                blocks.sort_by_key(|a| a.t_start);
-
-                // Reconstruct data from blocks
-                // This updates header ranges automatically
-                existing.data = Chain::from_blocks(&mut existing.header, &blocks);
-
-                // Sum score
-                existing.header.score += chain.header.score;
-            })
-            .or_insert(chain);
-    }
-
-    // Collect and sort by score (descending)
-    let mut chain_list: Vec<Chain> = chains.into_values().collect();
-    chain_list.sort_by(|a, b| {
-        // Sort by score descending
-        b.header.score.partial_cmp(&a.header.score).unwrap()
-    });
-
-    // Write output
-    let mut writer = pgr::writer(output_path)?;
-
-    for chain in chain_list {
-        chain.write(&mut writer)?;
-    }
-
-    Ok(())
+    let reader = pgr::reader(input_path)?;
+    let writer = pgr::writer(output_path)?;
+    pgr::libs::chain::stitch_chains(reader, writer)
 }

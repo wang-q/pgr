@@ -368,6 +368,26 @@ impl Psl {
             self.rep_match as f32 / aligned as f32
         }
     }
+
+    /// Fraction of query covered by this alignment (aligned bases / q_size).
+    pub fn cover(&self) -> f32 {
+        let aligned = self.match_count + self.mismatch_count + self.rep_match;
+        if aligned == 0 {
+            0.0
+        } else {
+            aligned as f32 / self.q_size as f32
+        }
+    }
+
+    /// Fraction identity (matches+rep_matches / aligned bases).
+    pub fn ident(&self) -> f32 {
+        let aligned = self.match_count + self.mismatch_count + self.rep_match;
+        if aligned == 0 {
+            0.0
+        } else {
+            (self.match_count + self.rep_match) as f32 / aligned as f32
+        }
+    }
 }
 
 impl std::str::FromStr for Psl {
@@ -477,6 +497,51 @@ impl Psl {
         }
 
         writeln!(w)?;
+        Ok(())
+    }
+
+    /// Write this PSL record to a writer in UCSC Chain format.
+    pub fn write_chain<W: io::Write>(&self, writer: &mut W, chain_id: u64) -> io::Result<()> {
+        let score = self.score();
+        let q_strand_char = self.strand.chars().next().unwrap_or('+');
+
+        // Chain format: tStrand is always +, qStrand can be + or -.
+        // If qStrand is -, qStart/qEnd are relative to reverse end.
+        let (q_start, q_end) = if q_strand_char == '-' {
+            crate::libs::alignment::reverse_range_pair(self.q_start, self.q_end, self.q_size as i32)
+        } else {
+            (self.q_start, self.q_end)
+        };
+
+        writeln!(
+            writer,
+            "chain {} {} {} + {} {} {} {} {} {} {} {}",
+            score,
+            self.t_name,
+            self.t_size,
+            self.t_start,
+            self.t_end,
+            self.q_name,
+            self.q_size,
+            q_strand_char,
+            q_start,
+            q_end,
+            chain_id
+        )?;
+
+        // Write blocks
+        for i in 0..self.block_count as usize {
+            let size = self.block_sizes[i];
+            write!(writer, "{}", size)?;
+
+            if i < (self.block_count as usize) - 1 {
+                let dt = self.t_starts[i + 1] - (self.t_starts[i] + size);
+                let dq = self.q_starts[i + 1] - (self.q_starts[i] + size);
+                write!(writer, "\t{}\t{}", dt, dq)?;
+            }
+            writeln!(writer)?;
+        }
+
         Ok(())
     }
 }
@@ -669,6 +734,32 @@ pub fn parse_subrange(name: &str) -> Option<(String, u32, u32)> {
         return Some((rg.chr().to_string(), *rg.start() as u32, *rg.end() as u32));
     }
     None
+}
+
+/// Compute (min, max) of `func` over a slice of Psl records.
+pub fn calc_spread<F>(psls: &[Psl], func: F) -> (f32, f32)
+where
+    F: Fn(&Psl) -> f32,
+{
+    let mut min_val = f32::MAX;
+    let mut max_val = f32::MIN;
+
+    for psl in psls {
+        let val = func(psl);
+        if val < min_val {
+            min_val = val;
+        }
+        if val > max_val {
+            max_val = val;
+        }
+    }
+
+    // Handle case where psls is empty (shouldn't happen here)
+    if min_val == f32::MAX {
+        (0.0, 0.0)
+    } else {
+        (min_val, max_val)
+    }
 }
 
 impl Psl {

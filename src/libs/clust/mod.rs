@@ -1,3 +1,4 @@
+pub mod cc;
 pub mod dbscan;
 pub mod eval;
 pub mod feature;
@@ -9,3 +10,5 @@ pub mod medoid;
 pub mod nj;
 pub mod tree_cut;
 pub mod upgma;
+
+pub use cc::connected_components;

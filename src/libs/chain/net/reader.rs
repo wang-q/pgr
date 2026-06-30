@@ -1,11 +1,12 @@
 //! UCSC Net text format reader.
 
 use super::types::{Chrom, Fill, Gap, NetNode};
+use anyhow::{anyhow, bail, Result};
 use std::cell::RefCell;
-use std::io::{self, BufRead};
+use std::io::BufRead;
 use std::rc::Rc;
 
-pub fn read_nets<R: BufRead>(mut reader: R) -> io::Result<Vec<Chrom>> {
+pub fn read_nets<R: BufRead>(mut reader: R) -> Result<Vec<Chrom>> {
     let mut chroms = Vec::new();
     let mut current_chrom: Option<Chrom> = None;
     let mut stack: Vec<(usize, NetNode)> = Vec::new();
@@ -41,11 +42,14 @@ pub fn read_nets<R: BufRead>(mut reader: R) -> io::Result<Vec<Chrom>> {
 
         match parts[0] {
             "net" => {
+                if parts.len() < 3 {
+                    bail!("net line needs at least 3 fields: {}", line.trim_end());
+                }
                 if let Some(c) = current_chrom {
                     chroms.push(c);
                 }
                 let name = parts[1];
-                let size = parts[2].parse::<u64>().unwrap();
+                let size = parse_u64(&parts, 2, "net size")?;
                 let mut chrom = Chrom::new(name, size);
                 if !pending_comments.is_empty() {
                     chrom.comments = std::mem::take(&mut pending_comments);
@@ -56,18 +60,24 @@ pub fn read_nets<R: BufRead>(mut reader: R) -> io::Result<Vec<Chrom>> {
             }
             "fill" => {
                 // fill tStart tLength qName qStrand qStart qLength id chainId score ali [type class]
-                let start = parts[1].parse::<u64>().unwrap();
-                let len = parts[2].parse::<u64>().unwrap();
+                if parts.len() < 13 {
+                    bail!("fill line needs at least 13 fields: {}", line.trim_end());
+                }
+                let start = parse_u64(&parts, 1, "fill tStart")?;
+                let len = parse_u64(&parts, 2, "fill tLength")?;
                 let q_name = parts[3].to_string();
-                let q_strand = parts[4].chars().next().unwrap();
-                let q_start = parts[5].parse::<u64>().unwrap();
-                let q_len = parts[6].parse::<u64>().unwrap();
+                let q_strand = parts[4]
+                    .chars()
+                    .next()
+                    .ok_or_else(|| anyhow!("empty fill qStrand field"))?;
+                let q_start = parse_u64(&parts, 5, "fill qStart")?;
+                let q_len = parse_u64(&parts, 6, "fill qLength")?;
                 // parts[7] is "id"
-                let chain_id = parts[8].parse::<u64>().unwrap();
+                let chain_id = parse_u64(&parts, 8, "fill chainId")?;
                 // parts[9] is "score"
-                let score = parts[10].parse::<f64>().unwrap();
+                let score = parse_f64(&parts, 10, "fill score")?;
                 // parts[11] is "ali"
-                let ali = parts[12].parse::<u64>().unwrap();
+                let ali = parse_u64(&parts, 12, "fill ali")?;
 
                 let mut class = String::new();
                 let mut q_dup = None;
@@ -183,12 +193,18 @@ pub fn read_nets<R: BufRead>(mut reader: R) -> io::Result<Vec<Chrom>> {
             }
             "gap" => {
                 // gap tStart tLength qName qStrand qStart qLength
-                let start = parts[1].parse::<u64>().unwrap();
-                let len = parts[2].parse::<u64>().unwrap();
+                if parts.len() < 7 {
+                    bail!("gap line needs at least 7 fields: {}", line.trim_end());
+                }
+                let start = parse_u64(&parts, 1, "gap tStart")?;
+                let len = parse_u64(&parts, 2, "gap tLength")?;
                 let _q_name = parts[3].to_string();
-                let _q_strand = parts[4].chars().next().unwrap();
-                let q_start = parts[5].parse::<u64>().unwrap();
-                let q_len = parts[6].parse::<u64>().unwrap();
+                let _q_strand = parts[4]
+                    .chars()
+                    .next()
+                    .ok_or_else(|| anyhow!("empty gap qStrand field"))?;
+                let q_start = parse_u64(&parts, 5, "gap qStart")?;
+                let q_len = parse_u64(&parts, 6, "gap qLength")?;
 
                 let mut t_n = None;
                 let mut q_n = None;
@@ -275,6 +291,26 @@ pub fn read_nets<R: BufRead>(mut reader: R) -> io::Result<Vec<Chrom>> {
     Ok(chroms)
 }
 
+// Parse a required u64 field at index `i`.
+fn parse_u64(parts: &[&str], i: usize, field: &str) -> Result<u64> {
+    let s = parts
+        .get(i)
+        .copied()
+        .ok_or_else(|| anyhow!("missing {field} at index {i}"))?;
+    s.parse::<u64>()
+        .map_err(|_| anyhow!("invalid {field} value: {s}"))
+}
+
+// Parse a required f64 field at index `i`.
+fn parse_f64(parts: &[&str], i: usize, field: &str) -> Result<f64> {
+    let s = parts
+        .get(i)
+        .copied()
+        .ok_or_else(|| anyhow!("missing {field} at index {i}"))?;
+    s.parse::<f64>()
+        .map_err(|_| anyhow!("invalid {field} value: {s}"))
+}
+
 // Parse an optional `name <value>` pair at position `i` in `parts` as u64.
 fn parse_opt_u64(parts: &[&str], i: usize) -> (Option<u64>, usize) {
     if i + 1 < parts.len() {
@@ -290,5 +326,58 @@ fn parse_opt_i64(parts: &[&str], i: usize) -> (Option<i64>, usize) {
         (Some(parts[i + 1].parse::<i64>().unwrap_or(0)), i + 2)
     } else {
         (None, i + 1)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_malformed_net_missing_fields() {
+        let data = "net chr1\n";
+        let r = read_nets(std::io::Cursor::new(data));
+        assert!(r.is_err());
+    }
+
+    #[test]
+    fn test_malformed_net_non_numeric_size() {
+        let data = "net chr1 notanumber\n";
+        let r = read_nets(std::io::Cursor::new(data));
+        assert!(r.is_err());
+    }
+
+    #[test]
+    fn test_malformed_fill_missing_fields() {
+        let data = "net chr1 100\nfill 10 20\n";
+        let r = read_nets(std::io::Cursor::new(data));
+        assert!(r.is_err());
+    }
+
+    #[test]
+    fn test_malformed_fill_non_numeric() {
+        let data = "net chr1 100\nfill abc 20 chr2 + 0 20 id 1 score 100 ali 20\n";
+        let r = read_nets(std::io::Cursor::new(data));
+        assert!(r.is_err());
+    }
+
+    #[test]
+    fn test_malformed_gap_missing_fields() {
+        let data = "net chr1 100\ngap 10 20 chr2\n";
+        let r = read_nets(std::io::Cursor::new(data));
+        assert!(r.is_err());
+    }
+
+    #[test]
+    fn test_empty_input() {
+        let r = read_nets(std::io::Cursor::new(""));
+        assert!(r.is_ok());
+        assert!(r.unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_binary_input_does_not_panic() {
+        let binary = b"\xff\xfe\x00\x01net chr1 100\n";
+        let _ = read_nets(std::io::Cursor::new(binary.as_slice()));
     }
 }

@@ -1,6 +1,6 @@
-use anyhow::{bail, Result};
+use anyhow::Result;
 use clap::{Arg, ArgAction, ArgMatches, Command};
-use pgr::libs::chain::{BitMap, ChainReader};
+use pgr::libs::chain::BitMap;
 use std::collections::HashMap;
 
 pub fn make_subcommand() -> Command {
@@ -39,21 +39,6 @@ pub fn make_subcommand() -> Command {
         )
 }
 
-fn is_haplotype(name: &str) -> bool {
-    name.ends_with("_hap")
-        || name.ends_with("_alt")
-        || name.contains("_hap")
-        || name.contains("_alt")
-    // UCSC implementation:
-    // boolean haplotype(char *chrom)
-    // {
-    // return (stringIn("_hap", chrom) != NULL) || (stringIn("_alt", chrom) != NULL);
-    // }
-    // Wait, the C code used `stringIn` which matches substring, but `haplotype` usually implies suffix in some contexts.
-    // However, `chainPreNet.c` calls `haplotype(chain->qName)`.
-    // Let's stick to `contains("_hap") || contains("_alt")` to be safe and match `stringIn`.
-}
-
 pub fn execute(args: &ArgMatches) -> Result<()> {
     let input_path = args.get_one::<String>("input").unwrap();
     let target_sizes_path = args.get_one::<String>("target_sizes").unwrap();
@@ -73,92 +58,12 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
         .map(|(k, v)| (k, BitMap::new(v)))
         .collect();
 
-    let reader = ChainReader::new(pgr::reader(input_path)?);
-
-    let mut writer = pgr::writer(output_path)?;
-
-    let mut last_score = f64::MAX;
-
-    for (count, res) in reader.enumerate() {
-        let chain = res?;
-
-        // Check sort order
-        if chain.header.score > last_score {
-            bail!(
-                "Input not sorted by score: {} > {}",
-                chain.header.score,
-                last_score
-            );
-        }
-        last_score = chain.header.score;
-
-        if let Some(d) = dots {
-            if count > 0 && count % d == 0 {
-                eprint!(".");
-            }
-        }
-
-        // Filter haplotype
-        if !incl_hap && is_haplotype(&chain.header.q_name) {
-            continue;
-        }
-
-        let t_chrom = t_hash.get_mut(&chain.header.t_name).ok_or_else(|| {
-            anyhow::anyhow!("Target sequence {} not found in sizes", chain.header.t_name)
-        })?;
-
-        // We need to access q_chrom as well. But Rust ownership prevents mutable borrowing both from the same HashMap if they were in the same map.
-        // Luckily they are in different HashMaps (t_hash and q_hash).
-        let q_chrom = q_hash.get_mut(&chain.header.q_name).ok_or_else(|| {
-            anyhow::anyhow!("Query sequence {} not found in sizes", chain.header.q_name)
-        })?;
-
-        // Check used
-        // Need to iterate blocks
-        let blocks = chain.to_blocks();
-        let mut any_open = false;
-
-        for b in &blocks {
-            // Check query
-            if !q_chrom.is_fully_set(b.q_start, b.q_end - b.q_start) {
-                any_open = true;
-                break;
-            }
-            // Check target
-            if !t_chrom.is_fully_set(b.t_start, b.t_end - b.t_start) {
-                any_open = true;
-                break;
-            }
-        }
-
-        if any_open {
-            chain.write(&mut writer)?;
-
-            // Mark as used with pad
-            for b in &blocks {
-                // Apply pad
-                // setWithPad(qChrom, b->qStart, b->qEnd);
-                // setWithPad(tChrom, b->tStart, b->tEnd);
-
-                // setWithPad logic:
-                // s -= pad; if (s < 0) s = 0;
-                // e += pad; if (e > size) e = size;
-                // bitSetRange(bits, s, e-s);
-
-                let q_s = b.q_start.saturating_sub(pad);
-                let q_len = (b.q_end + pad).min(q_chrom.size) - q_s;
-                q_chrom.set_range(q_s, q_len);
-
-                let t_s = b.t_start.saturating_sub(pad);
-                let t_len = (b.t_end + pad).min(t_chrom.size) - t_s;
-                t_chrom.set_range(t_s, t_len);
-            }
-        }
-    }
-
-    if dots.is_some() {
-        eprintln!();
-    }
-
-    Ok(())
+    let reader = pgr::reader(input_path)?;
+    let writer = pgr::writer(output_path)?;
+    let opts = pgr::libs::chain::PreNetOptions {
+        pad,
+        incl_hap,
+        dots,
+    };
+    pgr::libs::chain::pre_net(reader, writer, &mut t_hash, &mut q_hash, &opts)
 }
