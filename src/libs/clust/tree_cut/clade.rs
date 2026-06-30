@@ -1,11 +1,14 @@
 use super::{assign_clusters, Partition};
 use crate::libs::phylo::node::NodeId;
 use crate::libs::phylo::tree::Tree;
+use anyhow::Result;
 use std::collections::HashMap;
 
 /// TreeCluster: Max pairwise distance in clade <= threshold
-pub fn cut_max_clade(tree: &Tree, threshold: f64) -> Result<Partition, String> {
-    let root = tree.get_root().ok_or("Tree has no root")?;
+pub fn cut_max_clade(tree: &Tree, threshold: f64) -> Result<Partition> {
+    let root = tree
+        .get_root()
+        .ok_or_else(|| anyhow::anyhow!("Tree has no root"))?;
 
     // We need to compute diameters Bottom-Up.
     // Diameter of T(u) is max(Diameter(T(v)), Diameter(T(w)), MaxPathPassingThrough(u))
@@ -19,7 +22,9 @@ pub fn cut_max_clade(tree: &Tree, threshold: f64) -> Result<Partition, String> {
     let post_order = crate::libs::phylo::tree::traversal::postorder(tree, root);
 
     for id in post_order {
-        let node = tree.get_node(id).unwrap();
+        let node = tree
+            .get_node(id)
+            .ok_or_else(|| anyhow::anyhow!("node {} not found", id))?;
         if node.children.is_empty() {
             max_depths.insert(id, 0.0);
             diameters.insert(id, 0.0);
@@ -28,7 +33,9 @@ pub fn cut_max_clade(tree: &Tree, threshold: f64) -> Result<Partition, String> {
             let mut child_diams = Vec::new();
 
             for &child in &node.children {
-                let child_node = tree.get_node(child).unwrap();
+                let child_node = tree
+                    .get_node(child)
+                    .ok_or_else(|| anyhow::anyhow!("node {} not found", child))?;
                 let len = child_node.length.unwrap_or(0.0);
                 let d = max_depths[&child];
                 depths.push(d + len);
@@ -45,7 +52,7 @@ pub fn cut_max_clade(tree: &Tree, threshold: f64) -> Result<Partition, String> {
 
             // 2. Path through u: Sum of two largest depths
             let mut sorted_depths = depths;
-            sorted_depths.sort_by(|a, b| b.partial_cmp(a).unwrap());
+            sorted_depths.sort_by(|a, b| b.total_cmp(a));
             let path_thru_u = if sorted_depths.len() >= 2 {
                 sorted_depths[0] + sorted_depths[1]
             } else {
@@ -64,19 +71,23 @@ pub fn cut_max_clade(tree: &Tree, threshold: f64) -> Result<Partition, String> {
         if d <= threshold {
             cluster_roots.push(id);
         } else {
-            let node = tree.get_node(id).unwrap();
+            let node = tree
+                .get_node(id)
+                .ok_or_else(|| anyhow::anyhow!("node {} not found", id))?;
             for &child in &node.children {
                 stack.push(child);
             }
         }
     }
 
-    assign_clusters(tree, cluster_roots)
+    assign_clusters(tree, cluster_roots).map_err(|e| anyhow::anyhow!(e))
 }
 
 /// Cut tree where average pairwise distance in cluster <= threshold.
-pub fn cut_avg_clade(tree: &Tree, threshold: f64) -> Result<Partition, String> {
-    let root = tree.get_root().ok_or("Tree has no root")?;
+pub fn cut_avg_clade(tree: &Tree, threshold: f64) -> Result<Partition> {
+    let root = tree
+        .get_root()
+        .ok_or_else(|| anyhow::anyhow!("Tree has no root"))?;
 
     // 1. Compute avg distances
     let avg_dists = crate::libs::phylo::tree::stat::compute_avg_clade_distances(tree);
@@ -104,12 +115,14 @@ pub fn cut_avg_clade(tree: &Tree, threshold: f64) -> Result<Partition, String> {
         }
     }
 
-    assign_clusters(tree, clusters)
+    assign_clusters(tree, clusters).map_err(|e| anyhow::anyhow!(e))
 }
 
 /// Cut tree based on median pairwise distance in clade.
-pub fn cut_med_clade(tree: &Tree, threshold: f64) -> Result<Partition, String> {
-    let root = tree.get_root().ok_or("Tree has no root")?;
+pub fn cut_med_clade(tree: &Tree, threshold: f64) -> Result<Partition> {
+    let root = tree
+        .get_root()
+        .ok_or_else(|| anyhow::anyhow!("Tree has no root"))?;
     let mut clusters = Vec::new();
 
     // We will simulate the bottom-up pass using post-order traversal.
@@ -140,7 +153,9 @@ pub fn cut_med_clade(tree: &Tree, threshold: f64) -> Result<Partition, String> {
     let mut stats: HashMap<NodeId, NodeStat> = HashMap::new();
 
     for &u in &post_order {
-        let node = tree.get_node(u).unwrap();
+        let node = tree
+            .get_node(u)
+            .ok_or_else(|| anyhow::anyhow!("node {} not found", u))?;
         if node.children.is_empty() {
             // Leaf
             stats.insert(
@@ -160,8 +175,14 @@ pub fn cut_med_clade(tree: &Tree, threshold: f64) -> Result<Partition, String> {
             let mut child_leaf_dists_list = Vec::new();
 
             for &v in &node.children {
-                let child_stat = stats.get(&v).unwrap();
-                let len = tree.get_node(v).unwrap().length.unwrap_or(0.0);
+                let child_stat = stats
+                    .get(&v)
+                    .ok_or_else(|| anyhow::anyhow!("stats not found for node {}", v))?;
+                let len = tree
+                    .get_node(v)
+                    .ok_or_else(|| anyhow::anyhow!("node {} not found", v))?
+                    .length
+                    .unwrap_or(0.0);
 
                 // Add child's pair dists
                 my_pair_dists.extend_from_slice(&child_stat.pair_dists);
@@ -200,7 +221,7 @@ pub fn cut_med_clade(tree: &Tree, threshold: f64) -> Result<Partition, String> {
                 );
             } else {
                 // Sort to find median
-                my_pair_dists.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
+                my_pair_dists.sort_unstable_by(|a, b| a.total_cmp(b));
 
                 let mid = my_pair_dists.len() / 2;
                 let median = if my_pair_dists.len() % 2 == 1 {
@@ -212,7 +233,12 @@ pub fn cut_med_clade(tree: &Tree, threshold: f64) -> Result<Partition, String> {
                 #[cfg(test)]
                 {
                     // Get node name for debug
-                    let name = tree.get_node(u).unwrap().name.as_deref().unwrap_or("?");
+                    let name = tree
+                        .get_node(u)
+                        .ok_or_else(|| anyhow::anyhow!("node {} not found", u))?
+                        .name
+                        .as_deref()
+                        .unwrap_or("?");
                     println!(
                         "DEBUG: Node {} ({}): Median {}, PairDists {:?}",
                         u, name, median, my_pair_dists
@@ -236,7 +262,9 @@ pub fn cut_med_clade(tree: &Tree, threshold: f64) -> Result<Partition, String> {
     queue.push_back(root);
 
     while let Some(u) = queue.pop_front() {
-        let stat = stats.get(&u).unwrap();
+        let stat = stats
+            .get(&u)
+            .ok_or_else(|| anyhow::anyhow!("stats not found for node {}", u))?;
         // Use epsilon for float comparison? TreeCluster uses <=
         if stat.median <= threshold + 1e-9 {
             clusters.push(u);
@@ -249,12 +277,14 @@ pub fn cut_med_clade(tree: &Tree, threshold: f64) -> Result<Partition, String> {
         }
     }
 
-    assign_clusters(tree, clusters)
+    assign_clusters(tree, clusters).map_err(|e| anyhow::anyhow!(e))
 }
 
 /// Cut tree based on sum of branch lengths in clade.
-pub fn cut_sum_branch(tree: &Tree, threshold: f64) -> Result<Partition, String> {
-    let root = tree.get_root().ok_or("Tree has no root")?;
+pub fn cut_sum_branch(tree: &Tree, threshold: f64) -> Result<Partition> {
+    let root = tree
+        .get_root()
+        .ok_or_else(|| anyhow::anyhow!("Tree has no root"))?;
     let mut clusters = Vec::new();
 
     // Map NodeId -> Subtree Sum Branch Length
@@ -274,15 +304,23 @@ pub fn cut_sum_branch(tree: &Tree, threshold: f64) -> Result<Partition, String> 
     let post_order: Vec<NodeId> = post_order.into_iter().rev().collect();
 
     for &u in &post_order {
-        let node = tree.get_node(u).unwrap();
+        let node = tree
+            .get_node(u)
+            .ok_or_else(|| anyhow::anyhow!("node {} not found", u))?;
         if node.children.is_empty() {
             // Leaf has 0 internal branch length
             sums.insert(u, 0.0);
         } else {
             let mut sum = 0.0;
             for &v in &node.children {
-                let child_sum = sums.get(&v).unwrap();
-                let len = tree.get_node(v).unwrap().length.unwrap_or(0.0);
+                let child_sum = sums
+                    .get(&v)
+                    .ok_or_else(|| anyhow::anyhow!("sums not found for node {}", v))?;
+                let len = tree
+                    .get_node(v)
+                    .ok_or_else(|| anyhow::anyhow!("node {} not found", v))?
+                    .length
+                    .unwrap_or(0.0);
                 sum += child_sum + len;
             }
             sums.insert(u, sum);
@@ -294,7 +332,9 @@ pub fn cut_sum_branch(tree: &Tree, threshold: f64) -> Result<Partition, String> 
     queue.push_back(root);
 
     while let Some(u) = queue.pop_front() {
-        let sum = sums.get(&u).unwrap();
+        let sum = sums
+            .get(&u)
+            .ok_or_else(|| anyhow::anyhow!("sums not found for node {}", u))?;
         // Use epsilon?
         if *sum <= threshold + 1e-9 {
             clusters.push(u);
@@ -307,5 +347,5 @@ pub fn cut_sum_branch(tree: &Tree, threshold: f64) -> Result<Partition, String> 
         }
     }
 
-    assign_clusters(tree, clusters)
+    assign_clusters(tree, clusters).map_err(|e| anyhow::anyhow!(e))
 }

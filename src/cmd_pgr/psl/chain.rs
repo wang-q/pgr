@@ -187,7 +187,7 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
             &t_name,
             data.t_size as u64,
             &mut chain_id_counter,
-        );
+        )?;
         all_chains.extend(chains);
     }
 

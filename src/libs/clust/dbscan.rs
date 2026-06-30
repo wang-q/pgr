@@ -15,6 +15,7 @@
 //! * Cluster groups: Vec<Vec<point_indices>>
 //! * Representative pairs: Vec<(center, member)>
 // Adopt from https://blog.petrzemek.net/2017/01/01/implementing-dbscan-from-distance-matrix-in-rust/
+use anyhow::{anyhow, Result};
 use std::collections::{HashMap, VecDeque};
 
 #[derive(Debug)]
@@ -192,7 +193,7 @@ where
     pub fn results_pair(
         &self,
         matrix: &crate::libs::pairmat::ScoringMatrix<T>,
-    ) -> Vec<(usize, usize)> {
+    ) -> Result<Vec<(usize, usize)>> {
         let (cluster_map, noise_points) = self.all_clusters();
 
         // representative point, point
@@ -206,13 +207,16 @@ where
                 for &other_point in points {
                     sum_distance += matrix.get(point, other_point);
                 }
-                sum_distance_of.insert(point, sum_distance.to_f64().unwrap());
+                let sum_f64 = sum_distance
+                    .to_f64()
+                    .ok_or_else(|| anyhow!("failed to convert sum of distances to f64"))?;
+                sum_distance_of.insert(point, sum_f64);
             }
             let representative = sum_distance_of
                 .iter()
-                .min_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+                .min_by(|a, b| a.1.total_cmp(b.1))
                 .map(|(&key, _)| key)
-                .unwrap();
+                .ok_or_else(|| anyhow!("failed to find representative point in cluster"))?;
 
             for &point in points {
                 res.push((representative, point));
@@ -223,7 +227,7 @@ where
             res.push((p, p));
         }
 
-        res
+        Ok(res)
     }
 }
 

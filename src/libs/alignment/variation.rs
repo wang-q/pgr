@@ -1,5 +1,5 @@
 use crate::libs::nt::NT_VAL;
-use anyhow::bail;
+use anyhow::{anyhow, bail};
 use intspan::IntSpan;
 use itertools::Itertools;
 use std::cmp::min;
@@ -110,9 +110,13 @@ pub fn get_subs(seqs: &[&[u8]]) -> anyhow::Result<Vec<Substitution>> {
 
     let mut sites = vec![];
     for pos in bases_of.keys().sorted() {
-        let bases = bases_of.get(pos).unwrap();
+        let bases = bases_of
+            .get(pos)
+            .ok_or_else(|| anyhow!("position {} not found in bases_of", pos))?;
 
-        let tbase = bases.first().unwrap();
+        let tbase = bases
+            .first()
+            .ok_or_else(|| anyhow!("empty bases at position {}", pos))?;
 
         let class: Vec<_> = bases.iter().unique().collect();
 
@@ -133,12 +137,15 @@ pub fn get_subs(seqs: &[&[u8]]) -> anyhow::Result<Vec<Substitution>> {
                     pattern += "1";
                 }
             }
-            let qbase = bases.iter().find(|e| *e != tbase).unwrap();
+            let qbase = bases
+                .iter()
+                .find(|e| *e != tbase)
+                .ok_or_else(|| anyhow!("no variant base found at position {}", pos))?;
 
-            (freq, pattern, String::from_utf8(vec![*qbase]).unwrap())
+            (freq, pattern, String::from_utf8(vec![*qbase])?)
         };
 
-        let tbase = String::from_utf8(vec![*tbase]).unwrap();
+        let tbase = String::from_utf8(vec![*tbase])?;
         let mutant_to = if class.len() > 2 {
             "Complex".to_string()
         } else {
@@ -146,7 +153,7 @@ pub fn get_subs(seqs: &[&[u8]]) -> anyhow::Result<Vec<Substitution>> {
         };
 
         // mask previous variables
-        let bases = String::from_utf8(bases.clone()).unwrap();
+        let bases = String::from_utf8(bases.clone())?;
         let obase = "".to_string();
         let sub = Substitution {
             pos: (pos + 1) as i32,
@@ -174,7 +181,7 @@ pub fn get_subs(seqs: &[&[u8]]) -> anyhow::Result<Vec<Substitution>> {
 ///     b"AAAATTTTAG".as_ref(),
 /// ];
 /// let mut subs = pgr::libs::alignment::get_subs(&seqs[0..2]).unwrap();
-/// pgr::libs::alignment::polarize_subs(&mut subs, &seqs[2]);
+/// pgr::libs::alignment::polarize_subs(&mut subs, &seqs[2]).unwrap();
 /// let sub = subs.first().unwrap();
 /// assert_eq!(sub.pos, 9);
 /// assert_eq!(sub.tbase, "G".to_string());
@@ -192,7 +199,7 @@ pub fn get_subs(seqs: &[&[u8]]) -> anyhow::Result<Vec<Substitution>> {
 ///     b"TTAGCCGCTGAGAGGC".as_ref(),
 /// ];
 /// let mut subs = pgr::libs::alignment::get_subs(&seqs[0..2]).unwrap();
-/// pgr::libs::alignment::polarize_subs(&mut subs, &seqs[2]);
+/// pgr::libs::alignment::polarize_subs(&mut subs, &seqs[2]).unwrap();
 /// let sub = subs.first().unwrap();
 /// assert_eq!(sub.pos, 1);
 /// assert_eq!(sub.tbase, "T".to_string());
@@ -214,11 +221,11 @@ pub fn get_subs(seqs: &[&[u8]]) -> anyhow::Result<Vec<Substitution>> {
 /// assert_eq!(sub.obase, "G".to_string());
 ///
 /// ```
-pub fn polarize_subs(subs: &mut Vec<Substitution>, og: &[u8]) {
+pub fn polarize_subs(subs: &mut Vec<Substitution>, og: &[u8]) -> anyhow::Result<()> {
     for sub in subs {
         let pos = sub.pos;
         let obase_u8 = og[(pos - 1) as usize].to_ascii_uppercase();
-        let obase = String::from_utf8(vec![obase_u8]).unwrap();
+        let obase = String::from_utf8(vec![obase_u8])?;
 
         if sub.qbase.is_empty() {
             // complex ingroup bases
@@ -237,8 +244,7 @@ pub fn polarize_subs(subs: &mut Vec<Substitution>, og: &[u8]) {
                         pattern += "1";
                         freq += 1;
                         mutant_to =
-                            format!("{}->{}", obase, String::from_utf8(vec![*base]).unwrap())
-                                .to_string();
+                            format!("{}->{}", obase, String::from_utf8(vec![*base])?).to_string();
                     }
                 }
                 sub.mutant_to = mutant_to;
@@ -260,6 +266,8 @@ pub fn polarize_subs(subs: &mut Vec<Substitution>, og: &[u8]) {
             sub.obase = obase.clone();
         }
     }
+
+    Ok(())
 }
 
 #[derive(Default, Clone, Debug)]
@@ -392,7 +400,7 @@ pub fn get_indels(seqs: &[&[u8]]) -> anyhow::Result<Vec<Indel>> {
         let indel_seq = uniq_indel_seqs
             .iter()
             .min_by_key(|s| s.chars().filter(|c| *c == '-').count())
-            .unwrap()
+            .ok_or_else(|| anyhow!("no indel sequence found at {}..{}", start, end))?
             .to_string();
 
         let itype = if uniq_indel_seqs.len() < 2 {
@@ -517,7 +525,7 @@ pub fn polarize_indels(indels: &mut Vec<Indel>, og: &[u8]) -> anyhow::Result<()>
 
     for indel in indels {
         let og_seq = og[(indel.start - 1) as usize..indel.end as usize].to_vec();
-        let og_seq = String::from_utf8(og_seq).unwrap();
+        let og_seq = String::from_utf8(og_seq)?;
         indel.og_seq = og_seq.clone();
 
         let indel_seqs: Vec<String> = indel.all_seqs.split('|').map(|s| s.to_string()).collect();
@@ -532,7 +540,7 @@ pub fn polarize_indels(indels: &mut Vec<Indel>, og: &[u8]) -> anyhow::Result<()>
         let indel_seq = uniq_indel_seqs
             .iter()
             .min_by_key(|s| s.chars().filter(|c| *c == '-').count())
-            .unwrap()
+            .ok_or_else(|| anyhow!("no indel sequence found at {}..{}", indel.start, indel.end))?
             .clone();
 
         if uniq_indel_seqs.len() < 2 {

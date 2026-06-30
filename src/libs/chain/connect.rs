@@ -1,3 +1,4 @@
+use anyhow::Context;
 use crate::libs::alignment::coords::reverse_range_pair;
 use crate::libs::chain::gap_calc::GapCalc;
 use crate::libs::chain::kdtree::{ChainItem, KdTree};
@@ -80,9 +81,9 @@ pub fn chain_blocks<S: SequenceReader>(
     t_name: &str,
     t_size: u64,
     chain_id_counter: &mut usize,
-) -> Vec<Chain> {
+) -> anyhow::Result<Vec<Chain>> {
     if blocks.is_empty() {
-        return Vec::new();
+        return Ok(Vec::new());
     }
 
     // 1. Create DP entries
@@ -202,7 +203,7 @@ pub fn chain_blocks<S: SequenceReader>(
 
         // Trim overlaps if we have score context
         if let Some(ctx) = score_ctx {
-            trim_overlaps(&mut chain_blocks_rev, ctx, q_name, t_name, q_size, q_strand);
+            trim_overlaps(&mut chain_blocks_rev, ctx, q_name, t_name, q_size, q_strand)?;
         }
 
         let first = &chain_blocks_rev[0];
@@ -256,7 +257,7 @@ pub fn chain_blocks<S: SequenceReader>(
         *chain_id_counter += 1;
     }
 
-    chains
+    Ok(chains)
 }
 
 /// Trims overlaps between adjacent blocks in a chain using sequence data.
@@ -269,9 +270,9 @@ fn trim_overlaps<S: SequenceReader>(
     t_name: &str,
     q_size: u64,
     q_strand: char,
-) {
+) -> anyhow::Result<()> {
     if blocks.len() < 2 {
-        return;
+        return Ok(());
     }
 
     let mut i = 0;
@@ -296,7 +297,7 @@ fn trim_overlaps<S: SequenceReader>(
                 t_name,
                 q_size,
                 q_strand,
-            );
+            )?;
 
             let trim_left = overlap as i64 - cut_pos as i64;
             let trim_right = cut_pos as i64;
@@ -309,6 +310,7 @@ fn trim_overlaps<S: SequenceReader>(
         }
         i += 1;
     }
+    Ok(())
 }
 
 /// Finds the optimal crossover point for two overlapping blocks.
@@ -324,7 +326,7 @@ fn find_crossover<S: SequenceReader>(
     t_name: &str,
     q_size: u64,
     q_strand: char,
-) -> (usize, f64) {
+) -> anyhow::Result<(usize, f64)> {
     let l_t_seq = ctx
         .t_2bit
         .read_sequence(
@@ -332,7 +334,14 @@ fn find_crossover<S: SequenceReader>(
             Some((left.t_end - overlap as u64) as usize),
             Some(left.t_end as usize),
         )
-        .unwrap();
+        .with_context(|| {
+            format!(
+                "failed to read target {}:{}-{} (left block overlap)",
+                t_name,
+                left.t_end - overlap as u64,
+                left.t_end
+            )
+        })?;
     let r_t_seq = ctx
         .t_2bit
         .read_sequence(
@@ -340,7 +349,14 @@ fn find_crossover<S: SequenceReader>(
             Some(right.t_start as usize),
             Some((right.t_start + overlap as u64) as usize),
         )
-        .unwrap();
+        .with_context(|| {
+            format!(
+                "failed to read target {}:{}-{} (right block overlap)",
+                t_name,
+                right.t_start,
+                right.t_start + overlap as u64
+            )
+        })?;
 
     let l_q_seq = if q_strand == '+' {
         ctx.q_2bit
@@ -349,16 +365,29 @@ fn find_crossover<S: SequenceReader>(
                 Some((left.q_end - overlap as u64) as usize),
                 Some(left.q_end as usize),
             )
-            .unwrap()
+            .with_context(|| {
+                format!(
+                    "failed to read query {}:{}-{} (left block, + strand)",
+                    q_name,
+                    left.q_end - overlap as u64,
+                    left.q_end
+                )
+            })?
     } else {
         let (start, end) = reverse_range_pair(left.q_end - overlap as u64, left.q_end, q_size);
         let (start, end) = (start as usize, end as usize);
         let s = ctx
             .q_2bit
             .read_sequence(q_name, Some(start), Some(end))
-            .unwrap();
+            .with_context(|| {
+                format!(
+                    "failed to read query {}:{}-{} (left block, - strand)",
+                    q_name, start, end
+                )
+            })?;
         let rc: Vec<u8> = nt::rev_comp(s.as_bytes()).collect();
-        String::from_utf8(rc).unwrap()
+        String::from_utf8(rc)
+            .with_context(|| "reverse-complemented query is not valid UTF-8 (left block)")?
     };
 
     let r_q_seq = if q_strand == '+' {
@@ -368,7 +397,14 @@ fn find_crossover<S: SequenceReader>(
                 Some(right.q_start as usize),
                 Some((right.q_start + overlap as u64) as usize),
             )
-            .unwrap()
+            .with_context(|| {
+                format!(
+                    "failed to read query {}:{}-{} (right block, + strand)",
+                    q_name,
+                    right.q_start,
+                    right.q_start + overlap as u64
+                )
+            })?
     } else {
         let (start, end) =
             reverse_range_pair(right.q_start, right.q_start + overlap as u64, q_size);
@@ -376,9 +412,15 @@ fn find_crossover<S: SequenceReader>(
         let s = ctx
             .q_2bit
             .read_sequence(q_name, Some(start), Some(end))
-            .unwrap();
+            .with_context(|| {
+                format!(
+                    "failed to read query {}:{}-{} (right block, - strand)",
+                    q_name, start, end
+                )
+            })?;
         let rc: Vec<u8> = nt::rev_comp(s.as_bytes()).collect();
-        String::from_utf8(rc).unwrap()
+        String::from_utf8(rc)
+            .with_context(|| "reverse-complemented query is not valid UTF-8 (right block)")?
     };
 
     let mut best_pos = 0;
@@ -414,7 +456,7 @@ fn find_crossover<S: SequenceReader>(
     }
 
     let adjustment = (r_score + l_score) - best_score;
-    (best_pos, adjustment)
+    Ok((best_pos, adjustment))
 }
 
 /// Removes duplicate blocks that have exact same coordinates.
@@ -543,36 +585,38 @@ pub fn calc_block_score<S: SequenceReader>(
     t_name: &str,
     q_size: u64,
     q_strand: char,
-) -> Option<f64> {
-    let t_seq_res =
-        ctx.t_2bit
-            .read_sequence(t_name, Some(b.t_start as usize), Some(b.t_end as usize));
+) -> anyhow::Result<f64> {
+    let t_seq = ctx
+        .t_2bit
+        .read_sequence(t_name, Some(b.t_start as usize), Some(b.t_end as usize))
+        .with_context(|| format!("failed to read target {}:{}-{}", t_name, b.t_start, b.t_end))?;
 
-    let q_seq_res = if q_strand == '+' {
+    let q_seq = if q_strand == '+' {
         ctx.q_2bit
             .read_sequence(q_name, Some(b.q_start as usize), Some(b.q_end as usize))
+            .with_context(|| {
+                format!("failed to read query {}:{}-{}", q_name, b.q_start, b.q_end)
+            })?
     } else {
         let (start_pos, end_pos) = reverse_range_pair(b.q_start, b.q_end, q_size);
         let (start_pos, end_pos) = (start_pos as usize, end_pos as usize);
-
-        ctx.q_2bit
+        let s = ctx
+            .q_2bit
             .read_sequence(q_name, Some(start_pos), Some(end_pos))
-            .map(|s| {
-                let rc_bytes: Vec<u8> = nt::rev_comp(s.as_bytes()).collect();
-                String::from_utf8(rc_bytes).unwrap()
-            })
+            .with_context(|| {
+                format!("failed to read query {}:{}-{}", q_name, start_pos, end_pos)
+            })?;
+        let rc_bytes: Vec<u8> = nt::rev_comp(s.as_bytes()).collect();
+        String::from_utf8(rc_bytes)
+            .with_context(|| "reverse-complemented query is not valid UTF-8")?
     };
 
-    if let (Ok(t_seq), Ok(q_seq)) = (t_seq_res, q_seq_res) {
-        let mut exact_score = 0.0;
-        for (t, q) in t_seq.chars().zip(q_seq.chars()) {
-            let val = ctx.matrix.get_score(t, q);
-            exact_score += val as f64;
-        }
-        Some(exact_score)
-    } else {
-        None
+    let mut exact_score = 0.0;
+    for (t, q) in t_seq.chars().zip(q_seq.chars()) {
+        let val = ctx.matrix.get_score(t, q);
+        exact_score += val as f64;
     }
+    Ok(exact_score)
 }
 
 #[cfg(test)]
@@ -624,7 +668,8 @@ mod tests {
             "chr1",
             100,
             &mut chain_id,
-        );
+        )
+        .unwrap();
 
         assert!(!chains.is_empty());
         let best_chain = &chains[0];

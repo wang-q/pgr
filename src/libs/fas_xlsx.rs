@@ -1,5 +1,6 @@
 //! Export FAS block variations (substitutions/indels) to an Excel workbook.
 
+use anyhow::anyhow;
 use rust_xlsxwriter::*;
 use std::cmp::max;
 use std::collections::BTreeMap;
@@ -25,7 +26,7 @@ pub fn export_to_xlsx(
     let mut workbook = Workbook::new();
     let worksheet = workbook.add_worksheet();
 
-    let format_of: BTreeMap<String, Format> = create_formats();
+    let format_of: BTreeMap<String, Format> = create_formats()?;
 
     let mut opt = Opt {
         sec_cursor: 1,
@@ -70,7 +71,7 @@ pub fn export_to_xlsx(
             for (_, var) in vars {
                 match var {
                     Variation::Substitution(sub) => {
-                        paint_sub(worksheet, &format_of.clone(), &mut opt, &sub).unwrap()
+                        paint_sub(worksheet, &format_of.clone(), &mut opt, &sub)?
                     }
                     Variation::Indel(indel) => {
                         paint_indel(worksheet, format_of.clone(), &mut opt, &indel)?
@@ -121,16 +122,15 @@ fn paint_name(
     opt: &mut Opt,
     block: &FasBlock,
 ) -> anyhow::Result<()> {
+    let name_format = format_of
+        .get("name")
+        .ok_or_else(|| anyhow!("missing 'name' format"))?;
+
     for i in 1..=block.entries.len() {
         let pos_row = opt.sec_height * (opt.sec_cursor - 1);
 
         let rg = block.entries[i - 1].range().to_string();
-        worksheet.write_with_format(
-            pos_row + i as u32,
-            0,
-            rg.clone(),
-            format_of.clone().get("name").unwrap(),
-        )?;
+        worksheet.write_with_format(pos_row + i as u32, 0, rg.clone(), name_format)?;
 
         opt.max_name_len = max(rg.len(), opt.max_name_len);
     }
@@ -154,6 +154,9 @@ fn paint_indel(
     }
 
     let indel_string = format!("{}{}", indel.itype, indel.length);
+    let pos_format = format_of
+        .get("pos")
+        .ok_or_else(|| anyhow!("missing 'pos' format"))?;
     let format = {
         let bg_idx = if indel.occurred == "unknown" {
             "unknown".to_string()
@@ -162,7 +165,9 @@ fn paint_indel(
             idx.to_string()
         };
         let format_key = format!("indel_{}", bg_idx);
-        format_of.get(&format_key).unwrap()
+        format_of
+            .get(&format_key)
+            .ok_or_else(|| anyhow!("missing format for indel: {}", format_key))?
     };
 
     for i in 1..=opt.seq_count {
@@ -170,7 +175,13 @@ fn paint_indel(
         if indel.occurred == "unknown" {
             flag_draw = true;
         } else {
-            let occ = indel.occurred.chars().nth(i as usize - 1).unwrap();
+            let occ = indel.occurred.chars().nth(i as usize - 1).ok_or_else(|| {
+                anyhow!(
+                    "indel occurred string too short at index {} for indel at position {}",
+                    i - 1,
+                    indel.start
+                )
+            })?;
             if occ == '1' {
                 flag_draw = true;
             }
@@ -181,26 +192,11 @@ fn paint_indel(
         }
 
         if col_taken == 1 {
-            worksheet.write_with_format(
-                pos_row,
-                opt.col_cursor,
-                indel.start,
-                format_of.get("pos").unwrap(),
-            )?;
+            worksheet.write_with_format(pos_row, opt.col_cursor, indel.start, pos_format)?;
             worksheet.write_with_format(pos_row + i, opt.col_cursor, &indel_string, format)?;
         } else if col_taken == 2 {
-            worksheet.write_with_format(
-                pos_row,
-                opt.col_cursor,
-                indel.start,
-                format_of.get("pos").unwrap(),
-            )?;
-            worksheet.write_with_format(
-                pos_row,
-                opt.col_cursor + 1,
-                indel.end,
-                format_of.get("pos").unwrap(),
-            )?;
+            worksheet.write_with_format(pos_row, opt.col_cursor, indel.start, pos_format)?;
+            worksheet.write_with_format(pos_row, opt.col_cursor + 1, indel.end, pos_format)?;
             worksheet.merge_range(
                 pos_row + i,
                 opt.col_cursor,
@@ -210,24 +206,9 @@ fn paint_indel(
                 format,
             )?;
         } else {
-            worksheet.write_with_format(
-                pos_row,
-                opt.col_cursor,
-                indel.start,
-                format_of.get("pos").unwrap(),
-            )?;
-            worksheet.write_with_format(
-                pos_row,
-                opt.col_cursor + 1,
-                "|",
-                format_of.get("pos").unwrap(),
-            )?;
-            worksheet.write_with_format(
-                pos_row,
-                opt.col_cursor + 2,
-                indel.end,
-                format_of.get("pos").unwrap(),
-            )?;
+            worksheet.write_with_format(pos_row, opt.col_cursor, indel.start, pos_format)?;
+            worksheet.write_with_format(pos_row, opt.col_cursor + 1, "|", pos_format)?;
+            worksheet.write_with_format(pos_row, opt.col_cursor + 2, indel.end, pos_format)?;
             worksheet.merge_range(
                 pos_row + i,
                 opt.col_cursor,
@@ -249,19 +230,29 @@ fn paint_sub(
 ) -> anyhow::Result<()> {
     let pos_row = opt.sec_height * (opt.sec_cursor - 1);
 
-    worksheet.write_with_format(
-        pos_row,
-        opt.col_cursor,
-        sub.pos,
-        format_of.get("pos").unwrap(),
-    )?;
+    let pos_format = format_of
+        .get("pos")
+        .ok_or_else(|| anyhow!("missing 'pos' format"))?;
+    worksheet.write_with_format(pos_row, opt.col_cursor, sub.pos, pos_format)?;
 
     for i in 1..=opt.seq_count {
-        let base = sub.bases.chars().nth(i as usize - 1).unwrap();
+        let base = sub.bases.chars().nth(i as usize - 1).ok_or_else(|| {
+            anyhow!(
+                "sub bases string too short at index {} for substitution at position {}",
+                i - 1,
+                sub.pos
+            )
+        })?;
         let occurred = if sub.pattern == "unknown" {
             '0'
         } else {
-            sub.pattern.chars().nth(i as usize - 1).unwrap()
+            sub.pattern.chars().nth(i as usize - 1).ok_or_else(|| {
+                anyhow!(
+                    "sub pattern string too short at index {} for substitution at position {}",
+                    i - 1,
+                    sub.pos
+                )
+            })?
         };
 
         let base_color = if occurred == '1' {
@@ -270,13 +261,17 @@ fn paint_sub(
         } else {
             format!("sub_{}_unknown", base)
         };
-        let format = format_of.get(&base_color).unwrap();
+        let format = format_of
+            .get(&base_color)
+            .ok_or_else(|| anyhow!("missing format for substitution: {}", base_color))?;
         worksheet.write_with_format(pos_row + i, opt.col_cursor, base.to_string(), format)?;
     }
 
     if opt.is_outgroup {
         let base_color = format!("sub_{}_unknown", sub.obase);
-        let format = format_of.get(&base_color).unwrap();
+        let format = format_of
+            .get(&base_color)
+            .ok_or_else(|| anyhow!("missing format for outgroup substitution: {}", base_color))?;
         worksheet.write_with_format(
             pos_row + opt.seq_count + 1,
             opt.col_cursor,
@@ -308,7 +303,10 @@ fn get_vars(
 
     let subs = if is_outgroup {
         let mut unpolarized = get_subs(&seqs[..seq_count])?;
-        polarize_subs(&mut unpolarized, out_seq.unwrap());
+        polarize_subs(
+            &mut unpolarized,
+            out_seq.ok_or_else(|| anyhow!("outgroup sequence missing"))?,
+        )?;
         unpolarized
     } else {
         get_subs(seqs)?
@@ -338,7 +336,10 @@ fn get_vars(
     if is_indel {
         let indels = if is_outgroup {
             let mut unpolarized = get_indels(&seqs[..seq_count])?;
-            polarize_indels(&mut unpolarized, out_seq.unwrap())?;
+            polarize_indels(
+                &mut unpolarized,
+                out_seq.ok_or_else(|| anyhow!("outgroup sequence missing"))?,
+            )?;
             unpolarized
         } else {
             get_indels(seqs)?
@@ -369,7 +370,7 @@ fn get_vars(
     Ok(vars)
 }
 
-fn create_formats() -> BTreeMap<String, Format> {
+fn create_formats() -> anyhow::Result<BTreeMap<String, Format>> {
     let mut format_of: BTreeMap<String, Format> = BTreeMap::new();
 
     format_of.insert(
@@ -403,6 +404,9 @@ fn create_formats() -> BTreeMap<String, Format> {
     ]);
 
     for fc in sub_fc_of.keys() {
+        let font_color = *sub_fc_of
+            .get(fc)
+            .ok_or_else(|| anyhow!("missing font color for base: {}", fc))?;
         format_of.insert(
             format!("sub_{}_{}", fc, "unknown"),
             Format::new()
@@ -410,12 +414,15 @@ fn create_formats() -> BTreeMap<String, Format> {
                 .set_font_size(10)
                 .set_align(FormatAlign::VerticalCenter)
                 .set_align(FormatAlign::Center)
-                .set_font_color(*sub_fc_of.get(fc).unwrap())
+                .set_font_color(font_color)
                 .set_background_color(Color::White),
         );
 
         for i in 0..bg_colors.len() {
             let key = format!("sub_{}_{}", fc, i);
+            let bg_color = *bg_colors
+                .get(i)
+                .ok_or_else(|| anyhow!("missing background color at index: {}", i))?;
             format_of.insert(
                 key,
                 Format::new()
@@ -423,8 +430,8 @@ fn create_formats() -> BTreeMap<String, Format> {
                     .set_font_size(10)
                     .set_align(FormatAlign::VerticalCenter)
                     .set_align(FormatAlign::Center)
-                    .set_font_color(*sub_fc_of.get(fc).unwrap())
-                    .set_background_color(*bg_colors.get(i).unwrap()),
+                    .set_font_color(font_color)
+                    .set_background_color(bg_color),
             );
         }
     }
@@ -440,6 +447,9 @@ fn create_formats() -> BTreeMap<String, Format> {
 
     for i in 0..bg_colors.len() {
         let key = format!("indel_{}", i);
+        let bg_color = *bg_colors
+            .get(i)
+            .ok_or_else(|| anyhow!("missing background color at index: {}", i))?;
         format_of.insert(
             key,
             Format::new()
@@ -448,7 +458,7 @@ fn create_formats() -> BTreeMap<String, Format> {
                 .set_bold()
                 .set_align(FormatAlign::VerticalCenter)
                 .set_align(FormatAlign::Center)
-                .set_background_color(*bg_colors.get(i).unwrap()),
+                .set_background_color(bg_color),
         );
     }
     format_of.insert(
@@ -462,5 +472,5 @@ fn create_formats() -> BTreeMap<String, Format> {
             .set_background_color(Color::White),
     );
 
-    format_of
+    Ok(format_of)
 }

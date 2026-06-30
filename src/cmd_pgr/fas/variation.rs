@@ -103,7 +103,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             let subs = if has_outgroup {
                 let mut unpolarized =
                     pgr::libs::alignment::get_subs(&seqs[..(seq_count - 1)]).unwrap();
-                pgr::libs::alignment::polarize_subs(&mut unpolarized, seqs[seq_count - 1]);
+                pgr::libs::alignment::polarize_subs(&mut unpolarized, seqs[seq_count - 1])?;
                 unpolarized
             } else {
                 pgr::libs::alignment::get_subs(&seqs).unwrap()

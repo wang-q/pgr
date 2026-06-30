@@ -17,7 +17,10 @@ pub fn upgma(matrix: &NamedMatrix) -> Result<Tree> {
         let mut tree = Tree::new();
         let root = tree.add_node();
         tree.set_root(root);
-        tree.get_node_mut(root).unwrap().name = Some(names[0].clone());
+        let node = tree
+            .get_node_mut(root)
+            .ok_or_else(|| anyhow::anyhow!("node {} not found", root))?;
+        node.name = Some(names[0].clone());
         return Ok(tree);
     }
 
@@ -32,7 +35,10 @@ pub fn upgma(matrix: &NamedMatrix) -> Result<Tree> {
     // Initialize leaves
     for name in &names {
         let id = tree.add_node();
-        tree.get_node_mut(id).unwrap().name = Some(name.to_string());
+        let node = tree
+            .get_node_mut(id)
+            .ok_or_else(|| anyhow::anyhow!("node {} not found", id))?;
+        node.name = Some(name.to_string());
         active_nodes.push(id);
         node_heights.push(0.0);
         cluster_sizes.push(1);
@@ -101,8 +107,12 @@ pub fn upgma(matrix: &NamedMatrix) -> Result<Tree> {
         tree.add_child(new_node, id2)
             .map_err(|e| anyhow::anyhow!(e))?;
 
-        tree.get_node_mut(id1).unwrap().length = Some(len1);
-        tree.get_node_mut(id2).unwrap().length = Some(len2);
+        tree.get_node_mut(id1)
+            .ok_or_else(|| anyhow::anyhow!("node {} not found", id1))?
+            .length = Some(len1);
+        tree.get_node_mut(id2)
+            .ok_or_else(|| anyhow::anyhow!("node {} not found", id2))?
+            .length = Some(len2);
 
         // Update cluster size
         let size1 = cluster_sizes[id1];

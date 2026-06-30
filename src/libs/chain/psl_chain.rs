@@ -73,7 +73,7 @@ pub fn group_psl_blocks<R: BufRead, S: SequenceReader>(
             };
 
             if let Some(ctx) = score_ctx.as_mut() {
-                if let Some(exact) =
+                if let Ok(exact) =
                     calc_block_score(&block, ctx, &q_name, &t_name, psl.q_size as u64, q_strand)
                 {
                     block.score = exact;

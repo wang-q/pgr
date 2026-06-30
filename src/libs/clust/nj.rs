@@ -17,7 +17,10 @@ pub fn nj(matrix: &NamedMatrix) -> Result<Tree> {
         let mut tree = Tree::new();
         let root = tree.add_node();
         tree.set_root(root);
-        tree.get_node_mut(root).unwrap().name = Some(names[0].clone());
+        let node = tree
+            .get_node_mut(root)
+            .ok_or_else(|| anyhow::anyhow!("node {} not found", root))?;
+        node.name = Some(names[0].clone());
         return Ok(tree);
     }
 
@@ -29,7 +32,10 @@ pub fn nj(matrix: &NamedMatrix) -> Result<Tree> {
     // Initialize leaves
     for name in &names {
         let id = tree.add_node();
-        tree.get_node_mut(id).unwrap().name = Some(name.to_string());
+        let node = tree
+            .get_node_mut(id)
+            .ok_or_else(|| anyhow::anyhow!("node {} not found", id))?;
+        node.name = Some(name.to_string());
         active_nodes.push(id);
     }
 
@@ -73,7 +79,9 @@ pub fn nj(matrix: &NamedMatrix) -> Result<Tree> {
                 let id1 = active_nodes[i];
                 let id2 = active_nodes[j];
                 let key = (id1.min(id2), id1.max(id2));
-                let d = *dists.get(&key).unwrap();
+                let d = *dists
+                    .get(&key)
+                    .ok_or_else(|| anyhow::anyhow!("distance not found for pair {:?}", key))?;
                 let r1 = r[&id1];
                 let r2 = r[&id2];
 
@@ -91,7 +99,9 @@ pub fn nj(matrix: &NamedMatrix) -> Result<Tree> {
         let id1 = active_nodes[idx1];
         let id2 = active_nodes[idx2];
 
-        let d12 = *dists.get(&(id1.min(id2), id1.max(id2))).unwrap();
+        let d12 = *dists
+            .get(&(id1.min(id2), id1.max(id2)))
+            .ok_or_else(|| anyhow::anyhow!("distance not found for pair ({}, {})", id1, id2))?;
         let r1 = r[&id1];
         let r2 = r[&id2];
 
@@ -107,8 +117,12 @@ pub fn nj(matrix: &NamedMatrix) -> Result<Tree> {
         tree.add_child(new_node, id2)
             .map_err(|e| anyhow::anyhow!(e))?;
 
-        tree.get_node_mut(id1).unwrap().length = Some(len1);
-        tree.get_node_mut(id2).unwrap().length = Some(len2);
+        tree.get_node_mut(id1)
+            .ok_or_else(|| anyhow::anyhow!("node {} not found", id1))?
+            .length = Some(len1);
+        tree.get_node_mut(id2)
+            .ok_or_else(|| anyhow::anyhow!("node {} not found", id2))?
+            .length = Some(len2);
 
         // 4. Update distances
         let mut new_dists = Vec::new();
@@ -117,8 +131,16 @@ pub fn nj(matrix: &NamedMatrix) -> Result<Tree> {
                 continue;
             }
 
-            let d1 = *dists.get(&(id1.min(other_id), id1.max(other_id))).unwrap();
-            let d2 = *dists.get(&(id2.min(other_id), id2.max(other_id))).unwrap();
+            let d1 = *dists
+                .get(&(id1.min(other_id), id1.max(other_id)))
+                .ok_or_else(|| {
+                    anyhow::anyhow!("distance not found for pair ({}, {})", id1, other_id)
+                })?;
+            let d2 = *dists
+                .get(&(id2.min(other_id), id2.max(other_id)))
+                .ok_or_else(|| {
+                    anyhow::anyhow!("distance not found for pair ({}, {})", id2, other_id)
+                })?;
 
             let d_new = 0.5 * (d1 + d2 - d12);
             new_dists.push((other_id, d_new));
@@ -143,7 +165,9 @@ pub fn nj(matrix: &NamedMatrix) -> Result<Tree> {
     if active_nodes.len() == 2 {
         let id1 = active_nodes[0];
         let id2 = active_nodes[1];
-        let d = *dists.get(&(id1.min(id2), id1.max(id2))).unwrap();
+        let d = *dists
+            .get(&(id1.min(id2), id1.max(id2)))
+            .ok_or_else(|| anyhow::anyhow!("distance not found for pair ({}, {})", id1, id2))?;
 
         // Create a root node between them
         let root = tree.add_node();
@@ -153,8 +177,12 @@ pub fn nj(matrix: &NamedMatrix) -> Result<Tree> {
         tree.add_child(root, id2).map_err(|e| anyhow::anyhow!(e))?;
 
         let len = d / 2.0;
-        tree.get_node_mut(id1).unwrap().length = Some(len);
-        tree.get_node_mut(id2).unwrap().length = Some(len);
+        tree.get_node_mut(id1)
+            .ok_or_else(|| anyhow::anyhow!("node {} not found", id1))?
+            .length = Some(len);
+        tree.get_node_mut(id2)
+            .ok_or_else(|| anyhow::anyhow!("node {} not found", id2))?
+            .length = Some(len);
     }
 
     Ok(tree)
