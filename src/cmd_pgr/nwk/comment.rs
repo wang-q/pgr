@@ -215,38 +215,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         //----------------------------
         // Remove parts of comments
         //----------------------------
-        // ids matched with --remove
         if args.contains_id("remove") {
-            let regex = args.get_one::<String>("remove").unwrap();
-            let re = regex::RegexBuilder::new(regex)
-                .case_insensitive(true)
-                .unicode(false)
-                .build()
-                .unwrap();
-
-            // Iterate all nodes
-            for i in 0..tree.len() {
-                if let Some(node) = tree.get_node_mut(i) {
-                    if let Some(props) = &mut node.properties {
-                        let mut to_remove = vec![];
-                        for (k, v) in props.iter() {
-                            let entry = if v.is_empty() {
-                                k.to_string()
-                            } else {
-                                format!("{}={}", k, v)
-                            };
-
-                            if re.is_match(&entry) {
-                                to_remove.push(k.clone());
-                            }
-                        }
-
-                        for k in to_remove {
-                            props.remove(&k);
-                        }
-                    }
-                }
-            }
+            let pattern = args.get_one::<String>("remove").unwrap();
+            pgr::libs::phylo::tree::ops::remove_properties_matching(tree, pattern)?;
         }
 
         //----------------------------

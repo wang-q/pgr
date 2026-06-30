@@ -3,7 +3,6 @@ use clap::{Arg, ArgMatches, Command};
 use pgr::libs::chain::{chain_blocks, group_psl_blocks, GapCalc, ScoreContext, SubMatrix};
 use pgr::libs::fmt::twobit::TwoBitFile;
 use std::cmp::Ordering;
-use std::io::Write;
 
 pub fn make_subcommand() -> Command {
     Command::new("chain")
@@ -77,12 +76,16 @@ Examples:
                 .help("Minimum score of chain"),
         )
         .arg(
+            // Note: distinct from args::add_poa_args gap_open/gap_extend.
+            // POA gaps are always-on affine penalties with defaults; here they
+            // are optional overrides for the --linear-gap chaining preset.
             Arg::new("gap_open")
                 .long("gap-open")
                 .value_parser(clap::value_parser!(i32))
                 .help("Gap open cost (overrides --linear-gap)"),
         )
         .arg(
+            // See gap_open note above re: distinct from POA's --gap-extend.
             Arg::new("gap_extend")
                 .long("gap-extend")
                 .value_parser(clap::value_parser!(i32))
@@ -199,32 +202,7 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
         if chain.header.score < min_score {
             continue;
         }
-
-        writeln!(
-            writer,
-            "chain {:.0} {} {} {} {} {} {} {} {} {} {} {}",
-            chain.header.score,
-            chain.header.t_name,
-            chain.header.t_size,
-            chain.header.t_strand,
-            chain.header.t_start,
-            chain.header.t_end,
-            chain.header.q_name,
-            chain.header.q_size,
-            chain.header.q_strand,
-            chain.header.q_start,
-            chain.header.q_end,
-            chain.header.id
-        )?;
-
-        for (i, d) in chain.data.iter().enumerate() {
-            if i == chain.data.len() - 1 {
-                writeln!(writer, "{}", d.size)?;
-            } else {
-                writeln!(writer, "{}\t{}\t{}", d.size, d.dt, d.dq)?;
-            }
-        }
-        writeln!(writer)?;
+        chain.write(&mut writer)?;
     }
 
     Ok(())

@@ -1,7 +1,7 @@
 use clap::*;
 
 use pgr::libs::paf::index::{PafIndex, QueryResult};
-use pgr::libs::paf::msa::{build_msa_entries, build_pairwise_block, run_poa_msa};
+use pgr::libs::paf::msa_build::{build_msa_entries, build_pairwise_block, run_poa_msa};
 use pgr::libs::poa::AlignmentParams;
 
 use super::common;

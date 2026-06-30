@@ -16,7 +16,7 @@ use petgraph::Direction;
 
 use crate::libs::paf::fasta::FastaStore;
 use crate::libs::paf::index::{PafIndex, QueryResult};
-use crate::libs::paf::msa::{build_msa_entries, MsaEntry};
+use crate::libs::paf::msa_build::{build_msa_entries, MsaEntry};
 use crate::libs::poa::{AlignmentParams, AlignmentType, Poa};
 
 /// Output local GFA per region from a POA graph. The POA graph (nodes = bases,

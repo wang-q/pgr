@@ -1,6 +1,6 @@
 use super::utils as nwr;
 use clap::*;
-use pgr::libs::phylo::algo;
+use pgr::libs::phylo::tree::algo;
 use pgr::libs::phylo::tree::Tree;
 use std::io::Write;
 

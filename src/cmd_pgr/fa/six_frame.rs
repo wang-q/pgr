@@ -91,12 +91,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         let seq = record.sequence();
 
         // Perform six-frame translation
-        let translations = pgr::libs::nt::six_frame_translation(&seq[..]);
+        let translations = pgr::libs::translate::six_frame_translation(&seq[..]);
 
         // Iterate over each translation frame
         for (protein, frame, is_reverse) in translations {
             // Detect ORFs in the translated protein sequence
-            let orfs = pgr::libs::nt::find_orfs(&protein);
+            let orfs = pgr::libs::translate::find_orfs(&protein);
 
             // Calculate the starting position in the DNA sequence
             let dna_start = if is_reverse {

@@ -550,3 +550,38 @@ pub fn condense_subtree(
 
     Ok(())
 }
+
+/// Remove node properties matching a regex.
+///
+/// For every node in `tree`, each property entry is serialized as `key=value`
+/// (or just `key` when the value is empty) and tested against `pattern`
+/// (case-insensitive, ASCII-only). Matching entries are removed in place.
+pub fn remove_properties_matching(tree: &mut Tree, pattern: &str) -> anyhow::Result<()> {
+    let re = regex::RegexBuilder::new(pattern)
+        .case_insensitive(true)
+        .unicode(false)
+        .build()?;
+
+    for i in 0..tree.len() {
+        if let Some(node) = tree.get_node_mut(i) {
+            if let Some(props) = &mut node.properties {
+                let mut to_remove = Vec::new();
+                for (k, v) in props.iter() {
+                    let entry = if v.is_empty() {
+                        k.to_string()
+                    } else {
+                        format!("{}={}", k, v)
+                    };
+                    if re.is_match(&entry) {
+                        to_remove.push(k.clone());
+                    }
+                }
+                for k in to_remove {
+                    props.remove(&k);
+                }
+            }
+        }
+    }
+
+    Ok(())
+}

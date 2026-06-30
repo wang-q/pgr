@@ -72,6 +72,170 @@ pub fn windows(name: &str, seq: &[u8], len: usize, step: usize) -> Vec<(String, 
     result
 }
 
+/// Run the `fa window` workflow: split sequences into overlapping windows
+/// and optionally chunk/shuffle the output records.
+///
+/// * `infile` — input FASTA path (supports stdin/.gz via [`io::reader`]).
+/// * `len` / `step` — window length and step size in bases.
+/// * `shuffle` — randomize record order (uses `seed` for reproducibility).
+/// * `chunk_size` — when set, split output into files of N records each
+///   (`outfile` must not be `stdout`).
+/// * `outfile` — `stdout` or a file path; chunked files are named
+///   `<stem>.NNN<ext>`.
+///
+/// Windows consisting entirely of N/n are skipped (see [`windows`]).
+pub fn run_window(
+    infile: &str,
+    len: usize,
+    step: usize,
+    shuffle: bool,
+    seed: u64,
+    chunk_size: Option<usize>,
+    outfile: &str,
+) -> anyhow::Result<()> {
+    if chunk_size.is_some() && outfile == "stdout" {
+        anyhow::bail!("Cannot use --chunk with stdout output");
+    }
+
+    let mut fa_in = reader(infile)?;
+
+    // Build a chunked output path: <stem>.NNN<ext>
+    let create_writer = |part: usize| -> anyhow::Result<Box<dyn std::io::Write>> {
+        if outfile == "stdout" {
+            io::writer("stdout")
+        } else {
+            let path = std::path::Path::new(outfile);
+            let file_stem = path
+                .file_stem()
+                .and_then(std::ffi::OsStr::to_str)
+                .ok_or_else(|| anyhow::anyhow!("invalid outfile stem: {}", outfile))?;
+            let extension = path
+                .extension()
+                .and_then(std::ffi::OsStr::to_str)
+                .unwrap_or_default();
+            let ext_str = if extension.is_empty() {
+                String::new()
+            } else {
+                format!(".{}", extension)
+            };
+            let new_filename = format!("{}.{:03}{}", file_stem, part, ext_str);
+            let new_path = path.with_file_name(new_filename);
+            let new_path_str = new_path
+                .to_str()
+                .ok_or_else(|| anyhow::anyhow!("invalid chunked path: {}", new_path.display()))?;
+            io::writer(new_path_str)
+        }
+    };
+
+    let mut current_part = 1;
+    let mut record_count = 0;
+
+    let mut fa_out: Option<fasta::io::Writer<Box<dyn std::io::Write>>> = None;
+
+    // Initialize global writer if not chunking.
+    if chunk_size.is_none() {
+        fa_out = Some(writer(outfile)?);
+    } else if !shuffle {
+        // If chunking without shuffle, init first writer
+        let w = create_writer(current_part)?;
+        fa_out = Some(writer_from_writer(w));
+    }
+
+    // For shuffle we accumulate records; for non-shuffle chunking we stream.
+    let mut records_buffer: Vec<fasta::Record> = Vec::new();
+
+    for result in fa_in.records() {
+        let record = result?;
+        let name = String::from_utf8(record.name().into())?;
+        let seq = record.sequence();
+
+        for (new_name, window) in windows(&name, seq.as_ref(), len, step) {
+            let new_record = new_record(&new_name, &window);
+
+            if shuffle {
+                records_buffer.push(new_record);
+
+                // If chunk limit reached, flush buffer
+                if let Some(limit) = chunk_size {
+                    if records_buffer.len() >= limit {
+                        flush_shuffled_chunk(
+                            &mut records_buffer,
+                            seed,
+                            current_part,
+                            &create_writer,
+                        )?;
+                        current_part += 1;
+                    }
+                }
+            } else {
+                // No shuffle
+                if let Some(limit) = chunk_size {
+                    if record_count >= limit {
+                        current_part += 1;
+                        record_count = 0;
+                        let w = create_writer(current_part)?;
+                        fa_out = Some(writer_from_writer(w));
+                    }
+                }
+
+                if let Some(ref mut w) = fa_out {
+                    w.write_record(&new_record)?;
+                    record_count += 1;
+                }
+            }
+        }
+    }
+
+    // Flush remaining buffer (Shuffle case)
+    if shuffle && !records_buffer.is_empty() {
+        use rand::seq::SliceRandom;
+        use rand::SeedableRng;
+        let chunk_seed = seed + (current_part as u64);
+        let mut rng = rand::rngs::StdRng::seed_from_u64(chunk_seed);
+        records_buffer.shuffle(&mut rng);
+
+        // If chunking, this goes to a new chunk file.
+        // If not chunking, this goes to the single global file.
+        let mut final_out = if chunk_size.is_some() {
+            let w = create_writer(current_part)?;
+            writer_from_writer(w)
+        } else if let Some(w) = fa_out.take() {
+            w
+        } else {
+            writer(outfile)?
+        };
+
+        for record in records_buffer {
+            final_out.write_record(&record)?;
+        }
+    }
+
+    Ok(())
+}
+
+// Helper: shuffle `records_buffer` with a per-chunk seed and write to the
+// chunk file identified by `part`. Clears the buffer on success.
+fn flush_shuffled_chunk(
+    records_buffer: &mut Vec<fasta::Record>,
+    seed: u64,
+    part: usize,
+    create_writer: &impl Fn(usize) -> anyhow::Result<Box<dyn std::io::Write>>,
+) -> anyhow::Result<()> {
+    use rand::seq::SliceRandom;
+    use rand::SeedableRng;
+    let chunk_seed = seed + (part as u64);
+    let mut rng = rand::rngs::StdRng::seed_from_u64(chunk_seed);
+    records_buffer.shuffle(&mut rng);
+
+    let w = create_writer(part)?;
+    let mut chunk_out = writer_from_writer(w);
+    for r in records_buffer.iter() {
+        chunk_out.write_record(r)?;
+    }
+    records_buffer.clear();
+    Ok(())
+}
+
 /// Build a .gzi index for a BGZF file.
 ///
 /// The GZI format is defined by `bgzip` and used for random access.

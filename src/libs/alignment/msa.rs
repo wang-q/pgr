@@ -8,7 +8,7 @@ use std::path::Path;
 use std::process::Command;
 use std::str;
 
-use super::intspan_util::indel_intspan;
+use super::coords::indel_intspan;
 use crate::reader;
 
 /// ```

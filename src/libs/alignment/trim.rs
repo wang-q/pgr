@@ -1,6 +1,6 @@
 use intspan::{IntSpan, Range};
 
-use super::intspan_util::indel_intspan;
+use super::coords::indel_intspan;
 
 /// Trims pure dash regions
 ///

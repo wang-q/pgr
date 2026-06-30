@@ -2,7 +2,7 @@ use clap::{Arg, ArgMatches, Command};
 
 use pgr::libs::paf::fasta::{load_fasta_tsv, validate_tsv_covers_index, FastaStore};
 use pgr::libs::paf::index::{PafIndex, QueryResult};
-use pgr::libs::paf::msa::orient_interval;
+use pgr::libs::paf::msa_build::orient_interval;
 use pgr::libs::paf::query::QueryOptions;
 
 // Re-export shared POA argument builder and extractor from `cmd_pgr::args`.

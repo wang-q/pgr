@@ -243,3 +243,48 @@ pub fn tree_medoid(tree: &Tree, ids: &[NodeId]) -> Option<usize> {
     }
     Some(best_idx)
 }
+
+/// Lax-mode complement LCA: when the LCA of `specified_ids` equals `root_id`,
+/// treat the unspecified leaves as the ingroup and return their LCA.
+///
+/// Returns `Some(comp_lca)` when the complement is non-empty and its LCA
+/// differs from `root_id`; otherwise returns `None`.
+pub fn lax_complement_lca(
+    tree: &Tree,
+    specified_ids: &BTreeSet<NodeId>,
+    root_id: NodeId,
+) -> Option<NodeId> {
+    // Leaves under each specified node
+    let mut specified_leaves = BTreeSet::new();
+    for &id in specified_ids {
+        if let Ok(subtree) = tree.get_subtree(&id) {
+            for sub_id in subtree {
+                if let Some(node) = tree.get_node(sub_id) {
+                    if node.children.is_empty() {
+                        specified_leaves.insert(sub_id);
+                    }
+                }
+            }
+        }
+    }
+
+    let all_leaves: BTreeSet<NodeId> = tree.get_leaves().into_iter().collect();
+    let complement_leaves: Vec<NodeId> =
+        all_leaves.difference(&specified_leaves).cloned().collect();
+
+    if complement_leaves.is_empty() {
+        return None;
+    }
+
+    let mut comp_nodes = complement_leaves.clone();
+    let mut comp_lca = comp_nodes.pop()?;
+    for id in &comp_nodes {
+        comp_lca = tree.get_common_ancestor(&comp_lca, id).ok()?;
+    }
+
+    if comp_lca == root_id {
+        None
+    } else {
+        Some(comp_lca)
+    }
+}

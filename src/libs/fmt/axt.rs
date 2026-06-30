@@ -1,4 +1,7 @@
+use std::collections::BTreeMap;
 use std::io::BufRead;
+
+use super::maf::{MafAli, MafComp, MafWriter};
 
 #[derive(Debug, Clone, Default)]
 pub struct Axt {
@@ -20,6 +23,116 @@ impl Axt {
     pub fn new() -> Self {
         Self::default()
     }
+
+    /// Convert this AXT record into a MAF alignment block (`MafAli`).
+    ///
+    /// `t_sizes` / `q_sizes` provide the total sequence lengths (src_size in
+    /// MAF). `t_prefix` / `q_prefix` are prepended to the source names.
+    pub fn to_maf_ali(
+        &self,
+        t_sizes: &BTreeMap<String, usize>,
+        q_sizes: &BTreeMap<String, usize>,
+        t_prefix: &str,
+        q_prefix: &str,
+    ) -> anyhow::Result<MafAli> {
+        let t_size = *t_sizes
+            .get(&self.t_name)
+            .ok_or_else(|| anyhow::anyhow!("Target size not found for {}", self.t_name))?;
+        let q_size = *q_sizes
+            .get(&self.q_name)
+            .ok_or_else(|| anyhow::anyhow!("Query size not found for {}", self.q_name))?;
+
+        let t_comp = MafComp {
+            src: format!("{}{}", t_prefix, self.t_name),
+            start: self.t_start,
+            size: self.t_end - self.t_start,
+            strand: self.t_strand,
+            src_size: t_size,
+            text: self.t_sym.clone(),
+        };
+        let q_comp = MafComp {
+            src: format!("{}{}", q_prefix, self.q_name),
+            start: self.q_start,
+            size: self.q_end - self.q_start,
+            strand: self.q_strand,
+            src_size: q_size,
+            text: self.q_sym.clone(),
+        };
+
+        Ok(MafAli {
+            score: self.score.map(|s| s as f64),
+            components: vec![t_comp, q_comp],
+        })
+    }
+}
+
+/// Convert an AXT file to MAF format.
+///
+/// * `input` / `output` — input AXT path and output MAF path (or `stdout`).
+/// * `t_sizes` / `q_sizes` — sequence sizes for target/query.
+/// * `t_prefix` / `q_prefix` — optional name prefixes.
+/// * `t_split` — when true, write one MAF file per target sequence into the
+///   `output` directory (expects input grouped by target name).
+pub fn axt_to_maf(
+    input: &str,
+    output: &str,
+    t_sizes: &BTreeMap<String, usize>,
+    q_sizes: &BTreeMap<String, usize>,
+    t_prefix: &str,
+    q_prefix: &str,
+    t_split: bool,
+) -> anyhow::Result<()> {
+    use std::collections::HashMap;
+    use std::path::Path;
+
+    let reader = crate::libs::io::reader(input)?;
+    let axt_reader = AxtReader::new(reader);
+
+    let mut current_t_name = String::new();
+    let mut single_writer: Option<MafWriter<Box<dyn std::io::Write>>> = None;
+
+    if t_split {
+        if !Path::new(output).exists() {
+            std::fs::create_dir_all(output)?;
+        }
+    } else {
+        let writer = crate::libs::io::writer(output)?;
+        let mut writer = MafWriter::new(writer);
+        writer.write_header("blastz")?;
+        single_writer = Some(writer);
+    }
+
+    let mut split_writers: HashMap<String, MafWriter<Box<dyn std::io::Write>>> = HashMap::new();
+
+    for result in axt_reader {
+        let axt = result?;
+
+        let writer = if t_split {
+            if axt.t_name != current_t_name {
+                // C axtToMaf keeps only one file open and overwrites on tName change;
+                // input is assumed grouped (sorted) by target name.
+                if !split_writers.contains_key(&axt.t_name) {
+                    split_writers.clear();
+                    let path = Path::new(output).join(format!("{}.maf", axt.t_name));
+                    let path_str = path.to_str().ok_or_else(|| {
+                        anyhow::anyhow!("path is not valid UTF-8: {}", path.display())
+                    })?;
+                    let mut w = MafWriter::new(crate::libs::io::writer(path_str)?);
+                    w.write_header("blastz")?;
+                    split_writers.insert(axt.t_name.clone(), w);
+                }
+                current_t_name = axt.t_name.clone();
+            }
+            split_writers.get_mut(&axt.t_name).unwrap()
+        } else {
+            single_writer.as_mut().unwrap()
+        };
+
+        let ali = axt.to_maf_ali(t_sizes, q_sizes, t_prefix, q_prefix)?;
+        writer.write_ali(&ali)?;
+    }
+
+    Ok(())
 }
 
 pub struct AxtReader<R> {

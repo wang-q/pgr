@@ -1,6 +1,6 @@
 use clap::*;
 use pgr::libs::paf::index::QueryResult;
-use pgr::libs::paf::msa::orient_interval;
+use pgr::libs::paf::msa_build::orient_interval;
 
 use super::common;
 

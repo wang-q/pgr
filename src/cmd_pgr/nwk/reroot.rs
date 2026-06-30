@@ -133,38 +133,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
                 // Lax mode check
                 if old_root == sub_root_id && lax {
-                    // Identify leaves in the "ingroup" (specified nodes)
-                    let mut specified_leaves = BTreeSet::new();
-                    for &id in &ids {
-                        // Find all descendant leaves of this node
-                        if let Ok(subtree) = tree.get_subtree(&id) {
-                            for sub_id in subtree {
-                                if let Some(node) = tree.get_node(sub_id) {
-                                    if node.children.is_empty() {
-                                        specified_leaves.insert(sub_id);
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // Identify all leaves in the tree
-                    let all_leaves: BTreeSet<usize> = tree.get_leaves().into_iter().collect();
-
-                    // Complement = All Leaves - Specified Leaves
-                    let complement_leaves: Vec<usize> =
-                        all_leaves.difference(&specified_leaves).cloned().collect();
-
-                    if !complement_leaves.is_empty() {
-                        let mut comp_nodes = complement_leaves.clone();
-                        let mut comp_lca = comp_nodes.pop().unwrap();
-                        for id in &comp_nodes {
-                            comp_lca = tree.get_common_ancestor(&comp_lca, id).unwrap();
-                        }
-
-                        if comp_lca != old_root {
-                            sub_root_id = comp_lca;
-                        }
+                    if let Some(comp_lca) =
+                        pgr::libs::phylo::tree::query::lax_complement_lca(&tree, &ids, old_root)
+                    {
+                        sub_root_id = comp_lca;
                     }
                 }
 

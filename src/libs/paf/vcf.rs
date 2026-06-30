@@ -2,7 +2,7 @@
 
 use crate::libs::paf::fasta::FastaStore;
 use crate::libs::paf::index::{PafIndex, QueryResult};
-use crate::libs::paf::msa::{build_msa_entries, run_poa_msa};
+use crate::libs::paf::msa_build::{build_msa_entries, run_poa_msa};
 use crate::libs::poa::AlignmentParams;
 use std::io::Write;
 

@@ -1,5 +1,5 @@
-use super::tree::Tree;
-use super::NodeId;
+use super::Tree;
+use crate::libs::phylo::node::NodeId;
 use std::collections::{HashMap, HashSet};
 
 /// Sort the children of each node by their name (label).
@@ -12,7 +12,7 @@ use std::collections::{HashMap, HashSet};
 /// # Example
 /// ```
 /// use pgr::libs::phylo::tree::Tree;
-/// use pgr::libs::phylo::algo;
+/// use pgr::libs::phylo::tree::algo;
 ///
 /// let mut tree = Tree::from_newick("(B,A);").unwrap();
 /// algo::sort_by_name(&mut tree, false);
@@ -128,7 +128,7 @@ fn get_sort_key(tree: &Tree, name_map: &HashMap<NodeId, String>, id: NodeId) -> 
 /// # Example
 /// ```
 /// use pgr::libs::phylo::tree::Tree;
-/// use pgr::libs::phylo::algo;
+/// use pgr::libs::phylo::tree::algo;
 ///
 /// // ((A,B),C)
 /// // (A,B) has 2 descendants (leaves), C has 1 descendant.
@@ -211,7 +211,7 @@ pub fn ladderize(tree: &mut Tree, descending: bool) {
 /// # Example
 /// ```
 /// use pgr::libs::phylo::tree::Tree;
-/// use pgr::libs::phylo::algo;
+/// use pgr::libs::phylo::tree::algo;
 ///
 /// let mut tree = Tree::from_newick("(A,B,C);").unwrap();
 /// let order = vec!["C".to_string(), "B".to_string(), "A".to_string()];

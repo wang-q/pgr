@@ -125,10 +125,15 @@ impl Chain {
     }
 
     /// Write the chain in UCSC Chain format.
+    ///
+    /// Header fields are space-separated; gap data lines are tab-separated
+    /// (`size\tdt\tdq`), matching the UCSC convention. The score is formatted
+    /// as an integer (`{:.0}`) since chain scores are conventionally whole
+    /// numbers.
     pub fn write<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
         writeln!(
             writer,
-            "chain {} {} {} {} {} {} {} {} {} {} {} {}",
+            "chain {:.0} {} {} {} {} {} {} {} {} {} {} {}",
             self.header.score,
             self.header.t_name,
             self.header.t_size,
@@ -148,7 +153,7 @@ impl Chain {
             if i == len - 1 {
                 writeln!(writer, "{}", d.size)?;
             } else {
-                writeln!(writer, "{} {} {}", d.size, d.dt, d.dq)?;
+                writeln!(writer, "{}\t{}\t{}", d.size, d.dt, d.dq)?;
             }
         }
         writeln!(writer)?;

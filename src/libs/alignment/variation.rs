@@ -6,7 +6,7 @@ use std::cmp::min;
 use std::collections::BTreeMap;
 use std::fmt;
 
-use super::intspan_util::indel_intspan;
+use super::coords::indel_intspan;
 
 #[derive(Default, Clone, Debug)]
 pub struct Substitution {

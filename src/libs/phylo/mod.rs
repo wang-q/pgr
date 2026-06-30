@@ -1,4 +1,3 @@
-pub mod algo;
 pub mod cmp;
 pub mod error;
 pub mod node;

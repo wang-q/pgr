@@ -137,16 +137,15 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         let is_even = args.get_flag("even");
         let opt_maxpart = *args.get_one::<usize>("maxpart").unwrap();
 
-        let mut cur_cnt = 0;
-        let mut record_sn = 0;
-        let mut file_sn = 0;
+        let mut chunker =
+            pgr::libs::fasta::chunk::SizeChunker::new(opt_count, is_even, opt_maxpart);
         let part_width = (opt_maxpart.checked_ilog10().unwrap_or(0) + 1) as usize;
 
         'outer: for infile in args.get_many::<String>("infiles").unwrap() {
             let mut fa_in = pgr::libs::fmt::fa::reader(infile)?;
 
             for result in fa_in.records() {
-                if file_sn > opt_maxpart {
+                if chunker.max_files_exceeded() {
                     break 'outer;
                 }
 
@@ -164,22 +163,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 if outdir == "stdout" {
                     print!(">{}\n{}\n", name, seq_str);
                 } else {
-                    let filename = format!("{:0width$}", file_sn, width = part_width);
+                    let filename = format!("{:0width$}", chunker.file_index(), width = part_width);
                     gen_fh(outdir, &mut fh_of, &filename)?;
                     write!(fh_of.get(&filename).unwrap(), ">{}\n{}\n", name, seq_str)?;
                 }
-                cur_cnt += seq.len();
-                record_sn += 1;
-
-                if is_even {
-                    if record_sn % 2 != 0 {
-                        continue;
-                    }
-                } else if cur_cnt > opt_count {
-                    cur_cnt = 0;
-                    record_sn = 0;
-                    file_sn += 1;
-                }
+                chunker.advance(seq.len());
             } // record
         } // file
     }

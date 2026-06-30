@@ -19,3 +19,4 @@ pub mod par;
 pub mod phylo;
 pub mod plot;
 pub mod poa;
+pub mod translate;

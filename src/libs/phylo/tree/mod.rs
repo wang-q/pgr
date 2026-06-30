@@ -1,3 +1,5 @@
+pub mod algo;
+pub mod balance;
 pub mod distance;
 pub mod io;
 pub mod ops;

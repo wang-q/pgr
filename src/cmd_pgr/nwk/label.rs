@@ -192,51 +192,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         for id in ids.iter() {
             let node = tree.get_node(*id).unwrap();
             if let Some(x) = node.name.clone() {
-                let mut out_string: String = x.clone();
-                if !columns.is_empty() {
-                    for column in columns.iter() {
-                        match column.as_str() {
-                            "dup" => out_string += format!("\t{}", x).as_str(),
-                            "taxid" => {
-                                out_string += format!(
-                                    "\t{}",
-                                    node.get_property("T")
-                                        .map(|s: &String| s.as_str())
-                                        .unwrap_or("")
-                                )
-                                .as_str()
-                            }
-                            "species" => {
-                                out_string += format!(
-                                    "\t{}",
-                                    node.get_property("S")
-                                        .map(|s: &String| s.as_str())
-                                        .unwrap_or("")
-                                )
-                                .as_str()
-                            }
-                            "full" => {
-                                let props = node.properties.as_ref().map(
-                                    |p: &std::collections::BTreeMap<String, String>| {
-                                        p.iter()
-                                            .map(|(k, v)| format!(":{}={}", k, v))
-                                            .collect::<Vec<String>>()
-                                    },
-                                );
-
-                                let mut comment = String::new();
-                                if let Some(p) = props {
-                                    if !p.is_empty() {
-                                        comment = format!("[{}]", p.join(" "));
-                                    }
-                                }
-
-                                out_string += format!("\t{}", comment).as_str()
-                            }
-                            _ => unreachable!(),
-                        }
-                    }
-                }
+                let out_string = nwr::format_label_columns(node, &x, &columns);
 
                 if tab_sep {
                     collected_labels.push(out_string);
