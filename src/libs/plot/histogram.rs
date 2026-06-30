@@ -28,7 +28,13 @@ pub fn compute_hh_axis(
     let label_len = ygroups.iter().map(|s| s.len()).max().unwrap_or(0).max(3);
 
     let xticks = (0..=bins)
-        .filter_map(|i| if i % 5 == 0 { Some(i as f64 - 0.5) } else { None })
+        .filter_map(|i| {
+            if i % 5 == 0 {
+                Some(i as f64 - 0.5)
+            } else {
+                None
+            }
+        })
         .collect::<Vec<_>>();
     let xtick_labels = bin_edges
         .iter()

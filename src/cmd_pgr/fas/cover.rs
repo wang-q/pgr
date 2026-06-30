@@ -68,12 +68,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     for infile in args.get_many::<String>("infiles").unwrap() {
         let mut reader = pgr::reader(infile)?;
-        pgr::libs::fmt::fas::aggregate_coverage_into(
-            &mut reader,
-            &mut res_of,
-            opt_name,
-            opt_trim,
-        )?;
+        pgr::libs::fmt::fas::aggregate_coverage_into(&mut reader, &mut res_of, opt_name, opt_trim)?;
     }
 
     //----------------------------

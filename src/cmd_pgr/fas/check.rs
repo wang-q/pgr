@@ -68,14 +68,22 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 for entry in &block.entries {
                     let entry_name = entry.range().name();
                     if entry_name == opt_name {
-                        let status = pgr::libs::fmt::fas::check_entry_against_ref(entry, &mut genome_reader, &loc_of)?;
+                        let status = pgr::libs::fmt::fas::check_entry_against_ref(
+                            entry,
+                            &mut genome_reader,
+                            &loc_of,
+                        )?;
                         writer.write_all(format!("{}\t{}\n", entry.range(), status).as_ref())?;
                     }
                 }
             } else if opt_name.is_empty() {
                 // Check all sequences in the block
                 for entry in &block.entries {
-                    let status = pgr::libs::fmt::fas::check_entry_against_ref(entry, &mut genome_reader, &loc_of)?;
+                    let status = pgr::libs::fmt::fas::check_entry_against_ref(
+                        entry,
+                        &mut genome_reader,
+                        &loc_of,
+                    )?;
                     writer.write_all(format!("{}\t{}\n", entry.range(), status).as_ref())?;
                 }
             }

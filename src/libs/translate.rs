@@ -135,11 +135,7 @@ pub fn filter_and_convert_orfs(
     require_start_m: bool,
     require_end_star: bool,
 ) -> Vec<(usize, usize, String)> {
-    let dna_start = if is_reverse {
-        dna_len - frame
-    } else {
-        frame
-    };
+    let dna_start = if is_reverse { dna_len - frame } else { frame };
 
     let mut result = Vec::new();
     for (orf_seq, start, end) in orfs {

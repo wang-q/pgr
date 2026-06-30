@@ -105,8 +105,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let (entries1, entries2) =
         common::load_two_sets(&infiles, false, |paths| load_file(&paths[0], is_bin))?;
 
-    common::par_run_pairs(&entries1, &entries2, &sender, |e1, e2| {
-        match linalg::vector_score(e1.list(), e2.list(), opt_mode, is_sim, is_dis) {
+    common::par_run_pairs(
+        &entries1,
+        &entries2,
+        &sender,
+        |e1, e2| match linalg::vector_score(e1.list(), e2.list(), opt_mode, is_sim, is_dis) {
             Ok(score) => {
                 let line = format!("{}\t{}\t{:.4}\n", e1.name(), e2.name(), score);
                 Some(line)
@@ -115,8 +118,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 log::error!("{}", e);
                 None
             }
-        }
-    });
+        },
+    );
 
     // Drop the sender to signal the writer thread to exit
     drop(sender);

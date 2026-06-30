@@ -1,7 +1,7 @@
 use clap::{Arg, ArgMatches, Command};
 use pgr::libs::clust::eval::{
-    load_batch_partitions, load_partition, remove_singletons, run_batch, run_single, EvalTarget,
-    Coordinates, DistanceMatrix, PartitionFormat, TreeDistance,
+    load_batch_partitions, load_partition, remove_singletons, run_batch, run_single, Coordinates,
+    DistanceMatrix, EvalTarget, PartitionFormat, TreeDistance,
 };
 use pgr::libs::pairmat::NamedMatrix;
 use pgr::libs::phylo::tree::Tree;

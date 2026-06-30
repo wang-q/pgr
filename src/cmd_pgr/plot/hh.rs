@@ -1,5 +1,7 @@
 use clap::*;
-use pgr::libs::plot::histogram::{calc_density, calc_hist, compute_hh_axis, create_table, load_data, render_hh_tex};
+use pgr::libs::plot::histogram::{
+    calc_density, calc_hist, compute_hh_axis, create_table, load_data, render_hh_tex,
+};
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {

@@ -102,13 +102,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 anyhow::anyhow!(".sizes file doesn't contain the needed chr: {}", axt.q_name)
             })?;
 
-            let (q_start, q_end) =
-                pgr::libs::fmt::axt::axt_query_to_forward_coords(
-                    axt.q_start,
-                    axt.q_end,
-                    axt.q_strand,
-                    q_len,
-                );
+            let (q_start, q_end) = pgr::libs::fmt::axt::axt_query_to_forward_coords(
+                axt.q_start,
+                axt.q_end,
+                axt.q_strand,
+                q_len,
+            );
 
             let mut q_range = Range::from(&axt.q_name, q_start, q_end);
             *q_range.name_mut() = qname.to_string();

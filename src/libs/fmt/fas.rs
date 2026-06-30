@@ -286,7 +286,10 @@ pub fn concat_blocks_into<R: io::BufRead>(
 /// Process fas blocks from reader, aggregating coverage into res_of.
 pub fn aggregate_coverage_into<R: io::BufRead>(
     reader: &mut R,
-    res_of: &mut std::collections::BTreeMap<String, std::collections::BTreeMap<String, intspan::IntSpan>>,
+    res_of: &mut std::collections::BTreeMap<
+        String,
+        std::collections::BTreeMap<String, intspan::IntSpan>,
+    >,
     name_filter: &str,
     trim: i32,
 ) -> anyhow::Result<()> {
