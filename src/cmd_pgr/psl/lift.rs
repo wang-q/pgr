@@ -52,14 +52,6 @@ Examples:
         )
 }
 
-fn parse_subrange(name: &str) -> Option<(String, u32, u32)> {
-    let rg = intspan::Range::from_str(name);
-    if rg.is_valid() {
-        return Some((rg.chr().to_string(), *rg.start() as u32, *rg.end() as u32));
-    }
-    None
-}
-
 // command implementation
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap())?;
@@ -91,95 +83,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             }
         };
 
-        // Try to lift query
         if let Some(sizes_map) = &q_sizes_map {
-            if let Some((name_part, start, end)) = parse_subrange(&psl.q_name) {
-                let start_0based = start.saturating_sub(1);
-                let end_0based = end;
-
-                // Check sizes
-                let real_size_opt = sizes_map.get(&name_part).copied();
-
-                // If sizes provided and match, proceed
-                if let Some(real_size_i32) = real_size_opt {
-                    let real_size = real_size_i32 as u32;
-                    if end_0based > real_size {
-                        log::warn!(
-                            "Subrange end {} > sequence size {} for {}. Skipping query lift.",
-                            end_0based,
-                            real_size,
-                            psl.q_name
-                        );
-                    } else {
-                        let is_neg = psl.strand.starts_with('-');
-
-                        psl.q_name = name_part;
-                        psl.q_size = real_size;
-
-                        let offset = if is_neg {
-                            real_size - end_0based
-                        } else {
-                            start_0based
-                        };
-
-                        psl.q_start = (psl.q_start as u32 + offset) as i32;
-                        psl.q_end = (psl.q_end as u32 + offset) as i32;
-                        for q_start in &mut psl.q_starts {
-                            *q_start += offset;
-                        }
-                    }
-                } else {
-                    log::warn!("No sizes provided for {}. Skipping query lift.", name_part);
-                }
-            }
+            psl.lift_query(sizes_map);
         }
 
-        // Try to lift target
         if let Some(sizes_map) = &t_sizes_map {
-            if let Some((name_part, start, end)) = parse_subrange(&psl.t_name) {
-                let start_0based = start.saturating_sub(1);
-                let end_0based = end;
-
-                // Check sizes
-                let real_size_opt = sizes_map.get(&name_part).copied();
-
-                // If sizes provided and match, proceed
-                if let Some(real_size_i32) = real_size_opt {
-                    let real_size = real_size_i32 as u32;
-                    if end_0based > real_size {
-                        log::warn!(
-                            "Subrange end {} > sequence size {} for {}. Skipping target lift.",
-                            end_0based,
-                            real_size,
-                            psl.t_name
-                        );
-                    } else {
-                        // For target, check strand if present
-                        let is_neg = if psl.strand.len() >= 2 {
-                            psl.strand.chars().nth(1).unwrap() == '-'
-                        } else {
-                            false
-                        };
-
-                        psl.t_name = name_part;
-                        psl.t_size = real_size;
-
-                        let offset = if is_neg {
-                            real_size - end_0based
-                        } else {
-                            start_0based
-                        };
-
-                        psl.t_start = (psl.t_start as u32 + offset) as i32;
-                        psl.t_end = (psl.t_end as u32 + offset) as i32;
-                        for t_start in &mut psl.t_starts {
-                            *t_start += offset;
-                        }
-                    }
-                } else {
-                    log::warn!("No sizes provided for {}. Skipping target lift.", name_part);
-                }
-            }
+            psl.lift_target(sizes_map);
         }
 
         psl.write_to(&mut writer)?;

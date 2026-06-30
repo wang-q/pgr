@@ -103,6 +103,13 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let is_both = args.get_flag("both");
     let is_insensitive = args.get_flag("case");
 
+    let opts = pgr::libs::fasta::dedup::DedupOptions {
+        is_seq,
+        is_desc,
+        is_both,
+        is_insensitive,
+    };
+
     let mut fa_out = pgr::libs::fmt::fa::writer(args.get_one::<String>("outfile").unwrap())?;
 
     //----------------------------
@@ -127,32 +134,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             let mut flag_pass = true;
 
             // name/desc/sequence to u64 signatures
-            let subject = if is_seq {
-                if is_both {
-                    let fwd = rapidhash::rapidhash(&seq[..].to_ascii_uppercase());
-                    let rc: noodles_fasta::record::Sequence =
-                        seq.complement().rev().collect::<Result<_, _>>()?;
-                    let rev = rapidhash::rapidhash(&rc[..].to_ascii_uppercase());
-                    fwd.min(rev)
-                } else if is_insensitive {
-                    rapidhash::rapidhash(&seq[..].to_ascii_uppercase())
-                } else {
-                    rapidhash::rapidhash(&seq[..])
-                }
-            } else if is_desc && desc.is_some() {
-                let full = [name, desc.unwrap()].concat();
-                if is_insensitive {
-                    rapidhash::rapidhash(&full.to_ascii_uppercase())
-                } else {
-                    rapidhash::rapidhash(&full)
-                }
-            } else {
-                if is_insensitive {
-                    rapidhash::rapidhash(&name.to_ascii_uppercase())
-                } else {
-                    rapidhash::rapidhash(name)
-                }
-            };
+            let subject = pgr::libs::fasta::dedup::record_signature(
+                name,
+                desc.map(|v| &**v),
+                seq.get(..).unwrap(),
+                &opts,
+            )?;
 
             if let std::collections::hash_map::Entry::Vacant(e) = subject_map.entry(subject) {
                 e.insert(vec![name_str]);

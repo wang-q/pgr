@@ -1,4 +1,11 @@
 //! FASTA helpers wrapping noodles_fasta with pgr I/O.
+//!
+//! Division of labor for FASTA-related code:
+//! * [`fmt::fa`] (this module) — sequential read/write of FASTA streams,
+//!   record construction, windowing.
+//! * [`libs::loc`] — random-access sequence extraction by genomic interval
+//!   (uses 2bit/BGZF FastaStore backends).
+//! * [`libs::fasta::stat`] — sequence statistics (N50, base counts, etc.).
 
 use crate::libs::io;
 use noodles_bgzf as bgzf;

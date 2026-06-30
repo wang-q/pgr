@@ -62,7 +62,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             let name = String::from_utf8(record.name().into())?;
             let seq = record.sequence();
 
-            let (len, base_cnt) = count_bases(seq.get(..).unwrap());
+            let (len, base_cnt) = pgr::libs::fasta::stat::count_bases(seq.get(..).unwrap());
 
             writer.write_fmt(format_args!(
                 "{}\t{}\t{}\t{}\t{}\t{}\t{}\n",
@@ -103,20 +103,4 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     ))?;
 
     Ok(())
-}
-
-// Count bases in a sequence
-fn count_bases(seq: &[u8]) -> (usize, [usize; 5]) {
-    let mut len = 0usize;
-    let mut base_cnt = [0usize; 5]; // A, C, G, T, N
-
-    for &el in seq {
-        let nt = pgr::libs::nt::to_nt(el);
-        if !matches!(nt, pgr::libs::nt::Nt::Invalid) {
-            len += 1;
-            base_cnt[nt as usize] += 1;
-        }
-    }
-
-    (len, base_cnt)
 }

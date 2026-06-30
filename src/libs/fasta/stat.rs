@@ -75,3 +75,22 @@ pub fn transpose<T>(v: Vec<Vec<T>>) -> Vec<Vec<T>> {
         })
         .collect()
 }
+
+/// Count bases in a sequence, returning `(valid_len, [A, C, G, T, N])`.
+///
+/// Non-standard characters (IUPAC codes, gaps) are excluded from `len` and
+/// not counted in any of the five canonical bins.
+pub fn count_bases(seq: &[u8]) -> (usize, [usize; 5]) {
+    let mut len = 0usize;
+    let mut base_cnt = [0usize; 5];
+
+    for &el in seq {
+        let nt = crate::libs::nt::to_nt(el);
+        if !matches!(nt, crate::libs::nt::Nt::Invalid) {
+            len += 1;
+            base_cnt[nt as usize] += 1;
+        }
+    }
+
+    (len, base_cnt)
+}

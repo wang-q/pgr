@@ -91,7 +91,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         let seq = record.sequence();
 
         // Perform six-frame translation
-        let translations = six_frame_translation(&seq[..]);
+        let translations = pgr::libs::nt::six_frame_translation(&seq[..]);
 
         // Iterate over each translation frame
         for (protein, frame, is_reverse) in translations {
@@ -144,25 +144,4 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     }
 
     Ok(())
-}
-
-fn six_frame_translation(dna: &[u8]) -> Vec<(String, usize, bool)> {
-    let mut translations = Vec::new();
-
-    // Translate the three forward frames
-    for frame in 0..3 {
-        let frame_dna = &dna[frame..];
-        let protein = pgr::libs::nt::translate(frame_dna);
-        translations.push((protein, frame, false)); // false indicates forward strand
-    }
-
-    // Translate the three forward frames
-    let dna_rc = pgr::libs::nt::rev_comp(dna).collect::<Vec<_>>();
-    for frame in 0..3 {
-        let frame_dna = &dna_rc[frame..];
-        let protein = pgr::libs::nt::translate(frame_dna);
-        translations.push((protein, frame, true)); // true indicates reverse strand
-    }
-
-    translations
 }

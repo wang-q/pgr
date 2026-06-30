@@ -1,5 +1,46 @@
 use indexmap::IndexMap;
 
+/// Load grouped numeric data from a TSV file.
+///
+/// Reads column `col` (1-based) as numeric values, optionally grouping by
+/// the column `group` (1-based). Returns `(data, xlabel, ylabel)` where
+/// `data` maps group name → vector of values, `xlabel` is the header of the
+/// value column, and `ylabel` is the header of the group column (empty if
+/// no grouping).
+pub fn load_data(
+    infile: &str,
+    col: usize,
+    group: Option<&usize>,
+) -> anyhow::Result<(IndexMap<String, Vec<f64>>, String, String)> {
+    let mut rdr = csv::ReaderBuilder::new()
+        .delimiter(b'\t')
+        .from_path(infile)?;
+
+    let headers = rdr.headers()?.clone();
+    let mut data: IndexMap<String, Vec<f64>> = IndexMap::new();
+
+    let xlabel = headers[col - 1].to_string();
+    let ylabel = match group {
+        Some(g) => headers[*g - 1].to_string(),
+        None => String::new(),
+    };
+
+    for result in rdr.records() {
+        let record = result?;
+
+        if let Ok(val) = record[col - 1].parse::<f64>() {
+            let group_name = match group {
+                Some(g) => record[*g - 1].to_string(),
+                None => "default".to_string(),
+            };
+
+            data.entry(group_name).or_default().push(val);
+        }
+    }
+
+    Ok((data, xlabel, ylabel))
+}
+
 /// Compute per-group histograms and bin edges from grouped values.
 #[allow(clippy::type_complexity)]
 pub fn calc_hist(

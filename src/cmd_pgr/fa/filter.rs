@@ -126,12 +126,15 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let opt_minsize = args
         .get_one::<usize>("minsize")
         .copied()
-        .unwrap_or(usize::MAX);
+        .unwrap_or(pgr::libs::fasta::filter::NO_LIMIT);
     let opt_maxsize = args
         .get_one::<usize>("maxsize")
         .copied()
-        .unwrap_or(usize::MAX);
-    let opt_maxn = args.get_one::<usize>("maxn").copied().unwrap_or(usize::MAX);
+        .unwrap_or(pgr::libs::fasta::filter::NO_LIMIT);
+    let opt_maxn = args
+        .get_one::<usize>("maxn")
+        .copied()
+        .unwrap_or(pgr::libs::fasta::filter::NO_LIMIT);
     let opt_line = args.get_one::<usize>("line").copied().unwrap_or(usize::MAX);
 
     let is_uniq = args.get_flag("uniq");
@@ -163,8 +166,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             let seq = record.sequence();
 
             // Apply filters
-            if !pass_filters(
-                seq,
+            if !pgr::libs::fasta::filter::pass_filters(
+                seq.get(..).unwrap(),
                 opt_minsize,
                 opt_maxsize,
                 opt_maxn,
@@ -176,25 +179,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             }
 
             // Apply formatters
-            let mut seq_out = String::new();
-            for nt in seq.get(..).unwrap().iter() {
-                if is_dash && *nt == b'-' {
-                    continue;
-                }
-                if is_iupac {
-                    if is_upper {
-                        seq_out.push(char::from(pgr::libs::nt::to_n(*nt)).to_ascii_uppercase());
-                    } else {
-                        seq_out.push(char::from(pgr::libs::nt::to_n(*nt)));
-                    }
-                } else {
-                    if is_upper {
-                        seq_out.push(char::from(*nt).to_ascii_uppercase());
-                    } else {
-                        seq_out.push(char::from(*nt));
-                    }
-                }
-            } // end of each nt
+            let seq_out = pgr::libs::fasta::filter::format_sequence(
+                seq.get(..).unwrap(),
+                is_dash,
+                is_iupac,
+                is_upper,
+            );
 
             let record_out = pgr::libs::fmt::fa::new_record(&name, seq_out.as_bytes());
             fa_out.write_record(&record_out)?;
@@ -202,30 +192,4 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     }
 
     Ok(())
-}
-
-// Check if a sequence passes all filters
-fn pass_filters(
-    seq: &noodles_fasta::record::Sequence,
-    minsize: usize,
-    maxsize: usize,
-    maxn: usize,
-    is_uniq: bool,
-    set_list: &mut BTreeSet<String>,
-    name: &str,
-) -> bool {
-    if minsize != usize::MAX && seq.len() < minsize {
-        return false;
-    }
-    if maxsize != usize::MAX && seq.len() > maxsize {
-        return false;
-    }
-    if maxn != usize::MAX && pgr::libs::nt::count_n(seq.get(..).unwrap()) > maxn {
-        return false;
-    }
-    // If the set did not previously contain an equal value, true is returned
-    if is_uniq && !set_list.insert(name.to_string()) {
-        return false;
-    }
-    true
 }

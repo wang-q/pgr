@@ -382,6 +382,32 @@ pub fn find_orfs(protein: &str) -> Vec<(String, usize, usize)> {
     orfs
 }
 
+/// Translate DNA in all six frames.
+///
+/// Returns `Vec<(protein, frame, is_reverse)>` where `frame` is the offset
+/// (0, 1, or 2) and `is_reverse` indicates whether the protein came from the
+/// reverse-complement strand. Frames 0-2 are forward, 3-5 are reverse.
+pub fn six_frame_translation(dna: &[u8]) -> Vec<(String, usize, bool)> {
+    let mut translations = Vec::new();
+
+    // Forward frames.
+    for frame in 0..3 {
+        let frame_dna = &dna[frame..];
+        let protein = translate(frame_dna);
+        translations.push((protein, frame, false));
+    }
+
+    // Reverse-complement frames.
+    let dna_rc = rev_comp(dna).collect::<Vec<_>>();
+    for frame in 0..3 {
+        let frame_dna = &dna_rc[frame..];
+        let protein = translate(frame_dna);
+        translations.push((protein, frame, true));
+    }
+
+    translations
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

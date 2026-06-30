@@ -1,5 +1,4 @@
 use clap::*;
-use std::io::Write;
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
@@ -72,229 +71,99 @@ Examples:
 
 // command implementation
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    //----------------------------
-    // Args
-    //----------------------------
     let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap())?;
 
     let is_out_fq = args.get_flag("fq");
     let opt_prefix = args.get_one::<String>("prefix").unwrap();
     let mut opt_start = *args.get_one::<usize>("start").unwrap();
 
-    let infiles = args
+    let infiles: Vec<&str> = args
         .get_many::<String>("infiles")
         .unwrap()
         .map(|s| s.as_str())
-        .collect::<Vec<_>>();
+        .collect();
     let is_in_fq = pgr::libs::io::is_fq(infiles[0])?;
 
-    //----------------------------
-    // Ops
-    //----------------------------
     if infiles.len() == 1 {
+        // single file: produce dummy R2 for each R1
         if is_in_fq {
             let reader = pgr::reader(infiles[0])?;
             let mut seq_in = noodles_fastq::io::Reader::new(reader);
             for result in seq_in.records() {
-                // obtain record or fail with error
                 let record = result?;
-
-                if is_out_fq {
-                    // Output FASTQ format
-                    // R1
-                    write_fq(
-                        &mut writer,
-                        &format!("{}{}/1", opt_prefix, opt_start),
-                        record.sequence(),
-                        record.quality_scores(),
-                    )?;
-
-                    // R2
-                    write_fq(
-                        &mut writer,
-                        &format!("{}{}/2", opt_prefix, opt_start),
-                        b"N",
-                        b"!",
-                    )?;
-                } else {
-                    // Output FASTA format
-                    // R1
-                    write_fa(
-                        &mut writer,
-                        &format!("{}{}/1", opt_prefix, opt_start),
-                        record.sequence(),
-                    )?;
-
-                    // R2
-                    write_fa(
-                        &mut writer,
-                        &format!("{}{}/2", opt_prefix, opt_start),
-                        b"\n",
-                    )?;
-                }
-
+                // Preserve original: dummy R2 seq is "\n" for FA output, "N" for FQ output
+                let r2_seq: &[u8] = if is_out_fq { b"N" } else { b"\n" };
+                pgr::libs::fmt::fq::write_pair(
+                    &mut writer,
+                    opt_prefix,
+                    opt_start,
+                    record.sequence(),
+                    Some(record.quality_scores()),
+                    r2_seq,
+                    Some(b"!"),
+                    is_out_fq,
+                )?;
                 opt_start += 1;
             }
         } else {
             let mut seq_in = pgr::libs::fmt::fa::reader(infiles[0])?;
             for result in seq_in.records() {
-                // obtain record or fail with error
                 let record = result?;
-
-                if is_out_fq {
-                    // Output FASTQ format
-                    // R1
-                    write_fq(
-                        &mut writer,
-                        &format!("{}{}/1", opt_prefix, opt_start),
-                        &record.sequence()[..],
-                        &vec![b'!'; record.sequence().len()],
-                    )?;
-
-                    // R2
-                    write_fq(
-                        &mut writer,
-                        &format!("{}{}/2", opt_prefix, opt_start),
-                        b"N",
-                        b"!",
-                    )?;
-                } else {
-                    // Output FASTA format
-                    // R1
-                    write_fa(
-                        &mut writer,
-                        &format!("{}{}/1", opt_prefix, opt_start),
-                        &record.sequence()[..],
-                    )?;
-
-                    // R2
-                    write_fa(&mut writer, &format!("{}{}/2", opt_prefix, opt_start), b"N")?;
-                }
-
+                pgr::libs::fmt::fq::write_pair(
+                    &mut writer,
+                    opt_prefix,
+                    opt_start,
+                    &record.sequence()[..],
+                    None,
+                    b"N",
+                    None,
+                    is_out_fq,
+                )?;
                 opt_start += 1;
             }
         }
     } else {
+        // two files: zip R1 and R2 records
         if is_in_fq {
-            let reader = pgr::reader(infiles[0])?;
-            let mut seq1_in = noodles_fastq::io::Reader::new(reader);
-            let reader = pgr::reader(infiles[1])?;
-            let mut seq2_in = noodles_fastq::io::Reader::new(reader);
-
-            let zipped = std::iter::zip(seq1_in.records(), seq2_in.records());
-
-            for (result1, result2) in zipped {
-                // obtain record or fail with error
-                let record1 = result1?;
-                let record2 = result2?;
-
-                if is_out_fq {
-                    // Output FASTQ format
-                    // R1
-                    write_fq(
-                        &mut writer,
-                        &format!("{}{}/1", opt_prefix, opt_start),
-                        record1.sequence(),
-                        record1.quality_scores(),
-                    )?;
-
-                    // R2
-                    write_fq(
-                        &mut writer,
-                        &format!("{}{}/2", opt_prefix, opt_start),
-                        record2.sequence(),
-                        record2.quality_scores(),
-                    )?;
-                } else {
-                    // Output FASTA format
-                    // R1
-                    write_fa(
-                        &mut writer,
-                        &format!("{}{}/1", opt_prefix, opt_start),
-                        record1.sequence(),
-                    )?;
-
-                    // R2
-                    write_fa(
-                        &mut writer,
-                        &format!("{}{}/2", opt_prefix, opt_start),
-                        record2.sequence(),
-                    )?;
-                }
-
+            let reader1 = pgr::reader(infiles[0])?;
+            let mut seq1_in = noodles_fastq::io::Reader::new(reader1);
+            let reader2 = pgr::reader(infiles[1])?;
+            let mut seq2_in = noodles_fastq::io::Reader::new(reader2);
+            for (r1, r2) in std::iter::zip(seq1_in.records(), seq2_in.records()) {
+                let record1 = r1?;
+                let record2 = r2?;
+                pgr::libs::fmt::fq::write_pair(
+                    &mut writer,
+                    opt_prefix,
+                    opt_start,
+                    record1.sequence(),
+                    Some(record1.quality_scores()),
+                    record2.sequence(),
+                    Some(record2.quality_scores()),
+                    is_out_fq,
+                )?;
                 opt_start += 1;
             }
         } else {
             let mut seq1_in = pgr::libs::fmt::fa::reader(infiles[0])?;
             let mut seq2_in = pgr::libs::fmt::fa::reader(infiles[1])?;
-
-            let zipped = std::iter::zip(seq1_in.records(), seq2_in.records());
-
-            for (result1, result2) in zipped {
-                // obtain record or fail with error
-                let record1 = result1?;
-                let record2 = result2?;
-
-                if is_out_fq {
-                    // Output FASTQ format
-                    // R1
-                    write_fq(
-                        &mut writer,
-                        &format!("{}{}/1", opt_prefix, opt_start),
-                        &record1.sequence()[..],
-                        &vec![b'!'; record1.sequence().len()],
-                    )?;
-
-                    // R2
-                    write_fq(
-                        &mut writer,
-                        &format!("{}{}/2", opt_prefix, opt_start),
-                        &record2.sequence()[..],
-                        &vec![b'!'; record2.sequence().len()],
-                    )?;
-                } else {
-                    // Output FASTA format
-                    // R1
-                    write_fa(
-                        &mut writer,
-                        &format!("{}{}/1", opt_prefix, opt_start),
-                        &record1.sequence()[..],
-                    )?;
-
-                    // R2
-                    write_fa(
-                        &mut writer,
-                        &format!("{}{}/2", opt_prefix, opt_start),
-                        &record2.sequence()[..],
-                    )?;
-                }
-
+            for (r1, r2) in std::iter::zip(seq1_in.records(), seq2_in.records()) {
+                let record1 = r1?;
+                let record2 = r2?;
+                pgr::libs::fmt::fq::write_pair(
+                    &mut writer,
+                    opt_prefix,
+                    opt_start,
+                    &record1.sequence()[..],
+                    None,
+                    &record2.sequence()[..],
+                    None,
+                    is_out_fq,
+                )?;
                 opt_start += 1;
             }
         }
     }
 
-    Ok(())
-}
-
-fn write_fq(
-    writer: &mut Box<dyn Write>,
-    seq_name: &str,
-    seq: &[u8],
-    qual: &[u8],
-) -> Result<(), Error> {
-    writer.write_fmt(format_args!("@{}\n", seq_name))?;
-    writer.write_all(seq)?;
-    writer.write_all(b"\n")?;
-    writer.write_all(b"+\n")?;
-    writer.write_all(qual)?;
-    writer.write_all(b"\n")?;
-    Ok(())
-}
-
-fn write_fa(writer: &mut Box<dyn Write>, seq_name: &str, seq: &[u8]) -> Result<(), Error> {
-    writer.write_fmt(format_args!(">{}\n", seq_name))?;
-    writer.write_all(seq)?;
-    writer.write_all(b"\n")?;
     Ok(())
 }

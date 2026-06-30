@@ -1,7 +1,6 @@
 use crate::cmd_pgr::plot::common::{context_get_str, render_and_write, replace_section};
 use clap::*;
-use indexmap::IndexMap;
-use pgr::libs::plot::histogram::{calc_density, calc_hist, create_table};
+use pgr::libs::plot::histogram::{calc_density, calc_hist, create_table, load_data};
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
@@ -188,43 +187,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     gen_hh(&context)?;
 
     Ok(())
-}
-
-fn load_data(
-    infile: &str,
-    col: usize,
-    group: Option<&usize>,
-) -> anyhow::Result<(IndexMap<String, Vec<f64>>, String, String)> {
-    let mut rdr = csv::ReaderBuilder::new()
-        .delimiter(b'\t')
-        .from_path(infile)?;
-
-    let headers = rdr.headers()?.clone();
-    let mut data: IndexMap<String, Vec<f64>> = IndexMap::new();
-
-    // Get column headers
-    let xlabel = headers[col - 1].to_string();
-    let ylabel = match group {
-        Some(g) => headers[*g - 1].to_string(),
-        None => String::new(),
-    };
-
-    for result in rdr.records() {
-        let record = result?;
-
-        if let Ok(val) = record[col - 1].parse::<f64>() {
-            // Get group name, use "default" if group column not specified
-            let group_name = match group {
-                Some(g) => record[*g - 1].to_string(),
-                None => "default".to_string(),
-            };
-
-            // Add value to corresponding group
-            data.entry(group_name).or_default().push(val);
-        }
-    }
-
-    Ok((data, xlabel, ylabel))
 }
 
 fn gen_hh(context: &tera::Context) -> anyhow::Result<()> {

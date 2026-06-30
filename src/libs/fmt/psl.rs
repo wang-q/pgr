@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fmt;
 use std::io;
 
@@ -657,6 +658,106 @@ pub fn iter_psl<R: io::BufRead>(reader: R) -> impl Iterator<Item = anyhow::Resul
         }
         Err(err) => Some(Err(anyhow::anyhow!("read error: {}", err))),
     })
+}
+
+/// Parse a `chr:start-end` subrange name (1-based, inclusive) into
+/// `(chr, start, end)` with `start`/`end` as u32. Returns `None` if `name`
+/// is not a valid range.
+pub fn parse_subrange(name: &str) -> Option<(String, u32, u32)> {
+    let rg = intspan::Range::from_str(name);
+    if rg.is_valid() {
+        return Some((rg.chr().to_string(), *rg.start() as u32, *rg.end() as u32));
+    }
+    None
+}
+
+impl Psl {
+    /// Lift query coordinates from a fragment subrange to genomic coordinates.
+    ///
+    /// `sizes` maps chromosome name → real sequence size. Returns `true` if
+    /// the query was lifted, `false` if skipped (no subrange, missing size,
+    /// or subrange exceeds real size).
+    pub fn lift_query(&mut self, sizes: &BTreeMap<String, i32>) -> bool {
+        let (name_part, start, end) = match parse_subrange(&self.q_name) {
+            Some(v) => v,
+            None => return false,
+        };
+        let start_0 = start.saturating_sub(1);
+        let end_0 = end;
+
+        let real_size_i32 = match sizes.get(&name_part).copied() {
+            Some(v) => v,
+            None => {
+                log::warn!("No sizes provided for {name_part}. Skipping query lift.");
+                return false;
+            }
+        };
+        let real_size = real_size_i32 as u32;
+
+        if end_0 > real_size {
+            log::warn!(
+                "Subrange end {end_0} > sequence size {real_size} for {}. Skipping query lift.",
+                self.q_name
+            );
+            return false;
+        }
+
+        let is_neg = self.strand.starts_with('-');
+        self.q_name = name_part;
+        self.q_size = real_size;
+        let offset = if is_neg { real_size - end_0 } else { start_0 };
+        self.q_start = (self.q_start as u32 + offset) as i32;
+        self.q_end = (self.q_end as u32 + offset) as i32;
+        for q_start in &mut self.q_starts {
+            *q_start += offset;
+        }
+        true
+    }
+
+    /// Lift target coordinates from a fragment subrange to genomic coordinates.
+    ///
+    /// `sizes` maps chromosome name → real sequence size. Returns `true` if
+    /// the target was lifted, `false` if skipped.
+    pub fn lift_target(&mut self, sizes: &BTreeMap<String, i32>) -> bool {
+        let (name_part, start, end) = match parse_subrange(&self.t_name) {
+            Some(v) => v,
+            None => return false,
+        };
+        let start_0 = start.saturating_sub(1);
+        let end_0 = end;
+
+        let real_size_i32 = match sizes.get(&name_part).copied() {
+            Some(v) => v,
+            None => {
+                log::warn!("No sizes provided for {name_part}. Skipping target lift.");
+                return false;
+            }
+        };
+        let real_size = real_size_i32 as u32;
+
+        if end_0 > real_size {
+            log::warn!(
+                "Subrange end {end_0} > sequence size {real_size} for {}. Skipping target lift.",
+                self.t_name
+            );
+            return false;
+        }
+
+        let is_neg = if self.strand.len() >= 2 {
+            self.strand.chars().nth(1).unwrap() == '-'
+        } else {
+            false
+        };
+        self.t_name = name_part;
+        self.t_size = real_size;
+        let offset = if is_neg { real_size - end_0 } else { start_0 };
+        self.t_start = (self.t_start as u32 + offset) as i32;
+        self.t_end = (self.t_end as u32 + offset) as i32;
+        for t_start in &mut self.t_starts {
+            *t_start += offset;
+        }
+        true
+    }
 }
 
 #[cfg(test)]

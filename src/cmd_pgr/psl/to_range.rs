@@ -1,5 +1,5 @@
 use clap::*;
-use pgr::libs::alignment::coords::reverse_range_1based_pair;
+use pgr::libs::alignment::reverse_range_1based_pair;
 use pgr::libs::fmt::psl::Psl;
 use std::io::{BufRead, Write};
 use std::str::FromStr;
