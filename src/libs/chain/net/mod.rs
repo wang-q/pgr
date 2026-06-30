@@ -10,7 +10,7 @@
 //! * [`reader`] — UCSC Net text format reader.
 //! * [`writer`] — UCSC Net text format writer (filtered, with subchain scoring).
 //! * [`finalize`] — sort + recompute o_start/o_end from chain data.
-//! * [`syntenic`] — DupeTree for query-side duplication depth classification.
+//! * [`syntenic`] — DupeTree + `classify_syntenic` for query-side duplication depth classification.
 
 pub mod builder;
 pub mod class;
@@ -27,7 +27,7 @@ pub use class::{collect_stats_fill, collect_stats_gap, Stats};
 pub use filter::{filter_chrom, prune_gap, FilterCriteria};
 pub use finalize::finalize_net;
 pub use reader::read_nets;
-pub use syntenic::DupeTree;
+pub use syntenic::{classify_syntenic, DupeTree};
 pub use to_axt::net_to_axt;
 pub use types::{Chrom, Fill, Gap, NetNode, Space};
 pub use writer::{range_intersection, write_net};

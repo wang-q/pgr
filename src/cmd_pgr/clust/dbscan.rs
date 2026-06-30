@@ -103,49 +103,14 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     dbscan.perform_clustering(&matrix);
     let mut clusters = dbscan.results_cluster();
 
-    // Sort members within each cluster
-    for c in &mut clusters {
-        c.sort_by_key(|&idx| &names[idx]);
-    }
-
-    // Sort clusters: first by first member name, then by size (descending)
-    clusters.sort_by(|a, b| {
-        let name_a = &names[a[0]];
-        let name_b = &names[b[0]];
-        match b.len().cmp(&a.len()) {
-            std::cmp::Ordering::Equal => name_a.cmp(name_b),
-            other => other,
-        }
-    });
-
     //----------------------------
     // 4. Output
     //----------------------------
-    match opt_format.as_str() {
-        "cluster" => {
-            for c in clusters {
-                writer.write_fmt(format_args!(
-                    "{}\n",
-                    c.iter()
-                        .map(|&num| names[num].clone())
-                        .collect::<Vec<_>>()
-                        .join("\t")
-                ))?;
-            }
-        }
-        "pair" => {
-            for component in clusters {
-                // Find medoid (min distance sum; component is sorted by name)
-                let best_rep =
-                    pgr::libs::clust::medoid::find_medoid(&matrix, &component, false).unwrap();
-                let rep_name = &names[best_rep];
-                for &member_idx in &component {
-                    writer.write_fmt(format_args!("{}\t{}\n", rep_name, names[member_idx]))?;
-                }
-            }
-        }
-        _ => anyhow::bail!("unknown output format: {}", opt_format),
-    }
+    let out =
+        pgr::libs::clust::format::format_flat_clusters(&mut clusters, &names, opt_format, |c| {
+            pgr::libs::clust::medoid::find_medoid(&matrix, c, false)
+        })?;
+    writer.write_all(out.as_bytes())?;
 
     Ok(())
 }

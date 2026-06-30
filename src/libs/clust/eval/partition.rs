@@ -160,3 +160,12 @@ pub fn load_batch_partitions<P: AsRef<Path>>(path: P) -> anyhow::Result<Vec<(Str
     let result = groups.into_iter().zip(partitions).collect();
     Ok(result)
 }
+
+/// Remove singleton clusters (clusters with only one member) from a partition.
+pub fn remove_singletons(partition: &mut LabelMap) {
+    let mut counts = HashMap::new();
+    for cid in partition.values() {
+        *counts.entry(*cid).or_insert(0) += 1;
+    }
+    partition.retain(|_, cid| counts[cid] > 1);
+}

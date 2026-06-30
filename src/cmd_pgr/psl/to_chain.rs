@@ -13,20 +13,8 @@ Examples:
   pgr psl to-chain in.psl -o out.chain
 "###,
         )
-        .arg(
-            Arg::new("input")
-                .help("Input PSL file")
-                .default_value("stdin")
-                .index(1),
-        )
-        .arg(
-            Arg::new("output")
-                .short('o')
-                .long("output")
-                .value_name("FILE")
-                .help("Output Chain file")
-                .default_value("stdout"),
-        )
+        .arg(crate::cmd_pgr::args::infile_arg().help("Input PSL file"))
+        .arg(crate::cmd_pgr::args::outfile_arg())
         .arg(
             Arg::new("fix_strand")
                 .long("fix-strand")
@@ -37,8 +25,8 @@ Examples:
 }
 
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let input = args.get_one::<String>("input").unwrap();
-    let output = args.get_one::<String>("output").unwrap();
+    let input = crate::cmd_pgr::args::get_infile(args);
+    let output = crate::cmd_pgr::args::get_outfile(args);
     let fix_strand = args.get_flag("fix_strand");
 
     let reader = pgr::reader(input)?;

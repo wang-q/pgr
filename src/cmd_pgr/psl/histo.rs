@@ -1,8 +1,6 @@
 use clap::*;
 use pgr::libs::fmt::psl::Psl;
 use std::collections::HashMap;
-use std::io::BufRead;
-use std::str::FromStr;
 
 pub fn make_subcommand() -> Command {
     Command::new("histo")
@@ -32,20 +30,8 @@ Examples:
                 .value_parser(["alignsPerQuery", "coverSpread", "idSpread"])
                 .help("What data to collect"),
         )
-        .arg(
-            Arg::new("input")
-                .index(1)
-                .help("Input PSL file")
-                .default_value("stdin"),
-        )
-        .arg(
-            Arg::new("output")
-                .short('o')
-                .long("output")
-                .value_name("FILE")
-                .help("Output histogram file")
-                .default_value("stdout"),
-        )
+        .arg(crate::cmd_pgr::args::infile_arg().help("Input PSL file"))
+        .arg(crate::cmd_pgr::args::outfile_arg())
         .arg(
             Arg::new("multi_only")
                 .long("multi-only")
@@ -64,8 +50,8 @@ Examples:
 
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let what = args.get_one::<String>("what").unwrap();
-    let input = args.get_one::<String>("input").unwrap();
-    let output = args.get_one::<String>("output").unwrap();
+    let input = crate::cmd_pgr::args::get_infile(args);
+    let output = crate::cmd_pgr::args::get_outfile(args);
     let multi_only = args.get_flag("multi_only");
     let non_zero = args.get_flag("non_zero");
 
@@ -75,21 +61,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // Read all PSLs and group by query
     let mut query_map: HashMap<String, Vec<Psl>> = HashMap::new();
 
-    for line in reader.lines() {
-        let line = line?;
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-
-        // Skip header lines often found in PSL files
-        // psLayout version 3
-        // match ...
-        // ---------------- ...
-        if line.starts_with("psLayout") || line.starts_with("match") || line.starts_with("------") {
-            continue;
-        }
-
-        let psl = Psl::from_str(&line)?;
+    for psl in pgr::libs::fmt::psl::iter_psl(reader) {
+        let psl = psl?;
         query_map.entry(psl.q_name.clone()).or_default().push(psl);
     }
 

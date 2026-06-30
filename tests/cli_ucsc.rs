@@ -44,7 +44,7 @@ fn test_lav_to_psl_lastz() {
             "lav",
             "to-psl",
             input.to_str().unwrap(),
-            "--output",
+            "--outfile",
             output.to_str().unwrap(),
         ])
         .run();

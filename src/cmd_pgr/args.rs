@@ -24,6 +24,15 @@ pub fn outdir_arg() -> Arg {
         .help("Output directory. [stdout] for screen")
 }
 
+/// Standard positional `infile` argument defaulting to stdin.
+pub fn infile_arg() -> Arg {
+    Arg::new("infile")
+        .num_args(1)
+        .index(1)
+        .default_value("stdin")
+        .help("Input filename. [stdin] for standard input")
+}
+
 /// Standard `-r/--rgfile` argument (file of regions, one per line).
 pub fn rgfile_arg() -> Arg {
     Arg::new("rgfile")
@@ -42,6 +51,16 @@ pub fn parallel_arg() -> Arg {
         .default_value("1")
         .value_parser(clap::value_parser!(usize))
         .help("Number of threads for parallel processing")
+}
+
+/// Extract the `outfile` value from `args` as `&str`.
+pub fn get_outfile(args: &ArgMatches) -> &str {
+    args.get_one::<String>("outfile").unwrap()
+}
+
+/// Extract the `infile` value from `args` as `&str`.
+pub fn get_infile(args: &ArgMatches) -> &str {
+    args.get_one::<String>("infile").unwrap()
 }
 
 /// Collect region strings from `ranges` (positional, optional) and `rgfile`

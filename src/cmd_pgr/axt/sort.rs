@@ -20,21 +20,8 @@ Examples:
   pgr axt sort in.axt --by-score -o out.axt
 "###,
         )
-        .arg(
-            Arg::new("input")
-                .index(1)
-                .default_value("stdin")
-                .help("Input AXT file"),
-        )
-        .arg(
-            Arg::new("output")
-                .short('o')
-                .long("output")
-                .help("Output AXT file")
-                .num_args(1)
-                .value_name("FILE")
-                .default_value("stdout"),
-        )
+        .arg(crate::cmd_pgr::args::infile_arg().help("Input AXT file"))
+        .arg(crate::cmd_pgr::args::outfile_arg())
         .arg(
             Arg::new("query")
                 .long("query")
@@ -57,8 +44,8 @@ Examples:
 }
 
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let input = args.get_one::<String>("input").unwrap();
-    let output = args.get_one::<String>("output").unwrap();
+    let input = crate::cmd_pgr::args::get_infile(args);
+    let output = crate::cmd_pgr::args::get_outfile(args);
     let by_query = args.get_flag("query");
     let by_score = args.get_flag("by-score");
     let renumber = args.get_flag("renumber");

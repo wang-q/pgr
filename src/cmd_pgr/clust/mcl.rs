@@ -116,47 +116,14 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     mcl.set_max_iter(max_iter);
     let mut clusters = mcl.perform_clustering(&sm);
 
-    // Sort members within each cluster to ensure deterministic representative selection (by name)
-    for c in &mut clusters {
-        c.sort_by_key(|&idx| &names[idx]);
-    }
-
-    // Sort clusters: first by size (descending), then by first member name
-    clusters.sort_by(|a, b| {
-        let name_a = &names[a[0]];
-        let name_b = &names[b[0]];
-        match b.len().cmp(&a.len()) {
-            std::cmp::Ordering::Equal => name_a.cmp(name_b),
-            other => other,
-        }
-    });
-
     //----------------------------
     // 4. Output
     //----------------------------
-    match opt_format.as_str() {
-        "cluster" => {
-            for component in clusters {
-                let members: Vec<&str> = component.iter().map(|&idx| names[idx].as_str()).collect();
-
-                writer.write_fmt(format_args!("{}\n", members.join("\t")))?;
-            }
-        }
-        "pair" => {
-            for component in clusters {
-                // Find medoid (max similarity sum; component is sorted by name)
-                let best_rep =
-                    pgr::libs::clust::medoid::find_medoid(&sm, &component, true).unwrap();
-                let rep_name = &names[best_rep];
-                let members: Vec<&str> = component.iter().map(|&idx| names[idx].as_str()).collect();
-
-                for member in members {
-                    writer.write_fmt(format_args!("{}\t{}\n", rep_name, member))?;
-                }
-            }
-        }
-        _ => anyhow::bail!("unknown output format: {}", opt_format),
-    }
+    let out =
+        pgr::libs::clust::format::format_flat_clusters(&mut clusters, &names, opt_format, |c| {
+            pgr::libs::clust::medoid::find_medoid(&sm, c, true)
+        })?;
+    writer.write_all(out.as_bytes())?;
 
     Ok(())
 }

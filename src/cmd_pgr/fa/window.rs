@@ -156,25 +156,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         let record = result?;
         let name = String::from_utf8(record.name().into())?;
         let seq = record.sequence();
-        let seq_len = seq.len();
 
-        for start in (0..seq_len).step_by(step) {
-            let end = std::cmp::min(start + len, seq_len);
-            if start >= end {
-                continue;
-            }
-
-            let start_pos = noodles_core::Position::new(start + 1).unwrap();
-            let end_pos = noodles_core::Position::new(end).unwrap();
-            let slice = seq.slice(start_pos..=end_pos).unwrap();
-
-            if slice.as_ref().iter().all(|&b| pgr::libs::nt::is_n(b)) {
-                continue;
-            }
-
-            let new_name = format!("{}:{}-{}", name, start + 1, end);
-            let definition = noodles_fasta::record::Definition::new(new_name, None);
-            let new_record = noodles_fasta::Record::new(definition, slice);
+        for (new_name, window) in pgr::libs::fmt::fa::windows(&name, seq.as_ref(), len, step) {
+            let new_record = pgr::libs::fmt::fa::new_record(&new_name, &window);
 
             if shuffle {
                 records_buffer.push(new_record);

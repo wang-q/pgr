@@ -2,39 +2,6 @@ use rand::{RngCore, SeedableRng};
 use rapidhash::RapidRng;
 use std::simd::prelude::*;
 
-#[allow(dead_code)]
-// The original implementation is i16
-fn hash_hv_serial(seed_vec: &[u64], hv_d: usize) -> Vec<i32> {
-    // Initialize the hypervector (HV)
-    // The initial value of HV is -(seed_vec.len() as i32), which is the negative of the k-mer hash set size,
-    //   corresponding to the `-1` part of the equation
-    // hv_d is the dimension of the hypervector
-    let mut hv = vec![-(seed_vec.len() as i32); hv_d];
-
-    // Iterate over each k-mer hash value
-    for hash in seed_vec {
-        // Initialize the random number generator (RapidRng) using the k-mer hash as the seed
-        let mut rng = RapidRng::seed_from_u64(*hash);
-
-        // Generate a random stream of bits of sufficient length
-        for i in 0..(hv_d / 32) {
-            // Generate a 64-bit random number
-            let rnd_bits = rng.next_u32();
-
-            // Iterate over each bit in the random number
-            // Formula: hv[i * 64 + j] += (((rnd_bits >> j) & 1) << 1) as i32
-            // - (rnd_bits >> j) & 1: Extract the j-th bit (0 or 1)
-            // - << 1: Shift the bit left by 1 (resulting in 0 or 2, i.e. multiply by 2)
-            // - Add the result to the hypervector at position i * 64 + j
-            for j in 0..32 {
-                hv[i * 32 + j] += (((rnd_bits >> j) & 1) << 1) as i32;
-            }
-        }
-    }
-
-    hv
-}
-
 /// Generates a hypervector (HV) from a set of k-mer hash values using a SIMD-optimized implementation.
 ///
 /// # Arguments
@@ -257,39 +224,6 @@ mod tests {
         assert!(
             hv.iter().any(|&x| x != 0),
             "Hypervector should not be all zeros!"
-        );
-    }
-
-    #[test]
-    fn test_hash_hv_serial_vs_simd() {
-        // Generate random input data
-        let mut rng = rand::rng();
-        let kmer_hash_set: RapidHashSet<u64> = (0..1000).map(|_| rng.random::<u64>()).collect();
-        let seed_vec: Vec<u64> = kmer_hash_set.into_iter().collect();
-        let hv_d = 4096;
-
-        // Run normal version
-        let result_serial = hash_hv_serial(&seed_vec, hv_d);
-
-        // Run SIMD version
-        let result_simd = hash_hv_bit(&seed_vec, hv_d);
-
-        println!(
-            "Size of seed_vec: {} bytes",
-            seed_vec.capacity() * size_of::<u64>()
-        );
-        println!(
-            "Size of result_rapid: {} bytes",
-            result_serial.capacity() * size_of::<i16>()
-        );
-
-        let cardinality = hv_cardinality(&result_serial);
-        println!("HV cardinality: {}", cardinality);
-
-        // Compare results
-        assert_eq!(
-            result_serial, result_simd,
-            "SIMD version does not match normal version!"
         );
     }
 

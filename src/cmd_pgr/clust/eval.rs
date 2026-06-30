@@ -1,9 +1,13 @@
 use clap::{Arg, ArgMatches, Command};
+use pgr::libs::clust::eval::format::{
+    external_metric_values, format_metrics_row, COORD_METRIC_NAMES, DISTANCE_METRIC_NAMES,
+    EXTERNAL_METRIC_NAMES,
+};
 use pgr::libs::clust::eval::{
     ball_hall_score, c_index_score, calinski_harabasz_score, davies_bouldin_score, dunn_score,
-    evaluate, gamma_score, load_batch_partitions, load_partition, pbm_score, silhouette_score,
-    tau_score, wemmert_gancarski_score, xie_beni_score, Coordinates, DistanceMatrix, LabelMap,
-    PartitionFormat, TreeDistance,
+    evaluate, gamma_score, load_batch_partitions, load_partition, pbm_score, remove_singletons,
+    silhouette_score, tau_score, wemmert_gancarski_score, xie_beni_score, Coordinates,
+    DistanceMatrix, PartitionFormat, TreeDistance,
 };
 use pgr::libs::pairmat::NamedMatrix;
 use pgr::libs::phylo::tree::Tree;
@@ -142,35 +146,13 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
         // Write Header
         let mut header = vec!["Group"];
         if p2.is_some() {
-            header.extend_from_slice(&[
-                "ari",
-                "ami",
-                "homogeneity",
-                "completeness",
-                "v_measure",
-                "fmi",
-                "nmi",
-                "mi",
-                "ri",
-                "jaccard",
-                "precision",
-                "recall",
-            ]);
+            header.extend_from_slice(EXTERNAL_METRIC_NAMES);
         }
         if dist_provider.is_some() {
-            header.push("silhouette");
-            header.push("dunn");
-            header.push("c_index");
-            header.push("gamma");
-            header.push("tau");
+            header.extend_from_slice(DISTANCE_METRIC_NAMES);
         }
         if coords.is_some() {
-            header.push("davies_bouldin");
-            header.push("calinski_harabasz");
-            header.push("pbm");
-            header.push("ball_hall");
-            header.push("xie_beni");
-            header.push("wemmert_gancarski");
+            header.extend_from_slice(COORD_METRIC_NAMES);
         }
         writeln!(writer, "{}", header.join("\t"))?;
 
@@ -180,46 +162,30 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
 
             if let Some(ref truth) = p2 {
                 let metrics = evaluate(&p1, truth);
-                row.push(format!("{:.6}", metrics.ari));
-                row.push(format!("{:.6}", metrics.ami));
-                row.push(format!("{:.6}", metrics.homogeneity));
-                row.push(format!("{:.6}", metrics.completeness));
-                row.push(format!("{:.6}", metrics.v_measure));
-                row.push(format!("{:.6}", metrics.fmi));
-                row.push(format!("{:.6}", metrics.nmi));
-                row.push(format!("{:.6}", metrics.mi));
-                row.push(format!("{:.6}", metrics.ri));
-                row.push(format!("{:.6}", metrics.jaccard));
-                row.push(format!("{:.6}", metrics.precision));
-                row.push(format!("{:.6}", metrics.recall));
+                row.push(format_metrics_row(&external_metric_values(&metrics)));
             }
 
             if let Some(ref d) = dist_provider {
-                let s_score = silhouette_score(&p1, d.as_ref());
-                let d_score = dunn_score(&p1, d.as_ref());
-                let c_score = c_index_score(&p1, d.as_ref());
-                let g_score = gamma_score(&p1, d.as_ref());
-                let t_score = tau_score(&p1, d.as_ref());
-                row.push(format!("{:.6}", s_score));
-                row.push(format!("{:.6}", d_score));
-                row.push(format!("{:.6}", c_score));
-                row.push(format!("{:.6}", g_score));
-                row.push(format!("{:.6}", t_score));
+                let values = vec![
+                    silhouette_score(&p1, d.as_ref()),
+                    dunn_score(&p1, d.as_ref()),
+                    c_index_score(&p1, d.as_ref()),
+                    gamma_score(&p1, d.as_ref()),
+                    tau_score(&p1, d.as_ref()),
+                ];
+                row.push(format_metrics_row(&values));
             }
 
             if let Some(ref c) = coords {
-                let db_score = davies_bouldin_score(&p1, c);
-                let ch_score = calinski_harabasz_score(&p1, c);
-                let pbm = pbm_score(&p1, c);
-                let bh = ball_hall_score(&p1, c);
-                let xb = xie_beni_score(&p1, c);
-                let wg = wemmert_gancarski_score(&p1, c);
-                row.push(format!("{:.6}", db_score));
-                row.push(format!("{:.6}", ch_score));
-                row.push(format!("{:.6}", pbm));
-                row.push(format!("{:.6}", bh));
-                row.push(format!("{:.6}", xb));
-                row.push(format!("{:.6}", wg));
+                let values = vec![
+                    davies_bouldin_score(&p1, c),
+                    calinski_harabasz_score(&p1, c),
+                    pbm_score(&p1, c),
+                    ball_hall_score(&p1, c),
+                    xie_beni_score(&p1, c),
+                    wemmert_gancarski_score(&p1, c),
+                ];
+                row.push(format_metrics_row(&values));
             }
 
             writeln!(writer, "{}", row.join("\t"))?;
@@ -238,76 +204,53 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
         }
         let metrics = evaluate(&p1, &p2);
 
+        writeln!(writer, "{}", EXTERNAL_METRIC_NAMES.join("\t"))?;
         writeln!(
             writer,
-            "ari\tami\thomogeneity\tcompleteness\tv_measure\tfmi\tnmi\tmi\tri\tjaccard\tprecision\trecall"
-        )?;
-        writeln!(
-            writer,
-            "{:.6}\t{:.6}\t{:.6}\t{:.6}\t{:.6}\t{:.6}\t{:.6}\t{:.6}\t{:.6}\t{:.6}\t{:.6}\t{:.6}",
-            metrics.ari,
-            metrics.ami,
-            metrics.homogeneity,
-            metrics.completeness,
-            metrics.v_measure,
-            metrics.fmi,
-            metrics.nmi,
-            metrics.mi,
-            metrics.ri,
-            metrics.jaccard,
-            metrics.precision,
-            metrics.recall
+            "{}",
+            format_metrics_row(&external_metric_values(&metrics))
         )?;
     } else if let Some(matrix_path) = matches.get_one::<String>("matrix") {
         let matrix = NamedMatrix::from_relaxed_phylip(matrix_path)?;
-        let s_score = silhouette_score(&p1, &matrix);
-        let d_score = dunn_score(&p1, &matrix);
-        let c_score = c_index_score(&p1, &matrix);
-        let g_score = gamma_score(&p1, &matrix);
-        let t_score = tau_score(&p1, &matrix);
+        let values = vec![
+            silhouette_score(&p1, &matrix),
+            dunn_score(&p1, &matrix),
+            c_index_score(&p1, &matrix),
+            gamma_score(&p1, &matrix),
+            tau_score(&p1, &matrix),
+        ];
 
-        writeln!(writer, "silhouette\tdunn\tc_index\tgamma\ttau")?;
-        writeln!(
-            writer,
-            "{:.6}\t{:.6}\t{:.6}\t{:.6}\t{:.6}",
-            s_score, d_score, c_score, g_score, t_score
-        )?;
+        writeln!(writer, "{}", DISTANCE_METRIC_NAMES.join("\t"))?;
+        writeln!(writer, "{}", format_metrics_row(&values))?;
     } else if let Some(tree_path) = matches.get_one::<String>("tree") {
         let trees = Tree::from_file(tree_path)?;
         if trees.len() != 1 {
             anyhow::bail!("Tree file must contain exactly one tree.");
         }
         let dist = TreeDistance::new(trees.into_iter().next().unwrap());
-        let s_score = silhouette_score(&p1, &dist);
-        let d_score = dunn_score(&p1, &dist);
-        let c_score = c_index_score(&p1, &dist);
-        let g_score = gamma_score(&p1, &dist);
-        let t_score = tau_score(&p1, &dist);
+        let values = vec![
+            silhouette_score(&p1, &dist),
+            dunn_score(&p1, &dist),
+            c_index_score(&p1, &dist),
+            gamma_score(&p1, &dist),
+            tau_score(&p1, &dist),
+        ];
 
-        writeln!(writer, "silhouette\tdunn\tc_index\tgamma\ttau")?;
-        writeln!(
-            writer,
-            "{:.6}\t{:.6}\t{:.6}\t{:.6}\t{:.6}",
-            s_score, d_score, c_score, g_score, t_score
-        )?;
+        writeln!(writer, "{}", DISTANCE_METRIC_NAMES.join("\t"))?;
+        writeln!(writer, "{}", format_metrics_row(&values))?;
     } else if let Some(coords_path) = matches.get_one::<String>("coords") {
         let coords = Coordinates::from_path(coords_path)?;
-        let db_score = davies_bouldin_score(&p1, &coords);
-        let ch_score = calinski_harabasz_score(&p1, &coords);
-        let pbm = pbm_score(&p1, &coords);
-        let bh = ball_hall_score(&p1, &coords);
-        let xb = xie_beni_score(&p1, &coords);
-        let wg = wemmert_gancarski_score(&p1, &coords);
+        let values = vec![
+            davies_bouldin_score(&p1, &coords),
+            calinski_harabasz_score(&p1, &coords),
+            pbm_score(&p1, &coords),
+            ball_hall_score(&p1, &coords),
+            xie_beni_score(&p1, &coords),
+            wemmert_gancarski_score(&p1, &coords),
+        ];
 
-        writeln!(
-            writer,
-            "davies_bouldin\tcalinski_harabasz\tpbm\tball_hall\txie_beni\twemmert_gancarski"
-        )?;
-        writeln!(
-            writer,
-            "{:.6}\t{:.6}\t{:.6}\t{:.6}\t{:.6}\t{:.6}",
-            db_score, ch_score, pbm, bh, xb, wg
-        )?;
+        writeln!(writer, "{}", COORD_METRIC_NAMES.join("\t"))?;
+        writeln!(writer, "{}", format_metrics_row(&values))?;
     } else {
         anyhow::bail!(
             "Either --other/--truth (for external eval), --matrix, --tree, or --coords (for internal eval) must be provided."
@@ -315,12 +258,4 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
     }
 
     Ok(())
-}
-
-fn remove_singletons(partition: &mut LabelMap) {
-    let mut counts = std::collections::HashMap::new();
-    for cid in partition.values() {
-        *counts.entry(*cid).or_insert(0) += 1;
-    }
-    partition.retain(|_, cid| counts[cid] > 1);
 }

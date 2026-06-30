@@ -16,19 +16,8 @@ Examples:
   pgr psl swap --no-rc in.psl -o out.psl
 "###,
         )
-        .arg(
-            Arg::new("input")
-                .help("Input PSL file")
-                .default_value("stdin")
-                .index(1),
-        )
-        .arg(
-            Arg::new("output")
-                .short('o')
-                .long("output")
-                .help("Output PSL file")
-                .default_value("stdout"),
-        )
+        .arg(crate::cmd_pgr::args::infile_arg().help("Input PSL file"))
+        .arg(crate::cmd_pgr::args::outfile_arg())
         .arg(
             Arg::new("no_rc")
                 .short('n')
@@ -39,8 +28,8 @@ Examples:
 }
 
 pub fn execute(matches: &clap::ArgMatches) -> anyhow::Result<()> {
-    let input = matches.get_one::<String>("input").unwrap();
-    let output = matches.get_one::<String>("output").unwrap();
+    let input = crate::cmd_pgr::args::get_infile(matches);
+    let output = crate::cmd_pgr::args::get_outfile(matches);
     let no_rc = matches.get_flag("no_rc");
 
     let reader = reader(input);

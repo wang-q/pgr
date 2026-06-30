@@ -14,21 +14,8 @@ Examples:
   pgr lav to-psl in.lav -o out.psl
 "###,
         )
-        .arg(
-            Arg::new("input")
-                .index(1)
-                .default_value("stdin")
-                .help("Input LAV file"),
-        )
-        .arg(
-            Arg::new("output")
-                .short('o')
-                .long("output")
-                .value_name("FILE")
-                .help("Output PSL file")
-                .num_args(1)
-                .default_value("stdout"),
-        )
+        .arg(crate::cmd_pgr::args::infile_arg().help("Input LAV file"))
+        .arg(crate::cmd_pgr::args::outfile_arg())
         .arg(
             Arg::new("target_strand")
                 .long("target-strand")
@@ -47,8 +34,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     // Args
     //----------------------------
-    let input = args.get_one::<String>("input").unwrap();
-    let output = args.get_one::<String>("output").unwrap();
+    let input = crate::cmd_pgr::args::get_infile(args);
+    let output = crate::cmd_pgr::args::get_outfile(args);
     let target_strand = args.get_one::<String>("target_strand");
     // let score_file = args.get_one::<String>("score_file"); // TODO: Implement score file output
 

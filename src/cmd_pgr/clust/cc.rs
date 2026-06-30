@@ -75,50 +75,15 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     let mut scc = petgraph::algo::tarjan_scc(&graph);
 
-    // First sort members within each component alphabetically
-    for cc in &mut scc {
-        cc.sort_by_key(|&idx| names.get_index(idx).unwrap().as_str());
-    }
-
-    // Then sort components by first member alphabetically
-    scc.sort_by_key(|cc| names.get_index(cc[0]).unwrap().as_str());
-
-    // Finally sort by size (descending) while maintaining alphabetical order for same size
-    scc.sort_by_key(|cc| std::cmp::Reverse(cc.len()));
-
     //----------------------------
     // 4. Output
     //----------------------------
-    match opt_format.as_str() {
-        "cluster" => {
-            for cc in &scc {
-                writer.write_fmt(format_args!(
-                    "{}\n",
-                    cc.iter()
-                        .map(|&idx| names.get_index(idx).unwrap().as_str())
-                        .collect::<Vec<_>>()
-                        .join("\t")
-                ))?;
-            }
-        }
-        "pair" => {
-            for cc in &scc {
-                let members: Vec<&str> = cc
-                    .iter()
-                    .map(|&idx| names.get_index(idx).unwrap().as_str())
-                    .collect();
-                // Already sorted in cc, but let's be safe or just use the first as rep
-                // Note: scc sorting logic above sorts members within component
-
-                if let Some(rep) = members.first().copied() {
-                    for member in members {
-                        writer.write_fmt(format_args!("{}\t{}\n", rep, member))?;
-                    }
-                }
-            }
-        }
-        _ => anyhow::bail!("unsupported output format"),
-    }
+    let names_vec: Vec<String> = names.iter().cloned().collect();
+    let out =
+        pgr::libs::clust::format::format_flat_clusters(&mut scc, &names_vec, opt_format, |c| {
+            c.first().copied()
+        })?;
+    writer.write_all(out.as_bytes())?;
 
     Ok(())
 }

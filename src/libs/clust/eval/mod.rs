@@ -1,5 +1,6 @@
 mod coordinates;
 mod distance;
+pub mod format;
 mod pairwise;
 mod partition;
 
@@ -12,7 +13,7 @@ pub use distance::{
     TreeDistance,
 };
 pub use pairwise::{evaluate, Metrics};
-pub use partition::{load_batch_partitions, load_partition, PartitionFormat};
+pub use partition::{load_batch_partitions, load_partition, remove_singletons, PartitionFormat};
 
 use std::collections::HashMap;
 

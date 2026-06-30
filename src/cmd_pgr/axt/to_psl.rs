@@ -15,12 +15,7 @@ Examples:
   pgr axt to-psl in.axt -t t.sizes -q q.sizes -o out.psl
 "###,
         )
-        .arg(
-            Arg::new("input")
-                .help("Input AXT file")
-                .default_value("stdin")
-                .index(1),
-        )
+        .arg(crate::cmd_pgr::args::infile_arg().help("Input AXT file"))
         .arg(
             Arg::new("t_sizes")
                 .long("t-sizes")
@@ -37,21 +32,14 @@ Examples:
                 .help("Query sizes file")
                 .required(true),
         )
-        .arg(
-            Arg::new("output")
-                .short('o')
-                .long("output")
-                .value_name("FILE")
-                .help("Output PSL file")
-                .default_value("stdout"),
-        )
+        .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let input = args.get_one::<String>("input").unwrap();
+    let input = crate::cmd_pgr::args::get_infile(args);
     let t_sizes_path = args.get_one::<String>("t_sizes").unwrap();
     let q_sizes_path = args.get_one::<String>("q_sizes").unwrap();
-    let output = args.get_one::<String>("output").unwrap();
+    let output = crate::cmd_pgr::args::get_outfile(args);
 
     // Load sizes
     let t_sizes = pgr::read_sizes::<usize>(t_sizes_path)?;

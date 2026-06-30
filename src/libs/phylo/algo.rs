@@ -1,6 +1,6 @@
 use super::tree::Tree;
 use super::NodeId;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// Sort the children of each node by their name (label).
 ///
@@ -339,6 +339,111 @@ pub fn deladderize(tree: &mut Tree) {
 
         for child in children_ids {
             queue.push_back((child, !descending));
+        }
+    }
+}
+
+/// Compute the set of node IDs to keep when inverting a prune around `targets`.
+///
+/// Returns the union of `targets`, all descendants of any target, and all
+/// ancestors of any target. Nodes not in the returned set should be removed.
+pub fn compute_keep_set<I>(tree: &Tree, targets: I) -> HashSet<NodeId>
+where
+    I: IntoIterator<Item = NodeId>,
+{
+    let mut keep = HashSet::new();
+    let Some(root) = tree.get_root() else {
+        return keep;
+    };
+
+    let target_set: HashSet<NodeId> = targets.into_iter().collect();
+    let mut is_in_clade = HashSet::new();
+
+    // Pass 1: Downward propagation (descendants of targets).
+    // levelorder visits parents before children, so `is_in_clade` propagates.
+    let all_nodes = tree.levelorder(&root).unwrap_or_default();
+    for &id in &all_nodes {
+        let mut kept = target_set.contains(&id);
+        if !kept {
+            if let Some(node) = tree.get_node(id) {
+                if let Some(parent) = node.parent {
+                    if is_in_clade.contains(&parent) {
+                        kept = true;
+                    }
+                }
+            }
+        }
+        if kept {
+            is_in_clade.insert(id);
+            keep.insert(id);
+        }
+    }
+
+    // Pass 2: Upward propagation (ancestors of kept nodes).
+    // Iterate in reverse so children are visited before their parents.
+    for &id in all_nodes.iter().rev() {
+        if keep.contains(&id) {
+            if let Some(node) = tree.get_node(id) {
+                if let Some(parent) = node.parent {
+                    keep.insert(parent);
+                }
+            }
+        }
+    }
+
+    keep
+}
+
+/// Remove `to_remove` nodes from `tree`, then clean up internal nodes that
+/// became leaves and collapse degree-2 nodes (single-child internals).
+///
+/// `to_remove` may include both leaves and internal nodes; removal is recursive
+/// (subtrees are detached with their parent).
+pub fn prune_nodes(tree: &mut Tree, to_remove: Vec<NodeId>) {
+    // 1. Snapshot internal nodes before pruning, so we can detect those that
+    //    become leaves after removal.
+    let mut old_internals = Vec::new();
+    if let Some(root) = tree.get_root() {
+        let all_nodes = tree.levelorder(&root).unwrap_or_default();
+        for id in all_nodes {
+            if let Some(node) = tree.get_node(id) {
+                if !node.children.is_empty() {
+                    old_internals.push(id);
+                }
+            }
+        }
+    }
+
+    // 2. Remove the requested nodes.
+    for id in to_remove {
+        tree.remove_node(id, true);
+    }
+
+    // 3. Clean up internals that became leaves (reverse so deeper nodes first).
+    for id in old_internals.into_iter().rev() {
+        if let Some(node) = tree.get_node(id) {
+            if node.children.is_empty() {
+                tree.remove_node(id, true);
+            }
+        }
+    }
+
+    // 4. Collapse degree-2 nodes (post-order so children are visited first).
+    if let Some(root) = tree.get_root() {
+        let nodes = tree.postorder(&root).unwrap_or_default();
+        for id in nodes {
+            if let Some(node) = tree.get_node(id) {
+                if node.children.len() == 1 {
+                    if tree.get_root() == Some(id) {
+                        // Root with a single child: promote the child to root.
+                        let child_id = node.children[0];
+                        tree.set_root(child_id);
+                        tree.remove_node(id, false);
+                    } else {
+                        let _ = tree.collapse_node(id);
+                    }
+                }
+            }
         }
     }
 }

@@ -28,9 +28,9 @@ Examples:
                 .index(1),
         )
         .arg(
-            Arg::new("output")
+            Arg::new("outfile")
                 .short('o')
-                .long("output")
+                .long("outfile")
                 .value_name("FILE")
                 .help("Output filename")
                 .required(true),
@@ -63,7 +63,7 @@ Examples:
 
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let infiles = args.get_many::<String>("infiles").unwrap();
-    let output = args.get_one::<String>("output").unwrap();
+    let output = args.get_one::<String>("outfile").unwrap();
     let no_mask = args.get_flag("no_mask");
     let strip_version = args.get_flag("strip_version");
     let ignore_dups = args.get_flag("ignore_dups");

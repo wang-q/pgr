@@ -1,10 +1,7 @@
 use clap::builder::PossibleValuesParser;
 use clap::*;
-use rayon::prelude::*;
 use std::io::Write;
 use tempfile::NamedTempFile;
-
-use std::path::Path;
 
 // TODO: [multiple] on target
 // TODO: unmask on t/q
@@ -94,7 +91,7 @@ Examples:
 pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
     let preset = matches.get_one::<String>("preset");
 
-    // Check if show-preset is requested
+    // Show preset and exit
     if matches.get_flag("show_preset") {
         let preset_name = preset
             .ok_or_else(|| anyhow::anyhow!("--show-preset requires --preset to be specified."))?;
@@ -122,8 +119,6 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
         anyhow::bail!("lastz not found in PATH. Please install lastz first.");
     }
 
-    std::fs::create_dir_all(opt_output)?;
-
     // Expand files
     let mut query_files = pgr::libs::io::find_fasta_files(arg_query);
     query_files.sort();
@@ -138,7 +133,7 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
         anyhow::bail!("No target FASTA files found in {}", arg_target);
     }
 
-    // Prepare matrix file if needed
+    // Prepare matrix temp file if preset defines one (keep handle alive for the run)
     let mut _temp_matrix_handle: Option<NamedTempFile> = None;
     let mut matrix_path = String::new();
 
@@ -153,7 +148,7 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
         }
     }
 
-    // Build common args
+    // Build common args (depth, format, preset params, user args)
     let mut common_args = Vec::new();
     common_args.push(format!("--querydepth=keep,nowarn:{}", opt_depth));
     common_args.push("--format=lav".to_string());
@@ -179,104 +174,14 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
         }
     }
 
-    // Create jobs (Cartesian product)
-    let mut jobs = Vec::new();
-    for t in &target_files {
-        for q in &query_files {
-            jobs.push((t, q));
-        }
-    }
+    // Delegate the parallel orchestration to libs::lastz
+    let opts = pgr::libs::lastz::RunLastzOptions {
+        depth: opt_depth,
+        is_self,
+        common_args,
+        output_dir: opt_output.clone(),
+        parallel: opt_parallel,
+    };
 
-    log::info!("* Target files: [{}]", target_files.len());
-    log::info!("* Query files:  [{}]", query_files.len());
-    log::info!("* Total jobs:   [{}]", jobs.len());
-
-    // Parallel execution
-    let pool = rayon::ThreadPoolBuilder::new()
-        .num_threads(opt_parallel)
-        .build()?;
-
-    pool.install(|| {
-        jobs.par_iter().for_each(|(target_file, query_file)| {
-            let get_base_name = |path: &Path| -> String {
-                let stem = path.file_stem().unwrap().to_string_lossy();
-                stem.split('.').next().unwrap().to_string()
-            };
-
-            let t_base = get_base_name(target_file);
-            let q_base = get_base_name(query_file);
-
-            if is_self && t_base != q_base {
-                return;
-            }
-
-            // Output filename: [target]vs[query].lav
-            // Logic ported from lastz.pm to handle potential duplicates
-            let mut i = 0;
-            let out_path;
-            loop {
-                let out_name = if i == 0 {
-                    format!("[{}]vs[{}].lav", t_base, q_base)
-                } else {
-                    format!("[{}]vs[{}].{}.lav", t_base, q_base, i)
-                };
-                let candidate = std::path::Path::new(opt_output).join(out_name);
-
-                // Atomically try to create the file to reserve the name
-                // This prevents race conditions when multiple threads process identically named inputs
-                if std::fs::OpenOptions::new()
-                    .write(true)
-                    .create_new(true)
-                    .open(&candidate)
-                    .is_ok()
-                {
-                    out_path = candidate;
-                    break;
-                }
-
-                i += 1;
-            }
-
-            // [nameparse=darkspace] is required for correct sequence name parsing.
-            // [multiple] implies that the target file contains multiple sequences.
-            // However, lastz documentation states that --self cannot be used with multiple sequences in the target.
-            // Since we are running in --self mode for repeat masking (or at least supporting it),
-            // and we are feeding single-sequence chunks (or small chunks) in the standard workflow,
-            // we omit [multiple] to avoid conflicts.
-            // If the user provides a multi-sequence file without --self, lastz might complain or process only the first sequence
-            // unless we add [multiple] back conditionally.
-            // But for now, for the "Cactus-style" workflow which splits files, this is safer.
-            let target_arg = format!("{}[nameparse=darkspace]", target_file.to_string_lossy());
-
-            let mut cmd = std::process::Command::new("lastz");
-            cmd.arg(&target_arg);
-
-            if is_self && target_file == query_file {
-                cmd.arg("--self");
-            } else {
-                let query_arg = format!("{}[nameparse=darkspace]", query_file.to_string_lossy());
-                cmd.arg(&query_arg);
-            }
-
-            for arg in &common_args {
-                cmd.arg(arg);
-            }
-
-            cmd.arg(format!("--output={}", out_path.to_string_lossy()));
-
-            // Print command for progress tracking
-            log::info!("{:?}", cmd);
-
-            // Execute lastz and wait for it to complete
-            let status = cmd.status().expect("Failed to execute lastz");
-
-            if !status.success() {
-                log::warn!("lastz failed for {} vs {}", t_base, q_base);
-            } else {
-                // println!("Finished: {} vs {}", t_base, q_base);
-            }
-        });
-    });
-
-    Ok(())
+    pgr::libs::lastz::run_lastz(target_files, query_files, opts)
 }

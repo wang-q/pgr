@@ -10,7 +10,7 @@ pub mod link;
 pub mod method;
 pub mod simple;
 
-pub use method::Method;
+pub use method::{build_method, Method, METHOD_NAMES};
 
 /// Result of a cut operation.
 pub struct Partition {

@@ -22,12 +22,7 @@ Examples:
   pgr axt to-maf in.axt -t t.sizes -q q.sizes --t-split -o out_dir
 "###,
         )
-        .arg(
-            Arg::new("input")
-                .help("Input AXT file")
-                .default_value("stdin")
-                .index(1),
-        )
+        .arg(crate::cmd_pgr::args::infile_arg().help("Input AXT file"))
         .arg(
             Arg::new("t_sizes")
                 .long("t-sizes")
@@ -44,14 +39,7 @@ Examples:
                 .help("Query sizes file")
                 .required(true),
         )
-        .arg(
-            Arg::new("output")
-                .short('o')
-                .long("output")
-                .value_name("FILE")
-                .help("Output MAF file or directory")
-                .default_value("stdout"),
-        )
+        .arg(crate::cmd_pgr::args::outfile_arg())
         .arg(
             Arg::new("q_prefix")
                 .long("q-prefix")
@@ -87,10 +75,10 @@ Examples:
 }
 
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let input = args.get_one::<String>("input").unwrap();
+    let input = crate::cmd_pgr::args::get_infile(args);
     let t_sizes_path = args.get_one::<String>("t_sizes").unwrap();
     let q_sizes_path = args.get_one::<String>("q_sizes").unwrap();
-    let output = args.get_one::<String>("output").unwrap();
+    let output = crate::cmd_pgr::args::get_outfile(args);
     let q_prefix = args
         .get_one::<String>("q_prefix")
         .map(|s| s.as_str())

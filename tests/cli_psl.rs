@@ -155,7 +155,7 @@ fn test_to_chain_fix_strand() {
             "psl",
             "to-chain",
             input.to_str().unwrap(),
-            "--output",
+            "--outfile",
             output.to_str().unwrap(),
             "--fix-strand",
         ])

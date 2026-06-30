@@ -41,6 +41,30 @@ pub fn new_record(name: &str, seq: &[u8]) -> fasta::Record {
     fasta::Record::new(definition, sequence)
 }
 
+/// Generate windowed sub-sequences from `name`/`seq`.
+///
+/// Each window is `len` bytes long (the last one may be shorter); successive
+/// windows start `step` bytes apart. Windows consisting entirely of N/n are
+/// skipped. Coordinates embedded in the emitted names are 1-based inclusive
+/// (`name:start-end`).
+pub fn windows(name: &str, seq: &[u8], len: usize, step: usize) -> Vec<(String, Vec<u8>)> {
+    let mut result = Vec::new();
+    let seq_len = seq.len();
+    for start in (0..seq_len).step_by(step) {
+        let end = std::cmp::min(start + len, seq_len);
+        if start >= end {
+            continue;
+        }
+        let window = &seq[start..end];
+        if window.iter().all(|&b| crate::libs::nt::is_n(b)) {
+            continue;
+        }
+        let new_name = format!("{}:{}-{}", name, start + 1, end);
+        result.push((new_name, window.to_vec()));
+    }
+    result
+}
+
 /// Build a .gzi index for a BGZF file.
 ///
 /// The GZI format is defined by `bgzip` and used for random access.

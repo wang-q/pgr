@@ -1,5 +1,8 @@
 //! Lastz aligner presets and scoring matrices ported from UCSC.
 
+use rayon::prelude::*;
+use std::path::{Path, PathBuf};
+
 /// Default scoring matrix for lastz (Human vs Mouse / Macaque / Cow).
 pub const MATRIX_DEFAULT: &str = "   A    C    G    T
 A  91 -114  -31 -123
@@ -108,4 +111,142 @@ pub fn preset_help() -> String {
         ));
     }
     help
+}
+
+/// Options controlling a batch lastz run.
+pub struct RunLastzOptions {
+    /// Query depth threshold (informational; the actual flag lives in `common_args`).
+    pub depth: usize,
+    /// Self-alignment mode: skip pairs with different basenames and use `--self`
+    /// when target and query paths are identical.
+    pub is_self: bool,
+    /// Arguments passed to every lastz invocation (depth, format, preset, user args).
+    pub common_args: Vec<String>,
+    /// Output directory (created if missing).
+    pub output_dir: String,
+    /// Number of worker threads.
+    pub parallel: usize,
+}
+
+/// Run lastz for the cartesian product of `target_files` and `query_files`.
+///
+/// For each (target, query) pair, lastz is invoked with `opts.common_args` and
+/// the result is written to `[t_base]vs[q_base].lav` in `opts.output_dir`.
+/// Filename collisions are resolved by appending an incrementing counter
+/// (`[t]vs[q].1.lav`, ...). When `opts.is_self` is set, pairs with different
+/// file basenames are skipped, and identical target/query paths use lastz's
+/// `--self` flag instead of passing a separate query argument.
+pub fn run_lastz(
+    target_files: Vec<PathBuf>,
+    query_files: Vec<PathBuf>,
+    opts: RunLastzOptions,
+) -> anyhow::Result<()> {
+    std::fs::create_dir_all(&opts.output_dir)?;
+
+    let n_targets = target_files.len();
+    let n_queries = query_files.len();
+    let mut jobs: Vec<(PathBuf, PathBuf)> = Vec::with_capacity(n_targets * n_queries);
+    for t in &target_files {
+        for q in &query_files {
+            jobs.push((t.clone(), q.clone()));
+        }
+    }
+
+    log::info!("* Target files: [{}]", n_targets);
+    log::info!("* Query files:  [{}]", n_queries);
+    log::info!("* Total jobs:   [{}]", jobs.len());
+
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(opts.parallel)
+        .build()?;
+
+    let common_args = opts.common_args;
+    let output_dir = opts.output_dir;
+    let is_self = opts.is_self;
+
+    pool.install(move || {
+        jobs.par_iter().for_each(|(target_file, query_file)| {
+            let get_base_name = |path: &Path| -> String {
+                let stem = path.file_stem().unwrap().to_string_lossy();
+                stem.split('.').next().unwrap().to_string()
+            };
+
+            let t_base = get_base_name(target_file);
+            let q_base = get_base_name(query_file);
+
+            if is_self && t_base != q_base {
+                return;
+            }
+
+            // Output filename: [target]vs[query].lav.
+            // Logic ported from lastz.pm to handle potential duplicates:
+            // atomically reserve the name via create_new to prevent race
+            // conditions when multiple threads process identically named inputs.
+            let mut i = 0;
+            let out_path;
+            loop {
+                let out_name = if i == 0 {
+                    format!("[{}]vs[{}].lav", t_base, q_base)
+                } else {
+                    format!("[{}]vs[{}].{}.lav", t_base, q_base, i)
+                };
+                let candidate = std::path::Path::new(&output_dir).join(out_name);
+
+                if std::fs::OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .open(&candidate)
+                    .is_ok()
+                {
+                    out_path = candidate;
+                    break;
+                }
+
+                i += 1;
+            }
+
+            // [nameparse=darkspace] is required for correct sequence name parsing.
+            let target_arg = format!("{}[nameparse=darkspace]", target_file.to_string_lossy());
+
+            let mut cmd = std::process::Command::new("lastz");
+            cmd.arg(&target_arg);
+
+            if is_self && target_file == query_file {
+                cmd.arg("--self");
+            } else {
+                let query_arg = format!("{}[nameparse=darkspace]", query_file.to_string_lossy());
+                cmd.arg(&query_arg);
+            }
+
+            for arg in &common_args {
+                cmd.arg(arg);
+            }
+
+            cmd.arg(format!("--output={}", out_path.to_string_lossy()));
+
+            log::info!("{:?}", cmd);
+
+            match cmd.status() {
+                Ok(status) if status.success() => {}
+                Ok(status) => {
+                    log::warn!(
+                        "lastz failed (exit {:?}) for {} vs {}",
+                        status,
+                        t_base,
+                        q_base
+                    );
+                }
+                Err(err) => {
+                    log::error!(
+                        "failed to spawn lastz for {} vs {}: {}",
+                        t_base,
+                        q_base,
+                        err
+                    );
+                }
+            }
+        });
+    });
+
+    Ok(())
 }

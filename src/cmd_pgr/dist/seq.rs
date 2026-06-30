@@ -147,24 +147,31 @@ pub fn execute(args: &clap::ArgMatches) -> anyhow::Result<()> {
     let to_sim = |mash: f64| if mash > 1.0 { 0.0 } else { 1.0 - mash };
 
     common::par_run_pairs(&entries1, &entries2, &sender, |e1, e2| {
-        let (total1, total2, inter, union, mash, jaccard, containment) =
-            calc_distances(&e1.set, &e2.set, opt_kmer);
+        let d = pgr::libs::hash::set_distances(&e1.set, &e2.set, opt_kmer);
 
-        if !is_zero && jaccard == 0. {
+        if !is_zero && d.jaccard == 0. {
             return None;
         }
 
-        let dist = if is_sim { to_sim(mash) } else { mash };
+        let dist = if is_sim { to_sim(d.mash) } else { d.mash };
 
         let line = if is_merge {
             format!(
                 "{}\t{}\t{}\t{}\t{}\t{}\t{:.4}\t{:.4}\t{:.4}\n",
-                e1.name, e2.name, total1, total2, inter, union, dist, jaccard, containment
+                e1.name,
+                e2.name,
+                d.total1,
+                d.total2,
+                d.inter,
+                d.union,
+                dist,
+                d.jaccard,
+                d.containment
             )
         } else {
             format!(
                 "{}\t{}\t{:.4}\t{:.4}\t{:.4}\n",
-                e1.name, e2.name, dist, jaccard, containment
+                e1.name, e2.name, dist, d.jaccard, d.containment
             )
         };
         Some(line)
@@ -219,28 +226,4 @@ fn load_file(
     }
 
     Ok(entries)
-}
-
-// Calculate Jaccard, Containment, and Mash distance between two sets
-fn calc_distances(
-    s1: &rapidhash::RapidHashSet<u64>,
-    s2: &rapidhash::RapidHashSet<u64>,
-    opt_kmer: usize,
-) -> (usize, usize, usize, usize, f64, f64, f64) {
-    let total1 = s1.len();
-    let total2 = s2.len();
-
-    let inter = s1.intersection(s2).cloned().count();
-    let union = total1 + total2 - inter;
-
-    let jaccard = inter as f64 / union as f64;
-    let containment = inter as f64 / total1 as f64;
-    // https://mash.readthedocs.io/en/latest/distances.html#mash-distance-formulation
-    let mash = if jaccard == 0.0 {
-        1.0
-    } else {
-        ((-1.0 / opt_kmer as f64) * ((2.0 * jaccard) / (1.0 + jaccard)).ln()).abs()
-    };
-
-    (total1, total2, inter, union, mash, jaccard, containment)
 }

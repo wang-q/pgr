@@ -1,11 +1,9 @@
 use clap::{Arg, ArgMatches, Command};
 
-use pgr::libs::chain::record::read_chains;
 use pgr::libs::paf::fasta::{load_fasta_tsv, validate_tsv_covers_index, FastaStore};
 use pgr::libs::paf::index::{PafIndex, QueryResult};
 use pgr::libs::paf::msa::orient_interval;
-use std::collections::{HashMap, HashSet};
-use std::io::BufRead;
+use pgr::libs::paf::query::QueryOptions;
 
 // Re-export shared POA argument builder and extractor from `cmd_pgr::args`.
 pub use crate::cmd_pgr::args::{add_poa_args, get_poa_params};
@@ -145,222 +143,34 @@ pub fn add_msa_flag(cmd: Command) -> Command {
     )
 }
 
+/// Extract [`QueryOptions`] from clap matches.
+pub fn query_options_from_args(args: &ArgMatches) -> QueryOptions {
+    QueryOptions {
+        infile: args.get_one::<String>("infile").unwrap().clone(),
+        region: args.get_one::<String>("region").cloned(),
+        bed_regions: args.get_one::<String>("bed_regions").cloned(),
+        transitive: args.get_flag("transitive"),
+        max_depth: *args.get_one::<u16>("max_depth").unwrap(),
+        min_len: *args.get_one::<i32>("min_len").unwrap(),
+        min_dist: *args.get_one::<i32>("min_dist").unwrap(),
+        min_identity: *args.get_one::<f64>("min_identity").unwrap(),
+        min_output_len: *args.get_one::<i32>("min_output_len").unwrap(),
+        merge_distance: *args.get_one::<i32>("merge_distance").unwrap(),
+        min_degree: *args.get_one::<usize>("min_degree").unwrap(),
+        min_chain_length: *args.get_one::<i32>("min_chain_length").unwrap(),
+        subset_list: args.get_one::<String>("subset_list").cloned(),
+        syntenic_filter: args.get_one::<String>("syntenic_filter").cloned(),
+    }
+}
+
 /// Shared query logic: parse args, build/load index, run queries, apply filters.
 /// Returns the index and a list of (region, results) pairs.
 #[allow(clippy::type_complexity)]
 pub fn run_query(
     args: &ArgMatches,
 ) -> anyhow::Result<(PafIndex, Vec<((String, i32, i32), Vec<QueryResult>)>)> {
-    let infile = args.get_one::<String>("infile").unwrap();
-    let region_str = args.get_one::<String>("region");
-    let bed_regions_path = args.get_one::<String>("bed_regions");
-    let transitive = args.get_flag("transitive");
-    let max_depth = *args.get_one::<u16>("max_depth").unwrap();
-    let min_len = *args.get_one::<i32>("min_len").unwrap();
-    let min_dist = *args.get_one::<i32>("min_dist").unwrap();
-    let min_identity = *args.get_one::<f64>("min_identity").unwrap();
-    let min_output_len = *args.get_one::<i32>("min_output_len").unwrap();
-    let merge_distance = *args.get_one::<i32>("merge_distance").unwrap();
-    let min_degree = *args.get_one::<usize>("min_degree").unwrap();
-    let min_chain_length = *args.get_one::<i32>("min_chain_length").unwrap();
-    let syntenic_filter_path = args.get_one::<String>("syntenic_filter");
-
-    // Region input: exactly one of positional <region> or -b/--bed-regions
-    anyhow::ensure!(
-        region_str.is_some() || bed_regions_path.is_some(),
-        "either positional <region> or -b/--bed-regions must be provided"
-    );
-    anyhow::ensure!(
-        !(region_str.is_some() && bed_regions_path.is_some()),
-        "<region> and -b/--bed-regions are mutually exclusive"
-    );
-
-    let regions: Vec<(String, i32, i32)> = if let Some(path) = bed_regions_path {
-        load_bed_regions(path)?
-    } else {
-        let (name, start, end) = parse_region(region_str.unwrap())?;
-        vec![(name.to_string(), start, end)]
-    };
-
-    let idx = if infile.ends_with(".paf.idx") {
-        log::info!("Loading index from {infile}...");
-        PafIndex::load(infile)?
-    } else {
-        log::info!("Building index from {infile}...");
-        // Use build_from_path to enable lazy CIGAR loading for BGZF files.
-        PafIndex::build_from_path(infile)?
-    };
-
-    log::info!(
-        "  sequences: {}, targets: {}",
-        idx.names.len(),
-        idx.num_targets()
-    );
-    if idx.is_lazy() {
-        log::info!("  mode: lazy (BGZF virtual-position CIGAR)");
-    }
-
-    let subset = args
-        .get_one::<String>("subset_list")
-        .map(|list_path| pgr::libs::io::read_names_as_set(list_path))
-        .transpose()?;
-
-    // Optional syntenic filter: load UCSC chain file and build
-    // (t_name, q_name) -> Vec<(q_start, q_end)> map for chain-level query coverage check.
-    let syntenic_map: Option<HashMap<(String, String), Vec<(u64, u64)>>> =
-        if let Some(path) = syntenic_filter_path {
-            log::info!("Loading syntenic chains from {path}...");
-            let chains = read_chains(pgr::reader(path)?)?;
-            let mut map: HashMap<(String, String), Vec<(u64, u64)>> = HashMap::new();
-            for c in &chains {
-                let key = (c.header.t_name.clone(), c.header.q_name.clone());
-                map.entry(key)
-                    .or_default()
-                    .push((c.header.q_start, c.header.q_end));
-            }
-            log::info!(
-                "  loaded {} chains ({} unique name pairs)",
-                chains.len(),
-                map.len()
-            );
-            Some(map)
-        } else {
-            None
-        };
-
-    let mut all_results: Vec<((String, i32, i32), Vec<QueryResult>)> = Vec::new();
-    let mut total_results = 0usize;
-
-    for (target_name, start, end) in &regions {
-        let target_id = match idx.name_to_id(target_name) {
-            Some(id) => id,
-            None => {
-                log::warn!("target '{target_name}' not found in index, skipping");
-                continue;
-            }
-        };
-
-        let mut results = if transitive {
-            idx.query_transitive_bfs(
-                target_id,
-                *start,
-                *end,
-                max_depth,
-                min_len,
-                min_dist,
-                min_identity,
-                min_output_len,
-                merge_distance,
-            )
-        } else {
-            idx.query(target_id, *start, *end, min_identity, min_output_len)
-        };
-
-        if let Some(ref subset) = subset {
-            results.retain(|(qid, _, _, _, _, _, _)| {
-                let name = idx.id_to_name(*qid).unwrap_or("");
-                subset.contains(name)
-            });
-        }
-
-        if let Some(ref syntenic) = syntenic_map {
-            let before = results.len();
-            results.retain(|(qid, qiv, _, _, _, _, _)| {
-                let q_name = idx.id_to_name(*qid).unwrap_or("");
-                let key = (target_name.clone(), q_name.to_string());
-                match syntenic.get(&key) {
-                    None => false,
-                    Some(spans) => {
-                        let qs = qiv.first as u64;
-                        let qe = qiv.last as u64;
-                        spans.iter().any(|&(cs, ce)| qs < ce && qe > cs)
-                    }
-                }
-            });
-            let dropped = before - results.len();
-            if dropped > 0 {
-                log::info!("  syntenic-filter: dropped {dropped} non-syntenic results for {target_name}:{start}-{end}");
-            }
-        }
-
-        if min_chain_length > 0 {
-            filter_by_chain_length(&mut results, min_chain_length);
-        }
-
-        if min_degree > 0 {
-            let distinct: HashSet<u32> =
-                results.iter().map(|(qid, _, _, _, _, _, _)| *qid).collect();
-            if distinct.len() < min_degree {
-                log::info!(
-                    "region {target_name}:{start}-{end} skipped (degree {} < min-degree {min_degree})",
-                    distinct.len()
-                );
-                continue;
-            }
-        }
-
-        total_results += results.len();
-        all_results.push(((target_name.clone(), *start, *end), results));
-    }
-
-    if total_results == 0 {
-        log::info!("No results found.");
-    } else {
-        log::info!("Total results: {total_results}");
-    }
-
-    Ok((idx, all_results))
-}
-
-// Parse a region string "name:start-end" (0-based, PAF convention).
-fn parse_region(s: &str) -> anyhow::Result<(&str, i32, i32)> {
-    let parts: Vec<&str> = s.split(':').collect();
-    anyhow::ensure!(
-        parts.len() == 2,
-        "invalid region '{s}': expected name:start-end"
-    );
-    let name = parts[0];
-    let range: Vec<&str> = parts[1].split('-').collect();
-    anyhow::ensure!(range.len() == 2, "invalid region '{s}': expected start-end");
-    let start: i32 = range[0].parse()?;
-    let end: i32 = range[1].parse()?;
-    Ok((name, start, end))
-}
-
-// Parse BED file (name start end per line, tab-separated). Skips blank and comments.
-fn load_bed_regions(path: &str) -> anyhow::Result<Vec<(String, i32, i32)>> {
-    let reader = pgr::reader(path)?;
-    let mut regions = Vec::new();
-    for line in reader.lines() {
-        let line = line?;
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-        let fields: Vec<&str> = line.split('\t').collect();
-        anyhow::ensure!(
-            fields.len() >= 3,
-            "invalid BED line '{line}': expected at least 3 tab-separated fields"
-        );
-        let name = fields[0].to_string();
-        let start: i32 = fields[1].parse()?;
-        let end: i32 = fields[2].parse()?;
-        regions.push((name, start, end));
-    }
-    Ok(regions)
-}
-
-// Drop queries whose total aligned length (summed across all result intervals
-// for that query_id) is below `min_chain_length`. Operates in place.
-fn filter_by_chain_length(results: &mut Vec<QueryResult>, min_chain_length: i32) {
-    let mut totals: HashMap<u32, i32> = HashMap::new();
-    for (qid, q_iv, _, _, _, _, _) in results.iter() {
-        let len = (q_iv.last - q_iv.first).abs();
-        *totals.entry(*qid).or_insert(0) += len;
-    }
-    results.retain(|(qid, _, _, _, _, _, _)| {
-        totals.get(qid).copied().unwrap_or(0) >= min_chain_length
-    });
+    let opts = query_options_from_args(args);
+    pgr::libs::paf::query::run_query(&opts)
 }
 
 // Output PAF: 12 columns + gi/bi/cg tags.

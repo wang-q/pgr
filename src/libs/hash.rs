@@ -123,6 +123,57 @@ pub fn seq_mins(
     Ok(hashset)
 }
 
+/// Distance metrics between two minimizer sets.
+pub struct SetDistances {
+    /// Cardinality of the first set.
+    pub total1: usize,
+    /// Cardinality of the second set.
+    pub total2: usize,
+    /// Intersection size.
+    pub inter: usize,
+    /// Union size.
+    pub union: usize,
+    /// Mash distance (bounded to [0, 1]).
+    pub mash: f64,
+    /// Jaccard index.
+    pub jaccard: f64,
+    /// Containment index (intersection / first set).
+    pub containment: f64,
+}
+
+/// Compute Jaccard, Containment, and Mash distance between two minimizer sets.
+///
+/// See <https://mash.readthedocs.io/en/latest/distances.html#mash-distance-formulation>.
+pub fn set_distances(
+    s1: &rapidhash::RapidHashSet<u64>,
+    s2: &rapidhash::RapidHashSet<u64>,
+    kmer: usize,
+) -> SetDistances {
+    let total1 = s1.len();
+    let total2 = s2.len();
+
+    let inter = s1.intersection(s2).cloned().count();
+    let union = total1 + total2 - inter;
+
+    let jaccard = inter as f64 / union as f64;
+    let containment = inter as f64 / total1 as f64;
+    let mash = if jaccard == 0.0 {
+        1.0
+    } else {
+        ((-1.0 / kmer as f64) * ((2.0 * jaccard) / (1.0 + jaccard)).ln()).abs()
+    };
+
+    SetDistances {
+        total1,
+        total2,
+        inter,
+        union,
+        mash,
+        jaccard,
+        containment,
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct MinimizerInfo {
     pub hash: u64,

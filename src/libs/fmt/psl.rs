@@ -633,6 +633,32 @@ impl SumStats {
     }
 }
 
+/// Iterate PSL records from a buffered reader, skipping header lines and
+/// comments. Recognized headers: lines beginning with `#`, `psLayout`,
+/// `match`, or `------` (UCSC pslLayout convention); empty lines are also
+/// skipped. Unparseable lines are reported as errors.
+pub fn iter_psl<R: io::BufRead>(reader: R) -> impl Iterator<Item = anyhow::Result<Psl>> {
+    use std::str::FromStr;
+    reader.lines().filter_map(|line| match line {
+        Ok(line) => {
+            if line.is_empty()
+                || line.starts_with('#')
+                || line.starts_with("psLayout")
+                || line.starts_with("match")
+                || line.starts_with("------")
+            {
+                None
+            } else {
+                match Psl::from_str(&line) {
+                    Ok(psl) => Some(Ok(psl)),
+                    Err(err) => Some(Err(anyhow::anyhow!("invalid PSL line: {}", err))),
+                }
+            }
+        }
+        Err(err) => Some(Err(anyhow::anyhow!("read error: {}", err))),
+    })
+}
+
 #[cfg(test)]
 #[allow(clippy::field_reassign_with_default)]
 mod tests {

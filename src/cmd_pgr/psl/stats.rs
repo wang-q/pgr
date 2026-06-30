@@ -2,7 +2,7 @@ use clap::{Arg, ArgMatches, Command};
 use std::collections::HashMap;
 use std::io::{BufRead, Write};
 
-use pgr::libs::fmt::psl::{Psl, SumStats};
+use pgr::libs::fmt::psl::SumStats;
 
 pub fn make_subcommand() -> Command {
     Command::new("stats")
@@ -17,19 +17,8 @@ Examples:
   pgr psl stats --overall-stats in.psl -o out.stats
 "###,
         )
-        .arg(
-                    Arg::new("input")
-                        .help("Input PSL file")
-                        .default_value("stdin")
-                        .index(1),
-                )
-                .arg(
-                    Arg::new("output")
-                        .short('o')
-                        .long("output")
-                        .help("Output file")
-                        .default_value("stdout"),
-                )
+        .arg(crate::cmd_pgr::args::infile_arg().help("Input PSL file"))
+        .arg(crate::cmd_pgr::args::outfile_arg())
         .arg(
             Arg::new("query_stats")
                 .long("query-stats")
@@ -58,8 +47,8 @@ Examples:
 }
 
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let input = args.get_one::<String>("input").unwrap();
-    let output = args.get_one::<String>("output").unwrap();
+    let input = crate::cmd_pgr::args::get_infile(args);
+    let output = crate::cmd_pgr::args::get_outfile(args);
     let query_stats = args.get_flag("query_stats");
     let overall_stats = args.get_flag("overall_stats");
     let queries_file = args.get_one::<String>("queries");
@@ -86,23 +75,17 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     if query_stats || overall_stats {
         // Aggregation modes
-        for line in reader.lines() {
-            let line = line?;
-            if line.is_empty() || line.starts_with('#') {
-                continue;
-            }
-
-            if let Ok(psl) = line.parse::<Psl>() {
-                if queries_file.is_some() {
-                    if let Some(entry) = query_stats_tbl.get_mut(&psl.q_name) {
-                        entry.accumulate(&psl);
-                    }
-                } else {
-                    let entry = query_stats_tbl
-                        .entry(psl.q_name.clone())
-                        .or_insert_with(|| SumStats::new(&psl.q_name, psl.q_size));
+        for psl in pgr::libs::fmt::psl::iter_psl(reader) {
+            let psl = psl?;
+            if queries_file.is_some() {
+                if let Some(entry) = query_stats_tbl.get_mut(&psl.q_name) {
                     entry.accumulate(&psl);
                 }
+            } else {
+                let entry = query_stats_tbl
+                    .entry(psl.q_name.clone())
+                    .or_insert_with(|| SumStats::new(&psl.q_name, psl.q_size));
+                entry.accumulate(&psl);
             }
         }
 
@@ -167,31 +150,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             "qName\tqSize\ttName\ttStart\ttEnd\tident\tqCover\trepMatch\ttCover"
         )?;
 
-        for line in reader.lines() {
-            let line = line?;
-            if line.is_empty() || line.starts_with('#') {
-                continue;
-            }
-
-            if let Ok(psl) = line.parse::<Psl>() {
-                if queries_file.is_some() {
-                    if let Some(entry) = query_stats_tbl.get_mut(&psl.q_name) {
-                        writeln!(
-                            writer,
-                            "{}\t{}\t{}\t{}\t{}\t{:.4}\t{:.4}\t{:.4}\t{:.4}",
-                            psl.q_name,
-                            psl.q_size,
-                            psl.t_name,
-                            psl.t_start,
-                            psl.t_end,
-                            psl.calc_ident(),
-                            psl.calc_q_cover(),
-                            psl.calc_rep_match(),
-                            psl.calc_t_cover()
-                        )?;
-                        entry.aln_cnt += 1;
-                    }
-                } else {
+        for psl in pgr::libs::fmt::psl::iter_psl(reader) {
+            let psl = psl?;
+            if queries_file.is_some() {
+                if let Some(entry) = query_stats_tbl.get_mut(&psl.q_name) {
                     writeln!(
                         writer,
                         "{}\t{}\t{}\t{}\t{}\t{:.4}\t{:.4}\t{:.4}\t{:.4}",
@@ -205,7 +167,22 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                         psl.calc_rep_match(),
                         psl.calc_t_cover()
                     )?;
+                    entry.aln_cnt += 1;
                 }
+            } else {
+                writeln!(
+                    writer,
+                    "{}\t{}\t{}\t{}\t{}\t{:.4}\t{:.4}\t{:.4}\t{:.4}",
+                    psl.q_name,
+                    psl.q_size,
+                    psl.t_name,
+                    psl.t_start,
+                    psl.t_end,
+                    psl.calc_ident(),
+                    psl.calc_q_cover(),
+                    psl.calc_rep_match(),
+                    psl.calc_t_cover()
+                )?;
             }
         }
 

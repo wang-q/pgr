@@ -15,6 +15,7 @@ pub mod ms;
 pub mod nt;
 pub mod paf;
 pub mod pairmat;
+pub mod par;
 pub mod phylo;
 pub mod plot;
 pub mod poa;

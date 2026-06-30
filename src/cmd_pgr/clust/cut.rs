@@ -1,7 +1,7 @@
 use clap::*;
 use pgr::libs::clust::tree_cut::dynamic::{cutree_dynamic_tree, DynamicTreeOptions};
 use pgr::libs::clust::tree_cut::hybrid::{cutree_hybrid, HybridOptions};
-use pgr::libs::clust::tree_cut::{self as cut, Method, RepMode};
+use pgr::libs::clust::tree_cut::{self as cut, build_method, RepMode, METHOD_NAMES};
 use pgr::libs::phylo::tree::Tree;
 use std::io::Write;
 
@@ -312,33 +312,18 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
                 let p = cutree_dynamic_tree(tree, options).map_err(|e| anyhow::anyhow!(e))?;
                 (p, "dynamic-tree")
             } else {
-                let (method, method_name) = if matches.contains_id("k") {
-                    (Method::K(val as usize), "k")
-                } else if matches.contains_id("height") {
-                    (Method::Height(val), "height")
-                } else if matches.contains_id("root-dist") {
-                    (Method::RootDist(val), "root-dist")
-                } else if matches.contains_id("max-clade") {
-                    (Method::MaxClade(val), "max-clade")
-                } else if matches.contains_id("avg-clade") {
-                    (Method::AvgClade(val), "avg-clade")
-                } else if matches.contains_id("med-clade") {
-                    (Method::MedClade(val), "med-clade")
-                } else if matches.contains_id("sum-branch") {
-                    (Method::SumBranch(val), "sum-branch")
-                } else if matches.contains_id("leaf-dist-max") {
-                    (Method::RootDist(max_depth - val), "leaf-dist-max")
-                } else if matches.contains_id("leaf-dist-min") {
-                    (Method::RootDist(min_depth - val), "leaf-dist-min")
-                } else if matches.contains_id("leaf-dist-avg") {
-                    (Method::RootDist(avg_depth - val), "leaf-dist-avg")
-                } else if matches.contains_id("max-edge") {
-                    (Method::SingleLinkage(val), "max-edge")
-                } else if matches.contains_id("inconsistent") {
-                    (Method::Inconsistent(val, deep), "inconsistent")
-                } else {
-                    anyhow::bail!("no cut method specified");
-                };
+                let method_name = METHOD_NAMES
+                    .iter()
+                    .find(|&&n| matches.contains_id(n))
+                    .copied()
+                    .ok_or_else(|| anyhow::anyhow!("no cut method specified"))?;
+                let method = build_method(
+                    method_name,
+                    val,
+                    deep,
+                    Some((min_depth, max_depth, avg_depth)),
+                )
+                .map_err(|e| anyhow::anyhow!(e))?;
                 let p = cut::cut(tree, method).map_err(|e| anyhow::anyhow!(e))?;
                 (p, method_name)
             };
@@ -399,36 +384,27 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
 
             cutree_hybrid(tree, options)?
         } else {
-            let method = if let Some(&k) = matches.get_one::<usize>("k") {
-                Method::K(k)
-            } else if let Some(&h) = matches.get_one::<f64>("height") {
-                Method::Height(h)
-            } else if let Some(&d) = matches.get_one::<f64>("root-dist") {
-                Method::RootDist(d)
-            } else if let Some(&t) = matches.get_one::<f64>("max-clade") {
-                Method::MaxClade(t)
-            } else if let Some(&t) = matches.get_one::<f64>("avg-clade") {
-                Method::AvgClade(t)
-            } else if let Some(&t) = matches.get_one::<f64>("med-clade") {
-                Method::MedClade(t)
-            } else if let Some(&t) = matches.get_one::<f64>("sum-branch") {
-                Method::SumBranch(t)
-            } else if let Some(&t) = matches.get_one::<f64>("leaf-dist-max") {
-                let (_, max_depth, _) = pgr::libs::phylo::tree::stat::get_leaf_depth_stats(tree);
-                Method::RootDist(max_depth - t)
-            } else if let Some(&t) = matches.get_one::<f64>("leaf-dist-min") {
-                let (min_depth, _, _) = pgr::libs::phylo::tree::stat::get_leaf_depth_stats(tree);
-                Method::RootDist(min_depth - t)
-            } else if let Some(&t) = matches.get_one::<f64>("leaf-dist-avg") {
-                let (_, _, avg_depth) = pgr::libs::phylo::tree::stat::get_leaf_depth_stats(tree);
-                Method::RootDist(avg_depth - t)
-            } else if let Some(&t) = matches.get_one::<f64>("max-edge") {
-                Method::SingleLinkage(t)
-            } else if let Some(&t) = matches.get_one::<f64>("inconsistent") {
-                Method::Inconsistent(t, deep)
+            let method_name = METHOD_NAMES
+                .iter()
+                .find(|&&n| matches.contains_id(n))
+                .copied()
+                .ok_or_else(|| anyhow::anyhow!("no cut method specified"))?;
+            let val = if method_name == "k" {
+                *matches
+                    .get_one::<usize>("k")
+                    .ok_or_else(|| anyhow::anyhow!("missing --k value"))? as f64
             } else {
-                anyhow::bail!("no cut method specified");
+                *matches
+                    .get_one::<f64>(method_name)
+                    .ok_or_else(|| anyhow::anyhow!("missing --{} value", method_name))?
             };
+            let leaf_depths = if method_name.starts_with("leaf-dist-") {
+                Some(pgr::libs::phylo::tree::stat::get_leaf_depth_stats(tree))
+            } else {
+                None
+            };
+            let method = build_method(method_name, val, deep, leaf_depths)
+                .map_err(|e| anyhow::anyhow!(e))?;
             cut::cut(tree, method).map_err(|e| anyhow::anyhow!(e))?
         };
 

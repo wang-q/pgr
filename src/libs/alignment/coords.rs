@@ -18,7 +18,6 @@ use intspan::IntSpan;
 /// ];
 /// for (seq, pos, chr_start, strand, expected) in tests {
 ///     let ints = seq_intspan(seq.as_ref());
-///     // eprintln!("ints.to_string() = {:#?}", ints.to_string());
 ///     let result = pgr::libs::alignment::chr_to_align(&ints, pos, chr_start, strand).unwrap();
 ///     assert_eq!(result, expected);
 /// }
@@ -69,7 +68,6 @@ pub fn chr_to_align(ints: &IntSpan, pos: i32, chr_start: i32, strand: &str) -> a
 /// ];
 /// for (seq, pos, chr_start, strand, expected) in data {
 ///     let ints = seq_intspan(seq.as_ref());
-///     // eprintln!("ints.to_string() = {:#?}", ints.to_string());
 ///     let result = pgr::libs::alignment::align_to_chr(&ints, pos, chr_start, strand).unwrap();
 ///     assert_eq!(result, expected);
 /// }
