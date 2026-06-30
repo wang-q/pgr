@@ -2,7 +2,7 @@ use clap::*;
 use pgr::libs::paf::index::QueryResult;
 use pgr::libs::paf::msa::orient_interval;
 
-use super::{common, query};
+use super::common;
 
 // Output BED3 (name start end), one line per query result.
 fn output_bed(idx: &pgr::libs::paf::index::PafIndex, results: &[QueryResult]) {
@@ -44,7 +44,7 @@ Examples:
 }
 
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let (idx, all_results) = query::run_query(args)?;
+    let (idx, all_results) = common::run_query(args)?;
     for (_, results) in &all_results {
         output_bed(&idx, results);
     }

@@ -1,8 +1,9 @@
+use crate::libs::alignment::coords::reverse_range_pair;
 use crate::libs::chain::algo::{ChainItem, KdTree};
 use crate::libs::chain::gap_calc::GapCalc;
 use crate::libs::chain::record::{Chain, ChainData, ChainHeader};
 use crate::libs::chain::sub_matrix::SubMatrix;
-use crate::libs::io::{reverse_range_pair, SequenceReader};
+use crate::libs::io::SequenceReader;
 use crate::libs::nt;
 use std::cmp::Ordering;
 

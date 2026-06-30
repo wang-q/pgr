@@ -32,7 +32,11 @@ impl MafComp {
 
         // If the strand field is "-" then this is the start relative to the reverse-complemented source sequence
         if self.strand == '-' {
-            crate::libs::io::reverse_range_1based(&mut start, &mut end, self.src_size);
+            crate::libs::alignment::coords::reverse_range_1based(
+                &mut start,
+                &mut end,
+                self.src_size,
+            );
         }
 
         format!("{}({}):{}-{}", self.src, self.strand, start, end)

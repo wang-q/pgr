@@ -75,7 +75,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
         // Check if sequence exists
         if !tb.sequence_offsets.contains_key(seq_id) {
-            eprintln!("{} for [{}] not found in the 2bit file\n", seq_id, el);
+            log::warn!("{} for [{}] not found in the 2bit file", seq_id, el);
             continue;
         }
 

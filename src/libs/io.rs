@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter, Read, Write};
-use std::ops::Sub;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
@@ -164,69 +163,6 @@ pub fn is_fq<P: AsRef<Path>>(path: P) -> anyhow::Result<bool> {
         '@' => Ok(true),
         c => bail!("unknown file format, leading byte: {:?}", c),
     }
-}
-
-/// Reverse a `[start, end]` range against a total `size`, in place.
-///
-/// Both endpoints are mapped as `new = size - old`, so a forward range
-/// becomes a reverse-strand range (and vice versa).
-///
-/// ```
-/// let mut s = 10;
-/// let mut e = 20;
-/// pgr::reverse_range(&mut s, &mut e, 100);
-/// assert_eq!(s, 80);
-/// assert_eq!(e, 90);
-/// ```
-pub fn reverse_range<T: Copy + Sub<Output = T>>(start: &mut T, end: &mut T, size: T) {
-    let s = *start;
-    let e = *end;
-    *start = size - e;
-    *end = size - s;
-}
-
-/// Reverse a 0-based half-open `[start, end)` against `size`, returning the
-/// reversed range as a tuple `(size - end, size - start)`. Non-mutating
-/// counterpart of [`reverse_range`].
-///
-/// ```
-/// let (s, e) = pgr::libs::io::reverse_range_pair(10, 20, 100);
-/// assert_eq!(s, 80);
-/// assert_eq!(e, 90);
-/// ```
-pub fn reverse_range_pair<T: Copy + Sub<Output = T>>(start: T, end: T, size: T) -> (T, T) {
-    (size - end, size - start)
-}
-
-/// Reverse a 1-based inclusive `[start, end]` range against a total `size`,
-/// in place. The forward 1-based inclusive range becomes a reverse-strand
-/// 1-based inclusive range: `start -> size - end + 1`, `end -> size - start + 1`.
-///
-/// ```
-/// let mut s = 11;
-/// let mut e = 20;
-/// pgr::libs::io::reverse_range_1based(&mut s, &mut e, 100);
-/// assert_eq!(s, 81);
-/// assert_eq!(e, 90);
-/// ```
-pub fn reverse_range_1based(start: &mut usize, end: &mut usize, size: usize) {
-    let s = *start;
-    let e = *end;
-    *start = size - e + 1;
-    *end = size - s + 1;
-}
-
-/// Reverse a 1-based inclusive `[start, end]` range against `size`, returning the
-/// reversed range as a tuple `(size - end + 1, size - start + 1)`. Non-mutating
-/// counterpart of [`reverse_range_1based`].
-///
-/// ```
-/// let (s, e) = pgr::libs::io::reverse_range_1based_pair(11, 20, 100);
-/// assert_eq!(s, 81);
-/// assert_eq!(e, 90);
-/// ```
-pub fn reverse_range_1based_pair(start: usize, end: usize, size: usize) -> (usize, usize) {
-    (size - end + 1, size - start + 1)
 }
 
 /// Recursively collect FASTA files (`.fa` and `.fa.gz`) under `path`.

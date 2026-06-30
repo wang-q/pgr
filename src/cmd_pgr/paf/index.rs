@@ -50,7 +50,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let infiles: Vec<&String> = args.get_many::<String>("infiles").unwrap().collect();
     let count = infiles.len();
 
-    eprintln!("Building PAF index from {count} file(s)...");
+    log::info!("Building PAF index from {count} file(s)...");
 
     // For single-file input: use build_from_path (enables lazy CIGAR for BGZF).
     // For multi-file input: use build_multi (in-memory merge).
@@ -65,15 +65,15 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     };
 
     let lazy = idx.is_lazy();
-    eprintln!("  sequences: {}", idx.names.len());
-    eprintln!("  targets:   {}", idx.num_targets());
+    log::info!("  sequences: {}", idx.names.len());
+    log::info!("  targets:   {}", idx.num_targets());
     if lazy {
-        eprintln!("  mode:      lazy (BGZF virtual-position CIGAR)");
+        log::info!("  mode:      lazy (BGZF virtual-position CIGAR)");
     }
 
     if let Some(outfile) = args.get_one::<String>("outfile") {
         idx.save(outfile)?;
-        eprintln!("  saved to {}", outfile);
+        log::info!("  saved to {}", outfile);
     }
 
     Ok(())

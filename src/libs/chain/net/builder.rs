@@ -4,8 +4,8 @@
 //! chromosome's gap tree, producing a hierarchical Net structure.
 
 use super::types::{Chrom, Fill, Gap, Space};
+use crate::libs::alignment::coords::reverse_range;
 use crate::libs::chain::record::{Block, Chain};
-use crate::libs::io::reverse_range;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
 use std::rc::Rc;

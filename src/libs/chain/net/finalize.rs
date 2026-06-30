@@ -5,7 +5,7 @@
 //! `o_end`) for each fill by walking its attached chain's alignment data.
 
 use super::types::Gap;
-use crate::libs::io::reverse_range;
+use crate::libs::alignment::coords::reverse_range;
 use std::cell::RefCell;
 use std::rc::Rc;
 

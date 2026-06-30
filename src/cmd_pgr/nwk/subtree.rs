@@ -1,7 +1,6 @@
 use super::utils as nwr;
 use clap::*;
 use pgr::libs::phylo::tree::Tree;
-use std::collections::BTreeSet;
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
@@ -145,31 +144,15 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         }
 
         // Find LCA
-        let mut nodes: Vec<usize> = ids.iter().cloned().collect();
-        let mut sub_root_id = nodes.pop().unwrap();
-
-        // If multiple nodes, find their common ancestor
-        for id in &nodes {
-            match tree.get_common_ancestor(&sub_root_id, id) {
-                Ok(anc) => sub_root_id = anc,
-                Err(_) => {
-                    continue;
-                }
-            }
-        }
+        let ids_vec: Vec<usize> = ids.iter().cloned().collect();
+        let mut sub_root_id = match tree.get_lca(&ids_vec) {
+            Ok(id) => id,
+            Err(_) => continue,
+        };
 
         // Monophyly check
         if is_monophyly {
-            let mut descendants_named = BTreeSet::new();
-            if let Ok(subtree_nodes) = tree.get_subtree(&sub_root_id) {
-                for id in subtree_nodes {
-                    let node = tree.get_node(id).unwrap();
-                    // Check if it's a leaf/tip and has a name
-                    if node.children.is_empty() && node.name.is_some() {
-                        descendants_named.insert(id);
-                    }
-                }
-            }
+            let descendants_named = tree.get_named_leaves(sub_root_id);
 
             if ids != descendants_named {
                 if is_condense {
@@ -196,62 +179,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         if is_condense {
             let name = condense_name.unwrap();
 
-            // 1. Get info from sub_root
-            let sub_root = tree.get_node(sub_root_id).unwrap();
-            let parent_id_opt = sub_root.parent;
-            let edge_len = sub_root.length;
+            tree.condense_subtree(sub_root_id, name, ids.len())
+                .map_err(anyhow::Error::msg)?;
 
-            if let Some(parent_id) = parent_id_opt {
-                // 2. Create new node
-                let new_node_id = tree.add_node();
-                if let Some(node) = tree.get_node_mut(new_node_id) {
-                    node.set_name(name);
-                    node.length = edge_len;
-                    // Add properties
-                    let mut props = std::collections::BTreeMap::new();
-                    props.insert("member".to_string(), ids.len().to_string());
-                    props.insert("tri".to_string(), "white".to_string());
-                    node.properties = Some(props);
-                }
-
-                // 3. Remove old subtree
-                tree.remove_node(sub_root_id, true);
-
-                // 4. Link new node to parent
-                // Note: remove_node disconnects sub_root from parent, so we can just add child.
-                tree.add_child(parent_id, new_node_id).unwrap();
-
-                // 5. Output full tree
-                let out_string = tree.to_newick();
-                writer.write_fmt(format_args!("{}\n", out_string)).unwrap();
-            } else {
-                // Subtree root is tree root.
-                // Replaces the entire tree with a single node?
-                // Logic:
-                // Clear tree? Or just make a new root.
-                // Since we want to output the "condensed tree", which is just one node.
-                // We can just construct a string or modify tree.
-                // Let's modify tree for consistency.
-
-                // Remove root (clears everything basically)
-                tree.remove_node(sub_root_id, true);
-
-                // Add new root
-                let new_root = tree.add_node();
-                tree.set_root(new_root);
-                if let Some(node) = tree.get_node_mut(new_root) {
-                    node.set_name(name);
-                    // Root usually has no length
-                    // Add properties
-                    let mut props = std::collections::BTreeMap::new();
-                    props.insert("member".to_string(), ids.len().to_string());
-                    props.insert("tri".to_string(), "white".to_string());
-                    node.properties = Some(props);
-                }
-
-                let out_string = tree.to_newick();
-                writer.write_fmt(format_args!("{}\n", out_string)).unwrap();
-            }
+            let out_string = tree.to_newick();
+            writer.write_fmt(format_args!("{}\n", out_string)).unwrap();
         } else {
             // Extract subtree
             let out_string = tree.to_newick_subtree(sub_root_id);

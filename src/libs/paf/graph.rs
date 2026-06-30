@@ -752,7 +752,7 @@ fn split_alignment(
 /// For '+' strand, coords are already forward. For '-' strand, flip.
 fn fwd_query_coords(qs: i32, qe: i32, q_size: i32, reverse: bool) -> (i32, i32) {
     if reverse {
-        crate::libs::io::reverse_range_pair(qs, qe, q_size)
+        crate::libs::alignment::coords::reverse_range_pair(qs, qe, q_size)
     } else {
         (qs, qe)
     }

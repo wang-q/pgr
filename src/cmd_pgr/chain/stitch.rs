@@ -31,8 +31,8 @@ pub fn execute(args: &clap::ArgMatches) -> Result<()> {
                     || existing.header.q_name != chain.header.q_name
                     || existing.header.q_strand != chain.header.q_strand
                 {
-                    eprintln!(
-                        "Warning: Inconsistent chain info for ID {}: skipping fragment",
+                    log::warn!(
+                        "Inconsistent chain info for ID {}: skipping fragment",
                         chain.header.id
                     );
                     return;

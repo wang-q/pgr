@@ -49,6 +49,18 @@ pub fn get_common_ancestor(tree: &Tree, a: &NodeId, b: &NodeId) -> Result<NodeId
     lca.ok_or_else(|| "Nodes are not in the same tree (no common ancestor)".to_string())
 }
 
+/// Find the Lowest Common Ancestor (LCA) of multiple nodes.
+pub fn get_lca(tree: &Tree, nodes: &[NodeId]) -> Result<NodeId, String> {
+    if nodes.is_empty() {
+        return Err("Cannot find LCA of empty node set".to_string());
+    }
+    let mut lca = nodes[0];
+    for &n in &nodes[1..] {
+        lca = get_common_ancestor(tree, &lca, &n)?;
+    }
+    Ok(lca)
+}
+
 /// Calculate distance between two nodes.
 /// Returns (weighted_distance, topological_distance).
 pub fn get_distance(tree: &Tree, a: &NodeId, b: &NodeId) -> Result<(f64, usize), String> {
@@ -126,6 +138,21 @@ pub fn is_monophyletic(tree: &Tree, nodes: &[NodeId]) -> bool {
 
     // 4. Compare
     lca_leaves == input_leaves
+}
+
+/// Collect IDs of all named leaves (children.is_empty() && name.is_some()) in the subtree rooted at `id`.
+pub fn get_named_leaves(tree: &Tree, id: NodeId) -> BTreeSet<NodeId> {
+    let mut result = BTreeSet::new();
+    if let Ok(subtree_nodes) = tree.get_subtree(&id) {
+        for nid in subtree_nodes {
+            if let Some(node) = tree.get_node(nid) {
+                if node.children.is_empty() && node.name.is_some() {
+                    result.insert(nid);
+                }
+            }
+        }
+    }
+    result
 }
 
 /// Get height of a node (max distance to any leaf in its subtree).

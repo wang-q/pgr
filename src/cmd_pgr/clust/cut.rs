@@ -1,7 +1,7 @@
 use clap::*;
 use pgr::libs::clust::tree_cut::dynamic::{cutree_dynamic_tree, DynamicTreeOptions};
 use pgr::libs::clust::tree_cut::hybrid::{cutree_hybrid, HybridOptions};
-use pgr::libs::clust::tree_cut::{self as cut, Method};
+use pgr::libs::clust::tree_cut::{self as cut, Method, RepMode};
 use pgr::libs::phylo::tree::Tree;
 use std::io::Write;
 
@@ -353,37 +353,15 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
                 ))?;
             }
 
-            let clusters_map = partition.get_clusters();
-            // Sort cluster IDs (NodeIDs) for deterministic output
-            let mut cluster_ids: Vec<_> = clusters_map.keys().collect();
-            cluster_ids.sort();
-
-            for (i, &cid) in cluster_ids.iter().enumerate() {
-                let cluster_label = i + 1;
-                let members = clusters_map.get(cid).unwrap();
-
-                // Get names and sort
-                let mut member_names: Vec<String> = Vec::new();
-                for &mid in members {
-                    if let Some(node) = tree.get_node(mid) {
-                        let name = node.name.clone().unwrap_or_else(|| format!("Leaf_{}", mid));
-                        member_names.push(name);
-                    }
-                }
-                member_names.sort();
-
-                for name in member_names {
-                    writer.write_fmt(format_args!(
-                        "{}\t{}\t{}\n",
-                        group_label, cluster_label, name
-                    ))?;
-                }
-            }
+            let rows = cut::format_scan_rows(&partition, tree, &group_label);
+            writer.write_all(rows.as_bytes())?;
 
             val += step;
         }
         return Ok(());
     }
+
+    let rep_mode = RepMode::parse(rep_method).map_err(|e| anyhow::anyhow!(e))?;
 
     for tree in trees.iter() {
         let partition = if let Some(&min_cluster_size) = matches.get_one::<usize>("dynamic-tree") {
@@ -454,110 +432,9 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
             cut::cut(tree, method).map_err(|e| anyhow::anyhow!(e))?
         };
 
-        let root_dists = pgr::libs::phylo::tree::stat::compute_root_distances(tree);
-
-        let clusters_map = partition.get_clusters();
-
-        // Convert NodeId to names and group into Vec<Vec<(NodeId, String)>>
-        // We need NodeId for representative selection
-        let mut clusters: Vec<Vec<(pgr::libs::phylo::node::NodeId, String)>> = Vec::new();
-
-        for members in clusters_map.values() {
-            let mut member_info = Vec::new();
-            for &mid in members {
-                if let Some(node) = tree.get_node(mid) {
-                    let name = if let Some(name) = &node.name {
-                        name.clone()
-                    } else {
-                        format!("Leaf_{}", mid)
-                    };
-                    member_info.push((mid, name));
-                }
-            }
-            // Sort members within each cluster alphabetically
-            member_info.sort_by(|a, b| a.1.cmp(&b.1));
-            clusters.push(member_info);
-        }
-
-        // Sort clusters: first by size (descending), then by first member name
-        clusters.sort_by(|a, b| match b.len().cmp(&a.len()) {
-            std::cmp::Ordering::Equal => {
-                let name_a = a.first().map(|s| s.1.as_str()).unwrap_or("");
-                let name_b = b.first().map(|s| s.1.as_str()).unwrap_or("");
-                name_a.cmp(name_b)
-            }
-            other => other,
-        });
-
-        // Output
-        let find_rep =
-            |c: &Vec<(pgr::libs::phylo::node::NodeId, String)>| -> (Option<String>, usize) {
-                match rep_method {
-                    "first" => {
-                        if let Some(first) = c.first() {
-                            (Some(first.1.clone()), 0)
-                        } else {
-                            (None, 0)
-                        }
-                    }
-                    "root" => {
-                        if let Some((idx, rep)) =
-                            c.iter().enumerate().min_by(|(_, (id1, _)), (_, (id2, _))| {
-                                let d1 = root_dists.get(id1).unwrap_or(&f64::MAX);
-                                let d2 = root_dists.get(id2).unwrap_or(&f64::MAX);
-                                d1.partial_cmp(d2).unwrap_or(std::cmp::Ordering::Equal)
-                            })
-                        {
-                            (Some(rep.1.clone()), idx)
-                        } else {
-                            (None, 0)
-                        }
-                    }
-                    "medoid" => {
-                        let ids: Vec<_> = c.iter().map(|(id, _)| *id).collect();
-                        match pgr::libs::phylo::tree::query::tree_medoid(tree, &ids) {
-                            Some(best_idx) => (Some(c[best_idx].1.clone()), best_idx),
-                            None => (None, 0),
-                        }
-                    }
-                    _ => (None, 0), // unsupported rep method, treated as empty
-                }
-            };
-
-        match format.as_str() {
-            "cluster" => {
-                for c in clusters {
-                    let (best_rep_name, best_rep_idx) = find_rep(&c);
-
-                    if best_rep_name.is_some() {
-                        let mut names: Vec<&str> =
-                            c.iter().map(|(_, name)| name.as_str()).collect();
-                        if best_rep_idx != 0 {
-                            names.swap(0, best_rep_idx);
-                            // After swap, re-sort the rest to maintain determinism
-                            names[1..].sort();
-                        }
-
-                        writer.write_fmt(format_args!("{}\n", names.join("\t")))?;
-                    }
-                }
-            }
-            "pair" => {
-                for c in clusters {
-                    let (best_rep_name, _) = find_rep(&c);
-
-                    if let Some(rep_name) = best_rep_name {
-                        // For pair format, we might want to ensure the rep is listed first?
-                        // But pair format is just rep\tmember. Order of lines usually follows member order.
-                        // c is sorted alphabetically.
-                        for (_, member_name) in &c {
-                            writer.write_fmt(format_args!("{}\t{}\n", rep_name, member_name))?;
-                        }
-                    }
-                }
-            }
-            _ => anyhow::bail!("unsupported output format"),
-        }
+        let clusters = cut::partition_to_clusters(&partition, tree, rep_mode);
+        let output = cut::format_clusters(&clusters, format).map_err(|e| anyhow::anyhow!(e))?;
+        writer.write_all(output.as_bytes())?;
     }
 
     Ok(())

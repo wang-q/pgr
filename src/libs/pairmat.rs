@@ -543,11 +543,13 @@ pub fn transform_matrix(
     // Warn if normalize is requested but diagonals are missing or all zero
     if normalize {
         if diags.is_empty() {
-            eprintln!("Warning: --normalize requested but no diagonal values found. Result will be Inf/NaN.");
+            log::warn!(
+                "--normalize requested but no diagonal values found. Result will be Inf/NaN."
+            );
         } else {
             let max_diag = diags.iter().fold(0.0f32, |a, &b| a.max(b));
             if max_diag == 0.0 {
-                eprintln!("Warning: --normalize requested but all diagonal values are 0.0. Result will be Inf/NaN.");
+                log::warn!("--normalize requested but all diagonal values are 0.0. Result will be Inf/NaN.");
             }
         }
     }

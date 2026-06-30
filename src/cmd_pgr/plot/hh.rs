@@ -1,6 +1,7 @@
 use crate::cmd_pgr::plot::common::{context_get_str, render_and_write, replace_section};
 use clap::*;
 use indexmap::IndexMap;
+use pgr::libs::plot::histogram::{calc_density, calc_hist, create_table};
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
@@ -224,115 +225,6 @@ fn load_data(
     }
 
     Ok((data, xlabel, ylabel))
-}
-
-#[allow(clippy::type_complexity)]
-fn calc_hist(
-    data: &IndexMap<String, Vec<f64>>,
-    bins: usize,
-    xmm: Option<(f64, f64)>,
-) -> anyhow::Result<(IndexMap<String, Vec<usize>>, Vec<f64>)> {
-    // Calculate global range
-    let (min_val, max_val) = match xmm {
-        Some((min, max)) => (min, max),
-        None => {
-            let (min, max) = data
-                .values()
-                .flatten()
-                .fold((f64::INFINITY, f64::NEG_INFINITY), |(min, max), &val| {
-                    (min.min(val), max.max(val))
-                });
-            // Normalize range to neat values
-            let magnitude_min = if min.abs() < f64::EPSILON {
-                1.0
-            } else {
-                10f64.powf(min.abs().log10().floor())
-            };
-            let magnitude_max = if max.abs() < f64::EPSILON {
-                1.0
-            } else {
-                10f64.powf(max.abs().log10().floor())
-            };
-
-            let norm_min = (min / magnitude_min).floor() * magnitude_min;
-            let norm_max = (max / magnitude_max).ceil() * magnitude_max;
-
-            (norm_min, norm_max)
-        }
-    };
-
-    let mut hist_data = IndexMap::new();
-    let bin_width = (max_val - min_val) / (bins as f64);
-
-    // Calculate histogram for each group
-    for (group_name, values) in data.iter() {
-        let mut hist = vec![0usize; bins];
-        for &val in values {
-            if val >= min_val && val <= max_val {
-                let bin = ((val - min_val) / bin_width).floor() as usize;
-                let bin = bin.min(bins - 1); // Handle edge case
-                hist[bin] += 1;
-            }
-        }
-        hist_data.insert(group_name.clone(), hist);
-    }
-
-    // Calculate bin edges
-    let mut bin_edges = Vec::with_capacity(bins + 1);
-    for i in 0..=bins {
-        bin_edges.push(min_val + (i as f64) * bin_width);
-    }
-
-    Ok((hist_data, bin_edges))
-}
-
-fn calc_density(hist_data: &IndexMap<String, Vec<usize>>) -> IndexMap<String, Vec<f64>> {
-    let mut density_data = IndexMap::new();
-
-    for (group_name, hist) in hist_data.iter() {
-        let total_samples = hist.iter().sum::<usize>() as f64;
-        let density: Vec<f64> = hist
-            .iter()
-            .map(|&count| (count as f64) / total_samples)
-            .collect();
-        density_data.insert(group_name.clone(), density);
-    }
-
-    density_data
-}
-
-fn create_table(density_data: &IndexMap<String, Vec<f64>>) -> String {
-    let mut table = String::new();
-    let bins = density_data.values().next().map_or(0, |v| v.len());
-
-    // Iterate through each group
-    for (y, (_, densities)) in density_data.iter().enumerate() {
-        // Iterate through each bin
-        for (x, &d) in densities.iter().enumerate().take(bins) {
-            table.push_str(&format!(
-                "    {:3} {:3} {:.4}\n",
-                x, // x coordinate (3 digits)
-                y, // y coordinate (3 digits)
-                d  // density value (4 decimal places)
-            ));
-        }
-        table.push('\n');
-    }
-
-    // Add a dummy group with zeros if there's only one group
-    if density_data.len() == 1 {
-        for x in 0..bins {
-            table.push_str(&format!(
-                "    {:3} {:3} {:.4}\n",
-                x,   // x coordinate
-                1,   // y coordinate (second group)
-                0.0  // density value (zero)
-            ));
-        }
-        table.push('\n');
-    }
-
-    table
 }
 
 fn gen_hh(context: &tera::Context) -> anyhow::Result<()> {

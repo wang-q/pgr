@@ -91,7 +91,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         // Chain format: tStrand is always +, qStrand can be + or -
         // If qStrand is -, qStart/qEnd are relative to reverse end.
         let (q_start, q_end) = if q_strand_char == '-' {
-            pgr::libs::io::reverse_range_pair(psl.q_start, psl.q_end, q_size as i32)
+            pgr::libs::alignment::coords::reverse_range_pair(psl.q_start, psl.q_end, q_size as i32)
         } else {
             (psl.q_start, psl.q_end)
         };

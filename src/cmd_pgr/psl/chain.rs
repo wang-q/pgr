@@ -1,14 +1,9 @@
 use anyhow::Result;
 use clap::{Arg, ArgMatches, Command};
-use pgr::libs::chain::GapCalc;
-use pgr::libs::chain::SubMatrix;
-use pgr::libs::chain::{calc_block_score, chain_blocks, ChainableBlock, ScoreContext};
-use pgr::libs::fmt::psl::Psl;
+use pgr::libs::chain::{chain_blocks, group_psl_blocks, GapCalc, ScoreContext, SubMatrix};
 use pgr::libs::fmt::twobit::TwoBitFile;
 use std::cmp::Ordering;
-use std::collections::HashMap;
-use std::io::{BufRead, Write};
-use std::str::FromStr;
+use std::io::Write;
 
 pub fn make_subcommand() -> Command {
     Command::new("chain")
@@ -154,67 +149,7 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
     };
 
     // Group blocks by (t_name, q_name, q_strand)
-    let mut groups: HashMap<(String, String, char), GroupData> = HashMap::new();
-
-    for line in reader.lines() {
-        let line = line?;
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-
-        let psl = match Psl::from_str(&line) {
-            Ok(p) => p,
-            Err(_) => continue, // Skip invalid lines (e.g. headers)
-        };
-
-        let t_name = psl.t_name.clone();
-        let q_name = psl.q_name.clone();
-        let q_strand = psl.strand.chars().next().unwrap_or('+');
-
-        let key = (t_name.clone(), q_name.clone(), q_strand);
-        let entry = groups.entry(key).or_insert_with(|| GroupData {
-            t_size: psl.t_size,
-            q_size: psl.q_size,
-            blocks: Vec::new(),
-        });
-
-        if psl.strand.len() > 1 && psl.strand.chars().nth(1) == Some('-') {
-            eprintln!(
-                "Warning: Skipping PSL record with negative target strand: {} {} {}",
-                psl.q_name, psl.strand, psl.t_name
-            );
-            continue;
-        }
-
-        for i in 0..psl.block_count as usize {
-            let size = psl.block_sizes[i] as u64;
-            let t_start = psl.t_starts[i] as u64;
-            let t_end = t_start + size;
-
-            let (q_start, q_end) = {
-                let s = psl.q_starts[i] as u64;
-                (s, s + size)
-            };
-
-            let mut block = ChainableBlock {
-                t_start,
-                t_end,
-                q_start,
-                q_end,
-                score: size as f64 * 100.0,
-            };
-
-            if let Some(ctx) = &mut score_context {
-                if let Some(exact) =
-                    calc_block_score(&block, ctx, &q_name, &t_name, psl.q_size as u64, q_strand)
-                {
-                    block.score = exact;
-                }
-            }
-
-            entry.blocks.push(block);
-        }
-    }
+    let groups = group_psl_blocks(reader, &mut score_context)?;
 
     // Process groups
     let mut all_chains = Vec::new();
@@ -227,14 +162,16 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
 
         data.blocks.sort_by_key(|a| a.t_start);
 
-        if std::env::var("PGR_DEBUG").is_ok() {
-            eprintln!("Group: {} {} {}", t_name, q_name, q_strand);
-            for b in &data.blocks {
-                eprintln!(
-                    "Block: T {}-{} Q {}-{} Score {}",
-                    b.t_start, b.t_end, b.q_start, b.q_end, b.score
-                );
-            }
+        log::debug!("Group: {} {} {}", t_name, q_name, q_strand);
+        for b in &data.blocks {
+            log::debug!(
+                "Block: T {}-{} Q {}-{} Score {}",
+                b.t_start,
+                b.t_end,
+                b.q_start,
+                b.q_end,
+                b.score
+            );
         }
 
         let chains = chain_blocks(
@@ -291,10 +228,4 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
     }
 
     Ok(())
-}
-
-struct GroupData {
-    t_size: u32,
-    q_size: u32,
-    blocks: Vec<ChainableBlock>,
 }

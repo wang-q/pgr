@@ -99,9 +99,14 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         file_name.split('.').next().unwrap_or("unknown").to_string()
     };
 
-    eprintln!(
+    log::info!(
         "gff rg: infile={}, outfile={}, tag={}, asm={}, simplify={}, key={}",
-        infile, outfile, opt_tag, opt_asm, is_simplify, opt_key
+        infile,
+        outfile,
+        opt_tag,
+        opt_asm,
+        is_simplify,
+        opt_key
     );
 
     let reader = pgr::reader(infile)?;

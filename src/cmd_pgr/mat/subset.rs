@@ -54,7 +54,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         if let Some(idx) = all_names.iter().position(|n| *n == name) {
             indices.push(idx);
         } else {
-            eprintln!("Warning: Name not found in matrix: {}", name);
+            log::warn!("Name not found in matrix: {}", name);
         }
     }
 

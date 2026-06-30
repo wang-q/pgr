@@ -4,6 +4,10 @@ use clap::*;
 mod cmd_pgr;
 
 fn main() -> anyhow::Result<()> {
+    // Default to `info` level so progress/warning messages remain visible by default,
+    // matching the previous `eprintln!` behavior. Users can override via RUST_LOG.
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+
     let app = Command::new("pgr")
         .version(crate_version!())
         .author(crate_authors!())

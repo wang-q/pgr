@@ -2,4 +2,5 @@
 #![feature(portable_simd)]
 
 pub mod libs;
-pub use libs::io::{is_bgzf, read_lines, read_sizes, reader, reverse_range, writer};
+pub use libs::alignment::coords::reverse_range;
+pub use libs::io::{is_bgzf, read_lines, read_sizes, reader, writer};

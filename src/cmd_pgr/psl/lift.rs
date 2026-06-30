@@ -104,7 +104,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 if let Some(real_size_i32) = real_size_opt {
                     let real_size = real_size_i32 as u32;
                     if end_0based > real_size {
-                        eprintln!("Warning: Subrange end {} > sequence size {} for {}. Skipping query lift.", end_0based, real_size, psl.q_name);
+                        log::warn!(
+                            "Subrange end {} > sequence size {} for {}. Skipping query lift.",
+                            end_0based,
+                            real_size,
+                            psl.q_name
+                        );
                     } else {
                         let is_neg = psl.strand.starts_with('-');
 
@@ -124,10 +129,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                         }
                     }
                 } else {
-                    eprintln!(
-                        "Warning: No sizes provided for {}. Skipping query lift.",
-                        name_part
-                    );
+                    log::warn!("No sizes provided for {}. Skipping query lift.", name_part);
                 }
             }
         }
@@ -145,7 +147,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 if let Some(real_size_i32) = real_size_opt {
                     let real_size = real_size_i32 as u32;
                     if end_0based > real_size {
-                        eprintln!("Warning: Subrange end {} > sequence size {} for {}. Skipping target lift.", end_0based, real_size, psl.t_name);
+                        log::warn!(
+                            "Subrange end {} > sequence size {} for {}. Skipping target lift.",
+                            end_0based,
+                            real_size,
+                            psl.t_name
+                        );
                     } else {
                         // For target, check strand if present
                         let is_neg = if psl.strand.len() >= 2 {
@@ -170,10 +177,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                         }
                     }
                 } else {
-                    eprintln!(
-                        "Warning: No sizes provided for {}. Skipping target lift.",
-                        name_part
-                    );
+                    log::warn!("No sizes provided for {}. Skipping target lift.", name_part);
                 }
             }
         }

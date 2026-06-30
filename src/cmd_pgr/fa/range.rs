@@ -97,7 +97,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         let rg = intspan::Range::from_str(el);
         let seq_id = rg.chr().to_string();
         if !loc_of.contains_key(&seq_id) {
-            eprintln!("{} for [{}] not found in the .loc index file\n", seq_id, el);
+            log::warn!("{} for [{}] not found in the .loc index file", seq_id, el);
             continue;
         }
 

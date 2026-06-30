@@ -65,7 +65,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 // block untouched
 
                 if matched.len() > 1 {
-                    eprintln!("Doesn't support replacing multiple records in one block");
+                    log::warn!("Doesn't support replacing multiple records in one block");
                 }
 
                 //----------------------------

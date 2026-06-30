@@ -67,8 +67,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 continue;
             }
             if block.components.len() > 2 {
-                eprintln!(
-                    "Warning: skipping block with {} sequences (only two-sequence blocks are supported)",
+                log::warn!(
+                    "skipping block with {} sequences (only two-sequence blocks are supported)",
                     block.components.len()
                 );
                 continue;

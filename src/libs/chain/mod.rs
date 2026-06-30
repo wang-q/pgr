@@ -28,6 +28,7 @@ pub mod bitmap;
 pub mod connect;
 pub mod gap_calc;
 pub mod net;
+pub mod psl_chain;
 pub mod record;
 pub mod sub_matrix;
 
@@ -35,5 +36,6 @@ pub use algo::{ChainItem, KdTree};
 pub use bitmap::BitMap;
 pub use connect::{calc_block_score, chain_blocks, ChainableBlock, ScoreContext};
 pub use gap_calc::GapCalc;
+pub use psl_chain::{group_psl_blocks, GroupData, GroupKey};
 pub use record::{read_chains, Block, Chain, ChainData, ChainHeader, ChainReader};
 pub use sub_matrix::SubMatrix;

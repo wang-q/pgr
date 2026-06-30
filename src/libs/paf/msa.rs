@@ -1,4 +1,4 @@
-use crate::libs::io;
+use crate::libs::alignment::coords;
 use crate::libs::nt;
 use crate::libs::paf::cigar::CigarOp;
 use crate::libs::paf::fasta::FastaStore;
@@ -139,7 +139,7 @@ pub fn build_msa_entries(
         let (seq, start, strand_char) = if *strand == '-' {
             (
                 nt::rev_comp(&q_seq_fwd).collect::<Vec<u8>>(),
-                io::reverse_range_pair(qs, qe, q_src_size as i32).0,
+                coords::reverse_range_pair(qs, qe, q_src_size as i32).0,
                 '-',
             )
         } else {
@@ -213,7 +213,7 @@ pub fn build_pairwise_block(
             0,
             rc_sub_start,
             '-',
-            io::reverse_range_pair(qs, qe, q_src_size as i32).0,
+            coords::reverse_range_pair(qs, qe, q_src_size as i32).0,
         )
     } else {
         (q_seq_fwd, *rec_qs, qs, '+', qs)

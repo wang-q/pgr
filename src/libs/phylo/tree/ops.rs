@@ -485,3 +485,45 @@ where
         remove_node(tree, id, true);
     }
 }
+
+/// Condense the subtree rooted at `sub_root_id` into a single node with the given name.
+/// The new node inherits the edge length of the subtree root and gets `member` and `tri=white` properties.
+pub fn condense_subtree(
+    tree: &mut Tree,
+    sub_root_id: NodeId,
+    name: &str,
+    member_count: usize,
+) -> Result<(), String> {
+    let sub_root = tree
+        .get_node(sub_root_id)
+        .ok_or(format!("Node {} not found", sub_root_id))?;
+    let parent_id_opt = sub_root.parent;
+    let edge_len = sub_root.length;
+
+    if let Some(parent_id) = parent_id_opt {
+        // Subtree root has a parent: replace subtree with a single child node.
+        let new_node_id = tree.add_node();
+        if let Some(node) = tree.get_node_mut(new_node_id) {
+            node.set_name(name);
+            node.length = edge_len;
+            node.add_property("member", member_count.to_string());
+            node.add_property("tri", "white");
+        }
+
+        tree.remove_node(sub_root_id, true);
+        tree.add_child(parent_id, new_node_id)?;
+    } else {
+        // Subtree root is the tree root: replace entire tree with a single root node.
+        tree.remove_node(sub_root_id, true);
+
+        let new_root = tree.add_node();
+        tree.set_root(new_root);
+        if let Some(node) = tree.get_node_mut(new_root) {
+            node.set_name(name);
+            node.add_property("member", member_count.to_string());
+            node.add_property("tri", "white");
+        }
+    }
+
+    Ok(())
+}

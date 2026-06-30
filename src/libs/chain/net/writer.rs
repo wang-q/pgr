@@ -4,8 +4,8 @@
 //! recomputing per-fill subchain score/size from the attached chain data.
 
 use super::types::{Chrom, Fill, Gap};
+use crate::libs::alignment::coords::reverse_range;
 use crate::libs::chain::record::Chain;
-use crate::libs::io::reverse_range;
 use std::cell::RefCell;
 use std::io::{self, Write};
 use std::rc::Rc;

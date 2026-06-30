@@ -264,10 +264,7 @@ pub fn partition_to_clusters(
         let mut member_info: Vec<(NodeId, String)> = Vec::with_capacity(members.len());
         for &mid in members {
             if let Some(node) = tree.get_node(mid) {
-                let name = node
-                    .name
-                    .clone()
-                    .unwrap_or_else(|| format!("Leaf_{}", mid));
+                let name = node.name.clone().unwrap_or_else(|| format!("Leaf_{}", mid));
                 member_info.push((mid, name));
             }
         }
@@ -343,10 +340,7 @@ pub fn format_scan_rows(partition: &Partition, tree: &Tree, group_label: &str) -
             let mut member_names: Vec<String> = Vec::with_capacity(members.len());
             for &mid in members {
                 if let Some(node) = tree.get_node(mid) {
-                    let name = node
-                        .name
-                        .clone()
-                        .unwrap_or_else(|| format!("Leaf_{}", mid));
+                    let name = node.name.clone().unwrap_or_else(|| format!("Leaf_{}", mid));
                     member_names.push(name);
                 }
             }

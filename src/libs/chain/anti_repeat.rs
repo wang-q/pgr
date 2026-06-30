@@ -6,9 +6,9 @@
 //! this specific ordering (T<->A, C<->G). Switching to `NT_VAL` would break the
 //! complement calculation.
 
+use crate::libs::alignment::coords::reverse_range_pair;
 use crate::libs::chain::{Block, Chain};
 use crate::libs::fmt::twobit::TwoBitFile;
-use crate::libs::io::reverse_range_pair;
 use crate::libs::nt::is_lower;
 
 /// Check a chain against both the degeneracy and repeat filters.
@@ -143,9 +143,11 @@ pub fn check_degeneracy<R: std::io::Read + std::io::Seek>(
         let adjust_factor = 1.01 - over_ok / max_over_ok;
         let adjusted_score = chain.header.score * adjust_factor;
         if adjusted_score < min_score as f64 {
-            eprintln!(
+            log::info!(
                 "Chain {} filtered by degeneracy: score {} -> {}",
-                chain.header.id, chain.header.score, adjusted_score
+                chain.header.id,
+                chain.header.score,
+                adjusted_score
             );
             false
         } else {
@@ -197,9 +199,13 @@ pub fn check_repeat<R: std::io::Read + std::io::Seek>(
 
     let adjusted_score = chain.header.score * 2.0 * ((total - rep_count) as f64) / (total as f64);
     if adjusted_score < min_score as f64 {
-        eprintln!(
+        log::info!(
             "Chain {} filtered by repeat: score {} -> {} (rep {}/{})",
-            chain.header.id, chain.header.score, adjusted_score, rep_count, total
+            chain.header.id,
+            chain.header.score,
+            adjusted_score,
+            rep_count,
+            total
         );
         false
     } else {

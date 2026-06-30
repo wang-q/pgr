@@ -3,6 +3,7 @@ use crate::cmd_pgr::plot::common::{context_get_str, render_and_write, replace_se
 use anyhow::{anyhow, Result};
 use clap::*;
 use indexmap::IndexMap;
+use pgr::libs::plot::venn::{venn_sets_2, venn_sets_3, venn_sets_4};
 use std::path::Path;
 
 // Create clap subcommand arguments
@@ -84,124 +85,28 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
         ints_of.insert(basename, ints);
     }
 
-    let mut excls = Vec::new(); // sizes of exclusive elements
-    let mut inter = Vec::new(); // sizes of intersections
+    let get_set = |i: usize| -> anyhow::Result<&intspan::IntSpan> {
+        Ok(ints_of
+            .get_index(i)
+            .ok_or_else(|| anyhow!("missing set {}", i))?
+            .1)
+    };
 
-    match ints_of.len() {
+    let (excls, inter) = match ints_of.len() {
         2 => {
-            let set_a = ints_of
-                .get_index(0)
-                .ok_or_else(|| anyhow!("missing set 0"))?
-                .1;
-            let set_b = ints_of
-                .get_index(1)
-                .ok_or_else(|| anyhow!("missing set 1"))?
-                .1;
-
-            // A ∩ B
-            let i_ab = set_a.intersect(set_b).size();
-            inter.push(i_ab);
-
-            // A - B
-            excls.push(set_a.diff(set_b).size());
-            // B - A
-            excls.push(set_b.diff(set_a).size());
+            let r = venn_sets_2(get_set(0)?, get_set(1)?);
+            (r.excls, r.inter)
         }
         3 => {
-            let set_a = ints_of
-                .get_index(0)
-                .ok_or_else(|| anyhow!("missing set 0"))?
-                .1;
-            let set_b = ints_of
-                .get_index(1)
-                .ok_or_else(|| anyhow!("missing set 1"))?
-                .1;
-            let set_c = ints_of
-                .get_index(2)
-                .ok_or_else(|| anyhow!("missing set 2"))?
-                .1;
-
-            // A ∩ B ∩ C
-            let i_abc = set_a.intersect(set_b).intersect(set_c);
-
-            // Binary intersections minus triple intersection
-            let sets_arr = [set_a, set_b, set_c];
-            for i in 0..2 {
-                for j in (i + 1)..=2 {
-                    let intersection = sets_arr[i].intersect(sets_arr[j]).diff(&i_abc).size();
-                    inter.push(intersection);
-                }
-            }
-
-            inter.push(i_abc.size());
-
-            // A - B - C
-            excls.push(set_a.diff(set_b).diff(set_c).size());
-            // B - A - C
-            excls.push(set_b.diff(set_a).diff(set_c).size());
-            // C - A - B
-            excls.push(set_c.diff(set_a).diff(set_b).size());
+            let r = venn_sets_3(get_set(0)?, get_set(1)?, get_set(2)?);
+            (r.excls, r.inter)
         }
         4 => {
-            let set_a = ints_of
-                .get_index(0)
-                .ok_or_else(|| anyhow!("missing set 0"))?
-                .1;
-            let set_b = ints_of
-                .get_index(1)
-                .ok_or_else(|| anyhow!("missing set 1"))?
-                .1;
-            let set_c = ints_of
-                .get_index(2)
-                .ok_or_else(|| anyhow!("missing set 2"))?
-                .1;
-            let set_d = ints_of
-                .get_index(3)
-                .ok_or_else(|| anyhow!("missing set 3"))?
-                .1;
-
-            // Quadruple intersection
-            let i_abcd = set_a.intersect(set_b).intersect(set_c).intersect(set_d);
-
-            // Binary intersections
-            let sets_arr = [set_a, set_b, set_c, set_d];
-            for i in 0..3 {
-                for j in (i + 1)..=3 {
-                    let mut i_temp = sets_arr[i].intersect(sets_arr[j]);
-                    // Subtract all higher-order intersections containing these two sets
-                    for (k, _) in sets_arr.iter().enumerate() {
-                        if k != i && k != j {
-                            i_temp.subtract(sets_arr[k]);
-                        }
-                    }
-                    inter.push(i_temp.size());
-                }
-            }
-
-            // Triple intersections
-            for i in 0..2 {
-                for j in (i + 1)..3 {
-                    for k in (j + 1)..=3 {
-                        let i_temp = sets_arr[i]
-                            .intersect(sets_arr[j])
-                            .intersect(sets_arr[k])
-                            .diff(&i_abcd);
-                        inter.push(i_temp.size());
-                    }
-                }
-            }
-
-            // Quadruple intersection
-            inter.push(i_abcd.size());
-
-            // Exclusive elements
-            excls.push(set_a.diff(set_b).diff(set_c).diff(set_d).size());
-            excls.push(set_b.diff(set_a).diff(set_c).diff(set_d).size());
-            excls.push(set_c.diff(set_a).diff(set_b).diff(set_d).size());
-            excls.push(set_d.diff(set_a).diff(set_b).diff(set_c).size());
+            let r = venn_sets_4(get_set(0)?, get_set(1)?, get_set(2)?, get_set(3)?);
+            (r.excls, r.inter)
         }
-        _ => {}
-    }
+        _ => (Vec::new(), Vec::new()),
+    };
 
     //----------------------------
     // Context

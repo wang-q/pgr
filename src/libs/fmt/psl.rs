@@ -109,7 +109,7 @@ impl Psl {
         let mut qs = psl.q_start;
         let mut qe = psl.q_end;
         if strand.starts_with('-') {
-            crate::libs::io::reverse_range(&mut qs, &mut qe, psl.q_size as i32);
+            crate::libs::alignment::coords::reverse_range(&mut qs, &mut qe, psl.q_size as i32);
         }
 
         let mut ts = psl.t_start;
@@ -121,7 +121,7 @@ impl Psl {
         };
 
         if t_strand_rev {
-            crate::libs::io::reverse_range(&mut ts, &mut te, psl.t_size as i32);
+            crate::libs::alignment::coords::reverse_range(&mut ts, &mut te, psl.t_size as i32);
         }
 
         let mut either_insert = false;

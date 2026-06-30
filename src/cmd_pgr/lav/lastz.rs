@@ -187,9 +187,9 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
         }
     }
 
-    eprintln!("* Target files: [{}]", target_files.len());
-    eprintln!("* Query files:  [{}]", query_files.len());
-    eprintln!("* Total jobs:   [{}]", jobs.len());
+    log::info!("* Target files: [{}]", target_files.len());
+    log::info!("* Query files:  [{}]", query_files.len());
+    log::info!("* Total jobs:   [{}]", jobs.len());
 
     // Parallel execution
     let pool = rayon::ThreadPoolBuilder::new()
@@ -265,13 +265,13 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
             cmd.arg(format!("--output={}", out_path.to_string_lossy()));
 
             // Print command for progress tracking
-            eprintln!("{:?}", cmd);
+            log::info!("{:?}", cmd);
 
             // Execute lastz and wait for it to complete
             let status = cmd.status().expect("Failed to execute lastz");
 
             if !status.success() {
-                eprintln!("Warning: lastz failed for {} vs {}", t_base, q_base);
+                log::warn!("lastz failed for {} vs {}", t_base, q_base);
             } else {
                 // println!("Finished: {} vs {}", t_base, q_base);
             }

@@ -76,12 +76,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let common_names: Vec<_> = names1.iter().filter(|name| names2.contains(name)).collect();
 
     // Report sequence counts
-    eprintln!(
+    log::info!(
         "Sequences in matrices: {} and {}",
         names1.len(),
         names2.len()
     );
-    eprintln!("Common sequences: {}", common_names.len());
+    log::info!("Common sequences: {}", common_names.len());
 
     if common_names.is_empty() {
         return Err(anyhow::anyhow!(

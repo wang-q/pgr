@@ -8,7 +8,7 @@ pub mod tests;
 pub mod traversal;
 
 use super::node::{Node, NodeId};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug, Default, Clone)]
 pub struct Tree {
@@ -122,6 +122,16 @@ impl Tree {
         ops::prune_where(self, predicate)
     }
 
+    /// Condense the subtree rooted at `sub_root_id` into a single named node.
+    pub fn condense_subtree(
+        &mut self,
+        sub_root_id: NodeId,
+        name: &str,
+        member_count: usize,
+    ) -> Result<(), String> {
+        ops::condense_subtree(self, sub_root_id, name, member_count)
+    }
+
     // --- Delegation to traversal ---
 
     pub fn preorder(&self, start_node: &NodeId) -> Result<Vec<NodeId>, String> {
@@ -154,6 +164,11 @@ impl Tree {
         query::get_common_ancestor(self, a, b)
     }
 
+    /// Find the Lowest Common Ancestor (LCA) of multiple nodes.
+    pub fn get_lca(&self, nodes: &[NodeId]) -> Result<NodeId, String> {
+        query::get_lca(self, nodes)
+    }
+
     pub fn get_distance(&self, a: &NodeId, b: &NodeId) -> Result<(f64, usize), String> {
         query::get_distance(self, a, b)
     }
@@ -176,6 +191,11 @@ impl Tree {
 
     pub fn is_monophyletic(&self, nodes: &[NodeId]) -> bool {
         query::is_monophyletic(self, nodes)
+    }
+
+    /// Collect IDs of all named leaves in the subtree rooted at `id`.
+    pub fn get_named_leaves(&self, id: NodeId) -> BTreeSet<NodeId> {
+        query::get_named_leaves(self, id)
     }
 
     pub fn get_height(&self, id: NodeId, weighted: bool) -> f64 {
