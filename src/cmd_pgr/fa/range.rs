@@ -79,19 +79,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let mut fa_out = pgr::libs::fmt::fa::writer(args.get_one::<String>("outfile").unwrap())?;
 
-    let mut ranges = if args.contains_id("ranges") {
-        args.get_many::<String>("ranges")
-            .unwrap()
-            .cloned()
-            .collect()
-    } else {
-        vec![]
-    };
-
-    if args.contains_id("rgfile") {
-        let mut rgs = intspan::read_first_column(args.get_one::<String>("rgfile").unwrap());
-        ranges.append(&mut rgs);
-    }
+    let ranges = crate::cmd_pgr::args::collect_ranges(args);
 
     let opt_cache = *args.get_one::<std::num::NonZeroUsize>("cache").unwrap();
     let mut cache: lru::LruCache<String, noodles_fasta::Record> = lru::LruCache::new(opt_cache);

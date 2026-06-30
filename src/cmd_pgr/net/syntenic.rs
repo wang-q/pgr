@@ -2,8 +2,6 @@ use clap::{Arg, ArgMatches, Command};
 use pgr::libs::chain::net::{range_intersection, read_nets, write_net, Chrom, Fill, Gap};
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::fs::File;
-use std::io::{BufReader, BufWriter};
 use std::rc::Rc;
 
 pub fn make_subcommand() -> Command {
@@ -25,7 +23,7 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
     let out_file = matches.get_one::<String>("out_net").unwrap();
     let min_score = *matches.get_one::<f64>("min_score").unwrap();
 
-    let reader = BufReader::new(File::open(in_file)?);
+    let reader = pgr::reader(in_file)?;
     let nets = read_nets(reader)?;
 
     // Build DupeTrees for all query chromosomes
@@ -46,7 +44,7 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
     }
 
     // Write output
-    let mut writer = BufWriter::new(File::create(out_file)?);
+    let mut writer = pgr::writer(out_file)?;
     for net in &nets {
         write_net(net, &mut writer, false, min_score, 0)?;
     }

@@ -5,7 +5,7 @@ use regex::RegexBuilder;
 use std::collections::{BTreeMap, BTreeSet};
 
 // Named IDs that match the name rules
-pub fn match_names(tree: &Tree, args: &ArgMatches) -> BTreeSet<usize> {
+pub fn match_names(tree: &Tree, args: &ArgMatches) -> anyhow::Result<BTreeSet<usize>> {
     // IDs with names
     let id_of: BTreeMap<_, _> = tree.get_name_id();
 
@@ -25,7 +25,7 @@ pub fn match_names(tree: &Tree, args: &ArgMatches) -> BTreeSet<usize> {
     // ids supplied by --file
     if args.contains_id("file") {
         let file = args.get_one::<String>("file").unwrap();
-        for name in intspan::read_first_column(file).iter() {
+        for name in pgr::libs::io::read_names_as_vec(file)?.iter() {
             if id_of.contains_key(name) {
                 let id = id_of.get(name).unwrap();
                 ids.insert(*id);
@@ -80,7 +80,7 @@ pub fn match_names(tree: &Tree, args: &ArgMatches) -> BTreeSet<usize> {
         }
     }
 
-    ids
+    Ok(ids)
 }
 
 // IDs that match the position rules

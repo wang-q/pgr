@@ -107,7 +107,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         }
 
         // 2. Identify targets
-        let target_ids = nwr::match_names(&tree, args);
+        let target_ids = nwr::match_names(&tree, args)?;
 
         // 3. Determine nodes to remove
         let to_remove = if args.get_flag("invert") {

@@ -53,14 +53,7 @@ Examples:
                 .action(ArgAction::SetTrue)
                 .help("Reverse-complement sequences when chromosome strand is '-'"),
         )
-        .arg(
-            Arg::new("outdir")
-                .short('o')
-                .long("outdir")
-                .num_args(1)
-                .default_value("stdout")
-                .help("Output location. [stdout] for screen"),
-        )
+        .arg(crate::cmd_pgr::args::outdir_arg())
 }
 
 // command implementation
@@ -91,7 +84,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 // Reverse-complement the sequence if needed
                 let seq = if is_rc && range.strand() == "-" {
                     *range.strand_mut() = "+".to_string();
-                    bio::alphabets::dna::revcomp(entry.seq())
+                    pgr::libs::nt::rev_comp(entry.seq()).collect::<Vec<u8>>()
                 } else {
                     entry.seq().to_vec()
                 };

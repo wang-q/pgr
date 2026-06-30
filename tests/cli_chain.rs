@@ -156,7 +156,7 @@ fn test_chain_sort() {
             "sort",
             chain1_path.to_str().unwrap(),
             chain2_path.to_str().unwrap(),
-            "--output",
+            "--outfile",
             out_path.to_str().unwrap(),
         ])
         .run();
@@ -203,7 +203,7 @@ fn test_chain_sort_input_list() {
             "sort",
             "--input-list",
             list_path.to_str().unwrap(),
-            "--output",
+            "--outfile",
             out_path.to_str().unwrap(),
         ])
         .run();
@@ -242,7 +242,7 @@ fn test_chain_sort_mixed_inputs() {
             "--input-list",
             list_path.to_str().unwrap(),
             chain2_path.to_str().unwrap(), // Pass chain2 as arg
-            "--output",
+            "--outfile",
             out_path.to_str().unwrap(),
         ])
         .run();

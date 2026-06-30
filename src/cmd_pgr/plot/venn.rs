@@ -71,7 +71,7 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
         }
 
         // Read file content and convert to IntSpan
-        let vec = intspan::read_first_column(file);
+        let vec = pgr::libs::io::read_names_as_vec(file)?;
         let mut ints = intspan::IntSpan::new();
 
         for e in &vec {

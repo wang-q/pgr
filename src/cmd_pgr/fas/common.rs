@@ -4,8 +4,19 @@
 //! and dispatches per-block processing either single-threaded or via a
 //! crossbeam parallel pipeline (1 reader → N workers → 1 writer).
 
+use clap::Arg;
 use pgr::libs::fmt::fas::FasBlock;
 use std::io::Write;
+
+/// Standard `-r/--required` argument (file of required species names).
+pub fn required_arg() -> Arg {
+    Arg::new("required")
+        .long("required")
+        .short('r')
+        .required(true)
+        .num_args(1)
+        .help("Required: File with a list of species names to keep, one per line")
+}
 
 /// Process FasBlock files either single-threaded or in parallel.
 ///

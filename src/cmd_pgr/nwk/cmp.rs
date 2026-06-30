@@ -1,7 +1,7 @@
 use clap::*;
 use pgr::libs::phylo::tree::Tree;
 use pgr::libs::phylo::TreeComparison;
-use std::io::{self, Write};
+use std::io::Write;
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
@@ -66,11 +66,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     // 3. Output writer
     let outfile = args.get_one::<String>("outfile").unwrap();
-    let mut writer: Box<dyn Write> = if outfile == "stdout" {
-        Box::new(io::stdout())
-    } else {
-        Box::new(std::fs::File::create(outfile)?)
-    };
+    let mut writer = pgr::writer(outfile)?;
 
     // 4. Compare
     // Header

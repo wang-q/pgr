@@ -52,7 +52,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut fa_out = pgr::libs::fmt::fa::writer(args.get_one::<String>("outfile").unwrap())?;
 
     let list: indexmap::IndexSet<_> =
-        intspan::read_first_column(args.get_one::<String>("list.txt").unwrap())
+        pgr::libs::io::read_names_as_vec(args.get_one::<String>("list.txt").unwrap())?
             .into_iter()
             .collect();
 

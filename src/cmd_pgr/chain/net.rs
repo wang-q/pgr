@@ -2,8 +2,7 @@ use anyhow::Result;
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use pgr::libs::chain::net::{finalize_net, write_net, ChainNet};
 use pgr::libs::chain::ChainReader;
-use std::fs::File;
-use std::io::{BufReader, BufWriter, Write};
+use std::io::Write;
 
 pub fn make_subcommand() -> Command {
     Command::new("net")
@@ -78,8 +77,7 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
     let mut t_net = ChainNet::new(&t_sizes);
     let mut q_net = ChainNet::new(&q_sizes);
 
-    let f = File::open(input_path)?;
-    let mut reader = ChainReader::new(BufReader::new(f));
+    let mut reader = ChainReader::new(pgr::reader(input_path)?);
 
     let mut last_score = f64::MAX;
 
@@ -112,8 +110,7 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
 
     // Finish and write T net
     {
-        let out_file = File::create(target_net_path)?;
-        let mut writer = BufWriter::new(out_file);
+        let mut writer = pgr::writer(target_net_path)?;
 
         for comment in &reader.header_comments {
             write!(writer, "{}", comment)?;
@@ -137,8 +134,7 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
 
     // Finish and write Q net
     {
-        let out_file = File::create(query_net_path)?;
-        let mut writer = BufWriter::new(out_file);
+        let mut writer = pgr::writer(query_net_path)?;
 
         for comment in &reader.header_comments {
             write!(writer, "{}", comment)?;

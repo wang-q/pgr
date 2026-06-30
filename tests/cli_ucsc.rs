@@ -174,7 +174,7 @@ fn test_chain_sort_lastz() {
             "chain",
             "sort",
             input.to_str().unwrap(),
-            "--output",
+            "--outfile",
             output.to_str().unwrap(),
         ])
         .run();

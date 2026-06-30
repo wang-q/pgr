@@ -1,5 +1,4 @@
 use clap::*;
-use std::collections::BTreeMap;
 use std::io::Write;
 
 // Create clap subcommand arguments
@@ -27,14 +26,7 @@ Examples:
 
 "###,
         )
-        .arg(
-            Arg::new("replace.tsv")
-                .short('r')
-                .long("required")
-                .required(true)
-                .num_args(1)
-                .help("Required: Path to the TSV file containing replacement rules"),
-        )
+        .arg(crate::cmd_pgr::fas::common::required_arg())
         .arg(
             Arg::new("infiles")
                 .required(true)
@@ -52,22 +44,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap())?;
 
-    let mut replace_of: BTreeMap<String, Vec<String>> = BTreeMap::new();
-    for line in pgr::read_lines(args.get_one::<String>("replace.tsv").unwrap())? {
-        let rgs: Vec<_> = line.split('\t').collect();
-
-        if rgs.is_empty() {
-            continue;
-        }
-
-        let rg = rgs.first().unwrap().to_string();
-        let replacements = rgs
-            .iter()
-            .skip(1)
-            .map(|e| e.to_string())
-            .collect::<Vec<String>>();
-        replace_of.insert(rg.to_string(), replacements);
-    }
+    let replace_of = pgr::libs::io::read_replace_tsv(args.get_one::<String>("required").unwrap())?;
 
     //----------------------------
     // Operating

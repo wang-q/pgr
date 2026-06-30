@@ -49,15 +49,7 @@ Examples:
                 .index(1)
                 .help("Input FASTA file to compress"),
         )
-        .arg(
-            Arg::new("parallel")
-                .long("parallel")
-                .short('p')
-                .value_parser(value_parser!(std::num::NonZeroUsize))
-                .num_args(1)
-                .default_value("1")
-                .help("Number of threads for parallel compression"),
-        )
+        .arg(crate::cmd_pgr::args::parallel_arg())
         .arg(
             Arg::new("compress-level")
                 .long("compress-level")
@@ -104,7 +96,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let opt_parallel = *args.get_one::<std::num::NonZeroUsize>("parallel").unwrap();
+    let opt_parallel: std::num::NonZeroUsize =
+        (*args.get_one::<usize>("parallel").unwrap()).try_into()?;
     let compress_level = *args.get_one::<i32>("compress-level").unwrap();
 
     let outfile = if args.contains_id("outfile") {

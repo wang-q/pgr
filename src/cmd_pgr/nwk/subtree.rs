@@ -138,7 +138,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     for tree in &mut trees {
         // IDs matching names
-        let ids = nwr::match_names(tree, args);
+        let ids = nwr::match_names(tree, args)?;
 
         if ids.is_empty() {
             continue;

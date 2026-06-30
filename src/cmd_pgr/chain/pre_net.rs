@@ -2,8 +2,6 @@ use anyhow::{bail, Result};
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use pgr::libs::chain::ChainReader;
 use std::collections::HashMap;
-use std::fs::File;
-use std::io::{BufReader, BufWriter};
 
 pub fn make_subcommand() -> Command {
     Command::new("pre-net")
@@ -166,11 +164,9 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
         .map(|(k, v)| (k, BitMap::new(v)))
         .collect();
 
-    let f = File::open(input_path)?;
-    let reader = ChainReader::new(BufReader::new(f));
+    let reader = ChainReader::new(pgr::reader(input_path)?);
 
-    let out_file = File::create(output_path)?;
-    let mut writer = BufWriter::new(out_file);
+    let mut writer = pgr::writer(output_path)?;
 
     let mut last_score = f64::MAX;
 

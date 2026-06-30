@@ -87,21 +87,8 @@ Examples:
                 .long("lastz-args")
                 .help("Additional arguments passed directly to lastz (overrides preset)"),
         )
-        .arg(
-            Arg::new("output")
-                .long("output")
-                .short('o')
-                .default_value("lastz_out")
-                .help("Output directory"),
-        )
-        .arg(
-            Arg::new("parallel")
-                .long("parallel")
-                .short('p')
-                .value_parser(value_parser!(usize))
-                .default_value("4")
-                .help("Number of parallel threads"),
-        )
+        .arg(crate::cmd_pgr::args::outdir_arg().default_value("lastz_out"))
+        .arg(crate::cmd_pgr::args::parallel_arg().default_value("4"))
 }
 
 pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
@@ -126,7 +113,7 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
     let arg_target = matches.get_one::<String>("target").unwrap();
     let opt_depth = *matches.get_one::<usize>("depth").unwrap();
     let opt_lastz_args = matches.get_one::<String>("lastz_args");
-    let opt_output = matches.get_one::<String>("output").unwrap();
+    let opt_output = matches.get_one::<String>("outdir").unwrap();
     let opt_parallel = *matches.get_one::<usize>("parallel").unwrap();
     let is_self = matches.get_flag("is_self");
 

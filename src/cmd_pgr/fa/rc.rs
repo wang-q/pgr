@@ -66,9 +66,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut fa_out = pgr::libs::fmt::fa::writer(args.get_one::<String>("outfile").unwrap())?;
 
     let set_list: HashSet<String> = if args.contains_id("list.txt") {
-        intspan::read_first_column(args.get_one::<String>("list.txt").unwrap())
-            .into_iter()
-            .collect()
+        pgr::libs::io::read_names_as_set(args.get_one::<String>("list.txt").unwrap())?
     } else {
         HashSet::new()
     };

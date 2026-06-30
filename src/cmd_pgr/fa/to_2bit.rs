@@ -1,8 +1,6 @@
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use pgr::libs::fmt::twobit::TwoBitWriter;
 use std::collections::HashSet;
-use std::fs::File;
-use std::io::BufWriter;
 
 pub fn make_subcommand() -> Command {
     Command::new("to-2bit")
@@ -113,8 +111,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let refs: Vec<(&str, &str)> = data.iter().map(|(n, s)| (n.as_str(), s.as_str())).collect();
 
-    let f = File::create(output)?;
-    let mut writer = BufWriter::new(f);
+    let mut writer = pgr::writer(output)?;
     let mut tb_writer = TwoBitWriter::new(&mut writer);
 
     tb_writer.write(&refs, !no_mask)?;

@@ -1,8 +1,6 @@
 use clap::{Arg, ArgMatches, Command};
 use std::cell::{Ref, RefCell};
 use std::collections::HashMap;
-use std::fs::File;
-use std::io::{self, BufReader};
 use std::rc::Rc;
 
 use pgr::libs::chain::net::{read_nets, Fill, Gap};
@@ -11,7 +9,7 @@ pub fn make_subcommand() -> Command {
     Command::new("class").about("Show stats of net").arg(
         Arg::new("input")
             .required(true)
-            .help("Input net file (or stdin if '-')"),
+            .help("Input net file (or stdin if 'stdin')"),
     )
 }
 
@@ -24,11 +22,7 @@ struct Stats {
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let input_path = args.get_one::<String>("input").unwrap();
 
-    let reader: Box<dyn io::BufRead> = if input_path == "-" {
-        Box::new(BufReader::new(io::stdin()))
-    } else {
-        Box::new(BufReader::new(File::open(input_path)?))
-    };
+    let reader = pgr::reader(input_path)?;
 
     let chroms = read_nets(reader)?;
 

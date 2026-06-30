@@ -1,6 +1,5 @@
 use clap::*;
 use pgr::libs::fmt::twobit::TwoBitFile;
-use std::collections::HashSet;
 use std::io::Write;
 
 // Create clap subcommand arguments
@@ -64,7 +63,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     // Load list
     //----------------------------
-    let set_list: HashSet<String> = intspan::read_first_column(list_file).into_iter().collect();
+    let set_list = pgr::libs::io::read_names_as_set(list_file)?;
 
     //----------------------------
     // Process

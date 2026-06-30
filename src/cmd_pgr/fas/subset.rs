@@ -27,14 +27,7 @@ Examples:
 
 "###,
         )
-        .arg(
-            Arg::new("name.lst")
-                .short('r')
-                .long("required")
-                .required(true)
-                .num_args(1)
-                .help("Required: File with a list of species names to keep"),
-        )
+        .arg(crate::cmd_pgr::fas::common::required_arg())
         .arg(
             Arg::new("infiles")
                 .required(true)
@@ -59,7 +52,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap())?;
     let is_strict = args.get_flag("strict");
 
-    let needed = intspan::read_first_column(args.get_one::<String>("name.lst").unwrap());
+    let needed = pgr::libs::io::read_names_as_vec(args.get_one::<String>("required").unwrap())?;
 
     //----------------------------
     // Operating

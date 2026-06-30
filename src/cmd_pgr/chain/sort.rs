@@ -1,8 +1,7 @@
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use pgr::libs::chain::read_chains;
 use std::cmp::Ordering;
-use std::fs::File;
-use std::io::{BufRead, BufReader, BufWriter};
+use std::io::BufRead;
 
 pub fn make_subcommand() -> Command {
     Command::new("sort")
@@ -19,12 +18,7 @@ pub fn make_subcommand() -> Command {
                 .long("input-list")
                 .help("File containing a list of input chain files (one per line)"),
         )
-        .arg(
-            Arg::new("output")
-                .long("output")
-                .short('o')
-                .help("Output file (default: stdout)"),
-        )
+        .arg(crate::cmd_pgr::args::outfile_arg())
         .arg(
             Arg::new("save_id")
                 .long("save-id")
@@ -40,8 +34,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         .unwrap_or_default();
 
     if let Some(list_path) = args.get_one::<String>("input_list") {
-        let file = File::open(list_path)?;
-        let reader = BufReader::new(file);
+        let reader = pgr::reader(list_path)?;
         for line in reader.lines() {
             let line = line?;
             let trimmed = line.trim();
@@ -51,15 +44,13 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         }
     }
 
-    let output = args.get_one::<String>("output");
     let save_id = args.get_flag("save_id");
 
     let mut all_chains = Vec::new();
 
     // Read all chains
     for file_path in &files {
-        let file = File::open(file_path)?;
-        let chains = read_chains(file)?;
+        let chains = read_chains(pgr::reader(file_path)?)?;
         all_chains.extend(chains);
     }
 
@@ -79,16 +70,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     }
 
     // Write output
-    if let Some(out_path) = output {
-        let mut writer = BufWriter::new(File::create(out_path)?);
-        for chain in all_chains {
-            chain.write(&mut writer)?;
-        }
-    } else {
-        let mut writer = BufWriter::new(std::io::stdout());
-        for chain in all_chains {
-            chain.write(&mut writer)?;
-        }
+    let out_path = args.get_one::<String>("outfile").unwrap();
+    let mut writer = pgr::writer(out_path)?;
+    for chain in all_chains {
+        chain.write(&mut writer)?;
     }
 
     Ok(())

@@ -3,8 +3,6 @@ use pgr::libs::chain::net::{read_nets, Fill};
 use pgr::libs::chain::{read_chains, Chain};
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::fs::File;
-use std::io::{BufReader, BufWriter};
 use std::rc::Rc;
 
 pub fn make_subcommand() -> Command {
@@ -57,7 +55,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let type_filter = args.get_one::<String>("type");
 
     // Read chains
-    let chain_reader = BufReader::new(File::open(chain_in)?);
+    let chain_reader = pgr::reader(chain_in)?;
     let chains_vec = read_chains(chain_reader)?;
     let mut chains_map: HashMap<u64, Chain> = HashMap::new();
     for chain in chains_vec {
@@ -65,10 +63,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     }
 
     // Read nets
-    let net_reader = BufReader::new(File::open(net_in)?);
+    let net_reader = pgr::reader(net_in)?;
     let chroms = read_nets(net_reader)?;
 
-    let mut writer = BufWriter::new(File::create(chain_out)?);
+    let mut writer = pgr::writer(chain_out)?;
 
     for chrom in chroms {
         // Traverse net structure

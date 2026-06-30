@@ -7,8 +7,7 @@ use pgr::libs::clust::eval::{
 };
 use pgr::libs::pairmat::NamedMatrix;
 use pgr::libs::phylo::tree::Tree;
-use std::fs::File;
-use std::io::{self, Write};
+use std::io::Write;
 
 pub fn make_subcommand() -> Command {
     Command::new("eval")
@@ -94,11 +93,7 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
     let format_str = matches.get_one::<String>("format").unwrap();
     let format: PartitionFormat = format_str.parse().expect("Invalid format");
 
-    let mut writer: Box<dyn Write> = if outfile == "stdout" {
-        Box::new(io::stdout())
-    } else {
-        Box::new(File::create(outfile)?)
-    };
+    let mut writer = pgr::writer(outfile)?;
 
     let remove_singletons_flag = matches.get_flag("no-singletons");
 

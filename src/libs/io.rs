@@ -265,6 +265,66 @@ pub fn find_fasta_files<P: AsRef<Path>>(path: P) -> Vec<PathBuf> {
     files
 }
 
+/// Read the first column of `path` (one name per line) into a `HashSet`.
+///
+/// Lines are split on whitespace; only the first field is kept. Empty lines
+/// are skipped.
+pub fn read_names_as_set(path: &str) -> anyhow::Result<std::collections::HashSet<String>> {
+    Ok(read_lines(path)?
+        .into_iter()
+        .filter_map(|line| {
+            let line = line.trim();
+            if line.is_empty() {
+                None
+            } else {
+                line.split_whitespace().next().map(|s| s.to_string())
+            }
+        })
+        .collect())
+}
+
+/// Read the first column of `path` (one name per line) into a `Vec`.
+///
+/// Lines are split on whitespace; only the first field is kept. Empty lines
+/// are skipped. Order is preserved.
+pub fn read_names_as_vec(path: &str) -> anyhow::Result<Vec<String>> {
+    Ok(read_lines(path)?
+        .into_iter()
+        .filter_map(|line| {
+            let line = line.trim();
+            if line.is_empty() {
+                None
+            } else {
+                line.split_whitespace().next().map(|s| s.to_string())
+            }
+        })
+        .collect())
+}
+
+/// Read a replacement TSV file into a map of `name -> Vec<replacement_names>`.
+///
+/// Each line is split on tabs: the first field is the key, remaining fields
+/// are replacement names. Multiple lines with the same key accumulate
+/// replacements (append semantics). A single-field line (key only) inserts
+/// an empty Vec, which callers may interpret as a "delete" directive.
+pub fn read_replace_tsv(path: &str) -> anyhow::Result<BTreeMap<String, Vec<String>>> {
+    let mut replaces: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for line in read_lines(path)? {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let fields: Vec<&str> = line.split('\t').collect();
+        let key = fields[0].to_string();
+        let others: Vec<String> = fields
+            .get(1..)
+            .map(|rest| rest.iter().map(|s| s.to_string()).collect())
+            .unwrap_or_default();
+        replaces.entry(key).or_default().extend(others);
+    }
+    Ok(replaces)
+}
+
 /// Borrowed line iterator over a `BufRead`, yielding `String` with the
 /// trailing `\n` (and `\r`) stripped. Unlike `BufRead::lines`, the reader
 /// is borrowed for the lifetime of the iterator (zero-allocation handle).

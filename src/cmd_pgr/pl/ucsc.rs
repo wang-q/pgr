@@ -112,14 +112,7 @@ References:
                 .action(ArgAction::SetTrue)
                 .help("Generate syntenic alignments"),
         )
-        .arg(
-            Arg::new("outdir")
-                .short('o')
-                .long("outdir")
-                .num_args(1)
-                .default_value("stdout")
-                .help("Output location. [stdout] for screen"),
-        )
+        .arg(crate::cmd_pgr::args::outdir_arg())
 }
 
 // command implementation

@@ -28,14 +28,7 @@ Examples:
 
 "###,
         )
-        .arg(
-            Arg::new("name.lst")
-                .short('r')
-                .long("required")
-                .required(true)
-                .num_args(1)
-                .help("Required: File with a list of species names to keep, one per line"),
-        )
+        .arg(crate::cmd_pgr::fas::common::required_arg())
         .arg(
             Arg::new("infiles")
                 .required(true)
@@ -60,7 +53,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap())?;
     let is_phylip = args.get_flag("phylip");
 
-    let needed = intspan::read_first_column(args.get_one::<String>("name.lst").unwrap());
+    let needed = pgr::libs::io::read_names_as_vec(args.get_one::<String>("required").unwrap())?;
 
     let mut seq_of: BTreeMap<String, String> = BTreeMap::new();
     for name in &needed {

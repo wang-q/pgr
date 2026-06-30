@@ -173,7 +173,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         let ids_pos = nwr::match_positions(tree, args);
 
         // All IDs matching names
-        let ids_name = nwr::match_names(tree, args);
+        let ids_name = nwr::match_names(tree, args)?;
 
         let ids: BTreeSet<usize> = ids_pos.intersection(&ids_name).cloned().collect();
 

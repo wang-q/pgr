@@ -3,7 +3,6 @@ use pgr::libs::chain::record::read_chains;
 use pgr::libs::paf::index::{PafIndex, QueryResult};
 use pgr::libs::paf::msa::orient_interval;
 use std::collections::{HashMap, HashSet};
-use std::fs;
 use std::io::BufRead;
 
 use super::common;
@@ -63,19 +62,17 @@ pub fn run_query(
         eprintln!("  mode: lazy (BGZF virtual-position CIGAR)");
     }
 
-    let subset = args.get_one::<String>("subset_list").map(|list_path| {
-        intspan::read_first_column(list_path)
-            .into_iter()
-            .collect::<HashSet<String>>()
-    });
+    let subset = args
+        .get_one::<String>("subset_list")
+        .map(|list_path| pgr::libs::io::read_names_as_set(list_path))
+        .transpose()?;
 
     // Optional syntenic filter: load UCSC chain file and build
     // (t_name, q_name) -> Vec<(q_start, q_end)> map for chain-level query coverage check.
     let syntenic_map: Option<HashMap<(String, String), Vec<(u64, u64)>>> =
         if let Some(path) = syntenic_filter_path {
             eprintln!("Loading syntenic chains from {path}...");
-            let f = fs::File::open(path)?;
-            let chains = read_chains(f)?;
+            let chains = read_chains(pgr::reader(path)?)?;
             let mut map: HashMap<(String, String), Vec<(u64, u64)>> = HashMap::new();
             for c in &chains {
                 let key = (c.header.t_name.clone(), c.header.q_name.clone());
@@ -194,9 +191,9 @@ fn parse_region(s: &str) -> anyhow::Result<(&str, i32, i32)> {
 
 // Parse BED file (name start end per line, tab-separated). Skips blanks and comments.
 fn load_bed_regions(path: &str) -> anyhow::Result<Vec<(String, i32, i32)>> {
-    let f = fs::File::open(path)?;
+    let reader = pgr::reader(path)?;
     let mut regions = Vec::new();
-    for line in std::io::BufReader::new(f).lines() {
+    for line in reader.lines() {
         let line = line?;
         let line = line.trim();
         if line.is_empty() || line.starts_with('#') {

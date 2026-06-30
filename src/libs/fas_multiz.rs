@@ -566,14 +566,13 @@ pub fn merge_fas_files(
     windows: &[Window],
     cfg: &FasMultizConfig,
 ) -> anyhow::Result<Vec<FasBlock>> {
-    use std::fs::File;
-    use std::io::BufReader;
-
     let mut blocks_per_input: Vec<Vec<FasBlock>> = Vec::new();
 
     for infile in infiles {
-        let file = File::open(infile)?;
-        let mut reader = BufReader::new(file);
+        let infile_str = infile.as_ref().to_str().ok_or_else(|| {
+            anyhow::anyhow!("path is not valid UTF-8: {}", infile.as_ref().display())
+        })?;
+        let mut reader = crate::reader(infile_str)?;
         let mut blocks = Vec::new();
 
         loop {

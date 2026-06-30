@@ -14,6 +14,16 @@ pub fn outfile_arg() -> Arg {
         .help("Output filename. [stdout] for screen")
 }
 
+/// Standard `-o/--outdir` argument defaulting to stdout.
+pub fn outdir_arg() -> Arg {
+    Arg::new("outdir")
+        .long("outdir")
+        .short('o')
+        .num_args(1)
+        .default_value("stdout")
+        .help("Output directory. [stdout] for screen")
+}
+
 /// Standard `-r/--rgfile` argument (file of regions, one per line).
 pub fn rgfile_arg() -> Arg {
     Arg::new("rgfile")
@@ -34,22 +44,22 @@ pub fn parallel_arg() -> Arg {
         .help("Number of threads for parallel processing")
 }
 
-/// Standard `infile` argument (single input file, defaults to stdin).
-#[allow(dead_code)]
-pub fn infile_arg() -> Arg {
-    Arg::new("infile")
-        .index(1)
-        .default_value("stdin")
-        .help("Input file. [stdin] for standard input")
-}
-
-/// Standard `infiles` argument (multiple input files).
-#[allow(dead_code)]
-pub fn infiles_arg() -> Arg {
-    Arg::new("infiles")
-        .index(1)
-        .num_args(1..)
-        .help("Input file(s) to process")
+/// Collect region strings from `ranges` (positional, optional) and `rgfile`
+/// (`-r/--rgfile`) arguments. Returns the combined list.
+pub fn collect_ranges(args: &ArgMatches) -> Vec<String> {
+    let mut ranges: Vec<String> = if args.contains_id("ranges") {
+        args.get_many::<String>("ranges")
+            .unwrap()
+            .cloned()
+            .collect()
+    } else {
+        Vec::new()
+    };
+    if args.contains_id("rgfile") {
+        let mut rgs = intspan::read_first_column(args.get_one::<String>("rgfile").unwrap());
+        ranges.append(&mut rgs);
+    }
+    ranges
 }
 
 /// Add POA scoring arguments (`--match`, `--mismatch`, `--gap-open`,

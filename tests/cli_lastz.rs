@@ -27,7 +27,7 @@ fn test_lav_lastz() {
             "lastz",
             t_path.join("pseudocat.fa").to_str().unwrap(),
             t_path.join("pseudopig.fa").to_str().unwrap(),
-            "--output",
+            "--outdir",
             temp.path().to_str().unwrap(),
         ])
         .assert()
@@ -78,7 +78,7 @@ fn test_lav_lastz_preset() {
             t_path.join("pseudocat.fa").to_str().unwrap(), // Self-alignment to ensure matches with strict preset
             "--preset",
             "set01",
-            "--output",
+            "--outdir",
             temp.path().to_str().unwrap(),
         ])
         .assert()

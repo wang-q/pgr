@@ -42,14 +42,7 @@ Notes:
                 .index(1)
                 .help("Set the input files to use"),
         )
-        .arg(
-            Arg::new("outdir")
-                .short('o')
-                .long("outdir")
-                .num_args(1)
-                .default_value("PL-p2m")
-                .help("Output location"),
-        )
+        .arg(crate::cmd_pgr::args::outdir_arg().default_value("PL-p2m"))
 }
 
 // command implementation

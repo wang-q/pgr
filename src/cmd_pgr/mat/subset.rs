@@ -40,7 +40,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let list_file = args.get_one::<String>("list").unwrap();
     let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap())?;
 
-    let wanted_names = intspan::read_first_column(list_file);
+    let wanted_names = pgr::libs::io::read_names_as_vec(list_file)?;
 
     //----------------------------
     // Load and process matrix

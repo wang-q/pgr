@@ -115,11 +115,11 @@ pub fn collect_infiles(args: &ArgMatches) -> Vec<&str> {
 
 /// Resolve an infile to a list of paths. If `is_list` is true, read the file
 /// as a one-path-per-line list; otherwise treat `infile` itself as the path.
-pub fn resolve_paths(infile: &str, is_list: bool) -> Vec<String> {
+pub fn resolve_paths(infile: &str, is_list: bool) -> anyhow::Result<Vec<String>> {
     if is_list {
-        intspan::read_first_column(infile)
+        pgr::libs::io::read_names_as_vec(infile)
     } else {
-        vec![infile.to_string()]
+        Ok(vec![infile.to_string()])
     }
 }
 
@@ -155,12 +155,12 @@ where
     F: Fn(&[String]) -> anyhow::Result<Vec<E>>,
 {
     if infiles.len() == 1 {
-        let paths = resolve_paths(infiles[0], is_list);
+        let paths = resolve_paths(infiles[0], is_list)?;
         let entries = load_fn(&paths)?;
         Ok((entries.clone(), entries))
     } else {
-        let paths1 = resolve_paths(infiles[0], is_list);
-        let paths2 = resolve_paths(infiles[1], is_list);
+        let paths1 = resolve_paths(infiles[0], is_list)?;
+        let paths2 = resolve_paths(infiles[1], is_list)?;
         let entries1 = load_fn(&paths1)?;
         let entries2 = load_fn(&paths2)?;
         Ok((entries1, entries2))

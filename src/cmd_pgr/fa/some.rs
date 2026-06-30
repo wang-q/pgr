@@ -1,5 +1,4 @@
 use clap::*;
-use std::collections::HashSet;
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
@@ -64,10 +63,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     // Load list
     //----------------------------
-    let set_list: HashSet<String> =
-        intspan::read_first_column(args.get_one::<String>("list.txt").unwrap())
-            .into_iter()
-            .collect();
+    let set_list = pgr::libs::io::read_names_as_set(args.get_one::<String>("list.txt").unwrap())?;
 
     //----------------------------
     // Process

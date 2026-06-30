@@ -279,7 +279,7 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
 
         let mut stats_writer: Option<Box<dyn Write>> =
             if let Some(stats_file) = matches.get_one::<String>("stats-out") {
-                let mut w = Box::new(std::fs::File::create(stats_file)?) as Box<dyn Write>;
+                let mut w = pgr::writer(stats_file)?;
                 w.write_all(b"Group\tClusters\tSingletons\tNon-Singletons\tMaxSize\n")?;
                 Some(w)
             } else {

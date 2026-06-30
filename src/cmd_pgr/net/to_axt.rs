@@ -5,7 +5,6 @@ use pgr::libs::chain::{Chain, ChainReader};
 use pgr::libs::fmt::twobit::TwoBitFile;
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{BufReader, BufWriter};
 
 pub fn make_subcommand() -> Command {
     Command::new("to-axt")
@@ -34,12 +33,12 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
         chains.insert(chain.header.id, chain);
     }
 
-    let reader = BufReader::new(File::open(in_net)?);
+    let reader = pgr::reader(in_net)?;
     let nets = read_nets(reader)?;
 
     let matrix = SubMatrix::hoxd55();
 
-    let mut writer = BufWriter::new(File::create(out_axt)?);
+    let mut writer = pgr::writer(out_axt)?;
     net_to_axt(
         &nets,
         &chains,

@@ -1,7 +1,6 @@
 use clap::*;
 use std::collections::HashMap;
-use std::fs::{self, File};
-use std::io::BufWriter;
+use std::fs;
 use std::path::Path;
 
 use pgr::libs::fmt::axt::AxtReader;
@@ -165,9 +164,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                     // So it only keeps ONE file open.
                     split_writers.clear(); // Close previous
 
-                    let file = File::create(&path)?;
-                    let mut w =
-                        MafWriter::new(Box::new(BufWriter::new(file)) as Box<dyn std::io::Write>);
+                    let path_str = path.to_str().ok_or_else(|| {
+                        anyhow::anyhow!("path is not valid UTF-8: {}", path.display())
+                    })?;
+                    let mut w = MafWriter::new(pgr::writer(path_str)?);
                     w.write_header("blastz")?;
                     split_writers.insert(axt.t_name.clone(), w);
                 }

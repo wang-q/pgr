@@ -3,9 +3,9 @@ use clap::{Arg, ArgMatches, Command};
 use pgr::libs::chain::ChainReader;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
-use std::fs::{self, File};
+use std::fs;
 use std::hash::{Hash, Hasher};
-use std::io::{BufReader, BufWriter};
+use std::io::Write;
 use std::path::Path;
 
 pub fn make_subcommand() -> Command {
@@ -61,11 +61,10 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
     fs::create_dir_all(out_dir)?;
 
     // Cache open file handles
-    let mut file_cache: HashMap<String, BufWriter<File>> = HashMap::new();
+    let mut file_cache: HashMap<String, Box<dyn Write>> = HashMap::new();
 
     for file_path in chain_files {
-        let f = File::open(file_path)?;
-        let reader = ChainReader::new(BufReader::new(f));
+        let reader = ChainReader::new(pgr::reader(file_path)?);
 
         for res in reader {
             let chain = res?;
@@ -128,8 +127,8 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
                 // So, using `File::create` is correct for the simple HashMap approach.
                 // It ensures that for this run, we start fresh for each output file.
 
-                let file = File::create(path).expect("Failed to create output file");
-                BufWriter::new(file)
+                let path_str = path.to_str().expect("non-UTF-8 path");
+                pgr::writer(path_str).expect("Failed to create output file")
             });
 
             chain.write(writer)?;

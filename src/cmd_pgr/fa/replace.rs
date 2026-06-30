@@ -1,5 +1,4 @@
 use clap::*;
-use std::collections::HashMap;
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
@@ -58,7 +57,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     let mut fa_in = pgr::libs::fmt::fa::reader(args.get_one::<String>("infile").unwrap())?;
 
-    let replace_of = read_replaces(args.get_one::<String>("replace.tsv").unwrap());
+    let replace_of =
+        pgr::libs::io::read_replace_tsv(args.get_one::<String>("replace.tsv").unwrap())?;
     let is_some = args.get_flag("some");
 
     let mut fa_out = pgr::libs::fmt::fa::writer(args.get_one::<String>("outfile").unwrap())?;
@@ -83,25 +83,4 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     }
 
     Ok(())
-}
-
-// Read the replacement mappings from a TSV file
-fn read_replaces(input: &str) -> HashMap<String, Vec<String>> {
-    let mut replaces: HashMap<String, Vec<String>> = HashMap::new();
-
-    for line in pgr::read_lines(input).unwrap() {
-        let mut fields: Vec<&str> = line.split('\t').collect();
-
-        let key = fields[0].to_string();
-        let mut others = fields
-            .split_off(1)
-            .iter()
-            .map(|s| (*s).to_string())
-            .collect::<Vec<_>>();
-
-        // Use the entry method to check if the key exists
-        replaces.entry(key.clone()).or_default().append(&mut others);
-    }
-
-    replaces
 }

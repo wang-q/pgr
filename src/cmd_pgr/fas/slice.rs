@@ -27,14 +27,7 @@ Examples:
 
 "###,
         )
-        .arg(
-            Arg::new("runlist.json")
-                .short('r')
-                .long("required")
-                .required(true)
-                .num_args(1)
-                .help("Required: JSON file describing ranges to extract"),
-        )
+        .arg(crate::cmd_pgr::fas::common::required_arg())
         .arg(
             Arg::new("infiles")
                 .required(true)
@@ -58,7 +51,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap())?;
 
-    let json = intspan::read_json(args.get_one::<String>("runlist.json").unwrap());
+    let json = intspan::read_json(args.get_one::<String>("required").unwrap());
     let set = intspan::json2set(&json);
 
     let mut name = if args.contains_id("name") {

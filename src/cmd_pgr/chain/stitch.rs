@@ -2,8 +2,6 @@ use anyhow::Result;
 use clap::{Arg, Command};
 use pgr::libs::chain::{Chain, ChainReader};
 use std::collections::HashMap;
-use std::fs::File;
-use std::io::{BufReader, BufWriter};
 
 pub fn make_subcommand() -> Command {
     Command::new("stitch")
@@ -16,8 +14,7 @@ pub fn execute(args: &clap::ArgMatches) -> Result<()> {
     let input_path = args.get_one::<String>("input").unwrap();
     let output_path = args.get_one::<String>("output").unwrap();
 
-    let f = File::open(input_path)?;
-    let reader = ChainReader::new(BufReader::new(f));
+    let reader = ChainReader::new(pgr::reader(input_path)?);
 
     // Store chains by ID
     let mut chains: HashMap<u64, Chain> = HashMap::new();
@@ -69,8 +66,7 @@ pub fn execute(args: &clap::ArgMatches) -> Result<()> {
     });
 
     // Write output
-    let out_file = File::create(output_path)?;
-    let mut writer = BufWriter::new(out_file);
+    let mut writer = pgr::writer(output_path)?;
 
     for chain in chain_list {
         chain.write(&mut writer)?;

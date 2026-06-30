@@ -81,14 +81,7 @@ Examples:
                 .value_parser(value_parser!(usize))
                 .help("Maximum number of output files"),
         )
-        .arg(
-            Arg::new("outdir")
-                .short('o')
-                .long("outdir")
-                .num_args(1)
-                .default_value("stdout")
-                .help("Output directory. [stdout] for screen"),
-        )
+        .arg(crate::cmd_pgr::args::outdir_arg())
 }
 
 // command implementation

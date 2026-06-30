@@ -1,6 +1,4 @@
 use clap::{Arg, ArgMatches, Command};
-use std::fs::File;
-use std::io::{BufReader, BufWriter};
 
 use pgr::libs::chain::{read_chains, Block, Chain};
 use pgr::libs::fmt::twobit::TwoBitFile;
@@ -53,10 +51,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut target_2bit = TwoBitFile::open(target_path)?;
     let mut query_2bit = TwoBitFile::open(query_path)?;
 
-    let mut reader = BufReader::new(File::open(input_path)?);
-    let chains = read_chains(&mut reader)?; // Note: read_chains reads all chains into memory
+    let chains = read_chains(pgr::reader(input_path)?)?; // Note: read_chains reads all chains into memory
 
-    let mut writer = BufWriter::new(File::create(output_path)?);
+    let mut writer = pgr::writer(output_path)?;
 
     for chain in chains {
         if chain.header.score >= no_check_score as f64 {

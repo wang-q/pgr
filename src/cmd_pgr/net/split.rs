@@ -1,7 +1,7 @@
 use clap::{Arg, ArgMatches, Command};
 use pgr::libs::chain::net::read_nets;
 use std::fs::{self, File};
-use std::io::{self, BufReader};
+use std::io::BufWriter;
 use std::path::Path;
 
 pub fn make_subcommand() -> Command {
@@ -25,11 +25,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let input_path = args.get_one::<String>("input").unwrap();
     let output_dir = args.get_one::<String>("output_dir").unwrap();
 
-    let reader: Box<dyn io::BufRead> = if input_path == "-" {
-        Box::new(BufReader::new(io::stdin()))
-    } else {
-        Box::new(BufReader::new(File::open(input_path)?))
-    };
+    let reader = pgr::reader(input_path)?;
 
     let chroms = read_nets(reader)?;
 
@@ -37,7 +33,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     for chrom in chroms {
         let file_path = Path::new(output_dir).join(format!("{}.net", chrom.name));
-        let mut file = File::create(file_path)?;
+        let mut file = BufWriter::new(File::create(file_path)?);
         chrom.write(&mut file)?;
     }
 
