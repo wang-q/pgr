@@ -1,5 +1,5 @@
 use clap::{Arg, ArgMatches, Command};
-use pgr::libs::chain::net::{range_intersection, read_nets, write_net, Chrom, Fill, Gap};
+use pgr::libs::chain::net::{range_intersection, read_nets, write_net, Chrom, DupeTree, Fill, Gap};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -70,7 +70,7 @@ fn r_calc_dupes_fill(fill: &Rc<RefCell<Fill>>, map: &mut HashMap<String, DupeTre
     let end = f.o_end;
 
     if !q_name.is_empty() {
-        let dt = map.entry(q_name.clone()).or_insert_with(DupeTree::new);
+        let dt = map.entry(q_name.clone()).or_default();
         dt.add(start, end);
     }
 
@@ -84,7 +84,7 @@ fn r_calc_dupes_fill(fill: &Rc<RefCell<Fill>>, map: &mut HashMap<String, DupeTre
         let end = g.o_end;
 
         if !q_name.is_empty() {
-            let dt = map.entry(q_name.clone()).or_insert_with(DupeTree::new);
+            let dt = map.entry(q_name.clone()).or_default();
             dt.subtract(start, end);
         }
 
@@ -186,97 +186,5 @@ fn r_net_syn_fill(
     let gaps = fill.borrow().gaps.clone();
     for gap in gaps {
         r_net_syn_gap(&gap, map, Some(fill));
-    }
-}
-
-// DupeTree implementation
-struct DupeTree {
-    intervals: Vec<(u64, u64, i32)>,
-    segments: Vec<Segment>,
-}
-
-struct Segment {
-    start: u64,
-    end: u64,
-    depth: i32,
-}
-
-impl DupeTree {
-    fn new() -> Self {
-        Self {
-            intervals: Vec::new(),
-            segments: Vec::new(),
-        }
-    }
-
-    fn add(&mut self, start: u64, end: u64) {
-        if start < end {
-            self.intervals.push((start, end, 1));
-        }
-    }
-
-    fn subtract(&mut self, start: u64, end: u64) {
-        if start < end {
-            self.intervals.push((start, end, -1));
-        }
-    }
-
-    fn build(&mut self) {
-        if self.intervals.is_empty() {
-            return;
-        }
-
-        let mut events = Vec::new();
-        for (s, e, d) in &self.intervals {
-            events.push((*s, *d));
-            events.push((*e, -*d));
-        }
-        // Sort by position, then by delta (to process all updates at same pos)
-        // Actually, order of processing at same position doesn't matter for final segments between positions.
-        events.sort_by_key(|a| a.0);
-
-        let mut current_depth = 0;
-        let mut segments = Vec::new();
-
-        for i in 0..events.len() - 1 {
-            let (pos, delta) = events[i];
-            current_depth += delta;
-
-            let next_pos = events[i + 1].0;
-            if next_pos > pos {
-                segments.push(Segment {
-                    start: pos,
-                    end: next_pos,
-                    depth: current_depth,
-                });
-            }
-        }
-
-        self.segments = segments;
-    }
-
-    fn count_over(&self, start: u64, end: u64, threshold: i32) -> u64 {
-        if self.segments.is_empty() {
-            return 0;
-        }
-
-        // Binary search for first segment ending after start
-        let idx = self.segments.partition_point(|seg| seg.end <= start);
-
-        let mut count = 0;
-        for seg in &self.segments[idx..] {
-            if seg.start >= end {
-                break;
-            }
-
-            if seg.depth >= threshold {
-                let s = seg.start.max(start);
-                let e = seg.end.min(end);
-                if s < e {
-                    count += e - s;
-                }
-            }
-        }
-        count
     }
 }

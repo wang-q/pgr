@@ -3,6 +3,7 @@ pub mod chain;
 pub mod clust;
 pub mod fas_multiz;
 pub mod fas_xlsx;
+pub mod fasta;
 pub mod fmt;
 pub mod hash;
 pub mod hv;

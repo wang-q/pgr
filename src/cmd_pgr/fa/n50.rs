@@ -1,4 +1,5 @@
 use clap::*;
+use pgr::libs::fasta::stat::{calc_n50_stats, transpose};
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
@@ -120,18 +121,13 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let is_transpose = args.get_flag("transpose");
 
     let opt_nx: Vec<_> = args.get_many::<usize>("nx").unwrap().copied().collect();
-    let opt_genome = args
-        .get_one::<usize>("genome")
-        .copied()
-        .unwrap_or(usize::MAX);
+    let opt_genome = args.get_one::<usize>("genome").copied();
     let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap())?;
 
     //----------------------------
     // Process
     //----------------------------
     let mut lens = vec![];
-    let mut record_cnt = 0;
-    let mut total_size = 0;
 
     for infile in args.get_many::<String>("infiles").unwrap() {
         let mut fa_in = pgr::libs::fmt::fa::reader(infile)?;
@@ -143,40 +139,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             let len = record.sequence().len();
 
             lens.push(len);
-            record_cnt += 1;
-            total_size += len;
         }
     }
-    lens.sort_unstable_by(|a, b| b.cmp(a));
 
-    // reach n_given% of total_size or genome_size
-    let mut goals = vec![];
-    for el in opt_nx.iter() {
-        let goal = if opt_genome != usize::MAX {
-            (*el as f64) * (opt_genome as f64) / 100.0
-        } else {
-            (*el as f64) * (total_size as f64) / 100.0
-        } as usize;
-        goals.push(goal);
-    }
-
-    let mut cumul_size = 0; // the cumulative size
-    let mut e_size = 0.0;
-    let mut nx_sizes = vec![0; goals.len()];
-
-    for cur_size in lens {
-        let prev_cumul_size = cumul_size;
-        cumul_size += cur_size;
-
-        e_size = (prev_cumul_size as f64) / (cumul_size as f64) * e_size
-            + (cur_size as f64 * cur_size as f64) / cumul_size as f64;
-
-        for (i, goal) in goals.iter().enumerate() {
-            if nx_sizes[i] == 0 && cumul_size > *goal {
-                nx_sizes[i] = cur_size;
-            }
-        }
-    }
+    let stats = calc_n50_stats(lens, &opt_nx, opt_genome);
 
     //----------------------------
     // Output
@@ -190,7 +156,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             if !is_noheader {
                 row.push(format!("N{}", nx));
             }
-            row.push(format!("{}", nx_sizes[i]));
+            row.push(format!("{}", stats.nx_sizes[i]));
             outputs.push(row);
         }
     }
@@ -200,7 +166,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         if !is_noheader {
             row.push("S".to_string());
         }
-        row.push(format!("{}", total_size));
+        row.push(format!("{}", stats.total_size));
         outputs.push(row);
     }
 
@@ -209,7 +175,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         if !is_noheader {
             row.push("A".to_string());
         }
-        row.push(format!("{:.2}", total_size as f64 / record_cnt as f64));
+        row.push(format!(
+            "{:.2}",
+            stats.total_size as f64 / stats.record_cnt as f64
+        ));
         outputs.push(row);
     }
 
@@ -218,7 +187,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         if !is_noheader {
             row.push("E".to_string());
         }
-        row.push(format!("{:.2}", e_size));
+        row.push(format!("{:.2}", stats.e_size));
         outputs.push(row);
     }
 
@@ -227,7 +196,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         if !is_noheader {
             row.push("C".to_string());
         }
-        row.push(format!("{}", record_cnt));
+        row.push(format!("{}", stats.record_cnt));
         outputs.push(row);
     }
 
@@ -240,19 +209,4 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     }
 
     Ok(())
-}
-
-// https://stackoverflow.com/questions/64498617/how-to-transpose-a-vector-of-vectors-in-rust
-fn transpose<T>(v: Vec<Vec<T>>) -> Vec<Vec<T>> {
-    assert!(!v.is_empty());
-    let len = v[0].len();
-    let mut iters: Vec<_> = v.into_iter().map(|n| n.into_iter()).collect();
-    (0..len)
-        .map(|_| {
-            iters
-                .iter_mut()
-                .map(|n| n.next().unwrap())
-                .collect::<Vec<T>>()
-        })
-        .collect()
 }

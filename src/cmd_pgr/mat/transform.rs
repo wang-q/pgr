@@ -110,137 +110,28 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut writer = pgr::writer(args.get_one::<String>("outfile").unwrap())?;
 
     //----------------------------
-    // Load and Process
+    // Load and Transform
     //----------------------------
-    let mut matrix = if format == "pair" {
+    let matrix = if format == "pair" {
         pgr::libs::pairmat::NamedMatrix::from_pair_scores(infile, 0.0, 1.0)?
     } else {
         pgr::libs::pairmat::NamedMatrix::from_relaxed_phylip(infile)?
     };
 
-    // Get diagonals if needed
-    // We always try to get diagonals because transform operations might apply to diagonal elements too
-    // (e.g. inv-linear: max - x, if x=1.0 then 0.0)
-    // NamedMatrix stores diagonals internally now.
-    let diags = matrix.get_diags().cloned().unwrap_or_default();
-    let size = matrix.size();
-    // We clone names here to avoid borrowing matrix while we mutate it later
-    let names: Vec<String> = matrix.get_names().iter().map(|n| n.to_string()).collect();
-
-    // Warn if normalize is requested but diagonals are missing (all zero)
-    if normalize {
-        if diags.is_empty() {
-            eprintln!("Warning: --normalize requested but no diagonal values found. Result will be Inf/NaN.");
-        } else {
-            let max_diag = diags.iter().fold(0.0f32, |a, &b| a.max(b));
-            if max_diag == 0.0 {
-                eprintln!("Warning: --normalize requested but all diagonal values are 0.0. Result will be Inf/NaN.");
-            }
-        }
-    }
-
-    // Transform values
-    // NamedMatrix stores only upper triangle (or lower, logically symmetric).
-    // We iterate i, j where i < j (upper triangle).
-    // CondensedMatrix::set handles i != j.
-    for i in 0..size {
-        for j in (i + 1)..size {
-            let mut val = matrix.get(i, j);
-
-            // 1. Normalize
-            if normalize {
-                let d_i = diags[i];
-                let d_j = diags[j];
-                // Avoid division by zero
-                if d_i > 1e-9 && d_j > 1e-9 {
-                    val /= (d_i * d_j).sqrt();
-                } else {
-                    // If diagonal is 0, similarity is undefined or 0?
-                    // Assuming 0 if undefined.
-                    val = 0.0;
-                }
-            }
-
-            // 2. Transform
-            val = match op {
-                "linear" => val * scale + offset,
-                "inv-linear" => max_val - val,
-                "log" => {
-                    if val > 0.0 {
-                        -val.ln()
-                    } else {
-                        // -ln(0) = Inf. Use a large number?
-                        // Or just let it be Inf?
-                        // f32::INFINITY
-                        1000.0 // Cap at reasonable max distance?
-                    }
-                }
-                "exp" => (-val).exp(),
-                "square" => val * val,
-                "sqrt" => {
-                    if val >= 0.0 {
-                        val.sqrt()
-                    } else {
-                        0.0
-                    }
-                }
-                _ => val,
-            };
-
-            matrix.set(i, j, val);
-        }
-    }
+    let matrix =
+        pgr::libs::pairmat::transform_matrix(&matrix, op, max_val, scale, offset, normalize)?;
 
     //----------------------------
     // Output
     //----------------------------
-    // We always output full matrix for now (to match other commands default behavior)
-    // Or should we support --mode?
-    // Let's stick to full matrix tab-separated, similar to `mat format`.
+    let size = matrix.size();
+    let names = matrix.get_names();
 
     writer.write_fmt(format_args!("{:>4}\n", size))?;
-    for i in 0..size {
-        writer.write_fmt(format_args!("{}", names[i]))?;
+    for (i, name) in names.iter().enumerate() {
+        writer.write_fmt(format_args!("{}", name))?;
         for j in 0..size {
-            let val = if i == j {
-                // Handle diagonal specially
-                // We need to calculate the transformed diagonal value here because
-                // the main transformation loop only updated off-diagonal elements.
-                let mut d = if !diags.is_empty() { diags[i] } else { 0.0 };
-                if normalize {
-                    // x_norm(i,i) = x(i,i) / sqrt(x(i,i)*x(i,i)) = 1.0
-                    if d > 1e-9 {
-                        d = 1.0;
-                    } else {
-                        d = 0.0;
-                    }
-                }
-
-                match op {
-                    "linear" => d * scale + offset,
-                    "inv-linear" => max_val - d,
-                    "log" => {
-                        if d > 0.0 {
-                            -d.ln()
-                        } else {
-                            0.0
-                        }
-                    } // Distance diag usually 0
-                    "exp" => (-d).exp(),
-                    "square" => d * d,
-                    "sqrt" => {
-                        if d >= 0.0 {
-                            d.sqrt()
-                        } else {
-                            0.0
-                        }
-                    }
-                    _ => d,
-                }
-            } else {
-                matrix.get(i, j)
-            };
-
+            let val = matrix.get(i, j);
             writer.write_fmt(format_args!("\t{:.6}", val))?;
         }
         writer.write_fmt(format_args!("\n"))?;

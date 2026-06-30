@@ -23,6 +23,8 @@
 //! 5. **Output**: Chains passing a minimum score threshold are output.
 
 pub mod algo;
+pub mod anti_repeat;
+pub mod bitmap;
 pub mod connect;
 pub mod gap_calc;
 pub mod net;
@@ -30,6 +32,7 @@ pub mod record;
 pub mod sub_matrix;
 
 pub use algo::{ChainItem, KdTree};
+pub use bitmap::BitMap;
 pub use connect::{calc_block_score, chain_blocks, ChainableBlock, ScoreContext};
 pub use gap_calc::GapCalc;
 pub use record::{read_chains, Block, Chain, ChainData, ChainHeader, ChainReader};
