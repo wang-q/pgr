@@ -68,42 +68,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     for infile in args.get_many::<String>("infiles").unwrap() {
         let mut reader = pgr::reader(infile)?;
-
-        while let Ok(block) = pgr::libs::fmt::fas::next_fas_block(&mut reader) {
-            let block_names = block.names;
-
-            if !opt_name.is_empty() {
-                if !res_of.contains_key(opt_name) {
-                    res_of.insert(opt_name.to_string(), BTreeMap::new());
-                }
-            } else {
-                for name in &block_names {
-                    if !res_of.contains_key(name) {
-                        res_of.insert(name.to_string(), BTreeMap::new());
-                    }
-                }
-            }
-
-            for entry in &block.entries {
-                let range = entry.range();
-                if !range.is_valid() {
-                    continue;
-                }
-
-                if !opt_name.is_empty() && opt_name != range.name() {
-                    continue;
-                }
-
-                let res = res_of.get_mut(entry.range().name()).unwrap();
-
-                if !res.contains_key(entry.range().chr()) {
-                    res.insert(entry.range().chr().to_string(), intspan::IntSpan::new());
-                }
-
-                let intspan = range.intspan().clone().trim(opt_trim);
-                res.get_mut(entry.range().chr()).unwrap().merge(&intspan);
-            }
-        }
+        pgr::libs::fmt::fas::aggregate_coverage_into(
+            &mut reader,
+            &mut res_of,
+            opt_name,
+            opt_trim,
+        )?;
     }
 
     //----------------------------

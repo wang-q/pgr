@@ -33,7 +33,6 @@ This command implements the UCSC pipeline for pairwise genome alignments, psl-ch
     * axtSort (migrated as `pgr axt sort`)
     * axtToMaf (migrated as `pgr axt tomaf`)
     * netFilter (migrated as `pgr net filter`)
-    * netClass (migrated as `pgr net class`)
     * chainSplit (migrated as `pgr chain split`)
 
 Definitions:

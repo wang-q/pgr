@@ -368,3 +368,28 @@ pub fn distance_to_similarity(dist: f32) -> f32 {
 pub fn to_dissimilarity(sim: f32) -> f32 {
     1.0 - sim
 }
+
+/// Compute a vector similarity/distance score for the given mode.
+pub fn vector_score(
+    l1: &[f32],
+    l2: &[f32],
+    mode: &str,
+    is_sim: bool,
+    is_dis: bool,
+) -> anyhow::Result<f32> {
+    let mut score = match mode {
+        "euclid" => euclidean_distance(l1, l2),
+        "cosine" => cosine_similarity(l1, l2),
+        "jaccard" => weighted_jaccard_similarity(l1, l2),
+        _ => anyhow::bail!("unknown mode: {}", mode),
+    };
+
+    if is_sim {
+        score = distance_to_similarity(score);
+    }
+    if is_dis {
+        score = to_dissimilarity(score);
+    }
+
+    Ok(score)
+}

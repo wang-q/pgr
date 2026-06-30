@@ -288,3 +288,42 @@ pub fn lax_complement_lca(
         Some(comp_lca)
     }
 }
+
+/// Format a node's label with extra columns (`dup`, `taxid`, `species`, `full`).
+pub fn format_label_columns(node: &Node, name: &str, columns: &[String]) -> String {
+    let mut out = String::from(name);
+    if columns.is_empty() {
+        return out;
+    }
+    for column in columns {
+        match column.as_str() {
+            "dup" => out.push_str(&format!("\t{}", name)),
+            "taxid" => out.push_str(&format!(
+                "\t{}",
+                node.get_property("T").map(|s| s.as_str()).unwrap_or("")
+            )),
+            "species" => out.push_str(&format!(
+                "\t{}",
+                node.get_property("S").map(|s| s.as_str()).unwrap_or("")
+            )),
+            "full" => {
+                let comment = node
+                    .properties
+                    .as_ref()
+                    .map(|p| {
+                        let pairs: Vec<String> =
+                            p.iter().map(|(k, v)| format!(":{}={}", k, v)).collect();
+                        if pairs.is_empty() {
+                            String::new()
+                        } else {
+                            format!("[{}]", pairs.join(" "))
+                        }
+                    })
+                    .unwrap_or_default();
+                out.push_str(&format!("\t{}", comment));
+            }
+            _ => {}
+        }
+    }
+    out
+}

@@ -124,6 +124,46 @@ pub fn six_frame_translation(dna: &[u8]) -> Vec<(String, usize, bool)> {
     translations
 }
 
+/// Filter ORFs and convert protein coordinates to 1-based DNA coordinates.
+/// Returns (orf_start, orf_end, orf_seq) tuples in 1-based DNA coords.
+pub fn filter_and_convert_orfs(
+    orfs: &[(String, usize, usize)],
+    dna_len: usize,
+    frame: usize,
+    is_reverse: bool,
+    min_len: usize,
+    require_start_m: bool,
+    require_end_star: bool,
+) -> Vec<(usize, usize, String)> {
+    let dna_start = if is_reverse {
+        dna_len - frame
+    } else {
+        frame
+    };
+
+    let mut result = Vec::new();
+    for (orf_seq, start, end) in orfs {
+        if orf_seq.len() < min_len {
+            continue;
+        }
+        if require_start_m && !orf_seq.starts_with('M') {
+            continue;
+        }
+        if require_end_star && !orf_seq.ends_with('*') {
+            continue;
+        }
+
+        let (orf_start, orf_end) = if is_reverse {
+            (dna_start - end * 3 + 1, dna_start - start * 3)
+        } else {
+            (dna_start + start * 3 + 1, dna_start + end * 3)
+        };
+
+        result.push((orf_start, orf_end, orf_seq.clone()));
+    }
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

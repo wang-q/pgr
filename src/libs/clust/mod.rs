@@ -4,7 +4,7 @@ pub mod eval;
 pub mod feature;
 pub mod format;
 pub mod hier;
-pub mod kmedoids;
+pub mod k_medoids;
 pub mod mcl;
 pub mod medoid;
 pub mod nj;

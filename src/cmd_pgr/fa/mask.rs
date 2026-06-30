@@ -91,19 +91,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
         // Get the regions to mask for this sequence
         let ints = runlists.get(&name).unwrap();
-        let mut seq_out = String::from_utf8(seq[..].into())?;
-
-        for (lower, upper) in ints.spans().iter() {
-            let offset = (lower - 1) as usize;
-            let length = (upper - lower + 1) as usize;
-
-            let str = if is_hard {
-                "N".repeat(length)
-            } else {
-                seq_out[offset..offset + length].to_lowercase()
-            };
-            seq_out.replace_range(offset..offset + length, &str);
-        }
+        let seq_str = String::from_utf8(seq[..].into())?;
+        let seq_out = pgr::libs::fmt::fa::mask_sequence(&seq_str, ints, is_hard);
 
         //----------------------------
         // Output

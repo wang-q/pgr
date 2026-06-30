@@ -63,12 +63,6 @@ Examples:
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
-#[derive(Debug, Default, Clone)]
-struct HvEntry {
-    name: String,
-    set: Vec<i32>,
-}
-
 // command implementation
 pub fn execute(args: &clap::ArgMatches) -> anyhow::Result<()> {
     //----------------------------
@@ -93,19 +87,20 @@ pub fn execute(args: &clap::ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     let (entries1, entries2) = common::load_two_sets(&infiles, is_list, |paths| {
         common::load_entries(paths, |p| {
-            load_file(p, opt_hasher, opt_kmer, opt_window, opt_dim)
+            let entry =
+                pgr::libs::hv::load_hv_from_fasta(p, opt_hasher, opt_kmer, opt_window, opt_dim)?;
+            Ok(vec![entry])
         })
     })?;
 
     common::par_run_pairs(&entries1, &entries2, &sender, |e1, e2| {
-        let (total1, total2, inter, union, mash, jaccard, containment) =
-            calc_distances(&e1.set, &e2.set, opt_kmer);
+        let d = pgr::libs::hv::calc_distances(&e1.set, &e2.set, opt_kmer);
 
-        let dist = if is_sim { 1.0 - mash } else { mash };
+        let dist = if is_sim { 1.0 - d.mash } else { d.mash };
 
         let line = format!(
             "{}\t{}\t{}\t{}\t{}\t{}\t{:.4}\t{:.4}\t{:.4}\n",
-            e1.name, e2.name, total1, total2, inter, union, dist, jaccard, containment
+            e1.name, e2.name, d.card1, d.card2, d.inter, d.union, dist, d.jaccard, d.containment
         );
         Some(line)
     });
@@ -116,70 +111,4 @@ pub fn execute(args: &clap::ArgMatches) -> anyhow::Result<()> {
     writer_thread.join().unwrap();
 
     Ok(())
-}
-
-fn load_file(
-    infile: &str,
-    opt_hasher: &str,
-    opt_kmer: usize,
-    opt_window: usize,
-    opt_dim: usize,
-) -> anyhow::Result<Vec<HvEntry>> {
-    let mut fa_in = pgr::libs::fmt::fa::reader(infile)?;
-
-    let mut file_set = rapidhash::RapidHashSet::default();
-
-    for result in fa_in.records() {
-        // obtain record or fail with error
-        let record = result?;
-        let seq = record.sequence();
-
-        let set: rapidhash::RapidHashSet<u64> =
-            pgr::libs::hash::seq_mins(&seq[..], opt_hasher, opt_kmer, opt_window)?;
-
-        file_set.extend(set);
-    }
-
-    let seed_vec: Vec<u64> = file_set.into_iter().collect();
-    let hv: Vec<i32> = pgr::libs::hv::hash_hv_i8(&seed_vec, opt_dim);
-    let entry = HvEntry {
-        name: infile.to_string(),
-        set: hv,
-    };
-
-    Ok(vec![entry])
-}
-
-// Calculate Jaccard, Containment, and Mash distance between two sets
-fn calc_distances(
-    s1: &[i32],
-    s2: &[i32],
-    opt_kmer: usize,
-) -> (usize, usize, usize, usize, f32, f32, f32) {
-    let card1 = pgr::libs::hv::hv_cardinality(s1);
-    let card2 = pgr::libs::hv::hv_cardinality(s2);
-
-    let inter = pgr::libs::hv::hv_dot(s1, s2)
-        .min(card1 as f32)
-        .min(card2 as f32);
-    let union = card1 as f32 + card2 as f32 - inter;
-
-    let jaccard = inter / union;
-    let containment = inter / card1 as f32;
-    // https://mash.readthedocs.io/en/latest/distances.html#mash-distance-formulation
-    let mash = if jaccard == 0.0 {
-        1.0
-    } else {
-        ((-1.0 / opt_kmer as f32) * ((2.0f32 * jaccard) / (1.0f32 + jaccard)).ln()).abs()
-    };
-
-    (
-        card1,
-        card2,
-        inter as usize,
-        union as usize,
-        mash,
-        jaccard,
-        containment,
-    )
 }

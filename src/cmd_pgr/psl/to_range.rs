@@ -1,5 +1,4 @@
 use clap::*;
-use pgr::libs::alignment::reverse_range_1based_pair;
 use pgr::libs::fmt::psl::Psl;
 use std::io::{BufRead, Write};
 use std::str::FromStr;
@@ -65,30 +64,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             Err(_) => continue,
         };
 
-        let (name, size, starts, is_neg) = if extract_target {
-            let is_neg = if psl.strand.len() >= 2 {
-                psl.strand.chars().nth(1).unwrap() == '-'
-            } else {
-                false
-            };
-            (&psl.t_name, psl.t_size, &psl.t_starts, is_neg)
-        } else {
-            let is_neg = psl.strand.starts_with('-');
-            (&psl.q_name, psl.q_size, &psl.q_starts, is_neg)
-        };
-
-        for (i, &start) in starts.iter().enumerate() {
-            let len = psl.block_sizes[i];
-            let end = start + len; // 0-based exclusive end
-
-            // Convert to 1-based inclusive range on positive strand
-            let (final_start, final_end) = if is_neg {
-                reverse_range_1based_pair((start + 1) as usize, end as usize, size as usize)
-            } else {
-                ((start + 1) as usize, end as usize)
-            };
-
-            writer.write_fmt(format_args!("{}:{}-{}\n", name, final_start, final_end))?;
+        for range in pgr::libs::fmt::psl::psl_block_ranges(&psl, extract_target) {
+            writer.write_all(range.as_bytes())?;
+            writer.write_all(b"\n")?;
         }
     }
 

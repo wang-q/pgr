@@ -312,6 +312,22 @@ pub fn write_axt<W: std::io::Write>(writer: &mut W, axt: &Axt) -> std::io::Resul
     Ok(())
 }
 
+/// Convert AXT query coordinates (0-based) to forward-strand 1-based coordinates.
+pub fn axt_query_to_forward_coords(
+    q_start: usize,
+    q_end: usize,
+    q_strand: char,
+    q_len: i32,
+) -> (i32, i32) {
+    if q_strand == '-' {
+        let q_s_1 = (q_start + 1) as i32;
+        let q_e_1 = q_end as i32;
+        (q_len - q_e_1 + 1, q_len - q_s_1 + 1)
+    } else {
+        ((q_start + 1) as i32, q_end as i32)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

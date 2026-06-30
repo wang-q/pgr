@@ -1,7 +1,7 @@
 use clap::*;
-use pgr::libs::clust::tree_cut::dynamic::{cutree_dynamic_tree, DynamicTreeOptions};
-use pgr::libs::clust::tree_cut::hybrid::{cutree_hybrid, HybridOptions};
-use pgr::libs::clust::tree_cut::{self as cut, build_method, RepMode, METHOD_NAMES};
+use pgr::libs::clust::tree_cut::dynamic::DynamicTreeOptions;
+use pgr::libs::clust::tree_cut::hybrid::HybridOptions;
+use pgr::libs::clust::tree_cut::{self as cut, CutDispatch, RepMode, METHOD_NAMES};
 use pgr::libs::phylo::tree::Tree;
 use std::io::Write;
 
@@ -292,41 +292,37 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
         let mut val = start;
 
         // Pre-calculate leaf depths for scanning if needed
-        let (min_depth, max_depth, avg_depth) = if matches.contains_id("leaf-dist-max")
+        let leaf_depths_scan = if matches.contains_id("leaf-dist-max")
             || matches.contains_id("leaf-dist-min")
             || matches.contains_id("leaf-dist-avg")
         {
-            pgr::libs::phylo::tree::stat::get_leaf_depth_stats(tree)
+            Some(pgr::libs::phylo::tree::stat::get_leaf_depth_stats(tree))
         } else {
-            (0.0, 0.0, 0.0)
+            None
         };
 
         while val <= end + 1e-9 {
-            let (partition, method_name) = if matches.contains_id("dynamic-tree") {
-                let min_size = val as usize;
-                let options = DynamicTreeOptions {
-                    min_module_size: min_size,
+            let dispatch = if matches.contains_id("dynamic-tree") {
+                CutDispatch::DynamicTree(DynamicTreeOptions {
+                    min_module_size: val as usize,
                     deep_split: matches.get_flag("deep-split"),
                     max_tree_height: matches.get_one::<f64>("max-tree-height").copied(),
-                };
-                let p = cutree_dynamic_tree(tree, options).map_err(|e| anyhow::anyhow!(e))?;
-                (p, "dynamic-tree")
+                })
             } else {
                 let method_name = METHOD_NAMES
                     .iter()
                     .find(|&&n| matches.contains_id(n))
                     .copied()
                     .ok_or_else(|| anyhow::anyhow!("no cut method specified"))?;
-                let method = build_method(
-                    method_name,
+                CutDispatch::Standard {
+                    name: method_name,
                     val,
                     deep,
-                    Some((min_depth, max_depth, avg_depth)),
-                )
-                .map_err(|e| anyhow::anyhow!(e))?;
-                let p = cut::cut(tree, method).map_err(|e| anyhow::anyhow!(e))?;
-                (p, method_name)
+                    leaf_depths: leaf_depths_scan,
+                }
             };
+
+            let (partition, method_name) = cut::dispatch_cut(tree, dispatch)?;
 
             let group_label = format!("{}={}", method_name, val);
 
@@ -349,40 +345,30 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
     let rep_mode = RepMode::parse(rep_method).map_err(|e| anyhow::anyhow!(e))?;
 
     for tree in trees.iter() {
-        let partition = if let Some(&min_cluster_size) = matches.get_one::<usize>("dynamic-tree") {
-            let deep_split = matches.get_flag("deep-split");
-            let max_tree_height = matches.get_one::<f64>("max-tree-height").copied();
-
-            let options = DynamicTreeOptions {
+        let dispatch = if let Some(&min_cluster_size) = matches.get_one::<usize>("dynamic-tree") {
+            CutDispatch::DynamicTree(DynamicTreeOptions {
                 min_module_size: min_cluster_size,
-                deep_split,
-                max_tree_height,
-            };
-
-            cutree_dynamic_tree(tree, options)?
+                deep_split: matches.get_flag("deep-split"),
+                max_tree_height: matches.get_one::<f64>("max-tree-height").copied(),
+            })
         } else if let Some(&min_cluster_size) = matches.get_one::<usize>("dynamic-hybrid") {
             let matrix_file = matches
                 .get_one::<String>("matrix")
                 .ok_or_else(|| anyhow::anyhow!("--matrix is required for dynamic-hybrid"))?;
             let dist_matrix = pgr::libs::pairmat::NamedMatrix::from_relaxed_phylip(matrix_file)?;
 
-            let max_tree_height = matches.get_one::<f64>("max-tree-height").copied();
-            let max_pam_dist = matches.get_one::<f64>("max-pam-dist").copied();
-
-            let options = HybridOptions {
+            CutDispatch::DynamicHybrid(HybridOptions {
                 min_cluster_size,
                 dist_matrix,
-                cut_height: max_tree_height,
+                cut_height: matches.get_one::<f64>("max-tree-height").copied(),
                 deep_split: if matches.get_flag("deep-split") { 1 } else { 0 },
                 max_core_scatter: None,
                 min_gap: None,
                 pam_stage: true, // Default to true
-                pam_respects_dendro: !matches.get_flag("no-pam-dendro"), // Default to true to match R
-                max_pam_dist,
+                pam_respects_dendro: !matches.get_flag("no-pam-dendro"),
+                max_pam_dist: matches.get_one::<f64>("max-pam-dist").copied(),
                 respect_small_clusters: true, // Default to true to match R
-            };
-
-            cutree_hybrid(tree, options)?
+            })
         } else {
             let method_name = METHOD_NAMES
                 .iter()
@@ -403,10 +389,15 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
             } else {
                 None
             };
-            let method = build_method(method_name, val, deep, leaf_depths)
-                .map_err(|e| anyhow::anyhow!(e))?;
-            cut::cut(tree, method).map_err(|e| anyhow::anyhow!(e))?
+            CutDispatch::Standard {
+                name: method_name,
+                val,
+                deep,
+                leaf_depths,
+            }
         };
+
+        let (partition, _) = cut::dispatch_cut(tree, dispatch)?;
 
         let clusters = cut::partition_to_clusters(&partition, tree, rep_mode);
         let output = cut::format_clusters(&clusters, format).map_err(|e| anyhow::anyhow!(e))?;

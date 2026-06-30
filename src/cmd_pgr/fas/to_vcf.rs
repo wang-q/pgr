@@ -1,10 +1,9 @@
 use clap::*;
-use itertools::Itertools;
 use std::collections::{BTreeMap, HashSet};
-use std::io::Write;
 
 use pgr::libs::alignment::{align_to_chr, get_subs, seq_intspan};
 use pgr::libs::fmt::fas::next_fas_block;
+use pgr::libs::fmt::vcf::{write_snp_row, write_vcf_header};
 
 pub fn make_subcommand() -> Command {
     Command::new("to-vcf")
@@ -75,24 +74,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
         while let Ok(block) = next_fas_block(&mut reader) {
             if !header_written {
-                if !sizes.is_empty() {
-                    for (chr, len) in sizes.iter() {
-                        let meta = format!("##contig=<ID={},length={}>\n", chr, len);
-                        writer.write_all(meta.as_ref())?;
-                    }
-                }
-                writer.write_all(b"##fileformat=VCFv4.2\n")?;
-                writer.write_all(
-                    b"##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n",
-                )?;
-                let mut header =
-                    String::from("#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT");
-                for name in &block.names {
-                    header.push('\t');
-                    header.push_str(name);
-                }
-                header.push('\n');
-                writer.write_all(header.as_ref())?;
+                let contigs_ref = if sizes.is_empty() { None } else { Some(&sizes) };
+                write_vcf_header(&mut writer, contigs_ref, &block.names)?;
                 header_written = true;
             }
 
@@ -125,43 +108,23 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                         alt_bases.push(b);
                     }
                 }
+                use itertools::Itertools;
                 alt_bases = alt_bases.into_iter().unique().collect();
 
-                let alt_str = if alt_bases.is_empty() {
-                    ".".to_string()
-                } else {
-                    alt_bases.iter().map(|c| c.to_string()).join(",")
-                };
+                let sample_bases: Vec<u8> = seqs
+                    .iter()
+                    .take(seq_count)
+                    .map(|seq| seq[pos_idx])
+                    .collect();
 
-                let mut row = String::new();
-                row.push_str(chr);
-                row.push('\t');
-                row.push_str(&chr_pos.to_string());
-                row.push('\t');
-                row.push_str(".\t");
-                row.push(ref_base);
-                row.push('\t');
-                row.push_str(&alt_str);
-                row.push_str("\t.\t.\t.\tGT");
-
-                for seq in seqs.iter().take(seq_count) {
-                    row.push('\t');
-                    let b = char::from(seq[pos_idx]).to_ascii_uppercase();
-                    let gt = if !matches!(b, 'A' | 'C' | 'G' | 'T') {
-                        ".".to_string()
-                    } else if b == ref_base {
-                        "0".to_string()
-                    } else {
-                        match alt_bases.iter().position(|&x| x == b) {
-                            Some(idx) => (idx + 1).to_string(),
-                            None => ".".to_string(),
-                        }
-                    };
-                    row.push_str(&gt);
-                }
-
-                row.push('\n');
-                writer.write_all(row.as_ref())?;
+                write_snp_row(
+                    &mut writer,
+                    chr,
+                    chr_pos,
+                    ref_base,
+                    &alt_bases,
+                    &sample_bases,
+                )?;
             }
         }
     }

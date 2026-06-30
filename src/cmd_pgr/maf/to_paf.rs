@@ -50,7 +50,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 continue;
             }
 
-            if let Some(rec) = pgr::libs::fmt::maf::maf_block_to_paf(&block)? {
+            if let Some(rec) = pgr::libs::paf::maf_import::maf_block_to_paf(&block)? {
                 write_paf_record(&mut writer, &rec)?;
             }
         }

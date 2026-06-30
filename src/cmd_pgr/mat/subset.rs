@@ -1,5 +1,4 @@
 use clap::*;
-use std::io::Write;
 
 pub fn make_subcommand() -> Command {
     Command::new("subset")
@@ -46,29 +45,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // Load and process matrix
     //----------------------------
     let matrix = pgr::libs::pairmat::NamedMatrix::from_relaxed_phylip(infile)?;
-    let all_names = matrix.get_names();
-    let mut indices = Vec::new();
 
-    // Find indices of wanted names
-    for name in &wanted_names {
-        if let Some(idx) = all_names.iter().position(|n| *n == name) {
-            indices.push(idx);
-        } else {
-            log::warn!("Name not found in matrix: {}", name);
-        }
-    }
-
-    // Write sequence count
-    writer.write_fmt(format_args!("{}\n", indices.len()))?;
-
-    // Output submatrix
-    for &i in &indices {
-        writer.write_fmt(format_args!("{}", all_names[i]))?;
-        for &j in &indices {
-            writer.write_fmt(format_args!("\t{}", matrix.get(i, j)))?;
-        }
-
-        writer.write_fmt(format_args!("\n"))?;
+    let missing = pgr::libs::pairmat::write_subset(&matrix, &wanted_names, &mut writer)?;
+    for name in &missing {
+        log::warn!("Name not found in matrix: {}", name);
     }
 
     Ok(())

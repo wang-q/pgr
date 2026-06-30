@@ -62,32 +62,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             let name = String::from_utf8(record.name().into())?;
             let seq = record.sequence();
 
-            let mut begin = usize::MAX;
-            let mut end = usize::MAX;
-
-            for (i, &el) in seq.get(..).unwrap().iter().enumerate() {
-                let is_masked = if is_gap {
-                    pgr::libs::nt::is_n(el)
-                } else {
-                    pgr::libs::nt::is_n(el) || pgr::libs::nt::is_lower(el)
-                };
-
-                if is_masked {
-                    if begin == usize::MAX {
-                        begin = i;
-                    }
-                    end = i;
-                } else if begin != usize::MAX {
-                    writer.write_all(out_line(&name, begin, end).as_ref())?;
-
-                    // reset
-                    begin = usize::MAX;
-                    end = usize::MAX;
-                }
-            }
-
-            // Write the last masked region (if any)
-            if begin != usize::MAX {
+            for (begin, end) in pgr::libs::fmt::fa::find_masked_regions(&seq[..], is_gap) {
                 writer.write_all(out_line(&name, begin, end).as_ref())?;
             }
         }

@@ -1,5 +1,4 @@
 use clap::*;
-use indexmap::IndexMap;
 use pgr::libs::loc;
 
 // Create clap subcommand arguments
@@ -69,14 +68,14 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 for entry in &block.entries {
                     let entry_name = entry.range().name();
                     if entry_name == opt_name {
-                        let status = check_seq(entry, &mut genome_reader, &loc_of)?;
+                        let status = pgr::libs::fmt::fas::check_entry_against_ref(entry, &mut genome_reader, &loc_of)?;
                         writer.write_all(format!("{}\t{}\n", entry.range(), status).as_ref())?;
                     }
                 }
             } else if opt_name.is_empty() {
                 // Check all sequences in the block
                 for entry in &block.entries {
-                    let status = check_seq(entry, &mut genome_reader, &loc_of)?;
+                    let status = pgr::libs::fmt::fas::check_entry_against_ref(entry, &mut genome_reader, &loc_of)?;
                     writer.write_all(format!("{}\t{}\n", entry.range(), status).as_ref())?;
                 }
             }
@@ -84,27 +83,4 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     }
 
     Ok(())
-}
-
-fn check_seq(
-    entry: &pgr::libs::fmt::fas::FasEntry,
-    reader: &mut loc::Input,
-    loc_of: &IndexMap<String, (u64, usize)>,
-) -> anyhow::Result<String> {
-    let range = entry.range();
-    let seq = entry.seq().to_vec();
-    let seq = std::str::from_utf8(&seq)?
-        .to_string()
-        .to_ascii_uppercase()
-        .replace('-', "");
-
-    let gseq = if loc_of.contains_key(range.chr()) {
-        loc::fetch_range_seq(reader, loc_of, range)?.to_ascii_uppercase()
-    } else {
-        String::new()
-    };
-
-    let status = if seq == gseq { "OK" } else { "FAILED" };
-
-    Ok(status.to_string())
 }

@@ -70,40 +70,18 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let matrix1 = pgr::libs::pairmat::NamedMatrix::from_relaxed_phylip(matrix1_file)?;
     let matrix2 = pgr::libs::pairmat::NamedMatrix::from_relaxed_phylip(matrix2_file)?;
 
-    // Get common sequence names
-    let names1 = matrix1.get_names();
-    let names2 = matrix2.get_names();
-    let common_names: Vec<_> = names1.iter().filter(|name| names2.contains(name)).collect();
-
     // Report sequence counts
     log::info!(
         "Sequences in matrices: {} and {}",
-        names1.len(),
-        names2.len()
+        matrix1.size(),
+        matrix2.size()
     );
+
+    // Extract paired values from common upper triangle
+    let (common_names, values1, values2) =
+        pgr::libs::pairmat::extract_common_upper_triangle(&matrix1, &matrix2)?;
+
     log::info!("Common sequences: {}", common_names.len());
-
-    if common_names.is_empty() {
-        return Err(anyhow::anyhow!(
-            "No common sequence names found between matrices"
-        ));
-    }
-
-    // Extract values for comparison
-    let mut values1 = Vec::with_capacity(common_names.len() * (common_names.len() - 1) / 2);
-    let mut values2 = Vec::with_capacity(common_names.len() * (common_names.len() - 1) / 2);
-
-    for i in 0..common_names.len() {
-        for j in 0..i {
-            if let (Some(v1), Some(v2)) = (
-                matrix1.get_by_name(common_names[i], common_names[j]),
-                matrix2.get_by_name(common_names[i], common_names[j]),
-            ) {
-                values1.push(v1);
-                values2.push(v2);
-            }
-        }
-    }
 
     // Write header
     writer.write_all(b"Method\tScore\n")?;

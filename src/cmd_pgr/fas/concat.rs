@@ -60,28 +60,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     for infile in args.get_many::<String>("infiles").unwrap() {
         let mut reader = pgr::reader(infile)?;
-
-        while let Ok(block) = pgr::libs::fmt::fas::next_fas_block(&mut reader) {
-            let block_names = block.names;
-            let length = block.entries.first().unwrap().seq().len();
-
-            for name in &needed {
-                if block_names.contains(name) {
-                    for entry in &block.entries {
-                        let entry_name = entry.range().name();
-                        if entry_name == name {
-                            let seq = std::str::from_utf8(entry.seq()).unwrap();
-                            seq_of.entry(name.to_string()).and_modify(|e| *e += seq);
-                        }
-                    }
-                } else {
-                    // fill absent names with ------
-                    seq_of
-                        .entry(name.to_string())
-                        .and_modify(|e| *e += "-".repeat(length).as_str());
-                }
-            }
-        }
+        pgr::libs::fmt::fas::concat_blocks_into(&mut reader, &needed, &mut seq_of)?;
     }
 
     //----------------------------

@@ -120,10 +120,10 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
     }
 
     // Expand files
-    let mut query_files = pgr::libs::io::find_fasta_files(arg_query);
+    let mut query_files = pgr::libs::fmt::fa::find_fasta_files(arg_query);
     query_files.sort();
 
-    let mut target_files = pgr::libs::io::find_fasta_files(arg_target);
+    let mut target_files = pgr::libs::fmt::fa::find_fasta_files(arg_target);
     target_files.sort();
 
     if query_files.is_empty() {

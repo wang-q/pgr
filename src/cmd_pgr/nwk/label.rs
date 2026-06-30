@@ -192,7 +192,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         for id in ids.iter() {
             let node = tree.get_node(*id).unwrap();
             if let Some(x) = node.name.clone() {
-                let out_string = nwr::format_label_columns(node, &x, &columns);
+                let out_string =
+                    pgr::libs::phylo::tree::query::format_label_columns(node, &x, &columns);
 
                 if tab_sep {
                     collected_labels.push(out_string);

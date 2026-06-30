@@ -1,6 +1,5 @@
-use crate::cmd_pgr::plot::common::{context_get_str, render_and_write, replace_section};
 use clap::*;
-use pgr::libs::plot::histogram::{calc_density, calc_hist, create_table, load_data};
+use pgr::libs::plot::histogram::{calc_density, calc_hist, compute_hh_axis, create_table, load_data, render_hh_tex};
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
@@ -126,94 +125,30 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     // Axis section
     //----------------------------
-    // Use column names if labels are not specified
     let xlabel = xlabel.unwrap_or(col_name);
     let ylabel = ylabel.unwrap_or(group_name);
 
-    // Width unit per bin
-    let width = (*bins as f64) * unit.0;
-    // Calculate height, 1 unit per group, minimum 2
-    let height = (density_data.len() as f64).max(2.0) * unit.1;
-
-    // Y
-    let ygroups: Vec<_> = density_data.keys().cloned().collect();
-    let yticks = (0..=density_data.len().max(2))
-        .map(|i| i as f64 - 0.5)
-        .collect::<Vec<_>>(); // Generate ticks from -0.5 to n-0.5
-
-    // Find the longest group name for label width
-    let label_len = ygroups.iter().map(|s| s.len()).max().unwrap_or(0).max(3);
-
-    // X
-    let xticks = (0..=*bins)
-        .filter_map(|i| {
-            if i % 5 == 0 {
-                Some(i as f64 - 0.5)
-            } else {
-                None
-            }
-        })
-        .collect::<Vec<_>>();
-
-    let xtick_labels = bin_edges
-        .iter()
-        .enumerate()
-        .filter_map(|(i, &edge)| {
-            if i % 5 == 0 {
-                Some(format!("{}", edge))
-            } else {
-                None
-            }
-        })
-        .collect::<Vec<_>>();
+    let axis = compute_hh_axis(&density_data, *bins, &bin_edges, unit);
 
     //----------------------------
     // Context
     //----------------------------
     let mut context = tera::Context::new();
 
-    context.insert("outfile", crate::cmd_pgr::args::get_outfile(args));
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
+    let mut writer = pgr::writer(outfile)?;
     context.insert("table", &table);
     context.insert("xlabel", &xlabel);
     context.insert("ylabel", &ylabel);
-    context.insert("width", &width);
-    context.insert("height", &height);
-    context.insert("xticks", &xticks);
-    context.insert("xtick_labels", &xtick_labels);
-    context.insert("ygroups", &ygroups);
-    context.insert("yticks", &yticks);
-    context.insert("label_len", &label_len);
+    context.insert("width", &axis.width);
+    context.insert("height", &axis.height);
+    context.insert("xticks", &axis.xticks);
+    context.insert("xtick_labels", &axis.xtick_labels);
+    context.insert("ygroups", &axis.ygroups);
+    context.insert("yticks", &axis.yticks);
+    context.insert("label_len", &axis.label_len);
 
-    gen_hh(&context)?;
+    render_hh_tex(&context, &mut writer)?;
 
-    Ok(())
-}
-
-fn gen_hh(context: &tera::Context) -> anyhow::Result<()> {
-    let outfile = context_get_str(context, "outfile")?;
-    let mut writer = pgr::writer(outfile)?;
-
-    static FILE_TEMPLATE: &str = include_str!("../../../docs/heatmap.tex");
-    let mut template = FILE_TEMPLATE.to_string();
-
-    let out_string = r###"%
-width={{ width }}cm,
-height={{ height }}cm,
-xlabel={ {{ xlabel }} },
-ylabel={ {{ ylabel }} },
-extra x ticks={ {{ xticks | join(sep=", ") }} },
-extra x tick labels={ {{ xtick_labels | join(sep=", ") }} },
-yticklabels={ {{ ygroups | join(sep=", ") }} },
-extra y ticks={ {{ yticks | join(sep=", ") }} },
-y tick label style={
-    text width={{ label_len }}ex,
-},
-    "###;
-    replace_section(&mut template, "%AXIS_BEGIN", "%AXIS_END", out_string)?;
-
-    let table = context_get_str(context, "table")?;
-    replace_section(&mut template, "%TABLE_BEGIN", "%TABLE_END", table)?;
-
-    render_and_write(&template, context, &mut writer)?;
     Ok(())
 }

@@ -73,30 +73,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     // 5. Annotate Target Trees
     for target in &mut targets {
-        let target_bitsets =
-            support::compute_all_bitsets(target, &leaf_map).map_err(|e| anyhow::anyhow!(e))?;
-
-        for (id, bs) in target_bitsets {
-            let node = target.get_node_mut(id).unwrap();
-
-            // Only annotate internal nodes
-            if !node.is_leaf() {
-                let count = counts.get(&bs).copied().unwrap_or(0);
-
-                let label = if percent {
-                    match (count * 100).checked_div(total_reps) {
-                        Some(v) => format!("{}", v),
-                        None => "0".to_string(),
-                    }
-                } else {
-                    format!("{}", count)
-                };
-
-                // Overwrite existing label
-                node.name = Some(label);
-            }
-        }
-
+        support::annotate_support(target, &leaf_map, &counts, total_reps, percent)
+            .map_err(|e| anyhow::anyhow!(e))?;
         println!("{}", target.to_newick());
     }
 

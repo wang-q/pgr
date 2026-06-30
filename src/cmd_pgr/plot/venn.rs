@@ -1,10 +1,8 @@
 use crate::cmd_pgr::args::outfile_arg;
-use crate::cmd_pgr::plot::common::{context_get_str, render_and_write, replace_section};
 use anyhow::{anyhow, Result};
 use clap::*;
-use indexmap::IndexMap;
+use pgr::libs::plot::common::{context_get_str, render_and_write, replace_section};
 use pgr::libs::plot::venn::{venn_sets_2, venn_sets_3, venn_sets_4};
-use std::path::Path;
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
@@ -51,39 +49,7 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
     //----------------------------
     // Ops
     //----------------------------
-    let mut ints_of: IndexMap<String, _> = indexmap::IndexMap::new();
-    let mut all_elems = indexmap::IndexSet::new();
-
-    for (i, file) in infiles.iter().enumerate() {
-        // Get filename as label
-        let mut basename = Path::new(file)
-            .file_name()
-            .ok_or_else(|| anyhow!("invalid filename: {}", file))?
-            .to_str()
-            .ok_or_else(|| anyhow!("invalid UTF-8 in filename: {}", file))?
-            .split('.')
-            .next()
-            .ok_or_else(|| anyhow!("empty filename after splitting: {}", file))?
-            .to_string();
-
-        // Handle duplicate names
-        if ints_of.contains_key(&basename) {
-            basename = format!("cat{}", i + 1);
-        }
-
-        // Read file content and convert to IntSpan
-        let vec = pgr::libs::io::read_names_as_vec(file)?;
-        let mut ints = intspan::IntSpan::new();
-
-        for e in &vec {
-            all_elems.insert(e.clone());
-            let idx = all_elems
-                .get_index_of(e)
-                .ok_or_else(|| anyhow!("element not found after insert: {}", e))?;
-            ints.add_n(idx as i32);
-        }
-        ints_of.insert(basename, ints);
-    }
+    let ints_of = pgr::libs::plot::venn::build_venn_sets_from_files(&infiles)?;
 
     let get_set = |i: usize| -> anyhow::Result<&intspan::IntSpan> {
         Ok(ints_of

@@ -1,15 +1,10 @@
 use clap::{Arg, ArgMatches, Command};
-use pgr::libs::clust::eval::format::{
-    coord_metric_values, distance_metric_values, external_metric_values, format_metrics_row,
-    COORD_METRIC_NAMES, DISTANCE_METRIC_NAMES, EXTERNAL_METRIC_NAMES,
-};
 use pgr::libs::clust::eval::{
-    evaluate, load_batch_partitions, load_partition, remove_singletons, Coordinates,
-    DistanceMatrix, PartitionFormat, TreeDistance,
+    load_batch_partitions, load_partition, remove_singletons, run_batch, run_single, EvalTarget,
+    Coordinates, DistanceMatrix, PartitionFormat, TreeDistance,
 };
 use pgr::libs::pairmat::NamedMatrix;
 use pgr::libs::phylo::tree::Tree;
-use std::io::Write;
 
 pub fn make_subcommand() -> Command {
     Command::new("eval")
@@ -103,7 +98,7 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
         // Batch Mode
         let batches = load_batch_partitions(p1_path)?;
 
-        // Prepare resources
+        // Prepare resources (I/O stays in cmd layer)
         let p2 = if let Some(p2_path) = matches.get_one::<String>("other") {
             let mut truth = load_partition(p2_path, PartitionFormat::Pair)?;
             if remove_singletons_flag {
@@ -141,41 +136,18 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
             );
         }
 
-        // Write Header
-        let mut header = vec!["Group"];
-        if p2.is_some() {
-            header.extend_from_slice(EXTERNAL_METRIC_NAMES);
+        let mut targets: Vec<EvalTarget<'_>> = vec![];
+        if let Some(ref truth) = p2 {
+            targets.push(EvalTarget::External(truth));
         }
-        if dist_provider.is_some() {
-            header.extend_from_slice(DISTANCE_METRIC_NAMES);
+        if let Some(ref d) = dist_provider {
+            targets.push(EvalTarget::Matrix(&**d));
         }
-        if coords.is_some() {
-            header.extend_from_slice(COORD_METRIC_NAMES);
-        }
-        writeln!(writer, "{}", header.join("\t"))?;
-
-        // Process batches
-        for (group, p1) in batches {
-            let mut row = vec![group];
-
-            if let Some(ref truth) = p2 {
-                let metrics = evaluate(&p1, truth);
-                row.push(format_metrics_row(&external_metric_values(&metrics)));
-            }
-
-            if let Some(ref d) = dist_provider {
-                let values = distance_metric_values(&p1, d.as_ref());
-                row.push(format_metrics_row(&values));
-            }
-
-            if let Some(ref c) = coords {
-                let values = coord_metric_values(&p1, c);
-                row.push(format_metrics_row(&values));
-            }
-
-            writeln!(writer, "{}", row.join("\t"))?;
+        if let Some(ref c) = coords {
+            targets.push(EvalTarget::Coords(c));
         }
 
+        run_batch(batches, &targets, &mut writer)?;
         return Ok(());
     }
 
@@ -187,36 +159,20 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
         if remove_singletons_flag {
             remove_singletons(&mut p2);
         }
-        let metrics = evaluate(&p1, &p2);
-
-        writeln!(writer, "{}", EXTERNAL_METRIC_NAMES.join("\t"))?;
-        writeln!(
-            writer,
-            "{}",
-            format_metrics_row(&external_metric_values(&metrics))
-        )?;
+        run_single(&p1, EvalTarget::External(&p2), &mut writer)?;
     } else if let Some(matrix_path) = matches.get_one::<String>("matrix") {
         let matrix = NamedMatrix::from_relaxed_phylip(matrix_path)?;
-        let values = distance_metric_values(&p1, &matrix);
-
-        writeln!(writer, "{}", DISTANCE_METRIC_NAMES.join("\t"))?;
-        writeln!(writer, "{}", format_metrics_row(&values))?;
+        run_single(&p1, EvalTarget::Matrix(&matrix), &mut writer)?;
     } else if let Some(tree_path) = matches.get_one::<String>("tree") {
         let trees = Tree::from_file(tree_path)?;
         if trees.len() != 1 {
             anyhow::bail!("Tree file must contain exactly one tree.");
         }
         let dist = TreeDistance::new(trees.into_iter().next().unwrap());
-        let values = distance_metric_values(&p1, &dist);
-
-        writeln!(writer, "{}", DISTANCE_METRIC_NAMES.join("\t"))?;
-        writeln!(writer, "{}", format_metrics_row(&values))?;
+        run_single(&p1, EvalTarget::Matrix(&dist), &mut writer)?;
     } else if let Some(coords_path) = matches.get_one::<String>("coords") {
         let coords = Coordinates::from_path(coords_path)?;
-        let values = coord_metric_values(&p1, &coords);
-
-        writeln!(writer, "{}", COORD_METRIC_NAMES.join("\t"))?;
-        writeln!(writer, "{}", format_metrics_row(&values))?;
+        run_single(&p1, EvalTarget::Coords(&coords), &mut writer)?;
     } else {
         anyhow::bail!(
             "Either --other/--truth (for external eval), --matrix, --tree, or --coords (for internal eval) must be provided."

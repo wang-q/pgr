@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::*;
 use noodles_bgzf as bgzf;
 use std::io::{Read, Write};
@@ -124,7 +125,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     };
 
     let inner_writer = Box::new(std::io::BufWriter::new(
-        std::fs::File::create(&outfile).unwrap(),
+        std::fs::File::create(&outfile).with_context(|| format!("Failed to create: {outfile}"))?,
     ));
 
     let mut builder =

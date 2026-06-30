@@ -17,6 +17,54 @@ pub use partition::{
     Partition, RepMode,
 };
 
+use dynamic::{cutree_dynamic_tree, DynamicTreeOptions};
+use hybrid::{cutree_hybrid, HybridOptions};
+
+/// Cut-method dispatch value (clap-free). The caller constructs this from
+/// `ArgMatches` and `dispatch_cut` executes the corresponding algorithm.
+pub enum CutDispatch {
+    /// Dynamic Tree Cut.
+    DynamicTree(DynamicTreeOptions),
+    /// Dynamic Hybrid Cut (with pre-loaded distance matrix).
+    DynamicHybrid(HybridOptions),
+    /// One of the standard `METHOD_NAMES` methods.
+    Standard {
+        name: &'static str,
+        val: f64,
+        deep: usize,
+        leaf_depths: Option<(f64, f64, f64)>,
+    },
+}
+
+/// Execute the cut specified by `dispatch` on `tree`. Returns the resulting
+/// partition and the method name (for labeling).
+pub fn dispatch_cut(
+    tree: &Tree,
+    dispatch: CutDispatch,
+) -> anyhow::Result<(Partition, &'static str)> {
+    match dispatch {
+        CutDispatch::DynamicTree(opts) => {
+            let p = cutree_dynamic_tree(tree, opts).map_err(|e| anyhow::anyhow!(e))?;
+            Ok((p, "dynamic-tree"))
+        }
+        CutDispatch::DynamicHybrid(opts) => {
+            let p = cutree_hybrid(tree, opts).map_err(|e| anyhow::anyhow!(e))?;
+            Ok((p, "dynamic-hybrid"))
+        }
+        CutDispatch::Standard {
+            name,
+            val,
+            deep,
+            leaf_depths,
+        } => {
+            let method =
+                build_method(name, val, deep, leaf_depths).map_err(|e| anyhow::anyhow!(e))?;
+            let p = cut(tree, method).map_err(|e| anyhow::anyhow!(e))?;
+            Ok((p, name))
+        }
+    }
+}
+
 /// Cut the tree according to the specified method.
 ///
 /// # Arguments

@@ -82,6 +82,36 @@ pub fn compute_all_bitsets(
     Ok(node_bitsets)
 }
 
+/// Annotate internal nodes of `target` with support values from `counts`.
+/// If `as_percent` is true, values are written as integer percentages of `total_reps`.
+pub fn annotate_support(
+    target: &mut Tree,
+    leaf_map: &HashMap<String, usize>,
+    counts: &HashMap<FixedBitSet, usize>,
+    total_reps: usize,
+    as_percent: bool,
+) -> Result<(), String> {
+    let target_bitsets = compute_all_bitsets(target, leaf_map)?;
+    for (id, bs) in target_bitsets {
+        let node = target
+            .get_node_mut(id)
+            .ok_or_else(|| "invalid node id".to_string())?;
+        if !node.is_leaf() {
+            let count = counts.get(&bs).copied().unwrap_or(0);
+            let label = if as_percent {
+                match (count * 100).checked_div(total_reps) {
+                    Some(v) => format!("{}", v),
+                    None => "0".to_string(),
+                }
+            } else {
+                format!("{}", count)
+            };
+            node.name = Some(label);
+        }
+    }
+    Ok(())
+}
+
 /// Count clade frequencies from a list of replicate trees.
 pub fn count_clades(
     trees: &[Tree],

@@ -93,43 +93,19 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         // Perform six-frame translation
         let translations = pgr::libs::translate::six_frame_translation(&seq[..]);
 
-        // Iterate over each translation frame
         for (protein, frame, is_reverse) in translations {
-            // Detect ORFs in the translated protein sequence
             let orfs = pgr::libs::translate::find_orfs(&protein);
+            let filtered = pgr::libs::translate::filter_and_convert_orfs(
+                &orfs,
+                seq.len(),
+                frame,
+                is_reverse,
+                opt_len,
+                is_start,
+                is_end,
+            );
 
-            // Calculate the starting position in the DNA sequence
-            let dna_start = if is_reverse {
-                seq.len() - frame // Starting position for reverse strand
-            } else {
-                frame // Starting position for forward strand
-            };
-
-            // Adjust dna positions and write each ORF to the output file
-            for (orf_seq, start, end) in orfs {
-                // Filter ORFs based on the provided options
-                if orf_seq.len() < opt_len {
-                    continue;
-                }
-                if is_start && !orf_seq.starts_with('M') {
-                    continue;
-                }
-                if is_end && !orf_seq.ends_with('*') {
-                    continue;
-                }
-
-                // 1-based
-                let orf_start = if is_reverse {
-                    dna_start - end * 3 + 1
-                } else {
-                    dna_start + start * 3 + 1
-                };
-                let orf_end = if is_reverse {
-                    dna_start - start * 3
-                } else {
-                    dna_start + end * 3
-                };
-
+            for (orf_start, orf_end, orf_seq) in filtered {
                 let header = format!(
                     "{}({}):{}-{}|frame={}",
                     name,

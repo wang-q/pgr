@@ -1,5 +1,4 @@
 use clap::*;
-use std::io::Write;
 
 pub fn make_subcommand() -> Command {
     Command::new("format")
@@ -73,39 +72,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // Ops
     //----------------------------
     let matrix = pgr::libs::pairmat::NamedMatrix::from_relaxed_phylip(infile)?;
-    let names = matrix.get_names();
-    let size = matrix.size();
+    let fmt = pgr::libs::pairmat::MatrixFormat::from_mode(opt_mode)?;
 
-    // Write sequence count
-    writer.write_fmt(format_args!("{:>4}\n", size))?;
-
-    for (i, name) in names.iter().enumerate().take(size) {
-        match opt_mode.as_str() {
-            "full" => {
-                writer.write_fmt(format_args!("{}", name))?;
-                for j in 0..size {
-                    writer.write_fmt(format_args!("\t{}", matrix.get(i, j)))?;
-                }
-            }
-            "lower" => {
-                writer.write_fmt(format_args!("{}", name))?;
-                for j in 0..i {
-                    writer.write_fmt(format_args!("\t{}", matrix.get(i, j)))?;
-                }
-            }
-            "strict" => {
-                writer.write_fmt(format_args!(
-                    "{:<10}",
-                    name.chars().take(10).collect::<String>()
-                ))?;
-                for j in 0..size {
-                    writer.write_fmt(format_args!(" {:.6}", matrix.get(i, j)))?;
-                }
-            }
-            _ => anyhow::bail!("unsupported output format"),
-        }
-        writer.write_fmt(format_args!("\n"))?;
-    }
+    pgr::libs::pairmat::write_phylip_matrix(&matrix, fmt, &mut writer)?;
 
     Ok(())
 }

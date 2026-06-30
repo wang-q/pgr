@@ -106,7 +106,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     // 3. Clustering
     //----------------------------
-    let kmedoids = pgr::libs::clust::kmedoids::KMedoids::new(opt_k, max_iter, runs);
+    let kmedoids = pgr::libs::clust::k_medoids::KMedoids::new(opt_k, max_iter, runs);
     let mut clusters = kmedoids.perform_clustering(&sm);
 
     //----------------------------

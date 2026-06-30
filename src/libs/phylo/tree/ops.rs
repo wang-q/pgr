@@ -1,5 +1,6 @@
 use super::Tree;
 use crate::libs::phylo::node::NodeId;
+use std::collections::BTreeSet;
 
 /// Add a child to a parent node.
 /// Updates both parent's `children` list and child's `parent` field.
@@ -583,5 +584,68 @@ pub fn remove_properties_matching(tree: &mut Tree, pattern: &str) -> anyhow::Res
         }
     }
 
+    Ok(())
+}
+
+/// Reroot the tree on the edge above the LCA of `target_ids`.
+///
+/// When `lax` is true and the LCA equals the current root, falls back to the
+/// complement LCA (unspecified leaves). Returns `Ok(())` with the tree
+/// unchanged when the LCA is already the root.
+pub fn reroot_at_lca(
+    tree: &mut Tree,
+    target_ids: &BTreeSet<NodeId>,
+    lax: bool,
+    process_support: bool,
+) -> anyhow::Result<()> {
+    if target_ids.is_empty() {
+        return Ok(());
+    }
+
+    let mut nodes: Vec<NodeId> = target_ids.iter().cloned().collect();
+    let mut sub_root_id = nodes.pop().unwrap();
+    for id in &nodes {
+        sub_root_id = tree
+            .get_common_ancestor(&sub_root_id, id)
+            .map_err(|e| anyhow::anyhow!(e))?;
+    }
+
+    let old_root = tree
+        .get_root()
+        .ok_or_else(|| anyhow::anyhow!("tree has no root"))?;
+
+    if old_root == sub_root_id && lax {
+        if let Some(comp_lca) =
+            crate::libs::phylo::tree::query::lax_complement_lca(tree, target_ids, old_root)
+        {
+            sub_root_id = comp_lca;
+        }
+    }
+
+    if old_root == sub_root_id {
+        return Ok(());
+    }
+
+    let new_root = tree
+        .insert_parent(sub_root_id)
+        .map_err(|e| anyhow::anyhow!(e))?;
+    tree.reroot_at(new_root, process_support)
+        .map_err(|e| anyhow::anyhow!(e))?;
+    tree.remove_degree_two_nodes();
+
+    Ok(())
+}
+
+/// Reroot at the midpoint of the longest branch. No-op when the tree has no
+/// edges.
+pub fn reroot_at_longest_branch(tree: &mut Tree, process_support: bool) -> anyhow::Result<()> {
+    if let Some(longest_node) = tree.get_node_with_longest_edge() {
+        let new_root = tree
+            .insert_parent(longest_node)
+            .map_err(|e| anyhow::anyhow!(e))?;
+        tree.reroot_at(new_root, process_support)
+            .map_err(|e| anyhow::anyhow!(e))?;
+        tree.remove_degree_two_nodes();
+    }
     Ok(())
 }

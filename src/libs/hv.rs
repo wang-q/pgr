@@ -200,6 +200,86 @@ pub fn hv_dot(a: &[i32], b: &[i32]) -> f32 {
     crate::libs::linalg::dot_product(&a_f32, &b_f32)
 }
 
+/// A hypervector entry with its source name and the resulting HV set.
+#[derive(Debug, Default, Clone)]
+pub struct HvEntry {
+    pub name: String,
+    pub set: Vec<i32>,
+}
+
+/// Pairwise distance metrics between two hypervectors.
+#[derive(Debug, Clone)]
+pub struct HvDistances {
+    pub card1: usize,
+    pub card2: usize,
+    pub inter: usize,
+    pub union: usize,
+    pub mash: f32,
+    pub jaccard: f32,
+    pub containment: f32,
+}
+
+/// Calculate Jaccard, Containment, and Mash distance between two hypervector sets.
+pub fn calc_distances(s1: &[i32], s2: &[i32], kmer: usize) -> HvDistances {
+    let card1 = hv_cardinality(s1);
+    let card2 = hv_cardinality(s2);
+
+    let inter = hv_dot(s1, s2).min(card1 as f32).min(card2 as f32);
+    let union = card1 as f32 + card2 as f32 - inter;
+
+    let jaccard = inter / union;
+    let containment = inter / card1 as f32;
+    // https://mash.readthedocs.io/en/latest/distances.html#mash-distance-formulation
+    let mash = if jaccard == 0.0 {
+        1.0
+    } else {
+        ((-1.0 / kmer as f32) * ((2.0f32 * jaccard) / (1.0f32 + jaccard)).ln()).abs()
+    };
+
+    HvDistances {
+        card1,
+        card2,
+        inter: inter as usize,
+        union: union as usize,
+        mash,
+        jaccard,
+        containment,
+    }
+}
+
+/// Load a single FASTA file into one `HvEntry` by merging all sequences' minimizers.
+pub fn load_hv_from_fasta(
+    infile: &str,
+    hasher: &str,
+    kmer: usize,
+    window: usize,
+    dim: usize,
+) -> anyhow::Result<HvEntry> {
+    let mut fa_in = crate::libs::fmt::fa::reader(infile)?;
+
+    let mut file_set = rapidhash::RapidHashSet::default();
+
+    for result in fa_in.records() {
+        // obtain record or fail with error
+        let record = result?;
+        let seq = record.sequence();
+
+        let set: rapidhash::RapidHashSet<u64> =
+            crate::libs::hash::seq_mins(&seq[..], hasher, kmer, window)?;
+
+        file_set.extend(set);
+    }
+
+    let seed_vec: Vec<u64> = file_set.into_iter().collect();
+    let hv: Vec<i32> = hash_hv_i8(&seed_vec, dim);
+    let entry = HvEntry {
+        name: infile.to_string(),
+        set: hv,
+    };
+
+    Ok(entry)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,5 +1,93 @@
 use indexmap::IndexMap;
 
+/// Axis-layout parameters for a histo-heatmap (hh) plot.
+pub struct HhAxis {
+    pub width: f64,
+    pub height: f64,
+    pub ygroups: Vec<String>,
+    pub yticks: Vec<f64>,
+    pub label_len: usize,
+    pub xticks: Vec<f64>,
+    pub xtick_labels: Vec<String>,
+}
+
+/// Compute the hh axis layout (width/height/ticks/labels) from density data, bin edges, and cell unit.
+pub fn compute_hh_axis(
+    density_data: &IndexMap<String, Vec<f64>>,
+    bins: usize,
+    bin_edges: &[f64],
+    unit: (f64, f64),
+) -> HhAxis {
+    let width = (bins as f64) * unit.0;
+    let height = (density_data.len() as f64).max(2.0) * unit.1;
+
+    let ygroups: Vec<String> = density_data.keys().cloned().collect();
+    let yticks = (0..=density_data.len().max(2))
+        .map(|i| i as f64 - 0.5)
+        .collect::<Vec<_>>();
+    let label_len = ygroups.iter().map(|s| s.len()).max().unwrap_or(0).max(3);
+
+    let xticks = (0..=bins)
+        .filter_map(|i| if i % 5 == 0 { Some(i as f64 - 0.5) } else { None })
+        .collect::<Vec<_>>();
+    let xtick_labels = bin_edges
+        .iter()
+        .enumerate()
+        .filter_map(|(i, &edge)| {
+            if i % 5 == 0 {
+                Some(format!("{}", edge))
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+
+    HhAxis {
+        width,
+        height,
+        ygroups,
+        yticks,
+        label_len,
+        xticks,
+        xtick_labels,
+    }
+}
+
+/// Render the hh LaTeX document from `context` and write it to `writer`.
+pub fn render_hh_tex<W: std::io::Write>(
+    context: &tera::Context,
+    writer: &mut W,
+) -> anyhow::Result<()> {
+    static FILE_TEMPLATE: &str = include_str!("../../../docs/heatmap.tex");
+    let mut template = FILE_TEMPLATE.to_string();
+
+    let out_string = r###"%
+width={{ width }}cm,
+height={{ height }}cm,
+xlabel={ {{ xlabel }} },
+ylabel={ {{ ylabel }} },
+extra x ticks={ {{ xticks | join(sep=", ") }} },
+extra x tick labels={ {{ xtick_labels | join(sep=", ") }} },
+yticklabels={ {{ ygroups | join(sep=", ") }} },
+extra y ticks={ {{ yticks | join(sep=", ") }} },
+y tick label style={
+    text width={{ label_len }}ex,
+},
+    "###;
+    crate::libs::plot::common::replace_section(
+        &mut template,
+        "%AXIS_BEGIN",
+        "%AXIS_END",
+        out_string,
+    )?;
+
+    let table = crate::libs::plot::common::context_get_str(context, "table")?;
+    crate::libs::plot::common::replace_section(&mut template, "%TABLE_BEGIN", "%TABLE_END", table)?;
+
+    crate::libs::plot::common::render_and_write(&template, context, writer)?;
+    Ok(())
+}
+
 /// Load grouped numeric data from a TSV file.
 ///
 /// Reads column `col` (1-based) as numeric values, optionally grouping by

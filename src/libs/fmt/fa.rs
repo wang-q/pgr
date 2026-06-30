@@ -328,3 +328,87 @@ pub fn build_gzi_index(path: &str) -> anyhow::Result<()> {
 
     Ok(())
 }
+
+/// Recursively collect FASTA files (`.fa` and `.fa.gz`) under `path`.
+/// A file input is returned as a single-element vec. Directory inputs are
+/// walked recursively, matching `.fa` and `.fa.gz` extensions.
+pub fn find_fasta_files<P: AsRef<std::path::Path>>(path: P) -> Vec<std::path::PathBuf> {
+    let mut files = Vec::new();
+    let path = path.as_ref();
+
+    if path.is_file() {
+        files.push(path.to_path_buf());
+    } else if path.is_dir() {
+        if let Ok(entries) = std::fs::read_dir(path) {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p.is_dir() {
+                    files.extend(find_fasta_files(&p));
+                } else if let Some(ext) = p.extension() {
+                    let ext_str = ext.to_string_lossy().to_lowercase();
+                    if ext_str == "fa" {
+                        files.push(p);
+                    } else if ext_str == "gz" {
+                        if let Some(stem) = p.file_stem() {
+                            let stem_path = std::path::Path::new(stem);
+                            if let Some(stem_ext) = stem_path.extension() {
+                                if stem_ext.to_string_lossy().to_lowercase() == "fa" {
+                                    files.push(p);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    files
+}
+
+/// Mask sequence regions. Soft-mask lowercases, hard-mask replaces with N.
+pub fn mask_sequence(seq: &str, spans: &intspan::IntSpan, hard: bool) -> String {
+    let mut out = seq.to_string();
+    for (lower, upper) in spans.spans().iter() {
+        let offset = (lower - 1) as usize;
+        let length = (upper - lower + 1) as usize;
+        let replacement = if hard {
+            "N".repeat(length)
+        } else {
+            out[offset..offset + length].to_lowercase()
+        };
+        out.replace_range(offset..offset + length, &replacement);
+    }
+    out
+}
+
+/// Find contiguous masked regions (lowercase and/or N/n) in a sequence. Returns 0-based (begin, end) pairs.
+pub fn find_masked_regions(seq: &[u8], gap_only: bool) -> Vec<(usize, usize)> {
+    let mut regions = Vec::new();
+    let mut begin = usize::MAX;
+    let mut end = usize::MAX;
+
+    for (i, &el) in seq.iter().enumerate() {
+        let is_masked = if gap_only {
+            crate::libs::nt::is_n(el)
+        } else {
+            crate::libs::nt::is_n(el) || crate::libs::nt::is_lower(el)
+        };
+
+        if is_masked {
+            if begin == usize::MAX {
+                begin = i;
+            }
+            end = i;
+        } else if begin != usize::MAX {
+            regions.push((begin, end));
+            begin = usize::MAX;
+            end = usize::MAX;
+        }
+    }
+
+    if begin != usize::MAX {
+        regions.push((begin, end));
+    }
+
+    regions
+}

@@ -122,45 +122,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             }
 
             if !ids.is_empty() {
-                let mut nodes: Vec<usize> = ids.iter().cloned().collect();
-                let mut sub_root_id = nodes.pop().unwrap();
-
-                for id in &nodes {
-                    sub_root_id = tree.get_common_ancestor(&sub_root_id, id).unwrap();
-                }
-
-                let old_root = tree.get_root().unwrap();
-
-                // Lax mode check
-                if old_root == sub_root_id && lax {
-                    if let Some(comp_lca) =
-                        pgr::libs::phylo::tree::query::lax_complement_lca(&tree, &ids, old_root)
-                    {
-                        sub_root_id = comp_lca;
-                    }
-                }
-
-                if old_root == sub_root_id {
-                    let out_string = tree.to_newick();
-                    writer.write_all((out_string + "\n").as_ref())?;
-                    return Ok(());
-                }
-
-                let new_root = tree.insert_parent(sub_root_id).unwrap();
-
-                // Reroot at the new node
-                tree.reroot_at(new_root, process_support).unwrap();
-
-                // Compress: remove degree-2 nodes (redundant internal nodes)
-                // The old root likely became a degree-2 node.
-                tree.remove_degree_two_nodes();
+                pgr::libs::phylo::tree::ops::reroot_at_lca(&mut tree, &ids, lax, process_support)?;
             } else {
-                // Default behavior: Root at the middle of the longest branch
-                if let Some(longest_node) = tree.get_node_with_longest_edge() {
-                    let new_root = tree.insert_parent(longest_node).unwrap();
-                    tree.reroot_at(new_root, process_support).unwrap();
-                    tree.remove_degree_two_nodes();
-                }
+                pgr::libs::phylo::tree::ops::reroot_at_longest_branch(&mut tree, process_support)?;
             }
         }
 

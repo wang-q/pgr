@@ -231,6 +231,129 @@ where
     Ok(())
 }
 
+/// Check a FasEntry's sequence against the reference genome.
+pub fn check_entry_against_ref(
+    entry: &FasEntry,
+    reader: &mut crate::libs::loc::Input,
+    loc_of: &indexmap::IndexMap<String, (u64, usize)>,
+) -> anyhow::Result<String> {
+    let range = entry.range();
+    let seq = entry.seq().to_vec();
+    let seq = std::str::from_utf8(&seq)?
+        .to_string()
+        .to_ascii_uppercase()
+        .replace('-', "");
+
+    let gseq = if loc_of.contains_key(range.chr()) {
+        crate::libs::loc::fetch_range_seq(reader, loc_of, range)?.to_ascii_uppercase()
+    } else {
+        String::new()
+    };
+
+    let status = if seq == gseq { "OK" } else { "FAILED" };
+    Ok(status.to_string())
+}
+
+/// Process fas blocks from reader, concatenating sequences for needed names.
+pub fn concat_blocks_into<R: io::BufRead>(
+    reader: &mut R,
+    needed: &[String],
+    seq_of: &mut std::collections::BTreeMap<String, String>,
+) -> anyhow::Result<()> {
+    while let Ok(block) = next_fas_block(reader) {
+        let block_names = block.names;
+        let length = block.entries.first().unwrap().seq().len();
+
+        for name in needed {
+            if block_names.contains(name) {
+                for entry in &block.entries {
+                    let entry_name = entry.range().name();
+                    if entry_name == name {
+                        let seq = std::str::from_utf8(entry.seq())?;
+                        seq_of.entry(name.to_string()).and_modify(|e| *e += seq);
+                    }
+                }
+            } else {
+                seq_of
+                    .entry(name.to_string())
+                    .and_modify(|e| *e += "-".repeat(length).as_str());
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Process fas blocks from reader, aggregating coverage into res_of.
+pub fn aggregate_coverage_into<R: io::BufRead>(
+    reader: &mut R,
+    res_of: &mut std::collections::BTreeMap<String, std::collections::BTreeMap<String, intspan::IntSpan>>,
+    name_filter: &str,
+    trim: i32,
+) -> anyhow::Result<()> {
+    while let Ok(block) = next_fas_block(reader) {
+        let block_names = block.names;
+
+        if !name_filter.is_empty() {
+            if !res_of.contains_key(name_filter) {
+                res_of.insert(name_filter.to_string(), std::collections::BTreeMap::new());
+            }
+        } else {
+            for name in &block_names {
+                if !res_of.contains_key(name) {
+                    res_of.insert(name.to_string(), std::collections::BTreeMap::new());
+                }
+            }
+        }
+
+        for entry in &block.entries {
+            let range = entry.range();
+            if !range.is_valid() {
+                continue;
+            }
+
+            if !name_filter.is_empty() && name_filter != range.name() {
+                continue;
+            }
+
+            let res = res_of.get_mut(range.name()).unwrap();
+
+            if !res.contains_key(range.chr()) {
+                res.insert(range.chr().to_string(), intspan::IntSpan::new());
+            }
+
+            let intspan = range.intspan().clone().trim(trim);
+            res.get_mut(range.chr()).unwrap().merge(&intspan);
+        }
+    }
+    Ok(())
+}
+
+/// Find best-to-best bilateral pairs based on sequence distance.
+pub fn find_best_pairs(entries: &[FasEntry]) -> Vec<(usize, usize)> {
+    let n = entries.len();
+    let mut best_pair: Vec<(usize, usize)> = vec![];
+    for i in 0..n {
+        let mut dist_idx: (f32, usize) = (1.0, n - 1);
+        for j in 0..n {
+            if i == j {
+                continue;
+            }
+            let dist = crate::libs::alignment::pair_d(entries[i].seq(), entries[j].seq());
+            if dist < dist_idx.0 {
+                dist_idx = (dist, j);
+            }
+        }
+        if i < dist_idx.1 {
+            best_pair.push((i, dist_idx.1));
+        } else {
+            best_pair.push((dist_idx.1, i));
+        }
+    }
+    // Deduplicate pairs preserving first-occurrence order
+    let mut seen = std::collections::HashSet::new();
+    best_pair.into_iter().filter(|p| seen.insert(*p)).collect()
+}
+
 #[cfg(test)]
 mod fas_tests {
     use std::io::BufReader;

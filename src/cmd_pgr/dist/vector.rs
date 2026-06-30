@@ -106,7 +106,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         common::load_two_sets(&infiles, false, |paths| load_file(&paths[0], is_bin))?;
 
     common::par_run_pairs(&entries1, &entries2, &sender, |e1, e2| {
-        match calc(e1.list(), e2.list(), opt_mode, is_sim, is_dis) {
+        match linalg::vector_score(e1.list(), e2.list(), opt_mode, is_sim, is_dis) {
             Ok(score) => {
                 let line = format!("{}\t{}\t{:.4}\n", e1.name(), e2.name(), score);
                 Some(line)
@@ -145,22 +145,4 @@ fn load_file(infile: &str, is_bin: bool) -> anyhow::Result<Vec<FeatureVector>> {
         entries.push(entry);
     }
     Ok(entries)
-}
-
-fn calc(l1: &[f32], l2: &[f32], mode: &str, is_sim: bool, is_dis: bool) -> anyhow::Result<f32> {
-    let mut score = match mode {
-        "euclid" => linalg::euclidean_distance(l1, l2),
-        "cosine" => linalg::cosine_similarity(l1, l2),
-        "jaccard" => linalg::weighted_jaccard_similarity(l1, l2),
-        _ => anyhow::bail!("unknown mode: {}", mode),
-    };
-
-    if is_sim {
-        score = linalg::distance_to_similarity(score);
-    }
-    if is_dis {
-        score = linalg::to_dissimilarity(score);
-    }
-
-    Ok(score)
 }

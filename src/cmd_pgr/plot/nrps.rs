@@ -1,6 +1,6 @@
-use crate::cmd_pgr::plot::common::{context_get_str, render_and_write, replace_section};
 use anyhow::{anyhow, Context, Result};
 use clap::*;
+use pgr::libs::plot::common::{context_get_str, render_and_write, replace_section};
 use pgr::libs::plot::nrps::parse_nrps;
 use std::collections::HashMap;
 

@@ -79,31 +79,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                     writer.write_all(format!("{}\t{}\n", headers[i], headers[j]).as_ref())?;
                 }
             } else if is_best {
-                // Output best-to-best bilateral links
-                let mut best_pair: Vec<(usize, usize)> = vec![];
-                for i in 0..headers.len() {
-                    let mut dist_idx: (f32, usize) = (1.0, headers.len() - 1);
-                    for j in 0..headers.len() {
-                        if i == j {
-                            continue;
-                        }
-                        let dist = pgr::libs::alignment::pair_d(
-                            block.entries[i].seq(),
-                            block.entries[j].seq(),
-                        );
-                        if dist < dist_idx.0 {
-                            dist_idx = (dist, j);
-                        }
-                    }
-                    if i < dist_idx.1 {
-                        best_pair.push((i, dist_idx.1));
-                    } else {
-                        best_pair.push((dist_idx.1, i));
-                    }
-                }
-                // // Deduplicate pairs using itertools
-                let best_pair: Vec<(usize, usize)> = best_pair.into_iter().unique().collect();
-
+                let best_pair = pgr::libs::fmt::fas::find_best_pairs(&block.entries);
                 for (i, j) in best_pair {
                     writer.write_all(format!("{}\t{}\n", headers[i], headers[j]).as_ref())?;
                 }

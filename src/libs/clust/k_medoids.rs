@@ -9,7 +9,7 @@
 /// # Example
 ///
 /// ```
-/// use pgr::libs::clust::kmedoids::KMedoids;
+/// use pgr::libs::clust::k_medoids::KMedoids;
 /// use pgr::libs::pairmat::ScoringMatrix;
 ///
 /// // Create a distance matrix for 5 points

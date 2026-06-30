@@ -1,10 +1,10 @@
 use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter, Read, Write};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::str::FromStr;
 
-use anyhow::{bail, Context};
+use anyhow::Context;
 
 /// Random-access reader for subsequence extraction by name and 0-based range.
 ///
@@ -131,76 +131,6 @@ pub fn is_bgzf(path: &str) -> bool {
         && hdr[15] == 0x00
 }
 
-/// Detect whether `path` is a FASTQ file (as opposed to FASTA) by inspecting
-/// the first byte of the content (after gzip decompression if needed).
-pub fn is_fq<P: AsRef<Path>>(path: P) -> anyhow::Result<bool> {
-    let path = path.as_ref();
-
-    let mut buffer = [0; 2];
-    {
-        let mut file =
-            File::open(path).with_context(|| format!("could not open {}", path.display()))?;
-        file.read_exact(&mut buffer)
-            .context("could not read header")?;
-    }
-
-    let first_char = if buffer[0] == 0x1f && buffer[1] == 0x8b {
-        // Gzip-compressed: decompress the first bytes
-        let mut decoder = flate2::read::GzDecoder::new(
-            File::open(path).with_context(|| format!("could not open {}", path.display()))?,
-        );
-        let mut buf = [0; 2];
-        decoder
-            .read_exact(&mut buf)
-            .context("could not read decompressed header")?;
-        buf[0] as char
-    } else {
-        buffer[0] as char
-    };
-
-    match first_char {
-        '>' => Ok(false),
-        '@' => Ok(true),
-        c => bail!("unknown file format, leading byte: {:?}", c),
-    }
-}
-
-/// Recursively collect FASTA files (`.fa` and `.fa.gz`) under `path`.
-/// A file input is returned as a single-element vec. Directory inputs are
-/// walked recursively, matching `.fa` and `.fa.gz` extensions.
-pub fn find_fasta_files<P: AsRef<Path>>(path: P) -> Vec<PathBuf> {
-    let mut files = Vec::new();
-    let path = path.as_ref();
-
-    if path.is_file() {
-        files.push(path.to_path_buf());
-    } else if path.is_dir() {
-        if let Ok(entries) = std::fs::read_dir(path) {
-            for entry in entries.flatten() {
-                let p = entry.path();
-                if p.is_dir() {
-                    files.extend(find_fasta_files(&p));
-                } else if let Some(ext) = p.extension() {
-                    let ext_str = ext.to_string_lossy().to_lowercase();
-                    if ext_str == "fa" {
-                        files.push(p);
-                    } else if ext_str == "gz" {
-                        if let Some(stem) = p.file_stem() {
-                            let stem_path = Path::new(stem);
-                            if let Some(stem_ext) = stem_path.extension() {
-                                if stem_ext.to_string_lossy().to_lowercase() == "fa" {
-                                    files.push(p);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    files
-}
-
 /// List files in `dir` with the given `extension` (non-recursive).
 pub fn list_files_ext(dir: &str, extension: &str) -> Vec<String> {
     let mut files = Vec::new();
@@ -317,59 +247,5 @@ impl<'a, B: BufRead> Iterator for LinesRef<'a, B> {
             }
             Err(e) => Some(Err(e)),
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use flate2::write::GzEncoder;
-    use std::io::Write;
-    use tempfile::tempdir;
-
-    #[test]
-    fn test_is_fq_plain_text() {
-        let dir = tempdir().unwrap();
-
-        // Create a plain text FASTQ file
-        let fq_file_path = dir.path().join("test.fq");
-        {
-            let mut file = File::create(&fq_file_path).unwrap();
-            writeln!(file, "@SEQ_ID").unwrap(); // FASTQ format
-        }
-        assert!(is_fq(&fq_file_path).unwrap());
-
-        // Create a plain text FASTA file
-        let fasta_file_path = dir.path().join("test.fasta");
-        {
-            let mut file = File::create(&fasta_file_path).unwrap();
-            writeln!(file, ">SEQ_ID").unwrap(); // FASTA format
-        }
-        assert!(!is_fq(&fasta_file_path).unwrap());
-    }
-
-    #[test]
-    fn test_is_fq_gzip() {
-        let dir = tempdir().unwrap();
-
-        // Create a Gzip FASTQ file
-        let fq_file_path = dir.path().join("test.fq.gz");
-        {
-            let file = File::create(&fq_file_path).unwrap();
-            let mut encoder = GzEncoder::new(file, flate2::Compression::default());
-            writeln!(encoder, "@SEQ_ID").unwrap(); // FASTQ format
-            encoder.finish().unwrap();
-        }
-        assert!(is_fq(&fq_file_path).unwrap());
-
-        // Create a Gzip FASTA file
-        let fasta_file_path = dir.path().join("test.fasta.gz");
-        {
-            let file = File::create(&fasta_file_path).unwrap();
-            let mut encoder = GzEncoder::new(file, flate2::Compression::default());
-            writeln!(encoder, ">SEQ_ID").unwrap(); // FASTA format
-            encoder.finish().unwrap();
-        }
-        assert!(!is_fq(&fasta_file_path).unwrap());
     }
 }

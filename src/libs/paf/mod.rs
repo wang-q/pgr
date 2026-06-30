@@ -2,6 +2,7 @@ pub mod cigar;
 pub mod fasta;
 pub mod graph;
 pub mod index;
+pub mod maf_import;
 pub mod msa_build;
 pub mod parser;
 pub mod persist;

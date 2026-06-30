@@ -851,6 +851,38 @@ impl Psl {
     }
 }
 
+/// Extract block ranges (1-based inclusive) from a PSL record as "name:start-end" strings.
+pub fn psl_block_ranges(psl: &Psl, target: bool) -> Vec<String> {
+    let (name, size, starts, is_neg) = if target {
+        let is_neg = if psl.strand.len() >= 2 {
+            psl.strand.chars().nth(1) == Some('-')
+        } else {
+            false
+        };
+        (psl.t_name.as_str(), psl.t_size, &psl.t_starts, is_neg)
+    } else {
+        let is_neg = psl.strand.starts_with('-');
+        (psl.q_name.as_str(), psl.q_size, &psl.q_starts, is_neg)
+    };
+
+    let mut ranges = Vec::new();
+    for (i, &start) in starts.iter().enumerate() {
+        let len = psl.block_sizes[i];
+        let end = start + len;
+        let (final_start, final_end) = if is_neg {
+            crate::libs::alignment::reverse_range_1based_pair(
+                (start + 1) as usize,
+                end as usize,
+                size as usize,
+            )
+        } else {
+            ((start + 1) as usize, end as usize)
+        };
+        ranges.push(format!("{}:{}-{}", name, final_start, final_end));
+    }
+    ranges
+}
+
 #[cfg(test)]
 #[allow(clippy::field_reassign_with_default)]
 mod tests {
