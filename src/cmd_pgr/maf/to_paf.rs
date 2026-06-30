@@ -1,6 +1,6 @@
 use clap::*;
 
-use pgr::libs::paf::writer::write_paf_record;
+use pgr::libs::paf::record::write_paf_record;
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {

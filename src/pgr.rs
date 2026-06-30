@@ -105,7 +105,6 @@ fn main() -> anyhow::Result<()> {
 }
 
 // TODO: paralog
-// TODO: fas variation --indel
 // TODO: fas match
 //  sparsemem -maxmatch -F -l %d -b -n -k 4 -threads 4 %s %s > %s
 //  mummer -maxmatch -F -l %d -b -n %s %s > %s

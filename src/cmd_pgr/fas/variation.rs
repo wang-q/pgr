@@ -4,10 +4,10 @@ use std::io::Write;
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("variation")
-        .about("Lists variations (substitutions/indels)")
+        .about("Lists variations (substitutions)")
         .after_help(
             r###"
-Lists variations (substitutions and indels) from block FA files in TSV format.
+Lists variations (substitutions) from block FA files in TSV format.
 
 Notes:
 * Supports both plain text and gzipped (.gz) files
@@ -19,24 +19,15 @@ Examples:
 1. List substitutions from block FA files:
    pgr fas variation tests/fas/part1.fas
 
-2. List both substitutions and indels:
-   pgr fas variation tests/fas/part1.fas --indel
-
-3. Handle outgroup (last sequence) for polarization:
+2. Handle outgroup (last sequence) for polarization:
    pgr fas variation tests/fas/part1.fas --outgroup
 
-4. Output results to a file:
+3. Output results to a file:
    pgr fas variation tests/fas/part1.fas -o output.tsv
 
 "###,
         )
         .arg(crate::cmd_pgr::args::infiles_arg("block FA"))
-        .arg(
-            Arg::new("indel")
-                .long("indel")
-                .action(ArgAction::SetTrue)
-                .help("List indels"),
-        )
         .arg(
             Arg::new("has_outgroup")
                 .long("outgroup")

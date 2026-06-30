@@ -1,6 +1,5 @@
 use itertools::Itertools;
 use minimizer_iter::MinimizerBuilder;
-use noodles_fasta as fasta;
 use std::iter::FromIterator;
 
 // These codes were adapted from https://curiouscoding.nl/posts/fast-minimizers/

@@ -143,6 +143,7 @@ cargo test
     - **Analysis**: `clust` (Clustering), `dist` (Distance), `mat` (Matrix), `nwk` (Phylogeny/Newick).
     - **Misc**: `ms` (Simulation), `pl` (Pipelines).
 - **`src/libs/`** - 共享工具库和核心逻辑。
+  - **`fmt/`** - 格式 I/O: `fa`, `fas`, `fq`, `axt`, `maf`, `psl`, `lav`, `twobit`, `vcf`.
   - **`phylo/`** - 系统发育分析核心库。
     - **`tree/`**: 树结构定义、遍历、I/O、统计 (`stat.rs`)。
     - **`algo.rs`/`ops.rs`**: 树操作算法（排序、reroot 等）。
@@ -152,8 +153,12 @@ cargo test
     - **`hier.rs`**: 层次聚类 (NN-chain 算法)。
     - **`dbscan.rs`, `mcl.rs`, `k_medoids.rs`**: 其他聚类算法。
     - **`tree_cut/`**: 树切分算法。
+    - **`eval/`**: 聚类评估指标。
+  - **`paf/`** - PAF 处理: 记录读写、查询、图构建、索引。
+  - **`fasta/`** - FASTA 操作 (chunk/dedup/filter/stat)。
+  - **`pairmat/`** - 配对距离矩阵。
   - **`io.rs`** - I/O 辅助函数。
-  - **`alignment/`**, **`fas_multiz/`**, **`fmt/psl.rs`** 等 - 特定格式处理逻辑。
+  - **`alignment/`**, **`fas_multiz/`**, **`ms/`**, **`plot/`** 等 - 特定格式处理逻辑。
 
 ## 关键设计文档
 

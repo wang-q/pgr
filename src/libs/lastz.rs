@@ -28,7 +28,6 @@ T -300 -150 -300  100
 ";
 
 /// Close-species scoring matrix variant (Human vs Primate, more sensitive).
-#[allow(dead_code)]
 pub const MATRIX_SIMILAR2: &str = "   A    C    G    T
 A  90 -330 -236 -356
 C -330  100 -318 -236

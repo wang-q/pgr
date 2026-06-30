@@ -204,7 +204,7 @@ mod tests {
 
         // Write to buffer
         let mut buf = Vec::new();
-        super::super::writer::write_paf_record(&mut buf, &rec).unwrap();
+        super::super::record::write_paf_record(&mut buf, &rec).unwrap();
 
         // Parse back
         let line = String::from_utf8(buf).unwrap();

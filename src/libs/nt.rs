@@ -18,7 +18,6 @@
 ///  B   =>  C or G or T
 ///  N   =>  A or G or C or T (any)
 /// ```
-#[allow(dead_code)]
 #[repr(usize)]
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Nt {
@@ -28,22 +27,6 @@ pub enum Nt {
     T = 3, // U
     N = 4,
     Invalid = 255,
-}
-
-#[allow(dead_code)]
-impl Nt {
-    pub const U: Nt = Nt::T;
-
-    /// Convert a nucleotide character to its corresponding Nt variant
-    pub fn from_char(c: char) -> Self {
-        match c.to_ascii_uppercase() {
-            'A' => Nt::A,
-            'C' => Nt::C,
-            'G' => Nt::G,
-            'T' | 'U' => Nt::T,
-            _ => Nt::Invalid,
-        }
-    }
 }
 
 /// Maps an ASCII chars to index

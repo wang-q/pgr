@@ -10,4 +10,3 @@ pub mod poa_compact;
 pub mod query;
 pub mod record;
 pub mod vcf;
-pub mod writer;
