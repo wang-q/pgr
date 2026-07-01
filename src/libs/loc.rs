@@ -253,3 +253,21 @@ pub fn get_seq_loc(file: &str, range: &str) -> anyhow::Result<String> {
 
     Ok(seq)
 }
+
+/// Merge overlapping or adjacent half-open intervals.
+pub fn merge_intervals(mut blocks: Vec<std::ops::Range<usize>>) -> Vec<std::ops::Range<usize>> {
+    blocks.sort_by_key(|r| r.start);
+    let mut merged: Vec<std::ops::Range<usize>> = Vec::new();
+    if let Some(first) = blocks.first() {
+        merged.push(first.clone());
+    }
+    for block in blocks.iter().skip(1) {
+        let last = merged.last_mut().expect("merged non-empty");
+        if block.start <= last.end {
+            last.end = last.end.max(block.end);
+        } else {
+            merged.push(block.clone());
+        }
+    }
+    merged
+}

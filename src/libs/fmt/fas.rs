@@ -357,6 +357,84 @@ pub fn find_best_pairs(entries: &[FasEntry]) -> Vec<(usize, usize)> {
     best_pair.into_iter().filter(|p| seen.insert(*p)).collect()
 }
 
+/// Add entries from a block to the join map, keyed by the target entry's range.
+pub fn join_block_entries(
+    block: &FasBlock,
+    name: &str,
+    block_of: &mut std::collections::BTreeMap<String, Vec<FasEntry>>,
+) -> anyhow::Result<()> {
+    let idx = match block.names.iter().position(|x| x == name) {
+        Some(i) => i,
+        None => return Ok(()),
+    };
+    let header = block.entries[idx].range().to_string();
+
+    if !block_of.contains_key(&header) {
+        block_of.insert(header.clone(), vec![]);
+        block_of
+            .get_mut(&header)
+            .ok_or_else(|| anyhow::anyhow!("inserted header missing"))?
+            .push(block.entries[idx].clone());
+    }
+
+    for entry in &block.entries {
+        if entry.range().name() != name {
+            block_of
+                .get_mut(&header)
+                .ok_or_else(|| anyhow::anyhow!("header missing in block_of"))?
+                .push(entry.clone());
+        }
+    }
+    Ok(())
+}
+
+/// Generate output blocks (each a complete string) with header replacement applied.
+pub fn replace_block_lines(
+    block: &FasBlock,
+    replace_of: &std::collections::BTreeMap<String, Vec<String>>,
+) -> anyhow::Result<Vec<String>> {
+    let matched: Vec<&String> = replace_of
+        .keys()
+        .filter(|e| block.headers.contains(*e))
+        .collect();
+
+    let mut blocks = Vec::new();
+
+    if matched.len() != 1 {
+        if matched.len() > 1 {
+            log::warn!("Doesn't support replacing multiple records in one block");
+        }
+        let mut s = String::new();
+        for entry in &block.entries {
+            s.push_str(&entry.to_string());
+        }
+        blocks.push(s);
+    } else {
+        let original = matched[0];
+        let idx = block
+            .headers
+            .iter()
+            .position(|e| e == original)
+            .ok_or_else(|| anyhow::anyhow!("matched header not found"))?;
+        for new in &replace_of[original] {
+            let mut s = String::new();
+            for (i, entry) in block.entries.iter().enumerate() {
+                if i == idx {
+                    s.push_str(&format!(
+                        ">{}\n{}\n",
+                        new,
+                        String::from_utf8(entry.seq().to_vec())?
+                    ));
+                } else {
+                    s.push_str(&entry.to_string());
+                }
+            }
+            blocks.push(s);
+        }
+    }
+    Ok(blocks)
+}
+
 #[cfg(test)]
 mod fas_tests {
     use std::io::BufReader;

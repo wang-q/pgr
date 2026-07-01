@@ -58,34 +58,14 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
         while let Ok(block) = pgr::libs::fmt::fas::next_fas_block(&mut reader) {
             if name.is_empty() {
-                name = block.names.first().unwrap().to_string();
+                name = block
+                    .names
+                    .first()
+                    .ok_or_else(|| anyhow::anyhow!("empty block names"))?
+                    .to_string();
             }
 
-            let idx = block.names.iter().position(|x| x == &name);
-            if idx.is_none() {
-                continue;
-            }
-
-            let idx = idx.unwrap();
-            let header = block.entries.get(idx).unwrap().range().to_string();
-
-            if !block_of.contains_key(&header) {
-                // init
-                block_of.insert(header.to_string(), vec![]);
-
-                // entry with the selected name goes first
-                block_of
-                    .get_mut(&header)
-                    .unwrap()
-                    .push(block.entries.get(idx).unwrap().clone());
-            }
-
-            for entry in &block.entries {
-                if entry.range().name() == &name {
-                    continue;
-                }
-                block_of.get_mut(&header).unwrap().push(entry.clone());
-            }
+            pgr::libs::fmt::fas::join_block_entries(&block, &name, &mut block_of)?;
         }
     }
 

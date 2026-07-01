@@ -1,5 +1,5 @@
 use clap::*;
-use pgr::libs::phylo::tree::io::to_forest;
+use pgr::libs::phylo::tree::io::{compute_scale_bar, to_forest};
 use pgr::libs::phylo::tree::Tree;
 use std::io::Read;
 
@@ -94,25 +94,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
         // a bar of unit length
         if is_bl {
-            // Determine scale dynamically
-            let target_scale = height / 5.0; // Target ~20% of tree height
-            let magnitude = target_scale.log10().floor();
-            let base = 10.0_f64.powf(magnitude);
-
-            // Find the best step: 1x, 2x, or 5x of the base magnitude
-            // e.g., if target is 0.035 (base 0.01), candidates are 0.01, 0.02, 0.05
-            // we want the largest one <= target.
-            let scale = [1.0, 2.0, 5.0]
-                .iter()
-                .map(|&x| base * x)
-                .rfind(|&x| x <= target_scale)
-                .unwrap_or(base); // Fallback to base (1x) if even 1x is too big? Should not happen if logic is sound.
-
-            // Calculate actual length in millimeters
-            let bar_mm = (scale * 100.0 / height).round() as i32;
-
-            // If the bar is too small to see (< 5mm), don't draw it or warn?
-            // Current logic just draws it.
+            let (scale, bar_mm) = compute_scale_bar(height);
 
             // Draw scale bar
             s += "\\draw[-, grey, line width=1pt]";

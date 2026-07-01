@@ -1,7 +1,8 @@
+use anyhow::anyhow;
 use clap::*;
 use std::collections::{BTreeMap, HashSet};
 
-use pgr::libs::alignment::{align_to_chr, get_subs, seq_intspan};
+use pgr::libs::alignment::{align_to_chr, get_subs, seq_intspan, vcf_alt_bases};
 use pgr::libs::fmt::fas::next_fas_block;
 use pgr::libs::fmt::vcf::{write_snp_row, write_vcf_header};
 
@@ -62,7 +63,13 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 }
                 let mut reader = pgr::reader(infile)?;
                 while let Ok(block) = next_fas_block(&mut reader) {
-                    let chr = block.entries.first().unwrap().range().chr().to_string();
+                    let chr = block
+                        .entries
+                        .first()
+                        .ok_or_else(|| anyhow!("empty block entries in pre-scan"))?
+                        .range()
+                        .chr()
+                        .to_string();
                     contigs.insert(chr);
                 }
             }
@@ -88,8 +95,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             }
 
             let target_entry_idx = 0usize;
-            let trange = block.entries.get(target_entry_idx).unwrap().range().clone();
-            let t_ints_seq = seq_intspan(block.entries.get(target_entry_idx).unwrap().seq());
+            let target_entry = block
+                .entries
+                .get(target_entry_idx)
+                .ok_or_else(|| anyhow!("missing target entry at index {}", target_entry_idx))?;
+            let trange = target_entry.range().clone();
+            let t_ints_seq = seq_intspan(target_entry.seq());
 
             let seq_count = seqs.len();
             let subs = get_subs(&seqs)?;
@@ -101,15 +112,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 let pos_idx = (s.pos - 1) as usize;
                 let ref_base = char::from(seqs[0][pos_idx]).to_ascii_uppercase();
 
-                let mut alt_bases: Vec<char> = vec![];
-                for seq in seqs.iter().take(seq_count) {
-                    let b = char::from(seq[pos_idx]).to_ascii_uppercase();
-                    if matches!(b, 'A' | 'C' | 'G' | 'T') && b != ref_base {
-                        alt_bases.push(b);
-                    }
-                }
-                use itertools::Itertools;
-                alt_bases = alt_bases.into_iter().unique().collect();
+                let alt_bases = vcf_alt_bases(&s);
 
                 let sample_bases: Vec<u8> = seqs
                     .iter()

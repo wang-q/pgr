@@ -14,3 +14,4 @@ pub use dot::to_dot;
 pub use forest::to_forest;
 pub use newick::{from_file, to_newick, to_newick_subtree, to_newick_with_format};
 pub use svg::to_svg;
+pub use util::compute_scale_bar;

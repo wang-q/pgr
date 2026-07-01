@@ -631,6 +631,18 @@ pub fn collect_subs(seqs: &[&[u8]], outgroup: Option<&[u8]>) -> anyhow::Result<V
     Ok(subs)
 }
 
+/// Build deduplicated VCF alt allele chars from a substitution, excluding the ref base.
+pub fn vcf_alt_bases(sub: &Substitution) -> Vec<char> {
+    let ref_base = sub.tbase.chars().next();
+    let mut alt_bases: Vec<char> = vec![];
+    for b in sub.bases.chars() {
+        if matches!(b, 'A' | 'C' | 'G' | 'T') && Some(b) != ref_base {
+            alt_bases.push(b);
+        }
+    }
+    alt_bases.into_iter().unique().collect()
+}
+
 /// Collect indels, polarizing with outgroup if provided.
 ///
 /// When `outgroup` is `Some`, the last element of `seqs` is treated as the

@@ -47,52 +47,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         let mut reader = pgr::reader(infile)?;
 
         while let Ok(block) = pgr::libs::fmt::fas::next_fas_block(&mut reader) {
-            let originals = block.headers.clone();
-
-            let matched: Vec<String> = replace_of
-                .keys()
-                .filter(|e| originals.contains(*e))
-                .map(|e| e.to_string())
-                .collect();
-
-            if matched.is_empty() || matched.len() > 1 {
-                // block untouched
-
-                if matched.len() > 1 {
-                    log::warn!("Doesn't support replacing multiple records in one block");
-                }
-
-                //----------------------------
-                // Output
-                //----------------------------
-                for entry in &block.entries {
-                    writer.write_all(entry.to_string().as_ref())?;
-                }
+            let blocks = pgr::libs::fmt::fas::replace_block_lines(&block, &replace_of)?;
+            for b in &blocks {
+                writer.write_all(b.as_ref())?;
                 writer.write_all("\n".as_ref())?;
-            } else {
-                let original = matched.first().unwrap();
-                let idx = block.headers.iter().position(|e| e == original).unwrap();
-                for new in replace_of.get(original).unwrap() {
-                    for (i, entry) in block.entries.iter().enumerate() {
-                        //----------------------------
-                        // Output
-                        //----------------------------
-                        if i == idx {
-                            writer.write_all(
-                                format!(
-                                    ">{}\n{}\n",
-                                    new,
-                                    String::from_utf8(entry.seq().to_vec()).unwrap()
-                                )
-                                .as_ref(),
-                            )?;
-                        } else {
-                            writer.write_all(entry.to_string().as_ref())?;
-                        }
-                    }
-
-                    writer.write_all("\n".as_ref())?;
-                }
             }
         }
     }

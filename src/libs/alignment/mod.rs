@@ -16,6 +16,6 @@ pub use slice::slice_block;
 pub use stat::{alignment_stat, pair_d};
 pub use trim::{trim_complex_indel, trim_head_tail, trim_outgroup, trim_pure_dash};
 pub use variation::{
-    collect_indels, collect_subs, get_indels, get_subs, polarize_indels, polarize_subs, Indel,
-    Substitution,
+    collect_indels, collect_subs, get_indels, get_subs, polarize_indels, polarize_subs,
+    vcf_alt_bases, Indel, Substitution,
 };

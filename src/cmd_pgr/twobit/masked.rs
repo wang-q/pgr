@@ -1,7 +1,7 @@
 use clap::*;
 use pgr::libs::fmt::twobit::TwoBitFile;
+use pgr::libs::loc::merge_intervals;
 use std::io::Write;
-use std::ops::Range;
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
@@ -71,27 +71,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 continue;
             }
 
-            // Sort by start position
-            blocks.sort_by_key(|a| a.start);
-
-            // Merge adjacent or overlapping blocks
-            let mut merged: Vec<Range<usize>> = Vec::new();
-            if let Some(first) = blocks.first() {
-                merged.push(first.clone());
-            }
-
-            for block in blocks.iter().skip(1) {
-                let last = merged.last_mut().unwrap();
-                // Check for overlap or adjacency
-                // block.start <= last.end handles both:
-                // Overlap: [0, 5) and [3, 8) -> 3 < 5
-                // Adjacency: [0, 5) and [5, 10) -> 5 == 5
-                if block.start <= last.end {
-                    last.end = last.end.max(block.end);
-                } else {
-                    merged.push(block.clone());
-                }
-            }
+            let merged = merge_intervals(blocks);
 
             // Write output
             for block in merged {

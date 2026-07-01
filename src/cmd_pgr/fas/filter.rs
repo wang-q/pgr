@@ -118,25 +118,18 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             }
 
             for entry in &block.entries {
-                let mut out_seq: Vec<u8> = vec![];
-
-                for char in entry.seq() {
-                    if is_dash && *char == b'-' {
-                        continue;
-                    }
-                    out_seq.push(*char);
-                }
-
-                let out_seq = if is_upper {
-                    out_seq.to_ascii_uppercase()
-                } else {
-                    out_seq
-                };
+                let out_seq = pgr::libs::fasta::filter::format_sequence(
+                    entry.seq(),
+                    is_dash,
+                    false,
+                    is_upper,
+                );
 
                 //----------------------------
                 // Output
                 //----------------------------
-                let out_entry = pgr::libs::fmt::fas::FasEntry::from(entry.range(), &out_seq);
+                let out_entry =
+                    pgr::libs::fmt::fas::FasEntry::from(entry.range(), out_seq.as_bytes());
                 writer.write_all(out_entry.to_string().as_ref())?;
             }
 

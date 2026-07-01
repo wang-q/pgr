@@ -31,3 +31,17 @@ pub(super) fn branch_depth(tree: &Tree, id: NodeId) -> usize {
         Err(_) => self_depth,
     }
 }
+
+/// Compute scale bar (scale value, bar length in mm) for a tree of given height.
+pub fn compute_scale_bar(height: f64) -> (f64, i32) {
+    let target_scale = height / 5.0;
+    let magnitude = target_scale.log10().floor();
+    let base = 10.0_f64.powf(magnitude);
+    let scale = [1.0, 2.0, 5.0]
+        .iter()
+        .map(|&x| base * x)
+        .rfind(|&x| x <= target_scale)
+        .unwrap_or(base);
+    let bar_mm = (scale * 100.0 / height).round() as i32;
+    (scale, bar_mm)
+}
