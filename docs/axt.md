@@ -24,8 +24,8 @@
   - 排序后重新分配 ID（从 0 开始），确保 ID 的唯一性和顺序性。
   - 类似 UCSC `axtSort` 的行为。
 
-### 2. `pgr axt to-fas`: 转换为 Block FASTA
-将 AXT 记录转换为 Block FASTA (每条比对记录对应一对序列块)。
+### 2. `pgr axt to-fas`: 转换为 Block FA
+将 AXT 记录转换为 Block FA (每条比对记录对应一对序列块)。
 
 - **用途**: 用于需要逐块序列分析的场景。
 - **坐标处理**:
@@ -70,7 +70,7 @@ pgr axt to-maf sorted.axt \
     -o out.maf
 ```
 
-### 场景 B：转换为 Block FASTA 用于分析
+### 场景 B：转换为 Block FA 用于分析
 
 ```bash
 # 转换，指定物种名称

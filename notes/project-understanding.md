@@ -164,18 +164,20 @@ axtToMaf 标准化流程中的大部分步骤。`chain`/`net` 模块在功能上
 
 ### 3.4 聚类 (Clustering)
 
-| 子命令     | 算法                            |
-|------------|---------------------------------|
-| `cc`       | 连通分量 (Connected Components) |
-| `dbscan`   | DBSCAN 密度聚类                 |
-| `hier`     | 层次聚类 (NN-chain 算法)        |
-| `kmedoids` | K-medoids 划分聚类              |
-| `mcl`      | Markov Cluster Algorithm        |
-| `nj`       | Neighbor-Joining 建树           |
-| `upgma`    | UPGMA 建树                      |
+| 子命令 | 说明 |
+|---|---|
+| `cc` | 连通分量 (Connected Components) |
+| `cut` | 树切分 (动态/层次/inconsistent 等) |
+| `dbscan` | DBSCAN 密度聚类 |
+| `eval` | 聚类评估 (坐标/距离/配对/划分) |
+| `hier` | 层次聚类 (NN-chain 算法) |
+| `k-medoids` | K-medoids 划分聚类 |
+| `mcl` | Markov Cluster Algorithm |
+| `nj` | Neighbor-Joining 建树 |
+| `upgma` | UPGMA 建树 |
 
 聚类模块算法覆盖广：基于密度的 (DBSCAN)、划分的 (k-medoids)、层次的 (hier/NJ/UPGMA)、 图的 (MCL)、
-简单的 (CC)。评估子命令 (`eval`) 在设计阶段。
+简单的 (CC)。另有 `cut`（树切分）和 `eval`（聚类评估）辅助子命令。
 
 ### 3.5 距离与矩阵 (Distance & Matrix)
 
@@ -246,8 +248,8 @@ clustalw/muscle/mafft），充当工作流 glue。这与 `chain`/`net` 模块的
 - `medoid.rs`：medoid 计算
 - `feature.rs`：特征提取
 - `format.rs`：格式处理
-- `eval/`：聚类评估子模块（coordinates/distance/pairwise/partition）
-- `tree_cut/`：树切分方法（clade/dynamic/hybrid/inconsistent/link/simple）
+- `eval/`：聚类评估子模块（coordinates/distance/format/pairwise/partition/tests）
+- `tree_cut/`：树切分方法（clade/dynamic/hybrid/inconsistent/link/method/partition/simple）
 
 ### 4.5 `libs/fmt/` — 格式解析
 
@@ -352,7 +354,7 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
 - **FASTA/FASTQ/2bit 处理**：`fa`(18 子命令) + `fas`(20 子命令) + `fq`(2) + `twobit`(5)，
   日常序列操作需求基本覆盖。
 - **系统发育树操作**：`nwk`(18 子命令) 功能丰富，可视化 (SVG/DOT/TikZ) 也已有。
-- **聚类算法**：7 种算法已实现。
+- **聚类算法**：7 种聚类算法 + `cut`/`eval` 辅助命令已实现。
 - **距离/矩阵工具链**：`dist` → `mat` → `clust` 的数据流完整。
 
 ### 6.2 进行中的（活跃开发）
@@ -366,7 +368,6 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
 ### 6.3 待补全的（TODO / 设计阶段）
 
 - `pgr.rs` 末尾注释的 TODO：paralog、fas variation --indel、fas match、去完全包含序列
-- `docs/clust-eval.md`：聚类评估（设计中）
 - `notes/design/nwk-eval.md`：树结构多维度评估（设计中）
 
 PAF 泛基因组方向（query-to-vcf）已全部完成，后续规划见 [[paf-pangenome.md]] §5（stat 规模扩展 / V7 图质量 /

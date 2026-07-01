@@ -1,6 +1,6 @@
 # pgr fas
 
-`pgr fas` provides a comprehensive suite of tools for manipulating **Block FASTA** files. Block FASTA is a format used to represent multiple sequence alignments (MSA), where each "block" consists of aligned sequences from different species or genomic regions.
+`pgr fas` provides a comprehensive suite of tools for manipulating **Block FA** files. Block FA is a format used to represent multiple sequence alignments (MSA), where each "block" consists of aligned sequences from different species or genomic regions.
 
 ## Subcommands
 

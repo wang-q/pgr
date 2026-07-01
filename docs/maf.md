@@ -4,16 +4,16 @@
 
 ## Subcommands
 
-*   `to-fas`: Convert MAF files to block FASTA format.
+*   `to-fas`: Convert MAF files to block FA format.
 *   `to-paf`: Convert two-sequence MAF files to PAF format.
 
 ---
 
 ## to-fas
 
-Converts MAF files into block FASTA format.
+Converts MAF files into block FA format.
 
-MAF files typically contain multiple sequence alignments. This command extracts each alignment block and converts it into the block FASTA format used by other `pgr` tools (like `pgr fas`).
+MAF files typically contain multiple sequence alignments. This command extracts each alignment block and converts it into the block FA format used by other `pgr` tools (like `pgr fas`).
 
 ```bash
 pgr maf to-fas [OPTIONS] <infiles>...
@@ -31,7 +31,7 @@ pgr maf to-fas [OPTIONS] <infiles>...
 
 ### Examples
 
-1.  **Convert a MAF file to block FASTA format**:
+1.  **Convert a MAF file to block FA format**:
     ```bash
     pgr maf to-fas tests/maf/example.maf
     ```

@@ -498,8 +498,8 @@ FFI 层是 `unsafe` 的集中地，但遵循三条纪律：
 1. **pgr 不需要 FFI 层** — pgr 是纯 Rust 项目，无 C++ 主程序，不应模仿 seqwish 的 FFI 包装。 pgr 的
    `lib.rs` 应保持简洁的 `pub mod` 声明 + 公共类型，不引入 `extern "C"`。
 2. **模块划分与算法阶段对应** — seqwish 的 21 个 `pub mod` 与 §1 的 6 阶段一一对应，
-   是阅读源码的天然地图。pgr 的 `libs/paf/` 已有类似实践（`index/`/`query.rs`/`graph/`/
-   `to_gfa.rs` 按处理阶段划分），可继续保持。
+   是阅读源码的天然地图。pgr 的 `libs/paf/` 已有类似实践（`index/`/`query.rs`/`graph/`
+   按处理阶段划分），可继续保持。
 3. **opaque handle 模式的 Rust 纯净版** — 若 pgr 未来需要把图构建引擎抽象成可替换后端 （如 seqwish
    风格 vs impg 风格），可借鉴 handle 模式的"所有权显式转移"思想，但用 `Arc<dyn GraphEngine>` +
    trait object 而非裸指针。

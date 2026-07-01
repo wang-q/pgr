@@ -49,7 +49,7 @@ pgr pl ir [OPTIONS] <repeat> <infile>
 
 ## p2m
 
-Pairwise to Multiple (p2m) Pipeline. Constructs a "core" Multiple Sequence Alignment (MSA) from multiple pairwise alignment files (Block FASTA).
+Pairwise to Multiple (p2m) Pipeline. Constructs a "core" Multiple Sequence Alignment (MSA) from multiple pairwise alignment files (Block FA).
 
 ### Usage
 
@@ -61,7 +61,7 @@ pgr pl p2m [OPTIONS] <infiles>...
 
 | Argument | Short | Long | Value | Description |
 | :--- | :--- | :--- | :--- | :--- |
-| `infiles` | | | Files | Input Block FASTA files (2 or more) |
+| `infiles` | | | Files | Input Block FA files (2 or more) |
 | `outdir` | `-o` | `--outdir` | Dir | Output directory (default: "PL-p2m") |
 
 ### Logic

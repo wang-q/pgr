@@ -217,7 +217,7 @@ pub struct Tree {
     *   `to_newick_subtree()`: 序列化指定子树。
     *   `to_dot()` (Graphviz): 输出 DOT 格式。
     *   `to_svg()`: 输出 SVG 矢量图格式。
-    *   `to_forest()`: 输出 LaTeX Forest 代码 (通过 `io::to_forest()` 调用)。
+    *   `to_forest()`: 输出 LaTeX Forest 代码 (自由函数，通过 `io::to_forest()` 调用)。
 *   **Traversal**:
     *   `preorder`, `postorder`: 深度优先遍历 (迭代器风格)。
     *   `levelorder`: 广度优先遍历。
@@ -246,9 +246,9 @@ pub struct Tree {
 *   `robinson_foulds()`: 计算两棵树的 Robinson-Foulds 距离 (拓扑差异)。
 *   `weighted_robinson_foulds()`: 加权 RF 距离。
 *   `kuhner_felsenstein()`: Kuhner-Felsenstein 距离。
-*   `cherries()`: 计算 Cherry 数量。
-*   `colless()`: Colless 平衡指数。
-*   `sackin()`: Sackin 平衡指数。
+*   `cherries()` (自由函数，`balance.rs`/`stat.rs`): 计算 Cherry 数量。
+*   `colless()` (自由函数，`balance.rs`/`stat.rs`): Colless 平衡指数。
+*   `sackin()` (自由函数，`balance.rs`/`stat.rs`): Sackin 平衡指数。
 
 ### 未实现 (Missing)
 
