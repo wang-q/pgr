@@ -162,39 +162,9 @@ cargo test
 
 ## 关键设计文档
 
-### Analysis (Phylogeny, Clustering, Matrix)
-- **`notes/design/phylo.md`**: 系统发育树核心数据结构设计 (Arena vs Pointer)。
-- **`notes/design/nwk-eval.md`**: 树结构多维度评估（设计中）。
-- **`docs/clust-cut.md`**: 树切分与 Scan 模式。
-- **`docs/clust.md`**: 聚类模块总体规划。
-- **`docs/clust-hier.md`**: 层次聚类算法与实现细节。
-- **`docs/clust-eval.md`**: 通用聚类评估（设计中）。
-- **`docs/dist.md`**: 距离计算与度量。
-- **`docs/mat.md`**: 距离矩阵操作与转换。
-
-### Algorithms & Ports
-- **`notes/design/spoa_port.md`**: SPOA (SIMD POA) 移植笔记。
-- **`notes/design/ms2dna_port.md`**: MS 模拟器移植笔记。
-- **`notes/design/multiz.md`**: Multiz 多序列比对格式处理。
-
-### General
-- **`docs/axt.md`**: AXT 格式操作与转换。
-- **`docs/chain.md`**: Chain 格式高级处理。
-- **`docs/fa.md`**: FASTA 格式全能操作。
-- **`docs/fas.md`**: Block FASTA (FAS) 格式操作与转换。
-- **`docs/formats/README.md`**: 支持的文件格式概览。
-- **`docs/fq.md`**: FASTQ 格式操作。
-- **`docs/gff.md`**: GFF 格式操作。
-- **`docs/lav.md`**: LAV 格式操作与转换。
-- **`docs/maf.md`**: MAF 格式操作与转换。
-- **`docs/ms.md`**: Hudson's ms 模拟器数据处理。
-- **`docs/net.md`**: Net 格式操作与转换。
-- **`docs/nwk.md`**: Newick 系统发育树操作与可视化。
-- **`docs/paf.md`**: PAF 格式操作与隐式泛基因组图。
-- **`docs/pl.md`**: 集成分析流程 (Pipelines)。
-- **`docs/plot.md`**: 各种生物数据可视化工具。
-- **`docs/psl.md`**: PSL 格式操作与转换。
-- **`docs/twobit.md`**: 2bit 格式操作。
+- **`docs/`**: 用户面向命令文档（英文），每个 `pgr <command>` 对应一个 `docs/<command>.md`；`docs/formats/` 为格式规范参考。
+- **`notes/`**: 开发者面向笔记（中文）：`notes/design/`（设计稿/移植笔记）、`notes/references/`（外部工具源码分析）、`notes/` 根（项目理解/场景规划）。
+- **`notes/project-understanding.md`**: 项目整体理解（架构、命令模块、核心库、现状评估、设计模式），含各文档的索引与定位，需要时查阅。
 
 ## 命令结构 (Command Structure)
 
