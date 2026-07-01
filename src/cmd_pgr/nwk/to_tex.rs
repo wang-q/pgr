@@ -106,7 +106,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         s
     };
 
-    static FILE_TEMPLATE: &str = include_str!("../../../docs/template.tex");
+    static FILE_TEMPLATE: &str = include_str!("../../assets/template.tex");
     let mut template = FILE_TEMPLATE.to_string();
 
     {

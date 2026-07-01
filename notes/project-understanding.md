@@ -48,7 +48,7 @@ src/
 │   ├── nwk/
 │   ├── clust/
 │   ├── mat/
-│   ├── ...
+│   ├── paf/            #   PAF 泛基因组图操作
 │   ├── pl/             #   Pipelines：编排外部工具
 │   └── plot/           #   可视化输出 (TikZ/LaTeX)
 └── libs/               # 核心库层：数据结构与算法
@@ -56,9 +56,15 @@ src/
     ├── phylo/          #   系统发育树核心 (Arena 树结构)
     ├── poa/            #   偏序比对 (Partial Order Alignment)
     ├── chain/          #   Chain 算法 (连接、gap 计算、替换矩阵)
+    │   └── net/        #     Net 格式处理 (class/filter/to-axt)
     ├── clust/          #   聚类算法 (hier/DBSCAN/MCL/k-medoids/NJ/UPGMA)
+    │   ├── eval/       #     聚类评估
+    │   └── tree_cut/   #     树切分方法
     ├── ms/             #   Hudson's ms 模拟器解析
-    ├── fmt/            #   格式解析 (AXT/FAS/feature/LAV/MAF)
+    ├── fmt/            #   格式解析 (AXT/FAS/FA/FQ/LAV/MAF/PSL/2bit)
+    ├── paf/            #   PAF 隐式图核心
+    │   ├── index/      #     区间树索引 + BFS 传递闭包
+    │   └── graph/      #     DSU 图构建 + GFA 输出
     └── ...             #   io, hash, hv, linalg, loc, nt, pairmat, psl, twobit
 ```
 
@@ -133,9 +139,9 @@ axtToMaf 标准化流程中的大部分步骤。`chain`/`net` 模块在功能上
 
 ### 3.3 泛基因组 (Pangenome)
 
-| 模块  | 子命令数 | 核心能力                                                          |
-|-------|----------|-------------------------------------------------------------------|
-| `paf` | 8        | PAF 隐式图：索引、查询、to-bed、to-maf、graph、to-gfa、to-vcf、stat |
+| 模块  | 子命令数 | 核心能力                                                                 |
+|-------|----------|--------------------------------------------------------------------------|
+| `paf` | 9        | PAF 隐式图：索引、查询、to-bed、to-fas、to-maf、graph、to-gfa、to-vcf、stat |
 
 `paf` 模块是 pgr 走向泛基因组的核心载体。基于 PAF (Pairwise mApping Format) 的 all-vs-all
 比对，构建隐式泛基因组图：
@@ -181,7 +187,7 @@ axtToMaf 标准化流程中的大部分步骤。`chain`/`net` 模块在功能上
 `nwk` 模块功能非常丰富：树拓扑比较 (`cmp`、`topo`)、切分 (`prune`、`subtree`、`to-forest`)、
 重标 (`rename`、`label`、`comment`)、重根 (`reroot`)、可视化 (`to-svg`、`to-dot`、`to-tex`)、
 统计 (`stat`、`distance`、`support`)。底层 `libs/phylo/` 使用 Arena 树结构（非 Rc/RefCell 指针树），
-参考了 `docs/phylo.md` 的设计讨论。
+参考了 `notes/design/phylo.md` 的设计讨论。
 
 ### 3.7 模拟、流程、可视化 (Simulation, Pipelines, Plot)
 
@@ -216,26 +222,31 @@ clustalw/muscle/mafft），充当工作流 glue。这与 `chain`/`net` 模块的
 ### 4.3 `libs/chain/` — Chain 核心逻辑
 
 - `record.rs`：Chain 记录定义与解析
-- `algo.rs`：Chain 操作算法
-- `connect.rs`：Chain 连接
-- `gap_calc.rs`：Gap 计算
-- `sub_matrix.rs`：替换矩阵
+- `connect.rs`：Chain 连接（核心 chaining 算法）
+- `gap_calc.rs`：Gap 计算（线性和仿射罚分）
+- `sub_matrix.rs`：DNA 替换矩阵（如 HoxD55）
+- `kdtree.rs`：高效前驱搜索的数据结构
+- `anti_repeat.rs`：反重复处理
+- `net/`：Net 格式处理子模块（class/filter/to-axt/writer）
 
 ### 4.4 `libs/clust/` — 聚类算法库
 
 - `hier.rs`：NN-chain 层次聚类实现（参看 `docs/clust-hier.md`）
-- `dbscan.rs`、`mcl.rs`、`k_medoids.rs`：各算法实现
+- `dbscan.rs`、`mcl.rs`、`kmedoids.rs`：各算法实现
 - `nj.rs`、`upgma.rs`：建树算法
-- `eval.rs`：聚类评估
+- `medoid.rs`：medoid 计算
+- `feature.rs`：特征提取
+- `format.rs`：格式处理
+- `eval/`：聚类评估子模块（coordinates/distance/pairwise/partition）
+- `tree_cut/`：树切分方法（clade/dynamic/hybrid/inconsistent/link/simple）
 
 ### 4.5 `libs/fmt/` — 格式解析
 
 统一管理生物信息学格式的解析逻辑：
 
-- `axt.rs`、`fas.rs`、`lav.rs`、`maf.rs`、`feature.rs`
+- `axt.rs`、`fas.rs`、`fa.rs`、`fq.rs`、`lav.rs`、`maf.rs`、`psl.rs`、`twobit.rs`
 
-最近重构过：原先在 `libs/` 根目录下的 `axt.rs`、`fas.rs` 等移入 `libs/fmt/`， 通过 `pub use fmt::*`
-re-export 保持向后兼容。
+最近重构过：原先在 `libs/` 根目录下的 `axt.rs`、`fas.rs`、`lav.rs`、`maf.rs` 等移入 `libs/fmt/`。
 
 > **MAF 支持现状**（2026-06 确认）：
 
@@ -257,11 +268,14 @@ re-export 保持向后兼容。
 - `libs/nt.rs`：核苷酸类型
 - `libs/pairmat.rs`：pair 矩阵
 - `libs/hv.rs`：hypervariable 区域
-- `libs/net.rs`：Net 格式
+- `libs/chain/net/`：Net 格式处理（已移入 chain 子模块）
 - `libs/twobit.rs`：2bit 格式读写
 - `libs/psl.rs`：PSL 格式
 - `libs/alignment.rs`：比对通用逻辑
 - `libs/fas_multiz.rs`：Multiz 多序列比对处理（banded DP 合并）
+- `libs/fas_xlsx.rs`：FASTQ 到 Excel 转换
+- `libs/fasta/`：FASTA 处理工具（dedup/filter/stat）
+- `libs/paf/`：PAF 隐式图核心（索引、查询、图构建、VCF 导出）
 - `libs/ms/`：Hudson's ms 模拟器（解析器 + DNA 生成）
 
 ## 5. 设计模式与约定
@@ -340,7 +354,7 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
 
 - `pgr.rs` 末尾注释的 TODO：paralog、fas variation --indel、fas match、去完全包含序列
 - `docs/clust-eval.md`：聚类评估（设计中）
-- `docs/nwk-eval.md`：树结构多维度评估（设计中）
+- `notes/design/nwk-eval.md`：树结构多维度评估（设计中）
 
 PAF 泛基因组方向（query-to-vcf）已全部完成，后续规划见 [[paf-pangenome.md]] §5（stat 规模扩展 / V7 图质量 /
 V8 应用层）。

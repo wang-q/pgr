@@ -10,3 +10,15 @@ pub mod poa_compact;
 pub mod query;
 pub mod record;
 pub mod vcf;
+pub mod writer;
+
+pub use cigar::CigarOp;
+pub use graph::Edge;
+pub use graph::GraphReport;
+pub use graph::PafGraph;
+pub use graph::PathStep;
+pub use index::CigarStore;
+pub use index::PafIndex;
+pub use index::PafMetadata;
+pub use index::QueryResult;
+pub use record::PafRecord;
