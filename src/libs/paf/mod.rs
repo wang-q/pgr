@@ -10,3 +10,14 @@ pub mod query;
 pub mod record;
 pub mod vcf;
 pub mod writer;
+
+pub use record::PafRecord;
+pub use index::PafIndex;
+pub use index::PafMetadata;
+pub use index::CigarStore;
+pub use index::QueryResult;
+pub use graph::PafGraph;
+pub use graph::Edge;
+pub use graph::PathStep;
+pub use graph::GraphReport;
+pub use cigar::CigarOp;

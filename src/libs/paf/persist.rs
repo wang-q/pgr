@@ -211,6 +211,7 @@ pub fn from_data(data: PafIndexData) -> io::Result<PafIndex> {
 mod tests {
     use super::*;
     use std::io::BufReader;
+    use tempfile::tempdir;
 
     fn build_simple() -> PafIndex {
         let paf = "\
@@ -225,9 +226,10 @@ q2\t300\t10\t60\t-\tt1\t200\t10\t60\t45\t50\t255\tcg:Z:50M
     #[test]
     fn test_roundtrip_two_records_one_target() {
         let idx = build_simple();
-        let tmp = "/tmp/pgr_test_rt_2r1t.paf.idx";
-        idx.save(tmp).unwrap();
-        let loaded = PafIndex::load(tmp).unwrap();
+        let temp = tempdir().unwrap();
+        let tmp = temp.path().join("rt_2r1t.paf.idx");
+        idx.save(&tmp).unwrap();
+        let loaded = PafIndex::load(&tmp).unwrap();
 
         assert_eq!(loaded.names.len(), idx.names.len());
         assert_eq!(loaded.num_targets(), idx.num_targets());
@@ -247,9 +249,10 @@ q2\t300\t10\t60\t-\tt1\t200\t10\t60\t45\t50\t255\tcg:Z:50M
     fn test_roundtrip_complex_cigar() {
         let paf = "A\t100\t0\t100\t+\tB\t100\t0\t100\t95\t100\t255\tcg:Z:10=5I3D80=2X\n";
         let idx = PafIndex::build(BufReader::new(paf.as_bytes())).unwrap();
-        let tmp = "/tmp/pgr_test_rt_cigar.paf.idx";
-        idx.save(tmp).unwrap();
-        let loaded = PafIndex::load(tmp).unwrap();
+        let temp = tempdir().unwrap();
+        let tmp = temp.path().join("rt_cigar.paf.idx");
+        idx.save(&tmp).unwrap();
+        let loaded = PafIndex::load(&tmp).unwrap();
         let res = loaded.query(loaded.name_to_id("B").unwrap(), 0, 100, 0.0, 0);
         assert_eq!(res.len(), 1);
     }
@@ -264,9 +267,10 @@ C\t100\t0\t50\t+\tZ\t200\t0\t50\t45\t50\t255\tcg:Z:50M
         let idx = PafIndex::build(BufReader::new(paf.as_bytes())).unwrap();
         assert_eq!(idx.num_targets(), 3);
 
-        let tmp = "/tmp/pgr_test_rt_multit.paf.idx";
-        idx.save(tmp).unwrap();
-        let loaded = PafIndex::load(tmp).unwrap();
+        let temp = tempdir().unwrap();
+        let tmp = temp.path().join("rt_multit.paf.idx");
+        idx.save(&tmp).unwrap();
+        let loaded = PafIndex::load(&tmp).unwrap();
 
         assert_eq!(loaded.names.len(), idx.names.len());
         assert_eq!(loaded.num_targets(), 3);
@@ -285,9 +289,10 @@ A\t100\t0\t100\t+\tB\t100\t0\t100\t95\t100\t255\tcg:Z:100M
 C\t100\t0\t100\t+\tA\t100\t0\t100\t90\t100\t255\tcg:Z:100M
 ";
         let idx = PafIndex::build(BufReader::new(paf.as_bytes())).unwrap();
-        let tmp = "/tmp/pgr_test_rt_bfs.paf.idx";
-        idx.save(tmp).unwrap();
-        let loaded = PafIndex::load(tmp).unwrap();
+        let temp = tempdir().unwrap();
+        let tmp = temp.path().join("rt_bfs.paf.idx");
+        idx.save(&tmp).unwrap();
+        let loaded = PafIndex::load(&tmp).unwrap();
 
         let b = loaded.name_to_id("B").unwrap();
         let res = loaded.query_transitive_bfs(b, 0, 100, 2, 10, 10, 0.0, 0, 0);
@@ -305,9 +310,10 @@ C\t100\t0\t100\t+\tA\t100\t0\t100\t90\t100\t255\tcg:Z:100M
         assert_eq!(idx.names.len(), 0);
         assert_eq!(idx.num_targets(), 0);
 
-        let tmp = "/tmp/pgr_test_rt_empty.paf.idx";
-        idx.save(tmp).unwrap();
-        let loaded = PafIndex::load(tmp).unwrap();
+        let temp = tempdir().unwrap();
+        let tmp = temp.path().join("rt_empty.paf.idx");
+        idx.save(&tmp).unwrap();
+        let loaded = PafIndex::load(&tmp).unwrap();
         assert_eq!(loaded.names.len(), 0);
         assert_eq!(loaded.num_targets(), 0);
     }
@@ -352,41 +358,45 @@ C\t100\t0\t100\t+\tA\t100\t0\t100\t90\t100\t255\tcg:Z:100M
 
     #[test]
     fn test_load_bad_magic() {
-        let tmp = "/tmp/pgr_test_bad_magic.paf.idx";
-        std::fs::write(tmp, "XXXXsome garbage").unwrap();
-        let err = PafIndex::load(tmp).err().unwrap();
+        let temp = tempdir().unwrap();
+        let tmp = temp.path().join("bad_magic.paf.idx");
+        std::fs::write(&tmp, "XXXXsome garbage").unwrap();
+        let err = PafIndex::load(&tmp).err().unwrap();
         assert!(err.to_string().contains("bad magic"));
     }
 
     #[test]
     fn test_load_truncated_header() {
-        let tmp = "/tmp/pgr_test_trunc_hdr.paf.idx";
-        std::fs::write(tmp, "PG").unwrap(); // only 2 bytes, can't read 4-byte header
-        assert!(PafIndex::load(tmp).is_err());
+        let temp = tempdir().unwrap();
+        let tmp = temp.path().join("trunc_hdr.paf.idx");
+        std::fs::write(&tmp, "PG").unwrap(); // only 2 bytes, can't read 4-byte header
+        assert!(PafIndex::load(&tmp).is_err());
     }
 
     #[test]
     fn test_load_truncated_body() {
-        let tmp = "/tmp/pgr_test_trunc_body.paf.idx";
-        let mut f = std::fs::File::create(tmp).unwrap();
+        let temp = tempdir().unwrap();
+        let tmp = temp.path().join("trunc_body.paf.idx");
+        let mut f = std::fs::File::create(&tmp).unwrap();
         f.write_all(&MAGIC).unwrap();
         f.write_all(&VERSION.to_le_bytes()).unwrap();
         f.write_all(b"incomplete bincode").unwrap();
         // Should fail during bincode deserialization
-        assert!(PafIndex::load(tmp).is_err());
+        assert!(PafIndex::load(&tmp).is_err());
     }
 
     #[test]
     fn test_save_load_idempotent() {
         // save → load → save → load: second round should match first
         let idx = build_simple();
-        let tmp1 = "/tmp/pgr_test_idem_1.paf.idx";
-        let tmp2 = "/tmp/pgr_test_idem_2.paf.idx";
+        let temp = tempdir().unwrap();
+        let tmp1 = temp.path().join("idem_1.paf.idx");
+        let tmp2 = temp.path().join("idem_2.paf.idx");
 
-        idx.save(tmp1).unwrap();
-        let loaded1 = PafIndex::load(tmp1).unwrap();
-        loaded1.save(tmp2).unwrap();
-        let loaded2 = PafIndex::load(tmp2).unwrap();
+        idx.save(&tmp1).unwrap();
+        let loaded1 = PafIndex::load(&tmp1).unwrap();
+        loaded1.save(&tmp2).unwrap();
+        let loaded2 = PafIndex::load(&tmp2).unwrap();
 
         let t1 = loaded2.name_to_id("t1").unwrap();
         assert_eq!(loaded2.query(t1, 0, 50, 0.0, 0).len(), 2);

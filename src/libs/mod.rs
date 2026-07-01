@@ -19,3 +19,10 @@ pub mod par;
 pub mod phylo;
 pub mod plot;
 pub mod poa;
+
+pub use fmt::axt;
+pub use fmt::fas;
+pub use fmt::fq;
+pub use fmt::lav;
+pub use fmt::maf;
+pub use fmt::twobit;
