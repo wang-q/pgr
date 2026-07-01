@@ -13,7 +13,7 @@ The 'what' argument determines what data to collect, the following are currently
 
 * alignsPerQuery - number of alignments per query. Output is one line per query with the number of alignments.
 
-* coverSpread - difference between the highest and lowest coverage for alignments of a query. Output line per query, with the difference. Only includes queries with multiple alignments.
+* coverSpread - difference between the highest and lowest coverage for alignments of a query. Output line per query, with the difference. Use --multi-only to omit queries with a single alignment.
 
 * idSpread - difference between the highest and lowest fraction identity for alignments of a query. Output line per query, with the difference.
 

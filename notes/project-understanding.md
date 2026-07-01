@@ -38,7 +38,7 @@ pgr 是一个**生物信息学 CLI 工具集**，定位是"基因组数据处理
 ```
 src/
 ├── pgr.rs              # 入口：clap 命令树定义 + dispatch
-├── lib.rs              # 库入口：仅 re-export io 工具
+├── lib.rs              # 库入口：re-export io 工具 + reverse_range
 ├── cmd_pgr/            # 命令层：每个模块 = 一组子命令
 │   ├── mod.rs          #   声明所有命令模块
 │   ├── fa/             #   每个模块含 make_subcommand() + execute()
@@ -70,7 +70,7 @@ src/
     │   ├── eval/       #     聚类评估
     │   └── tree_cut/   #     树切分方法
     ├── ms/             #   Hudson's ms 模拟器解析
-    ├── fmt/            #   格式解析 (AXT/FAS/FA/FQ/LAV/MAF/PSL/2bit)
+    ├── fmt/            #   格式解析 (AXT/FAS/FA/FQ/LAV/MAF/PSL/2bit/VCF)
     ├── paf/            #   PAF 隐式图核心
     │   ├── index/      #     区间树索引 + BFS 传递闭包
     │   └── graph/      #     DSU 图构建 + GFA 输出
@@ -279,7 +279,6 @@ clustalw/muscle/mafft），充当工作流 glue。这与 `chain`/`net` 模块的
 - `libs/nt.rs`：核苷酸类型
 - `libs/pairmat/`：pair 矩阵
 - `libs/hv.rs`：hypervariable 区域
-- `libs/chain/net/`：Net 格式处理（已移入 chain 子模块）
 - `libs/fmt/twobit.rs`：2bit 格式读写
 - `libs/fmt/psl.rs`：PSL 格式
 - `libs/alignment/`：比对通用逻辑
@@ -367,7 +366,7 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
 
 ### 6.3 待补全的（TODO / 设计阶段）
 
-- `pgr.rs` 末尾注释的 TODO：paralog、fas variation --indel、fas match、去完全包含序列
+- `pgr.rs` 末尾注释的 TODO：paralog、fas match、去完全包含序列
 - `notes/design/nwk-eval.md`：树结构多维度评估（设计中）
 
 PAF 泛基因组方向（query-to-vcf）已全部完成，后续规划见 [[paf-pangenome.md]] §5（stat 规模扩展 / V7 图质量 /

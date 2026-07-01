@@ -145,8 +145,9 @@ cargo test
 - **`src/libs/`** - 共享工具库和核心逻辑。
   - **`fmt/`** - 格式 I/O: `fa`, `fas`, `fq`, `axt`, `maf`, `psl`, `lav`, `twobit`, `vcf`.
   - **`phylo/`** - 系统发育分析核心库。
-    - **`tree/`**: 树结构定义、遍历、I/O、统计 (`stat.rs`)。
+    - **`tree/`**: 树结构定义 (`node.rs`)、Newick 解析 (`parser.rs`)、遍历、I/O、统计 (`stat.rs`)、平衡性指标 (`balance.rs`)。
     - **`algo.rs`/`ops.rs`**: 树操作算法（排序、reroot 等）。
+    - **`cmp.rs`**: 树拓扑比较 (Robinson-Foulds 等)。
   - **`poa/`** - 偏序比对 (Partial Order Alignment) 实现。
   - **`chain/`** - 基因组比对链 (Chain/Net) 处理逻辑。
   - **`clust/`** - 聚类算法实现。
@@ -187,6 +188,11 @@ cargo test
 - **`rayon`**: 并行计算。
 - **`nom`**: 文本解析 (Newick 等)。
 - **`regex`**: 正则表达式。
+- **`coitrees`**: 区间树索引 (PAF/loc 模块核心)。
+- **`intspan`**: 区间集合数据结构。
+- **`petgraph`**: 图结构 (chain/paf 图构建)。
+- **`indexmap`**: 保序 HashMap (名称→id 映射统一模式)。
+- **`serde` + `bincode`**: PAF 索引 `.paf.idx` 持久化。
 
 ## 开发工作流
 

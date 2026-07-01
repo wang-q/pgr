@@ -22,10 +22,10 @@ Output format:
 
 Examples:
 1. Convert a PHYLIP matrix:
-   pgr mat pair input.mat -o output.tsv
+   pgr mat to-pair input.mat -o output.tsv
 
 2. Output to screen:
-   pgr mat pair input.mat
+   pgr mat to-pair input.mat
 
 "###,
         )

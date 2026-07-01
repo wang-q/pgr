@@ -17,10 +17,10 @@ Notes:
 
 Examples:
 1. Build tree from matrix:
-   pgr mat nj matrix.phy -o tree.nwk
+   pgr clust nj matrix.phy -o tree.nwk
 
 2. Pipe matrix to tree:
-   cat matrix.phy | pgr mat nj stdin > tree.nwk
+   cat matrix.phy | pgr clust nj stdin > tree.nwk
 "###,
         )
         .arg(
