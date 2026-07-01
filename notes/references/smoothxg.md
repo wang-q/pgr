@@ -368,7 +368,7 @@ smoothxg 同时支持 SPOA 和 abPOA 两个 POA 引擎，通过 `-A` 切换：
 对齐不完整"问题。`max_block_depth_for_padding_more`（默认 1000）控制深 block 不再加
 padding（节省算力）。
 
-**对 pgr 的启示**：pgr 的 `libs/poa/` 已有 SPOA 移植（参见 `docs/spoa_port.md`）。smoothxg
+**对 pgr 的启示**：pgr 的 `libs/poa/` 已有 SPOA 移植（参见 `notes/design/spoa_port.md`）。smoothxg
 的 padding 机制是 pgr 当前 POA 没有的——若 pgr 的 `paf to-gfa` 在 block 边界产出不完整
 对齐，可借鉴此方案。
 

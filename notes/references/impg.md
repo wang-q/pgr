@@ -1499,6 +1499,6 @@ fixture ×method 的 `fixture_class`/`tier`/`method_family`/`method_parameters`/
   `Rubric underspecified: true`）。
 - **可借鉴**：impg 的 `crush-architecture-spec.md` 模式——当某个算法复杂到"three days of agents
   working on crush have been flailing without a clear spec"时，强制写权威 spec 并要求 "No code
-  change should be proposed without referencing this document"。`pgr` 的 `docs/spoa_port.md`
+  change should be proposed without referencing this document"。`pgr` 的 `notes/design/spoa_port.md`
   等移植笔记已有类似性质，可强化。
 

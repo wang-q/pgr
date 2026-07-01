@@ -5,7 +5,7 @@
 query / to-maf / graph / to-gfa / to-vcf / stat 已全部完成。综合参考：impg（POA → GFA）、minigraph（chain → CIGAR → rGFA）、
 seqwish（DSU 传递闭包）、Cactus（Caf 退火-熔化）。
 
-参考文档：[[impg.md]]、[[seqwish.md]]、[[minigraph.md]]、[[cactus.md]]、[[cactus_lastz.md]]、
+参考文档：[[references/impg.md]]、[[references/seqwish.md]]、[[references/minigraph.md]]、[[references/cactus.md]]、[[references/cactus_lastz.md]]、
 [[project-understanding.md]]、[[ecoli-cohort.md]]。
 
 ```

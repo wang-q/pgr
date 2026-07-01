@@ -187,7 +187,7 @@ axtToMaf 标准化流程中的大部分步骤。`chain`/`net` 模块在功能上
 `nwk` 模块功能非常丰富：树拓扑比较 (`cmp`、`topo`)、切分 (`prune`、`subtree`、`to-forest`)、
 重标 (`rename`、`label`、`comment`)、重根 (`reroot`)、可视化 (`to-svg`、`to-dot`、`to-tex`)、
 统计 (`stat`、`distance`、`support`)。底层 `libs/phylo/` 使用 Arena 树结构（非 Rc/RefCell 指针树），
-参考了 `docs/phylo.md` 的设计讨论。
+参考了 `notes/design/phylo.md` 的设计讨论。
 
 ### 3.7 模拟、流程、可视化 (Simulation, Pipelines, Plot)
 
@@ -354,7 +354,7 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
 
 - `pgr.rs` 末尾注释的 TODO：paralog、fas variation --indel、fas match、去完全包含序列
 - `docs/clust-eval.md`：聚类评估（设计中）
-- `docs/nwk-eval.md`：树结构多维度评估（设计中）
+- `notes/design/nwk-eval.md`：树结构多维度评估（设计中）
 
 PAF 泛基因组方向（query-to-vcf）已全部完成，后续规划见 [[paf-pangenome.md]] §5（stat 规模扩展 / V7 图质量 /
 V8 应用层）。

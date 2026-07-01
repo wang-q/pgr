@@ -281,7 +281,7 @@ pub struct Tree {
 
 ### 5.2 LaTeX Forest 输出
 
-`pgr` 的可视化功能深度集成了 LaTeX Forest 包，配合精心设计的模板 (`docs/template.tex`)，能够生成出版级质量的进化树。
+`pgr` 的可视化功能深度集成了 LaTeX Forest 包，配合精心设计的模板 (`src/assets/template.tex`)，能够生成出版级质量的进化树。
 
 #### 核心命令
 
