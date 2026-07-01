@@ -1,11 +1,13 @@
 # FastK: 高保真 k-mer 计数器
 
-## 简介
+> 整理于 2026-06，源自对 FastK GitHub 仓库源码的分析。目的：理解 FastK 的 Super-mer + Minimizer k-mer 计数策略，为 pgr dist seq 与 pl rept/ir 命令提供参考。
+
+## 1. 简介
 FastK 是一个专为处理高质量 DNA 组装数据（如 Illumina 或 PacBio HiFi 数据）而优化的 k-mer 计数工具。它采用了一种新颖的基于 Minimizer 的分发方案，能够利用磁盘存储来处理任意大小的数据集。
 
 其核心优势在于能够直接生成序列的 k-mer 计数档案（Profile），并且在处理低错误率（1% 或更低）数据时，通过两阶段的“先 Super-mer 后加权 k-mer”排序策略，实现了极高的速度。
 
-## 核心概念 (Key Concepts)
+## 2. 核心概念 (Key Concepts)
 
 ### 1. K-mer 与 Canonical K-mer
 *   **K-mer**: 长度为 k 的 DNA 序列片段（FastK 支持 k >= 5，默认为 40）。
@@ -45,7 +47,7 @@ FastK 生成以下几种核心文件：
 *   **K-mer 表 (.ktab)**: 一个排序的列表，包含数据集中所有（或满足特定阈值）的规范 k-mer 及其计数。
 *   **档案 (.prof)**: (可选) 数据集中每条序列的 k-mer 计数概况。这是一个压缩格式，不仅记录了 k-mer 的出现，还按原序列顺序保留了位置信息。
 
-## 处理流程 (Processing Workflow)
+## 3. 处理流程 (Processing Workflow)
 
 FastK 的内部处理逻辑主要分为四个阶段（Phase）：
 
@@ -71,6 +73,16 @@ FastK 的内部处理逻辑主要分为四个阶段（Phase）：
 *   合并: (仅当启用 `-p` 选项时) 将分布在各处的 Profile 片段合并成最终的 `.prof` 文件。
 *   压缩: Profile 数据采用特定的编码进行压缩（约 4.7 bits/base），以节省空间。
 *   *代码对应*: `merge.c`
+
+## 4. 对 pgr 的启示
+
+1. **Super-mer + Minimizer 策略**：FastK 通过 Super-mer（共享同一 Minimizer 的连续 k-mer 段）将数据量压缩 10-50 倍，再按 Minimizer 分桶并行排序。这种"先聚合后排序"的思路对 pgr 处理大规模 k-mer 分析有直接参考价值。
+
+2. **Minimizer 的两种用途**：FastK 的 Minimizer 是**无损路由**（每个 k-mer 都被分配到对应桶，不丢弃数据，用于全量统计）；pgr 的 `src/libs/hash.rs` 中用于 MinHash Sketch 的 Minimizer 是**有损采样**（在滑动窗口中选出代表 k-mer，丢弃大部分数据，用于生成稀疏指纹）。两者原理相同但用途截然不同，`pgr dist seq` 用的是后者（详见 §2 核心概念中的对比注释）。
+
+3. **两阶段排序策略**：FastK 的"先 Super-mer 排序，再 k-mer 加权排序"两阶段方案，在低错误率数据（HiFi/Illumina）上实现了极高速度。pgr 若未来需要原生 k-mer 计数能力，可借鉴此策略。
+
+4. **外部工具依赖**：pgr 的 `pgr pl rept`（重复序列分析）和 `pgr pl ir`（反向重复序列分析）流水线当前依赖外部 FastK 工具。理解 FastK 的内部机制有助于在管线中精确控制参数，也为未来 Rust 原生重实现提供参考。
 
 ---
 *参考来源: [FastK GitHub Repository](https://github.com/thegenemyers/FASTK)*

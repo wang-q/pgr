@@ -1,5 +1,7 @@
 # KaKs_Calculator3.0 与 PAML 项目分析报告
 
+> 整理于 2026-06，源自对 KaKs_Calculator3.0 与 paml-master 源码的分析。目的：为 pgr 的 Ka/Ks 计算模块移植提供算法与架构参考。
+
 本以此文档详细分析 `KaKs_Calculator3.0` 与 `paml-master` 的代码结构、核心功能及异同点，为 `pgr` 项目的潜在集成与参考提供依据。
 
 ## 1. KaKs_Calculator3.0 分析
@@ -84,14 +86,14 @@ PAML 是一个工具箱，主要包含以下核心程序：
 
 ---
 
-## 6. Bio-Tools-Phylo-PAML (BioPerl 模块) 分析
+## 3. Bio-Tools-Phylo-PAML (BioPerl 模块) 分析
 
-### 6.1 概览
+### 3.1 概览
 *   **定位**: BioPerl 的一部分，专门用于解析 PAML (codeml, baseml, yn00) 的输出结果。
 *   **语言**: Perl
 *   **价值**: 提供了成熟的 PAML 输出解析逻辑，是 `pgr` 实现外部 PAML 调用后结果处理的重要参考。
 
-### 6.2 核心功能
+### 3.2 核心功能
 *   **解析器 (`Bio::Tools::Phylo::PAML`)**:
     *   支持解析 `codeml.mlc` 等主输出文件。
     *   提取 NG86 和 ML 方法生成的 dN/dS 矩阵。
@@ -101,16 +103,16 @@ PAML 是一个工具箱，主要包含以下核心程序：
 
 ---
 
-## 7. 对比与总结
+## 4. 对比与总结
 
-### 7.1 功能重叠点
+### 4.1 功能重叠点
 *   **YN00 算法**:
     *   **PAML**: 原创实现 (`src/yn00.c`)。
     *   **KaKs_Calculator**: 复现/集成实现 (`src/YN00.cpp` & `start_YN00()`)。
 *   **GY94 模型**:
     *   两者均支持，但 PAML 的 `codeml` 提供了基于树的完整 GY94 实现，而 KaKs_Calculator 主要关注成对比较。
 
-### 7.2 关键差异
+### 4.2 关键差异
 *   **核心目标**
     *   **KaKs_Calculator 3.0**: 快速计算成对 Ka/Ks，模型比较
     *   **PAML (codeml/yn00)**: 复杂的进化假设检验，树的构建与参数估算
@@ -130,7 +132,7 @@ PAML 是一个工具箱，主要包含以下核心程序：
     *   **KaKs_Calculator 3.0**: 易于集成新算法 (Strategy Pattern)
     *   **PAML (codeml/yn00)**: 难以修改核心逻辑，但功能极其强大
 
-### 7.3 对 pgr 的借鉴意义
+### 4.3 对 pgr 的借鉴意义
 *   **输出解析逻辑参考**: Bio-Tools-Phylo-PAML 提供了 PAML 输出解析的正则逻辑 (Regex)，可移植到 Rust 中用于 `pgr` 读取 `codeml` 结果（如矩阵提取、LRT 参数提取）。
 *   **算法移植参考**: `KaKs_Calculator` 的 C++ 源码适合作为 Rust 原生实现的蓝本；PAML 的 `tools.c` 适合作为数值计算的参考。
 *   **流程集成建议**:
@@ -187,12 +189,12 @@ PAML 是一个工具箱，主要包含以下核心程序：
 *   **适用场景**: 在拥有计算集群资源的条件下，构建大规模正选择数据库（如 Selectome 项目）。
 *   **对 pgr 的借鉴**: 学习其**子树复用**策略，即在遍历系统发育树时，对具有相同序列模式的子树（Site Repeats）进行合并计算，这是提升似然计算效率的关键技术之一。
 
-### 6. Bio-Tools-Phylo-PAML
+### 5.6 Bio-Tools-Phylo-PAML
 *   **定位**: BioPerl 项目的一部分，提供了对 PAML 输出结果的解析功能。
 *   **特点**: Perl 编写，能够提取 `codeml` 的复杂输出（如 dN/dS, lnL, 树结构），是构建自动化分析流程的常用组件。
 *   **对 pgr 的借鉴**: 参考其解析逻辑，确保 `pgr` 能正确理解 PAML 的输出格式，实现与 PAML 的无缝兼容。
 
-### 7. 对比与总结 (Comparison & Summary)
+### 5.7 对比与总结 (Comparison & Summary)
 尽管有上述工具，`pgr` 选择原生移植仍有独特价值：
 *   **零依赖 (Zero Dependency)**: 用户无需安装 PAML/HyPhy/Perl 等复杂的外部环境，`pgr` 单一二进制文件即可运行。
 *   **格式无缝对接**: 直接支持 pgr/UCSC 的 AXT/MAF/2bit 格式，无需中间转换 (如转为 PHYLIP)。
@@ -200,7 +202,7 @@ PAML 是一个工具箱，主要包含以下核心程序：
 
 ---
 
-## 8. 迁移与集成计划 (Migration Plan)
+## 6. 迁移与集成计划 (Migration Plan)
 
 为了在 `pgr` 中集成 Ka/Ks 计算功能，我们将直接基于标准数据结构分阶段实现算法移植。
 

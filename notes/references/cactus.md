@@ -1,5 +1,7 @@
 # Cactus 分析笔记
 
+> 整理于 2026-06，源自对 Cactus 项目源码与文档的分析。目的：理解 Progressive Cactus 与 Minigraph-Cactus 的算法架构，为 pgr 的泛基因组构建路线提供参考。
+
 本文档旨在总结 Cactus 项目的核心算法与架构，涵盖渐进式比对（Progressive Alignment）、泛基因组比对
 （Pangenome Alignment）及下游分析流程，为 `pgr` 项目提供参考。
 

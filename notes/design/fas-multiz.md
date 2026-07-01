@@ -1,136 +1,13 @@
-# Multiz 分析笔记
+# fas-multiz 设计与实现
 
-> **文档定位**：本文档混合了 multiz 源码分析（§1-§3，属 references 性质）与 fas-multiz 设计（§4-§5，属 design 性质）。保留合一是因 §1 源码理解是 §4 设计的基础。
+本文档是 `libs::fas_multiz` 的设计稿，基于对 multiz 源码的分析（见 [[multiz.md]]）。
+涵盖 pgr 与 multiz 的策略对比（§1）以及 fas-multiz 的设计与实现（§2）。
 
-本文档分析位于 `multiz/` 目录下的源码，该项目是 UCSC `multiz-tba` 软件包的核心组件之一。
-
-## 1. multiz 概览
-
-### 1.1 工具与输入输出
-
-*   **工具名称**: `multiz`（本文基于 11.2 版本）。
-*   **功能**: 对两个多序列比对文件（MAF 格式）进行比对合并，生成新的多序列比对。
-*   **核心假设**: 两个输入 MAF 文件的第一行（Top Row）必须是相同的参考序列（Reference Sequence）。`multiz` 利用这个共同的参考序列作为锚点，将其他物种的比对统一到同一坐标系中。
-
-**命令行接口（简化版）**：
-
-```bash
-multiz file1.maf file2.maf v [out1 out2]
-```
-
-*   `file1.maf`, `file2.maf`: 两个输入的 MAF 文件，Top Row 为同一参考。
-*   `v`: 版本/模式控制。
-    *   `0`: 参考在两个文件中都可微调。
-    *   `1`: 参考在第一个文件中固定，第二个文件的参考可相对其滑动。
-*   `out1`, `out2`（可选）:
-    *   `out1`: 收集 `file1.maf` 中未被使用的 block。
-    *   `out2`: 收集 `file2.maf` 中未被使用的 block。
-    *   若未提供这两个文件，未被使用的 block 将不会额外输出。
-
-常用参数（与 DP 行为直接相关）：
-
-*   `R=30`: 带状 DP 的半径（band radius），控制在参考坐标附近的搜索宽度。
-*   `M=1`: 最小输出宽度，小于该宽度的结果不会输出。
-
-### 1.2 核心算法与 Gap 模型
-
-基于 `mz_yama.c` 和 `multiz.c` 的源码，可以把 multiz 的核心算法概括为“参考锚定下的 profile–profile 动态规划”：
-
-*   **Sum-of-pairs 打分**:
-    *   对 profile–profile 的每一列，按所有物种对的替换矩阵分数求和（sum-of-pairs）。
-*   **Gap 成本**:
-    *   使用 quasi-natural gap costs（Altschul 1989）和仿射 gap（affine gap）相结合的模型。
-    *   对内部 gap（序列中间）收取 open + extend × length 的成本。
-    *   对 end-gaps（首尾 gap）通常不收取 gap open 罚分，更偏向 free-end gap 的行为。
-*   **DP 实现**:
-    *   采用类似 Myers & Miller (1989) 网格模型的实现方式，在参考坐标上做带状 DP。
-    *   Yama 引擎在 DP 过程中实时解决参考 gap 冲突、插入必要的列，以维持所有物种的一致对齐。
-
-### 1.3 带状优化与边界控制
-
-为了避免在全矩阵上做 O(L²) 的 DP，multiz 引入了带状优化：
-
-*   **半径 R**: 通过 `R` 参数限定允许的偏移范围，只在参考两条轨迹的“对齐对角线”附近计算 DP。
-*   **LB/RB 边界数组**:
-    *   每一行 DP 上维护 `LB`（Left Boundary）和 `RB`（Right Boundary），限制当前行能访问的列范围。
-    *   在参考上本来就不可能匹配到的位置不会进入 DP，大幅减少计算量。
-
-从 pgr 的角度看，这套机制和 `libs::fas_multiz` 里的“radius + 带状 DP”是一致的，只是 multiz 在 MAF/profile 层实现，而 fas-multiz 在 `.fas`/block 层实现。
-
-### 1.4 源码结构（bird’s eye）
-
-| 文件 | 描述 |
-| :--- | :--- |
-| `multiz.c` | 主程序入口：命令行解析、输入 MAF 读取、调度比对逻辑。 |
-| `mz_yama.c` | 核心 Yama 算法：profile–profile DP 引擎。 |
-| `mz_preyama.c` | 预处理模块：确定比对边界和重叠区域，为 Yama 准备数据。 |
-| `maf.c` / `maf.h` | MAF 读写库，定义 `mafAli` 等结构。 |
-| `mz_scores.c` | 打分矩阵和 gap 罚分参数的定义。 |
-| `util.c` | 通用工具函数（内存管理、错误处理等）。 |
-
-## 2. 对 `pgr` 项目的启示
-
-1.  **Profile Alignment**: `multiz` 本质上是一个 Profile-Profile Aligner。在 `pgr` 的 `fas consensus` 或图比对中，如果涉及多序列合并，可以参考其 Sum-of-pairs 的处理方式。
-2.  **锚点策略**: 利用共同参考序列作为锚点是处理大规模比对的有效手段（这也是 `pgr fas join` 的逻辑基础）。
-3.  **MAF 处理**: `multiz` 的 `maf.c` 提供了一个轻量级的 MAF 解析参考实现。**更新**: `pgr` 现已实现完整的 MAF 读写功能（见第 3 节），采用了更符合 Rust 特性的设计，但字段定义上仍与 MAF 规范保持一致。
-
-## 3. pgr MAF 实现现状 (2025-02)
-
-目前 `pgr` 已在 `src/libs/fmt/` 下实现了完整的 MAF 读写支持。
-
-### 3.1 模块分布与功能
-
-*   **读写统一**：位于 `src/libs/fmt/maf.rs`
-    *   **读取 (Reader)**:
-        *   **核心函数**: `next_maf_block`, `parse_maf_block`。
-        *   **特性**:
-            *   支持 `a` (alignment) 和 `s` (sequence) 行解析，`a` 行 `score=` 字段已解析到 `MafAli.score`。
-            *   **坐标转换**: `MafComp::to_range()` 将 MAF 的 0-based 坐标转换为 1-based inclusive 格式（如 `chr:start-end`）。
-            *   **负链处理**: 自动处理负链坐标，将其转换为相对于正链的坐标范围。
-    *   **写入 (Writer)**:
-        *   **核心结构**: `MafWriter`。
-        *   **特性**: 支持输出标准 MAF 头信息 (`##maf`) 和对齐块，自动处理列宽对齐。
-
-### 3.2 数据结构
-
- 读写使用同一套结构体：
-
- | 结构体 | 用途 | 关键字段 |
- | :--- | :--- | :--- |
- | `MafComp` | `s` 行（一条序列组件） | `src`、`start`、`size`、`strand`、`src_size`、`text`（均为 `String`/`usize`） |
- | `MafAli` | `a` 行 + block 内所有 `MafComp` | `score: Option<f64>`、`components: Vec<MafComp>` |
-
- ### 3.3 MAF 格式实现对比 (pgr vs multiz vs UCSC)
-
- 通过对比 `multiz/maf.c` (mini-maf) 与 `chainnet/src/lib/maf.c` (UCSC完整版)，以及 `pgr` 的实现，可以发现：
-
- 1.  **代码同源性**:
-     *   `multiz` 中的 `maf.c` (header 注明 "version 12") 明确标注了 "Stolen from Jim Kent & seriously abused"。它是一个精简版 (mini-maf)，移除了大量依赖 (如 `linefile.h`, `common.h` 等)，直接使用标准 C 库函数。
-     *   UCSC `chainnet` 中的 `maf.c` 是完整版，依赖于 Kent Source 庞大的基础设施库 (`common.h`, `linefile.h`, `hash.h` 等)。
-
- 2.  **功能差异**:
-     *   **UCSC 完整版**:
-         *   支持 `i` (synteny breaks), `q` (quality), `e` (empty/bridging), `r` (region definition) 等多种扩展行。
-         *   拥有复杂的内存管理 (`AllocVar`, `slAddHead` 等 Kent 库特有宏)。
-         *   包含大量辅助函数，如 `mafSubset` (切片), `mafFlipStrand` (反向互补), `mafScoreMultiz` (打分) 等。
-     *   **multiz 精简版**:
-         *   仅保留核心的 `a` (alignment) 和 `s` (sequence) 行解析，足以支持比对算法。
-         *   内存管理简化为 `ckalloc`。
-         *   去除了大部分与比对算法无关的辅助功能。
-     *   **pgr 实现**:
-         *   **解析策略**: 类似于 `multiz`，专注于核心的 `a` 和 `s` 行，忽略非标准行（但解析器通常具有鲁棒性，能跳过未知行）。
-         *   **坐标系统**: 与 UCSC/multiz 保持一致 (0-based start, 1-based size)，但内部提供了向 `1-based inclusive` (GFF/VCF 风格) 转换的接口，适应现代分析需求。
-         *   **内存模型**: 使用 Rust 的所有权模型 (`String`, `Vec`) 替代 C 指针，杜绝了内存泄漏风险，且无需手动管理 `free`。
-
- ### 3.4 总结
-
- `pgr` 的 MAF 模块已经成熟，具备处理 UCSC MAF 格式的能力，并集成了坐标标准化功能，适合作为后续基因组比对分析的基础组件。
-
-## 4. pgr 与 multiz 的异同分析
+## 1. pgr 与 multiz 的异同分析
 
 `pgr` 采用 **"Stitch + Refine" (拼接+精炼)** 的分步策略，与 `multiz` 的 **"Integrated Alignment" (一体化比对)** 形成鲜明对比。
 
-### 4.1 pgr 的分步工作流
+### 1.1 pgr 的分步工作流
 
 #### 第一步：机械拼接 (Stitch)
 *   **工具**: `pgr fas join` (或流程脚本 `pgr pl p2m`)
@@ -148,7 +25,7 @@ multiz file1.maf file2.maf v [out1 out2]
 *   **逻辑**: 对拼接后的 Block 进行多序列比对 (MSA)。
 *   **作用**: 弥补第一步的缺陷。调用 `mafft`, `muscle` 或内置 POA 引擎，修正由于机械堆叠导致的 Gap 错位，生成最终的高质量比对。
 
-### 4.2 策略深度对比
+### 1.2 策略深度对比
 
 #### multiz (UCSC)
 *   **模式**: **一体化动态规划 (Integrated DP)**。
@@ -159,38 +36,38 @@ multiz file1.maf file2.maf v [out1 out2]
 #### pgr (p2m + join + refine)
 *   **模式**: **拼接后修正 (Post-hoc Refinement)**。
 *   **核心算法**: Set Ops (Intersection) -> Stacking -> MSA (Refinement)。
-*   **处理逻辑**: 先根据坐标“硬”合并，再通过 MSA 工具“软”调整。
+*   **处理逻辑**: 先根据坐标"硬"合并，再通过 MSA 工具"软"调整。
 *   **输出目标**: **Core/Intersection** (通常仅关注严格的交集核心区)。
 
-### 4.3 结论
+### 1.3 结论
 *   `multiz` 适合构建复杂的、包含大量 Indel 和重排的全基因组比对 (WGA)。
-*   `pgr` 流程适合快速构建**核心基因组 (Core Genome)** 或处理**基于无 Gap 参考骨架**的数据。通过 `refine` 步骤，`pgr` 也能产出高质量的比对，但其依赖于“共同核心”的存在。
+*   `pgr` 流程适合快速构建**核心基因组 (Core Genome)** 或处理**基于无 Gap 参考骨架**的数据。通过 `refine` 步骤，`pgr` 也能产出高质量的比对，但其依赖于"共同核心"的存在。
 
-### 4.4 在 pgr 中是否需要 Yama DP
+### 1.4 在 pgr 中是否需要 Yama DP
 
 结合以上分析，可以给出一个比较实用的结论（并补充当前实现现状）：
 
 *   对于最初设计的 `pgr` 主用例（构建严格交集的 core genome，比对区域由 `cover`/`slice` 控制，再由 `fas refine` 精修），**可以不直接复刻 multiz 的完整 Yama 动态规划引擎**。
     *   这一路线本质上假设：在共同核心区域内，各个 pairwise/MAF 中的参考序列 gap 模式差异不大，或者差异可以在后续局部 MSA 中被吸收。
-    *   代价是：更偏向“交集/核心”，不会像 multiz 那样追求覆盖所有可能的比对区域（union/mesh）。
-*   在此基础上，`pgr` 目前在 `fas` 层引入了一个**简化版的带状 DP 引擎**（见第 5 节 `libs::fas_multiz`）：
+    *   代价是：更偏向"交集/核心"，不会像 multiz 那样追求覆盖所有可能的比对区域（union/mesh）。
+*   在此基础上，`pgr` 目前在 `fas` 层引入了一个**简化版的带状 DP 引擎**（见第 2 节 `libs::fas_multiz`）：
     *   在参考坐标网格上做带状 DP，用两个 profile 的物种交集上的 sum-of-pairs 打分（base–base 使用替换矩阵，base–gap 使用统一 gap 罚分），用于解决不同输入之间参考 gap 模式和列选择的冲突。
-    *   目前主要针对两个输入 `.fas` 的窗口合并场景，作为 `fas join` 的“智能版”补充，而不是完整的 yama 复刻。
+    *   目前主要针对两个输入 `.fas` 的窗口合并场景，作为 `fas join` 的"智能版"补充，而不是完整的 yama 复刻。
 *   Yama DP 主要解决的是两类问题：
     1.  **参考序列 gap 冲突**：不同 MAF 中参考序列的 gap pattern 不一致时，通过 DP 在合并过程中实时插入/调整 gap，使所有序列在同一参考坐标系下保持一致。
     2.  **block 级冲突与 unused block 判定**：通过 sum-of-pairs 全局评分决定哪些 block 被合并，哪些落到 `out1`/`out2`。
-    在 `pgr` 当前的“Set Ops + Refine” 模式下，这两类问题分别由“交集窗口的选取”和“后续 MSA 的局部重比对”粗略处理，并不追求与 multiz 完全一致的行为。
+    在 `pgr` 当前的"Set Ops + Refine" 模式下，这两类问题分别由"交集窗口的选取"和"后续 MSA 的局部重比对"粗略处理，并不追求与 multiz 完全一致的行为。
 *   因此，**在如下前提下，舍弃 DP 是可接受的工程权衡**：
     *   只关注严格交集区域，对边缘和稀有对齐不敏感。
     *   参考骨架事先经过统一处理（同一版本、类似 masking/裁剪策略），大型重排通过 `chain/net` 等流程已先行解决。
     *   `fas refine` 作用在规模适中的窗口上，用于修正机械堆叠引入的局部错位，而不负责重新定义 block 边界。
-*   若未来需要在 `pgr` 中支持接近 multiz 行为的 “Union/Mesh WGA” 模式，更自然的路径是：**在 `fas` 层实现 multiz 类功能**，而不是在 MAF 解析层再实现一次 `multiz`：
+*   若未来需要在 `pgr` 中支持接近 multiz 行为的 "Union/Mesh WGA" 模式，更自然的路径是：**在 `fas` 层实现 multiz 类功能**，而不是在 MAF 解析层再实现一次 `multiz`：
     *   上游已经可以通过 `pgr axt/maf to-fas` 等命令，将 pairwise 或 MAF 转换为 block FA (`.fas`)。
     *   在 `.fas` 层进行 profile 合并，可以直接对齐到 `pgr fas` 现有生态（`cover`/`slice`/`join`/`refine`/`stat` 等），避免重复造 MAF 级别的轮子。
 
-### 4.5 pgr 中 multiz 前置链路：LASTZ 与链化
+### 1.5 pgr 中 multiz 前置链路：LASTZ 与链化
 
-在 UCSC 的典型 WGA 流程中，`multiz` 位于“pairwise 比对 + 链化 + net + mafFromNet”之后，只消费已经整理好的 MAF。`pgr` 目前在这一前置链路上，也已经有相当完整的 Rust 封装，主要对应到：
+在 UCSC 的典型 WGA 流程中，`multiz` 位于"pairwise 比对 + 链化 + net + mafFromNet"之后，只消费已经整理好的 MAF。`pgr` 目前在这一前置链路上，也已经有相当完整的 Rust 封装，主要对应到：
 
 *   `pgr lav lastz`：LASTZ 前端
     *   位置：`src/cmd_pgr/lav/lastz.rs`。
@@ -201,7 +78,7 @@ multiz file1.maf file2.maf v [out1 out2]
         *   支持单文件和目录递归：对 target/query 目录做递归扫描（`.fa`/`.fa.gz`），生成笛卡尔积 job 列表。
         *   使用 `rayon` 并行跑多个 lastz 进程，并为每个 target–query 组合生成类似 `[t]vs[q].lav` 的输出文件名（带冲突规避逻辑）。
     *   对 multiz 的意义：
-        *   对应于“blastz/lastz pairwise 比对”这一步，为后续链化、net 和 multiz/fas-multiz 提供高质量的成对比对基础。
+        *   对应于"blastz/lastz pairwise 比对"这一步，为后续链化、net 和 multiz/fas-multiz 提供高质量的成对比对基础。
 
 *   `pgr psl chain`：PSL 链化（axtChain 风格）
     *   位置：`src/cmd_pgr/psl/chain.rs`，调用 `libs::chain` 中的 DP 引擎。
@@ -216,18 +93,18 @@ multiz file1.maf file2.maf v [out1 out2]
         *   依据 `(t_name, q_name, strand)` 分组，内部使用 KD-tree 等结构（见 `libs::chain`）加速前驱 block 搜索。
         *   允许在有 2bit 序列的情况下，用 `ScoreContext` 和 `calc_block_score` 精确重算每个 block 的序列得分，而不是只依赖 PSL 自带分数。
     *   对 multiz 的意义：
-        *   在 `pgr` 里，这一步提供了与 UCSC 链化阶段等价的“整理过的 syntenic 对齐骨架”，可以作为（通过 AXT/MAF/FA 转换后）fas-multiz 的上游输入。
+        *   在 `pgr` 里，这一步提供了与 UCSC 链化阶段等价的"整理过的 syntenic 对齐骨架"，可以作为（通过 AXT/MAF/FA 转换后）fas-multiz 的上游输入。
 
-综上，`pgr lav lastz` + `pgr psl chain` 组合，大致覆盖了 UCSC 链路中 “blastz/lastz 比对 + axtChain 链化” 这两步。它们提供了 multiz/fas-multiz 所需的 pairwise 对齐基础，而 `libs::fas_multiz` 则承担了更上游的 profile 合并角色：在已经有 syntenic 对齐骨架的前提下，对多个 `.fas` profile 做带状 DP 合并，构建 union/mesh 风格的多序列比对。
+综上，`pgr lav lastz` + `pgr psl chain` 组合，大致覆盖了 UCSC 链路中 "blastz/lastz 比对 + axtChain 链化" 这两步。它们提供了 multiz/fas-multiz 所需的 pairwise 对齐基础，而 `libs::fas_multiz` 则承担了更上游的 profile 合并角色：在已经有 syntenic 对齐骨架的前提下，对多个 `.fas` profile 做带状 DP 合并，构建 union/mesh 风格的多序列比对。
 
-## 5. fas-multiz 设计与实现
+## 2. fas-multiz 设计与实现
 
-在 `pgr` 中，`fas` 是“块级多序列比对”的核心抽象：每个 block 表示一段参考坐标下的多物种比对。`libs::fas_multiz` 就是在这一抽象上实现的 multiz 类功能：围绕 `.fas` profile 做合并，而不是在 MAF 文本层面复刻 `multiz`。
+在 `pgr` 中，`fas` 是"块级多序列比对"的核心抽象：每个 block 表示一段参考坐标下的多物种比对。`libs::fas_multiz` 就是在这一抽象上实现的 multiz 类功能：围绕 `.fas` profile 做合并，而不是在 MAF 文本层面复刻 `multiz`。
 
-### 5.1 目标与输入/输出
+### 2.1 目标与输入/输出
 
 *   **目标**：
-    *   给定多个 block FA 文件（例如多个 pairwise-derived `.fas` 或不同 pipeline 生成的 `.fas`），在共享参考物种的坐标系下，将它们合并为一个“union/mesh 风格”的 block FA。
+    *   给定多个 block FA 文件（例如多个 pairwise-derived `.fas` 或不同 pipeline 生成的 `.fas`），在共享参考物种的坐标系下，将它们合并为一个"union/mesh 风格"的 block FA。
     *   和现有 `p2m + join + refine` 所产出的 **Core/Intersection** 结果互为补充：一个偏交集（core），一个偏并集（union/mesh）。
 *   **输入**：
     *   `k` 个 `.fas` 文件（`k >= 2`），它们的 block 中均包含同名的参考序列（例如 `ref`）。
@@ -237,27 +114,27 @@ multiz file1.maf file2.maf v [out1 out2]
         *   在交集区域内，行为应与当前 `p2m + join + refine` 相兼容。
         *   在边缘/非完全交集区域内，会尽量保留来自不同输入的对齐（union 行为）。
 
-### 5.2 相对于 multiz 的主要差异
+### 2.2 相对于 multiz 的主要差异
 
 *   **工作层级不同**：
     *   multiz 直接操作 MAF，对齐的是两个 MAF profile。
     *   `pgr` 中的 fas-multiz 将直接操作 block FA，对齐的是若干 `.fas` profile。
 *   **上游数据准备不同**：
     *   在 `pgr` 中，pairwise MAF/AXT 等通常已经通过 `pgr maf/axt to-fas` 等步骤规整为更统一的 block FA 表达。
-    *   这意味着 fas-multiz 可以假设输入已经经过一次“标准化”，不需要自己处理复杂的 MAF 语法和扩展行。
+    *   这意味着 fas-multiz 可以假设输入已经经过一次"标准化"，不需要自己处理复杂的 MAF 语法和扩展行。
 *   **与现有命令的关系**：
-    *   fas-multiz 更像是 `pgr fas join` 的“智能版/DP 版”：
-        *   `fas join`：根据参考坐标“机械堆叠”，不处理 gap 冲突。
+    *   fas-multiz 更像是 `pgr fas join` 的"智能版/DP 版"：
+        *   `fas join`：根据参考坐标"机械堆叠"，不处理 gap 冲突。
         *   fas-multiz：在堆叠时引入 profile–profile 的 DP/启发式，解决参考 gap 冲突和 block 选择问题。
     *   输出仍然是 `.fas`，可以直接接上 `fas refine`, `fas stat`, `fas to-vcf` 等命令。
 
-### 5.3 数据流设计
+### 2.3 数据流设计
 
 1.  **标准化输入**：
     *   所有 upstream 比对结果（MAF/AXT 等）先通过现有命令统一转为 `.fas`。
     *   如有需要，可加一步 `fas normalize`（对序列名、物种名、参考 ID 做统一）。
 2.  **block 级别的配对与聚类**：
-    *   按参考物种与坐标对 block 做分组，将“位置相近”的 block 视为候选合并单元。
+    *   按参考物种与坐标对 block 做分组，将"位置相近"的 block 视为候选合并单元。
     *   这一层可以重用 `fas cover` / `spanr` 得到的区间信息。
 3.  **profile 合并（multiz-like）**：
     *   对每个候选区间内的多个 block profile，执行简化版的 profile–profile DP 或其他启发式：
@@ -265,20 +142,20 @@ multiz file1.maf file2.maf v [out1 out2]
         *   根据 sum-of-pairs 打分决定保留哪些列/序列，以及如何插入额外 gap。
     *   输出合并后的单个 block（或少数几个 block）。
 4.  **后处理与 refine**：
-    *   输出的 `.fas` 可以再交给 `pgr fas refine` 做局部 MSA，以获得更“平滑”的 alignment（尤其是在非参考序列上）。
+    *   输出的 `.fas` 可以再交给 `pgr fas refine` 做局部 MSA，以获得更"平滑"的 alignment（尤其是在非参考序列上）。
 
-### 5.4 与现有 core 流程的互补关系
+### 2.4 与现有 core 流程的互补关系
 
 *   `p2m + join + refine`：
     *   假设参考骨架在各数据源中基本一致。
-    *   倾向于“只相信大家都同意的部分”（严格交集），适合构建 core genome。
+    *   倾向于"只相信大家都同意的部分"（严格交集），适合构建 core genome。
 *   fas-multiz：
-    *   允许不同数据源在边缘和 gap pattern 上存在一定差异，通过 profile 合并策略尽量“合在一起”。
+    *   允许不同数据源在边缘和 gap pattern 上存在一定差异，通过 profile 合并策略尽量"合在一起"。
     *   输出更偏 union/mesh，适合探索 union pan-genome 或 WGA 风格的结果。
 
 在实现层面，fas-multiz 可以作为一个新的子命令（例如 `pgr fas multiz` 或 `pgr fas merge-mesh`），并明确声明它与 `p2m + join + refine` 的适用场景不同：前者追求覆盖度（union），后者继续服务于一致性（intersection）。
 
-### 5.5 命令行接口
+### 2.5 命令行接口
 
 *   子命令名称（示例）：
     *   `pgr fas multiz`
@@ -293,7 +170,7 @@ multiz file1.maf file2.maf v [out1 out2]
         *   `core`：在交集区域内行为尽量贴近 `p2m + join`，只对 gap 冲突做最小修复。
         *   `union`：尽量保留所有输入的对齐信息，生成 mesh 风格结果。
 
-### 5.6 约束与实现注意事项
+### 2.6 约束与实现注意事项
 
 *   **参考骨架一致性**：
     *   要求所有输入 `.fas` 的参考序列来自同一基因组版本，且建议事先经过相同的 masking/裁剪流程。
@@ -304,18 +181,18 @@ multiz file1.maf file2.maf v [out1 out2]
     *   可以重用 `pgr` 中现有的打分矩阵和 gap 参数（如 `libs/chain` 相关代码），避免在 `fas` 层重新定义一套 scoring。
     *   带状 DP 的半径 `R` 和最小宽度 `M` 建议和 multiz 保持同一数量级，以便结果直观可控。
 *   **失败与降级策略**：
-    *   当某个窗口内 profile DP 无法找到合理路径（打分过低或冲突过多）时，可以退回到简单的 `fas join` 行为，或干脆将该窗口标记为“未合并”，交给上游/下游流程决定如何处理。
+    *   当某个窗口内 profile DP 无法找到合理路径（打分过低或冲突过多）时，可以退回到简单的 `fas join` 行为，或干脆将该窗口标记为"未合并"，交给上游/下游流程决定如何处理。
 
-### 5.7 与现有模块的集成点
+### 2.7 与现有模块的集成点
 
 *   **输入准备**：依赖现有的 `pgr axt/maf to-fas` 和 `fas` 系列命令，将所有上游结果规整为块级 `.fas`。
 *   **区间计算**：复用 `fas cover` 和 `spanr` 的区间逻辑，定义候选合并窗口。
 *   **比对与 refine**：在新实现的 fas-multiz 中完成 profile 合并后，调用现有 `pgr fas refine` 作为可选的精修步骤。
 *   **下游分析**：输出 `.fas` 可以继续被 `fas stat`, `fas to-vcf`, `fas split` 等命令消费，与当前 `p2m + join + refine` 的结果处于同一生态。
 
-### 5.8 libs 实现概览
+### 2.8 libs 实现概览
 
-> 2026-02 更新：本节描述的是 `libs::fas_multiz` 在库层面的整体设计，与当前实现基本一致（包括 `FasMultizMode`/`FasMultizConfig`/`Window` 以及 `merge_window`、`merge_fas_files`、自动窗口推导等）。更细节的实现行为与局限见 5.10 小节。
+> 2026-02 更新：本节描述的是 `libs::fas_multiz` 在库层面的整体设计，与当前实现基本一致（包括 `FasMultizMode`/`FasMultizConfig`/`Window` 以及 `merge_window`、`merge_fas_files`、自动窗口推导等）。更细节的实现行为与局限见 2.10 小节。
 
 本节给出 fas-multiz 在 Rust 中的 libs 级别设计。
 
@@ -379,15 +256,15 @@ multiz file1.maf file2.maf v [out1 out2]
 *   将重采样后的各物种序列按列拼接，构造新的 `FasBlock`，并为参考 entry 生成合适的 `Range`（可以取窗口的 Range 或交集 Range）。
 *   如果在某个窗口内 profile 对齐得分过低或冲突过多，则返回 `None`，由调用者决定使用简单 `fas join` 还是跳过该窗口。
 
-### 5.9 与 multiz-multiz 源码的异同
+### 2.9 与 multiz-multiz 源码的异同
 
-这里的 fas-multiz 方案是从 `multiz-multiz` 的源码和算法抽象出来的一个 “pgr 版本”，既保留了一些核心思想，也刻意做了简化和调整。
+这里的 fas-multiz 方案是从 `multiz-multiz` 的源码和算法抽象出来的一个 "pgr 版本"，既保留了一些核心思想，也刻意做了简化和调整。
 
 *   **共同点（继承 multiz 的部分）**：
     *   都是以参考物种坐标为主轴，在参考坐标上定义窗口/段落，再在每个窗口内做 profile 合并。
     *   都采用带状 DP（或类似思想）限制搜索空间，在参考附近做局部优化，而不是在全空间做 MSA。
     *   在 union/mesh 场景下，都试图尽可能保留不同输入中的真实比对关系，只在必要时删除或压缩冲突列。
-    *   支持“核心交集 + 扩展区域”的思路：核心部分倾向于各输入一致，边缘部分允许有差异并通过 DP 协调。
+    *   支持"核心交集 + 扩展区域"的思路：核心部分倾向于各输入一致，边缘部分允许有差异并通过 DP 协调。
 *   **差异（pgr 有意做的调整）**：
     *   **工作层级不同**：
         *   multiz-multiz 在 MAF 层操作，直接对齐两个 MAF profile。
@@ -402,12 +279,12 @@ multiz file1.maf file2.maf v [out1 out2]
         *   multiz-multiz 直接消费上游链路输出的 MAF（如 blastz/last 等）。
         *   在 pgr 中，上游的 pairwise 结果通常已经通过若干步骤转换、规范成 `.fas`，fas-multiz 可以假设这些输入已经做过一次清洗/规整。
     *   **目标偏好与使用场景不同**：
-        *   multiz-multiz 更偏“通用 WGA 引擎”，追求在大范围基因组上做 mesh 式对齐。
-        *   fas-multiz 明确被设计成 pgr 的一个“union/mesh complement”：在 core/intersection 流程之外，提供一个额外的 union 视角，并保持与现有 `p2m + join + refine` 在交集区域内尽量兼容。
+        *   multiz-multiz 更偏"通用 WGA 引擎"，追求在大范围基因组上做 mesh 式对齐。
+        *   fas-multiz 明确被设计成 pgr 的一个"union/mesh complement"：在 core/intersection 流程之外，提供一个额外的 union 视角，并保持与现有 `p2m + join + refine` 在交集区域内尽量兼容。
 
-### 5.10 当前 fas-multiz 实现状态（2026-02）
+### 2.10 当前 fas-multiz 实现状态（2026-02）
 
-> 本节描述的是当前 `pgr` 仓库中已经落地的 `libs::fas_multiz` 实现，可与前文对 multiz 及 fas-multiz 的设计描述对照阅读。实现仍然是“轻量级 fas-multiz”，未来可以继续向更完整的 profile–profile DP 演进。
+> 本节描述的是当前 `pgr` 仓库中已经落地的 `libs::fas_multiz` 实现，可与前文对 multiz 及 fas-multiz 的设计描述对照阅读。实现仍然是"轻量级 fas-multiz"，未来可以继续向更完整的 profile–profile DP 演进。
 
 **实现位置与对外 API**
 
@@ -423,12 +300,12 @@ multiz file1.maf file2.maf v [out1 out2]
 
 **窗口推导与 Core/Union 语义**
 
-*   `merge_fas_files` 需要调用方显式给出 `windows`，行为与前文 5.3–5.8 小节给出的设计一致。
+*   `merge_fas_files` 需要调用方显式给出 `windows`，行为与前文 2.3–2.8 小节给出的设计一致。
 *   `merge_fas_files_auto_windows` 会：
     *   从所有输入 `.fas` 中提取参考物种 `ref_name` 的 `Range`，按 `radius` 向两侧扩展。
     *   按染色体合并重叠区间，再按 `min_width` 过滤过短窗口。
     *   按 `cfg.mode` 过滤窗口：
-        *   `Core`：只保留“在所有输入中都有参考覆盖”的窗口（严格交集）。
+        *   `Core`：只保留"在所有输入中都有参考覆盖"的窗口（严格交集）。
         *   `Union`：只要有任意一个输入在该窗口有参考覆盖即可保留（并集风格）。
 
 **窗口内合并逻辑（带状 DP 合并）**
@@ -445,10 +322,10 @@ multiz file1.maf file2.maf v [out1 out2]
 *   将 DP 生成的参考轨迹映射到所有物种：
 *   对每一列，优先从前一个累积结果（或第一个输入）的对应位置取碱基，不存在时再从当前输入取；两边都缺失则填 `'-'`。
 *   `Core` 模式下只合并在当前累积结果和新输入中都存在的物种；`Union` 模式下允许物种只存在于其中一边。
-*   在 Core 模式下，任一步 DP 失败都会导致整个 progressive 合并失败，随后回退到“保守合并”逻辑。
+*   在 Core 模式下，任一步 DP 失败都会导致整个 progressive 合并失败，随后回退到"保守合并"逻辑。
 *   在 Union 模式下，如果某一步 DP 失败，则跳过该输入，继续尝试将后续输入与当前累积结果进行 DP 合并；成功的部分会被保留，无法对齐的输入则在该窗口中被忽略。
 *   progressive DP 完成后（无论是否跳过了一些输入），若至少完成了一次成功的 DP 合并，则直接返回最终累积的 block。
-*   如果 progressive DP 入口阶段就失败（例如前两条参考轨迹 ungapped 不同，或带宽内找不到合理路径），则自动回退到“保守合并”逻辑：
+*   如果 progressive DP 入口阶段就失败（例如前两条参考轨迹 ungapped 不同，或带宽内找不到合理路径），则自动回退到"保守合并"逻辑：
 *   要求所有候选 block 的参考 entry 完全相同（包含 gap），否则返回 `None`。
 *   `Core` 模式下只保留在所有输入中都存在的物种；`Union` 模式下保留物种并集。
 *   参考物种的 `Range` 继承自模板 block；其他物种继承其来自的原始 block。
@@ -459,13 +336,13 @@ multiz file1.maf file2.maf v [out1 out2]
 *   DP 网格仍然只在参考行的坐标上展开，非参考物种没有各自独立的坐标轴，它们通过物种交集上的 profile–profile sum-of-pairs 打分参与评分，但不改变 DP 网格结构，与 multiz/yama 中更完整的多维 DP 仍有差距。
 *   替换分数已经复用 `libs::chain::SubMatrix` 做 base–base 的 sum-of-pairs 打分：默认使用 `hoxd55`，也支持通过 `--score-matrix` 读取 LASTZ 格式文件或预设名称（例如 `hoxd55`），并通过简单缩放与当前 `match_score` 的量级对齐。gap 支持三类模型：`constant`、`medium`/`loose`、以及显式仿射：
     *   `constant`：直接使用 `gap_score` 作为统一线性 gap 罚分。
-    *   `medium`/`loose`：从 `GapCalc::medium`/`GapCalc::loose` 的 quasi-natural 曲线中取 `len=1,2` 两点，反推出一组近似的仿射参数 `(open, extend)`，再按 HoxD55 的打分尺度和 `match_score` 做线性缩放，在带状 DP 中用“open + extend × length”的形式累积 gap 罚分，从而实现长度依赖的 quasi-natural 近似。
+    *   `medium`/`loose`：从 `GapCalc::medium`/`GapCalc::loose` 的 quasi-natural 曲线中取 `len=1,2` 两点，反推出一组近似的仿射参数 `(open, extend)`，再按 HoxD55 的打分尺度和 `match_score` 做线性缩放，在带状 DP 中用"open + extend × length"的形式累积 gap 罚分，从而实现长度依赖的 quasi-natural 近似。
     *   显式仿射：当通过 `--gap-open`/`--gap-extend` 提供 open/extend 时，fas-multiz 在 DP 中直接使用这一组仿射参数（同样按 `match_score` 缩放）进行三状态的仿射 gap 计分。
-*   已提供 CLI 子命令 `pgr fas multiz`（见 8.5 小节），支持 `--mode core|union`、`--radius`、`--min-width`、`--gap-model`、`--gap-open`、`--gap-extend` 以及 `--score-matrix` 等参数；gap 配置风格与 `pgr psl chain` 保持一致，而替换矩阵也不再局限于内置的 HoxD55，可与链化阶段共享同一套 matrix 配置；`libs::fas_multiz` 仍作为底层引擎，便于在 pipeline 或其他子命令中复用。
-*   在 gap 行为上，对端部 gap（leading/trailing gap）增加了简单的“首尾特化”规则：在带状 DP 回溯得到参考物种之间的对齐路径后，会自动裁剪掉首尾连续的单侧 gap 列（即仅一侧为碱基、另一侧为 gap 的前缀/后缀列），使这些端部 gap 在行为上视为 free end gaps，而中间区域仍按标准仿射 gap 计分；若需要更复杂的端部 gap 放宽或偏置策略，可以在这一基础上继续细化。
+*   已提供 CLI 子命令 `pgr fas multiz`，支持 `--mode core|union`、`--radius`、`--min-width`、`--gap-model`、`--gap-open`、`--gap-extend` 以及 `--score-matrix` 等参数；gap 配置风格与 `pgr psl chain` 保持一致，而替换矩阵也不再局限于内置的 HoxD55，可与链化阶段共享同一套 matrix 配置；`libs::fas_multiz` 仍作为底层引擎，便于在 pipeline 或其他子命令中复用。
+*   在 gap 行为上，对端部 gap（leading/trailing gap）增加了简单的"首尾特化"规则：在带状 DP 回溯得到参考物种之间的对齐路径后，会自动裁剪掉首尾连续的单侧 gap 列（即仅一侧为碱基、另一侧为 gap 的前缀/后缀列），使这些端部 gap 在行为上视为 free end gaps，而中间区域仍按标准仿射 gap 计分；若需要更复杂的端部 gap 放宽或偏置策略，可以在这一基础上继续细化。
 *   在上述基础上，仍可以在后续逐步接近 multiz 的完整行为，例如：
-    *   将 progressive DP 升级为真正的多输入 profile–profile sum-of-pairs 动态规划。这里的“真正”并不是指在 K 条序列上做天真的 K 维 DP（那样复杂度是 O(L^K)，在 K 稍大时不可用），而是指在工程上尽量在同一个 DP 决策里综合所有输入对的 sum-of-pairs 打分，减少合并顺序对结果的影响。一个可行的演进路径可以分为三个阶段：
-        1. **全体物种 SP 打分 + 合理的合并次序**：在仍保持当前“以参考为一维”的带状 DP 框架下，把 scoring 从“只看当前两个 block 的共同物种”升级为“在一个窗口内对全体物种做 sum-of-pairs（缺失视为 gap）”，并配合更合理的 merge 次序（例如基于 guide tree 或其他拓扑），这样即便 DP 依然是 pairwise reference–reference，决策时看到的是“全局 profile”的得分，progressive 的顺序敏感会明显减弱。
-        2. **局部的小 K 多输入 DP（K≤3）**：在窗口长度较短、冲突较集中的局部，引入一个只针对少数输入（例如 2–3 条参考轨迹）的 exact 多输入 DP 分支；在这一分支里，状态是 (i,j,k...) 这样的多维索引，每一个 DP 列都按“全体物种的 SP 打分”计分，用来精修最困难的区域，而大多数区域仍然走带状 2D DP 路径，从而在不爆炸复杂度的前提下局部地“接近理想解”。
-        3. **多轨迹但仍是 2D 网格的近似多输入 DP**：在充分掌握前两阶段行为的基础上，可以尝试构建“参考坐标 × 合法状态”的 2D DP 网格：横轴仍然是参考（或参考对）的坐标，纵轴是有限集合的“多物种轨迹状态”（例如用 bitmask 或离散状态表描述某一列中哪些物种前进一步、哪些物种打 gap），通过严格限制合法状态和转移（如必须顺着预先给定的链/轨迹前进，禁止任意插入/删除）来控制状态空间大小，在每个 DP 列上仍按全体物种的 sum-of-pairs 打分。这一层相当于在现有 fas-multiz 参考框架上实现一个工程化的“多输入 SP-DP 近似版”，在不引入完整 K 维 DP 的前提下向 multiz 的行为靠拢。
+    *   将 progressive DP 升级为真正的多输入 profile–profile sum-of-pairs 动态规划。这里的"真正"并不是指在 K 条序列上做天真的 K 维 DP（那样复杂度是 O(L^K)，在 K 稍大时不可用），而是指在工程上尽量在同一个 DP 决策里综合所有输入对的 sum-of-pairs 打分，减少合并顺序对结果的影响。一个可行的演进路径可以分为三个阶段：
+        1. **全体物种 SP 打分 + 合理的合并次序**：在仍保持当前"以参考为一维"的带状 DP 框架下，把 scoring 从"只看当前两个 block 的共同物种"升级为"在一个窗口内对全体物种做 sum-of-pairs（缺失视为 gap）"，并配合更合理的 merge 次序（例如基于 guide tree 或其他拓扑），这样即便 DP 依然是 pairwise reference–reference，决策时看到的是"全局 profile"的得分，progressive 的顺序敏感会明显减弱。
+        2. **局部的小 K 多输入 DP（K≤3）**：在窗口长度较短、冲突较集中的局部，引入一个只针对少数输入（例如 2–3 条参考轨迹）的 exact 多输入 DP 分支；在这一分支里，状态是 (i,j,k...) 这样的多维索引，每一个 DP 列都按"全体物种的 SP 打分"计分，用来精修最困难的区域，而大多数区域仍然走带状 2D DP 路径，从而在不爆炸复杂度的前提下局部地"接近理想解"。
+        3. **多轨迹但仍是 2D 网格的近似多输入 DP**：在充分掌握前两阶段行为的基础上，可以尝试构建"参考坐标 × 合法状态"的 2D DP 网格：横轴仍然是参考（或参考对）的坐标，纵轴是有限集合的"多物种轨迹状态"（例如用 bitmask 或离散状态表描述某一列中哪些物种前进一步、哪些物种打 gap），通过严格限制合法状态和转移（如必须顺着预先给定的链/轨迹前进，禁止任意插入/删除）来控制状态空间大小，在每个 DP 列上仍按全体物种的 sum-of-pairs 打分。这一层相当于在现有 fas-multiz 参考框架上实现一个工程化的"多输入 SP-DP 近似版"，在不引入完整 K 维 DP 的前提下向 multiz 的行为靠拢。
 *   在 DP 失败时更智能地选择降级策略（退回 `fas join`、标记窗口未合并等）。

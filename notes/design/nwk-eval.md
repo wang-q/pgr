@@ -10,14 +10,14 @@
 3.  **演化一致性**：基因树的分组与公认的物种演化历史是否冲突？（Discordance）
 4.  **地理/性状一致性**：分组是否对应特定的地理区域或表型特征？（Trait Purity/Entropy）
 
-## 设计目标与范围
+## 1. 设计目标与范围
 
 - **多层次评估**：支持从纯数学指标到引入外部生物学知识（分类表、参考树、地理分布）的深度评估。
 - **基因树 vs 物种树**：承认并量化由 ILS、HGT 或基因重复/丢失引起的不一致性。
 - **性状映射**：支持将叶子节点映射到分类层级或地理区域，计算分组的“纯度”和“熵”。
 - **距离定义**：优先采用分支长度（Patristic distance）；当长度缺失时，以边数作为距离替代。
 
-## 输入与输出约定
+## 2. 输入与输出约定
 
 ### 输入
 
@@ -37,7 +37,7 @@
   - `Phylo`: RF-Distance (to Ref), ConflictScore.
   - `Fit`: CopheneticCorrelation.
 
-## 指标详细定义
+## 3. 指标详细定义
 
 ### 1. 几何/拓扑指标 (Geometric/Topological)
 *无需外部信息，仅基于输入树的边长和拓扑。*
@@ -91,7 +91,7 @@
   - **Weighted RF**: 考虑枝长的 RF 距离。
   - **Branch Score Distance (Kuhner-Felsenstein)**: 基于枝长的距离。
 
-## 典型用法 (Use Cases)
+## 4. 典型用法 (Use Cases)
 
 ```bash
 # 场景 A: 纯几何评估 (无外部信息)
@@ -111,7 +111,7 @@ pgr nwk eval gene_tree.nwk --ref species_tree.nwk > phylo_eval.tsv
 pgr nwk eval tree.nwk --dist matrix.phy --metrics cophenet > fit.tsv
 ```
 
-## 实现备注（技术细节）
+## 5. 实现备注（技术细节）
 
 - **代码复用与协同**：
   - **距离计算**：
@@ -128,7 +128,7 @@ pgr nwk eval tree.nwk --dist matrix.phy --metrics cophenet > fit.tsv
 
 - **数值格式**：统一到六位小数，移除尾随零。
 
-## 实施计划 (Roadmap)
+## 6. 实施计划 (Roadmap)
 
 ### Phase 1: 几何核心 (Geometric Core)
 - [ ] **CLI 搭建**: 支持 `-t`, `-p`, `--dist`。

@@ -1,5 +1,7 @@
 # minigraph 分析笔记
 
+> 整理于 2026-06，源自对 minigraph-master 全部源文件的通读。目的：理解 minigraph 的参考锚定增量图构建算法，为 pgr 的图构建路线提供参考。
+
 本文档记录 minigraph 项目的架构、核心算法与数据结构，并分析其对 `pgr` 项目的启示。 minigraph
 （Heng Li 开发，约 1.3 万行 C 代码）是一个**构建参考型泛基因组图**的工具，核心是用 rGFA
 格式建模泛基因组图，通过增量映射-增强的方式把多个 assembly 合并进图。
@@ -306,7 +308,7 @@ pgr 的 PAF 区间树已支持区间查询，可类似地计算"每个 query 区
 
 minigraph 的 `--min-var-len`（默认 100）是按**变异长度**过滤的粗框架（§4.1）。seqwish 提供另一种
 正交维度：`--repeat-max` / `--min-repeat-dist` 按**重复拷贝数**过滤——限制同一序列在图同一位置的
-拷贝数，避免高拷贝重复把图吹爆（详见 [[seqwish.md]] §3.5、§6.2）。
+拷贝数，避免高拷贝重复把图吹爆（详见 [[seqwish.md]] §4.5、§7.2）。
 
 pgr graph 物化粗 GFA 时可同时启用两种过滤：
 
@@ -366,7 +368,7 @@ minigraph 值得借鉴的是**算法思想**而非具体实现：
 **物化图的两条路径**：minigraph（增量增强，输入 FASTA 自跑 minimizer chaining）与 seqwish（PAF 诱导，
 输入已有 pairwise 比对）是物化 GFA 的两条不同路径。pgr graph 输入是 PAF，与 seqwish 同源，因此
 算法骨架（spanning tree → BFS → DSU → compact → links → GFA）直接复用 seqwish（详见
-[[seqwish.md]] §6.2）；minigraph 的 `--min-var-len` 粗框架过滤哲学则作为正交补充（§4.1、§5.3(4b)）。
+[[seqwish.md]] §7.2）；minigraph 的 `--min-var-len` 粗框架过滤哲学则作为正交补充（§4.1、§5.3(4b)）。
 
 ### 7.2 行动建议
 

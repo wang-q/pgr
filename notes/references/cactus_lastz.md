@@ -1,5 +1,7 @@
 # Cactus Lastz Repeat Masking 模块详解
 
+> 整理于 2026-06，源自对 Cactus lastzRepeatMasking 模块源码的分析。目的：理解 Cactus 重复序列屏蔽流程，为 pgr 的对应替代方案提供设计依据。
+
 本文档详细解析 `src/cactus/preprocessor/lastzRepeatMasking` 目录下的代码逻辑及其在 Cactus
 预处理流程中的作用，并介绍了 `pgr` 项目如何通过 Rust 实现高效替代方案。
 

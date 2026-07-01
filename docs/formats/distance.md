@@ -1,10 +1,8 @@
-# Distance and Matrix Formats
+# 距离与矩阵格式 (Distance and Matrix Formats)
 
-pgr uses three matrix structures internally for clustering and distance
-analysis, and supports two external file formats for distance matrices:
-PHYLIP and Pairwise.
+pgr 内部使用三种矩阵结构用于聚类和距离分析，并支持两种外部距离矩阵文件格式：PHYLIP 和 Pairwise。
 
-## External formats
+## 外部格式 (External formats)
 
 ### PHYLIP distance matrix
 
@@ -42,7 +40,7 @@ Pairwise 格式是一种简单的三列 TSV 格式，用于表示序列两两之
 - **Pair to Matrix (`pgr mat to-phylip`)**：将 Pairwise 列表组装回 PHYLIP 矩阵，
   支持 `--missing` 和 `--same` 参数。
 
-## Internal matrix structures
+## 内部矩阵结构 (Internal matrix structures)
 
 `pgr` 在 `src/libs/pairmat/` 中定义了三种核心的矩阵结构。
 
@@ -68,7 +66,7 @@ Pairwise 格式是一种简单的三列 TSV 格式，用于表示序列两两之
   支持可选对角线存储（`mat transform --normalize` 依赖）；
   $N=10,000$ 时约 200MB。
 
-## pgr commands
+## pgr 命令 (pgr commands)
 
 | Command                | Description                              |
 |------------------------|------------------------------------------|

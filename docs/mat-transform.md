@@ -4,17 +4,17 @@
 
 这是将**相似度矩阵 (Similarity Matrix)** 转换为 **距离矩阵 (Distance Matrix)** 的核心工具，也支持归一化和其他数值调整。
 
-## 用法 (Usage)
+## 用法
 
 ```bash
 pgr mat transform [OPTIONS] <infile>
 ```
 
-### 参数 (Arguments)
+### 参数
 
 - `<infile>`: 输入 PHYLIP 矩阵或 Pairwise TSV 文件。
 
-### 选项 (Options)
+### 选项
 
 - `--format <FORMAT>`: 输入格式 (默认: `phylip`, 可选: `pair`)。
   - 显式指定 `--format pair` 可用于处理管道输入 (STDIN) 的 TSV 数据。
@@ -35,7 +35,7 @@ pgr mat transform [OPTIONS] <infile>
     - 归一化利用对角线（自比对得分）将其转换为相对相似度（0-1 范围），从而使后续的距离转换（如 $1-S$）具有数学意义。
 - `-o, --outfile <outfile>`: 输出文件名 (默认: stdout)。
 
-## 常见场景 (Examples)
+## 常见场景
 
 ### 1. Identity (0-100) 转 Distance (0-1)
 
@@ -90,7 +90,7 @@ pgr mat transform input.phy --op log -o dist.phy
 pgr mat transform raw_scores.phy --normalize --op inv-linear --max 1.0 -o dist.phy
 ```
 
-## 背景与原理 (Background)
+## 背景与原理
 
 聚类算法（如 UPGMA, NJ, Ward）和多维尺度分析（MDS）通常要求输入 **距离矩阵 (Distance Matrix)** 或 **相异度矩阵 (Dissimilarity Matrix)**，满足：
 - $D(x, x) = 0$
@@ -103,7 +103,7 @@ pgr mat transform raw_scores.phy --normalize --op inv-linear --max 1.0 -o dist.p
 
 目前用户需要使用 `awk` 或外部脚本进行转换（例如 `100 - identity`），这不方便且容易出错（如未处理缺失值或自比对）。
 
-### 转换模型 (Transformation Models)
+### 转换模型
 
 `pgr mat transform` 支持以下几种常见的转换模式，用于将相似度转换为距离或进行其他数学处理：
 
