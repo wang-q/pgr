@@ -80,7 +80,7 @@
 
 - **NMI (Normalized Mutual Information)**
   - **定义**：标准化的互信息。
-  - **原理**：$NMI = \frac{MI(U, V)}{\sqrt{H(U) \cdot H(V)}}$（几何平均）或 $\frac{2 \cdot MI}{H(U) + H(V)}$（算术平均）。`pgr` 采用算术平均。
+  - **原理**：$NMI = \frac{MI(U, V)}{\sqrt{H(U) \cdot H(V)}}$（几何平均）或 $\frac{2 \cdot MI}{H(U) + H(V)}$（算术平均）。`pgr` 采用几何平均。
   - **范围**：`[0, 1]`。
   - **缺点**：未校正随机性。
   - **适用**：簇大小分布均衡的场景。

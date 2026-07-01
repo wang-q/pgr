@@ -259,11 +259,11 @@ pgr clust hier matrix.phy --method average > tree.nwk
 - 语义差异：
   - hier 的合并高度是链接/准则的代价；不保证 ultrametric（除非数据满足相应条件）
   - 若需要“有根、超度量、演化意义”的分支长度，请使用 `clust upgma`；一般加性距离建议使用 `clust nj`
-- 稳定性：并列合并通过 `--tie` 选项保证确定性；名称字典序作为默认 Tie-break
+- 稳定性：并列合并以名称字典序作为 Tie-break，保证确定性
 - 实现约定：`ward.D2` 内部自动按“平方距离”完成更新并返回“距离量纲”的分支长度；用户无需提供或区分 `D` 与 `D^2`
 - 方法特性：
   - `centroid/median` 可能产生非单调的合并高度（inversion），属于算法特性；输出仍为合法 Newick，但高度的直觉性较 `average/ward` 略弱
-  - `optimal-ordering` 会改变叶子的输出顺序以提升可读性，不改变树的拓扑与分支长度
+  - 叶序优化：hier 命令本身不重排叶子，如需提升可视化可读性，请使用 `pgr nwk order --nd`（Ladderize）
 
 ## 与 SciPy 的映射与差异
 - 方法映射：与 SciPy `linkage` 的 `method` 集合对齐，`ward` 等价 `ward.D2`（内部按平方距离更新）；`average` 等价 UPGMA，`weighted` 等价 WPGMA，`centroid/median` 等价 UPGMC/WPGMC。

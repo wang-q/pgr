@@ -36,6 +36,10 @@ ms 3 1 -t 10 -r 0 1000 | pgr ms to-dna > output.fasta
   positions. This option disables this behavior.
 - `-v, --verbose`: Display detailed runtime information, including the seed
   used, input/output paths, etc.
+- `--doc`: Print the full documentation (markdown) and exit. Useful for
+  viewing the embedded reference material without leaving the terminal.
+- `-o, --outfile <FILE>`: Output filename. Use `[stdout]` for screen. Default
+  is stdout.
 - `-h, --help`: Display help information.
 
 ## Input Format

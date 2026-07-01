@@ -49,7 +49,7 @@ Examples:
    pgr clust cut tree.nwk --dynamic-tree 20
 
 4. Hybrid Cut with PAM (needs distance matrix):
-   pgr clust cut tree.nwk --dynamic-hybrid 20 --matrix dist.phy --pam-stage
+   pgr clust cut tree.nwk --dynamic-hybrid 20 --matrix dist.phy
 "###,
         )
         .arg(

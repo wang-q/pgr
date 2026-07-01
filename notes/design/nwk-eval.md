@@ -113,10 +113,10 @@ pgr nwk eval tree.nwk --dist matrix.phy --metrics cophenet > fit.tsv
 
 - **代码复用与协同**：
   - **距离计算**：
-    - 基础：复用 `Tree::get_distance` (来自 [distance.rs](file:///Volumes/ExtHome/Scripts/pgr/src/cmd_pgr/nwk/distance.rs))。
+    - 基础：复用 `Tree::get_distance` (来自 [libs/phylo/tree/mod.rs](file:///Volumes/ExtHome/Scripts/pgr/src/libs/phylo/tree/mod.rs)，CLI 入口为 [distance.rs](file:///Volumes/ExtHome/Scripts/pgr/src/cmd_pgr/nwk/distance.rs))。
     - 优化：对于 `avg_clade` (AvgDist) 和 `max_clade` (Diameter)，直接复用 `libs/phylo/tree/stat.rs` 中的 $O(N)$ 自底向上聚合算法（已在 `pgr clust cut` 中验证）。
   - **拓扑比较**：
-    - RF 距离：核心逻辑应复用或提取自 [cmp.rs](file:///Volumes/ExtHome/Scripts/pgr/src/cmd_pgr/nwk/cmp.rs)。建议将 `compute_metrics` 封装为 `libs::phylo::cmp` 模块。
+    - RF 距离：核心逻辑在 [libs/phylo/cmp.rs](file:///Volumes/ExtHome/Scripts/pgr/src/libs/phylo/cmp.rs)（`PhyloTreeCompare` trait 提供 `robinson_foulds`/`weighted_robinson_foulds`/`kuhner_felsenstein`），CLI 入口为 [cmp.rs](file:///Volumes/ExtHome/Scripts/pgr/src/cmd_pgr/nwk/cmp.rs)。
   - **单系性检查**：
     - 复用 `Tree::is_monophyletic` (已在 [label.rs](file:///Volumes/ExtHome/Scripts/pgr/src/cmd_pgr/nwk/label.rs) 和 [subtree.rs](file:///Volumes/ExtHome/Scripts/pgr/src/cmd_pgr/nwk/subtree.rs) 中使用)。
 

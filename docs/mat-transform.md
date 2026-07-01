@@ -126,13 +126,15 @@ $$D = -\ln(S)$$
 $$D = -\ln(\frac{S(x, y)}{\sqrt{S(x, x) \cdot S(y, y)}})$$
 - **场景**: 序列一致性概率 $\rightarrow$ 进化距离
 
-#### 4. 倒数转换 (Reciprocal)
+#### 4. 倒数转换 (Reciprocal) [未实现]
 $$D = \frac{1}{S} - \frac{1}{Max}$$
 - **场景**: 很少见，用于某些物理量的转换。
+- **状态**: 当前 `pgr mat transform` 未实现此 op；可通过 `--op linear` 配合外部脚本近似。
 
-#### 5. 特殊转换
+#### 5. 特殊转换 [未实现]
 - **Cosine Similarity**: $D = 1 - \cos(\theta)$
 - **Correlation**: $D = \sqrt{2(1 - r)}$ 或 $D = 1 - r$
+- **状态**: 当前 `pgr mat transform` 未实现。如需 Cosine/Correlation 距离，建议在 Python（SciPy）端计算后导出为 PHYLIP 矩阵。
 
 ## 注意事项
 
