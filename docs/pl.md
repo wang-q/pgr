@@ -14,6 +14,7 @@ Integrated pipelines for genomic analysis.
 | `rept` | Identify repetitive regions using k-mer analysis |
 | `trf` | Identify tandem repeats via `trf` |
 | `ucsc` | UCSC chain/net pipeline (psl -> chain -> net -> maf) |
+| `condense` | Condense subtrees based on taxonomy |
 
 ---
 
@@ -196,3 +197,49 @@ pgr pl ucsc [OPTIONS] <target> <query> <psl>
 
 Requires UCSC Kent tools in `$PATH`:
 `axtChain`, `chainAntiRepeat`, `chainMergeSort`, `chainPreNet`, `chainNet`, `netSyntenic`, `netChainSubset`, `chainStitchId`, `netSplit`, `netToAxt`, `axtSort`, `axtToMaf`, `netFilter`, `chainSplit`.
+
+---
+
+## condense
+
+Condense subtrees based on taxonomy. Monophyletic subtrees sharing the same taxonomic term are collapsed into a single node named `{term}___{count}`.
+
+### Usage
+
+```bash
+pgr pl condense [OPTIONS] -t <taxon.tsv> <infile>
+```
+
+### Arguments
+
+| Argument | Short | Long | Value | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| `infile` | | | File | Input Newick filename (`stdin` for standard input) |
+| `taxon` | `-t` | `--taxon` | File | Taxonomy TSV file (required) |
+| `rank` | `-r` | `--rank` | Int | Column index(es) for grouping (1-based, can be specified multiple times, default: 2) |
+| `map` | | `--map` | Flag | Write a mapping file `condensed.tsv` |
+| `outfile` | `-o` | `--outfile` | File | Output filename (default: stdout) |
+
+### Taxonomy TSV Format
+
+*   Tab-separated, no header, at least 2 columns: `node_name <TAB> taxonomic_term [additional columns...]`.
+*   The first column is the node name (must match leaf labels in the Newick file).
+*   `--rank` selects which column to use for grouping (1-based).
+
+### Notes
+
+*   Only monophyletic subtrees are condensed.
+*   Condensed nodes are named `{term}___{count}`.
+*   Multiple `--rank` values condense at multiple levels sequentially.
+
+### Examples
+
+1.  **Condense by species (2nd column)**:
+    ```bash
+    pgr pl condense -t taxon.tsv tree.nwk
+    ```
+
+2.  **Condense by genus (3rd column) with mapping file**:
+    ```bash
+    pgr pl condense -t taxon.tsv -r 3 --map tree.nwk -o condensed.nwk
+    ```

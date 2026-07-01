@@ -7,19 +7,19 @@
 - **目标**：统计意义的 dendrogram（合并高度表达链接准则的代价），不强制“演化/分子钟”语义。
 - **与 pgr 现有能力协同**：
   - 构树：`clust upgma`（有根、超度量）与 `clust nj`（加性、无根）已存在
-  - 切分：`docs/nwk-cut.md` 的切树分组
-  - 评估：`docs/nwk-eval.md` 的树上指标（几何/分类/演化/地理多维度评估）
+  - 切分：`docs/clust-cut.md` 的切树分组
+  - 评估：`notes/design/nwk-eval.md` 的树上指标（几何/分类/演化/地理多维度评估）
 
 ## 与 UPGMA/NJ 的关系
 - 共同点：都以距离矩阵为输入，输出树状结构；均可配合 `nwk cut` 得到扁平分组。
 - 与 UPGMA 的关系：
   - R `hclust(method="average")` 等价“平均链接”；UPGMA 是在“超度量（分子钟）”假设下的专用版本，输出有根且严格超度量的树，分支长度具有“时间/演化”意义。
   - 结论：两者链接更新一致，但语义不同；UPGMA 更偏系统发育场景，`clust hier` 更偏统计聚类。
-  - 参考实现：CLI [upgma](file:///c:/Users/wangq/Scripts/pgr/src/cmd_pgr/clust/upgma.rs)，库 [clust::upgma](file:///c:/Users/wangq/Scripts/pgr/src/libs/clust/upgma.rs)
+  - 参考实现：CLI [upgma](file:///Volumes/ExtHome/Scripts/pgr/src/cmd_pgr/clust/upgma.rs)，库 [clust::upgma](file:///Volumes/ExtHome/Scripts/pgr/src/libs/clust/upgma.rs)
 - 与 NJ 的关系：
   - NJ（Neighbor-Joining）通过 Q 矩阵最小化总树长，生成“加性最短树”，不属于链接更新范式，输出通常为无根树。
   - 在一般加性距离下，NJ比UPGMA更鲁棒；若距离是超度量，UPGMA/hclust-average与NJ在拓扑上通常一致（无根视角）。
-  - 参考实现：CLI [nj](file:///c:/Users/wangq/Scripts/pgr/src/cmd_pgr/clust/nj.rs)，库 [clust::nj](file:///c:/Users/wangq/Scripts/pgr/src/libs/clust/nj.rs)
+  - 参考实现：CLI [nj](file:///Volumes/ExtHome/Scripts/pgr/src/cmd_pgr/clust/nj.rs)，库 [clust::nj](file:///Volumes/ExtHome/Scripts/pgr/src/libs/clust/nj.rs)
 
 ## 方法与算法要点
 - `single/complete/average`：标准链接更新（Lance–Williams 框架），合并高度为链接准则对应的距离/代价。
@@ -35,7 +35,7 @@
 - 输出 Newick dendrogram：
   - 分支长度表示合并高度（链接代价或 SSE 增量的相应量纲处理）。
   - 不保证严格 ultrametric（除非数据满足相应条件），但满足 `nwk cut --height` 的使用需求。
-- 数值格式：统一六位小数，去除尾随零；与 `nwk distance` 的约定一致（见 [distance.rs](file:///c:/Users/wangq/Scripts/pgr/src/cmd_pgr/nwk/distance.rs)）。
+- 数值格式：统一六位小数，去除尾随零；与 `nwk distance` 的约定一致（见 [distance.rs](file:///Volumes/ExtHome/Scripts/pgr/src/cmd_pgr/nwk/distance.rs)）。
 
 ## 推荐工作流
 - 生成树：
@@ -47,8 +47,8 @@
   - 内部评估（无 Ground Truth）：`pgr clust eval --matrix ...` (Silhouette) 或 `pgr nwk eval` (树结构评估)
   - 外部评估（有 Ground Truth）：`pgr clust eval` (ARI/AMI/V-Measure)
 - 参考文档：
-  - 切分：[nwk-cut.md](file:///c:/Users/wangq/Scripts/pgr/docs/nwk-cut.md)
-  - 评估：[nwk-eval.md](file:///c:/Users/wangq/Scripts/pgr/docs/nwk-eval.md)
+  - 切分：[clust-cut.md](file:///Volumes/ExtHome/Scripts/pgr/docs/clust-cut.md)
+  - 评估：[notes/design/nwk-eval.md](file:///Volumes/ExtHome/Scripts/pgr/notes/design/nwk-eval.md)
 
 ## SciPy 实现借鉴与对比 (Insights from SciPy)
 通过深入分析 `scipy.cluster.hierarchy` 源码（基于 Cython 的高性能实现），`pgr` 吸收了以下关键设计思想：
@@ -93,7 +93,7 @@
 - **MST (最小生成树)**:
   - 适用：**Single Linkage** (最近邻)。
   - 原理：Single Linkage 聚类等价于求最小生成树（MST）。使用 Prim 或 Kruskal 算法可在 $O(N^2)$ (稠密) 或 $O(E \log E)$ (稀疏) 内完成，显著快于通用 Linkage 的 $O(N^3)$。
-  - `scikit-learn` 参考：[`scikit-learn-main/sklearn/cluster/_agglomerative.py`](file:///c:/Users/wangq/Scripts/pgr/scikit-learn-main/sklearn/cluster/_agglomerative.py) 中的 `_single_linkage_tree` 函数。
+  - `scikit-learn` 参考：[`scikit-learn-main/sklearn/cluster/_agglomerative.py`](file:///Volumes/ExtHome/Scripts/pgr/scikit-learn-main/sklearn/cluster/_agglomerative.py) 中的 `_single_linkage_tree` 函数。
 - **Union-Find (并查集)**：
   - 配合 MST 使用，用于快速合并簇和标记标签。
 
@@ -108,16 +108,16 @@
   - `pgr` 规划：未来可支持从 `pair.tsv`（稀疏边列表）直接构建 Linkage，而不强制转为全距离矩阵，从而支持超大规模序列聚类。
 
 ## 现有 Rust 生态参考
-- **kodama** ([`kodama-master/`](file:///c:/Users/wangq/Scripts/pgr/kodama-master/))：
+- **kodama** ([`kodama-master/`](file:///Volumes/ExtHome/Scripts/pgr/kodama-master/))：
   - 实现了现代层次聚类算法（NN-chain），性能对标 `fastcluster`。
   - 核心接口 `linkage` 接受 Condensed Matrix（上三角压缩），输出 Stepwise Dendrogram。
   - 提供了完整的 `Method` 枚举（Single, Complete, Average, Ward 等）。
   - **决策**：`pgr` 将参考 `kodama` 的 NN-chain 算法实现自己的逻辑，保持对核心数据结构的完全控制（如适配稀疏输入）。
-  - **价值**：利用 `kodama` 的测试用例（[`kodama-master/tests/`](file:///C:\Users\wangq\Scripts\pgr\kodama-master\src\test.rs)）和基准测试（[`kodama-master/benches/`](file:///c:/Users/wangq/Scripts/pgr/kodama-master/benches/)）来验证 `pgr` 实现的正确性与性能。
-- **linfa-hierarchical** ([`linfa-master/algorithms/linfa-hierarchical/`](file:///c:/Users/wangq/Scripts/pgr/linfa-master/algorithms/linfa-hierarchical/))：
+  - **价值**：利用 `kodama` 的测试用例（[`kodama-master/tests/`](file:///Volumes/ExtHome/Scripts/pgr/kodama-master/src/test.rs)）和基准测试（[`kodama-master/benches/`](file:///Volumes/ExtHome/Scripts/pgr/kodama-master/benches/)）来验证 `pgr` 实现的正确性与性能。
+- **linfa-hierarchical** ([`linfa-master/algorithms/linfa-hierarchical/`](file:///Volumes/ExtHome/Scripts/pgr/linfa-master/algorithms/linfa-hierarchical/))：
   - 提供了符合 `linfa` 生态的 `Transformer` 接口。
   - 内部直接调用 `kodama`，并增加了对 Similarity Kernel 的支持（自动转为 Distance）。
-  - **借鉴**：参考其清晰的参数校验（`ParamGuard`）和从 Stepwise Dendrogram 到 Flat Clusters 的后处理逻辑（[`linfa-hierarchical/src/lib.rs`](file:///c:/Users/wangq/Scripts/pgr/linfa-master/algorithms/linfa-hierarchical/src/lib.rs) 中的 `clusters` HashMap 维护）。
+  - **借鉴**：参考其清晰的参数校验（`ParamGuard`）和从 Stepwise Dendrogram 到 Flat Clusters 的后处理逻辑（[`linfa-hierarchical/src/lib.rs`](file:///Volumes/ExtHome/Scripts/pgr/linfa-master/algorithms/linfa-hierarchical/src/lib.rs) 中的 `clusters` HashMap 维护）。
 
 ### 阶段性实现路线
 
@@ -240,7 +240,7 @@
 
 ### 输出
 - 默认输出：Newick dendrogram，分支长度表示合并高度
-- 数值格式：统一六位小数、移除尾随零；与 `nwk distance` 的约定一致（见 [`src/cmd_pgr/nwk/distance.rs`](file:///c:/Users/wangq/Scripts/pgr/src/cmd_pgr/nwk/distance.rs)）
+- 数值格式：统一六位小数、移除尾随零；与 `nwk distance` 的约定一致（见 [`src/cmd_pgr/nwk/distance.rs`](file:///Volumes/ExtHome/Scripts/pgr/src/cmd_pgr/nwk/distance.rs)）
 
 ### 示例
 ```bash

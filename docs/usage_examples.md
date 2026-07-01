@@ -205,13 +205,13 @@ echo -e "tests/pgr/sakai.fa.gz\ntests/pgr/mg1655.fa.gz" |
 FastGA -v -pafx tests/pgr/sakai.fa.gz tests/pgr/mg1655.fa.gz > tmp.paf
 FastGA -v -psl tests/pgr/sakai.fa.gz tests/pgr/mg1655.fa.gz > tmp.psl
 
-pgr chain -t="" tests/pgr/mg1655.fa.gz tests/pgr/sakai.fa.gz tmp.psl > tmp.chain.maf
-pgr chain --syn -t="" tests/pgr/mg1655.fa.gz tests/pgr/sakai.fa.gz tmp.psl > tmp.syn.maf
+pgr pl ucsc -t="" tests/pgr/mg1655.fa.gz tests/pgr/sakai.fa.gz tmp.psl > tmp.chain.maf
+pgr pl ucsc --syn -t="" tests/pgr/mg1655.fa.gz tests/pgr/sakai.fa.gz tmp.psl > tmp.syn.maf
 
 lastz <(gzip -dcf tests/pgr/mg1655.fa.gz) <(gzip -dcf tests/pgr/sakai.fa.gz) |
     lavToPsl stdin stdout \
     > tmp.lastz.psl
-pgr chain --syn -t="" tests/pgr/mg1655.fa.gz tests/pgr/sakai.fa.gz tmp.lastz.psl > tmp.lastz.maf
+pgr pl ucsc --syn -t="" tests/pgr/mg1655.fa.gz tests/pgr/sakai.fa.gz tmp.lastz.psl > tmp.lastz.maf
 
 wgatools dotplot -f paf tmp.paf > tmp.html
 wgatools dotplot tmp.chain.maf > tmp.chain.html
@@ -264,15 +264,15 @@ spanr gff tests/pgr/mg1655.rm.gff -o tests/pgr/mg1655.rm.json
 ```
 
 ```bash
-pgr ir tests/pgr/tncentral.fa.gz tests/pgr/mg1655.fa.gz \
+pgr pl ir tests/pgr/tncentral.fa.gz tests/pgr/mg1655.fa.gz \
     > tests/pgr/mg1655.ir.json
 
 spanr stat tests/pgr/mg1655.chr.sizes tests/pgr/mg1655.ir.json
 
-pgr rept tests/pgr/mg1655.fa.gz \
+pgr pl rept tests/pgr/mg1655.fa.gz \
     > tests/pgr/mg1655.rept.json
 
-pgr trf tests/pgr/mg1655.fa.gz \
+pgr pl trf tests/pgr/mg1655.fa.gz \
     > tests/pgr/mg1655.trf.json
 
 spanr stat tests/pgr/mg1655.chr.sizes tests/pgr/mg1655.rm.json
@@ -282,7 +282,7 @@ lastz tests/pgr/pseudocat.fa tests/pgr/pseudopig.fa |
     lavToPsl stdin stdout \
     > tests/pgr/lastz.psl
 
-pgr chain tests/pgr/pseudocat.fa tests/pgr/pseudopig.fa tests/pgr/lastz.psl
+pgr pl ucsc tests/pgr/pseudocat.fa tests/pgr/pseudopig.fa tests/pgr/lastz.psl
 
 lastz --self <(gzip -dcf tests/pgr/mg1655.fa.gz)
 

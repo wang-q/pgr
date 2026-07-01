@@ -126,7 +126,7 @@
 
 ### 11. 动态树切割 (`--dynamic-tree`) [已实现]
 
-- **定义**：参考 R 语言 `dynamicTreeCut` 包的 `cutreeDynamicTree` 算法 ([dynamicTreeCut/R/cutreeDynamic.R](file:///c:/Users/wangq/Scripts/pgr/dynamicTreeCut/R/cutreeDynamic.R))。
+- **定义**：参考 R 语言 `dynamicTreeCut` 包的 `cutreeDynamicTree` 算法 ([dynamicTreeCut/R/cutreeDynamic.R](file:///Volumes/ExtHome/Scripts/pgr/dynamicTreeCut/R/cutreeDynamic.R))。
 - **原理**：自顶向下的递归算法。
   1.  首先基于全局高度进行初步切割。
   2.  对每个初步簇，分析其内部结构（高度分布）。

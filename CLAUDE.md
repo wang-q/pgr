@@ -163,8 +163,8 @@ cargo test
 ## 关键设计文档
 
 ### Analysis (Phylogeny, Clustering, Matrix)
-- **`docs/phylo.md`**: 系统发育树核心数据结构设计 (Arena vs Pointer)。
-- **`docs/nwk-eval.md`**: 树结构多维度评估（设计中）。
+- **`notes/design/phylo.md`**: 系统发育树核心数据结构设计 (Arena vs Pointer)。
+- **`notes/design/nwk-eval.md`**: 树结构多维度评估（设计中）。
 - **`docs/clust-cut.md`**: 树切分与 Scan 模式。
 - **`docs/clust.md`**: 聚类模块总体规划。
 - **`docs/clust-hier.md`**: 层次聚类算法与实现细节。
@@ -173,16 +173,16 @@ cargo test
 - **`docs/mat.md`**: 距离矩阵操作与转换。
 
 ### Algorithms & Ports
-- **`docs/spoa_port.md`**: SPOA (SIMD POA) 移植笔记。
-- **`docs/ms2dna_port.md`**: MS 模拟器移植笔记。
-- **`docs/multiz.md`**: Multiz 多序列比对格式处理。
+- **`notes/design/spoa_port.md`**: SPOA (SIMD POA) 移植笔记。
+- **`notes/design/ms2dna_port.md`**: MS 模拟器移植笔记。
+- **`notes/design/multiz.md`**: Multiz 多序列比对格式处理。
 
 ### General
 - **`docs/axt.md`**: AXT 格式操作与转换。
 - **`docs/chain.md`**: Chain 格式高级处理。
 - **`docs/fa.md`**: FASTA 格式全能操作。
 - **`docs/fas.md`**: Block FASTA (FAS) 格式操作与转换。
-- **`docs/formats.md`**: 支持的文件格式概览。
+- **`docs/formats/README.md`**: 支持的文件格式概览。
 - **`docs/fq.md`**: FASTQ 格式操作。
 - **`docs/gff.md`**: GFF 格式操作。
 - **`docs/lav.md`**: LAV 格式操作与转换。

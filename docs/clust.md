@@ -74,13 +74,13 @@
   - **命令**：`pgr nwk eval` (规划中)
   - **定位**：树结构的多维度评估。
   - **功能**：几何紧密性（Silhouette）、分类纯度（Purity）、演化一致性（Discordance）。
-  - **文档**：[docs/nwk-eval.md](file:///c:/Users/wangq/Scripts/pgr/docs/nwk-eval.md)
+  - **文档**：[notes/design/nwk-eval.md](file:///Volumes/ExtHome/Scripts/pgr/notes/design/nwk-eval.md)
 
 - **Partition-based Evaluation**
   - **命令**：`pgr clust eval`
   - **定位**：通用聚类质量评估（支持有/无 Ground Truth）。
   - **功能**：ARI, AMI, V-Measure (外部); Silhouette, Davies-Bouldin (内部)。
-  - **文档**：[docs/clust-eval.md](file:///c:/Users/wangq/Scripts/pgr/docs/clust-eval.md)
+  - **文档**：[docs/clust-eval.md](file:///Volumes/ExtHome/Scripts/pgr/docs/clust-eval.md)
 
 ## 计划中 (Planned)
 

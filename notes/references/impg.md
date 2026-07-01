@@ -1090,18 +1090,18 @@ panel sequences/pangenome graph → implicit graph backend → sample evidence p
 （`fas` 全套子命令 + `libs/poa/` 的 SPOA 移植 + `libs/fas_multiz.rs` 的 multiz 风格 banded DP 合并，
 其 `FasMultizMode::Core` 即"多基因组共享 core 比对"）。pairwise 与 core 比对均已成熟。
 
-**泛基因组图部分是 `pgr` 的空白**：[docs/gfa.md](file:///Volumes/ExtHome/Scripts/pgr/docs/gfa.md)
-明确写"如果 `pgr` 未来涉及泛基因组操作"，是规划/知识背景文档而非实现；`src/cmd_pgr/` 下无 `gfa`
-子命令，`src/libs/` 下无 GFA 模块。本节聚焦"泛基因组图"这一维度对比，作为 §9 启示的依据。
+**泛基因组图部分**：`pgr` 已通过 `pgr paf graph` / `pgr paf to-gfa` 实现 GFA 输出（见
+[docs/paf.md](file:///Volumes/ExtHome/Scripts/pgr/docs/paf.md)）；[docs/gfa.md](file:///Volumes/ExtHome/Scripts/pgr/docs/gfa.md)
+为 GFA 格式参考文档。本节聚焦"泛基因组图"这一维度对比，作为 §9 启示的依据。
 
 - **pairwise 比对** — `pgr` 成熟（AXT/MAF/PSL/Chain/Net/LAV）；`impg` 成熟（PAF/1ALN/TPA）
 - **core 比对** — `pgr` 已实现（`fas multiz --mode core` + `fas consensus` POA）；`impg` cohort
   all-vs-all + 投影间接得到
-- **图模型** — `pgr` 显式 Chain/Net（GFA 尚为规划）；`impg` 隐式图（比对网络），按需物化 GFA
+- **图模型** — `pgr` 显式 Chain/Net + `pgr paf` 隐式图（按需物化 GFA）；`impg` 隐式图（比对网络），按需物化 GFA
 - **核心数据结构** — `pgr` Newick 树 / PSL / Chain / Block FA；`impg` coitrees + 紧凑 CIGAR delta
 - **比对输入** — `pgr` AXT/MAF/PSL/Chain（UCSC 风格）；`impg` PAF/1ALN/TPA（wfmash 风格）
 - **查询模式** — `pgr` 按 coordinate 直接读取 / `psl lift` 线性单链投影；`impg` 区间投影 + 传递闭包
-- **泛基因组图构建** — `pgr` 无（gfa.md 规划中）；`impg` 内嵌 sweepga/seqwish/allwave/crush 管道
+- **泛基因组图构建** — `pgr` `pgr paf graph`（seqwish 风格 DSU，粗粒度）；`impg` 内嵌 sweepga/seqwish/allwave/crush 管道
 - **bounded bubble 处理** — `pgr` 无；`impg` crush 算法（POVU + aligner 路由 + polish）
 - **免比对后端** — `pgr` 无；`impg` syng syncmer GBWT
 - **基因分型** — `pgr` 无；`impg` `genotype cos` + `infer` (cosigt 模型)

@@ -13,7 +13,6 @@ The subcommands are organized into the following categories:
     *   `stat`: Print tree statistics (nodes, leaves, balance indices).
     *   `support`: Attribute bootstrap support values.
 *   **Ops**: Manipulate tree structure.
-    *   `cut`: Cut the tree into clusters.
     *   `order`: Reorder nodes (ladderize, alphanumeric).
     *   `prune`: Remove nodes (and their descendants/ancestors).
     *   `rename`: Rename specific nodes.
@@ -101,23 +100,6 @@ pgr nwk support [OPTIONS] <target> <replicates>
 ---
 
 ## Ops Commands
-
-### cut
-
-Cuts the tree into clusters based on various criteria.
-
-```bash
-pgr nwk cut [OPTIONS] <infile>
-```
-
-*   `--k <N>`: Cut into K clusters.
-*   `--height <H>`: Cut at specific height (max distance to leaves).
-*   `--root-dist <D>`: Cut at specific distance from root.
-*   `--max-clade <T>`: Max pairwise distance in cluster <= T.
-*   `--avg-clade <T>`: Avg pairwise distance in cluster <= T.
-*   `--inconsistent <T>`: Inconsistent coefficient <= T.
-*   `--rep <root|first|medoid>`: Representative selection method.
-*   `--format <cluster|pair>`: Output format.
 
 ### order
 

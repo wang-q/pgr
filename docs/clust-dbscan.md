@@ -10,8 +10,8 @@
 - CLI 参数
   - `infile`、`--format {cluster|pair}`、`--same`、`--missing`、`--eps`、`--min_points`、`-o/--outfile`
 - 代码参考
-  - CLI：[clust/dbscan.rs](file:///c:/Users/wangq/Scripts/pgr/src/cmd_pgr/clust/dbscan.rs)
-  - 算法库：[libs/clust/dbscan.rs](file:///c:/Users/wangq/Scripts/pgr/src/libs/clust/dbscan.rs)
+  - CLI：[clust/dbscan.rs](file:///Volumes/ExtHome/Scripts/pgr/src/cmd_pgr/clust/dbscan.rs)
+  - 算法库：[libs/clust/dbscan.rs](file:///Volumes/ExtHome/Scripts/pgr/src/libs/clust/dbscan.rs)
 
 ## 规划目标
 
@@ -95,9 +95,9 @@ pgr clust dbscan pairs.tsv --eps 0.15 --min_points 3 --format pair -o pairs.out.
 ## 相关参考
 
 - 本仓库
-  - CLI：[clust/dbscan.rs](file:///c:/Users/wangq/Scripts/pgr/src/cmd_pgr/clust/dbscan.rs)
-  - 库：[libs/clust/dbscan.rs](file:///c:/Users/wangq/Scripts/pgr/src/libs/clust/dbscan.rs)
-  - 评估文档：[clust-eval.md](file:///c:/Users/wangq/Scripts/pgr/docs/clust-eval.md)
+  - CLI：[clust/dbscan.rs](file:///Volumes/ExtHome/Scripts/pgr/src/cmd_pgr/clust/dbscan.rs)
+  - 库：[libs/clust/dbscan.rs](file:///Volumes/ExtHome/Scripts/pgr/src/libs/clust/dbscan.rs)
+  - 评估文档：[clust-eval.md](file:///Volumes/ExtHome/Scripts/pgr/docs/clust-eval.md)
 - 生态
   - ClustEval DBSCAN 扫描与评分（Silhouette）：`clusteval/dbscan.py`
 

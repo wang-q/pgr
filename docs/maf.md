@@ -5,6 +5,7 @@
 ## Subcommands
 
 *   `to-fas`: Convert MAF files to block FASTA format.
+*   `to-paf`: Convert two-sequence MAF files to PAF format.
 
 ---
 
@@ -33,4 +34,39 @@ pgr maf to-fas [OPTIONS] <infiles>...
 1.  **Convert a MAF file to block FASTA format**:
     ```bash
     pgr maf to-fas tests/maf/example.maf
+    ```
+
+---
+
+## to-paf
+
+Converts MAF (Multiple Alignment Format) files containing pairwise alignments into PAF (Pairwise mApping Format).
+
+Only blocks with exactly two `s` lines are converted. Multi-sequence blocks are skipped with a warning.
+
+```bash
+pgr maf to-paf [OPTIONS] <infiles>...
+```
+
+### Options
+
+*   `-o, --outfile <file>`: Output filename (default: stdout).
+
+### Custom PAF Tags
+
+*   `cg:Z:` – CIGAR string derived from the MAF alignment strings.
+*   `gi:f:` – Gap-compressed identity.
+*   `bi:f:` – Block identity.
+*   `ms:i:` – MAF score (from the `a` line `score=` field).
+
+### Notes
+
+*   Supports both plain text and gzipped (`.gz`) input files.
+*   Reads from stdin if the input file is `stdin`.
+
+### Examples
+
+1.  **Convert a MAF file to PAF**:
+    ```bash
+    pgr maf to-paf ref_vs_query.maf -o ref_vs_query.paf
     ```

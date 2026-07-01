@@ -53,7 +53,7 @@ PAF 适合这一角色的其他原因：
 
 - **Index**：把比对构建成可复用的区间树索引（`.paf.idx`）。
 - **Query**：查询一个目标区域，把坐标投影到所有比对上的 query，可选传递式 BFS 走多跳同源链。
-- **Export**：把收集到的同源片段导出为 BED、pairwise / multi-way MAF、局部 GFA 或 multi-way VCF。
+- **Export**：把收集到的同源片段导出为 BED、block FASTA、pairwise / multi-way MAF、局部 GFA 或 multi-way VCF。
 - **Build**：构建粗粒度的全局泛基因组图（seqwish 风格 DSU），或输出其拓扑统计报告。
 
 ## 工作原理
@@ -213,6 +213,38 @@ pgr paf to-maf aln.paf A:0-30 -f genomes.tsv
 pgr paf to-maf aln.paf A:0-30 -t --msa -f genomes.tsv
 ```
 
+### `to-fas` — 输出 pairwise 或 multi-way block FASTA
+
+```bash
+pgr paf to-fas <infile> <region> -f <tsv> [options]
+```
+
+- **默认**（pairwise）：每条查询结果变成一个 2 序列 block FASTA（target 在前，query 在后），直接由
+  CIGAR 重建。假定比对已被 chain/net 精炼过，不再做 POA 再精炼。
+- **`--msa`**（multi-way）：把每个区域的所有查询结果合并成单个多序列 block FASTA，由 POA 完成。CIGAR
+  被忽略；序列（target 在前，然后每个 query，`-` 链反向互补）喂给 POA 引擎。建议配合 `--transitive`
+  使用。
+
+输出格式（每个 block）：
+
+```
+>seq_name(+):start-end
+ATGC--ATGC
+>seq_name(-):start-end
+ATGCAT--GC
+(空行)
+```
+
+`-f/--fasta-tsv`（必填）与 `to-maf` 相同。输出与 `pgr fas to-vcf` 兼容，可直接管道传递。
+
+```bash
+# Pairwise block FASTA
+pgr paf to-fas aln.paf A:0-30 -f genomes.tsv
+
+# 带传递式 BFS 的 multi-way MSA，直接接 fas to-vcf
+pgr paf to-fas aln.paf A:0-30 -t --msa -f genomes.tsv | pgr fas to-vcf
+```
+
 ### `to-vcf` — 输出 multi-way VCF
 
 ```bash
@@ -311,7 +343,7 @@ pgr paf stat aln.paf -f genomes.tsv --min-var-len 500 -o r500.tsv
 
 ## 通用 query 选项
 
-`query`、`to-bed`、`to-maf`、`to-vcf`、`to-gfa` 子命令共享以下选项（由 `add_query_args` 定义）：
+`query`、`to-bed`、`to-maf`、`to-fas`、`to-vcf`、`to-gfa` 子命令共享以下选项（由 `add_query_args` 定义）：
 
 | 选项                            | 默认值 | 说明                                           |
 |---------------------------------|--------|------------------------------------------------|
