@@ -64,7 +64,15 @@
 - **命令**：`pgr clust hier` (别名 `hclust`)
 - **特点**：通用层次聚类，支持 `single`, `complete`, `average`, `ward` 等方法。
 - **实现状态**：✅ 已实现（$O(N^2)$ NN-Chain 优化）。
-- **价值**：提供通用层级结构视图（不限于生物演化），配合 `nwk cut` 可灵活获取不同粒度的分组。
+- **价值**：提供通用层级结构视图（不限于生物演化），配合 `clust cut` 可灵活获取不同粒度的分组。
+
+### Tree Cut
+
+- **原理**：对已有的 Newick 树（系统发生树或层次聚类树），按指定规则切分为扁平的聚类分组（Partition）。支持按簇数 (`--k`)、高度 (`--height`)、簇内直径 (`--max-clade`)、动态切割 (`--dynamic-tree`/`--dynamic-hybrid`) 等多种切割策略。
+- **命令**：`pgr clust cut`
+- **特点**：从已有树导出分组，不重建聚类；支持参数扫描 (`--scan`) 与代表点选择 (`--rep`)。
+- **适用场景**：已有树结构（来自 `clust hier`、`clust upgma`、`clust nj` 或外部工具），需要在不同阈值下切分并评估。
+- **文档**：[docs/clust-cut.md](file:///Volumes/ExtHome/Scripts/pgr/docs/clust-cut.md)
 
 ## 评估与分析 (Evaluation)
 
@@ -170,7 +178,7 @@ pgr clust gmm input.tsv --k 5 --cov full > clusters.tsv
 - **BIC (Bayesian Information Criterion)** [规划中]：
   - 在 GMM 中，BIC 权衡了对数似然（拟合度）与参数数量（复杂度）。
   - `pgr` 可提供 `clust gmm --scan-k 2..20`，自动计算并输出 BIC 曲线，辅助用户选择最佳 K（通常是 BIC 最低点或手肘点）。
-- **Silhouette / Calinski-Harabasz** [部分支持]：基于几何距离的评估指标，适用于 K-means 或一般距离聚类（`nwk metrics` 已支持树上 Silhouette）。
+- **Silhouette / Calinski-Harabasz** [部分支持]：基于几何距离的评估指标，适用于 K-means 或一般距离聚类（`clust eval` 已支持距离矩阵版 Silhouette；树上 Silhouette 计划在 `nwk metrics` [计划中] 中实现）。
 
 ## 实现分析与对比 (Implementation Analysis)
 
@@ -284,20 +292,20 @@ pgr clust mcl pairs.tsv --inflation 2.0 > families.tsv
 
 ### 场景 C: 层次聚类参数扫描与评估 (Workflow)
 
-结合 `nwk cut` 的扫描能力与 `clust eval` 的批量评估，寻找最佳切分阈值。
+结合 `clust cut` 的扫描能力与 `clust eval` 的批量评估，寻找最佳切分阈值。
 
 ```bash
 # 1. 生成层次聚类树
 pgr clust hier matrix.phy --method ward > tree.nwk
 
 # 2. 扫描阈值并评估内部指标 (Silhouette)
-# nwk cut 在 scan 模式下输出长表，直接传给 clust eval
-pgr nwk cut tree.nwk --height 1.0 --scan 0,1.0,0.05 | \
+# clust cut 在 scan 模式下输出长表，直接传给 clust eval
+pgr clust cut tree.nwk --height 1.0 --scan 0,1.0,0.05 | \
     pgr clust eval - --format long --matrix matrix.phy > evaluation.tsv
 
 # 3. 分析 evaluation.tsv 选择最佳阈值 (如 Silhouette 最大处)
 # 假设最佳阈值为 0.45
-pgr nwk cut tree.nwk --height 0.45 > final_clusters.tsv
+pgr clust cut tree.nwk --height 0.45 > final_clusters.tsv
 ```
 
 ## 实现路线图
@@ -345,7 +353,7 @@ pgr nwk cut tree.nwk --height 0.45 > final_clusters.tsv
   ```
 
 #### Long Format (Batch, `--format long`)
-用于批量评估的专用格式，通常由 `pgr nwk cut --scan` 生成。
+用于批量评估的专用格式，通常由 `pgr clust cut --scan` 生成。
 - **结构**：`Group <tab> ClusterID <tab> Item`
 - **Group 列**：用于标识不同的参数组合或切割方法。格式通常为 `Method=Value`（如 `height=0.5`）。
   - `pgr clust eval` 会保留此列作为评估结果的标识符。

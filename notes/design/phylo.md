@@ -11,14 +11,14 @@ src/libs/phylo/
 ├── node.rs             # 核心数据结构 (Node)
 ├── tree/               # Tree 结构体及子模块
 │   ├── mod.rs          # Tree 结构体定义，委托各子模块
-│   ├── io.rs           # 序列化/反序列化 (Newick, DOT, SVG, Forest)
+│   ├── io/             # 序列化/反序列化 (Newick, DOT, SVG, Forest)
 │   ├── ops.rs          # 拓扑修改 (add_child, remove_node, reroot, prune, etc.)
 │   ├── traversal.rs    # 遍历算法 (preorder, postorder, levelorder)
 │   ├── query.rs        # 路径/距离/LCA 查询
 │   ├── stat.rs         # 统计指标 (height, diameter, cherries, colless, sackin)
 │   ├── support.rs      # Bootstrap 支持率计算
+│   ├── algo.rs         # 高级算法 (Sort, etc.)
 │   └── tests.rs        # 内部集成测试
-├── algo.rs             # 高级算法 (Sort, etc.)
 ├── cmp.rs              # 树比较 (RF, WRF, KF 距离)
 ├── parser.rs           # Newick 解析器 (基于 Nom)
 └── error.rs            # 错误定义 (TreeError)

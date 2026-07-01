@@ -8,7 +8,7 @@
 
 *   **Python `clusteval`**: `fit()` 方法内部自动执行 Grid Search（尝试不同的 $k$ 或 $\epsilon$），计算内部指标（如 Silhouette），并返回最优结果。
 *   **`pgr` Workflow**:
-    1.  **生成**: 使用 `pgr nwk cut --scan` 或 `pgr clust dbscan --scan` 生成一系列候选聚类方案（Partitions）。
+    1.  **生成**: 使用 `pgr clust cut --scan` 或 `pgr clust dbscan --scan` 生成一系列候选聚类方案（Partitions）。
     2.  **评估**: 使用 `pgr clust eval` 批量计算这些方案的评估指标。
     3.  **决策**: 用户根据指标（如 Silhouette 峰值、Elbow 点）选择最优参数。
 
@@ -223,11 +223,11 @@ pgr clust eval result.tsv --coords vectors.tsv
 
 ### 场景 C: 批量扫描与评估
 
-结合 `nwk cut --scan` 生成多组阈值结果并批量评估。
+结合 `clust cut --scan` 生成多组阈值结果并批量评估。
 
 ```bash
 # 1. 扫描树切割阈值，输出长表 (Group, Cluster, ID)
-pgr nwk cut tree.nwk --scan 0.01,1.0,0.01 --mode leaf-dist-min > partitions.tsv
+pgr clust cut tree.nwk --scan 0.01,1.0,0.01 --mode leaf-dist-min > partitions.tsv
 
 # 2. 批量评估内部指标 (直接传入树文件)
 pgr clust eval partitions.tsv --format long --tree tree.nwk > scores.tsv
@@ -255,7 +255,7 @@ cat scores.tsv | sort -k2 -nr | head
     2. `ClusterID`: 簇 ID。
     3. `SampleID`: 样本 ID。
   - 数据必须按 `Group` 列排序或聚集（程序会按 Group 逐块处理）。
-  - 通常与 `pgr nwk cut --scan` 的输出直接对接。
+  - 通常与 `pgr clust cut --scan` 的输出直接对接。
   - 支持 `Group` 列包含 `Method=Value` 格式的元数据（如 `height=0.01`）。
 
 ### 输出

@@ -442,7 +442,7 @@ fn test_scipy_workflow() {
         .run();
 
     if cut_out.trim().is_empty() {
-        eprintln!("nwk cut height=0.3 failed. Stderr: {}", stderr);
+        eprintln!("clust cut height=0.3 failed. Stderr: {}", stderr);
     }
 
     let actual_dist_0_6 = parse_clusters(&cut_out);

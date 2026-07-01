@@ -248,13 +248,13 @@ clustalw/muscle/mafft），充当工作流 glue。这与 `chain`/`net` 模块的
 
 最近重构过：原先在 `libs/` 根目录下的 `axt.rs`、`fas.rs`、`lav.rs`、`maf.rs` 等移入 `libs/fmt/`。
 
-> **MAF 支持现状**（2026-06 确认）：
+> **MAF 支持现状**（2026-07 确认）：
 
-> - `maf.rs`（53 行）：仅有 `MafWriter`，不支持读取
-> - `fas.rs`（548 行）：`MafEntry`（line 242）解析 `s` 行含 alignment 向量， `MafBlock`（line 292）
-  汇聚 block 内所有 entry，`next_maf_block()`（line 298）流式读取下一个 block
-> - **缺失**：`a` 行 score 解析、对齐串→CIGAR 展开、坐标投影（ref→query）
-> - `cmd_pgr/maf/` 仅 `to-fas` 一个子命令
+> - `maf.rs`（363 行）：完整的读写支持
+>   - 读取：`MafComp`（s 行结构体）、`MafAli`（a 行 + components，含 `score=` 解析）、`next_maf_block()`（流式读取）、`parse_maf_block()`
+>   - 写入：`MafWriter`（header + block 输出）
+>   - 坐标转换：`MafComp::to_range()`（0-based → 1-based inclusive，含负链处理）
+> - `cmd_pgr/maf/`：`to-fas` 和 `to-paf` 两个子命令
 
 ### 4.6 其他库
 
@@ -388,15 +388,14 @@ pgr 的 `chain`/`net`/`axt`/`psl` 模块是 UCSC kent-tools 对应功能的**Rus
 
 ### 7.3 Cactus 的关系
 
-参见 `notes/cactus.md` 和 `notes/cactus_lastz.md`。pgr 的 `pgr lav lastz` 子命令封装了 lastz 调用，
+参见 `notes/references/cactus.md` 和 `notes/references/cactus_lastz.md`。pgr 的 `pgr lav lastz` 子命令封装了 lastz 调用，
 采用了 Cactus 风格的参数。Cactus 的 transitive alignment 机制对 pgr 泛基因组 方向有参考价值。
 
 ## 8. 关键风险与技术债
 
 1. **nightly 依赖**：`#![feature(portable_simd)]` 是 nightly-only，锁死了编译器版本。 如果
    portable_simd 迟迟不稳定，可能成为包袱。
-2. **maf 模块单薄**：`maf` 目前只有 `to_fas` 一个子命令（而 MAF 是泛基因组管道中的关键格式）。 需要
-   `to-paf`、`filter`、`subset` 等扩展。
+2. **maf 模块扩展**：`maf` 目前有 `to-fas` 和 `to-paf` 两个子命令。仍需 `filter`、`subset` 等扩展以支撑泛基因组管道。
 3. **命令树深度嵌套**：三跳 dispatch (`pgr.rs` → `mod.rs` → `leaf.rs`) 在新增命令时容易遗漏
    某一层的注册。可以考虑宏简化。
 4. **测试覆盖不均衡**：`fa`、`nwk` 等大模块有较全的集成测试，但 `chain`/`net`/`pl` 的覆盖 可能不足

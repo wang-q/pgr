@@ -328,8 +328,8 @@ pgr mat format tests/mat/IBPA.phy
 
 pgr mat subset tests/mat/IBPA.phy tests/mat/IBPA.list
 
-hnsm dist seq tests/mat/IBPA.fa -k 7 -w 1 |
-    pgr mat phylip stdin -o tests/mat/IBPA.71.phy
+pgr dist seq tests/mat/IBPA.fa -k 7 -w 1 |
+    pgr mat to-phylip stdin -o tests/mat/IBPA.71.phy
 
 pgr mat compare tests/mat/IBPA.phy tests/mat/IBPA.71.phy --method all
 ```
@@ -375,5 +375,5 @@ For contributors adding new subcommands, `pgr` uses a consistent style for CLI h
 - **Terminology**:
   - `pgr fa` → "FASTA"
   - `pgr fas` → "block FA"
-  - `pgr twobit` → "2bit"
+  - `pgr 2bit` → "2bit"
 

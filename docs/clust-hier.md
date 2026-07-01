@@ -1,6 +1,6 @@
 # clust hier: 层次聚类
 
-`pgr clust hier`（别名 `hclust`）提供通用的层次聚类（dendrogram）生成能力，支持 `single/complete/average/ward.D2` 等方法，输出 Newick 形式，便于下游 `nwk cut`。
+`pgr clust hier`（别名 `hclust`）提供通用的层次聚类（dendrogram）生成能力，支持 `single/complete/average/ward.D2` 等方法，输出 Newick 形式，便于下游 `clust cut`。
 
 ## 背景与定位
 - **归属**：`clust` 模块，与 `k-medoids`、`mcl` 等并列。
@@ -11,7 +11,7 @@
   - 评估：`notes/design/nwk-eval.md` 的树上指标（几何/分类/演化/地理多维度评估）
 
 ## 与 UPGMA/NJ 的关系
-- 共同点：都以距离矩阵为输入，输出树状结构；均可配合 `nwk cut` 得到扁平分组。
+- 共同点：都以距离矩阵为输入，输出树状结构；均可配合 `clust cut` 得到扁平分组。
 - 与 UPGMA 的关系：
   - R `hclust(method="average")` 等价“平均链接”；UPGMA 是在“超度量（分子钟）”假设下的专用版本，输出有根且严格超度量的树，分支长度具有“时间/演化”意义。
   - 结论：两者链接更新一致，但语义不同；UPGMA 更偏系统发育场景，`clust hier` 更偏统计聚类。
@@ -34,7 +34,7 @@
 ## 输出与约定
 - 输出 Newick dendrogram：
   - 分支长度表示合并高度（链接代价或 SSE 增量的相应量纲处理）。
-  - 不保证严格 ultrametric（除非数据满足相应条件），但满足 `nwk cut --height` 的使用需求。
+  - 不保证严格 ultrametric（除非数据满足相应条件），但满足 `clust cut --height` 的使用需求。
 - 数值格式：统一六位小数，去除尾随零；与 `nwk distance` 的约定一致（见 [distance.rs](file:///Volumes/ExtHome/Scripts/pgr/src/cmd_pgr/nwk/distance.rs)）。
 
 ## 推荐工作流
@@ -43,7 +43,7 @@
   - 一般加性距离场景：`clust nj`
   - 通用层次聚类分析或需要 `ward.D2`：`clust hier --method ward.D2`
 - 切分与评估：
-  - 切分：`pgr nwk cut --height H` 或按 TreeCluster 风格阈值/约束
+  - 切分：`pgr clust cut --height H` 或按 TreeCluster 风格阈值/约束
   - 内部评估（无 Ground Truth）：`pgr clust eval --matrix ...` (Silhouette) 或 `pgr nwk eval` (树结构评估)
   - 外部评估（有 Ground Truth）：`pgr clust eval` (ARI/AMI/V-Measure)
 - 参考文档：
@@ -63,14 +63,14 @@
     - **pgr 优化**: `pgr` 采用全程平方距离运算（Internal Squared Euclidean），仅在最终输出时开方。这避免了中间步骤的精度损失和 `sqrt` 开销，使得 Ward 方法的性能与 Average 方法完全持平（而在许多其他库中 Ward 通常更慢）。
 
 3.  **生态一致性**:
-    - **Flat Clustering**: `pgr nwk cut` 的设计与 SciPy `fcluster` 的 `criterion='distance'|'maxclust'` 保持概念一致。
+    - **Flat Clustering**: `pgr clust cut` 的设计与 SciPy `fcluster` 的 `criterion='distance'|'maxclust'` 保持概念一致。
     - **Cophenetic Correlation**: 确认将 `cophenet` 引入 `pgr nwk eval`，作为衡量树对原始距离矩阵拟合优度的核心指标。
 
 4.  **Optimal Leaf Ordering (OLO)**:
     - **背景**: 标准层次聚类算法生成的树，左右子树的顺序是任意的。这导致在绘制热图（Heatmap）时，相似的行/列可能不相邻，视觉效果杂乱。
     - **SciPy 方案**: `scipy.cluster.hierarchy.optimal_leaf_ordering`。
     - **算法**: Bar-Joseph et al. (2001) 的动态规划算法。在不改变树拓扑结构的前提下，通过旋转内部节点，最小化相邻叶子之间的距离之和。
-    - **pgr 借鉴**: 计划在 `pgr nwk order` 中实现此功能（`--olo` 或 `--optimal`），作为聚类后的标准优化步骤，显著提升下游可视化（`pgr mat plot` 或外部工具）的效果。
+    - **pgr 借鉴**: 计划在 `pgr nwk order` 中实现此功能（`--olo` 或 `--optimal`），作为聚类后的标准优化步骤，显著提升下游可视化（`pgr plot` 或外部工具）的效果。
 
 5.  **Cophenetic Correlation Coefficient**:
     - **背景**: 如何量化生成的树是否真实反映了原始距离矩阵？
@@ -93,7 +93,7 @@
 - **MST (最小生成树)**:
   - 适用：**Single Linkage** (最近邻)。
   - 原理：Single Linkage 聚类等价于求最小生成树（MST）。使用 Prim 或 Kruskal 算法可在 $O(N^2)$ (稠密) 或 $O(E \log E)$ (稀疏) 内完成，显著快于通用 Linkage 的 $O(N^3)$。
-  - `scikit-learn` 参考：[`scikit-learn-main/sklearn/cluster/_agglomerative.py`](file:///Volumes/ExtHome/Scripts/pgr/scikit-learn-main/sklearn/cluster/_agglomerative.py) 中的 `_single_linkage_tree` 函数。
+  - `scikit-learn` 参考：`scikit-learn-main/sklearn/cluster/_agglomerative.py` 中的 `_single_linkage_tree` 函数。
 - **Union-Find (并查集)**：
   - 配合 MST 使用，用于快速合并簇和标记标签。
 
@@ -108,16 +108,16 @@
   - `pgr` 规划：未来可支持从 `pair.tsv`（稀疏边列表）直接构建 Linkage，而不强制转为全距离矩阵，从而支持超大规模序列聚类。
 
 ## 现有 Rust 生态参考
-- **kodama** ([`kodama-master/`](file:///Volumes/ExtHome/Scripts/pgr/kodama-master/))：
+- **kodama** (`kodama-master/`)：
   - 实现了现代层次聚类算法（NN-chain），性能对标 `fastcluster`。
   - 核心接口 `linkage` 接受 Condensed Matrix（上三角压缩），输出 Stepwise Dendrogram。
   - 提供了完整的 `Method` 枚举（Single, Complete, Average, Ward 等）。
   - **决策**：`pgr` 将参考 `kodama` 的 NN-chain 算法实现自己的逻辑，保持对核心数据结构的完全控制（如适配稀疏输入）。
-  - **价值**：利用 `kodama` 的测试用例（[`kodama-master/tests/`](file:///Volumes/ExtHome/Scripts/pgr/kodama-master/src/test.rs)）和基准测试（[`kodama-master/benches/`](file:///Volumes/ExtHome/Scripts/pgr/kodama-master/benches/)）来验证 `pgr` 实现的正确性与性能。
-- **linfa-hierarchical** ([`linfa-master/algorithms/linfa-hierarchical/`](file:///Volumes/ExtHome/Scripts/pgr/linfa-master/algorithms/linfa-hierarchical/))：
+  - **价值**：利用 `kodama` 的测试用例（`kodama-master/src/test.rs`）和基准测试（`kodama-master/benches/`）来验证 `pgr` 实现的正确性与性能。
+- **linfa-hierarchical** (`linfa-master/algorithms/linfa-hierarchical/`)：
   - 提供了符合 `linfa` 生态的 `Transformer` 接口。
   - 内部直接调用 `kodama`，并增加了对 Similarity Kernel 的支持（自动转为 Distance）。
-  - **借鉴**：参考其清晰的参数校验（`ParamGuard`）和从 Stepwise Dendrogram 到 Flat Clusters 的后处理逻辑（[`linfa-hierarchical/src/lib.rs`](file:///Volumes/ExtHome/Scripts/pgr/linfa-master/algorithms/linfa-hierarchical/src/lib.rs) 中的 `clusters` HashMap 维护）。
+  - **借鉴**：参考其清晰的参数校验（`ParamGuard`）和从 Stepwise Dendrogram 到 Flat Clusters 的后处理逻辑（`linfa-master/algorithms/linfa-hierarchical/src/lib.rs` 中的 `clusters` HashMap 维护）。
 
 ### 阶段性实现路线
 
@@ -216,7 +216,7 @@
 1.  **真实分布测试 (Blobs Test)**:
     - 目标：验证算法能否正确聚类具有明显几何结构的合成数据（Statistical Correctness）。
     - 计划：在 `tests/` 中添加集成测试，生成两个高斯分布的簇（Blob A 和 Blob B），计算距离矩阵，运行 `clust hier`，验证生成的 Newick 树是否将两个簇的点分在不同的主分支上。
-    - **注意**：由于 `pgr nwk cut` 命令已实现，该测试可以被激活。
+    - **注意**：由于 `pgr clust cut` 命令已实现，该测试可以被激活。
 2.  **输入预处理文档 (已完成)**:
     - 目标：澄清输入要求。
     - 状态：已在 `mat-transform.md` 和 `clust-hier.md` 中更新，并增强了 `pgr mat transform` 功能（支持对角线归一化），确保用户能正确地将相似度转换为距离。
@@ -224,8 +224,8 @@
 ## CLI 设计
 
 ### 命令概览
-- 名称：`pgr clust hier`（可见别名 `hclust`、`hc`、`linkage`）
-- 作用：从距离矩阵生成层次聚类树（dendrogram），输出为 Newick，便于后续 `nwk cut`。
+- 名称：`pgr clust hier`（可见别名 `hclust`）
+- 作用：从距离矩阵生成层次聚类树（dendrogram），输出为 Newick，便于后续 `clust cut`。
 - 归属：`clust` 模块，与 `k-medoids` 等并列。
 
 ### 输入
@@ -268,16 +268,16 @@ pgr clust hier matrix.phy --method average > tree.nwk
 ## 与 SciPy 的映射与差异
 - 方法映射：与 SciPy `linkage` 的 `method` 集合对齐，`ward` 等价 `ward.D2`（内部按平方距离更新）；`average` 等价 UPGMA，`weighted` 等价 WPGMA，`centroid/median` 等价 UPGMC/WPGMC。
 - 输入差异：SciPy 接受“condensed 距离向量”或“观测矩阵”，pgr 统一使用 PHYLIP 距离矩阵；如需从 pair TSV 转换，请使用 `pgr mat to-phylip`。
-- 输出差异：SciPy 返回 `(n-1)×4` 的 linkage 矩阵 Z；pgr 输出 Newick 树，直接用于 `nwk cut / to-dot / to-forest`。普通用户无需关心 Z；若需与 SciPy 互操作，请在 Python 端继续使用 Z 与 `fcluster/cophenet`。
+- 输出差异：SciPy 返回 `(n-1)×4` 的 linkage 矩阵 Z；pgr 输出 Newick 树，直接用于 `clust cut / to-dot / to-forest`。普通用户无需关心 Z；若需与 SciPy 互操作，请在 Python 端继续使用 Z 与 `fcluster/cophenet`。
 - 叶序优化：`pgr` 推荐 `pgr nwk order --nd` (Ladderize) 以换取极高的性能，且可视化效果通常足够好。
-- 平切（flat clustering）：SciPy 的 `fcluster` 提供 `criterion='distance'|'maxclust'|...`；在 pgr 中分别对应 `nwk cut --height H` 与 `nwk cut --k K`，其它 `monocrit/inconsistent` 等准则暂不引入。
+- 平切（flat clustering）：SciPy 的 `fcluster` 提供 `criterion='distance'|'maxclust'|...`；在 pgr 中分别对应 `clust cut --height H` 与 `clust cut --k K`，其它 `monocrit/inconsistent` 等准则暂不引入。
 - 评估指标：SciPy 有 `cophenet`（共生相关系数）；pgr 建议在 `nwk eval` 中加入 cophenetic 相关系数作为树质量评估的补充。
 - 内部实现细节：
   - SciPy 的 `ward` 更新公式在内部进行平方和开方（`sqrt`）；`pgr` 采用全程平方距离运算（仅输出时开方），避免了中间步骤的精度损失和开方开销，理论上更高效。
   - SciPy 的 `fast_linkage` 使用了 Heap 优化；`pgr` 目前对非 NN-chain 方法使用朴素实现，未来可借鉴此优化。
 
 ### 用户提示
-- 新手路径（推荐）：`mat to-phylip → clust hier --method ward → nwk cut --height → nwk metrics → nwk 可视化`
+- 新手路径（推荐）：`mat to-phylip → clust hier --method ward → clust cut --height → clust eval → nwk 可视化`
 - 互操作与审计：若需要逐步核对合并过程或在 Python 端进一步平切/统计，请使用 SciPy 的 linkage 矩阵与工具；pgr 侧保持 Newick 为主，减少心智负担。
 
 ### 示例映射
@@ -286,10 +286,10 @@ pgr clust hier matrix.phy --method average > tree.nwk
   - pgr: `pgr mat to-phylip pairs.tsv -o matrix.phy` → `pgr clust hier matrix.phy --method ward > tree.nwk` → `pgr nwk order tree.nwk --nd > ordered.nwk`
 - SciPy fcluster（按距离平切）:
   - Python: `labels = fcluster(Z, t=0.05, criterion='distance')`
-  - pgr: `pgr nwk cut tree.nwk --height 0.05 > clusters.tsv`
+  - pgr: `pgr clust cut tree.nwk --height 0.05 > clusters.tsv`
 - SciPy fcluster（按簇数平切）:
   - Python: `labels = fcluster(Z, t=20, criterion='maxclust')`
-  - pgr: `pgr nwk cut tree.nwk --k 20 > clusters.tsv`
+  - pgr: `pgr clust cut tree.nwk --k 20 > clusters.tsv`
 - SciPy cophenet:
   - Python: `c, dists = cophenet(Z, Y)`
   - pgr: `pgr nwk eval tree.nwk --dist matrix.phy > metrics.tsv`
@@ -303,11 +303,11 @@ pgr clust hier matrix.phy --method average > tree.nwk
   - pgr: `pgr clust hier matrix.phy --method average > tree.nwk`
 - 差异说明:
   - scikit-learn 侧重于直接输出聚类标签（`labels_`），`pgr` 侧重于生成树结构（Newick）。
-  - 若需在 `pgr` 中获得标签，请配合 `nwk cut` 使用。
+  - 若需在 `pgr` 中获得标签，请配合 `clust cut` 使用。
 
 ### 与工具链协作
 - 构树：`pgr clust hier` → 生成 dendrogram
-- 切分：`pgr nwk cut --height H` → 导出分组
+- 切分：`pgr clust cut --height H` → 导出分组
 - 评估：
   - 无 Ground Truth：`pgr nwk eval`（几何/分类/演化/地理多维度评估）
   - 有 Ground Truth：`pgr clust eval`（ARI/AMI/V-Measure）

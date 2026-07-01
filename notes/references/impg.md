@@ -1087,11 +1087,11 @@ panel sequences/pangenome graph → implicit graph backend → sample evidence p
 
 `pgr` 的真正强项是**UCSC 体系的 pairwise 比对处理**（Chain/Net/MAF/AXT/PSL/LAV 全套， 见
 [docs/chain.md](file:///Volumes/ExtHome/Scripts/pgr/docs/chain.md)）与**Block FA 多序列比对**
-（`fas` 全套子命令 + `libs/poa/` 的 SPOA 移植 + `libs/fas_multiz.rs` 的 multiz 风格 banded DP 合并，
+（`fas` 全套子命令 + `libs/poa/` 的 SPOA 移植 + `libs/fas_multiz/` 的 multiz 风格 banded DP 合并，
 其 `FasMultizMode::Core` 即"多基因组共享 core 比对"）。pairwise 与 core 比对均已成熟。
 
 **泛基因组图部分**：`pgr` 已通过 `pgr paf graph` / `pgr paf to-gfa` 实现 GFA 输出（见
-[docs/paf.md](file:///Volumes/ExtHome/Scripts/pgr/docs/paf.md)）；[docs/gfa.md](file:///Volumes/ExtHome/Scripts/pgr/docs/gfa.md)
+[docs/paf.md](file:///Volumes/ExtHome/Scripts/pgr/docs/paf.md)）；[notes/references/gfa.md](file:///Volumes/ExtHome/Scripts/pgr/notes/references/gfa.md)
 为 GFA 格式参考文档。本节聚焦"泛基因组图"这一维度对比，作为 §9 启示的依据。
 
 - **pairwise 比对** — `pgr` 成熟（AXT/MAF/PSL/Chain/Net/LAV）；`impg` 成熟（PAF/1ALN/TPA）
@@ -1162,7 +1162,7 @@ impg 的隐式图以 PAF/1ALN/TPA all-vs-all 比对为边集。pgr 不应改用 
 with `=`/`X` CIGAR）。这是 pgr 复用已有 pairwise 基础设施的天然桥梁，无需引入 wfmash。
 
 物化图（pggb/Minigraph-Cactus 路线）的代价是"即使用户只关心一个位点，也要先构建整张图"。pgr 当前
-没有 GFA 构建管道（[docs/gfa.md](file:///Volumes/ExtHome/Scripts/pgr/docs/gfa.md) 是规划文档），
+没有 GFA 构建管道（[notes/references/gfa.md](file:///Volumes/ExtHome/Scripts/pgr/notes/references/gfa.md) 是规划文档），
 **"先物化再分析"对 pgr 是过载的**——应优先实现按需投影，把物化推迟到用户显式要求 `gfa`/`maf`输出时。
 
 §1.1.2 的适用边界表给出判断依据：pgr 的典型场景（locus 查询、cohort 区间投影）落在"隐式图赢"

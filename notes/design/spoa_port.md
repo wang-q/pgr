@@ -64,12 +64,12 @@ src/libs/poa/
 *   [x] 实现 `generate_msa` (从图生成多序列比对)。
 *   [x] 封装 `Poa` 结构体以便于调用。
 *   [x] **集成到 `pgr fas consensus`**:
-    *   [x] 修改 `src/libs/alignment.rs`，增加 `get_consensus_poa_builtin`。
+    *   [x] 修改 `src/libs/alignment/`，增加 `get_consensus_poa_builtin`。
     *   [x] 修改 `src/cmd_pgr/fas/consensus.rs`，增加 `--engine <spoa|builtin>` 参数。
     *   [x] 默认行为：默认为 `builtin`，但允许用户指定 `spoa`。
     *   [x] 确保支持并行处理 (`--parallel`)。
 *   [x] **集成到 `pgr fas refine`**:
-    *   [x] 修改 `src/libs/alignment.rs`，`align_seqs` 支持 `builtin` (原 `poa`) 和 `spoa`。
+    *   [x] 修改 `src/libs/alignment/`，`align_seqs` 支持 `builtin` (原 `poa`) 和 `spoa`。
     *   [x] 修改 `src/cmd_pgr/fas/refine.rs`，增加 `--msa <builtin|spoa>` 选项。
 *   [x] 清理:
     *   [x] 删除临时的 `src/cmd_pgr/poa/` 模块及子命令。

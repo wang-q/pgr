@@ -54,25 +54,25 @@ fn main() -> anyhow::Result<()> {
     * psl   - PSL statistics, manipulation, and conversion
 
 * Clustering:
-    * clust - Algorithms: cc, dbscan, hier, k-medoids, mcl, nj, upgma
+    * clust - Algorithms: cc, cut, dbscan, eval, hier, k-medoids, mcl, nj, upgma
 
 * Distance:
-    * dist  - Metrics: hv
+    * dist  - Metrics: hv, seq, vector
 
 * Matrix:
     * mat   - Processing: compare, format, subset, to-pair, to-phylip, transform
 
 * Phylogeny:
-    * nwk   - Newick tools: stat
+    * nwk   - Newick tools: stat, distance, cmp, reroot, prune, label, order, indent, comment, rename, replace, subtree, support, topo, to-dot, to-forest, to-svg, to-tex
 
 * Simulation:
     * ms    - Hudson's ms simulator tools: to-dna
 
 * Pipelines:
-    * pl - Workflows: p2m, trf, ir, rept, ucsc
+    * pl - Workflows: condense, p2m, prefilter, trf, ir, rept, ucsc
 
 * Plotting:
-    * plot - Plotting tools: venn
+    * plot - Plotting tools: hh, nrps, venn
 
 "###,
         );

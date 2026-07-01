@@ -102,7 +102,7 @@ fn test_clust_pipeline_full() {
             "-o", &cut_file,
         ])
         .run();
-    assert!(stderr.is_empty(), "nwk cut failed: {}", stderr);
+    assert!(stderr.is_empty(), "clust cut failed: {}", stderr);
     assert!(fs::metadata(&cut_file).is_ok(), "cut file not created");
 
     // 6. Evaluate (pgr clust eval)

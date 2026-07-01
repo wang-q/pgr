@@ -78,25 +78,25 @@ multiz file1.maf file2.maf v [out1 out2]
 
 ### 3.1 模块分布与功能
 
-*   **读取 (Reader)**: 位于 `src/libs/fmt/fas.rs`
-    *   **核心函数**: `next_maf_block`, `parse_maf_block`。
-    *   **特性**:
-        *   支持 `a` (alignment) 和 `s` (sequence) 行解析。
-        *   **坐标转换**: 内置 `to_range()` 方法，将 MAF 的 0-based 坐标转换为 1-based inclusive 格式（如 `chr:start-end`）。
-        *   **负链处理**: 自动处理负链坐标，将其转换为相对于正链的坐标范围。
-*   **写入 (Writer)**: 位于 `src/libs/fmt/maf.rs`
-    *   **核心结构**: `MafWriter`。
-    *   **特性**: 支持输出标准 MAF 头信息 (`##maf`) 和对齐块，自动处理列宽对齐。
+*   **读写统一**：位于 `src/libs/fmt/maf.rs`
+    *   **读取 (Reader)**:
+        *   **核心函数**: `next_maf_block`, `parse_maf_block`。
+        *   **特性**:
+            *   支持 `a` (alignment) 和 `s` (sequence) 行解析，`a` 行 `score=` 字段已解析到 `MafAli.score`。
+            *   **坐标转换**: `MafComp::to_range()` 将 MAF 的 0-based 坐标转换为 1-based inclusive 格式（如 `chr:start-end`）。
+            *   **负链处理**: 自动处理负链坐标，将其转换为相对于正链的坐标范围。
+    *   **写入 (Writer)**:
+        *   **核心结构**: `MafWriter`。
+        *   **特性**: 支持输出标准 MAF 头信息 (`##maf`) 和对齐块，自动处理列宽对齐。
 
-### 3.2 数据结构对比
+### 3.2 数据结构
 
- 目前读写使用两套略有不同的结构，开发时需注意转换：
+ 读写使用同一套结构体：
 
- | 特性 | 读取 (fas.rs) | 写入 (maf.rs) |
+ | 结构体 | 用途 | 关键字段 |
  | :--- | :--- | :--- |
- | **结构体** | `MafEntry` | `MafComp` |
- | **序列存储** | `Vec<u8>` | `String` |
- | **数值类型** | `u64` | `usize` |
+ | `MafComp` | `s` 行（一条序列组件） | `src`、`start`、`size`、`strand`、`src_size`、`text`（均为 `String`/`usize`） |
+ | `MafAli` | `a` 行 + block 内所有 `MafComp` | `score: Option<f64>`、`components: Vec<MafComp>` |
 
  ### 3.3 MAF 格式实现对比 (pgr vs multiz vs UCSC)
 
@@ -318,7 +318,7 @@ multiz file1.maf file2.maf v [out1 out2]
 本节给出 fas-multiz 在 Rust 中的 libs 级别设计。
 
 *   **模块位置**：
-    *   新增 `src/libs/fas_multiz.rs`，在 `src/libs/mod.rs` 中通过 `pub mod fas_multiz;` 暴露。
+    *   新增 `src/libs/fas_multiz/`，在 `src/libs/mod.rs` 中通过 `pub mod fas_multiz;` 暴露。
 *   **依赖复用**：
     *   解析 `.fas`：复用 `libs::fmt::fas` 中的 `FasEntry`、`FasBlock`、`next_fas_block` 等。
     *   区间坐标：继续使用 `intspan::Range`。
@@ -409,7 +409,7 @@ multiz file1.maf file2.maf v [out1 out2]
 
 **实现位置与对外 API**
 
-*   模块位置：`src/libs/fas_multiz.rs`，通过 `pub mod fas_multiz;` 暴露为 `pgr::libs::fas_multiz`。
+*   模块位置：`src/libs/fas_multiz/`，通过 `pub mod fas_multiz;` 暴露为 `pgr::libs::fas_multiz`。
 *   核心类型：与前文给出的设计保持一致，并在配置中加入了 DP 打分参数：
     *   `FasMultizMode { Core, Union }`
     *   `FasMultizConfig { ref_name, radius, min_width, mode, match_score, mismatch_score, gap_score }`

@@ -16,7 +16,7 @@
 ## 规划目标
 
 ### 扫描与评分
-- 新增 `--scan <start>,<end>,<steps>`：参考 `nwk cut --scan` 风格，对主参数 `eps` 进行扫描，输出 TSV 摘要表（不绘图）
+- 新增 `--scan <start>,<end>,<steps>`：参考 `clust cut --scan` 风格，对主参数 `eps` 进行扫描，输出 TSV 摘要表（不绘图）
 - 评分列（可选）：
   - `Silhouette`（距离矩阵版）
   - `DBIndex`（Davies–Bouldin）

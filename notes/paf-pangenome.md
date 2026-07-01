@@ -628,10 +628,10 @@ Minigraph 骨架构建 → 图映射定位 → rgfa-split 切分 → 批量 Cact
 | 组件               | 源码                          | 后续用途                                           |
 |--------------------|-------------------------------|----------------------------------------------------|
 | POA 引擎           | `libs/poa/poa.rs`             | 图构建阶段的 per-bubble 共识/比对                  |
-| Banded DP          | `libs/fas_multiz.rs`          | partition 内多 pairwise 合并（比 impg POA 更精确） |
-| `get_subs`         | `libs/alignment.rs:214`       | MSA 上的变体检测                                   |
-| 裁剪函数           | `libs/alignment.rs:1351-1687` | BFS 结果边界清理                                   |
-| crossbeam 并行管道 | `consensus.rs:250`            | `build_multi` 并行化                               |
+| Banded DP          | `libs/fas_multiz/`            | partition 内多 pairwise 合并（比 impg POA 更精确） |
+| `get_subs`         | `libs/alignment/variation.rs` | MSA 上的变体检测                                   |
+| 裁剪函数           | `libs/alignment/trim.rs`      | BFS 结果边界清理                                   |
+| crossbeam 并行管道 | `libs/par.rs`                 | `build_multi` 并行化                               |
 
 但这些都是**独立的 CLI 命令或库函数**，通过 Unix pipe 组合，不与 `paf query` 耦合。
 

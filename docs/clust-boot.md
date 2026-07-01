@@ -2,7 +2,7 @@
 
 > **状态：计划中（未实现）** — `pgr clust boot` 命令尚未实现，本文档为设计稿。
 
-本页基于仓库内置的 R 包源码 `pvclust`（见 [pvclust.R](file:///Volumes/ExtHome/Scripts/pgr/pvclust/R/pvclust.R)、[pvclust-internal.R](file:///Volumes/ExtHome/Scripts/pgr/pvclust/R/pvclust-internal.R)）梳理其算法与数据结构，并给出 `pgr` 侧计划新增命令 `pgr clust boot` 的接口与输出约定。
+本页基于仓库内置的 R 包源码 `pvclust`（见 `pvclust/R/pvclust.R`、`pvclust/R/pvclust-internal.R`）梳理其算法与数据结构，并给出 `pgr` 侧计划新增命令 `pgr clust boot` 的接口与输出约定。
 
 `pvclust` 的核心价值：给 dendrogram 的每个内部节点（cluster / edge）计算 **BP/AU/SI** 三类支持度（及标准误），用于回答“这个簇是不是稳定/显著”的问题，而不仅是“切成几类”。
 
@@ -52,7 +52,7 @@
     - 检查原始树中的每个簇（Pattern）是否出现在 Bootstrap 树中，并累加计数。这避免了节点顺序或旋转带来的干扰，只关注“成员集合”的一致性。
 5. 拟合得到最终值（BP/AU/SI）
     - 对于原始树中的每个簇，我们得到了一组数据 `(r, BP_r)`，即在不同采样比例 $r$ 下的 Bootstrap 出现频率。
-    - 使用加权最小二乘法拟合曲线（模型：$z = -qnorm(BP_r) \approx v\sqrt{r} + c/\sqrt{r}$），源码见 [pvclust-internal.R:L350-L407](file:///Volumes/ExtHome/Scripts/pgr/pvclust/R/pvclust-internal.R#L350-L407)。
+    - 使用加权最小二乘法拟合曲线（模型：$z = -qnorm(BP_r) \approx v\sqrt{r} + c/\sqrt{r}$），源码见 `pvclust/R/pvclust-internal.R:350-407`。
     - 根据拟合得到的参数 $v$ 和 $c$，计算出最终的三类数值：
         - **AU (Approximately Unbiased)**：**推荐使用**。通过多尺度拟合修正了 BP 的偏差，更接近真实的 p-value。
         - **BP (Bootstrap Probability)**：传统 Bootstrap 值（对应 $r=1.0$），通常有偏差（偏保守）。
@@ -69,8 +69,8 @@
 
 `pvclust` R 包对外导出：
 
-- `pvclust()`：主入口（见 [pvclust.R:L1-L63](file:///Volumes/ExtHome/Scripts/pgr/pvclust/R/pvclust.R#L1-L63)）
-- `msfit()`：多尺度曲线拟合（见 [pvclust-internal.R:L350-L407](file:///Volumes/ExtHome/Scripts/pgr/pvclust/R/pvclust-internal.R#L350-L407)）
+- `pvclust()`：主入口（见 `pvclust/R/pvclust.R:1-63`）
+- `msfit()`：多尺度曲线拟合（见 `pvclust/R/pvclust-internal.R:350-407`）
 - `msplot()/seplot()/pvrect()/pvpick()`：诊断与筛选（见 `pvclust/man/*.Rd`）
 
 ### 2.2 主入口 pvclust()
@@ -78,13 +78,13 @@
 `pvclust()` 的职责基本是：
 
 1. 处理并行参数（`parallel` 可为 FALSE / TRUE / 整数 / cluster）
-2. 进入 `pvclust.parallel()` 或 `pvclust.nonparallel()`（见 [pvclust.R:L1-L63](file:///Volumes/ExtHome/Scripts/pgr/pvclust/R/pvclust.R#L1-L63)）
+2. 进入 `pvclust.parallel()` 或 `pvclust.nonparallel()`（见 `pvclust/R/pvclust.R:1-63`）
 
 真正算法实现集中在 `pvclust-internal.R`：
 
-- `pvclust.common.settings()`：计算原始距离与原始 hclust；规范化 `r`（见 [pvclust-internal.R:L3-L37](file:///Volumes/ExtHome/Scripts/pgr/pvclust/R/pvclust-internal.R#L3-L37)）
-- `boot.hclust()`：对每个 `r`、每次 bootstrap，重采样行、重算距离、重做 hclust，并统计 cluster 出现次数（见 [pvclust-internal.R:L223-L279](file:///Volumes/ExtHome/Scripts/pgr/pvclust/R/pvclust-internal.R#L223-L279)）
-- `pvclust.merge()`：把多尺度计数合并成 `edges.bp/edges.cnt`，并对每个 edge 调用 `msfit()` 得到 AU/BP/SI 与标准误等（见 [pvclust-internal.R:L281-L332](file:///Volumes/ExtHome/Scripts/pgr/pvclust/R/pvclust-internal.R#L281-L332)）
+- `pvclust.common.settings()`：计算原始距离与原始 hclust；规范化 `r`（见 `pvclust/R/pvclust-internal.R:3-37`）
+- `boot.hclust()`：对每个 `r`、每次 bootstrap，重采样行、重算距离、重做 hclust，并统计 cluster 出现次数（见 `pvclust/R/pvclust-internal.R:223-279`）
+- `pvclust.merge()`：把多尺度计数合并成 `edges.bp/edges.cnt`，并对每个 edge 调用 `msfit()` 得到 AU/BP/SI 与标准误等（见 `pvclust/R/pvclust-internal.R:281-332`）
 
 ### 2.3 “同一个簇”的判定：hc2split() 的 pattern
 
@@ -94,7 +94,7 @@
   - `member`：每个内部节点的成员索引集合
   - `pattern`：每个内部节点的 0/1 向量拼接成字符串（作为簇 ID）
 
-见 [pvclust-internal.R:L180-L214](file:///Volumes/ExtHome/Scripts/pgr/pvclust/R/pvclust-internal.R#L180-L214)。
+见 `pvclust/R/pvclust-internal.R:180-214`。
 
 这意味着：在 `pgr` 侧实现时，最稳健的对齐方式也是“按 leaf-set 比较”，而不是依赖内部节点顺序。
 
@@ -108,7 +108,7 @@
 - `r`：相对样本量 `r = n'/n`
 - `nboot`：每个尺度的 bootstrap 次数
 
-关键步骤（见 [pvclust-internal.R:L350-L407](file:///Volumes/ExtHome/Scripts/pgr/pvclust/R/pvclust-internal.R#L350-L407)）：
+关键步骤（见 `pvclust/R/pvclust-internal.R:350-407`）：
 
 - 变换：`z = -qnorm(bp)`
 - 加权最小二乘拟合：
@@ -193,7 +193,7 @@ pgr clust boot [OPTIONS] <data.tsv>
 pgr clust boot data.tsv --dist correlation --method average --nboot 1000 -o boot.tsv
 ```
 
-2. 按阈值挑选显著簇（pvclust 的 `pvrect/pvpick` 思路，见 [pvpick.Rd](file:///Volumes/ExtHome/Scripts/pgr/pvclust/man/pvpick.Rd)）：
+2. 按阈值挑选显著簇（pvclust 的 `pvrect/pvpick` 思路，见 `pvclust/man/pvpick.Rd`）：
 
 - `au >= 0.95` 常用作强支持阈值（也可用 SI）
 
@@ -205,20 +205,20 @@ pgr clust boot data.tsv --dist correlation --method average --nboot 1000 -o boot
 
 - `pgr dist vector → pgr mat to-phylip → pgr clust hier`：现有“向量→距离→树”的通路
 - `pgr clust boot`：需要“可重采样的原始观测矩阵”，因此更适合直接吃 `data.tsv`，内部自算距离与树
-- `pgr nwk cut`：在 `boot` 给出簇置信度后，再做阈值切割与导出分区
+- `pgr clust cut`：在 `boot` 给出簇置信度后，再做阈值切割与导出分区
 - `pgr clust eval`：对不同切割/不同算法产生的分区做一致性比较（用 `--other`）
 
 ---
 
 ## 6. 参考与对照
 
-- pvclust R 包版本：2.2-0（见 [DESCRIPTION](file:///Volumes/ExtHome/Scripts/pgr/pvclust/DESCRIPTION)）
+- pvclust R 包版本：2.2-0（见 `pvclust/DESCRIPTION`）
 - 核心实现文件：
-  - [pvclust.R](file:///Volumes/ExtHome/Scripts/pgr/pvclust/R/pvclust.R)
-  - [pvclust-internal.R](file:///Volumes/ExtHome/Scripts/pgr/pvclust/R/pvclust-internal.R)
+  - `pvclust/R/pvclust.R`
+  - `pvclust/R/pvclust-internal.R`
 - 关键函数定位：
-  - `pvclust()`：[pvclust.R:L1-L63](file:///Volumes/ExtHome/Scripts/pgr/pvclust/R/pvclust.R#L1-L63)
-  - `boot.hclust()`：[pvclust-internal.R:L223-L279](file:///Volumes/ExtHome/Scripts/pgr/pvclust/R/pvclust-internal.R#L223-L279)
-  - `pvclust.merge()`：[pvclust-internal.R:L281-L332](file:///Volumes/ExtHome/Scripts/pgr/pvclust/R/pvclust-internal.R#L281-L332)
-  - `msfit()`：[pvclust-internal.R:L350-L407](file:///Volumes/ExtHome/Scripts/pgr/pvclust/R/pvclust-internal.R#L350-L407)
-  - `seplot()`：[pvclust-internal.R:L458-L481](file:///Volumes/ExtHome/Scripts/pgr/pvclust/R/pvclust-internal.R#L458-L481)
+  - `pvclust()`：`pvclust/R/pvclust.R:1-63`
+  - `boot.hclust()`：`pvclust/R/pvclust-internal.R:223-279`
+  - `pvclust.merge()`：`pvclust/R/pvclust-internal.R:281-332`
+  - `msfit()`：`pvclust/R/pvclust-internal.R:350-407`
+  - `seplot()`：`pvclust/R/pvclust-internal.R:458-481`

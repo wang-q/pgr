@@ -79,7 +79,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // Args
     //----------------------------
     if args.get_flag("doc") {
-        println!("{}", include_str!("../../../docs/ms2dna.md"));
+        println!("{}", include_str!("../../../docs/ms-to-dna.md"));
         return Ok(());
     }
     let outfile = crate::cmd_pgr::args::get_outfile(args);
