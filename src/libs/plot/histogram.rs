@@ -64,7 +64,7 @@ pub fn render_hh_tex<W: std::io::Write>(
     context: &tera::Context,
     writer: &mut W,
 ) -> anyhow::Result<()> {
-    static FILE_TEMPLATE: &str = include_str!("../../../docs/heatmap.tex");
+    static FILE_TEMPLATE: &str = include_str!("../../assets/heatmap.tex");
     let mut template = FILE_TEMPLATE.to_string();
 
     let out_string = r###"%

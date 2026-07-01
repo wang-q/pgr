@@ -155,32 +155,3 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn gen_hh(context: &tera::Context) -> anyhow::Result<()> {
-    let outfile = context_get_str(context, "outfile")?;
-    let mut writer = pgr::writer(outfile)?;
-
-    static FILE_TEMPLATE: &str = include_str!("../../assets/heatmap.tex");
-    let mut template = FILE_TEMPLATE.to_string();
-
-    let out_string = r###"%
-width={{ width }}cm,
-height={{ height }}cm,
-xlabel={ {{ xlabel }} },
-ylabel={ {{ ylabel }} },
-extra x ticks={ {{ xticks | join(sep=", ") }} },
-extra x tick labels={ {{ xtick_labels | join(sep=", ") }} },
-yticklabels={ {{ ygroups | join(sep=", ") }} },
-extra y ticks={ {{ yticks | join(sep=", ") }} },
-y tick label style={
-    text width={{ label_len }}ex,
-},
-    "###;
-    replace_section(&mut template, "%AXIS_BEGIN", "%AXIS_END", out_string)?;
-
-    let table = context_get_str(context, "table")?;
-    replace_section(&mut template, "%TABLE_BEGIN", "%TABLE_END", table)?;
-
-    render_and_write(&template, context, &mut writer)?;
-    Ok(())
-}
-ß
