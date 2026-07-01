@@ -138,7 +138,7 @@ cargo test
     - 在 `main` 函数中注册所有子命令模块。
 - **`src/lib.rs`** - 库入口，导出模块。
 - **`src/cmd_pgr/`** - 命令实现模块。按功能/格式分组：
-    - **Sequences**: `fa` (FASTA), `fq` (FASTQ), `fas` (Block FA), `2bit`, `gff`.
+    - **Sequences**: `fa` (FASTA), `fq` (FASTQ), `fas` (Block FA), `twobit` (命令 `2bit`), `gff`.
     - **Alignments**: `axt`, `chain`, `net`, `maf`, `paf`, `psl`, `lav`.
     - **Analysis**: `clust` (Clustering), `dist` (Distance), `mat` (Matrix), `nwk` (Phylogeny/Newick), `plot`.
     - **Misc**: `ms` (Simulation), `pl` (Pipelines).
@@ -152,6 +152,7 @@ cargo test
   - **`clust/`** - 聚类算法实现。
     - **`hier.rs`**: 层次聚类 (NN-chain 算法)。
     - **`dbscan.rs`, `mcl.rs`, `k_medoids.rs`**: 其他聚类算法。
+    - **`nj.rs`, `upgma.rs`**: 建树算法 (Neighbor-Joining, UPGMA)。
     - **`tree_cut/`**: 树切分算法。
     - **`eval/`**: 聚类评估指标。
   - **`paf/`** - PAF 处理: 记录读写、查询、图构建、索引。
@@ -162,7 +163,7 @@ cargo test
 
 ## 关键设计文档
 
-- **`docs/`**: 用户面向命令文档（英文），每个 `pgr <command>` 对应一个 `docs/<command>.md`；`docs/formats/` 为格式规范参考。
+- **`docs/`**: 用户面向命令文档（英文），每个 `pgr <command>` 对应一个 `docs/<command>.md`（子命令采用 `<command>-<subcommand>.md` 形式，如 `clust-cut.md`）；`docs/formats/` 为格式规范参考。注：`2bit` 命令的文档为 `docs/twobit.md`（历史命名）。
 - **`notes/`**: 开发者面向笔记（中文）：`notes/design/`（设计稿/移植笔记）、`notes/references/`（外部工具源码分析）、`notes/` 根（项目理解/场景规划）。
 - **`notes/project-understanding.md`**: 项目整体理解（架构、命令模块、核心库、现状评估、设计模式），含各文档的索引与定位，需要时查阅。
 
@@ -215,8 +216,8 @@ cargo test
     - **Notes**: Bullet points starting with `*`.
         - Standard note for `fa`/`fas`: `* Supports both plain text and gzipped (.gz) files`
         - Standard note for `fa`/`fas`: `* Reads from stdin if input file is 'stdin'`
-        - Standard note for `twobit`: `* 2bit files are binary and require random access (seeking)`
-        - Standard note for `twobit`: `* Does not support stdin or gzipped inputs`
+        - Standard note for `2bit`: `* 2bit files are binary and require random access (seeking)`
+        - Standard note for `2bit`: `* Does not support stdin or gzipped inputs`
     - **Examples**: Numbered list (`1.`, `2.`) with code blocks indented by 3 spaces.
 - **Arguments**:
     - **Input**: `infiles` (multiple) or `infile` (single).

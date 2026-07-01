@@ -43,12 +43,21 @@ src/
 │   ├── mod.rs          #   声明所有命令模块
 │   ├── fa/             #   每个模块含 make_subcommand() + execute()
 │   ├── fas/
+│   ├── fq/
+│   ├── twobit/         #   命令名 2bit
+│   ├── gff/
 │   ├── chain/
 │   ├── net/
-│   ├── nwk/
-│   ├── clust/
-│   ├── mat/
+│   ├── axt/
+│   ├── psl/
+│   ├── lav/
+│   ├── maf/
 │   ├── paf/            #   PAF 泛基因组图操作
+│   ├── clust/
+│   ├── dist/
+│   ├── mat/
+│   ├── nwk/
+│   ├── ms/
 │   ├── pl/             #   Pipelines：编排外部工具
 │   └── plot/           #   可视化输出 (TikZ/LaTeX)
 └── libs/               # 核心库层：数据结构与算法
@@ -65,7 +74,7 @@ src/
     ├── paf/            #   PAF 隐式图核心
     │   ├── index/      #     区间树索引 + BFS 传递闭包
     │   └── graph/      #     DSU 图构建 + GFA 输出
-    └── ...             #   io, hash, hv, linalg, loc, nt, pairmat, psl, twobit
+    └── ...             #   io, hash, hv, linalg, loc, nt, pairmat
 ```
 
 **关键设计**：`cmd_pgr/` 管命令分发，`libs/` 管核心逻辑。命令层薄，逻辑在库层。这是好的分层。
@@ -125,7 +134,7 @@ src/
 
 | 模块    | 子命令数 | 核心能力                                             |
 |---------|----------|------------------------------------------------------|
-| `chain` | 7        | Chain 排序、过滤、split、stitch、反重复、转 net 准备 |
+| `chain` | 6        | Chain 排序、过滤、split、stitch、反重复、转 net 准备 |
 | `net`   | 6        | Net 分类、过滤、split、subset、syntenic、转 AXT      |
 | `axt`   | 4        | AXT 排序、转 FAS/MAF/PSL                             |
 | `psl`   | 8        | PSL 统计、直方图、lift、swap、转 chain、转 range     |
@@ -232,7 +241,7 @@ clustalw/muscle/mafft），充当工作流 glue。这与 `chain`/`net` 模块的
 ### 4.4 `libs/clust/` — 聚类算法库
 
 - `hier.rs`：NN-chain 层次聚类实现（参看 `docs/clust-hier.md`）
-- `dbscan.rs`、`mcl.rs`、`kmedoids.rs`：各算法实现
+- `dbscan.rs`、`mcl.rs`、`k_medoids.rs`：各算法实现
 - `nj.rs`、`upgma.rs`：建树算法
 - `medoid.rs`：medoid 计算
 - `feature.rs`：特征提取

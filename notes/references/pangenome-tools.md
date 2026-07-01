@@ -101,7 +101,7 @@ pgr graph 的直接借鉴来源（见 [[minigraph.md]]）。
 - **pgr**: 保持**隐式**，按需查询/物化，目标是避免全局图爆炸
 
 差异化的边界：pgr 不产出全局 GFA，只在查询时走 BFS 传递闭包，在 to-gfa 按需产出局部 GFA。
-这一点 [[paf-pangenome.md]] §4.3.4 已明确"局部 GFA 不合并回全局"。
+这一点 [[paf-pangenome.md]] §2.5 已明确"局部 GFA 不合并回全局"。
 
 **粒度差异**是核心：seqwish 的传递闭包是**全局、一次性**的——一次性算出全部等价类再写图
 （[transclosure.rs](file:///Volumes/ExtHome/Scripts/pgr/seqwish-master/src/transclosure.rs) 的

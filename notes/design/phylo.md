@@ -16,6 +16,8 @@ src/libs/phylo/
 │   ├── traversal.rs    # 遍历算法 (preorder, postorder, levelorder)
 │   ├── query.rs        # 路径/距离/LCA 查询
 │   ├── stat.rs         # 统计指标 (height, diameter, cherries, colless, sackin)
+│   ├── balance.rs      # 平衡指标 (cherries, colless, sackin)
+│   ├── distance.rs     # 节点距离计算
 │   ├── support.rs      # Bootstrap 支持率计算
 │   ├── algo.rs         # 高级算法 (Sort, etc.)
 │   └── tests.rs        # 内部集成测试

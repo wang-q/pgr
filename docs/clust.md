@@ -63,7 +63,7 @@
 - **原理**：通用的自底向上（Agglomerative）聚类框架。通过不同的链接准则（如 Ward 最小方差、Complete 最远距离）合并簇，构建完整的树状层级。
 - **命令**：`pgr clust hier` (别名 `hclust`)
 - **特点**：通用层次聚类，支持 `single`, `complete`, `average`, `ward` 等方法。
-- **实现状态**：✅ 已实现（$O(N^2)$ NN-Chain 优化）。
+- **实现状态**：已实现（$O(N^2)$ NN-Chain 优化）。
 - **价值**：提供通用层级结构视图（不限于生物演化），配合 `clust cut` 可灵活获取不同粒度的分组。
 
 ### Tree Cut
@@ -79,7 +79,7 @@
 这些命令不产生聚类，而是评估聚类或树的质量。
 
 - **Tree-based Evaluation**
-  - **命令**：`pgr nwk eval` (规划中)
+  - **命令**：`pgr nwk eval` (计划中)
   - **定位**：树结构的多维度评估。
   - **功能**：几何紧密性（Silhouette）、分类纯度（Purity）、演化一致性（Discordance）。
   - **文档**：[notes/design/nwk-eval.md](file:///Volumes/ExtHome/Scripts/pgr/notes/design/nwk-eval.md)
@@ -156,7 +156,7 @@
 
 ## 算法详细说明 (Detailed Descriptions)
 
-### GMM (Gaussian Mixture Models) [规划中]
+### GMM (Gaussian Mixture Models) [计划中]
 
 引入 GMM 的动机：
 - **软聚类 (Soft Clustering)**：不同于 K-means 的硬划分，GMM 给出样本属于某簇的概率，适合处理边界模糊的生物学分类（如亚种、基因家族过渡态）。
@@ -175,7 +175,7 @@ pgr clust gmm input.tsv --k 5 --cov full > clusters.tsv
 
 如何确定聚类的簇数（K）或最佳模型复杂度？
 
-- **BIC (Bayesian Information Criterion)** [规划中]：
+- **BIC (Bayesian Information Criterion)** [计划中]：
   - 在 GMM 中，BIC 权衡了对数似然（拟合度）与参数数量（复杂度）。
   - `pgr` 可提供 `clust gmm --scan-k 2..20`，自动计算并输出 BIC 曲线，辅助用户选择最佳 K（通常是 BIC 最低点或手肘点）。
 - **Silhouette / Calinski-Harabasz** [部分支持]：基于几何距离的评估指标，适用于 K-means 或一般距离聚类（`clust eval` 已支持距离矩阵版 Silhouette；树上 Silhouette 计划在 `nwk metrics` [计划中] 中实现）。
@@ -314,8 +314,8 @@ pgr clust cut tree.nwk --height 0.45 > final_clusters.tsv
 2. **系统发育构树**：已完成 UPGMA、NJ、Hierarchical Clustering (hier)。
 3. **评估体系**：设计完成 `nwk eval` (Tree) 和 `clust eval` (Partition)。
 4. **向量支持**：建立读取稠密向量/矩阵的基础设施（进行中）。
-5. **统计聚类**：引入 GMM 实现，支持 BIC 模型选择（规划中）。
-6. **层次聚类扩展**：实现 HDBSCAN（规划中）。
+5. **统计聚类**：引入 GMM 实现，支持 BIC 模型选择（计划中）。
+6. **层次聚类扩展**：实现 HDBSCAN（计划中）。
 
 ## 输入输出格式约定 (File Formats)
 

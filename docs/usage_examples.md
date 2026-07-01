@@ -79,7 +79,7 @@ pgr fas create tests/fas/I.connect.tsv -r tests/fas/genome.fa --name S288c
 cat tests/fas/genome.fa | sed 's/^>/>S288c./' > tests/fas/genomes.fa
 samtools faidx tests/fas/genomes.fa S288c.I:1-100
 
-cargo run --bin pgr -- fas create tests/fas/I.name.tsv -r tests/fas/genomes.fa --multi
+cargo run --bin pgr -- fas create tests/fas/I.name.tsv -r tests/fas/genomes.fa
 
 pgr fas separate tests/fas/example.fas -o . --suffix .tmp
 

@@ -113,7 +113,7 @@ Gb 级），可借鉴此方案。
 传递闭包做"图遍历可达性"，不产出多重比对。找到所有同源片段后，如需 MSA，再调用 `fas consensus`（SPOA）
 或 `fas multiz`（banded DP）。图遍历和 MSA 是正交的两个步骤，不应耦合。
 
-pgr 的 MSA 质量可能优于 impg 的 per-bubble POA——`fas_multiz.rs` 实现了 banded DP 合并， 对 core
+pgr 的 MSA 质量可能优于 impg 的 per-bubble POA——`fas_multiz/` 实现了 banded DP 合并， 对 core
 区段比纯 POA 更精确。
 
 ### 2.5 两段式 GFA，局部不合并回全局
@@ -260,7 +260,7 @@ src/cmd_pgr/paf/
 └── mod.rs
 ```
 
-名字映射用 pgr 的 `IndexMap<String, u32>` 模式（与 `libs/loc.rs`、`libs/phylo/tree.rs` 一致），
+名字映射用 pgr 的 `IndexMap<String, u32>` 模式（与 `libs/loc.rs`、`libs/phylo/tree/` 一致），
 不需要独立的 `SequenceIndex`。
 
 ### 4.2 PafRecord
