@@ -158,7 +158,7 @@ fn gen_nrps(context: &tera::Context) -> Result<()> {
     let all_tex = context_get_str(context, "all_tex")?;
     let mut writer = pgr::writer(outfile)?;
 
-    static FILE_TEMPLATE: &str = include_str!("../../../docs/nrps.tex");
+    static FILE_TEMPLATE: &str = include_str!("../../assets/nrps.tex");
     let mut template = FILE_TEMPLATE.to_string();
 
     // Section color

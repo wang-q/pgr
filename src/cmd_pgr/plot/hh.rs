@@ -193,7 +193,7 @@ fn gen_hh(context: &tera::Context) -> anyhow::Result<()> {
     let outfile = context_get_str(context, "outfile")?;
     let mut writer = pgr::writer(outfile)?;
 
-    static FILE_TEMPLATE: &str = include_str!("../../../docs/heatmap.tex");
+    static FILE_TEMPLATE: &str = include_str!("../../assets/heatmap.tex");
     let mut template = FILE_TEMPLATE.to_string();
 
     let out_string = r###"%

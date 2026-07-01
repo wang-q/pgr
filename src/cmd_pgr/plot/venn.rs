@@ -251,7 +251,7 @@ fn gen_venn(context: &tera::Context, out_string: &str) -> Result<()> {
     let outfile = context_get_str(context, "outfile")?;
     let mut writer = pgr::writer(outfile)?;
 
-    static FILE_TEMPLATE: &str = include_str!("../../../docs/venn.tex");
+    static FILE_TEMPLATE: &str = include_str!("../../assets/venn.tex");
     let mut template = FILE_TEMPLATE.to_string();
 
     replace_section(&mut template, "%VENN_BEGIN", "%VENN_END", out_string)?;
