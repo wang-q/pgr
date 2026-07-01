@@ -138,9 +138,9 @@ cargo test
     - 在 `main` 函数中注册所有子命令模块。
 - **`src/lib.rs`** - 库入口，导出模块。
 - **`src/cmd_pgr/`** - 命令实现模块。按功能/格式分组：
-    - **Sequences**: `fa` (FASTA), `fq` (FASTQ), `fas` (Block FA), `twobit` (2bit), `gff`.
-    - **Alignments**: `axt`, `chain`, `net`, `maf`, `psl`, `lav`.
-    - **Analysis**: `clust` (Clustering), `dist` (Distance), `mat` (Matrix), `nwk` (Phylogeny/Newick).
+    - **Sequences**: `fa` (FASTA), `fq` (FASTQ), `fas` (Block FA), `2bit`, `gff`.
+    - **Alignments**: `axt`, `chain`, `net`, `maf`, `paf`, `psl`, `lav`.
+    - **Analysis**: `clust` (Clustering), `dist` (Distance), `mat` (Matrix), `nwk` (Phylogeny/Newick), `plot`.
     - **Misc**: `ms` (Simulation), `pl` (Pipelines).
 - **`src/libs/`** - 共享工具库和核心逻辑。
   - **`fmt/`** - 格式 I/O: `fa`, `fas`, `fq`, `axt`, `maf`, `psl`, `lav`, `twobit`, `vcf`.
@@ -226,4 +226,4 @@ cargo test
 - **Terminology**:
     - `pgr fa` -> "FASTA"
     - `pgr fas` -> "block FA"
-    - `pgr twobit` -> "2bit"
+    - `pgr 2bit` -> "2bit"

@@ -1,6 +1,6 @@
 # PSL 格式 (PSL Format)
 
-PSL 是 UCSC 使用的标准比对格式。`pgr` 在 `src/libs/psl.rs` 中提供了一个 `Psl` 结构体，匹配 21 列标准。
+PSL 是 UCSC 使用的标准比对格式。`pgr` 在 `src/libs/fmt/psl.rs` 中提供了一个 `Psl` 结构体，匹配 21 列标准。
 
 ### 结构与字段 (Structure and Fields)
 
@@ -43,9 +43,9 @@ PSL 文件是制表符分隔的文本文件，通常包含 21 列：
             *   换算回原始序列索引：`original_index = qSize - 1 - rc_index` (对于点坐标)。对于区间 `[s, e)`，`orig_start = qSize - rc_end`, `orig_end = qSize - rc_start`。
     *   `pgr` 实现：目前 `Psl` 结构体只是数据的容器，直接存储文件中的值，不进行自动坐标转换，这与 UCSC 的 `psl` 结构体行为一致。
 
-### `pgr` 实现 (`libs/psl.rs`) 与 UCSC `psl` 库的对比
+### `pgr` 实现 (`libs/fmt/psl.rs`) 与 UCSC `psl` 库的对比
 
-`pgr` 的 PSL 实现 (`src/libs/psl.rs`) 旨在与 UCSC 的 `psl.c`/`psl.h` 兼容。
+`pgr` 的 PSL 实现 (`src/libs/fmt/psl.rs`) 旨在与 UCSC 的 `psl.c`/`psl.h` 兼容。
 
 *   整数类型与字段对应 (Integer Types)
     *   UCSC: `match`, `misMatch` 等为 `unsigned` (32-bit)；`BaseInsert` 为 `int` (signed)。

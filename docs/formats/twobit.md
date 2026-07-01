@@ -1,6 +1,6 @@
 # 2bit 格式 (2bit Format)
 
-2bit 是 UCSC 开发的一种高效的基因组序列二进制存储格式。`pgr` 在 `src/libs/twobit.rs` 中实现了 2bit 文件的读取。
+2bit 是 UCSC 开发的一种高效的基因组序列二进制存储格式。`pgr` 在 `src/libs/fmt/twobit.rs` 中实现了 2bit 文件的读取。
 
 ### 结构 (Structure)
 
@@ -27,7 +27,7 @@
     *   每个字节包含 4 个碱基，高位在前 (Big-Endian bit order within byte)。
     *   最后一个字节可能包含填充位。
 
-### `pgr` 实现 (`libs/twobit.rs`) 与 UCSC `twoBit` 库的对比
+### `pgr` 实现 (`libs/fmt/twobit.rs`) 与 UCSC `twoBit` 库的对比
 
 `pgr` 的实现旨在提供高效的随机访问读取能力。
 

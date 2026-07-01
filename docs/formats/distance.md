@@ -9,7 +9,7 @@ PHYLIP and Pairwise.
 ### PHYLIP distance matrix
 
 PHYLIP 距离矩阵格式是系统发育分析中的通用格式。`pgr` 在 `src/cmd_pgr/mat`
-和 `src/libs/pairmat.rs` 中提供了一系列工具来处理这种格式。
+和 `src/libs/pairmat/` 中提供了一系列工具来处理这种格式。
 
 `pgr` 支持标准 (Strict) 和宽松 (Relaxed) 的 PHYLIP 格式。
 
@@ -44,7 +44,7 @@ Pairwise 格式是一种简单的三列 TSV 格式，用于表示序列两两之
 
 ## Internal matrix structures
 
-`pgr` 在 `src/libs/pairmat.rs` 中定义了三种核心的矩阵结构。
+`pgr` 在 `src/libs/pairmat/` 中定义了三种核心的矩阵结构。
 
 ### ScoringMatrix
 

@@ -44,7 +44,7 @@
   - 通用层次聚类分析或需要 `ward.D2`：`clust hier --method ward.D2`
 - 切分与评估：
   - 切分：`pgr clust cut --height H` 或按 TreeCluster 风格阈值/约束
-  - 内部评估（无 Ground Truth）：`pgr clust eval --matrix ...` (Silhouette) 或 `pgr nwk eval` (树结构评估)
+  - 内部评估（无 Ground Truth）：`pgr clust eval --matrix ...` (Silhouette) 或 `pgr nwk eval` [计划中] (树结构评估)
   - 外部评估（有 Ground Truth）：`pgr clust eval` (ARI/AMI/V-Measure)
 - 参考文档：
   - 切分：[clust-cut.md](file:///Volumes/ExtHome/Scripts/pgr/docs/clust-cut.md)
@@ -64,7 +64,7 @@
 
 3.  **生态一致性**:
     - **Flat Clustering**: `pgr clust cut` 的设计与 SciPy `fcluster` 的 `criterion='distance'|'maxclust'` 保持概念一致。
-    - **Cophenetic Correlation**: 确认将 `cophenet` 引入 `pgr nwk eval`，作为衡量树对原始距离矩阵拟合优度的核心指标。
+    - **Cophenetic Correlation**: 确认将 `cophenet` 引入 `pgr nwk eval` [计划中]，作为衡量树对原始距离矩阵拟合优度的核心指标。
 
 4.  **Optimal Leaf Ordering (OLO)**:
     - **背景**: 标准层次聚类算法生成的树，左右子树的顺序是任意的。这导致在绘制热图（Heatmap）时，相似的行/列可能不相邻，视觉效果杂乱。
@@ -76,7 +76,7 @@
     - **背景**: 如何量化生成的树是否真实反映了原始距离矩阵？
     - **SciPy 方案**: `scipy.cluster.hierarchy.cophenet`。
     - **原理**: 计算树上两点间的距离（cophenetic distance，即最近共同祖先的高度）与原始距离矩阵之间的 Pearson 相关系数。
-    - **pgr 借鉴**: 在 `pgr nwk eval` 中实现此指标，帮助用户评估不同 Linkage 方法（如 UPGMA vs Ward）对数据的拟合优度。
+    - **pgr 借鉴**: 在 `pgr nwk eval` [计划中] 中实现此指标，帮助用户评估不同 Linkage 方法（如 UPGMA vs Ward）对数据的拟合优度。
 
 6.  **Distance Metric Architecture**:
     - **背景**: SciPy/Scikit-learn 的距离计算模块架构清晰，支持稀疏矩阵和多种度量。
@@ -271,7 +271,7 @@ pgr clust hier matrix.phy --method average > tree.nwk
 - 输出差异：SciPy 返回 `(n-1)×4` 的 linkage 矩阵 Z；pgr 输出 Newick 树，直接用于 `clust cut / to-dot / to-forest`。普通用户无需关心 Z；若需与 SciPy 互操作，请在 Python 端继续使用 Z 与 `fcluster/cophenet`。
 - 叶序优化：`pgr` 推荐 `pgr nwk order --nd` (Ladderize) 以换取极高的性能，且可视化效果通常足够好。
 - 平切（flat clustering）：SciPy 的 `fcluster` 提供 `criterion='distance'|'maxclust'|...`；在 pgr 中分别对应 `clust cut --height H` 与 `clust cut --k K`，其它 `monocrit/inconsistent` 等准则暂不引入。
-- 评估指标：SciPy 有 `cophenet`（共生相关系数）；pgr 建议在 `nwk eval` 中加入 cophenetic 相关系数作为树质量评估的补充。
+- 评估指标：SciPy 有 `cophenet`（共生相关系数）；pgr 建议在 `nwk eval` [计划中] 中加入 cophenetic 相关系数作为树质量评估的补充。
 - 内部实现细节：
   - SciPy 的 `ward` 更新公式在内部进行平方和开方（`sqrt`）；`pgr` 采用全程平方距离运算（仅输出时开方），避免了中间步骤的精度损失和开方开销，理论上更高效。
   - SciPy 的 `fast_linkage` 使用了 Heap 优化；`pgr` 目前对非 NN-chain 方法使用朴素实现，未来可借鉴此优化。
@@ -292,7 +292,7 @@ pgr clust hier matrix.phy --method average > tree.nwk
   - pgr: `pgr clust cut tree.nwk --k 20 > clusters.tsv`
 - SciPy cophenet:
   - Python: `c, dists = cophenet(Z, Y)`
-  - pgr: `pgr nwk eval tree.nwk --dist matrix.phy > metrics.tsv`
+  - pgr: `pgr nwk eval tree.nwk --dist matrix.phy > metrics.tsv` [计划中]
 
 ### scikit-learn 映射
 - AgglomerativeClustering (Ward):
@@ -309,6 +309,6 @@ pgr clust hier matrix.phy --method average > tree.nwk
 - 构树：`pgr clust hier` → 生成 dendrogram
 - 切分：`pgr clust cut --height H` → 导出分组
 - 评估：
-  - 无 Ground Truth：`pgr nwk eval`（几何/分类/演化/地理多维度评估）
+  - 无 Ground Truth：`pgr nwk eval` [计划中]（几何/分类/演化/地理多维度评估）
   - 有 Ground Truth：`pgr clust eval`（ARI/AMI/V-Measure）
 - 可视化：`pgr nwk to-dot/to-forest` → 图形/LaTeX 展示

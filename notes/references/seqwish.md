@@ -412,7 +412,7 @@ seqwish 作为"图物化器"的正确性契约。
 ### 6.2 graph（粗全局 GFA，✅ 已实现）
 
 - **已实现**：`pgr paf graph [-f refs.fa] --min-var-len 100`，输出 GFA v1.0（S/L/P）；`-f` 可选，拓扑模式零序列依赖。
-  `src/libs/paf/graph.rs` 470 行引擎 + `src/cmd_pgr/paf/graph.rs` CLI 包装，5 单元 + 7 集成测试。
+  `src/libs/paf/graph/` 470 行引擎 + `src/cmd_pgr/paf/graph.rs` CLI 包装，5 单元 + 7 集成测试。
 - **算法骨架**：seqwish 风格段级 DSU（CIGAR 切分 → 段对 → DSU 传递闭包 → 节点序列 → 路径
     - novel 段补全 → 边派生 → GFA 输出），简化版（无 spanning tree 优化，等价类规模小）。
 - **`--min-var-len 100` 过滤**：在 CIGAR 切分阶段即过滤（indel < 阈值不切分）， 比 seqwish 在
@@ -498,13 +498,13 @@ FFI 层是 `unsafe` 的集中地，但遵循三条纪律：
 1. **pgr 不需要 FFI 层** — pgr 是纯 Rust 项目，无 C++ 主程序，不应模仿 seqwish 的 FFI 包装。 pgr 的
    `lib.rs` 应保持简洁的 `pub mod` 声明 + 公共类型，不引入 `extern "C"`。
 2. **模块划分与算法阶段对应** — seqwish 的 21 个 `pub mod` 与 §1 的 6 阶段一一对应，
-   是阅读源码的天然地图。pgr 的 `libs/paf/` 已有类似实践（`index.rs`/`query.rs`/`graph.rs`/
+   是阅读源码的天然地图。pgr 的 `libs/paf/` 已有类似实践（`index/`/`query.rs`/`graph/`/
    `to_gfa.rs` 按处理阶段划分），可继续保持。
 3. **opaque handle 模式的 Rust 纯净版** — 若 pgr 未来需要把图构建引擎抽象成可替换后端 （如 seqwish
    风格 vs impg 风格），可借鉴 handle 模式的"所有权显式转移"思想，但用 `Arc<dyn GraphEngine>` +
    trait object 而非裸指针。
 4. **`RwLock` vs `Mutex` 的读写模式区分** — seqwish 对只读树用 `RwLock`、写树用 `Mutex`
-   是并行区间树的标准实践。pgr 的 `libs/paf/index.rs` 若未来引入并行查询，可借鉴此区分。
+   是并行区间树的标准实践。pgr 的 `libs/paf/index/` 若未来引入并行查询，可借鉴此区分。
 
 ### 6.6 基础设施模块速览
 
@@ -557,7 +557,7 @@ FFI 层是 `unsafe` 的集中地，但遵循三条纪律：
 - **`reverse_complement_in_place`**：单遍扫描，`swap + complement` 同步做，奇数长度中间 元素单独
   complement。比"先 reverse 再 complement"少一次遍历。
 
-**对 pgr 的启示**：pgr 的 `src/libs/dna.rs` 已有类似 256 表实现，思路一致。seqwish 的 in-place
+**对 pgr 的启示**：pgr 的 `src/libs/nt.rs` 已有类似 256 表实现，思路一致。seqwish 的 in-place
 版本对大序列反补（如 `seq_v` 处理反链 query 时）省内存，pgr 可借鉴。
 
 #### 6.6.4 cigar.rs：极简 CIGAR 解析
@@ -567,7 +567,7 @@ FFI 层是 `unsafe` 的集中地，但遵循三条纪律：
 `cigar_to_string` 两个函数。解析是手写状态机（digit 累积 → 遇 alpha 切换 → flush），不依赖 regex。
 支持所有 CIGAR op（M/I/D/N/S/H/P/X/=），空串返回空 vec。
 
-**对 pgr 的启示**：pgr 已有 `src/libs/alignment.rs` 处理 CIGAR，功能更全（含逐碱基 walk）。 seqwish
+**对 pgr 的启示**：pgr 已有 `src/libs/alignment/` 处理 CIGAR，功能更全（含逐碱基 walk）。 seqwish
 的极简版只切 op 不解释语义，因为对齐解析在 `alignments.rs` 里做。pgr 不需要借鉴。
 
 #### 6.6.5 paf.rs：PAF 行 + 多文件 spec 解析
@@ -681,7 +681,7 @@ seqwish 的 compact/links/gfa 三个阶段都用 `(1..=n).into_par_iter().for_ea
 
 这个"写用 Mutex、读用 RwLock、不可变用 Arc"的三层选择是 Rust 并发数据结构的最佳实践。
 
-**对 pgr 的启示**：pgr 的 `libs/paf/index.rs` 若引入并行查询（多 region 同时 BFS），
+**对 pgr 的启示**：pgr 的 `libs/paf/index/` 若引入并行查询（多 region 同时 BFS），
 应照此分层：索引构建后用 `Arc<Index>` 共享，BFS 队列用 `crossbeam_queue`，结果收集用
 `par_iter().map().collect()`。
 

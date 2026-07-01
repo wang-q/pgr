@@ -465,7 +465,7 @@ if (orig_seq != smoothed_seq) {
 基于 smoothxg 的分析，pgr 若要做全图归一化（V7+），建议路线：
 
 1. **复用现有 `paf graph` 的物化图** — pgr 已有 seqwish 风格的 segment-level DSU 物化
-   （`libs/paf/graph.rs`），无需重新诱导。
+   （`libs/paf/graph/`），无需重新诱导。
 2. **引入 path-guided SGD 排序** — 这是 smoothxg prep 的核心，pgr 可移植 odgi 的
    `path_linear_sgd_order` 算法（或用 Rust 重写）。
 3. **块分解复用 BFS 传递闭包** — pgr 的 `paf query -t` 已有 BFS 同源片段发现，可直接

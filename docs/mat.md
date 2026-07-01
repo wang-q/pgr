@@ -71,6 +71,19 @@ PHYLIP 格式间的转换与标准化。
   - **距离/误差**：MAE (平均绝对误差), Euclidean (欧氏距离)。
   - `all`: 同时计算以上所有指标。
 
+#### `pgr mat transform`
+对矩阵元素进行数学变换。
+- **作用**：将相似度矩阵转换为距离矩阵，或进行归一化、对数变换等。
+- **操作 (`--op`)**：
+  - `linear`: `val = val * scale + offset`
+  - `inv-linear`: `val = max - val`（相似度→距离的常用变换）
+  - `log`: `val = -ln(val)`
+  - `exp`: `val = exp(-val)`
+  - `square`: `val = val * val`
+  - `sqrt`: `val = sqrt(val)`
+- **归一化 (`--normalize`)**：基于对角线元素归一化 `x_norm(i, j) = x(i, j) / sqrt(x(i, i) * x(j, j))`。
+- **参数**：`--max`（inv-linear 的最大值，默认 1.0）、`--scale`（linear 的缩放因子，默认 1.0）、`--offset`（linear 的偏移量，默认 0.0）、`--format`（输入格式：`phylip` 或 `pair`，默认 `phylip`）。
+
 ## 推荐工作流
 
 ### 场景 A：从 BLAST 结果构树

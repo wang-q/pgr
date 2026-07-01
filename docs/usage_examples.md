@@ -364,8 +364,8 @@ For contributors adding new subcommands, `pgr` uses a consistent style for CLI h
   - **Notes**: Bullet points starting with `*`.
     - Standard note for `fa`/`fas`: `* Supports both plain text and gzipped (.gz) files`
     - Standard note for `fa`/`fas`: `* Reads from stdin if input file is 'stdin'`
-    - Standard note for `twobit`: `* 2bit files are binary and require random access (seeking)`
-    - Standard note for `twobit`: `* Does not support stdin or gzipped inputs`
+    - Standard note for `2bit`: `* 2bit files are binary and require random access (seeking)`
+    - Standard note for `2bit`: `* Does not support stdin or gzipped inputs`
   - **Examples**: Numbered list (`1.`, `2.`) with code blocks indented by 3 spaces.
 - **Arguments**:
   - **Input**: `infiles` (multiple) or `infile` (single).

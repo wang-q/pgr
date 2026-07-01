@@ -1,5 +1,7 @@
 # ms2dna 迁移到 Rust 设计与规划
 
+> **实现状态注记**：本设计稿中规划的命令名为 `pgr ms2dna`，实际实现为 `pgr ms to-dna`（子命令形式，文档见 `docs/ms-to-dna.md`）。下文中的 `pgr ms2dna` 均指设计阶段的命名。
+
 ## 目标与范围
 - 目标：将 ms2dna（将 Hudson ms 输出的 0/1 单倍型转换为 DNA 序列）完整迁移到 Rust，保持 CLI 与输出格式兼容
 - 范围：参数解析、随机数与种子管理、输入解析（ms 输出）、GC 设定、DNA 序列生成、FASTA 输出、多群体标签与批次命名

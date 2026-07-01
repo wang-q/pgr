@@ -130,7 +130,7 @@ src/
 | `axt`   | 4        | AXT 排序、转 FAS/MAF/PSL                             |
 | `psl`   | 8        | PSL 统计、直方图、lift、swap、转 chain、转 range     |
 | `lav`   | 2        | LAV (lastz 原生输出) 转 PSL、lastz 调用封装          |
-| `maf`   | 1        | MAF (multiple alignment format) 转 Block FA          |
+| `maf`   | 2        | MAF (multiple alignment format) 转 Block FA、转 PAF  |
 
 **这是 pgr 最成熟的模块群**。完整覆盖了 UCSC 的 lastz → axtChain → chainAntiRepeat →
 chainMergeSort → chainPreNet → chainNet → netSyntenic → netChainSubset → netToAxt →
@@ -227,7 +227,7 @@ clustalw/muscle/mafft），充当工作流 glue。这与 `chain`/`net` 模块的
 - `sub_matrix.rs`：DNA 替换矩阵（如 HoxD55）
 - `kdtree.rs`：高效前驱搜索的数据结构
 - `anti_repeat.rs`：反重复处理
-- `net/`：Net 格式处理子模块（class/filter/to-axt/writer）
+- `net/`：Net 格式处理子模块（builder/class/filter/finalize/reader/subset/syntenic/to-axt/types/writer）
 
 ### 4.4 `libs/clust/` — 聚类算法库
 
@@ -244,7 +244,7 @@ clustalw/muscle/mafft），充当工作流 glue。这与 `chain`/`net` 模块的
 
 统一管理生物信息学格式的解析逻辑：
 
-- `axt.rs`、`fas.rs`、`fa.rs`、`fq.rs`、`lav.rs`、`maf.rs`、`psl.rs`、`twobit.rs`
+- `axt.rs`、`fas.rs`、`fa.rs`、`fq.rs`、`lav.rs`、`maf.rs`、`psl.rs`、`twobit.rs`、`vcf.rs`
 
 最近重构过：原先在 `libs/` 根目录下的 `axt.rs`、`fas.rs`、`lav.rs`、`maf.rs` 等移入 `libs/fmt/`。
 
@@ -266,17 +266,21 @@ clustalw/muscle/mafft），充当工作流 glue。这与 `chain`/`net` 模块的
   **2026-06 发现：此 IO 抽象层可直接支撑 PAF 模块的 CIGAR 懒加载和 BGZF 随机访问，比 impg 的 `paf.rs` IO 层更成熟**。
   见 [[paf-pangenome.md]] §6.1。
 - `libs/nt.rs`：核苷酸类型
-- `libs/pairmat.rs`：pair 矩阵
+- `libs/pairmat/`：pair 矩阵
 - `libs/hv.rs`：hypervariable 区域
 - `libs/chain/net/`：Net 格式处理（已移入 chain 子模块）
-- `libs/twobit.rs`：2bit 格式读写
-- `libs/psl.rs`：PSL 格式
-- `libs/alignment.rs`：比对通用逻辑
-- `libs/fas_multiz.rs`：Multiz 多序列比对处理（banded DP 合并）
+- `libs/fmt/twobit.rs`：2bit 格式读写
+- `libs/fmt/psl.rs`：PSL 格式
+- `libs/alignment/`：比对通用逻辑
+- `libs/fas_multiz/`：Multiz 多序列比对处理（banded DP 合并）
 - `libs/fas_xlsx.rs`：FASTQ 到 Excel 转换
 - `libs/fasta/`：FASTA 处理工具（dedup/filter/stat）
 - `libs/paf/`：PAF 隐式图核心（索引、查询、图构建、VCF 导出）
 - `libs/ms/`：Hudson's ms 模拟器（解析器 + DNA 生成）
+- `libs/plot/`：绘图工具（histogram/nrps/venn）
+- `libs/lastz.rs`：lastz 调用封装
+- `libs/par.rs`：并行辅助
+- `libs/translate.rs`：序列翻译（六框翻译）
 
 ## 5. 设计模式与约定
 

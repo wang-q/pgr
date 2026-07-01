@@ -13,7 +13,7 @@ structure, coordinate system, and pgr implementation details.
 | LAV      | BLASTZ local alignment view                  | [lav.md](lav.md) |
 | LOC      | FASTA random-access location index           | [loc.md](loc.md) |
 | Net      | UCSC hierarchical alignment net              | [net.md](net.md), [docs/net.md](../net.md) |
-| PAF      | Pairwise mApping Format (12-column TSV)      | (to be implemented) |
+| PAF      | Pairwise mApping Format (12-column TSV)      | [docs/paf.md](../paf.md) |
 | PSL      | UCSC pairwise sequence alignment             | [psl.md](psl.md), [docs/psl.md](../psl.md) |
 
 Additional formats with dedicated top-level documentation:

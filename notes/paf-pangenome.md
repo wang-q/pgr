@@ -232,22 +232,26 @@ src/libs/paf/
 ├── record.rs       # PafRecord — String 字段 + tags
 ├── parser.rs       # 纯文本 PAF 解析 + PafParseError
 ├── cigar.rs        # CigarOp bit-packing + stats + identity
-├── writer.rs       # PAF 行格式化
 ├── persist.rs      # .paf.idx 磁盘持久化（bincode）
 ├── fasta.rs        # FASTA 序列加载与检索
-├── msa.rs          # MSA 条目构建
+├── maf_import.rs   # MAF 导入为 PAF 记录
+├── msa_build.rs    # MSA 条目构建
 ├── poa_compact.rs  # POA 压缩
 ├── query.rs        # 查询接口
 ├── vcf.rs          # VCF 导出逻辑
 ├── index/          # PafIndex + BFS 传递闭包
 │   ├── mod.rs      #   PafIndex + PafMetadata + SortedRanges
+│   ├── builder.rs  #   索引构建
+│   ├── query.rs    #   索引查询
 │   ├── bfs.rs      #   传递闭包 BFS 算法
 │   └── tests.rs    #   单元测试
 └── graph/          # 粗全局 GFA 引擎（DSU 传递闭包）
     ├── mod.rs      #   PafGraph 主接口
+    ├── builder.rs  #   图构建
     ├── dsu.rs      #   DSU (Disjoint Set Union) 实现
     ├── gfa.rs      #   GFA 格式输出
     ├── segment.rs  #   段处理逻辑
+    ├── report.rs   #   图统计报告
     └── tests.rs    #   单元测试
 
 src/cmd_pgr/paf/

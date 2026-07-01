@@ -1,6 +1,6 @@
 # LAV 格式 (LAV Format)
 
-LAV (Local Alignment View) 是 BLASTZ 等比对工具使用的格式。`pgr` 在 `src/libs/lav.rs` 中实现了 LAV 文件的解析。
+LAV (Local Alignment View) 是 BLASTZ 等比对工具使用的格式。`pgr` 在 `src/libs/fmt/lav.rs` 中实现了 LAV 文件的解析。
 
 ### 结构 (Structure)
 
@@ -23,9 +23,9 @@ LAV 格式使用 **1-based 闭区间** (1-based, fully closed) 坐标系统。
     *   `e` (end): `e <end_t> <end_q>`。表示比对块的结束位置（1-based）。
     *   `l` (location): `l <begin_t> <begin_q> <end_t> <end_q> <percent_identity>`。详细的局部比对片段，包含起始和结束位置。
 
-### `pgr` 实现 (`libs/lav.rs`) 与 UCSC `lav` 库的对比
+### `pgr` 实现 (`libs/fmt/lav.rs`) 与 UCSC `lav` 库的对比
 
-`pgr` 的 LAV 解析实现 (`src/libs/lav.rs`) 旨在与 UCSC 的 `lav.c` 和 `lavToPsl.c` 保持高度兼容，以确保转换结果的一致性。以下是详细的对比和实现细节：
+`pgr` 的 LAV 解析实现 (`src/libs/fmt/lav.rs`) 旨在与 UCSC 的 `lav.c` 和 `lavToPsl.c` 保持高度兼容，以确保转换结果的一致性。以下是详细的对比和实现细节：
 
 *   坐标系转换 (Coordinate System Conversion)
     *   LAV 文件: 使用 1-based 闭区间坐标。

@@ -126,7 +126,7 @@
 
 ### 11. 动态树切割 (`--dynamic-tree`) [已实现]
 
-- **定义**：参考 R 语言 `dynamicTreeCut` 包的 `cutreeDynamicTree` 算法 ([dynamicTreeCut/R/cutreeDynamic.R](file:///Volumes/ExtHome/Scripts/pgr/dynamicTreeCut/R/cutreeDynamic.R))。
+- **定义**：参考 R 语言 `dynamicTreeCut` 包的 `cutreeDynamicTree` 算法 (`dynamicTreeCut/R/cutreeDynamic.R`).
 - **原理**：自顶向下的递归算法。
   1.  首先基于全局高度进行初步切割。
   2.  对每个初步簇，分析其内部结构（高度分布）。
@@ -223,13 +223,13 @@
 #### 1. 经典系统发育分析
 ```bash
 # 1. 扫描不同参数，生成多个聚类结果
-# pgr clust cut input.nwk --method max-clade --scan 0.01,0.05,0.10 > partitions.tsv
+# pgr clust cut input.nwk --max-clade 0.10 --scan 0.01,0.05,0.10 > partitions.tsv
 
 # 2. 选定最佳阈值，生成最终聚类
-pgr clust cut input.nwk --method max-clade -t 0.05 > final_cluster.tsv
+pgr clust cut input.nwk --max-clade 0.05 > final_cluster.tsv
 
 # 3. 可视化或提取子树
-pgr nwk subset input.nwk --list final_cluster.tsv --cluster-id 1 > cluster1.nwk
+pgr nwk subtree input.nwk --list final_cluster.tsv --cluster-id 1 > cluster1.nwk
 ```
 
 #### 2. 层次聚类（hclust）接入
