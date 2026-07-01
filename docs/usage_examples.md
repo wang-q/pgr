@@ -79,7 +79,7 @@ pgr fas create tests/fas/I.connect.tsv -r tests/fas/genome.fa --name S288c
 cat tests/fas/genome.fa | sed 's/^>/>S288c./' > tests/fas/genomes.fa
 samtools faidx tests/fas/genomes.fa S288c.I:1-100
 
-cargo run --bin pgr -- fas create tests/fas/I.name.tsv -r tests/fas/genomes.fa
+pgr fas create tests/fas/I.name.tsv -r tests/fas/genomes.fa
 
 pgr fas separate tests/fas/example.fas -o . --suffix .tmp
 
@@ -99,21 +99,21 @@ pgr fas split tests/fas/example.fas -o . --chr --suffix .tmp
 
 pgr fas slice tests/fas/slice.fas -r tests/fas/slice.json --name S288c
 
-cargo run --bin pgr -- fas join tests/fas/S288cvsYJM789.slice.fas --name YJM789
-cargo run --bin pgr -- fas join \
+pgr fas join tests/fas/S288cvsYJM789.slice.fas --name YJM789
+pgr fas join \
     tests/fas/S288cvsRM11_1a.slice.fas \
     tests/fas/S288cvsYJM789.slice.fas \
     tests/fas/S288cvsSpar.slice.fas
 
-cargo run --bin pgr -- fas stat tests/fas/example.fas --outgroup
+pgr fas stat tests/fas/example.fas --outgroup
 
-cargo run --bin pgr -- fas variation tests/fas/example.fas
-cargo run --bin pgr -- fas variation tests/fas/example.fas --outgroup
+fas variation tests/fas/example.fas
+pgr fas variation tests/fas/example.fas --outgroup
 
 # snp-sites -v tests/fas/YDL184C.fas
-cargo run --bin pgr -- fas to-vcf tests/fas/YDL184C.fas
-cargo run --bin pgr -- fas to-vcf tests/fas/example.fas
-cargo run --bin pgr -- fas to-vcf --sizes tests/fas/S288c.chr.sizes tests/fas/YDL184C.fas
+pgr fas to-vcf tests/fas/YDL184C.fas
+pgr fas to-vcf tests/fas/example.fas
+pgr fas to-vcf --sizes tests/fas/S288c.chr.sizes tests/fas/YDL184C.fas
 
 #fasops xlsx tests/fas/example.fas -o example.xlsx
 #fasops xlsx tests/fas/example.fas -l 50 --outgroup -o example.outgroup.xlsx
@@ -123,7 +123,7 @@ pgr fas to-xlsx tests/fas/example.fas --nosingle
 pgr fas to-xlsx tests/fas/example.fas --indel --nocomplex
 pgr fas to-xlsx tests/fas/example.fas --indel --min 0.3 --max 0.7
 
-cargo run --bin pgr -- pl p2m tests/fas/S288cvsRM11_1a.slice.fas tests/fas/S288cvsSpar.slice.fas
+pgr pl p2m tests/fas/S288cvsRM11_1a.slice.fas tests/fas/S288cvsSpar.slice.fas
 ```
 
 ### 2bit
@@ -154,44 +154,44 @@ pgr 2bit masked tests/genome/mg1655.2bit --gap
 ```bash
 curl -L https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/005/845/GCF_000005845.2_ASM584v2/GCF_000005845.2_ASM584v2_genomic.fna.gz |
     gzip -dc |
-    hnsm filter stdin -s |
-    hnsm gz stdin -o tests/pgr/mg1655.fa
+    pgr fa filter stdin -s |
+    pgr fa gz stdin -o tests/pgr/mg1655.fa
 
 curl -L https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/008/865/GCF_000008865.2_ASM886v2/GCF_000008865.2_ASM886v2_genomic.fna.gz |
     gzip -dc |
-    hnsm filter stdin -s |
-    hnsm gz stdin -o tests/pgr/sakai.fa
+    pgr fa filter stdin -s |
+    pgr fa gz stdin -o tests/pgr/sakai.fa
 ```
 
-#### Distance with hnsm
+#### Distance with pgr
 
 ```bash
-hnsm distance tests/pgr/sakai.fa.gz tests/pgr/mg1655.fa.gz --hasher mod -k 21 -w 1
+pgr dist seq tests/pgr/sakai.fa.gz tests/pgr/mg1655.fa.gz --hasher mod -k 21 -w 1
 #NC_002695       NC_000913       0.0221  0.4580  0.5881
 #NC_002127       NC_000913       0.6640  0.0000  0.0006
 #NC_002128       NC_000913       0.4031  0.0001  0.0053
 
-hnsm rc tests/pgr/mg1655.fa.gz |
-    hnsm distance tests/pgr/sakai.fa.gz stdin --hasher mod -k 21 -w 1
+pgr fa rc tests/pgr/mg1655.fa.gz |
+    pgr dist seq tests/pgr/sakai.fa.gz stdin --hasher mod -k 21 -w 1
 #NC_002695       RC_NC_000913    0.0221  0.4580  0.5881
 #NC_002127       RC_NC_000913    0.6640  0.0000  0.0006
 #NC_002128       RC_NC_000913    0.4031  0.0001  0.0053
 
-hnsm rc tests/pgr/mg1655.fa.gz |
-    hnsm distance tests/pgr/mg1655.fa.gz stdin --hasher mod -k 21 -w 1
+pgr fa rc tests/pgr/mg1655.fa.gz |
+    pgr dist seq tests/pgr/mg1655.fa.gz stdin --hasher mod -k 21 -w 1
 #NC_000913       RC_NC_000913    0.0000  1.0000  1.0000
-hnsm rc tests/pgr/mg1655.fa.gz |
-    hnsm distance tests/pgr/mg1655.fa.gz stdin --hasher rapid -k 21 -w 1
+pgr fa rc tests/pgr/mg1655.fa.gz |
+    pgr dist seq tests/pgr/mg1655.fa.gz stdin --hasher rapid -k 21 -w 1
 #NC_000913       RC_NC_000913    0.2289  0.0041  0.0082
 
-hnsm distance tests/pgr/sakai.fa.gz tests/pgr/mg1655.fa.gz --merge --hasher mod -k 21 -w 1
+pgr dist seq tests/pgr/sakai.fa.gz tests/pgr/mg1655.fa.gz --merge --hasher mod -k 21 -w 1
 #tests/pgr/sakai.fa.gz   tests/pgr/mg1655.fa.gz  5302382 4543891 3064483 6781790 0.0226  0.4519  0.5779
 
-hnsm distance tests/pgr/sakai.fa.gz tests/pgr/mg1655.fa.gz --merge --hasher rapid -k 21 -w 1
+pgr dist seq tests/pgr/sakai.fa.gz tests/pgr/mg1655.fa.gz --merge --hasher rapid -k 21 -w 1
 #tests/pgr/sakai.fa.gz   tests/pgr/mg1655.fa.gz  5394043 4562542 3071076 6885509 0.0230  0.4460  0.5693
 
 echo -e "tests/pgr/sakai.fa.gz\ntests/pgr/mg1655.fa.gz" |
-    hnsm distance stdin --merge --list --hasher mod -k 21 -w 1
+    pgr dist seq stdin --merge --list --hasher mod -k 21 -w 1
 #tests/pgr/sakai.fa.gz   tests/pgr/sakai.fa.gz   5302382 5302382 5302382 5302382 0.0000  1.0000  1.0000
 #tests/pgr/sakai.fa.gz   tests/pgr/mg1655.fa.gz  5302382 4543891 3064483 6781790 0.0226  0.4519  0.5779
 #tests/pgr/mg1655.fa.gz  tests/pgr/sakai.fa.gz   4543891 5302382 3064483 6781790 0.0226  0.4519  0.6744
@@ -238,9 +238,9 @@ curl -LO https://tncentral.ncc.unesp.br/api/download_blast/nc/tn_in_is
 unzip -j tn_in_is 'tncentral_integrall_isfinder.fa'
 gzip -9 -c 'tncentral_integrall_isfinder.fa' > tncentral.fa.gz
 
-hnsm size tests/pgr/tncentral.fa.gz
-hnsm distance tests/pgr/tncentral.fa.gz -k 17 -w 5 -p 8 |
-    rgr filter stdin --ge 5:0.9
+pgr fa size tests/pgr/tncentral.fa.gz
+pgr dist seq tests/pgr/tncentral.fa.gz -k 17 -w 5 -p 8 |
+    spanr filter stdin --ge 5:0.9
 
 # RepBase for RepeatMasker
 curl -LO https://github.com/wang-q/ubuntu/releases/download/20190906/repeatmaskerlibraries-20140131.tar.gz
@@ -293,19 +293,19 @@ multiz M=10 tests/multiz/S288cvsRM11_1a.maf tests/multiz/S288cvsSpar.maf 1 out1 
 
 ```bash
 pgr dist hv tests/clust/IBPA.fa
-hnsm dist seq tests/clust/IBPA.fa --merge
+pgr dist seq tests/clust/IBPA.fa --merge
 
-hnsm dist hv tests/genome/mg1655.pro.fa.gz
-hnsm dist seq tests/genome/mg1655.pro.fa.gz --merge
+pgr dist hv tests/genome/mg1655.pro.fa.gz
+pgr dist seq tests/genome/mg1655.pro.fa.gz --merge
 
-hnsm dist hv tests/genome/mg1655.pro.fa.gz tests/genome/pao1.pro.fa.gz -k 7 -w 1
-hnsm dist seq tests/genome/mg1655.pro.fa.gz tests/genome/pao1.pro.fa.gz -k 7 -w 1 --merge
+pgr dist hv tests/genome/mg1655.pro.fa.gz tests/genome/pao1.pro.fa.gz -k 7 -w 1
+pgr dist seq tests/genome/mg1655.pro.fa.gz tests/genome/pao1.pro.fa.gz -k 7 -w 1 --merge
 ```
 
 ### Assemblies
 
 ```bash
-cargo run --bin pgr pl prefilter tests/index/final.contigs.fa tests/clust/IBPA.fa
+pgr pl prefilter tests/index/final.contigs.fa tests/clust/IBPA.fa
 
 # SRR6323163 - APH(3')-IIIa
 # 3300030246 - acrB

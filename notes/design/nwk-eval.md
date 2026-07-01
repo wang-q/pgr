@@ -1,5 +1,7 @@
 # nwk eval [设计中]
 
+> **实现状态注记**：本文档为设计稿，所有功能均未实现（Roadmap 四个 Phase 全部 `[ ]`）。`pgr nwk` 当前无 `eval` 子命令。
+
 `pgr nwk eval` 的目标是建立一个**多维度的树评估框架**。除了基于树拓扑的几何指标外，重点引入**生物学语境**，评估基因树（Gene Tree）与物种树（Species Tree）或分类单元（Taxonomy）的一致性。
 
 它旨在回答四个核心问题：
@@ -113,12 +115,12 @@ pgr nwk eval tree.nwk --dist matrix.phy --metrics cophenet > fit.tsv
 
 - **代码复用与协同**：
   - **距离计算**：
-    - 基础：复用 `Tree::get_distance` (来自 [libs/phylo/tree/mod.rs](file:///Volumes/ExtHome/Scripts/pgr/src/libs/phylo/tree/mod.rs)，CLI 入口为 [distance.rs](file:///Volumes/ExtHome/Scripts/pgr/src/cmd_pgr/nwk/distance.rs))。
+    - 基础：复用 `Tree::get_distance` (来自 [libs/phylo/tree/mod.rs](../../../src/libs/phylo/tree/mod.rs)，CLI 入口为 [distance.rs](../../../src/cmd_pgr/nwk/distance.rs))。
     - 优化：对于 `avg_clade` (AvgDist) 和 `max_clade` (Diameter)，直接复用 `libs/phylo/tree/stat.rs` 中的 $O(N)$ 自底向上聚合算法（已在 `pgr clust cut` 中验证）。
   - **拓扑比较**：
-    - RF 距离：核心逻辑在 [libs/phylo/cmp.rs](file:///Volumes/ExtHome/Scripts/pgr/src/libs/phylo/cmp.rs)（`PhyloTreeCompare` trait 提供 `robinson_foulds`/`weighted_robinson_foulds`/`kuhner_felsenstein`），CLI 入口为 [cmp.rs](file:///Volumes/ExtHome/Scripts/pgr/src/cmd_pgr/nwk/cmp.rs)。
+    - RF 距离：核心逻辑在 [libs/phylo/cmp.rs](../../../src/libs/phylo/cmp.rs)（`PhyloTreeCompare` trait 提供 `robinson_foulds`/`weighted_robinson_foulds`/`kuhner_felsenstein`），CLI 入口为 [cmp.rs](../../../src/cmd_pgr/nwk/cmp.rs)。
   - **单系性检查**：
-    - 复用 `Tree::is_monophyletic` (已在 [label.rs](file:///Volumes/ExtHome/Scripts/pgr/src/cmd_pgr/nwk/label.rs) 和 [subtree.rs](file:///Volumes/ExtHome/Scripts/pgr/src/cmd_pgr/nwk/subtree.rs) 中使用)。
+    - 复用 `Tree::is_monophyletic` (已在 [label.rs](../../../src/cmd_pgr/nwk/label.rs) 和 [subtree.rs](../../../src/cmd_pgr/nwk/subtree.rs) 中使用)。
 
 - **性能策略**：
   - 优先使用基于遍历的聚合算法，避免构建 $O(N^2)$ 全距离矩阵。

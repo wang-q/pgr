@@ -18,7 +18,7 @@ pgr 是一个**生物信息学 CLI 工具集**，定位是"基因组数据处理
 | samtools  | SAM/BAM/CRAM 专用           | pgr 不做 SAM/BAM，focus on UCSC 链       |
 | bedtools  | BED/VCF/GFF 区间操作        | pgr 有 2bit/Chain/Net/Newick 等独特覆盖  |
 | seqtk     | FASTA/FASTQ 轻量处理        | pgr 的 fa/fas 子命令更多更全             |
-| pggb/odgi | 泛基因组图构建与分析        | pgr 目前是 pairwise 工具，泛基因组在路上 |
+| pggb/odgi | 泛基因组图构建与分析        | pgr 已实现 PAF 隐式图（query/graph/to-gfa/to-vcf/stat） |
 
 ### 1.2 核心优势
 
@@ -62,6 +62,7 @@ src/
 │   └── plot/           #   可视化输出 (TikZ/LaTeX)
 └── libs/               # 核心库层：数据结构与算法
     ├── mod.rs
+    ├── alignment/      #   序列比对工具 (coords/msa/slice/stat/trim/variation)
     ├── phylo/          #   系统发育树核心 (Arena 树结构)
     ├── poa/            #   偏序比对 (Partial Order Alignment)
     ├── chain/          #   Chain 算法 (连接、gap 计算、替换矩阵)
@@ -69,12 +70,19 @@ src/
     ├── clust/          #   聚类算法 (hier/DBSCAN/MCL/k-medoids/NJ/UPGMA)
     │   ├── eval/       #     聚类评估
     │   └── tree_cut/   #     树切分方法
-    ├── ms/             #   Hudson's ms 模拟器解析
+    ├── fas_multiz/     #   fas-multiz 多序列比对合并 (banded_align/merge/windows)
+    ├── fasta/          #   FASTA 操作 (chunk/dedup/filter/stat)
     ├── fmt/            #   格式解析 (AXT/FAS/FA/FQ/LAV/MAF/PSL/2bit/VCF)
+    ├── ms/             #   Hudson's ms 模拟器解析
     ├── paf/            #   PAF 隐式图核心
     │   ├── index/      #     区间树索引 + BFS 传递闭包
     │   └── graph/      #     DSU 图构建 + GFA 输出
-    └── ...             #   io, hash, hv, linalg, loc, nt, pairmat
+    ├── plot/           #   可视化 (histogram/nrps/venn)
+    ├── fas_xlsx.rs     #   FAS xlsx 输出
+    ├── lastz.rs        #   lastz 封装
+    ├── par.rs          #   并行工具
+    ├── translate.rs    #   翻译工具
+    └── (io/hash/hv/linalg/loc/nt/pairmat)
 ```
 
 **关键设计**：`cmd_pgr/` 管命令分发，`libs/` 管核心逻辑。命令层薄，逻辑在库层。这是好的分层。
@@ -369,8 +377,7 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
 - `pgr.rs` 末尾注释的 TODO：paralog、fas match、去完全包含序列
 - `notes/design/nwk-eval.md`：树结构多维度评估（设计中）
 
-PAF 泛基因组方向（query-to-vcf）已全部完成，后续规划见 [[paf-pangenome.md]] §5（stat 规模扩展 / V7 图质量 /
-V8 应用层）。
+PAF 泛基因组方向（query-to-vcf）已全部完成，后续规划见 [[paf-pangenome.md]] §5（图质量与归一化 / 规模扩展 / 应用层）。
 
 ### 6.4 不做 / 不适合做的
 
@@ -393,7 +400,7 @@ pgr 的 `chain`/`net`/`axt`/`psl` 模块是 UCSC kent-tools 对应功能的**Rus
 
 ### 7.2 impg 的关系
 
-参见 `notes/impg.md` 的详细分析。核心差异：
+参见 `notes/references/impg.md` 的详细分析。核心差异：
 
 - impg 的"隐式图"用的是 PAF/wfmash 生态，pgr 用的是 Chain/Net 生态
 - impg 需要 all-vs-all 比对（它不省比对，省的是图构建）

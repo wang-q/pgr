@@ -72,7 +72,7 @@
 - **命令**：`pgr clust cut`
 - **特点**：从已有树导出分组，不重建聚类；支持参数扫描 (`--scan`) 与代表点选择 (`--rep`)。
 - **适用场景**：已有树结构（来自 `clust hier`、`clust upgma`、`clust nj` 或外部工具），需要在不同阈值下切分并评估。
-- **文档**：[docs/clust-cut.md](file:///Volumes/ExtHome/Scripts/pgr/docs/clust-cut.md)
+- **文档**：[clust-cut.md](clust-cut.md)
 
 ## 评估与分析 (Evaluation)
 
@@ -82,36 +82,17 @@
   - **命令**：`pgr nwk eval` (计划中)
   - **定位**：树结构的多维度评估。
   - **功能**：几何紧密性（Silhouette）、分类纯度（Purity）、演化一致性（Discordance）。
-  - **文档**：[notes/design/nwk-eval.md](file:///Volumes/ExtHome/Scripts/pgr/notes/design/nwk-eval.md)
+  - **文档**：[notes/design/nwk-eval.md](../notes/design/nwk-eval.md)
 
 - **Partition-based Evaluation**
   - **命令**：`pgr clust eval`
   - **定位**：通用聚类质量评估（支持有/无 Ground Truth）。
   - **功能**：ARI, AMI, V-Measure (外部); Silhouette, Davies-Bouldin (内部)。
-  - **文档**：[docs/clust-eval.md](file:///Volumes/ExtHome/Scripts/pgr/docs/clust-eval.md)
+  - **文档**：[clust-eval.md](clust-eval.md)
 
 ## 计划中 (Planned)
 
-这些算法已列入路线图，旨在补全统计聚类与大规模向量分析能力。
-
-- **GMM (Gaussian Mixture Models)**
-  - **原理**：假设数据由 $K$ 个高斯分布混合而成。使用 EM（期望最大化）算法迭代估计每个高斯分量的参数（均值、协方差）及每个样本属于各分量的后验概率。
-  - **命令**：`pgr clust gmm`
-  - **计划内容**：支持**软聚类**（概率输出）与 **BIC** 模型选择。
-  - **价值**：适合**椭球形簇**与密度估计，解决 K-Means 仅适应球形簇的限制；BIC 可辅助确定最佳 K。
-
-- **HDBSCAN**
-  - **原理**：结合层次聚类与 DBSCAN。通过构建基于密度的层次树（Condensed Tree），并根据簇的稳定性（Stability）在不同层级自动提取最佳簇，无需全局 $\epsilon$。
-  - **命令**：`pgr clust hdbscan`
-  - **scikit-learn 对应**：`HDBSCAN`
-  - **计划内容**：层次化 DBSCAN，无需手动指定 `eps`。
-  - **价值**：DBSCAN 的现代高级版，**自动适应不同密度的簇**，参数更少且更稳健。
-
-- **Louvain / Leiden**
-  - **原理**：基于模块度（Modularity）优化的社区发现算法。Louvain 贪心地最大化模块度；Leiden 改进了 Louvain 的局部合并策略，保证连通性并加速收敛。
-  - **命令**：(待定)
-  - **计划内容**：社区发现算法。
-  - **价值**：比 MCL 更适合**超大规模网络**的层次化结构探索。
+GMM、HDBSCAN、Louvain/Leiden 等算法已列入路线图，规划详情移至 [notes/design/clust-planned.md](../notes/design/clust-planned.md)。
 
 ## 不建议实现 / 暂无计划 (Not Planned)
 

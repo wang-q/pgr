@@ -104,7 +104,7 @@ pgr graph 的直接借鉴来源（见 [[minigraph.md]]）。
 这一点 [[paf-pangenome.md]] §2.5 已明确"局部 GFA 不合并回全局"。
 
 **粒度差异**是核心：seqwish 的传递闭包是**全局、一次性**的——一次性算出全部等价类再写图
-（[transclosure.rs](file:///Volumes/ExtHome/Scripts/pgr/seqwish-master/src/transclosure.rs) 的
+（[transclosure.rs](../../../seqwish-master/src/transclosure.rs) 的
 spanning tree → BFS discovery → DSU union-find 流程）；pgr 是**局部、按需**的——每次查询从一个
 区间出发 BFS，只算相关等价类。这两种粒度对应不同应用场景：全图统计 vs 单点查询。详见
 [[seqwish.md]] §5 的对照表与 §6 的版本启示。

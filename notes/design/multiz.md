@@ -1,5 +1,7 @@
 # Multiz 分析笔记
 
+> **文档定位**：本文档混合了 multiz 源码分析（§1-§3，属 references 性质）与 fas-multiz 设计（§4-§5，属 design 性质）。保留合一是因 §1 源码理解是 §4 设计的基础。
+
 本文档分析位于 `multiz/` 目录下的源码，该项目是 UCSC `multiz-tba` 软件包的核心组件之一。
 
 ## 1. multiz 概览

@@ -1,4 +1,4 @@
-# pgr nwk — 系统发育树处理模块
+# 系统发育树处理 — libs/phylo 与 pgr nwk
 
 `pgr nwk` 提供完整的 Newick 格式系统发育树处理功能，包括解析、操作、分析和可视化。
 
