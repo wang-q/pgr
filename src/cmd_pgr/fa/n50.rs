@@ -19,7 +19,7 @@ Statistics:
 Notes:
 * N50 is calculated by default, use `-N 0` to skip
 * Multiple N-statistics: `-N 50 -N 90`
-* Use --genome to calculate statistics based on estimated genome size
+* Use --genome-size to calculate statistics based on estimated genome size
 * Supports both plain text and gzipped (.gz) files
 * Reads from stdin if input file is 'stdin'
 
@@ -86,7 +86,7 @@ Examples:
         )
         .arg(
             Arg::new("genome")
-                .long("genome")
+                .long("genome-size")
                 .short('g')
                 .num_args(1)
                 .value_parser(value_parser!(usize))

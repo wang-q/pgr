@@ -59,7 +59,7 @@ Examples:
         )
         .arg(
             Arg::new("count")
-                .long("count")
+                .long("size")
                 .short('c')
                 .num_args(1)
                 .value_parser(value_parser!(usize))

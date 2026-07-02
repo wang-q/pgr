@@ -167,7 +167,7 @@ pgr fas consensus [OPTIONS] <infiles>...
 *   `--gap-open <int>`: Gap opening penalty (default: -8).
 *   `--gap-extend <int>`: Gap extension penalty (default: -6).
 *   `--align-mode <local|global|semi_global>`: Alignment mode (default: global).
-*   `--cname <name>`: Name for the consensus sequence (default: consensus).
+*   `--consensus-name <name>`: Name for the consensus sequence (default: consensus).
 *   `--outgroup`: Indicates the last sequence is an outgroup.
 *   `-p, --parallel <int>`: Number of threads (default: 1).
 *   `-o, --outfile <file>`: Output filename (default: stdout).

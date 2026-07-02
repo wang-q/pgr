@@ -67,7 +67,7 @@ Examples:
             )
             .arg(
                 Arg::new("cname")
-                    .long("cname")
+                    .long("consensus-name")
                     .num_args(1)
                     .default_value("consensus")
                     .help("Name of the consensus"),
