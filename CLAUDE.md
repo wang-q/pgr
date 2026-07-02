@@ -145,8 +145,8 @@ cargo test
 - **`src/libs/`** - 共享工具库和核心逻辑。
   - **`fmt/`** - 格式 I/O: `fa`, `fas`, `fq`, `axt`, `maf`, `psl`, `lav`, `twobit`, `vcf`.
   - **`phylo/`** - 系统发育分析核心库。
-    - **`tree/`**: 树结构定义 (`node.rs`)、Newick 解析 (`parser.rs`)、遍历、I/O、统计 (`stat.rs`)、平衡性指标 (`balance.rs`)。
-    - **`algo.rs`/`ops.rs`**: 树操作算法（排序、reroot 等）。
+    - **`node.rs`/`parser.rs`**: 树节点定义与 Newick 解析（位于 `phylo/` 根级）。
+    - **`tree/`**: 树算法 — 操作 (`algo.rs`/`ops.rs`)、遍历、I/O、统计 (`stat.rs`)、平衡性指标 (`balance.rs`)。
     - **`cmp.rs`**: 树拓扑比较 (Robinson-Foulds 等)。
   - **`poa/`** - 偏序比对 (Partial Order Alignment) 实现。
   - **`chain/`** - 基因组比对链 (Chain/Net) 处理逻辑。
