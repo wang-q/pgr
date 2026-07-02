@@ -107,7 +107,7 @@ pgr fas join \
 
 pgr fas stat tests/fas/example.fas --outgroup
 
-fas variation tests/fas/example.fas
+pgr fas variation tests/fas/example.fas
 pgr fas variation tests/fas/example.fas --outgroup
 
 # snp-sites -v tests/fas/YDL184C.fas

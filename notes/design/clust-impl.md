@@ -248,6 +248,6 @@
 1. **基础图聚类**：已完成 MCL、CC、DBSCAN、K-Medoids。
 2. **系统发育构树**：已完成 UPGMA、NJ、Hierarchical Clustering (hier)。
 3. **评估体系**：设计完成 `nwk eval` (Tree) 和 `clust eval` (Partition)。
-4. **向量支持**：建立读取稠密向量/矩阵的基础设施（进行中）。
+4. **向量支持**：已完成。`libs/clust/feature.rs` 提供 `FeatureVector` 基础设施，被 `pgr dist vector`（欧氏/余弦/Jaccard 距离计算）与 `pgr clust eval --coords`（Davies-Bouldin 指标）共用。
 5. **统计聚类**：引入 GMM 实现，支持 BIC 模型选择（计划中）。
 6. **层次聚类扩展**：实现 HDBSCAN（计划中）。

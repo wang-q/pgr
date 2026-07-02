@@ -291,7 +291,7 @@ clustalw/muscle/mafft），充当工作流 glue。这与 `chain`/`net` 模块的
 - `libs/fmt/psl.rs`：PSL 格式
 - `libs/alignment/`：比对通用逻辑
 - `libs/fas_multiz/`：Multiz 多序列比对处理（banded DP 合并）
-- `libs/fas_xlsx.rs`：FASTQ 到 Excel 转换
+- `libs/fas_xlsx.rs`：FAS (block FA) 到 Excel 转换
 - `libs/fasta/`：FASTA 处理工具（dedup/filter/stat）
 - `libs/paf/`：PAF 隐式图核心（索引、查询、图构建、VCF 导出）
 - `libs/ms/`：Hudson's ms 模拟器（解析器 + DNA 生成）
