@@ -128,7 +128,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     for (basename, info) in info_of.iter_mut() {
         let infile = info.first().unwrap();
         let outfile = format!("{}.slice.fas", basename);
-        run_cmd!(${pgr} fas slice ${infile} --required intersect.json --name ${target_name} -o ${outfile})?;
+        run_cmd!(${pgr} fas slice ${infile} --runlist intersect.json --name ${target_name} -o ${outfile})?;
 
         info.push(outfile.to_string());
     }

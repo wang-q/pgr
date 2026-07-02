@@ -223,7 +223,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
             // Check if these nodes form a monophyletic group and get labels
             let labels_result = run_fun!(
-                ${exe} nwk label ${cur_tree} -f nodes.txt -M
+                ${exe} nwk label ${cur_tree} -l nodes.txt -M
             );
 
             let labels_output = match labels_result {
@@ -257,7 +257,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 "temp_b.nwk".to_string()
             };
             run_cmd!(
-                ${exe} nwk subtree ${cur_tree} -f nodes.txt -M --condense ${new_label} -o ${new_tree}
+                ${exe} nwk subtree ${cur_tree} -l nodes.txt -M --condense ${new_label} -o ${new_tree}
             )?;
 
             cur_tree = new_tree;

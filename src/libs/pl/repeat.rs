@@ -10,7 +10,6 @@ use std::io::BufRead;
 /// in output). If `min_depth` is set and the regex has a `depth` capture group,
 /// entries with depth below the threshold are skipped. Returns the list of
 /// `prof.<sn>.rg` file names.
-#[allow(unused_variables)]
 pub fn run_profex_per_chr(
     chrs: &[String],
     re_prof: &regex::Regex,
