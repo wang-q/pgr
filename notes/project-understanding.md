@@ -227,8 +227,14 @@ clustalw/muscle/mafft），充当工作流 glue。这与 `chain`/`net` 模块的
 - **Arena 树结构** (`node.rs`)：所有节点存储在 `Arena` 中，通过 `NodeId` 索引引用。 避免了 Rust
   中树结构的自引用问题（不用 `Rc<RefCell<>>`)。
 - **Newick 解析** (`parser.rs`)：用 `nom` 手写解析器。
-- **树比较** (`cmp.rs`)：Robinson-Foulds 距离等。
-- **树算法** (`algo.rs`)：排序、reroot 等操作。
+- **错误类型** (`error.rs`)：`TreeError` enum（解析错误/逻辑错误）。
+- **树比较** (`cmp.rs`)：`TreeComparison` trait，Robinson-Foulds / 加权 RF / Kuhner-Felsenstein 距离。
+- **树算法** (`tree/`)：
+  - `ops.rs`/`algo.rs`：节点操作 (add/remove/reroot/prune/compact 等) 与算法。
+  - `traversal.rs`：前序/后序/层序遍历、子树提取。
+  - `query.rs`：路径、LCA、节点距离、单系性检查等查询。
+  - `stat.rs`/`balance.rs`/`distance.rs`/`support.rs`：统计、平衡性指标、距离计算、支持值。
+  - `io/`：Newick/DOT/SVG/Forest 格式 I/O。
 
 ### 4.2 `libs/poa/` — 偏序比对
 
@@ -280,7 +286,7 @@ clustalw/muscle/mafft），充当工作流 glue。这与 `chain`/`net` 模块的
 - `libs/io.rs`：I/O 辅助（`read_lines`、`reader`、`writer`）
 - `libs/hash.rs`：哈希工具
 - `libs/linalg.rs`：线性代数
-- **`libs/loc.rs`**：FASTA 随机访问索引模块。`Input` enum（Buf/File/Bgzf）+
+- **`libs/loc.rs`**：FASTA 随机访问索引模块。`Input` enum（File/Bgzf）+
   `create_loc`（建 `.loc` 索引）+`read_offset`（seek+read）。
   **2026-06 发现：此 IO 抽象层可直接支撑 PAF 模块的 CIGAR 懒加载和 BGZF 随机访问，比 impg 的 `paf.rs` IO 层更成熟**。
   见 [[paf-pangenome.md]] §6.1。

@@ -145,9 +145,13 @@ cargo test
 - **`src/libs/`** - 共享工具库和核心逻辑。
   - **`fmt/`** - 格式 I/O: `fa`, `fas`, `fq`, `axt`, `maf`, `psl`, `lav`, `twobit`, `vcf`.
   - **`phylo/`** - 系统发育分析核心库。
-    - **`node.rs`/`parser.rs`**: 树节点定义与 Newick 解析（位于 `phylo/` 根级）。
-    - **`tree/`**: 树算法 — 操作 (`algo.rs`/`ops.rs`)、遍历、I/O、统计 (`stat.rs`)、平衡性指标 (`balance.rs`)。
-    - **`cmp.rs`**: 树拓扑比较 (Robinson-Foulds 等)。
+    - **`node.rs`/`parser.rs`/`error.rs`**: 树节点定义、Newick 解析、错误类型（位于 `phylo/` 根级）。
+    - **`cmp.rs`**: 树拓扑比较 (`TreeComparison` trait，Robinson-Foulds 等)。
+    - **`tree/`**: 树算法与操作。
+      - `ops.rs`/`algo.rs`: 节点操作 (add/remove/reroot/prune 等) 与算法。
+      - `traversal.rs`/`query.rs`: 遍历 (pre/post/level-order) 与查询 (LCA/路径/距离/单系性)。
+      - `stat.rs`/`balance.rs`/`distance.rs`/`support.rs`: 统计、平衡性指标、距离、支持值。
+      - `io/`: 格式 I/O — Newick/DOT/SVG/Forest。
   - **`poa/`** - 偏序比对 (Partial Order Alignment) 实现。
   - **`chain/`** - 基因组比对链 (Chain/Net) 处理逻辑。
   - **`clust/`** - 聚类算法实现。
