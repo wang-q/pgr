@@ -39,7 +39,7 @@ Examples:
    pgr dist hv input.fa --parallel 4
 
 5. Perform six-frame translation on a FA file and match to another
-    pgr six-frame input.fa |
+    pgr fa six-frame input.fa |
         pgr dist hv stdin match.fa
 
 "###,

@@ -111,7 +111,7 @@
 - **MST (最小生成树)**:
   - 适用：**Single Linkage** (最近邻)。
   - 原理：Single Linkage 聚类等价于求最小生成树（MST）。使用 Prim 或 Kruskal 算法可在 $O(N^2)$ (稠密) 或 $O(E \log E)$ (稀疏) 内完成，显著快于通用 Linkage 的 $O(N^3)$。
-  - `scikit-learn` 参考：`scikit-learn-main/sklearn/cluster/_agglomerative.py` 中的 `_single_linkage_tree` 函数。
+  - `scikit-learn` 参考：`sklearn/cluster/_agglomerative.py` 中的 `_single_linkage_tree` 函数。
 - **Union-Find (并查集)**：
   - 配合 MST 使用，用于快速合并簇和标记标签。
 
@@ -126,16 +126,16 @@
   - `pgr` 规划：未来可支持从 `pair.tsv`（稀疏边列表）直接构建 Linkage，而不强制转为全距离矩阵，从而支持超大规模序列聚类。
 
 ### 5.3 现有 Rust 生态参考
-- **kodama** (`kodama-master/`)：
+- **kodama**（[GitHub](https://github.com/m4b/kodama)）：
   - 实现了现代层次聚类算法（NN-chain），性能对标 `fastcluster`。
   - 核心接口 `linkage` 接受 Condensed Matrix（上三角压缩），输出 Stepwise Dendrogram。
   - 提供了完整的 `Method` 枚举（Single, Complete, Average, Ward 等）。
   - **决策**：`pgr` 将参考 `kodama` 的 NN-chain 算法实现自己的逻辑，保持对核心数据结构的完全控制（如适配稀疏输入）。
-  - **价值**：利用 `kodama` 的测试用例（`kodama-master/src/test.rs`）和基准测试（`kodama-master/benches/`）来验证 `pgr` 实现的正确性与性能。
-- **linfa-hierarchical** (`linfa-master/algorithms/linfa-hierarchical/`)：
+  - **价值**：参考 `kodama` 的测试用例和基准测试思路来验证 `pgr` 实现的正确性与性能。
+- **linfa-hierarchical**（[GitHub](https://github.com/rust-ml/linfa)）：
   - 提供了符合 `linfa` 生态的 `Transformer` 接口。
   - 内部直接调用 `kodama`，并增加了对 Similarity Kernel 的支持（自动转为 Distance）。
-  - **借鉴**：参考其清晰的参数校验（`ParamGuard`）和从 Stepwise Dendrogram 到 Flat Clusters 的后处理逻辑（`linfa-master/algorithms/linfa-hierarchical/src/lib.rs` 中的 `clusters` HashMap 维护）。
+  - **借鉴**：参考其清晰的参数校验（`ParamGuard`）和从 Stepwise Dendrogram 到 Flat Clusters 的后处理逻辑（`src/lib.rs` 中的 `clusters` HashMap 维护）。
 
 ### 5.4 阶段性实现路线
 
