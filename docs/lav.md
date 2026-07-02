@@ -28,7 +28,7 @@ pgr lav lastz [OPTIONS] <target> <query>
 *   `-s, --preset <set01..set07>`: Use a predefined parameter set (see below).
 *   `--show-preset`: Display the configuration (parameters & matrix) for the selected preset and exit.
 *   `--lastz-args <string>`: Additional arguments passed directly to `lastz` (overrides preset settings).
-*   `-o, --output <dir>`: Output directory (default: "lastz_out").
+*   `-o, --outdir <dir>`: Output directory (default: "lastz_out").
 *   `-p, --parallel <int>`: Number of parallel threads (default: 4).
 
 ### Presets
@@ -71,7 +71,7 @@ pgr lav to-psl [OPTIONS] [input]
 ### Options
 
 *   `[input]`: Input LAV file (default: stdin).
-*   `-o, --output <file>`: Output PSL file (default: stdout).
+*   `-o, --outfile <file>`: Output PSL file (default: stdout).
 *   `--target-strand <strand>`: Set the target strand (e.g., "+"). Default is no strand info.
 
 ### Examples

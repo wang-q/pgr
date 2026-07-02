@@ -108,7 +108,7 @@ pub fn load_data(
 ) -> anyhow::Result<(IndexMap<String, Vec<f64>>, String, String)> {
     let mut rdr = csv::ReaderBuilder::new()
         .delimiter(b'\t')
-        .from_path(infile)?;
+        .from_reader(crate::libs::io::reader(infile)?);
 
     let headers = rdr.headers()?.clone();
     let mut data: IndexMap<String, Vec<f64>> = IndexMap::new();

@@ -3,6 +3,7 @@ use clap::*;
 use pgr::libs::plot::common::{context_get_str, render_and_write, replace_section};
 use pgr::libs::plot::nrps::parse_nrps;
 use std::collections::HashMap;
+use std::io::Read;
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
@@ -74,7 +75,8 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
     //----------------------------
     // Read TSV file
     //----------------------------
-    let content = std::fs::read_to_string(infile)?;
+    let mut content = String::new();
+    pgr::reader(infile)?.read_to_string(&mut content)?;
     let nrps_data = parse_nrps(&content, &default_color)?;
 
     // Generate all modules

@@ -28,7 +28,7 @@ pgr plot hh [OPTIONS] <infile>
 
 | Argument | Short | Long | Value | Description |
 | :--- | :--- | :--- | :--- | :--- |
-| `infile` | | | File | Input filename (`-` for stdin) |
+| `infile` | | | File | Input filename ("stdin" for standard input) |
 | `outfile` | `-o` | `--outfile` | File | Output filename (default: stdout) |
 | `col` | `-c` | `--col` | Int | Column index to count (1-based, default: 1) |
 | `group` | `-g` | `--group` | Int | Group column index (1-based) |
@@ -73,7 +73,7 @@ pgr plot nrps [OPTIONS] <infile>
 
 | Argument | Short | Long | Value | Description |
 | :--- | :--- | :--- | :--- | :--- |
-| `infile` | | | File | Input filename (`-` for stdin) |
+| `infile` | | | File | Input filename ("stdin" for standard input) |
 | `outfile` | `-o` | `--outfile` | File | Output filename (default: stdout) |
 | `legend` | | `--legend` | Flag | Include legend in the output |
 | `color` | `-c` | `--color` | String | Default color (default: "grey") |

@@ -43,13 +43,13 @@ Examples:
         ))
         .arg(
             Arg::new("target")
-                .required(true)
+                .required_unless_present("show_preset")
                 .index(1)
                 .help("Target FASTA file or directory"),
         )
         .arg(
             Arg::new("query")
-                .required(true)
+                .required_unless_present("show_preset")
                 .index(2)
                 .help("Query FASTA file or directory"),
         )

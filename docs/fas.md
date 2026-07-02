@@ -30,7 +30,7 @@ The subcommands are organized into the following categories:
 *   **Variation**: Call variants from alignments.
     *   `to-vcf`: Export substitutions to VCF format.
     *   `to-xlsx`: Export substitutions and indels to an Excel file.
-    *   `variation`: List variations (substitutions/indels) in TSV format.
+    *   `variation`: List variations (substitutions) in TSV format.
 
 ---
 
@@ -304,12 +304,11 @@ pgr fas to-xlsx [OPTIONS] <infiles>...
 
 ### variation
 
-Lists variations (substitutions and indels) in TSV format.
+Lists variations (substitutions) in TSV format.
 
 ```bash
 pgr fas variation [OPTIONS] <infiles>...
 ```
 
-*   `--indel`: List indels.
 *   `--outgroup`: Indicates presence of outgroups.
 *   `-o, --outfile <file>`: Output filename (default: stdout).

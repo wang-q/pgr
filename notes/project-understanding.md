@@ -373,7 +373,7 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
 ### 6.2 进行中的（活跃开发）
 
 - **泛基因组方向**：已形成完整路线图，整合在 `notes/paf-pangenome.md`（路线决策 + 已实现能力 +
-  代码结构 + 后续规划）。query-to-vcf 已全部完成。
+  代码结构 + 后续规划）。`pgr paf` 的 query / to-bed / to-fas / to-maf / graph / to-gfa / to-vcf / stat 子命令已全部完成。
   **2026-06 发现：`libs/loc.rs` 的 IO 抽象层可直接支撑 PAF 的 CIGAR 懒加载和 BGZF 访问， 实际实现量比最初估计少约 30%**。
 
 - **`pl` 流程模块**：`ucsc`、`trf`、`rept`、`ir` 等 pipeline 在补充。
@@ -383,7 +383,7 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
 - `pgr.rs` 末尾注释的 TODO：paralog、fas match、去完全包含序列
 - `notes/design/` 下的规划文档（详见 §9 设计笔记索引）
 
-PAF 泛基因组方向（query-to-vcf）已全部完成，后续规划见 [[paf-pangenome.md]] §5（图质量与归一化 / 规模扩展 / 应用层）。
+PAF 泛基因组方向（query / to-maf / graph / to-gfa / to-vcf / stat）已全部完成，后续规划见 [[paf-pangenome.md]] §5（图质量与归一化 / 规模扩展 / 应用层）。
 
 ### 6.4 不做 / 不适合做的
 

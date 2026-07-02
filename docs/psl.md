@@ -62,7 +62,7 @@ pgr psl histo [OPTIONS] --what <TYPE> <input>
     *   `idSpread`: Difference between max and min identity for a query.
 *   `--multi-only`: Omit queries with only one alignment.
 *   `--non-zero`: Omit queries with zero values.
-*   `-o, --output <file>`: Output filename (default: stdout).
+*   `-o, --outfile <file>`: Output filename (default: stdout).
 
 ### Examples
 
@@ -127,7 +127,7 @@ pgr psl stats [OPTIONS] <input>
 *   `--overall-stats`: Output overall statistics.
 *   `--queries <file>`: Tab-separated file with expected qNames and sizes.
 *   `--tsv`: Write TSV header instead of autoSql style header.
-*   `-o, --output <file>`: Output filename (default: stdout).
+*   `-o, --outfile <file>`: Output filename (default: stdout).
 
 ### Examples
 
@@ -154,7 +154,7 @@ pgr psl swap [OPTIONS] <input>
 ### Options
 
 *   `--no-rc`: Don't reverse-complement; just swap and make target strand explicit (if needed).
-*   `-o, --output <file>`: Output filename (default: stdout).
+*   `-o, --outfile <file>`: Output filename (default: stdout).
 
 ### Examples
 
@@ -176,7 +176,7 @@ pgr psl to-chain [OPTIONS] <input>
 ### Options
 
 *   `--fix-strand`: Fix `-` target strand by reverse complementing the record.
-*   `-o, --output <file>`: Output filename (default: stdout).
+*   `-o, --outfile <file>`: Output filename (default: stdout).
 
 ### Examples
 

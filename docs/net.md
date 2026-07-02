@@ -18,12 +18,12 @@
 Displays statistics of the net file, including the count and total bases for each class (e.g., `top`, `syn`, `inv`, `nonSyn`, `gap`).
 
 ```bash
-pgr net class [input]
+pgr net class <input>
 ```
 
-### Options
+### Arguments
 
-*   `[input]`: Input net file (or `-` for stdin).
+*   `<input>`: Input net file (or stdin if "stdin").
 
 ### Examples
 
