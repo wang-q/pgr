@@ -68,8 +68,8 @@ This command identifies tandem repeats in a genome via `trf`.
                 .help("Indel probability"),
         )
         .arg(
-            Arg::new("minscore")
-                .long("minscore")
+            Arg::new("min_score")
+                .long("min-score")
                 .num_args(1)
                 .default_value("50")
                 .value_parser(value_parser!(usize))
@@ -98,7 +98,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let opt_delta = *args.get_one::<usize>("delta").unwrap();
     let opt_pm = *args.get_one::<usize>("pm").unwrap();
     let opt_pi = *args.get_one::<usize>("pi").unwrap();
-    let opt_minscore = *args.get_one::<usize>("minscore").unwrap();
+    let opt_minscore = *args.get_one::<usize>("min_score").unwrap();
     let opt_maxperiod = *args.get_one::<usize>("maxperiod").unwrap();
 
     //----------------------------

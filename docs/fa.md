@@ -55,7 +55,7 @@
   - `-c`: 保持原名（不添加 `RC_` 前缀）。
   - 支持按列表仅处理部分序列。
 - **`filter`**: 过滤和格式化序列。
-  - 过滤：长度 (`--minsize`, `--maxsize`)、N含量 (`--maxn`)、去重 (`--uniq`)。
+  - 过滤：长度 (`--min-len`, `--max-len`)、N含量 (`--maxn`)、去重 (`--uniq`)。
   - 格式化：转大写 (`--upper`)、IUPAC转N (`--iupac`)、去横杠 (`--dash`)、简化名称 (`--simplify`)、设置行宽 (`--line`)。
 - **`dedup`**: 去除重复序列。
   - 模式：按名称（默认）、按序列内容 (`-s`)、按描述 (`-d`)。
@@ -92,7 +92,7 @@
 ### 场景 A：数据清洗与统计
 ```bash
 # 1. 过滤短序列并转为大写，统一行宽
-pgr fa filter raw.fa --minsize 500 --upper --line 80 -o clean.fa
+pgr fa filter raw.fa --min-len 500 --upper --line 80 -o clean.fa
 
 # 2. 统计 N50 和总长
 pgr fa n50 clean.fa -N 50 -S

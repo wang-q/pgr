@@ -51,10 +51,10 @@ Examples:
                 .help("Input file containing genome/metagenome assembly"),
         )
         .arg(
-            Arg::new("match")
+            Arg::new("reference")
                 .required(true)
                 .index(2)
-                .help("Match file containing reference sequences for filtering"),
+                .help("Reference file containing sequences for filtering"),
         )
         .arg(
             Arg::new("chunk")
@@ -100,7 +100,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // Args
     //----------------------------
     let infile = args.get_one::<String>("infile").unwrap();
-    let match_file = args.get_one::<String>("match").unwrap();
+    let match_file = args.get_one::<String>("reference").unwrap();
 
     let opt_chunk = *args.get_one::<usize>("chunk").unwrap();
     let opt_len = *args.get_one::<usize>("len").unwrap();

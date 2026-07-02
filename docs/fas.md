@@ -107,8 +107,8 @@ pgr fas filter [OPTIONS] <infiles>...
 ```
 
 *   `--name <name>`: Keep blocks containing this species.
-*   `--ge <int>`: Keep sequences with length >= this value.
-*   `--le <int>`: Keep sequences with length <= this value.
+*   `--min-len <int>`: Keep sequences with length >= this value.
+*   `--max-len <int>`: Keep sequences with length <= this value.
 *   `--upper`: Convert sequences to uppercase.
 *   `--dash`: Remove dashes (gaps) from sequences.
 *   `-o, --outfile <file>`: Output filename (default: stdout).

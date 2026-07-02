@@ -49,6 +49,7 @@ Examples:
         .arg(
             Arg::new("tname")
                 .long("tname")
+                .short('t')
                 .num_args(1)
                 .default_value("target")
                 .help("Target name"),
@@ -56,6 +57,7 @@ Examples:
         .arg(
             Arg::new("qname")
                 .long("qname")
+                .short('q')
                 .num_args(1)
                 .default_value("query")
                 .help("Query name"),

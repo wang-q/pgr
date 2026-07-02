@@ -13,7 +13,7 @@ This command implements the UCSC pipeline for pairwise genome alignments, psl-ch
 * <psl> can be a .psl file or a directory containing multiple .psl files
 * Default names of target and query in the output .maf are derived from the basename of <target> and <query>
 
-* `--lineargap` and `--minscore`:
+* `--linear-gap` and `--min-score`:
     * Human18vsChimp2 use `loose` and 1000
     * Human19vsChimp3 use `medium` and 5000
     * `loose` corresponds to chicken/human linear gap costs
@@ -73,8 +73,8 @@ References:
                 .help("Path to the PSL file or directory containing PSL files"),
         )
         .arg(
-            Arg::new("lineargap")
-                .long("lineargap")
+            Arg::new("linear_gap")
+                .long("linear-gap")
                 .action(ArgAction::Set)
                 .value_parser([
                     builder::PossibleValue::new("loose"),
@@ -84,8 +84,8 @@ References:
                 .help("Linear gap cost setting for axtChain"),
         )
         .arg(
-            Arg::new("minscore")
-                .long("minscore")
+            Arg::new("min_score")
+                .long("min-score")
                 .num_args(1)
                 .default_value("1000")
                 .value_parser(value_parser!(usize))
@@ -124,8 +124,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         std::fs::create_dir_all(outdir)?;
     }
 
-    let opt_lineargap = args.get_one::<String>("lineargap").unwrap();
-    let opt_minscore = *args.get_one::<usize>("minscore").unwrap();
+    let opt_lineargap = args.get_one::<String>("linear_gap").unwrap();
+    let opt_minscore = *args.get_one::<usize>("min_score").unwrap();
 
     let is_syn = args.get_flag("syn");
 

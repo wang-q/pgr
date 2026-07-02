@@ -470,7 +470,7 @@ fn command_filter() {
     assert_eq!(stdout.lines().count(), 27);
 
     let (stdout, _) = PgrCmd::new()
-        .args(&["fas", "filter", "tests/fas/example.fas", "--ge", "30"])
+        .args(&["fas", "filter", "tests/fas/example.fas", "--min-len", "30"])
         .run();
 
     assert_eq!(stdout.lines().count(), 18);
@@ -480,9 +480,9 @@ fn command_filter() {
             "fas",
             "filter",
             "tests/fas/example.fas",
-            "--ge",
+            "--min-len",
             "30",
-            "--le",
+            "--max-len",
             "100",
             "--name",
             "S288c",

@@ -14,7 +14,7 @@ Notes:
 * Supports both plain text and gzipped (.gz) files
 * Reads from stdin if input file is 'stdin'
 * If `--name` is not specified, the first species in each block is used as the default
-* Sequences can be filtered based on length using `--ge` (greater than or equal) and `--le` (less than or equal)
+* Sequences can be filtered based on length using `--min-len` (greater than or equal) and `--max-len` (less than or equal)
 * Sequences can be formatted using `--upper` (convert to uppercase) and `--dash` (remove dashes)
 
 Examples:
@@ -22,10 +22,10 @@ Examples:
    pgr fas filter tests/fasr/example.fas --name S288c
 
 2. Filter blocks with sequences >= 100 bp:
-   pgr fas filter tests/fasr/example.fas --ge 100
+   pgr fas filter tests/fasr/example.fas --min-len 100
 
 3. Filter blocks with sequences <= 200 bp:
-   pgr fas filter tests/fasr/example.fas --le 200
+   pgr fas filter tests/fasr/example.fas --max-len 200
 
 4. Convert sequences to uppercase and remove dashes:
    pgr fas filter tests/fasr/example.fas --upper --dash
@@ -43,15 +43,15 @@ Examples:
                 .help("Filter blocks based on this species"),
         )
         .arg(
-            Arg::new("ge")
-                .long("ge")
+            Arg::new("min_len")
+                .long("min-len")
                 .value_parser(value_parser!(usize))
                 .num_args(1)
                 .help("Filter sequences with length >= this value"),
         )
         .arg(
-            Arg::new("le")
-                .long("le")
+            Arg::new("max_len")
+                .long("max-len")
                 .value_parser(value_parser!(usize))
                 .num_args(1)
                 .help("Filter sequences with length <= this value"),
@@ -59,12 +59,14 @@ Examples:
         .arg(
             Arg::new("upper")
                 .long("upper")
+                .short('U')
                 .action(ArgAction::SetTrue)
                 .help("Convert sequences to uppercase"),
         )
         .arg(
             Arg::new("dash")
                 .long("dash")
+                .short('d')
                 .action(ArgAction::SetTrue)
                 .help("Remove dashes '-'"),
         )
@@ -82,8 +84,14 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         .map(|s| s.as_str())
         .unwrap_or("")
         .to_string();
-    let opt_ge = args.get_one::<usize>("ge").copied().unwrap_or(usize::MAX);
-    let opt_le = args.get_one::<usize>("le").copied().unwrap_or(usize::MAX);
+    let opt_ge = args
+        .get_one::<usize>("min_len")
+        .copied()
+        .unwrap_or(usize::MAX);
+    let opt_le = args
+        .get_one::<usize>("max_len")
+        .copied()
+        .unwrap_or(usize::MAX);
 
     let is_upper = args.get_flag("upper");
     let is_dash = args.get_flag("dash");

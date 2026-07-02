@@ -49,7 +49,7 @@ pgr maf to-fas tests/maf/example.maf
 
 pgr axt to-fas tests/axt/RM11_1a.sizes tests/axt/example.axt --qname RM11_1a
 
-pgr fas filter tests/fas/example.fas --ge 10
+pgr fas filter tests/fas/example.fas --min-len 10
 
 pgr fas name tests/fas/example.fas --count
 

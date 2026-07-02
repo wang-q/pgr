@@ -10,8 +10,8 @@ pub fn make_subcommand() -> Command {
 This command filters and formats sequences in FASTA files.
 
 Filters:
-* --minsize N: Keep sequences >= N bp
-* --maxsize N: Keep sequences <= N bp
+* --min-len N: Keep sequences >= N bp
+* --max-len N: Keep sequences <= N bp
 * --maxn N: Keep sequences with < N ambiguous bases
 * --uniq: Remove duplicate sequence IDs
 
@@ -31,7 +31,7 @@ Notes:
 
         Examples:
         1. Filter by size:
-           pgr fa filter input.fa --minsize 100 --maxsize 1000
+           pgr fa filter input.fa --min-len 100 --max-len 1000
 
         2. Format sequences:
            pgr fa filter input.fa --upper --iupac --line 80
@@ -43,16 +43,16 @@ Notes:
         )
         .arg(crate::cmd_pgr::args::infiles_arg("FASTA"))
         .arg(
-            Arg::new("minsize")
-                .long("minsize")
+            Arg::new("min_len")
+                .long("min-len")
                 .short('a')
                 .num_args(1)
                 .value_parser(value_parser!(usize))
                 .help("Pass sequences at least this big ('a'-smallest)"),
         )
         .arg(
-            Arg::new("maxsize")
-                .long("maxsize")
+            Arg::new("max_len")
+                .long("max-len")
                 .short('z')
                 .num_args(1)
                 .value_parser(value_parser!(usize))
@@ -118,11 +118,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // Args
     //----------------------------
     let opt_minsize = args
-        .get_one::<usize>("minsize")
+        .get_one::<usize>("min_len")
         .copied()
         .unwrap_or(pgr::libs::fasta::filter::NO_LIMIT);
     let opt_maxsize = args
-        .get_one::<usize>("maxsize")
+        .get_one::<usize>("max_len")
         .copied()
         .unwrap_or(pgr::libs::fasta::filter::NO_LIMIT);
     let opt_maxn = args

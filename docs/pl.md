@@ -83,7 +83,7 @@ Prefilter genome/metagenome assembly by amino acid minimizers. Filters sequences
 ### Usage
 
 ```bash
-pgr pl prefilter [OPTIONS] <infile> <match>
+pgr pl prefilter [OPTIONS] <infile> <reference>
 ```
 
 ### Arguments
@@ -91,7 +91,7 @@ pgr pl prefilter [OPTIONS] <infile> <match>
 | Argument | Short | Long | Value | Description |
 | :--- | :--- | :--- | :--- | :--- |
 | `infile` | | | File | Input genome/metagenome FASTA |
-| `match` | | | File | Reference protein FASTA |
+| `reference` | | | File | Reference protein FASTA |
 | `chunk` | `-c` | `--chunk` | Int | Chunk size in bytes (default: 100000) |
 | `len` | | `--len` | Int | Min amino acid length (default: 15) |
 | `kmer` | `-k` | `--kmer` | Int | K-mer size (default: 7) |
@@ -149,7 +149,7 @@ pgr pl trf [OPTIONS] <infile>
 | `delta` | | `--delta` | Int | Indel penalty (default: 7) |
 | `pm` | | `--pm` | Int | Match probability (default: 80) |
 | `pi` | | `--pi` | Int | Indel probability (default: 10) |
-| `minscore` | | `--minscore` | Int | Min alignment score (default: 50) |
+| `min_score` | | `--min-score` | Int | Min alignment score (default: 50) |
 | `maxperiod` | | `--maxperiod` | Int | Max period size (default: 2000) |
 
 ### Dependencies
@@ -177,8 +177,8 @@ pgr pl ucsc [OPTIONS] <target> <query> <psl>
 | `query` | | | File | Query genome FASTA |
 | `psl` | | | Path | PSL file or directory containing PSL files |
 | `outdir` | `-o` | `--outdir` | Dir | Output directory (default: stdout) |
-| `lineargap` | | `--lineargap` | Str | Gap cost: "loose" (default) or "medium" |
-| `minscore` | | `--minscore` | Int | Min alignment score (default: 1000) |
+| `linear_gap` | | `--linear-gap` | Str | Gap cost: "loose" (default) or "medium" |
+| `min_score` | | `--min-score` | Int | Min alignment score (default: 1000) |
 | `tname` | `-t` | `--tname` | Str | Custom target name prefix |
 | `qname` | `-q` | `--qname` | Str | Custom query name prefix |
 | `syn` | | `--syn` | Flag | Generate syntenic alignments only |
