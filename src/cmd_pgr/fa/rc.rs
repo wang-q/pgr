@@ -39,7 +39,7 @@ Examples:
                 .help("Input FASTA file to process"),
         )
         .arg(
-            Arg::new("list.txt")
+            Arg::new("list")
                 .required(false)
                 .index(2)
                 .help("File containing one sequence name per line (optional)"),
@@ -65,9 +65,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let mut fa_out = pgr::libs::fmt::fa::writer(crate::cmd_pgr::args::get_outfile(args))?;
 
-    let set_list: HashSet<String> = if args.contains_id("list.txt") {
+    let set_list: HashSet<String> = if args.contains_id("list") {
         pgr::libs::io::read_names::<std::collections::HashSet<String>>(
-            args.get_one::<String>("list.txt").unwrap(),
+            args.get_one::<String>("list").unwrap(),
         )?
     } else {
         HashSet::new()
@@ -80,7 +80,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         let record = result?;
         let name = String::from_utf8(record.name().into())?;
 
-        if args.contains_id("list.txt") && !set_list.contains(&name) {
+        if args.contains_id("list") && !set_list.contains(&name) {
             fa_out.write_record(&record)?;
             continue;
         }

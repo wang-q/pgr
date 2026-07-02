@@ -43,22 +43,22 @@ Examples:
                 .help("Input filename. [stdin] for standard input"),
         )
         .arg(
-            Arg::new("replace.tsv")
+            Arg::new("replace")
                 .required(true)
                 .num_args(1..)
                 .index(2)
                 .help("Path to replace.tsv"),
         )
         .arg(
-            Arg::new("Internal")
-                .long("Internal")
+            Arg::new("internal")
+                .long("internal")
                 .short('I')
                 .action(ArgAction::SetTrue)
                 .help("Skip internal labels"),
         )
         .arg(
-            Arg::new("Leaf")
-                .long("Leaf")
+            Arg::new("leaf")
+                .long("leaf")
                 .short('L')
                 .action(ArgAction::SetTrue)
                 .help("Skip leaf labels"),
@@ -89,11 +89,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let infile = args.get_one::<String>("infile").unwrap();
     let mode = args.get_one::<String>("mode").unwrap();
 
-    let skip_internal = args.get_flag("Internal");
-    let skip_leaf = args.get_flag("Leaf");
+    let skip_internal = args.get_flag("internal");
+    let skip_leaf = args.get_flag("leaf");
 
     let mut replace_of: BTreeMap<String, Vec<String>> = BTreeMap::new();
-    for rfile in args.get_many::<String>("replace.tsv").unwrap() {
+    for rfile in args.get_many::<String>("replace").unwrap() {
         for line in pgr::read_lines(rfile)? {
             let parts: Vec<_> = line.split('\t').collect();
 

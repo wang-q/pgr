@@ -37,7 +37,7 @@ fn command_rg_asm() {
 #[test]
 fn command_rg_simplify() {
     let (stdout, _) = PgrCmd::new()
-        .args(&["gff", "rg", "tests/gff/test.gff", "--simplify"])
+        .args(&["gff", "rg", "tests/gff/test.gff", "--key-simplify"])
         .run();
 
     assert!(stdout.contains("prefix:gene2\ttest.chr1(-):3000-4000"));
@@ -55,7 +55,7 @@ fn command_rg_simplify_destructive() {
             "CDS",
             "--key",
             "Name", // NP_414542.1
-            "--simplify",
+            "--key-simplify",
         ])
         .run();
 
@@ -121,7 +121,7 @@ fn command_rg_key_product() {
 #[test]
 fn command_rg_ss() {
     let (stdout, _) = PgrCmd::new()
-        .args(&["gff", "rg", "tests/gff/test.gff", "--ss"])
+        .args(&["gff", "rg", "tests/gff/test.gff", "--seq-simplify"])
         .run();
 
     // test.gff contains "test.chr1", which doesn't need simplification.

@@ -36,9 +36,9 @@ pgr pl ir [OPTIONS] <repeat> <infile>
 | `infile` | | | File | Input genome FASTA (`.fa.gz` supported) |
 | `outfile` | `-o` | `--outfile` | File | Output filename (default: stdout) |
 | `kmer` | `-k` | `--kmer` | Int | K-mer size (default: 17) |
-| `fk` | | `--fk` | Int | Fill holes between repetitive k-mers (default: 2) |
-| `min` | | `--min` | Int | Minimum length of repetitive fragments (default: 300) |
-| `ff` | | `--ff` | Int | Fill holes between repetitive fragments (default: 10) |
+| `fk` | | `--fill-kmer` | Int | Fill holes between repetitive k-mers (default: 2) |
+| `min` | | `--min-len` | Int | Minimum length of repetitive fragments (default: 300) |
+| `ff` | | `--fill-fragment` | Int | Fill holes between repetitive fragments (default: 10) |
 
 ### Dependencies
 
@@ -117,9 +117,9 @@ pgr pl rept [OPTIONS] <infile>
 | `infile` | | | File | Input genome FASTA (`.fa.gz` supported) |
 | `outfile` | `-o` | `--outfile` | File | Output filename (default: stdout) |
 | `kmer` | `-k` | `--kmer` | Int | K-mer size (default: 17) |
-| `fk` | | `--fk` | Int | Fill holes between repetitive k-mers (default: 2) |
-| `min` | | `--min` | Int | Min length of repetitive fragments (default: 100) |
-| `ff` | | `--ff` | Int | Fill holes between repetitive fragments (default: 10) |
+| `fk` | | `--fill-kmer` | Int | Fill holes between repetitive k-mers (default: 2) |
+| `min` | | `--min-len` | Int | Min length of repetitive fragments (default: 100) |
+| `ff` | | `--fill-fragment` | Int | Fill holes between repetitive fragments (default: 10) |
 
 ### Dependencies
 

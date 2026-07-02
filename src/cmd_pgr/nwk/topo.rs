@@ -50,15 +50,15 @@ Examples:
                 .help("Keep comments"),
         )
         .arg(
-            Arg::new("Internal")
-                .long("Internal")
+            Arg::new("internal")
+                .long("internal")
                 .short('I')
                 .action(ArgAction::SetTrue)
                 .help("Don't print internal labels"),
         )
         .arg(
-            Arg::new("Leaf")
-                .long("Leaf")
+            Arg::new("leaf")
+                .long("leaf")
                 .short('L')
                 .action(ArgAction::SetTrue)
                 .help("Don't print leaf labels"),
@@ -72,8 +72,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let is_bl = args.get_flag("bl");
     let is_comment = args.get_flag("comment");
-    let skip_internal = args.get_flag("Internal");
-    let skip_leaf = args.get_flag("Leaf");
+    let skip_internal = args.get_flag("internal");
+    let skip_leaf = args.get_flag("leaf");
 
     let infile = args.get_one::<String>("infile").unwrap();
     let trees = Tree::from_file(infile)?;

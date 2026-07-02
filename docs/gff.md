@@ -24,8 +24,8 @@ pgr gff rg [OPTIONS] <infile>
 *   `--asm <string>`: Assembly name (default: inferred from filename).
 *   `--key <string>`: GFF attribute to use as the feature identifier (default: "ID").
     *   Choices: `ID`, `Name`, `Parent`, `gene`, `locus_tag`, `protein_id`, `product`.
-*   `-s, --simplify`: Simplify sequence names (identifiers) by truncating at the first space, dot, comma, or dash.
-*   `--ss`: Simplify reference sequence names (chromosome names) by truncating at the first space, dot, comma, or dash.
+*   `-s, --key-simplify`: Simplify sequence names (identifiers) by truncating at the first space, dot, comma, or dash.
+*   `--seq-simplify`: Simplify reference sequence names (chromosome names) by truncating at the first space, dot, comma, or dash.
 *   `-o, --outfile <file>`: Output filename (default: stdout).
 
 ### Output Format
@@ -53,5 +53,5 @@ The output is a tab-separated list with two columns:
 
 4.  **Simplify identifiers and sequence names**:
     ```bash
-    pgr gff rg tests/gff/test.gff --simplify --ss
+    pgr gff rg tests/gff/test.gff --key-simplify --seq-simplify
     ```

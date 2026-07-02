@@ -44,24 +44,24 @@ This command identifies interspersed repeats in a genome, mimicking the function
                 .help("Size of the k-mer"),
         )
         .arg(
-            Arg::new("fk")
-                .long("fk")
+            Arg::new("fill_kmer")
+                .long("fill-kmer")
                 .num_args(1)
                 .default_value("2")
                 .value_parser(value_parser!(usize))
                 .help("Fill holes between repetitive k-mers"),
         )
         .arg(
-            Arg::new("min")
-                .long("min")
+            Arg::new("min_len")
+                .long("min-len")
                 .num_args(1)
                 .default_value("300")
                 .value_parser(value_parser!(usize))
                 .help("Minimum length of repetitive fragments"),
         )
         .arg(
-            Arg::new("ff")
-                .long("ff")
+            Arg::new("fill_fragment")
+                .long("fill-fragment")
                 .num_args(1)
                 .default_value("10")
                 .value_parser(value_parser!(usize))
@@ -78,9 +78,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let outfile = crate::cmd_pgr::args::get_outfile(args);
 
     let opt_kmer = *args.get_one::<usize>("kmer").unwrap();
-    let opt_fk = *args.get_one::<usize>("fk").unwrap();
-    let opt_min = *args.get_one::<usize>("min").unwrap();
-    let opt_ff = *args.get_one::<usize>("ff").unwrap();
+    let opt_fk = *args.get_one::<usize>("fill_kmer").unwrap();
+    let opt_min = *args.get_one::<usize>("min_len").unwrap();
+    let opt_ff = *args.get_one::<usize>("fill_fragment").unwrap();
 
     //----------------------------
     // Paths

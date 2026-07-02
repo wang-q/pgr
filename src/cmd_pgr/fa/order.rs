@@ -34,7 +34,7 @@ Examples:
                 .help("Input FASTA file to process"),
         )
         .arg(
-            Arg::new("list.txt")
+            Arg::new("list")
                 .required(true)
                 .index(2)
                 .help("File containing one sequence name per line"),
@@ -52,7 +52,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut fa_out = pgr::libs::fmt::fa::writer(crate::cmd_pgr::args::get_outfile(args))?;
 
     let list: indexmap::IndexSet<_> =
-        pgr::libs::io::read_names::<Vec<String>>(args.get_one::<String>("list.txt").unwrap())?
+        pgr::libs::io::read_names::<Vec<String>>(args.get_one::<String>("list").unwrap())?
             .into_iter()
             .collect();
 

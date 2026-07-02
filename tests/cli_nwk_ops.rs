@@ -154,7 +154,7 @@ fn command_replace_filter() {
             "replace",
             "tests/newick/abc.nwk",
             "tests/newick/abc.replace.tsv",
-            "--Leaf", // Skip leaves
+            "--leaf", // Skip leaves
         ])
         .run();
 
@@ -168,7 +168,7 @@ fn command_replace_filter() {
             "replace",
             "tests/newick/abc.nwk",
             "tests/newick/abc.replace.tsv",
-            "--Internal", // Skip internal
+            "--internal", // Skip internal
         ])
         .run();
 

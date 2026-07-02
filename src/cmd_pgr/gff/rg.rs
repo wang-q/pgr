@@ -21,7 +21,7 @@ Examples:
    pgr gff rg tests/gff/test.gff --key ID
 
 4. Simplify sequence IDs:
-   pgr gff rg tests/gff/test.gff --simplify
+   pgr gff rg tests/gff/test.gff --key-simplify
 
 "###,
         )
@@ -61,15 +61,15 @@ Examples:
                 .help("GFF attribute to use as feature key"),
         )
         .arg(
-            Arg::new("simplify")
-                .long("simplify")
+            Arg::new("key_simplify")
+                .long("key-simplify")
                 .short('s')
                 .action(ArgAction::SetTrue)
-                .help("Simplify sequence names"),
+                .help("Simplify feature key names"),
         )
         .arg(
             Arg::new("seq_simplify")
-                .long("ss")
+                .long("seq-simplify")
                 .action(ArgAction::SetTrue)
                 .help("Simplify reference sequence names"),
         )
@@ -85,7 +85,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let outfile = crate::cmd_pgr::args::get_outfile(args);
     let opt_tag = args.get_one::<String>("tag").unwrap();
     let opt_key = args.get_one::<String>("key").unwrap();
-    let is_simplify = args.get_flag("simplify");
+    let is_simplify = args.get_flag("key_simplify");
     let is_seq_simplify = args.get_flag("seq_simplify");
 
     let opt_asm = if let Some(g) = args.get_one::<String>("asm") {

@@ -54,15 +54,15 @@ Examples:
                 .help("Input filename. [stdin] for standard input"),
         )
         .arg(
-            Arg::new("Internal")
-                .long("Internal")
+            Arg::new("internal")
+                .long("internal")
                 .short('I')
                 .action(ArgAction::SetTrue)
                 .help("Don't print internal labels"),
         )
         .arg(
-            Arg::new("Leaf")
-                .long("Leaf")
+            Arg::new("leaf")
+                .long("leaf")
                 .short('L')
                 .action(ArgAction::SetTrue)
                 .help("Don't print leaf labels"),

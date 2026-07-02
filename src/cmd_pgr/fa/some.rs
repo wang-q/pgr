@@ -34,7 +34,7 @@ Examples:
                 .help("Input FASTA file to process"),
         )
         .arg(
-            Arg::new("list.txt")
+            Arg::new("list")
                 .required(true)
                 .index(2)
                 .help("File containing one sequence name per line"),
@@ -64,7 +64,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // Load list
     //----------------------------
     let set_list = pgr::libs::io::read_names::<std::collections::HashSet<String>>(
-        args.get_one::<String>("list.txt").unwrap(),
+        args.get_one::<String>("list").unwrap(),
     )?;
 
     //----------------------------

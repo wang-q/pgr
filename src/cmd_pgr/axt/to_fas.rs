@@ -33,7 +33,7 @@ Examples:
 "###,
         )
         .arg(
-            Arg::new("chr.sizes")
+            Arg::new("sizes")
                 .required(true)
                 .index(1)
                 .num_args(1)
@@ -71,7 +71,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // Args
     //----------------------------
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
-    let sizes = pgr::read_sizes::<i32>(args.get_one::<String>("chr.sizes").unwrap())?;
+    let sizes = pgr::read_sizes::<i32>(args.get_one::<String>("sizes").unwrap())?;
 
     let tname = args.get_one::<String>("tname").unwrap();
     let qname = args.get_one::<String>("qname").unwrap();

@@ -35,7 +35,7 @@ Examples:
                 .help("Input FASTA file to process"),
         )
         .arg(
-            Arg::new("replace.tsv")
+            Arg::new("replace")
                 .required(true)
                 .index(2)
                 .help("TSV file containing original and replacement names"),
@@ -57,8 +57,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     let mut fa_in = pgr::libs::fmt::fa::reader(args.get_one::<String>("infile").unwrap())?;
 
-    let replace_of =
-        pgr::libs::io::read_replace_tsv(args.get_one::<String>("replace.tsv").unwrap())?;
+    let replace_of = pgr::libs::io::read_replace_tsv(args.get_one::<String>("replace").unwrap())?;
     let is_some = args.get_flag("some");
 
     let mut fa_out = pgr::libs::fmt::fa::writer(crate::cmd_pgr::args::get_outfile(args))?;

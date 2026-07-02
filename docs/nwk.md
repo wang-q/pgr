@@ -148,8 +148,8 @@ pgr nwk replace [OPTIONS] <infile> <replace.tsv>
 ```
 
 *   `<replace.tsv>`: Tab-separated file: `Original <TAB> Replacement [TAB Extra...]`.
-*   `-I, --Internal`: Skip internal labels.
-*   `-L, --Leaf`: Skip leaf labels.
+*   `-I, --internal`: Skip internal labels.
+*   `-L, --leaf`: Skip leaf labels.
 *   `--mode <mode>`:
     *   `label` (default): Replace node name.
     *   `taxid`: Add as NCBI TaxID (`:T=`).

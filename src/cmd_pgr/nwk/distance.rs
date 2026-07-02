@@ -65,15 +65,15 @@ Examples:
                 .help("Set the mode for calculating distances"),
         )
         .arg(
-            Arg::new("Internal")
-                .long("Internal")
+            Arg::new("internal")
+                .long("internal")
                 .short('I')
                 .action(ArgAction::SetTrue)
                 .help("Ignore internal nodes"),
         )
         .arg(
-            Arg::new("Leaf")
-                .long("Leaf")
+            Arg::new("leaf")
+                .long("leaf")
                 .short('L')
                 .action(ArgAction::SetTrue)
                 .help("Ignore leaf nodes"),
@@ -94,8 +94,8 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
 
     let mode = args.get_one::<String>("mode").unwrap();
 
-    let skip_internal = args.get_flag("Internal");
-    let skip_leaf = args.get_flag("Leaf");
+    let skip_internal = args.get_flag("internal");
+    let skip_leaf = args.get_flag("leaf");
 
     // ids with names
     let mut id_of = BTreeMap::new();

@@ -413,13 +413,13 @@ pub fn match_names(tree: &Tree, args: &ArgMatches) -> anyhow::Result<BTreeSet<us
 
 /// Returns IDs of nodes matching the position selection rules from CLI args.
 pub fn match_positions(tree: &Tree, args: &ArgMatches) -> BTreeSet<usize> {
-    let mut skip_internal = if args.try_contains_id("Internal").is_ok() {
-        args.get_flag("Internal")
+    let mut skip_internal = if args.try_contains_id("internal").is_ok() {
+        args.get_flag("internal")
     } else {
         false
     };
-    let skip_leaf = if args.try_contains_id("Leaf").is_ok() {
-        args.get_flag("Leaf")
+    let skip_leaf = if args.try_contains_id("leaf").is_ok() {
+        args.get_flag("leaf")
     } else {
         false
     };
