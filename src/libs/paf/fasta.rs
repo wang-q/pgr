@@ -53,6 +53,20 @@ pub fn validate_tsv_covers_index(
     Ok(())
 }
 
+/// Load FASTA TSV, validate it covers every name in `idx`, and build a [`FastaStore`].
+///
+/// Shared by `pgr paf` subcommands that need sequence access (to-fas, to-gfa,
+/// to-maf, to-vcf). Combines [`load_fasta_tsv`], [`validate_tsv_covers_index`],
+/// and [`FastaStore::new`] into one step.
+pub fn prepare_store(
+    tsv_path: &str,
+    idx: &crate::libs::paf::index::PafIndex,
+) -> anyhow::Result<FastaStore> {
+    let seq_to_file = load_fasta_tsv(tsv_path)?;
+    validate_tsv_covers_index(&seq_to_file, idx)?;
+    FastaStore::new(&seq_to_file)
+}
+
 /// One opened BGZF FASTA file with its .loc index and a per-name record cache.
 pub struct FastaEntry {
     reader: loc::Input,

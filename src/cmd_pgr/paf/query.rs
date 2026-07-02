@@ -1,7 +1,5 @@
 use clap::*;
 
-use super::common;
-
 pub fn make_subcommand() -> Command {
     let cmd = Command::new("query")
         .about("Query PAF index for coordinate projection")
@@ -52,9 +50,11 @@ Examples:
 }
 
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let (idx, all_results) = common::run_query(args)?;
+    let opts = crate::cmd_pgr::args::query_options_from_args(args);
+    let (idx, all_results) = pgr::libs::paf::query::run_query(&opts)?;
+    let stdout = std::io::stdout();
     for (_, results) in &all_results {
-        common::output_paf(&idx, results);
+        pgr::libs::paf::query::output_paf(&mut stdout.lock(), &idx, results)?;
     }
     Ok(())
 }

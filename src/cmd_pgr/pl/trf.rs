@@ -119,7 +119,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let abs_infile = intspan::absolute_path(args.get_one::<String>("infile").unwrap())?
         .display()
         .to_string();
-    let abs_outfile = crate::cmd_pgr::pl::common::abs_path_or_stdout(outfile)?;
+    let abs_outfile = pgr::libs::pl::abs_path_or_stdout(outfile)?;
 
     //----------------------------
     // Ops

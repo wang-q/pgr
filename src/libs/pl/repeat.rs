@@ -1,16 +1,7 @@
-//! Shared helpers for `pgr pl` pipeline subcommands.
+//! Repeat-identification pipeline drivers (FastK → Profex → spanr).
 
 use cmd_lib::*;
 use std::io::BufRead;
-
-/// Resolve `path` to an absolute path string. `stdout` is passed through as-is.
-pub fn abs_path_or_stdout(path: &str) -> anyhow::Result<String> {
-    if path == "stdout" {
-        Ok(path.to_string())
-    } else {
-        Ok(intspan::absolute_path(path)?.display().to_string())
-    }
-}
 
 /// Run `Profex -z genome` per chromosome and write `.rg` files.
 ///
@@ -32,10 +23,10 @@ pub fn run_profex_per_chr(
             Profex -z genome ${sn} > prof.${sn}.txt
         )?;
 
-        let reader = pgr::reader(&format!("prof.{}.txt", sn))?;
+        let reader = crate::reader(&format!("prof.{}.txt", sn))?;
 
         let rg_file = format!("prof.{}.rg", sn);
-        let mut writer = pgr::writer(&rg_file)?;
+        let mut writer = crate::writer(&rg_file)?;
 
         for line in std::io::BufReader::new(reader)
             .lines()
@@ -62,61 +53,6 @@ pub fn run_profex_per_chr(
         rg_files.push(rg_file);
     }
     Ok(rg_files)
-}
-
-/// Shared pipeline context: current dir, pgr executable, and tempdir.
-///
-/// Created at the start of a pipeline; call [`PipelineCtx::enter`] to switch
-/// into the tempdir and [`PipelineCtx::leave`] to restore the original cwd.
-pub struct PipelineCtx {
-    /// Original working directory, restored by `leave()`.
-    pub curdir: std::path::PathBuf,
-    /// Absolute path to the current `pgr` executable.
-    pub pgr: String,
-    /// Owned tempdir; dropped when the ctx is dropped.
-    pub tempdir: tempfile::TempDir,
-}
-
-impl PipelineCtx {
-    /// Create a new context with a tempdir using `prefix` (e.g. `"pgr_rm_"`).
-    ///
-    /// Prints the `==> Paths` info block.
-    pub fn new(prefix: &str) -> anyhow::Result<Self> {
-        let curdir = std::env::current_dir()?;
-        let pgr = std::env::current_exe()?.display().to_string();
-        let tempdir = tempfile::Builder::new().prefix(prefix).tempdir()?;
-        let tempdir_str = tempdir.path().to_str().unwrap();
-
-        run_cmd!(info "==> Paths")?;
-        run_cmd!(info "    \"pgr\"     = ${pgr}")?;
-        run_cmd!(info "    \"curdir\"  = ${curdir:?}")?;
-        run_cmd!(info "    \"tempdir\" = ${tempdir_str}")?;
-
-        Ok(Self {
-            curdir,
-            pgr,
-            tempdir,
-        })
-    }
-
-    /// Resolve `p` to an absolute path string.
-    pub fn abs_path(&self, p: &str) -> anyhow::Result<String> {
-        Ok(intspan::absolute_path(p)?.display().to_string())
-    }
-
-    /// Switch the current working directory into the tempdir.
-    pub fn enter(&self) -> anyhow::Result<()> {
-        let tempdir_str = self.tempdir.path().to_str().unwrap();
-        run_cmd!(info "==> Switch to tempdir")?;
-        std::env::set_current_dir(tempdir_str)?;
-        Ok(())
-    }
-
-    /// Restore the original working directory.
-    pub fn leave(&self) -> anyhow::Result<()> {
-        std::env::set_current_dir(&self.curdir)?;
-        Ok(())
-    }
 }
 
 /// Options for the shared repeat-identification pipeline (ir/rept).
@@ -170,7 +106,7 @@ pub fn run_repeat_pipeline(opts: &RepeatOpts) -> anyhow::Result<()> {
     run_cmd!(
         ${pgr} fa size ${abs_infile} -o chr.sizes
     )?;
-    let chrs = pgr::libs::io::read_names::<Vec<String>>("chr.sizes")?;
+    let chrs = crate::libs::io::read_names::<Vec<String>>("chr.sizes")?;
 
     let rg_files = run_profex_per_chr(&chrs, &opts.re_prof, opts.min_depth)?;
 

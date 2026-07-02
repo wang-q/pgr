@@ -178,7 +178,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         vec![abs_psl]
     };
 
-    let abs_outdir = crate::cmd_pgr::pl::common::abs_path_or_stdout(outdir)?;
+    let abs_outdir = pgr::libs::pl::abs_path_or_stdout(outdir)?;
 
     //----------------------------
     // Ops

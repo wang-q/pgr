@@ -1,7 +1,5 @@
 use clap::*;
 
-use super::common;
-
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("refine")
@@ -84,7 +82,15 @@ Examples:
 // command implementation
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let parallel = *args.get_one::<usize>("parallel").unwrap();
-    common::run_pipeline(args, parallel, |block| proc_block(block, args))
+    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
+    let infiles: Vec<String> = args
+        .get_many::<String>("infiles")
+        .unwrap()
+        .cloned()
+        .collect();
+    pgr::libs::fmt::fas::run_pipeline(&mut writer, &infiles, parallel, |block| {
+        proc_block(block, args)
+    })
 }
 
 fn proc_block(block: &pgr::libs::fmt::fas::FasBlock, args: &ArgMatches) -> anyhow::Result<String> {

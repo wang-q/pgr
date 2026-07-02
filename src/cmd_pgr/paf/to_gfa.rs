@@ -1,7 +1,5 @@
 use clap::*;
 
-use super::common;
-
 pub fn make_subcommand() -> Command {
     crate::cmd_pgr::args::add_poa_args(
         crate::cmd_pgr::args::add_query_args(
@@ -75,7 +73,10 @@ Examples:
 }
 
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let (idx, all_results, mut fasta_store) = common::prepare_query(args)?;
+    let opts = crate::cmd_pgr::args::query_options_from_args(args);
+    let (idx, all_results) = pgr::libs::paf::query::run_query(&opts)?;
+    let mut fasta_store =
+        pgr::libs::paf::fasta::prepare_store(args.get_one::<String>("fasta_tsv").unwrap(), &idx)?;
 
     let params = crate::cmd_pgr::args::get_poa_params(args);
     let crush = args.get_flag("crush");

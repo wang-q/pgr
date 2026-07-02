@@ -1,4 +1,3 @@
-pub mod common;
 pub mod condense;
 pub mod ir;
 pub mod p2m;

@@ -2,9 +2,8 @@ use clap::*;
 
 use pgr::libs::paf::index::PafIndex;
 use pgr::libs::paf::msa_build::{build_msa_entries, build_pairwise_block, run_poa_msa};
+use pgr::libs::paf::query::QueryGroup;
 use pgr::libs::poa::AlignmentParams;
-
-use super::common::{self, QueryGroup};
 
 fn output_fas_pairwise(
     idx: &PafIndex,
@@ -122,7 +121,10 @@ Examples:
 }
 
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let (idx, all_results, mut fasta_store) = common::prepare_query(args)?;
+    let opts = crate::cmd_pgr::args::query_options_from_args(args);
+    let (idx, all_results) = pgr::libs::paf::query::run_query(&opts)?;
+    let mut fasta_store =
+        pgr::libs::paf::fasta::prepare_store(args.get_one::<String>("fasta_tsv").unwrap(), &idx)?;
     if args.get_flag("msa") {
         let params = crate::cmd_pgr::args::get_poa_params(args);
         output_fas_msa(&idx, &all_results, &mut fasta_store, params)

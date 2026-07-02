@@ -85,12 +85,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     // Paths
     //----------------------------
-    let ctx = crate::cmd_pgr::pl::common::PipelineCtx::new("pgr_rm_")?;
+    let ctx = pgr::libs::pl::PipelineCtx::new("pgr_rm_")?;
 
     run_cmd!(info "==> Absolute paths")?;
     let abs_repeat = ctx.abs_path(args.get_one::<String>("repeat").unwrap())?;
     let abs_infile = ctx.abs_path(args.get_one::<String>("infile").unwrap())?;
-    let abs_outfile = crate::cmd_pgr::pl::common::abs_path_or_stdout(outfile)?;
+    let abs_outfile = pgr::libs::pl::abs_path_or_stdout(outfile)?;
 
     //----------------------------
     // Ops
@@ -105,7 +105,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             ",
     )?;
 
-    let opts = crate::cmd_pgr::pl::common::RepeatOpts {
+    let opts = pgr::libs::pl::RepeatOpts {
         pgr: ctx.pgr.clone(),
         abs_infile,
         abs_outfile,
@@ -118,7 +118,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         min_depth: None,
     };
 
-    crate::cmd_pgr::pl::common::run_repeat_pipeline(&opts)?;
+    pgr::libs::pl::run_repeat_pipeline(&opts)?;
 
     //----------------------------
     // Done

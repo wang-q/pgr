@@ -2,6 +2,7 @@
 
 use clap::{builder, Arg, ArgAction, ArgMatches, Command};
 
+use pgr::libs::paf::query::QueryOptions;
 use pgr::libs::poa::AlignmentParams;
 
 /// Standard `-o/--outfile` argument defaulting to stdout.
@@ -213,6 +214,26 @@ pub fn get_poa_params(args: &ArgMatches) -> AlignmentParams {
         mismatch_score: *args.get_one::<i32>("mismatch").unwrap(),
         gap_open: *args.get_one::<i32>("gap_open").unwrap(),
         gap_extend: *args.get_one::<i32>("gap_extend").unwrap(),
+    }
+}
+
+/// Extract PAF query options from clap matches added by [`add_query_args`].
+pub fn query_options_from_args(args: &ArgMatches) -> QueryOptions {
+    QueryOptions {
+        infile: args.get_one::<String>("infile").unwrap().clone(),
+        region: args.get_one::<String>("region").cloned(),
+        bed_regions: args.get_one::<String>("bed_regions").cloned(),
+        transitive: args.get_flag("transitive"),
+        max_depth: *args.get_one::<u16>("max_depth").unwrap(),
+        min_len: *args.get_one::<i32>("min_len").unwrap(),
+        min_dist: *args.get_one::<i32>("min_dist").unwrap(),
+        min_identity: *args.get_one::<f64>("min_identity").unwrap(),
+        min_output_len: *args.get_one::<i32>("min_output_len").unwrap(),
+        merge_distance: *args.get_one::<i32>("merge_distance").unwrap(),
+        min_degree: *args.get_one::<usize>("min_degree").unwrap(),
+        min_chain_length: *args.get_one::<i32>("min_chain_length").unwrap(),
+        subset_list: args.get_one::<String>("subset_list").cloned(),
+        syntenic_filter: args.get_one::<String>("syntenic_filter").cloned(),
     }
 }
 

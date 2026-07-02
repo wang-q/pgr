@@ -231,6 +231,38 @@ where
     Ok(())
 }
 
+/// Process FasBlock files either single-threaded or in parallel.
+///
+/// For each block read from `infiles`, calls `proc_block` to produce a string
+/// chunk, and writes all chunks to `writer`. When `parallel > 1`, delegates to
+/// [`run_parallel`] with `parallel` worker threads (output order may differ
+/// from input order). Flushes `writer` before returning.
+pub fn run_pipeline<W, F>(
+    writer: &mut W,
+    infiles: &[String],
+    parallel: usize,
+    proc_block: F,
+) -> anyhow::Result<()>
+where
+    W: Write,
+    F: Fn(&FasBlock) -> anyhow::Result<String> + Sync,
+{
+    if parallel <= 1 {
+        for infile in infiles {
+            let mut reader = crate::reader(infile)?;
+            while let Ok(block) = next_fas_block(&mut reader) {
+                let out_string = proc_block(&block)?;
+                writer.write_all(out_string.as_ref())?;
+            }
+        }
+    } else {
+        run_parallel(infiles, parallel, writer, &proc_block)?;
+    }
+
+    writer.flush()?;
+    Ok(())
+}
+
 /// Check a FasEntry's sequence against the reference genome.
 pub fn check_entry_against_ref(
     entry: &FasEntry,

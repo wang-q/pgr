@@ -5,10 +5,12 @@
 //! index build/load, transitive BFS traversal, and subset / syntenic /
 //! chain-length / degree filtering.
 
+use super::cigar;
 use super::index::{PafIndex, QueryResult};
+use super::msa_build::orient_interval;
 use crate::libs::chain::record::read_chains;
 use std::collections::{HashMap, HashSet};
-use std::io::BufRead;
+use std::io::{self, BufRead, Write};
 
 /// Parameters for a PAF index query, decoupled from clap.
 ///
@@ -261,4 +263,35 @@ pub fn filter_by_chain_length(results: &mut Vec<QueryResult>, min_chain_length: 
     results.retain(|(qid, _, _, _, _, _, _)| {
         totals.get(qid).copied().unwrap_or(0) >= min_chain_length
     });
+}
+
+/// A region paired with its query results.
+pub type QueryGroup = ((String, i32, i32), Vec<QueryResult>);
+
+/// Write `results` as PAF records (12 columns + `gi`/`bi`/`cg` tags) to `writer`.
+///
+/// Sequence names are resolved via `idx.id_to_name`. The `cg` tag is built from
+/// the per-result CIGAR; `gi` and `bi` are gap-compressed and block identities.
+pub fn output_paf<W: Write>(
+    writer: &mut W,
+    idx: &PafIndex,
+    results: &[QueryResult],
+) -> io::Result<()> {
+    for (query_id, q_iv, t_iv, cigar, _, _, strand) in results {
+        let qname = idx.id_to_name(*query_id).unwrap_or("?");
+        let tname = idx.id_to_name(t_iv.metadata).unwrap_or("?");
+        let block_len = (q_iv.last - q_iv.first).abs().max(1) as u32;
+        let matches = cigar::cigar_stats(cigar).matches;
+        let gi = cigar::gap_compressed_identity(cigar);
+        let bi = cigar::block_identity(cigar);
+        let cg = cigar::format_cigar(cigar);
+        let (qs, qe) = orient_interval(q_iv.first, q_iv.last);
+        let (ts, te) = orient_interval(t_iv.first, t_iv.last);
+        writeln!(
+            writer,
+            "{}\t0\t{}\t{}\t{}\t{}\t0\t{}\t{}\t{}\t{}\t255\tgi:f:{:.6}\tbi:f:{:.6}\tcg:Z:{}",
+            qname, qs, qe, strand, tname, ts, te, matches, block_len, gi, bi, cg
+        )?;
+    }
+    Ok(())
 }
