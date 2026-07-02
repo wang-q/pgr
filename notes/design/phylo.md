@@ -2,9 +2,11 @@
 
 `pgr nwk` 提供完整的 Newick 格式系统发育树处理功能，包括解析、操作、分析和可视化。
 
+> **关联文档**：[[nwk-eval.md]]（计划中的多维树评估框架，复用本文档描述的 `cmp.rs`/`stat.rs`/`is_monophyletic`）。
+
 ## 1. 架构设计
 
-### 模块位置
+### 1.1 模块位置
 ```text
 src/libs/phylo/
 ├── mod.rs              # 模块导出
@@ -16,7 +18,7 @@ src/libs/phylo/
 │   ├── traversal.rs    # 遍历算法 (preorder, postorder, levelorder)
 │   ├── query.rs        # 路径/距离/LCA 查询
 │   ├── stat.rs         # 统计指标 (height, diameter, cherries, colless, sackin)
-│   ├── balance.rs      # 平衡指标 (cherries, colless, sackin)
+│   ├── balance.rs      # 平衡指标 (cherries, colless, sackin) — 与 stat.rs 存在同名函数的重复定义，后续应统一到 stat.rs
 │   ├── distance.rs     # 节点距离计算
 │   ├── support.rs      # Bootstrap 支持率计算
 │   ├── algo.rs         # 高级算法 (Sort, etc.)
@@ -26,7 +28,7 @@ src/libs/phylo/
 └── error.rs            # 错误定义 (TreeError)
 ```
 
-### 核心数据结构
+### 1.2 核心数据结构
 
 采用 **Arena (Vector-backed)** 模式：所有节点存储在 `Vec<Node>` 中，使用 `usize` 索引代替指针。
 
@@ -53,7 +55,7 @@ pub struct Tree {
 }
 ```
 
-### 设计特点
+### 1.3 设计特点
 
 *   **Arena 内存布局**: 节点紧凑存储在 `Vec` 中，缓存局部性好。
 *   **索引引用**: 通过 `NodeId` (usize) 维护关系，避免 Rust 所有权问题。

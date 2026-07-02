@@ -5,6 +5,8 @@
 本文档旨在总结 Cactus 项目的核心算法与架构，涵盖渐进式比对（Progressive Alignment）、泛基因组比对
 （Pangenome Alignment）及下游分析流程，为 `pgr` 项目提供参考。
 
+**关联文档**：[[cactus_lastz.md]]（§1.5 lastzRepeatMasking 子模块深度分析）、[[minigraph.md]]（§3 Minigraph-Cactus 五阶段流程）、[[ucsc.md]]（§1.11 Cactus vs UCSC Chain/Net 数据结构对比）、[[paf-pangenome.md]]（§6.4–§6.5 Caf 退火-熔化与分治策略对 pgr 的启示）。
+
 ## 1. Progressive Cactus (渐进式比对)
 
 基于 `doc/progressive.md` 整理。

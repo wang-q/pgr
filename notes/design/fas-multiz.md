@@ -1,6 +1,8 @@
 # fas-multiz 设计与实现
 
-本文档是 `libs::fas_multiz` 的设计稿，基于对 multiz 源码的分析（见 [[multiz.md]]）。
+> **状态：已实现** — `libs::fas_multiz` 核心库与 `pgr fas multiz` CLI 均已落地，详见 §2.10。
+
+本文档是 `libs::fas_multiz` 的设计稿，基于对 multiz 源码的分析（见 [multiz.md](../references/multiz.md)）。
 涵盖 pgr 与 multiz 的策略对比（§1）以及 fas-multiz 的设计与实现（§2）。
 
 ## 1. pgr 与 multiz 的异同分析

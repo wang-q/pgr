@@ -1,4 +1,4 @@
-# axt
+# pgr axt
 
 `pgr axt` 模块用于处理 **AXT** 格式的成对基因组比对（Pairwise Genomic Alignments）。该格式通常由 `lastz` 或 `blastz` 等比对工具生成。
 

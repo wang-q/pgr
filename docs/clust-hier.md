@@ -1,4 +1,4 @@
-# clust hier: 层次聚类
+# pgr clust hier
 
 `pgr clust hier`（别名 `hclust`）提供通用的层次聚类（dendrogram）生成能力，支持 `single/complete/average/ward.D2` 等方法，输出 Newick 形式，便于下游 `clust cut`。
 

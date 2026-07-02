@@ -263,3 +263,9 @@ pgr nwk to-tex [OPTIONS] <infile>
 *   `--bl`: Draw phylogram (with branch lengths).
 *   `--forest`: Input is already Forest code.
 *   `--style`: Skip default style definitions.
+
+---
+
+## Planned Subcommands
+
+*   `eval` [Planned]: Multi-dimensional tree evaluation framework (geometric, taxonomic, phylogenetic, trait consistency). Design notes in `notes/design/nwk-eval.md`. Referenced by `pgr clust eval` and `pgr clust cut` for tree-based metrics.

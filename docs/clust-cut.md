@@ -214,7 +214,7 @@
   - 输出：ARI (Adjusted Rand Index), AMI (Adjusted Mutual Information), V-Measure 等。
   - 适用场景：当你已知样本的真实分类，或者想比较两种切割参数的差异度时。
 
-- **树相关指标 (`pgr nwk metrics` [计划中])**：
+- **树相关指标 (`pgr nwk eval` [计划中])**：
   - 输入：树文件 + 聚类结果。
   - 输出：Parsimony score, Silhouette score (基于树上距离矩阵) 等。
   - 适用场景：没有真实分类，需要评估聚类在树结构上的紧密性或分离度。
@@ -244,7 +244,7 @@ pgr clust hier matrix.phy --method ward > tree.nwk
 pgr clust cut tree.nwk --height 0.05 > clusters.tsv
 
 # 3. 评估 (计算 Cophenetic 相关系数与 Silhouette)
-# pgr nwk metrics tree.nwk --part clusters.tsv --metrics silhouette > sil.tsv (计划中，未实现)
+# pgr nwk eval tree.nwk --part clusters.tsv --metrics silhouette > sil.tsv (计划中，未实现)
 ```
 
 #### 3. SciPy 风格分析 (不一致系数)

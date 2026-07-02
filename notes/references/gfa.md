@@ -1,8 +1,10 @@
 # GFA (Graphical Fragment Assembly) Format
 
-> 整理于 2026-06，源自对 GFA 格式规范及泛基因组工具生态的梳理。目的：为 pgr 的 GFA 读写与图操作提供格式参考。
+> 整理于 2026-06，源自对 GFA 格式规范及泛基因组工具生态的梳理。目的：为 pgr 的 GFA 读写与图操作提供格式参考。本文档前半（§1–§7）为格式规范，§附录为 Erik Garrison "Untangling graphical pangenomics" 博客译文。
 
 GFA 是用于描述序列图（Sequence Graphs）的通用文本格式，广泛应用于基因组组装和泛基因组分析。它通过节点（Segments）和边（Links）来表示序列及其连接关系。
+
+**关联文档**：[[seqwish.md]]（DSU 传递闭包 → GFA 构建）、[[smoothxg.md]]（GFA 块分解 + 重新 POA 平滑）、[[impg.md]]（POA → GFA → gfaffix → gfasort 工具链）、[[minigraph.md]]（rGFA 输出）。
 
 ## 1. 版本与变体 (Versions & Dialects)
 

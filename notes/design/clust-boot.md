@@ -32,7 +32,7 @@
     -   **聚类方向**：列。
     -   **重采样方向**：行。
 
-### 1.3 核心算法流程：多尺度 Bootstrap
+### 1.2 核心算法流程：多尺度 Bootstrap
 
 `pvclust` 采用 **多尺度 Bootstrap (Multiscale Bootstrap)**，这是其区别于传统 Bootstrap（如 PHYLIP `seqboot`，固定 $r=1.0$）的核心特征。它在每一次 bootstrap 迭代中都会执行完整的流水线：
 

@@ -4,6 +4,8 @@
 
 这是将**相似度矩阵 (Similarity Matrix)** 转换为 **距离矩阵 (Distance Matrix)** 的核心工具，也支持归一化和其他数值调整。
 
+> 本文档是 `mat transform` 子命令的深入说明。所有 `mat` 子命令的概览见 [mat.md](mat.md)。
+
 ## 用法
 
 ```bash

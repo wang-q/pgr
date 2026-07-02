@@ -1,4 +1,4 @@
-# clust eval
+# pgr clust eval
 
 `pgr clust eval` 提供通用的聚类质量评估与比较功能。它支持**外部有效性（External Validity）**（与 Ground Truth 对比）和**内部有效性（Internal Validity）**（基于数据本身的几何/统计特性）。
 

@@ -41,6 +41,7 @@
 - **特点**：基于密度的聚类，需指定邻域半径 `eps` 和最小点数 `min_samples`。
 - **适用场景**：**非凸形状**簇，密度不均匀分布，需**离群点检测**。
 - **优势**：不需要指定簇数 K，能识别噪声。
+- **文档**：[clust-dbscan.md](clust-dbscan.md)
 
 ### UPGMA
 
@@ -65,6 +66,7 @@
 - **特点**：通用层次聚类，支持 `single`, `complete`, `average`, `ward` 等方法。
 - **实现状态**：已实现（$O(N^2)$ NN-Chain 优化）。
 - **价值**：提供通用层级结构视图（不限于生物演化），配合 `clust cut` 可灵活获取不同粒度的分组。
+- **文档**：[clust-hier.md](clust-hier.md)
 
 ### Tree Cut
 
@@ -159,7 +161,7 @@ pgr clust gmm input.tsv --k 5 --cov full > clusters.tsv
 - **BIC (Bayesian Information Criterion)** [计划中]：
   - 在 GMM 中，BIC 权衡了对数似然（拟合度）与参数数量（复杂度）。
   - `pgr` 可提供 `clust gmm --scan-k 2..20`，自动计算并输出 BIC 曲线，辅助用户选择最佳 K（通常是 BIC 最低点或手肘点）。
-- **Silhouette / Calinski-Harabasz** [部分支持]：基于几何距离的评估指标，适用于 K-means 或一般距离聚类（`clust eval` 已支持距离矩阵版 Silhouette；树上 Silhouette 计划在 `nwk metrics` [计划中] 中实现）。
+- **Silhouette / Calinski-Harabasz** [部分支持]：基于几何距离的评估指标，适用于 K-means 或一般距离聚类（`clust eval` 已支持距离矩阵版 Silhouette；树上 Silhouette 计划在 `pgr nwk eval` [计划中] 中实现）。
 
 ## 实现分析与对比 (Implementation Analysis)
 
@@ -271,7 +273,7 @@ pgr clust hier sub_matrix.phy --method ward > backbone.nwk
 pgr clust mcl pairs.tsv --inflation 2.0 > families.tsv
 ```
 
-### 场景 C: 层次聚类参数扫描与评估 (Workflow)
+### 场景 B: 层次聚类参数扫描与评估 (Workflow)
 
 结合 `clust cut` 的扫描能力与 `clust eval` 的批量评估，寻找最佳切分阈值。
 

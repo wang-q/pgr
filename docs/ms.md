@@ -2,6 +2,8 @@
 
 `pgr ms` provides tools for working with **Hudson's ms** simulator output.
 
+> For the algorithmic background (mutation model, RNG, porting details), see [ms-to-dna.md](ms-to-dna.md) and `notes/design/ms2dna_port.md`.
+
 ## Subcommands
 
 *   `to-dna`: Convert ms output haplotypes (0/1) to DNA sequences (FASTA).

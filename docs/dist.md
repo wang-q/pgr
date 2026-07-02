@@ -1,4 +1,4 @@
-# dist
+# pgr dist
 
 `pgr dist` 模块提供序列和向量的**距离/相似度计算**功能。它是构建系统发育树（Phylogeny）和聚类分析（Clustering）的核心前置步骤。
 

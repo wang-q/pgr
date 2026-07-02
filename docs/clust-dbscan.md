@@ -1,4 +1,4 @@
-# clust dbscan: 密度聚类
+# pgr clust dbscan
 
 `pgr clust dbscan` 提供基于密度的聚类（DBSCAN）。当前实现以“距离矩阵”为输入，输出标准的 `cluster`/`pair` 两种分区格式，便于与其它命令互操作。
 

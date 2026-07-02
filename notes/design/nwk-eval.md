@@ -1,6 +1,6 @@
 # nwk eval [设计中]
 
-> **实现状态注记**：本文档为设计稿，所有功能均未实现（Roadmap 四个 Phase 全部 `[ ]`）。`pgr nwk` 当前无 `eval` 子命令。
+> **实现状态注记**：本文档为设计稿，所有功能均未实现（Roadmap 四个 Phase 全部 `[ ]`）。`pgr nwk` 当前无 `eval` 子命令。本文档基于 [[phylo.md]] 中描述的 phylo 架构（Arena 树、`cmp.rs`、`stat.rs`）。
 
 `pgr nwk eval` 的目标是建立一个**多维度的树评估框架**。除了基于树拓扑的几何指标外，重点引入**生物学语境**，评估基因树（Gene Tree）与物种树（Species Tree）或分类单元（Taxonomy）的一致性。
 
@@ -39,7 +39,7 @@
 
 ## 3. 指标详细定义
 
-### 1. 几何/拓扑指标 (Geometric/Topological)
+### 3.1 几何/拓扑指标 (Geometric/Topological)
 *无需外部信息，仅基于输入树的边长和拓扑。*
 
 设树上任意两个叶子的距离为 `d(x, y)`。
@@ -65,7 +65,7 @@
 - **SciPy 参考**: `scipy.cluster.hierarchy.cophenet`。
 - **应用**: 评估不同聚类方法（如 UPGMA vs NJ vs Ward）对数据的拟合优度。$r$ 越接近 1，表示树结构越能真实反映原始数据。通常，$r > 0.8$ 认为拟合良好。
 
-### 2. 性状/分类指标 (Trait/Taxonomic Consistency)
+### 3.2 性状/分类指标 (Trait/Taxonomic Consistency)
 *需提供 `--traits` (或兼容 `--tax`)。评估分组与外部标签（分类、地理、表型）的一致性。*
 
 - **Purity**: 簇内最优势标签的占比。
@@ -74,14 +74,14 @@
 - **Entropy**: 标签分布的香农熵。`H(C) = - sum(p_i * log2(p_i))`。衡量簇内标签的混乱程度。
 - **LCA Rank Consistency** (仅限分类): 如果提供层级信息，评估 LCA 是否对应特定层级。
 
-### 3. 系统发育指标 (Phylogenetic Discordance)
+### 3.3 系统发育指标 (Phylogenetic Discordance)
 *需提供 `--ref`。评估基因树局部结构与物种树的冲突。*
 
 - **Local RF Distance**: 簇内子树与参考树对应子集的 Robinson-Foulds 距离。
 - **Monophyly Check**: 基因树上的簇成员，在物种树上是否也聚集成单系群？
   - 若基因树聚类但物种树分散 -> 可能暗示 HGT 或 LBA（长枝吸引）。
 
-### 4. 高级树比较 (Advanced Tree Comparison) [计划中]
+### 3.4 高级树比较 (Advanced Tree Comparison) [计划中]
 *参考 R `dendextend` 包的功能，支持更深入的树结构比较。*
 
 - **Tanglegram**: 可视化两棵树的对应关系（通常用于比较基因树与物种树，或不同聚类方法的树）。虽然 `pgr` 是 CLI 工具，但可以输出用于绘图的匹配表（link file）。
@@ -141,8 +141,8 @@ pgr nwk eval tree.nwk --dist matrix.phy --metrics cophenet > fit.tsv
 - [ ] 实现 `Purity` 和 `Entropy` 指标。
 
 ### Phase 3: 参考树对比 (Reference Comparison)
-- [ ] 引入 `phylo::cmp` 模块。
-- [ ] 实现 RF 距离和单系性检查。
+- [ ] 在 `nwk eval` 中复用已有的 `phylo::cmp` 模块（已实现，见 §5）。
+- [ ] 接入 RF 距离（`pgr nwk cmp` 已实现）与单系性检查（`is_monophyletic` 已实现）到 eval 输出。
 
 ### Phase 4: 文档与高级功能
 - [ ] 完善文档，添加 Benchmark。

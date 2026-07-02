@@ -375,7 +375,7 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
 ### 6.3 待补全的（TODO / 设计阶段）
 
 - `pgr.rs` 末尾注释的 TODO：paralog、fas match、去完全包含序列
-- `notes/design/nwk-eval.md`：树结构多维度评估（设计中）
+- `notes/design/` 下的规划文档（详见 §9 设计笔记索引）
 
 PAF 泛基因组方向（query-to-vcf）已全部完成，后续规划见 [[paf-pangenome.md]] §5（图质量与归一化 / 规模扩展 / 应用层）。
 
@@ -423,4 +423,18 @@ pgr 的 `chain`/`net`/`axt`/`psl` 模块是 UCSC kent-tools 对应功能的**Rus
 5. **外部工具依赖的文档化**：`pl ucsc` 需要安装一整套 kent-tools，但错误提示不够友好。
 6. **`fas` 模块职责过重**：20 个子命令塞在一个模块下，`fas multiz` 等复杂逻辑可能需要
    拆分为独立顶层命令。
+
+## 9. 设计笔记索引（notes/design/）
+
+| 文档 | 定位 | 状态 |
+|------|------|------|
+| [[phylo.md]] | `libs/phylo/` 架构设计（Arena 树、CLI 映射、API 参考） | 部分实现（架构已落地，部分 API 未实现） |
+| [[nwk-eval.md]] | `pgr nwk eval` 多维树评估框架设计 | 计划中（设计稿，未实现） |
+| [[fas-multiz.md]] | `libs::fas_multiz` 设计与实现（banded DP 合并） | 已实现（CLI 已落地） |
+| [[spoa_port.md]] | Spoa C++ → Rust 移植（POA 引擎） | 已完成（双引擎集成已落地） |
+| [[ms2dna_port.md]] | ms2dna C → Rust 迁移设计 | 已实现（实际命令为 `pgr ms to-dna`） |
+| [[clust-planned.md]] | clust 模块算法规划（GMM/HDBSCAN/Louvain 等） | 部分实现（核心算法已落地，GMM 等未实现） |
+| [[clust-boot.md]] | `pgr clust boot` pvclust 风格 bootstrap 设计 | 计划中（未实现） |
+| [[dbscan-planned.md]] | DBSCAN 密度聚类设计（含评分实现讨论） | 部分实现（DBSCAN 已落地，`--scan`/`--opt-eps` 未实现） |
+| [[dist-roadmap.md]] | dist 模块距离计算路线图（K2P/JC69 等） | 部分实现（hv/seq/vector 已落地，模型距离未实现） |
 

@@ -1,5 +1,7 @@
 # Spoa 到 Rust 的移植计划
 
+> **状态：已完成** — 核心库 `libs/poa/` 与 `pgr fas consensus`/`pgr fas refine` 集成均已落地（双引擎：外部 `spoa` 二进制 + Rust 原生实现），详见 §4–§5。
+
 ## 1. 目标
 将 [Spoa](https://github.com/rvaser/spoa) (SIMD POA) 库从 C++ 移植到 Rust，并将其集成到 `pgr` 项目中。目标是提供 Rust 原生的高性能偏序比对 (POA) 和一致性序列生成能力。
 

@@ -1,4 +1,4 @@
-# mat
+# pgr mat
 
 `pgr mat` 模块专注于**距离矩阵（Distance Matrix）**的操作与转换。它是 `pgr clust`（聚类与构树）的上游数据准备与预处理工具集。
 
@@ -83,6 +83,8 @@ PHYLIP 格式间的转换与标准化。
   - `sqrt`: `val = sqrt(val)`
 - **归一化 (`--normalize`)**：基于对角线元素归一化 `x_norm(i, j) = x(i, j) / sqrt(x(i, i) * x(j, j))`。
 - **参数**：`--max`（inv-linear 的最大值，默认 1.0）、`--scale`（linear 的缩放因子，默认 1.0）、`--offset`（linear 的偏移量，默认 0.0）、`--format`（输入格式：`phylip` 或 `pair`，默认 `phylip`）。
+
+> 详细变换场景与数学背景见 [mat-transform.md](mat-transform.md)。
 
 ## 推荐工作流
 

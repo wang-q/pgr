@@ -1,4 +1,4 @@
-# chain
+# pgr chain
 
 `pgr chain` 模块提供了一套用于操作和处理 **UCSC Chain** 格式比对文件的工具。这些工具是构建全基因组比对（Whole Genome Alignment）流水线（如 `pgr pl ucsc`）的核心组件。
 

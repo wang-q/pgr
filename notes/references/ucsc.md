@@ -6,6 +6,8 @@
 以 `pseudocat` vs `pseudopig` 为示例。该流程是 pgr `chain`/`net`/`axt`/`psl`/`lav`/`maf` 模块的
 Rust 重实现参照基准。
 
+**关联文档**：[[cactus.md]]（§1.11 Cactus vs UCSC Chain/Net 数据结构对比）。
+
 ## 1. Pseudocat and pseudopig
 
 ```bash
