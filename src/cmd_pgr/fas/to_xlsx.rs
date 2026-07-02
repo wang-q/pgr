@@ -42,12 +42,7 @@ Examples:
                 .action(ArgAction::SetTrue)
                 .help("List indels"),
         )
-        .arg(
-            Arg::new("outgroup")
-                .long("outgroup")
-                .action(ArgAction::SetTrue)
-                .help("Indicates the presence of outgroups at the end of each block"),
-        )
+        .arg(crate::cmd_pgr::args::outgroup_arg())
         .arg(
             Arg::new("no_single")
                 .long("no-single")

@@ -64,20 +64,8 @@ Examples:
                 .default_value("root")
                 .help("Set the mode for calculating distances"),
         )
-        .arg(
-            Arg::new("internal")
-                .long("internal")
-                .short('I')
-                .action(ArgAction::SetTrue)
-                .help("Don't print internal labels"),
-        )
-        .arg(
-            Arg::new("leaf")
-                .long("leaf")
-                .short('L')
-                .action(ArgAction::SetTrue)
-                .help("Don't print leaf labels"),
-        )
+        .arg(crate::cmd_pgr::args::internal_arg())
+        .arg(crate::cmd_pgr::args::leaf_arg())
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 

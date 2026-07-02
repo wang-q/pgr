@@ -1,6 +1,6 @@
 //! Shared clap argument builders for subcommands.
 
-use clap::{Arg, ArgMatches, Command};
+use clap::{builder, Arg, ArgAction, ArgMatches, Command};
 
 use pgr::libs::poa::AlignmentParams;
 
@@ -214,4 +214,113 @@ pub fn get_poa_params(args: &ArgMatches) -> AlignmentParams {
         gap_open: *args.get_one::<i32>("gap_open").unwrap(),
         gap_extend: *args.get_one::<i32>("gap_extend").unwrap(),
     }
+}
+
+// ============================================================================
+// fas subcommand builders
+// ============================================================================
+
+/// Standard `--outgroup` flag for fas subcommands.
+pub fn outgroup_arg() -> Arg {
+    Arg::new("outgroup")
+        .long("outgroup")
+        .action(ArgAction::SetTrue)
+        .help("Indicates the presence of outgroups at the end of each block")
+}
+
+// ============================================================================
+// nwk subcommand builders
+// ============================================================================
+
+/// Standard `--node` (`-n`) selector for nwk subcommands.
+pub fn node_arg() -> Arg {
+    Arg::new("node")
+        .long("node")
+        .short('n')
+        .num_args(1)
+        .action(ArgAction::Append)
+        .help("Select nodes by exact name")
+}
+
+/// Standard `--name-list` (`-l`) selector for nwk subcommands.
+pub fn name_list_arg() -> Arg {
+    Arg::new("name_list")
+        .long("name-list")
+        .short('l')
+        .num_args(1)
+        .help("Select nodes from a name-list file")
+}
+
+/// Standard `--regex` (`-r`) selector for nwk subcommands.
+pub fn regex_arg() -> Arg {
+    Arg::new("regex")
+        .long("regex")
+        .short('r')
+        .num_args(1)
+        .action(ArgAction::Append)
+        .help("Select nodes by regular expression (case insensitive)")
+}
+
+/// Standard `--descendants` (`-D`) flag for nwk subcommands.
+pub fn descendants_arg() -> Arg {
+    Arg::new("descendants")
+        .long("descendants")
+        .short('D')
+        .action(ArgAction::SetTrue)
+        .help("Include all descendants of selected internal nodes")
+}
+
+/// Standard `--internal` (`-I`) filter flag for nwk subcommands.
+pub fn internal_arg() -> Arg {
+    Arg::new("internal")
+        .long("internal")
+        .short('I')
+        .action(ArgAction::SetTrue)
+        .help("Don't print internal labels")
+}
+
+/// Standard `--leaf` (`-L`) filter flag for nwk subcommands.
+pub fn leaf_arg() -> Arg {
+    Arg::new("leaf")
+        .long("leaf")
+        .short('L')
+        .action(ArgAction::SetTrue)
+        .help("Don't print leaf labels")
+}
+
+// ============================================================================
+// clust subcommand builders
+// ============================================================================
+
+/// Standard `--format` argument for clustering output.
+pub fn format_arg() -> Arg {
+    Arg::new("format")
+        .long("format")
+        .action(ArgAction::Set)
+        .value_parser([
+            builder::PossibleValue::new("cluster"),
+            builder::PossibleValue::new("pair"),
+        ])
+        .default_value("cluster")
+        .help("Output format for clustering results")
+}
+
+/// Standard `--same` argument. `default` varies by algorithm (mcl=1.0, dbscan/k-medoids=0.0).
+pub fn same_arg(default: &'static str) -> Arg {
+    Arg::new("same")
+        .long("same")
+        .num_args(1)
+        .default_value(default)
+        .value_parser(clap::value_parser!(f32))
+        .help("Default score of identical element pairs")
+}
+
+/// Standard `--missing` argument. `default` varies by algorithm (mcl=0.0, dbscan/k-medoids=1.0).
+pub fn missing_arg(default: &'static str) -> Arg {
+    Arg::new("missing")
+        .long("missing")
+        .num_args(1)
+        .default_value(default)
+        .value_parser(clap::value_parser!(f32))
+        .help("Default score of missing pairs")
 }

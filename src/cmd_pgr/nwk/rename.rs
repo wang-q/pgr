@@ -43,14 +43,7 @@ Examples:
                 .index(1)
                 .help("Input filename. [stdin] for standard input"),
         )
-        .arg(
-            Arg::new("node")
-                .long("node")
-                .short('n')
-                .num_args(1)
-                .action(ArgAction::Append)
-                .help("Select nodes by exact name"),
-        )
+        .arg(crate::cmd_pgr::args::node_arg())
         .arg(
             Arg::new("lca")
                 .long("lca")

@@ -72,12 +72,7 @@ Examples:
                     .default_value("consensus")
                     .help("Name of the consensus"),
             )
-            .arg(
-                Arg::new("outgroup")
-                    .long("outgroup")
-                    .action(ArgAction::SetTrue)
-                    .help("Indicates the presence of outgroups at the end of each block"),
-            )
+            .arg(crate::cmd_pgr::args::outgroup_arg())
             .arg(crate::cmd_pgr::args::parallel_arg())
             .arg(crate::cmd_pgr::args::outfile_arg()),
         true,

@@ -46,12 +46,7 @@ Examples:
                 .default_value("builtin")
                 .help("Aligning program"),
         )
-        .arg(
-            Arg::new("outgroup")
-                .long("outgroup")
-                .action(ArgAction::SetTrue)
-                .help("Indicates the presence of outgroups at the end of each block"),
-        )
+        .arg(crate::cmd_pgr::args::outgroup_arg())
         .arg(
             Arg::new("chop")
                 .long("chop")

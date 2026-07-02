@@ -53,50 +53,12 @@ Examples:
                 .index(1)
                 .help("Input filename. [stdin] for standard input"),
         )
-        .arg(
-            Arg::new("internal")
-                .long("internal")
-                .short('I')
-                .action(ArgAction::SetTrue)
-                .help("Don't print internal labels"),
-        )
-        .arg(
-            Arg::new("leaf")
-                .long("leaf")
-                .short('L')
-                .action(ArgAction::SetTrue)
-                .help("Don't print leaf labels"),
-        )
-        .arg(
-            Arg::new("node")
-                .long("node")
-                .short('n')
-                .num_args(1)
-                .action(ArgAction::Append)
-                .help("Select nodes by exact name"),
-        )
-        .arg(
-            Arg::new("name_list")
-                .long("name-list")
-                .short('l')
-                .num_args(1)
-                .help("Select nodes from a name-list file"),
-        )
-        .arg(
-            Arg::new("regex")
-                .long("regex")
-                .short('r')
-                .num_args(1)
-                .action(ArgAction::Append)
-                .help("Select nodes by regular expression (case insensitive)"),
-        )
-        .arg(
-            Arg::new("descendants")
-                .long("descendants")
-                .short('D')
-                .action(ArgAction::SetTrue)
-                .help("Include all descendants of selected internal nodes"),
-        )
+        .arg(crate::cmd_pgr::args::internal_arg())
+        .arg(crate::cmd_pgr::args::leaf_arg())
+        .arg(crate::cmd_pgr::args::node_arg())
+        .arg(crate::cmd_pgr::args::name_list_arg())
+        .arg(crate::cmd_pgr::args::regex_arg())
+        .arg(crate::cmd_pgr::args::descendants_arg())
         .arg(
             Arg::new("root")
                 .long("root")

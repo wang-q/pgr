@@ -28,12 +28,7 @@ Examples:
 "###,
         )
         .arg(crate::cmd_pgr::args::infiles_arg("block FA"))
-        .arg(
-            Arg::new("outgroup")
-                .long("outgroup")
-                .action(ArgAction::SetTrue)
-                .help("Indicates the presence of outgroups at the end of each block"),
-        )
+        .arg(crate::cmd_pgr::args::outgroup_arg())
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 

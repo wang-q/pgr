@@ -38,36 +38,10 @@ Examples:
                 .index(1)
                 .help("Input filename. [stdin] for standard input"),
         )
-        .arg(
-            Arg::new("node")
-                .long("node")
-                .short('n')
-                .num_args(1)
-                .action(ArgAction::Append)
-                .help("Select nodes by exact name"),
-        )
-        .arg(
-            Arg::new("name_list")
-                .long("name-list")
-                .short('l')
-                .num_args(1)
-                .help("A name-list file containing node names"),
-        )
-        .arg(
-            Arg::new("regex")
-                .long("regex")
-                .short('r')
-                .num_args(1)
-                .action(ArgAction::Append)
-                .help("Nodes match the regular expression"),
-        )
-        .arg(
-            Arg::new("descendants")
-                .long("descendants")
-                .short('D')
-                .action(ArgAction::SetTrue)
-                .help("Include all descendants of internal nodes"),
-        )
+        .arg(crate::cmd_pgr::args::node_arg())
+        .arg(crate::cmd_pgr::args::name_list_arg())
+        .arg(crate::cmd_pgr::args::regex_arg())
+        .arg(crate::cmd_pgr::args::descendants_arg())
         .arg(
             Arg::new("invert")
                 .long("invert")

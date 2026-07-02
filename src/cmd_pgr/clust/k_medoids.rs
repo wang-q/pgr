@@ -36,33 +36,9 @@ If there are ties, the alphabetically first member is chosen.
                 .value_parser(value_parser!(usize))
                 .help("Number of clusters"),
         )
-        .arg(
-            Arg::new("format")
-                .long("format")
-                .action(ArgAction::Set)
-                .value_parser([
-                    builder::PossibleValue::new("cluster"),
-                    builder::PossibleValue::new("pair"),
-                ])
-                .default_value("cluster")
-                .help("Output format for clustering results"),
-        )
-        .arg(
-            Arg::new("same")
-                .long("same")
-                .num_args(1)
-                .default_value("0.0")
-                .value_parser(value_parser!(f32))
-                .help("Default score of identical element pairs"),
-        )
-        .arg(
-            Arg::new("missing")
-                .long("missing")
-                .num_args(1)
-                .default_value("1.0")
-                .value_parser(value_parser!(f32))
-                .help("Default score of missing pairs"),
-        )
+        .arg(crate::cmd_pgr::args::format_arg())
+        .arg(crate::cmd_pgr::args::same_arg("0.0"))
+        .arg(crate::cmd_pgr::args::missing_arg("1.0"))
         .arg(
             Arg::new("runs")
                 .long("runs")

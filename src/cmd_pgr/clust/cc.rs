@@ -24,17 +24,7 @@ Note:
                 .index(1)
                 .help("Input file containing pairwise relations (weights ignored) in .tsv format"),
         )
-        .arg(
-            Arg::new("format")
-                .long("format")
-                .action(ArgAction::Set)
-                .value_parser([
-                    builder::PossibleValue::new("cluster"),
-                    builder::PossibleValue::new("pair"),
-                ])
-                .default_value("cluster")
-                .help("Output format for clustering results"),
-        )
+        .arg(crate::cmd_pgr::args::format_arg())
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
