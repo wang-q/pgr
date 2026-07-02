@@ -361,9 +361,20 @@ pgr paf stat aln.paf -f genomes.tsv --min-var-len 500 -o r500.tsv
 | `--subset-sequence-list <file>` | —      | 要包含的序列名列表文件                         |
 | `--syntenic-filter <chain>`     | —      | UCSC chain 文件，用于丢弃非共线性的 query 结果 |
 
+## POA 评分参数
+
+`to-fas`、`to-maf`（`--msa` 模式）、`to-vcf`、`to-gfa` 在多序列比对阶段使用 POA 引擎，共享以下评分参数（由 `add_poa_args` 定义）：
+
+| 选项             | 默认值 | 说明                  |
+|------------------|--------|-----------------------|
+| `--match <n>`    | 5      | POA match score       |
+| `--mismatch <n>` | -4     | POA mismatch score    |
+| `--gap-open <n>` | -8     | POA gap open penalty  |
+| `--gap-extend <n>` | -6   | POA gap extend penalty |
+
 ## FASTA TSV 格式
 
-`-f/--fasta-tsv` 参数（`to-maf`、`to-vcf`、`to-gfa` 必填）是两列 tab 分隔文件：
+`-f/--fasta-tsv` 参数（`to-fas`、`to-maf`、`to-vcf`、`to-gfa` 必填）是两列 tab 分隔文件：
 
 ```
 genome_name<TAB>bgzf_fasta_path
@@ -385,7 +396,7 @@ C    /data/genomes/C.fa.gz
 ## 注意事项
 
 - 输入 PAF 文件应包含 `cg:Z:` tag，以便准确做坐标投影和图切分。缺少 CIGAR 时部分子命令会降级或报错。
-- `index` / `query` / `to-bed` 支持 PAF 与 `.paf.idx` 输入；`to-maf` / `to-vcf` / `to-gfa`
+- `index` / `query` / `to-bed` 支持 PAF 与 `.paf.idx` 输入；`to-fas` / `to-maf` / `to-vcf` / `to-gfa`
   同样支持两种输入，但都额外要求 `-f/--fasta-tsv` 提供 BGZF FASTA。
 - `graph` / `stat` 的 `-f` 参数与 query 类子命令相同，均为 TSV 文件（`genome_name<TAB>bgzf_fasta_path`），用于提供节点序列和长度。两者均可省略 `-f` 进入 topology-only 模式。
 - 支持纯文本和 gzip（`.gz`）文件（含 BGZF）。BGZF 输入启用 CIGAR 懒加载，降低内存占用。

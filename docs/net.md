@@ -60,6 +60,7 @@ pgr net filter [OPTIONS] <input>
 *   `--nonsyn`: Inverse filtering based on synteny.
 *   `--fill-only`: Only pass fills, not gaps.
 *   `--gap-only`: Only pass gaps, not fills.
+*   `-o, --outfile <file>`: Output filename. [stdout] for screen.
 
 ### Examples
 

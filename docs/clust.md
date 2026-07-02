@@ -7,7 +7,7 @@
 命令按输入数据类型分为三类（与 `pgr clust --help` 一致）：
 1.  **Tree**: 基于距离矩阵构建系统发育树或层级结构 (`hier`, `nj`, `upgma`)。
 2.  **Flat**: 基于图或向量直接生成分组，或从已有树切分得到分组 (`cc`, `cut`, `dbscan`, `k-medoids`, `mcl`)。
-3.  **Eval**: 评估聚类或树的质量 (`eval`)。详见下方 [评估与分析](#评估与分析-evaluation)。
+3.  **Eval**: 评估聚类分区的质量 (`eval`)。详见下方 [评估与分析](#评估与分析-evaluation)。
 
 ## 算法列表 (Algorithms)
 
@@ -146,7 +146,7 @@ GMM、HDBSCAN、Louvain/Leiden 等算法已列入路线图。
 - **非球形簇**：通过协方差矩阵建模，适应不同形状和大小的簇（K-means 假设簇是等方差球形）。
 - **生成式模型**：可用于密度估计（Density Estimation）和异常检测（Outlier Detection）。
 
-**规划接口**：
+**计划接口**：
 ```bash
 # 从 CSV/TSV 向量输入进行 GMM 聚类
 pgr clust gmm input.tsv --k 5 --cov full > clusters.tsv
@@ -258,7 +258,7 @@ pgr clust cut tree.nwk --height 0.45 > final_clusters.tsv
   ```
 
 #### Long Format (Batch, `--format long`)
-用于批量评估的专用格式，通常由 `pgr clust cut --scan` 生成。
+用于批量评估的专用格式。`--format long` 仅 `pgr clust eval` 接受；`pgr clust cut` 的 `--format` 仅支持 `cluster`/`pair`，但在 `--scan` 模式下自动输出 long format。
 - **结构**：`Group <tab> ClusterID <tab> Item`
 - **Group 列**：用于标识不同的参数组合或切割方法。格式通常为 `Method=Value`（如 `height=0.5`）。
   - `pgr clust eval` 会保留此列作为评估结果的标识符。

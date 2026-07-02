@@ -68,7 +68,7 @@ PHYLIP 格式间的转换与标准化。
 - **前提**：自动取两个矩阵的**公共 ID 交集**进行比较。
 - **指标 (`--method`)**：
   - **相关性**：Pearson ($r$), Spearman ($\rho$, 秩相关), Cosine, Jaccard。
-  - **距离/误差**：MAE (平均绝对误差), Euclidean (欧氏距离)。
+  - **距离/误差**：MAE (平均绝对误差), euclid (欧氏距离)。
   - `all`: 同时计算以上所有指标。
 
 #### `pgr mat transform`

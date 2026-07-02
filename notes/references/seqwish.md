@@ -12,7 +12,7 @@
 一句话概括其本质：
 **把 pairwise 比对蕴含的"同源等价类"通过传递闭包物化成图节点，再沿输入 序列的邻接关系派生出图边。**
 与 pgr/impg 的"隐式图"路线（不物化、按需 BFS）相对，seqwish 是"显式物化"路线的代表。
-本文档既是对其算法的拆解，也是 pgr graph / to-gfa（GFA 物化阶段）的直接参考。
+本文档既是对其算法的拆解，也是 `pgr paf graph` / `pgr paf to-gfa`（GFA 物化阶段）的直接参考。
 
 ## 2. 整体流程（6 阶段）
 
@@ -164,7 +164,7 @@ loop {
 没做这个优化。
 
 **对 pgr 的启示**：pgr 现在的 BFS 传递闭包是**查询时**按需做，规模小，普通 `HashSet` 就够。 但若
-pgr graph 要做"粗全局 GFA"（4 万大肠杆菌全图物化），等价类规模会到 Gbp 级，此时无锁并查集是必备。
+pgr paf graph 要做"粗全局 GFA"（4 万大肠杆菌全图物化），等价类规模会到 Gbp 级，此时无锁并查集是必备。
 选型建议：
 
 - **首选 `DisjointSets`（dset64.rs）**：`portable_atomic::AtomicU128` 在 x86_64 上自动用
@@ -420,7 +420,7 @@ seqwish 作为"图物化器"的正确性契约。
 - **简化项**（相对 seqwish）：无 disk-backed interval tree / SparseBitVec / lock-free DSU，
   路径方向恒 `+`（反向已翻转坐标到正链），rGFA SN/SO/SR tag 已补全（见 [[paf-pangenome.md]] §3.3）。
 - **与 seqwish 的关键差异——零序列依赖**：seqwish 的 GFA 输出中每个节点序列（S 行）对应传递闭包
-  的一个碱基等价类，必须从 `seqidx.at(offset)` 取原始碱基，因此**必须**有序列索引。pgr graph 的节点
+  的一个碱基等价类，必须从 `seqidx.at(offset)` 取原始碱基，因此**必须**有序列索引。pgr paf graph 的节点
   是段级（segment-level，CIGAR `=`/`X`/`M` 的累计长度），拓扑（边界、边、路径）完全从 PAF 坐标推断；
   S 行序列可填 `*` 并标注 `LN:i:` 长度，实现**拓扑模式零序列依赖**。这是 pgr 粗图能快速构建（无需
   加载 GB 级 FASTA）而 seqwish 必须先建序列索引的根本原因。

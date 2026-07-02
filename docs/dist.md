@@ -29,8 +29,8 @@
   - `murmur`: MurmurHash3。
   - `mod`: **Mod-Minimizer**。针对 DNA 序列生成 Canonical k-mers（正反义链统一），避免链的方向影响。
 - **主要参数**:
-  - `-k`/`--kmer`: k-mer 长度 (默认 21)。
-  - `-w`/`--window`: Minimizer 窗口大小 (默认 5)。
+  - `-k`/`--kmer`: k-mer 长度 (默认 7)。
+  - `-w`/`--window`: Minimizer 窗口大小 (默认 1)。
   - `--merge`: 将文件内所有序列合并为一个集合计算（例如比较两个基因组）。
 
 ### 2. `pgr dist hv`: 基于 Hypervector 的序列距离
@@ -51,9 +51,9 @@
 
 - **输入格式**: `Name <tab> val1,val2,val3...` (CSV 格式的数值列表)。
 - **计算模式 (`--mode`)**:
-  - **Euclidean**: 欧氏距离 $L_2$。支持转换为相似度 $S = 1 / e^D$。
-  - **Cosine**: 余弦相似度（-1 到 1）。支持转换为距离 $D = 1 - S$。
-  - **Jaccard**: 加权 Jaccard 相似度（针对数值向量）。
+  - **euclid**: 欧氏距离 $L_2$。支持转换为相似度 $S = 1 / e^D$。
+  - **cosine**: 余弦相似度（-1 到 1）。支持转换为距离 $D = 1 - S$。
+  - **jaccard**: 加权 Jaccard 相似度（针对数值向量）。
 - **二值化 (`--bin`)**:
   - 将非零值视为 1，零值视为 0。
   - 适合处理 Presence/Absence 矩阵。

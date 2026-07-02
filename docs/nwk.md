@@ -75,6 +75,7 @@ pgr nwk label [OPTIONS] <infile>
 *   `-M`: Monophyly check (only print if selected nodes form a monophyletic group).
 *   `-t`: Tab-separated output (single line).
 *   `-c <col>`: Add extra columns (`dup`, `taxid`, `species`, `full`).
+*   `--root`: Only print the root label.
 
 ### stat
 
@@ -147,6 +148,8 @@ pgr nwk replace [OPTIONS] <infile> <replace.tsv>
 ```
 
 *   `<replace.tsv>`: Tab-separated file: `Original <TAB> Replacement [TAB Extra...]`.
+*   `-I, --Internal`: Skip internal labels.
+*   `-L, --Leaf`: Skip leaf labels.
 *   `--mode <mode>`:
     *   `label` (default): Replace node name.
     *   `taxid`: Add as NCBI TaxID (`:T=`).
@@ -176,6 +179,7 @@ pgr nwk subtree [OPTIONS] <infile>
 ```
 
 *   `-n` / `-f` / `-r`: Select nodes.
+*   `-D, --descendants`: Include all descendants of selected internal nodes.
 *   `-M`: Monophyly check (only output if clade matches selection exactly).
 *   `-c <N>`: Context (extend N levels up).
 *   `-C, --condense <name>`: Condense the subtree into a single node.
@@ -207,6 +211,7 @@ pgr nwk comment [OPTIONS] <infile>
 ```
 
 *   `-n` / `-l`: Select nodes.
+*   `-s, --string <str>`: Add free-form string annotations.
 *   `--color`, `--label`, `--comment`: Add text attributes.
 *   `--dot`, `--bar`, `--rec`, `--tri`: Add shape attributes (for `to-tex` / `to-forest`).
 *   `-r, --remove <regex>`: Remove matching comments.

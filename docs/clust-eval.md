@@ -227,7 +227,7 @@ pgr clust eval result.tsv --coords vectors.tsv
 
 ```bash
 # 1. 扫描树切割阈值，输出长表 (Group, Cluster, ID)
-pgr clust cut tree.nwk --scan 0.01,1.0,0.01 --mode leaf-dist-min > partitions.tsv
+pgr clust cut tree.nwk --scan 0.01,1.0,0.01 --leaf-dist-min 0 > partitions.tsv
 
 # 2. 批量评估内部指标 (直接传入树文件)
 pgr clust eval partitions.tsv --format long --tree tree.nwk > scores.tsv
