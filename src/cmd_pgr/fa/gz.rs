@@ -34,10 +34,10 @@ Examples:
    pgr fa gz input.fa -p 4
 
 3. Set compression level (0-9, default -1):
-   pgr fa gz input.fa -l 9
+   pgr fa gz input.fa --compress-level 9
 
 4. Create index for existing .gz file (reindex):
-   pgr fa gz input.fa.gz -r
+   pgr fa gz input.fa.gz --reindex
 
 5. From stdin with custom output:
    cat input.fa | pgr fa gz stdin -o output.fa
@@ -54,7 +54,6 @@ Examples:
         .arg(
             Arg::new("compress_level")
                 .long("compress-level")
-                .short('l')
                 .value_parser(value_parser!(i32))
                 .num_args(1)
                 .default_value("-1")
@@ -63,7 +62,6 @@ Examples:
         .arg(
             Arg::new("reindex")
                 .long("reindex")
-                .short('r')
                 .action(ArgAction::SetTrue)
                 .help("Create BGZF index (.gzi) for an existing .gz file"),
         )

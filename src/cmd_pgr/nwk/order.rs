@@ -77,13 +77,7 @@ Examples:
                 .action(ArgAction::SetTrue)
                 .help("De-ladderize (alternate) the tree"),
         )
-        .arg(
-            Arg::new("name_list")
-                .long("name-list")
-                .short('l')
-                .num_args(1)
-                .help("Order by a list of names in the file"),
-        )
+        .arg(crate::cmd_pgr::args::name_list_arg())
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 

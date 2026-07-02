@@ -24,7 +24,7 @@ Examples:
    pgr fa replace input.fa replace.tsv -o output.fa
 
 2. Only output sequences listed in the TSV file (like `pgr fa some`):
-   pgr fa replace input.fa replace.tsv -s -o output.fa
+   pgr fa replace input.fa replace.tsv --some -o output.fa
 
 "###,
         )
@@ -43,7 +43,6 @@ Examples:
         .arg(
             Arg::new("some")
                 .long("some")
-                .short('s')
                 .action(ArgAction::SetTrue)
                 .help("Only output sequences listed in the TSV file, like `pgr fa some`"),
         )

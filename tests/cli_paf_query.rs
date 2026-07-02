@@ -96,7 +96,15 @@ fn command_paf_query_max_depth_short_m() {
 B\t100\t0\t100\t+\tC\t100\t0\t100\t90\t100\t255\tcg:Z:100M\n\
 A\t100\t0\t100\t+\tB\t100\t0\t100\t90\t100\t255\tcg:Z:100M\n";
     let (stdout, _) = PgrCmd::new()
-        .args(&["paf", "query", "stdin", "D:0-100", "-t", "-m", "1"])
+        .args(&[
+            "paf",
+            "query",
+            "stdin",
+            "D:0-100",
+            "--transitive",
+            "--max-depth",
+            "1",
+        ])
         .stdin(paf)
         .run();
     assert!(stdout.contains("C\t0\t0\t100\t+\tD"), "C (1-hop) not found");
@@ -114,7 +122,7 @@ B\t100\t0\t100\t+\tC\t100\t0\t100\t90\t100\t255\tcg:Z:100M\n\
 A\t100\t0\t100\t+\tB\t100\t0\t100\t90\t100\t255\tcg:Z:100M\n";
     // Default depth 2: A (3-hop) excluded.
     let (stdout_default, _) = PgrCmd::new()
-        .args(&["paf", "query", "stdin", "D:0-100", "-t"])
+        .args(&["paf", "query", "stdin", "D:0-100", "--transitive"])
         .stdin(paf)
         .run();
     assert!(stdout_default.contains("C\t0\t0\t100\t+\tD"), "C (1-hop)");
@@ -125,7 +133,15 @@ A\t100\t0\t100\t+\tB\t100\t0\t100\t90\t100\t255\tcg:Z:100M\n";
     );
     // Unlimited: A (3-hop) included.
     let (stdout_unlim, _) = PgrCmd::new()
-        .args(&["paf", "query", "stdin", "D:0-100", "-t", "-m", "0"])
+        .args(&[
+            "paf",
+            "query",
+            "stdin",
+            "D:0-100",
+            "--transitive",
+            "--max-depth",
+            "0",
+        ])
         .stdin(paf)
         .run();
     assert!(

@@ -34,7 +34,7 @@ Examples:
    pgr fa n50 input.fa -g 3000000
 
 4. Transpose output for better readability:
-   pgr fa n50 input.fa -N 50 -N 90 -S -t
+   pgr fa n50 input.fa -N 50 -N 90 -S --transpose
 
 "###,
         )
@@ -95,7 +95,6 @@ Examples:
         .arg(
             Arg::new("transpose")
                 .long("transpose")
-                .short('t')
                 .action(ArgAction::SetTrue)
                 .help("Transpose the outputs"),
         )

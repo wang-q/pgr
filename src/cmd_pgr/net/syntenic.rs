@@ -6,13 +6,7 @@ pub fn make_subcommand() -> Command {
         .about("Add synteny info to net")
         .arg(Arg::new("infile").required(true).help("Input net file"))
         .arg(Arg::new("outfile").required(true).help("Output net file"))
-        .arg(
-            Arg::new("min_score")
-                .long("min-score")
-                .value_parser(clap::value_parser!(f64))
-                .default_value("0.0")
-                .help("Minimum score to output"),
-        )
+        .arg(crate::cmd_pgr::args::min_score_arg("0.0"))
 }
 
 pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {

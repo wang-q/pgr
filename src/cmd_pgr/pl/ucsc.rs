@@ -83,25 +83,16 @@ References:
                 .default_value("loose")
                 .help("Linear gap cost setting for axtChain"),
         )
-        .arg(
-            Arg::new("min_score")
-                .long("min-score")
-                .num_args(1)
-                .default_value("1000")
-                .value_parser(value_parser!(f64))
-                .help("Minimum alignment score for axtChain"),
-        )
+        .arg(crate::cmd_pgr::args::min_score_arg("1000"))
         .arg(
             Arg::new("t_name")
                 .long("t-name")
-                .short('t')
                 .num_args(1)
                 .help("Custom name for the target genome"),
         )
         .arg(
             Arg::new("q_name")
                 .long("q-name")
-                .short('q')
                 .num_args(1)
                 .help("Custom name for the query genome"),
         )

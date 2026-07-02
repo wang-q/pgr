@@ -76,18 +76,18 @@ Examples:
                 .help("Gap model: constant, medium, or loose"),
         )
         .arg(
-            Arg::new("gap_open")
-                .long("gap-open")
+            Arg::new("align_gap_open")
+                .long("align-gap-open")
                 .value_parser(value_parser!(i32))
                 .num_args(1)
-                .help("Gap open cost (overrides gap-model when used with --gap-extend)"),
+                .help("Alignment gap open cost (overrides gap-model when used with --align-gap-extend)"),
         )
         .arg(
-            Arg::new("gap_extend")
-                .long("gap-extend")
+            Arg::new("align_gap_extend")
+                .long("align-gap-extend")
                 .value_parser(value_parser!(i32))
                 .num_args(1)
-                .help("Gap extension cost (overrides gap-model when used with --gap-open)"),
+                .help("Alignment gap extension cost (overrides gap-model when used with --align-gap-open)"),
         )
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
@@ -99,8 +99,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mode_str = args.get_one::<String>("mode").unwrap();
     let gap_model_str = args.get_one::<String>("gap_model").unwrap();
     let score_matrix = args.get_one::<String>("score_matrix").cloned();
-    let gap_open = args.get_one::<i32>("gap_open").copied();
-    let gap_extend = args.get_one::<i32>("gap_extend").copied();
+    let gap_open = args.get_one::<i32>("align_gap_open").copied();
+    let gap_extend = args.get_one::<i32>("align_gap_extend").copied();
 
     let mode = match mode_str.as_str() {
         "core" => pgr::libs::fas_multiz::FasMultizMode::Core,

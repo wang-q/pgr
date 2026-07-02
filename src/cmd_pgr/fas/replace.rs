@@ -19,17 +19,16 @@ Notes:
 
 Examples:
 1. Replace species names in a block FA file:
-   pgr fas replace tests/fas/example.fas -r tests/fas/replace.tsv
+   pgr fas replace tests/fas/example.fas --replace-tsv tests/fas/replace.tsv
 
 2. Output results to a file:
-   pgr fas replace tests/fas/example.fas -r tests/fas/replace.tsv -o output.fas
+   pgr fas replace tests/fas/example.fas --replace-tsv tests/fas/replace.tsv -o output.fas
 
 "###,
         )
         .arg(
             Arg::new("replace_tsv")
                 .long("replace-tsv")
-                .short('r')
                 .required(true)
                 .num_args(1)
                 .help("TSV file of original_name and replacement_name(s)"),

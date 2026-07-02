@@ -26,15 +26,7 @@ This command identifies repetitive regions in a genome using k-mer analysis.
                 .index(1)
                 .help("Input file to process"),
         )
-        .arg(
-            Arg::new("kmer")
-                .long("kmer")
-                .short('k')
-                .num_args(1)
-                .default_value("17")
-                .value_parser(value_parser!(usize))
-                .help("K-mer size"),
-        )
+        .arg(crate::cmd_pgr::args::kmer_arg_with_default("17"))
         .arg(
             Arg::new("fill_kmer")
                 .long("fill-kmer")

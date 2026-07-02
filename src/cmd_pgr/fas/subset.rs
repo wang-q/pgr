@@ -17,20 +17,20 @@ Notes:
 
 Examples:
 1. Extract a subset of species:
-   pgr fas subset tests/fas/example.fas -r tests/fas/name.lst
+   pgr fas subset tests/fas/example.fas -R tests/fas/name.lst
 
 2. Extract a subset and skip blocks missing any required species:
-   pgr fas subset tests/fas/example.fas -r tests/fas/name.lst --strict
+   pgr fas subset tests/fas/example.fas -R tests/fas/name.lst --strict
 
 3. Output results to a file:
-   pgr fas subset tests/fas/example.fas -r tests/fas/name.lst -o output.fas
+   pgr fas subset tests/fas/example.fas -R tests/fas/name.lst -o output.fas
 
 "###,
         )
         .arg(
             Arg::new("required")
                 .long("required")
-                .short('r')
+                .short('R')
                 .required(true)
                 .num_args(1)
                 .help("File with a list of species names to keep, one per line"),

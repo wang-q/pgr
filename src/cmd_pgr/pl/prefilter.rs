@@ -73,24 +73,8 @@ Examples:
                 .value_parser(value_parser!(usize))
                 .help("Minimum length of the amino acid sequence to consider"),
         )
-        .arg(
-            Arg::new("kmer")
-                .long("kmer")
-                .short('k')
-                .num_args(1)
-                .default_value("7")
-                .value_parser(value_parser!(usize))
-                .help("K-mer size"),
-        )
-        .arg(
-            Arg::new("window")
-                .long("window")
-                .short('w')
-                .num_args(1)
-                .default_value("1")
-                .value_parser(value_parser!(usize))
-                .help("Window size for minimizers"),
-        )
+        .arg(crate::cmd_pgr::args::kmer_arg_with_default("7"))
+        .arg(crate::cmd_pgr::args::window_arg())
         .arg(crate::cmd_pgr::args::parallel_arg())
 }
 

@@ -12,7 +12,7 @@ This command removes duplicate records from FASTA files.
 Deduplication modes:
 * By name (default): Compare sequence names only
 * By description (-d): Compare full headers (name + description)
-* By sequence (-s): Compare sequence contents
+* By sequence (--seq): Compare sequence contents
 
 Comparison options:
 * -b: Compare both strands (forward and reverse complement)
@@ -38,10 +38,10 @@ Examples:
    pgr fa dedup input.fa -o output.fa
 
 2. By sequence content:
-   pgr fa dedup input.fa -s -o output.fa
+   pgr fa dedup input.fa --seq -o output.fa
 
 3. Compare both strands:
-   pgr fa dedup input.fa -s -b -o output.fa
+   pgr fa dedup input.fa --seq -b -o output.fa
 
 4. Save duplicates mapping:
    pgr fa dedup input.fa --dups-file dups.tsv -o output.fa
@@ -59,7 +59,6 @@ Examples:
         .arg(
             Arg::new("seq")
                 .long("seq")
-                .short('s')
                 .action(ArgAction::SetTrue)
                 .help("Deduplicate by sequence"),
         )

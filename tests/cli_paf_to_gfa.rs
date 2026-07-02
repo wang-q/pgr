@@ -45,7 +45,7 @@ fn command_paf_to_gfa_identical() {
             "to-gfa",
             "stdin",
             "B:0-10",
-            "-t",
+            "--transitive",
             "-f",
             tsv.to_str().unwrap(),
         ])
@@ -120,7 +120,7 @@ C\t10\t0\t10\t+\tA\t10\t0\t10\t9\t10\t255\tcg:Z:10M\n";
             "to-gfa",
             "stdin",
             "B:0-10",
-            "-t",
+            "--transitive",
             "-f",
             tsv.to_str().unwrap(),
         ])
@@ -234,7 +234,7 @@ C\t10\t0\t10\t+\tA\t10\t0\t10\t9\t10\t255\tcg:Z:10M\n";
             "to-gfa",
             "stdin",
             "B:0-10",
-            "-t",
+            "--transitive",
             "-f",
             tsv.to_str().unwrap(),
             "--crush",
@@ -378,7 +378,7 @@ fn command_paf_to_gfa_roundtrip_identical() {
             "to-gfa",
             "stdin",
             "B:0-10",
-            "-t",
+            "--transitive",
             "-f",
             tsv.to_str().unwrap(),
         ])
@@ -421,7 +421,7 @@ C\t10\t0\t10\t+\tA\t10\t0\t10\t9\t10\t255\tcg:Z:10M\n";
             "to-gfa",
             "stdin",
             "B:0-10",
-            "-t",
+            "--transitive",
             "-f",
             tsv.to_str().unwrap(),
         ])
@@ -471,7 +471,7 @@ C\t12\t0\t12\t+\tA\t10\t0\t10\t10\t12\t255\tcg:Z:6=2I4=\n";
             "to-gfa",
             "stdin",
             "B:0-10",
-            "-t",
+            "--transitive",
             "-f",
             tsv.to_str().unwrap(),
         ])
@@ -524,7 +524,7 @@ C\t10\t0\t10\t+\tA\t10\t0\t10\t9\t10\t255\tcg:Z:10M\n";
             "to-gfa",
             "stdin",
             "B:0-10",
-            "-t",
+            "--transitive",
             "-f",
             tsv.to_str().unwrap(),
         ])

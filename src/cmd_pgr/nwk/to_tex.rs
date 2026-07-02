@@ -56,7 +56,6 @@ Examples:
         .arg(
             Arg::new("style")
                 .long("style")
-                .short('s')
                 .action(ArgAction::SetTrue)
                 .help("Skip default font settings in the template to allow custom styles"),
         )

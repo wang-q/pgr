@@ -63,7 +63,6 @@ Examples:
         .arg(
             Arg::new("key_simplify")
                 .long("key-simplify")
-                .short('s')
                 .action(ArgAction::SetTrue)
                 .help("Simplify feature key names"),
         )

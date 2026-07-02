@@ -84,8 +84,8 @@ Examples:
                 .help("Normalize based on diagonal values"),
         )
         .arg(
-            Arg::new("format")
-                .long("format")
+            Arg::new("input_format")
+                .long("input-format")
                 .default_value("phylip")
                 .value_parser([
                     builder::PossibleValue::new("phylip"),
@@ -106,7 +106,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let scale = *args.get_one::<f32>("scale").unwrap();
     let offset = *args.get_one::<f32>("offset").unwrap();
     let normalize = args.get_flag("normalize");
-    let format = args.get_one::<String>("format").unwrap().as_str();
+    let format = args.get_one::<String>("input_format").unwrap().as_str();
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
 
     //----------------------------

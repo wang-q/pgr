@@ -51,7 +51,6 @@ Examples:
             .arg(
                 Arg::new("align_mode")
                     .long("align-mode")
-                    .short('l')
                     .value_parser(["local", "global", "semi_global"])
                     .default_value("global") // Default to global for fas consensus
                     .help("Alignment mode"),

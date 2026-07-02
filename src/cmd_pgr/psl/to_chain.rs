@@ -18,7 +18,6 @@ Examples:
         .arg(
             Arg::new("fix_strand")
                 .long("fix-strand")
-                .short('f')
                 .action(clap::ArgAction::SetTrue)
                 .help("Fix '-' target strand by reverse complementing the record"),
         )

@@ -55,7 +55,6 @@ Examples:
         .arg(
             Arg::new("rename")
                 .long("rename")
-                .short('r')
                 .num_args(1)
                 .required(true)
                 .action(ArgAction::Append)

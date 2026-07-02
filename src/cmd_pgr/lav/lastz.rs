@@ -69,7 +69,6 @@ Examples:
         .arg(
             Arg::new("preset")
                 .long("preset")
-                .short('s')
                 .value_parser(PossibleValuesParser::new(pgr::libs::lastz::preset_names()))
                 .help("Use predefined parameter sets (set01..set07)"),
         )

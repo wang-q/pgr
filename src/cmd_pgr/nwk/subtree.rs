@@ -15,7 +15,7 @@ Notes:
 * Node selection:
     * `-n`: Select nodes by exact name.
     * `-l`: Select nodes from a name-list file.
-    * `-r`: Select nodes by regular expression.
+    * `-x`: Select nodes by regular expression.
     * If no selection is provided, no output is generated.
 * Monophyly check (`-M`):
     * Ensures the subtree defined by the LCA contains ONLY the selected named
@@ -32,7 +32,7 @@ Examples:
    pgr nwk subtree tree.nwk -n Human -n Chimp
 
 2. Extract subtree for all nodes matching "Homo":
-   pgr nwk subtree tree.nwk -r "^Homo"
+   pgr nwk subtree tree.nwk -x "^Homo"
 
 3. Condense the Hominini clade (LCA of Homo and Pan) into a single node "Hominini":
    pgr nwk subtree tree.nwk -n Homo -n Pan --condense Hominini

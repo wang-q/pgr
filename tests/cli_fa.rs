@@ -277,9 +277,9 @@ fn command_filter() {
             "fa",
             "filter",
             "tests/fasta/ufasta.fa",
-            "-a",
+            "--min-len",
             "10",
-            "-z",
+            "--max-len",
             "50",
         ])
         .run();
@@ -295,7 +295,7 @@ fn command_filter() {
             "tests/fasta/ufasta.fa",
             "tests/fasta/ufasta.fa.gz",
             "--uniq",
-            "-a",
+            "--min-len",
             "1",
         ])
         .run();
@@ -546,7 +546,7 @@ fn command_fa_n50_comprehensive() {
             "10",
             "-N",
             "90",
-            "-t",
+            "--transpose",
         ])
         .run();
 

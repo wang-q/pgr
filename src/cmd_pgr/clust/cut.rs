@@ -175,7 +175,6 @@ Examples:
         .arg(
             Arg::new("support")
                 .long("support")
-                .short('s')
                 .value_parser(value_parser!(f64))
                 .help("Branch support threshold (edges with support < S will be treated as infinite length)"),
         )

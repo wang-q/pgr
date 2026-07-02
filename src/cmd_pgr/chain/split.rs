@@ -17,9 +17,8 @@ pub fn make_subcommand() -> Command {
         )
         .arg(crate::cmd_pgr::args::outdir_arg_required())
         .arg(
-            Arg::new("q")
-                .short('q')
-                .long("query")
+            Arg::new("by_query")
+                .long("by-query")
                 .action(clap::ArgAction::SetTrue)
                 .help("Split on query (default is on target)"),
         )
@@ -34,7 +33,7 @@ pub fn make_subcommand() -> Command {
 pub fn execute(args: &ArgMatches) -> Result<()> {
     let out_dir = args.get_one::<String>("outdir").unwrap();
     let chain_files: Vec<_> = args.get_many::<String>("infiles").unwrap().collect();
-    let split_on_q = args.get_flag("q");
+    let split_on_q = args.get_flag("by_query");
     let lump = args.get_one::<usize>("lump").copied();
 
     fs::create_dir_all(out_dir)?;

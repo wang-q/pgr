@@ -18,8 +18,8 @@ pgr mat transform [OPTIONS] <infile>
 
 ### 选项
 
-- `--format <FORMAT>`: 输入格式 (默认: `phylip`, 可选: `pair`)。
-  - 显式指定 `--format pair` 可用于处理管道输入 (STDIN) 的 TSV 数据。
+- `--input-format <FORMAT>`: 输入格式 (默认: `phylip`, 可选: `pair`)。
+  - 显式指定 `--input-format pair` 可用于处理管道输入 (STDIN) 的 TSV 数据。
 - `--op <METHOD>`: 变换操作 (默认: `linear`)。
   - `linear`: $val = val \times scale + offset$
   - `inv-linear`: $val = max - val$

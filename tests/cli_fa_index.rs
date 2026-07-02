@@ -86,7 +86,7 @@ fn command_fa_gz_level() -> anyhow::Result<()> {
         .arg(infile)
         .arg("-o")
         .arg(out_fast.to_str().unwrap())
-        .arg("-l")
+        .arg("--compress-level")
         .arg("1")
         .assert()
         .success();
@@ -98,7 +98,7 @@ fn command_fa_gz_level() -> anyhow::Result<()> {
         .arg(infile)
         .arg("-o")
         .arg(out_best.to_str().unwrap())
-        .arg("-l")
+        .arg("--compress-level")
         .arg("9")
         .assert()
         .success();
@@ -137,7 +137,7 @@ fn command_fa_gz_reindex() -> anyhow::Result<()> {
     cmd.arg("fa")
         .arg("gz")
         .arg(bgzf_file.to_str().unwrap())
-        .arg("-r")
+        .arg("--reindex")
         .assert()
         .success();
 
@@ -157,7 +157,7 @@ fn command_fa_gz_reindex_fail_not_bgzf() -> anyhow::Result<()> {
     cmd.arg("fa")
         .arg("gz")
         .arg(&infile_dst)
-        .arg("-r")
+        .arg("--reindex")
         .assert()
         .failure()
         .stderr(predicate::str::contains("not a valid BGZF file"));

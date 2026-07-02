@@ -7,7 +7,7 @@ fn command_pl_condense_basic() {
     let mut cmd = Command::cargo_bin("pgr").unwrap();
     cmd.arg("pl")
         .arg("condense")
-        .arg("-t")
+        .arg("--taxon")
         .arg("tests/pipeline/strains.taxon.tsv")
         .arg("tests/pipeline/minhash.reroot.newick");
     let output = cmd.output().expect("Failed to execute command");
@@ -43,7 +43,7 @@ fn command_pl_condense_monophyly_check() {
     let mut cmd = Command::cargo_bin("pgr").unwrap();
     cmd.arg("pl")
         .arg("condense")
-        .arg("-t")
+        .arg("--taxon")
         .arg("tests/pipeline/strains.taxon.tsv")
         .arg("-o")
         .arg(&output_path)
@@ -64,9 +64,9 @@ fn command_pl_condense_with_rank() {
     let mut cmd = Command::cargo_bin("pgr").unwrap();
     cmd.arg("pl")
         .arg("condense")
-        .arg("-t")
+        .arg("--taxon")
         .arg("tests/pipeline/strains.taxon.tsv")
-        .arg("-r")
+        .arg("--rank")
         .arg("3")
         .arg("tests/pipeline/minhash.reroot.newick");
     let output = cmd.output().expect("Failed to execute command");
@@ -86,7 +86,7 @@ fn command_pl_condense_with_output() {
     let mut cmd = Command::cargo_bin("pgr").unwrap();
     cmd.arg("pl")
         .arg("condense")
-        .arg("-t")
+        .arg("--taxon")
         .arg("tests/pipeline/strains.taxon.tsv")
         .arg("-o")
         .arg(&output_path)
@@ -110,7 +110,7 @@ fn command_pl_condense_with_map() {
     let mut cmd = Command::cargo_bin("pgr").unwrap();
     cmd.arg("pl")
         .arg("condense")
-        .arg("-t")
+        .arg("--taxon")
         .arg("tests/pipeline/strains.taxon.tsv")
         .arg("--map")
         .arg("-o")
@@ -157,9 +157,9 @@ fn command_pl_condense_genus_level() {
     let mut cmd = Command::cargo_bin("pgr").unwrap();
     cmd.arg("pl")
         .arg("condense")
-        .arg("-t")
+        .arg("--taxon")
         .arg("tests/pipeline/strains.taxon.tsv")
-        .arg("-r")
+        .arg("--rank")
         .arg("3")
         .arg("tests/pipeline/minhash.reroot.newick");
     let output = cmd.output().expect("Failed to execute command");
@@ -177,9 +177,9 @@ fn command_pl_condense_family_level() {
     let mut cmd = Command::cargo_bin("pgr").unwrap();
     cmd.arg("pl")
         .arg("condense")
-        .arg("-t")
+        .arg("--taxon")
         .arg("tests/pipeline/strains.taxon.tsv")
-        .arg("-r")
+        .arg("--rank")
         .arg("4")
         .arg("tests/pipeline/minhash.reroot.newick");
     let output = cmd.output().expect("Failed to execute command");

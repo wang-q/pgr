@@ -28,20 +28,20 @@ This command identifies tandem repeats in a genome via `trf`.
                 .help("Input file to process"),
         )
         .arg(
-            Arg::new("match")
-                .long("match")
+            Arg::new("trf_match")
+                .long("trf-match")
                 .num_args(1)
                 .default_value("2")
                 .value_parser(value_parser!(usize))
-                .help("Matching weight"),
+                .help("TRF matching weight"),
         )
         .arg(
-            Arg::new("mismatch")
-                .long("mismatch")
+            Arg::new("trf_mismatch")
+                .long("trf-mismatch")
                 .num_args(1)
                 .default_value("7")
                 .value_parser(value_parser!(usize))
-                .help("Mismatching penalty"),
+                .help("TRF mismatching penalty"),
         )
         .arg(
             Arg::new("delta")
@@ -67,14 +67,7 @@ This command identifies tandem repeats in a genome via `trf`.
                 .value_parser(value_parser!(usize))
                 .help("Indel probability"),
         )
-        .arg(
-            Arg::new("min_score")
-                .long("min-score")
-                .num_args(1)
-                .default_value("50")
-                .value_parser(value_parser!(f64))
-                .help("Minimum alignment score to report"),
-        )
+        .arg(crate::cmd_pgr::args::min_score_arg("50"))
         .arg(
             Arg::new("max_period")
                 .long("max-period")
@@ -93,8 +86,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     let outfile = crate::cmd_pgr::args::get_outfile(args);
 
-    let opt_match = *args.get_one::<usize>("match").unwrap();
-    let opt_mismatch = *args.get_one::<usize>("mismatch").unwrap();
+    let opt_trf_match = *args.get_one::<usize>("trf_match").unwrap();
+    let opt_trf_mismatch = *args.get_one::<usize>("trf_mismatch").unwrap();
     let opt_delta = *args.get_one::<usize>("delta").unwrap();
     let opt_pm = *args.get_one::<usize>("pm").unwrap();
     let opt_pi = *args.get_one::<usize>("pi").unwrap();
@@ -141,7 +134,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut rg_files = vec![];
     for (i, chr) in chrs.iter().enumerate() {
         run_cmd!(
-            trf ${chr}.fa ${opt_match} ${opt_mismatch} ${opt_delta} ${opt_pm} ${opt_pi} ${opt_minscore_u} ${opt_max_period} -d -h -ngs > trf.${i}.dat
+            trf ${chr}.fa ${opt_trf_match} ${opt_trf_mismatch} ${opt_delta} ${opt_pm} ${opt_pi} ${opt_minscore_u} ${opt_max_period} -d -h -ngs > trf.${i}.dat
         )?;
 
         // 198 229 12 2.7 12 90 0 50 34 46 3 15 1.62 CATTACCACCAC CATTAGCACCACCATTACCACCACCATCACCA ATAGCGCACAGACAGATAAAAATTACAGAGTACACAACATCCATGAAACG TTACCACAGGTAACGGTGCGGGCTGACGCGTACAGGAAACACAGAAAAAA

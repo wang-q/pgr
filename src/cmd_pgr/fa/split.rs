@@ -17,7 +17,7 @@ Split FASTA files into multiple smaller files based on different modes:
 2. about: Split by approximate size
    * -c SIZE: Split into files of about SIZE bytes each
    * -e: Ensure even number of sequences per file
-   * -m NUM: Maximum number of output files (default: 999)
+   * --max-part NUM: Maximum number of output files (default: 999)
 
 Notes:
 * Supports both plain text and gzipped (.gz) files
@@ -75,7 +75,6 @@ Examples:
         .arg(
             Arg::new("max_part")
                 .long("max-part")
-                .short('m')
                 .num_args(1)
                 .default_value("999")
                 .value_parser(value_parser!(usize))

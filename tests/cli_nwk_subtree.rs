@@ -30,7 +30,7 @@ fn command_subtree_basic() {
             "Human",
             "-n",
             "Rhesus",
-            "-r",
+            "-x",
             "^ch",
             "-M",
         ])
@@ -48,7 +48,7 @@ fn command_subtree_basic() {
             "Human",
             "-n",
             "Rhesus",
-            "-r",
+            "-x",
             "^ch",
             "-M",
             "-C",
@@ -145,7 +145,7 @@ fn command_subtree_monophyly_fail() {
 #[test]
 fn command_subtree_regex() {
     let (stdout, _) = PgrCmd::new()
-        .args(&["nwk", "subtree", "tests/newick/HRV.nwk", "-r", "^HRV.*"])
+        .args(&["nwk", "subtree", "tests/newick/HRV.nwk", "-x", "^HRV.*"])
         .run();
 
     // Only checking the structure briefly to avoid super long string matching issues

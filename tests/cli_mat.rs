@@ -39,7 +39,13 @@ fn command_mat_format_full() {
 #[test]
 fn command_mat_format_lower() {
     let (stdout, _) = PgrCmd::new()
-        .args(&["mat", "format", "tests/mat/IBPA.phy", "--format", "lower"])
+        .args(&[
+            "mat",
+            "format",
+            "tests/mat/IBPA.phy",
+            "--out-format",
+            "lower",
+        ])
         .run();
 
     assert_eq!(stdout.lines().count(), 11);
@@ -50,7 +56,13 @@ fn command_mat_format_lower() {
 #[test]
 fn command_mat_format_strict() {
     let (stdout, _) = PgrCmd::new()
-        .args(&["mat", "format", "tests/mat/IBPA.phy", "--format", "strict"])
+        .args(&[
+            "mat",
+            "format",
+            "tests/mat/IBPA.phy",
+            "--out-format",
+            "strict",
+        ])
         .run();
 
     assert_eq!(stdout.lines().count(), 11);
@@ -245,7 +257,7 @@ fn command_mat_transform_pairwise_stdin() {
             "mat",
             "transform",
             "stdin",
-            "--format",
+            "--input-format",
             "pair",
             "--op",
             "linear",
@@ -265,13 +277,13 @@ fn command_mat_transform_pairwise_stdin() {
 
 #[test]
 fn command_mat_transform_tsv_explicit() {
-    // Should NOT auto-detect .tsv extension, must specify --format pair
+    // Should NOT auto-detect .tsv extension, must specify --input-format pair
     let (stdout, _) = PgrCmd::new()
         .args(&[
             "mat",
             "transform",
             "tests/mat/IBPA.fa.tsv", // Using existing TSV file
-            "--format",
+            "--input-format",
             "pair",
         ])
         .run();

@@ -272,11 +272,11 @@ pub fn name_list_arg() -> Arg {
         .help("Select nodes from a name-list file")
 }
 
-/// Standard `--regex` (`-r`) selector for nwk subcommands.
+/// Standard `--regex` (`-x`) selector for nwk subcommands.
 pub fn regex_arg() -> Arg {
     Arg::new("regex")
         .long("regex")
-        .short('r')
+        .short('x')
         .num_args(1)
         .action(ArgAction::Append)
         .help("Select nodes by regular expression (case insensitive)")
@@ -375,14 +375,12 @@ pub fn add_query_args(cmd: Command) -> Command {
     .arg(
         Arg::new("transitive")
             .long("transitive")
-            .short('t')
             .num_args(0)
             .help("Enable transitive BFS traversal"),
     )
     .arg(
         Arg::new("max_depth")
             .long("max-depth")
-            .short('m')
             .num_args(1)
             .default_value("2")
             .value_parser(clap::value_parser!(u16))
@@ -546,6 +544,17 @@ pub fn kmer_arg() -> Arg {
         .help("K-mer size")
 }
 
+/// `-k/--kmer` size argument with a custom default value.
+pub fn kmer_arg_with_default(default: &'static str) -> Arg {
+    Arg::new("kmer")
+        .long("kmer")
+        .short('k')
+        .num_args(1)
+        .default_value(default)
+        .value_parser(clap::value_parser!(usize))
+        .help("K-mer size")
+}
+
 /// `-w/--window` size argument.
 pub fn window_arg() -> Arg {
     Arg::new("window")
@@ -579,4 +588,14 @@ pub fn collect_infiles(args: &ArgMatches) -> Vec<&str> {
         .unwrap()
         .map(|s| s.as_str())
         .collect::<Vec<_>>()
+}
+
+/// `--min-score` argument (f64) with a custom default value.
+pub fn min_score_arg(default: &'static str) -> Arg {
+    Arg::new("min_score")
+        .long("min-score")
+        .num_args(1)
+        .default_value(default)
+        .value_parser(clap::value_parser!(f64))
+        .help("Minimum score threshold")
 }

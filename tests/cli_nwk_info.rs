@@ -239,7 +239,7 @@ fn command_label_regex() {
             "nwk",
             "label",
             "tests/newick/hg38.7way.nwk",
-            "-r",
+            "-x",
             "^ch", // Case insensitive by default?
         ])
         .run();
@@ -257,7 +257,7 @@ fn command_label_regex_case_insensitive() {
             "nwk",
             "label",
             "tests/newick/catarrhini.nwk",
-            "-r",
+            "-x",
             "^homo", // lowercase
         ])
         .run();

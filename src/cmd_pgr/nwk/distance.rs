@@ -36,10 +36,10 @@ Examples:
    pgr nwk distance tree.nwk --mode pairwise
 
 3. Generate Phylip matrix:
-   pgr nwk distance tree.nwk -m phylip > matrix.phy
+   pgr nwk distance tree.nwk --mode phylip > matrix.phy
 
 4. Distances to parent for leaves only:
-   pgr nwk distance tree.nwk -m parent -I
+   pgr nwk distance tree.nwk --mode parent -I
 "###,
         )
         .arg(
@@ -52,7 +52,6 @@ Examples:
         .arg(
             Arg::new("mode")
                 .long("mode")
-                .short('m')
                 .action(ArgAction::Set)
                 .value_parser([
                     builder::PossibleValue::new("root"),

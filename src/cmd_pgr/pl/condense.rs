@@ -24,16 +24,16 @@ pub fn make_subcommand() -> Command {
 
 Examples:
 1. Condense by species (2nd column):
-   pgr pl condense -t taxon.tsv tree.nwk
+   pgr pl condense --taxon taxon.tsv tree.nwk
 
 2. Condense by genus (3rd column):
-   pgr pl condense -t taxon.tsv -r 3 tree.nwk
+   pgr pl condense --taxon taxon.tsv --rank 3 tree.nwk
 
 3. Condense by multiple ranks:
-   pgr pl condense -t taxon.tsv -r 2 -r 3 tree.nwk
+   pgr pl condense --taxon taxon.tsv --rank 2 --rank 3 tree.nwk
 
 4. Output mapping file:
-   pgr pl condense -t taxon.tsv --map tree.nwk -o condensed.nwk
+   pgr pl condense --taxon taxon.tsv --map tree.nwk -o condensed.nwk
 
 "###,
         )
@@ -47,7 +47,6 @@ Examples:
         .arg(
             Arg::new("taxon")
                 .long("taxon")
-                .short('t')
                 .num_args(1)
                 .required(true)
                 .help("Path to taxonomy TSV file"),
@@ -55,7 +54,6 @@ Examples:
         .arg(
             Arg::new("rank")
                 .long("rank")
-                .short('r')
                 .num_args(1)
                 .action(ArgAction::Append)
                 .value_parser(value_parser!(usize))

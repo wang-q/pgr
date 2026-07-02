@@ -12,7 +12,7 @@ fn command_rename_basic() {
             "tests/newick/catarrhini.nwk",
             "-n",
             "Homo",
-            "-r",
+            "--rename",
             "Human",
         ])
         .run();
@@ -33,7 +33,7 @@ fn command_rename_lca() {
             "tests/newick/catarrhini.nwk",
             "--lca",
             "Homo,Pan",
-            "-r",
+            "--rename",
             "CladeX",
         ])
         .run();
@@ -50,7 +50,7 @@ fn command_rename_mixed() {
 
     let (stdout, _) = PgrCmd::new()
         .args(&[
-            "nwk", "rename", "stdin", "-n", "A", "-r", "A1", "-l", "A,B", "-r", "AB",
+            "nwk", "rename", "stdin", "-n", "A", "--rename", "A1", "-l", "A,B", "--rename", "AB",
         ])
         .stdin("((A,B),C);")
         .run();
@@ -234,7 +234,14 @@ fn command_reroot_support() {
     // Result should show labels in new positions.
     // Just verify execution for now and check consistency.
     let (stdout, _) = PgrCmd::new()
-        .args(&["nwk", "reroot", "tests/newick/bs.nwk", "-n", "C", "-s"])
+        .args(&[
+            "nwk",
+            "reroot",
+            "tests/newick/bs.nwk",
+            "-n",
+            "C",
+            "--support-as-labels",
+        ])
         .run();
 
     // We expect the tree structure to be rerooted at C.

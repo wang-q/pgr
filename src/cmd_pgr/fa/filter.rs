@@ -45,18 +45,16 @@ Notes:
         .arg(
             Arg::new("min_len")
                 .long("min-len")
-                .short('a')
                 .num_args(1)
                 .value_parser(value_parser!(usize))
-                .help("Pass sequences at least this big ('a'-smallest)"),
+                .help("Pass sequences at least this big"),
         )
         .arg(
             Arg::new("max_len")
                 .long("max-len")
-                .short('z')
                 .num_args(1)
                 .value_parser(value_parser!(usize))
-                .help("Pass sequences this size or smaller ('z'-biggest)"),
+                .help("Pass sequences this size or smaller"),
         )
         .arg(
             Arg::new("max_n")
@@ -97,7 +95,6 @@ Notes:
         .arg(
             Arg::new("simplify")
                 .long("simplify")
-                .short('s')
                 .action(ArgAction::SetTrue)
                 .help("Simplify sequence names"),
         )

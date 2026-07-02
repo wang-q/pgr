@@ -64,12 +64,7 @@ modes:
                 .action(ArgAction::SetTrue)
                 .help("Treat values in list as binary (0 or 1)"),
         )
-        .arg(
-            Arg::new("sim")
-                .long("sim")
-                .action(ArgAction::SetTrue)
-                .help("Convert distance to similarity"),
-        )
+        .arg(crate::cmd_pgr::args::sim_arg())
         .arg(
             Arg::new("dis")
                 .long("dis")

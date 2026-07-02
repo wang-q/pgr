@@ -37,7 +37,6 @@ Examples:
         .arg(
             Arg::new("text")
                 .long("text")
-                .short('t')
                 .num_args(1)
                 .default_value("  ")
                 .help("Use this text instead of the default two spaces"),

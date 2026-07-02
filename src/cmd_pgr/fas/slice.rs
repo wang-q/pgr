@@ -15,20 +15,19 @@ Notes:
 
 Examples:
 1. Extract slices defined in a JSON file:
-   pgr fas slice tests/fas/slice.fas -r tests/fas/slice.json
+   pgr fas slice tests/fas/slice.fas --runlist tests/fas/slice.json
 
 2. Extract slices and name the output based on a specific species:
-   pgr fas slice tests/fas/slice.fas -r tests/fas/slice.json --name S288c
+   pgr fas slice tests/fas/slice.fas --runlist tests/fas/slice.json --name S288c
 
 3. Output results to a file:
-   pgr fas slice tests/fas/slice.fas -r tests/fas/slice.json -o output.fas
+   pgr fas slice tests/fas/slice.fas --runlist tests/fas/slice.json -o output.fas
 
 "###,
         )
         .arg(
             Arg::new("runlist")
                 .long("runlist")
-                .short('r')
                 .required(true)
                 .num_args(1)
                 .help("JSON file of chromosome runlists (e.g. \"1-100,200-300\")"),

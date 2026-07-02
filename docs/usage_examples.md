@@ -22,8 +22,8 @@ pgr fa one tests/fasta/ufasta.fa read12
 pgr fa some tests/fasta/ufasta.fa tests/fasta/list.txt
 pgr fa order tests/fasta/ufasta.fa tests/fasta/list.txt
 
-pgr fa filter tests/fasta/ufasta.fa -a 10 -z 50 --uniq
-pgr fa filter tests/fasta/ufasta.fa tests/fasta/ufasta.fa.gz -a 1 --uniq
+pgr fa filter tests/fasta/ufasta.fa --min-len 10 --max-len 50 --uniq
+pgr fa filter tests/fasta/ufasta.fa tests/fasta/ufasta.fa.gz --min-len 1 --uniq
 pgr fa filter tests/fasta/filter.fa --iupac --upper
 
 pgr fa dedup tests/fasta/dedup.fa
@@ -34,7 +34,7 @@ pgr fa mask tests/fasta/ufasta.fa tests/fasta/mask.json --hard
 pgr fa replace tests/fasta/ufasta.fa tests/fasta/replace.tsv
 pgr fa rc tests/fasta/ufasta.fa
 
-pgr fa filter tests/fasta/ufasta.fa -a 400 |
+pgr fa filter tests/fasta/ufasta.fa --min-len 400 |
     pgr fa split name stdin -o tmp
 pgr fa split about tests/fasta/ufasta.fa -c 2000 -o tmp
 
@@ -57,16 +57,16 @@ pgr fas cover tests/fas/example.fas
 
 pgr fas cover tests/fas/example.fas --name S288c --trim 10
 
-pgr fas concat tests/fas/example.fas -r tests/fas/name.lst
+pgr fas concat tests/fas/example.fas -R tests/fas/name.lst
 
-pgr fas subset tests/fas/example.fas -r tests/fas/name.lst
-pgr fas subset tests/fas/refine.fas -r tests/fas/name.lst --strict
+pgr fas subset tests/fas/example.fas -R tests/fas/name.lst
+pgr fas subset tests/fas/refine.fas -R tests/fas/name.lst --strict
 
 pgr fas link tests/fas/example.fas --pair
 pgr fas link tests/fas/example.fas --best
 
-pgr fas replace tests/fas/example.fas -r tests/fas/replace.tsv
-pgr fas replace tests/fas/example.fas -r tests/fas/replace.fail.tsv
+pgr fas replace tests/fas/example.fas --replace-tsv tests/fas/replace.tsv
+pgr fas replace tests/fas/example.fas --replace-tsv tests/fas/replace.fail.tsv
 
 pgr fa range tests/fas/NC_000932.fa NC_000932:1-10
 
@@ -97,7 +97,7 @@ pgr fas refine tests/fas/example.fas --quick
 pgr fas split tests/fas/example.fas --simple
 pgr fas split tests/fas/example.fas -o . --chr --suffix .tmp
 
-pgr fas slice tests/fas/slice.fas -r tests/fas/slice.json --name S288c
+pgr fas slice tests/fas/slice.fas --runlist tests/fas/slice.json --name S288c
 
 pgr fas join tests/fas/S288cvsYJM789.slice.fas --name YJM789
 pgr fas join \
@@ -152,12 +152,12 @@ pgr 2bit masked tests/genome/mg1655.2bit --gap
 ```bash
 curl -L https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/005/845/GCF_000005845.2_ASM584v2/GCF_000005845.2_ASM584v2_genomic.fna.gz |
     gzip -dc |
-    pgr fa filter stdin -s |
+    pgr fa filter stdin --simplify |
     pgr fa gz stdin -o tests/pgr/mg1655.fa
 
 curl -L https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/008/865/GCF_000008865.2_ASM886v2/GCF_000008865.2_ASM886v2_genomic.fna.gz |
     gzip -dc |
-    pgr fa filter stdin -s |
+    pgr fa filter stdin --simplify |
     pgr fa gz stdin -o tests/pgr/sakai.fa
 ```
 

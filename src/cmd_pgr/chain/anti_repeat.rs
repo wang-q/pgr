@@ -24,13 +24,7 @@ pub fn make_subcommand() -> Command {
         )
         .arg(Arg::new("infile").required(true).help("Input chain file"))
         .arg(Arg::new("outfile").required(true).help("Output chain file"))
-        .arg(
-            Arg::new("min_score")
-                .long("min-score")
-                .default_value("5000")
-                .value_parser(clap::value_parser!(f64))
-                .help("Minimum score to pass"),
-        )
+        .arg(crate::cmd_pgr::args::min_score_arg("5000"))
         .arg(
             Arg::new("no_check_score")
                 .long("no-check-score")

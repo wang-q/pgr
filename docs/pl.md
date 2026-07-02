@@ -144,8 +144,8 @@ pgr pl trf [OPTIONS] <infile>
 | :--- | :--- | :--- | :--- | :--- |
 | `infile` | | | File | Input genome FASTA |
 | `outfile` | `-o` | `--outfile` | File | Output filename (default: stdout) |
-| `match` | | `--match` | Int | Matching weight (default: 2) |
-| `mismatch` | | `--mismatch` | Int | Mismatching penalty (default: 7) |
+| `trf_match` | | `--trf-match` | Int | TRF matching weight (default: 2) |
+| `trf_mismatch` | | `--trf-mismatch` | Int | TRF mismatching penalty (default: 7) |
 | `delta` | | `--delta` | Int | Indel penalty (default: 7) |
 | `pm` | | `--pm` | Int | Match probability (default: 80) |
 | `pi` | | `--pi` | Int | Indel probability (default: 10) |
@@ -179,8 +179,8 @@ pgr pl ucsc [OPTIONS] <target> <query> <psl>
 | `outdir` | `-o` | `--outdir` | Dir | Output directory (default: stdout) |
 | `gap_model` | | `--gap-model` | Str | Gap cost: "loose" (default) or "medium" |
 | `min_score` | | `--min-score` | Int | Min alignment score (default: 1000) |
-| `tname` | `-t` | `--t-name` | Str | Custom target name prefix |
-| `qname` | `-q` | `--q-name` | Str | Custom query name prefix |
+| `tname` | | `--t-name` | Str | Custom target name prefix |
+| `qname` | | `--q-name` | Str | Custom query name prefix |
 | `syn` | | `--syn` | Flag | Generate syntenic alignments only |
 
 ### Pipeline Steps
@@ -207,7 +207,7 @@ Condense subtrees based on taxonomy. Monophyletic subtrees sharing the same taxo
 ### Usage
 
 ```bash
-pgr pl condense [OPTIONS] -t <taxon.tsv> <infile>
+pgr pl condense [OPTIONS] --taxon <taxon.tsv> <infile>
 ```
 
 ### Arguments
@@ -215,8 +215,8 @@ pgr pl condense [OPTIONS] -t <taxon.tsv> <infile>
 | Argument | Short | Long | Value | Description |
 | :--- | :--- | :--- | :--- | :--- |
 | `infile` | | | File | Input Newick filename (`stdin` for standard input) |
-| `taxon` | `-t` | `--taxon` | File | Taxonomy TSV file (required) |
-| `rank` | `-r` | `--rank` | Int | Column index(es) for grouping (1-based, can be specified multiple times, default: 2) |
+| `taxon` | | `--taxon` | File | Taxonomy TSV file (required) |
+| `rank` | | `--rank` | Int | Column index(es) for grouping (1-based, can be specified multiple times, default: 2) |
 | `map` | | `--map` | Flag | Write a mapping file `condensed.tsv` |
 | `outfile` | `-o` | `--outfile` | File | Output filename (default: stdout) |
 
@@ -236,10 +236,10 @@ pgr pl condense [OPTIONS] -t <taxon.tsv> <infile>
 
 1.  **Condense by species (2nd column)**:
     ```bash
-    pgr pl condense -t taxon.tsv tree.nwk
+    pgr pl condense --taxon taxon.tsv tree.nwk
     ```
 
 2.  **Condense by genus (3rd column) with mapping file**:
     ```bash
-    pgr pl condense -t taxon.tsv -r 3 --map tree.nwk -o condensed.nwk
+    pgr pl condense --taxon taxon.tsv --rank 3 --map tree.nwk -o condensed.nwk
     ```

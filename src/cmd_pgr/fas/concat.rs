@@ -18,20 +18,20 @@ Notes:
 
 Examples:
 1. Concatenate sequences and output in FASTA format:
-   pgr fas concat tests/fasr/example.fas -r tests/fasr/name.lst
+   pgr fas concat tests/fasr/example.fas -R tests/fasr/name.lst
 
 2. Concatenate sequences and output in relaxed PHYLIP format:
-   pgr fas concat tests/fasr/example.fas -r tests/fasr/name.lst --phylip
+   pgr fas concat tests/fasr/example.fas -R tests/fasr/name.lst --phylip
 
 3. Output results to a file:
-   pgr fas concat tests/fasr/example.fas -r tests/fasr/name.lst -o output.fas
+   pgr fas concat tests/fasr/example.fas -R tests/fasr/name.lst -o output.fas
 
 "###,
         )
         .arg(
             Arg::new("required")
                 .long("required")
-                .short('r')
+                .short('R')
                 .required(true)
                 .num_args(1)
                 .help("File with a list of species names to keep, one per line"),

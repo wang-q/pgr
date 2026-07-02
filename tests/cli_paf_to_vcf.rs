@@ -52,7 +52,7 @@ C\t10\t0\t10\t+\tA\t10\t0\t10\t9\t10\t255\tcg:Z:10M\n";
             "to-vcf",
             "stdin",
             "B:0-10",
-            "-t",
+            "--transitive",
             "-f",
             tsv.to_str().unwrap(),
         ])
@@ -120,7 +120,7 @@ C\t10\t0\t10\t+\tA\t10\t0\t10\t10\t10\t255\tcg:Z:10=\n";
             "to-vcf",
             "stdin",
             "B:0-10",
-            "-t",
+            "--transitive",
             "-f",
             tsv.to_str().unwrap(),
         ])
@@ -164,7 +164,7 @@ C\t9\t0\t9\t+\tA\t10\t0\t10\t9\t10\t255\tcg:Z:4=1D5=\n";
             "to-vcf",
             "stdin",
             "B:0-10",
-            "-t",
+            "--transitive",
             "-f",
             tsv.to_str().unwrap(),
         ])
@@ -214,7 +214,7 @@ C\t11\t0\t11\t+\tA\t10\t0\t10\t10\t11\t255\tcg:Z:5=1I5=\n";
             "to-vcf",
             "stdin",
             "B:0-10",
-            "-t",
+            "--transitive",
             "-f",
             tsv.to_str().unwrap(),
         ])
@@ -265,7 +265,7 @@ C\t15\t0\t15\t+\tA\t14\t0\t14\t14\t15\t255\tcg:Z:11=1I3=\n";
             "to-vcf",
             "stdin",
             "B:0-14",
-            "-t",
+            "--transitive",
             "-f",
             tsv.to_str().unwrap(),
         ])
@@ -316,7 +316,7 @@ C\t14\t0\t14\t+\tA\t15\t0\t15\t14\t15\t255\tcg:Z:11=1D3=\n";
             "to-vcf",
             "stdin",
             "B:0-15",
-            "-t",
+            "--transitive",
             "-f",
             tsv.to_str().unwrap(),
         ])

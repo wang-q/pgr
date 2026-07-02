@@ -15,9 +15,9 @@ Extracts the tree's labels.
 Notes:
 * By default, prints all labels that occur in the tree, in the same order as
   in the Newick, one per line. Empty labels produce no output.
-* The `-t` option prints labels on a single line, separated by tabs.
+* The `--tab` option prints labels on a single line, separated by tabs.
 * The `-I` and `-L` options filter out internal or leaf nodes.
-* Selection options (`-n`, `-l`, `-r`) can be combined.
+* Selection options (`-n`, `-l`, `-x`) can be combined.
 * With `-D`, descendants of selected internal nodes are also included.
 * Monophyly check (`-M`) verifies if the selected nodes form a monophyletic
   group. It checks terminal nodes against the selection.
@@ -39,7 +39,7 @@ Examples:
    pgr nwk label tree.nwk -n Human -n Chimp
 
 4. List labels matching regex:
-   pgr nwk label tree.nwk -r "^Homo"
+   pgr nwk label tree.nwk -x "^Homo"
 
 5. Check monophyly:
    pgr nwk label tree.nwk -n Human -n Chimp -M
@@ -68,7 +68,6 @@ Examples:
         .arg(
             Arg::new("tab")
                 .long("tab")
-                .short('t')
                 .action(ArgAction::SetTrue)
                 .help("Print labels on a single line, separated by tab stops"),
         )

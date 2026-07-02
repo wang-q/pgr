@@ -27,7 +27,7 @@ Notes:
     * Deroot (`--deroot` / `-d`): Splices out the ingroup to create a multifurcating root.
 
 * Technical Details:
-    * Support Values (`--support-as-labels` / `-s`):
+    * Support Values (`--support-as-labels`):
         * Shifts internal node labels along the rerooting path to maintain split associations.
         * Necessary because rerooting changes edge directions.
     * Topology:
@@ -45,7 +45,7 @@ Examples:
    pgr nwk reroot input.nwk -n Homo -n Pan
 
 4. Reroot and preserve support values (internal node labels):
-   pgr nwk reroot input.nwk -n Homo -s
+   pgr nwk reroot input.nwk -n Homo --support-as-labels
 
 "###,
         )
@@ -61,7 +61,6 @@ Examples:
         .arg(
             Arg::new("support_as_labels")
                 .long("support-as-labels")
-                .short('s')
                 .action(ArgAction::SetTrue)
                 .help("Treat internal node labels as support values and shift them when rerooting"),
         )

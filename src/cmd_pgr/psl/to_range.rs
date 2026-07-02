@@ -36,7 +36,6 @@ Examples:
         .arg(
             Arg::new("target_coords")
                 .long("target-coords")
-                .short('t')
                 .action(ArgAction::SetTrue)
                 .help("Extract target coordinates instead of query"),
         )

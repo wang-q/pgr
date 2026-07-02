@@ -51,7 +51,7 @@ Calculates distances between nodes or generates distance matrices.
 pgr nwk distance [OPTIONS] <infile>
 ```
 
-*   `-m, --mode <mode>`: Calculation mode.
+*   `--mode <mode>`: Calculation mode.
     *   `root` (default): Distance to root.
     *   `parent`: Distance to parent.
     *   `pairwise`: All pairwise distances.
@@ -70,10 +70,10 @@ pgr nwk label [OPTIONS] <infile>
 
 *   `-I`: Skip internal labels.
 *   `-L`: Skip leaf labels.
-*   `-n <name>` / `-l <file>` / `-r <regex>`: Filter nodes.
+*   `-n <name>` / `-l <file>` / `-x <regex>`: Filter nodes.
 *   `-D`: Include descendants of selected nodes.
 *   `-M`: Monophyly check (only print if selected nodes form a monophyletic group).
-*   `-t`: Tab-separated output (single line).
+*   `--tab`: Tab-separated output (single line).
 *   `-c <col>`: Add extra columns (`dup`, `taxid`, `species`, `full`).
 *   `--root`: Only print the root label.
 
@@ -123,7 +123,7 @@ Removes nodes from the tree.
 pgr nwk prune [OPTIONS] <infile>
 ```
 
-*   `-n <name>` / `-l <file>` / `-r <regex>`: Select nodes to remove.
+*   `-n <name>` / `-l <file>` / `-x <regex>`: Select nodes to remove.
 *   `-v, --invert`: Invert selection (Keep selected nodes, remove others).
 *   `-D`: Include descendants.
 
@@ -137,7 +137,7 @@ pgr nwk rename [OPTIONS] <infile>
 
 *   `-n <name>`: Select node by name.
 *   `-l <name1,name2>`: Select node by LCA of two names.
-*   `-r <new_name>`: New name (must correspond to `-n` or `-l` arguments).
+*   `--rename <new_name>`: New name (must correspond to `-n` or `-l` arguments).
 
 ### replace
 
@@ -168,7 +168,7 @@ pgr nwk reroot [OPTIONS] <infile>
 *   `-n <node>`: Reroot at the edge leading to the LCA of specified nodes (Ingroup).
 *   `-l, --lax`: Lax mode (use complement if LCA is already root).
 *   `-d, --deroot`: Deroot (create multifurcating root).
-*   `-s`: Support values as labels (shift labels during reroot).
+*   `--support-as-labels`: Support values as labels (shift labels during reroot).
 
 ### subtree
 
@@ -178,7 +178,7 @@ Extracts a subtree (clade) rooted at the LCA of selected nodes.
 pgr nwk subtree [OPTIONS] <infile>
 ```
 
-*   `-n` / `-l` / `-r`: Select nodes.
+*   `-n` / `-l` / `-x`: Select nodes.
 *   `-D, --descendants`: Include all descendants of selected internal nodes.
 *   `-M`: Monophyly check (only output if clade matches selection exactly).
 *   `-c <N>`: Context (extend N levels up).
@@ -211,10 +211,10 @@ pgr nwk comment [OPTIONS] <infile>
 ```
 
 *   `-n` / `-l`: Select nodes.
-*   `-s, --string <str>`: Add free-form string annotations.
+*   `--string <str>`: Add free-form string annotations.
 *   `--color`, `--label`, `--comment`: Add text attributes.
 *   `--dot`, `--bar`, `--rec`, `--tri`: Add shape attributes (for `to-tex` / `to-forest`).
-*   `-r, --remove <regex>`: Remove matching comments.
+*   `--remove <regex>`: Remove matching comments.
 
 ### indent
 
@@ -224,7 +224,7 @@ Formats Newick trees with indentation.
 pgr nwk indent [OPTIONS] <infile>
 ```
 
-*   `-t, --text <str>`: Indentation string (default: "  ").
+*   `--text <str>`: Indentation string (default: "  ").
 *   `-c, --compact`: Compact output (single line).
 
 ### to-dot

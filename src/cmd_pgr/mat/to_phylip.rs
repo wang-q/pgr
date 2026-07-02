@@ -22,22 +22,8 @@ Examples:
                 .index(1)
                 .help("Input file containing pairwise distances"),
         )
-        .arg(
-            Arg::new("same")
-                .long("same")
-                .num_args(1)
-                .default_value("0.0")
-                .value_parser(value_parser!(f32))
-                .help("Default score of identical element pairs"),
-        )
-        .arg(
-            Arg::new("missing")
-                .long("missing")
-                .num_args(1)
-                .default_value("1.0")
-                .value_parser(value_parser!(f32))
-                .help("Default score of missing pairs"),
-        )
+        .arg(crate::cmd_pgr::args::same_arg("0.0"))
+        .arg(crate::cmd_pgr::args::missing_arg("1.0"))
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 

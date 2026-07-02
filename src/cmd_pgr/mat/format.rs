@@ -33,10 +33,10 @@ Examples:
        pgr mat format input.phy -o output.phy
 
     2. Create a lower-triangular matrix:
-       pgr mat format input.phy --format lower -o output.phy
+       pgr mat format input.phy --out-format lower -o output.phy
 
     3. Create a strict PHYLIP matrix:
-       pgr mat format input.phy --format strict -o output.phy
+       pgr mat format input.phy --out-format strict -o output.phy
 "###,
         )
         .arg(
@@ -46,8 +46,8 @@ Examples:
                 .help("Input PHYLIP matrix file"),
         )
         .arg(
-            Arg::new("format")
-                .long("format")
+            Arg::new("out_format")
+                .long("out-format")
                 .action(ArgAction::Set)
                 .value_parser([
                     builder::PossibleValue::new("full"),
@@ -65,7 +65,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // Args
     //----------------------------
     let infile = args.get_one::<String>("infile").unwrap();
-    let opt_mode = args.get_one::<String>("format").unwrap();
+    let opt_mode = args.get_one::<String>("out_format").unwrap();
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
 
     //----------------------------

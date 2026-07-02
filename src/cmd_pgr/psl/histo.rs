@@ -34,7 +34,6 @@ Examples:
         .arg(
             Arg::new("multi_only")
                 .long("multi-only")
-                .short('m')
                 .action(ArgAction::SetTrue)
                 .help("Omit queries with only one alignment"),
         )

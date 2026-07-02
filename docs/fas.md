@@ -121,7 +121,7 @@ Extracts specific slices of alignments based on a provided runlist (JSON).
 pgr fas slice [OPTIONS] --runlist <runlist.json> <infiles>...
 ```
 
-*   `-r, --runlist <file>`: JSON file describing ranges to extract (required).
+*   `--runlist <file>`: JSON file describing ranges to extract (required).
 *   `--name <name>`: Reference species name (default: first species).
 *   `-o, --outfile <file>`: Output filename (default: stdout).
 
@@ -133,7 +133,7 @@ Extracts a subset of species from the alignment blocks.
 pgr fas subset [OPTIONS] --required <name.lst> <infiles>...
 ```
 
-*   `-r, --required <file>`: File with a list of species names to keep, one per line (required).
+*   `-R, --required <file>`: File with a list of species names to keep, one per line (required).
 *   `--strict`: Skip blocks that do not contain *all* the required names.
 *   `-o, --outfile <file>`: Output filename (default: stdout).
 
@@ -149,7 +149,7 @@ Concatenates sequence pieces of the same species from multiple blocks.
 pgr fas concat [OPTIONS] --required <name.lst> <infiles>...
 ```
 
-*   `-r, --required <file>`: File with a list of species names to keep/order (required).
+*   `-R, --required <file>`: File with a list of species names to keep/order (required).
 *   `--phylip`: Output in relaxed PHYLIP format instead of FASTA.
 *   `-o, --outfile <file>`: Output filename (default: stdout).
 
@@ -197,8 +197,8 @@ pgr fas multiz [OPTIONS] --ref <name> <infiles>...
 *   `--mode <core|union>`: Merge mode (default: core).
 *   `--score-matrix <file>`: Score matrix file (LASTZ format).
 *   `--gap-model <constant|medium|loose>`: Gap model (default: medium).
-*   `--gap-open <int>`: Gap open cost.
-*   `--gap-extend <int>`: Gap extension cost.
+*   `--align-gap-open <int>`: Alignment gap open cost.
+*   `--align-gap-extend <int>`: Alignment gap extension cost.
 *   `-o, --outfile <file>`: Output filename (default: stdout).
 
 ### refine
@@ -226,7 +226,7 @@ Replaces headers in block FA files using a mapping file.
 pgr fas replace [OPTIONS] --replace-tsv <replace.tsv> <infiles>...
 ```
 
-*   `-r, --replace-tsv <file>`: TSV file containing replacement rules (required).
+*   `--replace-tsv <file>`: TSV file containing replacement rules (required).
 *   `-o, --outfile <file>`: Output filename (default: stdout).
 
 ---

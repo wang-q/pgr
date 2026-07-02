@@ -26,8 +26,8 @@ pgr psl chain [OPTIONS] <target.2bit> <query.2bit> <in.psl>
 ### Options
 
 *   `--gap-model <loose|medium>`: Linear gap cost presets (default: `loose`).
-*   `--gap-open <int>`: Gap open cost (overrides gap-model).
-*   `--gap-extend <int>`: Gap extension cost (overrides gap-model).
+*   `--align-gap-open <int>`: Alignment gap open cost (overrides gap-model).
+*   `--align-gap-extend <int>`: Alignment gap extension cost (overrides gap-model).
 *   `--score-scheme <file|preset>`: Scoring matrix (LASTZ format) or preset (e.g., `hoxd55`).
 *   `--min-score <float>`: Minimum chain score to output (default: 1000).
 *   `-o, --outfile <file>`: Output filename (default: stdout).
@@ -41,7 +41,7 @@ pgr psl chain [OPTIONS] <target.2bit> <query.2bit> <in.psl>
 
 2.  **Chain with affine gap costs**:
     ```bash
-    pgr psl chain t.2bit q.2bit in.psl -o out.chain --gap-open 400 --gap-extend 30
+    pgr psl chain t.2bit q.2bit in.psl -o out.chain --align-gap-open 400 --align-gap-extend 30
     ```
 
 ---

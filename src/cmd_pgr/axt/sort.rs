@@ -14,7 +14,7 @@ Examples:
   pgr axt sort in.axt -o out.axt
 
   # Sort by query
-  pgr axt sort in.axt --query -o out.axt
+  pgr axt sort in.axt --by-query -o out.axt
 
   # Sort by score (descending)
   pgr axt sort in.axt --by-score -o out.axt
@@ -23,8 +23,8 @@ Examples:
         .arg(crate::cmd_pgr::args::infile_arg().help("Input AXT file"))
         .arg(crate::cmd_pgr::args::outfile_arg())
         .arg(
-            Arg::new("query")
-                .long("query")
+            Arg::new("by_query")
+                .long("by-query")
                 .action(ArgAction::SetTrue)
                 .help("Sort by query position, not target"),
         )
@@ -37,7 +37,6 @@ Examples:
         .arg(
             Arg::new("renumber")
                 .long("renumber")
-                .short('r')
                 .action(ArgAction::SetTrue)
                 .help("Renumber AXT records"),
         )
@@ -46,7 +45,7 @@ Examples:
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let input = crate::cmd_pgr::args::get_infile(args);
     let output = crate::cmd_pgr::args::get_outfile(args);
-    let by_query = args.get_flag("query");
+    let by_query = args.get_flag("by_query");
     let by_score = args.get_flag("by-score");
     let renumber = args.get_flag("renumber");
 

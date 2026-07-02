@@ -22,7 +22,7 @@ Processing:
      - Gap Cost (Penalty):
        * Linear (Default): --gap-model loose (suitable for distant species).
                            --gap-model medium (suitable for mouse/human).
-       * Affine: Use --gap-open and --gap-extend to override linear costs.
+       * Affine: Use --align-gap-open and --align-gap-extend to override linear costs.
          (Cost = open + extend * length).
      - Overlaps are trimmed by finding the optimal cut point based on exact sequence scores.
   4. Filter chains by minimum score (controlled by --min-score).
@@ -33,7 +33,7 @@ Examples:
   pgr psl chain t.2bit q.2bit in.psl -o out.chain
 
   # Chain with affine gap costs
-  pgr psl chain t.2bit q.2bit in.psl -o out.chain --gap-open 400 --gap-extend 30
+  pgr psl chain t.2bit q.2bit in.psl -o out.chain --align-gap-open 400 --align-gap-extend 30
 
   # Chain with HoxD55 scoring scheme
   pgr psl chain t.2bit q.2bit in.psl -o out.chain --score-scheme hoxd55
@@ -76,20 +76,16 @@ Examples:
                 .help("Minimum score of chain"),
         )
         .arg(
-            // Note: distinct from args::add_poa_args gap_open/gap_extend.
-            // POA gaps are always-on affine penalties with defaults; here they
-            // are optional overrides for the --gap-model chaining preset.
-            Arg::new("gap_open")
-                .long("gap-open")
+            Arg::new("align_gap_open")
+                .long("align-gap-open")
                 .value_parser(clap::value_parser!(i32))
-                .help("Gap open cost (overrides --gap-model)"),
+                .help("Alignment gap open cost (overrides --gap-model)"),
         )
         .arg(
-            // See gap_open note above re: distinct from POA's --gap-extend.
-            Arg::new("gap_extend")
-                .long("gap-extend")
+            Arg::new("align_gap_extend")
+                .long("align-gap-extend")
                 .value_parser(clap::value_parser!(i32))
-                .help("Gap extension cost (overrides --gap-model)"),
+                .help("Alignment gap extension cost (overrides --gap-model)"),
         )
         .arg(
             Arg::new("score_scheme")
@@ -137,8 +133,8 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
         _ => None,
     };
 
-    let gap_open = args.get_one::<i32>("gap_open");
-    let gap_extend = args.get_one::<i32>("gap_extend");
+    let gap_open = args.get_one::<i32>("align_gap_open");
+    let gap_extend = args.get_one::<i32>("align_gap_extend");
 
     let gap_calc = if let (Some(&open), Some(&extend)) = (gap_open, gap_extend) {
         GapCalc::affine(open, extend)

@@ -41,9 +41,10 @@ Examples:
         .arg(
             Arg::new("method")
                 .long("method")
-                .short('m')
                 .default_value("ward")
-                .help("Clustering method (single, complete, average, weighted, centroid, median, ward)"),
+                .help(
+                "Clustering method (single, complete, average, weighted, centroid, median, ward)",
+            ),
         )
         .arg(crate::cmd_pgr::args::outfile_arg())
 }

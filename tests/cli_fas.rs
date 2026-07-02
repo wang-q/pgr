@@ -59,7 +59,7 @@ fn command_concat() {
             "fas",
             "concat",
             "tests/fas/example.fas",
-            "-r",
+            "-R",
             "tests/fas/name.lst",
         ])
         .run();
@@ -78,7 +78,7 @@ fn command_concat_phylip() {
             "fas",
             "concat",
             "tests/fas/example.fas",
-            "-r",
+            "-R",
             "tests/fas/name.lst",
             "--phylip",
         ])
@@ -98,7 +98,7 @@ fn command_subset() {
             "fas",
             "subset",
             "tests/fas/example.fas",
-            "-r",
+            "-R",
             "tests/fas/name.lst",
         ])
         .run();
@@ -111,7 +111,7 @@ fn command_subset() {
             "fas",
             "subset",
             "tests/fas/example.fas",
-            "-r",
+            "-R",
             "tests/fas/name.lst",
             "--strict",
         ])
@@ -154,7 +154,7 @@ fn command_replace() {
             "fas",
             "replace",
             "tests/fas/example.fas",
-            "-r",
+            "--replace-tsv",
             "tests/fas/replace.tsv",
         ])
         .run();
@@ -168,7 +168,7 @@ fn command_replace() {
             "fas",
             "replace",
             "tests/fas/example.fas",
-            "-r",
+            "--replace-tsv",
             "tests/fas/replace.fail.tsv",
         ])
         .run();
@@ -186,7 +186,7 @@ fn command_replace() {
             "fas",
             "replace",
             "tests/fas/example.fas",
-            "-r",
+            "--replace-tsv",
             "tests/fas/replace.remove.tsv",
         ])
         .run();
@@ -431,7 +431,7 @@ fn command_slice() {
             "fas",
             "slice",
             "tests/fas/slice.fas",
-            "-r",
+            "--runlist",
             "tests/fas/slice.json",
             "--name",
             "S288c",

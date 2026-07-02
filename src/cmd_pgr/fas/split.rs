@@ -39,7 +39,6 @@ Examples:
         .arg(
             Arg::new("suffix")
                 .long("suffix")
-                .short('s')
                 .num_args(1)
                 .default_value(".fas")
                 .help("File extension for output files"),
