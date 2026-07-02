@@ -5,14 +5,14 @@ use pgr::libs::chain::net::{collect_stats_gap, read_nets, Stats};
 
 pub fn make_subcommand() -> Command {
     Command::new("class").about("Show stats of net").arg(
-        Arg::new("input")
+        Arg::new("infile")
             .required(true)
             .help("Input net file (or stdin if 'stdin')"),
     )
 }
 
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let input_path = args.get_one::<String>("input").unwrap();
+    let input_path = args.get_one::<String>("infile").unwrap();
 
     let reader = pgr::reader(input_path)?;
 

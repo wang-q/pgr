@@ -8,7 +8,7 @@
   - 输入：成对距离 `.tsv`（lower is better）
   - 输出：`cluster`（一行一簇，首元素为代表点）或 `pair`（代表点-成员对）
 - CLI 参数
-  - `infile`、`--format {cluster|pair}`、`--same`、`--missing`、`--eps`、`--min_points`、`-o/--outfile`
+  - `infile`、`--format {cluster|pair}`、`--same`、`--missing`、`--eps`、`--min-points`、`-o/--outfile`
 
 ## 规划
 
@@ -18,10 +18,10 @@
 
 ```bash
 # 基本聚类（pairwise 距离输入）
-pgr clust dbscan pairs.tsv --eps 0.15 --min_points 3 -o clusters.tsv
+pgr clust dbscan pairs.tsv --eps 0.15 --min-points 3 -o clusters.tsv
 
 # 输出 pair 格式，便于后续评估
-pgr clust dbscan pairs.tsv --eps 0.15 --min_points 3 --format pair -o pairs.out.tsv
+pgr clust dbscan pairs.tsv --eps 0.15 --min-points 3 --format pair -o pairs.out.tsv
 ```
 
 ## 相关参考

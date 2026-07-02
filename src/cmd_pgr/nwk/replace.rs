@@ -54,14 +54,14 @@ Examples:
                 .long("internal")
                 .short('I')
                 .action(ArgAction::SetTrue)
-                .help("Skip internal labels"),
+                .help("Don't print internal labels"),
         )
         .arg(
             Arg::new("leaf")
                 .long("leaf")
                 .short('L')
                 .action(ArgAction::SetTrue)
-                .help("Skip leaf labels"),
+                .help("Don't print leaf labels"),
         )
         .arg(
             Arg::new("mode")

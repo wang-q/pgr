@@ -49,8 +49,8 @@ Examples:
                 .help("Input FASTA file to process"),
         )
         .arg(
-            Arg::new("len")
-                .long("len")
+            Arg::new("window")
+                .long("window")
                 .short('l')
                 .value_parser(value_parser!(usize))
                 .default_value("200")
@@ -89,7 +89,7 @@ Examples:
 // command implementation
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let infile = args.get_one::<String>("infile").unwrap();
-    let len = *args.get_one::<usize>("len").unwrap();
+    let len = *args.get_one::<usize>("window").unwrap();
     let step = *args.get_one::<usize>("step").unwrap();
     let shuffle = args.get_flag("shuffle");
     let seed = *args.get_one::<u64>("seed").unwrap();

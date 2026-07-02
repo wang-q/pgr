@@ -33,7 +33,7 @@ This command identifies repetitive regions in a genome using k-mer analysis.
                 .num_args(1)
                 .default_value("17")
                 .value_parser(value_parser!(usize))
-                .help("Size of the k-mer"),
+                .help("K-mer size"),
         )
         .arg(
             Arg::new("fill_kmer")

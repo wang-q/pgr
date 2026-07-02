@@ -33,7 +33,7 @@
   - 输出格式为 `>Target:Start-End` 和 `>Query:Start-End`。
 - **参数**:
   - `chr.sizes`: 必需。Query 基因组的大小文件。
-  - `--tname`/`--qname`: 自定义输出 FASTA 头中的物种名称前缀。
+  - `--t-name`/`--q-name`: 自定义输出 FASTA 头中的物种名称前缀。
 
 ### 3. `pgr axt to-maf`: 转换为 MAF 格式
 将 AXT 转换为 Multiple Alignment Format (MAF)。
@@ -75,7 +75,7 @@ pgr axt to-maf sorted.axt \
 ```bash
 # 转换，指定物种名称
 pgr axt to-fas query.sizes raw.axt \
-    --tname Human --qname Mouse \
+    --t-name Human --q-name Mouse \
     -o blocks.fas
 ```
 

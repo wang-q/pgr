@@ -89,13 +89,13 @@ pgr clust hier matrix.phy --method average > tree.nwk
 - 实现约定：`ward.D2` 内部自动按“平方距离”完成更新并返回“距离量纲”的分支长度；用户无需提供或区分 `D` 与 `D^2`
 - 方法特性：
   - `centroid/median` 可能产生非单调的合并高度（inversion），属于算法特性；输出仍为合法 Newick，但高度的直觉性较 `average/ward` 略弱
-  - 叶序优化：hier 命令本身不重排叶子，如需提升可视化可读性，请使用 `pgr nwk order --nd`（Ladderize）
+  - 叶序优化：hier 命令本身不重排叶子，如需提升可视化可读性，请使用 `pgr nwk order --num-descendants`（Ladderize）
 
 ## 与 SciPy 的映射与差异
 - 方法映射：与 SciPy `linkage` 的 `method` 集合对齐，`ward` 等价 `ward.D2`（内部按平方距离更新）；`average` 等价 UPGMA，`weighted` 等价 WPGMA，`centroid/median` 等价 UPGMC/WPGMC。
 - 输入差异：SciPy 接受“condensed 距离向量”或“观测矩阵”，pgr 统一使用 PHYLIP 距离矩阵；如需从 pair TSV 转换，请使用 `pgr mat to-phylip`。
 - 输出差异：SciPy 返回 `(n-1)×4` 的 linkage 矩阵 Z；pgr 输出 Newick 树，直接用于 `clust cut / to-dot / to-forest`。普通用户无需关心 Z；若需与 SciPy 互操作，请在 Python 端继续使用 Z 与 `fcluster/cophenet`。
-- 叶序优化：`pgr` 推荐 `pgr nwk order --nd` (Ladderize) 以换取极高的性能，且可视化效果通常足够好。
+- 叶序优化：`pgr` 推荐 `pgr nwk order --num-descendants` (Ladderize) 以换取极高的性能，且可视化效果通常足够好。
 - 平切（flat clustering）：SciPy 的 `fcluster` 提供 `criterion='distance'|'maxclust'|...`；在 pgr 中分别对应 `clust cut --height H` 与 `clust cut --k K`，其它 `monocrit/inconsistent` 等准则暂不引入。
 - 评估指标：SciPy 有 `cophenet`（共生相关系数）；pgr 建议在 `nwk eval` [计划中] 中加入 cophenetic 相关系数作为树质量评估的补充。
 
@@ -106,7 +106,7 @@ pgr clust hier matrix.phy --method average > tree.nwk
 ### 示例映射
 - SciPy linkage（Ward）:
   - Python: `Z = linkage(y, method='ward', optimal_ordering=True)`
-  - pgr: `pgr mat to-phylip pairs.tsv -o matrix.phy` → `pgr clust hier matrix.phy --method ward > tree.nwk` → `pgr nwk order tree.nwk --nd > ordered.nwk`
+  - pgr: `pgr mat to-phylip pairs.tsv -o matrix.phy` → `pgr clust hier matrix.phy --method ward > tree.nwk` → `pgr nwk order tree.nwk --num-descendants > ordered.nwk`
 - SciPy fcluster（按距离平切）:
   - Python: `labels = fcluster(Z, t=0.05, criterion='distance')`
   - pgr: `pgr clust cut tree.nwk --height 0.05 > clusters.tsv`

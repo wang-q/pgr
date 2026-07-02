@@ -6,18 +6,10 @@ use std::collections::HashMap;
 pub fn make_subcommand() -> Command {
     Command::new("pre-net")
         .about("Remove chains that don't have a chance of being netted")
-        .arg(Arg::new("input").required(true).help("Input chain file"))
-        .arg(
-            Arg::new("target_sizes")
-                .required(true)
-                .help("Target sizes file"),
-        )
-        .arg(
-            Arg::new("query_sizes")
-                .required(true)
-                .help("Query sizes file"),
-        )
-        .arg(Arg::new("output").required(true).help("Output chain file"))
+        .arg(Arg::new("infile").required(true).help("Input chain file"))
+        .arg(Arg::new("t_sizes").required(true).help("Target sizes file"))
+        .arg(Arg::new("q_sizes").required(true).help("Query sizes file"))
+        .arg(Arg::new("outfile").required(true).help("Output chain file"))
         .arg(
             Arg::new("dots")
                 .long("dots")
@@ -40,10 +32,10 @@ pub fn make_subcommand() -> Command {
 }
 
 pub fn execute(args: &ArgMatches) -> Result<()> {
-    let input_path = args.get_one::<String>("input").unwrap();
-    let target_sizes_path = args.get_one::<String>("target_sizes").unwrap();
-    let query_sizes_path = args.get_one::<String>("query_sizes").unwrap();
-    let output_path = args.get_one::<String>("output").unwrap();
+    let input_path = args.get_one::<String>("infile").unwrap();
+    let target_sizes_path = args.get_one::<String>("t_sizes").unwrap();
+    let query_sizes_path = args.get_one::<String>("q_sizes").unwrap();
+    let output_path = args.get_one::<String>("outfile").unwrap();
 
     let dots = args.get_one::<usize>("dots").copied();
     let pad = args.get_one::<u64>("pad").copied().unwrap_or(1);

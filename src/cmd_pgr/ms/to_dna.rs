@@ -47,7 +47,7 @@ pub fn make_subcommand() -> Command {
         )
         .arg(crate::cmd_pgr::args::outfile_arg())
         .arg(
-            Arg::new("files")
+            Arg::new("infiles")
                 .num_args(0..)
                 .help("Input files with ms output; reads stdin when omitted"),
         )
@@ -104,7 +104,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         println!("==> Inputs");
     }
     let files: Vec<String> = args
-        .get_many::<String>("files")
+        .get_many::<String>("infiles")
         .map(|vals| vals.map(|s| s.to_string()).collect())
         .unwrap_or_default();
     let abs_files: Vec<String> = files

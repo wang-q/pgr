@@ -27,10 +27,10 @@ Examples:
        pgr mat transform in.phy --op linear --scale -0.01 --offset 1.0
 
     2. Convert Identity (0-100) to Distance (0-100):
-       pgr mat transform in.phy --op inv-linear --max 100
+       pgr mat transform in.phy --op inv-linear --max-val 100
 
     3. Convert Similarity (0-1) to Distance (0-1):
-       pgr mat transform in.phy --op inv-linear --max 1.0
+       pgr mat transform in.phy --op inv-linear --max-val 1.0
 
     4. Log transformation with normalization (e.g. for probability):
        pgr mat transform in.phy --op log --normalize
@@ -57,8 +57,8 @@ Examples:
                 .help("Transformation operation"),
         )
         .arg(
-            Arg::new("max")
-                .long("max")
+            Arg::new("max_val")
+                .long("max-val")
                 .default_value("1.0")
                 .value_parser(value_parser!(f32))
                 .help("Maximum value for inv-linear"),
@@ -102,7 +102,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     let infile = args.get_one::<String>("infile").unwrap();
     let op = args.get_one::<String>("op").unwrap().as_str();
-    let max_val = *args.get_one::<f32>("max").unwrap();
+    let max_val = *args.get_one::<f32>("max_val").unwrap();
     let scale = *args.get_one::<f32>("scale").unwrap();
     let offset = *args.get_one::<f32>("offset").unwrap();
     let normalize = args.get_flag("normalize");

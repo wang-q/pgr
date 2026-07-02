@@ -72,7 +72,7 @@ This command identifies tandem repeats in a genome via `trf`.
                 .long("min-score")
                 .num_args(1)
                 .default_value("50")
-                .value_parser(value_parser!(usize))
+                .value_parser(value_parser!(f64))
                 .help("Minimum alignment score to report"),
         )
         .arg(
@@ -98,7 +98,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let opt_delta = *args.get_one::<usize>("delta").unwrap();
     let opt_pm = *args.get_one::<usize>("pm").unwrap();
     let opt_pi = *args.get_one::<usize>("pi").unwrap();
-    let opt_minscore = *args.get_one::<usize>("min_score").unwrap();
+    let opt_minscore = *args.get_one::<f64>("min_score").unwrap();
+    let opt_minscore_u = opt_minscore as usize;
     let opt_maxperiod = *args.get_one::<usize>("maxperiod").unwrap();
 
     //----------------------------
@@ -140,7 +141,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut rg_files = vec![];
     for (i, chr) in chrs.iter().enumerate() {
         run_cmd!(
-            trf ${chr}.fa ${opt_match} ${opt_mismatch} ${opt_delta} ${opt_pm} ${opt_pi} ${opt_minscore} ${opt_maxperiod} -d -h -ngs > trf.${i}.dat
+            trf ${chr}.fa ${opt_match} ${opt_mismatch} ${opt_delta} ${opt_pm} ${opt_pi} ${opt_minscore_u} ${opt_maxperiod} -d -h -ngs > trf.${i}.dat
         )?;
 
         // 198 229 12 2.7 12 90 0 50 34 46 3 15 1.62 CATTACCACCAC CATTAGCACCACCATTACCACCACCATCACCA ATAGCGCACAGACAGATAAAAATTACAGAGTACACAACATCCATGAAACG TTACCACAGGTAACGGTGCGGGCTGACGCGTACAGGAAACACAGAAAAAA

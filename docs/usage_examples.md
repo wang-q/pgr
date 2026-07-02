@@ -39,7 +39,7 @@ pgr fa filter tests/fasta/ufasta.fa -a 400 |
 pgr fa split about tests/fasta/ufasta.fa -c 2000 -o tmp
 
 pgr fa six-frame tests/fasta/trans.fa
-pgr fa six-frame tests/fasta/trans.fa --len 3 --start --end
+pgr fa six-frame tests/fasta/trans.fa --min-len 3 --start-met --end
 ```
 
 ### Block FA files
@@ -47,7 +47,7 @@ pgr fa six-frame tests/fasta/trans.fa --len 3 --start --end
 ```bash
 pgr maf to-fas tests/maf/example.maf
 
-pgr axt to-fas tests/axt/RM11_1a.sizes tests/axt/example.axt --qname RM11_1a
+pgr axt to-fas tests/axt/RM11_1a.sizes tests/axt/example.axt --q-name RM11_1a
 
 pgr fas filter tests/fas/example.fas --min-len 10
 
@@ -73,13 +73,13 @@ pgr fa range tests/fas/NC_000932.fa NC_000932:1-10
 pgr fas check tests/fas/A_tha.pair.fas -r tests/fas/NC_000932.fa
 pgr fas check tests/fas/A_tha.pair.fas --name A_tha -r tests/fas/NC_000932.fa
 
-pgr fas create tests/fas/I.connect.tsv -r tests/fas/genome.fa --name S288c
+pgr fas create tests/fas/I.connect.tsv -g tests/fas/genome.fa --name S288c
 
 # Create a fasta file containing multiple genomes
 cat tests/fas/genome.fa | sed 's/^>/>S288c./' > tests/fas/genomes.fa
 samtools faidx tests/fas/genomes.fa S288c.I:1-100
 
-pgr fas create tests/fas/I.connect.tsv -r tests/fas/genomes.fa
+pgr fas create tests/fas/I.connect.tsv -g tests/fas/genomes.fa
 
 pgr fas separate tests/fas/example.fas -o . --suffix .tmp
 
@@ -119,8 +119,8 @@ pgr fas to-vcf --sizes tests/fas_vcf/S288c.chr.sizes tests/fas_vcf/YDL184C.fas
 #fasops xlsx tests/fas/example.fas -l 50 --outgroup -o example.outgroup.xlsx
 pgr fas to-xlsx tests/fas/example.fas --indel
 pgr fas to-xlsx tests/fas/example.fas --indel --outgroup
-pgr fas to-xlsx tests/fas/example.fas --nosingle
-pgr fas to-xlsx tests/fas/example.fas --indel --nocomplex
+pgr fas to-xlsx tests/fas/example.fas --no-single
+pgr fas to-xlsx tests/fas/example.fas --indel --no-complex
 pgr fas to-xlsx tests/fas/example.fas --indel --min 0.3 --max 0.7
 
 pgr pl p2m tests/fas/S288cvsRM11_1a.slice.fas tests/fas/S288cvsSpar.slice.fas
@@ -189,7 +189,7 @@ pgr dist seq tests/pgr/sakai.fa.gz tests/pgr/mg1655.fa.gz --merge --hasher rapid
 #tests/pgr/sakai.fa.gz   tests/pgr/mg1655.fa.gz  5394043 4562542 3071076 6885509 0.0230  0.4460  0.5693
 
 echo -e "tests/pgr/sakai.fa.gz\ntests/pgr/mg1655.fa.gz" |
-    pgr dist seq stdin --merge --list --hasher mod -k 21 -w 1
+    pgr dist seq stdin --merge --list-files --hasher mod -k 21 -w 1
 #tests/pgr/sakai.fa.gz   tests/pgr/sakai.fa.gz   5302382 5302382 5302382 5302382 0.0000  1.0000  1.0000
 #tests/pgr/sakai.fa.gz   tests/pgr/mg1655.fa.gz  5302382 4543891 3064483 6781790 0.0226  0.4519  0.5779
 #tests/pgr/mg1655.fa.gz  tests/pgr/sakai.fa.gz   4543891 5302382 3064483 6781790 0.0226  0.4519  0.6744

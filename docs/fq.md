@@ -25,7 +25,7 @@ pgr fq interleave [OPTIONS] <infiles>...
     *   For FASTQ output, quality scores are preserved from input FASTQ files.
     *   If input is FASTA, quality scores are set to '!' (ASCII 33).
 *   `--prefix <string>`: Prefix for record names (default: "read").
-*   `--start <int>`: Starting index for record numbering (default: 0).
+*   `--start-index <int>`: Starting index for record numbering (default: 0).
 *   `-o, --outfile <file>`: Output filename (default: stdout).
 
 ### Examples
@@ -37,7 +37,7 @@ pgr fq interleave [OPTIONS] <infiles>...
 
 2.  **Generate dummy pairs from a single FASTA file**:
     ```bash
-    pgr fq interleave R1.fa --prefix sample --start 1
+    pgr fq interleave R1.fa --prefix sample --start-index 1
     ```
 
 3.  **Convert separate FASTA files to interleaved FASTQ**:

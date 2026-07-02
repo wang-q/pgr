@@ -40,7 +40,7 @@ fn command_clust_dbscan() {
             "tests/clust/IBPA.fa.tsv",
             "--eps",
             "0.05",
-            "--min_points",
+            "--min-points",
             "2",
         ])
         .run();
@@ -58,7 +58,7 @@ fn command_clust_dbscan_pair() {
             "tests/clust/IBPA.fa.tsv",
             "--eps",
             "0.05",
-            "--min_points",
+            "--min-points",
             "2",
             "--format",
             "pair",
@@ -149,7 +149,7 @@ fn command_clust_mcl_args() {
             "tests/clust/mcl_test.tsv",
             "--prune",
             "1e-3",
-            "--max_iter",
+            "--max-iter",
             "50",
         ])
         .run();

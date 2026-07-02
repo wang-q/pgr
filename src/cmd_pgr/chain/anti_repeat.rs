@@ -9,26 +9,26 @@ pub fn make_subcommand() -> Command {
     Command::new("anti-repeat")
         .about("Filter chains for repeats and degeneracy")
         .arg(
-            Arg::new("target")
-                .long("target")
+            Arg::new("target_2bit")
+                .long("target-2bit")
                 .short('t')
                 .required(true)
                 .help("Target genome 2bit file"),
         )
         .arg(
-            Arg::new("query")
-                .long("query")
+            Arg::new("query_2bit")
+                .long("query-2bit")
                 .short('q')
                 .required(true)
                 .help("Query genome 2bit file"),
         )
-        .arg(Arg::new("input").required(true).help("Input chain file"))
-        .arg(Arg::new("output").required(true).help("Output chain file"))
+        .arg(Arg::new("infile").required(true).help("Input chain file"))
+        .arg(Arg::new("outfile").required(true).help("Output chain file"))
         .arg(
             Arg::new("min_score")
                 .long("min-score")
                 .default_value("5000")
-                .value_parser(clap::value_parser!(usize))
+                .value_parser(clap::value_parser!(f64))
                 .help("Minimum score to pass"),
         )
         .arg(
@@ -41,11 +41,11 @@ pub fn make_subcommand() -> Command {
 }
 
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let target_path = args.get_one::<String>("target").unwrap();
-    let query_path = args.get_one::<String>("query").unwrap();
-    let input_path = args.get_one::<String>("input").unwrap();
-    let output_path = args.get_one::<String>("output").unwrap();
-    let min_score = *args.get_one::<usize>("min_score").unwrap();
+    let target_path = args.get_one::<String>("target_2bit").unwrap();
+    let query_path = args.get_one::<String>("query_2bit").unwrap();
+    let input_path = args.get_one::<String>("infile").unwrap();
+    let output_path = args.get_one::<String>("outfile").unwrap();
+    let min_score = *args.get_one::<f64>("min_score").unwrap();
     let no_check_score = *args.get_one::<usize>("no_check_score").unwrap();
 
     let mut target_2bit = TwoBitFile::open(target_path)?;

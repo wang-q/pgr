@@ -7,24 +7,24 @@ use std::io::Write;
 pub fn make_subcommand() -> Command {
     Command::new("net")
         .about("Make alignment nets out of chains")
-        .arg(Arg::new("input").required(true).help("Input chain file"))
+        .arg(Arg::new("infile").required(true).help("Input chain file"))
         .arg(
-            Arg::new("target_sizes")
+            Arg::new("t_sizes")
                 .required(true)
                 .help("Target sequence sizes"),
         )
         .arg(
-            Arg::new("query_sizes")
+            Arg::new("q_sizes")
                 .required(true)
                 .help("Query sequence sizes"),
         )
         .arg(
-            Arg::new("target_net")
+            Arg::new("out_target_net")
                 .required(true)
                 .help("Output target net file"),
         )
         .arg(
-            Arg::new("query_net")
+            Arg::new("out_query_net")
                 .required(true)
                 .help("Output query net file"),
         )
@@ -57,11 +57,11 @@ pub fn make_subcommand() -> Command {
 }
 
 pub fn execute(args: &ArgMatches) -> Result<()> {
-    let input_path = args.get_one::<String>("input").unwrap();
-    let target_sizes_path = args.get_one::<String>("target_sizes").unwrap();
-    let query_sizes_path = args.get_one::<String>("query_sizes").unwrap();
-    let target_net_path = args.get_one::<String>("target_net").unwrap();
-    let query_net_path = args.get_one::<String>("query_net").unwrap();
+    let input_path = args.get_one::<String>("infile").unwrap();
+    let target_sizes_path = args.get_one::<String>("t_sizes").unwrap();
+    let query_sizes_path = args.get_one::<String>("q_sizes").unwrap();
+    let target_net_path = args.get_one::<String>("out_target_net").unwrap();
+    let query_net_path = args.get_one::<String>("out_query_net").unwrap();
 
     let min_space = *args.get_one::<u64>("min_space").unwrap();
     let min_fill = args

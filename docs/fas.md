@@ -166,7 +166,7 @@ pgr fas consensus [OPTIONS] <infiles>...
 *   `--mismatch <int>`: Score for mismatching bases (default: -4).
 *   `--gap-open <int>`: Gap opening penalty (default: -8).
 *   `--gap-extend <int>`: Gap extension penalty (default: -6).
-*   `--algorithm <local|global|semi_global>`: Alignment mode (default: global).
+*   `--align-mode <local|global|semi_global>`: Alignment mode (default: global).
 *   `--cname <name>`: Name for the consensus sequence (default: consensus).
 *   `--outgroup`: Indicates the last sequence is an outgroup.
 *   `-p, --parallel <int>`: Number of threads (default: 1).
@@ -295,8 +295,8 @@ pgr fas to-xlsx [OPTIONS] <infiles>...
 
 *   `--indel`: Include indels.
 *   `--outgroup`: Indicates presence of outgroups.
-*   `--nosingle`: Omit singleton variations.
-*   `--nocomplex`: Omit complex variations.
+*   `--no-single`: Omit singleton variations.
+*   `--no-complex`: Omit complex variations.
 *   `--min <float>`: Minimal frequency.
 *   `--max <float>`: Maximal frequency.
 *   `--wrap <int>`: Wrap length for visualization (default: 50).

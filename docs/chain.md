@@ -45,7 +45,7 @@
   - **Degeneracy Filter**: 检查比对是否主要由低复杂度序列（如 `ATATAT...`）组成。
   - **Repeat Filter**: 检查比对是否落在软屏蔽（Soft-masked，小写字母）区域。
 - **参数**:
-  - `--target`/`--query`: 对应的 2bit 文件（必需，用于获取序列内容）。
+  - `--target-2bit`/`--query-2bit`: 对应的 2bit 文件（必需，用于获取序列内容）。
   - `--min-score`: 过滤后的最低得分阈值。
   - `--no-check-score`: 高于此得分的 Chain 将跳过检查（视为可信）。
 

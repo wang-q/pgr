@@ -12,7 +12,7 @@ This command filters and formats sequences in FASTA files.
 Filters:
 * --min-len N: Keep sequences >= N bp
 * --max-len N: Keep sequences <= N bp
-* --maxn N: Keep sequences with < N ambiguous bases
+* --max-n N: Keep sequences with < N ambiguous bases
 * --uniq: Remove duplicate sequence IDs
 
 Formatters:
@@ -59,8 +59,8 @@ Notes:
                 .help("Pass sequences this size or smaller ('z'-biggest)"),
         )
         .arg(
-            Arg::new("maxn")
-                .long("maxn")
+            Arg::new("max_n")
+                .long("max-n")
                 .short('n')
                 .num_args(1)
                 .value_parser(value_parser!(usize))
@@ -126,7 +126,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         .copied()
         .unwrap_or(pgr::libs::fasta::filter::NO_LIMIT);
     let opt_maxn = args
-        .get_one::<usize>("maxn")
+        .get_one::<usize>("max_n")
         .copied()
         .unwrap_or(pgr::libs::fasta::filter::NO_LIMIT);
     let opt_line = args.get_one::<usize>("line").copied().unwrap_or(usize::MAX);

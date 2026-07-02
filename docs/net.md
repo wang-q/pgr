@@ -51,10 +51,10 @@ pgr net filter [OPTIONS] <input>
 *   `--max-ali <int>`: Restrict to fills with at most this many aligned bases.
 *   `--min-size-t <int>`: Restrict to fills with target size >= this value.
 *   `--min-size-q <int>`: Restrict to fills with query size >= this value.
-*   `--t <names>`: Restrict target sequence to those named (comma-separated).
-*   `--not-t <names>`: Restrict target sequence to those NOT named (comma-separated).
-*   `--q <names>`: Restrict query sequence to those named (comma-separated).
-*   `--not-q <names>`: Restrict query sequence to those NOT named (comma-separated).
+*   `--target <names>`: Restrict target sequence to those named (comma-separated).
+*   `--not-target <names>`: Restrict target sequence to those NOT named (comma-separated).
+*   `--query <names>`: Restrict query sequence to those named (comma-separated).
+*   `--not-query <names>`: Restrict query sequence to those NOT named (comma-separated).
 *   `--type <type>`: Restrict to given type (e.g., `top`, `syn`). Can be repeated.
 *   `--syn`: Filter based on synteny criteria (tuned for human/mouse).
 *   `--nonsyn`: Inverse filtering based on synteny.

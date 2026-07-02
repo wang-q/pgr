@@ -143,9 +143,9 @@ fn test_chain_anti_repeat_lastz() {
         .args(&[
             "chain",
             "anti-repeat",
-            "--target",
+            "--target-2bit",
             t_2bit.to_str().unwrap(),
-            "--query",
+            "--query-2bit",
             q_2bit.to_str().unwrap(),
             input.to_str().unwrap(),
             output.to_str().unwrap(),

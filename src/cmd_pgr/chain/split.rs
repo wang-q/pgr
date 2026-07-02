@@ -9,9 +9,9 @@ use std::path::Path;
 pub fn make_subcommand() -> Command {
     Command::new("split")
         .about("Split chains up by target or query sequence")
-        .arg(Arg::new("out_dir").required(true).help("Output directory"))
+        .arg(Arg::new("outdir").required(true).help("Output directory"))
         .arg(
-            Arg::new("chains")
+            Arg::new("infiles")
                 .required(true)
                 .num_args(1..)
                 .help("Input chain file(s)"),
@@ -19,6 +19,7 @@ pub fn make_subcommand() -> Command {
         .arg(
             Arg::new("q")
                 .short('q')
+                .long("query")
                 .action(clap::ArgAction::SetTrue)
                 .help("Split on query (default is on target)"),
         )
@@ -31,8 +32,8 @@ pub fn make_subcommand() -> Command {
 }
 
 pub fn execute(args: &ArgMatches) -> Result<()> {
-    let out_dir = args.get_one::<String>("out_dir").unwrap();
-    let chain_files: Vec<_> = args.get_many::<String>("chains").unwrap().collect();
+    let out_dir = args.get_one::<String>("outdir").unwrap();
+    let chain_files: Vec<_> = args.get_many::<String>("infiles").unwrap().collect();
     let split_on_q = args.get_flag("q");
     let lump = args.get_one::<usize>("lump").copied();
 

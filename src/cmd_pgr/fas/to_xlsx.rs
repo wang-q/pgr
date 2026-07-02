@@ -20,10 +20,10 @@ Examples:
    pgr fas to-xlsx tests/fas/part1.fas --indel --outgroup
 
 3. Filter variations by frequency (e.g., min 0.1, max 0.9):
-   pgr fas to-xlsx tests/fas/part1.fas --min 0.1 --max 0.9
+   pgr fas to-xlsx tests/fas/part1.fas --min-freq 0.1 --max-freq 0.9
 
 4. Omit singleton and complex variations:
-   pgr fas to-xlsx tests/fas/part1.fas --nosingle --nocomplex
+   pgr fas to-xlsx tests/fas/part1.fas --no-single --no-complex
 
 "###,
         )
@@ -49,27 +49,27 @@ Examples:
                 .help("Indicates the presence of outgroups at the end of each block"),
         )
         .arg(
-            Arg::new("nosingle")
-                .long("nosingle")
+            Arg::new("no_single")
+                .long("no-single")
                 .action(ArgAction::SetTrue)
                 .help("Omit singleton SNPs and indels"),
         )
         .arg(
-            Arg::new("nocomplex")
-                .long("nocomplex")
+            Arg::new("no_complex")
+                .long("no-complex")
                 .action(ArgAction::SetTrue)
                 .help("Omit complex SNPs and indels"),
         )
         .arg(
-            Arg::new("min")
-                .long("min")
+            Arg::new("min_freq")
+                .long("min-freq")
                 .value_parser(value_parser!(f64))
                 .num_args(1)
                 .help("Minimal frequency"),
         )
         .arg(
-            Arg::new("max")
-                .long("max")
+            Arg::new("max_freq")
+                .long("max-freq")
                 .value_parser(value_parser!(f64))
                 .num_args(1)
                 .help("Maximal frequency"),
@@ -80,7 +80,7 @@ Examples:
                 .short('o')
                 .num_args(1)
                 .default_value("variations.xlsx")
-                .help("Output filename"),
+                .help("Output filename. [stdout] for screen"),
         )
 }
 
@@ -90,10 +90,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let opt_wrap = *args.get_one::<u16>("wrap").unwrap();
     let is_indel = args.get_flag("indel");
     let is_outgroup = args.get_flag("outgroup");
-    let is_nosingle = args.get_flag("nosingle");
-    let is_nocomplex = args.get_flag("nocomplex");
-    let opt_min = args.get_one::<f64>("min").cloned();
-    let opt_max = args.get_one::<f64>("max").cloned();
+    let is_nosingle = args.get_flag("no_single");
+    let is_nocomplex = args.get_flag("no_complex");
+    let opt_min = args.get_one::<f64>("min_freq").cloned();
+    let opt_max = args.get_one::<f64>("max_freq").cloned();
     let infiles: Vec<String> = args
         .get_many::<String>("infiles")
         .unwrap()

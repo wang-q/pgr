@@ -111,9 +111,9 @@ fn test_chain_anti_repeat() -> Result<(), Box<dyn std::error::Error>> {
     let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     cmd.arg("chain")
         .arg("anti-repeat")
-        .arg("--target")
+        .arg("--target-2bit")
         .arg(t_2bit_path.to_str().unwrap())
-        .arg("--query")
+        .arg("--query-2bit")
         .arg(q_2bit_path.to_str().unwrap())
         .arg(chain_path.to_str().unwrap())
         .arg(out_path.to_str().unwrap())

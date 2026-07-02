@@ -9,7 +9,7 @@ pub fn make_subcommand() -> Command {
             r###"
 These then be analyzed with R, textHistogram, etc.
 
-The 'what' argument determines what data to collect, the following are currently supported:
+The 'field' argument determines what data to collect, the following are currently supported:
 
 * alignsPerQuery - number of alignments per query. Output is one line per query with the number of alignments.
 
@@ -19,14 +19,13 @@ The 'what' argument determines what data to collect, the following are currently
 
 Examples:
   # Collect alignment counts per query
-  pgr psl histo --what alignsPerQuery in.psl -o out.histo
+  pgr psl histo --field alignsPerQuery in.psl -o out.histo
 "###,
         )
         .arg(
-            Arg::new("what")
-                .long("what")
+            Arg::new("field")
+                .long("field")
                 .required(true)
-                .value_name("TYPE")
                 .value_parser(["alignsPerQuery", "coverSpread", "idSpread"])
                 .help("What data to collect"),
         )
@@ -49,7 +48,7 @@ Examples:
 }
 
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let what = args.get_one::<String>("what").unwrap();
+    let what = args.get_one::<String>("field").unwrap();
     let input = crate::cmd_pgr::args::get_infile(args);
     let output = crate::cmd_pgr::args::get_outfile(args);
     let multi_only = args.get_flag("multi_only");

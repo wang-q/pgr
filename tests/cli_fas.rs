@@ -236,7 +236,7 @@ fn command_create() {
             "fas",
             "create",
             "tests/fas/I.connect.tsv",
-            "-r",
+            "-g",
             "tests/fas/genome.fa",
             "--name",
             "S288c",

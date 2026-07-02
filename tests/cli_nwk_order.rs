@@ -6,31 +6,42 @@ use common::PgrCmd;
 #[test]
 fn command_order_basic() {
     let (stdout, _) = PgrCmd::new()
-        .args(&["nwk", "order", "tests/newick/abc.nwk", "--nd"])
+        .args(&["nwk", "order", "tests/newick/abc.nwk", "--num-descendants"])
         .run();
 
     assert!(stdout.contains("(C,(A,B));"));
 
     let (stdout, _) = PgrCmd::new()
-        .args(&["nwk", "order", "tests/newick/abc.nwk", "--ndr"])
+        .args(&[
+            "nwk",
+            "order",
+            "tests/newick/abc.nwk",
+            "--num-descendants-rev",
+        ])
         .run();
 
     assert!(stdout.contains("((A,B),C);"));
 
     let (stdout, _) = PgrCmd::new()
-        .args(&["nwk", "order", "tests/newick/abc.nwk", "--an"])
+        .args(&["nwk", "order", "tests/newick/abc.nwk", "--alphanumeric"])
         .run();
 
     assert!(stdout.contains("((A,B),C);"));
 
     let (stdout, _) = PgrCmd::new()
-        .args(&["nwk", "order", "tests/newick/abc.nwk", "--anr"])
+        .args(&["nwk", "order", "tests/newick/abc.nwk", "--alphanumeric-rev"])
         .run();
 
     assert!(stdout.contains("(C,(B,A));"));
 
     let (stdout, _) = PgrCmd::new()
-        .args(&["nwk", "order", "tests/newick/abc.nwk", "--anr", "--ndr"])
+        .args(&[
+            "nwk",
+            "order",
+            "tests/newick/abc.nwk",
+            "--alphanumeric-rev",
+            "--num-descendants-rev",
+        ])
         .run();
 
     assert!(stdout.contains("((B,A),C);"));
@@ -43,7 +54,7 @@ fn command_order_list() {
             "nwk",
             "order",
             "tests/newick/abcde.nwk",
-            "--list",
+            "--name-list",
             "tests/newick/abcde.list",
         ])
         .run();
@@ -66,7 +77,7 @@ fn command_order_unnamed() {
     // Root -> compares "C" vs "A", should be ((A,B),(C,D))
 
     let (stdout, _) = PgrCmd::new()
-        .args(&["nwk", "order", "stdin", "--an"])
+        .args(&["nwk", "order", "stdin", "--alphanumeric"])
         .stdin("((C,D),(A,B));")
         .run();
 
@@ -91,7 +102,7 @@ fn command_order_species() {
 
     // Order the tree using the generated list
     let (stdout, _) = PgrCmd::new()
-        .args(&["nwk", "order", "species.nwk", "--list", "species.list"])
+        .args(&["nwk", "order", "species.nwk", "--name-list", "species.list"])
         .current_dir(temp_path)
         .run();
 
@@ -105,7 +116,7 @@ fn command_order_species() {
 
     // Order pmxc.nwk using the generated list
     let (stdout, _) = PgrCmd::new()
-        .args(&["nwk", "order", "pmxc.nwk", "--list", "species.list"])
+        .args(&["nwk", "order", "pmxc.nwk", "--name-list", "species.list"])
         .current_dir(temp_path)
         .run();
 
@@ -153,7 +164,12 @@ fn command_order_descendants_tetrapoda() {
     let expected = "(Tetrao:0.015266,(Bombina:0.269848,(Didelphis:0.007148,((Bradypus:0.020167,(Procavia:0.019702,(Vulpes:0.008083,Orcinus:0.008289)84:0.008124)42:0.003924)16:0,((Sorex:0.01766,(Mesocricetus:0.011181,Tamias:0.049599)88:0.023597)32:0.000744,(Lepus:0.030777,(Homo:0.004051,(Papio:0,Hylobates:0.004076)42:0)99:0.012677)67:0.007717)26:0.006246)78:0.02125)71:0.013125)30:0.006278)100;";
 
     let (stdout, _) = PgrCmd::new()
-        .args(&["nwk", "order", "tests/newick/tetrapoda.nwk", "--nd"])
+        .args(&[
+            "nwk",
+            "order",
+            "tests/newick/tetrapoda.nwk",
+            "--num-descendants",
+        ])
         .run();
 
     assert_eq!(stdout.trim(), expected);

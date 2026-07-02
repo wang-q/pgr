@@ -51,12 +51,12 @@ pgr psl chain [OPTIONS] <target.2bit> <query.2bit> <in.psl>
 Collects counts on PSL alignments for making histograms (e.g., alignments per query, coverage spread).
 
 ```bash
-pgr psl histo [OPTIONS] --what <TYPE> <input>
+pgr psl histo [OPTIONS] --field <TYPE> <input>
 ```
 
 ### Options
 
-*   `--what <alignsPerQuery|coverSpread|idSpread>`: Data to collect.
+*   `--field <alignsPerQuery|coverSpread|idSpread>`: Data to collect.
     *   `alignsPerQuery`: Number of alignments per query.
     *   `coverSpread`: Difference between max and min coverage for a query.
     *   `idSpread`: Difference between max and min identity for a query.
@@ -68,7 +68,7 @@ pgr psl histo [OPTIONS] --what <TYPE> <input>
 
 1.  **Count alignments per query**:
     ```bash
-    pgr psl histo --what alignsPerQuery in.psl -o out.histo
+    pgr psl histo --field alignsPerQuery in.psl -o out.histo
     ```
 
 ---
@@ -197,7 +197,7 @@ pgr psl to-range [OPTIONS] <infile>
 
 ### Options
 
-*   `-t, --target`: Extract target coordinates instead of query.
+*   `-t, --target-coords`: Extract target coordinates instead of query.
 *   `-o, --outfile <file>`: Output filename (default: stdout).
 
 ### Examples
@@ -209,5 +209,5 @@ pgr psl to-range [OPTIONS] <infile>
 
 2.  **Extract target ranges**:
     ```bash
-    pgr psl to-range input.psl --target > target.rg
+    pgr psl to-range input.psl --target-coords > target.rg
     ```

@@ -44,7 +44,7 @@
 #### `pgr mat format`
 PHYLIP 格式间的转换与标准化。
 - **作用**：清洗矩阵格式，使其符合特定软件的要求。
-- **模式 (`--mode`)**：
+- **模式 (`--format`)**：
   - `full`: 输出标准 $N \times N$ Tab 分隔矩阵，保留完整长名称。
   - `lower`: 输出下三角矩阵，节省磁盘空间。
   - `strict`: **截断名称**至10个字符，左对齐填充空格，数值固定宽度。用于兼容原始 Phylip 工具包。
@@ -136,7 +136,7 @@ pgr mat compare mash_dist.phy ani_dist.phy --method pearson,spearman
 
 ```bash
 # 将长名称矩阵转换为严格的 Phylip 格式
-pgr mat format modern.phy --mode strict -o input.infile
+pgr mat format modern.phy --format strict -o input.infile
 
 # 然后运行 neighbor (原始 Phylip 程序)
 neighbor < input.infile

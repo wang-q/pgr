@@ -88,19 +88,19 @@ References:
                 .long("min-score")
                 .num_args(1)
                 .default_value("1000")
-                .value_parser(value_parser!(usize))
+                .value_parser(value_parser!(f64))
                 .help("Minimum alignment score for axtChain"),
         )
         .arg(
-            Arg::new("tname")
-                .long("tname")
+            Arg::new("t_name")
+                .long("t-name")
                 .short('t')
                 .num_args(1)
                 .help("Custom name for the target genome"),
         )
         .arg(
-            Arg::new("qname")
-                .long("qname")
+            Arg::new("q_name")
+                .long("q-name")
                 .short('q')
                 .num_args(1)
                 .help("Custom name for the query genome"),
@@ -125,7 +125,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     }
 
     let opt_lineargap = args.get_one::<String>("linear_gap").unwrap();
-    let opt_minscore = *args.get_one::<usize>("min_score").unwrap();
+    let opt_minscore = *args.get_one::<f64>("min_score").unwrap();
 
     let is_syn = args.get_flag("syn");
 
@@ -150,7 +150,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         .display()
         .to_string();
 
-    let opt_tname = if let Some(tname) = args.get_one::<String>("tname") {
+    let opt_tname = if let Some(tname) = args.get_one::<String>("t_name") {
         if tname.is_empty() {
             "".to_string()
         } else {
@@ -159,7 +159,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     } else {
         format!("{}.", pgr::libs::io::get_basename(&abs_target).unwrap())
     };
-    let opt_qname = if let Some(qname) = args.get_one::<String>("qname") {
+    let opt_qname = if let Some(qname) = args.get_one::<String>("q_name") {
         if qname.is_empty() {
             "".to_string()
         } else {

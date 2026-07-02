@@ -179,8 +179,8 @@ pgr pl ucsc [OPTIONS] <target> <query> <psl>
 | `outdir` | `-o` | `--outdir` | Dir | Output directory (default: stdout) |
 | `linear_gap` | | `--linear-gap` | Str | Gap cost: "loose" (default) or "medium" |
 | `min_score` | | `--min-score` | Int | Min alignment score (default: 1000) |
-| `tname` | `-t` | `--tname` | Str | Custom target name prefix |
-| `qname` | `-q` | `--qname` | Str | Custom query name prefix |
+| `tname` | `-t` | `--t-name` | Str | Custom target name prefix |
+| `qname` | `-q` | `--q-name` | Str | Custom query name prefix |
 | `syn` | | `--syn` | Flag | Generate syntenic alignments only |
 
 ### Pipeline Steps

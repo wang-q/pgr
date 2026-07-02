@@ -16,7 +16,7 @@ pub fn check_chain<R: std::io::Read + std::io::Seek>(
     chain: &Chain,
     t_2bit: &mut TwoBitFile<R>,
     q_2bit: &mut TwoBitFile<R>,
-    min_score: usize,
+    min_score: f64,
 ) -> bool {
     // Check if sequences exist
     if !t_2bit.sequence_offsets.contains_key(&chain.header.t_name)
@@ -85,7 +85,7 @@ pub fn check_degeneracy<R: std::io::Read + std::io::Seek>(
     blocks: &[Block],
     t_2bit: &mut TwoBitFile<R>,
     q_2bit: &mut TwoBitFile<R>,
-    min_score: usize,
+    min_score: f64,
 ) -> bool {
     let mut counts = [0; 4]; // T, C, A, G
     let mut total_matches = 0;
@@ -142,7 +142,7 @@ pub fn check_degeneracy<R: std::io::Read + std::io::Seek>(
     } else {
         let adjust_factor = 1.01 - over_ok / max_over_ok;
         let adjusted_score = chain.header.score * adjust_factor;
-        if adjusted_score < min_score as f64 {
+        if adjusted_score < min_score {
             log::info!(
                 "Chain {} filtered by degeneracy: score {} -> {}",
                 chain.header.id,
@@ -162,7 +162,7 @@ pub fn check_repeat<R: std::io::Read + std::io::Seek>(
     blocks: &[Block],
     t_2bit: &mut TwoBitFile<R>,
     q_2bit: &mut TwoBitFile<R>,
-    min_score: usize,
+    min_score: f64,
 ) -> bool {
     let mut rep_count = 0;
     let mut total = 0;
@@ -198,7 +198,7 @@ pub fn check_repeat<R: std::io::Read + std::io::Seek>(
     }
 
     let adjusted_score = chain.header.score * 2.0 * ((total - rep_count) as f64) / (total as f64);
-    if adjusted_score < min_score as f64 {
+    if adjusted_score < min_score {
         log::info!(
             "Chain {} filtered by repeat: score {} -> {} (rep {}/{})",
             chain.header.id,

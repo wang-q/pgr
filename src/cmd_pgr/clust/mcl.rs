@@ -77,7 +77,7 @@ Stijn van Dongen, Graph Clustering by Flow Simulation. PhD thesis, University of
         )
         .arg(
             Arg::new("max_iter")
-                .long("max_iter")
+                .long("max-iter")
                 .num_args(1)
                 .default_value("100")
                 .value_parser(value_parser!(usize))

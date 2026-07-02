@@ -568,7 +568,7 @@ fn command_six_frame() {
     assert!(stdout.contains("TIYLYPIP"));
 
     let (stdout, _) = PgrCmd::new()
-        .args(&["fa", "six-frame", "tests/fasta/trans.fa", "--len", "3"])
+        .args(&["fa", "six-frame", "tests/fasta/trans.fa", "--min-len", "3"])
         .run();
 
     assert_eq!(stdout.lines().count(), 12);
@@ -578,7 +578,7 @@ fn command_six_frame() {
             "fa",
             "six-frame",
             "tests/fasta/trans.fa",
-            "--len",
+            "--min-len",
             "3",
             "--end",
         ])
@@ -591,9 +591,9 @@ fn command_six_frame() {
             "fa",
             "six-frame",
             "tests/fasta/trans.fa",
-            "--len",
+            "--min-len",
             "3",
-            "--start",
+            "--start-met",
             "--end",
         ])
         .run();

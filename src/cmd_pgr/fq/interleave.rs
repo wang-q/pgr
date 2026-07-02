@@ -31,7 +31,7 @@ Examples:
    pgr fq interleave R1.fq R2.fq -o out.fq
 
 2. Generate dummy pairs:
-   pgr fq interleave R1.fa --prefix sample --start 1
+   pgr fq interleave R1.fa --prefix sample --start-index 1
 
 3. Convert to FQ:
    pgr fq interleave R1.fa R2.fa --fq -o out.fq
@@ -59,8 +59,8 @@ Examples:
                 .help("Prefix of record names"),
         )
         .arg(
-            Arg::new("start")
-                .long("start")
+            Arg::new("start_index")
+                .long("start-index")
                 .value_parser(value_parser!(usize))
                 .num_args(1)
                 .default_value("0")
@@ -75,7 +75,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let is_out_fq = args.get_flag("fq");
     let opt_prefix = args.get_one::<String>("prefix").unwrap();
-    let opt_start = *args.get_one::<usize>("start").unwrap();
+    let opt_start = *args.get_one::<usize>("start_index").unwrap();
 
     let infiles: Vec<String> = args
         .get_many::<String>("infiles")

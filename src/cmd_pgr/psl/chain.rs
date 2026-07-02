@@ -94,7 +94,6 @@ Examples:
         .arg(
             Arg::new("score_scheme")
                 .long("score-scheme")
-                .value_name("FILE/PRESET")
                 .help("Score scheme file (LASTZ format) or preset (hoxd55)"),
         )
 }

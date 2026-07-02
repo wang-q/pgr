@@ -72,7 +72,7 @@ Examples:
                 .long("outfile")
                 .short('o')
                 .num_args(1)
-                .help("Output filename (default: <infile>.gz)"),
+                .help("Output filename. [stdout] for screen"),
         )
 }
 

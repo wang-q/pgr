@@ -22,7 +22,7 @@ Examples:
    pgr psl to-range input.psl > query.rg
 
 2. Extract target ranges:
-   pgr psl to-range input.psl --target > target.rg
+   pgr psl to-range input.psl --target-coords > target.rg
 "###,
         )
         .arg(
@@ -34,8 +34,8 @@ Examples:
         )
         .arg(crate::cmd_pgr::args::outfile_arg())
         .arg(
-            Arg::new("target")
-                .long("target")
+            Arg::new("target_coords")
+                .long("target-coords")
                 .short('t')
                 .action(ArgAction::SetTrue)
                 .help("Extract target coordinates instead of query"),
@@ -47,7 +47,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
     let infile = args.get_one::<String>("infile").unwrap();
     let reader = pgr::reader(infile)?;
-    let extract_target = args.get_flag("target");
+    let extract_target = args.get_flag("target_coords");
 
     for line in reader.lines() {
         let line = line?;

@@ -69,14 +69,14 @@ Examples:
                 .long("internal")
                 .short('I')
                 .action(ArgAction::SetTrue)
-                .help("Ignore internal nodes"),
+                .help("Don't print internal labels"),
         )
         .arg(
             Arg::new("leaf")
                 .long("leaf")
                 .short('L')
                 .action(ArgAction::SetTrue)
-                .help("Ignore leaf nodes"),
+                .help("Don't print leaf labels"),
         )
         .arg(crate::cmd_pgr::args::outfile_arg())
 }

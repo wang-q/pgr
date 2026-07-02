@@ -170,7 +170,6 @@ Examples:
         .arg(
             Arg::new("stats-out")
                 .long("stats-out")
-                .value_name("FILE")
                 .help("Output statistics to a separate file (useful when format is 'long')"),
         )
         .arg(
@@ -195,7 +194,6 @@ Examples:
         .arg(
             Arg::new("matrix")
                 .long("matrix")
-                .value_name("FILE")
                 .help("Distance matrix file (required for --dynamic-hybrid)"),
         )
         .arg(

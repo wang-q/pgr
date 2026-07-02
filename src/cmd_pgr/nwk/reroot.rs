@@ -62,7 +62,7 @@ Examples:
                 .short('n')
                 .num_args(1)
                 .action(ArgAction::Append)
-                .help("Node name"),
+                .help("Select nodes by exact name"),
         )
         .arg(crate::cmd_pgr::args::outfile_arg())
         .arg(

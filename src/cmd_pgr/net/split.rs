@@ -8,13 +8,13 @@ pub fn make_subcommand() -> Command {
     Command::new("split")
         .about("Split a net file into one file per chromosome")
         .arg(
-            Arg::new("input")
+            Arg::new("infile")
                 .help("Input net file")
                 .required(true)
                 .index(1),
         )
         .arg(
-            Arg::new("output_dir")
+            Arg::new("outdir")
                 .help("Output directory")
                 .required(true)
                 .index(2),
@@ -22,8 +22,8 @@ pub fn make_subcommand() -> Command {
 }
 
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let input_path = args.get_one::<String>("input").unwrap();
-    let output_dir = args.get_one::<String>("output_dir").unwrap();
+    let input_path = args.get_one::<String>("infile").unwrap();
+    let output_dir = args.get_one::<String>("outdir").unwrap();
 
     let reader = pgr::reader(input_path)?;
 

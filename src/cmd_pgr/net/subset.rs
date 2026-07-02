@@ -7,19 +7,19 @@ pub fn make_subcommand() -> Command {
     Command::new("subset")
         .about("Create chain file with subset of chains that appear in the net")
         .arg(
-            Arg::new("net_in")
+            Arg::new("in_net")
                 .required(true)
                 .index(1)
                 .help("Input net file"),
         )
         .arg(
-            Arg::new("chain_in")
+            Arg::new("in_chain")
                 .required(true)
                 .index(2)
                 .help("Input chain file"),
         )
         .arg(
-            Arg::new("chain_out")
+            Arg::new("out_chain")
                 .required(true)
                 .index(3)
                 .help("Output chain file"),
@@ -45,9 +45,9 @@ pub fn make_subcommand() -> Command {
 }
 
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let net_in = args.get_one::<String>("net_in").unwrap();
-    let chain_in = args.get_one::<String>("chain_in").unwrap();
-    let chain_out = args.get_one::<String>("chain_out").unwrap();
+    let net_in = args.get_one::<String>("in_net").unwrap();
+    let chain_in = args.get_one::<String>("in_chain").unwrap();
+    let chain_out = args.get_one::<String>("out_chain").unwrap();
     let whole_chains = args.get_flag("whole_chains");
     let split_on_insert = args.get_flag("split_on_insert");
     let type_filter = args.get_one::<String>("type");

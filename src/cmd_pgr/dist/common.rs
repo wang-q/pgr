@@ -68,10 +68,10 @@ pub fn sim_arg() -> Arg {
         .help("Convert distance to similarity (1 - distance)")
 }
 
-/// `--list` flag (treat infiles as list files).
+/// `--list-files` flag (treat infiles as list files).
 pub fn list_arg() -> Arg {
-    Arg::new("list")
-        .long("list")
+    Arg::new("list_files")
+        .long("list-files")
         .action(ArgAction::SetTrue)
         .help("Treat infiles as list files, where each line is a path to a sequence file")
 }

@@ -31,7 +31,6 @@ Examples:
             Arg::new("outfile")
                 .short('o')
                 .long("outfile")
-                .value_name("FILE")
                 .help("Output filename")
                 .required(true),
         )
@@ -56,7 +55,6 @@ Examples:
         .arg(
             Arg::new("name_prefix")
                 .long("name-prefix")
-                .value_name("STR")
                 .help("Add prefix to sequence names"),
         )
 }

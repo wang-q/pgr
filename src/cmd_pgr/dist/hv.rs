@@ -74,7 +74,7 @@ pub fn execute(args: &clap::ArgMatches) -> anyhow::Result<()> {
     let opt_dim = *args.get_one::<usize>("dim").unwrap();
 
     let is_sim = args.get_flag("sim");
-    let is_list = args.get_flag("list");
+    let is_list = args.get_flag("list_files");
     let opt_parallel = *args.get_one::<usize>("parallel").unwrap();
 
     let infiles = common::collect_infiles(args);

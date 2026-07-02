@@ -366,7 +366,7 @@ fn command_axt_to_fas_example() {
             "to-fas",
             "tests/axt/RM11_1a.sizes",
             "tests/axt/example.axt",
-            "--qname",
+            "--q-name",
             "RM11_1a",
         ])
         .run();

@@ -33,9 +33,9 @@ pgr plot hh [OPTIONS] <infile>
 | `col` | `-c` | `--col` | Int | Column index to count (1-based, default: 1) |
 | `group` | `-g` | `--group` | Int | Group column index (1-based) |
 | `bins` | | `--bins` | Int | Number of bins (default: 40) |
-| `xl` | | `--xl` | String | X axis label (default: column name) |
-| `yl` | | `--yl` | String | Y axis label (default: group column name) |
-| `xmm` | | `--xmm` | F,F | X axis range min,max (e.g., "0,100") |
+| `xl` | | `--xlabel` | String | X axis label (default: column name) |
+| `yl` | | `--ylabel` | String | Y axis label (default: group column name) |
+| `xmm` | | `--xmin-max` | F,F | X axis range min,max (e.g., "0,100") |
 | `unit` | | `--unit` | F,F | Cell width,height (default: "0.5,1.5") |
 
 ### Input Format
@@ -54,7 +54,7 @@ pgr plot hh input.tsv -o output.tex
 pgr plot hh input.tsv | tectonic - && mv texput.pdf hh.pdf
 
 # Specify columns and labels
-pgr plot hh data.tsv -c 2 -g 1 --xl "Length" --yl "Species" -o plot.tex
+pgr plot hh data.tsv -c 2 -g 1 --xlabel "Length" --ylabel "Species" -o plot.tex
 ```
 
 ---

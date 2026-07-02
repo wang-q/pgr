@@ -64,7 +64,7 @@ If there are ties, the alphabetically first member is chosen.
         )
         .arg(
             Arg::new("min_points")
-                .long("min_points")
+                .long("min-points")
                 .num_args(1)
                 .default_value("1")
                 .value_parser(value_parser!(usize))

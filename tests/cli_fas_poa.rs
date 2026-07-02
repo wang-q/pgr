@@ -334,7 +334,7 @@ fn command_consensus_params() -> anyhow::Result<()> {
         .arg("-5")
         .arg("--gap-extend")
         .arg("-1")
-        .arg("--algorithm")
+        .arg("--align-mode")
         .arg("global")
         .output()?;
     let stdout = String::from_utf8(output.stdout)?;

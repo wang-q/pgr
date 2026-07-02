@@ -20,7 +20,7 @@ Process:
 
 Parameters:
 * --chunk N: Process N bytes at a time (memory control)
-* --len N: Minimum peptide length to consider (filters short ORFs)
+* --min-len N: Minimum peptide length to consider (filters short ORFs)
 * --kmer/-k N: K-mer size for minimizers
 * --window/-w N: Window size for minimizers
 * --parallel/-p N: Number of threads
@@ -37,7 +37,7 @@ Examples:
    pgr pl prefilter assembly.fa refs.pep.fa
 
 2. Specify chunk size and minimum peptide length:
-   pgr pl prefilter assembly.fa refs.pep.fa --chunk 50000 --len 20
+   pgr pl prefilter assembly.fa refs.pep.fa --chunk 50000 --min-len 20
 
 3. Use custom k-mer and window sizes:
    pgr pl prefilter assembly.fa refs.pep.fa -k 7 -w 2 --parallel 8
@@ -66,8 +66,8 @@ Examples:
                 .help("Size of each chunk in bytes"),
         )
         .arg(
-            Arg::new("len")
-                .long("len")
+            Arg::new("min_len")
+                .long("min-len")
                 .num_args(1)
                 .default_value("15")
                 .value_parser(value_parser!(usize))
@@ -103,7 +103,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let match_file = args.get_one::<String>("reference").unwrap();
 
     let opt_chunk = *args.get_one::<usize>("chunk").unwrap();
-    let opt_len = *args.get_one::<usize>("len").unwrap();
+    let opt_len = *args.get_one::<usize>("min_len").unwrap();
     let opt_kmer = *args.get_one::<usize>("kmer").unwrap();
     let opt_window = *args.get_one::<usize>("window").unwrap();
 
@@ -145,7 +145,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 .to_string();
 
             run_cmd!(
-                ${pgr} fa six-frame ${temp_path} --len ${opt_len} |
+                ${pgr} fa six-frame ${temp_path} --min-len ${opt_len} |
                     ${pgr} dist seq stdin ${match_file} -k ${opt_kmer} -w ${opt_window}
             )?;
             Ok(())

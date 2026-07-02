@@ -7,7 +7,7 @@ pub fn make_subcommand() -> Command {
     Command::new("sort")
         .about("Sort chains by score")
         .arg(
-            Arg::new("files")
+            Arg::new("infiles")
                 .required_unless_present("input_list")
                 .num_args(1..)
                 .action(ArgAction::Append)
@@ -29,7 +29,7 @@ pub fn make_subcommand() -> Command {
 
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut files: Vec<String> = args
-        .get_many::<String>("files")
+        .get_many::<String>("infiles")
         .map(|v| v.cloned().collect())
         .unwrap_or_default();
 

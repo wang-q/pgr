@@ -30,7 +30,7 @@ fn test_histo_apq_base() {
         .args(&[
             "psl",
             "histo",
-            "--what",
+            "--field",
             "alignsPerQuery",
             input.to_str().unwrap(),
             "-o",
@@ -65,7 +65,7 @@ fn test_histo_apq_multi() {
         .args(&[
             "psl",
             "histo",
-            "--what",
+            "--field",
             "alignsPerQuery",
             input.to_str().unwrap(),
             "-o",
@@ -92,7 +92,7 @@ fn test_histo_cover_spread() {
         .args(&[
             "psl",
             "histo",
-            "--what",
+            "--field",
             "coverSpread",
             input.to_str().unwrap(),
             "-o",
@@ -125,7 +125,7 @@ fn test_histo_id_spread() {
         .args(&[
             "psl",
             "histo",
-            "--what",
+            "--field",
             "idSpread",
             input.to_str().unwrap(),
             "-o",

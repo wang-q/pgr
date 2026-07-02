@@ -19,16 +19,16 @@ Notes:
 
 Examples:
 1. Create block FA files for a single genome:
-   pgr fas create tests/fasr/I.connect.tsv -r tests/fasr/genome.fa
+   pgr fas create tests/fasr/I.connect.tsv -g tests/fasr/genome.fa
 
 2. Create block FA files for a specific species:
-   pgr fas create tests/fasr/I.connect.tsv -r tests/fasr/genome.fa --name S288c
+   pgr fas create tests/fasr/I.connect.tsv -g tests/fasr/genome.fa --name S288c
 
 "###,
         )
         .arg(
-            Arg::new("genome.fa")
-                .short('r')
+            Arg::new("genome")
+                .short('g')
                 .long("genome")
                 .required(true)
                 .num_args(1)
@@ -56,7 +56,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // Args
     //----------------------------
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
-    let opt_genome = args.get_one::<String>("genome.fa").unwrap();
+    let opt_genome = args.get_one::<String>("genome").unwrap();
     let opt_name = &args
         .get_one::<String>("name")
         .map(|s| s.as_str())

@@ -40,8 +40,8 @@ Examples:
         )
         .arg(crate::cmd_pgr::args::infiles_arg("FASTA"))
         .arg(
-            Arg::new("noheader")
-                .long("noheader")
+            Arg::new("no_header")
+                .long("no-header")
                 .short('H')
                 .action(ArgAction::SetTrue)
                 .help("Do not display headers"),
@@ -107,7 +107,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     // Args
     //----------------------------
-    let is_noheader = args.get_flag("noheader");
+    let is_noheader = args.get_flag("no_header");
     let is_sum = args.get_flag("sum");
     let is_average = args.get_flag("average");
     let is_esize = args.get_flag("esize");

@@ -47,7 +47,7 @@ Examples:
                 .help("Aligning program"),
         )
         .arg(
-            Arg::new("has_outgroup")
+            Arg::new("outgroup")
                 .long("outgroup")
                 .action(ArgAction::SetTrue)
                 .help("Indicates the presence of outgroups at the end of each block"),
@@ -97,7 +97,7 @@ fn proc_block(block: &pgr::libs::fmt::fas::FasBlock, args: &ArgMatches) -> anyho
     // Args
     //----------------------------
     let msa = args.get_one::<String>("msa").unwrap();
-    let has_outgroup = args.get_flag("has_outgroup");
+    let has_outgroup = args.get_flag("outgroup");
     let chop = *args.get_one::<usize>("chop").unwrap();
     let is_quick = args.get_flag("is_quick");
     let pad = *args.get_one::<usize>("pad").unwrap();

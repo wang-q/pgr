@@ -42,8 +42,18 @@ pub fn make_subcommand() -> Command {
                 .help("Input filename. [stdin] for standard input"),
         )
         .arg(crate::cmd_pgr::args::outfile_arg())
-        .arg(Arg::new("xl").long("xl").num_args(1).help("X label"))
-        .arg(Arg::new("yl").long("yl").num_args(1).help("Y label"))
+        .arg(
+            Arg::new("xlabel")
+                .long("xlabel")
+                .num_args(1)
+                .help("X label"),
+        )
+        .arg(
+            Arg::new("ylabel")
+                .long("ylabel")
+                .num_args(1)
+                .help("Y label"),
+        )
         .arg(
             Arg::new("col")
                 .long("col")
@@ -69,7 +79,12 @@ pub fn make_subcommand() -> Command {
                 .default_value("40")
                 .help("Number of bins"),
         )
-        .arg(Arg::new("xmm").long("xmm").num_args(1).help("X min,max"))
+        .arg(
+            Arg::new("xmin_max")
+                .long("xmin-max")
+                .num_args(1)
+                .help("X min,max"),
+        )
         .arg(
             Arg::new("unit")
                 .long("unit")
@@ -92,11 +107,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let bins = args.get_one::<usize>("bins").unwrap();
 
     // Optional labels
-    let xlabel = args.get_one::<String>("xl").map(|s| s.to_string());
-    let ylabel = args.get_one::<String>("yl").map(|s| s.to_string());
+    let xlabel = args.get_one::<String>("xlabel").map(|s| s.to_string());
+    let ylabel = args.get_one::<String>("ylabel").map(|s| s.to_string());
 
     // Parse X min,max if provided
-    let xmm = args.get_one::<String>("xmm").and_then(|s| {
+    let xmm = args.get_one::<String>("xmin_max").and_then(|s| {
         let parts: Vec<f64> = s.split(',').filter_map(|x| x.trim().parse().ok()).collect();
         if parts.len() == 2 {
             Some((parts[0], parts[1]))

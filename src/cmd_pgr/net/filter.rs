@@ -5,7 +5,7 @@ pub fn make_subcommand() -> Command {
     Command::new("filter")
         .about("Filter out parts of net")
         .arg(
-            Arg::new("input")
+            Arg::new("infile")
                 .index(1)
                 .required(true)
                 .help("Input net file (or stdin if 'stdin')"),
@@ -53,23 +53,23 @@ pub fn make_subcommand() -> Command {
                 .help("Restrict to those at least this big on query"),
         )
         .arg(
-            Arg::new("t")
-                .long("t")
+            Arg::new("target")
+                .long("target")
                 .help("Restrict target side sequence to those named (comma separated)"),
         )
         .arg(
-            Arg::new("not_t")
-                .long("not-t")
+            Arg::new("not_target")
+                .long("not-target")
                 .help("Restrict target side sequence to those not named (comma separated)"),
         )
         .arg(
-            Arg::new("q")
-                .long("q")
+            Arg::new("query")
+                .long("query")
                 .help("Restrict query side sequence to those named (comma separated)"),
         )
         .arg(
-            Arg::new("not_q")
-                .long("not-q")
+            Arg::new("not_query")
+                .long("not-query")
                 .help("Restrict query side sequence to those not named (comma separated)"),
         )
         .arg(
@@ -106,7 +106,7 @@ pub fn make_subcommand() -> Command {
 }
 
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let input_path = args.get_one::<String>("input").unwrap();
+    let input_path = args.get_one::<String>("infile").unwrap();
 
     let mut criteria = FilterCriteria::default();
 
@@ -132,16 +132,16 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         criteria.min_size_q = Some(*v);
     }
 
-    if let Some(s) = args.get_one::<String>("t") {
+    if let Some(s) = args.get_one::<String>("target") {
         criteria.t_names = Some(s.split(',').map(|s| s.to_string()).collect());
     }
-    if let Some(s) = args.get_one::<String>("not_t") {
+    if let Some(s) = args.get_one::<String>("not_target") {
         criteria.not_t_names = Some(s.split(',').map(|s| s.to_string()).collect());
     }
-    if let Some(s) = args.get_one::<String>("q") {
+    if let Some(s) = args.get_one::<String>("query") {
         criteria.q_names = Some(s.split(',').map(|s| s.to_string()).collect());
     }
-    if let Some(s) = args.get_one::<String>("not_q") {
+    if let Some(s) = args.get_one::<String>("not_query") {
         criteria.not_q_names = Some(s.split(',').map(|s| s.to_string()).collect());
     }
     if let Some(vals) = args.get_many::<String>("type") {

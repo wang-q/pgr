@@ -28,7 +28,7 @@ Examples:
    cat tests/fasr/example.axt | pgr axt to-fas tests/fasr/RM11_1a.chr.sizes stdin -o output.fas
 
 3. Specify target and query names:
-   pgr axt to-fas tests/fasr/RM11_1a.chr.sizes tests/fasr/example.axt --tname S288c --qname RM11_1a
+   pgr axt to-fas tests/fasr/RM11_1a.chr.sizes tests/fasr/example.axt --t-name S288c --q-name RM11_1a
 
 "###,
         )
@@ -47,16 +47,16 @@ Examples:
                 .help("Input AXT file(s) to process"),
         )
         .arg(
-            Arg::new("tname")
-                .long("tname")
+            Arg::new("t_name")
+                .long("t-name")
                 .short('t')
                 .num_args(1)
                 .default_value("target")
                 .help("Target name"),
         )
         .arg(
-            Arg::new("qname")
-                .long("qname")
+            Arg::new("q_name")
+                .long("q-name")
                 .short('q')
                 .num_args(1)
                 .default_value("query")
@@ -73,8 +73,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
     let sizes = pgr::read_sizes::<i32>(args.get_one::<String>("sizes").unwrap())?;
 
-    let tname = args.get_one::<String>("tname").unwrap();
-    let qname = args.get_one::<String>("qname").unwrap();
+    let tname = args.get_one::<String>("t_name").unwrap();
+    let qname = args.get_one::<String>("q_name").unwrap();
 
     //----------------------------
     // Ops

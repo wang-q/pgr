@@ -41,7 +41,7 @@ This command identifies interspersed repeats in a genome, mimicking the function
                 .num_args(1)
                 .default_value("17")
                 .value_parser(value_parser!(usize))
-                .help("Size of the k-mer"),
+                .help("K-mer size"),
         )
         .arg(
             Arg::new("fill_kmer")

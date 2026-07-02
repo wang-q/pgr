@@ -11,26 +11,26 @@ Sorts the children of each node without changing the topology.
 
 Notes:
 * Traverses the entire tree in a breadth-first order.
-* `--an` and `--nd` can be enabled at the same time; sorted first by `--an` and then by `--nd`.
-* `--list` is processed before `--an` and `--nd`.
+* `--alphanumeric` and `--num-descendants` can be enabled at the same time; sorted first by `--alphanumeric` and then by `--num-descendants`.
+* `--name-list` is processed before `--alphanumeric` and `--num-descendants`.
 * Sort orders:
-    * `--list`: By a list of names in the file, one name per line.
-    * `--an`/`--anr`: By alphanumeric order of labels.
-    * `--nd`/`--ndr`: By number of descendants (ladderize).
+    * `--name-list`: By a list of names in the file, one name per line.
+    * `--alphanumeric`/`--alphanumeric-rev`: By alphanumeric order of labels.
+    * `--num-descendants`/`--num-descendants-rev`: By number of descendants (ladderize).
     * `--deladderize`: Alternate sort direction at each level.
 
 Examples:
 1. Sort by number of descendants (ladderize):
-   pgr nwk order tree.nwk --nd
+   pgr nwk order tree.nwk --num-descendants
 
 2. Sort by alphanumeric order of labels:
-   pgr nwk order tree.nwk --an
+   pgr nwk order tree.nwk --alphanumeric
 
 3. Sort by a list of names:
-   pgr nwk order tree.nwk --list names.txt
+   pgr nwk order tree.nwk --name-list names.txt
 
 4. Sort by alphanumeric order, then by number of descendants (reverse):
-   pgr nwk order tree.nwk --an --ndr
+   pgr nwk order tree.nwk --alphanumeric --num-descendants-rev
 
 5. De-ladderize (alternate sort direction):
    pgr nwk order tree.nwk --deladderize
@@ -44,12 +44,32 @@ Examples:
                 .index(1)
                 .help("Input filename. [stdin] for standard input"),
         )
-        .arg(arg!(--nd  "By number of descendants"))
-        .arg(arg!(--ndr "By number of descendants, reversely"))
-        .group(ArgGroup::new("number-of-descendants").args(["nd", "ndr"]))
-        .arg(arg!(--an  "By alphanumeric order of labels"))
-        .arg(arg!(--anr "By alphanumeric order of labels, reversely"))
-        .group(ArgGroup::new("alphanumeric").args(["an", "anr"]))
+        .arg(
+            Arg::new("num_descendants")
+                .long("num-descendants")
+                .action(ArgAction::SetTrue)
+                .help("By number of descendants"),
+        )
+        .arg(
+            Arg::new("num_descendants_rev")
+                .long("num-descendants-rev")
+                .action(ArgAction::SetTrue)
+                .help("By number of descendants, reversely"),
+        )
+        .group(ArgGroup::new("number-of-descendants").args(["num_descendants", "num_descendants_rev"]))
+        .arg(
+            Arg::new("alphanumeric")
+                .long("alphanumeric")
+                .action(ArgAction::SetTrue)
+                .help("By alphanumeric order of labels"),
+        )
+        .arg(
+            Arg::new("alphanumeric_rev")
+                .long("alphanumeric-rev")
+                .action(ArgAction::SetTrue)
+                .help("By alphanumeric order of labels, reversely"),
+        )
+        .group(ArgGroup::new("alphanumeric-order").args(["alphanumeric", "alphanumeric_rev"]))
         .arg(
             Arg::new("deladderize")
                 .long("deladderize")
@@ -58,8 +78,8 @@ Examples:
                 .help("De-ladderize (alternate) the tree"),
         )
         .arg(
-            Arg::new("list")
-                .long("list")
+            Arg::new("name_list")
+                .long("name-list")
                 .short('l')
                 .num_args(1)
                 .help("Order by a list of names in the file"),
@@ -75,7 +95,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         None => "",
         Some(x) => x.as_str(),
     };
-    let opt_an = match args.get_one::<Id>("alphanumeric") {
+    let opt_an = match args.get_one::<Id>("alphanumeric-order") {
         None => "",
         Some(x) => x.as_str(),
     };
@@ -84,8 +104,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut trees = Tree::from_file(infile)?;
 
     let mut names = vec![];
-    if args.contains_id("list") {
-        let list_file = args.get_one::<String>("list").unwrap();
+    if args.contains_id("name_list") {
+        let list_file = args.get_one::<String>("name_list").unwrap();
         names = pgr::libs::io::read_names::<Vec<String>>(list_file)?;
     }
 
@@ -99,10 +119,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             algo::sort_by_list(tree, &names);
         }
         if default_an || !opt_an.is_empty() {
-            algo::sort_by_name(tree, opt_an == "anr");
+            algo::sort_by_name(tree, opt_an == "alphanumeric_rev");
         }
         if !opt_nd.is_empty() {
-            algo::ladderize(tree, opt_nd == "ndr");
+            algo::ladderize(tree, opt_nd == "num_descendants_rev");
         }
         if is_deladderize {
             algo::deladderize(tree);

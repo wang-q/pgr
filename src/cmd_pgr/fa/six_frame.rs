@@ -45,16 +45,16 @@ Examples:
                 .help("Input FASTA file to process"),
         )
         .arg(
-            Arg::new("len")
-                .long("len")
+            Arg::new("min_len")
+                .long("min-len")
                 .num_args(1)
                 .default_value("0")
                 .value_parser(value_parser!(usize))
                 .help("Minimum length of the amino acid sequence to consider"),
         )
         .arg(
-            Arg::new("start")
-                .long("start")
+            Arg::new("start_met")
+                .long("start-met")
                 .action(ArgAction::SetTrue)
                 .help("Only consider ORFs that start with Methionine (M)"),
         )
@@ -74,8 +74,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     let mut fa_in = pgr::libs::fmt::fa::reader(args.get_one::<String>("infile").unwrap())?;
 
-    let opt_len = *args.get_one::<usize>("len").unwrap();
-    let is_start = args.get_flag("start");
+    let opt_len = *args.get_one::<usize>("min_len").unwrap();
+    let is_start = args.get_flag("start_met");
     let is_end = args.get_flag("end");
 
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;

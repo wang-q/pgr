@@ -23,14 +23,12 @@ Examples:
         .arg(
             Arg::new("q_prefix")
                 .long("q-prefix")
-                .value_name("STR")
                 .help("Add prefix to start of query sequence name in maf")
                 .action(ArgAction::Set),
         )
         .arg(
             Arg::new("t_prefix")
                 .long("t-prefix")
-                .value_name("STR")
                 .help("Add prefix to start of target sequence name in maf")
                 .action(ArgAction::Set),
         )

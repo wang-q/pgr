@@ -110,9 +110,9 @@ Sorts the children of each node (rotates branches) without changing topology.
 pgr nwk order [OPTIONS] <infile>
 ```
 
-*   `--nd` / `--ndr`: Sort by number of descendants (Ladderize).
-*   `--an` / `--anr`: Sort by label (Alphanumeric).
-*   `--list <file>`: Sort by a list of names.
+*   `--num-descendants` / `--num-descendants-rev`: Sort by number of descendants (Ladderize).
+*   `--alphanumeric` / `--alphanumeric-rev`: Sort by label (Alphanumeric).
+*   `--name-list <file>`: Sort by a list of names.
 *   `--deladderize`: Alternate sort direction at each level.
 
 ### prune

@@ -42,7 +42,7 @@ Examples:
                 .long("outfile")
                 .short('o')
                 .num_args(1)
-                .help("Save index to .paf.idx file"),
+                .help("Output filename. [stdout] for screen"),
         )
 }
 

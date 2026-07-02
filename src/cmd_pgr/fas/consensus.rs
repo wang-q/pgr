@@ -18,7 +18,7 @@ Notes:
     * `--engine builtin` (default): Uses built-in Rust implementation.
     * `--engine spoa`: Forces use of external `spoa` command.
 * Alignment Parameters:
-    * Configurable via `--match`, `--mismatch`, `--gap-open`, `--gap-extend`, `--algorithm`.
+    * Configurable via `--match`, `--mismatch`, `--gap-open`, `--gap-extend`, `--align-mode`.
     * Defaults: Global alignment; Match 5, Mismatch -4, GapOpen -8, GapExtend -6.
 * Supports parallel processing for improved performance
     * Running in parallel mode with 1 reader, 1 writer and the corresponding number of workers
@@ -51,8 +51,8 @@ Examples:
                     .help("POA engine to use"),
             )
             .arg(
-                Arg::new("algorithm")
-                    .long("algorithm")
+                Arg::new("align_mode")
+                    .long("align-mode")
                     .short('l')
                     .value_parser(["local", "global", "semi_global"])
                     .default_value("global") // Default to global for fas consensus
@@ -73,7 +73,7 @@ Examples:
                     .help("Name of the consensus"),
             )
             .arg(
-                Arg::new("has_outgroup")
+                Arg::new("outgroup")
                     .long("outgroup")
                     .action(ArgAction::SetTrue)
                     .help("Indicates the presence of outgroups at the end of each block"),
@@ -95,12 +95,12 @@ fn proc_block(block: &pgr::libs::fmt::fas::FasBlock, args: &ArgMatches) -> anyho
     // Args
     //----------------------------
     let cname = args.get_one::<String>("cname").unwrap();
-    let has_outgroup = args.get_flag("has_outgroup");
+    let has_outgroup = args.get_flag("outgroup");
 
     let engine = args.get_one::<String>("engine").unwrap();
 
     let params = crate::cmd_pgr::args::get_poa_params(args);
-    let algorithm = args.get_one::<String>("algorithm").unwrap();
+    let algorithm = args.get_one::<String>("align_mode").unwrap();
 
     // Map algorithm string to integer code (0=local, 1=global, 2=semi_global) for internal use/spoa
     let algo_code = match algorithm.as_str() {

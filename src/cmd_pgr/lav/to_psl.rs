@@ -18,13 +18,11 @@ Examples:
         .arg(
             Arg::new("target_strand")
                 .long("target-strand")
-                .value_name("STRAND")
                 .help("Set the target strand (default is no strand)"),
         )
         .arg(
             Arg::new("score_file")
                 .long("score-file")
-                .value_name("FILE")
                 .help("Output lav scores to side file"),
         )
 }
