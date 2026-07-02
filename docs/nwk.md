@@ -70,7 +70,7 @@ pgr nwk label [OPTIONS] <infile>
 
 *   `-I`: Skip internal labels.
 *   `-L`: Skip leaf labels.
-*   `-n <name>` / `-f <file>` / `-r <regex>`: Filter nodes.
+*   `-n <name>` / `-l <file>` / `-r <regex>`: Filter nodes.
 *   `-D`: Include descendants of selected nodes.
 *   `-M`: Monophyly check (only print if selected nodes form a monophyletic group).
 *   `-t`: Tab-separated output (single line).
@@ -123,7 +123,7 @@ Removes nodes from the tree.
 pgr nwk prune [OPTIONS] <infile>
 ```
 
-*   `-n <name>` / `-f <file>` / `-r <regex>`: Select nodes to remove.
+*   `-n <name>` / `-l <file>` / `-r <regex>`: Select nodes to remove.
 *   `-v, --invert`: Invert selection (Keep selected nodes, remove others).
 *   `-D`: Include descendants.
 
@@ -178,7 +178,7 @@ Extracts a subtree (clade) rooted at the LCA of selected nodes.
 pgr nwk subtree [OPTIONS] <infile>
 ```
 
-*   `-n` / `-f` / `-r`: Select nodes.
+*   `-n` / `-l` / `-r`: Select nodes.
 *   `-D, --descendants`: Include all descendants of selected internal nodes.
 *   `-M`: Monophyly check (only output if clade matches selection exactly).
 *   `-c <N>`: Context (extend N levels up).

@@ -379,7 +379,7 @@ fn command_dedup() {
             "tests/fasta/dedup.fa",
             "--seq",
             "--both",
-            "--file",
+            "--dups-file",
             "stdout",
         ])
         .run();

@@ -13,7 +13,7 @@ This command implements the UCSC pipeline for pairwise genome alignments, psl-ch
 * <psl> can be a .psl file or a directory containing multiple .psl files
 * Default names of target and query in the output .maf are derived from the basename of <target> and <query>
 
-* `--linear-gap` and `--min-score`:
+* `--gap-model` and `--min-score`:
     * Human18vsChimp2 use `loose` and 1000
     * Human19vsChimp3 use `medium` and 5000
     * `loose` corresponds to chicken/human linear gap costs
@@ -73,8 +73,8 @@ References:
                 .help("Path to the PSL file or directory containing PSL files"),
         )
         .arg(
-            Arg::new("linear_gap")
-                .long("linear-gap")
+            Arg::new("gap_model")
+                .long("gap-model")
                 .action(ArgAction::Set)
                 .value_parser([
                     builder::PossibleValue::new("loose"),
@@ -124,7 +124,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         std::fs::create_dir_all(outdir)?;
     }
 
-    let opt_lineargap = args.get_one::<String>("linear_gap").unwrap();
+    let opt_gap_model = args.get_one::<String>("gap_model").unwrap();
     let opt_minscore = *args.get_one::<f64>("min_score").unwrap();
 
     let is_syn = args.get_flag("syn");
@@ -215,7 +215,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     for infile in infiles {
         let stem = pgr::libs::io::get_basename(&infile).unwrap();
         run_cmd!(
-            axtChain -minScore=${opt_minscore} -linearGap=${opt_lineargap} -psl ${infile} target.chr.2bit query.chr.2bit pslChain/${stem}.tmp
+            axtChain -minScore=${opt_minscore} -linearGap=${opt_gap_model} -psl ${infile} target.chr.2bit query.chr.2bit pslChain/${stem}.tmp
         )?;
         run_cmd!(
             chainAntiRepeat target.chr.2bit query.chr.2bit pslChain/${stem}.tmp pslChain/${stem}.chain

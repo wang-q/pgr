@@ -4,8 +4,8 @@ use pgr::libs::chain::net::{classify_syntenic, read_nets, write_net};
 pub fn make_subcommand() -> Command {
     Command::new("syntenic")
         .about("Add synteny info to net")
-        .arg(Arg::new("in_net").required(true).help("Input net file"))
-        .arg(Arg::new("out_net").required(true).help("Output net file"))
+        .arg(Arg::new("infile").required(true).help("Input net file"))
+        .arg(Arg::new("outfile").required(true).help("Output net file"))
         .arg(
             Arg::new("min_score")
                 .long("min-score")
@@ -16,8 +16,8 @@ pub fn make_subcommand() -> Command {
 }
 
 pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
-    let in_file = matches.get_one::<String>("in_net").unwrap();
-    let out_file = matches.get_one::<String>("out_net").unwrap();
+    let in_file = matches.get_one::<String>("infile").unwrap();
+    let out_file = matches.get_one::<String>("outfile").unwrap();
     let min_score = *matches.get_one::<f64>("min_score").unwrap();
 
     let reader = pgr::reader(in_file)?;

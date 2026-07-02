@@ -11,7 +11,7 @@ Extracts alignment slices from block FA files using a runlist JSON.
 Notes:
 * Supports both plain text and gzipped (.gz) files
 * Reads from stdin if input file is 'stdin'
-* The JSON file (--required) keys are chromosome/sequence names, and values are runlists (e.g., "1-100,200-300")
+* The JSON file (--runlist) keys are chromosome/sequence names, and values are runlists (e.g., "1-100,200-300")
 
 Examples:
 1. Extract slices defined in a JSON file:
@@ -25,7 +25,14 @@ Examples:
 
 "###,
         )
-        .arg(crate::cmd_pgr::fas::common::required_arg())
+        .arg(
+            Arg::new("runlist")
+                .long("runlist")
+                .short('r')
+                .required(true)
+                .num_args(1)
+                .help("JSON file of chromosome runlists (e.g. \"1-100,200-300\")"),
+        )
         .arg(crate::cmd_pgr::args::infiles_arg("block FA"))
         .arg(
             Arg::new("name")
@@ -40,7 +47,7 @@ Examples:
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
 
-    let json = intspan::read_json(args.get_one::<String>("required").unwrap());
+    let json = intspan::read_json(args.get_one::<String>("runlist").unwrap());
     let set = intspan::json2set(&json);
 
     let mut name = args

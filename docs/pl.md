@@ -150,7 +150,7 @@ pgr pl trf [OPTIONS] <infile>
 | `pm` | | `--pm` | Int | Match probability (default: 80) |
 | `pi` | | `--pi` | Int | Indel probability (default: 10) |
 | `min_score` | | `--min-score` | Int | Min alignment score (default: 50) |
-| `maxperiod` | | `--maxperiod` | Int | Max period size (default: 2000) |
+| `max_period` | | `--max-period` | Int | Max period size (default: 2000) |
 
 ### Dependencies
 
@@ -177,7 +177,7 @@ pgr pl ucsc [OPTIONS] <target> <query> <psl>
 | `query` | | | File | Query genome FASTA |
 | `psl` | | | Path | PSL file or directory containing PSL files |
 | `outdir` | `-o` | `--outdir` | Dir | Output directory (default: stdout) |
-| `linear_gap` | | `--linear-gap` | Str | Gap cost: "loose" (default) or "medium" |
+| `gap_model` | | `--gap-model` | Str | Gap cost: "loose" (default) or "medium" |
 | `min_score` | | `--min-score` | Int | Min alignment score (default: 1000) |
 | `tname` | `-t` | `--t-name` | Str | Custom target name prefix |
 | `qname` | `-q` | `--q-name` | Str | Custom query name prefix |

@@ -37,13 +37,7 @@ Examples:
                 .index(1)
                 .help("Input PAF file(s) to index"),
         )
-        .arg(
-            Arg::new("outfile")
-                .long("outfile")
-                .short('o')
-                .num_args(1)
-                .help("Output filename. [stdout] for screen"),
-        )
+        .arg(crate::cmd_pgr::args::outfile_arg_optional())
 }
 
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {

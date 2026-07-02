@@ -13,7 +13,7 @@ pub fn make_subcommand() -> Command {
 Removes nodes from the Newick tree based on provided labels or patterns.
 
 Notes:
-* Target nodes can be specified by name (`--node`), file (`--file`), or regex (`--regex`).
+* Target nodes can be specified by name (`--node`), name-list (`--name-list`), or regex (`--regex`).
 * With `--invert`, specified nodes (along with their ancestors and descendants) are kept, and everything else is removed.
 * Topology changes:
     * If a node removal leaves its parent with only one child, the parent is collapsed (spliced out).
@@ -24,7 +24,7 @@ Examples:
    pgr nwk prune input.nwk -n Homo -n Pan
 
 2. Remove nodes using a list in a file:
-   pgr nwk prune input.nwk -f remove.txt
+   pgr nwk prune input.nwk -l remove.txt
 
 3. Keep a clade (e.g., Hominidae) and remove everything else (Invert mode):
    pgr nwk prune input.nwk -v -n Hominidae
@@ -47,11 +47,11 @@ Examples:
                 .help("Select nodes by exact name"),
         )
         .arg(
-            Arg::new("file")
-                .long("file")
-                .short('f')
+            Arg::new("name_list")
+                .long("name-list")
+                .short('l')
                 .num_args(1)
-                .help("A file contains node names"),
+                .help("A name-list file containing node names"),
         )
         .arg(
             Arg::new("regex")

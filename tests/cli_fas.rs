@@ -202,7 +202,7 @@ fn command_check() {
             "fas",
             "check",
             "tests/fas/A_tha.pair.fas",
-            "-r",
+            "-g",
             "tests/fas/NC_000932.fa",
         ])
         .run();
@@ -217,7 +217,7 @@ fn command_check() {
             "fas",
             "check",
             "tests/fas/A_tha.pair.fas",
-            "-r",
+            "-g",
             "tests/fas/NC_000932.fa",
             "--name",
             "A_tha",

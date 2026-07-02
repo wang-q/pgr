@@ -4,7 +4,7 @@ use pgr::libs::paf::graph::PafGraph;
 use std::collections::HashMap;
 
 pub fn make_subcommand() -> Command {
-    Command::new("stat")
+    let cmd = Command::new("stat")
         .about("Reports coarse pangenome graph topology metrics from PAF alignments")
         .after_help(
             r###"
@@ -50,24 +50,9 @@ Examples:
                 .index(1)
                 .help("Input PAF file (or 'stdin' for piped input)"),
         )
-        .arg(
-            Arg::new("fasta_tsv")
-                .long("fasta-tsv")
-                .short('f')
-                .num_args(1)
-                .help(
-                    "TSV file: genome_name <tab> bgzf_fasta_path (optional for topology-only mode)",
-                ),
-        )
-        .arg(
-            Arg::new("min_var_len")
-                .long("min-var-len")
-                .num_args(1)
-                .default_value("100")
-                .value_parser(clap::value_parser!(i32))
-                .help("Minimum indel length to split at (default: 100)"),
-        )
-        .arg(crate::cmd_pgr::args::outfile_arg())
+        .arg(crate::cmd_pgr::args::outfile_arg());
+    let cmd = crate::cmd_pgr::paf::common::add_optional_fasta_tsv_arg(cmd);
+    crate::cmd_pgr::paf::common::add_min_var_len_arg(cmd)
 }
 
 pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {

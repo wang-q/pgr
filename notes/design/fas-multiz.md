@@ -88,7 +88,7 @@
     *   打分与 gap 模型：
         *   使用 `SubMatrix` 作为替换矩阵，默认 Identity（匹配 +100 / 不匹配 -100），也可通过 `--score-scheme` 选择 HoxD55 或读取 LASTZ 格式打分文件。
         *   gap 成本由 `GapCalc` 驱动：
-            *   线性模式：`--linear-gap loose|medium`，对应 Kent 源码中针对远缘/近缘物种的 quasi-natural gap 曲线。
+            *   线性模式：`--gap-model loose|medium`，对应 Kent 源码中针对远缘/近缘物种的 quasi-natural gap 曲线。
             *   仿射模式：`--gap-open` + `--gap-extend` 显式指定 open/extend，内部通过 `GapCalc::affine` 生成 gap 曲线。
         *   链化 DP 中的评分公式与 UCSC axtChain 一致：`Score = BlockScore + max(PrevScore - GapCost)`。
     *   结构与实现：

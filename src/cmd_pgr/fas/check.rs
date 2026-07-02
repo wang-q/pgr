@@ -16,8 +16,8 @@ Notes:
 "###,
         )
         .arg(
-            Arg::new("genome.fa")
-                .short('r')
+            Arg::new("genome")
+                .short('g')
                 .long("genome")
                 .required(true)
                 .num_args(1)
@@ -45,7 +45,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // Args
     //----------------------------
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
-    let opt_genome = args.get_one::<String>("genome.fa").unwrap();
+    let opt_genome = args.get_one::<String>("genome").unwrap();
     let opt_name = &args
         .get_one::<String>("name")
         .map(|s| s.as_str())

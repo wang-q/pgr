@@ -14,6 +14,35 @@ pub fn outfile_arg() -> Arg {
         .help("Output filename. [stdout] for screen")
 }
 
+/// `-o/--outfile` with a custom default value.
+pub fn outfile_arg_with_default(val: &'static str) -> Arg {
+    Arg::new("outfile")
+        .long("outfile")
+        .short('o')
+        .num_args(1)
+        .default_value(val)
+        .help("Output filename. [stdout] for screen")
+}
+
+/// `-o/--outfile` without default (optional). Caller must handle `None`.
+pub fn outfile_arg_optional() -> Arg {
+    Arg::new("outfile")
+        .long("outfile")
+        .short('o')
+        .num_args(1)
+        .help("Output filename. [stdout] for screen")
+}
+
+/// `-o/--outfile` required (no default).
+pub fn outfile_arg_required() -> Arg {
+    Arg::new("outfile")
+        .long("outfile")
+        .short('o')
+        .num_args(1)
+        .required(true)
+        .help("Output filename")
+}
+
 /// Standard `-o/--outdir` argument defaulting to stdout.
 pub fn outdir_arg() -> Arg {
     Arg::new("outdir")
@@ -22,6 +51,16 @@ pub fn outdir_arg() -> Arg {
         .num_args(1)
         .default_value("stdout")
         .help("Output directory. [stdout] for screen")
+}
+
+/// `-o/--outdir` required (no default). For commands that must write to a directory.
+pub fn outdir_arg_required() -> Arg {
+    Arg::new("outdir")
+        .long("outdir")
+        .short('o')
+        .num_args(1)
+        .required(true)
+        .help("Output directory")
 }
 
 /// Standard positional `infile` argument defaulting to stdin.

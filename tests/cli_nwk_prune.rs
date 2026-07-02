@@ -91,7 +91,7 @@ fn command_prune_file_remove_single() {
     writeln!(file, "Homo").unwrap();
 
     let (stdout, _) = PgrCmd::new()
-        .args(&["nwk", "prune", "stdin", "-f", file.path().to_str().unwrap()])
+        .args(&["nwk", "prune", "stdin", "-l", file.path().to_str().unwrap()])
         .stdin(CATARRHINI)
         .run();
 
@@ -105,7 +105,7 @@ fn command_prune_file_remove_multiple() {
     writeln!(file, "Pan").unwrap();
 
     let (stdout, _) = PgrCmd::new()
-        .args(&["nwk", "prune", "stdin", "-f", file.path().to_str().unwrap()])
+        .args(&["nwk", "prune", "stdin", "-l", file.path().to_str().unwrap()])
         .stdin(CATARRHINI)
         .run();
 
@@ -120,7 +120,7 @@ fn command_prune_file_remove_all() {
     writeln!(file, "Gorilla").unwrap();
 
     let (stdout, _) = PgrCmd::new()
-        .args(&["nwk", "prune", "stdin", "-f", file.path().to_str().unwrap()])
+        .args(&["nwk", "prune", "stdin", "-l", file.path().to_str().unwrap()])
         .stdin(CATARRHINI)
         .run();
 
@@ -137,7 +137,7 @@ fn command_prune_file_keep_single() {
             "nwk",
             "prune",
             "stdin",
-            "-f",
+            "-l",
             file.path().to_str().unwrap(),
             "--invert",
         ])

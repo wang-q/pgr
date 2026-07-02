@@ -41,10 +41,10 @@ The subcommands are organized into the following categories:
 Checks if the genome locations specified in the block headers are valid against a reference genome.
 
 ```bash
-pgr fas check [OPTIONS] --genome <genome.fa> <infiles>...
+pgr fas check [OPTIONS] --genome <genome> <infiles>...
 ```
 
-*   `-r, --genome <path>`: Path to the reference genome FA file (required).
+*   `-g, --genome <path>`: Path to the reference genome FA file (required).
 *   `--name <name>`: Check sequences for a specific species only.
 *   `-o, --outfile <file>`: Output filename (default: stdout).
 
@@ -118,10 +118,10 @@ pgr fas filter [OPTIONS] <infiles>...
 Extracts specific slices of alignments based on a provided runlist (JSON).
 
 ```bash
-pgr fas slice [OPTIONS] --required <runlist.json> <infiles>...
+pgr fas slice [OPTIONS] --runlist <runlist.json> <infiles>...
 ```
 
-*   `-r, --required <file>`: JSON file describing ranges to extract (required).
+*   `-r, --runlist <file>`: JSON file describing ranges to extract (required).
 *   `--name <name>`: Reference species name (default: first species).
 *   `-o, --outfile <file>`: Output filename (default: stdout).
 
@@ -223,10 +223,10 @@ pgr fas refine [OPTIONS] <infiles>...
 Replaces headers in block FA files using a mapping file.
 
 ```bash
-pgr fas replace [OPTIONS] --required <replace.tsv> <infiles>...
+pgr fas replace [OPTIONS] --replace-tsv <replace.tsv> <infiles>...
 ```
 
-*   `-r, --required <file>`: TSV file containing replacement rules (required).
+*   `-r, --replace-tsv <file>`: TSV file containing replacement rules (required).
 *   `-o, --outfile <file>`: Output filename (default: stdout).
 
 ---
@@ -238,10 +238,10 @@ pgr fas replace [OPTIONS] --required <replace.tsv> <infiles>...
 Creates block FA files from links of ranges (e.g., from `pgr fas link`).
 
 ```bash
-pgr fas create [OPTIONS] --genome <genome.fa> <infiles>...
+pgr fas create [OPTIONS] --genome <genome> <infiles>...
 ```
 
-*   `-r, --genome <file>`: Path to the reference genome FA file (required).
+*   `-g, --genome <file>`: Path to the reference genome FA file (required).
 *   `--name <name>`: Set a species name for ranges (if not multi-genome).
 *   `-o, --outfile <file>`: Output filename (default: stdout).
 

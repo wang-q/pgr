@@ -19,7 +19,7 @@ Comparison options:
 * -c: Case-insensitive comparison
 
 Output options:
-* -f FILE: Save duplicated entries mapping to FILE
+* --dups-file FILE: Save duplicated entries mapping to FILE
 * Format: original_name    duplicate_name
 
 Notes:
@@ -44,7 +44,7 @@ Examples:
    pgr fa dedup input.fa -s -b -o output.fa
 
 4. Save duplicates mapping:
-   pgr fa dedup input.fa -f dups.tsv -o output.fa
+   pgr fa dedup input.fa --dups-file dups.tsv -o output.fa
 
 "###,
         )
@@ -78,9 +78,8 @@ Examples:
                 .help("Case insensitive comparison"),
         )
         .arg(
-            Arg::new("file")
-                .long("file")
-                .short('f')
+            Arg::new("dups_file")
+                .long("dups-file")
                 .num_args(1)
                 .help("File to save duplicated names"),
         )
@@ -149,8 +148,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         }
     }
 
-    if args.contains_id("file") {
-        let opt_file = args.get_one::<String>("file").unwrap();
+    if args.contains_id("dups_file") {
+        let opt_file = args.get_one::<String>("dups_file").unwrap();
         let mut writer = pgr::writer(opt_file)?;
 
         for v in subject_map.values() {

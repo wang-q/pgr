@@ -156,7 +156,7 @@ fn test_chaining_psl_new_style_lastz() -> anyhow::Result<()> {
         .arg(&score_scheme)
         .arg("--outfile")
         .arg(&output)
-        // .arg("--linear-gap") // Default is now loose
+        // .arg("--gap-model") // Default is now loose
         // .arg("loose")
         .arg("--min-score")
         .arg("3000");

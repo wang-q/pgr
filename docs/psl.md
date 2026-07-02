@@ -25,9 +25,9 @@ pgr psl chain [OPTIONS] <target.2bit> <query.2bit> <in.psl>
 
 ### Options
 
-*   `--linear-gap <loose|medium>`: Linear gap cost presets (default: `loose`).
-*   `--gap-open <int>`: Gap open cost (overrides linear-gap).
-*   `--gap-extend <int>`: Gap extension cost (overrides linear-gap).
+*   `--gap-model <loose|medium>`: Linear gap cost presets (default: `loose`).
+*   `--gap-open <int>`: Gap open cost (overrides gap-model).
+*   `--gap-extend <int>`: Gap extension cost (overrides gap-model).
 *   `--score-scheme <file|preset>`: Scoring matrix (LASTZ format) or preset (e.g., `hoxd55`).
 *   `--min-score <float>`: Minimum chain score to output (default: 1000).
 *   `-o, --outfile <file>`: Output filename (default: stdout).

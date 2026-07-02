@@ -20,8 +20,8 @@ Processing:
        * Default: Identity matrix (Match: +100, Mismatch: -100).
        * Custom: Use --score-scheme to load a LASTZ format file or preset (hoxd55).
      - Gap Cost (Penalty):
-       * Linear (Default): --linear-gap loose (suitable for distant species).
-                           --linear-gap medium (suitable for mouse/human).
+       * Linear (Default): --gap-model loose (suitable for distant species).
+                           --gap-model medium (suitable for mouse/human).
        * Affine: Use --gap-open and --gap-extend to override linear costs.
          (Cost = open + extend * length).
      - Overlaps are trimmed by finding the optimal cut point based on exact sequence scores.
@@ -62,11 +62,11 @@ Examples:
         )
         .arg(crate::cmd_pgr::args::outfile_arg())
         .arg(
-            Arg::new("linear_gap")
-                .long("linear-gap")
+            Arg::new("gap_model")
+                .long("gap-model")
                 .default_value("loose")
                 .value_parser(["loose", "medium"])
-                .help("Linear gap cost type"),
+                .help("Gap model: loose or medium"),
         )
         .arg(
             Arg::new("min_score")
@@ -78,18 +78,18 @@ Examples:
         .arg(
             // Note: distinct from args::add_poa_args gap_open/gap_extend.
             // POA gaps are always-on affine penalties with defaults; here they
-            // are optional overrides for the --linear-gap chaining preset.
+            // are optional overrides for the --gap-model chaining preset.
             Arg::new("gap_open")
                 .long("gap-open")
                 .value_parser(clap::value_parser!(i32))
-                .help("Gap open cost (overrides --linear-gap)"),
+                .help("Gap open cost (overrides --gap-model)"),
         )
         .arg(
             // See gap_open note above re: distinct from POA's --gap-extend.
             Arg::new("gap_extend")
                 .long("gap-extend")
                 .value_parser(clap::value_parser!(i32))
-                .help("Gap extension cost (overrides --linear-gap)"),
+                .help("Gap extension cost (overrides --gap-model)"),
         )
         .arg(
             Arg::new("score_scheme")
@@ -101,7 +101,7 @@ Examples:
 pub fn execute(args: &ArgMatches) -> Result<()> {
     let input = args.get_one::<String>("psl").unwrap();
     let output = crate::cmd_pgr::args::get_outfile(args);
-    let linear_gap = args.get_one::<String>("linear_gap").unwrap();
+    let gap_model = args.get_one::<String>("gap_model").unwrap();
     let min_score = *args.get_one::<f64>("min_score").unwrap();
     let target_2bit_path = args.get_one::<String>("target");
     let query_2bit_path = args.get_one::<String>("query");
@@ -143,7 +143,7 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
     let gap_calc = if let (Some(&open), Some(&extend)) = (gap_open, gap_extend) {
         GapCalc::affine(open, extend)
     } else {
-        match linear_gap.as_str() {
+        match gap_model.as_str() {
             "loose" => GapCalc::loose(),
             "medium" => GapCalc::medium(),
             _ => GapCalc::medium(),

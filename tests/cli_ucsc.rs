@@ -107,7 +107,7 @@ fn test_chaining_psl_lastz() {
             output.to_str().unwrap(),
             "--score-scheme",
             "hoxd55",
-            "--linear-gap",
+            "--gap-model",
             "medium",
             "--min-score",
             "1000",

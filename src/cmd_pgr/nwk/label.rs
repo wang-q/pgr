@@ -17,7 +17,7 @@ Notes:
   in the Newick, one per line. Empty labels produce no output.
 * The `-t` option prints labels on a single line, separated by tabs.
 * The `-I` and `-L` options filter out internal or leaf nodes.
-* Selection options (`-n`, `-f`, `-r`) can be combined.
+* Selection options (`-n`, `-l`, `-r`) can be combined.
 * With `-D`, descendants of selected internal nodes are also included.
 * Monophyly check (`-M`) verifies if the selected nodes form a monophyletic
   group. It checks terminal nodes against the selection.
@@ -76,11 +76,11 @@ Examples:
                 .help("Select nodes by exact name"),
         )
         .arg(
-            Arg::new("file")
-                .long("file")
-                .short('f')
+            Arg::new("name_list")
+                .long("name-list")
+                .short('l')
                 .num_args(1)
-                .help("Select nodes from a file"),
+                .help("Select nodes from a name-list file"),
         )
         .arg(
             Arg::new("regex")

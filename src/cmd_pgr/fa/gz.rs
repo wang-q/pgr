@@ -52,7 +52,7 @@ Examples:
         )
         .arg(crate::cmd_pgr::args::parallel_arg())
         .arg(
-            Arg::new("compress-level")
+            Arg::new("compress_level")
                 .long("compress-level")
                 .short('l')
                 .value_parser(value_parser!(i32))
@@ -67,13 +67,7 @@ Examples:
                 .action(ArgAction::SetTrue)
                 .help("Create BGZF index (.gzi) for an existing .gz file"),
         )
-        .arg(
-            Arg::new("outfile")
-                .long("outfile")
-                .short('o')
-                .num_args(1)
-                .help("Output filename. [stdout] for screen"),
-        )
+        .arg(crate::cmd_pgr::args::outfile_arg_optional())
 }
 
 // command implementation
@@ -99,7 +93,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let opt_parallel: std::num::NonZeroUsize =
         (*args.get_one::<usize>("parallel").unwrap()).try_into()?;
-    let compress_level = *args.get_one::<i32>("compress-level").unwrap();
+    let compress_level = *args.get_one::<i32>("compress_level").unwrap();
 
     let outfile = if args.contains_id("outfile") {
         crate::cmd_pgr::args::get_outfile(args).to_string()

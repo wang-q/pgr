@@ -347,9 +347,9 @@ pub fn match_names(tree: &Tree, args: &ArgMatches) -> anyhow::Result<BTreeSet<us
         }
     }
 
-    // ids supplied by --file
-    if args.contains_id("file") {
-        let file = args.get_one::<String>("file").unwrap();
+    // ids supplied by --name-list
+    if args.contains_id("name_list") {
+        let file = args.get_one::<String>("name_list").unwrap();
         for name in crate::libs::io::read_names::<Vec<String>>(file)?.iter() {
             if let Some(id) = id_of.get(name) {
                 ids.insert(*id);
@@ -373,7 +373,7 @@ pub fn match_names(tree: &Tree, args: &ArgMatches) -> anyhow::Result<BTreeSet<us
 
     // Default is printing all named nodes
     let is_all =
-        !(args.contains_id("node") || args.contains_id("file") || args.contains_id("regex"));
+        !(args.contains_id("node") || args.contains_id("name_list") || args.contains_id("regex"));
 
     if is_all {
         ids = id_of.values().cloned().collect();

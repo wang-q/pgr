@@ -116,7 +116,7 @@ pgr net subset [OPTIONS] <net_in> <chain_in> <chain_out>
 Adds synteny information to a net file. It classifies fills as `syn` (syntenic), `inv` (inverted), or `nonSyn` (non-syntenic) based on their relationship to the parent structure and query coordinates.
 
 ```bash
-pgr net syntenic [OPTIONS] <in_net> <out_net>
+pgr net syntenic [OPTIONS] <infile> <outfile>
 ```
 
 ### Options

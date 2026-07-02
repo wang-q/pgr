@@ -25,7 +25,7 @@ pgr gff rg [OPTIONS] <infile>
 *   `--key <string>`: GFF attribute to use as the feature identifier (default: "ID").
     *   Choices: `ID`, `Name`, `Parent`, `gene`, `locus_tag`, `protein_id`, `product`.
 *   `-s, --key-simplify`: Simplify sequence names (identifiers) by truncating at the first space, dot, comma, or dash.
-*   `--seq-simplify`: Simplify reference sequence names (chromosome names) by truncating at the first space, dot, comma, or dash.
+*   `-S, --seq-simplify`: Simplify reference sequence names (chromosome names) by truncating at the first space, dot, comma, or dash.
 *   `-o, --outfile <file>`: Output filename (default: stdout).
 
 ### Output Format

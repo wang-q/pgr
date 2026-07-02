@@ -73,8 +73,8 @@ Examples:
                 .help("Record number in one file should be EVEN"),
         )
         .arg(
-            Arg::new("maxpart")
-                .long("maxpart")
+            Arg::new("max_part")
+                .long("max-part")
                 .short('m')
                 .num_args(1)
                 .default_value("999")
@@ -135,11 +135,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             usize::MAX
         };
         let is_even = args.get_flag("even");
-        let opt_maxpart = *args.get_one::<usize>("maxpart").unwrap();
+        let opt_max_part = *args.get_one::<usize>("max_part").unwrap();
 
         let mut chunker =
-            pgr::libs::fasta::chunk::SizeChunker::new(opt_count, is_even, opt_maxpart);
-        let part_width = (opt_maxpart.checked_ilog10().unwrap_or(0) + 1) as usize;
+            pgr::libs::fasta::chunk::SizeChunker::new(opt_count, is_even, opt_max_part);
+        let part_width = (opt_max_part.checked_ilog10().unwrap_or(0) + 1) as usize;
 
         'outer: for infile in args.get_many::<String>("infiles").unwrap() {
             let mut fa_in = pgr::libs::fmt::fa::reader(infile)?;

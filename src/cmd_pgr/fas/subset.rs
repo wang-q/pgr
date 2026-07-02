@@ -27,7 +27,14 @@ Examples:
 
 "###,
         )
-        .arg(crate::cmd_pgr::fas::common::required_arg())
+        .arg(
+            Arg::new("required")
+                .long("required")
+                .short('r')
+                .required(true)
+                .num_args(1)
+                .help("File with a list of species names to keep, one per line"),
+        )
         .arg(crate::cmd_pgr::args::infiles_arg("block FA"))
         .arg(
             Arg::new("strict")

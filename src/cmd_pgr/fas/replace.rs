@@ -12,7 +12,7 @@ Replaces headers in block FA files using a TSV file.
 Notes:
 * Supports both plain text and gzipped (.gz) files
 * Reads from stdin if input file is 'stdin'
-* The replacement file (--required) should contain one or more fields:
+* The replacement file (--replace-tsv) should contain one or more fields:
   * `original_name  replace_name   more_replace_name`
 * One field: Deletes the entire alignment block for the specified species
 * Three or more fields: Duplicates the entire alignment block for each replacement name
@@ -26,7 +26,14 @@ Examples:
 
 "###,
         )
-        .arg(crate::cmd_pgr::fas::common::required_arg())
+        .arg(
+            Arg::new("replace_tsv")
+                .long("replace-tsv")
+                .short('r')
+                .required(true)
+                .num_args(1)
+                .help("TSV file of original_name and replacement_name(s)"),
+        )
         .arg(crate::cmd_pgr::args::infiles_arg("block FA"))
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
@@ -38,7 +45,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
 
-    let replace_of = pgr::libs::io::read_replace_tsv(args.get_one::<String>("required").unwrap())?;
+    let replace_of =
+        pgr::libs::io::read_replace_tsv(args.get_one::<String>("replace_tsv").unwrap())?;
 
     //----------------------------
     // Operating

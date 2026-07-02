@@ -9,13 +9,13 @@ use std::path::Path;
 pub fn make_subcommand() -> Command {
     Command::new("split")
         .about("Split chains up by target or query sequence")
-        .arg(Arg::new("outdir").required(true).help("Output directory"))
         .arg(
             Arg::new("infiles")
                 .required(true)
                 .num_args(1..)
                 .help("Input chain file(s)"),
         )
+        .arg(crate::cmd_pgr::args::outdir_arg_required())
         .arg(
             Arg::new("q")
                 .short('q')

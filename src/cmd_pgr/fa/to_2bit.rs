@@ -27,13 +27,7 @@ Examples:
                 .num_args(1..)
                 .index(1),
         )
-        .arg(
-            Arg::new("outfile")
-                .short('o')
-                .long("outfile")
-                .help("Output filename")
-                .required(true),
-        )
+        .arg(crate::cmd_pgr::args::outfile_arg_required())
         .arg(
             Arg::new("no_mask")
                 .long("no-mask")

@@ -210,7 +210,7 @@ fn command_label_selection_node_monophyly() {
 
 #[test]
 fn command_label_selection_file() {
-    // -f file input
+    // -l name-list file input
     let mut temp_file = Builder::new().suffix(".txt").tempfile().unwrap();
     writeln!(temp_file, "Homo").unwrap();
     writeln!(temp_file, "Pan").unwrap();
@@ -221,7 +221,7 @@ fn command_label_selection_file() {
             "nwk",
             "label",
             "tests/newick/catarrhini.nwk",
-            "-f",
+            "-l",
             list_file,
         ])
         .run();

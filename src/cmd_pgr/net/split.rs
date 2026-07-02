@@ -13,12 +13,7 @@ pub fn make_subcommand() -> Command {
                 .required(true)
                 .index(1),
         )
-        .arg(
-            Arg::new("outdir")
-                .help("Output directory")
-                .required(true)
-                .index(2),
-        )
+        .arg(crate::cmd_pgr::args::outdir_arg_required())
 }
 
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {

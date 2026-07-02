@@ -27,7 +27,7 @@ pgr fa filter tests/fasta/ufasta.fa tests/fasta/ufasta.fa.gz -a 1 --uniq
 pgr fa filter tests/fasta/filter.fa --iupac --upper
 
 pgr fa dedup tests/fasta/dedup.fa
-pgr fa dedup tests/fasta/dedup.fa --seq --both --file stdout
+pgr fa dedup tests/fasta/dedup.fa --seq --both --dups-file stdout
 
 pgr fa mask tests/fasta/ufasta.fa tests/fasta/mask.json --hard
 

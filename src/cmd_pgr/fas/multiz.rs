@@ -63,27 +63,27 @@ Examples:
                 .help("Merge mode: core (strict intersection) or union"),
         )
         .arg(
-            Arg::new("score-matrix")
+            Arg::new("score_matrix")
                 .long("score-matrix")
                 .num_args(1)
                 .help("Score matrix file (LASTZ format) or preset name (e.g. hoxd55)"),
         )
         .arg(
-            Arg::new("gap-model")
+            Arg::new("gap_model")
                 .long("gap-model")
                 .num_args(1)
                 .default_value("medium")
                 .help("Gap model: constant, medium, or loose"),
         )
         .arg(
-            Arg::new("gap-open")
+            Arg::new("gap_open")
                 .long("gap-open")
                 .value_parser(value_parser!(i32))
                 .num_args(1)
                 .help("Gap open cost (overrides gap-model when used with --gap-extend)"),
         )
         .arg(
-            Arg::new("gap-extend")
+            Arg::new("gap_extend")
                 .long("gap-extend")
                 .value_parser(value_parser!(i32))
                 .num_args(1)
@@ -97,10 +97,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let radius = *args.get_one::<usize>("radius").unwrap();
     let min_width = *args.get_one::<usize>("min_width").unwrap();
     let mode_str = args.get_one::<String>("mode").unwrap();
-    let gap_model_str = args.get_one::<String>("gap-model").unwrap();
-    let score_matrix = args.get_one::<String>("score-matrix").cloned();
-    let gap_open = args.get_one::<i32>("gap-open").copied();
-    let gap_extend = args.get_one::<i32>("gap-extend").copied();
+    let gap_model_str = args.get_one::<String>("gap_model").unwrap();
+    let score_matrix = args.get_one::<String>("score_matrix").cloned();
+    let gap_open = args.get_one::<i32>("gap_open").copied();
+    let gap_extend = args.get_one::<i32>("gap_extend").copied();
 
     let mode = match mode_str.as_str() {
         "core" => pgr::libs::fas_multiz::FasMultizMode::Core,

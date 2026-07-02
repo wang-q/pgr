@@ -70,6 +70,7 @@ Examples:
         .arg(
             Arg::new("seq_simplify")
                 .long("seq-simplify")
+                .short('S')
                 .action(ArgAction::SetTrue)
                 .help("Simplify reference sequence names"),
         )

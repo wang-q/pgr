@@ -132,6 +132,31 @@ pub fn add_fasta_tsv_arg(cmd: Command) -> Command {
     )
 }
 
+/// Add the optional `-f/--fasta-tsv` argument (for topology-only commands).
+/// Shared by `paf stat` and `paf graph`.
+pub fn add_optional_fasta_tsv_arg(cmd: Command) -> Command {
+    cmd.arg(
+        Arg::new("fasta_tsv")
+            .long("fasta-tsv")
+            .short('f')
+            .num_args(1)
+            .help("TSV file: genome_name <tab> bgzf_fasta_path (optional for topology-only mode)"),
+    )
+}
+
+/// Add the `--min-var-len` argument (default 100).
+/// Shared by `paf stat` and `paf graph`.
+pub fn add_min_var_len_arg(cmd: Command) -> Command {
+    cmd.arg(
+        Arg::new("min_var_len")
+            .long("min-var-len")
+            .num_args(1)
+            .default_value("100")
+            .value_parser(clap::value_parser!(i32))
+            .help("Minimum indel length to split at (default: 100)"),
+    )
+}
+
 /// Add the `--msa` flag for POA-based multi-way output.
 /// Shared by `paf to-fas` and `paf to-maf`.
 pub fn add_msa_flag(cmd: Command) -> Command {

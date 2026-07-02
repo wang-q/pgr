@@ -14,7 +14,7 @@ provided nodes.
 Notes:
 * Node selection:
     * `-n`: Select nodes by exact name.
-    * `-f`: Select nodes from a file.
+    * `-l`: Select nodes from a name-list file.
     * `-r`: Select nodes by regular expression.
     * If no selection is provided, no output is generated.
 * Monophyly check (`-M`):
@@ -57,11 +57,11 @@ Examples:
                 .help("Select nodes by exact name"),
         )
         .arg(
-            Arg::new("file")
-                .long("file")
-                .short('f')
+            Arg::new("name_list")
+                .long("name-list")
+                .short('l')
                 .num_args(1)
-                .help("Select nodes from a file"),
+                .help("Select nodes from a name-list file"),
         )
         .arg(
             Arg::new("regex")

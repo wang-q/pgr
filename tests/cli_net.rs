@@ -246,6 +246,7 @@ fn test_net_split() -> Result<(), Box<dyn std::error::Error>> {
     cmd.arg("net")
         .arg("split")
         .arg(in_file.path().to_str().unwrap())
+        .arg("-o")
         .arg(out_dir_path)
         .assert()
         .success();
