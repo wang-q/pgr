@@ -53,8 +53,8 @@ Examples:
                 .help("Input PAF file (or 'stdin' for piped input)"),
         )
         .arg(crate::cmd_pgr::args::outfile_arg());
-    let cmd = crate::cmd_pgr::paf::common::add_optional_fasta_tsv_arg(cmd);
-    crate::cmd_pgr::paf::common::add_min_var_len_arg(cmd)
+    let cmd = crate::cmd_pgr::args::add_optional_fasta_tsv_arg(cmd);
+    crate::cmd_pgr::args::add_min_var_len_arg(cmd)
 }
 
 pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {

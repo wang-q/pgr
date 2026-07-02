@@ -1,4 +1,3 @@
-use super::common;
 use clap::{builder, Arg, ArgAction, ArgMatches, Command};
 use std::io::BufRead;
 
@@ -94,18 +93,20 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let opt_parallel = *args.get_one::<usize>("parallel").unwrap();
 
-    let infiles = common::collect_infiles(args);
+    let infiles = crate::cmd_pgr::args::collect_infiles(args);
 
-    let (sender, writer_thread) =
-        common::spawn_writer_and_pool(crate::cmd_pgr::args::get_outfile(args), opt_parallel)?;
+    let (sender, writer_thread) = pgr::libs::par::spawn_writer_and_pool(
+        crate::cmd_pgr::args::get_outfile(args),
+        opt_parallel,
+    )?;
 
     //----------------------------
     // Ops
     //----------------------------
     let (entries1, entries2) =
-        common::load_two_sets(&infiles, false, |paths| load_file(&paths[0], is_bin))?;
+        pgr::libs::par::load_two_sets(&infiles, false, |paths| load_file(&paths[0], is_bin))?;
 
-    common::par_run_pairs(
+    pgr::libs::par::par_run_pairs(
         &entries1,
         &entries2,
         &sender,

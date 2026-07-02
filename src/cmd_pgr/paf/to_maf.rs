@@ -73,10 +73,10 @@ fn output_maf_msa(
 }
 
 pub fn make_subcommand() -> Command {
-    common::add_poa_args(
-        common::add_query_args(common::add_msa_flag(common::add_fasta_tsv_arg(
-            Command::new("to-maf"),
-        ))),
+    crate::cmd_pgr::args::add_poa_args(
+        crate::cmd_pgr::args::add_query_args(crate::cmd_pgr::args::add_msa_flag(
+            crate::cmd_pgr::args::add_fasta_tsv_arg(Command::new("to-maf")),
+        )),
         false,
     )
     .about("Query PAF index and output pairwise or multi-way MAF")
@@ -124,7 +124,7 @@ Examples:
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let (idx, all_results, mut fasta_store) = common::prepare_query(args)?;
     if args.get_flag("msa") {
-        let params = common::get_poa_params(args);
+        let params = crate::cmd_pgr::args::get_poa_params(args);
         output_maf_msa(&idx, &all_results, &mut fasta_store, params)?;
     } else {
         output_maf(&idx, &all_results, &mut fasta_store)?;

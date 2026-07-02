@@ -1,172 +1,17 @@
-use clap::{Arg, ArgMatches, Command};
+//! Shared runtime helpers for `pgr paf` subcommands.
+//!
+//! Argument builders live in `crate::cmd_pgr::args`; this module provides
+//! query execution and PAF output formatting shared across `paf` subcommands.
+
+use clap::ArgMatches;
 
 use pgr::libs::paf::fasta::{load_fasta_tsv, validate_tsv_covers_index, FastaStore};
 use pgr::libs::paf::index::{PafIndex, QueryResult};
 use pgr::libs::paf::msa_build::orient_interval;
 use pgr::libs::paf::query::QueryOptions;
 
-// Re-export shared POA argument builder and extractor from `cmd_pgr::args`.
-pub use crate::cmd_pgr::args::{add_poa_args, get_poa_params};
-
 /// A region paired with its query results.
 pub type QueryGroup = ((String, i32, i32), Vec<QueryResult>);
-
-/// Add common query arguments to a clap Command.
-/// Shared by `paf query`, `paf to-bed`, `paf to-gfa`, `paf to-vcf`,
-/// `paf to-fas`, and `paf to-maf`.
-pub fn add_query_args(cmd: Command) -> Command {
-    cmd.arg(
-        Arg::new("infile")
-            .required(true)
-            .index(1)
-            .help("Input PAF file or .paf.idx index to query"),
-    )
-    .arg(
-        Arg::new("region")
-            .index(2)
-            .help("Target region to query (e.g. chr1:1000-5000)"),
-    )
-    .arg(
-        Arg::new("bed_regions")
-            .long("bed-regions")
-            .short('b')
-            .num_args(1)
-            .help("BED file with multiple regions for batch query (name start end per line)"),
-    )
-    .arg(
-        Arg::new("transitive")
-            .long("transitive")
-            .short('t')
-            .num_args(0)
-            .help("Enable transitive BFS traversal"),
-    )
-    .arg(
-        Arg::new("max_depth")
-            .long("max-depth")
-            .short('m')
-            .num_args(1)
-            .default_value("2")
-            .value_parser(clap::value_parser!(u16))
-            .help("Maximum BFS depth (0 = unlimited, default: 2)"),
-    )
-    .arg(
-        Arg::new("min_len")
-            .long("min-len")
-            .num_args(1)
-            .default_value("10")
-            .value_parser(clap::value_parser!(i32))
-            .help("Minimum interval length to propagate (default: 10)"),
-    )
-    .arg(
-        Arg::new("min_dist")
-            .long("min-dist")
-            .num_args(1)
-            .default_value("10")
-            .value_parser(clap::value_parser!(i32))
-            .help("Minimum distance to merge adjacent intervals (default: 10)"),
-    )
-    .arg(
-        Arg::new("min_identity")
-            .long("min-identity")
-            .num_args(1)
-            .default_value("0.0")
-            .value_parser(clap::value_parser!(f64))
-            .help("Minimum gap-compressed identity (0.0-1.0, default: 0.0)"),
-    )
-    .arg(
-        Arg::new("min_output_len")
-            .long("min-output-len")
-            .num_args(1)
-            .default_value("0")
-            .value_parser(clap::value_parser!(i32))
-            .help("Minimum output interval length (default: 0 = no filter)"),
-    )
-    .arg(
-        Arg::new("merge_distance")
-            .long("merge-distance")
-            .num_args(1)
-            .default_value("0")
-            .value_parser(clap::value_parser!(i32))
-            .help("Merge adjacent output intervals within this distance (default: 0 = off)"),
-    )
-    .arg(
-        Arg::new("min_degree")
-            .long("min-degree")
-            .num_args(1)
-            .default_value("0")
-            .value_parser(clap::value_parser!(usize))
-            .help("Minimum distinct query sequences per region (default: 0 = off)"),
-    )
-    .arg(
-        Arg::new("min_chain_length")
-            .long("min-chain-length")
-            .num_args(1)
-            .default_value("0")
-            .value_parser(clap::value_parser!(i32))
-            .help("Minimum total aligned length per query (default: 0 = off)"),
-    )
-    .arg(
-        Arg::new("subset_list")
-            .long("subset-sequence-list")
-            .num_args(1)
-            .help("File with sequence names to include (one per line)"),
-    )
-    .arg(
-        Arg::new("syntenic_filter")
-            .long("syntenic-filter")
-            .num_args(1)
-            .help("UCSC chain file; drop query results whose query interval is not covered by any chain's query span (chain-level, both target and query name must match)"),
-    )
-}
-
-/// Add the required `-f/--fasta-tsv` argument.
-/// Shared by `paf to-gfa`, `paf to-vcf`, `paf to-fas`, and `paf to-maf`.
-pub fn add_fasta_tsv_arg(cmd: Command) -> Command {
-    cmd.arg(
-        Arg::new("fasta_tsv")
-            .long("fasta-tsv")
-            .short('f')
-            .required(true)
-            .num_args(1)
-            .help("TSV file: genome_name <tab> bgzf_fasta_path"),
-    )
-}
-
-/// Add the optional `-f/--fasta-tsv` argument (for topology-only commands).
-/// Shared by `paf stat` and `paf graph`.
-pub fn add_optional_fasta_tsv_arg(cmd: Command) -> Command {
-    cmd.arg(
-        Arg::new("fasta_tsv")
-            .long("fasta-tsv")
-            .short('f')
-            .num_args(1)
-            .help("TSV file: genome_name <tab> bgzf_fasta_path (optional for topology-only mode)"),
-    )
-}
-
-/// Add the `--min-var-len` argument (default 100).
-/// Shared by `paf stat` and `paf graph`.
-pub fn add_min_var_len_arg(cmd: Command) -> Command {
-    cmd.arg(
-        Arg::new("min_var_len")
-            .long("min-var-len")
-            .num_args(1)
-            .default_value("100")
-            .value_parser(clap::value_parser!(i32))
-            .help("Minimum indel length to split at (default: 100)"),
-    )
-}
-
-/// Add the `--msa` flag for POA-based multi-way output.
-/// Shared by `paf to-fas` and `paf to-maf`.
-pub fn add_msa_flag(cmd: Command) -> Command {
-    cmd.arg(
-        Arg::new("msa")
-            .long("msa")
-            .num_args(0)
-            .help("Merge results per region into a multi-way block via POA"),
-    )
-}
 
 /// Extract [`QueryOptions`] from clap matches.
 pub fn query_options_from_args(args: &ArgMatches) -> QueryOptions {

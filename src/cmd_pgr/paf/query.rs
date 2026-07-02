@@ -48,7 +48,7 @@ Examples:
 
 "###,
         );
-    common::add_query_args(cmd)
+    crate::cmd_pgr::args::add_query_args(cmd)
 }
 
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {

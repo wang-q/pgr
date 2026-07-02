@@ -1,4 +1,3 @@
-use super::common;
 use clap::Command;
 
 // Create clap subcommand arguments
@@ -44,10 +43,10 @@ Examples:
 
 "###,
         )
-        .arg(common::infiles_arg())
-        .arg(common::hasher_arg())
-        .arg(common::kmer_arg())
-        .arg(common::window_arg())
+        .arg(crate::cmd_pgr::args::pair_infiles_arg())
+        .arg(crate::cmd_pgr::args::hasher_arg())
+        .arg(crate::cmd_pgr::args::kmer_arg())
+        .arg(crate::cmd_pgr::args::window_arg())
         .arg(
             clap::Arg::new("dim")
                 .long("dim")
@@ -57,8 +56,8 @@ Examples:
                 .value_parser(clap::value_parser!(usize))
                 .help("The dimension size should be a multiple of 32."),
         )
-        .arg(common::sim_arg())
-        .arg(common::list_arg())
+        .arg(crate::cmd_pgr::args::sim_arg())
+        .arg(crate::cmd_pgr::args::list_arg())
         .arg(crate::cmd_pgr::args::parallel_arg())
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
@@ -77,23 +76,25 @@ pub fn execute(args: &clap::ArgMatches) -> anyhow::Result<()> {
     let is_list = args.get_flag("list_files");
     let opt_parallel = *args.get_one::<usize>("parallel").unwrap();
 
-    let infiles = common::collect_infiles(args);
+    let infiles = crate::cmd_pgr::args::collect_infiles(args);
 
-    let (sender, writer_thread) =
-        common::spawn_writer_and_pool(crate::cmd_pgr::args::get_outfile(args), opt_parallel)?;
+    let (sender, writer_thread) = pgr::libs::par::spawn_writer_and_pool(
+        crate::cmd_pgr::args::get_outfile(args),
+        opt_parallel,
+    )?;
 
     //----------------------------
     // Ops
     //----------------------------
-    let (entries1, entries2) = common::load_two_sets(&infiles, is_list, |paths| {
-        common::load_entries(paths, |p| {
+    let (entries1, entries2) = pgr::libs::par::load_two_sets(&infiles, is_list, |paths| {
+        pgr::libs::par::load_entries(paths, |p| {
             let entry =
                 pgr::libs::hv::load_hv_from_fasta(p, opt_hasher, opt_kmer, opt_window, opt_dim)?;
             Ok(vec![entry])
         })
     })?;
 
-    common::par_run_pairs(&entries1, &entries2, &sender, |e1, e2| {
+    pgr::libs::par::par_run_pairs(&entries1, &entries2, &sender, |e1, e2| {
         let d = pgr::libs::hv::calc_distances(&e1.set, &e2.set, opt_kmer);
 
         let dist = if is_sim { 1.0 - d.mash } else { d.mash };

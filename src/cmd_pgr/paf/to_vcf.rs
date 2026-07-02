@@ -3,9 +3,9 @@ use clap::*;
 use super::common;
 
 pub fn make_subcommand() -> Command {
-    common::add_poa_args(
-        common::add_query_args(
-            common::add_fasta_tsv_arg(Command::new("to-vcf"))
+    crate::cmd_pgr::args::add_poa_args(
+        crate::cmd_pgr::args::add_query_args(
+            crate::cmd_pgr::args::add_fasta_tsv_arg(Command::new("to-vcf"))
                 .arg(crate::cmd_pgr::args::outfile_arg()),
         ),
         false,
@@ -65,7 +65,7 @@ Examples:
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let (idx, all_results, mut fasta_store) = common::prepare_query(args)?;
 
-    let params = common::get_poa_params(args);
+    let params = crate::cmd_pgr::args::get_poa_params(args);
 
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
 

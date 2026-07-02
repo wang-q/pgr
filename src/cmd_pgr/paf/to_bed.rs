@@ -14,7 +14,7 @@ fn output_bed(idx: &pgr::libs::paf::index::PafIndex, results: &[QueryResult]) {
 }
 
 pub fn make_subcommand() -> Command {
-    common::add_query_args(Command::new("to-bed"))
+    crate::cmd_pgr::args::add_query_args(Command::new("to-bed"))
         .about("Query PAF index and output BED3 coordinates")
         .after_help(
             r###"

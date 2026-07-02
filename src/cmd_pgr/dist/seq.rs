@@ -1,4 +1,3 @@
-use super::common;
 use clap::Command;
 
 // Create clap subcommand arguments
@@ -85,11 +84,11 @@ Examples:
 
 "###,
         )
-        .arg(common::infiles_arg())
-        .arg(common::hasher_arg())
-        .arg(common::kmer_arg())
-        .arg(common::window_arg())
-        .arg(common::sim_arg())
+        .arg(crate::cmd_pgr::args::pair_infiles_arg())
+        .arg(crate::cmd_pgr::args::hasher_arg())
+        .arg(crate::cmd_pgr::args::kmer_arg())
+        .arg(crate::cmd_pgr::args::window_arg())
+        .arg(crate::cmd_pgr::args::sim_arg())
         .arg(
             clap::Arg::new("zero")
                 .long("zero")
@@ -102,7 +101,7 @@ Examples:
                 .action(clap::ArgAction::SetTrue)
                 .help("Merge all sequences within a file into a single set for comparison"),
         )
-        .arg(common::list_arg())
+        .arg(crate::cmd_pgr::args::list_arg())
         .arg(crate::cmd_pgr::args::parallel_arg())
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
@@ -122,16 +121,18 @@ pub fn execute(args: &clap::ArgMatches) -> anyhow::Result<()> {
     let is_list = args.get_flag("list_files");
     let opt_parallel = *args.get_one::<usize>("parallel").unwrap();
 
-    let infiles = common::collect_infiles(args);
+    let infiles = crate::cmd_pgr::args::collect_infiles(args);
 
-    let (sender, writer_thread) =
-        common::spawn_writer_and_pool(crate::cmd_pgr::args::get_outfile(args), opt_parallel)?;
+    let (sender, writer_thread) = pgr::libs::par::spawn_writer_and_pool(
+        crate::cmd_pgr::args::get_outfile(args),
+        opt_parallel,
+    )?;
 
     //----------------------------
     // Ops
     //----------------------------
-    let (entries1, entries2) = common::load_two_sets(&infiles, is_list, |paths| {
-        common::load_entries(paths, |p| {
+    let (entries1, entries2) = pgr::libs::par::load_two_sets(&infiles, is_list, |paths| {
+        pgr::libs::par::load_entries(paths, |p| {
             pgr::libs::hash::load_minimizers(p, opt_hasher, opt_kmer, opt_window, is_merge)
         })
     })?;
@@ -139,7 +140,7 @@ pub fn execute(args: &clap::ArgMatches) -> anyhow::Result<()> {
     // Distance -> similarity converter for mash distance.
     let to_sim = |mash: f64| if mash > 1.0 { 0.0 } else { 1.0 - mash };
 
-    common::par_run_pairs(&entries1, &entries2, &sender, |e1, e2| {
+    pgr::libs::par::par_run_pairs(&entries1, &entries2, &sender, |e1, e2| {
         let d = pgr::libs::hash::set_distances(&e1.set, &e2.set, opt_kmer);
 
         if !is_zero && d.jaccard == 0. {
