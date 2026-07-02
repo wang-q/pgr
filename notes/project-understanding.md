@@ -437,4 +437,29 @@ pgr 的 `chain`/`net`/`axt`/`psl` 模块是 UCSC kent-tools 对应功能的**Rus
 | [[clust-boot.md]] | `pgr clust boot` pvclust 风格 bootstrap 设计 | 计划中（未实现） |
 | [[dbscan-planned.md]] | DBSCAN 密度聚类设计（含评分实现讨论） | 部分实现（DBSCAN 已落地，`--scan`/`--opt-eps` 未实现） |
 | [[dist-roadmap.md]] | dist 模块距离计算路线图（K2P/JC69 等） | 部分实现（hv/seq/vector 已落地，模型距离未实现） |
+| [[clust-impl.md]] | clust 模块实现分析（内存布局/SciPy 借鉴/NN-chain 路线图/基准） | 部分实现（NN-chain 已落地，Heap/MST 优化待做） |
+
+## 10. 外部工具参考索引（notes/references/）
+
+| 文档 | 定位 |
+|------|------|
+| [[impg.md]] | impg 隐式泛基因组图设计（PAF + 区间树投影） |
+| [[seqwish.md]] | seqwish 从 PAF 诱导 GFA 变异图（DSU 传递闭包） |
+| [[smoothxg.md]] | smoothxg GFA 图归一化（POA 块分解 + 平滑） |
+| [[minigraph.md]] | minigraph 参考锚定增量图构建（rGFA） |
+| [[cactus.md]] | Cactus 渐进式比对与 Minigraph-Cactus 架构 |
+| [[cactus_lastz.md]] | Cactus lastzRepeatMasking 子模块深度分析 |
+| [[pangenome-tools.md]] | 泛基因组工具生态全景与 pgr 定位 |
+| [[gfa.md]] | GFA 格式规范 + untangling 博客译文 |
+| [[ucsc.md]] | UCSC chain-net pipeline 脚本（pgr 重实现参照基准） |
+| [[multiz.md]] | multiz profile–profile DP 算法源码分析 |
+| [[fastk.md]] | FastK k-mer 计数器（Super-mer + Minimizer） |
+| [[kaks.md]] | KaKs_Calculator3.0 与 PAML 源码分析 |
+
+## 11. 笔记根文件索引（notes/）
+
+| 文档 | 定位 |
+|------|------|
+| [[paf-pangenome.md]] | PAF 隐式图核心目标、路线与已实现能力（泛基因组方向枢纽） |
+| [[ecoli-cohort.md]] | 4 万大肠杆菌基因组泛基因组端到端 pipeline |
 

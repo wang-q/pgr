@@ -268,4 +268,4 @@ pgr nwk to-tex [OPTIONS] <infile>
 
 ## Planned Subcommands
 
-*   `eval` [Planned]: Multi-dimensional tree evaluation framework (geometric, taxonomic, phylogenetic, trait consistency). Design notes in `notes/design/nwk-eval.md`. Referenced by `pgr clust eval` and `pgr clust cut` for tree-based metrics.
+*   `eval` [Planned]: Multi-dimensional tree evaluation framework (geometric, taxonomic, phylogenetic, trait consistency). Referenced by `pgr clust eval` and `pgr clust cut` for tree-based metrics.

@@ -88,4 +88,4 @@ pgr dist vector presence.txt --mode jaccard --bin --dis > distance.tsv
 
 ## 未来规划 (Roadmap)
 
-Alignment-based Metrics (K2P/JC69/p-distance)、Scikit-learn 兼容性架构优化、SciPy 标准度量扩展等规划详情移至 [notes/design/dist-roadmap.md](../notes/design/dist-roadmap.md)。
+Alignment-based Metrics (K2P/JC69/p-distance)、Scikit-learn 兼容性架构优化、SciPy 标准度量扩展等功能尚未实现。

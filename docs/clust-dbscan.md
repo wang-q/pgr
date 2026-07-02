@@ -5,17 +5,14 @@
 ## 现状概览
 
 - 输入与输出
-  - 输入：成对距离 `.tsv`（lower is better），通过 `pairmat::ScoringMatrix::from_pair_scores` 读入
+  - 输入：成对距离 `.tsv`（lower is better）
   - 输出：`cluster`（一行一簇，首元素为代表点）或 `pair`（代表点-成员对）
 - CLI 参数
   - `infile`、`--format {cluster|pair}`、`--same`、`--missing`、`--eps`、`--min_points`、`-o/--outfile`
-- 代码参考
-  - CLI：[clust/dbscan.rs](../src/cmd_pgr/clust/dbscan.rs)
-  - 算法库：[libs/clust/dbscan.rs](../src/libs/clust/dbscan.rs)
 
 ## 规划
 
-`--scan`/`--opt-eps`/`--min-pct` 等尚未实现的参数扫描与评分功能规划详情移至 [notes/design/dbscan-planned.md](../notes/design/dbscan-planned.md)。
+`--scan`/`--opt-eps`/`--min-pct` 等参数扫描与评分功能尚未实现。
 
 ## 使用示例
 
@@ -29,10 +26,5 @@ pgr clust dbscan pairs.tsv --eps 0.15 --min_points 3 --format pair -o pairs.out.
 
 ## 相关参考
 
-- 本仓库
-  - CLI：[clust/dbscan.rs](../src/cmd_pgr/clust/dbscan.rs)
-  - 库：[libs/clust/dbscan.rs](../src/libs/clust/dbscan.rs)
-  - 评估文档：[clust-eval.md](clust-eval.md)
-- 生态
-  - ClustEval DBSCAN 扫描与评分（Silhouette）：`clusteval/dbscan.py`
+- 评估文档：[clust-eval.md](clust-eval.md)
 

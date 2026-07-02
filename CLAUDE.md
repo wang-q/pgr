@@ -214,6 +214,29 @@ cargo test
 - **稳定性原则 (Zero Panic)**: 任何用户输入（包括畸形数据、二进制文件）都不应导致程序 Panic。必须捕获所有错误并返回友好的错误信息。
 - **基准测试**: 性能敏感的变更必须伴随 `benches/` 下的基准测试结果（使用 `criterion`）。
 
+### 辅助命令
+
+**Changelog 生成**（以最新 tag 为起点）:
+```bash
+git tag | sort -V | tail -1          # find latest tag
+git log v0.2.0..HEAD > gitlog.txt
+git diff v0.2.0 HEAD -- "*.rs" "*.md" > gitdiff.txt
+```
+
+**Code coverage**:
+```bash
+rustup component add llvm-tools
+cargo install cargo-llvm-cov
+cargo llvm-cov
+```
+
+**WSL 构建**（避免 Windows 文件系统性能问题）:
+```bash
+mkdir -p /tmp/cargo
+export CARGO_TARGET_DIR=/tmp/cargo
+cargo build
+```
+
 ## 帮助文本规范 (Help Text Style Guide)
 
 - **`about`**: Third-person singular (e.g., "Counts...", "Calculates...").

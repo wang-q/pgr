@@ -352,28 +352,3 @@ Some subcommands in `pgr` invoke external executables. In particular:
 
 Ensure these tools are installed and available in your `PATH` before running the corresponding pipelines.
 
----
-
-## Help Text Style Guide
-
-For contributors adding new subcommands, `pgr` uses a consistent style for CLI help text.
-
-- **`about`**: Third-person singular (e.g., "Counts...", "Calculates...").
-- **`after_help`**: Uses a raw string like `r###"..."###`.
-  - **Description**: Detailed explanation.
-  - **Notes**: Bullet points starting with `*`.
-    - Standard note for `fa`/`fas`: `* Supports both plain text and gzipped (.gz) files`
-    - Standard note for `fa`/`fas`: `* Reads from stdin if input file is 'stdin'`
-    - Standard note for `2bit`: `* 2bit files are binary and require random access (seeking)`
-    - Standard note for `2bit`: `* Does not support stdin or gzipped inputs`
-  - **Examples**: Numbered list (`1.`, `2.`) with code blocks indented by 3 spaces.
-- **Arguments**:
-  - **Input**: `infiles` (multiple) or `infile` (single).
-    - Help: `Input [FASTA|block FA|2bit] file(s) to process`.
-  - **Output**: `outfile` (`-o`, `--outfile`).
-    - Help: `Output filename. [stdout] for screen`.
-- **Terminology**:
-  - `pgr fa` → "FASTA"
-  - `pgr fas` → "block FA"
-  - `pgr 2bit` → "2bit"
-

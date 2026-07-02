@@ -84,7 +84,6 @@
   - **命令**：`pgr nwk eval` (计划中)
   - **定位**：树结构的多维度评估。
   - **功能**：几何紧密性（Silhouette）、分类纯度（Purity）、演化一致性（Discordance）。
-  - **文档**：[notes/design/nwk-eval.md](../notes/design/nwk-eval.md)
 
 - **Partition-based Evaluation**
   - **命令**：`pgr clust eval`
@@ -94,7 +93,7 @@
 
 ## 计划中 (Planned)
 
-GMM、HDBSCAN、Louvain/Leiden 等算法已列入路线图，规划详情移至 [notes/design/clust-planned.md](../notes/design/clust-planned.md)。
+GMM、HDBSCAN、Louvain/Leiden 等算法已列入路线图。
 
 ## 不建议实现 / 暂无计划 (Not Planned)
 
@@ -163,75 +162,6 @@ pgr clust gmm input.tsv --k 5 --cov full > clusters.tsv
   - `pgr` 可提供 `clust gmm --scan-k 2..20`，自动计算并输出 BIC 曲线，辅助用户选择最佳 K（通常是 BIC 最低点或手肘点）。
 - **Silhouette / Calinski-Harabasz** [部分支持]：基于几何距离的评估指标，适用于 K-means 或一般距离聚类（`clust eval` 已支持距离矩阵版 Silhouette；树上 Silhouette 计划在 `pgr nwk eval` [计划中] 中实现）。
 
-## 实现分析与对比 (Implementation Analysis)
-
-通过与 scikit-learn 的源码对比，总结 `pgr` 当前实现的特点与未来优化方向。
-
-### 内存数据布局 (Memory Layout)
-
-根据输入数据的特性和算法需求，`pgr` 采用三种不同的内存布局策略。
-
-#### 1. 构树类 (Tree-building)
-- **命令**：`hier`, `upgma`, `nj`
-- **输入**：PHYLIP 矩阵 (Dense)
-- **数据结构**：`NamedMatrix` (内部封装 `CondensedMatrix`)
-- **特点**：
-  - **全连接/稠密 (Dense)**：存储上三角矩阵，内存占用 $O(N^2)$。
-  - **内存瓶颈**：当 $N=100k$ 时，`f32` 矩阵需占用约 **18.6 GiB** 内存。这是单机内存处理全连接矩阵的实用极限。
-  - **原因**：PHYLIP 格式本身就是全矩阵格式，且传统构树算法基于全距离矩阵。
-
-#### 2. 扁平聚类 (Flat Clustering)
-- **命令**：`k-medoids`, `mcl`, `dbscan`
-- **输入**：Pair Scores TSV (Sparse-like)
-- **数据结构**：`ScoringMatrix` (内部封装 `HashMap<(usize, usize), f32>`)
-- **特点**：
-  - **稀疏 (Sparse-ish)**：仅存储输入文件中存在的边。
-  - **开销**：虽然不分配 $N^2$ 数组，但 `HashMap` 的每个 Entry 内存开销较大（Key+Value+Overhead），且查找速度不如数组索引。
-  - **适用性**：适合边数 $E \ll N^2$ 的稀疏场景。
-
-#### 3. 图连通分量 (Graph Components)
-- **命令**：`cc`
-- **输入**：Pair TSV (Graph edges)
-- **数据结构**：`petgraph::graphmap::UnGraphMap`
-- **特点**：
-  - **稀疏图 (Sparse Graph)**：基于邻接表/图结构，内存效率高。
-  - **适用性**：专注于图拓扑结构分析，适合超大规模网络。
-
-### DBSCAN
-
-- **scikit-learn 实现**：
-  - **核心**：使用 `NearestNeighbors` 模块（基于 BallTree/KDTree）加速邻域查询。
-  - **优化**：支持稀疏矩阵；通过 `n_jobs` 并行化；核心逻辑部分使用 Cython 加速。
-  - **适用性**：能处理数百万量级的数据（如果维度不高）。
-- **pgr 实现**：
-  - **核心**：基于 `ScoringMatrix` 的朴素 $O(N^2)$ 距离遍历；`region_query` 为线性扫描。
-  - **特点**：代码简洁，无需额外空间索引库；输出包含“代表点对”等生物学便利功能。
-  - **局限**：缺乏空间索引，在大规模（>1万点）或高维数据上性能不如 sklearn。
-- **未来方向**：对于大规模向量输入，需引入空间索引（如 R-tree/KD-tree）或并行化邻域搜索。
-
-### 层次聚类 (UPGMA / NJ vs Agglomerative)
-
-- **scikit-learn (AgglomerativeClustering)**：
-  - **定位**：通用统计聚类，输出 Linkage Matrix（$N-1$ 次合并记录）。
-  - **优化**：
-    - 使用 **MST (最小生成树)** 加速 Single Linkage ($O(N^2)$)。
-    - 使用 **Heap (堆)** 结构加速 Ward/Average/Complete Linkage 的最近邻查找。
-  - **输出**：不直接生成 Newick 树，需转换。
-- **pgr (UPGMA / NJ)**：
-  - **定位**：生物系统发育构树，直接输出 **Tree** 对象和 **Newick** 格式。
-  - **实现**：
-    - **UPGMA**：动态维护距离矩阵（HashMap），每次迭代寻找最小值，复杂度 $O(N^3)$。
-    - **NJ**：经典的 Neighbor-Joining 实现，计算净发散度与 Q 矩阵，输出无根树。
-  - **优势**：逻辑直观，原生支持生物学所需的枝长计算与树操作。
-  - **局限**：未采用 Heap 优化，在大规模数据（>5000 序列）上速度慢于优化过的 Linkage 算法。
-- **pgr (clust hier)**：
-  - **定位**：通用统计聚类底层引擎，类似 SciPy/scikit-learn。
-  - **输入**：`CondensedMatrix` (压缩上三角矩阵，节省 50% 内存)。
-  - **输出**：`Vec<Step>` (Linkage Matrix)，记录合并步骤，不直接生成 Tree 对象。
-  - **实现**：已实现 **NN-chain** 算法，时间复杂度优化至 $O(N^2)$，且对 Ward 方法进行了平方距离优化。支持 In-place 操作以减少内存复制。
-  - **与 UPGMA 的关系**：`hier` 是更底层的通用计算引擎；但 `upgma` 作为一个独立、直观且生物学语义明确的实现将被**长期保留**，作为算法学习和基准参考。
-- **未来方向**：探索针对超大规模数据的近似算法（如 Representative Strategy 已被推荐）。
-
 ## 大规模数据策略 (Two-stage / Representative Strategy)
 
 对于 $N > 20,000$ 的大规模数据，全连接层次聚类的内存 ($O(N^2)$) 和计算 ($O(N^2)$) 开销急剧增加。
@@ -290,15 +220,6 @@ pgr clust cut tree.nwk --height 1.0 --scan 0,1.0,0.05 | \
 # 假设最佳阈值为 0.45
 pgr clust cut tree.nwk --height 0.45 > final_clusters.tsv
 ```
-
-## 实现路线图
-
-1. **基础图聚类**：已完成 MCL、CC、DBSCAN、K-Medoids。
-2. **系统发育构树**：已完成 UPGMA、NJ、Hierarchical Clustering (hier)。
-3. **评估体系**：设计完成 `nwk eval` (Tree) 和 `clust eval` (Partition)。
-4. **向量支持**：建立读取稠密向量/矩阵的基础设施（进行中）。
-5. **统计聚类**：引入 GMM 实现，支持 BIC 模型选择（计划中）。
-6. **层次聚类扩展**：实现 HDBSCAN（计划中）。
 
 ## 输入输出格式约定 (File Formats)
 
