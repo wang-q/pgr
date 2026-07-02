@@ -47,7 +47,7 @@ pgr fa six-frame tests/fasta/trans.fa --len 3 --start --end
 ```bash
 pgr maf to-fas tests/maf/example.maf
 
-pgr axt to-fas tests/fas/RM11_1a.chr.sizes tests/fas/example.axt --qname RM11_1a
+pgr axt to-fas tests/axt/RM11_1a.sizes tests/axt/example.axt --qname RM11_1a
 
 pgr fas filter tests/fas/example.fas --ge 10
 
@@ -79,7 +79,7 @@ pgr fas create tests/fas/I.connect.tsv -r tests/fas/genome.fa --name S288c
 cat tests/fas/genome.fa | sed 's/^>/>S288c./' > tests/fas/genomes.fa
 samtools faidx tests/fas/genomes.fa S288c.I:1-100
 
-pgr fas create tests/fas/I.name.tsv -r tests/fas/genomes.fa
+pgr fas create tests/fas/I.connect.tsv -r tests/fas/genomes.fa
 
 pgr fas separate tests/fas/example.fas -o . --suffix .tmp
 
@@ -110,10 +110,10 @@ pgr fas stat tests/fas/example.fas --outgroup
 pgr fas variation tests/fas/example.fas
 pgr fas variation tests/fas/example.fas --outgroup
 
-# snp-sites -v tests/fas/YDL184C.fas
-pgr fas to-vcf tests/fas/YDL184C.fas
+# snp-sites -v tests/fas_vcf/YDL184C.fas
+pgr fas to-vcf tests/fas_vcf/YDL184C.fas
 pgr fas to-vcf tests/fas/example.fas
-pgr fas to-vcf --sizes tests/fas/S288c.chr.sizes tests/fas/YDL184C.fas
+pgr fas to-vcf --sizes tests/fas_vcf/S288c.chr.sizes tests/fas_vcf/YDL184C.fas
 
 #fasops xlsx tests/fas/example.fas -o example.xlsx
 #fasops xlsx tests/fas/example.fas -l 50 --outgroup -o example.outgroup.xlsx
@@ -134,14 +134,12 @@ faToTwoBit tests/genome/mg1655.fa.gz tests/genome/mg1655.2bit
 
 pgr 2bit size tests/genome/mg1655.2bit
 pgr 2bit size tests/genome/mg1655.2bit --no-ns
-pgr 2bit size tests/genome/mg1655.2bit tests/genome/sakai.2bit
 
 pgr 2bit to-fa tests/genome/mg1655.2bit -o tests/genome/mg1655.fa
 pgr 2bit to-fa tests/genome/mg1655.2bit --no-mask -o tests/genome/mg1655.unmasked.fa
 
 pgr 2bit range tests/genome/mg1655.2bit NC_000913:1-100
 pgr 2bit range tests/genome/mg1655.2bit NC_000913(-):1-100
-# pgr 2bit range tests/genome/mg1655.2bit --rgfile tests/genome/ranges.txt
 
 pgr 2bit masked tests/genome/mg1655.2bit
 pgr 2bit masked tests/genome/mg1655.2bit --gap

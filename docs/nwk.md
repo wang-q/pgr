@@ -41,7 +41,7 @@ pgr nwk cmp [OPTIONS] <infile> [compare_file]
 ```
 
 *   `[compare_file]`: Optional second file. If omitted, compares all trees in `<infile>` pairwise.
-*   Output columns: `Tree1_ID`, `Tree2_ID`, `RF_Dist`, `WRF_Dist`, `KF_Dist`.
+*   Output columns: `Tree1`, `Tree2`, `RF_Dist`, `WRF_Dist`, `KF_Dist`.
 
 ### distance
 

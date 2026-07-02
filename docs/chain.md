@@ -8,7 +8,7 @@
 - **输入**：Chain 格式文件（文本）。
 - **输出**：处理后的 Chain 文件或 Net 文件。
 - **互补**：
-  - 上游：`lastz` -> `axtChain` (或 `pgr axt to-chain` 计划中) 生成 Chain。
+  - 上游：`lastz` -> `axtChain` (或 `pgr psl to-chain`) 生成 Chain。
   - 下游：`pgr net` (生成 Net), `pgr maf` (生成 MAF)。
 
 ## 子命令详解
@@ -57,6 +57,7 @@
 - **参数**:
   - `target_sizes`/`query_sizes`: 染色体大小文件。
   - `--pad`: 在 Block 周围添加 Padding，减少碎片。
+  - `--dots <N>`: 每处理 N 条 Chain 输出一个进度点。
   - `--incl-hap`: 是否包含 Haplotype 序列（`_hap`, `_alt`）。
 
 ### 6. `pgr chain net`: 生成 Net
@@ -67,6 +68,7 @@
 - **参数**:
   - `target_sizes`/`query_sizes`: 染色体大小文件。
   - `--min-space`: 最小 Gap 大小（小于此值的 Gap 将被填充）。
+  - `--min-fill`: 最小填充记录阈值（默认为 `min-space / 2`）。
   - `--min-score`: 最小 Chain 得分阈值。
   - `--incl-hap`: 是否包含 Haplotype 序列。
 

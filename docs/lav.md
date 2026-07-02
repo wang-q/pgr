@@ -73,6 +73,7 @@ pgr lav to-psl [OPTIONS] [input]
 *   `[input]`: Input LAV file (default: stdin).
 *   `-o, --outfile <file>`: Output PSL file (default: stdout).
 *   `--target-strand <strand>`: Set the target strand (e.g., "+"). Default is no strand info.
+*   `--score-file <file>`: Output lav scores to side file (not yet implemented).
 
 ### Examples
 

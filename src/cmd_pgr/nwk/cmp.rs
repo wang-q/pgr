@@ -22,7 +22,7 @@ Notes:
     * Two files: Compares each tree in file1 against each tree in file2.
 
 * Output:
-    * TSV format: Tree1_ID \t Tree2_ID \t RF_Dist \t WRF_Dist \t KF_Dist
+    * TSV format: Tree1 \t Tree2 \t RF_Dist \t WRF_Dist \t KF_Dist
 
 * IDs are 1-based indices of the trees in the input files.
 

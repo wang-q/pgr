@@ -28,7 +28,7 @@ pub fn make_subcommand() -> clap::Command {
 
 * info: check / cover / link / name / stat
 * subset: filter / slice / subset
-* transform: concat / consensus / join / refine / replace
+* transform: concat / consensus / join / multiz / refine / replace
 * file: create / separate / split
 * var: to-vcf / to-xlsx / variation
 
