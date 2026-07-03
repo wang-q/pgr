@@ -18,21 +18,21 @@ modes:
     * euclidean distance to similarity
         * --mode euclid --sim
     * binary euclidean distance
-        * --mode euclid --bin
+        * --mode euclid --binary
     * binary euclidean distance to dissimilarity
-        * --mode euclid --bin --sim --dis
+        * --mode euclid --binary --sim --dis
 
     * cosine similarity, -1 -- 1
         * --mode cosine
     * cosine distance, 0 -- 2
         * --mode cosine --dis
     * binary cosine similarity
-        * --mode cosine --bin
+        * --mode cosine --binary
     * binary cosine similarity
-        * --mode cosine --bin --dis
+        * --mode cosine --binary --dis
 
     * jaccard index
-        * --mode jaccard --bin
+        * --mode jaccard --binary
     * weighted jaccard similarity
         * --mode jaccard
 
@@ -52,8 +52,8 @@ modes:
             "Mode of calculation",
         ))
         .arg(
-            Arg::new("bin")
-                .long("bin")
+            Arg::new("binary")
+                .long("binary")
                 .action(ArgAction::SetTrue)
                 .help("Treat values in list as binary (0 or 1)"),
         )
@@ -75,7 +75,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     let opt_mode = args.get_one::<String>("mode").unwrap();
 
-    let is_bin = args.get_flag("bin");
+    let is_bin = args.get_flag("binary");
     let is_sim = args.get_flag("sim");
     let is_dis = args.get_flag("dis");
 

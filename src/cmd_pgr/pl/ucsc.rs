@@ -68,12 +68,7 @@ References:
         .arg(crate::cmd_pgr::args::min_score_arg("1000"))
         .arg(crate::cmd_pgr::args::t_name_arg(None))
         .arg(crate::cmd_pgr::args::q_name_arg(None))
-        .arg(
-            Arg::new("syn")
-                .long("syn")
-                .action(ArgAction::SetTrue)
-                .help("Generate syntenic alignments"),
-        )
+        .arg(crate::cmd_pgr::args::syn_arg("Generate syntenic alignments"))
         .arg(crate::cmd_pgr::args::outdir_arg())
 }
 

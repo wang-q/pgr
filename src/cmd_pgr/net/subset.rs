@@ -36,12 +36,10 @@ pub fn make_subcommand() -> Command {
                 .action(ArgAction::SetTrue)
                 .help("Split chain when get an insertion of another chain"),
         )
-        .arg(
-            Arg::new("type")
-                .long("type")
-                .action(ArgAction::Set)
-                .help("Restrict output to particular type in net file"),
-        )
+        .arg(crate::cmd_pgr::args::net_type_arg(
+            ArgAction::Set,
+            "Restrict output to particular type in net file",
+        ))
 }
 
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {

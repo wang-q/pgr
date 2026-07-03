@@ -64,7 +64,7 @@
   - **euclid**: 欧氏距离 $L_2$。支持转换为相似度 $S = 1 / e^D$。
   - **cosine**: 余弦相似度（-1 到 1）。支持转换为距离 $D = 1 - S$。
   - **jaccard**: 加权 Jaccard 相似度（针对数值向量）。
-- **二值化 (`--bin`)**:
+- **二值化 (`--binary`)**:
   - 将非零值视为 1，零值视为 0。
   - 适合处理 Presence/Absence 矩阵。
 - **其他参数**:
@@ -97,7 +97,7 @@ pgr dist seq genes.fa -p 4 > dist.tsv
 pgr dist vector features.txt --mode cosine --sim > similarity.tsv
 
 # 计算二值化的 Jaccard 距离 (1 - Jaccard)
-pgr dist vector presence.txt --mode jaccard --bin --dis > distance.tsv
+pgr dist vector presence.txt --mode jaccard --binary --dis > distance.tsv
 ```
 
 ## 未来规划 (Roadmap)

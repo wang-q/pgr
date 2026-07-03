@@ -22,12 +22,9 @@ Examples:
         )
         .arg(crate::cmd_pgr::args::infile_arg().help("Input AXT file. [stdin] for standard input"))
         .arg(crate::cmd_pgr::args::outfile_arg())
-        .arg(
-            Arg::new("by_query")
-                .long("by-query")
-                .action(ArgAction::SetTrue)
-                .help("Sort by query position, not target"),
-        )
+        .arg(crate::cmd_pgr::args::by_query_arg(
+            "Sort by query position, not target",
+        ))
         .arg(
             Arg::new("by_score")
                 .long("by-score")

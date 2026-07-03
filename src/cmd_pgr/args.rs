@@ -859,15 +859,9 @@ pub fn kmer_arg_with_default(default: &'static str) -> Arg {
         .help("K-mer size")
 }
 
-/// `-w/--window` size argument.
+/// `-w/--window` size argument (default: 1, for minimizers).
 pub fn window_arg() -> Arg {
-    Arg::new("window")
-        .long("window")
-        .short('w')
-        .num_args(1)
-        .default_value("1")
-        .value_parser(clap::value_parser!(usize))
-        .help("Window size for minimizers")
+    window_arg_with_default("1", "Window size for minimizers")
 }
 
 /// `--sim` flag (convert distance to similarity).
@@ -1159,4 +1153,59 @@ pub fn fill_fragment_arg() -> Arg {
         .default_value("10")
         .value_parser(clap::value_parser!(usize))
         .help("Fill holes between repetitive fragments")
+}
+
+// ============================================================================
+// Cross-domain shared builders (Round 4 additions)
+// ============================================================================
+
+/// `--color` argument (no short flag, optional default value).
+pub fn color_arg(default: Option<&'static str>, help: &'static str) -> Arg {
+    let arg = Arg::new("color").long("color").num_args(1);
+    match default {
+        Some(d) => arg.default_value(d),
+        None => arg,
+    }
+    .help(help)
+}
+
+/// `--by-query` flag (split/sort on query instead of target).
+pub fn by_query_arg(help: &'static str) -> Arg {
+    Arg::new("by_query")
+        .long("by-query")
+        .action(ArgAction::SetTrue)
+        .help(help)
+}
+
+/// `-C/--count` flag (count records/occurrences).
+pub fn count_flag(help: &'static str) -> Arg {
+    Arg::new("count")
+        .long("count")
+        .short('C')
+        .action(ArgAction::SetTrue)
+        .help(help)
+}
+
+/// `--syn` flag (synteny-related processing).
+pub fn syn_arg(help: &'static str) -> Arg {
+    Arg::new("syn")
+        .long("syn")
+        .action(ArgAction::SetTrue)
+        .help(help)
+}
+
+/// `--type` argument for net subcommands (action varies: Set or Append).
+pub fn net_type_arg(action: ArgAction, help: &'static str) -> Arg {
+    Arg::new("type").long("type").action(action).help(help)
+}
+
+/// `-w/--window` size argument with a custom default and help text.
+pub fn window_arg_with_default(default: &'static str, help: &'static str) -> Arg {
+    Arg::new("window")
+        .long("window")
+        .short('w')
+        .num_args(1)
+        .default_value(default)
+        .value_parser(clap::value_parser!(usize))
+        .help(help)
 }

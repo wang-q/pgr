@@ -66,18 +66,13 @@ pub fn make_subcommand() -> Command {
                 .long("not-query")
                 .help("Restrict query side sequence to those not named (comma separated)"),
         )
-        .arg(
-            Arg::new("type")
-                .long("type")
-                .action(ArgAction::Append)
-                .help("Restrict to given type, maybe repeated"),
-        )
-        .arg(
-            Arg::new("syn")
-                .long("syn")
-                .action(ArgAction::SetTrue)
-                .help("Do filtering based on synteny (tuned for human/mouse)"),
-        )
+        .arg(crate::cmd_pgr::args::net_type_arg(
+            ArgAction::Append,
+            "Restrict to given type, maybe repeated",
+        ))
+        .arg(crate::cmd_pgr::args::syn_arg(
+            "Do filtering based on synteny (tuned for human/mouse)",
+        ))
         .arg(
             Arg::new("nonsyn")
                 .long("nonsyn")

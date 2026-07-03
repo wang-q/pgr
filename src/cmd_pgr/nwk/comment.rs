@@ -51,12 +51,7 @@ pub fn make_subcommand() -> Command {
                 .num_args(1)
                 .help("Free-form strings"),
         )
-        .arg(
-            Arg::new("color")
-                .long("color")
-                .num_args(1)
-                .help("Color of names"),
-        )
+        .arg(crate::cmd_pgr::args::color_arg(None, "Color of names"))
         .arg(
             Arg::new("label")
                 .long("label")

@@ -42,14 +42,10 @@ pub fn make_subcommand() -> Command {
                 .action(ArgAction::SetTrue)
                 .help("Include legend in the output"),
         )
-        .arg(
-            Arg::new("color")
-                .long("color")
-                .short('c')
-                .num_args(1)
-                .default_value("grey")
-                .help("Default color for modules"),
-        )
+        .arg(crate::cmd_pgr::args::color_arg(
+            Some("grey"),
+            "Default color for modules",
+        ))
 }
 
 // command implementation

@@ -77,13 +77,7 @@ Examples:
                 .action(ArgAction::SetTrue)
                 .help("Compute the E-size (from GAGE)"),
         )
-        .arg(
-            Arg::new("count")
-                .long("count")
-                .short('C')
-                .action(ArgAction::SetTrue)
-                .help("Count records"),
-        )
+        .arg(crate::cmd_pgr::args::count_flag("Count records"))
         .arg(
             Arg::new("genome_size")
                 .long("genome-size")

@@ -26,13 +26,9 @@ Examples:
 "###,
         )
         .arg(crate::cmd_pgr::args::infiles_arg("block FA"))
-        .arg(
-            Arg::new("count")
-                .long("count")
-                .short('C')
-                .action(ArgAction::SetTrue)
-                .help("Output species names with occurrence counts"),
-        )
+        .arg(crate::cmd_pgr::args::count_flag(
+            "Output species names with occurrence counts",
+        ))
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 

@@ -45,14 +45,10 @@ Examples:
         .arg(crate::cmd_pgr::args::infile_arg_required_with_help(
             "Input FASTA file to process",
         ))
-        .arg(
-            Arg::new("window")
-                .long("window")
-                .short('w')
-                .value_parser(value_parser!(usize))
-                .default_value("200")
-                .help("Window length"),
-        )
+        .arg(crate::cmd_pgr::args::window_arg_with_default(
+            "200",
+            "Window length",
+        ))
         .arg(
             Arg::new("step")
                 .long("step")

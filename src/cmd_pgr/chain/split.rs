@@ -11,12 +11,9 @@ pub fn make_subcommand() -> Command {
         .about("Split chains up by target or query sequence")
         .arg(crate::cmd_pgr::args::infiles_arg("chain"))
         .arg(crate::cmd_pgr::args::outdir_arg_required())
-        .arg(
-            Arg::new("by_query")
-                .long("by-query")
-                .action(clap::ArgAction::SetTrue)
-                .help("Split on query (default is on target)"),
-        )
+        .arg(crate::cmd_pgr::args::by_query_arg(
+            "Split on query (default is on target)",
+        ))
         .arg(
             Arg::new("lump")
                 .long("lump")

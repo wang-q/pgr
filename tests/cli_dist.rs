@@ -39,7 +39,7 @@ fn command_dist_vector() {
             "tests/clust/domain.tsv",
             "--mode",
             "jaccard",
-            "--bin",
+            "--binary",
         ])
         .run();
 

@@ -76,7 +76,7 @@ pgr plot nrps [OPTIONS] <infile>
 | `infile` | | | File | Input filename ("stdin" for standard input) |
 | `outfile` | `-o` | `--outfile` | File | Output filename (default: stdout) |
 | `legend` | | `--legend` | Flag | Include legend in the output |
-| `color` | `-c` | `--color` | String | Default color (default: "grey") |
+| `color` | | `--color` | String | Default color (default: "grey") |
 
 ### Input Format
 
@@ -99,7 +99,7 @@ A tab-separated file defining modules and domains.
 pgr plot nrps input.tsv -o nrps.tex
 
 # With legend and custom default color
-pgr plot nrps input.tsv --legend -c blue | tectonic -
+pgr plot nrps input.tsv --legend --color blue | tectonic -
 ```
 
 ---
