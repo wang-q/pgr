@@ -69,8 +69,8 @@ Examples:
             "Only print the labels when they form a monophyletic subtree",
         ))
         .arg(
-            Arg::new("column")
-                .long("column")
+            Arg::new("extra_column")
+                .long("extra-column")
                 .short('c')
                 .action(ArgAction::Append)
                 .value_parser([
@@ -97,8 +97,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         return Ok(());
     }
     let mut columns = vec![];
-    if args.contains_id("column") {
-        for column in args.get_many::<String>("column").unwrap() {
+    if args.contains_id("extra_column") {
+        for column in args.get_many::<String>("extra_column").unwrap() {
             columns.push(column.to_string());
         }
     }

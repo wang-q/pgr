@@ -106,7 +106,7 @@ fn test_fa_window_chunk() {
             "10",
             "--step",
             "10",
-            "--chunk",
+            "--chunk-records",
             "3",
             "-o",
             output_file.to_str().unwrap(),
@@ -150,7 +150,7 @@ fn test_fa_window_shuffle_chunk() {
             "10",
             "--step",
             "10",
-            "--chunk",
+            "--chunk-records",
             "20",
             "--shuffle",
             "--seed",
@@ -212,10 +212,10 @@ fn test_fa_window_chunk_stdout_fail() {
             "fa",
             "window",
             input_file.to_str().unwrap(),
-            "--chunk",
+            "--chunk-records",
             "10",
         ])
         .run_fail();
 
-    assert!(stderr.contains("Cannot use --chunk with stdout output"));
+    assert!(stderr.contains("Cannot use --chunk-records with stdout output"));
 }

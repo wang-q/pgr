@@ -25,9 +25,9 @@ Examples:
 "###,
         )
         .arg(
-            Arg::new("ref")
+            Arg::new("ref_name")
                 .short('r')
-                .long("ref")
+                .long("ref-name")
                 .num_args(1)
                 .required(true)
                 .help("Reference sequence name present in all inputs"),
@@ -72,7 +72,7 @@ Examples:
 }
 
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let ref_name = args.get_one::<String>("ref").unwrap().to_string();
+    let ref_name = args.get_one::<String>("ref_name").unwrap().to_string();
     let radius = *args.get_one::<usize>("radius").unwrap();
     let min_width = *args.get_one::<usize>("min_width").unwrap();
     let mode_str = args.get_one::<String>("mode").unwrap();

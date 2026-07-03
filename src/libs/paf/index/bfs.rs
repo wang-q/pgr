@@ -18,7 +18,7 @@ impl PafIndex {
         start: i32,
         end: i32,
         max_depth: u16,
-        min_len: i32,
+        min_len: usize,
         min_dist: i32,
         min_identity: f64,
         min_output_len: i32,
@@ -33,7 +33,7 @@ impl PafIndex {
             .insert(start, end);
         let mut current: Vec<(u32, i32, i32)> = init
             .into_iter()
-            .filter(|&(s, e)| (e - s).abs() >= min_len)
+            .filter(|&(s, e)| (e - s).unsigned_abs() >= min_len as u32)
             .map(|(s, e)| (target_id, s, e))
             .collect();
 
@@ -77,7 +77,7 @@ impl PafIndex {
                                     .entry(m.query_id)
                                     .or_insert_with(|| SortedRanges::new(i32::MAX, min_dist));
                                 for (ns, ne) in sr.insert(qs, qe) {
-                                    if (ne - ns).abs() >= min_len {
+                                    if (ne - ns).unsigned_abs() >= min_len as u32 {
                                         next.push((m.query_id, ns, ne));
                                     }
                                 }

@@ -74,7 +74,7 @@ pgr nwk label [OPTIONS] <infile>
 *   `-D`: Include descendants of selected nodes.
 *   `-M`: Monophyly check (only print if selected nodes form a monophyletic group).
 *   `--tab`: Tab-separated output (single line).
-*   `-c <col>`: Add extra columns (`dup`, `taxid`, `species`, `full`).
+*   `-c <col>` / `--extra-column <col>`: Add extra columns (`dup`, `taxid`, `species`, `full`).
 *   `--root`: Only print the root label.
 
 ### stat

@@ -22,7 +22,7 @@ Examples:
             "Input FASTA file to process",
         ))
         .arg(
-            Arg::new("name")
+            Arg::new("seq_name")
                 .required(true)
                 .index(2)
                 .help("Name of the sequence to extract"),
@@ -39,7 +39,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let mut fa_out = pgr::libs::fmt::fa::writer(crate::cmd_pgr::args::get_outfile(args))?;
 
-    let name = args.get_one::<String>("name").unwrap();
+    let name = args.get_one::<String>("seq_name").unwrap();
 
     //----------------------------
     // Process

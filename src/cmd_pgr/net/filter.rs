@@ -44,23 +44,23 @@ pub fn make_subcommand() -> Command {
                 .help("Restrict to those at least this big on query"),
         )
         .arg(
-            Arg::new("target")
-                .long("target")
+            Arg::new("target_names")
+                .long("target-names")
                 .help("Restrict target side sequence to those named (comma separated)"),
         )
         .arg(
-            Arg::new("not_target")
-                .long("not-target")
+            Arg::new("not_target_names")
+                .long("not-target-names")
                 .help("Restrict target side sequence to those not named (comma separated)"),
         )
         .arg(
-            Arg::new("query")
-                .long("query")
+            Arg::new("query_names")
+                .long("query-names")
                 .help("Restrict query side sequence to those named (comma separated)"),
         )
         .arg(
-            Arg::new("not_query")
-                .long("not-query")
+            Arg::new("not_query_names")
+                .long("not-query-names")
                 .help("Restrict query side sequence to those not named (comma separated)"),
         )
         .arg(crate::cmd_pgr::args::net_type_arg(
@@ -118,16 +118,16 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         criteria.min_size_q = Some(*v);
     }
 
-    if let Some(s) = args.get_one::<String>("target") {
+    if let Some(s) = args.get_one::<String>("target_names") {
         criteria.t_names = Some(s.split(',').map(|s| s.to_string()).collect());
     }
-    if let Some(s) = args.get_one::<String>("not_target") {
+    if let Some(s) = args.get_one::<String>("not_target_names") {
         criteria.not_t_names = Some(s.split(',').map(|s| s.to_string()).collect());
     }
-    if let Some(s) = args.get_one::<String>("query") {
+    if let Some(s) = args.get_one::<String>("query_names") {
         criteria.q_names = Some(s.split(',').map(|s| s.to_string()).collect());
     }
-    if let Some(s) = args.get_one::<String>("not_query") {
+    if let Some(s) = args.get_one::<String>("not_query_names") {
         criteria.not_q_names = Some(s.split(',').map(|s| s.to_string()).collect());
     }
     if let Some(vals) = args.get_many::<String>("type") {

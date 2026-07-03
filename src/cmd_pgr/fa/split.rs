@@ -40,7 +40,7 @@ Examples:
 "###,
         )
         .arg(
-            Arg::new("mode")
+            Arg::new("split_mode")
                 .required(true)
                 .index(1)
                 .action(ArgAction::Set)
@@ -82,7 +82,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     // Args
     //----------------------------
-    let mode = args.get_one::<String>("mode").unwrap();
+    let mode = args.get_one::<String>("split_mode").unwrap();
 
     let outdir = args.get_one::<String>("outdir").unwrap();
     if outdir != "stdout" {

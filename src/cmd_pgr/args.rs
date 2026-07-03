@@ -380,7 +380,7 @@ pub fn query_options_from_args(args: &ArgMatches) -> QueryOptions {
         bed_regions: args.get_one::<String>("bed_regions").cloned(),
         transitive: args.get_flag("transitive"),
         max_depth: *args.get_one::<u16>("max_depth").unwrap(),
-        min_len: *args.get_one::<i32>("min_len").unwrap(),
+        min_len: *args.get_one::<usize>("min_len").unwrap(),
         min_dist: *args.get_one::<i32>("min_dist").unwrap(),
         min_identity: *args.get_one::<f64>("min_identity").unwrap(),
         min_output_len: *args.get_one::<i32>("min_output_len").unwrap(),
@@ -695,7 +695,7 @@ pub fn add_query_args(cmd: Command) -> Command {
             .long("min-len")
             .num_args(1)
             .default_value("10")
-            .value_parser(clap::value_parser!(i32))
+            .value_parser(clap::value_parser!(usize))
             .help("Minimum interval length to propagate (default: 10)"),
     )
     .arg(
@@ -1059,6 +1059,22 @@ pub fn k_arg() -> Arg {
 // ============================================================================
 // chain subcommand builders
 // ============================================================================
+
+/// Positional `in_net` argument (required, auto-indexed).
+pub fn in_net_arg() -> Arg {
+    Arg::new("in_net")
+        .required(true)
+        .num_args(1)
+        .help("Input net file")
+}
+
+/// Positional `in_chain` argument (required, auto-indexed).
+pub fn in_chain_arg() -> Arg {
+    Arg::new("in_chain")
+        .required(true)
+        .num_args(1)
+        .help("Input chain file")
+}
 
 /// Positional `t_sizes` argument for chain subcommands (auto-indexed after infile).
 pub fn chain_t_sizes_arg() -> Arg {

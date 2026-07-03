@@ -19,12 +19,7 @@ Examples:
         .arg(crate::cmd_pgr::args::infile_arg_required_with_help(
             "Input PHYLIP matrix file",
         ))
-        .arg(
-            Arg::new("list")
-                .required(true)
-                .index(2)
-                .help("File containing sequence names to extract"),
-        )
+        .arg(crate::cmd_pgr::args::fa_name_list_arg(true))
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
@@ -33,7 +28,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // Args
     //----------------------------
     let infile = args.get_one::<String>("infile").unwrap();
-    let list_file = args.get_one::<String>("list").unwrap();
+    let list_file = args.get_one::<String>("name_list").unwrap();
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
 
     let wanted_names = pgr::libs::io::read_names::<Vec<String>>(list_file)?;

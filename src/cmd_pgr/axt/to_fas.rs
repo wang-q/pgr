@@ -32,13 +32,7 @@ Examples:
 
 "###,
         )
-        .arg(
-            Arg::new("sizes")
-                .required(true)
-                .index(1)
-                .num_args(1)
-                .help("Chromosome sizes file for the query genome"),
-        )
+        .arg(crate::cmd_pgr::args::chain_q_sizes_arg().index(1))
         .arg(crate::cmd_pgr::args::infiles_arg_at("AXT", 2))
         .arg(crate::cmd_pgr::args::t_name_arg(Some("target")))
         .arg(crate::cmd_pgr::args::q_name_arg(Some("query")))
@@ -51,7 +45,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // Args
     //----------------------------
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
-    let sizes = pgr::read_sizes::<i32>(args.get_one::<String>("sizes").unwrap())?;
+    let sizes = pgr::read_sizes::<i32>(args.get_one::<String>("q_sizes").unwrap())?;
 
     let tname = args.get_one::<String>("t_name").unwrap();
     let qname = args.get_one::<String>("q_name").unwrap();

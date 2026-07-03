@@ -60,8 +60,8 @@ Examples:
                 .help("Quick mode, only aligns indel adjacent regions"),
         )
         .arg(
-            Arg::new("pad")
-                .long("pad")
+            Arg::new("indel_pad")
+                .long("indel-pad")
                 .value_parser(value_parser!(usize))
                 .num_args(1)
                 .default_value("50")
@@ -101,7 +101,7 @@ fn proc_block(block: &pgr::libs::fmt::fas::FasBlock, args: &ArgMatches) -> anyho
     let has_outgroup = args.get_flag("outgroup");
     let chop = *args.get_one::<usize>("chop").unwrap();
     let is_quick = args.get_flag("is_quick");
-    let pad = *args.get_one::<usize>("pad").unwrap();
+    let pad = *args.get_one::<usize>("indel_pad").unwrap();
     let fill = *args.get_one::<usize>("fill").unwrap();
 
     //----------------------------

@@ -31,12 +31,7 @@ Examples:
         .arg(crate::cmd_pgr::args::infile_arg_required_with_help(
             "Input 2bit file to process",
         ))
-        .arg(
-            Arg::new("list")
-                .required(true)
-                .index(2)
-                .help("File containing one sequence name per line"),
-        )
+        .arg(crate::cmd_pgr::args::fa_name_list_arg(true))
         .arg(crate::cmd_pgr::args::invert_arg())
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
@@ -48,7 +43,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     let is_invert = args.get_flag("invert");
     let infile = args.get_one::<String>("infile").unwrap();
-    let list_file = args.get_one::<String>("list").unwrap();
+    let list_file = args.get_one::<String>("name_list").unwrap();
     let outfile = crate::cmd_pgr::args::get_outfile(args);
 
     //----------------------------

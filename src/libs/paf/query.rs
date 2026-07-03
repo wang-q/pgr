@@ -29,7 +29,7 @@ pub struct QueryOptions {
     /// Maximum BFS depth (0 = unlimited).
     pub max_depth: u16,
     /// Minimum interval length to propagate.
-    pub min_len: i32,
+    pub min_len: usize,
     /// Minimum distance to merge adjacent intervals.
     pub min_dist: i32,
     /// Minimum gap-compressed identity (0.0-1.0).

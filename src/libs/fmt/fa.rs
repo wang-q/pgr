@@ -94,7 +94,7 @@ pub fn run_window(
     outfile: &str,
 ) -> anyhow::Result<()> {
     if chunk_size.is_some() && outfile == "stdout" {
-        anyhow::bail!("Cannot use --chunk with stdout output");
+        anyhow::bail!("Cannot use --chunk-records with stdout output");
     }
 
     let mut fa_in = reader(infile)?;

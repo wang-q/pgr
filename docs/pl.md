@@ -92,7 +92,7 @@ pgr pl prefilter [OPTIONS] <infile> <reference>
 | :--- | :--- | :--- | :--- | :--- |
 | `infile` | | | File | Input genome/metagenome FASTA |
 | `reference` | | | File | Reference protein FASTA |
-| `chunk` | `-c` | `--chunk` | Int | Chunk size in bytes (default: 100000) |
+| `chunk` | `-c` | `--chunk-size` | Int | Chunk size in bytes (default: 100000) |
 | `len` | | `--len` | Int | Min amino acid length (default: 15) |
 | `kmer` | `-k` | `--kmer` | Int | K-mer size (default: 7) |
 | `window` | `-w` | `--window` | Int | Window size (default: 1) |

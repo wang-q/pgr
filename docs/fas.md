@@ -188,10 +188,10 @@ pgr fas join [OPTIONS] <infiles>...
 Merges multiple block FA files in a shared reference coordinate system using a multiz-like banded DP algorithm.
 
 ```bash
-pgr fas multiz [OPTIONS] --ref <name> <infiles>...
+pgr fas multiz [OPTIONS] --ref-name <name> <infiles>...
 ```
 
-*   `-r, --ref <name>`: Reference sequence name present in all inputs (required).
+*   `-r, --ref-name <name>`: Reference sequence name present in all inputs (required).
 *   `--radius <int>`: Banded DP radius around reference diagonal (default: 30).
 *   `--min-width <int>`: Minimum window width to merge (default: 1).
 *   `--mode <core|union>`: Merge mode (default: core).
@@ -213,7 +213,7 @@ pgr fas refine [OPTIONS] <infiles>...
 *   `--outgroup`: Indicates presence of outgroups.
 *   `--chop <int>`: Chop head and tail indels.
 *   `--quick`: Quick mode, only aligns indel-adjacent regions.
-*   `--pad <int>`: In quick mode, enlarge indel regions (default: 50).
+*   `--indel-pad <int>`: In quick mode, enlarge indel regions (default: 50).
 *   `--fill <int>`: In quick mode, fill holes between indels (default: 50).
 *   `-p, --parallel <int>`: Number of threads (default: 1).
 *   `-o, --outfile <file>`: Output filename (default: stdout).

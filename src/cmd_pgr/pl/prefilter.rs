@@ -54,8 +54,8 @@ Examples:
                 .help("Reference file containing sequences for filtering"),
         )
         .arg(
-            Arg::new("chunk")
-                .long("chunk")
+            Arg::new("chunk_size")
+                .long("chunk-size")
                 .short('c')
                 .num_args(1)
                 .default_value("100000")
@@ -79,7 +79,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let infile = args.get_one::<String>("infile").unwrap();
     let match_file = args.get_one::<String>("reference").unwrap();
 
-    let opt_chunk = *args.get_one::<usize>("chunk").unwrap();
+    let opt_chunk = *args.get_one::<usize>("chunk_size").unwrap();
     let opt_len = *args.get_one::<usize>("min_len").unwrap();
     let opt_kmer = *args.get_one::<usize>("kmer").unwrap();
     let opt_window = *args.get_one::<usize>("window").unwrap();

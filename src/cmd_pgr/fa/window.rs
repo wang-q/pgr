@@ -68,8 +68,8 @@ Examples:
             "Random seed for shuffling",
         ))
         .arg(
-            Arg::new("chunk")
-                .long("chunk")
+            Arg::new("chunk_records")
+                .long("chunk-records")
                 .value_parser(value_parser!(usize))
                 .help("Split output into chunks of N records"),
         )
@@ -83,7 +83,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let step = *args.get_one::<usize>("step").unwrap();
     let shuffle = args.get_flag("shuffle");
     let seed = *args.get_one::<u64>("seed").unwrap();
-    let chunk_size = args.get_one::<usize>("chunk").copied();
+    let chunk_size = args.get_one::<usize>("chunk_records").copied();
     let outfile = crate::cmd_pgr::args::get_outfile(args);
 
     pgr::libs::fmt::fa::run_window(infile, len, step, shuffle, seed, chunk_size, outfile)
