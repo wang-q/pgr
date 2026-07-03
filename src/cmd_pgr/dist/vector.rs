@@ -38,14 +38,7 @@ modes:
 
 "###,
         )
-        .arg(
-            Arg::new("infiles")
-                .required(true)
-                .num_args(1..=2)
-                .index(1)
-                .required(true)
-                .help("Input filenames. [stdin] for standard input"),
-        )
+        .arg(crate::cmd_pgr::args::pair_infiles_arg())
         .arg(crate::cmd_pgr::args::mode_arg(
             "euclid",
             &["euclid", "cosine", "jaccard"],

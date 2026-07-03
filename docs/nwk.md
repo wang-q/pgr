@@ -144,10 +144,10 @@ pgr nwk rename [OPTIONS] <infile>
 Batch replaces node names or annotations using a TSV file.
 
 ```bash
-pgr nwk replace [OPTIONS] <infile> <replace.tsv>
+pgr nwk replace [OPTIONS] --replace-tsv <replace.tsv> <infile>
 ```
 
-*   `<replace.tsv>`: Tab-separated file: `Original <TAB> Replacement [TAB Extra...]`.
+*   `--replace-tsv <replace.tsv>`: Tab-separated file: `Original <TAB> Replacement [TAB Extra...]`.
 *   `-I, --internal`: Skip internal labels.
 *   `-L, --leaf`: Skip leaf labels.
 *   `--mode <mode>`:

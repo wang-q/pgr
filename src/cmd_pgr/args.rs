@@ -935,6 +935,15 @@ pub fn max_len_arg() -> Arg {
         .help("Maximum length")
 }
 
+/// `--max-score` (f64) without default (optional threshold).
+pub fn max_score_arg_optional(help: &'static str) -> Arg {
+    Arg::new("max_score")
+        .long("max-score")
+        .num_args(1)
+        .value_parser(clap::value_parser!(f64))
+        .help(help)
+}
+
 // ============================================================================
 // Additional common builders
 // ============================================================================
@@ -977,6 +986,24 @@ pub fn ranges_arg() -> Arg {
         .index(2)
         .num_args(0..)
         .help("Ranges of interest")
+}
+
+/// `--replace-tsv` argument (required) for replace commands.
+pub fn replace_tsv_arg() -> Arg {
+    Arg::new("replace_tsv")
+        .long("replace-tsv")
+        .required(true)
+        .num_args(1)
+        .help("TSV file of original_name and replacement_name(s)")
+}
+
+/// `--runlist` argument (required) for region-based commands.
+pub fn runlist_arg() -> Arg {
+    Arg::new("runlist")
+        .long("runlist")
+        .required(true)
+        .num_args(1)
+        .help("JSON file of chromosome runlists")
 }
 
 /// `--mode` argument with possible values, a default, and a custom help text.

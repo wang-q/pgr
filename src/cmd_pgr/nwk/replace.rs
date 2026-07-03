@@ -12,7 +12,7 @@ pub fn make_subcommand() -> Command {
 Replaces node names or appends annotations in a Newick file using a TSV file.
 
 Notes:
-* `<replace.tsv>` is a tab-separated file with 2 or more columns:
+* `--replace-tsv` is a tab-separated file with 2 or more columns:
   `<original_name> <replacement> [additional_annotations...]`
 * The behavior of the 2nd column (`<replacement>`) depends on `--mode`:
     * `label` (default): Replaces the node name. Empty string removes the name.
@@ -25,24 +25,18 @@ Notes:
 
 Examples:
 1. Basic renaming of nodes:
-   pgr nwk replace input.nwk names.tsv > output.nwk
+   pgr nwk replace input.nwk --replace-tsv names.tsv > output.nwk
 
 2. Add species and color annotations:
-   pgr nwk replace input.nwk annotations.tsv --mode species
+   pgr nwk replace input.nwk --replace-tsv annotations.tsv --mode species
 
 3. Remove node names (2nd column is empty):
-   pgr nwk replace input.nwk remove.tsv
+   pgr nwk replace input.nwk --replace-tsv remove.tsv
 
 "###,
         )
         .arg(crate::cmd_pgr::args::infile_arg_required())
-        .arg(
-            Arg::new("replace")
-                .required(true)
-                .num_args(1..)
-                .index(2)
-                .help("Path to replace.tsv"),
-        )
+        .arg(crate::cmd_pgr::args::replace_tsv_arg())
         .arg(crate::cmd_pgr::args::internal_arg())
         .arg(crate::cmd_pgr::args::leaf_arg())
         .arg(crate::cmd_pgr::args::mode_arg(
@@ -67,21 +61,20 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let skip_leaf = args.get_flag("leaf");
 
     let mut replace_of: BTreeMap<String, Vec<String>> = BTreeMap::new();
-    for rfile in args.get_many::<String>("replace").unwrap() {
-        for line in pgr::read_lines(rfile)? {
-            let parts: Vec<_> = line.split('\t').collect();
+    let rfile = args.get_one::<String>("replace_tsv").unwrap();
+    for line in pgr::read_lines(rfile)? {
+        let parts: Vec<_> = line.split('\t').collect();
 
-            if parts.len() < 2 {
-                continue;
-            } else {
-                let name = parts.first().unwrap().to_string();
-                let replaces = parts
-                    .iter()
-                    .skip(1)
-                    .map(|e| e.to_string())
-                    .collect::<Vec<String>>();
-                replace_of.insert(name.to_string(), replaces);
-            }
+        if parts.len() < 2 {
+            continue;
+        } else {
+            let name = parts.first().unwrap().to_string();
+            let replaces = parts
+                .iter()
+                .skip(1)
+                .map(|e| e.to_string())
+                .collect::<Vec<String>>();
+            replace_of.insert(name.to_string(), replaces);
         }
     }
 

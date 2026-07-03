@@ -29,26 +29,20 @@ Notes:
 
 Examples:
 1. Soft-mask regions:
-   pgr fa mask input.fa regions.json -o output.fa
+   pgr fa mask input.fa --runlist regions.json -o output.fa
 
 2. Hard-mask regions:
-   pgr fa mask input.fa regions.json --hard -o output.fa
+   pgr fa mask input.fa --runlist regions.json --hard -o output.fa
 
 3. Process gzipped files:
-   pgr fa mask input.fa.gz regions.json -o output.fa.gz
+   pgr fa mask input.fa.gz --runlist regions.json -o output.fa.gz
 
 "###,
         )
         .arg(crate::cmd_pgr::args::infile_arg_required_with_help(
             "Input FASTA file to process",
         ))
-        .arg(
-            Arg::new("runlist")
-                .required(true)
-                .num_args(1)
-                .index(2)
-                .help("JSON file specifying regions to mask"),
-        )
+        .arg(crate::cmd_pgr::args::runlist_arg())
         .arg(
             Arg::new("hard")
                 .long("hard")

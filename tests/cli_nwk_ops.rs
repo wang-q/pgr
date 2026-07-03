@@ -65,6 +65,7 @@ fn command_replace() {
             "nwk",
             "replace",
             "tests/newick/abc.nwk",
+            "--replace-tsv",
             "tests/newick/abc.replace.tsv",
         ])
         .run();
@@ -77,6 +78,7 @@ fn command_replace() {
             "nwk",
             "replace",
             "tests/newick/abc.nwk",
+            "--replace-tsv",
             "tests/newick/abc.replace.tsv",
             "--mode",
             "species",
@@ -90,6 +92,7 @@ fn command_replace() {
             "nwk",
             "replace",
             "tests/newick/abc.nwk",
+            "--replace-tsv",
             "tests/newick/abc.replace.tsv",
             "--mode",
             "asis",
@@ -106,6 +109,7 @@ fn command_replace_comments() {
             "nwk",
             "replace",
             "tests/newick/abc.nwk",
+            "--replace-tsv",
             "tests/newick/mixed_comments.replace.tsv",
             "--mode",
             "species",
@@ -127,6 +131,7 @@ fn command_replace_remove() {
             "nwk",
             "replace",
             "tests/newick/abc.nwk",
+            "--replace-tsv",
             "tests/newick/replace_remove.tsv",
         ])
         .run();
@@ -153,6 +158,7 @@ fn command_replace_filter() {
             "nwk",
             "replace",
             "tests/newick/abc.nwk",
+            "--replace-tsv",
             "tests/newick/abc.replace.tsv",
             "--leaf", // Skip leaves
         ])
@@ -167,6 +173,7 @@ fn command_replace_filter() {
             "nwk",
             "replace",
             "tests/newick/abc.nwk",
+            "--replace-tsv",
             "tests/newick/abc.replace.tsv",
             "--internal", // Skip internal
         ])
@@ -183,6 +190,7 @@ fn command_replace_multi() {
             "nwk",
             "replace",
             "tests/newick/forest.nwk",
+            "--replace-tsv",
             "tests/newick/forest.replace.tsv",
         ])
         .run();

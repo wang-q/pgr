@@ -25,13 +25,7 @@ Examples:
 
 "###,
         )
-        .arg(
-            Arg::new("runlist")
-                .long("runlist")
-                .required(true)
-                .num_args(1)
-                .help("JSON file of chromosome runlists (e.g. \"1-100,200-300\")"),
-        )
+        .arg(crate::cmd_pgr::args::runlist_arg())
         .arg(crate::cmd_pgr::args::infiles_arg("block FA"))
         .arg(
             crate::cmd_pgr::args::fas_name_arg("Reference species name. Default is the first species"),

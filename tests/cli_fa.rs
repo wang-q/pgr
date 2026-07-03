@@ -192,6 +192,7 @@ fn command_mask() {
             "fa",
             "mask",
             "tests/fasta/ufasta.fa",
+            "--runlist",
             "tests/fasta/mask.json",
         ])
         .run();
@@ -205,6 +206,7 @@ fn command_mask() {
             "mask",
             "--hard",
             "tests/fasta/ufasta.fa",
+            "--runlist",
             "tests/fasta/mask.json",
         ])
         .run();
@@ -247,6 +249,7 @@ fn command_replace() {
             "fa",
             "replace",
             "tests/fasta/ufasta.fa",
+            "--replace-tsv",
             "tests/fasta/replace.tsv",
         ])
         .run();
@@ -260,6 +263,7 @@ fn command_replace() {
             "fa",
             "replace",
             "tests/fasta/ufasta.fa",
+            "--replace-tsv",
             "tests/fasta/replace.tsv",
             "--some",
         ])

@@ -21,22 +21,17 @@ Notes:
 
 Examples:
 1. Replace headers using a TSV file:
-   pgr fa replace input.fa replace.tsv -o output.fa
+   pgr fa replace input.fa --replace-tsv replace.tsv -o output.fa
 
 2. Only output sequences listed in the TSV file (like `pgr fa some`):
-   pgr fa replace input.fa replace.tsv --some -o output.fa
+   pgr fa replace input.fa --replace-tsv replace.tsv --some -o output.fa
 
 "###,
         )
         .arg(crate::cmd_pgr::args::infile_arg_required_with_help(
             "Input FASTA file to process",
         ))
-        .arg(
-            Arg::new("replace")
-                .required(true)
-                .index(2)
-                .help("TSV file containing original and replacement names"),
-        )
+        .arg(crate::cmd_pgr::args::replace_tsv_arg())
         .arg(
             Arg::new("some")
                 .long("some")
@@ -53,7 +48,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     let mut fa_in = pgr::libs::fmt::fa::reader(args.get_one::<String>("infile").unwrap())?;
 
-    let replace_of = pgr::libs::io::read_replace_tsv(args.get_one::<String>("replace").unwrap())?;
+    let replace_of =
+        pgr::libs::io::read_replace_tsv(args.get_one::<String>("replace_tsv").unwrap())?;
     let is_some = args.get_flag("some");
 
     let mut fa_out = pgr::libs::fmt::fa::writer(crate::cmd_pgr::args::get_outfile(args))?;

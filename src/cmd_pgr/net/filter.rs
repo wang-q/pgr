@@ -10,12 +10,9 @@ pub fn make_subcommand() -> Command {
         .arg(crate::cmd_pgr::args::min_score_arg_optional(
             "Restrict to those scoring at least N",
         ))
-        .arg(
-            Arg::new("max_score")
-                .long("max-score")
-                .value_parser(clap::value_parser!(f64))
-                .help("Restrict to those scoring less than N"),
-        )
+        .arg(crate::cmd_pgr::args::max_score_arg_optional(
+            "Restrict to those scoring less than N",
+        ))
         .arg(
             Arg::new("min_gap")
                 .long("min-gap")

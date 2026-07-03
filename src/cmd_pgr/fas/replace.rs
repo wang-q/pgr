@@ -26,13 +26,7 @@ Examples:
 
 "###,
         )
-        .arg(
-            Arg::new("replace_tsv")
-                .long("replace-tsv")
-                .required(true)
-                .num_args(1)
-                .help("TSV file of original_name and replacement_name(s)"),
-        )
+        .arg(crate::cmd_pgr::args::replace_tsv_arg())
         .arg(crate::cmd_pgr::args::infiles_arg("block FA"))
         .arg(crate::cmd_pgr::args::outfile_arg())
 }

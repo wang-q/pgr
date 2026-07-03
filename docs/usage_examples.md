@@ -29,9 +29,9 @@ pgr fa filter tests/fasta/filter.fa --iupac --upper
 pgr fa dedup tests/fasta/dedup.fa
 pgr fa dedup tests/fasta/dedup.fa --seq --both --dups-file stdout
 
-pgr fa mask tests/fasta/ufasta.fa tests/fasta/mask.json --hard
+pgr fa mask tests/fasta/ufasta.fa --runlist tests/fasta/mask.json --hard
 
-pgr fa replace tests/fasta/ufasta.fa tests/fasta/replace.tsv
+pgr fa replace tests/fasta/ufasta.fa --replace-tsv tests/fasta/replace.tsv
 pgr fa rc tests/fasta/ufasta.fa
 
 pgr fa filter tests/fasta/ufasta.fa --min-len 400 |

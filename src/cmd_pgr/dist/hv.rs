@@ -19,7 +19,7 @@ This command calculates pairwise distances between files in FA file(s) using min
       as the distance will always be 0 and the similarity will always be 1.
     * For two sequence files: Merge all sequences within each file into a single hypervector,
       and calculate distances between the two hypervectors.
-    * When --list is set:
+    * When --list-files is set:
       - For each file listed in the list file, merge all sequences within that file
         into a single hypervector, and calculate distances between these hypervectors.
       - The merging does not span across multiple files listed in the list file.
@@ -32,7 +32,7 @@ Examples:
    pgr dist hv file1.fa file2.fa --hasher mod -k 21 -w 5
 
 3. Treat input as a list file and calculate distances:
-   pgr dist hv list.txt --list
+   pgr dist hv list.txt --list-files
 
 4. Use 4 threads for parallel processing:
    pgr dist hv input.fa --parallel 4
