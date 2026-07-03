@@ -38,14 +38,7 @@ If there are ties, the alphabetically first member is chosen.
                 .value_parser(value_parser!(usize))
                 .help("Number of random initializations"),
         )
-        .arg(
-            Arg::new("max_iter")
-                .long("max-iter")
-                .num_args(1)
-                .default_value("100")
-                .value_parser(value_parser!(usize))
-                .help("Maximum number of iterations"),
-        )
+        .arg(crate::cmd_pgr::args::max_iter_arg())
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 

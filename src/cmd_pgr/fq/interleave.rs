@@ -51,13 +51,7 @@ Examples:
                 .action(ArgAction::SetTrue)
                 .help("Write FQ"),
         )
-        .arg(
-            Arg::new("name_prefix")
-                .long("name-prefix")
-                .num_args(1)
-                .default_value("read")
-                .help("Prefix of record names"),
-        )
+        .arg(crate::cmd_pgr::args::name_prefix_arg(Some("read")))
         .arg(
             Arg::new("start_index")
                 .long("start-index")

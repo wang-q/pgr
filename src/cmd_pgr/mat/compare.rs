@@ -37,22 +37,7 @@ Examples:
                 .index(2)
                 .help("Second PHYLIP matrix file"),
         )
-        .arg(
-            Arg::new("method")
-                .long("method")
-                .action(ArgAction::Set)
-                .value_parser([
-                    builder::PossibleValue::new("all"),
-                    builder::PossibleValue::new("pearson"),
-                    builder::PossibleValue::new("spearman"),
-                    builder::PossibleValue::new("mae"),
-                    builder::PossibleValue::new("cosine"),
-                    builder::PossibleValue::new("jaccard"),
-                    builder::PossibleValue::new("euclid"),
-                ])
-                .default_value("pearson")
-                .help("Comparison method(s), comma-separated"),
-        )
+        .arg(crate::cmd_pgr::args::mat_method_arg())
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 

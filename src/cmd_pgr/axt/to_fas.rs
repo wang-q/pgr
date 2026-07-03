@@ -40,20 +40,8 @@ Examples:
                 .help("Chromosome sizes file for the query genome"),
         )
         .arg(crate::cmd_pgr::args::infiles_arg_at("AXT", 2))
-        .arg(
-            Arg::new("t_name")
-                .long("t-name")
-                .num_args(1)
-                .default_value("target")
-                .help("Custom name for the target genome"),
-        )
-        .arg(
-            Arg::new("q_name")
-                .long("q-name")
-                .num_args(1)
-                .default_value("query")
-                .help("Custom name for the query genome"),
-        )
+        .arg(crate::cmd_pgr::args::t_name_arg(Some("target")))
+        .arg(crate::cmd_pgr::args::q_name_arg(Some("query")))
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 

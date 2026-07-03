@@ -8,20 +8,8 @@ use pgr::libs::fmt::twobit::TwoBitFile;
 pub fn make_subcommand() -> Command {
     Command::new("anti-repeat")
         .about("Filter chains for repeats and degeneracy")
-        .arg(
-            Arg::new("target_2bit")
-                .long("target-2bit")
-                .short('t')
-                .required(true)
-                .help("Target genome 2bit file"),
-        )
-        .arg(
-            Arg::new("query_2bit")
-                .long("query-2bit")
-                .short('q')
-                .required(true)
-                .help("Query genome 2bit file"),
-        )
+        .arg(crate::cmd_pgr::args::target_2bit_arg())
+        .arg(crate::cmd_pgr::args::query_2bit_arg())
         .arg(crate::cmd_pgr::args::infile_arg_required_with_help(
             "Input chain file",
         ))

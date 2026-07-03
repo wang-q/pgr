@@ -41,20 +41,8 @@ Examples:
         )
         .arg(crate::cmd_pgr::args::min_len_arg())
         .arg(crate::cmd_pgr::args::max_len_arg())
-        .arg(
-            Arg::new("upper")
-                .long("upper")
-                .short('U')
-                .action(ArgAction::SetTrue)
-                .help("Convert sequences to uppercase"),
-        )
-        .arg(
-            Arg::new("dash")
-                .long("dash")
-                .short('d')
-                .action(ArgAction::SetTrue)
-                .help("Remove dashes '-'"),
-        )
+        .arg(crate::cmd_pgr::args::upper_arg())
+        .arg(crate::cmd_pgr::args::dash_arg())
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 

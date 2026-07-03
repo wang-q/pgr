@@ -65,13 +65,11 @@ Examples:
                 .action(ArgAction::SetTrue)
                 .help("Shuffle the output records (uses more memory)"),
         )
-        .arg(
-            Arg::new("seed")
-                .long("seed")
-                .value_parser(value_parser!(u64))
-                .default_value("42")
-                .help("Random seed for shuffling"),
-        )
+        .arg(crate::cmd_pgr::args::seed_arg(
+            Some("42"),
+            None,
+            "Random seed for shuffling",
+        ))
         .arg(
             Arg::new("chunk")
                 .long("chunk")

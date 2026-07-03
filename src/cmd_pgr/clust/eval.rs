@@ -67,13 +67,7 @@ Examples:
                 .num_args(1)
                 .help("Coordinate matrix file (for internal evaluation: Davies-Bouldin)"),
         )
-        .arg(
-            Arg::new("input_format")
-                .long("input-format")
-                .value_parser(["cluster", "pair", "long"])
-                .default_value("pair")
-                .help("Input format for partition files"),
-        )
+        .arg(crate::cmd_pgr::args::clust_input_format_arg())
         .arg(crate::cmd_pgr::args::outfile_arg())
         .arg(
             Arg::new("no_singletons")

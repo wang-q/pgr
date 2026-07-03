@@ -18,14 +18,11 @@ pub fn make_subcommand() -> Command {
                 .value_parser(value_parser!(f64))
                 .help("GC content ratio in ancestral sequence (0..1)"),
         )
-        .arg(
-            Arg::new("seed")
-                .long("seed")
-                .short('s')
-                .num_args(1)
-                .value_parser(value_parser!(u64))
-                .help("Random seed; default uses system time and PID"),
-        )
+        .arg(crate::cmd_pgr::args::seed_arg(
+            None,
+            Some('s'),
+            "Random seed; default uses system time and PID",
+        ))
         .arg(
             Arg::new("no_perturb")
                 .long("no-perturb")

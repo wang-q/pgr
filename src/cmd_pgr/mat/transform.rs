@@ -80,16 +80,7 @@ Examples:
                 .action(ArgAction::SetTrue)
                 .help("Normalize based on diagonal values"),
         )
-        .arg(
-            Arg::new("input_format")
-                .long("input-format")
-                .default_value("phylip")
-                .value_parser([
-                    builder::PossibleValue::new("phylip"),
-                    builder::PossibleValue::new("pair"),
-                ])
-                .help("Input format"),
-        )
+        .arg(crate::cmd_pgr::args::mat_input_format_arg())
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 

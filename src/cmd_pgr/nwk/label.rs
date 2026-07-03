@@ -65,13 +65,9 @@ Examples:
                 .action(ArgAction::SetTrue)
                 .help("Print labels on a single line, separated by tab stops"),
         )
-        .arg(
-            Arg::new("monophyly")
-                .long("monophyly")
-                .short('M')
-                .action(ArgAction::SetTrue)
-                .help("Only print the labels when they form a monophyletic subtree"),
-        )
+        .arg(crate::cmd_pgr::args::monophyly_arg(
+            "Only print the labels when they form a monophyletic subtree",
+        ))
         .arg(
             Arg::new("column")
                 .long("column")

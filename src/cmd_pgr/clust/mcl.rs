@@ -50,14 +50,7 @@ Stijn van Dongen, Graph Clustering by Flow Simulation. PhD thesis, University of
                 .value_parser(value_parser!(f64))
                 .help("Pruning threshold. Matrix entries smaller than this will be set to zero."),
         )
-        .arg(
-            Arg::new("max_iter")
-                .long("max-iter")
-                .num_args(1)
-                .default_value("100")
-                .value_parser(value_parser!(usize))
-                .help("Maximum number of iterations"),
-        )
+        .arg(crate::cmd_pgr::args::max_iter_arg())
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 

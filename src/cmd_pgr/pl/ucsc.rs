@@ -57,31 +57,17 @@ References:
         .arg(crate::cmd_pgr::args::query_genome_arg(
             "Path to the query genome FA file",
         ))
-        .arg(
-            Arg::new("psl")
-                .required(true)
-                .num_args(1)
-                .index(3)
-                .help("Path to the PSL file or directory containing PSL files"),
-        )
+        .arg(crate::cmd_pgr::args::psl_positional_arg(
+            "Path to the PSL file or directory containing PSL files",
+        ))
         .arg(crate::cmd_pgr::args::gap_model_arg(
             "loose",
             &["loose", "medium"],
             "Linear gap cost setting for axtChain",
         ))
         .arg(crate::cmd_pgr::args::min_score_arg("1000"))
-        .arg(
-            Arg::new("t_name")
-                .long("t-name")
-                .num_args(1)
-                .help("Custom name for the target genome"),
-        )
-        .arg(
-            Arg::new("q_name")
-                .long("q-name")
-                .num_args(1)
-                .help("Custom name for the query genome"),
-        )
+        .arg(crate::cmd_pgr::args::t_name_arg(None))
+        .arg(crate::cmd_pgr::args::q_name_arg(None))
         .arg(
             Arg::new("syn")
                 .long("syn")

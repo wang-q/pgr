@@ -59,13 +59,7 @@ Notes:
                 .action(ArgAction::SetTrue)
                 .help("Unique, removes duplicated ids, keeping the first"),
         )
-        .arg(
-            Arg::new("upper")
-                .long("upper")
-                .short('U')
-                .action(ArgAction::SetTrue)
-                .help("Convert sequences to uppercase"),
-        )
+        .arg(crate::cmd_pgr::args::upper_arg())
         .arg(
             Arg::new("iupac")
                 .long("iupac")
@@ -73,13 +67,7 @@ Notes:
                 .action(ArgAction::SetTrue)
                 .help("Convert IUPAC ambiguous codes to 'N'"),
         )
-        .arg(
-            Arg::new("dash")
-                .long("dash")
-                .short('d')
-                .action(ArgAction::SetTrue)
-                .help("Remove dashes '-'"),
-        )
+        .arg(crate::cmd_pgr::args::dash_arg())
         .arg(
             Arg::new("simplify")
                 .long("simplify")

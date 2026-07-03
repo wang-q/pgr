@@ -1,5 +1,5 @@
 use anyhow::Result;
-use clap::{Arg, ArgMatches, Command};
+use clap::{ArgMatches, Command};
 use pgr::libs::chain::{chain_blocks, group_psl_blocks, GapCalc, ScoreContext, SubMatrix};
 use pgr::libs::fmt::twobit::TwoBitFile;
 use std::cmp::Ordering;
@@ -45,13 +45,7 @@ Examples:
         .arg(crate::cmd_pgr::args::query_genome_arg(
             "Path to the query genome 2bit file",
         ))
-        .arg(
-            Arg::new("psl")
-                .required(true)
-                .num_args(1)
-                .index(3)
-                .help("Path to the PSL file"),
-        )
+        .arg(crate::cmd_pgr::args::psl_positional_arg("Path to the PSL file"))
         .arg(crate::cmd_pgr::args::outfile_arg())
         .arg(crate::cmd_pgr::args::gap_model_arg(
             "loose",

@@ -33,13 +33,7 @@ Examples:
 "###,
         )
         .arg(crate::cmd_pgr::args::infiles_arg("block FA"))
-        .arg(
-            Arg::new("suffix")
-                .long("suffix")
-                .num_args(1)
-                .default_value(".fasta")
-                .help("File extension for output files"),
-        )
+        .arg(crate::cmd_pgr::args::suffix_arg(".fasta"))
         .arg(
             Arg::new("rc")
                 .long("rc")

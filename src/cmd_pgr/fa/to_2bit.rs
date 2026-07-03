@@ -37,11 +37,7 @@ Examples:
                 .action(ArgAction::SetTrue)
                 .help("Ignore duplicate sequence names (keep first)"),
         )
-        .arg(
-            Arg::new("name_prefix")
-                .long("name-prefix")
-                .help("Add prefix to sequence names"),
-        )
+        .arg(crate::cmd_pgr::args::name_prefix_arg(None))
 }
 
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {

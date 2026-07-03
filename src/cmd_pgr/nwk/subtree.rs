@@ -46,13 +46,9 @@ Examples:
         .arg(crate::cmd_pgr::args::name_list_arg())
         .arg(crate::cmd_pgr::args::regex_arg())
         .arg(crate::cmd_pgr::args::descendants_arg())
-        .arg(
-            Arg::new("monophyly")
-                .long("monophyly")
-                .short('M')
-                .action(ArgAction::SetTrue)
-                .help("Only print the subtree when it's monophyletic"),
-        )
+        .arg(crate::cmd_pgr::args::monophyly_arg(
+            "Only print the subtree when it's monophyletic",
+        ))
         .arg(
             Arg::new("condense")
                 .long("condense")

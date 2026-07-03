@@ -42,18 +42,7 @@ Examples:
         .arg(crate::cmd_pgr::args::infile_arg_required_with_help(
             "Input PHYLIP matrix file",
         ))
-        .arg(
-            Arg::new("format")
-                .long("format")
-                .action(ArgAction::Set)
-                .value_parser([
-                    builder::PossibleValue::new("full"),
-                    builder::PossibleValue::new("lower"),
-                    builder::PossibleValue::new("strict"),
-                ])
-                .default_value("full")
-                .help("Output format"),
-        )
+        .arg(crate::cmd_pgr::args::mat_format_arg())
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 

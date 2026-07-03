@@ -202,6 +202,82 @@ pub fn parallel_arg() -> Arg {
         .help("Number of threads for parallel processing")
 }
 
+/// `--no-ns` flag (output size without Ns).
+pub fn no_ns_arg() -> Arg {
+    Arg::new("no_ns")
+        .long("no-ns")
+        .action(ArgAction::SetTrue)
+        .help("Output size without Ns")
+}
+
+/// `-U/--upper` flag (convert sequences to uppercase).
+pub fn upper_arg() -> Arg {
+    Arg::new("upper")
+        .long("upper")
+        .short('U')
+        .action(ArgAction::SetTrue)
+        .help("Convert sequences to uppercase")
+}
+
+/// `-d/--dash` flag (remove dashes from sequences).
+pub fn dash_arg() -> Arg {
+    Arg::new("dash")
+        .long("dash")
+        .short('d')
+        .action(ArgAction::SetTrue)
+        .help("Remove dashes '-'")
+}
+
+/// `--t-name` argument with an optional default value.
+pub fn t_name_arg(default: Option<&'static str>) -> Arg {
+    let arg = Arg::new("t_name")
+        .long("t-name")
+        .num_args(1)
+        .help("Custom name for the target genome");
+    match default {
+        Some(d) => arg.default_value(d),
+        None => arg,
+    }
+}
+
+/// `--q-name` argument with an optional default value.
+pub fn q_name_arg(default: Option<&'static str>) -> Arg {
+    let arg = Arg::new("q_name")
+        .long("q-name")
+        .num_args(1)
+        .help("Custom name for the query genome");
+    match default {
+        Some(d) => arg.default_value(d),
+        None => arg,
+    }
+}
+
+/// `--seed` argument (u64) with an optional default, short flag, and help text.
+pub fn seed_arg(default: Option<&'static str>, short: Option<char>, help: &'static str) -> Arg {
+    let arg = Arg::new("seed")
+        .long("seed")
+        .num_args(1)
+        .value_parser(clap::value_parser!(u64))
+        .help(help);
+    let arg = match default {
+        Some(d) => arg.default_value(d),
+        None => arg,
+    };
+    match short {
+        Some(c) => arg.short(c),
+        None => arg,
+    }
+}
+
+/// `--name-prefix` argument with an optional default value.
+pub fn name_prefix_arg(default: Option<&'static str>) -> Arg {
+    let arg = Arg::new("name_prefix").long("name-prefix").num_args(1);
+    match default {
+        Some(d) => arg.default_value(d).help("Prefix of record names"),
+        None => arg.help("Add prefix to sequence names"),
+    }
+}
+
 /// Extract the `outfile` value from `args` as `&str`.
 pub fn get_outfile(args: &ArgMatches) -> &str {
     args.get_one::<String>("outfile").unwrap()
@@ -343,6 +419,25 @@ pub fn genome_arg() -> Arg {
         .help("Path to the reference genome FA file")
 }
 
+/// `-R/--required` argument (file with species names to keep).
+pub fn required_species_list_arg() -> Arg {
+    Arg::new("required")
+        .long("required")
+        .short('R')
+        .required(true)
+        .num_args(1)
+        .help("File with a list of species names to keep, one per line")
+}
+
+/// `--suffix` argument with a custom default (file extension for output files).
+pub fn suffix_arg(default: &'static str) -> Arg {
+    Arg::new("suffix")
+        .long("suffix")
+        .num_args(1)
+        .default_value(default)
+        .help("File extension for output files")
+}
+
 // ============================================================================
 // nwk subcommand builders
 // ============================================================================
@@ -403,6 +498,15 @@ pub fn leaf_arg() -> Arg {
         .help("Don't print leaf labels")
 }
 
+/// `-M/--monophyly` flag with a custom help text.
+pub fn monophyly_arg(help: &'static str) -> Arg {
+    Arg::new("monophyly")
+        .long("monophyly")
+        .short('M')
+        .action(ArgAction::SetTrue)
+        .help(help)
+}
+
 /// Standard `-b/--bl` flag for nwk subcommands (keep branch lengths in output).
 pub fn bl_arg() -> Arg {
     Arg::new("bl")
@@ -457,6 +561,85 @@ pub fn missing_arg(default: &'static str) -> Arg {
         .default_value(default)
         .value_parser(clap::value_parser!(f32))
         .help("Default score of missing pairs")
+}
+
+/// `--max-iter` argument (maximum iterations, default 100).
+pub fn max_iter_arg() -> Arg {
+    Arg::new("max_iter")
+        .long("max-iter")
+        .num_args(1)
+        .default_value("100")
+        .value_parser(clap::value_parser!(usize))
+        .help("Maximum number of iterations")
+}
+
+/// `--method` argument for hierarchical clustering (default: ward).
+pub fn clust_method_arg() -> Arg {
+    Arg::new("method")
+        .long("method")
+        .default_value("ward")
+        .help("Clustering method (single, complete, average, weighted, centroid, median, ward)")
+}
+
+/// `--input-format` argument for clustering partition files (default: pair).
+pub fn clust_input_format_arg() -> Arg {
+    Arg::new("input_format")
+        .long("input-format")
+        .value_parser([
+            builder::PossibleValue::new("cluster"),
+            builder::PossibleValue::new("pair"),
+            builder::PossibleValue::new("long"),
+        ])
+        .default_value("pair")
+        .help("Input format for partition files")
+}
+
+// ============================================================================
+// mat subcommand builders
+// ============================================================================
+
+/// `--method` argument for matrix comparison (default: pearson).
+pub fn mat_method_arg() -> Arg {
+    Arg::new("method")
+        .long("method")
+        .action(ArgAction::Set)
+        .value_parser([
+            builder::PossibleValue::new("all"),
+            builder::PossibleValue::new("pearson"),
+            builder::PossibleValue::new("spearman"),
+            builder::PossibleValue::new("mae"),
+            builder::PossibleValue::new("cosine"),
+            builder::PossibleValue::new("jaccard"),
+            builder::PossibleValue::new("euclid"),
+        ])
+        .default_value("pearson")
+        .help("Comparison method(s), comma-separated")
+}
+
+/// `--format` argument for matrix output (default: full).
+pub fn mat_format_arg() -> Arg {
+    Arg::new("format")
+        .long("format")
+        .action(ArgAction::Set)
+        .value_parser([
+            builder::PossibleValue::new("full"),
+            builder::PossibleValue::new("lower"),
+            builder::PossibleValue::new("strict"),
+        ])
+        .default_value("full")
+        .help("Output format")
+}
+
+/// `--input-format` argument for matrix transform (default: phylip).
+pub fn mat_input_format_arg() -> Arg {
+    Arg::new("input_format")
+        .long("input-format")
+        .default_value("phylip")
+        .value_parser([
+            builder::PossibleValue::new("phylip"),
+            builder::PossibleValue::new("pair"),
+        ])
+        .help("Input format")
 }
 
 // ============================================================================
@@ -862,6 +1045,33 @@ pub fn chain_q_sizes_arg() -> Arg {
         .required(true)
         .num_args(1)
         .help("Query sizes file")
+}
+
+/// `-t/--target-2bit` argument (target genome 2bit file).
+pub fn target_2bit_arg() -> Arg {
+    Arg::new("target_2bit")
+        .long("target-2bit")
+        .short('t')
+        .required(true)
+        .help("Target genome 2bit file")
+}
+
+/// `-q/--query-2bit` argument (query genome 2bit file).
+pub fn query_2bit_arg() -> Arg {
+    Arg::new("query_2bit")
+        .long("query-2bit")
+        .short('q')
+        .required(true)
+        .help("Query genome 2bit file")
+}
+
+/// Positional `psl` argument at index 3 (required).
+pub fn psl_positional_arg(help: &'static str) -> Arg {
+    Arg::new("psl")
+        .required(true)
+        .num_args(1)
+        .index(3)
+        .help(help)
 }
 
 /// `--incl-hap` flag (include haplotype sequences).

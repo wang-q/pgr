@@ -35,14 +35,7 @@ Examples:
         .arg(crate::cmd_pgr::args::infile_arg_required_with_help(
             "Input PHYLIP distance matrix file. [stdin] for standard input",
         ))
-        .arg(
-            Arg::new("method")
-                .long("method")
-                .default_value("ward")
-                .help(
-                "Clustering method (single, complete, average, weighted, centroid, median, ward)",
-            ),
-        )
+        .arg(crate::cmd_pgr::args::clust_method_arg())
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 

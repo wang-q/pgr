@@ -27,12 +27,7 @@ Examples:
         )
         .arg(crate::cmd_pgr::args::infiles_arg("FASTA"))
         .arg(crate::cmd_pgr::args::outfile_arg())
-        .arg(
-            Arg::new("no_ns")
-                .long("no-ns")
-                .action(ArgAction::SetTrue)
-                .help("Output size without Ns"),
-        )
+        .arg(crate::cmd_pgr::args::no_ns_arg())
 }
 
 // command implementation
