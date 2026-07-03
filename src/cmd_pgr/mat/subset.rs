@@ -16,12 +16,9 @@ Examples:
 
 "###,
         )
-        .arg(
-            Arg::new("infile")
-                .required(true)
-                .index(1)
-                .help("Input PHYLIP matrix file"),
-        )
+        .arg(crate::cmd_pgr::args::infile_arg_required_with_help(
+            "Input PHYLIP matrix file",
+        ))
         .arg(
             Arg::new("list")
                 .required(true)

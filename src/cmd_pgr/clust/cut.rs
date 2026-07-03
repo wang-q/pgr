@@ -174,7 +174,8 @@ Examples:
         .arg(
             Arg::new("matrix")
                 .long("matrix")
-                .help("Distance matrix file (required for --dynamic-hybrid)"),
+                .num_args(1)
+                .help("Distance matrix file"),
         )
         .arg(
             Arg::new("max_pam_dist")

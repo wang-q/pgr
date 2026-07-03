@@ -212,7 +212,7 @@ pgr nwk comment [OPTIONS] <infile>
 
 *   `-n` / `-l`: Select nodes.
 *   `--string <str>`: Add free-form string annotations.
-*   `--color`, `--label`, `--comment`: Add text attributes.
+*   `--color`, `--label`, `--comment-text`: Add text attributes.
 *   `--dot`, `--bar`, `--rec`, `--tri`: Add shape attributes (for `to-tex` / `to-forest`).
 *   `--remove <regex>`: Remove matching comments.
 
@@ -267,7 +267,7 @@ pgr nwk to-tex [OPTIONS] <infile>
 
 *   `--bl`: Draw phylogram (with branch lengths).
 *   `--forest`: Input is already Forest code.
-*   `--style`: Skip default style definitions.
+*   `--no-default-style`: Skip default style definitions.
 
 ---
 

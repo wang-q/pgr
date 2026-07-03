@@ -43,8 +43,8 @@ Examples:
                 .help("Treat input as a file containing pre-generated Forest code (pass-through mode)"),
         )
         .arg(
-            Arg::new("style")
-                .long("style")
+            Arg::new("no_default_style")
+                .long("no-default-style")
                 .action(ArgAction::SetTrue)
                 .help("Skip default font settings in the template to allow custom styles"),
         )
@@ -55,7 +55,7 @@ Examples:
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
     let is_bl = args.get_flag("bl");
-    let is_style = args.get_flag("style");
+    let is_style = args.get_flag("no_default_style");
 
     let infile = args.get_one::<String>("infile").unwrap();
 

@@ -318,7 +318,7 @@ pub struct Tree {
 *   **自动对齐**: 默认启用 `tier=word`，强制所有叶节点对齐（Cladogram 风格）。
 *   **字体支持**:
     *   **默认**: 使用 `Noto Sans` 系列（需安装），兼容性好。
-    *   **高级 (`--style`)**: 保留模板中预设的 `Fira Sans` (英) 和 `Source Han Sans SC` (中) 设置，适合需要特定设计感的场景。
+    *   **高级 (`--no-default-style`)**: 保留模板中预设的 `Fira Sans` (英) 和 `Source Han Sans SC` (中) 设置，适合需要特定设计感的场景。
 
 #### 高级特性 (Advanced Features)
 

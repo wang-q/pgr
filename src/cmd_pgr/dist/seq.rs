@@ -38,12 +38,12 @@ This command calculates pairwise distances between sequences in FA file(s) using
   https://lh3.github.io/2018/11/25/on-the-definition-of-sequence-identity
 
 * Input Modes:
-    * By default (--list is false):
+    * By default (--list-files is false):
         * Single file: Treat the file as a sequence file and calculate pairwise distances
           for all sequences within it.
         * Two files: Treat both files as sequence files and calculate pairwise distances
           between sequences from the two files.
-    * When --list is set:
+    * When --list-files is set:
         * Single file: Treat the file as a list file (each line is a path to a sequence file)
           and calculate pairwise distances for all sequences in the listed files.
         * Two files: Treat both files as list files and calculate pairwise distances
@@ -58,7 +58,7 @@ This command calculates pairwise distances between sequences in FA file(s) using
       meaningful, as the distance will always be 0 and the similarity will always be 1.
     * For two sequence files: Merge all sequences within each file into a single set,
       and calculate distances between the two sets.
-    * When --list is set, --merge operates on each sequence file individually:
+    * When --list-files is set, --merge operates on each sequence file individually:
       - For each file listed in the list file, merge all sequences within that file
         into a single set, and calculate distances between these sets.
       - The merging does not span across multiple files listed in the list file.
@@ -77,7 +77,7 @@ Examples:
    pgr dist seq file1.fa file2.fa --merge
 
 5. Treat input as a list file and calculate distances:
-   pgr dist seq list.txt --list
+   pgr dist seq list.txt --list-files
 
 6. Use 4 threads for parallel processing:
    pgr dist seq input.fa --parallel 4

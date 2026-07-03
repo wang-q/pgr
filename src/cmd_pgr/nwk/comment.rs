@@ -19,7 +19,7 @@ pub fn make_subcommand() -> Command {
 * Set `--string` to add free-form strings
 
 * The following options are used for visualization
-    * `--color`, `--label` and `--comment` take 1 argument
+    * `--color`, `--label` and `--comment-text` take 1 argument
     * `--dot`, `--bar` and `--rec` take 1 or 0 argument
 
 * Predefined colors for `--color`, `--dot` and `--bar`
@@ -64,10 +64,10 @@ pub fn make_subcommand() -> Command {
                 .help("Add this label to the south west of the node"),
         )
         .arg(
-            Arg::new("comment")
-                .long("comment")
+            Arg::new("comment_text")
+                .long("comment-text")
                 .num_args(1)
-                .help("comment text after names"),
+                .help("Comment text after names"),
         )
         .arg(
             Arg::new("dot")
@@ -117,7 +117,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let opt_label = args.get_one::<String>("label");
     let opt_color = args.get_one::<String>("color");
-    let opt_comment = args.get_one::<String>("comment");
+    let opt_comment = args.get_one::<String>("comment_text");
 
     let opt_dot = args.get_one::<String>("dot");
     let opt_bar = args.get_one::<String>("bar");

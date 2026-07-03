@@ -44,12 +44,9 @@ Examples:
 
 "###,
         )
-        .arg(
-            Arg::new("infile")
-                .required(true)
-                .index(1)
-                .help("Input file containing genome/metagenome assembly"),
-        )
+        .arg(crate::cmd_pgr::args::infile_arg_required_with_help(
+            "Input file containing genome/metagenome assembly",
+        ))
         .arg(
             Arg::new("reference")
                 .required(true)

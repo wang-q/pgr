@@ -34,13 +34,9 @@ Examples:
    pgr nwk cmp set1.nwk set2.nwk
 "###,
         )
-        .arg(
-            Arg::new("infile")
-                .required(true)
-                .num_args(1)
-                .index(1)
-                .help("First input filename (or stdin)"),
-        )
+        .arg(crate::cmd_pgr::args::infile_arg_required_with_help(
+            "First input filename (or stdin)",
+        ))
         .arg(
             Arg::new("compare_file")
                 .num_args(1)
