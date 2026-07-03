@@ -53,15 +53,10 @@ Examples:
                 .index(2)
                 .help("Reference file containing sequences for filtering"),
         )
-        .arg(
-            Arg::new("chunk_size")
-                .long("chunk-size")
-                .short('c')
-                .num_args(1)
-                .default_value("100000")
-                .value_parser(value_parser!(usize))
-                .help("Size of each chunk in bytes"),
-        )
+        .arg(crate::cmd_pgr::args::chunk_size_arg(
+            Some("100000"),
+            "Size of each chunk in bytes",
+        ))
         .arg(crate::cmd_pgr::args::min_len_arg_with_default(
             "15",
             "Minimum length of the amino acid sequence to consider",

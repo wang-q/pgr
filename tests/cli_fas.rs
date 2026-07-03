@@ -334,13 +334,7 @@ fn command_split_to() {
 #[test]
 fn command_refine() {
     let (stdout, _) = PgrCmd::new()
-        .args(&[
-            "fas",
-            "refine",
-            "tests/fas/example.fas",
-            "--aligner",
-            "none",
-        ])
+        .args(&["fas", "refine", "tests/fas/example.fas", "--engine", "none"])
         .run();
 
     assert_eq!(stdout.lines().count(), 27);
@@ -351,7 +345,7 @@ fn command_refine() {
             "fas",
             "refine",
             "tests/fas/example.fas",
-            "--aligner",
+            "--engine",
             "none",
             "-p",
             "2",
@@ -366,7 +360,7 @@ fn command_refine() {
             "fas",
             "refine",
             "tests/fas/refine2.fas",
-            "--aligner",
+            "--engine",
             "none",
             "-p",
             "2",
@@ -381,7 +375,7 @@ fn command_refine() {
             "fas",
             "refine",
             "tests/fas/example.fas",
-            "--aligner",
+            "--engine",
             "none",
             "--chop",
             "10",

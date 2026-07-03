@@ -11,7 +11,7 @@ Realigns sequences in block FA files using built-in or external programs (clusta
 Notes:
 * Supports both plain text and gzipped (.gz) files
 * Reads from stdin if input file is 'stdin'
-* Supported MSA programs (`--aligner`):
+* Supported MSA programs (`--engine`):
     * `builtin` (default): Uses built-in Rust implementation (Partial Order Alignment).
     * `clustalw`: Uses external `clustalw` command.
     * `mafft`: Uses external `mafft` command.
@@ -26,7 +26,7 @@ Examples:
    pgr fas refine tests/fas/part1.fas tests/fas/part2.fas
 
 2. Realign using mafft with 4 threads:
-   pgr fas refine tests/fas/part1.fas --aligner mafft --parallel 4
+   pgr fas refine tests/fas/part1.fas --engine mafft --parallel 4
 
 3. Quick alignment for files converted from pairwise alignments:
    pgr fas refine tests/fas/part1.fas --quick --parallel 4
@@ -38,8 +38,8 @@ Examples:
         )
         .arg(crate::cmd_pgr::args::infiles_arg("block FA"))
         .arg(
-            Arg::new("aligner")
-                .long("aligner")
+            Arg::new("engine")
+                .long("engine")
                 .num_args(1)
                 .default_value("builtin")
                 .help("Aligning program (builtin/clustalw/mafft/muscle/spoa/none)"),
@@ -97,7 +97,7 @@ fn proc_block(block: &pgr::libs::fmt::fas::FasBlock, args: &ArgMatches) -> anyho
     //----------------------------
     // Args
     //----------------------------
-    let aligner = args.get_one::<String>("aligner").unwrap();
+    let engine = args.get_one::<String>("engine").unwrap();
     let has_outgroup = args.get_flag("outgroup");
     let chop = *args.get_one::<usize>("chop").unwrap();
     let is_quick = args.get_flag("is_quick");
@@ -115,16 +115,16 @@ fn proc_block(block: &pgr::libs::fmt::fas::FasBlock, args: &ArgMatches) -> anyho
     }
 
     let mut aligned = vec![];
-    if aligner.as_str() == "none" {
+    if engine.as_str() == "none" {
         for seq in seqs {
             aligned.push(seq.clone());
         }
     } else {
         if is_quick {
             aligned =
-                pgr::libs::alignment::align_seqs_quick(&seqs, aligner, pad as i32, fill as i32)?;
+                pgr::libs::alignment::align_seqs_quick(&seqs, engine, pad as i32, fill as i32)?;
         } else {
-            aligned = pgr::libs::alignment::align_seqs(&seqs, aligner)?;
+            aligned = pgr::libs::alignment::align_seqs(&seqs, engine)?;
         }
     };
 

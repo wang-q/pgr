@@ -209,7 +209,7 @@ Realigns sequences within blocks using built-in or external MSA tools.
 pgr fas refine [OPTIONS] <infiles>...
 ```
 
-*   `--aligner <program>`: Aligning program: `builtin` (default), `clustalw`, `mafft`, `muscle`, `spoa`, `none`.
+*   `--engine <program>`: Aligning program: `builtin` (default), `clustalw`, `mafft`, `muscle`, `spoa`, `none`.
 *   `--outgroup`: Indicates presence of outgroups.
 *   `--chop <int>`: Chop head and tail indels.
 *   `--quick`: Quick mode, only aligns indel-adjacent regions.

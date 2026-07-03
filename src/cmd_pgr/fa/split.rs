@@ -51,14 +51,10 @@ Examples:
                 .help("Split mode: 'name' or 'about'"),
         )
         .arg(crate::cmd_pgr::args::infiles_arg_at("FASTA", 2))
-        .arg(
-            Arg::new("chunk_size")
-                .long("chunk-size")
-                .short('c')
-                .num_args(1)
-                .value_parser(value_parser!(usize))
-                .help("Approximate size in bytes (for 'about' mode)"),
-        )
+        .arg(crate::cmd_pgr::args::chunk_size_arg(
+            None,
+            "Approximate size in bytes (for 'about' mode)",
+        ))
         .arg(
             Arg::new("even")
                 .long("even")

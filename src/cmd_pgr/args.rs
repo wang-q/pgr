@@ -975,6 +975,20 @@ pub fn line_arg(default: Option<&'static str>) -> Arg {
     }
 }
 
+/// `-c/--chunk-size` argument (usize) with an optional default and custom help.
+pub fn chunk_size_arg(default: Option<&'static str>, help: &'static str) -> Arg {
+    let arg = Arg::new("chunk_size")
+        .long("chunk-size")
+        .short('c')
+        .num_args(1)
+        .value_parser(clap::value_parser!(usize))
+        .help(help);
+    match default {
+        Some(d) => arg.default_value(d),
+        None => arg,
+    }
+}
+
 /// `-g/--gap` flag (only identify regions of N/n).
 pub fn gap_arg() -> Arg {
     Arg::new("gap")

@@ -90,8 +90,8 @@ pgr fas consensus tests/fas/refine.fas
 pgr fas consensus tests/fas/refine.fas --outgroup -p 2
 
 pgr fas refine tests/fas/example.fas
-pgr fas refine tests/fas/example.fas --aligner none --chop 10
-pgr fas refine tests/fas/refine2.fas --aligner clustalw --outgroup
+pgr fas refine tests/fas/example.fas --engine none --chop 10
+pgr fas refine tests/fas/refine2.fas --engine clustalw --outgroup
 pgr fas refine tests/fas/example.fas --quick
 
 pgr fas split tests/fas/example.fas --simple

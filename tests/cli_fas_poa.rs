@@ -37,7 +37,7 @@ fn command_refine_msa() -> anyhow::Result<()> {
         .arg("fas")
         .arg("refine")
         .arg("tests/fas/refine.fas")
-        .arg("--aligner")
+        .arg("--engine")
         .arg("clustalw")
         .output()?;
     let stdout = String::from_utf8(output.stdout)?;
@@ -51,7 +51,7 @@ fn command_refine_msa() -> anyhow::Result<()> {
         .arg("fas")
         .arg("refine")
         .arg("tests/fas/refine2.fas")
-        .arg("--aligner")
+        .arg("--engine")
         .arg("clustalw")
         .arg("--outgroup")
         .output()?;
@@ -65,7 +65,7 @@ fn command_refine_msa() -> anyhow::Result<()> {
         .arg("fas")
         .arg("refine")
         .arg("tests/fas/refine2.fas")
-        .arg("--aligner")
+        .arg("--engine")
         .arg("clustalw")
         .output()?;
     let stdout = String::from_utf8(output.stdout)?;
@@ -79,7 +79,7 @@ fn command_refine_msa() -> anyhow::Result<()> {
         .arg("fas")
         .arg("refine")
         .arg("tests/fas/refine2.fas")
-        .arg("--aligner")
+        .arg("--engine")
         .arg("clustalw")
         .arg("--quick")
         .output()?;
@@ -98,7 +98,7 @@ fn command_refine_poa() -> anyhow::Result<()> {
         .arg("fas")
         .arg("refine")
         .arg("tests/fas/refine.fas")
-        .arg("--aligner")
+        .arg("--engine")
         .arg("builtin")
         .output()?;
     let stdout = String::from_utf8(output.stdout)?;
@@ -152,7 +152,7 @@ fn command_refine_spoa() -> anyhow::Result<()> {
         .arg("fas")
         .arg("refine")
         .arg("tests/fas/refine.fas")
-        .arg("--aligner")
+        .arg("--engine")
         .arg("spoa")
         .output()?;
     let stdout = String::from_utf8(output.stdout)?;
@@ -186,7 +186,7 @@ fn command_refine_mafft() -> anyhow::Result<()> {
         .arg("fas")
         .arg("refine")
         .arg("tests/fas/refine.fas")
-        .arg("--aligner")
+        .arg("--engine")
         .arg("mafft")
         .output()?;
     let stdout = String::from_utf8(output.stdout)?;
@@ -220,7 +220,7 @@ fn command_refine_muscle() -> anyhow::Result<()> {
         .arg("fas")
         .arg("refine")
         .arg("tests/fas/refine.fas")
-        .arg("--aligner")
+        .arg("--engine")
         .arg("muscle")
         .output()?;
     let stdout = String::from_utf8(output.stdout)?;
@@ -246,7 +246,7 @@ fn command_refine_comparison() -> anyhow::Result<()> {
         .arg("fas")
         .arg("refine")
         .arg("tests/fas/refine.fas")
-        .arg("--aligner")
+        .arg("--engine")
         .arg("builtin")
         .output()?;
     let stdout_builtin = String::from_utf8(output_builtin.stdout)?;
@@ -256,7 +256,7 @@ fn command_refine_comparison() -> anyhow::Result<()> {
         .arg("fas")
         .arg("refine")
         .arg("tests/fas/refine.fas")
-        .arg("--aligner")
+        .arg("--engine")
         .arg("spoa")
         .output()?;
     let stdout_spoa = String::from_utf8(output_spoa.stdout)?;
