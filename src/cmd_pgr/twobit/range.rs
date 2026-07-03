@@ -85,7 +85,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
         if rg.strand() == "-" {
             let rev_bytes: Vec<u8> = nt::rev_comp(seq.as_bytes()).collect();
-            seq = String::from_utf8(rev_bytes).unwrap();
+            seq = String::from_utf8(rev_bytes)
+                .map_err(|e| anyhow::anyhow!("invalid utf8 in rev_comp: {}", e))?;
         }
 
         // Header construction

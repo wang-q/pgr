@@ -111,7 +111,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                             .open(path)?;
                         file_of.insert(filename.clone(), file);
                     }
-                    let file = file_of.get_mut(&filename).unwrap();
+                    let file = file_of
+                        .get_mut(&filename)
+                        .ok_or_else(|| anyhow::anyhow!("file not found: {}", filename))?;
                     write!(file, ">{}\n{}\n", range, seq)?;
                 }
             }

@@ -95,7 +95,15 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                             .open(path)?;
                         file_of.insert(entry_name.to_string(), file);
                     }
-                    write!(file_of.get(entry_name).unwrap(), ">{}\n{}\n", range, seq)?;
+                    write!(
+                        file_of.get(entry_name).ok_or_else(|| anyhow::anyhow!(
+                            "file not found for entry: {}",
+                            entry_name
+                        ))?,
+                        ">{}\n{}\n",
+                        range,
+                        seq
+                    )?;
                 }
             }
         }

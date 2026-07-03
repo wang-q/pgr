@@ -127,7 +127,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
             // Apply filters
             if !pgr::libs::fasta::filter::pass_filters(
-                seq.get(..).unwrap(),
+                seq.get(..).unwrap_or(&[]),
                 opt_minsize,
                 opt_maxsize,
                 opt_maxn,
@@ -140,7 +140,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
             // Apply formatters
             let seq_out = pgr::libs::fasta::filter::format_sequence(
-                seq.get(..).unwrap(),
+                seq.get(..).unwrap_or(&[]),
                 is_dash,
                 is_iupac,
                 is_upper,

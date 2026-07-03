@@ -121,7 +121,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             if ids != descendants_named {
                 if is_condense {
                     let out_string = tree.to_newick();
-                    writer.write_fmt(format_args!("{}\n", out_string)).unwrap();
+                    writer.write_fmt(format_args!("{}\n", out_string))?;
                 }
                 continue;
             }
@@ -141,17 +141,17 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
         // Output
         if is_condense {
-            let name = condense_name.unwrap();
+            let name = condense_name.ok_or_else(|| anyhow::anyhow!("--condense required"))?;
 
             tree.condense_subtree(sub_root_id, name, ids.len())
                 .map_err(anyhow::Error::msg)?;
 
             let out_string = tree.to_newick();
-            writer.write_fmt(format_args!("{}\n", out_string)).unwrap();
+            writer.write_fmt(format_args!("{}\n", out_string))?;
         } else {
             // Extract subtree
             let out_string = tree.to_newick_subtree(sub_root_id);
-            writer.write_fmt(format_args!("{}\n", out_string)).unwrap();
+            writer.write_fmt(format_args!("{}\n", out_string))?;
         }
     }
 

@@ -69,7 +69,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     if is_phylip {
         let count = needed.len();
-        let length = seq_of.first_key_value().unwrap().1.len();
+        let length = seq_of.values().next().map(|s| s.len()).unwrap_or(0);
         writer.write_all(format!("{} {}\n", count, length).as_ref())?;
         for (k, v) in &seq_of {
             writer.write_all(format!("{} {}\n", k, v).as_ref())?;

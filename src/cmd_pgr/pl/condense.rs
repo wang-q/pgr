@@ -81,9 +81,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     };
 
     let curdir = env::current_dir()?;
-    let exe = env::current_exe().unwrap().display().to_string();
+    let exe = env::current_exe()?.display().to_string();
     let tempdir = TempDir::new()?;
-    let tempdir_str = tempdir.path().to_str().unwrap();
+    let tempdir_str = tempdir
+        .path()
+        .to_str()
+        .ok_or_else(|| anyhow::anyhow!("tempdir path is not utf-8"))?;
     let curdir_str = curdir.display().to_string();
 
     run_cmd!(info "==> Paths")?;
@@ -99,15 +102,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let abs_infile = if infile == "stdin" {
         "stdin".to_string()
     } else {
-        intspan::absolute_path(infile)
-            .unwrap()
-            .display()
-            .to_string()
+        intspan::absolute_path(infile)?.display().to_string()
     };
-    let abs_taxon = intspan::absolute_path(taxon_file)
-        .unwrap()
-        .display()
-        .to_string();
+    let abs_taxon = intspan::absolute_path(taxon_file)?.display().to_string();
 
     run_cmd!(info "==> Switch to tempdir")?;
     env::set_current_dir(tempdir_str)?;
@@ -265,7 +262,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     run_cmd!(info "==> Results")?;
     fs::copy(
-        tempdir.path().join(&cur_tree).to_str().unwrap(),
+        tempdir
+            .path()
+            .join(&cur_tree)
+            .to_str()
+            .ok_or_else(|| anyhow::anyhow!("path is not utf-8"))?,
         "result.nwk",
     )?;
 
@@ -284,12 +285,23 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         env::set_current_dir(&curdir)?;
     } else {
         env::set_current_dir(&curdir)?;
-        fs::copy(tempdir.path().join("result.nwk").to_str().unwrap(), outfile)?;
+        fs::copy(
+            tempdir
+                .path()
+                .join("result.nwk")
+                .to_str()
+                .ok_or_else(|| anyhow::anyhow!("path is not utf-8"))?,
+            outfile,
+        )?;
     }
 
     if args.get_flag("map") {
         fs::copy(
-            tempdir.path().join("condensed.tsv").to_str().unwrap(),
+            tempdir
+                .path()
+                .join("condensed.tsv")
+                .to_str()
+                .ok_or_else(|| anyhow::anyhow!("path is not utf-8"))?,
             "condensed.tsv",
         )?;
     }

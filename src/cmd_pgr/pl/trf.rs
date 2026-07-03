@@ -97,7 +97,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let curdir = std::env::current_dir()?;
     let pgr = std::env::current_exe()?.display().to_string();
     let tempdir = tempfile::Builder::new().prefix("pgr_trf_").tempdir()?;
-    let tempdir_str = tempdir.path().to_str().unwrap();
+    let tempdir_str = tempdir
+        .path()
+        .to_str()
+        .ok_or_else(|| anyhow::anyhow!("tempdir path is not utf-8"))?;
 
     run_cmd!(info "==> Paths")?;
     run_cmd!(info "    \"pgr\"     = ${pgr}")?;

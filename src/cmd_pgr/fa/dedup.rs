@@ -129,7 +129,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             let subject = pgr::libs::fasta::dedup::record_signature(
                 name,
                 desc.map(|v| &**v),
-                seq.get(..).unwrap(),
+                seq.get(..).unwrap_or(&[]),
                 &opts,
             )?;
 
@@ -137,7 +137,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 e.insert(vec![name_str]);
             } else {
                 flag_pass = false;
-                subject_map.get_mut(&subject).unwrap().push(name_str);
+                subject_map
+                    .get_mut(&subject)
+                    .ok_or_else(|| anyhow::anyhow!("subject not found: {}", subject))?
+                    .push(name_str);
             }
 
             if !flag_pass {

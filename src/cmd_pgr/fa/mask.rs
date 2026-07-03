@@ -80,7 +80,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         }
 
         // Get the regions to mask for this sequence
-        let ints = runlists.get(&name).unwrap();
+        let ints = runlists
+            .get(&name)
+            .ok_or_else(|| anyhow::anyhow!("runlist not found for: {}", name))?;
         let seq_str = String::from_utf8(seq[..].into())?;
         let seq_out = pgr::libs::fmt::fa::mask_sequence(&seq_str, ints, is_hard);
 

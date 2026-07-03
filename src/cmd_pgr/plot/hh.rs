@@ -115,13 +115,21 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     });
 
     // Parse unit
-    let unit = args
+    let unit_str = args
         .get_one::<String>("unit")
-        .map(|s| {
-            let parts: Vec<f64> = s.split(',').filter_map(|x| x.trim().parse().ok()).collect();
-            (parts[0], parts[1])
-        })
-        .unwrap();
+        .ok_or_else(|| anyhow::anyhow!("--unit required"))?;
+    let parts: Vec<f64> = unit_str
+        .split(',')
+        .filter_map(|x| x.trim().parse().ok())
+        .collect();
+    let unit: (f64, f64) = if parts.len() == 2 {
+        (parts[0], parts[1])
+    } else {
+        anyhow::bail!(
+            "--unit must be two comma-separated floats, got: {}",
+            unit_str
+        );
+    };
 
     //----------------------------
     // Table section

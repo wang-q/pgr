@@ -97,7 +97,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             cache.put(seq_id.clone(), record);
         }
 
-        let record: &noodles_fasta::Record = cache.get(&seq_id).unwrap();
+        let record: &noodles_fasta::Record = cache
+            .get(&seq_id)
+            .ok_or_else(|| anyhow::anyhow!("seq not in cache: {}", seq_id))?;
 
         // name only
         if *rg.start() == 0 {

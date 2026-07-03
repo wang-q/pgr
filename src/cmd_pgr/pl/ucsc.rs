@@ -93,7 +93,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let curdir = std::env::current_dir()?;
     let pgr = std::env::current_exe()?.display().to_string();
     let tempdir = tempfile::Builder::new().prefix("pgr_pipeline_").tempdir()?;
-    let tempdir_str = tempdir.path().to_str().unwrap();
+    let tempdir_str = tempdir
+        .path()
+        .to_str()
+        .ok_or_else(|| anyhow::anyhow!("tempdir path is not utf-8"))?;
 
     run_cmd!(info "==> Paths")?;
     run_cmd!(info "    \"pgr\"     = ${pgr}")?;
@@ -115,7 +118,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             format!("{}.", tname)
         }
     } else {
-        format!("{}.", pgr::libs::io::get_basename(&abs_target).unwrap())
+        format!(
+            "{}.",
+            pgr::libs::io::get_basename(&abs_target)
+                .ok_or_else(|| anyhow::anyhow!("failed to get basename of: {}", abs_target))?
+        )
     };
     let opt_qname = if let Some(qname) = args.get_one::<String>("q_name") {
         if qname.is_empty() {
@@ -124,7 +131,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             format!("{}.", qname)
         }
     } else {
-        format!("{}.", pgr::libs::io::get_basename(&abs_query).unwrap())
+        format!(
+            "{}.",
+            pgr::libs::io::get_basename(&abs_query)
+                .ok_or_else(|| anyhow::anyhow!("failed to get basename of: {}", abs_query))?
+        )
     };
 
     let abs_psl = intspan::absolute_path(args.get_one::<String>("psl").unwrap())?
@@ -171,7 +182,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //    -noCheckScore=N - score that will pass without checks (speed tweak)
     std::fs::create_dir_all("pslChain")?;
     for infile in infiles {
-        let stem = pgr::libs::io::get_basename(&infile).unwrap();
+        let stem = pgr::libs::io::get_basename(&infile)
+            .ok_or_else(|| anyhow::anyhow!("failed to get basename of: {}", infile))?;
         run_cmd!(
             axtChain -minScore=${opt_minscore} -linearGap=${opt_gap_model} -psl ${infile} target.chr.2bit query.chr.2bit pslChain/${stem}.tmp
         )?;
@@ -290,7 +302,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         // usage:
         //   axtSort in.axt out.axt
         for file in files {
-            let stem = pgr::libs::io::get_basename(&file).unwrap();
+            let stem = pgr::libs::io::get_basename(&file)
+                .ok_or_else(|| anyhow::anyhow!("failed to get basename of: {}", file))?;
             run_cmd!(
                 netToAxt ${file} all.pre.chain target.chr.2bit query.chr.2bit stdout |
                     axtSort stdin axtNet/${stem}.axt
@@ -304,7 +317,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
         let files = pgr::libs::io::list_files_ext("axtNet", "axt");
         for file in files {
-            let stem = pgr::libs::io::get_basename(&file).unwrap();
+            let stem = pgr::libs::io::get_basename(&file)
+                .ok_or_else(|| anyhow::anyhow!("failed to get basename of: {}", file))?;
             if abs_outdir == "stdout" {
                 if opt_tname.is_empty() {
                     run_cmd!(
@@ -356,8 +370,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
         let files = pgr::libs::io::list_files_ext("synNet", "net");
         for file in files {
-            let stem = pgr::libs::io::get_basename(&file).unwrap();
-            let chain_file = format!("{}.chain", file.strip_suffix(".net").unwrap());
+            let stem = pgr::libs::io::get_basename(&file)
+                .ok_or_else(|| anyhow::anyhow!("failed to get basename of: {}", file))?;
+            let net_stem = file
+                .strip_suffix(".net")
+                .ok_or_else(|| anyhow::anyhow!("expected .net suffix: {}", file))?;
+            let chain_file = format!("{}.chain", net_stem);
             if abs_outdir == "stdout" {
                 if opt_tname.is_empty() {
                     run_cmd!(

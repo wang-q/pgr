@@ -81,7 +81,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 if !block.names.contains(opt_name) {
                     continue 'BLOCK;
                 }
-                block.names.iter().position(|x| x == opt_name).unwrap()
+                block
+                    .names
+                    .iter()
+                    .position(|x| x == opt_name)
+                    .ok_or_else(|| anyhow::anyhow!("name not found in block: {}", opt_name))?
             } else {
                 0
             };

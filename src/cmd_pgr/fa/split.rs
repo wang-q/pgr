@@ -98,9 +98,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 // obtain record or fail with error
                 let record = result?;
 
-                let name = String::from_utf8(record.name().into()).unwrap();
+                let name = String::from_utf8(record.name().into())
+                    .map_err(|e| anyhow::anyhow!("invalid utf8 in record name: {}", e))?;
                 let seq = record.sequence();
-                let seq_str = String::from_utf8(seq.get(..).unwrap().to_vec()).unwrap();
+                let seq_str = String::from_utf8(seq.get(..).unwrap_or(&[]).to_vec())
+                    .map_err(|e| anyhow::anyhow!("invalid utf8 in sequence: {}", e))?;
 
                 //----------------------------
                 // Output
@@ -113,7 +115,15 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                         .replace(['(', ')', ':'], "_")
                         .replace("__", "_");
                     gen_fh(outdir, &mut fh_of, &filename)?;
-                    write!(fh_of.get(&filename).unwrap(), ">{}\n{}\n", name, seq_str)?;
+                    write!(
+                        fh_of.get(&filename).ok_or_else(|| anyhow::anyhow!(
+                            "file handle not found for: {}",
+                            filename
+                        ))?,
+                        ">{}\n{}\n",
+                        name,
+                        seq_str
+                    )?;
                 }
             }
         }
@@ -141,10 +151,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 // obtain record or fail with error
                 let record = result?;
 
-                let name = String::from_utf8(record.name().into()).unwrap();
+                let name = String::from_utf8(record.name().into())
+                    .map_err(|e| anyhow::anyhow!("invalid utf8 in record name: {}", e))?;
 
                 let seq = record.sequence();
-                let seq_str = String::from_utf8(seq.get(..).unwrap().to_vec()).unwrap();
+                let seq_str = String::from_utf8(seq.get(..).unwrap_or(&[]).to_vec())
+                    .map_err(|e| anyhow::anyhow!("invalid utf8 in sequence: {}", e))?;
 
                 //----------------------------
                 // Output
@@ -154,7 +166,15 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 } else {
                     let filename = format!("{:0width$}", chunker.file_index(), width = part_width);
                     gen_fh(outdir, &mut fh_of, &filename)?;
-                    write!(fh_of.get(&filename).unwrap(), ">{}\n{}\n", name, seq_str)?;
+                    write!(
+                        fh_of.get(&filename).ok_or_else(|| anyhow::anyhow!(
+                            "file handle not found for: {}",
+                            filename
+                        ))?,
+                        ">{}\n{}\n",
+                        name,
+                        seq_str
+                    )?;
                 }
                 chunker.advance(seq.len());
             } // record

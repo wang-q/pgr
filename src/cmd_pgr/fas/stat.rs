@@ -58,7 +58,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         let mut reader = pgr::reader(infile)?;
 
         while let Ok(block) = pgr::libs::fmt::fas::next_fas_block(&mut reader) {
-            let target = block.entries.first().unwrap().range().to_string();
+            let target = block
+                .entries
+                .first()
+                .ok_or_else(|| anyhow::anyhow!("empty block"))?
+                .range()
+                .to_string();
 
             let mut seqs: Vec<&[u8]> = vec![];
             for entry in &block.entries {

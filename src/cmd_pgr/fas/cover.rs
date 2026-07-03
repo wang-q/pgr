@@ -73,7 +73,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     let out_json = if !opt_name.is_empty() {
         // Output coverage for a single species
-        intspan::set2json(res_of.first_key_value().unwrap().1)
+        intspan::set2json(
+            res_of
+                .values()
+                .next()
+                .ok_or_else(|| anyhow::anyhow!("no coverage found"))?,
+        )
     } else {
         // Output coverage for all species
         intspan::set2json_m(&res_of)

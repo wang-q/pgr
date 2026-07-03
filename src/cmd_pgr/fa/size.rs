@@ -45,7 +45,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
             let len = if no_ns {
                 seq.get(..)
-                    .unwrap()
+                    .unwrap_or(&[])
                     .iter()
                     .filter(|&&b| !pgr::libs::nt::is_n(b))
                     .count()

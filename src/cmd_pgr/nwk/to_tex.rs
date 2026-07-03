@@ -99,8 +99,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     {
         // Section forest
-        let begin = template.find("%FOREST_BEGIN").unwrap();
-        let end = template.find("%FOREST_END").unwrap();
+        let begin = template
+            .find("%FOREST_BEGIN")
+            .ok_or_else(|| anyhow::anyhow!("template marker %FOREST_BEGIN missing"))?;
+        let end = template
+            .find("%FOREST_END")
+            .ok_or_else(|| anyhow::anyhow!("template marker %FOREST_END missing"))?;
         template.replace_range(begin..end, &out_string);
     }
 
@@ -115,8 +119,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 "#;
 
         // Section style
-        let begin = template.find("%STYLE_BEGIN").unwrap();
-        let end = template.find("%STYLE_END").unwrap();
+        let begin = template
+            .find("%STYLE_BEGIN")
+            .ok_or_else(|| anyhow::anyhow!("template marker %STYLE_BEGIN missing"))?;
+        let end = template
+            .find("%STYLE_END")
+            .ok_or_else(|| anyhow::anyhow!("template marker %STYLE_END missing"))?;
         template.replace_range(begin..end, default_font);
     }
 

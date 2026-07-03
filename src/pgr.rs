@@ -1,4 +1,3 @@
-extern crate clap;
 use clap::*;
 
 mod cmd_pgr;
@@ -77,7 +76,7 @@ fn main() -> anyhow::Result<()> {
 "###,
         );
 
-    // Check which subcomamnd the user ran...
+    // Check which subcommand the user ran...
     match app.get_matches().subcommand() {
         Some(("ms", sub_matches)) => cmd_pgr::ms::execute(sub_matches),
         Some(("axt", sub_matches)) => cmd_pgr::axt::execute(sub_matches),
@@ -103,10 +102,3 @@ fn main() -> anyhow::Result<()> {
 
     Ok(())
 }
-
-// TODO: paralog
-// TODO: fas match
-//  sparsemem -maxmatch -F -l %d -b -n -k 4 -threads 4 %s %s > %s
-//  mummer -maxmatch -F -l %d -b -n %s %s > %s
-//  $exe, $length, $genome, $query, $result
-// TODO: Remove fully contained sequences

@@ -68,7 +68,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         if parts.len() < 2 {
             continue;
         } else {
-            let name = parts.first().unwrap().to_string();
+            let name = parts
+                .first()
+                .ok_or_else(|| anyhow::anyhow!("empty line in replace file"))?
+                .to_string();
             let replaces = parts
                 .iter()
                 .skip(1)
@@ -106,7 +109,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         // Apply modifications
         for (id, replaces) in to_modify {
             if let Some(node) = tree.get_node_mut(id) {
-                let first = replaces.first().unwrap().to_string();
+                let first = replaces
+                    .first()
+                    .ok_or_else(|| anyhow::anyhow!("no replace values"))?
+                    .to_string();
                 match mode.as_str() {
                     "label" => node.set_name(first),
                     "taxid" => node.add_property("T", first),

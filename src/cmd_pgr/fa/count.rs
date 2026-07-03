@@ -56,7 +56,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             let name = String::from_utf8(record.name().into())?;
             let seq = record.sequence();
 
-            let (len, base_cnt) = pgr::libs::fasta::stat::count_bases(seq.get(..).unwrap());
+            let (len, base_cnt) = pgr::libs::fasta::stat::count_bases(seq.get(..).unwrap_or(&[]));
 
             writer.write_fmt(format_args!(
                 "{}\t{}\t{}\t{}\t{}\t{}\t{}\n",

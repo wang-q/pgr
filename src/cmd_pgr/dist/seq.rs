@@ -174,7 +174,9 @@ pub fn execute(args: &clap::ArgMatches) -> anyhow::Result<()> {
     // Drop the sender to signal the writer thread to exit
     drop(sender);
     // Wait for the writer thread to finish
-    writer_thread.join().unwrap();
+    writer_thread
+        .join()
+        .map_err(|_| anyhow::anyhow!("writer thread panicked"))?;
 
     Ok(())
 }

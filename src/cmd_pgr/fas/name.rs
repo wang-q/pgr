@@ -72,7 +72,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     for name in &names {
         if is_count {
-            let value = count_of.get(name).unwrap();
+            let value = count_of.get(name).copied().unwrap_or(0);
             writer.write_all(format!("{}\t{}\n", name, value).as_ref())?;
         } else {
             writer.write_all(format!("{}\n", name).as_ref())?;

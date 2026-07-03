@@ -52,7 +52,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     fs::create_dir_all(outdir)?;
 
     let curdir = env::current_dir()?;
-    let pgr = env::current_exe().unwrap().display().to_string();
+    let pgr = env::current_exe()?.display().to_string();
 
     run_cmd!(echo "==> Paths")?;
     run_cmd!(echo "    \"pgr\"      = ${pgr}")?;
@@ -68,10 +68,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     run_cmd!(echo "==> Basenames and absolute paths")?;
     for infile in args.get_many::<String>("infiles").unwrap() {
         let basename = intspan::basename(infile)?;
-        let absolute = intspan::absolute_path(infile)
-            .unwrap()
-            .display()
-            .to_string();
+        let absolute = intspan::absolute_path(infile)?.display().to_string();
 
         info_of.insert(basename.to_string(), vec![absolute.to_string()]);
     }
@@ -82,22 +79,27 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     run_cmd!(echo "==> pgr fas name - first")?;
     let mut target_name = "".to_string();
     {
-        let infile = info_of.first_key_value().unwrap().1.first().unwrap();
+        let infile = info_of
+            .values()
+            .next()
+            .and_then(|v| v.first())
+            .ok_or_else(|| anyhow::anyhow!("no cover input found"))?;
         run_cmd!(
             ${pgr} fas name ${infile} -o name.first.lst
         )?;
-        target_name = fs::read_to_string("name.first.lst")
-            .unwrap()
+        let first_content = fs::read_to_string("name.first.lst")
+            .map_err(|e| anyhow::anyhow!("failed to read name.first.lst: {}", e))?;
+        target_name = first_content
             .lines()
             .next()
-            .unwrap()
+            .ok_or_else(|| anyhow::anyhow!("name.first.lst is empty"))?
             .to_string();
         run_cmd!(echo "    \"target_name\" = ${target_name}")?;
     }
 
     run_cmd!(echo "==> pgr fas cover")?;
     for (basename, info) in info_of.iter_mut() {
-        let infile = info.first().unwrap();
+        let infile = info.first().ok_or_else(|| anyhow::anyhow!("no info"))?;
         let outfile = format!("{}.json", basename);
         run_cmd!(${pgr} fas cover ${infile} --trim 10 --name ${target_name} -o ${outfile})?;
 
@@ -108,8 +110,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     {
         let infiles: Vec<String> = info_of
             .iter()
-            .map(|e| e.1.get(1).unwrap().to_string())
-            .collect();
+            .map(|e| {
+                e.1.get(1)
+                    .ok_or_else(|| anyhow::anyhow!("missing cover output"))
+                    .map(|s| s.to_string())
+            })
+            .collect::<Result<_, _>>()?;
         let files = infiles.clone();
         run_cmd!(
             spanr compare --op intersect $[files] |
@@ -123,7 +129,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     run_cmd!(echo "==> pgr fas slice")?;
     for (basename, info) in info_of.iter_mut() {
-        let infile = info.first().unwrap();
+        let infile = info.first().ok_or_else(|| anyhow::anyhow!("no info"))?;
         let outfile = format!("{}.slice.fas", basename);
         run_cmd!(${pgr} fas slice ${infile} --runlist intersect.json --name ${target_name} -o ${outfile})?;
 
@@ -134,8 +140,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     {
         let infiles: Vec<String> = info_of
             .iter()
-            .map(|e| e.1.get(2).unwrap().to_string())
-            .collect();
+            .map(|e| {
+                e.1.get(2)
+                    .ok_or_else(|| anyhow::anyhow!("missing slice output"))
+                    .map(|s| s.to_string())
+            })
+            .collect::<Result<_, _>>()?;
         run_cmd!(
             ${pgr} fas join $[infiles] --name ${target_name} -o join.raw.fas
         )?;
