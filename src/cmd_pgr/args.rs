@@ -82,10 +82,7 @@ pub fn infile_arg_required() -> Arg {
 /// Index is auto-assigned by clap — do not add `.index(N)` to other positionals
 /// unless this is the only positional or all positionals use explicit indices.
 pub fn infile_arg_required_with_help(help: &'static str) -> Arg {
-    Arg::new("infile")
-        .required(true)
-        .num_args(1)
-        .help(help)
+    Arg::new("infile").required(true).num_args(1).help(help)
 }
 
 /// Standard positional `infiles` argument (one or more, required) at index 1.
@@ -99,6 +96,15 @@ pub fn infiles_arg(label: &str) -> Arg {
         .num_args(1..)
         .index(1)
         .help(format!("Input {label} file(s) to process"))
+}
+
+/// Standard `-i/--invert` flag for `some`-style subcommands (invert selection).
+pub fn invert_arg() -> Arg {
+    Arg::new("invert")
+        .long("invert")
+        .short('i')
+        .action(ArgAction::SetTrue)
+        .help("Invert selection: output sequences NOT in the list")
 }
 
 /// Standard `-r/--rgfile` argument (file of regions, one per line).
@@ -268,6 +274,16 @@ pub fn outgroup_arg() -> Arg {
 /// Standard `--name` argument for fas subcommands (species name selector).
 pub fn fas_name_arg(help: &'static str) -> Arg {
     Arg::new("name").long("name").num_args(1).help(help)
+}
+
+/// Standard `-g/--genome` argument for fas subcommands (reference genome FA file).
+pub fn genome_arg() -> Arg {
+    Arg::new("genome")
+        .short('g')
+        .long("genome")
+        .required(true)
+        .num_args(1)
+        .help("Path to the reference genome FA file")
 }
 
 // ============================================================================

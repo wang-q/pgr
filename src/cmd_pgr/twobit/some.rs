@@ -37,13 +37,7 @@ Examples:
                 .index(2)
                 .help("File containing one sequence name per line"),
         )
-        .arg(
-            Arg::new("invert")
-                .long("invert")
-                .short('i')
-                .action(ArgAction::SetTrue)
-                .help("Invert selection: output sequences NOT in the list"),
-        )
+        .arg(crate::cmd_pgr::args::invert_arg())
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 

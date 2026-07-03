@@ -15,14 +15,7 @@ Notes:
 
 "###,
         )
-        .arg(
-            Arg::new("genome")
-                .short('g')
-                .long("genome")
-                .required(true)
-                .num_args(1)
-                .help("Path to the reference genome FA file"),
-        )
+        .arg(crate::cmd_pgr::args::genome_arg())
         .arg(
             Arg::new("infiles")
                 .required(true)
