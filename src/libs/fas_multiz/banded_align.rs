@@ -16,6 +16,20 @@ pub(super) fn banded_align_refs(
     blocks: [&FasBlock; 2],
     ref_name: &str,
     cfg: &FasMultizConfig,
+) -> anyhow::Result<Option<(Vec<Option<usize>>, Vec<Option<usize>>)>> {
+    let submat = match &cfg.score_matrix {
+        Some(name) => SubMatrix::from_name(name)?,
+        None => SubMatrix::hoxd55(),
+    };
+    Ok(banded_align_refs_inner(blocks, ref_name, cfg, &submat))
+}
+
+#[allow(clippy::type_complexity)]
+fn banded_align_refs_inner(
+    blocks: [&FasBlock; 2],
+    ref_name: &str,
+    cfg: &FasMultizConfig,
+    submat: &SubMatrix,
 ) -> Option<(Vec<Option<usize>>, Vec<Option<usize>>)> {
     use std::cmp::min;
 
@@ -61,12 +75,6 @@ pub(super) fn banded_align_refs(
     } else {
         return None;
     }
-
-    let submat = if let Some(name) = &cfg.score_matrix {
-        SubMatrix::from_name(name).unwrap_or_else(|_| SubMatrix::hoxd55())
-    } else {
-        SubMatrix::hoxd55()
-    };
 
     let (gap_open_pen, gap_extend_pen) =
         if let (Some(open), Some(extend)) = (cfg.gap_open, cfg.gap_extend) {

@@ -84,7 +84,7 @@ pub fn merge_fas_files(
             match crate::libs::fmt::fas::next_fas_block(&mut reader) {
                 Ok(block) => blocks.push(block),
                 Err(e) => {
-                    if e.to_string() == "EOF" {
+                    if e.kind() == std::io::ErrorKind::UnexpectedEof {
                         break;
                     } else {
                         return Err(e.into());
@@ -102,7 +102,7 @@ pub fn merge_fas_files(
 
     let mut merged_blocks = Vec::new();
     for window in windows {
-        if let Some(block) = merge_window(ref_name, window, &blocks_per_input, cfg) {
+        if let Some(block) = merge_window(ref_name, window, &blocks_per_input, cfg)? {
             merged_blocks.push(block);
         }
     }
@@ -129,7 +129,7 @@ pub fn merge_fas_files_auto_windows(
             match crate::libs::fmt::fas::next_fas_block(&mut reader) {
                 Ok(block) => blocks.push(block),
                 Err(e) => {
-                    if e.to_string() == "EOF" {
+                    if e.kind() == std::io::ErrorKind::UnexpectedEof {
                         break;
                     } else {
                         return Err(e.into());
@@ -148,7 +148,7 @@ pub fn merge_fas_files_auto_windows(
 
     let mut merged_blocks = Vec::new();
     for window in &windows {
-        if let Some(block) = merge_window(ref_name, window, &blocks_per_input, cfg) {
+        if let Some(block) = merge_window(ref_name, window, &blocks_per_input, cfg)? {
             merged_blocks.push(block);
         }
     }

@@ -25,7 +25,7 @@ pub(super) fn derive_windows_from_blocks(
                 let start = *range.start() as u64;
                 let end = *range.end() as u64;
                 let s = start.saturating_sub(cfg.radius as u64);
-                let e = end + cfg.radius as u64;
+                let e = end.saturating_add(cfg.radius as u64);
                 per_chr.entry(chr).or_default().push((s, e));
             }
         }

@@ -58,7 +58,7 @@ fn merge_window_core_requires_blocks_in_all_inputs() {
         end: 4,
     };
 
-    let merged = merge_window("ref", &window, &blocks_per_input, &cfg);
+    let merged = merge_window("ref", &window, &blocks_per_input, &cfg).unwrap();
     assert!(merged.is_none());
 }
 
@@ -80,7 +80,7 @@ fn merge_window_core_requires_overlap_with_window() {
         end: 20,
     };
 
-    let merged = merge_window("ref", &window, &blocks_per_input, &cfg);
+    let merged = merge_window("ref", &window, &blocks_per_input, &cfg).unwrap();
     assert!(merged.is_none());
 }
 
@@ -102,7 +102,9 @@ fn merge_window_union_allows_missing_blocks() {
         end: *ref_entry.range().end() as u64,
     };
 
-    let merged = merge_window("ref", &window, &blocks_per_input, &cfg).unwrap();
+    let merged = merge_window("ref", &window, &blocks_per_input, &cfg)
+        .unwrap()
+        .unwrap();
     assert_eq!(merged.names.len(), 2);
     assert_eq!(merged.names[0], "ref");
     assert_eq!(merged.names[1], "A");
@@ -137,7 +139,9 @@ fn merge_window_core_species_intersection() {
         end: *ref_entry1.range().end() as u64,
     };
 
-    let merged = merge_window("ref", &window, &blocks_per_input, &cfg).unwrap();
+    let merged = merge_window("ref", &window, &blocks_per_input, &cfg)
+        .unwrap()
+        .unwrap();
 
     let names: Vec<String> = merged.names.clone();
     assert!(names.contains(&"ref".to_string()));
@@ -174,7 +178,9 @@ fn merge_window_union_species_union() {
         end: *ref_entry1.range().end() as u64,
     };
 
-    let merged = merge_window("ref", &window, &blocks_per_input, &cfg).unwrap();
+    let merged = merge_window("ref", &window, &blocks_per_input, &cfg)
+        .unwrap()
+        .unwrap();
 
     let mut names: Vec<String> = merged.names.clone();
     names.sort();
@@ -214,7 +220,7 @@ fn merge_window_mismatched_reference_returns_none() {
         end: 4,
     };
 
-    let merged = merge_window("ref", &window, &blocks_per_input, &cfg);
+    let merged = merge_window("ref", &window, &blocks_per_input, &cfg).unwrap();
     assert!(merged.is_none());
 }
 
@@ -387,7 +393,9 @@ fn merge_window_multi_input_dp_progressive() {
         end: 4,
     };
 
-    let merged = merge_window("ref", &window, &blocks_per_input, &cfg).unwrap();
+    let merged = merge_window("ref", &window, &blocks_per_input, &cfg)
+        .unwrap()
+        .unwrap();
     let mut names = merged.names.clone();
     names.sort();
     assert_eq!(

@@ -102,7 +102,7 @@ pub fn next_fas_block<T: io::BufRead + ?Sized>(mut input: &mut T) -> Result<FasB
         }
     }
     let block = parse_fas_block(
-        header.ok_or(io::Error::other("EOF"))?,
+        header.ok_or(io::Error::new(io::ErrorKind::UnexpectedEof, "EOF"))?,
         LinesRef { buf: &mut input },
     )?;
     Ok(block)
