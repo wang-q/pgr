@@ -27,7 +27,7 @@ Examples:
    pgr nwk prune input.nwk -l remove.txt
 
 3. Keep a clade (e.g., Hominidae) and remove everything else (Invert mode):
-   pgr nwk prune input.nwk -v -n Hominidae
+   pgr nwk prune input.nwk -i -n Hominidae
 
 "###,
         )
@@ -39,7 +39,7 @@ Examples:
         .arg(
             Arg::new("invert")
                 .long("invert")
-                .short('v')
+                .short('i')
                 .action(ArgAction::SetTrue)
                 .help("Invert pruning: keep specified nodes, their ancestors and descendants"),
         )

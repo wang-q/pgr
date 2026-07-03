@@ -51,20 +51,12 @@ References:
 
 "###,
         )
-        .arg(
-            Arg::new("target")
-                .required(true)
-                .num_args(1)
-                .index(1)
-                .help("Path to the target genome FA file"),
-        )
-        .arg(
-            Arg::new("query")
-                .required(true)
-                .num_args(1)
-                .index(2)
-                .help("Path to the query genome FA file"),
-        )
+        .arg(crate::cmd_pgr::args::target_genome_arg(
+            "Path to the target genome FA file",
+        ))
+        .arg(crate::cmd_pgr::args::query_genome_arg(
+            "Path to the query genome FA file",
+        ))
         .arg(
             Arg::new("psl")
                 .required(true)

@@ -28,15 +28,7 @@ Examples:
             "Input 2bit file to process",
         ))
         .arg(crate::cmd_pgr::args::outfile_arg())
-        .arg(
-            Arg::new("line")
-                .long("line")
-                .short('l')
-                .num_args(1)
-                .value_parser(value_parser!(usize))
-                .default_value("60")
-                .help("Sequence line length"),
-        )
+        .arg(crate::cmd_pgr::args::line_arg(Some("60")))
         .arg(
             Arg::new("no_mask")
                 .long("no-mask")

@@ -25,13 +25,9 @@ Examples:
    pgr psl to-range input.psl --target-coords > target.rg
 "###,
         )
-        .arg(
-            Arg::new("infile")
-                .required(true)
-                .num_args(1)
-                .index(1)
-                .help("Input PSL file. [stdin] for standard input"),
-        )
+        .arg(crate::cmd_pgr::args::infile_arg_required_with_help(
+            "Input PSL file. [stdin] for standard input",
+        ))
         .arg(crate::cmd_pgr::args::outfile_arg())
         .arg(
             Arg::new("target_coords")

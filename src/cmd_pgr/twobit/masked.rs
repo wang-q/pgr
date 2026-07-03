@@ -33,13 +33,7 @@ Examples:
 "###,
         )
         .arg(crate::cmd_pgr::args::infiles_arg("2bit"))
-        .arg(
-            Arg::new("gap")
-                .long("gap")
-                .short('g')
-                .action(ArgAction::SetTrue)
-                .help("Only identify regions of N/n (gaps)"),
-        )
+        .arg(crate::cmd_pgr::args::gap_flag())
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 

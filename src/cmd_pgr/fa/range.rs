@@ -40,13 +40,7 @@ Examples:
         .arg(crate::cmd_pgr::args::infile_arg_required_with_help(
             "Input FASTA file to process",
         ))
-        .arg(
-            Arg::new("ranges")
-                .required(false)
-                .index(2)
-                .num_args(0..)
-                .help("Ranges of interest"),
-        )
+        .arg(crate::cmd_pgr::args::ranges_arg())
         .arg(crate::cmd_pgr::args::rgfile_arg())
         .arg(
             Arg::new("cache")

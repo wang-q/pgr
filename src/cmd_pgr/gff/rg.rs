@@ -25,12 +25,7 @@ Examples:
 
 "###,
         )
-        .arg(
-            Arg::new("infile")
-                .required(true)
-                .index(1)
-                .help("Set the input file to use"),
-        )
+        .arg(crate::cmd_pgr::args::infile_arg_required_with_help("Input file"))
         .arg(
             Arg::new("tag")
                 .long("tag")

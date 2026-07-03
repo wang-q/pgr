@@ -55,13 +55,11 @@ Examples:
                 .default_value("1")
                 .help("Minimum window width to consider for merging"),
         )
-        .arg(
-            Arg::new("mode")
-                .long("mode")
-                .num_args(1)
-                .default_value("core")
-                .help("Merge mode: core (strict intersection) or union"),
-        )
+        .arg(crate::cmd_pgr::args::mode_arg(
+            "core",
+            &["core", "union"],
+            "Merge mode: core (strict intersection) or union",
+        ))
         .arg(
             Arg::new("score_matrix")
                 .long("score-matrix")

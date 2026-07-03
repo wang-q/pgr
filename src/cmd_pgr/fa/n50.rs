@@ -85,7 +85,7 @@ Examples:
                 .help("Count records"),
         )
         .arg(
-            Arg::new("genome")
+            Arg::new("genome_size")
                 .long("genome-size")
                 .short('g')
                 .num_args(1)
@@ -114,7 +114,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let is_transpose = args.get_flag("transpose");
 
     let opt_nx: Vec<_> = args.get_many::<usize>("nx").unwrap().copied().collect();
-    let opt_genome = args.get_one::<usize>("genome").copied();
+    let opt_genome = args.get_one::<usize>("genome_size").copied();
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
 
     //----------------------------

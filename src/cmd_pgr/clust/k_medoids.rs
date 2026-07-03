@@ -27,15 +27,7 @@ If there are ties, the alphabetically first member is chosen.
                 .index(1)
                 .help("Input file containing pairwise distances in .tsv format"),
         )
-        .arg(
-            Arg::new("k")
-                .long("k")
-                .short('k')
-                .num_args(1)
-                .required(true)
-                .value_parser(value_parser!(usize))
-                .help("Number of clusters"),
-        )
+        .arg(crate::cmd_pgr::args::k_arg().required(true))
         .arg(crate::cmd_pgr::args::format_arg())
         .arg(crate::cmd_pgr::args::same_arg("0.0"))
         .arg(crate::cmd_pgr::args::missing_arg("1.0"))

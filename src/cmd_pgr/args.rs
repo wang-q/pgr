@@ -98,6 +98,24 @@ pub fn infiles_arg(label: &str) -> Arg {
         .help(format!("Input {label} file(s) to process"))
 }
 
+/// Positional `target` genome file argument (required, index 1).
+pub fn target_genome_arg(help: &'static str) -> Arg {
+    Arg::new("target")
+        .required(true)
+        .index(1)
+        .num_args(1)
+        .help(help)
+}
+
+/// Positional `query` genome file argument (required, index 2).
+pub fn query_genome_arg(help: &'static str) -> Arg {
+    Arg::new("query")
+        .required(true)
+        .index(2)
+        .num_args(1)
+        .help(help)
+}
+
 /// Standard `-i/--invert` flag for `some`-style subcommands (invert selection).
 pub fn invert_arg() -> Arg {
     Arg::new("invert")
@@ -672,4 +690,134 @@ pub fn max_len_arg() -> Arg {
         .num_args(1)
         .value_parser(clap::value_parser!(usize))
         .help("Maximum length")
+}
+
+// ============================================================================
+// Additional common builders
+// ============================================================================
+
+/// `-l/--line` sequence line length argument.
+pub fn line_arg(default: Option<&'static str>) -> Arg {
+    let arg = Arg::new("line")
+        .long("line")
+        .short('l')
+        .num_args(1)
+        .value_parser(clap::value_parser!(usize))
+        .help("Sequence line length");
+    match default {
+        Some(d) => arg.default_value(d),
+        None => arg,
+    }
+}
+
+/// `-g/--gap` flag (only identify regions of N/n).
+pub fn gap_flag() -> Arg {
+    Arg::new("gap")
+        .long("gap")
+        .short('g')
+        .action(ArgAction::SetTrue)
+        .help("Only identify regions of N/n (gaps)")
+}
+
+/// Positional `ranges` argument (optional, index 2).
+pub fn ranges_arg() -> Arg {
+    Arg::new("ranges")
+        .required(false)
+        .index(2)
+        .num_args(0..)
+        .help("Ranges of interest")
+}
+
+/// `--mode` argument with possible values, a default, and a custom help text.
+pub fn mode_arg(
+    default: &'static str,
+    possible: &'static [&'static str],
+    help: &'static str,
+) -> Arg {
+    let values: Vec<builder::PossibleValue> = possible
+        .iter()
+        .map(|v| builder::PossibleValue::new(*v))
+        .collect();
+    Arg::new("mode")
+        .long("mode")
+        .num_args(1)
+        .action(ArgAction::Set)
+        .default_value(default)
+        .value_parser(values)
+        .help(help)
+}
+
+// ============================================================================
+// fa subcommand additional builders
+// ============================================================================
+
+/// Positional `name_list` file argument for fa subcommands.
+pub fn fa_name_list_arg(required: bool) -> Arg {
+    Arg::new("name_list")
+        .required(required)
+        .index(2)
+        .num_args(1)
+        .help(if required {
+            "File containing one sequence name per line"
+        } else {
+            "File containing one sequence name per line (optional)"
+        })
+}
+
+// ============================================================================
+// clust subcommand additional builders
+// ============================================================================
+
+/// `-k/--k` number of clusters argument.
+pub fn k_arg() -> Arg {
+    Arg::new("k")
+        .long("k")
+        .short('k')
+        .num_args(1)
+        .value_parser(clap::value_parser!(usize))
+        .help("Number of clusters")
+}
+
+// ============================================================================
+// chain subcommand builders
+// ============================================================================
+
+/// Positional `t_sizes` argument for chain subcommands (auto-indexed after infile).
+pub fn chain_t_sizes_arg() -> Arg {
+    Arg::new("t_sizes")
+        .required(true)
+        .num_args(1)
+        .help("Target sizes file")
+}
+
+/// Positional `q_sizes` argument for chain subcommands (auto-indexed after t_sizes).
+pub fn chain_q_sizes_arg() -> Arg {
+    Arg::new("q_sizes")
+        .required(true)
+        .num_args(1)
+        .help("Query sizes file")
+}
+
+// ============================================================================
+// pl subcommand builders
+// ============================================================================
+
+/// `--fill-kmer` argument (default 2).
+pub fn fill_kmer_arg() -> Arg {
+    Arg::new("fill_kmer")
+        .long("fill-kmer")
+        .num_args(1)
+        .default_value("2")
+        .value_parser(clap::value_parser!(usize))
+        .help("Fill holes between repetitive k-mers")
+}
+
+/// `--fill-fragment` argument (default 10).
+pub fn fill_fragment_arg() -> Arg {
+    Arg::new("fill_fragment")
+        .long("fill-fragment")
+        .num_args(1)
+        .default_value("10")
+        .value_parser(clap::value_parser!(usize))
+        .help("Fill holes between repetitive fragments")
 }

@@ -9,9 +9,9 @@ pub fn make_subcommand() -> Command {
         .arg(crate::cmd_pgr::args::infile_arg_required_with_help(
             "Input chain file",
         ))
-        .arg(Arg::new("t_sizes").required(true).help("Target sizes file"))
-        .arg(Arg::new("q_sizes").required(true).help("Query sizes file"))
-        .arg(Arg::new("outfile").required(true).help("Output chain file"))
+        .arg(crate::cmd_pgr::args::chain_t_sizes_arg())
+        .arg(crate::cmd_pgr::args::chain_q_sizes_arg())
+        .arg(crate::cmd_pgr::args::outfile_arg_required())
         .arg(
             Arg::new("dots")
                 .long("dots")
@@ -37,7 +37,7 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
     let input_path = args.get_one::<String>("infile").unwrap();
     let target_sizes_path = args.get_one::<String>("t_sizes").unwrap();
     let query_sizes_path = args.get_one::<String>("q_sizes").unwrap();
-    let output_path = args.get_one::<String>("outfile").unwrap();
+    let output_path = crate::cmd_pgr::args::get_outfile(args);
 
     let dots = args.get_one::<usize>("dots").copied();
     let pad = args.get_one::<u64>("pad").copied().unwrap_or(1);

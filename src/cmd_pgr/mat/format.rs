@@ -39,12 +39,9 @@ Examples:
        pgr mat format input.phy --out-format strict -o output.phy
 "###,
         )
-        .arg(
-            Arg::new("infile")
-                .required(true)
-                .index(1)
-                .help("Input PHYLIP matrix file"),
-        )
+        .arg(crate::cmd_pgr::args::infile_arg_required_with_help(
+            "Input PHYLIP matrix file",
+        ))
         .arg(
             Arg::new("out_format")
                 .long("out-format")

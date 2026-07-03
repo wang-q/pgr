@@ -124,7 +124,7 @@ pgr nwk prune [OPTIONS] <infile>
 ```
 
 *   `-n <name>` / `-l <file>` / `-x <regex>`: Select nodes to remove.
-*   `-v, --invert`: Invert selection (Keep selected nodes, remove others).
+*   `-i, --invert`: Invert selection (Keep selected nodes, remove others).
 *   `-D`: Include descendants.
 
 ### rename

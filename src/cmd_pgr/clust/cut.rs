@@ -52,30 +52,11 @@ Examples:
    pgr clust cut tree.nwk --dynamic-hybrid 20 --matrix dist.phy
 "###,
         )
-        .arg(
-            Arg::new("infile")
-                .required(true)
-                .index(1)
-                .help("Input Newick file"),
-        )
-        .arg(
-            Arg::new("format")
-                .long("format")
-                .action(ArgAction::Set)
-                .value_parser([
-                    builder::PossibleValue::new("cluster"),
-                    builder::PossibleValue::new("pair"),
-                ])
-                .default_value("cluster")
-                .help("Output format for clustering results (ignored in --scan mode)"),
-        )
-        .arg(
-            Arg::new("k")
-                .long("k")
-                .short('k')
-                .value_parser(value_parser!(usize))
-                .help("Number of clusters"),
-        )
+        .arg(crate::cmd_pgr::args::infile_arg_required_with_help(
+            "Input Newick file",
+        ))
+        .arg(crate::cmd_pgr::args::format_arg())
+        .arg(crate::cmd_pgr::args::k_arg())
         .arg(
             Arg::new("height")
                 .long("height")

@@ -43,7 +43,7 @@ Examples:
                 .required(true)
                 .num_args(1..=2)
                 .index(1)
-                .help("Set the input files to use"),
+                .help("Input FASTQ file(s)"),
         )
         .arg(
             Arg::new("fq")

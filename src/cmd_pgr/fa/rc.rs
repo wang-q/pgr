@@ -35,12 +35,7 @@ Examples:
         .arg(crate::cmd_pgr::args::infile_arg_required_with_help(
             "Input FASTA file to process",
         ))
-        .arg(
-            Arg::new("name_list")
-                .required(false)
-                .index(2)
-                .help("File containing one sequence name per line (optional)"),
-        )
+        .arg(crate::cmd_pgr::args::fa_name_list_arg(false))
         .arg(
             Arg::new("consistent")
                 .long("consistent")

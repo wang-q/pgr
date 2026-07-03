@@ -36,12 +36,9 @@ Examples:
        pgr mat transform in.phy --op log --normalize
 "###,
         )
-        .arg(
-            Arg::new("infile")
-                .required(true)
-                .index(1)
-                .help("Input PHYLIP matrix or pairwise TSV file"),
-        )
+        .arg(crate::cmd_pgr::args::infile_arg_required_with_help(
+            "Input PHYLIP matrix or pairwise TSV file",
+        ))
         .arg(
             Arg::new("op")
                 .long("op")

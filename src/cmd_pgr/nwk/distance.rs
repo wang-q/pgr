@@ -43,20 +43,11 @@ Examples:
 "###,
         )
         .arg(crate::cmd_pgr::args::infile_arg_required())
-        .arg(
-            Arg::new("mode")
-                .long("mode")
-                .action(ArgAction::Set)
-                .value_parser([
-                    builder::PossibleValue::new("root"),
-                    builder::PossibleValue::new("parent"),
-                    builder::PossibleValue::new("pairwise"),
-                    builder::PossibleValue::new("lca"),
-                    builder::PossibleValue::new("phylip"),
-                ])
-                .default_value("root")
-                .help("Set the mode for calculating distances"),
-        )
+        .arg(crate::cmd_pgr::args::mode_arg(
+            "root",
+            &["root", "parent", "pairwise", "lca", "phylip"],
+            "Set the mode for calculating distances",
+        ))
         .arg(crate::cmd_pgr::args::internal_arg())
         .arg(crate::cmd_pgr::args::leaf_arg())
         .arg(crate::cmd_pgr::args::outfile_arg())

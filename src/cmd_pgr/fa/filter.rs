@@ -86,14 +86,7 @@ Notes:
                 .action(ArgAction::SetTrue)
                 .help("Simplify sequence names"),
         )
-        .arg(
-            Arg::new("line")
-                .long("line")
-                .short('l')
-                .num_args(1)
-                .value_parser(value_parser!(usize))
-                .help("Sequence line length"),
-        )
+        .arg(crate::cmd_pgr::args::line_arg(None))
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 

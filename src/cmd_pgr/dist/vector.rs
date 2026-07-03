@@ -1,4 +1,4 @@
-use clap::{builder, Arg, ArgAction, ArgMatches, Command};
+use clap::{Arg, ArgAction, ArgMatches, Command};
 use std::io::BufRead;
 
 use pgr::libs::clust::feature::FeatureVector;
@@ -46,18 +46,11 @@ modes:
                 .required(true)
                 .help("Input filenames. [stdin] for standard input"),
         )
-        .arg(
-            Arg::new("mode")
-                .long("mode")
-                .action(ArgAction::Set)
-                .value_parser([
-                    builder::PossibleValue::new("euclid"),
-                    builder::PossibleValue::new("cosine"),
-                    builder::PossibleValue::new("jaccard"),
-                ])
-                .default_value("euclid")
-                .help("Mode of calculation"),
-        )
+        .arg(crate::cmd_pgr::args::mode_arg(
+            "euclid",
+            &["euclid", "cosine", "jaccard"],
+            "Mode of calculation",
+        ))
         .arg(
             Arg::new("bin")
                 .long("bin")

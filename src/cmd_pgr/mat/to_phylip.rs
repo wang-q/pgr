@@ -16,12 +16,9 @@ Examples:
        pgr mat to-phylip input.tsv -o output.phy
 "###,
         )
-        .arg(
-            Arg::new("infile")
-                .required(true)
-                .index(1)
-                .help("Input file containing pairwise distances"),
-        )
+        .arg(crate::cmd_pgr::args::infile_arg_required_with_help(
+            "Input file containing pairwise distances",
+        ))
         .arg(crate::cmd_pgr::args::same_arg("0.0"))
         .arg(crate::cmd_pgr::args::missing_arg("1.0"))
         .arg(crate::cmd_pgr::args::outfile_arg())

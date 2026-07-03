@@ -4,12 +4,9 @@ use pgr::libs::chain::net::{filter_chrom, prune_gap, read_nets, FilterCriteria};
 pub fn make_subcommand() -> Command {
     Command::new("filter")
         .about("Filter out parts of net")
-        .arg(
-            Arg::new("infile")
-                .index(1)
-                .required(true)
-                .help("Input net file (or stdin if 'stdin')"),
-        )
+        .arg(crate::cmd_pgr::args::infile_arg_required_with_help(
+            "Input net file (or stdin if 'stdin')",
+        ))
         .arg(
             Arg::new("min_score")
                 .long("min-score")

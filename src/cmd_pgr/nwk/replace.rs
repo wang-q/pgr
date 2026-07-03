@@ -45,19 +45,11 @@ Examples:
         )
         .arg(crate::cmd_pgr::args::internal_arg())
         .arg(crate::cmd_pgr::args::leaf_arg())
-        .arg(
-            Arg::new("mode")
-                .long("mode")
-                .action(ArgAction::Set)
-                .value_parser([
-                    builder::PossibleValue::new("label"),
-                    builder::PossibleValue::new("taxid"),
-                    builder::PossibleValue::new("species"),
-                    builder::PossibleValue::new("asis"),
-                ])
-                .default_value("label")
-                .help("Where we place the replaces"),
-        )
+        .arg(crate::cmd_pgr::args::mode_arg(
+            "label",
+            &["label", "taxid", "species", "asis"],
+            "Where we place the replaces",
+        ))
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 

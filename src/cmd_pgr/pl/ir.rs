@@ -35,26 +35,12 @@ This command identifies interspersed repeats in a genome, mimicking the function
                 .help("Input file to process"),
         )
         .arg(crate::cmd_pgr::args::kmer_arg_with_default("17"))
-        .arg(
-            Arg::new("fill_kmer")
-                .long("fill-kmer")
-                .num_args(1)
-                .default_value("2")
-                .value_parser(value_parser!(usize))
-                .help("Fill holes between repetitive k-mers"),
-        )
+        .arg(crate::cmd_pgr::args::fill_kmer_arg())
         .arg(crate::cmd_pgr::args::min_len_arg_with_default(
             "300",
             "Minimum length of repetitive fragments",
         ))
-        .arg(
-            Arg::new("fill_fragment")
-                .long("fill-fragment")
-                .num_args(1)
-                .default_value("10")
-                .value_parser(value_parser!(usize))
-                .help("Fill holes between repetitive fragments"),
-        )
+        .arg(crate::cmd_pgr::args::fill_fragment_arg())
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 

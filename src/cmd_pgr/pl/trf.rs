@@ -20,13 +20,9 @@ This command identifies tandem repeats in a genome via `trf`.
 
 "###,
         )
-        .arg(
-            Arg::new("infile")
-                .required(true)
-                .num_args(1)
-                .index(1)
-                .help("Input file to process"),
-        )
+        .arg(crate::cmd_pgr::args::infile_arg_required_with_help(
+            "Input file to process",
+        ))
         .arg(
             Arg::new("trf_match")
                 .long("trf-match")

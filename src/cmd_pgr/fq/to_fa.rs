@@ -25,13 +25,7 @@ Examples:
    pgr fq to-fa input.fq
 "###,
         )
-        .arg(
-            Arg::new("infiles")
-                .required(true)
-                .num_args(1..)
-                .index(1)
-                .help("Input FASTQ file(s)"),
-        )
+        .arg(crate::cmd_pgr::args::infiles_arg("FASTQ"))
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 

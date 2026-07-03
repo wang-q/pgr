@@ -28,13 +28,9 @@ Examples:
    pgr psl lift input.psl --q-sizes q.sizes --t-sizes t.sizes > output.psl
 "###,
         )
-        .arg(
-            Arg::new("infile")
-                .required(true)
-                .num_args(1)
-                .index(1)
-                .help("Input PSL file. [stdin] for standard input"),
-        )
+        .arg(crate::cmd_pgr::args::infile_arg_required_with_help(
+            "Input PSL file. [stdin] for standard input",
+        ))
         .arg(crate::cmd_pgr::args::outfile_arg())
         .arg(crate::cmd_pgr::args::q_sizes_arg())
         .arg(crate::cmd_pgr::args::t_sizes_arg())

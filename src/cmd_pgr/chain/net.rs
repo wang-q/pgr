@@ -10,16 +10,8 @@ pub fn make_subcommand() -> Command {
         .arg(crate::cmd_pgr::args::infile_arg_required_with_help(
             "Input chain file",
         ))
-        .arg(
-            Arg::new("t_sizes")
-                .required(true)
-                .help("Target sequence sizes"),
-        )
-        .arg(
-            Arg::new("q_sizes")
-                .required(true)
-                .help("Query sequence sizes"),
-        )
+        .arg(crate::cmd_pgr::args::chain_t_sizes_arg())
+        .arg(crate::cmd_pgr::args::chain_q_sizes_arg())
         .arg(
             Arg::new("out_target_net")
                 .required(true)

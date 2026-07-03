@@ -30,13 +30,7 @@ Examples:
 
 "###,
         )
-        .arg(
-            Arg::new("infiles")
-                .required(true)
-                .num_args(1..)
-                .index(1)
-                .help("Input PAF file(s) to index"),
-        )
+        .arg(crate::cmd_pgr::args::infiles_arg("PAF"))
         .arg(crate::cmd_pgr::args::outfile_arg_optional())
 }
 
