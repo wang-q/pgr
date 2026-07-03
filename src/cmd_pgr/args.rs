@@ -530,6 +530,14 @@ pub fn lca_arg() -> Arg {
 // clust subcommand builders
 // ============================================================================
 
+/// `--matrix` argument for clust commands (distance matrix file).
+pub fn matrix_arg() -> Arg {
+    Arg::new("matrix")
+        .long("matrix")
+        .num_args(1)
+        .help("Distance matrix file")
+}
+
 /// Standard `--format` argument for clustering output.
 pub fn format_arg() -> Arg {
     Arg::new("format")

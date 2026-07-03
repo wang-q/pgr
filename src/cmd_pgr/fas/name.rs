@@ -29,7 +29,7 @@ Examples:
         .arg(
             Arg::new("count")
                 .long("count")
-                .short('c')
+                .short('C')
                 .action(ArgAction::SetTrue)
                 .help("Output species names with occurrence counts"),
         )

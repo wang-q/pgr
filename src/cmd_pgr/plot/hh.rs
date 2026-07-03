@@ -49,8 +49,8 @@ pub fn make_subcommand() -> Command {
                 .help("Y label"),
         )
         .arg(
-            Arg::new("col")
-                .long("col")
+            Arg::new("column")
+                .long("column")
                 .short('c')
                 .num_args(1)
                 .value_parser(value_parser!(usize))
@@ -96,7 +96,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let infile = args.get_one::<String>("infile").unwrap();
 
     // Optional arguments with defaults
-    let col = args.get_one::<usize>("col").unwrap();
+    let col = args.get_one::<usize>("column").unwrap();
     let group = args.get_one::<usize>("group");
     let bins = args.get_one::<usize>("bins").unwrap();
 

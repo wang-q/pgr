@@ -49,12 +49,7 @@ Examples:
                 .num_args(1)
                 .help("Other partition file (for external evaluation)"),
         )
-        .arg(
-            Arg::new("matrix")
-                .long("matrix")
-                .num_args(1)
-                .help("Distance matrix file"),
-        )
+        .arg(crate::cmd_pgr::args::matrix_arg())
         .arg(
             Arg::new("tree")
                 .long("tree")

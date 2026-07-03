@@ -14,7 +14,7 @@ fn command_invalid() {
 #[test]
 fn command_name() {
     let (stdout, _) = PgrCmd::new()
-        .args(&["fas", "name", "tests/fas/example.fas", "-c"])
+        .args(&["fas", "name", "tests/fas/example.fas", "-C"])
         .run();
 
     assert_eq!(stdout.lines().count(), 4);

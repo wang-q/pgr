@@ -30,7 +30,7 @@ pgr plot hh [OPTIONS] <infile>
 | :--- | :--- | :--- | :--- | :--- |
 | `infile` | | | File | Input filename ("stdin" for standard input) |
 | `outfile` | `-o` | `--outfile` | File | Output filename (default: stdout) |
-| `col` | `-c` | `--col` | Int | Column index to count (1-based, default: 1) |
+| `column` | `-c` | `--column` | Int | Column index to count (1-based, default: 1) |
 | `group` | `-g` | `--group` | Int | Group column index (1-based) |
 | `bins` | | `--bins` | Int | Number of bins (default: 40) |
 | `xl` | | `--xlabel` | String | X axis label (default: column name) |
@@ -41,7 +41,7 @@ pgr plot hh [OPTIONS] <infile>
 ### Input Format
 
 A tab-separated file with a header line.
-*   **Column 1 (or specified by `--col`)**: Numeric values.
+*   **Column 1 (or specified by `--column`)**: Numeric values.
 *   **Column 2 (or specified by `--group`)**: Group names (optional).
 
 ### Examples

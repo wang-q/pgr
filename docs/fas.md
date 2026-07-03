@@ -80,7 +80,7 @@ Extracts all species names found in the block FA files.
 pgr fas name [OPTIONS] <infiles>...
 ```
 
-*   `-c, --count`: Also output the number of occurrences of each species name.
+*   `-C, --count`: Also output the number of occurrences of each species name.
 *   `-o, --outfile <file>`: Output filename (default: stdout).
 
 ### stat

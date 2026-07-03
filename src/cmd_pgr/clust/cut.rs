@@ -171,12 +171,7 @@ Examples:
                 .value_parser(value_parser!(usize))
                 .help("Use dynamic hybrid cut method (value: min cluster size)"),
         )
-        .arg(
-            Arg::new("matrix")
-                .long("matrix")
-                .num_args(1)
-                .help("Distance matrix file"),
-        )
+        .arg(crate::cmd_pgr::args::matrix_arg())
         .arg(
             Arg::new("max_pam_dist")
                 .long("max-pam-dist")
