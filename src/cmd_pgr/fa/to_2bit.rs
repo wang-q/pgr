@@ -20,13 +20,9 @@ Examples:
   pgr fa to-2bit in.fa -o out.2bit --no-mask
 "###,
         )
-        .arg(
-            Arg::new("infiles")
-                .help("Input FASTA files")
-                .required(true)
-                .num_args(1..)
-                .index(1),
-        )
+        .arg(crate::cmd_pgr::args::infiles_arg_with_help(
+            "Input FASTA files",
+        ))
         .arg(crate::cmd_pgr::args::outfile_arg_required())
         .arg(crate::cmd_pgr::args::no_mask_arg())
         .arg(

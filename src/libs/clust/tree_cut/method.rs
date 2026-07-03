@@ -52,15 +52,15 @@ pub enum Method {
 pub const METHOD_NAMES: &[&str] = &[
     "k",
     "height",
-    "root-dist",
-    "max-clade",
-    "avg-clade",
-    "med-clade",
-    "sum-branch",
-    "leaf-dist-max",
-    "leaf-dist-min",
-    "leaf-dist-avg",
-    "max-edge",
+    "root_dist",
+    "max_clade",
+    "avg_clade",
+    "med_clade",
+    "sum_branch",
+    "leaf_dist_max",
+    "leaf_dist_min",
+    "leaf_dist_avg",
+    "max_edge",
     "inconsistent",
 ];
 
@@ -76,21 +76,21 @@ pub fn build_method(
     match name {
         "k" => Ok(Method::K(val as usize)),
         "height" => Ok(Method::Height(val)),
-        "root-dist" => Ok(Method::RootDist(val)),
-        "max-clade" => Ok(Method::MaxClade(val)),
-        "avg-clade" => Ok(Method::AvgClade(val)),
-        "med-clade" => Ok(Method::MedClade(val)),
-        "sum-branch" => Ok(Method::SumBranch(val)),
-        "leaf-dist-max" => leaf_depths
+        "root_dist" => Ok(Method::RootDist(val)),
+        "max_clade" => Ok(Method::MaxClade(val)),
+        "avg_clade" => Ok(Method::AvgClade(val)),
+        "med_clade" => Ok(Method::MedClade(val)),
+        "sum_branch" => Ok(Method::SumBranch(val)),
+        "leaf_dist_max" => leaf_depths
             .map(|(_, max, _)| Method::RootDist(max - val))
             .ok_or_else(|| "leaf depths required for leaf-dist-max".to_string()),
-        "leaf-dist-min" => leaf_depths
+        "leaf_dist_min" => leaf_depths
             .map(|(min, _, _)| Method::RootDist(min - val))
             .ok_or_else(|| "leaf depths required for leaf-dist-min".to_string()),
-        "leaf-dist-avg" => leaf_depths
+        "leaf_dist_avg" => leaf_depths
             .map(|(_, _, avg)| Method::RootDist(avg - val))
             .ok_or_else(|| "leaf depths required for leaf-dist-avg".to_string()),
-        "max-edge" => Ok(Method::SingleLinkage(val)),
+        "max_edge" => Ok(Method::SingleLinkage(val)),
         "inconsistent" => Ok(Method::Inconsistent(val, deep)),
         _ => Err(format!("unknown method: {}", name)),
     }

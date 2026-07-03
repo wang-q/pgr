@@ -38,11 +38,9 @@ Examples:
 "###,
         )
         .arg(
-            Arg::new("infile")
-                .required(true)
-                .num_args(1)
-                .index(1)
-                .help("Input Newick filename. [stdin] for standard input"),
+            crate::cmd_pgr::args::infile_arg_required_with_help(
+                "Input Newick filename. [stdin] for standard input",
+            ),
         )
         .arg(
             Arg::new("taxon")

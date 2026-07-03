@@ -1,4 +1,4 @@
-use clap::{Arg, ArgMatches, Command};
+use clap::{ArgMatches, Command};
 use pgr::libs::chain::net::read_nets;
 use std::fs::{self, File};
 use std::io::BufWriter;
@@ -7,12 +7,9 @@ use std::path::Path;
 pub fn make_subcommand() -> Command {
     Command::new("split")
         .about("Split a net file into one file per chromosome")
-        .arg(
-            Arg::new("infile")
-                .help("Input net file")
-                .required(true)
-                .index(1),
-        )
+        .arg(crate::cmd_pgr::args::infile_arg_required_with_help(
+            "Input net file",
+        ))
         .arg(crate::cmd_pgr::args::outdir_arg_required())
 }
 

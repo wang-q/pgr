@@ -44,12 +44,9 @@ Examples:
 
 "###,
         )
-        .arg(
-            Arg::new("infile")
-                .required(true)
-                .index(1)
-                .help("Input PAF file (or 'stdin' for piped input)"),
-        )
+        .arg(crate::cmd_pgr::args::infile_arg_required_with_help(
+            "Input PAF file (or 'stdin' for piped input)",
+        ))
         .arg(crate::cmd_pgr::args::outfile_arg());
     let cmd = crate::cmd_pgr::args::add_optional_fasta_tsv_arg(cmd);
     crate::cmd_pgr::args::add_min_var_len_arg(cmd)

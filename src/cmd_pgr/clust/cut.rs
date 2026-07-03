@@ -64,55 +64,55 @@ Examples:
                 .help("Cut at specific height (max distance to leaves)"),
         )
         .arg(
-            Arg::new("root-dist")
+            Arg::new("root_dist")
                 .long("root-dist")
                 .value_parser(value_parser!(f64))
                 .help("Cut at specific distance from root"),
         )
         .arg(
-            Arg::new("max-clade")
+            Arg::new("max_clade")
                 .long("max-clade")
                 .value_parser(value_parser!(f64))
                 .help("Max pairwise distance in cluster threshold"),
         )
         .arg(
-            Arg::new("avg-clade")
+            Arg::new("avg_clade")
                 .long("avg-clade")
                 .value_parser(value_parser!(f64))
                 .help("Average pairwise distance in cluster threshold"),
         )
         .arg(
-            Arg::new("med-clade")
+            Arg::new("med_clade")
                 .long("med-clade")
                 .value_parser(value_parser!(f64))
                 .help("Median pairwise distance in cluster threshold"),
         )
         .arg(
-            Arg::new("sum-branch")
+            Arg::new("sum_branch")
                 .long("sum-branch")
                 .value_parser(value_parser!(f64))
                 .help("Sum of branch lengths in cluster threshold"),
         )
         .arg(
-            Arg::new("leaf-dist-max")
+            Arg::new("leaf_dist_max")
                 .long("leaf-dist-max")
                 .value_parser(value_parser!(f64))
                 .help("Max distance from cluster root to any leaf"),
         )
         .arg(
-            Arg::new("leaf-dist-min")
+            Arg::new("leaf_dist_min")
                 .long("leaf-dist-min")
                 .value_parser(value_parser!(f64))
                 .help("Min distance from cluster root to any leaf"),
         )
         .arg(
-            Arg::new("leaf-dist-avg")
+            Arg::new("leaf_dist_avg")
                 .long("leaf-dist-avg")
                 .value_parser(value_parser!(f64))
                 .help("Average distance from cluster root to leaves"),
         )
         .arg(
-            Arg::new("max-edge")
+            Arg::new("max_edge")
                 .long("max-edge")
                 .alias("single-linkage")
                 .value_parser(value_parser!(f64))
@@ -149,7 +149,7 @@ Examples:
                 .help("Scan thresholds (format: start,end,step)"),
         )
         .arg(
-            Arg::new("stats-out")
+            Arg::new("stats_out")
                 .long("stats-out")
                 .help("Output statistics to a separate file (useful when format is 'long')"),
         )
@@ -160,13 +160,13 @@ Examples:
                 .help("Branch support threshold (edges with support < S will be treated as infinite length)"),
         )
         .arg(
-            Arg::new("dynamic-tree")
+            Arg::new("dynamic_tree")
                 .long("dynamic-tree")
                 .value_parser(value_parser!(usize))
                 .help("Use dynamic tree cut method (value: min cluster size)"),
         )
         .arg(
-            Arg::new("dynamic-hybrid")
+            Arg::new("dynamic_hybrid")
                 .long("dynamic-hybrid")
                 .value_parser(value_parser!(usize))
                 .help("Use dynamic hybrid cut method (value: min cluster size)"),
@@ -177,25 +177,25 @@ Examples:
                 .help("Distance matrix file (required for --dynamic-hybrid)"),
         )
         .arg(
-            Arg::new("max-pam-dist")
+            Arg::new("max_pam_dist")
                 .long("max-pam-dist")
                 .value_parser(value_parser!(f64))
                 .help("Maximum distance to medoid for PAM reassignment"),
         )
         .arg(
-            Arg::new("no-pam-dendro")
+            Arg::new("no_pam_dendro")
                 .long("no-pam-dendro")
                 .action(ArgAction::SetTrue)
                 .help("Disable dendrogram respect in PAM stage (allow assigning to clusters across high branches)"),
         )
         .arg(
-            Arg::new("deep-split")
+            Arg::new("deep_split")
                 .long("deep-split")
                 .action(ArgAction::SetTrue)
                 .help("Enable deep split for dynamic tree cut (default: false)"),
         )
         .arg(
-            Arg::new("max-tree-height")
+            Arg::new("max_tree_height")
                 .long("max-tree-height")
                 .value_parser(value_parser!(f64))
                 .help("Maximum joining height for dynamic tree cut (default: 99% of tree height)"),
@@ -205,18 +205,18 @@ Examples:
                 .args([
                     "k",
                     "height",
-                    "root-dist",
-                    "max-clade",
-                    "avg-clade",
-                    "med-clade",
-                    "sum-branch",
-                    "leaf-dist-max",
-                    "leaf-dist-min",
-                    "leaf-dist-avg",
-                    "max-edge",
+                    "root_dist",
+                    "max_clade",
+                    "avg_clade",
+                    "med_clade",
+                    "sum_branch",
+                    "leaf_dist_max",
+                    "leaf_dist_min",
+                    "leaf_dist_avg",
+                    "max_edge",
                     "inconsistent",
-                    "dynamic-tree",
-                    "dynamic-hybrid",
+                    "dynamic_tree",
+                    "dynamic_hybrid",
                 ])
                 .required(true),
         )
@@ -256,7 +256,7 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
         }
 
         let mut stats_writer: Option<Box<dyn Write>> =
-            if let Some(stats_file) = matches.get_one::<String>("stats-out") {
+            if let Some(stats_file) = matches.get_one::<String>("stats_out") {
                 let mut w = pgr::writer(stats_file)?;
                 w.write_all(b"Group\tClusters\tSingletons\tNon-Singletons\tMaxSize\n")?;
                 Some(w)
@@ -270,9 +270,9 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
         let mut val = start;
 
         // Pre-calculate leaf depths for scanning if needed
-        let leaf_depths_scan = if matches.contains_id("leaf-dist-max")
-            || matches.contains_id("leaf-dist-min")
-            || matches.contains_id("leaf-dist-avg")
+        let leaf_depths_scan = if matches.contains_id("leaf_dist_max")
+            || matches.contains_id("leaf_dist_min")
+            || matches.contains_id("leaf_dist_avg")
         {
             Some(pgr::libs::phylo::tree::stat::get_leaf_depth_stats(tree))
         } else {
@@ -280,11 +280,11 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
         };
 
         while val <= end + 1e-9 {
-            let dispatch = if matches.contains_id("dynamic-tree") {
+            let dispatch = if matches.contains_id("dynamic_tree") {
                 CutDispatch::DynamicTree(DynamicTreeOptions {
                     min_module_size: val as usize,
-                    deep_split: matches.get_flag("deep-split"),
-                    max_tree_height: matches.get_one::<f64>("max-tree-height").copied(),
+                    deep_split: matches.get_flag("deep_split"),
+                    max_tree_height: matches.get_one::<f64>("max_tree_height").copied(),
                 })
             } else {
                 let method_name = METHOD_NAMES
@@ -323,13 +323,13 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
     let rep_mode = RepMode::parse(rep_method).map_err(|e| anyhow::anyhow!(e))?;
 
     for tree in trees.iter() {
-        let dispatch = if let Some(&min_cluster_size) = matches.get_one::<usize>("dynamic-tree") {
+        let dispatch = if let Some(&min_cluster_size) = matches.get_one::<usize>("dynamic_tree") {
             CutDispatch::DynamicTree(DynamicTreeOptions {
                 min_module_size: min_cluster_size,
-                deep_split: matches.get_flag("deep-split"),
-                max_tree_height: matches.get_one::<f64>("max-tree-height").copied(),
+                deep_split: matches.get_flag("deep_split"),
+                max_tree_height: matches.get_one::<f64>("max_tree_height").copied(),
             })
-        } else if let Some(&min_cluster_size) = matches.get_one::<usize>("dynamic-hybrid") {
+        } else if let Some(&min_cluster_size) = matches.get_one::<usize>("dynamic_hybrid") {
             let matrix_file = matches
                 .get_one::<String>("matrix")
                 .ok_or_else(|| anyhow::anyhow!("--matrix is required for dynamic-hybrid"))?;
@@ -338,13 +338,13 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
             CutDispatch::DynamicHybrid(HybridOptions {
                 min_cluster_size,
                 dist_matrix,
-                cut_height: matches.get_one::<f64>("max-tree-height").copied(),
-                deep_split: if matches.get_flag("deep-split") { 1 } else { 0 },
+                cut_height: matches.get_one::<f64>("max_tree_height").copied(),
+                deep_split: if matches.get_flag("deep_split") { 1 } else { 0 },
                 max_core_scatter: None,
                 min_gap: None,
                 pam_stage: true, // Default to true
-                pam_respects_dendro: !matches.get_flag("no-pam-dendro"),
-                max_pam_dist: matches.get_one::<f64>("max-pam-dist").copied(),
+                pam_respects_dendro: !matches.get_flag("no_pam_dendro"),
+                max_pam_dist: matches.get_one::<f64>("max_pam_dist").copied(),
                 respect_small_clusters: true, // Default to true to match R
             })
         } else {
@@ -362,7 +362,7 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
                     .get_one::<f64>(method_name)
                     .ok_or_else(|| anyhow::anyhow!("missing --{} value", method_name))?
             };
-            let leaf_depths = if method_name.starts_with("leaf-dist-") {
+            let leaf_depths = if method_name.starts_with("leaf_dist_") {
                 Some(pgr::libs::phylo::tree::stat::get_leaf_depth_stats(tree))
             } else {
                 None

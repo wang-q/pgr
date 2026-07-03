@@ -36,13 +36,9 @@ Examples:
         .arg(crate::cmd_pgr::args::name_list_arg())
         .arg(crate::cmd_pgr::args::regex_arg())
         .arg(crate::cmd_pgr::args::descendants_arg())
-        .arg(
-            Arg::new("invert")
-                .long("invert")
-                .short('i')
-                .action(ArgAction::SetTrue)
-                .help("Invert pruning: keep specified nodes, their ancestors and descendants"),
-        )
+        .arg(crate::cmd_pgr::args::invert_arg_with_help(
+            "Invert pruning: keep specified nodes, their ancestors and descendants",
+        ))
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 

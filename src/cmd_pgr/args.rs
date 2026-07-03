@@ -98,6 +98,26 @@ pub fn infiles_arg(label: &str) -> Arg {
         .help(format!("Input {label} file(s) to process"))
 }
 
+/// Positional `infiles` argument at a custom index (required, 1 or more files).
+/// Use when another positional precedes `infiles`.
+pub fn infiles_arg_at(label: &str, index: usize) -> Arg {
+    Arg::new("infiles")
+        .required(true)
+        .num_args(1..)
+        .index(index)
+        .help(format!("Input {label} file(s) to process"))
+}
+
+/// Positional `infiles` argument at index 1 with a custom help text.
+/// Use when the default "Input {label} file(s) to process" pattern doesn't fit.
+pub fn infiles_arg_with_help(help: &'static str) -> Arg {
+    Arg::new("infiles")
+        .required(true)
+        .num_args(1..)
+        .index(1)
+        .help(help)
+}
+
 /// Positional `target` genome file argument (required, index 1).
 pub fn target_genome_arg(help: &'static str) -> Arg {
     Arg::new("target")
@@ -123,6 +143,15 @@ pub fn invert_arg() -> Arg {
         .short('i')
         .action(ArgAction::SetTrue)
         .help("Invert selection: output sequences NOT in the list")
+}
+
+/// `-i/--invert` flag with a custom help text.
+pub fn invert_arg_with_help(help: &'static str) -> Arg {
+    Arg::new("invert")
+        .long("invert")
+        .short('i')
+        .action(ArgAction::SetTrue)
+        .help(help)
 }
 
 /// Standard `-r/--rgfile` argument (file of regions, one per line).

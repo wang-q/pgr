@@ -16,13 +16,9 @@ Notes:
 "###,
         )
         .arg(crate::cmd_pgr::args::genome_arg())
-        .arg(
-            Arg::new("infiles")
-                .required(true)
-                .num_args(1..)
-                .index(1)
-                .help("Input block FA file(s) to check"),
-        )
+        .arg(crate::cmd_pgr::args::infiles_arg_with_help(
+            "Input block FA file(s) to check",
+        ))
         .arg(crate::cmd_pgr::args::fas_name_arg(
             "Check sequences for a specific species",
         ))

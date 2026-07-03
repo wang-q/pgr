@@ -50,13 +50,7 @@ Examples:
                 ])
                 .help("Split mode: 'name' or 'about'"),
         )
-        .arg(
-            Arg::new("infiles")
-                .required(true)
-                .num_args(1..)
-                .index(2)
-                .help("Input FASTA file(s) to process"),
-        )
+        .arg(crate::cmd_pgr::args::infiles_arg_at("FASTA", 2))
         .arg(
             Arg::new("size")
                 .long("size")

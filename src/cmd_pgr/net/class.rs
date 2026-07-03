@@ -1,13 +1,11 @@
-use clap::{Arg, ArgMatches, Command};
+use clap::{ArgMatches, Command};
 use std::collections::HashMap;
 
 use pgr::libs::chain::net::{collect_stats_gap, read_nets, Stats};
 
 pub fn make_subcommand() -> Command {
     Command::new("class").about("Show stats of net").arg(
-        Arg::new("infile")
-            .required(true)
-            .help("Input net file (or stdin if 'stdin')"),
+        crate::cmd_pgr::args::infile_arg_required_with_help("Input net file (or stdin if 'stdin')"),
     )
 }
 

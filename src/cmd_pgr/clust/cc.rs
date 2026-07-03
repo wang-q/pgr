@@ -19,10 +19,9 @@ Note:
 "###,
         )
         .arg(
-            Arg::new("infile")
-                .required(true)
-                .index(1)
-                .help("Input file containing pairwise relations (weights ignored) in .tsv format"),
+            crate::cmd_pgr::args::infile_arg_required_with_help(
+                "Input file containing pairwise relations (weights ignored) in .tsv format",
+            ),
         )
         .arg(crate::cmd_pgr::args::format_arg())
         .arg(crate::cmd_pgr::args::outfile_arg())

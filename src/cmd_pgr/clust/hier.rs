@@ -32,12 +32,9 @@ Examples:
    pgr clust hier matrix.phy --method single > tree.nwk
 "#,
         )
-        .arg(
-            Arg::new("infile")
-                .required(true)
-                .index(1)
-                .help("Input PHYLIP distance matrix file. [stdin] for standard input"),
-        )
+        .arg(crate::cmd_pgr::args::infile_arg_required_with_help(
+            "Input PHYLIP distance matrix file. [stdin] for standard input",
+        ))
         .arg(
             Arg::new("method")
                 .long("method")

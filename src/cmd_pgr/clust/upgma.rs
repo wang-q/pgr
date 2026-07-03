@@ -22,12 +22,9 @@ Examples:
    cat matrix.phy | pgr clust upgma stdin > tree.nwk
 "###,
         )
-        .arg(
-            Arg::new("infile")
-                .required(true)
-                .index(1)
-                .help("Input PHYLIP matrix file. [stdin] for standard input"),
-        )
+        .arg(crate::cmd_pgr::args::infile_arg_required_with_help(
+            "Input PHYLIP matrix file. [stdin] for standard input",
+        ))
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 

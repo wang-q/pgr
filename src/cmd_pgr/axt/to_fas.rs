@@ -39,13 +39,7 @@ Examples:
                 .num_args(1)
                 .help("Chromosome sizes file for the query genome"),
         )
-        .arg(
-            Arg::new("infiles")
-                .required(true)
-                .num_args(1..)
-                .index(2)
-                .help("Input AXT file(s) to process"),
-        )
+        .arg(crate::cmd_pgr::args::infiles_arg_at("AXT", 2))
         .arg(
             Arg::new("t_name")
                 .long("t-name")

@@ -29,7 +29,7 @@ Examples:
                 .help("Sort by query position, not target"),
         )
         .arg(
-            Arg::new("by-score")
+            Arg::new("by_score")
                 .long("by-score")
                 .action(ArgAction::SetTrue)
                 .help("Sort by score"),
@@ -46,7 +46,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let input = crate::cmd_pgr::args::get_infile(args);
     let output = crate::cmd_pgr::args::get_outfile(args);
     let by_query = args.get_flag("by_query");
-    let by_score = args.get_flag("by-score");
+    let by_score = args.get_flag("by_score");
     let renumber = args.get_flag("renumber");
 
     let reader = pgr::reader(input)?;

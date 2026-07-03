@@ -26,10 +26,9 @@ Stijn van Dongen, Graph Clustering by Flow Simulation. PhD thesis, University of
 "###,
         )
         .arg(
-            Arg::new("infile")
-                .required(true)
-                .index(1)
-                .help("Input file containing pairwise similarities (edge weights) in .tsv format"),
+            crate::cmd_pgr::args::infile_arg_required_with_help(
+                "Input file containing pairwise similarities (edge weights) in .tsv format",
+            ),
         )
         .arg(crate::cmd_pgr::args::format_arg())
         .arg(crate::cmd_pgr::args::same_arg("1.0"))

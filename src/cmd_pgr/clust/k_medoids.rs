@@ -22,10 +22,9 @@ If there are ties, the alphabetically first member is chosen.
 "###,
         )
         .arg(
-            Arg::new("infile")
-                .required(true)
-                .index(1)
-                .help("Input file containing pairwise distances in .tsv format"),
+            crate::cmd_pgr::args::infile_arg_required_with_help(
+                "Input file containing pairwise distances in .tsv format",
+            ),
         )
         .arg(crate::cmd_pgr::args::k_arg().required(true))
         .arg(crate::cmd_pgr::args::format_arg())
