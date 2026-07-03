@@ -159,6 +159,12 @@ impl GapCalc {
     }
 
     fn interpolate(x: i32, s: &[i32], v: &[f64]) -> f64 {
+        if s.is_empty() {
+            return 0.0;
+        }
+        if s.len() == 1 {
+            return v[0];
+        }
         for i in 0..s.len() {
             if x == s[i] {
                 return v[i];

@@ -190,7 +190,7 @@ impl SubMatrix {
                 let val_start = if parts.len() > chars.len() { 1 } else { 0 };
 
                 // Extra check: if val_start is 1, parts[0] must match row_char
-                if val_start == 1 && parts[0].chars().next().unwrap() != row_char {
+                if val_start == 1 && parts[0].chars().next().unwrap_or('\0') != row_char {
                     // Mismatch, maybe not a matrix line
                     continue;
                 }

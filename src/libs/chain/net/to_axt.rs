@@ -9,6 +9,7 @@ use crate::libs::chain::record::Chain;
 use crate::libs::chain::sub_matrix::SubMatrix;
 use crate::libs::io::SequenceReader;
 use crate::libs::nt;
+use anyhow::anyhow;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::io::Write;
@@ -173,7 +174,8 @@ fn convert_segment<S: SequenceReader, W: Write>(
         )?;
         if chain.header.q_strand == '-' {
             let rev = nt::rev_comp(seq.as_bytes()).collect();
-            seq = String::from_utf8(rev).unwrap();
+            seq = String::from_utf8(rev)
+                .map_err(|e| anyhow!("reverse-complemented query is not valid UTF-8: {}", e))?;
         }
         Ok(seq)
     };
@@ -225,7 +227,7 @@ fn convert_segment<S: SequenceReader, W: Write>(
 
             // Handle dq (Q gap)
             if t_start <= gap_start_t && gap_start_t < t_end {
-                let dq_len = block.q_start - prev.q_end;
+                let dq_len = block.q_start.saturating_sub(prev.q_end);
                 if dq_len > 0 {
                     let q_chunk = read_q(prev.q_end, block.q_start, q_2bit)?;
                     q_seq_all.push_str(&q_chunk);

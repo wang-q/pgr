@@ -102,47 +102,47 @@ pub fn read_nets<R: BufRead>(mut reader: R) -> Result<Vec<Chrom>> {
                             }
                         }
                         "qDup" => {
-                            let (v, ni) = parse_opt_u64(&parts, i);
+                            let (v, ni) = parse_opt_u64(&parts, i)?;
                             q_dup = v;
                             i = ni;
                         }
                         "qOver" => {
-                            let (v, ni) = parse_opt_u64(&parts, i);
+                            let (v, ni) = parse_opt_u64(&parts, i)?;
                             q_over = v;
                             i = ni;
                         }
                         "qFar" => {
-                            let (v, ni) = parse_opt_i64(&parts, i);
+                            let (v, ni) = parse_opt_i64(&parts, i)?;
                             q_far = v;
                             i = ni;
                         }
                         "tN" => {
-                            let (v, ni) = parse_opt_u64(&parts, i);
+                            let (v, ni) = parse_opt_u64(&parts, i)?;
                             t_n = v;
                             i = ni;
                         }
                         "qN" => {
-                            let (v, ni) = parse_opt_u64(&parts, i);
+                            let (v, ni) = parse_opt_u64(&parts, i)?;
                             q_n = v;
                             i = ni;
                         }
                         "tR" => {
-                            let (v, ni) = parse_opt_u64(&parts, i);
+                            let (v, ni) = parse_opt_u64(&parts, i)?;
                             t_r = v;
                             i = ni;
                         }
                         "qR" => {
-                            let (v, ni) = parse_opt_u64(&parts, i);
+                            let (v, ni) = parse_opt_u64(&parts, i)?;
                             q_r = v;
                             i = ni;
                         }
                         "tTrf" => {
-                            let (v, ni) = parse_opt_u64(&parts, i);
+                            let (v, ni) = parse_opt_u64(&parts, i)?;
                             t_trf = v;
                             i = ni;
                         }
                         "qTrf" => {
-                            let (v, ni) = parse_opt_u64(&parts, i);
+                            let (v, ni) = parse_opt_u64(&parts, i)?;
                             q_trf = v;
                             i = ni;
                         }
@@ -217,32 +217,32 @@ pub fn read_nets<R: BufRead>(mut reader: R) -> Result<Vec<Chrom>> {
                 while i < parts.len() {
                     match parts[i] {
                         "tN" => {
-                            let (v, ni) = parse_opt_u64(&parts, i);
+                            let (v, ni) = parse_opt_u64(&parts, i)?;
                             t_n = v;
                             i = ni;
                         }
                         "qN" => {
-                            let (v, ni) = parse_opt_u64(&parts, i);
+                            let (v, ni) = parse_opt_u64(&parts, i)?;
                             q_n = v;
                             i = ni;
                         }
                         "tR" => {
-                            let (v, ni) = parse_opt_u64(&parts, i);
+                            let (v, ni) = parse_opt_u64(&parts, i)?;
                             t_r = v;
                             i = ni;
                         }
                         "qR" => {
-                            let (v, ni) = parse_opt_u64(&parts, i);
+                            let (v, ni) = parse_opt_u64(&parts, i)?;
                             q_r = v;
                             i = ni;
                         }
                         "tTrf" => {
-                            let (v, ni) = parse_opt_u64(&parts, i);
+                            let (v, ni) = parse_opt_u64(&parts, i)?;
                             t_trf = v;
                             i = ni;
                         }
                         "qTrf" => {
-                            let (v, ni) = parse_opt_u64(&parts, i);
+                            let (v, ni) = parse_opt_u64(&parts, i)?;
                             q_trf = v;
                             i = ni;
                         }
@@ -312,20 +312,36 @@ fn parse_f64(parts: &[&str], i: usize, field: &str) -> Result<f64> {
 }
 
 // Parse an optional `name <value>` pair at position `i` in `parts` as u64.
-fn parse_opt_u64(parts: &[&str], i: usize) -> (Option<u64>, usize) {
+fn parse_opt_u64(parts: &[&str], i: usize) -> Result<(Option<u64>, usize)> {
     if i + 1 < parts.len() {
-        (Some(parts[i + 1].parse::<u64>().unwrap_or(0)), i + 2)
+        let val = parts[i + 1].parse::<u64>().map_err(|e| {
+            anyhow!(
+                "invalid u64 value at index {}: {}: {}",
+                i + 1,
+                parts[i + 1],
+                e
+            )
+        })?;
+        Ok((Some(val), i + 2))
     } else {
-        (None, i + 1)
+        Ok((None, i + 1))
     }
 }
 
 // Parse an optional `name <value>` pair at position `i` in `parts` as i64.
-fn parse_opt_i64(parts: &[&str], i: usize) -> (Option<i64>, usize) {
+fn parse_opt_i64(parts: &[&str], i: usize) -> Result<(Option<i64>, usize)> {
     if i + 1 < parts.len() {
-        (Some(parts[i + 1].parse::<i64>().unwrap_or(0)), i + 2)
+        let val = parts[i + 1].parse::<i64>().map_err(|e| {
+            anyhow!(
+                "invalid i64 value at index {}: {}: {}",
+                i + 1,
+                parts[i + 1],
+                e
+            )
+        })?;
+        Ok((Some(val), i + 2))
     } else {
-        (None, i + 1)
+        Ok((None, i + 1))
     }
 }
 

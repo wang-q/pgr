@@ -52,7 +52,7 @@ pub fn collect_stats_gap(gap: &Rc<RefCell<Gap>>, stats: &mut HashMap<String, Sta
     }
 
     // The remaining part is gap
-    let gap_bases = size - fill_bases;
+    let gap_bases = size.saturating_sub(fill_bases);
     if gap_bases > 0 {
         let entry = stats.entry("gap".to_string()).or_default();
         entry.count += 1; // This is tricky. Is it 1 gap? Or multiple fragments?

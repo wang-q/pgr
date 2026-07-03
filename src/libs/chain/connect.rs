@@ -218,7 +218,7 @@ pub fn chain_blocks<S: SequenceReader>(
             t_name,
             q_size,
             q_strand,
-        );
+        )?;
 
         if score <= 0.0 {
             continue;
@@ -532,11 +532,11 @@ fn score_chain<S: SequenceReader>(
     t_name: &str,
     q_size: u64,
     q_strand: char,
-) -> f64 {
+) -> anyhow::Result<f64> {
     let mut score = 0.0;
     for i in 0..blocks.len() {
         let block_score = if let Some(ctx) = score_ctx {
-            calc_block_score(&blocks[i], ctx, q_name, t_name, q_size, q_strand).unwrap_or(0.0)
+            calc_block_score(&blocks[i], ctx, q_name, t_name, q_size, q_strand)?
         } else {
             blocks[i].score
         };
@@ -561,20 +561,19 @@ fn score_chain<S: SequenceReader>(
     if let Some(ctx) = score_ctx {
         let mut exact_score = 0.0;
         for b in blocks {
-            exact_score +=
-                calc_block_score(b, ctx, q_name, t_name, q_size, q_strand).unwrap_or(0.0);
+            exact_score += calc_block_score(b, ctx, q_name, t_name, q_size, q_strand)?;
         }
         for i in 1..blocks.len() {
             let prev = &blocks[i - 1];
             let curr = &blocks[i];
-            let dt = (curr.t_start - prev.t_end) as i32;
-            let dq = (curr.q_start - prev.q_end) as i32;
+            let dt = curr.t_start.saturating_sub(prev.t_end) as i32;
+            let dq = curr.q_start.saturating_sub(prev.q_end) as i32;
             exact_score -= gap_calc.calc(dq, dt) as f64;
         }
-        return exact_score;
+        return Ok(exact_score);
     }
 
-    score
+    Ok(score)
 }
 
 /// Calculates the score of a single block using sequence data and the substitution matrix.
