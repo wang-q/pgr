@@ -48,7 +48,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     let infile = args.get_one::<String>("infile").unwrap();
     let opt_k = *args.get_one::<usize>("k").unwrap();
-    let opt_format = args.get_one::<String>("format").unwrap();
+    let opt_format = args.get_one::<String>("clust_format").unwrap();
     let opt_same = *args.get_one::<f32>("same").unwrap();
     let opt_missing = *args.get_one::<f32>("missing").unwrap();
     let runs = *args.get_one::<usize>("runs").unwrap();

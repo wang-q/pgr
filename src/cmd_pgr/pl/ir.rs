@@ -24,16 +24,11 @@ This command identifies interspersed repeats in a genome, mimicking the function
             Arg::new("repeat")
                 .required(true)
                 .num_args(1)
-                .index(1)
                 .help("The repeats database"),
         )
-        .arg(
-            Arg::new("infile")
-                .required(true)
-                .num_args(1)
-                .index(2)
-                .help("Input file to process"),
-        )
+        .arg(crate::cmd_pgr::args::infile_arg_required_with_help(
+            "Input file to process",
+        ))
         .arg(crate::cmd_pgr::args::kmer_arg_with_default("17"))
         .arg(crate::cmd_pgr::args::fill_kmer_arg())
         .arg(crate::cmd_pgr::args::min_len_arg_with_default(

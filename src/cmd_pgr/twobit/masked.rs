@@ -33,7 +33,7 @@ Examples:
 "###,
         )
         .arg(crate::cmd_pgr::args::infiles_arg("2bit"))
-        .arg(crate::cmd_pgr::args::gap_flag())
+        .arg(crate::cmd_pgr::args::gap_arg())
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 

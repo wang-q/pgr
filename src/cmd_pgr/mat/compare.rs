@@ -44,10 +44,10 @@ Examples:
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let matrix1_file = args.get_one::<String>("matrix1").unwrap();
     let matrix2_file = args.get_one::<String>("matrix2").unwrap();
-    let methods = if args.get_one::<String>("method").unwrap() == "all" {
+    let methods = if args.get_one::<String>("mat_method").unwrap() == "all" {
         "pearson,spearman,mae,cosine,jaccard,euclid"
     } else {
-        args.get_one::<String>("method").unwrap()
+        args.get_one::<String>("mat_method").unwrap()
     };
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
 

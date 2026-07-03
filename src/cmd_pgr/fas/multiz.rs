@@ -32,13 +32,10 @@ Examples:
                 .required(true)
                 .help("Reference sequence name present in all inputs"),
         )
-        .arg(
-            Arg::new("infiles")
-                .required(true)
-                .num_args(2..)
-                .index(1)
-                .help("Input block FA file(s) to merge"),
-        )
+        .arg(crate::cmd_pgr::args::infiles_arg_with_numargs(
+            "Input block FA file(s) to merge",
+            2..,
+        ))
         .arg(
             Arg::new("radius")
                 .long("radius")

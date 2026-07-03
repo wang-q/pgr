@@ -52,8 +52,8 @@ Examples:
         )
         .arg(crate::cmd_pgr::args::infiles_arg_at("FASTA", 2))
         .arg(
-            Arg::new("size")
-                .long("size")
+            Arg::new("chunk_size")
+                .long("chunk-size")
                 .short('c')
                 .num_args(1)
                 .value_parser(value_parser!(usize))
@@ -122,8 +122,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             }
         }
     } else if mode == "about" {
-        let opt_count = if args.contains_id("size") {
-            *args.get_one::<usize>("size").unwrap()
+        let opt_count = if args.contains_id("chunk_size") {
+            *args.get_one::<usize>("chunk_size").unwrap()
         } else {
             usize::MAX
         };

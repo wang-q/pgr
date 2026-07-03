@@ -38,13 +38,10 @@ Examples:
 
 "###,
         )
-        .arg(
-            Arg::new("infiles")
-                .required(true)
-                .num_args(1..=2)
-                .index(1)
-                .help("Input FASTQ file(s)"),
-        )
+        .arg(crate::cmd_pgr::args::infiles_arg_with_numargs(
+            "Input FASTQ file(s)",
+            1..=2,
+        ))
         .arg(
             Arg::new("fq")
                 .long("fq")

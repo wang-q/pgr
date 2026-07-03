@@ -41,7 +41,7 @@ Examples:
 
 pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
     let infile = matches.get_one::<String>("infile").unwrap();
-    let method_str = matches.get_one::<String>("method").unwrap();
+    let method_str = matches.get_one::<String>("clust_method").unwrap();
     let outfile = crate::cmd_pgr::args::get_outfile(matches);
 
     // Parse method

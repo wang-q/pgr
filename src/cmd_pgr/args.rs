@@ -128,6 +128,19 @@ pub fn infiles_arg_with_help(help: &'static str) -> Arg {
         .help(help)
 }
 
+/// Positional `infiles` argument at index 1 with custom num_args and help.
+/// Use when the default `1..` range doesn't fit (e.g., `2..`, `1..=2`, `1..=4`).
+pub fn infiles_arg_with_numargs(
+    help: &'static str,
+    num_args: impl clap::builder::IntoResettable<builder::ValueRange>,
+) -> Arg {
+    Arg::new("infiles")
+        .required(true)
+        .num_args(num_args)
+        .index(1)
+        .help(help)
+}
+
 /// Positional `target` genome file argument (required, index 1).
 pub fn target_genome_arg(help: &'static str) -> Arg {
     Arg::new("target")
@@ -540,7 +553,7 @@ pub fn matrix_arg() -> Arg {
 
 /// Standard `--format` argument for clustering output.
 pub fn format_arg() -> Arg {
-    Arg::new("format")
+    Arg::new("clust_format")
         .long("format")
         .action(ArgAction::Set)
         .value_parser([
@@ -583,7 +596,7 @@ pub fn max_iter_arg() -> Arg {
 
 /// `--method` argument for hierarchical clustering (default: ward).
 pub fn clust_method_arg() -> Arg {
-    Arg::new("method")
+    Arg::new("clust_method")
         .long("method")
         .default_value("ward")
         .help("Clustering method (single, complete, average, weighted, centroid, median, ward)")
@@ -591,7 +604,7 @@ pub fn clust_method_arg() -> Arg {
 
 /// `--input-format` argument for clustering partition files (default: pair).
 pub fn clust_input_format_arg() -> Arg {
-    Arg::new("input_format")
+    Arg::new("clust_input_format")
         .long("input-format")
         .value_parser([
             builder::PossibleValue::new("cluster"),
@@ -608,7 +621,7 @@ pub fn clust_input_format_arg() -> Arg {
 
 /// `--method` argument for matrix comparison (default: pearson).
 pub fn mat_method_arg() -> Arg {
-    Arg::new("method")
+    Arg::new("mat_method")
         .long("method")
         .action(ArgAction::Set)
         .value_parser([
@@ -626,7 +639,7 @@ pub fn mat_method_arg() -> Arg {
 
 /// `--format` argument for matrix output (default: full).
 pub fn mat_format_arg() -> Arg {
-    Arg::new("format")
+    Arg::new("mat_format")
         .long("format")
         .action(ArgAction::Set)
         .value_parser([
@@ -640,7 +653,7 @@ pub fn mat_format_arg() -> Arg {
 
 /// `--input-format` argument for matrix transform (default: phylip).
 pub fn mat_input_format_arg() -> Arg {
-    Arg::new("input_format")
+    Arg::new("mat_input_format")
         .long("input-format")
         .default_value("phylip")
         .value_parser([
@@ -963,7 +976,7 @@ pub fn line_arg(default: Option<&'static str>) -> Arg {
 }
 
 /// `-g/--gap` flag (only identify regions of N/n).
-pub fn gap_flag() -> Arg {
+pub fn gap_arg() -> Arg {
     Arg::new("gap")
         .long("gap")
         .short('g')
@@ -1221,7 +1234,7 @@ pub fn by_query_arg(help: &'static str) -> Arg {
 }
 
 /// `-C/--count` flag (count records/occurrences).
-pub fn count_flag(help: &'static str) -> Arg {
+pub fn count_arg(help: &'static str) -> Arg {
     Arg::new("count")
         .long("count")
         .short('C')

@@ -23,13 +23,7 @@ Examples:
    pgr nwk support target.nwk replicates.nwk --percent
 "###,
         )
-        .arg(
-            Arg::new("target")
-                .required(true)
-                .num_args(1)
-                .index(1)
-                .help("Target tree file"),
-        )
+        .arg(crate::cmd_pgr::args::target_genome_arg("Target tree file"))
         .arg(
             Arg::new("replicates")
                 .required(true)

@@ -33,7 +33,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // 1. Args
     //----------------------------
     let infile = args.get_one::<String>("infile").unwrap();
-    let opt_format = args.get_one::<String>("format").unwrap();
+    let opt_format = args.get_one::<String>("clust_format").unwrap();
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
 
     //----------------------------

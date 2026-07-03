@@ -94,7 +94,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let scale = *args.get_one::<f32>("scale").unwrap();
     let offset = *args.get_one::<f32>("offset").unwrap();
     let normalize = args.get_flag("normalize");
-    let format = args.get_one::<String>("input_format").unwrap().as_str();
+    let format = args.get_one::<String>("mat_input_format").unwrap().as_str();
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
 
     //----------------------------

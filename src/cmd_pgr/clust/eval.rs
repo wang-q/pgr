@@ -76,7 +76,7 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
     let p1_path = matches.get_one::<String>("p1").unwrap();
     let outfile = crate::cmd_pgr::args::get_outfile(matches);
 
-    let format_str = matches.get_one::<String>("input_format").unwrap();
+    let format_str = matches.get_one::<String>("clust_input_format").unwrap();
     let format: PartitionFormat = match format_str.parse() {
         Ok(f) => f,
         Err(e) => anyhow::bail!("Invalid format: {}", e),

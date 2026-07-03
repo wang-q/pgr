@@ -26,7 +26,7 @@ Examples:
 "###,
         )
         .arg(crate::cmd_pgr::args::infiles_arg("block FA"))
-        .arg(crate::cmd_pgr::args::count_flag(
+        .arg(crate::cmd_pgr::args::count_arg(
             "Output species names with occurrence counts",
         ))
         .arg(crate::cmd_pgr::args::outfile_arg())

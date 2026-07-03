@@ -35,13 +35,10 @@ Notes:
 
 "###,
         )
-        .arg(
-            Arg::new("infiles")
-                .required(true)
-                .num_args(2..)
-                .index(1)
-                .help("Input files"),
-        )
+        .arg(crate::cmd_pgr::args::infiles_arg_with_numargs(
+            "Input files",
+            2..,
+        ))
         .arg(crate::cmd_pgr::args::outdir_arg_with_default("PL-p2m"))
 }
 

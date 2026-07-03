@@ -1,4 +1,4 @@
-use crate::cmd_pgr::args::outfile_arg;
+use crate::cmd_pgr::args::{infiles_arg_with_numargs, outfile_arg};
 use anyhow::{anyhow, Result};
 use clap::*;
 use pgr::libs::plot::common::{context_get_str, render_and_write, replace_section};
@@ -25,13 +25,10 @@ Examples:
    pgr plot venn list1.txt list2.txt list3.txt -o venn.tex
 "###,
         )
-        .arg(
-            Arg::new("infiles")
-                .required(true)
-                .num_args(1..=4)
-                .index(1)
-                .help("Input list files (2-4 files)"),
-        )
+        .arg(infiles_arg_with_numargs(
+            "Input list files (2-4 files)",
+            1..=4,
+        ))
         .arg(outfile_arg())
 }
 

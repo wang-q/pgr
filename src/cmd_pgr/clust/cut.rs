@@ -221,7 +221,7 @@ Examples:
 pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
     let infile = matches.get_one::<String>("infile").unwrap();
     let outfile = crate::cmd_pgr::args::get_outfile(matches);
-    let format = matches.get_one::<String>("format").unwrap();
+    let format = matches.get_one::<String>("clust_format").unwrap();
     let rep_method = matches.get_one::<String>("rep").unwrap().as_str();
     let deep = *matches.get_one::<usize>("deep").unwrap();
 
