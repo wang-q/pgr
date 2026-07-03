@@ -37,13 +37,11 @@ Examples:
 "###,
         )
         .arg(crate::cmd_pgr::args::infiles_arg("block FA"))
-        .arg(
-            Arg::new("engine")
-                .long("engine")
-                .num_args(1)
-                .default_value("builtin")
-                .help("Aligning program (builtin/clustalw/mafft/muscle/spoa/none)"),
-        )
+        .arg(crate::cmd_pgr::args::engine_arg(
+            &["builtin", "clustalw", "mafft", "muscle", "spoa", "none"],
+            "builtin",
+            "Aligning program (builtin/clustalw/mafft/muscle/spoa/none)",
+        ))
         .arg(crate::cmd_pgr::args::outgroup_arg())
         .arg(
             Arg::new("chop")

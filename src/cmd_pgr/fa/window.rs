@@ -19,9 +19,9 @@ Notes:
 Coverage & Overlap:
 * Theoretical Coverage = Window Length / Step Size.
 * Examples:
-  - --window-length 200 --step 100: 2x coverage (50% overlap).
-  - --window-length 200 --step 200: 1x coverage (no overlap).
-  - --window-length 200 --step 10:  20x coverage (95% overlap).
+  - --window 200 --step 100: 2x coverage (50% overlap).
+  - --window 200 --step 200: 1x coverage (no overlap).
+  - --window 200 --step 10:  20x coverage (95% overlap).
 
 Splitting & Shuffling:
 * --chunk N: Splits output into files with N records each (e.g., output.001.fa).
@@ -32,7 +32,7 @@ Splitting & Shuffling:
 
 Examples:
 1. Split into 200bp windows with 100bp step:
-   pgr fa window input.fa --window-length 200 --step 100
+   pgr fa window input.fa --window 200 --step 100
 
 2. Split large file into chunks of 1M records with shuffling:
    pgr fa window input.fa --chunk 1000000 --shuffle -o split.fa

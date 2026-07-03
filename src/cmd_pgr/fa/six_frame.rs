@@ -33,7 +33,7 @@ Examples:
    pgr fa six-frame input.fa --len 100 -o orfs.fa
 
 3. Complete proteins only:
-   pgr fa six-frame input.fa --start --end -o orfs.fa
+   pgr fa six-frame input.fa --start-met --end -o orfs.fa
 
 "###,
         )

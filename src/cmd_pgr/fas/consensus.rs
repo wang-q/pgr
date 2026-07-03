@@ -41,13 +41,11 @@ Examples:
 
 "###,
             )
-            .arg(
-                Arg::new("engine")
-                    .long("engine")
-                    .value_parser(["builtin", "spoa"])
-                    .default_value("builtin")
-                    .help("POA engine to use"),
-            )
+            .arg(crate::cmd_pgr::args::engine_arg(
+                &["builtin", "spoa"],
+                "builtin",
+                "POA engine to use",
+            ))
             .arg(
                 Arg::new("align_mode")
                     .long("align-mode")

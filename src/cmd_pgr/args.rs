@@ -451,6 +451,26 @@ pub fn suffix_arg(default: &'static str) -> Arg {
         .help("File extension for output files")
 }
 
+/// `--engine` argument with parameterized possible values, default, and help.
+/// Used by fas consensus (POA engine) and fas refine (MSA engine).
+pub fn engine_arg(
+    possible: &'static [&'static str],
+    default: &'static str,
+    help: &'static str,
+) -> Arg {
+    let values: Vec<builder::PossibleValue> = possible
+        .iter()
+        .map(|v| builder::PossibleValue::new(*v))
+        .collect();
+    Arg::new("engine")
+        .long("engine")
+        .num_args(1)
+        .action(ArgAction::Set)
+        .default_value(default)
+        .value_parser(values)
+        .help(help)
+}
+
 // ============================================================================
 // nwk subcommand builders
 // ============================================================================
