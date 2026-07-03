@@ -1,8 +1,8 @@
-use clap::*;
+use clap::{ArgMatches, Command};
 
 pub fn make_subcommand() -> Command {
     Command::new("subset")
-        .about("Extract a submatrix from a PHYLIP matrix using a list of names")
+        .about("Extracts a submatrix from a PHYLIP matrix using a list of names")
         .after_help(
             r###"
 Input formats:

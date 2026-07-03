@@ -9,7 +9,7 @@ use common::PgrCmd;
 #[test]
 fn command_paf_query_help() {
     let (stdout, _) = PgrCmd::new().args(&["paf", "query", "--help"]).run();
-    assert!(stdout.contains("Query PAF index"));
+    assert!(stdout.contains("Queries PAF index"));
     assert!(stdout.contains("--transitive"));
 }
 

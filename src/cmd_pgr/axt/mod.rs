@@ -1,4 +1,4 @@
-use clap::*;
+use clap::{ArgMatches, Command};
 
 pub mod sort;
 pub mod to_fas;
@@ -7,7 +7,7 @@ pub mod to_psl;
 
 pub fn make_subcommand() -> Command {
     Command::new("axt")
-        .about("Manipulate AXT alignment files")
+        .about("Manipulates AXT alignment files")
         .after_help(
             r###"
 AXT is a format for representing pairwise genomic alignments.

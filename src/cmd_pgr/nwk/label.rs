@@ -1,5 +1,5 @@
 use anyhow::Context;
-use clap::*;
+use clap::{builder::PossibleValue, Arg, ArgAction, ArgMatches, Command};
 use pgr::libs::phylo::tree::query as nwr;
 use pgr::libs::phylo::tree::Tree;
 use std::collections::BTreeSet;
@@ -74,10 +74,10 @@ Examples:
                 .short('c')
                 .action(ArgAction::Append)
                 .value_parser([
-                    builder::PossibleValue::new("dup"),
-                    builder::PossibleValue::new("taxid"),
-                    builder::PossibleValue::new("species"),
-                    builder::PossibleValue::new("full"),
+                    PossibleValue::new("dup"),
+                    PossibleValue::new("taxid"),
+                    PossibleValue::new("species"),
+                    PossibleValue::new("full"),
                 ])
                 .help("Add extra columns to output"),
         )

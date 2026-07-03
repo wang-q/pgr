@@ -1,8 +1,8 @@
-use clap::*;
+use clap::{ArgMatches, Command};
 
 pub fn make_subcommand() -> Command {
     let cmd = Command::new("query")
-        .about("Query PAF index for coordinate projection")
+        .about("Queries PAF index for coordinate projection")
         .after_help(
             r###"
 Queries a PAF file or saved index for intervals overlapping a target

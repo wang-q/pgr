@@ -1,4 +1,4 @@
-use clap::*;
+use clap::{value_parser, Arg, ArgMatches, Command};
 use pgr::libs::phylo::tree::query as nwr;
 use pgr::libs::phylo::tree::Tree;
 

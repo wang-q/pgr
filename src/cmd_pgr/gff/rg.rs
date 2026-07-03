@@ -1,11 +1,11 @@
-use clap::*;
+use clap::{Arg, ArgAction, ArgMatches, Command};
 use noodles_gff as gff;
 use std::io::Write;
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("rg")
-        .about("Extract ranges from GFF files")
+        .about("Extracts ranges from GFF files")
         .after_help(
             r###"
 Extract ranges from GFF files.

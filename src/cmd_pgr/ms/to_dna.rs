@@ -1,4 +1,4 @@
-use clap::*;
+use clap::{value_parser, Arg, ArgMatches, Command};
 use pgr::libs::ms::{
     build_anc_seq, build_mut_seq, map_positions as map_pos, parse_header, perturb_positions,
     read_next_sample, system_seed, write_fasta, SimpleRng,
@@ -8,7 +8,7 @@ use std::io::Write;
 
 pub fn make_subcommand() -> Command {
     Command::new("to-dna")
-        .about("Convert ms output haplotypes (0/1) to DNA sequences (FASTA)")
+        .about("Converts ms output haplotypes (0/1) to DNA sequences (FASTA)")
         .arg(
             Arg::new("gc")
                 .long("gc")

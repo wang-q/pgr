@@ -1,11 +1,11 @@
-use clap::*;
+use clap::{ArgMatches, Command};
 use pgr::libs::clust::upgma;
 use std::io::Write;
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("upgma")
-        .about("Construct a phylogenetic tree using UPGMA")
+        .about("Constructs a phylogenetic tree using UPGMA")
         .after_help(
             r###"
 Constructs a phylogenetic tree from a distance matrix using the UPGMA algorithm.

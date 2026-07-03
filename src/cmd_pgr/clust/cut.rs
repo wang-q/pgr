@@ -1,4 +1,4 @@
-use clap::*;
+use clap::{builder::PossibleValue, value_parser, Arg, ArgAction, ArgGroup, ArgMatches, Command};
 use pgr::libs::clust::tree_cut::dynamic::DynamicTreeOptions;
 use pgr::libs::clust::tree_cut::hybrid::HybridOptions;
 use pgr::libs::clust::tree_cut::{self as cut, CutDispatch, RepMode, METHOD_NAMES};
@@ -7,7 +7,7 @@ use std::io::Write;
 
 pub fn make_subcommand() -> Command {
     Command::new("cut")
-        .about("Cut a tree into clusters")
+        .about("Cuts a tree into clusters")
         .after_help(
             r###"
 Cuts the tree into clusters based on various criteria.
@@ -122,9 +122,9 @@ Examples:
             Arg::new("rep")
                 .long("rep")
                 .value_parser([
-                    builder::PossibleValue::new("root"),
-                    builder::PossibleValue::new("first"),
-                    builder::PossibleValue::new("medoid"),
+                    PossibleValue::new("root"),
+                    PossibleValue::new("first"),
+                    PossibleValue::new("medoid"),
                 ])
                 .default_value("root")
                 .help("Representative selection method"),

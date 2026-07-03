@@ -8,7 +8,7 @@ use std::path::Path;
 
 pub fn make_subcommand() -> Command {
     Command::new("split")
-        .about("Split chains up by target or query sequence")
+        .about("Splits chains up by target or query sequence")
         .arg(crate::cmd_pgr::args::infiles_arg("chain"))
         .arg(crate::cmd_pgr::args::outdir_arg_required())
         .arg(crate::cmd_pgr::args::by_query_arg(

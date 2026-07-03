@@ -1,11 +1,11 @@
-use clap::*;
+use clap::{Arg, ArgMatches, Command};
 use pgr::libs::phylo::tree::Tree;
 use std::io::Write;
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("to-svg")
-        .about("Convert Newick trees to SVG format")
+        .about("Converts Newick trees to SVG format")
         .after_help(
             r###"
 Convert Newick trees to SVG format for visualization.

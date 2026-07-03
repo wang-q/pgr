@@ -1,4 +1,4 @@
-use clap::*;
+use clap::{ArgMatches, Command};
 use pgr::libs::phylo::tree::io::to_forest;
 use pgr::libs::phylo::tree::Tree;
 use std::io::Write;
@@ -6,7 +6,7 @@ use std::io::Write;
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("to-forest")
-        .about("Convert Newick trees to raw LaTeX Forest code")
+        .about("Converts Newick trees to raw LaTeX Forest code")
         .after_help(
             r###"
 Convert Newick trees to raw LaTeX Forest code.

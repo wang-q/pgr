@@ -1,4 +1,4 @@
-use clap::*;
+use clap::{ArgMatches, Command};
 use intspan::Range;
 use pgr::libs::fmt::axt::AxtReader;
 use pgr::libs::fmt::fas::FasEntry;
@@ -7,7 +7,7 @@ use std::io::Write;
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("to-fas")
-        .about("Convert AXT format files to block FA format")
+        .about("Converts AXT format files to block FA format")
         .after_help(
             r###"
 This subcommand converts AXT files into block FA format for further analysis.

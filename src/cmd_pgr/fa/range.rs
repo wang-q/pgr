@@ -1,4 +1,4 @@
-use clap::*;
+use clap::{value_parser, Arg, ArgAction, ArgMatches, Command};
 use pgr::libs::loc;
 
 // Create clap subcommand arguments

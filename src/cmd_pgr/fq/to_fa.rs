@@ -1,9 +1,9 @@
-use clap::*;
+use clap::{ArgMatches, Command};
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("to-fa")
-        .about("Convert FASTQ to FASTA format")
+        .about("Converts FASTQ to FASTA format")
         .after_help(
             r###"
 This command converts FASTQ format sequences to FASTA format.

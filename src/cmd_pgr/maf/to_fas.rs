@@ -1,10 +1,10 @@
-use clap::*;
+use clap::{ArgMatches, Command};
 use std::io::Write;
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("to-fas")
-        .about("Convert MAF files to block FA format")
+        .about("Converts MAF files to block FA format")
         .after_help(
             r###"
 This subcommand converts MAF (Multiple Alignment Format) files into block FA format.

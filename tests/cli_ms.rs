@@ -6,7 +6,7 @@ fn command_ms_to_dna_help() -> anyhow::Result<()> {
     cmd.arg("ms").arg("to-dna").arg("--help");
     cmd.assert()
         .success()
-        .stdout(predicate::str::contains("Convert ms output haplotypes"));
+        .stdout(predicate::str::contains("Converts ms output haplotypes"));
     Ok(())
 }
 

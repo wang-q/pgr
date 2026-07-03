@@ -1,4 +1,4 @@
-use clap::*;
+use clap::{value_parser, Arg, ArgAction, ArgMatches, Command};
 use pgr::libs::fasta::stat::{calc_n50_stats, transpose};
 
 // Create clap subcommand arguments

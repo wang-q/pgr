@@ -1,10 +1,10 @@
-use clap::*;
+use clap::{Arg, ArgAction, ArgMatches, Command};
 use pgr::libs::fmt::psl::Psl;
 use std::collections::HashMap;
 
 pub fn make_subcommand() -> Command {
     Command::new("histo")
-        .about("Collect counts on PSL alignments for making histograms")
+        .about("Collects counts on PSL alignments for making histograms")
         .after_help(
             r###"
 These then be analyzed with R, textHistogram, etc.

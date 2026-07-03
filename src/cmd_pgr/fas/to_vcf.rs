@@ -1,5 +1,5 @@
 use anyhow::anyhow;
-use clap::*;
+use clap::{Arg, ArgMatches, Command};
 use std::collections::{BTreeMap, HashSet};
 
 use pgr::libs::alignment::{align_to_chr, get_subs, seq_intspan, vcf_alt_bases};

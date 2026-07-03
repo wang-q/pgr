@@ -1,9 +1,9 @@
-use clap::*;
+use clap::{ArgMatches, Command};
 use pgr::libs::paf::index::PafIndex;
 
 pub fn make_subcommand() -> Command {
     Command::new("index")
-        .about("Build interval-tree index from PAF files")
+        .about("Builds interval-tree index from PAF files")
         .after_help(
             r###"
 Builds a per-target interval-tree index from one or more PAF files.

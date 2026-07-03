@@ -1,10 +1,10 @@
-use clap::*;
-use cmd_lib::*;
+use clap::{ArgMatches, Command};
+use cmd_lib::run_cmd;
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("rept")
-        .about("Identify repetitive regions in a genome")
+        .about("Identifies repetitive regions in a genome")
         .after_help(
             r###"
 This command identifies repetitive regions in a genome using k-mer analysis.

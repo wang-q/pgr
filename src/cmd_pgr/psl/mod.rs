@@ -9,7 +9,7 @@ pub mod to_range;
 
 pub fn make_subcommand() -> clap::Command {
     clap::Command::new("psl")
-        .about("Manipulate PSL alignment files")
+        .about("Manipulates PSL alignment files")
         .after_help(
             r###"Note:
 These utilities are primarily provided for cross-validation with the original UCSC Kent tools,

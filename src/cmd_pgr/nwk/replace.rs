@@ -1,4 +1,4 @@
-use clap::*;
+use clap::{ArgMatches, Command};
 use pgr::libs::phylo::tree::Tree;
 use std::collections::BTreeMap;
 use std::io::Write;

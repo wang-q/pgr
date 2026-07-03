@@ -1,10 +1,10 @@
-use clap::*;
+use clap::{ArgMatches, Command};
 use std::io::Write;
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("to-phylip")
-        .about("Convert pairwise distances to a phylip distance matrix")
+        .about("Converts pairwise distances to a phylip distance matrix")
         .after_help(
             r###"
 Input format:

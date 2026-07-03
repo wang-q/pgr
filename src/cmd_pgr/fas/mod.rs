@@ -21,7 +21,7 @@ pub mod variation;
 
 pub fn make_subcommand() -> clap::Command {
     clap::Command::new("fas")
-        .about("Manipulate block FA files")
+        .about("Manipulates block FA files")
         .after_help(
             r###"Subcommand groups:
 

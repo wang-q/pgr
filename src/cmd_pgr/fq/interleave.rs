@@ -1,10 +1,10 @@
-use clap::*;
+use clap::{value_parser, Arg, ArgAction, ArgMatches, Command};
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("interleave")
         .visible_alias("il")
-        .about("Interleave paired-end sequences")
+        .about("Interleaves paired-end sequences")
         .after_help(
             r###"
 This command interleaves paired-end sequences from one or two files.

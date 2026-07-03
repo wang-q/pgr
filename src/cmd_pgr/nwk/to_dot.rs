@@ -1,11 +1,11 @@
-use clap::*;
+use clap::{ArgMatches, Command};
 use pgr::libs::phylo::tree::Tree;
 use std::io::Write;
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("to-dot")
-        .about("Convert Newick trees to Graphviz DOT format")
+        .about("Converts Newick trees to Graphviz DOT format")
         .after_help(
             r###"
 Convert Newick trees to Graphviz DOT format for visualization.

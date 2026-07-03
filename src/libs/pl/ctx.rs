@@ -1,6 +1,6 @@
 //! Pipeline working-directory context and path helpers.
 
-use cmd_lib::*;
+use cmd_lib::run_cmd;
 use intspan::absolute_path;
 
 /// Resolve `path` to an absolute path string. `stdout` is passed through as-is.

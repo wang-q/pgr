@@ -1,4 +1,4 @@
-use clap::*;
+use clap::{Arg, ArgAction, ArgMatches, Command};
 use pgr::libs::fmt::psl::Psl;
 use std::io::{BufRead, Write};
 use std::str::FromStr;
@@ -6,7 +6,7 @@ use std::str::FromStr;
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("to-range")
-        .about("Extract coordinates from PSL as ranges (.rg)")
+        .about("Extracts coordinates from PSL as ranges (.rg)")
         .after_help(
             r###"
 Extract alignment coordinates from PSL files and output in .rg format (chr:start-end).

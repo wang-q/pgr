@@ -3,7 +3,7 @@ pub mod to_paf;
 
 pub fn make_subcommand() -> clap::Command {
     clap::Command::new("maf")
-        .about("Manipulate MAF alignment files")
+        .about("Manipulates MAF alignment files")
         .subcommand_required(true)
         .arg_required_else_help(true)
         .subcommand(to_fas::make_subcommand())

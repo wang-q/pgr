@@ -1,11 +1,11 @@
-use clap::*;
+use clap::{ArgMatches, Command};
 
 use pgr::libs::paf::record::write_paf_record;
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("to-paf")
-        .about("Convert two-sequence MAF files to PAF format")
+        .about("Converts two-sequence MAF files to PAF format")
         .after_help(
             r###"
 Converts MAF (Multiple Alignment Format) files containing pairwise alignments

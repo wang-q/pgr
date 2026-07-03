@@ -1,7 +1,7 @@
 //! Export FAS block variations (substitutions/indels) to an Excel workbook.
 
 use anyhow::anyhow;
-use rust_xlsxwriter::*;
+use rust_xlsxwriter::{Color, Format, FormatAlign, Workbook, Worksheet};
 use std::cmp::max;
 use std::collections::BTreeMap;
 

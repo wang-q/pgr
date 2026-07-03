@@ -1,4 +1,4 @@
-use clap::*;
+use clap::{value_parser, Arg, ArgMatches, Command};
 use pgr::libs::plot::histogram::{
     calc_density, calc_hist, compute_hh_axis, create_table, load_data, render_hh_tex,
 };

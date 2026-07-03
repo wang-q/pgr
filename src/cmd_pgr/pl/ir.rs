@@ -1,10 +1,10 @@
-use clap::*;
-use cmd_lib::*;
+use clap::{Arg, ArgMatches, Command};
+use cmd_lib::run_cmd;
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("ir")
-        .about("Identify interspersed repeats in a genome")
+        .about("Identifies interspersed repeats in a genome")
         .after_help(
             r###"
 This command identifies interspersed repeats in a genome, mimicking the functionality of `RepeatMasker`.

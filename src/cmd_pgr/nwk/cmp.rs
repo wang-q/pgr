@@ -1,4 +1,4 @@
-use clap::*;
+use clap::{Arg, ArgMatches, Command};
 use pgr::libs::phylo::tree::Tree;
 use pgr::libs::phylo::TreeComparison;
 use std::io::Write;
@@ -6,7 +6,7 @@ use std::io::Write;
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("cmp")
-        .about("Compare trees (RF, WRF, KF distances)")
+        .about("Compares trees (RF, WRF, KF distances)")
         .after_help(
             r###"
 Compare trees using Robinson-Foulds (RF) distance and its variants.

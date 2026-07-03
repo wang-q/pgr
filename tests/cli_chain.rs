@@ -254,3 +254,101 @@ fn test_chain_sort_mixed_inputs() {
     assert!(lines[0].contains("chain 200"));
     assert!(lines[1].contains("chain 100"));
 }
+
+// --- chain split tests ---
+
+#[test]
+fn test_chain_split_by_target() {
+    let dir = tempdir().unwrap();
+    let in1_path = dir.path().join("in1.chain");
+    let in2_path = dir.path().join("in2.chain");
+    let outdir = dir.path().join("split_out");
+
+    // in1.chain: chr1 (score 100) + chr2 (score 200)
+    let c1 = "chain 100 chr1 1000 + 0 10 chr2 1000 + 0 10 1\n10\n\n";
+    let c2 = "chain 200 chr2 1000 + 20 30 chr3 1000 + 20 30 2\n10\n\n";
+    fs::write(&in1_path, format!("{}{}", c1, c2)).unwrap();
+
+    // in2.chain: chr1 (score 300)
+    let c3 = "chain 300 chr1 1000 + 40 50 chr2 1000 + 40 50 3\n10\n\n";
+    fs::write(&in2_path, c3).unwrap();
+
+    PgrCmd::new()
+        .args(&[
+            "chain",
+            "split",
+            in1_path.to_str().unwrap(),
+            in2_path.to_str().unwrap(),
+            "--outdir",
+            outdir.to_str().unwrap(),
+        ])
+        .run();
+
+    // Verify chr1.chain contains 2 chains (from in1 and in2)
+    let chr1_path = outdir.join("chr1.chain");
+    assert!(chr1_path.exists(), "chr1.chain should exist");
+    let chr1_content = fs::read_to_string(&chr1_path).unwrap();
+    let chr1_chains: Vec<&str> = chr1_content
+        .lines()
+        .filter(|l| l.starts_with("chain"))
+        .collect();
+    assert_eq!(chr1_chains.len(), 2);
+    assert!(chr1_chains[0].contains("chain 100"));
+    assert!(chr1_chains[1].contains("chain 300"));
+
+    // Verify chr2.chain contains 1 chain
+    let chr2_path = outdir.join("chr2.chain");
+    assert!(chr2_path.exists(), "chr2.chain should exist");
+    let chr2_content = fs::read_to_string(&chr2_path).unwrap();
+    let chr2_chains: Vec<&str> = chr2_content
+        .lines()
+        .filter(|l| l.starts_with("chain"))
+        .collect();
+    assert_eq!(chr2_chains.len(), 1);
+    assert!(chr2_chains[0].contains("chain 200"));
+}
+
+#[test]
+fn test_chain_split_by_query() {
+    let dir = tempdir().unwrap();
+    let in1_path = dir.path().join("in1.chain");
+    let outdir = dir.path().join("split_out");
+
+    // Two chains with different query names
+    let c1 = "chain 100 chr1 1000 + 0 10 chr_qA 1000 + 0 10 1\n10\n\n";
+    let c2 = "chain 200 chr1 1000 + 20 30 chr_qB 1000 + 20 30 2\n10\n\n";
+    fs::write(&in1_path, format!("{}{}", c1, c2)).unwrap();
+
+    PgrCmd::new()
+        .args(&[
+            "chain",
+            "split",
+            in1_path.to_str().unwrap(),
+            "--by-query",
+            "--outdir",
+            outdir.to_str().unwrap(),
+        ])
+        .run();
+
+    // Verify chr_qA.chain contains 1 chain
+    let qa_path = outdir.join("chr_qA.chain");
+    assert!(qa_path.exists(), "chr_qA.chain should exist");
+    let qa_content = fs::read_to_string(&qa_path).unwrap();
+    let qa_chains: Vec<&str> = qa_content
+        .lines()
+        .filter(|l| l.starts_with("chain"))
+        .collect();
+    assert_eq!(qa_chains.len(), 1);
+    assert!(qa_chains[0].contains("chain 100"));
+
+    // Verify chr_qB.chain contains 1 chain
+    let qb_path = outdir.join("chr_qB.chain");
+    assert!(qb_path.exists(), "chr_qB.chain should exist");
+    let qb_content = fs::read_to_string(&qb_path).unwrap();
+    let qb_chains: Vec<&str> = qb_content
+        .lines()
+        .filter(|l| l.starts_with("chain"))
+        .collect();
+    assert_eq!(qb_chains.len(), 1);
+    assert!(qb_chains[0].contains("chain 200"));
+}

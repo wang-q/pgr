@@ -1,8 +1,8 @@
-use clap::*;
+use clap::{Arg, ArgAction, ArgMatches, Command};
 
 pub fn make_subcommand() -> Command {
     Command::new("to-maf")
-        .about("Convert from axt to maf format")
+        .about("Converts from axt to maf format")
         .after_help(
             r###"
 Where tSizes and qSizes is a file that contains the sizes of the target and query sequences.

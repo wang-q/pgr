@@ -5,7 +5,7 @@ use std::collections::HashMap;
 
 pub fn make_subcommand() -> Command {
     Command::new("pre-net")
-        .about("Remove chains that don't have a chance of being netted")
+        .about("Removes chains that don't have a chance of being netted")
         .arg(crate::cmd_pgr::args::infile_arg_required_with_help(
             "Input chain file",
         ))

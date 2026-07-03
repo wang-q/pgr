@@ -1,12 +1,12 @@
 use clap::{Arg, Command};
-use intspan::*;
+use intspan::{reader, writer};
 use std::io::BufRead;
 
 use pgr::libs::fmt::psl::Psl;
 
 pub fn make_subcommand() -> Command {
     Command::new("swap")
-        .about("Reverse target and query in psls")
+        .about("Reverses target and query in psls")
         .after_help(
             r###"
 Reverse target and query in psls.

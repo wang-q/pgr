@@ -1,4 +1,4 @@
-use clap::*;
+use clap::{ArgMatches, Command};
 use pgr::libs::paf::fasta::{load_fasta_tsv, FastaStore};
 use pgr::libs::paf::graph::PafGraph;
 use std::collections::HashMap;

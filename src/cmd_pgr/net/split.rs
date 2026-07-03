@@ -6,7 +6,7 @@ use std::path::Path;
 
 pub fn make_subcommand() -> Command {
     Command::new("split")
-        .about("Split a net file into one file per chromosome")
+        .about("Splits a net file into one file per chromosome")
         .arg(crate::cmd_pgr::args::infile_arg_required_with_help(
             "Input net file",
         ))

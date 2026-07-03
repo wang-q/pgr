@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use pgr::libs::chain::net::{collect_stats_gap, read_nets, Stats};
 
 pub fn make_subcommand() -> Command {
-    Command::new("class").about("Show stats of net").arg(
+    Command::new("class").about("Shows stats of net").arg(
         crate::cmd_pgr::args::infile_arg_required_with_help("Input net file (or stdin if 'stdin')"),
     )
 }

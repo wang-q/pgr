@@ -19,7 +19,7 @@ pub mod window;
 
 pub fn make_subcommand() -> clap::Command {
     clap::Command::new("fa")
-        .about("Manipulate FASTA files")
+        .about("Manipulates FASTA files")
         .after_help(
             r###"Subcommand groups:
 

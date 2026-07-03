@@ -1,4 +1,4 @@
-use clap::*;
+use clap::{crate_authors, crate_version, ColorChoice, Command};
 
 mod cmd_pgr;
 

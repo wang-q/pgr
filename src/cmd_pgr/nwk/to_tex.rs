@@ -1,4 +1,4 @@
-use clap::*;
+use clap::{Arg, ArgAction, ArgMatches, Command};
 use pgr::libs::phylo::tree::io::{compute_scale_bar, to_forest};
 use pgr::libs::phylo::tree::Tree;
 use std::io::Read;
@@ -6,7 +6,7 @@ use std::io::Read;
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("to-tex")
-        .about("Convert Newick trees to a full LaTeX document")
+        .about("Converts Newick trees to a full LaTeX document")
         .after_help(
             r###"
 Convert Newick trees to a full LaTeX document.

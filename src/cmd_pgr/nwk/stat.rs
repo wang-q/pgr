@@ -1,4 +1,4 @@
-use clap::*;
+use clap::{Arg, ArgMatches, Command};
 use pgr::libs::phylo::tree::{stat, Tree};
 
 // Create clap subcommand arguments

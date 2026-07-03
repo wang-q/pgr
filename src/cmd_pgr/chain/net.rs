@@ -6,7 +6,33 @@ use std::io::Write;
 
 pub fn make_subcommand() -> Command {
     Command::new("net")
-        .about("Make alignment nets out of chains")
+        .about("Makes alignment nets out of chains")
+        .after_help(
+            r###"
+Builds alignment nets from chains. Nets hierarchically organize chains into
+filled alignments and gaps, providing a layered view of synteny between two
+genomes.
+
+Notes:
+* Input chain file should be sorted by score descending (use `pgr chain sort`)
+* Outputs two net files: one in target orientation, one in query orientation
+* Use `--min-space` to control the minimum gap size to fill (default: 25)
+* Use `--min-fill` to control the minimum fill to record (default: min-space / 2)
+* Use `--min-score` to filter low-scoring chains (default: 2000)
+* Use `--incl-hap` to include haplotype chains (names containing `_hap` or `_alt`)
+
+Examples:
+1. Build nets from sorted chains:
+   pgr chain net in.chain t.sizes q.sizes t.net q.net
+
+2. Adjust fill parameters:
+   pgr chain net in.chain t.sizes q.sizes t.net q.net --min-space 50 --min-fill 20
+
+3. Include haplotype chains:
+   pgr chain net in.chain t.sizes q.sizes t.net q.net --incl-hap
+
+"###,
+        )
         .arg(crate::cmd_pgr::args::infile_arg_required_with_help(
             "Input chain file",
         ))

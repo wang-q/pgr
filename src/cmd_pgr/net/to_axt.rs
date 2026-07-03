@@ -8,7 +8,7 @@ use std::fs::File;
 
 pub fn make_subcommand() -> Command {
     Command::new("to-axt")
-        .about("Convert net (and chain) to axt")
+        .about("Converts net (and chain) to axt")
         .arg(crate::cmd_pgr::args::in_net_arg())
         .arg(crate::cmd_pgr::args::in_chain_arg())
         .arg(Arg::new("target").required(true).help("Target 2bit file"))

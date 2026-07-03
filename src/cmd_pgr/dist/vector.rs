@@ -7,7 +7,7 @@ use pgr::libs::linalg;
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("vector")
-        .about("Calculate similarity/distance between vectors")
+        .about("Calculates similarity/distance between vectors")
         .after_help(
             r###"
 This command calculates pairwise similarity/distance between vectors in input file(s).

@@ -1,4 +1,4 @@
-use clap::*;
+use clap::{Arg, ArgAction, ArgMatches, Command};
 
 pub fn make_subcommand() -> Command {
     crate::cmd_pgr::args::add_poa_args(
@@ -16,7 +16,7 @@ pub fn make_subcommand() -> Command {
         ),
         false,
     )
-    .about("Query PAF index and output local GFA via POA graph")
+    .about("Queries PAF index and output local GFA via POA graph")
     .after_help(
         r###"
 Queries a PAF file or saved index (same logic as `pgr paf query`) and

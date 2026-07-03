@@ -382,3 +382,74 @@ fn test_to_range_basic() {
     assert_eq!(lines[0], "chr1:101-200:11-20");
     assert_eq!(lines[1], "chr1:101-200:81-90");
 }
+
+//
+// psl swap
+//
+
+#[test]
+fn test_psl_swap_mrna() {
+    let temp = TempDir::new().unwrap();
+    let input = get_path("swap", "input", "mrna.psl");
+    let expected = get_path("swap", "expected", "mrnaTest.psl");
+    let output = temp.path().join("out.psl");
+
+    PgrCmd::new()
+        .args(&[
+            "psl",
+            "swap",
+            input.to_str().unwrap(),
+            "-o",
+            output.to_str().unwrap(),
+        ])
+        .run();
+
+    let output_content = fs::read_to_string(&output).unwrap();
+    let expected_content = fs::read_to_string(&expected).unwrap();
+    assert_eq!(output_content, expected_content);
+}
+
+#[test]
+fn test_psl_swap_mrna_no_rc() {
+    let temp = TempDir::new().unwrap();
+    let input = get_path("swap", "input", "mrna.psl");
+    let expected = get_path("swap", "expected", "mrnaNoRcTest.psl");
+    let output = temp.path().join("out.psl");
+
+    PgrCmd::new()
+        .args(&[
+            "psl",
+            "swap",
+            "--no-rc",
+            input.to_str().unwrap(),
+            "-o",
+            output.to_str().unwrap(),
+        ])
+        .run();
+
+    let output_content = fs::read_to_string(&output).unwrap();
+    let expected_content = fs::read_to_string(&expected).unwrap();
+    assert_eq!(output_content, expected_content);
+}
+
+#[test]
+fn test_psl_swap_trans() {
+    let temp = TempDir::new().unwrap();
+    let input = get_path("swap", "input", "trans.psl");
+    let expected = get_path("swap", "expected", "transTest.psl");
+    let output = temp.path().join("out.psl");
+
+    PgrCmd::new()
+        .args(&[
+            "psl",
+            "swap",
+            input.to_str().unwrap(),
+            "-o",
+            output.to_str().unwrap(),
+        ])
+        .run();
+
+    let output_content = fs::read_to_string(&output).unwrap();
+    let expected_content = fs::read_to_string(&expected).unwrap();
+    assert_eq!(output_content, expected_content);
+}

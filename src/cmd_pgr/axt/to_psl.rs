@@ -1,11 +1,11 @@
-use clap::*;
+use clap::{ArgMatches, Command};
 
 use pgr::libs::fmt::axt::AxtReader;
 use pgr::libs::fmt::psl::Psl;
 
 pub fn make_subcommand() -> Command {
     Command::new("to-psl")
-        .about("Convert from axt to psl format")
+        .about("Converts from axt to psl format")
         .after_help(
             r###"
 Where tSizes and qSizes are tab-delimited files with <seqName> <size> columns.

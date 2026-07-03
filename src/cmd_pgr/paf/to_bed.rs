@@ -1,4 +1,4 @@
-use clap::*;
+use clap::{ArgMatches, Command};
 use pgr::libs::paf::index::QueryResult;
 use pgr::libs::paf::msa_build::orient_interval;
 
@@ -13,7 +13,7 @@ fn output_bed(idx: &pgr::libs::paf::index::PafIndex, results: &[QueryResult]) {
 
 pub fn make_subcommand() -> Command {
     crate::cmd_pgr::args::add_query_args(Command::new("to-bed"))
-        .about("Query PAF index and output BED3 coordinates")
+        .about("Queries PAF index and output BED3 coordinates")
         .after_help(
             r###"
 Queries a PAF file or saved index (same logic as `pgr paf query`) and

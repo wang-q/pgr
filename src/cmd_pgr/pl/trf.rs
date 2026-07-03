@@ -1,11 +1,11 @@
-use clap::*;
-use cmd_lib::*;
+use clap::{value_parser, Arg, ArgMatches, Command};
+use cmd_lib::run_cmd;
 use std::io::BufRead;
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("trf")
-        .about("Identify tandem repeats in a genome")
+        .about("Identifies tandem repeats in a genome")
         .after_help(
             r###"
 This command identifies tandem repeats in a genome via `trf`.

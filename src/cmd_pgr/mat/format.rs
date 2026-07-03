@@ -1,8 +1,8 @@
-use clap::*;
+use clap::{ArgMatches, Command};
 
 pub fn make_subcommand() -> Command {
     Command::new("format")
-        .about("Convert between different PHYLIP matrix formats")
+        .about("Converts between different PHYLIP matrix formats")
         .after_help(
             r###"
 Convert a PHYLIP matrix between different formats while preserving all distance values.

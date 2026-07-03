@@ -1,10 +1,10 @@
-use clap::*;
+use clap::{Arg, ArgAction, ArgMatches, Command};
 use pgr::libs::phylo::tree::{self, support};
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("support")
-        .about("Attribute support values (bootstrap) to a tree")
+        .about("Attributes support values (bootstrap) to a tree")
         .after_help(
             r###"
 Attributes bootstrap support values to a target tree based on a set of replicate trees.

@@ -1,4 +1,4 @@
-use clap::*;
+use clap::{Arg, ArgAction, ArgMatches, Command};
 use std::collections::HashMap;
 
 // Create clap subcommand arguments

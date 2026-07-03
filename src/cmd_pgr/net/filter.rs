@@ -3,7 +3,7 @@ use pgr::libs::chain::net::{filter_chrom, prune_gap, read_nets, FilterCriteria};
 
 pub fn make_subcommand() -> Command {
     Command::new("filter")
-        .about("Filter out parts of net")
+        .about("Filters out parts of net")
         .arg(crate::cmd_pgr::args::infile_arg_required_with_help(
             "Input net file (or stdin if 'stdin')",
         ))

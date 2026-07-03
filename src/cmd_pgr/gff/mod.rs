@@ -1,7 +1,7 @@
 // Subcommand modules for the `gff` command.
 pub mod rg;
 
-use clap::*;
+use clap::{ArgMatches, Command};
 
 pub fn make_subcommand() -> Command {
     Command::new("gff")

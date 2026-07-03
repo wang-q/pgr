@@ -7,7 +7,7 @@ pub mod to_axt;
 
 pub fn make_subcommand() -> clap::Command {
     clap::Command::new("net")
-        .about("Manipulate Net alignment files")
+        .about("Manipulates Net alignment files")
         .subcommand(class::make_subcommand())
         .subcommand(filter::make_subcommand())
         .subcommand(split::make_subcommand())

@@ -1,4 +1,4 @@
-use clap::*;
+use clap::{ArgMatches, Command};
 
 use pgr::libs::paf::index::{PafIndex, QueryResult};
 use pgr::libs::paf::msa_build::{build_msa_entries, build_pairwise_block, run_poa_msa};
@@ -77,7 +77,7 @@ pub fn make_subcommand() -> Command {
         )),
         false,
     )
-    .about("Query PAF index and output pairwise or multi-way MAF")
+    .about("Queries PAF index and output pairwise or multi-way MAF")
     .after_help(
         r###"
 Queries a PAF file or saved index (same logic as `pgr paf query`) and

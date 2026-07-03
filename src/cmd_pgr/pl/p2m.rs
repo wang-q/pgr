@@ -1,5 +1,5 @@
-use clap::*;
-use cmd_lib::*;
+use clap::{ArgMatches, Command};
+use cmd_lib::run_cmd;
 use std::collections::BTreeMap;
 use std::{env, fs};
 

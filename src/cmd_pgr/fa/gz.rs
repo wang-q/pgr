@@ -1,5 +1,5 @@
 use anyhow::Context;
-use clap::*;
+use clap::{value_parser, Arg, ArgAction, ArgMatches, Command};
 use noodles_bgzf as bgzf;
 use std::io::{Read, Write};
 

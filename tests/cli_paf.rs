@@ -9,7 +9,7 @@ use common::PgrCmd;
 #[test]
 fn command_paf_help() {
     let (stdout, _) = PgrCmd::new().args(&["paf", "--help"]).run();
-    assert!(stdout.contains("Manipulate PAF"));
+    assert!(stdout.contains("Manipulates PAF"));
     assert!(stdout.contains("index"));
 }
 
@@ -18,7 +18,7 @@ fn command_paf_help() {
 #[test]
 fn command_paf_index_help() {
     let (stdout, _) = PgrCmd::new().args(&["paf", "index", "--help"]).run();
-    assert!(stdout.contains("Build interval-tree index"));
+    assert!(stdout.contains("Builds interval-tree index"));
     assert!(stdout.contains("infiles"));
 }
 

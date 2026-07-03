@@ -1,10 +1,10 @@
-use clap::*;
+use clap::{Arg, ArgAction, ArgMatches, Command};
 use pgr::libs::fmt::axt::{write_axt, AxtReader};
 
 // Create subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("sort")
-        .about("Sort axt files")
+        .about("Sorts axt files")
         .after_help(
             r###"
 Sorts axt files by target, query, or score.

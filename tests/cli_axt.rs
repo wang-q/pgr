@@ -15,13 +15,13 @@ fn command_axt_help() {
 #[test]
 fn command_axt_sort_help() {
     let (stdout, _) = PgrCmd::new().args(&["axt", "sort", "--help"]).run();
-    assert!(stdout.contains("Sort axt files"));
+    assert!(stdout.contains("Sorts axt files"));
 }
 
 #[test]
 fn command_axt_to_maf_help() {
     let (stdout, _) = PgrCmd::new().args(&["axt", "to-maf", "--help"]).run();
-    assert!(stdout.contains("Convert from axt to maf format"));
+    assert!(stdout.contains("Converts from axt to maf format"));
 }
 
 #[test]

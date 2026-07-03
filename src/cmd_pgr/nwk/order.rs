@@ -1,10 +1,10 @@
-use clap::*;
+use clap::{Arg, ArgAction, ArgGroup, ArgMatches, Command, Id};
 use pgr::libs::phylo::tree::{algo, Tree};
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("order")
-        .about("Order nodes in a Newick file")
+        .about("Orders nodes in a Newick file")
         .after_help(
             r###"
 Sorts the children of each node without changing the topology.

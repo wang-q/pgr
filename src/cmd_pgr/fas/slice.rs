@@ -1,4 +1,4 @@
-use clap::*;
+use clap::{ArgMatches, Command};
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {

@@ -1,9 +1,9 @@
-use clap::*;
+use clap::{value_parser, Arg, ArgMatches, Command};
 use std::io::Write;
 
 pub fn make_subcommand() -> Command {
     Command::new("multiz")
-        .about("Merge block FA files using multiz-like DP on reference")
+        .about("Merges block FA files using multiz-like DP on reference")
         .after_help(
             r###"
 Merge multiple block FA files in the shared reference coordinate system using a multiz-like banded DP.

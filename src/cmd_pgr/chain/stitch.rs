@@ -3,7 +3,7 @@ use clap::Command;
 
 pub fn make_subcommand() -> Command {
     Command::new("stitch")
-        .about("Join chain fragments with the same chain ID into a single chain per ID")
+        .about("Joins chain fragments with the same chain ID into a single chain per ID")
         .arg(crate::cmd_pgr::args::infile_arg_required_with_help(
             "Input chain file",
         ))

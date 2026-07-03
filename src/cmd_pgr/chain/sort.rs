@@ -5,7 +5,7 @@ use std::io::BufRead;
 
 pub fn make_subcommand() -> Command {
     Command::new("sort")
-        .about("Sort chains by score")
+        .about("Sorts chains by score")
         .arg(
             Arg::new("infiles")
                 .required_unless_present("input_list")

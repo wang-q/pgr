@@ -1,4 +1,4 @@
-use clap::*;
+use clap::{ArgMatches, Command};
 
 pub mod cmp;
 pub mod comment;
@@ -21,7 +21,7 @@ pub mod topo;
 
 pub fn make_subcommand() -> Command {
     Command::new("nwk")
-        .about("Manipulate, analyze, and visualize Newick trees")
+        .about("Manipulates, analyze, and visualize Newick trees")
         .after_help(
             r###"
 This suite of tools provides a comprehensive set of operations for phylogenetic trees in Newick format.

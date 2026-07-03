@@ -1,4 +1,4 @@
-use clap::*;
+use clap::{ArgMatches, Command};
 
 pub fn make_subcommand() -> Command {
     crate::cmd_pgr::args::add_poa_args(
@@ -8,7 +8,7 @@ pub fn make_subcommand() -> Command {
         ),
         false,
     )
-    .about("Query PAF index and output multi-way VCF via POA MSA")
+    .about("Queries PAF index and output multi-way VCF via POA MSA")
     .after_help(
         r###"
 Queries a PAF file or saved index (same logic as `pgr paf query`) and

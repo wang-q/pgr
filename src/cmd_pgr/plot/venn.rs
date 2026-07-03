@@ -1,13 +1,13 @@
 use crate::cmd_pgr::args::{infiles_arg_with_numargs, outfile_arg};
 use anyhow::{anyhow, Result};
-use clap::*;
+use clap::{ArgMatches, Command};
 use pgr::libs::plot::common::{context_get_str, render_and_write, replace_section};
 use pgr::libs::plot::venn::{venn_sets_2, venn_sets_3, venn_sets_4};
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("venn")
-        .about("Plot Venn diagram for 2-4 sets")
+        .about("Plots Venn diagram for 2-4 sets")
         .after_help(
             r###"
 Generates a LaTeX file for a Venn diagram representing the intersections of sets.

@@ -1,4 +1,4 @@
-use clap::*;
+use clap::{ArgMatches, Command};
 use pgr::libs::fmt::twobit::TwoBitFile;
 use pgr::libs::nt;
 use std::io::Write;

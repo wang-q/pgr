@@ -1,6 +1,6 @@
 //! Repeat-identification pipeline drivers (FastK → Profex → spanr).
 
-use cmd_lib::*;
+use cmd_lib::run_cmd;
 use std::io::BufRead;
 
 /// Run `Profex -z genome` per chromosome and write `.rg` files.

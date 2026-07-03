@@ -1,11 +1,11 @@
-use clap::*;
+use clap::{ArgMatches, Command};
 use pgr::libs::clust::nj;
 use std::io::Write;
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("nj")
-        .about("Construct a phylogenetic tree using Neighbor-Joining")
+        .about("Constructs a phylogenetic tree using Neighbor-Joining")
         .after_help(
             r###"
 Constructs a phylogenetic tree from a distance matrix using the Neighbor-Joining (NJ) algorithm.

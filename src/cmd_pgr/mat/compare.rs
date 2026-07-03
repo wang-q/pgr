@@ -1,28 +1,28 @@
-use clap::*;
+use clap::{Arg, ArgMatches, Command};
 use std::io::Write;
 
 pub fn make_subcommand() -> Command {
     Command::new("compare")
-        .about("Compare two distance matrices")
+        .about("Compares two distance matrices")
         .after_help(
             r###"
 Compare two PHYLIP distance matrices and calculate similarity metrics.
 
 Methods:
-    * all:       Calculate all metrics below
-    * pearson:   Pearson correlation coefficient (-1 to 1)
-    * spearman:  Spearman rank correlation (-1 to 1)
-    * mae:       Mean absolute error
-    * cosine:    Cosine similarity (-1 to 1)
-    * jaccard:   Weighted Jaccard similarity (0 to 1)
-    * euclid:    Euclidean distance
+* all:       Calculate all metrics below
+* pearson:   Pearson correlation coefficient (-1 to 1)
+* spearman:  Spearman rank correlation (-1 to 1)
+* mae:       Mean absolute error
+* cosine:    Cosine similarity (-1 to 1)
+* jaccard:   Weighted Jaccard similarity (0 to 1)
+* euclid:    Euclidean distance
 
 Examples:
-    # Compare using Pearson correlation
-    pgr mat compare matrix1.phy matrix2.phy --method pearson
+1. Compare using Pearson correlation:
+   pgr mat compare matrix1.phy matrix2.phy --method pearson
 
-    # Compare using multiple methods
-    pgr mat compare matrix1.phy matrix2.phy --method pearson,cosine,jaccard
+2. Compare using multiple methods:
+   pgr mat compare matrix1.phy matrix2.phy --method pearson,cosine,jaccard
 "###,
         )
         .arg(

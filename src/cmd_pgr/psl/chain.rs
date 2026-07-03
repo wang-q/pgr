@@ -6,7 +6,7 @@ use std::cmp::Ordering;
 
 pub fn make_subcommand() -> Command {
     Command::new("chain")
-        .about("Chain PSL alignments")
+        .about("Chains PSL alignments")
         .after_help(
             r###"
 Processing:

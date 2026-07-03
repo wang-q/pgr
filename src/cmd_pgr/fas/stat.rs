@@ -1,4 +1,4 @@
-use clap::*;
+use clap::{ArgMatches, Command};
 use std::io::Write;
 
 // Create clap subcommand arguments

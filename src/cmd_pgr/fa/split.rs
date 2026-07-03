@@ -1,4 +1,4 @@
-use clap::*;
+use clap::{builder::PossibleValue, value_parser, Arg, ArgAction, ArgMatches, Command, Error};
 use std::collections::BTreeMap;
 use std::io::Write;
 
@@ -44,10 +44,7 @@ Examples:
                 .required(true)
                 .index(1)
                 .action(ArgAction::Set)
-                .value_parser([
-                    builder::PossibleValue::new("name"),
-                    builder::PossibleValue::new("about"),
-                ])
+                .value_parser([PossibleValue::new("name"), PossibleValue::new("about")])
                 .help("Split mode: 'name' or 'about'"),
         )
         .arg(crate::cmd_pgr::args::infiles_arg_at("FASTA", 2))

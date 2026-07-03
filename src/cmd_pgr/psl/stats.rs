@@ -6,15 +6,20 @@ use pgr::libs::fmt::psl::SumStats;
 
 pub fn make_subcommand() -> Command {
     Command::new("stats")
-        .about("Collect statistics from a psl file")
+        .about("Collects statistics from a psl file")
         .after_help(
             r###"
 Collect statistics from a psl file.
 
 Examples:
-  pgr psl stats in.psl -o out.stats
-  pgr psl stats --query-stats in.psl -o out.stats
-  pgr psl stats --overall-stats in.psl -o out.stats
+1. Output per-alignment statistics:
+   pgr psl stats in.psl -o out.stats
+
+2. Output per-query statistics:
+   pgr psl stats --query-stats in.psl -o out.stats
+
+3. Output overall statistics:
+   pgr psl stats --overall-stats in.psl -o out.stats
 "###,
         )
         .arg(crate::cmd_pgr::args::infile_arg().help("Input PSL file. [stdin] for standard input"))

@@ -1,9 +1,9 @@
-use clap::*;
+use clap::{builder::PossibleValue, value_parser, Arg, ArgAction, ArgMatches, Command};
 use std::io::Write;
 
 pub fn make_subcommand() -> Command {
     Command::new("transform")
-        .about("Apply mathematical transformations to a matrix")
+        .about("Applies mathematical transformations to a matrix")
         .after_help(
             r###"
 Transform matrix values element-wise.
@@ -44,12 +44,12 @@ Examples:
                 .long("op")
                 .default_value("linear")
                 .value_parser([
-                    builder::PossibleValue::new("linear"),
-                    builder::PossibleValue::new("inv-linear"),
-                    builder::PossibleValue::new("log"),
-                    builder::PossibleValue::new("exp"),
-                    builder::PossibleValue::new("square"),
-                    builder::PossibleValue::new("sqrt"),
+                    PossibleValue::new("linear"),
+                    PossibleValue::new("inv-linear"),
+                    PossibleValue::new("log"),
+                    PossibleValue::new("exp"),
+                    PossibleValue::new("square"),
+                    PossibleValue::new("sqrt"),
                 ])
                 .help("Transformation operation"),
         )

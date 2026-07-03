@@ -1,4 +1,4 @@
-use clap::*;
+use clap::{ArgMatches, Command};
 use std::io::{BufRead, Write};
 use std::str::FromStr;
 

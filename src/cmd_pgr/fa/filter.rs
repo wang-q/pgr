@@ -1,4 +1,4 @@
-use clap::*;
+use clap::{value_parser, Arg, ArgAction, ArgMatches, Command};
 use std::collections::BTreeSet;
 
 // Create clap subcommand arguments
@@ -23,23 +23,24 @@ Formatters:
 * --line N: Set sequence line length
 
 Notes:
-        * Multiple filters can be combined
-        * Supports both plain text and gzipped (.gz) files
-        * For duplicate IDs, keeps the first occurrence
-        * Not all faFilter options have been implemented
-          Wildcards for names can be easily implemented with `pgr fa some`
+* Multiple filters can be combined
+* Supports both plain text and gzipped (.gz) files
+* Reads from stdin if input file is 'stdin'
+* For duplicate IDs, keeps the first occurrence
+* Not all faFilter options have been implemented
+  Wildcards for names can be easily implemented with `pgr fa some`
 
-        Examples:
-        1. Filter by size:
-           pgr fa filter input.fa --min-len 100 --max-len 1000
+Examples:
+1. Filter by size:
+   pgr fa filter input.fa --min-len 100 --max-len 1000
 
-        2. Format sequences:
-           pgr fa filter input.fa --upper --iupac --line 80
+2. Format sequences:
+   pgr fa filter input.fa --upper --iupac --line 80
 
-        3. Process multiple files:
-           pgr fa filter *.fa --uniq --simplify -o output.fa
+3. Process multiple files:
+   pgr fa filter *.fa --uniq --simplify -o output.fa
 
-        "###,
+"###,
         )
         .arg(crate::cmd_pgr::args::infiles_arg("FASTA"))
         .arg(crate::cmd_pgr::args::min_len_arg())

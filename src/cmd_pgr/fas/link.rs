@@ -1,4 +1,4 @@
-use clap::*;
+use clap::{Arg, ArgAction, ArgMatches, Command};
 use itertools::Itertools;
 use std::io::Write;
 

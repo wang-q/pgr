@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Context, Result};
-use clap::*;
+use clap::{Arg, ArgAction, ArgMatches, Command};
 use pgr::libs::plot::common::{context_get_str, render_and_write, replace_section};
 use pgr::libs::plot::nrps::parse_nrps;
 use std::collections::HashMap;

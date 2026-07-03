@@ -1,12 +1,12 @@
-use clap::*;
-use cmd_lib::*;
+use clap::{Arg, ArgMatches, Command};
+use cmd_lib::run_cmd;
 use rayon::prelude::*;
 use std::io::Write;
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("prefilter")
-        .about("Prefilter genome/metagenome assembly by amino acid minimizers")
+        .about("Prefilters genome/metagenome assembly by amino acid minimizers")
         .after_help(
             r###"
 This command filters genome/metagenome sequences by comparing them against protein references using amino acid minimizers.

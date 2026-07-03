@@ -5,7 +5,7 @@ use std::collections::HashMap;
 
 pub fn make_subcommand() -> Command {
     Command::new("subset")
-        .about("Create chain file with subset of chains that appear in the net")
+        .about("Creates chain file with subset of chains that appear in the net")
         .arg(crate::cmd_pgr::args::in_net_arg().index(1))
         .arg(crate::cmd_pgr::args::in_chain_arg().index(2))
         .arg(

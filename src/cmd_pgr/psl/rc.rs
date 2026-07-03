@@ -1,12 +1,12 @@
 use clap::Command;
-use intspan::*;
+use intspan::{reader, writer};
 use std::io::BufRead;
 
 use pgr::libs::fmt::psl::Psl;
 
 pub fn make_subcommand() -> Command {
     Command::new("rc")
-        .about("Reverse-complement psl")
+        .about("Reverse-complements psl")
         .after_help(
             r###"
 Reverse-complement psl.

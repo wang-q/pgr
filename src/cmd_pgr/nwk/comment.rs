@@ -1,11 +1,11 @@
-use clap::*;
+use clap::{Arg, ArgMatches, Command};
 use pgr::libs::phylo::tree::Tree;
 use std::io::Write;
 
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("comment")
-        .about("Add comments to node(s) in a Newick file")
+        .about("Adds comments to node(s) in a Newick file")
         .after_help(
             r###"
 * Comments are in the NHX-like format

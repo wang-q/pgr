@@ -1,5 +1,5 @@
 use clap::builder::PossibleValuesParser;
-use clap::*;
+use clap::{value_parser, Arg, ArgAction, ArgMatches, Command};
 use std::io::Write;
 use tempfile::NamedTempFile;
 

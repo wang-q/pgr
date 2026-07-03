@@ -3,7 +3,7 @@ use clap::Command;
 // Create clap subcommand arguments
 pub fn make_subcommand() -> Command {
     Command::new("hv")
-        .about("Estimate distances between DNA/protein files using hypervectors")
+        .about("Estimates distances between DNA/protein files using hypervectors")
         .after_help(
             r###"
 This command calculates pairwise distances between files in FA file(s) using minimizers and hypervectors.
