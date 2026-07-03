@@ -29,19 +29,8 @@ Examples:
    pgr nwk to-forest tests/newick/catarrhini.nwk -o forest.tex
 "###,
         )
-        .arg(
-            Arg::new("infile")
-                .required(true)
-                .num_args(1)
-                .index(1)
-                .help("Input filename. [stdin] for standard input"),
-        )
-        .arg(
-            Arg::new("bl")
-                .long("bl")
-                .action(ArgAction::SetTrue)
-                .help("With branch lengths"),
-        )
+        .arg(crate::cmd_pgr::args::infile_arg_required())
+        .arg(crate::cmd_pgr::args::bl_arg())
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 

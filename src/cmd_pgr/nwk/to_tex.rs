@@ -34,19 +34,8 @@ Examples:
    latexmk -c tree.tex
 "###,
         )
-        .arg(
-            Arg::new("infile")
-                .required(true)
-                .num_args(1)
-                .index(1)
-                .help("Input filename. [stdin] for standard input"),
-        )
-        .arg(
-            Arg::new("bl")
-                .long("bl")
-                .action(ArgAction::SetTrue)
-                .help("Draw a phylogram with scaled branch lengths instead of a cladogram"),
-        )
+        .arg(crate::cmd_pgr::args::infile_arg_required())
+        .arg(crate::cmd_pgr::args::bl_arg())
         .arg(
             Arg::new("forest")
                 .long("forest")

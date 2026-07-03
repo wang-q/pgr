@@ -41,12 +41,9 @@ Examples:
                 .index(1)
                 .help("Input file(s) containing links of ranges"),
         )
-        .arg(
-            Arg::new("name")
-                .long("name")
-                .num_args(1)
-                .help("Set a species name for ranges. No effects if --multi"),
-        )
+        .arg(crate::cmd_pgr::args::fas_name_arg(
+            "Set a species name for ranges. No effects if --multi",
+        ))
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 

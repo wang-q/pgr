@@ -37,25 +37,10 @@ Examples:
         )
         .arg(crate::cmd_pgr::args::infiles_arg("block FA"))
         .arg(
-            Arg::new("name")
-                .long("name")
-                .num_args(1)
-                .help("Filter blocks based on this species"),
+            crate::cmd_pgr::args::fas_name_arg("Filter blocks based on this species"),
         )
-        .arg(
-            Arg::new("min_len")
-                .long("min-len")
-                .value_parser(value_parser!(usize))
-                .num_args(1)
-                .help("Filter sequences with length >= this value"),
-        )
-        .arg(
-            Arg::new("max_len")
-                .long("max-len")
-                .value_parser(value_parser!(usize))
-                .num_args(1)
-                .help("Filter sequences with length <= this value"),
-        )
+        .arg(crate::cmd_pgr::args::min_len_arg())
+        .arg(crate::cmd_pgr::args::max_len_arg())
         .arg(
             Arg::new("upper")
                 .long("upper")

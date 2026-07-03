@@ -30,12 +30,9 @@ Notes:
                 .index(1)
                 .help("Input block FA file(s) to check"),
         )
-        .arg(
-            Arg::new("name")
-                .long("name")
-                .num_args(1)
-                .help("Check sequences for a specific species"),
-        )
+        .arg(crate::cmd_pgr::args::fas_name_arg(
+            "Check sequences for a specific species",
+        ))
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 

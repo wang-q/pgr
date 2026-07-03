@@ -46,13 +46,7 @@ Examples:
 
 "###,
         )
-        .arg(
-            Arg::new("infile")
-                .required(true)
-                .num_args(1)
-                .index(1)
-                .help("Input filename. [stdin] for standard input"),
-        )
+        .arg(crate::cmd_pgr::args::infile_arg_required())
         .arg(crate::cmd_pgr::args::internal_arg())
         .arg(crate::cmd_pgr::args::leaf_arg())
         .arg(crate::cmd_pgr::args::node_arg())

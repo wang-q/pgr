@@ -65,14 +65,10 @@ Examples:
                 .value_parser(value_parser!(usize))
                 .help("Size of each chunk in bytes"),
         )
-        .arg(
-            Arg::new("min_len")
-                .long("min-len")
-                .num_args(1)
-                .default_value("15")
-                .value_parser(value_parser!(usize))
-                .help("Minimum length of the amino acid sequence to consider"),
-        )
+        .arg(crate::cmd_pgr::args::min_len_arg_with_default(
+            "15",
+            "Minimum length of the amino acid sequence to consider",
+        ))
         .arg(crate::cmd_pgr::args::kmer_arg_with_default("7"))
         .arg(crate::cmd_pgr::args::window_arg())
         .arg(crate::cmd_pgr::args::parallel_arg())

@@ -42,13 +42,7 @@ Examples:
    pgr nwk distance tree.nwk --mode parent -I
 "###,
         )
-        .arg(
-            Arg::new("infile")
-                .required(true)
-                .num_args(1)
-                .index(1)
-                .help("Input filename. [stdin] for standard input"),
-        )
+        .arg(crate::cmd_pgr::args::infile_arg_required())
         .arg(
             Arg::new("mode")
                 .long("mode")

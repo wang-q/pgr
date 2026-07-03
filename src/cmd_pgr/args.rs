@@ -73,6 +73,15 @@ pub fn infile_arg() -> Arg {
         .help("Input filename. [stdin] for standard input")
 }
 
+/// Required positional `infile` argument (caller must provide, may pass "stdin").
+pub fn infile_arg_required() -> Arg {
+    Arg::new("infile")
+        .required(true)
+        .num_args(1)
+        .index(1)
+        .help("Input filename. [stdin] for standard input")
+}
+
 /// Standard positional `infiles` argument (one or more, required).
 ///
 /// `label` is the format name used in the help text (e.g. `"FASTA"`,
@@ -249,6 +258,11 @@ pub fn outgroup_arg() -> Arg {
         .help("Indicates the presence of outgroups at the end of each block")
 }
 
+/// Standard `--name` argument for fas subcommands (species name selector).
+pub fn fas_name_arg(help: &'static str) -> Arg {
+    Arg::new("name").long("name").num_args(1).help(help)
+}
+
 // ============================================================================
 // nwk subcommand builders
 // ============================================================================
@@ -307,6 +321,15 @@ pub fn leaf_arg() -> Arg {
         .short('L')
         .action(ArgAction::SetTrue)
         .help("Don't print leaf labels")
+}
+
+/// Standard `-b/--bl` flag for nwk subcommands (keep branch lengths in output).
+pub fn bl_arg() -> Arg {
+    Arg::new("bl")
+        .long("bl")
+        .short('b')
+        .action(ArgAction::SetTrue)
+        .help("Keep branch lengths")
 }
 
 // ============================================================================
@@ -598,4 +621,32 @@ pub fn min_score_arg(default: &'static str) -> Arg {
         .default_value(default)
         .value_parser(clap::value_parser!(f64))
         .help("Minimum score threshold")
+}
+
+/// `--min-len` (usize) without default.
+pub fn min_len_arg() -> Arg {
+    Arg::new("min_len")
+        .long("min-len")
+        .num_args(1)
+        .value_parser(clap::value_parser!(usize))
+        .help("Minimum length")
+}
+
+/// `--min-len` (usize) with a custom default and help text.
+pub fn min_len_arg_with_default(default: &'static str, help: &'static str) -> Arg {
+    Arg::new("min_len")
+        .long("min-len")
+        .num_args(1)
+        .default_value(default)
+        .value_parser(clap::value_parser!(usize))
+        .help(help)
+}
+
+/// `--max-len` (usize) without default.
+pub fn max_len_arg() -> Arg {
+    Arg::new("max_len")
+        .long("max-len")
+        .num_args(1)
+        .value_parser(clap::value_parser!(usize))
+        .help("Maximum length")
 }

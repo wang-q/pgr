@@ -42,20 +42,8 @@ Notes:
         "###,
         )
         .arg(crate::cmd_pgr::args::infiles_arg("FASTA"))
-        .arg(
-            Arg::new("min_len")
-                .long("min-len")
-                .num_args(1)
-                .value_parser(value_parser!(usize))
-                .help("Pass sequences at least this big"),
-        )
-        .arg(
-            Arg::new("max_len")
-                .long("max-len")
-                .num_args(1)
-                .value_parser(value_parser!(usize))
-                .help("Pass sequences this size or smaller"),
-        )
+        .arg(crate::cmd_pgr::args::min_len_arg())
+        .arg(crate::cmd_pgr::args::max_len_arg())
         .arg(
             Arg::new("max_n")
                 .long("max-n")

@@ -351,6 +351,7 @@ fn test_net_split_lastz() {
             "net",
             "split",
             input.to_str().unwrap(),
+            "--outdir",
             output_dir.to_str().unwrap(),
         ])
         .run();

@@ -42,13 +42,7 @@ pub fn make_subcommand() -> Command {
 
 "###,
         )
-        .arg(
-            Arg::new("infile")
-                .required(true)
-                .num_args(1)
-                .index(1)
-                .help("Input filename. [stdin] for standard input"),
-        )
+        .arg(crate::cmd_pgr::args::infile_arg_required())
         .arg(crate::cmd_pgr::args::node_arg())
         .arg(
             Arg::new("lca")

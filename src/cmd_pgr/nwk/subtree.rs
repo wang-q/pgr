@@ -41,13 +41,7 @@ Examples:
    pgr nwk subtree tree.nwk -n Human -n Chimp -n Gorilla -M
 "###,
         )
-        .arg(
-            Arg::new("infile")
-                .required(true)
-                .num_args(1)
-                .index(1)
-                .help("Input filename. [stdin] for standard input"),
-        )
+        .arg(crate::cmd_pgr::args::infile_arg_required())
         .arg(crate::cmd_pgr::args::node_arg())
         .arg(crate::cmd_pgr::args::name_list_arg())
         .arg(crate::cmd_pgr::args::regex_arg())

@@ -28,20 +28,8 @@ Examples:
    pgr nwk topo tree.nwk -I
 "###,
         )
-        .arg(
-            Arg::new("infile")
-                .required(true)
-                .num_args(1)
-                .index(1)
-                .help("Input filename. [stdin] for standard input"),
-        )
-        .arg(
-            Arg::new("bl")
-                .long("bl")
-                .short('b')
-                .action(ArgAction::SetTrue)
-                .help("Keep branch lengths"),
-        )
+        .arg(crate::cmd_pgr::args::infile_arg_required())
+        .arg(crate::cmd_pgr::args::bl_arg())
         .arg(
             Arg::new("comment")
                 .long("comment")

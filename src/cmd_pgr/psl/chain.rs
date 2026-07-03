@@ -68,13 +68,7 @@ Examples:
                 .value_parser(["loose", "medium"])
                 .help("Gap model: loose or medium"),
         )
-        .arg(
-            Arg::new("min_score")
-                .long("min-score")
-                .default_value("1000")
-                .value_parser(clap::value_parser!(f64))
-                .help("Minimum score of chain"),
-        )
+        .arg(crate::cmd_pgr::args::min_score_arg("1000"))
         .arg(
             Arg::new("align_gap_open")
                 .long("align-gap-open")

@@ -43,14 +43,10 @@ This command identifies interspersed repeats in a genome, mimicking the function
                 .value_parser(value_parser!(usize))
                 .help("Fill holes between repetitive k-mers"),
         )
-        .arg(
-            Arg::new("min_len")
-                .long("min-len")
-                .num_args(1)
-                .default_value("300")
-                .value_parser(value_parser!(usize))
-                .help("Minimum length of repetitive fragments"),
-        )
+        .arg(crate::cmd_pgr::args::min_len_arg_with_default(
+            "300",
+            "Minimum length of repetitive fragments",
+        ))
         .arg(
             Arg::new("fill_fragment")
                 .long("fill-fragment")

@@ -34,10 +34,7 @@ Examples:
         )
         .arg(crate::cmd_pgr::args::infiles_arg("block FA"))
         .arg(
-            Arg::new("name")
-                .long("name")
-                .num_args(1)
-                .help("Reference species name. Default is the first species"),
+            crate::cmd_pgr::args::fas_name_arg("Reference species name. Default is the first species"),
         )
         .arg(crate::cmd_pgr::args::outfile_arg())
 }

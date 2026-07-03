@@ -44,14 +44,10 @@ Examples:
                 .index(1)
                 .help("Input FASTA file to process"),
         )
-        .arg(
-            Arg::new("min_len")
-                .long("min-len")
-                .num_args(1)
-                .default_value("0")
-                .value_parser(value_parser!(usize))
-                .help("Minimum length of the amino acid sequence to consider"),
-        )
+        .arg(crate::cmd_pgr::args::min_len_arg_with_default(
+            "0",
+            "Minimum length of the amino acid sequence to consider",
+        ))
         .arg(
             Arg::new("start_met")
                 .long("start-met")

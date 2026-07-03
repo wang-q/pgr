@@ -76,14 +76,14 @@ pgr net filter [OPTIONS] <input>
 Splits a single net file containing multiple chromosomes into individual files (one per chromosome) in the specified directory.
 
 ```bash
-pgr net split <input> <output_dir>
+pgr net split <input> --outdir <output_dir>
 ```
 
 ### Examples
 
 1.  **Split net file by chromosome**:
     ```bash
-    pgr net split all.net nets/
+    pgr net split all.net --outdir nets/
     ```
 
 ---

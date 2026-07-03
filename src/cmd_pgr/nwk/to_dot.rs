@@ -21,13 +21,7 @@ Examples:
    pgr nwk to-dot tests/newick/catarrhini.nwk | dot -Tpng -o tree.png
 "###,
         )
-        .arg(
-            Arg::new("infile")
-                .required(true)
-                .num_args(1)
-                .index(1)
-                .help("Input filename. [stdin] for standard input"),
-        )
+        .arg(crate::cmd_pgr::args::infile_arg_required())
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 

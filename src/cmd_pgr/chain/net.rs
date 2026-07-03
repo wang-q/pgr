@@ -41,13 +41,7 @@ pub fn make_subcommand() -> Command {
                 .value_parser(clap::value_parser!(u64))
                 .help("Minimum fill to record (default: min_space / 2)"),
         )
-        .arg(
-            Arg::new("min_score")
-                .long("min-score")
-                .default_value("2000")
-                .value_parser(clap::value_parser!(f64))
-                .help("Minimum chain score to consider"),
-        )
+        .arg(crate::cmd_pgr::args::min_score_arg("2000"))
         .arg(
             Arg::new("incl_hap")
                 .long("incl-hap")

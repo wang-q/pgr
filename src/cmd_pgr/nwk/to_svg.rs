@@ -24,13 +24,7 @@ Examples:
    pgr nwk to-svg tests/newick/catarrhini.nwk -w 1200 -v 30 -o tree.svg
 "###,
         )
-        .arg(
-            Arg::new("infile")
-                .required(true)
-                .num_args(1)
-                .index(1)
-                .help("Input filename. [stdin] for standard input"),
-        )
+        .arg(crate::cmd_pgr::args::infile_arg_required())
         .arg(
             Arg::new("width")
                 .short('w')
