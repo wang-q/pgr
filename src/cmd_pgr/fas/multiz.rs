@@ -60,12 +60,7 @@ Examples:
             &["core", "union"],
             "Merge mode: core (strict intersection) or union",
         ))
-        .arg(
-            Arg::new("score_matrix")
-                .long("score-matrix")
-                .num_args(1)
-                .help("Score matrix file (LASTZ format) or preset name (e.g. hoxd55)"),
-        )
+        .arg(crate::cmd_pgr::args::score_scheme_arg())
         .arg(crate::cmd_pgr::args::gap_model_arg(
             "medium",
             &["constant", "medium", "loose"],
@@ -82,7 +77,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let min_width = *args.get_one::<usize>("min_width").unwrap();
     let mode_str = args.get_one::<String>("mode").unwrap();
     let gap_model_str = args.get_one::<String>("gap_model").unwrap();
-    let score_matrix = args.get_one::<String>("score_matrix").cloned();
+    let score_matrix = args.get_one::<String>("score_scheme").cloned();
     let gap_open = args.get_one::<i32>("align_gap_open").copied();
     let gap_extend = args.get_one::<i32>("align_gap_extend").copied();
 

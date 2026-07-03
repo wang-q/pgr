@@ -61,11 +61,7 @@ Examples:
         .arg(crate::cmd_pgr::args::min_score_arg("1000"))
         .arg(crate::cmd_pgr::args::align_gap_open_arg())
         .arg(crate::cmd_pgr::args::align_gap_extend_arg())
-        .arg(
-            Arg::new("score_scheme")
-                .long("score-scheme")
-                .help("Score scheme file (LASTZ format) or preset (hoxd55)"),
-        )
+        .arg(crate::cmd_pgr::args::score_scheme_arg())
 }
 
 pub fn execute(args: &ArgMatches) -> Result<()> {

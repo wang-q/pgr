@@ -81,7 +81,7 @@ fn command_fas_multiz_custom_matrix() {
             "tests/fas/S288cvsRM11_1a.slice.fas",
             "tests/fas/S288cvsYJM789.slice.fas",
             "tests/fas/S288cvsSpar.slice.fas",
-            "--score-matrix",
+            "--score-scheme",
             "hoxd55",
             "-o",
             out_str,

@@ -17,7 +17,7 @@ Examples:
   pgr psl stats --overall-stats in.psl -o out.stats
 "###,
         )
-        .arg(crate::cmd_pgr::args::infile_arg().help("Input PSL file"))
+        .arg(crate::cmd_pgr::args::infile_arg().help("Input PSL file. [stdin] for standard input"))
         .arg(crate::cmd_pgr::args::outfile_arg())
         .arg(
             Arg::new("query_stats")

@@ -42,7 +42,7 @@ Notes:
                 .index(1)
                 .help("Input files"),
         )
-        .arg(crate::cmd_pgr::args::outdir_arg().default_value("PL-p2m"))
+        .arg(crate::cmd_pgr::args::outdir_arg_with_default("PL-p2m"))
 }
 
 // command implementation

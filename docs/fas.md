@@ -195,7 +195,7 @@ pgr fas multiz [OPTIONS] --ref <name> <infiles>...
 *   `--radius <int>`: Banded DP radius around reference diagonal (default: 30).
 *   `--min-width <int>`: Minimum window width to merge (default: 1).
 *   `--mode <core|union>`: Merge mode (default: core).
-*   `--score-matrix <file>`: Score matrix file (LASTZ format).
+*   `--score-scheme <file>`: Score scheme file (LASTZ format) or preset name (e.g. hoxd55).
 *   `--gap-model <constant|medium|loose>`: Gap model (default: medium).
 *   `--align-gap-open <int>`: Alignment gap open cost.
 *   `--align-gap-extend <int>`: Alignment gap extension cost.

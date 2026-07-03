@@ -13,7 +13,7 @@ Examples:
   pgr lav to-psl in.lav -o out.psl
 "###,
         )
-        .arg(crate::cmd_pgr::args::infile_arg().help("Input LAV file"))
+        .arg(crate::cmd_pgr::args::infile_arg().help("Input LAV file. [stdin] for standard input"))
         .arg(crate::cmd_pgr::args::outfile_arg())
         .arg(
             Arg::new("target_strand")

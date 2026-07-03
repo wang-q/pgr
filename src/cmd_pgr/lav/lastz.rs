@@ -83,7 +83,7 @@ Examples:
                 .long("lastz-args")
                 .help("Additional arguments passed directly to lastz (overrides preset)"),
         )
-        .arg(crate::cmd_pgr::args::outdir_arg().default_value("lastz_out"))
+        .arg(crate::cmd_pgr::args::outdir_arg_with_default("lastz_out"))
         .arg(crate::cmd_pgr::args::parallel_arg().default_value("4"))
 }
 

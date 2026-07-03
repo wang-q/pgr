@@ -18,7 +18,7 @@ Output format:
 MXXXXXX*
 
 Notes:
-* Filters: --len N (min length), --start (starts with M), --end (ends with *)
+* Filters: --min-len N (min length), --start-met (starts with M), --end (ends with *)
 * Coordinates are 1-based
 * Non-standard bases are translated as X
 * Supports both plain text and gzipped (.gz) files

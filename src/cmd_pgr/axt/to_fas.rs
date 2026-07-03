@@ -45,14 +45,14 @@ Examples:
                 .long("t-name")
                 .num_args(1)
                 .default_value("target")
-                .help("Target name"),
+                .help("Custom name for the target genome"),
         )
         .arg(
             Arg::new("q_name")
                 .long("q-name")
                 .num_args(1)
                 .default_value("query")
-                .help("Query name"),
+                .help("Custom name for the query genome"),
         )
         .arg(crate::cmd_pgr::args::outfile_arg())
 }

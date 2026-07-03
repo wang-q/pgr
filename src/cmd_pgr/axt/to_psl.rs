@@ -15,7 +15,7 @@ Examples:
   pgr axt to-psl in.axt -t t.sizes -q q.sizes -o out.psl
 "###,
         )
-        .arg(crate::cmd_pgr::args::infile_arg().help("Input AXT file"))
+        .arg(crate::cmd_pgr::args::infile_arg().help("Input AXT file. [stdin] for standard input"))
         .arg(crate::cmd_pgr::args::t_sizes_arg().required(true))
         .arg(crate::cmd_pgr::args::q_sizes_arg().required(true))
         .arg(crate::cmd_pgr::args::outfile_arg())

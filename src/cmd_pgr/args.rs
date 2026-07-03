@@ -64,6 +64,16 @@ pub fn outdir_arg_required() -> Arg {
         .help("Output directory")
 }
 
+/// `-o/--outdir` with a custom default value (not stdout).
+pub fn outdir_arg_with_default(val: &'static str) -> Arg {
+    Arg::new("outdir")
+        .long("outdir")
+        .short('o')
+        .num_args(1)
+        .default_value(val)
+        .help("Output directory")
+}
+
 /// Standard positional `infile` argument defaulting to stdin.
 pub fn infile_arg() -> Arg {
     Arg::new("infile")
@@ -899,6 +909,14 @@ pub fn align_gap_extend_arg() -> Arg {
         .value_parser(clap::value_parser!(i32))
         .allow_negative_numbers(true)
         .help("Alignment gap extension cost (overrides --gap-model)")
+}
+
+/// `--score-scheme` argument (LASTZ format file or preset name like hoxd55).
+pub fn score_scheme_arg() -> Arg {
+    Arg::new("score_scheme")
+        .long("score-scheme")
+        .num_args(1)
+        .help("Score scheme file (LASTZ format) or preset (e.g. hoxd55)")
 }
 
 // ============================================================================

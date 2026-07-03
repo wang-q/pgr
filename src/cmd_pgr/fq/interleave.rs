@@ -52,7 +52,7 @@ Examples:
                 .help("Write FQ"),
         )
         .arg(
-            Arg::new("prefix")
+            Arg::new("name_prefix")
                 .long("name-prefix")
                 .num_args(1)
                 .default_value("read")
@@ -74,7 +74,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
 
     let is_out_fq = args.get_flag("fq");
-    let opt_prefix = args.get_one::<String>("prefix").unwrap();
+    let opt_prefix = args.get_one::<String>("name_prefix").unwrap();
     let opt_start = *args.get_one::<usize>("start_index").unwrap();
 
     let infiles: Vec<String> = args

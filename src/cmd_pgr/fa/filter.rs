@@ -64,7 +64,7 @@ Notes:
                 .long("upper")
                 .short('U')
                 .action(ArgAction::SetTrue)
-                .help("Convert all sequences to upper cases"),
+                .help("Convert sequences to uppercase"),
         )
         .arg(
             Arg::new("iupac")

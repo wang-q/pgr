@@ -20,7 +20,7 @@ Examples:
   pgr axt sort in.axt --by-score -o out.axt
 "###,
         )
-        .arg(crate::cmd_pgr::args::infile_arg().help("Input AXT file"))
+        .arg(crate::cmd_pgr::args::infile_arg().help("Input AXT file. [stdin] for standard input"))
         .arg(crate::cmd_pgr::args::outfile_arg())
         .arg(
             Arg::new("by_query")
