@@ -13,7 +13,7 @@ pub fn make_subcommand() -> Command {
         .arg(Arg::new("in_chain").required(true).help("Input chain file"))
         .arg(Arg::new("target").required(true).help("Target 2bit file"))
         .arg(Arg::new("query").required(true).help("Query 2bit file"))
-        .arg(Arg::new("out_axt").required(true).help("Output AXT file"))
+        .arg(crate::cmd_pgr::args::outfile_arg_required())
 }
 
 pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
@@ -21,7 +21,7 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
     let in_chain = matches.get_one::<String>("in_chain").unwrap();
     let target = matches.get_one::<String>("target").unwrap();
     let query = matches.get_one::<String>("query").unwrap();
-    let out_axt = matches.get_one::<String>("out_axt").unwrap();
+    let out_axt = crate::cmd_pgr::args::get_outfile(matches);
 
     let mut t_2bit = TwoBitFile::open(target)?;
     let mut q_2bit = TwoBitFile::open(query)?;

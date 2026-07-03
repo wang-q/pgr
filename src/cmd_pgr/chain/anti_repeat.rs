@@ -25,7 +25,7 @@ pub fn make_subcommand() -> Command {
         .arg(crate::cmd_pgr::args::infile_arg_required_with_help(
             "Input chain file",
         ))
-        .arg(Arg::new("outfile").required(true).help("Output chain file"))
+        .arg(crate::cmd_pgr::args::outfile_arg_required())
         .arg(crate::cmd_pgr::args::min_score_arg("5000"))
         .arg(
             Arg::new("no_check_score")
@@ -40,7 +40,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let target_path = args.get_one::<String>("target_2bit").unwrap();
     let query_path = args.get_one::<String>("query_2bit").unwrap();
     let input_path = args.get_one::<String>("infile").unwrap();
-    let output_path = args.get_one::<String>("outfile").unwrap();
+    let output_path = crate::cmd_pgr::args::get_outfile(args);
     let min_score = *args.get_one::<f64>("min_score").unwrap();
     let no_check_score = *args.get_one::<usize>("no_check_score").unwrap();
 

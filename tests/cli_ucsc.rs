@@ -148,6 +148,7 @@ fn test_chain_anti_repeat_lastz() {
             "--query-2bit",
             q_2bit.to_str().unwrap(),
             input.to_str().unwrap(),
+            "-o",
             output.to_str().unwrap(),
         ])
         .run();
@@ -205,6 +206,7 @@ fn test_chain_pre_net_lastz() {
             input.to_str().unwrap(),
             t_sizes.to_str().unwrap(),
             q_sizes.to_str().unwrap(),
+            "-o",
             output.to_str().unwrap(),
         ])
         .run();
@@ -269,6 +271,7 @@ fn test_net_syntenic_lastz() {
             "net",
             "syntenic",
             input.to_str().unwrap(),
+            "-o",
             output.to_str().unwrap(),
         ])
         .run();
@@ -319,6 +322,7 @@ fn test_chain_stitch_lastz() {
             "chain",
             "stitch",
             input.to_str().unwrap(),
+            "-o",
             output.to_str().unwrap(),
         ])
         .run();
@@ -387,6 +391,7 @@ fn test_net_to_axt_lastz() {
             chain_input.to_str().unwrap(),
             t_2bit.to_str().unwrap(),
             q_2bit.to_str().unwrap(),
+            "-o",
             output.to_str().unwrap(),
         ])
         .run();

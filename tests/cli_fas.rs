@@ -334,7 +334,13 @@ fn command_split_to() {
 #[test]
 fn command_refine() {
     let (stdout, _) = PgrCmd::new()
-        .args(&["fas", "refine", "tests/fas/example.fas", "--aligner", "none"])
+        .args(&[
+            "fas",
+            "refine",
+            "tests/fas/example.fas",
+            "--aligner",
+            "none",
+        ])
         .run();
 
     assert_eq!(stdout.lines().count(), 27);

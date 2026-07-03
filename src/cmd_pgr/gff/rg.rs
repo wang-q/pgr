@@ -25,7 +25,9 @@ Examples:
 
 "###,
         )
-        .arg(crate::cmd_pgr::args::infile_arg_required_with_help("Input file"))
+        .arg(crate::cmd_pgr::args::infile_arg_required_with_help(
+            "Input file",
+        ))
         .arg(
             Arg::new("tag")
                 .long("tag")

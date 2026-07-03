@@ -79,7 +79,7 @@
 pgr chain sort raw.chain > sorted.chain
 
 # 2. 预处理 (PreNet) - 去除被高分比对覆盖的冗余
-pgr chain pre-net sorted.chain t.sizes q.sizes pre.chain
+pgr chain pre-net sorted.chain t.sizes q.sizes -o pre.chain
 
 # 3. 生成 Net (Net)
 pgr chain net pre.chain t.sizes q.sizes t.net q.net

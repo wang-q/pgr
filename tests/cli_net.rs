@@ -47,6 +47,7 @@ fn test_net_syntenic_basic() -> Result<(), Box<dyn std::error::Error>> {
     cmd.arg("net")
         .arg("syntenic")
         .arg(in_file.path().to_str().unwrap())
+        .arg("-o")
         .arg(out_path)
         .assert()
         .success();
@@ -95,6 +96,7 @@ fn test_net_syntenic_nested() -> Result<(), Box<dyn std::error::Error>> {
     cmd.arg("net")
         .arg("syntenic")
         .arg(in_file.path().to_str().unwrap())
+        .arg("-o")
         .arg(out_path)
         .assert()
         .success();
@@ -145,6 +147,7 @@ fn test_net_to_axt_basic() -> Result<(), Box<dyn std::error::Error>> {
         .arg(&chain_path)
         .arg(&t_2bit)
         .arg(&q_2bit)
+        .arg("-o")
         .arg(&out_path)
         .assert()
         .success();
@@ -205,6 +208,7 @@ fn test_net_to_axt_reverse() -> Result<(), Box<dyn std::error::Error>> {
         .arg(&chain_path)
         .arg(&t_2bit)
         .arg(&q_2bit)
+        .arg("-o")
         .arg(&out_path)
         .assert()
         .success();

@@ -116,7 +116,7 @@ pgr net subset [OPTIONS] <net_in> <chain_in> <chain_out>
 Adds synteny information to a net file. It classifies fills as `syn` (syntenic), `inv` (inverted), or `nonSyn` (non-syntenic) based on their relationship to the parent structure and query coordinates.
 
 ```bash
-pgr net syntenic [OPTIONS] <infile> <outfile>
+pgr net syntenic [OPTIONS] <infile> -o <outfile>
 ```
 
 ### Options
@@ -127,7 +127,7 @@ pgr net syntenic [OPTIONS] <infile> <outfile>
 
 1.  **Add synteny labels**:
     ```bash
-    pgr net syntenic raw.net syn.net
+    pgr net syntenic raw.net -o syn.net
     ```
 
 ---
@@ -137,7 +137,7 @@ pgr net syntenic [OPTIONS] <infile> <outfile>
 Converts a net file (and its corresponding chain file) into AXT format. This reconstructs the alignment sequence from the 2bit files.
 
 ```bash
-pgr net to-axt <in_net> <in_chain> <target.2bit> <query.2bit> <out_axt>
+pgr net to-axt <in_net> <in_chain> <target.2bit> <query.2bit> -o <outfile>
 ```
 
 ### Arguments
@@ -146,11 +146,11 @@ pgr net to-axt <in_net> <in_chain> <target.2bit> <query.2bit> <out_axt>
 *   `<in_chain>`: Input chain file.
 *   `<target.2bit>`: Target sequence 2bit file.
 *   `<query.2bit>`: Query sequence 2bit file.
-*   `<out_axt>`: Output AXT file.
+*   `-o <outfile>`: Output AXT file.
 
 ### Examples
 
 1.  **Convert net to AXT**:
     ```bash
-    pgr net to-axt in.net in.chain target.2bit query.2bit out.axt
+    pgr net to-axt in.net in.chain target.2bit query.2bit -o out.axt
     ```

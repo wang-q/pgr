@@ -116,6 +116,7 @@ fn test_chain_anti_repeat() -> Result<(), Box<dyn std::error::Error>> {
         .arg("--query-2bit")
         .arg(q_2bit_path.to_str().unwrap())
         .arg(chain_path.to_str().unwrap())
+        .arg("-o")
         .arg(out_path.to_str().unwrap())
         .arg("--min-score")
         .arg("800");

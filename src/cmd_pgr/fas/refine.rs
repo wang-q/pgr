@@ -121,7 +121,8 @@ fn proc_block(block: &pgr::libs::fmt::fas::FasBlock, args: &ArgMatches) -> anyho
         }
     } else {
         if is_quick {
-            aligned = pgr::libs::alignment::align_seqs_quick(&seqs, aligner, pad as i32, fill as i32)?;
+            aligned =
+                pgr::libs::alignment::align_seqs_quick(&seqs, aligner, pad as i32, fill as i32)?;
         } else {
             aligned = pgr::libs::alignment::align_seqs(&seqs, aligner)?;
         }
