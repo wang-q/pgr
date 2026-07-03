@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::io::Write;
 
+use anyhow::anyhow;
 use intspan::IntSpan;
 
 use crate::libs::alignment::{align_to_chr, chr_to_align, indel_intspan, seq_intspan};
@@ -89,9 +90,9 @@ pub fn slice_block<W: Write>(
 
             let ss_seq = &block.entries[i].seq()[((ss_start - 1) as usize)..(ss_end as usize)];
 
-            writer.write_all(
-                format!(">{}\n{}\n", ss_range, std::str::from_utf8(ss_seq).unwrap()).as_ref(),
-            )?;
+            let seq_str = std::str::from_utf8(ss_seq)
+                .map_err(|e| anyhow!("invalid UTF-8 in sliced sequence: {}", e))?;
+            writer.write_all(format!(">{}\n{}\n", ss_range, seq_str).as_ref())?;
         }
     }
 

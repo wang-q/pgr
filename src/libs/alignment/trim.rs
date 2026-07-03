@@ -35,7 +35,7 @@ pub fn trim_pure_dash(seqs: &mut [String]) {
     let seq_count = seqs.len();
 
     for (i, seq) in seqs.iter().enumerate() {
-        let ints = indel_intspan(seq.as_bytes().to_vec().as_ref());
+        let ints = indel_intspan(seq.as_bytes());
         if i == 0 {
             trim_region.merge(&ints);
         } else {
@@ -56,7 +56,7 @@ pub(super) fn align_indel_ints(seqs: &mut [String], count: usize) -> (IntSpan, I
     let mut intersect_ints = IntSpan::new();
 
     for (i, seq) in seqs.iter().enumerate().take(count) {
-        let ints = indel_intspan(seq.as_bytes().to_vec().as_ref());
+        let ints = indel_intspan(seq.as_bytes());
 
         if i == 0 {
             union_ints.merge(&ints);
@@ -119,10 +119,12 @@ pub(super) fn align_indel_ints(seqs: &mut [String], count: usize) -> (IntSpan, I
 /// assert_eq!(seqs[0].len(), 8);
 ///
 /// ```
-pub fn trim_outgroup(seqs: &mut [String]) {
+pub fn trim_outgroup(seqs: &mut [String]) -> anyhow::Result<()> {
     let seq_count = seqs.len();
 
-    assert!(seq_count >= 3, "Need three or more sequences");
+    if seq_count < 3 {
+        anyhow::bail!("Need three or more sequences");
+    }
 
     // Last seq is the outgroup
     let (union_ints, intersect_ints) = align_indel_ints(seqs, seq_count - 1);
@@ -142,6 +144,8 @@ pub fn trim_outgroup(seqs: &mut [String]) {
             seq.replace_range((*lower as usize - 1)..*upper as usize, "");
         }
     }
+
+    Ok(())
 }
 
 /// Records complex ingroup indels (ingroup-outgroup complex indels are not identified here)
@@ -163,7 +167,7 @@ pub fn trim_outgroup(seqs: &mut [String]) {
 ///     "AAAATTTTTG".to_string(),
 /// ];
 /// pgr::libs::alignment::trim_outgroup(&mut seqs);
-/// let complex = pgr::libs::alignment::trim_complex_indel(&mut seqs);
+/// let complex = pgr::libs::alignment::trim_complex_indel(&mut seqs).unwrap();
 /// assert_eq!(seqs[0].len(), 10);
 /// assert_eq!(complex.to_string(), "-");
 ///
@@ -173,7 +177,7 @@ pub fn trim_outgroup(seqs: &mut [String]) {
 ///     "-AA--TTTGG".to_string(),
 /// ];
 /// pgr::libs::alignment::trim_outgroup(&mut seqs);
-/// let complex = pgr::libs::alignment::trim_complex_indel(&mut seqs);
+/// let complex = pgr::libs::alignment::trim_complex_indel(&mut seqs).unwrap();
 /// assert_eq!(seqs[0].len(), 7);
 /// assert_eq!(complex.to_string(), "-");
 ///
@@ -183,7 +187,7 @@ pub fn trim_outgroup(seqs: &mut [String]) {
 ///     "AAA--TTTGG".to_string(),
 /// ];
 /// pgr::libs::alignment::trim_outgroup(&mut seqs);
-/// let complex = pgr::libs::alignment::trim_complex_indel(&mut seqs);
+/// let complex = pgr::libs::alignment::trim_complex_indel(&mut seqs).unwrap();
 /// assert_eq!(seqs[0].len(), 8);
 /// assert_eq!(complex.to_string(), "3");
 ///
@@ -193,7 +197,7 @@ pub fn trim_outgroup(seqs: &mut [String]) {
 ///     "AAA--TTTTG".to_string(),
 /// ];
 /// pgr::libs::alignment::trim_outgroup(&mut seqs);
-/// let complex = pgr::libs::alignment::trim_complex_indel(&mut seqs);
+/// let complex = pgr::libs::alignment::trim_complex_indel(&mut seqs).unwrap();
 /// assert_eq!(seqs[0].len(), 9);
 /// assert_eq!(complex.to_string(), "-");
 ///
@@ -203,7 +207,7 @@ pub fn trim_outgroup(seqs: &mut [String]) {
 ///     "AAA--TTTTG".to_string(),
 /// ];
 /// pgr::libs::alignment::trim_outgroup(&mut seqs);
-/// let complex = pgr::libs::alignment::trim_complex_indel(&mut seqs);
+/// let complex = pgr::libs::alignment::trim_complex_indel(&mut seqs).unwrap();
 /// assert_eq!(seqs[0].len(), 7);
 /// assert_eq!(complex.to_string(), "3");
 ///
@@ -213,7 +217,7 @@ pub fn trim_outgroup(seqs: &mut [String]) {
 ///     "AAA--TTTTG".to_string(),
 /// ];
 /// pgr::libs::alignment::trim_outgroup(&mut seqs);
-/// let complex = pgr::libs::alignment::trim_complex_indel(&mut seqs);
+/// let complex = pgr::libs::alignment::trim_complex_indel(&mut seqs).unwrap();
 /// assert_eq!(seqs[0].len(), 8);
 /// assert_eq!(complex.to_string(), "3");
 ///
@@ -223,7 +227,7 @@ pub fn trim_outgroup(seqs: &mut [String]) {
 ///     "AAA--TT--G".to_string(),
 /// ];
 /// pgr::libs::alignment::trim_outgroup(&mut seqs);
-/// let complex = pgr::libs::alignment::trim_complex_indel(&mut seqs);
+/// let complex = pgr::libs::alignment::trim_complex_indel(&mut seqs).unwrap();
 /// assert_eq!(seqs[0].len(), 8);
 /// assert_eq!(complex.to_string(), "3");
 ///
@@ -233,15 +237,17 @@ pub fn trim_outgroup(seqs: &mut [String]) {
 ///     "AAA--TT-GG".to_string(),
 /// ];
 /// pgr::libs::alignment::trim_outgroup(&mut seqs);
-/// let complex = pgr::libs::alignment::trim_complex_indel(&mut seqs);
+/// let complex = pgr::libs::alignment::trim_complex_indel(&mut seqs).unwrap();
 /// assert_eq!(seqs[0].len(), 8);
 /// assert_eq!(complex.to_string(), "3");
 ///
 /// ```
-pub fn trim_complex_indel(seqs: &mut [String]) -> String {
+pub fn trim_complex_indel(seqs: &mut [String]) -> anyhow::Result<String> {
     let seq_count = seqs.len();
 
-    assert!(seq_count >= 3, "Need three or more sequences");
+    if seq_count < 3 {
+        anyhow::bail!("Need three or more sequences");
+    }
 
     // Last seq is the outgroup
     let (union_ints, intersect_ints) = align_indel_ints(seqs, seq_count - 1);
@@ -269,7 +275,7 @@ pub fn trim_complex_indel(seqs: &mut [String]) -> String {
         complex_region = complex_region.banish(*lower, *upper);
     }
 
-    complex_region.to_string()
+    Ok(complex_region.to_string())
 }
 
 /// Trims head and tail indels.
@@ -367,12 +373,12 @@ pub fn trim_complex_indel(seqs: &mut [String]) -> String {
 pub fn trim_head_tail(seqs: &mut [String], ranges: &mut [Range], chop: usize) {
     let seq_count = seqs.len();
 
-    if chop == 0 {
+    if chop == 0 || seq_count == 0 {
         return;
     }
 
     // chop region covers all
-    let align_len = seqs.first().unwrap().len();
+    let align_len = seqs[0].len();
     if chop * 2 >= align_len {
         return;
     }

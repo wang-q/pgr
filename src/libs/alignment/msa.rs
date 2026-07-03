@@ -78,7 +78,9 @@ pub fn get_consensus_poa_external(
         .tempfile()?;
 
     for (i, seq) in seqs.iter().enumerate() {
-        write!(seq_in, ">seq-{}\n{}\n", i, str::from_utf8(seq).unwrap())?;
+        let seq_str =
+            std::str::from_utf8(seq).map_err(|e| anyhow!("invalid UTF-8 in seq {}: {}", i, e))?;
+        write!(seq_in, ">seq-{}\n{}\n", i, seq_str)?;
     }
     let seq_in_path = seq_in.into_temp_path();
 
@@ -342,14 +344,15 @@ pub fn align_seqs(seqs: &[String], aligner: &str) -> anyhow::Result<Vec<String>>
     let reader = reader(seq_out_path.to_string_lossy().as_ref())?;
     let fa_in = fasta::Reader::new(reader);
     for result in fa_in.records() {
-        // obtain record or fail with error
-        let record = result.unwrap();
+        let record = result?;
 
-        let idx = record.id().to_string();
-        let idx = idx.replace("seq-", "");
-        let idx = idx.parse::<usize>().unwrap();
+        let idx = record.id().trim_start_matches("seq-");
+        let idx: usize = idx
+            .parse()
+            .map_err(|e| anyhow!("invalid seq id [{}]: {}", record.id(), e))?;
 
-        out_seqs[idx] = String::from_utf8(record.seq().to_vec().to_ascii_uppercase()).unwrap();
+        out_seqs[idx] = String::from_utf8(record.seq().to_vec().to_ascii_uppercase())
+            .map_err(|e| anyhow!("invalid UTF-8 in record [{}]: {}", record.id(), e))?;
     }
 
     // closing the `TempPath` explicitly
@@ -366,7 +369,10 @@ pub fn align_seqs_quick(
     fill: i32,
 ) -> anyhow::Result<Vec<String>> {
     let count = seqs.len();
-    let align_len = seqs.first().unwrap().len() as i32;
+    if count == 0 {
+        return Ok(Vec::new());
+    }
+    let align_len = seqs[0].len() as i32;
 
     // realign regions
     let mut realign_ints = IntSpan::new();
@@ -375,7 +381,7 @@ pub fn align_seqs_quick(
     realign_ints.add_pair(align_len - pad, align_len);
 
     for seq in seqs.iter().take(count) {
-        let mut ints = indel_intspan(seq.as_bytes().to_vec().as_ref());
+        let mut ints = indel_intspan(seq.as_bytes());
         ints = ints.pad(pad);
         realign_ints.merge(&ints);
     }

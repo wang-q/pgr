@@ -131,8 +131,8 @@ fn proc_block(block: &pgr::libs::fmt::fas::FasBlock, args: &ArgMatches) -> anyho
     //----------------------------
     pgr::libs::alignment::trim_pure_dash(&mut aligned);
     if has_outgroup {
-        pgr::libs::alignment::trim_outgroup(&mut aligned);
-        let _ = pgr::libs::alignment::trim_complex_indel(&mut aligned);
+        pgr::libs::alignment::trim_outgroup(&mut aligned)?;
+        let _ = pgr::libs::alignment::trim_complex_indel(&mut aligned)?;
     }
 
     if chop > 0 {

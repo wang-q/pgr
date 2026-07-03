@@ -79,7 +79,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                     writer.write_all(format!("{}\t{}\n", headers[i], headers[j]).as_ref())?;
                 }
             } else if is_best {
-                let best_pair = pgr::libs::fmt::fas::find_best_pairs(&block.entries);
+                let best_pair = pgr::libs::fmt::fas::find_best_pairs(&block.entries)?;
                 for (i, j) in best_pair {
                     writer.write_all(format!("{}\t{}\n", headers[i], headers[j]).as_ref())?;
                 }

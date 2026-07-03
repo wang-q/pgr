@@ -149,7 +149,7 @@ pub fn get_subs(seqs: &[&[u8]]) -> anyhow::Result<Vec<Substitution>> {
         let mutant_to = if class.len() > 2 {
             "Complex".to_string()
         } else {
-            format!("{}<->{}", tbase, qbase).to_string()
+            format!("{}<->{}", tbase, qbase)
         };
 
         // mask previous variables
@@ -243,8 +243,7 @@ pub fn polarize_subs(subs: &mut Vec<Substitution>, og: &[u8]) -> anyhow::Result<
                     } else {
                         pattern += "1";
                         freq += 1;
-                        mutant_to =
-                            format!("{}->{}", obase, String::from_utf8(vec![*base])?).to_string();
+                        mutant_to = format!("{}->{}", obase, String::from_utf8(vec![*base])?);
                     }
                 }
                 sub.mutant_to = mutant_to;
@@ -557,37 +556,34 @@ pub fn polarize_indels(indels: &mut Vec<Indel>, og: &[u8]) -> anyhow::Result<()>
                 //    A-A
                 // og ACA
                 indel.itype = "C".to_string(); // Complex indel
-            } else if !og_indel_set.intersect(&indel_set).is_empty() {
-                let island = og_indel_set.find_islands_ints(&indel_set);
-                if island.equals(&indel_set) {
-                    // Outgroup has the same indel
-                    //    NNNN
-                    //    N--N
-                    // og N--N
-                    indel.itype = "I".to_string(); // Insertion
-                } else {
-                    // Outgroup has a different indel
-                    //    NNNN
-                    //    N-NN
-                    // og N--N
-                    // or
-                    //    NNNN
-                    //    N--N
-                    // og N-NN
-                    indel.itype = "C".to_string(); // Complex indel
-                }
-            } else if og_indel_set.intersect(&indel_set).is_empty() {
-                // Outgroup has no gaps in this region
-                //    NNNN
-                //    N--N
-                // og NNNN
-                indel.itype = "D".to_string(); // Deletion
             } else {
-                anyhow::bail!(
-                    "Errors when polarizing indel at position {}..{}",
-                    indel.start,
-                    indel.end
-                );
+                let intersect = og_indel_set.intersect(&indel_set);
+                if !intersect.is_empty() {
+                    let island = og_indel_set.find_islands_ints(&indel_set);
+                    if island.equals(&indel_set) {
+                        // Outgroup has the same indel
+                        //    NNNN
+                        //    N--N
+                        // og N--N
+                        indel.itype = "I".to_string(); // Insertion
+                    } else {
+                        // Outgroup has a different indel
+                        //    NNNN
+                        //    N-NN
+                        // og N--N
+                        // or
+                        //    NNNN
+                        //    N--N
+                        // og N-NN
+                        indel.itype = "C".to_string(); // Complex indel
+                    }
+                } else {
+                    // Outgroup has no gaps in this region
+                    //    NNNN
+                    //    N--N
+                    // og NNNN
+                    indel.itype = "D".to_string(); // Deletion
+                }
             }
         }
 

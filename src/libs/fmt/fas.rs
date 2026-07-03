@@ -364,7 +364,7 @@ pub fn aggregate_coverage_into<R: io::BufRead>(
 }
 
 /// Find best-to-best bilateral pairs based on sequence distance.
-pub fn find_best_pairs(entries: &[FasEntry]) -> Vec<(usize, usize)> {
+pub fn find_best_pairs(entries: &[FasEntry]) -> anyhow::Result<Vec<(usize, usize)>> {
     let n = entries.len();
     let mut best_pair: Vec<(usize, usize)> = vec![];
     for i in 0..n {
@@ -373,7 +373,7 @@ pub fn find_best_pairs(entries: &[FasEntry]) -> Vec<(usize, usize)> {
             if i == j {
                 continue;
             }
-            let dist = crate::libs::alignment::pair_d(entries[i].seq(), entries[j].seq());
+            let dist = crate::libs::alignment::pair_d(entries[i].seq(), entries[j].seq())?;
             if dist < dist_idx.0 {
                 dist_idx = (dist, j);
             }
@@ -386,7 +386,7 @@ pub fn find_best_pairs(entries: &[FasEntry]) -> Vec<(usize, usize)> {
     }
     // Deduplicate pairs preserving first-occurrence order
     let mut seen = std::collections::HashSet::new();
-    best_pair.into_iter().filter(|p| seen.insert(*p)).collect()
+    Ok(best_pair.into_iter().filter(|p| seen.insert(*p)).collect())
 }
 
 /// Add entries from a block to the join map, keyed by the target entry's range.
