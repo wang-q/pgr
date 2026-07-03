@@ -74,7 +74,12 @@ pub fn build_method(
     leaf_depths: Option<(f64, f64, f64)>,
 ) -> Result<Method, String> {
     match name {
-        "k" => Ok(Method::K(val as usize)),
+        "k" => {
+            if val < 1.0 || val.fract() != 0.0 {
+                return Err(format!("k must be a positive integer, got {}", val));
+            }
+            Ok(Method::K(val as usize))
+        }
         "height" => Ok(Method::Height(val)),
         "root_dist" => Ok(Method::RootDist(val)),
         "max_clade" => Ok(Method::MaxClade(val)),

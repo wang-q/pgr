@@ -28,7 +28,7 @@ impl Coordinates {
             }
 
             // Only support FeatureVector format: name \t v1,v2,v3
-            let fv = FeatureVector::parse(&line);
+            let fv = FeatureVector::parse(&line)?;
             if !fv.name().is_empty() {
                 let vec: Vec<f64> = fv.list().iter().map(|&v| v as f64).collect();
                 if i == 0 {

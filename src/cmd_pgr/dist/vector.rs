@@ -117,7 +117,7 @@ fn load_file(infile: &str, is_bin: bool) -> anyhow::Result<Vec<FeatureVector>> {
     let mut entries = vec![];
     let reader = pgr::reader(infile)?;
     'LINE: for line in reader.lines().map_while(Result::ok) {
-        let mut entry = FeatureVector::parse(&line);
+        let mut entry = FeatureVector::parse(&line)?;
         if entry.name().is_empty() {
             continue 'LINE;
         }

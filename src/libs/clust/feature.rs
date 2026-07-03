@@ -4,6 +4,8 @@
 //! by `cmd_pgr/dist/vector.rs` and `libs/clust/eval.rs` for distance
 //! computation and cluster evaluation.
 
+use anyhow::anyhow;
+
 //----------------------------
 // FeatureVector
 //----------------------------
@@ -49,19 +51,25 @@ impl FeatureVector {
     /// ```
     /// # use pgr::libs::clust::feature::FeatureVector;
     /// let line = "Es_coli_005008_GCF_013426115_1\t1,5,2,7,6,6".to_string();
-    /// let entry = FeatureVector::parse(&line);
+    /// let entry = FeatureVector::parse(&line).unwrap();
     /// # assert_eq!(*entry.name(), "Es_coli_005008_GCF_013426115_1");
     /// # assert_eq!(*entry.list().get(1).unwrap(), 5f32);
     /// ```
-    pub fn parse(line: &str) -> FeatureVector {
+    pub fn parse(line: &str) -> anyhow::Result<FeatureVector> {
         let fields: Vec<&str> = line.split('\t').collect();
         if fields.len() == 2 {
             let name = fields[0].to_string();
             let parts: Vec<&str> = fields[1].split(',').collect();
-            let list: Vec<f32> = parts.iter().map(|e| e.parse::<f32>().unwrap()).collect();
-            Self::from(&name, &list)
+            let list: Vec<f32> = parts
+                .iter()
+                .map(|e| {
+                    e.parse::<f32>()
+                        .map_err(|e| anyhow!("invalid float value: {}", e))
+                })
+                .collect::<anyhow::Result<_>>()?;
+            Ok(Self::from(&name, &list))
         } else {
-            Self::new()
+            Ok(Self::new())
         }
     }
 }
