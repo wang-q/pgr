@@ -75,17 +75,24 @@ pub fn infile_arg() -> Arg {
 
 /// Required positional `infile` argument (caller must provide, may pass "stdin").
 pub fn infile_arg_required() -> Arg {
+    infile_arg_required_with_help("Input filename. [stdin] for standard input")
+}
+
+/// Required positional `infile` argument with a custom help text.
+/// Index is auto-assigned by clap — do not add `.index(N)` to other positionals
+/// unless this is the only positional or all positionals use explicit indices.
+pub fn infile_arg_required_with_help(help: &'static str) -> Arg {
     Arg::new("infile")
         .required(true)
         .num_args(1)
-        .index(1)
-        .help("Input filename. [stdin] for standard input")
+        .help(help)
 }
 
-/// Standard positional `infiles` argument (one or more, required).
+/// Standard positional `infiles` argument (one or more, required) at index 1.
 ///
 /// `label` is the format name used in the help text (e.g. `"FASTA"`,
-/// `"block FA"`, `"2bit"`).
+/// `"block FA"`, `"2bit"`). Use inline definition with a different `.index(N)`
+/// when another positional precedes `infiles`.
 pub fn infiles_arg(label: &str) -> Arg {
     Arg::new("infiles")
         .required(true)

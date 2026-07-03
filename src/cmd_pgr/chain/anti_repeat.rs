@@ -22,7 +22,9 @@ pub fn make_subcommand() -> Command {
                 .required(true)
                 .help("Query genome 2bit file"),
         )
-        .arg(Arg::new("infile").required(true).help("Input chain file"))
+        .arg(crate::cmd_pgr::args::infile_arg_required_with_help(
+            "Input chain file",
+        ))
         .arg(Arg::new("outfile").required(true).help("Output chain file"))
         .arg(crate::cmd_pgr::args::min_score_arg("5000"))
         .arg(

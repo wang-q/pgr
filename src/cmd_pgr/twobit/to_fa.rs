@@ -24,12 +24,9 @@ Examples:
   pgr 2bit to-fa input.2bit -l 0  # no wrapping
 "###,
         )
-        .arg(
-            Arg::new("infile")
-                .help("Input 2bit file to process")
-                .required(true)
-                .index(1),
-        )
+        .arg(crate::cmd_pgr::args::infile_arg_required_with_help(
+            "Input 2bit file to process",
+        ))
         .arg(crate::cmd_pgr::args::outfile_arg())
         .arg(
             Arg::new("line")

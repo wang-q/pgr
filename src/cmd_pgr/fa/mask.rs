@@ -39,13 +39,9 @@ Examples:
 
 "###,
         )
-        .arg(
-            Arg::new("infile")
-                .required(true)
-                .num_args(1)
-                .index(1)
-                .help("Input FASTA file to process"),
-        )
+        .arg(crate::cmd_pgr::args::infile_arg_required_with_help(
+            "Input FASTA file to process",
+        ))
         .arg(
             Arg::new("runlist")
                 .required(true)

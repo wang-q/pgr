@@ -4,7 +4,9 @@ use pgr::libs::chain::net::{classify_syntenic, read_nets, write_net};
 pub fn make_subcommand() -> Command {
     Command::new("syntenic")
         .about("Add synteny info to net")
-        .arg(Arg::new("infile").required(true).help("Input net file"))
+        .arg(crate::cmd_pgr::args::infile_arg_required_with_help(
+            "Input net file",
+        ))
         .arg(Arg::new("outfile").required(true).help("Output net file"))
         .arg(crate::cmd_pgr::args::min_score_arg("0.0"))
 }

@@ -7,7 +7,9 @@ use std::io::Write;
 pub fn make_subcommand() -> Command {
     Command::new("net")
         .about("Make alignment nets out of chains")
-        .arg(Arg::new("infile").required(true).help("Input chain file"))
+        .arg(crate::cmd_pgr::args::infile_arg_required_with_help(
+            "Input chain file",
+        ))
         .arg(
             Arg::new("t_sizes")
                 .required(true)

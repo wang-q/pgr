@@ -28,12 +28,9 @@ Examples:
 
 "###,
         )
-        .arg(
-            Arg::new("infile")
-                .required(true)
-                .index(1)
-                .help("Input 2bit file to process"),
-        )
+        .arg(crate::cmd_pgr::args::infile_arg_required_with_help(
+            "Input 2bit file to process",
+        ))
         .arg(
             Arg::new("list")
                 .required(true)
