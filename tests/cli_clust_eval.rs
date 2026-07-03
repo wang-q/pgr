@@ -9,7 +9,7 @@ fn test_clust_eval_perfect_match() -> anyhow::Result<()> {
         .arg("tests/clust/perfect_1.tsv")
         .arg("--other")
         .arg("tests/clust/perfect_2.tsv")
-        .arg("--format")
+        .arg("--input-format")
         .arg("cluster")
         .output()?;
 
@@ -112,7 +112,7 @@ fn test_clust_eval_disjoint() -> anyhow::Result<()> {
         .arg("tests/clust/perfect_1.tsv")
         .arg("--other")
         .arg("tests/clust/disjoint_2.tsv")
-        .arg("--format")
+        .arg("--input-format")
         .arg("cluster")
         .output()?;
 
@@ -145,7 +145,7 @@ fn test_clust_eval_single_vs_singletons() -> anyhow::Result<()> {
         .arg("tests/clust/single_1.tsv")
         .arg("--other")
         .arg("tests/clust/singletons.tsv")
-        .arg("--format")
+        .arg("--input-format")
         .arg("cluster")
         .output()?;
 

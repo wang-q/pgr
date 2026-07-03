@@ -1,5 +1,5 @@
 use anyhow::Result;
-use clap::{Arg, ArgAction, ArgMatches, Command};
+use clap::{Arg, ArgMatches, Command};
 use pgr::libs::chain::BitMap;
 use std::collections::HashMap;
 
@@ -25,12 +25,7 @@ pub fn make_subcommand() -> Command {
                 .value_parser(clap::value_parser!(u64))
                 .help("Extra to pad around blocks to decrease trash"),
         )
-        .arg(
-            Arg::new("incl_hap")
-                .long("incl-hap")
-                .action(ArgAction::SetTrue)
-                .help("Include query sequences name in the form *_hap*|*_alt*"),
-        )
+        .arg(crate::cmd_pgr::args::incl_hap_arg())
 }
 
 pub fn execute(args: &ArgMatches) -> Result<()> {

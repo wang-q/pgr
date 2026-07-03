@@ -57,7 +57,7 @@ Examples:
             )
             .arg(crate::cmd_pgr::args::infiles_arg("block FA"))
             .arg(
-                Arg::new("cname")
+                Arg::new("consensus_name")
                     .long("consensus-name")
                     .num_args(1)
                     .default_value("consensus")
@@ -88,7 +88,7 @@ fn proc_block(block: &pgr::libs::fmt::fas::FasBlock, args: &ArgMatches) -> anyho
     //----------------------------
     // Args
     //----------------------------
-    let cname = args.get_one::<String>("cname").unwrap();
+    let cname = args.get_one::<String>("consensus_name").unwrap();
     let has_outgroup = args.get_flag("outgroup");
 
     let engine = args.get_one::<String>("engine").unwrap();

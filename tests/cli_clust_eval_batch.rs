@@ -69,7 +69,7 @@ D 1.0 1.0 0.2 0.0
         .arg("clust")
         .arg("eval")
         .arg(partitions_file.path())
-        .arg("--format")
+        .arg("--input-format")
         .arg("long")
         .arg("--matrix")
         .arg(matrix_file.path())

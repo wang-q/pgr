@@ -115,7 +115,7 @@ fn test_clust_pipeline_full() {
             &cut_file, // Prediction
             "--other",
             &truth_file, // Ground Truth
-            "--format",
+            "--input-format",
             "pair", // Both are in pair format (or at least compatible)
         ])
         .run();

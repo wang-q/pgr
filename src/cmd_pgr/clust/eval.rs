@@ -68,15 +68,15 @@ Examples:
                 .help("Coordinate matrix file (for internal evaluation: Davies-Bouldin)"),
         )
         .arg(
-            Arg::new("format")
-                .long("format")
+            Arg::new("input_format")
+                .long("input-format")
                 .value_parser(["cluster", "pair", "long"])
                 .default_value("pair")
                 .help("Input format for partition files"),
         )
         .arg(crate::cmd_pgr::args::outfile_arg())
         .arg(
-            Arg::new("no-singletons")
+            Arg::new("no_singletons")
                 .long("no-singletons")
                 .action(clap::ArgAction::SetTrue)
                 .help("Exclude true singletons (from Reference/Ground Truth) from evaluation"),
@@ -87,7 +87,7 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
     let p1_path = matches.get_one::<String>("p1").unwrap();
     let outfile = crate::cmd_pgr::args::get_outfile(matches);
 
-    let format_str = matches.get_one::<String>("format").unwrap();
+    let format_str = matches.get_one::<String>("input_format").unwrap();
     let format: PartitionFormat = match format_str.parse() {
         Ok(f) => f,
         Err(e) => anyhow::bail!("Invalid format: {}", e),
@@ -95,7 +95,7 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
 
     let mut writer = pgr::writer(outfile)?;
 
-    let remove_singletons_flag = matches.get_flag("no-singletons");
+    let remove_singletons_flag = matches.get_flag("no_singletons");
 
     if format == PartitionFormat::Long {
         // Batch Mode

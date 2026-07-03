@@ -58,7 +58,7 @@ Examples:
                 .help("Input FASTA file(s) to process"),
         )
         .arg(
-            Arg::new("count")
+            Arg::new("size")
                 .long("size")
                 .short('c')
                 .num_args(1)
@@ -128,8 +128,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             }
         }
     } else if mode == "about" {
-        let opt_count = if args.contains_id("count") {
-            *args.get_one::<usize>("count").unwrap()
+        let opt_count = if args.contains_id("size") {
+            *args.get_one::<usize>("size").unwrap()
         } else {
             usize::MAX
         };

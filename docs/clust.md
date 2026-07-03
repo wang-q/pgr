@@ -215,7 +215,7 @@ pgr clust hier matrix.phy --method ward > tree.nwk
 # 2. 扫描阈值并评估内部指标 (Silhouette)
 # clust cut 在 scan 模式下输出长表，直接传给 clust eval
 pgr clust cut tree.nwk --height 1.0 --scan 0,1.0,0.05 | \
-    pgr clust eval - --format long --matrix matrix.phy > evaluation.tsv
+    pgr clust eval - --input-format long --matrix matrix.phy > evaluation.tsv
 
 # 3. 分析 evaluation.tsv 选择最佳阈值 (如 Silhouette 最大处)
 # 假设最佳阈值为 0.45
@@ -258,7 +258,7 @@ pgr clust cut tree.nwk --height 0.45 > final_clusters.tsv
   ```
 
 #### Long Format (Batch, `--format long`)
-用于批量评估的专用格式。`--format long` 仅 `pgr clust eval` 接受；`pgr clust cut` 的 `--format` 仅支持 `cluster`/`pair`，但在 `--scan` 模式下自动输出 long format。
+用于批量评估的专用格式。`--input-format long` 仅 `pgr clust eval` 接受；`pgr clust cut` 的 `--format` 仅支持 `cluster`/`pair`，但在 `--scan` 模式下自动输出 long format。
 - **结构**：`Group <tab> ClusterID <tab> Item`
 - **Group 列**：用于标识不同的参数组合或切割方法。格式通常为 `Method=Value`（如 `height=0.5`）。
   - `pgr clust eval` 会保留此列作为评估结果的标识符。

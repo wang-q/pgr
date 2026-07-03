@@ -373,6 +373,16 @@ pub fn bl_arg() -> Arg {
         .help("Keep branch lengths")
 }
 
+/// Standard `-l/--lca` argument for nwk subcommands (lowest common ancestor).
+pub fn lca_arg() -> Arg {
+    Arg::new("lca")
+        .long("lca")
+        .short('l')
+        .num_args(1)
+        .action(ArgAction::Append)
+        .help("Lowest common ancestor of two nodes")
+}
+
 // ============================================================================
 // clust subcommand builders
 // ============================================================================
@@ -664,6 +674,15 @@ pub fn min_score_arg(default: &'static str) -> Arg {
         .help("Minimum score threshold")
 }
 
+/// `--min-score` (f64) without default (optional threshold).
+pub fn min_score_arg_optional(help: &'static str) -> Arg {
+    Arg::new("min_score")
+        .long("min-score")
+        .num_args(1)
+        .value_parser(clap::value_parser!(f64))
+        .help(help)
+}
+
 /// `--min-len` (usize) without default.
 pub fn min_len_arg() -> Arg {
     Arg::new("min_len")
@@ -717,6 +736,14 @@ pub fn gap_flag() -> Arg {
         .short('g')
         .action(ArgAction::SetTrue)
         .help("Only identify regions of N/n (gaps)")
+}
+
+/// `--no-mask` flag (do not apply sequence masking).
+pub fn no_mask_arg() -> Arg {
+    Arg::new("no_mask")
+        .long("no-mask")
+        .action(ArgAction::SetTrue)
+        .help("Do not apply sequence masking")
 }
 
 /// Positional `ranges` argument (optional, index 2).
@@ -796,6 +823,53 @@ pub fn chain_q_sizes_arg() -> Arg {
         .required(true)
         .num_args(1)
         .help("Query sizes file")
+}
+
+/// `--incl-hap` flag (include haplotype sequences).
+pub fn incl_hap_arg() -> Arg {
+    Arg::new("incl_hap")
+        .long("incl-hap")
+        .action(ArgAction::SetTrue)
+        .help("Include haplotype sequences")
+}
+
+/// `--gap-model` argument with parameterized default and possible values.
+pub fn gap_model_arg(
+    default: &'static str,
+    possible: &'static [&'static str],
+    help: &'static str,
+) -> Arg {
+    let values: Vec<builder::PossibleValue> = possible
+        .iter()
+        .map(|v| builder::PossibleValue::new(*v))
+        .collect();
+    Arg::new("gap_model")
+        .long("gap-model")
+        .num_args(1)
+        .action(ArgAction::Set)
+        .default_value(default)
+        .value_parser(values)
+        .help(help)
+}
+
+/// `--align-gap-open` (i32) argument (overrides --gap-model).
+pub fn align_gap_open_arg() -> Arg {
+    Arg::new("align_gap_open")
+        .long("align-gap-open")
+        .num_args(1)
+        .value_parser(clap::value_parser!(i32))
+        .allow_negative_numbers(true)
+        .help("Alignment gap open cost (overrides --gap-model)")
+}
+
+/// `--align-gap-extend` (i32) argument (overrides --gap-model).
+pub fn align_gap_extend_arg() -> Arg {
+    Arg::new("align_gap_extend")
+        .long("align-gap-extend")
+        .num_args(1)
+        .value_parser(clap::value_parser!(i32))
+        .allow_negative_numbers(true)
+        .help("Alignment gap extension cost (overrides --gap-model)")
 }
 
 // ============================================================================

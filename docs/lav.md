@@ -23,7 +23,7 @@ pgr lav lastz [OPTIONS] <target> <query>
 
 ### Options
 
-*   `--depth <int>`: Query depth threshold (default: 50). This sets `--querydepth=keep,nowarn:N` for `lastz`, which stops processing a query sequence once the coverage depth exceeds N (approx. 50x coverage).
+*   `--query-depth <int>`: Query depth threshold (default: 50). This sets `--querydepth=keep,nowarn:N` for `lastz`, which stops processing a query sequence once the coverage depth exceeds N (approx. 50x coverage).
 *   `--self`: Perform self-alignment (align target against itself). In this mode, `target` and `query` should point to the same file or directory.
 *   `-s, --preset <set01..set07>`: Use a predefined parameter set (see below).
 *   `--show-preset`: Display the configuration (parameters & matrix) for the selected preset and exit.

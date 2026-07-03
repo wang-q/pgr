@@ -44,14 +44,7 @@ pub fn make_subcommand() -> Command {
         )
         .arg(crate::cmd_pgr::args::infile_arg_required())
         .arg(crate::cmd_pgr::args::node_arg())
-        .arg(
-            Arg::new("lca")
-                .long("lca")
-                .short('l')
-                .num_args(1)
-                .action(ArgAction::Append)
-                .help("Lowest common ancestor of two nodes"),
-        )
+        .arg(crate::cmd_pgr::args::lca_arg())
         .arg(
             Arg::new("string")
                 .long("string")

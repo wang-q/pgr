@@ -54,8 +54,8 @@ Examples:
                 .help("Query FASTA file or directory"),
         )
         .arg(
-            Arg::new("depth")
-                .long("depth")
+            Arg::new("query_depth")
+                .long("query-depth")
                 .default_value("50")
                 .value_parser(value_parser!(usize))
                 .help("Query depth threshold"),
@@ -107,7 +107,7 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
 
     let arg_query = matches.get_one::<String>("query").unwrap();
     let arg_target = matches.get_one::<String>("target").unwrap();
-    let opt_depth = *matches.get_one::<usize>("depth").unwrap();
+    let opt_depth = *matches.get_one::<usize>("query_depth").unwrap();
     let opt_lastz_args = matches.get_one::<String>("lastz_args");
     let opt_output = matches.get_one::<String>("outdir").unwrap();
     let opt_parallel = *matches.get_one::<usize>("parallel").unwrap();

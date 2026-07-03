@@ -1,5 +1,5 @@
 use anyhow::Result;
-use clap::{Arg, ArgAction, ArgMatches, Command};
+use clap::{Arg, ArgMatches, Command};
 use pgr::libs::chain::net::{finalize_net, write_net, ChainNet};
 use pgr::libs::chain::ChainReader;
 use std::io::Write;
@@ -36,12 +36,7 @@ pub fn make_subcommand() -> Command {
                 .help("Minimum fill to record (default: min_space / 2)"),
         )
         .arg(crate::cmd_pgr::args::min_score_arg("2000"))
-        .arg(
-            Arg::new("incl_hap")
-                .long("incl-hap")
-                .action(ArgAction::SetTrue)
-                .help("Include haplotype pseudochromosome queries"),
-        )
+        .arg(crate::cmd_pgr::args::incl_hap_arg())
 }
 
 pub fn execute(args: &ArgMatches) -> Result<()> {

@@ -39,13 +39,7 @@ fn command_mat_format_full() {
 #[test]
 fn command_mat_format_lower() {
     let (stdout, _) = PgrCmd::new()
-        .args(&[
-            "mat",
-            "format",
-            "tests/mat/IBPA.phy",
-            "--out-format",
-            "lower",
-        ])
+        .args(&["mat", "format", "tests/mat/IBPA.phy", "--format", "lower"])
         .run();
 
     assert_eq!(stdout.lines().count(), 11);
@@ -56,13 +50,7 @@ fn command_mat_format_lower() {
 #[test]
 fn command_mat_format_strict() {
     let (stdout, _) = PgrCmd::new()
-        .args(&[
-            "mat",
-            "format",
-            "tests/mat/IBPA.phy",
-            "--out-format",
-            "strict",
-        ])
+        .args(&["mat", "format", "tests/mat/IBPA.phy", "--format", "strict"])
         .run();
 
     assert_eq!(stdout.lines().count(), 11);

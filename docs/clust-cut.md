@@ -289,7 +289,7 @@ pgr clust cut tree.nwk --inconsistent 1.5 > clusters.tsv
 1.  **标准输出 (`stdout` 或 `-o`)**：始终输出详细的分区表（Long format / Tidy Data）。
     - 列定义：`Group`, `ClusterID`, `SampleID`。
     - `Group` 列格式为 `Method=Value`（例如 `height=0.5`, `max-clade=0.02`），便于区分不同的切割参数。
-    - 这种格式可以直接作为 `pgr clust eval --format long` 的输入进行批量评估。
+    - 这种格式可以直接作为 `pgr clust eval --input-format long` 的输入进行批量评估。
 2.  **统计输出 (`--stats-out`)**：若指定，将摘要统计表（阈值, 簇数, 单例数, 非单例数, 最大簇大小）写入该文件。
 
 示例：
@@ -311,7 +311,7 @@ pgr clust cut tree.nwk --max-clade 0.5 --scan 0,0.5,0.01 -o partitions.tsv --sta
 ```bash
 # 生成所有阈值的分区，并直接通过管道传给 eval 进行 Silhouette 评估
 pgr clust cut tree.nwk --max-clade 0.5 --scan 0,0.5,0.01 | \
-    pgr clust eval - --format long --matrix dist.phy > evaluation.tsv
+    pgr clust eval - --input-format long --matrix dist.phy > evaluation.tsv
 ```
 
 #### 2. 针对性外部评估 (Targeted External Evaluation)
@@ -364,7 +364,7 @@ pgr clust eval pred.tsv --other truth.tsv -o eval.tsv
   # 生成所有候选分区的详细列表
   pgr clust cut ... --scan ... > partitions.tsv
   # 批量评估
-  pgr clust eval partitions.tsv --format long --matrix dist.phy
+  pgr clust eval partitions.tsv --input-format long --matrix dist.phy
   ```
 
 ## 现有工具参考 (Prior Art)

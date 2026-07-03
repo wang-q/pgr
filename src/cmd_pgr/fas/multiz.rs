@@ -66,27 +66,13 @@ Examples:
                 .num_args(1)
                 .help("Score matrix file (LASTZ format) or preset name (e.g. hoxd55)"),
         )
-        .arg(
-            Arg::new("gap_model")
-                .long("gap-model")
-                .num_args(1)
-                .default_value("medium")
-                .help("Gap model: constant, medium, or loose"),
-        )
-        .arg(
-            Arg::new("align_gap_open")
-                .long("align-gap-open")
-                .value_parser(value_parser!(i32))
-                .num_args(1)
-                .help("Alignment gap open cost (overrides gap-model when used with --align-gap-extend)"),
-        )
-        .arg(
-            Arg::new("align_gap_extend")
-                .long("align-gap-extend")
-                .value_parser(value_parser!(i32))
-                .num_args(1)
-                .help("Alignment gap extension cost (overrides gap-model when used with --align-gap-open)"),
-        )
+        .arg(crate::cmd_pgr::args::gap_model_arg(
+            "medium",
+            &["constant", "medium", "loose"],
+            "Gap model: constant, medium, or loose",
+        ))
+        .arg(crate::cmd_pgr::args::align_gap_open_arg())
+        .arg(crate::cmd_pgr::args::align_gap_extend_arg())
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 

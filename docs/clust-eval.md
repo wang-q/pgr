@@ -230,7 +230,7 @@ pgr clust eval result.tsv --coords vectors.tsv
 pgr clust cut tree.nwk --scan 0.01,1.0,0.01 --leaf-dist-min 0 > partitions.tsv
 
 # 2. 批量评估内部指标 (直接传入树文件)
-pgr clust eval partitions.tsv --format long --tree tree.nwk > scores.tsv
+pgr clust eval partitions.tsv --input-format long --tree tree.nwk > scores.tsv
 
 # 3. 查看结果 (找出 Silhouette 最高的阈值)
 cat scores.tsv | sort -k2 -nr | head
@@ -245,11 +245,11 @@ cat scores.tsv | sort -k2 -nr | head
   - 若提供 `--other`，计算外部指标（ARI/AMI）。
   - 可选：`--no-singletons` 在评估前从 `--other` 中排除簇大小为 1 的样本（仅对外部评估生效）。
   - 若不提供 `--other` 且提供了 `--matrix/--tree/--coords`，计算内部指标。
-  - 支持 `cluster` / `pair` 格式（通过 `--format` 指定）。
+  - 支持 `cluster` / `pair` 格式（通过 `--input-format` 指定）。
 
 - **批量评估模式 (Batch Mode)**：
   - **Partition (`<p1>`)**: 包含多个分组方案的长表文件（TSV）。
-  - 必须指定 `--format long`。
+  - 必须指定 `--input-format long`。
   - **列定义**：
     1. `Group`: 分组标识（如阈值、参数）。
     2. `ClusterID`: 簇 ID。

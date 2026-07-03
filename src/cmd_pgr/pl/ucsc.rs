@@ -64,17 +64,11 @@ References:
                 .index(3)
                 .help("Path to the PSL file or directory containing PSL files"),
         )
-        .arg(
-            Arg::new("gap_model")
-                .long("gap-model")
-                .action(ArgAction::Set)
-                .value_parser([
-                    builder::PossibleValue::new("loose"),
-                    builder::PossibleValue::new("medium"),
-                ])
-                .default_value("loose")
-                .help("Linear gap cost setting for axtChain"),
-        )
+        .arg(crate::cmd_pgr::args::gap_model_arg(
+            "loose",
+            &["loose", "medium"],
+            "Linear gap cost setting for axtChain",
+        ))
         .arg(crate::cmd_pgr::args::min_score_arg("1000"))
         .arg(
             Arg::new("t_name")

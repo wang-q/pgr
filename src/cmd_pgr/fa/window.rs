@@ -19,9 +19,9 @@ Notes:
 Coverage & Overlap:
 * Theoretical Coverage = Window Length / Step Size.
 * Examples:
-  - --window 200 --step 100: 2x coverage (50% overlap).
-  - --window 200 --step 200: 1x coverage (no overlap).
-  - --window 200 --step 10:  20x coverage (95% overlap).
+  - --window-length 200 --step 100: 2x coverage (50% overlap).
+  - --window-length 200 --step 200: 1x coverage (no overlap).
+  - --window-length 200 --step 10:  20x coverage (95% overlap).
 
 Splitting & Shuffling:
 * --chunk N: Splits output into files with N records each (e.g., output.001.fa).
@@ -32,7 +32,7 @@ Splitting & Shuffling:
 
 Examples:
 1. Split into 200bp windows with 100bp step:
-   pgr fa window input.fa --window 200 --step 100
+   pgr fa window input.fa --window-length 200 --step 100
 
 2. Split large file into chunks of 1M records with shuffling:
    pgr fa window input.fa --chunk 1000000 --shuffle -o split.fa
@@ -46,8 +46,8 @@ Examples:
             "Input FASTA file to process",
         ))
         .arg(
-            Arg::new("window")
-                .long("window")
+            Arg::new("window_length")
+                .long("window-length")
                 .value_parser(value_parser!(usize))
                 .default_value("200")
                 .help("Window length"),
@@ -84,7 +84,7 @@ Examples:
 // command implementation
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let infile = args.get_one::<String>("infile").unwrap();
-    let len = *args.get_one::<usize>("window").unwrap();
+    let len = *args.get_one::<usize>("window_length").unwrap();
     let step = *args.get_one::<usize>("step").unwrap();
     let shuffle = args.get_flag("shuffle");
     let seed = *args.get_one::<u64>("seed").unwrap();

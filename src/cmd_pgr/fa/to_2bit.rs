@@ -28,12 +28,7 @@ Examples:
                 .index(1),
         )
         .arg(crate::cmd_pgr::args::outfile_arg_required())
-        .arg(
-            Arg::new("no_mask")
-                .long("no-mask")
-                .action(ArgAction::SetTrue)
-                .help("Do not create mask blocks from lowercase letters"),
-        )
+        .arg(crate::cmd_pgr::args::no_mask_arg())
         .arg(
             Arg::new("strip_version")
                 .long("strip-version")

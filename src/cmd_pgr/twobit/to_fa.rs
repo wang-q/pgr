@@ -1,4 +1,4 @@
-use clap::{Arg, ArgAction, ArgMatches, Command};
+use clap::{ArgMatches, Command};
 use pgr::libs::fmt::twobit::TwoBitFile;
 
 pub fn make_subcommand() -> Command {
@@ -29,12 +29,7 @@ Examples:
         ))
         .arg(crate::cmd_pgr::args::outfile_arg())
         .arg(crate::cmd_pgr::args::line_arg(Some("60")))
-        .arg(
-            Arg::new("no_mask")
-                .long("no-mask")
-                .action(ArgAction::SetTrue)
-                .help("Convert sequence to all upper case"),
-        )
+        .arg(crate::cmd_pgr::args::no_mask_arg())
 }
 
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {

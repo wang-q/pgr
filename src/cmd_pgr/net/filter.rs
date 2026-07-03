@@ -7,12 +7,9 @@ pub fn make_subcommand() -> Command {
         .arg(crate::cmd_pgr::args::infile_arg_required_with_help(
             "Input net file (or stdin if 'stdin')",
         ))
-        .arg(
-            Arg::new("min_score")
-                .long("min-score")
-                .value_parser(clap::value_parser!(f64))
-                .help("Restrict to those scoring at least N"),
-        )
+        .arg(crate::cmd_pgr::args::min_score_arg_optional(
+            "Restrict to those scoring at least N",
+        ))
         .arg(
             Arg::new("max_score")
                 .long("max-score")

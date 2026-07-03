@@ -53,26 +53,14 @@ Examples:
                 .help("Path to the PSL file"),
         )
         .arg(crate::cmd_pgr::args::outfile_arg())
-        .arg(
-            Arg::new("gap_model")
-                .long("gap-model")
-                .default_value("loose")
-                .value_parser(["loose", "medium"])
-                .help("Gap model: loose or medium"),
-        )
+        .arg(crate::cmd_pgr::args::gap_model_arg(
+            "loose",
+            &["loose", "medium"],
+            "Gap model: loose or medium",
+        ))
         .arg(crate::cmd_pgr::args::min_score_arg("1000"))
-        .arg(
-            Arg::new("align_gap_open")
-                .long("align-gap-open")
-                .value_parser(clap::value_parser!(i32))
-                .help("Alignment gap open cost (overrides --gap-model)"),
-        )
-        .arg(
-            Arg::new("align_gap_extend")
-                .long("align-gap-extend")
-                .value_parser(clap::value_parser!(i32))
-                .help("Alignment gap extension cost (overrides --gap-model)"),
-        )
+        .arg(crate::cmd_pgr::args::align_gap_open_arg())
+        .arg(crate::cmd_pgr::args::align_gap_extend_arg())
         .arg(
             Arg::new("score_scheme")
                 .long("score-scheme")
