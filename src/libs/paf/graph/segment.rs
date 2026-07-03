@@ -20,8 +20,11 @@ pub(super) struct Segment {
 pub(super) struct AlignmentLink {
     pub a: usize, // index into `segments`
     pub b: usize, // index into `segments`
+    // True if the alignment between a and b is reverse-strand.
+    // Currently unused — coarse GFA always emits '+' orientation; reserved
+    // for future rGFA support to tag segment orientation per link.
     #[allow(dead_code)]
-    pub reverse: bool, // true if b is reverse-complement of a (for future rGFA orientation)
+    pub reverse: bool,
 }
 
 /// Walk a CIGAR and split at indels >= `min_var_len`, emitting segment pairs.
@@ -158,9 +161,12 @@ pub(super) fn novel_node_for(
     start: i32,
     end: i32,
     seqs: Option<&HashMap<String, Vec<u8>>>,
-    name_to_id: &HashMap<String, u32>,
+    id_to_name: &[String],
 ) -> u32 {
-    let name = id_to_name_local(name_to_id, sid).unwrap_or("?");
+    let name = id_to_name
+        .get(sid as usize)
+        .map(|s| s.as_str())
+        .unwrap_or("?");
     let bytes = if let Some(seqs_map) = seqs {
         let seq_bytes = seqs_map.get(name).map(|v| v.as_slice()).unwrap_or(&[]);
         let s = start.max(0) as usize;
@@ -177,10 +183,4 @@ pub(super) fn novel_node_for(
     node_seqs.push(bytes);
     node_origins.push((name.to_string(), start));
     node_id
-}
-
-pub(super) fn id_to_name_local(name_to_id: &HashMap<String, u32>, id: u32) -> Option<&str> {
-    name_to_id
-        .iter()
-        .find_map(|(name, &sid)| if sid == id { Some(name.as_str()) } else { None })
 }

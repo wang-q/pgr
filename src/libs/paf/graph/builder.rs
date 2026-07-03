@@ -3,11 +3,11 @@
 use super::{Edge, PafGraph, PathStep};
 use crate::libs::paf::cigar::extract_cigar;
 use crate::libs::paf::parser::parse_paf;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::BufRead;
 
 use super::dsu::Dsu;
-use super::segment::{id_to_name_local, novel_node_for, split_alignment, AlignmentLink, Segment};
+use super::segment::{novel_node_for, split_alignment, AlignmentLink, Segment};
 
 impl PafGraph {
     /// Build a coarse GFA graph from a PAF reader + per-sequence FASTA bytes.
@@ -21,24 +21,26 @@ impl PafGraph {
     ) -> anyhow::Result<Self> {
         let records = parse_paf(paf_reader)?;
 
-        // Build name -> id map (reuse order from records; fall back to seqs keys).
+        // Build name -> id map + reverse id -> name (reuse order from records; fall back to seqs keys).
         let mut name_to_id: HashMap<String, u32> = HashMap::new();
-        let register = |name: &str, map: &mut HashMap<String, u32>| -> u32 {
-            if let Some(&id) = map.get(name) {
+        let mut id_to_name: Vec<String> = Vec::new();
+        let mut register = |name: &str| -> u32 {
+            if let Some(&id) = name_to_id.get(name) {
                 id
             } else {
-                let id = map.len() as u32;
-                map.insert(name.to_string(), id);
+                let id = id_to_name.len() as u32;
+                name_to_id.insert(name.to_string(), id);
+                id_to_name.push(name.to_string());
                 id
             }
         };
         for r in &records {
-            register(&r.target_name, &mut name_to_id);
-            register(&r.query_name, &mut name_to_id);
+            register(&r.target_name);
+            register(&r.query_name);
         }
         if let Some(seqs_map) = seqs {
             for name in seqs_map.keys() {
-                register(name, &mut name_to_id);
+                register(name);
             }
         }
 
@@ -105,7 +107,7 @@ impl PafGraph {
                 continue;
             }
             let seg = &segments[seg_idx];
-            if let Some(name) = id_to_name_local(&name_to_id, seg.seq_id) {
+            if let Some(name) = id_to_name.get(seg.seq_id as usize).map(|s| s.as_str()) {
                 if let Some(seq_bytes) = seqs.and_then(|m| m.get(name)) {
                     let s = seg.start.max(0) as usize;
                     let e = (seg.end as usize).min(seq_bytes.len());
@@ -122,9 +124,12 @@ impl PafGraph {
         let num_seqs = name_to_id.len() as u32;
         let mut paths: Vec<(String, Vec<PathStep>)> = Vec::new();
         let mut edges: Vec<Edge> = Vec::new();
+        let mut seen_edges: HashSet<Edge> = HashSet::new();
 
         for sid in 0..num_seqs {
-            let name = id_to_name_local(&name_to_id, sid)
+            let name = id_to_name
+                .get(sid as usize)
+                .map(|s| s.as_str())
                 .unwrap_or("?")
                 .to_string();
             // Collect segments on this sequence, sorted by start.
@@ -154,7 +159,7 @@ impl PafGraph {
                         cursor,
                         seg.start,
                         seqs,
-                        &name_to_id,
+                        &id_to_name,
                     );
                     steps.push(PathStep {
                         node: novel_node,
@@ -180,7 +185,7 @@ impl PafGraph {
                     cursor,
                     seq_len,
                     seqs,
-                    &name_to_id,
+                    &id_to_name,
                 );
                 steps.push(PathStep {
                     node: novel_node,
@@ -196,7 +201,7 @@ impl PafGraph {
                     to: w[1].node,
                     to_orient: w[1].orient,
                 };
-                if !edges.contains(&e) {
+                if seen_edges.insert(e) {
                     edges.push(e);
                 }
             }
@@ -212,7 +217,7 @@ impl PafGraph {
                     0,
                     seq_len,
                     seqs,
-                    &name_to_id,
+                    &id_to_name,
                 );
                 paths.push((
                     name,

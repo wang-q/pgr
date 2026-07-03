@@ -16,7 +16,7 @@ mod tests;
 pub use report::GraphReport;
 
 /// A graph edge (GFA L line).
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Edge {
     pub from: u32,
     pub from_orient: char,

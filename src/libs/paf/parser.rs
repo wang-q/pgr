@@ -3,75 +3,69 @@
 /// Uses `csv::Reader` in flexible mode to handle variable column counts
 /// (12 mandatory + optional tags), following wgatools' approach.
 use super::record::PafRecord;
-use std::io::{self, BufRead};
+use anyhow::Context;
+use std::io::BufRead;
 
 /// Parse a complete PAF file into a vector of `PafRecord`s.
 ///
 /// Skips empty lines and lines starting with `#`.
-pub fn parse_paf<R: BufRead>(reader: R) -> io::Result<Vec<PafRecord>> {
+pub fn parse_paf<R: BufRead>(reader: R) -> anyhow::Result<Vec<PafRecord>> {
     let mut records = Vec::new();
     for line in reader.lines() {
         let line = line?;
         if line.is_empty() || line.starts_with('#') {
             continue;
         }
-        match parse_paf_line(&line) {
-            Ok(rec) => records.push(rec),
-            Err(e) => {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    format!("{}: {}", e, line),
-                ));
-            }
-        }
+        let rec = parse_paf_line(&line).with_context(|| format!("invalid PAF line: {line}"))?;
+        records.push(rec);
     }
     Ok(records)
 }
 
 /// Parse a single PAF line (not starting with `#`, not empty).
-pub fn parse_paf_line(line: &str) -> Result<PafRecord, String> {
+pub fn parse_paf_line(line: &str) -> anyhow::Result<PafRecord> {
     let fields: Vec<&str> = line.split('\t').collect();
     if fields.len() < 12 {
-        return Err(format!(
+        anyhow::bail!(
             "need at least 12 tab-separated fields, got {}",
             fields.len()
-        ));
+        );
     }
 
     let query_name = fields[0].to_string();
     let query_length = fields[1]
         .parse::<u32>()
-        .map_err(|_| format!("invalid query_length: {}", fields[1]))?;
+        .map_err(|_| anyhow::anyhow!("invalid query_length: {}", fields[1]))?;
     let query_start = fields[2]
         .parse::<u32>()
-        .map_err(|_| format!("invalid query_start: {}", fields[2]))?;
+        .map_err(|_| anyhow::anyhow!("invalid query_start: {}", fields[2]))?;
     let query_end = fields[3]
         .parse::<u32>()
-        .map_err(|_| format!("invalid query_end: {}", fields[3]))?;
+        .map_err(|_| anyhow::anyhow!("invalid query_end: {}", fields[3]))?;
     let strand = match fields[4] {
         "+" => '+',
         "-" => '-',
-        _ => return Err(format!("invalid strand: {}", fields[4])),
+        _ => anyhow::bail!("invalid strand: {}", fields[4]),
     };
     let target_name = fields[5].to_string();
     let target_length = fields[6]
         .parse::<u32>()
-        .map_err(|_| format!("invalid target_length: {}", fields[6]))?;
+        .map_err(|_| anyhow::anyhow!("invalid target_length: {}", fields[6]))?;
     let target_start = fields[7]
         .parse::<u32>()
-        .map_err(|_| format!("invalid target_start: {}", fields[7]))?;
+        .map_err(|_| anyhow::anyhow!("invalid target_start: {}", fields[7]))?;
     let target_end = fields[8]
         .parse::<u32>()
-        .map_err(|_| format!("invalid target_end: {}", fields[8]))?;
+        .map_err(|_| anyhow::anyhow!("invalid target_end: {}", fields[8]))?;
     let matches = fields[9]
         .parse::<u32>()
-        .map_err(|_| format!("invalid matches: {}", fields[9]))?;
+        .map_err(|_| anyhow::anyhow!("invalid matches: {}", fields[9]))?;
     let block_length = fields[10]
         .parse::<u32>()
-        .map_err(|_| format!("invalid block_length: {}", fields[10]))?;
+        .map_err(|_| anyhow::anyhow!("invalid block_length: {}", fields[10]))?;
     let mapq = fields[11]
         .parse::<u8>()
-        .map_err(|_| format!("invalid mapq: {}", fields[11]))?;
+        .map_err(|_| anyhow::anyhow!("invalid mapq: {}", fields[11]))?;
 
     let tags: Vec<String> = fields[12..].iter().map(|s| s.to_string()).collect();
 

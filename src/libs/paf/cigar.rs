@@ -148,6 +148,7 @@ pub fn format_cigar(ops: &[CigarOp]) -> String {
     let mut s = String::new();
     for op in ops {
         use fmt::Write;
+        // SAFETY: fmt::Write for String is infallible (capacity grows as needed).
         write!(&mut s, "{op}").unwrap();
     }
     s

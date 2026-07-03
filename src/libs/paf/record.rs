@@ -4,7 +4,7 @@ use std::io::{self, Write};
 /// and optional SAM-like tags.
 ///
 /// Follows the [lh3/miniasm PAF specification](https://github.com/lh3/miniasm/blob/master/PAF.md).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct PafRecord {
     /// Column 1: Query sequence name.
     pub query_name: String,

@@ -6,6 +6,9 @@ use std::collections::{HashMap, HashSet};
 use std::io::BufRead;
 use std::num::NonZeroUsize;
 
+/// Per-file FASTA record LRU cache size.
+const FASTA_LRU_SIZE: usize = 8;
+
 /// Load TSV mapping genome_name -> bgzf_fasta_path.
 /// Lines starting with '#' are comments; blank lines are skipped.
 pub fn load_fasta_tsv(path: &str) -> anyhow::Result<IndexMap<String, String>> {
@@ -100,7 +103,7 @@ impl FastaStore {
             let reader = loc::Input::Bgzf(
                 noodles_bgzf::io::indexed_reader::Builder::default().build_from_path(path)?,
             );
-            let cache = lru::LruCache::new(NonZeroUsize::new(8).unwrap());
+            let cache = lru::LruCache::new(NonZeroUsize::new(FASTA_LRU_SIZE).unwrap());
             files.insert(
                 path.clone(),
                 FastaEntry {
@@ -138,7 +141,10 @@ impl FastaStore {
             let record = loc::fetch_record(&mut entry.reader, &entry.loc_of, name)?;
             entry.cache.put(name.to_string(), record);
         }
-        let record = entry.cache.get(name).unwrap();
+        let record = entry
+            .cache
+            .get(name)
+            .ok_or_else(|| anyhow::anyhow!("cache miss after insert for '{name}'"))?;
         let total_len = record.sequence().len();
 
         // noodles Position is 1-based inclusive; our coords are 0-based half-open.
@@ -169,7 +175,10 @@ impl FastaStore {
             let record = loc::fetch_record(&mut entry.reader, &entry.loc_of, name)?;
             entry.cache.put(name.to_string(), record);
         }
-        let record = entry.cache.get(name).unwrap();
+        let record = entry
+            .cache
+            .get(name)
+            .ok_or_else(|| anyhow::anyhow!("cache miss after insert for '{name}'"))?;
         Ok(record.sequence()[..].to_vec())
     }
 }
