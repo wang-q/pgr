@@ -39,6 +39,8 @@ impl PafIndex {
         }
     }
 
+    /// Single-hop query: returns all records overlapping `[start, end)` on
+    /// `target_id`, filtered by `min_identity` and `min_output_len`.
     pub fn query(
         &self,
         target_id: u32,

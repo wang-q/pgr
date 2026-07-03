@@ -11,6 +11,8 @@ use coitrees::{Interval, IntervalNode, IntervalTree};
 use std::collections::HashMap;
 
 impl PafIndex {
+    /// Transitive BFS: walks the alignment graph outward from a seed region up
+    /// to `max_depth` hops, merging adjacent results within `merge_distance`.
     #[allow(clippy::too_many_arguments)]
     pub fn query_transitive_bfs(
         &self,
@@ -113,9 +115,11 @@ fn merge_results(results: &mut Vec<QueryResult>, max_gap: i32) {
         items.sort_by_key(|&(_, s, _)| s);
         let mut prev = items[0];
         for &curr in &items[1..] {
-            if (curr.1 - prev.2).abs() <= max_gap {
+            // Merge when curr.start is within max_gap after prev.end (covers overlap + adjacency).
+            if curr.1 <= prev.2 + max_gap {
                 // Merge: keep the one with earlier target
                 results[prev.0].1.last = results[prev.0].1.last.max(curr.2);
+                prev.2 = prev.2.max(curr.2);
                 to_remove.push(curr.0);
             } else {
                 prev = curr;
@@ -297,5 +301,75 @@ mod tests {
         ];
         merge_results(&mut results, 10);
         assert_eq!(results.len(), 2);
+    }
+
+    #[test]
+    fn test_merge_overlapping_intervals() {
+        // Overlapping intervals must merge regardless of max_gap (regression test
+        // for abs() bug that wrongly rejected overlaps when overlap > max_gap).
+        let mut results = vec![
+            (
+                0u32,
+                Interval::new(0, 100, 0u32),
+                Interval::new(0, 100, 1u32),
+                vec![],
+                0,
+                0,
+                '+',
+            ),
+            (
+                0u32,
+                Interval::new(50, 150, 0u32),
+                Interval::new(50, 150, 1u32),
+                vec![],
+                50,
+                50,
+                '+',
+            ),
+        ];
+        merge_results(&mut results, 10);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].1.first, 0);
+        assert_eq!(results[0].1.last, 150);
+    }
+
+    #[test]
+    fn test_merge_chained_intervals() {
+        // Three intervals where each pair is within max_gap, but the third is
+        // only mergeable after the second extends prev.end (regression test for
+        // prev.2 not being updated after merge).
+        let mut results = vec![
+            (
+                0u32,
+                Interval::new(0, 50, 0u32),
+                Interval::new(0, 50, 1u32),
+                vec![],
+                0,
+                0,
+                '+',
+            ),
+            (
+                0u32,
+                Interval::new(55, 60, 0u32),
+                Interval::new(55, 60, 1u32),
+                vec![],
+                55,
+                55,
+                '+',
+            ),
+            (
+                0u32,
+                Interval::new(65, 100, 0u32),
+                Interval::new(65, 100, 1u32),
+                vec![],
+                65,
+                65,
+                '+',
+            ),
+        ];
+        merge_results(&mut results, 10);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].1.first, 0);
+        assert_eq!(results[0].1.last, 100);
     }
 }

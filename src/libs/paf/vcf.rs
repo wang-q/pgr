@@ -217,6 +217,12 @@ pub fn output_vcf<W: Write>(
                 // + t_start_offset (anchor is the last target non-gap column
                 // before the INS gap, i.e. the (t_aln_pos)-th, 0-based idx
                 // t_aln_pos - 1 in the aligned region).
+                // Guard against underflow when no target non-gap column precedes
+                // the INS (defensive: current control flow guarantees t_aln_pos > 0
+                // here because col_start > 0 and msa[0][col_start - 1] is non-gap).
+                if t_aln_pos <= 0 {
+                    continue;
+                }
                 let anchor_offset = (t_aln_pos - 1 + t_start_offset as i32) as usize;
                 let anchor_base = target_ext[anchor_offset];
                 let (new_offset, new_anchor, new_inserted) =
@@ -298,6 +304,11 @@ pub fn output_vcf<W: Write>(
                         continue;
                     }
                     // Left-align target_segment (sole non-empty indel seq).
+                    // Guard against underflow (defensive: see INS branch).
+                    if t_aln_pos <= 0 {
+                        t_aln_pos += (col_end - col_start) as i32;
+                        continue;
+                    }
                     let anchor_offset = (t_aln_pos - 1 + t_start_offset as i32) as usize;
                     let anchor_base = target_ext[anchor_offset];
                     let indel_seqs = vec![target_segment.clone()];

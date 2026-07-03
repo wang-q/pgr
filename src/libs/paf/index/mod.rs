@@ -40,6 +40,7 @@ impl CigarStore {
     }
 }
 
+/// Per-record metadata stored in the interval tree, including CIGAR storage.
 #[derive(Debug, Clone)]
 pub struct PafMetadata {
     pub query_id: u32,
@@ -68,6 +69,7 @@ pub type QueryResult = (
     char,
 );
 
+/// In-memory PAF index: name↔id mapping + per-target COI interval trees.
 pub struct PafIndex {
     pub names: IndexMap<String, u32>,
     pub(crate) trees: HashMap<u32, Arc<BasicCOITree<PafMetadata, u32>>>,
@@ -81,6 +83,7 @@ pub struct PafIndex {
 }
 
 impl PafIndex {
+    /// Returns the number of target sequences in the index.
     pub fn num_targets(&self) -> usize {
         self.trees.len()
     }
@@ -90,10 +93,12 @@ impl PafIndex {
         self.lazy_source.is_some()
     }
 
+    /// Looks up a target/query id by name.
     pub fn name_to_id(&self, name: &str) -> Option<u32> {
         self.names.get(name).copied()
     }
 
+    /// Looks up a name by id (insertion order index).
     pub fn id_to_name(&self, id: u32) -> Option<&str> {
         self.names
             .get_index(id as usize)

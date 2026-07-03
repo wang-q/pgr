@@ -48,11 +48,11 @@ pub fn parse_paf_line(line: &str) -> Result<PafRecord, String> {
     let query_end = fields[3]
         .parse::<u32>()
         .map_err(|_| format!("invalid query_end: {}", fields[3]))?;
-    let strand = fields[4]
-        .chars()
-        .next()
-        .filter(|&c| c == '+' || c == '-')
-        .ok_or_else(|| format!("invalid strand: {}", fields[4]))?;
+    let strand = match fields[4] {
+        "+" => '+',
+        "-" => '-',
+        _ => return Err(format!("invalid strand: {}", fields[4])),
+    };
     let target_name = fields[5].to_string();
     let target_length = fields[6]
         .parse::<u32>()
@@ -147,6 +147,14 @@ mod tests {
     #[test]
     fn test_parse_paf_line_invalid_strand() {
         assert!(parse_paf_line("q\t100\t0\t100\t*\tt\t200\t0\t100\t80\t100\t255").is_err());
+    }
+
+    #[test]
+    fn test_parse_paf_line_strand_rejects_multi_char() {
+        // Strand field must be exactly "+" or "-"; leading-correct but
+        // multi-char values (e.g. "+foo", "+-") must be rejected.
+        assert!(parse_paf_line("q\t100\t0\t100\t+foo\tt\t200\t0\t100\t80\t100\t255").is_err());
+        assert!(parse_paf_line("q\t100\t0\t100\t+-\tt\t200\t0\t100\t80\t100\t255").is_err());
     }
 
     // ── Full file parsing ─────────────────────────────────────

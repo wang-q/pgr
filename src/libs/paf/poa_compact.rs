@@ -208,7 +208,7 @@ pub fn crush_bubbles(graph: CompactedGraph) -> CompactedGraph {
         // Keep max weight; tie-break: lowest id (deterministic).
         let keep = *members
             .iter()
-            .max_by_key(|&&id| (graph.weights[(id - 1) as usize], i64::MIN + id as i64))
+            .max_by_key(|&&id| (graph.weights[(id - 1) as usize], i64::MAX - id as i64))
             .unwrap();
         for &id in members {
             if id != keep {
