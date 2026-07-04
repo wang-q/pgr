@@ -50,6 +50,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let chain_files: Vec<_> = args.get_many::<String>("infiles").unwrap().collect();
     let split_on_q = args.get_flag("by_query");
     let lump = args.get_one::<usize>("lump").copied();
+    if let Some(l) = lump {
+        anyhow::ensure!(l > 0, "--lump must be positive: {}", l);
+    }
 
     fs::create_dir_all(out_dir)?;
 

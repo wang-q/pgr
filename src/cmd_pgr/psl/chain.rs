@@ -108,7 +108,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         match gap_model.as_str() {
             "loose" => GapCalc::loose(),
             "medium" => GapCalc::medium(),
-            _ => GapCalc::medium(),
+            _ => anyhow::bail!("invalid gap_model: {}", gap_model),
         }
     };
 

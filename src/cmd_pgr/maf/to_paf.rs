@@ -47,7 +47,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => break,
                 Err(e) => return Err(e.into()),
             };
-            if block.components.len() > 2 {
+            if block.components.len() != 2 {
                 log::warn!(
                     "skipping block with {} sequences (only two-sequence blocks are supported)",
                     block.components.len()
@@ -57,6 +57,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
             if let Some(rec) = pgr::libs::paf::maf_import::maf_block_to_paf(&block)? {
                 write_paf_record(&mut writer, &rec)?;
+            } else {
+                log::warn!("skipping block: failed to convert to PAF");
             }
         }
     }

@@ -325,7 +325,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let rep_mode = RepMode::parse(rep_method).map_err(|e| anyhow::anyhow!(e))?;
+    let rep_mode = RepMode::parse(rep_method)
+        .map_err(|e| anyhow::anyhow!("invalid --rep '{}': {}", rep_method, e))?;
 
     for tree in trees.iter() {
         let dispatch = if let Some(&min_cluster_size) = args.get_one::<usize>("dynamic_tree") {

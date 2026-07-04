@@ -93,6 +93,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             &strand,
         ) {
             psl.write_to(&mut writer)?;
+        } else {
+            log::warn!(
+                "skipping alignment (invalid coordinates): {} vs {}",
+                axt.q_name,
+                axt.t_name
+            );
         }
     }
 

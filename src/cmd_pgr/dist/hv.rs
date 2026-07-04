@@ -68,6 +68,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let opt_kmer = *args.get_one::<usize>("kmer").unwrap();
     let opt_window = *args.get_one::<usize>("window").unwrap();
     let opt_dim = *args.get_one::<usize>("dim").unwrap();
+    anyhow::ensure!(opt_kmer > 0, "--kmer must be positive: {}", opt_kmer);
+    anyhow::ensure!(opt_window > 0, "--window must be positive: {}", opt_window);
+    anyhow::ensure!(opt_dim > 0, "--dim must be positive: {}", opt_dim);
 
     let is_sim = args.get_flag("sim");
     let is_list = args.get_flag("list_files");

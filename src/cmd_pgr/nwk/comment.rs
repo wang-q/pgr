@@ -131,6 +131,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             for name in args.get_many::<String>("node").unwrap() {
                 if let Some(id) = id_of.get(name) {
                     ids.push(*id);
+                } else {
+                    log::warn!("node not found: {}", name);
                 }
             }
         }
@@ -140,14 +142,22 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             for lca in args.get_many::<String>("lca").unwrap() {
                 let parts = lca.split(',').map(|e| e.to_string()).collect::<Vec<_>>();
                 if parts.len() != 2 {
-                    continue;
+                    anyhow::bail!(
+                        "--lca requires exactly two comma-separated names, got: {}",
+                        lca
+                    );
                 }
 
-                if let (Some(id1), Some(id2)) = (id_of.get(&parts[0]), id_of.get(&parts[1])) {
-                    let id = tree
-                        .get_common_ancestor(id1, id2)
-                        .map_err(anyhow::Error::msg)?;
-                    ids.push(id);
+                match (id_of.get(&parts[0]), id_of.get(&parts[1])) {
+                    (Some(id1), Some(id2)) => {
+                        let id = tree
+                            .get_common_ancestor(id1, id2)
+                            .map_err(anyhow::Error::msg)?;
+                        ids.push(id);
+                    }
+                    _ => {
+                        log::warn!("lca name not found in tree: {} / {}", parts[0], parts[1]);
+                    }
                 }
             }
         }

@@ -73,17 +73,14 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         renames.push(rename.to_string());
     }
 
-    // discard the unnecessary ones
-    // make sure renames.len() >= names.len() + lcas.len()
-    if names.len() > renames.len() {
-        let unnecessary = names.len() - renames.len();
-        names.truncate(names.len().saturating_sub(unnecessary));
-        // All lcas are unnecessary
-        lcas.clear();
-    } else if names.len() + lcas.len() > renames.len() {
-        let unnecessary = names.len() + lcas.len() - renames.len();
-        lcas.truncate(lcas.len().saturating_sub(unnecessary));
-    }
+    // The sum of --node and --lca must equal the number of --rename
+    anyhow::ensure!(
+        names.len() + lcas.len() == renames.len(),
+        "the number of --node ({}) plus --lca ({}) must equal the number of --rename ({})",
+        names.len(),
+        lcas.len(),
+        renames.len()
+    );
     let len_names = names.len();
 
     let infile = args.get_one::<String>("infile").unwrap();
@@ -103,6 +100,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                     .get(i)
                     .ok_or_else(|| anyhow::anyhow!("rename entry missing at index {}", i))?;
                 rename_of.insert(*id, rename.to_string());
+            } else {
+                log::warn!("node not found: {}", name);
             }
         }
 
@@ -110,28 +109,27 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         for (i, lca) in lcas.iter().enumerate() {
             let parts = lca.split(',').map(|e| e.to_string()).collect::<Vec<_>>();
             if parts.len() != 2 {
-                continue;
+                anyhow::bail!(
+                    "--lca requires exactly two comma-separated names, got: {}",
+                    lca
+                );
             }
 
-            if parts.iter().all(|e| id_of.contains_key(e)) {
-                let first = parts
-                    .first()
-                    .ok_or_else(|| anyhow::anyhow!("empty parts"))?;
-                let last = parts.last().ok_or_else(|| anyhow::anyhow!("empty parts"))?;
-                let id1 = id_of
-                    .get(first)
-                    .ok_or_else(|| anyhow::anyhow!("name not found: {}", first))?;
-                let id2 = id_of
-                    .get(last)
-                    .ok_or_else(|| anyhow::anyhow!("name not found: {}", last))?;
-
-                let x = tree
-                    .get_common_ancestor(id1, id2)
-                    .map_err(anyhow::Error::msg)?;
-                let rename = renames.get(len_names + i).ok_or_else(|| {
-                    anyhow::anyhow!("rename entry missing at index {}", len_names + i)
-                })?;
-                rename_of.insert(x, rename.to_string());
+            let first = &parts[0];
+            let last = &parts[1];
+            match (id_of.get(first), id_of.get(last)) {
+                (Some(id1), Some(id2)) => {
+                    let x = tree
+                        .get_common_ancestor(id1, id2)
+                        .map_err(anyhow::Error::msg)?;
+                    let rename = renames.get(len_names + i).ok_or_else(|| {
+                        anyhow::anyhow!("rename entry missing at index {}", len_names + i)
+                    })?;
+                    rename_of.insert(x, rename.to_string());
+                }
+                _ => {
+                    log::warn!("lca name not found in tree: {} / {}", first, last);
+                }
             }
         }
 

@@ -65,18 +65,14 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         if parts.len() < 2 {
             log::warn!("skipping malformed line in replace file: {}", line);
             continue;
-        } else {
-            let name = parts
-                .first()
-                .ok_or_else(|| anyhow::anyhow!("empty line in replace file"))?
-                .to_string();
-            let replaces = parts
-                .iter()
-                .skip(1)
-                .map(|e| e.to_string())
-                .collect::<Vec<String>>();
-            replace_of.insert(name.to_string(), replaces);
         }
+        let name = parts[0].to_string();
+        let replaces = parts
+            .iter()
+            .skip(1)
+            .map(|e| e.to_string())
+            .collect::<Vec<String>>();
+        replace_of.insert(name, replaces);
     }
 
     let mut trees = Tree::from_file(infile)?;

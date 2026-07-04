@@ -54,12 +54,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             let block = block_result?;
             let block_names = block.names;
 
-            if is_strict {
-                for name in &needed {
-                    if !block_names.contains(name) {
-                        continue;
-                    }
-                }
+            if is_strict && !needed.iter().all(|n| block_names.contains(n)) {
+                continue;
             }
 
             for name in &needed {

@@ -84,6 +84,23 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let is_nocomplex = args.get_flag("no_complex");
     let opt_min = args.get_one::<f64>("min_freq").cloned();
     let opt_max = args.get_one::<f64>("max_freq").cloned();
+    if let Some(v) = opt_min {
+        anyhow::ensure!(
+            v.is_finite() && (0.0..=1.0).contains(&v),
+            "--min-freq must be in [0, 1]: {}",
+            v
+        );
+    }
+    if let Some(v) = opt_max {
+        anyhow::ensure!(
+            v.is_finite() && (0.0..=1.0).contains(&v),
+            "--max-freq must be in [0, 1]: {}",
+            v
+        );
+    }
+    if let (Some(a), Some(b)) = (opt_min, opt_max) {
+        anyhow::ensure!(a <= b, "--min-freq ({}) must be <= --max-freq ({})", a, b);
+    }
     let infiles: Vec<String> = args
         .get_many::<String>("infiles")
         .unwrap()

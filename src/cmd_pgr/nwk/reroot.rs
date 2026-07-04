@@ -100,7 +100,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         .ok_or_else(|| anyhow::anyhow!("no trees found in {}", infile))?;
 
     if deroot {
-        tree.deroot().map_err(|e| anyhow::anyhow!(e))?;
+        tree.deroot()
+            .map_err(|e| anyhow::anyhow!("deroot failed: {}", e))?;
     } else {
         // ids with names
         let id_of: BTreeMap<_, _> = tree.get_name_id();

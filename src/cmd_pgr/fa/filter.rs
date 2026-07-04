@@ -94,6 +94,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         .copied()
         .unwrap_or(pgr::libs::fasta::filter::NO_LIMIT);
     let opt_line = args.get_one::<usize>("line").copied().unwrap_or(usize::MAX);
+    anyhow::ensure!(
+        opt_line > 0,
+        "--line must be positive (use a large value for no wrapping): {}",
+        opt_line
+    );
 
     let is_uniq = args.get_flag("uniq");
     let is_upper = args.get_flag("upper");

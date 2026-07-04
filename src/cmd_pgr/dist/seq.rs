@@ -111,6 +111,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let opt_hasher = args.get_one::<String>("hasher").unwrap();
     let opt_kmer = *args.get_one::<usize>("kmer").unwrap();
     let opt_window = *args.get_one::<usize>("window").unwrap();
+    anyhow::ensure!(opt_kmer > 0, "--kmer must be positive: {}", opt_kmer);
+    anyhow::ensure!(opt_window > 0, "--window must be positive: {}", opt_window);
 
     let is_sim = args.get_flag("sim");
     let is_zero = args.get_flag("zero");

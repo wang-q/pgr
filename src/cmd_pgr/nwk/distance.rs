@@ -90,7 +90,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         "pairwise" => distance::dist_pairwise(&tree, &id_of, &mut writer)?,
         "lca" => distance::dist_lca(&tree, &id_of, &mut writer)?,
         "phylip" => distance::dist_phylip(&tree, &id_of, &mut writer)?,
-        _ => {}
+        _ => anyhow::bail!("unknown distance mode: {}", mode),
     }
 
     Ok(())
