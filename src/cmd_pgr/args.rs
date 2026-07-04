@@ -161,11 +161,7 @@ pub fn query_genome_arg(help: &'static str) -> Arg {
 
 /// Standard `-i/--invert` flag for `some`-style subcommands (invert selection).
 pub fn invert_arg() -> Arg {
-    Arg::new("invert")
-        .long("invert")
-        .short('i')
-        .action(ArgAction::SetTrue)
-        .help("Invert selection: output sequences NOT in the list")
+    invert_arg_with_help("Invert selection: output sequences NOT in the list")
 }
 
 /// `-i/--invert` flag with a custom help text.
@@ -872,13 +868,7 @@ pub fn hasher_arg() -> Arg {
 
 /// `-k/--kmer` size argument.
 pub fn kmer_arg() -> Arg {
-    Arg::new("kmer")
-        .long("kmer")
-        .short('k')
-        .num_args(1)
-        .default_value("7")
-        .value_parser(clap::value_parser!(usize))
-        .help("K-mer size")
+    kmer_arg_with_default("7")
 }
 
 /// `-k/--kmer` size argument with a custom default value.
