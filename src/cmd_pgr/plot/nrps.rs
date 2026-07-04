@@ -1,14 +1,12 @@
 use anyhow::{anyhow, Context};
 use clap::{Arg, ArgAction, ArgMatches, Command};
-use pgr::libs::plot::common::{context_get_str, render_and_write, replace_section};
 use pgr::libs::plot::nrps::parse_nrps;
-use std::collections::HashMap;
 use std::io::Read;
 
 /// Build the clap subcommand for nrps.
 pub fn make_subcommand() -> Command {
     Command::new("nrps")
-        .about("NRPS structure diagram")
+        .about("Plots an NRPS structure diagram")
         .after_help(
             r###"
 * Input file is a tab-separated file
@@ -61,7 +59,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     // Read TSV file
     let mut content = String::new();
-    pgr::reader(infile)?.read_to_string(&mut content)?;
+    pgr::reader(infile)
+        .with_context(|| format!("Failed to open reader for {}", infile))?
+        .read_to_string(&mut content)
+        .with_context(|| format!("Failed to read {}", infile))?;
     let nrps_data = parse_nrps(&content, &default_color)?;
 
     // Generate all modules
@@ -71,7 +72,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             .module_info
             .get(module_name)
             .ok_or_else(|| anyhow!("missing module info: {}", module_name))?;
-        let module_tex = gen_module(info, domains)?;
+        let module_tex = pgr::libs::plot::nrps::gen_module(info, domains)?;
         all_tex.push_str(&module_tex);
         all_tex.push('\n');
     }
@@ -87,95 +88,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     context.insert("is_legend", &is_legend);
     context.insert("default_color", &default_color);
 
-    gen_nrps(&context)?;
+    pgr::libs::plot::nrps::gen_nrps(&context)?;
 
-    Ok(())
-}
-
-fn gen_module(
-    info: &HashMap<String, String>,
-    domains: &Vec<HashMap<String, String>>,
-) -> anyhow::Result<String> {
-    let mut context = tera::Context::new();
-    context.insert("info", info);
-    context.insert("domains", domains);
-    let last_domain = domains
-        .last()
-        .ok_or_else(|| anyhow!("empty domains in gen_module"))?;
-    let first_domain = domains
-        .first()
-        .ok_or_else(|| anyhow!("empty domains in gen_module"))?;
-    context.insert("last_domain", last_domain);
-    context.insert("first_domain", first_domain);
-
-    let template = r###"
-    \begin{scope}[shift={([shift={({{ first_domain.dx_before }}cm,0)}]{{ info.prev }}.east)}]
-{% for domain in domains -%}
-        \node[{{ domain.type }}, {{ domain.color }}] ({{ domain.id }}) at ({{ domain.pos }}cm,0) {};
-{% if domain.text != "" -%}
-        \node[text=white,anchor=center,align=left] at ({{ domain.id }}) { {{ domain.text }}};
-{% endif -%}
-{% endfor -%}
-        \begin{scope}[on background layer]
-            \draw[{{ first_domain.color }}, line width=0.5mm, yshift=-1cm]
-                let \p1 = ({{ first_domain.id }}), \p2 = ({{ last_domain.id }}) in
-                (\x1,0) -- (\x2,0)
-                node[midway, below, text={{ first_domain.color }}] { {{ info.id }} };
-            \draw[{{ first_domain.color }}, line width=2mm]
-                let \p1 = ({{ last_domain.id }}) in
-                (-{{ first_domain.dx_before }}cm,0) -- (\x1 + {{ last_domain.dx_after }}cm,0)
-                coordinate ({{ info.id }});
-        \end{scope}
-    \end{scope}"###;
-
-    let mut tera = tera::Tera::default();
-    tera.add_raw_templates(vec![("t", template)])
-        .context("failed to register nrps module template")?;
-
-    let rendered = tera
-        .render("t", &context)
-        .context("failed to render nrps module template")?;
-    Ok(rendered)
-}
-
-fn gen_nrps(context: &tera::Context) -> anyhow::Result<()> {
-    let outfile = context_get_str(context, "outfile")?;
-    let all_tex = context_get_str(context, "all_tex")?;
-    let mut writer = pgr::writer(outfile)?;
-
-    static FILE_TEMPLATE: &str = include_str!("../../assets/nrps.tex");
-    let mut template = FILE_TEMPLATE.to_string();
-
-    // Section color
-    let default_color = context_get_str(context, "default_color")?;
-    let color_section = format!(
-        r###"%
-        draw={},
-        fill={},
-        text=white,
-        "###,
-        default_color, default_color
-    );
-    replace_section(
-        &mut template,
-        "%COLOR_BEGIN%",
-        "%COLOR_END%",
-        &color_section,
-    )?;
-
-    // Section module
-    replace_section(&mut template, "%MODULE_BEGIN%", "%MODULE_END%", all_tex)?;
-
-    // Section legend
-    let is_legend = context
-        .get("is_legend")
-        .ok_or_else(|| anyhow!("missing context key: is_legend"))?
-        .as_bool()
-        .ok_or_else(|| anyhow!("context key is_legend is not a bool"))?;
-    if !is_legend {
-        replace_section(&mut template, "%LEGEND_BEGIN%", "%LEGEND_END%", "")?;
-    }
-
-    render_and_write(&template, context, &mut writer)?;
     Ok(())
 }

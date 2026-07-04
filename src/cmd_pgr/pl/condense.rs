@@ -8,7 +8,7 @@ use std::io::Write;
 /// Build the clap subcommand for condense.
 pub fn make_subcommand() -> Command {
     Command::new("condense")
-        .about("Pipeline - condense subtrees based on taxonomy")
+        .about("Condenses subtrees based on taxonomy")
         .after_help(
             r###"
 * <taxon.tsv> is a tab-separated file without header, containing at least 2 columns:

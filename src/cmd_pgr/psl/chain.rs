@@ -1,5 +1,5 @@
 use clap::{ArgMatches, Command};
-use pgr::libs::chain::{chain_blocks, group_psl_blocks, GapCalc, ScoreContext, SubMatrix};
+use pgr::libs::chain::{chain_psl, GapCalc, ScoreContext, SubMatrix};
 use pgr::libs::fmt::twobit::TwoBitFile;
 /// Build the clap subcommand for chain.
 pub fn make_subcommand() -> Command {
@@ -27,14 +27,14 @@ Processing:
      - Default is 1000 to match UCSC axtChain behavior.
 
 Examples:
-  # Chain PSL file with default settings
-  pgr psl chain t.2bit q.2bit in.psl -o out.chain
+1. Chain PSL file with default settings:
+   pgr psl chain t.2bit q.2bit in.psl -o out.chain
 
-  # Chain with affine gap costs
-  pgr psl chain t.2bit q.2bit in.psl -o out.chain --align-gap-open 400 --align-gap-extend 30
+2. Chain with affine gap costs:
+   pgr psl chain t.2bit q.2bit in.psl -o out.chain --align-gap-open 400 --align-gap-extend 30
 
-  # Chain with HoxD55 scoring scheme
-  pgr psl chain t.2bit q.2bit in.psl -o out.chain --score-scheme hoxd55
+3. Chain with HoxD55 scoring scheme:
+   pgr psl chain t.2bit q.2bit in.psl -o out.chain --score-scheme hoxd55
 "###,
         )
         .arg(crate::cmd_pgr::args::target_genome_arg(
@@ -112,54 +112,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         }
     };
 
-    // Group blocks by (t_name, q_name, q_strand)
-    let groups = group_psl_blocks(reader, &mut score_context)?;
-
-    // Process groups
-    let mut all_chains = Vec::new();
-    let mut chain_id_counter = 1;
-
-    for ((t_name, q_name, q_strand), mut data) in groups {
-        if data.blocks.is_empty() {
-            continue;
-        }
-
-        data.blocks.sort_by_key(|a| a.t_start);
-
-        log::debug!("Group: {} {} {}", t_name, q_name, q_strand);
-        for b in &data.blocks {
-            log::debug!(
-                "Block: T {}-{} Q {}-{} Score {}",
-                b.t_start,
-                b.t_end,
-                b.q_start,
-                b.q_end,
-                b.score
-            );
-        }
-
-        let chains = chain_blocks(
-            &data.blocks,
-            &gap_calc,
-            &mut score_context,
-            &q_name,
-            data.q_size as u64,
-            q_strand,
-            &t_name,
-            data.t_size as u64,
-            &mut chain_id_counter,
-        )?;
-        all_chains.extend(chains);
-    }
-
-    all_chains.sort_by(|a, b| b.header.score.total_cmp(&a.header.score));
-
-    for chain in all_chains {
-        if chain.header.score < min_score {
-            continue;
-        }
-        chain.write(&mut writer)?;
-    }
+    chain_psl(reader, &mut writer, &gap_calc, min_score, &mut score_context)?;
 
     Ok(())
 }

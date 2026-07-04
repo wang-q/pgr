@@ -9,7 +9,7 @@ pub mod transform;
 /// Build the clap subcommand for mat.
 pub fn make_subcommand() -> Command {
     Command::new("mat")
-        .about("Matrix operations")
+        .about("Operates on matrices")
         .subcommand_required(true)
         .subcommand(compare::make_subcommand())
         .subcommand(format::make_subcommand())

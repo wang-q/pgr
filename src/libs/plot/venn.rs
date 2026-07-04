@@ -3,6 +3,8 @@ use indexmap::IndexMap;
 use intspan::IntSpan;
 use std::path::Path;
 
+use super::common::{context_get_str, render_and_write, replace_section};
+
 /// Build named IntSpan sets from a list of input files (one item per line).
 /// Each set is labeled by the file's basename (extension stripped); duplicate
 /// labels are renamed to `cat{i}` (1-based).
@@ -142,4 +144,145 @@ pub fn venn_sets_4(a: &IntSpan, b: &IntSpan, c: &IntSpan, d: &IntSpan) -> VennRe
     excls.push(d.diff(a).diff(b).diff(c).size());
 
     VennResult { excls, inter }
+}
+
+/// LaTeX/TikZ snippet for the 2-set Venn diagram body.
+pub const VENN_2: &str = r###"
+% Basic parameters for circles
+\def\radius{2cm}
+\def\overlap{1.2cm}
+
+% Draw two circles
+\begin{scope}[opacity=0.5]
+    \fill[indianred1] (-\overlap,0) circle (\radius);
+    \fill[deepskyblue] (\overlap,0) circle (\radius);
+\end{scope}
+
+% Add circle edges
+\draw[grey, thick] (-\overlap,0) circle (\radius);
+\draw[grey, thick] (\overlap,0) circle (\radius);
+
+% Add labels
+\node[text centered] at (-2.8, -1.8) { {{ label.0 }} };
+\node[text centered] at (2.8,  -1.8) { {{ label.1 }} };
+
+% Add numbers
+\node[text centered] at (-2,    0) { {{ excls.0 }} };
+\node[text centered] at (2,     0) { {{ excls.1 }} };
+\node[text centered] at (0,     0) { {{ inter.0 }} };
+    "###;
+
+/// LaTeX/TikZ snippet for the 3-set Venn diagram body.
+pub const VENN_3: &str = r###"
+% Basic parameters for circles
+\def\radius{2cm}
+\def\xshift{1.2cm}
+\def\yshift{2.08cm}
+
+% Draw three circles
+\begin{scope}[opacity=0.5]
+    \fill[indianred1] (-\xshift,0) circle (\radius);
+    \fill[deepskyblue] (0,\yshift) circle (\radius);
+    \fill[palegreen] (\xshift,0) circle (\radius);
+\end{scope}
+
+% Add circle edges
+\draw[grey, thick] (-\xshift,0) circle (\radius);
+\draw[grey, thick] (0,\yshift) circle (\radius);
+\draw[grey, thick] (\xshift,0) circle (\radius);
+
+% Add labels
+\node[text centered] at (-2.8, -1.8) { {{ label.0 }} };
+\node[text centered] at (-1.8,  3.8) { {{ label.1 }} };
+\node[text centered] at (2.8,  -1.8) { {{ label.2 }} };
+
+% Add numbers for exclusive regions
+\node[text centered] at (-2,   -0.2) { {{ excls.0 }} };
+\node[text centered] at (0,     2.8) { {{ excls.1 }} };
+\node[text centered] at (2,    -0.2) { {{ excls.2 }} };
+
+% Add numbers for binary intersections
+\node[text centered] at (-1.2,  1.2) { {{ inter.0 }} }; % AB
+\node[text centered] at (0,    -0.7) { {{ inter.1 }} }; % AC
+\node[text centered] at (1.2,   1.2) { {{ inter.2 }} }; % BC
+
+% Add number for triple intersection
+\node[text centered] at (0,     0.6) { {{ inter.3 }} }; % ABC
+    "###;
+
+/// LaTeX/TikZ snippet for the 4-set Venn diagram body.
+pub const VENN_4: &str = r###"
+% Basic parameters for ellipses
+\def\xradius{3.5cm}
+\def\yradius{2cm}
+\def\yradiusB{1.8cm}
+\def\xshift{1.5cm}
+\def\xshiftB{0.7cm}
+\def\yshift{1cm}
+
+% Draw four ellipses
+\begin{scope}[opacity=0.5]
+    \fill[indianred1] (-\xshift,0) ellipse [x radius=\xradius, y radius=\yradius, rotate=-45];    % A
+    \fill[deepskyblue] (-\xshiftB,\yshift) ellipse [x radius=\xradius, y radius=\yradiusB, rotate=-45];    % B
+    \fill[palegreen] (\xshiftB,\yshift) ellipse [x radius=\xradius, y radius=\yradiusB, rotate=45];      % C
+    \fill[burlywood] (\xshift,0) ellipse [x radius=\xradius, y radius=\yradius, rotate=45];    % D
+\end{scope}
+
+% Add ellipse edges
+\draw[grey, thick] (-\xshift,0) ellipse [x radius=\xradius, y radius=\yradius, rotate=-45];
+\draw[grey, thick] (-\xshiftB,\yshift) ellipse [x radius=\xradius, y radius=\yradiusB, rotate=-45];
+\draw[grey, thick] (\xshiftB,\yshift) ellipse [x radius=\xradius, y radius=\yradiusB, rotate=45];
+\draw[grey, thick] (\xshift,0) ellipse [x radius=\xradius, y radius=\yradius, rotate=45];
+
+% Add labels
+\node[text centered] at (-2.2, -2.6) { {{ label.0 }} }; % A
+\node[text centered] at (-3.8,  3.6) { {{ label.1 }} }; % B
+\node[text centered] at (3.8,   3.6) { {{ label.2 }} }; % C
+\node[text centered] at (2.2,  -2.6) { {{ label.3 }} }; % D
+
+% Add numbers for exclusive regions
+\node[text centered] at (-3.2,    0) { {{ excls.0 }} }; % A
+\node[text centered] at (-2,    3.2) { {{ excls.1 }} }; % B
+\node[text centered] at (2,     3.2) { {{ excls.2 }} }; % C
+\node[text centered] at (3.2,     0) { {{ excls.3 }} }; % D
+
+%%% Add numbers for binary intersections
+\node[text centered] at (-2.2,  1.5) { {{ inter.0 }} }; % AB
+\node[text centered] at (-1.7, -1.0) { {{ inter.1 }} }; % AC
+\node[text centered] at (0,    -2.2) { {{ inter.2 }} }; % AD
+\node[text centered] at (0,     2.0) { {{ inter.3 }} }; % BC
+\node[text centered] at (1.7,  -1.0) { {{ inter.4 }} }; % BD
+\node[text centered] at (2.2,   1.5) { {{ inter.5 }} }; % CD
+
+% Add numbers for triple intersections
+\node[text centered] at (-1.1,  0.7) { {{ inter.6 }} }; % ABC
+\node[text centered] at (0.9,  -1.5) { {{ inter.7 }} }; % ABD
+\node[text centered] at (-0.9, -1.5) { {{ inter.8 }} }; % ACD
+\node[text centered] at (1.1,   0.7) { {{ inter.9 }} }; % BCD
+
+% Add number for quadruple intersection
+\node[text centered] at (0,    -0.2) { {{ inter.10 }} }; % ABCD
+    "###;
+
+/// Render the Venn diagram LaTeX file by substituting the body template
+/// selected by `n` (2, 3, or 4) into the file template, then rendering via Tera.
+/// For unsupported `n`, returns `Ok(())` without writing.
+pub fn gen_venn(context: &tera::Context, n: usize) -> anyhow::Result<()> {
+    let out_string = match n {
+        2 => VENN_2,
+        3 => VENN_3,
+        4 => VENN_4,
+        _ => return Ok(()),
+    };
+
+    let outfile = context_get_str(context, "outfile")?;
+    let mut writer = crate::writer(outfile)?;
+
+    static FILE_TEMPLATE: &str = include_str!("../../assets/venn.tex");
+    let mut template = FILE_TEMPLATE.to_string();
+
+    replace_section(&mut template, "%VENN_BEGIN", "%VENN_END", out_string)?;
+
+    render_and_write(&template, context, &mut writer)?;
+    Ok(())
 }

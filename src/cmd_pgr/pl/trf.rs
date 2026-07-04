@@ -1,6 +1,5 @@
 use clap::{value_parser, Arg, ArgMatches, Command};
 use cmd_lib::run_cmd;
-use std::io::{BufRead, Write};
 
 /// Build the clap subcommand for trf.
 pub fn make_subcommand() -> Command {
@@ -140,19 +139,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
         let rg_file = format!("trf.{}.rg", i);
         let mut writer = pgr::writer(&rg_file)?;
-        for line in reader.lines() {
-            let line = line?;
-            let fields: Vec<&str> = line.split_ascii_whitespace().collect();
-            if fields.len() < 15 {
-                log::debug!("skipping short TRF line: {}", line);
-                continue;
-            }
-
-            let start = fields[0].parse::<usize>()?;
-            let end = fields[1].parse::<usize>()?;
-
-            writer.write_fmt(format_args!("{}:{}-{}\n", chr, start, end))?;
-        }
+        pgr::libs::pl::parse_trf_output(reader, chr, &mut writer)?;
         rg_files.push(rg_file);
     }
 

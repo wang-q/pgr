@@ -26,14 +26,14 @@ It handles:
 
 {}
 Examples:
-    # Single target with set01
-    pgr lav lastz target.fa query.fa --preset set01 -o lastz_out
+1. Single target with set01:
+   pgr lav lastz target.fa query.fa --preset set01 -o lastz_out
 
-    # Directory inputs
-    pgr lav lastz target_dir/ query_dir/ --preset set03 -o lastz_out
+2. Directory inputs:
+   pgr lav lastz target_dir/ query_dir/ --preset set03 -o lastz_out
 
-    # Show parameters and matrix for set01
-    pgr lav lastz --preset set01 --show-preset
+3. Show parameters and matrix for set01:
+   pgr lav lastz --preset set01 --show-preset
 
 "###,
             pgr::libs::lastz::preset_help()
@@ -129,13 +129,21 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         anyhow::bail!("No target FASTA files found in {}", arg_target);
     }
 
+    // Resolve preset once (used for both matrix setup and params building)
+    let preset_info = if let Some(preset_name) = preset {
+        Some(
+            pgr::libs::lastz::find_preset(preset_name)
+                .ok_or_else(|| anyhow::anyhow!("unknown preset: {}", preset_name))?,
+        )
+    } else {
+        None
+    };
+
     // Prepare matrix temp file if preset defines one (keep handle alive for the run)
     let mut _temp_matrix_handle: Option<NamedTempFile> = None;
     let mut matrix_path = String::new();
 
-    if let Some(preset_name) = preset {
-        let p = pgr::libs::lastz::find_preset(preset_name)
-            .ok_or_else(|| anyhow::anyhow!("unknown preset: {}", preset_name))?;
+    if let Some(p) = preset_info {
         if let Some(matrix) = p.matrix {
             let mut t = NamedTempFile::new()?;
             t.write_all(matrix.as_bytes())?;
@@ -151,9 +159,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     common_args.push("--markend".to_string());
     common_args.push("--ambiguous=iupac".to_string());
 
-    if let Some(preset_name) = preset {
-        let p = pgr::libs::lastz::find_preset(preset_name)
-            .ok_or_else(|| anyhow::anyhow!("unknown preset: {}", preset_name))?;
+    if let Some(p) = preset_info {
         for arg in p.params.split_whitespace() {
             if !arg.starts_with("Q=") {
                 common_args.push(arg.to_string());

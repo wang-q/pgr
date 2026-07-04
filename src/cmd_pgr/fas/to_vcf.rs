@@ -108,7 +108,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                     block_idx
                 )
             })?;
-            let trange = target_entry.range().clone();
+            let trange = target_entry.range();
             let t_ints_seq = seq_intspan(target_entry.seq());
 
             let seq_count = seqs.len();

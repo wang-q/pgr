@@ -49,13 +49,14 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             let block = block_result?;
             for entry in &block.entries {
                 let range = entry.range();
+                let name = range.name().to_string();
 
                 // Collect unique species names (O(1) lookup via IndexSet)
-                names.insert(range.name().to_string());
+                names.insert(name.clone());
 
                 // Count occurrences of each species name
                 count_of
-                    .entry(range.name().to_string())
+                    .entry(name)
                     .and_modify(|e| *e += 1)
                     .or_insert(1);
             }

@@ -13,15 +13,15 @@ Notes:
 * Does not support stdin or gzipped inputs
 
 Examples:
-  # Convert entire 2bit file to FASTA
-  pgr 2bit to-fa input.2bit -o output.fa
+1. Convert entire 2bit file to FASTA:
+   pgr 2bit to-fa input.2bit -o output.fa
 
-  # No masking (all uppercase)
-  pgr 2bit to-fa input.2bit --no-mask -o out.fa
+2. No masking (all uppercase):
+   pgr 2bit to-fa input.2bit --no-mask -o out.fa
 
-  # Set line width (default 60)
-  pgr 2bit to-fa input.2bit -l 80
-  pgr 2bit to-fa input.2bit -l 0  # no wrapping
+3. Set line width (default 60):
+   pgr 2bit to-fa input.2bit -l 80
+   pgr 2bit to-fa input.2bit -l 0  # no wrapping
 "###,
         )
         .arg(crate::cmd_pgr::args::infile_arg_required_with_help(

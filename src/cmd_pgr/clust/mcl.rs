@@ -4,7 +4,7 @@ use std::io::Write;
 /// Build the clap subcommand for mcl.
 pub fn make_subcommand() -> Command {
     Command::new("mcl")
-        .about("Markov Clustering Algorithm (MCL)")
+        .about("Clusters entries via Markov Clustering (MCL)")
         .after_help(
             r###"
 MCL is a fast and scalable unsupervised cluster algorithm for graphs (also known as networks) based on simulation of (stochastic) flow in graphs.

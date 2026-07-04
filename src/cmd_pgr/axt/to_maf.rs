@@ -9,11 +9,11 @@ Where tSizes and qSizes is a file that contains the sizes of the target and quer
 Very often this will be a chrom.sizes file.
 
 Examples:
-  # Convert axt to maf
-  pgr axt to-maf in.axt -t t.sizes -q q.sizes -o out.maf
+1. Convert axt to maf:
+   pgr axt to-maf in.axt -t t.sizes -q q.sizes -o out.maf
 
-  # Split output by target name
-  pgr axt to-maf in.axt -t t.sizes -q q.sizes --t-split -o out_dir
+2. Split output by target name:
+   pgr axt to-maf in.axt -t t.sizes -q q.sizes --t-split -o out_dir
 "###,
         )
         .arg(crate::cmd_pgr::args::infile_arg().help("Input AXT file. [stdin] for standard input"))

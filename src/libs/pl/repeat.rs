@@ -137,3 +137,29 @@ pub fn run_repeat_spanr_pipeline(
     )?;
     Ok(())
 }
+
+/// Parse a TRF `.dat` file and write `chr:start-end` lines to `writer`.
+///
+/// Each TRF row has at least 15 whitespace-separated fields; the first two
+/// are 1-based start and end coordinates. Rows with fewer fields are skipped
+/// with a `log::debug!` message.
+pub fn parse_trf_output<R: BufRead, W: Write>(
+    reader: R,
+    chr: &str,
+    writer: &mut W,
+) -> anyhow::Result<()> {
+    for line in reader.lines() {
+        let line = line?;
+        let fields: Vec<&str> = line.split_ascii_whitespace().collect();
+        if fields.len() < 15 {
+            log::debug!("skipping short TRF line: {}", line);
+            continue;
+        }
+
+        let start = fields[0].parse::<usize>()?;
+        let end = fields[1].parse::<usize>()?;
+
+        writer.write_fmt(format_args!("{}:{}-{}\n", chr, start, end))?;
+    }
+    Ok(())
+}

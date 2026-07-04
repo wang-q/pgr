@@ -7,4 +7,4 @@ mod ctx;
 mod repeat;
 
 pub use ctx::{abs_path_or_stdout, PipelineCtx};
-pub use repeat::{run_profex_per_chr, run_repeat_pipeline, run_repeat_spanr_pipeline, RepeatOpts};
+pub use repeat::{parse_trf_output, run_profex_per_chr, run_repeat_pipeline, run_repeat_spanr_pipeline, RepeatOpts};

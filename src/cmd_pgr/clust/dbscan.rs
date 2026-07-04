@@ -4,7 +4,7 @@ use std::io::Write;
 /// Build the clap subcommand for dbscan.
 pub fn make_subcommand() -> Command {
     Command::new("dbscan")
-        .about("DBSCAN clustering based on pairwise distances")
+        .about("Clusters entries via DBSCAN")
         .after_help(
             r###"
 Density-based spatial clustering of applications with noise (DBSCAN).

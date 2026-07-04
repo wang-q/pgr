@@ -4,7 +4,7 @@ use cmd_lib::run_cmd;
 /// Build the clap subcommand for ucsc.
 pub fn make_subcommand() -> Command {
     Command::new("ucsc")
-        .about("UCSC chain/net pipeline")
+        .about("Runs the UCSC chain/net pipeline")
         .after_help(
             r###"
 This command implements the UCSC pipeline for pairwise genome alignments, psl-chain-net-axt-maf.

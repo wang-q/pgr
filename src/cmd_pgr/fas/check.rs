@@ -43,7 +43,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
         for block_result in pgr::libs::fmt::fas::iter_fas_blocks(&mut reader) {
             let block = block_result?;
-            let block_names = block.names;
+            let block_names = &block.names;
 
             // Check if a specific species is requested
             if !opt_name.is_empty() && block_names.contains(opt_name) {

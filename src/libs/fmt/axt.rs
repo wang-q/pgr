@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
-use std::io::BufRead;
-
+use std::io::{BufRead, Write};
 use super::maf::{MafAli, MafComp, MafWriter};
+use super::psl::Psl;
 
 #[derive(Debug, Clone, Default)]
 pub struct Axt {
@@ -364,6 +364,85 @@ pub fn axt_query_to_forward_coords(
     } else {
         Ok(((q_start + 1) as i32, q_end as i32))
     }
+}
+
+/// Convert an AXT stream to PSL, looking up sequence sizes from the given maps.
+///
+/// For each AXT record, query coordinates on the `-` strand are reversed to
+/// forward-strand coordinates (per `axtToPsl.c` convention) before invoking
+/// `Psl::from_align`. Records with invalid coordinates are skipped with a
+/// `log::warn!`.
+pub fn axt_to_psl<R: std::io::Read, W: Write>(
+    reader: R,
+    writer: &mut W,
+    t_sizes: &BTreeMap<String, usize>,
+    q_sizes: &BTreeMap<String, usize>,
+) -> anyhow::Result<()> {
+    let reader = AxtReader::new(reader);
+
+    for result in reader {
+        let axt = result?;
+
+        let q_size = *q_sizes
+            .get(&axt.q_name)
+            .ok_or_else(|| anyhow::anyhow!("Query size not found for {}", axt.q_name))?;
+        let t_size = *t_sizes
+            .get(&axt.t_name)
+            .ok_or_else(|| anyhow::anyhow!("Target size not found for {}", axt.t_name))?;
+
+        // libs/axt.rs returns 0-based half-open coordinates
+        let mut q_start = i32::try_from(axt.q_start)
+            .map_err(|_| anyhow::anyhow!("q_start {} exceeds i32 range", axt.q_start))?;
+        let mut q_end = i32::try_from(axt.q_end)
+            .map_err(|_| anyhow::anyhow!("q_end {} exceeds i32 range", axt.q_end))?;
+        let q_size_i32 = i32::try_from(q_size)
+            .map_err(|_| anyhow::anyhow!("q_size {} exceeds i32 range", q_size))?;
+        let t_start_i32 = i32::try_from(axt.t_start)
+            .map_err(|_| anyhow::anyhow!("t_start {} exceeds i32 range", axt.t_start))?;
+        let t_end_i32 = i32::try_from(axt.t_end)
+            .map_err(|_| anyhow::anyhow!("t_end {} exceeds i32 range", axt.t_end))?;
+        let q_size_u32 = u32::try_from(q_size)
+            .map_err(|_| anyhow::anyhow!("q_size {} exceeds u32 range", q_size))?;
+        let t_size_u32 = u32::try_from(t_size)
+            .map_err(|_| anyhow::anyhow!("t_size {} exceeds u32 range", t_size))?;
+
+        // axtToPsl.c logic: "if (axt->qStrand == '-') reverseIntRange(&qStart, &qEnd, qSize);"
+        // This converts strand-relative coordinates (as in AXT) to positive strand coordinates
+        // which pslFromAlign expects (so it can reverse them back internally).
+        if axt.q_strand == '-' {
+            crate::reverse_range(&mut q_start, &mut q_end, q_size_i32);
+        }
+
+        // Construct strand string for PSL (e.g. "-")
+        // Note: PSL usually tracks target strand implicitly as +, so strand field is just query strand?
+        // axtToPsl.c: strand[0] = axt->qStrand; strand[1] = '\0';
+        // So it's just "+" or "-"
+        let strand = axt.q_strand.to_string();
+
+        if let Some(psl) = Psl::from_align(
+            &axt.q_name,
+            q_size_u32,
+            q_start,
+            q_end,
+            &axt.q_sym,
+            &axt.t_name,
+            t_size_u32,
+            t_start_i32,
+            t_end_i32,
+            &axt.t_sym,
+            &strand,
+        ) {
+            psl.write_to(writer)?;
+        } else {
+            log::warn!(
+                "skipping alignment (invalid coordinates): {} vs {}",
+                axt.q_name,
+                axt.t_name
+            );
+        }
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]

@@ -4,7 +4,7 @@ use std::io::Write;
 /// Build the clap subcommand for cc.
 pub fn make_subcommand() -> Command {
     Command::new("cc")
-        .about("Connected components clustering (ignoring weights)")
+        .about("Clusters entries via connected components")
         .after_help(
             r###"
 Ignores scores and writes all connected components.

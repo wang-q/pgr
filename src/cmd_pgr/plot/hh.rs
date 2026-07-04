@@ -6,7 +6,7 @@ use pgr::libs::plot::histogram::{
 /// Build the clap subcommand for hh.
 pub fn make_subcommand() -> Command {
     Command::new("hh")
-        .about("Histo-heatmap")
+        .about("Plots a histo-heatmap")
         .after_help(
             r###"
 * Input file is a tab-separated file

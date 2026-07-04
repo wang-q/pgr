@@ -95,7 +95,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                     print!(">{}\n{}\n", header, seq);
                 } else {
                     if !file_of.contains_key(&filename) {
-                        let path = std::path::Path::new(outdir).join(filename.clone() + opt_suffix);
+                        let path =
+                            std::path::Path::new(outdir).join(format!("{}{}", filename, opt_suffix));
                         let file = std::fs::OpenOptions::new()
                             .create(true)
                             .write(true)

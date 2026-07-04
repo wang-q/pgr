@@ -103,7 +103,7 @@ fn proc_block(block: &pgr::libs::fmt::fas::FasBlock, args: &ArgMatches) -> anyho
         _ => anyhow::bail!("unknown align_mode: {}", algorithm),
     };
 
-    let mut seqs = vec![];
+    let mut seqs = Vec::with_capacity(block.entries.len());
 
     let outgroup = if has_outgroup {
         block.entries.iter().last()

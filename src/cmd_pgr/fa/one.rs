@@ -42,9 +42,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut found = false;
     for result in fa_in.records() {
         let record = result?;
-        let this_name = String::from_utf8(record.name().into())?;
 
-        if this_name == *name {
+        if record.name() == name.as_bytes() {
             fa_out.write_record(&record)?;
             found = true;
             break;

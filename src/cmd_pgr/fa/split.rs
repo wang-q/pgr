@@ -177,18 +177,18 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 }
 
 fn gen_fh(
-    outdir: &String,
+    outdir: &str,
     fh_of: &mut BTreeMap<String, BufWriter<std::fs::File>>,
-    filename: &String,
+    filename: &str,
 ) -> Result<(), Error> {
     if !fh_of.contains_key(filename) {
-        let path = std::path::Path::new(outdir).join(filename.clone() + ".fa");
+        let path = std::path::Path::new(outdir).join(format!("{}.fa", filename));
         let file = std::fs::OpenOptions::new()
             .create(true)
             .write(true)
             .truncate(true)
             .open(path)?;
-        fh_of.insert(filename.clone(), BufWriter::new(file));
+        fh_of.insert(filename.to_owned(), BufWriter::new(file));
     }
     Ok(())
 }

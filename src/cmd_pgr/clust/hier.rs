@@ -8,7 +8,7 @@ use pgr::libs::phylo::tree::io::to_newick;
 /// Build the clap subcommand for hier.
 pub fn make_subcommand() -> Command {
     Command::new("hier")
-        .about("Hierarchical clustering (dendrogram)")
+        .about("Clusters entries via hierarchical clustering")
         .visible_alias("hclust")
         .after_help(
             r#"

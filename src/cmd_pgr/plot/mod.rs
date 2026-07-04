@@ -6,7 +6,7 @@ pub mod venn;
 /// Build the clap subcommand for plot.
 pub fn make_subcommand() -> Command {
     Command::new("plot")
-        .about("Plotting tools")
+        .about("Plots figures")
         .subcommand_required(true)
         .subcommand(hh::make_subcommand())
         .subcommand(nrps::make_subcommand())

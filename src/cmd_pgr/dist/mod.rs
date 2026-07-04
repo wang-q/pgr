@@ -6,7 +6,7 @@ use clap::{ArgMatches, Command};
 /// Build the clap subcommand for dist.
 pub fn make_subcommand() -> Command {
     Command::new("dist")
-        .about("Distance/Similarity metrics")
+        .about("Computes distance/similarity metrics")
         .after_help(
             r###"Subcommand groups:
 

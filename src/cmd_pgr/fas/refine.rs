@@ -100,8 +100,9 @@ fn proc_block(block: &pgr::libs::fmt::fas::FasBlock, args: &ArgMatches) -> anyho
     let pad = *args.get_one::<usize>("indel_pad").unwrap();
     let fill = *args.get_one::<usize>("fill").unwrap();
 
-    let mut seqs: Vec<String> = vec![];
-    let mut ranges = vec![];
+    let n = block.entries.len();
+    let mut seqs: Vec<String> = Vec::with_capacity(n);
+    let mut ranges = Vec::with_capacity(n);
     for entry in &block.entries {
         seqs.push(String::from_utf8(entry.seq().to_vec())?);
         ranges.push(entry.range().clone());

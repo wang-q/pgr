@@ -4,7 +4,7 @@ use clap::{ArgMatches, Command};
 /// Build the clap subcommand for ms.
 pub fn make_subcommand() -> Command {
     Command::new("ms")
-        .about("Hudson's ms simulator tools")
+        .about("Runs Hudson's ms simulator tools")
         .subcommand_required(true)
         .arg_required_else_help(true)
         .subcommand(to_dna::make_subcommand())

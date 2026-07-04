@@ -19,8 +19,8 @@ The 'field' argument determines what data to collect, the following are currentl
 * idSpread - difference between the highest and lowest fraction identity for alignments of a query. Output line per query, with the difference.
 
 Examples:
-  # Collect alignment counts per query
-  pgr psl histo --field alignsPerQuery in.psl -o out.histo
+1. Collect alignment counts per query:
+   pgr psl histo --field alignsPerQuery in.psl -o out.histo
 "###,
         )
         .arg(

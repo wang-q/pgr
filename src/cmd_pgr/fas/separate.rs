@@ -78,8 +78,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                     print!(">{}\n{}\n", range, seq);
                 } else {
                     if !file_of.contains_key(entry_name) {
-                        let path =
-                            std::path::Path::new(outdir).join(range.name().to_owned() + opt_suffix);
+                        let path = std::path::Path::new(outdir)
+                            .join(format!("{}{}", range.name(), opt_suffix));
                         let file = std::fs::OpenOptions::new()
                             .create(true)
                             .write(true)

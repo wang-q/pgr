@@ -70,7 +70,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 Some(e) => e,
                 None => continue,
             };
-            let trange = first.range().clone();
+            let trange = first.range();
             let t_ints_seq = pgr::libs::alignment::seq_intspan(first.seq());
 
             // pos, tbase, qbase, bases, mutant_to, freq, pattern, obase

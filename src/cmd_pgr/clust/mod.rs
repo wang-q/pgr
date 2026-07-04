@@ -12,7 +12,7 @@ use clap::{ArgMatches, Command};
 /// Build the clap subcommand for clust.
 pub fn make_subcommand() -> Command {
     Command::new("clust")
-        .about("Clustering operations")
+        .about("Clusters entries via various algorithms")
         .after_help(
             r###"Subcommand groups:
 

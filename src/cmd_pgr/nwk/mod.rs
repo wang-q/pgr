@@ -22,7 +22,7 @@ pub mod topo;
 /// Build the clap subcommand for nwk.
 pub fn make_subcommand() -> Command {
     Command::new("nwk")
-        .about("Manipulates, analyze, and visualize Newick trees")
+        .about("Manipulates, analyzes, and visualizes Newick trees")
         .after_help(
             r###"
 This suite of tools provides a comprehensive set of operations for phylogenetic trees in Newick format.

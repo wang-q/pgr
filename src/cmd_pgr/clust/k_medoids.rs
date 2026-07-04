@@ -4,7 +4,7 @@ use std::io::Write;
 /// Build the clap subcommand for k-medoids.
 pub fn make_subcommand() -> Command {
     Command::new("k-medoids")
-        .about("K-Medoids clustering")
+        .about("Clusters entries via K-Medoids")
         .visible_alias("km")
         .after_help(
             r###"

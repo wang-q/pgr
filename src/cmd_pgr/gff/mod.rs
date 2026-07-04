@@ -5,7 +5,7 @@ use clap::{ArgMatches, Command};
 /// Build the clap subcommand for gff.
 pub fn make_subcommand() -> Command {
     Command::new("gff")
-        .about("GFF operations: rg")
+        .about("Manipulates GFF files")
         .subcommand_required(true)
         .arg_required_else_help(true)
         .subcommand(rg::make_subcommand())

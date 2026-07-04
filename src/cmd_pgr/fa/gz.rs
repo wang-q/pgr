@@ -8,7 +8,7 @@ use pgr::libs::fmt::fa;
 /// Build the clap subcommand for gz.
 pub fn make_subcommand() -> Command {
     Command::new("gz")
-        .about("Compressing a file using the BGZF format")
+        .about("Compresses a file using the BGZF format")
         .after_help(
             r###"
 This command compresses a file using BGZF (Blocked Gzip Format).

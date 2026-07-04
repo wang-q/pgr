@@ -76,14 +76,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 continue;
             }
             let idx = if !opt_name.is_empty() {
-                if !block.names.contains(opt_name) {
-                    continue;
+                match block.names.iter().position(|x| x == opt_name) {
+                    Some(i) => i,
+                    None => continue,
                 }
-                block
-                    .names
-                    .iter()
-                    .position(|x| x == opt_name)
-                    .ok_or_else(|| anyhow::anyhow!("name not found in block: {}", opt_name))?
             } else {
                 0
             };

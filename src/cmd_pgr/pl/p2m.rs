@@ -29,7 +29,7 @@ impl Drop for CwdGuard {
 /// Build the clap subcommand for p2m.
 pub fn make_subcommand() -> Command {
     Command::new("p2m")
-        .about("Pipeline - pairwise alignments to multiple alignments")
+        .about("Runs the pairwise-to-multiple alignments pipeline")
         .after_help(
             r###"
 Pairwise to Multiple (p2m) Pipeline

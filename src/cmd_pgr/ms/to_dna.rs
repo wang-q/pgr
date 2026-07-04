@@ -46,14 +46,14 @@ pub fn make_subcommand() -> Command {
         .after_help(
             r###"
 Examples:
-  # Pipe ms output to pgr ms to-dna
-  ms 10 1 -t 5 -r 0 1000 | pgr ms to-dna --gc 0.5 > out.fa
+1. Pipe ms output to pgr ms to-dna:
+   ms 10 1 -t 5 -r 0 1000 | pgr ms to-dna --gc 0.5 > out.fa
 
-  # Read from file and write to output
-  pgr ms to-dna input.ms -o out.fa --seed 12345
+2. Read from file and write to output:
+   pgr ms to-dna input.ms -o out.fa --seed 12345
 
-  # Disable position perturbation (keep original ms positions)
-  pgr ms to-dna input.ms --no-perturb
+3. Disable position perturbation (keep original ms positions):
+   pgr ms to-dna input.ms --no-perturb
 
 Output Format:
   FASTA format with single-line sequences.

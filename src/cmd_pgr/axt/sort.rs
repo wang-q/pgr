@@ -11,14 +11,14 @@ pub fn make_subcommand() -> Command {
 Sorts axt files by target, query, or score.
 
 Examples:
-  # Sort by target (default)
-  pgr axt sort in.axt -o out.axt
+1. Sort by target (default):
+   pgr axt sort in.axt -o out.axt
 
-  # Sort by query
-  pgr axt sort in.axt --by-query -o out.axt
+2. Sort by query:
+   pgr axt sort in.axt --by-query -o out.axt
 
-  # Sort by score (descending)
-  pgr axt sort in.axt --by-score -o out.axt
+3. Sort by score (descending):
+   pgr axt sort in.axt --by-score -o out.axt
 "###,
         )
         .arg(crate::cmd_pgr::args::infile_arg().help("Input AXT file. [stdin] for standard input"))

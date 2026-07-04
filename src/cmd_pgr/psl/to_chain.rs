@@ -8,8 +8,8 @@ pub fn make_subcommand() -> Command {
         .after_help(
             r###"
 Examples:
-  # Convert PSL to Chain
-  pgr psl to-chain in.psl -o out.chain
+1. Convert PSL to Chain:
+   pgr psl to-chain in.psl -o out.chain
 "###,
         )
         .arg(crate::cmd_pgr::args::infile_arg().help("Input PSL file. [stdin] for standard input"))

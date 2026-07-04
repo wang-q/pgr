@@ -14,10 +14,10 @@ Notes:
 * Reads from stdin if input file is 'stdin'
 
 Examples:
-  # Convert FASTA to 2bit
-  pgr fa to-2bit in.fa -o out.2bit
-  pgr fa to-2bit in1.fa in2.fa -o out.2bit
-  pgr fa to-2bit in.fa -o out.2bit --no-mask
+1. Convert FASTA to 2bit:
+   pgr fa to-2bit in.fa -o out.2bit
+   pgr fa to-2bit in1.fa in2.fa -o out.2bit
+   pgr fa to-2bit in.fa -o out.2bit --no-mask
 "###,
         )
         .arg(crate::cmd_pgr::args::infiles_arg_with_help(
@@ -72,15 +72,13 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 name = format!("{}{}", name_prefix, name);
             }
 
-            if seen_names.contains(&name) {
+            if !seen_names.insert(name.clone()) {
                 if ignore_dups {
                     continue;
                 } else {
                     anyhow::bail!("Duplicate sequence name: {}", name);
                 }
             }
-
-            seen_names.insert(name.clone());
 
             let seq = record.sequence();
             let seq_str = String::from_utf8(seq.as_ref().to_vec())?;

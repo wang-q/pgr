@@ -40,7 +40,7 @@ pub use connect::{calc_block_score, chain_blocks, ChainableBlock, ScoreContext};
 pub use gap_calc::GapCalc;
 pub use kdtree::{ChainItem, KdTree};
 pub use pre_net::{is_haplotype, pre_net, PreNetOptions};
-pub use psl_chain::{group_psl_blocks, GroupData, GroupKey};
+pub use psl_chain::{chain_psl, group_psl_blocks, GroupData, GroupKey};
 pub use record::{read_chains, Block, Chain, ChainData, ChainHeader, ChainReader};
 pub use sort::sort_chains;
 pub use stitch::stitch_chains;
