@@ -1,5 +1,6 @@
 use clap::{ArgMatches, Command};
 use pgr::libs::fmt::twobit::TwoBitFile;
+use std::io::Write;
 
 /// Build the clap subcommand for size.
 pub fn make_subcommand() -> Command {

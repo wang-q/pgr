@@ -1,7 +1,7 @@
 use clap::{ArgMatches, Command};
 use pgr::libs::chain::net::read_nets;
 use std::fs::{self, File};
-use std::io::BufWriter;
+use std::io::{BufWriter, Write};
 use std::path::Path;
 /// Build the clap subcommand for split.
 pub fn make_subcommand() -> Command {
@@ -24,9 +24,17 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     fs::create_dir_all(output_dir)?;
 
     for chrom in chroms {
+        // Guard against path traversal: chromosome names come from the input
+        // net file and could contain '/' or '..' if the input is malicious.
+        anyhow::ensure!(
+            !chrom.name.contains('/') && !chrom.name.contains('\\') && chrom.name != "..",
+            "invalid chromosome name (contains path separator): {}",
+            chrom.name
+        );
         let file_path = Path::new(output_dir).join(format!("{}.net", chrom.name));
         let mut file = BufWriter::new(File::create(file_path)?);
         chrom.write(&mut file)?;
+        file.flush()?;
     }
 
     Ok(())

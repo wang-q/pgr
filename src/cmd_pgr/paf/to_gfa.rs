@@ -1,4 +1,5 @@
 use clap::{Arg, ArgAction, ArgMatches, Command};
+use std::io::Write;
 /// Build the clap subcommand for to-gfa.
 pub fn make_subcommand() -> Command {
     crate::cmd_pgr::args::add_poa_args(

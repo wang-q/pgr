@@ -1,5 +1,6 @@
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use pgr::libs::phylo::tree::{self, support};
+use std::io::Write;
 
 /// Build the clap subcommand for support.
 pub fn make_subcommand() -> Command {
@@ -38,6 +39,7 @@ Examples:
                 .action(ArgAction::SetTrue)
                 .help("Print values as percentages"),
         )
+        .arg(crate::cmd_pgr::args::outfile_arg())
 }
 /// Execute the support command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
@@ -45,18 +47,20 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let replicates_file = args.get_one::<String>("replicates").unwrap();
     let percent = args.get_flag("percent");
 
+    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
+
     // 1. Read Replicate Trees
     // We read replicates first to build the leaf map and counts, similar to nw_support logic
     let replicates = tree::io::from_file(replicates_file)?;
     if replicates.is_empty() {
-        return Err(anyhow::anyhow!("No replicate trees found"));
+        anyhow::bail!("No replicate trees found");
     }
     let total_reps = replicates.len();
 
     // 2. Read Target Trees
     let mut targets = tree::io::from_file(target_file)?;
     if targets.is_empty() {
-        return Err(anyhow::anyhow!("No target trees found"));
+        anyhow::bail!("No target trees found");
     }
 
     // 3. Build Leaf Map (from first replicate)
@@ -71,7 +75,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     for target in &mut targets {
         support::annotate_support(target, &leaf_map, &counts, total_reps, percent)
             .map_err(|e| anyhow::anyhow!("annotate_support failed: {}", e))?;
-        println!("{}", target.to_newick());
+        writer.write_fmt(format_args!("{}\n", target.to_newick()))?;
     }
 
     Ok(())

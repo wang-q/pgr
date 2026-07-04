@@ -3,7 +3,7 @@ use intspan::Range;
 use noodles_bgzf as bgzf;
 use noodles_core;
 use noodles_fasta as fasta;
-use std::io::{Read, Seek, SeekFrom};
+use std::io::{Read, Seek, SeekFrom, Write};
 
 /// Random-access reader for indexed FASTA files (plain or BGZF-compressed).
 pub enum Input {

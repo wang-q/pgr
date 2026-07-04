@@ -77,6 +77,14 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 raw_name.clone()
             };
 
+            // Guard against path traversal: names come from chain file headers
+            // and could contain '/' or '..' if the input is malicious.
+            anyhow::ensure!(
+                !name.contains('/') && !name.contains('\\') && name != "..",
+                "invalid sequence name (contains path separator): {}",
+                name
+            );
+
             let writer = match file_cache.entry(name.clone()) {
                 std::collections::hash_map::Entry::Occupied(e) => e.into_mut(),
                 std::collections::hash_map::Entry::Vacant(e) => {
@@ -85,7 +93,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                     let path_str = path
                         .to_str()
                         .ok_or_else(|| anyhow::anyhow!("non-UTF-8 path"))?;
-                    e.insert(pgr::writer(path_str)?)
+                    e.insert(Box::new(pgr::writer(path_str)?))
                 }
             };
 

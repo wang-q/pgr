@@ -1,4 +1,5 @@
 use clap::{ArgMatches, Command};
+use std::io::Write;
 /// Build the clap subcommand for to-vcf.
 pub fn make_subcommand() -> Command {
     crate::cmd_pgr::args::add_poa_args(

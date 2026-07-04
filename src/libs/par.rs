@@ -6,6 +6,7 @@
 //! them in.
 
 use rayon::prelude::*;
+use std::io::Write;
 use std::thread::JoinHandle;
 
 /// Spawn a writer thread draining a channel and configure the global rayon

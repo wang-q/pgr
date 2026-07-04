@@ -70,6 +70,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             writer.write_fmt(format_args!("{}\n", line))?;
             continue;
         }
+        // Skip PSL header lines (psLayout version 3, column names, separator)
+        if line.starts_with("psLayout") || line.starts_with("match") || line.starts_with("------") {
+            continue;
+        }
 
         let mut psl = match parse_or_warn(&line, strict)? {
             Some(p) => p,

@@ -1,5 +1,6 @@
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use std::collections::HashMap;
+use std::io::Write;
 
 /// Build the clap subcommand for dedup.
 pub fn make_subcommand() -> Command {

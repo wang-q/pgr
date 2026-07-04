@@ -3,6 +3,7 @@ use clap::{builder::PossibleValue, Arg, ArgAction, ArgMatches, Command};
 use pgr::libs::phylo::tree::query as nwr;
 use pgr::libs::phylo::tree::Tree;
 use std::collections::BTreeSet;
+use std::io::Write;
 
 /// Build the clap subcommand for label.
 pub fn make_subcommand() -> Command {

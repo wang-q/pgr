@@ -1,6 +1,6 @@
 use clap::{value_parser, Arg, ArgMatches, Command};
 use cmd_lib::run_cmd;
-use std::io::BufRead;
+use std::io::{BufRead, Write};
 
 /// Build the clap subcommand for trf.
 pub fn make_subcommand() -> Command {

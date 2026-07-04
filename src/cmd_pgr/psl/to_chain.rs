@@ -41,7 +41,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     for line in reader.lines() {
         let line = line?;
-        if line.is_empty() || line.starts_with('#') {
+        if line.trim().is_empty() || line.starts_with('#') {
+            continue;
+        }
+        // Skip PSL header lines (psLayout version 3, column names, separator)
+        if line.starts_with("psLayout") || line.starts_with("match") || line.starts_with("------") {
             continue;
         }
 

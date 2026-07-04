@@ -1,5 +1,6 @@
 use clap::{ArgMatches, Command};
 use pgr::libs::loc;
+use std::io::Write;
 
 /// Build the clap subcommand for check.
 pub fn make_subcommand() -> Command {

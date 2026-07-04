@@ -87,14 +87,54 @@ pub fn read_runlist(path: &str) -> anyhow::Result<BTreeMap<String, intspan::IntS
     Ok(set)
 }
 
-/// Open a buffered writer for `output` (`stdout` or a file path).
-pub fn writer(output: &str) -> anyhow::Result<Box<dyn Write>> {
-    if output == "stdout" {
-        return Ok(Box::new(BufWriter::new(std::io::stdout())));
-    }
+/// Buffered writer that flushes on drop and reports flush errors to stderr.
+///
+/// Wraps a `BufWriter<Box<dyn Write>>` so that `BufWriter`'s silent flush-on-drop
+/// behavior is replaced with a best-effort flush that emits a warning to stderr
+/// if flushing fails (e.g. broken pipe, disk full). Callers that need to
+/// propagate flush errors should call `flush()?` explicitly before the writer
+/// goes out of scope.
+pub struct PgrWriter {
+    inner: BufWriter<Box<dyn Write>>,
+}
 
-    let file = File::create(output).with_context(|| format!("could not create {}", output))?;
-    Ok(Box::new(BufWriter::new(file)))
+impl Write for PgrWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.inner.write(buf)
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.inner.flush()
+    }
+}
+
+impl Drop for PgrWriter {
+    fn drop(&mut self) {
+        if let Err(e) = self.inner.flush() {
+            // Best-effort: report to stderr but never panic from Drop.
+            let _ = writeln!(
+                std::io::stderr(),
+                "pgr: warning: failed to flush writer: {}",
+                e
+            );
+        }
+    }
+}
+
+/// Open a buffered writer for `output` (`stdout` or a file path).
+///
+/// Returns a [`PgrWriter`] which flushes on drop with a stderr warning on
+/// failure. To get a `Box<dyn Write>` (e.g. for storing in a heterogeneous
+/// collection), wrap the result with `Box::new(pgr::writer(...)?)`.
+pub fn writer(output: &str) -> anyhow::Result<PgrWriter> {
+    let boxed: Box<dyn Write> = if output == "stdout" {
+        Box::new(std::io::stdout())
+    } else {
+        let file = File::create(output).with_context(|| format!("could not create {}", output))?;
+        Box::new(file)
+    };
+    Ok(PgrWriter {
+        inner: BufWriter::new(boxed),
+    })
 }
 
 /// Read a `name<TAB>size` sizes file into a map with the requested value type.

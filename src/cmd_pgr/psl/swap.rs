@@ -39,6 +39,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         if line.trim().is_empty() {
             continue;
         }
+        // Skip PSL header lines (psLayout version 3, column names, separator)
+        if line.starts_with("psLayout") || line.starts_with("match") || line.starts_with("------") {
+            continue;
+        }
 
         let mut psl: Psl = line.parse()?;
         psl.swap(no_rc);

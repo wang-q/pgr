@@ -256,7 +256,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
         let mut stats_writer: Option<Box<dyn Write>> =
             if let Some(stats_file) = args.get_one::<String>("stats_out") {
-                let mut w = pgr::writer(stats_file)?;
+                let mut w = Box::new(pgr::writer(stats_file)?);
                 w.write_all(b"Group\tClusters\tSingletons\tNon-Singletons\tMaxSize\n")?;
                 Some(w)
             } else {
@@ -266,7 +266,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         writer.write_all(b"Group\tClusterID\tSampleID\n")?;
 
         let tree = &trees[0];
-        let mut val = start;
 
         // Pre-calculate leaf depths for scanning if needed
         let leaf_depths_scan = if args.contains_id("leaf_dist_max")
@@ -278,7 +277,15 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             None
         };
 
-        while val <= end + 1e-9 {
+        // Use integer step count + multiplication to avoid floating-point
+        // accumulation drift (e.g. 0.1 added 1000 times != 100.0).
+        let n_steps = ((end - start) / step).round() as i64;
+        for i in 0..=n_steps {
+            let val = start + (i as f64) * step;
+            if val > end + 1e-9 {
+                break;
+            }
+
             let dispatch = if args.contains_id("dynamic_tree") {
                 if !val.is_finite() || val < 0.0 || val > usize::MAX as f64 {
                     anyhow::bail!("scan value out of range: {}", val);
@@ -319,8 +326,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
             let rows = cut::format_scan_rows(&partition, tree, &group_label);
             writer.write_all(rows.as_bytes())?;
-
-            val += step;
         }
         return Ok(());
     }

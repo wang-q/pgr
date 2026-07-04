@@ -18,7 +18,7 @@ Input format:
 Output format:
 * Tab-separated values (TSV)
 * Three columns: name1, name2, distance
-* Symmetric output (both directions included)
+* Lower-triangular output (including diagonal)
 
 Examples:
 1. Convert a PHYLIP matrix:

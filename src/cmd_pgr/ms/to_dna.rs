@@ -85,13 +85,13 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     if verbose {
         let curdir = std::env::current_dir()?;
         let pgr = pgr::libs::io::current_exe_string()?;
-        println!("==> Paths");
-        println!("    \"pgr\"     = {}", pgr);
-        println!("    \"curdir\"  = {:?}", curdir);
+        eprintln!("==> Paths");
+        eprintln!("    \"pgr\"     = {}", pgr);
+        eprintln!("    \"curdir\"  = {:?}", curdir);
     }
 
     if verbose {
-        println!("==> Inputs");
+        eprintln!("==> Inputs");
     }
     let files: Vec<String> = args
         .get_many::<String>("infiles")
@@ -103,20 +103,20 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         .collect::<Result<_, _>>()?;
     if verbose {
         if abs_files.is_empty() {
-            println!("    [stdin]");
+            eprintln!("    [stdin]");
         } else {
-            println!("    files = {:?}", abs_files);
+            eprintln!("    files = {:?}", abs_files);
         }
     }
 
     let seed_final = seed.unwrap_or(pgr::libs::ms::system_seed());
     if verbose {
-        println!("==> Seed");
-        println!("    using = {}", seed_final);
+        eprintln!("==> Seed");
+        eprintln!("    using = {}", seed_final);
     }
 
     // Writer
-    let mut writer: Box<dyn Write> = pgr::writer(outfile)?;
+    let mut writer: Box<dyn Write> = Box::new(pgr::writer(outfile)?);
 
     // Process inputs (stdin or files)
     if abs_files.is_empty() {

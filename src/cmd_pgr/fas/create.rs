@@ -1,5 +1,5 @@
 use clap::{ArgMatches, Command};
-use std::io::BufRead;
+use std::io::{BufRead, Write};
 
 /// Build the clap subcommand for create.
 pub fn make_subcommand() -> Command {

@@ -1,5 +1,6 @@
 use clap::{value_parser, Arg, ArgAction, ArgMatches, Command};
 use pgr::libs::fasta::stat::{calc_n50_stats, transpose};
+use std::io::Write;
 
 /// Build the clap subcommand for n50.
 pub fn make_subcommand() -> Command {

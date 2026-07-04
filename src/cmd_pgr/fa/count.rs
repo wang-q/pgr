@@ -1,4 +1,5 @@
 use clap::{ArgMatches, Command};
+use std::io::Write;
 
 /// Build the clap subcommand for count.
 pub fn make_subcommand() -> Command {

@@ -20,7 +20,7 @@ pub fn reader(infile: &str) -> anyhow::Result<fasta::io::Reader<Box<dyn std::io:
 
 /// Create a FASTA writer with no line wrapping (single-line sequences).
 pub fn writer(outfile: &str) -> anyhow::Result<fasta::io::Writer<Box<dyn std::io::Write>>> {
-    Ok(writer_from_writer(io::writer(outfile)?))
+    Ok(writer_from_writer(Box::new(io::writer(outfile)?)))
 }
 
 /// Create a FASTA writer with configurable line width.
@@ -28,7 +28,7 @@ pub fn writer_with_wrap(
     outfile: &str,
     line_base_count: usize,
 ) -> anyhow::Result<fasta::io::Writer<Box<dyn std::io::Write>>> {
-    let w = io::writer(outfile)?;
+    let w: Box<dyn std::io::Write> = Box::new(io::writer(outfile)?);
     Ok(fasta::io::writer::Builder::default()
         .set_line_base_count(line_base_count)
         .build_from_writer(w))
@@ -102,7 +102,7 @@ pub fn run_window(
     // Build a chunked output path: <stem>.NNN<ext>
     let create_writer = |part: usize| -> anyhow::Result<Box<dyn std::io::Write>> {
         if outfile == "stdout" {
-            io::writer("stdout")
+            Ok(Box::new(io::writer("stdout")?))
         } else {
             let path = std::path::Path::new(outfile);
             let file_stem = path
@@ -123,7 +123,7 @@ pub fn run_window(
             let new_path_str = new_path
                 .to_str()
                 .ok_or_else(|| anyhow::anyhow!("invalid chunked path: {}", new_path.display()))?;
-            io::writer(new_path_str)
+            Ok(Box::new(io::writer(new_path_str)?))
         }
     };
 

@@ -51,7 +51,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             let block = block_result?;
             // the first name of the first block becomes the default reference
             if name.is_empty() {
-                name = block.names.first().cloned().unwrap_or_default();
+                name = block.names.first().cloned().ok_or_else(|| {
+                    anyhow::anyhow!("first block has no species names; use --name to specify")
+                })?;
             }
 
             pgr::libs::alignment::slice_block(&block, &name, &set, &mut writer)?;

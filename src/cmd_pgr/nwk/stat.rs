@@ -1,5 +1,6 @@
 use clap::{Arg, ArgMatches, Command};
 use pgr::libs::phylo::tree::{stat, Tree};
+use std::io::Write;
 
 /// Build the clap subcommand for stat.
 pub fn make_subcommand() -> Command {

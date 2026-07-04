@@ -55,11 +55,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut data = Vec::new();
 
     for infile in infiles {
-        let reader = pgr::reader(infile)?;
-        let reader = bio::io::fasta::Reader::new(reader);
-        for result in reader.records() {
+        let mut fa_in = pgr::libs::fmt::fa::reader(infile)?;
+        for result in fa_in.records() {
             let record = result?;
-            let mut name = record.id().to_string();
+            let mut name = String::from_utf8(record.name().into())?;
 
             if strip_version {
                 if let Some(idx) = name.rfind('.') {
@@ -83,8 +82,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
             seen_names.insert(name.clone());
 
-            let seq = std::str::from_utf8(record.seq())?.to_string();
-            data.push((name, seq));
+            let seq = record.sequence();
+            let seq_str = String::from_utf8(seq.as_ref().to_vec())?;
+            data.push((name, seq_str));
         }
     }
 

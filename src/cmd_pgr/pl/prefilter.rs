@@ -1,7 +1,8 @@
 use clap::{Arg, ArgMatches, Command};
 use cmd_lib::run_cmd;
 use rayon::prelude::*;
-use std::io::Write;
+use std::io::{Read, Write};
+use std::path::PathBuf;
 
 /// Build the clap subcommand for prefilter.
 pub fn make_subcommand() -> Command {
@@ -64,6 +65,7 @@ Examples:
         .arg(crate::cmd_pgr::args::kmer_arg_with_default("7"))
         .arg(crate::cmd_pgr::args::window_arg())
         .arg(crate::cmd_pgr::args::parallel_arg())
+        .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
 /// Execute the prefilter command.
@@ -95,7 +97,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let pgr = pgr::libs::io::current_exe_string()?;
 
-    let results: Vec<anyhow::Result<()>> = chunks
+    // Each parallel task writes its sub-process stdout to a private temp file to
+    // avoid interleaved output across rayon workers. Temp files are kept alive
+    // until their path is consumed by the serial cat phase below.
+    let results: Vec<anyhow::Result<PathBuf>> = chunks
         .par_iter()
         .map(|(_, offset, size)| {
             // Init reader for this chunk
@@ -103,25 +108,51 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
             let chunk = pgr::libs::loc::read_offset(&mut reader, *offset, *size)?;
 
-            let mut temp_file = tempfile::NamedTempFile::new()?;
-            temp_file.write_all(&chunk)?;
-            let temp_path = temp_file
+            let mut temp_input = tempfile::NamedTempFile::new()?;
+            temp_input.write_all(&chunk)?;
+            let temp_input_path = temp_input
                 .path()
                 .to_str()
                 .ok_or_else(|| anyhow::anyhow!("temp file path is not valid UTF-8"))?
                 .to_string();
 
+            // Persist the input temp file so its path remains valid after the
+            // handle is dropped; we clean it up manually after the pipeline.
+            let temp_input_persist_path = temp_input.into_temp_path().keep()?;
+            let temp_input_keep = temp_input_persist_path.clone();
+
+            let temp_output = tempfile::Builder::new().tempfile_in(std::env::temp_dir())?;
+            let temp_output_path = temp_output
+                .path()
+                .to_str()
+                .ok_or_else(|| anyhow::anyhow!("temp file path is not valid UTF-8"))?
+                .to_string();
+            // Persist output temp file too; we read & delete it in the serial phase.
+            let temp_output_persist_path = temp_output.into_temp_path().keep()?;
+
             run_cmd!(
-                ${pgr} fa six-frame ${temp_path} --min-len ${opt_len} |
-                    ${pgr} dist seq stdin ${match_file} -k ${opt_kmer} -w ${opt_window}
+                ${pgr} fa six-frame ${temp_input_path} --min-len ${opt_len} |
+                    ${pgr} dist seq stdin ${match_file} -k ${opt_kmer} -w ${opt_window} > ${temp_output_path}
             )?;
-            Ok(())
+
+            // Best-effort cleanup of the input temp file; failure is non-fatal.
+            let _ = std::fs::remove_file(&temp_input_keep);
+
+            Ok(temp_output_persist_path)
         })
         .collect();
 
+    // Serial phase: stream each chunk's output in order to the writer.
+    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
     for result in results {
-        result?;
+        let path = result?;
+        let mut f = std::fs::File::open(&path)?;
+        let mut buf = Vec::new();
+        f.read_to_end(&mut buf)?;
+        writer.write_all(&buf)?;
+        let _ = std::fs::remove_file(&path);
     }
+    writer.flush()?;
 
     Ok(())
 }

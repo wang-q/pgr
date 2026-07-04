@@ -1,6 +1,7 @@
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use pgr::libs::fmt::psl::Psl;
 use std::collections::HashMap;
+use std::io::Write;
 /// Build the clap subcommand for histo.
 pub fn make_subcommand() -> Command {
     Command::new("histo")

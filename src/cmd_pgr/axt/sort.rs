@@ -1,5 +1,6 @@
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use pgr::libs::fmt::axt::{write_axt, AxtReader};
+use std::io::Write;
 
 /// Build the clap subcommand for sort.
 pub fn make_subcommand() -> Command {

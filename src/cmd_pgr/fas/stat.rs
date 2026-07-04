@@ -76,7 +76,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 seqs.pop();
             }
 
-            // let (length, comparable, difference, gap, ambiguous, mean_d) = alignment_stat(&seqs);
             let result = pgr::libs::alignment::alignment_stat(&seqs)?;
 
             let mut indel_ints = intspan::IntSpan::new();

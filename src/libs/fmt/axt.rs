@@ -100,7 +100,7 @@ pub fn axt_to_maf(
             std::fs::create_dir_all(output)?;
         }
     } else {
-        let writer = crate::libs::io::writer(output)?;
+        let writer: Box<dyn std::io::Write> = Box::new(crate::libs::io::writer(output)?);
         let mut writer = MafWriter::new(writer);
         writer.write_header("blastz")?;
         single_writer = Some(writer);
@@ -121,7 +121,8 @@ pub fn axt_to_maf(
                     let path_str = path.to_str().ok_or_else(|| {
                         anyhow::anyhow!("path is not valid UTF-8: {}", path.display())
                     })?;
-                    let mut w = MafWriter::new(crate::libs::io::writer(path_str)?);
+                    let w: Box<dyn std::io::Write> = Box::new(crate::libs::io::writer(path_str)?);
+                    let mut w = MafWriter::new(w);
                     w.write_header("blastz")?;
                     split_writers.insert(axt.t_name.clone(), w);
                 }

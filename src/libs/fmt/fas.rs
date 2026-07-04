@@ -220,9 +220,20 @@ where
                     Ok(r) => r,
                     Err(_) => break,
                 };
-                while let Ok(block) = next_fas_block(&mut reader) {
-                    if snd1.send(block).is_err() {
-                        break;
+                for block_result in iter_fas_blocks(&mut reader) {
+                    match block_result {
+                        Ok(block) => {
+                            if snd1.send(block).is_err() {
+                                break;
+                            }
+                        }
+                        Err(e) => {
+                            let _ = writeln!(
+                                std::io::stderr(),
+                                "pgr: warning: skipping malformed fas block: {}",
+                                e
+                            );
+                        }
                     }
                 }
             }
@@ -275,7 +286,8 @@ where
     if parallel <= 1 {
         for infile in infiles {
             let mut reader = crate::reader(infile)?;
-            while let Ok(block) = next_fas_block(&mut reader) {
+            for block_result in iter_fas_blocks(&mut reader) {
+                let block = block_result?;
                 let out_string = proc_block(&block)?;
                 writer.write_all(out_string.as_ref())?;
             }
@@ -317,7 +329,8 @@ pub fn concat_blocks_into<R: io::BufRead>(
     needed: &[String],
     seq_of: &mut std::collections::BTreeMap<String, String>,
 ) -> anyhow::Result<()> {
-    while let Ok(block) = next_fas_block(reader) {
+    for block_result in iter_fas_blocks(reader) {
+        let block = block_result?;
         let block_names = block.names;
         let length = block.entries.first().unwrap().seq().len();
 
@@ -350,7 +363,8 @@ pub fn aggregate_coverage_into<R: io::BufRead>(
     name_filter: &str,
     trim: i32,
 ) -> anyhow::Result<()> {
-    while let Ok(block) = next_fas_block(reader) {
+    for block_result in iter_fas_blocks(reader) {
+        let block = block_result?;
         let block_names = block.names;
 
         if !name_filter.is_empty() {

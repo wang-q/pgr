@@ -1,5 +1,6 @@
 use clap::{Arg, ArgAction, ArgGroup, ArgMatches, Command, Id};
 use pgr::libs::phylo::tree::{algo, Tree};
+use std::io::Write;
 
 /// Build the clap subcommand for order.
 pub fn make_subcommand() -> Command {

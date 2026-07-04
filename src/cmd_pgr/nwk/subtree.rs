@@ -1,6 +1,7 @@
 use clap::{value_parser, Arg, ArgMatches, Command};
 use pgr::libs::phylo::tree::query as nwr;
 use pgr::libs::phylo::tree::Tree;
+use std::io::Write;
 
 /// Build the clap subcommand for subtree.
 pub fn make_subcommand() -> Command {
