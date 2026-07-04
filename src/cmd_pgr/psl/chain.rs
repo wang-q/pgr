@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{ArgMatches, Command};
 use pgr::libs::chain::{chain_psl, GapCalc, ScoreContext, SubMatrix};
 use pgr::libs::fmt::twobit::TwoBitFile;
@@ -65,17 +66,19 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let query_2bit_path = args.get_one::<String>("query");
     let score_scheme_path = args.get_one::<String>("score_scheme");
 
-    let reader = pgr::reader(input)?;
-    let mut writer = pgr::writer(output)?;
+    let reader =
+        pgr::reader(input).with_context(|| format!("Failed to open reader for {}", input))?;
+    let mut writer =
+        pgr::writer(output).with_context(|| format!("Failed to open writer for {}", output))?;
 
     let mut t_2bit = if let Some(path) = target_2bit_path {
-        Some(TwoBitFile::open(path)?)
+        Some(TwoBitFile::open(path).with_context(|| format!("Failed to open 2bit file {}", path))?)
     } else {
         None
     };
 
     let mut q_2bit = if let Some(path) = query_2bit_path {
-        Some(TwoBitFile::open(path)?)
+        Some(TwoBitFile::open(path).with_context(|| format!("Failed to open 2bit file {}", path))?)
     } else {
         None
     };
@@ -112,7 +115,13 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         }
     };
 
-    chain_psl(reader, &mut writer, &gap_calc, min_score, &mut score_context)?;
+    chain_psl(
+        reader,
+        &mut writer,
+        &gap_calc,
+        min_score,
+        &mut score_context,
+    )?;
 
     Ok(())
 }

@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{Arg, ArgMatches, Command};
 
 use pgr::libs::chain::anti_repeat::check_chain;
@@ -56,12 +57,18 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let min_score = *args.get_one::<f64>("min_score").unwrap();
     let no_check_score = *args.get_one::<usize>("no_check_score").unwrap();
 
-    let mut target_2bit = TwoBitFile::open(target_path)?;
-    let mut query_2bit = TwoBitFile::open(query_path)?;
+    let mut target_2bit = TwoBitFile::open(target_path)
+        .with_context(|| format!("Failed to open 2bit file {}", target_path))?;
+    let mut query_2bit = TwoBitFile::open(query_path)
+        .with_context(|| format!("Failed to open 2bit file {}", query_path))?;
 
-    let chains = read_chains(pgr::reader(input_path)?)?; // Note: read_chains reads all chains into memory
+    let chains = read_chains(
+        pgr::reader(input_path)
+            .with_context(|| format!("Failed to open reader for {}", input_path))?,
+    )?; // Note: read_chains reads all chains into memory
 
-    let mut writer = pgr::writer(output_path)?;
+    let mut writer = pgr::writer(output_path)
+        .with_context(|| format!("Failed to open writer for {}", output_path))?;
 
     for chain in chains {
         if chain.header.score >= no_check_score as f64 {

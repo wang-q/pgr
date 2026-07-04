@@ -509,6 +509,36 @@ pub fn replace_block_lines(
     Ok(blocks)
 }
 
+/// Create block FA content from a links-of-ranges TSV reader. For each line,
+/// splits on tab, parses each field as an intspan::Range, optionally overrides
+/// the species name, fetches the sequence via `get_seq_loc`, and writes
+/// `>{range}\n{seq}\n` per range with a blank line separating blocks.
+pub fn create_from_links<R: io::BufRead, W: Write>(
+    reader: R,
+    writer: &mut W,
+    genome: &str,
+    name: &str,
+) -> anyhow::Result<()> {
+    for line in reader.lines() {
+        let line = line?;
+        let parts: Vec<&str> = line.split('\t').collect();
+        for part in &parts {
+            let mut range = Range::from_str(part);
+            if !range.is_valid() {
+                log::warn!("skipping invalid range: {}", part);
+                continue;
+            }
+            if !name.is_empty() {
+                *range.name_mut() = name.to_string();
+            }
+            let seq = crate::libs::loc::get_seq_loc(genome, &range.to_string())?;
+            writer.write_all(format!(">{}\n{}\n", range, seq).as_ref())?;
+        }
+        writer.write_all(b"\n")?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod fas_tests {
     use std::io::BufReader;

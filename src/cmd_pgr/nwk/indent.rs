@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use pgr::libs::phylo::tree::Tree;
 use std::io::Write;
@@ -47,7 +48,9 @@ Examples:
 
 /// Execute the indent command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
+    let mut writer =
+        pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
 
     let compact = args.get_flag("compact");
     let text = if compact {

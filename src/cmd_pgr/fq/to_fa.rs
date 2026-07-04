@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{ArgMatches, Command};
 
 /// Build the clap subcommand for to-fa.
@@ -34,7 +35,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut fa_out = pgr::libs::fmt::fa::writer(crate::cmd_pgr::args::get_outfile(args))?;
 
     for infile in args.get_many::<String>("infiles").unwrap() {
-        let reader = pgr::reader(infile)?;
+        let reader =
+            pgr::reader(infile).with_context(|| format!("Failed to open reader for {}", infile))?;
         let mut seq_in = noodles_fastq::io::Reader::new(reader);
 
         for result in seq_in.records() {

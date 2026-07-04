@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{Arg, ArgMatches, Command};
 use pgr::libs::chain::net::{finalize_net, write_net, ChainNet};
 use pgr::libs::chain::ChainReader;
@@ -32,7 +33,8 @@ fn write_net_file(
     min_score: f64,
     min_fill: u64,
 ) -> anyhow::Result<()> {
-    let mut writer = pgr::writer(path)?;
+    let mut writer =
+        pgr::writer(path).with_context(|| format!("Failed to open writer for {}", path))?;
     for comment in comments {
         write!(writer, "{}", comment)?;
     }
@@ -122,7 +124,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut t_net = ChainNet::new(&t_sizes);
     let mut q_net = ChainNet::new(&q_sizes);
 
-    let mut reader = ChainReader::new(pgr::reader(input_path)?);
+    let mut reader = ChainReader::new(
+        pgr::reader(input_path)
+            .with_context(|| format!("Failed to open reader for {}", input_path))?,
+    );
 
     let mut last_score = f64::MAX;
 

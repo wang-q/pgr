@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{ArgMatches, Command};
 use pgr::libs::phylo::tree::io::to_forest;
 use pgr::libs::phylo::tree::Tree;
@@ -36,7 +37,9 @@ Examples:
 
 /// Execute the to-forest command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
+    let mut writer =
+        pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
     let is_bl = args.get_flag("bl");
 
     let infile = args.get_one::<String>("infile").unwrap();

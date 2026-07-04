@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use pgr::libs::phylo::tree::{self, support};
 use std::io::Write;
@@ -47,7 +48,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let replicates_file = args.get_one::<String>("replicates").unwrap();
     let percent = args.get_flag("percent");
 
-    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
+    let mut writer =
+        pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
 
     // 1. Read Replicate Trees
     // We read replicates first to build the leaf map and counts, similar to nw_support logic

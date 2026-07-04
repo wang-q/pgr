@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{ArgMatches, Command};
 use std::collections::HashMap;
 use std::io::Write;
@@ -16,7 +17,8 @@ pub fn make_subcommand() -> Command {
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let input_path = args.get_one::<String>("infile").unwrap();
 
-    let reader = pgr::reader(input_path)?;
+    let reader = pgr::reader(input_path)
+        .with_context(|| format!("Failed to open reader for {}", input_path))?;
 
     let chroms = read_nets(reader)?;
 

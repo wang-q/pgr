@@ -102,7 +102,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         ))
     } else {
         let path = std::path::Path::new(infile);
-        let file = std::fs::File::open(path)?;
+        let file =
+            std::fs::File::open(path).with_context(|| format!("Failed to open file {}", infile))?;
 
         // Use 64KB buffer (BGZF block size) to optimize read performance
         Box::new(std::io::BufReader::with_capacity(64 * 1024, file))

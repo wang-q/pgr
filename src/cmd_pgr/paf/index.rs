@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{ArgMatches, Command};
 use pgr::libs::paf::index::PafIndex;
 /// Build the clap subcommand for index.
@@ -47,7 +48,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     } else {
         let readers: Vec<_> = infiles
             .iter()
-            .map(|f| pgr::reader(f))
+            .map(|f| pgr::reader(f).with_context(|| format!("Failed to open reader for {}", f)))
             .collect::<Result<Vec<_>, _>>()?;
         PafIndex::build_multi(readers)?
     };

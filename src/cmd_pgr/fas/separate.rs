@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use std::collections::BTreeMap;
 use std::io::{BufWriter, Write};
@@ -55,7 +56,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let mut file_of: BTreeMap<String, BufWriter<std::fs::File>> = BTreeMap::new();
     for infile in args.get_many::<String>("infiles").unwrap() {
-        let mut reader = pgr::reader(infile)?;
+        let mut reader =
+            pgr::reader(infile).with_context(|| format!("Failed to open reader for {}", infile))?;
 
         for block_result in pgr::libs::fmt::fas::iter_fas_blocks(&mut reader) {
             let block = block_result?;
@@ -78,8 +80,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                     print!(">{}\n{}\n", range, seq);
                 } else {
                     if !file_of.contains_key(entry_name) {
-                        let path = std::path::Path::new(outdir)
-                            .join(format!("{}{}", range.name(), opt_suffix));
+                        let path = std::path::Path::new(outdir).join(format!(
+                            "{}{}",
+                            range.name(),
+                            opt_suffix
+                        ));
                         let file = std::fs::OpenOptions::new()
                             .create(true)
                             .write(true)

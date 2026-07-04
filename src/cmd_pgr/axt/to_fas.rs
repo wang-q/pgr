@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{ArgMatches, Command};
 use intspan::Range;
 use pgr::libs::fmt::axt::AxtReader;
@@ -41,14 +42,17 @@ Examples:
 
 /// Execute the to-fas command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
+    let mut writer =
+        pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
     let sizes = pgr::read_sizes::<i32>(args.get_one::<String>("q_sizes").unwrap())?;
 
     let tname = args.get_one::<String>("t_name").unwrap();
     let qname = args.get_one::<String>("q_name").unwrap();
 
     for infile in args.get_many::<String>("infiles").unwrap() {
-        let reader = pgr::reader(infile)?;
+        let reader =
+            pgr::reader(infile).with_context(|| format!("Failed to open reader for {}", infile))?;
         let axt_iter = AxtReader::new(reader);
 
         for axt_res in axt_iter {

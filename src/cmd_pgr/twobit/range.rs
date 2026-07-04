@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{ArgMatches, Command};
 use pgr::libs::fmt::twobit::TwoBitFile;
 use pgr::libs::nt;
@@ -49,8 +50,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let ranges = crate::cmd_pgr::args::collect_ranges(args)?;
 
     // Open files
-    let mut tb = TwoBitFile::open(infile)?;
-    let mut writer = pgr::writer(output_path)?;
+    let mut tb =
+        TwoBitFile::open(infile).with_context(|| format!("Failed to open 2bit file {}", infile))?;
+    let mut writer = pgr::writer(output_path)
+        .with_context(|| format!("Failed to open writer for {}", output_path))?;
 
     for el in ranges.iter() {
         let rg = intspan::Range::from_str(el);

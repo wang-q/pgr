@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{ArgMatches, Command};
 use pgr::libs::fmt::twobit::TwoBitFile;
 use std::io::Write;
@@ -30,11 +31,14 @@ Examples:
 
 /// Execute the size command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
+    let mut writer =
+        pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
     let no_ns = args.get_flag("no_ns");
 
     for infile in args.get_many::<String>("infiles").unwrap() {
-        let mut tb = TwoBitFile::open(infile)?;
+        let mut tb = TwoBitFile::open(infile)
+            .with_context(|| format!("Failed to open 2bit file {}", infile))?;
 
         // Get all sequence names
         let mut names = tb.get_sequence_names();

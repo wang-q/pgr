@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{ArgMatches, Command};
 use pgr::libs::clust::upgma;
 use std::io::Write;
@@ -39,7 +40,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let tree = upgma::upgma(&matrix)?;
 
     // Output tree
-    let mut writer = pgr::writer(outfile)?;
+    let mut writer =
+        pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
     writer.write_all((tree.to_newick() + "\n").as_ref())?;
 
     Ok(())

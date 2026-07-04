@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{value_parser, Arg, ArgAction, ArgMatches, Command};
 use cmd_lib::{run_cmd, run_fun};
 use pgr::libs::phylo::tree::Tree;
@@ -105,7 +106,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // Read taxonomy TSV
     run_cmd!(info "==> Read taxonomy TSV")?;
 
-    let taxon_reader = pgr::reader(&abs_taxon)?;
+    let taxon_reader = pgr::reader(&abs_taxon)
+        .with_context(|| format!("Failed to open reader for {}", abs_taxon))?;
     let taxon_table = pgr::libs::phylo::read_taxonomy(taxon_reader, &ranks, &leaf_names)?;
     let taxon_map = taxon_table.taxon_map;
     let all_groups = taxon_table.all_groups;
@@ -152,7 +154,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             }
 
             // Write node list to a reusable file
-            let mut writer = pgr::writer("nodes.txt")?;
+            let mut writer =
+                pgr::writer("nodes.txt").with_context(|| "Failed to open writer for nodes.txt")?;
             for node in &nodes_in_group {
                 writeln!(writer, "{}", node)?;
             }
@@ -206,7 +209,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         "result.nwk",
     )?;
 
-    let mut writer = pgr::writer("condensed.tsv")?;
+    let mut writer =
+        pgr::writer("condensed.tsv").with_context(|| "Failed to open writer for condensed.tsv")?;
     for line in condensed.iter() {
         writeln!(writer, "{}", line)?;
     }
@@ -214,7 +218,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     // Done
     if outfile == "stdout" {
-        let result_content = fs::read_to_string("result.nwk")?;
+        let result_content =
+            fs::read_to_string("result.nwk").with_context(|| "Failed to read from result.nwk")?;
         print!("{}", result_content);
         ctx.leave()?;
     } else {

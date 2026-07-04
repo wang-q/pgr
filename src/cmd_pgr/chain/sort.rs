@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use pgr::libs::chain::read_chains;
 use std::io::BufRead;
@@ -55,7 +56,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         .unwrap_or_default();
 
     if let Some(list_path) = args.get_one::<String>("input_list") {
-        let reader = pgr::reader(list_path)?;
+        let reader = pgr::reader(list_path)
+            .with_context(|| format!("Failed to open reader for {}", list_path))?;
         for line in reader.lines() {
             let line = line?;
             let trimmed = line.trim();
@@ -71,7 +73,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     // Read all chains
     for file_path in &files {
-        let chains = read_chains(pgr::reader(file_path)?)?;
+        let chains = read_chains(
+            pgr::reader(file_path)
+                .with_context(|| format!("Failed to open reader for {}", file_path))?,
+        )?;
         all_chains.extend(chains);
     }
 
@@ -80,7 +85,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     // Write output
     let out_path = crate::cmd_pgr::args::get_outfile(args);
-    let mut writer = pgr::writer(out_path)?;
+    let mut writer =
+        pgr::writer(out_path).with_context(|| format!("Failed to open writer for {}", out_path))?;
     for chain in all_chains {
         chain.write(&mut writer)?;
     }

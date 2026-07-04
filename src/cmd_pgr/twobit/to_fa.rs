@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{ArgMatches, Command};
 use pgr::libs::fmt::twobit::TwoBitFile;
 /// Build the clap subcommand for to-fa.
@@ -38,7 +39,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let no_mask = args.get_flag("no_mask");
     let line_width = args.get_one::<usize>("line").copied().unwrap_or(60);
 
-    let mut tb = TwoBitFile::open(input_path)?;
+    let mut tb = TwoBitFile::open(input_path)
+        .with_context(|| format!("Failed to open 2bit file {}", input_path))?;
     let mut writer = if line_width == 0 {
         pgr::libs::fmt::fa::writer(output_path)?
     } else {

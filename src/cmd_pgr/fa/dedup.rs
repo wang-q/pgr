@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use std::collections::HashMap;
 use std::io::Write;
@@ -145,7 +146,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     if args.contains_id("dups_file") {
         let opt_file = args.get_one::<String>("dups_file").unwrap();
-        let mut writer = pgr::writer(opt_file)?;
+        let mut writer = pgr::writer(opt_file)
+            .with_context(|| format!("Failed to open writer for {}", opt_file))?;
 
         for v in subject_map.values() {
             if v.len() < 2 {

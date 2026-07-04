@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{value_parser, Arg, ArgMatches, Command};
 use pgr::libs::phylo::tree::query as nwr;
 use pgr::libs::phylo::tree::Tree;
@@ -71,7 +72,9 @@ Examples:
 
 /// Execute the subtree command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
+    let mut writer =
+        pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
 
     let is_monophyly = args.get_flag("monophyly");
     let condense_name = args.get_one::<String>("condense");

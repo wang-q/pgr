@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{builder::PossibleValue, value_parser, Arg, ArgAction, ArgGroup, ArgMatches, Command};
 use pgr::libs::clust::tree_cut::dynamic::DynamicTreeOptions;
 use pgr::libs::clust::tree_cut::hybrid::HybridOptions;
@@ -239,7 +240,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         }
     }
 
-    let mut writer = pgr::writer(outfile)?;
+    let mut writer =
+        pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
 
     if let Some(scan_str) = args.get_one::<String>("scan") {
         let parts: Vec<&str> = scan_str.split(',').collect();
@@ -256,7 +258,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
         let mut stats_writer: Option<Box<dyn Write>> =
             if let Some(stats_file) = args.get_one::<String>("stats_out") {
-                let mut w = Box::new(pgr::writer(stats_file)?);
+                let mut w = Box::new(
+                    pgr::writer(stats_file)
+                        .with_context(|| format!("Failed to open writer for {}", stats_file))?,
+                );
                 w.write_all(b"Group\tClusters\tSingletons\tNon-Singletons\tMaxSize\n")?;
                 Some(w)
             } else {

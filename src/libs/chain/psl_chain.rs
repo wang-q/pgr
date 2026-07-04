@@ -1,4 +1,6 @@
-use crate::libs::chain::{calc_block_score, chain_blocks, Chain, ChainableBlock, GapCalc, ScoreContext};
+use crate::libs::chain::{
+    calc_block_score, chain_blocks, Chain, ChainableBlock, GapCalc, ScoreContext,
+};
 use crate::libs::fmt::psl::Psl;
 use crate::libs::io::SequenceReader;
 use std::collections::HashMap;

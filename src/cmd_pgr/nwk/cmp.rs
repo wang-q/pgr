@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{Arg, ArgMatches, Command};
 use pgr::libs::phylo::tree::Tree;
 use std::io::Write;
@@ -61,7 +62,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     // 3. Output writer
     let outfile = crate::cmd_pgr::args::get_outfile(args);
-    let mut writer = pgr::writer(outfile)?;
+    let mut writer =
+        pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
 
     // 4. Compare
     // Header

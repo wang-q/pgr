@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{ArgMatches, Command};
 /// Build the clap subcommand for stitch.
 pub fn make_subcommand() -> Command {
@@ -24,7 +25,9 @@ Examples:
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let input_path = args.get_one::<String>("infile").unwrap();
     let output_path = crate::cmd_pgr::args::get_outfile(args);
-    let reader = pgr::reader(input_path)?;
-    let writer = pgr::writer(output_path)?;
+    let reader = pgr::reader(input_path)
+        .with_context(|| format!("Failed to open reader for {}", input_path))?;
+    let writer = pgr::writer(output_path)
+        .with_context(|| format!("Failed to open writer for {}", output_path))?;
     pgr::libs::chain::stitch_chains(reader, writer)
 }

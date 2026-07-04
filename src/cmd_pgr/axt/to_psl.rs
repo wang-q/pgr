@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{ArgMatches, Command};
 /// Build the clap subcommand for to-psl.
 pub fn make_subcommand() -> Command {
@@ -27,8 +28,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let t_sizes = pgr::read_sizes::<usize>(t_sizes_path)?;
     let q_sizes = pgr::read_sizes::<usize>(q_sizes_path)?;
 
-    let reader = pgr::reader(input)?;
-    let mut writer = pgr::writer(output)?;
+    let reader =
+        pgr::reader(input).with_context(|| format!("Failed to open reader for {}", input))?;
+    let mut writer =
+        pgr::writer(output).with_context(|| format!("Failed to open writer for {}", output))?;
 
     pgr::libs::fmt::axt::axt_to_psl(reader, &mut writer, &t_sizes, &q_sizes)?;
 

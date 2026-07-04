@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use pgr::libs::fmt::axt::{write_axt, AxtReader};
 use std::io::Write;
@@ -47,8 +48,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let by_score = args.get_flag("by_score");
     let renumber = args.get_flag("renumber");
 
-    let reader = pgr::reader(input)?;
-    let mut writer = pgr::writer(output)?;
+    let reader =
+        pgr::reader(input).with_context(|| format!("Failed to open reader for {}", input))?;
+    let mut writer =
+        pgr::writer(output).with_context(|| format!("Failed to open writer for {}", output))?;
 
     let mut axt_reader = AxtReader::new(reader);
 

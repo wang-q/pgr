@@ -1,5 +1,4 @@
 use clap::{ArgMatches, Command};
-use std::io::{BufRead, Write};
 
 /// Build the clap subcommand for create.
 pub fn make_subcommand() -> Command {
@@ -48,31 +47,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     for infile in args.get_many::<String>("infiles").unwrap() {
         let reader = pgr::reader(infile)?;
-        for line in reader.lines() {
-            let line = line?;
-            let parts: Vec<&str> = line.split('\t').collect();
-
-            for part in &parts {
-                let mut range = intspan::Range::from_str(part);
-                if !range.is_valid() {
-                    log::warn!("skipping invalid range: {}", part);
-                    continue;
-                }
-
-                // Set the species name if provided
-                if !opt_name.is_empty() {
-                    *range.name_mut() = opt_name.to_string();
-                }
-
-                // Fetch the sequence from the reference genome
-                let seq = pgr::libs::loc::get_seq_loc(opt_genome, &range.to_string())?;
-
-                writer.write_all(format!(">{}\n{}\n", range, seq).as_ref())?;
-            }
-
-            // End of a block
-            writer.write_all("\n".as_ref())?;
-        }
+        pgr::libs::fmt::fas::create_from_links(reader, &mut writer, opt_genome, opt_name)?;
     }
 
     Ok(())

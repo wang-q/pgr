@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{ArgMatches, Command};
 use std::io::Write;
 
@@ -48,7 +49,12 @@ Examples:
 
 /// Execute the filter command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
+    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args)).with_context(|| {
+        format!(
+            "Failed to open writer for {}",
+            crate::cmd_pgr::args::get_outfile(args)
+        )
+    })?;
     let opt_name = &args
         .get_one::<String>("name")
         .map(|s| s.as_str())
@@ -67,7 +73,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let is_dash = args.get_flag("dash");
 
     for infile in args.get_many::<String>("infiles").unwrap() {
-        let mut reader = pgr::reader(infile)?;
+        let mut reader =
+            pgr::reader(infile).with_context(|| format!("Failed to open reader for {}", infile))?;
 
         for block_result in pgr::libs::fmt::fas::iter_fas_blocks(&mut reader) {
             let block = block_result?;

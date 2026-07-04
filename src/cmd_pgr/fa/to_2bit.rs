@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use pgr::libs::fmt::twobit::TwoBitWriter;
 use std::collections::HashSet;
@@ -88,7 +89,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let refs: Vec<(&str, &str)> = data.iter().map(|(n, s)| (n.as_str(), s.as_str())).collect();
 
-    let mut writer = pgr::writer(output)?;
+    let mut writer =
+        pgr::writer(output).with_context(|| format!("Failed to open writer for {}", output))?;
     let mut tb_writer = TwoBitWriter::new(&mut writer);
 
     tb_writer.write(&refs, !no_mask)?;

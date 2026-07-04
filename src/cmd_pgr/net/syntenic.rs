@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{ArgMatches, Command};
 use pgr::libs::chain::net::{classify_syntenic, read_nets, write_net};
 /// Build the clap subcommand for syntenic.
@@ -33,12 +34,14 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let out_file = crate::cmd_pgr::args::get_outfile(args);
     let min_score = *args.get_one::<f64>("min_score").unwrap();
 
-    let reader = pgr::reader(in_file)?;
+    let reader =
+        pgr::reader(in_file).with_context(|| format!("Failed to open reader for {}", in_file))?;
     let nets = read_nets(reader)?;
 
     classify_syntenic(&nets);
 
-    let mut writer = pgr::writer(out_file)?;
+    let mut writer =
+        pgr::writer(out_file).with_context(|| format!("Failed to open writer for {}", out_file))?;
     for net in &nets {
         write_net(net, &mut writer, false, min_score, 0)?;
     }

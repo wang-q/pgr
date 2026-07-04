@@ -1102,6 +1102,194 @@ pub fn psl_block_ranges(psl: &Psl, target: bool) -> Vec<String> {
     ranges
 }
 
+/// Collect histogram counts (alignsPerQuery / coverSpread / idSpread) from PSL
+/// records, grouped by query name. Writes one line per query to `writer`.
+pub fn histogram<R: BufRead, W: Write>(
+    reader: R,
+    writer: &mut W,
+    field: &str,
+    multi_only: bool,
+    non_zero: bool,
+) -> anyhow::Result<()> {
+    let mut query_map: HashMap<String, Vec<Psl>> = HashMap::new();
+    for psl in iter_psl(reader) {
+        let psl = psl?;
+        query_map.entry(psl.q_name.clone()).or_default().push(psl);
+    }
+    let mut queries: Vec<_> = query_map.keys().cloned().collect();
+    queries.sort();
+    for q_name in queries {
+        let psls = &query_map[&q_name];
+        if multi_only && psls.len() <= 1 {
+            continue;
+        }
+        match field {
+            "alignsPerQuery" => {
+                let cnt = psls.len();
+                if !non_zero || cnt != 0 {
+                    writeln!(writer, "{}", cnt)?;
+                }
+            }
+            "coverSpread" => {
+                let (min, max) = calc_spread(psls, |p| p.cover());
+                let diff = max - min;
+                if !non_zero || diff != 0.0 {
+                    writeln!(writer, "{:.4}", diff)?;
+                }
+            }
+            "idSpread" => {
+                let (min, max) = calc_spread(psls, |p| p.ident());
+                let diff = max - min;
+                if !non_zero || diff != 0.0 {
+                    writeln!(writer, "{:.4}", diff)?;
+                }
+            }
+            _ => anyhow::bail!("unsupported stat type"),
+        }
+    }
+    Ok(())
+}
+
+/// Swap target and query for all PSL records. When `no_rc` is false, records
+/// are reverse-complemented to keep target strand explicit.
+pub fn swap_records<R: BufRead, W: Write>(
+    reader: R,
+    writer: &mut W,
+    no_rc: bool,
+) -> anyhow::Result<()> {
+    for psl in iter_psl(reader) {
+        let mut psl = psl?;
+        psl.swap(no_rc);
+        psl.write_to(writer)?;
+    }
+    Ok(())
+}
+
+/// Reverse-complement all PSL records.
+pub fn rc_records<R: BufRead, W: Write>(reader: R, writer: &mut W) -> anyhow::Result<()> {
+    for psl in iter_psl(reader) {
+        let mut psl = psl?;
+        psl.rc();
+        psl.write_to(writer)?;
+    }
+    Ok(())
+}
+
+/// Extract alignment coordinates from PSL as ranges (chr:start-end, 1-based
+/// inclusive). When `target` is true, emits target coordinates; otherwise
+/// query. `strict` controls parse-failure behavior.
+pub fn to_ranges<R: BufRead, W: Write>(
+    reader: R,
+    writer: &mut W,
+    target: bool,
+    strict: bool,
+) -> anyhow::Result<()> {
+    for line in reader.lines() {
+        let line = line?;
+        if line.trim().is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if line.starts_with("psLayout") || line.starts_with("match") || line.starts_with("------") {
+            continue;
+        }
+        let psl = match parse_or_warn(&line, strict)? {
+            Some(p) => p,
+            None => continue,
+        };
+        for range in psl_block_ranges(&psl, target) {
+            writer.write_all(range.as_bytes())?;
+            writer.write_all(b"\n")?;
+        }
+    }
+    Ok(())
+}
+
+/// Convert PSL records to Chain format. When `fix_strand` is true, records
+/// with '-' target strand are reverse-complemented before conversion;
+/// otherwise such records cause an error. `strict` controls parse-failure
+/// behavior.
+pub fn to_chain<R: BufRead, W: Write>(
+    reader: R,
+    writer: &mut W,
+    fix_strand: bool,
+    strict: bool,
+) -> anyhow::Result<()> {
+    let mut chain_id: u64 = 1;
+    for line in reader.lines() {
+        let line = line?;
+        if line.trim().is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if line.starts_with("psLayout") || line.starts_with("match") || line.starts_with("------") {
+            continue;
+        }
+        let mut psl = match parse_or_warn(&line, strict)? {
+            Some(p) => p,
+            None => continue,
+        };
+        let strand_bytes = psl.strand.as_bytes();
+        if strand_bytes.len() < 2 {
+            anyhow::bail!("malformed PSL strand (expected 2 chars): {}", psl.strand);
+        }
+        let t_strand_char = strand_bytes[1] as char;
+        if t_strand_char == '-' {
+            if fix_strand {
+                psl.rc();
+            } else {
+                anyhow::bail!("PSL record has '-' for target strand. Use --fix-strand to fix.");
+            }
+        }
+        psl.write_chain(writer, chain_id)?;
+        chain_id += 1;
+    }
+    Ok(())
+}
+
+/// Lift PSL coordinates from fragment alignments to genomic coordinates.
+/// Preserves comment/blank lines verbatim. `q_sizes` / `t_sizes` are optional
+/// chromosome size maps; `strict` controls both parse-failure and lift-failure
+/// behavior.
+pub fn lift<R: BufRead, W: Write>(
+    reader: R,
+    writer: &mut W,
+    q_sizes: Option<&BTreeMap<String, i32>>,
+    t_sizes: Option<&BTreeMap<String, i32>>,
+    strict: bool,
+) -> anyhow::Result<()> {
+    for line in reader.lines() {
+        let line = line?;
+        if line.trim().is_empty() || line.starts_with('#') {
+            writer.write_fmt(format_args!("{}\n", line))?;
+            continue;
+        }
+        if line.starts_with("psLayout") || line.starts_with("match") || line.starts_with("------") {
+            continue;
+        }
+        let mut psl = match parse_or_warn(&line, strict)? {
+            Some(p) => p,
+            None => continue,
+        };
+        if let Some(sizes) = q_sizes {
+            if !psl.lift_query(sizes) {
+                if strict {
+                    anyhow::bail!("failed to lift query: {}", psl.q_name);
+                }
+                log::warn!("failed to lift query: {}", psl.q_name);
+            }
+        }
+        if let Some(sizes) = t_sizes {
+            if !psl.lift_target(sizes) {
+                if strict {
+                    anyhow::bail!("failed to lift target: {}", psl.t_name);
+                }
+                log::warn!("failed to lift target: {}", psl.t_name);
+            }
+        }
+        psl.write_to(writer)?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 #[allow(clippy::field_reassign_with_default)]
 mod tests {

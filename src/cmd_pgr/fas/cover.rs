@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{value_parser, Arg, ArgMatches, Command};
 use std::collections::BTreeMap;
 
@@ -57,7 +58,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut res_of: BTreeMap<String, BTreeMap<String, intspan::IntSpan>> = BTreeMap::new();
 
     for infile in args.get_many::<String>("infiles").unwrap() {
-        let mut reader = pgr::reader(infile)?;
+        let mut reader =
+            pgr::reader(infile).with_context(|| format!("Failed to open reader for {}", infile))?;
         pgr::libs::fmt::fas::aggregate_coverage_into(&mut reader, &mut res_of, opt_name, opt_trim)?;
     }
 

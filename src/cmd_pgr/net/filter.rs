@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use pgr::libs::chain::net::{filter_chrom, prune_gap, read_nets, FilterCriteria};
 /// Build the clap subcommand for filter.
@@ -155,10 +156,13 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     criteria.fill_only = args.get_flag("fill_only");
     criteria.gap_only = args.get_flag("gap_only");
 
-    let reader = pgr::reader(input_path)?;
+    let reader = pgr::reader(input_path)
+        .with_context(|| format!("Failed to open reader for {}", input_path))?;
     let chroms = read_nets(reader)?;
 
-    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
+    let out_path = crate::cmd_pgr::args::get_outfile(args);
+    let mut writer =
+        pgr::writer(out_path).with_context(|| format!("Failed to open writer for {}", out_path))?;
 
     for chrom in chroms {
         if !filter_chrom(&chrom, &criteria) {

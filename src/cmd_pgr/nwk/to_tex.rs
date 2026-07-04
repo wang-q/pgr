@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use pgr::libs::phylo::tree::io::{compute_scale_bar, to_forest};
 use pgr::libs::phylo::tree::Tree;
@@ -53,16 +54,21 @@ Examples:
 
 /// Execute the to-tex command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
+    let mut writer =
+        pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
     let is_bl = args.get_flag("bl");
     let is_style = args.get_flag("no_default_style");
 
     let infile = args.get_one::<String>("infile").unwrap();
 
     let out_string = if args.get_flag("forest") {
-        let mut reader = pgr::reader(infile)?;
+        let mut reader =
+            pgr::reader(infile).with_context(|| format!("Failed to open reader for {}", infile))?;
         let mut s = String::new();
-        reader.read_to_string(&mut s)?;
+        reader
+            .read_to_string(&mut s)
+            .with_context(|| format!("Failed to read from {}", infile))?;
 
         s
     } else {

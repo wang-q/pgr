@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{ArgMatches, Command};
 use pgr::libs::loc;
 use std::io::Write;
@@ -28,7 +29,12 @@ Notes:
 
 /// Execute the check command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
+    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args)).with_context(|| {
+        format!(
+            "Failed to open writer for {}",
+            crate::cmd_pgr::args::get_outfile(args)
+        )
+    })?;
     let opt_genome = args.get_one::<String>("genome").unwrap();
     let opt_name = &args
         .get_one::<String>("name")
@@ -39,7 +45,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let (mut genome_reader, loc_of) = loc::open_indexed(opt_genome, false)?;
 
     for infile in args.get_many::<String>("infiles").unwrap() {
-        let mut reader = pgr::reader(infile)?;
+        let mut reader =
+            pgr::reader(infile).with_context(|| format!("Failed to open reader for {}", infile))?;
 
         for block_result in pgr::libs::fmt::fas::iter_fas_blocks(&mut reader) {
             let block = block_result?;

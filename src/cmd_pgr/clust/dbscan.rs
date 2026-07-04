@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{value_parser, Arg, ArgMatches, Command};
 use std::io::Write;
 
@@ -59,7 +60,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let opt_eps = *args.get_one::<f32>("eps").unwrap();
     let opt_min_points = *args.get_one::<usize>("min_points").unwrap();
 
-    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
+    let mut writer =
+        pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
 
     // 2. Load Matrix
 

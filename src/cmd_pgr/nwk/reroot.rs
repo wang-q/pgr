@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use pgr::libs::phylo::tree::Tree;
 use std::collections::{BTreeMap, BTreeSet};
@@ -76,7 +77,9 @@ Examples:
 
 /// Execute the reroot command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
+    let mut writer =
+        pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
     let process_support = args.get_flag("support_as_labels");
     let deroot = args.get_flag("deroot");
     let lax = args.get_flag("lax");

@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{ArgMatches, Command};
 use pgr::libs::fmt::twobit::TwoBitFile;
 use pgr::libs::loc::merge_intervals;
@@ -40,10 +41,13 @@ Examples:
 /// Execute the masked command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let is_gap = args.get_flag("gap");
-    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
+    let mut writer =
+        pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
 
     for infile in args.get_many::<String>("infiles").unwrap() {
-        let mut tb = TwoBitFile::open(infile)?;
+        let mut tb = TwoBitFile::open(infile)
+            .with_context(|| format!("Failed to open 2bit file {}", infile))?;
         let names = tb.get_sequence_names();
 
         for name in names {

@@ -40,7 +40,12 @@ Examples:
 }
 /// Execute the to-vcf command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
+    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args)).with_context(|| {
+        format!(
+            "Failed to open writer for {}",
+            crate::cmd_pgr::args::get_outfile(args)
+        )
+    })?;
     let sizes_path = args
         .get_one::<String>("sizes")
         .map(|s| s.to_string())
@@ -61,7 +66,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 if infile.to_lowercase() == "stdin" {
                     continue;
                 }
-                let mut reader = pgr::reader(infile)?;
+                let mut reader = pgr::reader(infile)
+                    .with_context(|| format!("Failed to open reader for {}", infile))?;
                 for block_result in iter_fas_blocks(&mut reader) {
                     let block = block_result?;
                     let chr = block

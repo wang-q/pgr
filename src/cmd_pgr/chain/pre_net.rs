@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{Arg, ArgMatches, Command};
 use pgr::libs::chain::BitMap;
 use std::collections::HashMap;
@@ -69,8 +70,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         .map(|(k, v)| (k, BitMap::new(v)))
         .collect();
 
-    let reader = pgr::reader(input_path)?;
-    let writer = pgr::writer(output_path)?;
+    let reader = pgr::reader(input_path)
+        .with_context(|| format!("Failed to open reader for {}", input_path))?;
+    let writer = pgr::writer(output_path)
+        .with_context(|| format!("Failed to open writer for {}", output_path))?;
     let opts = pgr::libs::chain::PreNetOptions {
         pad,
         incl_hap,

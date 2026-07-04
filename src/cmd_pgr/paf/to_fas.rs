@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{ArgMatches, Command};
 
 /// Build the clap subcommand for to-fas.
@@ -71,7 +72,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let (idx, all_results) = pgr::libs::paf::query::run_query(&opts)?;
     let mut fasta_store =
         pgr::libs::paf::fasta::prepare_store(args.get_one::<String>("fasta_tsv").unwrap(), &idx)?;
-    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
+    let mut writer =
+        pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
     if args.get_flag("msa") {
         let params = crate::cmd_pgr::args::get_poa_params(args);
         pgr::libs::paf::to_fas::write_msa_fas(

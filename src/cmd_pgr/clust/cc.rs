@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{ArgMatches, Command};
 use std::io::Write;
 
@@ -32,10 +33,13 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // 1. Args
     let infile = args.get_one::<String>("infile").unwrap();
     let opt_format = args.get_one::<String>("clust_format").unwrap();
-    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
+    let mut writer =
+        pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
 
     // 2. Load Graph & Clustering
-    let reader = pgr::reader(infile)?;
+    let reader =
+        pgr::reader(infile).with_context(|| format!("Failed to open reader for {}", infile))?;
     let (names_vec, mut scc) = pgr::libs::clust::connected_components(reader)?;
 
     // 3. Output

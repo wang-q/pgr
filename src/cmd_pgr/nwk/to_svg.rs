@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{Arg, ArgMatches, Command};
 use pgr::libs::phylo::tree::Tree;
 use std::io::Write;
@@ -48,7 +49,9 @@ Examples:
 
 /// Execute the to-svg command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
+    let mut writer =
+        pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
 
     let width: f64 = *args.get_one::<f64>("width").unwrap();
     let vskip: f64 = *args.get_one::<f64>("vskip").unwrap();

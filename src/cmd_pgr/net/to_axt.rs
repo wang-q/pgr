@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{Arg, ArgMatches, Command};
 use pgr::libs::chain::net::{net_to_axt, read_nets};
 use pgr::libs::chain::sub_matrix::SubMatrix;
@@ -22,22 +23,28 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let query = args.get_one::<String>("query").unwrap();
     let out_axt = crate::cmd_pgr::args::get_outfile(args);
 
-    let mut t_2bit = TwoBitFile::open(target)?;
-    let mut q_2bit = TwoBitFile::open(query)?;
+    let mut t_2bit =
+        TwoBitFile::open(target).with_context(|| format!("Failed to open 2bit file {}", target))?;
+    let mut q_2bit =
+        TwoBitFile::open(query).with_context(|| format!("Failed to open 2bit file {}", query))?;
 
     let mut chains: HashMap<u64, Chain> = HashMap::new();
-    let chain_reader = ChainReader::new(pgr::reader(in_chain)?);
+    let chain_reader = ChainReader::new(
+        pgr::reader(in_chain).with_context(|| format!("Failed to open reader for {}", in_chain))?,
+    );
     for chain_res in chain_reader {
         let chain = chain_res?;
         chains.insert(chain.header.id, chain);
     }
 
-    let reader = pgr::reader(in_net)?;
+    let reader =
+        pgr::reader(in_net).with_context(|| format!("Failed to open reader for {}", in_net))?;
     let nets = read_nets(reader)?;
 
     let matrix = SubMatrix::hoxd55();
 
-    let mut writer = pgr::writer(out_axt)?;
+    let mut writer =
+        pgr::writer(out_axt).with_context(|| format!("Failed to open writer for {}", out_axt))?;
     net_to_axt(
         &nets,
         &chains,

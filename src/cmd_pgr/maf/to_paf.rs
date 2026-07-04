@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{ArgMatches, Command};
 
 use pgr::libs::paf::record::write_paf_record;
@@ -36,10 +37,13 @@ Examples:
 
 /// Execute the to-paf command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
+    let mut writer =
+        pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
 
     for infile in args.get_many::<String>("infiles").unwrap() {
-        let mut reader = pgr::reader(infile)?;
+        let mut reader =
+            pgr::reader(infile).with_context(|| format!("Failed to open reader for {}", infile))?;
 
         loop {
             let block = match pgr::libs::fmt::maf::next_maf_block(&mut reader) {

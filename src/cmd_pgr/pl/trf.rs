@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{value_parser, Arg, ArgMatches, Command};
 use cmd_lib::run_cmd;
 
@@ -135,10 +136,13 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         // The last 2 fields were introduced by -ngs
         // Matched with `pgr fa range mg1655.fa NC_000913:198-229`
 
-        let reader = pgr::reader(&format!("trf.{}.dat", i))?;
+        let dat_file = format!("trf.{}.dat", i);
+        let reader = pgr::reader(&dat_file)
+            .with_context(|| format!("Failed to open reader for {}", dat_file))?;
 
         let rg_file = format!("trf.{}.rg", i);
-        let mut writer = pgr::writer(&rg_file)?;
+        let mut writer = pgr::writer(&rg_file)
+            .with_context(|| format!("Failed to open writer for {}", rg_file))?;
         pgr::libs::pl::parse_trf_output(reader, chr, &mut writer)?;
         rg_files.push(rg_file);
     }

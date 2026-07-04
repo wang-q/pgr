@@ -1,7 +1,7 @@
-use std::collections::BTreeMap;
-use std::io::{BufRead, Write};
 use super::maf::{MafAli, MafComp, MafWriter};
 use super::psl::Psl;
+use std::collections::BTreeMap;
+use std::io::{BufRead, Write};
 
 #[derive(Debug, Clone, Default)]
 pub struct Axt {

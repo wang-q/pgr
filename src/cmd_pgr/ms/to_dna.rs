@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{value_parser, Arg, ArgMatches, Command};
 use std::io::Write;
 /// Build the clap subcommand for to-dna.
@@ -116,12 +117,14 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     }
 
     // Writer
-    let mut writer: Box<dyn Write> = Box::new(pgr::writer(outfile)?);
+    let mut writer: Box<dyn Write> = Box::new(
+        pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?,
+    );
 
     // Process inputs (stdin or files)
     if abs_files.is_empty() {
         pgr::libs::ms::convert_stream(
-            pgr::reader("stdin")?,
+            pgr::reader("stdin").with_context(|| "Failed to open reader for stdin")?,
             gc,
             Some(seed_final),
             &mut writer,
@@ -130,7 +133,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     } else {
         for path in abs_files {
             pgr::libs::ms::convert_stream(
-                pgr::reader(&path)?,
+                pgr::reader(&path)
+                    .with_context(|| format!("Failed to open reader for {}", path))?,
                 gc,
                 Some(seed_final),
                 &mut writer,

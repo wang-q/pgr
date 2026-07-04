@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use std::io::Write;
 /// Build the clap subcommand for to-gfa.
@@ -82,7 +83,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let params = crate::cmd_pgr::args::get_poa_params(args);
     let crush = args.get_flag("crush");
 
-    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
+    let mut writer =
+        pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
 
     pgr::libs::paf::poa_compact::output_gfa(
         &mut writer,

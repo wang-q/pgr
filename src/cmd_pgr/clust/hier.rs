@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{ArgMatches, Command};
 use std::io::Write;
 use std::str::FromStr;
@@ -11,7 +12,7 @@ pub fn make_subcommand() -> Command {
         .about("Clusters entries via hierarchical clustering")
         .visible_alias("hclust")
         .after_help(
-            r#"
+            r###"
 This command performs hierarchical clustering (agglomerative) on a distance matrix.
 It takes a PHYLIP format distance matrix as input and produces a Newick tree string.
 
@@ -30,7 +31,7 @@ Examples:
 
 3. Use Single Linkage (Nearest Neighbor):
    pgr clust hier matrix.phy --method single > tree.nwk
-"#,
+"###,
         )
         .arg(crate::cmd_pgr::args::infile_arg_required_with_help(
             "Input PHYLIP distance matrix file. [stdin] for standard input",
@@ -62,7 +63,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let newick = to_newick(&tree);
 
     // Write output
-    let mut writer = pgr::writer(outfile)?;
+    let mut writer =
+        pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
     writer.write_all((newick + "\n").as_ref())?;
 
     Ok(())

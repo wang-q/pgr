@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use pgr::libs::chain::net::{read_nets, subset_nets, SubsetOptions};
 use pgr::libs::chain::{read_chains, Chain};
@@ -41,7 +42,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let type_filter = args.get_one::<String>("type");
 
     // Read chains
-    let chain_reader = pgr::reader(chain_in)?;
+    let chain_reader =
+        pgr::reader(chain_in).with_context(|| format!("Failed to open reader for {}", chain_in))?;
     let chains_vec = read_chains(chain_reader)?;
     let mut chains_map: HashMap<u64, Chain> = HashMap::new();
     for chain in chains_vec {
@@ -49,10 +51,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     }
 
     // Read nets
-    let net_reader = pgr::reader(net_in)?;
+    let net_reader =
+        pgr::reader(net_in).with_context(|| format!("Failed to open reader for {}", net_in))?;
     let chroms = read_nets(net_reader)?;
 
-    let mut writer = pgr::writer(chain_out)?;
+    let mut writer = pgr::writer(chain_out)
+        .with_context(|| format!("Failed to open writer for {}", chain_out))?;
 
     let opts = SubsetOptions {
         whole_chains,

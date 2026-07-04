@@ -1,6 +1,5 @@
+use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches, Command};
-use pgr::libs::fmt::psl::parse_or_warn;
-use std::io::{BufRead, Write};
 
 /// Build the clap subcommand for to-range.
 pub fn make_subcommand() -> Command {
@@ -44,32 +43,17 @@ Examples:
 
 /// Execute the to-range command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
     let infile = args.get_one::<String>("infile").unwrap();
-    let reader = pgr::reader(infile)?;
+    let output = crate::cmd_pgr::args::get_outfile(args);
     let extract_target = args.get_flag("target_coords");
     let strict = args.get_flag("strict");
 
-    for line in reader.lines() {
-        let line = line?;
-        if line.trim().is_empty() || line.starts_with('#') {
-            continue;
-        }
-        // Skip header lines
-        if line.starts_with("psLayout") || line.starts_with("match") || line.starts_with("------") {
-            continue;
-        }
+    let reader =
+        pgr::reader(infile).with_context(|| format!("Failed to open reader for {}", infile))?;
+    let mut writer =
+        pgr::writer(output).with_context(|| format!("Failed to open writer for {}", output))?;
 
-        let psl = match parse_or_warn(&line, strict)? {
-            Some(p) => p,
-            None => continue,
-        };
-
-        for range in pgr::libs::fmt::psl::psl_block_ranges(&psl, extract_target) {
-            writer.write_all(range.as_bytes())?;
-            writer.write_all(b"\n")?;
-        }
-    }
+    pgr::libs::fmt::psl::to_ranges(reader, &mut writer, extract_target, strict)?;
 
     Ok(())
 }

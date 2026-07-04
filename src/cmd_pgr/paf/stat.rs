@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{ArgMatches, Command};
 use pgr::libs::paf::fasta::load_all_seqs;
 use pgr::libs::paf::graph::PafGraph;
@@ -61,13 +62,15 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let seqs = load_all_seqs(tsv_path)?;
 
     // Read PAF and build the graph.
-    let paf_reader = pgr::reader(infile)?;
+    let paf_reader =
+        pgr::reader(infile).with_context(|| format!("Failed to open reader for {}", infile))?;
     let seqs_ref = if seqs.is_empty() { None } else { Some(&seqs) };
     let graph = PafGraph::build(paf_reader, seqs_ref, min_var_len)?;
 
     // Compute and write the report.
     let report = graph.report();
-    let writer = pgr::writer(outfile)?;
+    let writer =
+        pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
     report.write_tsv(writer)?;
 
     Ok(())

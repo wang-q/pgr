@@ -1,7 +1,5 @@
+use anyhow::Context;
 use clap::{ArgMatches, Command};
-use std::io::BufRead;
-
-use pgr::libs::fmt::psl::Psl;
 /// Build the clap subcommand for rc.
 pub fn make_subcommand() -> Command {
     Command::new("rc")
@@ -11,7 +9,7 @@ pub fn make_subcommand() -> Command {
 Reverse-complement psl.
 
 Examples:
-  pgr psl rc in.psl -o out.psl
+   pgr psl rc in.psl -o out.psl
 "###,
         )
         .arg(crate::cmd_pgr::args::infile_arg().help("Input PSL file. [stdin] for standard input"))
@@ -22,23 +20,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let input = crate::cmd_pgr::args::get_infile(args);
     let output = crate::cmd_pgr::args::get_outfile(args);
 
-    let reader = pgr::reader(input)?;
-    let mut writer = pgr::writer(output)?;
+    let reader =
+        pgr::reader(input).with_context(|| format!("Failed to open reader for {}", input))?;
+    let mut writer =
+        pgr::writer(output).with_context(|| format!("Failed to open writer for {}", output))?;
 
-    for line in reader.lines() {
-        let line = line?;
-        if line.trim().is_empty() {
-            continue;
-        }
-        // Skip PSL header lines (psLayout version 3, column names, separator)
-        if line.starts_with("psLayout") || line.starts_with("match") || line.starts_with("------") {
-            continue;
-        }
-
-        let mut psl: Psl = line.parse()?;
-        psl.rc();
-        psl.write_to(&mut writer)?;
-    }
+    pgr::libs::fmt::psl::rc_records(reader, &mut writer)?;
 
     Ok(())
 }

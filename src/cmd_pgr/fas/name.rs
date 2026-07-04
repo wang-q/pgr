@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{ArgMatches, Command};
 use indexmap::IndexSet;
 use std::collections::BTreeMap;
@@ -35,7 +36,12 @@ Examples:
 
 /// Execute the name command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
+    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args)).with_context(|| {
+        format!(
+            "Failed to open writer for {}",
+            crate::cmd_pgr::args::get_outfile(args)
+        )
+    })?;
     let is_count = args.get_flag("count");
 
     // Operating
@@ -43,7 +49,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut count_of: BTreeMap<String, i32> = BTreeMap::new();
 
     for infile in args.get_many::<String>("infiles").unwrap() {
-        let mut reader = pgr::reader(infile)?;
+        let mut reader =
+            pgr::reader(infile).with_context(|| format!("Failed to open reader for {}", infile))?;
 
         for block_result in pgr::libs::fmt::fas::iter_fas_blocks(&mut reader) {
             let block = block_result?;
@@ -55,10 +62,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 names.insert(name.clone());
 
                 // Count occurrences of each species name
-                count_of
-                    .entry(name)
-                    .and_modify(|e| *e += 1)
-                    .or_insert(1);
+                count_of.entry(name).and_modify(|e| *e += 1).or_insert(1);
             }
         }
     }

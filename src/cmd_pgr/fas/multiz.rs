@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{value_parser, Arg, ArgMatches, Command};
 use std::io::Write;
 /// Build the clap subcommand for multiz.
@@ -141,7 +142,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let blocks = pgr::libs::fas_multiz::merge_fas_files_auto_windows(&ref_name, &infiles, &cfg)?;
 
-    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
+    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args)).with_context(|| {
+        format!(
+            "Failed to open writer for {}",
+            crate::cmd_pgr::args::get_outfile(args)
+        )
+    })?;
 
     for block in blocks {
         for entry in &block.entries {

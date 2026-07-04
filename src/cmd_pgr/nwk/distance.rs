@@ -55,12 +55,18 @@ Examples:
 
 /// Execute the distance command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let mut writer: Box<dyn Write> =
-        Box::new(pgr::writer(crate::cmd_pgr::args::get_outfile(args))?);
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
+    let mut writer: Box<dyn Write> = Box::new(
+        pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?,
+    );
 
     let infile = args.get_one::<String>("infile").unwrap();
     let mut input = String::new();
-    pgr::reader(infile)?.read_to_string(&mut input)?;
+    let mut reader =
+        pgr::reader(infile).with_context(|| format!("Failed to open reader for {}", infile))?;
+    reader
+        .read_to_string(&mut input)
+        .with_context(|| format!("Failed to read from {}", infile))?;
 
     // Attempt to parse Newick. If it fails, return error.
     let tree = Tree::from_newick(&input).with_context(|| "Failed to parse Newick")?;

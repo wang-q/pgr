@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{ArgMatches, Command};
 use pgr::libs::chain::net::read_nets;
 use std::fs::{self, File};
@@ -17,11 +18,13 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let input_path = args.get_one::<String>("infile").unwrap();
     let output_dir = args.get_one::<String>("outdir").unwrap();
 
-    let reader = pgr::reader(input_path)?;
+    let reader = pgr::reader(input_path)
+        .with_context(|| format!("Failed to open reader for {}", input_path))?;
 
     let chroms = read_nets(reader)?;
 
-    fs::create_dir_all(output_dir)?;
+    fs::create_dir_all(output_dir)
+        .with_context(|| format!("Failed to create directory {}", output_dir))?;
 
     for chrom in chroms {
         // Guard against path traversal: chromosome names come from the input
@@ -32,7 +35,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             chrom.name
         );
         let file_path = Path::new(output_dir).join(format!("{}.net", chrom.name));
-        let mut file = BufWriter::new(File::create(file_path)?);
+        let mut file = BufWriter::new(
+            File::create(&file_path)
+                .with_context(|| format!("Failed to create file {}", file_path.display()))?,
+        );
         chrom.write(&mut file)?;
         file.flush()?;
     }

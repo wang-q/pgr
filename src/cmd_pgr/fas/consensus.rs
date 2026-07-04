@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{Arg, ArgMatches, Command};
 use std::fmt::Write;
 
@@ -72,7 +73,12 @@ Examples:
 /// Execute the consensus command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let parallel = *args.get_one::<usize>("parallel").unwrap();
-    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
+    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args)).with_context(|| {
+        format!(
+            "Failed to open writer for {}",
+            crate::cmd_pgr::args::get_outfile(args)
+        )
+    })?;
     let infiles: Vec<String> = args
         .get_many::<String>("infiles")
         .unwrap()

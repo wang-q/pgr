@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{ArgMatches, Command};
 use pgr::libs::fmt::twobit::TwoBitFile;
 use std::io::Write;
@@ -46,10 +47,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // Load list
     let set_list = pgr::libs::io::read_names::<std::collections::HashSet<String>>(list_file)?;
 
-    let mut tb = TwoBitFile::open(infile)?;
+    let mut tb =
+        TwoBitFile::open(infile).with_context(|| format!("Failed to open 2bit file {}", infile))?;
     let names = tb.get_sequence_names();
 
-    let mut writer = pgr::writer(outfile)?;
+    let mut writer =
+        pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
 
     for name in names {
         if set_list.contains(&name) != is_invert {

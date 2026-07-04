@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use noodles_gff as gff;
 use std::io::Write;
@@ -103,9 +104,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         opt_key
     );
 
-    let reader = pgr::reader(infile)?;
+    let reader =
+        pgr::reader(infile).with_context(|| format!("Failed to open reader for {}", infile))?;
     let mut reader = gff::io::Reader::new(reader);
-    let mut writer = pgr::writer(outfile)?;
+    let mut writer =
+        pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
 
     let opt_tag_lower = opt_tag.to_ascii_lowercase();
     for result in reader.record_bufs() {

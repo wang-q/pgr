@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{Arg, ArgMatches, Command};
 use cmd_lib::run_cmd;
 use rayon::prelude::*;
@@ -143,10 +144,13 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         .collect();
 
     // Serial phase: stream each chunk's output in order to the writer.
-    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
+    let mut writer =
+        pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
     for result in results {
         let path = result?;
-        let mut f = std::fs::File::open(&path)?;
+        let mut f = std::fs::File::open(&path)
+            .with_context(|| format!("Failed to open file {}", path.display()))?;
         let mut buf = Vec::new();
         f.read_to_end(&mut buf)?;
         writer.write_all(&buf)?;

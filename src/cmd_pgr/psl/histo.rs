@@ -1,7 +1,5 @@
+use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches, Command};
-use pgr::libs::fmt::psl::Psl;
-use std::collections::HashMap;
-use std::io::Write;
 /// Build the clap subcommand for histo.
 pub fn make_subcommand() -> Command {
     Command::new("histo")
@@ -54,61 +52,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let multi_only = args.get_flag("multi_only");
     let non_zero = args.get_flag("non_zero");
 
-    let reader = pgr::reader(input)?;
-    let mut writer = pgr::writer(output)?;
+    let reader =
+        pgr::reader(input).with_context(|| format!("Failed to open reader for {}", input))?;
+    let mut writer =
+        pgr::writer(output).with_context(|| format!("Failed to open writer for {}", output))?;
 
-    // Read all PSLs and group by query
-    let mut query_map: HashMap<String, Vec<Psl>> = HashMap::new();
-
-    for psl in pgr::libs::fmt::psl::iter_psl(reader) {
-        let psl = psl?;
-        query_map.entry(psl.q_name.clone()).or_default().push(psl);
-    }
-
-    // Process queries (iteration order not guaranteed, but usually fine for histograms.
-    // If output order matters, we should sort keys. C implementation uses hash table, likely random order.)
-    // Let's sort keys for deterministic output.
-    let mut queries: Vec<_> = query_map.keys().cloned().collect();
-    queries.sort();
-
-    for q_name in queries {
-        let psls = &query_map[&q_name];
-
-        if multi_only && psls.len() <= 1 {
-            continue;
-        }
-
-        match what.as_str() {
-            "alignsPerQuery" => {
-                let cnt = psls.len();
-                if !non_zero || cnt != 0 {
-                    // cnt is never 0 here if it exists in map, but logic follows C
-                    writeln!(writer, "{}", cnt)?;
-                }
-            }
-            "coverSpread" => {
-                let (min, max) = pgr::libs::fmt::psl::calc_spread(psls, |p| p.cover());
-                anyhow::ensure!(max >= min, "calc_spread returned invalid range");
-                let diff = max - min;
-                if !non_zero || diff != 0.0 {
-                    // Using same format as C: %.4g
-                    // Rust doesn't have %g exactly, but {:.*} might work or standard formatting.
-                    // C uses %0.4g.
-                    // Let's use generic formatting for now, maybe check precision requirements.
-                    // %g uses scientific notation for large/small numbers.
-                    writeln!(writer, "{:.4}", diff)?;
-                }
-            }
-            "idSpread" => {
-                let (min, max) = pgr::libs::fmt::psl::calc_spread(psls, |p| p.ident());
-                let diff = max - min;
-                if !non_zero || diff != 0.0 {
-                    writeln!(writer, "{:.4}", diff)?;
-                }
-            }
-            _ => anyhow::bail!("unsupported stat type"),
-        }
-    }
+    pgr::libs::fmt::psl::histogram(reader, &mut writer, what, multi_only, non_zero)?;
 
     Ok(())
 }

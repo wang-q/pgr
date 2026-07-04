@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{Arg, ArgMatches, Command};
 /// Build the clap subcommand for to-psl.
 pub fn make_subcommand() -> Command {
@@ -33,8 +34,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let target_strand = args.get_one::<String>("target_strand");
     let strict = args.get_flag("strict");
 
-    let reader = pgr::reader(input)?;
-    let mut writer = pgr::writer(output)?;
+    let reader =
+        pgr::reader(input).with_context(|| format!("Failed to open reader for {}", input))?;
+    let mut writer =
+        pgr::writer(output).with_context(|| format!("Failed to open writer for {}", output))?;
 
     pgr::libs::fmt::lav::lav_to_psl(
         reader,

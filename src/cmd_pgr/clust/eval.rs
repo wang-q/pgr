@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{Arg, ArgMatches, Command};
 use pgr::libs::clust::eval::{
     load_batch_partitions, load_partition, remove_singletons, run_batch, run_single, Coordinates,
@@ -82,7 +83,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         Err(e) => anyhow::bail!("Invalid format: {}", e),
     };
 
-    let mut writer = pgr::writer(outfile)?;
+    let mut writer =
+        pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
 
     let remove_singletons_flag = args.get_flag("no_singletons");
 

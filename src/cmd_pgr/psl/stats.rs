@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{Arg, ArgMatches, Command};
 
 use pgr::libs::fmt::psl::{PslStatsMode, PslStatsOptions};
@@ -57,8 +58,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let queries_file = args.get_one::<String>("queries");
     let tsv = args.get_flag("tsv");
 
-    let reader = pgr::reader(input)?;
-    let mut writer = pgr::writer(output)?;
+    let reader =
+        pgr::reader(input).with_context(|| format!("Failed to open reader for {}", input))?;
+    let mut writer =
+        pgr::writer(output).with_context(|| format!("Failed to open writer for {}", output))?;
 
     let mode = if query_stats {
         PslStatsMode::PerQuery
@@ -71,7 +74,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let opts = PslStatsOptions { mode, tsv };
 
     let queries = if let Some(q_file) = queries_file {
-        let q_reader = pgr::reader(q_file)?;
+        let q_reader =
+            pgr::reader(q_file).with_context(|| format!("Failed to open reader for {}", q_file))?;
         Some(pgr::libs::fmt::psl::read_queries(q_reader)?)
     } else {
         None

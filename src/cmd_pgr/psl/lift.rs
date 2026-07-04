@@ -1,7 +1,5 @@
+use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches, Command};
-use std::io::{BufRead, Write};
-
-use pgr::libs::fmt::psl::parse_or_warn;
 
 /// Build the clap subcommand for lift.
 pub fn make_subcommand() -> Command {
@@ -48,10 +46,14 @@ Examples:
 
 /// Execute the lift command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
     let infile = args.get_one::<String>("infile").unwrap();
-    let reader = pgr::reader(infile)?;
+    let output = crate::cmd_pgr::args::get_outfile(args);
     let strict = args.get_flag("strict");
+
+    let reader =
+        pgr::reader(infile).with_context(|| format!("Failed to open reader for {}", infile))?;
+    let mut writer =
+        pgr::writer(output).with_context(|| format!("Failed to open writer for {}", output))?;
 
     let q_sizes_file = args.get_one::<String>("q_sizes").map(|s| s.as_str());
     let t_sizes_file = args.get_one::<String>("t_sizes").map(|s| s.as_str());
@@ -63,43 +65,13 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         .map(pgr::libs::io::read_sizes::<i32>)
         .transpose()?;
 
-    for line in reader.lines() {
-        let line = line?;
-        // Preserve comment/blank lines as-is.
-        if line.trim().is_empty() || line.starts_with('#') {
-            writer.write_fmt(format_args!("{}\n", line))?;
-            continue;
-        }
-        // Skip PSL header lines (psLayout version 3, column names, separator)
-        if line.starts_with("psLayout") || line.starts_with("match") || line.starts_with("------") {
-            continue;
-        }
-
-        let mut psl = match parse_or_warn(&line, strict)? {
-            Some(p) => p,
-            None => continue,
-        };
-
-        if let Some(sizes_map) = &q_sizes_map {
-            if !psl.lift_query(sizes_map) {
-                if strict {
-                    anyhow::bail!("failed to lift query: {}", psl.q_name);
-                }
-                log::warn!("failed to lift query: {}", psl.q_name);
-            }
-        }
-
-        if let Some(sizes_map) = &t_sizes_map {
-            if !psl.lift_target(sizes_map) {
-                if strict {
-                    anyhow::bail!("failed to lift target: {}", psl.t_name);
-                }
-                log::warn!("failed to lift target: {}", psl.t_name);
-            }
-        }
-
-        psl.write_to(&mut writer)?;
-    }
+    pgr::libs::fmt::psl::lift(
+        reader,
+        &mut writer,
+        q_sizes_map.as_ref(),
+        t_sizes_map.as_ref(),
+        strict,
+    )?;
 
     Ok(())
 }

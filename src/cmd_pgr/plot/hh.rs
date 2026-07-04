@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{value_parser, Arg, ArgMatches, Command};
 use pgr::libs::plot::histogram::{
     calc_density, calc_hist, compute_hh_axis, create_table, load_data, render_hh_tex,
@@ -150,7 +151,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut context = tera::Context::new();
 
     let outfile = crate::cmd_pgr::args::get_outfile(args);
-    let mut writer = pgr::writer(outfile)?;
+    let mut writer =
+        pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
     context.insert("table", &table);
     context.insert("xlabel", &xlabel);
     context.insert("ylabel", &ylabel);

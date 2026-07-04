@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{value_parser, Arg, ArgMatches, Command};
 use std::io::Write;
 
@@ -65,7 +66,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let max_iter = *args.get_one::<usize>("max_iter").unwrap();
     let outfile = crate::cmd_pgr::args::get_outfile(args);
 
-    let mut writer = pgr::writer(outfile)?;
+    let mut writer =
+        pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
 
     // 2. Load Matrix
     // ScoringMatrix::from_pair_scores is only implemented for f32

@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{ArgMatches, Command};
 use pgr::libs::phylo::tree::Tree;
 use std::io::Write;
@@ -27,7 +28,9 @@ Examples:
 
 /// Execute the to-dot command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
+    let mut writer =
+        pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
 
     let infile = args.get_one::<String>("infile").unwrap();
     let trees = Tree::from_file(infile)?;

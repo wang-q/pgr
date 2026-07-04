@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{Arg, ArgMatches, Command};
 use pgr::libs::chain::ChainReader;
 use std::collections::HashMap;
@@ -54,13 +55,17 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         anyhow::ensure!(l > 0, "--lump must be positive: {}", l);
     }
 
-    fs::create_dir_all(out_dir)?;
+    fs::create_dir_all(out_dir)
+        .with_context(|| format!("Failed to create directory {}", out_dir))?;
 
     // Cache open file handles
     let mut file_cache: HashMap<String, Box<dyn Write>> = HashMap::new();
 
     for file_path in chain_files {
-        let reader = ChainReader::new(pgr::reader(file_path)?);
+        let reader = ChainReader::new(
+            pgr::reader(file_path)
+                .with_context(|| format!("Failed to open reader for {}", file_path))?,
+        );
 
         for res in reader {
             let chain = res?;
@@ -93,7 +98,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                     let path_str = path
                         .to_str()
                         .ok_or_else(|| anyhow::anyhow!("non-UTF-8 path"))?;
-                    e.insert(Box::new(pgr::writer(path_str)?))
+                    e.insert(Box::new(pgr::writer(path_str).with_context(|| {
+                        format!("Failed to open writer for {}", path_str)
+                    })?))
                 }
             };
 
