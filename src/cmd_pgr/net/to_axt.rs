@@ -4,7 +4,6 @@ use pgr::libs::chain::sub_matrix::SubMatrix;
 use pgr::libs::chain::{Chain, ChainReader};
 use pgr::libs::fmt::twobit::TwoBitFile;
 use std::collections::HashMap;
-use std::fs::File;
 /// Build the clap subcommand for to-axt.
 pub fn make_subcommand() -> Command {
     Command::new("to-axt")
@@ -27,7 +26,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut q_2bit = TwoBitFile::open(query)?;
 
     let mut chains: HashMap<u64, Chain> = HashMap::new();
-    let chain_reader = ChainReader::new(File::open(in_chain)?);
+    let chain_reader = ChainReader::new(pgr::reader(in_chain)?);
     for chain_res in chain_reader {
         let chain = chain_res?;
         chains.insert(chain.header.id, chain);

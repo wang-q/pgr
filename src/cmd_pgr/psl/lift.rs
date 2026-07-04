@@ -1,7 +1,7 @@
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use std::io::{BufRead, Write};
 
-use pgr::libs::fmt::psl::Psl;
+use pgr::libs::fmt::psl::parse_or_warn;
 
 /// Build the clap subcommand for lift.
 pub fn make_subcommand() -> Command {
@@ -71,25 +71,25 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             continue;
         }
 
-        let mut psl: Psl = match line.parse() {
-            Ok(p) => p,
-            Err(e) => {
-                if strict {
-                    anyhow::bail!("failed to parse psl line: {}: {}", line, e);
-                }
-                log::warn!("skipping unparseable psl line: {}: {}", line, e);
-                continue;
-            }
+        let mut psl = match parse_or_warn(&line, strict)? {
+            Some(p) => p,
+            None => continue,
         };
 
         if let Some(sizes_map) = &q_sizes_map {
             if !psl.lift_query(sizes_map) {
+                if strict {
+                    anyhow::bail!("failed to lift query: {}", psl.q_name);
+                }
                 log::warn!("failed to lift query: {}", psl.q_name);
             }
         }
 
         if let Some(sizes_map) = &t_sizes_map {
             if !psl.lift_target(sizes_map) {
+                if strict {
+                    anyhow::bail!("failed to lift target: {}", psl.t_name);
+                }
                 log::warn!("failed to lift target: {}", psl.t_name);
             }
         }

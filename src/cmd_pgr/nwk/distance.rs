@@ -1,4 +1,4 @@
-use anyhow::anyhow;
+use anyhow::{anyhow, Context};
 use clap::{ArgMatches, Command};
 use pgr::libs::phylo::tree::{distance, Tree};
 use std::collections::BTreeMap;
@@ -62,7 +62,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     pgr::reader(infile)?.read_to_string(&mut input)?;
 
     // Attempt to parse Newick. If it fails, return error.
-    let tree = Tree::from_newick(&input).map_err(|e| anyhow!("Failed to parse Newick: {:?}", e))?;
+    let tree = Tree::from_newick(&input).with_context(|| "Failed to parse Newick")?;
 
     let mode = args.get_one::<String>("mode").unwrap();
 

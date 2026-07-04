@@ -2,6 +2,7 @@ use clap::{ArgMatches, Command};
 
 pub mod cmp;
 pub mod comment;
+pub(crate) mod common;
 pub mod distance;
 pub mod indent;
 pub mod label;

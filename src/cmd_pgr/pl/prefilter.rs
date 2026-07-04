@@ -93,7 +93,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // Split .loc file into chunks
     let chunks = pgr::libs::loc::split_loc_file(&loc_file, opt_chunk)?;
 
-    let pgr = std::env::current_exe()?.display().to_string();
+    let pgr = pgr::libs::io::current_exe_string()?;
 
     let results: Vec<anyhow::Result<()>> = chunks
         .par_iter()

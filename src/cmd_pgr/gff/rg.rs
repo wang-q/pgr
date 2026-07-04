@@ -123,17 +123,13 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         }
 
         if is_simplify {
-            if let Some(i) = key.find(&[' ', '.', ',', '-'][..]) {
-                key = key[..i].to_string();
-            }
+            key = pgr::libs::io::simplify_name(&key).to_string();
         }
 
         // Range
         let mut seq_name = record.reference_sequence_name().to_string();
         if is_seq_simplify {
-            if let Some(i) = seq_name.find(&[' ', '.', ',', '-'][..]) {
-                seq_name = seq_name[..i].to_string();
-            }
+            seq_name = pgr::libs::io::simplify_name(&seq_name).to_string();
         }
 
         let strand = match record.strand() {

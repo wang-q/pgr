@@ -1,7 +1,6 @@
 use clap::{ArgMatches, Command};
-use pgr::libs::paf::fasta::{load_fasta_tsv, FastaStore};
+use pgr::libs::paf::fasta::load_all_seqs;
 use pgr::libs::paf::graph::PafGraph;
-use std::collections::HashMap;
 /// Build the clap subcommand for graph.
 pub fn make_subcommand() -> Command {
     let cmd = Command::new("graph")
@@ -56,22 +55,12 @@ Examples:
 /// Execute the graph command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let infile = args.get_one::<String>("infile").unwrap();
-    let tsv_path = args.get_one::<String>("fasta_tsv");
+    let tsv_path = args.get_one::<String>("fasta_tsv").map(|s| s.as_str());
     let min_var_len = args.get_one::<i32>("min_var_len").copied().unwrap_or(100);
     let outfile = crate::cmd_pgr::args::get_outfile(args);
 
     // Load FASTA sequences via TSV + FastaStore (optional for topology-only mode).
-    let seqs: HashMap<String, Vec<u8>> = if let Some(tsv) = tsv_path {
-        let seq_to_file = load_fasta_tsv(tsv)?;
-        let mut store = FastaStore::new(&seq_to_file)?;
-        let mut map = HashMap::new();
-        for name in seq_to_file.keys() {
-            map.insert(name.clone(), store.fetch_full(name)?);
-        }
-        map
-    } else {
-        HashMap::new()
-    };
+    let seqs = load_all_seqs(tsv_path)?;
 
     // Read PAF.
     let paf_reader = pgr::reader(infile)?;

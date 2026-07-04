@@ -134,7 +134,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         }
 
         if is_condense {
-            let name = condense_name.ok_or_else(|| anyhow::anyhow!("--condense required"))?;
+            // condense_name is Some here (is_condense == condense_name.is_some()).
+            let name = condense_name.map_or("", |s| s.as_str());
+            if name.is_empty() {
+                anyhow::bail!("--condense requires a non-empty name argument");
+            }
 
             tree.condense_subtree(sub_root_id, name, ids.len())
                 .map_err(anyhow::Error::msg)?;

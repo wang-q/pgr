@@ -70,6 +70,25 @@ pub fn prepare_store(
     FastaStore::new(&seq_to_file)
 }
 
+/// Load all sequences referenced by a TSV into a HashMap.
+/// Returns an empty map if `tsv_path` is None.
+/// Bails if the TSV loads 0 entries.
+pub fn load_all_seqs(tsv_path: Option<&str>) -> anyhow::Result<HashMap<String, Vec<u8>>> {
+    let Some(tsv) = tsv_path else {
+        return Ok(HashMap::new());
+    };
+    let seq_to_file = load_fasta_tsv(tsv)?;
+    if seq_to_file.is_empty() {
+        anyhow::bail!("--fasta-tsv loaded 0 entries: {}", tsv);
+    }
+    let mut store = FastaStore::new(&seq_to_file)?;
+    let mut map = HashMap::with_capacity(seq_to_file.len());
+    for name in seq_to_file.keys() {
+        map.insert(name.clone(), store.fetch_full(name)?);
+    }
+    Ok(map)
+}
+
 /// One opened BGZF FASTA file with its .loc index and a per-name record cache.
 pub struct FastaEntry {
     reader: loc::Input,

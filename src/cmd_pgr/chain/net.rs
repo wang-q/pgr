@@ -2,6 +2,43 @@ use clap::{Arg, ArgMatches, Command};
 use pgr::libs::chain::net::{finalize_net, write_net, ChainNet};
 use pgr::libs::chain::ChainReader;
 use std::io::Write;
+
+/// Sort chroms by name and write each to `writer` via `finalize_net` + `write_net`.
+fn write_sorted_net<W: Write>(
+    net: &ChainNet,
+    writer: &mut W,
+    is_q: bool,
+    min_score: f64,
+    min_fill: u64,
+) -> anyhow::Result<()> {
+    let mut chrom_names: Vec<_> = net.chroms.keys().cloned().collect();
+    chrom_names.sort();
+    for name in chrom_names {
+        if let Some(chrom_cell) = net.chroms.get(&name) {
+            let mut chrom = chrom_cell.borrow_mut();
+            finalize_net(&mut chrom, is_q);
+            write_net(&chrom, writer, is_q, min_score, min_fill)?;
+        }
+    }
+    Ok(())
+}
+
+/// Write a net file with header comments and sorted net entries.
+fn write_net_file(
+    path: &str,
+    net: &ChainNet,
+    is_q: bool,
+    comments: &[String],
+    min_score: f64,
+    min_fill: u64,
+) -> anyhow::Result<()> {
+    let mut writer = pgr::writer(path)?;
+    for comment in comments {
+        write!(writer, "{}", comment)?;
+    }
+    write_sorted_net(net, &mut writer, is_q, min_score, min_fill)?;
+    Ok(())
+}
 /// Build the clap subcommand for net.
 pub fn make_subcommand() -> Command {
     Command::new("net")
@@ -114,48 +151,24 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     }
 
     // Finish and write T net
-    {
-        let mut writer = pgr::writer(target_net_path)?;
-
-        for comment in &reader.header_comments {
-            write!(writer, "{}", comment)?;
-        }
-
-        // We need to iterate chroms in order? C code iterates chromList (which is reversed from creation? No, preserved order).
-        // Hash map iteration is random.
-        // We should sort keys or iterate if we had a list.
-        // For deterministic output, let's sort by name.
-        let mut t_chrom_names: Vec<_> = t_net.chroms.keys().cloned().collect();
-        t_chrom_names.sort();
-
-        for name in t_chrom_names {
-            if let Some(chrom_cell) = t_net.chroms.get(&name) {
-                let mut chrom = chrom_cell.borrow_mut();
-                finalize_net(&mut chrom, false); // is_q = false
-                write_net(&chrom, &mut writer, false, min_score, min_fill)?;
-            }
-        }
-    }
+    write_net_file(
+        target_net_path,
+        &t_net,
+        false,
+        &reader.header_comments,
+        min_score,
+        min_fill,
+    )?;
 
     // Finish and write Q net
-    {
-        let mut writer = pgr::writer(query_net_path)?;
-
-        for comment in &reader.header_comments {
-            write!(writer, "{}", comment)?;
-        }
-
-        let mut q_chrom_names: Vec<_> = q_net.chroms.keys().cloned().collect();
-        q_chrom_names.sort();
-
-        for name in q_chrom_names {
-            if let Some(chrom_cell) = q_net.chroms.get(&name) {
-                let mut chrom = chrom_cell.borrow_mut();
-                finalize_net(&mut chrom, true); // is_q = true
-                write_net(&chrom, &mut writer, true, min_score, min_fill)?;
-            }
-        }
-    }
+    write_net_file(
+        query_net_path,
+        &q_net,
+        true,
+        &reader.header_comments,
+        min_score,
+        min_fill,
+    )?;
 
     Ok(())
 }

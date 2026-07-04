@@ -72,7 +72,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     fs::create_dir_all(outdir)?;
 
     let curdir = env::current_dir()?;
-    let pgr = env::current_exe()?.display().to_string();
+    let pgr = pgr::libs::io::current_exe_string()?;
 
     run_cmd!(echo "==> Paths")?;
     run_cmd!(echo "    \"pgr\"      = ${pgr}")?;
@@ -117,7 +117,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     run_cmd!(echo "==> pgr fas cover")?;
     for (basename, info) in info_of.iter_mut() {
-        let infile = info.first().ok_or_else(|| anyhow::anyhow!("no info"))?;
+        let infile = info
+            .first()
+            .ok_or_else(|| anyhow::anyhow!("no info for basename {}", basename))?;
         let outfile = format!("{}.json", basename);
         run_cmd!(${pgr} fas cover ${infile} --trim 10 --name ${target_name} -o ${outfile})?;
 
@@ -130,7 +132,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             .iter()
             .map(|e| {
                 e.1.get(1)
-                    .ok_or_else(|| anyhow::anyhow!("missing cover output"))
+                    .ok_or_else(|| anyhow::anyhow!("missing cover output for {}", e.0))
                     .map(|s| s.to_string())
             })
             .collect::<Result<_, _>>()?;
@@ -147,7 +149,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     run_cmd!(echo "==> pgr fas slice")?;
     for (basename, info) in info_of.iter_mut() {
-        let infile = info.first().ok_or_else(|| anyhow::anyhow!("no info"))?;
+        let infile = info
+            .first()
+            .ok_or_else(|| anyhow::anyhow!("no info for basename {}", basename))?;
         let outfile = format!("{}.slice.fas", basename);
         run_cmd!(${pgr} fas slice ${infile} --runlist intersect.json --name ${target_name} -o ${outfile})?;
 
@@ -160,7 +164,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             .iter()
             .map(|e| {
                 e.1.get(2)
-                    .ok_or_else(|| anyhow::anyhow!("missing slice output"))
+                    .ok_or_else(|| anyhow::anyhow!("missing slice output for {}", e.0))
                     .map(|s| s.to_string())
             })
             .collect::<Result<_, _>>()?;

@@ -202,11 +202,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // Results
     run_cmd!(info "==> Results")?;
     fs::copy(
-        ctx.tempdir
-            .path()
-            .join(&cur_tree)
-            .to_str()
-            .ok_or_else(|| anyhow::anyhow!("path is not utf-8"))?,
+        pgr::libs::io::path_to_str(&ctx.tempdir.path().join(&cur_tree))?,
         "result.nwk",
     )?;
 
@@ -224,22 +220,14 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     } else {
         ctx.leave()?;
         fs::copy(
-            ctx.tempdir
-                .path()
-                .join("result.nwk")
-                .to_str()
-                .ok_or_else(|| anyhow::anyhow!("path is not utf-8"))?,
+            pgr::libs::io::path_to_str(&ctx.tempdir.path().join("result.nwk"))?,
             outfile,
         )?;
     }
 
     if args.get_flag("map") {
         fs::copy(
-            ctx.tempdir
-                .path()
-                .join("condensed.tsv")
-                .to_str()
-                .ok_or_else(|| anyhow::anyhow!("path is not utf-8"))?,
+            pgr::libs::io::path_to_str(&ctx.tempdir.path().join("condensed.tsv"))?,
             "condensed.tsv",
         )?;
     }

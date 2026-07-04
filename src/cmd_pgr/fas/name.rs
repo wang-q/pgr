@@ -1,4 +1,5 @@
 use clap::{ArgMatches, Command};
+use indexmap::IndexSet;
 use std::collections::BTreeMap;
 use std::io::Write;
 
@@ -38,7 +39,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let is_count = args.get_flag("count");
 
     // Operating
-    let mut names: Vec<String> = vec![];
+    let mut names: IndexSet<String> = IndexSet::new();
     let mut count_of: BTreeMap<String, i32> = BTreeMap::new();
 
     for infile in args.get_many::<String>("infiles").unwrap() {
@@ -49,10 +50,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             for entry in &block.entries {
                 let range = entry.range();
 
-                // Collect unique species names
-                if !names.contains(range.name()) {
-                    names.push(range.name().to_string());
-                }
+                // Collect unique species names (O(1) lookup via IndexSet)
+                names.insert(range.name().to_string());
 
                 // Count occurrences of each species name
                 count_of

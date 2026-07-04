@@ -1,12 +1,16 @@
 use clap::{ArgMatches, Command};
 use std::collections::HashMap;
+use std::io::Write;
 
 use pgr::libs::chain::net::{collect_stats_gap, read_nets, Stats};
 /// Build the clap subcommand for class.
 pub fn make_subcommand() -> Command {
-    Command::new("class").about("Shows stats of net").arg(
-        crate::cmd_pgr::args::infile_arg_required_with_help("Input net file (or stdin if 'stdin')"),
-    )
+    Command::new("class")
+        .about("Shows stats of net")
+        .arg(crate::cmd_pgr::args::infile_arg_required_with_help(
+            "Input net file (or stdin if 'stdin')",
+        ))
+        .arg(crate::cmd_pgr::args::outfile_arg())
 }
 /// Execute the class command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
@@ -36,14 +40,17 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     results.sort_by_key(|b| std::cmp::Reverse(b.2)); // Sort by bases descending
 
-    println!(
+    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
+    writeln!(
+        writer,
         "{:<20} {:>10} {:>15} {:>10}",
         "Class", "Count", "Bases", "%"
-    );
-    println!(
+    )?;
+    writeln!(
+        writer,
         "{:<20} {:>10} {:>15} {:>10}",
         "-----", "-----", "-----", "-"
-    );
+    )?;
 
     for (class, count, bases) in results {
         let pct = if total_bases > 0 {
@@ -51,10 +58,18 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         } else {
             0.0
         };
-        println!("{:<20} {:>10} {:>15} {:>10.2}%", class, count, bases, pct);
+        writeln!(
+            writer,
+            "{:<20} {:>10} {:>15} {:>10.2}%",
+            class, count, bases, pct
+        )?;
     }
 
-    println!("\nTotal bases covered by nets/gaps: {}", total_bases);
+    writeln!(
+        writer,
+        "\nTotal bases covered by nets/gaps: {}",
+        total_bases
+    )?;
 
     Ok(())
 }

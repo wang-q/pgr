@@ -107,16 +107,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
         // ids supplied by --lca
         for (i, lca) in lcas.iter().enumerate() {
-            let parts = lca.split(',').map(|e| e.to_string()).collect::<Vec<_>>();
-            if parts.len() != 2 {
-                anyhow::bail!(
-                    "--lca requires exactly two comma-separated names, got: {}",
-                    lca
-                );
-            }
+            let (first, last) = super::common::parse_lca_pair(lca)?;
 
-            let first = &parts[0];
-            let last = &parts[1];
             match (id_of.get(first), id_of.get(last)) {
                 (Some(id1), Some(id2)) => {
                     let x = tree

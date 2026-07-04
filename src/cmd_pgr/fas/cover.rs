@@ -49,11 +49,10 @@ Examples:
 /// Execute the cover command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let opt_trim = *args.get_one::<i32>("trim").unwrap();
-    let opt_name = &args
+    let opt_name = args
         .get_one::<String>("name")
         .map(|s| s.as_str())
-        .unwrap_or("")
-        .to_string();
+        .unwrap_or("");
 
     let mut res_of: BTreeMap<String, BTreeMap<String, intspan::IntSpan>> = BTreeMap::new();
 
@@ -68,7 +67,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             res_of
                 .values()
                 .next()
-                .ok_or_else(|| anyhow::anyhow!("no coverage found"))?,
+                .ok_or_else(|| anyhow::anyhow!("no coverage found for --name {}", opt_name))?,
         )
     } else {
         // Output coverage for all species

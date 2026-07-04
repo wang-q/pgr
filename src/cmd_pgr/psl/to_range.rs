@@ -1,7 +1,6 @@
 use clap::{Arg, ArgAction, ArgMatches, Command};
-use pgr::libs::fmt::psl::Psl;
+use pgr::libs::fmt::psl::parse_or_warn;
 use std::io::{BufRead, Write};
-use std::str::FromStr;
 
 /// Build the clap subcommand for to-range.
 pub fn make_subcommand() -> Command {
@@ -61,15 +60,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             continue;
         }
 
-        let psl = match Psl::from_str(&line) {
-            Ok(p) => p,
-            Err(e) => {
-                if strict {
-                    anyhow::bail!("failed to parse psl line: {}: {}", line, e);
-                }
-                log::warn!("skipping malformed PSL line: {}", e);
-                continue;
-            }
+        let psl = match parse_or_warn(&line, strict)? {
+            Some(p) => p,
+            None => continue,
         };
 
         for range in pgr::libs::fmt::psl::psl_block_ranges(&psl, extract_target) {

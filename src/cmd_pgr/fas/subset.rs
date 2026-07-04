@@ -1,4 +1,5 @@
 use clap::{Arg, ArgAction, ArgMatches, Command};
+use std::collections::HashMap;
 use std::io::Write;
 
 /// Build the clap subcommand for subset.
@@ -52,20 +53,21 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
         for block_result in pgr::libs::fmt::fas::iter_fas_blocks(&mut reader) {
             let block = block_result?;
-            let block_names = block.names;
 
-            if is_strict && !needed.iter().all(|n| block_names.contains(n)) {
+            // Build name -> entry index for O(1) lookup (avoids O(N*M) triple loop)
+            let entry_of: HashMap<&str, &pgr::libs::fmt::fas::FasEntry> = block
+                .entries
+                .iter()
+                .map(|e| (e.range().name().as_str(), e))
+                .collect();
+
+            if is_strict && !needed.iter().all(|n| entry_of.contains_key(n.as_str())) {
                 continue;
             }
 
             for name in &needed {
-                if block_names.contains(name) {
-                    for entry in &block.entries {
-                        let entry_name = entry.range().name();
-                        if entry_name == name {
-                            writer.write_all(entry.to_string().as_ref())?;
-                        }
-                    }
+                if let Some(entry) = entry_of.get(name.as_str()) {
+                    writer.write_all(entry.to_string().as_ref())?;
                 }
             }
 

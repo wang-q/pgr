@@ -140,15 +140,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         // ids supplied by --lca
         if args.contains_id("lca") {
             for lca in args.get_many::<String>("lca").unwrap() {
-                let parts = lca.split(',').map(|e| e.to_string()).collect::<Vec<_>>();
-                if parts.len() != 2 {
-                    anyhow::bail!(
-                        "--lca requires exactly two comma-separated names, got: {}",
-                        lca
-                    );
-                }
+                let (first, last) = super::common::parse_lca_pair(lca)?;
 
-                match (id_of.get(&parts[0]), id_of.get(&parts[1])) {
+                match (id_of.get(first), id_of.get(last)) {
                     (Some(id1), Some(id2)) => {
                         let id = tree
                             .get_common_ancestor(id1, id2)
@@ -156,7 +150,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                         ids.push(id);
                     }
                     _ => {
-                        log::warn!("lca name not found in tree: {} / {}", parts[0], parts[1]);
+                        log::warn!("lca name not found in tree: {} / {}", first, last);
                     }
                 }
             }

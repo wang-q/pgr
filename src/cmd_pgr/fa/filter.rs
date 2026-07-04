@@ -119,9 +119,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
             let mut name = String::from_utf8(record.name().into())?;
             if is_simplify {
-                if let Some(i) = name.find(&[' ', '.', ',', '-'][..]) {
-                    name = name[..i].to_string();
-                }
+                name = pgr::libs::io::simplify_name(&name).to_string();
             }
             let seq = record.sequence();
 

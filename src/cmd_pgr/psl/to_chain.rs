@@ -1,7 +1,6 @@
 use clap::{Arg, ArgMatches, Command};
-use pgr::libs::fmt::psl::Psl;
+use pgr::libs::fmt::psl::parse_or_warn;
 use std::io::BufRead;
-use std::str::FromStr;
 /// Build the clap subcommand for to-chain.
 pub fn make_subcommand() -> Command {
     Command::new("to-chain")
@@ -46,19 +45,17 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             continue;
         }
 
-        let mut psl = match Psl::from_str(&line) {
-            Ok(p) => p,
-            Err(e) => {
-                if strict {
-                    anyhow::bail!("failed to parse psl line: {}: {}", line, e);
-                }
-                log::warn!("skipping unparseable psl line: {}: {}", line, e);
-                continue;
-            }
+        let mut psl = match parse_or_warn(&line, strict)? {
+            Some(p) => p,
+            None => continue,
         };
 
         // Handle negative target strand
-        let t_strand_char = psl.strand.chars().nth(1).unwrap_or('+');
+        let strand_bytes = psl.strand.as_bytes();
+        if strand_bytes.len() < 2 {
+            anyhow::bail!("malformed PSL strand (expected 2 chars): {}", psl.strand);
+        }
+        let t_strand_char = strand_bytes[1] as char;
         if t_strand_char == '-' {
             if fix_strand {
                 psl.rc();

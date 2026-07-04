@@ -117,9 +117,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     };
 
     // Parse unit
-    let unit_str = args
-        .get_one::<String>("unit")
-        .ok_or_else(|| anyhow::anyhow!("--unit required"))?;
+    let unit_str = args.get_one::<String>("unit").unwrap();
     let parts: Vec<f64> = unit_str
         .split(',')
         .map(|x| x.trim().parse::<f64>())

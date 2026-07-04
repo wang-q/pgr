@@ -93,5 +93,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         }
     }
 
+    // Explicitly flush all cached writers to catch errors on close (e.g. disk full)
+    for writer in file_cache.values_mut() {
+        writer.flush()?;
+    }
+
     Ok(())
 }

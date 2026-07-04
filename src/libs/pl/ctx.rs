@@ -31,7 +31,7 @@ impl PipelineCtx {
     /// Prints the `==> Paths` info block.
     pub fn new(prefix: &str) -> anyhow::Result<Self> {
         let curdir = std::env::current_dir()?;
-        let pgr = std::env::current_exe()?.display().to_string();
+        let pgr = crate::libs::io::current_exe_string()?;
         let tempdir = tempfile::Builder::new().prefix(prefix).tempdir()?;
         let tempdir_str = tempdir.path().to_str().unwrap();
 

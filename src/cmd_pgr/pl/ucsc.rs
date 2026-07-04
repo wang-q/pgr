@@ -98,11 +98,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             format!("{}.", tname)
         }
     } else {
-        format!(
-            "{}.",
-            pgr::libs::io::get_basename(&abs_target)
-                .ok_or_else(|| anyhow::anyhow!("failed to get basename of: {}", abs_target))?
-        )
+        format!("{}.", pgr::libs::io::basename_or_err(&abs_target)?)
     };
     let opt_qname = if let Some(qname) = args.get_one::<String>("q_name") {
         if qname.is_empty() {
@@ -111,11 +107,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             format!("{}.", qname)
         }
     } else {
-        format!(
-            "{}.",
-            pgr::libs::io::get_basename(&abs_query)
-                .ok_or_else(|| anyhow::anyhow!("failed to get basename of: {}", abs_query))?
-        )
+        format!("{}.", pgr::libs::io::basename_or_err(&abs_query)?)
     };
 
     let abs_psl = ctx.abs_path(args.get_one::<String>("psl").unwrap())?;
@@ -156,8 +148,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //    -noCheckScore=N - score that will pass without checks (speed tweak)
     std::fs::create_dir_all("pslChain")?;
     for infile in infiles {
-        let stem = pgr::libs::io::get_basename(&infile)
-            .ok_or_else(|| anyhow::anyhow!("failed to get basename of: {}", infile))?;
+        let stem = pgr::libs::io::basename_or_err(&infile)?;
         run_cmd!(
             axtChain -minScore=${opt_minscore} -linearGap=${opt_gap_model} -psl ${infile} target.chr.2bit query.chr.2bit pslChain/${stem}.tmp
         )?;
@@ -186,24 +177,36 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         while !files.is_empty() {
             let batching: Vec<_> = files.drain(0..CHAIN_BATCH_SIZE.min(files.len())).collect();
 
+            let mut tmp = tempfile::NamedTempFile::new()?;
             {
                 use std::io::Write;
-                let mut fh = std::fs::File::create("chainList.tmp")?;
                 for s in &batching {
-                    writeln!(fh, "{}", s)?;
+                    writeln!(tmp, "{}", s)?;
                 }
+                tmp.flush()?;
             }
+            let tmp_path = tmp
+                .path()
+                .to_str()
+                .ok_or_else(|| anyhow::anyhow!("temp file path is not valid UTF-8"))?
+                .to_string();
             run_cmd!(
-                chainMergeSort -inputList=chainList.tmp > all.${sn}.chain.tmp
+                chainMergeSort -inputList=${tmp_path} > all.${sn}.chain.tmp
             )?;
             merge_files.push(format!("all.{}.chain.tmp", sn));
 
             sn += 1;
         }
 
+        let cleanup_files: Vec<String> = merge_files.clone();
         run_cmd!(
             chainMergeSort $[merge_files] > all.chain
         )?;
+
+        // Clean up intermediate batch tmp files (best-effort)
+        for f in &cleanup_files {
+            let _ = std::fs::remove_file(f);
+        }
 
         // chainPreNet - Remove chains that don't have a chance of being netted
         // usage:
@@ -277,8 +280,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         // usage:
         //   axtSort in.axt out.axt
         for file in files {
-            let stem = pgr::libs::io::get_basename(&file)
-                .ok_or_else(|| anyhow::anyhow!("failed to get basename of: {}", file))?;
+            let stem = pgr::libs::io::basename_or_err(&file)?;
             run_cmd!(
                 netToAxt ${file} all.pre.chain target.chr.2bit query.chr.2bit stdout |
                     axtSort stdin axtNet/${stem}.axt
@@ -292,8 +294,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
         let files = pgr::libs::io::list_files_ext("axtNet", "axt");
         for file in files {
-            let stem = pgr::libs::io::get_basename(&file)
-                .ok_or_else(|| anyhow::anyhow!("failed to get basename of: {}", file))?;
+            let stem = pgr::libs::io::basename_or_err(&file)?;
             let maf_output = if abs_outdir == "stdout" {
                 "stdout".to_string()
             } else {
@@ -337,8 +338,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
         let files = pgr::libs::io::list_files_ext("synNet", "net");
         for file in files {
-            let stem = pgr::libs::io::get_basename(&file)
-                .ok_or_else(|| anyhow::anyhow!("failed to get basename of: {}", file))?;
+            let stem = pgr::libs::io::basename_or_err(&file)?;
             let net_stem = file
                 .strip_suffix(".net")
                 .ok_or_else(|| anyhow::anyhow!("expected .net suffix: {}", file))?;

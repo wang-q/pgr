@@ -1,6 +1,6 @@
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use std::collections::BTreeMap;
-use std::io::Write;
+use std::io::{BufWriter, Write};
 
 /// Build the clap subcommand for separate.
 pub fn make_subcommand() -> Command {
@@ -53,7 +53,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let opt_suffix = args.get_one::<String>("suffix").unwrap();
     let is_rc = args.get_flag("rc");
 
-    let mut file_of: BTreeMap<String, std::fs::File> = BTreeMap::new();
+    let mut file_of: BTreeMap<String, BufWriter<std::fs::File>> = BTreeMap::new();
     for infile in args.get_many::<String>("infiles").unwrap() {
         let mut reader = pgr::reader(infile)?;
 
@@ -85,10 +85,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                             .write(true)
                             .truncate(true)
                             .open(path)?;
-                        file_of.insert(entry_name.to_string(), file);
+                        file_of.insert(entry_name.to_string(), BufWriter::new(file));
                     }
                     write!(
-                        file_of.get(entry_name).ok_or_else(|| anyhow::anyhow!(
+                        file_of.get_mut(entry_name).ok_or_else(|| anyhow::anyhow!(
                             "file not found for entry: {}",
                             entry_name
                         ))?,
@@ -99,6 +99,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 }
             }
         }
+    }
+
+    // Explicitly flush all file handles to catch errors on close (e.g. disk full)
+    for fh in file_of.values_mut() {
+        fh.flush()?;
     }
 
     Ok(())

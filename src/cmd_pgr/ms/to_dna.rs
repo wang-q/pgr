@@ -72,7 +72,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         return Ok(());
     }
     let outfile = crate::cmd_pgr::args::get_outfile(args);
-    let gc = *args.get_one::<f64>("gc").unwrap_or(&0.5);
+    let gc = *args.get_one::<f64>("gc").unwrap();
     anyhow::ensure!(
         (0.0..=1.0).contains(&gc),
         "--gc must be in [0, 1], got {}",
@@ -82,10 +82,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let no_perturb = args.get_flag("no_perturb");
     let verbose = args.get_flag("verbose");
 
-    let curdir = std::env::current_dir()?;
-    let pgr = std::env::current_exe()?.display().to_string();
-
     if verbose {
+        let curdir = std::env::current_dir()?;
+        let pgr = pgr::libs::io::current_exe_string()?;
         println!("==> Paths");
         println!("    \"pgr\"     = {}", pgr);
         println!("    \"curdir\"  = {:?}", curdir);

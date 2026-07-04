@@ -65,6 +65,30 @@ Examples:
         ))
         .arg(crate::cmd_pgr::args::align_gap_open_arg())
         .arg(crate::cmd_pgr::args::align_gap_extend_arg())
+        .arg(
+            Arg::new("match_score")
+                .long("match-score")
+                .num_args(1)
+                .default_value("2")
+                .value_parser(value_parser!(i32))
+                .help("Match score for scoring matrix"),
+        )
+        .arg(
+            Arg::new("mismatch_score")
+                .long("mismatch-score")
+                .num_args(1)
+                .default_value("-1")
+                .value_parser(value_parser!(i32))
+                .help("Mismatch penalty for scoring matrix"),
+        )
+        .arg(
+            Arg::new("gap_score")
+                .long("gap-score")
+                .num_args(1)
+                .default_value("-2")
+                .value_parser(value_parser!(i32))
+                .help("Gap penalty for scoring matrix"),
+        )
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 /// Execute the multiz command.
@@ -91,14 +115,18 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         _ => anyhow::bail!("unknown gap_model: {}", gap_model_str),
     };
 
+    let match_score = *args.get_one::<i32>("match_score").unwrap();
+    let mismatch_score = *args.get_one::<i32>("mismatch_score").unwrap();
+    let gap_score = *args.get_one::<i32>("gap_score").unwrap();
+
     let cfg = pgr::libs::fas_multiz::FasMultizConfig {
         ref_name: ref_name.clone(),
         radius,
         min_width,
         mode,
-        match_score: 2,
-        mismatch_score: -1,
-        gap_score: -2,
+        match_score,
+        mismatch_score,
+        gap_score,
         gap_model,
         gap_open,
         gap_extend,

@@ -1,4 +1,4 @@
-use anyhow::anyhow;
+use anyhow::{anyhow, Context};
 use clap::{Arg, ArgMatches, Command};
 use std::collections::{BTreeMap, HashSet};
 
@@ -78,10 +78,13 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     }
 
     for infile in args.get_many::<String>("infiles").unwrap() {
-        let mut reader = pgr::reader(infile)?;
+        let mut reader =
+            pgr::reader(infile).with_context(|| format!("open reader for {}", infile))?;
 
+        let mut block_idx = 0usize;
         for block_result in iter_fas_blocks(&mut reader) {
-            let block = block_result?;
+            let block = block_result
+                .with_context(|| format!("read block {} from {}", block_idx, infile))?;
             if !header_written {
                 let contigs_ref = if sizes.is_empty() { None } else { Some(&sizes) };
                 write_vcf_header(&mut writer, contigs_ref, &block.names)?;
@@ -93,14 +96,18 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 seqs.push(entry.seq().as_ref());
             }
             if seqs.is_empty() {
+                block_idx += 1;
                 continue;
             }
 
             let target_entry_idx = 0usize;
-            let target_entry = block
-                .entries
-                .get(target_entry_idx)
-                .ok_or_else(|| anyhow!("missing target entry at index {}", target_entry_idx))?;
+            let target_entry = block.entries.get(target_entry_idx).ok_or_else(|| {
+                anyhow!(
+                    "missing target entry at index {} in block {}",
+                    target_entry_idx,
+                    block_idx
+                )
+            })?;
             let trange = target_entry.range().clone();
             let t_ints_seq = seq_intspan(target_entry.seq());
 
@@ -109,17 +116,23 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
             for s in subs {
                 let chr = trange.chr();
-                let chr_pos = align_to_chr(&t_ints_seq, s.pos, trange.start, trange.strand())?;
+                let chr_pos = align_to_chr(&t_ints_seq, s.pos, trange.start, trange.strand())
+                    .with_context(|| {
+                        format!("align_to_chr at pos {} in block {}", s.pos, block_idx)
+                    })?;
 
                 let pos_idx = usize::try_from(s.pos)
                     .ok()
                     .and_then(|p| p.checked_sub(1))
-                    .ok_or_else(|| anyhow!("invalid substitution pos: {}", s.pos))?;
+                    .ok_or_else(|| {
+                        anyhow!("invalid substitution pos {} in block {}", s.pos, block_idx)
+                    })?;
                 if pos_idx >= seqs[0].len() {
                     anyhow::bail!(
-                        "substitution pos {} out of range (seq len {})",
+                        "substitution pos {} out of range (seq len {}) in block {}",
                         s.pos,
-                        seqs[0].len()
+                        seqs[0].len(),
+                        block_idx
                     );
                 }
                 let ref_base = char::from(seqs[0][pos_idx]).to_ascii_uppercase();
@@ -141,6 +154,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                     &sample_bases,
                 )?;
             }
+            block_idx += 1;
         }
     }
 

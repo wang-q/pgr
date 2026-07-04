@@ -182,6 +182,32 @@ pub fn get_basename(file_path: &str) -> Option<String> {
         .map(|s| s.split('.').next().unwrap_or(s).to_string())
 }
 
+/// Like [`get_basename`] but errors with a contextual message on failure.
+pub fn basename_or_err(file_path: &str) -> anyhow::Result<String> {
+    get_basename(file_path)
+        .ok_or_else(|| anyhow::anyhow!("failed to get basename of: {}", file_path))
+}
+
+/// Convert a path to `&str`, erroring with a contextual message if not UTF-8.
+pub fn path_to_str(path: &std::path::Path) -> anyhow::Result<&str> {
+    path.to_str()
+        .ok_or_else(|| anyhow::anyhow!("path is not utf-8: {}", path.display()))
+}
+
+/// Return the prefix of `name` up to the first separator
+/// (`' '`, `'.'`, `','`, or `'-'`); returns `name` unchanged if no separator.
+pub fn simplify_name(name: &str) -> &str {
+    match name.find(&[' ', '.', ',', '-'][..]) {
+        Some(i) => &name[..i],
+        None => name,
+    }
+}
+
+/// Get the path of the currently executing binary as a String.
+pub fn current_exe_string() -> anyhow::Result<String> {
+    Ok(std::env::current_exe()?.display().to_string())
+}
+
 /// Read the first column of `path` (one name per line) into a collection.
 ///
 /// Lines are split on whitespace; only the first field is kept. Empty lines

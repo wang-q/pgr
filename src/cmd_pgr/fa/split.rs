@@ -1,6 +1,6 @@
 use clap::{builder::PossibleValue, value_parser, Arg, ArgAction, ArgMatches, Command, Error};
 use std::collections::BTreeMap;
-use std::io::Write;
+use std::io::{BufWriter, Write};
 
 /// Build the clap subcommand for split.
 pub fn make_subcommand() -> Command {
@@ -79,7 +79,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         std::fs::create_dir_all(outdir)?;
     }
 
-    let mut fh_of: BTreeMap<String, std::fs::File> = BTreeMap::new();
+    let mut fh_of: BTreeMap<String, BufWriter<std::fs::File>> = BTreeMap::new();
 
     // Operating
     if mode == "name" {
@@ -93,7 +93,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 let name = String::from_utf8(record.name().into())
                     .map_err(|e| anyhow::anyhow!("invalid utf8 in record name: {}", e))?;
                 let seq = record.sequence();
-                let seq_str = String::from_utf8(seq.get(..).unwrap_or(&[]).to_vec())
+                let seq_str = String::from_utf8(seq.as_ref().to_vec())
                     .map_err(|e| anyhow::anyhow!("invalid utf8 in sequence: {}", e))?;
 
                 if outdir == "stdout" {
@@ -105,7 +105,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                         .replace("__", "_");
                     gen_fh(outdir, &mut fh_of, &filename)?;
                     write!(
-                        fh_of.get(&filename).ok_or_else(|| anyhow::anyhow!(
+                        fh_of.get_mut(&filename).ok_or_else(|| anyhow::anyhow!(
                             "file handle not found for: {}",
                             filename
                         ))?,
@@ -145,7 +145,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                     .map_err(|e| anyhow::anyhow!("invalid utf8 in record name: {}", e))?;
 
                 let seq = record.sequence();
-                let seq_str = String::from_utf8(seq.get(..).unwrap_or(&[]).to_vec())
+                let seq_str = String::from_utf8(seq.as_ref().to_vec())
                     .map_err(|e| anyhow::anyhow!("invalid utf8 in sequence: {}", e))?;
 
                 if outdir == "stdout" {
@@ -154,7 +154,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                     let filename = format!("{:0width$}", chunker.file_index(), width = part_width);
                     gen_fh(outdir, &mut fh_of, &filename)?;
                     write!(
-                        fh_of.get(&filename).ok_or_else(|| anyhow::anyhow!(
+                        fh_of.get_mut(&filename).ok_or_else(|| anyhow::anyhow!(
                             "file handle not found for: {}",
                             filename
                         ))?,
@@ -178,7 +178,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
 fn gen_fh(
     outdir: &String,
-    fh_of: &mut BTreeMap<String, std::fs::File>,
+    fh_of: &mut BTreeMap<String, BufWriter<std::fs::File>>,
     filename: &String,
 ) -> Result<(), Error> {
     if !fh_of.contains_key(filename) {
@@ -188,7 +188,7 @@ fn gen_fh(
             .write(true)
             .truncate(true)
             .open(path)?;
-        fh_of.insert(filename.clone(), file);
+        fh_of.insert(filename.clone(), BufWriter::new(file));
     }
     Ok(())
 }

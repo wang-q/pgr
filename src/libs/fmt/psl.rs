@@ -926,6 +926,22 @@ pub fn iter_psl<R: io::BufRead>(reader: R) -> impl Iterator<Item = anyhow::Resul
     })
 }
 
+/// Parse a PSL line with strict/non-strict error handling.
+/// On parse failure: `strict` → `bail!`, else `log::warn!` and return `None`.
+pub fn parse_or_warn(line: &str, strict: bool) -> anyhow::Result<Option<Psl>> {
+    use std::str::FromStr;
+    match Psl::from_str(line) {
+        Ok(p) => Ok(Some(p)),
+        Err(e) => {
+            if strict {
+                anyhow::bail!("failed to parse psl line: {}: {}", line, e);
+            }
+            log::warn!("skipping unparseable psl line: {}: {}", line, e);
+            Ok(None)
+        }
+    }
+}
+
 /// Parse a `chr:start-end` subrange name (1-based, inclusive) into
 /// `(chr, start, end)` with `start`/`end` as u32. Returns `None` if `name`
 /// is not a valid range.

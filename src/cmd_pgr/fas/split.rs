@@ -1,6 +1,6 @@
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use std::collections::BTreeMap;
-use std::io::Write;
+use std::io::{BufWriter, Write};
 
 /// Build the clap subcommand for split.
 pub fn make_subcommand() -> Command {
@@ -63,7 +63,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let is_chr = args.get_flag("chr");
     let is_simple = args.get_flag("simple");
 
-    let mut file_of: BTreeMap<String, std::fs::File> = BTreeMap::new();
+    let mut file_of: BTreeMap<String, BufWriter<std::fs::File>> = BTreeMap::new();
 
     for infile in args.get_many::<String>("infiles").unwrap() {
         let mut reader = pgr::reader(infile)?;
@@ -101,7 +101,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                             .write(true)
                             .truncate(true)
                             .open(path)?;
-                        file_of.insert(filename.clone(), file);
+                        file_of.insert(filename.clone(), BufWriter::new(file));
                     }
                     let file = file_of
                         .get_mut(&filename)
@@ -120,6 +120,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 writeln!(file)?;
             }
         }
+    }
+
+    // Explicitly flush all file handles to catch errors on close (e.g. disk full)
+    for fh in file_of.values_mut() {
+        fh.flush()?;
     }
 
     Ok(())
