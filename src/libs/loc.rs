@@ -271,3 +271,35 @@ pub fn merge_intervals(mut blocks: Vec<std::ops::Range<usize>>) -> Vec<std::ops:
     }
     merged
 }
+
+/// Split a .loc index into chunks of approximately `chunk_size` bytes.
+pub fn split_loc_file(loc_file: &str, chunk_size: usize) -> anyhow::Result<Vec<(String, u64, usize)>> {
+    let loc_of = load_loc(loc_file)?;
+
+    let mut chunks: Vec<(String, u64, usize)> = Vec::new();
+    let mut cur_size = 0;
+    let mut cur_start_offset = 0;
+    let mut cur_first_seq = String::new();
+
+    for (seq_id, &(offset, size)) in &loc_of {
+        if cur_size + size > chunk_size && !cur_first_seq.is_empty() {
+            chunks.push((cur_first_seq.clone(), cur_start_offset, cur_size));
+            cur_size = 0;
+            cur_start_offset = offset;
+            cur_first_seq = seq_id.clone();
+        }
+
+        if cur_size == 0 {
+            cur_start_offset = offset;
+            cur_first_seq = seq_id.clone();
+        }
+
+        cur_size += size;
+    }
+
+    if !cur_first_seq.is_empty() {
+        chunks.push((cur_first_seq, cur_start_offset, cur_size));
+    }
+
+    Ok(chunks)
+}

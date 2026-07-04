@@ -1,4 +1,5 @@
 use clap::{Arg, ArgMatches, Command};
+use std::fmt::Write;
 
 /// Build the clap subcommand for consensus.
 pub fn make_subcommand() -> Command {
@@ -92,11 +93,14 @@ fn proc_block(block: &pgr::libs::fmt::fas::FasBlock, args: &ArgMatches) -> anyho
     let algorithm = args.get_one::<String>("align_mode").unwrap();
 
     // Map algorithm string to integer code (0=local, 1=global, 2=semi_global) for internal use/spoa
+    const ALGO_LOCAL: i32 = 0;
+    const ALGO_GLOBAL: i32 = 1;
+    const ALGO_SEMI_GLOBAL: i32 = 2;
     let algo_code = match algorithm.as_str() {
-        "local" => 0,
-        "global" => 1,
-        "semi_global" => 2,
-        _ => 1,
+        "local" => ALGO_LOCAL,
+        "global" => ALGO_GLOBAL,
+        "semi_global" => ALGO_SEMI_GLOBAL,
+        _ => anyhow::bail!("unknown align_mode: {}", algorithm),
     };
 
     let mut seqs = vec![];
@@ -140,19 +144,19 @@ fn proc_block(block: &pgr::libs::fmt::fas::FasBlock, args: &ArgMatches) -> anyho
         None => anyhow::bail!("empty block"),
     };
 
-    let mut out_string = "".to_string();
+    let mut out_string = String::new();
     if range.is_valid() {
         *range.name_mut() = cname.to_string();
-        out_string += format!(">{}\n{}\n", range, cons).as_ref();
+        writeln!(out_string, ">{}\n{}", range, cons)?;
     } else {
-        out_string += format!(">{}\n{}\n", cname, cons).as_ref();
+        writeln!(out_string, ">{}\n{}", cname, cons)?;
     }
     if let Some(og) = outgroup {
-        out_string += og.to_string().as_ref();
+        out_string.push_str(&og.to_string());
     }
 
     // end of a block
-    out_string += "\n";
+    out_string.push('\n');
 
     Ok(out_string)
 }

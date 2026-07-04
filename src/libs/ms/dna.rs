@@ -1,6 +1,6 @@
-use crate::libs::ms::SimpleRng;
+use crate::libs::ms::{parse_header, perturb_positions, read_next_sample, system_seed, SimpleRng};
 use anyhow::Result;
-use std::io::Write;
+use std::io::{BufRead, Write};
 
 pub fn build_anc_seq(gc: f64, nsite: usize, rng: &mut SimpleRng) -> Vec<u8> {
     let mut seq = vec![b'A'; nsite];
@@ -139,6 +139,71 @@ pub fn write_fasta(
             }
         }
         writer.write_all(b"\n")?;
+    }
+    Ok(())
+}
+
+/// Convert ms-style haplotype stream into FASTA DNA sequences.
+pub fn convert_stream<R: BufRead>(
+    mut reader: R,
+    gc: f64,
+    seed: Option<u64>,
+    writer: &mut dyn Write,
+    no_perturb: bool,
+) -> Result<()> {
+    let mut header = String::new();
+    reader.read_line(&mut header)?;
+    if header.trim().is_empty() {
+        return Ok(());
+    }
+    let hdr = parse_header(&header)?;
+    let nsam = hdr.nsam;
+    let howmany = hdr.howmany;
+    let nsite = hdr.nsite;
+    let npop = hdr.npop;
+    let sample_sizes = hdr.sample_sizes;
+    if nsite == 0 {
+        anyhow::bail!("ERROR [ms2dna]: please use ms with the -r switch (nsite missing).");
+    }
+
+    let mut sample_counter = 0usize;
+    let seed_final = seed.unwrap_or(system_seed());
+    let mut rng = SimpleRng::new(seed_final);
+    while let Some(sample) = read_next_sample(&mut reader, nsam)? {
+        let segsites = sample.segsites;
+        let mut positions = sample.positions;
+        let haplotypes = sample.haplotypes;
+        let seq_anc = build_anc_seq(gc, nsite, &mut rng);
+        if segsites > 0 && !no_perturb {
+            perturb_positions(&mut positions, &mut rng);
+        }
+        if segsites > nsite {
+            writeln!(
+                writer,
+                "#WARNING: number of segregating sites ({}) > number of mutable sites ({})",
+                segsites, nsite
+            )?;
+            writeln!(
+                writer,
+                "#Hint: input may come from macs; ensure positions/nsite are compatible"
+            )?;
+        }
+        let map = map_positions(&positions, nsite, &mut rng);
+        let seq_mut = build_mut_seq(&seq_anc, &map, gc, &mut rng, nsite);
+        sample_counter += 1;
+        write_fasta(
+            writer,
+            nsam,
+            nsite,
+            &map,
+            &seq_anc,
+            &seq_mut,
+            &haplotypes,
+            howmany,
+            npop,
+            sample_sizes.as_deref(),
+            sample_counter,
+        )?;
     }
     Ok(())
 }
@@ -332,5 +397,31 @@ mod tests {
         assert!(headers[0].starts_with(">L1_P1_S1"));
         assert!(headers[1].starts_with(">L1_P1_S2"));
         assert!(headers[2].starts_with(">L1_P2_S1"));
+    }
+
+    #[test]
+    fn test_convert_stream_warning_and_output() {
+        // Header: nsam=2, howmany=1, nsite=2
+        // Sample: segsites=3 (> nsite) to trigger warning; haplotypes length=3
+        let input = "\
+ms 2 1 -r 0 2
+//
+segsites: 3
+positions: 0.1000 0.5000 0.8000
+010
+001
+";
+        let mut out = Vec::new();
+        let reader = std::io::BufReader::new(input.as_bytes());
+        convert_stream(reader, 0.5, Some(123), &mut out, true).unwrap();
+        let s = String::from_utf8(out).unwrap();
+        let lines: Vec<&str> = s.lines().collect();
+        assert!(lines[0].starts_with("#WARNING: number of segregating sites"));
+        assert!(lines[1].starts_with("#Hint: input may come from macs"));
+        // Next should be headers and sequences for two samples
+        assert!(lines[2].starts_with('>'));
+        assert_eq!(lines[3].len(), 2);
+        assert!(lines[4].starts_with('>'));
+        assert_eq!(lines[5].len(), 2);
     }
 }

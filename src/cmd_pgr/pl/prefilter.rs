@@ -91,7 +91,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     }
 
     // Split .loc file into chunks
-    let chunks = split_loc_file(&loc_file, opt_chunk)?;
+    let chunks = pgr::libs::loc::split_loc_file(&loc_file, opt_chunk)?;
 
     let pgr = std::env::current_exe()?.display().to_string();
 
@@ -124,43 +124,4 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     }
 
     Ok(())
-}
-
-// Split .loc file into chunks
-fn split_loc_file(loc_file: &str, chunk_size: usize) -> anyhow::Result<Vec<(String, u64, usize)>> {
-    // Load .loc file
-    let loc_of: indexmap::IndexMap<String, (u64, usize)> = pgr::libs::loc::load_loc(loc_file)?;
-
-    let mut chunks: Vec<(String, u64, usize)> = Vec::new();
-    let mut cur_size = 0;
-    let mut cur_start_offset = 0;
-    let mut cur_first_seq = String::new();
-
-    // Iterate over each sequence in the .loc file
-    for (seq_id, &(offset, size)) in &loc_of {
-        // If the current chunk size exceeds the specified size,
-        //   record the current chunk and start a new one
-        if cur_size + size > chunk_size && !cur_first_seq.is_empty() {
-            chunks.push((cur_first_seq.clone(), cur_start_offset, cur_size));
-            cur_size = 0;
-            cur_start_offset = offset;
-            cur_first_seq = seq_id.clone();
-        }
-
-        // If it's the first sequence, record the start offset and sequence name
-        if cur_size == 0 {
-            cur_start_offset = offset;
-            cur_first_seq = seq_id.clone();
-        }
-
-        // Update the current chunk size
-        cur_size += size;
-    }
-
-    // Add the last chunk
-    if !cur_first_seq.is_empty() {
-        chunks.push((cur_first_seq, cur_start_offset, cur_size));
-    }
-
-    Ok(chunks)
 }

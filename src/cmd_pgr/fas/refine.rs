@@ -1,4 +1,5 @@
 use clap::{value_parser, Arg, ArgAction, ArgMatches, Command};
+use std::fmt::Write;
 
 /// Build the clap subcommand for refine.
 pub fn make_subcommand() -> Command {
@@ -131,13 +132,13 @@ fn proc_block(block: &pgr::libs::fmt::fas::FasBlock, args: &ArgMatches) -> anyho
         pgr::libs::alignment::trim_head_tail(&mut aligned, &mut ranges, chop);
     }
 
-    let mut out_string = "".to_string();
+    let mut out_string = String::new();
     for (range, seq) in ranges.iter().zip(aligned) {
-        out_string += format!(">{}\n{}\n", range, seq).as_ref();
+        writeln!(out_string, ">{}\n{}", range, seq)?;
     }
 
     // end of a block
-    out_string += "\n";
+    out_string.push('\n');
 
     Ok(out_string)
 }

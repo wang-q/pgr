@@ -465,6 +465,16 @@ impl Tree {
     }
 }
 
+/// Sanitize a string for safe use as a Newick label by replacing reserved chars.
+pub fn newick_safe(s: &str) -> String {
+    s.chars()
+        .map(|c| match c {
+            '(' | ')' | '[' | ']' | ',' | ':' | ';' | ' ' | '/' | '\\' => '_',
+            _ => c,
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

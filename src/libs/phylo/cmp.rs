@@ -242,6 +242,30 @@ impl TreeComparison for Tree {
     }
 }
 
+/// Compute RF, weighted RF, and Kuhner-Felsenstein metrics as formatted strings.
+pub fn compute_tree_metrics(
+    t1: &Tree,
+    t2: &Tree,
+) -> anyhow::Result<(String, String, String)> {
+    let rf = t1.robinson_foulds(t2).map_err(anyhow::Error::msg)?;
+    let wrf = t1
+        .weighted_robinson_foulds(t2)
+        .map_err(anyhow::Error::msg)?;
+    let kf = t1.kuhner_felsenstein(t2).map_err(anyhow::Error::msg)?;
+
+    let format_float = |v: f64| -> String {
+        let s = format!("{:.6}", v);
+        let trimmed = s.trim_end_matches('0').trim_end_matches('.');
+        if trimmed.is_empty() {
+            "0".to_string()
+        } else {
+            trimmed.to_string()
+        }
+    };
+
+    Ok((rf.to_string(), format_float(wrf), format_float(kf)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

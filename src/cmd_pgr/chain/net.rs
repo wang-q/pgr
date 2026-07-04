@@ -102,7 +102,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             continue;
         }
 
-        if !incl_hap && is_haplotype(&chain.header.q_name) {
+        if !incl_hap && pgr::libs::chain::pre_net::is_haplotype(&chain.header.q_name) {
             continue;
         }
 
@@ -158,8 +158,4 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     }
 
     Ok(())
-}
-
-fn is_haplotype(name: &str) -> bool {
-    name.contains("_hap") || name.contains("_alt")
 }

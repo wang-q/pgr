@@ -3,10 +3,8 @@ use cmd_lib::{run_cmd, run_fun};
 use itertools::Itertools;
 use pgr::libs::phylo::tree::Tree;
 use std::collections::{BTreeMap, BTreeSet};
-use std::env;
 use std::fs;
 use std::io::Write;
-use tempfile::TempDir;
 
 /// Build the clap subcommand for condense.
 pub fn make_subcommand() -> Command {
@@ -80,19 +78,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         anyhow::ensure!(*rank_col >= 1, "--rank must be >= 1, got {}", rank_col);
     }
 
-    let curdir = env::current_dir()?;
-    let exe = env::current_exe()?.display().to_string();
-    let tempdir = TempDir::new()?;
-    let tempdir_str = tempdir
-        .path()
-        .to_str()
-        .ok_or_else(|| anyhow::anyhow!("tempdir path is not utf-8"))?;
-    let curdir_str = curdir.display().to_string();
-
-    run_cmd!(info "==> Paths")?;
-    run_cmd!(info "    \"pgr\"     = ${exe}")?;
-    run_cmd!(info "    \"curdir\"  = ${curdir_str}")?;
-    run_cmd!(info "    \"tempdir\" = ${tempdir_str}")?;
+    let ctx = pgr::libs::pl::PipelineCtx::new("pgr_condense_")?;
+    let exe = ctx.pgr.clone();
 
     // Operating
     run_cmd!(info "==> Absolute paths")?;
@@ -100,12 +87,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let abs_infile = if infile == "stdin" {
         "stdin".to_string()
     } else {
-        intspan::absolute_path(infile)?.display().to_string()
+        ctx.abs_path(infile)?
     };
-    let abs_taxon = intspan::absolute_path(taxon_file)?.display().to_string();
+    let abs_taxon = ctx.abs_path(taxon_file)?;
 
-    run_cmd!(info "==> Switch to tempdir")?;
-    env::set_current_dir(tempdir_str)?;
+    ctx.enter()?;
 
     // Read tree leaf names for filtering
     let trees = Tree::from_file(&abs_infile)?;
@@ -138,7 +124,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
         for (i, rank_col) in ranks.iter().enumerate() {
             let rank_idx = rank_col.saturating_sub(1);
-            let term = parts.get(rank_idx).map(|s| newick_safe(s));
+            let term = parts.get(rank_idx).map(|s| pgr::libs::phylo::newick_safe(s));
             if let Some(t) = &term {
                 all_groups[i].push(t.clone());
             }
@@ -205,23 +191,17 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             // Write node list to a reusable file
             let mut writer = pgr::writer("nodes.txt")?;
             for node in &nodes_in_group {
-                writer.write_all(format!("{}\n", node).as_ref())?;
+                writeln!(writer, "{}", node)?;
             }
             writer.flush()?;
             drop(writer);
 
-            // Check if these nodes form a monophyletic group and get labels
-            let labels_result = run_fun!(
+            // Check if these nodes form a monophyletic group and get labels.
+            // nwk label -M exits 0 with empty output for non-monophyletic groups;
+            // a non-zero exit indicates a real error and is propagated via `?`.
+            let labels_output = run_fun!(
                 ${exe} nwk label ${cur_tree} -l nodes.txt -M
-            );
-
-            let labels_output = match labels_result {
-                Ok(output) => output,
-                Err(e) => {
-                    log::warn!("nwk label failed for group, skipping: {}", e);
-                    continue;
-                }
-            };
+            )?;
 
             let labels: Vec<String> = labels_output
                 .split('\n')
@@ -259,7 +239,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // Results
     run_cmd!(info "==> Results")?;
     fs::copy(
-        tempdir
+        ctx.tempdir
             .path()
             .join(&cur_tree)
             .to_str()
@@ -269,7 +249,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let mut writer = pgr::writer("condensed.tsv")?;
     for line in condensed.iter() {
-        writer.write_all(format!("{}\n", line).as_ref())?;
+        writeln!(writer, "{}", line)?;
     }
     writer.flush()?;
 
@@ -277,11 +257,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     if outfile == "stdout" {
         let result_content = fs::read_to_string("result.nwk")?;
         print!("{}", result_content);
-        env::set_current_dir(&curdir)?;
+        ctx.leave()?;
     } else {
-        env::set_current_dir(&curdir)?;
+        ctx.leave()?;
         fs::copy(
-            tempdir
+            ctx.tempdir
                 .path()
                 .join("result.nwk")
                 .to_str()
@@ -292,7 +272,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     if args.get_flag("map") {
         fs::copy(
-            tempdir
+            ctx.tempdir
                 .path()
                 .join("condensed.tsv")
                 .to_str()
@@ -302,13 +282,4 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     }
 
     Ok(())
-}
-
-fn newick_safe(s: &str) -> String {
-    s.chars()
-        .map(|c| match c {
-            '(' | ')' | '[' | ']' | ',' | ':' | ';' | ' ' | '/' | '\\' => '_',
-            _ => c,
-        })
-        .collect()
 }

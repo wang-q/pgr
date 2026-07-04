@@ -1,8 +1,6 @@
 use clap::{Arg, ArgAction, ArgMatches, Command};
-use std::io::BufRead;
 use std::sync::{Arc, Mutex};
 
-use pgr::libs::clust::feature::FeatureVector;
 use pgr::libs::linalg;
 
 /// Build the clap subcommand for vector.
@@ -80,7 +78,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     )?;
 
     let (entries1, entries2) =
-        pgr::libs::par::load_two_sets(&infiles, false, |paths| load_file(&paths[0], is_bin))?;
+        pgr::libs::par::load_two_sets(&infiles, false, |paths| {
+            pgr::libs::clust::feature::load_feature_vectors(&paths[0], is_bin)
+        })?;
 
     let errors: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
     let errors_clone = errors.clone();
@@ -125,26 +125,4 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     }
 
     Ok(())
-}
-
-fn load_file(infile: &str, is_bin: bool) -> anyhow::Result<Vec<FeatureVector>> {
-    let mut entries = vec![];
-    let reader = pgr::reader(infile)?;
-    'LINE: for line in reader.lines() {
-        let line = line?;
-        let mut entry = FeatureVector::parse(&line)?;
-        if entry.name().is_empty() {
-            continue 'LINE;
-        }
-        if is_bin {
-            let bin_list = entry
-                .list()
-                .iter()
-                .map(|e| if *e > 0.0 { 1.0 } else { 0.0 })
-                .collect::<Vec<f32>>();
-            entry = FeatureVector::from(entry.name(), &bin_list);
-        }
-        entries.push(entry);
-    }
-    Ok(entries)
 }

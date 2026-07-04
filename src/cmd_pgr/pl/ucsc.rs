@@ -84,26 +84,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let is_syn = args.get_flag("syn");
 
-    let curdir = std::env::current_dir()?;
-    let pgr = std::env::current_exe()?.display().to_string();
-    let tempdir = tempfile::Builder::new().prefix("pgr_pipeline_").tempdir()?;
-    let tempdir_str = tempdir
-        .path()
-        .to_str()
-        .ok_or_else(|| anyhow::anyhow!("tempdir path is not utf-8"))?;
-
-    run_cmd!(info "==> Paths")?;
-    run_cmd!(info "    \"pgr\"     = ${pgr}")?;
-    run_cmd!(info "    \"curdir\"  = ${curdir:?}")?;
-    run_cmd!(info "    \"tempdir\" = ${tempdir_str}")?;
+    let ctx = pgr::libs::pl::PipelineCtx::new("pgr_pipeline_")?;
+    let pgr = ctx.pgr.clone();
 
     run_cmd!(info "==> Absolute paths")?;
-    let abs_target = intspan::absolute_path(args.get_one::<String>("target").unwrap())?
-        .display()
-        .to_string();
-    let abs_query = intspan::absolute_path(args.get_one::<String>("query").unwrap())?
-        .display()
-        .to_string();
+    let abs_target = ctx.abs_path(args.get_one::<String>("target").unwrap())?;
+    let abs_query = ctx.abs_path(args.get_one::<String>("query").unwrap())?;
 
     let opt_tname = if let Some(tname) = args.get_one::<String>("t_name") {
         if tname.is_empty() {
@@ -132,9 +118,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         )
     };
 
-    let abs_psl = intspan::absolute_path(args.get_one::<String>("psl").unwrap())?
-        .display()
-        .to_string();
+    let abs_psl = ctx.abs_path(args.get_one::<String>("psl").unwrap())?;
     let infiles = if std::path::Path::new(&abs_psl).is_dir() {
         pgr::libs::io::list_files_ext(&abs_psl, "psl")
     } else {
@@ -143,8 +127,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let abs_outdir = pgr::libs::pl::abs_path_or_stdout(outdir)?;
 
-    run_cmd!(info "==> Switch to tempdir")?;
-    std::env::set_current_dir(tempdir_str)?;
+    ctx.enter()?;
 
     run_cmd!(info "==> Target .sizes and .2bit")?;
     run_cmd!(
@@ -186,7 +169,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     run_cmd!(info "==> chainMergeSort and chainPreNet")?;
     {
         // This step would open all .chain files and reach system's maxfile limit.
-        // So merge 100 files a time.
+        // So merge CHAIN_BATCH_SIZE files a time.
         //
         // chainMergeSort - Combine sorted files into larger sorted file
         // usage:
@@ -196,11 +179,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         //    -saveId - keep the existing chain ids.
         //    -inputList=somefile - somefile contains list of input chain files.
         //    -tempDir=somedir/ - somedir has space for temporary sorting data, default ./
+        const CHAIN_BATCH_SIZE: usize = 100;
         let mut files = pgr::libs::io::list_files_ext("pslChain", "chain");
         let mut sn = 1;
         let mut merge_files = vec![];
         while !files.is_empty() {
-            let batching: Vec<_> = files.drain(0..100.min(files.len())).collect();
+            let batching: Vec<_> = files.drain(0..CHAIN_BATCH_SIZE.min(files.len())).collect();
 
             {
                 use std::io::Write;
@@ -310,27 +294,19 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         for file in files {
             let stem = pgr::libs::io::get_basename(&file)
                 .ok_or_else(|| anyhow::anyhow!("failed to get basename of: {}", file))?;
-            if abs_outdir == "stdout" {
-                if opt_tname.is_empty() {
-                    run_cmd!(
-                        axtToMaf ${file} target.chr.sizes query.chr.sizes stdout
-                    )?;
-                } else {
-                    run_cmd!(
-                        axtToMaf -tPrefix=${opt_tname} -qPrefix=${opt_qname} ${file} target.chr.sizes query.chr.sizes stdout
-                    )?;
-                }
+            let maf_output = if abs_outdir == "stdout" {
+                "stdout".to_string()
             } else {
-                if opt_tname.is_empty() {
-                    run_cmd!(
-                        axtToMaf ${file} target.chr.sizes query.chr.sizes ${abs_outdir}/${stem}.maf
-                    )?;
-                } else {
-                    run_cmd!(
-                        axtToMaf -tPrefix=${opt_tname} -qPrefix=${opt_qname} ${file} target.chr.sizes query.chr.sizes ${abs_outdir}/${stem}.maf
-                    )?;
-                }
-            }
+                format!("{}/{}.maf", abs_outdir, stem)
+            };
+            let prefix_args = if opt_tname.is_empty() {
+                "".to_string()
+            } else {
+                format!("-tPrefix={} -qPrefix={}", opt_tname, opt_qname)
+            };
+            run_cmd!(
+                axtToMaf ${prefix_args} ${file} target.chr.sizes query.chr.sizes ${maf_output}
+            )?;
         }
     } else {
         std::fs::create_dir_all("synNet")?;
@@ -367,40 +343,26 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 .strip_suffix(".net")
                 .ok_or_else(|| anyhow::anyhow!("expected .net suffix: {}", file))?;
             let chain_file = format!("{}.chain", net_stem);
-            if abs_outdir == "stdout" {
-                if opt_tname.is_empty() {
-                    run_cmd!(
-                        netToAxt ${file} ${chain_file} target.chr.2bit query.chr.2bit stdout |
-                            axtSort stdin stdout |
-                            axtToMaf stdin target.chr.sizes query.chr.sizes stdout
-                    )?;
-                } else {
-                    run_cmd!(
-                        netToAxt ${file} ${chain_file} target.chr.2bit query.chr.2bit stdout |
-                            axtSort stdin stdout |
-                            axtToMaf -tPrefix=${opt_tname} -qPrefix=${opt_qname} stdin target.chr.sizes query.chr.sizes stdout
-                    )?;
-                }
+            let maf_output = if abs_outdir == "stdout" {
+                "stdout".to_string()
             } else {
-                if opt_tname.is_empty() {
-                    run_cmd!(
-                        netToAxt ${file} ${chain_file} target.chr.2bit query.chr.2bit stdout |
-                            axtSort stdin stdout |
-                            axtToMaf stdin target.chr.sizes query.chr.sizes ${abs_outdir}/${stem}.maf
-                    )?;
-                } else {
-                    run_cmd!(
-                        netToAxt ${file} ${chain_file} target.chr.2bit query.chr.2bit stdout |
-                            axtSort stdin stdout |
-                            axtToMaf -tPrefix=${opt_tname} -qPrefix=${opt_qname} stdin target.chr.sizes query.chr.sizes ${abs_outdir}/${stem}.maf
-                    )?;
-                }
-            }
+                format!("{}/{}.maf", abs_outdir, stem)
+            };
+            let prefix_args = if opt_tname.is_empty() {
+                "".to_string()
+            } else {
+                format!("-tPrefix={} -qPrefix={}", opt_tname, opt_qname)
+            };
+            run_cmd!(
+                netToAxt ${file} ${chain_file} target.chr.2bit query.chr.2bit stdout |
+                    axtSort stdin stdout |
+                    axtToMaf ${prefix_args} stdin target.chr.sizes query.chr.sizes ${maf_output}
+            )?;
         }
     }
 
     // Done
-    std::env::set_current_dir(&curdir)?;
+    ctx.leave()?;
 
     Ok(())
 }

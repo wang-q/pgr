@@ -7,4 +7,5 @@ pub mod tree;
 pub use cmp::TreeComparison;
 pub use error::TreeError;
 pub use node::{Node, NodeId};
+pub use parser::newick_safe;
 pub use tree::Tree;

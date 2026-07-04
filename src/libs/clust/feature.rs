@@ -5,6 +5,7 @@
 //! computation and cluster evaluation.
 
 use anyhow::anyhow;
+use std::io::BufRead;
 
 //----------------------------
 // FeatureVector
@@ -97,4 +98,27 @@ impl std::fmt::Display for FeatureVector {
         )?;
         Ok(())
     }
+}
+
+/// Load feature vectors from a file, optionally binarizing values to 0.0/1.0.
+pub fn load_feature_vectors(infile: &str, is_bin: bool) -> anyhow::Result<Vec<FeatureVector>> {
+    let mut entries = vec![];
+    let reader = crate::libs::io::reader(infile)?;
+    for line in reader.lines() {
+        let line = line?;
+        let mut entry = FeatureVector::parse(&line)?;
+        if entry.name().is_empty() {
+            continue;
+        }
+        if is_bin {
+            let bin_list = entry
+                .list()
+                .iter()
+                .map(|e| if *e > 0.0 { 1.0 } else { 0.0 })
+                .collect::<Vec<f32>>();
+            entry = FeatureVector::from(entry.name(), &bin_list);
+        }
+        entries.push(entry);
+    }
+    Ok(entries)
 }

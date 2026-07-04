@@ -88,30 +88,20 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     if !opt_minscore.is_finite() || opt_minscore < 0.0 {
         anyhow::bail!("--minscore must be non-negative finite: {}", opt_minscore);
     }
+    if opt_minscore.fract() != 0.0 {
+        anyhow::bail!("--minscore must be an integer: {}", opt_minscore);
+    }
     let opt_minscore_u = opt_minscore as usize;
     let opt_max_period = *args.get_one::<usize>("max_period").unwrap();
 
-    let curdir = std::env::current_dir()?;
-    let pgr = std::env::current_exe()?.display().to_string();
-    let tempdir = tempfile::Builder::new().prefix("pgr_trf_").tempdir()?;
-    let tempdir_str = tempdir
-        .path()
-        .to_str()
-        .ok_or_else(|| anyhow::anyhow!("tempdir path is not utf-8"))?;
-
-    run_cmd!(info "==> Paths")?;
-    run_cmd!(info "    \"pgr\"     = ${pgr}")?;
-    run_cmd!(info "    \"curdir\"  = ${curdir:?}")?;
-    run_cmd!(info "    \"tempdir\" = ${tempdir_str}")?;
+    let ctx = pgr::libs::pl::PipelineCtx::new("pgr_trf_")?;
+    let pgr = ctx.pgr.clone();
 
     run_cmd!(info "==> Absolute paths")?;
-    let abs_infile = intspan::absolute_path(args.get_one::<String>("infile").unwrap())?
-        .display()
-        .to_string();
+    let abs_infile = ctx.abs_path(args.get_one::<String>("infile").unwrap())?;
     let abs_outfile = pgr::libs::pl::abs_path_or_stdout(outfile)?;
 
-    run_cmd!(info "==> Switch to tempdir")?;
-    std::env::set_current_dir(tempdir_str)?;
+    ctx.enter()?;
 
     run_cmd!(info "==> Split by names")?;
     run_cmd!(
@@ -169,7 +159,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     )?;
 
     // Done
-    std::env::set_current_dir(&curdir)?;
+    ctx.leave()?;
 
     Ok(())
 }

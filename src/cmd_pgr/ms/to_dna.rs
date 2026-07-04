@@ -1,9 +1,4 @@
 use clap::{value_parser, Arg, ArgMatches, Command};
-use pgr::libs::ms::{
-    build_anc_seq, build_mut_seq, map_positions as map_pos, parse_header, perturb_positions,
-    read_next_sample, system_seed, write_fasta, SimpleRng,
-};
-use std::io::BufRead;
 use std::io::Write;
 /// Build the clap subcommand for to-dna.
 pub fn make_subcommand() -> Command {
@@ -110,7 +105,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         }
     }
 
-    let seed_final = seed.unwrap_or(system_seed());
+    let seed_final = seed.unwrap_or(pgr::libs::ms::system_seed());
     if verbose {
         println!("==> Seed");
         println!("    using = {}", seed_final);
@@ -121,7 +116,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     // Process inputs (stdin or files)
     if abs_files.is_empty() {
-        convert_stream(
+        pgr::libs::ms::convert_stream(
             pgr::reader("stdin")?,
             gc,
             Some(seed_final),
@@ -130,7 +125,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         )?;
     } else {
         for path in abs_files {
-            convert_stream(
+            pgr::libs::ms::convert_stream(
                 pgr::reader(&path)?,
                 gc,
                 Some(seed_final),
@@ -140,100 +135,4 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         }
     }
     Ok(())
-}
-fn convert_stream<R: BufRead>(
-    mut reader: R,
-    gc: f64,
-    seed: Option<u64>,
-    writer: &mut dyn Write,
-    no_perturb: bool,
-) -> anyhow::Result<()> {
-    let mut header = String::new();
-    reader.read_line(&mut header)?;
-    if header.trim().is_empty() {
-        return Ok(());
-    }
-    let hdr = parse_header(&header)?;
-    let nsam = hdr.nsam;
-    let howmany = hdr.howmany;
-    let nsite = hdr.nsite;
-    let npop = hdr.npop;
-    let sample_sizes = hdr.sample_sizes;
-    if nsite == 0 {
-        anyhow::bail!("ERROR [ms2dna]: please use ms with the -r switch (nsite missing).");
-    }
-
-    let mut sample_counter = 0usize;
-    let seed_final = seed.unwrap_or(system_seed());
-    let mut rng = SimpleRng::new(seed_final);
-    while let Some(sample) = read_next_sample(&mut reader, nsam)? {
-        let segsites = sample.segsites;
-        let mut positions = sample.positions;
-        let haplotypes = sample.haplotypes;
-        // Build sequences
-        let seq_anc = build_anc_seq(gc, nsite, &mut rng);
-        if segsites > 0 && !no_perturb {
-            perturb_positions(&mut positions, &mut rng);
-        }
-        if segsites > nsite {
-            writeln!(
-                writer,
-                "#WARNING: number of segregating sites ({}) > number of mutable sites ({})",
-                segsites, nsite
-            )?;
-            writeln!(
-                writer,
-                "#Hint: input may come from macs; ensure positions/nsite are compatible"
-            )?;
-        }
-        let map = map_pos(&positions, nsite, &mut rng);
-        let seq_mut = build_mut_seq(&seq_anc, &map, gc, &mut rng, nsite);
-        sample_counter += 1;
-        write_fasta(
-            writer,
-            nsam,
-            nsite,
-            &map,
-            &seq_anc,
-            &seq_mut,
-            &haplotypes,
-            howmany,
-            npop,
-            sample_sizes.as_deref(),
-            sample_counter,
-        )?;
-    }
-    Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::io::BufReader;
-
-    #[test]
-    fn test_convert_stream_warning_and_output() {
-        // Header: nsam=2, howmany=1, nsite=2
-        // Sample: segsites=3 (> nsite) to trigger warning; haplotypes length=3
-        let input = "\
-ms 2 1 -r 0 2
-//
-segsites: 3
-positions: 0.1000 0.5000 0.8000
-010
-001
-";
-        let mut out = Vec::new();
-        let reader = BufReader::new(input.as_bytes());
-        convert_stream(reader, 0.5, Some(123), &mut out, true).unwrap();
-        let s = String::from_utf8(out).unwrap();
-        let lines: Vec<&str> = s.lines().collect();
-        assert!(lines[0].starts_with("#WARNING: number of segregating sites"));
-        assert!(lines[1].starts_with("#Hint: input may come from macs"));
-        // Next should be headers and sequences for two samples
-        assert!(lines[2].starts_with('>'));
-        assert_eq!(lines[3].len(), 2);
-        assert!(lines[4].starts_with('>'));
-        assert_eq!(lines[5].len(), 2);
-    }
 }
