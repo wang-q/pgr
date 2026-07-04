@@ -21,10 +21,7 @@ fn command_pl_condense_basic() {
     );
 
     // Check that condensed labels are present (format: term||count)
-    assert!(
-        stdout.contains("||"),
-        "No condensed labels found in output"
-    );
+    assert!(stdout.contains("||"), "No condensed labels found in output");
 
     // Check that output is a valid Newick tree
     assert!(

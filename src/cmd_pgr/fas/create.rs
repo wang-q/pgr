@@ -55,6 +55,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             for part in &parts {
                 let mut range = intspan::Range::from_str(part);
                 if !range.is_valid() {
+                    log::warn!("skipping invalid range: {}", part);
                     continue;
                 }
 

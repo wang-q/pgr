@@ -20,12 +20,19 @@ Examples:
                 .long("target-strand")
                 .help("Set the target strand (default is no strand)"),
         )
+        .arg(
+            Arg::new("strict")
+                .long("strict")
+                .action(clap::ArgAction::SetTrue)
+                .help("Fail on unknown LAV stanzas instead of warning and skipping"),
+        )
 }
 /// Execute the to-psl command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let input = crate::cmd_pgr::args::get_infile(args);
     let output = crate::cmd_pgr::args::get_outfile(args);
     let target_strand = args.get_one::<String>("target_strand");
+    let strict = args.get_flag("strict");
 
     let reader = pgr::reader(input)?;
     let mut writer = pgr::writer(output)?;
@@ -97,6 +104,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 psl.write_to(&mut writer)?;
             }
             other => {
+                if strict {
+                    anyhow::bail!("unknown lav stanza: {:?}", other);
+                }
                 log::warn!("skipping unknown lav stanza: {:?}", other);
             }
         }

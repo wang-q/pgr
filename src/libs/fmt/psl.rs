@@ -1,6 +1,6 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt;
-use std::io;
+use std::io::{self, BufRead, Write};
 
 #[derive(Debug, Clone, Default)]
 pub struct Psl {
@@ -280,8 +280,8 @@ impl Psl {
         let last = (self.block_count as usize) - 1;
         let t_strand = self.strand.chars().nth(1).unwrap_or('+');
 
-        let t_end = self.t_end as u32;
-        let t_start = self.t_start as u32;
+        let t_end = u32::try_from(self.t_end).unwrap_or(0);
+        let t_start = u32::try_from(self.t_start).unwrap_or(0);
         let t_size = self.t_size;
         let t_start_last = self.t_starts[last];
         let block_size_last = self.block_sizes[last];
@@ -330,11 +330,12 @@ impl Psl {
 
     pub fn score(&self) -> i32 {
         let is_prot = self.is_protein();
-        let size_mul = if is_prot { 3 } else { 1 };
-        (size_mul * (self.match_count + (self.rep_match >> 1))) as i32
-            - (size_mul * self.mismatch_count) as i32
-            - self.q_num_insert as i32
-            - self.t_num_insert as i32
+        let size_mul: u64 = if is_prot { 3 } else { 1 };
+        let raw = (size_mul * (self.match_count as u64 + (self.rep_match as u64 >> 1))) as i64
+            - (size_mul * self.mismatch_count as u64) as i64
+            - self.q_num_insert as i64
+            - self.t_num_insert as i64;
+        raw.try_into().unwrap_or(i32::MAX)
     }
 
     pub fn calc_aligned(&self) -> u32 {
@@ -709,6 +710,196 @@ impl SumStats {
     }
 }
 
+/// Statistics output mode for `run_stats`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PslStatsMode {
+    PerAlignment,
+    PerQuery,
+    Overall,
+}
+
+/// Options for `run_stats`.
+#[derive(Debug, Clone)]
+pub struct PslStatsOptions {
+    pub mode: PslStatsMode,
+    pub tsv: bool,
+}
+
+impl Default for PslStatsOptions {
+    fn default() -> Self {
+        Self {
+            mode: PslStatsMode::PerAlignment,
+            tsv: false,
+        }
+    }
+}
+
+/// Read a queries TSV (q_name<TAB>q_size) into a map of pre-initialized SumStats.
+pub fn read_queries<R: BufRead>(reader: R) -> anyhow::Result<HashMap<String, SumStats>> {
+    let mut tbl: HashMap<String, SumStats> = HashMap::new();
+    for line in reader.lines() {
+        let line = line?;
+        let parts: Vec<&str> = line.split('\t').collect();
+        if parts.len() < 2 {
+            log::warn!("skipping malformed queries line: {}", line);
+            continue;
+        }
+        let q_name = parts[0].to_string();
+        let q_size: u32 = parts[1].parse()?;
+        tbl.insert(q_name.clone(), SumStats::new(&q_name, q_size));
+    }
+    Ok(tbl)
+}
+
+/// Run PSL statistics collection and write formatted output.
+///
+/// If `queries` is provided, only queries present in the map are counted
+/// (and queries with zero alignments are still emitted in per-query/overall
+/// modes). If `queries` is `None`, all records in the reader are counted.
+pub fn run_stats<R: BufRead, W: Write>(
+    reader: R,
+    writer: &mut W,
+    opts: &PslStatsOptions,
+    queries: Option<HashMap<String, SumStats>>,
+) -> anyhow::Result<()> {
+    let mut query_stats_tbl: HashMap<String, SumStats> = queries.unwrap_or_default();
+
+    match opts.mode {
+        PslStatsMode::PerQuery | PslStatsMode::Overall => {
+            let has_queries = !query_stats_tbl.is_empty();
+            for psl in iter_psl(reader) {
+                let psl = psl?;
+                if has_queries {
+                    if let Some(entry) = query_stats_tbl.get_mut(&psl.q_name) {
+                        entry.accumulate(&psl);
+                    }
+                } else {
+                    let entry = query_stats_tbl
+                        .entry(psl.q_name.clone())
+                        .or_insert_with(|| SumStats::new(&psl.q_name, psl.q_size));
+                    entry.accumulate(&psl);
+                }
+            }
+
+            if opts.mode == PslStatsMode::PerQuery {
+                if !opts.tsv {
+                    write!(writer, "#")?;
+                }
+                writeln!(writer, "qName\tqSize\talnCnt\tminIdent\tmaxIdent\tmeanIdent\tminQCover\tmaxQCover\tmeanQCover\tminRepMatch\tmaxRepMatch\tmeanRepMatch\tminTCover\tmaxTCover")?;
+
+                let mut keys: Vec<String> = query_stats_tbl.keys().cloned().collect();
+                keys.sort();
+
+                for k in keys {
+                    let s = &query_stats_tbl[&k];
+                    writeln!(writer, "{}\t{}\t{}\t{:.4}\t{:.4}\t{:.4}\t{:.4}\t{:.4}\t{:.4}\t{:.4}\t{:.4}\t{:.4}\t{:.4}\t{:.4}",
+                        s.q_name, s.min_q_size, s.aln_cnt,
+                        s.min_ident, s.max_ident, s.mean_ident(),
+                        s.min_q_cover, s.max_q_cover, s.mean_q_cover(),
+                        s.min_rep_match, s.max_rep_match, s.mean_rep_match(),
+                        s.min_t_cover, s.max_t_cover
+                    )?;
+                }
+            } else {
+                // Overall mode
+                let mut os = SumStats::default();
+                let mut aligned1 = 0;
+                let mut aligned_n = 0;
+
+                for s in query_stats_tbl.values() {
+                    os.merge(s);
+
+                    if s.aln_cnt == 1 {
+                        aligned1 += 1;
+                    } else if s.aln_cnt > 1 {
+                        aligned_n += 1;
+                    }
+                }
+
+                if !opts.tsv {
+                    write!(writer, "#")?;
+                }
+                writeln!(writer, "queryCnt\tminQSize\tmaxQSize\tmeanQSize\talnCnt\tminIdent\tmaxIdent\tmeanIdent\tminQCover\tmaxQCover\tmeanQCover\tminRepMatch\tmaxRepMatch\tmeanRepMatch\tminTCover\tmaxTCover\taligned\taligned1\talignedN\ttotalAlignedSize")?;
+
+                writeln!(writer, "{}\t{}\t{}\t{}\t{}\t{:.4}\t{:.4}\t{:.4}\t{:.4}\t{:.4}\t{:.4}\t{:.4}\t{:.4}\t{:.4}\t{:.4}\t{:.4}\t{}\t{}\t{}\t{}",
+                    os.query_cnt, os.min_q_size, os.max_q_size, os.mean_q_size(),
+                    os.aln_cnt,
+                    os.min_ident, os.max_ident, os.mean_ident(),
+                    os.min_q_cover, os.max_q_cover, os.mean_q_cover(),
+                    os.min_rep_match, os.max_rep_match, os.mean_rep_match(),
+                    os.min_t_cover, os.max_t_cover,
+                    aligned1 + aligned_n, aligned1, aligned_n,
+                    os.total_align
+                )?;
+            }
+        }
+        PslStatsMode::PerAlignment => {
+            if !opts.tsv {
+                write!(writer, "#")?;
+            }
+            writeln!(
+                writer,
+                "qName\tqSize\ttName\ttStart\ttEnd\tident\tqCover\trepMatch\ttCover"
+            )?;
+
+            let has_queries = !query_stats_tbl.is_empty();
+            for psl in iter_psl(reader) {
+                let psl = psl?;
+                if has_queries {
+                    if let Some(entry) = query_stats_tbl.get_mut(&psl.q_name) {
+                        writeln!(
+                            writer,
+                            "{}\t{}\t{}\t{}\t{}\t{:.4}\t{:.4}\t{:.4}\t{:.4}",
+                            psl.q_name,
+                            psl.q_size,
+                            psl.t_name,
+                            psl.t_start,
+                            psl.t_end,
+                            psl.calc_ident(),
+                            psl.calc_q_cover(),
+                            psl.calc_rep_match(),
+                            psl.calc_t_cover()
+                        )?;
+                        entry.aln_cnt += 1;
+                    }
+                } else {
+                    writeln!(
+                        writer,
+                        "{}\t{}\t{}\t{}\t{}\t{:.4}\t{:.4}\t{:.4}\t{:.4}",
+                        psl.q_name,
+                        psl.q_size,
+                        psl.t_name,
+                        psl.t_start,
+                        psl.t_end,
+                        psl.calc_ident(),
+                        psl.calc_q_cover(),
+                        psl.calc_rep_match(),
+                        psl.calc_t_cover()
+                    )?;
+                }
+            }
+
+            if has_queries {
+                let mut keys: Vec<String> = query_stats_tbl.keys().cloned().collect();
+                keys.sort();
+
+                for k in keys {
+                    let s = &query_stats_tbl[&k];
+                    if s.aln_cnt == 0 {
+                        writeln!(
+                            writer,
+                            "{}\t{}\t\t0\t0\t0.0000\t0.0000\t0.0000\t0.0000",
+                            s.q_name, s.min_q_size
+                        )?;
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
 /// Iterate PSL records from a buffered reader, skipping header lines and
 /// comments. Recognized headers: lines beginning with `#`, `psLayout`,
 /// `match`, or `------` (UCSC pslLayout convention); empty lines are also
@@ -807,8 +998,9 @@ impl Psl {
         self.q_name = name_part;
         self.q_size = real_size;
         let offset = if is_neg { real_size - end_0 } else { start_0 };
-        self.q_start = (self.q_start as u32 + offset) as i32;
-        self.q_end = (self.q_end as u32 + offset) as i32;
+        let offset_i32 = i32::try_from(offset).unwrap_or(i32::MAX);
+        self.q_start = self.q_start.saturating_add(offset_i32);
+        self.q_end = self.q_end.saturating_add(offset_i32);
         for q_start in &mut self.q_starts {
             *q_start += offset;
         }
@@ -852,8 +1044,9 @@ impl Psl {
         self.t_name = name_part;
         self.t_size = real_size;
         let offset = if is_neg { real_size - end_0 } else { start_0 };
-        self.t_start = (self.t_start as u32 + offset) as i32;
-        self.t_end = (self.t_end as u32 + offset) as i32;
+        let offset_i32 = i32::try_from(offset).unwrap_or(i32::MAX);
+        self.t_start = self.t_start.saturating_add(offset_i32);
+        self.t_end = self.t_end.saturating_add(offset_i32);
         for t_start in &mut self.t_starts {
             *t_start += offset;
         }

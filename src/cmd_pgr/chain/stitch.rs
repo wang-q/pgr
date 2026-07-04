@@ -3,6 +3,18 @@ use clap::{ArgMatches, Command};
 pub fn make_subcommand() -> Command {
     Command::new("stitch")
         .about("Joins chain fragments with the same chain ID into a single chain per ID")
+        .after_help(
+            r###"
+Joins chain fragments sharing the same chain ID into a single chain per ID,
+mirroring the UCSC chainStitchId workflow. Chains with the same ID are
+concatenated end-to-end in the order they appear in the input.
+
+Examples:
+1. Stitch chain fragments by ID:
+   pgr chain stitch in.chain -o stitched.chain
+
+"###,
+        )
         .arg(crate::cmd_pgr::args::infile_arg_required_with_help(
             "Input chain file",
         ))

@@ -35,6 +35,12 @@ Examples:
                 .action(ArgAction::SetTrue)
                 .help("Extract target coordinates instead of query"),
         )
+        .arg(
+            Arg::new("strict")
+                .long("strict")
+                .action(ArgAction::SetTrue)
+                .help("Fail on parse errors instead of skipping malformed lines"),
+        )
 }
 
 /// Execute the to-range command.
@@ -43,6 +49,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let infile = args.get_one::<String>("infile").unwrap();
     let reader = pgr::reader(infile)?;
     let extract_target = args.get_flag("target_coords");
+    let strict = args.get_flag("strict");
 
     for line in reader.lines() {
         let line = line?;
@@ -57,6 +64,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         let psl = match Psl::from_str(&line) {
             Ok(p) => p,
             Err(e) => {
+                if strict {
+                    anyhow::bail!("failed to parse psl line: {}: {}", line, e);
+                }
                 log::warn!("skipping malformed PSL line: {}", e);
                 continue;
             }

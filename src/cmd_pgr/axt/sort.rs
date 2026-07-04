@@ -53,28 +53,24 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let mut axts = Vec::new();
     for result in axt_reader.by_ref() {
-        let axt = result?;
-        axts.push(axt);
+        axts.push(result?);
     }
 
     for header in &axt_reader.headers {
         writeln!(writer, "{}", header)?;
     }
 
-    if by_score {
-        // Sort by score. Assuming higher score is better (descending).
-        axts.sort_by_key(|b| std::cmp::Reverse(b.score.unwrap_or(0)));
+    let by = if by_score {
+        pgr::libs::fmt::axt::AxtSortBy::Score
     } else if by_query {
-        axts.sort_by(|a, b| a.q_name.cmp(&b.q_name).then(a.q_start.cmp(&b.q_start)));
+        pgr::libs::fmt::axt::AxtSortBy::Query
     } else {
-        // Sort by target (default)
-        axts.sort_by(|a, b| a.t_name.cmp(&b.t_name).then(a.t_start.cmp(&b.t_start)));
-    }
+        pgr::libs::fmt::axt::AxtSortBy::Target
+    };
 
-    for (i, axt) in axts.iter_mut().enumerate() {
-        if renumber {
-            axt.id = i as u64;
-        }
+    pgr::libs::fmt::axt::sort_axts(&mut axts, by, renumber);
+
+    for axt in &axts {
         write_axt(&mut writer, axt)?;
     }
 

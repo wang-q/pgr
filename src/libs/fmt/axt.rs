@@ -316,6 +316,36 @@ pub fn write_axt<W: std::io::Write>(writer: &mut W, axt: &Axt) -> std::io::Resul
     Ok(())
 }
 
+/// Sort key for `sort_axts`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AxtSortBy {
+    Target,
+    Query,
+    Score,
+}
+
+/// Sort axts in place by the given key. If `renumber`, reassign ids starting from 0.
+pub fn sort_axts(axts: &mut [Axt], by: AxtSortBy, renumber: bool) {
+    match by {
+        AxtSortBy::Score => {
+            // Sort by score descending (higher is better).
+            axts.sort_by_key(|b| std::cmp::Reverse(b.score.unwrap_or(0)));
+        }
+        AxtSortBy::Query => {
+            axts.sort_by(|a, b| a.q_name.cmp(&b.q_name).then(a.q_start.cmp(&b.q_start)));
+        }
+        AxtSortBy::Target => {
+            axts.sort_by(|a, b| a.t_name.cmp(&b.t_name).then(a.t_start.cmp(&b.t_start)));
+        }
+    }
+
+    if renumber {
+        for (i, axt) in axts.iter_mut().enumerate() {
+            axt.id = i as u64;
+        }
+    }
+}
+
 /// Convert AXT query coordinates (0-based) to forward-strand 1-based coordinates.
 pub fn axt_query_to_forward_coords(
     q_start: usize,

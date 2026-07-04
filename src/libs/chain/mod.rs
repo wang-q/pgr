@@ -31,6 +31,7 @@ pub mod net;
 pub mod pre_net;
 pub mod psl_chain;
 pub mod record;
+pub mod sort;
 pub mod stitch;
 pub mod sub_matrix;
 
@@ -41,6 +42,7 @@ pub use kdtree::{ChainItem, KdTree};
 pub use pre_net::{is_haplotype, pre_net, PreNetOptions};
 pub use psl_chain::{group_psl_blocks, GroupData, GroupKey};
 pub use record::{read_chains, Block, Chain, ChainData, ChainHeader, ChainReader};
+pub use sort::sort_chains;
 pub use stitch::stitch_chains;
 pub use sub_matrix::SubMatrix;
 

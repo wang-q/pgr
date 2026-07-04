@@ -5,6 +5,29 @@ use std::collections::HashMap;
 pub fn make_subcommand() -> Command {
     Command::new("pre-net")
         .about("Removes chains that don't have a chance of being netted")
+        .after_help(
+            r###"
+Filters chains that cannot contribute to a net, mirroring the UCSC chainPreNet
+workflow. Chains whose target or query sequence is absent from the supplied
+sizes files, or that fall outside the padded sequence extents, are dropped.
+
+Notes:
+* `--pad` (default: 1) adds extra padding around blocks to reduce trash
+* `--incl-hap` retains haplotype chains (names containing `_hap` or `_alt`)
+* `--dots N` prints a progress dot every N processed chains
+
+Examples:
+1. Basic pre-net filtering:
+   pgr chain pre-net in.chain t.sizes q.sizes -o out.chain
+
+2. Include haplotype chains:
+   pgr chain pre-net in.chain t.sizes q.sizes --incl-hap -o out.chain
+
+3. Pad blocks by 10 bp:
+   pgr chain pre-net in.chain t.sizes q.sizes --pad 10 -o out.chain
+
+"###,
+        )
         .arg(crate::cmd_pgr::args::infile_arg_required_with_help(
             "Input chain file",
         ))

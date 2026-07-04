@@ -166,53 +166,65 @@ impl<R: BufRead> LavReader<R> {
 
             if line.starts_with('s') {
                 let parts: Vec<&str> = line.split_whitespace().collect();
-                if parts.len() >= 2 {
-                    if let Ok(s) = parts[1].parse::<i32>() {
-                        // C code: score = lineFileNeedNum(lf, words, 1) - 1;
-                        current_score = s - 1;
-                    }
+                if parts.len() < 2 {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!("malformed s line (need >=2 fields): {}", line),
+                    ));
                 }
+                let s: i32 = parts[1].parse().map_err(|e| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!("invalid score in s line: {}", e),
+                    )
+                })?;
+                // C code: score = lineFileNeedNum(lf, words, 1) - 1;
+                current_score = s - 1;
             } else if line.starts_with('l') {
                 let parts: Vec<&str> = line.split_whitespace().collect();
-                if parts.len() >= 6 {
-                    let t_start = parts[1]
-                        .parse::<i64>()
-                        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?
-                        - 1;
-                    let q_start = parts[2]
-                        .parse::<i64>()
-                        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?
-                        - 1;
-                    let t_end = parts[3]
-                        .parse::<i64>()
-                        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-                    let q_end = parts[4]
-                        .parse::<i64>()
-                        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-                    let percent_id = parts[5]
-                        .parse::<i32>()
-                        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-
-                    if (q_end - q_start) != (t_end - t_start) {
-                        return Err(io::Error::new(
-                            io::ErrorKind::InvalidData,
-                            "Block size mismatch",
-                        ));
-                    }
-
-                    if q_end == q_start && t_end == t_start {
-                        continue;
-                    }
-
-                    blocks.push(Block {
-                        score: current_score,
-                        t_start,
-                        t_end,
-                        q_start,
-                        q_end,
-                        percent_id,
-                    });
+                if parts.len() < 6 {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!("malformed l line (need >=6 fields): {}", line),
+                    ));
                 }
+                let t_start = parts[1]
+                    .parse::<i64>()
+                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?
+                    - 1;
+                let q_start = parts[2]
+                    .parse::<i64>()
+                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?
+                    - 1;
+                let t_end = parts[3]
+                    .parse::<i64>()
+                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+                let q_end = parts[4]
+                    .parse::<i64>()
+                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+                let percent_id = parts[5]
+                    .parse::<i32>()
+                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+
+                if (q_end - q_start) != (t_end - t_start) {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "Block size mismatch",
+                    ));
+                }
+
+                if q_end == q_start && t_end == t_start {
+                    continue;
+                }
+
+                blocks.push(Block {
+                    score: current_score,
+                    t_start,
+                    t_end,
+                    q_start,
+                    q_end,
+                    percent_id,
+                });
             }
         }
 

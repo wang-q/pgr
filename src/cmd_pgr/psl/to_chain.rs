@@ -21,12 +21,19 @@ Examples:
                 .action(clap::ArgAction::SetTrue)
                 .help("Fix '-' target strand by reverse complementing the record"),
         )
+        .arg(
+            Arg::new("strict")
+                .long("strict")
+                .action(clap::ArgAction::SetTrue)
+                .help("Fail on parse errors instead of skipping malformed lines"),
+        )
 }
 /// Execute the to-chain command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let input = crate::cmd_pgr::args::get_infile(args);
     let output = crate::cmd_pgr::args::get_outfile(args);
     let fix_strand = args.get_flag("fix_strand");
+    let strict = args.get_flag("strict");
 
     let reader = pgr::reader(input)?;
     let mut writer = pgr::writer(output)?;
@@ -42,6 +49,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         let mut psl = match Psl::from_str(&line) {
             Ok(p) => p,
             Err(e) => {
+                if strict {
+                    anyhow::bail!("failed to parse psl line: {}: {}", line, e);
+                }
                 log::warn!("skipping unparseable psl line: {}: {}", line, e);
                 continue;
             }

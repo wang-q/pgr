@@ -8,6 +8,30 @@ use std::path::Path;
 pub fn make_subcommand() -> Command {
     Command::new("split")
         .about("Splits chains up by target or query sequence")
+        .after_help(
+            r###"
+Splits chains into separate files based on target (default) or query sequence
+name. Each output file is named `<seq>.chain` and placed in the output directory.
+
+Notes:
+* Use `--by-query` to split on the query sequence name instead of target
+* Use `--lump N` to group sequences into at most N output files by hashing the
+  first integer run in the sequence name (falls back to a stable hash when no
+  digits are present); useful for parallelizing downstream steps
+* The output directory is created if it does not exist
+
+Examples:
+1. Split by target sequence:
+   pgr chain split in.chain out_dir/
+
+2. Split by query sequence:
+   pgr chain split in.chain out_dir/ --by-query
+
+3. Lump into 100 buckets:
+   pgr chain split in.chain out_dir/ --lump 100
+
+"###,
+        )
         .arg(crate::cmd_pgr::args::infiles_arg("chain"))
         .arg(crate::cmd_pgr::args::outdir_arg_required())
         .arg(crate::cmd_pgr::args::by_query_arg(

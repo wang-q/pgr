@@ -1,68 +1,5 @@
 use clap::{ArgMatches, Command};
 
-use pgr::libs::paf::index::PafIndex;
-use pgr::libs::paf::msa_build::{build_msa_entries, build_pairwise_block, run_poa_msa};
-use pgr::libs::paf::query::QueryGroup;
-use pgr::libs::poa::AlignmentParams;
-
-fn output_fas_pairwise(
-    idx: &PafIndex,
-    all_results: &[QueryGroup],
-    fasta_store: &mut pgr::libs::paf::fasta::FastaStore,
-) -> anyhow::Result<()> {
-    for (_, results) in all_results {
-        for result in results {
-            let blk = build_pairwise_block(idx, result, fasta_store)?;
-            let t_start_display = blk
-                .t_start
-                .checked_add(1)
-                .ok_or_else(|| anyhow::anyhow!("t_start {} overflow on display", blk.t_start))?;
-            println!(">{0}(+):{1}-{2}", blk.tname, t_start_display, blk.t_end);
-            println!("{}", blk.t_aln);
-            println!(
-                ">{0}({1}):{2}-{3}",
-                blk.qname,
-                blk.q_strand,
-                blk.q_start_fwd.saturating_add(1),
-                blk.q_end_fwd
-            );
-            println!("{}", blk.q_aln);
-            println!();
-        }
-    }
-    Ok(())
-}
-
-fn output_fas_msa(
-    idx: &PafIndex,
-    all_results: &[QueryGroup],
-    fasta_store: &mut pgr::libs::paf::fasta::FastaStore,
-    params: AlignmentParams,
-) -> anyhow::Result<()> {
-    for ((tname_region, _, _), results) in all_results {
-        let entries = build_msa_entries(idx, tname_region, results, fasta_store)?;
-        if entries.is_empty() {
-            continue;
-        }
-
-        let msa = run_poa_msa(&entries, params.clone());
-
-        for (e, aln) in entries.iter().zip(msa.iter()) {
-            let size = i32::try_from(aln.chars().filter(|c| *c != '-').count())
-                .map_err(|_| anyhow::anyhow!("alignment length exceeds i32 range"))?;
-            println!(
-                ">{0}({3}):{1}-{2}",
-                e.name,
-                e.start.saturating_add(1),
-                e.start.saturating_add(size),
-                e.strand
-            );
-            println!("{}", aln);
-        }
-        println!();
-    }
-    Ok(())
-}
 /// Build the clap subcommand for to-fas.
 pub fn make_subcommand() -> Command {
     crate::cmd_pgr::args::add_poa_args(
@@ -71,6 +8,7 @@ pub fn make_subcommand() -> Command {
         )),
         false,
     )
+    .arg(crate::cmd_pgr::args::outfile_arg())
     .about("Queries PAF index and output pairwise or multi-way block FASTA")
     .after_help(
         r###"
@@ -121,6 +59,9 @@ Examples:
 4. Batch query from BED regions:
    pgr paf to-fas alignments.paf.idx -b regions.bed -f genomes.tsv
 
+5. Write output to a file:
+   pgr paf to-fas alignments.paf chr1:1000-5000 -f genomes.tsv -o out.fas
+
 "###,
     )
 }
@@ -130,10 +71,22 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let (idx, all_results) = pgr::libs::paf::query::run_query(&opts)?;
     let mut fasta_store =
         pgr::libs::paf::fasta::prepare_store(args.get_one::<String>("fasta_tsv").unwrap(), &idx)?;
+    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
     if args.get_flag("msa") {
         let params = crate::cmd_pgr::args::get_poa_params(args);
-        output_fas_msa(&idx, &all_results, &mut fasta_store, params)
+        pgr::libs::paf::to_fas::write_msa_fas(
+            &idx,
+            &all_results,
+            &mut fasta_store,
+            params,
+            &mut writer,
+        )
     } else {
-        output_fas_pairwise(&idx, &all_results, &mut fasta_store)
+        pgr::libs::paf::to_fas::write_pairwise_fas(
+            &idx,
+            &all_results,
+            &mut fasta_store,
+            &mut writer,
+        )
     }
 }

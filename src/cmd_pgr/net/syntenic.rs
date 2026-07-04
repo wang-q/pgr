@@ -4,6 +4,23 @@ use pgr::libs::chain::net::{classify_syntenic, read_nets, write_net};
 pub fn make_subcommand() -> Command {
     Command::new("syntenic")
         .about("Adds synteny info to net")
+        .after_help(
+            r###"
+Classifies net entries as syntenic or non-syntenic based on chain scores and
+hierarchical structure, mirroring the UCSC netSyntenic workflow.
+
+Notes:
+* `--min-score` (default: 0.0) filters net entries below this score from output
+
+Examples:
+1. Add synteny info to a net:
+   pgr net syntenic in.net -o out.net
+
+2. Filter low-scoring entries:
+   pgr net syntenic in.net --min-score 5000 -o out.net
+
+"###,
+        )
         .arg(crate::cmd_pgr::args::infile_arg_required_with_help(
             "Input net file",
         ))

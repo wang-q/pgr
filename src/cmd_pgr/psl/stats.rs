@@ -1,8 +1,6 @@
 use clap::{Arg, ArgMatches, Command};
-use std::collections::HashMap;
-use std::io::{BufRead, Write};
 
-use pgr::libs::fmt::psl::SumStats;
+use pgr::libs::fmt::psl::{PslStatsMode, PslStatsOptions};
 /// Build the clap subcommand for stats.
 pub fn make_subcommand() -> Command {
     Command::new("stats")
@@ -62,151 +60,22 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let reader = pgr::reader(input)?;
     let mut writer = pgr::writer(output)?;
 
-    let mut query_stats_tbl: HashMap<String, SumStats> = HashMap::new();
-
-    // Load queries if provided
-    if let Some(q_file) = queries_file {
-        let r = pgr::reader(q_file)?;
-        for line in r.lines() {
-            let line = line?;
-            let parts: Vec<&str> = line.split('\t').collect();
-            if parts.len() >= 2 {
-                let q_name = parts[0].to_string();
-                let q_size: u32 = parts[1].parse()?;
-                query_stats_tbl.insert(q_name.clone(), SumStats::new(&q_name, q_size));
-            }
-        }
-    }
-
-    if query_stats || overall_stats {
-        // Aggregation modes
-        for psl in pgr::libs::fmt::psl::iter_psl(reader) {
-            let psl = psl?;
-            if queries_file.is_some() {
-                if let Some(entry) = query_stats_tbl.get_mut(&psl.q_name) {
-                    entry.accumulate(&psl);
-                }
-            } else {
-                let entry = query_stats_tbl
-                    .entry(psl.q_name.clone())
-                    .or_insert_with(|| SumStats::new(&psl.q_name, psl.q_size));
-                entry.accumulate(&psl);
-            }
-        }
-
-        if query_stats {
-            if !tsv {
-                write!(writer, "#")?;
-            }
-            writeln!(writer, "qName\tqSize\talnCnt\tminIdent\tmaxIdent\tmeanIdent\tminQCover\tmaxQCover\tmeanQCover\tminRepMatch\tmaxRepMatch\tmeanRepMatch\tminTCover\tmaxTCover")?;
-
-            let mut keys: Vec<_> = query_stats_tbl.keys().cloned().collect();
-            keys.sort();
-
-            for k in keys {
-                let s = &query_stats_tbl[&k];
-                writeln!(writer, "{}\t{}\t{}\t{:.4}\t{:.4}\t{:.4}\t{:.4}\t{:.4}\t{:.4}\t{:.4}\t{:.4}\t{:.4}\t{:.4}\t{:.4}",
-                    s.q_name, s.min_q_size, s.aln_cnt,
-                    s.min_ident, s.max_ident, s.mean_ident(),
-                    s.min_q_cover, s.max_q_cover, s.mean_q_cover(),
-                    s.min_rep_match, s.max_rep_match, s.mean_rep_match(),
-                    s.min_t_cover, s.max_t_cover
-                )?;
-            }
-        } else {
-            // overall stats
-            let mut os = SumStats::default();
-            let mut aligned1 = 0;
-            let mut aligned_n = 0;
-
-            for s in query_stats_tbl.values() {
-                os.merge(s);
-
-                if s.aln_cnt == 1 {
-                    aligned1 += 1;
-                } else if s.aln_cnt > 1 {
-                    aligned_n += 1;
-                }
-            }
-
-            if !tsv {
-                write!(writer, "#")?;
-            }
-            writeln!(writer, "queryCnt\tminQSize\tmaxQSize\tmeanQSize\talnCnt\tminIdent\tmaxIdent\tmeanIdent\tminQCover\tmaxQCover\tmeanQCover\tminRepMatch\tmaxRepMatch\tmeanRepMatch\tminTCover\tmaxTCover\taligned\taligned1\talignedN\ttotalAlignedSize")?;
-
-            writeln!(writer, "{}\t{}\t{}\t{}\t{}\t{:.4}\t{:.4}\t{:.4}\t{:.4}\t{:.4}\t{:.4}\t{:.4}\t{:.4}\t{:.4}\t{:.4}\t{:.4}\t{}\t{}\t{}\t{}",
-                os.query_cnt, os.min_q_size, os.max_q_size, os.mean_q_size(),
-                os.aln_cnt,
-                os.min_ident, os.max_ident, os.mean_ident(),
-                os.min_q_cover, os.max_q_cover, os.mean_q_cover(),
-                os.min_rep_match, os.max_rep_match, os.mean_rep_match(),
-                os.min_t_cover, os.max_t_cover,
-                aligned1 + aligned_n, aligned1, aligned_n,
-                os.total_align
-            )?;
-        }
+    let mode = if query_stats {
+        PslStatsMode::PerQuery
+    } else if overall_stats {
+        PslStatsMode::Overall
     } else {
-        // Per-alignment mode
-        if !tsv {
-            write!(writer, "#")?;
-        }
-        writeln!(
-            writer,
-            "qName\tqSize\ttName\ttStart\ttEnd\tident\tqCover\trepMatch\ttCover"
-        )?;
+        PslStatsMode::PerAlignment
+    };
 
-        for psl in pgr::libs::fmt::psl::iter_psl(reader) {
-            let psl = psl?;
-            if queries_file.is_some() {
-                if let Some(entry) = query_stats_tbl.get_mut(&psl.q_name) {
-                    writeln!(
-                        writer,
-                        "{}\t{}\t{}\t{}\t{}\t{:.4}\t{:.4}\t{:.4}\t{:.4}",
-                        psl.q_name,
-                        psl.q_size,
-                        psl.t_name,
-                        psl.t_start,
-                        psl.t_end,
-                        psl.calc_ident(),
-                        psl.calc_q_cover(),
-                        psl.calc_rep_match(),
-                        psl.calc_t_cover()
-                    )?;
-                    entry.aln_cnt += 1;
-                }
-            } else {
-                writeln!(
-                    writer,
-                    "{}\t{}\t{}\t{}\t{}\t{:.4}\t{:.4}\t{:.4}\t{:.4}",
-                    psl.q_name,
-                    psl.q_size,
-                    psl.t_name,
-                    psl.t_start,
-                    psl.t_end,
-                    psl.calc_ident(),
-                    psl.calc_q_cover(),
-                    psl.calc_rep_match(),
-                    psl.calc_t_cover()
-                )?;
-            }
-        }
+    let opts = PslStatsOptions { mode, tsv };
 
-        if queries_file.is_some() {
-            let mut keys: Vec<_> = query_stats_tbl.keys().cloned().collect();
-            keys.sort();
+    let queries = if let Some(q_file) = queries_file {
+        let q_reader = pgr::reader(q_file)?;
+        Some(pgr::libs::fmt::psl::read_queries(q_reader)?)
+    } else {
+        None
+    };
 
-            for k in keys {
-                let s = &query_stats_tbl[&k];
-                if s.aln_cnt == 0 {
-                    writeln!(
-                        writer,
-                        "{}\t{}\t\t0\t0\t0.0000\t0.0000\t0.0000\t0.0000",
-                        s.q_name, s.min_q_size
-                    )?;
-                }
-            }
-        }
-    }
-
-    Ok(())
+    pgr::libs::fmt::psl::run_stats(reader, &mut writer, &opts, queries)
 }

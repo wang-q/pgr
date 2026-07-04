@@ -6,7 +6,7 @@ use tempfile::NamedTempFile;
 /// Build the clap subcommand for lastz.
 pub fn make_subcommand() -> Command {
     Command::new("lastz")
-        .about("Wrapper for lastz alignment (Cactus style)")
+        .about("Wraps lastz alignment (Cactus style)")
         .after_help(format!(
             r###"
 This command wraps lastz to perform alignments suitable for the Cactus RepeatMasking workflow.

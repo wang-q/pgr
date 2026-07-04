@@ -1,8 +1,7 @@
 use clap::{value_parser, Arg, ArgAction, ArgMatches, Command};
 use cmd_lib::{run_cmd, run_fun};
-use itertools::Itertools;
 use pgr::libs::phylo::tree::Tree;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::fs;
 use std::io::Write;
 
@@ -106,49 +105,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // Read taxonomy TSV
     run_cmd!(info "==> Read taxonomy TSV")?;
 
-    // taxon_map: node_name -> Vec of terms (one per rank, None if column missing)
-    let mut taxon_map: BTreeMap<String, Vec<Option<String>>> = BTreeMap::new();
-    // groups: all unique terms for each rank
-    let mut all_groups: Vec<Vec<String>> = vec![vec![]; ranks.len()];
-
-    for line in pgr::read_lines(&abs_taxon)? {
-        let parts: Vec<&str> = line.split('\t').collect();
-        if parts.len() < 2 {
-            log::warn!("skipping line with <2 columns: {}", line);
-            continue;
-        }
-        let node_name = parts[0].to_string();
-        if !leaf_names.contains(&node_name) {
-            continue;
-        }
-        let mut terms: Vec<Option<String>> = Vec::with_capacity(ranks.len());
-
-        for (i, rank_col) in ranks.iter().enumerate() {
-            let rank_idx = rank_col.saturating_sub(1);
-            let term = parts
-                .get(rank_idx)
-                .map(|s| pgr::libs::phylo::newick_safe(s));
-            if let Some(t) = &term {
-                all_groups[i].push(t.clone());
-            }
-            terms.push(term);
-        }
-
-        if terms.iter().any(|t| t.is_some()) {
-            taxon_map.insert(node_name, terms);
-        }
-    }
-
-    // Deduplicate groups and filter NA
-    for groups in &mut all_groups {
-        *groups = groups
-            .clone()
-            .into_iter()
-            .sorted()
-            .unique()
-            .filter(|s| s.ne("NA"))
-            .collect();
-    }
+    let taxon_reader = pgr::reader(&abs_taxon)?;
+    let taxon_table = pgr::libs::phylo::read_taxonomy(taxon_reader, &ranks, &leaf_names)?;
+    let taxon_map = taxon_table.taxon_map;
+    let all_groups = taxon_table.all_groups;
 
     let taxon_count = taxon_map.len();
     run_cmd!(info "    Loaded ${taxon_count} taxonomy entries")?;

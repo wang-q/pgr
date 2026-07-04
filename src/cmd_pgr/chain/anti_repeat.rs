@@ -8,6 +8,30 @@ use pgr::libs::fmt::twobit::TwoBitFile;
 pub fn make_subcommand() -> Command {
     Command::new("anti-repeat")
         .about("Filters chains for repeats and degeneracy")
+        .after_help(
+            r###"
+Filters chains for repeats and degeneracy, mirroring the UCSC chainAntiRepeat
+workflow. Chains below `--min-score` are dropped; chains above
+`--no-check-score` are passed through unchecked; intermediate chains are
+evaluated against the target/query 2bit sequence libraries.
+
+Notes:
+* Target and query inputs must be 2bit files (use `pgr 2bit` to convert)
+* `--min-score` (default: 5000) drops chains below this score
+* `--no-check-score` (default: 200000) skips checks above this score
+
+Examples:
+1. Basic repeat filtering:
+   pgr chain anti-repeat t.2bit q.2bit in.chain -o out.chain
+
+2. Raise the minimum score threshold:
+   pgr chain anti-repeat t.2bit q.2bit in.chain --min-score 10000 -o out.chain
+
+3. Lower the no-check threshold:
+   pgr chain anti-repeat t.2bit q.2bit in.chain --no-check-score 100000 -o out.chain
+
+"###,
+        )
         .arg(crate::cmd_pgr::args::target_2bit_arg())
         .arg(crate::cmd_pgr::args::query_2bit_arg())
         .arg(crate::cmd_pgr::args::infile_arg_required_with_help(
