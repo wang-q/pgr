@@ -27,8 +27,8 @@ impl MafComp {
     /// Build a range string `src(strand):start-end` (1-based inclusive).
     pub fn to_range(&self) -> String {
         // adjust coordinates to be one-based inclusive
-        let mut start = self.start + 1;
-        let mut end = start + self.size - 1;
+        let mut start = self.start.saturating_add(1);
+        let mut end = start.saturating_add(self.size).saturating_sub(1);
 
         // If the strand field is "-" then this is the start relative to the reverse-complemented source sequence
         if self.strand == '-' {
@@ -85,7 +85,7 @@ pub fn next_maf_block<T: io::BufRead + ?Sized>(mut input: &mut T) -> Result<MafA
         }
     }
     let block = parse_maf_block(
-        header.ok_or(io::Error::other("EOF"))?,
+        header.ok_or(io::Error::new(io::ErrorKind::UnexpectedEof, "EOF"))?,
         LinesRef { buf: &mut input },
     )?;
     Ok(block)
@@ -157,6 +157,9 @@ pub fn parse_maf_block(
 
     for line in block_lines {
         let mut fields: Vec<_> = line.split_whitespace().collect();
+        if fields.is_empty() {
+            continue;
+        }
         match fields[0] {
             "a" => {
                 for f in &fields[1..] {
@@ -215,7 +218,10 @@ mod maf_tests {
         let mut reader = BufReader::new(str.as_bytes());
         let res = next_maf_block(&mut reader);
         eprintln!("got error {:?}", res.as_ref().err());
-        assert!(matches!(res.unwrap_err().kind(), io::ErrorKind::Other));
+        assert!(matches!(
+            res.unwrap_err().kind(),
+            io::ErrorKind::UnexpectedEof
+        ));
     }
 
     #[test]
@@ -223,7 +229,10 @@ mod maf_tests {
         let str = "#";
         let mut reader = BufReader::new(str.as_bytes());
         let res = next_maf_block(&mut reader);
-        assert!(matches!(res.unwrap_err().kind(), io::ErrorKind::Other));
+        assert!(matches!(
+            res.unwrap_err().kind(),
+            io::ErrorKind::UnexpectedEof
+        ));
     }
 
     #[test]

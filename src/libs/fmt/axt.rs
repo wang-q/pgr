@@ -45,7 +45,9 @@ impl Axt {
         let t_comp = MafComp {
             src: format!("{}{}", t_prefix, self.t_name),
             start: self.t_start,
-            size: self.t_end - self.t_start,
+            size: self.t_end.checked_sub(self.t_start).ok_or_else(|| {
+                anyhow::anyhow!("t_end {} < t_start {}", self.t_end, self.t_start)
+            })?,
             strand: self.t_strand,
             src_size: t_size,
             text: self.t_sym.clone(),
@@ -53,7 +55,9 @@ impl Axt {
         let q_comp = MafComp {
             src: format!("{}{}", q_prefix, self.q_name),
             start: self.q_start,
-            size: self.q_end - self.q_start,
+            size: self.q_end.checked_sub(self.q_start).ok_or_else(|| {
+                anyhow::anyhow!("q_end {} < q_start {}", self.q_end, self.q_start)
+            })?,
             strand: self.q_strand,
             src_size: q_size,
             text: self.q_sym.clone(),
@@ -318,13 +322,16 @@ pub fn axt_query_to_forward_coords(
     q_end: usize,
     q_strand: char,
     q_len: i32,
-) -> (i32, i32) {
+) -> anyhow::Result<(i32, i32)> {
     if q_strand == '-' {
         let q_s_1 = (q_start + 1) as i32;
         let q_e_1 = q_end as i32;
-        (q_len - q_e_1 + 1, q_len - q_s_1 + 1)
+        if q_e_1 > q_len || q_s_1 > q_len {
+            anyhow::bail!("AXT q_end {} exceeds q_len {}", q_e_1, q_len);
+        }
+        Ok((q_len - q_e_1 + 1, q_len - q_s_1 + 1))
     } else {
-        ((q_start + 1) as i32, q_end as i32)
+        Ok(((q_start + 1) as i32, q_end as i32))
     }
 }
 

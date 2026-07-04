@@ -83,7 +83,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 axt.q_end,
                 axt.q_strand,
                 q_len,
-            );
+            )?;
 
             let mut q_range = Range::from(&axt.q_name, q_start, q_end);
             *q_range.name_mut() = qname.to_string();

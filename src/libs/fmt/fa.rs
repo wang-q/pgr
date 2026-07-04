@@ -308,6 +308,13 @@ pub fn build_gzi_index(path: &str) -> anyhow::Result<()> {
 
         let block_size = bsize as u64 + 1;
 
+        if block_size < 4 {
+            anyhow::bail!(
+                "malformed BGZF block: bsize too small at offset {}",
+                compressed_offset
+            );
+        }
+
         file.seek(std::io::SeekFrom::Start(compressed_offset + block_size - 4))?;
         let mut isize_buf = [0u8; 4];
         file.read_exact(&mut isize_buf)?;
@@ -366,11 +373,22 @@ pub fn find_fasta_files<P: AsRef<std::path::Path>>(path: P) -> Vec<std::path::Pa
 }
 
 /// Mask sequence regions. Soft-mask lowercases, hard-mask replaces with N.
-pub fn mask_sequence(seq: &str, spans: &intspan::IntSpan, hard: bool) -> String {
+pub fn mask_sequence(seq: &str, spans: &intspan::IntSpan, hard: bool) -> anyhow::Result<String> {
     let mut out = seq.to_string();
     for (lower, upper) in spans.spans().iter() {
-        let offset = (lower - 1) as usize;
-        let length = (upper - lower + 1) as usize;
+        if *lower < 1 {
+            anyhow::bail!("span lower bound must be >= 1, got {}", lower);
+        }
+        let offset = (*lower - 1) as usize;
+        let length = (*upper - *lower + 1) as usize;
+        if offset + length > out.len() {
+            anyhow::bail!(
+                "span {}-{} exceeds sequence length {}",
+                lower,
+                upper,
+                out.len()
+            );
+        }
         let replacement = if hard {
             "N".repeat(length)
         } else {
@@ -378,7 +396,7 @@ pub fn mask_sequence(seq: &str, spans: &intspan::IntSpan, hard: bool) -> String 
         };
         out.replace_range(offset..offset + length, &replacement);
     }
-    out
+    Ok(out)
 }
 
 /// Find contiguous masked regions (lowercase and/or N/n) in a sequence. Returns 0-based (begin, end) pairs.

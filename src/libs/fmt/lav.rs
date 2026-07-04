@@ -319,8 +319,9 @@ pub fn blocks_to_psl(
     for block in blocks {
         let len = (block.t_end - block.t_start) as u32;
         // UCSC lavToPsl calculation: match = (width * identity + 50)/100
-        let match_cnt = (len * block.percent_id as u32 + 50) / 100;
-        let mismatch_cnt = len - match_cnt;
+        let match_cnt = (len.saturating_mul(block.percent_id as u32) + 50) / 100;
+        let match_cnt = match_cnt.min(len);
+        let mismatch_cnt = len.saturating_sub(match_cnt);
 
         psl.match_count += match_cnt;
         psl.mismatch_count += mismatch_cnt;
@@ -357,7 +358,7 @@ pub fn blocks_to_psl(
     }
 
     // Gaps (inserts)
-    for i in 0..blocks.len() - 1 {
+    for i in 0..blocks.len().saturating_sub(1) {
         let curr = &blocks[i];
         let next = &blocks[i + 1];
 

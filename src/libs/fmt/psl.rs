@@ -264,8 +264,12 @@ impl Psl {
         // Recalculate coordinates
         // qSize and tSize have already been swapped
         for i in 0..self.block_count as usize {
-            self.q_starts[i] = self.q_size - (self.q_starts[i] + self.block_sizes[i]);
-            self.t_starts[i] = self.t_size - (self.t_starts[i] + self.block_sizes[i]);
+            self.q_starts[i] = self
+                .q_size
+                .saturating_sub(self.q_starts[i].saturating_add(self.block_sizes[i]));
+            self.t_starts[i] = self
+                .t_size
+                .saturating_sub(self.t_starts[i].saturating_add(self.block_sizes[i]));
         }
     }
 
@@ -283,9 +287,12 @@ impl Psl {
         let block_size_last = self.block_sizes[last];
 
         if t_strand == '+' {
-            t_end == t_start_last + 3 * block_size_last
+            t_end == t_start_last.saturating_add(3u32.saturating_mul(block_size_last))
         } else if t_strand == '-' {
-            t_start == t_size - (t_start_last + 3 * block_size_last)
+            t_start
+                == t_size.saturating_sub(
+                    t_start_last.saturating_add(3u32.saturating_mul(block_size_last)),
+                )
         } else {
             false
         }
@@ -294,7 +301,7 @@ impl Psl {
     /// Reverse-complement a PSL alignment. This makes the target strand explicit.
     pub fn rc(&mut self) {
         let is_prot = self.is_protein();
-        let mult = if is_prot { 3 } else { 1 };
+        let mult: u32 = if is_prot { 3 } else { 1 };
 
         // swap strand, forcing target to have an explict strand
         let q_s = self.strand.chars().nth(0).unwrap_or('+');
@@ -309,8 +316,11 @@ impl Psl {
         let q_size = self.q_size;
 
         for i in 0..self.block_count as usize {
-            self.t_starts[i] = t_size - (self.t_starts[i] + mult * self.block_sizes[i]);
-            self.q_starts[i] = q_size - (self.q_starts[i] + self.block_sizes[i]);
+            self.t_starts[i] = t_size.saturating_sub(
+                self.t_starts[i].saturating_add(mult.saturating_mul(self.block_sizes[i])),
+            );
+            self.q_starts[i] =
+                q_size.saturating_sub(self.q_starts[i].saturating_add(self.block_sizes[i]));
         }
 
         self.t_starts.reverse();
@@ -535,8 +545,8 @@ impl Psl {
             write!(writer, "{}", size)?;
 
             if i < (self.block_count as usize) - 1 {
-                let dt = self.t_starts[i + 1] - (self.t_starts[i] + size);
-                let dq = self.q_starts[i + 1] - (self.q_starts[i] + size);
+                let dt = self.t_starts[i + 1].saturating_sub(self.t_starts[i].saturating_add(size));
+                let dq = self.q_starts[i + 1].saturating_sub(self.q_starts[i].saturating_add(size));
                 write!(writer, "\t{}\t{}", dt, dq)?;
             }
             writeln!(writer)?;

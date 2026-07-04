@@ -340,17 +340,20 @@ pub fn aggregate_coverage_into<R: io::BufRead>(
             }
         }
 
-        for entry in &block.entries {
+        for (idx, entry) in block.entries.iter().enumerate() {
             let range = entry.range();
             if !range.is_valid() {
                 continue;
             }
 
-            if !name_filter.is_empty() && name_filter != range.name() {
+            let name = &block_names[idx];
+            if !name_filter.is_empty() && name_filter != name {
                 continue;
             }
 
-            let res = res_of.get_mut(range.name()).unwrap();
+            let res = res_of
+                .get_mut(name)
+                .ok_or_else(|| anyhow::anyhow!("name not found in res_of: {}", name))?;
 
             if !res.contains_key(range.chr()) {
                 res.insert(range.chr().to_string(), intspan::IntSpan::new());
