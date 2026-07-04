@@ -97,9 +97,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             Err(e) => {
                 let msg = format!("{} vs {}: {}", e1.name(), e2.name(), e);
                 log::error!("{}", msg);
-                if let Ok(mut guard) = errors_clone.lock() {
-                    guard.push(msg);
-                }
+                let mut guard = errors_clone
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                guard.push(msg);
                 None
             }
         },

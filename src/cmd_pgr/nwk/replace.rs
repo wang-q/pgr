@@ -63,6 +63,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         let parts: Vec<_> = line.split('\t').collect();
 
         if parts.len() < 2 {
+            log::warn!("skipping malformed line in replace file: {}", line);
             continue;
         } else {
             let name = parts

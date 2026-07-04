@@ -27,7 +27,7 @@ Examples:
         )
         .arg(infiles_arg_with_numargs(
             "Input list files (2-4 files)",
-            1..=4,
+            2..=4,
         ))
         .arg(outfile_arg())
 }

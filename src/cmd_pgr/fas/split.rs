@@ -118,7 +118,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             if outdir == "stdout" {
                 println!();
             } else {
-                let file = file_of.get_mut(&filename).unwrap();
+                let file = file_of
+                    .get_mut(&filename)
+                    .ok_or_else(|| anyhow::anyhow!("file not found: {}", filename))?;
                 writeln!(file)?;
             }
         }

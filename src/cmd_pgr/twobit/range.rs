@@ -67,6 +67,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         let (start, end) = if *rg.start() == 0 {
             (None, None)
         } else {
+            anyhow::ensure!(rg.is_valid(), "invalid range: {}", el);
             // Convert 1-based inclusive to 0-based half-open
             let s = (*rg.start() as usize).saturating_sub(1);
             let e = *rg.end() as usize;
@@ -82,14 +83,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         }
 
         // Header construction
-        let header = if *rg.start() == 0 {
-            rg.to_string()
-        } else {
-            // Reconstruct range string with actual coordinates if needed,
-            // but rg.to_string() usually gives what we want "chr:start-end"
-            // If strand is -, intspan might output "chr(-):start-end"
-            rg.to_string()
-        };
+        let header = rg.to_string();
 
         writeln!(writer, ">{}", header)?;
         writeln!(writer, "{}", seq)?;

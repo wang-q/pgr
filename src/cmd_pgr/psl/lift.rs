@@ -71,11 +71,15 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         };
 
         if let Some(sizes_map) = &q_sizes_map {
-            psl.lift_query(sizes_map);
+            if !psl.lift_query(sizes_map) {
+                log::warn!("failed to lift query: {}", psl.q_name);
+            }
         }
 
         if let Some(sizes_map) = &t_sizes_map {
-            psl.lift_target(sizes_map);
+            if !psl.lift_target(sizes_map) {
+                log::warn!("failed to lift target: {}", psl.t_name);
+            }
         }
 
         psl.write_to(&mut writer)?;

@@ -58,7 +58,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let tree = Tree::from_file(infile)?
         .into_iter()
         .next()
-        .unwrap_or(Tree::new());
+        .ok_or_else(|| anyhow::anyhow!("no trees found in {}", infile))?;
 
     // Auto-detect: if any node has a branch length, draw phylogram
     let has_bl = if let Some(root) = tree.get_root() {

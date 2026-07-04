@@ -56,8 +56,7 @@ Examples:
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut fa_in = pgr::libs::fmt::fa::reader(args.get_one::<String>("infile").unwrap())?;
 
-    let json = intspan::read_json(args.get_one::<String>("runlist").unwrap());
-    let runlists = intspan::json2set(&json);
+    let runlists = pgr::libs::io::read_runlist(args.get_one::<String>("runlist").unwrap())?;
 
     let is_hard = args.get_flag("hard");
 

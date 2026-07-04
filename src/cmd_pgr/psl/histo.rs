@@ -87,6 +87,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             }
             "coverSpread" => {
                 let (min, max) = pgr::libs::fmt::psl::calc_spread(psls, |p| p.cover());
+                anyhow::ensure!(max >= min, "calc_spread returned invalid range");
                 let diff = max - min;
                 if !non_zero || diff != 0.0 {
                     // Using same format as C: %.4g

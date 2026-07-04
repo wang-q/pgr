@@ -85,8 +85,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let opt_pm = *args.get_one::<usize>("pm").unwrap();
     let opt_pi = *args.get_one::<usize>("pi").unwrap();
     let opt_minscore = *args.get_one::<f64>("min_score").unwrap();
-    if opt_minscore < 0.0 {
-        anyhow::bail!("--minscore must be non-negative: {}", opt_minscore);
+    if !opt_minscore.is_finite() || opt_minscore < 0.0 {
+        anyhow::bail!("--minscore must be non-negative finite: {}", opt_minscore);
     }
     let opt_minscore_u = opt_minscore as usize;
     let opt_max_period = *args.get_one::<usize>("max_period").unwrap();
@@ -151,6 +151,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             let line = line?;
             let fields: Vec<&str> = line.split_ascii_whitespace().collect();
             if fields.len() < 15 {
+                log::debug!("skipping short TRF line: {}", line);
                 continue;
             }
 

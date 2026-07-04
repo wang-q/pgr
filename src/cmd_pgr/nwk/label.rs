@@ -136,13 +136,15 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         for id in ids.iter() {
             let node = tree.get_node(*id).context("node not found")?;
             if let Some(x) = node.name.clone() {
-                let out_string =
-                    pgr::libs::phylo::tree::query::format_label_columns(node, &x, &columns);
+                if !x.is_empty() {
+                    let out_string =
+                        pgr::libs::phylo::tree::query::format_label_columns(node, &x, &columns);
 
-                if tab_sep {
-                    collected_labels.push(out_string);
-                } else {
-                    writer.write_fmt(format_args!("{}\n", out_string))?;
+                    if tab_sep {
+                        collected_labels.push(out_string);
+                    } else {
+                        writer.write_fmt(format_args!("{}\n", out_string))?;
+                    }
                 }
             }
         }

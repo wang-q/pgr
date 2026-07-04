@@ -5,7 +5,10 @@ use pgr::libs::paf::msa_build::orient_interval;
 // Output BED3 (name start end), one line per query result.
 fn output_bed(idx: &pgr::libs::paf::index::PafIndex, results: &[QueryResult]) {
     for (query_id, q_iv, _t_iv, _cigar, _, _, _) in results {
-        let qname = idx.id_to_name(*query_id).unwrap_or("?");
+        let qname = idx.id_to_name(*query_id).unwrap_or_else(|| {
+            log::warn!("query id {} not found in index", query_id);
+            "?"
+        });
         let (qs, qe) = orient_interval(q_iv.first, q_iv.last);
         println!("{qname}\t{qs}\t{qe}");
     }

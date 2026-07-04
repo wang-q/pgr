@@ -67,6 +67,26 @@ pub fn read_lines(input: &str) -> anyhow::Result<Vec<String>> {
     Ok(s.lines().map(|s| s.to_string()).collect())
 }
 
+/// Safely read a runlist JSON file and convert to IntSpan map.
+/// Replaces intspan::read_json + intspan::json2set which panic on errors.
+pub fn read_runlist(path: &str) -> anyhow::Result<BTreeMap<String, intspan::IntSpan>> {
+    let mut reader = reader(path)?;
+    let mut s = String::new();
+    reader
+        .read_to_string(&mut s)
+        .with_context(|| format!("failed to read runlist: {}", path))?;
+    let json: BTreeMap<String, serde_json::Value> = serde_json::from_str(&s)
+        .with_context(|| format!("failed to parse runlist JSON: {}", path))?;
+    let mut set: BTreeMap<String, intspan::IntSpan> = BTreeMap::new();
+    for (chr, value) in &json {
+        let s = value
+            .as_str()
+            .ok_or_else(|| anyhow::anyhow!("runlist value for {} is not a string", chr))?;
+        set.insert(chr.clone(), intspan::IntSpan::from(s));
+    }
+    Ok(set)
+}
+
 /// Open a buffered writer for `output` (`stdout` or a file path).
 pub fn writer(output: &str) -> anyhow::Result<Box<dyn Write>> {
     if output == "stdout" {

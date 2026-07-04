@@ -76,6 +76,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     } else {
         vec![2] // default to column 2
     };
+    for rank_col in &ranks {
+        anyhow::ensure!(*rank_col >= 1, "--rank must be >= 1, got {}", rank_col);
+    }
 
     let curdir = env::current_dir()?;
     let exe = env::current_exe()?.display().to_string();

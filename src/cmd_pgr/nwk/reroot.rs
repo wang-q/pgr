@@ -82,38 +82,43 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let lax = args.get_flag("lax");
 
     let infile = args.get_one::<String>("infile").unwrap();
-    let mut trees = Tree::from_file(infile)?;
+    let trees = Tree::from_file(infile)?;
 
     // Process only the first tree for now, or loop if we want to support multi-tree
     // Since arguments are node names, it implies a single tree context or consistent naming.
     // We'll process the first tree to match previous behavior.
-    if let Some(mut tree) = trees.pop() {
-        if deroot {
-            tree.deroot().map_err(|e| anyhow::anyhow!(e))?;
-        } else {
-            // ids with names
-            let id_of: BTreeMap<_, _> = tree.get_name_id();
+    let mut tree = trees
+        .into_iter()
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("no trees found in {}", infile))?;
 
-            // All IDs matched
-            let mut ids = BTreeSet::new();
-            if let Some(nodes) = args.get_many::<String>("node") {
-                for name in nodes {
-                    if let Some(&id) = id_of.get(name) {
-                        ids.insert(id);
-                    }
+    if deroot {
+        tree.deroot().map_err(|e| anyhow::anyhow!(e))?;
+    } else {
+        // ids with names
+        let id_of: BTreeMap<_, _> = tree.get_name_id();
+
+        // All IDs matched
+        let mut ids = BTreeSet::new();
+        if let Some(nodes) = args.get_many::<String>("node") {
+            for name in nodes {
+                if let Some(&id) = id_of.get(name) {
+                    ids.insert(id);
+                } else {
+                    log::warn!("node name not found in tree: {}", name);
                 }
-            }
-
-            if !ids.is_empty() {
-                pgr::libs::phylo::tree::ops::reroot_at_lca(&mut tree, &ids, lax, process_support)?;
-            } else {
-                pgr::libs::phylo::tree::ops::reroot_at_longest_branch(&mut tree, process_support)?;
             }
         }
 
-        let out_string = tree.to_newick();
-        writer.write_all((out_string + "\n").as_ref())?;
+        if !ids.is_empty() {
+            pgr::libs::phylo::tree::ops::reroot_at_lca(&mut tree, &ids, lax, process_support)?;
+        } else {
+            pgr::libs::phylo::tree::ops::reroot_at_longest_branch(&mut tree, process_support)?;
+        }
     }
+
+    let out_string = tree.to_newick();
+    writer.write_all((out_string + "\n").as_ref())?;
 
     Ok(())
 }

@@ -44,7 +44,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let tree = Tree::from_file(infile)?
         .into_iter()
         .next()
-        .unwrap_or(Tree::new());
+        .ok_or_else(|| anyhow::anyhow!("no trees found in {}", infile))?;
 
     let height = if is_bl {
         tree.get_root()

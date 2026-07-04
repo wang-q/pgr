@@ -51,15 +51,22 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     for mut tree in trees {
         let target_ids = nwr::match_names(&tree, args)?;
 
+        if args.get_flag("invert") && target_ids.is_empty() {
+            log::warn!("--invert set but no target nodes matched; entire tree will be pruned");
+        }
+
         let to_remove: Vec<_> = if args.get_flag("invert") {
             let keep = algo::compute_keep_set(&tree, target_ids.iter().copied());
             match tree.get_root() {
-                Some(root) => tree
-                    .levelorder(&root)
-                    .unwrap_or_default()
-                    .into_iter()
-                    .filter(|id| !keep.contains(id))
-                    .collect(),
+                Some(root) => {
+                    let all_ids = tree
+                        .levelorder(&root)
+                        .map_err(|e| anyhow::anyhow!("levelorder failed: {}", e))?;
+                    all_ids
+                        .into_iter()
+                        .filter(|id| !keep.contains(id))
+                        .collect()
+                }
                 None => Vec::new(),
             }
         } else {

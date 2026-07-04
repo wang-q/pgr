@@ -64,7 +64,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             // Write output
             for block in merged {
                 // Convert 0-based half-open [start, end) to 1-based inclusive
-                let start_1based = block.start + 1;
+                let start_1based = block.start.saturating_add(1);
                 let end_1based = block.end;
 
                 if start_1based == end_1based {

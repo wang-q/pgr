@@ -69,7 +69,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         let tree = Tree::from_file(infile)?
             .into_iter()
             .next()
-            .unwrap_or(Tree::new());
+            .ok_or_else(|| anyhow::anyhow!("no trees found in {}", infile))?;
 
         let height = if is_bl {
             tree.get_root()
@@ -105,6 +105,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         let end = template
             .find("%FOREST_END")
             .ok_or_else(|| anyhow::anyhow!("template marker %FOREST_END missing"))?;
+        anyhow::ensure!(begin < end, "template markers %FOREST out of order");
         template.replace_range(begin..end, &out_string);
     }
 
@@ -125,6 +126,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         let end = template
             .find("%STYLE_END")
             .ok_or_else(|| anyhow::anyhow!("template marker %STYLE_END missing"))?;
+        anyhow::ensure!(begin < end, "template markers %STYLE out of order");
         template.replace_range(begin..end, default_font);
     }
 

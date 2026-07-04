@@ -77,12 +77,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // make sure renames.len() >= names.len() + lcas.len()
     if names.len() > renames.len() {
         let unnecessary = names.len() - renames.len();
-        names.truncate(names.len() - unnecessary);
+        names.truncate(names.len().saturating_sub(unnecessary));
         // All lcas are unnecessary
         lcas.clear();
     } else if names.len() + lcas.len() > renames.len() {
         let unnecessary = names.len() + lcas.len() - renames.len();
-        lcas.truncate(lcas.len() - unnecessary);
+        lcas.truncate(lcas.len().saturating_sub(unnecessary));
     }
     let len_names = names.len();
 

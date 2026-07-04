@@ -23,7 +23,7 @@ fn output_fas_pairwise(
                 ">{0}({1}):{2}-{3}",
                 blk.qname,
                 blk.q_strand,
-                blk.q_start_fwd + 1,
+                blk.q_start_fwd.saturating_add(1),
                 blk.q_end_fwd
             );
             println!("{}", blk.q_aln);
@@ -53,8 +53,8 @@ fn output_fas_msa(
             println!(
                 ">{0}({3}):{1}-{2}",
                 e.name,
-                e.start + 1,
-                e.start + size,
+                e.start.saturating_add(1),
+                e.start.saturating_add(size),
                 e.strand
             );
             println!("{}", aln);

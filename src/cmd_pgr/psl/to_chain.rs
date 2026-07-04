@@ -42,10 +42,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         let mut psl = match Psl::from_str(&line) {
             Ok(p) => p,
             Err(_) => {
-                // Ignore lines that are not valid PSL (e.g. headers in some files)
-                // Or maybe warn? UCSC pslFileOpen skips header lines if they look like header.
-                // Here we assume standard PSL lines or skip errors.
-                // Better to skip errors if it's just header.
+                log::warn!("skipping unparseable psl line: {}", line);
                 continue;
             }
         };

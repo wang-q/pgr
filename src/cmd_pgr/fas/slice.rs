@@ -37,8 +37,7 @@ Examples:
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
 
-    let json = intspan::read_json(args.get_one::<String>("runlist").unwrap());
-    let set = intspan::json2set(&json);
+    let set = pgr::libs::io::read_runlist(args.get_one::<String>("runlist").unwrap())?;
 
     let mut name = args
         .get_one::<String>("name")

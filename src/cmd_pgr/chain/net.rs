@@ -94,10 +94,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
         // Sort check (optional but good)
         if chain.header.score > last_score {
-            // In C code, it doesn't strictly abort, but expects sorted.
-            // We can just warn or proceed. The greedy algorithm relies on score sorting.
-            // Let's bail if strict, or just log.
-            // bail!("Input not sorted by score");
+            log::warn!("input not sorted by score at chain {}", chain.header.id);
         }
         last_score = chain.header.score;
 

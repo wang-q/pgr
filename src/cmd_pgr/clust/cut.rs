@@ -280,7 +280,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
         while val <= end + 1e-9 {
             let dispatch = if args.contains_id("dynamic_tree") {
-                if val < 0.0 || val > usize::MAX as f64 {
+                if !val.is_finite() || val < 0.0 || val > usize::MAX as f64 {
                     anyhow::bail!("scan value out of range: {}", val);
                 }
                 CutDispatch::DynamicTree(DynamicTreeOptions {
