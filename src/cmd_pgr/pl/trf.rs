@@ -91,6 +91,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     if opt_minscore.fract() != 0.0 {
         anyhow::bail!("--minscore must be an integer: {}", opt_minscore);
     }
+    if opt_minscore > usize::MAX as f64 {
+        anyhow::bail!("--minscore too large: {}", opt_minscore);
+    }
     let opt_minscore_u = opt_minscore as usize;
     let opt_max_period = *args.get_one::<usize>("max_period").unwrap();
 

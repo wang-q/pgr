@@ -54,28 +54,3 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     Ok(())
 }
-
-// // Process a single line of the PHYLIP matrix and output pairwise distances
-// fn process_phylip_line(
-//     line: &str,
-//     names: &mut Vec<String>,
-//     writer: &mut Box<dyn Write>,
-// ) -> anyhow::Result<()> {
-//     let parts: Vec<&str> = line.trim().split_whitespace().collect();
-//     if !parts.is_empty() {
-//         let name = parts[0].to_string();
-//         names.push(name.clone());
-
-//         // Read lower-triangle distances
-//         let distances: Vec<f32> = parts[1..=names.len()]
-//             .iter()
-//             .map(|&s| s.parse().unwrap())
-//             .collect();
-
-//         for (i, &distance) in distances.iter().enumerate() {
-//             writer.write_fmt(format_args!("{}\t{}\t{}\n", names[i], name, distance))?;
-//         }
-//     }
-
-//     Ok(())
-// }

@@ -41,8 +41,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
         let mut psl = match Psl::from_str(&line) {
             Ok(p) => p,
-            Err(_) => {
-                log::warn!("skipping unparseable psl line: {}", line);
+            Err(e) => {
+                log::warn!("skipping unparseable psl line: {}: {}", line, e);
                 continue;
             }
         };

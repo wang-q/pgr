@@ -61,9 +61,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
         let mut psl: Psl = match line.parse() {
             Ok(p) => p,
-            Err(_) => {
+            Err(e) => {
                 if !line.starts_with('#') && !line.trim().is_empty() {
-                    log::warn!("failed to parse psl line, passing through: {}", line);
+                    log::warn!("failed to parse psl line, passing through: {}: {}", line, e);
                 }
                 writer.write_fmt(format_args!("{}\n", line))?;
                 continue;
