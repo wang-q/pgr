@@ -105,14 +105,19 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let ylabel = args.get_one::<String>("ylabel").map(|s| s.to_string());
 
     // Parse X min,max if provided
-    let xmm = args.get_one::<String>("xmin_max").and_then(|s| {
-        let parts: Vec<f64> = s.split(',').filter_map(|x| x.trim().parse().ok()).collect();
-        if parts.len() == 2 {
-            Some((parts[0], parts[1]))
-        } else {
-            None
+    let xmm = if let Some(s) = args.get_one::<String>("xmin_max") {
+        let parts: Vec<f64> = s
+            .split(',')
+            .map(|x| x.trim().parse::<f64>())
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| anyhow::anyhow!("invalid --xmin_max value: {}", e))?;
+        if parts.len() != 2 {
+            anyhow::bail!("--xmin_max must be two comma-separated floats, got: {}", s);
         }
-    });
+        Some((parts[0], parts[1]))
+    } else {
+        None
+    };
 
     // Parse unit
     let unit_str = args
@@ -120,8 +125,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         .ok_or_else(|| anyhow::anyhow!("--unit required"))?;
     let parts: Vec<f64> = unit_str
         .split(',')
-        .filter_map(|x| x.trim().parse().ok())
-        .collect();
+        .map(|x| x.trim().parse::<f64>())
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| anyhow::anyhow!("invalid --unit value: {}", e))?;
     let unit: (f64, f64) = if parts.len() == 2 {
         (parts[0], parts[1])
     } else {

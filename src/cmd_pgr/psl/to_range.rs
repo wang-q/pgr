@@ -56,7 +56,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
         let psl = match Psl::from_str(&line) {
             Ok(p) => p,
-            Err(_) => continue,
+            Err(e) => {
+                log::warn!("skipping malformed PSL line: {}", e);
+                continue;
+            }
         };
 
         for range in pgr::libs::fmt::psl::psl_block_ranges(&psl, extract_target) {

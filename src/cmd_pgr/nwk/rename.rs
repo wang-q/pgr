@@ -116,10 +116,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 let id1 = id_of.get(parts.first().unwrap()).unwrap();
                 let id2 = id_of.get(parts.last().unwrap()).unwrap();
 
-                if let Ok(x) = tree.get_common_ancestor(id1, id2) {
-                    let rename = renames.get(len_names + i).unwrap();
-                    rename_of.insert(x, rename.to_string());
-                }
+                let x = tree
+                    .get_common_ancestor(id1, id2)
+                    .map_err(anyhow::Error::msg)?;
+                let rename = renames.get(len_names + i).unwrap();
+                rename_of.insert(x, rename.to_string());
             }
         }
 

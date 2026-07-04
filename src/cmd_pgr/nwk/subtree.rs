@@ -109,10 +109,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
         // Find LCA
         let ids_vec: Vec<usize> = ids.iter().cloned().collect();
-        let mut sub_root_id = match tree.get_lca(&ids_vec) {
-            Ok(id) => id,
-            Err(_) => continue,
-        };
+        let mut sub_root_id = tree.get_lca(&ids_vec).map_err(anyhow::Error::msg)?;
 
         // Monophyly check
         if is_monophyly {
