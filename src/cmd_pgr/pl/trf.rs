@@ -153,7 +153,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
         let rg_file = format!("trf.{}.rg", i);
         let mut writer = pgr::writer(&rg_file)?;
-        for line in reader.lines().map_while(Result::ok) {
+        for line in reader.lines() {
+            let line = line?;
             let fields: Vec<&str> = line.split_ascii_whitespace().collect();
             if fields.len() < 15 {
                 continue;

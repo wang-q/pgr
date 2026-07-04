@@ -80,6 +80,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             // pos, tbase, qbase, bases, mutant_to, freq, pattern, obase
             //   0,     1,     2,     3,         4,    5,       6,     7
             let seq_count = seqs.len();
+            if has_outgroup && seq_count < 2 {
+                anyhow::bail!(
+                    "outgroup mode requires at least 2 sequences per block, got {}",
+                    seq_count
+                );
+            }
             let subs = if has_outgroup {
                 let mut unpolarized = pgr::libs::alignment::get_subs(&seqs[..(seq_count - 1)])?;
                 pgr::libs::alignment::polarize_subs(&mut unpolarized, seqs[seq_count - 1])?;

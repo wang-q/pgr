@@ -221,7 +221,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
             let labels_output = match labels_result {
                 Ok(output) => output,
-                Err(_) => continue, // Not monophyletic or error
+                Err(e) => {
+                    log::warn!("nwk label failed for group, skipping: {}", e);
+                    continue;
+                }
             };
 
             let labels: Vec<String> = labels_output

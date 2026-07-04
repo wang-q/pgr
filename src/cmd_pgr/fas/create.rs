@@ -54,7 +54,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     //----------------------------
     for infile in args.get_many::<String>("infiles").unwrap() {
         let reader = pgr::reader(infile)?;
-        for line in reader.lines().map_while(Result::ok) {
+        for line in reader.lines() {
+            let line = line?;
             let parts: Vec<&str> = line.split('\t').collect();
 
             for part in &parts {
