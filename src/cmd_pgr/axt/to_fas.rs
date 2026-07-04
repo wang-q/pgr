@@ -60,7 +60,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 .checked_add(1)
                 .and_then(|v| i32::try_from(v).ok())
                 .ok_or_else(|| anyhow::anyhow!("t_start {} overflow", axt.t_start))?;
-            let t_end = axt.t_end as i32;
+            let t_end = i32::try_from(axt.t_end)
+                .map_err(|_| anyhow::anyhow!("t_end {} overflow i32", axt.t_end))?;
             let mut t_range = Range::from(&axt.t_name, t_start, t_end);
             *t_range.name_mut() = tname.to_string();
             *t_range.strand_mut() = "+".to_string();

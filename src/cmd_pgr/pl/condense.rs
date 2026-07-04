@@ -117,8 +117,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // Read taxonomy TSV
     run_cmd!(info "==> Read taxonomy TSV")?;
 
-    // taxon_map: node_name -> Vec of terms (one per rank)
-    let mut taxon_map: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    // taxon_map: node_name -> Vec of terms (one per rank, None if column missing)
+    let mut taxon_map: BTreeMap<String, Vec<Option<String>>> = BTreeMap::new();
     // groups: all unique terms for each rank
     let mut all_groups: Vec<Vec<String>> = vec![vec![]; ranks.len()];
 
@@ -131,18 +131,18 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         if !leaf_names.contains(&node_name) {
             continue;
         }
-        let mut terms = vec![];
+        let mut terms: Vec<Option<String>> = Vec::with_capacity(ranks.len());
 
         for (i, rank_col) in ranks.iter().enumerate() {
             let rank_idx = rank_col.saturating_sub(1);
-            if let Some(term) = parts.get(rank_idx) {
-                let term = newick_safe(term);
-                terms.push(term.clone());
-                all_groups[i].push(term);
+            let term = parts.get(rank_idx).map(|s| newick_safe(s));
+            if let Some(t) = &term {
+                all_groups[i].push(t.clone());
             }
+            terms.push(term);
         }
 
-        if !terms.is_empty() {
+        if terms.iter().any(|t| t.is_some()) {
             taxon_map.insert(node_name, terms);
         }
     }
@@ -185,7 +185,13 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             // Find all original nodes that belong to this group at this rank
             let nodes_in_group: Vec<String> = taxon_map
                 .iter()
-                .filter(|(_, terms)| terms.get(rank_idx).map(|t| t == group).unwrap_or(false))
+                .filter(|(_, terms)| {
+                    terms
+                        .get(rank_idx)
+                        .and_then(|t| t.as_deref())
+                        .map(|t| t == group)
+                        .unwrap_or(false)
+                })
                 .map(|(name, _)| name.clone())
                 .collect();
 

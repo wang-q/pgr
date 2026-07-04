@@ -1,5 +1,6 @@
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use std::io::BufRead;
+use std::sync::{Arc, Mutex};
 
 use pgr::libs::clust::feature::FeatureVector;
 use pgr::libs::linalg;
@@ -81,6 +82,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let (entries1, entries2) =
         pgr::libs::par::load_two_sets(&infiles, false, |paths| load_file(&paths[0], is_bin))?;
 
+    let errors: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let errors_clone = errors.clone();
+
     pgr::libs::par::par_run_pairs(
         &entries1,
         &entries2,
@@ -91,7 +95,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 Some(line)
             }
             Err(e) => {
-                log::error!("{}", e);
+                let msg = format!("{} vs {}: {}", e1.name(), e2.name(), e);
+                log::error!("{}", msg);
+                if let Ok(mut guard) = errors_clone.lock() {
+                    guard.push(msg);
+                }
                 None
             }
         },
@@ -103,6 +111,17 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     writer_thread
         .join()
         .map_err(|_| anyhow::anyhow!("writer thread panicked"))?;
+
+    let errors = errors
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if !errors.is_empty() {
+        anyhow::bail!(
+            "vector scoring failed for {} pair(s): {}",
+            errors.len(),
+            errors[0]
+        );
+    }
 
     Ok(())
 }

@@ -76,6 +76,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 Err(e) => return Err(e.into()),
             };
             // Determine the index of the species
+            if block.entries.is_empty() {
+                continue 'BLOCK;
+            }
             let idx = if !opt_name.is_empty() {
                 if !block.names.contains(opt_name) {
                     continue 'BLOCK;

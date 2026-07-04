@@ -229,6 +229,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     if trees.len() > 1 {
         anyhow::bail!("Input file contains multiple trees. Only single tree input is supported.");
     }
+    if trees.is_empty() {
+        anyhow::bail!("Input file contains no tree");
+    }
 
     if let Some(&support_threshold) = args.get_one::<f64>("support") {
         for tree in &mut trees {
