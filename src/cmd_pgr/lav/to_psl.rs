@@ -44,10 +44,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 t_size: t,
                 q_size: q,
             } => {
-                t_size = u32::try_from(t)
-                    .map_err(|_| anyhow::anyhow!("invalid t_size: {}", t))?;
-                q_size = u32::try_from(q)
-                    .map_err(|_| anyhow::anyhow!("invalid q_size: {}", q))?;
+                t_size = u32::try_from(t).map_err(|_| anyhow::anyhow!("invalid t_size: {}", t))?;
+                q_size = u32::try_from(q).map_err(|_| anyhow::anyhow!("invalid q_size: {}", q))?;
             }
             LavStanza::Header {
                 t_name: t,

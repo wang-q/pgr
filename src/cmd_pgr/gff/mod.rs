@@ -11,8 +11,8 @@ pub fn make_subcommand() -> Command {
         .subcommand(rg::make_subcommand())
 }
 /// Execute the gff command.
-pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
-    match matches.subcommand() {
+pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
+    match args.subcommand() {
         Some(("rg", sub_matches)) => rg::execute(sub_matches),
         _ => Ok(()),
     }

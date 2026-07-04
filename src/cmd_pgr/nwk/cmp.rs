@@ -89,7 +89,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
 fn compute_metrics(t1: &Tree, t2: &Tree) -> anyhow::Result<(String, String, String)> {
     let rf = t1.robinson_foulds(t2).map_err(anyhow::Error::msg)?;
-    let wrf = t1.weighted_robinson_foulds(t2).map_err(anyhow::Error::msg)?;
+    let wrf = t1
+        .weighted_robinson_foulds(t2)
+        .map_err(anyhow::Error::msg)?;
     let kf = t1.kuhner_felsenstein(t2).map_err(anyhow::Error::msg)?;
 
     let format_float = |v: f64| -> String {

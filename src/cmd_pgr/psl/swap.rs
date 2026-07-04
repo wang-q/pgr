@@ -1,4 +1,4 @@
-use clap::{Arg, Command};
+use clap::{Arg, ArgMatches, Command};
 use intspan::{reader, writer};
 use std::io::BufRead;
 
@@ -27,10 +27,10 @@ Examples:
         )
 }
 /// Execute the swap command.
-pub fn execute(matches: &clap::ArgMatches) -> anyhow::Result<()> {
-    let input = crate::cmd_pgr::args::get_infile(matches);
-    let output = crate::cmd_pgr::args::get_outfile(matches);
-    let no_rc = matches.get_flag("no_rc");
+pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
+    let input = crate::cmd_pgr::args::get_infile(args);
+    let output = crate::cmd_pgr::args::get_outfile(args);
+    let no_rc = args.get_flag("no_rc");
 
     let reader = reader(input);
     let mut writer = writer(output);

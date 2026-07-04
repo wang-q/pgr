@@ -39,10 +39,10 @@ Examples:
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 /// Execute the hier command.
-pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
-    let infile = matches.get_one::<String>("infile").unwrap();
-    let method_str = matches.get_one::<String>("clust_method").unwrap();
-    let outfile = crate::cmd_pgr::args::get_outfile(matches);
+pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
+    let infile = args.get_one::<String>("infile").unwrap();
+    let method_str = args.get_one::<String>("clust_method").unwrap();
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
 
     // Parse method
     let method = Method::from_str(method_str).map_err(|e: String| anyhow::anyhow!(e))?;

@@ -107,7 +107,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         let mut fa_in = pgr::libs::fmt::fa::reader(infile)?;
 
         for result in fa_in.records() {
-            // obtain record or fail with error
             let record = result?;
 
             let name = record.name();
@@ -116,7 +115,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
             let name_str = String::from_utf8(record.name().into())?;
 
-            // filters
             let mut flag_pass = true;
 
             // name/desc/sequence to u64 signatures

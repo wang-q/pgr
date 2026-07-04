@@ -1,5 +1,4 @@
-use anyhow::Result;
-use clap::Command;
+use clap::{ArgMatches, Command};
 /// Build the clap subcommand for stitch.
 pub fn make_subcommand() -> Command {
     Command::new("stitch")
@@ -10,7 +9,7 @@ pub fn make_subcommand() -> Command {
         .arg(crate::cmd_pgr::args::outfile_arg_required())
 }
 /// Execute the stitch command.
-pub fn execute(args: &clap::ArgMatches) -> Result<()> {
+pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let input_path = args.get_one::<String>("infile").unwrap();
     let output_path = crate::cmd_pgr::args::get_outfile(args);
     let reader = pgr::reader(input_path)?;

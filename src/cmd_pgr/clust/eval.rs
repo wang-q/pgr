@@ -72,11 +72,11 @@ Examples:
         )
 }
 /// Execute the eval command.
-pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
-    let p1_path = matches.get_one::<String>("p1").unwrap();
-    let outfile = crate::cmd_pgr::args::get_outfile(matches);
+pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
+    let p1_path = args.get_one::<String>("p1").unwrap();
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
 
-    let format_str = matches.get_one::<String>("clust_input_format").unwrap();
+    let format_str = args.get_one::<String>("clust_input_format").unwrap();
     let format: PartitionFormat = match format_str.parse() {
         Ok(f) => f,
         Err(e) => anyhow::bail!("Invalid format: {}", e),
@@ -84,14 +84,14 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
 
     let mut writer = pgr::writer(outfile)?;
 
-    let remove_singletons_flag = matches.get_flag("no_singletons");
+    let remove_singletons_flag = args.get_flag("no_singletons");
 
     if format == PartitionFormat::Long {
         // Batch Mode
         let batches = load_batch_partitions(p1_path)?;
 
         // Prepare resources (I/O stays in cmd layer)
-        let p2 = if let Some(p2_path) = matches.get_one::<String>("other") {
+        let p2 = if let Some(p2_path) = args.get_one::<String>("other") {
             let mut truth = load_partition(p2_path, PartitionFormat::Pair)?;
             if remove_singletons_flag {
                 remove_singletons(&mut truth);
@@ -102,9 +102,9 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
         };
 
         let dist_provider: Option<Box<dyn DistanceMatrix>> =
-            if let Some(matrix_path) = matches.get_one::<String>("matrix") {
+            if let Some(matrix_path) = args.get_one::<String>("matrix") {
                 Some(Box::new(NamedMatrix::from_relaxed_phylip(matrix_path)?))
-            } else if let Some(tree_path) = matches.get_one::<String>("tree") {
+            } else if let Some(tree_path) = args.get_one::<String>("tree") {
                 let trees = Tree::from_file(tree_path)?;
                 if trees.len() != 1 {
                     anyhow::bail!("Tree file must contain exactly one tree.");
@@ -116,7 +116,7 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
                 None
             };
 
-        let coords = if let Some(coords_path) = matches.get_one::<String>("coords") {
+        let coords = if let Some(coords_path) = args.get_one::<String>("coords") {
             Some(Coordinates::from_path(coords_path)?)
         } else {
             None
@@ -146,23 +146,23 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
     // Single Mode
     let p1 = load_partition(p1_path, format)?;
 
-    if let Some(p2_path) = matches.get_one::<String>("other") {
+    if let Some(p2_path) = args.get_one::<String>("other") {
         let mut p2 = load_partition(p2_path, format)?;
         if remove_singletons_flag {
             remove_singletons(&mut p2);
         }
         run_single(&p1, EvalTarget::External(&p2), &mut writer)?;
-    } else if let Some(matrix_path) = matches.get_one::<String>("matrix") {
+    } else if let Some(matrix_path) = args.get_one::<String>("matrix") {
         let matrix = NamedMatrix::from_relaxed_phylip(matrix_path)?;
         run_single(&p1, EvalTarget::Matrix(&matrix), &mut writer)?;
-    } else if let Some(tree_path) = matches.get_one::<String>("tree") {
+    } else if let Some(tree_path) = args.get_one::<String>("tree") {
         let trees = Tree::from_file(tree_path)?;
         if trees.len() != 1 {
             anyhow::bail!("Tree file must contain exactly one tree.");
         }
         let dist = TreeDistance::new(trees.into_iter().next().unwrap());
         run_single(&p1, EvalTarget::Matrix(&dist), &mut writer)?;
-    } else if let Some(coords_path) = matches.get_one::<String>("coords") {
+    } else if let Some(coords_path) = args.get_one::<String>("coords") {
         let coords = Coordinates::from_path(coords_path)?;
         run_single(&p1, EvalTarget::Coords(&coords), &mut writer)?;
     } else {

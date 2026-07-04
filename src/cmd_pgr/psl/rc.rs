@@ -1,4 +1,4 @@
-use clap::Command;
+use clap::{ArgMatches, Command};
 use intspan::{reader, writer};
 use std::io::BufRead;
 
@@ -19,7 +19,7 @@ Examples:
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 /// Execute the rc command.
-pub fn execute(args: &clap::ArgMatches) -> anyhow::Result<()> {
+pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let input = crate::cmd_pgr::args::get_infile(args);
     let output = crate::cmd_pgr::args::get_outfile(args);
 

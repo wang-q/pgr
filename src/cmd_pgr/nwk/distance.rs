@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::anyhow;
 use clap::{ArgMatches, Command};
 use pgr::libs::phylo::tree::{distance, Tree};
 use std::collections::BTreeMap;
@@ -54,7 +54,7 @@ Examples:
 }
 
 /// Execute the distance command.
-pub fn execute(args: &ArgMatches) -> Result<()> {
+pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut writer: Box<dyn Write> = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
 
     let infile = args.get_one::<String>("infile").unwrap();

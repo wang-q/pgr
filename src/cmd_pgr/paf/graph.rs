@@ -57,10 +57,7 @@ Examples:
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let infile = args.get_one::<String>("infile").unwrap();
     let tsv_path = args.get_one::<String>("fasta_tsv");
-    let min_var_len = args
-        .get_one::<i32>("min_var_len")
-        .copied()
-        .unwrap_or(100);
+    let min_var_len = args.get_one::<i32>("min_var_len").copied().unwrap_or(100);
     let outfile = crate::cmd_pgr::args::get_outfile(args);
 
     // Load FASTA sequences via TSV + FastaStore (optional for topology-only mode).

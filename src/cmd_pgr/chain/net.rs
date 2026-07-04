@@ -1,4 +1,3 @@
-use anyhow::Result;
 use clap::{Arg, ArgMatches, Command};
 use pgr::libs::chain::net::{finalize_net, write_net, ChainNet};
 use pgr::libs::chain::ChainReader;
@@ -65,7 +64,7 @@ Examples:
         .arg(crate::cmd_pgr::args::incl_hap_arg())
 }
 /// Execute the net command.
-pub fn execute(args: &ArgMatches) -> Result<()> {
+pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let input_path = args.get_one::<String>("infile").unwrap();
     let target_sizes_path = args.get_one::<String>("t_sizes").unwrap();
     let query_sizes_path = args.get_one::<String>("q_sizes").unwrap();

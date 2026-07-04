@@ -1,4 +1,3 @@
-use anyhow::Result;
 use clap::{Arg, ArgMatches, Command};
 use pgr::libs::chain::BitMap;
 use std::collections::HashMap;
@@ -28,7 +27,7 @@ pub fn make_subcommand() -> Command {
         .arg(crate::cmd_pgr::args::incl_hap_arg())
 }
 /// Execute the pre-net command.
-pub fn execute(args: &ArgMatches) -> Result<()> {
+pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let input_path = args.get_one::<String>("infile").unwrap();
     let target_sizes_path = args.get_one::<String>("t_sizes").unwrap();
     let query_sizes_path = args.get_one::<String>("q_sizes").unwrap();
