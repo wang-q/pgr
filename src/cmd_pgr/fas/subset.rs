@@ -50,7 +50,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     for infile in args.get_many::<String>("infiles").unwrap() {
         let mut reader = pgr::reader(infile)?;
 
-        'BLOCK: while let Ok(block) = pgr::libs::fmt::fas::next_fas_block(&mut reader) {
+        'BLOCK: loop {
+            let block = match pgr::libs::fmt::fas::next_fas_block(&mut reader) {
+                Ok(b) => b,
+                Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => break,
+                Err(e) => return Err(e.into()),
+            };
             let block_names = block.names;
 
             if is_strict {

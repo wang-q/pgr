@@ -111,8 +111,11 @@ fn proc_block(block: &pgr::libs::fmt::fas::FasBlock, args: &ArgMatches) -> anyho
         aligned = seqs;
     } else {
         if is_quick {
-            aligned =
-                pgr::libs::alignment::align_seqs_quick(&seqs, engine, pad as i32, fill as i32)?;
+            let pad_i32 = i32::try_from(pad)
+                .map_err(|_| anyhow::anyhow!("--indel-pad {} exceeds i32 range", pad))?;
+            let fill_i32 = i32::try_from(fill)
+                .map_err(|_| anyhow::anyhow!("--indel-fill {} exceeds i32 range", fill))?;
+            aligned = pgr::libs::alignment::align_seqs_quick(&seqs, engine, pad_i32, fill_i32)?;
         } else {
             aligned = pgr::libs::alignment::align_seqs(&seqs, engine)?;
         }

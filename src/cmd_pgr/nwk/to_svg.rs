@@ -31,6 +31,7 @@ Examples:
                 .long("width")
                 .num_args(1)
                 .default_value("800")
+                .value_parser(clap::value_parser!(f64))
                 .help("SVG width in pixels"),
         )
         .arg(
@@ -39,6 +40,7 @@ Examples:
                 .long("vskip")
                 .num_args(1)
                 .default_value("20")
+                .value_parser(clap::value_parser!(f64))
                 .help("Vertical spacing between leaf nodes in pixels"),
         )
         .arg(crate::cmd_pgr::args::outfile_arg())
@@ -48,16 +50,8 @@ Examples:
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
 
-    let width: f64 = args
-        .get_one::<String>("width")
-        .unwrap()
-        .parse()
-        .unwrap_or(800.0);
-    let vskip: f64 = args
-        .get_one::<String>("vskip")
-        .unwrap()
-        .parse()
-        .unwrap_or(20.0);
+    let width: f64 = *args.get_one::<f64>("width").unwrap();
+    let vskip: f64 = *args.get_one::<f64>("vskip").unwrap();
 
     let infile = args.get_one::<String>("infile").unwrap();
 

@@ -51,14 +51,26 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
         // Prepare coordinates
         // libs/axt.rs returns 0-based half-open coordinates
-        let mut q_start = axt.q_start as i32;
-        let mut q_end = axt.q_end as i32;
+        let mut q_start = i32::try_from(axt.q_start)
+            .map_err(|_| anyhow::anyhow!("q_start {} exceeds i32 range", axt.q_start))?;
+        let mut q_end = i32::try_from(axt.q_end)
+            .map_err(|_| anyhow::anyhow!("q_end {} exceeds i32 range", axt.q_end))?;
+        let q_size_i32 = i32::try_from(q_size)
+            .map_err(|_| anyhow::anyhow!("q_size {} exceeds i32 range", q_size))?;
+        let t_start_i32 = i32::try_from(axt.t_start)
+            .map_err(|_| anyhow::anyhow!("t_start {} exceeds i32 range", axt.t_start))?;
+        let t_end_i32 = i32::try_from(axt.t_end)
+            .map_err(|_| anyhow::anyhow!("t_end {} exceeds i32 range", axt.t_end))?;
+        let q_size_u32 = u32::try_from(q_size)
+            .map_err(|_| anyhow::anyhow!("q_size {} exceeds u32 range", q_size))?;
+        let t_size_u32 = u32::try_from(t_size)
+            .map_err(|_| anyhow::anyhow!("t_size {} exceeds u32 range", t_size))?;
 
         // axtToPsl.c logic: "if (axt->qStrand == '-') reverseIntRange(&qStart, &qEnd, qSize);"
         // This converts strand-relative coordinates (as in AXT) to positive strand coordinates
         // which pslFromAlign expects (so it can reverse them back internally).
         if axt.q_strand == '-' {
-            pgr::reverse_range(&mut q_start, &mut q_end, q_size as i32);
+            pgr::reverse_range(&mut q_start, &mut q_end, q_size_i32);
         }
 
         // Construct strand string for PSL (e.g. "-")
@@ -69,14 +81,14 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
         if let Some(psl) = Psl::from_align(
             &axt.q_name,
-            q_size as u32,
+            q_size_u32,
             q_start,
             q_end,
             &axt.q_sym,
             &axt.t_name,
-            t_size as u32,
-            axt.t_start as i32,
-            axt.t_end as i32,
+            t_size_u32,
+            t_start_i32,
+            t_end_i32,
             &axt.t_sym,
             &strand,
         ) {

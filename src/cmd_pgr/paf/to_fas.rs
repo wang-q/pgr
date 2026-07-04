@@ -13,7 +13,11 @@ fn output_fas_pairwise(
     for (_, results) in all_results {
         for result in results {
             let blk = build_pairwise_block(idx, result, fasta_store)?;
-            println!(">{0}(+):{1}-{2}", blk.tname, blk.t_start + 1, blk.t_end);
+            let t_start_display = blk
+                .t_start
+                .checked_add(1)
+                .ok_or_else(|| anyhow::anyhow!("t_start {} overflow on display", blk.t_start))?;
+            println!(">{0}(+):{1}-{2}", blk.tname, t_start_display, blk.t_end);
             println!("{}", blk.t_aln);
             println!(
                 ">{0}({1}):{2}-{3}",
@@ -44,7 +48,8 @@ fn output_fas_msa(
         let msa = run_poa_msa(&entries, params.clone());
 
         for (e, aln) in entries.iter().zip(msa.iter()) {
-            let size = aln.chars().filter(|c| *c != '-').count() as i32;
+            let size = i32::try_from(aln.chars().filter(|c| *c != '-').count())
+                .map_err(|_| anyhow::anyhow!("alignment length exceeds i32 range"))?;
             println!(
                 ">{0}({3}):{1}-{2}",
                 e.name,

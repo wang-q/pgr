@@ -117,8 +117,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     if (0..=9).contains(&compress_level) {
         use noodles_bgzf::io::writer::CompressionLevel;
-        builder =
-            builder.set_compression_level(CompressionLevel::new(compress_level as u8).unwrap());
+        let level = CompressionLevel::new(compress_level as u8)
+            .ok_or_else(|| anyhow::anyhow!("invalid compression level: {}", compress_level))?;
+        builder = builder.set_compression_level(level);
     }
 
     let mut writer = builder.build_from_writer(inner_writer);

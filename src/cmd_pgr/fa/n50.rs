@@ -153,10 +153,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         if !is_noheader {
             row.push("A".to_string());
         }
-        row.push(format!(
-            "{:.2}",
+        let avg = if stats.record_cnt == 0 {
+            0.0
+        } else {
             stats.total_size as f64 / stats.record_cnt as f64
-        ));
+        };
+        row.push(format!("{:.2}", avg));
         outputs.push(row);
     }
 

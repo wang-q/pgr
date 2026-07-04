@@ -62,7 +62,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                     continue;
                 }
                 let mut reader = pgr::reader(infile)?;
-                while let Ok(block) = next_fas_block(&mut reader) {
+                loop {
+                    let block = match next_fas_block(&mut reader) {
+                        Ok(b) => b,
+                        Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => break,
+                        Err(e) => return Err(e.into()),
+                    };
                     let chr = block
                         .entries
                         .first()
@@ -79,7 +84,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     for infile in args.get_many::<String>("infiles").unwrap() {
         let mut reader = pgr::reader(infile)?;
 
-        while let Ok(block) = next_fas_block(&mut reader) {
+        loop {
+            let block = match next_fas_block(&mut reader) {
+                Ok(b) => b,
+                Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => break,
+                Err(e) => return Err(e.into()),
+            };
             if !header_written {
                 let contigs_ref = if sizes.is_empty() { None } else { Some(&sizes) };
                 write_vcf_header(&mut writer, contigs_ref, &block.names)?;
@@ -109,7 +119,17 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 let chr = trange.chr();
                 let chr_pos = align_to_chr(&t_ints_seq, s.pos, trange.start, trange.strand())?;
 
-                let pos_idx = (s.pos - 1) as usize;
+                let pos_idx = usize::try_from(s.pos)
+                    .ok()
+                    .and_then(|p| p.checked_sub(1))
+                    .ok_or_else(|| anyhow!("invalid substitution pos: {}", s.pos))?;
+                if pos_idx >= seqs[0].len() {
+                    anyhow::bail!(
+                        "substitution pos {} out of range (seq len {})",
+                        s.pos,
+                        seqs[0].len()
+                    );
+                }
                 let ref_base = char::from(seqs[0][pos_idx]).to_ascii_uppercase();
 
                 let alt_bases = vcf_alt_bases(&s);
@@ -117,7 +137,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 let sample_bases: Vec<u8> = seqs
                     .iter()
                     .take(seq_count)
-                    .map(|seq| seq[pos_idx])
+                    .map(|seq| seq.get(pos_idx).copied().unwrap_or(b'-'))
                     .collect();
 
                 write_snp_row(

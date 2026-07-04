@@ -48,7 +48,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     for infile in args.get_many::<String>("infiles").unwrap() {
         let mut reader = pgr::reader(infile)?;
 
-        while let Ok(block) = pgr::libs::fmt::fas::next_fas_block(&mut reader) {
+        loop {
+            let block = match pgr::libs::fmt::fas::next_fas_block(&mut reader) {
+                Ok(b) => b,
+                Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => break,
+                Err(e) => return Err(e.into()),
+            };
             // the first name of the first block becomes the default reference
             if name.is_empty() {
                 name = block.names.first().cloned().unwrap_or_default();

@@ -98,9 +98,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
         // ids supplied by --node
         for (i, name) in names.iter().enumerate() {
-            if id_of.contains_key(name) {
-                let id = id_of.get(name).unwrap();
-                let rename = renames.get(i).unwrap();
+            if let Some(id) = id_of.get(name) {
+                let rename = renames
+                    .get(i)
+                    .ok_or_else(|| anyhow::anyhow!("rename entry missing at index {}", i))?;
                 rename_of.insert(*id, rename.to_string());
             }
         }
@@ -113,13 +114,23 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             }
 
             if parts.iter().all(|e| id_of.contains_key(e)) {
-                let id1 = id_of.get(parts.first().unwrap()).unwrap();
-                let id2 = id_of.get(parts.last().unwrap()).unwrap();
+                let first = parts
+                    .first()
+                    .ok_or_else(|| anyhow::anyhow!("empty parts"))?;
+                let last = parts.last().ok_or_else(|| anyhow::anyhow!("empty parts"))?;
+                let id1 = id_of
+                    .get(first)
+                    .ok_or_else(|| anyhow::anyhow!("name not found: {}", first))?;
+                let id2 = id_of
+                    .get(last)
+                    .ok_or_else(|| anyhow::anyhow!("name not found: {}", last))?;
 
                 let x = tree
                     .get_common_ancestor(id1, id2)
                     .map_err(anyhow::Error::msg)?;
-                let rename = renames.get(len_names + i).unwrap();
+                let rename = renames.get(len_names + i).ok_or_else(|| {
+                    anyhow::anyhow!("rename entry missing at index {}", len_names + i)
+                })?;
                 rename_of.insert(x, rename.to_string());
             }
         }

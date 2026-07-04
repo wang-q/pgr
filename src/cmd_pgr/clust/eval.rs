@@ -109,9 +109,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 if trees.len() != 1 {
                     anyhow::bail!("Tree file must contain exactly one tree.");
                 }
-                Some(Box::new(TreeDistance::new(
-                    trees.into_iter().next().unwrap(),
-                )))
+                let tree = trees
+                    .into_iter()
+                    .next()
+                    .ok_or_else(|| anyhow::anyhow!("expected exactly one tree"))?;
+                Some(Box::new(TreeDistance::new(tree)))
             } else {
                 None
             };
@@ -160,7 +162,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         if trees.len() != 1 {
             anyhow::bail!("Tree file must contain exactly one tree.");
         }
-        let dist = TreeDistance::new(trees.into_iter().next().unwrap());
+        let tree = trees
+            .into_iter()
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("expected exactly one tree"))?;
+        let dist = TreeDistance::new(tree);
         run_single(&p1, EvalTarget::Matrix(&dist), &mut writer)?;
     } else if let Some(coords_path) = args.get_one::<String>("coords") {
         let coords = Coordinates::from_path(coords_path)?;

@@ -55,7 +55,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             let axt = axt_res?;
 
             // Target Entry
-            let t_start = (axt.t_start + 1) as i32;
+            let t_start = axt
+                .t_start
+                .checked_add(1)
+                .and_then(|v| i32::try_from(v).ok())
+                .ok_or_else(|| anyhow::anyhow!("t_start {} overflow", axt.t_start))?;
             let t_end = axt.t_end as i32;
             let mut t_range = Range::from(&axt.t_name, t_start, t_end);
             *t_range.name_mut() = tname.to_string();
