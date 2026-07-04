@@ -283,6 +283,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 if !val.is_finite() || val < 0.0 || val > usize::MAX as f64 {
                     anyhow::bail!("scan value out of range: {}", val);
                 }
+                if val.fract() != 0.0 {
+                    anyhow::bail!("scan value must be integer for dynamic-tree: {}", val);
+                }
                 CutDispatch::DynamicTree(DynamicTreeOptions {
                     min_module_size: val as usize,
                     deep_split: args.get_flag("deep_split"),

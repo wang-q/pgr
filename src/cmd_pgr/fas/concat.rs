@@ -61,6 +61,16 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     if is_phylip {
         let count = needed.len();
         let length = seq_of.values().next().map(|s| s.len()).unwrap_or(0);
+        for (k, v) in &seq_of {
+            if v.len() != length {
+                anyhow::bail!(
+                    "PHYLIP requires equal-length sequences, but {} has length {} (expected {})",
+                    k,
+                    v.len(),
+                    length
+                );
+            }
+        }
         writer.write_all(format!("{} {}\n", count, length).as_ref())?;
         for (k, v) in &seq_of {
             writer.write_all(format!("{} {}\n", k, v).as_ref())?;

@@ -84,6 +84,13 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let infile = args.get_one::<String>("infile").unwrap();
     let trees = Tree::from_file(infile)?;
 
+    if trees.len() > 1 {
+        log::warn!(
+            "file contains {} trees, only the first will be processed",
+            trees.len()
+        );
+    }
+
     // Process only the first tree for now, or loop if we want to support multi-tree
     // Since arguments are node names, it implies a single tree context or consistent naming.
     // We'll process the first tree to match previous behavior.
@@ -100,6 +107,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
         // All IDs matched
         let mut ids = BTreeSet::new();
+        let user_specified = args.get_many::<String>("node").is_some();
         if let Some(nodes) = args.get_many::<String>("node") {
             for name in nodes {
                 if let Some(&id) = id_of.get(name) {
@@ -112,6 +120,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
         if !ids.is_empty() {
             pgr::libs::phylo::tree::ops::reroot_at_lca(&mut tree, &ids, lax, process_support)?;
+        } else if user_specified {
+            anyhow::bail!("none of the specified --node names were found in the tree");
         } else {
             pgr::libs::phylo::tree::ops::reroot_at_longest_branch(&mut tree, process_support)?;
         }

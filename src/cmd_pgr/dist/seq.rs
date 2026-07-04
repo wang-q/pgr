@@ -131,9 +131,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         })
     })?;
 
-    // Distance -> similarity converter for mash distance.
-    let to_sim = |mash: f64| if mash > 1.0 { 0.0 } else { 1.0 - mash };
-
     pgr::libs::par::par_run_pairs(&entries1, &entries2, &sender, |e1, e2| {
         let d = pgr::libs::hash::set_distances(&e1.set, &e2.set, opt_kmer);
 
@@ -141,7 +138,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             return None;
         }
 
-        let dist = if is_sim { to_sim(d.mash) } else { d.mash };
+        let dist = if is_sim {
+            pgr::libs::hash::mash_to_sim(d.mash)
+        } else {
+            d.mash
+        };
 
         let line = if is_merge {
             format!(

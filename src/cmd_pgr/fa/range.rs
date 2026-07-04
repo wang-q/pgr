@@ -108,7 +108,3 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     Ok(())
 }
-
-// fn print_type_of<T: ?Sized>(_: &T) {
-//     println!("{}", std::any::type_name::<T>())
-// }

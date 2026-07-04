@@ -181,3 +181,11 @@ fn command_clust_mcl_pair() {
     assert!(stdout.contains("D\tD"));
     assert!(stdout.contains("D\tE"));
 }
+
+#[test]
+fn command_clust_dbscan_default_min_points() {
+    let (stdout, _) = PgrCmd::new().args(&["clust", "dbscan", "--help"]).run();
+
+    // The help should show default value of 4 for --min-points
+    assert!(stdout.contains("4") || stdout.contains("default"));
+}

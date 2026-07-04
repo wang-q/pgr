@@ -359,3 +359,20 @@ fn command_reroot_default() {
     }
     assert!(stdout.contains("C:1.5"));
 }
+
+#[test]
+fn command_nwk_reroot_node_not_found() {
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "nwk",
+            "reroot",
+            "tests/newick/abc.nwk",
+            "-n",
+            "NonExistentNode1",
+            "-n",
+            "NonExistentNode2",
+        ])
+        .run_fail();
+
+    assert!(stderr.contains("none of the specified --node names were found"));
+}

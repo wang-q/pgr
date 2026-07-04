@@ -61,6 +61,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // Load FASTA sequences via TSV + FastaStore (optional for topology-only mode).
     let seqs: HashMap<String, Vec<u8>> = if let Some(tsv) = tsv_path {
         let seq_to_file = load_fasta_tsv(tsv)?;
+        if seq_to_file.is_empty() {
+            anyhow::bail!("--fasta-tsv loaded 0 entries: {}", tsv);
+        }
         let mut store = FastaStore::new(&seq_to_file)?;
         let mut map = HashMap::new();
         for name in seq_to_file.keys() {

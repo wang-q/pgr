@@ -107,9 +107,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut reader = gff::io::Reader::new(reader);
     let mut writer = pgr::writer(outfile)?;
 
+    let opt_tag_lower = opt_tag.to_ascii_lowercase();
     for result in reader.record_bufs() {
         let record = result?;
-        if record.ty().to_ascii_lowercase() != opt_tag.to_ascii_lowercase().as_bytes() {
+        if record.ty().to_ascii_lowercase() != opt_tag_lower.as_bytes() {
             continue;
         }
 

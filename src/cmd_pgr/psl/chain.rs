@@ -99,6 +99,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let gap_open = args.get_one::<i32>("align_gap_open");
     let gap_extend = args.get_one::<i32>("align_gap_extend");
 
+    if gap_open.is_some() != gap_extend.is_some() {
+        anyhow::bail!("--align-gap-open and --align-gap-extend must be provided together");
+    }
+
     let gap_calc = if let (Some(&open), Some(&extend)) = (gap_open, gap_extend) {
         GapCalc::affine(open, extend)
     } else {

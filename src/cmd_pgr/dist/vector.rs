@@ -77,10 +77,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         opt_parallel,
     )?;
 
-    let (entries1, entries2) =
-        pgr::libs::par::load_two_sets(&infiles, false, |paths| {
-            pgr::libs::clust::feature::load_feature_vectors(&paths[0], is_bin)
-        })?;
+    let (entries1, entries2) = pgr::libs::par::load_two_sets(&infiles, false, |paths| {
+        pgr::libs::clust::feature::load_feature_vectors(&paths[0], is_bin)
+    })?;
 
     let errors: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
     let errors_clone = errors.clone();

@@ -91,7 +91,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     pgr::libs::par::par_run_pairs(&entries1, &entries2, &sender, |e1, e2| {
         let d = pgr::libs::hv::calc_distances(&e1.set, &e2.set, opt_kmer);
 
-        let dist = if is_sim { 1.0 - d.mash } else { d.mash };
+        let dist = if is_sim {
+            pgr::libs::hash::mash_to_sim(d.mash as f64) as f32
+        } else {
+            d.mash
+        };
 
         let line = format!(
             "{}\t{}\t{}\t{}\t{}\t{}\t{:.4}\t{:.4}\t{:.4}\n",

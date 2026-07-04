@@ -2,6 +2,12 @@ use std::fs;
 use std::path::PathBuf;
 use tempfile::TempDir;
 
+#[macro_use]
+#[path = "common/mod.rs"]
+mod common;
+
+use common::PgrCmd;
+
 fn get_path(subcommand: &str, dir: &str, filename: &str) -> PathBuf {
     let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     path.push("tests/chaining");
@@ -172,4 +178,21 @@ fn test_chaining_psl_new_style_lastz() -> anyhow::Result<()> {
     assert_eq!(output_norm, expected_norm);
 
     Ok(())
+}
+
+#[test]
+fn command_psl_chain_single_gap_param_fails() {
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "psl",
+            "chain",
+            "tests/chaining/psl/input/hg19.chrM.2bit",
+            "tests/chaining/psl/input/susScr3.chrM.2bit",
+            "tests/chaining/psl/input/newStyleLastz.psl",
+            "--align-gap-open",
+            "400",
+        ])
+        .run_fail();
+
+    assert!(stderr.contains("must be provided together"));
 }

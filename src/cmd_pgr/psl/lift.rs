@@ -1,6 +1,5 @@
-use clap::{ArgMatches, Command};
+use clap::{Arg, ArgAction, ArgMatches, Command};
 use std::io::{BufRead, Write};
-use std::str::FromStr;
 
 use pgr::libs::fmt::psl::Psl;
 
@@ -16,6 +15,8 @@ Notes:
 * The query or target name must be in the format `chr:start-end`.
 * The coordinates in the name are 1-based, inclusive.
 * Requires a chromosome sizes file for correct negative strand lifting.
+* Lines that fail to parse as PSL records are skipped with a warning.
+  Use --strict to turn parse failures into hard errors.
 
 Examples:
 1. Lift query coordinates:
@@ -26,6 +27,9 @@ Examples:
 
 3. Lift both:
    pgr psl lift input.psl --q-sizes q.sizes --t-sizes t.sizes > output.psl
+
+4. Strict mode (fail on parse errors):
+   pgr psl lift input.psl --q-sizes q.sizes --strict -o output.psl
 "###,
         )
         .arg(crate::cmd_pgr::args::infile_arg_required_with_help(
@@ -34,6 +38,12 @@ Examples:
         .arg(crate::cmd_pgr::args::outfile_arg())
         .arg(crate::cmd_pgr::args::q_sizes_arg())
         .arg(crate::cmd_pgr::args::t_sizes_arg())
+        .arg(
+            Arg::new("strict")
+                .long("strict")
+                .action(ArgAction::SetTrue)
+                .help("Fail on parse errors instead of skipping malformed lines"),
+        )
 }
 
 /// Execute the lift command.
@@ -41,6 +51,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
     let infile = args.get_one::<String>("infile").unwrap();
     let reader = pgr::reader(infile)?;
+    let strict = args.get_flag("strict");
 
     let q_sizes_file = args.get_one::<String>("q_sizes").map(|s| s.as_str());
     let t_sizes_file = args.get_one::<String>("t_sizes").map(|s| s.as_str());
@@ -54,7 +65,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     for line in reader.lines() {
         let line = line?;
-        if (line.trim().is_empty() || line.starts_with('#')) && Psl::from_str(&line).is_err() {
+        // Preserve comment/blank lines as-is.
+        if line.trim().is_empty() || line.starts_with('#') {
             writer.write_fmt(format_args!("{}\n", line))?;
             continue;
         }
@@ -62,10 +74,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         let mut psl: Psl = match line.parse() {
             Ok(p) => p,
             Err(e) => {
-                if !line.starts_with('#') && !line.trim().is_empty() {
-                    log::warn!("failed to parse psl line, passing through: {}: {}", line, e);
+                if strict {
+                    anyhow::bail!("failed to parse psl line: {}: {}", line, e);
                 }
-                writer.write_fmt(format_args!("{}\n", line))?;
+                log::warn!("skipping unparseable psl line: {}: {}", line, e);
                 continue;
             }
         };

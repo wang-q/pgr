@@ -38,18 +38,6 @@ Examples:
                 .help("Create a separate maf file for each target sequence. Output is a dir.")
                 .action(ArgAction::SetTrue),
         )
-        .arg(
-            Arg::new("score")
-                .long("score")
-                .help("Recalculate score (Not implemented, uses AXT score)")
-                .action(ArgAction::SetTrue),
-        )
-        .arg(
-            Arg::new("score_zero")
-                .long("score-zero")
-                .help("Recalculate score if zero (Not implemented, uses AXT score)")
-                .action(ArgAction::SetTrue),
-        )
 }
 /// Execute the to-maf command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {

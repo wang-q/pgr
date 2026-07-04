@@ -16,51 +16,60 @@ pub fn make_subcommand() -> Command {
         .arg(
             Arg::new("min_gap")
                 .long("min-gap")
+                .num_args(1)
                 .value_parser(clap::value_parser!(u64))
                 .help("Restrict to those with gap size (tSize) >= minSize"),
         )
         .arg(
             Arg::new("min_ali")
                 .long("min-ali")
+                .num_args(1)
                 .value_parser(clap::value_parser!(u64))
                 .help("Restrict to those with at least given bases aligning"),
         )
         .arg(
             Arg::new("max_ali")
                 .long("max-ali")
+                .num_args(1)
                 .value_parser(clap::value_parser!(u64))
                 .help("Restrict to those with at most given bases aligning"),
         )
         .arg(
             Arg::new("min_size_t")
                 .long("min-size-t")
+                .num_args(1)
                 .value_parser(clap::value_parser!(u64))
                 .help("Restrict to those at least this big on target"),
         )
         .arg(
             Arg::new("min_size_q")
                 .long("min-size-q")
+                .num_args(1)
                 .value_parser(clap::value_parser!(u64))
                 .help("Restrict to those at least this big on query"),
         )
         .arg(
             Arg::new("target_names")
                 .long("target-names")
+                .num_args(1)
                 .help("Restrict target side sequence to those named (comma separated)"),
         )
         .arg(
             Arg::new("not_target_names")
                 .long("not-target-names")
+                .num_args(1)
                 .help("Restrict target side sequence to those not named (comma separated)"),
         )
         .arg(
             Arg::new("query_names")
                 .long("query-names")
+                .num_args(1)
                 .help("Restrict query side sequence to those named (comma separated)"),
         )
         .arg(
             Arg::new("not_query_names")
                 .long("not-query-names")
+                .num_args(1)
                 .help("Restrict query side sequence to those not named (comma separated)"),
         )
         .arg(crate::cmd_pgr::args::net_type_arg(
@@ -93,6 +102,13 @@ pub fn make_subcommand() -> Command {
 /// Execute the filter command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let input_path = args.get_one::<String>("infile").unwrap();
+
+    if args.get_flag("fill_only") && args.get_flag("gap_only") {
+        anyhow::bail!("--fill-only and --gap-only are mutually exclusive");
+    }
+    if args.get_flag("syn") && args.get_flag("nonsyn") {
+        anyhow::bail!("--syn and --nonsyn are mutually exclusive");
+    }
 
     let mut criteria = FilterCriteria::default();
 

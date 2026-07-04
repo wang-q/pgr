@@ -71,6 +71,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             }
 
             if has_outgroup {
+                if seqs.len() < 2 {
+                    anyhow::bail!(
+                        "block has only {} entries, cannot apply --outgroup",
+                        seqs.len()
+                    );
+                }
                 seqs.pop();
             }
 

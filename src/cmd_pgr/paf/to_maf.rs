@@ -1,4 +1,5 @@
 use clap::{ArgMatches, Command};
+use std::io::Write;
 
 use pgr::libs::paf::index::{PafIndex, QueryResult};
 use pgr::libs::paf::msa_build::{build_msa_entries, build_pairwise_block, run_poa_msa};
@@ -12,8 +13,9 @@ fn output_maf(
     idx: &PafIndex,
     all_results: &[((String, i32, i32), Vec<QueryResult>)],
     fasta_store: &mut pgr::libs::paf::fasta::FastaStore,
+    writer: &mut dyn Write,
 ) -> anyhow::Result<()> {
-    println!("##maf version=1");
+    writeln!(writer, "##maf version=1")?;
     for (_, results) in all_results {
         for result in results {
             let blk = build_pairwise_block(idx, result, fasta_store)?;
@@ -22,16 +24,18 @@ fn output_maf(
             let q_size = blk.q_aln.chars().filter(|c| *c != '-').count();
             let t_size = blk.t_aln.chars().filter(|c| *c != '-').count();
 
-            println!("a");
-            println!(
+            writeln!(writer, "a")?;
+            writeln!(
+                writer,
                 "s\t{0}\t{1}\t{2}\t+\t{3}\t{4}",
                 blk.tname, blk.t_start, t_size, blk.t_src_size, blk.t_aln
-            );
-            println!(
+            )?;
+            writeln!(
+                writer,
                 "s\t{0}\t{1}\t{2}\t{3}\t{4}\t{5}",
                 blk.qname, blk.q_start_maf, q_size, blk.q_strand, blk.q_src_size, blk.q_aln
-            );
-            println!();
+            )?;
+            writeln!(writer)?;
         }
     }
     Ok(())
@@ -46,8 +50,9 @@ fn output_maf_msa(
     all_results: &[((String, i32, i32), Vec<QueryResult>)],
     fasta_store: &mut pgr::libs::paf::fasta::FastaStore,
     params: AlignmentParams,
+    writer: &mut dyn Write,
 ) -> anyhow::Result<()> {
-    println!("##maf version=1");
+    writeln!(writer, "##maf version=1")?;
     for ((tname_region, _, _), results) in all_results {
         if results.is_empty() {
             continue;
@@ -57,15 +62,16 @@ fn output_maf_msa(
         let msa = run_poa_msa(&entries, params.clone());
 
         // Emit the MAF block.
-        println!("a");
+        writeln!(writer, "a")?;
         for (e, aln) in entries.iter().zip(msa.iter()) {
             let size = aln.chars().filter(|c| *c != '-').count();
-            println!(
+            writeln!(
+                writer,
                 "s\t{}\t{}\t{}\t{}\t{}\t{}",
                 e.name, e.start, size, e.strand, e.src_size, aln
-            );
+            )?;
         }
-        println!();
+        writeln!(writer)?;
     }
     Ok(())
 }
@@ -77,6 +83,7 @@ pub fn make_subcommand() -> Command {
         )),
         false,
     )
+    .arg(crate::cmd_pgr::args::outfile_arg())
     .about("Queries PAF index and output pairwise or multi-way MAF")
     .after_help(
         r###"
@@ -124,11 +131,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let (idx, all_results) = pgr::libs::paf::query::run_query(&opts)?;
     let mut fasta_store =
         pgr::libs::paf::fasta::prepare_store(args.get_one::<String>("fasta_tsv").unwrap(), &idx)?;
+    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
     if args.get_flag("msa") {
         let params = crate::cmd_pgr::args::get_poa_params(args);
-        output_maf_msa(&idx, &all_results, &mut fasta_store, params)?;
+        output_maf_msa(&idx, &all_results, &mut fasta_store, params, &mut writer)?;
     } else {
-        output_maf(&idx, &all_results, &mut fasta_store)?;
+        output_maf(&idx, &all_results, &mut fasta_store, &mut writer)?;
     }
     Ok(())
 }

@@ -124,6 +124,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         };
         let is_even = args.get_flag("even");
         let opt_max_part = *args.get_one::<usize>("max_part").unwrap();
+        anyhow::ensure!(opt_max_part > 0, "--max-part must be positive");
 
         let mut chunker =
             pgr::libs::fasta::chunk::SizeChunker::new(opt_count, is_even, opt_max_part);
@@ -165,6 +166,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 chunker.advance(seq.len());
             } // record
         } // file
+    }
+
+    // Explicitly flush all file handles to catch errors on close (e.g. disk full)
+    for fh in fh_of.values_mut() {
+        fh.flush()?;
     }
 
     Ok(())

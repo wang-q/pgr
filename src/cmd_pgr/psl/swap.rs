@@ -1,5 +1,4 @@
 use clap::{Arg, ArgMatches, Command};
-use intspan::{reader, writer};
 use std::io::BufRead;
 
 use pgr::libs::fmt::psl::Psl;
@@ -32,8 +31,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let output = crate::cmd_pgr::args::get_outfile(args);
     let no_rc = args.get_flag("no_rc");
 
-    let reader = reader(input);
-    let mut writer = writer(output);
+    let reader = pgr::reader(input)?;
+    let mut writer = pgr::writer(output)?;
 
     for line in reader.lines() {
         let line = line?;

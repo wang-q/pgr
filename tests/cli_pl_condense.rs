@@ -20,9 +20,9 @@ fn command_pl_condense_basic() {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    // Check that condensed labels are present (format: term___count)
+    // Check that condensed labels are present (format: term||count)
     assert!(
-        stdout.contains("___"),
+        stdout.contains("||"),
         "No condensed labels found in output"
     );
 
@@ -53,7 +53,7 @@ fn command_pl_condense_monophyly_check() {
     let content = fs::read_to_string(&output_path).unwrap();
 
     // Some groups should be condensed (monophyletic)
-    assert!(content.contains("___"), "No condensed labels found");
+    assert!(content.contains("||"), "No condensed labels found");
 
     // The output should be a valid Newick tree
     assert!(content.starts_with('(') || content.starts_with("Sa_cer"));
@@ -75,7 +75,7 @@ fn command_pl_condense_with_rank() {
     assert!(output.status.success());
 
     // Column 3 is genus, so we should see genus-level condensation
-    assert!(stdout.contains("___"), "No condensed labels found");
+    assert!(stdout.contains("||"), "No condensed labels found");
 }
 
 #[test]
@@ -141,8 +141,8 @@ fn command_pl_condense_with_map() {
             line
         );
         assert!(
-            parts[1].contains("___"),
-            "condensed label should contain ___: {}",
+            parts[1].contains("||"),
+            "condensed label should contain ||: {}",
             parts[1]
         );
     }
@@ -168,7 +168,7 @@ fn command_pl_condense_genus_level() {
     assert!(output.status.success());
 
     // Genus level condensation should have genus names
-    assert!(stdout.contains("___"));
+    assert!(stdout.contains("||"));
 }
 
 #[test]
@@ -188,7 +188,7 @@ fn command_pl_condense_family_level() {
     assert!(output.status.success());
 
     // Family level should condense even more
-    assert!(stdout.contains("___"));
+    assert!(stdout.contains("||"));
 }
 
 #[test]

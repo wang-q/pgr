@@ -134,6 +134,16 @@ pub fn mash_distance(jaccard: f64, kmer: usize) -> f64 {
     }
 }
 
+/// Convert a Mash distance to a similarity in [0, 1].
+/// Clamps values > 1.0 (possible from numerical error) to similarity 0.0.
+pub fn mash_to_sim(mash: f64) -> f64 {
+    if mash > 1.0 {
+        0.0
+    } else {
+        1.0 - mash
+    }
+}
+
 /// Distance metrics between two minimizer sets.
 pub struct SetDistances {
     /// Cardinality of the first set.

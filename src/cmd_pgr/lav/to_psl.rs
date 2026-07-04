@@ -32,11 +32,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let mut lav_reader = LavReader::new(reader);
 
-    let mut t_size = 0;
-    let mut q_size = 0;
-    let mut t_name = String::new();
-    let mut q_name = String::new();
-    let mut strand = String::from("+");
+    let mut t_size: Option<u32> = None;
+    let mut q_size: Option<u32> = None;
+    let mut t_name: Option<String> = None;
+    let mut q_name: Option<String> = None;
+    let mut strand: Option<String> = None;
 
     while let Some(stanza) = lav_reader.next_stanza()? {
         match stanza {
@@ -44,29 +44,47 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 t_size: t,
                 q_size: q,
             } => {
-                t_size = u32::try_from(t).map_err(|_| anyhow::anyhow!("invalid t_size: {}", t))?;
-                q_size = u32::try_from(q).map_err(|_| anyhow::anyhow!("invalid q_size: {}", q))?;
+                t_size =
+                    Some(u32::try_from(t).map_err(|_| anyhow::anyhow!("invalid t_size: {}", t))?);
+                q_size =
+                    Some(u32::try_from(q).map_err(|_| anyhow::anyhow!("invalid q_size: {}", q))?);
             }
             LavStanza::Header {
                 t_name: t,
                 q_name: q,
                 is_rc,
             } => {
-                t_name = t;
-                q_name = q;
-                strand = if is_rc {
+                t_name = Some(t);
+                q_name = Some(q);
+                strand = Some(if is_rc {
                     "-".to_string()
                 } else {
                     "+".to_string()
-                };
+                });
             }
             LavStanza::Alignment { blocks } => {
                 if blocks.is_empty() {
                     continue;
                 }
 
+                let t_size = t_size.ok_or_else(|| {
+                    anyhow::anyhow!("Alignment stanza encountered before Sizes stanza")
+                })?;
+                let q_size = q_size.ok_or_else(|| {
+                    anyhow::anyhow!("Alignment stanza encountered before Sizes stanza")
+                })?;
+                let t_name = t_name.as_deref().ok_or_else(|| {
+                    anyhow::anyhow!("Alignment stanza encountered before Header stanza")
+                })?;
+                let q_name = q_name.as_deref().ok_or_else(|| {
+                    anyhow::anyhow!("Alignment stanza encountered before Header stanza")
+                })?;
+                let strand = strand.as_deref().ok_or_else(|| {
+                    anyhow::anyhow!("Alignment stanza encountered before Header stanza")
+                })?;
+
                 let mut psl = pgr::libs::fmt::lav::blocks_to_psl(
-                    &blocks, t_size, q_size, &t_name, &q_name, &strand,
+                    &blocks, t_size, q_size, t_name, q_name, strand,
                 );
 
                 if let Some(ts) = target_strand {
@@ -78,7 +96,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
                 psl.write_to(&mut writer)?;
             }
-            _ => {}
+            other => {
+                log::warn!("skipping unknown lav stanza: {:?}", other);
+            }
         }
     }
 

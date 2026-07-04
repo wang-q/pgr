@@ -219,3 +219,24 @@ fn test_fa_window_chunk_stdout_fail() {
 
     assert!(stderr.contains("Cannot use --chunk-records with stdout output"));
 }
+
+#[test]
+fn test_fa_window_step_zero_fails() {
+    let temp_dir = TempDir::new().unwrap();
+    let input_file = temp_dir.path().join("input.fa");
+    std::fs::write(&input_file, ">seq1\nATGCATGCAT\n").unwrap();
+
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "fa",
+            "window",
+            input_file.to_str().unwrap(),
+            "--window",
+            "4",
+            "--step",
+            "0",
+        ])
+        .run_fail();
+
+    assert!(stderr.contains("--step must be positive"));
+}

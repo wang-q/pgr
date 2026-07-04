@@ -3,6 +3,7 @@
 mod common;
 
 use common::PgrCmd;
+use std::fs;
 use tempfile::TempDir;
 
 #[test]
@@ -492,4 +493,46 @@ fn command_filter() {
 
     assert_eq!(stdout.lines().count(), 9);
     assert!(stdout.contains("\nGCTAAAATATGAACG"), "no dash");
+}
+
+#[test]
+fn command_fas_concat_phylip_unequal_lengths() {
+    let temp = TempDir::new().unwrap();
+    // Create a fas file where species have different total lengths
+    let fas_file = temp.path().join("unequal.fas");
+    fs::write(
+        &fas_file,
+        ">speciesA.chr1:1-10\nACGTACGTAC\n>speciesB.chr1:1-8\nACGTACGT\n",
+    )
+    .unwrap();
+
+    let name_lst = temp.path().join("names.lst");
+    fs::write(&name_lst, "speciesA\nspeciesB\n").unwrap();
+
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "fas",
+            "concat",
+            "--required",
+            name_lst.to_str().unwrap(),
+            fas_file.to_str().unwrap(),
+            "--phylip",
+        ])
+        .run_fail();
+
+    assert!(stderr.contains("PHYLIP requires equal-length sequences"));
+}
+
+#[test]
+fn command_fas_stat_outgroup_single_entry() {
+    let temp = TempDir::new().unwrap();
+    // Single-entry block
+    let fas_file = temp.path().join("single.fas");
+    fs::write(&fas_file, ">chr1.speciesA 1-10\nACGTACGTAC\n").unwrap();
+
+    let (_, stderr) = PgrCmd::new()
+        .args(&["fas", "stat", fas_file.to_str().unwrap(), "--outgroup"])
+        .run_fail();
+
+    assert!(stderr.contains("cannot apply --outgroup"));
 }

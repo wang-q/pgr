@@ -107,9 +107,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             .split(',')
             .map(|x| x.trim().parse::<f64>())
             .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| anyhow::anyhow!("invalid --xmin_max value: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("invalid --xmin-max value: {}", e))?;
         if parts.len() != 2 {
-            anyhow::bail!("--xmin_max must be two comma-separated floats, got: {}", s);
+            anyhow::bail!("--xmin-max must be two comma-separated floats, got: {}", s);
         }
         Some((parts[0], parts[1]))
     } else {

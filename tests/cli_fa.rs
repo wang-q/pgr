@@ -604,3 +604,30 @@ fn command_six_frame() {
 
     assert_eq!(stdout.lines().count(), 2);
 }
+
+#[test]
+fn command_fa_one_not_found() {
+    let temp = TempDir::new().unwrap();
+    let input = temp.path().join("test.fa");
+    fs::write(&input, ">seq1\nACGT\n>seq2\nACGTACGT\n").unwrap();
+
+    let (_, stderr) = PgrCmd::new()
+        .args(&["fa", "one", input.to_str().unwrap(), "nonexistent"])
+        .run_fail();
+
+    assert!(stderr.contains("not found"));
+}
+
+#[test]
+fn command_fa_one_success() {
+    let temp = TempDir::new().unwrap();
+    let input = temp.path().join("test.fa");
+    fs::write(&input, ">seq1\nACGT\n>seq2\nACGTACGT\n").unwrap();
+
+    let (stdout, _) = PgrCmd::new()
+        .args(&["fa", "one", input.to_str().unwrap(), "seq2"])
+        .run();
+
+    assert!(stdout.contains(">seq2"));
+    assert!(stdout.contains("ACGTACGT"));
+}

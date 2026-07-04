@@ -32,20 +32,27 @@ Examples:
 
 /// Execute the one command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let mut fa_in = pgr::libs::fmt::fa::reader(args.get_one::<String>("infile").unwrap())?;
+    let infile = args.get_one::<String>("infile").unwrap();
+    let mut fa_in = pgr::libs::fmt::fa::reader(infile)?;
 
     let mut fa_out = pgr::libs::fmt::fa::writer(crate::cmd_pgr::args::get_outfile(args))?;
 
     let name = args.get_one::<String>("seq_name").unwrap();
 
+    let mut found = false;
     for result in fa_in.records() {
         let record = result?;
         let this_name = String::from_utf8(record.name().into())?;
 
         if this_name == *name {
             fa_out.write_record(&record)?;
+            found = true;
             break;
         }
+    }
+
+    if !found {
+        anyhow::bail!("sequence {} not found in {}", name, infile);
     }
 
     Ok(())

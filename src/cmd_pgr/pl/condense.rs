@@ -18,7 +18,7 @@ pub fn make_subcommand() -> Command {
 * Use `--rank` to specify which column(s) to use for grouping (1-based index, default: 2)
 * Can specify multiple `--rank` values to condense at multiple levels
 * Monophyletic subtrees with the same taxonomic term will be condensed
-* Condensed nodes are named as {term}___{count}
+* Condensed nodes are named as {term}||{count}
 
 Examples:
 1. Condense by species (2nd column):
@@ -114,6 +114,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     for line in pgr::read_lines(&abs_taxon)? {
         let parts: Vec<&str> = line.split('\t').collect();
         if parts.len() < 2 {
+            log::warn!("skipping line with <2 columns: {}", line);
             continue;
         }
         let node_name = parts[0].to_string();
@@ -124,7 +125,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
         for (i, rank_col) in ranks.iter().enumerate() {
             let rank_idx = rank_col.saturating_sub(1);
-            let term = parts.get(rank_idx).map(|s| pgr::libs::phylo::newick_safe(s));
+            let term = parts
+                .get(rank_idx)
+                .map(|s| pgr::libs::phylo::newick_safe(s));
             if let Some(t) = &term {
                 all_groups[i].push(t.clone());
             }
@@ -214,7 +217,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 continue;
             }
 
-            let new_label = format!("{}___{}", group, nodes_in_group.len());
+            let new_label = format!("{}||{}", group, nodes_in_group.len());
 
             // Record mapping: original node name -> condensed label
             for node in &nodes_in_group {

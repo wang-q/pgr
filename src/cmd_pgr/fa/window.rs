@@ -86,5 +86,14 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let chunk_size = args.get_one::<usize>("chunk_records").copied();
     let outfile = crate::cmd_pgr::args::get_outfile(args);
 
+    anyhow::ensure!(step > 0, "--step must be positive");
+    if step > len {
+        log::warn!(
+            "--step ({}) > --window ({}), some bases will be skipped",
+            step,
+            len
+        );
+    }
+
     pgr::libs::fmt::fa::run_window(infile, len, step, shuffle, seed, chunk_size, outfile)
 }

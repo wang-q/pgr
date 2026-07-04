@@ -41,7 +41,7 @@ If there are ties, the alphabetically first member is chosen.
             Arg::new("min_points")
                 .long("min-points")
                 .num_args(1)
-                .default_value("1")
+                .default_value("4")
                 .value_parser(value_parser!(usize))
                 .help("Minimum number of points to form a dense region in DBSCAN"),
         )

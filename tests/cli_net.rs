@@ -3,6 +3,12 @@ use std::fs;
 use std::io::Write;
 use tempfile::{NamedTempFile, TempDir};
 
+#[macro_use]
+#[path = "common/mod.rs"]
+mod common;
+
+use common::PgrCmd;
+
 fn create_2bit(
     dir: &TempDir,
     name: &str,
@@ -457,4 +463,19 @@ fn test_net_class_basic() -> Result<(), Box<dyn std::error::Error>> {
         .stdout(predicates::str::contains("gap").and(predicates::str::contains("700")));
 
     Ok(())
+}
+
+#[test]
+fn command_net_filter_mutually_exclusive() {
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "net",
+            "filter",
+            "tests/pgr/net/cat.net",
+            "--fill-only",
+            "--gap-only",
+        ])
+        .run_fail();
+
+    assert!(stderr.contains("mutually exclusive"));
 }

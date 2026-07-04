@@ -1,5 +1,11 @@
 use predicates::prelude::*;
 
+#[macro_use]
+#[path = "common/mod.rs"]
+mod common;
+
+use common::PgrCmd;
+
 #[test]
 fn command_ms_to_dna_help() -> anyhow::Result<()> {
     let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
@@ -79,4 +85,14 @@ positions:
     assert!(gc_count > 90, "Expected high GC content, got {}", gc_count);
 
     Ok(())
+}
+
+#[test]
+fn command_ms_to_dna_gc_out_of_range() {
+    let (_, stderr) = PgrCmd::new()
+        .args(&["ms", "to-dna", "--gc", "1.5"])
+        .stdin("ms 10 1 -t 5\n\n//\nsegsites: 2\npositions: 0.1 0.2\n01\n10\n")
+        .run_fail();
+
+    assert!(stderr.contains("--gc must be in [0, 1]"));
 }
