@@ -1,7 +1,7 @@
 use clap::{ArgMatches, Command};
 use std::io::Write;
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for filter.
 pub fn make_subcommand() -> Command {
     Command::new("filter")
         .about("Filters blocks and optionally formats sequences")
@@ -46,11 +46,8 @@ Examples:
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
-// command implementation
+/// Execute the filter command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    //----------------------------
-    // Args
-    //----------------------------
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
     let opt_name = &args
         .get_one::<String>("name")
@@ -69,9 +66,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let is_upper = args.get_flag("upper");
     let is_dash = args.get_flag("dash");
 
-    //----------------------------
-    // Ops
-    //----------------------------
     for infile in args.get_many::<String>("infiles").unwrap() {
         let mut reader = pgr::reader(infile)?;
 
@@ -110,9 +104,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                     is_upper,
                 );
 
-                //----------------------------
-                // Output
-                //----------------------------
                 let out_entry =
                     pgr::libs::fmt::fas::FasEntry::from(entry.range(), out_seq.as_bytes());
                 writer.write_all(out_entry.to_string().as_ref())?;

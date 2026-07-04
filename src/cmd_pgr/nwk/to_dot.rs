@@ -2,7 +2,7 @@ use clap::{ArgMatches, Command};
 use pgr::libs::phylo::tree::Tree;
 use std::io::Write;
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for to-dot.
 pub fn make_subcommand() -> Command {
     Command::new("to-dot")
         .about("Converts Newick trees to Graphviz DOT format")
@@ -25,7 +25,7 @@ Examples:
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
-// command implementation
+/// Execute the to-dot command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
 

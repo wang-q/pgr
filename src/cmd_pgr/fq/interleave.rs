@@ -1,6 +1,6 @@
 use clap::{value_parser, Arg, ArgAction, ArgMatches, Command};
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for interleave.
 pub fn make_subcommand() -> Command {
     Command::new("interleave")
         .visible_alias("il")
@@ -60,7 +60,7 @@ Examples:
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
-// command implementation
+/// Execute the interleave command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
 

@@ -2,7 +2,7 @@ use clap::{Arg, ArgAction, ArgMatches, Command};
 use std::collections::BTreeMap;
 use std::io::Write;
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for split.
 pub fn make_subcommand() -> Command {
     Command::new("split")
         .about("Splits block FA files into per-alignment or per-chromosome FA files")
@@ -52,11 +52,8 @@ Examples:
         .arg(crate::cmd_pgr::args::outdir_arg())
 }
 
-// command implementation
+/// Execute the split command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    //----------------------------
-    // Args
-    //----------------------------
     let outdir = args.get_one::<String>("outdir").unwrap();
     if outdir != "stdout" {
         std::fs::create_dir_all(outdir)?;
@@ -68,9 +65,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let mut file_of: BTreeMap<String, std::fs::File> = BTreeMap::new();
 
-    //----------------------------
-    // Ops
-    //----------------------------
     for infile in args.get_many::<String>("infiles").unwrap() {
         let mut reader = pgr::reader(infile)?;
 
@@ -91,9 +85,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 let range = entry.range().clone();
                 let seq = std::str::from_utf8(entry.seq())?;
 
-                //----------------------------
-                // Output
-                //----------------------------
                 if outdir == "stdout" {
                     let header = if is_simple {
                         range.name().to_string()

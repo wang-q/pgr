@@ -2,7 +2,7 @@ use clap::{ArgMatches, Command};
 use pgr::libs::clust::nj;
 use std::io::Write;
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for nj.
 pub fn make_subcommand() -> Command {
     Command::new("nj")
         .about("Constructs a phylogenetic tree using Neighbor-Joining")
@@ -28,7 +28,7 @@ Examples:
         ))
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
-
+/// Execute the nj command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let infile = args.get_one::<String>("infile").unwrap();
     let outfile = crate::cmd_pgr::args::get_outfile(args);

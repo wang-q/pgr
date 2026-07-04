@@ -3,7 +3,7 @@ use pgr::libs::chain::net::read_nets;
 use std::fs::{self, File};
 use std::io::BufWriter;
 use std::path::Path;
-
+/// Build the clap subcommand for split.
 pub fn make_subcommand() -> Command {
     Command::new("split")
         .about("Splits a net file into one file per chromosome")
@@ -12,7 +12,7 @@ pub fn make_subcommand() -> Command {
         ))
         .arg(crate::cmd_pgr::args::outdir_arg_required())
 }
-
+/// Execute the split command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let input_path = args.get_one::<String>("infile").unwrap();
     let output_dir = args.get_one::<String>("outdir").unwrap();

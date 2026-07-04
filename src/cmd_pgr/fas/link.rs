@@ -2,7 +2,7 @@ use clap::{Arg, ArgAction, ArgMatches, Command};
 use itertools::Itertools;
 use std::io::Write;
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for link.
 pub fn make_subcommand() -> Command {
     Command::new("link")
         .about("Outputs bi/multi-lateral range links from block FA files")
@@ -48,18 +48,12 @@ Examples:
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
-// command implementation
+/// Execute the link command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    //----------------------------
-    // Args
-    //----------------------------
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
     let is_pair = args.get_flag("pair");
     let is_best = args.get_flag("best");
 
-    //----------------------------
-    // Ops
-    //----------------------------
     for infile in args.get_many::<String>("infiles").unwrap() {
         let mut reader = pgr::reader(infile)?;
 
@@ -70,9 +64,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 .map(|entry| entry.range().to_string())
                 .collect();
 
-            //----------------------------
-            // Output
-            //----------------------------
             if is_pair {
                 // Output bilateral (pairwise) links
                 for (i, j) in (0..headers.len()).tuple_combinations() {

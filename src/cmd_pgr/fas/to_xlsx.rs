@@ -1,6 +1,6 @@
 use clap::{value_parser, Arg, ArgAction, ArgMatches, Command};
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for to-xlsx.
 pub fn make_subcommand() -> Command {
     Command::new("to-xlsx")
         .about("Exports variations (substitutions/indels) to Excel")
@@ -74,7 +74,7 @@ Examples:
         ))
 }
 
-// command implementation
+/// Execute the to-xlsx command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let outfile = crate::cmd_pgr::args::get_outfile(args);
     let opt_wrap = *args.get_one::<u16>("wrap").unwrap();

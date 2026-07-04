@@ -1,7 +1,7 @@
 use clap::{value_parser, Arg, ArgMatches, Command};
 use std::io::Write;
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for dbscan.
 pub fn make_subcommand() -> Command {
     Command::new("dbscan")
         .about("DBSCAN clustering based on pairwise distances")
@@ -48,11 +48,9 @@ If there are ties, the alphabetically first member is chosen.
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
-// command implementation
+/// Execute the dbscan command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    //----------------------------
     // 1. Args
-    //----------------------------
     let infile = args.get_one::<String>("infile").unwrap();
 
     let opt_format = args.get_one::<String>("clust_format").unwrap();
@@ -63,24 +61,18 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
 
-    //----------------------------
     // 2. Load Matrix
-    //----------------------------
 
     // Load matrix from pairwise distances
     let (matrix, names) =
         pgr::libs::pairmat::ScoringMatrix::from_pair_scores(infile, opt_same, opt_missing)?;
 
-    //----------------------------
     // 3. Clustering
-    //----------------------------
     let mut dbscan = pgr::libs::clust::dbscan::Dbscan::new(opt_eps, opt_min_points);
     dbscan.perform_clustering(&matrix);
     let mut clusters = dbscan.results_cluster();
 
-    //----------------------------
     // 4. Output
-    //----------------------------
     let out =
         pgr::libs::clust::format::format_flat_clusters(&mut clusters, &names, opt_format, |c| {
             pgr::libs::clust::medoid::find_medoid(&matrix, c, false)

@@ -1,7 +1,7 @@
 use clap::{ArgMatches, Command};
 use std::io::Write;
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for replace.
 pub fn make_subcommand() -> Command {
     Command::new("replace")
         .about("Replaces headers in block FA files")
@@ -31,19 +31,14 @@ Examples:
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
-// command implementation
+/// Execute the replace command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    //----------------------------
-    // Args
-    //----------------------------
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
 
     let replace_of =
         pgr::libs::io::read_replace_tsv(args.get_one::<String>("replace_tsv").unwrap())?;
 
-    //----------------------------
     // Operating
-    //----------------------------
     for infile in args.get_many::<String>("infiles").unwrap() {
         let mut reader = pgr::reader(infile)?;
 

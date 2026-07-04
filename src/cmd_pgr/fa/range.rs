@@ -1,7 +1,7 @@
 use clap::{value_parser, Arg, ArgAction, ArgMatches, Command};
 use pgr::libs::loc;
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for range.
 pub fn make_subcommand() -> Command {
     Command::new("range")
         .about("Extracts sequence regions by coordinates")
@@ -61,11 +61,8 @@ Examples:
         )
 }
 
-// command implementation
+/// Execute the range command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    //----------------------------
-    // Args
-    //----------------------------
     let infile = args.get_one::<String>("infile").unwrap();
 
     let mut fa_out = pgr::libs::fmt::fa::writer(crate::cmd_pgr::args::get_outfile(args))?;
@@ -75,15 +72,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let opt_cache = *args.get_one::<std::num::NonZeroUsize>("cache").unwrap();
     let mut cache: lru::LruCache<String, noodles_fasta::Record> = lru::LruCache::new(opt_cache);
 
-    //----------------------------
     // Open files
-    //----------------------------
     let force_update = args.get_flag("update");
     let (mut reader, loc_of) = loc::open_indexed(infile, force_update)?;
 
-    //----------------------------
-    // Output
-    //----------------------------
     for el in ranges.iter() {
         let rg = intspan::Range::from_str(el);
         let seq_id = rg.chr().to_string();

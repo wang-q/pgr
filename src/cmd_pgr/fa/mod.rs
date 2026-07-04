@@ -17,8 +17,10 @@ pub mod split;
 pub mod to_2bit;
 pub mod window;
 
-pub fn make_subcommand() -> clap::Command {
-    clap::Command::new("fa")
+use clap::{ArgMatches, Command};
+/// Build the clap subcommand for fa.
+pub fn make_subcommand() -> Command {
+    Command::new("fa")
         .about("Manipulates FASTA files")
         .after_help(
             r###"Subcommand groups:
@@ -51,9 +53,9 @@ pub fn make_subcommand() -> clap::Command {
         .subcommand(to_2bit::make_subcommand())
         .subcommand(window::make_subcommand())
 }
-
-pub fn execute(matches: &clap::ArgMatches) -> anyhow::Result<()> {
-    match matches.subcommand() {
+/// Execute the fa command.
+pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
+    match args.subcommand() {
         Some(("count", sub_matches)) => count::execute(sub_matches),
         Some(("dedup", sub_matches)) => dedup::execute(sub_matches),
         Some(("filter", sub_matches)) => filter::execute(sub_matches),

@@ -1,7 +1,7 @@
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use pgr::libs::fmt::psl::Psl;
 use std::collections::HashMap;
-
+/// Build the clap subcommand for histo.
 pub fn make_subcommand() -> Command {
     Command::new("histo")
         .about("Collects counts on PSL alignments for making histograms")
@@ -45,7 +45,7 @@ Examples:
                 .help("Omit queries with zero values"),
         )
 }
-
+/// Execute the histo command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let what = args.get_one::<String>("field").unwrap();
     let input = crate::cmd_pgr::args::get_infile(args);

@@ -1,6 +1,6 @@
 use clap::{Arg, ArgMatches, Command};
 use pgr::libs::fmt::lav::{LavReader, LavStanza};
-
+/// Build the clap subcommand for to-psl.
 pub fn make_subcommand() -> Command {
     Command::new("to-psl")
         .about("Converts from lav to psl format")
@@ -20,31 +20,18 @@ Examples:
                 .long("target-strand")
                 .help("Set the target strand (default is no strand)"),
         )
-        .arg(
-            Arg::new("score_file")
-                .long("score-file")
-                .help("Output lav scores to side file"),
-        )
 }
-
+/// Execute the to-psl command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    //----------------------------
-    // Args
-    //----------------------------
     let input = crate::cmd_pgr::args::get_infile(args);
     let output = crate::cmd_pgr::args::get_outfile(args);
     let target_strand = args.get_one::<String>("target_strand");
-    // let score_file = args.get_one::<String>("score_file"); // TODO: Implement score file output
 
     let reader = pgr::reader(input)?;
     let mut writer = pgr::writer(output)?;
 
-    //----------------------------
-    // Ops
-    //----------------------------
     let mut lav_reader = LavReader::new(reader);
 
-    // State
     let mut t_size = 0;
     let mut q_size = 0;
     let mut t_name = String::new();
@@ -57,8 +44,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 t_size: t,
                 q_size: q,
             } => {
-                t_size = t as u32;
-                q_size = q as u32;
+                t_size = u32::try_from(t)
+                    .map_err(|_| anyhow::anyhow!("invalid t_size: {}", t))?;
+                q_size = u32::try_from(q)
+                    .map_err(|_| anyhow::anyhow!("invalid q_size: {}", q))?;
             }
             LavStanza::Header {
                 t_name: t,

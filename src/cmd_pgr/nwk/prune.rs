@@ -4,7 +4,7 @@ use pgr::libs::phylo::tree::query as nwr;
 use pgr::libs::phylo::tree::Tree;
 use std::io::Write;
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for prune.
 pub fn make_subcommand() -> Command {
     Command::new("prune")
         .about("Removes nodes from a Newick file")
@@ -42,7 +42,7 @@ Examples:
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
-// command implementation
+/// Execute the prune command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
     let infile = args.get_one::<String>("infile").unwrap();

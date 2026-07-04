@@ -4,7 +4,7 @@ use pgr::libs::phylo::tree::{distance, Tree};
 use std::collections::BTreeMap;
 use std::io::{Read, Write};
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for distance.
 pub fn make_subcommand() -> Command {
     Command::new("distance")
         .about("Calculates distances between nodes")
@@ -53,7 +53,7 @@ Examples:
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
-// command implementation
+/// Execute the distance command.
 pub fn execute(args: &ArgMatches) -> Result<()> {
     let mut writer: Box<dyn Write> = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
 

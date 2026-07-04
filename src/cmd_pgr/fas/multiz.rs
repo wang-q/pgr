@@ -1,6 +1,6 @@
 use clap::{value_parser, Arg, ArgMatches, Command};
 use std::io::Write;
-
+/// Build the clap subcommand for multiz.
 pub fn make_subcommand() -> Command {
     Command::new("multiz")
         .about("Merges block FA files using multiz-like DP on reference")
@@ -67,7 +67,7 @@ Examples:
         .arg(crate::cmd_pgr::args::align_gap_extend_arg())
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
-
+/// Execute the multiz command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let ref_name = args.get_one::<String>("ref_name").unwrap().to_string();
     let radius = *args.get_one::<usize>("radius").unwrap();

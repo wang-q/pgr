@@ -2,7 +2,7 @@ use clap::{Arg, ArgAction, ArgMatches, Command};
 use pgr::libs::phylo::tree::Tree;
 use std::io::Write;
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for topo.
 pub fn make_subcommand() -> Command {
     Command::new("topo")
         .about("Manipulates tree topology and attributes")
@@ -42,7 +42,7 @@ Examples:
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
-// command implementation
+/// Execute the topo command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
 

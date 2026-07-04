@@ -2,13 +2,13 @@ use clap::{ArgMatches, Command};
 use std::collections::HashMap;
 
 use pgr::libs::chain::net::{collect_stats_gap, read_nets, Stats};
-
+/// Build the clap subcommand for class.
 pub fn make_subcommand() -> Command {
     Command::new("class").about("Shows stats of net").arg(
         crate::cmd_pgr::args::infile_arg_required_with_help("Input net file (or stdin if 'stdin')"),
     )
 }
-
+/// Execute the class command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let input_path = args.get_one::<String>("infile").unwrap();
 

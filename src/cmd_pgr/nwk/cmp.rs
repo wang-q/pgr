@@ -3,7 +3,7 @@ use pgr::libs::phylo::tree::Tree;
 use pgr::libs::phylo::TreeComparison;
 use std::io::Write;
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for cmp.
 pub fn make_subcommand() -> Command {
     Command::new("cmp")
         .about("Compares trees (RF, WRF, KF distances)")
@@ -45,7 +45,7 @@ Examples:
         )
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
-
+/// Execute the cmp command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // 1. Load first file
     let infile = args.get_one::<String>("infile").unwrap();
@@ -71,14 +71,14 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     if self_compare {
         for (i, t1) in trees1.iter().enumerate() {
             for (j, t2) in trees1.iter().enumerate() {
-                let (rf, wrf, kf) = compute_metrics(t1, t2);
+                let (rf, wrf, kf) = compute_metrics(t1, t2)?;
                 writeln!(writer, "{}\t{}\t{}\t{}\t{}", i + 1, j + 1, rf, wrf, kf)?;
             }
         }
     } else {
         for (i, t1) in trees1.iter().enumerate() {
             for (j, t2) in trees2.iter().enumerate() {
-                let (rf, wrf, kf) = compute_metrics(t1, t2);
+                let (rf, wrf, kf) = compute_metrics(t1, t2)?;
                 writeln!(writer, "{}\t{}\t{}\t{}\t{}", i + 1, j + 1, rf, wrf, kf)?;
             }
         }
@@ -87,10 +87,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn compute_metrics(t1: &Tree, t2: &Tree) -> (String, String, String) {
-    let rf = t1.robinson_foulds(t2);
-    let wrf = t1.weighted_robinson_foulds(t2);
-    let kf = t1.kuhner_felsenstein(t2);
+fn compute_metrics(t1: &Tree, t2: &Tree) -> anyhow::Result<(String, String, String)> {
+    let rf = t1.robinson_foulds(t2).map_err(anyhow::Error::msg)?;
+    let wrf = t1.weighted_robinson_foulds(t2).map_err(anyhow::Error::msg)?;
+    let kf = t1.kuhner_felsenstein(t2).map_err(anyhow::Error::msg)?;
 
     let format_float = |v: f64| -> String {
         let s = format!("{:.6}", v);
@@ -102,12 +102,5 @@ fn compute_metrics(t1: &Tree, t2: &Tree) -> (String, String, String) {
         }
     };
 
-    match (rf, wrf, kf) {
-        (Ok(rf), Ok(wrf), Ok(kf)) => (rf.to_string(), format_float(wrf), format_float(kf)),
-        _ => (
-            "Error".to_string(),
-            "Error".to_string(),
-            "Error".to_string(),
-        ),
-    }
+    Ok((rf.to_string(), format_float(wrf), format_float(kf)))
 }

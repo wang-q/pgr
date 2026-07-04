@@ -1,7 +1,7 @@
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use pgr::libs::fmt::axt::{write_axt, AxtReader};
 
-// Create subcommand arguments
+/// Build the clap subcommand for sort.
 pub fn make_subcommand() -> Command {
     Command::new("sort")
         .about("Sorts axt files")
@@ -38,7 +38,7 @@ Examples:
                 .help("Renumber AXT records"),
         )
 }
-
+/// Execute the sort command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let input = crate::cmd_pgr::args::get_infile(args);
     let output = crate::cmd_pgr::args::get_outfile(args);

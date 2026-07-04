@@ -1,6 +1,6 @@
 use clap::{ArgMatches, Command};
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for to-fa.
 pub fn make_subcommand() -> Command {
     Command::new("to-fa")
         .about("Converts FASTQ to FASTA format")
@@ -29,16 +29,10 @@ Examples:
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
-// command implementation
+/// Execute the to-fa command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    //----------------------------
-    // Args
-    //----------------------------
     let mut fa_out = pgr::libs::fmt::fa::writer(crate::cmd_pgr::args::get_outfile(args))?;
 
-    //----------------------------
-    // Ops
-    //----------------------------
     for infile in args.get_many::<String>("infiles").unwrap() {
         let reader = pgr::reader(infile)?;
         let mut seq_in = noodles_fastq::io::Reader::new(reader);

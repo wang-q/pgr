@@ -2,7 +2,7 @@ use clap::{ArgMatches, Command};
 use pgr::libs::paf::fasta::{load_fasta_tsv, FastaStore};
 use pgr::libs::paf::graph::PafGraph;
 use std::collections::HashMap;
-
+/// Build the clap subcommand for graph.
 pub fn make_subcommand() -> Command {
     let cmd = Command::new("graph")
         .about("Induces a coarse GFA graph from PAF alignments")
@@ -53,15 +53,15 @@ Examples:
     let cmd = crate::cmd_pgr::args::add_optional_fasta_tsv_arg(cmd);
     crate::cmd_pgr::args::add_min_var_len_arg(cmd)
 }
-
-pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
-    let infile = matches.get_one::<String>("infile").unwrap();
-    let tsv_path = matches.get_one::<String>("fasta_tsv");
-    let min_var_len = matches
+/// Execute the graph command.
+pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
+    let infile = args.get_one::<String>("infile").unwrap();
+    let tsv_path = args.get_one::<String>("fasta_tsv");
+    let min_var_len = args
         .get_one::<i32>("min_var_len")
         .copied()
         .unwrap_or(100);
-    let outfile = crate::cmd_pgr::args::get_outfile(matches);
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
 
     // Load FASTA sequences via TSV + FastaStore (optional for topology-only mode).
     let seqs: HashMap<String, Vec<u8>> = if let Some(tsv) = tsv_path {

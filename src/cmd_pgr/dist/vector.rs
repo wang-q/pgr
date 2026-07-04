@@ -4,7 +4,7 @@ use std::io::BufRead;
 use pgr::libs::clust::feature::FeatureVector;
 use pgr::libs::linalg;
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for vector.
 pub fn make_subcommand() -> Command {
     Command::new("vector")
         .about("Calculates similarity/distance between vectors")
@@ -61,11 +61,8 @@ modes:
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
-// command implementation
+/// Execute the vector command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    //----------------------------
-    // Args
-    //----------------------------
     let opt_mode = args.get_one::<String>("mode").unwrap();
 
     let is_bin = args.get_flag("binary");
@@ -81,9 +78,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         opt_parallel,
     )?;
 
-    //----------------------------
-    // Ops
-    //----------------------------
     let (entries1, entries2) =
         pgr::libs::par::load_two_sets(&infiles, false, |paths| load_file(&paths[0], is_bin))?;
 

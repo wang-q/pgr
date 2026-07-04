@@ -1,6 +1,6 @@
 use clap::{Arg, ArgMatches, Command};
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for consensus.
 pub fn make_subcommand() -> Command {
     crate::cmd_pgr::args::add_poa_args(
         Command::new("consensus")
@@ -68,7 +68,7 @@ Examples:
     )
 }
 
-// command implementation
+/// Execute the consensus command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let parallel = *args.get_one::<usize>("parallel").unwrap();
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
@@ -83,9 +83,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 }
 
 fn proc_block(block: &pgr::libs::fmt::fas::FasBlock, args: &ArgMatches) -> anyhow::Result<String> {
-    //----------------------------
-    // Args
-    //----------------------------
     let cname = args.get_one::<String>("consensus_name").unwrap();
     let has_outgroup = args.get_flag("outgroup");
 
@@ -102,9 +99,6 @@ fn proc_block(block: &pgr::libs::fmt::fas::FasBlock, args: &ArgMatches) -> anyho
         _ => 1,
     };
 
-    //----------------------------
-    // Ops
-    //----------------------------
     let mut seqs = vec![];
 
     let outgroup = if has_outgroup {
@@ -146,9 +140,6 @@ fn proc_block(block: &pgr::libs::fmt::fas::FasBlock, args: &ArgMatches) -> anyho
         None => anyhow::bail!("empty block"),
     };
 
-    //----------------------------
-    // Output
-    //----------------------------
     let mut out_string = "".to_string();
     if range.is_valid() {
         *range.name_mut() = cname.to_string();

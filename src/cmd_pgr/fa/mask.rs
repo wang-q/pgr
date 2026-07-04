@@ -1,6 +1,6 @@
 use clap::{Arg, ArgAction, ArgMatches, Command};
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for mask.
 pub fn make_subcommand() -> Command {
     Command::new("mask")
         .about("Masks regions in FASTA file(s)")
@@ -52,11 +52,8 @@ Examples:
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
-// command implementation
+/// Execute the mask command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    //----------------------------
-    // Args
-    //----------------------------
     let mut fa_in = pgr::libs::fmt::fa::reader(args.get_one::<String>("infile").unwrap())?;
 
     let json = intspan::read_json(args.get_one::<String>("runlist").unwrap());
@@ -66,9 +63,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let mut fa_out = pgr::libs::fmt::fa::writer(crate::cmd_pgr::args::get_outfile(args))?;
 
-    //----------------------------
-    // Process
-    //----------------------------
     for result in fa_in.records() {
         let record = result?;
         let name = String::from_utf8(record.name().into())?;
@@ -86,9 +80,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         let seq_str = String::from_utf8(seq[..].into())?;
         let seq_out = pgr::libs::fmt::fa::mask_sequence(&seq_str, ints, is_hard)?;
 
-        //----------------------------
-        // Output
-        //----------------------------
         let record_out = pgr::libs::fmt::fa::new_record(&name, seq_out.as_bytes());
         fa_out.write_record(&record_out)?;
     }

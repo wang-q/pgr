@@ -2,7 +2,7 @@ use anyhow::Result;
 use clap::{Arg, ArgMatches, Command};
 use pgr::libs::chain::BitMap;
 use std::collections::HashMap;
-
+/// Build the clap subcommand for pre-net.
 pub fn make_subcommand() -> Command {
     Command::new("pre-net")
         .about("Removes chains that don't have a chance of being netted")
@@ -27,7 +27,7 @@ pub fn make_subcommand() -> Command {
         )
         .arg(crate::cmd_pgr::args::incl_hap_arg())
 }
-
+/// Execute the pre-net command.
 pub fn execute(args: &ArgMatches) -> Result<()> {
     let input_path = args.get_one::<String>("infile").unwrap();
     let target_sizes_path = args.get_one::<String>("t_sizes").unwrap();

@@ -1,6 +1,6 @@
 use clap::{Arg, ArgMatches, Command};
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for one.
 pub fn make_subcommand() -> Command {
     Command::new("one")
         .about("Extracts one FASTA record by name")
@@ -30,20 +30,14 @@ Examples:
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
-// command implementation
+/// Execute the one command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    //----------------------------
-    // Args
-    //----------------------------
     let mut fa_in = pgr::libs::fmt::fa::reader(args.get_one::<String>("infile").unwrap())?;
 
     let mut fa_out = pgr::libs::fmt::fa::writer(crate::cmd_pgr::args::get_outfile(args))?;
 
     let name = args.get_one::<String>("seq_name").unwrap();
 
-    //----------------------------
-    // Process
-    //----------------------------
     for result in fa_in.records() {
         let record = result?;
         let this_name = String::from_utf8(record.name().into())?;

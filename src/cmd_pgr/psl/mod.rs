@@ -7,8 +7,10 @@ pub mod swap;
 pub mod to_chain;
 pub mod to_range;
 
-pub fn make_subcommand() -> clap::Command {
-    clap::Command::new("psl")
+use clap::{ArgMatches, Command};
+/// Build the clap subcommand for psl.
+pub fn make_subcommand() -> Command {
+    Command::new("psl")
         .about("Manipulates PSL alignment files")
         .after_help(
             r###"Note:
@@ -25,9 +27,9 @@ ensuring the fidelity of the ported libraries.
         .subcommand(to_chain::make_subcommand())
         .subcommand(to_range::make_subcommand())
 }
-
-pub fn execute(matches: &clap::ArgMatches) -> anyhow::Result<()> {
-    match matches.subcommand() {
+/// Execute the psl command.
+pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
+    match args.subcommand() {
         Some(("chain", sub_matches)) => chain::execute(sub_matches),
         Some(("histo", sub_matches)) => histo::execute(sub_matches),
         Some(("lift", sub_matches)) => lift::execute(sub_matches),

@@ -3,7 +3,7 @@ use pgr::libs::fmt::twobit::TwoBitFile;
 use pgr::libs::nt;
 use std::io::Write;
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for range.
 pub fn make_subcommand() -> Command {
     Command::new("range")
         .about("Extracts sequence regions by coordinates")
@@ -41,25 +41,17 @@ Examples:
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
-// command implementation
+/// Execute the range command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    //----------------------------
-    // Args
-    //----------------------------
     let infile = args.get_one::<String>("infile").unwrap();
     let output_path = crate::cmd_pgr::args::get_outfile(args);
 
     let ranges = crate::cmd_pgr::args::collect_ranges(args)?;
 
-    //----------------------------
     // Open files
-    //----------------------------
     let mut tb = TwoBitFile::open(infile)?;
     let mut writer = pgr::writer(output_path)?;
 
-    //----------------------------
-    // Output
-    //----------------------------
     for el in ranges.iter() {
         let rg = intspan::Range::from_str(el);
         let seq_id = rg.chr();

@@ -1,7 +1,7 @@
 use clap::{ArgMatches, Command};
 use std::collections::BTreeMap;
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for order.
 pub fn make_subcommand() -> Command {
     Command::new("order")
         .about("Extracts FASTA records in the order specified by a list")
@@ -34,11 +34,8 @@ Examples:
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
-// command implementation
+/// Execute the order command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    //----------------------------
-    // Args
-    //----------------------------
     let mut fa_in = pgr::libs::fmt::fa::reader(args.get_one::<String>("infile").unwrap())?;
 
     let mut fa_out = pgr::libs::fmt::fa::writer(crate::cmd_pgr::args::get_outfile(args))?;
@@ -48,9 +45,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             .into_iter()
             .collect();
 
-    //----------------------------
-    // Process
-    //----------------------------
     // Load records into a BTreeMap for efficient lookup
     let mut record_of = BTreeMap::new();
 

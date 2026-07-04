@@ -1,5 +1,5 @@
 use clap::{ArgMatches, Command};
-
+/// Build the clap subcommand for subset.
 pub fn make_subcommand() -> Command {
     Command::new("subset")
         .about("Extracts a submatrix from a PHYLIP matrix using a list of names")
@@ -22,20 +22,15 @@ Examples:
         .arg(crate::cmd_pgr::args::fa_name_list_arg(true))
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
-
+/// Execute the subset command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    //----------------------------
-    // Args
-    //----------------------------
     let infile = args.get_one::<String>("infile").unwrap();
     let list_file = args.get_one::<String>("name_list").unwrap();
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
 
     let wanted_names = pgr::libs::io::read_names::<Vec<String>>(list_file)?;
 
-    //----------------------------
     // Load and process matrix
-    //----------------------------
     let matrix = pgr::libs::pairmat::NamedMatrix::from_relaxed_phylip(infile)?;
 
     let missing = pgr::libs::pairmat::write_subset(&matrix, &wanted_names, &mut writer)?;

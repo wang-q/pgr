@@ -1,7 +1,7 @@
 use clap::{ArgMatches, Command};
 use cmd_lib::run_cmd;
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for rept.
 pub fn make_subcommand() -> Command {
     Command::new("rept")
         .about("Identifies repetitive regions in a genome")
@@ -32,11 +32,8 @@ This command identifies repetitive regions in a genome using k-mer analysis.
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
-// command implementation
+/// Execute the rept command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    //----------------------------
-    // Args
-    //----------------------------
     let outfile = crate::cmd_pgr::args::get_outfile(args);
 
     let opt_kmer = *args.get_one::<usize>("kmer").unwrap();
@@ -44,18 +41,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let opt_min = *args.get_one::<usize>("min_len").unwrap();
     let opt_ff = *args.get_one::<usize>("fill_fragment").unwrap();
 
-    //----------------------------
-    // Paths
-    //----------------------------
     let ctx = pgr::libs::pl::PipelineCtx::new("pgr_rept_")?;
 
     run_cmd!(info "==> Absolute paths")?;
     let abs_infile = ctx.abs_path(args.get_one::<String>("infile").unwrap())?;
     let abs_outfile = pgr::libs::pl::abs_path_or_stdout(outfile)?;
 
-    //----------------------------
-    // Ops
-    //----------------------------
     ctx.enter()?;
 
     let re_prof: regex::Regex = regex::Regex::new(
@@ -83,9 +74,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     pgr::libs::pl::run_repeat_pipeline(&opts)?;
 
-    //----------------------------
     // Done
-    //----------------------------
     ctx.leave()?;
 
     Ok(())

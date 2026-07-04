@@ -1,7 +1,7 @@
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use pgr::libs::fmt::twobit::TwoBitWriter;
 use std::collections::HashSet;
-
+/// Build the clap subcommand for to-2bit.
 pub fn make_subcommand() -> Command {
     Command::new("to-2bit")
         .about("Converts FASTA to 2bit")
@@ -39,7 +39,7 @@ Examples:
         )
         .arg(crate::cmd_pgr::args::name_prefix_arg(None))
 }
-
+/// Execute the to-2bit command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let infiles = args.get_many::<String>("infiles").unwrap();
     let output = crate::cmd_pgr::args::get_outfile(args);

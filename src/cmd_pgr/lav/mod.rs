@@ -2,7 +2,7 @@ pub mod lastz;
 pub mod to_psl;
 
 use clap::{ArgMatches, Command};
-
+/// Build the clap subcommand for lav.
 pub fn make_subcommand() -> Command {
     Command::new("lav")
         .about("Manipulates LAV alignment files")
@@ -10,7 +10,7 @@ pub fn make_subcommand() -> Command {
         .subcommand(lastz::make_subcommand())
         .subcommand(to_psl::make_subcommand())
 }
-
+/// Execute the lav command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     match args.subcommand() {
         Some(("lastz", sub_matches)) => lastz::execute(sub_matches),

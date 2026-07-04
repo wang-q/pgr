@@ -4,7 +4,7 @@ use pgr::libs::fmt::axt::AxtReader;
 use pgr::libs::fmt::fas::FasEntry;
 use std::io::Write;
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for to-fas.
 pub fn make_subcommand() -> Command {
     Command::new("to-fas")
         .about("Converts AXT format files to block FA format")
@@ -39,20 +39,14 @@ Examples:
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
-// command implementation
+/// Execute the to-fas command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    //----------------------------
-    // Args
-    //----------------------------
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
     let sizes = pgr::read_sizes::<i32>(args.get_one::<String>("q_sizes").unwrap())?;
 
     let tname = args.get_one::<String>("t_name").unwrap();
     let qname = args.get_one::<String>("q_name").unwrap();
 
-    //----------------------------
-    // Ops
-    //----------------------------
     for infile in args.get_many::<String>("infiles").unwrap() {
         let reader = pgr::reader(infile)?;
         let axt_iter = AxtReader::new(reader);
@@ -60,9 +54,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         for axt_res in axt_iter {
             let axt = axt_res?;
 
-            //----------------------------
-            // Output
-            //----------------------------
             // Target Entry
             let t_start = (axt.t_start + 1) as i32;
             let t_end = axt.t_end as i32;

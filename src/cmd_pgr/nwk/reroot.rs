@@ -3,7 +3,7 @@ use pgr::libs::phylo::tree::Tree;
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for reroot.
 pub fn make_subcommand() -> Command {
     Command::new("reroot")
         .about("Reroots a tree at a specified node or the longest branch")
@@ -74,11 +74,8 @@ Examples:
         )
 }
 
-// command implementation
+/// Execute the reroot command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    //----------------------------
-    // Args
-    //----------------------------
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
     let process_support = args.get_flag("support_as_labels");
     let deroot = args.get_flag("deroot");

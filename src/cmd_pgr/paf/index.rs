@@ -1,6 +1,6 @@
 use clap::{ArgMatches, Command};
 use pgr::libs::paf::index::PafIndex;
-
+/// Build the clap subcommand for index.
 pub fn make_subcommand() -> Command {
     Command::new("index")
         .about("Builds interval-tree index from PAF files")
@@ -33,7 +33,7 @@ Examples:
         .arg(crate::cmd_pgr::args::infiles_arg("PAF"))
         .arg(crate::cmd_pgr::args::outfile_arg_optional())
 }
-
+/// Execute the index command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let infiles: Vec<&String> = args.get_many::<String>("infiles").unwrap().collect();
     let count = infiles.len();

@@ -1,7 +1,7 @@
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use std::io::Write;
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for subset.
 pub fn make_subcommand() -> Command {
     Command::new("subset")
         .about("Extracts a subset of species from block FA files")
@@ -38,20 +38,15 @@ Examples:
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
-// command implementation
+/// Execute the subset command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    //----------------------------
-    // Args
-    //----------------------------
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
     let is_strict = args.get_flag("strict");
 
     let needed =
         pgr::libs::io::read_names::<Vec<String>>(args.get_one::<String>("required").unwrap())?;
 
-    //----------------------------
     // Operating
-    //----------------------------
     for infile in args.get_many::<String>("infiles").unwrap() {
         let mut reader = pgr::reader(infile)?;
 
@@ -70,9 +65,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 if block_names.contains(name) {
                     for entry in &block.entries {
                         let entry_name = entry.range().name();
-                        //----------------------------
-                        // Output
-                        //----------------------------
                         if entry_name == name {
                             writer.write_all(entry.to_string().as_ref())?;
                         }

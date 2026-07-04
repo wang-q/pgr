@@ -1,7 +1,7 @@
 use clap::{value_parser, Arg, ArgMatches, Command};
 use std::collections::BTreeMap;
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for cover.
 pub fn make_subcommand() -> Command {
     Command::new("cover")
         .about("Outputs covered regions on chromosomes")
@@ -46,11 +46,8 @@ Examples:
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
-// command implementation
+/// Execute the cover command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    //----------------------------
-    // Args
-    //----------------------------
     let opt_trim = *args.get_one::<i32>("trim").unwrap();
     let opt_name = &args
         .get_one::<String>("name")
@@ -58,9 +55,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         .unwrap_or("")
         .to_string();
 
-    //----------------------------
-    // Ops
-    //----------------------------
     let mut res_of: BTreeMap<String, BTreeMap<String, intspan::IntSpan>> = BTreeMap::new();
 
     for infile in args.get_many::<String>("infiles").unwrap() {
@@ -68,9 +62,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         pgr::libs::fmt::fas::aggregate_coverage_into(&mut reader, &mut res_of, opt_name, opt_trim)?;
     }
 
-    //----------------------------
-    // Output
-    //----------------------------
     let out_json = if !opt_name.is_empty() {
         // Output coverage for a single species
         intspan::set2json(

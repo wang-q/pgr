@@ -5,7 +5,7 @@ use pgr::libs::clust::eval::{
 };
 use pgr::libs::pairmat::NamedMatrix;
 use pgr::libs::phylo::tree::Tree;
-
+/// Build the clap subcommand for eval.
 pub fn make_subcommand() -> Command {
     Command::new("eval")
         .about("Evaluates clustering quality")
@@ -71,7 +71,7 @@ Examples:
                 .help("Exclude true singletons (from Reference/Ground Truth) from evaluation"),
         )
 }
-
+/// Execute the eval command.
 pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
     let p1_path = matches.get_one::<String>("p1").unwrap();
     let outfile = crate::cmd_pgr::args::get_outfile(matches);

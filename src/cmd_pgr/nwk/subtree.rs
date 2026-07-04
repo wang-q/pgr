@@ -2,7 +2,7 @@ use clap::{value_parser, Arg, ArgMatches, Command};
 use pgr::libs::phylo::tree::query as nwr;
 use pgr::libs::phylo::tree::Tree;
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for subtree.
 pub fn make_subcommand() -> Command {
     Command::new("subtree")
         .about("Extracts a subtree")
@@ -68,11 +68,8 @@ Examples:
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
-// command implementation
+/// Execute the subtree command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    //----------------------------
-    // Args
-    //----------------------------
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
 
     let is_monophyly = args.get_flag("monophyly");
@@ -136,7 +133,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             }
         }
 
-        // Output
         if is_condense {
             let name = condense_name.ok_or_else(|| anyhow::anyhow!("--condense required"))?;
 

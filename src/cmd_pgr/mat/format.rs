@@ -1,5 +1,5 @@
 use clap::{ArgMatches, Command};
-
+/// Build the clap subcommand for format.
 pub fn make_subcommand() -> Command {
     Command::new("format")
         .about("Converts between different PHYLIP matrix formats")
@@ -45,18 +45,12 @@ Examples:
         .arg(crate::cmd_pgr::args::mat_format_arg())
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
-
+/// Execute the format command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    //----------------------------
-    // Args
-    //----------------------------
     let infile = args.get_one::<String>("infile").unwrap();
     let opt_mode = args.get_one::<String>("mat_format").unwrap();
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
 
-    //----------------------------
-    // Ops
-    //----------------------------
     let matrix = pgr::libs::pairmat::NamedMatrix::from_relaxed_phylip(infile)?;
     let fmt = pgr::libs::pairmat::MatrixFormat::from_mode(opt_mode)?;
 

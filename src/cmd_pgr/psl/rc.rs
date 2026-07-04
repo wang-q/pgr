@@ -3,7 +3,7 @@ use intspan::{reader, writer};
 use std::io::BufRead;
 
 use pgr::libs::fmt::psl::Psl;
-
+/// Build the clap subcommand for rc.
 pub fn make_subcommand() -> Command {
     Command::new("rc")
         .about("Reverse-complements psl")
@@ -18,7 +18,7 @@ Examples:
         .arg(crate::cmd_pgr::args::infile_arg().help("Input PSL file. [stdin] for standard input"))
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
-
+/// Execute the rc command.
 pub fn execute(args: &clap::ArgMatches) -> anyhow::Result<()> {
     let input = crate::cmd_pgr::args::get_infile(args);
     let output = crate::cmd_pgr::args::get_outfile(args);

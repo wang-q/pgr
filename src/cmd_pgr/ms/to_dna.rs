@@ -5,7 +5,7 @@ use pgr::libs::ms::{
 };
 use std::io::BufRead;
 use std::io::Write;
-
+/// Build the clap subcommand for to-dna.
 pub fn make_subcommand() -> Command {
     Command::new("to-dna")
         .about("Converts ms output haplotypes (0/1) to DNA sequences (FASTA)")
@@ -70,11 +70,8 @@ Output Format:
         )
 }
 
-// command implementation
+/// Execute the to-dna command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    //----------------------------
-    // Args
-    //----------------------------
     if args.get_flag("doc") {
         println!("{}", include_str!("../../../docs/ms-to-dna.md"));
         return Ok(());
@@ -85,9 +82,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let no_perturb = args.get_flag("no_perturb");
     let verbose = args.get_flag("verbose");
 
-    //----------------------------
-    // Paths
-    //----------------------------
     let curdir = std::env::current_dir()?;
     let pgr = std::env::current_exe()?.display().to_string();
 

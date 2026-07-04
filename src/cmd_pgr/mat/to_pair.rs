@@ -1,9 +1,9 @@
-use clap::ArgMatches;
+use clap::{ArgMatches, Command};
 use std::io::Write;
 
-// Create clap subcommand arguments
-pub fn make_subcommand() -> clap::Command {
-    clap::Command::new("to-pair")
+/// Build the clap subcommand for to-pair.
+pub fn make_subcommand() -> Command {
+    Command::new("to-pair")
         .about("Converts a PHYLIP distance matrix to pairwise distances")
         .after_help(
             r###"
@@ -35,17 +35,11 @@ Examples:
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
-// command implementation
+/// Execute the to-pair command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    //----------------------------
-    // Args
-    //----------------------------
     let infile = args.get_one::<String>("infile").unwrap();
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
 
-    //----------------------------
-    // Ops
-    //----------------------------
     // Load matrix from PHYLIP format
     let matrix = pgr::libs::pairmat::NamedMatrix::from_relaxed_phylip(infile)?;
     let names = matrix.get_names();

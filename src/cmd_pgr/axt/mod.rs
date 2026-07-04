@@ -4,7 +4,7 @@ pub mod sort;
 pub mod to_fas;
 pub mod to_maf;
 pub mod to_psl;
-
+/// Build the clap subcommand for axt.
 pub fn make_subcommand() -> Command {
     Command::new("axt")
         .about("Manipulates AXT alignment files")
@@ -21,7 +21,7 @@ AXT is a format for representing pairwise genomic alignments.
         .subcommand(to_fas::make_subcommand())
         .subcommand(to_psl::make_subcommand())
 }
-
+/// Execute the axt command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     match args.subcommand() {
         Some(("sort", sub_matches)) => sort::execute(sub_matches),

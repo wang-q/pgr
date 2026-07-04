@@ -1,7 +1,7 @@
 use clap::{Arg, ArgAction, ArgGroup, ArgMatches, Command, Id};
 use pgr::libs::phylo::tree::{algo, Tree};
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for order.
 pub fn make_subcommand() -> Command {
     Command::new("order")
         .about("Orders nodes in a Newick file")
@@ -75,7 +75,7 @@ Examples:
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
-// command implementation
+/// Execute the order command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
 

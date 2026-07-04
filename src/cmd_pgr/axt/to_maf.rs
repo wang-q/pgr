@@ -1,5 +1,5 @@
 use clap::{Arg, ArgAction, ArgMatches, Command};
-
+/// Build the clap subcommand for to-maf.
 pub fn make_subcommand() -> Command {
     Command::new("to-maf")
         .about("Converts from axt to maf format")
@@ -51,7 +51,7 @@ Examples:
                 .action(ArgAction::SetTrue),
         )
 }
-
+/// Execute the to-maf command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let input = crate::cmd_pgr::args::get_infile(args);
     let t_sizes_path = args.get_one::<String>("t_sizes").unwrap();

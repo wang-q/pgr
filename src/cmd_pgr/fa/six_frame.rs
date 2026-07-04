@@ -1,7 +1,7 @@
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use std::io::Write;
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for six-frame.
 pub fn make_subcommand() -> Command {
     Command::new("six-frame")
         .about("Translates DNA sequences in six frames")
@@ -59,11 +59,8 @@ Examples:
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
-// command implementation
+/// Execute the six-frame command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    //----------------------------
-    // Args
-    //----------------------------
     let mut fa_in = pgr::libs::fmt::fa::reader(args.get_one::<String>("infile").unwrap())?;
 
     let opt_len = *args.get_one::<usize>("min_len").unwrap();
@@ -72,9 +69,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
 
-    //----------------------------
-    // Ops
-    //----------------------------
     for result in fa_in.records() {
         // obtain record or fail with error
         let record = result?;

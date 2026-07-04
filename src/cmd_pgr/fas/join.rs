@@ -2,7 +2,7 @@ use clap::{ArgMatches, Command};
 use std::collections::BTreeMap;
 use std::io::Write;
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for join.
 pub fn make_subcommand() -> Command {
     Command::new("join")
         .about("Joins multiple block fasta files by a common target")
@@ -33,11 +33,8 @@ Examples:
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
-// command implementation
+/// Execute the join command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    //----------------------------
-    // Args
-    //----------------------------
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
 
     let mut name = if args.contains_id("name") {
@@ -47,9 +44,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     };
     let mut block_of: BTreeMap<String, Vec<pgr::libs::fmt::fas::FasEntry>> = BTreeMap::new();
 
-    //----------------------------
     // Operating
-    //----------------------------
     for infile in args.get_many::<String>("infiles").unwrap() {
         let mut reader = pgr::reader(infile)?;
 
@@ -66,9 +61,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         }
     }
 
-    //----------------------------
-    // Output
-    //----------------------------
     for v in block_of.values() {
         for e in v {
             writer.write_all(e.to_string().as_ref())?;

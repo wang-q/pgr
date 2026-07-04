@@ -2,7 +2,7 @@ use clap::{ArgMatches, Command};
 use pgr::libs::clust::upgma;
 use std::io::Write;
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for upgma.
 pub fn make_subcommand() -> Command {
     Command::new("upgma")
         .about("Constructs a phylogenetic tree using UPGMA")
@@ -27,7 +27,7 @@ Examples:
         ))
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
-
+/// Execute the upgma command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let infile = args.get_one::<String>("infile").unwrap();
     let outfile = crate::cmd_pgr::args::get_outfile(args);

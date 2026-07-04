@@ -3,7 +3,7 @@ use pgr::libs::phylo::tree::io::to_forest;
 use pgr::libs::phylo::tree::Tree;
 use std::io::Write;
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for to-forest.
 pub fn make_subcommand() -> Command {
     Command::new("to-forest")
         .about("Converts Newick trees to raw LaTeX Forest code")
@@ -34,7 +34,7 @@ Examples:
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
-// command implementation
+/// Execute the to-forest command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
     let is_bl = args.get_flag("bl");

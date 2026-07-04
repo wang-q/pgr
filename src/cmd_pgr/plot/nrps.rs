@@ -1,11 +1,11 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Context};
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use pgr::libs::plot::common::{context_get_str, render_and_write, replace_section};
 use pgr::libs::plot::nrps::parse_nrps;
 use std::collections::HashMap;
 use std::io::Read;
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for nrps.
 pub fn make_subcommand() -> Command {
     Command::new("nrps")
         .about("NRPS structure diagram")
@@ -48,11 +48,8 @@ pub fn make_subcommand() -> Command {
         ))
 }
 
-// command implementation
-pub fn execute(args: &ArgMatches) -> Result<()> {
-    //----------------------------
-    // Args
-    //----------------------------
+/// Execute the nrps command.
+pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let infile = args
         .get_one::<String>("infile")
         .ok_or_else(|| anyhow!("missing infile"))?;
@@ -62,9 +59,7 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
         .clone();
     let is_legend = args.get_flag("legend");
 
-    //----------------------------
     // Read TSV file
-    //----------------------------
     let mut content = String::new();
     pgr::reader(infile)?.read_to_string(&mut content)?;
     let nrps_data = parse_nrps(&content, &default_color)?;
@@ -81,9 +76,7 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
         all_tex.push('\n');
     }
 
-    //----------------------------
     // Context
-    //----------------------------
     let mut context = tera::Context::new();
 
     let outfile = args
@@ -102,7 +95,7 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
 fn gen_module(
     info: &HashMap<String, String>,
     domains: &Vec<HashMap<String, String>>,
-) -> Result<String> {
+) -> anyhow::Result<String> {
     let mut context = tera::Context::new();
     context.insert("info", info);
     context.insert("domains", domains);
@@ -145,7 +138,7 @@ fn gen_module(
     Ok(rendered)
 }
 
-fn gen_nrps(context: &tera::Context) -> Result<()> {
+fn gen_nrps(context: &tera::Context) -> anyhow::Result<()> {
     let outfile = context_get_str(context, "outfile")?;
     let all_tex = context_get_str(context, "all_tex")?;
     let mut writer = pgr::writer(outfile)?;

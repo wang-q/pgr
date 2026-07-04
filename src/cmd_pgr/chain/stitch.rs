@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::Command;
-
+/// Build the clap subcommand for stitch.
 pub fn make_subcommand() -> Command {
     Command::new("stitch")
         .about("Joins chain fragments with the same chain ID into a single chain per ID")
@@ -9,7 +9,7 @@ pub fn make_subcommand() -> Command {
         ))
         .arg(crate::cmd_pgr::args::outfile_arg_required())
 }
-
+/// Execute the stitch command.
 pub fn execute(args: &clap::ArgMatches) -> Result<()> {
     let input_path = args.get_one::<String>("infile").unwrap();
     let output_path = crate::cmd_pgr::args::get_outfile(args);

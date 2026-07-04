@@ -1,7 +1,7 @@
 use clap::{ArgMatches, Command};
 use pgr::libs::fmt::twobit::TwoBitFile;
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for size.
 pub fn make_subcommand() -> Command {
     Command::new("size")
         .about("Counts total bases in 2bit file(s)")
@@ -27,7 +27,7 @@ Examples:
         .arg(crate::cmd_pgr::args::no_ns_arg())
 }
 
-// command implementation
+/// Execute the size command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
     let no_ns = args.get_flag("no_ns");

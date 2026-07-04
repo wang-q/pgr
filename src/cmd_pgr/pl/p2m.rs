@@ -3,7 +3,7 @@ use cmd_lib::run_cmd;
 use std::collections::BTreeMap;
 use std::{env, fs};
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for p2m.
 pub fn make_subcommand() -> Command {
     Command::new("p2m")
         .about("Pipeline - pairwise alignments to multiple alignments")
@@ -42,12 +42,9 @@ Notes:
         .arg(crate::cmd_pgr::args::outdir_arg_with_default("PL-p2m"))
 }
 
-// command implementation
+/// Execute the p2m command.
 #[allow(unused_assignments)]
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    //----------------------------
-    // Args
-    //----------------------------
     let outdir = args.get_one::<String>("outdir").unwrap();
     fs::create_dir_all(outdir)?;
 
@@ -62,9 +59,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // basename => [abs_path, .json, .slice.fas]
     let mut info_of: BTreeMap<String, Vec<String>> = BTreeMap::new();
 
-    //----------------------------
     // Operating
-    //----------------------------
     run_cmd!(echo "==> Basenames and absolute paths")?;
     for infile in args.get_many::<String>("infiles").unwrap() {
         let basename = intspan::basename(infile)?;
@@ -161,9 +156,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         )?;
     }
 
-    //----------------------------
     // Done
-    //----------------------------
     env::set_current_dir(&curdir)?;
 
     Ok(())

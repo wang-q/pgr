@@ -4,7 +4,7 @@ use pgr::libs::phylo::tree::query as nwr;
 use pgr::libs::phylo::tree::Tree;
 use std::collections::BTreeSet;
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for label.
 pub fn make_subcommand() -> Command {
     Command::new("label")
         .about("Extracts labels from a Newick file")
@@ -84,11 +84,8 @@ Examples:
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
-// command implementation
+/// Execute the label command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    //----------------------------
-    // Args
-    //----------------------------
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
 
     let infile = args.get_one::<String>("infile").unwrap();
@@ -118,9 +115,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
         let is_monophyly = args.get_flag("monophyly");
 
-        //----------------------------
         // Operating
-        //----------------------------
         // All IDs matching positions
         let ids_pos = nwr::match_positions(tree, args);
 
@@ -135,9 +130,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             continue;
         }
 
-        //----------------------------
-        // Output
-        //----------------------------
         let tab_sep = args.get_flag("tab");
         let mut collected_labels = Vec::new();
 

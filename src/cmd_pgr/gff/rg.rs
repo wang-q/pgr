@@ -2,7 +2,7 @@ use clap::{Arg, ArgAction, ArgMatches, Command};
 use noodles_gff as gff;
 use std::io::Write;
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for rg.
 pub fn make_subcommand() -> Command {
     Command::new("rg")
         .about("Extracts ranges from GFF files")
@@ -73,11 +73,8 @@ Examples:
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
-// command implementation
+/// Execute the rg command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    //----------------------------
-    // Args
-    //----------------------------
     let infile = args.get_one::<String>("infile").unwrap();
     let outfile = crate::cmd_pgr::args::get_outfile(args);
     let opt_tag = args.get_one::<String>("tag").unwrap();

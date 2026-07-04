@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, HashSet};
 use pgr::libs::alignment::{align_to_chr, get_subs, seq_intspan, vcf_alt_bases};
 use pgr::libs::fmt::fas::next_fas_block;
 use pgr::libs::fmt::vcf::{write_snp_row, write_vcf_header};
-
+/// Build the clap subcommand for to-vcf.
 pub fn make_subcommand() -> Command {
     Command::new("to-vcf")
         .about("Outputs VCF file (substitutions only)")
@@ -38,7 +38,7 @@ Examples:
                 .help("Chrom sizes file with lines: <chr> <length>"),
         )
 }
-
+/// Execute the to-vcf command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
     let sizes_path = args

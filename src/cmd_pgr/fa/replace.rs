@@ -1,6 +1,6 @@
 use clap::{Arg, ArgAction, ArgMatches, Command};
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for replace.
 pub fn make_subcommand() -> Command {
     Command::new("replace")
         .about("Replaces headers of a FASTA file based on a TSV mapping")
@@ -41,11 +41,8 @@ Examples:
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
-// command implementation
+/// Execute the replace command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    //----------------------------
-    // Args
-    //----------------------------
     let mut fa_in = pgr::libs::fmt::fa::reader(args.get_one::<String>("infile").unwrap())?;
 
     let replace_of =
@@ -54,9 +51,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let mut fa_out = pgr::libs::fmt::fa::writer(crate::cmd_pgr::args::get_outfile(args))?;
 
-    //----------------------------
-    // Process
-    //----------------------------
     for result in fa_in.records() {
         let record = result?;
         let name = String::from_utf8(record.name().into())?;

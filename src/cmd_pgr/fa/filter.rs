@@ -1,7 +1,7 @@
 use clap::{value_parser, Arg, ArgAction, ArgMatches, Command};
 use std::collections::BTreeSet;
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for filter.
 pub fn make_subcommand() -> Command {
     Command::new("filter")
         .about("Filters and formats sequences in FASTA file(s)")
@@ -79,11 +79,8 @@ Examples:
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
-// command implementation
+/// Execute the filter command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    //----------------------------
-    // Args
-    //----------------------------
     let opt_minsize = args
         .get_one::<usize>("min_len")
         .copied()
@@ -107,9 +104,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut fa_out =
         pgr::libs::fmt::fa::writer_with_wrap(crate::cmd_pgr::args::get_outfile(args), opt_line)?;
 
-    //----------------------------
-    // Process
-    //----------------------------
     let mut set_list: BTreeSet<String> = BTreeSet::new();
     for infile in args.get_many::<String>("infiles").unwrap() {
         let mut fa_in = pgr::libs::fmt::fa::reader(infile)?;

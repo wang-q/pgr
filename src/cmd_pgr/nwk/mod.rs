@@ -18,7 +18,7 @@ pub mod to_forest;
 pub mod to_svg;
 pub mod to_tex;
 pub mod topo;
-
+/// Build the clap subcommand for nwk.
 pub fn make_subcommand() -> Command {
     Command::new("nwk")
         .about("Manipulates, analyze, and visualize Newick trees")
@@ -54,7 +54,7 @@ Subcommand groups:
         .subcommand(to_tex::make_subcommand())
         .subcommand(topo::make_subcommand())
 }
-
+/// Execute the nwk command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     match args.subcommand() {
         Some(("cmp", sub_matches)) => cmp::execute(sub_matches),

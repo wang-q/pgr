@@ -1,6 +1,6 @@
 use clap::{builder::PossibleValue, value_parser, Arg, ArgAction, ArgMatches, Command};
 use std::io::Write;
-
+/// Build the clap subcommand for transform.
 pub fn make_subcommand() -> Command {
     Command::new("transform")
         .about("Applies mathematical transformations to a matrix")
@@ -83,11 +83,8 @@ Examples:
         .arg(crate::cmd_pgr::args::mat_input_format_arg())
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
-
+/// Execute the transform command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    //----------------------------
-    // Args
-    //----------------------------
     let infile = args.get_one::<String>("infile").unwrap();
     let op = args.get_one::<String>("op").unwrap().as_str();
     let max_val = *args.get_one::<f32>("max_val").unwrap();
@@ -97,9 +94,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let format = args.get_one::<String>("mat_input_format").unwrap().as_str();
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
 
-    //----------------------------
     // Load and Transform
-    //----------------------------
     let matrix = if format == "pair" {
         pgr::libs::pairmat::NamedMatrix::from_pair_scores(infile, 0.0, 1.0)?
     } else {
@@ -109,9 +104,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let matrix =
         pgr::libs::pairmat::transform_matrix(&matrix, op, max_val, scale, offset, normalize)?;
 
-    //----------------------------
-    // Output
-    //----------------------------
     let size = matrix.size();
     let names = matrix.get_names();
 

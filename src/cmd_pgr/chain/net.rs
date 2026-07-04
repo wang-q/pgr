@@ -3,7 +3,7 @@ use clap::{Arg, ArgMatches, Command};
 use pgr::libs::chain::net::{finalize_net, write_net, ChainNet};
 use pgr::libs::chain::ChainReader;
 use std::io::Write;
-
+/// Build the clap subcommand for net.
 pub fn make_subcommand() -> Command {
     Command::new("net")
         .about("Makes alignment nets out of chains")
@@ -64,7 +64,7 @@ Examples:
         .arg(crate::cmd_pgr::args::min_score_arg("2000"))
         .arg(crate::cmd_pgr::args::incl_hap_arg())
 }
-
+/// Execute the net command.
 pub fn execute(args: &ArgMatches) -> Result<()> {
     let input_path = args.get_one::<String>("infile").unwrap();
     let target_sizes_path = args.get_one::<String>("t_sizes").unwrap();

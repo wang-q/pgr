@@ -3,7 +3,7 @@ use pgr::libs::phylo::tree::io::{compute_scale_bar, to_forest};
 use pgr::libs::phylo::tree::Tree;
 use std::io::Read;
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for to-tex.
 pub fn make_subcommand() -> Command {
     Command::new("to-tex")
         .about("Converts Newick trees to a full LaTeX document")
@@ -51,7 +51,7 @@ Examples:
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
-// command implementation
+/// Execute the to-tex command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
     let is_bl = args.get_flag("bl");

@@ -2,7 +2,7 @@ use clap::{builder::PossibleValue, value_parser, Arg, ArgAction, ArgMatches, Com
 use std::collections::BTreeMap;
 use std::io::Write;
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for split.
 pub fn make_subcommand() -> Command {
     Command::new("split")
         .about("Splits FASTA file(s) into several files")
@@ -70,11 +70,8 @@ Examples:
         .arg(crate::cmd_pgr::args::outdir_arg())
 }
 
-// command implementation
+/// Execute the split command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    //----------------------------
-    // Args
-    //----------------------------
     let mode = args.get_one::<String>("split_mode").unwrap();
 
     let outdir = args.get_one::<String>("outdir").unwrap();
@@ -84,9 +81,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let mut fh_of: BTreeMap<String, std::fs::File> = BTreeMap::new();
 
-    //----------------------------
     // Operating
-    //----------------------------
     if mode == "name" {
         for infile in args.get_many::<String>("infiles").unwrap() {
             let mut fa_in = pgr::libs::fmt::fa::reader(infile)?;
@@ -101,9 +96,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 let seq_str = String::from_utf8(seq.get(..).unwrap_or(&[]).to_vec())
                     .map_err(|e| anyhow::anyhow!("invalid utf8 in sequence: {}", e))?;
 
-                //----------------------------
-                // Output
-                //----------------------------
                 if outdir == "stdout" {
                     print!(">{}\n{}\n", name, seq_str);
                 } else {
@@ -155,9 +147,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 let seq_str = String::from_utf8(seq.get(..).unwrap_or(&[]).to_vec())
                     .map_err(|e| anyhow::anyhow!("invalid utf8 in sequence: {}", e))?;
 
-                //----------------------------
-                // Output
-                //----------------------------
                 if outdir == "stdout" {
                     print!(">{}\n{}\n", name, seq_str);
                 } else {

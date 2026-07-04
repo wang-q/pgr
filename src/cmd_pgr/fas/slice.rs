@@ -1,6 +1,6 @@
 use clap::{ArgMatches, Command};
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for slice.
 pub fn make_subcommand() -> Command {
     Command::new("slice")
         .about("Extracts alignment slices")
@@ -33,7 +33,7 @@ Examples:
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
-// command implementation
+/// Execute the slice command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
 

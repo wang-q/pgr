@@ -1,7 +1,7 @@
 use clap::{ArgMatches, Command};
 use pgr::libs::loc;
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for check.
 pub fn make_subcommand() -> Command {
     Command::new("check")
         .about("Checks genome locations in block FA headers")
@@ -25,11 +25,8 @@ Notes:
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
-// command implementation
+/// Execute the check command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    //----------------------------
-    // Args
-    //----------------------------
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
     let opt_genome = args.get_one::<String>("genome").unwrap();
     let opt_name = &args
@@ -38,9 +35,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         .unwrap_or("")
         .to_string();
 
-    //----------------------------
-    // Ops
-    //----------------------------
     let (mut genome_reader, loc_of) = loc::open_indexed(opt_genome, false)?;
 
     for infile in args.get_many::<String>("infiles").unwrap() {

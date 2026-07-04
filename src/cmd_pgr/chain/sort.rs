@@ -2,7 +2,7 @@ use clap::{Arg, ArgAction, ArgMatches, Command};
 use pgr::libs::chain::read_chains;
 use std::cmp::Ordering;
 use std::io::BufRead;
-
+/// Build the clap subcommand for sort.
 pub fn make_subcommand() -> Command {
     Command::new("sort")
         .about("Sorts chains by score")
@@ -26,7 +26,7 @@ pub fn make_subcommand() -> Command {
                 .help("Keep existing chain IDs (default: renumber starting from 1)"),
         )
 }
-
+/// Execute the sort command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut files: Vec<String> = args
         .get_many::<String>("infiles")

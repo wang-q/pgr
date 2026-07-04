@@ -1,7 +1,7 @@
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use std::collections::BTreeMap;
 use std::io::Write;
-// Create clap subcommand arguments
+/// Build the clap subcommand for concat.
 pub fn make_subcommand() -> Command {
     Command::new("concat")
         .about("Concatenates sequence pieces of the same species")
@@ -39,11 +39,8 @@ Examples:
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
-// command implementation
+/// Execute the concat command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    //----------------------------
-    // Args
-    //----------------------------
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
     let is_phylip = args.get_flag("phylip");
 
@@ -56,17 +53,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         seq_of.insert(name.to_string(), String::new());
     }
 
-    //----------------------------
-    // Ops
-    //----------------------------
     for infile in args.get_many::<String>("infiles").unwrap() {
         let mut reader = pgr::reader(infile)?;
         pgr::libs::fmt::fas::concat_blocks_into(&mut reader, &needed, &mut seq_of)?;
     }
 
-    //----------------------------
-    // Output
-    //----------------------------
     if is_phylip {
         let count = needed.len();
         let length = seq_of.values().next().map(|s| s.len()).unwrap_or(0);

@@ -2,7 +2,7 @@ use clap::{Arg, ArgAction, ArgMatches, Command};
 use pgr::libs::phylo::tree::Tree;
 use std::io::Write;
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for indent.
 pub fn make_subcommand() -> Command {
     Command::new("indent")
         .about("Formats Newick trees with indentation")
@@ -45,7 +45,7 @@ Examples:
         )
 }
 
-// command implementation
+/// Execute the indent command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
 

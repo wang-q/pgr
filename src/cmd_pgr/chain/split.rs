@@ -1,11 +1,10 @@
-use anyhow::Result;
 use clap::{Arg, ArgMatches, Command};
 use pgr::libs::chain::ChainReader;
 use std::collections::HashMap;
 use std::fs;
 use std::io::Write;
 use std::path::Path;
-
+/// Build the clap subcommand for split.
 pub fn make_subcommand() -> Command {
     Command::new("split")
         .about("Splits chains up by target or query sequence")
@@ -21,8 +20,8 @@ pub fn make_subcommand() -> Command {
                 .help("Lump together so have only N split files"),
         )
 }
-
-pub fn execute(args: &ArgMatches) -> Result<()> {
+/// Execute the split command.
+pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let out_dir = args.get_one::<String>("outdir").unwrap();
     let chain_files: Vec<_> = args.get_many::<String>("infiles").unwrap().collect();
     let split_on_q = args.get_flag("by_query");

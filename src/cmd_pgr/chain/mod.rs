@@ -6,7 +6,7 @@ pub mod split;
 pub mod stitch;
 
 use clap::{ArgMatches, Command};
-
+/// Build the clap subcommand for chain.
 pub fn make_subcommand() -> Command {
     Command::new("chain")
         .about("Manipulates Chain alignment files")
@@ -18,7 +18,7 @@ pub fn make_subcommand() -> Command {
         .subcommand(pre_net::make_subcommand())
         .subcommand(net::make_subcommand())
 }
-
+/// Execute the chain command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     match args.subcommand() {
         Some(("anti-repeat", sub_matches)) => anti_repeat::execute(sub_matches),

@@ -2,7 +2,7 @@ use clap::{ArgMatches, Command};
 use pgr::libs::fmt::twobit::TwoBitFile;
 use std::io::Write;
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for some.
 pub fn make_subcommand() -> Command {
     Command::new("some")
         .about("Extracts 2bit records based on a list of names")
@@ -36,24 +36,16 @@ Examples:
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
-// command implementation
+/// Execute the some command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    //----------------------------
-    // Args
-    //----------------------------
     let is_invert = args.get_flag("invert");
     let infile = args.get_one::<String>("infile").unwrap();
     let list_file = args.get_one::<String>("name_list").unwrap();
     let outfile = crate::cmd_pgr::args::get_outfile(args);
 
-    //----------------------------
     // Load list
-    //----------------------------
     let set_list = pgr::libs::io::read_names::<std::collections::HashSet<String>>(list_file)?;
 
-    //----------------------------
-    // Process
-    //----------------------------
     let mut tb = TwoBitFile::open(infile)?;
     let names = tb.get_sequence_names();
 

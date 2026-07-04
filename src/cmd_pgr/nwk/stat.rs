@@ -1,7 +1,7 @@
 use clap::{Arg, ArgMatches, Command};
 use pgr::libs::phylo::tree::{stat, Tree};
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for stat.
 pub fn make_subcommand() -> Command {
     Command::new("stat")
         .about("Prints statistics about trees")
@@ -47,7 +47,7 @@ Examples:
         )
 }
 
-// command implementation
+/// Execute the stat command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
     let infile = args.get_one::<String>("infile").unwrap();

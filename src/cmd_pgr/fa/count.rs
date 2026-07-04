@@ -1,6 +1,6 @@
 use clap::{ArgMatches, Command};
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for count.
 pub fn make_subcommand() -> Command {
     Command::new("count")
         .about("Counts base statistics in FASTA file(s)")
@@ -29,25 +29,17 @@ Examples:
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
-// command implementation
+/// Execute the count command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    //----------------------------
-    // Args
-    //----------------------------
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
 
-    //----------------------------
     // Init
-    //----------------------------
     let mut total_len = 0usize;
     let mut total_base_cnt = [0usize; 5]; // A, C, G, T, N
 
     // Write the header
     writer.write_fmt(format_args!("#seq\tlen\tA\tC\tG\tT\tN\n"))?;
 
-    //----------------------------
-    // Process
-    //----------------------------
     for infile in args.get_many::<String>("infiles").unwrap() {
         let mut fa_in = pgr::libs::fmt::fa::reader(infile)?;
 
@@ -83,9 +75,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         }
     }
 
-    //----------------------------
     // Output total
-    //----------------------------
     writer.write_fmt(format_args!(
         "total\t{}\t{}\t{}\t{}\t{}\t{}\n",
         total_len,

@@ -8,7 +8,7 @@ use std::fs;
 use std::io::Write;
 use tempfile::TempDir;
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for condense.
 pub fn make_subcommand() -> Command {
     Command::new("condense")
         .about("Pipeline - condense subtrees based on taxonomy")
@@ -66,11 +66,8 @@ Examples:
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
-// command implementation
+/// Execute the condense command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    //----------------------------
-    // Args
-    //----------------------------
     let outfile = crate::cmd_pgr::args::get_outfile(args);
     let taxon_file = args.get_one::<String>("taxon").unwrap();
 
@@ -94,9 +91,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     run_cmd!(info "    \"curdir\"  = ${curdir_str}")?;
     run_cmd!(info "    \"tempdir\" = ${tempdir_str}")?;
 
-    //----------------------------
     // Operating
-    //----------------------------
     run_cmd!(info "==> Absolute paths")?;
     let infile = args.get_one::<String>("infile").unwrap();
     let abs_infile = if infile == "stdin" {
@@ -109,9 +104,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     run_cmd!(info "==> Switch to tempdir")?;
     env::set_current_dir(tempdir_str)?;
 
-    //----------------------------
     // Read tree leaf names for filtering
-    //----------------------------
     let trees = Tree::from_file(&abs_infile)?;
     let leaf_names: BTreeSet<String> = if let Some(tree) = trees.first() {
         tree.get_leaf_names().into_iter().flatten().collect()
@@ -121,9 +114,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let leaf_count = leaf_names.len();
     run_cmd!(info "    Tree leaf count: ${leaf_count}")?;
 
-    //----------------------------
     // Read taxonomy TSV
-    //----------------------------
     run_cmd!(info "==> Read taxonomy TSV")?;
 
     // taxon_map: node_name -> Vec of terms (one per rank)
@@ -174,17 +165,13 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         run_cmd!(info "    Rank ${rank}: ${rank_groups} groups")?;
     }
 
-    //----------------------------
     // Start - copy input tree
-    //----------------------------
     run_cmd!(info "==> Start")?;
     run_cmd!(
         ${exe} nwk indent ${abs_infile} -o start.nwk
     )?;
 
-    //----------------------------
     // Condensing - process each rank
-    //----------------------------
     run_cmd!(info "==> Condensing")?;
     let mut cur_tree = "start.nwk".to_string();
     let mut condensed: Vec<String> = vec![];
@@ -260,9 +247,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         }
     }
 
-    //----------------------------
     // Results
-    //----------------------------
     run_cmd!(info "==> Results")?;
     fs::copy(
         tempdir
@@ -279,9 +264,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     }
     writer.flush()?;
 
-    //----------------------------
     // Done
-    //----------------------------
     if outfile == "stdout" {
         let result_content = fs::read_to_string("result.nwk")?;
         print!("{}", result_content);

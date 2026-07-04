@@ -1,4 +1,4 @@
-use clap::Command;
+use clap::{ArgMatches, Command};
 
 pub mod compare;
 pub mod format;
@@ -6,7 +6,7 @@ pub mod subset;
 pub mod to_pair;
 pub mod to_phylip;
 pub mod transform;
-
+/// Build the clap subcommand for mat.
 pub fn make_subcommand() -> Command {
     Command::new("mat")
         .about("Matrix operations")
@@ -18,9 +18,9 @@ pub fn make_subcommand() -> Command {
         .subcommand(subset::make_subcommand())
         .subcommand(transform::make_subcommand())
 }
-
-pub fn execute(matches: &clap::ArgMatches) -> anyhow::Result<()> {
-    match matches.subcommand() {
+/// Execute the mat command.
+pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
+    match args.subcommand() {
         Some(("compare", sub_matches)) => compare::execute(sub_matches),
         Some(("format", sub_matches)) => format::execute(sub_matches),
         Some(("to-pair", sub_matches)) => to_pair::execute(sub_matches),

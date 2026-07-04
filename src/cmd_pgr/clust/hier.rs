@@ -5,7 +5,7 @@ use std::str::FromStr;
 use pgr::libs::clust::hier::{linkage_inplace, to_tree, Method};
 use pgr::libs::pairmat::NamedMatrix;
 use pgr::libs::phylo::tree::io::to_newick;
-
+/// Build the clap subcommand for hier.
 pub fn make_subcommand() -> Command {
     Command::new("hier")
         .about("Hierarchical clustering (dendrogram)")
@@ -38,7 +38,7 @@ Examples:
         .arg(crate::cmd_pgr::args::clust_method_arg())
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
-
+/// Execute the hier command.
 pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
     let infile = matches.get_one::<String>("infile").unwrap();
     let method_str = matches.get_one::<String>("clust_method").unwrap();

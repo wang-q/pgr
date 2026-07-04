@@ -4,8 +4,10 @@ pub mod size;
 pub mod some;
 pub mod to_fa;
 
-pub fn make_subcommand() -> clap::Command {
-    clap::Command::new("2bit")
+use clap::{ArgMatches, Command};
+/// Build the clap subcommand for 2bit.
+pub fn make_subcommand() -> Command {
+    Command::new("2bit")
         .about("Manages 2bit files")
         .after_help(
             r###"Subcommand groups:
@@ -24,9 +26,9 @@ pub fn make_subcommand() -> clap::Command {
         .subcommand(some::make_subcommand())
         .subcommand(to_fa::make_subcommand())
 }
-
-pub fn execute(matches: &clap::ArgMatches) -> anyhow::Result<()> {
-    match matches.subcommand() {
+/// Execute the 2bit command.
+pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
+    match args.subcommand() {
         Some(("masked", sub_matches)) => masked::execute(sub_matches),
         Some(("range", sub_matches)) => range::execute(sub_matches),
         Some(("size", sub_matches)) => size::execute(sub_matches),

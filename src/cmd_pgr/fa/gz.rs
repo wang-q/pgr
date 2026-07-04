@@ -5,7 +5,7 @@ use std::io::{Read, Write};
 
 use pgr::libs::fmt::fa;
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for gz.
 pub fn make_subcommand() -> Command {
     Command::new("gz")
         .about("Compressing a file using the BGZF format")
@@ -65,11 +65,8 @@ Examples:
         .arg(crate::cmd_pgr::args::outfile_arg_optional())
 }
 
-// command implementation
+/// Execute the gz command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    //----------------------------
-    // Args
-    //----------------------------
     let infile = args.get_one::<String>("infile").unwrap();
 
     if args.get_flag("reindex") {
@@ -96,9 +93,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         format!("{}.gz", infile)
     };
 
-    //----------------------------
     // Input
-    //----------------------------
     let mut reader: Box<dyn std::io::BufRead> = if infile == "stdin" {
         // Use 64KB buffer (BGZF block size) to optimize read performance
         Box::new(std::io::BufReader::with_capacity(
@@ -128,9 +123,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let mut writer = builder.build_from_writer(inner_writer);
 
-    //----------------------------
-    // Output
-    //----------------------------
     // Manually read/write in 64KB chunks (BGZF block size) instead of std::io::copy.
     // std::io::copy uses a smaller default buffer (usually 8KB), which causes frequent small writes.
     // For MultithreadedWriter, this increases channel/lock overhead significantly,

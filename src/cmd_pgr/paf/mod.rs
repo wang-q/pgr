@@ -8,8 +8,10 @@ pub mod to_gfa;
 pub mod to_maf;
 pub mod to_vcf;
 
-pub fn make_subcommand() -> clap::Command {
-    clap::Command::new("paf")
+use clap::{ArgMatches, Command};
+/// Build the clap subcommand for paf.
+pub fn make_subcommand() -> Command {
+    Command::new("paf")
         .about("Manipulates PAF (Pairwise mApping Format) files")
         .subcommand_required(true)
         .arg_required_else_help(true)
@@ -23,9 +25,9 @@ pub fn make_subcommand() -> clap::Command {
         .subcommand(graph::make_subcommand())
         .subcommand(stat::make_subcommand())
 }
-
-pub fn execute(matches: &clap::ArgMatches) -> anyhow::Result<()> {
-    match matches.subcommand() {
+/// Execute the paf command.
+pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
+    match args.subcommand() {
         Some(("index", sub_matches)) => index::execute(sub_matches),
         Some(("query", sub_matches)) => query::execute(sub_matches),
         Some(("to-bed", sub_matches)) => to_bed::execute(sub_matches),

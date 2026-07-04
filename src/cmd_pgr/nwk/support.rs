@@ -1,7 +1,7 @@
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use pgr::libs::phylo::tree::{self, support};
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for support.
 pub fn make_subcommand() -> Command {
     Command::new("support")
         .about("Attributes support values (bootstrap) to a tree")
@@ -39,7 +39,7 @@ Examples:
                 .help("Print values as percentages"),
         )
 }
-
+/// Execute the support command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let target_file = args.get_one::<String>("target").unwrap();
     let replicates_file = args.get_one::<String>("replicates").unwrap();

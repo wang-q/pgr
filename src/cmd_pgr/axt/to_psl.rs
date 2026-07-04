@@ -2,7 +2,7 @@ use clap::{ArgMatches, Command};
 
 use pgr::libs::fmt::axt::AxtReader;
 use pgr::libs::fmt::psl::Psl;
-
+/// Build the clap subcommand for to-psl.
 pub fn make_subcommand() -> Command {
     Command::new("to-psl")
         .about("Converts from axt to psl format")
@@ -20,7 +20,7 @@ Examples:
         .arg(crate::cmd_pgr::args::q_sizes_arg().required(true))
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
-
+/// Execute the to-psl command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let input = crate::cmd_pgr::args::get_infile(args);
     let t_sizes_path = args.get_one::<String>("t_sizes").unwrap();

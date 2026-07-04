@@ -1,7 +1,7 @@
 use clap::{ArgMatches, Command};
 use std::io::BufRead;
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for create.
 pub fn make_subcommand() -> Command {
     Command::new("create")
         .about("Creates block FA files from links of ranges")
@@ -36,11 +36,8 @@ Examples:
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
-// command implementation
+/// Execute the create command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    //----------------------------
-    // Args
-    //----------------------------
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
     let opt_genome = args.get_one::<String>("genome").unwrap();
     let opt_name = &args
@@ -49,9 +46,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         .unwrap_or("")
         .to_string();
 
-    //----------------------------
-    // Ops
-    //----------------------------
     for infile in args.get_many::<String>("infiles").unwrap() {
         let reader = pgr::reader(infile)?;
         for line in reader.lines() {
@@ -72,9 +66,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 // Fetch the sequence from the reference genome
                 let seq = pgr::libs::loc::get_seq_loc(opt_genome, &range.to_string())?;
 
-                //----------------------------
-                // Output
-                //----------------------------
                 writer.write_all(format!(">{}\n{}\n", range, seq).as_ref())?;
             }
 

@@ -1,7 +1,7 @@
 use clap::{ArgMatches, Command};
 use std::io::Write;
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for variation.
 pub fn make_subcommand() -> Command {
     Command::new("variation")
         .about("Lists variations (substitutions)")
@@ -32,11 +32,8 @@ Examples:
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
-// command implementation
+/// Execute the variation command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    //----------------------------
-    // Args
-    //----------------------------
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
     let has_outgroup = args.get_flag("outgroup");
 
@@ -55,9 +52,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         "obase",
     ];
 
-    //----------------------------
     // Operating
-    //----------------------------
     writer.write_all(format!("{}\n", field_names.join("\t")).as_ref())?;
 
     for infile in args.get_many::<String>("infiles").unwrap() {

@@ -1,6 +1,6 @@
-use clap::Command;
+use clap::{ArgMatches, Command};
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for seq.
 pub fn make_subcommand() -> Command {
     Command::new("seq")
         .about("Estimates sequence distances using minimizers")
@@ -106,11 +106,8 @@ Examples:
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
-// command implementation
-pub fn execute(args: &clap::ArgMatches) -> anyhow::Result<()> {
-    //----------------------------
-    // Args
-    //----------------------------
+/// Execute the seq command.
+pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let opt_hasher = args.get_one::<String>("hasher").unwrap();
     let opt_kmer = *args.get_one::<usize>("kmer").unwrap();
     let opt_window = *args.get_one::<usize>("window").unwrap();
@@ -128,9 +125,6 @@ pub fn execute(args: &clap::ArgMatches) -> anyhow::Result<()> {
         opt_parallel,
     )?;
 
-    //----------------------------
-    // Ops
-    //----------------------------
     let (entries1, entries2) = pgr::libs::par::load_two_sets(&infiles, is_list, |paths| {
         pgr::libs::par::load_entries(paths, |p| {
             pgr::libs::hash::load_minimizers(p, opt_hasher, opt_kmer, opt_window, is_merge)

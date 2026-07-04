@@ -6,8 +6,10 @@ pub mod rept;
 pub mod trf;
 pub mod ucsc;
 
-pub fn make_subcommand() -> clap::Command {
-    clap::Command::new("pl")
+use clap::{ArgMatches, Command};
+/// Build the clap subcommand for pl.
+pub fn make_subcommand() -> Command {
+    Command::new("pl")
         .about("Runs integrated pipelines")
         .subcommand_required(true)
         .arg_required_else_help(true)
@@ -19,9 +21,9 @@ pub fn make_subcommand() -> clap::Command {
         .subcommand(rept::make_subcommand())
         .subcommand(ucsc::make_subcommand())
 }
-
-pub fn execute(matches: &clap::ArgMatches) -> anyhow::Result<()> {
-    match matches.subcommand() {
+/// Execute the pl command.
+pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
+    match args.subcommand() {
         Some(("condense", sub_matches)) => condense::execute(sub_matches),
         Some(("p2m", sub_matches)) => p2m::execute(sub_matches),
         Some(("prefilter", sub_matches)) => prefilter::execute(sub_matches),

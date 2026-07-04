@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::io::{BufRead, Write};
 
 use pgr::libs::fmt::psl::SumStats;
-
+/// Build the clap subcommand for stats.
 pub fn make_subcommand() -> Command {
     Command::new("stats")
         .about("Collects statistics from a psl file")
@@ -50,7 +50,7 @@ Examples:
                 .help("Write a TSV header instead of an autoSql header"),
         )
 }
-
+/// Execute the stats command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let input = crate::cmd_pgr::args::get_infile(args);
     let output = crate::cmd_pgr::args::get_outfile(args);

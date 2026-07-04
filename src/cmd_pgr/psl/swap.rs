@@ -3,7 +3,7 @@ use intspan::{reader, writer};
 use std::io::BufRead;
 
 use pgr::libs::fmt::psl::Psl;
-
+/// Build the clap subcommand for swap.
 pub fn make_subcommand() -> Command {
     Command::new("swap")
         .about("Reverses target and query in psls")
@@ -26,7 +26,7 @@ Examples:
                 .help("Don't reverse-complement PSL if needed, instead make target strand explict"),
         )
 }
-
+/// Execute the swap command.
 pub fn execute(matches: &clap::ArgMatches) -> anyhow::Result<()> {
     let input = crate::cmd_pgr::args::get_infile(matches);
     let output = crate::cmd_pgr::args::get_outfile(matches);

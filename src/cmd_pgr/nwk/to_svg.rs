@@ -2,7 +2,7 @@ use clap::{Arg, ArgMatches, Command};
 use pgr::libs::phylo::tree::Tree;
 use std::io::Write;
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for to-svg.
 pub fn make_subcommand() -> Command {
     Command::new("to-svg")
         .about("Converts Newick trees to SVG format")
@@ -44,7 +44,7 @@ Examples:
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
-// command implementation
+/// Execute the to-svg command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
 

@@ -3,7 +3,7 @@ use clap::{ArgMatches, Command};
 use pgr::libs::chain::{chain_blocks, group_psl_blocks, GapCalc, ScoreContext, SubMatrix};
 use pgr::libs::fmt::twobit::TwoBitFile;
 use std::cmp::Ordering;
-
+/// Build the clap subcommand for chain.
 pub fn make_subcommand() -> Command {
     Command::new("chain")
         .about("Chains PSL alignments")
@@ -57,7 +57,7 @@ Examples:
         .arg(crate::cmd_pgr::args::align_gap_extend_arg())
         .arg(crate::cmd_pgr::args::score_scheme_arg())
 }
-
+/// Execute the chain command.
 pub fn execute(args: &ArgMatches) -> Result<()> {
     let input = args.get_one::<String>("psl").unwrap();
     let output = crate::cmd_pgr::args::get_outfile(args);

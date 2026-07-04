@@ -1,6 +1,6 @@
 use clap::{value_parser, Arg, ArgAction, ArgMatches, Command};
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for refine.
 pub fn make_subcommand() -> Command {
     Command::new("refine")
         .about("Realigns files with built-in or external programs and trim unwanted regions")
@@ -77,7 +77,7 @@ Examples:
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
-// command implementation
+/// Execute the refine command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let parallel = *args.get_one::<usize>("parallel").unwrap();
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
@@ -92,9 +92,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 }
 
 fn proc_block(block: &pgr::libs::fmt::fas::FasBlock, args: &ArgMatches) -> anyhow::Result<String> {
-    //----------------------------
-    // Args
-    //----------------------------
     let engine = args.get_one::<String>("engine").unwrap();
     let has_outgroup = args.get_flag("outgroup");
     let chop = *args.get_one::<usize>("chop").unwrap();
@@ -102,9 +99,6 @@ fn proc_block(block: &pgr::libs::fmt::fas::FasBlock, args: &ArgMatches) -> anyho
     let pad = *args.get_one::<usize>("indel_pad").unwrap();
     let fill = *args.get_one::<usize>("fill").unwrap();
 
-    //----------------------------
-    // Realigning
-    //----------------------------
     let mut seqs: Vec<String> = vec![];
     let mut ranges = vec![];
     for entry in &block.entries {
@@ -114,9 +108,7 @@ fn proc_block(block: &pgr::libs::fmt::fas::FasBlock, args: &ArgMatches) -> anyho
 
     let mut aligned = vec![];
     if engine.as_str() == "none" {
-        for seq in seqs {
-            aligned.push(seq.clone());
-        }
+        aligned = seqs;
     } else {
         if is_quick {
             aligned =
@@ -126,9 +118,6 @@ fn proc_block(block: &pgr::libs::fmt::fas::FasBlock, args: &ArgMatches) -> anyho
         }
     };
 
-    //----------------------------
-    // Trimming
-    //----------------------------
     pgr::libs::alignment::trim_pure_dash(&mut aligned);
     if has_outgroup {
         pgr::libs::alignment::trim_outgroup(&mut aligned)?;
@@ -139,9 +128,6 @@ fn proc_block(block: &pgr::libs::fmt::fas::FasBlock, args: &ArgMatches) -> anyho
         pgr::libs::alignment::trim_head_tail(&mut aligned, &mut ranges, chop);
     }
 
-    //----------------------------
-    // Output
-    //----------------------------
     let mut out_string = "".to_string();
     for (range, seq) in ranges.iter().zip(aligned) {
         out_string += format!(">{}\n{}\n", range, seq).as_ref();

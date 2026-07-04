@@ -4,7 +4,7 @@ use std::str::FromStr;
 
 use pgr::libs::fmt::psl::Psl;
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for lift.
 pub fn make_subcommand() -> Command {
     Command::new("lift")
         .about("Lifts PSL coordinates from fragment alignments")
@@ -36,7 +36,7 @@ Examples:
         .arg(crate::cmd_pgr::args::t_sizes_arg())
 }
 
-// command implementation
+/// Execute the lift command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
     let infile = args.get_one::<String>("infile").unwrap();

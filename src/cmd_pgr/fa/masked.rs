@@ -1,7 +1,7 @@
 use clap::{ArgMatches, Command};
 use std::io::Write;
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for masked.
 pub fn make_subcommand() -> Command {
     Command::new("masked")
         .about("Identifies masked regions in FASTA file(s)")
@@ -37,17 +37,11 @@ Examples:
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
-// command implementation
+/// Execute the masked command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    //----------------------------
-    // Args
-    //----------------------------
     let is_gap = args.get_flag("gap");
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
 
-    //----------------------------
-    // Ops
-    //----------------------------
     for infile in args.get_many::<String>("infiles").unwrap() {
         let mut fa_in = pgr::libs::fmt::fa::reader(infile)?;
 

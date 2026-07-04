@@ -1,7 +1,7 @@
 use clap::{ArgMatches, Command};
 use std::io::Write;
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for to-fas.
 pub fn make_subcommand() -> Command {
     Command::new("to-fas")
         .about("Converts MAF files to block FA format")
@@ -27,16 +27,10 @@ Examples:
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
-// command implementation
+/// Execute the to-fas command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    //----------------------------
-    // Args
-    //----------------------------
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
 
-    //----------------------------
-    // Ops
-    //----------------------------
     for infile in args.get_many::<String>("infiles").unwrap() {
         let mut reader = pgr::reader(infile)?;
 
@@ -44,9 +38,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             for comp in block.components {
                 let range = comp.to_range();
 
-                //----------------------------
-                // Output
-                //----------------------------
                 writer.write_all(format!(">{}\n{}\n", range, comp.text).as_ref())?;
             }
 

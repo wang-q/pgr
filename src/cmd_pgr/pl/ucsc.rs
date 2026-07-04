@@ -1,7 +1,7 @@
 use clap::{ArgMatches, Command};
 use cmd_lib::run_cmd;
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for ucsc.
 pub fn make_subcommand() -> Command {
     Command::new("ucsc")
         .about("UCSC chain/net pipeline")
@@ -72,11 +72,8 @@ References:
         .arg(crate::cmd_pgr::args::outdir_arg())
 }
 
-// command implementation
+/// Execute the ucsc command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    //----------------------------
-    // Args
-    //----------------------------
     let outdir = args.get_one::<String>("outdir").unwrap();
     if outdir != "stdout" {
         std::fs::create_dir_all(outdir)?;
@@ -87,9 +84,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let is_syn = args.get_flag("syn");
 
-    //----------------------------
-    // Paths
-    //----------------------------
     let curdir = std::env::current_dir()?;
     let pgr = std::env::current_exe()?.display().to_string();
     let tempdir = tempfile::Builder::new().prefix("pgr_pipeline_").tempdir()?;
@@ -149,9 +143,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let abs_outdir = pgr::libs::pl::abs_path_or_stdout(outdir)?;
 
-    //----------------------------
-    // Ops
-    //----------------------------
     run_cmd!(info "==> Switch to tempdir")?;
     std::env::set_current_dir(tempdir_str)?;
 
@@ -408,9 +399,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         }
     }
 
-    //----------------------------
     // Done
-    //----------------------------
     std::env::set_current_dir(&curdir)?;
 
     Ok(())

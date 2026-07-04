@@ -1,6 +1,6 @@
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use pgr::libs::chain::net::{filter_chrom, prune_gap, read_nets, FilterCriteria};
-
+/// Build the clap subcommand for filter.
 pub fn make_subcommand() -> Command {
     Command::new("filter")
         .about("Filters out parts of net")
@@ -90,7 +90,7 @@ pub fn make_subcommand() -> Command {
         )
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
-
+/// Execute the filter command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let input_path = args.get_one::<String>("infile").unwrap();
 

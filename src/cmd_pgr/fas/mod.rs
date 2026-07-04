@@ -19,8 +19,10 @@ pub mod to_vcf;
 pub mod to_xlsx;
 pub mod variation;
 
-pub fn make_subcommand() -> clap::Command {
-    clap::Command::new("fas")
+use clap::{ArgMatches, Command};
+/// Build the clap subcommand for fas.
+pub fn make_subcommand() -> Command {
+    Command::new("fas")
         .about("Manipulates block FA files")
         .after_help(
             r###"Subcommand groups:
@@ -56,9 +58,9 @@ pub fn make_subcommand() -> clap::Command {
         .subcommand(to_vcf::make_subcommand())
         .subcommand(subset::make_subcommand())
 }
-
-pub fn execute(matches: &clap::ArgMatches) -> anyhow::Result<()> {
-    match matches.subcommand() {
+/// Execute the fas command.
+pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
+    match args.subcommand() {
         Some(("concat", sub_matches)) => concat::execute(sub_matches),
         Some(("check", sub_matches)) => check::execute(sub_matches),
         Some(("create", sub_matches)) => create::execute(sub_matches),

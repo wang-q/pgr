@@ -3,7 +3,7 @@ use cmd_lib::run_cmd;
 use rayon::prelude::*;
 use std::io::Write;
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for prefilter.
 pub fn make_subcommand() -> Command {
     Command::new("prefilter")
         .about("Prefilters genome/metagenome assembly by amino acid minimizers")
@@ -66,11 +66,8 @@ Examples:
         .arg(crate::cmd_pgr::args::parallel_arg())
 }
 
-// command implementation
+/// Execute the prefilter command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    //----------------------------
-    // Args
-    //----------------------------
     let infile = args.get_one::<String>("infile").unwrap();
     let match_file = args.get_one::<String>("reference").unwrap();
 
@@ -87,9 +84,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let is_bgzf = pgr::is_bgzf(infile);
 
-    //----------------------------
     // Open files
-    //----------------------------
     let loc_file = format!("{}.loc", infile);
     if !std::path::Path::new(&loc_file).is_file() {
         pgr::libs::loc::create_loc(infile, &loc_file, is_bgzf)?;

@@ -3,7 +3,7 @@ use pgr::libs::phylo::tree::Tree;
 use std::collections::BTreeMap;
 use std::io::Write;
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for replace.
 pub fn make_subcommand() -> Command {
     Command::new("replace")
         .about("Replaces node names or comments in a Newick file")
@@ -47,11 +47,8 @@ Examples:
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
-// command implementation
+/// Execute the replace command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    //----------------------------
-    // Args
-    //----------------------------
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
 
     let infile = args.get_one::<String>("infile").unwrap();

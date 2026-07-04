@@ -2,7 +2,7 @@ use clap::{value_parser, Arg, ArgMatches, Command};
 use cmd_lib::run_cmd;
 use std::io::BufRead;
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for trf.
 pub fn make_subcommand() -> Command {
     Command::new("trf")
         .about("Identifies tandem repeats in a genome")
@@ -75,11 +75,8 @@ This command identifies tandem repeats in a genome via `trf`.
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
-// command implementation
+/// Execute the trf command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    //----------------------------
-    // Args
-    //----------------------------
     let outfile = crate::cmd_pgr::args::get_outfile(args);
 
     let opt_trf_match = *args.get_one::<usize>("trf_match").unwrap();
@@ -91,9 +88,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let opt_minscore_u = opt_minscore as usize;
     let opt_max_period = *args.get_one::<usize>("max_period").unwrap();
 
-    //----------------------------
-    // Paths
-    //----------------------------
     let curdir = std::env::current_dir()?;
     let pgr = std::env::current_exe()?.display().to_string();
     let tempdir = tempfile::Builder::new().prefix("pgr_trf_").tempdir()?;
@@ -113,9 +107,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         .to_string();
     let abs_outfile = pgr::libs::pl::abs_path_or_stdout(outfile)?;
 
-    //----------------------------
-    // Ops
-    //----------------------------
     run_cmd!(info "==> Switch to tempdir")?;
     std::env::set_current_dir(tempdir_str)?;
 
@@ -173,9 +164,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         spanr cover $[rg_files] -o ${abs_outfile}
     )?;
 
-    //----------------------------
     // Done
-    //----------------------------
     std::env::set_current_dir(&curdir)?;
 
     Ok(())

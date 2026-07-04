@@ -1,7 +1,7 @@
 use clap::{value_parser, Arg, ArgMatches, Command};
 use std::io::Write;
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for k-medoids.
 pub fn make_subcommand() -> Command {
     Command::new("k-medoids")
         .about("K-Medoids clustering")
@@ -41,11 +41,9 @@ If there are ties, the alphabetically first member is chosen.
         .arg(crate::cmd_pgr::args::max_iter_arg())
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
-
+/// Execute the k-medoids command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    //----------------------------
     // 1. Args
-    //----------------------------
     let infile = args.get_one::<String>("infile").unwrap();
     let opt_k = *args.get_one::<usize>("k").unwrap();
     let opt_format = args.get_one::<String>("clust_format").unwrap();
@@ -57,21 +55,15 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let mut writer = pgr::writer(outfile)?;
 
-    //----------------------------
     // 2. Load Matrix
-    //----------------------------
     let (sm, names): (pgr::libs::pairmat::ScoringMatrix<f32>, Vec<String>) =
         pgr::libs::pairmat::ScoringMatrix::from_pair_scores(infile, opt_same, opt_missing)?;
 
-    //----------------------------
     // 3. Clustering
-    //----------------------------
     let kmedoids = pgr::libs::clust::k_medoids::KMedoids::new(opt_k, max_iter, runs);
     let mut clusters = kmedoids.perform_clustering(&sm);
 
-    //----------------------------
     // 4. Output
-    //----------------------------
     let out =
         pgr::libs::clust::format::format_flat_clusters(&mut clusters, &names, opt_format, |c| {
             pgr::libs::clust::medoid::find_medoid(&sm, c, false)

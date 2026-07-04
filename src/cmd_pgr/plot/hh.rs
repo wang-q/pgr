@@ -3,7 +3,7 @@ use pgr::libs::plot::histogram::{
     calc_density, calc_hist, compute_hh_axis, create_table, load_data, render_hh_tex,
 };
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for hh.
 pub fn make_subcommand() -> Command {
     Command::new("hh")
         .about("Histo-heatmap")
@@ -88,11 +88,8 @@ pub fn make_subcommand() -> Command {
         )
 }
 
-// command implementation
+/// Execute the hh command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    //----------------------------
-    // Args
-    //----------------------------
     let infile = args.get_one::<String>("infile").unwrap();
 
     // Optional arguments with defaults
@@ -137,9 +134,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         );
     };
 
-    //----------------------------
     // Table section
-    //----------------------------
     let (data, col_name, group_name) = load_data(infile, *col, group)?;
 
     // Calculate histogram for each group
@@ -147,17 +142,13 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let density_data = calc_density(&hist_data);
     let table = create_table(&density_data);
 
-    //----------------------------
     // Axis section
-    //----------------------------
     let xlabel = xlabel.unwrap_or(col_name);
     let ylabel = ylabel.unwrap_or(group_name);
 
     let axis = compute_hh_axis(&density_data, *bins, &bin_edges, unit);
 
-    //----------------------------
     // Context
-    //----------------------------
     let mut context = tera::Context::new();
 
     let outfile = crate::cmd_pgr::args::get_outfile(args);

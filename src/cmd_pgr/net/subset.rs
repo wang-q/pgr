@@ -2,7 +2,7 @@ use clap::{Arg, ArgAction, ArgMatches, Command};
 use pgr::libs::chain::net::{read_nets, subset_nets, SubsetOptions};
 use pgr::libs::chain::{read_chains, Chain};
 use std::collections::HashMap;
-
+/// Build the clap subcommand for subset.
 pub fn make_subcommand() -> Command {
     Command::new("subset")
         .about("Creates chain file with subset of chains that appear in the net")
@@ -31,7 +31,7 @@ pub fn make_subcommand() -> Command {
             "Restrict output to particular type in net file",
         ))
 }
-
+/// Execute the subset command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let net_in = args.get_one::<String>("in_net").unwrap();
     let chain_in = args.get_one::<String>("in_chain").unwrap();

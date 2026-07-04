@@ -69,7 +69,7 @@ fn output_maf_msa(
     }
     Ok(())
 }
-
+/// Build the clap subcommand for to-maf.
 pub fn make_subcommand() -> Command {
     crate::cmd_pgr::args::add_poa_args(
         crate::cmd_pgr::args::add_query_args(crate::cmd_pgr::args::add_msa_flag(
@@ -118,7 +118,7 @@ Examples:
 "###,
     )
 }
-
+/// Execute the to-maf command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let opts = crate::cmd_pgr::args::query_options_from_args(args);
     let (idx, all_results) = pgr::libs::paf::query::run_query(&opts)?;

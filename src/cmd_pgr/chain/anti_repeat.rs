@@ -4,7 +4,7 @@ use pgr::libs::chain::anti_repeat::check_chain;
 use pgr::libs::chain::read_chains;
 use pgr::libs::fmt::twobit::TwoBitFile;
 // Default scores from UCSC chainAntiRepeat.c
-
+/// Build the clap subcommand for anti-repeat.
 pub fn make_subcommand() -> Command {
     Command::new("anti-repeat")
         .about("Filters chains for repeats and degeneracy")
@@ -23,7 +23,7 @@ pub fn make_subcommand() -> Command {
                 .help("Score above which no checks are performed"),
         )
 }
-
+/// Execute the anti-repeat command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let target_path = args.get_one::<String>("target_2bit").unwrap();
     let query_path = args.get_one::<String>("query_2bit").unwrap();

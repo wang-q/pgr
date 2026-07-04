@@ -5,7 +5,7 @@ use pgr::libs::chain::{Chain, ChainReader};
 use pgr::libs::fmt::twobit::TwoBitFile;
 use std::collections::HashMap;
 use std::fs::File;
-
+/// Build the clap subcommand for to-axt.
 pub fn make_subcommand() -> Command {
     Command::new("to-axt")
         .about("Converts net (and chain) to axt")
@@ -15,13 +15,13 @@ pub fn make_subcommand() -> Command {
         .arg(Arg::new("query").required(true).help("Query 2bit file"))
         .arg(crate::cmd_pgr::args::outfile_arg_required())
 }
-
-pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
-    let in_net = matches.get_one::<String>("in_net").unwrap();
-    let in_chain = matches.get_one::<String>("in_chain").unwrap();
-    let target = matches.get_one::<String>("target").unwrap();
-    let query = matches.get_one::<String>("query").unwrap();
-    let out_axt = crate::cmd_pgr::args::get_outfile(matches);
+/// Execute the to-axt command.
+pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
+    let in_net = args.get_one::<String>("in_net").unwrap();
+    let in_chain = args.get_one::<String>("in_chain").unwrap();
+    let target = args.get_one::<String>("target").unwrap();
+    let query = args.get_one::<String>("query").unwrap();
+    let out_axt = crate::cmd_pgr::args::get_outfile(args);
 
     let mut t_2bit = TwoBitFile::open(target)?;
     let mut q_2bit = TwoBitFile::open(query)?;

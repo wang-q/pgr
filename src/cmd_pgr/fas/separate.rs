@@ -2,7 +2,7 @@ use clap::{Arg, ArgAction, ArgMatches, Command};
 use std::collections::BTreeMap;
 use std::io::Write;
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for separate.
 pub fn make_subcommand() -> Command {
     Command::new("separate")
         .about("Separates block FA files by species")
@@ -43,11 +43,8 @@ Examples:
         .arg(crate::cmd_pgr::args::outdir_arg())
 }
 
-// command implementation
+/// Execute the separate command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    //----------------------------
-    // Args
-    //----------------------------
     let outdir = args.get_one::<String>("outdir").unwrap();
     if outdir != "stdout" {
         std::fs::create_dir_all(outdir)?;
@@ -56,9 +53,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let opt_suffix = args.get_one::<String>("suffix").unwrap();
     let is_rc = args.get_flag("rc");
 
-    //----------------------------
-    // Ops
-    //----------------------------
     let mut file_of: BTreeMap<String, std::fs::File> = BTreeMap::new();
     for infile in args.get_many::<String>("infiles").unwrap() {
         let mut reader = pgr::reader(infile)?;
@@ -79,9 +73,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 // Remove dashes from the sequence
                 let seq = std::str::from_utf8(&seq)?.to_string().replace('-', "");
 
-                //----------------------------
-                // Output
-                //----------------------------
                 if outdir == "stdout" {
                     print!(">{}\n{}\n", range, seq);
                 } else {

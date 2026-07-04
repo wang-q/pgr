@@ -1,7 +1,7 @@
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use std::collections::HashSet;
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for rc.
 pub fn make_subcommand() -> Command {
     Command::new("rc")
         .about("Reverse complements sequences in FASTA file(s)")
@@ -46,11 +46,8 @@ Examples:
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
-// command implementation
+/// Execute the rc command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    //----------------------------
-    // Args
-    //----------------------------
     let mut fa_in = pgr::libs::fmt::fa::reader(args.get_one::<String>("infile").unwrap())?;
 
     let is_consistent = args.get_flag("consistent");
@@ -65,9 +62,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         HashSet::new()
     };
 
-    //----------------------------
-    // Process
-    //----------------------------
     for result in fa_in.records() {
         let record = result?;
         let name = String::from_utf8(record.name().into())?;

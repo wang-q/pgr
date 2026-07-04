@@ -1,6 +1,6 @@
 use clap::{ArgMatches, Command};
 use pgr::libs::fmt::twobit::TwoBitFile;
-
+/// Build the clap subcommand for to-fa.
 pub fn make_subcommand() -> Command {
     Command::new("to-fa")
         .about("Converts 2bit to FASTA")
@@ -31,7 +31,7 @@ Examples:
         .arg(crate::cmd_pgr::args::line_arg(Some("60")))
         .arg(crate::cmd_pgr::args::no_mask_arg())
 }
-
+/// Execute the to-fa command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let input_path = args.get_one::<String>("infile").unwrap();
     let output_path = crate::cmd_pgr::args::get_outfile(args);

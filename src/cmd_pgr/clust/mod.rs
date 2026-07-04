@@ -8,8 +8,10 @@ pub mod mcl;
 pub mod nj;
 pub mod upgma;
 
-pub fn make_subcommand() -> clap::Command {
-    clap::Command::new("clust")
+use clap::{ArgMatches, Command};
+/// Build the clap subcommand for clust.
+pub fn make_subcommand() -> Command {
+    Command::new("clust")
         .about("Clustering operations")
         .after_help(
             r###"Subcommand groups:
@@ -32,9 +34,9 @@ pub fn make_subcommand() -> clap::Command {
         .subcommand(nj::make_subcommand())
         .subcommand(upgma::make_subcommand())
 }
-
-pub fn execute(matches: &clap::ArgMatches) -> anyhow::Result<()> {
-    match matches.subcommand() {
+/// Execute the clust command.
+pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
+    match args.subcommand() {
         Some(("cc", sub_matches)) => cc::execute(sub_matches),
         Some(("cut", sub_matches)) => cut::execute(sub_matches),
         Some(("dbscan", sub_matches)) => dbscan::execute(sub_matches),

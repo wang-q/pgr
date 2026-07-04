@@ -1,7 +1,7 @@
 use clap::{ArgMatches, Command};
 use std::io::Write;
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for to-phylip.
 pub fn make_subcommand() -> Command {
     Command::new("to-phylip")
         .about("Converts pairwise distances to a phylip distance matrix")
@@ -24,19 +24,13 @@ Examples:
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
-// command implementation
+/// Execute the to-phylip command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    //----------------------------
-    // Args
-    //----------------------------
     let infile = args.get_one::<String>("infile").unwrap();
     let opt_same = *args.get_one::<f32>("same").unwrap();
     let opt_missing = *args.get_one::<f32>("missing").unwrap();
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
 
-    //----------------------------
-    // Ops
-    //----------------------------
     // Load matrix from pairwise distances
     let matrix = pgr::libs::pairmat::NamedMatrix::from_pair_scores(infile, opt_same, opt_missing)?;
     let names = matrix.get_names();

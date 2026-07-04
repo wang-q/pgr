@@ -3,7 +3,7 @@ use pgr::libs::fmt::psl::Psl;
 use std::io::{BufRead, Write};
 use std::str::FromStr;
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for to-range.
 pub fn make_subcommand() -> Command {
     Command::new("to-range")
         .about("Extracts coordinates from PSL as ranges (.rg)")
@@ -37,7 +37,7 @@ Examples:
         )
 }
 
-// command implementation
+/// Execute the to-range command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
     let infile = args.get_one::<String>("infile").unwrap();

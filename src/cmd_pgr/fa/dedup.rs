@@ -1,7 +1,7 @@
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use std::collections::HashMap;
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for dedup.
 pub fn make_subcommand() -> Command {
     Command::new("dedup")
         .about("Deduplicates records in FASTA file(s)")
@@ -85,11 +85,8 @@ Examples:
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
-// command implementation
+/// Execute the dedup command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    //----------------------------
-    // Args
-    //----------------------------
     let is_desc = args.get_flag("desc");
     let is_seq = args.get_flag("seq");
     let is_both = args.get_flag("both");
@@ -104,9 +101,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let mut fa_out = pgr::libs::fmt::fa::writer(crate::cmd_pgr::args::get_outfile(args))?;
 
-    //----------------------------
-    // Process
-    //----------------------------
     let mut subject_map: HashMap<u64, Vec<String>> = HashMap::new();
 
     for infile in args.get_many::<String>("infiles").unwrap() {
@@ -133,14 +127,14 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 &opts,
             )?;
 
-            if let std::collections::hash_map::Entry::Vacant(e) = subject_map.entry(subject) {
-                e.insert(vec![name_str]);
-            } else {
-                flag_pass = false;
-                subject_map
-                    .get_mut(&subject)
-                    .ok_or_else(|| anyhow::anyhow!("subject not found: {}", subject))?
-                    .push(name_str);
+            match subject_map.entry(subject) {
+                std::collections::hash_map::Entry::Vacant(e) => {
+                    e.insert(vec![name_str]);
+                }
+                std::collections::hash_map::Entry::Occupied(mut e) => {
+                    flag_pass = false;
+                    e.get_mut().push(name_str);
+                }
             }
 
             if !flag_pass {

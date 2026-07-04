@@ -1,10 +1,10 @@
 use crate::cmd_pgr::args::{infiles_arg_with_numargs, outfile_arg};
-use anyhow::{anyhow, Result};
+use anyhow::anyhow;
 use clap::{ArgMatches, Command};
 use pgr::libs::plot::common::{context_get_str, render_and_write, replace_section};
 use pgr::libs::plot::venn::{venn_sets_2, venn_sets_3, venn_sets_4};
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for venn.
 pub fn make_subcommand() -> Command {
     Command::new("venn")
         .about("Plots Venn diagram for 2-4 sets")
@@ -32,20 +32,14 @@ Examples:
         .arg(outfile_arg())
 }
 
-// command implementation
-pub fn execute(args: &ArgMatches) -> Result<()> {
-    //----------------------------
-    // Args
-    //----------------------------
+/// Execute the venn command.
+pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let infiles: Vec<String> = args
         .get_many::<String>("infiles")
         .ok_or_else(|| anyhow!("missing infiles"))?
         .map(|s| s.to_string())
         .collect();
 
-    //----------------------------
-    // Ops
-    //----------------------------
     let ints_of = pgr::libs::plot::venn::build_venn_sets_from_files(&infiles)?;
 
     let get_set = |i: usize| -> anyhow::Result<&intspan::IntSpan> {
@@ -71,9 +65,7 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
         _ => (Vec::new(), Vec::new()),
     };
 
-    //----------------------------
     // Context
-    //----------------------------
     let mut context = tera::Context::new();
 
     let outfile = args
@@ -210,7 +202,7 @@ const VENN_4: &str = r###"
 \node[text centered] at (0,    -0.2) { {{ inter.10 }} }; % ABCD
     "###;
 
-fn gen_venn(context: &tera::Context, out_string: &str) -> Result<()> {
+fn gen_venn(context: &tera::Context, out_string: &str) -> anyhow::Result<()> {
     let outfile = context_get_str(context, "outfile")?;
     let mut writer = pgr::writer(outfile)?;
 

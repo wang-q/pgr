@@ -5,8 +5,10 @@ pub mod subset;
 pub mod syntenic;
 pub mod to_axt;
 
-pub fn make_subcommand() -> clap::Command {
-    clap::Command::new("net")
+use clap::{ArgMatches, Command};
+/// Build the clap subcommand for net.
+pub fn make_subcommand() -> Command {
+    Command::new("net")
         .about("Manipulates Net alignment files")
         .subcommand(class::make_subcommand())
         .subcommand(filter::make_subcommand())
@@ -15,9 +17,9 @@ pub fn make_subcommand() -> clap::Command {
         .subcommand(syntenic::make_subcommand())
         .subcommand(to_axt::make_subcommand())
 }
-
-pub fn execute(matches: &clap::ArgMatches) -> anyhow::Result<()> {
-    match matches.subcommand() {
+/// Execute the net command.
+pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
+    match args.subcommand() {
         Some(("class", sub_matches)) => class::execute(sub_matches),
         Some(("filter", sub_matches)) => filter::execute(sub_matches),
         Some(("split", sub_matches)) => split::execute(sub_matches),

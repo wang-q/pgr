@@ -1,6 +1,6 @@
 use clap::{Arg, ArgMatches, Command};
 use std::io::Write;
-
+/// Build the clap subcommand for compare.
 pub fn make_subcommand() -> Command {
     Command::new("compare")
         .about("Compares two distance matrices")
@@ -40,7 +40,7 @@ Examples:
         .arg(crate::cmd_pgr::args::mat_method_arg())
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
-
+/// Execute the compare command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let matrix1_file = args.get_one::<String>("matrix1").unwrap();
     let matrix2_file = args.get_one::<String>("matrix2").unwrap();

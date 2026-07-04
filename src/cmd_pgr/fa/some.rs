@@ -1,6 +1,6 @@
 use clap::{ArgMatches, Command};
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for some.
 pub fn make_subcommand() -> Command {
     Command::new("some")
         .about("Extracts FASTA records based on a list of names")
@@ -35,27 +35,19 @@ Examples:
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
-// command implementation
+/// Execute the some command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    //----------------------------
-    // Args
-    //----------------------------
     let is_invert = args.get_flag("invert");
 
     let mut fa_in = pgr::libs::fmt::fa::reader(args.get_one::<String>("infile").unwrap())?;
 
     let mut fa_out = pgr::libs::fmt::fa::writer(crate::cmd_pgr::args::get_outfile(args))?;
 
-    //----------------------------
     // Load list
-    //----------------------------
     let set_list = pgr::libs::io::read_names::<std::collections::HashSet<String>>(
         args.get_one::<String>("name_list").unwrap(),
     )?;
 
-    //----------------------------
-    // Process
-    //----------------------------
     for result in fa_in.records() {
         let record = result?;
         let name = String::from_utf8(record.name().into())?;

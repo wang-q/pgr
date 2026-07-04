@@ -2,7 +2,7 @@ use clap::{Arg, ArgMatches, Command};
 use pgr::libs::phylo::tree::Tree;
 use std::io::Write;
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for comment.
 pub fn make_subcommand() -> Command {
     Command::new("comment")
         .about("Adds comments to node(s) in a Newick file")
@@ -101,11 +101,8 @@ pub fn make_subcommand() -> Command {
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
-// command implementation
+/// Execute the comment command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    //----------------------------
-    // Args
-    //----------------------------
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
 
     let opt_string = args.get_one::<String>("string");
@@ -186,17 +183,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             }
         }
 
-        //----------------------------
         // Remove parts of comments
-        //----------------------------
         if args.contains_id("remove") {
             let pattern = args.get_one::<String>("remove").unwrap();
             pgr::libs::phylo::tree::ops::remove_properties_matching(tree, pattern)?;
         }
 
-        //----------------------------
-        // Output
-        //----------------------------
         let out_string = tree.to_newick();
         writer.write_all((out_string + "\n").as_ref())?;
     }

@@ -3,10 +3,7 @@ use clap::{value_parser, Arg, ArgAction, ArgMatches, Command};
 use std::io::Write;
 use tempfile::NamedTempFile;
 
-// TODO: [multiple] on target
-// TODO: unmask on t/q
-
-// Create clap subcommand arguments
+/// Build the clap subcommand for lastz.
 pub fn make_subcommand() -> Command {
     Command::new("lastz")
         .about("Wrapper for lastz alignment (Cactus style)")
@@ -86,12 +83,12 @@ Examples:
         .arg(crate::cmd_pgr::args::outdir_arg_with_default("lastz_out"))
         .arg(crate::cmd_pgr::args::parallel_arg().default_value("4"))
 }
-
-pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
-    let preset = matches.get_one::<String>("preset");
+/// Execute the lastz command.
+pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
+    let preset = args.get_one::<String>("preset");
 
     // Show preset and exit
-    if matches.get_flag("show_preset") {
+    if args.get_flag("show_preset") {
         let preset_name = preset
             .ok_or_else(|| anyhow::anyhow!("--show-preset requires --preset to be specified."))?;
         let p = pgr::libs::lastz::find_preset(preset_name)
@@ -105,13 +102,13 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let arg_query = matches.get_one::<String>("query").unwrap();
-    let arg_target = matches.get_one::<String>("target").unwrap();
-    let opt_depth = *matches.get_one::<usize>("query_depth").unwrap();
-    let opt_lastz_args = matches.get_one::<String>("lastz_args");
-    let opt_output = matches.get_one::<String>("outdir").unwrap();
-    let opt_parallel = *matches.get_one::<usize>("parallel").unwrap();
-    let is_self = matches.get_flag("is_self");
+    let arg_query = args.get_one::<String>("query").unwrap();
+    let arg_target = args.get_one::<String>("target").unwrap();
+    let opt_depth = *args.get_one::<usize>("query_depth").unwrap();
+    let opt_lastz_args = args.get_one::<String>("lastz_args");
+    let opt_output = args.get_one::<String>("outdir").unwrap();
+    let opt_parallel = *args.get_one::<usize>("parallel").unwrap();
+    let is_self = args.get_flag("is_self");
 
     // Check if lastz is installed
     if which::which("lastz").is_err() {

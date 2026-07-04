@@ -1,7 +1,7 @@
 use clap::{value_parser, Arg, ArgAction, ArgMatches, Command};
 use pgr::libs::fasta::stat::{calc_n50_stats, transpose};
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for n50.
 pub fn make_subcommand() -> Command {
     Command::new("n50")
         .about("Calculates N50 and other statistics")
@@ -95,11 +95,8 @@ Examples:
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
-// command implementation
+/// Execute the n50 command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    //----------------------------
-    // Args
-    //----------------------------
     let is_noheader = args.get_flag("no_header");
     let is_sum = args.get_flag("sum");
     let is_average = args.get_flag("average");
@@ -111,9 +108,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let opt_genome = args.get_one::<usize>("genome_size").copied();
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
 
-    //----------------------------
-    // Process
-    //----------------------------
     let mut lens = vec![];
 
     for infile in args.get_many::<String>("infiles").unwrap() {
@@ -131,9 +125,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let stats = calc_n50_stats(lens, &opt_nx, opt_genome);
 
-    //----------------------------
-    // Output
-    //----------------------------
     let mut outputs = vec![];
 
     // set N == 0 to skip this

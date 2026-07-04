@@ -1,7 +1,7 @@
 use clap::{value_parser, Arg, ArgMatches, Command};
 use std::io::Write;
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for mcl.
 pub fn make_subcommand() -> Command {
     Command::new("mcl")
         .about("Markov Clustering Algorithm (MCL)")
@@ -53,11 +53,9 @@ Stijn van Dongen, Graph Clustering by Flow Simulation. PhD thesis, University of
         .arg(crate::cmd_pgr::args::max_iter_arg())
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
-
+/// Execute the mcl command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    //----------------------------
     // 1. Args
-    //----------------------------
     let infile = args.get_one::<String>("infile").unwrap();
     let opt_format = args.get_one::<String>("clust_format").unwrap();
     let opt_same = *args.get_one::<f32>("same").unwrap();
@@ -69,24 +67,18 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let mut writer = pgr::writer(outfile)?;
 
-    //----------------------------
     // 2. Load Matrix
-    //----------------------------
     // ScoringMatrix::from_pair_scores is only implemented for f32
     let (sm, names) =
         pgr::libs::pairmat::ScoringMatrix::<f32>::from_pair_scores(infile, opt_same, opt_missing)?;
 
-    //----------------------------
     // 3. Clustering
-    //----------------------------
     let mut mcl = pgr::libs::clust::mcl::Mcl::new(inflation);
     mcl.set_prune_limit(prune);
     mcl.set_max_iter(max_iter);
     let mut clusters = mcl.perform_clustering(&sm);
 
-    //----------------------------
     // 4. Output
-    //----------------------------
     let out =
         pgr::libs::clust::format::format_flat_clusters(&mut clusters, &names, opt_format, |c| {
             pgr::libs::clust::medoid::find_medoid(&sm, c, true)

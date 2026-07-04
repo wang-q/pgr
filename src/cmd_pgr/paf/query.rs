@@ -1,5 +1,5 @@
 use clap::{ArgMatches, Command};
-
+/// Build the clap subcommand for query.
 pub fn make_subcommand() -> Command {
     let cmd = Command::new("query")
         .about("Queries PAF index for coordinate projection")
@@ -48,7 +48,7 @@ Examples:
         );
     crate::cmd_pgr::args::add_query_args(cmd)
 }
-
+/// Execute the query command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let opts = crate::cmd_pgr::args::query_options_from_args(args);
     let (idx, all_results) = pgr::libs::paf::query::run_query(&opts)?;

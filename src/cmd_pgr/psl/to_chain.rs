@@ -2,7 +2,7 @@ use clap::{Arg, ArgMatches, Command};
 use pgr::libs::fmt::psl::Psl;
 use std::io::BufRead;
 use std::str::FromStr;
-
+/// Build the clap subcommand for to-chain.
 pub fn make_subcommand() -> Command {
     Command::new("to-chain")
         .about("Converts PSL to Chain format")
@@ -22,7 +22,7 @@ Examples:
                 .help("Fix '-' target strand by reverse complementing the record"),
         )
 }
-
+/// Execute the to-chain command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let input = crate::cmd_pgr::args::get_infile(args);
     let output = crate::cmd_pgr::args::get_outfile(args);

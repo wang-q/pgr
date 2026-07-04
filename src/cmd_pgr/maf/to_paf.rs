@@ -2,7 +2,7 @@ use clap::{ArgMatches, Command};
 
 use pgr::libs::paf::record::write_paf_record;
 
-// Create clap subcommand arguments
+/// Build the clap subcommand for to-paf.
 pub fn make_subcommand() -> Command {
     Command::new("to-paf")
         .about("Converts two-sequence MAF files to PAF format")
@@ -34,7 +34,7 @@ Examples:
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
-// command implementation
+/// Execute the to-paf command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
 
