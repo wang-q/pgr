@@ -3,6 +3,29 @@ use cmd_lib::run_cmd;
 use std::collections::BTreeMap;
 use std::{env, fs};
 
+/// RAII guard that restores the working directory on drop.
+struct CwdGuard {
+    prev_dir: std::path::PathBuf,
+}
+
+impl CwdGuard {
+    /// Change to `new_dir` and return a guard that restores the previous
+    /// directory on drop.
+    fn enter(new_dir: &str) -> anyhow::Result<Self> {
+        let prev_dir = env::current_dir()?;
+        env::set_current_dir(new_dir)?;
+        Ok(Self { prev_dir })
+    }
+}
+
+impl Drop for CwdGuard {
+    fn drop(&mut self) {
+        if let Err(e) = env::set_current_dir(&self.prev_dir) {
+            log::warn!("failed to restore working directory: {}", e);
+        }
+    }
+}
+
 /// Build the clap subcommand for p2m.
 pub fn make_subcommand() -> Command {
     Command::new("p2m")
@@ -69,7 +92,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     }
 
     run_cmd!(echo "==> Switch to outdir")?;
-    env::set_current_dir(outdir)?;
+    let _cwd_guard = CwdGuard::enter(outdir)?;
 
     run_cmd!(echo "==> pgr fas name - first")?;
     let mut target_name = "".to_string();
@@ -155,9 +178,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             ${pgr} fas subset join.raw.fas --required name.lst -o join.subset.fas
         )?;
     }
-
-    // Done
-    env::set_current_dir(&curdir)?;
 
     Ok(())
 }

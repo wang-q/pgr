@@ -69,19 +69,15 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     for infile in args.get_many::<String>("infiles").unwrap() {
         let mut reader = pgr::reader(infile)?;
 
-        'BLOCK: loop {
-            let block = match pgr::libs::fmt::fas::next_fas_block(&mut reader) {
-                Ok(b) => b,
-                Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => break,
-                Err(e) => return Err(e.into()),
-            };
+        for block_result in pgr::libs::fmt::fas::iter_fas_blocks(&mut reader) {
+            let block = block_result?;
             // Determine the index of the species
             if block.entries.is_empty() {
-                continue 'BLOCK;
+                continue;
             }
             let idx = if !opt_name.is_empty() {
                 if !block.names.contains(opt_name) {
-                    continue 'BLOCK;
+                    continue;
                 }
                 block
                     .names
@@ -96,12 +92,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
             // --ge
             if opt_ge != usize::MAX && idx_seq.len() < opt_ge {
-                continue 'BLOCK;
+                continue;
             }
 
             // --le
             if opt_le != usize::MAX && idx_seq.len() > opt_le {
-                continue 'BLOCK;
+                continue;
             }
 
             for entry in &block.entries {

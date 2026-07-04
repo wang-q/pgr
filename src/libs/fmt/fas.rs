@@ -108,6 +108,31 @@ pub fn next_fas_block<T: io::BufRead + ?Sized>(mut input: &mut T) -> Result<FasB
     Ok(block)
 }
 
+/// Iterator over FasBlock records from a reader.
+///
+/// Wraps [`next_fas_block`], treating `UnexpectedEof` as the end of iteration
+/// and propagating other errors as `anyhow::Error`.
+pub struct FasBlockIter<'a, R: io::BufRead + ?Sized> {
+    reader: &'a mut R,
+}
+
+impl<'a, R: io::BufRead + ?Sized> Iterator for FasBlockIter<'a, R> {
+    type Item = anyhow::Result<FasBlock>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match next_fas_block(self.reader) {
+            Ok(block) => Some(Ok(block)),
+            Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => None,
+            Err(e) => Some(Err(anyhow::Error::from(e))),
+        }
+    }
+}
+
+/// Create a FasBlock iterator from a reader.
+pub fn iter_fas_blocks<R: io::BufRead + ?Sized>(reader: &mut R) -> FasBlockIter<'_, R> {
+    FasBlockIter { reader }
+}
+
 pub fn parse_fas_block(
     header: String,
     iter: impl Iterator<Item = Result<String, io::Error>>,

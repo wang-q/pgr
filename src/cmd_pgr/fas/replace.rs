@@ -42,12 +42,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     for infile in args.get_many::<String>("infiles").unwrap() {
         let mut reader = pgr::reader(infile)?;
 
-        loop {
-            let block = match pgr::libs::fmt::fas::next_fas_block(&mut reader) {
-                Ok(b) => b,
-                Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => break,
-                Err(e) => return Err(e.into()),
-            };
+        for block_result in pgr::libs::fmt::fas::iter_fas_blocks(&mut reader) {
+            let block = block_result?;
             let blocks = pgr::libs::fmt::fas::replace_block_lines(&block, &replace_of)?;
             for b in &blocks {
                 writer.write_all(b.as_ref())?;

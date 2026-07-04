@@ -1,7 +1,6 @@
 use clap::{ArgMatches, Command};
 use pgr::libs::chain::{chain_blocks, group_psl_blocks, GapCalc, ScoreContext, SubMatrix};
 use pgr::libs::fmt::twobit::TwoBitFile;
-use std::cmp::Ordering;
 /// Build the clap subcommand for chain.
 pub fn make_subcommand() -> Command {
     Command::new("chain")
@@ -153,12 +152,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         all_chains.extend(chains);
     }
 
-    all_chains.sort_by(|a, b| {
-        b.header
-            .score
-            .partial_cmp(&a.header.score)
-            .unwrap_or(Ordering::Equal)
-    });
+    all_chains.sort_by(|a, b| b.header.score.total_cmp(&a.header.score));
 
     for chain in all_chains {
         if chain.header.score < min_score {

@@ -81,14 +81,14 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mode = match mode_str.as_str() {
         "core" => pgr::libs::fas_multiz::FasMultizMode::Core,
         "union" => pgr::libs::fas_multiz::FasMultizMode::Union,
-        _ => unreachable!("clap value_parser already validated mode"),
+        _ => anyhow::bail!("unknown mode: {}", mode_str),
     };
 
     let gap_model = match gap_model_str.as_str() {
         "constant" => pgr::libs::fas_multiz::FasMultizGapModel::Constant,
         "medium" => pgr::libs::fas_multiz::FasMultizGapModel::Medium,
         "loose" => pgr::libs::fas_multiz::FasMultizGapModel::Loose,
-        _ => unreachable!("clap value_parser already validated gap_model"),
+        _ => anyhow::bail!("unknown gap_model: {}", gap_model_str),
     };
 
     let cfg = pgr::libs::fas_multiz::FasMultizConfig {

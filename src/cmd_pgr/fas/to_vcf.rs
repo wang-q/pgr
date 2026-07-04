@@ -3,7 +3,7 @@ use clap::{Arg, ArgMatches, Command};
 use std::collections::{BTreeMap, HashSet};
 
 use pgr::libs::alignment::{align_to_chr, get_subs, seq_intspan, vcf_alt_bases};
-use pgr::libs::fmt::fas::next_fas_block;
+use pgr::libs::fmt::fas::iter_fas_blocks;
 use pgr::libs::fmt::vcf::{write_snp_row, write_vcf_header};
 /// Build the clap subcommand for to-vcf.
 pub fn make_subcommand() -> Command {
@@ -62,12 +62,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                     continue;
                 }
                 let mut reader = pgr::reader(infile)?;
-                loop {
-                    let block = match next_fas_block(&mut reader) {
-                        Ok(b) => b,
-                        Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => break,
-                        Err(e) => return Err(e.into()),
-                    };
+                for block_result in iter_fas_blocks(&mut reader) {
+                    let block = block_result?;
                     let chr = block
                         .entries
                         .first()
@@ -84,12 +80,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     for infile in args.get_many::<String>("infiles").unwrap() {
         let mut reader = pgr::reader(infile)?;
 
-        loop {
-            let block = match next_fas_block(&mut reader) {
-                Ok(b) => b,
-                Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => break,
-                Err(e) => return Err(e.into()),
-            };
+        for block_result in iter_fas_blocks(&mut reader) {
+            let block = block_result?;
             if !header_written {
                 let contigs_ref = if sizes.is_empty() { None } else { Some(&sizes) };
                 write_vcf_header(&mut writer, contigs_ref, &block.names)?;

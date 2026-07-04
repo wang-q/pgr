@@ -97,7 +97,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 if let Some(ts) = target_strand {
                     // Append target strand if provided
                     if psl.strand.len() == 1 {
-                        psl.strand.push(ts.chars().next().unwrap_or('+'));
+                        let ts_char = ts
+                            .chars()
+                            .next()
+                            .ok_or_else(|| anyhow::anyhow!("--target-strand cannot be empty"))?;
+                        psl.strand.push(ts_char);
                     }
                 }
 
