@@ -35,7 +35,7 @@ Examples:
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let infiles: Vec<String> = args
         .get_many::<String>("infiles")
-        .ok_or_else(|| anyhow!("missing infiles"))?
+        .unwrap()
         .map(|s| s.to_string())
         .collect();
 
@@ -67,9 +67,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // Context
     let mut context = tera::Context::new();
 
-    let outfile = args
-        .get_one::<String>("outfile")
-        .ok_or_else(|| anyhow!("missing outfile"))?;
+    let outfile = args.get_one::<String>("outfile").unwrap();
     context.insert("outfile", outfile);
     context.insert("label", &ints_of.keys().collect::<Vec<&String>>());
     context.insert("excls", &excls);

@@ -33,12 +33,9 @@ Examples:
 
 /// Execute the stat command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args)).with_context(|| {
-        format!(
-            "Failed to open writer for {}",
-            crate::cmd_pgr::args::get_outfile(args)
-        )
-    })?;
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
+    let mut writer =
+        pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
     let has_outgroup = args.get_flag("outgroup");
 
     let field_names = [
@@ -107,5 +104,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         }
     }
 
+    writer.flush()?;
     Ok(())
 }

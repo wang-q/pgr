@@ -48,13 +48,8 @@ pub fn make_subcommand() -> Command {
 
 /// Execute the nrps command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let infile = args
-        .get_one::<String>("infile")
-        .ok_or_else(|| anyhow!("missing infile"))?;
-    let default_color = args
-        .get_one::<String>("color")
-        .ok_or_else(|| anyhow!("missing color"))?
-        .clone();
+    let infile = args.get_one::<String>("infile").unwrap();
+    let default_color = args.get_one::<String>("color").unwrap().clone();
     let is_legend = args.get_flag("legend");
 
     // Read TSV file
@@ -80,9 +75,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // Context
     let mut context = tera::Context::new();
 
-    let outfile = args
-        .get_one::<String>("outfile")
-        .ok_or_else(|| anyhow!("missing outfile"))?;
+    let outfile = args.get_one::<String>("outfile").unwrap();
     context.insert("outfile", outfile);
     context.insert("all_tex", &all_tex);
     context.insert("is_legend", &is_legend);

@@ -1,30 +1,8 @@
 use clap::{ArgMatches, Command};
 use cmd_lib::run_cmd;
+use pgr::libs::pl::CwdGuard;
 use std::collections::BTreeMap;
 use std::{env, fs};
-
-/// RAII guard that restores the working directory on drop.
-struct CwdGuard {
-    prev_dir: std::path::PathBuf,
-}
-
-impl CwdGuard {
-    /// Change to `new_dir` and return a guard that restores the previous
-    /// directory on drop.
-    fn enter(new_dir: &str) -> anyhow::Result<Self> {
-        let prev_dir = env::current_dir()?;
-        env::set_current_dir(new_dir)?;
-        Ok(Self { prev_dir })
-    }
-}
-
-impl Drop for CwdGuard {
-    fn drop(&mut self) {
-        if let Err(e) = env::set_current_dir(&self.prev_dir) {
-            log::warn!("failed to restore working directory: {}", e);
-        }
-    }
-}
 
 /// Build the clap subcommand for p2m.
 pub fn make_subcommand() -> Command {
@@ -66,6 +44,8 @@ Notes:
 }
 
 /// Execute the p2m command.
+// `target_name` is initialized to empty and overwritten by the first cover
+// input's name; the initial assignment is intentionally never read.
 #[allow(unused_assignments)]
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let outdir = args.get_one::<String>("outdir").unwrap();

@@ -62,6 +62,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let mut replace_of: BTreeMap<String, Vec<String>> = BTreeMap::new();
     let rfile = args.get_one::<String>("replace_tsv").unwrap();
+    // Inlined parsing (rather than libs::io::read_replace_tsv) because nwk
+    // replace uses overwrite semantics per key and warns on single-field lines,
+    // whereas read_replace_tsv appends and treats single-field lines as deletes.
     for line in pgr::read_lines(rfile)? {
         let parts: Vec<_> = line.split('\t').collect();
 

@@ -211,6 +211,17 @@ pub fn parallel_arg() -> Arg {
         .help("Number of threads for parallel processing")
 }
 
+/// `-p/--parallel` with a custom default value.
+pub fn parallel_arg_with_default(default: &'static str) -> Arg {
+    Arg::new("parallel")
+        .long("parallel")
+        .short('p')
+        .num_args(1)
+        .default_value(default)
+        .value_parser(clap::value_parser!(usize))
+        .help("Number of threads for parallel processing")
+}
+
 /// `--no-ns` flag (output size without Ns).
 pub fn no_ns_arg() -> Arg {
     Arg::new("no_ns")

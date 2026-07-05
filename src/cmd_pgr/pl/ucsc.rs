@@ -205,7 +205,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
         // Clean up intermediate batch tmp files (best-effort)
         for f in &cleanup_files {
-            let _ = std::fs::remove_file(f);
+            if let Err(e) = std::fs::remove_file(f) {
+                log::warn!("failed to remove temp file {}: {}", f, e);
+            }
         }
 
         // chainPreNet - Remove chains that don't have a chance of being netted

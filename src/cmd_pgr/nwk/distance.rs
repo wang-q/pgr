@@ -83,7 +83,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     for (name, id) in name_id_map {
         let node = tree
             .get_node(id)
-            .ok_or_else(|| anyhow!("node {} not found in tree", id))?;
+            .ok_or_else(|| anyhow!("node id {} (name {:?}) not found in tree", id, name))?;
         let is_leaf = node.children.is_empty();
 
         if (is_leaf && !skip_leaf) || (!is_leaf && !skip_internal) {

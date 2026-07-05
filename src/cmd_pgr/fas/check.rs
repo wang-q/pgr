@@ -29,12 +29,9 @@ Notes:
 
 /// Execute the check command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args)).with_context(|| {
-        format!(
-            "Failed to open writer for {}",
-            crate::cmd_pgr::args::get_outfile(args)
-        )
-    })?;
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
+    let mut writer =
+        pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
     let opt_genome = args.get_one::<String>("genome").unwrap();
     let opt_name = &args
         .get_one::<String>("name")
@@ -79,5 +76,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         }
     }
 
+    writer.flush()?;
     Ok(())
 }

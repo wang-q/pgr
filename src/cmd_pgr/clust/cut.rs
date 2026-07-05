@@ -284,7 +284,16 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
         // Use integer step count + multiplication to avoid floating-point
         // accumulation drift (e.g. 0.1 added 1000 times != 100.0).
-        let n_steps = ((end - start) / step).round() as i64;
+        let n_steps_f = ((end - start) / step).round();
+        if !n_steps_f.is_finite() || n_steps_f < 0.0 || n_steps_f > i64::MAX as f64 {
+            anyhow::bail!(
+                "scan range too large: start={}, end={}, step={}",
+                start,
+                end,
+                step
+            );
+        }
+        let n_steps = n_steps_f as i64;
         for i in 0..=n_steps {
             let val = start + (i as f64) * step;
             if val > end + 1e-9 {

@@ -81,7 +81,7 @@ Examples:
                 .help("Additional arguments passed directly to lastz (overrides preset)"),
         )
         .arg(crate::cmd_pgr::args::outdir_arg_with_default("lastz_out"))
-        .arg(crate::cmd_pgr::args::parallel_arg().default_value("4"))
+        .arg(crate::cmd_pgr::args::parallel_arg_with_default("4"))
 }
 /// Execute the lastz command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
@@ -139,7 +139,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         None
     };
 
-    // Prepare matrix temp file if preset defines one (keep handle alive for the run)
+    // Prepare matrix temp file if preset defines one.
+    // The `_` prefix retains the `NamedTempFile` handle for the rest of the
+    // function so its drop (which deletes the temp file) is deferred until
+    // `matrix_path` is no longer needed by the lastz subprocess.
     let mut _temp_matrix_handle: Option<NamedTempFile> = None;
     let mut matrix_path = String::new();
 

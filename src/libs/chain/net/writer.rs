@@ -216,3 +216,43 @@ fn subchain_info(chain: &Chain, start: u64, end: u64, is_q: bool) -> (u64, f64) 
     let sub_score = chain.header.score * (sub_size as f64) / (full_ali_size as f64);
     (sub_size, sub_score)
 }
+
+/// Sort chroms by name and write each to `writer` via `finalize_net` + `write_net`.
+pub fn write_sorted_net<W: Write>(
+    net: &super::builder::ChainNet,
+    writer: &mut W,
+    is_q: bool,
+    min_score: f64,
+    min_fill: u64,
+) -> anyhow::Result<()> {
+    let mut chrom_names: Vec<_> = net.chroms.keys().cloned().collect();
+    chrom_names.sort();
+    for name in chrom_names {
+        if let Some(chrom_cell) = net.chroms.get(&name) {
+            let mut chrom = chrom_cell.borrow_mut();
+            super::finalize::finalize_net(&mut chrom, is_q);
+            write_net(&chrom, writer, is_q, min_score, min_fill)?;
+        }
+    }
+    Ok(())
+}
+
+/// Write a net file with header comments and sorted net entries.
+pub fn write_net_file(
+    path: &str,
+    net: &super::builder::ChainNet,
+    is_q: bool,
+    comments: &[String],
+    min_score: f64,
+    min_fill: u64,
+) -> anyhow::Result<()> {
+    use anyhow::Context;
+    let mut writer = crate::libs::io::writer(path)
+        .with_context(|| format!("Failed to open writer for {}", path))?;
+    for comment in comments {
+        write!(writer, "{}", comment)?;
+    }
+    write_sorted_net(net, &mut writer, is_q, min_score, min_fill)?;
+    writer.flush()?;
+    Ok(())
+}

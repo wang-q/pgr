@@ -137,7 +137,13 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             )?;
 
             // Best-effort cleanup of the input temp file; failure is non-fatal.
-            let _ = std::fs::remove_file(&temp_input_keep);
+            if let Err(e) = std::fs::remove_file(&temp_input_keep) {
+                log::warn!(
+                    "failed to remove temp file {}: {}",
+                    temp_input_keep.display(),
+                    e
+                );
+            }
 
             Ok(temp_output_persist_path)
         })
@@ -154,7 +160,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         let mut buf = Vec::new();
         f.read_to_end(&mut buf)?;
         writer.write_all(&buf)?;
-        let _ = std::fs::remove_file(&path);
+        // Best-effort cleanup of the chunk temp file; failure is non-fatal.
+        if let Err(e) = std::fs::remove_file(&path) {
+            log::warn!("failed to remove temp file {}: {}", path.display(), e);
+        }
     }
     writer.flush()?;
 

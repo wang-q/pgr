@@ -1,6 +1,9 @@
 use anyhow::Context;
+use clap::builder::PossibleValue;
 use clap::{Arg, ArgMatches, Command};
-use std::fmt::Write;
+use pgr::libs::fmt::fas::{consensus_block, run_pipeline, ConsensusOptions};
+use pgr::libs::poa::AlignmentParams;
+use std::io::Write;
 
 /// Build the clap subcommand for consensus.
 pub fn make_subcommand() -> Command {
@@ -51,7 +54,11 @@ Examples:
             .arg(
                 Arg::new("align_mode")
                     .long("align-mode")
-                    .value_parser(["local", "global", "semi_global"])
+                    .value_parser([
+                        PossibleValue::new("local"),
+                        PossibleValue::new("global"),
+                        PossibleValue::new("semi_global"),
+                    ])
                     .default_value("global") // Default to global for fas consensus
                     .help("Alignment mode"),
             )
@@ -73,96 +80,39 @@ Examples:
 /// Execute the consensus command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let parallel = *args.get_one::<usize>("parallel").unwrap();
-    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args)).with_context(|| {
-        format!(
-            "Failed to open writer for {}",
-            crate::cmd_pgr::args::get_outfile(args)
-        )
-    })?;
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
+    let mut writer =
+        pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
+
+    // Map algorithm string to integer code (0=local, 1=global, 2=semi_global) for internal use/spoa
+    let algo_code = match args.get_one::<String>("align_mode").unwrap().as_str() {
+        "local" => 0,
+        "global" => 1,
+        "semi_global" => 2,
+        other => anyhow::bail!("unknown align_mode: {}", other),
+    };
+
+    let opts = ConsensusOptions {
+        cname: args.get_one::<String>("consensus_name").unwrap().clone(),
+        has_outgroup: args.get_flag("outgroup"),
+        engine: args.get_one::<String>("engine").unwrap().clone(),
+        params: AlignmentParams {
+            match_score: *args.get_one::<i32>("match").unwrap(),
+            mismatch_score: *args.get_one::<i32>("mismatch").unwrap(),
+            gap_open: *args.get_one::<i32>("gap_open").unwrap(),
+            gap_extend: *args.get_one::<i32>("gap_extend").unwrap(),
+        },
+        algo_code,
+    };
+
     let infiles: Vec<String> = args
         .get_many::<String>("infiles")
         .unwrap()
         .cloned()
         .collect();
-    pgr::libs::fmt::fas::run_pipeline(&mut writer, &infiles, parallel, |block| {
-        proc_block(block, args)
-    })
-}
-
-fn proc_block(block: &pgr::libs::fmt::fas::FasBlock, args: &ArgMatches) -> anyhow::Result<String> {
-    let cname = args.get_one::<String>("consensus_name").unwrap();
-    let has_outgroup = args.get_flag("outgroup");
-
-    let engine = args.get_one::<String>("engine").unwrap();
-
-    let params = crate::cmd_pgr::args::get_poa_params(args);
-    let algorithm = args.get_one::<String>("align_mode").unwrap();
-
-    // Map algorithm string to integer code (0=local, 1=global, 2=semi_global) for internal use/spoa
-    const ALGO_LOCAL: i32 = 0;
-    const ALGO_GLOBAL: i32 = 1;
-    const ALGO_SEMI_GLOBAL: i32 = 2;
-    let algo_code = match algorithm.as_str() {
-        "local" => ALGO_LOCAL,
-        "global" => ALGO_GLOBAL,
-        "semi_global" => ALGO_SEMI_GLOBAL,
-        _ => anyhow::bail!("unknown align_mode: {}", algorithm),
-    };
-
-    let mut seqs = Vec::with_capacity(block.entries.len());
-
-    let outgroup = if has_outgroup {
-        block.entries.iter().last()
-    } else {
-        None
-    };
-
-    for entry in &block.entries {
-        seqs.push(entry.seq().as_ref());
-    }
-    if outgroup.is_some() {
-        seqs.pop(); // Remove the outgroup sequence
-    }
-
-    // Generate consensus sequence
-    let mut cons = match engine.as_str() {
-        "spoa" => pgr::libs::alignment::get_consensus_poa_external(
-            &seqs,
-            params.match_score,
-            params.mismatch_score,
-            params.gap_open,
-            params.gap_extend,
-            algo_code,
-        )?,
-        _ => pgr::libs::alignment::get_consensus_poa_builtin(
-            &seqs,
-            params.match_score,
-            params.mismatch_score,
-            params.gap_open,
-            params.gap_extend,
-            algo_code,
-        )?,
-    };
-    cons = cons.replace('-', "");
-
-    let mut range = match block.entries.first() {
-        Some(e) => e.range().clone(),
-        None => anyhow::bail!("empty block"),
-    };
-
-    let mut out_string = String::new();
-    if range.is_valid() {
-        *range.name_mut() = cname.to_string();
-        writeln!(out_string, ">{}\n{}", range, cons)?;
-    } else {
-        writeln!(out_string, ">{}\n{}", cname, cons)?;
-    }
-    if let Some(og) = outgroup {
-        out_string.push_str(&og.to_string());
-    }
-
-    // end of a block
-    out_string.push('\n');
-
-    Ok(out_string)
+    let result = run_pipeline(&mut writer, &infiles, parallel, |block| {
+        consensus_block(block, &opts)
+    });
+    writer.flush()?;
+    result
 }

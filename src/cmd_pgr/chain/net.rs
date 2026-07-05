@@ -1,46 +1,8 @@
 use anyhow::Context;
 use clap::{Arg, ArgMatches, Command};
-use pgr::libs::chain::net::{finalize_net, write_net, ChainNet};
+use pgr::libs::chain::net::{write_net_file, ChainNet};
 use pgr::libs::chain::ChainReader;
-use std::io::Write;
 
-/// Sort chroms by name and write each to `writer` via `finalize_net` + `write_net`.
-fn write_sorted_net<W: Write>(
-    net: &ChainNet,
-    writer: &mut W,
-    is_q: bool,
-    min_score: f64,
-    min_fill: u64,
-) -> anyhow::Result<()> {
-    let mut chrom_names: Vec<_> = net.chroms.keys().cloned().collect();
-    chrom_names.sort();
-    for name in chrom_names {
-        if let Some(chrom_cell) = net.chroms.get(&name) {
-            let mut chrom = chrom_cell.borrow_mut();
-            finalize_net(&mut chrom, is_q);
-            write_net(&chrom, writer, is_q, min_score, min_fill)?;
-        }
-    }
-    Ok(())
-}
-
-/// Write a net file with header comments and sorted net entries.
-fn write_net_file(
-    path: &str,
-    net: &ChainNet,
-    is_q: bool,
-    comments: &[String],
-    min_score: f64,
-    min_fill: u64,
-) -> anyhow::Result<()> {
-    let mut writer =
-        pgr::writer(path).with_context(|| format!("Failed to open writer for {}", path))?;
-    for comment in comments {
-        write!(writer, "{}", comment)?;
-    }
-    write_sorted_net(net, &mut writer, is_q, min_score, min_fill)?;
-    Ok(())
-}
 /// Build the clap subcommand for net.
 pub fn make_subcommand() -> Command {
     Command::new("net")

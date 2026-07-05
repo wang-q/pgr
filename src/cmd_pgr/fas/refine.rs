@@ -1,6 +1,7 @@
 use anyhow::Context;
 use clap::{value_parser, Arg, ArgAction, ArgMatches, Command};
-use std::fmt::Write;
+use pgr::libs::fmt::fas::{refine_block, run_pipeline, RefineOptions};
+use std::io::Write;
 
 /// Build the clap subcommand for refine.
 pub fn make_subcommand() -> Command {
@@ -82,70 +83,27 @@ Examples:
 /// Execute the refine command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let parallel = *args.get_one::<usize>("parallel").unwrap();
-    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args)).with_context(|| {
-        format!(
-            "Failed to open writer for {}",
-            crate::cmd_pgr::args::get_outfile(args)
-        )
-    })?;
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
+    let mut writer =
+        pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
+
+    let opts = RefineOptions {
+        engine: args.get_one::<String>("engine").unwrap(),
+        has_outgroup: args.get_flag("outgroup"),
+        chop: *args.get_one::<usize>("chop").unwrap(),
+        is_quick: args.get_flag("is_quick"),
+        pad: *args.get_one::<usize>("indel_pad").unwrap(),
+        fill: *args.get_one::<usize>("fill").unwrap(),
+    };
+
     let infiles: Vec<String> = args
         .get_many::<String>("infiles")
         .unwrap()
         .cloned()
         .collect();
-    pgr::libs::fmt::fas::run_pipeline(&mut writer, &infiles, parallel, |block| {
-        proc_block(block, args)
-    })
-}
-
-fn proc_block(block: &pgr::libs::fmt::fas::FasBlock, args: &ArgMatches) -> anyhow::Result<String> {
-    let engine = args.get_one::<String>("engine").unwrap();
-    let has_outgroup = args.get_flag("outgroup");
-    let chop = *args.get_one::<usize>("chop").unwrap();
-    let is_quick = args.get_flag("is_quick");
-    let pad = *args.get_one::<usize>("indel_pad").unwrap();
-    let fill = *args.get_one::<usize>("fill").unwrap();
-
-    let n = block.entries.len();
-    let mut seqs: Vec<String> = Vec::with_capacity(n);
-    let mut ranges = Vec::with_capacity(n);
-    for entry in &block.entries {
-        seqs.push(String::from_utf8(entry.seq().to_vec())?);
-        ranges.push(entry.range().clone());
-    }
-
-    let mut aligned = vec![];
-    if engine.as_str() == "none" {
-        aligned = seqs;
-    } else {
-        if is_quick {
-            let pad_i32 = i32::try_from(pad)
-                .map_err(|_| anyhow::anyhow!("--indel-pad {} exceeds i32 range", pad))?;
-            let fill_i32 = i32::try_from(fill)
-                .map_err(|_| anyhow::anyhow!("--fill {} exceeds i32 range", fill))?;
-            aligned = pgr::libs::alignment::align_seqs_quick(&seqs, engine, pad_i32, fill_i32)?;
-        } else {
-            aligned = pgr::libs::alignment::align_seqs(&seqs, engine)?;
-        }
-    };
-
-    pgr::libs::alignment::trim_pure_dash(&mut aligned);
-    if has_outgroup {
-        pgr::libs::alignment::trim_outgroup(&mut aligned)?;
-        pgr::libs::alignment::trim_complex_indel(&mut aligned)?;
-    }
-
-    if chop > 0 {
-        pgr::libs::alignment::trim_head_tail(&mut aligned, &mut ranges, chop);
-    }
-
-    let mut out_string = String::new();
-    for (range, seq) in ranges.iter().zip(aligned) {
-        writeln!(out_string, ">{}\n{}", range, seq)?;
-    }
-
-    // end of a block
-    out_string.push('\n');
-
-    Ok(out_string)
+    let result = run_pipeline(&mut writer, &infiles, parallel, |block| {
+        refine_block(block, &opts)
+    });
+    writer.flush()?;
+    result
 }

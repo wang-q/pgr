@@ -142,12 +142,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let blocks = pgr::libs::fas_multiz::merge_fas_files_auto_windows(&ref_name, &infiles, &cfg)?;
 
-    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args)).with_context(|| {
-        format!(
-            "Failed to open writer for {}",
-            crate::cmd_pgr::args::get_outfile(args)
-        )
-    })?;
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
+    let mut writer =
+        pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
 
     for block in blocks {
         for entry in &block.entries {
@@ -159,5 +156,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         writeln!(writer)?;
     }
 
+    writer.flush()?;
     Ok(())
 }

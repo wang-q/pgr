@@ -32,7 +32,7 @@ pub use subset::{subset_nets, SubsetOptions};
 pub use syntenic::{classify_syntenic, DupeTree};
 pub use to_axt::net_to_axt;
 pub use types::{Chrom, Fill, Gap, NetNode, Space};
-pub use writer::{range_intersection, write_net};
+pub use writer::{range_intersection, write_net, write_net_file, write_sorted_net};
 
 #[cfg(test)]
 mod tests {

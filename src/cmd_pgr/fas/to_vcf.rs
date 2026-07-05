@@ -1,6 +1,7 @@
 use anyhow::{anyhow, Context};
 use clap::{Arg, ArgMatches, Command};
 use std::collections::{BTreeMap, HashSet};
+use std::io::Write;
 
 use pgr::libs::alignment::{align_to_chr, get_subs, seq_intspan, vcf_alt_bases};
 use pgr::libs::fmt::fas::iter_fas_blocks;
@@ -40,12 +41,9 @@ Examples:
 }
 /// Execute the to-vcf command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args)).with_context(|| {
-        format!(
-            "Failed to open writer for {}",
-            crate::cmd_pgr::args::get_outfile(args)
-        )
-    })?;
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
+    let mut writer =
+        pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
     let sizes_path = args
         .get_one::<String>("sizes")
         .map(|s| s.to_string())
@@ -127,12 +125,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                         format!("align_to_chr at pos {} in block {}", s.pos, block_idx)
                     })?;
 
-                let pos_idx = usize::try_from(s.pos)
-                    .ok()
-                    .and_then(|p| p.checked_sub(1))
-                    .ok_or_else(|| {
-                        anyhow!("invalid substitution pos {} in block {}", s.pos, block_idx)
-                    })?;
+                let pos_idx = usize::try_from(s.pos).map_err(|_| {
+                    anyhow!("invalid substitution pos {} in block {}", s.pos, block_idx)
+                })?;
+                let pos_idx = pos_idx.checked_sub(1).ok_or_else(|| {
+                    anyhow!("invalid substitution pos {} in block {}", s.pos, block_idx)
+                })?;
                 if pos_idx >= seqs[0].len() {
                     anyhow::bail!(
                         "substitution pos {} out of range (seq len {}) in block {}",
@@ -164,5 +162,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         }
     }
 
+    writer.flush()?;
     Ok(())
 }

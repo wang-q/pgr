@@ -1,5 +1,6 @@
 use anyhow::Context;
 use clap::{ArgMatches, Command};
+use std::io::Write;
 
 use pgr::libs::paf::record::write_paf_record;
 
@@ -67,5 +68,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         }
     }
 
+    writer.flush()?;
     Ok(())
 }

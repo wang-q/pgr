@@ -539,6 +539,150 @@ pub fn create_from_links<R: io::BufRead, W: Write>(
     Ok(())
 }
 
+// ============================================================================
+// consensus_block
+// ============================================================================
+
+/// Options for [`consensus_block`].
+pub struct ConsensusOptions {
+    /// Consensus sequence name written to the output header.
+    pub cname: String,
+    /// Whether the last entry of each block is an outgroup to be preserved.
+    pub has_outgroup: bool,
+    /// POA engine selector: `"builtin"` or `"spoa"`.
+    pub engine: String,
+    /// POA scoring parameters.
+    pub params: crate::libs::poa::AlignmentParams,
+    /// Alignment mode code: 0=local, 1=global, 2=semi_global.
+    pub algo_code: i32,
+}
+
+/// Build consensus for one [`FasBlock`] and return a fas-formatted string.
+pub fn consensus_block(block: &FasBlock, opts: &ConsensusOptions) -> anyhow::Result<String> {
+    use std::fmt::Write;
+    let outgroup = if opts.has_outgroup {
+        block.entries.iter().last()
+    } else {
+        None
+    };
+
+    let mut seqs: Vec<&[u8]> = Vec::with_capacity(block.entries.len());
+    for entry in &block.entries {
+        seqs.push(entry.seq().as_ref());
+    }
+    if outgroup.is_some() {
+        seqs.pop(); // Remove the outgroup sequence
+    }
+
+    // Generate consensus sequence
+    let mut cons = match opts.engine.as_str() {
+        "spoa" => crate::libs::alignment::get_consensus_poa_external(
+            &seqs,
+            opts.params.match_score,
+            opts.params.mismatch_score,
+            opts.params.gap_open,
+            opts.params.gap_extend,
+            opts.algo_code,
+        )?,
+        _ => crate::libs::alignment::get_consensus_poa_builtin(
+            &seqs,
+            opts.params.match_score,
+            opts.params.mismatch_score,
+            opts.params.gap_open,
+            opts.params.gap_extend,
+            opts.algo_code,
+        )?,
+    };
+    cons = cons.replace('-', "");
+
+    let mut range = match block.entries.first() {
+        Some(e) => e.range().clone(),
+        None => anyhow::bail!("empty block"),
+    };
+
+    let mut out_string = String::new();
+    if range.is_valid() {
+        *range.name_mut() = opts.cname.clone();
+        writeln!(out_string, ">{}\n{}", range, cons)?;
+    } else {
+        writeln!(out_string, ">{}\n{}", opts.cname, cons)?;
+    }
+    if let Some(og) = outgroup {
+        out_string.push_str(&og.to_string());
+    }
+
+    // end of a block
+    out_string.push('\n');
+
+    Ok(out_string)
+}
+
+// ============================================================================
+// refine_block
+// ============================================================================
+
+/// Options for [`refine_block`].
+pub struct RefineOptions<'a> {
+    /// MSA engine selector: `"builtin"`, `"clustalw"`, `"mafft"`, `"muscle"`, `"spoa"`, or `"none"`.
+    pub engine: &'a str,
+    /// Whether the last entry of each block is an outgroup.
+    pub has_outgroup: bool,
+    /// Chop head and tail indels of this length (0 disables).
+    pub chop: usize,
+    /// Quick mode: only align indel-adjacent regions.
+    pub is_quick: bool,
+    /// In quick mode, enlarge indel regions by this padding.
+    pub pad: usize,
+    /// In quick mode, fill holes between indels up to this distance.
+    pub fill: usize,
+}
+
+/// Realign and trim one [`FasBlock`], return a fas-formatted string.
+pub fn refine_block(block: &FasBlock, opts: &RefineOptions) -> anyhow::Result<String> {
+    use std::fmt::Write;
+
+    let n = block.entries.len();
+    let mut seqs: Vec<String> = Vec::with_capacity(n);
+    let mut ranges = Vec::with_capacity(n);
+    for entry in &block.entries {
+        seqs.push(String::from_utf8(entry.seq().to_vec())?);
+        ranges.push(entry.range().clone());
+    }
+
+    let mut aligned = vec![];
+    if opts.engine == "none" {
+        aligned = seqs;
+    } else if opts.is_quick {
+        let pad_i32 = i32::try_from(opts.pad)
+            .map_err(|_| anyhow::anyhow!("--indel-pad {} exceeds i32 range", opts.pad))?;
+        let fill_i32 = i32::try_from(opts.fill)
+            .map_err(|_| anyhow::anyhow!("--fill {} exceeds i32 range", opts.fill))?;
+        aligned = crate::libs::alignment::align_seqs_quick(&seqs, opts.engine, pad_i32, fill_i32)?;
+    } else {
+        aligned = crate::libs::alignment::align_seqs(&seqs, opts.engine)?;
+    }
+
+    crate::libs::alignment::trim_pure_dash(&mut aligned);
+    if opts.has_outgroup {
+        crate::libs::alignment::trim_outgroup(&mut aligned)?;
+        crate::libs::alignment::trim_complex_indel(&mut aligned)?;
+    }
+
+    if opts.chop > 0 {
+        crate::libs::alignment::trim_head_tail(&mut aligned, &mut ranges, opts.chop);
+    }
+
+    let mut out_string = String::new();
+    for (range, seq) in ranges.iter().zip(aligned) {
+        writeln!(out_string, ">{}\n{}", range, seq)?;
+    }
+
+    // end of a block
+    out_string.push('\n');
+
+    Ok(out_string)
+}
+
 #[cfg(test)]
 mod fas_tests {
     use std::io::BufReader;

@@ -123,7 +123,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             let subject = pgr::libs::fasta::dedup::record_signature(
                 name,
                 desc.map(|v| &**v),
-                seq.get(..).unwrap_or(&[]),
+                seq.as_ref(),
                 &opts,
             )?;
 

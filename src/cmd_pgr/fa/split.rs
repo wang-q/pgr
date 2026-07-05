@@ -1,4 +1,4 @@
-use clap::{builder::PossibleValue, value_parser, Arg, ArgAction, ArgMatches, Command, Error};
+use clap::{builder::PossibleValue, value_parser, Arg, ArgAction, ArgMatches, Command};
 use std::collections::BTreeMap;
 use std::io::{BufWriter, Write};
 
@@ -180,7 +180,7 @@ fn gen_fh(
     outdir: &str,
     fh_of: &mut BTreeMap<String, BufWriter<std::fs::File>>,
     filename: &str,
-) -> Result<(), Error> {
+) -> anyhow::Result<()> {
     if !fh_of.contains_key(filename) {
         let path = std::path::Path::new(outdir).join(format!("{}.fa", filename));
         let file = std::fs::OpenOptions::new()
