@@ -4,6 +4,7 @@ use clap::{Arg, ArgMatches, Command};
 use pgr::libs::chain::anti_repeat::check_chain;
 use pgr::libs::chain::read_chains;
 use pgr::libs::fmt::twobit::TwoBitFile;
+use std::io::Write;
 // Default scores from UCSC chainAntiRepeat.c
 /// Build the clap subcommand for anti-repeat.
 pub fn make_subcommand() -> Command {
@@ -81,5 +82,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         }
     }
 
+    writer.flush()?;
     Ok(())
 }

@@ -3,6 +3,7 @@ use clap::{Arg, ArgAction, ArgMatches, Command};
 use pgr::libs::chain::net::{read_nets, subset_nets, SubsetOptions};
 use pgr::libs::chain::{read_chains, Chain};
 use std::collections::HashMap;
+use std::io::Write;
 /// Build the clap subcommand for subset.
 pub fn make_subcommand() -> Command {
     Command::new("subset")
@@ -64,5 +65,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     };
     subset_nets(&chroms, &chains_map, &mut writer, opts, type_filter)?;
 
+    writer.flush()?;
     Ok(())
 }

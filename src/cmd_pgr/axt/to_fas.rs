@@ -45,7 +45,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let outfile = crate::cmd_pgr::args::get_outfile(args);
     let mut writer =
         pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
-    let sizes = pgr::read_sizes::<i32>(args.get_one::<String>("q_sizes").unwrap())?;
+    let q_sizes_path = args.get_one::<String>("q_sizes").unwrap();
+    let sizes = pgr::read_sizes::<i32>(q_sizes_path)
+        .with_context(|| format!("Failed to read sizes from {}", q_sizes_path))?;
 
     let tname = args.get_one::<String>("t_name").unwrap();
     let qname = args.get_one::<String>("q_name").unwrap();
@@ -97,5 +99,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         }
     }
 
+    writer.flush()?;
     Ok(())
 }

@@ -1,5 +1,7 @@
 use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches, Command};
+use std::io::Write;
+
 /// Build the clap subcommand for histo.
 pub fn make_subcommand() -> Command {
     Command::new("histo")
@@ -59,5 +61,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     pgr::libs::fmt::psl::histogram(reader, &mut writer, what, multi_only, non_zero)?;
 
+    writer.flush()?;
     Ok(())
 }

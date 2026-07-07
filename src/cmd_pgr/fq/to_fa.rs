@@ -1,5 +1,6 @@
 use anyhow::Context;
 use clap::{ArgMatches, Command};
+use std::io::Write;
 
 /// Build the clap subcommand for to-fa.
 pub fn make_subcommand() -> Command {
@@ -32,7 +33,9 @@ Examples:
 
 /// Execute the to-fa command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let mut fa_out = pgr::libs::fmt::fa::writer(crate::cmd_pgr::args::get_outfile(args))?;
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
+    let mut fa_out = pgr::libs::fmt::fa::writer(outfile)
+        .with_context(|| format!("Failed to open writer for {}", outfile))?;
 
     for infile in args.get_many::<String>("infiles").unwrap() {
         let reader =
@@ -49,6 +52,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             fa_out.write_record(&record_out)?;
         }
     }
+
+    fa_out.get_mut().flush()?;
 
     Ok(())
 }

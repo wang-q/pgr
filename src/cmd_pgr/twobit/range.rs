@@ -92,5 +92,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         writeln!(writer, "{}", seq)?;
     }
 
+    writer.flush()?;
     Ok(())
 }

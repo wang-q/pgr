@@ -25,8 +25,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let q_sizes_path = args.get_one::<String>("q_sizes").unwrap();
     let output = crate::cmd_pgr::args::get_outfile(args);
 
-    let t_sizes = pgr::read_sizes::<usize>(t_sizes_path)?;
-    let q_sizes = pgr::read_sizes::<usize>(q_sizes_path)?;
+    let t_sizes = pgr::read_sizes::<usize>(t_sizes_path)
+        .with_context(|| format!("Failed to read sizes from {}", t_sizes_path))?;
+    let q_sizes = pgr::read_sizes::<usize>(q_sizes_path)
+        .with_context(|| format!("Failed to read sizes from {}", q_sizes_path))?;
 
     let reader =
         pgr::reader(input).with_context(|| format!("Failed to open reader for {}", input))?;

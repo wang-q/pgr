@@ -1,6 +1,7 @@
 use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use pgr::libs::chain::net::{filter_chrom, prune_gap, read_nets, FilterCriteria};
+use std::io::Write;
 /// Build the clap subcommand for filter.
 pub fn make_subcommand() -> Command {
     Command::new("filter")
@@ -176,5 +177,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         }
     }
 
+    writer.flush()?;
     Ok(())
 }

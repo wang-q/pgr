@@ -2,6 +2,7 @@ use anyhow::Context;
 use clap::{Arg, ArgMatches, Command};
 
 use pgr::libs::fmt::psl::{PslStatsMode, PslStatsOptions};
+use std::io::Write;
 /// Build the clap subcommand for stats.
 pub fn make_subcommand() -> Command {
     Command::new("stats")
@@ -81,5 +82,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         None
     };
 
-    pgr::libs::fmt::psl::run_stats(reader, &mut writer, &opts, queries)
+    pgr::libs::fmt::psl::run_stats(reader, &mut writer, &opts, queries)?;
+
+    writer.flush()?;
+    Ok(())
 }

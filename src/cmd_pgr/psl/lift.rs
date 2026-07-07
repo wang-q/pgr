@@ -1,5 +1,6 @@
 use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches, Command};
+use std::io::Write;
 
 /// Build the clap subcommand for lift.
 pub fn make_subcommand() -> Command {
@@ -73,5 +74,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         strict,
     )?;
 
+    writer.flush()?;
     Ok(())
 }

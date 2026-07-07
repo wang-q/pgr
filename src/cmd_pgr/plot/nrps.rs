@@ -75,7 +75,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // Context
     let mut context = tera::Context::new();
 
-    let outfile = args.get_one::<String>("outfile").unwrap();
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
     context.insert("outfile", outfile);
     context.insert("all_tex", &all_tex);
     context.insert("is_legend", &is_legend);

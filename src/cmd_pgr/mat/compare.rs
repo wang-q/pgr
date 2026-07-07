@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{Arg, ArgMatches, Command};
 use std::io::Write;
 /// Build the clap subcommand for compare.
@@ -50,7 +51,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     } else {
         method.as_str()
     };
-    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
+    let mut writer =
+        pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
 
     // Load matrices
     let matrix1 = pgr::libs::pairmat::NamedMatrix::from_relaxed_phylip(matrix1_file)?;
@@ -86,5 +89,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         writer.write_fmt(format_args!("{}\t{:.6}\n", method, result))?;
     }
 
+    writer.flush()?;
     Ok(())
 }

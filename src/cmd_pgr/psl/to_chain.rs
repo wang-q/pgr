@@ -1,5 +1,6 @@
 use anyhow::Context;
 use clap::{Arg, ArgMatches, Command};
+use std::io::Write;
 /// Build the clap subcommand for to-chain.
 pub fn make_subcommand() -> Command {
     Command::new("to-chain")
@@ -40,5 +41,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     pgr::libs::fmt::psl::to_chain(reader, &mut writer, fix_strand, strict)?;
 
+    writer.flush()?;
     Ok(())
 }

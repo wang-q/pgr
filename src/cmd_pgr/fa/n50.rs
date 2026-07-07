@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{value_parser, Arg, ArgAction, ArgMatches, Command};
 use pgr::libs::fasta::stat::{calc_n50_stats, transpose};
 use std::io::Write;
@@ -107,12 +108,15 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let opt_nx: Vec<_> = args.get_many::<usize>("nx").unwrap().copied().collect();
     let opt_genome = args.get_one::<usize>("genome_size").copied();
-    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
+    let mut writer =
+        pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
 
     let mut lens = vec![];
 
     for infile in args.get_many::<String>("infiles").unwrap() {
-        let mut fa_in = pgr::libs::fmt::fa::reader(infile)?;
+        let mut fa_in = pgr::libs::fmt::fa::reader(infile)
+            .with_context(|| format!("Failed to open reader for {}", infile))?;
 
         for result in fa_in.records() {
             // obtain record or fail with error
@@ -189,5 +193,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         writer.write_fmt(format_args!("{}\n", row.join("\t")))?;
     }
 
+    writer.flush()?;
     Ok(())
 }

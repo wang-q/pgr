@@ -1,5 +1,7 @@
+use anyhow::Context;
 use clap::{value_parser, Arg, ArgAction, ArgMatches, Command};
 use pgr::libs::loc;
+use std::io::Write;
 
 /// Build the clap subcommand for range.
 pub fn make_subcommand() -> Command {
@@ -65,7 +67,9 @@ Examples:
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let infile = args.get_one::<String>("infile").unwrap();
 
-    let mut fa_out = pgr::libs::fmt::fa::writer(crate::cmd_pgr::args::get_outfile(args))?;
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
+    let mut fa_out = pgr::libs::fmt::fa::writer(outfile)
+        .with_context(|| format!("Failed to open writer for {}", outfile))?;
 
     let ranges = crate::cmd_pgr::args::collect_ranges(args)?;
 
@@ -105,6 +109,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
         fa_out.write_record(&record_rg)?;
     }
+
+    fa_out.get_mut().flush()?;
 
     Ok(())
 }

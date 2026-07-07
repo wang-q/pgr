@@ -2,6 +2,7 @@ use anyhow::Context;
 use clap::{ArgMatches, Command};
 use pgr::libs::chain::{chain_psl, GapCalc, ScoreContext, SubMatrix};
 use pgr::libs::fmt::twobit::TwoBitFile;
+use std::io::Write;
 /// Build the clap subcommand for chain.
 pub fn make_subcommand() -> Command {
     Command::new("chain")
@@ -123,5 +124,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         &mut score_context,
     )?;
 
+    writer.flush()?;
     Ok(())
 }

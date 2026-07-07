@@ -100,5 +100,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         _ => anyhow::bail!("unknown distance mode: {}", mode),
     }
 
+    writer.flush()?;
     Ok(())
 }

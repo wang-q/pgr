@@ -78,5 +78,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         write_axt(&mut writer, axt)?;
     }
 
+    writer.flush()?;
     Ok(())
 }

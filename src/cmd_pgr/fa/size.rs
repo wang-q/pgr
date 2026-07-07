@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{ArgMatches, Command};
 use std::io::Write;
 
@@ -33,11 +34,14 @@ Examples:
 
 /// Execute the size command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
+    let mut writer =
+        pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
     let no_ns = args.get_flag("no_ns");
 
     for infile in args.get_many::<String>("infiles").unwrap() {
-        let mut fa_in = pgr::libs::fmt::fa::reader(infile)?;
+        let mut fa_in = pgr::libs::fmt::fa::reader(infile)
+            .with_context(|| format!("Failed to open reader for {}", infile))?;
 
         for result in fa_in.records() {
             let record = result?;
@@ -58,5 +62,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         }
     }
 
+    writer.flush()?;
     Ok(())
 }

@@ -5,6 +5,7 @@ use pgr::libs::chain::sub_matrix::SubMatrix;
 use pgr::libs::chain::{Chain, ChainReader};
 use pgr::libs::fmt::twobit::TwoBitFile;
 use std::collections::HashMap;
+use std::io::Write;
 /// Build the clap subcommand for to-axt.
 pub fn make_subcommand() -> Command {
     Command::new("to-axt")
@@ -54,5 +55,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         &mut writer,
     )?;
 
+    writer.flush()?;
     Ok(())
 }

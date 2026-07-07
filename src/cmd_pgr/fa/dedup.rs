@@ -101,12 +101,15 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         is_insensitive,
     };
 
-    let mut fa_out = pgr::libs::fmt::fa::writer(crate::cmd_pgr::args::get_outfile(args))?;
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
+    let mut fa_out = pgr::libs::fmt::fa::writer(outfile)
+        .with_context(|| format!("Failed to open writer for {}", outfile))?;
 
     let mut subject_map: HashMap<u64, Vec<String>> = HashMap::new();
 
     for infile in args.get_many::<String>("infiles").unwrap() {
-        let mut fa_in = pgr::libs::fmt::fa::reader(infile)?;
+        let mut fa_in = pgr::libs::fmt::fa::reader(infile)
+            .with_context(|| format!("Failed to open reader for {}", infile))?;
 
         for result in fa_in.records() {
             let record = result?;
@@ -159,6 +162,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             }
         }
     }
+
+    fa_out.get_mut().flush()?;
 
     Ok(())
 }

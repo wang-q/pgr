@@ -1,4 +1,6 @@
+use anyhow::Context;
 use clap::{value_parser, Arg, ArgAction, ArgMatches, Command};
+use std::io::Write;
 
 /// Build the clap subcommand for interleave.
 pub fn make_subcommand() -> Command {
@@ -62,7 +64,9 @@ Examples:
 
 /// Execute the interleave command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
+    let mut writer =
+        pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
 
     let is_out_fq = args.get_flag("fq");
     let opt_prefix = args.get_one::<String>("name_prefix").unwrap();
@@ -77,5 +81,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let _final_idx =
         pgr::libs::fmt::fq::interleave(&mut writer, &infiles, opt_prefix, opt_start, is_out_fq)?;
 
+    writer.flush()?;
     Ok(())
 }

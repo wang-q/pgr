@@ -1,5 +1,7 @@
+use anyhow::Context;
 use clap::{ArgMatches, Command};
 use std::collections::BTreeMap;
+use std::io::Write;
 
 /// Build the clap subcommand for order.
 pub fn make_subcommand() -> Command {
@@ -36,9 +38,13 @@ Examples:
 
 /// Execute the order command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let mut fa_in = pgr::libs::fmt::fa::reader(args.get_one::<String>("infile").unwrap())?;
+    let infile = args.get_one::<String>("infile").unwrap();
+    let mut fa_in = pgr::libs::fmt::fa::reader(infile)
+        .with_context(|| format!("Failed to open reader for {}", infile))?;
 
-    let mut fa_out = pgr::libs::fmt::fa::writer(crate::cmd_pgr::args::get_outfile(args))?;
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
+    let mut fa_out = pgr::libs::fmt::fa::writer(outfile)
+        .with_context(|| format!("Failed to open writer for {}", outfile))?;
 
     let list: indexmap::IndexSet<_> =
         pgr::libs::io::read_names::<Vec<String>>(args.get_one::<String>("name_list").unwrap())?
@@ -62,6 +68,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             fa_out.write_record(record)?;
         }
     }
+
+    fa_out.get_mut().flush()?;
 
     Ok(())
 }

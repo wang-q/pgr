@@ -142,5 +142,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             )?;
         }
     }
+
+    writer.flush()?;
     Ok(())
 }

@@ -42,7 +42,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     results.sort_by_key(|b| std::cmp::Reverse(b.2)); // Sort by bases descending
 
-    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
+    let mut writer =
+        pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
     writeln!(
         writer,
         "{:<20} {:>10} {:>15} {:>10}",
@@ -73,5 +75,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         total_bases
     )?;
 
+    writer.flush()?;
     Ok(())
 }

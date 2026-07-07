@@ -1,5 +1,6 @@
 use anyhow::Context;
 use clap::{ArgMatches, Command};
+use std::io::Write;
 /// Build the clap subcommand for rc.
 pub fn make_subcommand() -> Command {
     Command::new("rc")
@@ -27,5 +28,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     pgr::libs::fmt::psl::rc_records(reader, &mut writer)?;
 
+    writer.flush()?;
     Ok(())
 }

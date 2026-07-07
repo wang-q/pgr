@@ -124,5 +124,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         writer.write_all((out_string + "\n").as_ref())?;
     }
 
+    writer.flush()?;
     Ok(())
 }

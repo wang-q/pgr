@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{builder::PossibleValue, value_parser, Arg, ArgAction, ArgMatches, Command};
 use std::collections::BTreeMap;
 use std::io::{BufWriter, Write};
@@ -84,7 +85,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // Operating
     if mode == "name" {
         for infile in args.get_many::<String>("infiles").unwrap() {
-            let mut fa_in = pgr::libs::fmt::fa::reader(infile)?;
+            let mut fa_in = pgr::libs::fmt::fa::reader(infile)
+                .with_context(|| format!("Failed to open reader for {}", infile))?;
 
             for result in fa_in.records() {
                 // obtain record or fail with error
@@ -131,7 +133,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         let part_width = (opt_max_part.checked_ilog10().unwrap_or(0) + 1) as usize;
 
         'outer: for infile in args.get_many::<String>("infiles").unwrap() {
-            let mut fa_in = pgr::libs::fmt::fa::reader(infile)?;
+            let mut fa_in = pgr::libs::fmt::fa::reader(infile)
+                .with_context(|| format!("Failed to open reader for {}", infile))?;
 
             for result in fa_in.records() {
                 if chunker.max_files_exceeded() {

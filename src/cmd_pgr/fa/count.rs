@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{ArgMatches, Command};
 use std::io::Write;
 
@@ -32,7 +33,9 @@ Examples:
 
 /// Execute the count command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
+    let mut writer =
+        pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
 
     // Init
     let mut total_len = 0usize;
@@ -42,14 +45,15 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     writer.write_fmt(format_args!("#seq\tlen\tA\tC\tG\tT\tN\n"))?;
 
     for infile in args.get_many::<String>("infiles").unwrap() {
-        let mut fa_in = pgr::libs::fmt::fa::reader(infile)?;
+        let mut fa_in = pgr::libs::fmt::fa::reader(infile)
+            .with_context(|| format!("Failed to open reader for {}", infile))?;
 
         for result in fa_in.records() {
             let record = result?;
             let name = String::from_utf8(record.name().into())?;
             let seq = record.sequence();
 
-            let (len, base_cnt) = pgr::libs::fasta::stat::count_bases(seq.get(..).unwrap_or(&[]));
+            let (len, base_cnt) = pgr::libs::fasta::stat::count_bases(seq.as_ref());
 
             writer.write_fmt(format_args!(
                 "{}\t{}\t{}\t{}\t{}\t{}\t{}\n",
@@ -87,5 +91,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         total_base_cnt[pgr::libs::nt::Nt::N as usize],
     ))?;
 
+    writer.flush()?;
     Ok(())
 }

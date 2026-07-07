@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use std::io::Write;
 
@@ -61,13 +62,17 @@ Examples:
 
 /// Execute the six-frame command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let mut fa_in = pgr::libs::fmt::fa::reader(args.get_one::<String>("infile").unwrap())?;
+    let infile = args.get_one::<String>("infile").unwrap();
+    let mut fa_in = pgr::libs::fmt::fa::reader(infile)
+        .with_context(|| format!("Failed to open reader for {}", infile))?;
 
     let opt_len = *args.get_one::<usize>("min_len").unwrap();
     let is_start = args.get_flag("start_met");
     let is_end = args.get_flag("end");
 
-    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
+    let mut writer =
+        pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
 
     for result in fa_in.records() {
         // obtain record or fail with error
@@ -105,5 +110,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         }
     }
 
+    writer.flush()?;
     Ok(())
 }

@@ -1,5 +1,7 @@
+use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use std::collections::HashSet;
+use std::io::Write;
 
 /// Build the clap subcommand for rc.
 pub fn make_subcommand() -> Command {
@@ -48,11 +50,15 @@ Examples:
 
 /// Execute the rc command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let mut fa_in = pgr::libs::fmt::fa::reader(args.get_one::<String>("infile").unwrap())?;
+    let infile = args.get_one::<String>("infile").unwrap();
+    let mut fa_in = pgr::libs::fmt::fa::reader(infile)
+        .with_context(|| format!("Failed to open reader for {}", infile))?;
 
     let is_consistent = args.get_flag("consistent");
 
-    let mut fa_out = pgr::libs::fmt::fa::writer(crate::cmd_pgr::args::get_outfile(args))?;
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
+    let mut fa_out = pgr::libs::fmt::fa::writer(outfile)
+        .with_context(|| format!("Failed to open writer for {}", outfile))?;
 
     let set_list: HashSet<String> = if args.contains_id("name_list") {
         pgr::libs::io::read_names::<std::collections::HashSet<String>>(
@@ -85,6 +91,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         let record_rc = pgr::libs::fmt::fa::new_record(&new_name, &seq_rc);
         fa_out.write_record(&record_rc)?;
     }
+
+    fa_out.get_mut().flush()?;
 
     Ok(())
 }

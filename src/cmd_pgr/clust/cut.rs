@@ -341,6 +341,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             let rows = cut::format_scan_rows(&partition, tree, &group_label);
             writer.write_all(rows.as_bytes())?;
         }
+        writer.flush()?;
         return Ok(());
     }
 

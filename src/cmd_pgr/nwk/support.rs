@@ -81,5 +81,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         writer.write_fmt(format_args!("{}\n", target.to_newick()))?;
     }
 
+    writer.flush()?;
     Ok(())
 }

@@ -1,6 +1,7 @@
 use anyhow::Context;
 use clap::{ArgMatches, Command};
 use pgr::libs::chain::net::{classify_syntenic, read_nets, write_net};
+use std::io::Write;
 /// Build the clap subcommand for syntenic.
 pub fn make_subcommand() -> Command {
     Command::new("syntenic")
@@ -46,5 +47,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         write_net(net, &mut writer, false, min_score, 0)?;
     }
 
+    writer.flush()?;
     Ok(())
 }

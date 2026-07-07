@@ -6,6 +6,7 @@ use pgr::libs::clust::eval::{
 };
 use pgr::libs::pairmat::NamedMatrix;
 use pgr::libs::phylo::tree::Tree;
+use std::io::Write;
 /// Build the clap subcommand for eval.
 pub fn make_subcommand() -> Command {
     Command::new("eval")
@@ -144,6 +145,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         }
 
         run_batch(batches, &targets, &mut writer)?;
+        writer.flush()?;
         return Ok(());
     }
 
@@ -179,5 +181,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         );
     }
 
+    writer.flush()?;
     Ok(())
 }

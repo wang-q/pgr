@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{ArgMatches, Command};
 use std::io::Write;
 
@@ -29,7 +30,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let infile = args.get_one::<String>("infile").unwrap();
     let opt_same = *args.get_one::<f32>("same").unwrap();
     let opt_missing = *args.get_one::<f32>("missing").unwrap();
-    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
+    let mut writer =
+        pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
 
     // Load matrix from pairwise distances
     let matrix = pgr::libs::pairmat::NamedMatrix::from_pair_scores(infile, opt_same, opt_missing)?;
@@ -48,5 +51,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         writer.write_fmt(format_args!("\n"))?;
     }
 
+    writer.flush()?;
     Ok(())
 }

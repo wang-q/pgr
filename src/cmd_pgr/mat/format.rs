@@ -1,4 +1,6 @@
+use anyhow::Context;
 use clap::{ArgMatches, Command};
+use std::io::Write;
 /// Build the clap subcommand for format.
 pub fn make_subcommand() -> Command {
     Command::new("format")
@@ -49,12 +51,15 @@ Examples:
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let infile = args.get_one::<String>("infile").unwrap();
     let opt_mode = args.get_one::<String>("mat_format").unwrap();
-    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
+    let mut writer =
+        pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
 
     let matrix = pgr::libs::pairmat::NamedMatrix::from_relaxed_phylip(infile)?;
     let fmt = pgr::libs::pairmat::MatrixFormat::from_mode(opt_mode)?;
 
     pgr::libs::pairmat::write_phylip_matrix(&matrix, fmt, &mut writer)?;
 
+    writer.flush()?;
     Ok(())
 }

@@ -2,6 +2,7 @@ use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use pgr::libs::chain::read_chains;
 use std::io::BufRead;
+use std::io::Write;
 /// Build the clap subcommand for sort.
 pub fn make_subcommand() -> Command {
     Command::new("sort")
@@ -91,5 +92,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         chain.write(&mut writer)?;
     }
 
+    writer.flush()?;
     Ok(())
 }

@@ -3,6 +3,7 @@ use clap::{value_parser, Arg, ArgMatches, Command};
 use pgr::libs::plot::histogram::{
     calc_density, calc_hist, compute_hh_axis, create_table, load_data, render_hh_tex,
 };
+use std::io::Write;
 
 /// Build the clap subcommand for hh.
 pub fn make_subcommand() -> Command {
@@ -166,5 +167,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     render_hh_tex(&context, &mut writer)?;
 
+    writer.flush()?;
     Ok(())
 }

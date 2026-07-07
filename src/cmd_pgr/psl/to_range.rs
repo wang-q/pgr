@@ -1,5 +1,6 @@
 use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches, Command};
+use std::io::Write;
 
 /// Build the clap subcommand for to-range.
 pub fn make_subcommand() -> Command {
@@ -55,5 +56,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     pgr::libs::fmt::psl::to_ranges(reader, &mut writer, extract_target, strict)?;
 
+    writer.flush()?;
     Ok(())
 }

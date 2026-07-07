@@ -138,5 +138,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     writer.write_all(template.as_ref())?;
 
+    writer.flush()?;
     Ok(())
 }

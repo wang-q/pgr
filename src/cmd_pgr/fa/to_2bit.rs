@@ -2,6 +2,7 @@ use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use pgr::libs::fmt::twobit::TwoBitWriter;
 use std::collections::HashSet;
+use std::io::Write;
 /// Build the clap subcommand for to-2bit.
 pub fn make_subcommand() -> Command {
     Command::new("to-2bit")
@@ -56,7 +57,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut data = Vec::new();
 
     for infile in infiles {
-        let mut fa_in = pgr::libs::fmt::fa::reader(infile)?;
+        let mut fa_in = pgr::libs::fmt::fa::reader(infile)
+            .with_context(|| format!("Failed to open reader for {}", infile))?;
         for result in fa_in.records() {
             let record = result?;
             let mut name = String::from_utf8(record.name().into())?;
@@ -91,9 +93,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let mut writer =
         pgr::writer(output).with_context(|| format!("Failed to open writer for {}", output))?;
-    let mut tb_writer = TwoBitWriter::new(&mut writer);
-
-    tb_writer.write(&refs, !no_mask)?;
+    {
+        let mut tb_writer = TwoBitWriter::new(&mut writer);
+        tb_writer.write(&refs, !no_mask)?;
+    }
+    writer.flush()?;
 
     Ok(())
 }

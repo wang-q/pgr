@@ -1,5 +1,6 @@
 use anyhow::Context;
 use clap::{Arg, ArgMatches, Command};
+use std::io::Write;
 /// Build the clap subcommand for swap.
 pub fn make_subcommand() -> Command {
     Command::new("swap")
@@ -36,5 +37,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     pgr::libs::fmt::psl::swap_records(reader, &mut writer, no_rc)?;
 
+    writer.flush()?;
     Ok(())
 }

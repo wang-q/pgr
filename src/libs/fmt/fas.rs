@@ -209,8 +209,11 @@ where
     W: Write,
     F: Fn(&FasBlock) -> anyhow::Result<String> + Sync,
 {
+    use std::sync::{Arc, Mutex};
+
     let (snd1, rcv1) = crossbeam::channel::bounded::<FasBlock>(10);
     let (snd2, rcv2) = crossbeam::channel::bounded::<String>(10);
+    let errors: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
 
     crossbeam::scope(|s| {
         // Reader thread.
@@ -218,7 +221,10 @@ where
             for infile in infiles {
                 let mut reader = match crate::reader(infile) {
                     Ok(r) => r,
-                    Err(_) => break,
+                    Err(e) => {
+                        log::error!("failed to open reader for {}: {}", infile, e);
+                        break;
+                    }
                 };
                 for block_result in iter_fas_blocks(&mut reader) {
                     match block_result {
@@ -243,11 +249,20 @@ where
         // Worker threads.
         for _ in 0..parallel {
             let (sendr, recvr) = (snd2.clone(), rcv1.clone());
+            let errors = Arc::clone(&errors);
             s.spawn(move |_| {
                 for block in recvr.iter() {
-                    if let Ok(out_string) = proc_block(&block) {
-                        if sendr.send(out_string).is_err() {
-                            break;
+                    match proc_block(&block) {
+                        Ok(out_string) => {
+                            if sendr.send(out_string).is_err() {
+                                break;
+                            }
+                        }
+                        Err(e) => {
+                            if let Ok(mut guard) = errors.lock() {
+                                guard.push(format!("fas block processing failed: {}", e));
+                            }
+                            // Continue processing other blocks
                         }
                     }
                 }
@@ -263,6 +278,18 @@ where
         }
     })
     .map_err(|_| anyhow::anyhow!("parallel pipeline failed (worker panic)"))?;
+
+    let errors = Arc::try_unwrap(errors)
+        .map_err(|_| anyhow::anyhow!("errors Arc still shared"))?
+        .into_inner()
+        .map_err(|e| anyhow::anyhow!("errors mutex poisoned: {}", e))?;
+    if !errors.is_empty() {
+        anyhow::bail!(
+            "{} block(s) failed during parallel processing:\n{}",
+            errors.len(),
+            errors.join("\n")
+        );
+    }
 
     Ok(())
 }
@@ -332,7 +359,11 @@ pub fn concat_blocks_into<R: io::BufRead>(
     for block_result in iter_fas_blocks(reader) {
         let block = block_result?;
         let block_names = block.names;
-        let length = block.entries.first().unwrap().seq().len();
+        let first_entry = block
+            .entries
+            .first()
+            .ok_or_else(|| anyhow::anyhow!("empty fas block encountered while concatenating"))?;
+        let length = first_entry.seq().len();
 
         for name in needed {
             if block_names.contains(name) {

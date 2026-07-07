@@ -1,4 +1,6 @@
+use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches, Command};
+use std::io::Write;
 
 /// Build the clap subcommand for mask.
 pub fn make_subcommand() -> Command {
@@ -54,13 +56,17 @@ Examples:
 
 /// Execute the mask command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let mut fa_in = pgr::libs::fmt::fa::reader(args.get_one::<String>("infile").unwrap())?;
+    let infile = args.get_one::<String>("infile").unwrap();
+    let mut fa_in = pgr::libs::fmt::fa::reader(infile)
+        .with_context(|| format!("Failed to open reader for {}", infile))?;
 
     let runlists = pgr::libs::io::read_runlist(args.get_one::<String>("runlist").unwrap())?;
 
     let is_hard = args.get_flag("hard");
 
-    let mut fa_out = pgr::libs::fmt::fa::writer(crate::cmd_pgr::args::get_outfile(args))?;
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
+    let mut fa_out = pgr::libs::fmt::fa::writer(outfile)
+        .with_context(|| format!("Failed to open writer for {}", outfile))?;
 
     for result in fa_in.records() {
         let record = result?;
@@ -82,6 +88,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         let record_out = pgr::libs::fmt::fa::new_record(&name, seq_out.as_bytes());
         fa_out.write_record(&record_out)?;
     }
+
+    fa_out.get_mut().flush()?;
 
     Ok(())
 }

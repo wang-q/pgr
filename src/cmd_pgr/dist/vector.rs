@@ -108,9 +108,14 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // Drop the sender to signal the writer thread to exit
     drop(sender);
     // Wait for the writer thread to finish
-    writer_thread
-        .join()
-        .map_err(|_| anyhow::anyhow!("writer thread panicked"))?;
+    writer_thread.join().map_err(|e| {
+        let msg = e
+            .downcast_ref::<String>()
+            .map(|s| s.as_str())
+            .or_else(|| e.downcast_ref::<&str>().copied())
+            .unwrap_or("<non-string panic payload>");
+        anyhow::anyhow!("writer thread panicked: {}", msg)
+    })?;
 
     let errors = errors
         .lock()

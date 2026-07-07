@@ -67,5 +67,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
     writer.write_all((newick + "\n").as_ref())?;
 
+    writer.flush()?;
     Ok(())
 }

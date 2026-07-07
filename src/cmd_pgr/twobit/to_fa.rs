@@ -1,6 +1,7 @@
 use anyhow::Context;
 use clap::{ArgMatches, Command};
 use pgr::libs::fmt::twobit::TwoBitFile;
+use std::io::Write;
 /// Build the clap subcommand for to-fa.
 pub fn make_subcommand() -> Command {
     Command::new("to-fa")
@@ -42,9 +43,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut tb = TwoBitFile::open(input_path)
         .with_context(|| format!("Failed to open 2bit file {}", input_path))?;
     let mut writer = if line_width == 0 {
-        pgr::libs::fmt::fa::writer(output_path)?
+        pgr::libs::fmt::fa::writer(output_path)
+            .with_context(|| format!("Failed to open writer for {}", output_path))?
     } else {
-        pgr::libs::fmt::fa::writer_with_wrap(output_path, line_width)?
+        pgr::libs::fmt::fa::writer_with_wrap(output_path, line_width)
+            .with_context(|| format!("Failed to open writer for {}", output_path))?
     };
 
     let names = tb.get_sequence_names();
@@ -53,6 +56,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         let record = pgr::libs::fmt::fa::new_record(&name, seq.as_bytes());
         writer.write_record(&record)?;
     }
+
+    writer.get_mut().flush()?;
 
     Ok(())
 }

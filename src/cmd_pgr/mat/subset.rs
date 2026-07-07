@@ -1,4 +1,6 @@
+use anyhow::Context;
 use clap::{ArgMatches, Command};
+use std::io::Write;
 /// Build the clap subcommand for subset.
 pub fn make_subcommand() -> Command {
     Command::new("subset")
@@ -26,7 +28,9 @@ Examples:
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let infile = args.get_one::<String>("infile").unwrap();
     let list_file = args.get_one::<String>("name_list").unwrap();
-    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
+    let mut writer =
+        pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
 
     let wanted_names = pgr::libs::io::read_names::<Vec<String>>(list_file)?;
 
@@ -38,5 +42,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         log::warn!("Name not found in matrix: {}", name);
     }
 
+    writer.flush()?;
     Ok(())
 }

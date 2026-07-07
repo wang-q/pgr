@@ -1,4 +1,6 @@
+use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches, Command};
+use std::io::Write;
 
 /// Build the clap subcommand for replace.
 pub fn make_subcommand() -> Command {
@@ -43,13 +45,17 @@ Examples:
 
 /// Execute the replace command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let mut fa_in = pgr::libs::fmt::fa::reader(args.get_one::<String>("infile").unwrap())?;
+    let infile = args.get_one::<String>("infile").unwrap();
+    let mut fa_in = pgr::libs::fmt::fa::reader(infile)
+        .with_context(|| format!("Failed to open reader for {}", infile))?;
 
     let replace_of =
         pgr::libs::io::read_replace_tsv(args.get_one::<String>("replace_tsv").unwrap())?;
     let is_some = args.get_flag("some");
 
-    let mut fa_out = pgr::libs::fmt::fa::writer(crate::cmd_pgr::args::get_outfile(args))?;
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
+    let mut fa_out = pgr::libs::fmt::fa::writer(outfile)
+        .with_context(|| format!("Failed to open writer for {}", outfile))?;
 
     for result in fa_in.records() {
         let record = result?;
@@ -64,6 +70,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             fa_out.write_record(&record)?;
         }
     }
+
+    fa_out.get_mut().flush()?;
 
     Ok(())
 }

@@ -1,4 +1,6 @@
+use anyhow::Context;
 use clap::{Arg, ArgMatches, Command};
+use std::io::Write;
 
 /// Build the clap subcommand for one.
 pub fn make_subcommand() -> Command {
@@ -33,9 +35,12 @@ Examples:
 /// Execute the one command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let infile = args.get_one::<String>("infile").unwrap();
-    let mut fa_in = pgr::libs::fmt::fa::reader(infile)?;
+    let mut fa_in = pgr::libs::fmt::fa::reader(infile)
+        .with_context(|| format!("Failed to open reader for {}", infile))?;
 
-    let mut fa_out = pgr::libs::fmt::fa::writer(crate::cmd_pgr::args::get_outfile(args))?;
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
+    let mut fa_out = pgr::libs::fmt::fa::writer(outfile)
+        .with_context(|| format!("Failed to open writer for {}", outfile))?;
 
     let name = args.get_one::<String>("seq_name").unwrap();
 
@@ -53,6 +58,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     if !found {
         anyhow::bail!("sequence {} not found in {}", name, infile);
     }
+
+    fa_out.get_mut().flush()?;
 
     Ok(())
 }

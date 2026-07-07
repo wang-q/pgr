@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{builder::PossibleValue, value_parser, Arg, ArgAction, ArgMatches, Command};
 use std::io::Write;
 /// Build the clap subcommand for transform.
@@ -92,7 +93,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let offset = *args.get_one::<f32>("offset").unwrap();
     let normalize = args.get_flag("normalize");
     let format = args.get_one::<String>("mat_input_format").unwrap().as_str();
-    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
+    let mut writer =
+        pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
 
     // Load and Transform
     let matrix = if format == "pair" {
@@ -117,5 +120,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         writer.write_fmt(format_args!("\n"))?;
     }
 
+    writer.flush()?;
     Ok(())
 }

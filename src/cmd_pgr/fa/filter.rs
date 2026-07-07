@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{value_parser, Arg, ArgAction, ArgMatches, Command};
 use std::collections::BTreeSet;
 
@@ -111,7 +112,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let mut set_list: BTreeSet<String> = BTreeSet::new();
     for infile in args.get_many::<String>("infiles").unwrap() {
-        let mut fa_in = pgr::libs::fmt::fa::reader(infile)?;
+        let mut fa_in = pgr::libs::fmt::fa::reader(infile)
+            .with_context(|| format!("Failed to open reader for {}", infile))?;
 
         for result in fa_in.records() {
             // obtain record or fail with error
@@ -125,7 +127,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
             // Apply filters
             if !pgr::libs::fasta::filter::pass_filters(
-                seq.get(..).unwrap_or(&[]),
+                seq.as_ref(),
                 opt_minsize,
                 opt_maxsize,
                 opt_maxn,
@@ -138,7 +140,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
             // Apply formatters
             let seq_out = pgr::libs::fasta::filter::format_sequence(
-                seq.get(..).unwrap_or(&[]),
+                seq.as_ref(),
                 is_dash,
                 is_iupac,
                 is_upper,

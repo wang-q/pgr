@@ -72,5 +72,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         })?;
     writer.write_all(out.as_bytes())?;
 
+    writer.flush()?;
     Ok(())
 }

@@ -1,4 +1,6 @@
+use anyhow::Context;
 use clap::{ArgMatches, Command};
+use std::io::Write;
 
 /// Build the clap subcommand for create.
 pub fn make_subcommand() -> Command {
@@ -37,7 +39,9 @@ Examples:
 
 /// Execute the create command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let mut writer = pgr::writer(crate::cmd_pgr::args::get_outfile(args))?;
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
+    let mut writer =
+        pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
     let opt_genome = args.get_one::<String>("genome").unwrap();
     let opt_name = &args
         .get_one::<String>("name")
@@ -46,9 +50,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         .to_string();
 
     for infile in args.get_many::<String>("infiles").unwrap() {
-        let reader = pgr::reader(infile)?;
+        let reader =
+            pgr::reader(infile).with_context(|| format!("Failed to open reader for {}", infile))?;
         pgr::libs::fmt::fas::create_from_links(reader, &mut writer, opt_genome, opt_name)?;
     }
 
+    writer.flush()?;
     Ok(())
 }

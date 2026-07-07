@@ -134,5 +134,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let out_string = tree.to_newick();
     writer.write_all((out_string + "\n").as_ref())?;
 
+    writer.flush()?;
     Ok(())
 }
