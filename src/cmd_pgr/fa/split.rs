@@ -95,14 +95,14 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 let name = String::from_utf8(record.name().into())
                     .map_err(|e| anyhow::anyhow!("invalid utf8 in record name: {}", e))?;
                 let seq = record.sequence();
-                let seq_str = String::from_utf8(seq.as_ref().to_vec())
+                let seq_str = std::str::from_utf8(seq.as_ref())
                     .map_err(|e| anyhow::anyhow!("invalid utf8 in sequence: {}", e))?;
 
                 let filename = name
                     .clone()
                     .replace(['(', ')', ':'], "_")
                     .replace("__", "_");
-                write_record_to_fh(outdir, &mut fh_of, &filename, &name, &seq_str)?;
+                write_record_to_fh(outdir, &mut fh_of, &filename, &name, seq_str)?;
             }
         }
     } else if mode == "about" {
@@ -135,11 +135,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                     .map_err(|e| anyhow::anyhow!("invalid utf8 in record name: {}", e))?;
 
                 let seq = record.sequence();
-                let seq_str = String::from_utf8(seq.as_ref().to_vec())
+                let seq_str = std::str::from_utf8(seq.as_ref())
                     .map_err(|e| anyhow::anyhow!("invalid utf8 in sequence: {}", e))?;
 
                 let filename = format!("{:0width$}", chunker.file_index(), width = part_width);
-                write_record_to_fh(outdir, &mut fh_of, &filename, &name, &seq_str)?;
+                write_record_to_fh(outdir, &mut fh_of, &filename, &name, seq_str)?;
                 chunker.advance(seq.len());
             } // record
         } // file

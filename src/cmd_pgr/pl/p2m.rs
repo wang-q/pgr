@@ -44,9 +44,6 @@ Notes:
 }
 
 /// Execute the p2m command.
-// `target_name` is initialized to empty and overwritten by the first cover
-// input's name; the initial assignment is intentionally never read.
-#[allow(unused_assignments)]
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let outdir = args.get_one::<String>("outdir").unwrap();
     fs::create_dir_all(outdir)?;
@@ -75,25 +72,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let _cwd_guard = CwdGuard::enter(outdir)?;
 
     run_cmd!(echo "==> pgr fas name - first")?;
-    let mut target_name = "".to_string();
-    {
-        let infile = info_of
-            .values()
-            .next()
-            .and_then(|v| v.first())
-            .ok_or_else(|| anyhow::anyhow!("no cover input found"))?;
-        run_cmd!(
-            ${pgr} fas name ${infile} -o name.first.lst
-        )?;
-        let first_content = fs::read_to_string("name.first.lst")
-            .map_err(|e| anyhow::anyhow!("failed to read name.first.lst: {}", e))?;
-        target_name = first_content
-            .lines()
-            .next()
-            .ok_or_else(|| anyhow::anyhow!("name.first.lst is empty"))?
-            .to_string();
-        run_cmd!(echo "    \"target_name\" = ${target_name}")?;
-    }
+    let target_name = first_target_name(&pgr, &info_of)?;
+    run_cmd!(echo "    \"target_name\" = ${target_name}")?;
 
     run_cmd!(echo "==> pgr fas cover")?;
     for (basename, info) in info_of.iter_mut() {
@@ -164,4 +144,23 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+// Run `pgr fas name` on the first input file and return the first name line.
+fn first_target_name(pgr: &str, info_of: &BTreeMap<String, Vec<String>>) -> anyhow::Result<String> {
+    let infile = info_of
+        .values()
+        .next()
+        .and_then(|v| v.first())
+        .ok_or_else(|| anyhow::anyhow!("no cover input found"))?;
+    run_cmd!(
+        ${pgr} fas name ${infile} -o name.first.lst
+    )?;
+    let first_content = fs::read_to_string("name.first.lst")
+        .map_err(|e| anyhow::anyhow!("failed to read name.first.lst: {}", e))?;
+    first_content
+        .lines()
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("name.first.lst is empty"))
+        .map(str::to_string)
 }

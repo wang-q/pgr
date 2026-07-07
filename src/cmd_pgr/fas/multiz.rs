@@ -149,7 +149,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     for block in blocks {
         for entry in &block.entries {
             let range = entry.range();
-            let seq = String::from_utf8(entry.seq().to_vec())?;
+            let seq = std::str::from_utf8(entry.seq())?;
             writeln!(writer, ">{}", range)?;
             writeln!(writer, "{}", seq)?;
         }

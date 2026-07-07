@@ -2,7 +2,7 @@ use anyhow::Context;
 use clap::{Arg, ArgMatches, Command};
 
 use pgr::libs::chain::anti_repeat::check_chain;
-use pgr::libs::chain::read_chains;
+use pgr::libs::chain::ChainReader;
 use pgr::libs::fmt::twobit::TwoBitFile;
 use std::io::Write;
 // Default scores from UCSC chainAntiRepeat.c
@@ -63,15 +63,16 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut query_2bit = TwoBitFile::open(query_path)
         .with_context(|| format!("Failed to open 2bit file {}", query_path))?;
 
-    let chains = read_chains(
-        pgr::reader(input_path)
-            .with_context(|| format!("Failed to open reader for {}", input_path))?,
-    )?; // Note: read_chains reads all chains into memory
-
     let mut writer = pgr::writer(output_path)
         .with_context(|| format!("Failed to open writer for {}", output_path))?;
 
-    for chain in chains {
+    let mut reader = ChainReader::new(
+        pgr::reader(input_path)
+            .with_context(|| format!("Failed to open reader for {}", input_path))?,
+    );
+
+    for res in reader.by_ref() {
+        let chain = res?;
         if chain.header.score >= no_check_score as f64 {
             chain.write(&mut writer)?;
             continue;
