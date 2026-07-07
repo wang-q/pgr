@@ -1,17 +1,23 @@
 use clap::{ArgMatches, Command};
 use pgr::libs::paf::index::QueryResult;
 use pgr::libs::paf::msa_build::orient_interval;
+use std::io::Write;
 
 // Output BED3 (name start end), one line per query result.
-fn output_bed(idx: &pgr::libs::paf::index::PafIndex, results: &[QueryResult]) {
+fn output_bed(
+    idx: &pgr::libs::paf::index::PafIndex,
+    results: &[QueryResult],
+    writer: &mut impl Write,
+) -> anyhow::Result<()> {
     for (query_id, q_iv, _t_iv, _cigar, _, _, _) in results {
         let qname = idx.id_to_name(*query_id).unwrap_or_else(|| {
             log::warn!("query id {} not found in index", query_id);
             "?"
         });
         let (qs, qe) = orient_interval(q_iv.first, q_iv.last);
-        println!("{qname}\t{qs}\t{qe}");
+        writeln!(writer, "{qname}\t{qs}\t{qe}")?;
     }
+    Ok(())
 }
 /// Build the clap subcommand for to-bed.
 pub fn make_subcommand() -> Command {
@@ -47,8 +53,11 @@ Examples:
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let opts = crate::cmd_pgr::args::query_options_from_args(args);
     let (idx, all_results) = pgr::libs::paf::query::run_query(&opts)?;
+    let stdout = std::io::stdout();
+    let mut out = stdout.lock();
     for (_, results) in &all_results {
-        output_bed(&idx, results);
+        output_bed(&idx, results, &mut out)?;
     }
+    out.flush()?;
     Ok(())
 }

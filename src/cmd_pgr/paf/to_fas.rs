@@ -1,5 +1,6 @@
 use anyhow::Context;
 use clap::{ArgMatches, Command};
+use std::io::Write;
 
 /// Build the clap subcommand for to-fas.
 pub fn make_subcommand() -> Command {
@@ -83,13 +84,15 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             &mut fasta_store,
             params,
             &mut writer,
-        )
+        )?;
     } else {
         pgr::libs::paf::to_fas::write_pairwise_fas(
             &idx,
             &all_results,
             &mut fasta_store,
             &mut writer,
-        )
+        )?;
     }
+    writer.flush()?;
+    Ok(())
 }

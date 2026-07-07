@@ -1,5 +1,6 @@
 use anyhow::Context;
 use clap::{ArgMatches, Command};
+use std::io::Write;
 /// Build the clap subcommand for to-psl.
 pub fn make_subcommand() -> Command {
     Command::new("to-psl")
@@ -37,5 +38,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     pgr::libs::fmt::axt::axt_to_psl(reader, &mut writer, &t_sizes, &q_sizes)?;
 
+    writer.flush()?;
     Ok(())
 }

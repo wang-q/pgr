@@ -227,7 +227,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     if outfile == "stdout" {
         let result_content =
             fs::read_to_string("result.nwk").with_context(|| "Failed to read from result.nwk")?;
-        print!("{}", result_content);
+        let stdout = std::io::stdout();
+        let mut out = stdout.lock();
+        write!(out, "{}", result_content)?;
+        out.flush()?;
         ctx.leave()?;
     } else {
         ctx.leave()?;

@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Context};
 use clap::{Arg, ArgMatches, Command};
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 use std::io::Write;
 
 use pgr::libs::alignment::{align_to_chr, get_subs, seq_intspan, vcf_alt_bases};
@@ -55,31 +55,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     };
 
     let mut header_written = false;
-
-    // Pre-scan contigs to emit ##contig lines when sizes provided and inputs are regular files
-    let mut contigs: HashSet<String> = HashSet::new();
-    if !sizes.is_empty() {
-        if let Some(infiles) = args.get_many::<String>("infiles") {
-            for infile in infiles {
-                if infile.to_lowercase() == "stdin" {
-                    continue;
-                }
-                let mut reader = pgr::reader(infile)
-                    .with_context(|| format!("Failed to open reader for {}", infile))?;
-                for block_result in iter_fas_blocks(&mut reader) {
-                    let block = block_result?;
-                    let chr = block
-                        .entries
-                        .first()
-                        .ok_or_else(|| anyhow!("empty block entries in pre-scan"))?
-                        .range()
-                        .chr()
-                        .to_string();
-                    contigs.insert(chr);
-                }
-            }
-        }
-    }
 
     for infile in args.get_many::<String>("infiles").unwrap() {
         let mut reader =

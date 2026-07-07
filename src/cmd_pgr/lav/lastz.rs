@@ -93,12 +93,15 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             .ok_or_else(|| anyhow::anyhow!("--show-preset requires --preset to be specified."))?;
         let p = pgr::libs::lastz::find_preset(preset_name)
             .ok_or_else(|| anyhow::anyhow!("unknown preset: {}", preset_name))?;
-        println!("Preset: {}", p.name);
-        println!("Description: {}", p.desc);
-        println!("Parameters: {}", p.params);
+        let stdout = std::io::stdout();
+        let mut out = stdout.lock();
+        writeln!(out, "Preset: {}", p.name)?;
+        writeln!(out, "Description: {}", p.desc)?;
+        writeln!(out, "Parameters: {}", p.params)?;
         if let Some(matrix) = p.matrix {
-            println!("\nMatrix Content:\n{}", matrix);
+            writeln!(out, "\nMatrix Content:\n{}", matrix)?;
         }
+        out.flush()?;
         return Ok(());
     }
 

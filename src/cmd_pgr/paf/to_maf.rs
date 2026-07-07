@@ -1,5 +1,6 @@
 use anyhow::Context;
 use clap::{ArgMatches, Command};
+use std::io::Write;
 
 use pgr::libs::paf::to_maf::{write_msa_maf, write_pairwise_maf};
 
@@ -68,5 +69,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     } else {
         write_pairwise_maf(&idx, &all_results, &mut fasta_store, &mut writer)?;
     }
+    writer.flush()?;
     Ok(())
 }

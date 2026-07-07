@@ -69,7 +69,10 @@ Output Format:
 /// Execute the to-dna command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     if args.get_flag("doc") {
-        println!("{}", include_str!("../../../docs/ms-to-dna.md"));
+        let stdout = std::io::stdout();
+        let mut out = stdout.lock();
+        writeln!(out, "{}", include_str!("../../../docs/ms-to-dna.md"))?;
+        out.flush()?;
         return Ok(());
     }
     let outfile = crate::cmd_pgr::args::get_outfile(args);

@@ -1,6 +1,7 @@
 use anyhow::Context;
 use clap::{value_parser, Arg, ArgAction, ArgMatches, Command};
 use std::collections::BTreeSet;
+use std::io::Write;
 
 /// Build the clap subcommand for filter.
 pub fn make_subcommand() -> Command {
@@ -151,5 +152,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         }
     }
 
+    fa_out.get_mut().flush()?;
     Ok(())
 }

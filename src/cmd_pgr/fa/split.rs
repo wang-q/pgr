@@ -81,6 +81,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     }
 
     let mut fh_of: BTreeMap<String, BufWriter<std::fs::File>> = BTreeMap::new();
+    let stdout = std::io::stdout();
+    let mut out = stdout.lock();
 
     // Operating
     if mode == "name" {
@@ -102,7 +104,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                     .clone()
                     .replace(['(', ')', ':'], "_")
                     .replace("__", "_");
-                write_record_to_fh(outdir, &mut fh_of, &filename, &name, seq_str)?;
+                write_record_to_fh(outdir, &mut fh_of, &filename, &name, seq_str, &mut out)?;
             }
         }
     } else if mode == "about" {
@@ -139,7 +141,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                     .map_err(|e| anyhow::anyhow!("invalid utf8 in sequence: {}", e))?;
 
                 let filename = format!("{:0width$}", chunker.file_index(), width = part_width);
-                write_record_to_fh(outdir, &mut fh_of, &filename, &name, seq_str)?;
+                write_record_to_fh(outdir, &mut fh_of, &filename, &name, seq_str, &mut out)?;
                 chunker.advance(seq.len());
             } // record
         } // file
@@ -149,6 +151,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     for fh in fh_of.values_mut() {
         fh.flush()?;
     }
+    out.flush()?;
 
     Ok(())
 }
@@ -177,9 +180,10 @@ fn write_record_to_fh(
     filename: &str,
     name: &str,
     seq_str: &str,
+    stdout_lock: &mut impl Write,
 ) -> anyhow::Result<()> {
     if outdir == "stdout" {
-        print!(">{}\n{}\n", name, seq_str);
+        write!(stdout_lock, ">{}\n{}\n", name, seq_str)?;
     } else {
         gen_fh(outdir, fh_of, filename)?;
         let fh = fh_of

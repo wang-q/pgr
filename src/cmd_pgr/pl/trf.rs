@@ -1,6 +1,7 @@
 use anyhow::Context;
 use clap::{value_parser, Arg, ArgMatches, Command};
 use cmd_lib::run_cmd;
+use std::io::Write;
 
 /// Build the clap subcommand for trf.
 pub fn make_subcommand() -> Command {
@@ -144,6 +145,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         let mut writer = pgr::writer(&rg_file)
             .with_context(|| format!("Failed to open writer for {}", rg_file))?;
         pgr::libs::pl::parse_trf_output(reader, chr, &mut writer)?;
+        writer.flush()?;
         rg_files.push(rg_file);
     }
 

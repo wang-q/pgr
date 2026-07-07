@@ -55,6 +55,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let is_rc = args.get_flag("rc");
 
     let mut file_of: BTreeMap<String, BufWriter<std::fs::File>> = BTreeMap::new();
+    let stdout = std::io::stdout();
+    let mut out = stdout.lock();
     for infile in args.get_many::<String>("infiles").unwrap() {
         let mut reader =
             pgr::reader(infile).with_context(|| format!("Failed to open reader for {}", infile))?;
@@ -77,7 +79,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 let seq = std::str::from_utf8(&seq)?.to_string().replace('-', "");
 
                 if outdir == "stdout" {
-                    print!(">{}\n{}\n", range, seq);
+                    write!(out, ">{}\n{}\n", range, seq)?;
                 } else {
                     if !file_of.contains_key(entry_name) {
                         let path = std::path::Path::new(outdir).join(format!(
@@ -110,6 +112,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     for fh in file_of.values_mut() {
         fh.flush()?;
     }
+    out.flush()?;
 
     Ok(())
 }

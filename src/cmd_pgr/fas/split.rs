@@ -65,6 +65,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let is_simple = args.get_flag("simple");
 
     let mut file_of: BTreeMap<String, BufWriter<std::fs::File>> = BTreeMap::new();
+    let stdout = std::io::stdout();
+    let mut out = stdout.lock();
 
     for infile in args.get_many::<String>("infiles").unwrap() {
         let mut reader =
@@ -94,7 +96,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                     } else {
                         range.to_string()
                     };
-                    print!(">{}\n{}\n", header, seq);
+                    write!(out, ">{}\n{}\n", header, seq)?;
                 } else {
                     if !file_of.contains_key(&filename) {
                         let path = std::path::Path::new(outdir)
@@ -115,7 +117,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
             // end of a block
             if outdir == "stdout" {
-                println!();
+                writeln!(out)?;
             } else {
                 let file = file_of
                     .get_mut(&filename)
@@ -129,6 +131,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     for fh in file_of.values_mut() {
         fh.flush()?;
     }
+    out.flush()?;
 
     Ok(())
 }
