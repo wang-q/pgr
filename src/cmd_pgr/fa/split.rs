@@ -98,24 +98,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 let seq_str = String::from_utf8(seq.as_ref().to_vec())
                     .map_err(|e| anyhow::anyhow!("invalid utf8 in sequence: {}", e))?;
 
-                if outdir == "stdout" {
-                    print!(">{}\n{}\n", name, seq_str);
-                } else {
-                    let filename = name
-                        .clone()
-                        .replace(['(', ')', ':'], "_")
-                        .replace("__", "_");
-                    gen_fh(outdir, &mut fh_of, &filename)?;
-                    write!(
-                        fh_of.get_mut(&filename).ok_or_else(|| anyhow::anyhow!(
-                            "file handle not found for: {}",
-                            filename
-                        ))?,
-                        ">{}\n{}\n",
-                        name,
-                        seq_str
-                    )?;
-                }
+                let filename = name
+                    .clone()
+                    .replace(['(', ')', ':'], "_")
+                    .replace("__", "_");
+                write_record_to_fh(outdir, &mut fh_of, &filename, &name, &seq_str)?;
             }
         }
     } else if mode == "about" {
@@ -151,21 +138,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 let seq_str = String::from_utf8(seq.as_ref().to_vec())
                     .map_err(|e| anyhow::anyhow!("invalid utf8 in sequence: {}", e))?;
 
-                if outdir == "stdout" {
-                    print!(">{}\n{}\n", name, seq_str);
-                } else {
-                    let filename = format!("{:0width$}", chunker.file_index(), width = part_width);
-                    gen_fh(outdir, &mut fh_of, &filename)?;
-                    write!(
-                        fh_of.get_mut(&filename).ok_or_else(|| anyhow::anyhow!(
-                            "file handle not found for: {}",
-                            filename
-                        ))?,
-                        ">{}\n{}\n",
-                        name,
-                        seq_str
-                    )?;
-                }
+                let filename = format!("{:0width$}", chunker.file_index(), width = part_width);
+                write_record_to_fh(outdir, &mut fh_of, &filename, &name, &seq_str)?;
                 chunker.advance(seq.len());
             } // record
         } // file
@@ -192,6 +166,26 @@ fn gen_fh(
             .truncate(true)
             .open(path)?;
         fh_of.insert(filename.to_owned(), BufWriter::new(file));
+    }
+    Ok(())
+}
+
+// Write a record either to stdout or to a file handle in fh_of.
+fn write_record_to_fh(
+    outdir: &str,
+    fh_of: &mut BTreeMap<String, BufWriter<std::fs::File>>,
+    filename: &str,
+    name: &str,
+    seq_str: &str,
+) -> anyhow::Result<()> {
+    if outdir == "stdout" {
+        print!(">{}\n{}\n", name, seq_str);
+    } else {
+        gen_fh(outdir, fh_of, filename)?;
+        let fh = fh_of
+            .get_mut(filename)
+            .ok_or_else(|| anyhow::anyhow!("file handle not found for: {}", filename))?;
+        write!(fh, ">{}\n{}\n", name, seq_str)?;
     }
     Ok(())
 }

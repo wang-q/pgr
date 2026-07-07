@@ -2,7 +2,7 @@ use anyhow::Context;
 use clap::{value_parser, Arg, ArgAction, ArgMatches, Command};
 use cmd_lib::{run_cmd, run_fun};
 use pgr::libs::phylo::tree::Tree;
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::fs;
 use std::io::Write;
 
@@ -131,23 +131,30 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut condensed: Vec<String> = vec![];
     let mut toggle = false;
 
+    // Pre-build reverse index: (rank_idx, group) -> Vec<node_name>
+    // Avoids O(n^2) re-filtering of taxon_map for every (rank, group) pair.
+    let mut group_nodes: HashMap<(usize, String), Vec<String>> = HashMap::new();
+    for (name, terms) in taxon_map.iter() {
+        for (rank_idx, term) in terms.iter().enumerate() {
+            if let Some(t) = term.as_deref() {
+                group_nodes
+                    .entry((rank_idx, t.to_string()))
+                    .or_default()
+                    .push(name.clone());
+            }
+        }
+    }
+
     for (rank_idx, groups) in all_groups.iter().enumerate() {
         let rank_num = ranks[rank_idx];
         run_cmd!(info "    Processing rank ${rank_num}")?;
 
         for group in groups.iter() {
             // Find all original nodes that belong to this group at this rank
-            let nodes_in_group: Vec<String> = taxon_map
-                .iter()
-                .filter(|(_, terms)| {
-                    terms
-                        .get(rank_idx)
-                        .and_then(|t| t.as_deref())
-                        .map(|t| t == group)
-                        .unwrap_or(false)
-                })
-                .map(|(name, _)| name.clone())
-                .collect();
+            let nodes_in_group: Vec<String> = group_nodes
+                .get(&(rank_idx, group.clone()))
+                .cloned()
+                .unwrap_or_default();
 
             if nodes_in_group.len() < 2 {
                 continue;

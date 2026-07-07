@@ -71,9 +71,17 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             (None, None)
         } else {
             anyhow::ensure!(rg.is_valid(), "invalid range: {}", el);
+            // Defensive: ensure positive coordinates before i64 -> usize cast.
+            let start_val = *rg.start();
+            let end_val = *rg.end();
+            anyhow::ensure!(
+                start_val > 0 && end_val > 0,
+                "range coordinates must be positive: {}",
+                el
+            );
             // Convert 1-based inclusive to 0-based half-open
-            let s = (*rg.start() as usize).saturating_sub(1);
-            let e = *rg.end() as usize;
+            let s = (start_val as usize).saturating_sub(1);
+            let e = end_val as usize;
             (Some(s), Some(e))
         };
 
