@@ -420,7 +420,7 @@ pub fn trim_head_tail(seqs: &mut [String], ranges: &mut [Range], chop: usize) {
         if !tail_indel_ints.is_empty() {
             for _ in (tail_indel_ints.min() as usize)..=align_len {
                 // record current length
-                let cur_len = seqs.first().unwrap().len();
+                let cur_len = seqs[0].len();
                 for i in 0..seq_count {
                     let base = seqs[i].remove(cur_len - 1);
                     if base != '-' {

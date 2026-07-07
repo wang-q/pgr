@@ -186,14 +186,13 @@ impl PafGraph {
         let mut path_bp_lens: Vec<usize> = self
             .paths
             .iter()
-            .map(|(name, steps)| {
+            .map(|(_, steps)| {
                 let mut bp = 0usize;
                 for st in steps {
                     if (st.node as usize) < self.node_seqs.len() {
                         bp += self.node_seqs[st.node as usize].len();
                     }
                 }
-                let _ = name;
                 bp
             })
             .collect();

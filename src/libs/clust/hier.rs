@@ -291,12 +291,12 @@ fn linkage_nn_chain(condensed: &mut CondensedMatrix, method: Method) -> Vec<Step
 ///
 /// The resulting tree is rooted at the last merge.
 /// Branch lengths are derived from merge heights.
-pub fn to_tree(steps: &[Step], names: &[String]) -> Tree {
+pub fn to_tree(steps: &[Step], names: &[String]) -> anyhow::Result<Tree> {
     let mut tree = Tree::new();
     let n = names.len();
 
     if n == 0 {
-        return tree;
+        return Ok(tree);
     }
 
     // Map original cluster ID to Tree NodeId
@@ -345,7 +345,8 @@ pub fn to_tree(steps: &[Step], names: &[String]) -> Tree {
                 }
 
                 // Link in tree structure
-                let _ = tree.add_child(parent_node_id, child_node_id);
+                tree.add_child(parent_node_id, child_node_id)
+                    .map_err(|e| anyhow::anyhow!(e))?;
             }
         }
 
@@ -363,7 +364,7 @@ pub fn to_tree(steps: &[Step], names: &[String]) -> Tree {
         }
     }
 
-    tree
+    Ok(tree)
 }
 
 /// Primitive O(N^3) implementation of agglomerative clustering.
@@ -794,7 +795,7 @@ mod tests {
         ];
         let names = vec!["A".to_string(), "B".to_string(), "C".to_string()];
 
-        let tree = to_tree(&steps, &names);
+        let tree = to_tree(&steps, &names).unwrap();
 
         // Root is the last created node
         assert!(tree.get_root().is_some());

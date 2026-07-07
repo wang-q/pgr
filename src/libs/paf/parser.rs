@@ -1,7 +1,7 @@
 /// PAF format parser.
 ///
-/// Uses `csv::Reader` in flexible mode to handle variable column counts
-/// (12 mandatory + optional tags), following wgatools' approach.
+/// Splits on tab and parses 12 mandatory columns plus optional tags,
+/// following wgatools' approach.
 use super::record::PafRecord;
 use anyhow::Context;
 use std::io::BufRead;

@@ -57,7 +57,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let steps = linkage_inplace(condensed, method);
 
     // Convert to tree
-    let tree = to_tree(&steps, &names);
+    let tree = to_tree(&steps, &names)?;
 
     // Format output
     let newick = to_newick(&tree);
