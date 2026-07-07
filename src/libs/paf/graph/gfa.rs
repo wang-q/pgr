@@ -53,6 +53,7 @@ impl PafGraph {
                 overlaps.join(",")
             )?;
         }
+        w.flush()?;
         Ok(())
     }
 }

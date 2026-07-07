@@ -12,13 +12,12 @@ pub fn abs_path_or_stdout(path: &str) -> anyhow::Result<String> {
     }
 }
 
-/// Shared pipeline context: current dir, pgr executable, and tempdir.
+/// Shared pipeline context: pgr executable and tempdir.
 ///
 /// Created at the start of a pipeline; call [`PipelineCtx::enter`] to switch
-/// into the tempdir and [`PipelineCtx::leave`] to restore the original cwd.
+/// into the tempdir. The returned [`super::CwdGuard`] restores the original
+/// working directory on drop, so CWD is always restored — even on error.
 pub struct PipelineCtx {
-    /// Original working directory, restored by `leave()`.
-    pub curdir: std::path::PathBuf,
     /// Absolute path to the current `pgr` executable.
     pub pgr: String,
     /// Owned tempdir; dropped when the ctx is dropped.
@@ -40,11 +39,7 @@ impl PipelineCtx {
         run_cmd!(info "    \"curdir\"  = ${curdir:?}")?;
         run_cmd!(info "    \"tempdir\" = ${tempdir_str}")?;
 
-        Ok(Self {
-            curdir,
-            pgr,
-            tempdir,
-        })
+        Ok(Self { pgr, tempdir })
     }
 
     /// Resolve `p` to an absolute path string.
@@ -53,16 +48,12 @@ impl PipelineCtx {
     }
 
     /// Switch the current working directory into the tempdir.
-    pub fn enter(&self) -> anyhow::Result<()> {
+    ///
+    /// Returns a [`super::CwdGuard`] whose `Drop` restores the previous
+    /// working directory, ensuring cleanup even when the pipeline errors out.
+    pub fn enter(&self) -> anyhow::Result<super::CwdGuard> {
         let tempdir_str = self.tempdir.path().to_str().unwrap();
         run_cmd!(info "==> Switch to tempdir")?;
-        std::env::set_current_dir(tempdir_str)?;
-        Ok(())
-    }
-
-    /// Restore the original working directory.
-    pub fn leave(&self) -> anyhow::Result<()> {
-        std::env::set_current_dir(&self.curdir)?;
-        Ok(())
+        super::CwdGuard::enter(tempdir_str)
     }
 }

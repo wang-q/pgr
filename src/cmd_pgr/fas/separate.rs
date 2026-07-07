@@ -81,23 +81,21 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 if outdir == "stdout" {
                     write!(out, ">{}\n{}\n", range, seq)?;
                 } else {
-                    if !file_of.contains_key(entry_name) {
-                        let path = std::path::Path::new(outdir).join(format!(
-                            "{}{}",
-                            range.name(),
-                            opt_suffix
-                        ));
+                    let file_key = pgr::libs::io::sanitize_filename(entry_name);
+                    if !file_of.contains_key(&file_key) {
+                        let path = std::path::Path::new(outdir)
+                            .join(format!("{}{}", file_key, opt_suffix));
                         let file = std::fs::OpenOptions::new()
                             .create(true)
                             .write(true)
                             .truncate(true)
                             .open(path)?;
-                        file_of.insert(entry_name.to_string(), BufWriter::new(file));
+                        file_of.insert(file_key.clone(), BufWriter::new(file));
                     }
                     write!(
-                        file_of.get_mut(entry_name).ok_or_else(|| anyhow::anyhow!(
+                        file_of.get_mut(&file_key).ok_or_else(|| anyhow::anyhow!(
                             "file not found for entry: {}",
-                            entry_name
+                            file_key
                         ))?,
                         ">{}\n{}\n",
                         range,

@@ -647,21 +647,14 @@ pub fn clust_input_format_arg() -> Arg {
 // ============================================================================
 
 /// `--method` argument for matrix comparison (default: pearson).
+/// Accepts comma-separated methods (e.g. "pearson,cosine") or "all".
+/// Validation is done by the caller (each token checked against known methods).
 pub fn mat_method_arg() -> Arg {
     Arg::new("mat_method")
         .long("method")
         .action(ArgAction::Set)
-        .value_parser([
-            builder::PossibleValue::new("all"),
-            builder::PossibleValue::new("pearson"),
-            builder::PossibleValue::new("spearman"),
-            builder::PossibleValue::new("mae"),
-            builder::PossibleValue::new("cosine"),
-            builder::PossibleValue::new("jaccard"),
-            builder::PossibleValue::new("euclid"),
-        ])
         .default_value("pearson")
-        .help("Comparison method(s), comma-separated")
+        .help("Comparison method(s), comma-separated (all|pearson|spearman|mae|cosine|jaccard|euclid)")
 }
 
 /// `--format` argument for matrix output (default: full).

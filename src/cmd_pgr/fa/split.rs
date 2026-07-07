@@ -13,7 +13,7 @@ Split FASTA files into multiple smaller files based on different modes:
 
 1. name: Create separate files for each sequence
    * Uses sequence names as filenames (sanitized)
-   * Special characters ()/: are replaced with _
+   * Special characters /\\(): are replaced with _
 
 2. about: Split by approximate size
    * -c SIZE: Split into files of about SIZE bytes each
@@ -100,10 +100,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 let seq_str = std::str::from_utf8(seq.as_ref())
                     .map_err(|e| anyhow::anyhow!("invalid utf8 in sequence: {}", e))?;
 
-                let filename = name
-                    .clone()
-                    .replace(['(', ')', ':'], "_")
-                    .replace("__", "_");
+                let filename = pgr::libs::io::sanitize_filename(&name);
                 write_record_to_fh(outdir, &mut fh_of, &filename, &name, seq_str, &mut out)?;
             }
         }

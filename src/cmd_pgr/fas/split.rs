@@ -82,9 +82,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 format!("{}.{}", first.range().name(), first.range().chr())
             } else {
                 first.range().to_string()
-            }
-            .replace(['(', ')', ':'], "_")
-            .replace("__", "_");
+            };
+            let filename = pgr::libs::io::sanitize_filename(&filename);
 
             for entry in &block.entries {
                 let range = entry.range().clone();

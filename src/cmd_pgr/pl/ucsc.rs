@@ -119,7 +119,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let abs_outdir = pgr::libs::pl::abs_path_or_stdout(outdir)?;
 
-    ctx.enter()?;
+    let _cwd_guard = ctx.enter()?;
 
     run_cmd!(info "==> Target .sizes and .2bit")?;
     run_cmd!(
@@ -364,7 +364,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     }
 
     // Done
-    ctx.leave()?;
 
     Ok(())
 }

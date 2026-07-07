@@ -55,7 +55,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let abs_infile = ctx.abs_path(args.get_one::<String>("infile").unwrap())?;
     let abs_outfile = pgr::libs::pl::abs_path_or_stdout(outfile)?;
 
-    ctx.enter()?;
+    let _cwd_guard = ctx.enter()?;
 
     let re_prof: regex::Regex = regex::Regex::new(
         r"(?xi)
@@ -81,7 +81,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     pgr::libs::pl::run_repeat_pipeline(&opts)?;
 
     // Done
-    ctx.leave()?;
 
     Ok(())
 }

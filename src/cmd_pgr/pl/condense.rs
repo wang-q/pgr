@@ -91,7 +91,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     };
     let abs_taxon = ctx.abs_path(taxon_file)?;
 
-    ctx.enter()?;
+    let _cwd_guard = ctx.enter()?;
 
     // Read tree leaf names for filtering
     let trees = Tree::from_file(&abs_infile)?;
@@ -223,17 +223,21 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     }
     writer.flush()?;
 
+    // Restore original CWD before writing outputs to relative paths (e.g.
+    // --map's condensed.tsv, or a relative -o outfile). Intermediate files
+    // (result.nwk, condensed.tsv in tempdir) are accessed via absolute paths
+    // from here on.
+    drop(_cwd_guard);
+
     // Done
     if outfile == "stdout" {
-        let result_content =
-            fs::read_to_string("result.nwk").with_context(|| "Failed to read from result.nwk")?;
+        let result_content = fs::read_to_string(ctx.tempdir.path().join("result.nwk"))
+            .with_context(|| "Failed to read from result.nwk")?;
         let stdout = std::io::stdout();
         let mut out = stdout.lock();
         write!(out, "{}", result_content)?;
         out.flush()?;
-        ctx.leave()?;
     } else {
-        ctx.leave()?;
         fs::copy(
             pgr::libs::io::path_to_str(&ctx.tempdir.path().join("result.nwk"))?,
             outfile,

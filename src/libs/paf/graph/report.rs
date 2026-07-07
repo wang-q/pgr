@@ -82,6 +82,7 @@ impl GraphReport {
         for (k, v) in &fields {
             writeln!(w, "{k}\t{v}")?;
         }
+        w.flush()?;
         Ok(())
     }
 }

@@ -243,6 +243,13 @@ pub fn simplify_name(name: &str) -> &str {
     }
 }
 
+/// Sanitize a string for safe use as a filename by replacing path separators
+/// and other special characters with `_`, then collapsing consecutive `_`.
+pub fn sanitize_filename(name: &str) -> String {
+    name.replace(['/', '\\', '(', ')', ':'], "_")
+        .replace("__", "_")
+}
+
 /// Get the path of the currently executing binary as a String.
 pub fn current_exe_string() -> anyhow::Result<String> {
     Ok(std::env::current_exe()?.display().to_string())
