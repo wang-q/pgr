@@ -11,7 +11,7 @@ pub fn make_subcommand() -> Command {
         false,
     )
     .arg(crate::cmd_pgr::args::outfile_arg())
-    .about("Queries PAF index and output pairwise or multi-way block FASTA")
+    .about("Queries PAF index and outputs pairwise or multi-way block FASTA")
     .after_help(
         r###"
 Queries a PAF file or saved index (same logic as `pgr paf query`) and

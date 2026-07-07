@@ -76,7 +76,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 };
 
                 // Remove dashes from the sequence
-                let seq = std::str::from_utf8(&seq)?.to_string().replace('-', "");
+                let seq = std::str::from_utf8(&seq)?.replace('-', "");
 
                 if outdir == "stdout" {
                     write!(out, ">{}\n{}\n", range, seq)?;

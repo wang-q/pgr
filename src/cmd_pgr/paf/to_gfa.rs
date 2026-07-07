@@ -18,7 +18,7 @@ pub fn make_subcommand() -> Command {
         ),
         false,
     )
-    .about("Queries PAF index and output local GFA via POA graph")
+    .about("Queries PAF index and outputs local GFA via POA graph")
     .after_help(
         r###"
 Queries a PAF file or saved index (same logic as `pgr paf query`) and

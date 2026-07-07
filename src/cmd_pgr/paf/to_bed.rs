@@ -22,7 +22,7 @@ fn output_bed(
 /// Build the clap subcommand for to-bed.
 pub fn make_subcommand() -> Command {
     crate::cmd_pgr::args::add_query_args(Command::new("to-bed"))
-        .about("Queries PAF index and output BED3 coordinates")
+        .about("Queries PAF index and outputs BED3 coordinates")
         .after_help(
             r###"
 Queries a PAF file or saved index (same logic as `pgr paf query`) and

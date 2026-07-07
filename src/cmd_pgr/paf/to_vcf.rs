@@ -10,7 +10,7 @@ pub fn make_subcommand() -> Command {
         ),
         false,
     )
-    .about("Queries PAF index and output multi-way VCF via POA MSA")
+    .about("Queries PAF index and outputs multi-way VCF via POA MSA")
     .after_help(
         r###"
 Queries a PAF file or saved index (same logic as `pgr paf query`) and
