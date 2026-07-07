@@ -453,7 +453,7 @@ fn decompress(data: &[u8]) -> Vec<u8> {
 | `libs::nt::rev_comp`                   | [libs/nt](file:///Volumes/ExtHome/Scripts/pgr/src/libs/nt.rs) | LZ-diff 的反向互补参考            |
 | `indexmap::IndexMap`                   | crate                                                         | 保序 HashMap（pgr 统一模式）      |
 | `minimizer-iter`                       | crate                                                         | 参考选择的 minimizer 计算         |
-| `rapidhash` / `fxhash` / `murmurhash3` | crate                                                         | LZ-diff 哈希表（AGC 用 MurMur64） |
+| `murmurhash3`                          | crate                                                         | LZ-diff 哈希表（与 C++ AGC 的 MurMur64 对齐） |
 | `rayon`                                | crate                                                         | 并行压缩（多 contig 同时编码）    |
 
 ## Rust 架构建议
@@ -545,27 +545,36 @@ enum HashTable {
 
 impl LzDiff {
     pub fn new(min_match_len: u32) -> Self;
-    pub fn prepare(&mut self, reference: &[u8]);  // 2-bit encode + store
-    pub fn prepare_index(&mut self);              // build hash table (lazy)
+    /// 2-bit encode + store reference. Required for both encode and decode.
+    pub fn prepare(&mut self, reference: &[u8]);
+    /// Build hash table over the stored reference. Required only for encode
+    /// (decode does not need the hash table). Split from `prepare` so that
+    /// `Decompressor` can skip the expensive index build.
+    pub fn prepare_index(&mut self);
     pub fn encode(&mut self, text: &[u8], encoded: &mut Vec<u8>);
-    pub fn decode(&self, reference: &[u8], encoded: &[u8], decoded: &mut Vec<u8>);
+    /// Decode using `self.reference` (stored by `prepare`). No external
+    /// reference parameter — avoids redundancy with the internal field.
+    pub fn decode(&self, encoded: &[u8], decoded: &mut Vec<u8>);
     pub fn estimate(&mut self, text: &[u8], bound: u32) -> usize;
 }
 
 // segment.rs — delta encoding/decoding per reference group (no archive dependency)
 /// Segment-level delta compression/decompression.
+/// Holds a single `LzDiff` (which stores the 2-bit encoded reference internally);
+/// does NOT duplicate the reference as ASCII.
 pub struct Segment {
     lz_diff: LzDiff,
-    ref_dna: Vec<u8>,    // decoded reference (ASCII), set on prepare
 }
 
 impl Segment {
-    /// Encode `seq` against the prepared reference, return delta bytes (uncompressed).
-    pub fn add(&mut self, seq: &[u8]) -> anyhow::Result<Vec<u8>>;
-    /// Decode `delta` against the prepared reference, return raw sequence.
-    pub fn get(&self, delta: &[u8]) -> anyhow::Result<Vec<u8>>;
-    /// Prepare reference (call before add/get).
+    /// Prepare reference (call before add/get). Delegates to `lz_diff.prepare`.
     pub fn prepare(&mut self, ref_dna: &[u8]);
+    /// Build LZ-diff hash table (call before add, not needed for get).
+    pub fn prepare_index(&mut self);
+    /// Encode `seq` against the prepared reference, return uncompressed delta bytes.
+    pub fn add(&mut self, seq: &[u8]) -> anyhow::Result<Vec<u8>>;
+    /// Decode `delta` (uncompressed) against the prepared reference, return raw sequence.
+    pub fn get(&self, delta: &[u8]) -> anyhow::Result<Vec<u8>>;
 }
 
 // collection.rs — sample/contig/segment metadata (fixed u32 fields, flate2 compressed)
@@ -608,18 +617,34 @@ pub struct Compressor<W: Write + Seek> {
     segments: Vec<Segment>,                 // one per ref group
     segment_size: usize,
     kmer_len: usize,
+    min_match_len: u32,                     // LZ-diff min match length (default 18)
 }
 
 impl Compressor<BufWriter<File>> {
     /// Create from output path + reference FASTA.
     /// Writes header (placeholder) + reference records (via write_2bit_record).
+    /// The CLI `create` command calls this, then `append_sample` for each `-i`
+    /// input FASTA, then `finish`.
     pub fn create<P: AsRef<Path>>(out_path: P, ref_fasta: &str, segment_size: usize,
-                                  kmer_len: usize) -> anyhow::Result<Self>;
+                                  kmer_len: usize, min_match_len: u32) -> anyhow::Result<Self>;
+    /// Open an existing `.pbit` for appending samples (powers `pgr pbit append`).
+    /// Uses Decompressor to read existing header / ref_groups / deltas (with
+    /// packed_data) / collection, reads each reference segment via
+    /// `read_2bit_record` and rebuilds `Segment`s (prepare + prepare_index),
+    /// positions the writer at `footer.ref_index_offset` (start of Reference
+    /// Index). `finish` then rewrites Reference Index + Delta Data + Sample Index
+    /// + Footer as a contiguous block. No reference FASTA needed — reuses
+    /// reference records already embedded in the archive.
+    pub fn open_for_append<P: AsRef<Path>>(in_path: P) -> anyhow::Result<Self>;
 }
 
 impl<W: Write + Seek> Compressor<W> {
+    /// Append a sample: read FASTA → segment → k-mer minimizer reference selection
+    /// → LZ-diff encode → flate2 compress → delta dedup → store. Sample name is
+    /// derived from the FASTA basename by the caller (CLI layer).
     pub fn append_sample(&mut self, sample_name: &str, fasta_path: &str) -> anyhow::Result<()>;
-    /// Finalize: write delta data + collection + footer, patch header offsets.
+    /// Finalize: write Reference Index → Delta Data → Sample Index → Footer →
+    /// patch Header offsets. Called once after all samples are appended.
     pub fn finish(self) -> anyhow::Result<()>;
 }
 
@@ -630,10 +655,22 @@ pub struct Decompressor<R: Read + Seek> {
     footer: PbitFooter,
     ref_groups: Vec<RefGroupEntry>,
     contig_groups: IndexMap<String, Vec<u32>>,  // contig name → ref_group_id list (for SequenceReader)
+    contig_set: HashSet<String>,                // all contig names in collection (for contains_contig)
     collection: Collection,
     ref_cache: LruCache<u32, String>,           // ref_group_id → decoded ref segment
-    delta_offsets: Vec<Vec<u64>>,              // delta_offsets[ref_group_id][delta_id] → file offset
+    // Delta metadata loaded during `new` by scanning Delta Data headers (9 bytes each).
+    // Stores is_rev_comp / raw_length / packed_size per delta so that `get_contig`
+    // can compute segment coordinates without re-reading headers from disk.
+    delta_meta: Vec<Vec<DeltaMeta>>,            // [ref_group_id][delta_id] → (is_rc, raw_len, packed_size)
+    delta_offsets: Vec<Vec<u64>>,              // delta_offsets[ref_group_id][delta_id] → file offset of header
     delta_cache: LruCache<(u32, u32), Vec<u8>>,  // (ref_group_id, delta_id) → decoded raw seq
+}
+
+/// In-memory delta header (loaded during `new`, no packed_data).
+pub struct DeltaMeta {
+    pub is_rev_comp: bool,
+    pub raw_length: u32,
+    pub packed_size: u32,
 }
 
 impl Decompressor<BufReader<File>> {
@@ -648,7 +685,9 @@ impl Decompressor<std::io::Cursor<Vec<u8>>> {
 
 impl<R: Read + Seek> Decompressor<R> {
     /// Construct from an already-opened reader: parse header + footer + indexes
-    /// (mirrors TwoBitFile::new parsing header + sequence_offsets).
+    /// (mirrors TwoBitFile::new parsing header + sequence_offsets). Builds
+    /// `contig_groups`, `contig_set`, and scans Delta Data headers (9 bytes each)
+    /// to populate `delta_meta` + `delta_offsets` without decompressing data.
     pub fn new(reader: R) -> anyhow::Result<Self>;
 
     /// Check if a contig name exists in any sample's collection (getctg/getset
@@ -657,9 +696,13 @@ impl<R: Read + Seek> Decompressor<R> {
     /// `HashSet<String>` from `collection.samples[*][*].contig_name`.
     pub fn contains_contig(&self, name: &str) -> bool;
     pub fn list_samples(&self) -> Vec<&str>;
+    pub fn list_contigs(&self, sample: Option<&str>) -> Vec<&str>;
     pub fn get_sample(&mut self, sample: &str, out: &mut impl Write) -> anyhow::Result<()>;
     /// Extract a contig from ALL samples (getctg semantics), optionally sliced to
     /// [start, end). Writes one FASTA entry per sample that has this contig.
+    /// Uses `delta_meta` to compute segment coordinates and only decodes segments
+    /// overlapping [start, end) (smart selection, like the reference layer).
+    /// Output header: `>{sample_name} {contig}:{start}-{end}({strand})`.
     /// If strand is "-", each sequence is reverse-complemented before writing.
     pub fn get_contig(&mut self, contig: &str, start: Option<usize>, end: Option<usize>,
                       strand: &str, out: &mut impl Write) -> anyhow::Result<()>;
@@ -708,17 +751,28 @@ impl<R: Read + Seek> crate::libs::io::SequenceReader for Decompressor<R> {
 - `info` + `listref` + `listset` + `listctg` → `stat`（info 组，对应 `2bit size`，用 flag 区分输出）
 
 ```
-pgr pbit create    -i input.fa [-i input2.fa ...] -o out.pbit -r ref.fa [-s segment_size] [-k kmer_len]
-pgr pbit append    -i input.fa [-i input2.fa ...] -o in.pbit        # 参考已嵌入归档，无需 -r
+pgr pbit create    -i input.fa [-i input2.fa ...] -o out.pbit -r ref.fa [-s segment_size] [-k kmer_len] [-l min_match_len]
+pgr pbit append    in.pbit -i input.fa [-i input2.fa ...] [-o out.pbit]  # 归档为位置参数输入，-o 省略时原地修改
 pgr pbit to-fa     -i in.pbit -o out_dir/          # 提取所有样本为 FASTA，每样本一个文件 out_dir/{sample}.fa
-pgr pbit some      -i in.pbit sample_list.txt [-o out.fa] [--invert]  # 按样本名列表提取
+pgr pbit some      -i in.pbit sample_list.txt [-o out.fa] [--invert]  # 按样本名列表提取，输出多 FASTA
 pgr pbit range     -i in.pbit "chr1" "chr2:1-1000" [-o out.fa]  # 按 contig/区间提取（遍历所有样本，输出多 FASTA）
 pgr pbit stat      -i in.pbit [--samples | --refs | --contigs [-s sample]]  # 统计/列表
 ```
 
+> **参数说明**：
+> - `-s segment_size`：分段大小（bp，默认 4096）
+> - `-k kmer_len`：k-mer minimizer 参考选择的 k-mer 长度（默认 15）
+> - `-l min_match_len`：LZ-diff 最小匹配长度（默认 18，对应 key_len=15）
+> - 样本名从 `-i` 指定的 FASTA 文件 basename 派生（`libs::io::get_basename`），如
+>   `path/to/sample1.fa` → 样本名 `sample1`
+> - `append` 的归档文件为位置参数（输入），`-o` 可选（省略时原地修改 `in.pbit`，
+>   指定时先复制再追加）；参考已嵌入归档，无需 `-r`
+> - `some` / `range` 输出 FASTA header 格式：`>{sample_name} {contig}:{start}-{end}({strand})`
+>   （`some` 无区间时为 `>{sample_name} {contig}`）
+
 > **stat flag 语义**：
 > - 默认（无 flag）：输出归档总览统计（ref_group_count、sample_count、segment_size、kmer_len、
->   各参考 contig 段数、各样本 contig 数）。
+>   min_match_len、各参考 contig 段数、各样本 contig 数）。
 > - `--samples`：列出所有样本名（对应 C++ `listset`）。
 > - `--refs`：列出参考 contig 名（来自 `ref_groups[*].contig_name`，去重保序；对应 C++ `listref`，
 >   但 C++ 列"参考样本名"——pbit 无参考样本实体，参考由 contig 名标识）。
@@ -884,6 +938,10 @@ offset  size  field
 - [ ] `libs/fmt/twobit.rs`: 提取 `read_2bit_record` / `write_2bit_record` 为 `pub` 模块级函数
 - [ ] `libs/fmt/twobit.rs`: `TwoBitFile::read_sequence` 改为 `seek(offset) → read_2bit_record` 薄壳
 - [ ] `libs/fmt/twobit.rs`: `TwoBitWriter::write` 改为循环调用 `write_2bit_record`
+- [ ] `libs/fmt/twobit.rs`: `read_u32` / `read_u64` / `read_u32_vec` 改为 `pub`（供 pbit 复用，
+  pbit 统一小端，调用时 `is_swapped` 固定传 `false`；见 §复用-2.5）
+- [ ] `libs/fmt/twobit.rs`: 为 `read_2bit_record` / `write_2bit_record` 添加独立单元测试
+  （含 mask/N-block/区间切片往返），不依赖 `TwoBitFile`/`TwoBitWriter` 薄壳
 - [ ] 验证：现有 `2bit` 命令的 `cargo test` 全部通过（行为不变）
 
 ### Phase 1: 文件格式 I/O
@@ -891,26 +949,32 @@ offset  size  field
 - [ ] `format.rs`: `PBIT_MAGIC` / 版本常量、`PbitHeader` / `PbitFooter` 结构
 - [ ] `format.rs`: Header 读写（固定 32 字节）、Footer 读写（固定 24 字节）
 - [ ] `format.rs`: Reference Index 读写（`RefGroupEntry` 列表 + 段偏移）
+- [ ] `format.rs`: `DeltaEntry` 头部读写（`is_rev_comp` 1B + `raw_length` 4B + `packed_size` 4B，
+  共 9 字节；`packed_data` 体由 Phase 3 填充，本阶段只定义头部格式，见 §文件格式规范-Delta Data）
+- [ ] `format.rs`: Sample Index 容器读写（`ref_group_count` / `delta_count` 计数字段 + 顺序结构，
+  供 Phase 5 顺序扫描构建 `delta_offsets`）
 - [ ] `format.rs`: 字符串读写（u32 len + UTF-8 bytes）
 - [ ] 验证：能读写一个仅含 Header + 空 Reference Records + Footer 的空 `.pbit` 文件，往返一致
 
 ### Phase 2: LZ-diff 算法
 
 - [ ] `lz_diff.rs`: 2-bit 编码/解码（ACGT→0123, N→4）
-- [ ] `lz_diff.rs`: `prepare`（存储参考 + 填充 key_len 个 invalid_symbol）
-- [ ] `lz_diff.rs`: `prepare_index`（构建哈希表，16/32-bit 自适应，sparse 模式）
+- [ ] `lz_diff.rs`: `prepare`（2-bit 编码 + 存储参考 + 填充 key_len 个 invalid_symbol）
+- [ ] `lz_diff.rs`: `prepare_index`（构建哈希表，16/32-bit 自适应，sparse 模式；仅 encode 需要，
+  decode 跳过以节省开销）
 - [ ] `lz_diff.rs`: `encode`（V2：match/literal/N-run + '!' back-ref + end-match 优化）
-- [ ] `lz_diff.rs`: `decode`（V2：解析编码 + 重建序列）
+- [ ] `lz_diff.rs`: `decode`（V2：用 `self.reference` 解析编码 + 重建序列，不传外部 reference）
 - [ ] `lz_diff.rs`: `estimate`（仅计算编码大小，不生成输出）
 - [ ] 验证：编码后解码，序列与原始一致
 
 ### Phase 3: 段级 delta 压缩
 
-- [ ] `segment.rs`: `Segment::prepare`（接收参考 DNA，初始化 LzDiff）
+- [ ] `segment.rs`: `Segment::prepare`（接收参考 DNA，委托 `LzDiff::prepare`）
+- [ ] `segment.rs`: `Segment::prepare_index`（委托 `LzDiff::prepare_index`，encode 前调用）
 - [ ] `segment.rs`: `Segment::add`（LZ-diff 编码 → 返回未压缩 delta bytes）
-- [ ] `segment.rs`: `Segment::get`（LZ-diff 解码 delta → 返回原始序列）
-- [ ] `segment.rs`: flate2 压缩/解压 delta bytes
-- [ ] 验证：编码 N 条序列后能完整解码
+- [ ] `segment.rs`: `Segment::get`（LZ-diff 解码未压缩 delta → 返回原始序列）
+- [ ] 验证：编码 N 条序列后能完整解码（flate2 压缩/解压由 `Compressor`/`Decompressor` 负责，
+  `Segment` 仅处理未压缩 delta）
 
 ### Phase 4: 元数据
 
@@ -924,34 +988,53 @@ offset  size  field
 
 - [ ] `compressor.rs`: `Compressor<W: Write + Seek>` 泛型结构（直接持有 `W`，无 archive 包装）
 - [ ] `compressor.rs`: `Compressor::create`（写 Header 占位 → 读参考 FASTA → 分段 → 每段
-  `write_2bit_record` 写入 → 记录 `ref_groups[i].segment_offset`）
-- [ ] `compressor.rs`: `append_sample`（读 FASTA → 分段 → k-mer minimizer 选择参考组 → `Segment::add`
-  编码 → flate2 压缩 → 写 DeltaEntry → 记入 Collection）
-- [ ] `compressor.rs`: k-mer minimizer 参考选择算法
+  `write_2bit_record` 写入 → 记录 `ref_groups[i].segment_offset` → 对每段创建 `Segment` 并调
+  `prepare` + `prepare_index`，供后续 `append_sample` 编码使用）
+- [ ] `compressor.rs`: `Compressor::open_for_append`（**从已有 `.pbit` 恢复 Compressor 状态**，供
+  `pgr pbit append` 使用：用 `Decompressor` 读取已有归档的 Header / ref_groups / deltas（含
+  packed_data）/ collection → 读取各参考段（`read_2bit_record`）→ 为每段创建 `Segment` 并调
+  `prepare` + `prepare_index` → 重建 `Compressor` 的完整内存状态 → writer 定位到
+  `footer.ref_index_offset`（Reference Index 起始处）。`finish` 时重写 Reference Index + Delta Data
+  + Sample Index + Footer。参考 FASTA 不再需要，直接复用归档内已嵌入的参考段）
+- [ ] `compressor.rs`: `append_sample`（读 FASTA → 分段 → k-mer minimizer 选择参考组 → **判断正向/
+  反向匹配**：若反向更优则 `is_rev_comp=true` 并反向互补序列 → `Segment::add` 编码 → flate2 压缩
+  → **delta 去重**：与同 ref_group 已有 delta 比对，相同则复用 `delta_id`，否则新增 → 写
+  DeltaEntry → 记入 Collection）
+- [ ] `compressor.rs`: k-mer minimizer 参考选择算法（含正向/反向匹配评分，取最优方向）
 - [ ] `compressor.rs`: `finish`（写 Reference Index → 写 Delta Data → 写 Sample Index → 写 Footer →
   回填 Header 偏移）
 - [ ] `decompressor.rs`: `Decompressor<R: Read + Seek>` 泛型结构（直接持有 `R`）
 - [ ] `decompressor.rs`: 三构造器 `open` / `open_and_read` / `new`（镜像 twobit.rs:286-360）
 - [ ] `decompressor.rs`: `new` 解析 Header + Footer + Reference Index + Sample Index，构建
-  `contig_groups`（contig 名 → ref_group_id 列表）+ 顺序扫描 Delta Data 区构建 `delta_offsets`
-  （每条 delta 头部含 `packed_size`，按此累加偏移，无需每条解压）
+  `contig_groups`（contig 名 → ref_group_id 列表）+ `contig_set`（`HashSet<String>`，供
+  `contains_contig`）+ 顺序扫描 Delta Data 区构建 `delta_meta`（每条 delta 的
+  `is_rev_comp`/`raw_length`/`packed_size`）和 `delta_offsets`（按 `packed_size` 累加偏移，
+  仅读 9 字节头部，不解压数据）
+- [ ] `decompressor.rs`: `contains_contig(name)`（查 `contig_set`，供 `range` 命令判存在）+
+  `list_samples()`（委托 `Collection::list_samples`，供 `stat` 命令）+
+  `list_contigs(sample)`（委托 `Collection::list_contigs`，供 `stat --contigs -s`）
 - [ ] `decompressor.rs`: `impl SequenceReader for Decompressor<R>`（读**参考层**，镜像 twobit.rs:
   500-510 的 seek → read_2bit_record → slice 模式，但经 `contig_groups` 拼接多段；大 contig 按段
-  累加长度，只读包含 `[start, end)` 的段，避免拼接整条）
+  累加长度（用 2bit 记录的 `dna_size`），只读包含 `[start, end)` 的段，避免拼接整条）
 - [ ] `decompressor.rs`: `get_sample` / `get_contig(contig, start, end, strand, out)`（遍历 Collection
-  样本 → 每段 seek 参考段 → `read_2bit_record` → 用 `delta_offsets` 定位 delta → seek → flate2
-  解压 → LZ-diff 解码 → 拼接 → 切片 → if strand=="-" rev_comp → 写 FASTA）
+  样本 → 用 `delta_meta.raw_length` 累加计算各段坐标，仅解码包含 `[start, end)` 的段 → 每段 seek
+  参考段 → `read_2bit_record` → 用 `delta_offsets` 定位 delta → seek → flate2 解压 → LZ-diff
+  解码 → 拼接 → 切片 → if strand=="-" rev_comp → 写 FASTA）
 - [ ] `decompressor.rs`: LRU 缓存参考段（`ref_group_id` → decoded DNA）+ delta 缓存
   （`(ref_group_id, delta_id)` → decoded raw seq，避免重复 flate2 解压 + LZ-diff 解码）
 - [ ] 验证：压缩 → 解压 → FASTA 内容一致；`Decompressor` 的 `SequenceReader` 实现能读参考层 序列（供
-  chain/net）；`get_contig` 能遍历样本输出多 FASTA
+  chain/net）；`get_contig` 能遍历样本输出多 FASTA；`open_for_append` 追加样本后 `to-fa` 能输出
+  含新旧样本的完整 FASTA
 
 ### Phase 6: CLI 集成
 
 - [ ] `cmd_pgr/pbit/mod.rs`: 子命令注册（分组：build/info/subset/transform，镜像 `2bit` mod.rs）
-- [ ] `cmd_pgr/pbit/create.rs`: `pgr pbit create`
-- [ ] `cmd_pgr/pbit/append.rs`: `pgr pbit append`
-- [ ] `cmd_pgr/pbit/to_fa.rs`: `pgr pbit to-fa`（对应 `2bit to-fa`）
+- [ ] `cmd_pgr/pbit/create.rs`: `pgr pbit create`（解析 `-r`/`-o`/`-s`/`-k`/`-l` →
+  `Compressor::create` → 对每个 `-i` 输入用 `get_basename` 派生样本名 → `append_sample` → `finish`）
+- [ ] `cmd_pgr/pbit/append.rs`: `pgr pbit append`（位置参数 = 输入归档，`-o` 可选 → 若指定 `-o` 则
+  先复制归档；`Compressor::open_for_append` 打开 → 对每个 `-i` 输入 `append_sample` → `finish`）
+- [ ] `cmd_pgr/pbit/to_fa.rs`: `pgr pbit to-fa`（对应 `2bit to-fa`，但输出为目录：
+  用 `outdir_arg`，每样本一个文件 `{sample}.fa`；遍历 `list_samples` → `get_sample` 写各 contig）
 - [ ] `cmd_pgr/pbit/some.rs`: `pgr pbit some`（对应 `2bit some`，复用 `fa_name_list_arg` + `invert_arg`）
 - [ ] `cmd_pgr/pbit/range.rs`: `pgr pbit range` — 与 `twobit/range.rs` 共用区间解析工具 （`ranges_arg`
   / `collect_ranges` / `intspan::Range` / `nt::rev_comp`），但调 `Decompressor::get_contig`
@@ -963,10 +1046,82 @@ offset  size  field
 
 ### Phase 7: 测试与基准
 
-- [ ] 单元测试：LZ-diff 编解码、Header/Footer/Index 往返、Collection 序列化
-- [ ] 集成测试：`tests/cli_pbit_*.rs`（create → some → range → 比对 FASTA）
-- [ ] 随机测试：生成随机序列 → 压缩 → 解压 → 比对
-- [ ] 性能基准：`benches/pbit_benchmark.rs`（压缩率、速度；与 2bit 直接存储对比）
+#### 7.1 单元测试（`#[cfg(test)] mod tests`，各模块内嵌）
+
+- [ ] `lz_diff.rs`:
+  - 编解码往返：随机序列（ACGT-only、含 N、含小写）→ `prepare` + `prepare_index` → `encode` → `decode` → 比对
+  - 边界：空序列、1 bp 序列、纯 N 序列、超长序列（> segment_size）
+  - `prepare` 不调 `prepare_index` 时 `decode` 仍正常（验证 decode 不依赖哈希表）
+  - `min_match_len` 不同值（15/18/21）下编解码正确
+- [ ] `segment.rs`:
+  - `prepare` + `add` → `get` 往返；多条序列 add 后各自 get 一致
+  - 同参考不同样本（相似 vs 差异大）的 delta 大小合理（相似 < 差异）
+- [ ] `format.rs`（Header/Footer/Index I/O）:
+  - 空 archive 往返：Header（占位偏移）+ 空 Reference Records + Footer（零偏移）
+  - 最小 archive 往返：1 ref_group / 0 sample / 0 delta
+  - 多 ref_group + 多 sample + 多 delta 往返：偏移回填正确，`Decompressor::new` 能完整解析
+  - `delta_meta` 扫描：`is_rev_comp`/`raw_length`/`packed_size` 与写入时一致
+- [ ] `collection.rs`:
+  - `add_sample` / `add_segment` 后 `list_samples` / `list_contigs` / `get_segments` 返回正确
+  - `serde` 序列化/反序列化往返（`bincode` 或自定义二进制，与 Phase 1 一致）
+
+#### 7.2 集成测试（`tests/cli_pbit.rs`，使用 `PgrCmd` 辅助）
+
+遵循 pgr 惯例：单文件 `tests/cli_pbit.rs`，测试数据放 `tests/pbit/`，用 `PgrCmd::new().args(&[...]).run()`。
+
+- [ ] 测试数据准备 — 优先复用现有材料，仅新建必需的派生样本：
+  - **复用** [tests/pgr/pseudocat.fa](file:///Volumes/ExtHome/Scripts/pgr/tests/pgr/pseudocat.fa)
+    作为主参考（1 contig `cat`，18803 bp，含小写 mask，无 N；> `segment_size`，测多段拼接）
+  - **复用** [tests/2bit/expected/testMask.fa](file:///Volumes/ExtHome/Scripts/pgr/tests/2bit/expected/testMask.fa)
+    + [tests/2bit/expected/testN.fa](file:///Volumes/ExtHome/Scripts/pgr/tests/2bit/expected/testN.fa)
+    作为补充参考（小规模 mask/N 处理往返测试）
+  - **复用** [tests/index/final.contigs.fa](file:///Volumes/ExtHome/Scripts/pgr/tests/index/final.contigs.fa)
+    作为多 contig 参考（72 contigs，测 Collection 多 contig 路径）
+  - **新建** `tests/pbit/sample_cat_snp.fa`：从 `pseudocat.fa` 派生（保持 contig 名 `cat`），
+    引入 ~1% SNP + 少量短 indel — 测 delta 压缩有效性（delta 应远小于原始序列）
+  - **新建** `tests/pbit/sample_cat_div.fa`：从 `pseudocat.fa` 派生（保持 contig 名 `cat`），
+    大段替换/缺失 — 测低相似度退化行为（delta 接近原始大小，不应 panic）
+  - **复用** [tests/pgr/pseudopig.fa](file:///Volumes/ExtHome/Scripts/pgr/tests/pgr/pseudopig.fa)
+    作为不匹配样本（contig 名 `pig1`/`pig2` ≠ `cat`）— 测不匹配 contig 处理
+    （参考 `toy_ex/c.fa`，确认 pbit 是跳过还是单独存储）
+  - **新建** `tests/pbit/sample_list.txt`：含 `sample_cat_snp`/`sample_cat_div`，每行一个样本名
+- [ ] `test_pbit_create_basic`：`pgr pbit create -r pseudocat.fa -i sample_cat_snp.fa -o out.pbit` → 文件存在、非空
+- [ ] `test_pbit_create_multiple_samples`：`-i sample_cat_snp.fa -i sample_cat_div.fa` → `stat --samples` 列出两个样本
+- [ ] `test_pbit_stat_overview`：`stat`（无 flag）→ stdout 含 `ref_group_count`/`sample_count`/`segment_size`/`kmer_len`/`min_match_len`
+- [ ] `test_pbit_stat_refs`：`stat --refs` → 列出参考 contig 名（`cat`）
+- [ ] `test_pbit_stat_samples`：`stat --samples` → 列出 `sample_cat_snp`/`sample_cat_div`
+- [ ] `test_pbit_stat_contigs`：`stat --contigs` → 列出所有样本的 contig；`stat --contigs -s sample_cat_snp` → 仅该样本的 contig
+- [ ] `test_pbit_to_fa_roundtrip`：`create` → `to-fa -o out_dir/` → 各 `out_dir/{sample}.fa` 与原始样本 FASTA 内容一致（按 contig 比对）
+- [ ] `test_pbit_range_full_contig`：`range out.pbit "cat"` → 每个含 `cat` 的样本输出一条 FASTA，序列与 `to-fa` 提取的 `cat` 一致
+- [ ] `test_pbit_range_slice`：`range out.pbit "cat:1-100"` → 输出切片序列正确（与 `pgr fa range` 对原始 FASTA 的切片比对）
+- [ ] `test_pbit_range_neg_strand`：`range out.pbit "cat(-):1-100"` → 输出为正向切片的反向互补
+- [ ] `test_pbit_range_multi_ranges`：多个区间参数 → 每个区间各样本各一条 FASTA
+- [ ] `test_pbit_range_multicontig`：用 `final.contigs.fa` 作参考，`range "k81_130" "k81_88:1-50"` → 多 contig 区间提取正确
+- [ ] `test_pbit_some_basic`：`some out.pbit sample_list.txt -o out.fa` → 仅含列表中样本的序列
+- [ ] `test_pbit_some_invert`：`some out.pbit sample_list.txt --invert -o out.fa` → 仅含列表外样本的序列
+- [ ] `test_pbit_append`：`create -r pseudocat.fa -i sample_cat_snp.fa -o out.pbit` → `append out.pbit -i sample_cat_div.fa` → `stat --samples` 列出两个样本
+- [ ] `test_pbit_append_overwrite`：`append out.pbit -i sample_cat_div.fa`（省略 `-o`）→ 原地修改，`stat --samples` 正确
+- [ ] `test_pbit_create_custom_params`：`-s 1024 -k 10 -l 15` → `stat` 输出对应参数值
+- [ ] `test_pbit_empty_contig`：参考含空 contig（长度 0）→ create 不 panic，range 返回空序列
+- [ ] `test_pbit_single_sample`：仅 1 个样本 → to-fa/range/some 均正常
+- [ ] `test_pbit_identical_samples`：两个相同样本 → delta 去重生效（`stat` 显示 delta 数 ≤ ref_group 数）
+- [ ] `test_pbit_no_match_contig`：`create -r pseudocat.fa -i pseudopig.fa` → 不 panic，
+  `stat --contigs -s pseudopig` 行为符合设计（跳过或单独存储，取决于 pbit 规格）
+- [ ] `test_pbit_mask_roundtrip`：用 `testMask.fa` 作参考 + 样本 → `to-fa` 提取后 mask 大小写保留一致
+- [ ] `test_pbit_n_roundtrip`：用 `testN.fa` 作参考 + 样本 → `to-fa` 提取后 N 位置一致
+
+#### 7.3 属性测试 / 随机往返
+
+- [ ] `tests/cli_pbit.rs::test_pbit_random_roundtrip`：用 `rand` 生成随机参考（多 contig，含 N）+ 随机样本（SNP/indel 变异）→ create → to-fa → 比对，重复 N 次
+- [ ] 大 contig 分段往返：参考 contig 长度 = `segment_size * 3 + 1`（跨 4 段）→ range 提取各段边界区间 → 序列正确
+
+#### 7.4 性能基准（`benches/pbit_benchmark.rs`，`criterion`）
+
+- [ ] 压缩速度：参考 1 Mb + N 个样本（N=1/10/100），测 `create` 耗时
+- [ ] 解压速度：`to-fa` 全量提取 vs `range` 单 contig 提取 vs `range` 区间提取
+- [ ] 压缩率：`.pbit` 文件大小 vs 原始 FASTA vs `.2bit`（直接存储参考）→ 三者对比
+- [ ] `delta_cache` 命中率：重复 `range` 同一 contig → 第二次应命中缓存
+- [ ] 验证：`cargo bench` 能跑通，输出合理数据
 
 ## 当前状态
 
