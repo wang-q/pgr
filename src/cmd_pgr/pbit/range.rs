@@ -55,7 +55,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let mut dec = Decompressor::open(infile)
         .with_context(|| format!("Failed to open pbit file {}", infile))?;
-    let mut writer = pgr::writer(output_path)
+    let mut writer = pgr::libs::io::writer(output_path)
         .with_context(|| format!("Failed to open writer for {}", output_path))?;
 
     for el in ranges.iter() {
