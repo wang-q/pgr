@@ -3,10 +3,17 @@
 //!
 //! See `notes/design/agc-port.md` §Sample Index for the binary layout.
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use indexmap::IndexMap;
 
 use super::format::{read_string, read_u32_le, write_string, write_u32_le};
+
+/// Maximum sample count (1 million — far beyond any realistic archive).
+const MAX_SAMPLE_COUNT: usize = 1_000_000;
+/// Maximum contig count per sample (1 million).
+const MAX_CONTIG_COUNT: usize = 1_000_000;
+/// Maximum segment count per contig (100 million).
+const MAX_SEGMENT_COUNT: usize = 100_000_000;
 
 /// One segment of a sample's contig: a pointer into the reference group /
 /// delta tables. `is_rev_comp` / `raw_length` live in `DeltaEntry` (shared by
@@ -152,14 +159,35 @@ impl Collection {
         let mut cursor = std::io::Cursor::new(raw);
 
         let sample_count = read_u32_le(&mut cursor)? as usize;
+        if sample_count > MAX_SAMPLE_COUNT {
+            return Err(anyhow!(
+                "sample_count {} exceeds maximum {}",
+                sample_count,
+                MAX_SAMPLE_COUNT
+            ));
+        }
         let mut samples: IndexMap<String, Vec<ContigSegs>> = IndexMap::with_capacity(sample_count);
         for _ in 0..sample_count {
             let sample = read_string(&mut cursor)?;
             let contig_count = read_u32_le(&mut cursor)? as usize;
+            if contig_count > MAX_CONTIG_COUNT {
+                return Err(anyhow!(
+                    "contig_count {} exceeds maximum {}",
+                    contig_count,
+                    MAX_CONTIG_COUNT
+                ));
+            }
             let mut contigs = Vec::with_capacity(contig_count);
             for _ in 0..contig_count {
                 let contig_name = read_string(&mut cursor)?;
                 let segment_count = read_u32_le(&mut cursor)? as usize;
+                if segment_count > MAX_SEGMENT_COUNT {
+                    return Err(anyhow!(
+                        "segment_count {} exceeds maximum {}",
+                        segment_count,
+                        MAX_SEGMENT_COUNT
+                    ));
+                }
                 let mut segments = Vec::with_capacity(segment_count);
                 for _ in 0..segment_count {
                     let ref_group_id = read_u32_le(&mut cursor)?;

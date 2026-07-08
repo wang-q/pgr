@@ -573,7 +573,7 @@ impl Segment {
     /// Build LZ-diff hash table (call before add, not needed for get).
     pub fn prepare_index(&mut self);
     /// Encode `seq` against the prepared reference, return uncompressed delta bytes.
-    pub fn add(&mut self, seq: &[u8]) -> anyhow::Result<Vec<u8>>;
+    pub fn add(&mut self, seq: &[u8]) -> Vec<u8>;
     /// Decode `delta` (uncompressed) against the prepared reference, return raw sequence.
     pub fn get(&self, delta: &[u8]) -> anyhow::Result<Vec<u8>>;
 }
@@ -1004,6 +1004,11 @@ offset  size  field
   DeltaEntry → 记入 Collection）
 - [x] `compressor.rs`: k-mer minimizer 参考选择算法（简化版：按 contig 名 + 段位置匹配；用 k-mer
   采样检测正向/反向）
+
+  > **简化说明**：AGC 原始算法对每段计算 minimizer 并在所有 ref_group 中找全局最佳匹配。
+  > 当前实现简化为按 contig 名 + 段位置(索引)直接匹配参考段,不做跨 contig / 跨段位置的全局
+  > minimizer 搜索。这限制了处理"序列重排/转位"场景的能力,但对标准群体基因组(同源染色体对齐)
+  > 足够。反向互补检测仅基于首段 k-mer 采样 + 逐段 delta 大小回退(见 Issue 5 修复)。
 - [x] `compressor.rs`: `finish`（写 Reference Index → 写 Delta Data → 写 Sample Index → 写 Footer →
   回填 Header 偏移）
 - [x] `decompressor.rs`: `Decompressor<R: Read + Seek>` 泛型结构（直接持有 `R`）

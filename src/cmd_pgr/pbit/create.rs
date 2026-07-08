@@ -18,6 +18,8 @@ Notes:
   override with a TSV file of `name<TAB>path` lines)
 * Reference and sample FASTA files may be plain text or gzipped (.gz)
 * contigs in sample FASTA that do not match any reference contig are skipped
+* Only ACGTN characters are supported; IUPAC degenerate codes (R, Y, S, W,
+  K, M, B, D, H, V) are lossily mapped to N
 
 Examples:
 1. Create a pbit archive with one sample:

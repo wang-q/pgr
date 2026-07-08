@@ -18,6 +18,7 @@ Notes:
 * If -o is specified, the input archive is copied to the output path first
 * Reference and sample FASTA files may be plain text or gzipped (.gz)
 * contigs in sample FASTA that do not match any reference contig are skipped
+* Only ACGTN characters are supported; IUPAC degenerate codes are mapped to N
 
 Examples:
 1. Append a sample in place:

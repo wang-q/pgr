@@ -134,11 +134,30 @@ impl<R: Read + Seek> Decompressor<R> {
         // spans [sample_index_offset, footer_start) where footer_start =
         // file_size - 24.
         let file_size = reader.seek(SeekFrom::End(0))?;
-        let collection_len = (file_size - 24) - footer.sample_index_offset;
+        let footer_start = file_size
+            .checked_sub(24)
+            .ok_or_else(|| anyhow!("pbit file too small: {} bytes", file_size))?;
+        if footer.sample_index_offset > footer_start {
+            return Err(anyhow!(
+                "sample_index_offset {} exceeds footer start {}",
+                footer.sample_index_offset,
+                footer_start
+            ));
+        }
+        let collection_len = footer_start - footer.sample_index_offset;
         reader.seek(SeekFrom::Start(footer.sample_index_offset))?;
         let mut compressed = vec![0u8; collection_len as usize];
         reader.read_exact(&mut compressed)?;
         let collection = Collection::deserialize(&compressed)?;
+
+        // Validate sample_count consistency.
+        if header.sample_count != collection.samples.len() as u32 {
+            return Err(anyhow!(
+                "sample_count mismatch: header={}, collection={}",
+                header.sample_count,
+                collection.samples.len()
+            ));
+        }
 
         // Build contig_set from collection.
         let mut contig_set: HashSet<String> = HashSet::new();

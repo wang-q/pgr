@@ -91,9 +91,6 @@ pub struct Compressor<W: Write + Seek> {
     segments: Vec<Segment>,
     /// Map: contig_name → Vec<ref_group_id> (reference segment indices).
     contig_ref_groups: HashMap<String, Vec<u32>>,
-    /// Cached reference segment DNA (ASCII, forward) for rev-comp detection.
-    /// Kept small: one segment_size-length string per ref_group.
-    ref_seg_dna: Vec<Vec<u8>>,
     segment_size: usize,
     kmer_len: usize,
 }
@@ -146,7 +143,6 @@ impl Compressor<std::io::BufWriter<std::fs::File>> {
             collection: Collection::new(),
             segments: Vec::new(),
             contig_ref_groups: HashMap::new(),
-            ref_seg_dna: Vec::new(),
             segment_size,
             kmer_len,
         };
@@ -164,7 +160,8 @@ impl Compressor<std::io::BufWriter<std::fs::File>> {
             for seg in segs {
                 let offset = comp.writer.stream_position()?;
                 // do_mask=true preserves soft-mask (lowercase) info in 2bit record.
-                let seg_str = std::str::from_utf8(seg).unwrap_or("");
+                let seg_str = std::str::from_utf8(seg)
+                    .with_context(|| "reference segment is not valid UTF-8")?;
                 write_2bit_record(&mut comp.writer, seg_str, true)?;
 
                 let group_id = ref_group_id;
@@ -182,7 +179,6 @@ impl Compressor<std::io::BufWriter<std::fs::File>> {
                 lz.prepare(seg);
                 lz.prepare_index();
                 comp.segments.push(lz);
-                comp.ref_seg_dna.push(seg.to_vec());
 
                 ref_group_id += 1;
             }
@@ -234,7 +230,6 @@ impl Compressor<std::io::BufWriter<std::fs::File>> {
 
         // 4. Read reference segments and build Segment objects.
         let mut segments: Vec<Segment> = Vec::with_capacity(ref_group_count);
-        let mut ref_seg_dna: Vec<Vec<u8>> = Vec::with_capacity(ref_group_count);
         let mut contig_ref_groups: HashMap<String, Vec<u32>> = HashMap::new();
         for (i, entry) in ref_groups.iter().enumerate() {
             reader.seek(SeekFrom::Start(entry.segment_offset))?;
@@ -248,7 +243,6 @@ impl Compressor<std::io::BufWriter<std::fs::File>> {
             seg.prepare(&seq_bytes);
             seg.prepare_index();
             segments.push(seg);
-            ref_seg_dna.push(seq_bytes);
         }
 
         // 5. Truncate file at old ref_index_offset and position writer there.
@@ -267,7 +261,6 @@ impl Compressor<std::io::BufWriter<std::fs::File>> {
             collection,
             segments,
             contig_ref_groups,
-            ref_seg_dna,
             segment_size,
             kmer_len,
         })
@@ -307,24 +300,40 @@ impl<W: Write + Seek> Compressor<W> {
 
             // Detect orientation using the first segment vs first reference segment.
             let first_ref_group = ref_group_ids[0];
-            let first_ref_dna = &self.ref_seg_dna[first_ref_group as usize];
-            let is_rev_comp = detect_rev_comp(segs[0], first_ref_dna, self.kmer_len);
+            let first_ref_dna = self.segments[first_ref_group as usize].reference_dna();
+            let contig_is_rev_comp = detect_rev_comp(segs[0], &first_ref_dna, self.kmer_len);
 
             for (seg_idx, seg) in segs.iter().enumerate() {
                 // Match to reference segment by position (clamped to last).
                 let ref_idx = seg_idx.min(ref_group_ids.len() - 1);
                 let ref_group_id = ref_group_ids[ref_idx];
 
-                // Apply rev-comp if detected.
-                let encoded_seq: Vec<u8> = if is_rev_comp {
+                // Try contig-level orientation first.
+                let fwd_seq: Vec<u8> = if contig_is_rev_comp {
                     rev_comp_vec(seg)
                 } else {
                     seg.to_vec()
                 };
+                let fwd_delta = self.segments[ref_group_id as usize].add(&fwd_seq);
+                let fwd_raw_len = fwd_seq.len() as u32;
 
-                // LZ-diff encode.
-                let delta = self.segments[ref_group_id as usize].add(&encoded_seq);
-                let raw_length = encoded_seq.len() as u32;
+                // If delta is large (poor match), try opposite orientation and pick smaller.
+                let (delta, is_rev_comp, raw_length) = if fwd_delta.len() as u32 > fwd_raw_len / 2 {
+                    let alt_seq: Vec<u8> = if contig_is_rev_comp {
+                        seg.to_vec()
+                    } else {
+                        rev_comp_vec(seg)
+                    };
+                    let alt_delta = self.segments[ref_group_id as usize].add(&alt_seq);
+                    let alt_raw_len = alt_seq.len() as u32;
+                    if alt_delta.len() < fwd_delta.len() {
+                        (alt_delta, !contig_is_rev_comp, alt_raw_len)
+                    } else {
+                        (fwd_delta, contig_is_rev_comp, fwd_raw_len)
+                    }
+                } else {
+                    (fwd_delta, contig_is_rev_comp, fwd_raw_len)
+                };
 
                 // flate2 compress the delta.
                 let packed_data = flate2_compress(&delta)?;

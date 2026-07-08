@@ -32,6 +32,16 @@ impl Segment {
         self.lz_diff.prepare_index();
     }
 
+    /// Return the reference DNA as ASCII (decoded from internal 2-bit encoding).
+    /// Loses case info and IUPAC degeneracy (maps to N) — same as 2bit record roundtrip.
+    pub fn reference_dna(&self) -> Vec<u8> {
+        self.lz_diff
+            .reference_2bit()
+            .iter()
+            .map(|&c| decode_base(c))
+            .collect()
+    }
+
     /// Encode `seq` against the prepared reference, return uncompressed delta.
     /// Empty delta means seq == reference (equal-sequences optimization).
     pub fn add(&mut self, seq: &[u8]) -> Vec<u8> {

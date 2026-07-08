@@ -287,9 +287,19 @@ pub fn write_string<W: Write>(writer: &mut W, s: &str) -> Result<()> {
     Ok(())
 }
 
+/// Maximum string length (16 MB) — guards against malicious length prefixes.
+const MAX_STRING_LEN: usize = 16 * 1024 * 1024;
+
 /// Read a length-prefixed string (u32 len + UTF-8 bytes).
 pub fn read_string<R: Read>(reader: &mut R) -> Result<String> {
     let len = read_u32_le(reader)? as usize;
+    if len > MAX_STRING_LEN {
+        return Err(anyhow!(
+            "string length {} exceeds maximum {}",
+            len,
+            MAX_STRING_LEN
+        ));
+    }
     let mut buf = vec![0u8; len];
     reader.read_exact(&mut buf)?;
     Ok(String::from_utf8(buf)?)
