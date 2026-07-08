@@ -11,9 +11,26 @@ use std::io::{Read, Seek, SeekFrom, Write};
 /// pbit magic number: 'PBIT' in little-endian.
 pub const PBIT_MAGIC: u32 = 0x54494250;
 pub const PBIT_VERSION_MAJOR: u32 = 1;
-pub const PBIT_VERSION_MINOR: u32 = 0;
+pub const PBIT_VERSION_MINOR: u32 = 1;
 /// Current file version encoded as major*1000 + minor.
 pub const PBIT_VERSION: u32 = PBIT_VERSION_MAJOR * 1000 + PBIT_VERSION_MINOR;
+
+/// Delta encoding type stored in the on-disk delta header (10th byte).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeltaEncoding {
+    LzDiff = 0,
+    Cigar = 1,
+}
+
+impl DeltaEncoding {
+    pub fn from_u8(v: u8) -> Result<Self> {
+        match v {
+            0 => Ok(Self::LzDiff),
+            1 => Ok(Self::Cigar),
+            _ => Err(anyhow!("invalid DeltaEncoding: {}", v)),
+        }
+    }
+}
 
 /// File header (fixed 36 bytes, at file start).
 #[derive(Debug, Clone)]
@@ -182,45 +199,51 @@ pub fn read_ref_index<R: Read>(reader: &mut R) -> Result<Vec<RefGroupEntry>> {
     Ok(entries)
 }
 
-/// In-memory delta header (9 bytes): properties of a delta encoding, loaded
+/// In-memory delta header (10 bytes): properties of a delta encoding, loaded
 /// during `Decompressor::new` without the packed data.
 #[derive(Debug, Clone, Copy)]
 pub struct DeltaMeta {
     pub is_rev_comp: bool,
     pub raw_length: u32,
     pub packed_size: u32,
+    pub encoding: DeltaEncoding,
 }
 
 impl DeltaMeta {
-    /// Write the 9-byte delta header (no packed data).
+    /// Write the 10-byte delta header (no packed data).
     pub fn write_header<W: Write>(&self, writer: &mut W) -> Result<()> {
         writer.write_all(&[self.is_rev_comp as u8])?;
         writer.write_all(&self.raw_length.to_le_bytes())?;
         writer.write_all(&self.packed_size.to_le_bytes())?;
+        writer.write_all(&[self.encoding as u8])?;
         Ok(())
     }
 
-    /// Read the 9-byte delta header (no packed data).
+    /// Read the 10-byte delta header (no packed data).
     pub fn read_header<R: Read>(reader: &mut R) -> Result<Self> {
         let mut byte = [0u8; 1];
         reader.read_exact(&mut byte)?;
         let is_rev_comp = byte[0] != 0;
         let raw_length = read_u32_le(reader)?;
         let packed_size = read_u32_le(reader)?;
+        reader.read_exact(&mut byte)?;
+        let encoding = DeltaEncoding::from_u8(byte[0])?;
         Ok(Self {
             is_rev_comp,
             raw_length,
             packed_size,
+            encoding,
         })
     }
 }
 
-/// Full delta entry: header + packed (flate2-compressed LZ-diff) data.
+/// Full delta entry: header + packed (flate2-compressed) data.
 #[derive(Debug, Clone)]
 pub struct DeltaEntry {
     pub is_rev_comp: bool,
     pub raw_length: u32,
     pub packed_data: Vec<u8>,
+    pub encoding: DeltaEncoding,
 }
 
 impl DeltaEntry {
@@ -229,17 +252,18 @@ impl DeltaEntry {
             is_rev_comp: self.is_rev_comp,
             raw_length: self.raw_length,
             packed_size: self.packed_data.len() as u32,
+            encoding: self.encoding,
         }
     }
 
-    /// Write the full delta entry (9-byte header + packed data).
+    /// Write the full delta entry (10-byte header + packed data).
     pub fn write_to<W: Write>(&self, writer: &mut W) -> Result<()> {
         self.meta().write_header(writer)?;
         writer.write_all(&self.packed_data)?;
         Ok(())
     }
 
-    /// Read the full delta entry (9-byte header + packed data) from the
+    /// Read the full delta entry (10-byte header + packed data) from the
     /// current reader position.
     pub fn read_from<R: Read>(reader: &mut R) -> Result<Self> {
         let meta = DeltaMeta::read_header(reader)?;
@@ -249,6 +273,7 @@ impl DeltaEntry {
             is_rev_comp: meta.is_rev_comp,
             raw_length: meta.raw_length,
             packed_data,
+            encoding: meta.encoding,
         })
     }
 }
@@ -432,16 +457,18 @@ mod tests {
             is_rev_comp: true,
             raw_length: 4096,
             packed_size: 512,
+            encoding: DeltaEncoding::LzDiff,
         };
         let mut buf = Vec::new();
         meta.write_header(&mut buf)?;
-        assert_eq!(buf.len(), 9);
+        assert_eq!(buf.len(), 10);
 
         let mut cursor = Cursor::new(buf);
         let read = DeltaMeta::read_header(&mut cursor)?;
         assert!(read.is_rev_comp);
         assert_eq!(read.raw_length, 4096);
         assert_eq!(read.packed_size, 512);
+        assert_eq!(read.encoding, DeltaEncoding::LzDiff);
         Ok(())
     }
 
@@ -451,6 +478,7 @@ mod tests {
             is_rev_comp: false,
             raw_length: 100,
             packed_data: vec![1, 2, 3, 4, 5],
+            encoding: DeltaEncoding::Cigar,
         };
         let mut buf = Vec::new();
         entry.write_to(&mut buf)?;
@@ -460,6 +488,7 @@ mod tests {
         assert!(!read.is_rev_comp);
         assert_eq!(read.raw_length, 100);
         assert_eq!(read.packed_data, vec![1, 2, 3, 4, 5]);
+        assert_eq!(read.encoding, DeltaEncoding::Cigar);
         Ok(())
     }
 

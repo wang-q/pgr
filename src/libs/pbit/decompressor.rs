@@ -18,9 +18,10 @@ use crate::libs::fmt::twobit::read_2bit_record;
 use crate::libs::io::SequenceReader;
 use crate::libs::nt;
 
-use super::collection::Collection;
+use super::cigar_delta::{apply_cigar, unpack_cigar};
+use super::collection::{Collection, SegmentDesc};
 use super::format::{
-    read_ref_index, read_u32_le, DeltaMeta, PbitFooter, PbitHeader, RefGroupEntry,
+    read_ref_index, read_u32_le, DeltaEncoding, DeltaMeta, PbitFooter, PbitHeader, RefGroupEntry,
 };
 use super::segment::Segment;
 
@@ -41,7 +42,7 @@ pub struct Decompressor<R: Read + Seek> {
     /// selection (skip non-overlapping segments).
     delta_meta: Vec<Vec<DeltaMeta>>,
     /// delta_offsets[ref_group_id][delta_id] → file offset of the delta's
-    /// 9-byte header (followed by `packed_size` bytes).
+    /// 10-byte header (followed by `packed_size` bytes).
     delta_offsets: Vec<Vec<u64>>,
     /// LRU cache: ref_group_id → decoded reference segment DNA (ASCII).
     ref_cache: LruCache<u32, Vec<u8>>,
@@ -101,7 +102,7 @@ impl<R: Read + Seek> Decompressor<R> {
                 .push(i as u32);
         }
 
-        // Scan delta data: read each delta's 9-byte header, build delta_meta
+        // Scan delta data: read each delta's 10-byte header, build delta_meta
         // and delta_offsets (without decompressing data).
         reader.seek(SeekFrom::Start(footer.delta_data_offset))?;
         let ref_group_count = read_u32_le(&mut reader)? as usize;
@@ -255,39 +256,57 @@ impl<R: Read + Seek> Decompressor<R> {
         Ok(seq_bytes)
     }
 
-    /// Read and flate2-decompress a delta's packed data, then LZ-diff decode
-    /// it against the reference segment. Uses an LRU cache.
-    fn decode_delta(&mut self, ref_group_id: u32, delta_id: u32) -> Result<Vec<u8>> {
-        let key = (ref_group_id, delta_id);
+    /// Read a delta's packed data and decode it (LZ-diff or CIGAR depending
+    /// on `encoding`) against the reference segment. Uses an LRU cache.
+    /// CIGAR-encoded deltas use `seg.ref_start` / `seg.ref_end` to slice the
+    /// reference; LZ-diff deltas ignore them. Both encodings store
+    /// gzip-compressed packed_data, but the decompression path differs:
+    /// LZ-diff uses `flate2::read::GzDecoder` then `Segment::get`; CIGAR uses
+    /// `unpack_cigar` (which includes its own gzip decompression).
+    fn decode_delta(&mut self, seg: &SegmentDesc) -> Result<Vec<u8>> {
+        let key = (seg.ref_group_id, seg.delta_id);
         if let Some(cached) = self.delta_cache.get(&key) {
             return Ok(cached.clone());
         }
 
         // Read reference segment.
-        let ref_dna = self.read_ref_segment(ref_group_id)?;
+        let ref_dna = self.read_ref_segment(seg.ref_group_id)?;
 
-        // Read and decompress delta.
-        let offset = self.delta_offsets[ref_group_id as usize][delta_id as usize];
+        // Read packed delta data (header already scanned at construction).
+        let offset = self.delta_offsets[seg.ref_group_id as usize][seg.delta_id as usize];
         self.reader.seek(SeekFrom::Start(offset))?;
         let meta = DeltaMeta::read_header(&mut self.reader)?;
         let mut packed = vec![0u8; meta.packed_size as usize];
         self.reader.read_exact(&mut packed)?;
-        let mut decoder = flate2::read::GzDecoder::new(&packed[..]);
-        let mut delta = Vec::new();
-        decoder.read_to_end(&mut delta)?;
 
-        // LZ-diff decode.
-        let mut seg = Segment::new(self.min_match_len);
-        seg.prepare(&ref_dna);
-        let mut decoded = seg.get(&delta)?;
+        // Decode by encoding type.
+        let decoded = match meta.encoding {
+            DeltaEncoding::LzDiff => {
+                // LZ-diff: packed_data is flate2-compressed raw delta.
+                let mut decoder = flate2::read::GzDecoder::new(&packed[..]);
+                let mut delta = Vec::new();
+                decoder.read_to_end(&mut delta)?;
+                let mut lz = Segment::new(self.min_match_len);
+                lz.prepare(&ref_dna);
+                lz.get(&delta)?
+            }
+            DeltaEncoding::Cigar => {
+                // CIGAR: packed_data is pack_cigar output (includes its own gzip).
+                let (ops, xi_bases) = unpack_cigar(&packed)?;
+                let ref_slice = &ref_dna[seg.ref_start as usize..seg.ref_end as usize];
+                apply_cigar(ref_slice, &ops, &xi_bases)?
+            }
+        };
 
         // Apply reverse-complement if needed.
-        if meta.is_rev_comp {
-            decoded = nt::rev_comp(&decoded).collect();
-        }
+        let final_decoded = if meta.is_rev_comp {
+            nt::rev_comp(&decoded).collect()
+        } else {
+            decoded
+        };
 
-        self.delta_cache.put(key, decoded.clone());
-        Ok(decoded)
+        self.delta_cache.put(key, final_decoded.clone());
+        Ok(final_decoded)
     }
 
     /// Extract a contig from ALL samples (getctg semantics), optionally sliced
@@ -346,7 +365,7 @@ impl<R: Read + Seek> Decompressor<R> {
             for (seg, &seg_len) in segments.iter().zip(seg_lens.iter()) {
                 let seg_end = offset + seg_len;
                 if seg_end > s && offset < e {
-                    let decoded = self.decode_delta(seg.ref_group_id, seg.delta_id)?;
+                    let decoded = self.decode_delta(seg)?;
                     let local_start = s.saturating_sub(offset);
                     let local_end = (e - offset).min(seg_len);
                     result.extend_from_slice(&decoded[local_start..local_end]);
@@ -397,7 +416,7 @@ impl<R: Read + Seek> Decompressor<R> {
         for (contig_name, segments) in contig_segs {
             let mut full_seq = Vec::new();
             for seg in &segments {
-                let decoded = self.decode_delta(seg.ref_group_id, seg.delta_id)?;
+                let decoded = self.decode_delta(seg)?;
                 full_seq.extend_from_slice(&decoded);
             }
             writeln!(out, ">{}", contig_name)?;
