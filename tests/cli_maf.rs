@@ -50,7 +50,7 @@ fn command_maf_to_paf_basic() {
     assert_eq!(fields[6], "1000"); // target length
     assert_eq!(fields[7], "100"); // target start
     assert_eq!(fields[8], "110"); // target end (100 + 10)
-    assert_eq!(fields[9], "8"); // matches (8M)
+    assert_eq!(fields[9], "8"); // matches (8=)
     assert_eq!(fields[10], "10"); // block length
     assert_eq!(fields[11], "255"); // mapq
 
@@ -116,7 +116,7 @@ fn command_maf_to_paf_with_gaps() {
         .stdin(maf)
         .run();
 
-    assert!(stdout.contains("cg:Z:3M1I1M1D"), "CIGAR should be 3M1I1M1D");
+    assert!(stdout.contains("cg:Z:3=1I1=1D"), "CIGAR should be 3=1I1=1D");
     // gi: 4/(4+0+2) = 0.666..., bi: 4/(4+0+2) = 0.666...
     assert!(stdout.contains("gi:f:"), "gi tag present");
     assert!(stdout.contains("bi:f:"), "bi tag present");

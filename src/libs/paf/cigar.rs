@@ -273,10 +273,11 @@ pub fn block_identity(ops: &[CigarOp]) -> f64 {
 
 /// Build CIGAR from two MAF `s`-line alignment strings (byte slices).
 ///
-/// Each position is compared:
+/// Each position is compared (case-insensitive, so soft-masked bases count):
 /// - `ref[i] == '-' && qry[i] != '-'` → `I` (insertion in query)
 /// - `ref[i] != '-' && qry[i] == '-'` → `D` (deletion in query)
-/// - otherwise → `M` (match/mismatch, not distinguished in v1)
+/// - `ref[i] eq_ignore_ascii_case qry[i]` → `=` (match)
+/// - otherwise → `X` (mismatch)
 ///
 /// Consecutive identical ops are merged.
 pub fn cigar_from_alignment(r#ref: &[u8], qry: &[u8]) -> anyhow::Result<Vec<CigarOp>> {
@@ -291,7 +292,8 @@ pub fn cigar_from_alignment(r#ref: &[u8], qry: &[u8]) -> anyhow::Result<Vec<Ciga
             (b'-', b'-') => continue, // both gaps — degenerate, skip
             (b'-', _) => 'I',
             (_, b'-') => 'D',
-            _ => 'M',
+            _ if rc.eq_ignore_ascii_case(&qc) => '=',
+            _ => 'X',
         };
 
         match ops.last_mut() {
@@ -543,31 +545,52 @@ mod tests {
     #[test]
     fn test_cigar_from_alignment_all_match() {
         let ops = cigar_from_alignment(b"ACGT", b"ACGT").unwrap();
-        assert_eq!(ops, vec![CigarOp::new(4, 'M')]);
+        assert_eq!(ops, vec![CigarOp::new(4, '=')]);
+    }
+
+    #[test]
+    fn test_cigar_from_alignment_mismatches() {
+        // ACGT vs AGGT → = X = =
+        let ops = cigar_from_alignment(b"ACGT", b"AGGT").unwrap();
+        assert_eq!(
+            ops,
+            vec![
+                CigarOp::new(1, '='),
+                CigarOp::new(1, 'X'),
+                CigarOp::new(2, '='),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_cigar_from_alignment_case_insensitive() {
+        // Soft-masked bases (lowercase) count as match
+        let ops = cigar_from_alignment(b"acgt", b"ACGT").unwrap();
+        assert_eq!(ops, vec![CigarOp::new(4, '=')]);
     }
 
     #[test]
     fn test_cigar_from_alignment_ref_gap() {
         let ops = cigar_from_alignment(b"ACG-", b"ACGT").unwrap();
-        assert_eq!(ops, vec![CigarOp::new(3, 'M'), CigarOp::new(1, 'I')]);
+        assert_eq!(ops, vec![CigarOp::new(3, '='), CigarOp::new(1, 'I')]);
     }
 
     #[test]
     fn test_cigar_from_alignment_qry_gap() {
         let ops = cigar_from_alignment(b"ACGT", b"ACG-").unwrap();
-        assert_eq!(ops, vec![CigarOp::new(3, 'M'), CigarOp::new(1, 'D')]);
+        assert_eq!(ops, vec![CigarOp::new(3, '='), CigarOp::new(1, 'D')]);
     }
 
     #[test]
     fn test_cigar_from_alignment_interleaved() {
-        // AC-TG vs ACGT- →  M M I M D
+        // AC-TG vs ACGT- → = = I = D
         let ops = cigar_from_alignment(b"AC-TG", b"ACGT-").unwrap();
         assert_eq!(
             ops,
             vec![
-                CigarOp::new(2, 'M'),
+                CigarOp::new(2, '='),
                 CigarOp::new(1, 'I'),
-                CigarOp::new(1, 'M'),
+                CigarOp::new(1, '='),
                 CigarOp::new(1, 'D'),
             ]
         );
@@ -575,13 +598,13 @@ mod tests {
 
     #[test]
     fn test_cigar_from_alignment_terminal_gaps() {
-        // -ACGT- vs TACGTA →  I M M M M I
+        // -ACGT- vs TACGTA → I = = = = I
         let ops = cigar_from_alignment(b"-ACGT-", b"TACGTA").unwrap();
         assert_eq!(
             ops,
             vec![
                 CigarOp::new(1, 'I'),
-                CigarOp::new(4, 'M'),
+                CigarOp::new(4, '='),
                 CigarOp::new(1, 'I'),
             ]
         );
@@ -599,7 +622,7 @@ mod tests {
         assert_eq!(
             ops,
             vec![
-                CigarOp::new(3, 'M'),
+                CigarOp::new(3, '='),
                 CigarOp::new(2, 'I'),
                 CigarOp::new(1, 'D'),
             ]
@@ -633,7 +656,7 @@ mod tests {
         assert_eq!(
             ops,
             vec![
-                CigarOp::new(3, 'M'),
+                CigarOp::new(3, '='),
                 CigarOp::new(2, 'I'),
                 CigarOp::new(1, 'D'),
             ]
