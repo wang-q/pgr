@@ -7,7 +7,7 @@
 //! entries.
 
 use anyhow::{Context, Result};
-use std::collections::HashMap;
+use indexmap::IndexMap;
 use std::io::{Seek, SeekFrom, Write};
 use std::path::Path;
 
@@ -90,7 +90,7 @@ pub struct Compressor<W: Write + Seek> {
     /// One Segment per ref_group, prepared with the (forward) reference DNA.
     segments: Vec<Segment>,
     /// Map: contig_name → Vec<ref_group_id> (reference segment indices).
-    contig_ref_groups: HashMap<String, Vec<u32>>,
+    contig_ref_groups: IndexMap<String, Vec<u32>>,
     segment_size: usize,
     kmer_len: usize,
 }
@@ -142,7 +142,7 @@ impl Compressor<std::io::BufWriter<std::fs::File>> {
             deltas: vec![Vec::new(); ref_group_count],
             collection: Collection::new(),
             segments: Vec::new(),
-            contig_ref_groups: HashMap::new(),
+            contig_ref_groups: IndexMap::new(),
             segment_size,
             kmer_len,
         };
@@ -230,7 +230,7 @@ impl Compressor<std::io::BufWriter<std::fs::File>> {
 
         // 4. Read reference segments and build Segment objects.
         let mut segments: Vec<Segment> = Vec::with_capacity(ref_group_count);
-        let mut contig_ref_groups: HashMap<String, Vec<u32>> = HashMap::new();
+        let mut contig_ref_groups: IndexMap<String, Vec<u32>> = IndexMap::new();
         for (i, entry) in ref_groups.iter().enumerate() {
             reader.seek(SeekFrom::Start(entry.segment_offset))?;
             let seq = read_2bit_record(&mut reader, false, None, None, true)?;

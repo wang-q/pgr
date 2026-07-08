@@ -76,8 +76,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let dec = Decompressor::open(infile)
         .with_context(|| format!("Failed to open pbit file {}", infile))?;
-    let mut writer =
-        pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
+    let mut writer = pgr::libs::io::writer(outfile)
+        .with_context(|| format!("Failed to open writer for {}", outfile))?;
 
     // If no flag is set, show the overview.
     let show_overview = !show_samples && !show_refs && !show_contigs;

@@ -48,8 +48,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let mut dec = Decompressor::open(infile)
         .with_context(|| format!("Failed to open pbit file {}", infile))?;
-    let mut writer =
-        pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
+    let mut writer = pgr::libs::io::writer(outfile)
+        .with_context(|| format!("Failed to open writer for {}", outfile))?;
 
     // Gather all contig names across all samples (deduplicated, ordered).
     // Collect into owned Strings to release the immutable borrow on dec

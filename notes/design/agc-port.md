@@ -949,7 +949,7 @@ offset  size  field
 ### Phase 1: 文件格式 I/O
 
 - [x] `format.rs`: `PBIT_MAGIC` / 版本常量、`PbitHeader` / `PbitFooter` 结构
-- [x] `format.rs`: Header 读写（固定 32 字节）、Footer 读写（固定 24 字节）
+- [x] `format.rs`: Header 读写（固定 36 字节）、Footer 读写（固定 24 字节）
 - [x] `format.rs`: Reference Index 读写（`RefGroupEntry` 列表 + 段偏移）
 - [x] `format.rs`: `DeltaEntry` 头部读写（`is_rev_comp` 1B + `raw_length` 4B + `packed_size` 4B，
   共 9 字节；`packed_data` 体由 Phase 5 填充，本阶段只定义头部格式，见 §文件格式规范-Delta Data）
