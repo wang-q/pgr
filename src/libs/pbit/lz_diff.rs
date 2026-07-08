@@ -50,6 +50,17 @@ fn encode_base(c: u8) -> u8 {
     }
 }
 
+/// Decode a 2-bit value to ASCII byte (0→A, 1→C, 2→G, 3→T, 4→N, other→N).
+pub fn decode_base(code: u8) -> u8 {
+    match code {
+        0 => b'A',
+        1 => b'C',
+        2 => b'G',
+        3 => b'T',
+        _ => b'N',
+    }
+}
+
 /// Forward match length between two slices, up to max_len.
 fn compare_fwd(p: &[u8], q: &[u8], max_len: u32) -> u32 {
     let n = (max_len as usize).min(p.len()).min(q.len());
@@ -149,6 +160,12 @@ impl LzDiff {
             .resize(self.reference.len() + self.key_len as usize, INVALID_SYMBOL);
         self.index_ready = false;
         self.ht = None;
+    }
+
+    /// Return the stored reference (without key_len padding) as 2-bit encoded slice.
+    pub fn reference_2bit(&self) -> &[u8] {
+        let pad = self.key_len as usize;
+        &self.reference[..self.reference.len().saturating_sub(pad)]
     }
 
     /// Build the hash table over the stored reference. Required only for
@@ -357,15 +374,17 @@ impl LzDiff {
         if !self.index_ready {
             self.prepare_index();
         }
+        // Pre-encode text to 2-bit so get_code/find_best_match compare
+        // against the 2-bit encoded reference correctly.
+        let text: Vec<u8> = text.iter().map(|&c| encode_base(c)).collect();
         let text_size = text.len() as u32;
         encoded.clear();
 
         // Equal sequences optimization
-        if text_size == self.reference.len() as u32 - self.key_len {
-            let expected: Vec<u8> = text.iter().map(|&c| encode_base(c)).collect();
-            if expected == self.reference[..text_size as usize] {
-                return;
-            }
+        if text_size == self.reference.len() as u32 - self.key_len
+            && text == self.reference[..text_size as usize]
+        {
+            return;
         }
 
         encoded.reserve(text.len() / 64);
@@ -390,7 +409,7 @@ impl LzDiff {
                     i += nrun_len;
                     no_prev_literals = 0;
                 } else {
-                    encode_literal(encode_base(text[i as usize]), encoded);
+                    encode_literal(text[i as usize], encoded);
                     i += 1;
                     pred_pos += 1;
                     no_prev_literals += 1;
@@ -406,7 +425,7 @@ impl LzDiff {
 
             if !self.find_best_match(
                 ht_pos,
-                text,
+                &text,
                 i,
                 max_len,
                 no_prev_literals,
@@ -414,7 +433,7 @@ impl LzDiff {
                 &mut len_bck,
                 &mut len_fwd,
             ) {
-                encode_literal(encode_base(text[i as usize]), encoded);
+                encode_literal(text[i as usize], encoded);
                 i += 1;
                 pred_pos += 1;
                 no_prev_literals += 1;
@@ -461,7 +480,7 @@ impl LzDiff {
 
         // Tail literals
         while i < text_size {
-            encode_literal(encode_base(text[i as usize]), encoded);
+            encode_literal(text[i as usize], encoded);
             i += 1;
         }
     }
@@ -518,8 +537,15 @@ impl LzDiff {
                     !0u32
                 };
                 let actual_len = if len == !0u32 {
-                    ref_len.checked_sub(ref_pos).ok_or_else(|| {
-                        anyhow!("decode: ref_pos {} > ref_len {}", ref_pos, ref_len)
+                    // Match-to-end: copy from ref_pos to end of real reference
+                    // data (excluding key_len INVALID_SYMBOL padding).
+                    let ref_data_len = ref_len.saturating_sub(self.key_len);
+                    ref_data_len.checked_sub(ref_pos).ok_or_else(|| {
+                        anyhow!(
+                            "decode: ref_pos {} > ref_data_len {}",
+                            ref_pos,
+                            ref_data_len
+                        )
                     })?
                 } else {
                     len
@@ -546,15 +572,16 @@ impl LzDiff {
         if !self.index_ready {
             self.prepare_index();
         }
+        // Pre-encode text to 2-bit (same as encode).
+        let text: Vec<u8> = text.iter().map(|&c| encode_base(c)).collect();
         let text_size = text.len() as u32;
         let mut est_cost: usize = 0;
 
         // Equal sequences optimization
-        if text_size == self.reference.len() as u32 - self.key_len {
-            let expected: Vec<u8> = text.iter().map(|&c| encode_base(c)).collect();
-            if expected == self.reference[..text_size as usize] {
-                return 0;
-            }
+        if text_size == self.reference.len() as u32 - self.key_len
+            && text == self.reference[..text_size as usize]
+        {
+            return 0;
         }
 
         let mut i: u32 = 0;
@@ -597,7 +624,7 @@ impl LzDiff {
 
             if !self.find_best_match(
                 ht_pos,
-                text,
+                &text,
                 i,
                 max_len,
                 no_prev_literals,

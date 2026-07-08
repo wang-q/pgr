@@ -25,6 +25,7 @@ fn main() -> anyhow::Result<()> {
         .subcommand(cmd_pgr::net::make_subcommand())
         .subcommand(cmd_pgr::nwk::make_subcommand())
         .subcommand(cmd_pgr::paf::make_subcommand())
+        .subcommand(cmd_pgr::pbit::make_subcommand())
         .subcommand(cmd_pgr::psl::make_subcommand())
         .subcommand(cmd_pgr::pl::make_subcommand())
         .subcommand(cmd_pgr::plot::make_subcommand())
@@ -42,6 +43,7 @@ fn main() -> anyhow::Result<()> {
     * fas  - Block FA operations: info, subset, transform, file, variation
     * fq   - FASTQ interleaving and conversion
     * gff  - GFF operations: rg
+    * pbit - Population 2bit + delta: create, stat, range, some, to-fa
 
 * Genome alignments:
     * chain - Chain operations: sort, filter, transform, to-net
@@ -89,6 +91,7 @@ fn main() -> anyhow::Result<()> {
         Some(("net", sub_matches)) => cmd_pgr::net::execute(sub_matches),
         Some(("nwk", sub_matches)) => cmd_pgr::nwk::execute(sub_matches),
         Some(("paf", sub_matches)) => cmd_pgr::paf::execute(sub_matches),
+        Some(("pbit", sub_matches)) => cmd_pgr::pbit::execute(sub_matches),
         Some(("psl", sub_matches)) => cmd_pgr::psl::execute(sub_matches),
         Some(("pl", sub_matches)) => cmd_pgr::pl::execute(sub_matches),
         Some(("plot", sub_matches)) => cmd_pgr::plot::execute(sub_matches),

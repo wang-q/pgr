@@ -6,5 +6,9 @@
 //! reuses standard 2bit records via `libs::fmt::twobit::read_2bit_record` /
 //! `write_2bit_record`.
 
+pub mod collection;
+pub mod compressor;
+pub mod decompressor;
 pub mod format;
 pub mod lz_diff;
+pub mod segment;

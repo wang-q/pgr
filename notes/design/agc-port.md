@@ -969,25 +969,25 @@ offset  size  field
 
 ### Phase 3: 段级 delta 压缩
 
-- [ ] `segment.rs`: `Segment::prepare`（接收参考 DNA，委托 `LzDiff::prepare`）
-- [ ] `segment.rs`: `Segment::prepare_index`（委托 `LzDiff::prepare_index`，encode 前调用）
-- [ ] `segment.rs`: `Segment::add`（LZ-diff 编码 → 返回未压缩 delta bytes）
-- [ ] `segment.rs`: `Segment::get`（LZ-diff 解码未压缩 delta → 返回原始序列）
-- [ ] 验证：编码 N 条序列后能完整解码（flate2 压缩/解压由 `Compressor`/`Decompressor` 负责，
+- [x] `segment.rs`: `Segment::prepare`（接收参考 DNA，委托 `LzDiff::prepare`）
+- [x] `segment.rs`: `Segment::prepare_index`（委托 `LzDiff::prepare_index`，encode 前调用）
+- [x] `segment.rs`: `Segment::add`（LZ-diff 编码 → 返回未压缩 delta bytes）
+- [x] `segment.rs`: `Segment::get`（LZ-diff 解码未压缩 delta → 返回原始序列）
+- [x] 验证：编码 N 条序列后能完整解码（flate2 压缩/解压由 `Compressor`/`Decompressor` 负责，
   `Segment` 仅处理未压缩 delta）
 
 ### Phase 4: 元数据
 
-- [ ] `collection.rs`: `SegmentDesc` / `ContigSegs` / `Collection` 结构
-- [ ] `collection.rs`: `register_sample_contig` / `add_segment`
-- [ ] `collection.rs`: `serialize` / `deserialize`（固定 u32 LE 字段 + flate2）
-- [ ] `collection.rs`: 查询方法（`get_contig_segments`, `list_samples`, `list_contigs`）
-- [ ] 验证：元数据序列化/反序列化往返一致
+- [x] `collection.rs`: `SegmentDesc` / `ContigSegs` / `Collection` 结构
+- [x] `collection.rs`: `register_sample_contig` / `add_segment`
+- [x] `collection.rs`: `serialize` / `deserialize`（固定 u32 LE 字段 + flate2）
+- [x] `collection.rs`: 查询方法（`get_contig_segments`, `list_samples`, `list_contigs`）
+- [x] 验证：元数据序列化/反序列化往返一致
 
 ### Phase 5: 压缩器/解压器
 
-- [ ] `compressor.rs`: `Compressor<W: Write + Seek>` 泛型结构（直接持有 `W`，无 archive 包装）
-- [ ] `compressor.rs`: `Compressor::create`（写 Header 占位 → 读参考 FASTA → 分段 → 每段
+- [x] `compressor.rs`: `Compressor<W: Write + Seek>` 泛型结构（直接持有 `W`，无 archive 包装）
+- [x] `compressor.rs`: `Compressor::create`（写 Header 占位 → 读参考 FASTA → 分段 → 每段
   `write_2bit_record` 写入 → 记录 `ref_groups[i].segment_offset` → 对每段创建 `Segment` 并调
   `prepare` + `prepare_index`，供后续 `append_sample` 编码使用）
 - [ ] `compressor.rs`: `Compressor::open_for_append`（**从已有 `.pbit` 恢复 Compressor 状态**，供
@@ -996,119 +996,120 @@ offset  size  field
   `prepare` + `prepare_index` → 重建 `Compressor` 的完整内存状态 → writer 定位到
   `footer.ref_index_offset`（Reference Index 起始处）。`finish` 时重写 Reference Index + Delta Data
   + Sample Index + Footer。参考 FASTA 不再需要，直接复用归档内已嵌入的参考段）
-- [ ] `compressor.rs`: `append_sample`（读 FASTA → 分段 → k-mer minimizer 选择参考组 → **判断正向/
+- [x] `compressor.rs`: `append_sample`（读 FASTA → 分段 → k-mer minimizer 选择参考组 → **判断正向/
   反向匹配**：若反向更优则 `is_rev_comp=true` 并反向互补序列 → `Segment::add` 编码 → flate2 压缩
   → **delta 去重**：与同 ref_group 已有 delta 比对，相同则复用 `delta_id`，否则新增 → 写
   DeltaEntry → 记入 Collection）
-- [ ] `compressor.rs`: k-mer minimizer 参考选择算法（含正向/反向匹配评分，取最优方向）
-- [ ] `compressor.rs`: `finish`（写 Reference Index → 写 Delta Data → 写 Sample Index → 写 Footer →
+- [x] `compressor.rs`: k-mer minimizer 参考选择算法（简化版：按 contig 名 + 段位置匹配；用 k-mer
+  采样检测正向/反向）
+- [x] `compressor.rs`: `finish`（写 Reference Index → 写 Delta Data → 写 Sample Index → 写 Footer →
   回填 Header 偏移）
-- [ ] `decompressor.rs`: `Decompressor<R: Read + Seek>` 泛型结构（直接持有 `R`）
-- [ ] `decompressor.rs`: 三构造器 `open` / `open_and_read` / `new`（镜像 twobit.rs:286-360）
-- [ ] `decompressor.rs`: `new` 解析 Header + Footer + Reference Index + Sample Index，构建
+- [x] `decompressor.rs`: `Decompressor<R: Read + Seek>` 泛型结构（直接持有 `R`）
+- [x] `decompressor.rs`: 三构造器 `open` / `open_and_read` / `new`（镜像 twobit.rs:286-360）
+- [x] `decompressor.rs`: `new` 解析 Header + Footer + Reference Index + Sample Index，构建
   `contig_groups`（contig 名 → ref_group_id 列表）+ `contig_set`（`HashSet<String>`，供
   `contains_contig`）+ 顺序扫描 Delta Data 区构建 `delta_meta`（每条 delta 的
   `is_rev_comp`/`raw_length`/`packed_size`）和 `delta_offsets`（按 `packed_size` 累加偏移，
   仅读 9 字节头部，不解压数据）
-- [ ] `decompressor.rs`: `contains_contig(name)`（查 `contig_set`，供 `range` 命令判存在）+
+- [x] `decompressor.rs`: `contains_contig(name)`（查 `contig_set`，供 `range` 命令判存在）+
   `list_samples()`（委托 `Collection::list_samples`，供 `stat` 命令）+
   `list_contigs(sample)`（委托 `Collection::list_contigs`，供 `stat --contigs -s`）
-- [ ] `decompressor.rs`: `impl SequenceReader for Decompressor<R>`（读**参考层**，镜像 twobit.rs:
+- [x] `decompressor.rs`: `impl SequenceReader for Decompressor<R>`（读**参考层**，镜像 twobit.rs:
   500-510 的 seek → read_2bit_record → slice 模式，但经 `contig_groups` 拼接多段；大 contig 按段
   累加长度（用 2bit 记录的 `dna_size`），只读包含 `[start, end)` 的段，避免拼接整条）
-- [ ] `decompressor.rs`: `get_sample` / `get_contig(contig, start, end, strand, out)`（遍历 Collection
+- [x] `decompressor.rs`: `get_sample` / `get_contig(contig, start, end, strand, out)`（遍历 Collection
   样本 → 用 `delta_meta.raw_length` 累加计算各段坐标，仅解码包含 `[start, end)` 的段 → 每段 seek
   参考段 → `read_2bit_record` → 用 `delta_offsets` 定位 delta → seek → flate2 解压 → LZ-diff
   解码 → 拼接 → 切片 → if strand=="-" rev_comp → 写 FASTA）
-- [ ] `decompressor.rs`: LRU 缓存参考段（`ref_group_id` → decoded DNA）+ delta 缓存
+- [x] `decompressor.rs`: LRU 缓存参考段（`ref_group_id` → decoded DNA）+ delta 缓存
   （`(ref_group_id, delta_id)` → decoded raw seq，避免重复 flate2 解压 + LZ-diff 解码）
-- [ ] 验证：压缩 → 解压 → FASTA 内容一致；`Decompressor` 的 `SequenceReader` 实现能读参考层 序列（供
-  chain/net）；`get_contig` 能遍历样本输出多 FASTA；`open_for_append` 追加样本后 `to-fa` 能输出
-  含新旧样本的完整 FASTA
+- [x] 验证：压缩 → 解压 → FASTA 内容一致；`Decompressor` 的 `SequenceReader` 实现能读参考层 序列（供
+  chain/net）；`get_contig` 能遍历样本输出多 FASTA。（`open_for_append` 留待后续实现）
 
 ### Phase 6: CLI 集成
 
-- [ ] `cmd_pgr/pbit/mod.rs`: 子命令注册（分组：build/info/subset/transform，镜像 `2bit` mod.rs）
-- [ ] `cmd_pgr/pbit/create.rs`: `pgr pbit create`（解析 `-r`/`-o`/`-s`/`-k`/`-l` →
+- [x] `cmd_pgr/pbit/mod.rs`: 子命令注册（分组：build/info/subset/transform，镜像 `2bit` mod.rs）
+- [x] `cmd_pgr/pbit/create.rs`: `pgr pbit create`（解析 `-r`/`-o`/`-s`/`-k`/`-l` →
   `Compressor::create` → 对每个 `-i` 输入用 `get_basename` 派生样本名 → `append_sample` → `finish`）
-- [ ] `cmd_pgr/pbit/append.rs`: `pgr pbit append`（位置参数 = 输入归档，`-o` 可选 → 若指定 `-o` 则
-  先复制归档；`Compressor::open_for_append` 打开 → 对每个 `-i` 输入 `append_sample` → `finish`）
-- [ ] `cmd_pgr/pbit/to_fa.rs`: `pgr pbit to-fa`（对应 `2bit to-fa`，但输出为目录：
+- [ ] `cmd_pgr/pbit/append.rs`: `pgr pbit append`（依赖 `Compressor::open_for_append`，留待后续实现）
+- [x] `cmd_pgr/pbit/to_fa.rs`: `pgr pbit to-fa`（对应 `2bit to-fa`，但输出为目录：
   用 `outdir_arg`，每样本一个文件 `{sample}.fa`；遍历 `list_samples` → `get_sample` 写各 contig）
-- [ ] `cmd_pgr/pbit/some.rs`: `pgr pbit some`（对应 `2bit some`，复用 `fa_name_list_arg` + `invert_arg`）
-- [ ] `cmd_pgr/pbit/range.rs`: `pgr pbit range` — 与 `twobit/range.rs` 共用区间解析工具 （`ranges_arg`
+- [x] `cmd_pgr/pbit/some.rs`: `pgr pbit some`（对应 `2bit some`，复用 `fa_name_list_arg` + `invert_arg`）
+- [x] `cmd_pgr/pbit/range.rs`: `pgr pbit range` — 与 `twobit/range.rs` 共用区间解析工具 （`ranges_arg`
   / `collect_ranges` / `intspan::Range` / `nt::rev_comp`），但调 `Decompressor::get_contig`
   遍历样本输出多 FASTA（`getctg` 语义，见 §复用-2.6）
-- [ ] `cmd_pgr/pbit/stat.rs`: `pgr pbit stat`（合并 C++ `info`/`listref`/`listset`/`listctg`， 用
+- [x] `cmd_pgr/pbit/stat.rs`: `pgr pbit stat`（合并 C++ `info`/`listref`/`listset`/`listctg`， 用
   `--samples`/`--refs`/`--contigs` flag 区分）
-- [ ] 在 `src/pgr.rs` 注册 `pbit` 子命令
-- [ ] 验证：`cargo fmt && cargo clippy -- -D warnings && cargo test`
+- [x] 在 `src/pgr.rs` 注册 `pbit` 子命令
+- [x] 验证：`cargo fmt && cargo clippy -- -D warnings && cargo test`
 
 ### Phase 7: 测试与基准
 
 #### 7.1 单元测试（`#[cfg(test)] mod tests`，各模块内嵌）
 
-- [ ] `lz_diff.rs`:
+> 共 53 个单元测试覆盖以下场景（运行 `cargo test --lib pbit::` 验证）。
+
+- [x] `lz_diff.rs`:
   - 编解码往返：随机序列（ACGT-only、含 N、含小写）→ `prepare` + `prepare_index` → `encode` → `decode` → 比对
   - 边界：空序列、1 bp 序列、纯 N 序列、超长序列（> segment_size）
   - `prepare` 不调 `prepare_index` 时 `decode` 仍正常（验证 decode 不依赖哈希表）
   - `min_match_len` 不同值（15/18/21）下编解码正确
-- [ ] `segment.rs`:
+- [x] `segment.rs`:
   - `prepare` + `add` → `get` 往返；多条序列 add 后各自 get 一致
   - 同参考不同样本（相似 vs 差异大）的 delta 大小合理（相似 < 差异）
-- [ ] `format.rs`（Header/Footer/Index I/O）:
+- [x] `format.rs`（Header/Footer/Index I/O）:
   - 空 archive 往返：Header（占位偏移）+ 空 Reference Records + Footer（零偏移）
   - 最小 archive 往返：1 ref_group / 0 sample / 0 delta
   - 多 ref_group + 多 sample + 多 delta 往返：偏移回填正确，`Decompressor::new` 能完整解析
   - `delta_meta` 扫描：`is_rev_comp`/`raw_length`/`packed_size` 与写入时一致
-- [ ] `collection.rs`:
+- [x] `collection.rs`:
   - `add_sample` / `add_segment` 后 `list_samples` / `list_contigs` / `get_segments` 返回正确
   - `serde` 序列化/反序列化往返（`bincode` 或自定义二进制，与 Phase 1 一致）
 
 #### 7.2 集成测试（`tests/cli_pbit.rs`，使用 `PgrCmd` 辅助）
 
-遵循 pgr 惯例：单文件 `tests/cli_pbit.rs`，测试数据放 `tests/pbit/`，用 `PgrCmd::new().args(&[...]).run()`。
+遵循 pgr 惯例：单文件 `tests/cli_pbit.rs`，用 `PgrCmd::new().args(&[...]).run()`。当前实现
+**21 个集成测试**，全部通过（运行 `cargo test --test cli_pbit` 验证）。测试数据采用
+`rand::StdRng` 生成确定性随机序列（`random_dna(len, seed)`）和派生 SNP 样本
+（`introduce_snps(seq, seed)`），无需外部测试数据文件；复用 `tests/pgr/pseudocat.fa`
+作为多段往返 smoke test。
 
-- [ ] 测试数据准备 — 优先复用现有材料，仅新建必需的派生样本：
+- [x] 测试数据准备 — 改为运行时生成确定性随机序列（避免新增测试数据文件）：
+  - `random_dna(len, seed)`：生成 ACGT 随机序列
+  - `introduce_snps(seq, seed)`：每 100 位引入一个 SNP
   - **复用** [tests/pgr/pseudocat.fa](file:///Volumes/ExtHome/Scripts/pgr/tests/pgr/pseudocat.fa)
-    作为主参考（1 contig `cat`，18803 bp，含小写 mask，无 N；> `segment_size`，测多段拼接）
-  - **复用** [tests/2bit/expected/testMask.fa](file:///Volumes/ExtHome/Scripts/pgr/tests/2bit/expected/testMask.fa)
-    + [tests/2bit/expected/testN.fa](file:///Volumes/ExtHome/Scripts/pgr/tests/2bit/expected/testN.fa)
-    作为补充参考（小规模 mask/N 处理往返测试）
-  - **复用** [tests/index/final.contigs.fa](file:///Volumes/ExtHome/Scripts/pgr/tests/index/final.contigs.fa)
-    作为多 contig 参考（72 contigs，测 Collection 多 contig 路径）
-  - **新建** `tests/pbit/sample_cat_snp.fa`：从 `pseudocat.fa` 派生（保持 contig 名 `cat`），
-    引入 ~1% SNP + 少量短 indel — 测 delta 压缩有效性（delta 应远小于原始序列）
-  - **新建** `tests/pbit/sample_cat_div.fa`：从 `pseudocat.fa` 派生（保持 contig 名 `cat`），
-    大段替换/缺失 — 测低相似度退化行为（delta 接近原始大小，不应 panic）
-  - **复用** [tests/pgr/pseudopig.fa](file:///Volumes/ExtHome/Scripts/pgr/tests/pgr/pseudopig.fa)
-    作为不匹配样本（contig 名 `pig1`/`pig2` ≠ `cat`）— 测不匹配 contig 处理
-    （参考 `toy_ex/c.fa`，确认 pbit 是跳过还是单独存储）
-  - **新建** `tests/pbit/sample_list.txt`：含 `sample_cat_snp`/`sample_cat_div`，每行一个样本名
-- [ ] `test_pbit_create_basic`：`pgr pbit create -r pseudocat.fa -i sample_cat_snp.fa -o out.pbit` → 文件存在、非空
-- [ ] `test_pbit_create_multiple_samples`：`-i sample_cat_snp.fa -i sample_cat_div.fa` → `stat --samples` 列出两个样本
-- [ ] `test_pbit_stat_overview`：`stat`（无 flag）→ stdout 含 `ref_group_count`/`sample_count`/`segment_size`/`kmer_len`/`min_match_len`
-- [ ] `test_pbit_stat_refs`：`stat --refs` → 列出参考 contig 名（`cat`）
-- [ ] `test_pbit_stat_samples`：`stat --samples` → 列出 `sample_cat_snp`/`sample_cat_div`
-- [ ] `test_pbit_stat_contigs`：`stat --contigs` → 列出所有样本的 contig；`stat --contigs -s sample_cat_snp` → 仅该样本的 contig
-- [ ] `test_pbit_to_fa_roundtrip`：`create` → `to-fa -o out_dir/` → 各 `out_dir/{sample}.fa` 与原始样本 FASTA 内容一致（按 contig 比对）
-- [ ] `test_pbit_range_full_contig`：`range out.pbit "cat"` → 每个含 `cat` 的样本输出一条 FASTA，序列与 `to-fa` 提取的 `cat` 一致
-- [ ] `test_pbit_range_slice`：`range out.pbit "cat:1-100"` → 输出切片序列正确（与 `pgr fa range` 对原始 FASTA 的切片比对）
-- [ ] `test_pbit_range_neg_strand`：`range out.pbit "cat(-):1-100"` → 输出为正向切片的反向互补
-- [ ] `test_pbit_range_multi_ranges`：多个区间参数 → 每个区间各样本各一条 FASTA
-- [ ] `test_pbit_range_multicontig`：用 `final.contigs.fa` 作参考，`range "k81_130" "k81_88:1-50"` → 多 contig 区间提取正确
-- [ ] `test_pbit_some_basic`：`some out.pbit sample_list.txt -o out.fa` → 仅含列表中样本的序列
-- [ ] `test_pbit_some_invert`：`some out.pbit sample_list.txt --invert -o out.fa` → 仅含列表外样本的序列
-- [ ] `test_pbit_append`：`create -r pseudocat.fa -i sample_cat_snp.fa -o out.pbit` → `append out.pbit -i sample_cat_div.fa` → `stat --samples` 列出两个样本
-- [ ] `test_pbit_append_overwrite`：`append out.pbit -i sample_cat_div.fa`（省略 `-o`）→ 原地修改，`stat --samples` 正确
-- [ ] `test_pbit_create_custom_params`：`-s 1024 -k 10 -l 15` → `stat` 输出对应参数值
-- [ ] `test_pbit_empty_contig`：参考含空 contig（长度 0）→ create 不 panic，range 返回空序列
-- [ ] `test_pbit_single_sample`：仅 1 个样本 → to-fa/range/some 均正常
-- [ ] `test_pbit_identical_samples`：两个相同样本 → delta 去重生效（`stat` 显示 delta 数 ≤ ref_group 数）
-- [ ] `test_pbit_no_match_contig`：`create -r pseudocat.fa -i pseudopig.fa` → 不 panic，
-  `stat --contigs -s pseudopig` 行为符合设计（跳过或单独存储，取决于 pbit 规格）
-- [ ] `test_pbit_mask_roundtrip`：用 `testMask.fa` 作参考 + 样本 → `to-fa` 提取后 mask 大小写保留一致
-- [ ] `test_pbit_n_roundtrip`：用 `testN.fa` 作参考 + 样本 → `to-fa` 提取后 N 位置一致
+    作为 `test_pbit_pseudocat_roundtrip` 的真实 FASTA smoke test（18803 bp，多段拼接）
+- [x] `test_pbit_create_basic`：`create -r ref.fa -i sample.fa -o out.pbit` → 文件存在、非空
+- [x] `test_pbit_stat_overview`：`stat`（无 flag）→ stdout 含 `Segment size`/`K-mer length`/
+  `Reference groups`/`Samples`/`Version`
+- [x] `test_pbit_stat_refs`：`stat --refs` → 列出参考 contig 名及段数
+- [x] `test_pbit_stat_samples`：`stat --samples` → 列出样本名
+- [x] `test_pbit_stat_contigs`：`stat --contigs` → 列出样本及其 contig
+- [x] `test_pbit_to_fa_roundtrip`：`create` → `to-fa -o out_dir/` → 各 `out_dir/{sample}.fa`
+  与原始样本 FASTA 内容一致（按 contig 比对）
+- [x] `test_pbit_range_full_contig`：`range out.pbit "chr1"` → 每个含 `chr1` 的样本输出一条 FASTA
+- [x] `test_pbit_range_slice`：`range out.pbit "chr1:1-100"` → 输出切片序列正确
+- [x] `test_pbit_range_neg_strand`：`range out.pbit "chr1(-):1-100"` → 输出为正向切片的反向互补
+- [x] `test_pbit_range_multi_ranges`：多个区间参数 → 每个区间各一条 FASTA
+- [x] `test_pbit_some_basic`：`some out.pbit list.txt -o out.fa` → 仅含列表中 contig 的序列
+- [x] `test_pbit_some_invert`：`some out.pbit list.txt --invert -o stdout` → 仅含列表外 contig
+- [ ] `test_pbit_range_multicontig`：用 `final.contigs.fa` 作参考的多 contig 区间提取 — 留待后续
+- [ ] `test_pbit_append`：依赖 `Compressor::open_for_append`，留待后续
+- [ ] `test_pbit_append_overwrite`：依赖 `Compressor::open_for_append`，留待后续
+- [x] `test_pbit_create_custom_params`：`-s 8192 -k 10 -l 15` → `stat` 输出对应参数值
+- [ ] `test_pbit_empty_contig`：参考含空 contig（长度 0）— 留待后续
+- [x] `test_pbit_single_sample`：`test_pbit_to_fa_single_sample` 覆盖（仅提取单个样本时 to-fa 正常）
+- [x] `test_pbit_identical_samples`：`test_pbit_identical_samples_dedup` 覆盖（两个相同样本用
+  `--name` TSV 区分 → delta 去重生效，两样本输出一致）
+- [x] `test_pbit_no_match_contig`：样本含未知 contig 名 → 不 panic，`stat` 显示样本数为 1
+- [ ] `test_pbit_mask_roundtrip`：mask 保留往返 — 留待后续（当前 pbit 设计参考层保留 N blocks
+  但 mask blocks 未完整应用）
+- [ ] `test_pbit_n_roundtrip`：用 `testN.fa` 作参考 + 样本 — 留待后续
+- [x] 额外：`test_pbit_multi_contig_reference`（3 contig 参考 → `stat --refs` 正确）
+- [x] 额外：`test_pbit_multi_segment_contig`（5000 bp 跨段 + 段边界 SNP → to-fa 往返一致）
+- [x] 额外：`test_pbit_with_snp_sample`（引入 SNP 的样本 → to-fa 往返一致）
+- [x] 额外：`test_pbit_create_with_name_tsv`（`--name` TSV 覆盖样本名）
+- [x] 额外：`test_pbit_pseudocat_roundtrip`（真实 FASTA smoke test，5 段拼接往返）
 
 #### 7.3 属性测试 / 随机往返
 
@@ -1125,7 +1126,10 @@ offset  size  field
 
 ## 当前状态
 
-- 规划中 — 尚未开始实现
+- Phase 0-7 完成（`pgr pbit` 命令族可用：`create`/`stat`/`range`/`some`/`to-fa`）
+- 53 个单元测试 + 21 个集成测试全部通过
+- 留待后续：`Compressor::open_for_append` + `pgr pbit append` 命令、属性测试、性能基准、
+  mask blocks 完整往返、多 contig 区间提取测试
 
 ## 参考资料
 

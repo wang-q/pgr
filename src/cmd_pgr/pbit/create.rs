@@ -1,0 +1,155 @@
+use anyhow::{Context, Result};
+use clap::{Arg, ArgAction, ArgMatches, Command};
+use pgr::libs::io::basename_or_err;
+use pgr::libs::pbit::compressor::Compressor;
+
+/// Build the clap subcommand for create.
+pub fn make_subcommand() -> Command {
+    Command::new("create")
+        .about("Creates a pbit archive from a reference FASTA and sample FASTA files")
+        .after_help(
+            r###"
+This command creates a new pbit archive. The reference FASTA is stored as
+standard 2bit records; each sample FASTA is LZ-diff encoded against the
+matching reference segment, flate2-compressed, and stored as delta entries.
+
+Notes:
+* Sample names are derived from the input FASTA basenames (use `--name` to
+  override with a TSV file of `name<TAB>path` lines)
+* Reference and sample FASTA files may be plain text or gzipped (.gz)
+* contigs in sample FASTA that do not match any reference contig are skipped
+
+Examples:
+1. Create a pbit archive with one sample:
+   pgr pbit create -r ref.fa -i sample1.fa -o out.pbit
+
+2. Create with multiple samples:
+   pgr pbit create -r ref.fa -i s1.fa -i s2.fa -i s3.fa -o out.pbit
+
+3. Custom segment size and k-mer length:
+   pgr pbit create -r ref.fa -i sample.fa -o out.pbit -s 8192 -k 15
+
+4. Provide sample names via a TSV file:
+   pgr pbit create -r ref.fa --name samples.tsv -o out.pbit
+"###,
+        )
+        .arg(
+            Arg::new("ref")
+                .long("ref")
+                .short('r')
+                .required(true)
+                .num_args(1)
+                .help("Reference FASTA file (plain or .gz)"),
+        )
+        .arg(
+            Arg::new("infiles")
+                .long("infile")
+                .short('i')
+                .required(false)
+                .num_args(1)
+                .action(ArgAction::Append)
+                .help("Sample FASTA file(s) (plain or .gz)"),
+        )
+        .arg(crate::cmd_pgr::args::outfile_arg_required())
+        .arg(
+            Arg::new("segment_size")
+                .long("segment-size")
+                .short('s')
+                .num_args(1)
+                .default_value("4096")
+                .value_parser(clap::value_parser!(usize))
+                .help("Reference segment size in bp (default: 4096)"),
+        )
+        .arg(
+            Arg::new("kmer_len")
+                .long("kmer-len")
+                .short('k')
+                .num_args(1)
+                .default_value("15")
+                .value_parser(clap::value_parser!(usize))
+                .help("K-mer length for LZ-diff hashing (default: 15)"),
+        )
+        .arg(
+            Arg::new("min_match_len")
+                .long("min-match-len")
+                .short('l')
+                .num_args(1)
+                .default_value("18")
+                .value_parser(clap::value_parser!(u32))
+                .help("Minimum match length for LZ-diff (default: 18)"),
+        )
+        .arg(
+            Arg::new("name")
+                .long("name")
+                .num_args(1)
+                .help("TSV file of `sample_name<TAB>fasta_path` lines (overrides -i)"),
+        )
+}
+
+/// Execute the create command.
+pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
+    let ref_fasta = args.get_one::<String>("ref").unwrap();
+    let outfile = args.get_one::<String>("outfile").unwrap();
+    let segment_size = *args.get_one::<usize>("segment_size").unwrap();
+    let kmer_len = *args.get_one::<usize>("kmer_len").unwrap();
+    let min_match_len = *args.get_one::<u32>("min_match_len").unwrap();
+
+    // Collect (sample_name, fasta_path) pairs.
+    let samples: Vec<(String, String)> = if let Some(name_tsv) = args.get_one::<String>("name") {
+        read_name_tsv(name_tsv)?
+    } else {
+        let infiles = args
+            .get_many::<String>("infiles")
+            .ok_or_else(|| anyhow::anyhow!("no input files: provide -i or --name"))?;
+        let mut pairs = Vec::new();
+        for path in infiles {
+            let name = basename_or_err(path)?;
+            pairs.push((name, path.clone()));
+        }
+        pairs
+    };
+
+    if samples.is_empty() {
+        anyhow::bail!("no sample FASTA files provided");
+    }
+
+    let mut comp = Compressor::create(outfile, ref_fasta, segment_size, kmer_len, min_match_len)
+        .with_context(|| format!("failed to create pbit archive: {}", outfile))?;
+    for (name, path) in &samples {
+        comp.append_sample(name, path)
+            .with_context(|| format!("failed to append sample '{}'", name))?;
+    }
+    comp.finish().context("failed to finalize pbit archive")?;
+
+    Ok(())
+}
+
+/// Read a TSV file of `sample_name<TAB>fasta_path` lines.
+/// Empty lines and lines starting with '#' are skipped.
+fn read_name_tsv(path: &str) -> Result<Vec<(String, String)>> {
+    let lines = pgr::libs::io::read_lines(path)
+        .with_context(|| format!("failed to read name TSV: {}", path))?;
+    let mut out = Vec::new();
+    for line in lines {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        let mut parts = trimmed.splitn(2, '\t');
+        let name = parts
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("missing sample name in line: {}", line))?
+            .trim()
+            .to_string();
+        let fasta_path = parts
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("missing FASTA path in line: {}", line))?
+            .trim()
+            .to_string();
+        if name.is_empty() || fasta_path.is_empty() {
+            anyhow::bail!("empty name or path in line: {}", line);
+        }
+        out.push((name, fasta_path));
+    }
+    Ok(out)
+}
