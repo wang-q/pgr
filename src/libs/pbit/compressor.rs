@@ -1014,6 +1014,7 @@ mod tests {
     }
 
     /// Build a single PAF line string.
+    #[allow(clippy::too_many_arguments)]
     fn paf_line(
         qname: &str,
         qlen: u32,

@@ -16,7 +16,7 @@ use coitrees::{BasicCOITree, Interval, IntervalTree};
 use indexmap::IndexMap;
 
 use crate::libs::paf::cigar::{extract_cigar, CigarOp};
-use crate::libs::paf::parser::parse_paf;
+use crate::libs::paf::parser::parse_paf_line;
 
 /// One PAF alignment stored in the query-side index. Holds the ORIGINAL
 /// (non-swapped) fields needed by pbit's CIGAR encoding path. `cigar` is
@@ -41,18 +41,45 @@ pub struct PafQueryIndex {
 }
 
 impl PafQueryIndex {
-    /// Build from a PAF reader. Records without `cg:Z:` CIGAR are skipped
-    /// (empty Vec returned by `extract_cigar`). Single-record parse errors
-    /// propagate from `parse_paf`; the caller decides whether to bail.
+    /// Build from a PAF reader. Lines are parsed one-by-one: a single
+    /// malformed record is skipped with `log::warn` (design §11 decision 8),
+    /// and records without `cg:Z:` CIGAR are skipped silently (decision 7).
+    /// If every non-empty line fails to parse (non-PAF format), bail.
+    /// An empty file yields an empty index (caller falls back to LZ-diff).
     pub fn build<R: BufRead>(reader: R) -> Result<Self> {
-        let records = parse_paf(reader).context("failed to parse PAF for pbit index")?;
         let mut names: IndexMap<String, u32> = IndexMap::new();
         let mut by_query: HashMap<u32, Vec<Interval<PafAlign>>> = HashMap::new();
+        let mut total_lines = 0usize;
+        let mut failed_count = 0usize;
 
-        for rec in &records {
-            let cigar = extract_cigar(&rec.tags)?;
+        for line in reader.lines() {
+            let line = line.context("failed to read PAF line")?;
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            total_lines += 1;
+            let rec = match parse_paf_line(&line) {
+                Ok(r) => r,
+                Err(e) => {
+                    log::warn!("skipping invalid PAF line: {}: {}", line, e);
+                    failed_count += 1;
+                    continue;
+                }
+            };
+            let cigar = match extract_cigar(&rec.tags) {
+                Ok(c) => c,
+                Err(e) => {
+                    log::warn!(
+                        "skipping PAF record with malformed CIGAR tag: {}: {}",
+                        line,
+                        e
+                    );
+                    failed_count += 1;
+                    continue;
+                }
+            };
             if cigar.is_empty() {
-                // No CIGAR tag: skip this record (design §11 decision 7).
+                // No CIGAR tag: skip this record (design §11 decision 7). Not a failure.
                 continue;
             }
 
@@ -75,6 +102,14 @@ impl PafQueryIndex {
                 rec.query_end as i32,
                 meta,
             ));
+        }
+
+        // All non-empty lines failed to parse → treat as non-PAF format (decision 8).
+        if total_lines > 0 && failed_count == total_lines {
+            anyhow::bail!(
+                "PAF file contains no valid records (all {} lines failed to parse)",
+                total_lines
+            );
         }
 
         // Build sorted interval trees (one per query_id).
@@ -126,6 +161,7 @@ mod tests {
     use super::*;
     use std::io::Cursor;
 
+    #[allow(clippy::too_many_arguments)]
     fn paf_line(
         qname: &str,
         qs: u32,
@@ -240,5 +276,34 @@ mod tests {
         };
         let hits = idx.query(999, 0, 100);
         assert!(hits.is_empty());
+    }
+
+    #[test]
+    fn test_build_skips_malformed_lines() -> Result<()> {
+        // 1 malformed line + 2 valid lines → 2 records indexed, no error.
+        let valid1 = paf_line("qry1", 0, 100, "+", "ref1", 0, 100, "100=");
+        let valid2 = paf_line("qry1", 100, 200, "+", "ref1", 100, 200, "100=");
+        let malformed = "not_a_paf_line_at_all";
+        let paf = format!("{}\n{}\n{}\n", valid1, malformed, valid2);
+        let idx = PafQueryIndex::build(Cursor::new(paf))?;
+        assert_eq!(idx.names.len(), 1);
+        let qid = idx.query_id("qry1").unwrap();
+        let hits = idx.query(qid, 0, 200);
+        assert_eq!(hits.len(), 2);
+        Ok(())
+    }
+
+    #[test]
+    fn test_build_all_malformed_bails() {
+        // All lines malformed → bail (non-PAF format).
+        let paf = "garbage_line_one\ngarbage_line_two\n";
+        match PafQueryIndex::build(Cursor::new(paf)) {
+            Ok(_) => panic!("expected error for all-malformed PAF"),
+            Err(e) => assert!(
+                e.to_string().contains("no valid records"),
+                "unexpected error: {}",
+                e
+            ),
+        }
     }
 }

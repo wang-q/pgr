@@ -1,7 +1,15 @@
 # pbit PAF 驱动模式设计提案
 
-> **状态**：设计提案，尚未实现。基于 [pbit.md](pbit.md) 的现有格式，探讨用 PAF 比对结果驱动
+> **状态**：已实现（Phase 8a–8e 全部完成）。基于 [pbit.md](pbit.md) 的现有格式，探讨用 PAF 比对结果驱动
 > LZ-diff 参考选择、以及直接存储 CIGAR 替代 LZ-diff 的可行性与方案。
+>
+> **实现索引**：CIGAR 编解码 [cigar_delta.rs](../../src/libs/pbit/cigar_delta.rs)；
+> 格式扩展 [format.rs](../../src/libs/pbit/format.rs)（`DeltaEncoding`/10 字节 `DeltaMeta`/16 字节 `SegmentDesc`，版本 1001）；
+> query-side 索引 [paf_index.rs](../../src/libs/pbit/paf_index.rs)（`PafQueryIndex`）；
+> 压缩端 [compressor.rs](../../src/libs/pbit/compressor.rs)（`append_sample_with_paf`）；
+> 解压端 [decompressor.rs](../../src/libs/pbit/decompressor.rs)（`decode_delta(&SegmentDesc)`）；
+> CLI [create.rs](../../src/cmd_pgr/pbit/create.rs) / [append.rs](../../src/cmd_pgr/pbit/append.rs)（`--paf`/`-p`、3 列 TSV）；
+> 集成测试 [cli_pbit_paf.rs](../../tests/cli_pbit_paf.rs)。
 
 ## 1. 动机
 

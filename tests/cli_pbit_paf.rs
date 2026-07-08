@@ -43,6 +43,7 @@ fn snp_of(b: u8) -> u8 {
 }
 
 /// Build a single PAF line with 12 mandatory fields + `cg:Z:` CIGAR tag.
+#[allow(clippy::too_many_arguments)]
 fn make_paf_line(
     qname: &str,
     qlen: u32,
@@ -605,4 +606,241 @@ fn test_pbit_paf_name_paf_mutex_error() {
         "expected stderr to mention 'mutually exclusive', got: {}",
         stderr
     );
+}
+
+// ── Test 10: CIGAR target crosses ref segment boundary → fallback ──────
+
+#[test]
+fn test_pbit_paf_target_crosses_seg_boundary_fallback() {
+    let temp = TempDir::new().unwrap();
+    let ref_fa = temp.path().join("ref.fa");
+    let sample_fa = temp.path().join("sample.fa");
+    let paf_path = temp.path().join("sample.paf");
+    let out_pbit = temp.path().join("out.pbit");
+
+    // ref = 8192 bp → exactly 2 segments (4096 + 4096). sample = ref[0,4096)
+    // with a SNP at 100 (1 segment). PAF CIGAR contains a 4096-bp deletion so
+    // the target projection [0,8192) crosses the ref segment boundary
+    // (seg 0 vs seg 1) → CIGAR path rejected → fallback to LZ-diff.
+    let ref_seq = random_dna(8192, 42);
+    write_fasta(&ref_fa, &[("chr1", std::str::from_utf8(&ref_seq).unwrap())]);
+
+    let mut sample = ref_seq[0..4096].to_vec();
+    sample[100] = snp_of(ref_seq[100]);
+    write_fasta(
+        &sample_fa,
+        &[("chr1", std::str::from_utf8(&sample).unwrap())],
+    );
+
+    // CIGAR: 2000= 4096D 2096= (query advances 4096, target advances 8192).
+    write_paf(
+        &paf_path,
+        &[make_paf_line(
+            "chr1",
+            4096,
+            0,
+            4096,
+            "+",
+            "chr1",
+            8192,
+            0,
+            8192,
+            "2000=4096D2096=",
+        )],
+    );
+
+    let got = create_and_extract(
+        temp.path(),
+        &ref_fa,
+        &out_pbit,
+        &[
+            "-i",
+            sample_fa.to_str().unwrap(),
+            "-p",
+            paf_path.to_str().unwrap(),
+        ],
+        "sample",
+    );
+    let expected: String = sample.iter().map(|&b| b as char).collect();
+    assert_eq!(got, expected);
+}
+
+// ── Test 11: rearrangement (sample contig aligned to different ref contig) ─
+
+#[test]
+fn test_pbit_paf_rearrangement() {
+    let temp = TempDir::new().unwrap();
+    let ref_fa = temp.path().join("ref.fa");
+    let sample_fa = temp.path().join("sample.fa");
+    let paf_path = temp.path().join("sample.paf");
+    let out_pbit = temp.path().join("out.pbit");
+
+    // ref: chr1 + chr2 (each 2000 bp, distinct sequences).
+    let chr1 = random_dna(2000, 42);
+    let chr2 = random_dna(2000, 99);
+    write_fasta(
+        &ref_fa,
+        &[
+            ("chr1", std::str::from_utf8(&chr1).unwrap()),
+            ("chr2", std::str::from_utf8(&chr2).unwrap()),
+        ],
+    );
+
+    // sample's chr1 is a copy of ref's chr2 (rearrangement: cross-contig).
+    let sample: Vec<u8> = chr2.clone();
+    write_fasta(
+        &sample_fa,
+        &[("chr1", std::str::from_utf8(&sample).unwrap())],
+    );
+
+    // PAF: sample chr1 → ref chr2 (cross-contig alignment).
+    write_paf(
+        &paf_path,
+        &[make_paf_line(
+            "chr1", 2000, 0, 2000, "+", "chr2", 2000, 0, 2000, "2000=",
+        )],
+    );
+
+    let got = create_and_extract(
+        temp.path(),
+        &ref_fa,
+        &out_pbit,
+        &[
+            "-i",
+            sample_fa.to_str().unwrap(),
+            "-p",
+            paf_path.to_str().unwrap(),
+        ],
+        "sample",
+    );
+    let expected: String = sample.iter().map(|&b| b as char).collect();
+    assert_eq!(got, expected);
+}
+
+// ── Test 12: PAF record without CIGAR tag → skipped (decision 7) ───────
+
+#[test]
+fn test_pbit_paf_record_without_cigar_skipped() {
+    let temp = TempDir::new().unwrap();
+    let ref_fa = temp.path().join("ref.fa");
+    let sample_fa = temp.path().join("sample.fa");
+    let paf_path = temp.path().join("sample.paf");
+    let out_pbit = temp.path().join("out.pbit");
+
+    let ref_seq = random_dna(2000, 42);
+    write_fasta(&ref_fa, &[("chr1", std::str::from_utf8(&ref_seq).unwrap())]);
+
+    let mut sample = ref_seq.clone();
+    sample[100] = snp_of(ref_seq[100]);
+    write_fasta(
+        &sample_fa,
+        &[("chr1", std::str::from_utf8(&sample).unwrap())],
+    );
+
+    // Line 1: no cg:Z: tag → skipped (decision 7). Covers [0,1000) only.
+    let no_cigar_line = "chr1\t2000\t0\t1000\t+\tchr1\t2000\t0\t1000\t900\t1000\t60\tgi:f:0.9";
+    // Line 2: valid CIGAR covering full sample [0,2000).
+    let cigar_line = make_paf_line(
+        "chr1",
+        2000,
+        0,
+        2000,
+        "+",
+        "chr1",
+        2000,
+        0,
+        2000,
+        "100=1X1899=",
+    );
+    write_paf(&paf_path, &[no_cigar_line.to_string(), cigar_line]);
+
+    let got = create_and_extract(
+        temp.path(),
+        &ref_fa,
+        &out_pbit,
+        &[
+            "-i",
+            sample_fa.to_str().unwrap(),
+            "-p",
+            paf_path.to_str().unwrap(),
+        ],
+        "sample",
+    );
+    let expected: String = sample.iter().map(|&b| b as char).collect();
+    assert_eq!(got, expected);
+}
+
+// ── Test 13: malformed PAF line skipped with warn (decision 8) ─────────
+
+#[test]
+fn test_pbit_paf_malformed_line_skipped() {
+    let temp = TempDir::new().unwrap();
+    let ref_fa = temp.path().join("ref.fa");
+    let sample_fa = temp.path().join("sample.fa");
+    let paf_path = temp.path().join("sample.paf");
+    let out_pbit = temp.path().join("out.pbit");
+
+    let ref_seq = random_dna(2000, 42);
+    write_fasta(&ref_fa, &[("chr1", std::str::from_utf8(&ref_seq).unwrap())]);
+
+    let mut sample = ref_seq.clone();
+    sample[100] = snp_of(ref_seq[100]);
+    write_fasta(
+        &sample_fa,
+        &[("chr1", std::str::from_utf8(&sample).unwrap())],
+    );
+
+    // Line 1: malformed (only 3 fields) → skipped with warn (decision 8).
+    let malformed = "chr1\t1000\tjunk".to_string();
+    // Line 2: valid CIGAR covering full sample.
+    let valid = make_paf_line(
+        "chr1",
+        2000,
+        0,
+        2000,
+        "+",
+        "chr1",
+        2000,
+        0,
+        2000,
+        "100=1X1899=",
+    );
+    write_paf(&paf_path, &[malformed, valid]);
+
+    // Run create and capture stderr to verify the warn was emitted.
+    let (_stdout, stderr) = PgrCmd::new()
+        .args(&[
+            "pbit",
+            "create",
+            "-r",
+            ref_fa.to_str().unwrap(),
+            "-i",
+            sample_fa.to_str().unwrap(),
+            "-p",
+            paf_path.to_str().unwrap(),
+            "-o",
+            out_pbit.to_str().unwrap(),
+        ])
+        .run();
+    assert!(
+        stderr.contains("skipping invalid PAF line"),
+        "expected warn in stderr, got: {}",
+        stderr
+    );
+
+    // Extract and verify roundtrip.
+    let out_dir = temp.path().join("outdir");
+    PgrCmd::new()
+        .args(&[
+            "pbit",
+            "to-fa",
+            out_pbit.to_str().unwrap(),
+            "-o",
+            out_dir.to_str().unwrap(),
+        ])
+        .run();
+
+    let got = read_extracted_fa(&out_dir.join("sample.fa"));
+    let expected: String = sample.iter().map(|&b| b as char).collect();
+    assert_eq!(got, expected);
 }
