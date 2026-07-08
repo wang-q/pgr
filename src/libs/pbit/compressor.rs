@@ -579,14 +579,28 @@ impl<W: Write + Seek> Compressor<W> {
             return Ok(false);
         }
 
-        // 5. Slice CIGAR to [seg_start, seg_end) and project to target axis.
-        let (sliced_ops, target_start, target_end) = slice_cigar_by_query(
-            &best.cigar,
-            best.query_start,
-            best.target_start,
-            seg_start,
-            seg_end,
-        );
+        // 5. Slice CIGAR to the segment interval and project to the target
+        // axis. For '-' strand the CIGAR describes RC(query) vs forward
+        // (target): CIGAR op 0 corresponds to RC(query) position 0 (= forward
+        // query_end-1), and the CIGAR traverses forward query coords from
+        // high to low. Convert forward [seg_start, seg_end) to RC coords
+        // [query_end - seg_end, query_end - seg_start) and slice with
+        // rec_qs = 0 (CIGAR origin = RC(query) position 0). For '+' strand
+        // the CIGAR traverses forward query coords low→high, so forward
+        // coords are used directly with rec_qs = query_start.
+        let (sliced_ops, target_start, target_end) = if best.strand == '+' {
+            slice_cigar_by_query(
+                &best.cigar,
+                best.query_start,
+                best.target_start,
+                seg_start,
+                seg_end,
+            )
+        } else {
+            let rc_start = best.query_end - seg_end;
+            let rc_end = best.query_end - seg_start;
+            slice_cigar_by_query(&best.cigar, 0, best.target_start, rc_start, rc_end)
+        };
         if sliced_ops.is_empty() {
             return Ok(false);
         }

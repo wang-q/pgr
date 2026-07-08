@@ -844,3 +844,140 @@ fn test_pbit_paf_malformed_line_skipped() {
     let expected: String = sample.iter().map(|&b| b as char).collect();
     assert_eq!(got, expected);
 }
+
+// ── Test 14: delta_cache key includes ref_start/ref_end (Bug 1) ────────
+//
+// Two sample contigs align to different sub-intervals of the SAME ref
+// segment with identical CIGAR (`500=`) → packed_data dedup gives them
+// the same delta_id, but their ref_start/ref_end differ. Without
+// ref_start/ref_end in the cache key, the second decode hits the cache
+// and returns the first segment's bytes.
+
+#[test]
+fn test_pbit_paf_cache_key_ref_start_ref_end() {
+    let temp = TempDir::new().unwrap();
+    let ref_fa = temp.path().join("ref.fa");
+    let sa_fa = temp.path().join("sA.fa");
+    let sa_paf = temp.path().join("sA.paf");
+    let sb_fa = temp.path().join("sB.fa");
+    let sb_paf = temp.path().join("sB.paf");
+    let out_pbit = temp.path().join("out.pbit");
+
+    // ref = 1000 bp (1 ref segment, segment_size default 4096).
+    let ref_seq = random_dna(1000, 7);
+    write_fasta(
+        &ref_fa,
+        &[("chr1", std::str::from_utf8(&ref_seq).unwrap())],
+    );
+
+    // sA = ref[0..500], aligns to chr1[0..500) with CIGAR 500=.
+    // Sample contig name must match a reference contig name (pbit looks up
+    // ref groups by sample contig name), so both samples use "chr1".
+    let sa: Vec<u8> = ref_seq[0..500].to_vec();
+    write_fasta(&sa_fa, &[("chr1", std::str::from_utf8(&sa).unwrap())]);
+    write_paf(
+        &sa_paf,
+        &[make_paf_line(
+            "chr1", 500, 0, 500, "+", "chr1", 1000, 0, 500, "500=",
+        )],
+    );
+
+    // sB = ref[500..1000], aligns to chr1[500..1000) with CIGAR 500=.
+    let sb: Vec<u8> = ref_seq[500..1000].to_vec();
+    write_fasta(&sb_fa, &[("chr1", std::str::from_utf8(&sb).unwrap())]);
+    write_paf(
+        &sb_paf,
+        &[make_paf_line(
+            "chr1", 500, 0, 500, "+", "chr1", 1000, 500, 1000, "500=",
+        )],
+    );
+
+    PgrCmd::new()
+        .args(&[
+            "pbit",
+            "create",
+            "-r",
+            ref_fa.to_str().unwrap(),
+            "-i",
+            sa_fa.to_str().unwrap(),
+            "-p",
+            sa_paf.to_str().unwrap(),
+            "-i",
+            sb_fa.to_str().unwrap(),
+            "-p",
+            sb_paf.to_str().unwrap(),
+            "-o",
+            out_pbit.to_str().unwrap(),
+        ])
+        .run();
+
+    let out_dir = temp.path().join("outdir");
+    PgrCmd::new()
+        .args(&[
+            "pbit",
+            "to-fa",
+            out_pbit.to_str().unwrap(),
+            "-o",
+            out_dir.to_str().unwrap(),
+        ])
+        .run();
+
+    let got_sa = read_extracted_fa(&out_dir.join("sA.fa"));
+    let expected_sa: String = sa.iter().map(|&b| b as char).collect();
+    assert_eq!(got_sa, expected_sa, "sA mismatch");
+
+    let got_sb = read_extracted_fa(&out_dir.join("sB.fa"));
+    let expected_sb: String = sb.iter().map(|&b| b as char).collect();
+    assert_eq!(got_sb, expected_sb, "sB mismatch (cache key bug)");
+}
+
+// ── Test 15: - strand multi-segment roundtrip (Bug 2) ──────────────────
+//
+// ref = 8192 bp → 2 ref segments (segment_size 4096). sample = RC(ref).
+// PAF strand='-', CIGAR='8192='. The CIGAR describes RC(query) vs ref;
+// forward query [0,4096) maps to RC(query) [4096,8192). Without
+// converting forward→RC coords, slice_cigar_by_query assigns the wrong
+// CIGAR slice and target range to each segment, corrupting the `=` ops.
+
+#[test]
+fn test_pbit_paf_minus_strand_multi_segment() {
+    let temp = TempDir::new().unwrap();
+    let ref_fa = temp.path().join("ref.fa");
+    let sample_fa = temp.path().join("sample.fa");
+    let paf_path = temp.path().join("sample.paf");
+    let out_pbit = temp.path().join("out.pbit");
+
+    let ref_seq = random_dna(8192, 42);
+    write_fasta(
+        &ref_fa,
+        &[("chr1", std::str::from_utf8(&ref_seq).unwrap())],
+    );
+
+    let sample: Vec<u8> = pgr::libs::nt::rev_comp(&ref_seq).collect();
+    write_fasta(
+        &sample_fa,
+        &[("chr1", std::str::from_utf8(&sample).unwrap())],
+    );
+
+    write_paf(
+        &paf_path,
+        &[make_paf_line(
+            "chr1", 8192, 0, 8192, "-", "chr1", 8192, 0, 8192, "8192=",
+        )],
+    );
+
+    let got = create_and_extract(
+        temp.path(),
+        &ref_fa,
+        &out_pbit,
+        &[
+            "-i",
+            sample_fa.to_str().unwrap(),
+            "-p",
+            paf_path.to_str().unwrap(),
+        ],
+        "sample",
+    );
+    let expected: String = sample.iter().map(|&b| b as char).collect();
+    assert_eq!(got, expected, "minus-strand multi-segment mismatch");
+}

@@ -46,8 +46,12 @@ pub struct Decompressor<R: Read + Seek> {
     delta_offsets: Vec<Vec<u64>>,
     /// LRU cache: ref_group_id → decoded reference segment DNA (ASCII).
     ref_cache: LruCache<u32, Vec<u8>>,
-    /// LRU cache: (ref_group_id, delta_id) → decoded raw sample segment.
-    delta_cache: LruCache<(u32, u32), Vec<u8>>,
+    /// LRU cache: (ref_group_id, delta_id, ref_start, ref_end) → decoded raw
+    /// sample segment. ref_start/ref_end are part of the key because
+    /// CIGAR-mode deltas decode against a ref slice [ref_start, ref_end); two
+    /// segments sharing a delta_id (via packed_data dedup) but with different
+    /// ref slices produce different outputs.
+    delta_cache: LruCache<(u32, u32, u32, u32), Vec<u8>>,
     min_match_len: u32,
 }
 
@@ -264,7 +268,7 @@ impl<R: Read + Seek> Decompressor<R> {
     /// LZ-diff uses `flate2::read::GzDecoder` then `Segment::get`; CIGAR uses
     /// `unpack_cigar` (which includes its own gzip decompression).
     fn decode_delta(&mut self, seg: &SegmentDesc) -> Result<Vec<u8>> {
-        let key = (seg.ref_group_id, seg.delta_id);
+        let key = (seg.ref_group_id, seg.delta_id, seg.ref_start, seg.ref_end);
         if let Some(cached) = self.delta_cache.get(&key) {
             return Ok(cached.clone());
         }
