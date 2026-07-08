@@ -935,37 +935,37 @@ offset  size  field
 
 ### Phase 0: 共享函数提取（前置）
 
-- [ ] `libs/fmt/twobit.rs`: 提取 `read_2bit_record` / `write_2bit_record` 为 `pub` 模块级函数
-- [ ] `libs/fmt/twobit.rs`: `TwoBitFile::read_sequence` 改为 `seek(offset) → read_2bit_record` 薄壳
-- [ ] `libs/fmt/twobit.rs`: `TwoBitWriter::write` 改为循环调用 `write_2bit_record`
-- [ ] `libs/fmt/twobit.rs`: `read_u32` / `read_u64` / `read_u32_vec` 改为 `pub`（供 pbit 复用，
+- [x] `libs/fmt/twobit.rs`: 提取 `read_2bit_record` / `write_2bit_record` 为 `pub` 模块级函数
+- [x] `libs/fmt/twobit.rs`: `TwoBitFile::read_sequence` 改为 `seek(offset) → read_2bit_record` 薄壳
+- [x] `libs/fmt/twobit.rs`: `TwoBitWriter::write` 改为循环调用 `write_2bit_record`
+- [x] `libs/fmt/twobit.rs`: `read_u32` / `read_u64` / `read_u32_vec` 改为 `pub`（供 pbit 复用，
   pbit 统一小端，调用时 `is_swapped` 固定传 `false`；见 §复用-2.5）
-- [ ] `libs/fmt/twobit.rs`: 为 `read_2bit_record` / `write_2bit_record` 添加独立单元测试
+- [x] `libs/fmt/twobit.rs`: 为 `read_2bit_record` / `write_2bit_record` 添加独立单元测试
   （含 mask/N-block/区间切片往返），不依赖 `TwoBitFile`/`TwoBitWriter` 薄壳
-- [ ] 验证：现有 `2bit` 命令的 `cargo test` 全部通过（行为不变）
+- [x] 验证：现有 `2bit` 命令的 `cargo test` 全部通过（行为不变）
 
 ### Phase 1: 文件格式 I/O
 
-- [ ] `format.rs`: `PBIT_MAGIC` / 版本常量、`PbitHeader` / `PbitFooter` 结构
-- [ ] `format.rs`: Header 读写（固定 32 字节）、Footer 读写（固定 24 字节）
-- [ ] `format.rs`: Reference Index 读写（`RefGroupEntry` 列表 + 段偏移）
-- [ ] `format.rs`: `DeltaEntry` 头部读写（`is_rev_comp` 1B + `raw_length` 4B + `packed_size` 4B，
-  共 9 字节；`packed_data` 体由 Phase 3 填充，本阶段只定义头部格式，见 §文件格式规范-Delta Data）
-- [ ] `format.rs`: Sample Index 容器读写（`ref_group_count` / `delta_count` 计数字段 + 顺序结构，
+- [x] `format.rs`: `PBIT_MAGIC` / 版本常量、`PbitHeader` / `PbitFooter` 结构
+- [x] `format.rs`: Header 读写（固定 32 字节）、Footer 读写（固定 24 字节）
+- [x] `format.rs`: Reference Index 读写（`RefGroupEntry` 列表 + 段偏移）
+- [x] `format.rs`: `DeltaEntry` 头部读写（`is_rev_comp` 1B + `raw_length` 4B + `packed_size` 4B，
+  共 9 字节；`packed_data` 体由 Phase 5 填充，本阶段只定义头部格式，见 §文件格式规范-Delta Data）
+- [x] `format.rs`: Sample Index 容器读写（`ref_group_count` / `delta_count` 计数字段 + 顺序结构，
   供 Phase 5 顺序扫描构建 `delta_offsets`）
-- [ ] `format.rs`: 字符串读写（u32 len + UTF-8 bytes）
-- [ ] 验证：能读写一个仅含 Header + 空 Reference Records + Footer 的空 `.pbit` 文件，往返一致
+- [x] `format.rs`: 字符串读写（u32 len + UTF-8 bytes）
+- [x] 验证：能读写一个仅含 Header + 空 Reference Records + Footer 的空 `.pbit` 文件，往返一致
 
 ### Phase 2: LZ-diff 算法
 
-- [ ] `lz_diff.rs`: 2-bit 编码/解码（ACGT→0123, N→4）
-- [ ] `lz_diff.rs`: `prepare`（2-bit 编码 + 存储参考 + 填充 key_len 个 invalid_symbol）
-- [ ] `lz_diff.rs`: `prepare_index`（构建哈希表，16/32-bit 自适应，sparse 模式；仅 encode 需要，
+- [x] `lz_diff.rs`: 2-bit 编码/解码（ACGT→0123, N→4）
+- [x] `lz_diff.rs`: `prepare`（2-bit 编码 + 存储参考 + 填充 key_len 个 invalid_symbol）
+- [x] `lz_diff.rs`: `prepare_index`（构建哈希表，16/32-bit 自适应，sparse 模式；仅 encode 需要，
   decode 跳过以节省开销）
-- [ ] `lz_diff.rs`: `encode`（V2：match/literal/N-run + '!' back-ref + end-match 优化）
-- [ ] `lz_diff.rs`: `decode`（V2：用 `self.reference` 解析编码 + 重建序列，不传外部 reference）
-- [ ] `lz_diff.rs`: `estimate`（仅计算编码大小，不生成输出）
-- [ ] 验证：编码后解码，序列与原始一致
+- [x] `lz_diff.rs`: `encode`（V2：match/literal/N-run + '!' back-ref + end-match 优化）
+- [x] `lz_diff.rs`: `decode`（V2：用 `self.reference` 解析编码 + 重建序列，不传外部 reference）
+- [x] `lz_diff.rs`: `estimate`（仅计算编码大小，不生成输出）
+- [x] 验证：编码后解码，序列与原始一致
 
 ### Phase 3: 段级 delta 压缩
 

@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Result};
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{BufReader, Read, Seek, SeekFrom};
+use std::io::{BufReader, Read, Seek, SeekFrom, Write};
 use std::ops::{Bound, Deref, Range, RangeBounds};
 use std::path::Path;
 
@@ -165,6 +165,116 @@ impl Blocks {
     }
 }
 
+/// Read a single 2bit record from the current reader position and return the
+/// decoded DNA string with masks applied. Reused by `TwoBitFile` and `pbit::Decompressor`.
+/// The reader must be positioned at the start of the record (dna_size field).
+pub fn read_2bit_record<R: Read + Seek>(
+    reader: &mut R,
+    is_swapped: bool,
+    start: Option<usize>,
+    end: Option<usize>,
+    no_mask: bool,
+) -> Result<String> {
+    let dna_size = read_u32(reader, is_swapped)? as usize;
+
+    let n_blocks = read_blocks(reader, is_swapped)?;
+    let mask_blocks = read_blocks(reader, is_swapped)?;
+
+    let _reserved = read_u32(reader, is_swapped)?;
+
+    let start_pos = start.unwrap_or(0);
+    let end_pos = end.unwrap_or(dna_size).min(dna_size);
+
+    if start_pos >= end_pos {
+        return Ok(String::new());
+    }
+
+    // Currently at the start of packed DNA.
+    let packed_dna_start = reader.stream_position()?;
+
+    let first_byte_idx = start_pos / 4;
+    let last_byte_idx = (end_pos - 1) / 4;
+
+    reader.seek(SeekFrom::Start(packed_dna_start + first_byte_idx as u64))?;
+
+    let mut packed_buf = vec![0u8; last_byte_idx - first_byte_idx + 1];
+    reader.read_exact(&mut packed_buf)?;
+
+    let table = [b'T', b'C', b'A', b'G'];
+
+    let mut seq_vec = Vec::with_capacity(end_pos - start_pos);
+    for i in start_pos..end_pos {
+        let global_byte_idx = i / 4;
+        let local_byte_idx = global_byte_idx - first_byte_idx;
+        let bit_offset = 6 - 2 * (i % 4); // 0->6, 1->4, 2->2, 3->0
+
+        let byte = packed_buf[local_byte_idx];
+        let val = (byte >> bit_offset) & 3;
+        seq_vec.push(table[val as usize]);
+    }
+
+    n_blocks.apply_hard_mask(&mut seq_vec, start_pos);
+
+    if !no_mask {
+        mask_blocks.apply_soft_mask(&mut seq_vec, start_pos);
+    }
+
+    Ok(String::from_utf8(seq_vec).unwrap())
+}
+
+/// Write a single 2bit record (dna_size + n_blocks + mask_blocks + reserved +
+/// packed_dna) to the writer. Reused by `TwoBitWriter` and `pbit::Compressor`.
+pub fn write_2bit_record<W: Write>(writer: &mut W, dna: &str, do_mask: bool) -> Result<()> {
+    let (packed, n_blocks, mask_blocks, dna_size) = Blocks::from_dna(dna, do_mask);
+
+    writer.write_all(&dna_size.to_ne_bytes())?;
+
+    // Write N Blocks
+    writer.write_all(&(n_blocks.0.len() as u32).to_ne_bytes())?;
+    for block in &n_blocks.0 {
+        writer.write_all(&(block.start as u32).to_ne_bytes())?;
+    }
+    for block in &n_blocks.0 {
+        writer.write_all(&((block.end - block.start) as u32).to_ne_bytes())?;
+    }
+
+    // Write Mask Blocks
+    writer.write_all(&(mask_blocks.0.len() as u32).to_ne_bytes())?;
+    for block in &mask_blocks.0 {
+        writer.write_all(&(block.start as u32).to_ne_bytes())?;
+    }
+    for block in &mask_blocks.0 {
+        writer.write_all(&((block.end - block.start) as u32).to_ne_bytes())?;
+    }
+
+    // Reserved
+    writer.write_all(&0u32.to_ne_bytes())?;
+
+    // Packed DNA
+    writer.write_all(&packed)?;
+
+    Ok(())
+}
+
+/// Read a `Blocks` section (count + starts + sizes) from the reader.
+pub fn read_blocks<R: Read>(reader: &mut R, is_swapped: bool) -> Result<Blocks> {
+    let count = read_u32(reader, is_swapped)? as usize;
+    let starts = read_u32_vec(reader, count, is_swapped)?;
+    let sizes = read_u32_vec(reader, count, is_swapped)?;
+
+    let blocks: Vec<Block> = starts
+        .into_iter()
+        .zip(sizes)
+        .map(|(start, size)| {
+            let s = start as usize;
+            let e = s + size as usize;
+            s..e
+        })
+        .collect();
+
+    Ok(Blocks(blocks))
+}
+
 pub struct TwoBitWriter<W> {
     writer: W,
 }
@@ -233,41 +343,7 @@ impl<W: std::io::Write> TwoBitWriter<W> {
 
         // 3. Write Records
         for (_, dna) in sequences.iter() {
-            // Verify we are at the correct offset (optional debug check)
-            // let pos = self.writer.stream_position()?;
-            // assert_eq!(pos, record_offsets[i]);
-
-            let (packed, n_blocks, mask_blocks, dna_size) = Blocks::from_dna(dna, do_mask);
-
-            self.writer.write_all(&dna_size.to_ne_bytes())?;
-
-            // Write N Blocks
-            self.writer
-                .write_all(&(n_blocks.0.len() as u32).to_ne_bytes())?;
-            for block in &n_blocks.0 {
-                self.writer.write_all(&(block.start as u32).to_ne_bytes())?;
-            }
-            for block in &n_blocks.0 {
-                self.writer
-                    .write_all(&((block.end - block.start) as u32).to_ne_bytes())?;
-            }
-
-            // Write Mask Blocks
-            self.writer
-                .write_all(&(mask_blocks.0.len() as u32).to_ne_bytes())?;
-            for block in &mask_blocks.0 {
-                self.writer.write_all(&(block.start as u32).to_ne_bytes())?;
-            }
-            for block in &mask_blocks.0 {
-                self.writer
-                    .write_all(&((block.end - block.start) as u32).to_ne_bytes())?;
-            }
-
-            // Reserved
-            self.writer.write_all(&0u32.to_ne_bytes())?;
-
-            // Packed DNA
-            self.writer.write_all(&packed)?;
+            write_2bit_record(&mut self.writer, dna, do_mask)?;
         }
 
         Ok(())
@@ -364,21 +440,7 @@ impl<R: Read + Seek> TwoBitFile<R> {
     }
 
     fn read_blocks(&mut self) -> Result<Blocks> {
-        let count = read_u32(&mut self.reader, self.is_swapped)? as usize;
-        let starts = read_u32_vec(&mut self.reader, count, self.is_swapped)?;
-        let sizes = read_u32_vec(&mut self.reader, count, self.is_swapped)?;
-
-        let blocks: Vec<Block> = starts
-            .into_iter()
-            .zip(sizes)
-            .map(|(start, size)| {
-                let s = start as usize;
-                let e = s + size as usize;
-                s..e
-            })
-            .collect();
-
-        Ok(Blocks(blocks))
+        read_blocks(&mut self.reader, self.is_swapped)
     }
 
     pub fn read_sequence(
@@ -395,59 +457,7 @@ impl<R: Read + Seek> TwoBitFile<R> {
 
         self.reader.seek(SeekFrom::Start(offset))?;
 
-        let dna_size = read_u32(&mut self.reader, self.is_swapped)? as usize;
-
-        let n_blocks = self.read_blocks()?;
-        let mask_blocks = self.read_blocks()?;
-
-        let _reserved = read_u32(&mut self.reader, self.is_swapped)?;
-
-        let start_pos = start.unwrap_or(0);
-        let end_pos = end.unwrap_or(dna_size).min(dna_size);
-
-        if start_pos >= end_pos {
-            return Ok(String::new());
-        }
-
-        // Calculate packed DNA offset
-        // We are currently at the start of packed DNA
-        let packed_dna_start = self.reader.stream_position()?;
-
-        let mut seq_vec = Vec::with_capacity(end_pos - start_pos);
-
-        // We need to read from start_pos to end_pos
-        // Packed 4 bases per byte.
-        // Byte index for base i is i / 4.
-
-        let first_byte_idx = start_pos / 4;
-        let last_byte_idx = (end_pos - 1) / 4;
-
-        self.reader
-            .seek(SeekFrom::Start(packed_dna_start + first_byte_idx as u64))?;
-
-        let mut packed_buf = vec![0u8; last_byte_idx - first_byte_idx + 1];
-        self.reader.read_exact(&mut packed_buf)?;
-
-        let table = [b'T', b'C', b'A', b'G'];
-
-        for i in start_pos..end_pos {
-            let global_byte_idx = i / 4;
-            let local_byte_idx = global_byte_idx - first_byte_idx;
-            let bit_offset = 6 - 2 * (i % 4); // 0->6, 1->4, 2->2, 3->0
-
-            let byte = packed_buf[local_byte_idx];
-            let val = (byte >> bit_offset) & 3;
-            seq_vec.push(table[val as usize]);
-        }
-
-        // Apply masks
-        n_blocks.apply_hard_mask(&mut seq_vec, start_pos);
-
-        if !no_mask {
-            mask_blocks.apply_soft_mask(&mut seq_vec, start_pos);
-        }
-
-        Ok(String::from_utf8(seq_vec).unwrap())
+        read_2bit_record(&mut self.reader, self.is_swapped, start, end, no_mask)
     }
 
     pub fn get_sequence_len(&mut self, name: &str) -> Result<usize> {
@@ -509,7 +519,7 @@ impl<R: Read + Seek> crate::libs::io::SequenceReader for TwoBitFile<R> {
     }
 }
 
-fn read_u32<R: Read>(reader: &mut R, is_swapped: bool) -> Result<u32> {
+pub fn read_u32<R: Read>(reader: &mut R, is_swapped: bool) -> Result<u32> {
     let mut buf = [0u8; 4];
     reader.read_exact(&mut buf)?;
     let val = u32::from_ne_bytes(buf);
@@ -520,7 +530,7 @@ fn read_u32<R: Read>(reader: &mut R, is_swapped: bool) -> Result<u32> {
     }
 }
 
-fn read_u64<R: Read>(reader: &mut R, is_swapped: bool) -> Result<u64> {
+pub fn read_u64<R: Read>(reader: &mut R, is_swapped: bool) -> Result<u64> {
     let mut buf = [0u8; 8];
     reader.read_exact(&mut buf)?;
     let val = u64::from_ne_bytes(buf);
@@ -531,7 +541,7 @@ fn read_u64<R: Read>(reader: &mut R, is_swapped: bool) -> Result<u64> {
     }
 }
 
-fn read_u32_vec<R: Read>(reader: &mut R, count: usize, is_swapped: bool) -> Result<Vec<u32>> {
+pub fn read_u32_vec<R: Read>(reader: &mut R, count: usize, is_swapped: bool) -> Result<Vec<u32>> {
     let mut vec = Vec::with_capacity(count);
     for _ in 0..count {
         vec.push(read_u32(reader, is_swapped)?);
@@ -718,6 +728,74 @@ mod tests {
         let s2 = reader.read_sequence("seq2", None, None, false)?;
         assert_eq!(s2, "aaNgg");
 
+        Ok(())
+    }
+
+    // --- Independent tests for shared read_2bit_record / write_2bit_record ---
+
+    #[test]
+    fn test_record_roundtrip_acgt() -> Result<()> {
+        let dna = "TCAGTCAG";
+        let mut buf = Vec::new();
+        write_2bit_record(&mut buf, dna, false)?;
+
+        let mut cursor = Cursor::new(buf);
+        let seq = read_2bit_record(&mut cursor, false, None, None, false)?;
+        assert_eq!(seq, dna);
+        Ok(())
+    }
+
+    #[test]
+    fn test_record_roundtrip_with_mask() -> Result<()> {
+        let dna = "aaGTcc"; // lowercase = soft mask
+        let mut buf = Vec::new();
+        write_2bit_record(&mut buf, dna, true)?;
+
+        let mut cursor = Cursor::new(buf.clone());
+        // with mask applied
+        let seq = read_2bit_record(&mut cursor, false, None, None, false)?;
+        assert_eq!(seq, dna);
+
+        let mut cursor = Cursor::new(buf);
+        // no mask -> uppercase
+        let seq_no_mask = read_2bit_record(&mut cursor, false, None, None, true)?;
+        assert_eq!(seq_no_mask, "AAGTCC");
+        Ok(())
+    }
+
+    #[test]
+    fn test_record_roundtrip_with_n() -> Result<()> {
+        let dna = "ACGTNNNNTTTT";
+        let mut buf = Vec::new();
+        write_2bit_record(&mut buf, dna, false)?;
+
+        let mut cursor = Cursor::new(buf);
+        let seq = read_2bit_record(&mut cursor, false, None, None, false)?;
+        assert_eq!(seq, dna);
+        Ok(())
+    }
+
+    #[test]
+    fn test_record_slice() -> Result<()> {
+        let dna = "ACGTACGTACGT";
+        let mut buf = Vec::new();
+        write_2bit_record(&mut buf, dna, false)?;
+
+        let mut cursor = Cursor::new(buf);
+        let seq = read_2bit_record(&mut cursor, false, Some(2), Some(8), false)?;
+        assert_eq!(seq, &dna[2..8]);
+        Ok(())
+    }
+
+    #[test]
+    fn test_record_empty_slice() -> Result<()> {
+        let dna = "ACGT";
+        let mut buf = Vec::new();
+        write_2bit_record(&mut buf, dna, false)?;
+
+        let mut cursor = Cursor::new(buf);
+        let seq = read_2bit_record(&mut cursor, false, Some(2), Some(2), false)?;
+        assert_eq!(seq, "");
         Ok(())
     }
 }
