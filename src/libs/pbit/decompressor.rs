@@ -28,7 +28,6 @@ use super::segment::Segment;
 pub struct Decompressor<R: Read + Seek> {
     reader: R,
     header: PbitHeader,
-    #[allow(dead_code)]
     footer: PbitFooter,
     ref_groups: Vec<RefGroupEntry>,
     /// contig name → Vec<ref_group_id> (reference segments, ordered).
@@ -210,6 +209,16 @@ impl<R: Read + Seek> Decompressor<R> {
     /// Return the collection (for `stat --contigs`).
     pub fn collection(&self) -> &Collection {
         &self.collection
+    }
+
+    /// Return the footer (for `Compressor::open_for_append`).
+    pub fn footer(&self) -> &PbitFooter {
+        &self.footer
+    }
+
+    /// Return an owned clone of the collection (for `Compressor::open_for_append`).
+    pub fn collection_clone(&self) -> Collection {
+        self.collection.clone()
     }
 
     /// Read and decode a reference segment (2bit record) by ref_group_id.

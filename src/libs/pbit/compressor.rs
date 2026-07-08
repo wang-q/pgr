@@ -11,12 +11,13 @@ use std::collections::HashMap;
 use std::io::{Seek, SeekFrom, Write};
 use std::path::Path;
 
-use crate::libs::fmt::twobit::write_2bit_record;
+use crate::libs::fmt::twobit::{read_2bit_record, write_2bit_record};
 use crate::libs::nt;
 
 use super::collection::Collection;
+use super::decompressor::Decompressor;
 use super::format::{
-    write_ref_index, write_u32_le, DeltaEntry, PbitFooter, PbitHeader, RefGroupEntry,
+    read_u32_le, write_ref_index, write_u32_le, DeltaEntry, PbitFooter, PbitHeader, RefGroupEntry,
 };
 use super::segment::Segment;
 
@@ -195,6 +196,90 @@ impl Compressor<std::io::BufWriter<std::fs::File>> {
         debug_assert_eq!(comp.ref_groups.len() as u32, comp.header.ref_group_count);
 
         Ok(comp)
+    }
+
+    /// Open an existing `.pbit` for appending samples (powers `pgr pbit append`).
+    /// Reads the existing header, reference records, delta data (with packed
+    /// data), and collection; rebuilds Segment objects. The writer is
+    /// positioned at the old ref_index_offset and the file is truncated
+    /// there, ready for `append_sample` + `finish`.
+    pub fn open_for_append<P: AsRef<Path>>(in_path: P) -> Result<Self> {
+        let path = in_path.as_ref();
+
+        // 1. Read archive metadata via Decompressor (opens file read-only).
+        let dec = Decompressor::open(path)?;
+        let header = dec.header().clone();
+        let ref_groups = dec.ref_groups().to_vec();
+        let collection = dec.collection_clone();
+        let footer = dec.footer().clone();
+        let min_match_len = if header.kmer_len >= 4 {
+            header.kmer_len + 3
+        } else {
+            18
+        };
+        drop(dec); // release the read-only file handle
+
+        // 2. Reopen file for read + write.
+        let file = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(path)
+            .with_context(|| format!("failed to open pbit file for append: {}", path.display()))?;
+
+        // 3. Read full delta entries (header + packed_data) from delta data section.
+        let mut reader = std::io::BufReader::new(file.try_clone()?);
+        reader.seek(SeekFrom::Start(footer.delta_data_offset))?;
+        let ref_group_count = read_u32_le(&mut reader)? as usize;
+        let mut deltas: Vec<Vec<DeltaEntry>> = Vec::with_capacity(ref_group_count);
+        for _ in 0..ref_group_count {
+            let delta_count = read_u32_le(&mut reader)? as usize;
+            let mut group = Vec::with_capacity(delta_count);
+            for _ in 0..delta_count {
+                group.push(DeltaEntry::read_from(&mut reader)?);
+            }
+            deltas.push(group);
+        }
+
+        // 4. Read reference segments and build Segment objects.
+        let mut segments: Vec<Segment> = Vec::with_capacity(ref_group_count);
+        let mut ref_seg_dna: Vec<Vec<u8>> = Vec::with_capacity(ref_group_count);
+        let mut contig_ref_groups: HashMap<String, Vec<u32>> = HashMap::new();
+        for (i, entry) in ref_groups.iter().enumerate() {
+            reader.seek(SeekFrom::Start(entry.segment_offset))?;
+            let seq = read_2bit_record(&mut reader, false, None, None, true)?;
+            let seq_bytes = seq.into_bytes();
+            contig_ref_groups
+                .entry(entry.contig_name.clone())
+                .or_default()
+                .push(i as u32);
+            let mut seg = Segment::new(min_match_len);
+            seg.prepare(&seq_bytes);
+            seg.prepare_index();
+            segments.push(seg);
+            ref_seg_dna.push(seq_bytes);
+        }
+
+        // 5. Truncate file at old ref_index_offset and position writer there.
+        file.set_len(footer.ref_index_offset)?;
+        let mut writer = std::io::BufWriter::new(file);
+        writer.seek(SeekFrom::Start(footer.ref_index_offset))?;
+
+        let segment_size = header.segment_size as usize;
+        let kmer_len = header.kmer_len as usize;
+
+        Ok(Self {
+            writer,
+            header,
+            ref_groups,
+            deltas,
+            collection,
+            segments,
+            contig_ref_groups,
+            ref_seg_dna,
+            segment_size,
+            kmer_len,
+            min_match_len,
+        })
     }
 }
 
@@ -495,5 +580,67 @@ mod tests {
         decoder.read_to_end(&mut decompressed)?;
         assert_eq!(decompressed, data);
         Ok(())
+    }
+
+    #[test]
+    fn test_open_for_append() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let ref_path = dir.path().join("ref.fa");
+        let ref_seq = random_dna(2000, 42);
+        write_fasta(ref_path.to_str().unwrap(), &[("chr1", &ref_seq)]);
+
+        let s1_path = dir.path().join("s1.fa");
+        let s1_seq = introduce_snps(&ref_seq, 100);
+        write_fasta(s1_path.to_str().unwrap(), &[("chr1", &s1_seq)]);
+
+        let out_path = dir.path().join("out.pbit");
+        let mut comp = Compressor::create(&out_path, ref_path.to_str().unwrap(), 4096, 15, 18)?;
+        comp.append_sample("s1", s1_path.to_str().unwrap())?;
+        comp.finish()?;
+
+        // Append a second sample.
+        let s2_path = dir.path().join("s2.fa");
+        let s2_seq = introduce_snps(&ref_seq, 200);
+        write_fasta(s2_path.to_str().unwrap(), &[("chr1", &s2_seq)]);
+
+        let mut comp = Compressor::open_for_append(&out_path)?;
+        comp.append_sample("s2", s2_path.to_str().unwrap())?;
+        comp.finish()?;
+
+        // Verify both samples are present and extract correctly.
+        let mut dec = crate::libs::pbit::decompressor::Decompressor::open(&out_path)?;
+        assert_eq!(dec.list_samples(), vec!["s1", "s2"]);
+
+        let mut buf = Vec::new();
+        dec.get_sample("s2", &mut buf)?;
+        let out_str = String::from_utf8(buf)?;
+        let lines: Vec<&str> = out_str.lines().collect();
+        let seq: String = lines[1..].concat();
+        let expected =
+            String::from_utf8(s2_seq.iter().map(|&c| c.to_ascii_uppercase()).collect()).unwrap();
+        assert_eq!(seq, expected);
+        Ok(())
+    }
+
+    /// Introduce SNPs at every 100th position (helper for append test).
+    fn introduce_snps(seq: &[u8], seed: u64) -> Vec<u8> {
+        use rand::rngs::StdRng;
+        use rand::Rng;
+        use rand::SeedableRng;
+        let mut rng = StdRng::seed_from_u64(seed);
+        let mut out = seq.to_vec();
+        for i in (0..out.len()).step_by(100) {
+            out[i] = match out[i] {
+                b'A' => {
+                    if rng.random_range(0u8..3) == 0 {
+                        b'C'
+                    } else {
+                        b'G'
+                    }
+                }
+                _ => b'A',
+            };
+        }
+        out
     }
 }

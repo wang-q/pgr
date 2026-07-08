@@ -25,6 +25,7 @@ pub struct ContigSegs {
 }
 
 /// Collection of samples and their contig segment mappings.
+#[derive(Clone)]
 pub struct Collection {
     /// sample name → contigs (each contig has a list of segments).
     pub samples: IndexMap<String, Vec<ContigSegs>>,
