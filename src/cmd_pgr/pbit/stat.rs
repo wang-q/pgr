@@ -93,6 +93,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             writeln!(writer, "Version: {}", header.version)?;
             writeln!(writer, "Segment size: {}", header.segment_size)?;
             writeln!(writer, "K-mer length: {}", header.kmer_len)?;
+            writeln!(writer, "Min match length: {}", header.min_match_len)?;
             writeln!(writer, "Reference groups: {}", header.ref_group_count)?;
             writeln!(writer, "Samples: {}", header.sample_count)?;
             // Count unique reference contigs.

@@ -578,6 +578,61 @@ fn test_pbit_create_custom_params() {
 
     assert!(stdout.contains("Segment size: 8192"));
     assert!(stdout.contains("K-mer length: 10"));
+    assert!(stdout.contains("Min match length: 15"));
+}
+
+#[test]
+fn test_pbit_custom_min_match_len_roundtrip() {
+    // Regression test: custom -l must be stored in the header and used
+    // correctly by the decompressor. Previously min_match_len was inferred
+    // as kmer_len + 3, which mismatched the compressor's value for non-default
+    // -l, causing decode errors.
+    let temp = TempDir::new().unwrap();
+    let ref_fa = temp.path().join("ref.fa");
+    let sample_fa = temp.path().join("sample.fa");
+    let out_pbit = temp.path().join("out.pbit");
+    let out_dir = temp.path().join("outdir");
+
+    let ref_seq = random_dna(2000, 42);
+    let sample_seq = introduce_snps(&ref_seq, 100);
+    write_fasta(&ref_fa, &[("chr1", &ref_seq)]);
+    write_fasta(&sample_fa, &[("chr1", &sample_seq)]);
+
+    // Use non-default -k and -l where kmer_len + 3 != min_match_len.
+    PgrCmd::new()
+        .args(&[
+            "pbit",
+            "create",
+            "-r",
+            ref_fa.to_str().unwrap(),
+            "-i",
+            sample_fa.to_str().unwrap(),
+            "-o",
+            out_pbit.to_str().unwrap(),
+            "-k",
+            "10",
+            "-l",
+            "15",
+        ])
+        .run();
+
+    PgrCmd::new()
+        .args(&[
+            "pbit",
+            "to-fa",
+            out_pbit.to_str().unwrap(),
+            "-o",
+            out_dir.to_str().unwrap(),
+        ])
+        .run();
+
+    let out_fa = out_dir.join("sample.fa");
+    let content = fs::read_to_string(&out_fa).unwrap();
+    let lines: Vec<&str> = content.lines().collect();
+    assert!(lines[0].starts_with(">chr1"));
+    let extracted: String = lines[1..].concat();
+    let expected: String = sample_seq.chars().map(|c| c.to_ascii_uppercase()).collect();
+    assert_eq!(extracted, expected);
 }
 
 #[test]

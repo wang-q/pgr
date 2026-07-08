@@ -15,13 +15,14 @@ pub const PBIT_VERSION_MINOR: u32 = 0;
 /// Current file version encoded as major*1000 + minor.
 pub const PBIT_VERSION: u32 = PBIT_VERSION_MAJOR * 1000 + PBIT_VERSION_MINOR;
 
-/// File header (fixed 32 bytes, at file start).
+/// File header (fixed 36 bytes, at file start).
 #[derive(Debug, Clone)]
 pub struct PbitHeader {
     pub magic: u32,
     pub version: u32,
     pub segment_size: u32,
     pub kmer_len: u32,
+    pub min_match_len: u32,
     pub ref_group_count: u32,
     pub sample_count: u32,
     pub ref_records_offset: u64,
@@ -29,19 +30,26 @@ pub struct PbitHeader {
 
 impl PbitHeader {
     /// Create a new header with the given parameters and placeholder offsets.
-    pub fn new(segment_size: u32, kmer_len: u32, ref_group_count: u32, sample_count: u32) -> Self {
+    pub fn new(
+        segment_size: u32,
+        kmer_len: u32,
+        min_match_len: u32,
+        ref_group_count: u32,
+        sample_count: u32,
+    ) -> Self {
         Self {
             magic: PBIT_MAGIC,
             version: PBIT_VERSION,
             segment_size,
             kmer_len,
+            min_match_len,
             ref_group_count,
             sample_count,
-            ref_records_offset: 32,
+            ref_records_offset: 36,
         }
     }
 
-    /// Read a 32-byte header from the current reader position.
+    /// Read a 36-byte header from the current reader position.
     pub fn read_from<R: Read>(reader: &mut R) -> Result<Self> {
         let magic = read_u32_le(reader)?;
         if magic != PBIT_MAGIC {
@@ -54,6 +62,7 @@ impl PbitHeader {
         let version = read_u32_le(reader)?;
         let segment_size = read_u32_le(reader)?;
         let kmer_len = read_u32_le(reader)?;
+        let min_match_len = read_u32_le(reader)?;
         let ref_group_count = read_u32_le(reader)?;
         let sample_count = read_u32_le(reader)?;
         let ref_records_offset = read_u64_le(reader)?;
@@ -62,18 +71,20 @@ impl PbitHeader {
             version,
             segment_size,
             kmer_len,
+            min_match_len,
             ref_group_count,
             sample_count,
             ref_records_offset,
         })
     }
 
-    /// Write the header (32 bytes) to the writer.
+    /// Write the header (36 bytes) to the writer.
     pub fn write_to<W: Write>(&self, writer: &mut W) -> Result<()> {
         writer.write_all(&self.magic.to_le_bytes())?;
         writer.write_all(&self.version.to_le_bytes())?;
         writer.write_all(&self.segment_size.to_le_bytes())?;
         writer.write_all(&self.kmer_len.to_le_bytes())?;
+        writer.write_all(&self.min_match_len.to_le_bytes())?;
         writer.write_all(&self.ref_group_count.to_le_bytes())?;
         writer.write_all(&self.sample_count.to_le_bytes())?;
         writer.write_all(&self.ref_records_offset.to_le_bytes())?;
@@ -291,10 +302,10 @@ mod tests {
 
     #[test]
     fn test_header_roundtrip() -> Result<()> {
-        let header = PbitHeader::new(4096, 15, 100, 10);
+        let header = PbitHeader::new(4096, 15, 18, 100, 10);
         let mut buf = Vec::new();
         header.write_to(&mut buf)?;
-        assert_eq!(buf.len(), 32);
+        assert_eq!(buf.len(), 36);
 
         let mut cursor = Cursor::new(buf);
         let read = PbitHeader::read_from(&mut cursor)?;
@@ -302,9 +313,10 @@ mod tests {
         assert_eq!(read.version, PBIT_VERSION);
         assert_eq!(read.segment_size, 4096);
         assert_eq!(read.kmer_len, 15);
+        assert_eq!(read.min_match_len, 18);
         assert_eq!(read.ref_group_count, 100);
         assert_eq!(read.sample_count, 10);
-        assert_eq!(read.ref_records_offset, 32);
+        assert_eq!(read.ref_records_offset, 36);
         Ok(())
     }
 
@@ -312,7 +324,7 @@ mod tests {
     fn test_header_bad_magic() {
         let mut buf = Vec::new();
         buf.extend_from_slice(&0xDEADBEEFu32.to_le_bytes());
-        buf.extend_from_slice(&[0u8; 28]);
+        buf.extend_from_slice(&[0u8; 32]);
 
         let mut cursor = Cursor::new(buf);
         let res = PbitHeader::read_from(&mut cursor);
@@ -457,7 +469,7 @@ mod tests {
     fn test_empty_pbit_roundtrip() -> Result<()> {
         // An empty .pbit file: Header (placeholder offsets) + Footer (zero offsets).
         // No reference records, no index, no delta data, no sample index.
-        let header = PbitHeader::new(4096, 15, 0, 0);
+        let header = PbitHeader::new(4096, 15, 18, 0, 0);
         let footer = PbitFooter {
             ref_index_offset: 0,
             delta_data_offset: 0,
@@ -470,7 +482,7 @@ mod tests {
         // No ref index / delta data / sample index sections
         footer.write_to(&mut buf)?;
 
-        assert_eq!(buf.len(), 56); // 32 + 24
+        assert_eq!(buf.len(), 60); // 36 + 24
 
         let mut cursor = Cursor::new(buf);
         let read_header = PbitHeader::read_from(&mut cursor)?;
@@ -490,10 +502,10 @@ mod tests {
         // sample index + Footer.
         use crate::libs::fmt::twobit::write_2bit_record;
 
-        let header = PbitHeader::new(4096, 15, 1, 0);
+        let header = PbitHeader::new(4096, 15, 18, 1, 0);
         let mut buf = Vec::new();
 
-        // Header (32 bytes)
+        // Header (36 bytes)
         header.write_to(&mut buf)?;
 
         // Reference Records: one 2bit record (segment of "chr1")

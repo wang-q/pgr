@@ -264,7 +264,7 @@ pbit 的**参考层直接复用标准 2bit 记录**（`dna_size + n_blocks + mas
 // libs/fmt/twobit.rs (新增 pub 函数)
 /// Read a single 2bit record from the current reader position and return the
 /// decoded DNA string with masks applied. Reused by TwoBitFile and pbit::Decompressor.
-pub fn read_2bit_record<R: Read>(
+pub fn read_2bit_record<R: Read + Seek>(
     reader: &mut R,
     is_swapped: bool,
     start: Option<usize>,
@@ -491,15 +491,16 @@ pub const PBIT_MAGIC: u32 = 0x54494250;  // 'PBIT' — native "2bit + delta" for
 pub const PBIT_VERSION_MAJOR: u32 = 1;
 pub const PBIT_VERSION_MINOR: u32 = 0;
 
-/// File header (fixed 32 bytes, at file start).
+/// File header (fixed 36 bytes, at file start).
 pub struct PbitHeader {
     pub magic: u32,           // PBIT_MAGIC
     pub version: u32,         // major*1000 + minor
     pub segment_size: u32,
     pub kmer_len: u32,
+    pub min_match_len: u32,   // LZ-diff min match length (CLI -l, default 18)
     pub ref_group_count: u32,
     pub sample_count: u32,
-    pub ref_records_offset: u64,  // offset to Reference Records (usually 32)
+    pub ref_records_offset: u64,  // offset to Reference Records (usually 36)
 }
 
 /// Footer (fixed 24 bytes, at end of file). Located by seeking to file_size - 24.
@@ -800,7 +801,7 @@ pbit 格式（原生"2bit + delta"，扩展名 `.pbit`，区别于 C++ AGC 的 `
 
 ```
 ┌─────────────────────────────────────┐  ← offset 0
-│ Header (固定 32 字节)               │
+│ Header (固定 36 字节)               │
 ├─────────────────────────────────────┤
 │ Reference Records                   │  ← 参考段，每段为标准 2bit 记录
 │   ref_group 0: seg 0, seg 1, ...    │     (dna_size + n_blocks + mask_blocks
@@ -819,7 +820,7 @@ pbit 格式（原生"2bit + delta"，扩展名 `.pbit`，区别于 C++ AGC 的 `
 └─────────────────────────────────────┘  ← EOF
 ```
 
-### Header（32 字节，文件起始）
+### Header（36 字节，文件起始）
 
 ```
 offset  size  field              说明
@@ -827,9 +828,10 @@ offset  size  field              说明
 4       4     version            major*1000 + minor (当前 1000)
 8       4     segment_size       分段大小（bp，如 4096）
 12      4     kmer_len           k-mer 长度（如 15）
-16      4     ref_group_count    参考段总数（每段 = 一个 group，非 contig 数）
-20      4     sample_count       样本数（不含参考）
-24      8     ref_records_offset Reference Records 起始偏移（通常 = 32）
+16      4     min_match_len      LZ-diff 最小匹配长度（如 18，对应 -l 参数）
+20      4     ref_group_count    参考段总数（每段 = 一个 group，非 contig 数）
+24      4     sample_count       样本数（不含参考）
+28      8     ref_records_offset Reference Records 起始偏移（通常 = 36）
 ```
 
 ### Reference Records（标准 2bit 记录，连续存储）

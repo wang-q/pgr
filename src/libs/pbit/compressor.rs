@@ -96,10 +96,6 @@ pub struct Compressor<W: Write + Seek> {
     ref_seg_dna: Vec<Vec<u8>>,
     segment_size: usize,
     kmer_len: usize,
-    /// Stored for future `stat` exposure; segment encoding uses `Segment`
-    /// objects which bake in `min_match_len` at construction.
-    #[allow(dead_code)]
-    min_match_len: u32,
 }
 
 impl Compressor<std::io::BufWriter<std::fs::File>> {
@@ -128,7 +124,7 @@ impl Compressor<std::io::BufWriter<std::fs::File>> {
             .with_context(|| format!("failed to read reference FASTA: {}", ref_fasta))?;
 
         // We'll write the header first with a placeholder, then reference records.
-        // The header's ref_records_offset is always 32 (right after the 32-byte header).
+        // The header's ref_records_offset is always 36 (right after the 36-byte header).
         let ref_group_count = ref_contigs
             .iter()
             .map(|(_, seq)| segment_sequence(seq, segment_size).len())
@@ -137,6 +133,7 @@ impl Compressor<std::io::BufWriter<std::fs::File>> {
         let header = PbitHeader::new(
             segment_size as u32,
             kmer_len as u32,
+            min_match_len,
             ref_group_count as u32,
             0, // sample_count, patched in finish()
         );
@@ -152,10 +149,9 @@ impl Compressor<std::io::BufWriter<std::fs::File>> {
             ref_seg_dna: Vec::new(),
             segment_size,
             kmer_len,
-            min_match_len,
         };
 
-        // Write header (placeholder — ref_records_offset is already 32).
+        // Write header (placeholder — ref_records_offset is already 36).
         comp.header.write_to(&mut comp.writer)?;
 
         // Write reference records and build the ref_groups index.
@@ -212,11 +208,7 @@ impl Compressor<std::io::BufWriter<std::fs::File>> {
         let ref_groups = dec.ref_groups().to_vec();
         let collection = dec.collection_clone();
         let footer = dec.footer().clone();
-        let min_match_len = if header.kmer_len >= 4 {
-            header.kmer_len + 3
-        } else {
-            18
-        };
+        let min_match_len = header.min_match_len;
         drop(dec); // release the read-only file handle
 
         // 2. Reopen file for read + write.
@@ -278,7 +270,6 @@ impl Compressor<std::io::BufWriter<std::fs::File>> {
             ref_seg_dna,
             segment_size,
             kmer_len,
-            min_match_len,
         })
     }
 }

@@ -37,9 +37,8 @@ pub struct Decompressor<R: Read + Seek> {
     contig_set: HashSet<String>,
     collection: Collection,
     /// delta_meta[ref_group_id][delta_id] → header info (no packed data).
-    /// Kept for future `stat --deltas` exposure; decoding re-reads headers
-    /// from disk via `delta_offsets`.
-    #[allow(dead_code)]
+    /// Used by `get_contig` to compute segment coordinates for smart slice
+    /// selection (skip non-overlapping segments).
     delta_meta: Vec<Vec<DeltaMeta>>,
     /// delta_offsets[ref_group_id][delta_id] → file offset of the delta's
     /// 9-byte header (followed by `packed_size` bytes).
@@ -58,6 +57,17 @@ impl Decompressor<std::io::BufReader<std::fs::File>> {
             .with_context(|| format!("failed to open pbit file: {}", path.as_ref().display()))?;
         let reader = std::io::BufReader::new(file);
         Self::new(reader)
+    }
+}
+
+impl Decompressor<std::io::Cursor<Vec<u8>>> {
+    /// Open and read entire file into memory (mirrors `TwoBitFile::open_and_read`).
+    pub fn open_and_read<P: AsRef<Path>>(path: P) -> Result<Self> {
+        let mut buf = Vec::new();
+        std::fs::File::open(&path)
+            .with_context(|| format!("failed to open pbit file: {}", path.as_ref().display()))?
+            .read_to_end(&mut buf)?;
+        Self::new(std::io::Cursor::new(buf))
     }
 }
 
@@ -120,20 +130,14 @@ impl<R: Read + Seek> Decompressor<R> {
             delta_offsets.push(offsets);
         }
 
-        // Read sample index (collection, flate2-compressed).
+        // Read sample index (collection, flate2-compressed). The collection
+        // spans [sample_index_offset, footer_start) where footer_start =
+        // file_size - 24.
+        let file_size = reader.seek(SeekFrom::End(0))?;
+        let collection_len = (file_size - 24) - footer.sample_index_offset;
         reader.seek(SeekFrom::Start(footer.sample_index_offset))?;
-        let mut compressed = Vec::new();
-        reader.read_to_end(&mut compressed)?;
-        // The footer is 24 bytes at the end; the collection is everything from
-        // sample_index_offset to the footer. But we already read_to_end which
-        // includes the footer. We need to strip the trailing 24 bytes.
-        // Actually, the footer is already parsed via read_at_end, and the
-        // collection bytes are between sample_index_offset and footer position.
-        // Since we used read_to_end, we have collection + footer. Strip 24.
-        let footer_len = 24;
-        if compressed.len() > footer_len {
-            compressed.truncate(compressed.len() - footer_len);
-        }
+        let mut compressed = vec![0u8; collection_len as usize];
+        reader.read_exact(&mut compressed)?;
         let collection = Collection::deserialize(&compressed)?;
 
         // Build contig_set from collection.
@@ -144,11 +148,7 @@ impl<R: Read + Seek> Decompressor<R> {
             }
         }
 
-        let min_match_len = if header.kmer_len >= 4 {
-            header.kmer_len + 3
-        } else {
-            18
-        };
+        let min_match_len = header.min_match_len;
 
         Ok(Self {
             reader,
@@ -302,35 +302,58 @@ impl<R: Read + Seek> Decompressor<R> {
             .collect();
 
         for (sample, segments) in sample_segs {
-            // Decode and concatenate all segments of this contig.
-            let mut full_seq = Vec::new();
-            for seg in &segments {
-                let decoded = self.decode_delta(seg.ref_group_id, seg.delta_id)?;
-                full_seq.extend_from_slice(&decoded);
-            }
+            // Extract raw_lengths first to release the immutable borrow on
+            // self.delta_meta before calling self.decode_delta (mutable).
+            let seg_lens: Vec<usize> = segments
+                .iter()
+                .map(|seg| {
+                    self.delta_meta[seg.ref_group_id as usize][seg.delta_id as usize].raw_length
+                        as usize
+                })
+                .collect();
+            let total_len: usize = seg_lens.iter().sum();
 
-            // Apply slice [start, end).
-            let total_len = full_seq.len();
+            // Clamp [s, e) to [0, total_len].
             let s = start.unwrap_or(0).min(total_len);
             let e = end.unwrap_or(total_len).min(total_len);
-            if s < e {
-                let slice = &full_seq[s..e];
-                let seq_bytes: Vec<u8> = if strand == "-" {
-                    nt::rev_comp(slice).collect()
-                } else {
-                    slice.to_vec()
-                };
-
-                // Write FASTA header.
-                let header = match (start, end, strand) {
-                    (Some(_), Some(_), _) => {
-                        format!(">{} {}:{}-{}({})", sample, contig, s + 1, e, strand)
-                    }
-                    _ => format!(">{} {}", sample, contig),
-                };
-                writeln!(out, "{}", header)?;
-                write_fasta_seq(out, &seq_bytes, line_width)?;
+            if s >= e {
+                continue;
             }
+
+            // Decode only segments overlapping [s, e) (smart selection, like
+            // the reference layer's read_sequence).
+            let mut result = Vec::new();
+            let mut offset: usize = 0;
+            for (seg, &seg_len) in segments.iter().zip(seg_lens.iter()) {
+                let seg_end = offset + seg_len;
+                if seg_end > s && offset < e {
+                    let decoded = self.decode_delta(seg.ref_group_id, seg.delta_id)?;
+                    let local_start = s.saturating_sub(offset);
+                    let local_end = (e - offset).min(seg_len);
+                    result.extend_from_slice(&decoded[local_start..local_end]);
+                }
+                offset = seg_end;
+                if offset >= e {
+                    break;
+                }
+            }
+
+            // Apply reverse-complement if needed.
+            let seq_bytes: Vec<u8> = if strand == "-" {
+                nt::rev_comp(&result).collect()
+            } else {
+                result
+            };
+
+            // Write FASTA header.
+            let header = match (start, end, strand) {
+                (Some(_), Some(_), _) => {
+                    format!(">{} {}:{}-{}({})", sample, contig, s + 1, e, strand)
+                }
+                _ => format!(">{} {}", sample, contig),
+            };
+            writeln!(out, "{}", header)?;
+            write_fasta_seq(out, &seq_bytes, line_width)?;
         }
         Ok(())
     }
