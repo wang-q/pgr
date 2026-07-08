@@ -69,6 +69,10 @@ path = "src/pgr.rs"
 name = "hier_benchmark"
 harness = false
 
+[[bench]]
+name = "pbit_benchmark"
+harness = false
+
 [build-dependencies]
 
 [dev-dependencies]

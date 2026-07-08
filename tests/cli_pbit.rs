@@ -1383,12 +1383,12 @@ fn test_pbit_random_roundtrip() {
         let mut current_seq = String::new();
         let mut entries: Vec<(String, String)> = Vec::new();
         for line in content.lines() {
-            if line.starts_with('>') {
+            if let Some(stripped) = line.strip_prefix('>') {
                 if !current_name.is_empty() {
                     entries.push((current_name.clone(), current_seq.clone()));
                     current_seq.clear();
                 }
-                current_name = line[1..].to_string();
+                current_name = stripped.to_string();
             } else {
                 current_seq.push_str(line);
             }
@@ -1442,13 +1442,9 @@ fn test_pbit_large_contig_segment_boundary() {
     // Segment 0: [1, 4096], Segment 1: [4097, 8192], etc.
     let boundary_ranges = ["chr1:4095-4098", "chr1:8191-8194", "chr1:12288-12289"];
 
-    let (stdout, _) = PgrCmd::new()
-        .args({
-            let mut v = vec!["pbit", "range", out_pbit.to_str().unwrap()];
-            v.extend_from_slice(&boundary_ranges);
-            v
-        })
-        .run();
+    let mut v = vec!["pbit", "range", out_pbit.to_str().unwrap()];
+    v.extend_from_slice(&boundary_ranges);
+    let (stdout, _) = PgrCmd::new().args(&v).run();
 
     // 3 ranges → 3 FASTA entries.
     let headers: Vec<&str> = stdout.lines().filter(|l| l.starts_with('>')).collect();
@@ -1456,7 +1452,7 @@ fn test_pbit_large_contig_segment_boundary() {
 
     // Verify each slice matches the original sample.
     let lines: Vec<&str> = stdout.lines().collect();
-    let mut seq_idx = 1; // skip first header
+    let mut seq_idx = 0;
     for range in &boundary_ranges {
         // Parse start-end from range string.
         let coords: &str = range.split(':').nth(1).unwrap();
@@ -1464,7 +1460,7 @@ fn test_pbit_large_contig_segment_boundary() {
         let start: usize = parts.next().unwrap().parse().unwrap();
         let end: usize = parts.next().unwrap().parse().unwrap();
 
-        // Skip header line.
+        // Skip header line, then collect sequence lines until next '>'.
         seq_idx += 1;
         let mut seq = String::new();
         while seq_idx < lines.len() && !lines[seq_idx].starts_with('>') {

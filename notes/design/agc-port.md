@@ -990,7 +990,7 @@ offset  size  field
 - [x] `compressor.rs`: `Compressor::create`（写 Header 占位 → 读参考 FASTA → 分段 → 每段
   `write_2bit_record` 写入 → 记录 `ref_groups[i].segment_offset` → 对每段创建 `Segment` 并调
   `prepare` + `prepare_index`，供后续 `append_sample` 编码使用）
-- [ ] `compressor.rs`: `Compressor::open_for_append`（**从已有 `.pbit` 恢复 Compressor 状态**，供
+- [x] `compressor.rs`: `Compressor::open_for_append`（**从已有 `.pbit` 恢复 Compressor 状态**，供
   `pgr pbit append` 使用：用 `Decompressor` 读取已有归档的 Header / ref_groups / deltas（含
   packed_data）/ collection → 读取各参考段（`read_2bit_record`）→ 为每段创建 `Segment` 并调
   `prepare` + `prepare_index` → 重建 `Compressor` 的完整内存状态 → writer 定位到
@@ -1024,14 +1024,14 @@ offset  size  field
 - [x] `decompressor.rs`: LRU 缓存参考段（`ref_group_id` → decoded DNA）+ delta 缓存
   （`(ref_group_id, delta_id)` → decoded raw seq，避免重复 flate2 解压 + LZ-diff 解码）
 - [x] 验证：压缩 → 解压 → FASTA 内容一致；`Decompressor` 的 `SequenceReader` 实现能读参考层 序列（供
-  chain/net）；`get_contig` 能遍历样本输出多 FASTA。（`open_for_append` 留待后续实现）
+  chain/net）；`get_contig` 能遍历样本输出多 FASTA。`open_for_append` 已实现并测试（见 `test_open_for_append`）
 
 ### Phase 6: CLI 集成
 
 - [x] `cmd_pgr/pbit/mod.rs`: 子命令注册（分组：build/info/subset/transform，镜像 `2bit` mod.rs）
 - [x] `cmd_pgr/pbit/create.rs`: `pgr pbit create`（解析 `-r`/`-o`/`-s`/`-k`/`-l` →
   `Compressor::create` → 对每个 `-i` 输入用 `get_basename` 派生样本名 → `append_sample` → `finish`）
-- [ ] `cmd_pgr/pbit/append.rs`: `pgr pbit append`（依赖 `Compressor::open_for_append`，留待后续实现）
+- [x] `cmd_pgr/pbit/append.rs`: `pgr pbit append`（依赖 `Compressor::open_for_append`；归档为位置参数，`-o` 省略时原地修改，指定时先复制）
 - [x] `cmd_pgr/pbit/to_fa.rs`: `pgr pbit to-fa`（对应 `2bit to-fa`，但输出为目录：
   用 `outdir_arg`，每样本一个文件 `{sample}.fa`；遍历 `list_samples` → `get_sample` 写各 contig）
 - [x] `cmd_pgr/pbit/some.rs`: `pgr pbit some`（对应 `2bit some`，复用 `fa_name_list_arg` + `invert_arg`）
@@ -1047,7 +1047,7 @@ offset  size  field
 
 #### 7.1 单元测试（`#[cfg(test)] mod tests`，各模块内嵌）
 
-> 共 53 个单元测试覆盖以下场景（运行 `cargo test --lib pbit::` 验证）。
+> 共 54 个单元测试覆盖以下场景（运行 `cargo test --lib pbit::` 验证）。
 
 - [x] `lz_diff.rs`:
   - 编解码往返：随机序列（ACGT-only、含 N、含小写）→ `prepare` + `prepare_index` → `encode` → `decode` → 比对
@@ -1069,7 +1069,7 @@ offset  size  field
 #### 7.2 集成测试（`tests/cli_pbit.rs`，使用 `PgrCmd` 辅助）
 
 遵循 pgr 惯例：单文件 `tests/cli_pbit.rs`，用 `PgrCmd::new().args(&[...]).run()`。当前实现
-**21 个集成测试**，全部通过（运行 `cargo test --test cli_pbit` 验证）。测试数据采用
+**30 个集成测试**，全部通过（运行 `cargo test --test cli_pbit` 验证）。测试数据采用
 `rand::StdRng` 生成确定性随机序列（`random_dna(len, seed)`）和派生 SNP 样本
 （`introduce_snps(seq, seed)`），无需外部测试数据文件；复用 `tests/pgr/pseudocat.fa`
 作为多段往返 smoke test。
@@ -1093,18 +1093,18 @@ offset  size  field
 - [x] `test_pbit_range_multi_ranges`：多个区间参数 → 每个区间各一条 FASTA
 - [x] `test_pbit_some_basic`：`some out.pbit list.txt -o out.fa` → 仅含列表中 contig 的序列
 - [x] `test_pbit_some_invert`：`some out.pbit list.txt --invert -o stdout` → 仅含列表外 contig
-- [ ] `test_pbit_range_multicontig`：用 `final.contigs.fa` 作参考的多 contig 区间提取 — 留待后续
-- [ ] `test_pbit_append`：依赖 `Compressor::open_for_append`，留待后续
-- [ ] `test_pbit_append_overwrite`：依赖 `Compressor::open_for_append`，留待后续
+- [x] `test_pbit_range_multicontig`：多 contig 参考 + 区间提取，验证各 contig 独立切片
+- [x] `test_pbit_append`：`append` 命令基础功能（向已有归档追加样本）
+- [x] `test_pbit_append_overwrite`：`append -o new.pbit` 先复制再追加
+- [x] 额外：`test_pbit_append_in_place`（`append` 原地修改归档后内容正确）
 - [x] `test_pbit_create_custom_params`：`-s 8192 -k 10 -l 15` → `stat` 输出对应参数值
-- [ ] `test_pbit_empty_contig`：参考含空 contig（长度 0）— 留待后续
+- [x] `test_pbit_empty_contig`：参考含空 contig（长度 0）不 panic
 - [x] `test_pbit_single_sample`：`test_pbit_to_fa_single_sample` 覆盖（仅提取单个样本时 to-fa 正常）
 - [x] `test_pbit_identical_samples`：`test_pbit_identical_samples_dedup` 覆盖（两个相同样本用
   `--name` TSV 区分 → delta 去重生效，两样本输出一致）
 - [x] `test_pbit_no_match_contig`：样本含未知 contig 名 → 不 panic，`stat` 显示样本数为 1
-- [ ] `test_pbit_mask_roundtrip`：mask 保留往返 — 留待后续（当前 pbit 设计参考层保留 N blocks
-  但 mask blocks 未完整应用）
-- [ ] `test_pbit_n_roundtrip`：用 `testN.fa` 作参考 + 样本 — 留待后续
+- [x] `test_pbit_mask_roundtrip`：含小写 mask 的参考往返（pbit 参考层保留 mask blocks）
+- [x] `test_pbit_n_roundtrip`：含 N 字符的参考 + 样本往返
 - [x] 额外：`test_pbit_multi_contig_reference`（3 contig 参考 → `stat --refs` 正确）
 - [x] 额外：`test_pbit_multi_segment_contig`（5000 bp 跨段 + 段边界 SNP → to-fa 往返一致）
 - [x] 额外：`test_pbit_with_snp_sample`（引入 SNP 的样本 → to-fa 往返一致）
@@ -1113,23 +1113,24 @@ offset  size  field
 
 #### 7.3 属性测试 / 随机往返
 
-- [ ] `tests/cli_pbit.rs::test_pbit_random_roundtrip`：用 `rand` 生成随机参考（多 contig，含 N）+ 随机样本（SNP/indel 变异）→ create → to-fa → 比对，重复 N 次
-- [ ] 大 contig 分段往返：参考 contig 长度 = `segment_size * 3 + 1`（跨 4 段）→ range 提取各段边界区间 → 序列正确
+- [x] `tests/cli_pbit.rs::test_pbit_random_roundtrip`：用 `rand` 生成随机参考（2-3 contig，含 5% N）+ SNP 样本 → create → to-fa → 比对，重复 5 次
+- [x] 大 contig 分段往返：参考 contig 长度 = `segment_size * 3 + 1`（12289 bp，跨 4 段）→ range 提取段边界区间 → 序列正确
 
 #### 7.4 性能基准（`benches/pbit_benchmark.rs`，`criterion`）
 
-- [ ] 压缩速度：参考 1 Mb + N 个样本（N=1/10/100），测 `create` 耗时
-- [ ] 解压速度：`to-fa` 全量提取 vs `range` 单 contig 提取 vs `range` 区间提取
-- [ ] 压缩率：`.pbit` 文件大小 vs 原始 FASTA vs `.2bit`（直接存储参考）→ 三者对比
-- [ ] `delta_cache` 命中率：重复 `range` 同一 contig → 第二次应命中缓存
-- [ ] 验证：`cargo bench` 能跑通，输出合理数据
+- [x] 压缩速度：参考 1 Mb + N 个样本（N=1/10/100），测 `Compressor::create` + `append_sample` + `finish` 耗时（直接调库 API，不走 CLI 子进程）
+- [x] 解压速度：`get_sample` 全量提取 vs `get_contig` 全 contig vs `get_contig` 区间切片
+- [ ] 压缩率：`.pbit` 文件大小 vs 原始 FASTA vs `.2bit`（直接存储参考）→ 三者对比（非性能测量，通过 `ls -la` 手动观察，未纳入 criterion 基准）
+- [x] `Decompressor::open` 耗时：仅解析 header/footer/index，不解压数据
+- [x] `delta_cache` 命中率：重复 `get_contig` 同一 contig → cold（首次）vs warm（缓存命中）对比
+- [x] 验证：`cargo bench --no-run` 编译通过
 
 ## 当前状态
 
-- Phase 0-7 完成（`pgr pbit` 命令族可用：`create`/`stat`/`range`/`some`/`to-fa`）
-- 53 个单元测试 + 21 个集成测试全部通过
-- 留待后续：`Compressor::open_for_append` + `pgr pbit append` 命令、属性测试、性能基准、
-  mask blocks 完整往返、多 contig 区间提取测试
+- Phase 0-7 全部完成（`pgr pbit` 命令族可用：`create`/`append`/`stat`/`range`/`some`/`to-fa`）
+- 54 个单元测试 + 30 个集成测试全部通过；性能基准 `benches/pbit_benchmark.rs` 编译通过
+- `cargo fmt` + `cargo clippy -- -D warnings` + `cargo test` + `cargo bench --no-run` 全绿
+- 留待后续：压缩率对比统计（Phase 7.4 第3项，非性能测量，可通过 `ls -la` 手动观察）
 
 ## 参考资料
 
