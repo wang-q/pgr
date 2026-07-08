@@ -2,7 +2,7 @@
 //!
 //! All integers use fixed-size little-endian encoding (no varint/prefix
 //! coding). Strings use a u32 length prefix + UTF-8 bytes (no null
-//! termination). See `notes/design/agc-port.md` §文件格式规范 for the
+//! termination). See `notes/design/pbit.md` §文件格式规范 for the
 //! complete specification.
 
 use anyhow::{anyhow, Result};

@@ -1,7 +1,7 @@
 //! Sample/contig/segment metadata (collection), serialized as fixed-size u32
 //! LE fields + flate2 compression (no prefix coding).
 //!
-//! See `notes/design/agc-port.md` §Sample Index for the binary layout.
+//! See `notes/design/pbit.md` §Sample Index for the binary layout.
 
 use anyhow::{anyhow, Result};
 use indexmap::IndexMap;
