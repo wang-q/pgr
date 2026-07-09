@@ -1,6 +1,5 @@
 use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches, Command};
-use pgr::libs::io::basename_or_err;
 use pgr::libs::pbit::compressor::Compressor;
 
 /// Build the clap subcommand for create.
@@ -105,56 +104,27 @@ Examples:
 
 /// Execute the create command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let ref_fasta = args.get_one::<String>("ref").unwrap();
-    let outfile = args.get_one::<String>("outfile").unwrap();
-    let segment_size = *args.get_one::<usize>("segment_size").unwrap();
-    let kmer_len = *args.get_one::<usize>("kmer_len").unwrap();
-    let min_match_len = *args.get_one::<u32>("min_match_len").unwrap();
+    let ref_fasta = args
+        .get_one::<String>("ref")
+        .context("missing required argument: --ref")?;
+    let outfile = args
+        .get_one::<String>("outfile")
+        .context("missing required argument: --outfile")?;
+    let segment_size = *args
+        .get_one::<usize>("segment_size")
+        .context("missing --segment-size")?;
+    let kmer_len = *args
+        .get_one::<usize>("kmer_len")
+        .context("missing --kmer-len")?;
+    let min_match_len = *args
+        .get_one::<u32>("min_match_len")
+        .context("missing --min-match-len")?;
 
     anyhow::ensure!(segment_size > 0, "segment-size must be positive");
     anyhow::ensure!(kmer_len > 0, "kmer-len must be positive");
     anyhow::ensure!(min_match_len > 0, "min-match-len must be positive");
 
-    // Mutex: --name and --paf cannot coexist.
-    let has_name = args.get_one::<String>("name").is_some();
-    let has_paf = args.get_many::<String>("paf").is_some();
-    if has_name && has_paf {
-        anyhow::bail!(
-            "--name and --paf are mutually exclusive (use --name TSV with 3rd column for PAF)"
-        );
-    }
-
-    // Collect (sample_name, fasta_path, paf_path_opt) triples.
-    let samples: Vec<(String, String, Option<String>)> =
-        if let Some(name_tsv) = args.get_one::<String>("name") {
-            super::read_name_tsv(name_tsv)?
-        } else {
-            let infiles = args
-                .get_many::<String>("infiles")
-                .ok_or_else(|| anyhow::anyhow!("no input files: provide -i or --name"))?;
-            let pafs: Vec<String> = args
-                .get_many::<String>("paf")
-                .map(|v| v.cloned().collect())
-                .unwrap_or_default();
-            if !pafs.is_empty() && pafs.len() != infiles.len() {
-                anyhow::bail!(
-                    "--paf count ({}) does not match -i count ({})",
-                    pafs.len(),
-                    infiles.len()
-                );
-            }
-            let mut pairs = Vec::new();
-            for (i, path) in infiles.enumerate() {
-                let name = basename_or_err(path)?;
-                let paf = pafs.get(i).cloned();
-                pairs.push((name, path.clone(), paf));
-            }
-            pairs
-        };
-
-    if samples.is_empty() {
-        anyhow::bail!("no sample FASTA files provided");
-    }
+    let samples = super::collect_samples_from_args(args)?;
 
     let mut comp = Compressor::create(outfile, ref_fasta, segment_size, kmer_len, min_match_len)
         .with_context(|| format!("failed to create pbit archive: {}", outfile))?;

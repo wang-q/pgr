@@ -1,6 +1,5 @@
 use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches, Command};
-use pgr::libs::io::basename_or_err;
 use pgr::libs::pbit::compressor::Compressor;
 
 /// Build the clap subcommand for append.
@@ -69,49 +68,12 @@ Examples:
 
 /// Execute the append command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let infile = args.get_one::<String>("infile").unwrap();
+    let infile = args
+        .get_one::<String>("infile")
+        .context("missing required argument: infile")?;
     let outfile_opt = args.get_one::<String>("outfile");
 
-    // Mutex: --name and --paf cannot coexist.
-    let has_name = args.get_one::<String>("name").is_some();
-    let has_paf = args.get_many::<String>("paf").is_some();
-    if has_name && has_paf {
-        anyhow::bail!(
-            "--name and --paf are mutually exclusive (use --name TSV with 3rd column for PAF)"
-        );
-    }
-
-    // Collect (sample_name, fasta_path, paf_path_opt) triples.
-    let samples: Vec<(String, String, Option<String>)> =
-        if let Some(name_tsv) = args.get_one::<String>("name") {
-            super::read_name_tsv(name_tsv)?
-        } else {
-            let infiles = args
-                .get_many::<String>("infiles")
-                .ok_or_else(|| anyhow::anyhow!("no input files: provide -i or --name"))?;
-            let pafs: Vec<String> = args
-                .get_many::<String>("paf")
-                .map(|v| v.cloned().collect())
-                .unwrap_or_default();
-            if !pafs.is_empty() && pafs.len() != infiles.len() {
-                anyhow::bail!(
-                    "--paf count ({}) does not match -i count ({})",
-                    pafs.len(),
-                    infiles.len()
-                );
-            }
-            let mut pairs = Vec::new();
-            for (i, path) in infiles.enumerate() {
-                let name = basename_or_err(path)?;
-                let paf = pafs.get(i).cloned();
-                pairs.push((name, path.clone(), paf));
-            }
-            pairs
-        };
-
-    if samples.is_empty() {
-        anyhow::bail!("no sample FASTA files provided");
-    }
+    let samples = super::collect_samples_from_args(args)?;
 
     // Determine the working path: copy if -o specified, else in-place via a
     // temp file + atomic rename so a mid-append failure cannot corrupt the

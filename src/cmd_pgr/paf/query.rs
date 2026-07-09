@@ -1,4 +1,5 @@
 use clap::{ArgMatches, Command};
+use std::io::Write;
 /// Build the clap subcommand for query.
 pub fn make_subcommand() -> Command {
     let cmd = Command::new("query")
@@ -53,8 +54,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let opts = crate::cmd_pgr::args::query_options_from_args(args);
     let (idx, all_results) = pgr::libs::paf::query::run_query(&opts)?;
     let stdout = std::io::stdout();
+    let mut out = stdout.lock();
     for (_, results) in &all_results {
-        pgr::libs::paf::query::output_paf(&mut stdout.lock(), &idx, results)?;
+        pgr::libs::paf::query::output_paf(&mut out, &idx, results)?;
     }
+    out.flush()?;
     Ok(())
 }

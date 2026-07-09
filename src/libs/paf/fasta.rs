@@ -123,7 +123,9 @@ impl FastaStore {
             let reader = loc::Input::Bgzf(
                 noodles_bgzf::io::indexed_reader::Builder::default().build_from_path(path)?,
             );
-            let cache = lru::LruCache::new(NonZeroUsize::new(FASTA_LRU_SIZE).unwrap());
+            let cache = lru::LruCache::new(
+                NonZeroUsize::new(FASTA_LRU_SIZE).expect("FASTA_LRU_SIZE must be non-zero"),
+            );
             files.insert(
                 path.clone(),
                 FastaEntry {

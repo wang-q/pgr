@@ -39,8 +39,12 @@ Examples:
 /// Execute the some command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let is_invert = args.get_flag("invert");
-    let infile = args.get_one::<String>("infile").unwrap();
-    let list_file = args.get_one::<String>("name_list").unwrap();
+    let infile = args
+        .get_one::<String>("infile")
+        .context("missing required argument: infile")?;
+    let list_file = args
+        .get_one::<String>("name_list")
+        .context("missing required argument: name_list")?;
     let outfile = crate::cmd_pgr::args::get_outfile(args);
 
     // Load contig name list.

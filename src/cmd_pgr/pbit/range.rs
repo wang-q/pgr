@@ -48,7 +48,9 @@ Examples:
 
 /// Execute the range command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let infile = args.get_one::<String>("infile").unwrap();
+    let infile = args
+        .get_one::<String>("infile")
+        .context("missing required argument: infile")?;
     let output_path = crate::cmd_pgr::args::get_outfile(args);
 
     let ranges = crate::cmd_pgr::args::collect_ranges(args)?;

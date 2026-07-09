@@ -43,6 +43,55 @@ pub(crate) fn read_name_tsv(path: &str) -> Result<Vec<(String, String, Option<St
     Ok(out)
 }
 
+/// Collect `(sample_name, fasta_path, paf_path_opt)` triples from clap args.
+///
+/// Supports either `--name` (TSV with optional PAF column) or `-i` with an
+/// optional paired `--paf`. `--name` and `--paf` are mutually exclusive.
+pub(crate) fn collect_samples_from_args(
+    args: &clap::ArgMatches,
+) -> anyhow::Result<Vec<(String, String, Option<String>)>> {
+    let has_name = args.get_one::<String>("name").is_some();
+    let has_paf = args.get_many::<String>("paf").is_some();
+    if has_name && has_paf {
+        anyhow::bail!(
+            "--name and --paf are mutually exclusive (use --name TSV with 3rd column for PAF)"
+        );
+    }
+
+    let samples: Vec<(String, String, Option<String>)> =
+        if let Some(name_tsv) = args.get_one::<String>("name") {
+            read_name_tsv(name_tsv)?
+        } else {
+            let infiles = args
+                .get_many::<String>("infiles")
+                .ok_or_else(|| anyhow::anyhow!("no input files: provide -i or --name"))?;
+            let pafs: Vec<String> = args
+                .get_many::<String>("paf")
+                .map(|v| v.cloned().collect())
+                .unwrap_or_default();
+            if !pafs.is_empty() && pafs.len() != infiles.len() {
+                anyhow::bail!(
+                    "--paf count ({}) does not match -i count ({})",
+                    pafs.len(),
+                    infiles.len()
+                );
+            }
+            let mut pairs = Vec::new();
+            for (i, path) in infiles.enumerate() {
+                let name = pgr::libs::io::basename_or_err(path)?;
+                let paf = pafs.get(i).cloned();
+                pairs.push((name, path.clone(), paf));
+            }
+            pairs
+        };
+
+    if samples.is_empty() {
+        anyhow::bail!("no sample FASTA files provided");
+    }
+
+    Ok(samples)
+}
+
 /// Build the clap subcommand for pbit.
 pub fn make_subcommand() -> Command {
     Command::new("pbit")

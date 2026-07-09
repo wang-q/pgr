@@ -309,7 +309,8 @@ impl Compressor<std::io::BufWriter<std::fs::File>> {
         let mut ref_group_id: u32 = 0;
         for (contig_name, seq) in &ref_contigs {
             let segs = segment_sequence(seq, segment_size);
-            comp.contig_ref_groups
+            let groups = comp
+                .contig_ref_groups
                 .entry(contig_name.clone())
                 .or_default();
             for seg in segs {
@@ -324,10 +325,7 @@ impl Compressor<std::io::BufWriter<std::fs::File>> {
                     contig_name: contig_name.clone(),
                     segment_offset: offset,
                 });
-                comp.contig_ref_groups
-                    .get_mut(contig_name)
-                    .unwrap()
-                    .push(group_id);
+                groups.push(group_id);
 
                 // Prepare a Segment for this reference group.
                 let mut lz = Segment::new(min_match_len);
@@ -594,7 +592,7 @@ impl<W: Write + Seek> Compressor<W> {
                     id_a.partial_cmp(&id_b).unwrap_or(std::cmp::Ordering::Equal)
                 })
             })
-            .unwrap();
+            .ok_or_else(|| anyhow::anyhow!("no alignment hit found for segment"))?;
 
         // 4. Check full coverage (decision 3a).
         if best.query_start > seg_start || best.query_end < seg_end {

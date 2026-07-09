@@ -65,8 +65,10 @@ Examples:
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let opts = crate::cmd_pgr::args::query_options_from_args(args);
     let (idx, all_results) = pgr::libs::paf::query::run_query(&opts)?;
-    let mut fasta_store =
-        pgr::libs::paf::fasta::prepare_store(args.get_one::<String>("fasta_tsv").unwrap(), &idx)?;
+    let fasta_tsv = args
+        .get_one::<String>("fasta_tsv")
+        .context("missing required argument: --fasta-tsv")?;
+    let mut fasta_store = pgr::libs::paf::fasta::prepare_store(fasta_tsv, &idx)?;
 
     let params = crate::cmd_pgr::args::get_poa_params(args);
 

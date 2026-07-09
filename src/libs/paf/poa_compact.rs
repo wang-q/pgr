@@ -56,7 +56,7 @@ pub fn output_gfa<W: Write>(
             writeln!(writer, "# region: {tname_region}")?;
         }
 
-        let mut graph = build_compacted(&poa);
+        let mut graph = build_compacted(&poa)?;
         if crush {
             graph = crush_bubbles(graph);
         }
@@ -85,7 +85,7 @@ pub struct CompactedGraph {
 /// when p has out-degree 1 (sole successor v) and v has in-degree 1 (sole
 /// predecessor p). This preserves all branching structure (bubbles remain as
 /// graph branches) while collapsing non-branching runs.
-pub fn build_compacted(poa: &Poa) -> CompactedGraph {
+pub fn build_compacted(poa: &Poa) -> anyhow::Result<CompactedGraph> {
     let g = &poa.graph().graph;
     let topo = poa.graph().topological_sort();
 
@@ -131,15 +131,20 @@ pub fn build_compacted(poa: &Poa) -> CompactedGraph {
     for &v in &topo {
         let h = head[v.index()];
         let id = (head_to_id[&h] - 1) as usize;
-        let base = char::from(g.node_weight(v).unwrap().base);
+        let node = g
+            .node_weight(v)
+            .ok_or_else(|| anyhow::anyhow!("POA node {:?} missing in compacted graph", v))?;
+        let base = char::from(node.base);
         segments[id].push(base);
-        weights[id] += g.node_weight(v).unwrap().weight;
+        weights[id] += node.weight;
     }
 
     // 4. Edges: map original edges to (head_from, head_to), dedup.
     let mut edges: BTreeSet<(u32, u32)> = BTreeSet::new();
     for e in g.edge_indices() {
-        let (u, v) = g.edge_endpoints(e).unwrap();
+        let (u, v) = g
+            .edge_endpoints(e)
+            .ok_or_else(|| anyhow::anyhow!("POA edge {:?} missing in compacted graph", e))?;
         let hu = head_to_id[&head[u.index()]];
         let hv = head_to_id[&head[v.index()]];
         if hu != hv {
@@ -162,12 +167,12 @@ pub fn build_compacted(poa: &Poa) -> CompactedGraph {
         paths.push(compact);
     }
 
-    CompactedGraph {
+    Ok(CompactedGraph {
         segments,
         weights,
         edges,
         paths,
-    }
+    })
 }
 
 /// Crush simple bubbles (impg `crush` style). A bubble is a set of nodes
@@ -206,10 +211,11 @@ pub fn crush_bubbles(graph: CompactedGraph) -> CompactedGraph {
             continue;
         }
         // Keep max weight; tie-break: lowest id (deterministic).
+        // `expect` is safe: we only process groups with at least 2 members.
         let keep = *members
             .iter()
             .max_by_key(|&&id| (graph.weights[(id - 1) as usize], i64::MAX - id as i64))
-            .unwrap();
+            .expect("bubble group has at least 2 members");
         for &id in members {
             if id != keep {
                 remap[(id - 1) as usize] = keep;

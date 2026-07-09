@@ -42,8 +42,12 @@ Examples:
 
 /// Execute the to-fa command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let input_path = args.get_one::<String>("infile").unwrap();
-    let outdir = args.get_one::<String>("outdir").unwrap();
+    let input_path = args
+        .get_one::<String>("infile")
+        .context("missing required argument: infile")?;
+    let outdir = args
+        .get_one::<String>("outdir")
+        .context("missing required argument: outdir")?;
     let sample_filter = args.get_one::<String>("sample");
 
     // Create output directory if it does not exist.

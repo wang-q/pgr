@@ -9,6 +9,7 @@ pub mod persist;
 pub mod poa_compact;
 pub mod query;
 pub mod record;
+pub mod to_bed;
 pub mod to_fas;
 pub mod to_maf;
 pub mod vcf;

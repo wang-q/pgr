@@ -36,7 +36,10 @@ Examples:
 }
 /// Execute the index command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let infiles: Vec<&String> = args.get_many::<String>("infiles").unwrap().collect();
+    let infiles: Vec<&String> = args
+        .get_many::<String>("infiles")
+        .ok_or_else(|| anyhow::anyhow!("no input files"))?
+        .collect();
     let count = infiles.len();
 
     log::info!("Building PAF index from {count} file(s)...");

@@ -54,17 +54,19 @@ impl Collection {
     }
 
     /// Ensure `sample` is registered and has a contig entry for `contig`.
-    /// Returns `false` if the sample already had this contig (duplicate).
-    pub fn register_sample_contig(&mut self, sample: &str, contig: &str) -> bool {
+    /// Returns a mutable reference to the (existing or newly created) contig entry.
+    pub fn register_sample_contig(&mut self, sample: &str, contig: &str) -> &mut ContigSegs {
         let contigs = self.samples.entry(sample.to_string()).or_default();
-        if contigs.iter().any(|c| c.contig_name == contig) {
-            return false;
+        if let Some(pos) = contigs.iter().position(|c| c.contig_name == contig) {
+            &mut contigs[pos]
+        } else {
+            contigs.push(ContigSegs {
+                contig_name: contig.to_string(),
+                segments: Vec::new(),
+            });
+            // `last_mut` is safe because we just pushed an element.
+            contigs.last_mut().expect("just pushed a contig entry")
         }
-        contigs.push(ContigSegs {
-            contig_name: contig.to_string(),
-            segments: Vec::new(),
-        });
-        true
     }
 
     /// Ensure `sample` exists in the collection (with no contigs if new).
@@ -83,18 +85,14 @@ impl Collection {
         ref_start: u32,
         ref_end: u32,
     ) {
-        self.register_sample_contig(sample, contig);
-        let contigs = self.samples.get_mut(sample).expect("just registered");
-        let entry = contigs
-            .iter_mut()
-            .find(|c| c.contig_name == contig)
-            .expect("just registered");
-        entry.segments.push(SegmentDesc {
-            ref_group_id,
-            delta_id,
-            ref_start,
-            ref_end,
-        });
+        self.register_sample_contig(sample, contig)
+            .segments
+            .push(SegmentDesc {
+                ref_group_id,
+                delta_id,
+                ref_start,
+                ref_end,
+            });
     }
 
     /// Return the segment list for `sample`'s `contig`, or `None`.
@@ -338,8 +336,10 @@ mod tests {
     #[test]
     fn test_register_duplicate_contig() {
         let mut col = Collection::new();
-        assert!(col.register_sample_contig("s1", "chr1"));
-        assert!(!col.register_sample_contig("s1", "chr1")); // duplicate
+        let first = col.register_sample_contig("s1", "chr1");
+        assert_eq!(first.contig_name, "chr1");
+        let second = col.register_sample_contig("s1", "chr1"); // duplicate
+        assert_eq!(second.contig_name, "chr1");
         assert_eq!(col.list_contigs("s1").len(), 1);
     }
 
