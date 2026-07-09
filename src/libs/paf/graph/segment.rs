@@ -21,9 +21,6 @@ pub(super) struct AlignmentLink {
     pub a: usize, // index into `segments`
     pub b: usize, // index into `segments`
     // True if the alignment between a and b is reverse-strand.
-    // Currently unused — coarse GFA always emits '+' orientation; reserved
-    // for future rGFA support to tag segment orientation per link.
-    #[allow(dead_code)]
     pub reverse: bool,
 }
 

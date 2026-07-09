@@ -6,13 +6,15 @@
 //! second PAF record with swapped roles.
 
 use super::{project, PafIndex, PafMetadata, QueryResult};
-use crate::libs::paf::cigar::gap_compressed_identity;
+use crate::libs::paf::cigar::{gap_compressed_identity, slice_cigar_by_target, CigarOp};
+use crate::libs::paf::fasta::FastaStore;
 use coitrees::{Interval, IntervalNode, IntervalTree};
 use std::collections::HashMap;
 
 impl PafIndex {
     /// Transitive BFS: walks the alignment graph outward from a seed region up
-    /// to `max_depth` hops, merging adjacent results within `merge_distance`.
+    /// to `max_depth` hops. Adjacent results are merged afterwards by the
+    /// caller via [`PafIndex::merge_results`] when `--merge-distance` is set.
     #[allow(clippy::too_many_arguments)]
     pub fn query_transitive_bfs(
         &self,
@@ -25,6 +27,7 @@ impl PafIndex {
         min_identity: f64,
         min_output_len: i32,
         merge_distance: i32,
+        fasta_store: Option<&mut FastaStore>,
     ) -> Vec<QueryResult> {
         let mut results = Vec::new();
         let mut visited: HashMap<u32, SortedRanges> = HashMap::new();
@@ -92,44 +95,140 @@ impl PafIndex {
             depth += 1;
         }
         if merge_distance > 0 {
-            merge_results(&mut results, merge_distance);
+            self.merge_results(&mut results, merge_distance, fasta_store);
         }
         results
     }
 }
 
-fn merge_results(results: &mut Vec<QueryResult>, max_gap: i32) {
-    // Group by query_id, sort by query_start, merge adjacent within max_gap
-    let mut groups: HashMap<u32, Vec<(usize, i32, i32)>> = HashMap::new();
-    for (i, &(qid, q_iv, _t_iv, _, _, _, _)) in results.iter().enumerate() {
-        groups
-            .entry(qid)
-            .or_default()
-            .push((i, q_iv.first, q_iv.last));
-    }
-    let mut to_remove = Vec::new();
-    for (_qid, mut items) in groups {
-        if items.len() <= 1 {
-            continue;
+impl PafIndex {
+    fn merge_results(
+        &self,
+        results: &mut Vec<QueryResult>,
+        max_gap: i32,
+        mut fasta_store: Option<&mut FastaStore>,
+    ) {
+        if results.len() < 2 {
+            return;
         }
-        items.sort_by_key(|&(_, s, _)| s);
-        let mut prev = items[0];
-        for &curr in &items[1..] {
-            // Merge when curr.start is within max_gap after prev.end (covers overlap + adjacency).
-            if curr.1 <= prev.2 + max_gap {
-                // Merge: keep the one with earlier target
-                results[prev.0].1.last = results[prev.0].1.last.max(curr.2);
-                prev.2 = prev.2.max(curr.2);
-                to_remove.push(curr.0);
-            } else {
-                prev = curr;
+        // Group by (query_id, target_id, strand). Within a group, adjacent
+        // results are merged; the original-record check uses rec_ts/rec_qs.
+        let mut groups: HashMap<(u32, u32, char), Vec<usize>> = HashMap::new();
+        for (i, (qid, _q_iv, t_iv, _cigar, _rec_ts, _rec_qs, strand)) in results.iter().enumerate()
+        {
+            groups
+                .entry((*qid, t_iv.metadata, *strand))
+                .or_default()
+                .push(i);
+        }
+
+        let mut to_remove = Vec::new();
+        for (_key, mut idxs) in groups {
+            if idxs.len() <= 1 {
+                continue;
+            }
+            idxs.sort_by_key(|&i| results[i].1.first);
+            let mut curr = idxs[0];
+            for &next in &idxs[1..] {
+                let (c_qs, c_qe) = (results[curr].1.first, results[curr].1.last);
+                let (n_qs, n_qe) = (results[next].1.first, results[next].1.last);
+                let (c_ts, c_te) = (results[curr].2.first, results[curr].2.last);
+                let (n_ts, n_te) = (results[next].2.first, results[next].2.last);
+
+                if n_qs > c_qe + max_gap {
+                    curr = next;
+                    continue;
+                }
+
+                let merged_qs = c_qs.min(n_qs);
+                let merged_qe = c_qe.max(n_qe);
+                let merged_ts = c_ts.min(n_ts);
+                let merged_te = c_te.max(n_te);
+
+                let same_record = results[curr].4 == results[next].4
+                    && results[curr].5 == results[next].5
+                    && results[curr].6 == results[next].6;
+
+                let new_cigar = if same_record {
+                    Some(slice_cigar_by_target(
+                        &results[curr].3,
+                        results[curr].4,
+                        merged_ts,
+                        merged_te,
+                    ))
+                } else {
+                    fasta_store.as_mut().and_then(|store| {
+                        Self::recompute_gap_cigar(
+                            store,
+                            self.id_to_name(results[curr].0).unwrap_or("?"),
+                            self.id_to_name(results[curr].2.metadata).unwrap_or("?"),
+                            merged_qs,
+                            merged_qe,
+                            merged_ts,
+                            merged_te,
+                            results[curr].6,
+                        )
+                    })
+                };
+
+                if let Some(cigar) = new_cigar {
+                    results[curr].1.first = merged_qs;
+                    results[curr].1.last = merged_qe;
+                    results[curr].2.first = merged_ts;
+                    results[curr].2.last = merged_te;
+                    results[curr].3 = cigar;
+                    to_remove.push(next);
+                } else {
+                    curr = next;
+                }
             }
         }
+
+        to_remove.sort_unstable();
+        to_remove.dedup();
+        for &idx in to_remove.iter().rev() {
+            results.remove(idx);
+        }
     }
-    to_remove.sort_unstable();
-    to_remove.dedup();
-    for &idx in to_remove.iter().rev() {
-        results.remove(idx);
+
+    /// Recompute a gap-filled CIGAR between two merged result intervals.
+    ///
+    /// Fetches the merged target/query ranges from `store` and emits `=`/`X`
+    /// ops. Returns `None` if the sequences cannot be fetched or if the
+    /// merged ranges contain indels (unequal lengths), in which case merging
+    /// is conservatively skipped.
+    #[allow(clippy::too_many_arguments)]
+    fn recompute_gap_cigar(
+        store: &mut FastaStore,
+        qname: &str,
+        tname: &str,
+        qs: i32,
+        qe: i32,
+        ts: i32,
+        te: i32,
+        strand: char,
+    ) -> Option<Vec<CigarOp>> {
+        let (t_seq, _) = store.fetch_range(tname, ts, te).ok()?;
+        let (q_seq_fwd, _) = store.fetch_range(qname, qs, qe).ok()?;
+        let q_seq: Vec<u8> = if strand == '-' {
+            crate::libs::nt::rev_comp(&q_seq_fwd).collect()
+        } else {
+            q_seq_fwd
+        };
+        if t_seq.len() != q_seq.len() {
+            return None;
+        }
+        let mut ops: Vec<CigarOp> = Vec::new();
+        for (&t, &q) in t_seq.iter().zip(q_seq.iter()) {
+            let op = if t.eq_ignore_ascii_case(&q) { '=' } else { 'X' };
+            match ops.last_mut() {
+                Some(last) if last.op() == op => {
+                    *last = CigarOp::new(last.len() + 1, op);
+                }
+                _ => ops.push(CigarOp::new(1, op)),
+            }
+        }
+        Some(ops)
     }
 }
 
@@ -225,6 +324,36 @@ impl SortedRanges {
 mod tests {
     use super::*;
     use coitrees::Interval;
+    use indexmap::IndexMap;
+
+    fn empty_index() -> PafIndex {
+        PafIndex {
+            names: IndexMap::new(),
+            trees: HashMap::new(),
+            reverse_trees: HashMap::new(),
+            lazy_source: None,
+            lazy_source_path: None,
+        }
+    }
+
+    fn tmp_fasta_store(seqs: &[(&str, &str)]) -> (tempfile::TempDir, FastaStore) {
+        use std::io::Write;
+        let dir = tempfile::tempdir().unwrap();
+        let mut entries = IndexMap::new();
+        for (name, seq) in seqs {
+            let path = dir.path().join(format!("{name}.fa.gz"));
+            let file = std::fs::File::create(&path).unwrap();
+            let mut writer = noodles_bgzf::io::Writer::new(file);
+            writeln!(writer, ">{name}").unwrap();
+            writeln!(writer, "{seq}").unwrap();
+            writer.flush().unwrap();
+            drop(writer);
+            crate::libs::fmt::fa::build_gzi_index(path.to_str().unwrap()).unwrap();
+            entries.insert(name.to_string(), path.to_string_lossy().to_string());
+        }
+        let store = FastaStore::new(&entries).unwrap();
+        (dir, store)
+    }
 
     #[test]
     fn test_sorted_ranges_disjoint() {
@@ -266,12 +395,12 @@ mod tests {
                 Interval::new(55, 100, 0u32),
                 Interval::new(55, 100, 1u32),
                 vec![],
-                55,
-                55,
+                0,
+                0,
                 '+',
             ),
         ];
-        merge_results(&mut results, 10);
+        empty_index().merge_results(&mut results, 10, None);
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].1.first, 0);
         assert_eq!(results[0].1.last, 100);
@@ -294,12 +423,12 @@ mod tests {
                 Interval::new(100, 150, 0u32),
                 Interval::new(100, 150, 1u32),
                 vec![],
-                100,
-                100,
+                0,
+                0,
                 '+',
             ),
         ];
-        merge_results(&mut results, 10);
+        empty_index().merge_results(&mut results, 10, None);
         assert_eq!(results.len(), 2);
     }
 
@@ -322,12 +451,12 @@ mod tests {
                 Interval::new(50, 150, 0u32),
                 Interval::new(50, 150, 1u32),
                 vec![],
-                50,
-                50,
+                0,
+                0,
                 '+',
             ),
         ];
-        merge_results(&mut results, 10);
+        empty_index().merge_results(&mut results, 10, None);
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].1.first, 0);
         assert_eq!(results[0].1.last, 150);
@@ -353,8 +482,8 @@ mod tests {
                 Interval::new(55, 60, 0u32),
                 Interval::new(55, 60, 1u32),
                 vec![],
-                55,
-                55,
+                0,
+                0,
                 '+',
             ),
             (
@@ -362,14 +491,158 @@ mod tests {
                 Interval::new(65, 100, 0u32),
                 Interval::new(65, 100, 1u32),
                 vec![],
-                65,
-                65,
+                0,
+                0,
                 '+',
             ),
         ];
-        merge_results(&mut results, 10);
+        empty_index().merge_results(&mut results, 10, None);
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].1.first, 0);
         assert_eq!(results[0].1.last, 100);
+    }
+
+    #[test]
+    fn test_merge_same_record_cigar_recomputed() {
+        // Same source record: merging must rebuild the CIGAR for the union of
+        // target intervals, not just extend query coordinates.
+        let cigar = crate::libs::paf::cigar::parse_cigar("25=5X25=").unwrap();
+        let mut results = vec![
+            (
+                0u32,
+                Interval::new(0, 25, 0u32),
+                Interval::new(0, 25, 1u32),
+                cigar.clone(),
+                0,
+                0,
+                '+',
+            ),
+            (
+                0u32,
+                Interval::new(30, 55, 0u32),
+                Interval::new(30, 55, 1u32),
+                cigar.clone(),
+                0,
+                0,
+                '+',
+            ),
+        ];
+        empty_index().merge_results(&mut results, 10, None);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].1.first, 0);
+        assert_eq!(results[0].1.last, 55);
+        assert_eq!(results[0].2.first, 0);
+        assert_eq!(results[0].2.last, 55);
+        let out = crate::libs::paf::cigar::format_cigar(&results[0].3);
+        assert_eq!(out, "25=5X25=");
+    }
+
+    #[test]
+    fn test_merge_without_fasta_does_not_merge_different_records() {
+        // Different source records without a FastaStore: merging must be
+        // skipped because the gap CIGAR cannot be recomputed.
+        let mut results = vec![
+            (
+                0u32,
+                Interval::new(0, 25, 0u32),
+                Interval::new(0, 25, 1u32),
+                vec![],
+                0,
+                0,
+                '+',
+            ),
+            (
+                0u32,
+                Interval::new(30, 55, 0u32),
+                Interval::new(30, 55, 1u32),
+                vec![],
+                30,
+                0,
+                '+',
+            ),
+        ];
+        empty_index().merge_results(&mut results, 10, None);
+        assert_eq!(results.len(), 2);
+    }
+
+    #[test]
+    fn test_merge_different_records_with_fasta() {
+        // Different source records with a FastaStore: the gap is filled by
+        // comparing the merged target/query sequences base-by-base.
+        let (_dir, mut store) = tmp_fasta_store(&[
+            ("T", "AAAAAAAAAACCCCCCCCCCTTTTTTTTTT"),
+            ("Q", "AAAAAAAAAACCCCCCCCCgTTTTTTTTTT"),
+        ]);
+        let mut idx = empty_index();
+        idx.names.insert("Q".to_string(), 0);
+        idx.names.insert("T".to_string(), 1);
+
+        let mut results = vec![
+            (
+                0u32,
+                Interval::new(0, 20, 0u32),
+                Interval::new(0, 20, 1u32),
+                vec![],
+                0,
+                0,
+                '+',
+            ),
+            (
+                0u32,
+                Interval::new(20, 30, 0u32),
+                Interval::new(20, 30, 1u32),
+                vec![],
+                20,
+                20,
+                '+',
+            ),
+        ];
+        idx.merge_results(&mut results, 10, Some(&mut store));
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].1.first, 0);
+        assert_eq!(results[0].1.last, 30);
+        assert_eq!(results[0].2.first, 0);
+        assert_eq!(results[0].2.last, 30);
+        let out = crate::libs::paf::cigar::format_cigar(&results[0].3);
+        assert_eq!(out, "19=1X10=");
+    }
+
+    #[test]
+    fn test_merge_different_records_with_fasta_minus_strand() {
+        // Different source records on the '-' strand: query coords are forward,
+        // but the merged CIGAR must compare the reverse complement of Q to T.
+        let (_dir, mut store) = tmp_fasta_store(&[("T", "AAAACCCCGGGG"), ("Q", "CCCCGGGGTTTT")]);
+        let mut idx = empty_index();
+        idx.names.insert("Q".to_string(), 0);
+        idx.names.insert("T".to_string(), 1);
+
+        let mut results = vec![
+            (
+                0u32,
+                Interval::new(0, 6, 0u32),
+                Interval::new(0, 6, 1u32),
+                vec![],
+                0,
+                0,
+                '-',
+            ),
+            (
+                0u32,
+                Interval::new(6, 12, 0u32),
+                Interval::new(6, 12, 1u32),
+                vec![],
+                6,
+                6,
+                '-',
+            ),
+        ];
+        idx.merge_results(&mut results, 10, Some(&mut store));
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].1.first, 0);
+        assert_eq!(results[0].1.last, 12);
+        assert_eq!(results[0].2.first, 0);
+        assert_eq!(results[0].2.last, 12);
+        let out = crate::libs::paf::cigar::format_cigar(&results[0].3);
+        assert_eq!(out, "12=");
     }
 }

@@ -110,6 +110,32 @@ fn test_reverse_strand_coords_flipped() {
 }
 
 #[test]
+fn test_reverse_strand_path_orientation() {
+    // A = ACGTACGTAC, B = GTACGTACGT (reverse complement of A).
+    // PAF order: query first, target second. B is the query aligned in reverse
+    // to target A; they should share one node, but B's path step must traverse
+    // it in the '-' orientation.
+    let paf = "B\t10\t0\t10\t-\tA\t10\t0\t10\t10\t10\t255\tcg:Z:10M\n";
+    let seqs = seqs_map(&[("A", "ACGTACGTAC"), ("B", "GTACGTACGT")]);
+    let g = PafGraph::build(paf.as_bytes(), Some(&seqs), 100).unwrap();
+    let a_path = g.paths.iter().find(|(n, _)| n == "A").unwrap();
+    let b_path = g.paths.iter().find(|(n, _)| n == "B").unwrap();
+    assert_eq!(a_path.1.len(), 1, "A should have one aligned step");
+    assert_eq!(b_path.1.len(), 1, "B should have one aligned step");
+    assert_eq!(
+        a_path.1[0].node, b_path.1[0].node,
+        "A and B should share a node"
+    );
+    assert_eq!(a_path.1[0].orient, '+', "A traverses the node forward");
+    assert_eq!(b_path.1[0].orient, '-', "B traverses the node reverse");
+    assert_eq!(
+        String::from_utf8_lossy(&g.node_seqs[a_path.1[0].node as usize]),
+        "ACGTACGTAC",
+        "node sequence should match A's forward strand"
+    );
+}
+
+#[test]
 fn test_gfa_output_format() {
     let paf = "A\t100\t0\t100\t+\tB\t100\t0\t100\t95\t100\t255\tcg:Z:100M\n";
     let seqs = seqs_map(&[("A", &"ACGT".repeat(25)), ("B", &"TGCA".repeat(25))]);

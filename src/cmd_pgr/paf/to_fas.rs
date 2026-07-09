@@ -70,11 +70,8 @@ Examples:
 /// Execute the to-fas command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let opts = crate::cmd_pgr::args::query_options_from_args(args);
-    let (idx, all_results) = pgr::libs::paf::query::run_query(&opts)?;
-    let fasta_tsv = args
-        .get_one::<String>("fasta_tsv")
-        .context("missing required argument: --fasta-tsv")?;
-    let mut fasta_store = pgr::libs::paf::fasta::prepare_store(fasta_tsv, &idx)?;
+    let (idx, all_results, fasta_store_opt) = pgr::libs::paf::query::run_query(&opts)?;
+    let mut fasta_store = fasta_store_opt.context("missing required argument: --fasta-tsv")?;
     let outfile = crate::cmd_pgr::args::get_outfile(args);
     let mut writer =
         pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;

@@ -50,7 +50,7 @@ C\t100\t0\t100\t+\tA\t100\t0\t100\t90\t100\t255\tcg:Z:100M
 ";
     let idx = PafIndex::build(BufReader::new(paf.as_bytes())).unwrap();
     let b = idx.name_to_id("B").unwrap();
-    let res = idx.query_transitive_bfs(b, 0, 100, 2, 10, 10, 0.0, 0, 0);
+    let res = idx.query_transitive_bfs(b, 0, 100, 2, 10, 10, 0.0, 0, 0, None);
     let a = idx.name_to_id("A").unwrap();
     let c = idx.name_to_id("C").unwrap();
     assert!(

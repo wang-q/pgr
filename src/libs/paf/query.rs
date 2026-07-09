@@ -6,6 +6,7 @@
 //! chain-length / degree filtering.
 
 use super::cigar;
+use super::fasta::FastaStore;
 use super::index::{PafIndex, QueryResult};
 use super::msa_build::orient_interval;
 use crate::libs::chain::record::read_chains;
@@ -46,6 +47,10 @@ pub struct QueryOptions {
     pub subset_list: Option<String>,
     /// Optional UCSC chain file for syntenic filtering.
     pub syntenic_filter: Option<String>,
+    /// Optional TSV of genome_name -> bgzf_fasta_path. Required for
+    /// `--merge-distance` to recompute CIGAR when merging results from
+    /// transitive BFS.
+    pub fasta_tsv: Option<String>,
 }
 
 /// Run a query against a PAF index.
@@ -53,10 +58,18 @@ pub struct QueryOptions {
 /// Builds or loads the index from `opts.infile`, parses regions from
 /// `opts.region` or `opts.bed_regions`, runs BFS / direct query, and
 /// applies subset / syntenic / chain-length / degree filters.
+///
+/// Returns the index, results per region, and an optional `FastaStore`
+/// built from `opts.fasta_tsv` (used for `--merge-distance` CIGAR
+/// recomputation and returned so downstream commands can reuse it).
 #[allow(clippy::type_complexity)]
 pub fn run_query(
     opts: &QueryOptions,
-) -> anyhow::Result<(PafIndex, Vec<((String, i32, i32), Vec<QueryResult>)>)> {
+) -> anyhow::Result<(
+    PafIndex,
+    Vec<((String, i32, i32), Vec<QueryResult>)>,
+    Option<FastaStore>,
+)> {
     anyhow::ensure!(
         opts.region.is_some() || opts.bed_regions.is_some(),
         "either <region> or --bed-regions must be provided"
@@ -121,6 +134,18 @@ pub fn run_query(
             None
         };
 
+    if opts.merge_distance > 0 && opts.fasta_tsv.is_none() {
+        anyhow::bail!("--merge-distance requires --fasta-tsv");
+    }
+
+    let mut fasta_store: Option<FastaStore> = if let Some(path) = &opts.fasta_tsv {
+        let seq_to_file = super::fasta::load_fasta_tsv(path)?;
+        super::fasta::validate_tsv_covers_index(&seq_to_file, &idx)?;
+        Some(FastaStore::new(&seq_to_file)?)
+    } else {
+        None
+    };
+
     let mut all_results: Vec<((String, i32, i32), Vec<QueryResult>)> = Vec::new();
     let mut total_results = 0usize;
 
@@ -144,6 +169,7 @@ pub fn run_query(
                 opts.min_identity,
                 opts.min_output_len,
                 opts.merge_distance,
+                fasta_store.as_mut(),
             )
         } else {
             idx.query(
@@ -211,7 +237,7 @@ pub fn run_query(
         log::info!("Total results: {total_results}");
     }
 
-    Ok((idx, all_results))
+    Ok((idx, all_results, fasta_store))
 }
 
 /// Parse a region string `name:start-end` (0-based, PAF convention).

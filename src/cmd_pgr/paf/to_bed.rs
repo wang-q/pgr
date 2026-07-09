@@ -34,7 +34,7 @@ Examples:
 /// Execute the to-bed command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let opts = crate::cmd_pgr::args::query_options_from_args(args);
-    let (idx, all_results) = pgr::libs::paf::query::run_query(&opts)?;
+    let (idx, all_results, _fasta_store) = pgr::libs::paf::query::run_query(&opts)?;
     let stdout = std::io::stdout();
     let mut out = stdout.lock();
     for (_, results) in &all_results {

@@ -9,6 +9,14 @@ use std::io::BufRead;
 use super::dsu::Dsu;
 use super::segment::{novel_node_for, split_alignment, AlignmentLink, Segment};
 
+fn flip_orient(o: char) -> char {
+    if o == '+' {
+        '-'
+    } else {
+        '+'
+    }
+}
+
 impl PafGraph {
     /// Build a coarse GFA graph from a PAF reader + per-sequence FASTA bytes.
     ///
@@ -96,6 +104,41 @@ impl PafGraph {
             .map(|i| root_to_node[&dsu.find(i)])
             .collect();
 
+        // ── Stage 2b: per-segment orientation relative to its node sequence ──
+        // The node sequence comes from the representative segment (first entry in
+        // root_info). Each link flips orientation if the alignment is reverse.
+        let mut adj: Vec<Vec<(usize, bool)>> = vec![vec![]; segments.len()];
+        for link in &links {
+            adj[link.a].push((link.b, link.reverse));
+            adj[link.b].push((link.a, link.reverse));
+        }
+        let mut seg_orient: Vec<Option<char>> = vec![None; segments.len()];
+        for &(_, _, _, rep_idx) in &root_info {
+            if seg_orient[rep_idx].is_some() {
+                continue;
+            }
+            seg_orient[rep_idx] = Some('+');
+            let mut stack = vec![rep_idx];
+            while let Some(curr) = stack.pop() {
+                let curr_o = seg_orient[curr].expect("oriented segment");
+                for &(nbr, rev) in &adj[curr] {
+                    let expected = if rev { flip_orient(curr_o) } else { curr_o };
+                    match seg_orient[nbr] {
+                        Some(existing) => {
+                            debug_assert_eq!(
+                                existing, expected,
+                                "inconsistent orientation in DSU component"
+                            )
+                        }
+                        None => {
+                            seg_orient[nbr] = Some(expected);
+                            stack.push(nbr);
+                        }
+                    }
+                }
+            }
+        }
+        let seg_orient: Vec<char> = seg_orient.into_iter().map(|o| o.unwrap_or('+')).collect();
         // ── Stage 3: node sequences (first-seen segment's forward strand) ──
         let mut node_seqs: Vec<Vec<u8>> = vec![Vec::new(); num_nodes as usize];
         let mut node_origins: Vec<(String, i32)> = vec![(String::new(), 0); num_nodes as usize];
@@ -168,12 +211,13 @@ impl PafGraph {
                 }
                 // The aligned segment's node.
                 let node = seg_node[seg_idx];
-                // Orientation: segments are always forward coords; the alignment
-                // orientation affects the *edge*, not the path orientation here.
-                // For simplicity, path orientation is '+' (forward traversal).
-                // (Reverse-strand alignments produce forward-coord segments;
-                //  a full rGFA would tag orientation, but coarse GFA uses '+'.)
-                steps.push(PathStep { node, orient: '+' });
+                // Orientation relative to the node's stored sequence: '+' if this
+                // sequence's forward strand matches the node sequence, '-' if it
+                // is the reverse complement (tracked via alignment links).
+                steps.push(PathStep {
+                    node,
+                    orient: seg_orient[seg_idx],
+                });
                 cursor = seg.end.max(cursor);
             }
             // Trailing novel segment.

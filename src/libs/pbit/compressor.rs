@@ -83,6 +83,14 @@ fn rev_comp_vec(seq: &[u8]) -> Vec<u8> {
     nt::rev_comp(seq).collect()
 }
 
+/// Convert a forward-strand query sub-interval [seg_start, seg_end) into
+/// CIGAR coordinate space for a '-' strand record. CIGAR for '-' records
+/// describes RC(query) vs target, so CIGAR position 0 corresponds to
+/// forward position query_end - 1. Returns `(rc_start, rc_end)`.
+fn forward_to_rc_coords(seg_start: i32, seg_end: i32, query_end: i32) -> (i32, i32) {
+    (query_end - seg_end, query_end - seg_start)
+}
+
 /// Slice CIGAR to the query sub-interval [q_start, q_end) and project to the
 /// target axis. Returns (sliced_ops, target_start, target_end) where
 /// target_start/target_end are absolute target coordinates corresponding to
@@ -617,8 +625,7 @@ impl<W: Write + Seek> Compressor<W> {
                 seg_end,
             )
         } else {
-            let rc_start = best.query_end - seg_end;
-            let rc_end = best.query_end - seg_start;
+            let (rc_start, rc_end) = forward_to_rc_coords(seg_start, seg_end, best.query_end);
             slice_cigar_by_query(&best.cigar, 0, best.target_start, rc_start, rc_end)
         };
         if sliced_ops.is_empty() {
@@ -1324,6 +1331,61 @@ mod tests {
 
         let paf_path = dir.path().join("empty.paf");
         write_paf(paf_path.to_str().unwrap(), &[]);
+
+        let out_path = dir.path().join("out.pbit");
+        let mut comp = Compressor::create(&out_path, ref_path.to_str().unwrap(), 4096, 15, 18)?;
+        comp.append_sample_with_paf(
+            "sample1",
+            sample_path.to_str().unwrap(),
+            paf_path.to_str().unwrap(),
+        )?;
+        comp.finish()?;
+
+        let mut dec = crate::libs::pbit::decompressor::Decompressor::open(&out_path)?;
+        let mut buf = Vec::new();
+        dec.get_sample("sample1", &mut buf)?;
+        let got = extract_fasta_seq(&buf);
+        let expected = String::from_utf8(sample_seq.clone()).unwrap();
+        assert_eq!(got, expected);
+        Ok(())
+    }
+
+    #[test]
+    fn test_append_sample_with_paf_minus_strand_multi_segment() -> Result<()> {
+        // ref = 5000 bp -> 2 segments (4096 + 904). Sample is RC(ref) with
+        // SNPs in both segments plus an indel, exercised on '-' strand.
+        let dir = tempfile::tempdir()?;
+        let ref_seq = vec![b'A'; 5000];
+        let ref_path = dir.path().join("ref.fa");
+        write_fasta(ref_path.to_str().unwrap(), &[("chr1", &ref_seq)]);
+
+        // sample_fwd is almost identical to ref, with SNPs and one insertion.
+        let mut sample_fwd = ref_seq.clone();
+        sample_fwd[100] = b'C';
+        sample_fwd[4100] = b'G';
+        sample_fwd.insert(3000, b'T');
+
+        let sample_seq: Vec<u8> = nt::rev_comp(&sample_fwd).collect();
+        let sample_path = dir.path().join("sample.fa");
+        write_fasta(sample_path.to_str().unwrap(), &[("chr1", &sample_seq)]);
+
+        // PAF: '-' strand, CIGAR describes sample_fwd (== RC(sample)) vs ref.
+        let paf_path = dir.path().join("sample.paf");
+        write_paf(
+            paf_path.to_str().unwrap(),
+            &[paf_line(
+                "chr1",
+                5001,
+                0,
+                5001,
+                "-",
+                "chr1",
+                5000,
+                0,
+                5000,
+                "100=1X2899=1I1100=1X899=",
+            )],
+        );
 
         let out_path = dir.path().join("out.pbit");
         let mut comp = Compressor::create(&out_path, ref_path.to_str().unwrap(), 4096, 15, 18)?;

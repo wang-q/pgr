@@ -409,6 +409,11 @@ pub fn query_options_from_args(args: &ArgMatches) -> QueryOptions {
         min_chain_length: *args.get_one::<i32>("min_chain_length").unwrap(),
         subset_list: args.get_one::<String>("subset_list").cloned(),
         syntenic_filter: args.get_one::<String>("syntenic_filter").cloned(),
+        fasta_tsv: args
+            .try_get_one::<String>("fasta_tsv")
+            .ok()
+            .flatten()
+            .cloned(),
     }
 }
 

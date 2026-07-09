@@ -186,6 +186,55 @@ pub fn reverse_cigar(ops: &[CigarOp]) -> Vec<CigarOp> {
         .collect()
 }
 
+/// Extract the sub-CIGAR corresponding to a target sub-interval `[ts, te)`.
+///
+/// The input CIGAR is assumed to start at `target_start` on the target axis.
+/// Insertions (`I`) are included when their target anchor lies inside the
+/// interval; deletions and match/mismatch ops are clipped to the interval.
+/// Consecutive identical ops are merged.
+pub fn slice_cigar_by_target(
+    cigar: &[CigarOp],
+    target_start: i32,
+    ts: i32,
+    te: i32,
+) -> Vec<CigarOp> {
+    let mut out = Vec::new();
+    let mut ct = target_start;
+    for op in cigar {
+        let td = op.target_delta() as i32;
+        match op.op() {
+            '=' | 'X' | 'M' | 'D' => {
+                let os = ts.max(ct);
+                let oe = te.min(ct + td);
+                if os < oe {
+                    push_or_merge(&mut out, op.op(), (oe - os) as u32);
+                }
+            }
+            'I' => {
+                if ct >= ts && ct < te {
+                    push_or_merge(&mut out, 'I', op.len());
+                }
+            }
+            _ => {}
+        }
+        ct += td;
+    }
+    out
+}
+
+fn push_or_merge(ops: &mut Vec<CigarOp>, op: char, len: u32) {
+    if len == 0 {
+        return;
+    }
+    if let Some(last) = ops.last_mut() {
+        if last.op() == op {
+            *last = CigarOp::new(last.len() + len, op);
+            return;
+        }
+    }
+    ops.push(CigarOp::new(len, op));
+}
+
 // ── Statistics ───────────────────────────────────────────────────
 
 /// Summary statistics computed from a CIGAR operation list.
