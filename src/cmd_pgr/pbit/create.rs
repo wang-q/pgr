@@ -1,5 +1,5 @@
 use anyhow::Context;
-use clap::{Arg, ArgAction, ArgMatches, Command};
+use clap::{ArgMatches, Command};
 use pgr::libs::pbit::compressor::Compressor;
 
 /// Build the clap subcommand for create.
@@ -42,64 +42,14 @@ Examples:
    pgr pbit create -r ref.fa -i sample.fa -p sample.paf -o out.pbit
 "###,
         )
-        .arg(
-            Arg::new("ref")
-                .long("ref")
-                .short('r')
-                .required(true)
-                .num_args(1)
-                .help("Reference FASTA file (plain or .gz)"),
-        )
-        .arg(
-            Arg::new("infiles")
-                .long("infile")
-                .short('i')
-                .required(false)
-                .num_args(1)
-                .action(ArgAction::Append)
-                .help("Sample FASTA file(s) (plain or .gz)"),
-        )
+        .arg(crate::cmd_pgr::args::pbit_ref_arg())
+        .arg(crate::cmd_pgr::args::pbit_infiles_arg())
         .arg(crate::cmd_pgr::args::outfile_arg_required())
-        .arg(
-            Arg::new("segment_size")
-                .long("segment-size")
-                .short('s')
-                .num_args(1)
-                .default_value("4096")
-                .value_parser(clap::value_parser!(usize))
-                .help("Reference segment size in bp (default: 4096)"),
-        )
-        .arg(
-            Arg::new("kmer_len")
-                .long("kmer-len")
-                .short('k')
-                .num_args(1)
-                .default_value("15")
-                .value_parser(clap::value_parser!(usize))
-                .help("K-mer length for LZ-diff hashing (default: 15)"),
-        )
-        .arg(
-            Arg::new("min_match_len")
-                .long("min-match-len")
-                .short('l')
-                .num_args(1)
-                .default_value("18")
-                .value_parser(clap::value_parser!(u32))
-                .help("Minimum match length for LZ-diff (default: 18)"),
-        )
-        .arg(
-            Arg::new("name").long("name").num_args(1).help(
-                "TSV file of `sample_name<TAB>fasta_path[<TAB>paf_path]` lines (overrides -i)",
-            ),
-        )
-        .arg(
-            Arg::new("paf")
-                .long("paf")
-                .short('p')
-                .num_args(1)
-                .action(ArgAction::Append)
-                .help("PAF file(s) for CIGAR-driven encoding (paired with -i by order)"),
-        )
+        .arg(crate::cmd_pgr::args::pbit_segment_size_arg())
+        .arg(crate::cmd_pgr::args::pbit_kmer_len_arg())
+        .arg(crate::cmd_pgr::args::pbit_min_match_len_arg())
+        .arg(crate::cmd_pgr::args::pbit_name_arg())
+        .arg(crate::cmd_pgr::args::pbit_paf_arg())
 }
 
 /// Execute the create command.

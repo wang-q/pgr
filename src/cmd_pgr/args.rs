@@ -1298,3 +1298,112 @@ pub fn window_arg_with_default(default: &'static str, help: &'static str) -> Arg
         .value_parser(clap::value_parser!(usize))
         .help(help)
 }
+
+// ============================================================================
+// pbit subcommand builders
+// ============================================================================
+
+/// `--ref`/`-r` argument for `pbit create`.
+pub fn pbit_ref_arg() -> Arg {
+    Arg::new("ref")
+        .long("ref")
+        .short('r')
+        .required(true)
+        .num_args(1)
+        .help("Reference FASTA file (plain or .gz)")
+}
+
+/// `-i/--infile` argument for `pbit create` / `pbit append`.
+pub fn pbit_infiles_arg() -> Arg {
+    Arg::new("infiles")
+        .long("infile")
+        .short('i')
+        .required(false)
+        .num_args(1)
+        .action(ArgAction::Append)
+        .help("Sample FASTA file(s) (plain or .gz)")
+}
+
+/// `--name` argument for `pbit create` / `pbit append` (TSV of sample info).
+pub fn pbit_name_arg() -> Arg {
+    Arg::new("name")
+        .long("name")
+        .num_args(1)
+        .help("TSV file of `sample_name<TAB>fasta_path[<TAB>paf_path]` lines (overrides -i)")
+}
+
+/// `-p/--paf` argument for `pbit create` / `pbit append`.
+pub fn pbit_paf_arg() -> Arg {
+    Arg::new("paf")
+        .long("paf")
+        .short('p')
+        .num_args(1)
+        .action(ArgAction::Append)
+        .help("PAF file(s) for CIGAR-driven encoding (paired with -i by order)")
+}
+
+/// `-s/--segment-size` argument for `pbit create`.
+pub fn pbit_segment_size_arg() -> Arg {
+    Arg::new("segment_size")
+        .long("segment-size")
+        .short('s')
+        .num_args(1)
+        .default_value("4096")
+        .value_parser(clap::value_parser!(usize))
+        .help("Reference segment size in bp (default: 4096)")
+}
+
+/// `-k/--kmer-len` argument for `pbit create`.
+pub fn pbit_kmer_len_arg() -> Arg {
+    Arg::new("kmer_len")
+        .long("kmer-len")
+        .short('k')
+        .num_args(1)
+        .default_value("15")
+        .value_parser(clap::value_parser!(usize))
+        .help("K-mer length for LZ-diff hashing (default: 15)")
+}
+
+/// `-l/--min-match-len` argument for `pbit create`.
+pub fn pbit_min_match_len_arg() -> Arg {
+    Arg::new("min_match_len")
+        .long("min-match-len")
+        .short('l')
+        .num_args(1)
+        .default_value("18")
+        .value_parser(clap::value_parser!(u32))
+        .help("Minimum match length for LZ-diff (default: 18)")
+}
+
+/// `--samples` flag for `pbit stat`.
+pub fn pbit_samples_flag_arg() -> Arg {
+    Arg::new("samples")
+        .long("samples")
+        .action(ArgAction::SetTrue)
+        .help("List all sample names")
+}
+
+/// `--refs` flag for `pbit stat`.
+pub fn pbit_refs_flag_arg() -> Arg {
+    Arg::new("refs")
+        .long("refs")
+        .action(ArgAction::SetTrue)
+        .help("List reference contigs (with segment counts)")
+}
+
+/// `--contigs` flag for `pbit stat`.
+pub fn pbit_contigs_flag_arg() -> Arg {
+    Arg::new("contigs")
+        .long("contigs")
+        .action(ArgAction::SetTrue)
+        .help("List contigs per sample (or for a single sample with -s)")
+}
+
+/// `-s/--sample` argument for `pbit stat` / `pbit to-fa`.
+pub fn pbit_sample_filter_arg(help: &'static str) -> Arg {
+    Arg::new("sample")
+        .long("sample")
+        .short('s')
+        .num_args(1)
+        .help(help)
+}

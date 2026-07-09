@@ -1,5 +1,5 @@
 use anyhow::Context;
-use clap::{ArgAction, ArgMatches, Command};
+use clap::{ArgMatches, Command};
 use pgr::libs::pbit::decompressor::Decompressor;
 use std::io::Write;
 
@@ -38,31 +38,12 @@ Examples:
             "Input pbit file to process",
         ))
         .arg(crate::cmd_pgr::args::outfile_arg())
-        .arg(
-            clap::Arg::new("samples")
-                .long("samples")
-                .action(ArgAction::SetTrue)
-                .help("List all sample names"),
-        )
-        .arg(
-            clap::Arg::new("refs")
-                .long("refs")
-                .action(ArgAction::SetTrue)
-                .help("List reference contigs (with segment counts)"),
-        )
-        .arg(
-            clap::Arg::new("contigs")
-                .long("contigs")
-                .action(ArgAction::SetTrue)
-                .help("List contigs per sample (or for a single sample with -s)"),
-        )
-        .arg(
-            clap::Arg::new("sample")
-                .long("sample")
-                .short('s')
-                .num_args(1)
-                .help("Restrict --contigs to this sample"),
-        )
+        .arg(crate::cmd_pgr::args::pbit_samples_flag_arg())
+        .arg(crate::cmd_pgr::args::pbit_refs_flag_arg())
+        .arg(crate::cmd_pgr::args::pbit_contigs_flag_arg())
+        .arg(crate::cmd_pgr::args::pbit_sample_filter_arg(
+            "Restrict --contigs to this sample",
+        ))
 }
 
 /// Execute the stat command.

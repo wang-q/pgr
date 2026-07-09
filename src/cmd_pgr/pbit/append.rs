@@ -1,5 +1,5 @@
 use anyhow::Context;
-use clap::{Arg, ArgAction, ArgMatches, Command};
+use clap::{ArgMatches, Command};
 use pgr::libs::pbit::compressor::Compressor;
 
 /// Build the clap subcommand for append.
@@ -41,29 +41,10 @@ Examples:
         .arg(crate::cmd_pgr::args::infile_arg_required_with_help(
             "Existing pbit archive to append to",
         ))
-        .arg(
-            Arg::new("infiles")
-                .long("infile")
-                .short('i')
-                .required(false)
-                .num_args(1)
-                .action(ArgAction::Append)
-                .help("Sample FASTA file(s) to append (plain or .gz)"),
-        )
+        .arg(crate::cmd_pgr::args::pbit_infiles_arg())
         .arg(crate::cmd_pgr::args::outfile_arg_optional())
-        .arg(
-            Arg::new("name").long("name").num_args(1).help(
-                "TSV file of `sample_name<TAB>fasta_path[<TAB>paf_path]` lines (overrides -i)",
-            ),
-        )
-        .arg(
-            Arg::new("paf")
-                .long("paf")
-                .short('p')
-                .num_args(1)
-                .action(ArgAction::Append)
-                .help("PAF file(s) for CIGAR-driven encoding (paired with -i by order)"),
-        )
+        .arg(crate::cmd_pgr::args::pbit_name_arg())
+        .arg(crate::cmd_pgr::args::pbit_paf_arg())
 }
 
 /// Execute the append command.

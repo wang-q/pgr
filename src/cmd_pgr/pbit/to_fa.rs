@@ -31,13 +31,9 @@ Examples:
             "Input pbit file to process",
         ))
         .arg(crate::cmd_pgr::args::outdir_arg_required())
-        .arg(
-            clap::Arg::new("sample")
-                .long("sample")
-                .short('s')
-                .num_args(1)
-                .help("Extract only this sample (default: all samples)"),
-        )
+        .arg(crate::cmd_pgr::args::pbit_sample_filter_arg(
+            "Extract only this sample (default: all samples)",
+        ))
 }
 
 /// Execute the to-fa command.

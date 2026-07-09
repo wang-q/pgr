@@ -252,6 +252,15 @@ pub fn parse_region(s: &str) -> anyhow::Result<(&str, i32, i32)> {
     anyhow::ensure!(range.len() == 2, "invalid region '{s}': expected start-end");
     let start: i32 = range[0].parse()?;
     let end: i32 = range[1].parse()?;
+    anyhow::ensure!(
+        start >= 0,
+        "invalid region '{s}': start must be non-negative"
+    );
+    anyhow::ensure!(end >= 0, "invalid region '{s}': end must be non-negative");
+    anyhow::ensure!(
+        end > start,
+        "invalid region '{s}': end must be greater than start"
+    );
     Ok((name, start, end))
 }
 
@@ -273,6 +282,18 @@ pub fn load_bed_regions(path: &str) -> anyhow::Result<Vec<(String, i32, i32)>> {
         let name = fields[0].to_string();
         let start: i32 = fields[1].parse()?;
         let end: i32 = fields[2].parse()?;
+        anyhow::ensure!(
+            start >= 0,
+            "invalid BED line '{line}': start must be non-negative"
+        );
+        anyhow::ensure!(
+            end >= 0,
+            "invalid BED line '{line}': end must be non-negative"
+        );
+        anyhow::ensure!(
+            end > start,
+            "invalid BED line '{line}': end must be greater than start"
+        );
         regions.push((name, start, end));
     }
     Ok(regions)
