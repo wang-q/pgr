@@ -865,10 +865,7 @@ fn test_pbit_paf_cache_key_ref_start_ref_end() {
 
     // ref = 1000 bp (1 ref segment, segment_size default 4096).
     let ref_seq = random_dna(1000, 7);
-    write_fasta(
-        &ref_fa,
-        &[("chr1", std::str::from_utf8(&ref_seq).unwrap())],
-    );
+    write_fasta(&ref_fa, &[("chr1", std::str::from_utf8(&ref_seq).unwrap())]);
 
     // sA = ref[0..500], aligns to chr1[0..500) with CIGAR 500=.
     // Sample contig name must match a reference contig name (pbit looks up
@@ -948,10 +945,7 @@ fn test_pbit_paf_minus_strand_multi_segment() {
     let out_pbit = temp.path().join("out.pbit");
 
     let ref_seq = random_dna(8192, 42);
-    write_fasta(
-        &ref_fa,
-        &[("chr1", std::str::from_utf8(&ref_seq).unwrap())],
-    );
+    write_fasta(&ref_fa, &[("chr1", std::str::from_utf8(&ref_seq).unwrap())]);
 
     let sample: Vec<u8> = pgr::libs::nt::rev_comp(&ref_seq).collect();
     write_fasta(
@@ -980,4 +974,74 @@ fn test_pbit_paf_minus_strand_multi_segment() {
     );
     let expected: String = sample.iter().map(|&b| b as char).collect();
     assert_eq!(got, expected, "minus-strand multi-segment mismatch");
+}
+
+// ── Test 16: - strand multi-segment with X/I bases (Bug 2 + X/I) ───────
+//
+// ref = 8192 bp → 2 ref segments (segment_size 4096). RC(sample) = ref with
+// a SNP at position 100 and a 2-bp insertion after position 200. PAF
+// strand='-', CIGAR='100=1X99=2I7992=' (describes RC(sample) vs ref). The
+// X/I bases must be extracted from RC(sample), not forward sample. Segment 1
+// (forward [4096,8194)) maps to RC [0,4098) which contains the X and I ops;
+// segment 0 (forward [0,4096)) maps to RC [4098,8194) which is pure match.
+
+#[test]
+fn test_pbit_paf_minus_strand_with_xi() {
+    let temp = TempDir::new().unwrap();
+    let ref_fa = temp.path().join("ref.fa");
+    let sample_fa = temp.path().join("sample.fa");
+    let paf_path = temp.path().join("sample.paf");
+    let out_pbit = temp.path().join("out.pbit");
+
+    let ref_seq = random_dna(8192, 42);
+    write_fasta(&ref_fa, &[("chr1", std::str::from_utf8(&ref_seq).unwrap())]);
+
+    // Build RC(sample) = ref with SNP at 100 + 2-bp insertion after 200.
+    let snp = snp_of(ref_seq[100]);
+    let mut rc_sample: Vec<u8> = Vec::with_capacity(8194);
+    rc_sample.extend_from_slice(&ref_seq[0..100]); // 100=
+    rc_sample.push(snp); // 1X
+    rc_sample.extend_from_slice(&ref_seq[101..200]); // 99=
+    rc_sample.extend_from_slice(b"GT"); // 2I
+    rc_sample.extend_from_slice(&ref_seq[200..8192]); // 7992=
+    assert_eq!(rc_sample.len(), 8194);
+
+    // sample = rev_comp(RC(sample)).
+    let sample: Vec<u8> = pgr::libs::nt::rev_comp(&rc_sample).collect();
+    write_fasta(
+        &sample_fa,
+        &[("chr1", std::str::from_utf8(&sample).unwrap())],
+    );
+
+    // CIGAR describes RC(sample) vs ref: 100=1X99=2I7992=
+    write_paf(
+        &paf_path,
+        &[make_paf_line(
+            "chr1",
+            8194,
+            0,
+            8194,
+            "-",
+            "chr1",
+            8192,
+            0,
+            8192,
+            "100=1X99=2I7992=",
+        )],
+    );
+
+    let got = create_and_extract(
+        temp.path(),
+        &ref_fa,
+        &out_pbit,
+        &[
+            "-i",
+            sample_fa.to_str().unwrap(),
+            "-p",
+            paf_path.to_str().unwrap(),
+        ],
+        "sample",
+    );
+    let expected: String = sample.iter().map(|&b| b as char).collect();
+    assert_eq!(got, expected, "minus-strand X/I roundtrip mismatch");
 }
