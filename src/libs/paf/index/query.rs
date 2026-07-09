@@ -172,7 +172,7 @@ pub(crate) fn project(
         ct = se;
         cq += qd;
     }
-    if found {
+    if found && q_min < q_max && t_min < t_max {
         Some((q_min, q_max, t_min, t_max))
     } else {
         None

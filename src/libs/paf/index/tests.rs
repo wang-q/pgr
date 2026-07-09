@@ -246,3 +246,68 @@ fn test_query_min_identity_filters() {
     let res = idx.query(t1, 0, 50, 1.01, 0);
     assert_eq!(res.len(), 0);
 }
+
+#[test]
+fn test_project_pure_insertion_only_returns_none() {
+    // An insertion-only overlap leaves t_min/t_max degenerate because 'I'
+    // consumes zero target bases. Such projections have no target extent and
+    // must return None. Real PAF records never consist solely of insertions,
+    // but this guards against corrupted / degenerate metadata.
+    let cigar = vec![CigarOp::new(5, 'I')];
+    let m = PafMetadata {
+        query_id: 0,
+        target_start: 10,
+        target_end: 10,
+        query_start: 0,
+        query_end: 5,
+        strand: '+',
+        cigar: CigarStore::owned(cigar.clone()),
+    };
+    assert!(project(10, 11, &m, &cigar).is_none());
+}
+
+#[test]
+fn test_project_pure_deletion_only_returns_none() {
+    // CIGAR: 5M3D5M. Querying target [5,8) hits only the deletion.
+    // The deletion contributes target bases but zero query bases, so the
+    // projection has no query extent and must return None.
+    let cigar = vec![
+        CigarOp::new(5, 'M'),
+        CigarOp::new(3, 'D'),
+        CigarOp::new(5, 'M'),
+    ];
+    let m = PafMetadata {
+        query_id: 0,
+        target_start: 0,
+        target_end: 13,
+        query_start: 0,
+        query_end: 10,
+        strand: '+',
+        cigar: CigarStore::owned(cigar.clone()),
+    };
+    assert!(project(5, 8, &m, &cigar).is_none());
+}
+
+#[test]
+fn test_project_mixed_match_and_indel_returns_some() {
+    // CIGAR: 10M5I10M. Querying target [9,12) overlaps the last base of
+    // the first M, the insertion at target 10, and the first base of the
+    // trailing M. The projection has both query and target extent.
+    let cigar = vec![
+        CigarOp::new(10, 'M'),
+        CigarOp::new(5, 'I'),
+        CigarOp::new(10, 'M'),
+    ];
+    let m = PafMetadata {
+        query_id: 0,
+        target_start: 0,
+        target_end: 25,
+        query_start: 0,
+        query_end: 25,
+        strand: '+',
+        cigar: CigarStore::owned(cigar.clone()),
+    };
+    let (qs, qe, ts, te) = project(9, 12, &m, &cigar).unwrap();
+    // Query offsets: M[9,10) -> q[9,10); I at t=10 -> q[10,15); M[10,12) -> q[15,17).
+    assert_eq!((qs, qe, ts, te), (9, 17, 9, 12));
+}

@@ -1,9 +1,11 @@
 //! Segment-level representation and alignment-splitting helpers for
 //! [`super::PafGraph`].
 //!
-//! [`Segment`] is a forward-orientation region on a sequence. Alignments are
-//! split at indels >= `min_var_len` into `Segment` pairs (one on each side of
-//! the alignment), linked bidirectionally via [`AlignmentLink`].
+//! [`Segment`] is a forward-orientation region on a sequence. Each PAF
+//! alignment is split at indels >= `min_var_len` into consecutive matched
+//! blocks. Every matched block is represented as a pair of `Segment`s (one on
+//! the target sequence and one on the query sequence), linked via
+//! [`AlignmentLink`]. Large indels become unaligned gaps between blocks.
 
 use crate::libs::paf::cigar::CigarOp;
 use std::collections::HashMap;

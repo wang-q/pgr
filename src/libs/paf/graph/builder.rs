@@ -17,6 +17,54 @@ fn flip_orient(o: char) -> char {
     }
 }
 
+/// Compute per-segment orientation relative to its node's stored sequence.
+///
+/// The representative segment of each DSU component (the first entry in
+/// `root_info`) is oriented '+'. Each alignment link flips orientation if the
+/// alignment is reverse-strand. Returns an error if a segment receives
+/// conflicting orientations (e.g. an odd cycle of reverse links).
+fn compute_segment_orientations(
+    links: &[AlignmentLink],
+    root_info: &[(usize, u32, i32, usize)],
+) -> anyhow::Result<Vec<char>> {
+    let max_seg_idx = links.iter().map(|l| l.a.max(l.b)).max().unwrap_or(0);
+    let mut adj: Vec<Vec<(usize, bool)>> = vec![vec![]; max_seg_idx + 1];
+    for link in links {
+        adj[link.a].push((link.b, link.reverse));
+        adj[link.b].push((link.a, link.reverse));
+    }
+
+    let mut seg_orient: Vec<Option<char>> = vec![None; adj.len()];
+    for &(_, _, _, rep_idx) in root_info {
+        if seg_orient[rep_idx].is_some() {
+            continue;
+        }
+        seg_orient[rep_idx] = Some('+');
+        let mut stack = vec![rep_idx];
+        while let Some(curr) = stack.pop() {
+            let curr_o = seg_orient[curr].expect("oriented segment");
+            for &(nbr, rev) in &adj[curr] {
+                let expected = if rev { flip_orient(curr_o) } else { curr_o };
+                match seg_orient[nbr] {
+                    Some(existing) => {
+                        if existing != expected {
+                            anyhow::bail!(
+                                "inconsistent orientation in DSU component: segment {nbr} expected {expected} but found {existing}"
+                            );
+                        }
+                    }
+                    None => {
+                        seg_orient[nbr] = Some(expected);
+                        stack.push(nbr);
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(seg_orient.into_iter().map(|o| o.unwrap_or('+')).collect())
+}
+
 impl PafGraph {
     /// Build a coarse GFA graph from a PAF reader + per-sequence FASTA bytes.
     ///
@@ -105,40 +153,7 @@ impl PafGraph {
             .collect();
 
         // ── Stage 2b: per-segment orientation relative to its node sequence ──
-        // The node sequence comes from the representative segment (first entry in
-        // root_info). Each link flips orientation if the alignment is reverse.
-        let mut adj: Vec<Vec<(usize, bool)>> = vec![vec![]; segments.len()];
-        for link in &links {
-            adj[link.a].push((link.b, link.reverse));
-            adj[link.b].push((link.a, link.reverse));
-        }
-        let mut seg_orient: Vec<Option<char>> = vec![None; segments.len()];
-        for &(_, _, _, rep_idx) in &root_info {
-            if seg_orient[rep_idx].is_some() {
-                continue;
-            }
-            seg_orient[rep_idx] = Some('+');
-            let mut stack = vec![rep_idx];
-            while let Some(curr) = stack.pop() {
-                let curr_o = seg_orient[curr].expect("oriented segment");
-                for &(nbr, rev) in &adj[curr] {
-                    let expected = if rev { flip_orient(curr_o) } else { curr_o };
-                    match seg_orient[nbr] {
-                        Some(existing) => {
-                            debug_assert_eq!(
-                                existing, expected,
-                                "inconsistent orientation in DSU component"
-                            )
-                        }
-                        None => {
-                            seg_orient[nbr] = Some(expected);
-                            stack.push(nbr);
-                        }
-                    }
-                }
-            }
-        }
-        let seg_orient: Vec<char> = seg_orient.into_iter().map(|o| o.unwrap_or('+')).collect();
+        let seg_orient = compute_segment_orientations(&links, &root_info)?;
         // ── Stage 3: node sequences (first-seen segment's forward strand) ──
         let mut node_seqs: Vec<Vec<u8>> = vec![Vec::new(); num_nodes as usize];
         let mut node_origins: Vec<(String, i32)> = vec![(String::new(), 0); num_nodes as usize];
@@ -302,5 +317,64 @@ impl PafGraph {
             edges,
             paths,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{compute_segment_orientations, AlignmentLink};
+
+    #[test]
+    fn test_orientations_consistent() {
+        // Two independent components:
+        //   component 0: seg 0 (+) <-> seg 1 (+)  (forward link)
+        //   component 1: seg 2 (+) <-> seg 3 (-)  (reverse link)
+        let links = vec![
+            AlignmentLink {
+                a: 0,
+                b: 1,
+                reverse: false,
+            },
+            AlignmentLink {
+                a: 2,
+                b: 3,
+                reverse: true,
+            },
+        ];
+        let root_info = vec![(0, 0, 0, 0), (1, 1, 0, 2)];
+        let orient = compute_segment_orientations(&links, &root_info).unwrap();
+        assert_eq!(orient, vec!['+', '+', '+', '-']);
+    }
+
+    #[test]
+    fn test_orientations_inconsistent_errors() {
+        // A triangle of links where every edge is reverse-strand produces a
+        // contradiction: seg 0 is forced '+' and '-' simultaneously.
+        //   0 --reverse--> 1 --reverse--> 2 --reverse--> 0
+        // Product of reverse flags = true * true * true = true (odd cycle).
+        let links = vec![
+            AlignmentLink {
+                a: 0,
+                b: 1,
+                reverse: true,
+            },
+            AlignmentLink {
+                a: 1,
+                b: 2,
+                reverse: true,
+            },
+            AlignmentLink {
+                a: 2,
+                b: 0,
+                reverse: true,
+            },
+        ];
+        let root_info = vec![(0, 0, 0, 0)];
+        let err = compute_segment_orientations(&links, &root_info).unwrap_err();
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("inconsistent orientation"),
+            "expected orientation error, got: {msg}"
+        );
     }
 }

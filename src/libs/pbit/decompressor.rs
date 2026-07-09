@@ -405,9 +405,20 @@ impl<R: Read + Seek> Decompressor<R> {
                 let seg_end = offset + seg_len;
                 if seg_end > s && offset < e {
                     let decoded = self.decode_delta(seg)?;
-                    let local_start = s.saturating_sub(offset);
-                    let local_end = (e - offset).min(seg_len);
-                    result.extend_from_slice(&decoded[local_start..local_end]);
+                    anyhow::ensure!(
+                        decoded.len() == seg_len,
+                        "decoded segment length {} does not match metadata raw_length {} \
+                         for sample '{}' contig '{}' (archive may be corrupt)",
+                        decoded.len(),
+                        seg_len,
+                        sample,
+                        contig
+                    );
+                    let local_start = s.saturating_sub(offset).min(decoded.len());
+                    let local_end = (e - offset).min(seg_len).min(decoded.len());
+                    if local_start < local_end {
+                        result.extend_from_slice(&decoded[local_start..local_end]);
+                    }
                 }
                 offset = seg_end;
                 if offset >= e {
@@ -795,6 +806,62 @@ mod tests {
         // Should have 2 FASTA entries (one per sample).
         let headers: Vec<&str> = out_str.lines().filter(|l| l.starts_with('>')).collect();
         assert_eq!(headers.len(), 2);
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_contig_corrupt_raw_length_returns_error() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let ref_path = dir.path().join("ref.fa");
+        let ref_seq = random_dna(1000, 42);
+        write_fasta(ref_path.to_str().unwrap(), &[("chr1", &ref_seq)]);
+
+        let sample_path = dir.path().join("sample.fa");
+        let sample_seq = random_dna(1000, 100);
+        write_fasta(sample_path.to_str().unwrap(), &[("chr1", &sample_seq)]);
+
+        let out_path = dir.path().join("out.pbit");
+        let mut comp = Compressor::create(&out_path, ref_path.to_str().unwrap(), 4096, 15, 18)?;
+        comp.append_sample("s1", sample_path.to_str().unwrap())?;
+        comp.finish()?;
+
+        // Patch the first delta's raw_length to be larger than the decoded segment.
+        // Delta data layout: delta_data_offset + 4 (ref_group_count) + 4 (delta_count)
+        // + 1 (is_rev_comp) -> raw_length u32.
+        let mut file = std::fs::File::open(&out_path)?;
+        file.seek(SeekFrom::End(-24))?;
+        let mut footer_buf = [0u8; 24];
+        file.read_exact(&mut footer_buf)?;
+        let delta_data_offset = u64::from_le_bytes([
+            footer_buf[8],
+            footer_buf[9],
+            footer_buf[10],
+            footer_buf[11],
+            footer_buf[12],
+            footer_buf[13],
+            footer_buf[14],
+            footer_buf[15],
+        ]);
+        let raw_length_offset = delta_data_offset + 4 + 4 + 1;
+        let mut file = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&out_path)?;
+        file.seek(SeekFrom::Start(raw_length_offset))?;
+        // Write a deliberately wrong raw_length (2000 instead of 1000).
+        file.write_all(&2000u32.to_le_bytes())?;
+        drop(file);
+
+        let mut dec = Decompressor::open(&out_path)?;
+        let mut out_buf = Vec::new();
+        let res = dec.get_contig("chr1", None, None, "+", &mut out_buf);
+        assert!(res.is_err());
+        let err = res.unwrap_err().to_string();
+        assert!(
+            err.contains("does not match metadata raw_length"),
+            "unexpected error: {}",
+            err
+        );
         Ok(())
     }
 }

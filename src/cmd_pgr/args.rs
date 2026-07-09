@@ -717,6 +717,7 @@ pub fn add_query_args(cmd: Command) -> Command {
     .arg(
         Arg::new("transitive")
             .long("transitive")
+            .short('t')
             .num_args(0)
             .help("Enable transitive BFS traversal"),
     )

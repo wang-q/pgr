@@ -169,6 +169,20 @@ impl FastaStore {
             .ok_or_else(|| anyhow::anyhow!("cache miss after insert for '{name}'"))?;
         let total_len = record.sequence().len();
 
+        // Validate coordinates before constructing noodles positions.
+        if start < 0 {
+            anyhow::bail!("start position {start} is negative for '{name}'");
+        }
+        if end < 0 {
+            anyhow::bail!("end position {end} is negative for '{name}'");
+        }
+        if start >= end {
+            anyhow::bail!("empty range [{start},{end}) for '{name}'");
+        }
+        if end as usize > total_len {
+            anyhow::bail!("end position {end} exceeds sequence length {total_len} for '{name}'");
+        }
+
         // noodles Position is 1-based inclusive; our coords are 0-based half-open.
         let start_pos = Position::new(start as usize + 1)
             .ok_or_else(|| anyhow::anyhow!("invalid start position {start}"))?;
@@ -202,5 +216,81 @@ impl FastaStore {
             .get(name)
             .ok_or_else(|| anyhow::anyhow!("cache miss after insert for '{name}'"))?;
         Ok(record.sequence()[..].to_vec())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use indexmap::IndexMap;
+    use std::io::Write;
+
+    /// Write a single-sequence BGZF FASTA file and build its .gzi index.
+    /// Returns the path to the `.fa.gz` file.
+    fn write_bgzf_fasta(dir: &std::path::Path, name: &str, seq: &str) -> String {
+        let path = dir.join(format!("{name}.fa.gz"));
+        let file = std::fs::File::create(&path).unwrap();
+        let mut writer = noodles_bgzf::io::Writer::new(file);
+        writeln!(writer, ">{name}").unwrap();
+        writeln!(writer, "{seq}").unwrap();
+        writer.flush().unwrap();
+        drop(writer);
+        crate::libs::fmt::fa::build_gzi_index(path.to_str().unwrap()).unwrap();
+        path.to_string_lossy().to_string()
+    }
+
+    fn build_store(dir: &std::path::Path, name: &str, seq: &str) -> FastaStore {
+        let gz = write_bgzf_fasta(dir, name, seq);
+        let mut map = IndexMap::new();
+        map.insert(name.to_string(), gz);
+        FastaStore::new(&map).unwrap()
+    }
+
+    #[test]
+    fn test_fetch_range_valid() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = build_store(dir.path(), "chr1", "ACGTACGTAC");
+        let (seq, len) = store.fetch_range("chr1", 2, 8).unwrap();
+        assert_eq!(len, 10);
+        assert_eq!(seq, b"GTACGT");
+    }
+
+    #[test]
+    fn test_fetch_range_end_exceeds_length() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = build_store(dir.path(), "chr1", "ACGTACGTAC");
+        let err = store.fetch_range("chr1", 0, 100).unwrap_err();
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("end position 100 exceeds sequence length 10"),
+            "{msg}"
+        );
+    }
+
+    #[test]
+    fn test_fetch_range_negative_start() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = build_store(dir.path(), "chr1", "ACGTACGTAC");
+        let err = store.fetch_range("chr1", -1, 5).unwrap_err();
+        let msg = format!("{err}");
+        assert!(msg.contains("start position -1 is negative"), "{msg}");
+    }
+
+    #[test]
+    fn test_fetch_range_empty_range() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = build_store(dir.path(), "chr1", "ACGTACGTAC");
+        let err = store.fetch_range("chr1", 5, 5).unwrap_err();
+        let msg = format!("{err}");
+        assert!(msg.contains("empty range [5,5)"), "{msg}");
+    }
+
+    #[test]
+    fn test_fetch_range_start_greater_than_end() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = build_store(dir.path(), "chr1", "ACGTACGTAC");
+        let err = store.fetch_range("chr1", 8, 2).unwrap_err();
+        let msg = format!("{err}");
+        assert!(msg.contains("empty range [8,2)"), "{msg}");
     }
 }

@@ -26,6 +26,20 @@ fn command_paf_query_bidirectional_mirror_finds_target() {
 }
 
 #[test]
+fn command_paf_query_short_flag_transitive() {
+    // `-t` should be equivalent to `--transitive`.
+    let paf = "A\t100\t0\t100\t+\tB\t100\t0\t100\t95\t100\t255\tcg:Z:100M\n";
+    let (stdout, _) = PgrCmd::new()
+        .args(&["paf", "query", "stdin", "A:0-100", "-t"])
+        .stdin(paf)
+        .run();
+    assert!(
+        stdout.contains("B\t0\t0\t100\t+\tA"),
+        "B should be found via mirror index when using -t short flag"
+    );
+}
+
+#[test]
 fn command_paf_query_single_hop_does_not_use_mirror() {
     // Same PAF as above, but without --transitive. Single-hop query only
     // searches `trees[A]`, which is empty, so no results.

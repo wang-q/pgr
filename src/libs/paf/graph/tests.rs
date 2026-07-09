@@ -146,3 +146,30 @@ fn test_gfa_output_format() {
     assert!(out.starts_with("S\t1\t"), "first line should be S");
     assert!(out.contains("\nP\t"), "should contain P line");
 }
+
+#[test]
+fn test_report_path_len_bp_uses_node_lens() {
+    // 50M 200I 50M: one shared aligned node (50bp) + one B-only novel node (200bp).
+    let paf = "A\t300\t0\t100\t+\tB\t300\t0\t300\t95\t300\t255\tcg:Z:50M200I50M\n";
+    let seqs = seqs_map(&[("A", &"A".repeat(300)), ("B", &"G".repeat(300))]);
+    let g = PafGraph::build(paf.as_bytes(), Some(&seqs), 100).unwrap();
+    let report = g.report();
+
+    // Total segment bp must come from node_lens.
+    let expected_total_bp: usize = g.node_lens.iter().sum();
+    assert_eq!(report.total_segment_bp, expected_total_bp);
+
+    // Each path's bp length must equal the sum of its node_lens.
+    for (name, steps) in &g.paths {
+        let expected_bp: usize = steps.iter().map(|st| g.node_lens[st.node as usize]).sum();
+        let reported_bp = if name == "A" {
+            report.path_len_bp_min
+        } else {
+            report.path_len_bp_max
+        };
+        assert_eq!(
+            reported_bp, expected_bp,
+            "path {name} bp length should match sum of node_lens"
+        );
+    }
+}

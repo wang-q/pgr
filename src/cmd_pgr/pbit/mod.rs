@@ -51,11 +51,15 @@ pub(crate) fn collect_samples_from_args(
     args: &clap::ArgMatches,
 ) -> anyhow::Result<Vec<(String, String, Option<String>)>> {
     let has_name = args.get_one::<String>("name").is_some();
+    let has_infiles = args.get_many::<String>("infiles").is_some();
     let has_paf = args.get_many::<String>("paf").is_some();
     if has_name && has_paf {
         anyhow::bail!(
             "--name and --paf are mutually exclusive (use --name TSV with 3rd column for PAF)"
         );
+    }
+    if has_name && has_infiles {
+        anyhow::bail!("--name and -i/--infile are mutually exclusive");
     }
 
     let samples: Vec<(String, String, Option<String>)> =

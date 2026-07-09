@@ -57,7 +57,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         .get_one::<String>("infile")
         .context("missing required argument: infile")?;
     let tsv_path = args.get_one::<String>("fasta_tsv").map(|s| s.as_str());
-    let min_var_len = args.get_one::<i32>("min_var_len").copied().unwrap_or(100);
+    let min_var_len = args.get_one::<i32>("min_var_len").copied().unwrap();
+    anyhow::ensure!(min_var_len > 0, "--min-var-len must be > 0");
     let outfile = crate::cmd_pgr::args::get_outfile(args);
 
     // Load FASTA sequences via TSV + FastaStore (optional for topology-only mode).

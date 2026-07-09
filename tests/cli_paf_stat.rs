@@ -208,6 +208,19 @@ fn command_paf_stat_threshold_comparison() {
 }
 
 #[test]
+fn command_paf_stat_invalid_min_var_len_fails() {
+    let paf = "A\t100\t0\t100\t+\tB\t100\t0\t100\t95\t100\t255\tcg:Z:100M\n";
+    let (_stdout, stderr) = PgrCmd::new()
+        .args(&["paf", "stat", "stdin", "--min-var-len", "0"])
+        .stdin(paf)
+        .run_fail();
+    assert!(
+        stderr.contains("--min-var-len must be > 0"),
+        "expected validation error, got: {stderr}"
+    );
+}
+
+#[test]
 fn command_paf_stat_no_alignment() {
     // Empty PAF → each sequence becomes one isolated novel node.
     let paf = "";

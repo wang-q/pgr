@@ -248,6 +248,19 @@ fn command_paf_graph_missing_fasta_fails() {
 }
 
 #[test]
+fn command_paf_graph_invalid_min_var_len_fails() {
+    let paf = "A\t100\t0\t100\t+\tB\t100\t0\t100\t95\t100\t255\tcg:Z:100M\n";
+    let (_stdout, stderr) = PgrCmd::new()
+        .args(&["paf", "graph", "stdin", "--min-var-len", "0"])
+        .stdin(paf)
+        .run_fail();
+    assert!(
+        stderr.contains("--min-var-len must be > 0"),
+        "expected validation error, got: {stderr}"
+    );
+}
+
+#[test]
 fn command_paf_graph_rgfa_tags() {
     // PAF: query=A, target=B. Target is registered first → B has seq_id 0.
     // Shared aligned node originates from B (target) at offset 0.

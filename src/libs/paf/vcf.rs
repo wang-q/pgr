@@ -288,22 +288,31 @@ pub fn output_vcf<W: Write>(
                         t_aln_pos += (col_end - col_start) as i32;
                         continue;
                     }
-                    // target_segment: target bases in [col_start, col_end).
-                    let target_segment: Vec<u8> = (col_start..col_end)
-                        .filter_map(|c| {
-                            let b = msa[0].as_bytes()[c].to_ascii_uppercase();
-                            if matches!(b, b'A' | b'C' | b'G' | b'T') {
-                                Some(b)
-                            } else {
-                                None
-                            }
+                    // Per-sample deleted segments: non-gap bases in
+                    // [col_start, col_end). Index 0 is the target (REF);
+                    // empty entries represent fully-deleted samples.
+                    let sample_segments: Vec<Vec<u8>> = msa
+                        .iter()
+                        .take(n_seq)
+                        .map(|seq| {
+                            (col_start..col_end)
+                                .filter_map(|c| {
+                                    let b = seq.as_bytes()[c].to_ascii_uppercase();
+                                    if matches!(b, b'A' | b'C' | b'G' | b'T') {
+                                        Some(b)
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .collect()
                         })
                         .collect();
-                    if target_segment.is_empty() {
+                    if sample_segments[0].is_empty() {
                         t_aln_pos += (col_end - col_start) as i32;
                         continue;
                     }
-                    // Left-align target_segment (sole non-empty indel seq).
+                    // Left-align all deleted segments together so sample
+                    // alleles stay consistent with the shifted REF/ALT.
                     // Guard against underflow (defensive: see INS branch).
                     if t_aln_pos <= 0 {
                         t_aln_pos += (col_end - col_start) as i32;
@@ -311,35 +320,27 @@ pub fn output_vcf<W: Write>(
                     }
                     let anchor_offset = (t_aln_pos - 1 + t_start_offset as i32) as usize;
                     let anchor_base = target_ext[anchor_offset];
-                    let indel_seqs = vec![target_segment.clone()];
-                    let (new_offset, new_anchor, new_segs) =
-                        left_align_indels(anchor_offset, anchor_base, &indel_seqs, &target_ext);
-                    let new_segment = &new_segs[0];
-                    // REF = new_anchor + new_segment.
+                    let (new_offset, new_anchor, new_segs) = left_align_indels(
+                        anchor_offset,
+                        anchor_base,
+                        &sample_segments,
+                        &target_ext,
+                    );
+                    // REF = new_anchor + target's left-aligned deleted segment.
                     let mut ref_allele = String::from(new_anchor as char);
-                    for &b in new_segment {
+                    for &b in &new_segs[0] {
                         ref_allele.push(b as char);
                     }
-                    // Per-sample allele. Fully-deleted -> anchor only;
-                    // fully-present -> REF; partial deletion -> best-effort
-                    // (left-aligned anchor + original non-gap bases).
-                    let sample_alleles: Vec<String> = msa
+                    // Per-sample allele: empty deleted segment -> anchor only
+                    // (deletion); non-empty -> anchor + retained bases.
+                    let sample_alleles: Vec<String> = new_segs
                         .iter()
-                        .take(n_seq)
-                        .map(|seq| {
-                            let all_gap = (col_start..col_end).all(|c| seq.as_bytes()[c] == b'-');
-                            if all_gap {
-                                String::from(new_anchor as char)
-                            } else {
-                                let mut s = String::from(new_anchor as char);
-                                for c in col_start..col_end {
-                                    let b = seq.as_bytes()[c].to_ascii_uppercase();
-                                    if matches!(b, b'A' | b'C' | b'G' | b'T') {
-                                        s.push(b as char);
-                                    }
-                                }
-                                s
+                        .map(|seg| {
+                            let mut s = String::from(new_anchor as char);
+                            for &b in seg {
+                                s.push(b as char);
                             }
+                            s
                         })
                         .collect();
                     // POS (1-based) = prefix_start + new_offset + 1.

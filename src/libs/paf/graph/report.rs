@@ -190,8 +190,8 @@ impl PafGraph {
             .map(|(_, steps)| {
                 let mut bp = 0usize;
                 for st in steps {
-                    if (st.node as usize) < self.node_seqs.len() {
-                        bp += self.node_seqs[st.node as usize].len();
+                    if (st.node as usize) < self.node_lens.len() {
+                        bp += self.node_lens[st.node as usize];
                     }
                 }
                 bp
