@@ -11,7 +11,8 @@ impl PafIndex {
     /// Fetch CIGAR ops for a lazy record by seeking to its BGZF virtual position.
     pub fn fetch_cigar(&self, vpos: u64) -> Vec<CigarOp> {
         if let Some(ref src) = self.lazy_source {
-            let mut reader = src.lock().expect("lazy_source mutex poisoned");
+            // Recover from a poisoned mutex rather than panicking (Zero Panic).
+            let mut reader = src.lock().unwrap_or_else(|e| e.into_inner());
             if reader.seek(bgzf::VirtualPosition::from(vpos)).is_err() {
                 return vec![];
             }

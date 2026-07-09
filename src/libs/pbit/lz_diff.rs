@@ -119,7 +119,10 @@ fn read_int(data: &[u8], pos: &mut usize) -> Result<i64> {
     }
     let mut x: i64 = 0;
     while *pos < data.len() && data[*pos].is_ascii_digit() {
-        x = x * 10 + (data[*pos] - b'0') as i64;
+        x = x
+            .checked_mul(10)
+            .and_then(|v| v.checked_add((data[*pos] - b'0') as i64))
+            .ok_or_else(|| anyhow!("decode: integer overflow in read_int"))?;
         *pos += 1;
     }
     Ok(if is_neg { -x } else { x })
@@ -371,6 +374,13 @@ impl LzDiff {
 
     /// Encode `text` against the prepared reference into `encoded`.
     pub fn encode(&mut self, text: &[u8], encoded: &mut Vec<u8>) {
+        // Guard against API misuse: if prepare() was never called (or the
+        // reference is shorter than key_len), the equal-sequences check below
+        // would underflow `reference.len() as u32 - key_len`.
+        if self.reference.len() < self.key_len as usize {
+            encoded.clear();
+            return;
+        }
         if !self.index_ready {
             self.prepare_index();
         }
@@ -515,12 +525,29 @@ impl LzDiff {
                     return Err(anyhow!("decode: malformed N-run (missing N_CODE suffix)"));
                 }
                 pos += 1;
-                let len = (raw_len + MIN_NRUN_LEN as i64) as usize;
+                if raw_len < 0 {
+                    return Err(anyhow!("decode: negative N-run length {}", raw_len));
+                }
+                let len = raw_len as usize + MIN_NRUN_LEN as usize;
+                // A single N-run longer than the reference is clearly corruption.
+                if len > ref_len as usize {
+                    return Err(anyhow!(
+                        "decode: N-run length {} exceeds ref_len {}",
+                        len,
+                        ref_len
+                    ));
+                }
                 decoded.resize(decoded.len() + len, N_CODE);
             } else {
                 // Match
                 let raw_pos = read_int(encoded, &mut pos)?;
-                let ref_pos = (raw_pos + pred_pos as i64) as u32;
+                let pos_sum = raw_pos
+                    .checked_add(pred_pos as i64)
+                    .ok_or_else(|| anyhow!("decode: ref_pos computation overflow"))?;
+                if pos_sum < 0 || pos_sum > u32::MAX as i64 {
+                    return Err(anyhow!("decode: ref_pos {} out of u32 range", pos_sum));
+                }
+                let ref_pos = pos_sum as u32;
                 let len = if pos < encoded.len() && encoded[pos] == b',' {
                     pos += 1;
                     let raw_len = read_int(encoded, &mut pos)?;
@@ -528,7 +555,16 @@ impl LzDiff {
                         return Err(anyhow!("decode: malformed match (missing '.')"));
                     }
                     pos += 1;
-                    (raw_len + self.min_match_len as i64) as u32
+                    if raw_len < 0 {
+                        return Err(anyhow!("decode: negative match length {}", raw_len));
+                    }
+                    let len_sum = raw_len
+                        .checked_add(self.min_match_len as i64)
+                        .ok_or_else(|| anyhow!("decode: match length overflow"))?;
+                    if len_sum > u32::MAX as i64 {
+                        return Err(anyhow!("decode: match length {} out of u32 range", len_sum));
+                    }
+                    len_sum as u32
                 } else {
                     if pos >= encoded.len() || encoded[pos] != b'.' {
                         return Err(anyhow!("decode: malformed match (missing '.')"));
@@ -550,7 +586,10 @@ impl LzDiff {
                 } else {
                     len
                 };
-                let end = (ref_pos + actual_len) as usize;
+                let end_u32 = ref_pos
+                    .checked_add(actual_len)
+                    .ok_or_else(|| anyhow!("decode: ref_pos + len overflow"))?;
+                let end = end_u32 as usize;
                 if end > self.reference.len() {
                     return Err(anyhow!(
                         "decode: match [{}, {}) out of range (ref_len {})",
@@ -560,7 +599,7 @@ impl LzDiff {
                     ));
                 }
                 decoded.extend_from_slice(&self.reference[ref_pos as usize..end]);
-                pred_pos = ref_pos + actual_len;
+                pred_pos = end_u32;
             }
         }
         Ok(())
@@ -569,6 +608,10 @@ impl LzDiff {
     /// Estimate the encoded size without generating output. Stops early if
     /// the estimate exceeds `bound`.
     pub fn estimate(&mut self, text: &[u8], bound: u32) -> usize {
+        // Guard against API misuse: same underflow as in encode().
+        if self.reference.len() < self.key_len as usize {
+            return 0;
+        }
         if !self.index_ready {
             self.prepare_index();
         }
@@ -837,6 +880,41 @@ mod tests {
         lz2.decode(&encoded, &mut decoded).expect("decode failed");
         let expected: Vec<u8> = text.iter().map(|&c| encode_base(c)).collect();
         assert_eq!(decoded, expected);
+    }
+
+    #[test]
+    fn test_decode_corrupted_input_no_panic() {
+        // decode must return Err (never panic) on malformed/corrupted input
+        // read from an untrusted .pbit archive.
+        let reference = random_dna(2000, 42);
+        let mut lz = LzDiff::new(18);
+        lz.prepare(&reference);
+        lz.prepare_index();
+
+        let cases: &[(&[u8], &str)] = &[
+            // Integer overflow in read_int (20 nines > i64::MAX).
+            (b"99999999999999999999.", "int overflow"),
+            // Negative N-run length.
+            (
+                &[N_RUN_STARTER_CODE, b'-', b'1', b'0', b'0', N_CODE],
+                "neg nrun",
+            ),
+            // Negative match length.
+            (b"0,-100.", "neg match len"),
+            // ref_pos out of u32 range (99 billion).
+            (b"99999999999.", "ref_pos oor"),
+            // ref_pos + len u32 overflow (ref_pos near u32::MAX, len=min_match_len=18).
+            (b"4294967294,0.", "ref_pos+len overflow"),
+        ];
+        for (input, label) in cases {
+            let mut decoded = Vec::new();
+            let res = lz.decode(input, &mut decoded);
+            assert!(
+                res.is_err(),
+                "expected error for corrupted input ({}) but got Ok",
+                label
+            );
+        }
     }
 
     #[test]

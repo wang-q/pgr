@@ -111,6 +111,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let kmer_len = *args.get_one::<usize>("kmer_len").unwrap();
     let min_match_len = *args.get_one::<u32>("min_match_len").unwrap();
 
+    anyhow::ensure!(segment_size > 0, "segment-size must be positive");
+    anyhow::ensure!(kmer_len > 0, "kmer-len must be positive");
+    anyhow::ensure!(min_match_len > 0, "min-match-len must be positive");
+
     // Mutex: --name and --paf cannot coexist.
     let has_name = args.get_one::<String>("name").is_some();
     let has_paf = args.get_many::<String>("paf").is_some();

@@ -40,11 +40,23 @@ pub fn maf_block_to_paf(block: &MafAli) -> anyhow::Result<Option<PafRecord>> {
         tags.push(format!("ms:i:{}", s as u64));
     }
 
+    // MAF `start` for '-' strand is relative to the reverse-complemented
+    // source; PAF query coordinates must be forward-strand 0-based half-open.
+    let (q_start, q_end) = if qry_entry.strand == '-' {
+        crate::libs::alignment::coords::reverse_range_pair(
+            qry_entry.start,
+            qry_entry.start + qry_entry.size,
+            qry_entry.src_size,
+        )
+    } else {
+        (qry_entry.start, qry_entry.start + qry_entry.size)
+    };
+
     let rec = PafRecord {
         query_name: qry_entry.src.clone(),
         query_length: qry_entry.src_size as u32,
-        query_start: qry_entry.start as u32,
-        query_end: (qry_entry.start + qry_entry.size) as u32,
+        query_start: q_start as u32,
+        query_end: q_end as u32,
         strand: qry_entry.strand,
         target_name: ref_entry.src.clone(),
         target_length: ref_entry.src_size as u32,
@@ -57,4 +69,65 @@ pub fn maf_block_to_paf(block: &MafAli) -> anyhow::Result<Option<PafRecord>> {
     };
 
     Ok(Some(rec))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::libs::fmt::maf::MafComp;
+
+    fn comp(
+        src: &str,
+        start: usize,
+        size: usize,
+        strand: char,
+        src_size: usize,
+        text: &str,
+    ) -> MafComp {
+        MafComp {
+            src: src.to_string(),
+            start,
+            size,
+            strand,
+            src_size,
+            text: text.to_string(),
+        }
+    }
+
+    #[test]
+    fn test_minus_strand_query_coords_converted_to_forward() {
+        // query on '-' strand: start=5, size=12, src_size=100.
+        // MAF reverse-strand interval [5, 17); forward = [100-17, 100-5) = [83, 95).
+        let block = MafAli {
+            score: None,
+            components: vec![
+                comp("ref", 0, 12, '+', 12, "ACGTACGTACGT"),
+                comp("qry", 5, 12, '-', 100, "ACGTACGTACGT"),
+            ],
+        };
+        let rec = maf_block_to_paf(&block)
+            .unwrap()
+            .expect("expected Some(rec)");
+        assert_eq!(rec.strand, '-');
+        assert_eq!(rec.query_start, 83);
+        assert_eq!(rec.query_end, 95);
+        assert_eq!(rec.query_length, 100);
+    }
+
+    #[test]
+    fn test_plus_strand_query_coords_unchanged() {
+        let block = MafAli {
+            score: None,
+            components: vec![
+                comp("ref", 10, 12, '+', 50, "ACGTACGTACGT"),
+                comp("qry", 20, 12, '+', 100, "ACGTACGTACGT"),
+            ],
+        };
+        let rec = maf_block_to_paf(&block)
+            .unwrap()
+            .expect("expected Some(rec)");
+        assert_eq!(rec.strand, '+');
+        assert_eq!(rec.query_start, 20);
+        assert_eq!(rec.query_end, 32);
+    }
 }

@@ -20,6 +20,9 @@ pub fn orient_interval(first: i32, last: i32) -> (i32, i32) {
 /// `q_seq` covers query[qs..qe), `t_seq` covers target[ts..te).
 /// CIGAR origin is (rec_ts, rec_qs). Ops before `ts` are skipped (with partial
 /// skip for =/X/M/D); ops at/after `te` are stopped.
+///
+/// Returns `Err` if the CIGAR is inconsistent with the provided sequence
+/// lengths (defensive guard against malformed index data).
 #[allow(clippy::too_many_arguments)]
 pub fn build_maf_block(
     cigar: &[CigarOp],
@@ -30,11 +33,13 @@ pub fn build_maf_block(
     qs: i32,
     q_seq: &[u8],
     t_seq: &[u8],
-) -> (String, String) {
+) -> anyhow::Result<(String, String)> {
     let mut ct = rec_ts;
     let mut cq = rec_qs;
     let mut q_aln = String::new();
     let mut t_aln = String::new();
+    let q_len = q_seq.len() as i32;
+    let t_len = t_seq.len() as i32;
 
     for op in cigar {
         if ct >= te {
@@ -53,8 +58,16 @@ pub fn build_maf_block(
                 if os < oe {
                     let skip_t = os - ct;
                     let take = oe - os;
-                    let q_idx = (cq + skip_t - qs) as usize;
-                    let t_idx = (os - ts) as usize;
+                    let q_idx = cq + skip_t - qs;
+                    let t_idx = os - ts;
+                    if q_idx < 0 || t_idx < 0 || q_idx + take > q_len || t_idx + take > t_len {
+                        anyhow::bail!(
+                            "build_maf_block: CIGAR/sequence mismatch at M op (cq={}, skip_t={}, qs={}, q_idx={}, take={}, q_len={}, t_idx={}, t_len={})",
+                            cq, skip_t, qs, q_idx, take, q_len, t_idx, t_len
+                        );
+                    }
+                    let q_idx = q_idx as usize;
+                    let t_idx = t_idx as usize;
                     for j in 0..take {
                         q_aln.push(q_seq[q_idx + j as usize] as char);
                         t_aln.push(t_seq[t_idx + j as usize] as char);
@@ -66,7 +79,14 @@ pub fn build_maf_block(
             'I' => {
                 // Consume query only (td == 0). Include if ct is within [ts, te).
                 if ct >= ts && ct < te {
-                    let q_idx = (cq - qs) as usize;
+                    let q_idx = cq - qs;
+                    if q_idx < 0 || q_idx + len > q_len {
+                        anyhow::bail!(
+                            "build_maf_block: CIGAR/sequence mismatch at I op (cq={}, qs={}, q_idx={}, len={}, q_len={})",
+                            cq, qs, q_idx, len, q_len
+                        );
+                    }
+                    let q_idx = q_idx as usize;
                     for j in 0..len {
                         q_aln.push(q_seq[q_idx + j as usize] as char);
                         t_aln.push('-');
@@ -79,8 +99,15 @@ pub fn build_maf_block(
                 let os = ct.max(ts);
                 let oe = next_ct.min(te);
                 if os < oe {
-                    let t_idx = (os - ts) as usize;
+                    let t_idx = os - ts;
                     let take = oe - os;
+                    if t_idx < 0 || t_idx + take > t_len {
+                        anyhow::bail!(
+                            "build_maf_block: CIGAR/sequence mismatch at D op (os={}, ts={}, t_idx={}, take={}, t_len={})",
+                            os, ts, t_idx, take, t_len
+                        );
+                    }
+                    let t_idx = t_idx as usize;
                     for j in 0..take {
                         q_aln.push('-');
                         t_aln.push(t_seq[t_idx + j as usize] as char);
@@ -94,7 +121,7 @@ pub fn build_maf_block(
         let _ = qd;
     }
 
-    (q_aln, t_aln)
+    Ok((q_aln, t_aln))
 }
 
 /// One entry to feed into POA: aligned sequence plus metadata for the MAF `s` line.
@@ -228,7 +255,7 @@ pub fn build_pairwise_block(
         qs_eff,
         &q_seq_for_aln,
         &t_seq,
-    );
+    )?;
 
     Ok(PairwiseBlock {
         qname,

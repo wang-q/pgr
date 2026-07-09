@@ -272,6 +272,16 @@ pub type QueryGroup = ((String, i32, i32), Vec<QueryResult>);
 ///
 /// Sequence names are resolved via `idx.id_to_name`. The `cg` tag is built from
 /// the per-result CIGAR; `gi` and `bi` are gap-compressed and block identities.
+///
+/// Known limitations of sub-interval projection:
+/// - The coordinates (cols 3-4, 8-9) are projected sub-intervals of the
+///   original record, while `matches`, `block_len`, `gi`, `bi`, and `cg`
+///   (cols 10-12 + tags) reflect the **full source CIGAR**, not the slice.
+///   Consumers needing slice-consistent tags should re-derive them from the
+///   emitted `cg` after trimming to the projected coordinates.
+/// - `query_length` / `target_length` (cols 2, 7) are emitted as `0` because
+///   `PafIndex` does not retain per-sequence total lengths. Filling these
+///   requires an index-format change to persist `src_size`.
 pub fn output_paf<W: Write>(
     writer: &mut W,
     idx: &PafIndex,
@@ -280,8 +290,13 @@ pub fn output_paf<W: Write>(
     for (query_id, q_iv, t_iv, cigar, _, _, strand) in results {
         let qname = idx.id_to_name(*query_id).unwrap_or("?");
         let tname = idx.id_to_name(t_iv.metadata).unwrap_or("?");
-        let block_len = (q_iv.last - q_iv.first).abs().max(1) as u32;
-        let matches = cigar::cigar_stats(cigar).matches;
+        // Use cigar-derived block_length (matches + mismatches + ins_bp +
+        // del_bp) for consistency with `matches` and `cg`, which also come
+        // from the full source CIGAR. The previous formula (query span)
+        // silently dropped `del_bp`, undercounting block length.
+        let stats = cigar::cigar_stats(cigar);
+        let block_len = cigar::block_length(&stats).max(1);
+        let matches = stats.matches;
         let gi = cigar::gap_compressed_identity(cigar);
         let bi = cigar::block_identity(cigar);
         let cg = cigar::format_cigar(cigar);

@@ -64,6 +64,14 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     };
 
     for sample in &samples {
+        // Guard against path traversal: sample names come from the archive
+        // (untrusted .pbit input) and must not escape the output directory.
+        if sample.contains('/') || sample.contains('\\') || sample == "." || sample == ".." {
+            anyhow::bail!(
+                "invalid sample name '{}': must not contain path separators or be '.'/'..'",
+                sample
+            );
+        }
         let out_path = Path::new(outdir).join(format!("{}.fa", sample));
         let out_str = out_path
             .to_str()

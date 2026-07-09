@@ -113,14 +113,23 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         anyhow::bail!("no sample FASTA files provided");
     }
 
-    // Determine the working path: copy if -o specified, else in-place.
+    // Determine the working path: copy if -o specified, else in-place via a
+    // temp file + atomic rename so a mid-append failure cannot corrupt the
+    // input archive.
+    let in_place = outfile_opt.is_none();
     let work_path = match outfile_opt {
         Some(out) => {
             std::fs::copy(infile, out)
                 .with_context(|| format!("failed to copy {} to {}", infile, out))?;
             out.clone()
         }
-        None => infile.clone(),
+        None => {
+            let tmp = format!("{}.tmp", infile);
+            std::fs::copy(infile, &tmp).with_context(|| {
+                format!("failed to stage temp file {} for in-place append", tmp)
+            })?;
+            tmp
+        }
     };
 
     let mut comp = Compressor::open_for_append(&work_path)
@@ -136,6 +145,16 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         }
     }
     comp.finish().context("failed to finalize pbit archive")?;
+
+    // Atomic in-place replacement: rename temp file over the input archive.
+    if in_place {
+        std::fs::rename(&work_path, infile).with_context(|| {
+            format!(
+                "failed to finalize in-place append: rename {} -> {}",
+                work_path, infile
+            )
+        })?;
+    }
 
     Ok(())
 }

@@ -273,11 +273,32 @@ impl<R: Read + Seek> Decompressor<R> {
             return Ok(cached.clone());
         }
 
+        // Validate SegmentDesc indices against the in-file metadata. These
+        // values come from the (potentially corrupted) sample index, so they
+        // must be bounds-checked before use to avoid panics.
+        let gid = seg.ref_group_id as usize;
+        let did = seg.delta_id as usize;
+        if gid >= self.ref_groups.len() {
+            anyhow::bail!(
+                "decode_delta: ref_group_id {} out of range ({})",
+                seg.ref_group_id,
+                self.ref_groups.len()
+            );
+        }
+        if did >= self.delta_offsets[gid].len() {
+            anyhow::bail!(
+                "decode_delta: delta_id {} out of range ({}) for ref_group {}",
+                seg.delta_id,
+                self.delta_offsets[gid].len(),
+                seg.ref_group_id
+            );
+        }
+
         // Read reference segment.
         let ref_dna = self.read_ref_segment(seg.ref_group_id)?;
 
         // Read packed delta data (header already scanned at construction).
-        let offset = self.delta_offsets[seg.ref_group_id as usize][seg.delta_id as usize];
+        let offset = self.delta_offsets[gid][did];
         self.reader.seek(SeekFrom::Start(offset))?;
         let meta = DeltaMeta::read_header(&mut self.reader)?;
         let mut packed = vec![0u8; meta.packed_size as usize];
@@ -296,6 +317,20 @@ impl<R: Read + Seek> Decompressor<R> {
             }
             DeltaEncoding::Cigar => {
                 // CIGAR: packed_data is pack_cigar output (includes its own gzip).
+                if seg.ref_start > seg.ref_end {
+                    anyhow::bail!(
+                        "decode_delta: ref_start {} > ref_end {}",
+                        seg.ref_start,
+                        seg.ref_end
+                    );
+                }
+                if (seg.ref_end as usize) > ref_dna.len() {
+                    anyhow::bail!(
+                        "decode_delta: ref_end {} > ref segment length {}",
+                        seg.ref_end,
+                        ref_dna.len()
+                    );
+                }
                 let (ops, xi_bases) = unpack_cigar(&packed)?;
                 let ref_slice = &ref_dna[seg.ref_start as usize..seg.ref_end as usize];
                 apply_cigar(ref_slice, &ops, &xi_bases)?

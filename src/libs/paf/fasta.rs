@@ -104,6 +104,7 @@ pub struct FastaStore {
 }
 
 impl FastaStore {
+    /// Create a FastaStore from a `seq_name → bgzf_fasta_path` mapping.
     pub fn new(seq_to_file: &IndexMap<String, String>) -> anyhow::Result<Self> {
         let mut files = HashMap::new();
         let name_to_file: HashMap<String, String> = seq_to_file

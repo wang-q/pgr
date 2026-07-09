@@ -79,6 +79,14 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut writer = pgr::libs::io::writer(outfile)
         .with_context(|| format!("Failed to open writer for {}", outfile))?;
 
+    // Validate --sample early so a non-existent sample is reported clearly
+    // rather than silently producing empty output.
+    if let Some(s) = sample_filter {
+        if !dec.list_samples().contains(&s.as_str()) {
+            anyhow::bail!("sample '{}' not found in archive", s);
+        }
+    }
+
     // If no flag is set, show the overview.
     let show_overview = !show_samples && !show_refs && !show_contigs;
 

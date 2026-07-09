@@ -184,7 +184,8 @@ impl Collection {
                 MAX_SAMPLE_COUNT
             ));
         }
-        let mut samples: IndexMap<String, Vec<ContigSegs>> = IndexMap::with_capacity(sample_count);
+        let mut samples: IndexMap<String, Vec<ContigSegs>> =
+            IndexMap::with_capacity(sample_count.min(1024));
         for _ in 0..sample_count {
             let sample = read_string(&mut cursor)?;
             let contig_count = read_u32_le(&mut cursor)? as usize;
@@ -195,7 +196,7 @@ impl Collection {
                     MAX_CONTIG_COUNT
                 ));
             }
-            let mut contigs = Vec::with_capacity(contig_count);
+            let mut contigs = Vec::with_capacity(contig_count.min(1024));
             for _ in 0..contig_count {
                 let contig_name = read_string(&mut cursor)?;
                 let segment_count = read_u32_le(&mut cursor)? as usize;
@@ -206,7 +207,7 @@ impl Collection {
                         MAX_SEGMENT_COUNT
                     ));
                 }
-                let mut segments = Vec::with_capacity(segment_count);
+                let mut segments = Vec::with_capacity(segment_count.min(1024));
                 for _ in 0..segment_count {
                     let ref_group_id = read_u32_le(&mut cursor)?;
                     let delta_id = read_u32_le(&mut cursor)?;
