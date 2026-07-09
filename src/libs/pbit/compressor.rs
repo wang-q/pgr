@@ -174,6 +174,9 @@ fn split_m_to_eqx(
         let len = op.len() as usize;
         match op.op() {
             '=' => {
+                if rt + len > ref_seq.len() || si + len > sample_seq.len() {
+                    anyhow::bail!("CIGAR '=' exceeds ref/sample length");
+                }
                 push_or_merge(&mut out_ops, len as u32, '=');
                 rt += len;
                 si += len;
@@ -218,6 +221,15 @@ fn split_m_to_eqx(
             }
             other => anyhow::bail!("invalid CIGAR op: '{}'", other),
         }
+    }
+    if rt != ref_seq.len() || si != sample_seq.len() {
+        anyhow::bail!(
+            "CIGAR consumed ref={}/{} sample={}/{}",
+            rt,
+            ref_seq.len(),
+            si,
+            sample_seq.len()
+        );
     }
     Ok((out_ops, xi_bases))
 }
@@ -1144,6 +1156,28 @@ mod tests {
         assert_eq!(ops[1], CigarOp::new(1, 'X'));
         assert_eq!(ops[2], CigarOp::new(4, '='));
         assert_eq!(xi, vec![b'A']);
+    }
+
+    #[test]
+    fn test_split_m_to_eqx_error_eq_overflow() {
+        // `=` op longer than ref/sample must be rejected (previously the `=`
+        // branch advanced cursors without bounds checks, unlike X/I/M).
+        let ref_seq = b"ACGTACGT";
+        let sample_seq = b"ACGTACGT";
+        let cigar = crate::libs::paf::cigar::parse_cigar("10=").unwrap();
+        let err = split_m_to_eqx(ref_seq, sample_seq, &cigar).unwrap_err();
+        assert!(err.to_string().contains("exceeds ref/sample length"));
+    }
+
+    #[test]
+    fn test_split_m_to_eqx_error_underconsumed() {
+        // CIGAR that does not fully consume ref/sample must be rejected rather
+        // than silently returning ops/bases that don't cover the sequences.
+        let ref_seq = b"ACGTACGT";
+        let sample_seq = b"ACGTACGT";
+        let cigar = crate::libs::paf::cigar::parse_cigar("4=").unwrap();
+        let err = split_m_to_eqx(ref_seq, sample_seq, &cigar).unwrap_err();
+        assert!(err.to_string().contains("consumed ref=4/8 sample=4/8"));
     }
 
     // ── append_sample_with_paf tests ─────────────────────────

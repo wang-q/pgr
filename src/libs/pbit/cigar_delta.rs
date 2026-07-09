@@ -77,6 +77,9 @@ pub fn apply_cigar(ref_seq: &[u8], ops: &[CigarOp], xi_bases: &[u8]) -> Result<V
                 if xi + len > xi_bases.len() {
                     return Err(anyhow!("CIGAR 'X' exceeds X/I base stream"));
                 }
+                if rt + len > ref_seq.len() {
+                    return Err(anyhow!("CIGAR 'X' exceeds reference length"));
+                }
                 out.extend_from_slice(&xi_bases[xi..xi + len]);
                 xi += len;
                 rt += len; // X consumes reference too
@@ -103,6 +106,13 @@ pub fn apply_cigar(ref_seq: &[u8], ops: &[CigarOp], xi_bases: &[u8]) -> Result<V
             "CIGAR consumed {} X/I bases but {} were packed",
             xi,
             xi_bases.len()
+        ));
+    }
+    if rt != ref_seq.len() {
+        return Err(anyhow!(
+            "CIGAR consumed {} reference bases but {} available",
+            rt,
+            ref_seq.len()
         ));
     }
     Ok(out)
@@ -204,8 +214,8 @@ mod tests {
     #[test]
     fn test_apply_cigar_combined() {
         let ref_seq = b"ACGTACGTACGT";
-        // =2 X1 =2 I2 D2 =3: X at ref[2], insert "GG" after ref[4], delete ref[5..7]
-        let ops_in = ops(&[(2, '='), (1, 'X'), (2, '='), (2, 'I'), (2, 'D'), (3, '=')]);
+        // =2 X1 =2 I2 D2 =5: X at ref[2], insert "GG" after ref[4], delete ref[5..7]
+        let ops_in = ops(&[(2, '='), (1, 'X'), (2, '='), (2, 'I'), (2, 'D'), (5, '=')]);
         let xi = b"TGG"; // 1 X + 2 I
         let out = apply_cigar(ref_seq, &ops_in, xi).unwrap();
         // ref: A(0) C(1) G(2) T(3) A(4) C(5) G(6) T(7) A(8) C(9) G(10) T(11)
@@ -214,9 +224,9 @@ mod tests {
         // =2 (ref[3..5]):  TA
         // I2:              GG (xi)
         // D2 (ref[5..7]):  skip CG
-        // =3 (ref[7..10]): TAC
-        // result: AC + T + TA + GG + TAC = ACTTAGGTAC
-        assert_eq!(out, b"ACTTAGGTAC");
+        // =5 (ref[7..12]): TACGT
+        // result: AC + T + TA + GG + TACGT = ACTTAGGTACGT
+        assert_eq!(out, b"ACTTAGGTACGT");
     }
 
     #[test]
@@ -298,5 +308,27 @@ mod tests {
         // =4 (ref[12..16]):ACGT
         // result: ACG + N + ACGTAC + TT + ACGT = ACGNACGTACTTACGT
         assert_eq!(reconstructed, b"ACGNACGTACTTACGT");
+    }
+
+    #[test]
+    fn test_apply_cigar_error_x_ref_overflow() {
+        // X consumes reference too; an X op that overruns ref_seq must be
+        // rejected (previously only the X/I base stream was bounds-checked).
+        let ref_seq = b"ACGT";
+        let ops_in = ops(&[(3, '='), (2, 'X')]);
+        let err = apply_cigar(ref_seq, &ops_in, b"GG").unwrap_err();
+        assert!(err.to_string().contains("exceeds reference length"));
+    }
+
+    #[test]
+    fn test_apply_cigar_error_ref_underconsumed() {
+        // CIGAR covers only part of the reference; the leftover ref bases must
+        // be rejected rather than silently producing a truncated sample.
+        let ref_seq = b"ACGTACGT";
+        let ops_in = ops(&[(4, '=')]);
+        let err = apply_cigar(ref_seq, &ops_in, &[]).unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("consumed 4 reference bases but 8 available"));
     }
 }
