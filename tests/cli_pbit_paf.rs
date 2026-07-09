@@ -1045,3 +1045,76 @@ fn test_pbit_paf_minus_strand_with_xi() {
     let expected: String = sample.iter().map(|&b| b as char).collect();
     assert_eq!(got, expected, "minus-strand X/I roundtrip mismatch");
 }
+
+// ── Test 17: empty reference contig does not panic (Issue 1) ──────────
+//
+// ref has chr_empty (0 bp) + chr1 (2000 bp). sample has chr_empty (500 bp)
+// + chr1 (ref with SNP at 100). Without the empty-ref guard,
+// ref_group_ids[0] panics for chr_empty. With the guard, chr_empty is
+// warned+skipped and chr1 roundtrips correctly via CIGAR encoding.
+
+#[test]
+fn test_pbit_paf_empty_ref_contig() {
+    let temp = TempDir::new().unwrap();
+    let ref_fa = temp.path().join("ref.fa");
+    let sample_fa = temp.path().join("sample.fa");
+    let paf_path = temp.path().join("sample.paf");
+    let out_pbit = temp.path().join("out.pbit");
+
+    let ref_seq = random_dna(2000, 42);
+    write_fasta(
+        &ref_fa,
+        &[
+            ("chr_empty", ""),
+            ("chr1", std::str::from_utf8(&ref_seq).unwrap()),
+        ],
+    );
+
+    // sample chr_empty has sequence (triggers the bug path); chr1 has a SNP.
+    let mut sample_chr1: Vec<u8> = ref_seq.clone();
+    sample_chr1[100] = snp_of(sample_chr1[100]);
+    let sample_chr_empty = random_dna(500, 99);
+    write_fasta(
+        &sample_fa,
+        &[
+            ("chr_empty", std::str::from_utf8(&sample_chr_empty).unwrap()),
+            ("chr1", std::str::from_utf8(&sample_chr1).unwrap()),
+        ],
+    );
+
+    // PAF for chr1: 100= 1X 1899=
+    write_paf(
+        &paf_path,
+        &[make_paf_line(
+            "chr1",
+            2000,
+            0,
+            2000,
+            "+",
+            "chr1",
+            2000,
+            0,
+            2000,
+            "100=1X1899=",
+        )],
+    );
+
+    let got = create_and_extract(
+        temp.path(),
+        &ref_fa,
+        &out_pbit,
+        &[
+            "-i",
+            sample_fa.to_str().unwrap(),
+            "-p",
+            paf_path.to_str().unwrap(),
+        ],
+        "sample",
+    );
+    // chr_empty is skipped (empty ref); output contains only chr1.
+    let expected: String = sample_chr1.iter().map(|&b| b as char).collect();
+    assert_eq!(
+        got, expected,
+        "chr1 roundtrip mismatch with empty ref contig"
+    );
+}

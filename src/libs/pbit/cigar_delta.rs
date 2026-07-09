@@ -98,6 +98,13 @@ pub fn apply_cigar(ref_seq: &[u8], ops: &[CigarOp], xi_bases: &[u8]) -> Result<V
             other => return Err(anyhow!("invalid CIGAR op: '{}'", other)),
         }
     }
+    if xi != xi_bases.len() {
+        return Err(anyhow!(
+            "CIGAR consumed {} X/I bases but {} were packed",
+            xi,
+            xi_bases.len()
+        ));
+    }
     Ok(out)
 }
 
@@ -248,6 +255,18 @@ mod tests {
         let ops_in = ops(&[(2, 'X')]);
         let err = apply_cigar(ref_seq, &ops_in, b"A").unwrap_err();
         assert!(err.to_string().contains("exceeds X/I base stream"));
+    }
+
+    #[test]
+    fn test_apply_cigar_error_xi_excess() {
+        // xi_bases has one more base than the CIGAR consumes; must be rejected
+        // rather than silently discarded (corrupted-archive guard).
+        let ref_seq = b"ACGTACGT";
+        let ops_in = ops(&[(2, 'X')]);
+        let err = apply_cigar(ref_seq, &ops_in, b"ABC").unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("consumed 2 X/I bases but 3 were packed"));
     }
 
     #[test]
