@@ -19,11 +19,12 @@ document (in `docs/`) are listed with both links.
 | GFF      | Generic Feature Format                       | — | [docs/gff.md](../gff.md) |
 | LAV      | BLASTZ local alignment view                  | [lav.md](lav.md) | [docs/lav.md](../lav.md) |
 | LOC      | FASTA random-access location index           | [loc.md](loc.md) | — |
-| MAF      | Multiple Alignment Format                    | — | [docs/maf.md](../maf.md) |
+| MAF      | Multiple Alignment Format                    | [maf.md](../maf.md) | [docs/maf.md](../maf.md) |
 | Net      | UCSC hierarchical alignment net              | [net.md](net.md) | [docs/net.md](../net.md) |
 | Newick   | Phylogenetic tree format                     | — | [docs/nwk.md](../nwk.md) |
 | PAF      | Pairwise mApping Format (12-column TSV)      | — | [docs/paf.md](../paf.md) |
 | PSL      | UCSC pairwise sequence alignment             | [psl.md](psl.md) | [docs/psl.md](../psl.md) |
+| pbit     | pgr population 2bit + delta archive          | [pbit.md](../pbit.md) | [docs/pbit.md](../pbit.md) |
 
 ## Coordinate conventions
 

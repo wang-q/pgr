@@ -17,7 +17,7 @@ workflows, with a focus on:
 
 High-level capabilities include:
 
-- Sequences: FASTA/FASTQ inspection, filtering, slicing, conversion, and 2bit querying
+- Sequences: FASTA/FASTQ inspection, filtering, slicing, conversion, 2bit querying, and pbit population archive compression
 - Alignments: sorting, filtering, conversion, and coordinate/range utilities across UCSC formats
 - Clustering & trees: distance/matrix processing, multiple clustering algorithms, tree cutting and visualization
 - Pipelines & plots: integrated workflows (optionally using external tools) and LaTeX/TikZ figure generation
@@ -61,6 +61,12 @@ pgr fas stat tests/fas/example.fas --outgroup
 
 # 2bit range extraction
 pgr 2bit range tests/genome/mg1655.2bit NC_000913:1-100
+
+# Create a pbit population archive from a reference and sample assemblies
+pgr pbit create -r tests/pgr/pseudocat.fa -i tests/pgr/pseudopig.fa -o tmp.pbit
+
+# Extract a region from all samples in the archive
+pgr pbit range tmp.pbit scaffold_1:1-1000 -o tmp.fa
 ```
 
 ## External dependencies

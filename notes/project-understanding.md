@@ -133,6 +133,7 @@ src/
 | `fas`    | 20       | Block FA (多序列比对块)：统计、筛选、subset、变异检测 |
 | `fq`     | 2        | FASTQ 交叉合并、转 FASTA                              |
 | `twobit` | 5        | 2bit 二进制格式查询：range、sequence、masked 统计     |
+| `pbit`   | 6        | 群体基因组 2bit + delta 压缩与随机访问                |
 | `gff`    | 1        | GFF 注释：rg (read group)                             |
 
 **fa 和 fas 是序列模块的核心**，子命令最多、功能最全。`fas` 的 `multiz`、`variation`、 `refine`、
@@ -364,13 +365,16 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
 
 - **pairwise 比对全链路**：lastz → chain → net → axt → maf 的工具链在 `chain`/`net`/ `axt`/`psl`/
   `lav`/`maf` 六个模块中基本完整，且是纯 Rust 实现（不依赖 kent-tools）。
-- **FASTA/FASTQ/2bit 处理**：`fa`(18 子命令) + `fas`(20 子命令) + `fq`(2) + `twobit`(5)，
-  日常序列操作需求基本覆盖。
+- **FASTA/FASTQ/2bit/pbit 处理**：`fa`(18 子命令) + `fas`(20 子命令) + `fq`(2) + `twobit`(5) + `pbit`(6)，
+  日常序列操作与群体基因组归档压缩需求基本覆盖。
 - **系统发育树操作**：`nwk`(18 子命令) 功能丰富，可视化 (SVG/DOT/TikZ) 也已有。
 - **聚类算法**：7 种聚类算法 + `cut`/`eval` 辅助命令已实现。
 - **距离/矩阵工具链**：`dist` → `mat` → `clust` 的数据流完整。
 
 ### 6.2 进行中的（活跃开发）
+
+- **`pbit` 归档压缩**：`pgr pbit` 的 `create`/`append`/`stat`/`range`/`some`/`to-fa` 六个子命令已实现并文档化
+  （用户文档见 `docs/pbit.md`，设计笔记见 `notes/design/pbit.md`），归入 §6.1。
 
 - **泛基因组方向**：已形成完整路线图，整合在 `notes/paf-pangenome.md`（路线决策 + 已实现能力 +
   代码结构 + 后续规划）。`pgr paf` 的 query / to-bed / to-fas / to-maf / graph / to-gfa / to-vcf / stat 子命令已全部完成。

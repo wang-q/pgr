@@ -145,6 +145,36 @@ pgr 2bit masked tests/genome/mg1655.2bit
 pgr 2bit masked tests/genome/mg1655.2bit --gap
 ```
 
+### pbit
+
+```bash
+# Create a pbit archive from a reference and one or more samples
+pgr pbit create -r ref.fa -i sample1.fa -i sample2.fa -o out.pbit
+
+# Append samples to an existing archive
+pgr pbit append out.pbit -i sample3.fa
+
+# Show archive overview
+pgr pbit stat out.pbit
+
+# List all samples or reference contigs
+pgr pbit stat out.pbit --samples
+pgr pbit stat out.pbit --refs
+
+# Extract a region from all samples
+pgr pbit range out.pbit "chr1:1-1000" -o region.fa
+
+# Extract specific contigs from all samples
+pgr pbit some out.pbit contigs.txt -o selected.fa
+
+# Export all samples as per-sample FASTA files
+pgr pbit to-fa out.pbit -o outdir
+
+# CIGAR-driven encoding with PAF (recommended for samples with SVs)
+minimap2 -cx asm20 --eqx ref.fa sample.fa > sample.paf
+pgr pbit create -r ref.fa -i sample.fa -p sample.paf -o out.pbit
+```
+
 ### Genomes and plots
 
 #### Download genomes
