@@ -1,6 +1,29 @@
 use anyhow::Context;
 use clap::{ArgMatches, Command};
 use pgr::libs::pbit::compressor::Compressor;
+use std::path::PathBuf;
+
+/// RAII guard that deletes a temporary file on drop unless disarmed.
+struct TempFileGuard {
+    path: Option<PathBuf>,
+}
+
+impl TempFileGuard {
+    fn new(path: PathBuf) -> Self {
+        Self { path: Some(path) }
+    }
+    fn disarm(mut self) {
+        self.path.take();
+    }
+}
+
+impl Drop for TempFileGuard {
+    fn drop(&mut self) {
+        if let Some(ref p) = self.path {
+            let _ = std::fs::remove_file(p);
+        }
+    }
+}
 
 /// Build the clap subcommand for append.
 pub fn make_subcommand() -> Command {
@@ -60,18 +83,26 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // temp file + atomic rename so a mid-append failure cannot corrupt the
     // input archive.
     let in_place = outfile_opt.is_none();
+    let mut temp_guard: Option<TempFileGuard> = None;
     let work_path = match outfile_opt {
         Some(out) => {
             // Refuse to overwrite the source archive in-place: fs::copy would
             // truncate the source before reading, destroying the archive.
             let in_path = std::path::Path::new(infile);
             let out_path = std::path::Path::new(out);
-            let same_file = if out_path.exists() {
-                let in_canon = std::fs::canonicalize(in_path)
-                    .with_context(|| format!("failed to canonicalize infile {}", infile))?;
-                let out_canon = std::fs::canonicalize(out_path)
-                    .with_context(|| format!("failed to canonicalize outfile {}", out))?;
-                in_canon == out_canon
+            if in_path == out_path {
+                anyhow::bail!("outfile must differ from infile; omit -o for in-place append");
+            }
+            // Canonicalize when both paths exist; treat failure as "not the
+            // same file" rather than aborting the operation.
+            let same_file = if in_path.exists() && out_path.exists() {
+                match (
+                    std::fs::canonicalize(in_path),
+                    std::fs::canonicalize(out_path),
+                ) {
+                    (Ok(i), Ok(o)) => i == o,
+                    _ => false,
+                }
             } else {
                 false
             };
@@ -87,6 +118,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             std::fs::copy(infile, &tmp).with_context(|| {
                 format!("failed to stage temp file {} for in-place append", tmp)
             })?;
+            temp_guard = Some(TempFileGuard::new(PathBuf::from(&tmp)));
             tmp
         }
     };
@@ -107,6 +139,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     // Atomic in-place replacement: rename temp file over the input archive.
     if in_place {
+        // Disarm the guard so the temp file survives the rename.
+        if let Some(guard) = temp_guard.take() {
+            guard.disarm();
+        }
         std::fs::rename(&work_path, infile).with_context(|| {
             format!(
                 "failed to finalize in-place append: rename {} -> {}",

@@ -70,8 +70,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             continue;
         }
 
-        // Handle full contig request (start=0 means just the name).
-        let (start, end) = if *rg.start() == 0 {
+        // Handle full contig request (start=0 and end=0 means just the name).
+        let (start, end) = if *rg.start() == 0 && *rg.end() == 0 {
             (None, None)
         } else {
             anyhow::ensure!(rg.is_valid(), "invalid range: {}", el);

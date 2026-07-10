@@ -543,11 +543,13 @@ impl<W: Write + Seek> Compressor<W> {
         // flate2 compress the delta.
         let packed_data = flate2_compress(&delta)?;
 
-        // Delta dedup: check if an identical packed_data already exists
-        // in this ref_group. If so, reuse its delta_id.
+        // Delta dedup: check if an identical packed_data with the same
+        // orientation already exists in this ref_group. is_rev_comp is part
+        // of the delta header and cannot be shared across orientations
+        // (e.g., an empty delta for forward vs rev-comp reference).
         let existing = self.deltas[ref_group_id as usize]
             .iter()
-            .position(|d| d.packed_data == packed_data);
+            .position(|d| d.packed_data == packed_data && d.is_rev_comp == is_rev_comp);
         let delta_id = match existing {
             Some(id) => id as u32,
             None => {
@@ -683,10 +685,10 @@ impl<W: Write + Seek> Compressor<W> {
         let raw_length = seg.len() as u32;
         let is_rev_comp = best.strand == '-';
 
-        // 13. Delta dedup by packed_data.
+        // 13. Delta dedup by packed_data + orientation.
         let existing = self.deltas[ref_group_id as usize]
             .iter()
-            .position(|d| d.packed_data == packed_data);
+            .position(|d| d.packed_data == packed_data && d.is_rev_comp == is_rev_comp);
         let delta_id = match existing {
             Some(id) => id as u32,
             None => {
