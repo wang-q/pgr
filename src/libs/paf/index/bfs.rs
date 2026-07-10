@@ -31,6 +31,7 @@ impl PafIndex {
     ) -> Vec<QueryResult> {
         let mut results = Vec::new();
         let mut visited: HashMap<u32, SortedRanges> = HashMap::new();
+        let root_target_id = target_id;
 
         let init = visited
             .entry(target_id)
@@ -66,6 +67,12 @@ impl PafIndex {
                         }
                         if let Some((qs, qe, ts, te)) = project(os, oe, m, &cigar) {
                             if (qe - qs).abs() < min_output_len {
+                                return;
+                            }
+                            // Skip self-loops: the mirror index can walk back to
+                            // the original target, which would otherwise appear as
+                            // a query identical to the target.
+                            if m.query_id == root_target_id {
                                 return;
                             }
                             results.push((

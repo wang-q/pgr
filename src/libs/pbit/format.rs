@@ -10,12 +10,15 @@ use std::io::{Read, Seek, SeekFrom, Write};
 
 /// pbit magic number: 'PBIT' in little-endian.
 pub const PBIT_MAGIC: u32 = 0x54494250;
+/// pbit format major version.
 pub const PBIT_VERSION_MAJOR: u32 = 1;
+/// pbit format minor version.
 pub const PBIT_VERSION_MINOR: u32 = 1;
 /// Current file version encoded as major*1000 + minor.
 pub const PBIT_VERSION: u32 = PBIT_VERSION_MAJOR * 1000 + PBIT_VERSION_MINOR;
 
 /// Delta encoding type stored in the on-disk delta header (10th byte).
+#[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DeltaEncoding {
     LzDiff = 0,

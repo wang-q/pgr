@@ -88,6 +88,11 @@ impl PafIndex {
         self.trees.len()
     }
 
+    /// Returns the number of named sequences (targets and queries).
+    pub fn num_sequences(&self) -> usize {
+        self.names.len()
+    }
+
     /// Returns true if the index uses lazy CIGAR loading from a BGZF file.
     pub fn is_lazy(&self) -> bool {
         self.lazy_source.is_some()

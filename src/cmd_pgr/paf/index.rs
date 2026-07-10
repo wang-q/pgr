@@ -57,7 +57,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     };
 
     let lazy = idx.is_lazy();
-    log::info!("  sequences: {}", idx.names.len());
+    log::info!("  sequences: {}", idx.num_sequences());
     log::info!("  targets:   {}", idx.num_targets());
     if lazy {
         log::info!("  mode:      lazy (BGZF virtual-position CIGAR)");

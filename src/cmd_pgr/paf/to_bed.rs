@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{ArgMatches, Command};
 use std::io::Write;
 
@@ -30,16 +31,18 @@ Examples:
 
 "###,
         )
+        .arg(crate::cmd_pgr::args::outfile_arg())
 }
 /// Execute the to-bed command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let opts = crate::cmd_pgr::args::query_options_from_args(args);
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
     let (idx, all_results, _fasta_store) = pgr::libs::paf::query::run_query(&opts)?;
-    let stdout = std::io::stdout();
-    let mut out = stdout.lock();
+    let mut writer =
+        pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
     for (_, results) in &all_results {
-        pgr::libs::paf::to_bed::write_bed3(&idx, results, &mut out)?;
+        pgr::libs::paf::to_bed::write_bed3(&idx, results, &mut writer)?;
     }
-    out.flush()?;
+    writer.flush()?;
     Ok(())
 }

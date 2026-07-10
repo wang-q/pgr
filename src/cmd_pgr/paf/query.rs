@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{ArgMatches, Command};
 use std::io::Write;
 /// Build the clap subcommand for query.
@@ -24,8 +25,8 @@ Region input (one of):
 * -b/--bed-regions <file>: BED file with multiple regions (one per line,
   tab-separated `name start end`), enabling batch query
 
-Output: PAF (12 columns + gi/bi/cg tags). For BED or MAF output, use
-`pgr paf to-bed` or `pgr paf to-maf` respectively.
+Output: PAF (12 columns + gi/bi/cg tags). For BED/MAF/FAS/GFA/VCF
+output, use the corresponding `pgr paf to-*` subcommand.
 
 Notes:
 * Input PAF files should contain cg:Z: tags for accurate projection
@@ -48,16 +49,18 @@ Examples:
 "###,
         );
     crate::cmd_pgr::args::add_query_args(crate::cmd_pgr::args::add_optional_fasta_tsv_arg(cmd))
+        .arg(crate::cmd_pgr::args::outfile_arg())
 }
 /// Execute the query command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let opts = crate::cmd_pgr::args::query_options_from_args(args);
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
     let (idx, all_results, _fasta_store) = pgr::libs::paf::query::run_query(&opts)?;
-    let stdout = std::io::stdout();
-    let mut out = stdout.lock();
+    let mut writer =
+        pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
     for (_, results) in &all_results {
-        pgr::libs::paf::query::output_paf(&mut out, &idx, results)?;
+        pgr::libs::paf::query::output_paf(&mut writer, &idx, results)?;
     }
-    out.flush()?;
+    writer.flush()?;
     Ok(())
 }

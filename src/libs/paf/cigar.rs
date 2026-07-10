@@ -140,6 +140,10 @@ pub fn parse_cigar(s: &str) -> anyhow::Result<Vec<CigarOp>> {
         }
     }
 
+    if len > 0 {
+        anyhow::bail!("trailing digits without CIGAR op: {s}");
+    }
+
     Ok(ops)
 }
 
@@ -422,8 +426,8 @@ mod tests {
 
     #[test]
     fn test_parse_cigar_digits_only() {
-        let ops = parse_cigar("10").unwrap();
-        assert!(ops.is_empty());
+        assert!(parse_cigar("10").is_err());
+        assert!(parse_cigar("10=5").is_err());
     }
 
     #[test]
