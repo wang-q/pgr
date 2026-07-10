@@ -1,5 +1,8 @@
 # pgr 泛基因组 — PAF 隐式图
 
+> 本文档覆盖 `pgr paf` 泛基因组查询与图构建命令族（query / to-bed / to-fas / to-maf / graph / to-gfa / to-vcf / stat）。
+> 群体基因组压缩格式 `pgr pbit` 见 [`pbit.md`](design/pbit.md)。
+
 **复用已有的 pairwise 比对基础设施，构建 PAF 隐式图，按需回答"哪些序列的哪些区段同源"， 而非物化一张泛基因组图。**
 
 query / to-maf / graph / to-gfa / to-vcf / stat 已全部完成。综合参考：impg（POA → GFA）、minigraph（chain → CIGAR → rGFA）、

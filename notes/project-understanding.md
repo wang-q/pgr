@@ -434,6 +434,7 @@ pgr 的 `chain`/`net`/`axt`/`psl` 模块是 UCSC kent-tools 对应功能的**Rus
 
 | 文档 | 定位 | 状态 |
 |------|------|------|
+| [[pbit.md]] | `pgr pbit` 压缩格式设计（LZ-diff + PAF 驱动 CIGAR delta） | 已实现 |
 | [[phylo.md]] | `libs/phylo/` 架构设计（Arena 树、CLI 映射、API 参考） | 部分实现（架构已落地，部分 API 未实现） |
 | [[nwk-eval.md]] | `pgr nwk eval` 多维树评估框架设计 | 计划中（设计稿，未实现） |
 | [[fas-multiz.md]] | `libs::fas_multiz` 设计与实现（banded DP 合并） | 已实现（CLI 已落地） |
