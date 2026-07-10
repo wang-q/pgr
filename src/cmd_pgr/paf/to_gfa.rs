@@ -1,23 +1,16 @@
 use anyhow::Context;
-use clap::{Arg, ArgAction, ArgMatches, Command};
+use clap::{ArgMatches, Command};
 use std::io::Write;
 /// Build the clap subcommand for to-gfa.
 pub fn make_subcommand() -> Command {
     crate::cmd_pgr::args::add_poa_args(
-        crate::cmd_pgr::args::add_query_args(
-            crate::cmd_pgr::args::add_fasta_tsv_arg(Command::new("to-gfa"))
-                .arg(
-                    Arg::new("crush")
-                        .long("crush")
-                        .action(ArgAction::SetTrue)
-                        .help(
-                            "Compress SNP bubbles (impg `crush` style; loses base-level ALT info)",
-                        ),
-                )
-                .arg(crate::cmd_pgr::args::outfile_arg()),
-        ),
+        crate::cmd_pgr::args::add_query_args(crate::cmd_pgr::args::add_fasta_tsv_arg(
+            Command::new("to-gfa"),
+        )),
         false,
     )
+    .arg(crate::cmd_pgr::args::crush_arg())
+    .arg(crate::cmd_pgr::args::outfile_arg())
     .about("Queries PAF index and outputs local GFA via POA graph")
     .after_help(
         r###"

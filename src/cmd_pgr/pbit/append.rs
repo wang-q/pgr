@@ -19,7 +19,7 @@ Notes:
 * If -o is omitted, the input archive is modified in place
 * If -o is specified, the input archive is copied to the output path first
 * Reference and sample FASTA files may be plain text or gzipped (.gz)
-* contigs in sample FASTA that do not match any reference contig are skipped
+* Contigs in sample FASTA that do not match any reference contig are skipped
 * Only ACGTN characters are supported; IUPAC degenerate codes are mapped to N
 * `--paf` files are paired with `-i` files by order; `--name` and `--paf`
   are mutually exclusive (use the TSV's optional 3rd column for PAF)
@@ -62,6 +62,22 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let in_place = outfile_opt.is_none();
     let work_path = match outfile_opt {
         Some(out) => {
+            // Refuse to overwrite the source archive in-place: fs::copy would
+            // truncate the source before reading, destroying the archive.
+            let in_path = std::path::Path::new(infile);
+            let out_path = std::path::Path::new(out);
+            let same_file = if out_path.exists() {
+                let in_canon = std::fs::canonicalize(in_path)
+                    .with_context(|| format!("failed to canonicalize infile {}", infile))?;
+                let out_canon = std::fs::canonicalize(out_path)
+                    .with_context(|| format!("failed to canonicalize outfile {}", out))?;
+                in_canon == out_canon
+            } else {
+                false
+            };
+            if same_file {
+                anyhow::bail!("outfile must differ from infile; omit -o for in-place append");
+            }
             std::fs::copy(infile, out)
                 .with_context(|| format!("failed to copy {} to {}", infile, out))?;
             out.clone()

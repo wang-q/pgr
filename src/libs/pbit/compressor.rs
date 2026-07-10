@@ -190,6 +190,9 @@ fn split_m_to_eqx(
                 si += len;
             }
             'X' => {
+                if rt + len > ref_seq.len() {
+                    anyhow::bail!("CIGAR X exceeds ref length");
+                }
                 if si + len > sample_seq.len() {
                     anyhow::bail!("CIGAR X exceeds sample length");
                 }
@@ -207,6 +210,9 @@ fn split_m_to_eqx(
                 si += len;
             }
             'D' => {
+                if rt + len > ref_seq.len() {
+                    anyhow::bail!("CIGAR D exceeds ref length");
+                }
                 push_or_merge(&mut out_ops, len as u32, 'D');
                 rt += len;
             }

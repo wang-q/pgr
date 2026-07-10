@@ -36,7 +36,7 @@ pub struct GraphReport {
 
 impl GraphReport {
     /// Write the report as TSV (key<TAB>value) to a writer.
-    pub fn write_tsv<W: std::io::Write>(&self, mut w: W) -> std::io::Result<()> {
+    pub fn write_tsv<W: std::io::Write>(&self, w: &mut W) -> std::io::Result<()> {
         let fields: Vec<(&str, String)> = vec![
             ("segments", self.segments.to_string()),
             ("links", self.links.to_string()),

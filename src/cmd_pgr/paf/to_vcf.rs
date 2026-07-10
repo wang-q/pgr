@@ -4,12 +4,12 @@ use std::io::Write;
 /// Build the clap subcommand for to-vcf.
 pub fn make_subcommand() -> Command {
     crate::cmd_pgr::args::add_poa_args(
-        crate::cmd_pgr::args::add_query_args(
-            crate::cmd_pgr::args::add_fasta_tsv_arg(Command::new("to-vcf"))
-                .arg(crate::cmd_pgr::args::outfile_arg()),
-        ),
+        crate::cmd_pgr::args::add_query_args(crate::cmd_pgr::args::add_fasta_tsv_arg(
+            Command::new("to-vcf"),
+        )),
         false,
     )
+    .arg(crate::cmd_pgr::args::outfile_arg())
     .about("Queries PAF index and outputs multi-way VCF via POA MSA")
     .after_help(
         r###"

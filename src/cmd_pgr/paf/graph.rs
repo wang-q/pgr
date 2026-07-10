@@ -75,9 +75,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let graph = PafGraph::build(paf_reader, seqs_ref, min_var_len)?;
 
     // Write GFA.
-    let writer =
+    let mut writer =
         pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
-    graph.write_gfa(writer)?;
+    graph.write_gfa(&mut writer)?;
 
     Ok(())
 }

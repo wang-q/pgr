@@ -35,7 +35,6 @@ pub(super) fn split_alignment(
     qid: u32,
     q_start: i32,
     q_end: i32,
-    q_size: i32,
     reverse: bool,
     cigar: &[CigarOp],
     min_var_len: i32,
@@ -43,8 +42,8 @@ pub(super) fn split_alignment(
     links: &mut Vec<AlignmentLink>,
 ) {
     if cigar.is_empty() {
-        // No CIGAR: treat whole record as one segment pair.
-        let (qs_fwd, qe_fwd) = fwd_query_coords(q_start, q_end, q_size, reverse);
+        // No CIGAR: treat whole record as one segment pair. PAF query coords
+        // are already forward-strand regardless of strand.
         let a = segments.len();
         segments.push(Segment {
             seq_id: tid,
@@ -54,15 +53,17 @@ pub(super) fn split_alignment(
         let b = segments.len();
         segments.push(Segment {
             seq_id: qid,
-            start: qs_fwd,
-            end: qe_fwd,
+            start: q_start,
+            end: q_end,
         });
         links.push(AlignmentLink { a, b, reverse });
         return;
     }
 
     let mut ct = t_start;
-    let mut cq = q_start; // in alignment-orientation coords (forward if '+', reverse if '-')
+    // CIGAR describes RC(query) vs target for '-' strand, so walk from RC
+    // offset 0 and convert back to forward coords via q_end when flushing.
+    let mut cq = 0;
     let mut seg_start_t = ct;
     let mut seg_start_q = cq;
     let mut have_seg = false;
@@ -78,7 +79,7 @@ pub(super) fn split_alignment(
             *have_seg = false;
             return;
         }
-        let (qs_fwd, qe_fwd) = fwd_query_coords(seg_start_q, cq, q_size, reverse);
+        let (qs_fwd, qe_fwd) = fwd_query_coords(seg_start_q, cq, q_end, reverse);
         if qs_fwd >= qe_fwd {
             *have_seg = false;
             return;
@@ -143,10 +144,12 @@ pub(super) fn split_alignment(
 }
 
 /// Convert alignment-orientation query coords to forward-strand coords.
-/// For '+' strand, coords are already forward. For '-' strand, flip.
-fn fwd_query_coords(qs: i32, qe: i32, q_size: i32, reverse: bool) -> (i32, i32) {
+/// For '+' strand, coords are already forward. For '-' strand the CIGAR
+/// describes RC(query) vs target, so RC offset [qs, qe) maps to
+/// [q_end - qe, q_end - qs) in forward coordinates.
+fn fwd_query_coords(qs: i32, qe: i32, q_end: i32, reverse: bool) -> (i32, i32) {
     if reverse {
-        crate::libs::alignment::coords::reverse_range_pair(qs, qe, q_size)
+        (q_end - qe, q_end - qs)
     } else {
         (qs, qe)
     }

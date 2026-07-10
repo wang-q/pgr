@@ -718,7 +718,7 @@ pub fn add_query_args(cmd: Command) -> Command {
         Arg::new("transitive")
             .long("transitive")
             .short('t')
-            .num_args(0)
+            .action(ArgAction::SetTrue)
             .help("Enable transitive BFS traversal"),
     )
     .arg(
@@ -837,13 +837,21 @@ pub fn add_min_var_len_arg(cmd: Command) -> Command {
     )
 }
 
+/// `--crush` flag for `paf to-gfa`.
+pub fn crush_arg() -> Arg {
+    Arg::new("crush")
+        .long("crush")
+        .action(ArgAction::SetTrue)
+        .help("Compress SNP bubbles (impg 'crush' style; loses base-level ALT info)")
+}
+
 /// Add the `--msa` flag for POA-based multi-way output.
 /// Shared by `paf to-fas` and `paf to-maf`.
 pub fn add_msa_flag(cmd: Command) -> Command {
     cmd.arg(
         Arg::new("msa")
             .long("msa")
-            .num_args(0)
+            .action(ArgAction::SetTrue)
             .help("Merge results per region into a multi-way block via POA"),
     )
 }

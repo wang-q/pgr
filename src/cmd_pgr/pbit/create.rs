@@ -19,7 +19,7 @@ Notes:
 * Sample names are derived from the input FASTA basenames (use `--name` to
   override with a TSV file of `name<TAB>path[<TAB>paf_path]` lines)
 * Reference and sample FASTA files may be plain text or gzipped (.gz)
-* contigs in sample FASTA that do not match any reference contig are skipped
+* Contigs in sample FASTA that do not match any reference contig are skipped
 * Only ACGTN characters are supported; IUPAC degenerate codes (R, Y, S, W,
   K, M, B, D, H, V) are lossily mapped to N
 * `--paf` files are paired with `-i` files by order; `--name` and `--paf`

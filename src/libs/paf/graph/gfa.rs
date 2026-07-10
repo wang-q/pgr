@@ -5,7 +5,7 @@ use std::io::Write;
 
 impl PafGraph {
     /// Write GFA v1.0 (rGFA with SN/SO/SR tags on S lines) to a writer.
-    pub fn write_gfa<W: Write>(&self, mut w: W) -> std::io::Result<()> {
+    pub fn write_gfa<W: Write>(&self, w: &mut W) -> std::io::Result<()> {
         // S lines (1-based node ids in GFA convention) with rGFA SN/SO/SR tags.
         // SN: source sequence name; SO: 0-based start offset; SR: rank (0 = primary).
         for (i, seq) in self.node_seqs.iter().enumerate() {

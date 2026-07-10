@@ -8,9 +8,7 @@ pub mod to_fa;
 use anyhow::{Context, Result};
 use clap::{ArgMatches, Command};
 
-/// Read a TSV file of `sample_name<TAB>fasta_path[<TAB>paf_path]` lines.
-/// Empty lines and lines starting with '#' are skipped. The 3rd column is
-/// optional; when present and non-empty, it enables CIGAR-driven encoding.
+/// Read a TSV of `sample_name<TAB>fasta_path[<TAB>paf_path]` lines (3rd column optional).
 pub(crate) fn read_name_tsv(path: &str) -> Result<Vec<(String, String, Option<String>)>> {
     let lines = pgr::libs::io::read_lines(path)
         .with_context(|| format!("failed to read name TSV: {}", path))?;
@@ -43,13 +41,10 @@ pub(crate) fn read_name_tsv(path: &str) -> Result<Vec<(String, String, Option<St
     Ok(out)
 }
 
-/// Collect `(sample_name, fasta_path, paf_path_opt)` triples from clap args.
-///
-/// Supports either `--name` (TSV with optional PAF column) or `-i` with an
-/// optional paired `--paf`. `--name` and `--paf` are mutually exclusive.
+/// Collect `(sample_name, fasta_path, paf_path_opt)` triples from `--name` TSV or `-i`/`--paf`.
 pub(crate) fn collect_samples_from_args(
-    args: &clap::ArgMatches,
-) -> anyhow::Result<Vec<(String, String, Option<String>)>> {
+    args: &ArgMatches,
+) -> Result<Vec<(String, String, Option<String>)>> {
     let has_name = args.get_one::<String>("name").is_some();
     let has_infiles = args.get_many::<String>("infiles").is_some();
     let has_paf = args.get_many::<String>("paf").is_some();
@@ -121,7 +116,7 @@ pub fn make_subcommand() -> Command {
 }
 
 /// Execute the pbit command.
-pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
+pub fn execute(args: &ArgMatches) -> Result<()> {
     match args.subcommand() {
         Some(("create", sub_matches)) => create::execute(sub_matches),
         Some(("append", sub_matches)) => append::execute(sub_matches),

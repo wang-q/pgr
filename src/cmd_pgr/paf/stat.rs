@@ -72,9 +72,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     // Compute and write the report.
     let report = graph.report();
-    let writer =
+    let mut writer =
         pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
-    report.write_tsv(writer)?;
+    report.write_tsv(&mut writer)?;
 
     Ok(())
 }

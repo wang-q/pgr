@@ -35,7 +35,10 @@ pub fn write_pairwise_fas<W: Write>(
                 ">{0}({1}):{2}-{3}",
                 blk.qname,
                 blk.q_strand,
-                blk.q_start_fwd.saturating_add(1),
+                blk.q_start_fwd.checked_add(1).ok_or_else(|| anyhow!(
+                    "q_start_fwd {} overflow on display",
+                    blk.q_start_fwd
+                ))?,
                 blk.q_end_fwd
             )?;
             writeln!(writer, "{}", blk.q_aln)?;
@@ -54,6 +57,9 @@ pub fn write_msa_fas<W: Write>(
     writer: &mut W,
 ) -> anyhow::Result<()> {
     for ((tname_region, _, _), results) in all_results {
+        if results.is_empty() {
+            continue;
+        }
         let entries = build_msa_entries(idx, tname_region, results, fasta_store)?;
         if entries.is_empty() {
             continue;
@@ -64,13 +70,18 @@ pub fn write_msa_fas<W: Write>(
         for (e, aln) in entries.iter().zip(msa.iter()) {
             let size = i32::try_from(aln.chars().filter(|c| *c != '-').count())
                 .map_err(|_| anyhow!("alignment length exceeds i32 range"))?;
+            let start_display = e
+                .start
+                .checked_add(1)
+                .ok_or_else(|| anyhow!("start {} overflow on display", e.start))?;
+            let end_display = e
+                .start
+                .checked_add(size)
+                .ok_or_else(|| anyhow!("start + size overflow on display"))?;
             writeln!(
                 writer,
                 ">{0}({3}):{1}-{2}",
-                e.name,
-                e.start.saturating_add(1),
-                e.start.saturating_add(size),
-                e.strand
+                e.name, start_display, end_display, e.strand
             )?;
             writeln!(writer, "{}", aln)?;
         }

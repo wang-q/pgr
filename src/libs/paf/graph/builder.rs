@@ -116,7 +116,6 @@ impl PafGraph {
                 qid,
                 rec.query_start as i32,
                 rec.query_end as i32,
-                rec.query_length as i32,
                 reverse,
                 &cigar,
                 min_var_len,

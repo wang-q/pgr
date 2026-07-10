@@ -384,10 +384,26 @@ impl<R: Read + Seek> Decompressor<R> {
             let seg_lens: Vec<usize> = segments
                 .iter()
                 .map(|seg| {
-                    self.delta_meta[seg.ref_group_id as usize][seg.delta_id as usize].raw_length
-                        as usize
+                    let gid = seg.ref_group_id as usize;
+                    let did = seg.delta_id as usize;
+                    let meta_row = self.delta_meta.get(gid).ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "get_contig: ref_group_id {} out of range ({})",
+                            seg.ref_group_id,
+                            self.delta_meta.len()
+                        )
+                    })?;
+                    let meta = meta_row.get(did).ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "get_contig: delta_id {} out of range ({}) for ref_group {}",
+                            seg.delta_id,
+                            meta_row.len(),
+                            seg.ref_group_id
+                        )
+                    })?;
+                    Ok::<usize, anyhow::Error>(meta.raw_length as usize)
                 })
-                .collect();
+                .collect::<Result<Vec<_>>>()?;
             let total_len: usize = seg_lens.iter().sum();
 
             // Clamp [s, e) to [0, total_len].

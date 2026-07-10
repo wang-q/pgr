@@ -46,7 +46,6 @@ pub fn build_maf_block(
             break;
         }
         let td = op.target_delta() as i32;
-        let qd = op.query_delta() as i32;
         let len = op.len() as i32;
         let next_ct = ct + td;
 
@@ -117,8 +116,6 @@ pub fn build_maf_block(
             }
             _ => {}
         }
-        // suppress unused-assignment warning when qd == 0 (D op)
-        let _ = qd;
     }
 
     Ok((q_aln, t_aln))
