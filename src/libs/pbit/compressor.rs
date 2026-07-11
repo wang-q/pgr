@@ -373,6 +373,11 @@ impl Compressor<std::io::BufWriter<std::fs::File>> {
         // 1. Read archive metadata via Decompressor (opens file read-only).
         let dec = Decompressor::open(path)?;
         let header = dec.header().clone();
+        anyhow::ensure!(
+            header.segment_size <= i32::MAX as u32,
+            "archive segment_size {} exceeds i32::MAX; archive is corrupt or malicious",
+            header.segment_size
+        );
         let ref_groups = dec.ref_groups().to_vec();
         let collection = dec.collection_clone();
         let footer = dec.footer().clone();
@@ -858,7 +863,7 @@ impl<W: Write + Seek> Compressor<W> {
 }
 
 /// flate2-compress a byte slice.
-pub(crate) fn flate2_compress(data: &[u8]) -> Result<Vec<u8>> {
+fn flate2_compress(data: &[u8]) -> Result<Vec<u8>> {
     use std::io::Write;
     let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
     encoder.write_all(data)?;

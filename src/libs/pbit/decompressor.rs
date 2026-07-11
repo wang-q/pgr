@@ -25,6 +25,9 @@ use super::format::{
 };
 use super::segment::Segment;
 
+/// FASTA line wrap width for output.
+const FASTA_LINE_WIDTH: usize = 60;
+
 /// Decompressor for a `.pbit` archive.
 pub struct Decompressor<R: Read + Seek> {
     reader: R,
@@ -361,7 +364,7 @@ impl<R: Read + Seek> Decompressor<R> {
         strand: &str,
         out: &mut impl Write,
     ) -> Result<()> {
-        let line_width = 60;
+        let line_width = FASTA_LINE_WIDTH;
 
         // Collect (sample_name, segments) pairs first to release the immutable
         // borrow on self.collection before calling self.decode_delta(). We
@@ -466,7 +469,7 @@ impl<R: Read + Seek> Decompressor<R> {
 
     /// Extract all contigs of a single sample, writing FASTA entries.
     pub fn get_sample(&mut self, sample: &str, out: &mut impl Write) -> Result<()> {
-        let line_width = 60;
+        let line_width = FASTA_LINE_WIDTH;
 
         // Collect (contig_name, segments) pairs first to release the immutable
         // borrow on self.collection before calling self.decode_delta().

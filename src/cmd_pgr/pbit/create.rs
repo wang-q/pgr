@@ -73,6 +73,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         .context("missing --min-match-len")?;
 
     anyhow::ensure!(segment_size > 0, "segment-size must be positive");
+    anyhow::ensure!(
+        segment_size <= i32::MAX as usize,
+        "segment-size must not exceed {}",
+        i32::MAX
+    );
     anyhow::ensure!(kmer_len > 0, "kmer-len must be positive");
     anyhow::ensure!(min_match_len > 0, "min-match-len must be positive");
 
