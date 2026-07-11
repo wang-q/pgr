@@ -318,9 +318,9 @@ impl<R: Read + Seek> Decompressor<R> {
             }
             DeltaEncoding::Cigar => {
                 // CIGAR: packed_data is pack_cigar output (includes its own gzip).
-                if seg.ref_start > seg.ref_end {
+                if seg.ref_start >= seg.ref_end {
                     anyhow::bail!(
-                        "decode_delta: ref_start {} > ref_end {}",
+                        "decode_delta: invalid CIGAR reference interval [{}; {})",
                         seg.ref_start,
                         seg.ref_end
                     );

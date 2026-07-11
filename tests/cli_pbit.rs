@@ -1602,3 +1602,106 @@ fn test_pbit_create_invalid_name_tsv_line_number() {
     assert!(combined.contains("line 2"));
     assert!(combined.contains("missing FASTA path"));
 }
+
+#[test]
+fn test_pbit_range_nonexistent_contig_warns() {
+    let temp = TempDir::new().unwrap();
+    let ref_fa = temp.path().join("ref.fa");
+    let sample_fa = temp.path().join("sample.fa");
+    let out_pbit = temp.path().join("out.pbit");
+
+    let ref_seq = random_dna(2000, 42);
+    write_fasta(&ref_fa, &[("chr1", &ref_seq)]);
+    write_fasta(&sample_fa, &[("chr1", &ref_seq)]);
+
+    PgrCmd::new()
+        .args(&[
+            "pbit",
+            "create",
+            "-r",
+            ref_fa.to_str().unwrap(),
+            "-i",
+            sample_fa.to_str().unwrap(),
+            "-o",
+            out_pbit.to_str().unwrap(),
+        ])
+        .run();
+
+    let assert = PgrCmd::new()
+        .args(&[
+            "pbit",
+            "range",
+            out_pbit.to_str().unwrap(),
+            "missing_contig",
+        ])
+        .assert()
+        .success();
+    let output = assert.get_output();
+    let stdout = String::from_utf8(output.stdout.clone()).unwrap();
+    let stderr = String::from_utf8(output.stderr.clone()).unwrap();
+
+    assert!(stdout.trim().is_empty());
+    assert!(
+        stderr.contains("missing_contig") || stderr.contains("not found"),
+        "expected warning about missing contig, got stderr: {}",
+        stderr
+    );
+}
+
+#[test]
+fn test_pbit_empty_sample_fasta() {
+    let temp = TempDir::new().unwrap();
+    let ref_fa = temp.path().join("ref.fa");
+    let sample_fa = temp.path().join("sample.fa");
+    let out_pbit = temp.path().join("out.pbit");
+
+    let ref_seq = random_dna(1000, 42);
+    write_fasta(&ref_fa, &[("chr1", &ref_seq)]);
+    // Empty sample FASTA.
+    fs::write(&sample_fa, "").unwrap();
+
+    PgrCmd::new()
+        .args(&[
+            "pbit",
+            "create",
+            "-r",
+            ref_fa.to_str().unwrap(),
+            "-i",
+            sample_fa.to_str().unwrap(),
+            "-o",
+            out_pbit.to_str().unwrap(),
+        ])
+        .run();
+
+    let (stdout, _) = PgrCmd::new()
+        .args(&["pbit", "stat", out_pbit.to_str().unwrap()])
+        .run();
+    assert!(stdout.contains("Samples: 1"));
+
+    let (stdout, _) = PgrCmd::new()
+        .args(&["pbit", "stat", out_pbit.to_str().unwrap(), "--contigs"])
+        .run();
+    assert!(stdout.trim().is_empty());
+
+    let out_dir = temp.path().join("outdir");
+    PgrCmd::new()
+        .args(&[
+            "pbit",
+            "to-fa",
+            out_pbit.to_str().unwrap(),
+            "-o",
+            out_dir.to_str().unwrap(),
+        ])
+        .run();
+
+    // The command must not panic. The output file may be absent or empty.
+    let out_file = out_dir.join("sample.fa");
+    if out_file.exists() {
+        let content = fs::read_to_string(&out_file).unwrap();
+        assert!(
+            content.trim().is_empty(),
+            "expected empty output file for sample with no contigs, got: {}",
+            content
+        );
+    }
+}

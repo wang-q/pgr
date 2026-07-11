@@ -51,6 +51,11 @@ fn segment_sequence(seq: &[u8], segment_size: usize) -> Vec<&[u8]> {
 /// forward vs rev-comp presence in `ref_seg`. Returns `true` if rev-comp
 /// gives more k-mer hits (i.e. the sample appears to be reverse-complemented
 /// relative to the reference).
+///
+/// Orientation is detected once per contig using the first segment. This
+/// assumption holds for typical whole-chromosome alignments but may be
+/// incorrect for contigs with internal inversions or rearrangements; such
+/// segments fall back to LZ-diff's opposite-orientation retry logic.
 fn detect_rev_comp(sample_seg: &[u8], ref_seg: &[u8], kmer_len: usize) -> bool {
     if sample_seg.len() < kmer_len || ref_seg.len() < kmer_len {
         return false;

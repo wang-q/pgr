@@ -257,6 +257,7 @@ pub struct DeltaEntry {
 }
 
 impl DeltaEntry {
+    /// Return the in-memory metadata header for this delta entry.
     pub fn meta(&self) -> DeltaMeta {
         DeltaMeta {
             is_rev_comp: self.is_rev_comp,

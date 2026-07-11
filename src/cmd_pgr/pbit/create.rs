@@ -1,3 +1,5 @@
+//! Create a new pbit archive from a reference FASTA and sample FASTA files.
+
 use anyhow::Context;
 use clap::{ArgMatches, Command};
 use pgr::libs::pbit::compressor::Compressor;

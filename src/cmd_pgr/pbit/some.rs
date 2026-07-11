@@ -1,3 +1,5 @@
+//! Extract full contig sequences from a pbit archive, filtered by name list.
+
 use anyhow::Context;
 use clap::{ArgMatches, Command};
 use pgr::libs::pbit::decompressor::Decompressor;

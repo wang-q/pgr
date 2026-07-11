@@ -1,3 +1,5 @@
+//! Display statistics about a pbit archive.
+
 use anyhow::Context;
 use clap::{ArgMatches, Command};
 use pgr::libs::pbit::decompressor::Decompressor;

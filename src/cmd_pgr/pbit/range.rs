@@ -1,3 +1,5 @@
+//! Extract sequence regions by coordinates from a pbit archive.
+
 use anyhow::Context;
 use clap::{ArgMatches, Command};
 use pgr::libs::pbit::decompressor::Decompressor;
@@ -63,6 +65,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     for el in ranges.iter() {
         let rg = intspan::Range::from_str(el);
         let contig = rg.chr();
+
+        if contig.is_empty() {
+            log::warn!("empty contig name in range: {}", el);
+            continue;
+        }
 
         // A range without ':' is a full-contig request (e.g. "chr1");
         // intspan returns start=0/end=0 and is_valid=false for these, so

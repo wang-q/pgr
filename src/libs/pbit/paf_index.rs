@@ -23,11 +23,12 @@ fn coord_to_i32(val: u32, field: &str, line: &str) -> Option<i32> {
     match i32::try_from(val) {
         Ok(v) => Some(v),
         Err(_) => {
+            let preview: String = line.chars().take(200).collect();
             log::warn!(
                 "skipping PAF record with {} exceeding i32 range ({}): {}",
                 field,
                 val,
-                line
+                preview
             );
             None
         }

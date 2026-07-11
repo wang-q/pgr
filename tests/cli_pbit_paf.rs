@@ -1118,3 +1118,108 @@ fn test_pbit_paf_empty_ref_contig() {
         "chr1 roundtrip mismatch with empty ref contig"
     );
 }
+
+#[test]
+fn test_pbit_paf_unknown_query_target_name_skipped() {
+    let temp = TempDir::new().unwrap();
+    let ref_fa = temp.path().join("ref.fa");
+    let sample_fa = temp.path().join("sample.fa");
+    let paf_path = temp.path().join("sample.paf");
+    let out_pbit = temp.path().join("out.pbit");
+
+    let ref_seq = random_dna(2000, 42);
+    write_fasta(&ref_fa, &[("chr1", std::str::from_utf8(&ref_seq).unwrap())]);
+
+    let mut sample = ref_seq.clone();
+    sample[100] = snp_of(ref_seq[100]);
+    write_fasta(
+        &sample_fa,
+        &[("chr1", std::str::from_utf8(&sample).unwrap())],
+    );
+
+    // Line 1: target name does not exist in the reference FASTA.
+    let unknown_target = make_paf_line(
+        "chr1",
+        2000,
+        0,
+        2000,
+        "+",
+        "unknown_ref",
+        2000,
+        0,
+        2000,
+        "2000=",
+    );
+    // Line 2: valid CIGAR covering the sample.
+    let valid = make_paf_line(
+        "chr1",
+        2000,
+        0,
+        2000,
+        "+",
+        "chr1",
+        2000,
+        0,
+        2000,
+        "100=1X1899=",
+    );
+    write_paf(&paf_path, &[unknown_target, valid]);
+
+    // The unknown-target record is skipped (falls back to LZ-diff) and the
+    // valid record is used for chr1. The command must succeed without panic.
+    PgrCmd::new()
+        .args(&[
+            "pbit",
+            "create",
+            "-r",
+            ref_fa.to_str().unwrap(),
+            "-i",
+            sample_fa.to_str().unwrap(),
+            "-p",
+            paf_path.to_str().unwrap(),
+            "-o",
+            out_pbit.to_str().unwrap(),
+        ])
+        .run();
+
+    let got = create_and_extract(temp.path(), &ref_fa, &out_pbit, &[], "sample");
+    let expected: String = sample.iter().map(|&b| b as char).collect();
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn test_pbit_paf_only_comments_fallback_lzdiff() {
+    let temp = TempDir::new().unwrap();
+    let ref_fa = temp.path().join("ref.fa");
+    let sample_fa = temp.path().join("sample.fa");
+    let paf_path = temp.path().join("sample.paf");
+    let out_pbit = temp.path().join("out.pbit");
+
+    let ref_seq = random_dna(2000, 42);
+    write_fasta(&ref_fa, &[("chr1", std::str::from_utf8(&ref_seq).unwrap())]);
+
+    let mut sample = ref_seq.clone();
+    sample[100] = snp_of(ref_seq[100]);
+    write_fasta(
+        &sample_fa,
+        &[("chr1", std::str::from_utf8(&sample).unwrap())],
+    );
+
+    // PAF file contains only comments and empty lines.
+    fs::write(&paf_path, "# This is a comment\n\n# another comment\n").unwrap();
+
+    let got = create_and_extract(
+        temp.path(),
+        &ref_fa,
+        &out_pbit,
+        &[
+            "-i",
+            sample_fa.to_str().unwrap(),
+            "-p",
+            paf_path.to_str().unwrap(),
+        ],
+        "sample",
+    );
+    let expected: String = sample.iter().map(|&b| b as char).collect();
+    assert_eq!(got, expected);
+}

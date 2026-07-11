@@ -1,3 +1,5 @@
+//! Convert a pbit archive to per-sample FASTA files.
+
 use anyhow::Context;
 use clap::{ArgMatches, Command};
 use pgr::libs::pbit::decompressor::Decompressor;
