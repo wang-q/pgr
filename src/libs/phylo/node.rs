@@ -149,9 +149,7 @@ impl Node {
         self.properties.as_ref().and_then(|p| p.get(key))
     }
 
-    /// Check if the node is a leaf (no children)
-    /// Note: This ignores soft-deleted children if checked externally,
-    /// but strictly speaking a node is a leaf if `children` is empty.
+    /// Returns true if this node has no children.
     ///
     /// # Example
     /// ```ignore

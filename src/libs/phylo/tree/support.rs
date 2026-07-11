@@ -21,7 +21,15 @@ pub fn build_leaf_map(tree: &Tree) -> anyhow::Result<BTreeMap<String, usize>> {
     }
 
     leaf_names.sort();
+    let len_before = leaf_names.len();
     leaf_names.dedup();
+    let len_after = leaf_names.len();
+    if len_after < len_before {
+        eprintln!(
+            "[warn] {} duplicate leaf name(s) ignored in leaf map",
+            len_before - len_after
+        );
+    }
 
     for name in leaf_names {
         map.insert(name, index);

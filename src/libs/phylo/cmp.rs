@@ -205,17 +205,18 @@ pub fn compute_tree_metrics(t1: &Tree, t2: &Tree) -> anyhow::Result<(String, Str
     let wrf = t1.weighted_robinson_foulds(t2)?;
     let kf = t1.kuhner_felsenstein(t2)?;
 
-    let format_float = |v: f64| -> String {
-        let s = format!("{:.6}", v);
-        let trimmed = s.trim_end_matches('0').trim_end_matches('.');
-        if trimmed.is_empty() {
-            "0".to_string()
-        } else {
-            trimmed.to_string()
-        }
-    };
-
     Ok((rf.to_string(), format_float(wrf), format_float(kf)))
+}
+
+/// Format a float to 6 decimal places, stripping trailing zeros.
+pub(crate) fn format_float(val: f64) -> String {
+    let s = format!("{:.6}", val);
+    let trimmed = s.trim_end_matches('0').trim_end_matches('.');
+    if trimmed.is_empty() {
+        "0".to_string()
+    } else {
+        trimmed.to_string()
+    }
 }
 
 #[cfg(test)]

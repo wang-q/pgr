@@ -1,5 +1,6 @@
 //! Distance calculations between tree nodes.
 use super::Tree;
+use crate::libs::phylo::cmp::format_float;
 use crate::libs::phylo::node::NodeId;
 use anyhow::{anyhow, Result};
 use std::collections::BTreeMap;
@@ -13,7 +14,7 @@ pub fn dist_root<W: Write>(
 ) -> Result<()> {
     let root = tree.get_root().ok_or_else(|| anyhow!("tree has no root"))?;
     for (k, v) in id_of.iter() {
-        let dist = tree.node_distance(&root, v).map_err(anyhow::Error::msg)?;
+        let dist = tree.node_distance(&root, v)?;
         writer.write_fmt(format_args!("{}\t{}\n", k, format_float(dist)))?;
     }
     Ok(())
@@ -36,7 +37,7 @@ pub fn dist_parent<W: Write>(
                 continue;
             }
         };
-        let dist = tree.node_distance(&parent, v).map_err(anyhow::Error::msg)?;
+        let dist = tree.node_distance(&parent, v)?;
         writer.write_fmt(format_args!("{}\t{}\n", k, format_float(dist)))?;
     }
     Ok(())
@@ -50,7 +51,7 @@ pub fn dist_pairwise<W: Write>(
 ) -> Result<()> {
     for (k1, v1) in id_of.iter() {
         for (k2, v2) in id_of.iter() {
-            let dist = tree.node_distance(v1, v2).map_err(anyhow::Error::msg)?;
+            let dist = tree.node_distance(v1, v2)?;
             writer.write_fmt(format_args!("{}\t{}\t{}\n", k1, k2, format_float(dist)))?;
         }
     }
@@ -65,11 +66,9 @@ pub fn dist_lca<W: Write>(
 ) -> Result<()> {
     for (k1, v1) in id_of.iter() {
         for (k2, v2) in id_of.iter() {
-            let lca = tree
-                .get_common_ancestor(v1, v2)
-                .map_err(anyhow::Error::msg)?;
-            let dist1 = tree.node_distance(&lca, v1).map_err(anyhow::Error::msg)?;
-            let dist2 = tree.node_distance(&lca, v2).map_err(anyhow::Error::msg)?;
+            let lca = tree.get_common_ancestor(v1, v2)?;
+            let dist1 = tree.node_distance(&lca, v1)?;
+            let dist2 = tree.node_distance(&lca, v2)?;
             writer.write_fmt(format_args!(
                 "{}\t{}\t{}\t{}\n",
                 k1,
@@ -109,7 +108,7 @@ pub fn dist_phylip<W: Write>(
             let dist = if i == j {
                 0.0
             } else {
-                tree.node_distance(v1, v2).map_err(anyhow::Error::msg)?
+                tree.node_distance(v1, v2)?
             };
 
             writer.write_fmt(format_args!(" {:.6}", dist))?;
@@ -117,10 +116,4 @@ pub fn dist_phylip<W: Write>(
         writer.write_all(b"\n")?;
     }
     Ok(())
-}
-
-/// Format a float by rounding to 6 decimal places and stripping trailing zeros.
-fn format_float(val: f64) -> String {
-    let rounded = (val * 1e6).round() / 1e6;
-    format!("{}", rounded)
 }

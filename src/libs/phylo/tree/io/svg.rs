@@ -300,9 +300,6 @@ fn compute_svg_positions(
             Some(n) => n,
             None => continue,
         };
-        if node.deleted {
-            continue;
-        }
 
         if node.is_leaf() {
             // x position for leaves
@@ -323,12 +320,15 @@ fn compute_svg_positions(
                 continue;
             }
 
-            let y_sum: f64 = children
+            let child_ys: Vec<f64> = children
                 .iter()
                 .filter_map(|&c| positions.get(&c).map(|p| p.1))
-                .sum();
-            let y_count = children.len() as f64;
-            let y = y_sum / y_count;
+                .collect();
+            let y_count = child_ys.len() as f64;
+            if y_count == 0.0 {
+                continue;
+            }
+            let y = child_ys.iter().sum::<f64>() / y_count;
 
             let x = if height > 0.0 {
                 let cl = cum_length.get(&id).copied().unwrap_or(0.0);

@@ -18,9 +18,6 @@ pub fn to_dot(tree: &Tree) -> String {
             let Some(node) = tree.get_node(node_id) else {
                 continue;
             };
-            if node.deleted {
-                continue;
-            }
 
             // 1. Define Node
             // Use NodeID as the DOT identifier

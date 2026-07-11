@@ -123,7 +123,7 @@ impl Tree {
     /// Remove all nodes matching `predicate`.
     pub fn prune_where<F>(&mut self, predicate: F)
     where
-        F: Fn(&Node) -> bool + Copy,
+        F: Fn(&Node) -> bool,
     {
         ops::prune_where(self, predicate)
     }

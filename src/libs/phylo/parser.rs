@@ -94,11 +94,10 @@ impl ParsedNode {
     ///
     /// This function recursively traverses the `ParsedNode` tree, creating `Node`s in the `Tree` struct
     /// and linking them together.
-    #[allow(clippy::wrong_self_convention)]
-    fn to_tree(self, tree: &mut Tree) -> NodeId {
+    fn into_tree(self, tree: &mut Tree) -> NodeId {
         let id = tree.add_node();
         for child in self.children {
-            let child_id = child.to_tree(tree);
+            let child_id = child.into_tree(tree);
             // The unwrap here is safe because `id` was just created and exists in the tree.
             tree.add_child(id, child_id)
                 .expect("internal: freshly created node can be linked");
@@ -343,7 +342,7 @@ pub fn parse_newick(input: &str) -> Result<Tree, TreeError> {
     match parser.parse(input) {
         Ok((_, (root_node, _))) => {
             let mut tree = Tree::new();
-            let root_id = root_node.to_tree(&mut tree);
+            let root_id = root_node.into_tree(&mut tree);
             tree.set_root(root_id);
             Ok(tree)
         }
@@ -382,7 +381,7 @@ pub fn parse_newick_multi(input: &str) -> Result<Vec<Tree>, TreeError> {
             let mut trees = Vec::new();
             for root_node in trees_data.into_iter().flatten() {
                 let mut tree = Tree::new();
-                let root_id = root_node.to_tree(&mut tree);
+                let root_id = root_node.into_tree(&mut tree);
                 tree.set_root(root_id);
                 trees.push(tree);
             }

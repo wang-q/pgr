@@ -49,7 +49,7 @@ pub fn sort_by_name(tree: &mut Tree, descending: bool) {
 
         let mut child_keys: HashMap<NodeId, String> = HashMap::new();
         for &child_id in &children {
-            child_keys.insert(child_id, get_sort_key(tree, &name_map, child_id));
+            child_keys.insert(child_id, get_sort_key(&name_map, child_id));
         }
 
         if let Some(node) = tree.get_node_mut(id) {
@@ -68,7 +68,7 @@ pub fn sort_by_name(tree: &mut Tree, descending: bool) {
         if let Some(node) = tree.get_node(id) {
             if node.name.as_deref().unwrap_or("").is_empty() {
                 if let Some(&first_child) = node.children.first() {
-                    let child_key = get_sort_key(tree, &name_map, first_child);
+                    let child_key = get_sort_key(&name_map, first_child);
                     name_map.insert(id, child_key);
                 }
             }
@@ -76,18 +76,8 @@ pub fn sort_by_name(tree: &mut Tree, descending: bool) {
     }
 }
 
-fn get_sort_key(tree: &Tree, name_map: &HashMap<NodeId, String>, id: NodeId) -> String {
-    if let Some(name) = name_map.get(&id) {
-        if !name.is_empty() {
-            return name.clone();
-        }
-    }
-
-    if let Some(node) = tree.get_node(id) {
-        return node.name.clone().unwrap_or_default();
-    }
-
-    String::new()
+fn get_sort_key(name_map: &HashMap<NodeId, String>, id: NodeId) -> String {
+    name_map.get(&id).cloned().unwrap_or_default()
 }
 
 /// Sort the children of each node by the number of descendants (also known as ladderize).
