@@ -451,10 +451,11 @@ impl<R: Read + Seek> Decompressor<R> {
             };
 
             // Write FASTA header.
-            let header = match (start, end, strand) {
-                (Some(_), Some(_), _) => {
+            let header = match (start, end) {
+                (Some(_), Some(_)) => {
                     format!(">{} {}:{}-{}({})", sample, contig, s + 1, e, strand)
                 }
+                _ if strand == "-" => format!(">{} {}(-)", sample, contig),
                 _ => format!(">{} {}", sample, contig),
             };
             writeln!(out, "{}", header)?;
@@ -469,16 +470,16 @@ impl<R: Read + Seek> Decompressor<R> {
 
         // Collect (contig_name, segments) pairs first to release the immutable
         // borrow on self.collection before calling self.decode_delta().
-        let contig_segs: Vec<(String, Vec<crate::libs::pbit::collection::SegmentDesc>)> =
-            match self.collection.samples.get(sample) {
-                Some(c) => c
-                    .iter()
-                    .map(|cs| (cs.contig_name.clone(), cs.segments.clone()))
-                    .collect(),
-                None => {
-                    return Err(anyhow!("sample '{}' not found in archive", sample));
-                }
-            };
+        let contig_segs: Vec<(String, Vec<SegmentDesc>)> = match self.collection.samples.get(sample)
+        {
+            Some(c) => c
+                .iter()
+                .map(|cs| (cs.contig_name.clone(), cs.segments.clone()))
+                .collect(),
+            None => {
+                return Err(anyhow!("sample '{}' not found in archive", sample));
+            }
+        };
 
         for (contig_name, segments) in contig_segs {
             let mut full_seq = Vec::new();

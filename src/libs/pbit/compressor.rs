@@ -619,7 +619,7 @@ impl<W: Write + Seek> Compressor<W> {
                     id_a.partial_cmp(&id_b).unwrap_or(std::cmp::Ordering::Equal)
                 })
             })
-            .ok_or_else(|| anyhow::anyhow!("no alignment hit found for segment"))?;
+            .unwrap();
 
         // 4. Check full coverage (decision 3a).
         if best.query_start > seg_start || best.query_end < seg_end {
