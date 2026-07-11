@@ -83,6 +83,13 @@ impl PafQueryIndex {
                 continue;
             }
 
+            // Reject records with invalid coordinates before building the interval.
+            if rec.query_start > rec.query_end || rec.target_start > rec.target_end {
+                log::warn!("skipping PAF record with invalid coordinates: {}", line);
+                failed_count += 1;
+                continue;
+            }
+
             // Allocate query_id by query_name (insertion order).
             let next_id = names.len() as u32;
             let query_id = *names.entry(rec.query_name.clone()).or_insert(next_id);
@@ -290,6 +297,23 @@ mod tests {
         let qid = idx.query_id("qry1").unwrap();
         let hits = idx.query(qid, 0, 200);
         assert_eq!(hits.len(), 2);
+        Ok(())
+    }
+
+    #[test]
+    fn test_build_skips_invalid_query_coords() -> Result<()> {
+        // One invalid record (query_start > query_end) + one valid record.
+        // The invalid record is warn+skipped; the valid record is indexed.
+        let invalid = paf_line("qry1", 200, 100, "+", "ref1", 0, 100, "100=");
+        let valid = paf_line("qry1", 0, 100, "+", "ref1", 0, 100, "100=");
+        let paf = format!("{}\n{}\n", invalid, valid);
+        let idx = PafQueryIndex::build(Cursor::new(paf))?;
+        assert_eq!(idx.names.len(), 1);
+        let qid = idx.query_id("qry1").unwrap();
+        let hits = idx.query(qid, 0, 100);
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].query_start, 0);
+        assert_eq!(hits[0].query_end, 100);
         Ok(())
     }
 

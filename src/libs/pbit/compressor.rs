@@ -509,8 +509,14 @@ impl<W: Write + Seek> Compressor<W> {
         ref_group_ids: &[u32],
         contig_is_rev_comp: bool,
     ) -> Result<()> {
+        anyhow::ensure!(
+            !ref_group_ids.is_empty(),
+            "encode_segment_lzdiff: no reference groups for contig '{}' in sample '{}'",
+            contig_name,
+            sample_name
+        );
         // Match to reference segment by position (clamped to last).
-        let ref_idx = seg_idx.min(ref_group_ids.len() - 1);
+        let ref_idx = seg_idx.min(ref_group_ids.len().saturating_sub(1));
         let ref_group_id = ref_group_ids[ref_idx];
 
         // Try contig-level orientation first.
@@ -1410,6 +1416,28 @@ mod tests {
         let got = extract_fasta_seq(&buf);
         let expected = String::from_utf8(sample_seq.clone()).unwrap();
         assert_eq!(got, expected);
+        Ok(())
+    }
+
+    #[test]
+    fn test_encode_segment_lzdiff_empty_ref_groups_returns_error() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let ref_path = dir.path().join("ref.fa");
+        write_fasta(ref_path.to_str().unwrap(), &[("chr1", b"ACGTACGTACGTACGT")]);
+        let out_path = dir.path().join("out.pbit");
+
+        let mut comp = Compressor::create(&out_path, ref_path.to_str().unwrap(), 4096, 15, 18)?;
+        let seg = b"ACGT";
+        let empty_ref_groups: &[u32] = &[];
+        let result = comp.encode_segment_lzdiff("sample1", "chr1", 0, seg, empty_ref_groups, false);
+
+        assert!(result.is_err(), "expected error for empty ref_group_ids");
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("no reference groups"),
+            "unexpected error: {}",
+            err
+        );
         Ok(())
     }
 }

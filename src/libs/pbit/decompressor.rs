@@ -297,10 +297,11 @@ impl<R: Read + Seek> Decompressor<R> {
         // Read reference segment.
         let ref_dna = self.read_ref_segment(seg.ref_group_id)?;
 
-        // Read packed delta data (header already scanned at construction).
+        // Read packed delta data. The 10-byte header was already scanned at
+        // construction and cached in self.delta_meta, so seek past it.
         let offset = self.delta_offsets[gid][did];
-        self.reader.seek(SeekFrom::Start(offset))?;
-        let meta = DeltaMeta::read_header(&mut self.reader)?;
+        let meta = self.delta_meta[gid][did];
+        self.reader.seek(SeekFrom::Start(offset + 10))?;
         let mut packed = vec![0u8; meta.packed_size as usize];
         self.reader.read_exact(&mut packed)?;
 
@@ -483,6 +484,33 @@ impl<R: Read + Seek> Decompressor<R> {
             let mut full_seq = Vec::new();
             for seg in &segments {
                 let decoded = self.decode_delta(seg)?;
+
+                // Validate decoded length against cached metadata (indices come
+                // from the potentially corrupted sample index).
+                let gid = seg.ref_group_id as usize;
+                let did = seg.delta_id as usize;
+                let expected = self
+                    .delta_meta
+                    .get(gid)
+                    .and_then(|row| row.get(did))
+                    .map(|m| m.raw_length as usize)
+                    .ok_or_else(|| {
+                        anyhow!(
+                            "get_sample: ref_group_id {} or delta_id {} out of range",
+                            seg.ref_group_id,
+                            seg.delta_id
+                        )
+                    })?;
+                anyhow::ensure!(
+                    decoded.len() == expected,
+                    "decoded segment length {} does not match metadata raw_length {} \
+                     for sample '{}' contig '{}' (archive may be corrupt)",
+                    decoded.len(),
+                    expected,
+                    sample,
+                    contig_name
+                );
+
                 full_seq.extend_from_slice(&decoded);
             }
             writeln!(out, ">{}", contig_name)?;
@@ -871,6 +899,60 @@ mod tests {
         let mut dec = Decompressor::open(&out_path)?;
         let mut out_buf = Vec::new();
         let res = dec.get_contig("chr1", None, None, "+", &mut out_buf);
+        assert!(res.is_err());
+        let err = res.unwrap_err().to_string();
+        assert!(
+            err.contains("does not match metadata raw_length"),
+            "unexpected error: {}",
+            err
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_sample_corrupt_raw_length_returns_error() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let ref_path = dir.path().join("ref.fa");
+        let ref_seq = random_dna(1000, 42);
+        write_fasta(ref_path.to_str().unwrap(), &[("chr1", &ref_seq)]);
+
+        let sample_path = dir.path().join("sample.fa");
+        let sample_seq = random_dna(1000, 100);
+        write_fasta(sample_path.to_str().unwrap(), &[("chr1", &sample_seq)]);
+
+        let out_path = dir.path().join("out.pbit");
+        let mut comp = Compressor::create(&out_path, ref_path.to_str().unwrap(), 4096, 15, 18)?;
+        comp.append_sample("s1", sample_path.to_str().unwrap())?;
+        comp.finish()?;
+
+        // Patch the first delta's raw_length to be larger than the decoded segment.
+        let mut file = std::fs::File::open(&out_path)?;
+        file.seek(SeekFrom::End(-24))?;
+        let mut footer_buf = [0u8; 24];
+        file.read_exact(&mut footer_buf)?;
+        let delta_data_offset = u64::from_le_bytes([
+            footer_buf[8],
+            footer_buf[9],
+            footer_buf[10],
+            footer_buf[11],
+            footer_buf[12],
+            footer_buf[13],
+            footer_buf[14],
+            footer_buf[15],
+        ]);
+        let raw_length_offset = delta_data_offset + 4 + 4 + 1;
+        let mut file = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&out_path)?;
+        file.seek(SeekFrom::Start(raw_length_offset))?;
+        // Write a deliberately wrong raw_length (2000 instead of 1000).
+        file.write_all(&2000u32.to_le_bytes())?;
+        drop(file);
+
+        let mut dec = Decompressor::open(&out_path)?;
+        let mut out_buf = Vec::new();
+        let res = dec.get_sample("s1", &mut out_buf);
         assert!(res.is_err());
         let err = res.unwrap_err().to_string();
         assert!(

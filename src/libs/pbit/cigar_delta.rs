@@ -58,7 +58,7 @@ pub fn unpack_cigar(packed: &[u8]) -> Result<(Vec<CigarOp>, Vec<u8>)> {
 ///
 /// Simplified variant of `build_maf_block`: produces raw sample sequence
 /// directly. `M` ops are not expected here (compressor splits M into `=/X`);
-/// if encountered, treated as `=` (consume reference, no base stream).
+/// encountering `M` indicates corrupt or unsupported packed CIGAR data.
 pub fn apply_cigar(ref_seq: &[u8], ops: &[CigarOp], xi_bases: &[u8]) -> Result<Vec<u8>> {
     let mut out = Vec::new();
     let mut rt: usize = 0; // ref cursor
@@ -66,12 +66,17 @@ pub fn apply_cigar(ref_seq: &[u8], ops: &[CigarOp], xi_bases: &[u8]) -> Result<V
     for op in ops {
         let len = op.len() as usize;
         match op.op() {
-            '=' | 'M' => {
+            '=' => {
                 if rt + len > ref_seq.len() {
-                    return Err(anyhow!("CIGAR '{}' exceeds reference length", op.op()));
+                    return Err(anyhow!("CIGAR '=' exceeds reference length"));
                 }
                 out.extend_from_slice(&ref_seq[rt..rt + len]);
                 rt += len;
+            }
+            'M' => {
+                return Err(anyhow!(
+                    "unexpected CIGAR op 'M' in pbit delta (should have been split to =/X)"
+                ));
             }
             'X' => {
                 if xi + len > xi_bases.len() {
@@ -244,11 +249,11 @@ mod tests {
     }
 
     #[test]
-    fn test_apply_cigar_m_treated_as_match() {
+    fn test_apply_cigar_m_rejected() {
         let ref_seq = b"ACGTACGT";
         let ops_in = ops(&[(8, 'M')]);
-        let out = apply_cigar(ref_seq, &ops_in, &[]).unwrap();
-        assert_eq!(out, ref_seq);
+        let err = apply_cigar(ref_seq, &ops_in, &[]).unwrap_err();
+        assert!(err.to_string().contains("unexpected CIGAR op 'M'"));
     }
 
     #[test]
