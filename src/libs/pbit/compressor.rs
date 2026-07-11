@@ -647,6 +647,11 @@ impl<W: Write + Seek> Compressor<W> {
         }
 
         // 6. Check target doesn't cross ref segment boundary (decision 3c).
+        // Guard against pure insertion CIGAR where target_start == target_end,
+        // which would make (target_end - 1) underflow on i32.
+        if target_start >= target_end {
+            return Ok(false);
+        }
         let seg_size = self.segment_size as i32;
         let t_seg_idx_start = target_start / seg_size;
         let t_seg_idx_end = (target_end - 1) / seg_size;

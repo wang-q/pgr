@@ -80,6 +80,13 @@ impl PbitHeader {
             ));
         }
         let version = read_u32_le(reader)?;
+        if version != PBIT_VERSION {
+            return Err(anyhow!(
+                "unsupported pbit version {} (expected {})",
+                version,
+                PBIT_VERSION
+            ));
+        }
         let segment_size = read_u32_le(reader)?;
         let kmer_len = read_u32_le(reader)?;
         let min_match_len = read_u32_le(reader)?;
@@ -371,6 +378,22 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("Not a valid pbit file"));
+    }
+
+    #[test]
+    fn test_header_bad_version() {
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&PBIT_MAGIC.to_le_bytes());
+        buf.extend_from_slice(&(PBIT_VERSION + 1).to_le_bytes());
+        buf.extend_from_slice(&[0u8; 28]);
+
+        let mut cursor = Cursor::new(buf);
+        let res = PbitHeader::read_from(&mut cursor);
+        assert!(res.is_err());
+        assert!(res
+            .unwrap_err()
+            .to_string()
+            .contains("unsupported pbit version"));
     }
 
     #[test]

@@ -3,25 +3,35 @@ use clap::{ArgMatches, Command};
 use pgr::libs::pbit::compressor::Compressor;
 use std::path::PathBuf;
 
-/// RAII guard that deletes a temporary file on drop unless disarmed.
+/// RAII guard that keeps a `tempfile::NamedTempFile` alive on drop unless
+/// disarmed. The temp file is deleted automatically when the guard is dropped;
+/// a successful in-place append disarms the guard before renaming the file.
 struct TempFileGuard {
-    path: Option<PathBuf>,
+    file: Option<tempfile::NamedTempFile>,
 }
 
 impl TempFileGuard {
-    fn new(path: PathBuf) -> Self {
-        Self { path: Some(path) }
+    fn new(file: tempfile::NamedTempFile) -> Self {
+        Self { file: Some(file) }
     }
-    fn disarm(mut self) {
-        self.path.take();
+
+    /// Keep the temporary file so it can be renamed over the original archive.
+    fn disarm(mut self) -> anyhow::Result<PathBuf> {
+        let file = self
+            .file
+            .take()
+            .expect("disarm called on an empty TempFileGuard");
+        let (_, path) = file
+            .keep()
+            .context("failed to keep temp file for in-place rename")?;
+        Ok(path)
     }
 }
 
 impl Drop for TempFileGuard {
     fn drop(&mut self) {
-        if let Some(ref p) = self.path {
-            let _ = std::fs::remove_file(p);
-        }
+        // `NamedTempFile` deletes the underlying file on drop automatically.
+        let _ = self.file.take();
     }
 }
 
@@ -114,12 +124,25 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             out.clone()
         }
         None => {
-            let tmp = format!("{}.tmp", infile);
-            std::fs::copy(infile, &tmp).with_context(|| {
-                format!("failed to stage temp file {} for in-place append", tmp)
-            })?;
-            temp_guard = Some(TempFileGuard::new(PathBuf::from(&tmp)));
-            tmp
+            let in_path = std::path::Path::new(infile);
+            let parent = in_path
+                .parent()
+                .filter(|p| !p.as_os_str().is_empty())
+                .unwrap_or_else(|| std::path::Path::new("."));
+            let temp_file = tempfile::Builder::new()
+                .suffix(".pbit.tmp")
+                .tempfile_in(parent)
+                .with_context(|| {
+                    format!(
+                        "failed to create temp file for in-place append in {}",
+                        parent.display()
+                    )
+                })?;
+            let tmp_path = temp_file.path().to_path_buf();
+            std::fs::copy(infile, &tmp_path)
+                .with_context(|| "failed to stage temp file for in-place append")?;
+            temp_guard = Some(TempFileGuard::new(temp_file));
+            tmp_path.to_string_lossy().into_owned()
         }
     };
 
@@ -147,13 +170,18 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // Atomic in-place replacement: rename temp file over the input archive.
     if in_place {
         // Disarm the guard so the temp file survives the rename.
-        if let Some(guard) = temp_guard.take() {
-            guard.disarm();
-        }
-        std::fs::rename(&work_path, infile).with_context(|| {
+        let rename_from = if let Some(guard) = temp_guard.take() {
+            guard
+                .disarm()
+                .with_context(|| "failed to prepare temp file for in-place rename")?
+        } else {
+            PathBuf::from(&work_path)
+        };
+        std::fs::rename(&rename_from, infile).with_context(|| {
             format!(
                 "failed to finalize in-place append: rename {} -> {}",
-                work_path, infile
+                rename_from.display(),
+                infile
             )
         })?;
     }
