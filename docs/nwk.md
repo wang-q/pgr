@@ -113,7 +113,7 @@ pgr nwk order [OPTIONS] <infile>
 *   `--num-descendants` / `--num-descendants-rev`: Sort by number of descendants (Ladderize).
 *   `--alphanumeric` / `--alphanumeric-rev`: Sort by label (Alphanumeric).
 *   `--name-list <file>`: Sort by a list of names.
-*   `--deladderize`: Alternate sort direction at each level.
+*   `--deladderize` (`--dl`): Alternate sort direction at each level.
 
 ### prune
 
@@ -193,8 +193,8 @@ pgr nwk topo [OPTIONS] <infile>
 ```
 
 *   By default, removes branch lengths and comments (topology only).
-*   `--bl`: Keep branch lengths.
-*   `--comment`: Keep comments.
+*   `-b, --bl`: Keep branch lengths.
+*   `-c, --comment`: Keep comments.
 *   `-I`: Remove internal labels.
 *   `-L`: Remove leaf labels.
 
@@ -243,7 +243,7 @@ Converts Newick trees to raw LaTeX Forest code.
 pgr nwk to-forest [OPTIONS] <infile>
 ```
 
-*   `--bl`: Include branch lengths.
+*   `-b, --bl`: Include branch lengths.
 
 ### to-svg
 
@@ -265,7 +265,7 @@ Converts Newick trees to a full LaTeX document (wrapper around `to-forest`).
 pgr nwk to-tex [OPTIONS] <infile>
 ```
 
-*   `--bl`: Draw phylogram (with branch lengths).
+*   `-b, --bl`: Draw phylogram (with branch lengths).
 *   `--forest`: Input is already Forest code.
 *   `--no-default-style`: Skip default style definitions.
 

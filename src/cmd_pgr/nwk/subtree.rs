@@ -1,6 +1,5 @@
 use anyhow::Context;
 use clap::{value_parser, Arg, ArgMatches, Command};
-use pgr::libs::phylo::tree::query as nwr;
 use pgr::libs::phylo::tree::Tree;
 use std::io::Write;
 
@@ -91,7 +90,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     for tree in &mut trees {
         // IDs matching names
-        let ids = nwr::match_names(tree, args)?;
+        let ids = super::common::match_names(tree, args)?;
 
         if ids.is_empty() {
             continue;

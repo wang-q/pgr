@@ -2,7 +2,7 @@ use anyhow::{anyhow, Context};
 use clap::{ArgMatches, Command};
 use pgr::libs::phylo::tree::{distance, Tree};
 use std::collections::BTreeMap;
-use std::io::{Read, Write};
+use std::io::Write;
 
 /// Build the clap subcommand for distance.
 pub fn make_subcommand() -> Command {
@@ -60,15 +60,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
 
     let infile = args.get_one::<String>("infile").unwrap();
-    let mut input = String::new();
-    let mut reader =
-        pgr::reader(infile).with_context(|| format!("Failed to open reader for {}", infile))?;
-    reader
-        .read_to_string(&mut input)
-        .with_context(|| format!("Failed to read from {}", infile))?;
-
-    // Attempt to parse Newick. If it fails, return error.
-    let tree = Tree::from_newick(&input).with_context(|| "Failed to parse Newick")?;
+    let trees = Tree::from_file(infile)?;
+    let tree = trees
+        .into_iter()
+        .next()
+        .ok_or_else(|| anyhow!("no trees found in {}", infile))?;
 
     let mode = args.get_one::<String>("mode").unwrap();
 

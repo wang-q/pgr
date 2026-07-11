@@ -577,7 +577,7 @@ pub fn remove_properties_matching(tree: &mut Tree, pattern: &str) -> anyhow::Res
         .unicode(false)
         .build()?;
 
-    for i in 0..tree.len() {
+    for i in 0..tree.nodes.len() {
         if let Some(node) = tree.get_node_mut(i) {
             if let Some(props) = &mut node.properties {
                 let mut to_remove = Vec::new();

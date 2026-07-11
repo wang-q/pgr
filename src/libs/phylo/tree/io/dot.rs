@@ -2,6 +2,11 @@
 
 use super::super::Tree;
 
+/// Escape a string for safe use inside a DOT double-quoted label.
+fn escape_dot_label(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
 /// Serialize the tree to a Graphviz DOT string.
 pub fn to_dot(tree: &Tree) -> String {
     let mut s = String::from("digraph Tree {\n");
@@ -20,7 +25,7 @@ pub fn to_dot(tree: &Tree) -> String {
             // 1. Define Node
             // Use NodeID as the DOT identifier
             let label = node.name.as_deref().unwrap_or("");
-            let mut label_attr = format!("label=\"{}\"", label);
+            let mut label_attr = format!("label=\"{}\"", escape_dot_label(label));
             if label.is_empty() {
                 label_attr = format!("label=\"{}\"", node_id);
             }

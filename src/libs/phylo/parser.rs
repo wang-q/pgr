@@ -3,7 +3,7 @@ use super::node::NodeId;
 use super::tree::Tree;
 use nom::{
     branch::alt,
-    bytes::complete::{is_not, take_while},
+    bytes::complete::{is_not, take_until, take_while},
     character::complete::{char, digit1, multispace0},
     combinator::{cut, map, map_res, opt, recognize},
     error::{context, ContextError, ErrorKind, FromExternalError, ParseError},
@@ -144,11 +144,7 @@ fn parse_label(input: &str) -> IResult<&str, String, DetailedError<'_>> {
 
     // Single quoted labels: 'Homo sapiens'
     // Two single quotes inside represent one single quote: 'O''Brien' -> O'Brien
-    let single_quoted = delimited(
-        char('\''),
-        map(is_not("'"), |s: &str| s.replace("''", "'")),
-        char('\''),
-    );
+    // (Handled by `single_quoted` below, which loops to recognize `''` escapes.)
 
     // Double quoted labels: "Homo sapiens"
     // Two double quotes inside represent one double quote: "He said ""Hello""" -> He said "Hello"
@@ -160,6 +156,27 @@ fn parse_label(input: &str) -> IResult<&str, String, DetailedError<'_>> {
 
     // Try quoted formats first, then fall back to unquoted
     context("label", alt((single_quoted, double_quoted, unquoted))).parse(input)
+}
+
+/// Parse a single-quoted Newick label, handling `''` as an escaped literal `'`.
+fn single_quoted(input: &str) -> IResult<&str, String, DetailedError<'_>> {
+    let (input, _) = char('\'')(input)?;
+    let mut result = String::new();
+    let mut rest = input;
+    loop {
+        // Take content up to the next single quote (may be empty)
+        let (after, chunk) = take_until("'")(rest)?;
+        result.push_str(chunk);
+        // Consume the closing quote
+        let (after, _) = char('\'')(after)?;
+        // If the next char is also `'`, it's an escaped quote — continue
+        if let Ok((after2, _)) = char::<&str, DetailedError<'_>>('\'')(after) {
+            result.push('\'');
+            rest = after2;
+        } else {
+            return Ok((after, result));
+        }
+    }
 }
 
 // 3. Length
@@ -665,6 +682,29 @@ mod tests {
 
         let c2 = tree.get_node(root.children[1]).unwrap();
         assert_eq!(c2.name.as_deref(), Some("Mus musculus"));
+    }
+
+    #[test]
+    fn test_parser_single_quoted_escape() {
+        // '' inside a single-quoted label represents a literal '
+        let input = "('O''Brien':0.1, 'Smith''s'):0.2;";
+        let tree = Tree::from_newick(input).unwrap();
+        let root = tree.get_node(tree.get_root().unwrap()).unwrap();
+
+        let c1 = tree.get_node(root.children[0]).unwrap();
+        assert_eq!(c1.name.as_deref(), Some("O'Brien"));
+
+        let c2 = tree.get_node(root.children[1]).unwrap();
+        assert_eq!(c2.name.as_deref(), Some("Smith's"));
+
+        // Round-trip: serialize back and re-parse
+        let out = tree.to_newick();
+        let tree2 = Tree::from_newick(&out).unwrap();
+        let root2 = tree2.get_node(tree2.get_root().unwrap()).unwrap();
+        let c1 = tree2.get_node(root2.children[0]).unwrap();
+        assert_eq!(c1.name.as_deref(), Some("O'Brien"));
+        let c2 = tree2.get_node(root2.children[1]).unwrap();
+        assert_eq!(c2.name.as_deref(), Some("Smith's"));
     }
 
     #[test]

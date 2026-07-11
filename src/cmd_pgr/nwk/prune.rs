@@ -1,7 +1,6 @@
 use anyhow::Context;
 use clap::{ArgMatches, Command};
 use pgr::libs::phylo::tree::algo;
-use pgr::libs::phylo::tree::query as nwr;
 use pgr::libs::phylo::tree::Tree;
 use std::io::Write;
 
@@ -52,7 +51,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let trees = Tree::from_file(infile)?;
 
     for mut tree in trees {
-        let target_ids = nwr::match_names(&tree, args)?;
+        let target_ids = super::common::match_names(&tree, args)?;
 
         if args.get_flag("invert") && target_ids.is_empty() {
             log::warn!("--invert set but no target nodes matched; entire tree will be pruned");

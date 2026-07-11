@@ -1,6 +1,5 @@
 use anyhow::Context;
 use clap::{builder::PossibleValue, Arg, ArgAction, ArgMatches, Command};
-use pgr::libs::phylo::tree::query as nwr;
 use pgr::libs::phylo::tree::Tree;
 use std::collections::BTreeSet;
 use std::io::Write;
@@ -120,10 +119,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
         // Operating
         // All IDs matching positions
-        let ids_pos = nwr::match_positions(tree, args);
+        let ids_pos = super::common::match_positions(tree, args);
 
         // All IDs matching names
-        let ids_name = nwr::match_names(tree, args)?;
+        let ids_name = super::common::match_names(tree, args)?;
 
         let ids: BTreeSet<usize> = ids_pos.intersection(&ids_name).cloned().collect();
 
@@ -140,8 +139,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             let node = tree.get_node(*id).context("node not found")?;
             if let Some(x) = node.name.clone() {
                 if !x.is_empty() {
-                    let out_string =
-                        pgr::libs::phylo::tree::query::format_label_columns(node, &x, &columns);
+                    let out_string = super::common::format_label_columns(node, &x, &columns);
 
                     if tab_sep {
                         collected_labels.push(out_string);

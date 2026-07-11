@@ -1,7 +1,7 @@
 //! SVG format writer.
 
 use super::super::Tree;
-use super::util::{branch_depth, node_depth};
+use super::util::{branch_depth, compute_scale_bar, node_depth};
 use crate::libs::phylo::node::NodeId;
 use std::collections::HashMap;
 
@@ -175,16 +175,7 @@ pub fn to_svg(tree: &Tree, height: f64, vskip: f64, width: f64) -> String {
 
     // Scale bar (phylogram mode only)
     if height > 0.0 {
-        let target_scale = height / 5.0;
-        let magnitude = target_scale.log10().floor();
-        let base = 10.0_f64.powf(magnitude);
-
-        let scale = [1.0, 2.0, 5.0]
-            .iter()
-            .map(|&x| base * x)
-            .rfind(|&x| x <= target_scale)
-            .unwrap_or(base);
-
+        let (scale, _) = compute_scale_bar(height);
         let scale_px = scale * (max_x / height);
 
         let bar_x = ox;

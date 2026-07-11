@@ -51,14 +51,18 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let infile = args.get_one::<String>("infile").unwrap();
     let trees1 = Tree::from_file(infile)?;
 
-    // 2. Load second file (if provided) or point to first
-    let trees2 = if let Some(f2) = args.get_one::<String>("compare_file") {
+    // 2. Load second file (if provided) or self-compare against trees1
+    let compare_file = args.get_one::<String>("compare_file");
+    let trees2_owned: Vec<Tree> = if let Some(f2) = compare_file {
         Tree::from_file(f2)?
     } else {
         Vec::new()
     };
-
-    let self_compare = args.get_one::<String>("compare_file").is_none();
+    let trees2: &[Tree] = if compare_file.is_some() {
+        &trees2_owned
+    } else {
+        &trees1
+    };
 
     // 3. Output writer
     let outfile = crate::cmd_pgr::args::get_outfile(args);
@@ -69,19 +73,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // Header
     writeln!(writer, "Tree1\tTree2\tRF_Dist\tWRF_Dist\tKF_Dist")?;
 
-    if self_compare {
-        for (i, t1) in trees1.iter().enumerate() {
-            for (j, t2) in trees1.iter().enumerate() {
-                let (rf, wrf, kf) = pgr::libs::phylo::cmp::compute_tree_metrics(t1, t2)?;
-                writeln!(writer, "{}\t{}\t{}\t{}\t{}", i + 1, j + 1, rf, wrf, kf)?;
-            }
-        }
-    } else {
-        for (i, t1) in trees1.iter().enumerate() {
-            for (j, t2) in trees2.iter().enumerate() {
-                let (rf, wrf, kf) = pgr::libs::phylo::cmp::compute_tree_metrics(t1, t2)?;
-                writeln!(writer, "{}\t{}\t{}\t{}\t{}", i + 1, j + 1, rf, wrf, kf)?;
-            }
+    for (i, t1) in trees1.iter().enumerate() {
+        for (j, t2) in trees2.iter().enumerate() {
+            let (rf, wrf, kf) = pgr::libs::phylo::cmp::compute_tree_metrics(t1, t2)?;
+            writeln!(writer, "{}\t{}\t{}\t{}\t{}", i + 1, j + 1, rf, wrf, kf)?;
         }
     }
 
