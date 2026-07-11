@@ -21,18 +21,16 @@ fn command_nwk_cmp_single_file() {
         .args(&["nwk", "cmp", file.path().to_str().unwrap()])
         .run();
 
-    // Expected output:
+    // Expected output (pairwise, no self-comparisons or duplicate pairs):
     // Tree1 Tree2 RF_Dist WRF_Dist KF_Dist
-    // 1     1     0       0.000000 0.000000
     // 1     2     2       0.000000 0.000000
-    // 2     1     2       0.000000 0.000000
-    // 2     2     0       0.000000 0.000000
 
     assert!(stdout.contains("Tree1\tTree2\tRF_Dist\tWRF_Dist\tKF_Dist"));
-    assert!(stdout.contains("1\t1\t0\t0\t0"));
     assert!(stdout.contains("1\t2\t2\t0\t0"));
-    assert!(stdout.contains("2\t1\t2\t0\t0"));
-    assert!(stdout.contains("2\t2\t0\t0\t0"));
+    // No self-comparisons or duplicate pairs (check line starts to avoid substring false positives)
+    assert!(!stdout.lines().any(|l| l.starts_with("1\t1\t")));
+    assert!(!stdout.lines().any(|l| l.starts_with("2\t1\t")));
+    assert!(!stdout.lines().any(|l| l.starts_with("2\t2\t")));
 }
 
 #[test]
