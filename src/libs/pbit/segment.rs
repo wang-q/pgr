@@ -44,10 +44,10 @@ impl Segment {
 
     /// Encode `seq` against the prepared reference, return uncompressed delta.
     /// Empty delta means seq == reference (equal-sequences optimization).
-    pub fn add(&mut self, seq: &[u8]) -> Vec<u8> {
+    pub fn add(&mut self, seq: &[u8]) -> Result<Vec<u8>> {
         let mut delta = Vec::new();
-        self.lz_diff.encode(seq, &mut delta);
-        delta
+        self.lz_diff.encode(seq, &mut delta)?;
+        Ok(delta)
     }
 
     /// Decode `delta` (uncompressed) back to the original ASCII sequence.
@@ -111,7 +111,7 @@ mod tests {
         let mut seg = Segment::new(18);
         seg.prepare(&reference);
         seg.prepare_index();
-        let delta = seg.add(&text);
+        let delta = seg.add(&text).unwrap();
         let decoded = seg.get(&delta).expect("decode failed");
         assert_eq!(decoded, text);
     }
@@ -122,7 +122,7 @@ mod tests {
         let mut seg = Segment::new(18);
         seg.prepare(&reference);
         seg.prepare_index();
-        let delta = seg.add(&reference);
+        let delta = seg.add(&reference).unwrap();
         assert!(
             delta.is_empty(),
             "identical sequence should produce empty delta"
@@ -141,8 +141,8 @@ mod tests {
         let mut seg = Segment::new(18);
         seg.prepare(&reference);
         seg.prepare_index();
-        let delta1 = seg.add(&seq1);
-        let delta2 = seg.add(&seq2);
+        let delta1 = seg.add(&seq1).unwrap();
+        let delta2 = seg.add(&seq2).unwrap();
         assert_eq!(seg.get(&delta1).unwrap(), seq1);
         assert_eq!(seg.get(&delta2).unwrap(), seq2);
     }
@@ -154,7 +154,7 @@ mod tests {
         let mut seg = Segment::new(18);
         seg.prepare(&reference);
         seg.prepare_index();
-        let delta = seg.add(&text);
+        let delta = seg.add(&text).unwrap();
         let decoded = seg.get(&delta).expect("decode failed");
         // N and IUPAC codes both map to 4, decode_base maps 4 to 'N'
         let expected: Vec<u8> = text
@@ -183,8 +183,8 @@ mod tests {
         let mut seg = Segment::new(18);
         seg.prepare(&reference);
         seg.prepare_index();
-        let delta_similar = seg.add(&similar);
-        let delta_different = seg.add(&different);
+        let delta_similar = seg.add(&similar).unwrap();
+        let delta_different = seg.add(&different).unwrap();
         assert!(
             delta_similar.len() < delta_different.len(),
             "similar sequence should have smaller delta ({} < {})",
@@ -200,7 +200,7 @@ mod tests {
         let mut seg = Segment::new(18);
         seg.prepare(&reference);
         seg.prepare_index();
-        let delta = seg.add(&text);
+        let delta = seg.add(&text).unwrap();
 
         // New Segment with same reference but no index
         let mut seg2 = Segment::new(18);
@@ -220,7 +220,7 @@ mod tests {
         let mut seg = Segment::new(18);
         seg.prepare(&reference);
         seg.prepare_index();
-        let delta = seg.add(&text);
+        let delta = seg.add(&text).unwrap();
         let decoded = seg.get(&delta).expect("decode failed");
         // Output is always uppercase (2-bit encoding loses case info)
         let expected: Vec<u8> = text.iter().map(|&c| c.to_ascii_uppercase()).collect();

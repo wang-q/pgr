@@ -6,7 +6,7 @@
 //! the matching reference segment, flate2-compressed, and stored as delta
 //! entries.
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use indexmap::IndexMap;
 use std::io::{Seek, SeekFrom, Write};
 use std::path::Path;
@@ -183,7 +183,7 @@ fn split_m_to_eqx(
         match op.op() {
             '=' => {
                 if rt + len > ref_seq.len() || si + len > sample_seq.len() {
-                    anyhow::bail!("CIGAR '=' exceeds ref/sample length");
+                    bail!("CIGAR '=' exceeds ref/sample length");
                 }
                 push_or_merge(&mut out_ops, len as u32, '=');
                 rt += len;
@@ -191,10 +191,10 @@ fn split_m_to_eqx(
             }
             'X' => {
                 if rt + len > ref_seq.len() {
-                    anyhow::bail!("CIGAR X exceeds ref length");
+                    bail!("CIGAR X exceeds ref length");
                 }
                 if si + len > sample_seq.len() {
-                    anyhow::bail!("CIGAR X exceeds sample length");
+                    bail!("CIGAR X exceeds sample length");
                 }
                 xi_bases.extend_from_slice(&sample_seq[si..si + len]);
                 push_or_merge(&mut out_ops, len as u32, 'X');
@@ -203,7 +203,7 @@ fn split_m_to_eqx(
             }
             'I' => {
                 if si + len > sample_seq.len() {
-                    anyhow::bail!("CIGAR I exceeds sample length");
+                    bail!("CIGAR I exceeds sample length");
                 }
                 xi_bases.extend_from_slice(&sample_seq[si..si + len]);
                 push_or_merge(&mut out_ops, len as u32, 'I');
@@ -211,14 +211,14 @@ fn split_m_to_eqx(
             }
             'D' => {
                 if rt + len > ref_seq.len() {
-                    anyhow::bail!("CIGAR D exceeds ref length");
+                    bail!("CIGAR D exceeds ref length");
                 }
                 push_or_merge(&mut out_ops, len as u32, 'D');
                 rt += len;
             }
             'M' => {
                 if rt + len > ref_seq.len() || si + len > sample_seq.len() {
-                    anyhow::bail!("CIGAR M exceeds ref/sample length");
+                    bail!("CIGAR M exceeds ref/sample length");
                 }
                 for i in 0..len {
                     let rb = ref_seq[rt + i];
@@ -233,11 +233,11 @@ fn split_m_to_eqx(
                 rt += len;
                 si += len;
             }
-            other => anyhow::bail!("invalid CIGAR op: '{}'", other),
+            other => bail!("invalid CIGAR op: '{}'", other),
         }
     }
     if rt != ref_seq.len() || si != sample_seq.len() {
-        anyhow::bail!(
+        bail!(
             "CIGAR consumed ref={}/{} sample={}/{}",
             rt,
             ref_seq.len(),
@@ -525,7 +525,7 @@ impl<W: Write + Seek> Compressor<W> {
         } else {
             seg.to_vec()
         };
-        let fwd_delta = self.segments[ref_group_id as usize].add(&fwd_seq);
+        let fwd_delta = self.segments[ref_group_id as usize].add(&fwd_seq)?;
         let fwd_raw_len = fwd_seq.len() as u32;
 
         // If delta is large (poor match), try opposite orientation and pick smaller.
@@ -535,7 +535,7 @@ impl<W: Write + Seek> Compressor<W> {
             } else {
                 rev_comp_vec(seg)
             };
-            let alt_delta = self.segments[ref_group_id as usize].add(&alt_seq);
+            let alt_delta = self.segments[ref_group_id as usize].add(&alt_seq)?;
             let alt_raw_len = alt_seq.len() as u32;
             if alt_delta.len() < fwd_delta.len() {
                 (alt_delta, !contig_is_rev_comp, alt_raw_len)
@@ -927,6 +927,26 @@ mod tests {
     }
 
     #[test]
+    fn test_create_sets_cmd_line() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let ref_path = dir.path().join("ref.fa");
+        write_fasta(ref_path.to_str().unwrap(), &[("chr1", b"ACGTACGTACGTACGT")]);
+        let out_path = dir.path().join("out.pbit");
+
+        let mut comp = Compressor::create(&out_path, ref_path.to_str().unwrap(), 4096, 15, 18)?;
+        comp.set_cmd_line("pgr pbit create -r ref.fa -o out.pbit -s 4096 -k 15 -l 18");
+        comp.finish()?;
+
+        let dec = Decompressor::open(&out_path)?;
+        assert!(
+            dec.collection().cmd_line.contains("pgr pbit create"),
+            "cmd_line should record create command: {}",
+            dec.collection().cmd_line
+        );
+        Ok(())
+    }
+
+    #[test]
     fn test_create_multiple_samples_dedup() -> Result<()> {
         let dir = tempfile::tempdir()?;
         let ref_path = dir.path().join("ref.fa");
@@ -1038,11 +1058,17 @@ mod tests {
         write_fasta(s2_path.to_str().unwrap(), &[("chr1", &s2_seq)]);
 
         let mut comp = Compressor::open_for_append(&out_path)?;
+        comp.set_cmd_line("pgr pbit append out.pbit -o out.pbit");
         comp.append_sample("s2", s2_path.to_str().unwrap())?;
         comp.finish()?;
 
         // Verify both samples are present and extract correctly.
         let mut dec = crate::libs::pbit::decompressor::Decompressor::open(&out_path)?;
+        assert!(
+            dec.collection().cmd_line.contains("pgr pbit append"),
+            "cmd_line should record append command: {}",
+            dec.collection().cmd_line
+        );
         assert_eq!(dec.list_samples(), vec!["s1", "s2"]);
 
         let mut buf = Vec::new();

@@ -11,7 +11,7 @@
 //! [u8; xi_base_count]     // X/I bases (ASCII, in CIGAR forward-traversal order)
 //! ```
 
-use anyhow::{anyhow, Result};
+use anyhow::{bail, Result};
 
 use crate::libs::paf::cigar::CigarOp;
 
@@ -68,22 +68,20 @@ pub fn apply_cigar(ref_seq: &[u8], ops: &[CigarOp], xi_bases: &[u8]) -> Result<V
         match op.op() {
             '=' => {
                 if rt + len > ref_seq.len() {
-                    return Err(anyhow!("CIGAR '=' exceeds reference length"));
+                    bail!("CIGAR '=' exceeds reference length");
                 }
                 out.extend_from_slice(&ref_seq[rt..rt + len]);
                 rt += len;
             }
             'M' => {
-                return Err(anyhow!(
-                    "unexpected CIGAR op 'M' in pbit delta (should have been split to =/X)"
-                ));
+                bail!("unexpected CIGAR op 'M' in pbit delta (should have been split to =/X)");
             }
             'X' => {
                 if xi + len > xi_bases.len() {
-                    return Err(anyhow!("CIGAR 'X' exceeds X/I base stream"));
+                    bail!("CIGAR 'X' exceeds X/I base stream");
                 }
                 if rt + len > ref_seq.len() {
-                    return Err(anyhow!("CIGAR 'X' exceeds reference length"));
+                    bail!("CIGAR 'X' exceeds reference length");
                 }
                 out.extend_from_slice(&xi_bases[xi..xi + len]);
                 xi += len;
@@ -91,7 +89,7 @@ pub fn apply_cigar(ref_seq: &[u8], ops: &[CigarOp], xi_bases: &[u8]) -> Result<V
             }
             'I' => {
                 if xi + len > xi_bases.len() {
-                    return Err(anyhow!("CIGAR 'I' exceeds X/I base stream"));
+                    bail!("CIGAR 'I' exceeds X/I base stream");
                 }
                 out.extend_from_slice(&xi_bases[xi..xi + len]);
                 xi += len;
@@ -99,26 +97,26 @@ pub fn apply_cigar(ref_seq: &[u8], ops: &[CigarOp], xi_bases: &[u8]) -> Result<V
             }
             'D' => {
                 if rt + len > ref_seq.len() {
-                    return Err(anyhow!("CIGAR 'D' exceeds reference length"));
+                    bail!("CIGAR 'D' exceeds reference length");
                 }
                 rt += len; // D advances reference only
             }
-            other => return Err(anyhow!("invalid CIGAR op: '{}'", other)),
+            other => bail!("invalid CIGAR op: '{}'", other),
         }
     }
     if xi != xi_bases.len() {
-        return Err(anyhow!(
+        bail!(
             "CIGAR consumed {} X/I bases but {} were packed",
             xi,
             xi_bases.len()
-        ));
+        );
     }
     if rt != ref_seq.len() {
-        return Err(anyhow!(
+        bail!(
             "CIGAR consumed {} reference bases but {} available",
             rt,
             ref_seq.len()
-        ));
+        );
     }
     Ok(out)
 }

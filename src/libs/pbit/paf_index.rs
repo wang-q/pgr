@@ -18,6 +18,22 @@ use indexmap::IndexMap;
 use crate::libs::paf::cigar::{extract_cigar, CigarOp};
 use crate::libs::paf::parser::parse_paf_line;
 
+/// Convert a PAF coordinate to i32, warning and returning `None` on overflow.
+fn coord_to_i32(val: u32, field: &str, line: &str) -> Option<i32> {
+    match i32::try_from(val) {
+        Ok(v) => Some(v),
+        Err(_) => {
+            log::warn!(
+                "skipping PAF record with {} exceeding i32 range ({}): {}",
+                field,
+                val,
+                line
+            );
+            None
+        }
+    }
+}
+
 /// One PAF alignment stored in the query-side index. Holds the ORIGINAL
 /// (non-swapped) fields needed by pbit's CIGAR encoding path. `cigar` is
 /// already `extract_cigar`-parsed; empty Vec means the record was skipped
@@ -83,8 +99,27 @@ impl PafQueryIndex {
                 continue;
             }
 
+            // Convert coordinates to i32 (interval tree uses i32). Overflow is
+            // treated as a malformed record and skipped (design §11 decision 8).
+            let Some(query_start) = coord_to_i32(rec.query_start, "query_start", &line) else {
+                failed_count += 1;
+                continue;
+            };
+            let Some(query_end) = coord_to_i32(rec.query_end, "query_end", &line) else {
+                failed_count += 1;
+                continue;
+            };
+            let Some(target_start) = coord_to_i32(rec.target_start, "target_start", &line) else {
+                failed_count += 1;
+                continue;
+            };
+            let Some(target_end) = coord_to_i32(rec.target_end, "target_end", &line) else {
+                failed_count += 1;
+                continue;
+            };
+
             // Reject records with invalid coordinates before building the interval.
-            if rec.query_start > rec.query_end || rec.target_start > rec.target_end {
+            if query_start > query_end || target_start > target_end {
                 log::warn!("skipping PAF record with invalid coordinates: {}", line);
                 failed_count += 1;
                 continue;
@@ -93,22 +128,22 @@ impl PafQueryIndex {
             // Allocate query_id by query_name (insertion order).
             let next_id = names.len() as u32;
             let query_id = *names.entry(rec.query_name.clone()).or_insert(next_id);
+            let target_name = rec.target_name.clone();
 
             let meta = PafAlign {
                 query_id,
-                query_start: rec.query_start as i32,
-                query_end: rec.query_end as i32,
-                target_name: rec.target_name.clone(),
-                target_start: rec.target_start as i32,
-                target_end: rec.target_end as i32,
+                query_start,
+                query_end,
+                target_name,
+                target_start,
+                target_end,
                 strand: rec.strand,
                 cigar,
             };
-            by_query.entry(query_id).or_default().push(Interval::new(
-                rec.query_start as i32,
-                rec.query_end as i32,
-                meta,
-            ));
+            by_query
+                .entry(query_id)
+                .or_default()
+                .push(Interval::new(query_start, query_end, meta));
         }
 
         // All non-empty lines failed to parse → treat as non-PAF format (decision 8).
@@ -314,6 +349,33 @@ mod tests {
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].query_start, 0);
         assert_eq!(hits[0].query_end, 100);
+        Ok(())
+    }
+
+    #[test]
+    fn test_build_skips_i32_overflow_coords() -> Result<()> {
+        // One record with query_start exceeding i32::MAX + one valid record.
+        // The overflow record is warn+skipped; the valid record is indexed.
+        let overflow_qs = i32::MAX as u32 + 1;
+        let invalid = paf_line(
+            "qry1",
+            overflow_qs,
+            overflow_qs + 100,
+            "+",
+            "ref1",
+            0,
+            100,
+            "100=",
+        );
+        let valid = paf_line("qry2", 0, 100, "+", "ref2", 0, 100, "100=");
+        let paf = format!("{}\n{}\n", invalid, valid);
+        let idx = PafQueryIndex::build(Cursor::new(paf))?;
+        assert_eq!(idx.names.len(), 1);
+        assert!(idx.query_id("qry1").is_none());
+        assert!(idx.query_id("qry2").is_some());
+        let qid = idx.query_id("qry2").unwrap();
+        let hits = idx.query(qid, 0, 100);
+        assert_eq!(hits.len(), 1);
         Ok(())
     }
 

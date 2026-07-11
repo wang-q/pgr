@@ -6,7 +6,7 @@
 //! match-to-end optimization, '!' back-reference literal, and get_code_skip1
 //! fast scanning.
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, bail, Result};
 
 // Constants mirroring C++ CLZDiffBase (lz_diff.h)
 const EMPTY_KEY32: u32 = !0u32;
@@ -378,11 +378,10 @@ impl LzDiff {
     }
 
     /// Encode `text` against the prepared reference into `encoded`.
-    pub fn encode(&mut self, text: &[u8], encoded: &mut Vec<u8>) {
-        assert!(
-            !self.reference.is_empty(),
-            "LzDiff::encode called before prepare()"
-        );
+    pub fn encode(&mut self, text: &[u8], encoded: &mut Vec<u8>) -> Result<()> {
+        if self.reference.is_empty() {
+            bail!("LzDiff::encode called before prepare()");
+        }
         if !self.index_ready {
             self.prepare_index();
         }
@@ -396,7 +395,7 @@ impl LzDiff {
         if text_size == self.reference.len() as u32 - self.key_len
             && text == self.reference[..text_size as usize]
         {
-            return;
+            return Ok(());
         }
 
         encoded.reserve(text.len() / 64);
@@ -495,6 +494,7 @@ impl LzDiff {
             encode_literal(text[i as usize], encoded);
             i += 1;
         }
+        Ok(())
     }
 
     /// Decode `encoded` using the stored reference, producing 2-bit coded
@@ -657,7 +657,7 @@ mod tests {
         lz.prepare(reference);
         lz.prepare_index();
         let mut encoded = Vec::new();
-        lz.encode(text, &mut encoded);
+        lz.encode(text, &mut encoded).expect("encode failed");
         let mut decoded = Vec::new();
         lz.decode(&encoded, &mut decoded).expect("decode failed");
         let expected: Vec<u8> = text.iter().map(|&c| encode_base(c)).collect();
@@ -679,7 +679,7 @@ mod tests {
         lz.prepare(&reference);
         lz.prepare_index();
         let mut encoded = Vec::new();
-        lz.encode(&reference, &mut encoded);
+        lz.encode(&reference, &mut encoded).expect("encode failed");
         assert!(
             encoded.is_empty(),
             "identical sequence should produce empty delta"
@@ -710,7 +710,7 @@ mod tests {
         lz.prepare(&reference);
         lz.prepare_index();
         let mut encoded = Vec::new();
-        lz.encode(b"", &mut encoded);
+        lz.encode(b"", &mut encoded).expect("encode failed");
         let mut decoded = Vec::new();
         lz.decode(&encoded, &mut decoded).expect("decode failed");
         assert!(decoded.is_empty());
@@ -739,7 +739,7 @@ mod tests {
         lz.prepare(&reference);
         lz.prepare_index();
         let mut encoded = Vec::new();
-        lz.encode(&text, &mut encoded);
+        lz.encode(&text, &mut encoded).expect("encode failed");
 
         // New LzDiff with same reference but no index
         let mut lz2 = LzDiff::new(18);
@@ -836,8 +836,10 @@ mod tests {
         let mut lz = LzDiff::new(18);
         lz.prepare(reference);
         lz.prepare_index();
+
         let mut encoded = Vec::new();
-        lz.encode(text_three_n, &mut encoded);
+        lz.encode(text_three_n, &mut encoded)
+            .expect("encode failed");
         let mut decoded = Vec::new();
         lz.decode(&encoded, &mut decoded).expect("decode failed");
         assert_eq!(decoded, vec![N_CODE; 3]);
@@ -846,7 +848,7 @@ mod tests {
         // short texts because the main loop needs key_len bases).
         let text_four_n = b"NNNN";
         let mut encoded = Vec::new();
-        lz.encode(text_four_n, &mut encoded);
+        lz.encode(text_four_n, &mut encoded).expect("encode failed");
         let mut decoded = Vec::new();
         lz.decode(&encoded, &mut decoded).expect("decode failed");
         assert_eq!(decoded, vec![N_CODE; 4]);
@@ -857,7 +859,9 @@ mod tests {
         lz_small.prepare(reference);
         lz_small.prepare_index();
         let mut encoded = Vec::new();
-        lz_small.encode(text_four_n, &mut encoded);
+        lz_small
+            .encode(text_four_n, &mut encoded)
+            .expect("encode failed");
         // N-run encoding: starter + varint(len - MIN_NRUN_LEN) + N_CODE.
         // For len == 4 this is 3 bytes, smaller than 4 literal bytes.
         assert!(
@@ -872,13 +876,14 @@ mod tests {
     }
 
     #[test]
-    fn test_encode_without_prepare_panics() {
+    fn test_encode_without_prepare_returns_error() {
         let mut lz = LzDiff::new(18);
         let mut encoded = Vec::new();
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            lz.encode(b"ACGT", &mut encoded);
-        }));
-        assert!(result.is_err(), "encode before prepare should panic");
+        let result = lz.encode(b"ACGT", &mut encoded);
+        assert!(
+            result.is_err(),
+            "encode before prepare should return an error"
+        );
     }
 
     #[test]
@@ -896,7 +901,7 @@ mod tests {
         lz.prepare_index();
 
         let mut encoded = Vec::new();
-        lz.encode(&text, &mut encoded);
+        lz.encode(&text, &mut encoded).expect("encode failed");
         assert!(
             !encoded.is_empty(),
             "exact-min-match should produce a match"

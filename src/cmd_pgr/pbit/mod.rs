@@ -20,11 +20,7 @@ pub(crate) fn read_name_tsv(path: &str) -> Result<Vec<(String, String, Option<St
             continue;
         }
         let parts: Vec<&str> = trimmed.split('\t').collect();
-        let name = parts
-            .first()
-            .ok_or_else(|| anyhow::anyhow!("line {}: missing sample name: {}", line_no, trimmed))?
-            .trim()
-            .to_string();
+        let name = parts[0].trim().to_string();
         let fasta_path = parts
             .get(1)
             .ok_or_else(|| anyhow::anyhow!("line {}: missing FASTA path: {}", line_no, trimmed))?

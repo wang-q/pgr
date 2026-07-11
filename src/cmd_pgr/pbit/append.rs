@@ -125,6 +125,13 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let mut comp = Compressor::open_for_append(&work_path)
         .with_context(|| format!("failed to open pbit archive for append: {}", work_path))?;
+
+    let mut cmd_line = format!("pgr pbit append {}", infile);
+    if let Some(out) = outfile_opt {
+        cmd_line.push_str(&format!(" -o {}", out));
+    }
+    comp.set_cmd_line(&cmd_line);
+
     for (name, path, paf_opt) in &samples {
         match paf_opt {
             Some(paf) => comp

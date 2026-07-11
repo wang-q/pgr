@@ -78,6 +78,13 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let mut comp = Compressor::create(outfile, ref_fasta, segment_size, kmer_len, min_match_len)
         .with_context(|| format!("failed to create pbit archive: {}", outfile))?;
+
+    let cmd_line = format!(
+        "pgr pbit create -r {} -o {} -s {} -k {} -l {}",
+        ref_fasta, outfile, segment_size, kmer_len, min_match_len
+    );
+    comp.set_cmd_line(&cmd_line);
+
     for (name, path, paf_opt) in &samples {
         match paf_opt {
             Some(paf) => comp
