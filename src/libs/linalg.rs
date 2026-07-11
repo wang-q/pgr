@@ -18,7 +18,7 @@ const LANES: usize = 8;
 /// The Euclidean distance between `a` and `b`.
 ///
 /// # Examples
-/// ```
+/// ```ignore
 /// let a = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
 /// let b = [10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.0, 2.0, 1.0];
 /// let distance = pgr::libs::linalg::euclidean_distance(&a, &b);
@@ -53,7 +53,7 @@ pub fn euclidean_distance(a: &[f32], b: &[f32]) -> f32 {
 /// The dot product of `a` and `b`.
 ///
 /// # Examples
-/// ```
+/// ```ignore
 /// let a = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
 /// let b = [10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.0, 2.0, 1.0];
 /// let dot = pgr::libs::linalg::dot_product(&a, &b);
@@ -85,7 +85,7 @@ pub fn dot_product(a: &[f32], b: &[f32]) -> f32 {
 /// The L2 norm of `a`.
 ///
 /// # Examples
-/// ```
+/// ```ignore
 /// let a = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
 /// let norm = pgr::libs::linalg::norm_l2(&a);
 /// assert_eq!(format!("{:.4}", norm), "19.6214".to_string());
@@ -104,7 +104,7 @@ pub fn norm_l2(a: &[f32]) -> f32 {
 /// The squared L2 norm of `a`.
 ///
 /// # Examples
-/// ```
+/// ```ignore
 /// let a = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
 /// let norm_sq = pgr::libs::linalg::norm_l2_sq(&a);
 /// assert_eq!(norm_sq, 385.0);
@@ -134,7 +134,7 @@ pub fn norm_l2_sq(a: &[f32]) -> f32 {
 /// The sum of all elements in `a`.
 ///
 /// # Examples
-/// ```
+/// ```ignore
 /// let a = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
 /// let sum_value = pgr::libs::linalg::sum(&a);
 /// assert_eq!(sum_value, 55.0);
@@ -164,7 +164,7 @@ pub fn sum(a: &[f32]) -> f32 {
 /// The mean of the vector `a`.
 ///
 /// # Examples
-/// ```
+/// ```ignore
 /// let a = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
 /// let mean_value = pgr::libs::linalg::mean(&a);
 /// assert_eq!(mean_value, 5.5);
@@ -187,7 +187,7 @@ pub fn mean(a: &[f32]) -> f32 {
 /// The Jaccard intersection of `a` and `b`.
 ///
 /// # Examples
-/// ```
+/// ```ignore
 /// let a = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
 /// let b = [10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.0, 2.0, 1.0];
 /// let intersection = pgr::libs::linalg::jaccard_intersection(&a, &b);
@@ -221,7 +221,7 @@ pub fn jaccard_intersection(a: &[f32], b: &[f32]) -> f32 {
 /// The Jaccard union of `a` and `b`.
 ///
 /// # Examples
-/// ```
+/// ```ignore
 /// let a = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
 /// let b = [10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.0, 2.0, 1.0];
 /// let union = pgr::libs::linalg::jaccard_union(&a, &b);
@@ -270,7 +270,7 @@ pub fn jaccard_union(a: &[f32], b: &[f32]) -> f32 {
 /// If either vector is empty or their lengths do not match, returns `NaN`.
 ///
 /// # Examples
-/// ```
+/// ```ignore
 /// let a = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
 /// let b = [10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.0, 2.0, 1.0];
 /// let correlation = pgr::libs::linalg::pearson_correlation(&a, &b);

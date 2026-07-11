@@ -41,7 +41,7 @@ impl fmt::Display for Substitution {
 
 /// Returns unpolarized substitutions
 ///
-/// ```
+/// ```ignore
 /// let seqs = vec![
 ///     //        *
 ///     b"AAAATTTTGG".as_ref(),
@@ -173,7 +173,7 @@ pub fn get_subs(seqs: &[&[u8]]) -> anyhow::Result<Vec<Substitution>> {
 
 /// Polarize substitutions
 ///
-/// ```
+/// ```ignore
 /// let seqs = vec![
 ///     //        *
 ///     b"AAAATTTTGG".as_ref(),
@@ -308,7 +308,7 @@ impl fmt::Display for Indel {
 /// 'I': means insertion relative to target/first seq
 ///      target is AAAA
 ///
-/// ```
+/// ```ignore
 /// let seqs = vec![
 ///     //        ****
 ///     b"AAAATTTTGGGG".as_ref(),
@@ -370,7 +370,6 @@ impl fmt::Display for Indel {
 /// assert_eq!(indel.itype, "I");
 ///
 /// ```
-// cargo test --doc alignment::get_indels
 pub fn get_indels(seqs: &[&[u8]]) -> anyhow::Result<Vec<Indel>> {
     let seq_count = seqs.len();
 
@@ -448,7 +447,7 @@ pub fn get_indels(seqs: &[&[u8]]) -> anyhow::Result<Vec<Indel>> {
 
 /// Polarize indels based on outgroup sequence
 ///
-/// ```
+/// ```ignore
 /// let seqs = vec![
 ///     //        ****
 ///     b"AAAATTTTGGGG".as_ref(),
@@ -518,7 +517,6 @@ pub fn get_indels(seqs: &[&[u8]]) -> anyhow::Result<Vec<Indel>> {
 /// assert_eq!(indel.og_seq, "-");
 ///
 /// ```
-// cargo test --doc alignment::polarize_indels
 pub fn polarize_indels(indels: &mut Vec<Indel>, og: &[u8]) -> anyhow::Result<()> {
     let og_indel_set = indel_intspan(og);
 

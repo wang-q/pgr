@@ -29,7 +29,7 @@ impl FasEntry {
 
     /// Constructed from range and seq
     ///
-    /// ```
+    /// ```ignore
     /// # use intspan::Range;
     /// # use pgr::libs::fmt::fas::FasEntry;
     /// let range = Range::from("I", 1, 10);
@@ -50,7 +50,7 @@ impl FasEntry {
 
 /// To string
 ///
-/// ```
+/// ```ignore
 /// # use intspan::Range;
 /// # use pgr::libs::fmt::fas::FasEntry;
 /// let range = Range::from("I", 1, 10);

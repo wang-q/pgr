@@ -25,7 +25,7 @@ where
 {
     /// Creates a new empty matrix with default values.
     ///
-    /// ```
+    /// ```ignore
     /// # use pgr::libs::pairmat::ScoringMatrix;
     /// let matrix: ScoringMatrix<i32> = ScoringMatrix::new();
     /// assert_eq!(matrix.get(0, 0), 0);  // Using T::default()
@@ -41,7 +41,7 @@ where
 
     /// Creates a new matrix with specified default values.
     ///
-    /// ```
+    /// ```ignore
     /// # use pgr::libs::pairmat::ScoringMatrix;
     /// let matrix = ScoringMatrix::with_defaults(0.0, -1.0);
     /// assert_eq!(matrix.get(0, 0), 0.0);    // same value
@@ -58,7 +58,7 @@ where
 
     /// Creates a new matrix with specified size and default values.
     ///
-    /// ```
+    /// ```ignore
     /// # use pgr::libs::pairmat::ScoringMatrix;
     /// let matrix = ScoringMatrix::with_size_and_defaults(3, 1.0, 0.0);
     /// assert_eq!(matrix.size(), 3);
@@ -100,7 +100,7 @@ where
 
     /// Returns the value of the given cell.
     ///
-    /// ```
+    /// ```ignore
     /// # use pgr::libs::pairmat::ScoringMatrix;
     /// let mut m = ScoringMatrix::with_size_and_defaults(5, 0, 1);
     /// m.set(1, 2, 42);

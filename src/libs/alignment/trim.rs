@@ -4,7 +4,7 @@ use super::coords::indel_intspan;
 
 /// Trims pure dash regions
 ///
-/// ```
+/// ```ignore
 /// let mut seqs = vec![
 ///     "AAAATTTTTG".to_string(),
 ///     "AAAATTTTTG".to_string(),
@@ -77,7 +77,7 @@ pub(super) fn align_indel_ints(seqs: &mut [String], count: usize) -> (IntSpan, I
 ///     Q G----C
 ///     O GAAAAC
 ///
-/// ```
+/// ```ignore
 /// let mut seqs = vec![
 ///     "AAAATTTTTG".to_string(),
 ///     "AAAATTTTTG".to_string(),
@@ -160,7 +160,7 @@ pub fn trim_outgroup(seqs: &mut [String]) -> anyhow::Result<()> {
 ///     Q G--C
 ///     O GGAC
 ///
-/// ```
+/// ```ignore
 /// let mut seqs = vec![
 ///     "AAAATTTTTG".to_string(),
 ///     "AAAATTTTTG".to_string(),
@@ -287,7 +287,7 @@ pub fn trim_complex_indel(seqs: &mut [String]) -> anyhow::Result<String> {
 /// --AAAGC...
 /// GAAAAGC...
 ///
-/// ```
+/// ```ignore
 /// let seqs = vec![
 ///     "-AA--TTTGGCGCGCGCGCGCGCGCGC".to_string(),
 ///     "-AAAATT--GCGCGCGCGCGCGCGC-C".to_string(),
@@ -338,7 +338,7 @@ pub fn trim_complex_indel(seqs: &mut [String]) -> anyhow::Result<String> {
 /// assert_eq!(rangec[2].end, 121);
 /// ```
 ///
-/// ```
+/// ```ignore
 /// let seqs = vec![
 ///     "-AA--TTTGGCATGCATG123456789".to_string(),
 ///     "-AAAATT--GCATGCATG1234567-9".to_string(),

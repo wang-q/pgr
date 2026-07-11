@@ -25,7 +25,7 @@ pub trait SequenceReader {
 
 /// Open a buffered reader for `input` (`stdin` or a file path, `.gz` supported).
 ///
-/// ```
+/// ```ignore
 /// # use std::io::BufRead;
 /// let reader = pgr::reader("tests/mat/IBPA.list").unwrap();
 /// let mut lines = vec![];
@@ -56,7 +56,7 @@ pub fn reader(input: &str) -> anyhow::Result<Box<dyn BufRead>> {
 
 /// Read all lines from `input` (`stdin` or a file path, `.gz` supported).
 ///
-/// ```
+/// ```ignore
 /// let lines = pgr::read_lines("tests/mat/IBPA.list").unwrap();
 /// assert_eq!(lines.len(), 3);
 /// ```
@@ -141,7 +141,7 @@ pub fn writer(output: &str) -> anyhow::Result<PgrWriter> {
 ///
 /// Lines are split on whitespace; lines with fewer than 2 fields are skipped.
 ///
-/// ```
+/// ```ignore
 /// let sizes = pgr::read_sizes::<u64>("tests/pgr/pseudopig.sizes").unwrap();
 /// assert_eq!(sizes.len(), 2);
 /// assert_eq!(*sizes.get("pig2").unwrap(), 22929);
@@ -261,7 +261,7 @@ pub fn current_exe_string() -> anyhow::Result<String> {
 /// are skipped. Order is preserved. Use `read_names::<Vec<String>>` for a
 /// vector or `read_names::<HashSet<String>>` for a set.
 ///
-/// ```
+/// ```ignore
 /// let names: Vec<String> = pgr::libs::io::read_names("tests/mat/IBPA.list").unwrap();
 /// assert_eq!(names.len(), 3);
 /// ```

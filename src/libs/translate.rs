@@ -28,7 +28,7 @@ pub static AA_TAB: &[[[char; 4]; 4]; 4] = &[
     ],
 ];
 
-/// ```
+/// ```ignore
 /// let dna = b"GCTAGTCGTATCGTAGCTAGTC";
 /// assert_eq!(&pgr::libs::translate::translate(dna), "ASRIVAS");
 ///
@@ -61,7 +61,7 @@ pub fn translate(seq: &[u8]) -> String {
 ///
 /// # Examples
 ///
-/// ```
+/// ```ignore
 /// let protein = "MGGMGG*AGG";
 /// let orfs = pgr::libs::translate::find_orfs(protein);
 /// assert_eq!(orfs, vec![

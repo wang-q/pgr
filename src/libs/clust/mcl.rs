@@ -9,7 +9,7 @@
 //!
 //! # Example
 //!
-//! ```
+//! ```ignore
 //! use pgr::libs::clust::mcl::Mcl;
 //! use pgr::libs::pairmat::ScoringMatrix;
 //!

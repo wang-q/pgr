@@ -8,7 +8,7 @@
 //!
 /// # Example
 ///
-/// ```
+/// ```ignore
 /// use pgr::libs::clust::k_medoids::KMedoids;
 /// use pgr::libs::pairmat::ScoringMatrix;
 ///

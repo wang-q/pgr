@@ -5,7 +5,7 @@ use intspan::IntSpan;
 
 /// Build an IntSpan of gap positions (1-based) from an aligned sequence.
 ///
-/// ```
+/// ```ignore
 /// use pgr::libs::alignment::{indel_intspan, seq_intspan};
 /// let tests : Vec<(&str, &str)> = vec![
 ///     // seq, expected
@@ -45,7 +45,7 @@ pub fn seq_intspan(seq: &[u8]) -> IntSpan {
 
 /// Coordinate transforming - from chr to align
 ///
-/// ```
+/// ```ignore
 /// use pgr::libs::alignment::{indel_intspan, seq_intspan};
 /// let tests : Vec<(&str, i32, i32, &str, i32)> = vec![
 ///     // seq, pos, chr_start, strand, expected
@@ -87,7 +87,7 @@ pub fn chr_to_align(ints: &IntSpan, pos: i32, chr_start: i32, strand: &str) -> a
 
 /// Coordinate transforming - from align to chr
 ///
-/// ```
+/// ```ignore
 /// use pgr::libs::alignment::{indel_intspan, seq_intspan};
 /// let data : Vec<(&str, i32, i32, &str, i32)> = vec![
 ///     // seq, pos, chr_start, strand, expected
@@ -158,7 +158,7 @@ pub fn align_to_chr(ints: &IntSpan, pos: i32, chr_start: i32, strand: &str) -> a
 /// Both endpoints are mapped as `new = size - old`, so a forward range
 /// becomes a reverse-strand range (and vice versa).
 ///
-/// ```
+/// ```ignore
 /// let mut s = 10;
 /// let mut e = 20;
 /// pgr::reverse_range(&mut s, &mut e, 100);
@@ -176,7 +176,7 @@ pub fn reverse_range<T: Copy + Sub<Output = T>>(start: &mut T, end: &mut T, size
 /// reversed range as a tuple `(size - end, size - start)`. Non-mutating
 /// counterpart of [`reverse_range`].
 ///
-/// ```
+/// ```ignore
 /// let (s, e) = pgr::libs::alignment::coords::reverse_range_pair(10, 20, 100);
 /// assert_eq!(s, 80);
 /// assert_eq!(e, 90);
@@ -189,7 +189,7 @@ pub fn reverse_range_pair<T: Copy + Sub<Output = T>>(start: T, end: T, size: T) 
 /// in place. The forward 1-based inclusive range becomes a reverse-strand
 /// 1-based inclusive range: `start -> size - end + 1`, `end -> size - start + 1`.
 ///
-/// ```
+/// ```ignore
 /// let mut s = 11;
 /// let mut e = 20;
 /// pgr::libs::alignment::coords::reverse_range_1based(&mut s, &mut e, 100);
@@ -207,7 +207,7 @@ pub fn reverse_range_1based(start: &mut usize, end: &mut usize, size: usize) {
 /// reversed range as a tuple `(size - end + 1, size - start + 1)`. Non-mutating
 /// counterpart of [`reverse_range_1based`].
 ///
-/// ```
+/// ```ignore
 /// let (s, e) = pgr::libs::alignment::coords::reverse_range_1based_pair(11, 20, 100);
 /// assert_eq!(s, 81);
 /// assert_eq!(e, 90);

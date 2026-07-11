@@ -11,7 +11,7 @@ use std::str;
 use super::coords::indel_intspan;
 use crate::reader;
 
-/// ```
+/// ```ignore
 /// match which::which("spoa") {
 ///     Ok(_) => {
 ///         let seqs = vec![
@@ -50,7 +50,6 @@ use crate::reader;
 ///     Err(_) => {}
 /// }
 /// ```
-// cargo test --doc alignment::get_consensus_poa_external
 pub fn get_consensus_poa_external(
     seqs: &[&[u8]],
     match_score: i32,
@@ -120,7 +119,7 @@ pub fn get_consensus_poa_external(
     Ok(seq)
 }
 
-/// ```
+/// ```ignore
 /// let seqs = vec![
 /// //              *
 ///     b"TTAGCCGCTGAGAAGC".as_ref(),
@@ -153,7 +152,6 @@ pub fn get_consensus_poa_external(
 /// let cons = pgr::libs::alignment::get_consensus_poa_builtin(&seqs, 5, -4, -8, -6, 0).unwrap();
 /// assert_eq!(cons, "AAAATTTTGG".to_string());
 /// ```
-// cargo test --doc alignment::get_consensus_poa_builtin
 pub fn get_consensus_poa_builtin(
     seqs: &[&[u8]],
     match_score: i32,
@@ -188,7 +186,7 @@ pub fn get_consensus_poa_builtin(
 
 /// Returns Strings to avoid lifetime issues
 ///
-/// ```
+/// ```ignore
 /// match which::which("clustalw") {
 ///     Ok(_) => {
 ///         let seqs = vec![

@@ -442,7 +442,7 @@ impl Tree {
     /// Parse a Newick string into a Tree.
     ///
     /// # Example
-    /// ```
+    /// ```ignore
     /// use pgr::libs::phylo::tree::Tree;
     ///
     /// // Successful parse

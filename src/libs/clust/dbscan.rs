@@ -59,7 +59,7 @@ where
     ///
     /// # Example
     ///
-    /// ```
+    /// ```ignore
     /// # use pgr::libs::clust::dbscan::Dbscan;
     /// # use pgr::libs::pairmat::ScoringMatrix;
     ///

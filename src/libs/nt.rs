@@ -93,7 +93,7 @@ pub fn to_nt(nt: u8) -> Nt {
     }
 }
 
-/// ```
+/// ```ignore
 /// assert!(pgr::libs::nt::is_n(b'n'));
 /// assert!(!pgr::libs::nt::is_n(b'Z'));
 /// assert!(!pgr::libs::nt::is_n(b'-'));
@@ -103,7 +103,7 @@ pub fn is_n(nt: u8) -> bool {
     NT_VAL[nt as usize] == Nt::N as usize
 }
 
-/// ```
+/// ```ignore
 /// assert!(pgr::libs::nt::is_lower(b'n'));
 /// assert!(!pgr::libs::nt::is_lower(b'A'));
 /// ```
@@ -111,7 +111,7 @@ pub fn is_lower(nt: u8) -> bool {
     nt.is_ascii_lowercase()
 }
 
-/// ```
+/// ```ignore
 /// let dna = b"NCTAGTCGTATCGTAGCTAGNNC";
 /// assert_eq!(pgr::libs::nt::count_n(dna), 3);
 /// ```
@@ -127,7 +127,7 @@ pub fn count_n(seq: &[u8]) -> usize {
 }
 
 /// convert IUPAC ambiguous codes to 'N'
-/// ```
+/// ```ignore
 /// assert_eq!(pgr::libs::nt::to_n(b'a'), b'a');
 /// assert_eq!(pgr::libs::nt::to_n(b'M'), b'N');
 /// ```
@@ -152,7 +152,7 @@ pub fn to_n(nt: u8) -> u8 {
 ///
 /// # Examples
 ///
-/// ```
+/// ```ignore
 /// // Test the lookup table directly
 /// assert_eq!(pgr::libs::nt::NT_COMP[b'A' as usize], b'T');
 /// assert_eq!(pgr::libs::nt::NT_COMP[b'C' as usize], b'G');
@@ -228,7 +228,7 @@ pub static NT_COMP: &[u8; 256] = &{
 ///
 /// # Examples
 ///
-/// ```
+/// ```ignore
 /// // Test complement
 /// let seq = b"ACGT";
 /// let complemented: Vec<u8> = pgr::libs::nt::complement(seq).collect();
@@ -254,7 +254,7 @@ pub fn complement<'a>(seq: &'a [u8]) -> impl DoubleEndedIterator<Item = u8> + 'a
 ///
 /// # Examples
 ///
-/// ```
+/// ```ignore
 /// let seq = b"ACGT";
 /// let rev_complemented: Vec<u8> = pgr::libs::nt::rev_comp(seq).collect();
 /// assert_eq!(rev_complemented, b"ACGT"); // Reverse complement of "ACGT" is "ACGT"

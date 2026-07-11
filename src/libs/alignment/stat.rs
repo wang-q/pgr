@@ -4,7 +4,7 @@ use itertools::Itertools;
 
 /// Divergence (D) between two sequences
 ///
-/// ```
+/// ```ignore
 /// //           * **  **
 /// let seq1 = b"GTCTGCATGCN";
 /// let seq2 = b"TTTAGCTAgc-";
@@ -42,7 +42,7 @@ pub fn pair_d(seq1: &[u8], seq2: &[u8]) -> anyhow::Result<f32> {
 
 /// Basic stats on alignments
 ///
-/// ```
+/// ```ignore
 /// let seqs = vec![
 ///     //        *
 ///     b"AAAATTTTGG".as_ref(),

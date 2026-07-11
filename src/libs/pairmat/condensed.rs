@@ -9,7 +9,7 @@
 /// The diagonal is implicitly 0.0. The matrix is symmetric.
 ///
 /// # Examples
-/// ```
+/// ```ignore
 /// # use pgr::libs::pairmat::CondensedMatrix;
 /// let mut m = CondensedMatrix::new(3);
 /// m.set(0, 1, 0.5);

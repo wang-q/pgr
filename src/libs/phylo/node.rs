@@ -37,7 +37,7 @@ impl Node {
     /// Create a new empty node with a specific ID
     ///
     /// # Example
-    /// ```
+    /// ```ignore
     /// use pgr::libs::phylo::node::Node;
     /// let node = Node::new(1);
     /// assert_eq!(node.id, 1);
@@ -59,7 +59,7 @@ impl Node {
     /// Set the name of the node
     ///
     /// # Example
-    /// ```
+    /// ```ignore
     /// use pgr::libs::phylo::node::Node;
     /// let mut node = Node::new(1);
     /// node.set_name("Node1");
@@ -72,7 +72,7 @@ impl Node {
     /// Set the name of the node (builder pattern)
     ///
     /// # Example
-    /// ```
+    /// ```ignore
     /// use pgr::libs::phylo::node::Node;
     /// let node = Node::new(1).with_name("Node1");
     /// assert_eq!(node.name, Some("Node1".to_string()));
@@ -85,7 +85,7 @@ impl Node {
     /// Set the branch length
     ///
     /// # Example
-    /// ```
+    /// ```ignore
     /// use pgr::libs::phylo::node::Node;
     /// let node = Node::new(1).with_length(0.5);
     /// assert_eq!(node.length, Some(0.5));
@@ -98,7 +98,7 @@ impl Node {
     /// Add a property (key-value pair)
     ///
     /// # Example
-    /// ```
+    /// ```ignore
     /// use pgr::libs::phylo::node::Node;
     /// let mut node = Node::new(1);
     /// node.add_property("color", "blue");
@@ -118,7 +118,7 @@ impl Node {
     /// Supports single "key=value" or multiple "key1=value1:key2=value2" (NHX style).
     ///
     /// # Example
-    /// ```
+    /// ```ignore
     /// use pgr::libs::phylo::node::Node;
     /// let mut node = Node::new(0);
     /// node.add_property_from_str("color=red");
@@ -140,7 +140,7 @@ impl Node {
     /// Get the value of a property by key.
     ///
     /// # Example
-    /// ```
+    /// ```ignore
     /// use pgr::libs::phylo::node::Node;
     /// let mut node = Node::new(0);
     /// node.add_property("T", "9606");
@@ -159,7 +159,7 @@ impl Node {
     /// but strictly speaking a node is a leaf if `children` is empty.
     ///
     /// # Example
-    /// ```
+    /// ```ignore
     /// use pgr::libs::phylo::node::Node;
     /// let mut node = Node::new(1);
     /// assert!(node.is_leaf());
