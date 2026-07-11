@@ -52,7 +52,7 @@ C++ AGC 用**位置参数**（非 `-i`/`-r` flag），`-i` 在 create/append 中
 | `getctg`  | 提取指定 contig             | `<in.agc> <contig_name>`, `-o out.fa`                                    |
 | `listref` | 列出参考样本名              | `<in.agc>`                                                               |
 | `listset` | 列出所有样本名              | `<in.agc>`                                                               |
-| `listctg` | 列出样本和 contig 名        | `<in.agc>`                                                               |
+| `listctg` | 列出样本和 contig 名        | `<in.agc> <sample_name>`                                                 |
 | `info`    | 显示统计信息                | `<in.agc>`                                                               |
 
 ## 压缩算法流程
@@ -61,7 +61,9 @@ C++ AGC 用**位置参数**（非 `-i`/`-r` flag），`-i` 在 create/append 中
 create 流程:
 1. 读取参考 FASTA → 分段（~segment_size bp/段）
 2. 每段作为一个 "group" 的参考 (group_id 递增, in_group_id=0)
-   → C++: zstd 压缩存储到 archive stream "seg.{gid}.ref"
+   → C++: ZSTD 压缩存储到 archive stream（V1/V2: `seg-{gid}-ref`, V3: `x{base64(gid)}r`）
+     * 先检测序列周期性 best_frac：若 < 0.5 用 bytes2tuples 转换 + ZSTD(level 13, marker=1)，
+       否则 plain ZSTD(level 19, marker=0)；压缩后追加 1 字节 marker 供解码判断
    → pbit: write_2bit_record 写标准 2bit 记录（保留 mask，不二次压缩）
 3. 对每个输入样本:
    a. 读取 FASTA → 分段
@@ -69,9 +71,11 @@ create 流程:
       - 计算 k-mer minimizer → 在所有 group 的参考中找最佳匹配
       - 若最佳匹配的参考段在反向上更好 → is_rev_comp=true, 反向互补
       - 用 LZ-diff 编码差异 → delta
+      - 若 delta 为空（与参考相同）→ 复用参考 (in_group_id=0)
       - 若 delta 与已有 delta 相同 → 复用 (in_group_id 指向已有)
       - 否则 → 新增到 group (in_group_id++)
-   c. 每条 delta 单独 flate2 压缩（支持随机访问单样本，不批打包）
+   c. 每 `contigs_in_pack`（`-b` 参数）条 delta 用 0xff 分隔符拼接为一个 part，
+      ZSTD 压缩（level 17）后存入 delta stream（支持按 part 随机访问）
 4. 存储元数据 (collection) → C++: archive stream; pbit: flate2 压缩到 Sample Index
 5. C++: 存储 file_type_info → archive stream
 6. 序列化 footer
@@ -87,7 +91,7 @@ create 流程:
 
 **数据结构**：
 
-- `reference`: 2-bit 编码的参考序列（A=0,C=1,G=2,T=3,N=4，其他=31）
+- `reference`: 2-bit 编码的参考序列。FASTA 转换表 `cnv_num`（`agc_basic.h`）：A=0,C=1,G=2,T=3,N=4，其他 IUPAC(R/Y/S/W/K/M/B/D/H/V/U)=5-14，无效字符=30。LZ-diff 内 `invalid_symbol=31` 仅用作参考序列尾部 padding 哨兵（`prepare_gen` 追加 key_len 个 31）
 - `ht16` / `ht32`: 开放寻址哈希表，存储参考中 k-mer 的位置
     - `short_ht_ver`: 参考长度 < 65535×hashing_step 时用 16-bit
     - `USE_SPARSE_HT`: 每 4 位取一个 key（hashing_step=4），减少表大小
@@ -97,7 +101,7 @@ create 流程:
 
 **编码格式**（V2，当前版本）：
 
-- **Literal**: `'A' + code`（单字节，code 是 0-20 的 2-bit 值）
+- **Literal**: `'A' + code`（单字节，code 0-20：0-3 为 ACGT，4 为 N，5-14 为其他 IUPAC 码；`is_literal` 判定 `'A'`..`'U'`）
 - **特殊 literal `'!'`**: 表示 "与参考同位置相同"，解码时取 `reference[pred_pos]`
 - **Match**: `<diff_pos>,<len-min_match_len>.` 或 `<diff_pos>.`（到序列末尾的匹配，len=~0u）
     - `diff_pos = ref_pos - pred_pos`（有符号，ASCII 十进制）
@@ -105,7 +109,7 @@ create 流程:
 
 **V1 vs V2 差异**：
 
-- V2 增加 "equal sequences" 优化（delta 为空）
+- "equal sequences" 优化（delta 为空）：V1 由 `IMPROVED_LZ_ENCODING`（`defs.h` 默认定义）条件启用，V2 无条件启用
 - V2 增加 "match to end" 优化（len=~0u 省略长度字段）
 - V2 增加 `'!'` back-reference literal
 - V2 增加 `get_code_skip1` 快速扫描（在前一个 key 有效且当前有 literal 时，滑动窗口而非重新计算）
@@ -135,9 +139,12 @@ while i + key_len < text_size:
         if len_bck > 0:              # 回溯替换之前的 literal
             pop len_bck 个 literal
             match_pos -= len_bck
-        if match_pos == pred_pos:    # 同位置匹配，标记 '!'
-            替换匹配的 literal 为 '!'
-        encode_match(match_pos, len, pred_pos)
+        if match_pos == pred_pos:    # 同位置匹配
+            回看之前已编码的 literal，若值 == reference[match_pos - i] 则替换为 '!'
+        if 到序列末尾:               # match-to-end 优化
+            encode_match(match_pos, ~0u, pred_pos)   # len=~0u 省略长度字段
+        else:
+            encode_match(match_pos, len, pred_pos)
         i += len, pred_pos = match_pos + len
 ```
 
@@ -149,42 +156,51 @@ while i + key_len < text_size:
 
 ```
 ┌─────────────────────────────────────┐  ← 文件起始
-│ Stream 0, Part 0 data              │
-│ Stream 0, Part 1 data              │
+│ Stream 0, Part 0: metadata(varint) + raw_data
+│ Stream 0, Part 1: metadata(varint) + raw_data
 │ ...                                │
-│ Stream 1, Part 0 data              │
+│ Stream 1, Part 0: ...              │
 │ ...                                │
 ├─────────────────────────────────────┤
-│ Footer                              │  ← footer_offset 处
+│ Footer                              │  ← file_size - 8 - footer_size 处
 │  ├─ no_streams (varint)            │
 │  ├─ for each stream:               │
 │  │   ├─ stream_name (null-term str) │
-│  │   ├─ cur_id (varint)            │
+│  │   ├─ no_parts (varint)          │  ← 读入 cur_id，即 parts 数
 │  │   ├─ raw_size (varint)          │
-│  │   ├─ packed_size (varint)       │
-│  │   ├─ packed_data_size (varint)  │
-│  │   ├─ no_parts (varint)          │
 │  │   └─ for each part:             │
-│  │       ├─ offset (fixed uint64)  │
-│  │       └─ size (fixed uint64)    │
+│  │       ├─ offset (varint)        │  ← 非 fixed，用 write()
+│  │       └─ size (varint)          │  ← 非 fixed，用 write()
+│  （注：packed_size / packed_data_size 仅内存字段，不写入 footer）
 ├─────────────────────────────────────┤
 │ footer_size (fixed uint64 LE)       │  ← 文件末 8 字节
 └─────────────────────────────────────┘
 ```
+
+> **数据区每个 part** = `metadata`(varint) + `raw_data`。metadata 由写入方指定
+> （如 delta part 存 raw_size=解压后字节数，0 表示未压缩）。
 
 **变长整数编码**（`CArchive::write<T>`）：
 
 - 第 1 字节: 值的字节数 N
 - 后续 N 字节: 值的大端表示
 
-**固定整数**（`write_fixed<T>`）：8 字节小端 uint64
+**固定整数**（`write_fixed<T>`）：8 字节小端 uint64（`COutFile::WriteUInt` 逐字节低位先行）
 
 ### Stream 命名约定
 
 - `file_type_info` — 归档元数据（producer, version, comment）
-- `seg.{group_id}.ref` — 参考序列段（每 group 一个 stream，1 part）
-- `seg.{group_id}.delta` — delta 编码段（每 group 一个 stream，多 part）
-- `collection` — 样本/contig/segment 元数据
+- `params` — 压缩参数（kmer_length, min_match_len, pack_cardinality, segment_size）
+- 参考序列段（每 group 一个 stream，1 part）：
+    - V1/V2: `seg-{group_id}-ref`
+    - V3: `x{base64(group_id)}r`（base64 编码 group_id，紧凑命名）
+- delta 编码段（每 group 一个 stream，多 part）：
+    - V1/V2: `seg-{group_id}-delta`
+    - V3: `x{base64(group_id)}d`
+- collection 元数据（按版本拆分为多个 stream，无单一 `collection` 流）：
+    - V1: `collection-desc`
+    - V2: `collection-main` + `collection-details`
+    - V3: `collection-samples` + `collection-contigs` + `collection-details`
 
 ### 元数据结构（collection.h）
 
@@ -203,7 +219,7 @@ struct segment_desc_t {
 **元数据序列化**（V3）：
 
 - 使用前缀编码变长 uint32（1-5 字节，类似 UTF-8 编码）
-- 整个元数据块用 zstd 压缩后存入 `collection` stream
+- 元数据拆分为 samples / contigs / details 三部分，分别 ZSTD 压缩后存入对应的 `collection-*` stream（见上文 Stream 命名约定）
 
 ## 版本演进
 

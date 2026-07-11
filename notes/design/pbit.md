@@ -296,9 +296,12 @@ fn decompress(data: &[u8]) -> Vec<u8> {
 |----------------------|---------------------------------------------------------------|-----------------------------------------------|
 | `libs::nt::rev_comp` | [libs/nt](file:///Volumes/ExtHome/Scripts/pgr/src/libs/nt.rs) | LZ-diff 的反向互补参考                        |
 | `indexmap::IndexMap` | crate                                                         | 保序 HashMap（pgr 统一模式）                  |
-| `minimizer-iter`     | crate                                                         | 参考选择的 minimizer 计算                     |
 | `murmurhash3`        | crate                                                         | LZ-diff 哈希表（与 C++ AGC 的 MurMur64 对齐） |
 | `rayon`              | crate                                                         | 并行压缩（多 contig 同时编码）                |
+
+> **注**：`minimizer-iter` 虽为 pgr 依赖（用于 `libs/hash.rs`），但 pbit 当前**未使用**——参考选择
+> 按 contig 名 + 段位置索引匹配（`contig_ref_groups`，见 §PAF 驱动 §1），k-mer 采样仅用于方向
+> 检测（`detect_rev_comp`）。若未来引入 minimizer 参考选择可再启用。
 
 ## Rust 架构建议
 
@@ -372,7 +375,7 @@ pub struct DeltaEntry {
 
 // lz_diff.rs — LZ-diff encoder/decoder (V2), mirrors C++ CLZDiff_V2.
 pub struct LzDiff {
-    reference: Vec<u8>,       // 2-bit encoded (A=0,C=1,G=2,T=3,N=4, other=31)
+    reference: Vec<u8>,       // 2-bit encoded (A=0,C=1,G=2,T=3, non-ACGT=N_CODE=4; INVALID_SYMBOL=31 for key_len padding)
     ht: HashTable,            // u16 or u32 positions (built lazily by prepare_index)
     min_match_len: u32,       // default 18
     key_len: u32,             // = min_match_len - hashing_step + 1 (= 15)
