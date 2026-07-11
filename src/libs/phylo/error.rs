@@ -1,5 +1,6 @@
 use std::fmt;
 
+/// Tree-level error type.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TreeError {
     /// Error during parsing (e.g., syntax error)

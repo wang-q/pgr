@@ -87,7 +87,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         let mut s = to_forest(&tree, height);
 
         // a bar of unit length
-        if is_bl {
+        if is_bl && height > 0.0 {
             let (scale, bar_mm) = compute_scale_bar(height);
 
             // Draw scale bar

@@ -104,12 +104,8 @@ impl Node {
     /// assert_eq!(node.get_property("color"), Some(&"blue".to_string()));
     /// ```
     pub fn add_property(&mut self, key: impl Into<String>, value: impl Into<String>) {
-        if self.properties.is_none() {
-            self.properties = Some(BTreeMap::new());
-        }
         self.properties
-            .as_mut()
-            .unwrap()
+            .get_or_insert_with(BTreeMap::new)
             .insert(key.into(), value.into());
     }
 

@@ -13,6 +13,7 @@ pub mod traversal;
 use super::node::{Node, NodeId};
 use std::collections::{BTreeMap, BTreeSet};
 
+/// Arena-based phylogenetic tree.
 #[derive(Debug, Default, Clone)]
 pub struct Tree {
     /// Arena storage for all nodes

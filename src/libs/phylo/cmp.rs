@@ -42,6 +42,34 @@ pub trait TreeComparison {
     fn kuhner_felsenstein(&self, other: &Self) -> anyhow::Result<f64>;
 }
 
+/// Check leaf-set equality and build a sorted leaf_map for split comparison.
+fn check_leaves_and_build_map(t1: &Tree, t2: &Tree) -> anyhow::Result<BTreeMap<String, usize>> {
+    let leaves_self: HashSet<_> = t1.get_leaf_names().into_iter().flatten().collect();
+    let leaves_other: HashSet<_> = t2.get_leaf_names().into_iter().flatten().collect();
+
+    if leaves_self != leaves_other {
+        let mut diff1: Vec<_> = leaves_self.difference(&leaves_other).collect();
+        let mut diff2: Vec<_> = leaves_other.difference(&leaves_self).collect();
+        diff1.sort();
+        diff2.sort();
+        anyhow::bail!(
+            "Leaf sets do not match.\nIn Tree1 but not Tree2: {:?}\nIn Tree2 but not Tree1: {:?}",
+            diff1,
+            diff2
+        );
+    }
+
+    let mut all_leaves: Vec<_> = leaves_self.into_iter().collect();
+    all_leaves.sort();
+
+    let mut leaf_map = BTreeMap::new();
+    for (i, name) in all_leaves.iter().enumerate() {
+        leaf_map.insert(name.clone(), i);
+    }
+
+    Ok(leaf_map)
+}
+
 impl TreeComparison for Tree {
     fn get_splits(&self, leaf_map: &BTreeMap<String, usize>) -> HashSet<FixedBitSet> {
         let num_leaves = leaf_map.len();
@@ -111,38 +139,13 @@ impl TreeComparison for Tree {
     }
 
     fn robinson_foulds(&self, other: &Self) -> anyhow::Result<usize> {
-        // 1. Check leaf consistency
-        // get_leaf_names returns Vec<Option<String>>
-        let leaves_self: HashSet<_> = self.get_leaf_names().into_iter().flatten().collect();
-        let leaves_other: HashSet<_> = other.get_leaf_names().into_iter().flatten().collect();
+        let leaf_map = check_leaves_and_build_map(self, other)?;
 
-        if leaves_self != leaves_other {
-            // Sort for consistent error message
-            let mut diff1: Vec<_> = leaves_self.difference(&leaves_other).collect();
-            let mut diff2: Vec<_> = leaves_other.difference(&leaves_self).collect();
-            diff1.sort();
-            diff2.sort();
-            anyhow::bail!(
-                "Leaf sets do not match.\nIn Tree1 but not Tree2: {:?}\nIn Tree2 but not Tree1: {:?}",
-                diff1,
-                diff2
-            );
-        }
-
-        // 2. Build map
-        let mut all_leaves: Vec<_> = leaves_self.into_iter().collect();
-        all_leaves.sort(); // Deterministic order
-
-        let mut leaf_map = BTreeMap::new();
-        for (i, name) in all_leaves.iter().enumerate() {
-            leaf_map.insert(name.clone(), i);
-        }
-
-        // 3. Get splits
+        // Get splits
         let splits1 = self.get_splits(&leaf_map);
         let splits2 = other.get_splits(&leaf_map);
 
-        // 4. Calculate symmetric difference size
+        // Calculate symmetric difference size
         // |A \ B| + |B \ A| = (A union B) - (A intersect B)
         // Or just count differences
         let diff1 = splits1.difference(&splits2).count();
@@ -152,36 +155,13 @@ impl TreeComparison for Tree {
     }
 
     fn weighted_robinson_foulds(&self, other: &Self) -> anyhow::Result<f64> {
-        // 1. Check leaf consistency
-        let leaves_self: HashSet<_> = self.get_leaf_names().into_iter().flatten().collect();
-        let leaves_other: HashSet<_> = other.get_leaf_names().into_iter().flatten().collect();
+        let leaf_map = check_leaves_and_build_map(self, other)?;
 
-        if leaves_self != leaves_other {
-            let mut diff1: Vec<_> = leaves_self.difference(&leaves_other).collect();
-            let mut diff2: Vec<_> = leaves_other.difference(&leaves_self).collect();
-            diff1.sort();
-            diff2.sort();
-            anyhow::bail!(
-                "Leaf sets do not match.\nIn Tree1 but not Tree2: {:?}\nIn Tree2 but not Tree1: {:?}",
-                diff1,
-                diff2
-            );
-        }
-
-        // 2. Build map
-        let mut all_leaves: Vec<_> = leaves_self.into_iter().collect();
-        all_leaves.sort();
-
-        let mut leaf_map = BTreeMap::new();
-        for (i, name) in all_leaves.iter().enumerate() {
-            leaf_map.insert(name.clone(), i);
-        }
-
-        // 3. Get splits with values
+        // Get splits with values
         let splits1 = self.get_splits_with_values(&leaf_map);
         let splits2 = other.get_splits_with_values(&leaf_map);
 
-        // 4. Calculate WRF
+        // Calculate WRF
         let mut dist = 0.0;
 
         // Iterate over union of keys
@@ -197,36 +177,13 @@ impl TreeComparison for Tree {
     }
 
     fn kuhner_felsenstein(&self, other: &Self) -> anyhow::Result<f64> {
-        // 1. Check leaf consistency
-        let leaves_self: HashSet<_> = self.get_leaf_names().into_iter().flatten().collect();
-        let leaves_other: HashSet<_> = other.get_leaf_names().into_iter().flatten().collect();
+        let leaf_map = check_leaves_and_build_map(self, other)?;
 
-        if leaves_self != leaves_other {
-            let mut diff1: Vec<_> = leaves_self.difference(&leaves_other).collect();
-            let mut diff2: Vec<_> = leaves_other.difference(&leaves_self).collect();
-            diff1.sort();
-            diff2.sort();
-            anyhow::bail!(
-                "Leaf sets do not match.\nIn Tree1 but not Tree2: {:?}\nIn Tree2 but not Tree1: {:?}",
-                diff1,
-                diff2
-            );
-        }
-
-        // 2. Build map
-        let mut all_leaves: Vec<_> = leaves_self.into_iter().collect();
-        all_leaves.sort();
-
-        let mut leaf_map = BTreeMap::new();
-        for (i, name) in all_leaves.iter().enumerate() {
-            leaf_map.insert(name.clone(), i);
-        }
-
-        // 3. Get splits with values
+        // Get splits with values
         let splits1 = self.get_splits_with_values(&leaf_map);
         let splits2 = other.get_splits_with_values(&leaf_map);
 
-        // 4. Calculate KF (Sum of squares)
+        // Calculate KF (Sum of squares)
         let mut sum_sq = 0.0;
 
         // Iterate over union of keys

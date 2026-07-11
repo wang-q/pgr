@@ -64,8 +64,7 @@ fn to_forest_node_props(tree: &Tree, id: NodeId, height: f64) -> String {
 
     // internal node's name will be treated as labels and place a dot there
     if !node.is_leaf() && name.is_some() {
-        label = Some(name.clone().unwrap());
-        name = None;
+        label = name.take();
         // dot with default color
         repr += ", dot";
     }
@@ -96,27 +95,23 @@ fn to_forest_node_props(tree: &Tree, id: NodeId, height: f64) -> String {
         }
     }
 
-    if color.is_some() {
-        if name.is_some() {
-            repr = format!(
-                ", \\color{{{}}}{{{}}}",
-                color.clone().unwrap(),
-                name.clone().unwrap()
-            ) + &repr;
+    if let Some(color) = &color {
+        if let Some(name) = &name {
+            repr = format!(", \\color{{{}}}{{{}}}", color, name) + &repr;
         }
-        if label.is_some() && !label.clone().unwrap().is_empty() {
-            repr += &format!(
-                ", label=\\color{{{}}}{{{}}}",
-                color.clone().unwrap(),
-                label.clone().unwrap()
-            );
+        if let Some(label) = &label {
+            if !label.is_empty() {
+                repr += &format!(", label=\\color{{{}}}{{{}}}", color, label);
+            }
         }
     } else {
-        if name.is_some() {
-            repr = format!("{{{}}},", name.clone().unwrap()) + &repr;
+        if let Some(name) = &name {
+            repr = format!("{{{}}},", name) + &repr;
         }
-        if label.is_some() && !label.clone().unwrap().is_empty() {
-            repr += &format!(", label={{{}}}", label.clone().unwrap());
+        if let Some(label) = &label {
+            if !label.is_empty() {
+                repr += &format!(", label={{{}}}", label);
+            }
         }
     }
 
