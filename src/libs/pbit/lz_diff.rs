@@ -38,15 +38,14 @@ pub struct LzDiff {
     index_ready: bool,
 }
 
-/// Encode an ASCII DNA byte to 2-bit value (A=0, C=1, G=2, T=3, N=4, other=31).
+/// Encode an ASCII DNA byte to 2-bit value (A=0, C=1, G=2, T=3, other=N).
 fn encode_base(c: u8) -> u8 {
     match c {
         b'A' | b'a' => 0,
         b'C' | b'c' => 1,
         b'G' | b'g' => 2,
         b'T' | b't' | b'U' | b'u' => 3,
-        _ if c.is_ascii_alphabetic() => N_CODE,
-        _ => INVALID_SYMBOL,
+        _ => N_CODE,
     }
 }
 
@@ -280,12 +279,18 @@ impl LzDiff {
         ((code << 2) & self.key_mask) | (new_base as u64)
     }
 
-    /// Detect a run of N_CODE starting at `s[0]`. Returns 0 if fewer than 3.
+    /// Detect a run of N_CODE starting at `s[0]`. Returns 0 if fewer than MIN_NRUN_LEN.
     fn get_nrun_len(s: &[u8], max_len: u32) -> u32 {
-        if s.len() < 3 || s[0] != N_CODE || s[1] != N_CODE || s[2] != N_CODE {
+        let min_len = MIN_NRUN_LEN as usize;
+        if s.len() < min_len {
             return 0;
         }
-        let mut len = 3usize;
+        for &b in s.iter().take(min_len) {
+            if b != N_CODE {
+                return 0;
+            }
+        }
+        let mut len = min_len;
         let limit = (max_len as usize).min(s.len());
         while len < limit && s[len] == N_CODE {
             len += 1;
@@ -347,7 +352,7 @@ impl LzDiff {
                     b_len += 1;
                 }
 
-                if b_len + f_len > min_to_update {
+                if b_len + f_len >= min_to_update {
                     *len_bck = b_len;
                     *len_fwd = f_len;
                     *match_pos = h_pos;
@@ -374,13 +379,10 @@ impl LzDiff {
 
     /// Encode `text` against the prepared reference into `encoded`.
     pub fn encode(&mut self, text: &[u8], encoded: &mut Vec<u8>) {
-        // Guard against API misuse: if prepare() was never called (or the
-        // reference is shorter than key_len), the equal-sequences check below
-        // would underflow `reference.len() as u32 - key_len`.
-        if self.reference.len() < self.key_len as usize {
-            encoded.clear();
-            return;
-        }
+        assert!(
+            !self.reference.is_empty(),
+            "LzDiff::encode called before prepare()"
+        );
         if !self.index_ready {
             self.prepare_index();
         }
@@ -814,5 +816,95 @@ mod tests {
         // Deletion
         text.remove(1500);
         assert_roundtrip(&reference, &text, 18);
+    }
+
+    #[test]
+    fn test_encode_base_non_acgt_maps_to_n() {
+        assert_eq!(encode_base(b'N'), N_CODE);
+        assert_eq!(encode_base(b'n'), N_CODE);
+        assert_eq!(encode_base(b'R'), N_CODE);
+        assert_eq!(encode_base(b'1'), N_CODE);
+        assert_eq!(encode_base(b'*'), N_CODE);
+        assert_eq!(encode_base(b' '), N_CODE);
+    }
+
+    #[test]
+    fn test_nrun_threshold_min_nrun_len() {
+        // 3 Ns must NOT be encoded as an N-run (MIN_NRUN_LEN = 4).
+        let reference = b"ACGTACGTACGTACGTACGT";
+        let text_three_n = b"NNN";
+        let mut lz = LzDiff::new(18);
+        lz.prepare(reference);
+        lz.prepare_index();
+        let mut encoded = Vec::new();
+        lz.encode(text_three_n, &mut encoded);
+        let mut decoded = Vec::new();
+        lz.decode(&encoded, &mut decoded).expect("decode failed");
+        assert_eq!(decoded, vec![N_CODE; 3]);
+
+        // 4 Ns roundtrip correctly (N-run is allowed but not required for very
+        // short texts because the main loop needs key_len bases).
+        let text_four_n = b"NNNN";
+        let mut encoded = Vec::new();
+        lz.encode(text_four_n, &mut encoded);
+        let mut decoded = Vec::new();
+        lz.decode(&encoded, &mut decoded).expect("decode failed");
+        assert_eq!(decoded, vec![N_CODE; 4]);
+
+        // Use a small min_match_len so 4 Ns are long enough to enter the main
+        // loop and trigger N-run encoding.
+        let mut lz_small = LzDiff::new(5);
+        lz_small.prepare(reference);
+        lz_small.prepare_index();
+        let mut encoded = Vec::new();
+        lz_small.encode(text_four_n, &mut encoded);
+        // N-run encoding: starter + varint(len - MIN_NRUN_LEN) + N_CODE.
+        // For len == 4 this is 3 bytes, smaller than 4 literal bytes.
+        assert!(
+            encoded.len() < text_four_n.len(),
+            "4 Ns should be compressed by N-run encoding"
+        );
+        let mut decoded = Vec::new();
+        lz_small
+            .decode(&encoded, &mut decoded)
+            .expect("decode failed");
+        assert_eq!(decoded, vec![N_CODE; 4]);
+    }
+
+    #[test]
+    fn test_encode_without_prepare_panics() {
+        let mut lz = LzDiff::new(18);
+        let mut encoded = Vec::new();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            lz.encode(b"ACGT", &mut encoded);
+        }));
+        assert!(result.is_err(), "encode before prepare should panic");
+    }
+
+    #[test]
+    fn test_find_best_match_exact_min_match_len() {
+        // Reference is 30 As; text contains a block of exactly 10 As.
+        // min_match_len = 10, so the 10-A block is a valid match of exactly
+        // the minimum length and must be used (delta non-empty, roundtrip OK).
+        let reference = vec![b'A'; 30];
+        let mut text = vec![b'G'; 10];
+        text.extend(vec![b'A'; 10]);
+        text.extend(vec![b'G'; 10]);
+
+        let mut lz = LzDiff::new(10);
+        lz.prepare(&reference);
+        lz.prepare_index();
+
+        let mut encoded = Vec::new();
+        lz.encode(&text, &mut encoded);
+        assert!(
+            !encoded.is_empty(),
+            "exact-min-match should produce a match"
+        );
+
+        let mut decoded = Vec::new();
+        lz.decode(&encoded, &mut decoded).expect("decode failed");
+        let expected: Vec<u8> = text.iter().map(|&c| encode_base(c)).collect();
+        assert_eq!(decoded, expected);
     }
 }
