@@ -96,15 +96,6 @@ impl Tree {
         ops::insert_parent(self, child_id)
     }
 
-    /// Swap a node with its parent, returning the previous edge length.
-    pub fn swap_parent(
-        &mut self,
-        node_id: NodeId,
-        prev_edge: Option<f64>,
-    ) -> anyhow::Result<Option<f64>> {
-        ops::swap_parent(self, node_id, prev_edge)
-    }
-
     /// Insert a common parent above two sibling nodes.
     pub fn insert_parent_pair(&mut self, id1: NodeId, id2: NodeId) -> anyhow::Result<NodeId> {
         ops::insert_parent_pair(self, id1, id2)

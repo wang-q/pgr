@@ -73,8 +73,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // Header
     writeln!(writer, "Tree1\tTree2\tRF_Dist\tWRF_Dist\tKF_Dist")?;
 
+    // Single-file mode: skip self-comparisons (j == i) and duplicate pairs
+    // (j < i) since RF is symmetric. Two-file mode: full cross comparison.
     for (i, t1) in trees1.iter().enumerate() {
-        for (j, t2) in trees2.iter().enumerate() {
+        let start_j = if compare_file.is_some() { 0 } else { i + 1 };
+        for (j, t2) in trees2.iter().enumerate().skip(start_j) {
             let (rf, wrf, kf) = pgr::libs::phylo::cmp::compute_tree_metrics(t1, t2)?;
             writeln!(writer, "{}\t{}\t{}\t{}\t{}", i + 1, j + 1, rf, wrf, kf)?;
         }

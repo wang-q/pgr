@@ -232,54 +232,6 @@ pub fn insert_parent(tree: &mut Tree, id: NodeId) -> anyhow::Result<NodeId> {
     Ok(new_node)
 }
 
-/// Swap parent-child link of a node.
-/// This reverses the edge between the node and its parent.
-pub fn swap_parent(
-    tree: &mut Tree,
-    id: NodeId,
-    _prev_edge: Option<f64>,
-) -> anyhow::Result<Option<f64>> {
-    let node = tree
-        .get_node(id)
-        .ok_or_else(|| anyhow::anyhow!("Node {} not found", id))?;
-    let parent = node
-        .parent
-        .ok_or_else(|| anyhow::anyhow!("Node {} has no parent", id))?;
-
-    // Swap lengths
-    let child_len = node.length;
-    let parent_len = tree
-        .get_node(parent)
-        .ok_or_else(|| anyhow::anyhow!("Parent {} not found", parent))?
-        .length;
-
-    if let Some(p_node) = tree.get_node_mut(parent) {
-        p_node.length = child_len;
-    }
-    if let Some(node) = tree.get_node_mut(id) {
-        node.length = parent_len;
-    }
-
-    // Unlink parent -> id
-    if let Some(p_node) = tree.get_node_mut(parent) {
-        p_node.children.retain(|&c| c != id);
-    }
-    // Unlink id -> parent
-    if let Some(node) = tree.get_node_mut(id) {
-        node.parent = None;
-    }
-
-    // Link id -> parent (parent becomes child)
-    // We must clear parent's parent pointer to satisfy add_child check (as parent is "moving down")
-    if let Some(p_node) = tree.get_node_mut(parent) {
-        p_node.parent = None;
-    }
-
-    add_child(tree, id, parent)?;
-
-    Ok(None)
-}
-
 /// Insert a new parent node for a pair of nodes (LCA-based).
 /// Returns the new parent node ID.
 pub fn insert_parent_pair(tree: &mut Tree, id1: NodeId, id2: NodeId) -> anyhow::Result<NodeId> {
@@ -648,6 +600,18 @@ pub fn reroot_at_lca(
 /// Reroot at the midpoint of the longest branch. No-op when the tree has no
 /// edges.
 pub fn reroot_at_longest_branch(tree: &mut Tree, process_support: bool) -> anyhow::Result<()> {
+    // Skip when no meaningful branch lengths exist (cladogram); otherwise
+    // get_node_with_longest_edge would return an arbitrary node due to
+    // tie-breaking, producing a meaningless reroot.
+    let has_length = tree
+        .nodes
+        .iter()
+        .any(|n| !n.deleted && n.length.map(|l| l > 0.0).unwrap_or(false));
+    if !has_length {
+        log::warn!("reroot_at_longest_branch: tree has no positive branch lengths, skipping");
+        return Ok(());
+    }
+
     if let Some(longest_node) = tree.get_node_with_longest_edge() {
         let new_root = tree.insert_parent(longest_node)?;
         tree.reroot_at(new_root, process_support)?;

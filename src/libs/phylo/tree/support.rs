@@ -1,12 +1,12 @@
 use super::Tree;
 use crate::libs::phylo::node::NodeId;
 use fixedbitset::FixedBitSet;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 /// Build a map from leaf name to index (0..N-1).
 /// Uses the first tree to establish the mapping.
-pub fn build_leaf_map(tree: &Tree) -> anyhow::Result<HashMap<String, usize>> {
-    let mut map = HashMap::new();
+pub fn build_leaf_map(tree: &Tree) -> anyhow::Result<BTreeMap<String, usize>> {
+    let mut map = BTreeMap::new();
     let mut index = 0;
 
     let mut leaf_names = Vec::new();
@@ -21,12 +21,11 @@ pub fn build_leaf_map(tree: &Tree) -> anyhow::Result<HashMap<String, usize>> {
     }
 
     leaf_names.sort();
+    leaf_names.dedup();
 
     for name in leaf_names {
-        if let std::collections::hash_map::Entry::Vacant(e) = map.entry(name) {
-            e.insert(index);
-            index += 1;
-        }
+        map.insert(name, index);
+        index += 1;
     }
 
     Ok(map)
@@ -36,7 +35,7 @@ pub fn build_leaf_map(tree: &Tree) -> anyhow::Result<HashMap<String, usize>> {
 /// Returns a map NodeId -> FixedBitSet.
 pub fn compute_all_bitsets(
     tree: &Tree,
-    leaf_map: &HashMap<String, usize>,
+    leaf_map: &BTreeMap<String, usize>,
 ) -> anyhow::Result<HashMap<NodeId, FixedBitSet>> {
     let num_leaves = leaf_map.len();
     let mut node_bitsets = HashMap::new();
@@ -74,7 +73,7 @@ pub fn compute_all_bitsets(
 /// If `as_percent` is true, values are written as integer percentages of `total_reps`.
 pub fn annotate_support(
     target: &mut Tree,
-    leaf_map: &HashMap<String, usize>,
+    leaf_map: &BTreeMap<String, usize>,
     counts: &HashMap<FixedBitSet, usize>,
     total_reps: usize,
     as_percent: bool,
@@ -103,7 +102,7 @@ pub fn annotate_support(
 /// Count clade frequencies from a list of replicate trees.
 pub fn count_clades(
     trees: &[Tree],
-    leaf_map: &HashMap<String, usize>,
+    leaf_map: &BTreeMap<String, usize>,
 ) -> anyhow::Result<HashMap<FixedBitSet, usize>> {
     let mut counts = HashMap::new();
 

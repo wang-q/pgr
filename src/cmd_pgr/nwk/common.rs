@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use anyhow::anyhow;
 use clap::ArgMatches;
-use pgr::libs::phylo::node::Node;
+use pgr::libs::phylo::node::{Node, NodeId};
 use pgr::libs::phylo::tree::Tree;
 use regex::RegexBuilder;
 
@@ -120,18 +120,17 @@ pub(crate) fn match_names(tree: &Tree, args: &ArgMatches) -> anyhow::Result<BTre
     };
 
     if is_descendants {
-        let nodes: Vec<Node> = ids
+        let internal_ids: Vec<NodeId> = ids
             .iter()
-            .filter_map(|e| tree.get_node(*e).cloned())
+            .filter(|&&id| tree.get_node(id).map(|n| !n.is_leaf()).unwrap_or(false))
+            .copied()
             .collect();
-        for node in &nodes {
-            if !node.is_leaf() {
-                let subtree_ids = tree.get_subtree(&node.id);
-                for id in &subtree_ids {
-                    if let Some(n) = tree.get_node(*id) {
-                        if n.name.is_some() {
-                            ids.insert(*id);
-                        }
+        for id in &internal_ids {
+            let subtree_ids = tree.get_subtree(id);
+            for sid in &subtree_ids {
+                if let Some(n) = tree.get_node(*sid) {
+                    if n.name.is_some() {
+                        ids.insert(*sid);
                     }
                 }
             }
