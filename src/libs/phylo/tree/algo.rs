@@ -26,15 +26,7 @@ pub fn sort_by_name(tree: &mut Tree, descending: bool) {
     let root = tree
         .get_root()
         .expect("internal: non-empty tree has a root");
-    // We can use levelorder to visit all nodes, but we just need to iterate all nodes.
-    // However, to propagate sorting up the tree (inheriting labels), we should use post-order.
-    // Or, we can just sort all nodes. For a single pass, if we just sort children, the order of visiting nodes matters
-    // IF the sort criteria depends on the sorted order of children (which it does for recursive labeling).
-    // So we MUST use post-order (leaves first, then parents).
-    let ids = match tree.postorder(&root) {
-        Ok(v) => v,
-        Err(_) => return,
-    };
+    let ids = tree.postorder(&root);
 
     // Pre-collect names to avoid borrowing issues during sort
     let mut name_map: HashMap<NodeId, String> = HashMap::new();
@@ -45,13 +37,6 @@ pub fn sort_by_name(tree: &mut Tree, descending: bool) {
     }
 
     for id in ids {
-        // We need to re-borrow name_map for each node if we update it?
-        // Actually, if a node is unnamed, we want to USE its children's names.
-        // But we are iterating post-order. Children are already visited and sorted.
-        // So when we are at `id`, its children are sorted.
-        // We can determine the "effective name" of `id` now.
-
-        // Let's get the node
         let children = if let Some(node) = tree.get_node(id) {
             node.children.clone()
         } else {
@@ -62,9 +47,6 @@ pub fn sort_by_name(tree: &mut Tree, descending: bool) {
             continue;
         }
 
-        // Sort children
-        // To avoid double borrow (tree immutable in sort_by closure vs tree mutable in get_node_mut),
-        // we can collect sort keys first.
         let mut child_keys: HashMap<NodeId, String> = HashMap::new();
         for &child_id in &children {
             child_keys.insert(child_id, get_sort_key(tree, &name_map, child_id));
@@ -72,7 +54,6 @@ pub fn sort_by_name(tree: &mut Tree, descending: bool) {
 
         if let Some(node) = tree.get_node_mut(id) {
             node.children.sort_by(|&a, &b| {
-                // Get name or derive from children
                 let name_a = child_keys.get(&a).map(|s| s.as_str()).unwrap_or("");
                 let name_b = child_keys.get(&b).map(|s| s.as_str()).unwrap_or("");
 
@@ -84,11 +65,8 @@ pub fn sort_by_name(tree: &mut Tree, descending: bool) {
             });
         }
 
-        // After sorting children, update name_map for THIS node if it has no name
-        // This ensures parents can use this node's derived name
         if let Some(node) = tree.get_node(id) {
             if node.name.as_deref().unwrap_or("").is_empty() {
-                // Derived name is the name/key of the first child (after sort)
                 if let Some(&first_child) = node.children.first() {
                     let child_key = get_sort_key(tree, &name_map, first_child);
                     name_map.insert(id, child_key);
@@ -104,13 +82,7 @@ fn get_sort_key(tree: &Tree, name_map: &HashMap<NodeId, String>, id: NodeId) -> 
             return name.clone();
         }
     }
-    // Fallback if not in map or empty (should be in map if visited post-order)
-    // But if it was a leaf with empty name, it stays empty?
-    // If it's a leaf, name_map has ""
-    // If it's an internal node, we might have updated name_map in the loop.
 
-    // If we are here, it means name_map has "" or missing.
-    // If missing, try to get from tree
     if let Some(node) = tree.get_node(id) {
         return node.name.clone().unwrap_or_default();
     }
@@ -146,38 +118,26 @@ pub fn ladderize(tree: &mut Tree, descending: bool) {
     let root = tree
         .get_root()
         .expect("internal: non-empty tree has a root");
-    let ids = match tree.levelorder(&root) {
-        Ok(v) => v,
-        Err(_) => return,
-    };
+    let ids = tree.levelorder(&root);
 
-    // Calculate descendant counts
-    // Since `get_subtree` (preorder) returns the node itself + descendants,
-    // the count is simply len() - 1 (if we strictly mean descendants) or len() (subtree size).
-    // Subtree size is stable.
     let mut size_map: HashMap<NodeId, usize> = HashMap::new();
 
-    // Optimization: Calculate sizes bottom-up (postorder) instead of calling get_subtree for each node.
-    // But get_subtree is O(N) per call, making this O(N^2).
-    // Let's use postorder to do it in O(N).
-    if let Ok(post_ids) = tree.postorder(&root) {
-        for &id in &post_ids {
-            let mut count = 0;
-            if let Some(node) = tree.get_node(id) {
-                if node.is_leaf() {
-                    count = 1; // Count self as 1 unit of "size"
-                } else {
-                    count = 1; // Self
-                    for child in &node.children {
-                        count += size_map.get(child).unwrap_or(&0);
-                    }
+    let post_ids = tree.postorder(&root);
+    for &id in &post_ids {
+        let mut count = 0;
+        if let Some(node) = tree.get_node(id) {
+            if node.is_leaf() {
+                count = 1;
+            } else {
+                count = 1;
+                for child in &node.children {
+                    count += size_map.get(child).unwrap_or(&0);
                 }
             }
-            size_map.insert(id, count);
         }
+        size_map.insert(id, count);
     }
 
-    // Now sort
     for id in ids {
         if let Some(node) = tree.get_node_mut(id) {
             if node.children.is_empty() {
@@ -236,53 +196,42 @@ pub fn sort_by_list(tree: &mut Tree, order_list: &[String]) {
     let max_pos = order_list.len();
     let mut node_pos: HashMap<NodeId, usize> = HashMap::new();
 
-    // Compute positions bottom-up (postorder)
-    if let Ok(ids) = tree.postorder(&root) {
-        for &id in &ids {
-            let mut pos = max_pos;
-            if let Some(node) = tree.get_node(id) {
-                // 1. Check self name
-                if let Some(name) = &node.name {
-                    if let Some(&p) = pos_map.get(name) {
-                        pos = p;
-                    }
+    let ids = tree.postorder(&root);
+    for &id in &ids {
+        let mut pos = max_pos;
+        if let Some(node) = tree.get_node(id) {
+            if let Some(name) = &node.name {
+                if let Some(&p) = pos_map.get(name) {
+                    pos = p;
                 }
+            }
 
-                // 2. Check children (if self didn't override, or maybe we want min of self+children?)
-                // Usually for ladderize/sorting, if I am a leaf, I use my name.
-                // If I am internal, I use my children's derived positions.
-                // The newick.rs logic was: check descendants.
-                // Here, since we are bottom-up, children are already processed.
-                for &child in &node.children {
-                    if let Some(&child_p) = node_pos.get(&child) {
-                        if child_p < pos {
-                            pos = child_p;
-                        }
+            for &child in &node.children {
+                if let Some(&child_p) = node_pos.get(&child) {
+                    if child_p < pos {
+                        pos = child_p;
                     }
                 }
             }
-            node_pos.insert(id, pos);
         }
+        node_pos.insert(id, pos);
     }
 
-    // Sort children
-    // We can iterate all nodes or use levelorder.
-    if let Ok(ids) = tree.levelorder(&root) {
-        for id in ids {
-            if let Some(node) = tree.get_node_mut(id) {
-                if node.children.is_empty() {
-                    continue;
-                }
-                node.children.sort_by(|a, b| {
-                    let pos_a = node_pos.get(a).unwrap_or(&max_pos);
-                    let pos_b = node_pos.get(b).unwrap_or(&max_pos);
-                    if pos_a == pos_b {
-                        a.cmp(b) // Stable tie-break by ID
-                    } else {
-                        pos_a.cmp(pos_b)
-                    }
-                });
+    let ids = tree.levelorder(&root);
+    for id in ids {
+        if let Some(node) = tree.get_node_mut(id) {
+            if node.children.is_empty() {
+                continue;
             }
+            node.children.sort_by(|a, b| {
+                let pos_a = node_pos.get(a).unwrap_or(&max_pos);
+                let pos_b = node_pos.get(b).unwrap_or(&max_pos);
+                if pos_a == pos_b {
+                    a.cmp(b)
+                } else {
+                    pos_a.cmp(pos_b)
+                }
+            });
         }
     }
 }
@@ -304,21 +253,20 @@ pub fn deladderize(tree: &mut Tree) {
 
     // 1. Calculate descendant counts (same as ladderize)
     let mut size_map: HashMap<NodeId, usize> = HashMap::new();
-    if let Ok(post_ids) = tree.postorder(&root) {
-        for &id in &post_ids {
-            let mut count = 0;
-            if let Some(node) = tree.get_node(id) {
-                if node.is_leaf() {
-                    count = 1;
-                } else {
-                    count = 1;
-                    for child in &node.children {
-                        count += size_map.get(child).unwrap_or(&0);
-                    }
+    let post_ids = tree.postorder(&root);
+    for &id in &post_ids {
+        let mut count = 0;
+        if let Some(node) = tree.get_node(id) {
+            if node.is_leaf() {
+                count = 1;
+            } else {
+                count = 1;
+                for child in &node.children {
+                    count += size_map.get(child).unwrap_or(&0);
                 }
             }
-            size_map.insert(id, count);
         }
+        size_map.insert(id, count);
     }
 
     // 2. Traversal with state
@@ -369,7 +317,7 @@ where
 
     // Pass 1: Downward propagation (descendants of targets).
     // levelorder visits parents before children, so `is_in_clade` propagates.
-    let all_nodes = tree.levelorder(&root).unwrap_or_default();
+    let all_nodes = tree.levelorder(&root);
     for &id in &all_nodes {
         let mut kept = target_set.contains(&id);
         if !kept {
@@ -412,7 +360,7 @@ pub fn prune_nodes(tree: &mut Tree, to_remove: Vec<NodeId>) {
     //    become leaves after removal.
     let mut old_internals = Vec::new();
     if let Some(root) = tree.get_root() {
-        let all_nodes = tree.levelorder(&root).unwrap_or_default();
+        let all_nodes = tree.levelorder(&root);
         for id in all_nodes {
             if let Some(node) = tree.get_node(id) {
                 if !node.children.is_empty() {
@@ -438,7 +386,7 @@ pub fn prune_nodes(tree: &mut Tree, to_remove: Vec<NodeId>) {
 
     // 4. Collapse degree-2 nodes (post-order so children are visited first).
     if let Some(root) = tree.get_root() {
-        let nodes = tree.postorder(&root).unwrap_or_default();
+        let nodes = tree.postorder(&root);
         for id in nodes {
             if let Some(node) = tree.get_node(id) {
                 if node.children.len() == 1 {

@@ -226,15 +226,9 @@ fn parse_comment(
                         return Some(props);
                     }
                 } else {
-                    // Try to parse simple Key=Value properties
-                    // Example: [S=Gorilla]
+                    // Parse simple Key=Value properties (e.g., [S=Gorilla])
                     let mut props = BTreeMap::new();
-                    // First try splitting by whitespace to see if it looks like k=v
                     let parts: Vec<&str> = s.split_whitespace().collect();
-
-                    // If it's just a single word without =, it's definitely not kv unless we force it
-                    // The user wants unstructured comment -> property key, value empty.
-                    // So [SimpleComment] -> {"SimpleComment": ""}
 
                     for part in parts {
                         if let Some((k, v)) = part.split_once('=') {
@@ -244,22 +238,9 @@ fn parse_comment(
                         }
                     }
 
-                    // If parsing as space-separated tokens yielded something, great.
-                    // But if the comment was "Sentence with spaces", we might not want to split it?
-                    // "Sentence with spaces" -> {"Sentence": "", "with": "", "spaces": ""}
-                    // Or {"Sentence with spaces": ""} ?
-                    // Usually NHX/Newick comments don't have spaces in keys.
-                    // But unstructured comments might.
-                    // If we want to support "Unstructured Comment" as a single key, we shouldn't split by whitespace if it doesn't look like K=V.
-
-                    // However, `pgr` previously supported [S=Gorilla T=9606] via split_whitespace.
-                    // So we should stick to that behavior for compatibility.
-
                     if !props.is_empty() {
                         return Some(props);
                     }
-
-                    // If somehow empty (e.g. whitespace only string), return None
                 }
             }
             None
@@ -637,7 +618,7 @@ mod tests {
 
         // User's cleaning logic
         let root_id = tree.get_root().unwrap();
-        let traversal = tree.preorder(&root_id).unwrap();
+        let traversal = tree.preorder(&root_id);
 
         for id in traversal {
             let node = tree.get_node_mut(id).unwrap();

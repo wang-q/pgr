@@ -4,28 +4,23 @@ use std::collections::BTreeSet;
 
 /// Add a child to a parent node.
 /// Updates both parent's `children` list and child's `parent` field.
-pub fn add_child(tree: &mut Tree, parent_id: NodeId, child_id: NodeId) -> Result<(), String> {
-    // Validation
+pub fn add_child(tree: &mut Tree, parent_id: NodeId, child_id: NodeId) -> anyhow::Result<()> {
     if parent_id == child_id {
-        return Err("Cannot add node as child of itself".to_string());
+        anyhow::bail!("Cannot add node as child of itself");
     }
     if tree.get_node(parent_id).is_none() {
-        return Err(format!("Parent node {} not found or deleted", parent_id));
+        anyhow::bail!("Parent node {} not found or deleted", parent_id);
     }
     if tree.get_node(child_id).is_none() {
-        return Err(format!("Child node {} not found or deleted", child_id));
+        anyhow::bail!("Child node {} not found or deleted", child_id);
     }
 
     // Check if child already has a parent
     let child_parent = tree.nodes[child_id].parent;
     if let Some(old_parent) = child_parent {
-        return Err(format!(
-            "Node {} already has parent {}",
-            child_id, old_parent
-        ));
+        anyhow::bail!("Node {} already has parent {}", child_id, old_parent);
     }
 
-    // Link
     tree.nodes[child_id].parent = Some(parent_id);
     tree.nodes[parent_id].children.push(child_id);
 
@@ -75,12 +70,12 @@ pub fn remove_node(tree: &mut Tree, id: NodeId, recursive: bool) {
 
 /// Collapse a node, removing it and connecting its children to its parent.
 /// Edge lengths are summed (parent->node + node->child).
-pub fn collapse_node(tree: &mut Tree, id: NodeId) -> Result<(), String> {
+pub fn collapse_node(tree: &mut Tree, id: NodeId) -> anyhow::Result<()> {
     if tree.get_node(id).is_none() {
-        return Err(format!("Node {} not found", id));
+        anyhow::bail!("Node {} not found", id);
     }
     if tree.root == Some(id) {
-        return Err("Cannot collapse root node".to_string());
+        anyhow::bail!("Cannot collapse root node");
     }
 
     // 1. Get info
@@ -201,9 +196,13 @@ pub fn compact(tree: &mut Tree) {
 
 /// Insert a node in the middle of the desired node and its parent.
 /// Returns the new parent node ID.
-pub fn insert_parent(tree: &mut Tree, id: NodeId) -> Result<NodeId, String> {
-    let node = tree.get_node(id).ok_or(format!("Node {} not found", id))?;
-    let parent = node.parent.ok_or("Node has no parent")?;
+pub fn insert_parent(tree: &mut Tree, id: NodeId) -> anyhow::Result<NodeId> {
+    let node = tree
+        .get_node(id)
+        .ok_or_else(|| anyhow::anyhow!("Node {} not found", id))?;
+    let parent = node
+        .parent
+        .ok_or_else(|| anyhow::anyhow!("Node {} has no parent", id))?;
     let length = node.length;
     let new_length = length.map(|l| l / 2.0);
 
@@ -239,13 +238,20 @@ pub fn swap_parent(
     tree: &mut Tree,
     id: NodeId,
     _prev_edge: Option<f64>,
-) -> Result<Option<f64>, String> {
-    let node = tree.get_node(id).ok_or(format!("Node {} not found", id))?;
-    let parent = node.parent.ok_or("Node has no parent")?;
+) -> anyhow::Result<Option<f64>> {
+    let node = tree
+        .get_node(id)
+        .ok_or_else(|| anyhow::anyhow!("Node {} not found", id))?;
+    let parent = node
+        .parent
+        .ok_or_else(|| anyhow::anyhow!("Node {} has no parent", id))?;
 
     // Swap lengths
     let child_len = node.length;
-    let parent_len = tree.get_node(parent).ok_or("Parent not found")?.length;
+    let parent_len = tree
+        .get_node(parent)
+        .ok_or_else(|| anyhow::anyhow!("Parent {} not found", parent))?
+        .length;
 
     if let Some(p_node) = tree.get_node_mut(parent) {
         p_node.length = child_len;
@@ -276,12 +282,18 @@ pub fn swap_parent(
 
 /// Insert a new parent node for a pair of nodes (LCA-based).
 /// Returns the new parent node ID.
-pub fn insert_parent_pair(tree: &mut Tree, id1: NodeId, id2: NodeId) -> Result<NodeId, String> {
+pub fn insert_parent_pair(tree: &mut Tree, id1: NodeId, id2: NodeId) -> anyhow::Result<NodeId> {
     let old = tree.get_common_ancestor(&id1, &id2)?;
 
     // Get original edge lengths
-    let edge1 = tree.get_node(id1).ok_or("Node 1 not found")?.length;
-    let edge2 = tree.get_node(id2).ok_or("Node 2 not found")?.length;
+    let edge1 = tree
+        .get_node(id1)
+        .ok_or_else(|| anyhow::anyhow!("Node {} not found", id1))?
+        .length;
+    let edge2 = tree
+        .get_node(id2)
+        .ok_or_else(|| anyhow::anyhow!("Node {} not found", id2))?
+        .length;
 
     // New node with parent (old) has no edge length
     let new = tree.add_node();
@@ -356,8 +368,8 @@ pub fn remove_degree_two_nodes(tree: &mut Tree) {
 /// This effectively merges the two edges connected to the root into a single edge,
 /// removing the root node's structural role and making the tree multifurcating at the top level.
 /// The "heavier" child (with more descendants) is the one collapsed into the root.
-pub fn deroot(tree: &mut Tree) -> Result<(), String> {
-    let root = tree.root.ok_or("Empty tree")?;
+pub fn deroot(tree: &mut Tree) -> anyhow::Result<()> {
+    let root = tree.root.ok_or_else(|| anyhow::anyhow!("Empty tree"))?;
     let children = tree
         .get_node(root)
         .expect("internal: root id points to a valid node")
@@ -365,7 +377,7 @@ pub fn deroot(tree: &mut Tree) -> Result<(), String> {
         .clone();
 
     if children.len() != 2 {
-        return Err("Root is not bifurcating (degree != 2)".to_string());
+        anyhow::bail!("Root is not bifurcating (degree != 2)");
     }
 
     let c1 = children[0];
@@ -387,12 +399,14 @@ pub fn reroot_at(
     tree: &mut Tree,
     new_root_id: NodeId,
     process_support_values: bool,
-) -> Result<(), String> {
+) -> anyhow::Result<()> {
     if tree.get_node(new_root_id).is_none() {
-        return Err(format!("Node {} not found", new_root_id));
+        anyhow::bail!("Node {} not found", new_root_id);
     }
 
-    let old_root_id = tree.root.ok_or("Tree has no root")?;
+    let old_root_id = tree
+        .root
+        .ok_or_else(|| anyhow::anyhow!("Tree has no root"))?;
     if old_root_id == new_root_id {
         return Ok(());
     }
@@ -517,10 +531,10 @@ pub fn condense_subtree(
     sub_root_id: NodeId,
     name: &str,
     member_count: usize,
-) -> Result<(), String> {
+) -> anyhow::Result<()> {
     let sub_root = tree
         .get_node(sub_root_id)
-        .ok_or(format!("Node {} not found", sub_root_id))?;
+        .ok_or_else(|| anyhow::anyhow!("Node {} not found", sub_root_id))?;
     let parent_id_opt = sub_root.parent;
     let edge_len = sub_root.length;
 
@@ -605,9 +619,7 @@ pub fn reroot_at_lca(
     let mut nodes: Vec<NodeId> = target_ids.iter().cloned().collect();
     let mut sub_root_id = nodes.pop().unwrap();
     for id in &nodes {
-        sub_root_id = tree
-            .get_common_ancestor(&sub_root_id, id)
-            .map_err(|e| anyhow::anyhow!(e))?;
+        sub_root_id = tree.get_common_ancestor(&sub_root_id, id)?;
     }
 
     let old_root = tree
@@ -626,11 +638,8 @@ pub fn reroot_at_lca(
         return Ok(());
     }
 
-    let new_root = tree
-        .insert_parent(sub_root_id)
-        .map_err(|e| anyhow::anyhow!(e))?;
-    tree.reroot_at(new_root, process_support)
-        .map_err(|e| anyhow::anyhow!(e))?;
+    let new_root = tree.insert_parent(sub_root_id)?;
+    tree.reroot_at(new_root, process_support)?;
     tree.remove_degree_two_nodes();
 
     Ok(())
@@ -640,11 +649,8 @@ pub fn reroot_at_lca(
 /// edges.
 pub fn reroot_at_longest_branch(tree: &mut Tree, process_support: bool) -> anyhow::Result<()> {
     if let Some(longest_node) = tree.get_node_with_longest_edge() {
-        let new_root = tree
-            .insert_parent(longest_node)
-            .map_err(|e| anyhow::anyhow!(e))?;
-        tree.reroot_at(new_root, process_support)
-            .map_err(|e| anyhow::anyhow!(e))?;
+        let new_root = tree.insert_parent(longest_node)?;
+        tree.reroot_at(new_root, process_support)?;
         tree.remove_degree_two_nodes();
     }
     Ok(())

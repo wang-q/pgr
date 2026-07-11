@@ -50,7 +50,6 @@ fn to_forest_recursive(tree: &Tree, id: NodeId, height: f64) -> String {
     }
 }
 
-// almost all the operations in here
 fn to_forest_node_props(tree: &Tree, id: NodeId, height: f64) -> String {
     let node = tree
         .get_node(id)

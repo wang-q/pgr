@@ -19,17 +19,14 @@ pub(super) fn node_depth(tree: &Tree, id: NodeId) -> usize {
     depth
 }
 
-// max depth of this node's children
+/// Max depth of this node's children.
 pub(super) fn branch_depth(tree: &Tree, id: NodeId) -> usize {
     let self_depth = node_depth(tree, id);
-    match tree.get_subtree(&id) {
-        Ok(nodes) => nodes
-            .iter()
-            .map(|nid| node_depth(tree, *nid))
-            .max()
-            .unwrap_or(self_depth),
-        Err(_) => self_depth,
-    }
+    tree.get_subtree(&id)
+        .iter()
+        .map(|nid| node_depth(tree, *nid))
+        .max()
+        .unwrap_or(self_depth)
 }
 
 /// Compute scale bar (scale value, bar length in mm) for a tree of given height.

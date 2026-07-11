@@ -87,17 +87,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         return Ok(());
     }
 
-    // We process the first tree only, as typical for this operation
-    // or should we process all? The original code did `nwr::read_newick` which likely returned one tree.
-    // Let's iterate but usually nwk tools handle multi-tree files by processing each.
-    // But `condense` modifies the tree.
-    // Let's assume we process all trees.
-
-    // Note: Since we might modify the tree (condense), we need it to be mutable.
-    // But we are iterating.
-    // We can iterate and process.
-
-    // Since `reader::from_file` returns Vec<Tree>, we can iterate mutably.
     let mut trees = trees;
 
     for tree in &mut trees {
@@ -110,7 +99,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
         // Find LCA
         let ids_vec: Vec<usize> = ids.iter().cloned().collect();
-        let mut sub_root_id = tree.get_lca(&ids_vec).map_err(anyhow::Error::msg)?;
+        let mut sub_root_id = tree.get_lca(&ids_vec)?;
 
         // Monophyly check
         if is_monophyly {
@@ -144,8 +133,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 anyhow::bail!("--condense requires a non-empty name argument");
             }
 
-            tree.condense_subtree(sub_root_id, name, ids.len())
-                .map_err(anyhow::Error::msg)?;
+            tree.condense_subtree(sub_root_id, name, ids.len())?;
 
             let out_string = tree.to_newick();
             writer.write_fmt(format_args!("{}\n", out_string))?;

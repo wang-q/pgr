@@ -5,17 +5,9 @@ use std::collections::HashMap;
 
 /// Build a map from leaf name to index (0..N-1).
 /// Uses the first tree to establish the mapping.
-pub fn build_leaf_map(tree: &Tree) -> Result<HashMap<String, usize>, String> {
+pub fn build_leaf_map(tree: &Tree) -> anyhow::Result<HashMap<String, usize>> {
     let mut map = HashMap::new();
     let mut index = 0;
-
-    // Use traversal to ensure consistent order if needed, or just iterate nodes.
-    // Iterating nodes.iter() follows creation order.
-    // To be safe and deterministic, let's sort the leaf names?
-    // nw_support uses the order in the first tree.
-    // Let's collect names then sort them to be independent of input order in the file?
-    // No, usually tools respect the order of the first tree or sort.
-    // Let's sort them. It makes the indices deterministic regardless of leaf order in the input file.
 
     let mut leaf_names = Vec::new();
     for node in &tree.nodes {
@@ -23,14 +15,11 @@ pub fn build_leaf_map(tree: &Tree) -> Result<HashMap<String, usize>, String> {
             if let Some(name) = &node.name {
                 leaf_names.push(name.clone());
             } else {
-                return Err("Leaf node missing name".to_string());
+                anyhow::bail!("Leaf node missing name");
             }
         }
     }
 
-    // Sorting ensures that if we run this on different files with same leaves but different order,
-    // we get compatible maps? No, map is local to the run.
-    // But sorting is good practice.
     leaf_names.sort();
 
     for name in leaf_names {
@@ -48,16 +37,17 @@ pub fn build_leaf_map(tree: &Tree) -> Result<HashMap<String, usize>, String> {
 pub fn compute_all_bitsets(
     tree: &Tree,
     leaf_map: &HashMap<String, usize>,
-) -> Result<HashMap<NodeId, FixedBitSet>, String> {
+) -> anyhow::Result<HashMap<NodeId, FixedBitSet>> {
     let num_leaves = leaf_map.len();
     let mut node_bitsets = HashMap::new();
 
     if let Some(root) = tree.get_root() {
-        // Post-order: Children processed before parents
-        let traversal = tree.postorder(&root).map_err(|e| e.to_string())?;
+        let traversal = tree.postorder(&root);
 
         for id in traversal {
-            let node = tree.get_node(id).unwrap();
+            let node = tree
+                .get_node(id)
+                .expect("id from postorder traversal of valid tree");
             let mut bitset = FixedBitSet::with_capacity(num_leaves);
 
             if node.is_leaf() {
@@ -65,8 +55,6 @@ pub fn compute_all_bitsets(
                     if let Some(&idx) = leaf_map.get(name) {
                         bitset.set(idx, true);
                     }
-                    // If leaf not in map (e.g. replicate has extra leaf), we ignore it here
-                    // or treat as missing data. nw_support assumes same leaves.
                 }
             } else {
                 for &child in &node.children {
@@ -90,12 +78,12 @@ pub fn annotate_support(
     counts: &HashMap<FixedBitSet, usize>,
     total_reps: usize,
     as_percent: bool,
-) -> Result<(), String> {
+) -> anyhow::Result<()> {
     let target_bitsets = compute_all_bitsets(target, leaf_map)?;
     for (id, bs) in target_bitsets {
         let node = target
             .get_node_mut(id)
-            .ok_or_else(|| "invalid node id".to_string())?;
+            .ok_or_else(|| anyhow::anyhow!("invalid node id"))?;
         if !node.is_leaf() {
             let count = counts.get(&bs).copied().unwrap_or(0);
             let label = if as_percent {
@@ -116,29 +104,16 @@ pub fn annotate_support(
 pub fn count_clades(
     trees: &[Tree],
     leaf_map: &HashMap<String, usize>,
-) -> Result<HashMap<FixedBitSet, usize>, String> {
+) -> anyhow::Result<HashMap<FixedBitSet, usize>> {
     let mut counts = HashMap::new();
 
-    // This can be parallelized with rayon
-    // But FixedBitSet is not Send/Sync? It is pure data, should be.
-    // HashMap is not concurrent.
-    // We can use fold/reduce.
-
-    // Serial version first
     for tree in trees {
         let bitsets = compute_all_bitsets(tree, leaf_map)?;
-        // Only count internal nodes? Or all nodes?
-        // nw_support counts ALL nodes (leaves and internal).
-        // But leaves always have count = total_reps (if present).
-        // Usually we only care about support for internal nodes.
-        // But nw_support implementation:
-        // if (is_leaf) ... node_set_add ...
-        // else ... union ... add_bipart_count ...
-        // It calls add_bipart_count only for ELSE block (internal nodes).
-        // So it counts internal nodes only.
 
         for (id, bs) in bitsets {
-            let node = tree.get_node(id).unwrap();
+            let node = tree
+                .get_node(id)
+                .expect("id from compute_all_bitsets of valid tree");
             if !node.is_leaf() {
                 *counts.entry(bs).or_insert(0) += 1;
             }

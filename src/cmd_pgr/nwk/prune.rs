@@ -62,9 +62,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             let keep = algo::compute_keep_set(&tree, target_ids.iter().copied());
             match tree.get_root() {
                 Some(root) => {
-                    let all_ids = tree
-                        .levelorder(&root)
-                        .map_err(|e| anyhow::anyhow!("levelorder failed: {}", e))?;
+                    let all_ids = tree.levelorder(&root);
                     all_ids
                         .into_iter()
                         .filter(|id| !keep.contains(id))

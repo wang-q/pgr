@@ -65,9 +65,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     // Auto-detect: if any node has a branch length, draw phylogram
     let has_bl = if let Some(root) = tree.get_root() {
-        let ids = tree
-            .preorder(&root)
-            .map_err(|e| anyhow::anyhow!("preorder traversal failed: {}", e))?;
+        let ids = tree.preorder(&root);
         ids.iter().any(|&id| {
             tree.get_node(id)
                 .map(|n| n.length.is_some())

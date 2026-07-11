@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 
-/// NodeId is an index into the Tree's node vector.
-/// It is lightweight (Copy) and safe (no pointers).
+/// Index into the Tree's node arena (Copy, lightweight, no pointers).
 pub type NodeId = usize;
 
 #[derive(Debug, Clone)]

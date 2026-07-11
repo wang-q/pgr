@@ -24,15 +24,15 @@ fn test_tree_traversals() {
     tree.add_child(n2, n5).unwrap();
 
     // Preorder: 0, 1, 3, 4, 2, 5
-    let pre = tree.preorder(&n0).unwrap();
+    let pre = tree.preorder(&n0);
     assert_eq!(pre, vec![n0, n1, n3, n4, n2, n5]);
 
     // Postorder: 3, 4, 1, 5, 2, 0
-    let post = tree.postorder(&n0).unwrap();
+    let post = tree.postorder(&n0);
     assert_eq!(post, vec![n3, n4, n1, n5, n2, n0]);
 
     // Levelorder: 0, 1, 2, 3, 4, 5
-    let level = tree.levelorder(&n0).unwrap();
+    let level = tree.levelorder(&n0);
     assert_eq!(level, vec![n0, n1, n2, n3, n4, n5]);
 }
 
@@ -50,9 +50,9 @@ fn test_tree_basic_ops() {
 
     tree.set_root(n0);
 
-    assert_eq!(tree.add_child(n0, n1), Ok(()));
-    assert_eq!(tree.add_child(n0, n2), Ok(()));
-    assert_eq!(tree.add_child(n1, n3), Ok(()));
+    tree.add_child(n0, n1).unwrap();
+    tree.add_child(n0, n2).unwrap();
+    tree.add_child(n1, n3).unwrap();
 
     assert_eq!(tree.len(), 4);
 
@@ -280,7 +280,7 @@ fn test_diameter() {
     // Dist(A,B) = 3
     // Dist(A,C) = 1+1+4 = 6
     // Dist(B,C) = 2+1+4 = 7
-    assert_eq!(tree.diameter().unwrap(), 7.0);
+    assert_eq!(tree.diameter(), 7.0);
 }
 
 #[test]

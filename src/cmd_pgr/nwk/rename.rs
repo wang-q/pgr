@@ -114,9 +114,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
             match (id_of.get(first), id_of.get(last)) {
                 (Some(id1), Some(id2)) => {
-                    let x = tree
-                        .get_common_ancestor(id1, id2)
-                        .map_err(anyhow::Error::msg)?;
+                    let x = tree.get_common_ancestor(id1, id2)?;
                     let rename = renames.get(len_names + i).ok_or_else(|| {
                         anyhow::anyhow!("rename entry missing at index {}", len_names + i)
                     })?;

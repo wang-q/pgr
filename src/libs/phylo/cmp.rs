@@ -28,18 +28,18 @@ pub trait TreeComparison {
     /// Returns error if trees have different sets of leaves.
     ///
     /// Note: This computes Unrooted RF distance.
-    fn robinson_foulds(&self, other: &Self) -> Result<usize, String>;
+    fn robinson_foulds(&self, other: &Self) -> anyhow::Result<usize>;
 
     /// Compute the Weighted Robinson-Foulds (WRF) distance.
     ///
     /// Sum of absolute differences in branch lengths for all splits.
     /// If a split is missing in one tree, its length is assumed to be 0.
-    fn weighted_robinson_foulds(&self, other: &Self) -> Result<f64, String>;
+    fn weighted_robinson_foulds(&self, other: &Self) -> anyhow::Result<f64>;
 
     /// Compute the Kuhner-Felsenstein (KF) distance (Branch Score Distance).
     ///
     /// Square root of the sum of squared differences in branch lengths for all splits.
-    fn kuhner_felsenstein(&self, other: &Self) -> Result<f64, String>;
+    fn kuhner_felsenstein(&self, other: &Self) -> anyhow::Result<f64>;
 }
 
 impl TreeComparison for Tree {
@@ -67,10 +67,7 @@ impl TreeComparison for Tree {
         };
 
         // Get all nodes in postorder (bottom-up)
-        let nodes = match self.postorder(&root_id) {
-            Ok(n) => n,
-            Err(_) => return splits,
-        };
+        let nodes = self.postorder(&root_id);
 
         // Map NodeId -> BitSet (set of leaves under this node)
         let mut node_leaves: BTreeMap<usize, FixedBitSet> = BTreeMap::new();
@@ -113,7 +110,7 @@ impl TreeComparison for Tree {
         splits
     }
 
-    fn robinson_foulds(&self, other: &Self) -> Result<usize, String> {
+    fn robinson_foulds(&self, other: &Self) -> anyhow::Result<usize> {
         // 1. Check leaf consistency
         // get_leaf_names returns Vec<Option<String>>
         let leaves_self: HashSet<_> = self.get_leaf_names().into_iter().flatten().collect();
@@ -125,10 +122,11 @@ impl TreeComparison for Tree {
             let mut diff2: Vec<_> = leaves_other.difference(&leaves_self).collect();
             diff1.sort();
             diff2.sort();
-            return Err(format!(
+            anyhow::bail!(
                 "Leaf sets do not match.\nIn Tree1 but not Tree2: {:?}\nIn Tree2 but not Tree1: {:?}",
-                diff1, diff2
-            ));
+                diff1,
+                diff2
+            );
         }
 
         // 2. Build map
@@ -153,7 +151,7 @@ impl TreeComparison for Tree {
         Ok(diff1 + diff2)
     }
 
-    fn weighted_robinson_foulds(&self, other: &Self) -> Result<f64, String> {
+    fn weighted_robinson_foulds(&self, other: &Self) -> anyhow::Result<f64> {
         // 1. Check leaf consistency
         let leaves_self: HashSet<_> = self.get_leaf_names().into_iter().flatten().collect();
         let leaves_other: HashSet<_> = other.get_leaf_names().into_iter().flatten().collect();
@@ -163,10 +161,11 @@ impl TreeComparison for Tree {
             let mut diff2: Vec<_> = leaves_other.difference(&leaves_self).collect();
             diff1.sort();
             diff2.sort();
-            return Err(format!(
+            anyhow::bail!(
                 "Leaf sets do not match.\nIn Tree1 but not Tree2: {:?}\nIn Tree2 but not Tree1: {:?}",
-                diff1, diff2
-            ));
+                diff1,
+                diff2
+            );
         }
 
         // 2. Build map
@@ -197,7 +196,7 @@ impl TreeComparison for Tree {
         Ok(dist)
     }
 
-    fn kuhner_felsenstein(&self, other: &Self) -> Result<f64, String> {
+    fn kuhner_felsenstein(&self, other: &Self) -> anyhow::Result<f64> {
         // 1. Check leaf consistency
         let leaves_self: HashSet<_> = self.get_leaf_names().into_iter().flatten().collect();
         let leaves_other: HashSet<_> = other.get_leaf_names().into_iter().flatten().collect();
@@ -207,10 +206,11 @@ impl TreeComparison for Tree {
             let mut diff2: Vec<_> = leaves_other.difference(&leaves_self).collect();
             diff1.sort();
             diff2.sort();
-            return Err(format!(
+            anyhow::bail!(
                 "Leaf sets do not match.\nIn Tree1 but not Tree2: {:?}\nIn Tree2 but not Tree1: {:?}",
-                diff1, diff2
-            ));
+                diff1,
+                diff2
+            );
         }
 
         // 2. Build map
@@ -244,11 +244,9 @@ impl TreeComparison for Tree {
 
 /// Compute RF, weighted RF, and Kuhner-Felsenstein metrics as formatted strings.
 pub fn compute_tree_metrics(t1: &Tree, t2: &Tree) -> anyhow::Result<(String, String, String)> {
-    let rf = t1.robinson_foulds(t2).map_err(anyhow::Error::msg)?;
-    let wrf = t1
-        .weighted_robinson_foulds(t2)
-        .map_err(anyhow::Error::msg)?;
-    let kf = t1.kuhner_felsenstein(t2).map_err(anyhow::Error::msg)?;
+    let rf = t1.robinson_foulds(t2)?;
+    let wrf = t1.weighted_robinson_foulds(t2)?;
+    let kf = t1.kuhner_felsenstein(t2)?;
 
     let format_float = |v: f64| -> String {
         let s = format!("{:.6}", v);

@@ -48,7 +48,9 @@ pub fn to_newick_subtree(tree: &Tree, root: NodeId, indent: &str) -> String {
 }
 
 fn to_newick_recursive(tree: &Tree, node_id: NodeId, indent: &str, depth: usize) -> String {
-    let node = tree.get_node(node_id).unwrap();
+    let node = tree
+        .get_node(node_id)
+        .expect("internal: traversal only visits existing nodes");
     let is_pretty = !indent.is_empty();
 
     // Calculate current indentation string

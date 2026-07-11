@@ -59,8 +59,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     for mut tree in trees {
         if let Some(root) = tree.get_root() {
-            // We use levelorder to traverse all nodes safely
-            let ids = tree.levelorder(&root).map_err(anyhow::Error::msg)?;
+            let ids = tree.levelorder(&root);
 
             for id in ids {
                 if let Some(node) = tree.get_node_mut(id) {

@@ -94,9 +94,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         );
     }
 
-    // Process only the first tree for now, or loop if we want to support multi-tree
-    // Since arguments are node names, it implies a single tree context or consistent naming.
-    // We'll process the first tree to match previous behavior.
     let mut tree = trees
         .into_iter()
         .next()

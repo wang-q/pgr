@@ -29,6 +29,7 @@ pub fn get_leaf_names(tree: &Tree, id: NodeId) -> Vec<Option<String>> {
         .collect()
 }
 
+/// Return all node names in the tree.
 pub fn get_names(tree: &Tree) -> Vec<String> {
     tree.nodes
         .iter()
@@ -37,6 +38,7 @@ pub fn get_names(tree: &Tree) -> Vec<String> {
         .collect()
 }
 
+/// Return a map from node name to node ID.
 pub fn get_name_id(tree: &Tree) -> BTreeMap<String, NodeId> {
     tree.nodes
         .iter()
@@ -45,6 +47,7 @@ pub fn get_name_id(tree: &Tree) -> BTreeMap<String, NodeId> {
         .collect()
 }
 
+/// Return a map from node ID to property value for a given key.
 pub fn get_property_values(tree: &Tree, key: &str) -> BTreeMap<NodeId, String> {
     tree.nodes
         .iter()
@@ -58,6 +61,7 @@ pub fn get_property_values(tree: &Tree, key: &str) -> BTreeMap<NodeId, String> {
         .collect()
 }
 
+/// Return the node ID with the longest edge length.
 pub fn get_node_with_longest_edge(tree: &Tree) -> Option<NodeId> {
     tree.nodes
         .iter()
@@ -190,6 +194,7 @@ pub fn compute_node_heights(tree: &Tree) -> HashMap<NodeId, f64> {
     heights
 }
 
+/// Calculate inconsistency index for each node.
 pub fn calculate_inconsistency(
     tree: &Tree,
     heights: &HashMap<NodeId, f64>,
@@ -198,18 +203,22 @@ pub fn calculate_inconsistency(
     super::balance::calculate_inconsistency(tree, heights, depth)
 }
 
+/// Count the number of cherries (pairs of sibling leaves) in the tree.
 pub fn cherries(tree: &Tree) -> usize {
     super::balance::cherries(tree)
 }
 
+/// Compute the Sackin index (sum of leaf depths).
 pub fn sackin(tree: &Tree) -> Option<f64> {
     super::balance::sackin(tree)
 }
 
+/// Compute the Colless index (sum of |left - right| subtree sizes).
 pub fn colless(tree: &Tree) -> Option<f64> {
     super::balance::colless(tree)
 }
 
+/// Compute average clade distances for each internal node.
 pub fn compute_avg_clade_distances(tree: &Tree) -> HashMap<NodeId, f64> {
     super::balance::compute_avg_clade_distances(tree)
 }
@@ -302,30 +311,29 @@ pub fn tree_summary(tree: &Tree) -> TreeSummary {
     let mut edges_without_length = 0usize;
 
     if let Some(root) = tree.get_root() {
-        if let Ok(ids) = tree.preorder(&root) {
-            for id in ids {
-                let Some(node) = tree.get_node(id) else {
-                    continue;
-                };
-                nodes += 1;
+        let ids = tree.preorder(&root);
+        for id in ids {
+            let Some(node) = tree.get_node(id) else {
+                continue;
+            };
+            nodes += 1;
+            if node.is_leaf() {
+                leaves += 1;
+            }
+            if node.children.len() == 2 {
+                dichotomies += 1;
+            }
+            if node.name.is_some() {
                 if node.is_leaf() {
-                    leaves += 1;
-                }
-                if node.children.len() == 2 {
-                    dichotomies += 1;
-                }
-                if node.name.is_some() {
-                    if node.is_leaf() {
-                        leaf_labels += 1;
-                    } else {
-                        internal_labels += 1;
-                    }
-                }
-                if node.length.is_some() {
-                    edges_with_length += 1;
+                    leaf_labels += 1;
                 } else {
-                    edges_without_length += 1;
+                    internal_labels += 1;
                 }
+            }
+            if node.length.is_some() {
+                edges_with_length += 1;
+            } else {
+                edges_without_length += 1;
             }
         }
     }

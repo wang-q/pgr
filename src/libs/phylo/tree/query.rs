@@ -4,12 +4,14 @@ use super::Tree;
 use crate::libs::phylo::node::{Node, NodeId};
 use clap::ArgMatches;
 use regex::RegexBuilder;
-pub fn get_path_from_root(tree: &Tree, id: &NodeId) -> Result<Vec<NodeId>, String> {
+
+/// Return the path from root to `id` (inclusive).
+pub fn get_path_from_root(tree: &Tree, id: &NodeId) -> anyhow::Result<Vec<NodeId>> {
     let mut path = Vec::new();
     let mut current = *id;
 
     if tree.get_node(current).is_none() {
-        return Err(format!("Node {} not found", current));
+        anyhow::bail!("Node {} not found", current);
     }
 
     loop {
@@ -24,17 +26,15 @@ pub fn get_path_from_root(tree: &Tree, id: &NodeId) -> Result<Vec<NodeId>, Strin
     // Validate root
     if let Some(root) = tree.root {
         if path[0] != root {
-            return Err("Node is detached from root".to_string());
+            anyhow::bail!("Node is detached from root");
         }
-    } else if !path.is_empty() {
-        // Tree has no root but node exists? Should not happen in valid tree.
     }
 
     Ok(path)
 }
 
 /// Find Lowest Common Ancestor (LCA) of two nodes.
-pub fn get_common_ancestor(tree: &Tree, a: &NodeId, b: &NodeId) -> Result<NodeId, String> {
+pub fn get_common_ancestor(tree: &Tree, a: &NodeId, b: &NodeId) -> anyhow::Result<NodeId> {
     let path_a = get_path_from_root(tree, a)?;
     let path_b = get_path_from_root(tree, b)?;
 
@@ -48,13 +48,13 @@ pub fn get_common_ancestor(tree: &Tree, a: &NodeId, b: &NodeId) -> Result<NodeId
         }
     }
 
-    lca.ok_or_else(|| "Nodes are not in the same tree (no common ancestor)".to_string())
+    lca.ok_or_else(|| anyhow::anyhow!("Nodes are not in the same tree (no common ancestor)"))
 }
 
 /// Find the Lowest Common Ancestor (LCA) of multiple nodes.
-pub fn get_lca(tree: &Tree, nodes: &[NodeId]) -> Result<NodeId, String> {
+pub fn get_lca(tree: &Tree, nodes: &[NodeId]) -> anyhow::Result<NodeId> {
     if nodes.is_empty() {
-        return Err("Cannot find LCA of empty node set".to_string());
+        anyhow::bail!("Cannot find LCA of empty node set");
     }
     let mut lca = nodes[0];
     for &n in &nodes[1..] {
@@ -65,7 +65,7 @@ pub fn get_lca(tree: &Tree, nodes: &[NodeId]) -> Result<NodeId, String> {
 
 /// Calculate distance between two nodes.
 /// Returns (weighted_distance, topological_distance).
-pub fn get_distance(tree: &Tree, a: &NodeId, b: &NodeId) -> Result<(f64, usize), String> {
+pub fn get_distance(tree: &Tree, a: &NodeId, b: &NodeId) -> anyhow::Result<(f64, usize)> {
     let lca = get_common_ancestor(tree, a, b)?;
 
     let dist_to_lca = |start: &NodeId, end: &NodeId| -> (f64, usize) {
@@ -94,7 +94,7 @@ pub fn get_distance(tree: &Tree, a: &NodeId, b: &NodeId) -> Result<(f64, usize),
 }
 
 /// Distance between two nodes. Uses branch lengths if non-zero, else edge count.
-pub fn node_distance(tree: &Tree, a: &NodeId, b: &NodeId) -> Result<f64, String> {
+pub fn node_distance(tree: &Tree, a: &NodeId, b: &NodeId) -> anyhow::Result<f64> {
     let (edge_sum, num_edges) = get_distance(tree, a, b)?;
     Ok(if edge_sum.abs() > 1e-9 {
         edge_sum
@@ -145,12 +145,11 @@ pub fn is_monophyletic(tree: &Tree, nodes: &[NodeId]) -> bool {
 /// Collect IDs of all named leaves (children.is_empty() && name.is_some()) in the subtree rooted at `id`.
 pub fn get_named_leaves(tree: &Tree, id: NodeId) -> BTreeSet<NodeId> {
     let mut result = BTreeSet::new();
-    if let Ok(subtree_nodes) = tree.get_subtree(&id) {
-        for nid in subtree_nodes {
-            if let Some(node) = tree.get_node(nid) {
-                if node.children.is_empty() && node.name.is_some() {
-                    result.insert(nid);
-                }
+    let subtree_nodes = tree.get_subtree(&id);
+    for nid in subtree_nodes {
+        if let Some(node) = tree.get_node(nid) {
+            if node.children.is_empty() && node.name.is_some() {
+                result.insert(nid);
             }
         }
     }
@@ -259,12 +258,11 @@ pub fn lax_complement_lca(
     // Leaves under each specified node
     let mut specified_leaves = BTreeSet::new();
     for &id in specified_ids {
-        if let Ok(subtree) = tree.get_subtree(&id) {
-            for sub_id in subtree {
-                if let Some(node) = tree.get_node(sub_id) {
-                    if node.children.is_empty() {
-                        specified_leaves.insert(sub_id);
-                    }
+        let subtree = tree.get_subtree(&id);
+        for sub_id in subtree {
+            if let Some(node) = tree.get_node(sub_id) {
+                if node.children.is_empty() {
+                    specified_leaves.insert(sub_id);
                 }
             }
         }
@@ -393,10 +391,7 @@ pub fn match_names(tree: &Tree, args: &ArgMatches) -> anyhow::Result<BTreeSet<us
             .collect();
         for node in &nodes {
             if !node.is_leaf() {
-                let subtree_ids = match tree.get_subtree(&node.id) {
-                    Ok(v) => v,
-                    Err(e) => anyhow::bail!(e),
-                };
+                let subtree_ids = tree.get_subtree(&node.id);
                 for id in &subtree_ids {
                     if let Some(n) = tree.get_node(*id) {
                         if n.name.is_some() {
@@ -440,9 +435,7 @@ pub fn match_positions(tree: &Tree, args: &ArgMatches) -> BTreeSet<usize> {
     let Some(root_id) = tree.get_root() else {
         return ids;
     };
-    let Ok(preorder_ids) = tree.preorder(&root_id) else {
-        return ids;
-    };
+    let preorder_ids = tree.preorder(&root_id);
 
     preorder_ids.iter().for_each(|id| {
         if let Some(node) = tree.get_node(*id) {

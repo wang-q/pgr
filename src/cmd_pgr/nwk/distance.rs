@@ -56,9 +56,8 @@ Examples:
 /// Execute the distance command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let outfile = crate::cmd_pgr::args::get_outfile(args);
-    let mut writer: Box<dyn Write> = Box::new(
-        pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?,
-    );
+    let mut writer =
+        pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
 
     let infile = args.get_one::<String>("infile").unwrap();
     let mut input = String::new();

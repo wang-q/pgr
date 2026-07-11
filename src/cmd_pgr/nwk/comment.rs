@@ -147,9 +147,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
                 match (id_of.get(first), id_of.get(last)) {
                     (Some(id1), Some(id2)) => {
-                        let id = tree
-                            .get_common_ancestor(id1, id2)
-                            .map_err(anyhow::Error::msg)?;
+                        let id = tree.get_common_ancestor(id1, id2)?;
                         ids.push(id);
                     }
                     _ => {

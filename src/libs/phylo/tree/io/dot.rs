@@ -8,48 +8,45 @@ pub fn to_dot(tree: &Tree) -> String {
     s.push_str("    node [shape=box];\n"); // Optional styling
 
     if let Some(root) = tree.get_root() {
-        // Use a traversal to visit all reachable nodes.
-        // Preorder is good.
-        if let Ok(nodes) = tree.preorder(&root) {
-            for &node_id in &nodes {
-                let Some(node) = tree.get_node(node_id) else {
+        let nodes = tree.preorder(&root);
+        for &node_id in &nodes {
+            let Some(node) = tree.get_node(node_id) else {
+                continue;
+            };
+            if node.deleted {
+                continue;
+            }
+
+            // 1. Define Node
+            // Use NodeID as the DOT identifier
+            let label = node.name.as_deref().unwrap_or("");
+            let mut label_attr = format!("label=\"{}\"", label);
+            if label.is_empty() {
+                label_attr = format!("label=\"{}\"", node_id);
+            }
+
+            s.push_str(&format!("    {} [{}];\n", node_id, label_attr));
+
+            // 2. Define Edges to children
+            for &child_id in &node.children {
+                let Some(child) = tree.get_node(child_id) else {
                     continue;
                 };
-                if node.deleted {
-                    continue;
+                let mut edge_attrs = Vec::new();
+                if let Some(len) = child.length {
+                    edge_attrs.push(format!("label=\"{}\"", len));
                 }
 
-                // 1. Define Node
-                // Use NodeID as the DOT identifier
-                let label = node.name.as_deref().unwrap_or("");
-                let mut label_attr = format!("label=\"{}\"", label);
-                if label.is_empty() {
-                    label_attr = format!("label=\"{}\"", node_id);
-                }
+                let edge_attr_str = if edge_attrs.is_empty() {
+                    String::new()
+                } else {
+                    format!(" [{}]", edge_attrs.join(", "))
+                };
 
-                s.push_str(&format!("    {} [{}];\n", node_id, label_attr));
-
-                // 2. Define Edges to children
-                for &child_id in &node.children {
-                    let Some(child) = tree.get_node(child_id) else {
-                        continue;
-                    };
-                    let mut edge_attrs = Vec::new();
-                    if let Some(len) = child.length {
-                        edge_attrs.push(format!("label=\"{}\"", len));
-                    }
-
-                    let edge_attr_str = if edge_attrs.is_empty() {
-                        String::new()
-                    } else {
-                        format!(" [{}]", edge_attrs.join(", "))
-                    };
-
-                    s.push_str(&format!(
-                        "    {} -> {}{};\n",
-                        node_id, child_id, edge_attr_str
-                    ));
-                }
+                s.push_str(&format!(
+                    "    {} -> {}{};\n",
+                    node_id, child_id, edge_attr_str
+                ));
             }
         }
     }
