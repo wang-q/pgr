@@ -1533,3 +1533,72 @@ fn test_pbit_large_contig_segment_boundary() {
         assert_eq!(seq, expected);
     }
 }
+
+#[test]
+fn test_pbit_range_invalid_range_warns() {
+    let temp = TempDir::new().unwrap();
+    let ref_fa = temp.path().join("ref.fa");
+    let sample_fa = temp.path().join("sample.fa");
+    let out_pbit = temp.path().join("out.pbit");
+
+    let ref_seq = random_dna(2000, 42);
+    write_fasta(&ref_fa, &[("chr1", &ref_seq)]);
+    write_fasta(&sample_fa, &[("chr1", &ref_seq)]);
+
+    PgrCmd::new()
+        .args(&[
+            "pbit",
+            "create",
+            "-r",
+            ref_fa.to_str().unwrap(),
+            "-i",
+            sample_fa.to_str().unwrap(),
+            "-o",
+            out_pbit.to_str().unwrap(),
+        ])
+        .run();
+
+    let assert = PgrCmd::new()
+        .args(&["pbit", "range", out_pbit.to_str().unwrap(), "chr1:abc-def"])
+        .assert()
+        .success();
+    let output = assert.get_output();
+    let stdout = String::from_utf8(output.stdout.clone()).unwrap();
+    let stderr = String::from_utf8(output.stderr.clone()).unwrap();
+
+    assert!(stdout.trim().is_empty());
+    assert!(stderr.contains("invalid range format"));
+}
+
+#[test]
+fn test_pbit_create_invalid_name_tsv_line_number() {
+    let temp = TempDir::new().unwrap();
+    let ref_fa = temp.path().join("ref.fa");
+    let sample_fa = temp.path().join("sample.fa");
+    let name_tsv = temp.path().join("names.tsv");
+    let out_pbit = temp.path().join("out.pbit");
+
+    let ref_seq = random_dna(1000, 42);
+    write_fasta(&ref_fa, &[("chr1", &ref_seq)]);
+    write_fasta(&sample_fa, &[("chr1", &ref_seq)]);
+
+    // Line 1 is a comment (skipped); line 2 is missing the FASTA path.
+    fs::write(&name_tsv, "# sample list\nsample1\n").unwrap();
+
+    let (stdout, stderr) = PgrCmd::new()
+        .args(&[
+            "pbit",
+            "create",
+            "-r",
+            ref_fa.to_str().unwrap(),
+            "--name",
+            name_tsv.to_str().unwrap(),
+            "-o",
+            out_pbit.to_str().unwrap(),
+        ])
+        .run_fail();
+
+    let combined = format!("{}{}", stdout, stderr);
+    assert!(combined.contains("line 2"));
+    assert!(combined.contains("missing FASTA path"));
+}

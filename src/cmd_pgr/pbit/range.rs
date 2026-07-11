@@ -64,6 +64,15 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         let rg = intspan::Range::from_str(el);
         let contig = rg.chr();
 
+        // A range without ':' is a full-contig request (e.g. "chr1");
+        // intspan returns start=0/end=0 and is_valid=false for these, so
+        // bypass validation. Anything with ':' must parse as a valid range.
+        let is_full_contig = !el.contains(':');
+        if !is_full_contig && !rg.is_valid() {
+            log::warn!("invalid range format: {}", el);
+            continue;
+        }
+
         // Check if contig exists in any sample.
         if !dec.contains_contig(contig) {
             log::warn!("{} for [{}] not found in any sample", contig, el);
@@ -71,10 +80,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         }
 
         // Handle full contig request (start=0 and end=0 means just the name).
-        let (start, end) = if *rg.start() == 0 && *rg.end() == 0 {
+        let (start, end) = if is_full_contig {
             (None, None)
         } else {
-            anyhow::ensure!(rg.is_valid(), "invalid range: {}", el);
             let start_val = *rg.start();
             let end_val = *rg.end();
             anyhow::ensure!(

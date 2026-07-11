@@ -13,7 +13,8 @@ pub(crate) fn read_name_tsv(path: &str) -> Result<Vec<(String, String, Option<St
     let lines = pgr::libs::io::read_lines(path)
         .with_context(|| format!("failed to read name TSV: {}", path))?;
     let mut out = Vec::new();
-    for line in lines {
+    for (line_no, line) in lines.iter().enumerate() {
+        let line_no = line_no + 1;
         let trimmed = line.trim();
         if trimmed.is_empty() || trimmed.starts_with('#') {
             continue;
@@ -21,12 +22,12 @@ pub(crate) fn read_name_tsv(path: &str) -> Result<Vec<(String, String, Option<St
         let parts: Vec<&str> = trimmed.split('\t').collect();
         let name = parts
             .first()
-            .ok_or_else(|| anyhow::anyhow!("missing sample name in line: {}", line))?
+            .ok_or_else(|| anyhow::anyhow!("line {}: missing sample name: {}", line_no, trimmed))?
             .trim()
             .to_string();
         let fasta_path = parts
             .get(1)
-            .ok_or_else(|| anyhow::anyhow!("missing FASTA path in line: {}", line))?
+            .ok_or_else(|| anyhow::anyhow!("line {}: missing FASTA path: {}", line_no, trimmed))?
             .trim()
             .to_string();
         let paf_path = parts
@@ -34,7 +35,7 @@ pub(crate) fn read_name_tsv(path: &str) -> Result<Vec<(String, String, Option<St
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty());
         if name.is_empty() || fasta_path.is_empty() {
-            anyhow::bail!("empty name or path in line: {}", line);
+            anyhow::bail!("line {}: empty name or path: {}", line_no, trimmed);
         }
         out.push((name, fasta_path, paf_path));
     }
