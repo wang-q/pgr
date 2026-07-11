@@ -324,11 +324,10 @@ fn compute_svg_positions(
                 .iter()
                 .filter_map(|&c| positions.get(&c).map(|p| p.1))
                 .collect();
-            let y_count = child_ys.len() as f64;
-            if y_count == 0.0 {
+            if child_ys.is_empty() {
                 continue;
             }
-            let y = child_ys.iter().sum::<f64>() / y_count;
+            let y = child_ys.iter().sum::<f64>() / child_ys.len() as f64;
 
             let x = if height > 0.0 {
                 let cl = cum_length.get(&id).copied().unwrap_or(0.0);

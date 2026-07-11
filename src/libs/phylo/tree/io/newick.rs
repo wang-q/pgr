@@ -112,7 +112,7 @@ fn to_newick_recursive(tree: &Tree, node_id: NodeId, indent: &str, depth: usize)
 }
 
 fn quote_label(label: &str) -> String {
-    let needs_quote = label.chars().any(|c| "'(),:;[] \t\n".contains(c));
+    let needs_quote = label.chars().any(|c| "\"'(),:;[] \t\n".contains(c));
     if needs_quote {
         format!("'{}'", label.replace('\'', "''"))
     } else {

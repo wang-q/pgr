@@ -249,8 +249,6 @@ fn parse_comment(
                     for part in parts {
                         if let Some((k, v)) = part.split_once('=') {
                             props.insert(k.to_string(), v.to_string());
-                        } else {
-                            props.insert(part.to_string(), String::new());
                         }
                     }
 

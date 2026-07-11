@@ -86,7 +86,7 @@ pgr nwk stat [OPTIONS] <infile>
 ```
 
 *   `--style <col|line>`: Output format (key-value pairs or TSV).
-*   Statistics include: Node count, Leaf count, Rooted status, Dichotomies, Label counts, Cherries, Sackin index, Colless index.
+*   Statistics include: Type (cladogram/phylogram/neither), Node count, Leaf count, Rooted status, Dichotomies, Leaf labels, Internal labels, Cherries, Sackin index, Colless index.
 
 ### support
 
