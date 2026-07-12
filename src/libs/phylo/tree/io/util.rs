@@ -31,7 +31,7 @@ pub(super) fn branch_depth(tree: &Tree, id: NodeId) -> usize {
 
 /// Compute scale bar (scale value, bar length in mm) for a tree of given height.
 pub fn compute_scale_bar(height: f64) -> (f64, i32) {
-    if height <= 0.0 {
+    if height <= 0.0 || !height.is_finite() {
         return (0.0, 0);
     }
     let target_scale = height / 5.0;
@@ -54,5 +54,12 @@ mod tests {
     fn compute_scale_bar_non_positive() {
         assert_eq!(compute_scale_bar(0.0), (0.0, 0));
         assert_eq!(compute_scale_bar(-1.0), (0.0, 0));
+    }
+
+    #[test]
+    fn compute_scale_bar_non_finite() {
+        assert_eq!(compute_scale_bar(f64::NAN), (0.0, 0));
+        assert_eq!(compute_scale_bar(f64::INFINITY), (0.0, 0));
+        assert_eq!(compute_scale_bar(f64::NEG_INFINITY), (0.0, 0));
     }
 }

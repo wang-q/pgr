@@ -1,6 +1,7 @@
 use super::Tree;
 use crate::libs::phylo::node::NodeId;
-use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::cmp::Reverse;
+use std::collections::{BTreeMap, BinaryHeap, HashMap};
 
 /// Get IDs of all leaves in subtree rooted at `id`.
 pub fn get_leaves(tree: &Tree, id: NodeId) -> Vec<NodeId> {
@@ -111,27 +112,44 @@ pub fn is_rooted(tree: &Tree) -> bool {
 
 /// Calculate diameter (longest path between any two nodes).
 pub fn diameter(tree: &Tree, weighted: bool) -> f64 {
+    #[derive(Clone, Copy)]
+    struct Dist(f64);
+
+    impl PartialEq for Dist {
+        fn eq(&self, other: &Self) -> bool {
+            self.0.total_cmp(&other.0) == std::cmp::Ordering::Equal
+        }
+    }
+
+    impl Eq for Dist {}
+
+    impl Ord for Dist {
+        fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+            self.0.total_cmp(&other.0)
+        }
+    }
+
+    impl PartialOrd for Dist {
+        fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+            Some(self.cmp(other))
+        }
+    }
+
     let root = match tree.get_root() {
         Some(r) => r,
         None => return 0.0,
     };
 
     let get_furthest = |start: NodeId| -> (NodeId, f64) {
-        let mut max_dist = 0.0;
-        let mut furthest_node = start;
-        let mut visited = HashMap::new();
-        let mut queue = VecDeque::new();
+        let mut dist = HashMap::new();
+        let mut heap = BinaryHeap::new();
 
-        visited.insert(start, 0.0);
-        queue.push_back(start);
+        dist.insert(start, 0.0);
+        heap.push((Reverse(Dist(0.0)), start));
 
-        while let Some(u) = queue.pop_front() {
-            let Some(&d) = visited.get(&u) else {
+        while let Some((Reverse(Dist(d)), u)) = heap.pop() {
+            if dist.get(&u).map(|&cur| cur < d).unwrap_or(false) {
                 continue;
-            };
-            if d > max_dist {
-                max_dist = d;
-                furthest_node = u;
             }
 
             let Some(node) = tree.get_node(u) else {
@@ -143,26 +161,32 @@ pub fn diameter(tree: &Tree, weighted: bool) -> f64 {
             }
 
             for v in neighbors {
-                if let std::collections::hash_map::Entry::Vacant(e) = visited.entry(v) {
-                    let weight = if weighted {
-                        if let (Some(v_node), Some(u_node)) = (tree.get_node(v), tree.get_node(u)) {
-                            if v_node.parent == Some(u) {
-                                super::finite_length(v_node.length)
-                            } else {
-                                super::finite_length(u_node.length)
-                            }
+                let weight = if weighted {
+                    if let (Some(v_node), Some(u_node)) = (tree.get_node(v), tree.get_node(u)) {
+                        if v_node.parent == Some(u) {
+                            super::finite_length(v_node.length)
                         } else {
-                            0.0
+                            super::finite_length(u_node.length)
                         }
                     } else {
-                        1.0
-                    };
-                    e.insert(d + weight);
-                    queue.push_back(v);
+                        0.0
+                    }
+                } else {
+                    1.0
+                };
+
+                let new_dist = d + weight;
+                let is_shorter = dist.get(&v).map(|&old| new_dist < old).unwrap_or(true);
+                if is_shorter {
+                    dist.insert(v, new_dist);
+                    heap.push((Reverse(Dist(new_dist)), v));
                 }
             }
         }
-        (furthest_node, max_dist)
+
+        dist.into_iter()
+            .max_by(|(_, a), (_, b)| a.total_cmp(b))
+            .unwrap_or((start, 0.0))
     };
 
     let (node_a, _) = get_furthest(root);
@@ -406,5 +430,27 @@ mod tests {
         let longest = get_node_with_longest_edge(&tree);
         let c_id = tree.get_node_by_name("C").unwrap();
         assert_eq!(longest, Some(c_id));
+    }
+
+    #[test]
+    fn diameter_unweighted() {
+        // ((A,B),(C,D)) - unweighted diameter is 4 edges between any two leaves
+        // across the root (e.g., A to C).
+        let tree = Tree::from_newick("((A,B),(C,D));").unwrap();
+        assert_eq!(diameter(&tree, false), 4.0);
+    }
+
+    #[test]
+    fn diameter_weighted() {
+        // ((A:0.1,B:0.5):0.2,(C:0.1,D:0.1):0.1);
+        // BFS would prefer the node discovered first, but the true weighted
+        // diameter is the longest root-to-leaf path sum: B -> root -> D = 0.9.
+        let tree = Tree::from_newick("((A:0.1,B:0.5):0.2,(C:0.1,D:0.1):0.1);").unwrap();
+        let diam = diameter(&tree, true);
+        assert!(
+            (diam - 0.9).abs() < 1e-9,
+            "expected diameter 0.9, got {}",
+            diam
+        );
     }
 }

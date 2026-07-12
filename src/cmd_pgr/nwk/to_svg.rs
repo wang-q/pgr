@@ -69,13 +69,16 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         .next()
         .ok_or_else(|| anyhow::anyhow!("no trees found in {}", infile))?;
 
-    // Auto-detect: if any node has a branch length, draw phylogram
+    // Auto-detect: if any non-root node has a branch length, draw phylogram.
+    // The root node's length has no parent edge, so it is ignored.
     let has_bl = if let Some(root) = tree.get_root() {
         let ids = tree.preorder(&root);
         ids.iter().any(|&id| {
-            tree.get_node(id)
-                .map(|n| n.length.is_some())
-                .unwrap_or(false)
+            id != root
+                && tree
+                    .get_node(id)
+                    .map(|n| n.length.is_some())
+                    .unwrap_or(false)
         })
     } else {
         false

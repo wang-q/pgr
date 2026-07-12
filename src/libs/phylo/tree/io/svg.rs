@@ -256,10 +256,7 @@ fn compute_svg_positions(
                     if child.deleted {
                         continue;
                     }
-                    let edge = child.length.unwrap_or(0.0);
-                    // Treat NaN branch lengths as 0.0 so SVG coordinates remain
-                    // valid numbers.
-                    let edge = if edge.is_nan() { 0.0 } else { edge };
+                    let edge = super::super::finite_length(child.length);
                     cl.insert(child_id, parent_len + edge);
                 }
             }
