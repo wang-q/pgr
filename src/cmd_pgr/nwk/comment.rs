@@ -50,7 +50,7 @@ pub fn make_subcommand() -> Command {
             Arg::new("string")
                 .long("string")
                 .num_args(1)
-                .help("Free-form string stored as the comment property"),
+                .help("Free-form string stored as a separate property"),
         )
         .arg(crate::cmd_pgr::args::color_arg(None, "Color of names"))
         .arg(
@@ -168,7 +168,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         for id in &ids {
             if let Some(node) = tree.get_node_mut(*id) {
                 if let Some(x) = opt_string {
-                    node.add_property("comment", x);
+                    node.add_property("string", x);
                 }
 
                 if let Some(x) = opt_label {

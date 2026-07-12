@@ -645,3 +645,29 @@ fn deleted_node_get_path_from_root_errors() {
 
     assert!(tree.get_path_from_root(&leaf).is_err());
 }
+
+#[test]
+fn get_distance_with_deleted_node_on_path() {
+    let mut tree = Tree::new();
+    //    0
+    //   / \
+    //  1   2
+    // /
+    //3
+    let n0 = tree.add_node();
+    let n1 = tree.add_node();
+    let n2 = tree.add_node();
+    let n3 = tree.add_node();
+
+    tree.set_root(n0);
+    tree.add_child(n0, n1).unwrap();
+    tree.add_child(n0, n2).unwrap();
+    tree.add_child(n1, n3).unwrap();
+
+    // Mark n1 as deleted; n3's parent still points to it
+    tree.get_node_mut(n1).unwrap().deleted = true;
+
+    // get_distance must return an error (not hang) because the path
+    // from n3 to root goes through the deleted n1
+    assert!(tree.get_distance(&n3, &n2).is_err());
+}

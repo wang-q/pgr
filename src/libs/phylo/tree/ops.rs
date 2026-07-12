@@ -295,27 +295,20 @@ pub fn insert_parent_pair(tree: &mut Tree, id1: NodeId, id2: NodeId) -> anyhow::
 /// Remove nodes that have a parent and exactly one child (degree 2 nodes).
 /// This is often used after rerooting to clean up the tree.
 pub fn remove_degree_two_nodes(tree: &mut Tree) {
-    loop {
-        // Find a node that is:
-        // 1. Not deleted
-        // 2. Has a parent (not root)
-        // 3. Has exactly 1 child
-        let to_remove = if let Some(_root) = tree.get_root() {
-            tree.find_nodes(|n| {
-                n.parent.is_some() && // Not root
-                n.children.len() == 1 // Degree 2 (1 parent, 1 child)
-            })
-            .first()
-            .cloned()
-        } else {
-            None
-        };
+    // Collect all degree-2 nodes in one pass.
+    // Collapsing a degree-2 node replaces it with its child in the parent's
+    // children list, so the parent's degree is unchanged and no new degree-2
+    // nodes are created.
+    let to_remove: Vec<NodeId> = tree.find_nodes(|n| n.parent.is_some() && n.children.len() == 1);
 
-        if let Some(id) = to_remove {
-            // Ignore result, just proceed
+    for id in to_remove {
+        // Skip nodes that may have been altered by a previous collapse
+        let need_remove = tree
+            .get_node(id)
+            .map(|n| n.parent.is_some() && n.children.len() == 1)
+            .unwrap_or(false);
+        if need_remove {
             let _ = collapse_node(tree, id);
-        } else {
-            break;
         }
     }
 }
@@ -568,13 +561,8 @@ pub fn reroot_at_lca(
         return Ok(());
     }
 
-    let mut nodes: Vec<NodeId> = target_ids.iter().cloned().collect();
-    let mut sub_root_id = nodes
-        .pop()
-        .ok_or_else(|| anyhow::anyhow!("empty target set"))?;
-    for id in &nodes {
-        sub_root_id = tree.get_common_ancestor(&sub_root_id, id)?;
-    }
+    let nodes: Vec<NodeId> = target_ids.iter().cloned().collect();
+    let mut sub_root_id = tree.get_lca(&nodes)?;
 
     let old_root = tree
         .get_root()

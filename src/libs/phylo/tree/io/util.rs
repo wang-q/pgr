@@ -2,32 +2,47 @@
 
 use super::super::Tree;
 use crate::libs::phylo::node::NodeId;
+use std::collections::HashMap;
 
-/// Depth of `id` from the root (root has depth 0).
-pub(super) fn node_depth(tree: &Tree, id: NodeId) -> usize {
-    let mut depth = 0usize;
-    let mut curr = id;
-    while let Some(node) = tree.get_node(curr) {
-        match node.parent {
-            Some(p) => {
-                depth += 1;
-                curr = p;
+/// Compute depth (edges from root) for all nodes in a single BFS pass.
+pub(super) fn compute_depths(tree: &Tree) -> HashMap<NodeId, usize> {
+    let mut depths = HashMap::new();
+    if let Some(root) = tree.get_root() {
+        depths.insert(root, 0);
+        for &id in &tree.levelorder(&root) {
+            if let Some(node) = tree.get_node(id) {
+                let depth = depths.get(&id).copied().unwrap_or(0);
+                for &child in &node.children {
+                    depths.insert(child, depth + 1);
+                }
             }
-            None => break,
         }
     }
-    depth
+    depths
 }
 
-/// Maximum `node_depth` among all nodes in the subtree rooted at `id`.
-/// Note: this measures depth from the tree root, not from `id`.
-pub(super) fn branch_depth(tree: &Tree, id: NodeId) -> usize {
-    let self_depth = node_depth(tree, id);
-    tree.get_subtree(&id)
-        .iter()
-        .map(|nid| node_depth(tree, *nid))
-        .max()
-        .unwrap_or(self_depth)
+/// Compute height (max edges to any descendant leaf) for all nodes.
+/// Leaves have height 0; internal nodes have height = 1 + max(child heights).
+pub(super) fn compute_heights(tree: &Tree) -> HashMap<NodeId, usize> {
+    let mut heights = HashMap::new();
+    if let Some(root) = tree.get_root() {
+        for &id in &tree.postorder(&root) {
+            if let Some(node) = tree.get_node(id) {
+                let h = if node.children.is_empty() {
+                    0
+                } else {
+                    node.children
+                        .iter()
+                        .filter_map(|c| heights.get(c))
+                        .max()
+                        .map(|h| h + 1)
+                        .unwrap_or(0)
+                };
+                heights.insert(id, h);
+            }
+        }
+    }
+    heights
 }
 
 /// Compute scale bar (scale value, bar length in mm) for a tree of given height.

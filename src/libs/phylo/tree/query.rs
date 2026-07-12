@@ -86,6 +86,9 @@ pub fn get_distance(tree: &Tree, a: &NodeId, b: &NodeId) -> anyhow::Result<(f64,
                 } else {
                     break;
                 }
+            } else {
+                // Node deleted or missing; stop to avoid infinite loop
+                break;
             }
         }
         (weighted, topo)

@@ -84,6 +84,8 @@ pub(crate) fn match_names(tree: &Tree, args: &ArgMatches) -> anyhow::Result<BTre
         for name in names {
             if let Some(id) = id_of.get(name) {
                 ids.insert(*id);
+            } else {
+                log::warn!("node not found: {}", name);
             }
         }
     }
@@ -96,6 +98,8 @@ pub(crate) fn match_names(tree: &Tree, args: &ArgMatches) -> anyhow::Result<BTre
         for name in pgr::libs::io::read_names::<Vec<String>>(file)?.iter() {
             if let Some(id) = id_of.get(name) {
                 ids.insert(*id);
+            } else {
+                log::warn!("name-list node not found: {}", name);
             }
         }
     }

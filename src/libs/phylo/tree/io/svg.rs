@@ -1,7 +1,7 @@
 //! SVG format writer.
 
 use super::super::Tree;
-use super::util::{compute_scale_bar, node_depth};
+use super::util::compute_scale_bar;
 use crate::libs::phylo::node::NodeId;
 use std::collections::HashMap;
 
@@ -204,6 +204,10 @@ fn compute_svg_positions(
 
     // Get non-deleted leaves in order
     let nodes = tree.preorder(&root);
+
+    // Precompute depths in O(n) to avoid O(n^2) repeated node_depth calls
+    let depths = super::util::compute_depths(tree);
+
     let leaves: Vec<NodeId> = nodes
         .iter()
         .filter(|&&id| tree.get_node(id).map(|n| n.is_leaf()).unwrap_or(false))
@@ -249,14 +253,7 @@ fn compute_svg_positions(
     let max_depth = if height == 0.0 {
         leaves
             .iter()
-            .filter_map(|&id| {
-                let d = node_depth(tree, id);
-                if d > 0 {
-                    Some(d)
-                } else {
-                    None
-                }
-            })
+            .filter_map(|&id| depths.get(&id).copied().filter(|&d| d > 0))
             .max()
             .unwrap_or(1)
     } else {
@@ -311,7 +308,7 @@ fn compute_svg_positions(
                 cl * hskip
             } else {
                 // Cladogram: x is proportional to the node's depth from the root.
-                let depth = node_depth(tree, id);
+                let depth = *depths.get(&id).unwrap_or(&0);
                 depth as f64 * hskip
             };
 

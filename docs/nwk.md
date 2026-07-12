@@ -219,8 +219,8 @@ pgr nwk comment [OPTIONS] <infile>
 ```
 
 *   `-n` / `-l`: Select nodes.
-*   `--string <str>`: Add free-form string annotations.
-*   `--color`, `--label`, `--comment-text`: Add text attributes.
+*   `--string <str>`: Add free-form string annotations (stored as `string` property).
+*   `--color`, `--label`, `--comment-text`: Add text attributes (`--comment-text` stored as `comment` property for visualization).
 *   `--dot`, `--bar`, `--rec`, `--tri`: Add shape attributes (for `to-tex` / `to-forest`).
 *   `--remove <regex>`: Remove matching comments.
 *   `-o, --outfile <file>`: Output filename. `[stdout]` for screen.

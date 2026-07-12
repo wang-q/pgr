@@ -1,8 +1,9 @@
 //! LaTeX Forest format writer.
 
 use super::super::Tree;
-use super::util::{branch_depth, node_depth};
+use super::util::{compute_depths, compute_heights};
 use crate::libs::phylo::node::NodeId;
+use std::collections::HashMap;
 
 /// Serialize tree to LaTeX Forest format.
 ///
@@ -11,50 +12,62 @@ use crate::libs::phylo::node::NodeId;
 /// * `height` - Tree height for scaling branch lengths. If 0.0, uses cladogram mode (tier-based).
 pub fn to_forest(tree: &Tree, height: f64) -> String {
     if let Some(root) = tree.get_root() {
-        to_forest_recursive(tree, root, height)
+        let depths = compute_depths(tree);
+        let heights = compute_heights(tree);
+        to_forest_recursive(tree, root, height, &depths, &heights)
     } else {
         String::new()
     }
 }
 
-fn to_forest_recursive(tree: &Tree, id: NodeId, height: f64) -> String {
+fn to_forest_recursive(
+    tree: &Tree,
+    id: NodeId,
+    height: f64,
+    depths: &HashMap<NodeId, usize>,
+    heights: &HashMap<NodeId, usize>,
+) -> String {
     let Some(node) = tree.get_node(id) else {
         return String::new();
     };
     let indent = "  ";
 
     let children = &node.children;
-    let depth = node_depth(tree, id);
+    let depth = *depths.get(&id).unwrap_or(&0);
 
     if children.is_empty() {
         let indention = indent.repeat(depth);
         format!(
             "{}[{}]\n",
             indention,
-            to_forest_node_props(tree, id, height)
+            to_forest_node_props(tree, id, height, heights)
         )
     } else {
         let branch_set = children
             .iter()
-            .map(|&child| to_forest_recursive(tree, child, height))
+            .map(|&child| to_forest_recursive(tree, child, height, depths, heights))
             .collect::<Vec<_>>();
 
         let indention = indent.repeat(depth);
         format!(
             "{}[{}\n{}{}]\n",
             indention,
-            to_forest_node_props(tree, id, height),
+            to_forest_node_props(tree, id, height, heights),
             branch_set.join(""),
             indention,
         )
     }
 }
 
-fn to_forest_node_props(tree: &Tree, id: NodeId, height: f64) -> String {
+fn to_forest_node_props(
+    tree: &Tree,
+    id: NodeId,
+    height: f64,
+    heights: &HashMap<NodeId, usize>,
+) -> String {
     let Some(node) = tree.get_node(id) else {
         return String::new();
     };
-    let depth = node_depth(tree, id);
 
     let mut options = String::new();
 
@@ -128,11 +141,7 @@ fn to_forest_node_props(tree: &Tree, id: NodeId, height: f64) -> String {
     };
 
     if height == 0.0 {
-        let tier = if node.is_leaf() {
-            0
-        } else {
-            branch_depth(tree, id) - depth
-        };
+        let tier = *heights.get(&id).unwrap_or(&0);
         options += &format!(", tier={}", tier);
     } else {
         let edge = node.length.unwrap_or(0.0);

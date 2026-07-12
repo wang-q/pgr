@@ -82,6 +82,14 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let include_trivial = args.get_flag("include_trivial");
 
+    // Warn if single-file mode has fewer than 2 trees
+    if compare_file.is_none() && trees1.len() < 2 {
+        log::warn!(
+            "need at least 2 trees for pairwise comparison, got {}",
+            trees1.len()
+        );
+    }
+
     // 4. Compare
     // Header
     writeln!(writer, "Tree1\tTree2\tRF_Dist\tWRF_Dist\tKF_Dist")?;

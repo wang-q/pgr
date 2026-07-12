@@ -191,7 +191,7 @@ fn command_comment_string_free_form() {
         ])
         .run();
 
-    assert_eq!(stdout.trim(), "((A[&&NHX:comment=hello world],B),C);");
+    assert_eq!(stdout.trim(), "((A[&&NHX:string=hello world],B),C);");
 }
 
 #[test]
