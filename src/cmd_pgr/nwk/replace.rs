@@ -19,7 +19,7 @@ Notes:
     * `label` (default): Replaces the node name. Empty string removes the name.
     * `taxid`:           Appends as NCBI TaxID (`:T=<replacement>`) in NHX.
     * `species`:         Appends as species name (`:S=<replacement>`) in NHX.
-    * `asis`:            Appends verbatim to comments (e.g. `key=val` or `tag`).
+    * `asis`:            Appends as comments/properties. Values containing `=` are parsed as `key=value` pairs; bare values are stored as keys with empty values.
 * Columns 3+ are ALWAYS appended to the node's comments/properties.
   Key-value pairs (e.g., `color=red`) are stored as properties.
   Simple tags (e.g., `highlight`) are stored as keys with empty values.
@@ -114,20 +114,39 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                     .ok_or_else(|| anyhow::anyhow!("no replace values"))?
                     .to_string();
                 match mode.as_str() {
-                    "label" => node.set_name(first),
-                    "taxid" => node.add_property("T", first),
-                    "species" => node.add_property("S", first),
-                    "asis" => {
-                        if first.contains('=') {
-                            node.add_property_from_str(&first);
+                    "label" => {
+                        if first.is_empty() {
+                            node.name = None;
                         } else {
-                            node.add_property(&first, "");
+                            node.set_name(first);
+                        }
+                    }
+                    "taxid" => {
+                        if !first.is_empty() {
+                            node.add_property("T", first);
+                        }
+                    }
+                    "species" => {
+                        if !first.is_empty() {
+                            node.add_property("S", first);
+                        }
+                    }
+                    "asis" => {
+                        if !first.is_empty() {
+                            if first.contains('=') {
+                                node.add_property_from_str(&first);
+                            } else {
+                                node.add_property(&first, "");
+                            }
                         }
                     }
                     other => anyhow::bail!("unknown property mode: {}", other),
                 }
 
                 replaces.iter().skip(1).for_each(|e| {
+                    if e.is_empty() {
+                        return;
+                    }
                     if e.contains('=') {
                         node.add_property_from_str(e);
                     } else {

@@ -45,14 +45,19 @@ pub(crate) fn format_label_columns(node: &Node, name: &str, columns: &[String]) 
                 let comment = node
                     .properties
                     .as_ref()
+                    .filter(|p| !p.is_empty())
                     .map(|p| {
-                        let pairs: Vec<String> =
-                            p.iter().map(|(k, v)| format!(":{}={}", k, v)).collect();
-                        if pairs.is_empty() {
-                            String::new()
-                        } else {
-                            format!("[{}]", pairs.join(" "))
-                        }
+                        let pairs: Vec<String> = p
+                            .iter()
+                            .map(|(k, v)| {
+                                if v.is_empty() {
+                                    format!(":{}", k)
+                                } else {
+                                    format!(":{}={}", k, v)
+                                }
+                            })
+                            .collect();
+                        format!("[&&NHX{}]", pairs.join(""))
                     })
                     .unwrap_or_default();
                 out.push_str(&format!("\t{}", comment));

@@ -41,6 +41,7 @@ pgr nwk cmp [OPTIONS] <infile> [compare_file]
 ```
 
 *   `[compare_file]`: Optional second file. If omitted, compares all trees in `<infile>` pairwise.
+*   `--include-trivial`: Include trivial splits (single-leaf branches) in WRF/KF calculations.
 *   Output columns: `Tree1`, `Tree2`, `RF_Dist`, `WRF_Dist`, `KF_Dist`.
 
 ### distance
@@ -56,7 +57,7 @@ pgr nwk distance [OPTIONS] <infile>
     *   `parent`: Distance to parent.
     *   `pairwise`: All pairwise distances.
     *   `lca`: Distances to the Lowest Common Ancestor.
-    *   `phylip`: Output Phylip-formatted distance matrix.
+    *   `phylip`: Phylip-formatted distance matrix for the selected nodes.
 *   `-I`: Ignore internal nodes.
 *   `-L`: Ignore leaf nodes.
 
@@ -154,7 +155,7 @@ pgr nwk replace [OPTIONS] --replace-tsv <replace.tsv> <infile>
     *   `label` (default): Replace node name.
     *   `taxid`: Add as NCBI TaxID (`:T=`).
     *   `species`: Add as species name (`:S=`).
-    *   `asis`: Append verbatim to comments.
+    *   `asis`: Append as comments/properties. Values containing `=` are parsed as `key=value` pairs; bare values are stored as keys with empty values.
 
 ### reroot
 
@@ -183,6 +184,8 @@ pgr nwk subtree [OPTIONS] <infile>
 *   `-M`: Monophyly check (only output if clade matches selection exactly).
 *   `-c <N>`: Context (extend N levels up).
 *   `-C, --condense <name>`: Condense the subtree into a single node.
+    * The new node is annotated with `member=<count>` and `tri=white`.
+    * `<count>` is the number of named nodes matched by `-n/-l/-x` (including descendants expanded by `-D`).
 
 ### topo
 
@@ -215,6 +218,7 @@ pgr nwk comment [OPTIONS] <infile>
 *   `--color`, `--label`, `--comment-text`: Add text attributes.
 *   `--dot`, `--bar`, `--rec`, `--tri`: Add shape attributes (for `to-tex` / `to-forest`).
 *   `--remove <regex>`: Remove matching comments.
+*   `-o, --outfile <file>`: Output filename. `[stdout]` for screen.
 
 ### indent
 
@@ -226,6 +230,7 @@ pgr nwk indent [OPTIONS] <infile>
 
 *   `--text <str>`: Indentation string (default: "  ").
 *   `-c, --compact`: Compact output (single line).
+*   `-o, --outfile <file>`: Output filename. `[stdout]` for screen.
 
 ### to-dot
 
@@ -234,6 +239,8 @@ Converts Newick trees to Graphviz DOT format.
 ```bash
 pgr nwk to-dot [OPTIONS] <infile>
 ```
+
+*   `-o, --outfile <file>`: Output filename. `[stdout]` for screen.
 
 ### to-forest
 
@@ -244,6 +251,7 @@ pgr nwk to-forest [OPTIONS] <infile>
 ```
 
 *   `-b, --bl`: Include branch lengths.
+*   `-o, --outfile <file>`: Output filename. `[stdout]` for screen.
 
 ### to-svg
 
@@ -256,6 +264,7 @@ pgr nwk to-svg [OPTIONS] <infile>
 *   Automatically draws a phylogram if branch lengths are present, otherwise a cladogram.
 *   `-w, --width <N>`: SVG width in pixels (default: 800).
 *   `-v, --vskip <N>`: Vertical spacing between leaf nodes in pixels (default: 20).
+*   `-o, --outfile <file>`: Output filename. `[stdout]` for screen.
 
 ### to-tex
 
@@ -268,6 +277,7 @@ pgr nwk to-tex [OPTIONS] <infile>
 *   `-b, --bl`: Draw phylogram (with branch lengths).
 *   `--forest`: Input is already Forest code.
 *   `--no-default-style`: Skip default style definitions.
+*   `-o, --outfile <file>`: Output filename. `[stdout]` for screen.
 
 ---
 

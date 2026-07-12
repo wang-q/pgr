@@ -104,9 +104,13 @@ impl Node {
     /// assert_eq!(node.get_property("color"), Some(&"blue".to_string()));
     /// ```
     pub fn add_property(&mut self, key: impl Into<String>, value: impl Into<String>) {
+        let key = key.into();
+        if key.is_empty() {
+            return;
+        }
         self.properties
             .get_or_insert_with(BTreeMap::new)
-            .insert(key.into(), value.into());
+            .insert(key, value.into());
     }
 
     /// Add properties from a string.

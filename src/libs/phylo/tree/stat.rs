@@ -69,6 +69,9 @@ pub fn get_node_with_longest_edge(tree: &Tree) -> Option<NodeId> {
         .max_by(|a, b| {
             let len_a = a.length.unwrap_or(0.0);
             let len_b = b.length.unwrap_or(0.0);
+            // Treat NaN lengths as 0.0 so they are never selected as the longest edge.
+            let len_a = if len_a.is_nan() { 0.0 } else { len_a };
+            let len_b = if len_b.is_nan() { 0.0 } else { len_b };
             match len_a
                 .partial_cmp(&len_b)
                 .unwrap_or(std::cmp::Ordering::Equal)
@@ -359,5 +362,34 @@ pub fn tree_summary(tree: &Tree) -> TreeSummary {
         colless: colless(tree),
         is_rooted: is_rooted(tree),
         tree_type,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::libs::phylo::tree::Tree;
+
+    #[test]
+    fn get_node_with_longest_edge_nan() {
+        // B has NaN length, C has a real length; the longest edge should be C.
+        let mut tree = Tree::new();
+        let root = tree.add_node();
+        let a = tree.add_node();
+        let b = tree.add_node();
+        let c = tree.add_node();
+        tree.set_root(root);
+        tree.add_child(root, a).unwrap();
+        tree.add_child(root, b).unwrap();
+        tree.add_child(root, c).unwrap();
+        tree.get_node_mut(a).unwrap().set_name("A");
+        tree.get_node_mut(b).unwrap().set_name("B");
+        tree.get_node_mut(b).unwrap().length = Some(f64::NAN);
+        tree.get_node_mut(c).unwrap().set_name("C");
+        tree.get_node_mut(c).unwrap().length = Some(5.0);
+
+        let longest = get_node_with_longest_edge(&tree);
+        let c_id = tree.get_node_by_name("C").unwrap();
+        assert_eq!(longest, Some(c_id));
     }
 }

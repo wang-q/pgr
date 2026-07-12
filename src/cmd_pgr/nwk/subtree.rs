@@ -27,6 +27,8 @@ Notes:
       node in the original tree.
     * The new node inherits the edge length of the subtree root.
     * Added annotations: `member=<count>` and `tri=white`.
+    * `<count>` is the number of named nodes matched by `-n/-l/-x`
+      (including descendants expanded by `-D`).
 
 Examples:
 1. Extract subtree for Human and Chimp:
@@ -99,16 +101,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         let mut sub_root_id = tree.get_lca(&ids_vec)?;
 
         // Monophyly check
-        if is_monophyly {
-            let descendants_named = tree.get_named_leaves(sub_root_id);
-
-            if ids != descendants_named {
-                if is_condense {
-                    let out_string = tree.to_newick();
-                    writer.write_fmt(format_args!("{}\n", out_string))?;
-                }
-                continue;
+        if is_monophyly && !tree.is_monophyletic(&ids_vec) {
+            if is_condense {
+                let out_string = tree.to_newick();
+                writer.write_fmt(format_args!("{}\n", out_string))?;
             }
+            continue;
         }
 
         // Apply context

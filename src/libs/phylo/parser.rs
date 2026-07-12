@@ -203,15 +203,25 @@ fn parse_length(input: &str) -> IResult<&str, f64, DetailedError<'_>> {
             // This gives a better error message ("expected float" instead of trying other branches).
             cut(map_res(
                 recognize((
-                    digit1,
-                    opt((char('.'), digit1)),
+                    opt(alt((char('+'), char('-')))),
+                    alt((
+                        recognize((digit1, opt((char('.'), opt(digit1))))),
+                        recognize((char('.'), digit1)),
+                    )),
                     opt((
                         alt((char('e'), char('E'))),
                         opt(alt((char('+'), char('-')))),
                         digit1,
                     )),
                 )),
-                |s: &str| s.parse::<f64>(),
+                |s: &str| {
+                    let value = s.parse::<f64>().map_err(|e| e.to_string())?;
+                    if value < 0.0 {
+                        Err("negative branch length".to_string())
+                    } else {
+                        Ok(value)
+                    }
+                },
             )),
         ),
     )
@@ -748,6 +758,25 @@ mod tests {
             "negative branch length should be rejected, got {:?}",
             res
         );
+    }
+
+    #[test]
+    fn test_parser_length_formats() {
+        // Leading dot (no integer part)
+        let tree = Tree::from_newick("(A:.5,B:.25)C;").unwrap();
+        let root = tree.get_node(tree.get_root().unwrap()).unwrap();
+        let a = tree.get_node(root.children[0]).unwrap();
+        let b = tree.get_node(root.children[1]).unwrap();
+        assert!((a.length.unwrap() - 0.5).abs() < 1e-9);
+        assert!((b.length.unwrap() - 0.25).abs() < 1e-9);
+
+        // Explicit positive sign and scientific notation
+        let tree = Tree::from_newick("(A:+.5e1,B:+1.2e-3)C;").unwrap();
+        let root = tree.get_node(tree.get_root().unwrap()).unwrap();
+        let a = tree.get_node(root.children[0]).unwrap();
+        let b = tree.get_node(root.children[1]).unwrap();
+        assert!((a.length.unwrap() - 5.0).abs() < 1e-9);
+        assert!((b.length.unwrap() - 0.0012).abs() < 1e-9);
     }
 
     #[test]

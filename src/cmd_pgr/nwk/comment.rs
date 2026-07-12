@@ -17,7 +17,7 @@ pub fn make_subcommand() -> Command {
   of two node names, separated by commas
     * `--lca A,B`
 
-* Set `--string` to add free-form strings
+* Set `--string` to add a free-form string as the `comment` property
 
 * The following options are used for visualization
     * `--color`, `--label` and `--comment-text` take 1 argument
@@ -50,7 +50,7 @@ pub fn make_subcommand() -> Command {
             Arg::new("string")
                 .long("string")
                 .num_args(1)
-                .help("Free-form strings"),
+                .help("Free-form string stored as the comment property"),
         )
         .arg(crate::cmd_pgr::args::color_arg(None, "Color of names"))
         .arg(
@@ -160,7 +160,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         for id in &ids {
             if let Some(node) = tree.get_node_mut(*id) {
                 if let Some(x) = opt_string {
-                    node.add_property_from_str(x);
+                    node.add_property("comment", x);
                 }
 
                 if let Some(x) = opt_label {

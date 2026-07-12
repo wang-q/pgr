@@ -110,6 +110,8 @@ pub fn dist_phylip<W: Write>(
             } else {
                 tree.node_distance(v1, v2)?
             };
+            // Normalize -0.0 to 0.0 so Phylip matrices never print "-0.000000".
+            let dist = if dist == 0.0 { 0.0 } else { dist };
 
             writer.write_fmt(format_args!(" {:.6}", dist))?;
         }

@@ -178,6 +178,23 @@ fn command_comment_remove() {
 }
 
 #[test]
+fn command_comment_string_free_form() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "nwk",
+            "comment",
+            "tests/newick/abc.nwk",
+            "-n",
+            "A",
+            "--string",
+            "hello world",
+        ])
+        .run();
+
+    assert_eq!(stdout.trim(), "((A[&&NHX:comment=hello world],B),C);");
+}
+
+#[test]
 fn command_to_dot() {
     let (stdout, _) = PgrCmd::new()
         .args(&["nwk", "to-dot", "tests/newick/catarrhini.nwk"])

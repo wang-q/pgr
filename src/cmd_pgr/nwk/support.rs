@@ -6,7 +6,7 @@ use std::io::Write;
 /// Build the clap subcommand for support.
 pub fn make_subcommand() -> Command {
     Command::new("support")
-        .about("Attributes support values (bootstrap) to a tree")
+        .about("Assigns bootstrap support values to internal nodes")
         .after_help(
             r###"
 Attributes bootstrap support values to a target tree based on a set of replicate trees.

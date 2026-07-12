@@ -68,7 +68,9 @@ fn to_newick_recursive(tree: &Tree, node_id: NodeId, indent: &str, depth: usize)
     }
 
     if let Some(len) = node.length {
-        node_info.push_str(&format!(":{}", len));
+        if len.is_finite() {
+            node_info.push_str(&format!(":{}", len));
+        }
     }
 
     if let Some(props) = &node.properties {
@@ -208,5 +210,28 @@ mod tests {
         let output = to_newick(&tree);
         // Since BTreeMap order is deterministic (alphabetical keys), but we only have one key here.
         assert!(output.contains("A[&&NHX:color=red];"));
+    }
+
+    #[test]
+    fn test_to_newick_non_finite_lengths() {
+        let mut tree = Tree::new();
+        let root = tree.add_node();
+        let a = tree.add_node();
+        tree.set_root(root);
+        tree.add_child(root, a).unwrap();
+
+        tree.get_node_mut(root).unwrap().set_name("Root");
+        tree.get_node_mut(a).unwrap().set_name("A");
+        tree.get_node_mut(a).unwrap().length = Some(f64::NAN);
+        assert_eq!(to_newick(&tree), "(A)Root;");
+
+        tree.get_node_mut(a).unwrap().length = Some(f64::INFINITY);
+        assert_eq!(to_newick(&tree), "(A)Root;");
+
+        tree.get_node_mut(a).unwrap().length = Some(f64::NEG_INFINITY);
+        assert_eq!(to_newick(&tree), "(A)Root;");
+
+        tree.get_node_mut(a).unwrap().length = Some(0.5);
+        assert_eq!(to_newick(&tree), "(A:0.5)Root;");
     }
 }

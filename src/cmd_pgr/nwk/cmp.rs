@@ -1,5 +1,5 @@
 use anyhow::Context;
-use clap::{Arg, ArgMatches, Command};
+use clap::{Arg, ArgAction, ArgMatches, Command};
 use pgr::libs::phylo::tree::Tree;
 use std::io::Write;
 
@@ -15,7 +15,10 @@ Notes:
 * Metrics:
     * RF: Robinson-Foulds distance (Topological difference).
     * WRF: Weighted Robinson-Foulds distance (Branch length difference).
+      Trivial splits (single-leaf branches) are excluded by default.
     * KF: Kuhner-Felsenstein (Branch Score) distance.
+      Trivial splits are excluded by default.
+* Use `--include-trivial` to include single-leaf splits in WRF/KF calculations.
 
 * Input:
     * One file: Compares all trees in the file against each other (Pairwise).
@@ -43,6 +46,12 @@ Examples:
                 .index(2)
                 .help("Second input filename (optional)"),
         )
+        .arg(
+            Arg::new("include_trivial")
+                .long("include-trivial")
+                .action(ArgAction::SetTrue)
+                .help("Include trivial splits (single-leaf branches) in WRF/KF"),
+        )
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 /// Execute the cmp command.
@@ -69,6 +78,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut writer =
         pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
 
+    let include_trivial = args.get_flag("include_trivial");
+
     // 4. Compare
     // Header
     writeln!(writer, "Tree1\tTree2\tRF_Dist\tWRF_Dist\tKF_Dist")?;
@@ -78,7 +89,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     for (i, t1) in trees1.iter().enumerate() {
         let start_j = if compare_file.is_some() { 0 } else { i + 1 };
         for (j, t2) in trees2.iter().enumerate().skip(start_j) {
-            let (rf, wrf, kf) = pgr::libs::phylo::cmp::compute_tree_metrics(t1, t2)?;
+            let (rf, wrf, kf) =
+                pgr::libs::phylo::cmp::compute_tree_metrics(t1, t2, include_trivial)?;
             writeln!(writer, "{}\t{}\t{}\t{}\t{}", i + 1, j + 1, rf, wrf, kf)?;
         }
     }

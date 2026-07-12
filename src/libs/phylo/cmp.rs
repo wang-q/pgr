@@ -34,12 +34,32 @@ pub trait TreeComparison {
     ///
     /// Sum of absolute differences in branch lengths for all splits.
     /// If a split is missing in one tree, its length is assumed to be 0.
-    fn weighted_robinson_foulds(&self, other: &Self) -> anyhow::Result<f64>;
+    /// Trivial splits are excluded by default.
+    fn weighted_robinson_foulds(&self, other: &Self) -> anyhow::Result<f64> {
+        self.weighted_robinson_foulds_with_trivial(other, false)
+    }
+
+    /// Compute the Weighted Robinson-Foulds (WRF) distance with optional trivial splits.
+    fn weighted_robinson_foulds_with_trivial(
+        &self,
+        other: &Self,
+        include_trivial: bool,
+    ) -> anyhow::Result<f64>;
 
     /// Compute the Kuhner-Felsenstein (KF) distance (Branch Score Distance).
     ///
     /// Square root of the sum of squared differences in branch lengths for all splits.
-    fn kuhner_felsenstein(&self, other: &Self) -> anyhow::Result<f64>;
+    /// Trivial splits are excluded by default.
+    fn kuhner_felsenstein(&self, other: &Self) -> anyhow::Result<f64> {
+        self.kuhner_felsenstein_with_trivial(other, false)
+    }
+
+    /// Compute the Kuhner-Felsenstein (KF) distance with optional trivial splits.
+    fn kuhner_felsenstein_with_trivial(
+        &self,
+        other: &Self,
+        include_trivial: bool,
+    ) -> anyhow::Result<f64>;
 }
 
 /// Check leaf-set equality and build a sorted leaf_map for split comparison.
@@ -154,12 +174,26 @@ impl TreeComparison for Tree {
         Ok(diff1 + diff2)
     }
 
-    fn weighted_robinson_foulds(&self, other: &Self) -> anyhow::Result<f64> {
+    fn weighted_robinson_foulds_with_trivial(
+        &self,
+        other: &Self,
+        include_trivial: bool,
+    ) -> anyhow::Result<f64> {
         let leaf_map = check_leaves_and_build_map(self, other)?;
 
         // Get splits with values
         let splits1 = self.get_splits_with_values(&leaf_map);
         let splits2 = other.get_splits_with_values(&leaf_map);
+
+        let (splits1, splits2) = if include_trivial {
+            (splits1, splits2)
+        } else {
+            let num_leaves = leaf_map.len();
+            (
+                filter_trivial_splits(splits1, num_leaves),
+                filter_trivial_splits(splits2, num_leaves),
+            )
+        };
 
         // Calculate WRF
         let mut dist = 0.0;
@@ -176,12 +210,26 @@ impl TreeComparison for Tree {
         Ok(dist)
     }
 
-    fn kuhner_felsenstein(&self, other: &Self) -> anyhow::Result<f64> {
+    fn kuhner_felsenstein_with_trivial(
+        &self,
+        other: &Self,
+        include_trivial: bool,
+    ) -> anyhow::Result<f64> {
         let leaf_map = check_leaves_and_build_map(self, other)?;
 
         // Get splits with values
         let splits1 = self.get_splits_with_values(&leaf_map);
         let splits2 = other.get_splits_with_values(&leaf_map);
+
+        let (splits1, splits2) = if include_trivial {
+            (splits1, splits2)
+        } else {
+            let num_leaves = leaf_map.len();
+            (
+                filter_trivial_splits(splits1, num_leaves),
+                filter_trivial_splits(splits2, num_leaves),
+            )
+        };
 
         // Calculate KF (Sum of squares)
         let mut sum_sq = 0.0;
@@ -199,17 +247,38 @@ impl TreeComparison for Tree {
     }
 }
 
+/// Remove trivial splits (single leaf or all-but-one leaf) from a split map.
+fn filter_trivial_splits(
+    splits: HashMap<FixedBitSet, f64>,
+    num_leaves: usize,
+) -> HashMap<FixedBitSet, f64> {
+    splits
+        .into_iter()
+        .filter(|(split, _)| {
+            let count = split.count_ones(..);
+            count > 1 && count < num_leaves - 1
+        })
+        .collect()
+}
+
 /// Compute RF, weighted RF, and Kuhner-Felsenstein metrics as formatted strings.
-pub fn compute_tree_metrics(t1: &Tree, t2: &Tree) -> anyhow::Result<(String, String, String)> {
+pub fn compute_tree_metrics(
+    t1: &Tree,
+    t2: &Tree,
+    include_trivial: bool,
+) -> anyhow::Result<(String, String, String)> {
     let rf = t1.robinson_foulds(t2)?;
-    let wrf = t1.weighted_robinson_foulds(t2)?;
-    let kf = t1.kuhner_felsenstein(t2)?;
+    let wrf = t1.weighted_robinson_foulds_with_trivial(t2, include_trivial)?;
+    let kf = t1.kuhner_felsenstein_with_trivial(t2, include_trivial)?;
 
     Ok((rf.to_string(), format_float(wrf), format_float(kf)))
 }
 
 /// Format a float to 6 decimal places, stripping trailing zeros.
 pub(crate) fn format_float(val: f64) -> String {
+    if val == 0.0 {
+        return "0".to_string();
+    }
     let s = format!("{:.6}", val);
     let trimmed = s.trim_end_matches('0').trim_end_matches('.');
     if trimmed.is_empty() {
@@ -260,8 +329,7 @@ mod tests {
         // T1: ((A:0.1,B:0.1):0.2,(C:0.1,D:0.1):0.2);
         // T2: ((A:0.1,B:0.1):0.3,(C:0.1,D:0.1):0.2);
         // Split {A,B}: T1=0.2, T2=0.3. Diff=0.1.
-        // Other splits: Trivial {A}, {B}, {C}, {D} are 0.1 each. {C,D} is 0.2 each.
-        // Assuming trivial splits are identical and lengths match.
+        // Trivial splits are excluded by default, so leaf branch lengths do not contribute.
         // WRF: |0.2 - 0.3| = 0.1.
         // KF: sqrt((0.2-0.3)^2) = 0.1.
 
@@ -276,6 +344,47 @@ mod tests {
 
         assert!((wrf - 0.1).abs() < 1e-6, "WRF expected 0.1, got {}", wrf);
         assert!((kf - 0.1).abs() < 1e-6, "KF expected 0.1, got {}", kf);
+    }
+
+    #[test]
+    fn test_wrf_kf_include_trivial() {
+        // T1: ((A:0.1,B:0.1):0.2,(C:0.1,D:0.1):0.2);
+        // T2: ((A:0.2,B:0.1):0.2,(C:0.1,D:0.1):0.2);
+        // Non-trivial splits are identical; only the trivial split {A} differs (0.1 vs 0.2).
+        // Default (exclude trivial): WRF = 0.0, KF = 0.0.
+        // Include trivial: WRF = 0.1, KF = 0.1.
+
+        let t1_str = "((A:0.1,B:0.1):0.2,(C:0.1,D:0.1):0.2);";
+        let t2_str = "((A:0.2,B:0.1):0.2,(C:0.1,D:0.1):0.2);";
+
+        let t1 = Tree::from_newick(t1_str).unwrap();
+        let t2 = Tree::from_newick(t2_str).unwrap();
+
+        let wrf_default = t1.weighted_robinson_foulds(&t2).unwrap();
+        let kf_default = t1.kuhner_felsenstein(&t2).unwrap();
+        assert!(
+            wrf_default.abs() < 1e-6,
+            "WRF default expected 0.0, got {}",
+            wrf_default
+        );
+        assert!(
+            kf_default.abs() < 1e-6,
+            "KF default expected 0.0, got {}",
+            kf_default
+        );
+
+        let wrf_trivial = t1.weighted_robinson_foulds_with_trivial(&t2, true).unwrap();
+        let kf_trivial = t1.kuhner_felsenstein_with_trivial(&t2, true).unwrap();
+        assert!(
+            (wrf_trivial - 0.1).abs() < 1e-6,
+            "WRF with trivial expected 0.1, got {}",
+            wrf_trivial
+        );
+        assert!(
+            (kf_trivial - 0.1).abs() < 1e-6,
+            "KF with trivial expected 0.1, got {}",
+            kf_trivial
+        );
     }
 
     #[test]
@@ -304,5 +413,13 @@ mod tests {
             "KF expected sqrt(0.32), got {}",
             kf
         );
+    }
+
+    #[test]
+    fn format_float_negative_zero() {
+        assert_eq!(format_float(-0.0), "0");
+        assert_eq!(format_float(0.0), "0");
+        assert_eq!(format_float(1.0), "1");
+        assert_eq!(format_float(1.234560), "1.23456");
     }
 }

@@ -288,6 +288,23 @@ fn command_label_columns() {
 }
 
 #[test]
+fn command_label_columns_full() {
+    // -c full should emit the comment in NHX format
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "nwk",
+            "label",
+            "tests/newick/catarrhini.comment.nwk",
+            "-c",
+            "full",
+        ])
+        .run();
+
+    assert!(stdout.contains("Homo\t[&&NHX:S=Homo]\n"));
+    assert!(stdout.contains("Gorilla\t[&&NHX:S=Gorilla]\n"));
+}
+
+#[test]
 fn command_label_formatting_root() {
     // --root
     let (stdout, _) = PgrCmd::new()

@@ -6,12 +6,6 @@ use crate::libs::phylo::node::NodeId;
 use std::collections::HashMap;
 
 /// Serialize tree to SVG format.
-///
-/// # Arguments
-/// * `tree` - The tree to serialize.
-/// * `height` - Tree height for scaling branch lengths. If 0.0, uses cladogram mode.
-/// * `vskip` - Vertical spacing between leaf nodes in pixels.
-/// * `width` - SVG width in pixels.
 pub fn to_svg(tree: &Tree, height: f64, vskip: f64, width: f64) -> String {
     let root = match tree.get_root() {
         Some(r) => r,
@@ -201,10 +195,6 @@ pub fn to_svg(tree: &Tree, height: f64, vskip: f64, width: f64) -> String {
 }
 
 /// Compute (x, y) positions for all nodes in the tree.
-///
-/// Layout: left-to-right (root at left, leaves at right).
-/// - Y: leaves are evenly spaced vertically; internal nodes are centered over their children.
-/// - X: cladogram uses tier-based alignment (all leaves at same x); phylogram uses cumulative branch length * scale.
 fn compute_svg_positions(
     tree: &Tree,
     root: NodeId,

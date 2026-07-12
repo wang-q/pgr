@@ -2,6 +2,8 @@
 #[path = "common/mod.rs"]
 mod common;
 use common::PgrCmd;
+use std::io::Write;
+use tempfile::Builder;
 
 #[test]
 fn command_rename_basic() {
@@ -145,6 +147,32 @@ fn command_replace_remove() {
     // resulting in format like `(:0.1,Pan:0.1)...` or just `(,Pan)...` depending on branch lengths.
     // abc.nwk has no branch lengths.
     assert!(stdout.contains("((,Pan),C);"));
+}
+
+#[test]
+fn command_replace_asis_empty() {
+    // Empty replacement value in asis mode must not create an empty-key property.
+    let mut tsv = Builder::new().suffix(".tsv").tempfile().unwrap();
+    writeln!(tsv, "A\t").unwrap(); // empty second column for A
+    writeln!(tsv, "B\ttag").unwrap();
+    let replace_tsv = tsv.path().to_str().unwrap();
+
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "nwk",
+            "replace",
+            "tests/newick/abc.nwk",
+            "--replace-tsv",
+            replace_tsv,
+            "--mode",
+            "asis",
+        ])
+        .run();
+
+    // A should have no comment; B should get the bare tag.
+    assert!(!stdout.contains("[&&NHX:]"));
+    assert!(stdout.contains("B[&&NHX:tag]"));
+    assert!(stdout.contains("((A,B[&&NHX:tag]),C);"));
 }
 
 #[test]
