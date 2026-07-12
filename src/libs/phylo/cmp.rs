@@ -148,6 +148,12 @@ impl TreeComparison for Tree {
                 normalized.toggle_range(..num_leaves);
             }
 
+            // Root node has no parent edge; its length does not belong to any split.
+            if node_id == root_id {
+                node_leaves.insert(node_id, bitset);
+                continue;
+            }
+
             // Use branch length, default to 0.0 if None, and treat non-finite
             // lengths as 0.0 so they do not poison WRF/KF calculations.
             let len = super::tree::finite_length(node.length);
@@ -414,6 +420,22 @@ mod tests {
             "KF expected sqrt(0.32), got {}",
             kf
         );
+    }
+
+    #[test]
+    fn test_wrf_kf_ignore_root_length() {
+        // Root has a huge length, but WRF/KF only compare non-trivial split lengths.
+        // The non-trivial split {A,B} has length 0.2 in both trees, so distances are 0.
+        let t1_str = "((A:0.1,B:0.1):0.2,(C:0.1,D:0.1):0.2):999;";
+        let t2_str = "((A:0.1,B:0.1):0.2,(C:0.1,D:0.1):0.2):1;";
+
+        let t1 = Tree::from_newick(t1_str).unwrap();
+        let t2 = Tree::from_newick(t2_str).unwrap();
+
+        let wrf = t1.weighted_robinson_foulds(&t2).unwrap();
+        let kf = t1.kuhner_felsenstein(&t2).unwrap();
+        assert!(wrf.abs() < 1e-6, "WRF expected 0.0, got {}", wrf);
+        assert!(kf.abs() < 1e-6, "KF expected 0.0, got {}", kf);
     }
 
     #[test]

@@ -3,7 +3,7 @@ use super::node::NodeId;
 use super::tree::Tree;
 use nom::{
     branch::alt,
-    bytes::complete::{is_not, take_until, take_while},
+    bytes::complete::{is_not, tag, take_until, take_while},
     character::complete::{char, digit1, multispace0},
     combinator::{cut, map, map_res, opt, recognize},
     error::{context, ContextError, ErrorKind, FromExternalError, ParseError},
@@ -195,7 +195,9 @@ fn single_quoted(input: &str) -> IResult<&str, String, DetailedError<'_>> {
 // 3. Length
 // Parses the branch length, which follows a colon (e.g., ":0.123").
 // Supports standard floating point formats including scientific notation.
-fn parse_length(input: &str) -> IResult<&str, f64, DetailedError<'_>> {
+// Non-finite (NaN, +/-inf) and negative values are accepted syntactically
+// but normalized to `None`, matching the documented "treated as 0.0" semantics.
+fn parse_length(input: &str) -> IResult<&str, Option<f64>, DetailedError<'_>> {
     context(
         "length",
         preceded(
@@ -203,26 +205,33 @@ fn parse_length(input: &str) -> IResult<&str, f64, DetailedError<'_>> {
             // Use `cut` to prevent backtracking if we found a ':' but failed to parse the number.
             // This gives a better error message ("expected float" instead of trying other branches).
             cut(map_res(
-                recognize((
-                    opt(alt((char('+'), char('-')))),
-                    alt((
-                        recognize((digit1, opt((char('.'), opt(digit1))))),
-                        recognize((char('.'), digit1)),
+                alt((
+                    // Non-finite special values: NaN, +/-inf, +/-infinity.
+                    // These are accepted syntactically and normalized to None.
+                    recognize((
+                        opt(alt((char('-'), char('+')))),
+                        alt((tag("NaN"), tag("infinity"), tag("inf"))),
                     )),
-                    opt((
-                        alt((char('e'), char('E'))),
+                    // Standard floating point formats.
+                    recognize((
                         opt(alt((char('+'), char('-')))),
-                        digit1,
+                        alt((
+                            recognize((digit1, opt((char('.'), opt(digit1))))),
+                            recognize((char('.'), digit1)),
+                        )),
+                        opt((
+                            alt((char('e'), char('E'))),
+                            opt(alt((char('+'), char('-')))),
+                            digit1,
+                        )),
                     )),
                 )),
-                |s: &str| {
+                |s: &str| -> Result<Option<f64>, String> {
                     let value = s.parse::<f64>().map_err(|e| e.to_string())?;
-                    if value < 0.0 {
-                        Err("negative branch length".to_string())
-                    } else if !value.is_finite() {
-                        Err("branch length must be finite".to_string())
+                    if value < 0.0 || !value.is_finite() {
+                        Ok(None)
                     } else {
-                        Ok(value)
+                        Ok(Some(value))
                     }
                 },
             )),
@@ -325,7 +334,7 @@ fn parse_subtree(input: &str) -> IResult<&str, ParsedNode, DetailedError<'_>> {
             node.name = Some(l);
         }
     }
-    node.length = length;
+    node.length = length.flatten();
 
     // Merge properties from comments found before and after length
     if comment1.is_some() || comment2.is_some() {
@@ -760,12 +769,25 @@ mod tests {
     #[test]
     fn test_parser_negative_length() {
         let input = "(A,B:-0.5)C;";
-        let res = Tree::from_newick(input);
-        assert!(
-            res.is_err(),
-            "negative branch length should be rejected, got {:?}",
-            res
+        let tree = Tree::from_newick(input).unwrap();
+        let root = tree.get_node(tree.get_root().unwrap()).unwrap();
+        let b = tree.get_node(root.children[1]).unwrap();
+        assert_eq!(b.name.as_deref(), Some("B"));
+        assert_eq!(
+            b.length, None,
+            "negative branch length should be normalized to None"
         );
+    }
+
+    #[test]
+    fn test_parser_non_finite_lengths() {
+        // NaN and infinities are normalized to None.
+        let tree = Tree::from_newick("(A:NaN,B:inf,C:-inf)R;").unwrap();
+        let root = tree.get_node(tree.get_root().unwrap()).unwrap();
+        for &child_id in &root.children {
+            let child = tree.get_node(child_id).unwrap();
+            assert_eq!(child.length, None, "{:?} should be None", child.name);
+        }
     }
 
     #[test]

@@ -1,7 +1,7 @@
 //! SVG format writer.
 
 use super::super::Tree;
-use super::util::{branch_depth, compute_scale_bar, node_depth};
+use super::util::{compute_scale_bar, node_depth};
 use crate::libs::phylo::node::NodeId;
 use std::collections::HashMap;
 
@@ -331,10 +331,9 @@ fn compute_svg_positions(
                 let cl = cum_length.get(&id).copied().unwrap_or(0.0);
                 cl * hskip
             } else {
-                // Cladogram: use subtree height (like Forest's tier system)
-                // tier = max_depth - branch_depth + 1
-                let bd = branch_depth(tree, id);
-                (max_depth - bd + 1) as f64 * hskip
+                // Cladogram: x is proportional to the node's depth from the root.
+                let depth = node_depth(tree, id);
+                depth as f64 * hskip
             };
 
             positions.insert(id, (x, y));
@@ -351,4 +350,39 @@ fn xml_escape(s: &str) -> String {
         .replace('>', "&gt;")
         .replace('"', "&quot;")
         .replace('\'', "&apos;")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::libs::phylo::tree::Tree;
+
+    #[test]
+    fn cladogram_internal_node_x_greater_than_parent() {
+        // Tree: ((A,B),(C,D));  root has two internal children, each with two leaves.
+        let tree = Tree::from_newick("((A,B),(C,D));").unwrap();
+        let root = tree.get_root().unwrap();
+        let positions = compute_svg_positions(&tree, root, 0.0, 20.0, 800.0);
+
+        let root_pos = positions.get(&root).unwrap();
+        assert_eq!(root_pos.0, 0.0, "root x should be 0");
+
+        let root_node = tree.get_node(root).unwrap();
+        for &child_id in &root_node.children {
+            let child_pos = positions.get(&child_id).unwrap();
+            assert!(
+                child_pos.0 > root_pos.0,
+                "internal node x should be greater than root x"
+            );
+
+            let child_node = tree.get_node(child_id).unwrap();
+            for &leaf_id in &child_node.children {
+                let leaf_pos = positions.get(&leaf_id).unwrap();
+                assert!(
+                    leaf_pos.0 > child_pos.0,
+                    "leaf x should be greater than its parent internal node x"
+                );
+            }
+        }
+    }
 }

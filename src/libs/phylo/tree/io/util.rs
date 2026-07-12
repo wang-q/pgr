@@ -19,7 +19,8 @@ pub(super) fn node_depth(tree: &Tree, id: NodeId) -> usize {
     depth
 }
 
-/// Max depth of this node's children.
+/// Maximum `node_depth` among all nodes in the subtree rooted at `id`.
+/// Note: this measures depth from the tree root, not from `id`.
 pub(super) fn branch_depth(tree: &Tree, id: NodeId) -> usize {
     let self_depth = node_depth(tree, id);
     tree.get_subtree(&id)

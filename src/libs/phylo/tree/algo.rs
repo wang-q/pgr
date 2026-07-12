@@ -1,5 +1,6 @@
 use super::Tree;
 use crate::libs::phylo::node::NodeId;
+use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet};
 
 /// Sort the children of each node by their name (label).
@@ -134,15 +135,15 @@ pub fn ladderize(tree: &mut Tree, descending: bool) {
                 continue;
             }
 
-            node.children.sort_by(|a, b| {
-                let size_a = size_map.get(a).unwrap_or(&0);
-                let size_b = size_map.get(b).unwrap_or(&0);
-                if descending {
-                    size_b.cmp(size_a)
-                } else {
-                    size_a.cmp(size_b)
-                }
-            });
+            // Stable sort so that an earlier alphanumeric order is preserved
+            // within groups that have the same descendant count.
+            if descending {
+                node.children
+                    .sort_by_key(|&c| Reverse(size_map.get(&c).copied().unwrap_or(0)));
+            } else {
+                node.children
+                    .sort_by_key(|&c| size_map.get(&c).copied().unwrap_or(0));
+            }
         }
     }
 }
@@ -269,15 +270,15 @@ pub fn deladderize(tree: &mut Tree) {
                 continue;
             }
 
-            node.children.sort_by(|a, b| {
-                let size_a = size_map.get(a).unwrap_or(&0);
-                let size_b = size_map.get(b).unwrap_or(&0);
-                if descending {
-                    size_b.cmp(size_a)
-                } else {
-                    size_a.cmp(size_b)
-                }
-            });
+            // Stable sort so that alternating levels preserve input order
+            // within groups that have the same descendant count.
+            if descending {
+                node.children
+                    .sort_by_key(|&c| Reverse(size_map.get(&c).copied().unwrap_or(0)));
+            } else {
+                node.children
+                    .sort_by_key(|&c| size_map.get(&c).copied().unwrap_or(0));
+            }
             node.children.clone()
         } else {
             continue;
@@ -614,5 +615,24 @@ mod tests {
         let cde_children = &tree.get_node(cde).unwrap().children;
         assert_eq!(cde_children[0], de); // Larger one first (descending)
         assert_eq!(cde_children[1], c);
+    }
+
+    #[test]
+    fn test_ladderize_is_stable() {
+        // All children have the same size, so stable sort must preserve input order.
+        let mut tree = Tree::from_newick("(Z,Y,X);").unwrap();
+        ladderize(&mut tree, false);
+        assert_eq!(tree.to_newick(), "(Z,Y,X);");
+    }
+
+    #[test]
+    fn test_sort_by_name_then_ladderize() {
+        // Leaves in reverse alphabetical order. sort_by_name puts them in
+        // alphabetical order; ladderize is stable and preserves that order
+        // because all leaves have the same descendant count.
+        let mut tree = Tree::from_newick("(D,C,B,A);").unwrap();
+        sort_by_name(&mut tree, false);
+        ladderize(&mut tree, false);
+        assert_eq!(tree.to_newick(), "(A,B,C,D);");
     }
 }

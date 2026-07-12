@@ -64,9 +64,11 @@ pub fn get_property_values(tree: &Tree, key: &str) -> BTreeMap<NodeId, String> {
 
 /// Return the node ID with the longest edge length.
 pub fn get_node_with_longest_edge(tree: &Tree) -> Option<NodeId> {
+    let root_id = tree.get_root();
     tree.nodes
         .iter()
         .filter(|n| !n.deleted)
+        .filter(|n| root_id.map(|r| n.id != r).unwrap_or(true))
         .max_by(|a, b| {
             // Treat non-finite lengths as 0.0 so they are never selected as the longest edge.
             let len_a = super::finite_length(a.length);
@@ -372,6 +374,10 @@ pub fn tree_summary(tree: &Tree) -> TreeSummary {
                     internal_labels += 1;
                 }
             }
+            // Root node has no parent edge, so its length is not an edge.
+            if id == root {
+                continue;
+            }
             if node.length.is_some() {
                 edges_with_length += 1;
             } else {
@@ -380,10 +386,10 @@ pub fn tree_summary(tree: &Tree) -> TreeSummary {
         }
     }
 
-    let tree_type = if edges_without_length == nodes {
-        TreeType::Cladogram
-    } else if edges_with_length == nodes || edges_with_length == nodes.saturating_sub(1) {
+    let tree_type = if edges_with_length == nodes.saturating_sub(1) && nodes > 1 {
         TreeType::Phylogram
+    } else if edges_with_length == 0 {
+        TreeType::Cladogram
     } else {
         TreeType::Neither
     };
@@ -430,6 +436,35 @@ mod tests {
         let longest = get_node_with_longest_edge(&tree);
         let c_id = tree.get_node_by_name("C").unwrap();
         assert_eq!(longest, Some(c_id));
+    }
+
+    #[test]
+    fn tree_summary_ignores_root_length() {
+        // Only the root has a length; all other edges are undecorated.
+        // The root's length must not be counted as an edge.
+        let tree = Tree::from_newick("(A,B)Root:100;").unwrap();
+        let summary = tree_summary(&tree);
+        assert_eq!(summary.nodes, 3);
+        assert_eq!(summary.edges_with_length, 0);
+        assert_eq!(summary.edges_without_length, 2);
+        assert_eq!(summary.tree_type, TreeType::Cladogram);
+    }
+
+    #[test]
+    fn get_node_with_longest_edge_ignores_root() {
+        let mut tree = Tree::new();
+        let root = tree.add_node();
+        let a = tree.add_node();
+        let b = tree.add_node();
+        tree.set_root(root);
+        tree.add_child(root, a).unwrap();
+        tree.add_child(root, b).unwrap();
+        tree.get_node_mut(root).unwrap().length = Some(100.0);
+        tree.get_node_mut(a).unwrap().length = Some(1.0);
+        tree.get_node_mut(b).unwrap().length = Some(2.0);
+
+        let longest = get_node_with_longest_edge(&tree);
+        assert_eq!(longest, Some(b));
     }
 
     #[test]

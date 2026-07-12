@@ -113,8 +113,13 @@ pgr nwk order [OPTIONS] <infile>
 
 *   `--num-descendants` / `--num-descendants-rev`: Sort by number of descendants (Ladderize).
 *   `--alphanumeric` / `--alphanumeric-rev`: Sort by label (Alphanumeric).
-*   `--name-list <file>`: Sort by a list of names.
+*   `--name-list <file>`: Sort by a list of names. Applied before the other sort options.
 *   `--deladderize` (`--dl`): Alternate sort direction at each level.
+
+When `--alphanumeric` and `--num-descendants` are both enabled, the tree is first sorted
+alphanumerically and then ladderized stably. The final ordering is therefore primarily by
+number of descendants, with alphanumeric order used as the tie-breaker within groups of
+equal size.
 
 ### prune
 
