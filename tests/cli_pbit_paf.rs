@@ -4,84 +4,40 @@ mod common;
 
 use common::PgrCmd;
 use std::fs;
-use std::io::Write;
+use std::path::PathBuf;
 use tempfile::TempDir;
 
-/// Write a FASTA file with the given (name, seq) records.
-fn write_fasta(path: &std::path::Path, records: &[(&str, &str)]) {
-    let mut f = fs::File::create(path).unwrap();
-    for (name, seq) in records {
-        writeln!(f, ">{}", name).unwrap();
-        writeln!(f, "{}", seq).unwrap();
-    }
+/// Return the absolute path to a fixture in `tests/pbit/input`.
+fn fixture(name: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/pbit/input")
+        .join(name)
 }
 
-/// Generate a deterministic random DNA sequence of the given length.
-fn random_dna(len: usize, seed: u64) -> Vec<u8> {
-    use rand::rngs::StdRng;
-    use rand::Rng;
-    use rand::SeedableRng;
-    let mut rng = StdRng::seed_from_u64(seed);
-    (0..len)
-        .map(|_| match rng.random_range(0u8..4) {
-            0 => b'A',
-            1 => b'C',
-            2 => b'G',
-            _ => b'T',
-        })
-        .collect()
-}
-
-/// Return a different DNA base (for introducing SNPs).
-fn snp_of(b: u8) -> u8 {
-    match b {
-        b'A' => b'C',
-        b'C' => b'G',
-        b'G' => b'T',
-        _ => b'A',
-    }
-}
-
-/// Build a single PAF line with 12 mandatory fields + `cg:Z:` CIGAR tag.
-#[allow(clippy::too_many_arguments)]
-fn make_paf_line(
-    qname: &str,
-    qlen: u32,
-    qs: u32,
-    qe: u32,
-    strand: &str,
-    tname: &str,
-    tlen: u32,
-    ts: u32,
-    te: u32,
-    cigar: &str,
-) -> String {
-    // matches = sum of = ops (approximation; pbit does not use this field).
-    // block_length = target span (te - ts). mapq = 60.
-    let matches = (qe - qs).min(te - ts);
-    let block_len = te - ts;
-    format!(
-        "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t60\tcg:Z:{}",
-        qname, qlen, qs, qe, strand, tname, tlen, ts, te, matches, block_len, cigar
-    )
-}
-
-/// Write PAF lines to a file (one per line).
-fn write_paf(path: &std::path::Path, lines: &[String]) {
-    let mut f = fs::File::create(path).unwrap();
-    for line in lines {
-        writeln!(f, "{}", line).unwrap();
-    }
-}
-
-/// Read a FASTA file produced by `pgr pbit to-fa` and return the concatenated
-/// sequence (all non-header lines joined, uppercased).
-fn read_extracted_fa(path: &std::path::Path) -> String {
-    let content = fs::read_to_string(path).unwrap();
-    content
+/// Read a FASTA file and return the concatenated sequence (all non-header
+/// lines joined, uppercased).
+fn read_fasta_seq(path: &std::path::Path) -> String {
+    fs::read_to_string(path)
+        .unwrap()
         .lines()
         .filter(|l| !l.starts_with('>'))
         .collect::<String>()
+        .to_ascii_uppercase()
+}
+
+/// Read a single named record from a FASTA file.
+fn read_fasta_record(path: &std::path::Path, target: &str) -> String {
+    let content = fs::read_to_string(path).unwrap();
+    let mut in_target = false;
+    let mut seq = String::new();
+    for line in content.lines() {
+        if let Some(name) = line.strip_prefix('>') {
+            in_target = name == target;
+        } else if in_target {
+            seq.push_str(line);
+        }
+    }
+    seq.to_ascii_uppercase()
 }
 
 /// Run `pgr pbit create` with the given ref, then `pgr pbit to-fa` and return
@@ -116,7 +72,7 @@ fn create_and_extract(
         "expected output file: {}",
         out_fa.display()
     );
-    read_extracted_fa(&out_fa)
+    read_fasta_seq(&out_fa)
 }
 
 // ── Test 1: + strand roundtrip with =/X/I/D CIGAR ──────────────────────
@@ -124,51 +80,21 @@ fn create_and_extract(
 #[test]
 fn test_pbit_paf_plus_strand_roundtrip() {
     let temp = TempDir::new().unwrap();
-    let ref_fa = temp.path().join("ref.fa");
-    let sample_fa = temp.path().join("sample.fa");
-    let paf_path = temp.path().join("sample.paf");
     let out_pbit = temp.path().join("out.pbit");
-
-    // ref = 2000 bp. Sample (2001 bp) = ref with SNP at 100, 2-bp insertion
-    // after position 200, and 1-bp deletion at ref position 299.
-    // CIGAR: 100= 1X 99= 2I 99= 1D 1700=
-    let ref_seq = random_dna(2000, 42);
-    write_fasta(&ref_fa, &[("chr1", std::str::from_utf8(&ref_seq).unwrap())]);
-
-    let mut sample: Vec<u8> = Vec::with_capacity(2001);
-    sample.extend_from_slice(&ref_seq[0..100]); // 100=
-    sample.push(snp_of(ref_seq[100])); // 1X
-    sample.extend_from_slice(&ref_seq[101..200]); // 99=
-    sample.extend_from_slice(b"GT"); // 2I
-    sample.extend_from_slice(&ref_seq[200..299]); // 99=
-                                                  // ref[299] deleted (1D)
-    sample.extend_from_slice(&ref_seq[300..2000]); // 1700=
-    write_fasta(
-        &sample_fa,
-        &[("chr1", std::str::from_utf8(&sample).unwrap())],
-    );
-
-    let cigar = "100=1X99=2I99=1D1700=";
-    write_paf(
-        &paf_path,
-        &[make_paf_line(
-            "chr1", 2001, 0, 2001, "+", "chr1", 2000, 0, 2000, cigar,
-        )],
-    );
 
     let got = create_and_extract(
         temp.path(),
-        &ref_fa,
+        &fixture("ref_2000.fa"),
         &out_pbit,
         &[
             "-i",
-            sample_fa.to_str().unwrap(),
+            fixture("sample_2000_plus_strand.fa").to_str().unwrap(),
             "-p",
-            paf_path.to_str().unwrap(),
+            fixture("sample_2000_plus_strand.paf").to_str().unwrap(),
         ],
-        "sample",
+        "sample_2000_plus_strand",
     );
-    let expected: String = sample.iter().map(|&b| b as char).collect();
+    let expected = read_fasta_seq(&fixture("sample_2000_plus_strand.fa"));
     assert_eq!(got, expected);
 }
 
@@ -177,42 +103,21 @@ fn test_pbit_paf_plus_strand_roundtrip() {
 #[test]
 fn test_pbit_paf_minus_strand_roundtrip() {
     let temp = TempDir::new().unwrap();
-    let ref_fa = temp.path().join("ref.fa");
-    let sample_fa = temp.path().join("sample.fa");
-    let paf_path = temp.path().join("sample.paf");
     let out_pbit = temp.path().join("out.pbit");
-
-    // ref = 2000 bp. sample = RC(ref). PAF strand='-', CIGAR='2000='
-    // (describes RC(sample) vs ref = ref vs ref).
-    let ref_seq = random_dna(2000, 42);
-    write_fasta(&ref_fa, &[("chr1", std::str::from_utf8(&ref_seq).unwrap())]);
-
-    let sample: Vec<u8> = pgr::libs::nt::rev_comp(&ref_seq).collect();
-    write_fasta(
-        &sample_fa,
-        &[("chr1", std::str::from_utf8(&sample).unwrap())],
-    );
-
-    write_paf(
-        &paf_path,
-        &[make_paf_line(
-            "chr1", 2000, 0, 2000, "-", "chr1", 2000, 0, 2000, "2000=",
-        )],
-    );
 
     let got = create_and_extract(
         temp.path(),
-        &ref_fa,
+        &fixture("ref_2000.fa"),
         &out_pbit,
         &[
             "-i",
-            sample_fa.to_str().unwrap(),
+            fixture("sample_2000_minus_strand.fa").to_str().unwrap(),
             "-p",
-            paf_path.to_str().unwrap(),
+            fixture("sample_2000_minus_strand.paf").to_str().unwrap(),
         ],
-        "sample",
+        "sample_2000_minus_strand",
     );
-    let expected: String = sample.iter().map(|&b| b as char).collect();
+    let expected = read_fasta_seq(&fixture("sample_2000_minus_strand.fa"));
     assert_eq!(got, expected);
 }
 
@@ -221,43 +126,21 @@ fn test_pbit_paf_minus_strand_roundtrip() {
 #[test]
 fn test_pbit_paf_m_op_split() {
     let temp = TempDir::new().unwrap();
-    let ref_fa = temp.path().join("ref.fa");
-    let sample_fa = temp.path().join("sample.fa");
-    let paf_path = temp.path().join("sample.paf");
     let out_pbit = temp.path().join("out.pbit");
-
-    // ref = 2000 bp. sample = ref with SNP at position 100.
-    // PAF CIGAR = '2000M' (no =/X distinction) → compressor splits M into =/X.
-    let ref_seq = random_dna(2000, 42);
-    write_fasta(&ref_fa, &[("chr1", std::str::from_utf8(&ref_seq).unwrap())]);
-
-    let mut sample = ref_seq.clone();
-    sample[100] = snp_of(ref_seq[100]);
-    write_fasta(
-        &sample_fa,
-        &[("chr1", std::str::from_utf8(&sample).unwrap())],
-    );
-
-    write_paf(
-        &paf_path,
-        &[make_paf_line(
-            "chr1", 2000, 0, 2000, "+", "chr1", 2000, 0, 2000, "2000M",
-        )],
-    );
 
     let got = create_and_extract(
         temp.path(),
-        &ref_fa,
+        &fixture("ref_2000.fa"),
         &out_pbit,
         &[
             "-i",
-            sample_fa.to_str().unwrap(),
+            fixture("sample_2000_snp100.fa").to_str().unwrap(),
             "-p",
-            paf_path.to_str().unwrap(),
+            fixture("sample_2000_snp100_M.paf").to_str().unwrap(),
         ],
-        "sample",
+        "sample_2000_snp100",
     );
-    let expected: String = sample.iter().map(|&b| b as char).collect();
+    let expected = read_fasta_seq(&fixture("sample_2000_snp100.fa"));
     assert_eq!(got, expected);
 }
 
@@ -266,39 +149,8 @@ fn test_pbit_paf_m_op_split() {
 #[test]
 fn test_pbit_paf_mixed_mode() {
     let temp = TempDir::new().unwrap();
-    let ref_fa = temp.path().join("ref.fa");
-    let s1_fa = temp.path().join("s1.fa");
-    let s1_paf = temp.path().join("s1.paf");
-    let s2_fa = temp.path().join("s2.fa");
     let out_pbit = temp.path().join("out.pbit");
-
-    let ref_seq = random_dna(2000, 42);
-    write_fasta(&ref_fa, &[("chr1", std::str::from_utf8(&ref_seq).unwrap())]);
-
-    // s1: SNP at 100, with PAF (CIGAR mode via `pbit create`).
-    let mut s1 = ref_seq.clone();
-    s1[100] = snp_of(ref_seq[100]);
-    write_fasta(&s1_fa, &[("chr1", std::str::from_utf8(&s1).unwrap())]);
-    write_paf(
-        &s1_paf,
-        &[make_paf_line(
-            "chr1",
-            2000,
-            0,
-            2000,
-            "+",
-            "chr1",
-            2000,
-            0,
-            2000,
-            "100=1X1899=",
-        )],
-    );
-
-    // s2: SNP at 200, no PAF (LZ-diff mode via `pbit append`).
-    let mut s2 = ref_seq.clone();
-    s2[200] = snp_of(ref_seq[200]);
-    write_fasta(&s2_fa, &[("chr1", std::str::from_utf8(&s2).unwrap())]);
+    let out_dir = temp.path().join("outdir");
 
     // Step 1: create with s1 + PAF (CIGAR mode).
     PgrCmd::new()
@@ -306,11 +158,11 @@ fn test_pbit_paf_mixed_mode() {
             "pbit",
             "create",
             "-r",
-            ref_fa.to_str().unwrap(),
+            fixture("ref_2000.fa").to_str().unwrap(),
             "-i",
-            s1_fa.to_str().unwrap(),
+            fixture("sample_2000_snp100.fa").to_str().unwrap(),
             "-p",
-            s1_paf.to_str().unwrap(),
+            fixture("sample_2000_snp100.paf").to_str().unwrap(),
             "-o",
             out_pbit.to_str().unwrap(),
         ])
@@ -323,11 +175,10 @@ fn test_pbit_paf_mixed_mode() {
             "append",
             out_pbit.to_str().unwrap(),
             "-i",
-            s2_fa.to_str().unwrap(),
+            fixture("sample_2000_snp200.fa").to_str().unwrap(),
         ])
         .run();
 
-    let out_dir = temp.path().join("outdir");
     PgrCmd::new()
         .args(&[
             "pbit",
@@ -339,13 +190,13 @@ fn test_pbit_paf_mixed_mode() {
         .run();
 
     // Verify s1 (CIGAR-encoded).
-    let got_s1 = read_extracted_fa(&out_dir.join("s1.fa"));
-    let expected_s1: String = s1.iter().map(|&b| b as char).collect();
+    let got_s1 = read_fasta_seq(&out_dir.join("sample_2000_snp100.fa"));
+    let expected_s1 = read_fasta_seq(&fixture("sample_2000_snp100.fa"));
     assert_eq!(got_s1, expected_s1);
 
     // Verify s2 (LZ-diff-encoded).
-    let got_s2 = read_extracted_fa(&out_dir.join("s2.fa"));
-    let expected_s2: String = s2.iter().map(|&b| b as char).collect();
+    let got_s2 = read_fasta_seq(&out_dir.join("sample_2000_snp200.fa"));
+    let expected_s2 = read_fasta_seq(&fixture("sample_2000_snp200.fa"));
     assert_eq!(got_s2, expected_s2);
 }
 
@@ -354,44 +205,21 @@ fn test_pbit_paf_mixed_mode() {
 #[test]
 fn test_pbit_paf_uncovered_fallback() {
     let temp = TempDir::new().unwrap();
-    let ref_fa = temp.path().join("ref.fa");
-    let sample_fa = temp.path().join("sample.fa");
-    let paf_path = temp.path().join("sample.paf");
     let out_pbit = temp.path().join("out.pbit");
-
-    // ref = 5000 bp → 2 segments (4096 + 904). PAF covers only [0, 4096).
-    // Second segment falls back to LZ-diff. SNP at position 4500 (in 2nd seg).
-    let ref_seq = random_dna(5000, 42);
-    write_fasta(&ref_fa, &[("chr1", std::str::from_utf8(&ref_seq).unwrap())]);
-
-    let mut sample = ref_seq.clone();
-    sample[4500] = snp_of(ref_seq[4500]);
-    write_fasta(
-        &sample_fa,
-        &[("chr1", std::str::from_utf8(&sample).unwrap())],
-    );
-
-    // PAF covers [0, 4096) with CIGAR 4096= (first segment matches exactly).
-    write_paf(
-        &paf_path,
-        &[make_paf_line(
-            "chr1", 5000, 0, 4096, "+", "chr1", 5000, 0, 4096, "4096=",
-        )],
-    );
 
     let got = create_and_extract(
         temp.path(),
-        &ref_fa,
+        &fixture("ref_5000.fa"),
         &out_pbit,
         &[
             "-i",
-            sample_fa.to_str().unwrap(),
+            fixture("sample_5000_snp4500.fa").to_str().unwrap(),
             "-p",
-            paf_path.to_str().unwrap(),
+            fixture("sample_5000_partial.paf").to_str().unwrap(),
         ],
-        "sample",
+        "sample_5000_snp4500",
     );
-    let expected: String = sample.iter().map(|&b| b as char).collect();
+    let expected = read_fasta_seq(&fixture("sample_5000_snp4500.fa"));
     assert_eq!(got, expected);
 }
 
@@ -400,37 +228,21 @@ fn test_pbit_paf_uncovered_fallback() {
 #[test]
 fn test_pbit_paf_empty_paf_all_fallback() {
     let temp = TempDir::new().unwrap();
-    let ref_fa = temp.path().join("ref.fa");
-    let sample_fa = temp.path().join("sample.fa");
-    let paf_path = temp.path().join("empty.paf");
     let out_pbit = temp.path().join("out.pbit");
-
-    let ref_seq = random_dna(2000, 42);
-    write_fasta(&ref_fa, &[("chr1", std::str::from_utf8(&ref_seq).unwrap())]);
-
-    let mut sample = ref_seq.clone();
-    sample[100] = snp_of(ref_seq[100]);
-    write_fasta(
-        &sample_fa,
-        &[("chr1", std::str::from_utf8(&sample).unwrap())],
-    );
-
-    // Empty PAF file.
-    write_paf(&paf_path, &[]);
 
     let got = create_and_extract(
         temp.path(),
-        &ref_fa,
+        &fixture("ref_2000.fa"),
         &out_pbit,
         &[
             "-i",
-            sample_fa.to_str().unwrap(),
+            fixture("sample_2000_snp100.fa").to_str().unwrap(),
             "-p",
-            paf_path.to_str().unwrap(),
+            fixture("empty.paf").to_str().unwrap(),
         ],
-        "sample",
+        "sample_2000_snp100",
     );
-    let expected: String = sample.iter().map(|&b| b as char).collect();
+    let expected = read_fasta_seq(&fixture("sample_2000_snp100.fa"));
     assert_eq!(got, expected);
 }
 
@@ -439,47 +251,16 @@ fn test_pbit_paf_empty_paf_all_fallback() {
 #[test]
 fn test_pbit_paf_name_tsv_three_columns() {
     let temp = TempDir::new().unwrap();
-    let ref_fa = temp.path().join("ref.fa");
-    let s1_fa = temp.path().join("s1.fa");
-    let s1_paf = temp.path().join("s1.paf");
-    let s2_fa = temp.path().join("s2.fa");
     let tsv_path = temp.path().join("samples.tsv");
     let out_pbit = temp.path().join("out.pbit");
-
-    let ref_seq = random_dna(2000, 42);
-    write_fasta(&ref_fa, &[("chr1", std::str::from_utf8(&ref_seq).unwrap())]);
-
-    // s1: SNP at 100, with PAF (CIGAR mode).
-    let mut s1 = ref_seq.clone();
-    s1[100] = snp_of(ref_seq[100]);
-    write_fasta(&s1_fa, &[("chr1", std::str::from_utf8(&s1).unwrap())]);
-    write_paf(
-        &s1_paf,
-        &[make_paf_line(
-            "chr1",
-            2000,
-            0,
-            2000,
-            "+",
-            "chr1",
-            2000,
-            0,
-            2000,
-            "100=1X1899=",
-        )],
-    );
-
-    // s2: SNP at 200, no PAF (LZ-diff mode).
-    let mut s2 = ref_seq.clone();
-    s2[200] = snp_of(ref_seq[200]);
-    write_fasta(&s2_fa, &[("chr1", std::str::from_utf8(&s2).unwrap())]);
+    let out_dir = temp.path().join("outdir");
 
     // TSV: name<TAB>fasta<TAB>paf (s1 has paf, s2 doesn't).
     let tsv_content = format!(
         "s1\t{}\t{}\ns2\t{}\n",
-        s1_fa.display(),
-        s1_paf.display(),
-        s2_fa.display()
+        fixture("sample_2000_snp100.fa").display(),
+        fixture("sample_2000_snp100.paf").display(),
+        fixture("sample_2000_snp200.fa").display(),
     );
     fs::write(&tsv_path, tsv_content).unwrap();
 
@@ -488,7 +269,7 @@ fn test_pbit_paf_name_tsv_three_columns() {
             "pbit",
             "create",
             "-r",
-            ref_fa.to_str().unwrap(),
+            fixture("ref_2000.fa").to_str().unwrap(),
             "--name",
             tsv_path.to_str().unwrap(),
             "-o",
@@ -496,7 +277,6 @@ fn test_pbit_paf_name_tsv_three_columns() {
         ])
         .run();
 
-    let out_dir = temp.path().join("outdir");
     PgrCmd::new()
         .args(&[
             "pbit",
@@ -508,13 +288,13 @@ fn test_pbit_paf_name_tsv_three_columns() {
         .run();
 
     // Verify s1 (CIGAR-encoded).
-    let got_s1 = read_extracted_fa(&out_dir.join("s1.fa"));
-    let expected_s1: String = s1.iter().map(|&b| b as char).collect();
+    let got_s1 = read_fasta_seq(&out_dir.join("s1.fa"));
+    let expected_s1 = read_fasta_seq(&fixture("sample_2000_snp100.fa"));
     assert_eq!(got_s1, expected_s1);
 
     // Verify s2 (LZ-diff-encoded).
-    let got_s2 = read_extracted_fa(&out_dir.join("s2.fa"));
-    let expected_s2: String = s2.iter().map(|&b| b as char).collect();
+    let got_s2 = read_fasta_seq(&out_dir.join("s2.fa"));
+    let expected_s2 = read_fasta_seq(&fixture("sample_2000_snp200.fa"));
     assert_eq!(got_s2, expected_s2);
 }
 
@@ -523,35 +303,20 @@ fn test_pbit_paf_name_tsv_three_columns() {
 #[test]
 fn test_pbit_paf_count_mismatch_error() {
     let temp = TempDir::new().unwrap();
-    let ref_fa = temp.path().join("ref.fa");
-    let s1_fa = temp.path().join("s1.fa");
-    let s2_fa = temp.path().join("s2.fa");
-    let paf_path = temp.path().join("s1.paf");
     let out_pbit = temp.path().join("out.pbit");
-
-    let ref_seq = random_dna(2000, 42);
-    write_fasta(&ref_fa, &[("chr1", std::str::from_utf8(&ref_seq).unwrap())]);
-    write_fasta(&s1_fa, &[("chr1", std::str::from_utf8(&ref_seq).unwrap())]);
-    write_fasta(&s2_fa, &[("chr1", std::str::from_utf8(&ref_seq).unwrap())]);
-    write_paf(
-        &paf_path,
-        &[make_paf_line(
-            "chr1", 2000, 0, 2000, "+", "chr1", 2000, 0, 2000, "2000=",
-        )],
-    );
 
     let (_stdout, stderr) = PgrCmd::new()
         .args(&[
             "pbit",
             "create",
             "-r",
-            ref_fa.to_str().unwrap(),
+            fixture("ref_2000.fa").to_str().unwrap(),
             "-i",
-            s1_fa.to_str().unwrap(),
+            fixture("sample_2000_identical.fa").to_str().unwrap(),
             "-i",
-            s2_fa.to_str().unwrap(),
+            fixture("sample_2000_identical.fa").to_str().unwrap(),
             "-p",
-            paf_path.to_str().unwrap(),
+            fixture("sample_2000_identical.paf").to_str().unwrap(),
             "-o",
             out_pbit.to_str().unwrap(),
         ])
@@ -569,33 +334,25 @@ fn test_pbit_paf_count_mismatch_error() {
 #[test]
 fn test_pbit_paf_name_paf_mutex_error() {
     let temp = TempDir::new().unwrap();
-    let ref_fa = temp.path().join("ref.fa");
-    let s1_fa = temp.path().join("s1.fa");
-    let paf_path = temp.path().join("s1.paf");
     let tsv_path = temp.path().join("samples.tsv");
     let out_pbit = temp.path().join("out.pbit");
 
-    let ref_seq = random_dna(2000, 42);
-    write_fasta(&ref_fa, &[("chr1", std::str::from_utf8(&ref_seq).unwrap())]);
-    write_fasta(&s1_fa, &[("chr1", std::str::from_utf8(&ref_seq).unwrap())]);
-    write_paf(
-        &paf_path,
-        &[make_paf_line(
-            "chr1", 2000, 0, 2000, "+", "chr1", 2000, 0, 2000, "2000=",
-        )],
-    );
-    fs::write(&tsv_path, format!("s1\t{}\n", s1_fa.display())).unwrap();
+    fs::write(
+        &tsv_path,
+        format!("s1\t{}\n", fixture("sample_2000_identical.fa").display()),
+    )
+    .unwrap();
 
     let (_stdout, stderr) = PgrCmd::new()
         .args(&[
             "pbit",
             "create",
             "-r",
-            ref_fa.to_str().unwrap(),
+            fixture("ref_2000.fa").to_str().unwrap(),
             "--name",
             tsv_path.to_str().unwrap(),
             "-p",
-            paf_path.to_str().unwrap(),
+            fixture("sample_2000_identical.paf").to_str().unwrap(),
             "-o",
             out_pbit.to_str().unwrap(),
         ])
@@ -613,55 +370,21 @@ fn test_pbit_paf_name_paf_mutex_error() {
 #[test]
 fn test_pbit_paf_target_crosses_seg_boundary_fallback() {
     let temp = TempDir::new().unwrap();
-    let ref_fa = temp.path().join("ref.fa");
-    let sample_fa = temp.path().join("sample.fa");
-    let paf_path = temp.path().join("sample.paf");
     let out_pbit = temp.path().join("out.pbit");
-
-    // ref = 8192 bp → exactly 2 segments (4096 + 4096). sample = ref[0,4096)
-    // with a SNP at 100 (1 segment). PAF CIGAR contains a 4096-bp deletion so
-    // the target projection [0,8192) crosses the ref segment boundary
-    // (seg 0 vs seg 1) → CIGAR path rejected → fallback to LZ-diff.
-    let ref_seq = random_dna(8192, 42);
-    write_fasta(&ref_fa, &[("chr1", std::str::from_utf8(&ref_seq).unwrap())]);
-
-    let mut sample = ref_seq[0..4096].to_vec();
-    sample[100] = snp_of(ref_seq[100]);
-    write_fasta(
-        &sample_fa,
-        &[("chr1", std::str::from_utf8(&sample).unwrap())],
-    );
-
-    // CIGAR: 2000= 4096D 2096= (query advances 4096, target advances 8192).
-    write_paf(
-        &paf_path,
-        &[make_paf_line(
-            "chr1",
-            4096,
-            0,
-            4096,
-            "+",
-            "chr1",
-            8192,
-            0,
-            8192,
-            "2000=4096D2096=",
-        )],
-    );
 
     let got = create_and_extract(
         temp.path(),
-        &ref_fa,
+        &fixture("ref_8192.fa"),
         &out_pbit,
         &[
             "-i",
-            sample_fa.to_str().unwrap(),
+            fixture("sample_4096_snp100.fa").to_str().unwrap(),
             "-p",
-            paf_path.to_str().unwrap(),
+            fixture("sample_4096_cross_seg.paf").to_str().unwrap(),
         ],
-        "sample",
+        "sample_4096_snp100",
     );
-    let expected: String = sample.iter().map(|&b| b as char).collect();
+    let expected = read_fasta_seq(&fixture("sample_4096_snp100.fa"));
     assert_eq!(got, expected);
 }
 
@@ -670,50 +393,21 @@ fn test_pbit_paf_target_crosses_seg_boundary_fallback() {
 #[test]
 fn test_pbit_paf_rearrangement() {
     let temp = TempDir::new().unwrap();
-    let ref_fa = temp.path().join("ref.fa");
-    let sample_fa = temp.path().join("sample.fa");
-    let paf_path = temp.path().join("sample.paf");
     let out_pbit = temp.path().join("out.pbit");
-
-    // ref: chr1 + chr2 (each 2000 bp, distinct sequences).
-    let chr1 = random_dna(2000, 42);
-    let chr2 = random_dna(2000, 99);
-    write_fasta(
-        &ref_fa,
-        &[
-            ("chr1", std::str::from_utf8(&chr1).unwrap()),
-            ("chr2", std::str::from_utf8(&chr2).unwrap()),
-        ],
-    );
-
-    // sample's chr1 is a copy of ref's chr2 (rearrangement: cross-contig).
-    let sample: Vec<u8> = chr2.clone();
-    write_fasta(
-        &sample_fa,
-        &[("chr1", std::str::from_utf8(&sample).unwrap())],
-    );
-
-    // PAF: sample chr1 → ref chr2 (cross-contig alignment).
-    write_paf(
-        &paf_path,
-        &[make_paf_line(
-            "chr1", 2000, 0, 2000, "+", "chr2", 2000, 0, 2000, "2000=",
-        )],
-    );
 
     let got = create_and_extract(
         temp.path(),
-        &ref_fa,
+        &fixture("ref_2000_2contig.fa"),
         &out_pbit,
         &[
             "-i",
-            sample_fa.to_str().unwrap(),
+            fixture("sample_2000_chr2only.fa").to_str().unwrap(),
             "-p",
-            paf_path.to_str().unwrap(),
+            fixture("sample_2000_rearrange.paf").to_str().unwrap(),
         ],
-        "sample",
+        "sample_2000_chr2only",
     );
-    let expected: String = sample.iter().map(|&b| b as char).collect();
+    let expected = read_fasta_seq(&fixture("sample_2000_chr2only.fa"));
     assert_eq!(got, expected);
 }
 
@@ -722,51 +416,21 @@ fn test_pbit_paf_rearrangement() {
 #[test]
 fn test_pbit_paf_record_without_cigar_skipped() {
     let temp = TempDir::new().unwrap();
-    let ref_fa = temp.path().join("ref.fa");
-    let sample_fa = temp.path().join("sample.fa");
-    let paf_path = temp.path().join("sample.paf");
     let out_pbit = temp.path().join("out.pbit");
-
-    let ref_seq = random_dna(2000, 42);
-    write_fasta(&ref_fa, &[("chr1", std::str::from_utf8(&ref_seq).unwrap())]);
-
-    let mut sample = ref_seq.clone();
-    sample[100] = snp_of(ref_seq[100]);
-    write_fasta(
-        &sample_fa,
-        &[("chr1", std::str::from_utf8(&sample).unwrap())],
-    );
-
-    // Line 1: no cg:Z: tag → skipped (decision 7). Covers [0,1000) only.
-    let no_cigar_line = "chr1\t2000\t0\t1000\t+\tchr1\t2000\t0\t1000\t900\t1000\t60\tgi:f:0.9";
-    // Line 2: valid CIGAR covering full sample [0,2000).
-    let cigar_line = make_paf_line(
-        "chr1",
-        2000,
-        0,
-        2000,
-        "+",
-        "chr1",
-        2000,
-        0,
-        2000,
-        "100=1X1899=",
-    );
-    write_paf(&paf_path, &[no_cigar_line.to_string(), cigar_line]);
 
     let got = create_and_extract(
         temp.path(),
-        &ref_fa,
+        &fixture("ref_2000.fa"),
         &out_pbit,
         &[
             "-i",
-            sample_fa.to_str().unwrap(),
+            fixture("sample_2000_snp100.fa").to_str().unwrap(),
             "-p",
-            paf_path.to_str().unwrap(),
+            fixture("sample_2000_no_cigar.paf").to_str().unwrap(),
         ],
-        "sample",
+        "sample_2000_snp100",
     );
-    let expected: String = sample.iter().map(|&b| b as char).collect();
+    let expected = read_fasta_seq(&fixture("sample_2000_snp100.fa"));
     assert_eq!(got, expected);
 }
 
@@ -775,37 +439,8 @@ fn test_pbit_paf_record_without_cigar_skipped() {
 #[test]
 fn test_pbit_paf_malformed_line_skipped() {
     let temp = TempDir::new().unwrap();
-    let ref_fa = temp.path().join("ref.fa");
-    let sample_fa = temp.path().join("sample.fa");
-    let paf_path = temp.path().join("sample.paf");
     let out_pbit = temp.path().join("out.pbit");
-
-    let ref_seq = random_dna(2000, 42);
-    write_fasta(&ref_fa, &[("chr1", std::str::from_utf8(&ref_seq).unwrap())]);
-
-    let mut sample = ref_seq.clone();
-    sample[100] = snp_of(ref_seq[100]);
-    write_fasta(
-        &sample_fa,
-        &[("chr1", std::str::from_utf8(&sample).unwrap())],
-    );
-
-    // Line 1: malformed (only 3 fields) → skipped with warn (decision 8).
-    let malformed = "chr1\t1000\tjunk".to_string();
-    // Line 2: valid CIGAR covering full sample.
-    let valid = make_paf_line(
-        "chr1",
-        2000,
-        0,
-        2000,
-        "+",
-        "chr1",
-        2000,
-        0,
-        2000,
-        "100=1X1899=",
-    );
-    write_paf(&paf_path, &[malformed, valid]);
+    let out_dir = temp.path().join("outdir");
 
     // Run create and capture stderr to verify the warn was emitted.
     let (_stdout, stderr) = PgrCmd::new()
@@ -813,11 +448,11 @@ fn test_pbit_paf_malformed_line_skipped() {
             "pbit",
             "create",
             "-r",
-            ref_fa.to_str().unwrap(),
+            fixture("ref_2000.fa").to_str().unwrap(),
             "-i",
-            sample_fa.to_str().unwrap(),
+            fixture("sample_2000_snp100.fa").to_str().unwrap(),
             "-p",
-            paf_path.to_str().unwrap(),
+            fixture("sample_2000_malformed.paf").to_str().unwrap(),
             "-o",
             out_pbit.to_str().unwrap(),
         ])
@@ -829,7 +464,6 @@ fn test_pbit_paf_malformed_line_skipped() {
     );
 
     // Extract and verify roundtrip.
-    let out_dir = temp.path().join("outdir");
     PgrCmd::new()
         .args(&[
             "pbit",
@@ -840,8 +474,8 @@ fn test_pbit_paf_malformed_line_skipped() {
         ])
         .run();
 
-    let got = read_extracted_fa(&out_dir.join("sample.fa"));
-    let expected: String = sample.iter().map(|&b| b as char).collect();
+    let got = read_fasta_seq(&out_dir.join("sample_2000_snp100.fa"));
+    let expected = read_fasta_seq(&fixture("sample_2000_snp100.fa"));
     assert_eq!(got, expected);
 }
 
@@ -856,59 +490,28 @@ fn test_pbit_paf_malformed_line_skipped() {
 #[test]
 fn test_pbit_paf_cache_key_ref_start_ref_end() {
     let temp = TempDir::new().unwrap();
-    let ref_fa = temp.path().join("ref.fa");
-    let sa_fa = temp.path().join("sA.fa");
-    let sa_paf = temp.path().join("sA.paf");
-    let sb_fa = temp.path().join("sB.fa");
-    let sb_paf = temp.path().join("sB.paf");
     let out_pbit = temp.path().join("out.pbit");
-
-    // ref = 1000 bp (1 ref segment, segment_size default 4096).
-    let ref_seq = random_dna(1000, 7);
-    write_fasta(&ref_fa, &[("chr1", std::str::from_utf8(&ref_seq).unwrap())]);
-
-    // sA = ref[0..500], aligns to chr1[0..500) with CIGAR 500=.
-    // Sample contig name must match a reference contig name (pbit looks up
-    // ref groups by sample contig name), so both samples use "chr1".
-    let sa: Vec<u8> = ref_seq[0..500].to_vec();
-    write_fasta(&sa_fa, &[("chr1", std::str::from_utf8(&sa).unwrap())]);
-    write_paf(
-        &sa_paf,
-        &[make_paf_line(
-            "chr1", 500, 0, 500, "+", "chr1", 1000, 0, 500, "500=",
-        )],
-    );
-
-    // sB = ref[500..1000], aligns to chr1[500..1000) with CIGAR 500=.
-    let sb: Vec<u8> = ref_seq[500..1000].to_vec();
-    write_fasta(&sb_fa, &[("chr1", std::str::from_utf8(&sb).unwrap())]);
-    write_paf(
-        &sb_paf,
-        &[make_paf_line(
-            "chr1", 500, 0, 500, "+", "chr1", 1000, 500, 1000, "500=",
-        )],
-    );
+    let out_dir = temp.path().join("outdir");
 
     PgrCmd::new()
         .args(&[
             "pbit",
             "create",
             "-r",
-            ref_fa.to_str().unwrap(),
+            fixture("ref_1000_seed7.fa").to_str().unwrap(),
             "-i",
-            sa_fa.to_str().unwrap(),
+            fixture("sample_500_A.fa").to_str().unwrap(),
             "-p",
-            sa_paf.to_str().unwrap(),
+            fixture("sample_500_A.paf").to_str().unwrap(),
             "-i",
-            sb_fa.to_str().unwrap(),
+            fixture("sample_500_B.fa").to_str().unwrap(),
             "-p",
-            sb_paf.to_str().unwrap(),
+            fixture("sample_500_B.paf").to_str().unwrap(),
             "-o",
             out_pbit.to_str().unwrap(),
         ])
         .run();
 
-    let out_dir = temp.path().join("outdir");
     PgrCmd::new()
         .args(&[
             "pbit",
@@ -919,12 +522,12 @@ fn test_pbit_paf_cache_key_ref_start_ref_end() {
         ])
         .run();
 
-    let got_sa = read_extracted_fa(&out_dir.join("sA.fa"));
-    let expected_sa: String = sa.iter().map(|&b| b as char).collect();
+    let got_sa = read_fasta_seq(&out_dir.join("sample_500_A.fa"));
+    let expected_sa = read_fasta_seq(&fixture("sample_500_A.fa"));
     assert_eq!(got_sa, expected_sa, "sA mismatch");
 
-    let got_sb = read_extracted_fa(&out_dir.join("sB.fa"));
-    let expected_sb: String = sb.iter().map(|&b| b as char).collect();
+    let got_sb = read_fasta_seq(&out_dir.join("sample_500_B.fa"));
+    let expected_sb = read_fasta_seq(&fixture("sample_500_B.fa"));
     assert_eq!(got_sb, expected_sb, "sB mismatch (cache key bug)");
 }
 
@@ -939,40 +542,21 @@ fn test_pbit_paf_cache_key_ref_start_ref_end() {
 #[test]
 fn test_pbit_paf_minus_strand_multi_segment() {
     let temp = TempDir::new().unwrap();
-    let ref_fa = temp.path().join("ref.fa");
-    let sample_fa = temp.path().join("sample.fa");
-    let paf_path = temp.path().join("sample.paf");
     let out_pbit = temp.path().join("out.pbit");
-
-    let ref_seq = random_dna(8192, 42);
-    write_fasta(&ref_fa, &[("chr1", std::str::from_utf8(&ref_seq).unwrap())]);
-
-    let sample: Vec<u8> = pgr::libs::nt::rev_comp(&ref_seq).collect();
-    write_fasta(
-        &sample_fa,
-        &[("chr1", std::str::from_utf8(&sample).unwrap())],
-    );
-
-    write_paf(
-        &paf_path,
-        &[make_paf_line(
-            "chr1", 8192, 0, 8192, "-", "chr1", 8192, 0, 8192, "8192=",
-        )],
-    );
 
     let got = create_and_extract(
         temp.path(),
-        &ref_fa,
+        &fixture("ref_8192.fa"),
         &out_pbit,
         &[
             "-i",
-            sample_fa.to_str().unwrap(),
+            fixture("sample_8192_minus_strand.fa").to_str().unwrap(),
             "-p",
-            paf_path.to_str().unwrap(),
+            fixture("sample_8192_minus_strand.paf").to_str().unwrap(),
         ],
-        "sample",
+        "sample_8192_minus_strand",
     );
-    let expected: String = sample.iter().map(|&b| b as char).collect();
+    let expected = read_fasta_seq(&fixture("sample_8192_minus_strand.fa"));
     assert_eq!(got, expected, "minus-strand multi-segment mismatch");
 }
 
@@ -988,61 +572,21 @@ fn test_pbit_paf_minus_strand_multi_segment() {
 #[test]
 fn test_pbit_paf_minus_strand_with_xi() {
     let temp = TempDir::new().unwrap();
-    let ref_fa = temp.path().join("ref.fa");
-    let sample_fa = temp.path().join("sample.fa");
-    let paf_path = temp.path().join("sample.paf");
     let out_pbit = temp.path().join("out.pbit");
-
-    let ref_seq = random_dna(8192, 42);
-    write_fasta(&ref_fa, &[("chr1", std::str::from_utf8(&ref_seq).unwrap())]);
-
-    // Build RC(sample) = ref with SNP at 100 + 2-bp insertion after 200.
-    let snp = snp_of(ref_seq[100]);
-    let mut rc_sample: Vec<u8> = Vec::with_capacity(8194);
-    rc_sample.extend_from_slice(&ref_seq[0..100]); // 100=
-    rc_sample.push(snp); // 1X
-    rc_sample.extend_from_slice(&ref_seq[101..200]); // 99=
-    rc_sample.extend_from_slice(b"GT"); // 2I
-    rc_sample.extend_from_slice(&ref_seq[200..8192]); // 7992=
-    assert_eq!(rc_sample.len(), 8194);
-
-    // sample = rev_comp(RC(sample)).
-    let sample: Vec<u8> = pgr::libs::nt::rev_comp(&rc_sample).collect();
-    write_fasta(
-        &sample_fa,
-        &[("chr1", std::str::from_utf8(&sample).unwrap())],
-    );
-
-    // CIGAR describes RC(sample) vs ref: 100=1X99=2I7992=
-    write_paf(
-        &paf_path,
-        &[make_paf_line(
-            "chr1",
-            8194,
-            0,
-            8194,
-            "-",
-            "chr1",
-            8192,
-            0,
-            8192,
-            "100=1X99=2I7992=",
-        )],
-    );
 
     let got = create_and_extract(
         temp.path(),
-        &ref_fa,
+        &fixture("ref_8192.fa"),
         &out_pbit,
         &[
             "-i",
-            sample_fa.to_str().unwrap(),
+            fixture("sample_8192_minus_xi.fa").to_str().unwrap(),
             "-p",
-            paf_path.to_str().unwrap(),
+            fixture("sample_8192_minus_xi.paf").to_str().unwrap(),
         ],
-        "sample",
+        "sample_8192_minus_xi",
     );
-    let expected: String = sample.iter().map(|&b| b as char).collect();
+    let expected = read_fasta_seq(&fixture("sample_8192_minus_xi.fa"));
     assert_eq!(got, expected, "minus-strand X/I roundtrip mismatch");
 }
 
@@ -1056,63 +600,22 @@ fn test_pbit_paf_minus_strand_with_xi() {
 #[test]
 fn test_pbit_paf_empty_ref_contig() {
     let temp = TempDir::new().unwrap();
-    let ref_fa = temp.path().join("ref.fa");
-    let sample_fa = temp.path().join("sample.fa");
-    let paf_path = temp.path().join("sample.paf");
     let out_pbit = temp.path().join("out.pbit");
-
-    let ref_seq = random_dna(2000, 42);
-    write_fasta(
-        &ref_fa,
-        &[
-            ("chr_empty", ""),
-            ("chr1", std::str::from_utf8(&ref_seq).unwrap()),
-        ],
-    );
-
-    // sample chr_empty has sequence (triggers the bug path); chr1 has a SNP.
-    let mut sample_chr1: Vec<u8> = ref_seq.clone();
-    sample_chr1[100] = snp_of(sample_chr1[100]);
-    let sample_chr_empty = random_dna(500, 99);
-    write_fasta(
-        &sample_fa,
-        &[
-            ("chr_empty", std::str::from_utf8(&sample_chr_empty).unwrap()),
-            ("chr1", std::str::from_utf8(&sample_chr1).unwrap()),
-        ],
-    );
-
-    // PAF for chr1: 100= 1X 1899=
-    write_paf(
-        &paf_path,
-        &[make_paf_line(
-            "chr1",
-            2000,
-            0,
-            2000,
-            "+",
-            "chr1",
-            2000,
-            0,
-            2000,
-            "100=1X1899=",
-        )],
-    );
 
     let got = create_and_extract(
         temp.path(),
-        &ref_fa,
+        &fixture("ref_empty_2000.fa"),
         &out_pbit,
         &[
             "-i",
-            sample_fa.to_str().unwrap(),
+            fixture("sample_empty_2000.fa").to_str().unwrap(),
             "-p",
-            paf_path.to_str().unwrap(),
+            fixture("sample_empty_2000.paf").to_str().unwrap(),
         ],
-        "sample",
+        "sample_empty_2000",
     );
     // chr_empty is skipped (empty ref); output contains only chr1.
-    let expected: String = sample_chr1.iter().map(|&b| b as char).collect();
+    let expected = read_fasta_record(&fixture("sample_empty_2000.fa"), "chr1");
     assert_eq!(
         got, expected,
         "chr1 roundtrip mismatch with empty ref contig"
@@ -1122,48 +625,7 @@ fn test_pbit_paf_empty_ref_contig() {
 #[test]
 fn test_pbit_paf_unknown_query_target_name_skipped() {
     let temp = TempDir::new().unwrap();
-    let ref_fa = temp.path().join("ref.fa");
-    let sample_fa = temp.path().join("sample.fa");
-    let paf_path = temp.path().join("sample.paf");
     let out_pbit = temp.path().join("out.pbit");
-
-    let ref_seq = random_dna(2000, 42);
-    write_fasta(&ref_fa, &[("chr1", std::str::from_utf8(&ref_seq).unwrap())]);
-
-    let mut sample = ref_seq.clone();
-    sample[100] = snp_of(ref_seq[100]);
-    write_fasta(
-        &sample_fa,
-        &[("chr1", std::str::from_utf8(&sample).unwrap())],
-    );
-
-    // Line 1: target name does not exist in the reference FASTA.
-    let unknown_target = make_paf_line(
-        "chr1",
-        2000,
-        0,
-        2000,
-        "+",
-        "unknown_ref",
-        2000,
-        0,
-        2000,
-        "2000=",
-    );
-    // Line 2: valid CIGAR covering the sample.
-    let valid = make_paf_line(
-        "chr1",
-        2000,
-        0,
-        2000,
-        "+",
-        "chr1",
-        2000,
-        0,
-        2000,
-        "100=1X1899=",
-    );
-    write_paf(&paf_path, &[unknown_target, valid]);
 
     // The unknown-target record is skipped (falls back to LZ-diff) and the
     // valid record is used for chr1. The command must succeed without panic.
@@ -1172,54 +634,44 @@ fn test_pbit_paf_unknown_query_target_name_skipped() {
             "pbit",
             "create",
             "-r",
-            ref_fa.to_str().unwrap(),
+            fixture("ref_2000.fa").to_str().unwrap(),
             "-i",
-            sample_fa.to_str().unwrap(),
+            fixture("sample_2000_snp100.fa").to_str().unwrap(),
             "-p",
-            paf_path.to_str().unwrap(),
+            fixture("sample_2000_unknown_target.paf").to_str().unwrap(),
             "-o",
             out_pbit.to_str().unwrap(),
         ])
         .run();
 
-    let got = create_and_extract(temp.path(), &ref_fa, &out_pbit, &[], "sample");
-    let expected: String = sample.iter().map(|&b| b as char).collect();
+    let got = create_and_extract(
+        temp.path(),
+        &fixture("ref_2000.fa"),
+        &out_pbit,
+        &[],
+        "sample_2000_snp100",
+    );
+    let expected = read_fasta_seq(&fixture("sample_2000_snp100.fa"));
     assert_eq!(got, expected);
 }
 
 #[test]
 fn test_pbit_paf_only_comments_fallback_lzdiff() {
     let temp = TempDir::new().unwrap();
-    let ref_fa = temp.path().join("ref.fa");
-    let sample_fa = temp.path().join("sample.fa");
-    let paf_path = temp.path().join("sample.paf");
     let out_pbit = temp.path().join("out.pbit");
-
-    let ref_seq = random_dna(2000, 42);
-    write_fasta(&ref_fa, &[("chr1", std::str::from_utf8(&ref_seq).unwrap())]);
-
-    let mut sample = ref_seq.clone();
-    sample[100] = snp_of(ref_seq[100]);
-    write_fasta(
-        &sample_fa,
-        &[("chr1", std::str::from_utf8(&sample).unwrap())],
-    );
-
-    // PAF file contains only comments and empty lines.
-    fs::write(&paf_path, "# This is a comment\n\n# another comment\n").unwrap();
 
     let got = create_and_extract(
         temp.path(),
-        &ref_fa,
+        &fixture("ref_2000.fa"),
         &out_pbit,
         &[
             "-i",
-            sample_fa.to_str().unwrap(),
+            fixture("sample_2000_snp100.fa").to_str().unwrap(),
             "-p",
-            paf_path.to_str().unwrap(),
+            fixture("comments_only.paf").to_str().unwrap(),
         ],
-        "sample",
+        "sample_2000_snp100",
     );
-    let expected: String = sample.iter().map(|&b| b as char).collect();
+    let expected = read_fasta_seq(&fixture("sample_2000_snp100.fa"));
     assert_eq!(got, expected);
 }

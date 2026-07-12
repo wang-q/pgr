@@ -4,109 +4,61 @@ mod common;
 
 use common::PgrCmd;
 use std::fs;
-use std::io::Write;
+use std::path::PathBuf;
 use tempfile::TempDir;
 
-/// Write a FASTA file with the given (name, seq) records.
-fn write_fasta(path: &std::path::Path, records: &[(&str, &str)]) {
-    let mut f = fs::File::create(path).unwrap();
-    for (name, seq) in records {
-        writeln!(f, ">{}", name).unwrap();
-        writeln!(f, "{}", seq).unwrap();
-    }
+/// Return the absolute path to a fixture in `tests/pbit/input`.
+fn fixture(name: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/pbit/input")
+        .join(name)
 }
 
-/// Generate a deterministic random DNA sequence of the given length.
-fn random_dna(len: usize, seed: u64) -> String {
-    use rand::rngs::StdRng;
-    use rand::Rng;
-    use rand::SeedableRng;
-    let mut rng = StdRng::seed_from_u64(seed);
-    (0..len)
-        .map(|_| match rng.random_range(0u8..4) {
-            0 => 'A',
-            1 => 'C',
-            2 => 'G',
-            _ => 'T',
-        })
-        .collect()
+/// Read a FASTA file and return the concatenated sequence (all non-header
+/// lines joined, uppercased).
+fn read_fasta_seq(path: &std::path::Path) -> String {
+    fs::read_to_string(path)
+        .unwrap()
+        .lines()
+        .filter(|l| !l.starts_with('>'))
+        .collect::<String>()
 }
 
-/// Introduce SNPs at every 100th position.
-fn introduce_snps(seq: &str, seed: u64) -> String {
-    use rand::rngs::StdRng;
-    use rand::Rng;
-    use rand::SeedableRng;
-    let mut rng = StdRng::seed_from_u64(seed);
-    let mut out: Vec<char> = seq.chars().collect();
-    for i in (0..out.len()).step_by(100) {
-        let orig = out[i];
-        let new = match orig {
-            'A' => {
-                let r = rng.random_range(0u8..3);
-                if r == 0 {
-                    'C'
-                } else if r == 1 {
-                    'G'
-                } else {
-                    'T'
-                }
+/// Read a FASTA file and return its records as (name, sequence) pairs.
+fn read_fasta_records(path: &std::path::Path) -> Vec<(String, String)> {
+    let content = fs::read_to_string(path).unwrap();
+    let mut records = Vec::new();
+    let mut name = String::new();
+    let mut seq = String::new();
+    for line in content.lines() {
+        if let Some(stripped) = line.strip_prefix('>') {
+            if !name.is_empty() {
+                records.push((name.clone(), std::mem::take(&mut seq)));
             }
-            'C' => {
-                let r = rng.random_range(0u8..3);
-                if r == 0 {
-                    'A'
-                } else if r == 1 {
-                    'G'
-                } else {
-                    'T'
-                }
-            }
-            'G' => {
-                let r = rng.random_range(0u8..3);
-                if r == 0 {
-                    'A'
-                } else if r == 1 {
-                    'C'
-                } else {
-                    'T'
-                }
-            }
-            _ => {
-                let r = rng.random_range(0u8..3);
-                if r == 0 {
-                    'A'
-                } else if r == 1 {
-                    'C'
-                } else {
-                    'G'
-                }
-            }
-        };
-        out[i] = new;
+            name = stripped.to_string();
+        } else {
+            seq.push_str(line);
+        }
     }
-    out.into_iter().collect()
+    if !name.is_empty() {
+        records.push((name, seq));
+    }
+    records
 }
 
 #[test]
 fn test_pbit_create_basic() {
     let temp = TempDir::new().unwrap();
-    let ref_fa = temp.path().join("ref.fa");
-    let sample_fa = temp.path().join("sample.fa");
     let out_pbit = temp.path().join("out.pbit");
-
-    let ref_seq = random_dna(2000, 42);
-    write_fasta(&ref_fa, &[("chr1", &ref_seq)]);
-    write_fasta(&sample_fa, &[("chr1", &ref_seq)]);
 
     PgrCmd::new()
         .args(&[
             "pbit",
             "create",
             "-r",
-            ref_fa.to_str().unwrap(),
+            fixture("ref_2000.fa").to_str().unwrap(),
             "-i",
-            sample_fa.to_str().unwrap(),
+            fixture("sample_2000_identical.fa").to_str().unwrap(),
             "-o",
             out_pbit.to_str().unwrap(),
         ])
@@ -119,22 +71,16 @@ fn test_pbit_create_basic() {
 #[test]
 fn test_pbit_stat_overview() {
     let temp = TempDir::new().unwrap();
-    let ref_fa = temp.path().join("ref.fa");
-    let sample_fa = temp.path().join("sample.fa");
     let out_pbit = temp.path().join("out.pbit");
-
-    let ref_seq = random_dna(2000, 42);
-    write_fasta(&ref_fa, &[("chr1", &ref_seq)]);
-    write_fasta(&sample_fa, &[("chr1", &ref_seq)]);
 
     PgrCmd::new()
         .args(&[
             "pbit",
             "create",
             "-r",
-            ref_fa.to_str().unwrap(),
+            fixture("ref_2000.fa").to_str().unwrap(),
             "-i",
-            sample_fa.to_str().unwrap(),
+            fixture("sample_2000_identical.fa").to_str().unwrap(),
             "-o",
             out_pbit.to_str().unwrap(),
         ])
@@ -154,26 +100,23 @@ fn test_pbit_stat_overview() {
 #[test]
 fn test_pbit_stat_samples() {
     let temp = TempDir::new().unwrap();
-    let ref_fa = temp.path().join("ref.fa");
-    let s1_fa = temp.path().join("s1.fa");
-    let s2_fa = temp.path().join("s2.fa");
     let out_pbit = temp.path().join("out.pbit");
-
-    let ref_seq = random_dna(2000, 42);
-    write_fasta(&ref_fa, &[("chr1", &ref_seq)]);
-    write_fasta(&s1_fa, &[("chr1", &ref_seq)]);
-    write_fasta(&s2_fa, &[("chr1", &ref_seq)]);
+    let name_tsv = temp.path().join("names.tsv");
+    let sample = fixture("sample_2000_identical.fa");
+    fs::write(
+        &name_tsv,
+        format!("s1\t{}\ns2\t{}\n", sample.display(), sample.display()),
+    )
+    .unwrap();
 
     PgrCmd::new()
         .args(&[
             "pbit",
             "create",
             "-r",
-            ref_fa.to_str().unwrap(),
-            "-i",
-            s1_fa.to_str().unwrap(),
-            "-i",
-            s2_fa.to_str().unwrap(),
+            fixture("ref_2000.fa").to_str().unwrap(),
+            "--name",
+            name_tsv.to_str().unwrap(),
             "-o",
             out_pbit.to_str().unwrap(),
         ])
@@ -192,22 +135,16 @@ fn test_pbit_stat_samples() {
 #[test]
 fn test_pbit_stat_refs() {
     let temp = TempDir::new().unwrap();
-    let ref_fa = temp.path().join("ref.fa");
-    let sample_fa = temp.path().join("sample.fa");
     let out_pbit = temp.path().join("out.pbit");
-
-    let ref_seq = random_dna(5000, 42);
-    write_fasta(&ref_fa, &[("chr1", &ref_seq)]);
-    write_fasta(&sample_fa, &[("chr1", &ref_seq)]);
 
     PgrCmd::new()
         .args(&[
             "pbit",
             "create",
             "-r",
-            ref_fa.to_str().unwrap(),
+            fixture("ref_5000.fa").to_str().unwrap(),
             "-i",
-            sample_fa.to_str().unwrap(),
+            fixture("sample_5000_identical.fa").to_str().unwrap(),
             "-o",
             out_pbit.to_str().unwrap(),
         ])
@@ -217,29 +154,23 @@ fn test_pbit_stat_refs() {
         .args(&["pbit", "stat", out_pbit.to_str().unwrap(), "--refs"])
         .run();
 
-    // 5000 bp / 4096 segment_size → 2 segments for chr1.
+    // 5000 bp / 4096 segment_size -> 2 segments for chr1.
     assert_eq!(stdout.trim(), "chr1\t2");
 }
 
 #[test]
 fn test_pbit_stat_contigs() {
     let temp = TempDir::new().unwrap();
-    let ref_fa = temp.path().join("ref.fa");
-    let sample_fa = temp.path().join("sample.fa");
     let out_pbit = temp.path().join("out.pbit");
-
-    let ref_seq = random_dna(1000, 42);
-    write_fasta(&ref_fa, &[("chr1", &ref_seq)]);
-    write_fasta(&sample_fa, &[("chr1", &ref_seq)]);
 
     PgrCmd::new()
         .args(&[
             "pbit",
             "create",
             "-r",
-            ref_fa.to_str().unwrap(),
+            fixture("ref_1000.fa").to_str().unwrap(),
             "-i",
-            sample_fa.to_str().unwrap(),
+            fixture("sample_1000_identical.fa").to_str().unwrap(),
             "-o",
             out_pbit.to_str().unwrap(),
         ])
@@ -249,30 +180,26 @@ fn test_pbit_stat_contigs() {
         .args(&["pbit", "stat", out_pbit.to_str().unwrap(), "--contigs"])
         .run();
 
-    assert_eq!(stdout.trim(), "sample\tchr1");
+    let sample_path = fixture("sample_1000_identical.fa");
+    let stem = sample_path.file_stem().unwrap().to_str().unwrap();
+    assert_eq!(stdout.trim(), format!("{}\tchr1", stem));
 }
 
 #[test]
 fn test_pbit_to_fa_roundtrip() {
     let temp = TempDir::new().unwrap();
-    let ref_fa = temp.path().join("ref.fa");
-    let sample_fa = temp.path().join("sample.fa");
     let out_pbit = temp.path().join("out.pbit");
     let out_dir = temp.path().join("outdir");
-
-    let ref_seq = random_dna(2000, 42);
-    let sample_seq = introduce_snps(&ref_seq, 100);
-    write_fasta(&ref_fa, &[("chr1", &ref_seq)]);
-    write_fasta(&sample_fa, &[("chr1", &sample_seq)]);
+    let sample = fixture("sample_2000_snps100.fa");
 
     PgrCmd::new()
         .args(&[
             "pbit",
             "create",
             "-r",
-            ref_fa.to_str().unwrap(),
+            fixture("ref_2000.fa").to_str().unwrap(),
             "-i",
-            sample_fa.to_str().unwrap(),
+            sample.to_str().unwrap(),
             "-o",
             out_pbit.to_str().unwrap(),
         ])
@@ -288,37 +215,28 @@ fn test_pbit_to_fa_roundtrip() {
         ])
         .run();
 
-    let out_fa = out_dir.join("sample.fa");
+    let stem = sample.file_stem().unwrap().to_str().unwrap();
+    let out_fa = out_dir.join(format!("{}.fa", stem));
     assert!(out_fa.exists());
 
-    // Read the output FASTA and verify the sequence matches (uppercase).
-    let content = fs::read_to_string(&out_fa).unwrap();
-    let lines: Vec<&str> = content.lines().collect();
-    assert!(lines[0].starts_with(">chr1"));
-    let extracted: String = lines[1..].concat();
-    let expected: String = sample_seq.chars().map(|c| c.to_ascii_uppercase()).collect();
+    let expected = read_fasta_seq(&sample).to_ascii_uppercase();
+    let extracted = read_fasta_seq(&out_fa);
     assert_eq!(extracted, expected);
 }
 
 #[test]
 fn test_pbit_range_full_contig() {
     let temp = TempDir::new().unwrap();
-    let ref_fa = temp.path().join("ref.fa");
-    let sample_fa = temp.path().join("sample.fa");
     let out_pbit = temp.path().join("out.pbit");
-
-    let ref_seq = random_dna(2000, 42);
-    write_fasta(&ref_fa, &[("chr1", &ref_seq)]);
-    write_fasta(&sample_fa, &[("chr1", &ref_seq)]);
 
     PgrCmd::new()
         .args(&[
             "pbit",
             "create",
             "-r",
-            ref_fa.to_str().unwrap(),
+            fixture("ref_2000.fa").to_str().unwrap(),
             "-i",
-            sample_fa.to_str().unwrap(),
+            fixture("sample_2000_identical.fa").to_str().unwrap(),
             "-o",
             out_pbit.to_str().unwrap(),
         ])
@@ -329,7 +247,7 @@ fn test_pbit_range_full_contig() {
         .run();
 
     let lines: Vec<&str> = stdout.lines().collect();
-    assert!(lines[0].starts_with(">sample chr1"));
+    assert!(lines[0].starts_with('>') && lines[0].contains(" chr1"));
     let seq: String = lines[1..].concat();
     assert_eq!(seq.len(), 2000);
 }
@@ -337,22 +255,16 @@ fn test_pbit_range_full_contig() {
 #[test]
 fn test_pbit_range_slice() {
     let temp = TempDir::new().unwrap();
-    let ref_fa = temp.path().join("ref.fa");
-    let sample_fa = temp.path().join("sample.fa");
     let out_pbit = temp.path().join("out.pbit");
-
-    let ref_seq = random_dna(2000, 42);
-    write_fasta(&ref_fa, &[("chr1", &ref_seq)]);
-    write_fasta(&sample_fa, &[("chr1", &ref_seq)]);
 
     PgrCmd::new()
         .args(&[
             "pbit",
             "create",
             "-r",
-            ref_fa.to_str().unwrap(),
+            fixture("ref_2000.fa").to_str().unwrap(),
             "-i",
-            sample_fa.to_str().unwrap(),
+            fixture("sample_2000_identical.fa").to_str().unwrap(),
             "-o",
             out_pbit.to_str().unwrap(),
         ])
@@ -363,32 +275,26 @@ fn test_pbit_range_slice() {
         .run();
 
     let lines: Vec<&str> = stdout.lines().collect();
-    assert!(lines[0].starts_with(">sample chr1:1-100(+)"));
+    assert!(lines[0].starts_with('>') && lines[0].contains("chr1:1-100(+)"));
     let seq: String = lines[1..].concat();
     assert_eq!(seq.len(), 100);
-    let expected: String = ref_seq[..100].to_uppercase();
+    let expected = read_fasta_seq(&fixture("ref_2000.fa"))[..100].to_uppercase();
     assert_eq!(seq, expected);
 }
 
 #[test]
 fn test_pbit_range_neg_strand() {
     let temp = TempDir::new().unwrap();
-    let ref_fa = temp.path().join("ref.fa");
-    let sample_fa = temp.path().join("sample.fa");
     let out_pbit = temp.path().join("out.pbit");
-
-    let ref_seq = random_dna(2000, 42);
-    write_fasta(&ref_fa, &[("chr1", &ref_seq)]);
-    write_fasta(&sample_fa, &[("chr1", &ref_seq)]);
 
     PgrCmd::new()
         .args(&[
             "pbit",
             "create",
             "-r",
-            ref_fa.to_str().unwrap(),
+            fixture("ref_2000.fa").to_str().unwrap(),
             "-i",
-            sample_fa.to_str().unwrap(),
+            fixture("sample_2000_identical.fa").to_str().unwrap(),
             "-o",
             out_pbit.to_str().unwrap(),
         ])
@@ -399,12 +305,11 @@ fn test_pbit_range_neg_strand() {
         .run();
 
     let lines: Vec<&str> = stdout.lines().collect();
-    assert!(lines[0].starts_with(">sample chr1:1-100(-)"));
+    assert!(lines[0].starts_with('>') && lines[0].contains("chr1:1-100(-)"));
     let seq: String = lines[1..].concat();
     assert_eq!(seq.len(), 100);
 
-    // Compute the expected reverse complement of ref_seq[..100].
-    let fwd: Vec<u8> = ref_seq[..100]
+    let fwd: Vec<u8> = read_fasta_seq(&fixture("ref_2000.fa"))[..100]
         .bytes()
         .map(|b| b.to_ascii_uppercase())
         .collect();
@@ -415,22 +320,16 @@ fn test_pbit_range_neg_strand() {
 #[test]
 fn test_pbit_range_multi_ranges() {
     let temp = TempDir::new().unwrap();
-    let ref_fa = temp.path().join("ref.fa");
-    let sample_fa = temp.path().join("sample.fa");
     let out_pbit = temp.path().join("out.pbit");
-
-    let ref_seq = random_dna(2000, 42);
-    write_fasta(&ref_fa, &[("chr1", &ref_seq)]);
-    write_fasta(&sample_fa, &[("chr1", &ref_seq)]);
 
     PgrCmd::new()
         .args(&[
             "pbit",
             "create",
             "-r",
-            ref_fa.to_str().unwrap(),
+            fixture("ref_2000.fa").to_str().unwrap(),
             "-i",
-            sample_fa.to_str().unwrap(),
+            fixture("sample_2000_identical.fa").to_str().unwrap(),
             "-o",
             out_pbit.to_str().unwrap(),
         ])
@@ -446,7 +345,7 @@ fn test_pbit_range_multi_ranges() {
         ])
         .run();
 
-    // Two ranges → two FASTA entries.
+    // Two ranges -> two FASTA entries.
     let headers: Vec<&str> = stdout.lines().filter(|l| l.starts_with('>')).collect();
     assert_eq!(headers.len(), 2);
 }
@@ -454,15 +353,9 @@ fn test_pbit_range_multi_ranges() {
 #[test]
 fn test_pbit_some_basic() {
     let temp = TempDir::new().unwrap();
-    let ref_fa = temp.path().join("ref.fa");
-    let sample_fa = temp.path().join("sample.fa");
     let out_pbit = temp.path().join("out.pbit");
     let list_file = temp.path().join("list.txt");
     let out_fa = temp.path().join("out.fa");
-
-    let ref_seq = random_dna(2000, 42);
-    write_fasta(&ref_fa, &[("chr1", &ref_seq), ("chr2", &ref_seq)]);
-    write_fasta(&sample_fa, &[("chr1", &ref_seq), ("chr2", &ref_seq)]);
 
     fs::write(&list_file, "chr1\n").unwrap();
 
@@ -471,9 +364,9 @@ fn test_pbit_some_basic() {
             "pbit",
             "create",
             "-r",
-            ref_fa.to_str().unwrap(),
+            fixture("ref_2000_2contig_identical.fa").to_str().unwrap(),
             "-i",
-            sample_fa.to_str().unwrap(),
+            fixture("ref_2000_2contig_identical.fa").to_str().unwrap(),
             "-o",
             out_pbit.to_str().unwrap(),
         ])
@@ -490,7 +383,7 @@ fn test_pbit_some_basic() {
         ])
         .run();
 
-    // Read the output file (not stdout — output goes to the file).
+    // Read the output file (not stdout -- output goes to the file).
     let content = fs::read_to_string(&out_fa).unwrap();
     let headers: Vec<&str> = content.lines().filter(|l| l.starts_with('>')).collect();
     assert_eq!(headers.len(), 1);
@@ -500,14 +393,8 @@ fn test_pbit_some_basic() {
 #[test]
 fn test_pbit_some_invert() {
     let temp = TempDir::new().unwrap();
-    let ref_fa = temp.path().join("ref.fa");
-    let sample_fa = temp.path().join("sample.fa");
     let out_pbit = temp.path().join("out.pbit");
     let list_file = temp.path().join("list.txt");
-
-    let ref_seq = random_dna(2000, 42);
-    write_fasta(&ref_fa, &[("chr1", &ref_seq), ("chr2", &ref_seq)]);
-    write_fasta(&sample_fa, &[("chr1", &ref_seq), ("chr2", &ref_seq)]);
 
     fs::write(&list_file, "chr1\n").unwrap();
 
@@ -516,9 +403,9 @@ fn test_pbit_some_invert() {
             "pbit",
             "create",
             "-r",
-            ref_fa.to_str().unwrap(),
+            fixture("ref_2000_2contig_identical.fa").to_str().unwrap(),
             "-i",
-            sample_fa.to_str().unwrap(),
+            fixture("ref_2000_2contig_identical.fa").to_str().unwrap(),
             "-o",
             out_pbit.to_str().unwrap(),
         ])
@@ -545,22 +432,16 @@ fn test_pbit_some_invert() {
 #[test]
 fn test_pbit_create_custom_params() {
     let temp = TempDir::new().unwrap();
-    let ref_fa = temp.path().join("ref.fa");
-    let sample_fa = temp.path().join("sample.fa");
     let out_pbit = temp.path().join("out.pbit");
-
-    let ref_seq = random_dna(2000, 42);
-    write_fasta(&ref_fa, &[("chr1", &ref_seq)]);
-    write_fasta(&sample_fa, &[("chr1", &ref_seq)]);
 
     PgrCmd::new()
         .args(&[
             "pbit",
             "create",
             "-r",
-            ref_fa.to_str().unwrap(),
+            fixture("ref_2000.fa").to_str().unwrap(),
             "-i",
-            sample_fa.to_str().unwrap(),
+            fixture("sample_2000_identical.fa").to_str().unwrap(),
             "-o",
             out_pbit.to_str().unwrap(),
             "-s",
@@ -588,15 +469,9 @@ fn test_pbit_custom_min_match_len_roundtrip() {
     // as kmer_len + 3, which mismatched the compressor's value for non-default
     // -l, causing decode errors.
     let temp = TempDir::new().unwrap();
-    let ref_fa = temp.path().join("ref.fa");
-    let sample_fa = temp.path().join("sample.fa");
     let out_pbit = temp.path().join("out.pbit");
     let out_dir = temp.path().join("outdir");
-
-    let ref_seq = random_dna(2000, 42);
-    let sample_seq = introduce_snps(&ref_seq, 100);
-    write_fasta(&ref_fa, &[("chr1", &ref_seq)]);
-    write_fasta(&sample_fa, &[("chr1", &sample_seq)]);
+    let sample = fixture("sample_2000_snps100.fa");
 
     // Use non-default -k and -l where kmer_len + 3 != min_match_len.
     PgrCmd::new()
@@ -604,9 +479,9 @@ fn test_pbit_custom_min_match_len_roundtrip() {
             "pbit",
             "create",
             "-r",
-            ref_fa.to_str().unwrap(),
+            fixture("ref_2000.fa").to_str().unwrap(),
             "-i",
-            sample_fa.to_str().unwrap(),
+            sample.to_str().unwrap(),
             "-o",
             out_pbit.to_str().unwrap(),
             "-k",
@@ -626,36 +501,26 @@ fn test_pbit_custom_min_match_len_roundtrip() {
         ])
         .run();
 
-    let out_fa = out_dir.join("sample.fa");
-    let content = fs::read_to_string(&out_fa).unwrap();
-    let lines: Vec<&str> = content.lines().collect();
-    assert!(lines[0].starts_with(">chr1"));
-    let extracted: String = lines[1..].concat();
-    let expected: String = sample_seq.chars().map(|c| c.to_ascii_uppercase()).collect();
+    let stem = sample.file_stem().unwrap().to_str().unwrap();
+    let out_fa = out_dir.join(format!("{}.fa", stem));
+    let expected = read_fasta_seq(&sample).to_ascii_uppercase();
+    let extracted = read_fasta_seq(&out_fa);
     assert_eq!(extracted, expected);
 }
 
 #[test]
 fn test_pbit_no_match_contig() {
     let temp = TempDir::new().unwrap();
-    let ref_fa = temp.path().join("ref.fa");
-    let sample_fa = temp.path().join("sample.fa");
     let out_pbit = temp.path().join("out.pbit");
-
-    let ref_seq = random_dna(1000, 42);
-    let sample_seq = random_dna(1000, 100);
-    write_fasta(&ref_fa, &[("chr1", &ref_seq)]);
-    // Sample has a contig name that does not match any reference contig.
-    write_fasta(&sample_fa, &[("unknown_contig", &sample_seq)]);
 
     PgrCmd::new()
         .args(&[
             "pbit",
             "create",
             "-r",
-            ref_fa.to_str().unwrap(),
+            fixture("ref_1000.fa").to_str().unwrap(),
             "-i",
-            sample_fa.to_str().unwrap(),
+            fixture("unknown_1000_seed100.fa").to_str().unwrap(),
             "-o",
             out_pbit.to_str().unwrap(),
         ])
@@ -677,30 +542,16 @@ fn test_pbit_no_match_contig() {
 #[test]
 fn test_pbit_multi_contig_reference() {
     let temp = TempDir::new().unwrap();
-    let ref_fa = temp.path().join("ref.fa");
-    let sample_fa = temp.path().join("sample.fa");
     let out_pbit = temp.path().join("out.pbit");
-
-    let seq1 = random_dna(500, 1);
-    let seq2 = random_dna(500, 2);
-    let seq3 = random_dna(500, 3);
-    write_fasta(
-        &ref_fa,
-        &[("chr1", &seq1), ("chr2", &seq2), ("chr3", &seq3)],
-    );
-    write_fasta(
-        &sample_fa,
-        &[("chr1", &seq1), ("chr2", &seq2), ("chr3", &seq3)],
-    );
 
     PgrCmd::new()
         .args(&[
             "pbit",
             "create",
             "-r",
-            ref_fa.to_str().unwrap(),
+            fixture("multi_500.fa").to_str().unwrap(),
             "-i",
-            sample_fa.to_str().unwrap(),
+            fixture("multi_500.fa").to_str().unwrap(),
             "-o",
             out_pbit.to_str().unwrap(),
         ])
@@ -720,27 +571,18 @@ fn test_pbit_multi_contig_reference() {
 #[test]
 fn test_pbit_multi_segment_contig() {
     let temp = TempDir::new().unwrap();
-    let ref_fa = temp.path().join("ref.fa");
-    let sample_fa = temp.path().join("sample.fa");
     let out_pbit = temp.path().join("out.pbit");
     let out_dir = temp.path().join("outdir");
-
-    // 5000 bp → 2 segments of 4096 + 904.
-    let ref_seq = random_dna(5000, 42);
-    let mut sample_seq = ref_seq.clone();
-    // Introduce a SNP near the segment boundary.
-    sample_seq.replace_range(4090..4091, "G");
-    write_fasta(&ref_fa, &[("chr1", &ref_seq)]);
-    write_fasta(&sample_fa, &[("chr1", &sample_seq)]);
+    let sample = fixture("sample_5000_snp4090g.fa");
 
     PgrCmd::new()
         .args(&[
             "pbit",
             "create",
             "-r",
-            ref_fa.to_str().unwrap(),
+            fixture("ref_5000.fa").to_str().unwrap(),
             "-i",
-            sample_fa.to_str().unwrap(),
+            sample.to_str().unwrap(),
             "-o",
             out_pbit.to_str().unwrap(),
         ])
@@ -756,31 +598,27 @@ fn test_pbit_multi_segment_contig() {
         ])
         .run();
 
-    let out_fa = out_dir.join("sample.fa");
+    let stem = sample.file_stem().unwrap().to_str().unwrap();
+    let out_fa = out_dir.join(format!("{}.fa", stem));
     let content = fs::read_to_string(&out_fa).unwrap();
     let lines: Vec<&str> = content.lines().collect();
     let seq: String = lines[1..].concat();
     assert_eq!(seq.len(), 5000);
-    let expected: String = sample_seq.chars().map(|c| c.to_ascii_uppercase()).collect();
+    let expected = read_fasta_seq(&sample).to_ascii_uppercase();
     assert_eq!(seq, expected);
 }
 
 #[test]
 fn test_pbit_identical_samples_dedup() {
     let temp = TempDir::new().unwrap();
-    let ref_fa = temp.path().join("ref.fa");
-    let sample_fa = temp.path().join("sample.fa");
     let name_tsv = temp.path().join("names.tsv");
     let out_pbit = temp.path().join("out.pbit");
-
-    let ref_seq = random_dna(1000, 42);
-    write_fasta(&ref_fa, &[("chr1", &ref_seq)]);
-    write_fasta(&sample_fa, &[("chr1", &ref_seq)]);
+    let sample = fixture("sample_1000_identical.fa");
 
     // Use --name TSV to give two different sample names to the same file.
     fs::write(
         &name_tsv,
-        format!("s1\t{}\ns2\t{}", sample_fa.display(), sample_fa.display()),
+        format!("s1\t{}\ns2\t{}\n", sample.display(), sample.display()),
     )
     .unwrap();
 
@@ -789,7 +627,7 @@ fn test_pbit_identical_samples_dedup() {
             "pbit",
             "create",
             "-r",
-            ref_fa.to_str().unwrap(),
+            fixture("ref_1000.fa").to_str().unwrap(),
             "--name",
             name_tsv.to_str().unwrap(),
             "-o",
@@ -823,7 +661,7 @@ fn test_pbit_identical_samples_dedup() {
     assert!(f1.exists());
     assert!(f2.exists());
 
-    // Both should have identical content (identical input → identical output).
+    // Both should have identical content (identical input -> identical output).
     let c1 = fs::read_to_string(&f1).unwrap();
     let c2 = fs::read_to_string(&f2).unwrap();
     assert_eq!(c1, c2);
@@ -832,24 +670,18 @@ fn test_pbit_identical_samples_dedup() {
 #[test]
 fn test_pbit_with_snp_sample() {
     let temp = TempDir::new().unwrap();
-    let ref_fa = temp.path().join("ref.fa");
-    let sample_fa = temp.path().join("sample.fa");
     let out_pbit = temp.path().join("out.pbit");
     let out_dir = temp.path().join("outdir");
-
-    let ref_seq = random_dna(2000, 42);
-    let sample_seq = introduce_snps(&ref_seq, 100);
-    write_fasta(&ref_fa, &[("chr1", &ref_seq)]);
-    write_fasta(&sample_fa, &[("chr1", &sample_seq)]);
+    let sample = fixture("sample_2000_snps100.fa");
 
     PgrCmd::new()
         .args(&[
             "pbit",
             "create",
             "-r",
-            ref_fa.to_str().unwrap(),
+            fixture("ref_2000.fa").to_str().unwrap(),
             "-i",
-            sample_fa.to_str().unwrap(),
+            sample.to_str().unwrap(),
             "-o",
             out_pbit.to_str().unwrap(),
         ])
@@ -865,34 +697,28 @@ fn test_pbit_with_snp_sample() {
         ])
         .run();
 
-    let out_fa = out_dir.join("sample.fa");
-    let content = fs::read_to_string(&out_fa).unwrap();
-    let lines: Vec<&str> = content.lines().collect();
-    let seq: String = lines[1..].concat();
-    let expected: String = sample_seq.chars().map(|c| c.to_ascii_uppercase()).collect();
+    let stem = sample.file_stem().unwrap().to_str().unwrap();
+    let out_fa = out_dir.join(format!("{}.fa", stem));
+    let expected = read_fasta_seq(&sample).to_ascii_uppercase();
+    let seq = read_fasta_seq(&out_fa);
     assert_eq!(seq, expected);
 }
 
 #[test]
 fn test_pbit_create_with_name_tsv() {
     let temp = TempDir::new().unwrap();
-    let ref_fa = temp.path().join("ref.fa");
-    let sample_fa = temp.path().join("sample.fa");
     let name_tsv = temp.path().join("names.tsv");
     let out_pbit = temp.path().join("out.pbit");
+    let sample = fixture("sample_1000_identical.fa");
 
-    let ref_seq = random_dna(1000, 42);
-    write_fasta(&ref_fa, &[("chr1", &ref_seq)]);
-    write_fasta(&sample_fa, &[("chr1", &ref_seq)]);
-
-    fs::write(&name_tsv, format!("custom_name\t{}", sample_fa.display())).unwrap();
+    fs::write(&name_tsv, format!("custom_name\t{}\n", sample.display())).unwrap();
 
     PgrCmd::new()
         .args(&[
             "pbit",
             "create",
             "-r",
-            ref_fa.to_str().unwrap(),
+            fixture("ref_1000.fa").to_str().unwrap(),
             "--name",
             name_tsv.to_str().unwrap(),
             "-o",
@@ -909,27 +735,25 @@ fn test_pbit_create_with_name_tsv() {
 #[test]
 fn test_pbit_to_fa_single_sample() {
     let temp = TempDir::new().unwrap();
-    let ref_fa = temp.path().join("ref.fa");
-    let s1_fa = temp.path().join("s1.fa");
-    let s2_fa = temp.path().join("s2.fa");
+    let name_tsv = temp.path().join("names.tsv");
     let out_pbit = temp.path().join("out.pbit");
     let out_dir = temp.path().join("outdir");
+    let sample = fixture("sample_1000_identical.fa");
 
-    let ref_seq = random_dna(1000, 42);
-    write_fasta(&ref_fa, &[("chr1", &ref_seq)]);
-    write_fasta(&s1_fa, &[("chr1", &ref_seq)]);
-    write_fasta(&s2_fa, &[("chr1", &ref_seq)]);
+    fs::write(
+        &name_tsv,
+        format!("s1\t{}\ns2\t{}\n", sample.display(), sample.display()),
+    )
+    .unwrap();
 
     PgrCmd::new()
         .args(&[
             "pbit",
             "create",
             "-r",
-            ref_fa.to_str().unwrap(),
-            "-i",
-            s1_fa.to_str().unwrap(),
-            "-i",
-            s2_fa.to_str().unwrap(),
+            fixture("ref_1000.fa").to_str().unwrap(),
+            "--name",
+            name_tsv.to_str().unwrap(),
             "-o",
             out_pbit.to_str().unwrap(),
         ])
@@ -979,7 +803,7 @@ fn test_pbit_pseudocat_roundtrip() {
         .run();
     assert!(stdout.contains("Reference contigs: 1"));
     assert!(stdout.contains("Samples: 1"));
-    // pseudocat.fa is ~18803 bp → 5 segments (4*4096 + remainder).
+    // pseudocat.fa is ~18803 bp -> 5 segments (4*4096 + remainder).
     assert!(stdout.contains("Reference groups: 5"));
 
     PgrCmd::new()
@@ -1006,31 +830,29 @@ fn test_pbit_pseudocat_roundtrip() {
 #[test]
 fn test_pbit_append() {
     let temp = TempDir::new().unwrap();
-    let ref_fa = temp.path().join("ref.fa");
-    let s1_fa = temp.path().join("s1.fa");
-    let s2_fa = temp.path().join("s2.fa");
     let out_pbit = temp.path().join("out.pbit");
+    let name_tsv = temp.path().join("names.tsv");
+    let s2_fa = temp.path().join("s2.fa");
+    let sample = fixture("sample_2000_identical.fa");
 
-    let ref_seq = random_dna(2000, 42);
-    write_fasta(&ref_fa, &[("chr1", &ref_seq)]);
-    write_fasta(&s1_fa, &[("chr1", &ref_seq)]);
-    write_fasta(&s2_fa, &[("chr1", &ref_seq)]);
+    fs::write(&name_tsv, format!("s1\t{}\n", sample.display())).unwrap();
+    fs::copy(&sample, &s2_fa).unwrap();
 
-    // Create with 1 sample.
+    // Create with 1 sample named s1.
     PgrCmd::new()
         .args(&[
             "pbit",
             "create",
             "-r",
-            ref_fa.to_str().unwrap(),
-            "-i",
-            s1_fa.to_str().unwrap(),
+            fixture("ref_2000.fa").to_str().unwrap(),
+            "--name",
+            name_tsv.to_str().unwrap(),
             "-o",
             out_pbit.to_str().unwrap(),
         ])
         .run();
 
-    // Append a second sample.
+    // Append a second sample named s2.
     PgrCmd::new()
         .args(&[
             "pbit",
@@ -1054,26 +876,24 @@ fn test_pbit_append() {
 #[test]
 fn test_pbit_append_overwrite() {
     let temp = TempDir::new().unwrap();
-    let ref_fa = temp.path().join("ref.fa");
-    let s1_fa = temp.path().join("s1.fa");
-    let s2_fa = temp.path().join("s2.fa");
     let out_pbit = temp.path().join("out.pbit");
     let new_pbit = temp.path().join("new.pbit");
+    let name_tsv = temp.path().join("names.tsv");
+    let s2_fa = temp.path().join("s2.fa");
+    let sample = fixture("sample_2000_identical.fa");
 
-    let ref_seq = random_dna(2000, 42);
-    write_fasta(&ref_fa, &[("chr1", &ref_seq)]);
-    write_fasta(&s1_fa, &[("chr1", &ref_seq)]);
-    write_fasta(&s2_fa, &[("chr1", &ref_seq)]);
+    fs::write(&name_tsv, format!("s1\t{}\n", sample.display())).unwrap();
+    fs::copy(&sample, &s2_fa).unwrap();
 
-    // Create with 1 sample.
+    // Create with 1 sample named s1.
     PgrCmd::new()
         .args(&[
             "pbit",
             "create",
             "-r",
-            ref_fa.to_str().unwrap(),
-            "-i",
-            s1_fa.to_str().unwrap(),
+            fixture("ref_2000.fa").to_str().unwrap(),
+            "--name",
+            name_tsv.to_str().unwrap(),
             "-o",
             out_pbit.to_str().unwrap(),
         ])
@@ -1108,27 +928,26 @@ fn test_pbit_append_overwrite() {
 #[test]
 fn test_pbit_append_in_place() {
     let temp = TempDir::new().unwrap();
-    let ref_fa = temp.path().join("ref.fa");
-    let s1_fa = temp.path().join("s1.fa");
-    let s2_fa = temp.path().join("s2.fa");
     let out_pbit = temp.path().join("out.pbit");
+    let name_tsv = temp.path().join("names.tsv");
+    let s2_fa = temp.path().join("s2.fa");
 
-    let ref_seq = random_dna(2000, 42);
-    let s1_seq = introduce_snps(&ref_seq, 100);
-    let s2_seq = introduce_snps(&ref_seq, 200);
-    write_fasta(&ref_fa, &[("chr1", &ref_seq)]);
-    write_fasta(&s1_fa, &[("chr1", &s1_seq)]);
-    write_fasta(&s2_fa, &[("chr1", &s2_seq)]);
+    fs::write(
+        &name_tsv,
+        format!("s1\t{}\n", fixture("sample_2000_snps100.fa").display()),
+    )
+    .unwrap();
+    fs::copy(fixture("sample_2000_snps200.fa"), &s2_fa).unwrap();
 
-    // Create with 1 sample.
+    // Create with 1 sample named s1.
     PgrCmd::new()
         .args(&[
             "pbit",
             "create",
             "-r",
-            ref_fa.to_str().unwrap(),
-            "-i",
-            s1_fa.to_str().unwrap(),
+            fixture("ref_2000.fa").to_str().unwrap(),
+            "--name",
+            name_tsv.to_str().unwrap(),
             "-o",
             out_pbit.to_str().unwrap(),
         ])
@@ -1160,43 +979,29 @@ fn test_pbit_append_in_place() {
     // s1 content preserved.
     let c1 = fs::read_to_string(out_dir.join("s1.fa")).unwrap();
     let seq1: String = c1.lines().filter(|l| !l.starts_with('>')).collect();
-    let expected1: String = s1_seq.chars().map(|c| c.to_ascii_uppercase()).collect();
+    let expected1 = read_fasta_seq(&fixture("sample_2000_snps100.fa")).to_ascii_uppercase();
     assert_eq!(seq1, expected1);
 
     // s2 content correct.
     let c2 = fs::read_to_string(out_dir.join("s2.fa")).unwrap();
     let seq2: String = c2.lines().filter(|l| !l.starts_with('>')).collect();
-    let expected2: String = s2_seq.chars().map(|c| c.to_ascii_uppercase()).collect();
+    let expected2 = read_fasta_seq(&fixture("sample_2000_snps200.fa")).to_ascii_uppercase();
     assert_eq!(seq2, expected2);
 }
 
 #[test]
 fn test_pbit_range_multicontig() {
     let temp = TempDir::new().unwrap();
-    let ref_fa = temp.path().join("ref.fa");
-    let sample_fa = temp.path().join("sample.fa");
     let out_pbit = temp.path().join("out.pbit");
-
-    let seq1 = random_dna(500, 1);
-    let seq2 = random_dna(500, 2);
-    let seq3 = random_dna(500, 3);
-    write_fasta(
-        &ref_fa,
-        &[("chr1", &seq1), ("chr2", &seq2), ("chr3", &seq3)],
-    );
-    write_fasta(
-        &sample_fa,
-        &[("chr1", &seq1), ("chr2", &seq2), ("chr3", &seq3)],
-    );
 
     PgrCmd::new()
         .args(&[
             "pbit",
             "create",
             "-r",
-            ref_fa.to_str().unwrap(),
+            fixture("multi_500.fa").to_str().unwrap(),
             "-i",
-            sample_fa.to_str().unwrap(),
+            fixture("multi_500.fa").to_str().unwrap(),
             "-o",
             out_pbit.to_str().unwrap(),
         ])
@@ -1214,7 +1019,7 @@ fn test_pbit_range_multicontig() {
         ])
         .run();
 
-    // 3 ranges → 3 FASTA entries.
+    // 3 ranges -> 3 FASTA entries.
     let headers: Vec<&str> = stdout.lines().filter(|l| l.starts_with('>')).collect();
     assert_eq!(headers.len(), 3);
     assert!(headers.iter().any(|h| h.contains("chr1:1-50")));
@@ -1225,23 +1030,16 @@ fn test_pbit_range_multicontig() {
 #[test]
 fn test_pbit_empty_contig() {
     let temp = TempDir::new().unwrap();
-    let ref_fa = temp.path().join("ref.fa");
-    let sample_fa = temp.path().join("sample.fa");
     let out_pbit = temp.path().join("out.pbit");
-
-    let ref_seq = random_dna(1000, 42);
-    // Reference has chr1 (normal) + chr2 (empty).
-    write_fasta(&ref_fa, &[("chr1", &ref_seq), ("chr2", "")]);
-    write_fasta(&sample_fa, &[("chr1", &ref_seq), ("chr2", "")]);
 
     PgrCmd::new()
         .args(&[
             "pbit",
             "create",
             "-r",
-            ref_fa.to_str().unwrap(),
+            fixture("ref_empty_1000.fa").to_str().unwrap(),
             "-i",
-            sample_fa.to_str().unwrap(),
+            fixture("ref_empty_1000.fa").to_str().unwrap(),
             "-o",
             out_pbit.to_str().unwrap(),
         ])
@@ -1258,30 +1056,23 @@ fn test_pbit_empty_contig() {
         .args(&["pbit", "stat", out_pbit.to_str().unwrap(), "--contigs"])
         .run();
     assert!(stdout.contains("chr1"));
-    assert!(stdout.contains("chr2"));
+    assert!(stdout.contains("chr_empty"));
 }
 
 #[test]
 fn test_pbit_mask_roundtrip() {
     let temp = TempDir::new().unwrap();
-    let ref_fa = temp.path().join("ref.fa");
-    let sample_fa = temp.path().join("sample.fa");
     let out_pbit = temp.path().join("out.pbit");
     let out_dir = temp.path().join("outdir");
-
-    // Mixed-case reference: lowercase regions are soft-masked.
-    let ref_seq = "acgtACGTacgtACGTacgtACGTacgtACGT";
-    write_fasta(&ref_fa, &[("chr1", ref_seq)]);
-    write_fasta(&sample_fa, &[("chr1", ref_seq)]);
 
     PgrCmd::new()
         .args(&[
             "pbit",
             "create",
             "-r",
-            ref_fa.to_str().unwrap(),
+            fixture("mask_ref.fa").to_str().unwrap(),
             "-i",
-            sample_fa.to_str().unwrap(),
+            fixture("mask_ref.fa").to_str().unwrap(),
             "-o",
             out_pbit.to_str().unwrap(),
         ])
@@ -1298,34 +1089,29 @@ fn test_pbit_mask_roundtrip() {
         .run();
 
     // Extracted sequence is uppercase (mask not applied), content correct.
-    let content = fs::read_to_string(out_dir.join("sample.fa")).unwrap();
+    let mask_path = fixture("mask_ref.fa");
+    let stem = mask_path.file_stem().unwrap().to_str().unwrap();
+    let content = fs::read_to_string(out_dir.join(format!("{}.fa", stem))).unwrap();
     let seq: String = content.lines().filter(|l| !l.starts_with('>')).collect();
-    let expected: String = ref_seq.chars().map(|c| c.to_ascii_uppercase()).collect();
+    let expected = read_fasta_seq(&fixture("mask_ref.fa")).to_ascii_uppercase();
     assert_eq!(seq, expected);
 }
 
 #[test]
 fn test_pbit_n_roundtrip() {
     let temp = TempDir::new().unwrap();
-    let ref_fa = temp.path().join("ref.fa");
-    let sample_fa = temp.path().join("sample.fa");
     let out_pbit = temp.path().join("out.pbit");
     let out_dir = temp.path().join("outdir");
-
-    // Reference and sample contain N runs.
-    let ref_seq = "ACGTNNNNACGTACGTACGTNNNNACGTACGT";
-    let sample_seq = "ACGTNNNNACGTACGTACGTNNNnACGTACGT";
-    write_fasta(&ref_fa, &[("chr1", ref_seq)]);
-    write_fasta(&sample_fa, &[("chr1", sample_seq)]);
+    let sample = fixture("n_sample.fa");
 
     PgrCmd::new()
         .args(&[
             "pbit",
             "create",
             "-r",
-            ref_fa.to_str().unwrap(),
+            fixture("n_ref.fa").to_str().unwrap(),
             "-i",
-            sample_fa.to_str().unwrap(),
+            sample.to_str().unwrap(),
             "-o",
             out_pbit.to_str().unwrap(),
         ])
@@ -1342,72 +1128,23 @@ fn test_pbit_n_roundtrip() {
         .run();
 
     // Extracted sequence preserves N (uppercase).
-    let content = fs::read_to_string(out_dir.join("sample.fa")).unwrap();
+    let stem = sample.file_stem().unwrap().to_str().unwrap();
+    let content = fs::read_to_string(out_dir.join(format!("{}.fa", stem))).unwrap();
     let seq: String = content.lines().filter(|l| !l.starts_with('>')).collect();
-    let expected: String = sample_seq.chars().map(|c| c.to_ascii_uppercase()).collect();
+    let expected = read_fasta_seq(&sample).to_ascii_uppercase();
     assert_eq!(seq, expected);
-}
-
-/// Generate random DNA with occasional N runs.
-fn random_dna_with_n(len: usize, seed: u64, n_freq: f64) -> String {
-    use rand::rngs::StdRng;
-    use rand::Rng;
-    use rand::SeedableRng;
-    let mut rng = StdRng::seed_from_u64(seed);
-    (0..len)
-        .map(|_| {
-            if rng.random::<f64>() < n_freq {
-                'N'
-            } else {
-                match rng.random_range(0u8..4) {
-                    0 => 'A',
-                    1 => 'C',
-                    2 => 'G',
-                    _ => 'T',
-                }
-            }
-        })
-        .collect()
 }
 
 #[test]
 fn test_pbit_random_roundtrip() {
     // Property test: random reference (multi-contig, with N) + random SNP
-    // samples → create → to-fa → compare. Repeated 5 times.
+    // samples -> create -> to-fa -> compare. Repeated 5 times.
     for seed in 0..5u64 {
         let temp = TempDir::new().unwrap();
-        let ref_fa = temp.path().join("ref.fa");
-        let sample_fa = temp.path().join("sample.fa");
         let out_pbit = temp.path().join("out.pbit");
         let out_dir = temp.path().join("outdir");
-
-        // Random reference: 2-3 contigs, 500-1000 bp each, ~5% N.
-        let n_contigs = 2 + (seed % 2) as usize;
-        let mut ref_records: Vec<(String, String)> = Vec::new();
-        for c in 0..n_contigs {
-            let len = 500 + (seed as usize + c * 100) % 500;
-            let seq = random_dna_with_n(len, seed * 100 + c as u64, 0.05);
-            ref_records.push((format!("chr{}", c + 1), seq));
-        }
-
-        // Build sample FASTA with SNPs introduced per contig.
-        let mut sample_records: Vec<(String, String)> = Vec::new();
-        for (name, seq) in &ref_records {
-            let mutated = introduce_snps(seq, seed * 7 + name.len() as u64);
-            sample_records.push((name.clone(), mutated));
-        }
-
-        // Write reference and sample FASTA.
-        let ref_pairs: Vec<(&str, &str)> = ref_records
-            .iter()
-            .map(|(n, s)| (n.as_str(), s.as_str()))
-            .collect();
-        write_fasta(&ref_fa, &ref_pairs);
-        let sample_pairs: Vec<(&str, &str)> = sample_records
-            .iter()
-            .map(|(n, s)| (n.as_str(), s.as_str()))
-            .collect();
-        write_fasta(&sample_fa, &sample_pairs);
+        let ref_fa = fixture(&format!("prop_ref_{}.fa", seed));
+        let sample_fa = fixture(&format!("prop_sample_{}.fa", seed));
 
         PgrCmd::new()
             .args(&[
@@ -1433,27 +1170,11 @@ fn test_pbit_random_roundtrip() {
             .run();
 
         // Verify each sample contig matches (uppercase).
-        let content = fs::read_to_string(out_dir.join("sample.fa")).unwrap();
-        let mut current_name = String::new();
-        let mut current_seq = String::new();
-        let mut entries: Vec<(String, String)> = Vec::new();
-        for line in content.lines() {
-            if let Some(stripped) = line.strip_prefix('>') {
-                if !current_name.is_empty() {
-                    entries.push((current_name.clone(), current_seq.clone()));
-                    current_seq.clear();
-                }
-                current_name = stripped.to_string();
-            } else {
-                current_seq.push_str(line);
-            }
-        }
-        if !current_name.is_empty() {
-            entries.push((current_name, current_seq));
-        }
-
-        assert_eq!(entries.len(), sample_records.len());
-        for (i, (name, seq)) in entries.iter().enumerate() {
+        let sample_records = read_fasta_records(&sample_fa);
+        let out_fa = out_dir.join(format!("prop_sample_{}.fa", seed));
+        let got_records = read_fasta_records(&out_fa);
+        assert_eq!(got_records.len(), sample_records.len());
+        for (i, (name, seq)) in got_records.iter().enumerate() {
             assert_eq!(*name, sample_records[i].0);
             let expected: String = sample_records[i]
                 .1
@@ -1469,25 +1190,19 @@ fn test_pbit_random_roundtrip() {
 #[test]
 fn test_pbit_large_contig_segment_boundary() {
     // Reference contig length = segment_size * 3 + 1 (spans 4 segments).
-    // Default segment_size = 4096 → contig length = 12289.
+    // Default segment_size = 4096 -> contig length = 12289.
     let temp = TempDir::new().unwrap();
-    let ref_fa = temp.path().join("ref.fa");
-    let sample_fa = temp.path().join("sample.fa");
     let out_pbit = temp.path().join("out.pbit");
-
-    let ref_seq = random_dna(12289, 42);
-    let sample_seq = introduce_snps(&ref_seq, 100);
-    write_fasta(&ref_fa, &[("chr1", &ref_seq)]);
-    write_fasta(&sample_fa, &[("chr1", &sample_seq)]);
+    let sample = fixture("sample_12289_snps100.fa");
 
     PgrCmd::new()
         .args(&[
             "pbit",
             "create",
             "-r",
-            ref_fa.to_str().unwrap(),
+            fixture("ref_12289.fa").to_str().unwrap(),
             "-i",
-            sample_fa.to_str().unwrap(),
+            sample.to_str().unwrap(),
             "-o",
             out_pbit.to_str().unwrap(),
         ])
@@ -1501,11 +1216,12 @@ fn test_pbit_large_contig_segment_boundary() {
     v.extend_from_slice(&boundary_ranges);
     let (stdout, _) = PgrCmd::new().args(&v).run();
 
-    // 3 ranges → 3 FASTA entries.
+    // 3 ranges -> 3 FASTA entries.
     let headers: Vec<&str> = stdout.lines().filter(|l| l.starts_with('>')).collect();
     assert_eq!(headers.len(), 3);
 
     // Verify each slice matches the original sample.
+    let sample_seq = read_fasta_seq(&sample);
     let lines: Vec<&str> = stdout.lines().collect();
     let mut seq_idx = 0;
     for range in &boundary_ranges {
@@ -1522,7 +1238,7 @@ fn test_pbit_large_contig_segment_boundary() {
             seq.push_str(lines[seq_idx]);
             seq_idx += 1;
         }
-        // 1-based inclusive → 0-based half-open.
+        // 1-based inclusive -> 0-based half-open.
         let expected: String = sample_seq
             .chars()
             .skip(start - 1)
@@ -1537,22 +1253,16 @@ fn test_pbit_large_contig_segment_boundary() {
 #[test]
 fn test_pbit_range_invalid_range_warns() {
     let temp = TempDir::new().unwrap();
-    let ref_fa = temp.path().join("ref.fa");
-    let sample_fa = temp.path().join("sample.fa");
     let out_pbit = temp.path().join("out.pbit");
-
-    let ref_seq = random_dna(2000, 42);
-    write_fasta(&ref_fa, &[("chr1", &ref_seq)]);
-    write_fasta(&sample_fa, &[("chr1", &ref_seq)]);
 
     PgrCmd::new()
         .args(&[
             "pbit",
             "create",
             "-r",
-            ref_fa.to_str().unwrap(),
+            fixture("ref_2000.fa").to_str().unwrap(),
             "-i",
-            sample_fa.to_str().unwrap(),
+            fixture("sample_2000_identical.fa").to_str().unwrap(),
             "-o",
             out_pbit.to_str().unwrap(),
         ])
@@ -1573,14 +1283,8 @@ fn test_pbit_range_invalid_range_warns() {
 #[test]
 fn test_pbit_create_invalid_name_tsv_line_number() {
     let temp = TempDir::new().unwrap();
-    let ref_fa = temp.path().join("ref.fa");
-    let sample_fa = temp.path().join("sample.fa");
     let name_tsv = temp.path().join("names.tsv");
     let out_pbit = temp.path().join("out.pbit");
-
-    let ref_seq = random_dna(1000, 42);
-    write_fasta(&ref_fa, &[("chr1", &ref_seq)]);
-    write_fasta(&sample_fa, &[("chr1", &ref_seq)]);
 
     // Line 1 is a comment (skipped); line 2 is missing the FASTA path.
     fs::write(&name_tsv, "# sample list\nsample1\n").unwrap();
@@ -1590,7 +1294,7 @@ fn test_pbit_create_invalid_name_tsv_line_number() {
             "pbit",
             "create",
             "-r",
-            ref_fa.to_str().unwrap(),
+            fixture("ref_1000.fa").to_str().unwrap(),
             "--name",
             name_tsv.to_str().unwrap(),
             "-o",
@@ -1606,22 +1310,16 @@ fn test_pbit_create_invalid_name_tsv_line_number() {
 #[test]
 fn test_pbit_range_nonexistent_contig_warns() {
     let temp = TempDir::new().unwrap();
-    let ref_fa = temp.path().join("ref.fa");
-    let sample_fa = temp.path().join("sample.fa");
     let out_pbit = temp.path().join("out.pbit");
-
-    let ref_seq = random_dna(2000, 42);
-    write_fasta(&ref_fa, &[("chr1", &ref_seq)]);
-    write_fasta(&sample_fa, &[("chr1", &ref_seq)]);
 
     PgrCmd::new()
         .args(&[
             "pbit",
             "create",
             "-r",
-            ref_fa.to_str().unwrap(),
+            fixture("ref_2000.fa").to_str().unwrap(),
             "-i",
-            sample_fa.to_str().unwrap(),
+            fixture("sample_2000_identical.fa").to_str().unwrap(),
             "-o",
             out_pbit.to_str().unwrap(),
         ])
@@ -1651,23 +1349,16 @@ fn test_pbit_range_nonexistent_contig_warns() {
 #[test]
 fn test_pbit_empty_sample_fasta() {
     let temp = TempDir::new().unwrap();
-    let ref_fa = temp.path().join("ref.fa");
-    let sample_fa = temp.path().join("sample.fa");
     let out_pbit = temp.path().join("out.pbit");
-
-    let ref_seq = random_dna(1000, 42);
-    write_fasta(&ref_fa, &[("chr1", &ref_seq)]);
-    // Empty sample FASTA.
-    fs::write(&sample_fa, "").unwrap();
 
     PgrCmd::new()
         .args(&[
             "pbit",
             "create",
             "-r",
-            ref_fa.to_str().unwrap(),
+            fixture("ref_1000.fa").to_str().unwrap(),
             "-i",
-            sample_fa.to_str().unwrap(),
+            fixture("empty.fa").to_str().unwrap(),
             "-o",
             out_pbit.to_str().unwrap(),
         ])
@@ -1695,7 +1386,7 @@ fn test_pbit_empty_sample_fasta() {
         .run();
 
     // The command must not panic. The output file may be absent or empty.
-    let out_file = out_dir.join("sample.fa");
+    let out_file = out_dir.join("empty.fa");
     if out_file.exists() {
         let content = fs::read_to_string(&out_file).unwrap();
         assert!(
