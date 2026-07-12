@@ -13,6 +13,17 @@ pub mod traversal;
 use super::node::{Node, NodeId};
 use std::collections::{BTreeMap, BTreeSet};
 
+/// Return a branch length as a finite, non-negative value for calculations.
+///
+/// NaN, infinite, negative, or missing lengths are treated as 0.0 so they do
+/// not poison sums, maxima, or distance computations.
+pub(crate) fn finite_length(length: Option<f64>) -> f64 {
+    match length {
+        Some(v) if v.is_finite() && v >= 0.0 => v,
+        _ => 0.0,
+    }
+}
+
 /// Arena-based phylogenetic tree.
 #[derive(Debug, Default, Clone)]
 pub struct Tree {

@@ -403,3 +403,245 @@ fn test_extract_subtree_skips_deleted_children() {
     let subtree = tree.extract_subtree(&root_id).unwrap();
     assert_eq!(subtree.len(), 3); // root + A + B, deleted node skipped
 }
+
+#[test]
+fn nan_length_get_distance() {
+    // root -> internal(NaN) -> A(1.0)
+    // root -> B(2.0)
+    let mut tree = Tree::new();
+    let root = tree.add_node();
+    let internal = tree.add_node();
+    let leaf_a = tree.add_node();
+    let leaf_b = tree.add_node();
+
+    tree.set_root(root);
+    tree.add_child(root, internal).unwrap();
+    tree.add_child(internal, leaf_a).unwrap();
+    tree.add_child(root, leaf_b).unwrap();
+
+    tree.get_node_mut(internal).unwrap().length = Some(f64::NAN);
+    tree.get_node_mut(leaf_a).unwrap().length = Some(1.0);
+    tree.get_node_mut(leaf_b).unwrap().length = Some(2.0);
+
+    let (weighted, topo) = tree.get_distance(&leaf_a, &leaf_b).unwrap();
+    assert!(
+        (weighted - 3.0).abs() < 1e-9,
+        "expected 3.0, got {}",
+        weighted
+    );
+    assert_eq!(topo, 3);
+}
+
+#[test]
+fn nan_length_get_height() {
+    let mut tree = Tree::new();
+    let root = tree.add_node();
+    let internal = tree.add_node();
+    let leaf_a = tree.add_node();
+    let leaf_b = tree.add_node();
+
+    tree.set_root(root);
+    tree.add_child(root, internal).unwrap();
+    tree.add_child(internal, leaf_a).unwrap();
+    tree.add_child(root, leaf_b).unwrap();
+
+    tree.get_node_mut(internal).unwrap().length = Some(f64::NAN);
+    tree.get_node_mut(leaf_a).unwrap().length = Some(1.0);
+    tree.get_node_mut(leaf_b).unwrap().length = Some(2.0);
+
+    let height = tree.get_height(root, true);
+    assert!((height - 2.0).abs() < 1e-9, "expected 2.0, got {}", height);
+}
+
+#[test]
+fn nan_length_compute_node_heights() {
+    let mut tree = Tree::new();
+    let root = tree.add_node();
+    let internal = tree.add_node();
+    let leaf_a = tree.add_node();
+    let leaf_b = tree.add_node();
+
+    tree.set_root(root);
+    tree.add_child(root, internal).unwrap();
+    tree.add_child(internal, leaf_a).unwrap();
+    tree.add_child(root, leaf_b).unwrap();
+
+    tree.get_node_mut(internal).unwrap().length = Some(f64::NAN);
+    tree.get_node_mut(leaf_a).unwrap().length = Some(1.0);
+    tree.get_node_mut(leaf_b).unwrap().length = Some(2.0);
+
+    let heights = super::stat::compute_node_heights(&tree);
+    assert!(
+        (heights[&root] - 2.0).abs() < 1e-9,
+        "root height expected 2.0, got {}",
+        heights[&root]
+    );
+    assert!(
+        (heights[&internal] - 1.0).abs() < 1e-9,
+        "internal height expected 1.0, got {}",
+        heights[&internal]
+    );
+    assert_eq!(heights[&leaf_a], 0.0);
+    assert_eq!(heights[&leaf_b], 0.0);
+}
+
+#[test]
+fn nan_length_compute_root_distances() {
+    let mut tree = Tree::new();
+    let root = tree.add_node();
+    let internal = tree.add_node();
+    let leaf_a = tree.add_node();
+    let leaf_b = tree.add_node();
+
+    tree.set_root(root);
+    tree.add_child(root, internal).unwrap();
+    tree.add_child(internal, leaf_a).unwrap();
+    tree.add_child(root, leaf_b).unwrap();
+
+    tree.get_node_mut(internal).unwrap().length = Some(f64::NAN);
+    tree.get_node_mut(leaf_a).unwrap().length = Some(1.0);
+    tree.get_node_mut(leaf_b).unwrap().length = Some(2.0);
+
+    let dists = super::stat::compute_root_distances(&tree);
+    assert_eq!(dists[&root], 0.0);
+    assert_eq!(dists[&internal], 0.0);
+    assert!(
+        (dists[&leaf_a] - 1.0).abs() < 1e-9,
+        "leaf_a distance expected 1.0, got {}",
+        dists[&leaf_a]
+    );
+    assert!(
+        (dists[&leaf_b] - 2.0).abs() < 1e-9,
+        "leaf_b distance expected 2.0, got {}",
+        dists[&leaf_b]
+    );
+}
+
+#[test]
+fn nan_length_diameter() {
+    let mut tree = Tree::new();
+    let root = tree.add_node();
+    let internal = tree.add_node();
+    let leaf_a = tree.add_node();
+    let leaf_b = tree.add_node();
+
+    tree.set_root(root);
+    tree.add_child(root, internal).unwrap();
+    tree.add_child(internal, leaf_a).unwrap();
+    tree.add_child(root, leaf_b).unwrap();
+
+    tree.get_node_mut(internal).unwrap().length = Some(f64::NAN);
+    tree.get_node_mut(leaf_a).unwrap().length = Some(1.0);
+    tree.get_node_mut(leaf_b).unwrap().length = Some(2.0);
+
+    assert!(
+        (tree.diameter() - 3.0).abs() < 1e-9,
+        "expected 3.0, got {}",
+        tree.diameter()
+    );
+}
+
+#[test]
+fn nan_length_get_node_with_longest_edge() {
+    let mut tree = Tree::new();
+    let root = tree.add_node();
+    let leaf_nan = tree.add_node();
+    let leaf_long = tree.add_node();
+
+    tree.set_root(root);
+    tree.add_child(root, leaf_nan).unwrap();
+    tree.add_child(root, leaf_long).unwrap();
+
+    tree.get_node_mut(leaf_nan).unwrap().length = Some(f64::NAN);
+    tree.get_node_mut(leaf_long).unwrap().length = Some(5.0);
+
+    assert_eq!(tree.get_node_with_longest_edge(), Some(leaf_long));
+}
+
+#[test]
+fn nan_length_collapse_node() {
+    let mut tree = Tree::new();
+    let root = tree.add_node();
+    let internal = tree.add_node();
+    let leaf = tree.add_node();
+
+    tree.set_root(root);
+    tree.add_child(root, internal).unwrap();
+    tree.add_child(internal, leaf).unwrap();
+
+    tree.get_node_mut(internal).unwrap().length = Some(2.0);
+    tree.get_node_mut(leaf).unwrap().length = Some(f64::NAN);
+
+    tree.collapse_node(internal).unwrap();
+
+    assert!(tree.get_node(internal).is_none());
+    let leaf_node = tree.get_node(leaf).unwrap();
+    assert!(
+        (leaf_node.length.unwrap() - 2.0).abs() < 1e-9,
+        "expected 2.0, got {:?}",
+        leaf_node.length
+    );
+}
+
+#[test]
+fn nan_length_insert_parent() {
+    let mut tree = Tree::new();
+    let root = tree.add_node();
+    let leaf = tree.add_node();
+
+    tree.set_root(root);
+    tree.add_child(root, leaf).unwrap();
+    tree.get_node_mut(leaf).unwrap().length = Some(f64::NAN);
+
+    let new_parent = tree.insert_parent(leaf).unwrap();
+
+    let new_parent_node = tree.get_node(new_parent).unwrap();
+    assert!(
+        (new_parent_node.length.unwrap()).abs() < 1e-9,
+        "expected 0.0, got {:?}",
+        new_parent_node.length
+    );
+
+    let leaf_node = tree.get_node(leaf).unwrap();
+    assert!(
+        (leaf_node.length.unwrap()).abs() < 1e-9,
+        "expected 0.0, got {:?}",
+        leaf_node.length
+    );
+}
+
+#[test]
+fn nan_length_to_dot() {
+    let mut tree = Tree::new();
+    let root = tree.add_node();
+    let leaf = tree.add_node();
+
+    tree.set_root(root);
+    tree.add_child(root, leaf).unwrap();
+    tree.get_node_mut(leaf).unwrap().length = Some(f64::NAN);
+
+    let dot = tree.to_dot();
+    let edge_line = dot.lines().find(|l| l.contains("->")).unwrap();
+    assert!(
+        !edge_line.contains("[label="),
+        "NaN edge should not have a label: {}",
+        edge_line
+    );
+}
+
+#[test]
+fn deleted_node_get_path_from_root_errors() {
+    let mut tree = Tree::new();
+    let root = tree.add_node();
+    let internal = tree.add_node();
+    let leaf = tree.add_node();
+
+    tree.set_root(root);
+    tree.add_child(root, internal).unwrap();
+    tree.add_child(internal, leaf).unwrap();
+
+    // Simulate malformed tree: internal is marked deleted but leaf still points to it.
+    tree.get_node_mut(internal).unwrap().deleted = true;
+
+    assert!(tree.get_path_from_root(&leaf).is_err());
+}

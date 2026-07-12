@@ -148,8 +148,9 @@ impl TreeComparison for Tree {
                 normalized.toggle_range(..num_leaves);
             }
 
-            // Use branch length, default to 0.0 if None
-            let len = node.length.unwrap_or(0.0);
+            // Use branch length, default to 0.0 if None, and treat non-finite
+            // lengths as 0.0 so they do not poison WRF/KF calculations.
+            let len = super::tree::finite_length(node.length);
             *splits.entry(normalized.clone()).or_insert(0.0) += len;
 
             node_leaves.insert(node_id, bitset);

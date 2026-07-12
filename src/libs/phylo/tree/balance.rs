@@ -122,7 +122,8 @@ pub fn compute_avg_clade_distances(tree: &Tree) -> HashMap<NodeId, f64> {
 
                     for &child in &node.children {
                         if let Some(st) = stats.get(&child) {
-                            let len = tree.get_node(child).and_then(|n| n.length).unwrap_or(0.0);
+                            let len =
+                                super::finite_length(tree.get_node(child).and_then(|n| n.length));
                             let d_child_ext = st.d + st.n as f64 * len;
 
                             let cross = n_total as f64 * d_child_ext + st.n as f64 * d_total;

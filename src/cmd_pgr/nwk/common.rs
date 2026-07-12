@@ -69,7 +69,7 @@ pub(crate) fn format_label_columns(node: &Node, name: &str, columns: &[String]) 
 }
 
 /// Returns IDs of named nodes matching the name selection rules from CLI args.
-pub(crate) fn match_names(tree: &Tree, args: &ArgMatches) -> anyhow::Result<BTreeSet<usize>> {
+pub(crate) fn match_names(tree: &Tree, args: &ArgMatches) -> anyhow::Result<BTreeSet<NodeId>> {
     // IDs with names
     let id_of: BTreeMap<_, _> = tree.get_name_id();
 
@@ -146,7 +146,7 @@ pub(crate) fn match_names(tree: &Tree, args: &ArgMatches) -> anyhow::Result<BTre
 }
 
 /// Returns IDs of nodes matching the position selection rules from CLI args.
-pub(crate) fn match_positions(tree: &Tree, args: &ArgMatches) -> BTreeSet<usize> {
+pub(crate) fn match_positions(tree: &Tree, args: &ArgMatches) -> BTreeSet<NodeId> {
     let mut skip_internal = if args.try_contains_id("internal").is_ok() {
         args.get_flag("internal")
     } else {

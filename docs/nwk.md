@@ -281,6 +281,19 @@ pgr nwk to-tex [OPTIONS] <infile>
 
 ---
 
+## Branch Length Handling
+
+`pgr nwk` treats non-finite branch lengths (`NaN`, positive/negative infinity) and negative values as `0.0` during calculations and visualization. This applies to:
+
+*   Statistics (`stat`) and distance calculations (`distance`).
+*   Tree comparisons (`cmp`), including weighted Robinson-Foulds and Kuhner-Felsenstein distances.
+*   Tree operations such as `reroot`, `collapse`, and `insert_parent`.
+*   Visualizations (`to-svg`, `to-dot`, `to-forest`, `to-tex`).
+
+This normalization prevents invalid values from poisoning sums, maxima, or distance computations. Note that the input file itself is not modified; the values are only normalized internally. If you require strict validation of branch lengths, clean the input before processing.
+
+---
+
 ## Planned Subcommands
 
 *   `eval` [Planned]: Multi-dimensional tree evaluation framework (geometric, taxonomic, phylogenetic, trait consistency). Referenced by `pgr clust eval` and `pgr clust cut` for tree-based metrics.

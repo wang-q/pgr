@@ -110,9 +110,11 @@ pub fn collapse_node(tree: &mut Tree, id: NodeId) -> anyhow::Result<()> {
     let mut new_children_ids = Vec::new();
     for (child_id, child_edge) in children_info {
         let new_edge = match (parent_edge, child_edge) {
-            (Some(p), Some(c)) => Some(p + c),
-            (Some(p), None) => Some(p),
-            (None, Some(c)) => Some(c),
+            (Some(p), Some(c)) => {
+                Some(super::finite_length(Some(p)) + super::finite_length(Some(c)))
+            }
+            (Some(p), None) => Some(super::finite_length(Some(p))),
+            (None, Some(c)) => Some(super::finite_length(Some(c))),
             (None, None) => None,
         };
 
@@ -204,7 +206,7 @@ pub fn insert_parent(tree: &mut Tree, id: NodeId) -> anyhow::Result<NodeId> {
         .parent
         .ok_or_else(|| anyhow::anyhow!("Node {} has no parent", id))?;
     let length = node.length;
-    let new_length = length.map(|l| l / 2.0);
+    let new_length = length.map(|l| super::finite_length(Some(l)) / 2.0);
 
     let new_node = tree.add_node();
 

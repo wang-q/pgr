@@ -67,11 +67,9 @@ pub fn get_node_with_longest_edge(tree: &Tree) -> Option<NodeId> {
         .iter()
         .filter(|n| !n.deleted)
         .max_by(|a, b| {
-            let len_a = a.length.unwrap_or(0.0);
-            let len_b = b.length.unwrap_or(0.0);
-            // Treat NaN lengths as 0.0 so they are never selected as the longest edge.
-            let len_a = if len_a.is_nan() { 0.0 } else { len_a };
-            let len_b = if len_b.is_nan() { 0.0 } else { len_b };
+            // Treat non-finite lengths as 0.0 so they are never selected as the longest edge.
+            let len_a = super::finite_length(a.length);
+            let len_b = super::finite_length(b.length);
             match len_a
                 .partial_cmp(&len_b)
                 .unwrap_or(std::cmp::Ordering::Equal)
@@ -147,17 +145,10 @@ pub fn diameter(tree: &Tree, weighted: bool) -> f64 {
                     let weight = if weighted {
                         let v_node = tree.get_node(v).expect("internal: neighbor exists in tree");
                         let u_node = tree.get_node(u).expect("internal: BFS node exists in tree");
-                        let len = if v_node.parent == Some(u) {
-                            v_node.length.unwrap_or(0.0)
+                        if v_node.parent == Some(u) {
+                            super::finite_length(v_node.length)
                         } else {
-                            u_node.length.unwrap_or(0.0)
-                        };
-                        // Treat NaN branch lengths as 0.0 so they do not poison
-                        // the diameter calculation.
-                        if len.is_nan() {
-                            0.0
-                        } else {
-                            len
+                            super::finite_length(u_node.length)
                         }
                     } else {
                         1.0
@@ -190,7 +181,8 @@ pub fn compute_node_heights(tree: &Tree) -> HashMap<NodeId, f64> {
                     let mut max_h = 0.0;
                     for &child in &node.children {
                         let child_h = *heights.get(&child).unwrap_or(&0.0);
-                        let edge_len = tree.get_node(child).and_then(|n| n.length).unwrap_or(0.0);
+                        let edge_len =
+                            super::finite_length(tree.get_node(child).and_then(|n| n.length));
                         let h = child_h + edge_len;
                         if h > max_h {
                             max_h = h;
@@ -242,7 +234,7 @@ pub fn compute_root_distances(tree: &Tree) -> HashMap<NodeId, f64> {
             dists.insert(node_id, d);
             if let Some(node) = tree.get_node(node_id) {
                 for &child in &node.children {
-                    let len = tree.get_node(child).and_then(|n| n.length).unwrap_or(0.0);
+                    let len = super::finite_length(tree.get_node(child).and_then(|n| n.length));
                     stack.push((child, d + len));
                 }
             }

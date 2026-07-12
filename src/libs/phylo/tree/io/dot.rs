@@ -36,7 +36,9 @@ pub fn to_dot(tree: &Tree) -> String {
                 };
                 let mut edge_attrs = Vec::new();
                 if let Some(len) = child.length {
-                    edge_attrs.push(format!("label=\"{}\"", len));
+                    if len.is_finite() {
+                        edge_attrs.push(format!("label=\"{}\"", len));
+                    }
                 }
 
                 let edge_attr_str = if edge_attrs.is_empty() {

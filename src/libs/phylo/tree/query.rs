@@ -14,7 +14,13 @@ pub fn get_path_from_root(tree: &Tree, id: &NodeId) -> anyhow::Result<Vec<NodeId
 
     loop {
         path.push(current);
-        match tree.nodes[current].parent {
+        let node = tree.get_node(current).ok_or_else(|| {
+            anyhow::anyhow!(
+                "Node {} not found or deleted while building root path",
+                current
+            )
+        })?;
+        match node.parent {
             Some(p) => current = p,
             None => break,
         }
@@ -23,7 +29,7 @@ pub fn get_path_from_root(tree: &Tree, id: &NodeId) -> anyhow::Result<Vec<NodeId
     path.reverse();
     // Validate root
     if let Some(root) = tree.root {
-        if path[0] != root {
+        if path.first() != Some(&root) {
             anyhow::bail!("Node is detached from root");
         }
     }
@@ -73,7 +79,7 @@ pub fn get_distance(tree: &Tree, a: &NodeId, b: &NodeId) -> anyhow::Result<(f64,
 
         while curr != *end {
             if let Some(node) = tree.get_node(curr) {
-                weighted += node.length.unwrap_or(0.0);
+                weighted += super::finite_length(node.length);
                 topo += 1;
                 if let Some(p) = node.parent {
                     curr = p;
@@ -169,7 +175,7 @@ pub fn get_height(tree: &Tree, id: NodeId, weighted: bool) -> f64 {
         .iter()
         .map(|&child| {
             let dist = if weighted {
-                tree.get_node(child).and_then(|n| n.length).unwrap_or(0.0)
+                super::finite_length(tree.get_node(child).and_then(|n| n.length))
             } else {
                 1.0
             };
