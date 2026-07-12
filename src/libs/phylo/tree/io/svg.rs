@@ -77,7 +77,9 @@ pub fn to_svg(tree: &Tree, height: f64, vskip: f64, width: f64) -> String {
         if node.deleted {
             continue;
         }
-        let (nx, ny) = positions[&id];
+        let Some(&(nx, ny)) = positions.get(&id) else {
+            continue;
+        };
 
         // Horizontal branch line (from parent to this node)
         if let Some(parent_id) = node.parent {
@@ -121,7 +123,9 @@ pub fn to_svg(tree: &Tree, height: f64, vskip: f64, width: f64) -> String {
         if node.deleted {
             continue;
         }
-        let (nx, ny) = positions[&id];
+        let Some(&(nx, ny)) = positions.get(&id) else {
+            continue;
+        };
 
         if !node.is_leaf() {
             // Only draw dot if node has a name (matching Forest behavior)
@@ -144,7 +148,9 @@ pub fn to_svg(tree: &Tree, height: f64, vskip: f64, width: f64) -> String {
         if node.deleted {
             continue;
         }
-        let (nx, ny) = positions[&id];
+        let Some(&(nx, ny)) = positions.get(&id) else {
+            continue;
+        };
 
         if node.is_leaf() {
             // Leaf label: right of node

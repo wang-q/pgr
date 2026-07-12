@@ -89,7 +89,7 @@ pub fn collapse_node(tree: &mut Tree, id: NodeId) -> anyhow::Result<()> {
         let children_info: Vec<(NodeId, Option<f64>)> = node
             .children
             .iter()
-            .filter_map(|&c| tree.nodes.get(c).map(|child| (c, child.length)))
+            .filter_map(|&c| tree.get_node(c).map(|child| (c, child.length)))
             .collect();
         (parent_id, node.length, children_info)
     };

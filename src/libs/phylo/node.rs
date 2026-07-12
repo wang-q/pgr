@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 /// Index into the Tree's node arena (Copy, lightweight, no pointers).
 pub type NodeId = usize;
 
+/// A node in a phylogenetic tree.
 #[derive(Debug, Clone)]
 pub struct Node {
     /// Unique identifier for the node (index in the arena)
