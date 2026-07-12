@@ -3,22 +3,26 @@
 mod common;
 
 use common::PgrCmd;
+use std::path::PathBuf;
 use tempfile::TempDir;
+
+/// Return the absolute path to a fixture in `tests/fasta/input`.
+fn fixture(name: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fasta/input")
+        .join(name)
+}
 
 #[test]
 fn test_fa_window_basic() {
     let temp_dir = TempDir::new().unwrap();
     let output_file = temp_dir.path().join("output.fa");
 
-    // Create a simple test file
-    let input_file = temp_dir.path().join("input.fa");
-    std::fs::write(&input_file, ">seq1\nATGCATGCAT\n>seq2\nGGCCGGCCGG\n").unwrap();
-
     PgrCmd::new()
         .args(&[
             "fa",
             "window",
-            input_file.to_str().unwrap(),
+            fixture("window_basic.fa").to_str().unwrap(),
             "--window",
             "4",
             "--step",
@@ -53,18 +57,11 @@ fn test_fa_window_skip_n() {
     let temp_dir = TempDir::new().unwrap();
     let output_file = temp_dir.path().join("output.fa");
 
-    let input_file = temp_dir.path().join("input.fa");
-    std::fs::write(
-        &input_file,
-        ">seq1\nATGC\nNNNN\nGCAT\n", // ATGC NNNN GCAT
-    )
-    .unwrap();
-
     PgrCmd::new()
         .args(&[
             "fa",
             "window",
-            input_file.to_str().unwrap(),
+            fixture("window_skip_n.fa").to_str().unwrap(),
             "--window",
             "4",
             "--step",
@@ -87,21 +84,13 @@ fn test_fa_window_chunk() {
     let temp_dir = TempDir::new().unwrap();
     let output_file = temp_dir.path().join("output.fa");
 
-    let input_file = temp_dir.path().join("input.fa");
-    // Create 10 records of 10bp
-    let mut input_content = String::new();
-    for i in 0..10 {
-        input_content.push_str(&format!(">seq{}\nAAAAAAAAAA\n", i));
-    }
-    std::fs::write(&input_file, input_content).unwrap();
-
     // Window size 10, step 10 -> 1 window per sequence -> 10 output records total
     // Chunk size 3 -> Should produce 4 files: .001 (3), .002 (3), .003 (3), .004 (1)
     PgrCmd::new()
         .args(&[
             "fa",
             "window",
-            input_file.to_str().unwrap(),
+            fixture("window_chunk.fa").to_str().unwrap(),
             "--window",
             "10",
             "--step",
@@ -132,20 +121,12 @@ fn test_fa_window_shuffle_chunk() {
     let temp_dir = TempDir::new().unwrap();
     let output_file = temp_dir.path().join("output.fa");
 
-    let input_file = temp_dir.path().join("input.fa");
-    // 100 sequences to ensure shuffle is noticeable (though we check logic mostly)
-    let mut input_content = String::new();
-    for i in 0..100 {
-        input_content.push_str(&format!(">seq{}\nAAAAAAAAAA\n", i));
-    }
-    std::fs::write(&input_file, input_content).unwrap();
-
     // Chunk 20 -> 5 files
     PgrCmd::new()
         .args(&[
             "fa",
             "window",
-            input_file.to_str().unwrap(),
+            fixture("window_shuffle_chunk.fa").to_str().unwrap(),
             "--window",
             "10",
             "--step",
@@ -203,15 +184,11 @@ fn test_fa_window_real_file() {
 
 #[test]
 fn test_fa_window_chunk_stdout_fail() {
-    let temp_dir = TempDir::new().unwrap();
-    let input_file = temp_dir.path().join("input.fa");
-    std::fs::write(&input_file, ">seq1\nACGT\n").unwrap();
-
     let (_, stderr) = PgrCmd::new()
         .args(&[
             "fa",
             "window",
-            input_file.to_str().unwrap(),
+            fixture("basic.fa").to_str().unwrap(),
             "--chunk-records",
             "10",
         ])
@@ -222,15 +199,11 @@ fn test_fa_window_chunk_stdout_fail() {
 
 #[test]
 fn test_fa_window_step_zero_fails() {
-    let temp_dir = TempDir::new().unwrap();
-    let input_file = temp_dir.path().join("input.fa");
-    std::fs::write(&input_file, ">seq1\nATGCATGCAT\n").unwrap();
-
     let (_, stderr) = PgrCmd::new()
         .args(&[
             "fa",
             "window",
-            input_file.to_str().unwrap(),
+            fixture("window_basic.fa").to_str().unwrap(),
             "--window",
             "4",
             "--step",

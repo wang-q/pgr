@@ -4,7 +4,15 @@ mod common;
 
 use common::PgrCmd;
 use std::fs;
+use std::path::PathBuf;
 use tempfile::TempDir;
+
+/// Return the absolute path to a fixture in `tests/fasta/input`.
+fn fixture(name: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fasta/input")
+        .join(name)
+}
 
 #[test]
 fn command_invalid() {
@@ -28,13 +36,8 @@ fn file_doesnt_exist() {
 
 #[test]
 fn command_fa_size() {
-    let temp = TempDir::new().unwrap();
-    let input = temp.path().join("test.fa");
-
-    fs::write(&input, ">seq1\nACGT\n>seq2\nACGTACGT\n").unwrap();
-
     let (stdout, _) = PgrCmd::new()
-        .args(&["fa", "size", input.to_str().unwrap()])
+        .args(&["fa", "size", fixture("basic.fa").to_str().unwrap()])
         .run();
 
     assert!(stdout.contains("seq1\t4\n"));
@@ -79,14 +82,15 @@ fn command_fa_size_gz() {
 
 #[test]
 fn command_fa_size_no_ns() {
-    let temp = TempDir::new().unwrap();
-    let input = temp.path().join("test_nons.fa");
-
     // seq1: 12 bases, 4 Ns (ACGT NNNN ACGT) -> 8 bases
     // seq2: 4 bases, 0 Ns -> 4 bases
-    fs::write(&input, ">seq1\nACGTNNNNACGT\n>seq2\nACGT\n").unwrap();
     let (stdout, _) = PgrCmd::new()
-        .args(&["fa", "size", input.to_str().unwrap(), "--no-ns"])
+        .args(&[
+            "fa",
+            "size",
+            fixture("nons.fa").to_str().unwrap(),
+            "--no-ns",
+        ])
         .run();
 
     assert!(stdout.contains("seq1\t8\n"));
@@ -96,18 +100,16 @@ fn command_fa_size_no_ns() {
 #[test]
 fn command_fa_some() {
     let temp = TempDir::new().unwrap();
-    let input = temp.path().join("test.fa");
     let list = temp.path().join("list.txt");
     let output = temp.path().join("out.fa");
 
-    fs::write(&input, ">seq1\nACGT\n>seq2\nACGTACGT\n>seq3\nTTTT\n").unwrap();
     fs::write(&list, "seq1\nseq3\n").unwrap();
 
     PgrCmd::new()
         .args(&[
             "fa",
             "some",
-            input.to_str().unwrap(),
+            fixture("some.fa").to_str().unwrap(),
             list.to_str().unwrap(),
             "-o",
             output.to_str().unwrap(),
@@ -124,18 +126,16 @@ fn command_fa_some() {
 #[test]
 fn command_fa_some_invert() {
     let temp = TempDir::new().unwrap();
-    let input = temp.path().join("test.fa");
     let list = temp.path().join("list.txt");
     let output = temp.path().join("out.fa");
 
-    fs::write(&input, ">seq1\nACGT\n>seq2\nACGTACGT\n>seq3\nTTTT\n").unwrap();
     fs::write(&list, "seq1\nseq3\n").unwrap();
 
     PgrCmd::new()
         .args(&[
             "fa",
             "some",
-            input.to_str().unwrap(),
+            fixture("some.fa").to_str().unwrap(),
             list.to_str().unwrap(),
             "--invert",
             "-o",
@@ -447,18 +447,8 @@ fn command_split_about() {
 
 #[test]
 fn command_fa_n50() {
-    let temp = TempDir::new().unwrap();
-    let input = temp.path().join("test.fa");
-
-    fs::write(
-        &input,
-        ">seq1\nN\n>seq2\nN\n>seq3\nNN\n>seq4\nNN\n>seq5\nNNNN\n"
-            .replace("N", "N".repeat(100).as_str()),
-    )
-    .unwrap();
-
     let (stdout, _) = PgrCmd::new()
-        .args(&["fa", "n50", input.to_str().unwrap()])
+        .args(&["fa", "n50", fixture("n50.fa").to_str().unwrap()])
         .run();
 
     assert!(stdout.contains("N50\t200\n"));
@@ -466,18 +456,16 @@ fn command_fa_n50() {
 
 #[test]
 fn command_fa_n50_stats() {
-    let temp = TempDir::new().unwrap();
-    let input = temp.path().join("test.fa");
-
-    fs::write(
-        &input,
-        ">seq1\nN\n>seq2\nN\n>seq3\nNN\n>seq4\nNN\n>seq5\nNNNN\n"
-            .replace("N", "N".repeat(100).as_str()),
-    )
-    .unwrap();
-
     let (stdout, _) = PgrCmd::new()
-        .args(&["fa", "n50", input.to_str().unwrap(), "-S", "-A", "-C", "-H"])
+        .args(&[
+            "fa",
+            "n50",
+            fixture("n50.fa").to_str().unwrap(),
+            "-S",
+            "-A",
+            "-C",
+            "-H",
+        ])
         .run();
 
     assert!(stdout.contains("200\n"));
@@ -607,12 +595,13 @@ fn command_six_frame() {
 
 #[test]
 fn command_fa_one_not_found() {
-    let temp = TempDir::new().unwrap();
-    let input = temp.path().join("test.fa");
-    fs::write(&input, ">seq1\nACGT\n>seq2\nACGTACGT\n").unwrap();
-
     let (_, stderr) = PgrCmd::new()
-        .args(&["fa", "one", input.to_str().unwrap(), "nonexistent"])
+        .args(&[
+            "fa",
+            "one",
+            fixture("basic.fa").to_str().unwrap(),
+            "nonexistent",
+        ])
         .run_fail();
 
     assert!(stderr.contains("not found"));
@@ -620,12 +609,8 @@ fn command_fa_one_not_found() {
 
 #[test]
 fn command_fa_one_success() {
-    let temp = TempDir::new().unwrap();
-    let input = temp.path().join("test.fa");
-    fs::write(&input, ">seq1\nACGT\n>seq2\nACGTACGT\n").unwrap();
-
     let (stdout, _) = PgrCmd::new()
-        .args(&["fa", "one", input.to_str().unwrap(), "seq2"])
+        .args(&["fa", "one", fixture("basic.fa").to_str().unwrap(), "seq2"])
         .run();
 
     assert!(stdout.contains(">seq2"));
