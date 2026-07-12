@@ -36,7 +36,7 @@ pub fn to_dot(tree: &Tree) -> String {
                 };
                 let mut edge_attrs = Vec::new();
                 if let Some(len) = child.length {
-                    if len.is_finite() {
+                    if len.is_finite() && len >= 0.0 {
                         edge_attrs.push(format!("label=\"{}\"", len));
                     }
                 }
@@ -81,5 +81,25 @@ mod tests {
         assert!(dot.contains(&format!("{} [label=\"Root\"];", n0)));
         assert!(dot.contains(&format!("{} [label=\"A\"];", n1)));
         assert!(dot.contains(&format!("{} -> {} [label=\"0.1\"];", n0, n1)));
+    }
+
+    #[test]
+    fn test_to_dot_negative_length() {
+        let mut tree = Tree::new();
+        let n0 = tree.add_node();
+        let n1 = tree.add_node();
+
+        tree.set_root(n0);
+        tree.add_child(n0, n1).unwrap();
+
+        tree.get_node_mut(n0).unwrap().set_name("Root");
+        tree.get_node_mut(n1).unwrap().set_name("A");
+        tree.get_node_mut(n1).unwrap().length = Some(-0.5);
+
+        let dot = to_dot(&tree);
+        // Negative length should be treated as 0.0 (no label emitted)
+        assert!(!dot.contains("label=\"-0.5\""));
+        // Edge should exist but without label attribute
+        assert!(dot.contains(&format!("{} -> {};", n0, n1)));
     }
 }
