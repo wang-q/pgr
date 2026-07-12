@@ -107,11 +107,9 @@ pub(crate) fn match_names(tree: &Tree, args: &ArgMatches) -> anyhow::Result<BTre
             .ok_or_else(|| anyhow::anyhow!("missing --regex values"))?;
         for regex in regexes {
             let re = RegexBuilder::new(regex).case_insensitive(true).build()?;
-            for name in id_of.keys() {
+            for (name, id) in id_of.iter() {
                 if re.is_match(name) {
-                    if let Some(id) = id_of.get(name) {
-                        ids.insert(*id);
-                    }
+                    ids.insert(*id);
                 }
             }
         }

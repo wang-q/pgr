@@ -28,7 +28,7 @@ pub fn to_svg(tree: &Tree, height: f64, vskip: f64, width: f64) -> String {
         .iter()
         .filter_map(|&id| {
             tree.get_node(id)
-                .filter(|n| n.is_leaf() && !n.deleted)
+                .filter(|n| n.is_leaf())
                 .and_then(|n| n.name.as_ref())
                 .map(|name| name.replace('_', " ").len() as f64 * 7.0 + 6.0)
         })
@@ -68,15 +68,11 @@ pub fn to_svg(tree: &Tree, height: f64, vskip: f64, width: f64) -> String {
     let oy = margin_top;
 
     // Layer 1: Draw all edges first (so labels render on top)
-    let nodes = tree.preorder(&root);
     for &id in &nodes {
         let node = match tree.get_node(id) {
             Some(n) => n,
             None => continue,
         };
-        if node.deleted {
-            continue;
-        }
         let Some(&(nx, ny)) = positions.get(&id) else {
             continue;
         };
@@ -120,9 +116,6 @@ pub fn to_svg(tree: &Tree, height: f64, vskip: f64, width: f64) -> String {
             Some(n) => n,
             None => continue,
         };
-        if node.deleted {
-            continue;
-        }
         let Some(&(nx, ny)) = positions.get(&id) else {
             continue;
         };
@@ -145,9 +138,6 @@ pub fn to_svg(tree: &Tree, height: f64, vskip: f64, width: f64) -> String {
             Some(n) => n,
             None => continue,
         };
-        if node.deleted {
-            continue;
-        }
         let Some(&(nx, ny)) = positions.get(&id) else {
             continue;
         };
@@ -216,11 +206,7 @@ fn compute_svg_positions(
     let nodes = tree.preorder(&root);
     let leaves: Vec<NodeId> = nodes
         .iter()
-        .filter(|&&id| {
-            tree.get_node(id)
-                .map(|n| n.is_leaf() && !n.deleted)
-                .unwrap_or(false)
-        })
+        .filter(|&&id| tree.get_node(id).map(|n| n.is_leaf()).unwrap_or(false))
         .copied()
         .collect();
 
@@ -241,21 +227,14 @@ fn compute_svg_positions(
     let cum_length = if height > 0.0 {
         let mut cl = HashMap::new();
         cl.insert(root, 0.0);
-        let nodes = tree.preorder(&root);
         for &id in &nodes {
             let node = match tree.get_node(id) {
                 Some(n) => n,
                 None => continue,
             };
-            if node.deleted {
-                continue;
-            }
             let parent_len = *cl.get(&id).unwrap_or(&0.0);
             for &child_id in &node.children {
                 if let Some(child) = tree.get_node(child_id) {
-                    if child.deleted {
-                        continue;
-                    }
                     let edge = super::super::finite_length(child.length);
                     cl.insert(child_id, parent_len + edge);
                 }
