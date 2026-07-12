@@ -95,7 +95,9 @@ pub fn to_svg(tree: &Tree, height: f64, vskip: f64, width: f64) -> String {
         // Vertical connector line between children
         if node.children.len() >= 2 {
             let first_child = node.children[0];
-            let last_child = *node.children.last().unwrap();
+            let Some(&last_child) = node.children.last() else {
+                continue;
+            };
             if let (Some(&(_, first_y)), Some(&(_, last_y))) =
                 (positions.get(&first_child), positions.get(&last_child))
             {

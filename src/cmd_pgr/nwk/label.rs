@@ -90,14 +90,19 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut writer =
         pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
 
-    let infile = args.get_one::<String>("infile").unwrap();
+    let infile = args
+        .get_one::<String>("infile")
+        .ok_or_else(|| anyhow::anyhow!("missing required argument: infile"))?;
     let trees = Tree::from_file(infile)?;
     if trees.is_empty() {
         return Ok(());
     }
     let mut columns = vec![];
     if args.contains_id("extra_column") {
-        for column in args.get_many::<String>("extra_column").unwrap() {
+        for column in args
+            .get_many::<String>("extra_column")
+            .ok_or_else(|| anyhow::anyhow!("missing required argument: extra_column"))?
+        {
             columns.push(column.to_string());
         }
     }

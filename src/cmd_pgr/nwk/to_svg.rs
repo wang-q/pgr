@@ -53,10 +53,16 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut writer =
         pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
 
-    let width: f64 = *args.get_one::<f64>("width").unwrap();
-    let vskip: f64 = *args.get_one::<f64>("vskip").unwrap();
+    let width: f64 = *args
+        .get_one::<f64>("width")
+        .ok_or_else(|| anyhow::anyhow!("missing required argument: width"))?;
+    let vskip: f64 = *args
+        .get_one::<f64>("vskip")
+        .ok_or_else(|| anyhow::anyhow!("missing required argument: vskip"))?;
 
-    let infile = args.get_one::<String>("infile").unwrap();
+    let infile = args
+        .get_one::<String>("infile")
+        .ok_or_else(|| anyhow::anyhow!("missing required argument: infile"))?;
 
     let tree = Tree::from_file(infile)?
         .into_iter()

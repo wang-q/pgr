@@ -54,8 +54,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let outfile = crate::cmd_pgr::args::get_outfile(args);
     let mut writer =
         pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
-    let infile = args.get_one::<String>("infile").unwrap();
-    let style = args.get_one::<String>("style").unwrap();
+    let infile = args
+        .get_one::<String>("infile")
+        .ok_or_else(|| anyhow::anyhow!("missing required argument: infile"))?;
+    let style = args
+        .get_one::<String>("style")
+        .ok_or_else(|| anyhow::anyhow!("missing required argument: style"))?;
 
     let trees = Tree::from_file(infile)?;
 

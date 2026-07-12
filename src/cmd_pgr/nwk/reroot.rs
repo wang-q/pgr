@@ -84,7 +84,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let deroot = args.get_flag("deroot");
     let lax = args.get_flag("lax");
 
-    let infile = args.get_one::<String>("infile").unwrap();
+    let infile = args
+        .get_one::<String>("infile")
+        .ok_or_else(|| anyhow::anyhow!("missing required argument: infile"))?;
     let trees = Tree::from_file(infile)?;
 
     if trees.len() > 1 {

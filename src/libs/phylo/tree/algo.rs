@@ -23,9 +23,9 @@ pub fn sort_by_name(tree: &mut Tree, descending: bool) {
         return;
     }
 
-    let root = tree
-        .get_root()
-        .expect("internal: non-empty tree has a root");
+    let Some(root) = tree.get_root() else {
+        return;
+    };
     let ids = tree.postorder(&root);
 
     // Pre-collect names to avoid borrowing issues during sort
@@ -105,9 +105,9 @@ pub fn ladderize(tree: &mut Tree, descending: bool) {
         return;
     }
 
-    let root = tree
-        .get_root()
-        .expect("internal: non-empty tree has a root");
+    let Some(root) = tree.get_root() else {
+        return;
+    };
     let ids = tree.levelorder(&root);
 
     let mut size_map: HashMap<NodeId, usize> = HashMap::new();
@@ -173,9 +173,9 @@ pub fn sort_by_list(tree: &mut Tree, order_list: &[String]) {
         return;
     }
 
-    let root = tree
-        .get_root()
-        .expect("internal: non-empty tree has a root");
+    let Some(root) = tree.get_root() else {
+        return;
+    };
 
     // Map name -> position
     let mut pos_map: HashMap<String, usize> = HashMap::new();
@@ -237,9 +237,9 @@ pub fn deladderize(tree: &mut Tree) {
         return;
     }
 
-    let root = tree
-        .get_root()
-        .expect("internal: non-empty tree has a root");
+    let Some(root) = tree.get_root() else {
+        return;
+    };
 
     // 1. Calculate descendant counts (same as ladderize)
     let mut size_map: HashMap<NodeId, usize> = HashMap::new();

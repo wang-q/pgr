@@ -1,3 +1,8 @@
+//! Arena-based tree representation and operations.
+//!
+//! Provides the core `Tree` type plus modules for traversal, topology
+//! operations, statistics, queries, and format I/O.
+
 pub mod algo;
 pub mod balance;
 pub mod distance;

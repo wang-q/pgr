@@ -78,7 +78,10 @@ pub(crate) fn match_names(tree: &Tree, args: &ArgMatches) -> anyhow::Result<BTre
 
     // ids supplied by --node
     if args.contains_id("node") {
-        for name in args.get_many::<String>("node").unwrap() {
+        let names = args
+            .get_many::<String>("node")
+            .ok_or_else(|| anyhow::anyhow!("missing --node values"))?;
+        for name in names {
             if let Some(id) = id_of.get(name) {
                 ids.insert(*id);
             }
@@ -87,7 +90,9 @@ pub(crate) fn match_names(tree: &Tree, args: &ArgMatches) -> anyhow::Result<BTre
 
     // ids supplied by --name-list
     if args.contains_id("name_list") {
-        let file = args.get_one::<String>("name_list").unwrap();
+        let file = args
+            .get_one::<String>("name_list")
+            .ok_or_else(|| anyhow::anyhow!("missing --name-list value"))?;
         for name in pgr::libs::io::read_names::<Vec<String>>(file)?.iter() {
             if let Some(id) = id_of.get(name) {
                 ids.insert(*id);
@@ -97,7 +102,10 @@ pub(crate) fn match_names(tree: &Tree, args: &ArgMatches) -> anyhow::Result<BTre
 
     // ids matched with --regex
     if args.contains_id("regex") {
-        for regex in args.get_many::<String>("regex").unwrap() {
+        let regexes = args
+            .get_many::<String>("regex")
+            .ok_or_else(|| anyhow::anyhow!("missing --regex values"))?;
+        for regex in regexes {
             let re = RegexBuilder::new(regex).case_insensitive(true).build()?;
             for name in id_of.keys() {
                 if re.is_match(name) {

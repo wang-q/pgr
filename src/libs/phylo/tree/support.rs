@@ -52,9 +52,9 @@ pub fn compute_all_bitsets(
         let traversal = tree.postorder(&root);
 
         for id in traversal {
-            let node = tree
-                .get_node(id)
-                .expect("id from postorder traversal of valid tree");
+            let Some(node) = tree.get_node(id) else {
+                continue;
+            };
             let mut bitset = FixedBitSet::with_capacity(num_leaves);
 
             if node.is_leaf() {
@@ -118,9 +118,9 @@ pub fn count_clades(
         let bitsets = compute_all_bitsets(tree, leaf_map)?;
 
         for (id, bs) in bitsets {
-            let node = tree
-                .get_node(id)
-                .expect("id from compute_all_bitsets of valid tree");
+            let Some(node) = tree.get_node(id) else {
+                continue;
+            };
             if !node.is_leaf() {
                 *counts.entry(bs).or_insert(0) += 1;
             }

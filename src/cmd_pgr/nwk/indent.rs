@@ -56,10 +56,13 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let text = if compact {
         ""
     } else {
-        args.get_one::<String>("text").unwrap()
+        args.get_one::<String>("text")
+            .ok_or_else(|| anyhow::anyhow!("missing required argument: text"))?
     };
 
-    let infile = args.get_one::<String>("infile").unwrap();
+    let infile = args
+        .get_one::<String>("infile")
+        .ok_or_else(|| anyhow::anyhow!("missing required argument: infile"))?;
     let trees = Tree::from_file(infile)?;
 
     for tree in trees {

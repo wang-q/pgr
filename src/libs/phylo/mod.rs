@@ -1,3 +1,5 @@
+//! Phylogenetic tree library: Newick parsing, manipulation, comparison, and I/O.
+
 pub mod cmp;
 pub mod error;
 pub mod node;

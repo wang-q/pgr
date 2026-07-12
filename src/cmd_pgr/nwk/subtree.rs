@@ -81,7 +81,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let condense_name = args.get_one::<String>("condense");
     let is_condense = condense_name.is_some();
 
-    let infile = args.get_one::<String>("infile").unwrap();
+    let infile = args
+        .get_one::<String>("infile")
+        .ok_or_else(|| anyhow::anyhow!("missing required argument: infile"))?;
     let mut trees = Tree::from_file(infile)?;
 
     if trees.is_empty() {
@@ -110,7 +112,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         }
 
         // Apply context
-        let context_levels = *args.get_one::<usize>("context").unwrap();
+        let context_levels = *args
+            .get_one::<usize>("context")
+            .ok_or_else(|| anyhow::anyhow!("missing required argument: context"))?;
         for _ in 0..context_levels {
             if let Some(node) = tree.get_node(sub_root_id) {
                 if let Some(parent) = node.parent {

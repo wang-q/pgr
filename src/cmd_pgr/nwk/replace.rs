@@ -54,14 +54,20 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut writer =
         pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
 
-    let infile = args.get_one::<String>("infile").unwrap();
-    let mode = args.get_one::<String>("mode").unwrap();
+    let infile = args
+        .get_one::<String>("infile")
+        .ok_or_else(|| anyhow::anyhow!("missing required argument: infile"))?;
+    let mode = args
+        .get_one::<String>("mode")
+        .ok_or_else(|| anyhow::anyhow!("missing required argument: mode"))?;
 
     let skip_internal = args.get_flag("internal");
     let skip_leaf = args.get_flag("leaf");
 
     let mut replace_of: BTreeMap<String, Vec<String>> = BTreeMap::new();
-    let rfile = args.get_one::<String>("replace_tsv").unwrap();
+    let rfile = args
+        .get_one::<String>("replace_tsv")
+        .ok_or_else(|| anyhow::anyhow!("missing required argument: replace_tsv"))?;
     // Inlined parsing (rather than libs::io::read_replace_tsv) because nwk
     // replace uses overwrite semantics per key and warns on single-field lines,
     // whereas read_replace_tsv appends and treats single-field lines as deletes.

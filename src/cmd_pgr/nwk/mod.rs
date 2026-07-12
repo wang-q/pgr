@@ -19,6 +19,7 @@ pub mod to_forest;
 pub mod to_svg;
 pub mod to_tex;
 pub mod topo;
+
 /// Build the clap subcommand for nwk.
 pub fn make_subcommand() -> Command {
     Command::new("nwk")
@@ -76,6 +77,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         Some(("to-svg", sub_matches)) => to_svg::execute(sub_matches),
         Some(("to-tex", sub_matches)) => to_tex::execute(sub_matches),
         Some(("topo", sub_matches)) => topo::execute(sub_matches),
-        _ => Ok(()),
+        _ => anyhow::bail!("unrecognized nwk subcommand"),
     }
 }

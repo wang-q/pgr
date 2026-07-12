@@ -57,7 +57,9 @@ Examples:
 /// Execute the cmp command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // 1. Load first file
-    let infile = args.get_one::<String>("infile").unwrap();
+    let infile = args
+        .get_one::<String>("infile")
+        .ok_or_else(|| anyhow::anyhow!("missing required argument: infile"))?;
     let trees1 = Tree::from_file(infile)?;
 
     // 2. Load second file (if provided) or self-compare against trees1

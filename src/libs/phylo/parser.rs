@@ -17,16 +17,19 @@ use std::collections::BTreeMap;
 // Error Handling Structures
 // ================================================================================================
 
+/// Kind of a single detailed parsing error entry.
 #[derive(Clone, Debug, PartialEq)]
 pub enum DetailedErrorKind {
+    /// Human-readable parser context.
     Context(&'static str),
+    /// Underlying nom error kind.
     Nom(ErrorKind),
 }
 
-/// A custom error type for nom that accumulates context and error kinds.
-/// This allows for more informative error messages when parsing fails.
+/// Detailed Newick parser error with location and context stack.
 #[derive(Clone, Debug, PartialEq)]
 pub struct DetailedError<'a> {
+    /// Stack of `(remaining_input, kind)` entries accumulated during parsing.
     pub errors: Vec<(&'a str, DetailedErrorKind)>,
 }
 
@@ -94,20 +97,18 @@ impl ParsedNode {
     ///
     /// This function recursively traverses the `ParsedNode` tree, creating `Node`s in the `Tree` struct
     /// and linking them together.
-    fn into_tree(self, tree: &mut Tree) -> NodeId {
+    fn into_tree(self, tree: &mut Tree) -> anyhow::Result<NodeId> {
         let id = tree.add_node();
         for child in self.children {
-            let child_id = child.into_tree(tree);
-            // The unwrap here is safe because `id` was just created and exists in the tree.
-            tree.add_child(id, child_id)
-                .expect("internal: freshly created node can be linked");
+            let child_id = child.into_tree(tree)?;
+            tree.add_child(id, child_id)?;
         }
         if let Some(node) = tree.get_node_mut(id) {
             node.name = self.name;
             node.length = self.length;
             node.properties = self.properties;
         }
-        id
+        Ok(id)
     }
 }
 
@@ -364,7 +365,9 @@ pub fn parse_newick(input: &str) -> Result<Tree, TreeError> {
     match parser.parse(input) {
         Ok((_, (root_node, _))) => {
             let mut tree = Tree::new();
-            let root_id = root_node.into_tree(&mut tree);
+            let root_id = root_node.into_tree(&mut tree).map_err(|e| {
+                TreeError::LogicError(format!("failed to build tree from parsed nodes: {}", e))
+            })?;
             tree.set_root(root_id);
             Ok(tree)
         }
@@ -403,7 +406,9 @@ pub fn parse_newick_multi(input: &str) -> Result<Vec<Tree>, TreeError> {
             let mut trees = Vec::new();
             for root_node in trees_data.into_iter().flatten() {
                 let mut tree = Tree::new();
-                let root_id = root_node.into_tree(&mut tree);
+                let root_id = root_node.into_tree(&mut tree).map_err(|e| {
+                    TreeError::LogicError(format!("failed to build tree from parsed nodes: {}", e))
+                })?;
                 tree.set_root(root_id);
                 trees.push(tree);
             }
@@ -479,6 +484,7 @@ impl Tree {
         parse_newick(input)
     }
 
+    /// Parse a string containing multiple Newick trees into a vector of Trees.
     pub fn from_newick_multi(input: &str) -> Result<Vec<Self>, TreeError> {
         parse_newick_multi(input)
     }

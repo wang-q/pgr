@@ -79,31 +79,19 @@ pub fn collapse_node(tree: &mut Tree, id: NodeId) -> anyhow::Result<()> {
     }
 
     // 1. Get info
-    let (parent_id, parent_edge) = {
+    let (parent_id, parent_edge, children_info) = {
         let node = tree
             .get_node(id)
-            .expect("internal: node existence checked above");
-        // Safety: Checked root above, so parent must exist
-        (
-            node.parent.expect("internal: non-root node has a parent"),
-            node.length,
-        )
-    };
-
-    let children_info: Vec<(NodeId, Option<f64>)> = {
-        let node = tree
-            .get_node(id)
-            .expect("internal: node existence checked above");
-        node.children
+            .ok_or_else(|| anyhow::anyhow!("Node {} not found or deleted", id))?;
+        let parent_id = node
+            .parent
+            .ok_or_else(|| anyhow::anyhow!("Node {} has no parent", id))?;
+        let children_info: Vec<(NodeId, Option<f64>)> = node
+            .children
             .iter()
-            .map(|&c| {
-                let child_node = tree
-                    .nodes
-                    .get(c)
-                    .expect("internal: child exists in node vector");
-                (c, child_node.length)
-            })
-            .collect()
+            .filter_map(|&c| tree.nodes.get(c).map(|child| (c, child.length)))
+            .collect();
+        (parent_id, node.length, children_info)
     };
 
     // 2. Re-parent children
@@ -170,7 +158,9 @@ pub fn compact(tree: &mut Tree) {
             continue;
         }
 
-        let new_self_idx = *old_to_new.get(&old_idx).unwrap();
+        let Some(&new_self_idx) = old_to_new.get(&old_idx) else {
+            continue;
+        };
 
         // Remap parent
         if let Some(old_parent) = node.parent {
@@ -336,11 +326,10 @@ pub fn remove_degree_two_nodes(tree: &mut Tree) {
 /// The "heavier" child (with more descendants) is the one collapsed into the root.
 pub fn deroot(tree: &mut Tree) -> anyhow::Result<()> {
     let root = tree.root.ok_or_else(|| anyhow::anyhow!("Empty tree"))?;
-    let children = tree
+    let node = tree
         .get_node(root)
-        .expect("internal: root id points to a valid node")
-        .children
-        .clone();
+        .ok_or_else(|| anyhow::anyhow!("root node {} not found", root))?;
+    let children = node.children.clone();
 
     if children.len() != 2 {
         anyhow::bail!("Root is not bifurcating (degree != 2)");
@@ -389,15 +378,13 @@ pub fn reroot_at(
             .unwrap_or(false);
 
         // Capture original names
-        let names: Vec<Option<String>> = path
-            .iter()
-            .map(|&id| {
-                tree.get_node(id)
-                    .expect("internal: path nodes exist")
-                    .name
-                    .clone()
-            })
-            .collect();
+        let mut names = Vec::with_capacity(path.len());
+        for &id in &path {
+            let node = tree
+                .get_node(id)
+                .ok_or_else(|| anyhow::anyhow!("path node {} not found", id))?;
+            names.push(node.name.clone());
+        }
 
         for i in 0..path.len() {
             let node_id = path[i];
@@ -428,13 +415,12 @@ pub fn reroot_at(
 
     // 2. Collect edge lengths along the path
     // path[i]'s length represents edge (path[i-1] -> path[i])
-    let mut lengths = Vec::new();
+    let mut lengths = Vec::with_capacity(path.len());
     for &id in &path {
-        lengths.push(
-            tree.get_node(id)
-                .expect("internal: path nodes exist")
-                .length,
-        );
+        let node = tree
+            .get_node(id)
+            .ok_or_else(|| anyhow::anyhow!("path node {} not found", id))?;
+        lengths.push(node.length);
     }
 
     // 3. Reverse edges
@@ -583,7 +569,9 @@ pub fn reroot_at_lca(
     }
 
     let mut nodes: Vec<NodeId> = target_ids.iter().cloned().collect();
-    let mut sub_root_id = nodes.pop().unwrap();
+    let mut sub_root_id = nodes
+        .pop()
+        .ok_or_else(|| anyhow::anyhow!("empty target set"))?;
     for id in &nodes {
         sub_root_id = tree.get_common_ancestor(&sub_root_id, id)?;
     }

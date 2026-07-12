@@ -126,15 +126,17 @@ pub fn diameter(tree: &Tree, weighted: bool) -> f64 {
         queue.push_back(start);
 
         while let Some(u) = queue.pop_front() {
-            let d = *visited
-                .get(&u)
-                .expect("internal: BFS node was inserted before pop");
+            let Some(&d) = visited.get(&u) else {
+                continue;
+            };
             if d > max_dist {
                 max_dist = d;
                 furthest_node = u;
             }
 
-            let node = tree.get_node(u).expect("internal: BFS node exists in tree");
+            let Some(node) = tree.get_node(u) else {
+                continue;
+            };
             let mut neighbors = node.children.clone();
             if let Some(p) = node.parent {
                 neighbors.push(p);
@@ -143,12 +145,14 @@ pub fn diameter(tree: &Tree, weighted: bool) -> f64 {
             for v in neighbors {
                 if let std::collections::hash_map::Entry::Vacant(e) = visited.entry(v) {
                     let weight = if weighted {
-                        let v_node = tree.get_node(v).expect("internal: neighbor exists in tree");
-                        let u_node = tree.get_node(u).expect("internal: BFS node exists in tree");
-                        if v_node.parent == Some(u) {
-                            super::finite_length(v_node.length)
+                        if let (Some(v_node), Some(u_node)) = (tree.get_node(v), tree.get_node(u)) {
+                            if v_node.parent == Some(u) {
+                                super::finite_length(v_node.length)
+                            } else {
+                                super::finite_length(u_node.length)
+                            }
                         } else {
-                            super::finite_length(u_node.length)
+                            0.0
                         }
                     } else {
                         1.0
@@ -288,17 +292,29 @@ impl TreeType {
 /// Aggregate statistics for a single tree, as reported by `pgr nwk stat`.
 #[derive(Debug, Clone)]
 pub struct TreeSummary {
+    /// Total number of nodes (excluding soft-deleted nodes).
     pub nodes: usize,
+    /// Number of leaf nodes.
     pub leaves: usize,
+    /// Number of internal nodes with exactly two children.
     pub dichotomies: usize,
+    /// Number of leaves carrying a label.
     pub leaf_labels: usize,
+    /// Number of internal nodes carrying a label.
     pub internal_labels: usize,
+    /// Number of edges with a branch length.
     pub edges_with_length: usize,
+    /// Number of edges without a branch length.
     pub edges_without_length: usize,
+    /// Number of cherries (sibling leaf pairs).
     pub cherries: usize,
+    /// Sackin index (sum of leaf depths), if the tree has a root.
     pub sackin: Option<f64>,
+    /// Colless index, if the tree has a root.
     pub colless: Option<f64>,
+    /// True when the root node has exactly two children.
     pub is_rooted: bool,
+    /// Classification based on branch-length decoration.
     pub tree_type: TreeType,
 }
 

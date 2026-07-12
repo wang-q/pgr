@@ -59,20 +59,29 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let mut names = vec![];
     if args.contains_id("node") {
-        for name in args.get_many::<String>("node").unwrap() {
+        for name in args
+            .get_many::<String>("node")
+            .ok_or_else(|| anyhow::anyhow!("missing required argument: node"))?
+        {
             names.push(name.to_string());
         }
     }
 
     let mut lcas = vec![];
     if args.contains_id("lca") {
-        for lca in args.get_many::<String>("lca").unwrap() {
+        for lca in args
+            .get_many::<String>("lca")
+            .ok_or_else(|| anyhow::anyhow!("missing required argument: lca"))?
+        {
             lcas.push(lca.to_string());
         }
     }
 
     let mut renames = vec![];
-    for rename in args.get_many::<String>("rename").unwrap() {
+    for rename in args
+        .get_many::<String>("rename")
+        .ok_or_else(|| anyhow::anyhow!("missing required argument: rename"))?
+    {
         renames.push(rename.to_string());
     }
 
@@ -86,7 +95,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     );
     let len_names = names.len();
 
-    let infile = args.get_one::<String>("infile").unwrap();
+    let infile = args
+        .get_one::<String>("infile")
+        .ok_or_else(|| anyhow::anyhow!("missing required argument: infile"))?;
     let mut trees = Tree::from_file(infile)?;
 
     for tree in &mut trees {

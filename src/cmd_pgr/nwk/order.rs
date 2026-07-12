@@ -92,12 +92,16 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         Some(x) => x.as_str(),
     };
 
-    let infile = args.get_one::<String>("infile").unwrap();
+    let infile = args
+        .get_one::<String>("infile")
+        .ok_or_else(|| anyhow::anyhow!("missing required argument: infile"))?;
     let mut trees = Tree::from_file(infile)?;
 
     let mut names = vec![];
     if args.contains_id("name_list") {
-        let list_file = args.get_one::<String>("name_list").unwrap();
+        let list_file = args
+            .get_one::<String>("name_list")
+            .ok_or_else(|| anyhow::anyhow!("missing required argument: name_list"))?;
         names = pgr::libs::io::read_names::<Vec<String>>(list_file)?;
     }
 

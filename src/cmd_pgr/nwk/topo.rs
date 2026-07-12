@@ -54,7 +54,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let skip_internal = args.get_flag("internal");
     let skip_leaf = args.get_flag("leaf");
 
-    let infile = args.get_one::<String>("infile").unwrap();
+    let infile = args
+        .get_one::<String>("infile")
+        .ok_or_else(|| anyhow::anyhow!("missing required argument: infile"))?;
     let trees = Tree::from_file(infile)?;
 
     for mut tree in trees {

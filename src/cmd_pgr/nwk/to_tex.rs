@@ -60,7 +60,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let is_bl = args.get_flag("bl");
     let no_default_style = args.get_flag("no_default_style");
 
-    let infile = args.get_one::<String>("infile").unwrap();
+    let infile = args
+        .get_one::<String>("infile")
+        .ok_or_else(|| anyhow::anyhow!("missing required argument: infile"))?;
 
     let out_string = if args.get_flag("forest") {
         let mut reader =

@@ -119,7 +119,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let opt_rec = args.get_one::<String>("rec");
     let opt_tri = args.get_one::<String>("tri");
 
-    let infile = args.get_one::<String>("infile").unwrap();
+    let infile = args
+        .get_one::<String>("infile")
+        .ok_or_else(|| anyhow::anyhow!("missing required argument: infile"))?;
     let mut trees = Tree::from_file(infile)?;
 
     for tree in &mut trees {
@@ -131,7 +133,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
         // ids supplied by --node
         if args.contains_id("node") {
-            for name in args.get_many::<String>("node").unwrap() {
+            for name in args
+                .get_many::<String>("node")
+                .ok_or_else(|| anyhow::anyhow!("missing required argument: node"))?
+            {
                 if let Some(id) = id_of.get(name) {
                     ids.push(*id);
                 } else {
@@ -142,7 +147,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
         // ids supplied by --lca
         if args.contains_id("lca") {
-            for lca in args.get_many::<String>("lca").unwrap() {
+            for lca in args
+                .get_many::<String>("lca")
+                .ok_or_else(|| anyhow::anyhow!("missing required argument: lca"))?
+            {
                 let (first, last) = super::common::parse_lca_pair(lca)?;
 
                 match (id_of.get(first), id_of.get(last)) {
@@ -190,7 +198,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
         // Remove parts of comments
         if args.contains_id("remove") {
-            let pattern = args.get_one::<String>("remove").unwrap();
+            let pattern = args
+                .get_one::<String>("remove")
+                .ok_or_else(|| anyhow::anyhow!("missing required argument: remove"))?;
             pgr::libs::phylo::tree::ops::remove_properties_matching(tree, pattern)?;
         }
 

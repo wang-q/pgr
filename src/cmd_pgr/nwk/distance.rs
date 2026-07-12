@@ -58,14 +58,18 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut writer =
         pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
 
-    let infile = args.get_one::<String>("infile").unwrap();
+    let infile = args
+        .get_one::<String>("infile")
+        .ok_or_else(|| anyhow::anyhow!("missing required argument: infile"))?;
     let trees = Tree::from_file(infile)?;
     let tree = trees
         .into_iter()
         .next()
         .ok_or_else(|| anyhow!("no trees found in {}", infile))?;
 
-    let mode = args.get_one::<String>("mode").unwrap();
+    let mode = args
+        .get_one::<String>("mode")
+        .ok_or_else(|| anyhow::anyhow!("missing required argument: mode"))?;
 
     let skip_internal = args.get_flag("internal");
     let skip_leaf = args.get_flag("leaf");

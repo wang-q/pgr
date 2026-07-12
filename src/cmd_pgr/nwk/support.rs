@@ -44,8 +44,12 @@ Examples:
 }
 /// Execute the support command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let target_file = args.get_one::<String>("target").unwrap();
-    let replicates_file = args.get_one::<String>("replicates").unwrap();
+    let target_file = args
+        .get_one::<String>("target")
+        .ok_or_else(|| anyhow::anyhow!("missing required argument: target"))?;
+    let replicates_file = args
+        .get_one::<String>("replicates")
+        .ok_or_else(|| anyhow::anyhow!("missing required argument: replicates"))?;
     let percent = args.get_flag("percent");
 
     let outfile = crate::cmd_pgr::args::get_outfile(args);
