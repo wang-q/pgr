@@ -215,11 +215,6 @@ pub fn get_node_by_name(tree: &Tree, name: &str) -> Option<NodeId> {
         .map(|n| n.id)
 }
 
-/// Get root ID.
-pub fn get_root(tree: &Tree) -> Option<NodeId> {
-    tree.root
-}
-
 /// Find the medoid index among `ids` (min sum of pairwise branch-length distances).
 pub fn tree_medoid(tree: &Tree, ids: &[NodeId]) -> Option<usize> {
     if ids.is_empty() {

@@ -68,7 +68,7 @@ fn to_newick_recursive(tree: &Tree, node_id: NodeId, indent: &str, depth: usize)
     }
 
     if let Some(len) = node.length {
-        if len.is_finite() {
+        if len.is_finite() && len >= 0.0 {
             node_info.push_str(&format!(":{}", len));
         }
     }
