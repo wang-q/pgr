@@ -145,16 +145,29 @@ fn parse_label(input: &str) -> IResult<&str, String, DetailedError<'_>> {
     // Two single quotes inside represent one single quote: 'O''Brien' -> O'Brien
     // (Handled by `single_quoted` below, which loops to recognize `''` escapes.)
 
-    // Double quoted labels: "Homo sapiens"
-    // Two double quotes inside represent one double quote: "He said ""Hello""" -> He said "Hello"
-    let double_quoted = delimited(
-        char('"'),
-        map(is_not("\""), |s: &str| s.replace("\"\"", "\"")),
-        char('"'),
-    );
-
     // Try quoted formats first, then fall back to unquoted
     context("label", alt((single_quoted, double_quoted, unquoted))).parse(input)
+}
+
+/// Parse a double-quoted Newick label, handling `""` as an escaped literal `"`.
+fn double_quoted(input: &str) -> IResult<&str, String, DetailedError<'_>> {
+    let (input, _) = char('"')(input)?;
+    let mut result = String::new();
+    let mut rest = input;
+    loop {
+        // Take content up to the next double quote (may be empty)
+        let (after, chunk) = take_until("\"")(rest)?;
+        result.push_str(chunk);
+        // Consume the closing quote
+        let (after, _) = char('"')(after)?;
+        // If the next char is also `"`, it's an escaped quote — continue
+        if let Ok((after2, _)) = char::<&str, DetailedError<'_>>('"')(after) {
+            result.push('"');
+            rest = after2;
+        } else {
+            return Ok((after, result));
+        }
+    }
 }
 
 /// Parse a single-quoted Newick label, handling `''` as an escaped literal `'`.
@@ -190,7 +203,6 @@ fn parse_length(input: &str) -> IResult<&str, f64, DetailedError<'_>> {
             // This gives a better error message ("expected float" instead of trying other branches).
             cut(map_res(
                 recognize((
-                    opt(char('-')),
                     digit1,
                     opt((char('.'), digit1)),
                     opt((
@@ -669,6 +681,29 @@ mod tests {
     }
 
     #[test]
+    fn test_parser_double_quoted_escape() {
+        // "" inside a double-quoted label represents a literal "
+        let input = "(\"O\"\"Brien\":0.1, \"Smith\"\"s\"):0.2;";
+        let tree = Tree::from_newick(input).unwrap();
+        let root = tree.get_node(tree.get_root().unwrap()).unwrap();
+
+        let c1 = tree.get_node(root.children[0]).unwrap();
+        assert_eq!(c1.name.as_deref(), Some("O\"Brien"));
+
+        let c2 = tree.get_node(root.children[1]).unwrap();
+        assert_eq!(c2.name.as_deref(), Some("Smith\"s"));
+
+        // Round-trip: serialize back and re-parse
+        let out = tree.to_newick();
+        let tree2 = Tree::from_newick(&out).unwrap();
+        let root2 = tree2.get_node(tree2.get_root().unwrap()).unwrap();
+        let c1 = tree2.get_node(root2.children[0]).unwrap();
+        assert_eq!(c1.name.as_deref(), Some("O\"Brien"));
+        let c2 = tree2.get_node(root2.children[1]).unwrap();
+        assert_eq!(c2.name.as_deref(), Some("Smith\"s"));
+    }
+
+    #[test]
     fn test_parser_quoted() {
         let input = "('Homo sapiens':0.1, 'Mus musculus':0.2);";
         let tree = Tree::from_newick(input).unwrap();
@@ -702,6 +737,17 @@ mod tests {
         assert_eq!(c1.name.as_deref(), Some("O'Brien"));
         let c2 = tree2.get_node(root2.children[1]).unwrap();
         assert_eq!(c2.name.as_deref(), Some("Smith's"));
+    }
+
+    #[test]
+    fn test_parser_negative_length() {
+        let input = "(A,B:-0.5)C;";
+        let res = Tree::from_newick(input);
+        assert!(
+            res.is_err(),
+            "negative branch length should be rejected, got {:?}",
+            res
+        );
     }
 
     #[test]

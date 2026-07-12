@@ -80,13 +80,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let is_condense = condense_name.is_some();
 
     let infile = args.get_one::<String>("infile").unwrap();
-    let trees = Tree::from_file(infile)?;
+    let mut trees = Tree::from_file(infile)?;
 
     if trees.is_empty() {
         return Ok(());
     }
-
-    let mut trees = trees;
 
     for tree in &mut trees {
         // IDs matching names

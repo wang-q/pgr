@@ -58,7 +58,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut writer =
         pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
     let is_bl = args.get_flag("bl");
-    let is_style = args.get_flag("no_default_style");
+    let no_default_style = args.get_flag("no_default_style");
 
     let infile = args.get_one::<String>("infile").unwrap();
 
@@ -115,7 +115,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         template.replace_range(begin..end, &out_string);
     }
 
-    if !is_style {
+    if !no_default_style {
         let default_font = r#"\setmainfont{NotoSans}[
     Extension      = .ttf,
     UprightFont    = *-Regular,

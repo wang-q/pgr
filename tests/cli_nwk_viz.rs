@@ -195,9 +195,10 @@ fn command_to_forest() {
         .args(&["nwk", "to-forest", "tests/newick/catarrhini.nwk"])
         .run();
 
-    assert!(stdout.contains("[,, tier="));
+    assert!(!stdout.contains(",,"));
     assert!(stdout.contains("Hominidae"));
     assert!(stdout.contains("{Homo}"));
+    assert!(stdout.contains("[tier="));
 }
 
 #[test]

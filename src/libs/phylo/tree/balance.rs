@@ -202,20 +202,15 @@ pub fn calculate_inconsistency(
             }
 
             let n = sub_heights.len();
-            if n == 0 {
+            let mean = sub_heights.iter().sum::<f64>() / n as f64;
+            // Use sample variance (divisor n-1) to match SciPy/standard stats
+            let divisor = if n > 1 { (n - 1) as f64 } else { 1.0 };
+            let variance = sub_heights.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / divisor;
+            let std = variance.sqrt();
+            if std == 0.0 {
                 inconsistency.insert(id, 0.0);
             } else {
-                let mean = sub_heights.iter().sum::<f64>() / n as f64;
-                // Use sample variance (divisor n-1) to match SciPy/standard stats
-                let divisor = if n > 1 { (n - 1) as f64 } else { 1.0 };
-                let variance =
-                    sub_heights.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / divisor;
-                let std = variance.sqrt();
-                if std == 0.0 {
-                    inconsistency.insert(id, 0.0);
-                } else {
-                    inconsistency.insert(id, (h - mean) / std);
-                }
+                inconsistency.insert(id, (h - mean) / std);
             }
         }
     }

@@ -56,7 +56,7 @@ fn to_forest_node_props(tree: &Tree, id: NodeId, height: f64) -> String {
         .expect("internal: caller ensures node exists");
     let depth = node_depth(tree, id);
 
-    let mut repr = String::new();
+    let mut options = String::new();
 
     let mut name = node.name.clone().map(|x| x.replace('_', " "));
     let mut color: Option<String> = None;
@@ -66,7 +66,7 @@ fn to_forest_node_props(tree: &Tree, id: NodeId, height: f64) -> String {
     if !node.is_leaf() && name.is_some() {
         label = name.take();
         // dot with default color
-        repr += ", dot";
+        options += ", dot";
     }
 
     if let Some(props) = node.properties.as_ref() {
@@ -78,7 +78,7 @@ fn to_forest_node_props(tree: &Tree, id: NodeId, height: f64) -> String {
         }
         for key in ["dot", "bar", "rec", "tri"] {
             if let Some(v) = props.get(key) {
-                repr += &format!(", {}={{{}}}", key, v.replace('_', " "));
+                options += &format!(", {}={{{}}}", key, v.replace('_', " "));
             }
         }
         let mut comment = String::new();
@@ -91,37 +91,41 @@ fn to_forest_node_props(tree: &Tree, id: NodeId, height: f64) -> String {
             }
         }
         if !comment.is_empty() && node.is_leaf() {
-            repr += &format!(", comment={{{}}}", comment);
+            options += &format!(", comment={{{}}}", comment);
         }
     }
 
     if let Some(color) = &color {
-        if let Some(name) = &name {
-            repr = format!(", \\color{{{}}}{{{}}}", color, name) + &repr;
-        }
         if let Some(label) = &label {
             if !label.is_empty() {
-                repr += &format!(", label=\\color{{{}}}{{{}}}", color, label);
+                options += &format!(", label=\\color{{{}}}{{{}}}", color, label);
             }
         }
-    } else {
-        if let Some(name) = &name {
-            repr = format!("{{{}}},", name) + &repr;
-        }
-        if let Some(label) = &label {
-            if !label.is_empty() {
-                repr += &format!(", label={{{}}}", label);
-            }
+    } else if let Some(label) = &label {
+        if !label.is_empty() {
+            options += &format!(", label={{{}}}", label);
         }
     }
 
-    if name.is_none() {
-        if node.is_leaf() {
-            repr = "{~},".to_owned() + &repr; // non-breaking space in latex
+    let content = if let Some(color) = &color {
+        if let Some(name) = &name {
+            format!(
+                r"{{\color{{{color}}}{{{name}}}}}",
+                color = color,
+                name = name
+            )
+        } else if node.is_leaf() {
+            format!(r"{{\color{{{color}}}{{~}}}}", color = color)
         } else {
-            repr = ",".to_owned() + &repr;
+            String::new()
         }
-    }
+    } else if let Some(name) = &name {
+        format!("{{{}}}", name)
+    } else if node.is_leaf() {
+        "{~}".to_string() // non-breaking space in latex
+    } else {
+        String::new()
+    };
 
     if height == 0.0 {
         let tier = if node.is_leaf() {
@@ -129,22 +133,73 @@ fn to_forest_node_props(tree: &Tree, id: NodeId, height: f64) -> String {
         } else {
             branch_depth(tree, id) - depth
         };
-        repr += &format!(", tier={}", tier);
+        options += &format!(", tier={}", tier);
     } else {
         let edge = node.length.unwrap_or(0.0);
         let bl = calc_length(edge, height);
-        repr += &format!(", l={}mm, l sep=0", bl);
+        options += &format!(", l={}mm, l sep=0", bl);
 
         if node.is_leaf() {
             // Add an invisible node to the rightmost to occupy spaces
-            repr += ", [{~},tier=0,edge={draw=none}]";
+            options += ", [{~},tier=0,edge={draw=none}]";
         }
     }
 
-    repr
+    if content.is_empty() {
+        // Strip the leading comma separator when there is no node content.
+        if options.starts_with(", ") {
+            options.split_off(2)
+        } else if options.starts_with(',') {
+            options.split_off(1)
+        } else {
+            options
+        }
+    } else {
+        content + &options
+    }
 }
 
 // relative length
 fn calc_length(edge: f64, height: f64) -> i32 {
     (edge * 100.0 / height).round() as i32
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::libs::phylo::tree::Tree;
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn to_forest_colored_leaf() {
+        let mut tree = Tree::new();
+        let root = tree.add_node();
+        let leaf = tree.add_node();
+        tree.set_root(root);
+        tree.add_child(root, leaf).unwrap();
+
+        if let Some(node) = tree.get_node_mut(leaf) {
+            node.name = Some("Leaf_A".to_string());
+            let mut props = BTreeMap::new();
+            props.insert("color".to_string(), "red".to_string());
+            node.properties = Some(props);
+        }
+
+        let output = to_forest(&tree, 0.0);
+        assert!(
+            output.contains(r"{\color{red}{Leaf A}},"),
+            "expected colored leaf content, got: {}",
+            output
+        );
+        assert!(
+            !output.contains(r", \color{red}{Leaf A},"),
+            "unexpected leading comma in colored leaf output: {}",
+            output
+        );
+        assert!(
+            !output.contains(",,"),
+            "unexpected consecutive commas in forest output: {}",
+            output
+        );
+    }
 }
