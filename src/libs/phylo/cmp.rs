@@ -97,7 +97,7 @@ impl TreeComparison for Tree {
             .into_keys()
             .filter(|split| {
                 let count = split.count_ones(..);
-                count > 1 && count < num_leaves - 1
+                count > 1 && count < num_leaves.saturating_sub(1)
             })
             .collect()
     }
@@ -263,22 +263,67 @@ fn filter_trivial_splits(
         .into_iter()
         .filter(|(split, _)| {
             let count = split.count_ones(..);
-            count > 1 && count < num_leaves - 1
+            count > 1 && count < num_leaves.saturating_sub(1)
         })
         .collect()
 }
 
 /// Compute RF, weighted RF, and Kuhner-Felsenstein metrics as formatted strings.
+///
+/// Reuses the leaf map and per-tree splits (2 `get_splits_with_values` calls
+/// instead of 6) to avoid redundant work when all three metrics are needed.
 pub fn compute_tree_metrics(
     t1: &Tree,
     t2: &Tree,
     include_trivial: bool,
 ) -> anyhow::Result<(String, String, String)> {
-    let rf = t1.robinson_foulds(t2)?;
-    let wrf = t1.weighted_robinson_foulds_with_trivial(t2, include_trivial)?;
-    let kf = t1.kuhner_felsenstein_with_trivial(t2, include_trivial)?;
+    let leaf_map = check_leaves_and_build_map(t1, t2)?;
+    let num_leaves = leaf_map.len();
 
-    Ok((rf.to_string(), format_float(wrf), format_float(kf)))
+    // Compute splits-with-values once per tree (2 calls, was 6).
+    let raw_sv1 = t1.get_splits_with_values(&leaf_map);
+    let raw_sv2 = t2.get_splits_with_values(&leaf_map);
+
+    // RF always uses non-trivial split keys (matches robinson_foulds()).
+    let is_nontrivial = |count: usize| count > 1 && count < num_leaves.saturating_sub(1);
+    let rf = {
+        let s1: HashSet<&FixedBitSet> = raw_sv1
+            .keys()
+            .filter(|s| is_nontrivial(s.count_ones(..)))
+            .collect();
+        let s2: HashSet<&FixedBitSet> = raw_sv2
+            .keys()
+            .filter(|s| is_nontrivial(s.count_ones(..)))
+            .collect();
+        s1.symmetric_difference(&s2).count()
+    };
+
+    // WRF/KF: optionally filter trivial splits, then aggregate.
+    let (sv1, sv2) = if include_trivial {
+        (raw_sv1, raw_sv2)
+    } else {
+        (
+            filter_trivial_splits(raw_sv1, num_leaves),
+            filter_trivial_splits(raw_sv2, num_leaves),
+        )
+    };
+
+    let keys: HashSet<&FixedBitSet> = sv1.keys().chain(sv2.keys()).collect();
+    let mut wrf = 0.0;
+    let mut kf_sq = 0.0;
+    for key in keys {
+        let v1 = sv1.get(key).copied().unwrap_or(0.0);
+        let v2 = sv2.get(key).copied().unwrap_or(0.0);
+        let d = v1 - v2;
+        wrf += d.abs();
+        kf_sq += d * d;
+    }
+
+    Ok((
+        rf.to_string(),
+        format_float(wrf),
+        format_float(kf_sq.sqrt()),
+    ))
 }
 
 /// Format a float to 6 decimal places, stripping trailing zeros.
