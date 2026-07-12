@@ -249,6 +249,9 @@ fn compute_svg_positions(
                         continue;
                     }
                     let edge = child.length.unwrap_or(0.0);
+                    // Treat NaN branch lengths as 0.0 so SVG coordinates remain
+                    // valid numbers.
+                    let edge = if edge.is_nan() { 0.0 } else { edge };
                     cl.insert(child_id, parent_len + edge);
                 }
             }

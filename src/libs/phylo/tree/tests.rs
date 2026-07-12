@@ -366,3 +366,40 @@ fn test_reroot_longest_branch() {
     tree.reroot_at(target, false).unwrap();
     assert_eq!(tree.get_root(), Some(b_id));
 }
+
+#[test]
+fn test_insert_parent_pair_requires_siblings() {
+    let mut tree = Tree::from_newick("((A,B)C,D)Root;").unwrap();
+    let a_id = tree.get_node_by_name("A").unwrap();
+    let d_id = tree.get_node_by_name("D").unwrap();
+
+    // A and D are not siblings: inserting a common parent must fail.
+    assert!(tree.insert_parent_pair(a_id, d_id).is_err());
+
+    let b_id = tree.get_node_by_name("B").unwrap();
+    // A and B are siblings under C.
+    let new_parent = tree.insert_parent_pair(a_id, b_id).unwrap();
+    let new_parent_node = tree.get_node(new_parent).unwrap();
+    assert_eq!(new_parent_node.children.len(), 2);
+    assert!(new_parent_node.children.contains(&a_id));
+    assert!(new_parent_node.children.contains(&b_id));
+}
+
+#[test]
+fn test_extract_subtree_skips_deleted_children() {
+    let mut tree = Tree::from_newick("(A,B)Root;").unwrap();
+    let root_id = tree.get_root().unwrap();
+
+    // Simulate a malformed tree where a deleted node id is still listed as a
+    // child of the root. Extraction should skip the deleted node rather than
+    // panic.
+    let deleted_id = tree.add_node();
+    tree.get_node_mut(deleted_id).unwrap().deleted = true;
+    tree.get_node_mut(root_id)
+        .unwrap()
+        .children
+        .push(deleted_id);
+
+    let subtree = tree.extract_subtree(&root_id).unwrap();
+    assert_eq!(subtree.len(), 3); // root + A + B, deleted node skipped
+}

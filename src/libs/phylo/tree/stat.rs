@@ -147,10 +147,17 @@ pub fn diameter(tree: &Tree, weighted: bool) -> f64 {
                     let weight = if weighted {
                         let v_node = tree.get_node(v).expect("internal: neighbor exists in tree");
                         let u_node = tree.get_node(u).expect("internal: BFS node exists in tree");
-                        if v_node.parent == Some(u) {
+                        let len = if v_node.parent == Some(u) {
                             v_node.length.unwrap_or(0.0)
                         } else {
                             u_node.length.unwrap_or(0.0)
+                        };
+                        // Treat NaN branch lengths as 0.0 so they do not poison
+                        // the diameter calculation.
+                        if len.is_nan() {
+                            0.0
+                        } else {
+                            len
                         }
                     } else {
                         1.0

@@ -66,9 +66,10 @@ pub fn extract_subtree(tree: &Tree, node_id: NodeId) -> anyhow::Result<Tree> {
     let mut stack = vec![(node_id, None::<NodeId>)];
 
     while let Some((old_id, new_parent_opt)) = stack.pop() {
-        let old_node = tree
-            .get_node(old_id)
-            .expect("old_id from id_map or initial node_id");
+        let Some(old_node) = tree.get_node(old_id) else {
+            // Skip deleted nodes that are still referenced as children.
+            continue;
+        };
 
         let new_id = new_tree.add_node();
         id_map.insert(old_id, new_id);

@@ -218,6 +218,8 @@ fn parse_length(input: &str) -> IResult<&str, f64, DetailedError<'_>> {
                     let value = s.parse::<f64>().map_err(|e| e.to_string())?;
                     if value < 0.0 {
                         Err("negative branch length".to_string())
+                    } else if !value.is_finite() {
+                        Err("branch length must be finite".to_string())
                     } else {
                         Ok(value)
                     }

@@ -232,39 +232,51 @@ pub fn insert_parent(tree: &mut Tree, id: NodeId) -> anyhow::Result<NodeId> {
     Ok(new_node)
 }
 
-/// Insert a new parent node for a pair of nodes (LCA-based).
+/// Insert a new parent node above two sibling nodes.
 /// Returns the new parent node ID.
+///
+/// # Errors
+///
+/// Returns an error if the nodes do not share the same parent, or if either
+/// node is not found. Restricting this to siblings prevents creating cycles
+/// when one node is an ancestor of the other.
 pub fn insert_parent_pair(tree: &mut Tree, id1: NodeId, id2: NodeId) -> anyhow::Result<NodeId> {
-    let old = tree.get_common_ancestor(&id1, &id2)?;
-
-    // Get original edge lengths
-    let edge1 = tree
+    let node1 = tree
         .get_node(id1)
-        .ok_or_else(|| anyhow::anyhow!("Node {} not found", id1))?
-        .length;
-    let edge2 = tree
+        .ok_or_else(|| anyhow::anyhow!("Node {} not found", id1))?;
+    let node2 = tree
         .get_node(id2)
-        .ok_or_else(|| anyhow::anyhow!("Node {} not found", id2))?
-        .length;
+        .ok_or_else(|| anyhow::anyhow!("Node {} not found", id2))?;
+
+    let parent1 = node1
+        .parent
+        .ok_or_else(|| anyhow::anyhow!("Node {} has no parent", id1))?;
+    let parent2 = node2
+        .parent
+        .ok_or_else(|| anyhow::anyhow!("Node {} has no parent", id2))?;
+
+    if parent1 != parent2 {
+        anyhow::bail!(
+            "Nodes {} and {} are not siblings (parents {} and {} differ)",
+            id1,
+            id2,
+            parent1,
+            parent2
+        );
+    }
+
+    let old = parent1;
+    let edge1 = node1.length;
+    let edge2 = node2.length;
 
     // New node with parent (old) has no edge length
     let new = tree.add_node();
     add_child(tree, old, new)?;
 
     // Move children to new node
-    // 1. Unlink from their current parents
-    let p1 = tree.get_node(id1).and_then(|n| n.parent);
-    if let Some(p) = p1 {
-        if let Some(p_node) = tree.get_node_mut(p) {
-            p_node.children.retain(|&c| c != id1);
-        }
-    }
-
-    let p2 = tree.get_node(id2).and_then(|n| n.parent);
-    if let Some(p) = p2 {
-        if let Some(p_node) = tree.get_node_mut(p) {
-            p_node.children.retain(|&c| c != id2);
-        }
+    // 1. Unlink from their current parent
+    if let Some(p_node) = tree.get_node_mut(old) {
+        p_node.children.retain(|&c| c != id1 && c != id2);
     }
 
     if let Some(node) = tree.get_node_mut(id1) {
