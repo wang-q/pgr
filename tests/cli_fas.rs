@@ -160,7 +160,7 @@ fn command_replace() {
         ])
         .run();
 
-    assert_eq!(stdout.lines().count(), 36);
+    assert_eq!(stdout.lines().count(), 32);
     assert!(stdout.contains(">query.VIII(+)"));
 
     // fail
@@ -174,7 +174,7 @@ fn command_replace() {
         ])
         .run();
 
-    assert_eq!(stdout.lines().count(), 27);
+    assert_eq!(stdout.lines().count(), 24);
     assert!(!stdout.contains("query"), "not replaced");
     assert!(
         stderr.contains("records") || stderr.contains("multiple records"),
@@ -192,7 +192,7 @@ fn command_replace() {
         ])
         .run();
 
-    assert_eq!(stdout.lines().count(), 18);
+    assert_eq!(stdout.lines().count(), 16);
     assert!(!stdout.contains("13267-13287"), "block removed");
 }
 

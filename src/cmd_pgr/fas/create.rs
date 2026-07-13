@@ -32,7 +32,7 @@ Examples:
             "Input file(s) containing links of ranges",
         ))
         .arg(crate::cmd_pgr::args::fas_name_arg(
-            "Set a species name for ranges. No effects if --multi",
+            "Set a species name for ranges (default: inferred from header)",
         ))
         .arg(crate::cmd_pgr::args::outfile_arg())
 }

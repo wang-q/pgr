@@ -1,7 +1,6 @@
 use anyhow::Context;
 use clap::{ArgMatches, Command};
-use indexmap::IndexSet;
-use std::collections::BTreeMap;
+use indexmap::IndexMap;
 use std::io::Write;
 
 /// Build the clap subcommand for name.
@@ -42,8 +41,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let is_count = args.get_flag("count");
 
     // Operating
-    let mut names: IndexSet<String> = IndexSet::new();
-    let mut count_of: BTreeMap<String, i32> = BTreeMap::new();
+    let mut counts: IndexMap<String, i32> = IndexMap::new();
 
     for infile in args.get_many::<String>("infiles").unwrap() {
         let mut reader =
@@ -52,22 +50,15 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         for block_result in pgr::libs::fmt::fas::iter_fas_blocks(&mut reader) {
             let block = block_result?;
             for entry in &block.entries {
-                let range = entry.range();
-                let name = range.name().to_string();
-
-                // Collect unique species names (O(1) lookup via IndexSet)
-                names.insert(name.clone());
-
-                // Count occurrences of each species name
-                count_of.entry(name).and_modify(|e| *e += 1).or_insert(1);
+                let name = entry.range().name().to_string();
+                *counts.entry(name).or_insert(0) += 1;
             }
         }
     }
 
-    for name in &names {
+    for (name, count) in &counts {
         if is_count {
-            let value = count_of.get(name).copied().unwrap_or(0);
-            writer.write_all(format!("{}\t{}\n", name, value).as_ref())?;
+            writer.write_all(format!("{}\t{}\n", name, count).as_ref())?;
         } else {
             writer.write_all(format!("{}\n", name).as_ref())?;
         }

@@ -64,15 +64,18 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         for block_result in pgr::libs::fmt::fas::iter_fas_blocks(&mut reader) {
             let block = block_result?;
             for entry in &block.entries {
-                let entry_name = entry.range().name(); // Don't borrow the following `range`
-                let mut range = entry.range().clone();
+                let entry_name = entry.range().name();
 
                 // Reverse-complement the sequence if needed
-                let seq = if is_rc && range.strand() == "-" {
+                let (range, seq) = if is_rc && entry.range().strand() == "-" {
+                    let mut range = entry.range().clone();
                     *range.strand_mut() = "+".to_string();
-                    pgr::libs::nt::rev_comp(entry.seq()).collect::<Vec<u8>>()
+                    (
+                        range,
+                        pgr::libs::nt::rev_comp(entry.seq()).collect::<Vec<u8>>(),
+                    )
                 } else {
-                    entry.seq().to_vec()
+                    (entry.range().clone(), entry.seq().to_vec())
                 };
 
                 // Remove dashes from the sequence

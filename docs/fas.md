@@ -107,8 +107,8 @@ pgr fas filter [OPTIONS] <infiles>...
 ```
 
 *   `--name <name>`: Keep blocks containing this species.
-*   `--min-len <int>`: Keep sequences with length >= this value.
-*   `--max-len <int>`: Keep sequences with length <= this value.
+*   `--min-len <int>`: Keep sequences with alignment length (including gaps) >= this value.
+*   `--max-len <int>`: Keep sequences with alignment length (including gaps) <= this value.
 *   `--upper`: Convert sequences to uppercase.
 *   `--dash`: Remove dashes (gaps) from sequences.
 *   `-o, --outfile <file>`: Output filename (default: stdout).
@@ -214,7 +214,7 @@ pgr fas refine [OPTIONS] <infiles>...
 
 *   `--engine <program>`: Aligning program: `builtin` (default), `clustalw`, `mafft`, `muscle`, `spoa`, `none`.
 *   `--outgroup`: Indicates presence of outgroups.
-*   `--chop <int>`: Chop head and tail indels.
+*   `--chop <int>`: Chop head and tail indels (default: 0).
 *   `--quick`: Quick mode, only aligns indel-adjacent regions.
 *   `--indel-pad <int>`: In quick mode, enlarge indel regions (default: 50).
 *   `--fill <int>`: In quick mode, fill holes between indels (default: 50).
@@ -245,7 +245,7 @@ pgr fas create [OPTIONS] --genome <genome> <infiles>...
 ```
 
 *   `-g, --genome <file>`: Path to the reference genome FA file (required).
-*   `--name <name>`: Set a species name for ranges (if not multi-genome).
+*   `--name <name>`: Set a species name for ranges (default: inferred from header).
 *   `-o, --outfile <file>`: Output filename (default: stdout).
 
 ### separate

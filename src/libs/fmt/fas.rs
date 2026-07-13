@@ -60,12 +60,8 @@ impl FasEntry {
 /// ```
 impl fmt::Display for FasEntry {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            ">{}\n{}\n",
-            self.range(),
-            str::from_utf8(self.seq()).unwrap()
-        )?;
+        let seq = str::from_utf8(self.seq()).map_err(|_| fmt::Error)?;
+        write!(f, ">{}\n{}\n", self.range(), seq)?;
         Ok(())
     }
 }
@@ -439,6 +435,9 @@ pub fn aggregate_coverage_into<R: io::BufRead>(
 /// Find best-to-best bilateral pairs based on sequence distance.
 pub fn find_best_pairs(entries: &[FasEntry]) -> anyhow::Result<Vec<(usize, usize)>> {
     let n = entries.len();
+    if n < 2 {
+        return Ok(vec![]);
+    }
     let mut best_pair: Vec<(usize, usize)> = vec![];
     for i in 0..n {
         let mut dist_idx: (f32, usize) = (1.0, n - 1);
@@ -513,6 +512,9 @@ pub fn replace_block_lines(
         for entry in &block.entries {
             s.push_str(&entry.to_string());
         }
+        if s.ends_with('\n') {
+            s.pop();
+        }
         blocks.push(s);
     } else {
         let original = matched[0];
@@ -533,6 +535,9 @@ pub fn replace_block_lines(
                 } else {
                     s.push_str(&entry.to_string());
                 }
+            }
+            if s.ends_with('\n') {
+                s.pop();
             }
             blocks.push(s);
         }

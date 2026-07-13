@@ -46,31 +46,18 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
         for block_result in pgr::libs::fmt::fas::iter_fas_blocks(&mut reader) {
             let block = block_result?;
-            let block_names = &block.names;
 
-            // Check if a specific species is requested
-            if !opt_name.is_empty() && block_names.iter().any(|n| n == opt_name) {
-                for entry in &block.entries {
-                    let entry_name = entry.range().name();
-                    if entry_name == opt_name {
-                        let status = pgr::libs::fmt::fas::check_entry_against_ref(
-                            entry,
-                            &mut genome_reader,
-                            &loc_of,
-                        )?;
-                        writer.write_all(format!("{}\t{}\n", entry.range(), status).as_ref())?;
-                    }
+            for entry in &block.entries {
+                let entry_name = entry.range().name();
+                if !opt_name.is_empty() && entry_name != opt_name {
+                    continue;
                 }
-            } else if opt_name.is_empty() {
-                // Check all sequences in the block
-                for entry in &block.entries {
-                    let status = pgr::libs::fmt::fas::check_entry_against_ref(
-                        entry,
-                        &mut genome_reader,
-                        &loc_of,
-                    )?;
-                    writer.write_all(format!("{}\t{}\n", entry.range(), status).as_ref())?;
-                }
+                let status = pgr::libs::fmt::fas::check_entry_against_ref(
+                    entry,
+                    &mut genome_reader,
+                    &loc_of,
+                )?;
+                writer.write_all(format!("{}\t{}\n", entry.range(), status).as_ref())?;
             }
         }
     }

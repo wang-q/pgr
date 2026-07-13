@@ -58,12 +58,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
         for block_result in pgr::libs::fmt::fas::iter_fas_blocks(&mut reader) {
             let block = block_result?;
-            let target = block
-                .entries
-                .first()
-                .ok_or_else(|| anyhow::anyhow!("empty block"))?
-                .range()
-                .to_string();
+            if block.entries.is_empty() {
+                continue;
+            }
+            let target = block.entries.first().unwrap().range().to_string();
 
             let mut seqs: Vec<&[u8]> = vec![];
             for entry in &block.entries {

@@ -379,7 +379,6 @@ fn create_formats() -> anyhow::Result<BTreeMap<String, Format>> {
         ("G".to_string(), 0x660066),
         ("T".to_string(), 0x800000),
         ("N".to_string(), 0x000000),
-        ("N".to_string(), 0x000000),
         ("-".to_string(), 0x000000),
     ]);
 
