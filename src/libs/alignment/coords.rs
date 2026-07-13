@@ -129,14 +129,12 @@ pub fn align_to_chr(ints: &IntSpan, pos: i32, chr_start: i32, strand: &str) -> a
         // pos is in the holes
         // pins to the left base
         let spans = ints.spans();
-        let mut cursor = pos;
-        for i in 0..spans.len() {
-            if spans[i].1 < cursor {
-                continue;
-            } else {
-                cursor = spans[i - 1].1;
+        let mut cursor = 1;
+        for (start, end) in spans {
+            if start > pos {
                 break;
             }
+            cursor = end;
         }
 
         ints.index(cursor)
@@ -214,4 +212,35 @@ pub fn reverse_range_1based(start: &mut usize, end: &mut usize, size: usize) {
 /// ```
 pub fn reverse_range_1based_pair(start: usize, end: usize, size: usize) -> (usize, usize) {
     (size - end + 1, size - start + 1)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{align_to_chr, seq_intspan};
+
+    #[test]
+    fn align_to_chr_holes_pin_to_left_base() {
+        let tests = vec![
+            // seq, pos, chr_start, strand, expected
+            // Holes between spans
+            ("A--A", 2, 1, "+", 1),
+            ("A--A", 3, 1, "+", 1),
+            ("-A-A-", 3, 1, "+", 1),
+            // Hole before first span
+            ("-AA-", 1, 1, "+", 1),
+            // Hole after last span (handled by pos > ints.max)
+            ("-AA-", 4, 1, "+", 2),
+            // With chr_start offset
+            ("A--A", 2, 101, "+", 101),
+        ];
+        for (seq, pos, chr_start, strand, expected) in tests {
+            let ints = seq_intspan(seq.as_ref());
+            let result = align_to_chr(&ints, pos, chr_start, strand).unwrap();
+            assert_eq!(
+                result, expected,
+                "seq={}, pos={}, chr_start={}, strand={}",
+                seq, pos, chr_start, strand
+            );
+        }
+    }
 }

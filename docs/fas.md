@@ -7,7 +7,7 @@
 The subcommands are organized into the following categories:
 
 *   **Info**: Extract information or statistics from block FA files.
-    *   `check`: Check genome locations against a `chrom.sizes` file.
+    *   `check`: Check genome locations against a reference genome FA file.
     *   `cover`: Calculate covered regions on chromosomes.
     *   `link`: Extract bi-lateral or multi-lateral range links.
     *   `name`: List species names present in the files.
@@ -38,7 +38,7 @@ The subcommands are organized into the following categories:
 
 ### check
 
-Checks if the genome locations specified in the block headers are valid against a reference genome.
+Checks if the genome locations specified in the block headers are valid against a reference genome FA file.
 
 ```bash
 pgr fas check [OPTIONS] --genome <genome> <infiles>...
@@ -69,7 +69,7 @@ pgr fas link [OPTIONS] <infiles>...
 ```
 
 *   `--pair`: Output bilateral (pairwise) links.
-*   `--best`: Output best-to-best bilateral links based on sequence similarity.
+*   `--best`: Output nearest-neighbor bilateral links based on sequence distance (deduplicated).
 *   `-o, --outfile <file>`: Output filename (default: stdout).
 
 ### name
@@ -94,6 +94,17 @@ pgr fas stat [OPTIONS] <infiles>...
 *   `--outgroup`: Treat the last sequence in each block as an outgroup (excludes it from some stats).
 *   `-o, --outfile <file>`: Output filename (default: stdout).
 
+Output columns (tab-separated):
+
+*   `target`: Target range of the block.
+*   `length`: Alignment length including gaps.
+*   `comparable`: Number of positions with unambiguous bases in all sequences.
+*   `difference`: Number of polymorphic positions among comparable bases.
+*   `gap`: Number of positions where every sequence contains a gap.
+*   `ambiguous`: Number of positions with at least one ambiguous base and no gap.
+*   `D`: Mean pairwise divergence over all sequence pairs.
+*   `indel`: Total span size of all indel regions.
+
 ---
 
 ## Subset Commands
@@ -106,9 +117,9 @@ Filters blocks based on species presence and sequence length, and optionally for
 pgr fas filter [OPTIONS] <infiles>...
 ```
 
-*   `--name <name>`: Keep blocks containing this species.
-*   `--min-len <int>`: Keep sequences with alignment length (including gaps) >= this value.
-*   `--max-len <int>`: Keep sequences with alignment length (including gaps) <= this value.
+*   `--name <name>`: Species whose sequence is used for length filtering. Blocks not containing this species are skipped. Defaults to the first species in each block.
+*   `--min-len <int>`: Keep blocks where the selected species' alignment length (including gaps) is >= this value.
+*   `--max-len <int>`: Keep blocks where the selected species' alignment length (including gaps) is <= this value.
 *   `--upper`: Convert sequences to uppercase.
 *   `--dash`: Remove dashes (gaps) from sequences.
 *   `-o, --outfile <file>`: Output filename (default: stdout).
@@ -122,7 +133,7 @@ pgr fas slice [OPTIONS] --runlist <runlist.json> <infiles>...
 ```
 
 *   `--runlist <file>`: JSON file describing ranges to extract (required).
-*   `--name <name>`: Reference species name (default: first species).
+*   `--name <name>`: Reference species name (default: first species of the first block).
 *   `-o, --outfile <file>`: Output filename (default: stdout).
 
 ### subset
@@ -180,7 +191,7 @@ Joins multiple block FA files by a common target sequence.
 pgr fas join [OPTIONS] <infiles>...
 ```
 
-*   `--name <name>`: Target species name (default: first species).
+*   `--name <name>`: Target species name. Defaults to the first species of the first block and is used as the common target for all blocks.
 *   `-o, --outfile <file>`: Output filename (default: stdout).
 
 ### multiz
@@ -214,7 +225,7 @@ pgr fas refine [OPTIONS] <infiles>...
 
 *   `--engine <program>`: Aligning program: `builtin` (default), `clustalw`, `mafft`, `muscle`, `spoa`, `none`.
 *   `--outgroup`: Indicates presence of outgroups.
-*   `--chop <int>`: Chop head and tail indels (default: 0).
+*   `--chop <int>`: Chop head and tail indels (default: 0, disabled).
 *   `--quick`: Quick mode, only aligns indel-adjacent regions.
 *   `--indel-pad <int>`: In quick mode, enlarge indel regions (default: 50).
 *   `--fill <int>`: In quick mode, fill holes between indels (default: 50).
@@ -229,7 +240,11 @@ Replaces headers in block FA files using a mapping file.
 pgr fas replace [OPTIONS] --replace-tsv <replace.tsv> <infiles>...
 ```
 
-*   `--replace-tsv <file>`: TSV file containing replacement rules (required).
+*   `--replace-tsv <file>`: TSV file containing replacement rules (required). Each line is a tab-separated list:
+    *   One field: if the name uniquely matches one header in a block, the whole block is dropped.
+    *   Two fields: `original_name<TAB>new_name` replaces the matching header.
+    *   Three or more fields: duplicates the block once for every replacement name after the first.
+    *   If a block contains multiple matching headers, the block is kept unchanged and a warning is emitted.
 *   `-o, --outfile <file>`: Output filename (default: stdout).
 
 ---
@@ -315,3 +330,12 @@ pgr fas variation [OPTIONS] <infiles>...
 
 *   `--outgroup`: Indicates presence of outgroups.
 *   `-o, --outfile <file>`: Output filename (default: stdout).
+
+Output columns (tab-separated):
+
+*   `#target`: Target range of the block.
+*   `chr`: Chromosome name.
+*   `chr_pos`: Position on the chromosome.
+*   `range`: Chromosome position formatted as `chr:pos`.
+*   `pos`: Position within the alignment (1-based).
+*   `tbase`, `qbase`, `bases`, `mutant_to`, `freq`, `pattern`, `obase`: Fields from the substitution record (see `pgr::libs::alignment::Substitution`).

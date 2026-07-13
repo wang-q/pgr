@@ -6,7 +6,7 @@ use std::cmp::max;
 use std::collections::BTreeMap;
 
 use crate::libs::alignment::{collect_indels, collect_subs, Indel, Substitution};
-use crate::libs::fmt::fas::{next_fas_block, FasBlock};
+use crate::libs::fmt::fas::{iter_fas_blocks, FasBlock};
 
 /// Export variations from FAS blocks to an Excel xlsx file.
 #[allow(clippy::too_many_arguments)]
@@ -40,7 +40,8 @@ pub fn export_to_xlsx(
     for infile in infiles {
         let mut reader = crate::reader(infile)?;
 
-        while let Ok(block) = next_fas_block(&mut reader) {
+        for block_result in iter_fas_blocks(&mut reader) {
+            let block = block_result?;
             let mut seqs: Vec<&[u8]> = vec![];
             for entry in &block.entries {
                 seqs.push(entry.seq().as_ref());
@@ -60,7 +61,7 @@ pub fn export_to_xlsx(
             opt.sec_height = opt.seq_count + 2;
             opt.col_cursor = 1;
 
-            paint_name(worksheet, &format_of.clone(), &mut opt, &block)?;
+            paint_name(worksheet, &format_of, &mut opt, &block)?;
 
             if opt.is_outgroup {
                 opt.seq_count -= 1;
@@ -69,10 +70,10 @@ pub fn export_to_xlsx(
             for (_, var) in vars {
                 match var {
                     Variation::Substitution(sub) => {
-                        paint_sub(worksheet, &format_of.clone(), &mut opt, &sub)?
+                        paint_sub(worksheet, &format_of, &mut opt, &sub)?
                     }
                     Variation::Indel(indel) => {
-                        paint_indel(worksheet, format_of.clone(), &mut opt, &indel)?
+                        paint_indel(worksheet, &format_of, &mut opt, &indel)?
                     }
                 }
 
@@ -137,7 +138,7 @@ fn paint_name(
 
 fn paint_indel(
     worksheet: &mut Worksheet,
-    format_of: BTreeMap<String, Format>,
+    format_of: &BTreeMap<String, Format>,
     opt: &mut Opt,
     indel: &Indel,
 ) -> anyhow::Result<()> {

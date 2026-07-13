@@ -558,6 +558,7 @@ pub fn create_from_links<R: io::BufRead, W: Write>(
     for line in reader.lines() {
         let line = line?;
         let parts: Vec<&str> = line.split('\t').collect();
+        let mut wrote_entry = false;
         for part in &parts {
             let mut range = Range::from_str(part);
             if !range.is_valid() {
@@ -568,9 +569,16 @@ pub fn create_from_links<R: io::BufRead, W: Write>(
                 *range.name_mut() = name.to_string();
             }
             let seq = crate::libs::loc::get_seq_loc(genome, &range.to_string())?;
+            if seq.is_empty() {
+                log::warn!("skipping range with no sequence: {}", range);
+                continue;
+            }
             writer.write_all(format!(">{}\n{}\n", range, seq).as_ref())?;
+            wrote_entry = true;
         }
-        writer.write_all(b"\n")?;
+        if wrote_entry {
+            writer.write_all(b"\n")?;
+        }
     }
     Ok(())
 }

@@ -67,22 +67,22 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 let entry_name = entry.range().name();
 
                 // Reverse-complement the sequence if needed
-                let (range, seq) = if is_rc && entry.range().strand() == "-" {
+                let (range_str, seq) = if is_rc && entry.range().strand() == "-" {
                     let mut range = entry.range().clone();
                     *range.strand_mut() = "+".to_string();
                     (
-                        range,
+                        range.to_string(),
                         pgr::libs::nt::rev_comp(entry.seq()).collect::<Vec<u8>>(),
                     )
                 } else {
-                    (entry.range().clone(), entry.seq().to_vec())
+                    (entry.range().to_string(), entry.seq().to_vec())
                 };
 
                 // Remove dashes from the sequence
                 let seq = std::str::from_utf8(&seq)?.replace('-', "");
 
                 if outdir == "stdout" {
-                    write!(out, ">{}\n{}\n", range, seq)?;
+                    write!(out, ">{}\n{}\n", range_str, seq)?;
                 } else {
                     let file_key = pgr::libs::io::sanitize_filename(entry_name);
                     if !file_of.contains_key(&file_key) {
@@ -101,7 +101,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                             file_key
                         ))?,
                         ">{}\n{}\n",
-                        range,
+                        range_str,
                         seq
                     )?;
                 }
