@@ -30,7 +30,7 @@ impl FasEntry {
         }
     }
 
-    /// Constructed from range and seq
+    /// Creates an entry from a range and sequence.
     ///
     /// ```ignore
     /// # use intspan::Range;
@@ -149,7 +149,7 @@ pub fn parse_fas_block(
 
     for line_res in iter {
         let line: String = line_res?;
-        if line.is_empty() {
+        if line.trim().is_empty() {
             // Blank lines terminate the "paragraph".
             break;
         }
@@ -626,20 +626,6 @@ pub fn filter_block(
     }
     out.push('\n');
     Ok(Some(out))
-}
-
-/// Collect species name occurrence counts from an iterator of FasBlocks.
-pub fn collect_name_counts<'a, I>(blocks: I) -> indexmap::IndexMap<String, i32>
-where
-    I: Iterator<Item = &'a FasBlock>,
-{
-    let mut counts: indexmap::IndexMap<String, i32> = indexmap::IndexMap::new();
-    for block in blocks {
-        for name in &block.names {
-            *counts.entry(name.clone()).or_insert(0) += 1;
-        }
-    }
-    counts
 }
 
 /// Statistics for one FasBlock.
@@ -1145,5 +1131,20 @@ ACGT\n";
             result.is_err(),
             "non-header sequence line should be rejected"
         );
+    }
+
+    #[test]
+    fn parse_fas_block_handles_whitespace_separator() {
+        let input = ">S288c.I(+):13267-13287
+TCGTCAGTTGGTTGACCATTA
+   \n>S288c.I(+):185273-185334
+GCATATAATATGAACCAATATCTA\n";
+        let mut reader = BufReader::new(input.as_bytes());
+
+        let block = crate::libs::fmt::fas::next_fas_block(&mut reader).unwrap();
+        assert_eq!(block.entries.len(), 1, "first block should have one entry");
+
+        let block = crate::libs::fmt::fas::next_fas_block(&mut reader).unwrap();
+        assert_eq!(block.entries.len(), 1, "second block should have one entry");
     }
 }

@@ -1,5 +1,6 @@
 use anyhow::Context;
 use clap::{ArgMatches, Command};
+use indexmap::IndexMap;
 use std::io::Write;
 
 /// Build the clap subcommand for name.
@@ -39,16 +40,18 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
     let is_count = args.get_flag("count");
 
-    let mut blocks = Vec::new();
+    let mut counts: IndexMap<String, i32> = IndexMap::new();
     for infile in args.get_many::<String>("infiles").unwrap() {
         let mut reader =
             pgr::reader(infile).with_context(|| format!("Failed to open reader for {}", infile))?;
         for block_result in pgr::libs::fmt::fas::iter_fas_blocks(&mut reader) {
-            blocks.push(block_result?);
+            let block = block_result?;
+            for name in &block.names {
+                *counts.entry(name.clone()).or_insert(0) += 1;
+            }
         }
     }
 
-    let counts = pgr::libs::fmt::fas::collect_name_counts(blocks.iter());
     for (name, count) in &counts {
         if is_count {
             writeln!(writer, "{}\t{}", name, count)?;
