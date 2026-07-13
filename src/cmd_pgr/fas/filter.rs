@@ -16,7 +16,7 @@ Notes:
 * Reads from stdin if input file is 'stdin'
 * If `--name` is not specified, the first species in each block is used as the default
 * Sequences can be filtered based on length using `--min-len` (greater than or equal) and `--max-len` (less than or equal)
-* Sequences can be formatted using `--upper` (convert to uppercase) and `--dash` (remove dashes)
+* Sequences can be formatted using `-U/--upper` (convert to uppercase) and `-d/--dash` (remove dashes)
 
 Examples:
 1. Filter blocks for a specific species:
@@ -58,7 +58,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         .unwrap_or("");
     let opt_min = args.get_one::<usize>("min_len").copied();
     let opt_max = args.get_one::<usize>("max_len").copied();
-
     let is_upper = args.get_flag("upper");
     let is_dash = args.get_flag("dash");
 
@@ -68,48 +67,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
         for block_result in pgr::libs::fmt::fas::iter_fas_blocks(&mut reader) {
             let block = block_result?;
-            // Determine the index of the species
-            if block.entries.is_empty() {
-                continue;
+            if let Some(out) = pgr::libs::fmt::fas::filter_block(
+                &block, opt_name, opt_min, opt_max, is_upper, is_dash,
+            )? {
+                writer.write_all(out.as_ref())?;
             }
-            let idx = if !opt_name.is_empty() {
-                match block.names.iter().position(|x| x == opt_name) {
-                    Some(i) => i,
-                    None => continue,
-                }
-            } else {
-                0
-            };
-
-            let idx_seq = block.entries[idx].seq();
-
-            if let Some(min) = opt_min {
-                if idx_seq.len() < min {
-                    continue;
-                }
-            }
-
-            if let Some(max) = opt_max {
-                if idx_seq.len() > max {
-                    continue;
-                }
-            }
-
-            for entry in &block.entries {
-                let out_seq = pgr::libs::fasta::filter::format_sequence(
-                    entry.seq(),
-                    is_dash,
-                    false,
-                    is_upper,
-                );
-
-                let out_entry =
-                    pgr::libs::fmt::fas::FasEntry::from(entry.range(), out_seq.as_bytes());
-                writer.write_all(out_entry.to_string().as_ref())?;
-            }
-
-            // end of a block
-            writer.write_all("\n".as_ref())?;
         }
     }
 

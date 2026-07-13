@@ -1,11 +1,10 @@
-use anyhow::{anyhow, Context};
+use anyhow::Context;
 use clap::{Arg, ArgMatches, Command};
 use std::collections::BTreeMap;
 use std::io::Write;
 
-use pgr::libs::alignment::{align_to_chr, get_subs, seq_intspan, vcf_alt_bases};
 use pgr::libs::fmt::fas::iter_fas_blocks;
-use pgr::libs::fmt::vcf::{write_snp_row, write_vcf_header};
+use pgr::libs::fmt::vcf::write_vcf_header;
 
 /// Build the clap subcommand for to-vcf.
 pub fn make_subcommand() -> Command {
@@ -63,8 +62,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         let mut reader =
             pgr::reader(infile).with_context(|| format!("open reader for {}", infile))?;
 
-        let mut block_idx = 0usize;
-        for block_result in iter_fas_blocks(&mut reader) {
+        for (block_idx, block_result) in iter_fas_blocks(&mut reader).enumerate() {
             let block = block_result
                 .with_context(|| format!("read block {} from {}", block_idx, infile))?;
             if !header_written {
@@ -84,64 +82,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 }
             }
 
-            let mut seqs: Vec<&[u8]> = vec![];
-            for entry in &block.entries {
-                seqs.push(entry.seq());
-            }
-            if seqs.is_empty() {
-                block_idx += 1;
-                continue;
-            }
-
-            let target_entry = block
-                .entries
-                .first()
-                .ok_or_else(|| anyhow!("empty target entry in block {}", block_idx))?;
-            let trange = target_entry.range();
-            let t_ints_seq = seq_intspan(target_entry.seq());
-
-            let subs = get_subs(&seqs)?;
-
-            for s in subs {
-                let chr = trange.chr();
-                let chr_pos = align_to_chr(&t_ints_seq, s.pos, trange.start, trange.strand())
-                    .with_context(|| {
-                        format!("align_to_chr at pos {} in block {}", s.pos, block_idx)
-                    })?;
-
-                let pos_idx = usize::try_from(s.pos).map_err(|_| {
-                    anyhow!("invalid substitution pos {} in block {}", s.pos, block_idx)
-                })?;
-                let pos_idx = pos_idx.checked_sub(1).ok_or_else(|| {
-                    anyhow!("invalid substitution pos {} in block {}", s.pos, block_idx)
-                })?;
-                if pos_idx >= seqs[0].len() {
-                    anyhow::bail!(
-                        "substitution pos {} out of range (seq len {}) in block {}",
-                        s.pos,
-                        seqs[0].len(),
-                        block_idx
-                    );
-                }
-                let ref_base = char::from(seqs[0][pos_idx]).to_ascii_uppercase();
-
-                let alt_bases = vcf_alt_bases(&s);
-
-                let sample_bases: Vec<u8> = seqs
-                    .iter()
-                    .map(|seq| seq.get(pos_idx).copied().unwrap_or(b'-'))
-                    .collect();
-
-                write_snp_row(
-                    &mut writer,
-                    chr,
-                    chr_pos,
-                    ref_base,
-                    &alt_bases,
-                    &sample_bases,
-                )?;
-            }
-            block_idx += 1;
+            pgr::libs::fmt::fas::write_vcf_block(&block, block_idx, &mut writer)?;
         }
     }
 

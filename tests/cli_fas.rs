@@ -853,3 +853,135 @@ fn command_refine_skips_malformed_block() {
         stderr
     );
 }
+
+#[test]
+fn command_filter_upper() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&["fas", "filter", "tests/fas/example.fas", "--upper"])
+        .run();
+
+    assert_eq!(stdout.lines().count(), 27);
+    let seq_lower = stdout
+        .lines()
+        .filter(|line| !line.starts_with('>'))
+        .flat_map(|line| line.chars())
+        .filter(|c| c.is_ascii_lowercase())
+        .count();
+    assert_eq!(seq_lower, 0, "all sequence characters should be uppercase");
+}
+
+#[test]
+fn command_slice_default_name() {
+    let (stdout_with_name, _) = PgrCmd::new()
+        .args(&[
+            "fas",
+            "slice",
+            "tests/fas/slice.fas",
+            "--runlist",
+            "tests/fas/slice.json",
+            "--name",
+            "S288c",
+        ])
+        .run();
+
+    let (stdout_default, _) = PgrCmd::new()
+        .args(&[
+            "fas",
+            "slice",
+            "tests/fas/slice.fas",
+            "--runlist",
+            "tests/fas/slice.json",
+        ])
+        .run();
+
+    assert_eq!(stdout_with_name, stdout_default);
+}
+
+#[test]
+fn command_replace_three_fields() {
+    let temp = TempDir::new().unwrap();
+    let fas_file = temp.path().join("replace3.fas");
+    fs::write(
+        &fas_file,
+        ">target.chr1:1-5\nACGTA\n>query.chr1:1-5\nACGTC\n",
+    )
+    .unwrap();
+
+    let tsv = temp.path().join("replace3.tsv");
+    fs::write(&tsv, "target.chr1:1-5\tnewA\tnewB\n").unwrap();
+
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "fas",
+            "replace",
+            fas_file.to_str().unwrap(),
+            "--replace-tsv",
+            tsv.to_str().unwrap(),
+        ])
+        .run();
+
+    assert_eq!(
+        stdout.matches(">newA").count(),
+        1,
+        "first replacement name should appear once"
+    );
+    assert_eq!(
+        stdout.matches(">newB").count(),
+        1,
+        "second replacement name should appear once"
+    );
+    assert_eq!(
+        stdout.matches(">target.").count(),
+        0,
+        "original name should be replaced"
+    );
+}
+
+#[test]
+fn command_create_skips_invalid_range() {
+    let temp = TempDir::new().unwrap();
+    let connect = temp.path().join("connect.tsv");
+    fs::write(&connect, "S288c.I:1-10\tinvalid_range\nS288c.I:11-20\n").unwrap();
+
+    let (stdout, stderr) = PgrCmd::new()
+        .args(&[
+            "fas",
+            "create",
+            connect.to_str().unwrap(),
+            "-g",
+            "tests/fas/genome.fa",
+            "--name",
+            "S288c",
+        ])
+        .run();
+
+    assert!(
+        stdout.contains(">S288c.I:11-20"),
+        "valid range should produce output"
+    );
+    assert!(
+        !stdout.contains("invalid_range"),
+        "invalid range should be skipped"
+    );
+    assert!(
+        stderr.contains("skipping invalid range"),
+        "expected warning about invalid range, got {}",
+        stderr
+    );
+}
+
+#[test]
+fn command_split_simple_stdout() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&["fas", "split", "tests/fas/example.fas", "--simple"])
+        .run();
+
+    assert!(
+        stdout.contains(">S288c\n"),
+        "simple headers should use species names only"
+    );
+    assert!(
+        !stdout.contains("I(+)"),
+        "simple headers should not contain coordinates"
+    );
+}

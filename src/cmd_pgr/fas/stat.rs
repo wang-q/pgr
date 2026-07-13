@@ -13,6 +13,8 @@ Calculates basic statistics of block FA files (length, comparable, difference, e
 Notes:
 * Supports both plain text and gzipped (.gz) files
 * Reads from stdin if input file is 'stdin'
+* Output columns: target length comparable difference gap ambiguous D indel
+* `--outgroup` excludes the last sequence from all calculations except length
 
 Examples:
 1. Get statistics for block FA files:
@@ -49,8 +51,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         "indel",
     ];
 
-    // Operating
-    writer.write_all(format!("{}\n", field_names.join("\t")).as_ref())?;
+    writeln!(writer, "{}", field_names.join("\t"))?;
 
     for infile in args.get_many::<String>("infiles").unwrap() {
         let mut reader =
@@ -58,50 +59,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
         for block_result in pgr::libs::fmt::fas::iter_fas_blocks(&mut reader) {
             let block = block_result?;
-            if block.entries.is_empty() {
-                continue;
-            }
-            let target = block.entries.first().unwrap().range().to_string();
-            // length always reflects the full alignment, even when --outgroup is used
-            let full_length = block.entries.first().unwrap().seq().len();
-
-            let mut seqs: Vec<&[u8]> = vec![];
-            for entry in &block.entries {
-                seqs.push(entry.seq());
-            }
-
-            if has_outgroup {
-                if seqs.len() < 2 {
-                    anyhow::bail!(
-                        "block has only {} entries, cannot apply --outgroup",
-                        seqs.len()
-                    );
-                }
-                seqs.pop();
-            }
-
-            let (_, comparable, difference, gap, ambiguous, mean_d) =
-                pgr::libs::alignment::alignment_stat(&seqs)?;
-
-            let mut indel_ints = intspan::IntSpan::new();
-            for seq in seqs {
-                indel_ints.merge(&pgr::libs::alignment::indel_intspan(seq));
-            }
-
-            writer.write_all(
-                format!(
-                    "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n",
-                    target,
-                    full_length,
-                    comparable,
-                    difference,
-                    gap,
-                    ambiguous,
-                    mean_d,
-                    indel_ints.span_size(),
-                )
-                .as_ref(),
-            )?;
+            let stat = pgr::libs::fmt::fas::compute_block_stat(&block, has_outgroup)?;
+            writeln!(writer, "{}", stat.to_tsv())?;
         }
     }
 

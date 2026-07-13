@@ -1,3 +1,4 @@
+use anyhow::Context;
 use intspan::Range;
 use std::collections::VecDeque;
 use std::io::Write;
@@ -349,9 +350,7 @@ pub fn check_entry_against_ref(
     loc_of: &indexmap::IndexMap<String, (u64, usize)>,
 ) -> anyhow::Result<String> {
     let range = entry.range();
-    let seq = entry.seq().to_vec();
-    let seq = std::str::from_utf8(&seq)?
-        .to_string()
+    let seq = std::str::from_utf8(entry.seq())?
         .to_ascii_uppercase()
         .replace('-', "");
 
@@ -408,14 +407,10 @@ pub fn aggregate_coverage_into<R: io::BufRead>(
         let block_names = block.names;
 
         if !name_filter.is_empty() {
-            if !res_of.contains_key(name_filter) {
-                res_of.insert(name_filter.to_string(), std::collections::BTreeMap::new());
-            }
+            res_of.entry(name_filter.to_string()).or_default();
         } else {
             for name in &block_names {
-                if !res_of.contains_key(name) {
-                    res_of.insert(name.to_string(), std::collections::BTreeMap::new());
-                }
+                res_of.entry(name.clone()).or_default();
             }
         }
 
@@ -433,13 +428,10 @@ pub fn aggregate_coverage_into<R: io::BufRead>(
             let res = res_of
                 .get_mut(name)
                 .ok_or_else(|| anyhow::anyhow!("name not found in res_of: {}", name))?;
-
-            if !res.contains_key(range.chr()) {
-                res.insert(range.chr().to_string(), intspan::IntSpan::new());
-            }
-
             let intspan = range.intspan().clone().trim(trim);
-            res.get_mut(range.chr()).unwrap().merge(&intspan);
+            res.entry(range.chr().to_string())
+                .or_default()
+                .merge(&intspan);
         }
     }
     Ok(())
@@ -488,20 +480,14 @@ pub fn join_block_entries(
     };
     let header = block.entries[idx].range().to_string();
 
-    if !block_of.contains_key(&header) {
-        block_of.insert(header.clone(), vec![]);
-        block_of
-            .get_mut(&header)
-            .ok_or_else(|| anyhow::anyhow!("inserted header missing"))?
-            .push(block.entries[idx].clone());
+    let entries = block_of.entry(header).or_default();
+    if entries.is_empty() {
+        entries.push(block.entries[idx].clone());
     }
 
     for entry in &block.entries {
         if entry.range().name() != name {
-            block_of
-                .get_mut(&header)
-                .ok_or_else(|| anyhow::anyhow!("header missing in block_of"))?
-                .push(entry.clone());
+            entries.push(entry.clone());
         }
     }
     Ok(())
@@ -529,50 +515,355 @@ pub fn replace_block_lines(
         .filter(|e| block.headers.contains(*e))
         .collect();
 
-    let mut blocks = Vec::new();
-
     if matched.len() != 1 {
         if matched.len() > 1 {
             log::warn!("Doesn't support replacing multiple records in one block");
         }
-        blocks.push(block_to_string(&block.entries));
-    } else {
-        let original = matched[0];
-        let occ = block.headers.iter().filter(|h| *h == original).count();
-        if occ != 1 {
-            log::warn!(
-                "Header '{}' appears {} times in one block; keeping block unchanged",
-                original,
-                occ
-            );
-            blocks.push(block_to_string(&block.entries));
-        } else {
-            let idx = block
-                .headers
-                .iter()
-                .position(|e| e == original)
-                .ok_or_else(|| anyhow::anyhow!("matched header not found"))?;
-            for new in &replace_of[original] {
-                let mut s = String::new();
-                for (i, entry) in block.entries.iter().enumerate() {
-                    if i == idx {
-                        s.push_str(&format!(
-                            ">{}\n{}\n",
-                            new,
-                            String::from_utf8(entry.seq().to_vec())?
-                        ));
-                    } else {
-                        s.push_str(&entry.to_string());
-                    }
-                }
-                if s.ends_with('\n') {
-                    s.pop();
-                }
-                blocks.push(s);
+        return Ok(vec![block_to_string(&block.entries)]);
+    }
+
+    let original = matched[0];
+    let occ = block.headers.iter().filter(|h| *h == original).count();
+    if occ != 1 {
+        log::warn!(
+            "Header '{}' appears {} times in one block; keeping block unchanged",
+            original,
+            occ
+        );
+        return Ok(vec![block_to_string(&block.entries)]);
+    }
+
+    let idx = block
+        .headers
+        .iter()
+        .position(|e| e == original)
+        .ok_or_else(|| anyhow::anyhow!("matched header not found"))?;
+
+    let mut blocks = Vec::with_capacity(replace_of[original].len());
+    for new in &replace_of[original] {
+        let mut s = String::new();
+        for (i, entry) in block.entries.iter().enumerate() {
+            if i == idx {
+                s.push_str(&format!(
+                    ">{}\n{}\n",
+                    new,
+                    String::from_utf8(entry.seq().to_vec())?
+                ));
+            } else {
+                s.push_str(&entry.to_string());
             }
         }
+        if s.ends_with('\n') {
+            s.pop();
+        }
+        blocks.push(s);
     }
     Ok(blocks)
+}
+
+/// Format a sequence byte slice according to `--upper` and `--dash` flags.
+///
+/// When `is_dash` is true, gap characters (`-`) are removed. When `is_upper`
+/// is true, the result is converted to ASCII uppercase.
+pub fn format_sequence(seq: &[u8], is_dash: bool, is_upper: bool) -> String {
+    let mut out = String::with_capacity(seq.len());
+    for &nt in seq {
+        if is_dash && nt == b'-' {
+            continue;
+        }
+        let c = char::from(nt);
+        out.push(if is_upper { c.to_ascii_uppercase() } else { c });
+    }
+    out
+}
+
+/// Filter and format one FasBlock.
+///
+/// Returns `Ok(None)` when the block should be skipped (missing species or
+/// length out of range). Otherwise returns the formatted block string.
+pub fn filter_block(
+    block: &FasBlock,
+    opt_name: &str,
+    opt_min: Option<usize>,
+    opt_max: Option<usize>,
+    is_upper: bool,
+    is_dash: bool,
+) -> anyhow::Result<Option<String>> {
+    if block.entries.is_empty() {
+        return Ok(None);
+    }
+
+    let idx = if !opt_name.is_empty() {
+        match block.names.iter().position(|x| x == opt_name) {
+            Some(i) => i,
+            None => return Ok(None),
+        }
+    } else {
+        0
+    };
+
+    let idx_seq = block.entries[idx].seq();
+    if let Some(min) = opt_min {
+        if idx_seq.len() < min {
+            return Ok(None);
+        }
+    }
+    if let Some(max) = opt_max {
+        if idx_seq.len() > max {
+            return Ok(None);
+        }
+    }
+
+    let mut out = String::new();
+    for entry in &block.entries {
+        let formatted = format_sequence(entry.seq(), is_dash, is_upper);
+        let out_entry = FasEntry::from(entry.range(), formatted.as_bytes());
+        out.push_str(&out_entry.to_string());
+    }
+    out.push('\n');
+    Ok(Some(out))
+}
+
+/// Collect species name occurrence counts from an iterator of FasBlocks.
+pub fn collect_name_counts<'a, I>(blocks: I) -> indexmap::IndexMap<String, i32>
+where
+    I: Iterator<Item = &'a FasBlock>,
+{
+    let mut counts: indexmap::IndexMap<String, i32> = indexmap::IndexMap::new();
+    for block in blocks {
+        for name in &block.names {
+            *counts.entry(name.clone()).or_insert(0) += 1;
+        }
+    }
+    counts
+}
+
+/// Statistics for one FasBlock.
+#[derive(Debug)]
+pub struct BlockStat {
+    pub target: String,
+    pub length: usize,
+    pub comparable: i32,
+    pub difference: i32,
+    pub gap: i32,
+    pub ambiguous: i32,
+    pub mean_d: f32,
+    pub indel_span: i32,
+}
+
+impl BlockStat {
+    /// Format the statistic as a TSV line without a trailing newline.
+    pub fn to_tsv(&self) -> String {
+        format!(
+            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+            self.target,
+            self.length,
+            self.comparable,
+            self.difference,
+            self.gap,
+            self.ambiguous,
+            self.mean_d,
+            self.indel_span,
+        )
+    }
+}
+
+/// Compute statistics for a FasBlock.
+///
+/// When `has_outgroup` is true, the last entry is excluded from all
+/// calculations except `length`.
+pub fn compute_block_stat(block: &FasBlock, has_outgroup: bool) -> anyhow::Result<BlockStat> {
+    if block.entries.is_empty() {
+        anyhow::bail!("empty fas block");
+    }
+
+    let target = block.entries[0].range().to_string();
+    let full_length = block.entries[0].seq().len();
+
+    let mut seqs: Vec<&[u8]> = block.entries.iter().map(|e| e.seq()).collect();
+    if has_outgroup {
+        if seqs.len() < 2 {
+            anyhow::bail!(
+                "block has only {} entries, cannot apply --outgroup",
+                seqs.len()
+            );
+        }
+        seqs.pop();
+    }
+
+    let (_, comparable, difference, gap, ambiguous, mean_d) =
+        crate::libs::alignment::alignment_stat(&seqs)?;
+
+    let mut indel_ints = intspan::IntSpan::new();
+    for seq in &seqs {
+        indel_ints.merge(&crate::libs::alignment::indel_intspan(seq));
+    }
+
+    Ok(BlockStat {
+        target,
+        length: full_length,
+        comparable,
+        difference,
+        gap,
+        ambiguous,
+        mean_d,
+        indel_span: indel_ints.span_size() as i32,
+    })
+}
+
+/// Write variations (substitutions) from a FasBlock to a writer.
+///
+/// `has_outgroup` treats the last entry as the outgroup and polarizes
+/// substitutions against it.
+pub fn write_variations<W: Write>(
+    block: &FasBlock,
+    has_outgroup: bool,
+    writer: &mut W,
+) -> anyhow::Result<()> {
+    if block.entries.is_empty() {
+        return Ok(());
+    }
+
+    let first = &block.entries[0];
+    let trange = first.range();
+    let t_ints_seq = crate::libs::alignment::seq_intspan(first.seq());
+
+    let seqs: Vec<&[u8]> = block.entries.iter().map(|e| e.seq()).collect();
+    let seq_count = seqs.len();
+    if has_outgroup && seq_count < 2 {
+        anyhow::bail!(
+            "outgroup mode requires at least 2 sequences per block, got {}",
+            seq_count
+        );
+    }
+
+    let subs = if has_outgroup {
+        let mut unpolarized = crate::libs::alignment::get_subs(&seqs[..(seq_count - 1)])?;
+        crate::libs::alignment::polarize_subs(&mut unpolarized, seqs[seq_count - 1])?;
+        unpolarized
+    } else {
+        crate::libs::alignment::get_subs(&seqs)?
+    };
+
+    for s in subs {
+        let chr = trange.chr();
+        let chr_pos = crate::libs::alignment::align_to_chr(
+            &t_ints_seq,
+            s.pos,
+            trange.start,
+            trange.strand(),
+        )?;
+        let var_rg = format!("{}:{}", chr, chr_pos);
+        writeln!(
+            writer,
+            "{}\t{}\t{}\t{}\t{}",
+            trange, chr, chr_pos, var_rg, s
+        )?;
+    }
+    Ok(())
+}
+
+/// Write VCF rows for a single FasBlock.
+///
+/// `block_idx` is used only for error messages.
+pub fn write_vcf_block<W: Write>(
+    block: &FasBlock,
+    block_idx: usize,
+    writer: &mut W,
+) -> anyhow::Result<()> {
+    if block.entries.is_empty() {
+        return Ok(());
+    }
+
+    let seqs: Vec<&[u8]> = block.entries.iter().map(|e| e.seq()).collect();
+    let target_entry = &block.entries[0];
+    let trange = target_entry.range();
+    let t_ints_seq = crate::libs::alignment::seq_intspan(target_entry.seq());
+
+    let subs = crate::libs::alignment::get_subs(&seqs)?;
+
+    for s in subs {
+        let chr = trange.chr();
+        let chr_pos =
+            crate::libs::alignment::align_to_chr(&t_ints_seq, s.pos, trange.start, trange.strand())
+                .with_context(|| format!("align_to_chr at pos {} in block {}", s.pos, block_idx))?;
+
+        let pos_idx = usize::try_from(s.pos).map_err(|_| {
+            anyhow::anyhow!("invalid substitution pos {} in block {}", s.pos, block_idx)
+        })?;
+        let pos_idx = pos_idx.checked_sub(1).ok_or_else(|| {
+            anyhow::anyhow!("invalid substitution pos {} in block {}", s.pos, block_idx)
+        })?;
+        if pos_idx >= seqs[0].len() {
+            anyhow::bail!(
+                "substitution pos {} out of range (seq len {}) in block {}",
+                s.pos,
+                seqs[0].len(),
+                block_idx
+            );
+        }
+        let ref_base = char::from(seqs[0][pos_idx]).to_ascii_uppercase();
+        let alt_bases = crate::libs::alignment::vcf_alt_bases(&s);
+        let sample_bases: Vec<u8> = seqs
+            .iter()
+            .map(|seq| seq.get(pos_idx).copied().unwrap_or(b'-'))
+            .collect();
+
+        crate::libs::fmt::vcf::write_snp_row(
+            writer,
+            chr,
+            chr_pos,
+            ref_base,
+            &alt_bases,
+            &sample_bases,
+        )?;
+    }
+    Ok(())
+}
+
+/// Concatenate accumulated sequences and write them in FASTA or relaxed PHYLIP format.
+pub fn write_concat_output<W: Write>(
+    writer: &mut W,
+    needed: &[String],
+    seq_of: &std::collections::BTreeMap<String, String>,
+    is_phylip: bool,
+) -> anyhow::Result<()> {
+    if is_phylip {
+        let length = seq_of.get(&needed[0]).map(|s| s.len()).unwrap_or(0);
+        if length == 0 {
+            anyhow::bail!(
+                "PHYLIP output requires non-empty sequences, but all sequences are empty (check --required list and input blocks)"
+            );
+        }
+        for name in needed {
+            let v = seq_of
+                .get(name)
+                .ok_or_else(|| anyhow::anyhow!("name not found in concat results: {}", name))?;
+            if v.len() != length {
+                anyhow::bail!(
+                    "PHYLIP requires equal-length sequences, but {} has length {} (expected {})",
+                    name,
+                    v.len(),
+                    length
+                );
+            }
+        }
+        writeln!(writer, "{} {}", needed.len(), length)?;
+        for name in needed {
+            let v = seq_of
+                .get(name)
+                .ok_or_else(|| anyhow::anyhow!("name not found in concat results: {}", name))?;
+            writeln!(writer, "{} {}", name, v)?;
+        }
+    } else {
+        for name in needed {
+            let v = seq_of
+                .get(name)
+                .ok_or_else(|| anyhow::anyhow!("name not found in concat results: {}", name))?;
+            writeln!(writer, ">{}\n{}", name, v)?;
+        }
+    }
+    Ok(())
 }
 
 /// Create block FA content from a links-of-ranges TSV reader. For each line,
@@ -611,6 +902,42 @@ pub fn create_from_links<R: io::BufRead, W: Write>(
         }
     }
     Ok(())
+}
+
+/// Returns the file key used to group a FasBlock when splitting.
+///
+/// When `is_chr` is true, the key is `{name}.{chr}` using the first entry's
+/// species name and chromosome. Otherwise it is the first entry's full range
+/// string. Returns `None` for an empty block.
+pub fn split_block_key(block: &FasBlock, is_chr: bool) -> Option<String> {
+    let first = block.entries.first()?;
+    let first_name = block.names.first()?;
+    let key = if is_chr {
+        format!("{}.{}", first_name, first.range().chr())
+    } else {
+        first.range().to_string()
+    };
+    Some(key)
+}
+
+/// Format one FasBlock for the `split` command.
+///
+/// Each entry is written as `>{header}\n{seq}\n`. When `is_simple` is true,
+/// the header is reduced to the species name; otherwise the full range is
+/// used. The returned string does not include the trailing blank line.
+pub fn format_split_block(block: &FasBlock, is_simple: bool) -> anyhow::Result<String> {
+    use std::fmt::Write;
+    let mut out = String::new();
+    for (idx, entry) in block.entries.iter().enumerate() {
+        let header_owned = if is_simple {
+            block.names.get(idx).cloned().unwrap_or_default()
+        } else {
+            entry.range().to_string()
+        };
+        let seq = std::str::from_utf8(entry.seq())?;
+        writeln!(out, ">{}\n{}", header_owned, seq)?;
+    }
+    Ok(out)
 }
 
 // ============================================================================

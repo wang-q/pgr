@@ -13,6 +13,7 @@ Lists variations (substitutions) from block FA files in TSV format.
 Notes:
 * Supports both plain text and gzipped (.gz) files
 * Reads from stdin if input file is 'stdin'
+* `--outgroup` requires at least 2 sequences per block and polarizes substitutions against the last sequence
 * Filter out complex variations: `tsv-filter -H --ne freq:-1`
 * Filter out singletons: `tsv-filter -H --ne freq:1`
 
@@ -40,7 +41,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
     let has_outgroup = args.get_flag("outgroup");
 
-    let field_names = vec![
+    let field_names = [
         "#target",
         "chr",
         "chr_pos",
@@ -55,8 +56,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         "obase",
     ];
 
-    // Operating
-    writer.write_all(format!("{}\n", field_names.join("\t")).as_ref())?;
+    writeln!(writer, "{}", field_names.join("\t"))?;
 
     for infile in args.get_many::<String>("infiles").unwrap() {
         let mut reader =
@@ -64,51 +64,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
         for block_result in pgr::libs::fmt::fas::iter_fas_blocks(&mut reader) {
             let block = block_result?;
-            let mut seqs: Vec<&[u8]> = vec![];
-            for entry in &block.entries {
-                seqs.push(entry.seq());
-            }
-
-            // target range and sequence intspan
-            let first = match block.entries.first() {
-                Some(e) => e,
-                None => continue,
-            };
-            let trange = first.range();
-            let t_ints_seq = pgr::libs::alignment::seq_intspan(first.seq());
-
-            // pos, tbase, qbase, bases, mutant_to, freq, pattern, obase
-            //   0,     1,     2,     3,         4,    5,       6,     7
-            let seq_count = seqs.len();
-            if has_outgroup && seq_count < 2 {
-                anyhow::bail!(
-                    "outgroup mode requires at least 2 sequences per block, got {}",
-                    seq_count
-                );
-            }
-            let subs = if has_outgroup {
-                let mut unpolarized = pgr::libs::alignment::get_subs(&seqs[..(seq_count - 1)])?;
-                pgr::libs::alignment::polarize_subs(&mut unpolarized, seqs[seq_count - 1])?;
-                unpolarized
-            } else {
-                pgr::libs::alignment::get_subs(&seqs)?
-            };
-
-            for s in subs {
-                let chr = trange.chr();
-
-                let chr_pos = pgr::libs::alignment::align_to_chr(
-                    &t_ints_seq,
-                    s.pos,
-                    trange.start,
-                    trange.strand(),
-                )?;
-                let var_rg = format!("{}:{}", chr, chr_pos);
-
-                writer.write_all(
-                    format!("{}\t{}\t{}\t{}\t{}\n", trange, chr, chr_pos, var_rg, s,).as_ref(),
-                )?;
-            }
+            pgr::libs::fmt::fas::write_variations(&block, has_outgroup, &mut writer)?;
         }
     }
 

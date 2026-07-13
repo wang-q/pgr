@@ -8,20 +8,20 @@ pub fn make_subcommand() -> Command {
         .about("Realigns files with built-in or external programs and trims unwanted regions")
         .after_help(
             r###"
-Realigns sequences in block FA files using built-in or external programs (clustalw, mafft, muscle, spoa) and trims unwanted regions.
+Realigns sequences in block FA files using built-in or external programs and trims unwanted regions.
 
 Notes:
 * Supports both plain text and gzipped (.gz) files
 * Reads from stdin if input file is 'stdin'
 * Supported MSA programs (`--engine`):
-    * `builtin` (default): Uses built-in Rust implementation (Partial Order Alignment).
-    * `clustalw`: Uses external `clustalw` command.
-    * `mafft`: Uses external `mafft` command.
-    * `muscle`: Uses external `muscle` command.
-    * `spoa`: Uses external `spoa` command (SIMD optimized).
-    * `none`: Skips realigning (useful for trimming only).
-* The `--quick` option aligns only indel-adjacent regions (useful for .axt/.maf conversions)
-* Supports parallel processing. The output order may differ from the original
+    * `builtin` (default): built-in Rust POA implementation.
+    * `clustalw`, `mafft`, `muscle`, `spoa`: external commands.
+    * `none`: skip realigning (useful for trimming only).
+* `--chop` trims head/tail indels (default: 0, disabled)
+* `--quick` aligns only indel-adjacent regions (useful for .axt/.maf conversions)
+    * `--indel-pad` enlarges indel regions in quick mode (default: 50)
+    * `--fill` fills holes between indels in quick mode (default: 50)
+* Parallel mode (`-p`) may change output order
 
 Examples:
 1. Realign block FA files using builtin (default):

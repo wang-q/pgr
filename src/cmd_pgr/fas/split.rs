@@ -67,58 +67,37 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut file_of: BTreeMap<String, BufWriter<std::fs::File>> = BTreeMap::new();
     let stdout = std::io::stdout();
     let mut out = stdout.lock();
-
     for infile in args.get_many::<String>("infiles").unwrap() {
         let mut reader =
             pgr::reader(infile).with_context(|| format!("Failed to open reader for {}", infile))?;
 
-        for block_result in pgr::libs::fmt::fas::iter_fas_blocks(&mut reader) {
-            let block = block_result?;
-            let first = match block.entries.first() {
-                Some(e) => e,
+        for (block_idx, block_result) in
+            pgr::libs::fmt::fas::iter_fas_blocks(&mut reader).enumerate()
+        {
+            let block = block_result
+                .with_context(|| format!("read block {} from {}", block_idx, infile))?;
+            let filename = match pgr::libs::fmt::fas::split_block_key(&block, is_chr) {
+                Some(k) => pgr::libs::io::sanitize_filename(&k),
                 None => continue,
             };
-            let first_name = &block.names[0];
-            let filename = if is_chr {
-                format!("{}.{}", first_name, first.range().chr())
-            } else {
-                first.range().to_string()
-            };
-            let filename = pgr::libs::io::sanitize_filename(&filename);
+            let block_str = pgr::libs::fmt::fas::format_split_block(&block, is_simple)?;
 
-            for entry in &block.entries {
-                let range = entry.range().clone();
-                let seq = std::str::from_utf8(entry.seq())?;
-                let header = if is_simple {
-                    range.name().to_string()
-                } else {
-                    range.to_string()
-                };
-
-                if outdir == "stdout" {
-                    write!(out, ">{}\n{}\n", header, seq)?;
-                } else {
-                    if !file_of.contains_key(&filename) {
-                        let path = std::path::Path::new(outdir)
-                            .join(format!("{}{}", filename, opt_suffix));
-                        let file = std::fs::OpenOptions::new()
-                            .create(true)
-                            .write(true)
-                            .truncate(true)
-                            .open(path)?;
-                        file_of.insert(filename.clone(), BufWriter::new(file));
-                    }
-                    let file = file_of.get_mut(&filename).unwrap();
-                    write!(file, ">{}\n{}\n", header, seq)?;
-                }
-            }
-
-            // end of a block
             if outdir == "stdout" {
-                writeln!(out)?;
+                writeln!(out, "{}", block_str)?;
             } else {
-                let file = file_of.get_mut(&filename).unwrap();
-                writeln!(file)?;
+                let file = if let Some(fh) = file_of.get_mut(&filename) {
+                    fh
+                } else {
+                    let path =
+                        std::path::Path::new(outdir).join(format!("{}{}", filename, opt_suffix));
+                    let file = std::fs::OpenOptions::new()
+                        .create(true)
+                        .write(true)
+                        .truncate(true)
+                        .open(path)?;
+                    file_of.entry(filename).or_insert(BufWriter::new(file))
+                };
+                writeln!(file, "{}", block_str)?;
             }
         }
     }

@@ -14,8 +14,10 @@ Checks genome locations in block FA headers against a reference genome FA file.
 Notes:
 * Supports both plain text and gzipped (.gz) files
 * Reads from stdin if input file is 'stdin'
+* Reference genome can be plain text or bgzipped
+* Output format: `range<TAB>status` where status is OK or FAILED
 
-"###,
+Examples:"###,
         )
         .arg(crate::cmd_pgr::args::genome_arg())
         .arg(crate::cmd_pgr::args::infiles_arg_with_help(

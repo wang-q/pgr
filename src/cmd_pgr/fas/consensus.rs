@@ -9,36 +9,33 @@ pub fn make_subcommand() -> Command {
             .about("Generates consensus sequences using POA")
             .after_help(
                 r###"
-Generates consensus sequences using POA (Partial Order Alignment) graph.
+Generates consensus sequences using POA (Partial Order Alignment).
 
 Notes:
 * Supports both plain text and gzipped (.gz) files
 * Reads from stdin if input file is 'stdin'
-* POA Engine:
-    * `--engine builtin` (default): Uses built-in Rust implementation.
-    * `--engine spoa`: Forces use of external `spoa` command.
-* Alignment Parameters:
-    * Configurable via `--match`, `--mismatch`, `--gap-open`, `--gap-extend`, `--align-mode`.
-    * Defaults: Global alignment; Match 5, Mismatch -4, GapOpen -8, GapExtend -6.
-* Supports parallel processing for improved performance
-    * Running in parallel mode with 1 reader, 1 writer and the corresponding number of workers
-    * The order of output may be different from the original
-* If outgroups are present, they are handled appropriately
+* POA engine:
+    * `--engine builtin` (default): built-in Rust implementation.
+    * `--engine spoa`: external `spoa` command.
+* Alignment parameters:
+    * `--match` (default: 5), `--mismatch` (default: -4)
+    * `--gap-open` (default: -8), `--gap-extend` (default: -6)
+    * `--align-mode` (default: global)
+* `--consensus-name` sets the output header name (default: consensus)
+* `--outgroup` preserves the last sequence as outgroup (excluded from consensus)
+* Parallel mode (`-p`) may change output order
 
 Examples:
 1. Generate consensus sequences from a block FA file:
    pgr fas consensus tests/fas/example.fas
 
-2. Generate consensus sequences using built-in engine:
-   pgr fas consensus tests/fas/example.fas --engine builtin
-
-3. Generate consensus sequences with outgroups:
+2. Generate consensus with outgroup:
    pgr fas consensus tests/fas/example.fas --outgroup
 
-4. Run in parallel with 4 threads:
+3. Run in parallel with 4 threads:
    pgr fas consensus tests/fas/example.fas --parallel 4
 
-5. Output results to a file:
+4. Output results to a file:
    pgr fas consensus tests/fas/example.fas -o output.fas
 
 "###,

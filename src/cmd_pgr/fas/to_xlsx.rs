@@ -11,6 +11,8 @@ Exports variations (substitutions/indels) to Excel.
 Notes:
 * Supports both plain text and gzipped (.gz) files
 * Reads from stdin if input file is 'stdin'
+* `--min-freq` and `--max-freq` must be in [0, 1] and `--min-freq` <= `--max-freq`
+* `--outgroup` treats the last sequence of each block as the outgroup
 
 Examples:
 1. Export variations to an Excel file:

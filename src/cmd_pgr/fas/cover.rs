@@ -15,7 +15,7 @@ Notes:
 * Reads from stdin if input file is 'stdin'
 * The output is in JSON format, showing the coverage of sequences on chromosomes
 * Optionally, you can specify a species name to limit the output to that species
-* For lastz results, use --trim 10
+* `--trim` trims alignment borders inward (default: 0); for lastz results, try --trim 10
 
 Examples:
 1. Calculate coverage for all species:

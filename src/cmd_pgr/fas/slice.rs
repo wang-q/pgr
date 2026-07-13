@@ -14,6 +14,7 @@ Notes:
 * Supports both plain text and gzipped (.gz) files
 * Reads from stdin if input file is 'stdin'
 * The JSON file (--runlist) keys are chromosome/sequence names, and values are runlists (e.g., "1-100,200-300")
+* If `--name` is not specified, the first species of the first non-empty block is used as the reference
 
 Examples:
 1. Extract slices defined in a JSON file:

@@ -88,7 +88,20 @@ pub fn slice_block<W: Write>(
             let ss_range =
                 intspan::Range::from_full(range.name(), range.chr(), range.strand(), start, end);
 
-            let ss_seq = &block.entries[i].seq()[((ss_start - 1) as usize)..(ss_end as usize)];
+            let seq = block.entries[i].seq();
+            let seq_len_i32 = i32::try_from(seq.len())
+                .map_err(|_| anyhow!("sequence length {} exceeds i32 range", seq.len()))?;
+            if ss_start < 1 || ss_end > seq_len_i32 {
+                anyhow::bail!(
+                    "slice range {}..{} out of sequence length {}",
+                    ss_start,
+                    ss_end,
+                    seq.len()
+                );
+            }
+            let start_idx = (ss_start - 1) as usize;
+            let end_idx = ss_end as usize;
+            let ss_seq = &seq[start_idx..end_idx];
 
             let seq_str = std::str::from_utf8(ss_seq)
                 .map_err(|e| anyhow!("invalid UTF-8 in sliced sequence: {}", e))?;
