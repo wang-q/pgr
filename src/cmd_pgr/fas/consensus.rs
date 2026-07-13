@@ -2,7 +2,6 @@ use anyhow::Context;
 use clap::builder::PossibleValue;
 use clap::{Arg, ArgMatches, Command};
 use pgr::libs::fmt::fas::{consensus_block, run_pipeline, ConsensusOptions};
-use pgr::libs::poa::AlignmentParams;
 
 /// Build the clap subcommand for consensus.
 pub fn make_subcommand() -> Command {
@@ -95,12 +94,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         cname: args.get_one::<String>("consensus_name").unwrap().clone(),
         has_outgroup: args.get_flag("outgroup"),
         engine: args.get_one::<String>("engine").unwrap().clone(),
-        params: AlignmentParams {
-            match_score: *args.get_one::<i32>("match").unwrap(),
-            mismatch_score: *args.get_one::<i32>("mismatch").unwrap(),
-            gap_open: *args.get_one::<i32>("gap_open").unwrap(),
-            gap_extend: *args.get_one::<i32>("gap_extend").unwrap(),
-        },
+        params: crate::cmd_pgr::args::get_poa_params(args),
         algo_code,
     };
 

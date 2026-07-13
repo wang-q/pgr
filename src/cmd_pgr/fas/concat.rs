@@ -49,6 +49,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let needed =
         pgr::libs::io::read_names::<Vec<String>>(args.get_one::<String>("required").unwrap())?;
+    anyhow::ensure!(!needed.is_empty(), "--required file is empty");
 
     let mut seq_of: BTreeMap<String, String> = BTreeMap::new();
     for name in &needed {

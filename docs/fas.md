@@ -95,7 +95,7 @@ Calculates basic statistics for each alignment block (length, comparable bases, 
 pgr fas stat [OPTIONS] <infiles>...
 ```
 
-*   `--outgroup`: Treat the last sequence in each block as an outgroup (excludes it from some stats).
+*   `--outgroup`: Treat the last sequence in each block as an outgroup. The `length` column still reflects the full alignment length; all other statistics (`comparable`, `difference`, `gap`, `ambiguous`, `D`, `indel`) exclude the outgroup.
 *   `-o, --outfile <file>`: Output filename (default: stdout).
 
 Output columns (tab-separated):
@@ -183,7 +183,7 @@ pgr fas consensus [OPTIONS] <infiles>...
 *   `--gap-extend <int>`: Gap extension penalty (default: -6).
 *   `--align-mode <local|global|semi_global>`: Alignment mode (default: global).
 *   `--consensus-name <name>`: Name for the consensus sequence (default: consensus).
-*   `--outgroup`: Indicates the last sequence is an outgroup.
+*   `--outgroup`: Indicates the last sequence in each block is an outgroup. It is excluded from consensus computation and preserved in the output block.
 *   `-p, --parallel <int>`: Number of threads (default: 1).
 *   `-o, --outfile <file>`: Output filename (default: stdout).
 
@@ -229,7 +229,7 @@ pgr fas refine [OPTIONS] <infiles>...
 
 *   `--engine <program>`: Aligning program: `builtin` (default), `clustalw`, `mafft`, `muscle`, `spoa`, `none`.
 *   `--outgroup`: Indicates presence of outgroups.
-*   `--chop <int>`: Chop head and tail indels (default: 0, disabled).
+*   `--chop <usize>`: Chop head and tail indels (default: 0, disabled).
 *   `--quick`: Quick mode, only aligns indel-adjacent regions.
 *   `--indel-pad <int>`: In quick mode, enlarge indel regions (default: 50).
 *   `--fill <int>`: In quick mode, fill holes between indels (default: 50).

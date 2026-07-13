@@ -352,13 +352,9 @@ pub fn concat_blocks_into<R: io::BufRead>(
         let length = first_entry.seq().len();
 
         for name in needed {
-            if block.names.contains(name) {
-                for (idx, entry) in block.entries.iter().enumerate() {
-                    if block.names[idx] == *name {
-                        let seq = std::str::from_utf8(entry.seq())?;
-                        seq_of.entry(name.to_string()).and_modify(|e| *e += seq);
-                    }
-                }
+            if let Some(idx) = block.names.iter().position(|n| n == name) {
+                let seq = std::str::from_utf8(block.entries[idx].seq())?;
+                seq_of.entry(name.to_string()).and_modify(|e| *e += seq);
             } else {
                 seq_of
                     .entry(name.to_string())
@@ -435,7 +431,7 @@ pub fn find_best_pairs(entries: &[FasEntry]) -> anyhow::Result<Vec<(usize, usize
                 continue;
             }
             let dist = crate::libs::alignment::pair_d(entries[i].seq(), entries[j].seq())?;
-            if dist_idx.is_none_or(|d| dist < d.0) {
+            if dist_idx.map(|d| dist < d.0).unwrap_or(true) {
                 dist_idx = Some((dist, j));
             }
         }

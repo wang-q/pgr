@@ -5,7 +5,7 @@ use pgr::libs::fmt::fas::{refine_block, run_pipeline, RefineOptions};
 /// Build the clap subcommand for refine.
 pub fn make_subcommand() -> Command {
     Command::new("refine")
-        .about("Realigns files with built-in or external programs and trim unwanted regions")
+        .about("Realigns files with built-in or external programs and trims unwanted regions")
         .after_help(
             r###"
 Realigns sequences in block FA files using built-in or external programs (clustalw, mafft, muscle, spoa) and trims unwanted regions.

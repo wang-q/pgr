@@ -645,3 +645,33 @@ fn command_fas_replace_duplicate_header() {
         stderr
     );
 }
+
+#[test]
+fn command_fas_concat_empty_required() {
+    let temp = TempDir::new().unwrap();
+    let fas_file = temp.path().join("empty_required.fas");
+    fs::write(
+        &fas_file,
+        ">speciesA.chr1:1-5\nACGTA\n>speciesB.chr1:1-5\nACGTG\n",
+    )
+    .unwrap();
+
+    let name_lst = temp.path().join("empty.lst");
+    fs::write(&name_lst, "").unwrap();
+
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "fas",
+            "concat",
+            "--required",
+            name_lst.to_str().unwrap(),
+            fas_file.to_str().unwrap(),
+        ])
+        .run_fail();
+
+    assert!(
+        stderr.contains("required file is empty"),
+        "expected empty --required error, got {}",
+        stderr
+    );
+}
