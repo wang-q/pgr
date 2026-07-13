@@ -1,7 +1,6 @@
 use anyhow::Context;
 use clap::{value_parser, Arg, ArgAction, ArgMatches, Command};
 use pgr::libs::fmt::fas::{refine_block, run_pipeline, RefineOptions};
-use std::io::Write;
 
 /// Build the clap subcommand for refine.
 pub fn make_subcommand() -> Command {
@@ -101,9 +100,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         .unwrap()
         .cloned()
         .collect();
-    let result = run_pipeline(&mut writer, &infiles, parallel, |block| {
+    run_pipeline(&mut writer, &infiles, parallel, |block| {
         refine_block(block, &opts)
-    });
-    writer.flush()?;
-    result
+    })
 }

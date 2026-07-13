@@ -258,8 +258,8 @@ pub fn merge_window(
             chosen.range().clone()
         };
 
-        let seq = chosen.seq().clone();
-        let entry = FasEntry::from(&range, &seq);
+        let seq = chosen.seq();
+        let entry = FasEntry::from(&range, seq);
         let header = format!("{}", range);
 
         entries.push(entry);

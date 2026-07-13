@@ -38,16 +38,16 @@ fn command_vcf_basic() {
 fn command_vcf_example_fields() {
     let stdout = run_vcf(&["tests/fas/example.fas"]);
 
-    let mut rows: std::collections::HashMap<i32, Vec<String>> = std::collections::HashMap::new();
+    let mut rows: Vec<Vec<String>> = Vec::new();
     for line in stdout.lines() {
         if line.starts_with('#') {
             continue;
         }
         let cols: Vec<String> = line.split('\t').map(|s| s.to_string()).collect();
-        rows.insert(0, cols);
+        rows.push(cols);
     }
 
-    let r = rows.get(&0).unwrap();
+    let r = rows.last().unwrap();
     assert_eq!(r[2], ".", "ID is '.'");
     assert_eq!(r[5], ".", "QUAL is '.'");
     assert_eq!(r[6], ".", "FILTER is '.'");
@@ -82,16 +82,16 @@ fn command_vcf_ydl_basic() {
 fn command_vcf_ydl_fields() {
     let stdout = run_vcf(&["tests/fas_vcf/YDL184C.fas"]);
 
-    let mut rows: std::collections::HashMap<i32, Vec<String>> = std::collections::HashMap::new();
+    let mut rows: Vec<Vec<String>> = Vec::new();
     for line in stdout.lines() {
         if line.starts_with('#') {
             continue;
         }
         let cols: Vec<String> = line.split('\t').map(|s| s.to_string()).collect();
-        rows.insert(0, cols);
+        rows.push(cols);
     }
 
-    let r = rows.get(&0).unwrap();
+    let r = rows.last().unwrap();
     assert_eq!(r[2], ".", "ID is '.'");
     assert_eq!(r[5], ".", "QUAL is '.'");
     assert_eq!(r[6], ".", "FILTER is '.'");

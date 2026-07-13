@@ -16,7 +16,7 @@ impl FasEntry {
     pub fn range(&self) -> &Range {
         &self.range
     }
-    pub fn seq(&self) -> &Vec<u8> {
+    pub fn seq(&self) -> &[u8] {
         &self.seq
     }
 
@@ -130,6 +130,7 @@ pub fn iter_fas_blocks<R: io::BufRead + ?Sized>(reader: &mut R) -> FasBlockIter<
     FasBlockIter { reader }
 }
 
+/// Parse a single FasBlock from its header line and the following non-empty lines.
 pub fn parse_fas_block(
     header: String,
     iter: impl Iterator<Item = Result<String, io::Error>>,
@@ -428,20 +429,22 @@ pub fn find_best_pairs(entries: &[FasEntry]) -> anyhow::Result<Vec<(usize, usize
     }
     let mut best_pair: Vec<(usize, usize)> = vec![];
     for i in 0..n {
-        let mut dist_idx: (f32, usize) = (f32::INFINITY, n - 1);
+        let mut dist_idx: Option<(f32, usize)> = None;
         for j in 0..n {
             if i == j {
                 continue;
             }
             let dist = crate::libs::alignment::pair_d(entries[i].seq(), entries[j].seq())?;
-            if dist < dist_idx.0 {
-                dist_idx = (dist, j);
+            if dist_idx.is_none_or(|d| dist < d.0) {
+                dist_idx = Some((dist, j));
             }
         }
-        if i < dist_idx.1 {
-            best_pair.push((i, dist_idx.1));
-        } else {
-            best_pair.push((dist_idx.1, i));
+        if let Some((_, j)) = dist_idx {
+            if i < j {
+                best_pair.push((i, j));
+            } else {
+                best_pair.push((j, i));
+            }
         }
     }
     // Deduplicate pairs preserving first-occurrence order
@@ -617,7 +620,7 @@ pub fn consensus_block(block: &FasBlock, opts: &ConsensusOptions) -> anyhow::Res
 
     let mut seqs: Vec<&[u8]> = Vec::with_capacity(block.entries.len());
     for entry in &block.entries {
-        seqs.push(entry.seq().as_ref());
+        seqs.push(entry.seq());
     }
     if outgroup.is_some() {
         seqs.pop(); // Remove the outgroup sequence

@@ -3,7 +3,6 @@ use clap::builder::PossibleValue;
 use clap::{Arg, ArgMatches, Command};
 use pgr::libs::fmt::fas::{consensus_block, run_pipeline, ConsensusOptions};
 use pgr::libs::poa::AlignmentParams;
-use std::io::Write;
 
 /// Build the clap subcommand for consensus.
 pub fn make_subcommand() -> Command {
@@ -110,9 +109,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         .unwrap()
         .cloned()
         .collect();
-    let result = run_pipeline(&mut writer, &infiles, parallel, |block| {
+    run_pipeline(&mut writer, &infiles, parallel, |block| {
         consensus_block(block, &opts)
-    });
-    writer.flush()?;
-    result
+    })
 }

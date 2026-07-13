@@ -44,7 +44,7 @@ pub fn export_to_xlsx(
             let block = block_result?;
             let mut seqs: Vec<&[u8]> = vec![];
             for entry in &block.entries {
-                seqs.push(entry.seq().as_ref());
+                seqs.push(entry.seq());
             }
 
             let vars = get_vars(

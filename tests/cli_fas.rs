@@ -333,6 +333,32 @@ fn command_split_to() {
 }
 
 #[test]
+fn command_split_to_simple() {
+    let tempdir = TempDir::new().unwrap();
+    let tempdir_str = tempdir.path().to_str().unwrap();
+
+    PgrCmd::new()
+        .args(&[
+            "fas",
+            "split",
+            "tests/fas/example.fas",
+            "--chr",
+            "--simple",
+            "-o",
+            tempdir_str,
+        ])
+        .assert()
+        .success()
+        .stdout(predicates::str::is_empty());
+
+    let content = fs::read_to_string(tempdir.path().join("S288c.I.fas")).unwrap();
+    assert!(content.contains(">S288c\n"), "simple header in file output");
+    assert!(!content.contains("I(+)"), "no positions in file output");
+
+    tempdir.close().unwrap();
+}
+
+#[test]
 fn command_refine() {
     let (stdout, _) = PgrCmd::new()
         .args(&["fas", "refine", "tests/fas/example.fas", "--engine", "none"])

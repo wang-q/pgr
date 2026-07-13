@@ -65,7 +65,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
             let mut seqs: Vec<&[u8]> = vec![];
             for entry in &block.entries {
-                seqs.push(entry.seq().as_ref());
+                seqs.push(entry.seq());
             }
 
             if has_outgroup {

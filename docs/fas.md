@@ -290,7 +290,7 @@ pgr fas split [OPTIONS] <infiles>...
 ```
 
 *   `--chr`: Split files by chromosomes.
-*   `--simple`: Simplify headers by keeping only species names.
+*   `--simple`: Simplify headers by keeping only species names. Applies to both stdout and per-file output.
 *   `-s, --suffix <string>`: File extension for output files (default: .fas).
 *   `-o, --outdir <dir>`: Output directory (default: stdout).
 

@@ -1,7 +1,6 @@
 use anyhow::Context;
 use clap::{value_parser, Arg, ArgMatches, Command};
 use std::collections::BTreeMap;
-
 /// Build the clap subcommand for cover.
 pub fn make_subcommand() -> Command {
     Command::new("cover")

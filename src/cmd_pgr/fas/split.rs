@@ -89,13 +89,13 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             for entry in &block.entries {
                 let range = entry.range().clone();
                 let seq = std::str::from_utf8(entry.seq())?;
+                let header = if is_simple {
+                    range.name().to_string()
+                } else {
+                    range.to_string()
+                };
 
                 if outdir == "stdout" {
-                    let header = if is_simple {
-                        range.name().to_string()
-                    } else {
-                        range.to_string()
-                    };
                     write!(out, ">{}\n{}\n", header, seq)?;
                 } else {
                     if !file_of.contains_key(&filename) {
@@ -111,7 +111,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                     let file = file_of
                         .get_mut(&filename)
                         .ok_or_else(|| anyhow::anyhow!("file not found: {}", filename))?;
-                    write!(file, ">{}\n{}\n", range, seq)?;
+                    write!(file, ">{}\n{}\n", header, seq)?;
                 }
             }
 
