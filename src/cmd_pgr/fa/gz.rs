@@ -40,7 +40,7 @@ Examples:
    pgr fa gz input.fa.gz --reindex
 
 5. From stdin with custom output:
-   cat input.fa | pgr fa gz stdin -o output.fa
+   cat input.fa | pgr fa gz stdin -o output.fa.gz
 
 "###,
         )

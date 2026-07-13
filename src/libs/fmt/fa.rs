@@ -51,9 +51,9 @@ pub fn new_record(name: &str, seq: &[u8]) -> fasta::Record {
 /// Generate windowed sub-sequences from `name`/`seq`.
 ///
 /// Each window is `len` bytes long (the last one may be shorter); successive
-/// windows start `step` bytes apart. Windows consisting entirely of N/n are
-/// skipped. Coordinates embedded in the emitted names are 1-based inclusive
-/// (`name:start-end`).
+/// windows start `step` bytes apart. Windows consisting entirely of ambiguous
+/// bases (N/IUPAC) are skipped. Coordinates embedded in the emitted names are
+/// 1-based inclusive (`name:start-end`).
 pub fn windows(name: &str, seq: &[u8], len: usize, step: usize) -> Vec<(String, Vec<u8>)> {
     if step == 0 {
         return Vec::new();
@@ -86,7 +86,8 @@ pub fn windows(name: &str, seq: &[u8], len: usize, step: usize) -> Vec<(String, 
 /// * `outfile` — `stdout` or a file path; chunked files are named
 ///   `<stem>.NNN<ext>`.
 ///
-/// Windows consisting entirely of N/n are skipped (see [`windows`]).
+/// Windows consisting entirely of ambiguous bases (N/IUPAC) are skipped (see
+/// [`windows`]).
 pub fn run_window(
     infile: &str,
     len: usize,

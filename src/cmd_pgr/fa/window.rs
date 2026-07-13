@@ -24,11 +24,11 @@ Coverage & Overlap:
   - --window 200 --step 10:  20x coverage (95% overlap).
 
 Splitting & Shuffling:
-* --chunk N: Splits output into files with N records each (e.g., output.001.fa).
+* --chunk-records N: Splits output into files with N records each (e.g., output.001.fa).
 * --shuffle: Randomizes output records.
-  - With --chunk: Buffers N records, shuffles, writes to file, clears buffer (Low memory).
-  - Without --chunk: Buffers ALL records, shuffles, writes to single file (High memory).
-* --chunk cannot be used with stdout.
+  - With --chunk-records: Buffers N records, shuffles, writes to file, clears buffer (Low memory).
+  - Without --chunk-records: Buffers ALL records, shuffles, writes to single file (High memory).
+* --chunk-records cannot be used with stdout.
 
 Examples:
 1. Split into 200bp windows with 100bp step:
