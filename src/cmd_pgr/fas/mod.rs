@@ -20,6 +20,7 @@ pub mod to_xlsx;
 pub mod variation;
 
 use clap::{ArgMatches, Command};
+
 /// Build the clap subcommand for fas.
 pub fn make_subcommand() -> Command {
     Command::new("fas")
@@ -58,6 +59,7 @@ pub fn make_subcommand() -> Command {
         .subcommand(to_xlsx::make_subcommand())
         .subcommand(variation::make_subcommand())
 }
+
 /// Execute the fas command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     match args.subcommand() {

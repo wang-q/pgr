@@ -6,6 +6,7 @@ use std::io::Write;
 use pgr::libs::alignment::{align_to_chr, get_subs, seq_intspan, vcf_alt_bases};
 use pgr::libs::fmt::fas::iter_fas_blocks;
 use pgr::libs::fmt::vcf::{write_snp_row, write_vcf_header};
+
 /// Build the clap subcommand for to-vcf.
 pub fn make_subcommand() -> Command {
     Command::new("to-vcf")
@@ -39,6 +40,7 @@ Examples:
                 .help("Chrom sizes file with lines: <chr> <length>"),
         )
 }
+
 /// Execute the to-vcf command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let outfile = crate::cmd_pgr::args::get_outfile(args);

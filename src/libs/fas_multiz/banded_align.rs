@@ -89,7 +89,9 @@ fn banded_align_refs_inner(
                     let gap_calc = match cfg.gap_model {
                         FasMultizGapModel::Medium => GapCalc::medium(),
                         FasMultizGapModel::Loose => GapCalc::loose(),
-                        FasMultizGapModel::Constant => return None, // unreachable in this branch
+                        FasMultizGapModel::Constant => {
+                            unreachable!("Constant gap model already handled in outer branch")
+                        }
                     };
                     let c1 = gap_calc.calc(1, 0).max(1);
                     let c2 = gap_calc.calc(2, 0).max(c1 + 1);

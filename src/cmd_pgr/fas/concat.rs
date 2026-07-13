@@ -2,6 +2,7 @@ use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use std::collections::BTreeMap;
 use std::io::Write;
+
 /// Build the clap subcommand for concat.
 pub fn make_subcommand() -> Command {
     Command::new("concat")

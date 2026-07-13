@@ -5,6 +5,7 @@ use std::{fmt, io, str};
 
 use crate::libs::io::LinesRef;
 
+/// A single sequence entry in a block FA file, with its genomic range and aligned sequence.
 #[derive(Default, Clone)]
 pub struct FasEntry {
     range: Range,
@@ -67,10 +68,13 @@ impl fmt::Display for FasEntry {
     }
 }
 
-/// A Fas alignment block.
+/// A block FA alignment block, containing one or more aligned sequence entries.
 pub struct FasBlock {
+    /// Aligned sequence entries in this block.
     pub entries: Vec<FasEntry>,
+    /// Species/genome name for each entry.
     pub names: Vec<String>,
+    /// Header strings (range descriptions) for each entry.
     pub headers: Vec<String>,
 }
 
@@ -205,15 +209,19 @@ where
     let (snd2, rcv2) = crossbeam::channel::bounded::<String>(10);
     let errors: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
 
-    crossbeam::scope(|s| {
+    let write_result = crossbeam::scope(|s| {
         // Reader thread.
-        s.spawn(|_| {
+        let reader_errors = Arc::clone(&errors);
+        s.spawn(move |_| {
             for infile in infiles {
                 let mut reader = match crate::reader(infile) {
                     Ok(r) => r,
                     Err(e) => {
-                        log::error!("failed to open reader for {}: {}", infile, e);
-                        break;
+                        reader_errors
+                            .lock()
+                            .unwrap()
+                            .push(format!("failed to open reader for {}: {}", infile, e));
+                        continue;
                     }
                 };
                 for block_result in iter_fas_blocks(&mut reader) {
@@ -249,10 +257,10 @@ where
                             }
                         }
                         Err(e) => {
-                            if let Ok(mut guard) = errors.lock() {
-                                guard.push(format!("fas block processing failed: {}", e));
-                            }
-                            // Continue processing other blocks
+                            errors
+                                .lock()
+                                .unwrap()
+                                .push(format!("fas block processing failed: {}", e));
                         }
                     }
                 }
@@ -261,13 +269,20 @@ where
         drop(snd2);
 
         // Writer thread (runs on this thread).
+        let mut result = Ok(());
         for out_string in rcv2.iter() {
-            if writer.write_all(out_string.as_ref()).is_err() {
+            if let Err(e) = writer.write_all(out_string.as_ref()) {
+                result = Err(e);
                 break;
             }
         }
+        result
     })
     .map_err(|_| anyhow::anyhow!("parallel pipeline failed (worker panic)"))?;
+
+    if let Err(e) = write_result {
+        return Err(anyhow::Error::from(e));
+    }
 
     let errors = Arc::try_unwrap(errors)
         .map_err(|_| anyhow::anyhow!("errors Arc still shared"))?

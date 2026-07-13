@@ -1,6 +1,7 @@
 use anyhow::Context;
 use clap::{value_parser, Arg, ArgMatches, Command};
 use std::io::Write;
+
 /// Build the clap subcommand for multiz.
 pub fn make_subcommand() -> Command {
     Command::new("multiz")
@@ -92,6 +93,7 @@ Examples:
         )
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
+
 /// Execute the multiz command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let ref_name = args.get_one::<String>("ref_name").unwrap().to_string();
