@@ -103,6 +103,10 @@ pub fn alignment_stat(seqs: &[&[u8]]) -> anyhow::Result<(i32, i32, i32, i32, i32
         bail!("Comparable bases shouldn't be zero");
     }
 
+    if seq_count < 2 {
+        return Ok((length as i32, comparable, difference, gap, ambiguous, 0.0));
+    }
+
     let mut dists = vec![];
     for i in 0..seq_count {
         for j in i + 1..seq_count {

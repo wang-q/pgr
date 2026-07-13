@@ -78,8 +78,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 Some(e) => e,
                 None => continue,
             };
+            let first_name = &block.names[0];
             let filename = if is_chr {
-                format!("{}.{}", first.range().name(), first.range().chr())
+                format!("{}.{}", first_name, first.range().chr())
             } else {
                 first.range().to_string()
             };

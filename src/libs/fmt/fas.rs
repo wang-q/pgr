@@ -20,6 +20,7 @@ impl FasEntry {
         &self.seq
     }
 
+    /// Create an empty FasEntry.
     pub fn new() -> Self {
         Self {
             range: Range::new(),
@@ -168,18 +169,7 @@ pub fn parse_fas_block(
         let entry = FasEntry::from(&range, &seq);
         block_entries.push(entry);
 
-        let name = if let Some(idx) = header.find("|species=") {
-            let species = &header[idx + "|species=".len()..];
-            let species = species
-                .split(['|', ' ', '\t'])
-                .next()
-                .unwrap_or("")
-                .to_string();
-            species
-        } else {
-            range.name().to_string()
-        };
-        block_names.push(name);
+        block_names.push(range.name().to_string());
         block_headers.push(header.to_string());
     }
 
@@ -354,7 +344,6 @@ pub fn concat_blocks_into<R: io::BufRead>(
 ) -> anyhow::Result<()> {
     for block_result in iter_fas_blocks(reader) {
         let block = block_result?;
-        let block_names = block.names;
         let first_entry = block
             .entries
             .first()
@@ -362,10 +351,9 @@ pub fn concat_blocks_into<R: io::BufRead>(
         let length = first_entry.seq().len();
 
         for name in needed {
-            if block_names.contains(name) {
-                for entry in &block.entries {
-                    let entry_name = entry.range().name();
-                    if entry_name == name {
+            if block.names.contains(name) {
+                for (idx, entry) in block.entries.iter().enumerate() {
+                    if block.names[idx] == *name {
                         let seq = std::str::from_utf8(entry.seq())?;
                         seq_of.entry(name.to_string()).and_modify(|e| *e += seq);
                     }
@@ -440,7 +428,7 @@ pub fn find_best_pairs(entries: &[FasEntry]) -> anyhow::Result<Vec<(usize, usize
     }
     let mut best_pair: Vec<(usize, usize)> = vec![];
     for i in 0..n {
-        let mut dist_idx: (f32, usize) = (1.0, n - 1);
+        let mut dist_idx: (f32, usize) = (f32::INFINITY, n - 1);
         for j in 0..n {
             if i == j {
                 continue;
@@ -622,7 +610,7 @@ pub struct ConsensusOptions {
 pub fn consensus_block(block: &FasBlock, opts: &ConsensusOptions) -> anyhow::Result<String> {
     use std::fmt::Write;
     let outgroup = if opts.has_outgroup {
-        block.entries.iter().last()
+        block.entries.last()
     } else {
         None
     };
@@ -750,22 +738,22 @@ mod fas_tests {
 
     #[test]
     fn parse_fas_block_range() {
-        let str = ">S288c.I(+):13267-13287|species=S288c
+        let str = ">S288c.I(+):13267-13287
 TCGTCAGTTGGTTGACCATTA
->YJM789.gi_151941327(-):5668-5688|species=YJM789
+>YJM789.gi_151941327(-):5668-5688
 TCGTCAGTTGGTTGACCATTA
->RM11.gi_61385832(-):5590-5610|species=RM11
+>RM11.gi_61385832(-):5590-5610
 TCGTCAGTTGGTTGACCATTA
->Spar.gi_29362400(+):2477-2497|species=Spar
+>Spar.gi_29362400(+):2477-2497
 TCATCAGTTGGCAAACCGTTA
 
->S288c.I(+):185273-185334|species=S288c
+>S288c.I(+):185273-185334
 GCATATAATATGAACCAATATCTA-TTCATGAAGAGACTATGGTATACCCGGTACTATTTCTA
->YJM789.gi_151941327(+):156665-156726|species=YJM789
+>YJM789.gi_151941327(+):156665-156726
 GCGTATAATATGAACCAGTATCTTTTTCATGAAG-GGCTATGGTATACTCCATATTACTTCTA
->RM11.gi_61385833(-):3668-3730|species=RM11
+>RM11.gi_61385833(-):3668-3730
 GCATATAATATGAACCAATATCTATTTCATGGAGAGACTATGATAT-CCCCGTACTATTTCTA
->Spar.gi_29362478(-):2102-2161|species=Spar
+>Spar.gi_29362478(-):2102-2161
 GC-TAAAATATGAA-CGATATTTA-CCTGTAGAGGGACTATGGGAT-CCCCATACTACTTT--
 ";
         let mut reader = BufReader::new(str.as_bytes());

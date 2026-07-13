@@ -45,7 +45,7 @@ pgr fas check [OPTIONS] --genome <genome> <infiles>...
 ```
 
 *   `-g, --genome <path>`: Path to the reference genome FA file (required).
-*   `--name <name>`: Check sequences for a specific species only.
+*   `-n, --name <name>`: Check sequences for a specific species only.
 *   `-o, --outfile <file>`: Output filename (default: stdout).
 
 Output format (tab-separated): each line contains the entry range followed by its status (`OK` or `FAILED`).
@@ -58,7 +58,7 @@ Outputs the regions on chromosomes covered by the alignments in JSON format.
 pgr fas cover [OPTIONS] <infiles>...
 ```
 
-*   `--name <name>`: Only output regions for this species.
+*   `-n, --name <name>`: Only output regions for this species.
 *   `--trim <int>`: Trim alignment borders by N bases to avoid overlaps (useful for lastz results).
 *   `-o, --outfile <file>`: Output filename (default: stdout).
 
@@ -121,7 +121,7 @@ Filters blocks based on species presence and sequence length, and optionally for
 pgr fas filter [OPTIONS] <infiles>...
 ```
 
-*   `--name <name>`: Species whose sequence is used for length filtering. Blocks not containing this species are skipped. Defaults to the first species in each block.
+*   `-n, --name <name>`: Species whose sequence is used for length filtering. Blocks not containing this species are skipped. Defaults to the first species in each block.
 *   `--min-len <int>`: Keep blocks where the selected species' alignment length (including gaps) is >= this value.
 *   `--max-len <int>`: Keep blocks where the selected species' alignment length (including gaps) is <= this value.
 *   `--upper`: Convert sequences to uppercase.
@@ -137,7 +137,7 @@ pgr fas slice [OPTIONS] --runlist <runlist.json> <infiles>...
 ```
 
 *   `--runlist <file>`: JSON file describing ranges to extract (required).
-*   `--name <name>`: Reference species name (default: first species of the first block).
+*   `-n, --name <name>`: Reference species name (default: first species of the first block).
 *   `-o, --outfile <file>`: Output filename (default: stdout).
 
 ### subset
@@ -195,7 +195,7 @@ Joins multiple block FA files by a common target sequence.
 pgr fas join [OPTIONS] <infiles>...
 ```
 
-*   `--name <name>`: Target species name. Defaults to the first species of the first block and is used as the common target for all blocks.
+*   `-n, --name <name>`: Target species name. Defaults to the first species of the first block and is used as the common target for all blocks.
 *   `-o, --outfile <file>`: Output filename (default: stdout).
 
 ### multiz
@@ -266,7 +266,7 @@ pgr fas create [OPTIONS] --genome <genome> <infiles>...
 ```
 
 *   `-g, --genome <file>`: Path to the reference genome FA file (required).
-*   `--name <name>`: Set a species name for ranges (default: inferred from header).
+*   `-n, --name <name>`: Set a species name for ranges (default: inferred from header).
 *   `-o, --outfile <file>`: Output filename (default: stdout).
 
 ### separate

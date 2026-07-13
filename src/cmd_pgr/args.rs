@@ -429,9 +429,13 @@ pub fn outgroup_arg() -> Arg {
         .help("Indicates the presence of outgroups at the end of each block")
 }
 
-/// Standard `--name` argument for fas subcommands (species name selector).
+/// Standard `-n/--name` argument for fas subcommands (species name selector).
 pub fn fas_name_arg(help: &'static str) -> Arg {
-    Arg::new("name").long("name").num_args(1).help(help)
+    Arg::new("name")
+        .short('n')
+        .long("name")
+        .num_args(1)
+        .help(help)
 }
 
 /// Standard `-g/--genome` argument for fas subcommands (reference genome FA file).

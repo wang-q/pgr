@@ -538,6 +538,23 @@ fn command_fas_stat_outgroup_single_entry() {
 }
 
 #[test]
+fn command_fas_stat_outgroup_two_entries() {
+    let temp = TempDir::new().unwrap();
+    let fas_file = temp.path().join("two.fas");
+    fs::write(&fas_file, ">target.chr1:1-5\nACGTA\n>out.chr1:1-5\nACGTC\n").unwrap();
+
+    let (stdout, _) = PgrCmd::new()
+        .args(&["fas", "stat", fas_file.to_str().unwrap(), "--outgroup"])
+        .run();
+
+    assert_eq!(stdout.lines().count(), 2, "header plus one block");
+    let data_line = stdout.lines().nth(1).unwrap();
+    let cols: Vec<&str> = data_line.split('\t').collect();
+    assert_eq!(cols[1], "5", "length");
+    assert_eq!(cols[6], "0", "D after excluding outgroup");
+}
+
+#[test]
 fn command_fas_concat_required_order() {
     let temp = TempDir::new().unwrap();
     let fas_file = temp.path().join("order.fas");

@@ -62,7 +62,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             let entry_of: HashMap<&str, &pgr::libs::fmt::fas::FasEntry> = block
                 .entries
                 .iter()
-                .map(|e| (e.range().name().as_str(), e))
+                .enumerate()
+                .map(|(idx, e)| (block.names[idx].as_str(), e))
                 .collect();
 
             if is_strict && !needed.iter().all(|n| entry_of.contains_key(n.as_str())) {

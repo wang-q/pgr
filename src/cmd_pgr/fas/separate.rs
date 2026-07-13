@@ -63,8 +63,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
         for block_result in pgr::libs::fmt::fas::iter_fas_blocks(&mut reader) {
             let block = block_result?;
-            for entry in &block.entries {
-                let entry_name = entry.range().name();
+            for (idx, entry) in block.entries.iter().enumerate() {
+                let entry_name = &block.names[idx];
 
                 // Reverse-complement the sequence if needed
                 let (range_str, seq) = if is_rc && entry.range().strand() == "-" {

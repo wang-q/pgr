@@ -236,32 +236,32 @@ fn merge_fas_files_multiple_windows() {
 
     {
         let mut f1 = File::create(&path1).unwrap();
-        writeln!(f1, ">ref(+):1-4|species=ref").unwrap();
+        writeln!(f1, ">ref.chr1(+):1-4").unwrap();
         writeln!(f1, "ACGT").unwrap();
-        writeln!(f1, ">A(+):1-4|species=A").unwrap();
+        writeln!(f1, ">A.chr1(+):1-4").unwrap();
         writeln!(f1, "ACGT").unwrap();
         writeln!(f1).unwrap();
-        writeln!(f1, ">ref(+):21-24|species=ref").unwrap();
+        writeln!(f1, ">ref.chr1(+):21-24").unwrap();
         writeln!(f1, "ACGT").unwrap();
-        writeln!(f1, ">A(+):21-24|species=A").unwrap();
+        writeln!(f1, ">A.chr1(+):21-24").unwrap();
         writeln!(f1, "ACGT").unwrap();
         writeln!(f1).unwrap();
 
         let mut f2 = File::create(&path2).unwrap();
-        writeln!(f2, ">ref(+):1-4|species=ref").unwrap();
+        writeln!(f2, ">ref.chr1(+):1-4").unwrap();
         writeln!(f2, "ACGT").unwrap();
-        writeln!(f2, ">B(+):1-4|species=B").unwrap();
+        writeln!(f2, ">B.chr1(+):1-4").unwrap();
         writeln!(f2, "ACGT").unwrap();
         writeln!(f2).unwrap();
-        writeln!(f2, ">ref(+):21-24|species=ref").unwrap();
+        writeln!(f2, ">ref.chr1(+):21-24").unwrap();
         writeln!(f2, "ACGT").unwrap();
-        writeln!(f2, ">B(+):21-24|species=B").unwrap();
+        writeln!(f2, ">B.chr1(+):21-24").unwrap();
         writeln!(f2, "ACGT").unwrap();
         writeln!(f2).unwrap();
     }
 
-    let r1 = Range::from_str("ref(+):1-4|species=ref");
-    let r2 = Range::from_str("ref(+):21-24|species=ref");
+    let r1 = Range::from_str("ref.chr1(+):1-4");
+    let r2 = Range::from_str("ref.chr1(+):21-24");
 
     let windows = vec![
         Window {
@@ -306,32 +306,32 @@ fn merge_fas_files_auto_windows_matches_explicit() {
 
     {
         let mut f1 = File::create(&path1).unwrap();
-        writeln!(f1, ">ref(+):1-4|species=ref").unwrap();
+        writeln!(f1, ">ref.chr1(+):1-4").unwrap();
         writeln!(f1, "ACGT").unwrap();
-        writeln!(f1, ">A(+):1-4|species=A").unwrap();
+        writeln!(f1, ">A.chr1(+):1-4").unwrap();
         writeln!(f1, "ACGT").unwrap();
         writeln!(f1).unwrap();
-        writeln!(f1, ">ref(+):21-24|species=ref").unwrap();
+        writeln!(f1, ">ref.chr1(+):21-24").unwrap();
         writeln!(f1, "ACGT").unwrap();
-        writeln!(f1, ">A(+):21-24|species=A").unwrap();
+        writeln!(f1, ">A.chr1(+):21-24").unwrap();
         writeln!(f1, "ACGT").unwrap();
         writeln!(f1).unwrap();
 
         let mut f2 = File::create(&path2).unwrap();
-        writeln!(f2, ">ref(+):1-4|species=ref").unwrap();
+        writeln!(f2, ">ref.chr1(+):1-4").unwrap();
         writeln!(f2, "ACGT").unwrap();
-        writeln!(f2, ">B(+):1-4|species=B").unwrap();
+        writeln!(f2, ">B.chr1(+):1-4").unwrap();
         writeln!(f2, "ACGT").unwrap();
         writeln!(f2).unwrap();
-        writeln!(f2, ">ref(+):21-24|species=ref").unwrap();
+        writeln!(f2, ">ref.chr1(+):21-24").unwrap();
         writeln!(f2, "ACGT").unwrap();
-        writeln!(f2, ">B(+):21-24|species=B").unwrap();
+        writeln!(f2, ">B.chr1(+):21-24").unwrap();
         writeln!(f2, "ACGT").unwrap();
         writeln!(f2).unwrap();
     }
 
-    let r1 = Range::from_str("ref(+):1-4|species=ref");
-    let r2 = Range::from_str("ref(+):21-24|species=ref");
+    let r1 = Range::from_str("ref.chr1(+):1-4");
+    let r2 = Range::from_str("ref.chr1(+):21-24");
 
     let windows = vec![
         Window {

@@ -47,9 +47,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         for block_result in pgr::libs::fmt::fas::iter_fas_blocks(&mut reader) {
             let block = block_result?;
 
-            for entry in &block.entries {
-                let entry_name = entry.range().name();
-                if !opt_name.is_empty() && entry_name != opt_name {
+            for (idx, entry) in block.entries.iter().enumerate() {
+                if !opt_name.is_empty() && block.names[idx] != opt_name {
                     continue;
                 }
                 let status = pgr::libs::fmt::fas::check_entry_against_ref(

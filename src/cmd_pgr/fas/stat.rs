@@ -78,7 +78,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 seqs.pop();
             }
 
-            let result = pgr::libs::alignment::alignment_stat(&seqs)?;
+            let (length, comparable, difference, gap, ambiguous, mean_d) =
+                pgr::libs::alignment::alignment_stat(&seqs)?;
 
             let mut indel_ints = intspan::IntSpan::new();
             for seq in seqs {
@@ -89,12 +90,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 format!(
                     "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n",
                     target,
-                    result.0,
-                    result.1,
-                    result.2,
-                    result.3,
-                    result.4,
-                    result.5,
+                    length,
+                    comparable,
+                    difference,
+                    gap,
+                    ambiguous,
+                    mean_d,
                     indel_ints.span_size(),
                 )
                 .as_ref(),

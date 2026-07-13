@@ -49,8 +49,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
         for block_result in pgr::libs::fmt::fas::iter_fas_blocks(&mut reader) {
             let block = block_result?;
-            for entry in &block.entries {
-                let name = entry.range().name().to_string();
+            for (idx, _entry) in block.entries.iter().enumerate() {
+                let name = block.names[idx].clone();
                 *counts.entry(name).or_insert(0) += 1;
             }
         }
