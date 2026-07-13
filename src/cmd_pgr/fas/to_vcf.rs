@@ -23,10 +23,10 @@ Notes:
 
 Examples:
 1. Output VCF from a block FASTA:
-   pgr fas to-vcf tests/fasr/example.fas
+   pgr fas to-vcf tests/fas/example.fas
 
 2. Output VCF with contig headers:
-   pgr fas to-vcf --sizes tests/fasr/S288c.chr.sizes tests/fasr/YDL184C.fas
+   pgr fas to-vcf --sizes tests/fas_vcf/S288c.chr.sizes tests/fas_vcf/YDL184C.fas
 
 "###,
         )
@@ -79,18 +79,13 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 continue;
             }
 
-            let target_entry_idx = 0usize;
-            let target_entry = block.entries.get(target_entry_idx).ok_or_else(|| {
-                anyhow!(
-                    "missing target entry at index {} in block {}",
-                    target_entry_idx,
-                    block_idx
-                )
-            })?;
+            let target_entry = block
+                .entries
+                .first()
+                .ok_or_else(|| anyhow!("empty target entry in block {}", block_idx))?;
             let trange = target_entry.range();
             let t_ints_seq = seq_intspan(target_entry.seq());
 
-            let seq_count = seqs.len();
             let subs = get_subs(&seqs)?;
 
             for s in subs {
@@ -120,7 +115,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
                 let sample_bases: Vec<u8> = seqs
                     .iter()
-                    .take(seq_count)
                     .map(|seq| seq.get(pos_idx).copied().unwrap_or(b'-'))
                     .collect();
 

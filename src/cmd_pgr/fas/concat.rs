@@ -19,13 +19,13 @@ Notes:
 
 Examples:
 1. Concatenate sequences and output in FASTA format:
-   pgr fas concat tests/fasr/example.fas -R tests/fasr/name.lst
+   pgr fas concat tests/fas/example.fas -R tests/fas/name.lst
 
 2. Concatenate sequences and output in relaxed PHYLIP format:
-   pgr fas concat tests/fasr/example.fas -R tests/fasr/name.lst --phylip
+   pgr fas concat tests/fas/example.fas -R tests/fas/name.lst --phylip
 
 3. Output results to a file:
-   pgr fas concat tests/fasr/example.fas -R tests/fasr/name.lst -o output.fas
+   pgr fas concat tests/fas/example.fas -R tests/fas/name.lst -o output.fas
 
 "###,
         )

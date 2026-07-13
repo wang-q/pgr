@@ -33,11 +33,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut writer =
         pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
     let opt_genome = args.get_one::<String>("genome").unwrap();
-    let opt_name = &args
+    let opt_name: &str = args
         .get_one::<String>("name")
         .map(|s| s.as_str())
-        .unwrap_or("")
-        .to_string();
+        .unwrap_or("");
 
     let (mut genome_reader, loc_of) = loc::open_indexed(opt_genome, false)?;
 
@@ -50,7 +49,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             let block_names = &block.names;
 
             // Check if a specific species is requested
-            if !opt_name.is_empty() && block_names.contains(opt_name) {
+            if !opt_name.is_empty() && block_names.iter().any(|n| n == opt_name) {
                 for entry in &block.entries {
                     let entry_name = entry.range().name();
                     if entry_name == opt_name {

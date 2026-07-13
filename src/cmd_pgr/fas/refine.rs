@@ -26,16 +26,16 @@ Notes:
 
 Examples:
 1. Realign block FA files using builtin (default):
-   pgr fas refine tests/fas/part1.fas tests/fas/part2.fas
+   pgr fas refine tests/fas/refine.fas tests/fas/refine2.fas
 
 2. Realign using mafft with 4 threads:
-   pgr fas refine tests/fas/part1.fas --engine mafft --parallel 4
+   pgr fas refine tests/fas/refine.fas --engine mafft --parallel 4
 
 3. Quick alignment for files converted from pairwise alignments:
-   pgr fas refine tests/fas/part1.fas --quick --parallel 4
+   pgr fas refine tests/fas/refine.fas --quick --parallel 4
 
 4. Output results to a file:
-   pgr fas refine tests/fas/part1.fas -o output.fas
+   pgr fas refine tests/fas/refine.fas -o output.fas
 
 "###,
         )

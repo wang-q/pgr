@@ -17,13 +17,13 @@ Notes:
 
 Examples:
 1. Join multiple block FA files:
-   pgr fas join tests/fas/part1.fas tests/fas/part2.fas
+   pgr fas join tests/fas/S288cvsRM11_1a.slice.fas tests/fas/S288cvsSpar.slice.fas
 
 2. Join files based on a specific species:
-   pgr fas join tests/fas/part1.fas tests/fas/part2.fas --name S288c
+   pgr fas join tests/fas/S288cvsRM11_1a.slice.fas tests/fas/S288cvsSpar.slice.fas --name S288c
 
 3. Output results to a file:
-   pgr fas join tests/fas/part1.fas tests/fas/part2.fas -o output.fas
+   pgr fas join tests/fas/S288cvsRM11_1a.slice.fas tests/fas/S288cvsSpar.slice.fas -o output.fas
 
 "###,
         )
@@ -40,11 +40,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut writer =
         pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
 
-    let mut name = if args.contains_id("name") {
-        args.get_one::<String>("name").unwrap().to_string()
-    } else {
-        "".to_string()
-    };
+    let mut name = args.get_one::<String>("name").cloned().unwrap_or_default();
     let mut block_of: BTreeMap<String, Vec<pgr::libs::fmt::fas::FasEntry>> = BTreeMap::new();
 
     // Operating

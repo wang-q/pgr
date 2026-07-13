@@ -19,16 +19,16 @@ Notes:
 
 Examples:
 1. Calculate coverage for all species:
-   pgr fas cover tests/fasr/example.fas
+   pgr fas cover tests/fas/example.fas
 
 2. Calculate coverage for a specific species:
-   pgr fas cover tests/fasr/example.fas --name S288c
+   pgr fas cover tests/fas/example.fas --name S288c
 
 3. Trim alignment borders to avoid overlaps:
-   pgr fas cover tests/fasr/example.fas --trim 10
+   pgr fas cover tests/fas/example.fas --trim 10
 
 4. Output results to a file:
-   pgr fas cover tests/fasr/example.fas -o output.json
+   pgr fas cover tests/fas/example.fas -o output.json
 
 "###,
         )

@@ -199,6 +199,9 @@ pgr fas multiz [OPTIONS] --ref-name <name> <infiles>...
 *   `--gap-model <constant|medium|loose>`: Gap model (default: medium).
 *   `--align-gap-open <int>`: Alignment gap open cost.
 *   `--align-gap-extend <int>`: Alignment gap extension cost.
+*   `--match-score <int>`: Match score (default: 2).
+*   `--mismatch-score <int>`: Mismatch penalty (default: -1).
+*   `--gap-score <int>`: Gap penalty (default: -2).
 *   `-o, --outfile <file>`: Output filename (default: stdout).
 
 ### refine
@@ -297,8 +300,8 @@ pgr fas to-xlsx [OPTIONS] <infiles>...
 *   `--outgroup`: Indicates presence of outgroups.
 *   `--no-single`: Omit singleton variations.
 *   `--no-complex`: Omit complex variations.
-*   `--min <float>`: Minimal frequency.
-*   `--max <float>`: Maximal frequency.
+*   `--min-freq <float>`: Minimal frequency.
+*   `--max-freq <float>`: Maximal frequency.
 *   `--wrap <int>`: Wrap length for visualization (default: 50).
 *   `-o, --outfile <file>`: Output filename (default: variations.xlsx).
 

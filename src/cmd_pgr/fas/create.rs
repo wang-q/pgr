@@ -20,10 +20,10 @@ Notes:
 
 Examples:
 1. Create block FA files for a single genome:
-   pgr fas create tests/fasr/I.connect.tsv -g tests/fasr/genome.fa
+   pgr fas create tests/fas/I.connect.tsv -g tests/fas/genome.fa
 
 2. Create block FA files for a specific species:
-   pgr fas create tests/fasr/I.connect.tsv -g tests/fasr/genome.fa --name S288c
+   pgr fas create tests/fas/I.connect.tsv -g tests/fas/genome.fa --name S288c
 
 "###,
         )
@@ -43,11 +43,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut writer =
         pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
     let opt_genome = args.get_one::<String>("genome").unwrap();
-    let opt_name = &args
+    let opt_name: &str = args
         .get_one::<String>("name")
         .map(|s| s.as_str())
-        .unwrap_or("")
-        .to_string();
+        .unwrap_or("");
 
     for infile in args.get_many::<String>("infiles").unwrap() {
         let reader =

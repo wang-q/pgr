@@ -20,10 +20,10 @@ Notes:
 
 Examples:
 1. Output all species names:
-   pgr fas name tests/fasr/example.fas
+   pgr fas name tests/fas/example.fas
 
 2. Output species names with occurrence counts:
-   pgr fas name tests/fasr/example.fas --count
+   pgr fas name tests/fas/example.fas --count
 
 "###,
         )

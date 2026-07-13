@@ -20,19 +20,19 @@ Notes:
 
 Examples:
 1. Filter blocks for a specific species:
-   pgr fas filter tests/fasr/example.fas --name S288c
+   pgr fas filter tests/fas/example.fas --name S288c
 
 2. Filter blocks with sequences >= 100 bp:
-   pgr fas filter tests/fasr/example.fas --min-len 100
+   pgr fas filter tests/fas/example.fas --min-len 100
 
 3. Filter blocks with sequences <= 200 bp:
-   pgr fas filter tests/fasr/example.fas --max-len 200
+   pgr fas filter tests/fas/example.fas --max-len 200
 
 4. Convert sequences to uppercase and remove dashes:
-   pgr fas filter tests/fasr/example.fas --upper --dash
+   pgr fas filter tests/fas/example.fas --upper --dash
 
 5. Output results to a file:
-   pgr fas filter tests/fasr/example.fas -o output.fas
+   pgr fas filter tests/fas/example.fas -o output.fas
 
 "###,
         )
@@ -52,19 +52,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let outfile = crate::cmd_pgr::args::get_outfile(args);
     let mut writer =
         pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
-    let opt_name = &args
+    let opt_name: &str = args
         .get_one::<String>("name")
         .map(|s| s.as_str())
-        .unwrap_or("")
-        .to_string();
-    let opt_ge = args
-        .get_one::<usize>("min_len")
-        .copied()
-        .unwrap_or(usize::MAX);
-    let opt_le = args
-        .get_one::<usize>("max_len")
-        .copied()
-        .unwrap_or(usize::MAX);
+        .unwrap_or("");
+    let opt_min = args.get_one::<usize>("min_len").copied();
+    let opt_max = args.get_one::<usize>("max_len").copied();
 
     let is_upper = args.get_flag("upper");
     let is_dash = args.get_flag("dash");
@@ -90,14 +83,16 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
             let idx_seq = block.entries[idx].seq();
 
-            // --ge
-            if opt_ge != usize::MAX && idx_seq.len() < opt_ge {
-                continue;
+            if let Some(min) = opt_min {
+                if idx_seq.len() < min {
+                    continue;
+                }
             }
 
-            // --le
-            if opt_le != usize::MAX && idx_seq.len() > opt_le {
-                continue;
+            if let Some(max) = opt_max {
+                if idx_seq.len() > max {
+                    continue;
+                }
             }
 
             for entry in &block.entries {

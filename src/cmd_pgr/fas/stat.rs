@@ -16,13 +16,13 @@ Notes:
 
 Examples:
 1. Get statistics for block FA files:
-   pgr fas stat tests/fas/part1.fas
+   pgr fas stat tests/fas/example.fas
 
 2. Statistics treating the last sequence as an outgroup:
-   pgr fas stat tests/fas/part1.fas --outgroup
+   pgr fas stat tests/fas/example.fas --outgroup
 
 3. Output results to a file:
-   pgr fas stat tests/fas/part1.fas -o output.tsv
+   pgr fas stat tests/fas/example.fas -o output.tsv
 
 "###,
         )

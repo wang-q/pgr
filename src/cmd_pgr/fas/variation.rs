@@ -18,13 +18,13 @@ Notes:
 
 Examples:
 1. List substitutions from block FA files:
-   pgr fas variation tests/fas/part1.fas
+   pgr fas variation tests/fas/example.fas
 
 2. Handle outgroup (last sequence) for polarization:
-   pgr fas variation tests/fas/part1.fas --outgroup
+   pgr fas variation tests/fas/example.fas --outgroup
 
 3. Output results to a file:
-   pgr fas variation tests/fas/part1.fas -o output.tsv
+   pgr fas variation tests/fas/example.fas -o output.tsv
 
 "###,
         )

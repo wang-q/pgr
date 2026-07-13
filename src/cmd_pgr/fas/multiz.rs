@@ -16,13 +16,13 @@ Notes:
 
 Examples:
 1. Core mode merge with default radius:
-   pgr fas multiz -r ref tests/fas/part1.fas tests/fas/part2.fas
+   pgr fas multiz -r S288c tests/fas/S288cvsRM11_1a.slice.fas tests/fas/S288cvsSpar.slice.fas
 
 2. Union mode with larger radius and minimum width:
-   pgr fas multiz -r ref --mode union --radius 30 --min-width 1000 part1.fas part2.fas part3.fas
+   pgr fas multiz -r S288c --mode union --radius 30 --min-width 1000 tests/fas/S288cvsRM11_1a.slice.fas tests/fas/S288cvsYJM789.slice.fas tests/fas/S288cvsSpar.slice.fas
 
 3. Write merged blocks to a file:
-   pgr fas multiz -r ref part1.fas part2.fas -o merged.fas
+   pgr fas multiz -r S288c tests/fas/S288cvsRM11_1a.slice.fas tests/fas/S288cvsSpar.slice.fas -o merged.fas
 "###,
         )
         .arg(
