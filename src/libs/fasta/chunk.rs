@@ -36,9 +36,9 @@ impl SizeChunker {
         self.file_index
     }
 
-    /// Returns true once the file index has exceeded `max_files`.
+    /// Returns true once the file index has reached `max_files`.
     pub fn max_files_exceeded(&self) -> bool {
-        self.file_index > self.max_files
+        self.file_index >= self.max_files
     }
 
     /// Account for a record of `seq_len` bytes that was just written.
@@ -93,17 +93,14 @@ mod tests {
         // file 0: 5 bytes, rotate (5 > 10? no) → stay
         c.advance(5);
         assert_eq!(c.file_index(), 0);
+        assert!(!c.max_files_exceeded());
         // file 0: 5 + 6 = 11 > 10 → rotate to file 1
         c.advance(6);
         assert_eq!(c.file_index(), 1);
         assert!(!c.max_files_exceeded());
-        // file 1: 11 > 10 → rotate to file 2
+        // file 1: 11 > 10 → rotate to file 2 (reached max_files)
         c.advance(11);
         assert_eq!(c.file_index(), 2);
-        assert!(!c.max_files_exceeded());
-        // file 2: 11 > 10 → rotate to file 3
-        c.advance(11);
-        assert_eq!(c.file_index(), 3);
         assert!(c.max_files_exceeded());
     }
 }

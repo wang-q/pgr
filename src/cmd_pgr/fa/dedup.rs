@@ -29,12 +29,6 @@ Notes:
 * Supports both plain text and gzipped (.gz) files
 * -b implies case-insensitive comparison for sequences
 
- sequence name
- | |
->sq0 LN:13
-     |   |
-     description
-
 Examples:
 1. Basic deduplication by name:
    pgr fa dedup input.fa -o output.fa

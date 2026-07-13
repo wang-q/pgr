@@ -73,20 +73,14 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         let name = String::from_utf8(record.name().into())?;
         let seq = record.sequence();
 
-        if !runlists.contains_key(&name) {
+        if let Some(ints) = runlists.get(&name) {
+            let seq_str = String::from_utf8(seq[..].into())?;
+            let seq_out = pgr::libs::fmt::fa::mask_sequence(&seq_str, ints, is_hard)?;
+            let record_out = pgr::libs::fmt::fa::new_record(&name, seq_out.as_bytes());
+            fa_out.write_record(&record_out)?;
+        } else {
             fa_out.write_record(&record)?;
-            continue;
         }
-
-        // Get the regions to mask for this sequence
-        let ints = runlists
-            .get(&name)
-            .ok_or_else(|| anyhow::anyhow!("runlist not found for: {}", name))?;
-        let seq_str = String::from_utf8(seq[..].into())?;
-        let seq_out = pgr::libs::fmt::fa::mask_sequence(&seq_str, ints, is_hard)?;
-
-        let record_out = pgr::libs::fmt::fa::new_record(&name, seq_out.as_bytes());
-        fa_out.write_record(&record_out)?;
     }
 
     fa_out.get_mut().flush()?;

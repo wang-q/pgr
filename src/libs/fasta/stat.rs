@@ -43,8 +43,10 @@ pub fn calc_n50_stats(
         let prev_cumul_size = cumul_size;
         cumul_size += cur_size;
 
-        e_size = (prev_cumul_size as f64) / (cumul_size as f64) * e_size
-            + (cur_size as f64 * cur_size as f64) / cumul_size as f64;
+        if cumul_size > 0 {
+            e_size = (prev_cumul_size as f64) / (cumul_size as f64) * e_size
+                + (cur_size as f64 * cur_size as f64) / cumul_size as f64;
+        }
 
         for (i, goal) in goals.iter().enumerate() {
             if nx_sizes[i] == 0 && cumul_size > *goal {

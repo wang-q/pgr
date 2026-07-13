@@ -31,7 +31,7 @@ Examples:
    pgr fa six-frame input.fa -o orfs.fa
 
 2. Filter long ORFs:
-   pgr fa six-frame input.fa --len 100 -o orfs.fa
+   pgr fa six-frame input.fa --min-len 100 -o orfs.fa
 
 3. Complete proteins only:
    pgr fa six-frame input.fa --start-met --end -o orfs.fa

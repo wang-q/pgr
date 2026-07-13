@@ -86,6 +86,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let opt_parallel: std::num::NonZeroUsize =
         (*args.get_one::<usize>("parallel").unwrap()).try_into()?;
     let compress_level = *args.get_one::<i32>("compress_level").unwrap();
+    anyhow::ensure!(
+        compress_level == -1 || (0..=9).contains(&compress_level),
+        "invalid compression level: {} (must be -1 or 0-9)",
+        compress_level
+    );
 
     let outfile = if args.contains_id("outfile") {
         crate::cmd_pgr::args::get_outfile(args).to_string()

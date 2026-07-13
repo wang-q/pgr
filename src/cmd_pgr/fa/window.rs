@@ -86,7 +86,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let chunk_size = args.get_one::<usize>("chunk_records").copied();
     let outfile = crate::cmd_pgr::args::get_outfile(args);
 
+    anyhow::ensure!(len > 0, "--window must be positive");
     anyhow::ensure!(step > 0, "--step must be positive");
+    if let Some(cs) = chunk_size {
+        anyhow::ensure!(cs > 0, "--chunk-records must be positive");
+    }
     if step > len {
         log::warn!(
             "--step ({}) > --window ({}), some bases will be skipped",
