@@ -99,7 +99,11 @@ pub fn next_fas_block<T: io::BufRead + ?Sized>(mut input: &mut T) -> Result<FasB
                 break;
             } else {
                 // Shouldn't see this.
-                return Err(io::Error::other("Unexpected line"));
+                let preview: String = line.chars().take(80).collect();
+                return Err(io::Error::other(format!(
+                    "Unexpected line in block FA: {}",
+                    preview
+                )));
             }
         }
     }
@@ -828,6 +832,9 @@ pub fn write_concat_output<W: Write>(
     seq_of: &std::collections::BTreeMap<String, String>,
     is_phylip: bool,
 ) -> anyhow::Result<()> {
+    if needed.is_empty() {
+        anyhow::bail!("no species specified for concat output");
+    }
     if is_phylip {
         let length = seq_of.get(&needed[0]).map(|s| s.len()).unwrap_or(0);
         if length == 0 {
