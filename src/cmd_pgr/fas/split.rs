@@ -108,9 +108,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                             .open(path)?;
                         file_of.insert(filename.clone(), BufWriter::new(file));
                     }
-                    let file = file_of
-                        .get_mut(&filename)
-                        .ok_or_else(|| anyhow::anyhow!("file not found: {}", filename))?;
+                    let file = file_of.get_mut(&filename).unwrap();
                     write!(file, ">{}\n{}\n", header, seq)?;
                 }
             }
@@ -119,9 +117,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             if outdir == "stdout" {
                 writeln!(out)?;
             } else {
-                let file = file_of
-                    .get_mut(&filename)
-                    .ok_or_else(|| anyhow::anyhow!("file not found: {}", filename))?;
+                let file = file_of.get_mut(&filename).unwrap();
                 writeln!(file)?;
             }
         }

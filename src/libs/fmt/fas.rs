@@ -20,7 +20,7 @@ impl FasEntry {
         &self.seq
     }
 
-    /// Create an empty FasEntry.
+    /// Creates an empty FasEntry.
     pub fn new() -> Self {
         Self {
             range: Range::new(),
@@ -151,10 +151,13 @@ pub fn parse_fas_block(
     let mut block_headers: Vec<String> = vec![];
 
     while let Some(h) = block_lines.pop_front() {
-        let header = match h.starts_with('>') {
-            true => &h[1..],
-            false => h.as_str(),
-        };
+        if !h.starts_with('>') {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Expected FAS header line starting with '>'",
+            ));
+        }
+        let header = &h[1..];
         let range = Range::from_str(header);
         let seq = block_lines
             .pop_front()
@@ -479,6 +482,18 @@ pub fn join_block_entries(
     Ok(())
 }
 
+/// Concatenate FasEntry records into a single block string without a trailing newline.
+fn block_to_string(entries: &[FasEntry]) -> String {
+    let mut s = String::new();
+    for entry in entries {
+        s.push_str(&entry.to_string());
+    }
+    if s.ends_with('\n') {
+        s.pop();
+    }
+    s
+}
+
 /// Generate output blocks (each a complete string) with header replacement applied.
 pub fn replace_block_lines(
     block: &FasBlock,
@@ -495,14 +510,7 @@ pub fn replace_block_lines(
         if matched.len() > 1 {
             log::warn!("Doesn't support replacing multiple records in one block");
         }
-        let mut s = String::new();
-        for entry in &block.entries {
-            s.push_str(&entry.to_string());
-        }
-        if s.ends_with('\n') {
-            s.pop();
-        }
-        blocks.push(s);
+        blocks.push(block_to_string(&block.entries));
     } else {
         let original = matched[0];
         let occ = block.headers.iter().filter(|h| *h == original).count();
@@ -512,14 +520,7 @@ pub fn replace_block_lines(
                 original,
                 occ
             );
-            let mut s = String::new();
-            for entry in &block.entries {
-                s.push_str(&entry.to_string());
-            }
-            if s.ends_with('\n') {
-                s.pop();
-            }
-            blocks.push(s);
+            blocks.push(block_to_string(&block.entries));
         } else {
             let idx = block
                 .headers
@@ -771,6 +772,19 @@ GC-TAAAATATGAA-CGATATTTA-CCTGTAGAGGGACTATGGGAT-CCCCATACTACTTT--
         assert_eq!(
             String::from_utf8(block.entries.get(1).unwrap().seq.clone()).unwrap(),
             "GCGTATAATATGAACCAGTATCTTTTTCATGAAG-GGCTATGGTATACTCCATATTACTTCTA".to_string()
+        );
+    }
+
+    #[test]
+    fn parse_fas_block_rejects_missing_header() {
+        let str = ">S288c.I(+):13267-13287
+TCGTCAGTTGGTTGACCATTA
+ACGT\n";
+        let mut reader = BufReader::new(str.as_bytes());
+        let result = crate::libs::fmt::fas::next_fas_block(&mut reader);
+        assert!(
+            result.is_err(),
+            "non-header sequence line should be rejected"
         );
     }
 }

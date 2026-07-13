@@ -50,12 +50,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
         for block_result in pgr::libs::fmt::fas::iter_fas_blocks(&mut reader) {
             let block = block_result?;
+            if block.entries.is_empty() {
+                continue;
+            }
             if name.is_empty() {
-                name = block
-                    .names
-                    .first()
-                    .ok_or_else(|| anyhow::anyhow!("empty block names"))?
-                    .to_string();
+                name = block.names[0].clone();
             }
 
             pgr::libs::fmt::fas::join_block_entries(&block, &name, &mut block_of)?;

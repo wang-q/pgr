@@ -1,5 +1,4 @@
 use anyhow::Context;
-use clap::builder::PossibleValue;
 use clap::{Arg, ArgMatches, Command};
 use pgr::libs::fmt::fas::{consensus_block, run_pipeline, ConsensusOptions};
 
@@ -49,17 +48,7 @@ Examples:
                 "builtin",
                 "POA engine to use",
             ))
-            .arg(
-                Arg::new("align_mode")
-                    .long("align-mode")
-                    .value_parser([
-                        PossibleValue::new("local"),
-                        PossibleValue::new("global"),
-                        PossibleValue::new("semi_global"),
-                    ])
-                    .default_value("global") // Default to global for fas consensus
-                    .help("Alignment mode"),
-            )
+            .arg(crate::cmd_pgr::args::align_mode_arg())
             .arg(crate::cmd_pgr::args::infiles_arg("block FA"))
             .arg(
                 Arg::new("consensus_name")
@@ -83,12 +72,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
 
     // Map algorithm string to integer code (0=local, 1=global, 2=semi_global) for internal use/spoa
-    let algo_code = match args.get_one::<String>("align_mode").unwrap().as_str() {
-        "local" => 0,
-        "global" => 1,
-        "semi_global" => 2,
-        other => anyhow::bail!("unknown align_mode: {}", other),
-    };
+    let algo_code = crate::cmd_pgr::args::get_align_mode_code(args)?;
 
     let opts = ConsensusOptions {
         cname: args.get_one::<String>("consensus_name").unwrap().clone(),

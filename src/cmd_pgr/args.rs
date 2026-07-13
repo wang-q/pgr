@@ -448,6 +448,32 @@ pub fn genome_arg() -> Arg {
         .help("Path to the reference genome FA file")
 }
 
+/// `--align-mode` argument for POA-based consensus (`local`/`global`/`semi_global`).
+pub fn align_mode_arg() -> Arg {
+    Arg::new("align_mode")
+        .long("align-mode")
+        .num_args(1)
+        .value_parser([
+            builder::PossibleValue::new("local"),
+            builder::PossibleValue::new("global"),
+            builder::PossibleValue::new("semi_global"),
+        ])
+        .default_value("global")
+        .help("Alignment mode")
+}
+
+/// Extract the `--align-mode` value and map it to an internal integer code.
+///
+/// Returns `0` for `local`, `1` for `global`, and `2` for `semi_global`.
+pub fn get_align_mode_code(args: &ArgMatches) -> anyhow::Result<i32> {
+    match args.get_one::<String>("align_mode").unwrap().as_str() {
+        "local" => Ok(0),
+        "global" => Ok(1),
+        "semi_global" => Ok(2),
+        other => anyhow::bail!("unknown align_mode: {}", other),
+    }
+}
+
 /// `-R/--required` argument (file with species names to keep).
 pub fn required_species_list_arg() -> Arg {
     Arg::new("required")

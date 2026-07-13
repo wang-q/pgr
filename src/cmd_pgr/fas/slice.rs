@@ -54,11 +54,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
         for block_result in pgr::libs::fmt::fas::iter_fas_blocks(&mut reader) {
             let block = block_result?;
-            // the first name of the first block becomes the default reference
+            if block.entries.is_empty() {
+                continue;
+            }
+            // the first name of the first non-empty block becomes the default reference
             if name.is_empty() {
-                name = block.names.first().cloned().ok_or_else(|| {
-                    anyhow::anyhow!("first block has no species names; use --name to specify")
-                })?;
+                name = block.names[0].clone();
             }
 
             pgr::libs::alignment::slice_block(&block, &name, &set, &mut writer)?;

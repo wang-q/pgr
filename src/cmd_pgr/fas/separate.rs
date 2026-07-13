@@ -96,10 +96,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                         file_of.insert(file_key.clone(), BufWriter::new(file));
                     }
                     write!(
-                        file_of.get_mut(&file_key).ok_or_else(|| anyhow::anyhow!(
-                            "file not found for entry: {}",
-                            file_key
-                        ))?,
+                        file_of.get_mut(&file_key).unwrap(),
                         ">{}\n{}\n",
                         range_str,
                         seq

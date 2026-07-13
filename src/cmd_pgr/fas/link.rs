@@ -16,7 +16,7 @@ Notes:
 * Reads from stdin if input file is 'stdin'
 * By default, the tool outputs multi-lateral links (all ranges in a block)
 * Use `--pair` to output bilateral (pairwise) links
-* Use `--best` to output best-to-best bilateral links based on sequence similarity
+* Use `--best` to output nearest-neighbor bilateral links based on sequence distance (deduplicated)
 
 Examples:
 1. Output multi-lateral links:
@@ -25,7 +25,7 @@ Examples:
 2. Output bilateral (pairwise) links:
    pgr fas link tests/fas/example.fas --pair
 
-3. Output best-to-best bilateral links:
+3. Output nearest-neighbor bilateral links:
    pgr fas link tests/fas/example.fas --best
 
 4. Output results to a file:
@@ -44,7 +44,7 @@ Examples:
             Arg::new("best")
                 .long("best")
                 .action(ArgAction::SetTrue)
-                .help("Output best-to-best bilateral links"),
+                .help("Output nearest-neighbor bilateral links"),
         )
         .arg(crate::cmd_pgr::args::outfile_arg())
 }

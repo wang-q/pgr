@@ -148,12 +148,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     for block in blocks {
         for entry in &block.entries {
-            let range = entry.range();
-            let seq = std::str::from_utf8(entry.seq())?;
-            writeln!(writer, ">{}", range)?;
-            writeln!(writer, "{}", seq)?;
+            writer.write_all(entry.to_string().as_ref())?;
         }
-        writeln!(writer)?;
+        writer.write_all(b"\n")?;
     }
 
     writer.flush()?;
