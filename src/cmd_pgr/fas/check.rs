@@ -9,7 +9,7 @@ pub fn make_subcommand() -> Command {
         .about("Checks genome locations in block FA headers")
         .after_help(
             r###"
-Checks genome locations in block FA headers against a chrom.sizes file.
+Checks genome locations in block FA headers against a reference genome FA file.
 
 Notes:
 * Supports both plain text and gzipped (.gz) files

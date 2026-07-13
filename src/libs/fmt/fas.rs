@@ -518,28 +518,45 @@ pub fn replace_block_lines(
         blocks.push(s);
     } else {
         let original = matched[0];
-        let idx = block
-            .headers
-            .iter()
-            .position(|e| e == original)
-            .ok_or_else(|| anyhow::anyhow!("matched header not found"))?;
-        for new in &replace_of[original] {
+        let occ = block.headers.iter().filter(|h| *h == original).count();
+        if occ != 1 {
+            log::warn!(
+                "Header '{}' appears {} times in one block; keeping block unchanged",
+                original,
+                occ
+            );
             let mut s = String::new();
-            for (i, entry) in block.entries.iter().enumerate() {
-                if i == idx {
-                    s.push_str(&format!(
-                        ">{}\n{}\n",
-                        new,
-                        String::from_utf8(entry.seq().to_vec())?
-                    ));
-                } else {
-                    s.push_str(&entry.to_string());
-                }
+            for entry in &block.entries {
+                s.push_str(&entry.to_string());
             }
             if s.ends_with('\n') {
                 s.pop();
             }
             blocks.push(s);
+        } else {
+            let idx = block
+                .headers
+                .iter()
+                .position(|e| e == original)
+                .ok_or_else(|| anyhow::anyhow!("matched header not found"))?;
+            for new in &replace_of[original] {
+                let mut s = String::new();
+                for (i, entry) in block.entries.iter().enumerate() {
+                    if i == idx {
+                        s.push_str(&format!(
+                            ">{}\n{}\n",
+                            new,
+                            String::from_utf8(entry.seq().to_vec())?
+                        ));
+                    } else {
+                        s.push_str(&entry.to_string());
+                    }
+                }
+                if s.ends_with('\n') {
+                    s.pop();
+                }
+                blocks.push(s);
+            }
         }
     }
     Ok(blocks)

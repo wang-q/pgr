@@ -31,7 +31,7 @@ pub fn make_subcommand() -> Command {
 * subset: filter / slice / subset
 * transform: concat / consensus / join / multiz / refine / replace
 * file: create / separate / split
-* var: to-vcf / to-xlsx / variation
+* variation: to-vcf / to-xlsx / variation
 
 "###,
         )

@@ -48,6 +48,8 @@ pgr fas check [OPTIONS] --genome <genome> <infiles>...
 *   `--name <name>`: Check sequences for a specific species only.
 *   `-o, --outfile <file>`: Output filename (default: stdout).
 
+Output format (tab-separated): each line contains the entry range followed by its status (`OK` or `FAILED`).
+
 ### cover
 
 Outputs the regions on chromosomes covered by the alignments in JSON format.
@@ -71,6 +73,8 @@ pgr fas link [OPTIONS] <infiles>...
 *   `--pair`: Output bilateral (pairwise) links.
 *   `--best`: Output nearest-neighbor bilateral links based on sequence distance (deduplicated).
 *   `-o, --outfile <file>`: Output filename (default: stdout).
+
+Output format: each line is tab-separated. By default, all ranges in a block are printed on one line. With `--pair` or `--best`, each line contains two ranges.
 
 ### name
 
@@ -246,6 +250,8 @@ pgr fas replace [OPTIONS] --replace-tsv <replace.tsv> <infiles>...
     *   Three or more fields: duplicates the block once for every replacement name after the first.
     *   If a block contains multiple matching headers, the block is kept unchanged and a warning is emitted.
 *   `-o, --outfile <file>`: Output filename (default: stdout).
+
+A header that appears more than once within the same block is also treated as multiple matching headers, and the block will be kept unchanged.
 
 ---
 

@@ -458,6 +458,7 @@ pub fn required_species_list_arg() -> Arg {
 pub fn suffix_arg(default: &'static str) -> Arg {
     Arg::new("suffix")
         .long("suffix")
+        .short('s')
         .num_args(1)
         .default_value(default)
         .help("File extension for output files")

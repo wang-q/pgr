@@ -275,7 +275,7 @@ fn command_separate_to() {
             "fas",
             "separate",
             "tests/fas/example.fas",
-            "--suffix",
+            "-s",
             ".tmp",
             "-o",
             tempdir_str,
@@ -316,7 +316,7 @@ fn command_split_to() {
             "fas",
             "split",
             "tests/fas/example.fas",
-            "--suffix",
+            "-s",
             ".tmp",
             "--chr",
             "-o",
@@ -535,4 +535,70 @@ fn command_fas_stat_outgroup_single_entry() {
         .run_fail();
 
     assert!(stderr.contains("cannot apply --outgroup"));
+}
+
+#[test]
+fn command_fas_concat_required_order() {
+    let temp = TempDir::new().unwrap();
+    let fas_file = temp.path().join("order.fas");
+    fs::write(
+        &fas_file,
+        ">speciesA.chr1:1-5\nACGTA\n>speciesB.chr1:1-5\nACGTG\n\n",
+    )
+    .unwrap();
+
+    let name_lst = temp.path().join("names.lst");
+    fs::write(&name_lst, "speciesB\nspeciesA\n").unwrap();
+
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "fas",
+            "concat",
+            fas_file.to_str().unwrap(),
+            "-R",
+            name_lst.to_str().unwrap(),
+        ])
+        .run();
+
+    let first_header = stdout.lines().next().unwrap();
+    assert!(
+        first_header.starts_with(">speciesB"),
+        "output should follow --required order, got {}",
+        first_header
+    );
+}
+
+#[test]
+fn command_fas_replace_duplicate_header() {
+    let temp = TempDir::new().unwrap();
+    let fas_file = temp.path().join("dup.fas");
+    fs::write(
+        &fas_file,
+        ">target.chr1:1-5\nACGTA\n>target.chr1:1-5\nACGTC\n\n",
+    )
+    .unwrap();
+
+    let tsv = temp.path().join("dup.tsv");
+    fs::write(&tsv, "target.chr1:1-5\n").unwrap();
+
+    let (stdout, stderr) = PgrCmd::new()
+        .args(&[
+            "fas",
+            "replace",
+            fas_file.to_str().unwrap(),
+            "--replace-tsv",
+            tsv.to_str().unwrap(),
+        ])
+        .run();
+
+    assert_eq!(
+        stdout.matches(">target.").count(),
+        2,
+        "duplicate header block should be kept unchanged"
+    );
+    assert!(
+        stderr.contains("appears") || stderr.contains("keeping block unchanged"),
+        "expected warning about duplicate header, got {}",
+        stderr
+    );
 }

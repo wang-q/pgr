@@ -64,29 +64,38 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     if is_phylip {
         let count = needed.len();
-        let length = seq_of.values().next().map(|s| s.len()).unwrap_or(0);
+        let length = seq_of.get(&needed[0]).map(|s| s.len()).unwrap_or(0);
         if length == 0 {
             anyhow::bail!(
                 "PHYLIP output requires non-empty sequences, but all sequences are empty (check --required list and input blocks)"
             );
         }
-        for (k, v) in &seq_of {
+        for name in &needed {
+            let v = seq_of
+                .get(name)
+                .ok_or_else(|| anyhow::anyhow!("name not found in concat results: {}", name))?;
             if v.len() != length {
                 anyhow::bail!(
                     "PHYLIP requires equal-length sequences, but {} has length {} (expected {})",
-                    k,
+                    name,
                     v.len(),
                     length
                 );
             }
         }
         writer.write_all(format!("{} {}\n", count, length).as_ref())?;
-        for (k, v) in &seq_of {
-            writer.write_all(format!("{} {}\n", k, v).as_ref())?;
+        for name in &needed {
+            let v = seq_of
+                .get(name)
+                .ok_or_else(|| anyhow::anyhow!("name not found in concat results: {}", name))?;
+            writer.write_all(format!("{} {}\n", name, v).as_ref())?;
         }
     } else {
-        for (k, v) in &seq_of {
-            writer.write_all(format!(">{}\n{}\n", k, v).as_ref())?;
+        for name in &needed {
+            let v = seq_of
+                .get(name)
+                .ok_or_else(|| anyhow::anyhow!("name not found in concat results: {}", name))?;
+            writer.write_all(format!(">{}\n{}\n", name, v).as_ref())?;
         }
     }
 
