@@ -27,7 +27,7 @@ Notes:
 * Sequences not in runlist remain unchanged
 * Supports both plain text and gzipped (.gz) files
 * Reads from stdin if input file is 'stdin'
-* Invalid ranges are silently ignored
+* Out-of-range spans cause an error (not silently ignored)
 
 Examples:
 1. Soft-mask regions:

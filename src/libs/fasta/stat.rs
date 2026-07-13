@@ -63,7 +63,9 @@ pub fn calc_n50_stats(
 
 /// Transpose a vector of vectors.
 pub fn transpose<T>(v: Vec<Vec<T>>) -> Vec<Vec<T>> {
-    assert!(!v.is_empty());
+    if v.is_empty() {
+        return Vec::new();
+    }
     let len = v[0].len();
     let mut iters: Vec<_> = v.into_iter().map(|n| n.into_iter()).collect();
     (0..len)

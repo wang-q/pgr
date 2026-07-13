@@ -55,6 +55,9 @@ pub fn new_record(name: &str, seq: &[u8]) -> fasta::Record {
 /// skipped. Coordinates embedded in the emitted names are 1-based inclusive
 /// (`name:start-end`).
 pub fn windows(name: &str, seq: &[u8], len: usize, step: usize) -> Vec<(String, Vec<u8>)> {
+    if step == 0 {
+        return Vec::new();
+    }
     let mut result = Vec::new();
     let seq_len = seq.len();
     for start in (0..seq_len).step_by(step) {
