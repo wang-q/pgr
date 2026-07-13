@@ -1,3 +1,5 @@
+//! Commands for manipulating block FA (multiple sequence alignment) files.
+
 pub mod check;
 pub mod concat;
 pub mod consensus;

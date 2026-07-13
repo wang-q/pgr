@@ -1,372 +1,372 @@
 # pgr fas
 
-`pgr fas` provides a comprehensive suite of tools for manipulating **Block FA** files. Block FA is a format used to represent multiple sequence alignments (MSA), where each "block" consists of aligned sequences from different species or genomic regions.
+`pgr fas` 提供了一套用于操作 **block FA** 文件的工具。block FA 是一种表示多序列比对（MSA）的格式，其中每个“block”包含来自不同物种或基因组区域的比对序列。
 
-## Subcommands
+## 子命令
 
-The subcommands are organized into the following categories:
+子命令按以下类别组织：
 
-*   **Info**: Extract information or statistics from block FA files.
-    *   `check`: Check genome locations against a reference genome FA file.
-    *   `cover`: Calculate covered regions on chromosomes.
-    *   `link`: Extract bi-lateral or multi-lateral range links.
-    *   `name`: List species names present in the files.
-    *   `stat`: Calculate alignment statistics (length, differences, etc.).
-*   **Subset**: Filter and extract specific parts of the data.
-    *   `filter`: Filter blocks by species presence or sequence length.
-    *   `slice`: Extract specific alignment slices using a runlist.
-    *   `subset`: Extract a subset of species from blocks.
-*   **Transform**: Modify or combine block FA files.
-    *   `concat`: Concatenate sequence pieces of the same species.
-    *   `consensus`: Generate consensus sequences using POA (Partial Order Alignment).
-    *   `join`: Join multiple files based on a common target sequence.
-    *   `multiz`: Merge block FA files using a multiz-like banded DP algorithm.
-    *   `refine`: Realign sequences within blocks using built-in or external tools.
-    *   `replace`: Replace sequence headers using a mapping file.
-*   **File**: Create or split block FA files.
-    *   `create`: Create block FA files from range links.
-    *   `separate`: Separate blocks into individual files per species.
-    *   `split`: Split blocks into per-alignment or per-chromosome files.
-*   **Variation**: Call variants from alignments.
-    *   `to-vcf`: Export substitutions to VCF format.
-    *   `to-xlsx`: Export substitutions and indels to an Excel file.
-    *   `variation`: List variations (substitutions) in TSV format.
+*   **信息（Info）**：从 block FA 文件中提取信息或统计量。
+    *   `check`：根据参考基因组 FA 文件检查基因组位置。
+    *   `cover`：计算染色体上的覆盖区域。
+    *   `link`：提取双边或多边区间链接。
+    *   `name`：列出文件中出现的物种名。
+    *   `stat`：计算比对统计量（长度、差异等）。
+*   **子集（Subset）**：筛选并提取数据的特定部分。
+    *   `filter`：按物种存在与否或序列长度过滤 block。
+    *   `slice`：使用 runlist 提取特定的比对切片。
+    *   `subset`：从 block 中提取物种子集。
+*   **转换（Transform）**：修改或合并 block FA 文件。
+    *   `concat`：连接同一物种的序列片段。
+    *   `consensus`：使用 POA（偏序比对）生成一致性序列。
+    *   `join`：基于共同的目标序列合并多个文件。
+    *   `multiz`：使用类 multiz 的带状动态规划算法合并 block FA 文件。
+    *   `refine`：使用内置或外部工具对 block 内的序列进行重新比对。
+    *   `replace`：使用映射文件替换序列头。
+*   **文件（File）**：创建或拆分 block FA 文件。
+    *   `create`：根据区间链接创建 block FA 文件。
+    *   `separate`：按物种将 block 拆分为独立文件。
+    *   `split`：按比对块或染色体拆分 block FA 文件。
+*   **变异（Variation）**：从比对中 calling 变异。
+    *   `to-vcf`：将替换（SNP）导出为 VCF 格式。
+    *   `to-xlsx`：将替换和 indel 导出为 Excel 文件。
+    *   `variation`：以 TSV 格式列出变异（替换）。
 
 ---
 
-## Info Commands
+## 信息命令
 
 ### check
 
-Checks if the genome locations specified in the block headers are valid against a reference genome FA file.
+检查 block 头中指定的基因组位置是否对参考基因组 FA 文件有效。
 
 ```bash
 pgr fas check [OPTIONS] --genome <genome> <infiles>...
 ```
 
-*   `-g, --genome <path>`: Path to the reference genome FA file (required).
-*   `-n, --name <name>`: Check sequences for a specific species only.
-*   `-o, --outfile <file>`: Output filename (default: stdout).
+*   `-g, --genome <path>`：参考基因组 FA 文件路径（必填）。
+*   `-n, --name <name>`：仅检查特定物种的序列。
+*   `-o, --outfile <file>`：输出文件名（默认：stdout）。
 
-Output format (tab-separated): each line contains the entry range followed by its status (`OK` or `FAILED`).
+输出格式（制表符分隔）：每行包含条目区间及其状态（`OK` 或 `FAILED`）。
 
 ### cover
 
-Outputs the regions on chromosomes covered by the alignments in JSON format.
+输出比对在染色体上的覆盖区域，格式为 JSON。
 
 ```bash
 pgr fas cover [OPTIONS] <infiles>...
 ```
 
-*   `-n, --name <name>`: Only output regions for this species.
-*   `--trim <int>`: Trim alignment borders by N bases to avoid overlaps (useful for lastz results).
-*   `-o, --outfile <file>`: Output filename (default: stdout).
+*   `-n, --name <name>`：仅输出该物种的覆盖区域。
+*   `--trim <int>`：将比对边界向内修剪 N 个碱基以避免重叠（对 lastz 结果有用）。
+*   `-o, --outfile <file>`：输出文件名（默认：stdout）。
 
 ### link
 
-Outputs links between ranges (genomic coordinates) found in the alignment blocks.
+输出比对 block 中区间（基因组坐标）之间的链接。
 
 ```bash
 pgr fas link [OPTIONS] <infiles>...
 ```
 
-*   `--pair`: Output bilateral (pairwise) links.
-*   `--best`: Output nearest-neighbor bilateral links based on sequence distance (deduplicated).
-*   `-o, --outfile <file>`: Output filename (default: stdout).
+*   `--pair`：输出双边（成对）链接。
+*   `--best`：基于序列距离输出最近邻双边链接（去重）。
+*   `-o, --outfile <file>`：输出文件名（默认：stdout）。
 
-Notes:
+注意：
 
-*   `--pair` and `--best` are mutually exclusive.
+*   `--pair` 与 `--best` 互斥。
 
-Output format: each line is tab-separated. By default, all ranges in a block are printed on one line. With `--pair` or `--best`, each line contains two ranges.
+输出格式：每行以制表符分隔。默认情况下，一个 block 中的所有区间输出在同一行。使用 `--pair` 或 `--best` 时，每行包含两个区间。
 
 ### name
 
-Extracts all species names found in the block FA files.
+提取 block FA 文件中的所有物种名。
 
 ```bash
 pgr fas name [OPTIONS] <infiles>...
 ```
 
-*   `-C, --count`: Also output the number of occurrences of each species name.
-*   `-o, --outfile <file>`: Output filename (default: stdout).
+*   `-C, --count`：同时输出每个物种名的出现次数。
+*   `-o, --outfile <file>`：输出文件名（默认：stdout）。
 
 ### stat
 
-Calculates basic statistics for each alignment block (length, comparable bases, differences, gaps, etc.).
+计算每个比对 block 的基本统计量（长度、可比较碱基数、差异、gap 等）。
 
 ```bash
 pgr fas stat [OPTIONS] <infiles>...
 ```
 
-*   `--outgroup`: Treat the last sequence in each block as an outgroup. The `length` column still reflects the full alignment length; all other statistics (`comparable`, `difference`, `gap`, `ambiguous`, `D`, `indel`) exclude the outgroup.
-*   `-o, --outfile <file>`: Output filename (default: stdout).
+*   `--outgroup`：将每个 block 的最后一条序列视为外群。`length` 列仍反映完整比对长度；其他统计量（`comparable`、`difference`、`gap`、`ambiguous`、`D`、`indel`）均排除外群。
+*   `-o, --outfile <file>`：输出文件名（默认：stdout）。
 
-Output columns (tab-separated):
+输出列（制表符分隔）：
 
-*   `target`: Target range of the block.
-*   `length`: Alignment length including gaps.
-*   `comparable`: Number of positions with unambiguous bases in all sequences.
-*   `difference`: Number of polymorphic positions among comparable bases.
-*   `gap`: Number of positions where every sequence contains a gap.
-*   `ambiguous`: Number of positions with at least one ambiguous base and no gap.
-*   `D`: Mean pairwise divergence over all sequence pairs.
-*   `indel`: Total span size of all indel regions.
+*   `target`：block 的目标区间。
+*   `length`：包含 gap 的比对长度。
+*   `comparable`：所有序列均为非模糊碱基的位置数。
+*   `difference`：可比较碱基中的多态位置数。
+*   `gap`：所有序列均含 gap 的位置数。
+*   `ambiguous`：至少含一个模糊碱基且不含 gap 的位置数。
+*   `D`：所有序列对之间的平均成对分歧度。
+*   `indel`：所有 indel 区域的总跨度。
 
 ---
 
-## Subset Commands
+## 子集命令
 
 ### filter
 
-Filters blocks based on species presence and sequence length, and optionally formats sequences.
+根据物种存在与否和序列长度过滤 block，并可选择性地格式化序列。
 
 ```bash
 pgr fas filter [OPTIONS] <infiles>...
 ```
 
-*   `-n, --name <name>`: Species whose sequence is used for length filtering. Blocks not containing this species are skipped. Defaults to the first species in each block.
-*   `--min-len <int>`: Keep blocks where the selected species' alignment length (including gaps) is >= this value.
-*   `--max-len <int>`: Keep blocks where the selected species' alignment length (including gaps) is <= this value.
-*   `--upper`: Convert sequences to uppercase.
-*   `--dash`: Remove dashes (gaps) from sequences.
-*   `-o, --outfile <file>`: Output filename (default: stdout).
+*   `-n, --name <name>`：用于长度过滤的物种。不包含该物种的 block 会被跳过。默认使用每个 block 的第一个物种。
+*   `--min-len <int>`：保留所选物种比对长度（含 gap）大于等于该值的 block。
+*   `--max-len <int>`：保留所选物种比对长度（含 gap）小于等于该值的 block。
+*   `--upper`：将序列转换为大写。
+*   `--dash`：从序列中移除 dash（gap）。
+*   `-o, --outfile <file>`：输出文件名（默认：stdout）。
 
 ### slice
 
-Extracts specific slices of alignments based on a provided runlist (JSON).
+根据提供的 runlist（JSON）提取特定的比对切片。
 
 ```bash
 pgr fas slice [OPTIONS] --runlist <runlist.json> <infiles>...
 ```
 
-*   `--runlist <file>`: JSON file describing ranges to extract (required).
-*   `-n, --name <name>`: Reference species name (default: first species of the first block).
-*   `-o, --outfile <file>`: Output filename (default: stdout).
+*   `--runlist <file>`：描述要提取区间的 JSON 文件（必填）。
+*   `-n, --name <name>`：参考物种名（默认：第一个 block 的第一个物种）。
+*   `-o, --outfile <file>`：输出文件名（默认：stdout）。
 
 ### subset
 
-Extracts a subset of species from the alignment blocks.
+从比对 block 中提取物种子集。
 
 ```bash
 pgr fas subset [OPTIONS] --required <name.lst> <infiles>...
 ```
 
-*   `-R, --required <file>`: File with a list of species names to keep, one per line (required).
-*   `--strict`: Skip blocks that do not contain *all* the required names.
-*   `-o, --outfile <file>`: Output filename (default: stdout).
+*   `-R, --required <file>`：包含要保留物种名的文件，每行一个（必填）。
+*   `--strict`：跳过不包含所有必需物种的 block。
+*   `-o, --outfile <file>`：输出文件名（默认：stdout）。
 
 ---
 
-## Transform Commands
+## 转换命令
 
 ### concat
 
-Concatenates sequence pieces of the same species from multiple blocks.
+连接多个 block 中同一物种的序列片段。
 
 ```bash
 pgr fas concat [OPTIONS] --required <name.lst> <infiles>...
 ```
 
-*   `-R, --required <file>`: File with a list of species names to keep/order (required).
-*   `--phylip`: Output in relaxed PHYLIP format instead of FASTA.
-*   `-o, --outfile <file>`: Output filename (default: stdout).
+*   `-R, --required <file>`：包含要保留/排序物种名的文件，每行一个（必填）。
+*   `--phylip`：以 relaxed PHYLIP 格式输出，而非 FASTA。
+*   `-o, --outfile <file>`：输出文件名（默认：stdout）。
 
-Notes:
+注意：
 
-*   Missing sequences are filled with gaps (`-`).
+*   缺失的序列用 gap（`-`）填充。
 
 ### consensus
 
-Generates a consensus sequence for each block using Partial Order Alignment (POA).
+使用偏序比对（POA）为每个 block 生成一致性序列。
 
 ```bash
 pgr fas consensus [OPTIONS] <infiles>...
 ```
 
-*   `--engine <builtin|spoa>`: POA engine to use (default: builtin).
-*   `--match <int>`: Score for matching bases (default: 5).
-*   `--mismatch <int>`: Score for mismatching bases (default: -4).
-*   `--gap-open <int>`: Gap opening penalty (default: -8).
-*   `--gap-extend <int>`: Gap extension penalty (default: -6).
-*   `--align-mode <local|global|semi_global>`: Alignment mode (default: global).
-*   `--consensus-name <name>`: Name for the consensus sequence (default: consensus).
-*   `--outgroup`: Indicates the last sequence in each block is an outgroup. It is excluded from consensus computation and preserved in the output block.
-*   `-p, --parallel <int>`: Number of threads (default: 1).
-*   `-o, --outfile <file>`: Output filename (default: stdout).
+*   `--engine <builtin|spoa>`：使用的 POA 引擎（默认：builtin）。
+*   `--match <int>`：匹配碱基的得分（默认：5）。
+*   `--mismatch <int>`：不匹配碱基的得分（默认：-4）。
+*   `--gap-open <int>`：gap 开放罚分（默认：-8）。
+*   `--gap-extend <int>`：gap 延伸罚分（默认：-6）。
+*   `--align-mode <local|global|semi_global>`：比对模式（默认：global）。
+*   `--consensus-name <name>`：一致性序列的名称（默认：consensus）。
+*   `--outgroup`：表示每个 block 的最后一条序列为外群。外群不参与一致性计算，但会保留在输出 block 中。
+*   `-p, --parallel <int>`：线程数（默认：1）。
+*   `-o, --outfile <file>`：输出文件名（默认：stdout）。
 
 ### join
 
-Joins multiple block FA files by a common target sequence.
+基于共同的目标序列合并多个 block FA 文件。
 
 ```bash
 pgr fas join [OPTIONS] <infiles>...
 ```
 
-*   `-n, --name <name>`: Target species name. Defaults to the first species of the first block and is used as the common target for all blocks.
-*   `-o, --outfile <file>`: Output filename (default: stdout).
+*   `-n, --name <name>`：目标物种名。默认使用第一个 block 的第一个物种，并作为所有 block 的共同目标。
+*   `-o, --outfile <file>`：输出文件名（默认：stdout）。
 
 ### multiz
 
-Merges multiple block FA files in a shared reference coordinate system using a multiz-like banded DP algorithm.
+在共享的参考坐标系下，使用类 multiz 的带状动态规划算法合并多个 block FA 文件。
 
 ```bash
 pgr fas multiz [OPTIONS] --ref-name <name> <infiles>...
 ```
 
-*   `-r, --ref-name <name>`: Reference sequence name present in all inputs (required).
-*   `--radius <int>`: Banded DP radius around reference diagonal (default: 30).
-*   `--min-width <int>`: Minimum window width to merge (default: 1).
-*   `--mode <core|union>`: Merge mode (default: core).
-*   `--score-scheme <file>`: Score scheme file (LASTZ format) or preset name (e.g. hoxd55).
-*   `--gap-model <constant|medium|loose>`: Gap model (default: medium).
-*   `--align-gap-open <int>`: Alignment gap open cost.
-*   `--align-gap-extend <int>`: Alignment gap extension cost.
-*   `--match-score <int>`: Match score (default: 2).
-*   `--mismatch-score <int>`: Mismatch penalty (default: -1).
-*   `--gap-score <int>`: Gap penalty (default: -2).
-*   `-o, --outfile <file>`: Output filename (default: stdout).
+*   `-r, --ref-name <name>`：所有输入中都存在的参考序列名（必填）。
+*   `--radius <int>`：参考对角线周围的带状 DP 半径（默认：30）。
+*   `--min-width <int>`：参与合并的最小窗口宽度（默认：1）。
+*   `--mode <core|union>`：合并模式（默认：core）。
+*   `--score-scheme <file>`：评分方案文件（LASTZ 格式）或预设名（如 `hoxd55`）。
+*   `--gap-model <constant|medium|loose>`：gap 模型（默认：medium）。
+*   `--align-gap-open <int>`：比对 gap 开放罚分，覆盖 `--gap-model` 的默认值。
+*   `--align-gap-extend <int>`：比对 gap 延伸罚分，覆盖 `--gap-model` 的默认值。
+*   `--match-score <int>`：匹配得分（默认：2）。
+*   `--mismatch-score <int>`：不匹配罚分（默认：-1）。
+*   `--gap-score <int>`：gap 罚分（默认：-2）。
+*   `-o, --outfile <file>`：输出文件名（默认：stdout）。
 
 ### refine
 
-Realigns sequences within blocks using built-in or external MSA tools.
+使用内置或外部 MSA 工具对 block 内的序列进行重新比对。
 
 ```bash
 pgr fas refine [OPTIONS] <infiles>...
 ```
 
-*   `--engine <program>`: Aligning program: `builtin` (default), `clustalw`, `mafft`, `muscle`, `spoa`, `none`.
-*   `--outgroup`: Indicates presence of outgroups.
-*   `--chop <usize>`: Chop head and tail indels (default: 0, disabled).
-*   `--quick`: Quick mode, only aligns indel-adjacent regions.
-*   `--indel-pad <int>`: In quick mode, enlarge indel regions (default: 50).
-*   `--fill <int>`: In quick mode, fill holes between indels (default: 50).
-*   `-p, --parallel <int>`: Number of threads (default: 1).
-*   `-o, --outfile <file>`: Output filename (default: stdout).
+*   `--engine <program>`：比对程序：`builtin`（默认）、`clustalw`、`mafft`、`muscle`、`spoa`、`none`。
+*   `--outgroup`：表示存在外群。
+*   `--chop <usize>`：修剪头部和尾部的 indel（默认：0，即禁用）。
+*   `--quick`：快速模式，仅比对 indel 邻近区域。
+*   `--indel-pad <int>`：快速模式下，扩大 indel 区域（默认：50）。
+*   `--fill <int>`：快速模式下，填充 indel 之间的空洞（默认：50）。
+*   `-p, --parallel <int>`：线程数（默认：1）。
+*   `-o, --outfile <file>`：输出文件名（默认：stdout）。
 
 ### replace
 
-Replaces headers in block FA files using a mapping file.
+使用映射文件替换 block FA 文件中的序列头。
 
 ```bash
 pgr fas replace [OPTIONS] --replace-tsv <replace.tsv> <infiles>...
 ```
 
-*   `--replace-tsv <file>`: TSV file containing replacement rules (required). Each line is a tab-separated list:
-    *   One field: if the name uniquely matches one header in a block, the whole block is dropped.
-    *   Two fields: `original_name<TAB>new_name` replaces the matching header.
-    *   Three or more fields: duplicates the block once for every replacement name after the first.
-    *   If a block contains multiple matching headers, the block is kept unchanged and a warning is emitted.
-*   `-o, --outfile <file>`: Output filename (default: stdout).
+*   `--replace-tsv <file>`：包含替换规则的 TSV 文件（必填）。每行是一个制表符分隔的列表：
+    *   一个字段：如果该名唯一匹配 block 中的一个头，则丢弃整个 block。
+    *   两个字段：`original_name<TAB>new_name`，替换匹配的头。
+    *   三个或更多字段：对第一个字段之后的每个替换名复制一次 block。
+    *   如果一个 block 包含多个匹配头，则保持 block 不变并发出警告。
+*   `-o, --outfile <file>`：输出文件名（默认：stdout）。
 
-A header that appears more than once within the same block is also treated as multiple matching headers, and the block will be kept unchanged.
+同一个 block 内出现多次的头也视为多个匹配头，该 block 将保持不变。
 
 ---
 
-## File Commands
+## 文件命令
 
 ### create
 
-Creates block FA files from links of ranges (e.g., from `pgr fas link`).
+根据区间链接（例如来自 `pgr fas link`）创建 block FA 文件。
 
 ```bash
 pgr fas create [OPTIONS] --genome <genome> <infiles>...
 ```
 
-*   `-g, --genome <file>`: Path to the reference genome FA file (required).
-*   `-n, --name <name>`: Set a species name for ranges (default: inferred from header).
-*   `-o, --outfile <file>`: Output filename (default: stdout).
+*   `-g, --genome <file>`：参考基因组 FA 文件路径（必填）。
+*   `-n, --name <name>`：为区间设置物种名（默认：从头信息推断）。
+*   `-o, --outfile <file>`：输出文件名（默认：stdout）。
 
-Notes:
+注意：
 
-*   The reference genome FA file can be plain text or bgzipped.
+*   参考基因组 FA 文件可以是纯文本或 bgzip 压缩。
 
 ### separate
 
-Separates block FA files into individual files per species.
+将 block FA 文件按物种拆分为独立文件。
 
 ```bash
 pgr fas separate [OPTIONS] <infiles>...
 ```
 
-*   `-s, --suffix <string>`: File extension for output files (default: .fasta).
-*   `--rc`: Reverse-complement sequences if the strand is '-'.
-*   `-o, --outdir <dir>`: Output directory (default: stdout).
+*   `-s, --suffix <string>`：输出文件扩展名（默认：.fasta）。
+*   `--rc`：如果链为 '-'，则对序列进行反向互补。
+*   `-o, --outdir <dir>`：输出目录（默认：stdout）。
 
-Notes:
+注意：
 
-*   Dashes are removed from sequences.
-*   Existing output files are overwritten.
+*   序列中的 dash 会被移除。
+*   已存在的输出文件会被覆盖。
 
 ### split
 
-Splits block FA files into per-alignment or per-chromosome files.
+将 block FA 文件按比对块或染色体拆分为文件。
 
 ```bash
 pgr fas split [OPTIONS] <infiles>...
 ```
 
-*   `--chr`: Split files by chromosomes.
-*   `--simple`: Simplify headers by keeping only species names. Applies to both stdout and per-file output.
-*   `-s, --suffix <string>`: File extension for output files (default: .fas).
-*   `-o, --outdir <dir>`: Output directory (default: stdout).
+*   `--chr`：按染色体拆分文件。
+*   `--simple`：简化头信息，仅保留物种名。同时作用于 stdout 和按文件输出。
+*   `-s, --suffix <string>`：输出文件扩展名（默认：.fas）。
+*   `-o, --outdir <dir>`：输出目录（默认：stdout）。
 
 ---
 
-## Variation Commands
+## 变异命令
 
 ### to-vcf
 
-Exports substitutions (SNPs) to VCF format.
+将替换（SNP）导出为 VCF 格式。
 
 ```bash
 pgr fas to-vcf [OPTIONS] <infiles>...
 ```
 
-*   `--sizes <file>`: Chrom sizes file to emit `##contig` headers.
-*   `-o, --outfile <file>`: Output filename (default: stdout).
+*   `--sizes <file>`：染色体长度文件，用于输出 `##contig` 头。
+*   `-o, --outfile <file>`：输出文件名（默认：stdout）。
 
-Notes:
+注意：
 
-*   All blocks must contain the same species in the same order, because VCF uses a fixed sample header.
+*   所有 block 必须包含相同物种且顺序一致，因为 VCF 使用固定的样本头。
 
 ### to-xlsx
 
-Exports variations (substitutions and indels) to an Excel file with formatting.
+将变异（替换和 indel）导出为带格式的 Excel 文件。
 
 ```bash
 pgr fas to-xlsx [OPTIONS] <infiles>...
 ```
 
-*   `--indel`: Include indels.
-*   `--outgroup`: Indicates presence of outgroups.
-*   `--no-single`: Omit singleton variations.
-*   `--no-complex`: Omit complex variations.
-*   `--min-freq <float>`: Minimal frequency.
-*   `--max-freq <float>`: Maximal frequency.
-*   `--wrap <int>`: Wrap length for visualization (default: 50).
-*   `-o, --outfile <file>`: Output filename (default: variations.xlsx).
+*   `--indel`：包含 indel。
+*   `--outgroup`：表示存在外群。
+*   `--no-single`：省略单例变异。
+*   `--no-complex`：省略复杂变异。
+*   `--min-freq <float>`：最小频率。
+*   `--max-freq <float>`：最大频率。
+*   `--wrap <int>`：可视化换行长度（默认：50）。
+*   `-o, --outfile <file>`：输出文件名（默认：variations.xlsx）。
 
 ### variation
 
-Lists variations (substitutions) in TSV format.
+以 TSV 格式列出变异（替换）。
 
 ```bash
 pgr fas variation [OPTIONS] <infiles>...
 ```
 
-*   `--outgroup`: Indicates presence of outgroups.
-*   `-o, --outfile <file>`: Output filename (default: stdout).
+*   `--outgroup`：表示存在外群。
+*   `-o, --outfile <file>`：输出文件名（默认：stdout）。
 
-Notes:
+注意：
 
-*   `--outgroup` requires at least 2 sequences per block.
+*   `--outgroup` 要求每个 block 至少包含 2 条序列。
 
-Output columns (tab-separated):
+输出列（制表符分隔）：
 
-*   `#target`: Target range of the block.
-*   `chr`: Chromosome name.
-*   `chr_pos`: Position on the chromosome.
-*   `range`: Chromosome position formatted as `chr:pos`.
-*   `pos`: Position within the alignment (1-based).
-*   `tbase`, `qbase`, `bases`, `mutant_to`, `freq`, `pattern`, `obase`: Fields from the substitution record (see `pgr::libs::alignment::Substitution`).
+*   `#target`：block 的目标区间。
+*   `chr`：染色体名。
+*   `chr_pos`：染色体上的位置。
+*   `range`：格式为 `chr:pos` 的染色体位置。
+*   `pos`：比对内的位置（1-based）。
+*   `tbase`、`qbase`、`bases`、`mutant_to`、`freq`、`pattern`、`obase`：来自替换记录的字段（见 `pgr::libs::alignment::Substitution`）。

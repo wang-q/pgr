@@ -4,19 +4,19 @@
 use std::collections::BTreeMap;
 use std::io::Write;
 
-/// Write the VCF header: optional `##contig` lines (when `contigs` is Some),
-/// `##fileformat`, `##FORMAT=GT`, and the `#CHROM` line with `samples`.
+/// Write the VCF header: `##fileformat` first, optional `##contig` lines
+/// (when `contigs` is Some), `##FORMAT=GT`, and the `#CHROM` line with `samples`.
 pub fn write_vcf_header<W: Write>(
     writer: &mut W,
     contigs: Option<&BTreeMap<String, i32>>,
     samples: &[String],
 ) -> anyhow::Result<()> {
+    writer.write_all(b"##fileformat=VCFv4.2\n")?;
     if let Some(contigs) = contigs {
         for (chr, len) in contigs.iter() {
             writer.write_all(format!("##contig=<ID={},length={}>\n", chr, len).as_ref())?;
         }
     }
-    writer.write_all(b"##fileformat=VCFv4.2\n")?;
     writer.write_all(b"##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n")?;
     let mut header = String::from("#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT");
     for name in samples {

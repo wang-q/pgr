@@ -108,6 +108,10 @@ fn command_vcf_sizes_contig_real() {
     ]);
 
     assert!(
+        stdout.starts_with("##fileformat=VCF"),
+        "VCF fileformat line must precede contig lines"
+    );
+    assert!(
         stdout.contains("##contig=<ID=IV,length=1531933>"),
         "contig header contains IV from sizes"
     );
