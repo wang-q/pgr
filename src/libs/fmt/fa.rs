@@ -174,6 +174,9 @@ pub fn run_window(
                 // No shuffle
                 if let Some(limit) = chunk_size {
                     if record_count >= limit {
+                        if let Some(ref mut w) = fa_out {
+                            w.get_mut().flush()?;
+                        }
                         current_part += 1;
                         record_count = 0;
                         let w = create_writer(current_part)?;
@@ -211,6 +214,12 @@ pub fn run_window(
         for record in records_buffer {
             final_out.write_record(&record)?;
         }
+        final_out.get_mut().flush()?;
+    }
+
+    // Flush streaming writer (non-shuffle path)
+    if let Some(ref mut w) = fa_out {
+        w.get_mut().flush()?;
     }
 
     Ok(())
@@ -235,6 +244,7 @@ fn flush_shuffled_chunk(
     for r in records_buffer.iter() {
         chunk_out.write_record(r)?;
     }
+    chunk_out.get_mut().flush()?;
     records_buffer.clear();
     Ok(())
 }

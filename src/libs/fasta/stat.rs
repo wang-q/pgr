@@ -82,8 +82,8 @@ pub fn transpose<T>(v: Vec<Vec<T>>) -> Vec<Vec<T>> {
 
 /// Count bases in a sequence, returning `(valid_len, [A, C, G, T, N])`.
 ///
-/// Non-standard characters (IUPAC codes, gaps) are excluded from `len` and
-/// not counted in any of the five canonical bins.
+/// IUPAC ambiguous codes (M, R, W, S, Y, K, V, H, D, B) are counted as `N`;
+/// other non-standard characters (e.g., gaps, `*`) are excluded from `len`.
 pub fn count_bases(seq: &[u8]) -> (usize, [usize; 5]) {
     let mut len = 0usize;
     let mut base_cnt = [0usize; 5];

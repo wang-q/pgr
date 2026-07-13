@@ -14,7 +14,7 @@ This command filters and formats sequences in FASTA files.
 Filters:
 * --min-len N: Keep sequences >= N bp
 * --max-len N: Keep sequences <= N bp
-* --max-n N: Keep sequences with < N ambiguous bases
+* --max-n N: Keep sequences with <= N ambiguous bases (N/IUPAC)
 * --uniq: Remove duplicate sequence IDs
 
 Formatters:
@@ -53,7 +53,7 @@ Examples:
                 .short('n')
                 .num_args(1)
                 .value_parser(value_parser!(usize))
-                .help("Pass sequences with fewer than this number of Ns"),
+                .help("Pass sequences with at most this number of ambiguous bases (N/IUPAC)"),
         )
         .arg(
             Arg::new("uniq")

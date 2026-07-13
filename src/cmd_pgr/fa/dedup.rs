@@ -155,6 +155,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 writer.write_fmt(format_args!("{}\t{}\n", v[0], v[i]))?;
             }
         }
+        writer.flush()?;
     }
 
     fa_out.get_mut().flush()?;
