@@ -19,6 +19,7 @@ The output is a list of regions in the format:
 Notes:
 * Coordinates are 1-based, inclusive
 * Supports both plain text and gzipped (.gz) files
+* Reads from stdin if input file is 'stdin'
 * Adjacent masked positions are merged into a single region
 
 Examples:

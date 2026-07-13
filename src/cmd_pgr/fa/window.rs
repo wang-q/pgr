@@ -15,6 +15,8 @@ Notes:
 * Coordinates are 1-based, inclusive.
 * Windows containing only Ns are skipped.
 * Output sequences are unwrapped (single line).
+* Supports both plain text and gzipped (.gz) files
+* Reads from stdin if input file is 'stdin'
 
 Coverage & Overlap:
 * Theoretical Coverage = Window Length / Step Size.

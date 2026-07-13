@@ -18,7 +18,6 @@ Notes:
 * Creates index file (.gzi) for random access
 * Supports stdin as input (use 'stdin' as filename)
 * Preserves original file
-* Cannot compress already gzipped files
 * Default thread count is 1
 * Index creation is automatic
 

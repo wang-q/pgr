@@ -27,6 +27,7 @@ Output options:
 Notes:
 * First occurrence is kept, others removed
 * Supports both plain text and gzipped (.gz) files
+* Reads from stdin if input file is 'stdin'
 * -b implies case-insensitive comparison for sequences
 
 Examples:
