@@ -108,8 +108,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let is_dash = args.get_flag("dash");
     let is_simplify = args.get_flag("simplify");
 
-    let mut fa_out =
-        pgr::libs::fmt::fa::writer_with_wrap(crate::cmd_pgr::args::get_outfile(args), opt_line)?;
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
+    let mut fa_out = pgr::libs::fmt::fa::writer_with_wrap(outfile, opt_line)
+        .with_context(|| format!("Failed to open writer for {}", outfile))?;
 
     let mut set_list: BTreeSet<String> = BTreeSet::new();
     for infile in args.get_many::<String>("infiles").unwrap() {
