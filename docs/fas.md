@@ -74,6 +74,10 @@ pgr fas link [OPTIONS] <infiles>...
 *   `--best`: Output nearest-neighbor bilateral links based on sequence distance (deduplicated).
 *   `-o, --outfile <file>`: Output filename (default: stdout).
 
+Notes:
+
+*   `--pair` and `--best` are mutually exclusive.
+
 Output format: each line is tab-separated. By default, all ranges in a block are printed on one line. With `--pair` or `--best`, each line contains two ranges.
 
 ### name
@@ -167,6 +171,10 @@ pgr fas concat [OPTIONS] --required <name.lst> <infiles>...
 *   `-R, --required <file>`: File with a list of species names to keep/order (required).
 *   `--phylip`: Output in relaxed PHYLIP format instead of FASTA.
 *   `-o, --outfile <file>`: Output filename (default: stdout).
+
+Notes:
+
+*   Missing sequences are filled with gaps (`-`).
 
 ### consensus
 
@@ -269,6 +277,10 @@ pgr fas create [OPTIONS] --genome <genome> <infiles>...
 *   `-n, --name <name>`: Set a species name for ranges (default: inferred from header).
 *   `-o, --outfile <file>`: Output filename (default: stdout).
 
+Notes:
+
+*   The reference genome FA file can be plain text or bgzipped.
+
 ### separate
 
 Separates block FA files into individual files per species.
@@ -280,6 +292,11 @@ pgr fas separate [OPTIONS] <infiles>...
 *   `-s, --suffix <string>`: File extension for output files (default: .fasta).
 *   `--rc`: Reverse-complement sequences if the strand is '-'.
 *   `-o, --outdir <dir>`: Output directory (default: stdout).
+
+Notes:
+
+*   Dashes are removed from sequences.
+*   Existing output files are overwritten.
 
 ### split
 
@@ -309,6 +326,10 @@ pgr fas to-vcf [OPTIONS] <infiles>...
 *   `--sizes <file>`: Chrom sizes file to emit `##contig` headers.
 *   `-o, --outfile <file>`: Output filename (default: stdout).
 
+Notes:
+
+*   All blocks must contain the same species in the same order, because VCF uses a fixed sample header.
+
 ### to-xlsx
 
 Exports variations (substitutions and indels) to an Excel file with formatting.
@@ -336,6 +357,10 @@ pgr fas variation [OPTIONS] <infiles>...
 
 *   `--outgroup`: Indicates presence of outgroups.
 *   `-o, --outfile <file>`: Output filename (default: stdout).
+
+Notes:
+
+*   `--outgroup` requires at least 2 sequences per block.
 
 Output columns (tab-separated):
 

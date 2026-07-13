@@ -6,10 +6,10 @@ use std::io::Write;
 /// Build the clap subcommand for join.
 pub fn make_subcommand() -> Command {
     Command::new("join")
-        .about("Joins multiple block fasta files by a common target")
+        .about("Joins multiple block FA files by a common target")
         .after_help(
             r###"
-Joins multiple block fasta files by a common target sequence.
+Joins multiple block FA files by a common target sequence.
 
 Notes:
 * Supports both plain text and gzipped (.gz) files

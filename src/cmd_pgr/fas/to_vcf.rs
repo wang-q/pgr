@@ -55,6 +55,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     };
 
     let mut header_written = false;
+    let mut header_names: Option<Vec<String>> = None;
 
     for infile in args.get_many::<String>("infiles").unwrap() {
         let mut reader =
@@ -67,7 +68,18 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             if !header_written {
                 let contigs_ref = if sizes.is_empty() { None } else { Some(&sizes) };
                 write_vcf_header(&mut writer, contigs_ref, &block.names)?;
+                header_names = Some(block.names.clone());
                 header_written = true;
+            } else if let Some(ref expected) = header_names {
+                if block.names != *expected {
+                    anyhow::bail!(
+                        "block {} from {} has inconsistent samples: expected {:?}, got {:?}; VCF requires the same species in the same order across all blocks",
+                        block_idx,
+                        infile,
+                        expected,
+                        block.names
+                    );
+                }
             }
 
             let mut seqs: Vec<&[u8]> = vec![];

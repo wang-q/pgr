@@ -13,10 +13,11 @@ Replaces headers in block FA files using a TSV file.
 Notes:
 * Supports both plain text and gzipped (.gz) files
 * Reads from stdin if input file is 'stdin'
-* The replacement file (--replace-tsv) should contain one or more fields:
-  * `original_name  replace_name   more_replace_name`
-* One field: Deletes the entire alignment block for the specified species
-* Three or more fields: Duplicates the entire alignment block for each replacement name
+* The replacement file (--replace-tsv) contains tab-separated fields per line:
+* One field: if the name uniquely matches one header in a block, the whole block is dropped
+* Two fields: `original_name<TAB>new_name` replaces the matching header
+* Three or more fields: duplicates the entire alignment block once for every replacement name after the first
+* If a block contains multiple matching headers, the block is kept unchanged and a warning is emitted
 
 Examples:
 1. Replace species names in a block FA file:

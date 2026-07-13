@@ -1,5 +1,5 @@
 use anyhow::Context;
-use clap::{Arg, ArgAction, ArgMatches, Command};
+use clap::{Arg, ArgAction, ArgGroup, ArgMatches, Command};
 use itertools::Itertools;
 use std::io::Write;
 
@@ -47,6 +47,11 @@ Examples:
                 .help("Output nearest-neighbor bilateral links"),
         )
         .arg(crate::cmd_pgr::args::outfile_arg())
+        .group(
+            ArgGroup::new("link_mode")
+                .args(["pair", "best"])
+                .multiple(false),
+        )
 }
 
 /// Execute the link command.
