@@ -389,7 +389,7 @@ pub fn concat_blocks_into<R: io::BufRead>(
             } else {
                 seq_of
                     .entry(name.to_string())
-                    .and_modify(|e| *e += "-".repeat(length).as_str());
+                    .and_modify(|e| e.push_str(&"-".repeat(length)));
             }
         }
     }
@@ -954,6 +954,17 @@ pub struct ConsensusOptions {
 /// Build consensus for one [`FasBlock`] and return a fas-formatted string.
 pub fn consensus_block(block: &FasBlock, opts: &ConsensusOptions) -> anyhow::Result<String> {
     use std::fmt::Write;
+
+    if block.entries.is_empty() {
+        anyhow::bail!("empty fas block");
+    }
+    if opts.has_outgroup && block.entries.len() < 2 {
+        anyhow::bail!(
+            "outgroup mode requires at least 2 entries, got {}",
+            block.entries.len()
+        );
+    }
+
     let outgroup = if opts.has_outgroup {
         block.entries.last()
     } else {
@@ -989,10 +1000,7 @@ pub fn consensus_block(block: &FasBlock, opts: &ConsensusOptions) -> anyhow::Res
     };
     cons = cons.replace('-', "");
 
-    let mut range = match block.entries.first() {
-        Some(e) => e.range().clone(),
-        None => anyhow::bail!("empty block"),
-    };
+    let mut range = block.entries[0].range().clone();
 
     let mut out_string = String::new();
     if range.is_valid() {
@@ -1036,6 +1044,13 @@ pub fn refine_block(block: &FasBlock, opts: &RefineOptions) -> anyhow::Result<St
     use std::fmt::Write;
 
     let n = block.entries.len();
+    if n == 0 {
+        anyhow::bail!("empty fas block");
+    }
+    if opts.has_outgroup && n < 3 {
+        anyhow::bail!("outgroup mode requires at least 3 entries, got {}", n);
+    }
+
     let mut seqs: Vec<String> = Vec::with_capacity(n);
     let mut ranges = Vec::with_capacity(n);
     for entry in &block.entries {
@@ -1083,7 +1098,7 @@ mod fas_tests {
 
     #[test]
     fn parse_fas_block_range() {
-        let str = ">S288c.I(+):13267-13287
+        let input = ">S288c.I(+):13267-13287
 TCGTCAGTTGGTTGACCATTA
 >YJM789.gi_151941327(-):5668-5688
 TCGTCAGTTGGTTGACCATTA
@@ -1101,7 +1116,7 @@ GCATATAATATGAACCAATATCTATTTCATGGAGAGACTATGATAT-CCCCGTACTATTTCTA
 >Spar.gi_29362478(-):2102-2161
 GC-TAAAATATGAA-CGATATTTA-CCTGTAGAGGGACTATGGGAT-CCCCATACTACTTT--
 ";
-        let mut reader = BufReader::new(str.as_bytes());
+        let mut reader = BufReader::new(input.as_bytes());
 
         let block = crate::libs::fmt::fas::next_fas_block(&mut reader).unwrap();
         assert_eq!(
@@ -1122,10 +1137,10 @@ GC-TAAAATATGAA-CGATATTTA-CCTGTAGAGGGACTATGGGAT-CCCCATACTACTTT--
 
     #[test]
     fn parse_fas_block_rejects_missing_header() {
-        let str = ">S288c.I(+):13267-13287
+        let input = ">S288c.I(+):13267-13287
 TCGTCAGTTGGTTGACCATTA
 ACGT\n";
-        let mut reader = BufReader::new(str.as_bytes());
+        let mut reader = BufReader::new(input.as_bytes());
         let result = crate::libs::fmt::fas::next_fas_block(&mut reader);
         assert!(
             result.is_err(),
