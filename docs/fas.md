@@ -99,7 +99,7 @@ pgr fas name [OPTIONS] <infiles>...
 pgr fas stat [OPTIONS] <infiles>...
 ```
 
-*   `--outgroup`：将每个 block 的最后一条序列视为外群。`length` 列仍反映完整比对长度；其他统计量（`comparable`、`difference`、`gap`、`ambiguous`、`D`、`indel`）均排除外群。
+*   `--outgroup`：将每个 block 的最后一条序列视为外群。`length` 列始终反映完整比对长度（含外群）；其他统计量（`comparable`、`difference`、`gap`、`ambiguous`、`D`、`indel`）均基于排除外群后的序列计算。
 *   `-o, --outfile <file>`：输出文件名（默认：stdout）。
 
 输出列（制表符分隔）：
@@ -274,7 +274,7 @@ pgr fas create [OPTIONS] --genome <genome> <infiles>...
 ```
 
 *   `-g, --genome <file>`：参考基因组 FA 文件路径（必填）。
-*   `-n, --name <name>`：为区间设置物种名（默认：从头信息推断）。
+*   `-n, --name <name>`：为区间设置物种名（默认：从区间字符串中的物种名推断）。
 *   `-o, --outfile <file>`：输出文件名（默认：stdout）。
 
 注意：

@@ -4,6 +4,7 @@ mod common;
 
 use common::PgrCmd;
 use std::fs;
+use std::io::Write;
 use tempfile::TempDir;
 
 #[test]
@@ -672,6 +673,183 @@ fn command_fas_concat_empty_required() {
     assert!(
         stderr.contains("required file is empty"),
         "expected empty --required error, got {}",
+        stderr
+    );
+}
+
+#[test]
+fn command_consensus() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "fas",
+            "consensus",
+            "tests/fas/example.fas",
+            "--engine",
+            "builtin",
+        ])
+        .run();
+
+    assert!(stdout.contains(">consensus"), "consensus header");
+    assert!(stdout.lines().count() > 2, "has header and sequence");
+}
+
+#[test]
+fn command_variation() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&["fas", "variation", "tests/fas/example.fas"])
+        .run();
+
+    assert!(stdout.contains("#target"), "header line");
+    assert!(stdout.lines().count() > 1, "has data rows");
+}
+
+#[test]
+fn command_to_vcf() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "fas",
+            "to-vcf",
+            "--sizes",
+            "tests/fas_vcf/S288c.chr.sizes",
+            "tests/fas_vcf/YDL184C.fas",
+        ])
+        .run();
+
+    assert!(stdout.starts_with("##fileformat=VCFv4.2"), "vcf header");
+    assert!(stdout.contains("##contig=<ID="), "contig header");
+    assert!(stdout.contains("\nIV\t"), "data line");
+}
+
+#[test]
+fn command_to_xlsx() {
+    let temp = TempDir::new().unwrap();
+    let out = temp.path().join("variations.xlsx");
+
+    PgrCmd::new()
+        .args(&[
+            "fas",
+            "to-xlsx",
+            "tests/fas/example.fas",
+            "-o",
+            out.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    assert!(out.is_file());
+    assert!(fs::metadata(&out).unwrap().len() > 0);
+}
+
+#[test]
+fn command_multiz() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "fas",
+            "multiz",
+            "-r",
+            "S288c",
+            "tests/fas/S288cvsRM11_1a.slice.fas",
+            "tests/fas/S288cvsSpar.slice.fas",
+        ])
+        .run();
+
+    assert!(stdout.contains(">S288c."), "has S288c entry");
+    assert!(stdout.lines().count() > 2, "has output blocks");
+}
+
+#[test]
+fn command_multiz_gzip() {
+    let temp = TempDir::new().unwrap();
+
+    let rm11 = fs::read("tests/fas/S288cvsRM11_1a.slice.fas").unwrap();
+    let spar = fs::read("tests/fas/S288cvsSpar.slice.fas").unwrap();
+
+    let rm11_gz = temp.path().join("rm11.fas.gz");
+    let spar_gz = temp.path().join("spar.fas.gz");
+
+    {
+        let mut encoder = flate2::write::GzEncoder::new(
+            fs::File::create(&rm11_gz).unwrap(),
+            flate2::Compression::default(),
+        );
+        encoder.write_all(&rm11).unwrap();
+        encoder.finish().unwrap();
+    }
+    {
+        let mut encoder = flate2::write::GzEncoder::new(
+            fs::File::create(&spar_gz).unwrap(),
+            flate2::Compression::default(),
+        );
+        encoder.write_all(&spar).unwrap();
+        encoder.finish().unwrap();
+    }
+
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "fas",
+            "multiz",
+            "-r",
+            "S288c",
+            rm11_gz.to_str().unwrap(),
+            spar_gz.to_str().unwrap(),
+        ])
+        .run();
+
+    assert!(stdout.contains(">S288c."), "has S288c entry");
+    assert!(stdout.lines().count() > 2, "has output blocks");
+}
+
+#[test]
+fn command_fas_stat_outgroup_length_consistent() {
+    let (stdout_no, _) = PgrCmd::new()
+        .args(&["fas", "stat", "tests/fas/example.fas"])
+        .run();
+    let (stdout_og, _) = PgrCmd::new()
+        .args(&["fas", "stat", "tests/fas/example.fas", "--outgroup"])
+        .run();
+
+    let lines_no: Vec<&str> = stdout_no.lines().collect();
+    let lines_og: Vec<&str> = stdout_og.lines().collect();
+    assert_eq!(lines_no.len(), lines_og.len());
+
+    for (no, og) in lines_no.iter().skip(1).zip(lines_og.iter().skip(1)) {
+        let cols_no: Vec<&str> = no.split('\t').collect();
+        let cols_og: Vec<&str> = og.split('\t').collect();
+        assert_eq!(
+            cols_no[1], cols_og[1],
+            "length should be consistent with and without --outgroup"
+        );
+    }
+}
+
+#[test]
+fn command_refine_skips_malformed_block() {
+    let temp = TempDir::new().unwrap();
+    let fas_file = temp.path().join("malformed.fas");
+    fs::write(
+        &fas_file,
+        ">target.chr1:1-5\nACGTA\nACGT\n\n>target.chr1:1-5\nACGTA\n>out.chr1:1-5\nACGTC\n",
+    )
+    .unwrap();
+
+    let (stdout, stderr) = PgrCmd::new()
+        .args(&[
+            "fas",
+            "refine",
+            fas_file.to_str().unwrap(),
+            "--engine",
+            "none",
+        ])
+        .run();
+
+    assert_eq!(
+        stdout.lines().count(),
+        5,
+        "only the valid block should be output"
+    );
+    assert!(
+        stderr.contains("skipping malformed fas block"),
+        "expected warning about malformed block, got {}",
         stderr
     );
 }

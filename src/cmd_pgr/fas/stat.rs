@@ -62,6 +62,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 continue;
             }
             let target = block.entries.first().unwrap().range().to_string();
+            // length always reflects the full alignment, even when --outgroup is used
+            let full_length = block.entries.first().unwrap().seq().len();
 
             let mut seqs: Vec<&[u8]> = vec![];
             for entry in &block.entries {
@@ -78,7 +80,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 seqs.pop();
             }
 
-            let (length, comparable, difference, gap, ambiguous, mean_d) =
+            let (_, comparable, difference, gap, ambiguous, mean_d) =
                 pgr::libs::alignment::alignment_stat(&seqs)?;
 
             let mut indel_ints = intspan::IntSpan::new();
@@ -90,7 +92,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 format!(
                     "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n",
                     target,
-                    length,
+                    full_length,
                     comparable,
                     difference,
                     gap,

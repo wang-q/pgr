@@ -319,9 +319,19 @@ where
         for infile in infiles {
             let mut reader = crate::reader(infile)?;
             for block_result in iter_fas_blocks(&mut reader) {
-                let block = block_result?;
-                let out_string = proc_block(&block)?;
-                writer.write_all(out_string.as_ref())?;
+                match block_result {
+                    Ok(block) => {
+                        let out_string = proc_block(&block)?;
+                        writer.write_all(out_string.as_ref())?;
+                    }
+                    Err(e) => {
+                        let _ = writeln!(
+                            std::io::stderr(),
+                            "pgr: warning: skipping malformed fas block: {}",
+                            e
+                        );
+                    }
+                }
             }
         }
     } else {
