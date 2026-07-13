@@ -63,7 +63,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
         if let Some(new_names) = replace_of.get(&name) {
             for el in new_names {
-                let record_replace = pgr::libs::fmt::fa::new_record(el, &record.sequence()[..]);
+                let record_replace = pgr::libs::fmt::fa::new_record_preserving_desc(
+                    el,
+                    &record,
+                    &record.sequence()[..],
+                );
                 fa_out.write_record(&record_replace)?;
             }
         } else if !is_some {

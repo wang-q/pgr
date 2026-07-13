@@ -147,7 +147,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 is_upper,
             );
 
-            let record_out = pgr::libs::fmt::fa::new_record(&name, seq_out.as_bytes());
+            let record_out =
+                pgr::libs::fmt::fa::new_record_preserving_desc(&name, &record, seq_out.as_bytes());
             fa_out.write_record(&record_out)?;
         }
     }

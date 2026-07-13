@@ -96,12 +96,19 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
                 let name = String::from_utf8(record.name().into())
                     .map_err(|e| anyhow::anyhow!("invalid utf8 in record name: {}", e))?;
+                let desc = record
+                    .description()
+                    .map(|d| std::str::from_utf8(d))
+                    .transpose()
+                    .map_err(|e| anyhow::anyhow!("invalid utf8 in description: {}", e))?;
                 let seq = record.sequence();
                 let seq_str = std::str::from_utf8(seq.as_ref())
                     .map_err(|e| anyhow::anyhow!("invalid utf8 in sequence: {}", e))?;
 
                 let filename = pgr::libs::io::sanitize_filename(&name);
-                write_record_to_fh(outdir, &mut fh_of, &filename, &name, seq_str, &mut out)?;
+                write_record_to_fh(
+                    outdir, &mut fh_of, &filename, &name, desc, seq_str, &mut out,
+                )?;
             }
         }
     } else if mode == "about" {
@@ -132,13 +139,20 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
                 let name = String::from_utf8(record.name().into())
                     .map_err(|e| anyhow::anyhow!("invalid utf8 in record name: {}", e))?;
+                let desc = record
+                    .description()
+                    .map(|d| std::str::from_utf8(d))
+                    .transpose()
+                    .map_err(|e| anyhow::anyhow!("invalid utf8 in description: {}", e))?;
 
                 let seq = record.sequence();
                 let seq_str = std::str::from_utf8(seq.as_ref())
                     .map_err(|e| anyhow::anyhow!("invalid utf8 in sequence: {}", e))?;
 
                 let filename = format!("{:0width$}", chunker.file_index(), width = part_width);
-                write_record_to_fh(outdir, &mut fh_of, &filename, &name, seq_str, &mut out)?;
+                write_record_to_fh(
+                    outdir, &mut fh_of, &filename, &name, desc, seq_str, &mut out,
+                )?;
                 chunker.advance(seq.len());
             } // record
         } // file
@@ -176,17 +190,22 @@ fn write_record_to_fh(
     fh_of: &mut BTreeMap<String, BufWriter<std::fs::File>>,
     filename: &str,
     name: &str,
+    desc: Option<&str>,
     seq_str: &str,
     stdout_lock: &mut impl Write,
 ) -> anyhow::Result<()> {
+    let header = match desc {
+        Some(d) if !d.is_empty() => format!(">{} {}", name, d),
+        _ => format!(">{}", name),
+    };
     if outdir == "stdout" {
-        write!(stdout_lock, ">{}\n{}\n", name, seq_str)?;
+        write!(stdout_lock, "{}\n{}\n", header, seq_str)?;
     } else {
         gen_fh(outdir, fh_of, filename)?;
         let fh = fh_of
             .get_mut(filename)
             .ok_or_else(|| anyhow::anyhow!("file handle not found for: {}", filename))?;
-        write!(fh, ">{}\n{}\n", name, seq_str)?;
+        write!(fh, "{}\n{}\n", header, seq_str)?;
     }
     Ok(())
 }

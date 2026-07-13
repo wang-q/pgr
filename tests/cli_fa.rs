@@ -336,7 +336,7 @@ fn command_filter_fmt() {
         .run();
 
     assert!(!stdout.contains(">read.1 simplify\nAGGG"), "simplify");
-    assert!(stdout.contains(">read\nAGGG"), "simplify");
+    assert!(stdout.contains(">read simplify\nAGGG"), "simplify");
 }
 
 #[test]

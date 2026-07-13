@@ -48,6 +48,15 @@ pub fn new_record(name: &str, seq: &[u8]) -> fasta::Record {
     fasta::Record::new(definition, sequence)
 }
 
+/// Build a FASTA record from a new name and sequence, preserving the
+/// description from `source`.
+pub fn new_record_preserving_desc(name: &str, source: &fasta::Record, seq: &[u8]) -> fasta::Record {
+    let definition =
+        fasta::record::Definition::new(name, source.description().map(|d| d.to_owned()));
+    let sequence = fasta::record::Sequence::from(seq.to_vec());
+    fasta::Record::new(definition, sequence)
+}
+
 /// Generate windowed sub-sequences from `name`/`seq`.
 ///
 /// Each window is `len` bytes long (the last one may be shorter); successive
@@ -413,7 +422,7 @@ pub fn mask_sequence(seq: &str, spans: &intspan::IntSpan, hard: bool) -> anyhow:
     Ok(out)
 }
 
-/// Find contiguous masked regions (lowercase and/or N/n) in a sequence. Returns 0-based (begin, end) pairs.
+/// Find contiguous masked regions (lowercase and/or N/n) in a sequence. Returns 0-based inclusive (begin, end) pairs.
 pub fn find_masked_regions(seq: &[u8], gap_only: bool) -> Vec<(usize, usize)> {
     let mut regions = Vec::new();
     let mut begin = usize::MAX;

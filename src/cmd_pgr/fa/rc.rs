@@ -88,7 +88,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             .complement()
             .rev()
             .collect::<Result<_, _>>()?;
-        let record_rc = pgr::libs::fmt::fa::new_record(&new_name, &seq_rc);
+        let record_rc = pgr::libs::fmt::fa::new_record_preserving_desc(&new_name, &record, &seq_rc);
         fa_out.write_record(&record_rc)?;
     }
 

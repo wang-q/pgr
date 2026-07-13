@@ -35,7 +35,7 @@ Examples:
    pgr fa window input.fa --window 200 --step 100
 
 2. Split large file into chunks of 1M records with shuffling:
-   pgr fa window input.fa --chunk 1000000 --shuffle -o split.fa
+   pgr fa window input.fa --chunk-records 1000000 --shuffle -o split.fa
 
 3. Use default settings (200bp window, 100bp step):
    pgr fa window input.fa
