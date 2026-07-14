@@ -31,22 +31,17 @@ impl Blocks {
             Bound::Excluded(&x) => x + 1,
             Bound::Unbounded => 0,
         };
-
         let end = match range.end_bound() {
-            Bound::Included(&x) => Bound::Included(x),
-            Bound::Excluded(&x) => Bound::Excluded(x),
-            Bound::Unbounded => Bound::Unbounded,
+            Bound::Included(&x) => x + 1,
+            Bound::Excluded(&x) => x,
+            Bound::Unbounded => usize::MAX,
         };
 
         self.0
             .iter()
             // Assume blocks are sorted
             .skip_while(move |block| block.end <= start)
-            .take_while(move |block| match end {
-                Bound::Included(e) => block.start <= e,
-                Bound::Excluded(e) => block.start < e,
-                Bound::Unbounded => true,
-            })
+            .take_while(move |block| block.start < end)
     }
 
     /// Replace overlapping positions in `seq` with 'N', using 0-based global coordinates.
@@ -556,9 +551,12 @@ pub fn read_u64<R: Read>(reader: &mut R, is_swapped: bool) -> Result<u64> {
 
 /// Read `count` little-endian u32 values, byte-swapping if `is_swapped` is true.
 pub fn read_u32_vec<R: Read>(reader: &mut R, count: usize, is_swapped: bool) -> Result<Vec<u32>> {
+    let mut buf = vec![0u8; count * 4];
+    reader.read_exact(&mut buf)?;
     let mut vec = Vec::with_capacity(count);
-    for _ in 0..count {
-        vec.push(read_u32(reader, is_swapped)?);
+    for chunk in buf.chunks_exact(4) {
+        let val = u32::from_le_bytes(chunk.try_into().unwrap());
+        vec.push(if is_swapped { val.swap_bytes() } else { val });
     }
     Ok(vec)
 }

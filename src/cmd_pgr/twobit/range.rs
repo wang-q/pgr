@@ -2,6 +2,7 @@ use anyhow::Context;
 use clap::{ArgMatches, Command};
 use pgr::libs::fmt::twobit::TwoBitFile;
 use pgr::libs::nt;
+use std::collections::HashMap;
 use std::io::Write;
 
 /// Build the clap subcommand for range.
@@ -54,6 +55,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         TwoBitFile::open(infile).with_context(|| format!("Failed to open 2bit file {}", infile))?;
     let mut writer = pgr::writer(output_path)
         .with_context(|| format!("Failed to open writer for {}", output_path))?;
+    let mut len_cache: HashMap<String, usize> = HashMap::new();
 
     for el in ranges.iter().filter(|s| !s.trim().is_empty()) {
         let rg = intspan::Range::from_str(el);
@@ -90,7 +92,14 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             let e = end_val as usize;
 
             // Warn if the requested range exceeds the sequence length.
-            let seq_len = tb.get_sequence_len(seq_id)?;
+            let seq_len = match len_cache.get(seq_id) {
+                Some(&len) => len,
+                None => {
+                    let len = tb.get_sequence_len(seq_id)?;
+                    len_cache.insert(seq_id.to_string(), len);
+                    len
+                }
+            };
             if s >= seq_len {
                 log::warn!(
                     "range {} start {} exceeds sequence length {} for {}; skipping",

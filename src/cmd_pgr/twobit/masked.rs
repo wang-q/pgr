@@ -54,9 +54,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             let (n_blocks, mask_blocks) = tb.get_sequence_blocks(&name)?;
 
             let mut blocks = Vec::new();
-            blocks.extend(n_blocks.0.into_iter());
+            blocks.extend(n_blocks.0);
             if !is_gap {
-                blocks.extend(mask_blocks.0.into_iter());
+                blocks.extend(mask_blocks.0);
             }
 
             if blocks.is_empty() {
