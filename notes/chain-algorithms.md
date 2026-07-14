@@ -190,6 +190,8 @@ PSL / chain 文件
 
 Degeneracy 检查本质是一个**Top-K 类别占比惩罚**算法。
 
+见 `src/libs/ds/top_k_purity.rs`。
+
 **问题抽象**：给定一个多类别计数向量 `counts[0..C-1]`，总次数 `total`。若最大的 K 项之和占比超过阈值 `ok_ratio`，则按超出比例对分数进行惩罚。
 
 **核心步骤**：

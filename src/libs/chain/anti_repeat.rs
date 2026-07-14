@@ -8,6 +8,7 @@
 
 use crate::libs::alignment::coords::reverse_range_pair;
 use crate::libs::chain::{Block, Chain};
+use crate::libs::ds::TopKPurity;
 use crate::libs::fmt::twobit::TwoBitFile;
 use crate::libs::nt::is_lower;
 
@@ -87,8 +88,7 @@ pub fn check_degeneracy<R: std::io::Read + std::io::Seek>(
     q_2bit: &mut TwoBitFile<R>,
     min_score: f64,
 ) -> bool {
-    let mut counts = [0; 4]; // T, C, A, G
-    let mut total_matches = 0;
+    let mut detector = TopKPurity::new(4, 2, 0.80);
 
     for block in blocks {
         if let Some((t_slice, q_slice)) = get_slices(
@@ -116,42 +116,31 @@ pub fn check_degeneracy<R: std::io::Read + std::io::Seek>(
                 }
 
                 if t_val >= 0 && t_val == q_val {
-                    counts[t_val as usize] += 1;
-                    total_matches += 1;
+                    detector.increment(t_val as usize);
                 }
             }
         }
     }
 
-    if total_matches == 0 {
+    if detector.total() == 0 {
         return false;
     }
 
-    // Sum of top 2
-    let mut counts_vec = counts.to_vec();
-    counts_vec.sort_unstable_by(|a, b| b.cmp(a)); // Descending
-    let best2 = counts_vec[0] + counts_vec[1];
-
-    let ok_best2 = 0.80;
-    let observed_best2 = best2 as f64 / total_matches as f64;
-    let over_ok = observed_best2 - ok_best2;
-    let max_over_ok = 1.0 - ok_best2;
-
-    if over_ok <= 0.0 {
-        true
-    } else {
-        let adjust_factor = 1.01 - over_ok / max_over_ok;
-        let adjusted_score = chain.header.score * adjust_factor;
-        if adjusted_score < min_score {
-            log::info!(
-                "Chain {} filtered by degeneracy: score {} -> {}",
-                chain.header.id,
-                chain.header.score,
-                adjusted_score
-            );
-            false
-        } else {
-            true
+    match detector.penalty_factor() {
+        None => true,
+        Some(factor) => {
+            let adjusted_score = chain.header.score * factor;
+            if adjusted_score < min_score {
+                log::info!(
+                    "Chain {} filtered by degeneracy: score {} -> {}",
+                    chain.header.id,
+                    chain.header.score,
+                    adjusted_score
+                );
+                false
+            } else {
+                true
+            }
         }
     }
 }
