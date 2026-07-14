@@ -71,13 +71,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             let seq = tb.read_sequence(&name, None, None, false)?;
 
             // Write FASTA with the sequence on a single line.
-            write!(
-                writer,
-                ">{}
-{}
-",
-                name, seq
-            )?;
+            writeln!(writer, ">{}", name)?;
+            writeln!(writer, "{}", seq)?;
         }
     }
 

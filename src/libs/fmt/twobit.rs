@@ -71,9 +71,7 @@ impl Blocks {
         }
     }
 
-    /// Pack a DNA string into 2-bit data and extract N-blocks and soft-mask blocks.
-    ///
-    /// Returns `(packed_dna, n_blocks, mask_blocks, dna_size)`.
+    /// Pack a DNA string into 2-bit data, returning `(packed, n_blocks, mask_blocks, dna_size)`.
     pub fn from_dna(dna: &str, do_mask: bool) -> (Vec<u8>, Blocks, Blocks, u32) {
         let len = dna.len();
         let mut n_blocks_vec = Vec::new();
@@ -157,9 +155,7 @@ impl Blocks {
     }
 }
 
-/// Read a single 2bit record from the current reader position and return the
-/// decoded DNA string with masks applied. Reused by `TwoBitFile` and `pbit::Decompressor`.
-/// The reader must be positioned at the start of the record (dna_size field).
+/// Read and decode a single 2bit record, optionally sub-sampled, with masks applied.
 pub fn read_2bit_record<R: Read + Seek>(
     reader: &mut R,
     is_swapped: bool,
@@ -167,6 +163,7 @@ pub fn read_2bit_record<R: Read + Seek>(
     end: Option<usize>,
     no_mask: bool,
 ) -> Result<String> {
+    // The reader must be positioned at the start of the record (dna_size field).
     let dna_size = read_u32(reader, is_swapped)? as usize;
 
     let n_blocks = read_blocks(reader, is_swapped)?;
@@ -254,8 +251,7 @@ pub fn write_packed_record<W: Write>(
     Ok(())
 }
 
-/// Write a single 2bit record (dna_size + n_blocks + mask_blocks + reserved +
-/// packed_dna) to the writer. Reused by `TwoBitWriter` and `pbit::Compressor`.
+/// Write a single 2bit record to the writer, including blocks and packed DNA.
 pub fn write_2bit_record<W: Write>(writer: &mut W, dna: &str, do_mask: bool) -> Result<()> {
     let (packed, n_blocks, mask_blocks, dna_size) = Blocks::from_dna(dna, do_mask);
     write_packed_record(writer, dna_size, &n_blocks, &mask_blocks, &packed)
@@ -291,9 +287,7 @@ impl<W: std::io::Write> TwoBitWriter<W> {
         Self { writer }
     }
 
-    /// Write a complete 2bit file containing the given sequences.
-    ///
-    /// `do_mask` controls whether lowercase bases are stored as soft-mask blocks.
+    /// Write a complete 2bit file with the given sequences and optional soft-masking.
     pub fn write(&mut self, sequences: &[(&str, &str)], do_mask: bool) -> Result<()> {
         // Pack each sequence once and reuse the result for sizing and writing.
         let mut packed_records = Vec::with_capacity(sequences.len());
@@ -456,9 +450,7 @@ impl<R: Read + Seek> TwoBitFile<R> {
         read_blocks(&mut self.reader, self.is_swapped)
     }
 
-    /// Read a sequence (or subsequence) by name, applying masks unless `no_mask` is true.
-    ///
-    /// `start` and `end` are 0-based half-open coordinates; `None` means the full sequence.
+    /// Read a sequence by name; `start`/`end` are 0-based half-open (None = full) and masks are applied unless `no_mask` is true.
     pub fn read_sequence(
         &mut self,
         name: &str,

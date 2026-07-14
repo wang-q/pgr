@@ -19,7 +19,7 @@ Examples:
 1. Convert entire 2bit file to FASTA:
    pgr 2bit to-fa input.2bit -o output.fa
 
-2. No masking (all uppercase):
+2. Remove soft-masking (uppercase bases, Ns remain):
    pgr 2bit to-fa input.2bit --no-mask -o out.fa
 
 3. Set line width (default 60):

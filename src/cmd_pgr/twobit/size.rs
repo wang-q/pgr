@@ -49,7 +49,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             } else {
                 tb.get_sequence_len(&name)?
             };
-            writer.write_fmt(format_args!("{}\t{}\n", name, len))?;
+            writeln!(writer, "{}\t{}", name, len)?;
         }
     }
 

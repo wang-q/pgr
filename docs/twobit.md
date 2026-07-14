@@ -97,6 +97,6 @@ pgr 2bit to-fa [OPTIONS] <infile>
 ```
 
 *   `-l, --line <int>`: Sequence line length (default: 60). Set to 0 for single line.
-*   `--no-mask`: Convert sequence to all uppercase (remove soft-masking).
+*   `--no-mask`: Remove soft-masking (convert lowercase ACGT to uppercase). Hard-masked `N` positions remain unchanged.
 *   `-o, --outfile <file>`: Output filename (default: stdout).
-*   Masking is preserved by default; use `--no-mask` to emit uppercase only.
+*   Soft-masking is preserved by default; use `--no-mask` to emit uppercase bases while keeping `N` gaps as `N`.

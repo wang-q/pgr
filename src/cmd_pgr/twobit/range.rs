@@ -56,7 +56,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         .with_context(|| format!("Failed to open writer for {}", output_path))?;
 
     for el in ranges.iter().filter(|s| !s.trim().is_empty()) {
-        let el = el.as_str();
         let rg = intspan::Range::from_str(el);
         let seq_id = rg.chr();
 
@@ -124,9 +123,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         }
 
         // Use the original range string as the header to match documentation.
-        let header = el;
-
-        writeln!(writer, ">{}", header)?;
+        writeln!(writer, ">{}", el)?;
         writeln!(writer, "{}", seq)?;
     }
 
