@@ -10,9 +10,9 @@ pub const NO_LIMIT: usize = usize::MAX;
 
 /// Check whether a sequence passes size, N-count, and uniqueness filters.
 ///
-/// `seq_len` is the sequence length; `seq` is the raw bases (for N-count).
-/// When `is_uniq` is true, `name` is inserted into `seen` and the record is
-/// rejected if it was already present.
+/// `seq` provides both the length (via `seq.len()`) and the raw bases for
+/// N-counting. When `is_uniq` is true, `name` is inserted into `seen` and the
+/// record is rejected if it was already present.
 pub fn pass_filters(
     seq: &[u8],
     minsize: usize,

@@ -1,6 +1,6 @@
 use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches, Command};
-use std::collections::HashMap;
+use indexmap::IndexMap;
 use std::io::Write;
 
 /// Build the clap subcommand for dedup.
@@ -100,7 +100,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut fa_out = pgr::libs::fmt::fa::writer(outfile)
         .with_context(|| format!("Failed to open writer for {}", outfile))?;
 
-    let mut subject_map: HashMap<u64, Vec<String>> = HashMap::new();
+    let mut subject_map: IndexMap<u64, Vec<String>> = IndexMap::new();
 
     for infile in args.get_many::<String>("infiles").unwrap() {
         let mut fa_in = pgr::libs::fmt::fa::reader(infile)
@@ -126,10 +126,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             )?;
 
             match subject_map.entry(subject) {
-                std::collections::hash_map::Entry::Vacant(e) => {
+                indexmap::map::Entry::Vacant(e) => {
                     e.insert(vec![name_str]);
                 }
-                std::collections::hash_map::Entry::Occupied(mut e) => {
+                indexmap::map::Entry::Occupied(mut e) => {
                     flag_pass = false;
                     e.get_mut().push(name_str);
                 }

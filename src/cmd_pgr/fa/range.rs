@@ -15,8 +15,9 @@ Range format:
     seq_name(strand):start-end
 
 Notes:
-* Cannot read from stdin or plain gzip (requires BGZF for random access)
-* Supports BGZF compressed files (.gz)
+* Cannot read from stdin or plain gzip
+* Supports both plain FASTA and BGZF compressed files (.gz)
+* BGZF (from `pgr fa gz`) enables compressed random access
 * Automatic index creation (.loc)
 * LRU caching for better performance
 * Reverse complement for negative strand
