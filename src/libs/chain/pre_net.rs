@@ -1,7 +1,7 @@
 //! chainPreNet: filter chains that cannot be netted, marking used target/query ranges.
 
-use super::bitmap::BitMap;
 use super::record::ChainReader;
+use crate::libs::ds::BitMap;
 use anyhow::{bail, Result};
 use std::collections::HashMap;
 use std::io::{BufRead, Write};

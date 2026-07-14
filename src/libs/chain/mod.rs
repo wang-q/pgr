@@ -11,6 +11,8 @@
 //! * [`connect`] - Core chaining logic (dynamic programming, overlap trimming).
 //! * [`record`] - Data structures for reading/writing Chain format.
 //!
+//! Generic data structures such as [`BitMap`] live in [`crate::libs::ds`].
+//!
 //! # Algorithm Overview
 //!
 //! 1. **Input**: A set of alignment blocks (e.g., from PSL).
@@ -23,7 +25,6 @@
 //! 5. **Output**: Chains passing a minimum score threshold are output.
 
 pub mod anti_repeat;
-pub mod bitmap;
 pub mod connect;
 pub mod gap_calc;
 pub mod kdtree;
@@ -35,7 +36,6 @@ pub mod sort;
 pub mod stitch;
 pub mod sub_matrix;
 
-pub use bitmap::BitMap;
 pub use connect::{calc_block_score, chain_blocks, ChainableBlock, ScoreContext};
 pub use gap_calc::GapCalc;
 pub use kdtree::{ChainItem, KdTree};

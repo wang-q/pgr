@@ -1,6 +1,6 @@
 use anyhow::Context;
 use clap::{Arg, ArgMatches, Command};
-use pgr::libs::chain::BitMap;
+use pgr::libs::ds::BitMap;
 use std::collections::HashMap;
 /// Build the clap subcommand for pre-net.
 pub fn make_subcommand() -> Command {

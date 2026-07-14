@@ -1,6 +1,7 @@
 pub mod alignment;
 pub mod chain;
 pub mod clust;
+pub mod ds;
 pub mod fas_multiz;
 pub mod fas_xlsx;
 pub mod fasta;

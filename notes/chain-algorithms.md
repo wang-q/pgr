@@ -211,7 +211,7 @@ Degeneracy 检查本质是一个**Top-K 类别占比惩罚**算法。
 
 ## 8. chain pre-net 与位图范围覆盖（通用算法）
 
-见 `src/libs/chain/bitmap.rs` 与 `pre_net.rs`。`BitMap` 是一个**紧凑的位向量范围集合**，支持 O(⌈L/64⌉) 的范围设置与全置检查。
+见 `src/libs/ds/bitmap.rs` 与 `src/libs/chain/pre_net.rs`。`BitMap` 是一个**紧凑的位向量范围集合**，支持 O(⌈L/64⌉) 的范围设置与全置检查。
 
 **问题抽象**：在 `[0, size)` 上维护一个布尔集合，支持：
 - `set_range(start, len)`：把区间全部置 1。
