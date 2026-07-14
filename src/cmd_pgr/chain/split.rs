@@ -19,6 +19,8 @@ Notes:
 * Use `--lump N` to group sequences into at most N output files by hashing the
   first integer run in the sequence name (falls back to a stable hash when no
   digits are present); useful for parallelizing downstream steps
+* `--lump N` caps the number of output files at N; the actual number may be smaller
+  if the input contains fewer distinct buckets
 * The output directory is created if it does not exist
 
 Examples:

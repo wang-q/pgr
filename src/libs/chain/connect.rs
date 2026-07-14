@@ -455,6 +455,9 @@ fn find_crossover<S: SequenceReader>(
 }
 
 /// Removes duplicate blocks that have exact same coordinates.
+///
+/// When duplicates are found, the first block is retained and its score is not
+/// modified; scores of duplicate blocks are discarded.
 fn remove_exact_overlaps(blocks: &mut Vec<ChainableBlock>) {
     if blocks.is_empty() {
         return;

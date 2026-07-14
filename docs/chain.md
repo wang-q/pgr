@@ -24,6 +24,7 @@ Sorts Chain file(s) by score in descending order.
   - `--save-id`: Preserve original Chain IDs. By default IDs are renumbered from 1 after sorting.
 - **Notes**:
   - If no input is provided, the command fails.
+  - `pgr chain sort` reads from input files or `--input-list`; it does not support stdin.
   - Output is written to stdout when `--outfile` is omitted.
 
 ### 2. `pgr chain split`: Split chains
@@ -75,8 +76,8 @@ Removes chains that are fully covered by higher-scoring chains and therefore can
 - **Mechanism**: Uses a bitmap to track coverage on target and query sequences. Higher-scoring chains are processed first; lower-scoring chains whose blocks are already fully covered are dropped.
 - **Arguments**:
   - `infile`: Input Chain file. Must already be sorted by score in descending order (use `pgr chain sort`); otherwise the command returns an error.
-  - `t_sizes`: Target chromosome sizes file.
-  - `q_sizes`: Query chromosome sizes file.
+  - `t_sizes`: Target chromosome sizes file. Must contain every target sequence referenced by the input; a missing sequence causes an error rather than silently dropping the chain.
+  - `q_sizes`: Query chromosome sizes file. Must contain every query sequence referenced by the input; a missing sequence causes an error rather than silently dropping the chain.
   - `--pad`: Padding around blocks (default: 1).
   - `--dots <N>`: Print a progress dot every N chains.
   - `--incl-hap`: Include haplotype query sequences (`_hap` or `_alt` in the query name).

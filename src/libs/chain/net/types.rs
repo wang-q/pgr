@@ -183,7 +183,7 @@ impl Fill {
         let indent_str = " ".repeat(indent);
         write!(
             writer,
-            "{}fill {} {} {} {} {} {} id {} score {} ali {}",
+            "{}fill {} {} {} {} {} {} id {} score {:.0} ali {}",
             indent_str,
             self.start,
             self.end - self.start,

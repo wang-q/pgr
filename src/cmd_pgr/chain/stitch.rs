@@ -13,12 +13,12 @@ Processing:
   1. Group input chains by their ID.
   2. For each group, check that target name, query name, and query strand are
      consistent; inconsistent fragments are skipped with a warning.
-  3. Convert all fragments to blocks, sort the blocks by target start, and
-     rebuild a single chain.
+  3. Convert all fragments to blocks, sort the blocks by (target start, query start),
+     and rebuild a single chain.
   4. Sum the scores of all fragments and assign the result to the stitched chain.
 
 Notes:
-* Fragments are concatenated in input order before sorting by target start.
+* Fragments are concatenated in input order before sorting by (target start, query start).
 * No overlap or abutment validation is performed between fragments.
 
 Examples:

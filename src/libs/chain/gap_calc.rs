@@ -1,3 +1,4 @@
+use anyhow::{bail, Result};
 use std::cmp;
 
 /// A gap cost calculator using linear interpolation for efficient scoring.
@@ -41,7 +42,7 @@ impl GapCalc {
             625.0, 660.0, 700.0, 750.0, 900.0, 1400.0, 4000.0, 8000.0, 16000.0, 32000.0, 57000.0,
         ];
 
-        Self::new(pos, q_gap, t_gap, b_gap)
+        Self::new(pos, q_gap, t_gap, b_gap).expect("built-in GapCalc tables are valid")
     }
 
     /// Creates a "loose" gap calculator (suitable for distant species like chicken/human).
@@ -59,7 +60,7 @@ impl GapCalc {
         ];
         let t_gap = q_gap.clone();
 
-        Self::new(pos, q_gap, t_gap, b_gap)
+        Self::new(pos, q_gap, t_gap, b_gap).expect("built-in GapCalc tables are valid")
     }
 
     /// Creates a new `GapCalc` with affine gap costs.
@@ -88,10 +89,12 @@ impl GapCalc {
         // So b_gap table should be same as q_gap/t_gap.
         let b_gap = q_gap.clone();
 
-        Self::new(pos, q_gap, t_gap, b_gap)
+        Self::new(pos, q_gap, t_gap, b_gap).expect("built-in GapCalc tables are valid")
     }
 
     /// Creates a new `GapCalc` with custom cost tables.
+    ///
+    /// Returns an error if the input tables are too short or have inconsistent lengths.
     ///
     /// # Arguments
     ///
@@ -99,8 +102,21 @@ impl GapCalc {
     /// * `q_vals` - Costs for gaps in query sequence.
     /// * `t_vals` - Costs for gaps in target sequence.
     /// * `b_vals` - Costs for gaps in both sequences (simultaneous).
-    pub fn new(pos: Vec<i32>, q_vals: Vec<f64>, t_vals: Vec<f64>, b_vals: Vec<f64>) -> Self {
+    pub fn new(
+        pos: Vec<i32>,
+        q_vals: Vec<f64>,
+        t_vals: Vec<f64>,
+        b_vals: Vec<f64>,
+    ) -> Result<Self> {
         let small_size = 111;
+
+        if pos.len() < 2 {
+            bail!("GapCalc position table must contain at least two positions");
+        }
+        if q_vals.len() != pos.len() || t_vals.len() != pos.len() || b_vals.len() != pos.len() {
+            bail!("GapCalc cost tables (q_vals, t_vals, b_vals) must have the same length as pos");
+        }
+
         let mut q_small = vec![0; small_size];
         let mut t_small = vec![0; small_size];
         let mut b_small = vec![0; small_size];
@@ -121,6 +137,13 @@ impl GapCalc {
         let t_long = t_vals[start_long..].to_vec();
         let b_long = b_vals[start_long..].to_vec();
 
+        if long_pos.len() < 2 {
+            bail!(
+                "GapCalc needs at least two positions >= small_size ({})",
+                small_size
+            );
+        }
+
         let n = long_pos.len();
         let q_last_pos = long_pos[n - 1];
         let q_last_pos_val = q_long[n - 1];
@@ -137,7 +160,7 @@ impl GapCalc {
         let b_last_slope =
             (b_long[n - 1] - b_long[n - 2]) / (long_pos[n - 1] - long_pos[n - 2]) as f64;
 
-        GapCalc {
+        Ok(GapCalc {
             small_size,
             q_small,
             t_small,
@@ -155,7 +178,7 @@ impl GapCalc {
             b_last_pos,
             b_last_pos_val,
             b_last_slope,
-        }
+        })
     }
 
     fn interpolate(x: i32, s: &[i32], v: &[f64]) -> f64 {
