@@ -65,13 +65,14 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             continue;
         }
 
-        // Handle full sequence request (start=0 in intspan usually means just name)
-        // intspan::Range::from_str("chr1") -> start=0, end=0
-        let (start, end) = if *rg.start() == 0 {
+        // A range without ':' is a full-sequence request (e.g. "chr1");
+        // intspan returns start=0/end=0 and is_valid=false for these, so
+        // bypass validation. Anything with ':' must parse as a valid range.
+        let is_full_sequence = !el.contains(':');
+        let (start, end) = if is_full_sequence {
             (None, None)
         } else {
             anyhow::ensure!(rg.is_valid(), "invalid range: {}", el);
-            // Defensive: ensure positive coordinates before i64 -> usize cast.
             let start_val = *rg.start();
             let end_val = *rg.end();
             anyhow::ensure!(
@@ -79,9 +80,22 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 "range coordinates must be positive: {}",
                 el
             );
-            // Convert 1-based inclusive to 0-based half-open
+            // Convert 1-based inclusive to 0-based half-open.
             let s = (start_val as usize).saturating_sub(1);
             let e = end_val as usize;
+
+            // Warn if the requested range exceeds the sequence length.
+            let seq_len = tb.get_sequence_len(seq_id)?;
+            if e > seq_len {
+                log::warn!(
+                    "range {} end {} exceeds sequence length {} for {}; truncating",
+                    el,
+                    end_val,
+                    seq_len,
+                    seq_id
+                );
+            }
+
             (Some(s), Some(e))
         };
 

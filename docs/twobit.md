@@ -55,9 +55,10 @@ pgr 2bit range [OPTIONS] <infile> [ranges]...
 ```
 
 *   `[ranges]`: List of ranges in format `seq_name(strand):start-end` or just `seq_name`.
-    *   `seq_name` alone extracts the full sequence.
+    *   `seq_name` alone (without a colon) extracts the full sequence.
     *   `start-end` are 1-based, inclusive.
     *   `strand` is optional (`+` or `-`).
+    *   Ranges extending past the end of a sequence are truncated with a warning.
 *   `-r, --rgfile <file>`: File containing ranges, one per line.
 *   `-o, --outfile <file>`: Output filename (default: stdout).
 *   Output is FASTA; the header is the original range string (e.g. `>seq1:2-5` or `>seq1`).

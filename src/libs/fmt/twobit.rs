@@ -92,7 +92,9 @@ impl Blocks {
 
         for (i, c) in dna.chars().enumerate() {
             // Handle N-blocks (Hard mask)
-            let is_n = matches!(c, 'N' | 'n');
+            // Any character that is not a valid DNA base (A/C/G/T) is treated as N,
+            // matching UCSC faToTwoBit semantics.
+            let is_n = !matches!(c.to_ascii_uppercase(), 'A' | 'C' | 'G' | 'T');
             if is_n {
                 if !in_n {
                     in_n = true;
@@ -389,7 +391,7 @@ impl<R: Read + Seek> TwoBitFile<R> {
         // Read magic
         let mut buf = [0u8; 4];
         reader.read_exact(&mut buf)?;
-        let magic = u32::from_ne_bytes(buf);
+        let magic = u32::from_le_bytes(buf);
 
         let is_swapped = if magic == TWOBIT_MAGIC {
             false
@@ -539,7 +541,7 @@ impl<R: Read + Seek> crate::libs::io::SequenceReader for TwoBitFile<R> {
 pub fn read_u32<R: Read>(reader: &mut R, is_swapped: bool) -> Result<u32> {
     let mut buf = [0u8; 4];
     reader.read_exact(&mut buf)?;
-    let val = u32::from_ne_bytes(buf);
+    let val = u32::from_le_bytes(buf);
     if is_swapped {
         Ok(val.swap_bytes())
     } else {
@@ -551,7 +553,7 @@ pub fn read_u32<R: Read>(reader: &mut R, is_swapped: bool) -> Result<u32> {
 pub fn read_u64<R: Read>(reader: &mut R, is_swapped: bool) -> Result<u64> {
     let mut buf = [0u8; 8];
     reader.read_exact(&mut buf)?;
-    let val = u64::from_ne_bytes(buf);
+    let val = u64::from_le_bytes(buf);
     if is_swapped {
         Ok(val.swap_bytes())
     } else {
@@ -815,6 +817,25 @@ mod tests {
         let mut cursor = Cursor::new(buf);
         let seq = read_2bit_record(&mut cursor, false, Some(2), Some(2), false)?;
         assert_eq!(seq, "");
+        Ok(())
+    }
+
+    #[test]
+    fn test_record_non_acgt_becomes_n() -> Result<()> {
+        // U/R and IUPAC ambiguity codes are not valid DNA bases; they should be
+        // stored as N-blocks rather than silently packed as T.
+        let dna = "ACGTURacgtur";
+        let mut buf = Vec::new();
+        write_2bit_record(&mut buf, dna, true)?;
+
+        let mut cursor = Cursor::new(buf.clone());
+        let seq = read_2bit_record(&mut cursor, false, None, None, false)?;
+        assert_eq!(seq, "ACGTNNacgtnn");
+
+        let mut cursor = Cursor::new(buf);
+        let seq_no_mask = read_2bit_record(&mut cursor, false, None, None, true)?;
+        assert_eq!(seq_no_mask, "ACGTNNACGTNN");
+
         Ok(())
     }
 }

@@ -40,10 +40,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         let mut tb = TwoBitFile::open(infile)
             .with_context(|| format!("Failed to open 2bit file {}", infile))?;
 
-        // Get all sequence names
-        let mut names = tb.get_sequence_names();
-        // Sort names to be deterministic (optional but good)
-        names.sort();
+        // Get all sequence names in file order.
+        let names = tb.get_sequence_names();
 
         for name in names {
             if no_ns {
