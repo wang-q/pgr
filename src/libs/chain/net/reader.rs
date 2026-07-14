@@ -60,8 +60,8 @@ pub fn read_nets<R: BufRead>(mut reader: R) -> Result<Vec<Chrom>> {
             }
             "fill" => {
                 // fill tStart tLength qName qStrand qStart qLength id chainId score ali [type class]
-                if parts.len() < 13 {
-                    bail!("fill line needs at least 13 fields: {}", line.trim_end());
+                if parts.len() < 11 {
+                    bail!("fill line needs at least 11 fields: {}", line.trim_end());
                 }
                 let start = parse_u64(&parts, 1, "fill tStart")?;
                 let len = parse_u64(&parts, 2, "fill tLength")?;

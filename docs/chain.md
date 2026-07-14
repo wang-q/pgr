@@ -53,9 +53,9 @@ Filters out chains composed mainly of repetitive or low-complexity sequence.
   - **Degeneracy filter**: Checks whether the alignment is mostly low-complexity sequence (for example, `ATATAT...`).
   - **Repeat filter**: Checks whether the alignment falls in soft-masked (lowercase) regions.
 - **Arguments**:
-  - `target_2bit`: Target genome 2bit file.
-  - `query_2bit`: Query genome 2bit file.
   - `infile`: Input Chain file.
+  - `--target-2bit`: Target genome 2bit file.
+  - `--query-2bit`: Query genome 2bit file.
   - `--min-score`: Minimum score threshold (default: 5000).
   - `--no-check-score`: Chains above this score skip checks (default: 200000).
   - `-o, --outfile <file>`: Output Chain file.

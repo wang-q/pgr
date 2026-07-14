@@ -288,7 +288,7 @@ fn trim_overlaps<S: SequenceReader>(
 
         if overlap > 0 {
             let overlap = overlap as usize;
-            let (cut_pos, _) = find_crossover(
+            let cut_pos = find_crossover(
                 &blocks[i],
                 &blocks[i + 1],
                 overlap,
@@ -315,7 +315,7 @@ fn trim_overlaps<S: SequenceReader>(
 
 /// Finds the optimal crossover point for two overlapping blocks.
 ///
-/// Returns the best cut position within the overlap and the score adjustment.
+/// Returns the best cut position within the overlap.
 #[allow(clippy::too_many_arguments)]
 fn find_crossover<S: SequenceReader>(
     left: &ChainableBlock,
@@ -326,7 +326,7 @@ fn find_crossover<S: SequenceReader>(
     t_name: &str,
     q_size: u64,
     q_strand: char,
-) -> anyhow::Result<(usize, f64)> {
+) -> anyhow::Result<usize> {
     let l_t_seq = ctx
         .t_2bit
         .read_sequence(
@@ -427,7 +427,6 @@ fn find_crossover<S: SequenceReader>(
     let mut best_score = -1e9;
 
     let mut r_score = 0.0;
-    let mut l_score = 0.0;
 
     let l_t_chars: Vec<char> = l_t_seq.chars().collect();
     let l_q_chars: Vec<char> = l_q_seq.chars().collect();
@@ -435,7 +434,6 @@ fn find_crossover<S: SequenceReader>(
     let r_q_chars: Vec<char> = r_q_seq.chars().collect();
 
     for i in 0..overlap {
-        l_score += ctx.matrix.get_score(l_t_chars[i], l_q_chars[i]) as f64;
         r_score += ctx.matrix.get_score(r_t_chars[i], r_q_chars[i]) as f64;
     }
 
@@ -455,8 +453,7 @@ fn find_crossover<S: SequenceReader>(
         }
     }
 
-    let adjustment = (r_score + l_score) - best_score;
-    Ok((best_pos, adjustment))
+    Ok(best_pos)
 }
 
 /// Removes duplicate blocks that have exact same coordinates.

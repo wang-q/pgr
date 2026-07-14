@@ -297,35 +297,52 @@ impl KdTree {
                     target_item.t_start()
                 };
 
-                if dim_coord > *cut_coord {
-                    let res = Self::best_recursive(
-                        hi,
-                        target_idx,
-                        items,
-                        cost_func,
-                        lower_bound_func,
-                        1 - dim,
-                        best_score,
-                        best_pred,
-                    );
-                    best_score = res.0;
-                    best_pred = res.1;
-
-                    let res = Self::best_recursive(
-                        lo,
-                        target_idx,
-                        items,
-                        cost_func,
-                        lower_bound_func,
-                        1 - dim,
-                        best_score,
-                        best_pred,
-                    );
-                    best_score = res.0;
-                    best_pred = res.1;
+                // Search the subtree containing the target coordinate first.
+                let (near, far) = if dim_coord > *cut_coord {
+                    (hi, lo)
                 } else {
+                    (lo, hi)
+                };
+                let res = Self::best_recursive(
+                    near,
+                    target_idx,
+                    items,
+                    cost_func,
+                    lower_bound_func,
+                    1 - dim,
+                    best_score,
+                    best_pred,
+                );
+                best_score = res.0;
+                best_pred = res.1;
+
+                // Determine whether the far subtree could contain a better predecessor.
+                // The closest point in the far subtree is separated from the target by at
+                // least the distance to the splitting plane in this dimension.
+                let far_dist = dim_coord.abs_diff(*cut_coord);
+                let (dq_far, dt_far) = if dim == 0 {
+                    (
+                        far_dist,
+                        if target_item.t_start() > far.max_t() {
+                            target_item.t_start() - far.max_t()
+                        } else {
+                            0
+                        },
+                    )
+                } else {
+                    (
+                        if target_item.q_start() > far.max_q() {
+                            target_item.q_start() - far.max_q()
+                        } else {
+                            0
+                        },
+                        far_dist,
+                    )
+                };
+                let far_cost = lower_bound_func(dq_far, dt_far);
+                if far.max_score() + target_item.score() - far_cost >= best_score {
                     let res = Self::best_recursive(
-                        lo,
+                        far,
                         target_idx,
                         items,
                         cost_func,
@@ -437,5 +454,71 @@ mod tests {
         // score = 100 (prev) + 100 (curr) - 20 = 180
         assert_eq!(best_pred, Some(0));
         assert_eq!(best_score, 180.0);
+    }
+
+    #[test]
+    fn test_kd_tree_searches_far_subtree() {
+        // The target (item 2) falls in the high-q subtree of the root, but the
+        // best predecessor (item 0) lies in the low-q subtree. A naive
+        // near-subtree-only search would return item 1.
+        let items = vec![
+            TestItem {
+                q_start: 0,
+                q_end: 5,
+                t_start: 0,
+                t_end: 5,
+                score: 1000.0,
+            }, // 0
+            TestItem {
+                q_start: 50,
+                q_end: 55,
+                t_start: 50,
+                t_end: 55,
+                score: 100.0,
+            }, // 1
+            TestItem {
+                q_start: 60,
+                q_end: 70,
+                t_start: 60,
+                t_end: 70,
+                score: 100.0,
+            }, // 2
+        ];
+
+        let mut indices: Vec<usize> = (0..items.len()).collect();
+        let mut tree = KdTree::build(&mut indices, &items);
+
+        // Simulate DP: item 0 has total score 1000, item 1 has total score 100.
+        tree.update_scores(0, 1000.0, &items);
+        tree.update_scores(1, 100.0, &items);
+
+        let cost_func = |cand_idx: usize, target_idx: usize| -> Option<f64> {
+            if cand_idx >= target_idx {
+                return None;
+            }
+            let cand = &items[cand_idx];
+            let target = &items[target_idx];
+            if cand.q_end > target.q_start || cand.t_end > target.t_start {
+                return None;
+            }
+            let dq = target.q_start - cand.q_end;
+            let dt = target.t_start - cand.t_end;
+            let prev_total = if cand_idx == 0 { 1000.0 } else { 100.0 };
+            Some(prev_total + target.score - (dq + dt) as f64)
+        };
+        let lower_bound_func = |dq: u64, dt: u64| -> f64 { (dq + dt) as f64 };
+
+        let (best_score, best_pred) = tree.best_predecessor(
+            2,     // target is item 2
+            100.0, // base score of item 2
+            &items,
+            &cost_func,
+            &lower_bound_func,
+        );
+
+        // Item 0 yields 1000 + 100 - (60 - 5 + 60 - 5) = 1000 + 100 - 110 = 990.
+        // Item 1 yields 100 + 100 - (60 - 55 + 60 - 55) = 200 - 10 = 190.
+        assert_eq!(best_pred, Some(0));
+        assert_eq!(best_score, 990.0);
     }
 }

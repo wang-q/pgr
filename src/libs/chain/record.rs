@@ -541,4 +541,54 @@ malformed
         assert_eq!(data[0].dt, 0);
         assert_eq!(data[0].dq, 0);
     }
+
+    #[test]
+    fn test_subset_reverse_strand() {
+        let chain = Chain {
+            header: ChainHeader {
+                score: 100.0,
+                t_name: "chrT".to_string(),
+                t_size: 1000,
+                t_strand: '+',
+                t_start: 100,
+                t_end: 350,
+                q_name: "chrQ".to_string(),
+                q_size: 1000,
+                q_strand: '-',
+                q_start: 600,
+                q_end: 850,
+                id: 1,
+            },
+            data: vec![
+                ChainData {
+                    size: 100,
+                    dt: 50,
+                    dq: 50,
+                },
+                ChainData {
+                    size: 100,
+                    dt: 0,
+                    dq: 0,
+                },
+            ],
+        };
+
+        let sub = chain.subset(120, 280).expect("subset should overlap");
+
+        assert_eq!(sub.header.t_strand, '+');
+        assert_eq!(sub.header.q_strand, '-');
+        assert_eq!(sub.header.t_start, 120);
+        assert_eq!(sub.header.t_end, 280);
+        // Query coordinates remain in reverse-strand space.
+        assert_eq!(sub.header.q_start, 620);
+        assert_eq!(sub.header.q_end, 780);
+
+        assert_eq!(sub.data.len(), 2);
+        assert_eq!(sub.data[0].size, 80);
+        assert_eq!(sub.data[0].dt, 50);
+        assert_eq!(sub.data[0].dq, 50);
+        assert_eq!(sub.data[1].size, 30);
+        assert_eq!(sub.data[1].dt, 0);
+        assert_eq!(sub.data[1].dq, 0);
+    }
 }
