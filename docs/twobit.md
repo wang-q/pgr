@@ -53,7 +53,7 @@ Retrieves sequence sizes (lengths) from one or more 2bit files.
 pgr 2bit size [OPTIONS] <infiles>...
 ```
 
-*   `--no-ns`: Output size excluding Ns (only A, C, G, T counts).
+*   `--no-ns`: Output size excluding hard-masked N positions (soft-masked bases are still counted).
 *   `-o, --outfile <file>`: Output filename (default: stdout).
 *   Output is one `name\tsize` line per sequence, in the order sequences appear in each input file.
 
@@ -73,7 +73,7 @@ pgr 2bit range [OPTIONS] <infile> [ranges]...
     *   `seq_name` alone (without a colon) extracts the full sequence.
     *   `start-end` are 1-based, inclusive.
     *   `strand` is optional (`+` or `-`).
-    *   Ranges with a start beyond the sequence length are skipped with a warning.
+    *   Ranges with a start at or beyond the sequence length are skipped with a warning.
     *   Ranges extending past the end of a sequence are truncated with a warning.
 *   `-r, --rgfile <file>`: File containing ranges, one per line.
 *   `-o, --outfile <file>`: Output filename (default: stdout).

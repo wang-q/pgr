@@ -8,7 +8,7 @@ use std::path::Path;
 const TWOBIT_MAGIC: u32 = 0x1A412743;
 const TWOBIT_MAGIC_SWAPPED: u32 = 0x4327411A;
 
-/// A half-open interval representing a masked region within a sequence.
+/// A 0-based half-open interval representing a masked region within a sequence.
 pub type Block = Range<usize>;
 
 /// A collection of masked regions (N-blocks or soft-mask blocks) for a sequence.
@@ -67,6 +67,10 @@ impl Blocks {
     }
 
     /// Pack a DNA string into 2-bit data, returning `(packed, n_blocks, mask_blocks, dna_size)`.
+    ///
+    /// Bases that are not A/C/G/T (case-insensitive), including IUPAC ambiguity
+    /// codes and U, are treated as N and recorded as hard-mask blocks. Lowercase
+    /// A/C/G/T bases are recorded as soft-mask blocks when `do_mask` is true.
     ///
     /// Returns an error if the sequence length exceeds the 2bit u32 size limit.
     pub fn from_dna(dna: &str, do_mask: bool) -> Result<(Vec<u8>, Blocks, Blocks, u32)> {
@@ -323,12 +327,11 @@ impl<W: std::io::Write> TwoBitWriter<W> {
 
         for ((name, _), (packed, n_blocks, mask_blocks, _)) in sequences.iter().zip(&packed_records)
         {
-            let name_bytes = name.as_bytes();
-            if name_bytes.len() > 255 {
+            if name.len() > 255 {
                 return Err(anyhow!("Sequence name too long: {}", name));
             }
-            self.writer.write_all(&[name_bytes.len() as u8])?;
-            self.writer.write_all(name_bytes)?;
+            self.writer.write_all(&[name.len() as u8])?;
+            self.writer.write_all(name.as_bytes())?;
             self.writer.write_all(&running_offset.to_le_bytes())?;
 
             let n_count = n_blocks.0.len() as u64;
