@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::fmt;
 use std::io::{self, BufRead, Write};
 
+/// A single UCSC PSL alignment record.
 #[derive(Debug, Clone, Default)]
 pub struct Psl {
     pub match_count: u32,
@@ -109,22 +110,20 @@ impl Psl {
             ..Default::default()
         };
 
+        let strand_bytes = strand.as_bytes();
+        let q_strand_neg = strand_bytes.first() == Some(&b'-');
+        let t_strand_neg = strand_bytes.get(1) == Some(&b'-');
+
         let mut qs = psl.q_start;
         let mut qe = psl.q_end;
-        if strand.starts_with('-') {
-            crate::libs::alignment::coords::reverse_range(&mut qs, &mut qe, psl.q_size as i32);
+        if q_strand_neg {
+            crate::libs::alignment::reverse_range(&mut qs, &mut qe, psl.q_size as i32);
         }
 
         let mut ts = psl.t_start;
         let mut te = psl.t_end;
-        let t_strand_rev = if strand.len() >= 2 {
-            strand.chars().nth(1) == Some('-')
-        } else {
-            false
-        };
-
-        if t_strand_rev {
-            crate::libs::alignment::coords::reverse_range(&mut ts, &mut te, psl.t_size as i32);
+        if t_strand_neg {
+            crate::libs::alignment::reverse_range(&mut ts, &mut te, psl.t_size as i32);
         }
 
         let mut either_insert = false;
@@ -214,6 +213,8 @@ impl Psl {
         }
     }
 
+    /// Swap target and query. When `no_rc` is false, reverse-complement
+    /// untranslated negative-strand records so the target strand stays explicit.
     pub fn swap(&mut self, no_rc: bool) {
         // Swap simple fields
         std::mem::swap(&mut self.q_base_insert, &mut self.t_base_insert);
@@ -224,8 +225,9 @@ impl Psl {
         std::mem::swap(&mut self.q_end, &mut self.t_end);
 
         // Handle strand and blocks
-        let q_strand = self.strand.chars().nth(0).unwrap_or('+');
-        let t_strand = self.strand.chars().nth(1);
+        let strand_bytes = self.strand.as_bytes();
+        let q_strand = *strand_bytes.first().unwrap_or(&b'+') as char;
+        let t_strand = strand_bytes.get(1).copied().map(|b| b as char);
 
         if let Some(ts) = t_strand {
             // Translated
@@ -281,7 +283,7 @@ impl Psl {
             return false;
         }
         let last = (self.block_count as usize) - 1;
-        let t_strand = self.strand.chars().nth(1).unwrap_or('+');
+        let t_strand = *self.strand.as_bytes().get(1).unwrap_or(&b'+') as char;
 
         let t_end = u32::try_from(self.t_end).unwrap_or(0);
         let t_start = u32::try_from(self.t_start).unwrap_or(0);
@@ -307,8 +309,9 @@ impl Psl {
         let mult: u32 = if is_prot { 3 } else { 1 };
 
         // swap strand, forcing target to have an explict strand
-        let q_s = self.strand.chars().nth(0).unwrap_or('+');
-        let t_s = self.strand.chars().nth(1).unwrap_or('+');
+        let strand_bytes = self.strand.as_bytes();
+        let q_s = *strand_bytes.first().unwrap_or(&b'+') as char;
+        let t_s = *strand_bytes.get(1).unwrap_or(&b'+') as char;
 
         let flip = |c| if c == '-' { '+' } else { '-' };
         let new_q_s = flip(q_s);
@@ -1025,7 +1028,7 @@ impl Psl {
             return false;
         }
 
-        let is_neg = self.strand.starts_with('-');
+        let is_neg = self.strand.as_bytes().first() == Some(&b'-');
         self.q_name = name_part;
         self.q_size = real_size;
         let offset = if is_neg { real_size - end_0 } else { start_0 };
@@ -1067,11 +1070,7 @@ impl Psl {
             return false;
         }
 
-        let is_neg = if self.strand.len() >= 2 {
-            self.strand.chars().nth(1).unwrap() == '-'
-        } else {
-            false
-        };
+        let is_neg = self.strand.as_bytes().get(1) == Some(&b'-');
         self.t_name = name_part;
         self.t_size = real_size;
         let offset = if is_neg { real_size - end_0 } else { start_0 };
@@ -1088,20 +1087,15 @@ impl Psl {
 /// Extract block ranges (1-based inclusive) from a PSL record as "name:start-end" strings.
 pub fn psl_block_ranges(psl: &Psl, target: bool) -> Vec<String> {
     let (name, size, starts, is_neg) = if target {
-        let is_neg = if psl.strand.len() >= 2 {
-            psl.strand.chars().nth(1) == Some('-')
-        } else {
-            false
-        };
+        let is_neg = psl.strand.as_bytes().get(1) == Some(&b'-');
         (psl.t_name.as_str(), psl.t_size, &psl.t_starts, is_neg)
     } else {
-        let is_neg = psl.strand.starts_with('-');
+        let is_neg = psl.strand.as_bytes().first() == Some(&b'-');
         (psl.q_name.as_str(), psl.q_size, &psl.q_starts, is_neg)
     };
 
     let mut ranges = Vec::new();
-    for (i, &start) in starts.iter().enumerate() {
-        let len = psl.block_sizes[i];
+    for (&start, &len) in starts.iter().zip(psl.block_sizes.iter()) {
         let end = start + len;
         let (final_start, final_end) = if is_neg {
             crate::libs::alignment::reverse_range_1based_pair(
@@ -1422,6 +1416,53 @@ mod tests {
     }
 
     #[test]
+    fn test_swap_no_rc() {
+        let mut psl = Psl::default();
+        psl.q_name = "q".to_string();
+        psl.t_name = "t".to_string();
+        psl.q_size = 100;
+        psl.t_size = 200;
+        psl.strand = "-".to_string();
+        psl.block_count = 1;
+        psl.block_sizes = vec![10];
+        psl.q_starts = vec![0];
+        psl.t_starts = vec![0];
+        psl.q_start = 0;
+        psl.q_end = 10;
+        psl.t_start = 0;
+        psl.t_end = 10;
+
+        psl.swap(true);
+        assert_eq!(psl.q_name, "t");
+        assert_eq!(psl.t_name, "q");
+        assert_eq!(psl.strand, "+-");
+    }
+
+    #[test]
+    fn test_swap_translated() {
+        let mut psl = Psl::default();
+        psl.q_name = "q".to_string();
+        psl.t_name = "t".to_string();
+        psl.q_size = 100;
+        psl.t_size = 200;
+        psl.strand = "+-".to_string();
+        psl.block_count = 1;
+        psl.block_sizes = vec![10];
+        psl.q_starts = vec![0];
+        psl.t_starts = vec![0];
+        psl.q_start = 0;
+        psl.q_end = 10;
+        psl.t_start = 0;
+        psl.t_end = 10;
+
+        psl.swap(false);
+        assert_eq!(psl.q_name, "t");
+        assert_eq!(psl.t_name, "q");
+        // Query and target strands are swapped.
+        assert_eq!(psl.strand, "-+");
+    }
+
+    #[test]
     fn test_rc() {
         // Simple case: 1 block, length 10.
         // T: 0-10 (size 100) -> RC: 100-10 = 90, 100-0 = 100. New start 90.
@@ -1459,6 +1500,34 @@ mod tests {
         assert_eq!(psl.match_count, 3); // A, C, G
         assert_eq!(psl.t_num_insert, 1);
         assert_eq!(psl.t_base_insert, 1);
+    }
+
+    #[test]
+    fn test_from_align_negative_strand() {
+        // q: AC-G on negative strand of a size-5 query
+        // t: ACTG
+        // Negative strand: query coordinates are reversed against q_size.
+        let q_seq = "AC-G";
+        let t_seq = "ACTG";
+        let psl = Psl::from_align("q", 5, 0, 3, q_seq, "t", 4, 0, 4, t_seq, "-").unwrap();
+
+        assert_eq!(psl.block_count, 2);
+        assert_eq!(psl.block_sizes, vec![2, 1]);
+        assert_eq!(psl.strand, "-");
+    }
+
+    #[test]
+    fn test_psl_block_ranges_negative() {
+        let mut psl = Psl::default();
+        psl.q_name = "chr1".to_string();
+        psl.q_size = 100;
+        psl.strand = "-".to_string();
+        psl.block_count = 1;
+        psl.block_sizes = vec![10];
+        psl.q_starts = vec![10];
+
+        let ranges = psl_block_ranges(&psl, false);
+        assert_eq!(ranges, vec!["chr1:81-90"]);
     }
 
     #[test]

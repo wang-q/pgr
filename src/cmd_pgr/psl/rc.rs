@@ -7,9 +7,10 @@ pub fn make_subcommand() -> Command {
         .about("Reverse-complements PSL")
         .after_help(
             r###"
-Reverse-complement PSL.
+Reverse-complement PSL alignments. This makes the target strand explicit in the output strand field (e.g., '++' or '+-').
 
 Examples:
+1. Reverse-complement a PSL file:
    pgr psl rc in.psl -o out.psl
 "###,
         )

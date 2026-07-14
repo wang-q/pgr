@@ -7,9 +7,22 @@ pub fn make_subcommand() -> Command {
         .about("Converts PSL to Chain format")
         .after_help(
             r###"
+Convert PSL alignments to UCSC Chain format.
+
+Notes:
+* Chain format requires an explicit target strand. PSL records with a '-' target strand must be reverse-complemented first.
+* By default, records with '-' target strand cause an error; use --fix-strand to reverse-complement them automatically.
+* Malformed PSL lines are skipped with a warning unless --strict is used.
+
 Examples:
 1. Convert PSL to Chain:
    pgr psl to-chain in.psl -o out.chain
+
+2. Fix negative target strands during conversion:
+   pgr psl to-chain in.psl -o out.chain --fix-strand
+
+3. Fail on parse errors:
+   pgr psl to-chain in.psl -o out.chain --strict
 "###,
         )
         .arg(crate::cmd_pgr::args::infile_arg().help("Input PSL file. [stdin] for standard input"))

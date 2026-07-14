@@ -9,8 +9,16 @@ pub fn make_subcommand() -> Command {
             r###"
 Reverse target and query in PSLs.
 
+Notes:
+* For translated PSLs (strand has two characters), target and query strands are simply swapped.
+* For untranslated PSLs with --no-rc, the original query strand becomes the explicit target strand.
+* For untranslated PSLs without --no-rc, negative-strand records are reverse-complemented so the target strand is '+'.
+
 Examples:
+1. Swap target and query (default):
    pgr psl swap in.psl -o out.psl
+
+2. Swap without reverse-complementing:
    pgr psl swap --no-rc in.psl -o out.psl
 "###,
         )
@@ -21,9 +29,7 @@ Examples:
                 .short('n')
                 .long("no-rc")
                 .action(clap::ArgAction::SetTrue)
-                .help(
-                    "Don't reverse-complement PSL if needed; instead make target strand explicit",
-                ),
+                .help("Swap target and query without reverse-complementing"),
         )
 }
 /// Execute the swap command.

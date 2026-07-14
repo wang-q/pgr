@@ -108,7 +108,7 @@ pgr psl lift [OPTIONS] <infile>
 
 ## rc
 
-Reverse-complements alignments in a PSL file.
+Reverse-complements alignments in a PSL file. The output makes the target strand explicit (e.g., `++` or `+-`).
 
 ```bash
 pgr psl rc [OPTIONS] <input>
@@ -163,8 +163,14 @@ pgr psl swap [OPTIONS] <input>
 
 ### Options
 
-*   `--no-rc`: Don't reverse-complement; just swap and make target strand explicit (if needed).
+*   `--no-rc`: Swap target and query without reverse-complementing.
 *   `-o, --outfile <file>`: Output filename (default: stdout).
+
+### Notes
+
+*   For translated PSLs (strand has two characters), target and query strands are swapped.
+*   For untranslated PSLs with `--no-rc`, the original query strand becomes the explicit target strand.
+*   For untranslated PSLs without `--no-rc`, negative-strand records are reverse-complemented so the target strand is `'+'`.
 
 ### Examples
 
@@ -173,11 +179,16 @@ pgr psl swap [OPTIONS] <input>
     pgr psl swap in.psl -o out.psl
     ```
 
+2.  **Swap without reverse-complementing**:
+    ```bash
+    pgr psl swap --no-rc in.psl -o out.psl
+    ```
+
 ---
 
 ## to-chain
 
-Converts PSL format to Chain format.
+Converts PSL format to Chain format. Chain format requires an explicit target strand, so records with a `-` target strand must be reverse-complemented first.
 
 ```bash
 pgr psl to-chain [OPTIONS] <input>
@@ -185,7 +196,7 @@ pgr psl to-chain [OPTIONS] <input>
 
 ### Options
 
-*   `-f, --fix-strand`: Fix `-` target strand by reverse complementing the record.
+*   `--fix-strand`: Fix `-` target strand by reverse complementing the record.
 *   `--strict`: Fail on parse errors instead of skipping malformed lines.
 *   `-o, --outfile <file>`: Output filename (default: stdout).
 
@@ -194,6 +205,11 @@ pgr psl to-chain [OPTIONS] <input>
 1.  **Convert PSL to Chain**:
     ```bash
     pgr psl to-chain in.psl -o out.chain
+    ```
+
+2.  **Fix negative target strands during conversion**:
+    ```bash
+    pgr psl to-chain in.psl -o out.chain --fix-strand
     ```
 
 ---

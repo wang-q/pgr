@@ -63,8 +63,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let output = crate::cmd_pgr::args::get_outfile(args);
     let gap_model = args.get_one::<String>("gap_model").unwrap();
     let min_score = *args.get_one::<f64>("min_score").unwrap();
-    let target_2bit_path = args.get_one::<String>("target");
-    let query_2bit_path = args.get_one::<String>("query");
+    let target_2bit_path = args.get_one::<String>("target").unwrap();
+    let query_2bit_path = args.get_one::<String>("query").unwrap();
     let score_scheme_path = args.get_one::<String>("score_scheme");
 
     let reader =
@@ -72,17 +72,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut writer =
         pgr::writer(output).with_context(|| format!("Failed to open writer for {}", output))?;
 
-    let mut t_2bit = if let Some(path) = target_2bit_path {
-        Some(TwoBitFile::open(path).with_context(|| format!("Failed to open 2bit file {}", path))?)
-    } else {
-        None
-    };
-
-    let mut q_2bit = if let Some(path) = query_2bit_path {
-        Some(TwoBitFile::open(path).with_context(|| format!("Failed to open 2bit file {}", path))?)
-    } else {
-        None
-    };
+    let mut t_2bit = TwoBitFile::open(target_2bit_path)
+        .with_context(|| format!("Failed to open 2bit file {}", target_2bit_path))?;
+    let mut q_2bit = TwoBitFile::open(query_2bit_path)
+        .with_context(|| format!("Failed to open 2bit file {}", query_2bit_path))?;
 
     let score_matrix = if let Some(path) = score_scheme_path {
         SubMatrix::from_name(path)?
@@ -90,14 +83,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         SubMatrix::default()
     };
 
-    let mut score_context = match (t_2bit.as_mut(), q_2bit.as_mut()) {
-        (Some(t), Some(q)) => Some(ScoreContext {
-            t_2bit: t,
-            q_2bit: q,
-            matrix: &score_matrix,
-        }),
-        _ => None,
-    };
+    let mut score_context = Some(ScoreContext {
+        t_2bit: &mut t_2bit,
+        q_2bit: &mut q_2bit,
+        matrix: &score_matrix,
+    });
 
     let gap_open = args.get_one::<i32>("align_gap_open");
     let gap_extend = args.get_one::<i32>("align_gap_extend");

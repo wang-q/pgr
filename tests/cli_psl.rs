@@ -183,6 +183,46 @@ fn test_to_chain_fail_neg_strand() {
         .run_fail();
 }
 
+#[test]
+fn test_to_chain_strict_malformed() {
+    let temp = TempDir::new().unwrap();
+    let input = temp.path().join("malformed.psl");
+    fs::write(&input, "this is not a valid psl line\n").unwrap();
+    let output = temp.path().join("out.chain");
+
+    PgrCmd::new()
+        .args(&[
+            "psl",
+            "to-chain",
+            input.to_str().unwrap(),
+            "-o",
+            output.to_str().unwrap(),
+            "--strict",
+        ])
+        .run_fail();
+}
+
+#[test]
+fn test_to_chain_non_strict_malformed() {
+    let temp = TempDir::new().unwrap();
+    let input = temp.path().join("malformed.psl");
+    fs::write(&input, "this is not a valid psl line\n").unwrap();
+    let output = temp.path().join("out.chain");
+
+    PgrCmd::new()
+        .args(&[
+            "psl",
+            "to-chain",
+            input.to_str().unwrap(),
+            "-o",
+            output.to_str().unwrap(),
+        ])
+        .run();
+
+    let output_content = fs::read_to_string(&output).unwrap();
+    assert!(output_content.is_empty());
+}
+
 //
 // psl rc
 //
@@ -345,6 +385,29 @@ fn test_stats_basic() {
     // Default is per-alignment stats.
     // Input has 31 records. Output should have 32 lines (header + 31).
     assert_eq!(lines.len(), 32);
+}
+
+#[test]
+fn test_stats_empty() {
+    let temp = TempDir::new().unwrap();
+    let input = temp.path().join("empty.psl");
+    fs::write(&input, "").unwrap();
+    let output = temp.path().join("stats.tsv");
+
+    PgrCmd::new()
+        .args(&[
+            "psl",
+            "stats",
+            input.to_str().unwrap(),
+            "-o",
+            output.to_str().unwrap(),
+        ])
+        .run();
+
+    let output_content = fs::read_to_string(&output).unwrap();
+    let lines: Vec<&str> = output_content.lines().collect();
+    assert_eq!(lines.len(), 1);
+    assert!(lines[0].starts_with('#'));
 }
 
 //
