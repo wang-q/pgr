@@ -272,55 +272,8 @@ impl<R: std::io::Read> ChainReader<R> {
 
 /// Reads all chains from a reader into a vector.
 pub fn read_chains<R: std::io::Read>(reader: R) -> anyhow::Result<Vec<Chain>> {
-    let mut reader = ChainReader::new(reader);
-    let mut chains = Vec::new();
-
-    while let Some(line) = reader.read_line()? {
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-
-        if line.starts_with("chain") {
-            let header = ChainHeader::from_str(line)?;
-            let mut data = Vec::new();
-
-            while let Some(inner_line) = reader.read_line()? {
-                let inner_line_trim = inner_line.trim();
-                if inner_line_trim.is_empty() {
-                    break;
-                }
-                // Check if next line is a new chain (shouldn't happen if properly formatted with blank lines, but just in case)
-                if inner_line_trim.starts_with("chain") {
-                    reader.push_back(inner_line);
-                    break;
-                }
-
-                let parts: Vec<&str> = inner_line_trim.split_whitespace().collect();
-                if parts.len() == 1 {
-                    data.push(ChainData {
-                        size: parts[0].parse()?,
-                        dt: 0,
-                        dq: 0,
-                    });
-                } else if parts.len() == 3 {
-                    data.push(ChainData {
-                        size: parts[0].parse()?,
-                        dt: parts[1].parse()?,
-                        dq: parts[2].parse()?,
-                    });
-                } else {
-                    return Err(anyhow::anyhow!(
-                        "Invalid chain data line: {}",
-                        inner_line_trim
-                    ));
-                }
-            }
-            chains.push(Chain { header, data });
-        }
-    }
-
-    Ok(chains)
+    let chain_reader = ChainReader::new(reader);
+    chain_reader.collect()
 }
 
 impl<R: std::io::Read> Iterator for ChainReader<R> {

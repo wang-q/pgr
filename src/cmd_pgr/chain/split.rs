@@ -85,8 +85,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             // Guard against path traversal: names come from chain file headers
             // and could contain '/' or '..' if the input is malicious.
             anyhow::ensure!(
-                !name.contains('/') && !name.contains('\\') && name != "..",
-                "invalid sequence name (contains path separator): {}",
+                !name.contains('/') && !name.contains('\\') && !name.starts_with('.'),
+                "invalid sequence name (contains path separator or starts with '.'): {}",
                 name
             );
 

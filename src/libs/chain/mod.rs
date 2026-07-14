@@ -46,9 +46,6 @@ pub use sort::sort_chains;
 pub use stitch::stitch_chains;
 pub use sub_matrix::SubMatrix;
 
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
-
 /// Derive a 3-digit lump bucket name from a sequence name.
 ///
 /// Scans `name` for the first ASCII-digit run and returns `val % lump` formatted
@@ -66,9 +63,7 @@ pub fn lump_name(name: &str, lump: usize) -> String {
         s = &s[end..];
     }
 
-    // If no digits found, hash it
-    let mut hasher = DefaultHasher::new();
-    name.hash(&mut hasher);
-    let hash = hasher.finish();
+    // If no digits found, hash it with fxhash for stability across Rust versions.
+    let hash = fxhash::hash64(name.as_bytes());
     format!("{:03}", (hash as usize) % lump)
 }

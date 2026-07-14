@@ -352,3 +352,207 @@ fn test_chain_split_by_query() {
     assert_eq!(qb_chains.len(), 1);
     assert!(qb_chains[0].contains("chain 200"));
 }
+
+// --- chain net / pre-net sort-order tests ---
+
+#[test]
+fn test_chain_net_unsorted_fails() {
+    let dir = tempdir().unwrap();
+    let chain_path = dir.path().join("in.chain");
+    let t_sizes_path = dir.path().join("t.sizes");
+    let q_sizes_path = dir.path().join("q.sizes");
+    let t_net_path = dir.path().join("t.net");
+    let q_net_path = dir.path().join("q.net");
+
+    // Scores are ascending, not descending.
+    let c1 = "chain 100 chr1 1000 + 0 10 chr2 1000 + 0 10 1\n10\n\n";
+    let c2 = "chain 200 chr1 1000 + 20 30 chr2 1000 + 20 30 2\n10\n\n";
+    fs::write(&chain_path, format!("{}{}", c1, c2)).unwrap();
+
+    fs::write(&t_sizes_path, "chr1 1000\n").unwrap();
+    fs::write(&q_sizes_path, "chr2 1000\n").unwrap();
+
+    let (_stdout, stderr) = PgrCmd::new()
+        .args(&[
+            "chain",
+            "net",
+            chain_path.to_str().unwrap(),
+            t_sizes_path.to_str().unwrap(),
+            q_sizes_path.to_str().unwrap(),
+            t_net_path.to_str().unwrap(),
+            q_net_path.to_str().unwrap(),
+        ])
+        .run_fail();
+
+    assert!(
+        stderr.contains("Input not sorted by score"),
+        "expected sort error in stderr, got: {}",
+        stderr
+    );
+}
+
+#[test]
+fn test_chain_pre_net_unsorted_fails() {
+    let dir = tempdir().unwrap();
+    let chain_path = dir.path().join("in.chain");
+    let t_sizes_path = dir.path().join("t.sizes");
+    let q_sizes_path = dir.path().join("q.sizes");
+    let out_path = dir.path().join("out.chain");
+
+    // Scores are ascending, not descending.
+    let c1 = "chain 100 chr1 1000 + 0 10 chr2 1000 + 0 10 1\n10\n\n";
+    let c2 = "chain 200 chr1 1000 + 20 30 chr2 1000 + 20 30 2\n10\n\n";
+    fs::write(&chain_path, format!("{}{}", c1, c2)).unwrap();
+
+    fs::write(&t_sizes_path, "chr1 1000\n").unwrap();
+    fs::write(&q_sizes_path, "chr2 1000\n").unwrap();
+
+    let (_stdout, stderr) = PgrCmd::new()
+        .args(&[
+            "chain",
+            "pre-net",
+            chain_path.to_str().unwrap(),
+            t_sizes_path.to_str().unwrap(),
+            q_sizes_path.to_str().unwrap(),
+            "-o",
+            out_path.to_str().unwrap(),
+        ])
+        .run_fail();
+
+    assert!(
+        stderr.contains("Input not sorted by score"),
+        "expected sort error in stderr, got: {}",
+        stderr
+    );
+}
+
+// --- chain stitch tests ---
+
+#[test]
+fn test_chain_stitch() {
+    let dir = tempdir().unwrap();
+    let chain_path = dir.path().join("in.chain");
+    let out_path = dir.path().join("out.chain");
+
+    // Two fragments with the same ID; scores should be summed.
+    let c1 = "chain 100 chr1 1000 + 0 10 chr2 1000 + 0 10 1\n10\n\n";
+    let c2 = "chain 200 chr1 1000 + 20 30 chr2 1000 + 20 30 1\n10\n\n";
+    fs::write(&chain_path, format!("{}{}", c1, c2)).unwrap();
+
+    PgrCmd::new()
+        .args(&[
+            "chain",
+            "stitch",
+            chain_path.to_str().unwrap(),
+            "-o",
+            out_path.to_str().unwrap(),
+        ])
+        .run();
+
+    let output = fs::read_to_string(&out_path).unwrap();
+    let lines: Vec<&str> = output.lines().filter(|l| l.starts_with("chain")).collect();
+    assert_eq!(lines.len(), 1);
+    assert!(lines[0].contains("chain 300"));
+}
+
+// --- chain split lump tests ---
+
+#[test]
+fn test_chain_split_lump() {
+    let dir = tempdir().unwrap();
+    let in1_path = dir.path().join("in1.chain");
+    let outdir = dir.path().join("split_out");
+
+    // chr10 -> 10 % 10 = 0, chr21 -> 21 % 10 = 1.
+    let c1 = "chain 100 chr10 1000 + 0 10 chr2 1000 + 0 10 1\n10\n\n";
+    let c2 = "chain 200 chr21 1000 + 20 30 chr2 1000 + 20 30 2\n10\n\n";
+    fs::write(&in1_path, format!("{}{}", c1, c2)).unwrap();
+
+    PgrCmd::new()
+        .args(&[
+            "chain",
+            "split",
+            in1_path.to_str().unwrap(),
+            "--outdir",
+            outdir.to_str().unwrap(),
+            "--lump",
+            "10",
+        ])
+        .run();
+
+    let p0 = outdir.join("000.chain");
+    let p1 = outdir.join("001.chain");
+    assert!(p0.exists(), "000.chain should exist");
+    assert!(p1.exists(), "001.chain should exist");
+
+    let content0 = fs::read_to_string(&p0).unwrap();
+    assert!(content0.contains("chain 100"));
+
+    let content1 = fs::read_to_string(&p1).unwrap();
+    assert!(content1.contains("chain 200"));
+}
+
+// --- chain anti-repeat negative strand test ---
+
+#[test]
+fn test_chain_anti_repeat_negative_strand() -> Result<(), Box<dyn std::error::Error>> {
+    let dir = tempdir()?;
+    let chain_path = dir.path().join("in.chain");
+    let out_path = dir.path().join("out.chain");
+    let t_fa_path = dir.path().join("target.fa");
+    let q_fa_path = dir.path().join("query.fa");
+
+    let t_seq = ">chr1\nACTGACTGAC\n";
+    fs::write(&t_fa_path, t_seq)?;
+    // Query is the reverse complement of target so the negative-strand chain is valid.
+    let q_seq = ">chr2\nGTCAGTCAGT\n";
+    fs::write(&q_fa_path, q_seq)?;
+
+    let t_2bit_path = dir.path().join("target.2bit");
+    let q_2bit_path = dir.path().join("query.2bit");
+
+    let mut cmd_2bit = assert_cmd::Command::cargo_bin("pgr").unwrap();
+    cmd_2bit
+        .arg("fa")
+        .arg("to-2bit")
+        .arg(t_fa_path.to_str().unwrap())
+        .arg("-o")
+        .arg(t_2bit_path.to_str().unwrap());
+    cmd_2bit.assert().success();
+
+    let mut cmd_2bit = assert_cmd::Command::cargo_bin("pgr").unwrap();
+    cmd_2bit
+        .arg("fa")
+        .arg("to-2bit")
+        .arg(q_fa_path.to_str().unwrap())
+        .arg("-o")
+        .arg(q_2bit_path.to_str().unwrap());
+    cmd_2bit.assert().success();
+
+    // Query on the negative strand.
+    let chain = "chain 1000 chr1 10 + 0 10 chr2 10 - 0 10 1\n10\n\n";
+    fs::write(&chain_path, chain)?;
+
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
+    cmd.arg("chain")
+        .arg("anti-repeat")
+        .arg("--target-2bit")
+        .arg(t_2bit_path.to_str().unwrap())
+        .arg("--query-2bit")
+        .arg(q_2bit_path.to_str().unwrap())
+        .arg(chain_path.to_str().unwrap())
+        .arg("-o")
+        .arg(out_path.to_str().unwrap())
+        .arg("--min-score")
+        .arg("800");
+
+    cmd.assert().success();
+
+    let output = fs::read_to_string(&out_path)?;
+    let lines: Vec<&str> = output.lines().filter(|l| l.starts_with("chain")).collect();
+    assert_eq!(lines.len(), 1);
+    assert!(lines[0].contains("chain 1000"));
+    assert!(lines[0].contains("chr2 10 - 0 10 1"));
+
+    Ok(())
+}

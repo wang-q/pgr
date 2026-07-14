@@ -1,4 +1,9 @@
 //! Stitch chain fragments sharing the same chain ID into a single chain.
+//!
+//! Mirrors the UCSC `chainStitchId` workflow: fragments with the same ID are
+//! merged after checking that target name, query name, and query strand are
+//! consistent. As with the original tool, overlapping blocks between fragments
+//! are not detected; the caller must ensure fragments do not overlap.
 
 use super::record::{Chain, ChainReader};
 use anyhow::Result;
@@ -9,6 +14,10 @@ use std::io::{BufRead, Write};
 ///
 /// Fragments are merged by converting to blocks, sorting by t_start, and rebuilding.
 /// Output is sorted by score descending.
+///
+/// Note: This does not verify that blocks from different fragments are non-overlapping,
+/// matching the behavior of UCSC `chainStitchId`. The caller is responsible for ensuring
+/// that fragments of the same chain ID do not overlap.
 pub fn stitch_chains<R: BufRead, W: Write>(reader: R, mut writer: W) -> Result<()> {
     let chain_reader = ChainReader::new(reader);
     let mut chains: HashMap<u64, Chain> = HashMap::new();

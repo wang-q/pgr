@@ -62,6 +62,10 @@ Filters out chains composed mainly of repetitive or low-complexity sequence.
   - `--min-score`: Minimum score threshold (default: 5000).
   - `--no-check-score`: Chains above this score skip checks (default: 200000).
   - `-o, --outfile <file>`: Output Chain file.
+- **Example**:
+  ```bash
+  pgr chain anti-repeat --target-2bit t.2bit --query-2bit q.2bit in.chain -o out.chain
+  ```
 
 ### 5. `pgr chain pre-net`: Pre-net filtering
 
@@ -85,7 +89,7 @@ Converts a Chain file into Net format (syntenic nets).
 - **Purpose**: Net format represents high-level correspondences between genomes, distinguishing orthologs and paralogs and handling inversions and translocations.
 - **Output**: Two Net files, one in target orientation (`out_target_net`) and one in query orientation (`out_query_net`).
 - **Arguments**:
-  - `infile`: Input Chain file. Should already be sorted by score descending.
+  - `infile`: Input chain file. Must already be sorted by score in descending order (use `pgr chain sort`); otherwise the command returns an error.
   - `t_sizes`: Target chromosome sizes file.
   - `q_sizes`: Query chromosome sizes file.
   - `out_target_net`: Output target Net file.

@@ -24,13 +24,13 @@ Notes:
 
 Examples:
 1. Basic repeat filtering:
-   pgr chain anti-repeat t.2bit q.2bit in.chain -o out.chain
+   pgr chain anti-repeat --target-2bit t.2bit --query-2bit q.2bit in.chain -o out.chain
 
 2. Raise the minimum score threshold:
-   pgr chain anti-repeat t.2bit q.2bit in.chain --min-score 10000 -o out.chain
+   pgr chain anti-repeat --target-2bit t.2bit --query-2bit q.2bit in.chain --min-score 10000 -o out.chain
 
 3. Lower the no-check threshold:
-   pgr chain anti-repeat t.2bit q.2bit in.chain --no-check-score 100000 -o out.chain
+   pgr chain anti-repeat --target-2bit t.2bit --query-2bit q.2bit in.chain --no-check-score 100000 -o out.chain
 
 "###,
         )

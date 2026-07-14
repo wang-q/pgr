@@ -22,7 +22,7 @@ pub fn read_nets<R: BufRead>(mut reader: R) -> Result<Vec<Chrom>> {
             continue;
         }
 
-        if line.starts_with('#') {
+        if line.trim_start().starts_with('#') {
             pending_comments.push(line.trim_end().to_string());
             line.clear();
             continue;

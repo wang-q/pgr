@@ -14,7 +14,7 @@ filled alignments and gaps, providing a layered view of synteny between two
 genomes.
 
 Notes:
-* Input chain file should be sorted by score descending (use `pgr chain sort`)
+* Input chain file must already be sorted by score descending (use `pgr chain sort`); otherwise the command returns an error
 * Outputs two net files: one in target orientation, one in query orientation
 * Use `--min-space` to control the minimum gap size to fill (default: 25)
 * Use `--min-fill` to control the minimum fill to record (default: min-space / 2)
@@ -96,9 +96,13 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     for res in reader.by_ref() {
         let chain = res?;
 
-        // Sort check (optional but good)
+        // Input must be sorted by score descending.
         if chain.header.score > last_score {
-            log::warn!("input not sorted by score at chain {}", chain.header.id);
+            anyhow::bail!(
+                "Input not sorted by score: {} > {}",
+                chain.header.score,
+                last_score
+            );
         }
         last_score = chain.header.score;
 
