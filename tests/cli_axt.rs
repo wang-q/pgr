@@ -15,7 +15,7 @@ fn command_axt_help() {
 #[test]
 fn command_axt_sort_help() {
     let (stdout, _) = PgrCmd::new().args(&["axt", "sort", "--help"]).run();
-    assert!(stdout.contains("Sorts axt files"));
+    assert!(stdout.contains("Sorts AXT files"));
 }
 
 #[test]
@@ -376,4 +376,100 @@ fn command_axt_to_fas_example() {
     assert!(stdout.contains("RM11_1a.scaffold_14"), "name list");
     assert!(stdout.contains("(+):3634-3714"), "positive strand");
     assert!(stdout.contains("(-):22732-22852"), "coordinate transformed");
+}
+
+#[test]
+fn command_axt_to_fas_help() {
+    let (stdout, _) = PgrCmd::new().args(&["axt", "to-fas", "--help"]).run();
+    assert!(stdout.contains("Converts AXT format files to block FA format"));
+}
+
+#[test]
+fn command_axt_to_psl_help() {
+    let (stdout, _) = PgrCmd::new().args(&["axt", "to-psl", "--help"]).run();
+    assert!(stdout.contains("Converts from axt to psl format"));
+}
+
+#[test]
+fn command_axt_sort_by_query() {
+    let dir = TempDir::new().unwrap();
+    let input_path = dir.path().join("input.axt");
+    let output_path = dir.path().join("output.axt");
+
+    let input_content = "\
+0 chr1 11 21 chrB 11 21 - 100
+ACTG
+ACTG
+
+1 chr1 6 16 chrA 31 41 + 50
+AAAA
+AAAA
+
+2 chr1 31 41 chrA 6 16 + 200
+TTTT
+TTTT
+";
+    fs::write(&input_path, input_content).unwrap();
+
+    PgrCmd::new()
+        .args(&[
+            "axt",
+            "sort",
+            "--by-query",
+            input_path.to_str().unwrap(),
+            "-o",
+            output_path.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    let output = fs::read_to_string(&output_path).unwrap();
+    let lines: Vec<&str> = output.lines().filter(|l| !l.is_empty()).collect();
+
+    // Expected order: 2 (chrA start 6), 1 (chrA start 31), 0 (chrB start 11)
+    assert!(lines[0].contains("2 chr1 31 41"));
+    assert!(lines[3].contains("1 chr1 6 16"));
+    assert!(lines[6].contains("0 chr1 11 21"));
+}
+
+#[test]
+fn command_axt_sort_renumber() {
+    let dir = TempDir::new().unwrap();
+    let input_path = dir.path().join("input.axt");
+    let output_path = dir.path().join("output.axt");
+
+    let input_content = "\
+5 chr1 11 21 chr2 11 21 - 100
+ACTG
+ACTG
+
+3 chr1 6 16 chr2 31 41 + 50
+AAAA
+AAAA
+
+9 chr1 31 41 chr2 6 16 + 200
+TTTT
+TTTT
+";
+    fs::write(&input_path, input_content).unwrap();
+
+    PgrCmd::new()
+        .args(&[
+            "axt",
+            "sort",
+            "--renumber",
+            input_path.to_str().unwrap(),
+            "-o",
+            output_path.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    let output = fs::read_to_string(&output_path).unwrap();
+    let lines: Vec<&str> = output.lines().filter(|l| !l.is_empty()).collect();
+
+    // Sorted by target start, then renumbered: 0, 1, 2
+    assert!(lines[0].starts_with("0 chr1 6 16"));
+    assert!(lines[3].starts_with("1 chr1 11 21"));
+    assert!(lines[6].starts_with("2 chr1 31 41"));
 }

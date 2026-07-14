@@ -9,7 +9,7 @@ pub struct Axt {
     pub t_name: String,
     pub t_start: usize, // 0-based
     pub t_end: usize,   // 0-based, half-open
-    pub t_strand: char,
+    pub t_strand: char, // AXT target strand is always '+'
     pub q_name: String,
     pub q_start: usize, // 0-based
     pub q_end: usize,   // 0-based, half-open
@@ -180,7 +180,7 @@ impl<R: std::io::Read> Iterator for AxtReader<R> {
                     }
 
                     // Parse header
-                    // Format: id tName tStart tEnd tStrand? qName qStart qEnd qStrand score?
+                    // Format: id tName tStart tEnd qName qStart qEnd qStrand score?
                     // Example: 0 chr19 3001012 3001075 chr11 70568380 70568443 - 3500
                     let parts: Vec<&str> = line.split_whitespace().collect();
                     if parts.len() < 8 {
@@ -196,13 +196,13 @@ impl<R: std::io::Read> Iterator for AxtReader<R> {
 
                     let t_name = parts[1].to_string();
                     let t_start: usize = match parts[2].parse::<usize>() {
-                        Ok(v) => {
-                            if v > 0 {
-                                v - 1
-                            } else {
-                                0
-                            }
-                        } // 1-based to 0-based
+                        Ok(v) if v > 0 => v - 1, // 1-based to 0-based
+                        Ok(_) => {
+                            return Some(Err(anyhow::anyhow!(
+                                "Invalid tStart: {} (AXT coordinates are 1-based)",
+                                parts[2]
+                            )))
+                        }
                         Err(_) => {
                             return Some(Err(anyhow::anyhow!("Invalid tStart: {}", parts[2])))
                         }
@@ -214,13 +214,13 @@ impl<R: std::io::Read> Iterator for AxtReader<R> {
 
                     let q_name = parts[4].to_string();
                     let q_start: usize = match parts[5].parse::<usize>() {
-                        Ok(v) => {
-                            if v > 0 {
-                                v - 1
-                            } else {
-                                0
-                            }
-                        } // 1-based to 0-based
+                        Ok(v) if v > 0 => v - 1, // 1-based to 0-based
+                        Ok(_) => {
+                            return Some(Err(anyhow::anyhow!(
+                                "Invalid qStart: {} (AXT coordinates are 1-based)",
+                                parts[5]
+                            )))
+                        }
                         Err(_) => {
                             return Some(Err(anyhow::anyhow!("Invalid qStart: {}", parts[5])))
                         }
@@ -233,7 +233,15 @@ impl<R: std::io::Read> Iterator for AxtReader<R> {
                     let q_strand = parts[7].chars().next().unwrap_or('?');
 
                     let score = if parts.len() > 8 {
-                        parts[8].parse().ok()
+                        match parts[8].parse::<i32>() {
+                            Ok(v) => Some(v),
+                            Err(_) => {
+                                return Some(Err(anyhow::anyhow!(
+                                    "Invalid AXT score: {}",
+                                    parts[8]
+                                )))
+                            }
+                        }
                     } else {
                         None
                     };
@@ -291,24 +299,19 @@ pub fn write_axt<W: std::io::Write>(writer: &mut W, axt: &Axt) -> std::io::Resul
     let q_start = axt.q_start + 1;
     let q_end = axt.q_end;
 
-    let score_str = match axt.score {
-        Some(s) => format!("{}", s),
-        None => String::new(),
-    };
-
-    writeln!(
-        writer,
-        "{} {} {} {} {} {} {} {} {}",
-        axt.id,
-        axt.t_name,
-        t_start,
-        t_end,
-        axt.q_name,
-        q_start,
-        q_end,
-        axt.q_strand,
-        score_str // Placeholder
-    )?;
+    if let Some(score) = axt.score {
+        writeln!(
+            writer,
+            "{} {} {} {} {} {} {} {} {}",
+            axt.id, axt.t_name, t_start, t_end, axt.q_name, q_start, q_end, axt.q_strand, score
+        )?;
+    } else {
+        writeln!(
+            writer,
+            "{} {} {} {} {} {} {} {}",
+            axt.id, axt.t_name, t_start, t_end, axt.q_name, q_start, q_end, axt.q_strand
+        )?;
+    }
 
     writeln!(writer, "{}", axt.t_sym)?;
     writeln!(writer, "{}", axt.q_sym)?;
@@ -358,7 +361,7 @@ pub fn axt_query_to_forward_coords(
         let q_s_1 = (q_start + 1) as i32;
         let q_e_1 = q_end as i32;
         if q_e_1 > q_len || q_s_1 > q_len {
-            anyhow::bail!("AXT q_end {} exceeds q_len {}", q_e_1, q_len);
+            anyhow::bail!("AXT query coordinate exceeds q_len {}", q_len);
         }
         Ok((q_len - q_e_1 + 1, q_len - q_s_1 + 1))
     } else {

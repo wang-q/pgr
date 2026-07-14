@@ -6,10 +6,13 @@ use std::io::Write;
 /// Build the clap subcommand for sort.
 pub fn make_subcommand() -> Command {
     Command::new("sort")
-        .about("Sorts axt files")
+        .about("Sorts AXT files")
         .after_help(
             r###"
-Sorts axt files by target, query, or score.
+Sorts AXT files by target, query, or score.
+
+Notes:
+* --by-query and --by-score are mutually exclusive
 
 Examples:
 1. Sort by target (default):
@@ -24,13 +27,15 @@ Examples:
         )
         .arg(crate::cmd_pgr::args::infile_arg().help("Input AXT file. [stdin] for standard input"))
         .arg(crate::cmd_pgr::args::outfile_arg())
-        .arg(crate::cmd_pgr::args::by_query_arg(
-            "Sort by query position, not target",
-        ))
+        .arg(
+            crate::cmd_pgr::args::by_query_arg("Sort by query position, not target")
+                .conflicts_with("by_score"),
+        )
         .arg(
             Arg::new("by_score")
                 .long("by-score")
                 .action(ArgAction::SetTrue)
+                .conflicts_with("by_query")
                 .help("Sort by score"),
         )
         .arg(

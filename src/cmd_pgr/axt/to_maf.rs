@@ -5,7 +5,7 @@ pub fn make_subcommand() -> Command {
         .about("Converts from axt to maf format")
         .after_help(
             r###"
-Where tSizes and qSizes is a file that contains the sizes of the target and query sequences.
+Where tSizes and qSizes are files that contain the sizes of the target and query sequences.
 Very often this will be a chrom.sizes file.
 
 Examples:
