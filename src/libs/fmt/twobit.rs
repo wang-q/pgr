@@ -90,9 +90,9 @@ impl Blocks {
         let mut in_mask = false;
         let mut mask_start = 0;
 
-        for (i, c) in dna.chars().enumerate() {
-            // Hard-mask any character that is not A/C/G/T (case-insensitive).
-            let is_n = !matches!(c.to_ascii_uppercase(), 'A' | 'C' | 'G' | 'T');
+        for (i, c) in dna.bytes().enumerate() {
+            // Hard-mask any byte that is not A/C/G/T (case-insensitive).
+            let is_n = !matches!(c.to_ascii_uppercase(), b'A' | b'C' | b'G' | b'T');
             if is_n {
                 if !in_n {
                     in_n = true;
@@ -103,7 +103,7 @@ impl Blocks {
                 n_blocks_vec.push(n_start..i);
             }
 
-            // Soft-mask lowercase characters when masking is enabled.
+            // Soft-mask lowercase bytes when masking is enabled.
             let is_lower = c.is_ascii_lowercase();
             if do_mask && is_lower {
                 if !in_mask {
@@ -117,10 +117,10 @@ impl Blocks {
 
             // Pack DNA: T=00, C=01, A=10, G=11; N and others are packed as T.
             let val = match c {
-                'T' | 't' => 0,
-                'C' | 'c' => 1,
-                'A' | 'a' => 2,
-                'G' | 'g' => 3,
+                b'T' | b't' => 0,
+                b'C' | b'c' => 1,
+                b'A' | b'a' => 2,
+                b'G' | b'g' => 3,
                 _ => 0,
             };
 
@@ -176,6 +176,14 @@ pub fn read_2bit_record<R: Read + Seek>(
 
     let start_pos = start.unwrap_or(0);
     let end_pos = end.unwrap_or(dna_size).min(dna_size);
+
+    if start_pos > dna_size {
+        return Err(anyhow!(
+            "start {} exceeds sequence length {}",
+            start_pos,
+            dna_size
+        ));
+    }
 
     if start_pos >= end_pos {
         return Ok(String::new());
@@ -434,6 +442,11 @@ impl<R: Read + Seek> TwoBitFile<R> {
     /// Return the sequence names in their original file order.
     pub fn get_sequence_names(&self) -> Vec<String> {
         self.sequence_order.clone()
+    }
+
+    /// Return true if the named sequence exists in the file.
+    pub fn has_sequence(&self, name: &str) -> bool {
+        self.sequence_offsets.contains_key(name)
     }
 
     fn read_blocks(&mut self) -> Result<Blocks> {

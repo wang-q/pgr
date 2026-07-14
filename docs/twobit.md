@@ -27,6 +27,7 @@ Identifies masked regions in one or more 2bit files.
 pgr 2bit masked [OPTIONS] <infiles>...
 ```
 
+*   By default, outputs both soft-masked (lowercase) and hard-masked (N/n gap) regions; use `--gap` to report only hard-masked regions.
 *   `--gap`: Only identify hard-masked regions (N/n gaps).
 *   `-o, --outfile <file>`: Output filename (default: stdout).
 *   Output is one region per line in the form `seq_name:start-end` (1-based, inclusive). Single-base regions are emitted as `seq_name:position`.
@@ -59,6 +60,7 @@ pgr 2bit range [OPTIONS] <infile> [ranges]...
     *   `seq_name` alone (without a colon) extracts the full sequence.
     *   `start-end` are 1-based, inclusive.
     *   `strand` is optional (`+` or `-`).
+    *   Ranges with a start beyond the sequence length are skipped with a warning.
     *   Ranges extending past the end of a sequence are truncated with a warning.
 *   `-r, --rgfile <file>`: File containing ranges, one per line.
 *   `-o, --outfile <file>`: Output filename (default: stdout).

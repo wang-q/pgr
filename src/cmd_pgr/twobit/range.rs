@@ -60,7 +60,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         let seq_id = rg.chr();
 
         // Check if sequence exists
-        if !tb.sequence_offsets.contains_key(seq_id) {
+        if !tb.has_sequence(seq_id) {
             log::warn!("{} for [{}] not found in the 2bit file", seq_id, el);
             continue;
         }
@@ -91,6 +91,16 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
             // Warn if the requested range exceeds the sequence length.
             let seq_len = tb.get_sequence_len(seq_id)?;
+            if s >= seq_len {
+                log::warn!(
+                    "range {} start {} exceeds sequence length {} for {}; skipping",
+                    el,
+                    start_val,
+                    seq_len,
+                    seq_id
+                );
+                continue;
+            }
             if e > seq_len {
                 log::warn!(
                     "range {} end {} exceeds sequence length {} for {}; truncating",

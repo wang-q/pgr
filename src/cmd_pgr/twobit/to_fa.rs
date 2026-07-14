@@ -2,6 +2,7 @@ use anyhow::Context;
 use clap::{ArgMatches, Command};
 use pgr::libs::fmt::twobit::TwoBitFile;
 use std::io::Write;
+
 /// Build the clap subcommand for to-fa.
 pub fn make_subcommand() -> Command {
     Command::new("to-fa")
