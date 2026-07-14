@@ -35,9 +35,9 @@
     *   UCSC: 支持版本 0 (32-bit) 和版本 1 (64-bit)。
     *   pgr: **同时支持版本 0 (32-bit) 和版本 1 (64-bit)**。写入时默认使用版本 1 以支持大文件。
 
-*   字节序处理 (Endianness)
-    *   UCSC: 通过检查魔数自动检测字节序并进行 swap。
-    *   pgr: 实现了相同的逻辑，支持在不同字节序机器上读取 2bit 文件。
+* 字节序处理 (Endianness)
+    * UCSC: 通过检查魔数自动检测字节序并进行 swap。
+    * pgr: 写入时始终使用 little-endian；读取时通过 magic 检测自动处理跨平台字节序差异。
 
 *   屏蔽处理 (Masking Handling)
     *   UCSC: `twoBitToFa` 工具通过命令行参数控制是否应用屏蔽。

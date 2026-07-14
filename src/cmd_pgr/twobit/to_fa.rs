@@ -38,7 +38,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let input_path = args.get_one::<String>("infile").unwrap();
     let output_path = crate::cmd_pgr::args::get_outfile(args);
     let no_mask = args.get_flag("no_mask");
-    let line_width = args.get_one::<usize>("line").copied().unwrap_or(60);
+    let line_width = args.get_one::<usize>("line").copied().unwrap();
 
     let mut tb = TwoBitFile::open(input_path)
         .with_context(|| format!("Failed to open 2bit file {}", input_path))?;
