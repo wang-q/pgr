@@ -91,8 +91,9 @@ impl Chain {
 
     /// Reconstruct chain data from blocks.
     ///
-    /// Assumes blocks are sorted by t_start and consistent with the header.
-    /// Will update header.t_start, t_end, q_start, q_end based on the blocks.
+    /// Assumes blocks are sorted by t_start, non-overlapping, and consistent
+    /// with the header. Will update header.t_start, t_end, q_start, q_end
+    /// based on the blocks. Overlapping blocks are treated as having zero gap.
     pub fn from_blocks(header: &mut ChainHeader, blocks: &[Block]) -> Vec<ChainData> {
         if blocks.is_empty() {
             return Vec::new();
@@ -114,7 +115,10 @@ impl Chain {
 
             let (dt, dq) = if i < blocks.len() - 1 {
                 let next = &blocks[i + 1];
-                (next.t_start - curr.t_end, next.q_start - curr.q_end)
+                (
+                    next.t_start.saturating_sub(curr.t_end),
+                    next.q_start.saturating_sub(curr.q_end),
+                )
             } else {
                 (0, 0)
             };
@@ -362,18 +366,51 @@ impl<R: std::io::Read> Iterator for ChainReader<R> {
                     let parts: Vec<&str> = trimmed.split_whitespace().collect();
                     if parts.len() == 1 {
                         // Last line of block: size
-                        if let Ok(size) = parts[0].parse() {
-                            data.push(ChainData { size, dt: 0, dq: 0 });
+                        match parts[0].parse() {
+                            Ok(size) => data.push(ChainData { size, dt: 0, dq: 0 }),
+                            Err(e) => {
+                                return Some(Err(anyhow::anyhow!(
+                                    "Invalid chain data line '{}': failed to parse size: {}",
+                                    trimmed,
+                                    e
+                                )))
+                            }
                         }
                     } else if parts.len() == 3 {
                         // size dt dq
-                        if let (Ok(size), Ok(dt), Ok(dq)) =
-                            (parts[0].parse(), parts[1].parse(), parts[2].parse())
-                        {
-                            data.push(ChainData { size, dt, dq });
-                        }
+                        let size = match parts[0].parse() {
+                            Ok(v) => v,
+                            Err(e) => {
+                                return Some(Err(anyhow::anyhow!(
+                                    "Invalid chain data line '{}': failed to parse size: {}",
+                                    trimmed,
+                                    e
+                                )))
+                            }
+                        };
+                        let dt = match parts[1].parse() {
+                            Ok(v) => v,
+                            Err(e) => {
+                                return Some(Err(anyhow::anyhow!(
+                                    "Invalid chain data line '{}': failed to parse dt: {}",
+                                    trimmed,
+                                    e
+                                )))
+                            }
+                        };
+                        let dq = match parts[2].parse() {
+                            Ok(v) => v,
+                            Err(e) => {
+                                return Some(Err(anyhow::anyhow!(
+                                    "Invalid chain data line '{}': failed to parse dq: {}",
+                                    trimmed,
+                                    e
+                                )))
+                            }
+                        };
+                        data.push(ChainData { size, dt, dq });
                     } else {
-                        // Invalid data line
+                        return Some(Err(anyhow::anyhow!("Invalid chain data line: {}", trimmed)));
                     }
                 }
                 Ok(None) => break, // EOF ends the current chain
@@ -465,5 +502,43 @@ chain 4900 chrY 58368225 + 25985403 25985638 chr5 151006098 - 43257292 43257528 
         assert_eq!(new_data[1].size, 20);
         assert_eq!(new_data[1].dt, 0);
         assert_eq!(new_data[1].dq, 0);
+    }
+
+    #[test]
+    fn test_iterator_rejects_malformed_data_line() {
+        let input = "\
+chain 4900 chrY 58368225 + 25985403 25985638 chr5 151006098 - 43257292 43257528 1
+16 0 4
+malformed
+";
+        let reader = ChainReader::new(input.as_bytes());
+        let result: Result<Vec<_>, _> = reader.collect();
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Invalid chain data line"));
+    }
+
+    #[test]
+    fn test_from_blocks_overlapping_does_not_panic() {
+        let mut header = ChainHeader::default();
+        let blocks = vec![
+            Block {
+                t_start: 10,
+                t_end: 20,
+                q_start: 100,
+                q_end: 110,
+            },
+            Block {
+                t_start: 15,
+                t_end: 25,
+                q_start: 105,
+                q_end: 115,
+            },
+        ];
+        let data = Chain::from_blocks(&mut header, &blocks);
+        assert_eq!(data.len(), 2);
+        // Overlap produces zero gap via saturating_sub.
+        assert_eq!(data[0].dt, 0);
+        assert_eq!(data[0].dq, 0);
     }
 }

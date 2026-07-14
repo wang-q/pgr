@@ -177,11 +177,13 @@ pub fn read_nets<R: BufRead>(mut reader: R) -> Result<Vec<Chrom>> {
                 }));
 
                 // Find parent gap
+                let mut parent_found = false;
                 while let Some((parent_indent, parent_node)) = stack.last() {
                     if indent > *parent_indent {
                         if let NetNode::Gap(gap) = parent_node {
                             gap.borrow_mut().fills.push(fill.clone());
                             stack.push((indent, NetNode::Fill(fill)));
+                            parent_found = true;
                             break;
                         } else {
                             stack.pop();
@@ -189,6 +191,9 @@ pub fn read_nets<R: BufRead>(mut reader: R) -> Result<Vec<Chrom>> {
                     } else {
                         stack.pop();
                     }
+                }
+                if !parent_found {
+                    bail!("orphaned fill line: {}", line.trim_end());
                 }
             }
             "gap" => {
@@ -267,11 +272,13 @@ pub fn read_nets<R: BufRead>(mut reader: R) -> Result<Vec<Chrom>> {
                 }));
 
                 // Find parent fill
+                let mut parent_found = false;
                 while let Some((parent_indent, parent_node)) = stack.last() {
                     if indent > *parent_indent {
                         if let NetNode::Fill(fill) = parent_node {
                             fill.borrow_mut().gaps.push(gap.clone());
                             stack.push((indent, NetNode::Gap(gap)));
+                            parent_found = true;
                             break;
                         } else {
                             stack.pop();
@@ -279,6 +286,9 @@ pub fn read_nets<R: BufRead>(mut reader: R) -> Result<Vec<Chrom>> {
                     } else {
                         stack.pop();
                     }
+                }
+                if !parent_found {
+                    bail!("orphaned gap line: {}", line.trim_end());
                 }
             }
             _ => {}
@@ -395,5 +405,33 @@ mod tests {
     fn test_binary_input_does_not_panic() {
         let binary = b"\xff\xfe\x00\x01net chr1 100\n";
         let _ = read_nets(std::io::Cursor::new(binary.as_slice()));
+    }
+
+    #[test]
+    fn test_orphaned_fill() {
+        let data = "net chr1 100\nfill 0 10 chr2 + 0 10 id 1 score 100 ali 10\n";
+        let r = read_nets(std::io::Cursor::new(data));
+        match r {
+            Err(e) => assert!(e.to_string().contains("orphaned fill line")),
+            Ok(_) => panic!("expected orphaned fill error"),
+        }
+    }
+
+    #[test]
+    fn test_orphaned_gap() {
+        let data = "net chr1 100\ngap 0 10 chr2 + 0 10\n";
+        let r = read_nets(std::io::Cursor::new(data));
+        match r {
+            Err(e) => assert!(e.to_string().contains("orphaned gap line")),
+            Ok(_) => panic!("expected orphaned gap error"),
+        }
+    }
+
+    #[test]
+    fn test_orphaned_nested_fill() {
+        // A gap at indent 1 has no parent fill at indent 0.
+        let data = "net chr1 100\n gap 0 10 chr2 + 0 10\n";
+        let r = read_nets(std::io::Cursor::new(data));
+        assert!(r.is_err());
     }
 }

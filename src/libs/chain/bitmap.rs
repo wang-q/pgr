@@ -22,7 +22,7 @@ impl BitMap {
         if len == 0 {
             return;
         }
-        let end = (start + len).min(self.size);
+        let end = start.saturating_add(len).min(self.size);
         let start = start.min(self.size);
         if start >= end {
             return;
@@ -56,7 +56,7 @@ impl BitMap {
         if len == 0 {
             return true;
         }
-        let end = (start + len).min(self.size);
+        let end = start.saturating_add(len).min(self.size);
         let start = start.min(self.size);
         if start >= end {
             return true;
@@ -93,5 +93,26 @@ impl BitMap {
         }
 
         true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_set_range_does_not_overflow() {
+        let mut bm = BitMap::new(100);
+        // start near u64::MAX with a length that would overflow if added directly.
+        bm.set_range(u64::MAX - 5, 10);
+        // Bits are clamped to size, so nothing beyond the logical size is set.
+        assert!(!bm.is_fully_set(0, 100));
+    }
+
+    #[test]
+    fn test_is_fully_set_does_not_overflow() {
+        let bm = BitMap::new(100);
+        // Query range whose end would overflow if computed with plain addition.
+        assert!(bm.is_fully_set(u64::MAX - 5, 10));
     }
 }

@@ -533,14 +533,24 @@ fn score_chain<S: SequenceReader>(
     q_size: u64,
     q_strand: char,
 ) -> anyhow::Result<f64> {
+    if let Some(ctx) = score_ctx {
+        let mut score = 0.0;
+        for b in blocks {
+            score += calc_block_score(b, ctx, q_name, t_name, q_size, q_strand)?;
+        }
+        for i in 1..blocks.len() {
+            let prev = &blocks[i - 1];
+            let curr = &blocks[i];
+            let dt = curr.t_start.saturating_sub(prev.t_end) as i32;
+            let dq = curr.q_start.saturating_sub(prev.q_end) as i32;
+            score -= gap_calc.calc(dq, dt) as f64;
+        }
+        return Ok(score);
+    }
+
     let mut score = 0.0;
     for i in 0..blocks.len() {
-        let block_score = if let Some(ctx) = score_ctx {
-            calc_block_score(&blocks[i], ctx, q_name, t_name, q_size, q_strand)?
-        } else {
-            blocks[i].score
-        };
-        score += block_score;
+        score += blocks[i].score;
 
         if i > 0 {
             let prev = &blocks[i - 1];
@@ -548,29 +558,8 @@ fn score_chain<S: SequenceReader>(
 
             let dt = curr.t_start.saturating_sub(prev.t_end);
             let dq = curr.q_start.saturating_sub(prev.q_end);
-
-            if let Some(_ctx) = score_ctx {
-                // If trimmed, dt >= 0.
-                score -= gap_calc.calc(dq as i32, dt as i32) as f64;
-            } else {
-                score -= gap_calc.calc(dq as i32, dt as i32) as f64;
-            }
+            score -= gap_calc.calc(dq as i32, dt as i32) as f64;
         }
-    }
-
-    if let Some(ctx) = score_ctx {
-        let mut exact_score = 0.0;
-        for b in blocks {
-            exact_score += calc_block_score(b, ctx, q_name, t_name, q_size, q_strand)?;
-        }
-        for i in 1..blocks.len() {
-            let prev = &blocks[i - 1];
-            let curr = &blocks[i];
-            let dt = curr.t_start.saturating_sub(prev.t_end) as i32;
-            let dq = curr.q_start.saturating_sub(prev.q_end) as i32;
-            exact_score -= gap_calc.calc(dq, dt) as f64;
-        }
-        return Ok(exact_score);
     }
 
     Ok(score)

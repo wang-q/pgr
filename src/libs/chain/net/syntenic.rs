@@ -67,9 +67,9 @@ impl DupeTree {
             events.push((*s, *d));
             events.push((*e, -*d));
         }
-        // Sort by position, then by delta (to process all updates at same pos)
-        // Actually, order of processing at same position doesn't matter for final segments between positions.
-        events.sort_by_key(|a| a.0);
+        // Sort by position, then by delta so that end events (negative delta)
+        // are processed before start events (positive delta) at the same coordinate.
+        events.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
 
         let mut current_depth = 0;
         let mut segments = Vec::new();
@@ -281,5 +281,35 @@ fn r_net_syn_fill(
     let gaps = fill.borrow().gaps.clone();
     for gap in gaps {
         r_net_syn_gap(&gap, map, Some(fill));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_dupe_tree_adjacent_intervals() {
+        let mut dt = DupeTree::new();
+        dt.add(0, 10);
+        dt.add(10, 20);
+        dt.build();
+
+        // Each adjacent interval contributes depth 1 on its own range.
+        assert_eq!(dt.count_over(0, 20, 1), 20);
+        assert_eq!(dt.count_over(0, 20, 2), 0);
+    }
+
+    #[test]
+    fn test_dupe_tree_overlapping_intervals() {
+        let mut dt = DupeTree::new();
+        dt.add(0, 15);
+        dt.add(10, 25);
+        dt.build();
+
+        assert_eq!(dt.count_over(0, 25, 1), 25);
+        assert_eq!(dt.count_over(0, 25, 2), 5);
+        assert_eq!(dt.count_over(0, 10, 2), 0);
+        assert_eq!(dt.count_over(20, 25, 2), 0);
     }
 }
