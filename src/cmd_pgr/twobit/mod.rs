@@ -12,9 +12,9 @@ pub fn make_subcommand() -> Command {
         .after_help(
             r###"Subcommand groups:
 
-* info: masked / size
-* subset: range / some
-* transform: to-fa
+* Info: masked / size
+* Subset: range / some
+* Transform: to-fa
 
 "###,
         )

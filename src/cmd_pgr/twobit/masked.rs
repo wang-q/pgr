@@ -72,11 +72,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 let end_1based = block.end;
 
                 if start_1based == end_1based {
-                    writer.write_all(format!("{}:{}\n", name, start_1based).as_bytes())?;
+                    writeln!(writer, "{}:{}", name, start_1based)?;
                 } else {
-                    writer.write_all(
-                        format!("{}:{}-{}\n", name, start_1based, end_1based).as_bytes(),
-                    )?;
+                    writeln!(writer, "{}:{}-{}", name, start_1based, end_1based)?;
                 }
             }
         }

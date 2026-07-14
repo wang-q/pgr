@@ -6,10 +6,10 @@ use std::io::Write;
 /// Build the clap subcommand for size.
 pub fn make_subcommand() -> Command {
     Command::new("size")
-        .about("Counts total bases in 2bit file(s)")
+        .about("Retrieves sequence sizes from 2bit file(s)")
         .after_help(
             r###"
-This command retrieves the sequence sizes from a 2bit file.
+This command retrieves the sequence sizes from one or more 2bit files.
 
 Notes:
 * 2bit files are binary and require random access (seeking)
@@ -44,13 +44,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         let names = tb.get_sequence_names();
 
         for name in names {
-            if no_ns {
-                let len = tb.get_sequence_len_no_ns(&name)?;
-                writer.write_fmt(format_args!("{}\t{}\n", name, len))?;
+            let len = if no_ns {
+                tb.get_sequence_len_no_ns(&name)?
             } else {
-                let len = tb.get_sequence_len(&name)?;
-                writer.write_fmt(format_args!("{}\t{}\n", name, len))?;
-            }
+                tb.get_sequence_len(&name)?
+            };
+            writer.write_fmt(format_args!("{}\t{}\n", name, len))?;
         }
     }
 

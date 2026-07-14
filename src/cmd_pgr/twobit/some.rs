@@ -44,8 +44,19 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let list_file = args.get_one::<String>("name_list").unwrap();
     let outfile = crate::cmd_pgr::args::get_outfile(args);
 
-    // Load list
-    let set_list = pgr::libs::io::read_names::<std::collections::HashSet<String>>(list_file)?;
+    // Load list, ignoring empty lines and comment lines starting with '#'.
+    let lines = pgr::libs::io::read_lines(list_file)?;
+    let set_list: std::collections::HashSet<String> = lines
+        .into_iter()
+        .filter_map(|line| {
+            let trimmed = line.trim();
+            if trimmed.is_empty() || trimmed.starts_with('#') {
+                None
+            } else {
+                trimmed.split_whitespace().next().map(|s| s.to_string())
+            }
+        })
+        .collect();
 
     let mut tb =
         TwoBitFile::open(infile).with_context(|| format!("Failed to open 2bit file {}", infile))?;

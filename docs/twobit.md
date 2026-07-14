@@ -75,6 +75,7 @@ pgr 2bit some [OPTIONS] <infile> <list.txt>
 ```
 
 *   `<list.txt>`: File containing one sequence name per line.
+*   Empty lines and lines starting with `#` are ignored.
 *   `-i, --invert`: Invert selection (output sequences NOT in the list).
 *   `-o, --outfile <file>`: Output filename (default: stdout).
 *   Output is FASTA with one sequence line per record.

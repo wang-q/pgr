@@ -248,6 +248,33 @@ fn test_2bit_some() {
 }
 
 #[test]
+fn test_2bit_some_ignores_comments_and_empty_lines() {
+    let temp = TempDir::new().unwrap();
+    let out = temp.path().join("out_some_comments.fa");
+    let list = temp.path().join("list_comments.txt");
+
+    fs::write(&list, "\nseq1\n\n# seq2\nseq3\n# trailing comment\n").unwrap();
+
+    PgrCmd::new()
+        .args(&[
+            "2bit",
+            "some",
+            fixture("some.2bit").to_str().unwrap(),
+            list.to_str().unwrap(),
+            "-o",
+            out.to_str().unwrap(),
+        ])
+        .run();
+
+    let content = read_fasta(&out);
+    assert!(content.contains(">seq1"));
+    assert!(content.contains("ACGT"));
+    assert!(content.contains(">seq3"));
+    assert!(content.contains("NNNN"));
+    assert!(!content.contains(">seq2"));
+}
+
+#[test]
 fn test_2bit_range_seqlist1_file() {
     let temp = TempDir::new().unwrap();
     let output = temp.path().join("out.fa");
