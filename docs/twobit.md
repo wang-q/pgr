@@ -2,6 +2,10 @@
 
 `pgr 2bit` provides tools for manipulating **2bit** files. 2bit is a binary format for storing genomic sequences efficiently (2 bits per base). It supports random access but does not support streaming (stdin) or gzip compression directly.
 
+## Creating 2bit files
+
+To create a 2bit file from FASTA, use `pgr fa to-2bit`. See [docs/fa.md](fa.md) for details.
+
 ## Subcommands
 
 The subcommands are organized into the following categories:

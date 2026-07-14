@@ -70,9 +70,14 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             // Read sequence with masking (no_mask = false)
             let seq = tb.read_sequence(&name, None, None, false)?;
 
-            // Write FASTA
-            // Matches pgr fa some behavior (single line sequence)
-            write!(writer, ">{}\n{}\n", name, seq)?;
+            // Write FASTA with the sequence on a single line.
+            write!(
+                writer,
+                ">{}
+{}
+",
+                name, seq
+            )?;
         }
     }
 

@@ -123,8 +123,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 .map_err(|e| anyhow::anyhow!("invalid utf8 in rev_comp: {}", e))?;
         }
 
-        // Header construction
-        let header = rg.to_string();
+        // Use the original range string as the header to match documentation.
+        let header = el;
 
         writeln!(writer, ">{}", header)?;
         writeln!(writer, "{}", seq)?;
