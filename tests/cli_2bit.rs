@@ -437,6 +437,36 @@ fn test_2bit_range_r_complex() {
 }
 
 #[test]
+fn test_2bit_range_invalid_inverted() {
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "2bit",
+            "range",
+            fixture("range.2bit").to_str().unwrap(),
+            "seq1:5-2",
+        ])
+        .run_fail();
+    assert!(stderr.contains("range start must not be greater than end"));
+}
+
+#[test]
+fn test_2bit_range_invalid_zero_coordinate() {
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "2bit",
+            "range",
+            fixture("range.2bit").to_str().unwrap(),
+            "seq1:0-3",
+        ])
+        .run_fail();
+    assert!(
+        stderr.contains("invalid range") || stderr.contains("range coordinates must be positive"),
+        "expected invalid range error, got: {}",
+        stderr
+    );
+}
+
+#[test]
 fn test_2bit_size_doc_consistency() {
     let tests_pgr = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/pgr");
     let temp = TempDir::new().unwrap();

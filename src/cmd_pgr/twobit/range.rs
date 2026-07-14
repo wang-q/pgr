@@ -80,6 +80,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 "range coordinates must be positive: {}",
                 el
             );
+            anyhow::ensure!(
+                start_val <= end_val,
+                "range start must not be greater than end: {}",
+                el
+            );
             // Convert 1-based inclusive to 0-based half-open.
             let s = (start_val as usize).saturating_sub(1);
             let e = end_val as usize;

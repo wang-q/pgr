@@ -91,9 +91,7 @@ impl Blocks {
         let mut mask_start = 0;
 
         for (i, c) in dna.chars().enumerate() {
-            // Handle N-blocks (Hard mask)
-            // Any character that is not a valid DNA base (A/C/G/T) is treated as N,
-            // matching UCSC faToTwoBit semantics.
+            // Hard-mask any character that is not A/C/G/T (case-insensitive).
             let is_n = !matches!(c.to_ascii_uppercase(), 'A' | 'C' | 'G' | 'T');
             if is_n {
                 if !in_n {
@@ -105,14 +103,7 @@ impl Blocks {
                 n_blocks_vec.push(n_start..i);
             }
 
-            // Handle Mask-blocks (Soft mask - lowercase)
-            // Note: Ns are usually not counted as soft-mask in UCSC,
-            // but if they are lowercase 'n', they might be?
-            // twoBit.c: "lower-case characters are masked".
-            // faToTwoBit.c: unknownToN converts to 'N' or 'n' based on case.
-            // But usually N-mask takes precedence or is separate.
-            // Let's stick to simple logic: if it's lowercase, it's a mask block.
-            // However, typical usage is: valid bases in lowercase -> mask.
+            // Soft-mask lowercase characters when masking is enabled.
             let is_lower = c.is_ascii_lowercase();
             if do_mask && is_lower {
                 if !in_mask {
@@ -124,18 +115,13 @@ impl Blocks {
                 mask_blocks_vec.push(mask_start..i);
             }
 
-            // Pack DNA
-            // T=00, C=01, A=10, G=11
-            // N is treated as T (00) usually, or C?
-            // UCSC twoBitFromDnaSeq: val = ntVal[c]
-            // We need a map. T/t/N/n -> ?
-            // Usually arbitrary for N since it's masked. Let's use T (00).
+            // Pack DNA: T=00, C=01, A=10, G=11; N and others are packed as T.
             let val = match c {
                 'T' | 't' => 0,
                 'C' | 'c' => 1,
                 'A' | 'a' => 2,
                 'G' | 'g' => 3,
-                _ => 0, // Treat N and others as T
+                _ => 0,
             };
 
             current_byte |= val << bit_offset;
@@ -228,14 +214,16 @@ pub fn read_2bit_record<R: Read + Seek>(
     String::from_utf8(seq_vec).map_err(|e| anyhow!("invalid UTF-8 in 2bit sequence: {}", e))
 }
 
-/// Write a single 2bit record (dna_size + n_blocks + mask_blocks + reserved +
-/// packed_dna) to the writer. Reused by `TwoBitWriter` and `pbit::Compressor`.
-pub fn write_2bit_record<W: Write>(writer: &mut W, dna: &str, do_mask: bool) -> Result<()> {
-    let (packed, n_blocks, mask_blocks, dna_size) = Blocks::from_dna(dna, do_mask);
-
+/// Write a single 2bit record from already packed DNA and block metadata.
+pub fn write_packed_record<W: Write>(
+    writer: &mut W,
+    dna_size: u32,
+    n_blocks: &Blocks,
+    mask_blocks: &Blocks,
+    packed: &[u8],
+) -> Result<()> {
     writer.write_all(&dna_size.to_le_bytes())?;
 
-    // Write N Blocks
     writer.write_all(&(n_blocks.0.len() as u32).to_le_bytes())?;
     for block in &n_blocks.0 {
         writer.write_all(&(block.start as u32).to_le_bytes())?;
@@ -244,7 +232,6 @@ pub fn write_2bit_record<W: Write>(writer: &mut W, dna: &str, do_mask: bool) -> 
         writer.write_all(&((block.end - block.start) as u32).to_le_bytes())?;
     }
 
-    // Write Mask Blocks
     writer.write_all(&(mask_blocks.0.len() as u32).to_le_bytes())?;
     for block in &mask_blocks.0 {
         writer.write_all(&(block.start as u32).to_le_bytes())?;
@@ -253,13 +240,17 @@ pub fn write_2bit_record<W: Write>(writer: &mut W, dna: &str, do_mask: bool) -> 
         writer.write_all(&((block.end - block.start) as u32).to_le_bytes())?;
     }
 
-    // Reserved
     writer.write_all(&0u32.to_le_bytes())?;
-
-    // Packed DNA
-    writer.write_all(&packed)?;
+    writer.write_all(packed)?;
 
     Ok(())
+}
+
+/// Write a single 2bit record (dna_size + n_blocks + mask_blocks + reserved +
+/// packed_dna) to the writer. Reused by `TwoBitWriter` and `pbit::Compressor`.
+pub fn write_2bit_record<W: Write>(writer: &mut W, dna: &str, do_mask: bool) -> Result<()> {
+    let (packed, n_blocks, mask_blocks, dna_size) = Blocks::from_dna(dna, do_mask);
+    write_packed_record(writer, dna_size, &n_blocks, &mask_blocks, &packed)
 }
 
 /// Read a block list (count + starts + sizes) from a 2bit record.
@@ -296,6 +287,13 @@ impl<W: std::io::Write> TwoBitWriter<W> {
     ///
     /// `do_mask` controls whether lowercase bases are stored as soft-mask blocks.
     pub fn write(&mut self, sequences: &[(&str, &str)], do_mask: bool) -> Result<()> {
+        // Pack each sequence once and reuse the result for sizing and writing.
+        let mut packed_records = Vec::with_capacity(sequences.len());
+        for (_, dna) in sequences {
+            let (packed, n_blocks, mask_blocks, dna_size) = Blocks::from_dna(dna, do_mask);
+            packed_records.push((packed, n_blocks, mask_blocks, dna_size));
+        }
+
         // 1. Write Header
         self.writer.write_all(&TWOBIT_MAGIC.to_le_bytes())?;
         self.writer.write_all(&1u32.to_le_bytes())?; // Version 1
@@ -306,17 +304,14 @@ impl<W: std::io::Write> TwoBitWriter<W> {
         // 2. Calculate offsets and Write Index
         // Header is 16 bytes; index starts at byte 16.
         // Index entry: NameLen(1) + Name(N) + Offset(8)
-
         let mut current_offset = 16u64;
         for (name, _) in sequences {
             current_offset += 1 + name.len() as u64 + 8;
         }
-        // current_offset is now the offset of the first sequence record.
-        let mut record_offsets = Vec::new();
         let mut running_offset = current_offset;
 
-        for (name, dna) in sequences {
-            // Write Index Entry
+        for ((name, _), (packed, n_blocks, mask_blocks, _)) in sequences.iter().zip(&packed_records)
+        {
             let name_bytes = name.as_bytes();
             if name_bytes.len() > 255 {
                 return Err(anyhow!("Sequence name too long: {}", name));
@@ -325,19 +320,9 @@ impl<W: std::io::Write> TwoBitWriter<W> {
             self.writer.write_all(name_bytes)?;
             self.writer.write_all(&running_offset.to_le_bytes())?;
 
-            record_offsets.push(running_offset);
-
-            // Calculate next offset
-            // Record overhead:
-            // size(4) + nBlockCount(4) + nStarts(...) + nSizes(...) +
-            // maskBlockCount(4) + maskStarts(...) + maskSizes(...) +
-            // reserved(4) + packedDna(...)
-
-            let (_, n_blocks, mask_blocks, _) = Blocks::from_dna(dna, do_mask);
-
             let n_count = n_blocks.0.len() as u64;
             let mask_count = mask_blocks.0.len() as u64;
-            let packed_len = dna.len().div_ceil(4) as u64;
+            let packed_len = packed.len() as u64;
 
             let record_size = 4 + // dnaSize
                 4 + (n_count * 4) + (n_count * 4) + // N blocks
@@ -349,8 +334,8 @@ impl<W: std::io::Write> TwoBitWriter<W> {
         }
 
         // 3. Write Records
-        for (_, dna) in sequences.iter() {
-            write_2bit_record(&mut self.writer, dna, do_mask)?;
+        for (packed, n_blocks, mask_blocks, dna_size) in &packed_records {
+            write_packed_record(&mut self.writer, *dna_size, n_blocks, mask_blocks, packed)?;
         }
 
         Ok(())

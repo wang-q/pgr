@@ -29,6 +29,7 @@ pgr 2bit masked [OPTIONS] <infiles>...
 
 *   `--gap`: Only identify hard-masked regions (N/n gaps).
 *   `-o, --outfile <file>`: Output filename (default: stdout).
+*   Output is one region per line in the form `seq_name:start-end` (1-based, inclusive). Single-base regions are emitted as `seq_name:position`.
 
 ### size
 
@@ -82,7 +83,7 @@ pgr 2bit some [OPTIONS] <infile> <list.txt>
 
 ### to-fa
 
-Converts 2bit files to FASTA format.
+Converts a 2bit file to FASTA format.
 
 ```bash
 pgr 2bit to-fa [OPTIONS] <infile>
