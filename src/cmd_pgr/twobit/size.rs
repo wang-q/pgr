@@ -12,6 +12,7 @@ pub fn make_subcommand() -> Command {
 This command retrieves the sequence sizes from one or more 2bit files.
 
 Notes:
+* Use --no-ns to report the size excluding hard-masked N positions
 * 2bit files are binary and require random access (seeking)
 * Does not support stdin or gzipped inputs
 

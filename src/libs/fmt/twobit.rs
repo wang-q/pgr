@@ -67,8 +67,11 @@ impl Blocks {
     }
 
     /// Pack a DNA string into 2-bit data, returning `(packed, n_blocks, mask_blocks, dna_size)`.
-    pub fn from_dna(dna: &str, do_mask: bool) -> (Vec<u8>, Blocks, Blocks, u32) {
+    ///
+    /// Returns an error if the sequence length exceeds the 2bit u32 size limit.
+    pub fn from_dna(dna: &str, do_mask: bool) -> Result<(Vec<u8>, Blocks, Blocks, u32)> {
         let len = dna.len();
+        let dna_size = u32_dna_size(len)?;
         let mut n_blocks_vec = Vec::new();
         let mut mask_blocks_vec = Vec::new();
         let mut packed_dna = Vec::with_capacity(len.div_ceil(4));
@@ -141,13 +144,24 @@ impl Blocks {
             packed_dna.push(current_byte);
         }
 
-        (
+        Ok((
             packed_dna,
             Blocks(n_blocks_vec),
             Blocks(mask_blocks_vec),
-            len as u32,
-        )
+            dna_size,
+        ))
     }
+}
+
+/// Validate that a DNA length fits in the 2bit u32 size field.
+fn u32_dna_size(len: usize) -> Result<u32> {
+    u32::try_from(len).map_err(|_| {
+        anyhow!(
+            "sequence length {} exceeds 2bit u32 limit ({})",
+            len,
+            u32::MAX
+        )
+    })
 }
 
 /// Read and decode a single 2bit record, optionally sub-sampled, with masks applied.
@@ -248,7 +262,7 @@ pub fn write_packed_record<W: Write>(
 
 /// Write a single 2bit record to the writer, including blocks and packed DNA.
 pub fn write_2bit_record<W: Write>(writer: &mut W, dna: &str, do_mask: bool) -> Result<()> {
-    let (packed, n_blocks, mask_blocks, dna_size) = Blocks::from_dna(dna, do_mask);
+    let (packed, n_blocks, mask_blocks, dna_size) = Blocks::from_dna(dna, do_mask)?;
     write_packed_record(writer, dna_size, &n_blocks, &mask_blocks, &packed)
 }
 
@@ -287,7 +301,7 @@ impl<W: std::io::Write> TwoBitWriter<W> {
         // Pack each sequence once and reuse the result for sizing and writing.
         let mut packed_records = Vec::with_capacity(sequences.len());
         for (_, dna) in sequences {
-            let (packed, n_blocks, mask_blocks, dna_size) = Blocks::from_dna(dna, do_mask);
+            let (packed, n_blocks, mask_blocks, dna_size) = Blocks::from_dna(dna, do_mask)?;
             packed_records.push((packed, n_blocks, mask_blocks, dna_size));
         }
 
@@ -708,7 +722,7 @@ mod tests {
         // 10 01 11 00 -> 0x9C
         // 00 00 -> 0x00
 
-        let (packed, n_blocks, mask_blocks, size) = Blocks::from_dna(dna, true);
+        let (packed, n_blocks, mask_blocks, size) = Blocks::from_dna(dna, true).unwrap();
         assert_eq!(size, 6);
         assert_eq!(packed, vec![0x9C, 0x00]);
 
@@ -828,5 +842,12 @@ mod tests {
         assert_eq!(seq_no_mask, "ACGTNNACGTNN");
 
         Ok(())
+    }
+
+    #[test]
+    fn test_u32_dna_size_rejects_overflow() {
+        assert!(u32_dna_size((u32::MAX as usize) + 1).is_err());
+        assert_eq!(u32_dna_size(4).unwrap(), 4);
+        assert_eq!(u32_dna_size(u32::MAX as usize).unwrap(), u32::MAX);
     }
 }

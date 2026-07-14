@@ -1,6 +1,7 @@
 use anyhow::Context;
 use clap::{ArgMatches, Command};
 use pgr::libs::fmt::twobit::TwoBitFile;
+use std::collections::HashSet;
 use std::io::Write;
 
 /// Build the clap subcommand for some.
@@ -16,6 +17,7 @@ Notes:
 * Case-sensitive name matching
 * One sequence name per line in the list file
 * Empty lines and lines starting with '#' are ignored
+* Only the first whitespace-delimited field on each line is used; trailing text is ignored
 * Output format is FASTA
 * 2bit files are binary and require random access (seeking)
 * Does not support stdin or gzipped inputs
@@ -46,7 +48,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     // Load list, ignoring empty lines and comment lines starting with '#'.
     let lines = pgr::libs::io::read_lines(list_file)?;
-    let set_list: std::collections::HashSet<String> = lines
+    let set_list: HashSet<String> = lines
         .into_iter()
         .filter_map(|line| {
             let trimmed = line.trim();

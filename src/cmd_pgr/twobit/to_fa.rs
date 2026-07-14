@@ -6,7 +6,7 @@ use std::io::Write;
 /// Build the clap subcommand for to-fa.
 pub fn make_subcommand() -> Command {
     Command::new("to-fa")
-        .about("Converts 2bit to FASTA")
+        .about("Converts 2bit files to FASTA format")
         .after_help(
             r###"
 This command converts 2bit files to FASTA format.

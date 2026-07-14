@@ -6,6 +6,15 @@
 
 To create a 2bit file from FASTA, use `pgr fa to-2bit`. See [docs/fa.md](fa.md) for details.
 
+Common options include:
+
+*   `--no-mask`: Do not preserve soft-masking (lowercase bases become uppercase).
+*   `--strip-version`: Strip trailing version numbers from sequence names (e.g. `NM_001.1` → `NM_001`).
+*   `--ignore-dups`: Ignore duplicate sequence names, keeping the first occurrence.
+*   `--name-prefix <str>`: Add a prefix to every sequence name.
+
+The 2bit format stores sequence lengths as unsigned 32-bit integers, so `pgr fa to-2bit` rejects sequences longer than 4,294,967,295 bp.
+
 ## Subcommands
 
 The subcommands are organized into the following categories:
