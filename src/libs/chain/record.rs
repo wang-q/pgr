@@ -57,7 +57,9 @@ pub struct Block {
 /// Represents a complete chain with header and data blocks.
 #[derive(Debug, Clone, Default)]
 pub struct Chain {
+    /// Chain header containing score, sequence names, coordinates, and ID.
     pub header: ChainHeader,
+    /// Alignment blocks (size, dt, dq) constituting the chain.
     pub data: Vec<ChainData>,
 }
 
@@ -230,14 +232,18 @@ impl FromStr for ChainHeader {
     }
 }
 
-/// A reader for UCSC Chain format files.
+/// A buffered reader for UCSC Chain format files.
+///
+/// Non-chain, non-comment lines encountered while scanning for a header are silently ignored.
 pub struct ChainReader<R> {
     reader: std::io::BufReader<R>,
     next_line: Option<String>,
+    /// Header/comments lines (starting with `#`) collected before the first chain header.
     pub header_comments: Vec<String>,
 }
 
 impl<R: std::io::Read> ChainReader<R> {
+    /// Creates a new `ChainReader` from any `Read` source.
     pub fn new(inner: R) -> Self {
         Self {
             reader: std::io::BufReader::new(inner),

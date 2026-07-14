@@ -10,73 +10,116 @@ use std::collections::BTreeMap;
 use std::io::{self, Write};
 use std::rc::Rc;
 
-/// A node in the net tree (gap or fill).
+/// A node in the net tree, either a gap or a fill.
 #[derive(Clone, Debug)]
 pub enum NetNode {
+    /// An unaligned gap node.
     Gap(Rc<RefCell<Gap>>),
+    /// An aligned fill node.
     Fill(Rc<RefCell<Fill>>),
 }
 
 /// A searchable space on a chromosome (points to its owning gap).
 #[derive(Clone, Debug)]
 pub struct Space {
+    /// Start coordinate on the chromosome (0-based, inclusive).
     pub start: u64,
+    /// End coordinate on the chromosome (0-based, exclusive).
     pub end: u64,
+    /// Gap that owns this space.
     pub gap: Rc<RefCell<Gap>>,
 }
 
 /// A gap region (unaligned stretch) that may contain nested fills.
 #[derive(Debug)]
 pub struct Gap {
+    /// Start coordinate on the target/query chromosome.
     pub start: u64,
+    /// End coordinate on the target/query chromosome.
     pub end: u64,
+    /// Start coordinate on the other genome's chromosome.
     pub o_start: u64,
+    /// End coordinate on the other genome's chromosome.
     pub o_end: u64,
+    /// Nested fill regions within this gap.
     pub fills: Vec<Rc<RefCell<Fill>>>,
+    /// Count of N bases in the target portion.
     pub t_n: Option<u64>,
+    /// Count of N bases in the query portion.
     pub q_n: Option<u64>,
+    /// Count of repeat bases in the target portion.
     pub t_r: Option<u64>,
+    /// Count of repeat bases in the query portion.
     pub q_r: Option<u64>,
+    /// Count of TRF bases in the target portion.
     pub t_trf: Option<u64>,
+    /// Count of TRF bases in the query portion.
     pub q_trf: Option<u64>,
 }
 
 /// A fill region (aligned stretch) referencing its source chain.
 #[derive(Debug)]
 pub struct Fill {
+    /// Start coordinate on the target/query chromosome.
     pub start: u64,
+    /// End coordinate on the target/query chromosome.
     pub end: u64,
+    /// Start coordinate on the other genome's chromosome.
     pub o_start: u64,
+    /// End coordinate on the other genome's chromosome.
     pub o_end: u64,
+    /// Name of the other genome's chromosome.
     pub o_chrom: String,
+    /// Strand of the other genome's chromosome.
     pub o_strand: char,
+    /// ID of the source chain.
     pub chain_id: u64,
+    /// Score of this fill (or source chain score).
     pub score: f64,
+    /// Aligned bases in this fill.
     pub ali: u64,
+    /// Synteny class (`top`, `syn`, `inv`, `nonSyn`, etc.).
     pub class: String,
+    /// Query-side duplication overlap.
     pub q_dup: Option<u64>,
+    /// Query overlap beyond the fill's own span.
     pub q_over: Option<u64>,
+    /// Distance to the syntenic parent on the query.
     pub q_far: Option<i64>,
+    /// Source chain reference (used for subchain scoring).
     pub chain: Option<Rc<Chain>>,
+    /// Gaps nested inside this fill.
     pub gaps: Vec<Rc<RefCell<Gap>>>,
+    /// Count of N bases in the target portion.
     pub t_n: Option<u64>,
+    /// Count of N bases in the query portion.
     pub q_n: Option<u64>,
+    /// Count of repeat bases in the target portion.
     pub t_r: Option<u64>,
+    /// Count of repeat bases in the query portion.
     pub q_r: Option<u64>,
+    /// Count of TRF bases in the target portion.
     pub t_trf: Option<u64>,
+    /// Count of TRF bases in the query portion.
     pub q_trf: Option<u64>,
 }
 
-/// A chromosome's net tree root + searchable space index.
+/// A chromosome's net tree root and searchable space index.
 pub struct Chrom {
+    /// Chromosome name.
     pub name: String,
+    /// Chromosome size in bases.
     pub size: u64,
+    /// Root gap covering the whole chromosome.
     pub root: Rc<RefCell<Gap>>,
-    pub spaces: BTreeMap<u64, Space>, // start -> Space
+    /// Map from space start coordinate to its owning `Space`.
+    pub spaces: BTreeMap<u64, Space>,
+    /// Header comment lines for this chromosome.
     pub comments: Vec<String>,
 }
 
 impl Chrom {
+    /// Creates a new chromosome net with a root gap covering `[0, size)`.
     pub fn new(name: &str, size: u64) -> Self {
         let root = Rc::new(RefCell::new(Gap {
             start: 0,
@@ -110,6 +153,7 @@ impl Chrom {
         }
     }
 
+    /// Returns all spaces overlapping `[start, end)`.
     pub fn find_spaces(&self, start: u64, end: u64) -> Vec<Space> {
         let mut result = Vec::new();
         for (_, space) in self.spaces.range(..end) {
@@ -120,6 +164,7 @@ impl Chrom {
         result
     }
 
+    /// Writes this chromosome net in UCSC Net text format.
     pub fn write<W: Write>(&self, mut writer: W) -> io::Result<()> {
         for comment in &self.comments {
             writeln!(writer, "{}", comment)?;
@@ -133,6 +178,7 @@ impl Chrom {
 }
 
 impl Fill {
+    /// Writes this fill in UCSC Net text format at the given indentation level.
     pub fn write<W: Write>(&self, writer: &mut W, indent: usize) -> io::Result<()> {
         let indent_str = " ".repeat(indent);
         write!(
@@ -191,6 +237,7 @@ impl Fill {
 }
 
 impl Gap {
+    /// Writes this gap in UCSC Net text format at the given indentation level.
     pub fn write<W: Write>(
         &self,
         writer: &mut W,

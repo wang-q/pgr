@@ -6,6 +6,9 @@ use std::cell::RefCell;
 use std::io::BufRead;
 use std::rc::Rc;
 
+/// Reads UCSC Net text format and returns a vector of chromosomes.
+///
+/// Unrecognized non-empty lines are silently skipped.
 pub fn read_nets<R: BufRead>(mut reader: R) -> Result<Vec<Chrom>> {
     let mut chroms = Vec::new();
     let mut current_chrom: Option<Chrom> = None;

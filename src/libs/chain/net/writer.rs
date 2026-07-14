@@ -251,6 +251,9 @@ pub fn write_net_file(
         .with_context(|| format!("Failed to open writer for {}", path))?;
     for comment in comments {
         write!(writer, "{}", comment)?;
+        if !comment.ends_with('\n') {
+            writeln!(writer)?;
+        }
     }
     write_sorted_net(net, &mut writer, is_q, min_score, min_fill)?;
     writer.flush()?;

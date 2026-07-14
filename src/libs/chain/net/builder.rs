@@ -12,11 +12,14 @@ use std::rc::Rc;
 
 /// A collection of per-chromosome net trees built from chains.
 pub struct ChainNet {
+    /// Map from chromosome name to its mutable net tree.
     pub chroms: HashMap<String, RefCell<Chrom>>,
+    /// Source chains added to this net (retained for subchain scoring).
     pub chains: Vec<Rc<Chain>>,
 }
 
 impl ChainNet {
+    /// Creates an empty `ChainNet` from a map of chromosome sizes.
     pub fn new(target_sizes: &BTreeMap<String, u64>) -> Self {
         let mut chroms = HashMap::new();
         for (name, size) in target_sizes {
@@ -28,6 +31,7 @@ impl ChainNet {
         }
     }
 
+    /// Inserts a chain into the target-side net tree.
     pub fn add_chain(&mut self, chain: Chain, min_space: u64, min_fill: u64, min_score: f64) {
         if chain.header.score < min_score {
             return;
@@ -50,6 +54,7 @@ impl ChainNet {
         }
     }
 
+    /// Inserts a chain into the query-side net tree.
     pub fn add_chain_as_q(&mut self, chain: Chain, min_space: u64, min_fill: u64, min_score: f64) {
         if chain.header.score < min_score {
             return;

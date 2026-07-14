@@ -7,7 +7,9 @@ use std::io::BufRead;
 /// Also stores gap open and gap extend penalties.
 pub struct SubMatrix {
     matrix: Vec<i32>,
+    /// Gap open penalty.
     pub gap_open: i32,
+    /// Gap extension penalty.
     pub gap_extend: i32,
 }
 

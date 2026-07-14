@@ -6,7 +6,6 @@ use crate::libs::chain::sub_matrix::SubMatrix;
 use crate::libs::io::SequenceReader;
 use crate::libs::nt;
 use anyhow::Context;
-use std::cmp::Ordering;
 
 /// Represents a single alignment block that can be chained.
 ///
@@ -168,8 +167,7 @@ pub fn chain_blocks<S: SequenceReader>(
     sorted_indices.sort_by(|&a, &b| {
         dp_entries[b]
             .total_score
-            .partial_cmp(&dp_entries[a].total_score)
-            .unwrap_or(Ordering::Equal)
+            .total_cmp(&dp_entries[a].total_score)
     });
 
     let mut chains = Vec::new();

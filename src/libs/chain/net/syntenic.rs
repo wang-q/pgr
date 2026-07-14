@@ -16,8 +16,11 @@ use super::types::{Chrom, Fill, Gap};
 
 /// A non-overlapping run of constant duplication depth.
 pub struct Segment {
+    /// Start coordinate on the query chromosome.
     pub start: u64,
+    /// End coordinate on the query chromosome.
     pub end: u64,
+    /// Duplication depth over this interval.
     pub depth: i32,
 }
 

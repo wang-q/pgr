@@ -9,8 +9,11 @@ use std::str::FromStr;
 
 /// PSL alignment blocks grouped by (target, query, strand) for chaining.
 pub struct GroupData {
+    /// Target sequence size.
     pub t_size: u32,
+    /// Query sequence size.
     pub q_size: u32,
+    /// Alignment blocks in this group.
     pub blocks: Vec<ChainableBlock>,
 }
 

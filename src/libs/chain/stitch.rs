@@ -38,8 +38,8 @@ pub fn stitch_chains<R: BufRead, W: Write>(reader: R, mut writer: W) -> Result<(
                 // Append new blocks
                 blocks.extend(new_blocks);
 
-                // Sort blocks by t_start (and q_start for stability if needed)
-                blocks.sort_by_key(|a| a.t_start);
+                // Sort blocks by t_start, then q_start for deterministic ordering
+                blocks.sort_by_key(|a| (a.t_start, a.q_start));
 
                 // Reconstruct data from blocks
                 // This updates header ranges automatically

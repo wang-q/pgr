@@ -10,29 +10,50 @@ use std::rc::Rc;
 
 /// Filtering criteria for net pruning (UCSC `netFilter` equivalent).
 pub struct FilterCriteria {
+    /// Minimum fill score.
     pub min_score: Option<f64>,
+    /// Maximum fill score.
     pub max_score: Option<f64>,
+    /// Minimum gap size to retain.
     pub min_gap: Option<u64>,
+    /// Minimum aligned bases in a fill.
     pub min_ali: Option<u64>,
+    /// Maximum aligned bases in a fill.
     pub max_ali: Option<u64>,
+    /// Minimum target-side fill size.
     pub min_size_t: Option<u64>,
+    /// Minimum query-side fill size.
     pub min_size_q: Option<u64>,
+    /// Allowed target chromosome names.
     pub t_names: Option<HashSet<String>>,
+    /// Excluded target chromosome names.
     pub not_t_names: Option<HashSet<String>>,
+    /// Allowed query chromosome names.
     pub q_names: Option<HashSet<String>>,
+    /// Excluded query chromosome names.
     pub not_q_names: Option<HashSet<String>>,
+    /// Allowed synteny classes.
     pub types: Option<HashSet<String>>,
 
     // Synteny specific
+    /// Keep only syntenic fills.
     pub do_syn: bool,
+    /// Keep only non-syntenic fills.
     pub do_nonsyn: bool,
+    /// Minimum score for a top-level fill to be considered syntenic.
     pub min_top_score: f64,
+    /// Minimum score for a non-top fill to be considered syntenic.
     pub min_syn_score: f64,
+    /// Minimum target size for a non-top fill to be considered syntenic.
     pub min_syn_size: f64,
+    /// Minimum aligned bases for a non-top fill to be considered syntenic.
     pub min_syn_ali: u64,
+    /// Maximum allowed qFar for syntenic fills.
     pub max_far: i64,
 
+    /// Output only fill lines.
     pub fill_only: bool,
+    /// Output only gap lines.
     pub gap_only: bool,
 }
 
