@@ -151,6 +151,16 @@ pgr psl stats [OPTIONS] <input>
     pgr psl stats --query-stats in.psl -o out.stats
     ```
 
+3.  **Overall statistics**:
+    ```bash
+    pgr psl stats --overall-stats in.psl -o out.stats
+    ```
+
+4.  **TSV-style header**:
+    ```bash
+    pgr psl stats --tsv in.psl -o out.stats
+    ```
+
 ---
 
 ## swap
@@ -163,7 +173,7 @@ pgr psl swap [OPTIONS] <input>
 
 ### Options
 
-*   `--no-rc`: Swap target and query without reverse-complementing.
+*   `-n, --no-rc`: Swap target and query without reverse-complementing.
 *   `-o, --outfile <file>`: Output filename (default: stdout).
 
 ### Notes
@@ -199,6 +209,10 @@ pgr psl to-chain [OPTIONS] <input>
 *   `--fix-strand`: Fix `-` target strand by reverse complementing the record.
 *   `--strict`: Fail on parse errors instead of skipping malformed lines.
 *   `-o, --outfile <file>`: Output filename (default: stdout).
+
+### Notes
+
+*   Untranslated PSL records (single-character strand field) are treated as having target strand `'+'`.
 
 ### Examples
 

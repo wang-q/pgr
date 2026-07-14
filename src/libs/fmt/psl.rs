@@ -1237,10 +1237,11 @@ pub fn to_chain<R: BufRead, W: Write>(
             None => continue,
         };
         let strand_bytes = psl.strand.as_bytes();
-        if strand_bytes.len() < 2 {
-            anyhow::bail!("malformed PSL strand (expected 2 chars): {}", psl.strand);
-        }
-        let t_strand_char = strand_bytes[1] as char;
+        let t_strand_char = match strand_bytes.len() {
+            1 => '+',
+            2 => strand_bytes[1] as char,
+            _ => anyhow::bail!("malformed PSL strand: {}", psl.strand),
+        };
         if t_strand_char == '-' {
             if fix_strand {
                 psl.rc();
@@ -1545,5 +1546,28 @@ mod tests {
 
         psl.t_end = 10;
         assert!(!psl.is_protein());
+    }
+
+    #[test]
+    fn test_to_chain_untranslated_positive() {
+        let psl_line =
+            "10\t0\t0\t0\t0\t0\t0\t0\t+\tq\t100\t10\t20\tt\t200\t50\t60\t1\t10,\t10,\t50,";
+        let input = std::io::Cursor::new(psl_line);
+        let mut output = Vec::new();
+        to_chain(input, &mut output, false, false).unwrap();
+        let chain = String::from_utf8(output).unwrap();
+        assert!(chain.starts_with("chain 10 t 200 + 50 60 q 100 + 10 20 1"));
+    }
+
+    #[test]
+    fn test_to_chain_untranslated_negative() {
+        let psl_line =
+            "10\t0\t0\t0\t0\t0\t0\t0\t-\tq\t100\t10\t20\tt\t200\t50\t60\t1\t10,\t10,\t50,";
+        let input = std::io::Cursor::new(psl_line);
+        let mut output = Vec::new();
+        to_chain(input, &mut output, false, false).unwrap();
+        let chain = String::from_utf8(output).unwrap();
+        // write_chain reverses qStart/qEnd for negative query strand.
+        assert!(chain.starts_with("chain 10 t 200 + 50 60 q 100 - 80 90 1"));
     }
 }

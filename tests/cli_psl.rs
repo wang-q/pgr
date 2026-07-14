@@ -223,6 +223,35 @@ fn test_to_chain_non_strict_malformed() {
     assert!(output_content.is_empty());
 }
 
+#[test]
+fn test_to_chain_untranslated() {
+    let temp = TempDir::new().unwrap();
+    let input = temp.path().join("untranslated.psl");
+    fs::write(
+        &input,
+        "10\t0\t0\t0\t0\t0\t0\t0\t+\tq1\t100\t10\t20\tt\t200\t50\t60\t1\t10,\t10,\t50,\n\
+         10\t0\t0\t0\t0\t0\t0\t0\t-\tq2\t100\t10\t20\tt\t200\t70\t80\t1\t10,\t10,\t70,\n",
+    )
+    .unwrap();
+    let output = temp.path().join("out.chain");
+
+    PgrCmd::new()
+        .args(&[
+            "psl",
+            "to-chain",
+            input.to_str().unwrap(),
+            "-o",
+            output.to_str().unwrap(),
+        ])
+        .run();
+
+    let output_content = fs::read_to_string(&output).unwrap();
+    let lines: Vec<&str> = output_content.lines().collect();
+    assert!(lines[0].starts_with("chain 10 t 200 + 50 60 q1 100 + 10 20 1"));
+    // Negative query strand is reversed by write_chain.
+    assert!(lines[2].starts_with("chain 10 t 200 + 70 80 q2 100 - 80 90 2"));
+}
+
 //
 // psl rc
 //
