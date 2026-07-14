@@ -354,11 +354,12 @@ impl<W: std::io::Write> TwoBitWriter<W> {
 #[derive(Debug)]
 pub struct TwoBitFile<R> {
     reader: R,
-    /// Map of sequence name to file offset of its record.
+    /// Map of sequence name to the file offset of its record.
     pub sequence_offsets: HashMap<String, u64>,
     /// Sequence names in the order they appear in the file.
     pub sequence_order: Vec<String>,
     is_swapped: bool,
+    /// 2bit file format version (0 or 1).
     pub version: u32,
 }
 

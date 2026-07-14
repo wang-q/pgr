@@ -10,12 +10,27 @@ pub fn make_subcommand() -> Command {
     Command::new("2bit")
         .about("Manages 2bit files")
         .after_help(
-            r###"Subcommand groups:
+            r###"Description:
+    Manipulates 2bit binary sequence files.
 
+Subcommand groups:
 * Info: masked / size
 * Subset: range / some
 * Transform: to-fa
 
+Notes:
+* 2bit files are binary and require random access (seeking)
+* Does not support stdin or gzipped inputs
+
+Examples:
+1. Convert FASTA to 2bit:
+   pgr fa to-2bit in.fa -o out.2bit
+
+2. Extract masked regions:
+   pgr 2bit masked out.2bit -o masked.txt
+
+3. Convert back to FASTA:
+   pgr 2bit to-fa out.2bit -o out.fa
 "###,
         )
         .subcommand_required(true)

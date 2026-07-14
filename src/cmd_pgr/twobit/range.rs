@@ -15,9 +15,9 @@ This command extracts sequence regions from 2bit files using genomic coordinates
 Range format:
     seq_name(strand):start-end
 
-* seq_name: Required, sequence identifier
+* seq_name: Required, sequence identifier; alone extracts the full sequence
 * strand: Optional, + (default) or -
-* start-end: Required, 1-based coordinates
+* start-end: Optional for full-sequence extraction; required for sub-ranges, 1-based inclusive
 
 Notes:
 * All coordinates (<start> and <end>) are based on the positive strand, regardless of the specified strand
