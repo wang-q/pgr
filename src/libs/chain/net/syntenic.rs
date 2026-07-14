@@ -1,129 +1,20 @@
 //! Synteny classification: depth-tracking interval tree + net walker.
 //!
-//! `DupeTree` accumulates signed intervals (added by fills, subtracted by
-//! nested gaps) and flattens them into non-overlapping `Segment`s of constant
-//! depth, so a fill's query-overlap with duplications can be queried.
-//!
 //! `classify_syntenic` walks a Net's gap-fill tree and assigns each fill a
 //! synteny class (`top`/`syn`/`inv`/`nonSyn`) plus qOver/qFar/qDup statistics.
+//! Depth tracking is delegated to [`DupeTree`](crate::libs::ds::DupeTree).
 
 use crate::libs::chain::net::writer::range_intersection;
+use crate::libs::ds::DupeTree;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
 use super::types::{Chrom, Fill, Gap};
 
-/// A non-overlapping run of constant duplication depth.
-pub struct Segment {
-    /// Start coordinate on the query chromosome.
-    pub start: u64,
-    /// End coordinate on the query chromosome.
-    pub end: u64,
-    /// Duplication depth over this interval.
-    pub depth: i32,
-}
-
-/// Interval tree tracking query-side duplication depth for synteny classification.
-pub struct DupeTree {
-    intervals: Vec<(u64, u64, i32)>,
-    segments: Vec<Segment>,
-}
-
-impl Default for DupeTree {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl DupeTree {
-    /// Creates an empty DupeTree.
-    pub fn new() -> Self {
-        Self {
-            intervals: Vec::new(),
-            segments: Vec::new(),
-        }
-    }
-
-    /// Records a +1 depth contribution over `[start, end)`.
-    pub fn add(&mut self, start: u64, end: u64) {
-        if start < end {
-            self.intervals.push((start, end, 1));
-        }
-    }
-
-    /// Records a -1 depth contribution over `[start, end)`.
-    pub fn subtract(&mut self, start: u64, end: u64) {
-        if start < end {
-            self.intervals.push((start, end, -1));
-        }
-    }
-
-    /// Flattens recorded intervals into non-overlapping constant-depth segments.
-    pub fn build(&mut self) {
-        if self.intervals.is_empty() {
-            return;
-        }
-
-        let mut events = Vec::new();
-        for (s, e, d) in &self.intervals {
-            events.push((*s, *d));
-            events.push((*e, -*d));
-        }
-        // Sort by position, then by delta so that end events (negative delta)
-        // are processed before start events (positive delta) at the same coordinate.
-        events.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
-
-        let mut current_depth = 0;
-        let mut segments = Vec::new();
-
-        for i in 0..events.len() - 1 {
-            let (pos, delta) = events[i];
-            current_depth += delta;
-
-            let next_pos = events[i + 1].0;
-            if next_pos > pos {
-                segments.push(Segment {
-                    start: pos,
-                    end: next_pos,
-                    depth: current_depth,
-                });
-            }
-        }
-
-        self.segments = segments;
-    }
-
-    /// Returns total bases covered by segments with `depth >= threshold`.
-    pub fn count_over(&self, start: u64, end: u64, threshold: i32) -> u64 {
-        if self.segments.is_empty() {
-            return 0;
-        }
-
-        // Binary search for first segment ending after start
-        let idx = self.segments.partition_point(|seg| seg.end <= start);
-
-        let mut count = 0;
-        for seg in &self.segments[idx..] {
-            if seg.start >= end {
-                break;
-            }
-
-            if seg.depth >= threshold {
-                let s = seg.start.max(start);
-                let e = seg.end.min(end);
-                if s < e {
-                    count += e - s;
-                }
-            }
-        }
-        count
-    }
-}
-
 /// Classify syntenic relationship for all fills in `chroms`.
 ///
-/// For each query chromosome referenced by fills, builds a `DupeTree`
+/// For each query chromosome referenced by fills, builds a [`DupeTree`]
 /// tracking signed depth contributions (fills add, nested gaps subtract),
 /// then walks each fill assigning:
 /// * `class` — `top` (root fill), `syn`/`inv` (same query chrom, same/opposite strand),
@@ -284,35 +175,5 @@ fn r_net_syn_fill(
     let gaps = fill.borrow().gaps.clone();
     for gap in gaps {
         r_net_syn_gap(&gap, map, Some(fill));
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_dupe_tree_adjacent_intervals() {
-        let mut dt = DupeTree::new();
-        dt.add(0, 10);
-        dt.add(10, 20);
-        dt.build();
-
-        // Each adjacent interval contributes depth 1 on its own range.
-        assert_eq!(dt.count_over(0, 20, 1), 20);
-        assert_eq!(dt.count_over(0, 20, 2), 0);
-    }
-
-    #[test]
-    fn test_dupe_tree_overlapping_intervals() {
-        let mut dt = DupeTree::new();
-        dt.add(0, 15);
-        dt.add(10, 25);
-        dt.build();
-
-        assert_eq!(dt.count_over(0, 25, 1), 25);
-        assert_eq!(dt.count_over(0, 25, 2), 5);
-        assert_eq!(dt.count_over(0, 10, 2), 0);
-        assert_eq!(dt.count_over(20, 25, 2), 0);
     }
 }

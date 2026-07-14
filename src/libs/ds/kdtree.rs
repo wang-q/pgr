@@ -1,19 +1,19 @@
-// use std::cmp::Ordering;
+//! A generic 2D KD-tree for weighted interval predecessor search.
 
-/// Trait representing an item that can be indexed in the KD-tree for chaining.
+/// Trait representing an item that can be indexed in the 2D KD-tree.
 ///
-/// Each item corresponds to an alignment block with query and target coordinates
-/// and a score.
-pub trait ChainItem {
-    /// Query sequence start coordinate (0-based, inclusive).
-    fn q_start(&self) -> u64;
-    /// Query sequence end coordinate (0-based, exclusive).
-    fn q_end(&self) -> u64;
-    /// Target sequence start coordinate (0-based, inclusive).
-    fn t_start(&self) -> u64;
-    /// Target sequence end coordinate (0-based, exclusive).
-    fn t_end(&self) -> u64;
-    /// Score of the alignment block.
+/// Each item corresponds to an axis-aligned rectangle with two dimensions
+/// (`x` and `y`) and a scalar score.
+pub trait KdTreeItem {
+    /// Start coordinate on the x-axis (0-based, inclusive).
+    fn x_start(&self) -> u64;
+    /// End coordinate on the x-axis (0-based, exclusive).
+    fn x_end(&self) -> u64;
+    /// Start coordinate on the y-axis (0-based, inclusive).
+    fn y_start(&self) -> u64;
+    /// End coordinate on the y-axis (0-based, exclusive).
+    fn y_end(&self) -> u64;
+    /// Score associated with the item.
     fn score(&self) -> f64;
 }
 
@@ -30,31 +30,31 @@ pub struct KdLeaf<T> {
 pub enum KdNode {
     Leaf {
         leaf_idx: usize,
-        max_q: u64,
-        max_t: u64,
+        max_x: u64,
+        max_y: u64,
         max_score: f64,
     },
     Internal {
         cut_coord: u64,
         lo: Box<KdNode>,
         hi: Box<KdNode>,
-        max_q: u64,
-        max_t: u64,
+        max_x: u64,
+        max_y: u64,
         max_score: f64,
     },
 }
 
 impl KdNode {
-    pub fn max_q(&self) -> u64 {
+    pub fn max_x(&self) -> u64 {
         match self {
-            KdNode::Leaf { max_q, .. } => *max_q,
-            KdNode::Internal { max_q, .. } => *max_q,
+            KdNode::Leaf { max_x, .. } => *max_x,
+            KdNode::Internal { max_x, .. } => *max_x,
         }
     }
-    pub fn max_t(&self) -> u64 {
+    pub fn max_y(&self) -> u64 {
         match self {
-            KdNode::Leaf { max_t, .. } => *max_t,
-            KdNode::Internal { max_t, .. } => *max_t,
+            KdNode::Leaf { max_y, .. } => *max_y,
+            KdNode::Internal { max_y, .. } => *max_y,
         }
     }
     pub fn max_score(&self) -> f64 {
@@ -65,9 +65,9 @@ impl KdNode {
     }
 }
 
-/// A 2D KD-tree for efficient range queries and predecessor search in chaining algorithms.
+/// A 2D KD-tree for efficient range queries and weighted predecessor search.
 ///
-/// It indexes items based on their query (`q_start`) and target (`t_start`) coordinates.
+/// It indexes items based on their `x_start` and `y_start` coordinates.
 pub struct KdTree {
     root: Option<Box<KdNode>>,
 }
@@ -75,8 +75,8 @@ pub struct KdTree {
 impl KdTree {
     /// Builds a KD-tree from a list of indices into the `items` slice.
     ///
-    /// The tree construction alternates between splitting on query and target coordinates.
-    pub fn build<T: ChainItem>(indices: &mut [usize], items: &[T]) -> Self {
+    /// The tree construction alternates between splitting on x and y coordinates.
+    pub fn build<T: KdTreeItem>(indices: &mut [usize], items: &[T]) -> Self {
         if indices.is_empty() {
             return KdTree { root: None };
         }
@@ -85,7 +85,7 @@ impl KdTree {
         }
     }
 
-    fn build_recursive<T: ChainItem>(
+    fn build_recursive<T: KdTreeItem>(
         indices: &mut [usize],
         items: &[T],
         dim: usize,
@@ -95,23 +95,23 @@ impl KdTree {
             let item = &items[idx];
             return Box::new(KdNode::Leaf {
                 leaf_idx: idx,
-                max_q: item.q_end(),
-                max_t: item.t_end(),
+                max_x: item.x_end(),
+                max_y: item.y_end(),
                 max_score: 0.0,
             });
         }
 
         if dim == 0 {
-            indices.sort_by_key(|&i| items[i].q_start());
+            indices.sort_by_key(|&i| items[i].x_start());
         } else {
-            indices.sort_by_key(|&i| items[i].t_start());
+            indices.sort_by_key(|&i| items[i].y_start());
         }
 
         let mid = indices.len() / 2;
         let cut_coord = if dim == 0 {
-            items[indices[mid]].q_start()
+            items[indices[mid]].x_start()
         } else {
-            items[indices[mid]].t_start()
+            items[indices[mid]].y_start()
         };
 
         let (left_indices, right_indices) = indices.split_at_mut(mid);
@@ -119,15 +119,15 @@ impl KdTree {
         let lo = Self::build_recursive(left_indices, items, 1 - dim);
         let hi = Self::build_recursive(right_indices, items, 1 - dim);
 
-        let max_q = std::cmp::max(lo.max_q(), hi.max_q());
-        let max_t = std::cmp::max(lo.max_t(), hi.max_t());
+        let max_x = std::cmp::max(lo.max_x(), hi.max_x());
+        let max_y = std::cmp::max(lo.max_y(), hi.max_y());
 
         Box::new(KdNode::Internal {
             cut_coord,
             lo,
             hi,
-            max_q,
-            max_t,
+            max_x,
+            max_y,
             max_score: 0.0,
         })
     }
@@ -135,13 +135,13 @@ impl KdTree {
     /// Updates the max score of a leaf node and propagates the change up the tree.
     ///
     /// This is called during dynamic programming when a better score is found for a chain ending at `leaf_idx`.
-    pub fn update_scores<T: ChainItem>(&mut self, leaf_idx: usize, score: f64, items: &[T]) {
+    pub fn update_scores<T: KdTreeItem>(&mut self, leaf_idx: usize, score: f64, items: &[T]) {
         if let Some(root) = &mut self.root {
             Self::update_recursive(root, leaf_idx, score, items, 0);
         }
     }
 
-    fn update_recursive<T: ChainItem>(
+    fn update_recursive<T: KdTreeItem>(
         node: &mut KdNode,
         target_idx: usize,
         score: f64,
@@ -170,9 +170,9 @@ impl KdTree {
                 }
 
                 let coord = if dim == 0 {
-                    items[target_idx].q_start()
+                    items[target_idx].x_start()
                 } else {
-                    items[target_idx].t_start()
+                    items[target_idx].y_start()
                 };
 
                 if coord < *cut_coord {
@@ -192,11 +192,11 @@ impl KdTree {
     ///
     /// * `target_idx` - Index of the current item in the `items` slice.
     /// * `current_score` - Current best score for the target item (e.g., just its own score).
-    /// * `items` - Slice of all chain items.
+    /// * `items` - Slice of all items.
     /// * `cost_func` - A closure `Fn(candidate_idx, target_idx) -> Option<new_total_score>`.
     ///   It calculates the score if `candidate` precedes `target`. Returns `None` if they cannot be chained.
-    /// * `lower_bound_func` - A closure `Fn(dq, dt) -> lower_bound_cost`.
-    ///   It returns a lower bound on the gap cost based on distance in query (`dq`) and target (`dt`) coordinates.
+    /// * `lower_bound_func` - A closure `Fn(dx, dy) -> lower_bound_cost`.
+    ///   It returns a lower bound on the gap cost based on distance in x (`dx`) and y (`dy`) coordinates.
     ///   Used for pruning the search.
     ///
     /// # Returns
@@ -211,9 +211,9 @@ impl KdTree {
         lower_bound_func: &L,
     ) -> (f64, Option<usize>)
     where
-        T: ChainItem,
+        T: KdTreeItem,
         F: Fn(usize, usize) -> Option<f64>, // (candidate_idx, target_idx) -> Option<new_total_score>
-        L: Fn(u64, u64) -> f64,             // (dq, dt) -> lower_bound_cost
+        L: Fn(u64, u64) -> f64,             // (dx, dy) -> lower_bound_cost
     {
         let mut best_score = current_score;
         let mut best_pred = None;
@@ -247,7 +247,7 @@ impl KdTree {
         mut best_pred: Option<usize>,
     ) -> (f64, Option<usize>)
     where
-        T: ChainItem,
+        T: KdTreeItem,
         F: Fn(usize, usize) -> Option<f64>,
         L: Fn(u64, u64) -> f64,
     {
@@ -262,18 +262,18 @@ impl KdTree {
         }
 
         // Pruning 2: Geometric distance check
-        let dq = if target_item.q_start() > node.max_q() {
-            target_item.q_start() - node.max_q()
+        let dx = if target_item.x_start() > node.max_x() {
+            target_item.x_start() - node.max_x()
         } else {
             0
         };
-        let dt = if target_item.t_start() > node.max_t() {
-            target_item.t_start() - node.max_t()
+        let dy = if target_item.y_start() > node.max_y() {
+            target_item.y_start() - node.max_y()
         } else {
             0
         };
 
-        let cost = lower_bound_func(dq, dt);
+        let cost = lower_bound_func(dx, dy);
         if node_max_score + target_item.score() - cost < best_score {
             return (best_score, best_pred);
         }
@@ -292,9 +292,9 @@ impl KdTree {
                 cut_coord, lo, hi, ..
             } => {
                 let dim_coord = if dim == 0 {
-                    target_item.q_start()
+                    target_item.x_start()
                 } else {
-                    target_item.t_start()
+                    target_item.y_start()
                 };
 
                 // Search the subtree containing the target coordinate first.
@@ -320,26 +320,26 @@ impl KdTree {
                 // The closest point in the far subtree is separated from the target by at
                 // least the distance to the splitting plane in this dimension.
                 let far_dist = dim_coord.abs_diff(*cut_coord);
-                let (dq_far, dt_far) = if dim == 0 {
+                let (dx_far, dy_far) = if dim == 0 {
                     (
                         far_dist,
-                        if target_item.t_start() > far.max_t() {
-                            target_item.t_start() - far.max_t()
+                        if target_item.y_start() > far.max_y() {
+                            target_item.y_start() - far.max_y()
                         } else {
                             0
                         },
                     )
                 } else {
                     (
-                        if target_item.q_start() > far.max_q() {
-                            target_item.q_start() - far.max_q()
+                        if target_item.x_start() > far.max_x() {
+                            target_item.x_start() - far.max_x()
                         } else {
                             0
                         },
                         far_dist,
                     )
                 };
-                let far_cost = lower_bound_func(dq_far, dt_far);
+                let far_cost = lower_bound_func(dx_far, dy_far);
                 if far.max_score() + target_item.score() - far_cost >= best_score {
                     let res = Self::best_recursive(
                         far,
@@ -365,25 +365,25 @@ mod tests {
     use super::*;
 
     struct TestItem {
-        q_start: u64,
-        q_end: u64,
-        t_start: u64,
-        t_end: u64,
+        x_start: u64,
+        x_end: u64,
+        y_start: u64,
+        y_end: u64,
         score: f64,
     }
 
-    impl ChainItem for TestItem {
-        fn q_start(&self) -> u64 {
-            self.q_start
+    impl KdTreeItem for TestItem {
+        fn x_start(&self) -> u64 {
+            self.x_start
         }
-        fn q_end(&self) -> u64 {
-            self.q_end
+        fn x_end(&self) -> u64 {
+            self.x_end
         }
-        fn t_start(&self) -> u64 {
-            self.t_start
+        fn y_start(&self) -> u64 {
+            self.y_start
         }
-        fn t_end(&self) -> u64 {
-            self.t_end
+        fn y_end(&self) -> u64 {
+            self.y_end
         }
         fn score(&self) -> f64 {
             self.score
@@ -394,24 +394,24 @@ mod tests {
     fn test_kd_tree_build_and_search() {
         let items = vec![
             TestItem {
-                q_start: 0,
-                q_end: 10,
-                t_start: 0,
-                t_end: 10,
+                x_start: 0,
+                x_end: 10,
+                y_start: 0,
+                y_end: 10,
                 score: 100.0,
             }, // 0
             TestItem {
-                q_start: 20,
-                q_end: 30,
-                t_start: 20,
-                t_end: 30,
+                x_start: 20,
+                x_end: 30,
+                y_start: 20,
+                y_end: 30,
                 score: 100.0,
             }, // 1
             TestItem {
-                q_start: 50,
-                q_end: 60,
-                t_start: 50,
-                t_end: 60,
+                x_start: 50,
+                x_end: 60,
+                y_start: 50,
+                y_end: 60,
                 score: 100.0,
             }, // 2
         ];
@@ -431,13 +431,13 @@ mod tests {
             } // strict order for test
             let cand = &items[cand_idx];
             let target = &items[target_idx];
-            if cand.q_end > target.q_start || cand.t_end > target.t_start {
+            if cand.x_end > target.x_start || cand.y_end > target.y_start {
                 return None;
             }
-            let dist = (target.q_start - cand.q_end) + (target.t_start - cand.t_end);
+            let dist = (target.x_start - cand.x_end) + (target.y_start - cand.y_end);
             Some(100.0 + target.score - dist as f64) // 100.0 is prev total score
         };
-        let lower_bound_func = |dq: u64, dt: u64| -> f64 { (dq + dt) as f64 };
+        let lower_bound_func = |dx: u64, dy: u64| -> f64 { (dx + dy) as f64 };
 
         let (best_score, best_pred) = tree.best_predecessor(
             1,     // target is item 1
@@ -458,29 +458,29 @@ mod tests {
 
     #[test]
     fn test_kd_tree_searches_far_subtree() {
-        // The target (item 2) falls in the high-q subtree of the root, but the
-        // best predecessor (item 0) lies in the low-q subtree. A naive
+        // The target (item 2) falls in the high-x subtree of the root, but the
+        // best predecessor (item 0) lies in the low-x subtree. A naive
         // near-subtree-only search would return item 1.
         let items = vec![
             TestItem {
-                q_start: 0,
-                q_end: 5,
-                t_start: 0,
-                t_end: 5,
+                x_start: 0,
+                x_end: 5,
+                y_start: 0,
+                y_end: 5,
                 score: 1000.0,
             }, // 0
             TestItem {
-                q_start: 50,
-                q_end: 55,
-                t_start: 50,
-                t_end: 55,
+                x_start: 50,
+                x_end: 55,
+                y_start: 50,
+                y_end: 55,
                 score: 100.0,
             }, // 1
             TestItem {
-                q_start: 60,
-                q_end: 70,
-                t_start: 60,
-                t_end: 70,
+                x_start: 60,
+                x_end: 70,
+                y_start: 60,
+                y_end: 70,
                 score: 100.0,
             }, // 2
         ];
@@ -498,15 +498,15 @@ mod tests {
             }
             let cand = &items[cand_idx];
             let target = &items[target_idx];
-            if cand.q_end > target.q_start || cand.t_end > target.t_start {
+            if cand.x_end > target.x_start || cand.y_end > target.y_start {
                 return None;
             }
-            let dq = target.q_start - cand.q_end;
-            let dt = target.t_start - cand.t_end;
+            let dx = target.x_start - cand.x_end;
+            let dy = target.y_start - cand.y_end;
             let prev_total = if cand_idx == 0 { 1000.0 } else { 100.0 };
-            Some(prev_total + target.score - (dq + dt) as f64)
+            Some(prev_total + target.score - (dx + dy) as f64)
         };
-        let lower_bound_func = |dq: u64, dt: u64| -> f64 { (dq + dt) as f64 };
+        let lower_bound_func = |dx: u64, dy: u64| -> f64 { (dx + dy) as f64 };
 
         let (best_score, best_pred) = tree.best_predecessor(
             2,     // target is item 2

@@ -1,8 +1,7 @@
 use crate::libs::alignment::coords::reverse_range_pair;
-use crate::libs::chain::gap_calc::GapCalc;
-use crate::libs::chain::kdtree::{ChainItem, KdTree};
 use crate::libs::chain::record::{Chain, ChainData, ChainHeader};
 use crate::libs::chain::sub_matrix::SubMatrix;
+use crate::libs::ds::{GapCalc, KdTree, KdTreeItem};
 use crate::libs::io::SequenceReader;
 use crate::libs::nt;
 use anyhow::Context;
@@ -19,17 +18,17 @@ pub struct ChainableBlock {
     pub score: f64,
 }
 
-impl ChainItem for ChainableBlock {
-    fn q_start(&self) -> u64 {
+impl KdTreeItem for ChainableBlock {
+    fn x_start(&self) -> u64 {
         self.q_start
     }
-    fn q_end(&self) -> u64 {
+    fn x_end(&self) -> u64 {
         self.q_end
     }
-    fn t_start(&self) -> u64 {
+    fn y_start(&self) -> u64 {
         self.t_start
     }
-    fn t_end(&self) -> u64 {
+    fn y_end(&self) -> u64 {
         self.t_end
     }
     fn score(&self) -> f64 {

@@ -59,7 +59,7 @@ PSL / chain 文件
 
 #### 3.2.2 KD-tree 前驱搜索（通用算法）
 
-见 `src/libs/chain/kdtree.rs`。这是一个**二维区间上的带权最长路径前驱搜索**，不依赖于生物序列语义，可复用到任何需要"找左下侧最优前驱"的场景。
+见 `src/libs/ds/kdtree.rs`。这是一个**二维区间上的带权最长路径前驱搜索**，不依赖于生物序列语义，可复用到任何需要"找左下侧最优前驱"的场景。
 
 **问题抽象**：给定平面上带权矩形（`[t_start,t_end) × [q_start,q_end)`，权重为 `score`），对每个矩形找另一个完全位于其左下方（`t_end <= target.t_start` 且 `q_end <= target.q_start`）的矩形，使 `pred_total_score + target.score - cost` 最大。
 
@@ -108,7 +108,7 @@ PSL / chain 文件
 
 ### 3.3 分段插值 Gap 代价（通用算法）
 
-见 `src/libs/chain/gap_calc.rs`。这是一个**一维标量函数的分段查表 + 线性插值 + 外推**实现，可复用到任何需要"根据距离查非线性代价"的场景。
+见 `src/libs/ds/gap_calc.rs`。这是一个**一维标量函数的分段查表 + 线性插值 + 外推**实现，可复用到任何需要"根据距离查非线性代价"的场景。
 
 **问题抽象**：给定一组控制点 `(pos, value)`，实现函数 `f(x)`：
 - `x < small_size`：查预计算整数表。
@@ -316,7 +316,7 @@ Degeneracy 检查本质是一个**Top-K 类别占比惩罚**算法。
 
 #### 9.5.1 区间深度统计 DupeTree（通用算法）
 
-见 `src/libs/chain/net/syntenic.rs` 中的 `DupeTree`。这是一个**带符号区间覆盖深度统计**工具。
+见 `src/libs/ds/dupe_tree.rs`。这是一个**带符号区间覆盖深度统计**工具。
 
 **问题抽象**：给定若干带符号区间 `[start, end)`，权重为 `+1`（增加覆盖）或 `-1`（减少覆盖），回答查询：区间 `[q_start, q_end)` 内覆盖深度 >= `threshold` 的总长度是多少？
 

@@ -5,13 +5,13 @@
 //!
 //! # Core Components
 //!
-//! * [`kdtree`] - Data structures for efficient predecessor search (KD-tree).
 //! * [`gap_calc`] - Gap cost calculation (linear and affine penalties).
 //! * [`sub_matrix`] - DNA substitution matrices (e.g., HoxD55).
 //! * [`connect`] - Core chaining logic (dynamic programming, overlap trimming).
 //! * [`record`] - Data structures for reading/writing Chain format.
 //!
-//! Generic data structures such as [`BitMap`] live in [`crate::libs::ds`].
+//! Generic data structures such as [`BitMap`], [`KdTree`](crate::libs::ds::KdTree),
+//! and [`DupeTree`](crate::libs::ds::DupeTree) live in [`crate::libs::ds`].
 //!
 //! # Algorithm Overview
 //!
@@ -26,8 +26,6 @@
 
 pub mod anti_repeat;
 pub mod connect;
-pub mod gap_calc;
-pub mod kdtree;
 pub mod net;
 pub mod pre_net;
 pub mod psl_chain;
@@ -36,9 +34,8 @@ pub mod sort;
 pub mod stitch;
 pub mod sub_matrix;
 
+pub use crate::libs::ds::GapCalc;
 pub use connect::{calc_block_score, chain_blocks, ChainableBlock, ScoreContext};
-pub use gap_calc::GapCalc;
-pub use kdtree::{ChainItem, KdTree};
 pub use pre_net::{is_haplotype, pre_net, PreNetOptions};
 pub use psl_chain::{chain_psl, group_psl_blocks, GroupData, GroupKey};
 pub use record::{read_chains, Block, Chain, ChainData, ChainHeader, ChainReader};
