@@ -73,6 +73,10 @@ harness = false
 name = "pbit_benchmark"
 harness = false
 
+[[bench]]
+name = "bitmap_intspan_benchmark"
+harness = false
+
 [build-dependencies]
 
 [dev-dependencies]

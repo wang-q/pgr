@@ -94,6 +94,11 @@ impl BitMap {
 
         true
     }
+
+    /// Return the allocated memory size of the underlying bit vector in bytes.
+    pub fn memory_size(&self) -> usize {
+        self.bits.len() * std::mem::size_of::<u64>()
+    }
 }
 
 #[cfg(test)]

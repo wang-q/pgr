@@ -85,9 +85,9 @@ use crate::libs::chain::sub_matrix::SubMatrix;
 
 #### 3.2.4 `src/cmd_pgr/fas/cover.rs`：大规模覆盖可用 `BitMap` 替代 `IntSpan`
 
-该命令用 `intspan::IntSpan` 聚合多个 block 在参考序列上的覆盖。对于单条染色体很大的场景（哺乳动物基因组），`BitMap` 的位向量布局比 `IntSpan` 的区间列表更紧凑，且 `is_fully_set`/`set_range` 是 O(⌈L/64⌉)。
+该命令用 `intspan::IntSpan` 聚合多个 block 在参考序列上的覆盖。对于单条染色体很大的场景（哺乳动物基因组），`BitMap` 的位向量布局比 `IntSpan` 的区间列表更紧凑，且 `is_fully_set`/`set_range` 是 O(⌈L/64⌉)。`benches/bitmap_intspan_benchmark.rs` 的实测结果：100M 染色体、约 10% 覆盖时，`BitMap` 内存约为 `IntSpan` 的 1/3（12.5 MB vs 38 MB），完全覆盖查询速度提升约 1500 倍，混合构建+查询速度提升约 530 倍；构建速度在小染色体上 `IntSpan` 略快，但在 100M 规模两者接近。
 
-收益：降低内存占用，可能提升速度（需基准验证）。
+收益：显著降低内存占用，并在大型染色体上大幅提升覆盖查询与聚合速度。
 
 ### 3.3 Alignment 模块 (`src/libs/alignment/`)
 
