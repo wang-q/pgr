@@ -64,6 +64,10 @@ pgr psl histo [OPTIONS] --field <TYPE> <input>
 *   `-z, --non-zero`: Omit queries with zero values.
 *   `-o, --outfile <file>`: Output filename (default: stdout).
 
+### Notes
+
+* These can then be analyzed with R, textHistogram, etc.
+
 ### Examples
 
 1.  **Count alignments per query**:
@@ -85,6 +89,7 @@ pgr psl lift [OPTIONS] <infile>
 
 *   `--q-sizes <file>`: Query sizes file (name, size).
 *   `--t-sizes <file>`: Target sizes file (name, size).
+*   `--strict`: Fail on parse errors or lift failures instead of skipping with a warning.
 *   `-o, --outfile <file>`: Output filename (default: stdout).
 
 ### Examples
@@ -92,6 +97,11 @@ pgr psl lift [OPTIONS] <infile>
 1.  **Lift query coordinates**:
     ```bash
     pgr psl lift input.psl --q-sizes chrom.sizes > output.psl
+    ```
+
+2.  **Strict mode**:
+    ```bash
+    pgr psl lift input.psl --q-sizes chrom.sizes --strict -o output.psl
     ```
 
 ---
@@ -176,6 +186,7 @@ pgr psl to-chain [OPTIONS] <input>
 ### Options
 
 *   `-f, --fix-strand`: Fix `-` target strand by reverse complementing the record.
+*   `--strict`: Fail on parse errors instead of skipping malformed lines.
 *   `-o, --outfile <file>`: Output filename (default: stdout).
 
 ### Examples
@@ -198,6 +209,7 @@ pgr psl to-range [OPTIONS] <infile>
 ### Options
 
 *   `-t, --target-coords`: Extract target coordinates instead of query.
+*   `--strict`: Fail on parse errors instead of skipping malformed lines.
 *   `-o, --outfile <file>`: Output filename (default: stdout).
 
 ### Examples

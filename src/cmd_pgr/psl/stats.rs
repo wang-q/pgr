@@ -6,10 +6,10 @@ use std::io::Write;
 /// Build the clap subcommand for stats.
 pub fn make_subcommand() -> Command {
     Command::new("stats")
-        .about("Collects statistics from a psl file")
+        .about("Collects statistics from a PSL file")
         .after_help(
             r###"
-Collect statistics from a psl file.
+Collect statistics from a PSL file.
 
 Examples:
 1. Output per-alignment statistics:

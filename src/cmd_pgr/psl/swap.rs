@@ -4,10 +4,10 @@ use std::io::Write;
 /// Build the clap subcommand for swap.
 pub fn make_subcommand() -> Command {
     Command::new("swap")
-        .about("Reverses target and query in psls")
+        .about("Reverses target and query in PSLs")
         .after_help(
             r###"
-Reverse target and query in psls.
+Reverse target and query in PSLs.
 
 Examples:
    pgr psl swap in.psl -o out.psl
@@ -21,7 +21,9 @@ Examples:
                 .short('n')
                 .long("no-rc")
                 .action(clap::ArgAction::SetTrue)
-                .help("Don't reverse-complement PSL if needed, instead make target strand explict"),
+                .help(
+                    "Don't reverse-complement PSL if needed; instead make target strand explicit",
+                ),
         )
 }
 /// Execute the swap command.

@@ -28,10 +28,12 @@ pub struct Psl {
 }
 
 impl Psl {
+    /// Create a new empty PSL record.
     pub fn new() -> Self {
         Default::default()
     }
 
+    /// Build a PSL record from a pairwise alignment string.
     #[allow(clippy::too_many_arguments)]
     pub fn from_align(
         q_name: &str,
@@ -273,6 +275,7 @@ impl Psl {
         }
     }
 
+    /// Returns true if this record appears to be a protein alignment.
     pub fn is_protein(&self) -> bool {
         if self.block_count == 0 {
             return false;
@@ -328,6 +331,7 @@ impl Psl {
         self.block_sizes.reverse();
     }
 
+    /// Calculate the UCSC-style PSL score.
     pub fn score(&self) -> i32 {
         let is_prot = self.is_protein();
         let size_mul: u64 = if is_prot { 3 } else { 1 };
@@ -338,14 +342,17 @@ impl Psl {
         raw.try_into().unwrap_or(i32::MAX)
     }
 
+    /// Total aligned bases (matches + mismatches + rep_matches + Ns).
     pub fn calc_aligned(&self) -> u32 {
         self.match_count + self.mismatch_count + self.rep_match + self.n_count
     }
 
+    /// Total matching bases including repeat matches.
     pub fn calc_match(&self) -> u32 {
         self.match_count + self.rep_match
     }
 
+    /// Fraction identity over aligned bases.
     pub fn calc_ident(&self) -> f32 {
         let aligned = self.calc_aligned();
         if aligned == 0 {
@@ -355,6 +362,7 @@ impl Psl {
         }
     }
 
+    /// Fraction of the query covered by aligned bases.
     pub fn calc_q_cover(&self) -> f32 {
         if self.q_size == 0 {
             0.0
@@ -363,6 +371,7 @@ impl Psl {
         }
     }
 
+    /// Fraction of the target covered by aligned bases.
     pub fn calc_t_cover(&self) -> f32 {
         if self.t_size == 0 {
             0.0
@@ -371,6 +380,7 @@ impl Psl {
         }
     }
 
+    /// Fraction of aligned bases that are repeat matches.
     pub fn calc_rep_match(&self) -> f32 {
         let aligned = self.calc_aligned();
         if aligned == 0 {
@@ -380,7 +390,7 @@ impl Psl {
         }
     }
 
-    /// Fraction of query covered by this alignment (aligned bases / q_size).
+    /// Fraction of the full query covered by this alignment.
     pub fn cover(&self) -> f32 {
         let aligned = self.match_count + self.mismatch_count + self.rep_match;
         if aligned == 0 {
@@ -390,7 +400,7 @@ impl Psl {
         }
     }
 
-    /// Fraction identity (matches+rep_matches / aligned bases).
+    /// Fraction identity over aligned bases (matches + repeat matches).
     pub fn ident(&self) -> f32 {
         let aligned = self.match_count + self.mismatch_count + self.rep_match;
         if aligned == 0 {
@@ -471,6 +481,7 @@ impl std::str::FromStr for Psl {
 }
 
 impl Psl {
+    /// Write this PSL record in tab-separated format.
     pub fn write_to<W: io::Write>(&self, w: &mut W) -> io::Result<()> {
         write!(
             w,
@@ -589,6 +600,7 @@ pub struct SumStats {
 }
 
 impl SumStats {
+    /// Create a new `SumStats` for a single query.
     pub fn new(q_name: &str, q_size: u32) -> Self {
         Self {
             q_name: q_name.to_string(),
@@ -601,13 +613,19 @@ impl SumStats {
         }
     }
 
+    /// Accumulate a single PSL alignment into this query's statistics.
     pub fn accumulate(&mut self, psl: &Psl) {
         let ident = psl.calc_ident();
         let q_cover = psl.calc_q_cover();
         let t_cover = psl.calc_t_cover();
         let rep_match = psl.calc_rep_match();
 
+        // Accumulate qSize once per alignment to match UCSC pslStats behavior.
+        // This intentionally makes total_q_size = qSize * alnCnt for a single query,
+        // so mean_q_cover becomes the mean coverage across alignments.
         self.total_q_size += psl.q_size as u64;
+        self.min_q_size = self.min_q_size.min(psl.q_size);
+        self.max_q_size = self.max_q_size.max(psl.q_size);
 
         if self.aln_cnt == 0 {
             self.min_ident = ident;
@@ -618,13 +636,7 @@ impl SumStats {
             self.max_t_cover = t_cover;
             self.min_rep_match = rep_match;
             self.max_rep_match = rep_match;
-
-            self.min_q_size = self.min_q_size.min(psl.q_size);
-            self.max_q_size = self.max_q_size.max(psl.q_size);
         } else {
-            self.min_q_size = self.min_q_size.min(psl.q_size);
-            self.max_q_size = self.max_q_size.max(psl.q_size);
-
             self.min_ident = self.min_ident.min(ident);
             self.max_ident = self.max_ident.max(ident);
 
@@ -644,6 +656,7 @@ impl SumStats {
         self.aln_cnt += 1;
     }
 
+    /// Merge another `SumStats` into this one (used for overall aggregation).
     pub fn merge(&mut self, other: &SumStats) {
         if self.aln_cnt == 0 {
             self.min_q_size = other.min_q_size;
@@ -677,6 +690,7 @@ impl SumStats {
         self.aln_cnt += other.aln_cnt;
     }
 
+    /// Mean identity across all aligned bases.
     pub fn mean_ident(&self) -> f32 {
         if self.total_align == 0 {
             0.0
@@ -685,6 +699,10 @@ impl SumStats {
         }
     }
 
+    /// Mean query size (total_q_size / query_cnt).
+    ///
+    /// total_q_size is accumulated once per alignment, matching UCSC pslStats.
+    /// For a single query this equals qSize * alnCnt.
     pub fn mean_q_size(&self) -> u32 {
         if self.query_cnt == 0 {
             0
@@ -693,6 +711,10 @@ impl SumStats {
         }
     }
 
+    /// Mean query coverage (total_align / total_q_size).
+    ///
+    /// total_q_size is accumulated once per alignment, matching UCSC pslStats.
+    /// For per-query stats this gives the mean coverage across alignments.
     pub fn mean_q_cover(&self) -> f32 {
         if self.total_q_size == 0 {
             0.0
@@ -701,6 +723,7 @@ impl SumStats {
         }
     }
 
+    /// Mean repeat match fraction across all aligned bases.
     pub fn mean_rep_match(&self) -> f32 {
         if self.total_align == 0 {
             0.0
@@ -725,15 +748,6 @@ pub struct PslStatsOptions {
     pub tsv: bool,
 }
 
-impl Default for PslStatsOptions {
-    fn default() -> Self {
-        Self {
-            mode: PslStatsMode::PerAlignment,
-            tsv: false,
-        }
-    }
-}
-
 /// Read a queries TSV (q_name<TAB>q_size) into a map of pre-initialized SumStats.
 pub fn read_queries<R: BufRead>(reader: R) -> anyhow::Result<HashMap<String, SumStats>> {
     let mut tbl: HashMap<String, SumStats> = HashMap::new();
@@ -746,7 +760,8 @@ pub fn read_queries<R: BufRead>(reader: R) -> anyhow::Result<HashMap<String, Sum
         }
         let q_name = parts[0].to_string();
         let q_size: u32 = parts[1].parse()?;
-        tbl.insert(q_name.clone(), SumStats::new(&q_name, q_size));
+        let stats = SumStats::new(&q_name, q_size);
+        tbl.insert(q_name, stats);
     }
     Ok(tbl)
 }

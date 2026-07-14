@@ -4,10 +4,10 @@ use std::io::Write;
 /// Build the clap subcommand for rc.
 pub fn make_subcommand() -> Command {
     Command::new("rc")
-        .about("Reverse-complements psl")
+        .about("Reverse-complements PSL")
         .after_help(
             r###"
-Reverse-complement psl.
+Reverse-complement PSL.
 
 Examples:
    pgr psl rc in.psl -o out.psl

@@ -8,7 +8,7 @@ pub fn make_subcommand() -> Command {
         .about("Collects counts on PSL alignments for making histograms")
         .after_help(
             r###"
-These then be analyzed with R, textHistogram, etc.
+These can then be analyzed with R, textHistogram, etc.
 
 The 'field' argument determines what data to collect, the following are currently supported:
 
