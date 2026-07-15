@@ -257,7 +257,7 @@ clustalw/muscle/mafft），充当工作流 glue。这与 `chain`/`net` 模块的
 
 ### 4.4 `libs/clust/` — 聚类算法库
 
-- `hier.rs`：NN-chain 层次聚类实现（参看 `docs/clust-hier.md`）
+- `hier.rs`：NN-chain 层次聚类实现（参看 `docs/clust.md` 的 Hierarchical Clustering 详细说明）
 - `dbscan.rs`、`mcl.rs`、`k_medoids.rs`：各算法实现
 - `nj.rs`、`upgma.rs`：建树算法
 - `medoid.rs`：medoid 计算

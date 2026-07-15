@@ -1,6 +1,6 @@
 # clust 模块实现分析
 
-> **实现状态注记**：本文档记录 `pgr clust` 模块的实现分析、优化路线与外部生态对比，从 `docs/clust.md` 和 `docs/clust-hier.md` 剥离而来。
+> **实现状态注记**：本文档记录 `pgr clust` 模块的实现分析、优化路线与外部生态对比，从 `docs/clust.md` 剥离而来。
 
 ## 1. 内存数据布局
 
@@ -236,7 +236,7 @@
     - **注意**：由于 `pgr clust cut` 命令已实现，该测试可以被激活。
 2.  **输入预处理文档 (已完成)**:
     - 目标：澄清输入要求。
-    - 状态：已在 `mat-transform.md` 和 `clust-hier.md` 中更新，并增强了 `pgr mat transform` 功能（支持对角线归一化），确保用户能正确地将相似度转换为距离。
+    - 状态：已在 `mat-transform.md` 和 `docs/clust.md` 的 Hierarchical Clustering 详细说明中更新，并增强了 `pgr mat transform` 功能（支持对角线归一化），确保用户能正确地将相似度转换为距离。
 
 ## 6. clust hier 内部实现细节（与 SciPy 对比）
 
