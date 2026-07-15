@@ -678,6 +678,194 @@ pub fn clust_input_format_arg() -> Arg {
         .help("Input format for partition files")
 }
 
+/// `--eps` argument for DBSCAN (default: 0.05).
+pub fn eps_arg() -> Arg {
+    Arg::new("eps")
+        .long("eps")
+        .num_args(1)
+        .default_value("0.05")
+        .value_parser(clap::value_parser!(f32))
+        .help("The maximum distance between two points for DBSCAN clustering")
+}
+
+/// `--min-points` argument for DBSCAN (default: 4).
+pub fn min_points_arg() -> Arg {
+    Arg::new("min_points")
+        .long("min-points")
+        .num_args(1)
+        .default_value("4")
+        .value_parser(clap::value_parser!(usize))
+        .help("Minimum number of points to form a dense region in DBSCAN")
+}
+
+/// `--inflation` argument for MCL (default: 2.0).
+pub fn mcl_inflation_arg() -> Arg {
+    Arg::new("inflation")
+        .long("inflation")
+        .short('I')
+        .num_args(1)
+        .default_value("2.0")
+        .value_parser(clap::value_parser!(f64))
+        .help("Inflation parameter. Controls the granularity of clusters. Higher values = tighter/more clusters.")
+}
+
+/// `--prune` argument for MCL (default: 1e-5).
+pub fn mcl_prune_arg() -> Arg {
+    Arg::new("prune")
+        .long("prune")
+        .num_args(1)
+        .default_value("1e-5")
+        .value_parser(clap::value_parser!(f64))
+        .help("Pruning threshold. Matrix entries smaller than this will be set to zero.")
+}
+
+/// `--runs` argument for randomized clustering (default: 10).
+pub fn runs_arg() -> Arg {
+    Arg::new("runs")
+        .long("runs")
+        .num_args(1)
+        .default_value("10")
+        .value_parser(clap::value_parser!(usize))
+        .help("Number of random initializations")
+}
+
+/// `--rep` argument for tree cut representative selection (default: root).
+pub fn rep_arg() -> Arg {
+    Arg::new("rep")
+        .long("rep")
+        .num_args(1)
+        .value_parser([
+            builder::PossibleValue::new("root"),
+            builder::PossibleValue::new("first"),
+            builder::PossibleValue::new("medoid"),
+        ])
+        .default_value("root")
+        .help("Representative selection method")
+}
+
+/// `--scan` argument for parameter sweep (format: start,end,step).
+pub fn scan_arg() -> Arg {
+    Arg::new("scan")
+        .long("scan")
+        .num_args(1)
+        .help("Scan thresholds (format: start,end,step)")
+}
+
+/// `--stats-out` argument for scan summary output.
+pub fn stats_out_arg() -> Arg {
+    Arg::new("stats_out")
+        .long("stats-out")
+        .num_args(1)
+        .help("Output statistics to a separate file (useful when format is 'long')")
+}
+
+/// `--support` argument for branch support threshold.
+pub fn support_arg() -> Arg {
+    Arg::new("support")
+        .long("support")
+        .num_args(1)
+        .value_parser(clap::value_parser!(f64))
+        .help(
+            "Branch support threshold (edges with support < S will be treated as infinite length). \
+             Internal node names that cannot be parsed as numbers are treated as support = 100.0.",
+        )
+}
+
+/// `--deep` argument for inconsistent coefficient depth (default: 2).
+pub fn deep_arg() -> Arg {
+    Arg::new("deep")
+        .long("deep")
+        .num_args(1)
+        .default_value("2")
+        .value_parser(clap::value_parser!(usize))
+        .help("Depth for inconsistent coefficient calculation (default: 2)")
+}
+
+/// `--dynamic-tree` argument for dynamic tree cut (value: min cluster size).
+pub fn dynamic_tree_arg() -> Arg {
+    Arg::new("dynamic_tree")
+        .long("dynamic-tree")
+        .num_args(1)
+        .value_parser(clap::value_parser!(usize))
+        .help("Use dynamic tree cut method (value: min cluster size)")
+}
+
+/// `--dynamic-hybrid` argument for dynamic hybrid cut (value: min cluster size).
+pub fn dynamic_hybrid_arg() -> Arg {
+    Arg::new("dynamic_hybrid")
+        .long("dynamic-hybrid")
+        .num_args(1)
+        .value_parser(clap::value_parser!(usize))
+        .help("Use dynamic hybrid cut method (value: min cluster size)")
+}
+
+/// `--max-pam-dist` argument for hybrid cut PAM reassignment.
+pub fn max_pam_dist_arg() -> Arg {
+    Arg::new("max_pam_dist")
+        .long("max-pam-dist")
+        .num_args(1)
+        .value_parser(clap::value_parser!(f64))
+        .help("Maximum distance to medoid for PAM reassignment")
+}
+
+/// `--no-pam-dendro` flag for hybrid cut.
+pub fn no_pam_dendro_arg() -> Arg {
+    Arg::new("no_pam_dendro")
+        .long("no-pam-dendro")
+        .action(ArgAction::SetTrue)
+        .help("Disable dendrogram respect in PAM stage (allow assigning to clusters across high branches)")
+}
+
+/// `--deep-split` flag for dynamic tree cut.
+pub fn deep_split_arg() -> Arg {
+    Arg::new("deep_split")
+        .long("deep-split")
+        .action(ArgAction::SetTrue)
+        .help("Enable deep split for dynamic tree cut (default: false)")
+}
+
+/// `--max-tree-height` argument for dynamic tree cut.
+pub fn max_tree_height_arg() -> Arg {
+    Arg::new("max_tree_height")
+        .long("max-tree-height")
+        .num_args(1)
+        .value_parser(clap::value_parser!(f64))
+        .help("Maximum joining height for dynamic tree cut (default: 99% of tree height)")
+}
+
+/// `--other` argument for external partition evaluation (alias: `--truth`).
+pub fn other_partition_arg() -> Arg {
+    Arg::new("other")
+        .long("other")
+        .alias("truth")
+        .num_args(1)
+        .help("Other partition file (for external evaluation)")
+}
+
+/// `--tree` argument for internal evaluation using patristic distance.
+pub fn tree_arg() -> Arg {
+    Arg::new("tree")
+        .long("tree")
+        .num_args(1)
+        .help("Tree file (for internal evaluation: Silhouette, using patristic distance)")
+}
+
+/// `--coords` argument for internal evaluation using Davies-Bouldin.
+pub fn coords_arg() -> Arg {
+    Arg::new("coords")
+        .long("coords")
+        .num_args(1)
+        .help("Coordinate matrix file (for internal evaluation: Davies-Bouldin)")
+}
+
+/// `--no-singletons` flag for external evaluation.
+pub fn no_singletons_arg() -> Arg {
+    Arg::new("no_singletons")
+        .long("no-singletons")
+        .action(ArgAction::SetTrue)
+        .help("Exclude true singletons (from Reference/Ground Truth) from evaluation")
+}
+
 // ============================================================================
 // mat subcommand builders
 // ============================================================================

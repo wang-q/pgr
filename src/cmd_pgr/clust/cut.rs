@@ -1,5 +1,5 @@
 use anyhow::Context;
-use clap::{builder::PossibleValue, value_parser, Arg, ArgAction, ArgGroup, ArgMatches, Command};
+use clap::{value_parser, Arg, ArgGroup, ArgMatches, Command};
 use pgr::libs::clust::tree_cut::{self as cut, RepMode, METHOD_NAMES};
 use pgr::libs::phylo::tree::Tree;
 use std::io::Write;
@@ -117,17 +117,7 @@ Examples:
                 .value_parser(value_parser!(f64))
                 .help("Cut branches longer than threshold (Single Linkage)"),
         )
-        .arg(
-            Arg::new("rep")
-                .long("rep")
-                .value_parser([
-                    PossibleValue::new("root"),
-                    PossibleValue::new("first"),
-                    PossibleValue::new("medoid"),
-                ])
-                .default_value("root")
-                .help("Representative selection method"),
-        )
+        .arg(crate::cmd_pgr::args::rep_arg())
         .arg(crate::cmd_pgr::args::outfile_arg())
         .arg(
             Arg::new("inconsistent")
@@ -135,69 +125,17 @@ Examples:
                 .value_parser(value_parser!(f64))
                 .help("Cut by inconsistent coefficient threshold"),
         )
-        .arg(
-            Arg::new("deep")
-                .long("deep")
-                .value_parser(value_parser!(usize))
-                .default_value("2")
-                .help("Depth for inconsistent coefficient calculation (default: 2)"),
-        )
-        .arg(
-            Arg::new("scan")
-                .long("scan")
-                .help("Scan thresholds (format: start,end,step)"),
-        )
-        .arg(
-            Arg::new("stats_out")
-                .long("stats-out")
-                .help("Output statistics to a separate file (useful when format is 'long')"),
-        )
-        .arg(
-            Arg::new("support")
-                .long("support")
-                .value_parser(value_parser!(f64))
-                .help(
-                    "Branch support threshold (edges with support < S will be treated as infinite length). \
-                     Internal node names that cannot be parsed as numbers are treated as support = 100.0.",
-                ),
-        )
-        .arg(
-            Arg::new("dynamic_tree")
-                .long("dynamic-tree")
-                .value_parser(value_parser!(usize))
-                .help("Use dynamic tree cut method (value: min cluster size)"),
-        )
-        .arg(
-            Arg::new("dynamic_hybrid")
-                .long("dynamic-hybrid")
-                .value_parser(value_parser!(usize))
-                .help("Use dynamic hybrid cut method (value: min cluster size)"),
-        )
+        .arg(crate::cmd_pgr::args::deep_arg())
+        .arg(crate::cmd_pgr::args::scan_arg())
+        .arg(crate::cmd_pgr::args::stats_out_arg())
+        .arg(crate::cmd_pgr::args::support_arg())
+        .arg(crate::cmd_pgr::args::dynamic_tree_arg())
+        .arg(crate::cmd_pgr::args::dynamic_hybrid_arg())
         .arg(crate::cmd_pgr::args::matrix_arg())
-        .arg(
-            Arg::new("max_pam_dist")
-                .long("max-pam-dist")
-                .value_parser(value_parser!(f64))
-                .help("Maximum distance to medoid for PAM reassignment"),
-        )
-        .arg(
-            Arg::new("no_pam_dendro")
-                .long("no-pam-dendro")
-                .action(ArgAction::SetTrue)
-                .help("Disable dendrogram respect in PAM stage (allow assigning to clusters across high branches)"),
-        )
-        .arg(
-            Arg::new("deep_split")
-                .long("deep-split")
-                .action(ArgAction::SetTrue)
-                .help("Enable deep split for dynamic tree cut (default: false)"),
-        )
-        .arg(
-            Arg::new("max_tree_height")
-                .long("max-tree-height")
-                .value_parser(value_parser!(f64))
-                .help("Maximum joining height for dynamic tree cut (default: 99% of tree height)"),
-        )
+        .arg(crate::cmd_pgr::args::max_pam_dist_arg())
+        .arg(crate::cmd_pgr::args::no_pam_dendro_arg())
+        .arg(crate::cmd_pgr::args::deep_split_arg())
+        .arg(crate::cmd_pgr::args::max_tree_height_arg())
         .group(
             ArgGroup::new("method")
                 .args([

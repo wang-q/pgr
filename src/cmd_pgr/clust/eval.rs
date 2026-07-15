@@ -44,34 +44,13 @@ Examples:
                 .index(1)
                 .help("Partition file"),
         )
-        .arg(
-            Arg::new("other")
-                .long("other")
-                .alias("truth")
-                .num_args(1)
-                .help("Other partition file (for external evaluation)"),
-        )
+        .arg(crate::cmd_pgr::args::other_partition_arg())
         .arg(crate::cmd_pgr::args::matrix_arg())
-        .arg(
-            Arg::new("tree")
-                .long("tree")
-                .num_args(1)
-                .help("Tree file (for internal evaluation: Silhouette, using patristic distance)"),
-        )
-        .arg(
-            Arg::new("coords")
-                .long("coords")
-                .num_args(1)
-                .help("Coordinate matrix file (for internal evaluation: Davies-Bouldin)"),
-        )
+        .arg(crate::cmd_pgr::args::tree_arg())
+        .arg(crate::cmd_pgr::args::coords_arg())
         .arg(crate::cmd_pgr::args::clust_input_format_arg())
         .arg(crate::cmd_pgr::args::outfile_arg())
-        .arg(
-            Arg::new("no_singletons")
-                .long("no-singletons")
-                .action(clap::ArgAction::SetTrue)
-                .help("Exclude true singletons (from Reference/Ground Truth) from evaluation"),
-        )
+        .arg(crate::cmd_pgr::args::no_singletons_arg())
 }
 /// Execute the eval command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {

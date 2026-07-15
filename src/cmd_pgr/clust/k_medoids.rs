@@ -1,5 +1,5 @@
 use anyhow::Context;
-use clap::{value_parser, Arg, ArgMatches, Command};
+use clap::{ArgMatches, Command};
 use std::io::Write;
 
 /// Build the clap subcommand for k-medoids.
@@ -31,22 +31,13 @@ If there are ties, the alphabetically first member is chosen.
         .arg(crate::cmd_pgr::args::format_arg())
         .arg(crate::cmd_pgr::args::same_arg("0.0"))
         .arg(crate::cmd_pgr::args::missing_arg("1.0"))
-        .arg(
-            Arg::new("runs")
-                .long("runs")
-                .num_args(1)
-                .default_value("10")
-                .value_parser(value_parser!(usize))
-                .help("Number of random initializations"),
-        )
+        .arg(crate::cmd_pgr::args::runs_arg())
         .arg(crate::cmd_pgr::args::max_iter_arg())
-        .arg(
-            Arg::new("seed")
-                .long("seed")
-                .num_args(1)
-                .value_parser(value_parser!(u64))
-                .help("Random seed for reproducible initialization"),
-        )
+        .arg(crate::cmd_pgr::args::seed_arg(
+            None,
+            None,
+            "Random seed for reproducible initialization",
+        ))
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 /// Execute the k-medoids command.

@@ -1,5 +1,5 @@
 use anyhow::Context;
-use clap::{value_parser, Arg, ArgMatches, Command};
+use clap::{ArgMatches, Command};
 use std::io::Write;
 
 /// Build the clap subcommand for dbscan.
@@ -30,22 +30,8 @@ If there are ties, the alphabetically first member is chosen.
         .arg(crate::cmd_pgr::args::format_arg())
         .arg(crate::cmd_pgr::args::same_arg("0.0"))
         .arg(crate::cmd_pgr::args::missing_arg("1.0"))
-        .arg(
-            Arg::new("eps")
-                .long("eps")
-                .num_args(1)
-                .default_value("0.05")
-                .value_parser(value_parser!(f32))
-                .help("The maximum distance between two points for DBSCAN clustering"),
-        )
-        .arg(
-            Arg::new("min_points")
-                .long("min-points")
-                .num_args(1)
-                .default_value("4")
-                .value_parser(value_parser!(usize))
-                .help("Minimum number of points to form a dense region in DBSCAN"),
-        )
+        .arg(crate::cmd_pgr::args::eps_arg())
+        .arg(crate::cmd_pgr::args::min_points_arg())
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 

@@ -1,5 +1,5 @@
 use anyhow::Context;
-use clap::{value_parser, Arg, ArgMatches, Command};
+use clap::{ArgMatches, Command};
 use std::io::Write;
 
 /// Build the clap subcommand for mcl.
@@ -34,23 +34,8 @@ Stijn van Dongen, Graph Clustering by Flow Simulation. PhD thesis, University of
         .arg(crate::cmd_pgr::args::format_arg())
         .arg(crate::cmd_pgr::args::same_arg("1.0"))
         .arg(crate::cmd_pgr::args::missing_arg("0.0"))
-        .arg(
-            Arg::new("inflation")
-                .long("inflation")
-                .short('I')
-                .num_args(1)
-                .default_value("2.0")
-                .value_parser(value_parser!(f64))
-                .help("Inflation parameter. Controls the granularity of clusters. Higher values = tighter/more clusters."),
-        )
-        .arg(
-            Arg::new("prune")
-                .long("prune")
-                .num_args(1)
-                .default_value("1e-5")
-                .value_parser(value_parser!(f64))
-                .help("Pruning threshold. Matrix entries smaller than this will be set to zero."),
-        )
+        .arg(crate::cmd_pgr::args::mcl_inflation_arg())
+        .arg(crate::cmd_pgr::args::mcl_prune_arg())
         .arg(crate::cmd_pgr::args::max_iter_arg())
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
