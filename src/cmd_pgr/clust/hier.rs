@@ -41,8 +41,12 @@ Examples:
 }
 /// Execute the hier command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let infile = args.get_one::<String>("infile").unwrap();
-    let method_str = args.get_one::<String>("clust_method").unwrap();
+    let infile = args
+        .get_one::<String>("infile")
+        .ok_or_else(|| anyhow::anyhow!("missing required argument: infile"))?;
+    let method_str = args
+        .get_one::<String>("clust_method")
+        .ok_or_else(|| anyhow::anyhow!("missing required argument: clust_method"))?;
     let outfile = crate::cmd_pgr::args::get_outfile(args);
 
     // Parse method

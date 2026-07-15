@@ -106,7 +106,9 @@ pub fn cutree_hybrid(tree: &Tree, options: HybridOptions) -> anyhow::Result<Part
     let post_order = postorder(tree, root_id);
 
     for &node_id in &post_order {
-        let node = tree.get_node(node_id).unwrap();
+        let node = tree
+            .get_node(node_id)
+            .ok_or_else(|| anyhow::anyhow!("node {} not found", node_id))?;
 
         if node.is_leaf() {
             if let Some(&mat_idx) = node_to_mat_idx.get(&node_id) {
@@ -349,7 +351,9 @@ pub fn cutree_hybrid(tree: &Tree, options: HybridOptions) -> anyhow::Result<Part
 
         let all_indices: Vec<usize> = node_to_mat_idx.values().cloned().collect();
         for &idx in &all_indices {
-            let node_id = *mat_idx_to_node.get(&idx).unwrap();
+            let node_id = *mat_idx_to_node.get(&idx).ok_or_else(|| {
+                anyhow::anyhow!("matrix index {} has no corresponding tree node", idx)
+            })?;
             if assignment.contains_key(&node_id) {
                 continue;
             }

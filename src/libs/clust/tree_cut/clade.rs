@@ -80,7 +80,7 @@ pub fn cut_max_clade(tree: &Tree, threshold: f64) -> Result<Partition> {
         }
     }
 
-    assign_clusters(tree, cluster_roots).map_err(|e| anyhow::anyhow!(e))
+    assign_clusters(tree, cluster_roots)
 }
 
 /// Cut tree where average pairwise distance in cluster <= threshold.
@@ -115,7 +115,7 @@ pub fn cut_avg_clade(tree: &Tree, threshold: f64) -> Result<Partition> {
         }
     }
 
-    assign_clusters(tree, clusters).map_err(|e| anyhow::anyhow!(e))
+    assign_clusters(tree, clusters)
 }
 
 /// Cut tree based on median pairwise distance in clade.
@@ -277,7 +277,7 @@ pub fn cut_med_clade(tree: &Tree, threshold: f64) -> Result<Partition> {
         }
     }
 
-    assign_clusters(tree, clusters).map_err(|e| anyhow::anyhow!(e))
+    assign_clusters(tree, clusters)
 }
 
 /// Cut tree based on sum of branch lengths in clade.
@@ -347,5 +347,97 @@ pub fn cut_sum_branch(tree: &Tree, threshold: f64) -> Result<Partition> {
         }
     }
 
-    assign_clusters(tree, clusters).map_err(|e| anyhow::anyhow!(e))
+    assign_clusters(tree, clusters)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::libs::phylo::tree::Tree;
+    use std::collections::HashMap;
+
+    fn parse_tree(nwk: &str) -> Tree {
+        Tree::from_newick(nwk).expect("valid newick")
+    }
+
+    fn cluster_names(part: &Partition, tree: &Tree) -> Vec<Vec<String>> {
+        let mut groups: HashMap<usize, Vec<String>> = HashMap::new();
+        for (&leaf_id, &cid) in &part.assignment {
+            let name = tree
+                .get_node(leaf_id)
+                .and_then(|n| n.name.clone())
+                .unwrap_or_else(|| format!("Node_{}", leaf_id));
+            groups.entry(cid).or_default().push(name);
+        }
+        let mut clusters: Vec<Vec<String>> = groups.into_values().collect();
+        for c in &mut clusters {
+            c.sort();
+        }
+        clusters.sort();
+        clusters
+    }
+
+    #[test]
+    fn test_cut_max_clade() {
+        // Tree: ((A:0.1,B:0.1):0.4,C:0.5);
+        // Max pairwise distance at root = 1.0 (A-C, B-C).
+        let tree = parse_tree("((A:0.1,B:0.1):0.4,C:0.5);");
+
+        let part_low = cut_max_clade(&tree, 0.5).unwrap();
+        assert_eq!(
+            cluster_names(&part_low, &tree),
+            vec![vec!["A", "B"], vec!["C"]]
+        );
+
+        let part_high = cut_max_clade(&tree, 1.0).unwrap();
+        assert_eq!(cluster_names(&part_high, &tree), vec![vec!["A", "B", "C"]]);
+    }
+
+    #[test]
+    fn test_cut_avg_clade() {
+        // Tree: ((A:0.1,B:0.1):0.4,C:0.5);
+        // Avg pairwise distance at root = (0.2 + 1.0 + 1.0) / 3 = 0.733...
+        let tree = parse_tree("((A:0.1,B:0.1):0.4,C:0.5);");
+
+        let part_low = cut_avg_clade(&tree, 0.7).unwrap();
+        assert_eq!(
+            cluster_names(&part_low, &tree),
+            vec![vec!["A", "B"], vec!["C"]]
+        );
+
+        let part_high = cut_avg_clade(&tree, 0.8).unwrap();
+        assert_eq!(cluster_names(&part_high, &tree), vec![vec!["A", "B", "C"]]);
+    }
+
+    #[test]
+    fn test_cut_sum_branch() {
+        // Tree: ((A:0.1,B:0.1):0.4,C:0.5);
+        // Sum of branch lengths at root = 0.1 + 0.1 + 0.4 + 0.5 = 1.1.
+        let tree = parse_tree("((A:0.1,B:0.1):0.4,C:0.5);");
+
+        let part_low = cut_sum_branch(&tree, 1.0).unwrap();
+        assert_eq!(
+            cluster_names(&part_low, &tree),
+            vec![vec!["A", "B"], vec!["C"]]
+        );
+
+        let part_high = cut_sum_branch(&tree, 1.2).unwrap();
+        assert_eq!(cluster_names(&part_high, &tree), vec![vec!["A", "B", "C"]]);
+    }
+
+    #[test]
+    fn test_cut_med_clade() {
+        // Tree: ((A:0.1,B:0.1):0.4,C:0.5);
+        // Pairwise distances: 0.2, 1.0, 1.0 -> median = 1.0.
+        let tree = parse_tree("((A:0.1,B:0.1):0.4,C:0.5);");
+
+        let part_low = cut_med_clade(&tree, 0.5).unwrap();
+        assert_eq!(
+            cluster_names(&part_low, &tree),
+            vec![vec!["A", "B"], vec!["C"]]
+        );
+
+        let part_high = cut_med_clade(&tree, 1.0).unwrap();
+        assert_eq!(cluster_names(&part_high, &tree), vec![vec!["A", "B", "C"]]);
+    }
 }

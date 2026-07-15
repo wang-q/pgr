@@ -10,7 +10,9 @@ pub trait DistanceMatrix {
 
 impl DistanceMatrix for NamedMatrix {
     fn get_distance(&self, id1: &str, id2: &str) -> f64 {
-        self.get_by_name(id1, id2).unwrap_or(0.0) as f64
+        self.get_by_name(id1, id2)
+            .map(|v| v as f64)
+            .unwrap_or(f64::NAN)
     }
 }
 
@@ -35,9 +37,9 @@ impl DistanceMatrix for TreeDistance {
             self.tree
                 .get_distance(&id1, &id2)
                 .map(|(d, _)| d)
-                .unwrap_or(0.0)
+                .unwrap_or(f64::NAN)
         } else {
-            0.0
+            f64::NAN
         }
     }
 }
@@ -65,6 +67,7 @@ pub fn silhouette_score(partition: &LabelMap, dist_mat: &dyn DistanceMatrix) -> 
     }
 
     let mut total_s = 0.0;
+    let mut has_nan = false;
     let n = partition.len();
 
     for (item_i, &cluster_i) in partition {
@@ -80,6 +83,11 @@ pub fn silhouette_score(partition: &LabelMap, dist_mat: &dyn DistanceMatrix) -> 
             .iter()
             .filter(|&&item_j| item_j != item_i)
             .map(|&item_j| dist_mat.get_distance(item_i, item_j))
+            .inspect(|d| {
+                if d.is_nan() {
+                    has_nan = true;
+                }
+            })
             .sum();
         let a_i = sum_dist_a / (cluster_i_members.len() - 1) as f64;
 
@@ -93,6 +101,11 @@ pub fn silhouette_score(partition: &LabelMap, dist_mat: &dyn DistanceMatrix) -> 
             let sum_dist_b: f64 = cluster_j_members
                 .iter()
                 .map(|&item_j| dist_mat.get_distance(item_i, item_j))
+                .inspect(|d| {
+                    if d.is_nan() {
+                        has_nan = true;
+                    }
+                })
                 .sum();
             let mean_dist_b = sum_dist_b / cluster_j_members.len() as f64;
             if mean_dist_b < min_mean_dist_other {
@@ -111,7 +124,11 @@ pub fn silhouette_score(partition: &LabelMap, dist_mat: &dyn DistanceMatrix) -> 
         total_s += s_i;
     }
 
-    total_s / n as f64
+    if has_nan {
+        f64::NAN
+    } else {
+        total_s / n as f64
+    }
 }
 
 /// Calculate Dunn Index
@@ -138,13 +155,17 @@ pub fn dunn_score(partition: &LabelMap, dist_mat: &dyn DistanceMatrix) -> f64 {
     // 2. Calculate Max Intra-cluster Diameter (max_delta)
     let mut max_diameter = 0.0;
 
+    let mut has_nan = false;
+
     for members in clusters.values() {
         let mut cluster_diameter = 0.0;
         // O(n_k^2)
         for i in 0..members.len() {
             for j in i + 1..members.len() {
                 let d = dist_mat.get_distance(members[i], members[j]);
-                if d > cluster_diameter {
+                if d.is_nan() {
+                    has_nan = true;
+                } else if d > cluster_diameter {
                     cluster_diameter = d;
                 }
             }
@@ -170,12 +191,18 @@ pub fn dunn_score(partition: &LabelMap, dist_mat: &dyn DistanceMatrix) -> f64 {
             for item_i in members_i {
                 for item_j in members_j {
                     let d = dist_mat.get_distance(item_i, item_j);
-                    if d < min_inter_dist {
+                    if d.is_nan() {
+                        has_nan = true;
+                    } else if d < min_inter_dist {
                         min_inter_dist = d;
                     }
                 }
             }
         }
+    }
+
+    if has_nan {
+        return f64::NAN;
     }
 
     if max_diameter == 0.0 {
@@ -217,6 +244,9 @@ pub fn c_index_score(partition: &LabelMap, dist_mat: &dyn DistanceMatrix) -> f64
     for i in 0..n {
         for j in i + 1..n {
             let d = dist_mat.get_distance(items[i], items[j]);
+            if d.is_nan() {
+                return f64::NAN;
+            }
             all_distances.push(d);
 
             if partition[items[i]] == partition[items[j]] {
@@ -277,6 +307,9 @@ pub fn gamma_score(partition: &LabelMap, dist_mat: &dyn DistanceMatrix) -> f64 {
     for i in 0..n {
         for j in i + 1..n {
             let d = dist_mat.get_distance(items[i], items[j]);
+            if d.is_nan() {
+                return f64::NAN;
+            }
             let is_diff = if partition[items[i]] != partition[items[j]] {
                 1.0
             } else {
@@ -329,6 +362,9 @@ pub fn tau_score(partition: &LabelMap, dist_mat: &dyn DistanceMatrix) -> f64 {
     for i in 0..n {
         for j in i + 1..n {
             let d = dist_mat.get_distance(items[i], items[j]);
+            if d.is_nan() {
+                return f64::NAN;
+            }
             let is_diff = partition[items[i]] != partition[items[j]];
             pairs.push(Pair { dist: d, is_diff });
         }

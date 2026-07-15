@@ -68,7 +68,7 @@ fn parse_pair_format(lines: &[String]) -> anyhow::Result<LabelMap> {
     for line in lines {
         let parts: Vec<&str> = line.split_whitespace().collect();
         if parts.len() < 2 {
-            continue;
+            anyhow::bail!("invalid pair format line (expected 2 columns): {}", line);
         }
         let label_str = parts[0];
         let item = parts[1];

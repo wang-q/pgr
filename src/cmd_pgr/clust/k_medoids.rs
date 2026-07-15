@@ -45,13 +45,27 @@ If there are ties, the alphabetically first member is chosen.
 /// Execute the k-medoids command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // 1. Args
-    let infile = args.get_one::<String>("infile").unwrap();
-    let opt_k = *args.get_one::<usize>("k").unwrap();
-    let opt_format = args.get_one::<String>("clust_format").unwrap();
-    let opt_same = *args.get_one::<f32>("same").unwrap();
-    let opt_missing = *args.get_one::<f32>("missing").unwrap();
-    let runs = *args.get_one::<usize>("runs").unwrap();
-    let max_iter = *args.get_one::<usize>("max_iter").unwrap();
+    let infile = args
+        .get_one::<String>("infile")
+        .ok_or_else(|| anyhow::anyhow!("missing required argument: infile"))?;
+    let opt_k = *args
+        .get_one::<usize>("k")
+        .ok_or_else(|| anyhow::anyhow!("missing required argument: k"))?;
+    let opt_format = args
+        .get_one::<String>("clust_format")
+        .ok_or_else(|| anyhow::anyhow!("missing required argument: clust_format"))?;
+    let opt_same = *args
+        .get_one::<f32>("same")
+        .ok_or_else(|| anyhow::anyhow!("missing required argument: same"))?;
+    let opt_missing = *args
+        .get_one::<f32>("missing")
+        .ok_or_else(|| anyhow::anyhow!("missing required argument: missing"))?;
+    let runs = *args
+        .get_one::<usize>("runs")
+        .ok_or_else(|| anyhow::anyhow!("missing required argument: runs"))?;
+    let max_iter = *args
+        .get_one::<usize>("max_iter")
+        .ok_or_else(|| anyhow::anyhow!("missing required argument: max_iter"))?;
     let outfile = crate::cmd_pgr::args::get_outfile(args);
 
     let mut writer =

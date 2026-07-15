@@ -1,8 +1,6 @@
 use anyhow::Context;
 use clap::{builder::PossibleValue, value_parser, Arg, ArgAction, ArgGroup, ArgMatches, Command};
-use pgr::libs::clust::tree_cut::dynamic::DynamicTreeOptions;
-use pgr::libs::clust::tree_cut::hybrid::HybridOptions;
-use pgr::libs::clust::tree_cut::{self as cut, CutDispatch, RepMode, METHOD_NAMES};
+use pgr::libs::clust::tree_cut::{self as cut, RepMode, METHOD_NAMES};
 use pgr::libs::phylo::tree::Tree;
 use std::io::Write;
 /// Build the clap subcommand for cut.
@@ -218,13 +216,31 @@ Examples:
                 .required(true),
         )
 }
+/// Detect which standard cut method was requested.
+fn detect_method_name(args: &ArgMatches) -> anyhow::Result<&'static str> {
+    METHOD_NAMES
+        .iter()
+        .find(|&&n| args.contains_id(n))
+        .copied()
+        .ok_or_else(|| anyhow::anyhow!("no cut method specified"))
+}
+
 /// Execute the cut command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let infile = args.get_one::<String>("infile").unwrap();
+    let infile = args
+        .get_one::<String>("infile")
+        .ok_or_else(|| anyhow::anyhow!("missing required argument: infile"))?;
     let outfile = crate::cmd_pgr::args::get_outfile(args);
-    let format = args.get_one::<String>("clust_format").unwrap();
-    let rep_method = args.get_one::<String>("rep").unwrap().as_str();
-    let deep = *args.get_one::<usize>("deep").unwrap();
+    let format = args
+        .get_one::<String>("clust_format")
+        .ok_or_else(|| anyhow::anyhow!("missing required argument: clust_format"))?;
+    let rep_method = args
+        .get_one::<String>("rep")
+        .ok_or_else(|| anyhow::anyhow!("missing required argument: rep"))?
+        .as_str();
+    let deep = *args
+        .get_one::<usize>("deep")
+        .ok_or_else(|| anyhow::anyhow!("missing required argument: deep"))?;
 
     let mut trees = Tree::from_file(infile)?;
     if trees.len() > 1 {
@@ -243,7 +259,19 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut writer =
         pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
 
+    // Options common to dynamic methods
+    let deep_split = args.get_flag("deep_split");
+    let max_tree_height = args.get_one::<f64>("max_tree_height").copied();
+    let max_pam_dist = args.get_one::<f64>("max_pam_dist").copied();
+    let no_pam_dendro = args.get_flag("no_pam_dendro");
+
+    let tree = &trees[0];
+
     if let Some(scan_str) = args.get_one::<String>("scan") {
+        if args.contains_id("dynamic_hybrid") {
+            anyhow::bail!("--scan is not supported with --dynamic-hybrid");
+        }
+
         let parts: Vec<&str> = scan_str.split(',').collect();
         if parts.len() != 3 {
             anyhow::bail!("--scan format must be start,end,step");
@@ -270,14 +298,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
         writer.write_all(b"Group\tClusterID\tSampleID\n")?;
 
-        let tree = &trees[0];
-
-        // Pre-calculate leaf depths for scanning if needed
-        let leaf_depths_scan = if args.contains_id("leaf_dist_max")
-            || args.contains_id("leaf_dist_min")
-            || args.contains_id("leaf_dist_avg")
-        {
-            Some(pgr::libs::phylo::tree::stat::get_leaf_depth_stats(tree))
+        let dynamic_tree = args.get_one::<usize>("dynamic_tree").copied();
+        let method_name = if dynamic_tree.is_none() {
+            Some(detect_method_name(args)?)
         } else {
             None
         };
@@ -300,30 +323,41 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 break;
             }
 
-            let dispatch = if args.contains_id("dynamic_tree") {
+            let dispatch = if dynamic_tree.is_some() {
                 if !val.is_finite() || val < 0.0 || val > usize::MAX as f64 {
                     anyhow::bail!("scan value out of range: {}", val);
                 }
                 if val.fract() != 0.0 {
                     anyhow::bail!("scan value must be integer for dynamic-tree: {}", val);
                 }
-                CutDispatch::DynamicTree(DynamicTreeOptions {
-                    min_module_size: val as usize,
-                    deep_split: args.get_flag("deep_split"),
-                    max_tree_height: args.get_one::<f64>("max_tree_height").copied(),
-                })
-            } else {
-                let method_name = METHOD_NAMES
-                    .iter()
-                    .find(|&&n| args.contains_id(n))
-                    .copied()
-                    .ok_or_else(|| anyhow::anyhow!("no cut method specified"))?;
-                CutDispatch::Standard {
-                    name: method_name,
+                cut::build_dispatch(
+                    tree,
+                    None,
                     val,
                     deep,
-                    leaf_depths: leaf_depths_scan,
-                }
+                    Some(val as usize),
+                    None,
+                    max_tree_height,
+                    deep_split,
+                    no_pam_dendro,
+                    max_pam_dist,
+                    None,
+                )?
+            } else {
+                let name = method_name.ok_or_else(|| anyhow::anyhow!("no cut method specified"))?;
+                cut::build_dispatch(
+                    tree,
+                    Some(name),
+                    val,
+                    deep,
+                    None,
+                    None,
+                    max_tree_height,
+                    deep_split,
+                    no_pam_dendro,
+                    max_pam_dist,
+                    None,
+                )?
             };
 
             let (partition, method_name) = cut::dispatch_cut(tree, dispatch)?;
@@ -345,66 +379,57 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let rep_mode = RepMode::parse(rep_method)
-        .map_err(|e| anyhow::anyhow!("invalid --rep '{}': {}", rep_method, e))?;
+    let rep_mode = RepMode::parse(rep_method)?;
+
+    let dynamic_tree = args.get_one::<usize>("dynamic_tree").copied();
+    let dynamic_hybrid = args.get_one::<usize>("dynamic_hybrid").copied();
+
+    let matrix = if dynamic_hybrid.is_some() {
+        let matrix_file = args
+            .get_one::<String>("matrix")
+            .ok_or_else(|| anyhow::anyhow!("--matrix is required for dynamic-hybrid"))?;
+        Some(pgr::libs::pairmat::NamedMatrix::from_relaxed_phylip(
+            matrix_file,
+        )?)
+    } else {
+        None
+    };
+
+    let (method_name, val) = if dynamic_tree.is_none() && dynamic_hybrid.is_none() {
+        let name = detect_method_name(args)?;
+        let val = if name == "k" {
+            *args
+                .get_one::<usize>("k")
+                .ok_or_else(|| anyhow::anyhow!("missing --k value"))? as f64
+        } else {
+            *args
+                .get_one::<f64>(name)
+                .ok_or_else(|| anyhow::anyhow!("missing --{} value", name))?
+        };
+        (Some(name), val)
+    } else {
+        (None, 0.0)
+    };
 
     for tree in trees.iter() {
-        let dispatch = if let Some(&min_cluster_size) = args.get_one::<usize>("dynamic_tree") {
-            CutDispatch::DynamicTree(DynamicTreeOptions {
-                min_module_size: min_cluster_size,
-                deep_split: args.get_flag("deep_split"),
-                max_tree_height: args.get_one::<f64>("max_tree_height").copied(),
-            })
-        } else if let Some(&min_cluster_size) = args.get_one::<usize>("dynamic_hybrid") {
-            let matrix_file = args
-                .get_one::<String>("matrix")
-                .ok_or_else(|| anyhow::anyhow!("--matrix is required for dynamic-hybrid"))?;
-            let dist_matrix = pgr::libs::pairmat::NamedMatrix::from_relaxed_phylip(matrix_file)?;
-
-            CutDispatch::DynamicHybrid(HybridOptions {
-                min_cluster_size,
-                dist_matrix,
-                cut_height: args.get_one::<f64>("max_tree_height").copied(),
-                deep_split: if args.get_flag("deep_split") { 1 } else { 0 },
-                max_core_scatter: None,
-                min_gap: None,
-                pam_stage: true, // Default to true
-                pam_respects_dendro: !args.get_flag("no_pam_dendro"),
-                max_pam_dist: args.get_one::<f64>("max_pam_dist").copied(),
-                respect_small_clusters: true, // Default to true to match R
-            })
-        } else {
-            let method_name = METHOD_NAMES
-                .iter()
-                .find(|&&n| args.contains_id(n))
-                .copied()
-                .ok_or_else(|| anyhow::anyhow!("no cut method specified"))?;
-            let val = if method_name == "k" {
-                *args
-                    .get_one::<usize>("k")
-                    .ok_or_else(|| anyhow::anyhow!("missing --k value"))? as f64
-            } else {
-                *args
-                    .get_one::<f64>(method_name)
-                    .ok_or_else(|| anyhow::anyhow!("missing --{} value", method_name))?
-            };
-            let leaf_depths = if method_name.starts_with("leaf_dist_") {
-                Some(pgr::libs::phylo::tree::stat::get_leaf_depth_stats(tree))
-            } else {
-                None
-            };
-            CutDispatch::Standard {
-                name: method_name,
-                val,
-                deep,
-                leaf_depths,
-            }
-        };
+        let dispatch = cut::build_dispatch(
+            tree,
+            method_name,
+            val,
+            deep,
+            dynamic_tree,
+            dynamic_hybrid,
+            max_tree_height,
+            deep_split,
+            no_pam_dendro,
+            max_pam_dist,
+            matrix.clone(),
+        )?;
 
         let (partition, _) = cut::dispatch_cut(tree, dispatch)?;
 
         let clusters = cut::partition_to_clusters(&partition, tree, rep_mode);
-        let output = cut::format_clusters(&clusters, format).map_err(|e| anyhow::anyhow!(e))?;
+        let output = cut::format_clusters(&clusters, format)?;
         writer.write_all(output.as_bytes())?;
     }
 

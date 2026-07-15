@@ -30,7 +30,9 @@ Examples:
 }
 /// Execute the upgma command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let infile = args.get_one::<String>("infile").unwrap();
+    let infile = args
+        .get_one::<String>("infile")
+        .ok_or_else(|| anyhow::anyhow!("missing required argument: infile"))?;
     let outfile = crate::cmd_pgr::args::get_outfile(args);
 
     // Load matrix

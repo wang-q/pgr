@@ -63,7 +63,7 @@ pub fn cutree_dynamic_tree(tree: &Tree, options: DynamicTreeOptions) -> anyhow::
         &node_heights,
         cut_height,
         options.min_module_size,
-    );
+    )?;
 
     // 4. Process each cluster
     let mut final_partition = HashMap::new();
@@ -218,8 +218,10 @@ fn cutree_static(
     node_heights: &HashMap<NodeId, f64>,
     cut_height: f64,
     min_size: usize,
-) -> HashMap<NodeId, usize> {
-    let root = tree.get_root().unwrap();
+) -> anyhow::Result<HashMap<NodeId, usize>> {
+    let root = tree
+        .get_root()
+        .ok_or_else(|| anyhow::anyhow!("Tree has no root"))?;
     let mut cluster_roots = Vec::new();
     let mut stack = vec![root];
 
@@ -258,7 +260,7 @@ fn cutree_static(
         }
     }
 
-    partition
+    Ok(partition)
 }
 
 /// Returns a list of [start, end) indices relative to input heights.

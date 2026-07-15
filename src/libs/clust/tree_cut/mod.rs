@@ -1,5 +1,7 @@
+use crate::libs::pairmat::NamedMatrix;
 use crate::libs::phylo::node::NodeId;
 use crate::libs::phylo::tree::Tree;
+use anyhow::Result;
 use std::collections::HashMap;
 
 pub mod clade;
@@ -36,19 +38,74 @@ pub enum CutDispatch {
     },
 }
 
+/// Build a `CutDispatch` from raw CLI-style values.
+///
+/// Priority: `dynamic_tree` > `dynamic_hybrid` > standard `method_name`.
+/// For standard methods, `val` is the threshold; `leaf_dist_*` methods will
+/// compute leaf depth stats from `tree` automatically.
+#[allow(clippy::too_many_arguments)]
+pub fn build_dispatch(
+    tree: &Tree,
+    method_name: Option<&'static str>,
+    val: f64,
+    deep: usize,
+    dynamic_tree: Option<usize>,
+    dynamic_hybrid: Option<usize>,
+    max_tree_height: Option<f64>,
+    deep_split: bool,
+    no_pam_dendro: bool,
+    max_pam_dist: Option<f64>,
+    matrix: Option<NamedMatrix>,
+) -> Result<CutDispatch> {
+    if let Some(min_module_size) = dynamic_tree {
+        return Ok(CutDispatch::DynamicTree(DynamicTreeOptions {
+            min_module_size,
+            deep_split,
+            max_tree_height,
+        }));
+    }
+
+    if let Some(min_cluster_size) = dynamic_hybrid {
+        let dist_matrix =
+            matrix.ok_or_else(|| anyhow::anyhow!("--matrix is required for dynamic-hybrid"))?;
+        return Ok(CutDispatch::DynamicHybrid(HybridOptions {
+            min_cluster_size,
+            dist_matrix,
+            cut_height: max_tree_height,
+            deep_split: if deep_split { 1 } else { 0 },
+            max_core_scatter: None,
+            min_gap: None,
+            pam_stage: true,
+            pam_respects_dendro: !no_pam_dendro,
+            max_pam_dist,
+            respect_small_clusters: true,
+        }));
+    }
+
+    let name = method_name.ok_or_else(|| anyhow::anyhow!("no cut method specified"))?;
+    let leaf_depths = if name.starts_with("leaf_dist_") {
+        Some(crate::libs::phylo::tree::stat::get_leaf_depth_stats(tree))
+    } else {
+        None
+    };
+    Ok(CutDispatch::Standard {
+        name,
+        val,
+        deep,
+        leaf_depths,
+    })
+}
+
 /// Execute the cut specified by `dispatch` on `tree`. Returns the resulting
 /// partition and the method name (for labeling).
-pub fn dispatch_cut(
-    tree: &Tree,
-    dispatch: CutDispatch,
-) -> anyhow::Result<(Partition, &'static str)> {
+pub fn dispatch_cut(tree: &Tree, dispatch: CutDispatch) -> Result<(Partition, &'static str)> {
     match dispatch {
         CutDispatch::DynamicTree(opts) => {
-            let p = cutree_dynamic_tree(tree, opts).map_err(|e| anyhow::anyhow!(e))?;
+            let p = cutree_dynamic_tree(tree, opts)?;
             Ok((p, "dynamic-tree"))
         }
         CutDispatch::DynamicHybrid(opts) => {
-            let p = cutree_hybrid(tree, opts).map_err(|e| anyhow::anyhow!(e))?;
+            let p = cutree_hybrid(tree, opts)?;
             Ok((p, "dynamic-hybrid"))
         }
         CutDispatch::Standard {
@@ -57,9 +114,8 @@ pub fn dispatch_cut(
             deep,
             leaf_depths,
         } => {
-            let method =
-                build_method(name, val, deep, leaf_depths).map_err(|e| anyhow::anyhow!(e))?;
-            let p = cut(tree, method).map_err(|e| anyhow::anyhow!(e))?;
+            let method = build_method(name, val, deep, leaf_depths)?;
+            let p = cut(tree, method)?;
             Ok((p, name))
         }
     }
@@ -75,7 +131,7 @@ pub fn dispatch_cut(
 /// # Returns
 ///
 /// A `Result` containing the `Partition` or an error message.
-pub fn cut(tree: &Tree, method: Method) -> Result<Partition, String> {
+pub fn cut(tree: &Tree, method: Method) -> Result<Partition> {
     if tree.is_empty() {
         return Ok(Partition::new());
     }
@@ -84,10 +140,10 @@ pub fn cut(tree: &Tree, method: Method) -> Result<Partition, String> {
         Method::K(k) => simple::cut_k(tree, k),
         Method::Height(h) => simple::cut_height(tree, h),
         Method::RootDist(d) => simple::cut_root_dist(tree, d),
-        Method::MaxClade(t) => clade::cut_max_clade(tree, t).map_err(|e| e.to_string()),
-        Method::AvgClade(t) => clade::cut_avg_clade(tree, t).map_err(|e| e.to_string()),
-        Method::MedClade(t) => clade::cut_med_clade(tree, t).map_err(|e| e.to_string()),
-        Method::SumBranch(t) => clade::cut_sum_branch(tree, t).map_err(|e| e.to_string()),
+        Method::MaxClade(t) => clade::cut_max_clade(tree, t),
+        Method::AvgClade(t) => clade::cut_avg_clade(tree, t),
+        Method::MedClade(t) => clade::cut_med_clade(tree, t),
+        Method::SumBranch(t) => clade::cut_sum_branch(tree, t),
         Method::Inconsistent(t, d) => inconsistent::cut_inconsistent(tree, t, d),
         Method::SingleLinkage(t) => link::cut_single_linkage(tree, t),
     }
@@ -96,18 +152,22 @@ pub fn cut(tree: &Tree, method: Method) -> Result<Partition, String> {
 // --- Helpers ---
 
 /// Compute max distance from each node to its leaves
-pub(crate) fn compute_heights(tree: &Tree, root: NodeId) -> Result<HashMap<NodeId, f64>, String> {
+pub(crate) fn compute_heights(tree: &Tree, root: NodeId) -> Result<HashMap<NodeId, f64>> {
     let mut heights = HashMap::new();
     let post_order = crate::libs::phylo::tree::traversal::postorder(tree, root);
 
     for id in post_order {
-        let node = tree.get_node(id).unwrap();
+        let node = tree
+            .get_node(id)
+            .ok_or_else(|| anyhow::anyhow!("node {} not found", id))?;
         if node.children.is_empty() {
             heights.insert(id, 0.0);
         } else {
             let mut max_h = 0.0;
             for &child in &node.children {
-                let child_node = tree.get_node(child).unwrap();
+                let child_node = tree
+                    .get_node(child)
+                    .ok_or_else(|| anyhow::anyhow!("node {} not found", child))?;
                 let len = child_node.length.unwrap_or(0.0); // If None, assume 0
                 let h = heights[&child] + len;
                 if h > max_h {
@@ -121,10 +181,7 @@ pub(crate) fn compute_heights(tree: &Tree, root: NodeId) -> Result<HashMap<NodeI
 }
 
 /// Assign leaves to clusters based on cluster roots
-pub(crate) fn assign_clusters(
-    tree: &Tree,
-    cluster_roots: Vec<NodeId>,
-) -> Result<Partition, String> {
+pub(crate) fn assign_clusters(tree: &Tree, cluster_roots: Vec<NodeId>) -> Result<Partition> {
     let mut part = Partition::new();
     let mut cluster_id = 0;
 

@@ -1,10 +1,13 @@
 use super::Partition;
 use crate::libs::phylo::tree::Tree;
+use anyhow::Result;
 use std::collections::HashMap;
 
 /// Cut tree using Single Linkage (cut long branches).
-pub fn cut_single_linkage(tree: &Tree, threshold: f64) -> Result<Partition, String> {
-    let root = tree.get_root().ok_or("Tree has no root")?;
+pub fn cut_single_linkage(tree: &Tree, threshold: f64) -> Result<Partition> {
+    let root = tree
+        .get_root()
+        .ok_or_else(|| anyhow::anyhow!("Tree has no root"))?;
     let mut part = Partition::new();
     let mut next_cluster_id = 0; // Starts from 0, incremented before use
 
@@ -19,13 +22,17 @@ pub fn cut_single_linkage(tree: &Tree, threshold: f64) -> Result<Partition, Stri
     let mut stack = vec![(root, next_cluster_id)];
 
     while let Some((u, cid)) = stack.pop() {
-        let node = tree.get_node(u).unwrap();
+        let node = tree
+            .get_node(u)
+            .ok_or_else(|| anyhow::anyhow!("node {} not found", u))?;
 
         if node.children.is_empty() {
             part.assignment.insert(u, cid);
         } else {
             for &v in &node.children {
-                let child_node = tree.get_node(v).unwrap();
+                let child_node = tree
+                    .get_node(v)
+                    .ok_or_else(|| anyhow::anyhow!("node {} not found", v))?;
                 let len = child_node.length.unwrap_or(0.0);
 
                 if len > threshold {
@@ -66,4 +73,58 @@ pub fn cut_single_linkage(tree: &Tree, threshold: f64) -> Result<Partition, Stri
     part.num_clusters = new_id_counter;
 
     Ok(part)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::libs::phylo::tree::Tree;
+    use std::collections::HashMap;
+
+    fn parse_tree(nwk: &str) -> Tree {
+        Tree::from_newick(nwk).expect("valid newick")
+    }
+
+    fn cluster_names(part: &Partition, tree: &Tree) -> Vec<Vec<String>> {
+        let mut groups: HashMap<usize, Vec<String>> = HashMap::new();
+        for (&leaf_id, &cid) in &part.assignment {
+            let name = tree
+                .get_node(leaf_id)
+                .and_then(|n| n.name.clone())
+                .unwrap_or_else(|| format!("Node_{}", leaf_id));
+            groups.entry(cid).or_default().push(name);
+        }
+        let mut clusters: Vec<Vec<String>> = groups.into_values().collect();
+        for c in &mut clusters {
+            c.sort();
+        }
+        clusters.sort();
+        clusters
+    }
+
+    #[test]
+    fn test_cut_single_linkage_all_singletons() {
+        // Tree: ((A:1,B:1):1,C:1);
+        // threshold < 1 cuts all edges.
+        let tree = parse_tree("((A:1,B:1):1,C:1);");
+        let part = cut_single_linkage(&tree, 0.5).unwrap();
+        let mut clusters = cluster_names(&part, &tree);
+        clusters.sort();
+        assert_eq!(clusters, vec![vec!["A"], vec!["B"], vec!["C"]]);
+    }
+
+    #[test]
+    fn test_cut_single_linkage_one_cluster() {
+        // threshold >= 1 keeps all edges.
+        let tree = parse_tree("((A:1,B:1):1,C:1);");
+        let part = cut_single_linkage(&tree, 2.0).unwrap();
+        let clusters = cluster_names(&part, &tree);
+        assert_eq!(clusters, vec![vec!["A", "B", "C"]]);
+    }
+
+    #[test]
+    fn test_cut_single_linkage_empty_tree() {
+        let tree = Tree::new();
+        assert!(cut_single_linkage(&tree, 1.0).is_err());
+    }
 }

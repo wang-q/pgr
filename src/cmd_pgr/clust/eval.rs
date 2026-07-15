@@ -75,10 +75,14 @@ Examples:
 }
 /// Execute the eval command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let p1_path = args.get_one::<String>("p1").unwrap();
+    let p1_path = args
+        .get_one::<String>("p1")
+        .ok_or_else(|| anyhow::anyhow!("missing required argument: p1"))?;
     let outfile = crate::cmd_pgr::args::get_outfile(args);
 
-    let format_str = args.get_one::<String>("clust_input_format").unwrap();
+    let format_str = args
+        .get_one::<String>("clust_input_format")
+        .ok_or_else(|| anyhow::anyhow!("missing required argument: clust_input_format"))?;
     let format: PartitionFormat = match format_str.parse() {
         Ok(f) => f,
         Err(e) => anyhow::bail!("Invalid format: {}", e),

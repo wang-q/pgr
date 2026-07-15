@@ -622,3 +622,81 @@ fn test_cut_support_filter() {
     // Cleanup
     let _ = fs::remove_file(nwk_file);
 }
+
+#[test]
+fn test_cut_empty_tree_input() {
+    let nwk_file = "tests/clust/empty.nwk";
+    fs::write(nwk_file, "").expect("Failed to write empty nwk");
+
+    let (_, stderr) = PgrCmd::new()
+        .args(&["clust", "cut", nwk_file, "--k", "2"])
+        .run_fail();
+
+    assert!(
+        stderr.to_lowercase().contains("no tree") || stderr.to_lowercase().contains("parse error"),
+        "Expected 'no tree' or 'parse error', got: {}",
+        stderr
+    );
+
+    let _ = fs::remove_file(nwk_file);
+}
+
+#[test]
+fn test_cut_multitree_input_rejected() {
+    let nwk_file = "tests/clust/multi.nwk";
+    fs::write(nwk_file, "(A,B);\n(C,D);\n").expect("Failed to write multi-tree nwk");
+
+    let (_, stderr) = PgrCmd::new()
+        .args(&["clust", "cut", nwk_file, "--k", "2"])
+        .run_fail();
+
+    assert!(
+        stderr.to_lowercase().contains("multiple trees"),
+        "Expected 'multiple trees' error, got: {}",
+        stderr
+    );
+
+    let _ = fs::remove_file(nwk_file);
+}
+
+#[test]
+fn test_cut_scan_with_dynamic_hybrid_rejected() {
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "clust",
+            "cut",
+            "tests/newick/abcde.nwk",
+            "--dynamic-hybrid",
+            "1",
+            "--matrix",
+            "tests/clust/eval/simple.matrix.phy",
+            "--scan",
+            "0,1,0.5",
+        ])
+        .run_fail();
+
+    assert!(
+        stderr.to_lowercase().contains("scan") && stderr.to_lowercase().contains("dynamic-hybrid"),
+        "Expected scan+dynamic-hybrid rejection, got: {}",
+        stderr
+    );
+}
+
+#[test]
+fn test_cut_missing_matrix_for_dynamic_hybrid() {
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "clust",
+            "cut",
+            "tests/newick/abcde.nwk",
+            "--dynamic-hybrid",
+            "1",
+        ])
+        .run_fail();
+
+    assert!(
+        stderr.to_lowercase().contains("matrix") && stderr.to_lowercase().contains("required"),
+        "Expected missing matrix error, got: {}",
+        stderr
+    );
+}

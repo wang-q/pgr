@@ -72,11 +72,11 @@ pub fn build_method(
     val: f64,
     deep: usize,
     leaf_depths: Option<(f64, f64, f64)>,
-) -> Result<Method, String> {
+) -> anyhow::Result<Method> {
     match name {
         "k" => {
             if val < 1.0 || val.fract() != 0.0 {
-                return Err(format!("k must be a positive integer, got {}", val));
+                anyhow::bail!("k must be a positive integer, got {}", val);
             }
             Ok(Method::K(val as usize))
         }
@@ -88,15 +88,15 @@ pub fn build_method(
         "sum_branch" => Ok(Method::SumBranch(val)),
         "leaf_dist_max" => leaf_depths
             .map(|(_, max, _)| Method::RootDist(max - val))
-            .ok_or_else(|| "leaf depths required for leaf-dist-max".to_string()),
+            .ok_or_else(|| anyhow::anyhow!("leaf depths required for leaf-dist-max")),
         "leaf_dist_min" => leaf_depths
             .map(|(min, _, _)| Method::RootDist(min - val))
-            .ok_or_else(|| "leaf depths required for leaf-dist-min".to_string()),
+            .ok_or_else(|| anyhow::anyhow!("leaf depths required for leaf-dist-min")),
         "leaf_dist_avg" => leaf_depths
             .map(|(_, _, avg)| Method::RootDist(avg - val))
-            .ok_or_else(|| "leaf depths required for leaf-dist-avg".to_string()),
+            .ok_or_else(|| anyhow::anyhow!("leaf depths required for leaf-dist-avg")),
         "max_edge" => Ok(Method::SingleLinkage(val)),
         "inconsistent" => Ok(Method::Inconsistent(val, deep)),
-        _ => Err(format!("unknown method: {}", name)),
+        _ => anyhow::bail!("unknown method: {}", name),
     }
 }

@@ -382,3 +382,58 @@ fn test_clust_eval_empty_input() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_eval_malformed_pair_format() -> anyhow::Result<()> {
+    let malformed_path = "tests/clust/eval/malformed.pair";
+    std::fs::write(malformed_path, "A\nB\n")?;
+
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("clust")
+        .arg("eval")
+        .arg(malformed_path)
+        .arg("--other")
+        .arg("tests/clust/eval/simple.pair")
+        .output()?;
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !output.status.success(),
+        "Expected failure for malformed pair format, but command succeeded"
+    );
+    assert!(
+        stderr.to_lowercase().contains("pair") || stderr.to_lowercase().contains("invalid"),
+        "Expected pair format error, got: {}",
+        stderr
+    );
+
+    std::fs::remove_file(malformed_path)?;
+    Ok(())
+}
+
+#[test]
+fn test_eval_missing_other_for_external() -> anyhow::Result<()> {
+    let mut cmd = Command::cargo_bin("pgr")?;
+    let output = cmd
+        .arg("clust")
+        .arg("eval")
+        .arg("tests/clust/perfect_1.tsv")
+        .arg("--input-format")
+        .arg("cluster")
+        .output()?;
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !output.status.success(),
+        "Expected failure when no evaluation target is provided"
+    );
+    assert!(
+        stderr.to_lowercase().contains("other")
+            || stderr.to_lowercase().contains("must be provided"),
+        "Expected missing evaluation target error, got: {}",
+        stderr
+    );
+
+    Ok(())
+}

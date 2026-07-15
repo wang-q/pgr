@@ -77,12 +77,12 @@ pub enum RepMode {
 
 impl RepMode {
     /// Parse a rep mode from a string ("root", "first", "medoid").
-    pub fn parse(s: &str) -> Result<Self, String> {
+    pub fn parse(s: &str) -> anyhow::Result<Self> {
         match s {
             "root" => Ok(RepMode::Root),
             "first" => Ok(RepMode::First),
             "medoid" => Ok(RepMode::Medoid),
-            _ => Err(format!("unsupported rep method: {}", s)),
+            _ => anyhow::bail!("unsupported rep method: {}", s),
         }
     }
 }
@@ -178,7 +178,7 @@ pub fn partition_to_clusters(
 
 /// Format clusters into output string.
 /// `format` must be "cluster" or "pair".
-pub fn format_clusters(clusters: &[Cluster], format: &str) -> Result<String, String> {
+pub fn format_clusters(clusters: &[Cluster], format: &str) -> anyhow::Result<String> {
     let mut out = String::new();
     match format {
         "cluster" => {
@@ -206,9 +206,90 @@ pub fn format_clusters(clusters: &[Cluster], format: &str) -> Result<String, Str
                 }
             }
         }
-        _ => return Err(format!("unsupported output format: {}", format)),
+        _ => anyhow::bail!("unsupported output format: {}", format),
     }
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::libs::phylo::tree::Tree;
+
+    fn parse_tree(nwk: &str) -> Tree {
+        Tree::from_newick(nwk).expect("valid newick")
+    }
+
+    #[test]
+    fn test_partition_get_stats() {
+        let mut part = Partition::new();
+        assert_eq!(part.get_stats(), (0, 0, 0, 0));
+
+        part.assignment.insert(0, 1);
+        part.assignment.insert(1, 1);
+        part.assignment.insert(2, 2);
+        part.num_clusters = 2;
+        assert_eq!(part.get_stats(), (2, 1, 1, 2));
+    }
+
+    #[test]
+    fn test_find_representative_root() {
+        // Tree: ((A:10,B:1):1,C:1);
+        // Root distances: A=11, B=2, C=1.
+        let tree = parse_tree("((A:10,B:1):1,C:1);");
+        let root_dists = crate::libs::phylo::tree::stat::compute_root_distances(&tree);
+        let members = vec![
+            (tree.get_node_by_name("A").unwrap(), "A".to_string()),
+            (tree.get_node_by_name("B").unwrap(), "B".to_string()),
+        ];
+        let cluster = Cluster {
+            members,
+            rep_index: None,
+        };
+        let idx = find_representative(&cluster, &tree, RepMode::Root, &root_dists).unwrap();
+        assert_eq!(cluster.members[idx].1, "B");
+    }
+
+    #[test]
+    fn test_find_representative_first() {
+        let tree = parse_tree("((A:1,B:1):1,C:1);");
+        let root_dists = crate::libs::phylo::tree::stat::compute_root_distances(&tree);
+        let members = vec![
+            (tree.get_node_by_name("B").unwrap(), "B".to_string()),
+            (tree.get_node_by_name("A").unwrap(), "A".to_string()),
+        ];
+        let cluster = Cluster {
+            members,
+            rep_index: None,
+        };
+        let idx = find_representative(&cluster, &tree, RepMode::First, &root_dists).unwrap();
+        // First member in the provided order, not alphabetical.
+        assert_eq!(cluster.members[idx].1, "B");
+    }
+
+    #[test]
+    fn test_partition_to_clusters_and_format() {
+        // Tree: ((A:1,B:1):1,C:1);
+        // K=2 -> {A,B}, {C}.
+        let tree = parse_tree("((A:1,B:1):1,C:1);");
+        let partition = crate::libs::clust::tree_cut::simple::cut_k(&tree, 2).unwrap();
+        let clusters = partition_to_clusters(&partition, &tree, RepMode::First);
+        assert_eq!(clusters.len(), 2);
+        assert_eq!(clusters[0].members.len(), 2); // {A,B} first by size
+        assert_eq!(clusters[1].members.len(), 1); // {C}
+
+        let output = format_clusters(&clusters, "cluster").unwrap();
+        assert_eq!(output, "A\tB\nC\n");
+
+        let pair_output = format_clusters(&clusters, "pair").unwrap();
+        assert_eq!(pair_output, "A\tA\nA\tB\nC\tC\n");
+    }
+
+    #[test]
+    fn test_format_clusters_unsupported_format() {
+        let clusters = Vec::new();
+        assert!(format_clusters(&clusters, "unknown").is_err());
+    }
 }
 
 /// Format a partition as scan-mode TSV rows.
