@@ -60,7 +60,7 @@ mod tests {
     fn test_connected_components_empty() -> anyhow::Result<()> {
         let data = "";
         let reader = BufReader::new(data.as_bytes());
-        let (names, mut components) = connected_components(reader)?;
+        let (names, components) = connected_components(reader)?;
         assert!(names.is_empty());
         assert!(components.is_empty());
         Ok(())

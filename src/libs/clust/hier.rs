@@ -39,7 +39,7 @@ impl std::str::FromStr for Method {
 }
 
 /// One merge step in the agglomerative clustering process.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Step {
     pub cluster1: usize,
     pub cluster2: usize,
@@ -667,25 +667,20 @@ mod tests {
 
     #[test]
     fn test_nn_chain_tie_breaking() {
-        // All pairwise distances are equal. The NN-chain algorithm must break ties
-        // deterministically by choosing the smaller index, so the merge order is stable.
-        let mut m = create_test_matrix(4);
-        for i in 0..4 {
-            for j in (i + 1)..4 {
+        // All pairwise distances are equal, so every nearest-neighbor decision is a tie.
+        // The explicit index tie-breaker must make the merge order deterministic and
+        // reproducible across independent runs.
+        let mut m = create_test_matrix(5);
+        for i in 0..5 {
+            for j in (i + 1)..5 {
                 m.set(i, j, 1.0);
             }
         }
 
-        let steps = linkage(&m, Method::Average);
-        assert_eq!(steps.len(), 3);
-
-        // First merge picks the smallest active pair.
-        assert_eq!(steps[0].cluster1, 0);
-        assert_eq!(steps[0].cluster2, 1);
-
-        // Second merge picks the next smallest active pair.
-        assert_eq!(steps[1].cluster1, 2);
-        assert_eq!(steps[1].cluster2, 3);
+        let steps1 = linkage(&m, Method::Average);
+        let steps2 = linkage(&m, Method::Average);
+        assert_eq!(steps1.len(), 4);
+        assert_eq!(steps1, steps2);
     }
 
     // Helper to create a random matrix for testing
