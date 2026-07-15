@@ -192,3 +192,106 @@ D 14 9 7 0
     assert!(stdout.contains("A:"));
     assert!(stdout.contains("B:"));
 }
+
+#[test]
+fn test_clust_hier_empty_matrix() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let input = temp.path().join("empty.phy");
+    std::fs::write(&input, "").unwrap();
+
+    let (stdout, stderr) = PgrCmd::new()
+        .args(&["clust", "hier", input.to_str().unwrap()])
+        .run();
+
+    if !stderr.is_empty() {
+        println!("STDERR: {}", stderr);
+    }
+
+    assert!(
+        stdout.trim() == ";",
+        "expected empty Newick, got: {}",
+        stdout
+    );
+}
+
+#[test]
+fn test_clust_hier_single_sample() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let input = temp.path().join("single.phy");
+    std::fs::write(&input, "1\nA 0.0\n").unwrap();
+
+    let (stdout, stderr) = PgrCmd::new()
+        .args(&["clust", "hier", input.to_str().unwrap()])
+        .run();
+
+    if !stderr.is_empty() {
+        println!("STDERR: {}", stderr);
+    }
+
+    assert_eq!(stdout.trim(), "A;");
+}
+
+#[test]
+fn test_clust_hier_invalid_method() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let input = temp.path().join("single.phy");
+    std::fs::write(&input, "1\nA 0.0\n").unwrap();
+
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "clust",
+            "hier",
+            input.to_str().unwrap(),
+            "--method",
+            "unknown",
+        ])
+        .run_fail();
+
+    let lower = stderr.to_lowercase();
+    assert!(
+        lower.contains("method") || lower.contains("invalid"),
+        "expected invalid method error, got: {}",
+        stderr
+    );
+}
+
+#[test]
+fn test_clust_hier_average_equals_upgma_alias() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let input = temp.path().join("input.phy");
+
+    let content = "4\nA 0 7 11 14\nB 7 0 6 9\nC 11 6 0 7\nD 14 9 7 0\n";
+    std::fs::write(&input, content).unwrap();
+
+    let out_average = temp.path().join("average.nwk");
+    PgrCmd::new()
+        .args(&[
+            "clust",
+            "hier",
+            input.to_str().unwrap(),
+            "--method",
+            "average",
+            "-o",
+            out_average.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    let out_upgma_alias = temp.path().join("upgma_alias.nwk");
+    PgrCmd::new()
+        .args(&[
+            "clust",
+            "hier",
+            input.to_str().unwrap(),
+            "--method",
+            "upgma",
+            "-o",
+            out_upgma_alias.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    let nwk_average = std::fs::read_to_string(&out_average).unwrap();
+    let nwk_upgma = std::fs::read_to_string(&out_upgma_alias).unwrap();
+    assert_eq!(nwk_average, nwk_upgma);
+}

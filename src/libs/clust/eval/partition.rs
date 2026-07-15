@@ -4,6 +4,7 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 
+/// Supported partition file formats for clustering evaluation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PartitionFormat {
     Cluster,
@@ -29,7 +30,7 @@ impl std::str::FromStr for PartitionFormat {
 /// 1. Cluster-based: Each line is a cluster, items separated by whitespace.
 ///    The first item is treated as the cluster representative/ID.
 /// 2. Pair-based: Two columns.
-///    - If 2 columns: ClusterID <tab> Item
+///    - If 2 columns: ClusterID `tab` Item
 ///    - If > 2 columns: Treated as Cluster-based.
 /// 3. Long-based: Treated as Batch LabelMap (returns empty map here, use load_batch_partitions).
 pub fn load_partition<P: AsRef<Path>>(
@@ -89,9 +90,6 @@ fn parse_cluster_format(lines: &[String]) -> anyhow::Result<LabelMap> {
 
     for line in lines {
         let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.is_empty() {
-            continue;
-        }
         cluster_id += 1;
         for item in parts {
             partition.insert(item.to_string(), cluster_id);
@@ -101,7 +99,7 @@ fn parse_cluster_format(lines: &[String]) -> anyhow::Result<LabelMap> {
 }
 
 /// Load batch partitions from a file in Long format.
-/// Format: GroupID <tab> ClusterID <tab> SampleID
+/// Format: GroupID `tab` ClusterID `tab` SampleID
 /// Returns a list of (GroupID, LabelMap).
 pub fn load_batch_partitions<P: AsRef<Path>>(path: P) -> anyhow::Result<Vec<(String, LabelMap)>> {
     let file = File::open(path)?;
@@ -168,4 +166,115 @@ pub fn remove_singletons(partition: &mut LabelMap) {
         *counts.entry(*cid).or_insert(0) += 1;
     }
     partition.retain(|_, cid| counts[cid] > 1);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    #[test]
+    fn test_partition_format_parse() {
+        assert_eq!(
+            "cluster".parse::<PartitionFormat>().unwrap(),
+            PartitionFormat::Cluster
+        );
+        assert_eq!(
+            "pair".parse::<PartitionFormat>().unwrap(),
+            PartitionFormat::Pair
+        );
+        assert_eq!(
+            "long".parse::<PartitionFormat>().unwrap(),
+            PartitionFormat::Long
+        );
+        assert!("unknown".parse::<PartitionFormat>().is_err());
+    }
+
+    #[test]
+    fn test_load_partition_cluster() -> anyhow::Result<()> {
+        let mut file = tempfile::NamedTempFile::new()?;
+        writeln!(file, "A B")?;
+        writeln!(file, "C")?;
+        writeln!(file, "# comment")?;
+
+        let partition = load_partition(file.path(), PartitionFormat::Cluster)?;
+        assert_eq!(partition.get("A"), Some(&1));
+        assert_eq!(partition.get("B"), Some(&1));
+        assert_eq!(partition.get("C"), Some(&2));
+        assert_eq!(partition.len(), 3);
+        Ok(())
+    }
+
+    #[test]
+    fn test_load_partition_pair() -> anyhow::Result<()> {
+        let mut file = tempfile::NamedTempFile::new()?;
+        writeln!(file, "1\tA")?;
+        writeln!(file, "1\tB")?;
+        writeln!(file, "2\tC")?;
+
+        let partition = load_partition(file.path(), PartitionFormat::Pair)?;
+        assert_eq!(partition.get("A"), Some(&1));
+        assert_eq!(partition.get("B"), Some(&1));
+        assert_eq!(partition.get("C"), Some(&2));
+        assert_eq!(partition.len(), 3);
+        Ok(())
+    }
+
+    #[test]
+    fn test_load_partition_pair_malformed() -> anyhow::Result<()> {
+        let mut file = tempfile::NamedTempFile::new()?;
+        writeln!(file, "A")?;
+        writeln!(file, "B")?;
+
+        let result = load_partition(file.path(), PartitionFormat::Pair);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("pair format"), "unexpected error: {}", err);
+        Ok(())
+    }
+
+    #[test]
+    fn test_load_partition_long_rejected() -> anyhow::Result<()> {
+        let mut file = tempfile::NamedTempFile::new()?;
+        writeln!(file, "g\t1\tA")?;
+
+        let result = load_partition(file.path(), PartitionFormat::Long);
+        assert!(result.is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn test_load_batch_partitions() -> anyhow::Result<()> {
+        let mut file = tempfile::NamedTempFile::new()?;
+        writeln!(file, "Group\tClusterID\tSampleID")?;
+        writeln!(file, "g1\t1\tA")?;
+        writeln!(file, "g1\t1\tB")?;
+        writeln!(file, "g2\t1\tC")?;
+
+        let batches = load_batch_partitions(file.path())?;
+        assert_eq!(batches.len(), 2);
+
+        let (g1, p1) = &batches[0];
+        assert_eq!(g1, "g1");
+        assert_eq!(p1.get("A"), Some(&1));
+        assert_eq!(p1.get("B"), Some(&1));
+
+        let (g2, p2) = &batches[1];
+        assert_eq!(g2, "g2");
+        assert_eq!(p2.get("C"), Some(&1));
+        Ok(())
+    }
+
+    #[test]
+    fn test_remove_singletons() {
+        let mut partition = HashMap::new();
+        partition.insert("A".to_string(), 1);
+        partition.insert("B".to_string(), 1);
+        partition.insert("C".to_string(), 2);
+
+        remove_singletons(&mut partition);
+        assert!(!partition.contains_key("C"));
+        assert_eq!(partition.get("A"), Some(&1));
+        assert_eq!(partition.get("B"), Some(&1));
+    }
 }

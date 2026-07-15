@@ -1,6 +1,7 @@
 use crate::libs::pairmat::{CondensedMatrix, NamedMatrix};
 use crate::libs::phylo::tree::Tree;
 
+/// Linkage method for hierarchical clustering.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Method {
     Single,
@@ -37,6 +38,7 @@ impl std::str::FromStr for Method {
     }
 }
 
+/// One merge step in the agglomerative clustering process.
 #[derive(Debug, Clone)]
 pub struct Step {
     pub cluster1: usize,
@@ -45,6 +47,7 @@ pub struct Step {
     pub size: usize,
 }
 
+/// Algorithm implementation to use for hierarchical clustering.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Algorithm {
     Primitive,

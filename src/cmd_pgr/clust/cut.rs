@@ -411,27 +411,25 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         (None, 0.0)
     };
 
-    for tree in trees.iter() {
-        let dispatch = cut::build_dispatch(
-            tree,
-            method_name,
-            val,
-            deep,
-            dynamic_tree,
-            dynamic_hybrid,
-            max_tree_height,
-            deep_split,
-            no_pam_dendro,
-            max_pam_dist,
-            matrix.clone(),
-        )?;
+    let dispatch = cut::build_dispatch(
+        tree,
+        method_name,
+        val,
+        deep,
+        dynamic_tree,
+        dynamic_hybrid,
+        max_tree_height,
+        deep_split,
+        no_pam_dendro,
+        max_pam_dist,
+        matrix.clone(),
+    )?;
 
-        let (partition, _) = cut::dispatch_cut(tree, dispatch)?;
+    let (partition, _) = cut::dispatch_cut(tree, dispatch)?;
 
-        let clusters = cut::partition_to_clusters(&partition, tree, rep_mode);
-        let output = cut::format_clusters(&clusters, format)?;
-        writer.write_all(output.as_bytes())?;
-    }
+    let clusters = cut::partition_to_clusters(&partition, tree, rep_mode);
+    let output = cut::format_clusters(&clusters, format)?;
+    writer.write_all(output.as_bytes())?;
 
     Ok(())
 }

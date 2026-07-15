@@ -14,7 +14,7 @@ pub struct Coordinates {
 
 impl Coordinates {
     /// Load coordinates from a FeatureVector file.
-    /// Format: Name <tab> Val1,Val2,Val3...
+    /// Format: Name `tab` Val1,Val2,Val3...
     pub fn from_path<P: AsRef<Path>>(path: P) -> anyhow::Result<Self> {
         let file = File::open(path)?;
         let reader = BufReader::new(file);

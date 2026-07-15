@@ -45,7 +45,7 @@
 - **输入**：成对距离 `.tsv`（lower is better）。
 - **输出**：`cluster`（一行一簇，首元素为代表点）或 `pair`（代表点-成员对）。
 - **CLI 参数**：`infile`、`--format {cluster|pair}`、`--same`、`--missing`、`--eps`、`--min-points`、`-o/--outfile`。
-- **规划中功能**：`--scan`/`--opt-eps`/`--min-pct` 等参数扫描与评分功能尚未实现。
+- **未实现参数**：`--scan`、`--opt-eps`、`--min-pct` 等参数扫描与评分功能当前未实现，后续可能通过 `pgr clust dbscan` 的子命令或独立脚本提供。
 - **评估文档**：[clust-eval.md](clust-eval.md)
 
 #### 使用示例
@@ -102,7 +102,7 @@ pgr clust dbscan pairs.tsv --eps 0.15 --min-points 3 --format pair -o pairs.out.
 - **与 pgr 现有能力协同**：
   - 构树：`clust upgma`（有根、超度量）与 `clust nj`（加性、无根）已存在
   - 切分：[clust-cut.md](clust-cut.md) 的切树分组
-  - 评估：`pgr nwk eval` [计划中] 的树上指标（几何/分类/演化/地理多维度评估）
+  - 评估：`pgr clust eval --matrix` / `--tree` / `--coords`（当前可用）；`pgr nwk eval` 尚未实现
 
 ### 与 UPGMA/NJ 的关系
 
@@ -128,6 +128,8 @@ pgr clust dbscan pairs.tsv --eps 0.15 --min-points 3 --format pair -o pairs.out.
 ### 输出与约定
 
 - 输出 Newick dendrogram：
+  - 内部节点高度取合并距离的一半（`height = distance / 2`），子节点到父节点的枝长为 `parent_height - child_height`。
+  - 因此输出是 ultrametric-like：同一内部节点下的所有叶子到该节点的总距离相等。
   - 分支长度表示合并高度（链接代价或 SSE 增量的相应量纲处理）。
   - 不保证严格 ultrametric（除非数据满足相应条件），但满足 `clust cut --height` 的使用需求。
 - 数值格式：统一六位小数，去除尾随零；与 `nwk distance` 的约定一致。
@@ -140,7 +142,7 @@ pgr clust dbscan pairs.tsv --eps 0.15 --min-points 3 --format pair -o pairs.out.
   - 通用层次聚类分析或需要 `ward.D2`：`clust hier --method ward.D2`
 - 切分与评估：
   - 切分：`pgr clust cut --height H` 或按 TreeCluster 风格阈值/约束
-  - 内部评估（无 Ground Truth）：`pgr clust eval --matrix ...` (Silhouette) 或 `pgr nwk eval` [计划中] (树结构评估)
+  - 内部评估（无 Ground Truth）：`pgr clust eval --matrix ...` (Silhouette)（当前可用）；`pgr nwk eval` 尚未实现
   - 外部评估（有 Ground Truth）：`pgr clust eval` (ARI/AMI/V-Measure)
 
 ### CLI 设计
@@ -200,7 +202,7 @@ pgr clust hier matrix.phy --method average > tree.nwk
 - 输出差异：SciPy 返回 `(n-1)×4` 的 linkage 矩阵 Z；pgr 输出 Newick 树，直接用于 `clust cut / to-dot / to-forest`。普通用户无需关心 Z；若需与 SciPy 互操作，请在 Python 端继续使用 Z 与 `fcluster/cophenet`。
 - 叶序优化：`pgr` 推荐 `pgr nwk order --num-descendants` (Ladderize) 以换取极高的性能，且可视化效果通常足够好。
 - 平切（flat clustering）：SciPy 的 `fcluster` 提供 `criterion='distance'|'maxclust'|...`；在 pgr 中分别对应 `clust cut --height H` 与 `clust cut --k K`，其它 `monocrit/inconsistent` 等准则暂不引入。
-- 评估指标：SciPy 有 `cophenet`（共生相关系数）；pgr 建议在 `nwk eval` [计划中] 中加入 cophenetic 相关系数作为树质量评估的补充。
+- 评估指标：SciPy 有 `cophenet`（共生相关系数）；pgr 计划在 `pgr nwk eval` 中加入 cophenetic 相关系数作为树质量评估的补充（尚未实现）。
 
 #### 用户提示
 
@@ -239,7 +241,7 @@ pgr clust hier matrix.phy --method average > tree.nwk
 - 构树：`pgr clust hier` → 生成 dendrogram
 - 切分：`pgr clust cut --height H` → 导出分组
 - 评估：
-  - 无 Ground Truth：`pgr nwk eval` [计划中]（几何/分类/演化/地理多维度评估）
+  - 无 Ground Truth：`pgr clust eval --matrix` / `--tree` / `--coords`（当前可用）；`pgr nwk eval` 尚未实现
   - 有 Ground Truth：`pgr clust eval`（ARI/AMI/V-Measure）
 - 可视化：`pgr nwk to-dot/to-forest` → 图形/LaTeX 展示
 
@@ -248,9 +250,10 @@ pgr clust hier matrix.phy --method average > tree.nwk
 这些命令不产生聚类，而是评估聚类或树的质量。
 
 - **Tree-based Evaluation**
-  - **命令**：`pgr nwk eval` (计划中)
+  - **命令**：`pgr nwk eval` (尚未实现)
   - **定位**：树结构的多维度评估。
   - **功能**：几何紧密性（Silhouette）、分类纯度（Purity）、演化一致性（Discordance）。
+  - **替代方案**：当前可使用 `pgr clust eval --matrix` / `--tree` / `--coords` 进行基于距离/树/坐标的评估。
 
 - **Partition-based Evaluation**
   - **命令**：`pgr clust eval`
