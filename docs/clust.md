@@ -44,7 +44,8 @@
 - **优势**：不需要指定簇数 K，能识别噪声。
 - **输入**：成对距离 `.tsv`（lower is better）。
 - **输出**：`cluster`（一行一簇，首元素为代表点）或 `pair`（代表点-成员对）。
-- **CLI 参数**：`infile`、`--format {cluster|pair}`、`--same`、`--missing`、`--eps`、`--min-points`、`-o/--outfile`。
+- **CLI 参数**：`infile`、`--format {cluster|pair}`、`--rep {medoid|first}`、`--same`、`--missing`、`--eps`、`--min-points`、`-o/--outfile`。
+  - `--rep` 控制代表点选择；默认 `medoid`（距离和最小），`first` 为按名字字典序第一个成员。在 `pair` 格式中作为第一列，在 `cluster` 格式中置于第一列。
 - **未实现参数**：`--scan`、`--opt-eps`、`--min-pct` 等参数扫描与评分功能当前未实现，后续可能通过 `pgr clust dbscan` 的子命令或独立脚本提供。
 - **评估文档**：[clust-eval.md](clust-eval.md)
 
@@ -402,6 +403,7 @@ pgr clust cut tree.nwk --height 0.45 > final_clusters.tsv
 #### Pair Format (默认, `--format pair`)
 最通用的长表格式，每行表示一个样本所属的簇。
 - **结构**：`ClusterID <tab> Item`
+- **代表点选择**：对于 `dbscan`/`mcl`/`k-medoids`，可通过 `--rep {medoid|first}` 控制；默认 `medoid`（距离/相似度和极值），`first` 为簇内名字字典序第一个成员。该选项同时影响 `cluster` 格式的第一列。`cc` 不读权重，固定使用 `first`。
 - **特点**：易于解析，支持流式处理。
 - **示例**：
   ```text

@@ -258,7 +258,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         deep_split,
         no_pam_dendro,
         max_pam_dist,
-        matrix.clone(),
+        matrix,
     )?;
 
     let (partition, _) = cut::dispatch_cut(tree, dispatch)?;

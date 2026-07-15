@@ -46,6 +46,28 @@ fn command_clust_dbscan() {
         .run();
 
     assert_eq!(stdout.lines().count(), 7);
+    // Default representative is medoid; the first column for the {A0A, IBPA_ECOLI, IBPA_ESCF3}
+    // cluster should be IBPA_ECOLI (minimum sum of distances; tie broken alphabetically).
+    assert!(stdout.contains("IBPA_ECOLI\tA0A192CFC5_ECO25\tIBPA_ESCF3"));
+}
+
+#[test]
+fn command_clust_dbscan_rep_first() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "clust",
+            "dbscan",
+            "tests/clust/IBPA.fa.tsv",
+            "--eps",
+            "0.05",
+            "--min-points",
+            "2",
+            "--rep",
+            "first",
+        ])
+        .run();
+
+    assert_eq!(stdout.lines().count(), 7);
     assert!(stdout.contains("A0A192CFC5_ECO25\tIBPA_ECOLI\tIBPA_ESCF3"));
 }
 
@@ -188,4 +210,223 @@ fn command_clust_dbscan_default_min_points() {
 
     // The help should show default value of 4 for --min-points
     assert!(stdout.contains("4") || stdout.contains("default"));
+}
+
+#[test]
+fn command_clust_dbscan_pair_rep_first() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let input = temp.path().join("pairs.tsv");
+    std::fs::write(
+        &input,
+        "A\tB\t0.1\nA\tC\t0.2\nB\tC\t0.15\nA\tD\t0.5\nB\tD\t0.6\nC\tD\t0.55\n",
+    )
+    .unwrap();
+
+    let (stdout_medoid_pair, _) = PgrCmd::new()
+        .args(&[
+            "clust",
+            "dbscan",
+            input.to_str().unwrap(),
+            "--eps",
+            "0.25",
+            "--min-points",
+            "2",
+            "--format",
+            "pair",
+        ])
+        .run();
+
+    let (stdout_first_pair, _) = PgrCmd::new()
+        .args(&[
+            "clust",
+            "dbscan",
+            input.to_str().unwrap(),
+            "--eps",
+            "0.25",
+            "--min-points",
+            "2",
+            "--format",
+            "pair",
+            "--rep",
+            "first",
+        ])
+        .run();
+
+    let (stdout_medoid_cluster, _) = PgrCmd::new()
+        .args(&[
+            "clust",
+            "dbscan",
+            input.to_str().unwrap(),
+            "--eps",
+            "0.25",
+            "--min-points",
+            "2",
+            "--format",
+            "cluster",
+        ])
+        .run();
+
+    let (stdout_first_cluster, _) = PgrCmd::new()
+        .args(&[
+            "clust",
+            "dbscan",
+            input.to_str().unwrap(),
+            "--eps",
+            "0.25",
+            "--min-points",
+            "2",
+            "--format",
+            "cluster",
+            "--rep",
+            "first",
+        ])
+        .run();
+
+    // Default medoid representative is B (min sum of distances).
+    assert!(stdout_medoid_pair.contains("B\tA"));
+    assert!(stdout_medoid_pair.contains("B\tB"));
+    assert!(stdout_medoid_pair.contains("B\tC"));
+    let cluster_medoid_line = stdout_medoid_cluster.lines().next().unwrap();
+    assert!(cluster_medoid_line.starts_with("B\t"));
+
+    // With --rep first, representative is A (alphabetically first).
+    assert!(stdout_first_pair.contains("A\tA"));
+    assert!(stdout_first_pair.contains("A\tB"));
+    assert!(stdout_first_pair.contains("A\tC"));
+    let cluster_first_line = stdout_first_cluster.lines().next().unwrap();
+    assert!(cluster_first_line.starts_with("A\t"));
+}
+
+#[test]
+fn command_clust_mcl_pair_rep_first() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let input = temp.path().join("pairs.tsv");
+    std::fs::write(&input, "A\tB\t1.0\nB\tC\t1.0\nC\tA\t0.5\nD\tE\t1.0\n").unwrap();
+
+    let (stdout_medoid, _) = PgrCmd::new()
+        .args(&["clust", "mcl", input.to_str().unwrap(), "--format", "pair"])
+        .run();
+
+    let (stdout_first, _) = PgrCmd::new()
+        .args(&[
+            "clust",
+            "mcl",
+            input.to_str().unwrap(),
+            "--format",
+            "pair",
+            "--rep",
+            "first",
+        ])
+        .run();
+
+    let (stdout_medoid_cluster, _) = PgrCmd::new()
+        .args(&[
+            "clust",
+            "mcl",
+            input.to_str().unwrap(),
+            "--format",
+            "cluster",
+        ])
+        .run();
+
+    let (stdout_first_cluster, _) = PgrCmd::new()
+        .args(&[
+            "clust",
+            "mcl",
+            input.to_str().unwrap(),
+            "--format",
+            "cluster",
+            "--rep",
+            "first",
+        ])
+        .run();
+
+    // Default medoid (max similarity sum) representative is B.
+    assert!(stdout_medoid.contains("B\tA"));
+    assert!(stdout_medoid.contains("B\tB"));
+    assert!(stdout_medoid.contains("B\tC"));
+    let cluster_medoid_line = stdout_medoid_cluster.lines().next().unwrap();
+    assert!(cluster_medoid_line.starts_with("B\t"));
+
+    // With --rep first, representative is A.
+    assert!(stdout_first.contains("A\tA"));
+    assert!(stdout_first.contains("A\tB"));
+    assert!(stdout_first.contains("A\tC"));
+    let cluster_first_line = stdout_first_cluster.lines().next().unwrap();
+    assert!(cluster_first_line.starts_with("A\t"));
+}
+
+#[test]
+fn command_clust_kmedoids_pair_rep_first() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let input = temp.path().join("pairs.tsv");
+    std::fs::write(
+        &input,
+        "A\tB\t0.1\nA\tC\t0.2\nB\tC\t0.15\nA\tD\t0.5\nB\tD\t0.6\nC\tD\t0.55\n",
+    )
+    .unwrap();
+
+    let (stdout_medoid, _) = PgrCmd::new()
+        .args(&[
+            "clust",
+            "k-medoids",
+            input.to_str().unwrap(),
+            "-k",
+            "2",
+            "--format",
+            "pair",
+        ])
+        .run();
+
+    let (stdout_first, _) = PgrCmd::new()
+        .args(&[
+            "clust",
+            "k-medoids",
+            input.to_str().unwrap(),
+            "-k",
+            "2",
+            "--format",
+            "pair",
+            "--rep",
+            "first",
+        ])
+        .run();
+
+    let (stdout_medoid_cluster, _) = PgrCmd::new()
+        .args(&[
+            "clust",
+            "k-medoids",
+            input.to_str().unwrap(),
+            "-k",
+            "2",
+            "--format",
+            "cluster",
+        ])
+        .run();
+
+    let (stdout_first_cluster, _) = PgrCmd::new()
+        .args(&[
+            "clust",
+            "k-medoids",
+            input.to_str().unwrap(),
+            "-k",
+            "2",
+            "--format",
+            "cluster",
+            "--rep",
+            "first",
+        ])
+        .run();
+
+    // Verify both produce valid pair output.
+    assert!(stdout_medoid.contains("\t"));
+    assert!(stdout_first.contains("\t"));
+    assert!(stdout_medoid.lines().count() >= 2);
+    assert!(stdout_first.lines().count() >= 2);
+
+    // In cluster format, representative is placed in the first column.
+    let cluster_medoid_first_line = stdout_medoid_cluster.lines().next().unwrap();
+    let cluster_first_first_line = stdout_first_cluster.lines().next().unwrap();
+    assert!(cluster_medoid_first_line.starts_with("B\t"));
+    assert!(cluster_first_first_line.starts_with("A\t"));
 }

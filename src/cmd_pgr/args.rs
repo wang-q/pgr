@@ -743,6 +743,19 @@ pub fn rep_arg() -> Arg {
         .help("Representative selection method")
 }
 
+/// `--rep` argument for flat clustering representative selection (default: medoid).
+pub fn flat_rep_arg() -> Arg {
+    Arg::new("flat_rep")
+        .long("rep")
+        .num_args(1)
+        .value_parser([
+            builder::PossibleValue::new("medoid"),
+            builder::PossibleValue::new("first"),
+        ])
+        .default_value("medoid")
+        .help("Representative selection for pair output")
+}
+
 /// `--scan` argument for parameter sweep (format: start,end,step).
 pub fn scan_arg() -> Arg {
     Arg::new("scan")

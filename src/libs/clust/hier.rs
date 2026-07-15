@@ -255,14 +255,21 @@ fn linkage_nn_chain(condensed: &mut CondensedMatrix, method: Method) -> Vec<Step
         id_map.insert(i, i);
     }
 
-    let mut new_steps = Vec::with_capacity(steps.len());
-
+    // First pass: register every old internal node ID -> new ID.
+    // This must be done before rewriting child references so that
+    // non-monotonic merges (e.g. centroid/median inversions) do not
+    // cause a "Cluster ID not found in map" panic.
     for (new_idx, &old_idx) in indices.iter().enumerate() {
-        let step = &steps[old_idx];
         let old_res_id = n + old_idx;
         let new_res_id = n + new_idx;
-
         id_map.insert(old_res_id, new_res_id);
+    }
+
+    let mut new_steps = Vec::with_capacity(steps.len());
+
+    // Second pass: rewrite child references using the fully populated map.
+    for &old_idx in indices.iter() {
+        let step = &steps[old_idx];
 
         let new_c1 = *id_map
             .get(&step.cluster1)
@@ -866,5 +873,49 @@ mod tests {
         // We need to find Node 3 (parent of A and B)
         let parent_a = tree.get_node(leaf_a.parent.unwrap()).unwrap();
         assert_eq!(parent_a.length, Some(0.5));
+    }
+
+    #[test]
+    fn test_nn_chain_non_monotonic_id_remap() {
+        // Centroid and Median can produce non-monotonic merge distances
+        // (inversions). The post-processing ID remap must handle this
+        // without panicking, even when a later step has a smaller distance
+        // than an earlier step and therefore gets remapped first.
+        let mut m = create_test_matrix(4);
+        m.set(0, 1, 1.0);
+        m.set(2, 3, 1.0);
+        m.set(0, 2, 10.0);
+        m.set(0, 3, 5.0);
+        m.set(1, 2, 5.0);
+        m.set(1, 3, 10.0);
+
+        let steps_centroid = linkage_with_algo(&m, Method::Centroid, Algorithm::NnChain);
+        assert_eq!(steps_centroid.len(), 3);
+
+        let steps_median = linkage_with_algo(&m, Method::Median, Algorithm::NnChain);
+        assert_eq!(steps_median.len(), 3);
+    }
+
+    #[test]
+    fn test_nn_chain_id_remap_matches_primitive() {
+        // For reducible methods the NN-chain and primitive implementations
+        // must agree on distances; the ID-remap fix should not change this.
+        let m = create_random_matrix_local(20);
+
+        for method in [Method::Single, Method::Complete, Method::Average] {
+            let steps_prim = linkage_with_algo(&m, method, Algorithm::Primitive);
+            let steps_nn = linkage_with_algo(&m, method, Algorithm::NnChain);
+            assert_eq!(steps_prim.len(), steps_nn.len());
+            for (i, (s1, s2)) in steps_prim.iter().zip(steps_nn.iter()).enumerate() {
+                assert!(
+                    (s1.distance - s2.distance).abs() < 1e-5,
+                    "Method {:?} step {}: distance mismatch {} vs {}",
+                    method,
+                    i,
+                    s1.distance,
+                    s2.distance
+                );
+            }
+        }
     }
 }

@@ -295,3 +295,111 @@ fn test_clust_hier_average_equals_upgma_alias() {
     let nwk_upgma = std::fs::read_to_string(&out_upgma_alias).unwrap();
     assert_eq!(nwk_average, nwk_upgma);
 }
+
+fn run_hier_method(method: &str) -> String {
+    let temp = tempfile::TempDir::new().unwrap();
+    let input = temp.path().join("input.phy");
+    let output = temp.path().join("output.nwk");
+
+    let content = "4\nA 0 7 11 14\nB 7 0 6 9\nC 11 6 0 7\nD 14 9 7 0\n";
+    std::fs::write(&input, content).unwrap();
+
+    PgrCmd::new()
+        .args(&[
+            "clust",
+            "hier",
+            input.to_str().unwrap(),
+            "--method",
+            method,
+            "-o",
+            output.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    std::fs::read_to_string(&output).unwrap()
+}
+
+fn assert_valid_newick(nwk: &str) {
+    let trimmed = nwk.trim();
+    assert!(!trimmed.is_empty());
+    assert!(trimmed.starts_with('('));
+    assert!(trimmed.ends_with(';'));
+    assert!(nwk.contains("A:"));
+    assert!(nwk.contains("B:"));
+    assert!(nwk.contains("C:"));
+    assert!(nwk.contains("D:"));
+}
+
+#[test]
+fn command_clust_hier_complete() {
+    let nwk = run_hier_method("complete");
+    assert_valid_newick(&nwk);
+}
+
+#[test]
+fn command_clust_hier_weighted() {
+    let nwk = run_hier_method("weighted");
+    assert_valid_newick(&nwk);
+}
+
+#[test]
+fn command_clust_hier_centroid() {
+    let nwk = run_hier_method("centroid");
+    assert_valid_newick(&nwk);
+}
+
+#[test]
+fn command_clust_hier_median() {
+    let nwk = run_hier_method("median");
+    assert_valid_newick(&nwk);
+}
+
+#[test]
+fn test_clust_hier_all_zero() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let input = temp.path().join("zeros.phy");
+
+    let content = "3\nA 0 0 0\nB 0 0 0\nC 0 0 0\n";
+    std::fs::write(&input, content).unwrap();
+
+    let (stdout, stderr) = PgrCmd::new()
+        .args(&["clust", "hier", input.to_str().unwrap()])
+        .run();
+
+    if !stderr.is_empty() {
+        println!("STDERR: {}", stderr);
+    }
+
+    let trimmed = stdout.trim();
+    assert!(!trimmed.is_empty());
+    assert!(trimmed.starts_with('('));
+    assert!(trimmed.ends_with(';'));
+    assert!(stdout.contains("A:"));
+    assert!(stdout.contains("B:"));
+    assert!(stdout.contains("C:"));
+}
+
+#[test]
+fn test_clust_hier_two_samples() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let input = temp.path().join("two.phy");
+
+    let content = "2\nA 0 0.5\nB 0.5 0\n";
+    std::fs::write(&input, content).unwrap();
+
+    let (stdout, stderr) = PgrCmd::new()
+        .args(&["clust", "hier", input.to_str().unwrap()])
+        .run();
+
+    if !stderr.is_empty() {
+        println!("STDERR: {}", stderr);
+    }
+
+    let trimmed = stdout.trim();
+    assert!(!trimmed.is_empty());
+    assert!(trimmed.starts_with('('));
+    assert!(trimmed.ends_with(';'));
+    assert!(stdout.contains("A:"));
+    assert!(stdout.contains("B:"));
+}

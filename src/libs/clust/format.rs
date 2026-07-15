@@ -6,9 +6,10 @@
 /// Sort and format flat clustering results (indices into `names`).
 ///
 /// Members within each cluster are sorted alphabetically by name; clusters
-/// are sorted by size (descending) then by first member name. For "pair"
-/// format, `rep_fn` selects the representative index for each cluster
-/// (returning `None` skips that cluster).
+/// are sorted by size (descending) then by first member name. `rep_fn`
+/// selects the representative index for each cluster. For "pair" format,
+/// returning `None` skips that cluster. For "cluster" format, the
+/// representative is placed in the first column if one is returned.
 pub fn format_flat_clusters<F>(
     clusters: &mut Vec<Vec<usize>>,
     names: &[String],
@@ -32,7 +33,17 @@ where
     match format {
         "cluster" => {
             for c in clusters {
-                let members: Vec<&str> = c.iter().map(|&idx| names[idx].as_str()).collect();
+                let rep_idx = rep_fn(c);
+                let mut members: Vec<&str> = c.iter().map(|&idx| names[idx].as_str()).collect();
+                if let Some(rep) = rep_idx {
+                    // Move the representative to the first column.
+                    if let Some(pos) = c.iter().position(|&idx| idx == rep) {
+                        if pos > 0 && pos < members.len() {
+                            let rep_name = members.remove(pos);
+                            members.insert(0, rep_name);
+                        }
+                    }
+                }
                 out.push_str(&members.join("\t"));
                 out.push('\n');
             }

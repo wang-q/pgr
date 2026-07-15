@@ -13,9 +13,7 @@
 //! Output formats:
 //! * Cluster labels: Some(id) or None (noise)
 //! * Cluster groups: Vec<Vec<point_indices>>
-//! * Representative pairs: Vec<(center, member)>
 // Adopt from https://blog.petrzemek.net/2017/01/01/implementing-dbscan-from-distance-matrix-in-rust/
-use anyhow::{anyhow, Result};
 use std::collections::{HashMap, VecDeque};
 
 #[derive(Debug)]
@@ -178,56 +176,6 @@ where
         }
 
         res
-    }
-
-    /// Finds the representative point (medoid) for each cluster and pairs all members with it.
-    ///
-    /// The representative point is the one with the minimum sum of distances to all other points
-    /// within the same cluster.
-    ///
-    /// # Returns
-    ///
-    /// A vector of `(representative_index, member_index)` pairs.
-    /// * For clustered points: `(medoid, member)`
-    /// * For noise points: `(self, self)`
-    pub fn results_pair(
-        &self,
-        matrix: &crate::libs::pairmat::ScoringMatrix<T>,
-    ) -> Result<Vec<(usize, usize)>> {
-        let (cluster_map, noise_points) = self.all_clusters();
-
-        // representative point, point
-        let mut res: Vec<(usize, usize)> = vec![];
-
-        for (_, points) in cluster_map.iter() {
-            let mut sum_distance_of: HashMap<usize, f64> = HashMap::new();
-            for &point in points {
-                // Calculate the sum of distances from this point to all others in the cluster
-                let mut sum_distance = T::default();
-                for &other_point in points {
-                    sum_distance += matrix.get(point, other_point);
-                }
-                let sum_f64 = sum_distance
-                    .to_f64()
-                    .ok_or_else(|| anyhow!("failed to convert sum of distances to f64"))?;
-                sum_distance_of.insert(point, sum_f64);
-            }
-            let representative = sum_distance_of
-                .iter()
-                .min_by(|a, b| a.1.total_cmp(b.1))
-                .map(|(&key, _)| key)
-                .ok_or_else(|| anyhow!("failed to find representative point in cluster"))?;
-
-            for &point in points {
-                res.push((representative, point));
-            }
-        }
-
-        for p in noise_points {
-            res.push((p, p));
-        }
-
-        Ok(res)
     }
 }
 
