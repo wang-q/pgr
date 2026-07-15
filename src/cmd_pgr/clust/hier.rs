@@ -44,9 +44,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let infile = args
         .get_one::<String>("infile")
         .ok_or_else(|| anyhow::anyhow!("missing required argument: infile"))?;
-    let method_str = args
-        .get_one::<String>("clust_method")
-        .ok_or_else(|| anyhow::anyhow!("missing required argument: clust_method"))?;
+    // clust_method has a clap default value, so unwrap is safe.
+    let method_str = args.get_one::<String>("clust_method").unwrap();
     let outfile = crate::cmd_pgr::args::get_outfile(args);
 
     // Parse method

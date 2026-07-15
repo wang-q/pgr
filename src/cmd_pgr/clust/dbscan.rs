@@ -56,21 +56,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         .get_one::<String>("infile")
         .ok_or_else(|| anyhow::anyhow!("missing required argument: infile"))?;
 
-    let opt_format = args
-        .get_one::<String>("clust_format")
-        .ok_or_else(|| anyhow::anyhow!("missing required argument: clust_format"))?;
-    let opt_same = *args
-        .get_one::<f32>("same")
-        .ok_or_else(|| anyhow::anyhow!("missing required argument: same"))?;
-    let opt_missing = *args
-        .get_one::<f32>("missing")
-        .ok_or_else(|| anyhow::anyhow!("missing required argument: missing"))?;
-    let opt_eps = *args
-        .get_one::<f32>("eps")
-        .ok_or_else(|| anyhow::anyhow!("missing required argument: eps"))?;
-    let opt_min_points = *args
-        .get_one::<usize>("min_points")
-        .ok_or_else(|| anyhow::anyhow!("missing required argument: min_points"))?;
+    // Remaining arguments have clap default values, so unwrap is safe.
+    let opt_format = args.get_one::<String>("clust_format").unwrap();
+    let opt_same = *args.get_one::<f32>("same").unwrap();
+    let opt_missing = *args.get_one::<f32>("missing").unwrap();
+    let opt_eps = *args.get_one::<f32>("eps").unwrap();
+    let opt_min_points = *args.get_one::<usize>("min_points").unwrap();
 
     let outfile = crate::cmd_pgr::args::get_outfile(args);
     let mut writer =

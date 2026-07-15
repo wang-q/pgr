@@ -60,24 +60,13 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let infile = args
         .get_one::<String>("infile")
         .ok_or_else(|| anyhow::anyhow!("missing required argument: infile"))?;
-    let opt_format = args
-        .get_one::<String>("clust_format")
-        .ok_or_else(|| anyhow::anyhow!("missing required argument: clust_format"))?;
-    let opt_same = *args
-        .get_one::<f32>("same")
-        .ok_or_else(|| anyhow::anyhow!("missing required argument: same"))?;
-    let opt_missing = *args
-        .get_one::<f32>("missing")
-        .ok_or_else(|| anyhow::anyhow!("missing required argument: missing"))?;
-    let inflation = *args
-        .get_one::<f64>("inflation")
-        .ok_or_else(|| anyhow::anyhow!("missing required argument: inflation"))?;
-    let prune = *args
-        .get_one::<f64>("prune")
-        .ok_or_else(|| anyhow::anyhow!("missing required argument: prune"))?;
-    let max_iter = *args
-        .get_one::<usize>("max_iter")
-        .ok_or_else(|| anyhow::anyhow!("missing required argument: max_iter"))?;
+    // Remaining arguments have clap default values, so unwrap is safe.
+    let opt_format = args.get_one::<String>("clust_format").unwrap();
+    let opt_same = *args.get_one::<f32>("same").unwrap();
+    let opt_missing = *args.get_one::<f32>("missing").unwrap();
+    let inflation = *args.get_one::<f64>("inflation").unwrap();
+    let prune = *args.get_one::<f64>("prune").unwrap();
+    let max_iter = *args.get_one::<usize>("max_iter").unwrap();
     let outfile = crate::cmd_pgr::args::get_outfile(args);
 
     let mut writer =

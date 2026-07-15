@@ -37,6 +37,7 @@ pub struct KMedoids {
     k: usize,
     max_iter: usize,
     runs: usize,
+    seed: Option<u64>,
 }
 
 impl KMedoids {
@@ -48,7 +49,18 @@ impl KMedoids {
     /// * `max_iter` - Maximum number of iterations per run
     /// * `runs` - Number of random initializations to perform
     pub fn new(k: usize, max_iter: usize, runs: usize) -> Self {
-        Self { k, max_iter, runs }
+        Self {
+            k,
+            max_iter,
+            runs,
+            seed: None,
+        }
+    }
+
+    /// Set a fixed random seed for reproducible results.
+    pub fn with_seed(mut self, seed: u64) -> Self {
+        self.seed = Some(seed);
+        self
     }
 
     /// Perform clustering on the given distance matrix
@@ -67,7 +79,10 @@ impl KMedoids {
         let mut best_cost = f32::MAX;
         let mut best_assignment = vec![0; n];
 
-        let mut rng = rand::rng();
+        let mut rng: Box<dyn RngCore> = match self.seed {
+            Some(seed) => Box::new(StdRng::seed_from_u64(seed)),
+            None => Box::new(rand::rng()),
+        };
         let indices: Vec<usize> = (0..n).collect();
 
         for _ in 0..self.runs {
@@ -205,5 +220,20 @@ mod tests {
         let clusters = kmedoids.perform_clustering(&sm);
 
         assert_eq!(clusters.len(), 3);
+    }
+
+    #[test]
+    fn test_kmedoids_seed_reproducibility() {
+        // Create a distance matrix for 4 points
+        // 0-1 are close, 2-3 are close
+        let mut sm = ScoringMatrix::<f32>::with_size_and_defaults(4, 0.0, 10.0);
+        sm.set(0, 1, 1.0);
+        sm.set(2, 3, 1.0);
+
+        let kmedoids = KMedoids::new(2, 100, 10).with_seed(42);
+        let clusters1 = kmedoids.perform_clustering(&sm);
+        let clusters2 = kmedoids.perform_clustering(&sm);
+
+        assert_eq!(clusters1, clusters2);
     }
 }

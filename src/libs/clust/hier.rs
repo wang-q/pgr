@@ -157,10 +157,9 @@ fn linkage_nn_chain(condensed: &mut CondensedMatrix, method: Method) -> Vec<Step
                 continue;
             }
             let d = condensed.get(k, i);
-            // Strict inequality < is crucial for chain stability,
-            // but for equal distances we need a tie-breaking rule (usually index).
-            // Here: d < min_dist OR (d == min_dist and i < nn)
-            if d < min_dist {
+            // Strict inequality < keeps the chain stable; when distances are equal
+            // break ties deterministically by choosing the smaller index.
+            if d < min_dist || (d == min_dist && i < nn) {
                 min_dist = d;
                 nn = i;
             }
@@ -664,6 +663,29 @@ mod tests {
             assert_eq!(min1, min2, "Step {}: cluster1 mismatch", i);
             assert_eq!(max1, max2, "Step {}: cluster2 mismatch", i);
         }
+    }
+
+    #[test]
+    fn test_nn_chain_tie_breaking() {
+        // All pairwise distances are equal. The NN-chain algorithm must break ties
+        // deterministically by choosing the smaller index, so the merge order is stable.
+        let mut m = create_test_matrix(4);
+        for i in 0..4 {
+            for j in (i + 1)..4 {
+                m.set(i, j, 1.0);
+            }
+        }
+
+        let steps = linkage(&m, Method::Average);
+        assert_eq!(steps.len(), 3);
+
+        // First merge picks the smallest active pair.
+        assert_eq!(steps[0].cluster1, 0);
+        assert_eq!(steps[0].cluster2, 1);
+
+        // Second merge picks the next smallest active pair.
+        assert_eq!(steps[1].cluster1, 2);
+        assert_eq!(steps[1].cluster2, 3);
     }
 
     // Helper to create a random matrix for testing

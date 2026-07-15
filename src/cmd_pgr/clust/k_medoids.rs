@@ -40,6 +40,13 @@ If there are ties, the alphabetically first member is chosen.
                 .help("Number of random initializations"),
         )
         .arg(crate::cmd_pgr::args::max_iter_arg())
+        .arg(
+            Arg::new("seed")
+                .long("seed")
+                .num_args(1)
+                .value_parser(value_parser!(u64))
+                .help("Random seed for reproducible initialization"),
+        )
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 /// Execute the k-medoids command.
@@ -51,21 +58,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let opt_k = *args
         .get_one::<usize>("k")
         .ok_or_else(|| anyhow::anyhow!("missing required argument: k"))?;
-    let opt_format = args
-        .get_one::<String>("clust_format")
-        .ok_or_else(|| anyhow::anyhow!("missing required argument: clust_format"))?;
-    let opt_same = *args
-        .get_one::<f32>("same")
-        .ok_or_else(|| anyhow::anyhow!("missing required argument: same"))?;
-    let opt_missing = *args
-        .get_one::<f32>("missing")
-        .ok_or_else(|| anyhow::anyhow!("missing required argument: missing"))?;
-    let runs = *args
-        .get_one::<usize>("runs")
-        .ok_or_else(|| anyhow::anyhow!("missing required argument: runs"))?;
-    let max_iter = *args
-        .get_one::<usize>("max_iter")
-        .ok_or_else(|| anyhow::anyhow!("missing required argument: max_iter"))?;
+    // Remaining arguments have clap default values, so unwrap is safe.
+    let opt_format = args.get_one::<String>("clust_format").unwrap();
+    let opt_same = *args.get_one::<f32>("same").unwrap();
+    let opt_missing = *args.get_one::<f32>("missing").unwrap();
+    let runs = *args.get_one::<usize>("runs").unwrap();
+    let max_iter = *args.get_one::<usize>("max_iter").unwrap();
     let outfile = crate::cmd_pgr::args::get_outfile(args);
 
     let mut writer =
@@ -76,7 +74,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         pgr::libs::pairmat::ScoringMatrix::from_pair_scores(infile, opt_same, opt_missing)?;
 
     // 3. Clustering
-    let kmedoids = pgr::libs::clust::k_medoids::KMedoids::new(opt_k, max_iter, runs);
+    let mut kmedoids = pgr::libs::clust::k_medoids::KMedoids::new(opt_k, max_iter, runs);
+    if let Some(&seed) = args.get_one::<u64>("seed") {
+        kmedoids = kmedoids.with_seed(seed);
+    }
     let mut clusters = kmedoids.perform_clustering(&sm);
 
     // 4. Output

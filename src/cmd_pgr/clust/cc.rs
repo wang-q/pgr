@@ -34,9 +34,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let infile = args
         .get_one::<String>("infile")
         .ok_or_else(|| anyhow::anyhow!("missing required argument: infile"))?;
-    let opt_format = args
-        .get_one::<String>("clust_format")
-        .ok_or_else(|| anyhow::anyhow!("missing required argument: clust_format"))?;
+    // clust_format has a clap default value, so unwrap is safe.
+    let opt_format = args.get_one::<String>("clust_format").unwrap();
     let outfile = crate::cmd_pgr::args::get_outfile(args);
     let mut writer =
         pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;

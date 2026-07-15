@@ -80,9 +80,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         .ok_or_else(|| anyhow::anyhow!("missing required argument: p1"))?;
     let outfile = crate::cmd_pgr::args::get_outfile(args);
 
-    let format_str = args
-        .get_one::<String>("clust_input_format")
-        .ok_or_else(|| anyhow::anyhow!("missing required argument: clust_input_format"))?;
+    // clust_input_format has a clap default value, so unwrap is safe.
+    let format_str = args.get_one::<String>("clust_input_format").unwrap();
     let format: PartitionFormat = match format_str.parse() {
         Ok(f) => f,
         Err(e) => anyhow::bail!("Invalid format: {}", e),

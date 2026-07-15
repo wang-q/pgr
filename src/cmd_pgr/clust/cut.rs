@@ -156,7 +156,10 @@ Examples:
             Arg::new("support")
                 .long("support")
                 .value_parser(value_parser!(f64))
-                .help("Branch support threshold (edges with support < S will be treated as infinite length)"),
+                .help(
+                    "Branch support threshold (edges with support < S will be treated as infinite length). \
+                     Internal node names that cannot be parsed as numbers are treated as support = 100.0.",
+                ),
         )
         .arg(
             Arg::new("dynamic_tree")
@@ -231,16 +234,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         .get_one::<String>("infile")
         .ok_or_else(|| anyhow::anyhow!("missing required argument: infile"))?;
     let outfile = crate::cmd_pgr::args::get_outfile(args);
-    let format = args
-        .get_one::<String>("clust_format")
-        .ok_or_else(|| anyhow::anyhow!("missing required argument: clust_format"))?;
-    let rep_method = args
-        .get_one::<String>("rep")
-        .ok_or_else(|| anyhow::anyhow!("missing required argument: rep"))?
-        .as_str();
-    let deep = *args
-        .get_one::<usize>("deep")
-        .ok_or_else(|| anyhow::anyhow!("missing required argument: deep"))?;
+    // Remaining arguments have clap default values, so unwrap is safe.
+    let format = args.get_one::<String>("clust_format").unwrap();
+    let rep_method = args.get_one::<String>("rep").unwrap().as_str();
+    let deep = *args.get_one::<usize>("deep").unwrap();
 
     let mut trees = Tree::from_file(infile)?;
     if trees.len() > 1 {
@@ -267,116 +264,17 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let tree = &trees[0];
 
-    if let Some(scan_str) = args.get_one::<String>("scan") {
-        if args.contains_id("dynamic_hybrid") {
-            anyhow::bail!("--scan is not supported with --dynamic-hybrid");
-        }
-
-        let parts: Vec<&str> = scan_str.split(',').collect();
-        if parts.len() != 3 {
-            anyhow::bail!("--scan format must be start,end,step");
-        }
-        let start: f64 = parts[0].parse()?;
-        let end: f64 = parts[1].parse()?;
-        let step: f64 = parts[2].parse()?;
-
-        if step <= 0.0 {
-            anyhow::bail!("Scan step must be positive");
-        }
-
-        let mut stats_writer: Option<Box<dyn Write>> =
-            if let Some(stats_file) = args.get_one::<String>("stats_out") {
-                let mut w = Box::new(
-                    pgr::writer(stats_file)
-                        .with_context(|| format!("Failed to open writer for {}", stats_file))?,
-                );
-                w.write_all(b"Group\tClusters\tSingletons\tNon-Singletons\tMaxSize\n")?;
-                Some(w)
-            } else {
-                None
-            };
-
-        writer.write_all(b"Group\tClusterID\tSampleID\n")?;
-
-        let dynamic_tree = args.get_one::<usize>("dynamic_tree").copied();
-        let method_name = if dynamic_tree.is_none() {
-            Some(detect_method_name(args)?)
-        } else {
-            None
-        };
-
-        // Use integer step count + multiplication to avoid floating-point
-        // accumulation drift (e.g. 0.1 added 1000 times != 100.0).
-        let n_steps_f = ((end - start) / step).round();
-        if !n_steps_f.is_finite() || n_steps_f < 0.0 || n_steps_f > i64::MAX as f64 {
-            anyhow::bail!(
-                "scan range too large: start={}, end={}, step={}",
-                start,
-                end,
-                step
-            );
-        }
-        let n_steps = n_steps_f as i64;
-        for i in 0..=n_steps {
-            let val = start + (i as f64) * step;
-            if val > end + 1e-9 {
-                break;
-            }
-
-            let dispatch = if dynamic_tree.is_some() {
-                if !val.is_finite() || val < 0.0 || val > usize::MAX as f64 {
-                    anyhow::bail!("scan value out of range: {}", val);
-                }
-                if val.fract() != 0.0 {
-                    anyhow::bail!("scan value must be integer for dynamic-tree: {}", val);
-                }
-                cut::build_dispatch(
-                    tree,
-                    None,
-                    val,
-                    deep,
-                    Some(val as usize),
-                    None,
-                    max_tree_height,
-                    deep_split,
-                    no_pam_dendro,
-                    max_pam_dist,
-                    None,
-                )?
-            } else {
-                let name = method_name.ok_or_else(|| anyhow::anyhow!("no cut method specified"))?;
-                cut::build_dispatch(
-                    tree,
-                    Some(name),
-                    val,
-                    deep,
-                    None,
-                    None,
-                    max_tree_height,
-                    deep_split,
-                    no_pam_dendro,
-                    max_pam_dist,
-                    None,
-                )?
-            };
-
-            let (partition, method_name) = cut::dispatch_cut(tree, dispatch)?;
-
-            let group_label = format!("{}={}", method_name, val);
-
-            if let Some(w) = &mut stats_writer {
-                let (n_clusters, n_single, n_non_single, max_size) = partition.get_stats();
-                w.write_fmt(format_args!(
-                    "{}\t{}\t{}\t{}\t{}\n",
-                    group_label, n_clusters, n_single, n_non_single, max_size
-                ))?;
-            }
-
-            let rows = cut::format_scan_rows(&partition, tree, &group_label);
-            writer.write_all(rows.as_bytes())?;
-        }
-        writer.flush()?;
-        return Ok(());
+    if args.contains_id("scan") {
+        return run_scan(
+            args,
+            tree,
+            &mut writer,
+            deep,
+            max_tree_height,
+            deep_split,
+            no_pam_dendro,
+            max_pam_dist,
+        );
     }
 
     let rep_mode = RepMode::parse(rep_method)?;
@@ -432,4 +330,170 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     writer.write_all(output.as_bytes())?;
 
     Ok(())
+}
+
+/// Run the `--scan` parameter sweep over a single tree.
+///
+/// Writes a long-format table (Group, ClusterID, SampleID) to `writer` and,
+/// if requested, summary statistics to `--stats-out`.
+#[allow(clippy::too_many_arguments)]
+fn run_scan(
+    args: &ArgMatches,
+    tree: &Tree,
+    writer: &mut dyn Write,
+    deep: usize,
+    max_tree_height: Option<f64>,
+    deep_split: bool,
+    no_pam_dendro: bool,
+    max_pam_dist: Option<f64>,
+) -> anyhow::Result<()> {
+    if args.contains_id("dynamic_hybrid") {
+        anyhow::bail!("--scan is not supported with --dynamic-hybrid");
+    }
+
+    let scan_str = args.get_one::<String>("scan").unwrap();
+    let (start, end, step) = parse_scan_range(scan_str)?;
+
+    let mut stats_writer = init_stats_writer(args)?;
+    writer.write_all(b"Group\tClusterID\tSampleID\n")?;
+
+    let dynamic_tree = args.get_one::<usize>("dynamic_tree").copied();
+    let method_name = if dynamic_tree.is_none() {
+        Some(detect_method_name(args)?)
+    } else {
+        None
+    };
+
+    let n_steps = compute_n_steps(start, end, step)?;
+    for i in 0..=n_steps {
+        let val = start + (i as f64) * step;
+        if val > end + 1e-9 {
+            break;
+        }
+
+        let dispatch = if let Some(min_size) = dynamic_tree {
+            build_dynamic_tree_dispatch(
+                tree,
+                val,
+                deep,
+                min_size,
+                max_tree_height,
+                deep_split,
+                no_pam_dendro,
+                max_pam_dist,
+            )?
+        } else {
+            // detect_method_name already verified that a method is present.
+            let name = method_name.unwrap();
+            cut::build_dispatch(
+                tree,
+                Some(name),
+                val,
+                deep,
+                None,
+                None,
+                max_tree_height,
+                deep_split,
+                no_pam_dendro,
+                max_pam_dist,
+                None,
+            )?
+        };
+
+        let (partition, method_name) = cut::dispatch_cut(tree, dispatch)?;
+        let group_label = format!("{}={}", method_name, val);
+
+        if let Some(w) = &mut stats_writer {
+            let (n_clusters, n_single, n_non_single, max_size) = partition.get_stats();
+            w.write_fmt(format_args!(
+                "{}\t{}\t{}\t{}\t{}\n",
+                group_label, n_clusters, n_single, n_non_single, max_size
+            ))?;
+        }
+
+        let rows = cut::format_scan_rows(&partition, tree, &group_label);
+        writer.write_all(rows.as_bytes())?;
+    }
+
+    writer.flush()?;
+    Ok(())
+}
+
+/// Parse the `--scan` argument of the form `start,end,step`.
+fn parse_scan_range(scan_str: &str) -> anyhow::Result<(f64, f64, f64)> {
+    let parts: Vec<&str> = scan_str.split(',').collect();
+    if parts.len() != 3 {
+        anyhow::bail!("--scan format must be start,end,step");
+    }
+    let start: f64 = parts[0].parse()?;
+    let end: f64 = parts[1].parse()?;
+    let step: f64 = parts[2].parse()?;
+
+    if step <= 0.0 {
+        anyhow::bail!("Scan step must be positive");
+    }
+    Ok((start, end, step))
+}
+
+/// Compute the number of scan steps using integer arithmetic to avoid
+/// floating-point drift.
+fn compute_n_steps(start: f64, end: f64, step: f64) -> anyhow::Result<i64> {
+    let n_steps_f = ((end - start) / step).round();
+    if !n_steps_f.is_finite() || n_steps_f < 0.0 || n_steps_f > i64::MAX as f64 {
+        anyhow::bail!(
+            "scan range too large: start={}, end={}, step={}",
+            start,
+            end,
+            step
+        );
+    }
+    Ok(n_steps_f as i64)
+}
+
+/// Open the `--stats-out` writer and write its header.
+fn init_stats_writer(args: &ArgMatches) -> anyhow::Result<Option<Box<dyn Write>>> {
+    if let Some(stats_file) = args.get_one::<String>("stats_out") {
+        let mut w = Box::new(
+            pgr::writer(stats_file)
+                .with_context(|| format!("Failed to open writer for {}", stats_file))?,
+        );
+        w.write_all(b"Group\tClusters\tSingletons\tNon-Singletons\tMaxSize\n")?;
+        Ok(Some(w))
+    } else {
+        Ok(None)
+    }
+}
+
+/// Build a dispatch for dynamic-tree scan values, validating that the value is
+/// a non-negative integer.
+#[allow(clippy::too_many_arguments)]
+fn build_dynamic_tree_dispatch(
+    tree: &Tree,
+    val: f64,
+    deep: usize,
+    min_size: usize,
+    max_tree_height: Option<f64>,
+    deep_split: bool,
+    no_pam_dendro: bool,
+    max_pam_dist: Option<f64>,
+) -> anyhow::Result<cut::CutDispatch> {
+    if !val.is_finite() || val < 0.0 || val > usize::MAX as f64 {
+        anyhow::bail!("scan value out of range: {}", val);
+    }
+    if val.fract() != 0.0 {
+        anyhow::bail!("scan value must be integer for dynamic-tree: {}", val);
+    }
+    cut::build_dispatch(
+        tree,
+        None,
+        val,
+        deep,
+        Some(min_size),
+        None,
+        max_tree_height,
+        deep_split,
+        no_pam_dendro,
+        max_pam_dist,
+        None,
+    )
 }

@@ -125,7 +125,10 @@ pub fn load_batch_partitions<P: AsRef<Path>>(path: P) -> anyhow::Result<Vec<(Str
 
         let parts: Vec<&str> = line.split('\t').collect();
         if parts.len() < 3 {
-            continue; // Skip invalid lines
+            anyhow::bail!(
+                "invalid long format line (expected 3 tab-separated columns): {}",
+                line
+            );
         }
 
         let group_id = parts[0].to_string();
@@ -262,6 +265,19 @@ mod tests {
         let (g2, p2) = &batches[1];
         assert_eq!(g2, "g2");
         assert_eq!(p2.get("C"), Some(&1));
+        Ok(())
+    }
+
+    #[test]
+    fn test_load_batch_partitions_malformed() -> anyhow::Result<()> {
+        let mut file = tempfile::NamedTempFile::new()?;
+        writeln!(file, "g1\t1\tA")?;
+        writeln!(file, "g1\tA")?;
+
+        let result = load_batch_partitions(file.path());
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("long format"), "unexpected error: {}", err);
         Ok(())
     }
 

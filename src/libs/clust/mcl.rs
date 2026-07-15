@@ -140,7 +140,8 @@ impl SparseMat {
         for i in 0..size {
             for j in 0..size {
                 let val = sm.get(i, j) as f64;
-                if val.abs() > 1e-5 {
+                // MCL assumes non-negative similarities; treat negatives as zero.
+                if val > 1e-5 {
                     cols[j].push((i, val));
                 }
             }
@@ -277,5 +278,26 @@ mod tests {
 
         assert_eq!(mcl.prune_limit, 1e-4);
         assert_eq!(mcl.max_iter, 50);
+    }
+
+    #[test]
+    fn test_mcl_negative_ignored() {
+        // 4 nodes: positive edge 0-1, negative edge 2-3.
+        // Negative similarities must be ignored, so 2 and 3 should not cluster together.
+        let mut sm = ScoringMatrix::<f32>::with_size_and_defaults(4, 1.0, 0.0);
+        sm.set(0, 1, 1.0);
+        sm.set(1, 0, 1.0);
+        sm.set(2, 3, -5.0);
+        sm.set(3, 2, -5.0);
+
+        let mcl = Mcl::new(2.0);
+        let clusters = mcl.perform_clustering(&sm);
+
+        // Nodes 0 and 1 should remain connected.
+        let c01 = clusters.iter().find(|c| c.contains(&0)).unwrap();
+        assert!(c01.contains(&1));
+
+        // Nodes 2 and 3 must not be grouped together because their similarity is negative.
+        assert!(!clusters.iter().any(|c| c.contains(&2) && c.contains(&3)));
     }
 }

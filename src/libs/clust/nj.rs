@@ -226,4 +226,38 @@ D 14 9 7 0
         assert!(newick.contains("C:"));
         assert!(newick.contains("D:"));
     }
+
+    #[test]
+    fn test_nj_empty() {
+        let mat = NamedMatrix::new(vec![]);
+        let tree = nj(&mat).unwrap();
+        assert!(tree.get_root().is_none());
+    }
+
+    #[test]
+    fn test_nj_single() {
+        let mat = NamedMatrix::new(vec!["A".to_string()]);
+        let tree = nj(&mat).unwrap();
+        let root = tree.get_root().unwrap();
+        let node = tree.get_node(root).unwrap();
+        assert!(node.is_leaf());
+        assert_eq!(node.name.as_deref(), Some("A"));
+    }
+
+    #[test]
+    fn test_nj_two() {
+        let mut mat = NamedMatrix::new(vec!["A".to_string(), "B".to_string()]);
+        mat.set(0, 1, 4.0);
+
+        let tree = nj(&mat).unwrap();
+        let root = tree.get_root().unwrap();
+        assert_eq!(tree.get_node(root).unwrap().children.len(), 2);
+
+        let leaves = tree.get_leaves();
+        assert_eq!(leaves.len(), 2);
+        for &leaf in &leaves {
+            let node = tree.get_node(leaf).unwrap();
+            assert!((node.length.unwrap() - 2.0).abs() < 1e-6);
+        }
+    }
 }

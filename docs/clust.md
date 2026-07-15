@@ -87,7 +87,7 @@ pgr clust dbscan pairs.tsv --eps 0.15 --min-points 3 --format pair -o pairs.out.
 
 - **原理**：对已有的 Newick 树（系统发生树或层次聚类树），按指定规则切分为扁平的聚类分组（Partition）。支持按簇数 (`--k`)、高度 (`--height`)、簇内直径 (`--max-clade`)、动态切割 (`--dynamic-tree`/`--dynamic-hybrid`) 等多种切割策略。
 - **命令**：`pgr clust cut`
-- **特点**：从已有树导出分组，不重建聚类；支持参数扫描 (`--scan`) 与代表点选择 (`--rep`)。
+- **特点**：从已有树导出分组，不重建聚类；支持参数扫描 (`--scan`) 与代表点选择 (`--rep`)。`--support` 过滤低支持度边；无法解析为数字的内部节点名默认视为支持度 100.0（完全可信，不会被过滤）。
 - **适用场景**：已有树结构（来自 `clust hier`、`clust upgma`、`clust nj` 或外部工具），需要在不同阈值下切分并评估。
 - **文档**：[clust-cut.md](clust-cut.md)
 
