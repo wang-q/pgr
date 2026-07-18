@@ -3,7 +3,6 @@
 pub mod args;
 pub mod axt;
 pub mod chain;
-pub mod clust;
 pub mod dist;
 pub mod fa;
 pub mod fas;

@@ -9,7 +9,7 @@
 - **输出**：Pairwise TSV 格式（`Name1 Name2 Distance ...`），可用于下游分析或矩阵构建。
 - **互补**：
   - 上游：`pgr fa`/`pgr fq` (序列处理), `pgr fa count` (生成 k-mer 向量)。
-  - 下游：`pgr clust` (聚类/构树)。
+  - 下游：聚类/构树工具。
 
 ## 子命令详解
 
