@@ -12,7 +12,6 @@ pub mod lav;
 pub mod maf;
 pub mod ms;
 pub mod net;
-pub mod nwk;
 pub mod paf;
 pub mod pbit;
 pub mod pl;

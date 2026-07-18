@@ -21,7 +21,6 @@ fn main() -> anyhow::Result<()> {
         .subcommand(cmd_pgr::lav::make_subcommand())
         .subcommand(cmd_pgr::maf::make_subcommand())
         .subcommand(cmd_pgr::net::make_subcommand())
-        .subcommand(cmd_pgr::nwk::make_subcommand())
         .subcommand(cmd_pgr::paf::make_subcommand())
         .subcommand(cmd_pgr::pbit::make_subcommand())
         .subcommand(cmd_pgr::psl::make_subcommand())
@@ -55,9 +54,6 @@ fn main() -> anyhow::Result<()> {
 * Distance:
     * dist  - Metrics: hv, seq
 
-* Phylogeny:
-    * nwk   - Newick tools: stat, distance, cmp, reroot, prune, label, order, indent, comment, rename, replace, subtree, support, topo, to-dot, to-forest, to-svg, to-tex
-
 * Simulation:
     * ms    - Hudson's ms simulator tools: to-dna
 
@@ -79,7 +75,6 @@ fn main() -> anyhow::Result<()> {
         Some(("lav", sub_matches)) => cmd_pgr::lav::execute(sub_matches),
         Some(("maf", sub_matches)) => cmd_pgr::maf::execute(sub_matches),
         Some(("net", sub_matches)) => cmd_pgr::net::execute(sub_matches),
-        Some(("nwk", sub_matches)) => cmd_pgr::nwk::execute(sub_matches),
         Some(("paf", sub_matches)) => cmd_pgr::paf::execute(sub_matches),
         Some(("pbit", sub_matches)) => cmd_pgr::pbit::execute(sub_matches),
         Some(("psl", sub_matches)) => cmd_pgr::psl::execute(sub_matches),
