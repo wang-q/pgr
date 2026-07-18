@@ -345,23 +345,6 @@ pgr fa range tests/metagenome/SRR6323163.fa.gz "k141_4576(-):285-455|frame=2"
 pgr pl prefilter tests/metagenome/3300030246.fna.gz "tests/metagenome/APH(3')-IIIa.fa" -c 1000000 -p 8
 ```
 
-### Matrix commands
-
-```bash
-pgr mat to-phylip tests/mat/IBPA.fa.tsv
-
-pgr mat to-pair tests/mat/IBPA.phy
-
-pgr mat format tests/mat/IBPA.phy
-
-pgr mat subset tests/mat/IBPA.phy tests/mat/IBPA.list
-
-pgr dist seq tests/mat/IBPA.fa -k 7 -w 1 |
-    pgr mat to-phylip stdin -o tests/mat/IBPA.71.phy
-
-pgr mat compare tests/mat/IBPA.phy tests/mat/IBPA.71.phy --method all
-```
-
 ---
 
 ## External Dependencies (Details)

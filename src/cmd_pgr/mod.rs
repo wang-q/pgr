@@ -11,7 +11,6 @@ pub mod fq;
 pub mod gff;
 pub mod lav;
 pub mod maf;
-pub mod mat;
 pub mod ms;
 pub mod net;
 pub mod nwk;

@@ -880,47 +880,6 @@ pub fn no_singletons_arg() -> Arg {
 }
 
 // ============================================================================
-// mat subcommand builders
-// ============================================================================
-
-/// `--method` argument for matrix comparison (default: pearson).
-/// Accepts comma-separated methods (e.g. "pearson,cosine") or "all".
-/// Validation is done by the caller (each token checked against known methods).
-pub fn mat_method_arg() -> Arg {
-    Arg::new("mat_method")
-        .long("method")
-        .action(ArgAction::Set)
-        .default_value("pearson")
-        .help("Comparison method(s), comma-separated (all|pearson|spearman|mae|cosine|jaccard|euclid)")
-}
-
-/// `--format` argument for matrix output (default: full).
-pub fn mat_format_arg() -> Arg {
-    Arg::new("mat_format")
-        .long("format")
-        .action(ArgAction::Set)
-        .value_parser([
-            builder::PossibleValue::new("full"),
-            builder::PossibleValue::new("lower"),
-            builder::PossibleValue::new("strict"),
-        ])
-        .default_value("full")
-        .help("Output format")
-}
-
-/// `--input-format` argument for matrix transform (default: phylip).
-pub fn mat_input_format_arg() -> Arg {
-    Arg::new("mat_input_format")
-        .long("input-format")
-        .default_value("phylip")
-        .value_parser([
-            builder::PossibleValue::new("phylip"),
-            builder::PossibleValue::new("pair"),
-        ])
-        .help("Input format")
-}
-
-// ============================================================================
 // paf subcommand builders (Command → Command transformers)
 // ============================================================================
 
