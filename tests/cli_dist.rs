@@ -47,24 +47,6 @@ fn command_dist_hv_pair() {
 }
 
 #[test]
-fn command_dist_vector() {
-    let (stdout, _) = PgrCmd::new()
-        .args(&[
-            "dist",
-            "vector",
-            fixture("vector.tsv").to_str().unwrap(),
-            "--mode",
-            "jaccard",
-            "--binary",
-        ])
-        .run();
-
-    assert_eq!(stdout.lines().count(), 16);
-    assert!(stdout.contains("A\tA\t1.0000"));
-    assert!(stdout.contains("A\tB\t0.3333"));
-}
-
-#[test]
 fn command_dist_seq() {
     let (stdout, _) = PgrCmd::new()
         .args(&[

@@ -58,7 +58,7 @@ fn main() -> anyhow::Result<()> {
     * clust - Algorithms: cc, cut, dbscan, eval, hier, k-medoids, mcl, nj, upgma
 
 * Distance:
-    * dist  - Metrics: hv, seq, vector
+    * dist  - Metrics: hv, seq
 
 * Matrix:
     * mat   - Processing: compare, format, subset, to-pair, to-phylip, transform
