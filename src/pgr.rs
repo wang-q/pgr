@@ -58,7 +58,7 @@ fn main() -> anyhow::Result<()> {
     * ms    - Hudson's ms simulator tools: to-dna
 
 * Pipelines:
-    * pl - Workflows: condense, p2m, prefilter, trf, ir, rept, ucsc
+    * pl - Workflows: p2m, prefilter, trf, ir, rept, ucsc
 
 * Plotting:
     * plot - Plotting tools: hh, nrps, venn
