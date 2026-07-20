@@ -2,6 +2,14 @@
 
 ## Unreleased - ReleaseDate
 
+### Changed
+
+* Migrated `clust`, `cut`, `eval`, `mat`, `nwk` command modules and associated
+  libraries (`libs/phylo/`, `libs/clust/`, `libs/cut/`, `libs/eval/`,
+  `libs/pairmat/`) to the `necom` project. `pgr` now focuses on genome data
+  processing (sequences, alignments, pangenome, pipelines, plotting).
+* Removed `nom` dependency (Newick parsing moved to `necom`).
+
 ## 0.2.0 - 2026-04-05
 
 ### New Features
@@ -105,50 +113,11 @@
   * `lastz`: LASTZ-specific operations
   * `to-psl`: Convert to PSL format
 
-#### Clustering and Phylogenetic Analysis
+#### Distance
 
-* **`pgr clust`** - Clustering operations (9 subcommands)
-  * `hier`: Hierarchical clustering (NN-chain algorithm)
-  * `nj`: Neighbor-Joining tree construction
-  * `upgma`: UPGMA tree construction
-  * `cc`: Connected components clustering
-  * `cut`: Tree cutting for cluster extraction
-  * `dbscan`: DBSCAN clustering
-  * `k-medoids`: K-medoids clustering
-  * `mcl`: Markov Clustering (MCL)
-  * `eval`: Cluster evaluation metrics
-
-* **`pgr dist`** - Distance and similarity metrics (3 subcommands)
+* **`pgr dist`** - Distance and similarity metrics (2 subcommands)
   * `hv`: Hypervector distance calculations
   * `seq`: Sequence distance calculations
-  * `vector`: Vector distance calculations
-
-* **`pgr mat`** - Matrix operations (6 subcommands)
-  * `compare`: Compare distance matrices
-  * `format`: Format matrix files
-  * `subset`: Create matrix subset
-  * `to-pair`: Convert to pair format
-  * `to-phylip`: Convert to PHYLIP format
-  * `transform`: Matrix transformations
-
-* **`pgr nwk`** - Newick tree manipulation and visualization (17 subcommands)
-  * `stat`: Tree statistics
-  * `label`: Label tree nodes
-  * `distance`: Calculate pairwise distances
-  * `support`: Branch support operations
-  * `order`: Order tree nodes
-  * `prune`: Prune tree branches
-  * `rename`: Rename tree nodes
-  * `replace`: Replace node information
-  * `reroot`: Reroot the tree
-  * `subtree`: Extract subtrees
-  * `topo`: Topological operations
-  * `comment`: Add comments to trees
-  * `indent`: Indent/format tree files
-  * `to-dot`: Convert to Graphviz DOT format
-  * `to-forest`: Convert to forest representation
-  * `to-tex`: Convert to LaTeX/TikZ format
-  * `cmp`: Compare trees
 
 #### Other Tools
 
@@ -170,29 +139,16 @@
 
 ### Core Libraries
 
-* **`src/libs/phylo/`** - Phylogenetic analysis core library
-  * Tree structure definitions and traversals
-  * Tree I/O operations
-  * Tree statistics (`stat.rs`)
-  * Tree cutting algorithms (`cut.rs`)
-  * Tree manipulation algorithms (sorting, rerooting)
-
 * **`src/libs/poa/`** - Partial Order Alignment (POA) implementation
 
 * **`src/libs/chain/`** - Chain/Net alignment processing logic
-
-* **`src/libs/clust/`** - Clustering algorithm implementations
-  * `hier.rs`: Hierarchical clustering with NN-chain algorithm
-  * `dbscan.rs`: DBSCAN implementation
-  * `mcl.rs`: Markov Clustering implementation
-  * `k_medoids.rs`: K-medoids implementation
 
 * **`src/libs/io.rs`** - I/O utilities
 
 ### Technical Features
 
 * **Rust Implementation**: High-performance, memory-safe implementation
-* **Standard Bioinformatics Formats**: Full support for FASTA, FASTQ, 2bit, GFF, AXT, Chain, Net, MAF, PSL, LAV, Newick
+* **Standard Bioinformatics Formats**: Full support for FASTA, FASTQ, 2bit, GFF, AXT, Chain, Net, MAF, PSL, LAV
 * **Parallel Computing**: Rayon-based parallelism for performance-critical operations
 * **Zero Panic Policy**: Robust error handling for malformed inputs
 * **Pipeline-Friendly**: stdin/stdout support where possible, predictable outputs
@@ -205,9 +161,9 @@
 * **Error Handling**: anyhow 1.0.93
 * **Bioinformatics**: noodles 0.104.0, bio 0.30.1
 * **Parallelism**: rayon 1.10.0, crossbeam 0.8.4
-* **Parsing**: nom 8.0.0, regex 1.11.1
+* **Parsing**: regex 1.11.1
 * **Data Structures**: petgraph 0.7.1, indexmap 2.13.0
-* **Hashing**: rapidhash, fxhash, murmurhash3, xxhash-rust
+* **Hashing**: rapidhash, fxhash, murmurhash3
 * **Output**: rust_xlsxwriter 0.83.0, csv 1.4.0, tera 1.20.1
 
 ### Notes

@@ -108,7 +108,7 @@
 
 **目录约定**: 任何被 `.gitignore` 完全忽略的目录，均仅作为参考资料，**不是本项目的一部分**。
 
-`pgr` (Practical Genome Refiner) 是一个多功能的基因组数据处理工具集。它旨在提供一套高效、易用的命令行工具，用于处理各种生物信息学格式（FASTA, FASTQ, AXT, MAF, PSL, Chain, Net, Newick 等）以及执行常见的基因组分析任务。
+`pgr` (Practical Genome Refiner) 是一个多功能的基因组数据处理工具集。它旨在提供一套高效、易用的命令行工具，用于处理各种生物信息学格式（FASTA, FASTQ, AXT, MAF, PSL, Chain, Net 等）以及执行常见的基因组分析任务。
 
 ## 构建命令
 
@@ -140,35 +140,20 @@ cargo test
 - **`src/cmd_pgr/`** - 命令实现模块。按功能/格式分组：
     - **Sequences**: `fa` (FASTA), `fq` (FASTQ), `fas` (Block FA), `twobit` (命令 `2bit`), `gff`.
     - **Alignments**: `axt`, `chain`, `net`, `maf`, `paf`, `psl`, `lav`.
-    - **Analysis**: `clust` (Clustering), `dist` (Distance), `mat` (Matrix), `nwk` (Phylogeny/Newick), `plot`.
+    - **Analysis**: `dist` (Distance), `plot`.
     - **Misc**: `ms` (Simulation), `pl` (Pipelines).
 - **`src/libs/`** - 共享工具库和核心逻辑。
   - **`fmt/`** - 格式 I/O: `fa`, `fas`, `fq`, `axt`, `maf`, `psl`, `lav`, `twobit`, `vcf`.
-  - **`phylo/`** - 系统发育分析核心库。
-    - **`node.rs`/`parser.rs`/`error.rs`**: 树节点定义、Newick 解析、错误类型（位于 `phylo/` 根级）。
-    - **`cmp.rs`**: 树拓扑比较 (`TreeComparison` trait，Robinson-Foulds 等)。
-    - **`tree/`**: 树算法与操作。
-      - `ops.rs`/`algo.rs`: 节点操作 (add/remove/reroot/prune 等) 与算法。
-      - `traversal.rs`/`query.rs`: 遍历 (pre/post/level-order) 与查询 (LCA/路径/距离/单系性)。
-      - `stat.rs`/`balance.rs`/`distance.rs`/`support.rs`: 统计、平衡性指标、距离、支持值。
-      - `io/`: 格式 I/O — Newick/DOT/SVG/Forest。
   - **`poa/`** - 偏序比对 (Partial Order Alignment) 实现。
   - **`chain/`** - 基因组比对链 (Chain/Net) 处理逻辑。
-  - **`clust/`** - 聚类算法实现。
-    - **`hier.rs`**: 层次聚类 (NN-chain 算法)。
-    - **`dbscan.rs`, `mcl.rs`, `k_medoids.rs`**: 其他聚类算法。
-    - **`nj.rs`, `upgma.rs`**: 建树算法 (Neighbor-Joining, UPGMA)。
-    - **`tree_cut/`**: 树切分算法。
-    - **`eval/`**: 聚类评估指标。
   - **`paf/`** - PAF 处理: 记录读写、查询、图构建、索引。
   - **`fasta/`** - FASTA 操作 (chunk/dedup/filter/stat)。
-  - **`pairmat/`** - 配对距离矩阵。
   - **`io.rs`** - I/O 辅助函数。
   - **`alignment/`**, **`fas_multiz/`**, **`ms/`**, **`plot/`** 等 - 特定格式处理逻辑。
 
 ## 关键设计文档
 
-- **`docs/`**: 用户面向命令文档（英文），每个 `pgr <command>` 对应一个 `docs/<command>.md`（子命令采用 `<command>-<subcommand>.md` 形式，如 `clust-cut.md`）；`docs/formats/` 为格式规范参考。注：`2bit` 命令的文档为 `docs/twobit.md`（历史命名）。
+- **`docs/`**: 用户面向命令文档（英文），每个 `pgr <command>` 对应一个 `docs/<command>.md`（子命令采用 `<command>-<subcommand>.md` 形式，如 `ms-to-dna.md`）；`docs/formats/` 为格式规范参考。注：`2bit` 命令的文档为 `docs/twobit.md`（历史命名）。
 - **`notes/`**: 开发者面向笔记（中文）：`notes/design/`（设计稿/移植笔记）、`notes/references/`（外部工具源码分析）、`notes/` 根（项目理解/场景规划）。
 - **`notes/project-understanding.md`**: 项目整体理解（架构、命令模块、核心库、现状评估、设计模式），含各文档的索引与定位，需要时查阅。
 
@@ -190,7 +175,6 @@ cargo test
 - **`clap`**: 命令行参数解析。
 - **`anyhow`**: 错误处理。
 - **`rayon`**: 并行计算。
-- **`nom`**: 文本解析 (Newick 等)。
 - **`regex`**: 正则表达式。
 - **`coitrees`**: 区间树索引 (PAF/loc 模块核心)。
 - **`intspan`**: 区间集合数据结构。

@@ -13,7 +13,7 @@ fn command_pl_prefilter_help() -> anyhow::Result<()> {
 #[test]
 fn command_pl_prefilter_run() -> anyhow::Result<()> {
     let input = "tests/index/final.contigs.fa";
-    let ref_file = "tests/clust/IBPA.fa";
+    let ref_file = "tests/pl/IBPA.fa";
 
     let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
