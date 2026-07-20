@@ -2,13 +2,104 @@
 
 ## Unreleased - ReleaseDate
 
+### New Features
+
+#### Pangenome (PAF)
+
+* **`pgr paf`** - PAF (Pairwise mApping Format) file manipulation (9 subcommands).
+  Treats pairwise alignments as an implicit pangenome graph; query commands
+  traverse the graph on demand without materializing it.
+  * `index`: Build a persistent `.paf.idx` index (interval tree + BFS transitive
+    closure) over one or more PAF files, with BGZF/gzip support and lazy CIGAR
+    loading.
+  * `query`: Project target intervals through the alignment network; supports
+    `--transitive` (A→B→C chaining), `-b/--batch` batch queries, and `-o bed`
+    BED output.
+  * `to-bed`: Convert PAF records (or query results) to BED intervals.
+  * `to-fas`: Extract pairwise alignments as block FA via on-demand FASTA slicing.
+  * `to-maf`: Reconstruct MAF from PAF CIGAR; supports multi-way POA MSA and
+    minus-strand output.
+  * `to-vcf`: Emit VCF from POA multiple sequence alignment; supports
+    substitutions and indels with left-alignment, plus rGFA tags.
+  * `to-gfa`: Produce local GFA with unchopping, GFA header, and crush mode.
+  * `graph`: Materialize a coarse whole-genome graph (splits nodes only at
+    variants ≥ `--min-var-len`, default 100 bp).
+  * `stat`: Report alignment statistics; supports topology-only mode.
+
+* **`pgr maf to-paf`** - Convert MAF alignments to PAF format (new `maf`
+  subcommand; `maf` now has 2 subcommands).
+
+#### Population Genome Compression (pbit)
+
+* **`pgr pbit`** - Native population genome compression format (6 subcommands).
+  Stores a reference genome as standard 2bit and each sample as LZ-diff or
+  PAF-driven CIGAR delta encoding, preserving random access while compressing
+  large cohorts of homologous samples.
+  * `create`: Build a new `.pbit` archive from a reference FASTA and sample
+    FASTAs (with optional PAF for delta encoding).
+  * `append`: Add samples to an existing `.pbit` archive.
+  * `range`: Extract coordinate intervals from all samples.
+  * `some`: Extract complete contigs by name from all samples.
+  * `stat`: Display archive statistics, sample list, and contig list.
+  * `to-fa`: Export sample sequences to per-sample FASTA files.
+
+### Enhancements
+
+* **`pgr fas`**: Added outgroup support for `stat`; improved `concat` order
+  handling and duplicate header detection; renamed `--aligner` to `--engine`;
+  consolidated shared logic into `libs/fas_multiz`.
+* **CLI standardization**: Centralized repeated `clap` argument definitions into
+  a shared `cmd_pgr::args` module; unified flag names and short aliases across
+  commands.
+* **Error handling**: Replaced `unwrap`/`expect`/`unreachable!` with
+  `anyhow::Result` propagation and contextual errors across the codebase.
+* **Code quality**: Extracted shared logic into `libs/` modules (POA args, FASTA
+  utilities, range reversal, etc.); modernized imports and deduplicated code.
+* **Logging**: Added `log`/`env_logger` based logging in pipeline commands.
+* **Tests**: Switched all CLI tests to temporary directories; added
+  comprehensive fixtures for `paf`, `pbit`, `2bit`, and `dist`; added
+  regression tests for minus-strand CIGAR and edge cases.
+* **Docs**: Migrated scattered docs to dedicated per-command files under
+  `docs/`; added `docs/formats/` for format references; standardized
+  terminology to "Block FA".
+
+### Core Libraries
+
+* **`src/libs/paf/`** - PAF implicit graph core: record I/O, interval tree
+  index (`coitrees`), bidirectional CIGAR handling, BFS transitive closure,
+  and graph materialization.
+* **`src/libs/pbit/`** - pbit archive format: LZ-diff and PAF-driven CIGAR
+  delta encoding, with random-access decompression.
+* **`src/libs/poa/`** - Partial Order Alignment engine (Spoa C++ → Rust port),
+  used by `paf to-maf`/`to-vcf` and `fas refine`.
+* **CIGAR support** in `libs/paf/cigar.rs`: splits `M` into `=`/`X`,
+  case-insensitive matching, and bounds-checked operations.
+* **`src/libs/loc.rs`** - FASTA random-access index (`.loc`) with BGZF support,
+  shared by `fa range`, `paf`, and `pbit`.
+
 ### Changed
 
 * Migrated `clust`, `cut`, `eval`, `mat`, `nwk` command modules and associated
   libraries (`libs/phylo/`, `libs/clust/`, `libs/cut/`, `libs/eval/`,
   `libs/pairmat/`) to the `necom` project. `pgr` now focuses on genome data
   processing (sequences, alignments, pangenome, pipelines, plotting).
-* Removed `nom` dependency (Newick parsing moved to `necom`).
+* `pgr dist` reduced from 3 to 2 subcommands (`vector` migrated to `necom`).
+* `pgr pl` reduced from 7 to 6 subcommands (`condense` migrated to `necom`).
+* `pgr maf` expanded from 1 to 2 subcommands (added `to-paf`).
+
+### Removed
+
+* `nom` dependency (Newick parsing moved to `necom`).
+* `xxhash-rust` dependency (unused; never appeared in `Cargo.toml`).
+
+### Dependencies
+
+* **Added**: `coitrees` (interval tree for PAF/loc), `intspan` (interval set),
+  `bincode` + `serde` + `serde_json` (PAF index persistence), `lru` (caching),
+  `minimizer-iter` (pbit/paf), `cmd_lib` (pipelines), `which` (executable
+  lookup), `flate2` (gzip), `log` + `env_logger` (logging), `itertools`,
+  `rand`.
+* **Removed**: `nom`.
 
 ## 0.2.0 - 2026-04-05
 
