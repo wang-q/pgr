@@ -2,6 +2,8 @@
 
 ## Unreleased - ReleaseDate
 
+## 0.3.0 - 2026-07-21
+
 ### New Features
 
 #### Pangenome (PAF)
