@@ -289,10 +289,9 @@ pub fn align_seqs(seqs: &[String], aligner: &str) -> anyhow::Result<Vec<String>>
             .arg(format!("-outfile={}", seq_out_path.to_string_lossy()))
             .output()?,
         "muscle" => Command::new(bin)
-            .arg("-quiet")
-            .arg("-in")
+            .arg("-align")
             .arg(seq_in_path.to_string_lossy().to_string())
-            .arg("-out")
+            .arg("-output")
             .arg(seq_out_path.to_string_lossy().to_string())
             .output()?,
         "mafft" => Command::new(bin)

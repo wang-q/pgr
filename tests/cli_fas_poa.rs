@@ -215,6 +215,22 @@ fn command_refine_muscle() -> anyhow::Result<()> {
         eprintln!("bin = {:#?}", bin);
     }
 
+    // Require muscle v5+ (v3 uses -in/-out, v5 uses -align/-output)
+    let version_output = std::process::Command::new(&bin).arg("-version").output()?;
+    let version_str = String::from_utf8_lossy(&version_output.stdout);
+    let major = version_str
+        .lines()
+        .next()
+        .and_then(|line| line.split_whitespace().nth(1))
+        .and_then(|s| s.split('.').next());
+    if major != Some("5") {
+        eprintln!(
+            "Skipping: muscle v5+ required, found: {}",
+            version_str.lines().next().unwrap_or("")
+        );
+        return Ok(());
+    }
+
     let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
         .arg("fas")
