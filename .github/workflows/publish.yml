@@ -60,7 +60,7 @@ jobs:
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file: pgr.tar.gz
-          asset_name: pgr-x86_64-apple-darwin.tar.gz
+          asset_name: pgr-aarch64-apple-darwin.tar.gz
           tag: ${{ github.ref }}
   windows:
     runs-on: windows-latest
