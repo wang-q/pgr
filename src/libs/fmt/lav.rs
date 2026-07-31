@@ -306,6 +306,131 @@ fn remove_frayed_ends(mut blocks: Vec<Block>) -> Vec<Block> {
     blocks
 }
 
+/// Parse a LAV `d` stanza into UCSC-style `##` metadata comment lines.
+///
+/// Mirrors UCSC `lavToPsl`'s `parseD` + `axtScoreSchemeReadLf` +
+/// `axtScoreSchemeDnaWrite`: when the first line mentions `lastz`, emit
+/// `##aligner`, `##matrix`, `##gapPenalties`, and `##blastzParms` lines.
+/// Returns an empty vec for non-lastz d stanzas (matching UCSC, which only
+/// processes lastz-style stanzas).
+pub fn parse_d_stanza_to_comments(lines: &[String]) -> anyhow::Result<Vec<String>> {
+    if lines.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // UCSC parseD: stripChar(line, '"') then chopLine. Only proceeds if
+    // stringIn("lastz", line).
+    let first_stripped: String = lines[0].chars().filter(|c| *c != '"').collect();
+    if !first_stripped.contains("lastz") {
+        return Ok(Vec::new());
+    }
+
+    let words: Vec<&str> = first_stripped.split_whitespace().collect();
+    if words.is_empty() {
+        return Ok(Vec::new());
+    }
+    let aligner = words[0];
+
+    // ##aligner=<words[0]> + " <words[3]> " for each remaining param. The
+    // surrounding spaces match UCSC's `fprintf(f, " %s ", words[i])` format,
+    // producing double spaces between params and a trailing space.
+    let mut aligner_line = format!("##aligner={}", aligner);
+    for w in &words[3..] {
+        aligner_line.push(' ');
+        aligner_line.push_str(w);
+        aligner_line.push(' ');
+    }
+    let mut comments = vec![aligner_line];
+
+    // Locate the matrix header line ("A C G T"). UCSC axtScoreSchemeReadLf
+    // scans for the row where row[0..4] == ['A','C','G','T'].
+    let mut header_idx = 1;
+    while header_idx < lines.len() {
+        let parts: Vec<&str> = lines[header_idx].split_whitespace().collect();
+        if parts.len() >= 4
+            && parts[0] == "A"
+            && parts[1] == "C"
+            && parts[2] == "G"
+            && parts[3] == "T"
+        {
+            break;
+        }
+        header_idx += 1;
+    }
+    if header_idx + 5 > lines.len() {
+        anyhow::bail!(
+            "lastz d stanza missing matrix rows or params line (header at {}, need {} lines, have {})",
+            header_idx,
+            header_idx + 6,
+            lines.len()
+        );
+    }
+
+    // Read 4 matrix rows. UCSC skips the first column when wordCount == 5
+    // (row-labeled form like "A 91 -114 ...").
+    let mut matrix_vals: Vec<i32> = Vec::with_capacity(16);
+    for row_i in 0..4 {
+        let parts: Vec<&str> = lines[header_idx + 1 + row_i].split_whitespace().collect();
+        let start = if parts.len() == 5 { 1 } else { 0 };
+        if start + 4 > parts.len() {
+            anyhow::bail!(
+                "matrix row {} has too few columns: {:?}",
+                row_i,
+                lines[header_idx + 1 + row_i]
+            );
+        }
+        for part in parts.iter().skip(start).take(4) {
+            let v: i32 = part
+                .parse()
+                .map_err(|e| anyhow::anyhow!("invalid matrix value {:?}: {}", part, e))?;
+            matrix_vals.push(v);
+        }
+    }
+
+    // Params line: "O = 400, E = 30, K = 3000, L = 3000, M = 0"
+    let params_line = &lines[header_idx + 5];
+    let param_tokens: Vec<&str> = params_line
+        .split([' ', '=', ',', '\t'])
+        .filter(|s| !s.is_empty())
+        .collect();
+    let mut gap_open: i32 = 400;
+    let mut gap_extend: i32 = 30;
+    let mut k = 0;
+    while k + 1 < param_tokens.len() {
+        let val = param_tokens[k + 1].trim_end_matches('"');
+        match param_tokens[k] {
+            "O" => {
+                gap_open = val.parse().unwrap_or(gap_open);
+            }
+            "E" => {
+                gap_extend = val.parse().unwrap_or(gap_extend);
+            }
+            _ => {}
+        }
+        k += 2;
+    }
+
+    // ##matrix=<aligner> 16 v1,v2,...,v16
+    let matrix_str: Vec<String> = matrix_vals.iter().map(|v| v.to_string()).collect();
+    comments.push(format!("##matrix={} 16 {}", aligner, matrix_str.join(",")));
+
+    // ##gapPenalties=<aligner> O=<open> E=<extend>
+    comments.push(format!(
+        "##gapPenalties={} O={} E={}",
+        aligner, gap_open, gap_extend
+    ));
+
+    // ##blastzParms=<extra> — UCSC strips spaces and quotes from the params
+    // line (the `extra` field accumulates the line, then stripChar ' ' and '"').
+    let extra: String = params_line
+        .chars()
+        .filter(|c| *c != ' ' && *c != '"')
+        .collect();
+    comments.push(format!("##blastzParms={}", extra));
+
+    Ok(comments)
+}
+
 /// Convert LAV alignment blocks into a Psl record.
 pub fn blocks_to_psl(
     blocks: &[Block],
@@ -474,6 +599,14 @@ pub fn lav_to_psl<R: BufRead, W: Write>(
 
                 psl.write_to(writer)?;
             }
+            LavStanza::Data { lines } => {
+                // UCSC lavToPsl parseD: emit ##aligner/##matrix/##gapPenalties/
+                // ##blastzParms metadata lines from the d stanza.
+                let comments = parse_d_stanza_to_comments(&lines)?;
+                for comment in &comments {
+                    writeln!(writer, "{}", comment)?;
+                }
+            }
             other => {
                 if strict {
                     anyhow::bail!("unknown lav stanza: {:?}", other);
@@ -580,5 +713,92 @@ h {
             }
             _ => panic!("Expected Header stanza, got {:?}", stanza),
         }
+    }
+
+    #[test]
+    fn test_parse_d_stanza_to_comments_lastz() {
+        // Mirrors tests/pgr/cmp/shared/lastz.lav d stanza (UCSC reference).
+        let lines = vec![
+            r#"  "lastz.v1.04.41 tests/pgr/pseudocat.fa tests/pgr/pseudopig.fa "#.to_string(),
+            "     A    C    G    T".to_string(),
+            "    91 -114  -31 -123".to_string(),
+            "  -114  100 -125  -31".to_string(),
+            "   -31 -125  100 -114".to_string(),
+            "  -123  -31 -114   91".to_string(),
+            r#"  O = 400, E = 30, K = 3000, L = 3000, M = 0""#.to_string(),
+        ];
+        let comments = parse_d_stanza_to_comments(&lines).unwrap();
+        assert_eq!(comments.len(), 4);
+        // No params beyond word[2] -> ##aligner has no trailing params.
+        assert_eq!(comments[0], "##aligner=lastz.v1.04.41");
+        assert_eq!(
+            comments[1],
+            "##matrix=lastz.v1.04.41 16 91,-114,-31,-123,-114,100,-125,-31,-31,-125,100,-114,-123,-31,-114,91"
+        );
+        assert_eq!(comments[2], "##gapPenalties=lastz.v1.04.41 O=400 E=30");
+        assert_eq!(comments[3], "##blastzParms=O=400,E=30,K=3000,L=3000,M=0");
+    }
+
+    #[test]
+    fn test_parse_d_stanza_to_comments_with_params() {
+        // Mirrors tests/lav/newStyleLastz.lav d stanza with extra params.
+        let lines = vec![
+            r#"  "lastz.v1.03.46 hg19.chrM.fa susScr3.chrM.fa M=50 T=2 O=400 E=30 Q=hg19.susScr3.chrM.Q.txt --output=hg19.susScr3.chrM.lav "#.to_string(),
+            "     A    C    G    T".to_string(),
+            "    79  -84  -55 -128".to_string(),
+            "   -84  100 -174  -55".to_string(),
+            "   -55 -174  100  -84".to_string(),
+            "  -128  -55  -84   79".to_string(),
+            r#"  O = 400, E = 30, K = 3000, L = 3000, M = 50""#.to_string(),
+        ];
+        let comments = parse_d_stanza_to_comments(&lines).unwrap();
+        assert_eq!(comments.len(), 4);
+        // Words[3..] each get surrounding spaces -> double space between params.
+        assert_eq!(
+            comments[0],
+            "##aligner=lastz.v1.03.46 M=50  T=2  O=400  E=30  Q=hg19.susScr3.chrM.Q.txt  --output=hg19.susScr3.chrM.lav "
+        );
+        assert_eq!(
+            comments[1],
+            "##matrix=lastz.v1.03.46 16 79,-84,-55,-128,-84,100,-174,-55,-55,-174,100,-84,-128,-55,-84,79"
+        );
+        assert_eq!(comments[2], "##gapPenalties=lastz.v1.03.46 O=400 E=30");
+        assert_eq!(comments[3], "##blastzParms=O=400,E=30,K=3000,L=3000,M=50");
+    }
+
+    #[test]
+    fn test_parse_d_stanza_to_comments_non_lastz() {
+        // UCSC parseD only proceeds when stringIn("lastz", line). An aligner
+        // name without the "lastz" substring yields no comments.
+        let lines = vec!["  \"blurz.v1 target.fa query.fa".to_string()];
+        let comments = parse_d_stanza_to_comments(&lines).unwrap();
+        assert!(comments.is_empty());
+    }
+
+    #[test]
+    fn test_parse_d_stanza_to_comments_blastz_v7() {
+        // "blastz" contains "lastz" as a substring (b-lastz), so UCSC's
+        // stringIn("lastz", ...) matches and comments are emitted.
+        let lines = vec![
+            r#"  "blastz.v7 hg19.chrM.fa susScr3.chrM.fa M=50 T=2 O=400 E=30 Q=hg19.susScr3.blastz.q"#.to_string(),
+            "     A    C    G    T".to_string(),
+            "    79  -84  -55 -128".to_string(),
+            "   -84  100 -174  -55".to_string(),
+            "   -55 -174  100  -84".to_string(),
+            "  -128  -55  -84   79".to_string(),
+            r#"  O = 400, E = 30, K = 3000, L = 3000, M = 50""#.to_string(),
+        ];
+        let comments = parse_d_stanza_to_comments(&lines).unwrap();
+        assert_eq!(comments.len(), 4);
+        assert_eq!(
+            comments[0],
+            "##aligner=blastz.v7 M=50  T=2  O=400  E=30  Q=hg19.susScr3.blastz.q "
+        );
+        assert_eq!(
+            comments[1],
+            "##matrix=blastz.v7 16 79,-84,-55,-128,-84,100,-174,-55,-55,-174,100,-84,-128,-55,-84,79"
+        );
+        assert_eq!(comments[2], "##gapPenalties=blastz.v7 O=400 E=30");
+        assert_eq!(comments[3], "##blastzParms=O=400,E=30,K=3000,L=3000,M=50");
     }
 }

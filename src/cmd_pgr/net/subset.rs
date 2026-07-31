@@ -1,7 +1,7 @@
 use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use pgr::libs::chain::net::{read_nets, subset_nets, SubsetOptions};
-use pgr::libs::chain::{read_chains, Chain};
+use pgr::libs::chain::{Chain, ChainReader};
 use std::collections::HashMap;
 use std::io::Write;
 /// Build the clap subcommand for subset.
@@ -42,10 +42,13 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let split_on_insert = args.get_flag("split_on_insert");
     let type_filter = args.get_one::<String>("type");
 
-    // Read chains
+    // Read chains. UCSC netChainSubset uses chainReadAllWithMeta which
+    // propagates `##` header comments via lineFileSetMetaDataOutput.
     let chain_reader =
         pgr::reader(chain_in).with_context(|| format!("Failed to open reader for {}", chain_in))?;
-    let chains_vec = read_chains(chain_reader)?;
+    let mut chain_reader = ChainReader::new(chain_reader);
+    let chains_vec: Vec<Chain> = chain_reader.by_ref().collect::<Result<Vec<_>, _>>()?;
+    let header_comments = std::mem::take(&mut chain_reader.header_comments);
     let mut chains_map: HashMap<u64, Chain> = HashMap::new();
     for chain in chains_vec {
         chains_map.insert(chain.header.id, chain);
@@ -58,6 +61,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let mut writer = pgr::writer(chain_out)
         .with_context(|| format!("Failed to open writer for {}", chain_out))?;
+
+    for comment in &header_comments {
+        writeln!(writer, "{}", comment.trim_end())?;
+    }
 
     let opts = SubsetOptions {
         whole_chains,

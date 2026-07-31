@@ -31,11 +31,23 @@ pub fn pre_net<R: BufRead, W: Write>(
     q_hash: &mut HashMap<String, BitMap>,
     opts: &PreNetOptions,
 ) -> Result<()> {
-    let chain_reader = ChainReader::new(reader);
+    let mut chain_reader = ChainReader::new(reader);
     let mut last_score = f64::MAX;
+    let mut count = 0usize;
 
-    for (count, res) in chain_reader.enumerate() {
+    // UCSC chainPreNet uses lineFileSetMetaDataOutput to pass `##` header
+    // comments through. Flush collected comments before the first chain.
+    let mut comments_flushed = false;
+
+    while let Some(res) = chain_reader.next() {
         let chain = res?;
+
+        if !comments_flushed {
+            for comment in std::mem::take(&mut chain_reader.header_comments) {
+                writeln!(writer, "{}", comment.trim_end())?;
+            }
+            comments_flushed = true;
+        }
 
         // Check sort order
         if chain.header.score > last_score {
@@ -48,12 +60,13 @@ pub fn pre_net<R: BufRead, W: Write>(
         last_score = chain.header.score;
 
         if let Some(d) = opts.dots {
-            if count > 0 && count % d == 0 {
+            if count > 0 && count.is_multiple_of(d) {
                 eprint!(".");
             }
         }
 
         if !opts.incl_hap && is_haplotype(&chain.header.q_name) {
+            count += 1;
             continue;
         }
 
@@ -89,6 +102,8 @@ pub fn pre_net<R: BufRead, W: Write>(
                 t_chrom.set_range(t_s, t_len);
             }
         }
+
+        count += 1;
     }
 
     if opts.dots.is_some() {

@@ -21,12 +21,22 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let reader = pgr::reader(input_path)
         .with_context(|| format!("Failed to open reader for {}", input_path))?;
 
-    let chroms = read_nets(reader)?;
+    let mut chroms = read_nets(reader)?;
 
     fs::create_dir_all(output_dir)
         .with_context(|| format!("Failed to create directory {}", output_dir))?;
 
-    for chrom in chroms {
+    // UCSC netSplit: collect all `##` comments globally, `sort -u`, then
+    // write the SAME sorted+deduplicated comment set to EACH output file.
+    let mut all_comments: Vec<String> = Vec::new();
+    for chrom in &chroms {
+        all_comments.extend(chrom.comments.iter().cloned());
+    }
+    all_comments.sort();
+    all_comments.dedup();
+
+    for chrom in chroms.iter_mut() {
+        chrom.comments = all_comments.clone();
         // Guard against path traversal: chromosome names come from the input
         // net file and could contain '/' or '..' if the input is malicious.
         anyhow::ensure!(

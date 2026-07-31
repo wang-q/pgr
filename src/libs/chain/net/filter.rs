@@ -214,6 +214,14 @@ pub fn prune_gap(gap: &Rc<RefCell<Gap>>, c: &FilterCriteria) {
 fn prune_fill(fill: &Rc<RefCell<Fill>>, c: &FilterCriteria) {
     let mut fill_mut = fill.borrow_mut();
 
+    // UCSC netFilter: gaps have no `type` field, so filterOne returns FALSE
+    // for them whenever the `types` filter is set. This drops all gaps (and
+    // their nested fills) at every level, keeping only type-matched fills.
+    if c.types.is_some() {
+        fill_mut.gaps.clear();
+        return;
+    }
+
     let mut new_gaps = Vec::new();
     for gap_rc in &fill_mut.gaps {
         let keep = {

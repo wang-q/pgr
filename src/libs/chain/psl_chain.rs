@@ -21,15 +21,23 @@ pub struct GroupData {
 pub type GroupKey = (String, String, char);
 
 /// Read PSL records and group alignment blocks by (target, query, strand).
+///
+/// Returns the grouped blocks plus any `#` comment lines collected from the
+/// input header (UCSC axtChain propagates these via lineFileSetMetaDataOutput).
 pub fn group_psl_blocks<R: BufRead, S: SequenceReader>(
     reader: R,
     score_ctx: &mut Option<ScoreContext<S>>,
-) -> anyhow::Result<HashMap<GroupKey, GroupData>> {
+) -> anyhow::Result<(HashMap<GroupKey, GroupData>, Vec<String>)> {
     let mut groups: HashMap<GroupKey, GroupData> = HashMap::new();
+    let mut comments: Vec<String> = Vec::new();
 
     for line in reader.lines() {
         let line = line?;
-        if line.is_empty() || line.starts_with('#') {
+        if line.is_empty() {
+            continue;
+        }
+        if line.starts_with('#') {
+            comments.push(line);
             continue;
         }
 
@@ -89,7 +97,7 @@ pub fn group_psl_blocks<R: BufRead, S: SequenceReader>(
         }
     }
 
-    Ok(groups)
+    Ok((groups, comments))
 }
 
 /// Chain PSL alignments and write chains filtered by `min_score`.
@@ -104,7 +112,7 @@ pub fn chain_psl<R: BufRead, W: Write, S: SequenceReader>(
     min_score: f64,
     score_context: &mut Option<ScoreContext<S>>,
 ) -> anyhow::Result<()> {
-    let groups = group_psl_blocks(reader, score_context)?;
+    let (groups, comments) = group_psl_blocks(reader, score_context)?;
 
     let mut all_chains: Vec<Chain> = Vec::new();
     let mut chain_id_counter = 1;
@@ -143,6 +151,12 @@ pub fn chain_psl<R: BufRead, W: Write, S: SequenceReader>(
     }
 
     all_chains.sort_by(|a, b| b.header.score.total_cmp(&a.header.score));
+
+    // UCSC axtChain propagates `##` metadata from the PSL input to the chain
+    // output via lineFileSetMetaDataOutput.
+    for comment in &comments {
+        writeln!(writer, "{}", comment)?;
+    }
 
     for chain in all_chains {
         if chain.header.score < min_score {

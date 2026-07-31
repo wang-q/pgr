@@ -17,8 +17,8 @@ Processing:
   3. Connect blocks into chains using dynamic programming:
      - Score = BlockScore + Max(PredecessorScore - GapCost).
      - Block Scoring:
-       * Default: Identity matrix (Match: +100, Mismatch: -100).
-       * Custom: Use --score-scheme to load a LASTZ format file or preset (hoxd55).
+       * Default: HoxD55 matrix (LASTZ/axtChain default).
+       * Override: Use --score-scheme to load a LASTZ format file or preset (hoxd55).
      - Gap Cost (Penalty):
        * Linear (Default): --gap-model loose (suitable for distant species).
                            --gap-model medium (suitable for mouse/human).
@@ -29,13 +29,13 @@ Processing:
      - Default is 1000 to match UCSC axtChain behavior.
 
 Examples:
-1. Chain PSL file with default settings:
+1. Chain PSL file with default settings (HoxD55):
    pgr psl chain t.2bit q.2bit in.psl -o out.chain
 
 2. Chain with affine gap costs:
    pgr psl chain t.2bit q.2bit in.psl -o out.chain --align-gap-open 400 --align-gap-extend 30
 
-3. Chain with HoxD55 scoring scheme:
+3. Chain with an explicit scoring scheme:
    pgr psl chain t.2bit q.2bit in.psl -o out.chain --score-scheme hoxd55
 "###,
         )
@@ -80,7 +80,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let score_matrix = if let Some(path) = score_scheme_path {
         SubMatrix::from_name(path)?
     } else {
-        SubMatrix::default()
+        SubMatrix::hoxd55()
     };
 
     let mut score_context = Some(ScoreContext {

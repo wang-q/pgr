@@ -316,7 +316,9 @@ fn test_net_subset_basic() -> Result<(), Box<dyn std::error::Error>> {
 
     // Should contain a chain covering 100-200.
     // Header: size 1000. tStart 100. tEnd 200. qStart 100. qEnd 200.
-    assert!(output.contains("chain 1000 chr1 1000 + 100 200 chr2 1000 + 100 200 1"));
+    // Score is re-calculated by target span ratio (UCSC chainFastSubsetOnT):
+    // 1000 * (200-100) / (1000-0) = 100.
+    assert!(output.contains("chain 100 chr1 1000 + 100 200 chr2 1000 + 100 200 1"));
     assert!(output.contains("100")); // Block size
 
     Ok(())
@@ -365,9 +367,11 @@ fn test_net_subset_split_on_insert() -> Result<(), Box<dyn std::error::Error>> {
     // Should contain two parts of chain 1:
     // 1. 0-200.
     // 2. 300-500. (Gap was 200-300).
+    // Scores are re-calculated by target span ratio (UCSC chainFastSubsetOnT):
+    // 1000 * (200-0) / (1000-0) = 200 for each part.
 
-    assert!(output.contains("chain 1000 chr1 1000 + 0 200"));
-    assert!(output.contains("chain 1000 chr1 1000 + 300 500"));
+    assert!(output.contains("chain 200 chr1 1000 + 0 200"));
+    assert!(output.contains("chain 200 chr1 1000 + 300 500"));
 
     Ok(())
 }

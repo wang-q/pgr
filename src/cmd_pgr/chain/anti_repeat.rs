@@ -71,8 +71,13 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             .with_context(|| format!("Failed to open reader for {}", input_path))?,
     );
 
-    for res in reader.by_ref() {
+    // UCSC chainAntiRepeat uses lineFileSetMetaDataOutput to pass `##` header
+    // comments through to the output. Emit them before any chain records.
+    while let Some(res) = reader.next() {
         let chain = res?;
+        for comment in std::mem::take(&mut reader.header_comments) {
+            writeln!(writer, "{}", comment.trim_end())?;
+        }
         if chain.header.score >= no_check_score as f64 {
             chain.write(&mut writer)?;
             continue;

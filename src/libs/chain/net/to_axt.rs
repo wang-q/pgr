@@ -84,9 +84,13 @@ fn convert_fill<S: SequenceReader, W: Write>(
     writer: &mut W,
     counter: &mut usize,
 ) -> anyhow::Result<()> {
+    // UCSC netToAxt splitWrite + rConvert: first emit ALL segments of this
+    // fill (splitting at gaps with inserts), THEN recurse into children.
+    // This produces parent AXT records before child AXT records (pre-order).
     let mut cur = fill.start;
+    let mut child_gaps: Vec<Rc<RefCell<Gap>>> = Vec::new();
 
-    // Iterate gaps to interleave segments and children
+    // First pass: emit all segments (UCSC splitWrite behavior).
     for gap_rc in &fill.gaps {
         let (g_start, g_end, has_children, q_gap_size) = {
             let g = gap_rc.borrow();
@@ -98,26 +102,28 @@ fn convert_fill<S: SequenceReader, W: Write>(
         let should_split = has_children || q_gap_size > 0;
 
         if should_split {
-            // 1. Segment before gap
             if g_start > cur {
                 convert_segment(cur, g_start, chain, t_2bit, q_2bit, matrix, writer, counter)?;
             }
-
-            // 2. Recurse into gap
-            r_convert(gap_rc, chains, t_2bit, q_2bit, matrix, writer, counter)?;
-
-            // 3. Update cur to skip this gap
             cur = cur.max(g_end);
+            if has_children {
+                child_gaps.push(gap_rc.clone());
+            }
         }
         // else: Merge — extend the current segment over this gap (indel).
         // convert_segment will handle the gap by inserting dashes.
     }
 
-    // 3. Tail
+    // Tail segment.
     if cur < fill.end {
         convert_segment(
             cur, fill.end, chain, t_2bit, q_2bit, matrix, writer, counter,
         )?;
+    }
+
+    // Second pass: recurse into children (UCSC rConvert behavior).
+    for gap_rc in child_gaps {
+        r_convert(&gap_rc, chains, t_2bit, q_2bit, matrix, writer, counter)?;
     }
 
     Ok(())

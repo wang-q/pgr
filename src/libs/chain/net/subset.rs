@@ -71,7 +71,8 @@ fn process_fill(
                         // This gap has inserts (children fills)
                         // Output chain part from t_start to gap.start
                         if gap.start > t_start {
-                            if let Some(sub) = chain.subset(t_start, gap.start) {
+                            if let Some(mut sub) = chain.subset(t_start, gap.start) {
+                                rescore_subset(&mut sub, chain);
                                 sub.write(writer)?;
                             }
                         }
@@ -80,13 +81,15 @@ fn process_fill(
                 }
                 // Output remaining part
                 if fill.end > t_start {
-                    if let Some(sub) = chain.subset(t_start, fill.end) {
+                    if let Some(mut sub) = chain.subset(t_start, fill.end) {
+                        rescore_subset(&mut sub, chain);
                         sub.write(writer)?;
                     }
                 }
             } else {
                 // Default: subset to fill range
-                if let Some(sub) = chain.subset(fill.start, fill.end) {
+                if let Some(mut sub) = chain.subset(fill.start, fill.end) {
+                    rescore_subset(&mut sub, chain);
                     sub.write(writer)?;
                 }
             }
@@ -99,6 +102,17 @@ fn process_fill(
     }
 
     Ok(())
+}
+
+/// Re-score a subset chain based on target span ratio, matching UCSC
+/// `chainFastSubsetOnT` (chain.c:554-557):
+/// `sub.score = chain.score * (sub.tEnd - sub.tStart) / (chain.tEnd - chain.tStart)`.
+fn rescore_subset(sub: &mut Chain, full: &Chain) {
+    let full_t_span = full.header.t_end.saturating_sub(full.header.t_start);
+    let sub_t_span = sub.header.t_end.saturating_sub(sub.header.t_start);
+    if full_t_span > 0 {
+        sub.header.score = full.header.score * (sub_t_span as f64) / (full_t_span as f64);
+    }
 }
 
 #[cfg(test)]
@@ -214,5 +228,74 @@ mod tests {
         // The top fill should be skipped, but the nested "syn" fill must still be emitted.
         assert!(!output.contains("chain 100 chr1 1000 + 0 100 chr2 1000 + 0 100 1"));
         assert!(output.contains("chain 100 chr1 1000 + 10 20 chr2 1000 + 10 20 2"));
+    }
+
+    #[test]
+    fn test_subset_rescores_by_target_span_ratio() {
+        // UCSC chainFastSubsetOnT: sub.score = chain.score * sub_t_span / full_t_span.
+        // Full chain spans t 0..1000 (score 1000); fill covers t 0..100 -> sub score 100.
+        let chrom = Chrom::new("chr1", 1000);
+        let fill = Rc::new(RefCell::new(Fill {
+            start: 0,
+            end: 100,
+            o_start: 0,
+            o_end: 100,
+            o_chrom: "chr2".to_string(),
+            o_strand: '+',
+            chain_id: 1,
+            score: 1000.0,
+            ali: 100,
+            class: "top".to_string(),
+            q_dup: None,
+            q_over: None,
+            q_far: None,
+            chain: None,
+            gaps: Vec::new(),
+            t_n: None,
+            q_n: None,
+            t_r: None,
+            q_r: None,
+            t_trf: None,
+            q_trf: None,
+        }));
+        chrom.root.borrow_mut().fills.push(fill);
+
+        let mut chains_map = HashMap::new();
+        // Full chain: t 0..1000, score 1000. Subset t 0..100 -> score 100.
+        chains_map.insert(
+            1,
+            Chain {
+                header: ChainHeader {
+                    score: 1000.0,
+                    t_name: "chr1".to_string(),
+                    t_size: 1000,
+                    t_strand: '+',
+                    t_start: 0,
+                    t_end: 1000,
+                    q_name: "chr2".to_string(),
+                    q_size: 1000,
+                    q_strand: '+',
+                    q_start: 0,
+                    q_end: 1000,
+                    id: 1,
+                },
+                data: vec![ChainData {
+                    size: 1000,
+                    dt: 0,
+                    dq: 0,
+                }],
+            },
+        );
+
+        let mut buf = Vec::new();
+        let opts = SubsetOptions {
+            whole_chains: false,
+            split_on_insert: false,
+        };
+        subset_nets(&[chrom], &chains_map, &mut buf, opts, None).unwrap();
+        let output = String::from_utf8(buf).unwrap();
+        // 1000 * (100-0) / (1000-0) = 100
+        assert!(output.contains("chain 100 chr1 1000 + 0 100 chr2 1000 + 0 100 1"));
+        assert!(!output.contains("chain 1000 chr1 1000 + 0 100 chr2 1000 + 0 100 1"));
     }
 }

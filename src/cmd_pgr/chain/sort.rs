@@ -1,6 +1,6 @@
 use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches, Command};
-use pgr::libs::chain::read_chains;
+use pgr::libs::chain::{read_chains, ChainReader};
 use std::io::BufRead;
 use std::io::Write;
 /// Build the clap subcommand for sort.
@@ -71,14 +71,21 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let save_id = args.get_flag("save_id");
 
     let mut all_chains = Vec::new();
+    let mut header_comments: Vec<String> = Vec::new();
 
-    // Read all chains
-    for file_path in &files {
-        let chains = read_chains(
-            pgr::reader(file_path)
-                .with_context(|| format!("Failed to open reader for {}", file_path))?,
-        )?;
-        all_chains.extend(chains);
+    // Read all chains. UCSC chainMergeSort propagates `##` metadata from the
+    // first file only (lineFileSetMetaDataOutput on the first lineFile).
+    for (i, file_path) in files.iter().enumerate() {
+        let reader = pgr::reader(file_path)
+            .with_context(|| format!("Failed to open reader for {}", file_path))?;
+        if i == 0 {
+            let mut chain_reader = ChainReader::new(reader);
+            all_chains.extend(chain_reader.by_ref().collect::<Result<Vec<_>, _>>()?);
+            header_comments = std::mem::take(&mut chain_reader.header_comments);
+        } else {
+            let chains = read_chains(reader)?;
+            all_chains.extend(chains);
+        }
     }
 
     // Sort by score descending, renumber unless --save-id
@@ -88,6 +95,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let out_path = crate::cmd_pgr::args::get_outfile(args);
     let mut writer =
         pgr::writer(out_path).with_context(|| format!("Failed to open writer for {}", out_path))?;
+    for comment in &header_comments {
+        writeln!(writer, "{}", comment.trim_end())?;
+    }
     for chain in all_chains {
         chain.write(&mut writer)?;
     }

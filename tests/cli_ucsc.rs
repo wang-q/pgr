@@ -399,7 +399,10 @@ fn test_net_to_axt_lastz() {
     assert!(output.exists());
     assert!(fs::metadata(&output).unwrap().len() > 0);
 
-    let expected_output = get_path("axtNet/cat.axt");
+    // UCSC netToAxt emits AXT records in net-tree pre-order (parent segments
+    // before child fills). The sorted variant is cat.axt (post-axtSort); the
+    // raw netToAxt output is cat.tmp.axt.
+    let expected_output = get_path("axtNet/cat.tmp.axt");
     let output_content = fs::read_to_string(&output).unwrap();
     let expected_content = fs::read_to_string(&expected_output).unwrap();
 
