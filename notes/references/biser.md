@@ -172,18 +172,46 @@ k-mer（tie 时取最右）。期望指纹大小为 `2|G|/(w+1)`。论文/代码
 - `build_index=True`: 扫描参考基因组，建立 k-mer → 位置列表的索引。
 - `find_sds=True`: 用已建索引对 query 序列做 plane-sweep，更新 `ListNode` 链表并输出 hits。
 
-`update_list()` 是 plane-sweep 的核心：维护一个按染色体/位置排序的 `ListNode` 链表，每个节点记录一段
-putative SD 在 query 上的区间 (`first`, `last`)、在参考上的对应区间 (`ref`, `ref_last`)、
-命中次数 (`count`) 与扫描步数 (`age`)。当 `count ≥ ceil(age · τ)` 且长度未超过 `MAX_SD_LEN`
-时，节点被标记为 `potentional`；一旦条件不满足，若节点先前是 potential 且满足长度阈值，则调用
-`save_sd()` 输出。
+**2-bit 编码**: 代码中对碱基做 `(int(si) & 3)` 得到 2-bit 值，即 `A=0, C=1, G=2, T=3`。
+滚动哈希 `h = ((h << 2) | base) & ((1 << 28) - 1)`（`KMER_SIZE=14`）生成 28-bit k-mer hash。
 
-Winnowing 实现使用单调栈/队列：维护一个 `(hash, pos)` 双端队列，保证队首为当前窗口最小 hash；
-当位置滑出窗口时弹出。只有窗口填满后才输出 fingerprint。
+**Winnowing 实现**: `build_index()` 中用单调栈/队列维护 `(hash, pos)`：
+- 新 k-mer 入队前，从队尾弹出 hash 不小于新 hash 的元素，保证队首为窗口最小值。
+- 从队首弹出位置超出当前窗口 (`pos < i - KMER_SIZE + 1 - WINNOW_SIZE`) 的元素。
+- 窗口填满 (`i - KMER_SIZE + 1 >= WINNOW_SIZE`) 后，队首 hash 即为一个 fingerprint；
+  只有 fingerprint 变化时才进入 plane-sweep/索引插入，避免同一 hash 连续处理。
+
+**Plane-sweep 链表 `update_list()`**: 维护按 `(chr, first)` 排序的 `ListNode` 链表，
+每个节点保存：
+- query 区间 `(first, last)` 与 reference 对应区间 `(ref, ref_last)`；
+- 已扫描步数 `age`、命中次数 `count`；
+- 是否曾经满足阈值 `potentional`。
+
+对当前 query 位置 `current.loc` 对应的 reference 位置列表 `loci`（已按 `(chr, loc)` 排序），
+`update_list()` 依次处理三种情况：
+1. **延伸**: 若 `loci[lidx]` 与某 walker 同属一条 chromosome，且距离在 `MAX_DISTANCE` 内
+   (`loci.loc - MAX_DISTANCE ≤ walker.last < loci.loc`)，则延伸 walker 的 `last`/`ref_last`
+   并增加 `count`。
+2. **插入**: 若 `loci[lidx]` 落在当前 walker 与下一个 walker 之间，则插入新节点，
+   年龄初始为 0（本轮结束时再 `age += 1`）。
+3. **老化**: 若当前 walker 未被延伸或插入，则 `age += 1`，并检查 `count ≥ ceil(age · τ)`。
+   - 若满足且长度 `< MAX_SD_LEN`，标记 `potentional`。
+   - 若不满足或长度超限，且此前为 `potentional`，并满足 `last - first > QUERY_THRESHOLD`
+     与 `current.loc - walker.ref ≥ REF_THRESHOLD`，则调用 `save_sd()` 输出该 hit。
+
+**Tau 计算**: `tau()` 中先算 `gap_error = min(1.0, (MAX_ERROR - MAX_EDIT_ERROR) / MAX_EDIT_ERROR * MAX_EDIT_ERROR)`，
+再返回
+`((1 - gap_error) / (1 + gap_error)) * (1 / (2 * exp(KMER_SIZE * MAX_EDIT_ERROR) - 1))`。
+此即论文中的 Jaccard 下界。
+
+**输出 `save_sd()`**: 输出前对边界做 `MAX_EXTEND` 填充（同 chromosome 时避免两个 mate 重叠），
+并过滤掉完全自重叠（same species/name/strand 且坐标相同）的情况。最终生成 `Hit` 存入按
+`(species1, chr1, species2, chr2, complement)` 分组的 `result` 字典。
 
 #### 3.3.2 Chaining in `chain.codon`
 
-`PrioritySearchTree` 是 chaining 的核心数据结构。它支持：
+`PrioritySearchTree` 是 chaining 的核心数据结构。它基于 y 坐标建静态二叉搜索树，每个叶子对应一个 anchor 的
+y 位置 `(y + l - 1, anchor_idx)`。支持：
 
 - `activate(x, score)`: 激活一个点并赋值。
 - `deactivate(x)`: 将点置为 `-INF`。
@@ -191,34 +219,77 @@ Winnowing 实现使用单调栈/队列：维护一个 `(hash, pos)` 双端队列
 
 `chain()` 流程：
 
-1. 将每个锚点的 y 坐标（含 inclusive end）建树。
-2. 按 x 坐标扫描；在锚点左端点时查询树中 y 方向最近的已激活锚点，更新 DP 与 `prev` 指针。
-3. 在锚点右端点时激活当前锚点。
-4. 按 DP 得分排序并重构链，过滤掉过短的链。
+1. 对 reference 上的每个 anchor 左端点 `x` 和右端点 `x + l` 生成事件，按 x 排序扫描。
+2. 在左端点事件时：
+   - 先 deactivate 距离过远（`x - (anchor_j.x + anchor_j.l) > MAX_CHAIN_GAP`）的旧 anchor。
+   - 在 PST 中查询 y 区间 `[ay - MAX_CHAIN_GAP, ay - 1]` 内得分最高的已激活 anchor `j`。
+   - 若 `j` 存在，计算 gap cost `dx + dy`（`dx = ax - (jx + jl)`，`dy = ay - (jy + jl)`），
+     更新 `dp[i] = max(MATCH_SCORE + (MATCH_SCORE//2)*(al-1) + dp[j] - gap, 自身得分)`，
+     并设置 `prev[i] = j`。
+3. 在右端点事件时，以 `dp[i] - gap_to_end` 激活当前 anchor，其中 `gap_to_end` 是从当前 anchor 到
+   序列末端的最大可能距离惩罚。
+4. 按 DP 得分排序并重构链，过滤掉 span 小于 `MIN_UPPERCASE_MATCH` 或 `MIN_READ_SIZE * (1 - MAX_ERROR)` 的链。
+
+anchor 得分模型：第一个碱基得 `MATCH_SCORE`（默认 4），每多一个匹配碱基加 `MATCH_SCORE // 2`（即 2）。
+gap 惩罚为 reference gap 与 query gap 之和（`dx + dy`），无 open 项。
 
 #### 3.3.3 Alignment refinement in `align.codon`
 
-`generate_anchors(h, KMER_SIZE=10)` 在两个 mate 序列间找 10-mer 精确匹配。为避免同染色体上
-self-overlap 的 trivial anchors，它会跳过与对角线距离过近的匹配。
+`generate_anchors(h, KMER_SIZE=10)` 在两个 mate 序列间找 10-mer 精确匹配锚点：
+- 先在 reference mate (`h.y`) 上建 hash 表 `ref_hashes: kmer -> [pos]`。
+- 再扫描 query mate (`h.x`)，对每个 k-mer 查找匹配位置。
+- 使用 `slide[d]` 数组（`d = len(x) + yi - xi`）避免同一对角线上被包含的短匹配：
+  只保留每个对角线上能向右延伸最远的 anchor。
+- 对保留的匹配向右延伸，直到遇到 `N` 或碱基不一致。
+- 同染色体时跳过与对角线距离小于等于 `KMER_SIZE` 的 trivial 匹配。
+- 只使用出现次数 `0 < count < 1000` 的 k-mer。
 
-`refine(orig_h, hits, max_iter=500)` 对 anchors 做第二次 DP：
-
-- 按位置排序 anchors；
-- 用 `score = match*len - mismatch*diff - gapopen - gap*(max_gap - min_gap)` 计算链得分；
-- 回溯得到不相交的高分 anchor 链；
-- 对链两端的 gap 分别调用 `ltrim()` / `rtrim()`，保留高比对得分部分；
-- 最终用 `Hit(orig_h, [anchors], SIDE_ALIGN)` 拼接 anchors 与 gaps，输出精修后的 hit。
+`refine(orig_h, hits, max_iter=500)` 对 anchors 做第二次 DP 精修：
+- anchors 先按 `(x.chr, y.chr, x.end, x.start, y)` 排序。
+- 每个 anchor 的自身得分 `score = MATCH * matches - MISMATCH * mismatches - GAP * indel_bp`。
+- DP 仅向后查找最多 `max_iter=500` 个候选前驱；对每对 `(aj, ai)` 计算：
+  - `mi = min(c_xs - p.x.end, c_ys - p.y.end)`
+  - `ma = max(c_xs - p.x.end, c_ys - p.y.end)`
+  - 若 `ma ≥ MAX_GAP` 或同染色体且中间无 gap，则跳过。
+  - 更新 `dp[ai] = max(dp[ai], dp[aj] + score[ai] - MISMATCH * mi - GAPOPEN - GAP * (ma - mi))`。
+- 按 `dp` 得分降序回溯，得到不相交的 anchor 链；合并被已有结果完全覆盖的链。
+- 对最终链，用 `Hit(orig_h, [anchors], SIDE_ALIGN)` 拼接 anchors：
+  - 相邻 anchors 之间的 gap 调用 `align_gap()`，小 gap（≤1000）用 `bio.seq.align()` 做精确比对；
+    大 gap 用两端各比对 1000bp 并取分高者，中间用 `I`/`D` 表示。
+  - 在链两端各取 `SIDE_ALIGN=500` 做 `ltrim()` / `rtrim()`：从端点向内侧扫描，找到累积比对得分
+    最大的位置作为新边界。
 
 `hit.codon` 中的 `Hit.align()` 会调用 `bio.seq.align()`，并将返回的 `M` 操作细分为 `=`（匹配）与
-`X`（错配）。
+`X`（错配），CIGAR 操作仅使用 `=`, `X`, `I`, `D`。
 
 #### 3.3.4 Decomposition in `decompose.codon`
 
-分解阶段读取 `cluster` 输出的每个 cluster FASTA，对每个序列扫描 `k=10` 的 k-mer。`update_list()`
-与 search 阶段类似，但节点需要跟踪*多个*拷贝（`mappings` 字典），并在节点被移除时输出一组长度超过
-`MIN_MATE_LEN` 的 elementary SD 区间。
+分解阶段读取 `cluster` 输出的每个 cluster FASTA，对每个序列扫描 `k=10` 的 k-mer。
 
-`filter_index()` / 阈值逻辑与 search 一致：过滤掉出现频率最高的 0.1% k-mer，避免重复序列干扰。
+**索引构建**: 对 cluster 中所有序列（来自 `cluster.codon` 输出的 `.fa`）建立完整 k-mer 索引，
+`kmer.as_int()` 作为 key，记录每个 k-mer 出现的 `(chr_id, loc)` 列表。同样用频率阈值过滤最高的
+0.1% k-mer。
+
+**`update_list()` 与 search 的差异**: search 阶段每个节点只跟踪一段 putative SD 的两个 mate；
+decompose 阶段需要跟踪同一 elementary SD 在多个序列上的多个拷贝，因此每个 `ListNode` 额外维护：
+- `mappings: Dict[int, int]`：记录该节点对应 elementary SD 在每个 chromosome 上的当前最右边界；
+- `gap`：自上次命中以来的未命中步数；
+- `score`：命中计数。
+
+处理当前 k-mer 的位置列表 `index`（按 `(chr, loc)` 降序排列）时：
+1. 对尚未进入链表的新位置，在链表头部插入新节点，并继承当前 `mappings`。
+2. 对可延伸的节点，更新 `end`、`score`、`gap=0`、`count += 1`。
+3. 对老化节点（`gap >= diff=50`），若此前为 `potentional` 且长度超过 `MIN_MATE_LEN`，
+   调用 `process()` 输出：
+   - 若 `mappings` 为空，输出 `(chr, begin, end, score)`；
+   - 否则对每个 chromosome 输出从 `begin` 到 `mappings[chr]` 的区间，并更新 `begin` 为 `mappings[chr]+1`。
+4. 清空已输出区域对应的 `visited` 标记，避免同一碱基被多次分解。
+
+**合并 `merge()`**: 对相邻的 elementary SD 集合，若它们在所有 chromosome 上连续且间隔不超过 500bp，
+则合并为一个集合。
+
+**输出**: 每个 elementary SD 集合输出为 BED 行，格式为
+`species\tchrom\tbegin\tend\tset_id\tlength\tscore\tstrand`；其中 strand 来自序列名中的 `+`/`-`。
 
 ## 4. 相关研究：T2T-CHM13 SD 注释来源与下游分析
 
@@ -370,7 +441,358 @@ IGC 会导致某个 haplotype 上的 SD 序列与其参考位置上的 ortholog 
    CIGAR 比较 + 二项检验）为 pgr 提供了一个可复用的“寻找 ectopic 最佳匹配”模板，
    可用于检测组装间的非等位基因转换或重复片段的迁移事件。
 
-## 6. 参考文献
+## 6. 迁移到 PGR 的可执行方案
+
+> 本节基于对 BISER 源码的逐行阅读与 PGR 现有代码的深入对比，给出将 BISER 体系迁移到 PGR 的
+> 具体算法映射、可复用组件清单、缺失模块清单以及分阶段实施计划。所有可复用组件均与代码库中的
+> 实际 API 对应，目标是让迁移工作可以直接按图索骥。
+
+### 6.1 迁移目标与边界
+
+- **目标**: 在 PGR 中新增 `pgr sd` 命令族，实现与 BISER 等价的功能：
+  putative SD 检测、局部比对精修、跨基因组映射、SD 聚类、elementary SD 分解、
+  core duplicon 识别、hard-mask 坐标与原基因组坐标互转。
+- **边界**: 本次迁移聚焦算法实现与命令接口；多进程调度、临时目录管理、 resume 等工程特性
+  可在核心算法稳定后按 PGR 已有模式（如 `pgr pl` pipeline）补充。
+- **原则**: 复杂算法放 `src/libs/`，`cmd_pgr/` 仅做参数解析、I/O 转换与调用。单命令专用的
+  复杂逻辑也放 `libs/`。
+
+### 6.2 BISER 算法阶段与 PGR 组件映射
+
+#### 6.2.1 Hard-masking（`mask.codon`）
+
+- **BISER 实现**
+  - 文件: `biser/codon/mask.codon:7-15`
+  - 行为: 读取 FASTA，只保留大写碱基（即删除 lowercase bases），按 `width=80` 输出为新的 hard-masked FASTA。
+    因此 hard-masked 序列长度会变短，需要额外记录 uppercase run 在原基因组中的坐标，供后续 translate 使用。
+- **PGR 可复用组件**
+  - `src/libs/fmt/fa.rs`:
+    - `reader(infile) -> Result<fasta::io::Reader<...>>`: 顺序读取 FASTA，支持 stdin 与 gzip。
+    - `writer_with_wrap(outfile, 80) -> Result<fasta::io::Writer<...>>`: 按 80 bp 换行输出（与 BISER 的 `width=80` 一致）。
+    - `find_masked_regions(seq, gap_only=false) -> Vec<(usize, usize)>`: 返回 lowercase 或 N/n 区域的 0-based inclusive 区间。
+    - `mask_sequence(seq, spans, hard=true) -> Result<String>`: 将指定区间替换为 `N`；若需要保留序列长度并仅做 hard-mask，可复用此函数。
+  - `src/libs/nt.rs`:
+    - `NT_VAL: [usize; 256]`: A/a/C/c/G/g/T/t/U/u 映射到 0/1/2/3，IUPAC ambiguity codes 与 N/n 映射到 4，其余为 255 (Invalid)。
+    - `is_lower(b) -> bool`: 判断小写碱基。
+    - `is_n(b) -> bool`: 判断 N 或 IUPAC ambiguous。
+- **需要新增的实现**
+  - 在 `mask` 阶段没有直接“删除 lowercase 碱基”的函数。实现方式：读取 record 时过滤 `nt::is_lower(b)`，
+    仅保留 uppercase A/C/G/T；同时记录每个 uppercase run 在原序列中的 `[orig_start, orig_end)` 边界，
+    存入 `Vec<(usize, usize)>` 供 `translate` 使用。输出用 `fa::writer_with_wrap(outfile, 80)`。
+
+#### 6.2.2 Putative SD detection（`search.codon`）
+
+- **BISER 实现**
+  - 文件: `biser/codon/search.codon:189-343`
+  - 核心: 2-bit 滚动哈希 + winnowing + plane-sweep 链表 + tau 阈值 + 输出候选 hit。
+- **PGR 可复用组件**
+  - `src/libs/nt.rs`:
+    - `NT_VAL` 将 A/C/G/T/U 映射到 0/1/2/3，可直接用于 BISER 风格的 2-bit 滚动哈希；
+      遇到 `NT_VAL[b] > 3` 时跳过（与 BISER 的 hard-mask 行为一致）。
+  - `src/libs/fmt/fa.rs`:
+    - `reader()`: 顺序读取 FASTA，适合建 k-mer 索引。
+  - `src/libs/ds/bitmap.rs`:
+    - `BitMap::new(size)` + `set_range(start, len)` + `is_fully_set(start, len)`: 可用于标记已访问位置，
+      避免 plane-sweep 中同一碱基被重复计入多个 putative SD。
+- **不可直接复用**
+  - `src/libs/hash.rs`: 提供 canonical minimizer 采样（`seq_sketch`、`JumpingMinimizer`）与 Jaccard/Mash 距离计算。
+    但 BISER search/decompose 依赖 exact 2-bit k-mer + winnowing（非 canonical、非 hash-based），
+    因此 `hash.rs` 的 minimizer 流程不能直接复用，仅可作为 sketch 验证或后续扩展使用。
+- **需要新增的实现**
+  - `src/libs/sd/kmer_index.rs`: exact 2-bit k-mer 滚动哈希、winnowing 采样、
+    `kmer -> Vec<(chr_id, pos)>` 索引、频率阈值过滤（0.1%）。
+  - `src/libs/sd/plane_sweep.rs`: `ListNode` 链表、`update_list()` 三种分支逻辑、
+    `save_sd()` 输出、tau 计算。
+  - `src/libs/sd/hit.rs`: SD hit 数据结构（坐标、species、chromosome、strand、CIGAR、
+    error rate），可参考 `src/libs/chain/record.rs` 的 `Chain` / `Block` 设计。
+
+#### 6.2.3 Alignment refinement（`align.codon` + `hit.codon`）
+
+- **BISER 实现**
+  - 文件: `biser/codon/align.codon:5-112`、`biser/codon/hit.codon:325-348`
+  - 核心: 10-mer anchor 生成、PST chaining、sparse DP refine、CIGAR 精修。
+- **PGR 可复用组件**
+  - `src/libs/chain/connect.rs`:
+    - `chain_blocks(blocks, gap_calc, score_ctx, ...) -> Result<Vec<Chain>>` 是已经实现的完整 chaining DP：
+      内部使用 `src/libs/ds/kdtree.rs` 的 `KdTree` 做 weighted predecessor search，
+      支持 gap cost、overlap penalty、去重、merge、trim、score recalc。
+    - 将 BISER 的 anchor `(x, x+l, y, y+l, score)` 映射为
+      `ChainableBlock { t_start: x, t_end: x+l, q_start: y, q_end: y+l, score }` 后即可调用。
+    - **注意**: `chain_blocks` 中 KD-tree 的 x 维度对应 query (`q_start`/`q_end`)，y 维度对应 target
+      (`t_start`/`t_end`)；其几何下界剪枝使用 `lower_bound_func(dx, dy)`。BISER PST 的 y 区间查询
+      `[ay - MAX_CHAIN_GAP, ay - 1]` 可通过在 `cost_func` 中返回 `None` 实现过滤。
+  - `src/libs/ds/kdtree.rs`:
+    - `KdTree::build(indices, items)` + `update_scores(leaf_idx, score, items)` +
+      `best_predecessor(target_idx, current_score, items, cost_func, lower_bound_func)` 是底层 chaining 引擎。
+    - 若 `chain_blocks` 的默认打分/去重模型与 BISER 差异较大，可直接使用 `KdTree` 自定义逻辑。
+  - `src/libs/ds/gap_calc.rs`:
+    - `GapCalc::medium()` / `GapCalc::loose()` / `GapCalc::affine(open, extend)`: 预计算 gap cost 表。
+    - **重要差异**: `GapCalc::calc(dq, dt)` 在 `dq > 0 && dt > 0` 时使用 `max(dq, dt)` 查表，
+      而 BISER chaining 的 gap 惩罚是 `dx + dy`（无 open）。因此若要让 `chain_blocks` 严格匹配 BISER，
+      应传入自定义 `cost_func` 直接计算 `dx + dy`，而不是依赖 `GapCalc::affine(0, 1)`。
+    - BISER alignment refinement 的 sparse DP 使用 `GAPOPEN` / `GAP`，可用 `GapCalc::affine(gap_open, gap_extend)`
+      近似单轴 gap cost，但 BISER 的 refine DP 对双 gap 的惩罚公式特殊（`MISMATCH * mi + GAPOPEN + GAP * (ma - mi)`），
+      需要在新模块中重新实现，不能简单套用 `GapCalc`。
+  - `src/libs/poa/align.rs` + `src/libs/poa/graph.rs`:
+    - `ScalarAlignmentEngine::new(AlignmentParams { match_score, mismatch_score, gap_open, gap_extend }, AlignmentType::Local)`
+      提供 Smith-Waterman 局部比对；也支持 `SemiGlobal` 和 `Global`。
+    - 虽然接口面向 POA graph，但只要把其中一条 mate 序列构建成线性 graph，即可做 pairwise alignment：
+      ```rust
+      let mut graph = PoaGraph::new();
+      let mut prev = None;
+      for &base in ref_seq {
+          let node = graph.add_node(base);
+          if let Some(p) = prev { graph.add_edge(p, node, 1); }
+          prev = Some(node);
+      }
+      let engine = ScalarAlignmentEngine::new(params, AlignmentType::Local);
+      let aln = engine.align(qry_seq, &graph);
+      ```
+    - **这是 PGR 内部可用的局部比对器**，可替代 BISER 的 `bio.seq.align()` 处理小 gap（≤1000 bp）。
+  - `src/libs/paf/cigar.rs`:
+    - `parse_cigar(s) -> Result<Vec<CigarOp>>` / `format_cigar(ops) -> String`: CIGAR 解析与格式化。
+    - `extract_cigar(tags)`: 从 PAF tags 提取 CIGAR。
+    - `reverse_cigar(ops)`: 反向并交换 I/D。
+    - `cigar_from_alignment(ref, qry)`: 从两条等长对齐序列生成 `=` / `X` / `I` / `D` CIGAR。
+    - `cigar_stats(ops) -> CigarStats` / `gap_compressed_identity(ops) -> f64` / `block_identity(ops) -> f64`:
+      统计与 identity 计算，可直接用于 error rate 估算。
+    - `slice_cigar_by_target(cigar, target_start, ts, te)`: 按 target 子区间切 CIGAR。
+  - `src/libs/alignment/stat.rs`:
+    - `pair_d(seq1, seq2) -> Result<f32>`: 计算两条等长序列的 divergence。注意它要求输入是等长对齐列，
+      因此更适合从 `cigar_from_alignment` 生成的对齐字符串计算，而不是直接用于 CIGAR。
+  - `src/libs/alignment/msa.rs`:
+    - `align_seqs(seqs, "builtin")` 调用内置 POA consensus 做多序列对齐；
+      也支持 `"spoa"`、`"clustalw"`、`"muscle"`、`"mafft"` 等外部 aligner，可作为 fallback。
+    - 对于 pairwise 小 gap，优先直接用 `ScalarAlignmentEngine`；对于多拷贝 consensus 或 cluster MSA，
+      可复用 `align_seqs(..., "builtin")`。
+  - `src/libs/fas_multiz/banded_align.rs`:
+    - `banded_align_refs(...)` 实现 banded DP + affine gap，当前绑定 `FasBlock`，但算法本身
+      可作为“小范围精确比对”的参考；若需要可提取为通用 pairwise banded align。
+- **需要新增的实现**
+  - `src/libs/sd/anchor.rs`: 在 putative SD 的两个 mate 间生成 10-mer exact-match anchors，
+    包含 `slide[d]` 去重、向右延伸、过滤高频 k-mer、过滤 trivial self-overlap。
+  - `src/libs/sd/refine.rs`: 基于 `chain_blocks` 输出，做 sparse DP 精修、大 gap 处理、
+    两端 score-based `ltrim`/`rtrim`、生成最终 CIGAR。小 gap（≤1000 bp）直接调用 `ScalarAlignmentEngine`
+    或 `align_seqs(..., "builtin")`；大 gap 按 BISER 策略处理。
+
+#### 6.2.4 SD clustering（`cluster.codon`）
+
+- **BISER 实现**
+  - 文件: `biser/codon/cluster.codon:53-165`
+  - 核心: 对 hit 的四个端点做区间 coloring，等价于 union-find 找重叠 hit 的连通分量，
+    然后提取每个 cluster 的序列 FASTA。
+- **PGR 可复用组件**
+  - `src/libs/paf/graph/dsu.rs`:
+    - 已实现 union-by-rank + path compression 的 `Dsu`，但它是 `pub(super)`，仅在
+      `paf::graph` 模块内部可见，**不能直接作为公共 API 使用**。
+    - 迁移时有两种选择：
+      1. 将 `src/libs/paf/graph/dsu.rs` 中的 `Dsu` 提升为 `pub`，并迁移到 `src/libs/ds/dsu.rs`
+         （符合项目“纯数据结构放 `src/libs/ds/`”的约束）。
+      2. 在 `src/libs/sd/` 中重新实现一个轻量 `Dsu`。
+  - `src/libs/ds/dupe_tree.rs`:
+    - `DupeTree::add(start, end)` + `build()` + `count_over(start, end, threshold)`: 可用于统计 hit 端点
+      或 cluster 区域的覆盖深度，辅助过滤高重复区域。
+  - `src/libs/ds/bitmap.rs`:
+    - `BitMap::set_range` / `is_fully_set`: 可用于标记已被 cluster 覆盖的碱基，避免重复提取。
+  - `src/libs/fmt/fa.rs`:
+    - `reader()` / `new_record()` / `writer()`: 读取基因组并构造 cluster FASTA。
+  - `src/libs/nt.rs`:
+    - `rev_comp(seq)`: 生成反向链序列。
+  - `src/libs/loc.rs`:
+    - `fetch_range_seq(reader, loc_of, rg)`: 按区间从 indexed FASTA 提取子序列，避免为超大染色体一次性加载内存。
+  - `src/libs/fmt/twobit.rs`:
+    - `TwoBitFile::read_sequence(name, start, end, no_mask)`: 随机访问 2bit 序列，同样适合区间提取。
+  - `src/libs/paf/fasta.rs`:
+    - `FastaStore::new(seq_to_file)` + `fetch_range(name, start, end)`: 管理多个 BGZF FASTA 文件，
+      带 `.loc` 索引与 LRU 缓存，适合多基因组场景下批量提取 mate 序列。
+- **需要新增的实现**
+  - `src/libs/sd/cluster.rs`: 将 hit 端点排序，用 `Dsu` 合并重叠端点，输出每个 cluster 的
+    FASTA（序列名采用 `species#chrom+/-#start#end` 格式）。
+
+#### 6.2.5 SD decomposition（`decompose.codon`）
+
+- **BISER 实现**
+  - 文件: `biser/codon/decompose.codon:52-277`
+  - 核心: 对 cluster FASTA 建 10-mer 完整索引，再用 plane-sweep + mappings 输出
+    elementary SD 集合。
+- **PGR 可复用组件**
+  - `src/libs/sd/kmer_index.rs`: 复用 exact 10-mer 索引（调整 `k` 参数即可）。
+  - `src/libs/sd/plane_sweep.rs`: 复用链表扫描框架，但 decompose 需要支持多拷贝 mappings，
+    因此 `PlaneSweepState` 需要泛化或单独实现一个 `MultiCopyPlaneSweep`。
+  - `src/libs/ds/bitmap.rs`: 用于标记已输出的 `visited` 区域。
+- **需要新增的实现**
+  - `src/libs/sd/decompose.rs`: 在 cluster FASTA 上调用 10-mer 索引 + 多拷贝 plane-sweep + merge，
+    输出 `.elem` 格式 BED。
+
+#### 6.2.6 Core duplicon identification（`cover.py`）
+
+- **BISER 实现**
+  - 文件: `biser/cover.py:1-102`
+  - 核心: 用 `ncls` 建立 elementary SD → 覆盖的 SD 列表映射，再用贪心 set cover 找出
+    能覆盖所有 SD 的最小 elementary SD 集合，标记为 `CORE`。
+- **PGR 可复用组件**
+  - `coitrees`（已通过 `src/libs/paf/index/builder.rs` 使用）:
+    - 直接建立 `Interval<ElemMetadata>` 区间树，查询重叠 interval，替代 `ncls`。
+    - 比 `PafIndex` 更轻量；`PafIndex` 的 `query()` 与 `query_transitive_bfs()` 展示了
+      “interval tree + CIGAR 投影”模式，可作为复杂场景参考。
+  - `src/libs/paf/index/query.rs`:
+    - `project(ts, te, metadata, cigar)` 实现了 target 子区间到 query 坐标的投影，
+      在将 elementary SD 区间映射到 SD 覆盖时思路类似。
+- **需要新增的实现**
+  - `src/libs/sd/set_cover.rs`: 用二叉堆实现 `greedy_set_cover`，输入为
+    `elementary_id -> Vec<sd_id>`，输出被选中的 core elementary IDs。
+  - `src/libs/sd/cover.rs`: 组装 interval overlap + set cover 流程，在 `.elem` 文件中追加
+    `CORE` 标记。
+
+#### 6.2.7 Coordinate translation（`mask.codon:32-154`）
+
+- **BISER 实现**
+  - 文件: `biser/codon/mask.codon:32-154`
+  - 核心: 记录原始序列中大写区段的上边界 `uppers` 与原始坐标 `lowers`，在 hard-masked 坐标
+    与原始坐标之间双向映射，并同步更新 CIGAR 中的 `M`/`I`/`D` 为 `M`/`S`/`N`。
+- **PGR 可复用组件**
+  - `src/libs/paf/cigar.rs`:
+    - `parse_cigar()` / `format_cigar()` / `slice_cigar_by_target()`: 解析、切片、重构 CIGAR。
+  - `src/libs/io.rs`:
+    - `reader()` / `writer()`: 读取原始 FASTA 与输出转换后的结果。
+- **不可直接复用**
+  - `src/libs/alignment/coords.rs`: 这里的 `align_to_chr()` / `chr_to_align()` 是通过**带 gap 的对齐列**
+    （用 `IntSpan` 记录非 gap 位置）在对齐坐标与基因组坐标之间转换，适用于 MSA/POA 输出。
+    它**不适用于** BISER 的 hard-masked ↔ original 坐标映射，因为后者只是简单的“删除 lowercase 碱基”
+    后产生的坐标偏移，不存在对齐 gap。
+- **需要新增的实现**
+  - `src/libs/sd/translate.rs`: 在 `mask` 阶段记录 uppercase run 列表 `[(orig_start, orig_end, masked_start, masked_end)]`，
+    通过二分查找实现 hard-masked ↔ original 坐标双向映射，并同步改写 CIGAR。
+
+### 6.3 其他值得复用的工具
+
+除了按算法阶段映射的组件外，以下通用工具在 SD 流程中也 likely 有用：
+
+- `src/libs/ds/bitmap.rs::BitMap`
+  - 固定大小的位图，支持 `set_range(start, len)` 和 `is_fully_set(start, len)`。
+  - 用途: 标记 plane-sweep 或 decomposition 中已访问/已输出的基因组位置；避免重复命中。
+- `src/libs/ds/dupe_tree.rs::DupeTree`
+  - 一维区间深度树，支持 `add/subtract` 后 `build()`，再 `count_over(start, end, threshold)`。
+  - 用途: 统计 SD hit 端点在基因组上的覆盖深度，识别高重复 hotspot 区域。
+- `src/libs/ds/top_k_purity.rs::TopKPurity`
+  - 检测 top-K 类别占比是否过高，返回 penalty factor。
+  - 用途: 在扫描 k-mer 或序列窗口时检测低复杂度/AT 富集区域，作为额外过滤条件。
+- `src/libs/fasta/stat.rs::count_bases`
+  - 统计序列中 A/C/G/T/N 数量（IUPAC 计为 N）。
+  - 用途: 快速评估 hard-masked 后有效碱基比例，或过滤 N 含量过高的 putative SD。
+- `src/libs/paf/fasta.rs::FastaStore`
+  - 多 BGZF FASTA 管理器，支持 `fetch_range(name, start, end)` 与 `fetch_full(name)`，带 LRU 缓存。
+  - 用途: 多基因组 cross_search/cross_align 时批量、高效地提取 mate 序列。
+
+### 6.4 建议的模块与命令结构
+
+#### 6.4.1 `src/libs/sd/` 目录（新增）
+
+- `kmer_index.rs`: exact 2-bit k-mer 索引 + winnowing + 频率过滤。
+- `plane_sweep.rs`: plane-sweep 链表与 hit 输出。
+- `hit.rs`: SD hit 数据结构（坐标、species、strand、CIGAR、error rate）。
+- `anchor.rs`: 10-mer anchor 生成。
+- `refine.rs`: 基于 chaining + sparse DP 的比对精修。
+- `cluster.rs`: 重叠 hit 聚类并输出 cluster FASTA。
+- `decompose.rs`: elementary SD 分解。
+- `set_cover.rs`: 贪心 set cover。
+- `cover.rs`: core duplicon 标记流程。
+- `translate.rs`: hard-masked 与原基因组坐标互转。
+- `dsu.rs`（可选）: 若 `src/libs/paf/graph/dsu.rs` 未提升为公共 API，则在此处放一个轻量实现。
+
+#### 6.4.2 `src/cmd_pgr/sd/` 目录（新增）
+
+- `mod.rs`: 子命令注册与分发。
+- `mask.rs`: `pgr sd mask <genome.fa> -o <masked.fa>`。
+- `search.rs`: `pgr sd search <genome.fa> -o <hits.bed>`。
+- `align.rs`: `pgr sd align <genome.fa> <hits.bed> -o <hits.align.bed>`。
+- `cluster.rs`: `pgr sd cluster <genomes...> <hits.align.bed> -o <clusters.dir>`。
+- `decompose.rs`: `pgr sd decompose <cluster.fa> -o <cluster.elem.bed>`。
+- `cover.rs`: `pgr sd cover <hits.align.bed> <elems.txt> -o <elems.covered.txt>`。
+- `translate.rs`: `pgr sd translate <hits.align.bed> <genomes...> -o <out.bed>`。
+- `run.rs`: `pgr sd run <genomes...> -o <out.bed>`，按 BISER 顺序串接上述步骤。
+
+### 6.5 分阶段实施计划
+
+#### 第一阶段：索引与 plane-sweep（验证：human chr21 自比对命中数与 BISER 一致）
+
+1. 实现 `libs/sd/kmer_index.rs`：2-bit k-mer + winnowing + 频率过滤。
+2. 实现 `libs/sd/plane_sweep.rs`：ListNode、update_list、tau、save_sd。
+3. 实现 `libs/sd/hit.rs`：hit 数据结构。
+4. 实现 `cmd_pgr/sd/search.rs`：单基因组 putative SD 检测。
+5. 验证: 在相同参数下，PGR 输出的 hit 数量与坐标与 BISER `search` 子命令高度一致。
+
+#### 第二阶段：比对精修（验证：hit 的 CIGAR 与 error rate 与 BISER align 一致）
+
+1. 实现 `libs/sd/anchor.rs`：10-mer anchor 生成。
+2. 实现 `libs/sd/refine.rs`：
+   - 用 `chain_blocks` 获得 anchor 链（注意在 `cost_func` 中实现 BISER 的 `dx + dy` gap 惩罚，
+     因为 `GapCalc::calc` 对同时存在的 query/target gap 取 `max` 而非求和）。
+   - 小 gap（≤1000 bp）用 `ScalarAlignmentEngine`（把一条 mate 构建成线性 POA graph）
+     或 `align_seqs(..., "builtin")`。
+   - 用 `paf/cigar.rs` 输出 CIGAR。
+   - 用 `paf/cigar.rs::gap_compressed_identity` / `block_identity` 计算 error rate。
+3. 实现 `cmd_pgr/sd/align.rs`。
+4. 验证: 对同一组 putative hits，PGR 与 BISER 输出的 alignment span、CIGAR、error rate
+   差异 < 1%。
+
+#### 第三阶段：聚类与分解（验证：elementary SD 集合与 BISER 一致）
+
+1. 实现 `libs/sd/cluster.rs`：用 `Dsu` 聚类并输出 cluster FASTA（复用 `fa::new_record`、
+   `nt::rev_comp`、`loc::fetch_range_seq`、`twobit::TwoBitFile` 或 `paf/fasta.rs::FastaStore` 提取子序列）。
+2. 实现 `libs/sd/decompose.rs`：多拷贝 plane-sweep。
+3. 实现 `cmd_pgr/sd/cluster.rs` 与 `cmd_pgr/sd/decompose.rs`。
+4. 验证: cluster 数量与覆盖范围、elementary SD 数量与 `.elem` 内容一致。
+
+#### 第四阶段：core duplicon 与坐标转换（验证：CORE 标记与 translate 后坐标一致）
+
+1. 实现 `libs/sd/set_cover.rs` 与 `libs/sd/cover.rs`（用 `coitrees` 做区间重叠查询）。
+2. 实现 `libs/sd/translate.rs`（基于 `mask` 阶段记录的 uppercase run 列表做二分查找映射，
+   不要误用 `alignment/coords.rs` 的 gapped-alignment 坐标函数）。
+3. 实现对应子命令。
+4. 验证: CORE 标记集合与 BISER 一致；translate 后的坐标与 CIGAR 可通过一致性检查。
+
+#### 第五阶段：pipeline 与跨基因组（验证：多基因组输入与 BISER 最终输出一致）
+
+1. 实现 `cmd_pgr/sd/run.rs` 串联所有步骤。
+2. 实现 `cross_search` / `cross_align` 等价逻辑（复用 search/align，只是 query 为另一基因组）。
+3. 验证: 多基因组场景下最终 `out.bed` 与 `.elem.txt` 与 BISER 等价。
+
+### 6.6 风险与注意事项
+
+- **比对器依赖（基本可解决，但性能有差异）**: BISER 的 alignment 精修依赖 `bio.seq.align()` 这个内置 SIMD aligner。
+  PGR 的 `src/libs/poa/align.rs` 已经提供了 `ScalarAlignmentEngine`，支持 Global、Local、
+  SemiGlobal 三种模式以及自定义 match/mismatch/gap_open/gap_extend 参数。把其中一条 mate
+  用 `src/libs/poa/graph.rs` 构建成线性 graph 后，即可直接用于两条序列间的 pairwise alignment。
+  因此小 gap（≤1000 bp）精修可以直接复用 `libs/poa`，无需新增外部依赖或调用 minimap2/lastz。
+  但它是标量 O(nm) 实现，不是 SIMD；在人类全基因组尺度上可能显著慢于 BISER，后续若性能成为瓶颈，
+  再评估是否引入 SIMD 优化的 Rust aligner（如 `parasail-rs`）或针对小 gap 做 banded 优化。
+- **`GapCalc` 与 BISER gap 模型不完全一致**: `GapCalc::calc(dq, dt)` 对同时存在的 query gap 与 target gap
+  使用 `max(dq, dt)` 查表，而 BISER chaining 要求 `dx + dy`。实现 BISER 链式打分时应传入自定义
+  `cost_func`；BISER refine DP 的特殊惩罚公式也需在新模块中重新实现，不能简单套用 `GapCalc::affine`。
+- **`Dsu` 可见性**: `src/libs/paf/graph/dsu.rs` 中的 `Dsu` 是 `pub(super)`，不能直接作为公共 API。
+  迁移 SD 聚类前需要先将其公开化（建议迁移到 `src/libs/ds/dsu.rs`）或在 `libs/sd/` 重新实现。
+- **`hash.rs` 不是 exact k-mer 索引**: `src/libs/hash.rs` 提供的是 canonical minimizer 采样，
+  而 BISER 的 search/decompose 依赖 exact 2-bit k-mer + winnowing，因此 k-mer 索引必须重新实现，
+  `hash.rs` 仅可作为 sketch 验证或后续扩展使用。
+- **坐标系统**: BISER 内部大量使用 0-based 半开区间，但部分输出为 1-based 闭区间。
+  迁移时需统一使用 PGR 的 0-based 半开约定，仅在输出时转换。
+- **hard-masked ↔ original 坐标映射不要误用 `alignment/coords.rs`**: `alignment/coords.rs` 是处理
+  带 gap 对齐列的坐标转换，而 BISER 的 translate 只是“删除 lowercase 碱基”后的简单偏移映射。
+  应在 `mask` 阶段记录 uppercase run 边界，在 `translate` 中做二分查找。
+- **大染色体切片**: BISER 将染色体按 `MAX_CHROMOSOME_SIZE`（默认 300Mbp）切片处理。
+  PGR 的 `fa::reader` 顺序读取整条 FASTA record，但对于超大染色体，还可选用
+  `src/libs/fmt/twobit.rs` 的 `TwoBitFile`（支持 `read_sequence(name, start, end)` 随机访问）
+  或 `src/libs/loc.rs` 的 `.loc` 索引（支持 `fetch_range_seq` 按区间提取），
+  两者都不需要一次性加载整条序列到内存。因此迁移时可按使用场景选择读取方式：
+  顺序扫描建 k-mer 索引用 `fa::reader`，区间提取 mate 序列用 `loc` 或 `twobit`。
+  若仍需要切片，可在 `fa::reader` 层面按 `MAX_CHROMOSOME_SIZE` 切分 record。
+- **反向互补**: BISER 在 chromosome 级别同时索引 forward 与 reverse complement，
+  PGR 中可用 `nt::rev_comp` 生成反向链序列，或按 BISER 方式在索引阶段同时扫描两条链。
+- **性能**: BISER 的 Codon 实现经编译为原生代码，plane-sweep 是其性能关键。
+  Rust 实现应可达到相近性能，但需对 k-mer 索引做内存优化（如 `u64` key + `Vec<(u32, u32)>`）。
+
+## 7. 参考文献
 
 - Išerić H, Alkan C, Hach F, Numanagić I.
   *Fast characterization of segmental duplication structure in multiple genome assemblies*
@@ -387,4 +809,3 @@ IGC 会导致某个 haplotype 上的 SD 序列与其参考位置上的 ortholog 
   . Nature. 2023;617:335–344.
   [https://doi.org/10.1038/s41586-023-05895-y](https://doi.org/10.1038/s41586-023-05895-y)
 - BISER GitHub Repository: [https://github.com/0xTCG/biser](https://github.com/0xTCG/biser)
-
