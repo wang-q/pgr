@@ -538,10 +538,13 @@ PGR 内部不同模块混用 0-based half-open 与 1-based inclusive 两种约�
   - `src/libs/fmt/fa.rs`:
     - `reader(infile) -> Result<fasta::io::Reader<...>>`: 顺序读取 FASTA，支持 stdin 与 gzip。
     - `writer_with_wrap(outfile, 80) -> Result<fasta::io::Writer<...>>`: 按 80 bp 换行输出（与 BISER 的 `width=80` 一致）。
+    - `new_record(name, seq)` / `new_record_preserving_desc(name, source, seq)`: 构造 FASTA record。
+    - `find_fasta_files(path) -> Vec<PathBuf>`: 递归收集 `.fa` 与 `.fa.gz` 文件，输入为文件时返回单元素 vec。
+    - `build_gzi_index(path)`: 为 BGZF FASTA 构建 `.gzi` 索引，`FastaStore::new` 需要该索引做随机访问。
     - `find_masked_regions(seq, gap_only) -> Vec<(usize, usize)>`: 返回 0-based inclusive 的 masked 区间。`gap_only=false` 时返回 lowercase 或 `nt::is_n` 为 true 的字符（即 N/n 与 IUPAC ambiguity）所在区间；`gap_only=true` 时只返回 N/n 与 IUPAC ambiguity 所在区间。**注意** lowercase 的 A/C/G/T 属于 `gap_only=false` 的返回范围，但它们不是 `nt::is_n`。
-    - `mask_sequence(seq, spans, hard) -> Result<String>`: 将 1-based inclusive 的 `IntSpan` 区间替换为 `N`（hard）或小写（soft）。它**保留序列长度**，与 BISER 的“删除 lowercase”行为不同，因此不能直接用于生成 hard-masked FASTA。
+    - `mask_sequence(seq, spans, hard) -> Result<String>`: `seq` 为 `&str`，`spans` 为 1-based inclusive 的 `IntSpan`；函数将区间内字符替换为 `N`（hard）或小写（soft）。它**保留序列长度**，与 BISER 的 hard-mask（删除 lowercase）行为不同，因此不能直接用于生成 hard-masked FASTA。
   - `src/libs/nt.rs`:
-    - `NT_VAL: &[usize; 256]`: 将 ASCII 字节映射到碱基编码。**A/a/C/c/G/g/T/t/U/u 映射到 0/1/2/3/3**（U/u 与 T/t 共用编码 3）；M/R/W/S/Y/K/V/H/D/B 及其小写，以及 N/n，映射到 4；其余字符（包括 gap `-`、`*` 等）映射到 255 (Invalid)。
+    - `NT_VAL: &[usize; 256]`: 将 ASCII 字节映射到碱基编码。**A/a→0, C/c→1, G/g→2, T/t→3, U/u→3**（U/u 与 T/t 共用编码 3）；M/R/W/S/Y/K/V/H/D/B 及其小写，以及 N/n，映射到 4；其余字符（包括 gap `-`、`*` 等）映射到 255 (Invalid)。
       **关键注意**：lowercase a/c/g/t/u 在 `NT_VAL` 中同样映射到 0/1/2/3，因此在做 BISER 风格的 2-bit 滚动哈希前，必须先完成 hard-mask（删除 lowercase），不能直接用 `NT_VAL[b] & 3` 处理原始序列。
     - `is_n(b) -> bool`: 当 `NT_VAL[b] == 4` 时返回 true，即 N/n 与所有 IUPAC ambiguity codes。lowercase a/c/g/t/u 返回 false。
     - `is_lower(b) -> bool`: 判断字符是否为小写 ASCII。
@@ -551,7 +554,12 @@ PGR 内部不同模块混用 0-based half-open 与 1-based inclusive 两种约�
     - `rev_comp(seq) -> impl Iterator<Item = u8>`: 反向互补迭代器，在 cluster 阶段构造反向链序列时可直接使用。该迭代器保留原字符大小写，因此 lowercase 碱基在反向互补后仍为 lowercase。
   - `src/libs/fmt/twobit.rs::Blocks::from_dna`: 在打包 DNA 为 2bit 时，非 A/C/G/T 字符被记为 N-block，lowercase A/C/G/T 被记为 soft-mask block。这是 2bit 写入时的 mask 语义，与 BISER hard-mask（删除字符）不同，但可作为参考。
     - **重要**：2bit 内部位编码为 `T=00, C=01, A=10, G=11`，而 BISER 的 2-bit 滚动哈希使用 `A=0, C=1, G=2, T=3`。如果直接读取 2bit 的 packed bytes 做哈希，必须重新映射位；若通过 `TwoBitFile::read_sequence` 读取字符串后再用 `NT_VAL` 编码，则天然得到 BISER 编码。
-  - `src/libs/fmt/twobit.rs::TwoBitFile` 实现 `SequenceReader` trait 时固定调用 `read_sequence(..., no_mask=false)`，即通过 trait 接口读取会保留 soft-mask（返回 lowercase）和 N-block。SD 流程若要从 2bit 获得 hard-masked 后的 uppercase 序列，应调用其 inherent 方法 `TwoBitFile::read_sequence(name, start, end, no_mask=true)`，而不是 trait 方法。
+  - `src/libs/fmt/twobit.rs::TwoBitFile`:
+    - 实现 `SequenceReader` trait 时固定调用 `read_sequence(..., no_mask=false)`，
+      即通过 trait 接口读取会保留 soft-mask（返回 lowercase）和 N-block。SD 流程若要从 2bit 获得 hard-masked 后的 uppercase 序列，
+      应调用其 inherent 方法 `TwoBitFile::read_sequence(name, start, end, no_mask=true)`，而不是 trait 方法。
+    - `TwoBitFile::read_sequence` 的 `start/end` 为 `Option<usize>` 的 0-based half-open 区间；`no_mask=true` 时 soft-mask block
+      也会被转为 uppercase，`no_mask=false` 时保留 lowercase；N-block 始终返回 `N`。
 - **需要新增的实现**
   - BISER 的 `mask` 是**删除 lowercase bases**并输出 hard-masked FASTA（序列长度变短），没有现成函数。
   - 实现方式：读取 record 时只保留 uppercase A/C/G/T（即 `NT_VAL[b] <= 3 && !b.is_ascii_lowercase()`）。小写 a/c/g/t、N、IUPAC ambiguity 以及 gap 字符均删除。
@@ -567,7 +575,7 @@ PGR 内部不同模块混用 0-based half-open 与 1-based inclusive 两种约�
   - 核心: 2-bit 滚动哈希 + winnowing + plane-sweep 链表 + tau 阈值 + 输出候选 hit。
 - **PGR 可复用组件**
   - `src/libs/nt.rs`:
-    - `NT_VAL: &[usize; 256]` 将 A/a/C/c/G/g/T/t/U/u 映射到 0/1/2/3/3（U/u 与 T/t 共用 3）。该表可直接用于 BISER 风格的 2-bit 滚动哈希，但**前提是序列已经过 hard-mask**：只保留 uppercase A/C/G/T，其余字符（ lowercase a/c/g/t/u、N、IUPAC ambiguity、gap 等）均已删除。
+    - `NT_VAL: &[usize; 256]` 将 A/a→0, C/c→1, G/g→2, T/t→3, U/u→3（U/u 与 T/t 共用 3）。该表可直接用于 BISER 风格的 2-bit 滚动哈希，但**前提是序列已经过 hard-mask**：只保留 uppercase A/C/G/T，其余字符（lowercase a/c/g/t/u、N、IUPAC ambiguity、gap 等）均已删除。
     - 编码方式：对 hard-masked 后的字节 `b`，若 `NT_VAL[b] <= 3 && !b.is_ascii_lowercase()`，则 2-bit 值为 `NT_VAL[b] & 3`（即 A=0, C=1, G=2, T=3，与 BISER 一致）；否则应作为无效字符跳过。注意 2bit 文件内部位编码与 BISER 不同，不要直接对 2bit packed bytes 使用 `NT_VAL`。
   - `src/libs/fmt/fa.rs`:
     - `reader()`: 顺序读取 FASTA，适合建 k-mer 索引。注意它会将整条 record 载入内存。
@@ -609,6 +617,10 @@ PGR 内部不同模块混用 0-based half-open 与 1-based inclusive 两种约�
     - `chain_blocks(blocks, gap_calc, score_ctx, ...) -> Result<Vec<Chain>>` 是已经实现的完整 chaining DP，
       包含去重、merge、trim、score recalc。但它的打分模型面向 UCSC `axtChain`（`GapCalc` 取 `max(dq, dt)`、
       有 overlap trim 等），与 BISER 的 PST chaining 不完全等价。
+    - `ScoreContext { t_2bit, q_2bit, matrix }` 提供序列读取与替换矩阵，用于 overlap trim 和最终 score recalc。
+      当 `score_ctx` 为 `Some` 时，链构建完成并去重/merge 后，会调用 `trim_overlaps`：对相邻 block 的 target 重叠区，
+      用 `SubMatrix` 分别计算把重叠区全归左 block 或全归右 block 的得分，取得分更高的切分点，然后重新计算链总得分。
+      负链 query 的序列会通过 `reverse_range_pair` 取反向互补后再参与评分。
     - **不建议用 `chain_blocks` 做 BISER 原型**：由于 gap 模型差异（`max(dq, dt)` vs `dx + dy`），其输出链与
       BISER 会有系统性偏差，无法验证 PST chaining 逻辑是否正确。原型阶段应使用 y 离散化 + 线段树的 PST 实现。
   - `src/libs/ds/gap_calc.rs`:
@@ -622,8 +634,12 @@ PGR 内部不同模块混用 0-based half-open 与 1-based inclusive 两种约�
   - `src/libs/poa/align.rs` + `src/libs/poa/graph.rs` + `src/libs/poa/poa.rs`:
     - `src/libs/poa/mod.rs` 只导出 `AlignmentParams`、`AlignmentType`、`Poa`。`ScalarAlignmentEngine` 和 `PoaGraph`
       需分别通过 `poa::align::ScalarAlignmentEngine` 和 `poa::graph::PoaGraph` 使用。
-    - `ScalarAlignmentEngine::new(AlignmentParams { match_score, mismatch_score, gap_open, gap_extend }, AlignmentType::Local)`
+    - `ScalarAlignmentEngine::new(AlignmentParams { match_score, mismatch_score, gap_open, gap_extend }, AlignmentType::Local)
       提供 Smith-Waterman 局部比对；也支持 `SemiGlobal` 和 `Global`。
+    - `Alignment { score, path }`：`score` 为最佳路径总得分；`path` 为最佳路径上的步骤序列。
+    - `AlignmentParams::default()` 的默认值为 `match_score=5, mismatch_score=-4, gap_open=-8, gap_extend=-6`。
+      这些默认值来自 SPOA，适合做小片段 pairwise alignment；若要与 BISER 的 `MATCH_SCORE=4` 等参数对齐，
+      应显式构造 `AlignmentParams`。
     - **三种模式的精确语义（对线性 POA graph 做 pairwise 比对时）**：
       - `Local`：query 与 graph 均允许自由起点/终点，返回得分最高的局部子比对。适合在较大 gap 区域内寻找最优局部对齐块。
       - `SemiGlobal`：query 必须完整对齐，graph 的起点/终点自由。适合把一段 query 锚定到 reference 的任意子区间。
@@ -689,8 +705,20 @@ PGR 内部不同模块混用 0-based half-open 与 1-based inclusive 两种约�
       poa.add_sequence(ref_seq);
       let aln = engine.align(qry_seq, poa.graph());
       ```
-      注意 `poa.add_sequence()` 会通过 `PoaGraph::add_alignment` 修改 graph（添加节点/边、合并 aligned nodes），
-      因此若只想做**不改变 graph 的 pairwise alignment**，应手动构建线性 `PoaGraph`。
+      注意 `poa.add_sequence()` 会通过 `PoaGraph::add_alignment` 修改 graph，因此若只想做**不改变 graph 的 pairwise alignment**，应手动构建线性 `PoaGraph`。
+    - `PoaGraph::add_alignment` 的具体行为（理解 consensus/MSA 的基础）：
+      - 对 `Alignment.path` 中每个 `(seq_idx, node_idx)` 步骤，若 `seq_idx` 存在则消费 query 碱基；
+        `(None, Some)` 或 `(None, None)` 表示 deletion，不消费 query 碱基。
+      - 在消费 query 碱基前，先把 path 中未对齐的 query 前缀（`(Some, None)` 之前的独立碱基）逐个加入 graph，
+        作为新节点并用 weight=1 的边连接。
+      - `(Some(seq_idx), Some(node_idx))` 且 graph 节点碱基与 query 碱基一致时，该节点 `weight += 1`，
+        predecessor 边 weight += 1。
+      - `(Some(seq_idx), Some(node_idx))` 但碱基不一致时，先检查 `node_idx.aligned_nodes` 中是否已有相同碱基的节点；
+        若有则复用该节点，否则**新建一个节点**保存 query 碱基，并将其加入 `node_idx.aligned_nodes` 与原有 clique 合并；
+        随后该节点 weight += 1。
+      - 连续的 query 碱基通过 `add_edge` 连接，边权重累加；`add_edge` 对重复边做 weight 累加而非新建多重边。
+      - 因此 `PoaGraph` 中节点 weight 表示某碱基在已加入序列中出现的次数，边 weight 表示相邻关系出现次数；
+        `generate_consensus` 与 `generate_msa` 基于此做多数表决/回溯。
     - **性能注意**: `ScalarAlignmentEngine` 是标量 O(nm) 实现，无 SIMD/banded。小 gap（≤1000 bp）可直接使用；
       人类全基因组尺度批量调用可能成为瓶颈，届时再评估 `parasail-rs` 或 banded 优化。
     - 若需要多序列 consensus/MSA（例如 cluster 内多个拷贝），可用 `Poa::new(params, align_type)` +
@@ -715,8 +743,24 @@ PGR 内部不同模块混用 0-based half-open 与 1-based inclusive 两种约�
   - `src/libs/alignment/msa.rs`:
     - `align_seqs(seqs, "builtin")` 调用内置 POA 做多序列对齐，返回 MSA 字符串（含 `'-'`），**不是 pairwise alignment**。
       也支持 `"spoa"`、`"clustalw"`、`"muscle"`、`"mafft"` 等外部 aligner。
+    - `align_seqs_quick(seqs, aligner, pad, fill)` 在已有粗对齐（所有序列长度相同）的基础上，仅对
+      head/tail 和 gap 邻近区域调用外部 aligner 重新对齐，再拼回原位。适合先快速得到整体对齐框架，
+      再局部精修的场景。
+    - `get_consensus_poa_builtin(seqs, match_score, mismatch_score, gap_open, gap_extend, algo_code)` /
+      `get_consensus_poa_external(seqs, ...)` 直接用 POA 或外部 spoa 生成 consensus 字符串。
     - 对于 pairwise 小 gap，优先直接用 `ScalarAlignmentEngine`；对于多拷贝 consensus 或 cluster MSA，
-      可复用 `align_seqs(..., "builtin")` 或 `poa::Poa`。
+      可复用 `align_seqs(..., "builtin")`、`align_seqs_quick` 或 `poa::Poa`。
+  - `src/libs/chain/sub_matrix.rs`:
+    - `SubMatrix` 提供 256×256 字节替换矩阵（含大小写）与 gap open/extend。
+    - `SubMatrix::default()` 是一个简化的 identity-like 矩阵：A/C/G/T 匹配得 100，错配 -100，N 相关 -100，
+      `gap_open=400`, `gap_extend=30`。它**不是** lastz 默认矩阵，仅作为通用 fallback。
+    - `SubMatrix::hoxd55()` 才是 lastz 默认的 HoxD55 矩阵（A-A=91, C-C=100, G-G=100, T-T=91，非对角线负值），
+      同样 `gap_open=400`, `gap_extend=30`。
+    - `SubMatrix::from_name(name)` 支持 `"hoxd55"` 预设，其他名字按 BLAST 格式从文件解析。
+    - `SubMatrix::get_score(c1, c2)` 按字符 ASCII 值查表，大小写均可。
+    - `chain_blocks` 的 `ScoreContext` 使用 `SubMatrix` 在 overlap trim 时重新计算匹配得分。注意 `ScalarAlignmentEngine`
+      **不使用** `SubMatrix`，它只接受简单的 `match_score`/`mismatch_score`；若 BISER 精修需要 HoxD55 等复杂矩阵，
+      需改用外部 aligner（如 lastz）或自行实现支持替换矩阵的 DP。
   - `src/libs/lastz.rs`:
     - 提供 lastz 的预设评分矩阵与参数（`PRESETS`、`find_preset`、`run_lastz`）。若 `ScalarAlignmentEngine`
       性能不足或需要更复杂的评分矩阵，可将小 gap 区域提取后调用 lastz 作为外部 fallback。
@@ -730,9 +774,9 @@ PGR 内部不同模块混用 0-based half-open 与 1-based inclusive 两种约�
   - `src/libs/sd/anchor.rs`: 在 putative SD 的两个 mate 间生成 10-mer exact-match anchors，
     包含 `slide[d]` 去重、向右延伸、过滤高频 k-mer、过滤 trivial self-overlap。
   - `src/libs/sd/refine.rs`: 基于 y 坐标离散化 + segment tree / Fenwick tree 的 event-driven
-  PST chaining + sparse DP 精修、大 gap 处理、两端 score-based `ltrim`/`rtrim`、生成最终 CIGAR。
-  小 gap（≤1000 bp）调用 `ScalarAlignmentEngine` 并把 path 转为 CIGAR；大 gap 按 BISER 策略
-  （两端各比对 1000 bp，中间用 `I`/`D`）处理。
+    PST chaining + sparse DP 精修、大 gap 处理、两端 score-based `ltrim`/`rtrim`、生成最终 CIGAR。
+    小 gap（≤1000 bp）调用 `ScalarAlignmentEngine` 并把 path 转为 CIGAR；大 gap 按 BISER 策略
+    （两端各比对 1000 bp，中间用 `I`/`D`）处理。
 
 #### 6.3.4 SD clustering（`cluster.codon`）
 
@@ -759,12 +803,17 @@ PGR 内部不同模块混用 0-based half-open 与 1-based inclusive 两种约�
   - `src/libs/nt.rs`:
     - `rev_comp(seq)`: 生成反向互补序列，返回迭代器。
   - `src/libs/loc.rs`:
+    - `create_loc(infile, locfile, is_bgzf) -> Result<()>`: 为 plain 或 BGZF FASTA 创建 `.loc` 索引。
+      普通代码更常用 `open_indexed` 自动创建。
     - `open_indexed(infile, force_update) -> Result<(Input, IndexMap<name, (offset, size)>)>`: 打开带 `.loc` 索引的 FASTA
-      （plain 或 BGZF 均可），不存在时自动创建索引。
+      （plain 或 BGZF 均可），不存在时自动创建索引。内部通过 `is_bgzf` 判断压缩类型。
+    - `open_input(infile, is_bgzf) -> Result<Input>`: 打开 FASTA 为 `Input::File` 或 `Input::Bgzf`。
     - `fetch_record(reader, loc_of, name) -> Result<fasta::Record>`: 按名字读取完整 record。
     - `fetch_range_seq(reader, loc_of, rg) -> Result<String>`: 按 `intspan::Range`（1-based inclusive，支持 `chr(-):start-end` 链向）
       提取子序列。
-    - `slice_record(record, rg) -> Result<fasta::record::Sequence>`: 从已加载 record 中按 1-based Range 切片。
+    - `slice_record(record, rg) -> Result<fasta::record::Sequence>`: 从已加载 record 中按 1-based Range 切片，负链会返回 reverse complement。
+    - `get_seq_loc(file, range) -> Result<String>`: 便捷函数，对无效 range 或找不到的 chromosome 返回空字符串而非报错；
+      测试/脚本中可用，但生产代码建议用 `open_indexed` + `fetch_range_seq` 以明确错误处理。
   - `src/libs/io.rs`:
     - `SequenceReader` trait: `read_sequence(name, start, end) -> Result<String>`，定义 0-based half-open 的随机访问接口。
       `TwoBitFile` 实现该 trait，`chain_blocks` 的 `ScoreContext` 也依赖它，因此 SD 流程中可用统一接口切换 2bit / indexed FASTA。
@@ -773,10 +822,18 @@ PGR 内部不同模块混用 0-based half-open 与 1-based inclusive 两种约�
       适合区间提取；`no_mask=true` 时返回 uppercase，否则保留 mask（N-blocks 变 N，soft-mask 变 lowercase）。
     - `TwoBitFile` 实现 `SequenceReader` trait，可直接传给 `ScoreContext` 等需要序列读取的接口。
   - `src/libs/paf/fasta.rs`:
+    - `load_fasta_tsv(path) -> Result<IndexMap<name, path>>`: 读取 `name\tbgzf_fasta_path` 格式的 TSV，
+      用于将 PAF/SD 中的序列名映射到 BGZF FASTA 文件路径。
+    - `prepare_store(tsv_path, idx) -> Result<FastaStore>`: 加载 TSV、校验覆盖所有 `idx.names`、
+      构造 `FastaStore` 的一站式函数；SD 流程若用 TSV 管理多基因组输入，可直接复用。
+    - `load_all_seqs(tsv_path) -> Result<HashMap<name, seq>>`: 一次性加载 TSV 中所有序列到内存，
+      适合 cluster/decompose 阶段加载单个 cluster 的小规模 FASTA。
     - `FastaStore::new(seq_to_file)` + `fetch_range(name, start, end)` + `fetch_full(name)`: 管理多个 **BGZF FASTA**
       文件，带 `.loc` 索引与 LRU 缓存，适合多基因组 cross_search/cross_align 时批量提取 mate 序列。
     - **限制**: `FastaStore::new` 内部使用 `noodles_bgzf::io::indexed_reader`，因此输入必须是 BGZF 压缩的 FASTA。
       普通 gzip 或未压缩 FASTA 应先用 `loc`（plain/BGZF 通用）或 `twobit` 处理。
+    - **注意**: `FastaStore` **没有**实现 `SequenceReader` trait，它提供自己的 `fetch_range` / `fetch_full` API。
+      若函数签名要求 `&mut dyn SequenceReader`（如 `chain_blocks` 的 `ScoreContext`），应使用 `TwoBitFile` 而非 `FastaStore`。
 - **需要新增的实现**
   - `src/libs/sd/cluster.rs`: 将 hit 端点排序，用 `Dsu` 合并重叠端点，输出每个 cluster 的
     FASTA（序列名采用 `species#chrom+/-#start#end` 格式）。
@@ -857,9 +914,12 @@ PGR 内部不同模块混用 0-based half-open 与 1-based inclusive 两种约�
     `resolve_paths` / `load_entries` / `load_two_sets` / `par_run_pairs` 支持列表解析、批量加载与
     成对并行迭代。SD pipeline 的 search/align 阶段若需要“生产者-消费者”式并行输出，可直接复用。
 - `src/libs/io.rs`
-  - `reader(input)` / `writer(output)`: 通用缓冲读写，支持 `stdin`、普通文件、`.gz`。
-  - `read_names(path)` / `read_sizes(path)` / `is_bgzf(path)`: 名单读取、大小文件读取、BGZF 检测。
-  - `SequenceReader` trait: 统一 0-based half-open 随机访问接口，`TwoBitFile` 已实现。
+    - `reader(input)` / `writer(output)`: 通用缓冲读写，支持 `stdin`、普通文件、`.gz`。
+    - `read_names(path)` / `read_sizes(path)`: 名单读取、大小文件读取。
+    - `is_bgzf(path)`: 通过读取文件头判断是否为 BGZF 格式，`FastaStore` 与 `loc::open_indexed` 内部均用此决定打开方式。
+    - `read_runlist(path)`: 安全读取 runlist JSON 并转为 `BTreeMap<String, IntSpan>`，避免原 `intspan` API 在错误输入上 panic。
+    - `get_basename(path) -> Option<String>`: 提取文件基本名（去掉路径与扩展名），`lastz.rs` 与多个命令用它生成输出文件名。
+    - `SequenceReader` trait: 统一 0-based half-open 随机访问接口，`TwoBitFile` 已实现。
 - `src/libs/ds/bitmap.rs::BitMap`
   - 固定大小的 0-based 位图，支持 `set_range(start, len)` 和 `is_fully_set(start, len)`。
   - 用途: 标记 plane-sweep 或 decomposition 中已访问/已输出的基因组位置；避免重复命中。
@@ -879,12 +939,22 @@ PGR 内部不同模块混用 0-based half-open 与 1-based inclusive 两种约�
   - 多 **BGZF FASTA** 管理器，支持 `fetch_range(name, start, end)`（0-based half-open，参数为 `i32`）
     与 `fetch_full(name)`，带 `.loc` 索引与 LRU 缓存。
   - 用途: 多基因组 cross_search/cross_align 时批量、高效地提取 mate 序列。注意输入必须是 BGZF 压缩 FASTA。
+- `src/libs/paf/persist.rs`
+  - `PafIndex::save(path)` / `PafIndex::load(path)`: 将 interval tree + CIGAR 索引持久化为 `.paf.idx`。
+  - 用途: 若 SD 流程需要将 k-mer/anchor 索引或 hit 索引缓存到磁盘，可参考其 bincode + version + magic 的序列化模式。
 - `src/libs/lastz.rs`
   - 提供 UCSC lastz 预设（`PRESETS`、`find_preset`、`run_lastz`）与评分矩阵。可作为 `ScalarAlignmentEngine` 性能不足时的外部局部比对 fallback。
+  - 内置矩阵：`MATRIX_DEFAULT`（HoxD55， Human/Mouse/Macaque/Cow）、`MATRIX_DISTANT`（Human/Zebrafish/Opossum）、
+    `MATRIX_SIMILAR`（Human/Chimp）、`MATRIX_SIMILAR2`（Human/Primate，更敏感）。
+  - 内置 preset `set01`–`set07` 的参数（如 `O=400 E=30 K=3000 L=2200` 等）直接来自 UCSC pipeline；
+    `run_lastz` 会处理 target/query 笛卡尔积、文件名去重与 `--self` 模式。
 - `src/libs/chain/stitch.rs`
   - 按 chain ID 合并 fragments（`chainStitchId` 语义），要求 fragments 之间不重叠。SD 流程若输出带 ID 的 chain fragments，可参考；但它不是通用的“合并相邻 chain”工具。
 - `src/libs/alignment/trim.rs`
-  - 提供 MSA 后处理的 trim 函数。SD refine 阶段若需要对齐后修剪，可参考，但 BISER 的 score-based `ltrim`/`rtrim` 仍需自行实现。
+    - `trim_pure_dash(seqs)`：删除所有序列在该列均为 gap（`-`）的列。
+    - `trim_outgroup(seqs)`：删除 outgroup-only 的插入列（当前实现取 gap 列的并集与交集关系判断）。
+    - `trim_head_tail(seqs)` / `trim_complex_indel(seqs)`：其他 MSA 后处理辅助函数。
+    - SD refine 阶段若需要对齐后修剪，可参考这些函数，但 BISER 的 score-based `ltrim`/`rtrim` 仍需自行实现。
 - `src/libs/fas_multiz/banded_align.rs`
   - 实现 banded DP + affine gap，但当前紧密绑定 `FasBlock` 输入，不能直接复用。若后续需要 banded
     pairwise align，可参考其索引函数 `idx(i, j)` 和 band 半径计算逻辑，提取为通用函数。
