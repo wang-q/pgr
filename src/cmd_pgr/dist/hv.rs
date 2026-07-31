@@ -6,12 +6,15 @@ pub fn make_subcommand() -> Command {
         .about("Estimates distances between DNA/protein files using hypervectors")
         .after_help(
             r###"
-This command calculates pairwise distances between files in FA file(s) using minimizers and hypervectors.
+This command calculates pairwise distances between files in FA file(s) using
+minimizers or closed syncmers, projected onto hypervectors.
 
 * The outputs are printed to stdout in the following format:
     <file1> <file2> <total1> <total2> <inter> <union> <mash_distance> <jaccard_index> <containment_index>
 
-* Minimizers and Hash Algorithms are the same as `pgr dist seq`
+* Samplers, hash algorithms, --protein, -k/-w semantics are the same as `pgr dist seq`;
+  see its help for details. Syncmer defaults (DNA smer=8/window=55, protein smer=7/window=5)
+  are applied automatically when --sampler syncmer is used without explicit -k/-w.
 
 * Input Modes:
     * For a single sequence file: Merge all sequences within the file into a single hypervector.
@@ -31,22 +34,27 @@ Examples:
 2. Use Mod-Minimizer for DNA sequences (canonical k-mers):
    pgr dist hv file1.fa file2.fa --hasher mod -k 21 -w 5
 
-3. Treat input as a list file and calculate distances:
+3. Use closed syncmers for DNA:
+   pgr dist hv file1.fa file2.fa --sampler syncmer
+
+4. Treat input as a list file and calculate distances:
    pgr dist hv list.txt --list-files
 
-4. Use 4 threads for parallel processing:
+5. Use 4 threads for parallel processing:
    pgr dist hv input.fa --parallel 4
 
-5. Perform six-frame translation on a FA file and match to another
+6. Perform six-frame translation on a FA file and match to another
     pgr fa six-frame input.fa |
         pgr dist hv stdin match.fa
 
 "###,
         )
         .arg(crate::cmd_pgr::args::pair_infiles_arg())
+        .arg(crate::cmd_pgr::args::sampler_arg())
         .arg(crate::cmd_pgr::args::hasher_arg())
         .arg(crate::cmd_pgr::args::kmer_arg())
         .arg(crate::cmd_pgr::args::window_arg())
+        .arg(crate::cmd_pgr::args::protein_arg())
         .arg(
             clap::Arg::new("dim")
                 .long("dim")
@@ -64,13 +72,22 @@ Examples:
 
 /// Execute the hv command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
+    let opt_sampler = args.get_one::<String>("sampler").unwrap();
     let opt_hasher = args.get_one::<String>("hasher").unwrap();
-    let opt_kmer = *args.get_one::<usize>("kmer").unwrap();
-    let opt_window = *args.get_one::<usize>("window").unwrap();
+    let is_protein = args.get_flag("protein");
+    let (opt_kmer, opt_window) =
+        crate::cmd_pgr::args::resolve_kmer_window(args, opt_sampler, is_protein);
     let opt_dim = *args.get_one::<usize>("dim").unwrap();
     anyhow::ensure!(opt_kmer > 0, "--kmer must be positive: {}", opt_kmer);
     anyhow::ensure!(opt_window > 0, "--window must be positive: {}", opt_window);
     anyhow::ensure!(opt_dim > 0, "--dim must be positive: {}", opt_dim);
+
+    // mod-minimizer relies on DNA reverse complement and is meaningless on protein.
+    if is_protein && opt_sampler == "minimizer" && opt_hasher == "mod" {
+        anyhow::bail!(
+            "--hasher mod is DNA-only (canonical reverse complement) and cannot be used with --protein"
+        );
+    }
 
     let is_sim = args.get_flag("sim");
     let is_list = args.get_flag("list_files");
@@ -83,13 +100,24 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         opt_parallel,
     )?;
 
-    let (entries1, entries2) = pgr::libs::par::load_two_sets(&infiles, is_list, |paths| {
-        pgr::libs::par::load_entries(paths, |p| {
-            let entry =
-                pgr::libs::hv::load_hv_from_fasta(p, opt_hasher, opt_kmer, opt_window, opt_dim)?;
-            Ok(vec![entry])
-        })
-    })?;
+    let (entries1, entries2) = match opt_sampler.as_str() {
+        "syncmer" => pgr::libs::par::load_two_sets(&infiles, is_list, |paths| {
+            pgr::libs::par::load_entries(paths, |p| {
+                let entry = pgr::libs::hv::load_hv_from_fasta_syncmer(
+                    p, opt_kmer, opt_window, is_protein, opt_dim,
+                )?;
+                Ok(vec![entry])
+            })
+        })?,
+        _ => pgr::libs::par::load_two_sets(&infiles, is_list, |paths| {
+            pgr::libs::par::load_entries(paths, |p| {
+                let entry = pgr::libs::hv::load_hv_from_fasta(
+                    p, opt_hasher, opt_kmer, opt_window, opt_dim,
+                )?;
+                Ok(vec![entry])
+            })
+        })?,
+    };
 
     pgr::libs::par::par_run_pairs(&entries1, &entries2, &sender, |e1, e2| {
         let d = pgr::libs::hv::calc_distances(&e1.set, &e2.set, opt_kmer);

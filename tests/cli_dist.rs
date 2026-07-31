@@ -47,6 +47,44 @@ fn command_dist_hv_pair() {
 }
 
 #[test]
+fn command_dist_hv_syncmer() {
+    // Closed syncmers projected onto hypervectors; syng DNA defaults (smer=8,
+    // window=55) applied automatically.
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "dist",
+            "hv",
+            fixture("genome1.fa").to_str().unwrap(),
+            fixture("genome2.fa").to_str().unwrap(),
+            "--sampler",
+            "syncmer",
+        ])
+        .run();
+
+    // Single pair of files -> one line.
+    assert_eq!(stdout.lines().count(), 1);
+    assert!(stdout.contains("0.0000"));
+    assert!(stdout.contains("1.0000"));
+}
+
+#[test]
+fn command_dist_hv_protein_rejects_mod_hasher() {
+    // --hasher mod is DNA-only; with --protein it must error.
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "dist",
+            "hv",
+            fixture("seq.fa").to_str().unwrap(),
+            "--hasher",
+            "mod",
+            "--protein",
+        ])
+        .run_fail();
+
+    assert!(stderr.contains("--hasher mod is DNA-only"));
+}
+
+#[test]
 fn command_dist_seq() {
     let (stdout, _) = PgrCmd::new()
         .args(&[

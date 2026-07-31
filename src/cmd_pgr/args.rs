@@ -1,6 +1,6 @@
 //! Shared clap argument builders for subcommands.
 
-use clap::{builder, Arg, ArgAction, ArgMatches, Command};
+use clap::{builder, parser::ValueSource, Arg, ArgAction, ArgMatches, Command};
 
 use pgr::libs::paf::query::QueryOptions;
 use pgr::libs::poa::AlignmentParams;
@@ -736,6 +736,35 @@ pub fn protein_arg() -> Arg {
         .long("protein")
         .action(ArgAction::SetTrue)
         .help("Treat input as protein sequence")
+}
+
+/// Resolve `--kmer` and `--window`, applying syncmer defaults when
+/// `--sampler syncmer` is used without explicit `-k`/`-w`:
+/// * DNA (`--protein` off): syng defaults smer=8, window=55.
+/// * Protein (`--protein` on): smer=7, window=5 — k=7 keeps random match prob
+///   negligible (20^7 ≈ 1.3e9) and matches the protein k=7 convention; w=5
+///   gives ~33% density so short proteins still yield enough syncmers.
+///
+/// Shared by `dist seq` and `dist hv`.
+pub fn resolve_kmer_window(
+    args: &ArgMatches,
+    opt_sampler: &str,
+    is_protein: bool,
+) -> (usize, usize) {
+    let kmer_cli = matches!(args.value_source("kmer"), Some(ValueSource::CommandLine));
+    let window_cli = matches!(args.value_source("window"), Some(ValueSource::CommandLine));
+    let (def_k, def_w) = if is_protein { (7, 5) } else { (8, 55) };
+    let k = if opt_sampler == "syncmer" && !kmer_cli {
+        def_k
+    } else {
+        *args.get_one::<usize>("kmer").unwrap()
+    };
+    let w = if opt_sampler == "syncmer" && !window_cli {
+        def_w
+    } else {
+        *args.get_one::<usize>("window").unwrap()
+    };
+    (k, w)
 }
 
 /// `-k/--kmer` size argument.

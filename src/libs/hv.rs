@@ -275,6 +275,44 @@ pub fn load_hv_from_fasta(
     Ok(entry)
 }
 
+/// Load a single FASTA file into one `HvEntry` by merging all sequences' syncmers.
+///
+/// Drop-in parallel to [`load_hv_from_fasta`]; `smer` is the s-mer length and
+/// `window` the number of s-mers per syncmer window. `is_protein` dispatches
+/// to the protein byte-hash path (DNA uses the 2-bit canonical rolling hash).
+pub fn load_hv_from_fasta_syncmer(
+    infile: &str,
+    smer: usize,
+    window: usize,
+    is_protein: bool,
+    dim: usize,
+) -> anyhow::Result<HvEntry> {
+    let params = crate::libs::syncmer::SyncmerParams {
+        smer,
+        window,
+        seed: 7,
+    };
+    params.validate()?;
+
+    let mut fa_in = crate::libs::fmt::fa::reader(infile)?;
+
+    let mut file_set = rapidhash::RapidHashSet::default();
+
+    for result in fa_in.records() {
+        let record = result?;
+        let seq = record.sequence();
+        let set = crate::libs::syncmer::seq_syncmer_set(&seq[..], &params, is_protein)?;
+        file_set.extend(set);
+    }
+
+    let seed_vec: Vec<u64> = file_set.into_iter().collect();
+    let hv: Vec<i32> = hash_hv_i8(&seed_vec, dim);
+    Ok(HvEntry {
+        name: infile.to_string(),
+        set: hv,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,4 +1,4 @@
-use clap::{parser::ValueSource, ArgMatches, Command};
+use clap::{ArgMatches, Command};
 
 /// Build the clap subcommand for seq.
 pub fn make_subcommand() -> Command {
@@ -132,35 +132,13 @@ Examples:
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
-/// Resolve `--kmer` and `--window`, applying syncmer defaults when `--sampler
-/// syncmer` is used without explicit `-k`/`-w`:
-/// * DNA (`--protein` off): syng defaults smer=8, window=55.
-/// * Protein (`--protein` on): smer=7, window=5 — k=7 keeps random match prob
-///   negligible (20^7 ≈ 1.3e9) and matches the protein k=7 convention; w=5
-///   gives ~33% density so short proteins still yield enough syncmers.
-fn resolve_kmer_window(args: &ArgMatches, opt_sampler: &str, is_protein: bool) -> (usize, usize) {
-    let kmer_cli = matches!(args.value_source("kmer"), Some(ValueSource::CommandLine));
-    let window_cli = matches!(args.value_source("window"), Some(ValueSource::CommandLine));
-    let (def_k, def_w) = if is_protein { (7, 5) } else { (8, 55) };
-    let default_k = if opt_sampler == "syncmer" && !kmer_cli {
-        def_k
-    } else {
-        *args.get_one::<usize>("kmer").unwrap()
-    };
-    let default_w = if opt_sampler == "syncmer" && !window_cli {
-        def_w
-    } else {
-        *args.get_one::<usize>("window").unwrap()
-    };
-    (default_k, default_w)
-}
-
 /// Execute the seq command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let opt_sampler = args.get_one::<String>("sampler").unwrap();
     let opt_hasher = args.get_one::<String>("hasher").unwrap();
     let is_protein = args.get_flag("protein");
-    let (opt_kmer, opt_window) = resolve_kmer_window(args, opt_sampler, is_protein);
+    let (opt_kmer, opt_window) =
+        crate::cmd_pgr::args::resolve_kmer_window(args, opt_sampler, is_protein);
     anyhow::ensure!(opt_kmer > 0, "--kmer must be positive: {}", opt_kmer);
     anyhow::ensure!(opt_window > 0, "--window must be positive: {}", opt_window);
 

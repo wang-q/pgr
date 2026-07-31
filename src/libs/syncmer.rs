@@ -382,4 +382,51 @@ mod tests {
     fn revcomp_dna(seq: &[u8]) -> Vec<u8> {
         crate::libs::nt::rev_comp(seq).collect()
     }
+
+    /// Closed syncmers guarantee a bounded gap between consecutive syncmer
+    /// endpoints: consecutive syncmer positions differ by at most `2*w`. This
+    /// bounded-gap property (no large unsampled region) is the coverage
+    /// guarantee minimizers lack. Sequence ends are NOT guaranteed (only
+    /// interior gaps). The `2*w` bound arises because a position is a syncmer
+    /// endpoint iff it is the minimum of its w-window at an end; a non-syncmer
+    /// run's interior minimum must reach a smaller value on both sides within w,
+    /// which is impossible once the run reaches length 2w.
+    #[test]
+    fn test_core_bounded_gap_property() {
+        // Deterministic LCG for reproducible random hash streams.
+        fn lcg(state: &mut u64) -> u64 {
+            *state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            *state
+        }
+
+        for &w in &[2usize, 3, 4, 5, 8, 16] {
+            for &n in &[w, w + 1, w + 5, 20, 50, 100, 200, 500] {
+                for seed in 0..8u64 {
+                    let mut state = 0xA5A5_5A5A_A5A5_5A5A_u64
+                        .wrapping_mul(w as u64)
+                        .wrapping_add(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15));
+                    let hashes: Vec<u64> = (0..n).map(|_| lcg(&mut state)).collect();
+                    let positions = closed_syncmers_from_hashes(&hashes, w);
+                    let unique: Vec<usize> = positions
+                        .into_iter()
+                        .collect::<std::collections::BTreeSet<_>>()
+                        .into_iter()
+                        .collect();
+                    for pair in unique.windows(2) {
+                        assert!(
+                            pair[1] - pair[0] <= 2 * w,
+                            "gap {} exceeds 2w={} (w={}, n={}, seed={})",
+                            pair[1] - pair[0],
+                            2 * w,
+                            w,
+                            n,
+                            seed
+                        );
+                    }
+                }
+            }
+        }
+    }
 }

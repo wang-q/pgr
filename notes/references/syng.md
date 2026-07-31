@@ -44,7 +44,7 @@ syng 的参数命名与 pgr/minimizer 习惯**相反**，移植时必须注意�
 | :--- | :--- | :--- | :--- | :--- |
 | **kmer** | 全部 k-mer | 是（满覆盖） | 1× | — |
 | **minimizer** | 窗口内 hash 最小的 k-mer | 否（窗口间会跳） | ~1/w | `src/libs/hash.rs` 现用 |
-| **modimizer** | `hash % w == 0` 的 k-mer | 否 | 1/w | pgr 的 `"mod"` 选项 |
+| **mod-minimizer** | `hash % w == 0` 的 k-mer | 否 | 1/w | pgr 的 `"mod"` 选项 |
 | **closed syncmer** | 最小 s-mer 在窗口首/末 | **是** | ~2/(w+1) | **本次移植目标** |
 
 > 关键差异：minimizer 在每个窗口选最小值后"跳跃"到新窗口，可能跳过中间区域；syncmer 通过"端点最小"的几何约束保证每个位置都在某个 syncmer 窗口内，因此**对序列变更和 indel 更鲁棒**（插入/缺失只局部影响 syncmer 集合，而 minimizer 的跳跃会放大扰动）。这对 `pgr dist seq` 的 Mash/Jaccard 距离稳定性有直接价值。
@@ -129,12 +129,12 @@ pgr 现有实现在 [src/libs/hash.rs](file:///Users/wangq/Scripts/pgr/src/libs/
 | `load_minimizers(infile, hasher, k, w, is_merge) -> Vec<MinimizerEntry>` | 从 FASTA 加载 | `load_syncmers`（同模式） |
 | `set_distances` / `mash_distance` / `mash_to_sim` | 距离度量 | **不变**（与采样器无关，共用） |
 
-调用点（syncmer 路径需接入处；minimizer 路径不动）：
+调用点（已接入；`--sampler` 在 `dist seq` / `dist hv` 的 `execute` 中分流到 syncmer 或 minimizer 路径）：
 
-- [src/cmd_pgr/dist/seq.rs:132](file:///Users/wangq/Scripts/pgr/src/cmd_pgr/dist/seq.rs#L132) — `load_minimizers` → `pgr dist seq`
-- [src/cmd_pgr/dist/seq.rs:137](file:///Users/wangq/Scripts/pgr/src/cmd_pgr/dist/seq.rs#L137) — `set_distances`（不变）
-- [src/libs/hv.rs:263](file:///Users/wangq/Scripts/pgr/src/libs/hv.rs#L263) — `seq_mins` → `pgr dist hv`
-- [src/libs/hv.rs:232](file:///Users/wangq/Scripts/pgr/src/libs/hv.rs#L232) — `mash_distance`（不变）
+- [src/cmd_pgr/dist/seq.rs](file:///Users/wangq/Scripts/pgr/src/cmd_pgr/dist/seq.rs) — `--sampler syncmer` → `load_syncmers`；否则 `load_minimizers` → `pgr dist seq`
+- [src/cmd_pgr/dist/hv.rs](file:///Users/wangq/Scripts/pgr/src/cmd_pgr/dist/hv.rs) — `--sampler syncmer` → `load_hv_from_fasta_syncmer`；否则 `load_hv_from_fasta` → `pgr dist hv`
+- `set_distances` / `calc_distances` / `mash_distance`（不变，与采样器无关）
+- `--kmer`/`--window` 默认值由 `args::resolve_kmer_window` 统一分流（两命令共用）
 
 **算法层面差异**：
 
@@ -144,9 +144,11 @@ pgr 现有实现在 [src/libs/hash.rs](file:///Users/wangq/Scripts/pgr/src/libs/
 
 ## 5. 对 pgr 的启示与实现计划
 
-> **状态：计划中（未实现）** — 以下为设计稿，`src/libs/` 下尚无 syncmer 模块。
+> **状态：已实现** — `src/libs/syncmer.rs` 已落地（核心算法 + DNA/蛋白双轨），`pgr dist seq` 与 `pgr dist hv` 均已接入 `--sampler syncmer`。以下为设计稿与实现记录。
 >
-> **定位**：不全面替换 minimizer，而是新增 syncmer 作为采样器选项，与现有 modimizer/minimizer 长期并存（见 §5.2 采样器矩阵）。目标是为 `pgr dist seq` / `dist hv` 提供对 indel/重排更稳定的备选采样器，而非强制切换。
+> **定位**：不全面替换 minimizer，而是新增 syncmer 作为采样器选项，与现有 mod-minimizer/minimizer 长期并存（见 §5.2 采样器矩阵）。目标是为 `pgr dist seq` / `dist hv` 提供对 indel/重排更稳定的备选采样器，而非强制切换。
+>
+> **与原计划的分歧**：原计划（§5.3.1）拟用 `--sampler mod-minimizer|syncmer|minimizer` 三选一。实际实现中 mod-minimizer 仍保留在 `--hasher mod` 下（非破坏性，沿用既有 CLI），`--sampler` 只承载 `minimizer|syncmer` 两选一。
 
 ### 5.1 核心移植要点
 
@@ -195,7 +197,7 @@ pub fn syncmer_protein(seq: &[u8], params: &SyncmerParams, h: impl Hasher)
 
 // 便捷 dispatch：按 is_protein 在 syncmer_dna/syncmer_protein 间选择。
 // cmd_pgr 层按 --sampler 统一分发，三套采样器长期并存：
-//   --sampler modimizer → hash.rs 现有 mod 路径（DNA canonical，保留）
+//   --sampler mod-minimizer → hash.rs 现有 mod 路径（DNA canonical，保留）
 //   --sampler syncmer   → 本模块 syncmer_dna（DNA）或 syncmer_protein（蛋白）
 //   --sampler minimizer → hash.rs 现有 rapid/fx/murmur 路径（DNA+蛋白，保留）
 pub fn seq_syncmer_set(seq: &[u8], params: &SyncmerParams, is_protein: bool)
@@ -204,14 +206,15 @@ pub fn seq_syncmer_set(seq: &[u8], params: &SyncmerParams, is_protein: bool)
 
 ### 5.3 切换策略
 
-1. **长期并存（不强制替换）**：在 `dist seq` / `dist hv` 增加 `--sampler modimizer|syncmer|minimizer` 选项。三套采样器长期共存，默认值可后续按实证表现调整，但不以"替换 minimizer"为目标——modimizer 与 minimizer 作为回退与对照保留。
-2. **测试基准**：构造已知序列，断言 syncmer 集合满足"完整覆盖"性质（任何长度 ≥ `smer+window` 的子串至少命中一个 syncmer）——这是 minimizer 不具备的可验证不变量，应作为单元测试。
+1. **长期并存（不强制替换，已实现）**：`dist seq` 与 `dist hv` 均已增加 `--sampler minimizer|syncmer` 选项（mod-minimizer 仍走 `--hasher mod`，见上方分歧说明）。三套采样器长期共存，默认值可后续按实证表现调整，但不以"替换 minimizer"为目标——mod-minimizer 与 minimizer 作为回退与对照保留。
+2. **测试基准（已实现）**：在 `syncmer.rs` 中用随机化属性测试断言"有界间隔"性质——相邻 syncmer 端点位置之差 ≤ `2w`（即任意 `2w` 个连续 s-mer 位置至少含一个 syncmer）。这是 minimizer 不具备的可验证不变量。
+   > **勘误**：原设计稿曾写"任何长度 ≥ `smer+window` 的子串至少命中一个 syncmer"（等价于间隔 ≤ `w+1`），实测**错误**——随机序列下间隔可达 `w+2` 及以上。正确上界是 `2w`：一个非 syncmer 连续段的内部最小值必须能在两侧 `w` 范围内找到更小值，段长达到 `2w` 时该最小值无法同时向两侧够到更小值，必然成为 syncmer。注意序列首尾**不保证**被覆盖（§2.2），仅保证内部间隔有界。
 3. **参数等价性**：切换到 `--sampler syncmer` 时 `--kmer`/`--window` 语义会变（见 §2.1 表），需在文档与 CLI 帮助中显式说明，避免用户沿用旧参数得到不同密度。
 
 ### 5.4 预期收益与风险
 
-- **收益**：序列距离对 indel/重排更稳定（syncmer 集合的局部扰动性）；采样密度有理论保证，便于跨样本对齐比较；保留 modimizer/minimizer 作为回退，迁移风险可控。
-- **风险**：syncmer 平均深度 ~2×，sketch 集合比 minimizer 大约一倍，Jaccard/Mash 距离的尺度会变化——需重新校准 `pgr dist seq` 在 `--sampler syncmer` 下的阈值与 `--kmer` 默认值。这是迁移后必须验证的实证问题，不是算法 bug。
+- **收益**：序列距离对 indel/重排更稳定（syncmer 集合的局部扰动性）；采样密度有理论保证，便于跨样本对齐比较；保留 mod-minimizer/minimizer 作为回退，迁移风险可控。
+- **风险**：syncmer 平均深度 ~2×，sketch 集合比 minimizer 大约一倍，Jaccard/Mash 距离的尺度会变化——需重新校准 `pgr dist seq` 在 `--sampler syncmer` 下的阈值与 `--kmer` 默认值。**默认值已校准**（`resolve_kmer_window`：DNA smer=8/window=55 即 syng 默认；蛋白 smer=7/window=5，k=7 使随机碰撞概率可忽略且与 minimizer 蛋白惯例一致，w=5 给 ~33% 密度适配短序列）。当前无距离阈值参数，距离尺度变化待实证评估。
 - **硬约束**：必须同时支持 DNA 和蛋白（见 §5.1 第 5 点）。蛋白走字节哈希无 canonical 的独立 syncmer 路径，不能为了忠实移植 syng 的 2-bit+canonical 而漏掉蛋白。验证标准：蛋白 syncmer 集合与同序列的 minimizer 集合在密度量级上一致（不要求完全相同，因采样器语义不同），且 `pgr dist seq` 蛋白用法（`-k 7 -w 2`）在 `--sampler syncmer` 下可用。
 
 ---
