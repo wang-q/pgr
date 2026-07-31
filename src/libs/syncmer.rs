@@ -35,7 +35,7 @@ impl SyncmerParams {
     }
 
     /// Validate parameters; smer must fit 2-bit-per-base in a u64.
-    fn validate(&self) -> anyhow::Result<()> {
+    pub fn validate(&self) -> anyhow::Result<()> {
         if self.smer == 0 {
             anyhow::bail!("syncmer smer must be positive");
         }

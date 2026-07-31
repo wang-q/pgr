@@ -1,25 +1,33 @@
-use clap::{ArgMatches, Command};
+use clap::{parser::ValueSource, ArgMatches, Command};
 
 /// Build the clap subcommand for seq.
 pub fn make_subcommand() -> Command {
     Command::new("seq")
-        .about("Estimates sequence distances using minimizers")
+        .about("Estimates sequence distances using minimizers or syncmers")
         .after_help(
             r###"
-This command calculates pairwise distances between sequences in FA file(s) using minimizers.
+This command calculates pairwise distances between sequences in FA file(s) using
+minimizers or closed syncmers.
 
 * The outputs are printed to stdout in the following format:
     <sequence1> <sequence2> <mash_distance> <jaccard_index> <containment_index>
 * With --merge
     <file1> <file2> <total1> <total2> <inter> <union> <mash_distance> <jaccard_index> <containment_index>
 
-* Minimizers
-    Given a $(k + w - 1)$-mer, consider the $w$ contained $k$-mers. The (rightmost) $k$-mer with
-    minimal hash (for some given hash function) is the minimizer.
+* Samplers (--sampler):
+    * `minimizer` (default): Given a $(k + w - 1)$-mer, consider the $w$ contained $k$-mers.
+      The (rightmost) $k$-mer with minimal hash is the minimizer.
+    * `syncmer`: Closed syncmers per Edgar (2021). A window of `w` s-mers is emitted iff
+      its minimal s-mer hash falls at the first or last position. This gives a sparse but
+      complete cover and localizes indel/rearrangement perturbation better than minimizers.
+      `-k` is the s-mer size; `-w` is the number of s-mers per window (span `k + w - 1`).
 
-* We use minimizers here to sample kmers
+* We use these samplers to sample kmers
     * For proteins, the length is short, so the window size can be set as: `-k 7 -w 2`
-    * DNA: `-k 21 -w 5`
+    * DNA (minimizer): `-k 21 -w 5`
+    * DNA (syncmer): `-k 8 -w 55` (syng defaults; applied automatically when not set)
+    * Protein (syncmer): `-k 7 -w 5` (applied automatically with --protein when not set;
+      k=7 keeps random match prob negligible, w=5 gives ~33% density for short sequences)
     * Increasing the window size speeds up processing
 
 * Hash Algorithms (--hasher):
@@ -29,10 +37,20 @@ This command calculates pairwise distances between sequences in FA file(s) using
         - `fx`: FxHash
         - `murmur`: MurmurHash3
     * Note: The `mod` option is not a hash algorithm but a special mode for DNA sequences.
+    * For `--sampler syncmer`, `--hasher` is ignored: DNA uses a 2-bit canonical rolling
+      hash and protein uses RapidHash on s-mer bytes.
 
 * Mod-Minimizer (--hasher mod):
     * It generates canonical k-mers, meaning that a sequence and its reverse complement
       are generating the same k-mer set.
+
+* --protein:
+    * Declares that the input is protein sequence; affects all samplers.
+    * With `--sampler syncmer`: switches to the protein s-mer byte-hash path
+      (no reverse complement); DNA uses the 2-bit canonical rolling hash.
+    * With `--sampler minimizer`: `--hasher mod` is rejected (mod-minimizer
+      requires DNA reverse complement); the byte hashers (rapid/fx/murmur) hash
+      raw bytes and work for both DNA and protein.
 
 * To get accurate pairwise sequence identities, use clustalo
   https://lh3.github.io/2018/11/25/on-the-definition-of-sequence-identity
@@ -70,24 +88,32 @@ Examples:
 2. Use Mod-Minimizer for DNA sequences (canonical k-mers):
    pgr dist seq input.fa --hasher mod -k 21 -w 5
 
-3. Compare two FA files:
+3. Use closed syncmers for DNA (syng defaults applied automatically):
+   pgr dist seq input.fa --sampler syncmer
+
+4. Use closed syncmers for proteins (defaults smer=7, window=5 applied automatically):
+   pgr dist seq proteins.fa --sampler syncmer --protein
+
+5. Compare two FA files:
    pgr dist seq file1.fa file2.fa
 
-4. Merge all sequences in a file and compare to another:
+6. Merge all sequences in a file and compare to another:
    pgr dist seq file1.fa file2.fa --merge
 
-5. Treat input as a list file and calculate distances:
+7. Treat input as a list file and calculate distances:
    pgr dist seq list.txt --list-files
 
-6. Use 4 threads for parallel processing:
+8. Use 4 threads for parallel processing:
    pgr dist seq input.fa --parallel 4
 
 "###,
         )
         .arg(crate::cmd_pgr::args::pair_infiles_arg())
+        .arg(crate::cmd_pgr::args::sampler_arg())
         .arg(crate::cmd_pgr::args::hasher_arg())
         .arg(crate::cmd_pgr::args::kmer_arg())
         .arg(crate::cmd_pgr::args::window_arg())
+        .arg(crate::cmd_pgr::args::protein_arg())
         .arg(crate::cmd_pgr::args::sim_arg())
         .arg(
             clap::Arg::new("zero")
@@ -106,11 +132,35 @@ Examples:
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
+/// Resolve `--kmer` and `--window`, applying syncmer defaults when `--sampler
+/// syncmer` is used without explicit `-k`/`-w`:
+/// * DNA (`--protein` off): syng defaults smer=8, window=55.
+/// * Protein (`--protein` on): smer=7, window=5 — k=7 keeps random match prob
+///   negligible (20^7 ≈ 1.3e9) and matches the protein k=7 convention; w=5
+///   gives ~33% density so short proteins still yield enough syncmers.
+fn resolve_kmer_window(args: &ArgMatches, opt_sampler: &str, is_protein: bool) -> (usize, usize) {
+    let kmer_cli = matches!(args.value_source("kmer"), Some(ValueSource::CommandLine));
+    let window_cli = matches!(args.value_source("window"), Some(ValueSource::CommandLine));
+    let (def_k, def_w) = if is_protein { (7, 5) } else { (8, 55) };
+    let default_k = if opt_sampler == "syncmer" && !kmer_cli {
+        def_k
+    } else {
+        *args.get_one::<usize>("kmer").unwrap()
+    };
+    let default_w = if opt_sampler == "syncmer" && !window_cli {
+        def_w
+    } else {
+        *args.get_one::<usize>("window").unwrap()
+    };
+    (default_k, default_w)
+}
+
 /// Execute the seq command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
+    let opt_sampler = args.get_one::<String>("sampler").unwrap();
     let opt_hasher = args.get_one::<String>("hasher").unwrap();
-    let opt_kmer = *args.get_one::<usize>("kmer").unwrap();
-    let opt_window = *args.get_one::<usize>("window").unwrap();
+    let is_protein = args.get_flag("protein");
+    let (opt_kmer, opt_window) = resolve_kmer_window(args, opt_sampler, is_protein);
     anyhow::ensure!(opt_kmer > 0, "--kmer must be positive: {}", opt_kmer);
     anyhow::ensure!(opt_window > 0, "--window must be positive: {}", opt_window);
 
@@ -120,6 +170,13 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let is_list = args.get_flag("list_files");
     let opt_parallel = *args.get_one::<usize>("parallel").unwrap();
 
+    // mod-minimizer relies on DNA reverse complement and is meaningless on protein.
+    if is_protein && opt_sampler == "minimizer" && opt_hasher == "mod" {
+        anyhow::bail!(
+            "--hasher mod is DNA-only (canonical reverse complement) and cannot be used with --protein"
+        );
+    }
+
     let infiles = crate::cmd_pgr::args::collect_infiles(args);
 
     let (sender, writer_thread) = pgr::libs::par::spawn_writer_and_pool(
@@ -127,11 +184,18 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         opt_parallel,
     )?;
 
-    let (entries1, entries2) = pgr::libs::par::load_two_sets(&infiles, is_list, |paths| {
-        pgr::libs::par::load_entries(paths, |p| {
-            pgr::libs::hash::load_minimizers(p, opt_hasher, opt_kmer, opt_window, is_merge)
-        })
-    })?;
+    let (entries1, entries2) = match opt_sampler.as_str() {
+        "syncmer" => pgr::libs::par::load_two_sets(&infiles, is_list, |paths| {
+            pgr::libs::par::load_entries(paths, |p| {
+                pgr::libs::hash::load_syncmers(p, opt_kmer, opt_window, is_protein, is_merge)
+            })
+        })?,
+        _ => pgr::libs::par::load_two_sets(&infiles, is_list, |paths| {
+            pgr::libs::par::load_entries(paths, |p| {
+                pgr::libs::hash::load_minimizers(p, opt_hasher, opt_kmer, opt_window, is_merge)
+            })
+        })?,
+    };
 
     pgr::libs::par::par_run_pairs(&entries1, &entries2, &sender, |e1, e2| {
         let d = pgr::libs::hash::set_distances(&e1.set, &e2.set, opt_kmer);
