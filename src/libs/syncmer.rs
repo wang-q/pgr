@@ -384,13 +384,17 @@ mod tests {
     }
 
     /// Closed syncmers guarantee a bounded gap between consecutive syncmer
-    /// endpoints: consecutive syncmer positions differ by at most `2*w`. This
-    /// bounded-gap property (no large unsampled region) is the coverage
-    /// guarantee minimizers lack. Sequence ends are NOT guaranteed (only
-    /// interior gaps). The `2*w` bound arises because a position is a syncmer
-    /// endpoint iff it is the minimum of its w-window at an end; a non-syncmer
-    /// run's interior minimum must reach a smaller value on both sides within w,
-    /// which is impossible once the run reaches length 2w.
+    /// endpoints: for `w >= 2`, consecutive endpoint positions differ by at
+    /// most `2*(w-1)` (tight bound, verified exhaustively over all-distinct
+    /// permutations and 4-letter alphabets for w in {3,4,5}, and randomly for
+    /// w up to 32). This bounded-gap property (no large unsampled region) is
+    /// the coverage guarantee minimizers lack. Sequence ends are NOT
+    /// guaranteed (only interior gaps). Proof sketch: take the minimum-hash
+    /// position `p*` of a non-endpoint run; since `p*` is not an endpoint,
+    /// each of its two w-windows must hold a smaller value, and those smaller
+    /// values must lie outside the run (p* is the run min), forcing the run
+    /// endpoints `a < b` to satisfy `b-w+1 <= p* <= a+w-1`, i.e. `b-a <=
+    /// 2*(w-1)`.
     #[test]
     fn test_core_bounded_gap_property() {
         // Deterministic LCG for reproducible random hash streams.
@@ -416,10 +420,10 @@ mod tests {
                         .collect();
                     for pair in unique.windows(2) {
                         assert!(
-                            pair[1] - pair[0] <= 2 * w,
-                            "gap {} exceeds 2w={} (w={}, n={}, seed={})",
+                            pair[1] - pair[0] <= 2 * w - 2,
+                            "gap {} exceeds 2(w-1)={} (w={}, n={}, seed={})",
                             pair[1] - pair[0],
-                            2 * w,
+                            2 * w - 2,
                             w,
                             n,
                             seed

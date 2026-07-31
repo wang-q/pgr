@@ -27,11 +27,13 @@ syng 的参数命名与 pgr/minimizer 习惯**相反**，移植时必须注意�
 
 默认参数 `k=8, w=55`，对应 syncmer 跨度 `62`（w 个 s-mer，`w+k-1`；README 标注 63）。README 中 `(1023,32)-syncmer` 指 `(w,k) = (1023,32)`。**下文如无特别说明，"syncmer 跨度"=`w+k-1`，"s-mer 长度"=`k`，窗口含 `w` 个 s-mer。**
 
+> **最小序列长度差异**：syng `syncmerIterator` 要求 `len >= w+k`（`seqhash.c:189` `if (len < sh->w + sh->k)`），比理论最小跨度 `w+k-1` 多 1——这会漏掉长度恰为 `w+k-1`（仅一个完整窗口）的序列中的 syncmer。pgr 实现按理论最小值 `len >= w+k-1` 判定（[syncmer.rs:132](file:///Users/wangq/Scripts/pgr/src/libs/syncmer.rs#L132) `canonical.len() < w`、[syncmer.rs:200](file:///Users/wangq/Scripts/pgr/src/libs/syncmer.rs#L200) `n < k+w-1`），即单窗口序列若满足端点最小也会被采到。这是 pgr 比 syng 更宽松的边界处理。
+
 ### 2.2 Closed Syncmer 的定义与性质
 
 设窗口含 `w` 个长度为 `k` 的 s-mer（位置 `0..w-1`），窗口跨度 `L = w + k - 1` 个碱基。设 `h_i` 为第 `i` 个 s-mer 的规范哈希（canonical，见 §3.1）。
 
-- **closed syncmer 判定**：窗口为 syncmer ⟺ 窗口最小哈希值出现在位置 `0`（首位）或 `w-1`（末位）。syng 用 `argmin` 位置判定；pgr 改用"最小值是否出现在端点"判定，以在并列哈希时对反向互补对称（见 §5.1）。
+- **closed syncmer 判定**：窗口为 syncmer ⟺ 窗口最小哈希值出现在位置 `0`（首位）或 `w-1`（末位）。syng 与 pgr 都用"最小值是否出现在端点"的**值判定**（`hash==min` / `x<=min`，见 `seqhash.c:201,206-209`），而非 argmin 位置。两者差异在**输出**：syng 的 `syncmerNext` 输出窗口首端 s-mer（`hash[iStart]`，用于图路径节点），pgr 输出最小 s-mer 的 canonical 哈希（使序列与反向互补产生同一哈希集合，Mash/Jaccard 所需，见 `syncmer.rs:59-61,124-128`）。并列时 syng 滚动循环先查末端（`x<=min`），pgr 先查首端（`==`）；但因 pgr 取的是最小值哈希，并列两端哈希相同，tie-break 不影响集合的链对称性。
 - **密度保证**：相邻 syncmer 间隔有上界、无大 gap（密度数值见下条）。但**不保证序列首尾被覆盖**（syng 用 X/Y ends 补首尾；pgr 的 sketch 用途不依赖首尾覆盖）。这是 syncmer 相对 minimizer 的核心优势——采样位置由"端点最小"的几何约束决定，对 indel/重排局部化扰动。
 - **密度**：平均约 `2/(w+1)` 的 s-mer 是 syncmer 的端点，对应 syncmer 在序列上的平均深度约 `2×`（每个位置平均被 2 个 syncmer 覆盖）。
 - **"closed" vs "open"**：closed 要求最小 s-mer 在两端；open syncmer 只要求在某个固定偏移。syng 只实现 closed。
@@ -77,7 +79,8 @@ typedef struct {
    }
    ```
    - `factor1` 是奇数（`| 0x01`），由 `srandom(seed)` 生成，`shift1 = 64 - 2*k`。
-   - 这是一种 fast universal hashing，比 Murmur/Fx 更轻量，且对短 k-mer 足够均匀。pgr 当前用 `fxhash`/`murmur`/`rapidhash`，移植时可保留 pgr 的哈希或改用此法。
+   - **seed 是实验调优来的**：`seqhash.c:301-365` 的 `#ifdef H_EXPLORE` 工具暴力遍历 seed `1..1e6`，对一段高度重复序列（poly-a/c/g/t + 二周期重复共 512bp）用全 k-mer 迭代器采样，挑出让"最小哈希值最大化"（分布最均匀、无低值塌缩）的 seed。syng 默认 `seed=7`（README、`seqhashCreate` 调用均用 7），很可能即由此工具搜出。pgr 的 `hash_factor` 用 splitmix64 由 seed 生成 factor（[syncmer.rs:114](file:///Users/wangq/Scripts/pgr/src/libs/syncmer.rs#L114)），雪崩性质良好、任意 seed 都均匀，故无需此调优步骤。
+   - 这是一种 fast universal hashing，比 Murmur/Fx 更轻量，且对短 k-mer 足够均匀。最终实现的哈希选择见 §5.1.3（DNA 用此 2-bit 乘加移位，蛋白用 `RapidHash` 字节哈希）。
 3. **正反向同步滚动**（`seqhash.c:67` `advanceHashRC`）：
    ```c
    si->h    = ((si->h << 2) & sh->mask) | *s;           // 正向滚动
@@ -115,7 +118,7 @@ typedef struct {
 
 `syncmerset.[ch]` 在 syncmer 迭代器之上构建去重集合，`kmerhash.[ch]` 是底层哈希表。pgr 当前用 `rapidhash::RapidHashSet<u64>` 做去重，无需移植这套 ONEcode 持久化机制。但有两点设计值得记录：
 
-- **1-based 索引 + 负号表示反向**（`kmerhash.h:21-22`）：`kmerHashAdd` 返回 `index > 0` 表示新增正向，`index < 0` 表示命中反向互补。pgr 的 `MinimizerInfo.strand` 字段可复用此思路。
+- **1-based 索引 + 负号表示反向**（`kmerhash.h:22-23`）：`kmerHashAdd` 返回 `index > 0` 表示新增正向，`index < 0` 表示命中反向互补。pgr 的 `MinimizerInfo.strand` 字段可复用此思路。
 - **canonical 定向**（`kmerhash.c:57` `isCanonical`）：k-mer 存储时统一取向（kmer < revcomp(kmer)），比较时只需正向比对。这与 pgr `seq_sketch` 的 `.canonical()` 一致。
 
 ## 4. 与 pgr 当前 minimizer 实现的对比
@@ -140,7 +143,7 @@ pgr 现有实现在 [src/libs/hash.rs](file:///Users/wangq/Scripts/pgr/src/libs/
 
 - pgr 的 `JumpingMinimizer`（`hash.rs:43`）先对全文所有 k-mer 预算哈希（`hash_kmers`），再做"跳跃式"选最小——O(n) 内存且语义是经典 minimizer。
 - pgr 的另一条路径用 `minimizer_iter` crate（`hash.rs:111`、`seq_sketch`），已是滚动窗口式。
-- syncmer 移植只需实现 §3.2 的滚动迭代器，**无需预算全部 k-mer 哈希**，内存 O(w)。
+- syng 的 syncmer 迭代器是 O(w) 内存的滚动式（环形缓冲区，无需预算全部哈希）。**pgr 的实际实现选择了更简单的 O(n) 路径**：`dna_canonical_hashes` / `syncmer_protein` 先预算全部 s-mer 哈希入 `Vec<u64>`，再用单调 deque 做窗口最小（[syncmer.rs:145-185](file:///Users/wangq/Scripts/pgr/src/libs/syncmer.rs#L145)）。这对 `pgr dist` 按单条记录流式处理（非基因组级）足够；O(w) 滚动迭代器可作为后续优化点。
 
 ## 5. 对 pgr 的启示与实现计划
 
@@ -162,7 +165,7 @@ pgr 现有实现在 [src/libs/hash.rs](file:///Users/wangq/Scripts/pgr/src/libs/
    }
    // syncmer 长度 = smer + window
    ```
-3. **哈希函数选择**：syng 用乘加移位（`k * factor1 >> shift1`）。pgr 可保留现有 `RapidHash`/`FxHash`/`MurmurHash3` 之一作用于 s-mer 字节串，避免引入新哈希；但需注意 syng 的 `kHash` 直接作用于 2-bit packed 整数，比字节串哈希快。可作为后续优化点。
+3. **哈希函数选择**：syng 用乘加移位（`k * factor1 >> shift1`）。最终实现按双轨选择——DNA 路径采用 syng 式 2-bit packed 乘加移位（`k_hash = x * factor >> (64-2k)`，[syncmer.rs:159](file:///Users/wangq/Scripts/pgr/src/libs/syncmer.rs#L159)，`factor` 用 splitmix64 由 seed 生成，与 syng 的 `libc random()` 值不同但同样均匀），蛋白路径复用 `RapidHash` 作用于 s-mer 字节串。DNA 不用 `--hasher`（2-bit 路径自带哈希），蛋白沿用 `--hasher`（rapid/fx/murmur）。
 4. **canonical 处理**：syng 同时维护 `h` 与 `hRC` 取 min。pgr 的 `seq_sketch` 已通过 `.canonical()` 做了等价事；移植 syncmer 时需在迭代器内部完成（因为判定"端点最小"必须用 canonical 哈希），不能依赖外部 crate 的后处理。
 
 5. **氨基酸适配（硬约束）**：pgr 当前 minimizer 同时服务 DNA 和蛋白（[dist/seq.rs:20-21](file:///Users/wangq/Scripts/pgr/src/cmd_pgr/dist/seq.rs#L20)，蛋白 `-k 7 -w 2`、DNA `-k 21 -w 5`），靠的是字节串哈希（`rapid`/`fx`/`murmur`）对任意字母表工作。但 syng 的 syncmer 实现 **DNA 强绑定**：2-bit 编码（仅 4 碱基）、`patternRC` 反向互补、canonical 三处都假设 DNA。**蛋白没有反向互补链概念**，因此蛋白 syncmer 反而更简单——去掉 canonical 即可。移植必须双轨：DNA 路径保留 canonical（链无关性对 `pgr dist seq` 的距离稳定性必要），蛋白路径用字节哈希、不做 canonical。
@@ -207,8 +210,8 @@ pub fn seq_syncmer_set(seq: &[u8], params: &SyncmerParams, is_protein: bool)
 ### 5.3 切换策略
 
 1. **长期并存（不强制替换，已实现）**：`dist seq` 与 `dist hv` 均已增加 `--sampler minimizer|syncmer` 选项（mod-minimizer 仍走 `--hasher mod`，见上方分歧说明）。三套采样器长期共存，默认值可后续按实证表现调整，但不以"替换 minimizer"为目标——mod-minimizer 与 minimizer 作为回退与对照保留。
-2. **测试基准（已实现）**：在 `syncmer.rs` 中用随机化属性测试断言"有界间隔"性质——相邻 syncmer 端点位置之差 ≤ `2w`（即任意 `2w` 个连续 s-mer 位置至少含一个 syncmer）。这是 minimizer 不具备的可验证不变量。
-   > **勘误**：原设计稿曾写"任何长度 ≥ `smer+window` 的子串至少命中一个 syncmer"（等价于间隔 ≤ `w+1`），实测**错误**——随机序列下间隔可达 `w+2` 及以上。正确上界是 `2w`：一个非 syncmer 连续段的内部最小值必须能在两侧 `w` 范围内找到更小值，段长达到 `2w` 时该最小值无法同时向两侧够到更小值，必然成为 syncmer。注意序列首尾**不保证**被覆盖（§2.2），仅保证内部间隔有界。
+2. **测试基准（已实现）**：在 `syncmer.rs` 中用随机化属性测试断言"有界间隔"性质——相邻 syncmer 端点位置之差 ≤ `2(w-1)`（w≥2；即任意 `2(w-1)` 个连续 s-mer 位置至少含一个 syncmer 端点）。这是 minimizer 不具备的可验证不变量。
+   > **勘误**：原设计稿曾写"任何长度 ≥ `smer+window` 的子串至少命中一个 syncmer"（等价于间隔 ≤ `w+1`），实测**错误**——随机序列下间隔可达 `w+2` 及以上。**紧致上界为 `2(w-1)`**（穷举 w∈{3,4,5} 的全排列与 4-字母表序列、随机 w≤32 均验证，且可达）：取非端点连续段内的最小哈希位置 `p*`，因 `p*` 非端点，其左右两个 w-窗口内必各有更小值；而 `p*` 已是段内最小，更小值只能在段外，故段两端 `a<b` 满足 `b-w+1 ≤ p* ≤ a+w-1`，即 `b-a ≤ 2(w-1)`。原稿"两侧 w 范围"应为 `w-1`（窗口内除端点自身外的 `w-1` 个位置），故上界是 `2(w-1)` 而非 `2w`。注意序列首尾**不保证**被覆盖（§2.2），仅保证内部间隔有界。
 3. **参数等价性**：切换到 `--sampler syncmer` 时 `--kmer`/`--window` 语义会变（见 §2.1 表），需在文档与 CLI 帮助中显式说明，避免用户沿用旧参数得到不同密度。
 
 ### 5.4 预期收益与风险
