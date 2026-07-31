@@ -489,9 +489,17 @@ PGR 内部不同模块混用 0-based half-open 与 1-based inclusive 两种约�
   都按 0-based half-open `[start, start+len)` 解释。
 - **`src/libs/ds/dupe_tree.rs::DupeTree`**: `add(start, end)`、`subtract(start, end)`、
   `count_over(start, end, threshold)` 均为 0-based half-open。
-- **`src/libs/alignment/coords.rs`**: `reverse_range_pair(start, end, size)` 与
-  `reverse_range_1based_pair(start, end, size)` 分别处理 0-based half-open 与
-  1-based inclusive 链向反转。
+- **`src/libs/alignment/coords.rs`**:
+    - `reverse_range<T: Copy + Sub>(start: &mut T, end: &mut T, size: T)`: 原地反转 0-based half-open 区间，`new_start = size - old_end`, `new_end = size - old_start`。
+    - `reverse_range_pair(start, end, size) -> (T, T)`: 非原地版本，返回反转后的 0-based half-open 区间。
+    - `reverse_range_1based(start: &mut usize, end: &mut usize, size: usize)`: 原地反转 1-based inclusive 区间，`new_start = size - old_end + 1`, `new_end = size - old_start + 1`。
+    - `reverse_range_1based_pair(start, end, size) -> (usize, usize)`: 非原地版本。
+    - `indel_intspan(seq: &[u8]) -> IntSpan`: 从带 gap 的对齐序列生成 1-based inclusive 的 gap 位置集合。
+    - `seq_intspan(seq: &[u8]) -> IntSpan`: 从带 gap 的对齐序列生成 1-based inclusive 的非 gap 位置集合（即 `indel_intspan` 的补集）。
+    - `chr_to_align(ints: &IntSpan, pos: i32, chr_start: i32, strand: &str) -> Result<i32>`: 把基因组坐标（1-based inclusive）映射到对齐列坐标；`ints` 为 `seq_intspan` 结果，`chr_start` 为该序列在染色体上的起始（1-based），`strand` 为 `"+"` 或 `"-"`。
+    - `align_to_chr(ints: &IntSpan, pos: i32, chr_start: i32, strand: &str) -> Result<i32>`: 把对齐列坐标映射回基因组坐标；当 `pos` 落在 gap 列时，会 pin 到左侧最近非 gap 碱基。
+    - 以上函数均按 `size - ...` 计算，因此把 forward 区间映射到 reverse strand 坐标系，负链 block 转换后 `start < end` 仍然成立。
+    - **注意**: `chr_to_align` / `align_to_chr` 只适用于带 gap 的对齐序列与基因组坐标之间的转换；BISER hard-mask 后的坐标映射是简单偏移，需要 `sd/translate.rs` 自行实现。
 
 #### 6.2.2 1-based inclusive `[start, end]`
 
@@ -536,11 +544,14 @@ PGR 内部不同模块混用 0-based half-open 与 1-based inclusive 两种约�
     因此 hard-masked 序列长度会变短，需要额外记录 uppercase run 在原基因组中的坐标，供后续 translate 使用。
 - **PGR 可复用组件**
   - `src/libs/fmt/fa.rs`:
-    - `reader(infile) -> Result<fasta::io::Reader<...>>`: 顺序读取 FASTA，支持 stdin 与 gzip。
-    - `writer_with_wrap(outfile, 80) -> Result<fasta::io::Writer<...>>`: 按 80 bp 换行输出（与 BISER 的 `width=80` 一致）。
-    - `new_record(name, seq)` / `new_record_preserving_desc(name, source, seq)`: 构造 FASTA record。
+    - `reader(infile) -> Result<fasta::io::Reader<Box<dyn BufRead>>>`: 顺序读取 FASTA，支持 `stdin`、普通文件与 `.gz`。
+    - `writer(outfile) -> Result<fasta::io::Writer<Box<dyn Write>>>`: 单行序列输出（不换行）。
+    - `writer_with_wrap(outfile, line_base_count) -> Result<fasta::io::Writer<Box<dyn Write>>>`: 按指定 bp 换行输出（与 BISER 的 `width=80` 一致）。
+    - `writer_from_writer(writer) -> fasta::io::Writer<W>`: 把已有 `Write` 包装为单行 FASTA writer。
+    - `new_record(name, seq) -> fasta::Record`: 从名称与序列字节构造 FASTA record。
+    - `new_record_preserving_desc(name, source, seq) -> fasta::Record`: 构造 record 并保留 `source` 的 description。
     - `find_fasta_files(path) -> Vec<PathBuf>`: 递归收集 `.fa` 与 `.fa.gz` 文件，输入为文件时返回单元素 vec。
-    - `build_gzi_index(path)`: 为 BGZF FASTA 构建 `.gzi` 索引，`FastaStore::new` 需要该索引做随机访问。
+    - `build_gzi_index(path) -> Result<()>`: 为 BGZF FASTA 构建 `.gzi` 索引，`FastaStore::new` 需要该索引做随机访问。
     - `find_masked_regions(seq, gap_only) -> Vec<(usize, usize)>`: 返回 0-based inclusive 的 masked 区间。`gap_only=false` 时返回 lowercase 或 `nt::is_n` 为 true 的字符（即 N/n 与 IUPAC ambiguity）所在区间；`gap_only=true` 时只返回 N/n 与 IUPAC ambiguity 所在区间。**注意** lowercase 的 A/C/G/T 属于 `gap_only=false` 的返回范围，但它们不是 `nt::is_n`。
     - `mask_sequence(seq, spans, hard) -> Result<String>`: `seq` 为 `&str`，`spans` 为 1-based inclusive 的 `IntSpan`；函数将区间内字符替换为 `N`（hard）或小写（soft）。它**保留序列长度**，与 BISER 的 hard-mask（删除 lowercase）行为不同，因此不能直接用于生成 hard-masked FASTA。
   - `src/libs/nt.rs`:
@@ -582,11 +593,13 @@ PGR 内部不同模块混用 0-based half-open 与 1-based inclusive 两种约�
   - `src/libs/ds/bitmap.rs`:
     - `BitMap::new(size)` + `set_range(start, len)` + `is_fully_set(start, len)`: 0-based 位图，可用于标记 plane-sweep 或 decomposition 中已访问/已输出的基因组位置，避免同一碱基被重复命中。
 - **不可直接复用**
-  - `src/libs/hash.rs`: 提供 canonical minimizer 采样（`seq_sketch`、`JumpingMinimizer`）与 Jaccard/Mash 距离计算。
-    `seq_sketch` 返回 `Vec<MinimizerInfo>`，包含 hash、seq_id、pos、strand，形式上类似 BISER 的
-    winnowing 输出，但本质不同：
-    - `hash.rs` 使用 fxhash/rapidhash/murmurhash 等哈希函数，且支持 canonical k-mer；
-    - BISER search/decompose 依赖 exact 2-bit k-mer + winnowing（非 canonical、非 hash-based）。
+  - `src/libs/hash.rs`: 提供 canonical minimizer 采样与 Jaccard/Mash 距离计算：
+    - `seq_sketch(seq, seq_id, k, w, soft_mask, filter) -> Vec<MinimizerInfo>`: 使用 `minimizer_iter` 的 canonical minimizer，返回每个 minimizer 的 hash、seq_id、pos、strand。`soft_mask=true` 时丢弃包含 lowercase 碱基的 k-mer；`filter` 用于按 hash 值过滤保留的 minimizer。
+    - `seq_mins(seq, opt_hasher, opt_kmer, opt_window) -> Result<RapidHashSet<u64>>`: 基于 `JumpingMinimizer`（fxhash/rapidhash/murmurhash/mod）返回 minimizer hash 集合，用于 `pgr dist seq` 等 sketch 场景。
+    - `seq_sketch` 返回 `Vec<MinimizerInfo>`，包含 hash、seq_id、pos、strand，形式上类似 BISER 的
+      winnowing 输出，但本质不同：
+      - `hash.rs` 使用 fxhash/rapidhash/murmurhash 等哈希函数，且支持 canonical k-mer；
+      - BISER search/decompose 依赖 exact 2-bit k-mer + winnowing（非 canonical、非 hash-based）。
     因此 `hash.rs` 的 minimizer 流程不能直接复用，仅可作为 sketch 验证或后续扩展使用。
 - **需要新增的实现**
   - `src/libs/sd/kmer_index.rs`: exact 2-bit k-mer 滚动哈希、winnowing 采样、
@@ -623,8 +636,26 @@ PGR 内部不同模块混用 0-based half-open 与 1-based inclusive 两种约�
       负链 query 的序列会通过 `reverse_range_pair` 取反向互补后再参与评分。
     - **不建议用 `chain_blocks` 做 BISER 原型**：由于 gap 模型差异（`max(dq, dt)` vs `dx + dy`），其输出链与
       BISER 会有系统性偏差，无法验证 PST chaining 逻辑是否正确。原型阶段应使用 y 离散化 + 线段树的 PST 实现。
+  - `src/libs/chain/record.rs`:
+    - `Chain { header: ChainHeader, data: Vec<ChainData> }`: UCSC chain 格式的内存表示。
+    - `ChainHeader` 字段：`score`, `t_name`, `t_size`, `t_strand`, `t_start`, `t_end`, `q_name`, `q_size`, `q_strand`, `q_start`, `q_end`, `id`。
+      `t_start/t_end/q_start/q_end` 为 0-based half-open；`t_strand` 恒为 `'+'`，`q_strand` 可为 `'+'`/`'-'`。
+    - `ChainData { size, dt, dq }`: 相对增量，最后一个 block 的 `dt=dq=0`。
+    - `Chain::to_blocks() -> Vec<Block>`: 把相对 `ChainData` 转为绝对坐标 `Block { t_start, t_end, q_start, q_end }`（0-based half-open）。
+    - `Chain::from_blocks(header, blocks) -> Vec<ChainData>`: 从绝对 block 重建相对 data，并更新 header 的 `t_start/t_end/q_start/q_end`。
+    - `Chain::subset(t_start, t_end) -> Option<Chain>`: 按 target 子区间切 chain，返回新的 `Chain`。
+    - `Chain::write(writer)`: 按 UCSC 格式写出。
+    - `ChainReader<R>` / `read_chains(reader)`: 顺序读取 UCSC chain 文件；非 chain 行被忽略，`#` 行存入 `header_comments`。
+    - BISER refine 阶段输出的 anchors/CIGAR 若需导出为 chain 格式（例如与 `pgr chain` 生态互操作），可直接使用这些结构。
+  - `src/libs/chain/sort.rs`:
+    - `sort_chains(chains, renumber)`: 按 score 降序排序 chain；`renumber=true` 时从 1 开始重新赋值 id。
+  - `src/libs/chain/stitch.rs`:
+    - `stitch_chains(reader, writer)`: 按 chain ID 合并 fragments（UCSC `chainStitchId` 语义）。要求同一 ID 的 fragments 在 target/query/strand 上一致且 block 不重叠；输出按 score 降序。
+    - SD 流程若输出带 ID 的 chain fragments 并需要合并，可参考；但它不是通用的“合并相邻 chain”工具。
   - `src/libs/ds/gap_calc.rs`:
     - `GapCalc::medium()` / `GapCalc::loose()` / `GapCalc::affine(open, extend)`: 预计算 gap cost 表。
+    - 该类型也在 `src/libs/chain/mod.rs` 中通过 `pub use crate::libs::ds::GapCalc;` 重新导出为
+      `chain::GapCalc`，`src/libs/fas_multiz/banded_align.rs` 等模块即通过此路径使用。
     - **重要差异**: `GapCalc::calc(dq, dt)` 在 `dq > 0 && dt > 0` 时使用 `max(dq, dt)` 查表，而 BISER chaining
       要求 `dx + dy`。因此 BISER chaining 不能通过 `GapCalc` 表达，需要在 segment-tree/Fenwick PST 的
       查询更新逻辑中直接按 `dx + dy` 计算。
@@ -643,7 +674,7 @@ PGR 内部不同模块混用 0-based half-open 与 1-based inclusive 两种约�
     - **三种模式的精确语义（对线性 POA graph 做 pairwise 比对时）**：
       - `Local`：query 与 graph 均允许自由起点/终点，返回得分最高的局部子比对。适合在较大 gap 区域内寻找最优局部对齐块。
       - `SemiGlobal`：query 必须完整对齐，graph 的起点/终点自由。适合把一段 query 锚定到 reference 的任意子区间。
-      - `Global`：query 必须完整对齐，graph 起点固定（必须从第一个节点开始），但 graph 终点自由（可以在任意节点结束）。因此它**不是**传统 Needleman-Wunsch 的双端固定全局比对；若要做两条序列完全对齐，需要在得到 alignment 后手动检查 path 是否覆盖 graph 首尾，或改用 `SemiGlobal` 并在后续截断。
+      - `Global`：代码注释为 "Needleman-Wunsch"，但实际实现是 **query 完整对齐、graph 起点固定（从第一个节点开始）、graph 终点自由**。因此它**不是**传统 Needleman-Wunsch 的双端固定全局比对；若要做两条序列完全对齐，需要在得到 alignment 后手动检查 path 是否覆盖 graph 首尾，或改用 `SemiGlobal` 并在后续截断。`align_seqs(..., "builtin")` 即使用此 `Global` 模式依次加入序列并输出 MSA。
     - 做 pairwise alignment 时，把其中一条 mate 构建成线性 POA graph：
       ```rust
       use pgr::libs::poa::graph::PoaGraph;
@@ -737,11 +768,19 @@ PGR 内部不同模块混用 0-based half-open 与 1-based inclusive 两种约�
     - `slice_cigar_by_target(cigar, target_start, ts, te)`: 按 target 子区间切 CIGAR。
     - `CigarOp` 使用 bit-packed `u32`：高 3 bits 存 op code（`=`/`X`/`I`/`D`/`M`），低 29 bits 存长度，最大单 op 长度约 512 Mbp。
   - `src/libs/alignment/stat.rs`:
-    - `pair_d(seq1, seq2) -> Result<f32>`: 计算两条**等长对齐序列**的 divergence（忽略 gap 列，IUPAC 按 N 处理）。
-      适合从展开后的对齐字符串计算，而不是直接用于 CIGAR。
-    - `alignment_stat(seqs) -> Result<(i32, i32, i32, i32, i32, f32)>`: 多序列对齐列统计（长度、可比列、差异列、gap 列、模糊列、平均差异）。
+    - `pair_d(seq1: &[u8], seq2: &[u8]) -> Result<f32>`: 计算两条**等长对齐序列**的 divergence。
+      只统计 `NT_VAL` 均 ≤ 3 的位置（即 A/C/G/T，IUPAC ambiguity 按 N 排除）；忽略 gap 列；
+      比较时忽略大小写。`comparable == 0` 时返回错误。
+    - `alignment_stat(seqs: &[&[u8]]) -> Result<(i32, i32, i32, i32, i32, f32)>`: 多序列对齐列统计，返回
+      `(length, comparable, difference, gap, ambiguous, mean_d)`。
+      - `comparable`: 该列所有序列都是 A/C/G/T 的列数；
+      - `difference`: comparable 列中至少有一个序列与第一个序列不同的列数；
+      - `gap`: 该列包含 `'-'` 的列数；
+      - `ambiguous`: 其余列（含 IUPAC ambiguity 或 N）；
+      - `mean_d`: 所有序列对之间 `pair_d` 的平均值（序列数 < 2 时为 0.0）。
   - `src/libs/alignment/msa.rs`:
     - `align_seqs(seqs, "builtin")` 调用内置 POA 做多序列对齐，返回 MSA 字符串（含 `'-'`），**不是 pairwise alignment**。
+      内部使用 `AlignmentType::Global` 将所有序列依次加入 POA graph，再调用 `poa.msa()` 输出。
       也支持 `"spoa"`、`"clustalw"`、`"muscle"`、`"mafft"` 等外部 aligner。
     - `align_seqs_quick(seqs, aligner, pad, fill)` 在已有粗对齐（所有序列长度相同）的基础上，仅对
       head/tail 和 gap 邻近区域调用外部 aligner 重新对齐，再拼回原位。适合先快速得到整体对齐框架，
@@ -765,11 +804,23 @@ PGR 内部不同模块混用 0-based half-open 与 1-based inclusive 两种约�
     - 提供 lastz 的预设评分矩阵与参数（`PRESETS`、`find_preset`、`run_lastz`）。若 `ScalarAlignmentEngine`
       性能不足或需要更复杂的评分矩阵，可将小 gap 区域提取后调用 lastz 作为外部 fallback。
   - `src/libs/fas_multiz/banded_align.rs`:
-    - `banded_align_refs(...)` 实现 banded DP + affine gap，但当前紧密绑定 `FasBlock` 输入，不能直接复用。
-      若后续需要 banded pairwise align，可参考其索引函数 `idx(i, j)` 和 band 半径计算逻辑，提取为通用函数。
+    - `banded_align_refs(...)` 对两个 `FasBlock` 的 reference entry 做 banded DP + affine gap，
+      返回两 reference 序列列与列之间的对齐映射 `(Vec<Option<usize>>, Vec<Option<usize>>)`。
+    - DP 会同时考虑两个 block 中所有共有的 species，对每个 `match/mismatch` 位置累加所有物种对的
+      `SubMatrix::get_score` 得分（gap 只算一次），因此它本质上是多序列 banded 对齐，不是单纯的 pairwise。
+    - 当前实现紧密绑定 `FasBlock` 输入，不能直接复用于 BISER 的 pairwise gap 精修。若后续需要 banded
+      pairwise align，可参考其索引函数 `idx(i, j)` 和 band 半径计算逻辑，提取为通用函数。
+    - 该模块使用 `crate::libs::chain::GapCalc`，它是 `src/libs/ds/gap_calc.rs::GapCalc` 的 re-export。
   - `src/libs/alignment/trim.rs`:
-    - 提供 `trim_head_tail`、`trim_complex_indel`、`trim_outgroup` 等函数，用于 MSA 后处理。
-    - BISER 的 `ltrim`/`rtrim` 是从链两端向内扫描、找累积比对得分最大的边界，与这些通用 trim 不同，需要自行实现。
+    - `trim_pure_dash(seqs: &mut [String])`: 删除所有序列共同为 gap 的列（交集）。
+    - `trim_head_tail(seqs: &mut [String])`: 从两端删除纯 gap 列，直到遇到任一序列的非 gap 字符。
+    - `trim_outgroup(seqs: &mut [String]) -> Result<()>`: 要求至少 3 条序列，最后一条为 outgroup；删除 outgroup 有插入而 ingroup 共同为 gap 的区域（ingroup gap 的并集是 ingroup gap 交集的超集时才删）。
+    - `trim_complex_indel(seqs: &mut [String]) -> Result<IntSpan>`: 在 `trim_outgroup` 后使用，识别并删除 ingroup 内部复杂 indel 区域，返回被删除的区域。
+    - 这些函数面向多序列对齐后处理；BISER 的 `ltrim`/`rtrim` 是从链两端向内扫描、找累积比对得分最大的边界，与这些通用 trim 不同，需要自行实现。
+  - `src/libs/alignment/slice.rs`:
+    - `slice_block(block, name, set, writer) -> Result<()>`: 按参考物种的 chromosome runlist 对一个 `FasBlock` 做切片，
+      每个子区间按 `>range\nseq\n` 输出每个物种。内部使用 `chr_to_align` / `align_to_chr` 做带 gap 的坐标转换。
+    - 若 BISER 流程需要按区域从 MSA 中提取子序列，可参考其坐标转换逻辑。
 - **需要新增的实现**
   - `src/libs/sd/anchor.rs`: 在 putative SD 的两个 mate 间生成 10-mer exact-match anchors，
     包含 `slide[d]` 去重、向右延伸、过滤高频 k-mer、过滤 trivial self-overlap。
@@ -865,10 +916,16 @@ PGR 内部不同模块混用 0-based half-open 与 1-based inclusive 两种约�
     - 比 `PafIndex` 更轻量；`PafIndex` 的 `query()` 与 `query_transitive_bfs()` 展示了
       “interval tree + CIGAR 投影”模式，可作为复杂场景参考。
   - `src/libs/paf/index/query.rs`:
-    - `project(ts, te, metadata, cigar)` 实现了 target 子区间到 query 坐标的投影，
+    - `project(ts, te, metadata, cigar) -> Option<(qs, qe, ts, te)>` 实现了 target 子区间到 query 坐标的投影，
       输入 `ts/te` 为 0-based half-open，返回 query 区间也是 0-based half-open。
       在将 elementary SD 区间映射到 SD 覆盖时思路类似，但注意它处理的是带 CIGAR 的对齐投影，
       不是简单的坐标偏移。
+  - `src/libs/paf/index/bfs.rs`:
+    - `PafIndex::query_transitive_bfs(...)`: 从 seed target 区间出发做双向 BFS，遍历 alignment graph。
+    - `PafIndex::merge_results(results, max_gap, fasta_store)`: 按 `(query_id, target_id, strand)` 分组，
+      合并 query 区间间隔不超过 `max_gap` 的相邻结果；若提供 `FastaStore`，合并不同 record 时会通过 FASTA 重新计算 CIGAR。
+    - SD 流程中若需把多个重叠/相邻 hit 合并成连续区间（例如 cluster 后合并同一 chain 上的 fragments），
+      可参考 `merge_results` 的分组-排序-合并逻辑，但它依赖 PAF/CIGAR 语义，需要适配为 SD 的 interval merge。
 - **需要新增的实现**
   - `src/libs/sd/set_cover.rs`: 用二叉堆实现 `greedy_set_cover`，输入为
     `elementary_id -> Vec<sd_id>`，输出被选中的 core elementary IDs。
@@ -910,13 +967,20 @@ PGR 内部不同模块混用 0-based half-open 与 1-based inclusive 两种约�
 除了按算法阶段映射的组件外，以下通用工具在 SD 流程中也 likely 有用：
 
 - `src/libs/par.rs`
-  - 并行 pipeline 原语：`spawn_writer_and_pool` 创建 writer thread + rayon pool；
-    `resolve_paths` / `load_entries` / `load_two_sets` / `par_run_pairs` 支持列表解析、批量加载与
-    成对并行迭代。SD pipeline 的 search/align 阶段若需要“生产者-消费者”式并行输出，可直接复用。
+  - 并行 pipeline 原语，无 clap 依赖：
+    - `spawn_writer_and_pool(outfile, num_threads) -> Result<(Sender<String>, JoinHandle<()>)>`：创建 writer thread + 按 `num_threads` 配置全局 rayon pool。
+    - `resolve_paths(infile, is_list) -> Result<Vec<String>>`：`is_list=true` 时按行读取路径列表，否则返回单元素 vec。
+    - `load_entries<E, F>(paths, load_fn) -> Result<Vec<E>>`：顺序加载每个路径的条目。
+    - `load_two_sets<E, F>(infiles, is_list, load_fn) -> Result<(Vec<E>, Vec<E>)>`：单输入时返回 `(clone, original)` 用于自比较；双输入时分别加载。
+    - `par_run_pairs(entries1, entries2, sender, pair_fn)`：rayon 并行遍历笛卡尔积，每 1000 条结果通过 `sender` 批量发送。
+  - SD pipeline 的 search/align 阶段若需要“生产者-消费者”式并行输出，可直接复用。
 - `src/libs/io.rs`
-    - `reader(input)` / `writer(output)`: 通用缓冲读写，支持 `stdin`、普通文件、`.gz`。
-    - `read_names(path)` / `read_sizes(path)`: 名单读取、大小文件读取。
-    - `is_bgzf(path)`: 通过读取文件头判断是否为 BGZF 格式，`FastaStore` 与 `loc::open_indexed` 内部均用此决定打开方式。
+    - `reader(input) -> Result<Box<dyn BufRead>>`: 通用缓冲读，支持 `stdin`、普通文件、`.gz`。
+    - `writer(output) -> Result<PgrWriter>`: 通用缓冲写，支持 `stdout` 与普通文件；`PgrWriter` 在 drop 时会尝试 flush，失败则向 stderr 输出警告。
+    - `read_lines(input) -> Result<Vec<String>>`: 一次性读取所有行。
+    - `read_names<T: FromIterator<String>>(path) -> Result<T>`: 读取第一列（按空白分割），可收集为 `Vec<String>` 或 `HashSet<String>`。
+    - `read_sizes<T: FromStr>(path) -> Result<BTreeMap<String, T>>`: 读取 `name\tsize`，支持任意数值类型。
+    - `is_bgzf(path) -> bool`: 通过读取文件头判断是否为 BGZF 格式，`FastaStore` 与 `loc::open_indexed` 内部均用此决定打开方式。
     - `read_runlist(path)`: 安全读取 runlist JSON 并转为 `BTreeMap<String, IntSpan>`，避免原 `intspan` API 在错误输入上 panic。
     - `get_basename(path) -> Option<String>`: 提取文件基本名（去掉路径与扩展名），`lastz.rs` 与多个命令用它生成输出文件名。
     - `SequenceReader` trait: 统一 0-based half-open 随机访问接口，`TwoBitFile` 已实现。
@@ -942,6 +1006,42 @@ PGR 内部不同模块混用 0-based half-open 与 1-based inclusive 两种约�
 - `src/libs/paf/persist.rs`
   - `PafIndex::save(path)` / `PafIndex::load(path)`: 将 interval tree + CIGAR 索引持久化为 `.paf.idx`。
   - 用途: 若 SD 流程需要将 k-mer/anchor 索引或 hit 索引缓存到磁盘，可参考其 bincode + version + magic 的序列化模式。
+- `src/libs/paf/record.rs` + `src/libs/paf/parser.rs`
+  - `PafRecord { query_name, query_length, query_start, query_end, strand, target_name, target_length, target_start, target_end, matches, block_length, mapq, tags }`:
+    `query_start/target_start` 为 0-based inclusive，`query_end/target_end` 为 0-based exclusive，符合 PAF 规范；`tags` 为可选 SAM 风格标签字符串列表。
+  - `parse_paf(reader) -> Result<Vec<PafRecord>>`: 读取完整 PAF 文件，跳过空行与 `#` 注释行。
+  - `parse_paf_line(line) -> Result<PafRecord>`: 解析单行，字段数不足 12 或 strand 非法时返回错误。
+  - `write_paf_record(writer, rec)`: 写出完整 PAF 记录（含 tags）。
+  - 用途: 若 SD 流程需要以 PAF 作为中间格式（例如把 hit 的 CIGAR 存为 PAF 后再投影/合并），可直接复用。
+- `src/libs/fasta/stat.rs`
+  - `count_bases(seq: &[u8]) -> (usize, [usize; 5])`: 统计序列中 A/C/G/T/N 的数量，IUPAC ambiguity 按 N 计数，
+    gap 等非标准字符不计入 `len`。可用于 SD 流程中快速计算 GC 含量或 N 含量。
+  - `calc_n50_stats(lens, opt_nx, opt_genome) -> N50Stats`: 从序列长度列表计算 N50/Nx/E-size 等组装统计。
+  - `transpose<T>(v: Vec<Vec<T>>) -> Vec<Vec<T>>>`: 矩阵转置，输出工具函数。
+- `src/libs/fasta/filter.rs`
+  - `pass_filters(seq, minsize, maxsize, maxn, is_uniq, seen, name) -> bool`: 按长度、N 数、名称唯一性过滤 FASTA record。
+    `NO_LIMIT`（`usize::MAX`）表示不限制。
+  - `format_sequence(seq, is_dash, is_iupac, is_upper) -> String`: 可选删除 `'-'`、把 IUPAC 折叠为 `N`、转大写。
+  - 可用于 SD 流程的输入预处理（例如过滤太短/太 N 多的序列）。
+- `src/libs/fasta/chunk.rs`
+  - `SizeChunker`: 按累计序列大小或每 2 条记录切换输出文件的状态机；`max_files_exceeded()` 判断是否达到最大文件数。
+  - 主要用于 `pgr fa split`，与 BISER 关系不大。
+- `src/libs/fasta/dedup.rs`
+  - `record_signature(name, desc, seq, opts) -> Result<u64>`: 基于 rapidhash 计算 FASTA record 的签名，
+    支持按 name/description/sequence 去重，`is_both` 模式同时考虑正链与反向互补。
+  - 若 SD 流程需要去除重复 contig/record，可直接复用。
+- `src/libs/ds/top_k_purity.rs`
+  - `TopKPurity::new(num_classes, k, ok_ratio)`: 跟踪类别计数，检测前 K 类是否超过可接受比例。
+  - `penalty_factor()`: 若分布过于集中，返回 `Some(1.01 - (observed - ok_ratio) / (1 - ok_ratio))` 作为 score 惩罚因子。
+  - 被 `chain/anti_repeat.rs` 用于低复杂度过滤；SD 流程若需过滤高重复 k-mer 或低复杂度 hit 可参考。
+- `src/libs/fmt/psl.rs`
+  - `Psl` 结构体：UCSC PSL 格式的内存表示，字段包括 `match_count`、`mismatch_count`、`rep_match`、
+    `n_count`、`q_num_insert`、`q_base_insert`、`t_num_insert`、`t_base_insert`、
+    `strand`、`q_name`、`q_size`、`q_start`、`q_end`、`t_name`、`t_size`、`t_start`、`t_end`、
+    `block_count`、`block_sizes`、`q_starts`、`t_starts`。
+  - `Psl::from_align(...) -> Option<Psl>`: 从两条等长对齐字符串构建 PSL 记录，会跳过两端纯 indel 列。
+  - `Psl::from_str(line)`: 从 PSL 行解析；支持 `"+"`、`"-"`、`"++"`、`"+-"` 等 strand。
+  - 若 SD 流程需要与 PSL 格式互操作（例如把 POA alignment 导出为 PSL 再转 chain），可参考。
 - `src/libs/lastz.rs`
   - 提供 UCSC lastz 预设（`PRESETS`、`find_preset`、`run_lastz`）与评分矩阵。可作为 `ScalarAlignmentEngine` 性能不足时的外部局部比对 fallback。
   - 内置矩阵：`MATRIX_DEFAULT`（HoxD55， Human/Mouse/Macaque/Cow）、`MATRIX_DISTANT`（Human/Zebrafish/Opossum）、
@@ -950,14 +1050,44 @@ PGR 内部不同模块混用 0-based half-open 与 1-based inclusive 两种约�
     `run_lastz` 会处理 target/query 笛卡尔积、文件名去重与 `--self` 模式。
 - `src/libs/chain/stitch.rs`
   - 按 chain ID 合并 fragments（`chainStitchId` 语义），要求 fragments 之间不重叠。SD 流程若输出带 ID 的 chain fragments，可参考；但它不是通用的“合并相邻 chain”工具。
+- `src/libs/chain/anti_repeat.rs`
+  - `check_chain(chain, t_2bit, q_2bit, min_score) -> bool`: 对 UCSC chain 做 degeneracy 与 repeat 过滤。
+  - `check_degeneracy`: 用 `TopKPurity(4, 2, 0.80)` 检测低复杂度（1–2 个碱基占比过高），若占比过高则按 penalty factor 降低 chain score。
+  - `check_repeat`: 检测 chain 中 soft-masked（lowercase）碱基比例，若过高则降低 score。
+  - 内部使用与 `NT_VAL` 不同的 2-bit 编码（T=0, C=1, A=2, G=3），因负链 complement 用 `(v + 2) % 4`；不能直接用 `crate::libs::nt::NT_VAL`。
+  - SD 流程若需过滤低复杂度或重复区域 hits，可参考其思路，但 `check_chain` 强依赖 `TwoBitFile` 与 chain 结构，需要适配。
+- `src/libs/chain/pre_net.rs`
+  - `pre_net(reader, writer, t_hash, q_hash, opts)`: 实现 UCSC `chainPreNet` 语义，按 score 降序遍历 chain，保留 target/query 尚未被完全覆盖的 chain，并用 `BitMap` 标记已用区间（可带 pad）。
+  - 输入 chain 必须已按 score 降序排序，否则会报错。
+  - `is_haplotype(name)`: 判断名称是否含 `_hap` 或 `_alt`。
+  - 该逻辑与 BISER 的 coverage/decomposition 有相似之处，但针对 chain 格式；SD 的“去重复覆盖”步骤可参考其实现。
+- `src/libs/chain/psl_chain.rs`
+  - `group_psl_blocks(reader, score_ctx)`: 读取 PSL 记录，按 `(target, query, strand)` 分组为 `ChainableBlock`。
+  - `chain_psl(reader, writer, gap_calc, min_score, score_ctx)`: 对每组调用 `chain_blocks` 生成 chain，过滤低分链后输出。
+  - 展示了 PSL → chain 的完整 pipeline，但使用 `chain_blocks` 的 `max(dq, dt)` gap 模型，不适用于 BISER refine。
 - `src/libs/alignment/trim.rs`
-    - `trim_pure_dash(seqs)`：删除所有序列在该列均为 gap（`-`）的列。
-    - `trim_outgroup(seqs)`：删除 outgroup-only 的插入列（当前实现取 gap 列的并集与交集关系判断）。
-    - `trim_head_tail(seqs)` / `trim_complex_indel(seqs)`：其他 MSA 后处理辅助函数。
+    - `trim_pure_dash(seqs)`：删除所有序列在该列均为 gap（`-`）的列（交集）。
+    - `trim_head_tail(seqs)`：从两端删除纯 gap 列，直到遇到任一序列的非 gap 字符。
+    - `trim_outgroup(seqs)`：要求至少 3 条序列且最后一条为 outgroup，删除 outgroup-only 的插入列。
+    - `trim_complex_indel(seqs)`：在 `trim_outgroup` 后使用，识别并删除 ingroup 内部复杂 indel 区域。
     - SD refine 阶段若需要对齐后修剪，可参考这些函数，但 BISER 的 score-based `ltrim`/`rtrim` 仍需自行实现。
+- `src/libs/alignment/variation.rs`
+  - `get_subs` / `get_indels`: 从 MSA 中检测替换与 indel；`Substitution` / `Indel` 结构体记录位置、碱基、频率、模式。
+  - 主要用于 MSA 变异检测，不是 BISER SD 检测核心，但可作为 MSA 后处理参考。
 - `src/libs/fas_multiz/banded_align.rs`
-  - 实现 banded DP + affine gap，但当前紧密绑定 `FasBlock` 输入，不能直接复用。若后续需要 banded
+  - `banded_align_refs(...)` 对两个 `FasBlock` 的 reference entry 做 banded DP + affine gap，
+    返回两 reference 序列列与列之间的对齐映射 `(Vec<Option<usize>>, Vec<Option<usize>>)`。
+  - DP 会同时考虑两个 block 中所有共有的 species，对每个 `match/mismatch` 位置累加所有物种对的
+    `SubMatrix::get_score` 得分（gap 只算一次），因此它本质上是多序列 banded 对齐，不是单纯的 pairwise。
+  - 当前实现紧密绑定 `FasBlock` 输入，不能直接复用于 BISER 的 pairwise gap 精修。若后续需要 banded
     pairwise align，可参考其索引函数 `idx(i, j)` 和 band 半径计算逻辑，提取为通用函数。
+  - 该模块使用 `crate::libs::chain::GapCalc`，它是 `src/libs/ds/gap_calc.rs::GapCalc` 的 re-export。
+- `src/libs/fas_multiz/merge.rs` + `src/libs/fas_multiz/windows.rs`
+  - `merge_blocks_with_dp` / `merge_two_blocks_with_dp`: 基于 `banded_align_refs` 对多个 `FasBlock` 做 progressive 合并，
+    `Core` 模式要求所有输入都包含该物种，`Union` 模式允许缺失。
+  - `derive_windows_from_blocks`: 从 reference ranges 推导合并窗口，先按染色体合并重叠区间（扩展 `radius`），
+    再按 `min_width` 与覆盖输入数过滤。
+  - 面向多物种 block FA 合并，与 BISER 单基因组 SD 检测无直接复用关系，但可作为“区间合并 + progressive 对齐”模式参考。
 
 ### 6.5 建议的模块与命令结构
 
@@ -1076,6 +1206,407 @@ PGR 内部不同模块混用 0-based half-open 与 1-based inclusive 两种约�
   PGR 中可用 `nt::rev_comp` 生成反向链序列，或按 BISER 方式在索引阶段同时扫描两条链。
 - **性能**: BISER 的 Codon 实现经编译为原生代码，plane-sweep 是其性能关键。
   Rust 实现应可达到相近性能，但需对 k-mer 索引做内存优化（如 `u64` key + `Vec<(u32, u32)>`）。
+
+## 6.8 外部全基因组自比对替代路线：lastz --self 与 FastGA
+
+> 本节从“复用 PGR 已有的外部比对基础设施”出发，讨论是否可以用 lastz --self 或 FastGA 替代 BISER 内部的 `search` + `align` 阶段，直接把外部比对结果转换成 BISER hit 格式后接入 `cluster` / `decompose` / `translate`。所有分析均结合 BISER 源码中的实际输入输出格式与 PGR 现有命令能力，并给出可落地的模块与命令设计。
+
+### 6.8.1 BISER search/align 的内部数据契约
+
+要判断外部比对能否替代 BISER 的 `search` + `align`，首先必须明确这两个阶段的数据契约。
+
+**`biser search` 的输出**
+
+- 文件：`biser/codon/search.codon:61-86` 的 `save_sd()`。
+- 输出时机：plane-sweep 链表中的 walker 满足 `count >= ceil(age * tau)` 且长度超过 `QUERY_THRESHOLD=100` 与 `REF_THRESHOLD=500` 时被提升为最终 hit。
+- 输出格式：7 列 BEDPE（`x_name\tx_start\tx_end\ty_name\ty_start\ty_end\tspecies1:species2`），**无 CIGAR、无链向列**。
+- 坐标系：hard-masked 基因组上的 0-based half-open；同染色体时会通过 `pad_sd()` 做 `MAX_EXTEND=5000` 填充，并保证两个 mate 不重叠（`biser/codon/search.codon:62-69`）。
+
+**`biser align` 的输入与输出**
+
+- 输入：即 `search` 输出的 7 列粗 BEDPE。
+- 处理：
+  1. 用 `align.generate_anchors()`（`biser/codon/align.codon:5-28`）在 mate 之间找 10-mer 精确匹配锚点；
+  2. 用 `chain.chain()`（`biser/codon/chain.codon:171-244`）做 PST chaining，得到粗略锚点链；
+  3. 用 `align.refine()`（`biser/codon/align.codon:31-112`）做 sparse DP 精修边界并生成 CIGAR。
+- 输出：14 列 `.align` BEDPE，格式由 `hit.Hit.__str__()`（`biser/codon/hit.codon:155-171`）定义。
+
+**下游阶段只依赖 `.align` 文件**
+
+- `biser cluster`（`biser/codon/cluster.codon:53-165`）读取 `.align` 后：
+  - 用第 1–3 列与第 4–6 列构建 `SD` 的 `mate1` / `mate2` 区间；
+  - 用第 7 列拆分 species（`l[6].split(':')`）；
+  - 用第 10 列判断反向（`l[9] == '-'`）；
+  - **不解析第 13 列 CIGAR**。
+- `biser translate`（`biser/codon/mask.codon:32-154`）读取 `.align` 后：
+  - 用第 1–6 列做 hard-masked → original 坐标映射；
+  - **逐字符解析第 13 列 CIGAR**，把 `M`/`I`/`D` 映射为 original 坐标系下的 `M`/`S`/`N`；
+  - 因此 CIGAR 的语义必须与 BISER 完全一致。
+
+**结论**：外部比对只要生成与 BISER `.align` 格式一致的 14 列 BEDPE，就可以无缝替代 `search` + `align`，保留 `cluster` / `decompose` / `translate` 不变。
+
+### 6.8.2 为什么外部比对可以替代 BISER 的 search/align
+
+BISER 内部 pipeline 在单基因组场景下的数据流如下（`biser/__main__.py:480-499`）：
+
+1. `biser search`（`biser/codon/search.codon:265`）：在 hard-masked 基因组上建立 2-bit k-mer 索引，用 plane-sweep 找出 putative SD pairs，输出无 CIGAR 的粗 BEDPE。
+2. `biser align`（`biser/codon/__init__.codon:75-104`）：读取粗 BEDPE，对每对 mate 用 `align.generate_anchors` + `chain.chain` + `align.refine` 精修边界并生成 CIGAR，输出带完整 CIGAR 的 14 列 BEDPE（`.align`）。
+3. 后续 `cluster` / `decompose` / `translate` 只依赖 `.align` 文件的坐标、链向与 CIGAR。
+
+因此，**只要能把“全基因组自我比对”结果转换成与 BISER `.align` 格式一致的 BEDPE，就可以跳过 BISER 自研的 search/align，直接复用下游阶段**。PGR 已经具备成熟的外部比对调用与格式转换能力，这为该替代路线提供了工程基础。
+
+### 6.8.3 BISER `.align` 文件格式（必须精确匹配）
+
+`biser/codon/hit.codon:155-171` 定义了 `Hit.__str__` 输出的 14 列：
+
+- 第 1–3 列：`x_name`, `x_start`, `x_end`（query mate，0-based half-open）
+- 第 4–6 列：`y_name`, `y_start`, `y_end`（target mate，0-based half-open）
+- 第 7 列：`species1:species2`
+- 第 8 列：总错误率 `err() * 100`（`gap_err + mis_err`，`hit.codon:237-238`）
+- 第 9–10 列：`x_strand`, `y_strand`（`+` 或 `-`；BISER 保证 `x` 永远为正链，`hit.codon:100`）
+- 第 11 列：`max(x_end - x_start, y_end - y_start)`
+- 第 12 列：`span()`（CIGAR 总长度）
+- 第 13 列：`simple_cigar`（把连续的 `=`/`X` 合并为 `M`，`I`/`D` 保留，如 `100M50I200M`）
+- 第 14 列：`X=...;ID=...`（ mismatch 错误率与 gap 错误率）
+
+下游阶段对列的使用：
+- `cluster`（`biser/codon/cluster.codon:53-84`）只读取第 1–7 列与第 10 列（`l[9] == '-'` 判断反向），不解析 CIGAR。
+- `translate`（`biser/codon/mask.codon:69-147`）会读取第 13 列 CIGAR，并在 hard-masked 坐标与原基因组坐标之间转换。
+- 因此外部比对转换器必须保证坐标、链向、CIGAR 三要素与 BISER 语义一致，且第 8、14 列的错误率计算需使用 `gap_err + mis_err` 与 `block_identity` 思路（见 6.3.3 对 `paf/cigar.rs` 的讨论）。
+
+### 6.8.4 lastz --self 路线
+
+PGR 已有 `pgr lav lastz` 命令（`src/cmd_pgr/lav/lastz.rs:86-194`），其 `RunLastzOptions.is_self` 会在 target 与 query 为同一文件时调用 lastz 的 `--self` 标志（`src/libs/lastz.rs:138-247`），避免冗余计算。
+
+**完整数据流**：
+
+1. **Hard-mask 输入基因组**（与 BISER 保持一致）：
+   ```bash
+   pgr sd mask genome.fa -o genome.hard.fa
+   ```
+   这一步对应 BISER `mask.codon:7-15`，只保留 uppercase A/C/G/T，删除 lowercase 与 N；PGR 实现需同步记录 uppercase run 映射表供后续 `translate` 使用（见 6.3.7）。
+
+2. **lastz 自比对**：
+   ```bash
+   pgr lav lastz genome.hard.fa genome.hard.fa --self --preset set01 -o lav_out/
+   ```
+   输出为 LAV 文件（`src/libs/fmt/lav.rs`）。lastz 的 `--self` 会自动跳过 query 与 target 完全相同且同方向的 trivial 比对，只保留有意义的同源区段。
+
+3. **LAV → PSL**：
+   ```bash
+   pgr lav to-psl lav_out/[genome]vs[genome].lav -o self.psl
+   ```
+   对应 `src/cmd_pgr/lav/to_psl.rs`，调用 `fmt::lav::lav_to_psl`（`src/libs/fmt/lav.rs:403-487`）。该函数解析 LAV 的 `s {}/h {}/a {}` stanzas，把 `l` 行（`l t_start q_start t_end q_end percent_id`）转换为 0-based half-open 的 `Block`，再汇总为 `Psl`。
+
+4. **PSL → Chain（可选，用于去重/过滤）**：
+   ```bash
+   # 直接转 chain
+   pgr psl to-chain self.psl -o self.chain
+   # 或带 chaining 与 score recalc
+   pgr psl chain t.2bit q.2bit self.psl -o self.chain --gap-model loose --min-score 1000
+   ```
+   对应 `src/cmd_pgr/psl/to_chain.rs` 与 `src/cmd_pgr/psl/chain.rs`。`to-chain` 调用 `src/libs/fmt/psl.rs::to_chain()`（`src/libs/fmt/psl.rs:1220-1256`），把 PSL 按 record 直接写成 UCSC chain 格式。注意 `pgr psl chain` 使用 `chain_blocks` 的 `max(dq, dt)` gap 模型（6.3.3），与 BISER 的 `dx + dy` 不同，主要用于把散落的 lastz 局部比对连接成 longer chains，不是 BISER 精修的 bit-exact 替代。
+
+5. **Chain/PSL → BISER `.align` BEDPE**：
+   - 需要新增转换器，读取 PSL/chain 的 block 结构，把每个 chain 或 PSL record 映射为 BISER hit。
+   - 坐标转换：lastz 在 hard-masked 基因组上输出，因此坐标天然就是 BISER 内部使用的 hard-masked 坐标。
+   - CIGAR 生成：从 chain/PSL 的 block 大小与间隔直接构造 `=`/`X`/`I`/`D` 或直接输出 `simple_cigar`（`M`/`I`/`D`）。
+     - 对相邻 blocks，`block_size` 对应 `=`；`t_gap` 对应 `D`；`q_gap` 对应 `I`。
+     - 由于 PSL 不直接给出 mismatch 位置，可将每个 block 整体记为 `M`（与 BISER `simple_cigar` 一致），但第 14 列的 `X=` 需用 `percent_id` 反推：`mismatch_bp = block_size * (1 - percent_id/100)`。
+   - 错误率：用 `block_identity` 计算 `1 - identity` 作为总错误率，再拆分 mismatch 与 gap 比例填入第 14 列。不要误用 `gap_compressed_identity`（6.3.3 已说明其会低估 indel）。
+
+6. **接入下游**：转换后的 `.align` 文件可直接作为 `pgr sd cluster` 的输入，后续 `decompose` / `translate` 无需改动。
+
+### 6.8.5 FastGA / PAF 路线
+
+FastGA 在 PGR 文档中被描述为 impg 支持的备选 aligner（`docs/paf.md:39`），输出 PAF 格式，磁盘占用低，适合小基因组/细菌基因组的 all-vs-all 场景（`notes/ecoli-cohort.md`）。
+
+**完整数据流**：
+
+1. 同样需要先做 `pgr sd mask` 得到 hard-masked FASTA。
+2. **FastGA 自比对**：
+   ```bash
+   FastGA -pafx genome.hard.fa genome.hard.fa > self.paf
+   ```
+   `-pafx` 表示输出 PAF 并包含 CIGAR（`cg:Z:` tag）。
+3. **PAF → BISER `.align`**：
+   - 直接读取 PAF record，提取 `target_name`, `target_start`, `target_end`, `query_name`, `query_start`, `query_end`, `strand`。
+   - PAF 的 `target_start/query_start` 为 0-based inclusive，`target_end/query_end` 为 0-based exclusive（`src/libs/paf/record.rs`），与 BISER 的 0-based half-open 一致，只需注意 inclusive start 转 half-open 时 start 不变。
+   - 从 `cg:Z:` CIGAR 计算 `=`/`X`/`I`/`D`，再折叠为 `simple_cigar`。
+     - 复用 `src/libs/paf/cigar.rs::parse_cigar()` 解析 `cg:Z:` tag；
+     - 复用 `src/libs/paf/cigar.rs::cigar_stats()` 统计 match/mismatch/ins/del；
+     - 把连续的 `=`/`X` 合并为 `M`，`I`/`D` 保留，即得到 BISER 风格 `simple_cigar`。
+   - 用 `src/libs/paf/cigar.rs::block_identity()` 计算 `1 - identity` 作为错误率。
+4. **接入下游**：与 lastz 路线相同。
+
+相比 lastz，FastGA 路线步骤更短（无需 LAV → PSL → Chain 转换），但 PGR 目前对 FastGA 没有原生命令封装，需要用户在 PGR 外部安装并调用。
+
+### 6.8.6 两种路线与 BISER 原生的技术对比
+
+- **灵敏度**
+  - **BISER**：ordered Jaccard + plane-sweep 针对 SD error model 设计，允许总错误率高达 `--max-error=30`（默认），并区分 `MAX_ERROR` 与 `MAX_EDIT_ERROR`（`biser/__main__.py:407-413`）。
+  - **lastz/FastGA**：默认参数面向种间/种内保守比对，要捕获古老 SD（低同源性）必须显式调低 seed/阈值/身份要求，否则可能漏检。
+- **速度**
+  - **BISER**：原生 plane-sweep 近似线性。
+  - **lastz --self**：在全基因组上寻找所有局部比对开销大，但 PGR 的 `pgr lav lastz` 已用 rayon 并行化。
+  - **FastGA**：针对细菌规模优化，在人类尺度染色体上的行为需实测。
+- **坐标一致性**
+  - **BISER**：内部全程在 hard-masked 坐标系下工作。
+  - **lastz --self / FastGA**：若直接作用于 hard-masked FASTA，输出坐标自然对齐；若作用于原始 FASTA，则必须在转换器或 `mask` 阶段做坐标映射，增加复杂度。
+- **CIGAR 语义**
+  - **BISER**：CIGAR 只含 `M`/`I`/`D`（`simple_cigar`），且 `M` 同时代表 match 与 mismatch。
+  - **lastz/PSL/PAF**：通常含 `=`/`X`/`I`/`D`。转换时需要合并 `=`/`X` 为 `M` 以匹配 BISER 下游。
+- **下游兼容性**
+  - `cluster` 对坐标/链向敏感，对 CIGAR 不敏感；`translate` 对 CIGAR 敏感。因此外部比对路线至少能保证 clustering 正确，但 translate 阶段必须验证 CIGAR 在 hard-masked ↔ original 映射时不出错。
+
+### 6.8.7 参数调优：让外部比对捕获更多古老 SD
+
+BISER 默认允许 30% 总错误率，而 lastz 的 UCSC preset（如 `set01`）通常面向 >90% 同一性。要让外部比对路线接近 BISER 的灵敏度，需要显式调参：
+
+- **lastz 方向**
+  - 降低 seed 阈值：`K`（匹配种子长度）与 `L`（阈值）需要下调；例如 `K=1500 L=1000` 或更低。
+  - 允许更多错配：通过 `--match/--mismatch` 或自定义评分矩阵降低 gap/extension 惩罚。
+  - 提高 `--querydepth` 上限，避免 lastz 在高重复区域提前截断。
+  - 使用 `--self` 时，lastz 自动跳过完全相同的 query/target 同方向 trivial 比对，这与 BISER 过滤 self-overlap 一致。
+- **FastGA 方向**
+  - FastGA 的 `-p` 选项控制映射参数；要捕获低同一性重复，需要放宽 identity 阈值（具体参数参考 FastGA 文档）。
+  - 确保输出包含 CIGAR（`-pafx` 或等价选项），否则无法生成 `simple_cigar` 与 error rate。
+- **共同策略**
+  - 所有外部比对都应作用于 `pgr sd mask` 输出的 hard-masked FASTA，确保坐标系与 BISER 一致。
+  - 转换后按 BISER 的 `err()` 公式重新计算第 8、14 列，而不是直接采用 lastz/FastGA 的内部 identity，因为它们的 identity 计算方式可能与 BISER 的 `block_identity` 不同。
+
+### 6.8.8 建议新增的实现
+
+若要在 PGR 中正式支持该替代路线，建议新增以下模块/命令：
+
+- `src/libs/sd/from_lastz.rs`
+  - 输入：LAV 文件（或已转换的 PSL/chain）与 hard-masked FASTA。
+  - 输出：BISER 14 列 `.align` BEDPE。
+  - 核心：复用 `src/libs/fmt/lav.rs` 的 `LavReader`/`Block` 或 `src/libs/fmt/psl.rs` 的 `Psl` 解析，把 block 间隔转成 CIGAR，并计算 `block_identity` 风格的 error rate。
+- `src/libs/sd/from_paf.rs`
+  - 输入：PAF 文件（来自 FastGA / minimap2 / wfmash）与 hard-masked FASTA。
+  - 输出：BISER 14 列 `.align` BEDPE。
+  - 核心：复用 `src/libs/paf/record.rs` + `src/libs/paf/cigar.rs`，从 `cg:Z:` 解析 CIGAR，折叠 `=`/`X` 为 `M`。
+- `src/libs/sd/align_validator.rs`（可选）
+  - 对转换后的 `.align` 做一致性校验：
+    - 验证 CIGAR 总长度与坐标差是否一致（类似 `biser/codon/mask.codon:18-29` 的 `validate_cigar`）；
+    - 验证 `simple_cigar` 展开后 query/target 长度分别等于 `x_end-x_start` 与 `y_end-y_start`。
+- `src/cmd_pgr/sd/import.rs`
+  - CLI 入口，例如：
+    - `pgr sd import-lastz genome.hard.fa lav_out/ -o hits.align.bed`
+    - `pgr sd import-paf genome.hard.fa self.paf -o hits.align.bed`
+  - 命令内部可校验 uppercase run 映射表是否存在，并在输出目录同时生成 `.align` 与 `.align.elem.txt` 的占位或提示。
+- 与 `pgr sd run` 的集成
+  - 在 `pgr sd run` 中增加 `--aligner biser|lastz|fastga` 选项，允许用户选择用原生 BISER 算法、lastz --self 还是 FastGA 生成 `.align`。
+  - 选择 `lastz`/`fastga` 时，跳过 `search` + `align` 阶段，直接调用 `from_lastz.rs` / `from_paf.rs`，然后进入 `cluster` / `decompose` / `translate`。
+
+### 6.8.9 与 6.3 自研路线的关系
+
+本节并非推翻 6.3 的迁移方案，而是提供**同一目标下的第二条实现路径**：
+
+- 若追求与 BISER bit-exact 一致，按 6.3 自研 `kmer_index.rs` + `plane_sweep.rs` + `refine.rs`。
+- 若追求快速复用 PGR 已有外部比对生态，按本节路线用 lastz --self 或 FastGA 生成 self-alignment，再转换为 BISER hit 格式，保留 `cluster` / `decompose` / `translate` 不变。
+- 两条路线的最终验证标准相同：转换后的 `.align` 文件能被 `pgr sd cluster` 正确读取，且 `translate` 后坐标/CIGAR 与 BISER 原生输出一致。
+
+## 6.9 用标准 PAF 替代 BISER `.align` 格式
+
+> 本节分析是否可以用 PGR 原生支持的标准 PAF（Pairwise mApping Format）替代 BISER 私有的 14 列 `.align` BEDPE。结论是可以替代，且由于 PGR 已有成熟的 PAF 生态，这甚至比保留 `.align` 更符合项目架构。下面结合 BISER 下游源码与 PGR 的 PAF 实现给出完整映射与迁移方案。
+
+### 6.9.1 为什么 PAF 可以替代 `.align`
+
+BISER 的 `.align` 文件本质上是带 CIGAR 的成对比对记录，下游阶段只使用其中一部分字段：
+
+- `cluster`（`biser/codon/cluster.codon:53-84`）使用：
+  - 第 1–6 列：两个 mate 的染色体与坐标；
+  - 第 7 列：`species1:species2`；
+  - 第 10 列：`y` 链向（`+`/`-`）。
+  - **不使用** CIGAR、错误率、max span、span。
+- `translate`（`biser/codon/mask.codon:69-147`）使用：
+  - 第 1–6 列：坐标；
+  - 第 7 列：物种对；
+  - 第 10 列：`y` 链向；
+  - 第 13 列：`simple_cigar`（`M`/`I`/`D`），用于把 hard-masked 坐标映射回 original 基因组。
+- `decompose`（`biser/codon/decompose.codon:226-277`）不直接读取 `.align`，而是读取 `cluster` 输出的 FASTA；其头部格式为 `{sp}#{ch}{sr}#{st}#{ed}`，因此它依赖的是 `cluster` 对物种/染色体/链向的编码能力，而非 `.align` 的具体列结构。
+
+PAF 的 12 列本身就包含：query 名称/长度/起止、target 名称/长度/起止、链向、匹配碱基数、block 长度、mapq。BISER 额外需要的物种对、CIGAR、错误率、max span、span 均可通过 PAF 的**可选 SAM-like tag** 承载。因此，**PAF 在信息量上完全覆盖 `.align`**。
+
+### 6.9.2 `.align` → PAF 字段映射
+
+将 BISER `.align` 的 14 列映射到 PAF：
+
+- **query 侧（x mate）**
+  - `x_name` → PAF 第 1 列 `query_name`
+  - `x_start` → PAF 第 3 列 `query_start`（0-based inclusive）
+  - `x_end` → PAF 第 4 列 `query_end`（0-based exclusive）
+- **target 侧（y mate）**
+  - `y_name` → PAF 第 6 列 `target_name`
+  - `y_start` → PAF 第 8 列 `target_start`（0-based inclusive）
+  - `y_end` → PAF 第 9 列 `target_end`（0-based exclusive）
+- **链向**
+  - BISER 保证 `x_strand` 恒为 `+`（`hit.codon:100`），因此 PAF 的 strand 列直接对应 `y_strand`：
+    - `y_strand == '+'` → PAF 第 5 列为 `+`
+    - `y_strand == '-'` → PAF 第 5 列为 `-`
+- **物种对**
+  - `.align` 第 7 列 `species1:species2` 需要额外 tag，例如 `sp:Z:hg38:panTro6`。
+  - 或者把物种编码进序列名：`query_name = "hg38#chr1"`，`target_name = "panTro6#chr2"`。这与 `cluster` 输出 FASTA 头 `{sp}#{ch}...` 的约定一致。
+- **max span 与 span**
+  - `.align` 第 11 列 `max(x_end - x_start, y_end - y_start)` 可用 tag `ms:i:` 记录。
+  - `.align` 第 12 列 `span()`（CIGAR 总长度）可从 `cg:Z:` 直接推导，也可用 tag `sp2:i:` 缓存。
+- **CIGAR**
+  - `.align` 第 13 列 `simple_cigar` 使用 `M`/`I`/`D`，其中 `M` 同时代表 match 与 mismatch。
+  - 标准 PAF 使用 `cg:Z:` tag，操作符为 `=`/`X`/`I`/`D`（`minimap2 --eqx` / `wfmash` 输出）。
+  - 两种方案：
+    1. **标准方案**：输出 `cg:Z:`（`=`/`X`/`I`/`D`），在需要 BISER-style CIGAR 时把 `=`/`X` 合并为 `M`。
+    2. **兼容方案**：同时输出 `cg:Z:` 和 `bc:Z:`（BISER-compatible CIGAR，`M`/`I`/`D`），`translate` 直接读取 `bc:Z:`。
+- **错误率**
+  - `.align` 第 8 列总错误率 `err() * 100` 可用 tag `er:f:` 记录。
+  - 第 14 列 `X=...;ID=...` 可拆为 `xm:f:`（mismatch rate）与 `id:f:`（gap rate）。
+  - 也可用标准 tag `nm:i:`（edit distance）配合 `block_length` 反推。
+
+### 6.9.3 下游阶段如何直接消费 PAF
+
+若把中间格式改为 PAF，`cluster` 与 `translate` 需要相应调整：
+
+**`cluster`**
+- 读取 PAF 12 列即可工作：
+  - `query_name/target_name` → 染色体名；
+  - `query_start/query_end/target_start/target_end` → 坐标；
+  - `strand` → 反向判断；
+  - 物种对通过序列名前缀（`species#chr`）或 `sp:Z:` tag 获得。
+- 不需要 CIGAR，因此 PAF 记录是否带 `cg:Z:` 不影响 clustering。
+- 输出 FASTA 头保持 `{sp}#{ch}{sr}#{st}#{ed}`，与现有 `decompose` 输入兼容。
+
+**`translate`**
+- 需要 PAF 带 CIGAR tag：
+  - 若使用 `bc:Z:`（BISER-style `M`/`I`/`D`），可直接复用 `biser/codon/mask.codon:79-147` 的逻辑。
+  - 若只使用 `cg:Z:`（`=`/`X`/`I`/`D`），需先把 `=`/`X` 合并为 `M`，再进行 hard-masked → original 的坐标映射。
+- PGR 已有 `src/libs/paf/cigar.rs` 可以解析 `cg:Z:`，并把 `=`/`X`/`I`/`D` 折叠为 `M`/`I`/`D`。
+- 坐标映射逻辑与 `.align` 相同：因为 PAF 的 `query_start/target_start` 是 0-based inclusive、`query_end/target_end` 是 0-based exclusive，与 BISER 坐标系一致。
+
+**`decompose`**
+- 无需改动，因为它只读取 `cluster` 输出的 FASTA。
+
+### 6.9.4 坐标与 CIGAR 的精确处理
+
+**坐标系统**
+- BISER `.align` 使用 0-based half-open `[start, end)`。
+- PAF 同样使用 0-based：start inclusive、end exclusive（`src/libs/paf/record.rs:13-26`）。
+- 因此坐标可直接拷贝，无需任何转换。
+- 唯一注意点：BISER 中 `x_strand` 恒为 `+`，而 PAF 的 strand 表示 query 相对 target 的方向。当 `y_strand == '-'` 时，PAF strand 为 `-`；target 坐标仍需按 forward 坐标系给出（与 PAF 规范一致），`translate` 阶段再按需反向。
+
+**CIGAR 转换**
+- 从标准 `cg:Z:` 到 BISER `simple_cigar`：
+  - `=` 和 `X` 都合并为 `M`；
+  - `I` 和 `D` 保持不变；
+  - 连续同操作符需要合并。
+- PGR 实现可直接调用 `src/libs/paf/cigar.rs`：
+  - `parse_cigar()` 解析 `cg:Z:`；
+  - 遍历 `CigarOp`，把 `=`/`X` 统一当作 `M` 输出；
+  - 对 `I`/`D` 直接输出。
+- 反向转换（BISER → PAF）需要实际序列，因为把 `M` 拆成 `=`/`X` 必须知道碱基是否相同。因此若要保持信息无损，输出 PAF 时应直接记录 `cg:Z:`（`=`/`X`/`I`/`D`），而不是事后再从 `simple_cigar` 反推。
+
+### 6.9.5 物种编码策略
+
+PAF 本身没有物种列，需要额外约定：
+
+- **方案 A：序列名编码物种（推荐）**
+  - `query_name = "hg38#chr1"`，`target_name = "panTro6#chr2"`。
+  - `cluster` 解析 `name.split('#')` 得到 species 与 chromosome。
+  - 优点：不依赖自定义 tag，与 `cluster` 输出 FASTA 头 `{sp}#{ch}...` 天然一致，也便于 `pgr paf` 索引直接复用。
+  - 缺点：要求输入 FASTA 的序列名必须含物种前缀；跨项目需要统一命名规范。
+- **方案 B：自定义 `sp:Z:` tag**
+  - 每条 PAF 记录带 `sp:Z:species1:species2`。
+  - 优点：显式、不污染序列名。
+  - 缺点：需要所有下游工具解析该 tag；`pgr paf` 现有索引不识别此 tag。
+- **方案 C：单独物种映射表**
+  - 一个 TSV 文件：`sequence_name<TAB>species`。
+  - 优点：最灵活，不改 PAF。
+  - 缺点：多一个文件，容易遗漏或不同步。
+
+**建议**：在 PGR 的 SD 流程中采用**方案 A**（序列名含物种），并在文档与 CLI 中强制要求；`sp:Z:` tag 作为可选冗余信息，方便与外部 PAF 互操作。
+
+### 6.9.6 建议的 PAF tag schema
+
+若要在 PGR 中正式用 PAF 替代 `.align`，建议统一以下 tag：
+
+- **必需**
+  - `cg:Z:`：标准 CIGAR（`=`/`X`/`I`/`D`），用于精确坐标投影与图构建。
+- **推荐**
+  - `sp:Z:species1:species2`：物种对（当序列名未编码物种时使用）。
+  - `er:f:0.15`：总错误率（对应 `.align` 第 8 列 / 100）。
+  - `xm:f:0.10`：mismatch 错误率（对应 `.align` 第 14 列 `X=` 部分 / 100）。
+  - `id:f:0.05`：gap（insertion/deletion）错误率（对应 `.align` 第 14 列 `ID=` 部分 / 100）。
+  - `ms:i:10000`：max span（对应 `.align` 第 11 列）。
+  - `sp2:i:10500`：span（CIGAR 总长度，对应 `.align` 第 12 列）。
+- **可选**
+  - `bc:Z:100M50I200M`：BISER-style CIGAR（`M`/`I`/`D`），供 `translate` 直接消费，避免运行时合并 `=`/`X`。
+  - `nm:i:1500`：编辑距离，可与 `block_length` 互推 error rate。
+  - `gi:f:0.95`：gap-compressed identity（PGR `paf` 已有惯例）。
+
+所有 tag 类型遵循 SAM specification：`Z` 表示字符串，`f` 表示 float，`i` 表示 integer。
+
+### 6.9.7 迁移路径与模块设计
+
+若决定用 PAF 替代 `.align`，建议按以下模块实现：
+
+- `src/libs/sd/to_paf.rs`
+  - 输入：BISER `.align` 14 列 BEDPE + hard-masked / original FASTA（用于把 `M` 拆分为 `=`/`X`）。
+  - 输出：标准 PAF（12 列 + `cg:Z:` + 推荐 tag）。
+  - 核心：
+    - 坐标直接映射；
+    - 序列名按 `species#chr` 编码；
+    - 对 `simple_cigar` 的每个 `M` 块，从 FASTA 提取 query/target 子序列，逐碱基比较拆分为 `=`/`X`；
+    - 计算 `er`/`xm`/`id` tag；
+    - 写出 `cg:Z:`，可选写出 `bc:Z:`。
+- `src/libs/sd/from_paf.rs`（升级版）
+  - 除了 6.8.8 描述的从 FastGA PAF 生成 `.align`，还应支持：
+    - 读取 `cg:Z:`，折叠为 `simple_cigar`（`M`/`I`/`D`）；
+    - 读取 `sp:Z:` 或序列名前缀得到物种对；
+    - 计算 `.align` 第 8、11、12、14 列；
+    - 输出 14 列 BEDPE（用于与旧 BISER 下游或外部工具兼容）。
+- `src/libs/sd/cluster_paf.rs`
+  - `cluster` 的 PAF 版本：直接读取 PAF，按 `query/target` 坐标与 `strand` 做 coloring，输出 `{sp}#{ch}{sr}#{st}#{ed}` FASTA。
+  - 优势：可直接利用 PGR 的 PAF 索引（`src/libs/paf/index.rs`）做区间查询，未来可扩展为只处理指定区域。
+- `src/libs/sd/translate_paf.rs`
+  - `translate` 的 PAF 版本：读取 PAF，用 `cg:Z:` 或 `bc:Z:` 做 hard-masked → original 映射，输出更新后的 PAF（坐标与 CIGAR 均已转换）。
+  - 输出 tag 中 `bc:Z:` 自动转换为 `M`/`S`/`N`（对应 `mask.codon` 的 `S`/`N` 语义），坐标恢复 original 基因组坐标。
+- `src/cmd_pgr/sd/` 子命令调整
+  - `pgr sd align`：默认输出 PAF 而非 `.align`。
+  - `pgr sd cluster`：接受 PAF 输入。
+  - `pgr sd translate`：接受 PAF 输入，输出 PAF。
+  - 为兼容旧流程，保留 `pgr sd to-align` / `pgr sd from-align` 转换命令。
+
+### 6.9.8 与 6.8 外部比对路线的关系
+
+将 `.align` 替换为 PAF 后，6.8 节描述的 lastz --self / FastGA 路线会变得更自然：
+
+- **FastGA** 直接输出 PAF，无需再转换为 `.align`；只需确保：
+  - 输入序列名为 `species#chr` 格式（或附加 `sp:Z:` tag）；
+  - 输出带 `cg:Z:` CIGAR（`FastGA -pafx`）。
+- **lastz --self** 的推荐路径从 `LAV → PSL → chain → .align` 变为 `LAV → PSL → PAF` 或 `LAV → PAF`：
+  - PSL 本身与 PAF 的列高度相似，可直接转换；
+  - 跳过 chain 步骤也能工作，因为 SD 检测对 chaining 的需求可在 `cluster` 阶段通过 overlap 合并满足。
+- **minimap2 / wfmash** 等 PAF 原生工具也可直接接入 `pgr sd cluster`，不再需要任何中间格式转换。
+
+因此，**PAF 不仅替代了 `.align`，也统一了 6.8 中 lastz / FastGA / 原生 BISER 三条路线的中间表示**。
+
+### 6.9.9 优势、风险与落地建议
+
+**优势**
+- 标准格式：可被 `pgr paf`、`pgr maf to-paf`、minimap2、wfmash、FastGA 等直接消费。
+- 减少私有格式维护：无需为 `.align` 单独写解析器、验证器、文档。
+- 坐标系统一致：PAF 与 BISER 均为 0-based half-open，避免转换错误。
+- 易于扩展：新增 tag 即可携带更多元信息，不影响旧工具（旧工具会忽略未知 tag）。
+
+**风险**
+- 需要更新 `cluster` / `translate`：虽然改动范围有限，但需仔细验证 hard-masked → original 的 CIGAR 映射。
+- 物种编码必须统一：若用户输入 FASTA 未按 `species#chr` 命名，需要强制重命名或要求 `sp:Z:` tag。
+- CIGAR 语义差异：标准 `cg:Z:` 与 BISER `simple_cigar` 的转换点必须清晰文档化，避免 `translate` 输出错误。
+
+**落地建议**
+- 第一阶段：保留 `.align`，新增 `pgr sd to-paf` / `pgr sd from-paf` 作为互转命令，验证映射正确性。
+- 第二阶段：让 `pgr sd cluster` 同时支持 `.align` 与 PAF 输入，默认优先 PAF。
+- 第三阶段：`pgr sd translate` 支持 PAF，并默认输出 PAF；完全移除 `.align` 中间文件。
 
 ## 7. 参考文献
 
