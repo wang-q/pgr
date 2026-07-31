@@ -428,7 +428,10 @@ IGC 会导致某个 haplotype 上的 SD 序列与其参考位置上的 ortholog 
    matching + 扫描线的设计。
 2. **Winnowing 作为采样手段**: BISER 用 winnowing 将 k-mer 采样率降到约
    `2/(w+1)`，同时保证同一 windows 内必然命中。这与 pgr sketching 的有损采样不同，
-   但为“在保敏感度的前提下降低索引规模”提供了可借鉴的参数化方法。
+   但为“在保敏感度的前提下降低索引规模”提供了可借鉴的参数化方法。pgr 现已落地 closed
+   syncmer（`src/libs/syncmer.rs`）：同属有界间隔采样（连续点距 ≤ `2(w-1)`、密度约
+   `2/(w+1)`），且 canonical 哈希使其链向对称，Jaccard/Mash 距离偏差小于 minimizer
+   （Edgar 2021）；未来原生 BISER search 可优先以其替代 winnowing。
 3. **Priority Search Tree 用于 chaining**: `chain.codon` 中的 PST 实现是一个清晰的 `O(n log n)`
    chaining 模板，可迁移到 pgr 的 PAF/anchor chaining 场景中。
 4. **多阶段 pipeline 的薄壳设计**: BISER 将复杂算法放在 Codon 核心（`biser/codon/`），Python
@@ -637,6 +640,8 @@ PGR 内部不同模块混用 0-based half-open 与 1-based inclusive 两种约�
   - 若后续要替换为原生 k-mer plane-sweep，需要实现 `src/libs/sd/kmer_index.rs` 与
     `src/libs/sd/plane_sweep.rs`。`src/libs/nt.rs::NT_VAL` 与 `src/libs/fmt/fa.rs::reader`
     可复用；`src/libs/hash.rs` 的 minimizer 流程与 BISER exact 2-bit k-mer 不同，不能直接复用。
+    `src/libs/syncmer.rs` 的 DNA 路径已基于 2-bit canonical rolling hash（复用 `nt::NT_VAL`），
+    编码与 BISER 一致，未来原生 search 的 k-mer 索引可优先基于它扩展。
   - 为保持接口统一，建议 `pgr sd search` 设计为 `--mode lastz|coverage|kmer`，默认 `lastz`，
     未来 `kmer` 模式输出格式与 `lastz` 模式完全一致。
 
@@ -1252,7 +1257,9 @@ PGR 内部不同模块混用 0-based half-open 与 1-based inclusive 两种约�
 - **`hash.rs` 不是 exact k-mer 索引（当前阶段不实现）**: `src/libs/hash.rs` 提供基于哈希的 canonical minimizer 采样（`seq_sketch`、`JumpingMinimizer`），
   而 BISER 的 search/decompose 依赖 exact 2-bit k-mer + winnowing。由于第一阶段改用 LASTZ-based search，
   k-mer 索引与 plane-sweep 暂时不需要实现；未来若要替换为原生 BISER search，再新增 `src/libs/sd/kmer_index.rs`
-  与 `src/libs/sd/plane_sweep.rs`，`hash.rs` 仅可作为 sketch 验证或后续扩展使用。
+  与 `src/libs/sd/plane_sweep.rs`，`hash.rs` 仅可作为 sketch 验证或后续扩展使用。采样底座上，
+  `src/libs/syncmer.rs` 的 DNA 路径已基于 2-bit canonical rolling hash（复用 `nt::NT_VAL`），
+  比 `hash.rs` 更贴近 BISER 的 2-bit k-mer。
 - **坐标系统不一致**: PGR 内部不同模块使用不同坐标约定：
   - `chain`、`paf`、`twobit`、`FastaStore`、`BitMap`、`DupeTree`、`io::SequenceReader` 使用 0-based half-open。
   - `loc.rs` 的 `intspan::Range` 和 `slice_record` 使用 1-based inclusive，支持链向。
