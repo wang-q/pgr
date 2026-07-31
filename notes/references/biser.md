@@ -1608,6 +1608,169 @@ PAF 本身没有物种列，需要额外约定：
 - 第二阶段：让 `pgr sd cluster` 同时支持 `.align` 与 PAF 输入，默认优先 PAF。
 - 第三阶段：`pgr sd translate` 支持 PAF，并默认输出 PAF；完全移除 `.align` 中间文件。
 
+## 6.10 历史项目参考：App-Egaz 与 intspan/cmd_linkr
+
+> 本节分析作者早期两个项目（`~/Scripts/App-Egaz`、`~/Scripts/intspan/src/cmd_linkr/`）中与 SD 检测相关的流程，找出可与 BISER 迁移方案相互参照或借鉴的部分。这两个项目采用“lastz/blastn 找种子 + link 图聚类 + MSA 精修”的路线，与 BISER 的“k-mer plane-sweep + PST chaining + 分解”路线差异较大，但在 pipeline 组织、图聚类、区间操作上仍有参考价值。
+
+### 6.10.1 App-Egaz 的 SD 检测流程
+
+`App-Egaz`（Perl 项目，`lib/App/Egaz/Command/`）是一个围绕 UCSC chain/net 与 lastz/blastn 的基因组比对流程工具。其自我 SD 检测流程在 `share/3_self.tt2.sh` 与 `doc/Scer-self.md` 中有完整描述，可概括为以下阶段：
+
+**阶段 1：lastz 自比对与 chain/net 精炼**
+
+- 调用 `egaz lastz --isself --set set01 -C 0` 做全基因组自比对（`share/1_self.tt2.sh:15-19`）。
+- 调用 `egaz lpcnam` 跑通 `lav → psl → chain → net → axt` 流程（`lib/App/Egaz/Command/lpcnam.pm:101-393`）。
+  - 使用 kent-tools 的 `axtChain`、`chainAntiRepeat`、`chainMergeSort`、`chainNet`、`netToAxt` 等外部程序。
+  - 参数 `--lineargap loose --minscore 1000` 用于人类尺度；酵母等小基因组可更宽松。
+- 输出为 `axtNet/*.axt.gz`，即经 net 过滤后的 pairwise 局部比对。
+
+**阶段 2：提取初始精确/近精确拷贝**
+
+- `fasr axt2fas` 把 axtNet 转成 block FA（多序列比对块）。
+- `fasr filter --ge 1000` 保留长度 ≥1000 bp 的块（`share/3_self.tt2.sh:47-48`）。
+- `fasr link axt.fas` 从 block FA 中提取 bilateral links，每行两个 range：`chr(strand):start-end`。
+- 输出 `links.lastz.tsv`。
+
+**阶段 3：blastn 扩展寻找更多 paralogs**
+
+- 从初始拷贝中去除重复、去除含过多 N 的序列，得到 `axt.gl.fasta`（`share/3_self.tt2.sh:58-62`）。
+- `egaz blastn axt.gl.fasta genome.fa` 把候选 paralogs 比对回全基因组。
+- `egaz blastmatch` 按 coverage ≥0.95 提取命中区域（`lib/App/Egaz/Command/blastmatch.pm:63-227`）。
+- 提取命中序列后与原始候选合并为 `axt.all.fasta`。
+- 再次 `egaz blastn axt.all.fasta axt.all.fasta` 做 all-vs-all 比对。
+- `egaz blastlink -c 0.95` 把 blastn 结果转成 links（`lib/App/Egaz/Command/blastlink.pm:61-141`）。
+
+**阶段 4：link 图清理与聚类**
+
+- `linkr sort`：对 links 去重并排序。
+- `linkr clean`：合并链向、去除嵌套 links、按 `--bundle 500` 合并重叠 links（`~/Scripts/intspan/src/cmd_linkr/clean.rs`）。
+- `rgr merge -c 0.95`：按双向 coverage ≥0.95 合并重叠 range（`~/Scripts/intspan/src/cmd_rgr/merge.rs`）。
+- `linkr clean -r links.merge.tsv --bundle 500`：用 merge 结果替换原始 ranges 后再次清理。
+- `linkr connect -r 0.9`：把 bilateral links 连接成 multilateral connected components（`~/Scripts/intspan/src/cmd_linkr/connect.rs`）。
+- `linkr filter -r 0.8`：按长度差异 ratio ≥0.8 过滤（`~/Scripts/intspan/src/cmd_linkr/filter.rs`）。
+
+**阶段 5：MSA 精修**
+
+- `fasr create genome.fa links.filter.tsv -o multi.temp.fas`：按 links 从基因组提取序列并生成 block FA。
+- `fasr refine multi.temp.fas -o multi.refine.fas --msa mafft -p 8 --chop 10`：用 mafft 做多序列比对精修。
+- `fasr link multi.refine.fas`：从精修后的 block FA 重新提取 links。
+- 对 pairwise best links 再次精修，得到最终 `pair.refine.fas`。
+
+### 6.10.2 intspan/cmd_linkr 的 link 图操作
+
+`intspan`（Rust 项目）中的 `cmd_linkr` 模块提供了一套区间 link 操作，可直接视为 SD 聚类的图工具：
+
+- **Link 文件格式**
+  - bilateral link：`range_0\trange_1` 或 `range_0\trange_1\thit_strand`。
+  - multilateral link：`range_0\trange_1\t...\trange_n`。
+  - range 格式：`chr(strand):start-end`，例如 `chr1(+):1000-2000`。坐标为 1-based inclusive。
+- **`linkr sort`**（`src/cmd_linkr/sort.rs:28-61`）
+  - 用 `BTreeSet` 去重；
+  - 调用 `intspan::sort_links` 对每行内 ranges 及行之间排序。
+- **`linkr clean`**（`src/cmd_linkr/clean.rs:59-391`）
+  - 把带链向的 ranges 统一规范化为正链；
+  - 去除完全嵌套的 links（两个 range 均被另一条 link 的两个 range 包含）；
+  - `--replace`：用 `rgr merge` 的结果替换 ranges；
+  - `--bundle N`：当两条 link 在两个端点上都有 ≥N bp 重叠时，用图连通分量合并为一条 link；
+  - 去除 self-link（同染色体重叠 >50%）。
+- **`linkr connect`**（`src/cmd_linkr/connect.rs:53-297`）
+  - 把 bilateral links 当作无向图边，用 `petgraph::algo::tarjan_scc` 找连通分量；
+  - 根据边权重（`+`/`-`）为每个连通分量内的节点分配链向；
+  - `--ratio 0.9`：若两节点长度差异过大则断开边；
+  - 输出 multilateral links（每个连通分量一行）。
+- **`linkr filter`**（`src/cmd_linkr/filter.rs:49-103`）
+  - `--number`：按每行 range 数量过滤（如 `--number 2-10` 只保留 copy number 2–10 的 SD）；
+  - `--ratio`：按行内最大/最小 range 长度比过滤。
+- **`rgr merge`**（`src/cmd_rgr/merge.rs:61-212`）
+  - 对单个染色体上的 ranges 构建重叠图；
+  - 若两个 range 的双向 coverage 均 ≥ `--coverage 0.95`，则连边；
+  - 输出 `original_range\tmerged_range` 替换表，供 `linkr clean --replace` 使用。
+
+### 6.10.3 与 BISER 的对比
+
+**整体策略差异**
+
+- **BISER**：
+  - 在 hard-masked 基因组上建 exact 2-bit k-mer 索引；
+  - plane-sweep 快速找出 putative SD pairs；
+  - PST chaining + DP 精修边界与 CIGAR；
+  - interval coloring 聚类；
+  - k-mer frequency 分解 elementary SDs。
+- **App-Egaz/intspan**：
+  - 用 lastz 做全基因组自比对，经 UCSC chain/net 过滤；
+  - 从精炼比对中提取长 block（≥1000 bp）作为种子；
+  - blastn 把种子扩展为更大 paralog 集合；
+  - all-vs-all blastn 生成 pairwise links；
+  - linkr 图操作（clean/connect/filter）完成聚类；
+  - mafft MSA 精修对齐边界。
+
+**灵敏度与准确性**
+
+- **BISER 优势**：
+  - k-mer + plane-sweep 近似线性，适合人类尺度大基因组；
+  - 允许较高 error rate（默认 30%），能检测古老 SD；
+  - 有系统化的 decomposition 步骤，输出 elementary SDs。
+- **App-Egaz 劣势（也是用户观察到效果不如 BISER 的原因）**：
+  - 依赖 lastz `--set set01` 默认参数，对低同一性古老 SD 灵敏度不足；
+  - 中间步骤过多（lav/psl/chain/net/axt/blastn），每个环节都可能丢失信息；
+  - blastmatch/blastlink 仅按 coverage 过滤，没有 BISER 的 error model；
+  - chain/net 过滤会去除大量非共线性重复，而 SD 本身常伴随重排；
+  - 没有类似 BISER `decompose` 的 elementary SD 分解，只能得到 multilateral link clusters。
+
+**可借鉴之处**
+
+尽管效果不如 BISER，以下流程与工具对 PGR 的 SD 迁移仍有参考价值：
+
+1. **lastz 自比对作为种子来源**
+   - App-Egaz 的 `egaz lastz --isself` 与 6.8 节的 `pgr lav lastz --self` 本质相同；
+   - 可作为 BISER `search` 阶段的一种低灵敏度、高特异度替代，尤其适合小基因组或细菌；
+   - 其 `lpcnam` 流程（lav → psl → chain → net → axt）可被 PGR 的 `pgr lav to-psl` / `pgr psl to-chain` / `pgr chain to-axt` 等命令替代。
+
+2. **blastn 扩展策略**
+   - 用 lastz/blastn 的可靠长 hits 作为种子，再用 blastn 回贴基因组寻找更多 paralogs，是一种经典的“seed-and-expand”策略；
+   - 在 PGR 中，若 BISER 的 k-mer search 漏掉某些低复杂度或高度分化区域，可考虑用 lastz/blastn 作为补充种子源。
+
+3. **link 图聚类思想**
+   - BISER `cluster` 用 interval coloring 把重叠 SDs 分到同一组；
+   - App-Egaz/linkr 用图连通分量（clean/connect/filter）实现类似功能，且更直观；
+   - PGR 的 SD 聚类阶段可参考 `linkr connect` 的图方法，把 `.align` 或 PAF 记录当作边，构建 SD 图，再输出 clusters。
+
+4. **range 操作工具链**
+   - `linkr clean` 的嵌套去除、bundle 合并、self-link 过滤；
+   - `linkr filter` 的 copy number 与长度比过滤；
+   - `rgr merge` 的双向 coverage 合并；
+   - 这些操作本质上是对 SD hit 集合的后处理，可在 PGR 中复现为 `pgr sd clean` / `pgr sd filter` 等子命令。
+
+5. **分区处理大染色体**
+   - App-Egaz 的 `partition` 命令（`lib/App/Egaz/Command/partition.pm:57-83`）把大染色体切成带 overlap 的小段（默认 10 Mbp + 10 kbp overlap），以便 lastz 并行处理；
+   - BISER 的 `MAX_CHROMOSOME_SIZE` 也有类似切片逻辑（`biser/__main__.py:114`），PGR 实现 `kmer_index.rs` 时可参考两者，选择按固定长度或按 N/gap 边界分区。
+
+6. **MSA 精修边界**
+   - App-Egaz 用 `fasr refine --msa mafft` 精修 cluster 内序列边界；
+   - PGR 已有 POA 引擎（`src/libs/poa`），可在 `pgr sd refine` 中替代 mafft，实现不依赖外部 aligner 的边界精修；
+   - 但 App-Egaz 的“提取候选序列 → 多序列比对 → 重新生成 links”循环值得借鉴，可用于改进 BISER `cluster` 后、`decompose` 前的边界质量。
+
+### 6.10.4 对 PGR SD 迁移的启示
+
+- **不要直接复刻 App-Egaz 流程**：其 lastz + chain/net + blastn 的多步组合在灵敏度上已被 BISER 超越，且依赖大量外部程序，不适合作为 PGR SD 的主路径。
+- **可取用的组件化思路**：
+  - `src/libs/sd/seed.rs`：封装 lastz/blastn 种子生成；
+  - `src/libs/sd/cluster_graph.rs`：用图连通分量替代 BISER interval coloring，输出 multilateral SD clusters；
+  - `src/cmd_pgr/sd/clean.rs` / `filter.rs`：提供 `linkr clean` / `linkr filter` 风格的 SD hit 后处理；
+  - `src/libs/sd/refine_poa.rs`：在 cluster 阶段用 POA 精修边界（补充 BISER 的 `align.refine`）。
+- **与 6.3 / 6.8 / 6.9 的关系**：
+  - 6.3 的 BISER 原生路线仍是主路径；
+  - 6.8 的 lastz/FastGA 外部比对路线可看作 App-Egaz 阶段 1 的现代化、标准化版本；
+  - 6.9 的 PAF 替代 `.align` 可让 App-Egaz/linkr 的图工具更直接地消费 BISER 输出；
+  - 6.10 的历史项目则为后处理（聚类、过滤、精修）提供了额外思路。
+
+### 6.10.5 需要避免的历史项目缺陷
+
+- **过度依赖 chain/net**：UCSC chain/net 是为 syntenic alignment 设计的，会系统性地丢弃非共线性重复；SD 检测应慎用或跳过 net 过滤。
+- **coverage-only 过滤**：blastmatch/blastlink 仅按 coverage 过滤，没有区分 match/mismatch/gap，容易保留低质量 hits；应使用 BISER 的 `block_identity` 或 PAF 的 `er`/`gi` tag 做质量控制。
+- **1-based inclusive 坐标**：App-Egaz 的 range 格式使用 1-based inclusive，与 BISER/PGR 的 0-based half-open 不同，迁移时需小心转换。
+- **缺少 elementary SD 分解**：App-Egaz 只能输出 clusters，没有 BISER `decompose` 的 nested SD 拆解能力；PGR 应保留 BISER 的 decomposition 阶段。
+
 ## 7. 参考文献
 
 - Išerić H, Alkan C, Hach F, Numanagić I.
