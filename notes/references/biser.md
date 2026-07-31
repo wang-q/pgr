@@ -63,6 +63,8 @@ BISER 发表于*Algorithms for Molecular Biology* (2022) 与*WABI 2021*。论文
 
 因此总错误率 `ε = ε_P + ε_B`。只有 PSV 部分适合用 Poisson 模型建模。
 
+> **注**：BISER 的 error model 面向低至 75% 同一性的古老 SD。PGR 采用 T2T-CHM13 SD 标准（>1 kbp、>90% 同一性，见 4.2.1），不追求 75% 同一性场景；上述模型仅作为 BISER 算法背景理解，不作为 PGR 的检测阈值。
+
 ### 2.2 Putative SD Detection：有序 Jaccard + Plane Sweep
 
 由于全基因组局部比对的二次复杂度不可行，BISER 先用 k-mer 相似性做过滤，快速得到*putative SD*区域对，
@@ -413,7 +415,7 @@ IGC 会导致某个 haplotype 上的 SD 序列与其参考位置上的 ortholog 
     - **Vollger et al. 2023**: 102 个人类单倍型组装 + T2T-CHM13 注释
 - **SD 定义**
     - **BISER**: 自定义错误模型（可低至 75% 同一性）
-    - **Vollger et al. 2023**: 基于 T2T-CHM13 注释（> 1 kbp, > 90% 同一性）
+    - **Vollger et al. 2023**: 基于 T2T-CHM13 注释（> 1 kbp, > 90% 同一性）✅ **PGR 采用此标准**
 - **关键算法**
     - **BISER**: ordered Jaccard + plane sweep + chaining
     - **Vollger et al. 2023**: minimap2 1:1 alignment + 窗口化重比对 + 二项检验
@@ -423,9 +425,7 @@ IGC 会导致某个 haplotype 上的 SD 序列与其参考位置上的 ortholog 
 
 ## 5. 对 pgr 的启示
 
-1. **低同源性重复检测的过滤策略**: BISER 的 ordered Jaccard + plane-sweep 提供了一种不依赖 MinHash
-   的线性过滤思路。若 pgr 未来需要检测古老重复或低同源性 segdups，可考虑类似 colinear k-mer
-   matching + 扫描线的设计。
+1. **SD 同一性标准采用 T2T-CHM13 定义**: PGR 采用 >1 kbp、>90% 同一性的 SD 定义（见 4.2.1），不追求 BISER 默认的 75% 同一性（30% 错误率）场景。BISER 的 ordered Jaccard + plane-sweep 虽然支持低同源性检测，但该能力不在 PGR 当前需求范围内；若未来确需检测古老重复，可再参考其 colinear k-mer matching + 扫描线设计。
 2. **Winnowing 作为采样手段**: BISER 用 winnowing 将 k-mer 采样率降到约
    `2/(w+1)`，同时保证同一 windows 内必然命中。这与 pgr sketching 的有损采样不同，
    但为“在保敏感度的前提下降低索引规模”提供了可借鉴的参数化方法。pgr 现已落地 closed
@@ -456,9 +456,12 @@ IGC 会导致某个 haplotype 上的 SD 序列与其参考位置上的 ortholog 
   putative SD 检测、局部比对精修、跨基因组映射、SD 聚类、elementary SD 分解、
   core duplicon 识别、hard-mask 坐标与原基因组坐标互转。
 - **策略调整（简化）**: 不从头实现 BISER 的 k-mer 索引 + plane-sweep 搜索，而是先用 LASTZ
-  （或基于 LASTZ 的覆盖度方法）生成候选 SD 区间，再接入 BISER 后续的 align / refine /
-  cluster / decompose / translate 算法。这样可以用 PGR 已成熟的 lastz 封装快速验证端到端
-  pipeline，同时保留未来替换为原生 k-mer search 的接口空间。
+  （或基于 LASTZ 的覆盖度方法）生成候选 SD 区间，再经 UCSC chain/net 流程（`pgr pl ucsc`）
+  做 chaining/refine，最后接入 BISER 后续的 cluster / decompose / translate 算法。
+  **chaining 统一使用 UCSC chain/net，不用 lastz/FastGA 内置的 chaining，也不实现 BISER 的
+  PST refine**；SD 场景下 `pgr pl ucsc` 不加 `--syn`（不做共线性筛选），以保留伴随重排的 SD。
+  chain/net 输出的 MAF 经 `pgr maf to-paf` 转为 PAF 后进入下游。这样可以用 PGR 已成熟的
+  lastz/UCSC 封装快速验证端到端 pipeline，同时保留未来替换为原生 k-mer search 的接口空间。
 - **边界**: 本次迁移聚焦算法实现与命令接口；多进程调度、临时目录管理、 resume 等工程特性
   可在核心算法稳定后按 PGR 已有模式（如 `pgr pl` pipeline）补充。
 - **原则**: 复杂算法放 `src/libs/`，`cmd_pgr/` 仅做参数解析、I/O 转换与调用。单命令专用的
@@ -603,8 +606,8 @@ PGR 内部不同模块混用 0-based half-open 与 1-based inclusive 两种约�
     已有的 lastz 基础设施生成候选 SD 区间。两种具体形态可选：
     - **形态 A：全基因组自比对（`lastz --self`）**
       - 直接调用 `pgr lav lastz --self <genome.fa> <genome.fa>`，输出 LAV；
-      - 经 `pgr lav to-psl` / `pgr psl to-chain` 或直接转 PAF 后得到 pairwise alignments；
-      - 过滤短命中（< 1 kbp）、低同一性命中，得到 putative SD pairs。
+      - 经 `pgr lav to-psl` 转为 PSL，得到 pairwise alignments（chaining/refine 交由 UCSC chain/net，见 6.3.3 与 6.8）；
+      - 过滤短命中（< 1 kbp）和同一性 < 90% 的命中（T2T-CHM13 SD 标准，见 4.2.1），得到 putative SD pairs。
     - **形态 B：滑动窗口覆盖度（`scripts/pgr-repeat.sh`）**
       - 把基因组切成 200 bp 重叠窗口，用 lastz 回贴到基因组；
       - 计算每个碱基的覆盖深度，取深度 ≥ 4 的区域作为重复区；
@@ -618,7 +621,7 @@ PGR 内部不同模块混用 0-based half-open 与 1-based inclusive 两种约�
       或直接使用 `--self` 模式。
     - `run_lastz` 负责并行调用 lastz 并输出 LAV。
   - `src/libs/fmt/lav.rs` / `src/cmd_pgr/lav/to_psl.rs`:
-    - 解析 LAV 并转为 PSL；PSL 与 PAF 列语义相近，可继续转为 PAF（见 6.9）。
+    - 解析 LAV 并转为 PSL，供 `pgr pl ucsc` 消费；PSL 不直接转 PAF，最终 PAF 由 UCSC chain/net 输出的 MAF 经 `pgr maf to-paf` 产出（见 6.8、6.9）。
   - `src/libs/fmt/psl.rs`:
     - `PslRecord` 数据结构、`to_chain` 等方法可用于坐标转换与链向处理。
   - `src/libs/paf/cigar.rs` / `src/libs/paf/parser.rs`:
@@ -629,7 +632,7 @@ PGR 内部不同模块混用 0-based half-open 与 1-based inclusive 两种约�
   - `src/libs/sd/search_lastz.rs`（或复用 `src/libs/sd/from_lastz.rs`）:
     - 封装"lastz 自比对 → 格式转换 → 过滤 → 输出 putative hits"的完整流程。
     - 输入：基因组 FASTA、lastz 参数、最小 hit 长度、最大 error rate。
-    - 输出：PAF，坐标统一为 0-based half-open（详见 6.9）。
+    - 输出：原始 pairwise alignments（统一为 PSL：lastz LAV 经 `pgr lav to-psl`，FastGA/minimap2 PAF 需 PAF→PSL），未经 chaining；最终供下游消费的 PAF 由 UCSC chain/net refine 阶段产出（见 6.3.3、6.8、6.9）。
   - `src/libs/sd/coverage.rs`（形态 B 需要）:
     - 封装 `pgr-repeat.sh` 中的窗口化、自比对、lift、覆盖度计算逻辑，输出候选重复区 BED。
   - `src/libs/sd/subtract_repeatmasker.rs`（形态 B 需要）:
@@ -650,6 +653,7 @@ PGR 内部不同模块混用 0-based half-open 与 1-based inclusive 两种约�
 - **BISER 实现**
   - 文件: `biser/codon/align.codon:5-112`、`biser/codon/hit.codon:325-348`
   - 核心: 10-mer anchor 生成、PST chaining、sparse DP refine、CIGAR 精修。
+  - **外部比对路线不实现本阶段**：lastz/FastGA 路线的 chaining/refine 统一交由 UCSC chain/net 流程（`pgr pl ucsc`，SD 不加 `--syn`），其 MAF 输出经 `pgr maf to-paf` 转为 PAF（见 6.8、6.9）。本节 PST refine 仅用于原生 BISER 路线，属延后实现项。
 - **PGR 可复用组件**
   - `src/libs/ds/kdtree.rs`:
     - `KdTree::build(indices, items)` + `update_scores(leaf_idx, score, items)` +
@@ -1157,9 +1161,9 @@ PGR 内部不同模块混用 0-based half-open 与 1-based inclusive 两种约�
 
 - `mod.rs`: 子命令注册与分发。
 - `mask.rs`: `pgr sd mask <genome.fa> -o <masked.fa>`。
-- `search.rs`: `pgr sd search <genome.fa> -o <hits.paf> [--mode lastz|coverage|kmer]`。
+- `search.rs`: `pgr sd search <genome.fa> -o <hits.psl> [--mode lastz|coverage|kmer]`，输出原始 pairwise alignments（lastz LAV 经 `pgr lav to-psl`；FastGA PAF 需 PAF→PSL），供 `pgr sd align` 的 chain/net 消费。
   默认 `lastz`，未来可扩展 `kmer` 原生模式。
-- `align.rs`: `pgr sd align <genome.fa> <hits.paf> -o <hits.align.paf>`。
+- `align.rs`: `pgr sd align <genome.fa> <hits.psl> -o <hits.align.paf>`，封装 `pgr pl ucsc`（不加 `--syn`）+ `pgr maf to-paf`，用 UCSC chain/net 做 chaining/refine。
 - `cluster.rs`: `pgr sd cluster <genomes...> <hits.align.paf> -o <clusters.dir>`。
 - `decompose.rs`: `pgr sd decompose <cluster.fa> -o <cluster.elem.bed>`。
 - `cover.rs`: `pgr sd cover <hits.align.paf> <elems.txt> -o <elems.covered.txt>`。
@@ -1174,15 +1178,15 @@ PGR 内部不同模块混用 0-based half-open 与 1-based inclusive 两种约�
 2. 实现 `libs/sd/search_lastz.rs`：
    - 调用 `pgr::libs::lastz::run_lastz` 做 `--self` 自比对，或按用户指定做 target/query 比对；
    - 用 `pgr::libs::fmt::lav` 解析 LAV，或先 `pgr lav to-psl` 再读 PSL；
-   - 将 LAV/PSL 记录转换为 PAF（复用 6.9 的字段映射）；
-   - 过滤：长度 < 1 kbp、error rate > 0.3（用 `block_identity` 计算）、低复杂度（`TopKPurity`）。
+   - 输出 PSL（lastz LAV 经 `pgr lav to-psl`；PAF 输入则需 PAF→PSL），供 `pgr sd align` 的 chain/net 消费，不做 chaining；
+   - 过滤：长度 < 1 kbp、error rate > 0.1（即同一性 < 90%，采用 T2T-CHM13 SD 标准，见 4.2.1；用 `block_identity` 计算）、低复杂度（`TopKPurity`）。
 3. 实现 `cmd_pgr/sd/search.rs`：
-   - CLI：`pgr sd search <genome.fa> -o <hits.paf> [--mode lastz]`；
-   - 默认输出 PAF，坐标 0-based half-open；
+   - CLI：`pgr sd search <genome.fa> -o <hits.psl> [--mode lastz]`；
+   - 默认输出 PSL（lastz LAV 经 `pgr lav to-psl`；FastGA PAF 需 PAF→PSL），坐标 0-based half-open；
    - 序列名按 `species#chr` 编码（为 `cluster` 阶段输出 FASTA 头做准备）。
 4. 验证:
-   - `pgr sd search` 能在人类 chr21 上成功运行并输出合法 PAF；
-   - 输出 PAF 可被 `pgr paf index` 索引、`pgr sd align` 消费；
+   - `pgr sd search` 能在人类 chr21 上成功运行并输出合法 PSL；
+   - 输出 PSL 可被 `pgr sd align`（封装 `pgr pl ucsc`）消费；
    - hit 数量级与 BISER `search` 同数量级（不必 bit-exact，但不应差一个数量级）。
 
 **可选（若选择形态 B：pgr-repeat.sh 覆盖度路线）**
@@ -1193,9 +1197,11 @@ PGR 内部不同模块混用 0-based half-open 与 1-based inclusive 两种约�
    - 先调用 `coverage.rs` 得到候选区；
    - 减 TE；
    - 提取候选区序列，调用 lastz/minimap2 做 all-vs-all 自比对；
-   - 输出与 `--mode lastz` 格式一致的 PAF。
+   - 输出与 `--mode lastz` 格式一致的 PSL，供 `pgr sd align` 的 chain/net 消费（不直接产出 PAF）。
 
 #### 第二阶段：比对精修（验证：hit 的 CIGAR 与 error rate 与 BISER align 一致）
+
+> **注**：外部比对路线（lastz/FastGA）的精修由 UCSC chain/net（`pgr pl ucsc` 不加 `--syn`）+ `pgr maf to-paf` 完成，不实现下列 PST refine；下列 PST refine 仅用于原生 BISER 路线，可延后。外部路线只需在 `pgr sd align` 中封装 `pgr pl ucsc`。
 
 1. 实现 `libs/sd/anchor.rs`：10-mer anchor 生成。
 2. 实现 `libs/sd/refine.rs`：
@@ -1275,16 +1281,16 @@ PGR 内部不同模块混用 0-based half-open 与 1-based inclusive 两种约�
 - **反向互补**: BISER 在 chromosome 级别同时索引 forward 与 reverse complement，
   PGR 中可用 `nt::rev_comp` 生成反向链序列，或按 BISER 方式在索引阶段同时扫描两条链。
 - **LASTZ-based search 的灵敏度与计算代价**: 用 lastz 替代 BISER k-mer plane-sweep 可以快速拿到
-  putative hits，但默认 `set01`（`K=3000 L=2200`）对低同一性 ancient SD 可能偏严；建议对 SD 自比对
-  降低 `K/L` 或使用 `--self` 模式。另外，全基因组 lastz 自比对 + 后续 all-vs-all 候选区比对的计算量
-  通常大于 BISER 的 plane-sweep，人类尺度基因组需充分并行化。
+  putative hits。PGR 采用 >90% 同一性标准（见 4.2.1），lastz 默认 `set01`（`K=3000 L=2200`）正好匹配，
+  无需为低同源性额外调参；如需略提灵敏度可适度降低 `K/L` 或使用 `--self` 模式。另外，全基因组 lastz
+  自比对 + 后续 all-vs-all 候选区比对的计算量通常大于 BISER 的 plane-sweep，人类尺度基因组需充分并行化。
 - **性能**: BISER 的 Codon 实现经编译为原生代码，plane-sweep 是其性能关键。
   当前阶段不实现 plane-sweep，因此该风险暂时规避；未来若替换为原生 BISER search，
   Rust 实现需对 k-mer 索引做内存优化（如 `u64` key + `Vec<(u32, u32)>`）。
 
 ## 6.8 外部全基因组自比对替代路线：lastz --self 与 FastGA
 
-> 本节从“复用 PGR 已有的外部比对基础设施”出发，讨论是否可以用 lastz --self 或 FastGA 替代 BISER 内部的 `search` + `align` 阶段，直接把外部比对结果转换成 PAF（见 6.9）后接入 `cluster` / `decompose` / `translate`。所有分析均结合 BISER 源码中的实际输入输出格式与 PGR 现有命令能力，并给出可落地的模块与命令设计。
+> 本节从“复用 PGR 已有的外部比对基础设施”出发，讨论是否可以用 lastz --self 或 FastGA 替代 BISER 内部的 `search` + `align` 阶段，直接把外部比对结果经 UCSC chain/net（`pgr pl ucsc`，SD 不加 `--syn`）精炼后转为 PAF（见 6.9），再接入 `cluster` / `decompose` / `translate`。**lastz 与 FastGA 内置的 chaining 均不采用，chaining 统一由 UCSC chain/net 承担**。所有分析均结合 BISER 源码中的实际输入输出格式与 PGR 现有命令能力，并给出可落地的模块与命令设计。
 >
 > **注意**：在 6.1/6.3.2/6.6 的简化实施策略中，`lastz --self` 已被选为第一阶段 putative SD 检测的
 > 主要实现路径。本节的技术细节（LAV/PSL/PAF 转换、字段映射、tag schema）因此成为当前迁移方案的核心
@@ -1377,21 +1383,18 @@ PGR 已有 `pgr lav lastz` 命令（`src/cmd_pgr/lav/lastz.rs:86-194`），其 `
    ```
    对应 `src/cmd_pgr/lav/to_psl.rs`，调用 `fmt::lav::lav_to_psl`（`src/libs/fmt/lav.rs:403-487`）。该函数解析 LAV 的 `s {}/h {}/a {}` stanzas，把 `l` 行（`l t_start q_start t_end q_end percent_id`）转换为 0-based half-open 的 `Block`，再汇总为 `Psl`。
 
-4. **PSL → Chain（可选，用于去重/过滤）**：
-   ```bash
-   # 直接转 chain
-   pgr psl to-chain self.psl -o self.chain
-   # 或带 chaining 与 score recalc
-   pgr psl chain t.2bit q.2bit self.psl -o self.chain --gap-model loose --min-score 1000
+4. **PSL → UCSC chain/net（必经，`pgr pl ucsc`，SD 不加 `--syn`）**：
+   ```shell
+   # target=query=自身基因组，做 self chain/net；默认（不带 --syn）即不做共线性筛选
+   pgr pl ucsc genome.hard.fa genome.hard.fa self.psl -o ucsc_out/
+   # 输出 ucsc_out/*.maf（chain/net 精炼后的 pairwise alignments）
    ```
-   对应 `src/cmd_pgr/psl/to_chain.rs` 与 `src/cmd_pgr/psl/chain.rs`。`to-chain` 调用 `src/libs/fmt/psl.rs::to_chain()`（`src/libs/fmt/psl.rs:1220-1256`），把 PSL 按 record 直接写成 UCSC chain 格式。注意 `pgr psl chain` 使用 `chain_blocks` 的 `max(dq, dt)` gap 模型（6.3.3），与 BISER 的 `dx + dy` 不同，主要用于把散落的 lastz 局部比对连接成 longer chains，不是 BISER 精修的 bit-exact 替代。
+   对应 `src/cmd_pgr/pl/ucsc.rs`，内部串接 `axtChain`（`-psl`、`-linearGap=loose|medium`、`-minScore`）→ `chainAntiRepeat` → `chainMergeSort` → `chainPreNet` → `chainNet` + `netSyntenic` → `netChainSubset` + `chainStitchId` → `netSplit` → `netToAxt` + `axtSort` → `axtToMaf`。**chaining 统一走此流程，不用 lastz 内置 chaining，也不用 `pgr psl chain` 单独建链**。SD 场景必须使用默认（非 `--syn`）路径：`--syn` 会经 `netFilter -syn` 只保留共线性比对，丢掉伴随重排的 SD。`axtChain` 的 gap 模型为 `max(dq, dt)`（与 BISER 的 `dx + dy` 不同），这是本路线接受的已知差异。
 
-5. **Chain/PSL → PAF**：
-   - 需要新增转换器，读取 PSL/chain 的 block 结构，按 6.9 的映射输出标准 PAF（12 列 + `cg:Z:` + 推荐 tag）。
-   - 坐标转换：lastz 在 hard-masked 基因组上输出，因此坐标天然就是 BISER 内部使用的 hard-masked 坐标，直接填入 PAF 的 `query_start/end` 与 `target_start/end`。
-   - CIGAR 生成：从 chain/PSL 的 block 大小与间隔构造 `=`/`X`/`I`/`D` 写入 `cg:Z:`。
-     - 对相邻 blocks，`block_size` 对应 `=`（若需区分 `=`/`X` 须回查 FASTA）；`t_gap` 对应 `D`；`q_gap` 对应 `I`。
-     - 由于 PSL 不直接给出 mismatch 位置，mismatch 碱基数用 `percent_id` 反推：`mismatch_bp = block_size * (1 - percent_id/100)`。
+5. **MAF → PAF（`pgr maf to-paf`）**：
+   - `pgr pl ucsc` 输出的 `ucsc_out/*.maf` 直接喂给 `pgr maf to-paf`（`src/libs/paf/maf_import.rs::maf_block_to_paf`），按 6.9 的映射输出标准 PAF（12 列 + `cg:Z:` + 推荐 tag）。
+   - 坐标：MAF block 的坐标天然来自 hard-masked 基因组上的 chain/net，直接填入 PAF 的 `query_start/end` 与 `target_start/end`。
+   - CIGAR：`pgr maf to-paf` 从 MAF block 的逐列比对直接生成 `=`/`X`/`I`/`D` 写入 `cg:Z:`，无需回查 FASTA。
    - 错误率：用 `block_identity` 计算 `1 - identity` 作为总错误率写入 `er:f:`，并拆分 mismatch 与 gap 比例写入 `xm:f:` / `id:f:`（见 6.9.6）。不要误用 `gap_compressed_identity`（6.3.3 已说明其会低估 indel）。
 6. **接入下游**：转换后的 PAF 可直接作为 `pgr sd cluster` 的输入，后续 `decompose` / `translate` 按 6.9.3 消费 PAF。
 
@@ -1407,20 +1410,20 @@ FastGA 在 PGR 文档中被描述为 impg 支持的备选 aligner（`docs/paf.md
    FastGA -pafx genome.hard.fa genome.hard.fa > self.paf
    ```
    `-pafx` 表示输出 PAF 并包含 CIGAR（`cg:Z:` tag）。
-3. **PAF 直接复用（按 6.9 补 tag）**：
-   - FastGA 输出的 PAF 已包含 12 列与 `cg:Z:`，只需补齐 6.9.6 的推荐 tag（`sp:Z:` 或序列名前缀编码物种、`er`/`xm`/`id` 错误率、`ms`/`sp2` span）。
+3. **PAF → PSL → UCSC chain/net**：与 lastz 路线一样，FastGA 内置的 chaining 不采用，chaining 统一交由 UCSC chain/net。
+   - 先把 FastGA PAF 转为 PSL（PAF 与 PSL 列语义可互转，供 `axtChain -psl` 消费；该 PAF→PSL 转换需新增）；
+   - 再走 `pgr pl ucsc genome.hard.fa genome.hard.fa self.psl -o ucsc_out/`（默认非 `--syn`），输出 MAF；
+   - 经 `pgr maf to-paf` 转为 PAF，并补齐 6.9.6 的推荐 tag（`sp:Z:`、`er`/`xm`/`id`、`ms`/`sp2`）。
    - PAF 的 `target_start/query_start` 为 0-based inclusive，`target_end/query_end` 为 0-based exclusive（`src/libs/paf/record.rs`），与 BISER 的 0-based half-open 一致，坐标无需转换。
-   - 物种编码：若 FastGA 输入 FASTA 的序列名已是 `species#chr` 格式，`cluster` 可直接解析；否则补 `sp:Z:` tag（见 6.9.5）。
-   - 用 `src/libs/paf/cigar.rs::block_identity()` 计算 `1 - identity` 作为错误率，写入 `er:f:`。
-4. **接入下游**：与 lastz 路线相同，PAF 直接进入 `pgr sd cluster`。
+4. **接入下游**：与 lastz 路线相同，PAF 进入 `pgr sd cluster`。
 
-相比 lastz，FastGA 路线步骤更短（无需 LAV → PSL → Chain 转换），但 PGR 目前对 FastGA 没有原生命令封装，需要用户在 PGR 外部安装并调用。
+相比 lastz，FastGA 在小基因组上自比对更快、磁盘占用更低；但两条路线在 chaining 之后完全合流（都走 UCSC chain/net + `pgr maf to-paf`），不再有"FastGA 步骤更短"的优势。PGR 目前对 FastGA 没有原生命令封装，需要用户在 PGR 外部安装并调用。
 
 ### 6.8.6 两种路线与 BISER 原生的技术对比
 
 - **灵敏度**
-  - **BISER**：ordered Jaccard + plane-sweep 针对 SD error model 设计，允许总错误率高达 `--max-error=30`（默认），并区分 `MAX_ERROR` 与 `MAX_EDIT_ERROR`（`biser/__main__.py:407-413`）。
-  - **lastz/FastGA**：默认参数面向种间/种内保守比对，要捕获古老 SD（低同源性）必须显式调低 seed/阈值/身份要求，否则可能漏检。
+  - **BISER**：ordered Jaccard + plane-sweep 针对 SD error model 设计，默认允许总错误率高达 `--max-error=30`（即低至 70% 同一性），并区分 `MAX_ERROR` 与 `MAX_EDIT_ERROR`（`biser/__main__.py:407-413`）。
+  - **lastz/FastGA**：默认参数面向种间/种内保守比对（通常 >90% 同一性）。PGR 采用 T2T-CHM13 SD 标准（>1 kbp、>90% 同一性，见 4.2.1），lastz 默认参数正好匹配，无需为低同源性额外调参。
 - **速度**
   - **BISER**：原生 plane-sweep 近似线性。
   - **lastz --self**：在全基因组上寻找所有局部比对开销大，但 PGR 的 `pgr lav lastz` 已用 rayon 并行化。
@@ -1434,53 +1437,54 @@ FastGA 在 PGR 文档中被描述为 impg 支持的备选 aligner（`docs/paf.md
 - **下游兼容性**
   - `cluster` 对坐标/链向敏感，对 CIGAR 不敏感；`translate` 对 CIGAR 敏感。因此外部比对路线至少能保证 clustering 正确，但 translate 阶段必须验证 CIGAR 在 hard-masked ↔ original 映射时不出错。
 
-### 6.8.7 参数调优：让外部比对捕获更多古老 SD
+### 6.8.7 参数选择：匹配 T2T-CHM13 SD 标准
 
-BISER 默认允许 30% 总错误率，而 lastz 的 UCSC preset（如 `set01`）通常面向 >90% 同一性。要让外部比对路线接近 BISER 的灵敏度，需要显式调参：
+PGR 采用 T2T-CHM13 SD 标准（>1 kbp、>90% 同一性，见 4.2.1），不追求 BISER 默认的 30% 错误率（低至 70% 同一性）场景。lastz 的 UCSC preset（如 `set01`）通常面向 >90% 同一性，正好匹配该标准，无需为低同源性额外调参：
 
 - **lastz 方向**
-  - 降低 seed 阈值：`K`（匹配种子长度）与 `L`（阈值）需要下调；例如 `K=1500 L=1000` 或更低。
-  - 允许更多错配：通过 `--match/--mismatch` 或自定义评分矩阵降低 gap/extension 惩罚。
+  - `set01` 默认参数（`K=3000 L=2200`）即可满足 >90% 同一性 SD 检测；如需略提灵敏度可适度降低 `K/L`（如 `K=1500 L=1500`），但不必放宽到 75% 同一性级别。
   - 提高 `--querydepth` 上限，避免 lastz 在高重复区域提前截断。
   - 使用 `--self` 时，lastz 自动跳过完全相同的 query/target 同方向 trivial 比对，这与 BISER 过滤 self-overlap 一致。
 - **FastGA 方向**
-  - FastGA 的 `-p` 选项控制映射参数；要捕获低同一性重复，需要放宽 identity 阈值（具体参数参考 FastGA 文档）。
+  - FastGA 的 `-p` 选项控制映射参数；按默认 identity 阈值（面向高同一性比对）即可，无需为低同一性重复放宽。
   - 确保输出包含 CIGAR（`-pafx` 或等价选项），否则无法填入 `cg:Z:` 与 error rate tag。
 - **共同策略**
-  - 所有外部比对都应作用于 `pgr sd mask` 输出的 hard-masked FASTA，确保坐标系与 BISER 一致。
-  - 转换后按 BISER 的 `err()` 公式重新计算 `er`/`xm`/`id` tag（见 6.9.6），而不是直接采用 lastz/FastGA 的内部 identity，因为它们的 identity 计算方式可能与 BISER 的 `block_identity` 不同。
+  - 所有外部比对都应作用于 `pgr sd mask` 输出的 hard-masked FASTA，确保坐标系一致。
+  - 转换后按 `block_identity` 计算 `er`/`xm`/`id` tag（见 6.9.6），而不是直接采用 lastz/FastGA 的内部 identity，因为它们的 identity 计算方式可能与 `block_identity` 不同。
 
 ### 6.8.8 建议新增的实现
 
 若要在 PGR 中正式支持该替代路线，建议新增以下模块/命令：
 
 - `src/libs/sd/from_lastz.rs`
-  - 输入：LAV 文件（或已转换的 PSL/chain）与 hard-masked FASTA。
+  - 输入：LAV 文件（经 `pgr lav to-psl` 转 PSL）与 hard-masked FASTA。
+  - 流程：`PSL → pgr pl ucsc（默认非 --syn）→ MAF → pgr maf to-paf → PAF`。
   - 输出：标准 PAF（12 列 + `cg:Z:` + 6.9.6 推荐 tag）。
-  - 核心：复用 `src/libs/fmt/lav.rs` 的 `LavReader`/`Block` 或 `src/libs/fmt/psl.rs` 的 `Psl` 解析，把 block 间隔转成 `=`/`X`/`I`/`D` CIGAR 写入 `cg:Z:`，并用 `block_identity` 风格计算 `er`/`xm`/`id` tag。
+  - 核心：调用 `pgr pl ucsc` 完成 UCSC chain/net（chaining 不依赖 lastz 内置结果），再用 `pgr maf to-paf`（`src/libs/paf/maf_import.rs::maf_block_to_paf`）转 PAF，并用 `block_identity` 风格补 `er`/`xm`/`id` tag。
 - `src/libs/sd/from_paf.rs`
   - 输入：PAF 文件（来自 FastGA / minimap2 / wfmash）与 hard-masked FASTA。
-  - 输出：补齐 6.9.6 推荐 tag 的标准 PAF（FastGA/minimap2 输出通常已含 `cg:Z:`，本模块主要负责补物种编码与错误率 tag）。
-  - 核心：复用 `src/libs/paf/record.rs` + `src/libs/paf/cigar.rs`，从 `cg:Z:` 解析 CIGAR 并计算 `er`/`xm`/`id`；不产出 `.align`，仅在需要导出给外部 BISER 工具时按 6.9.7 的 `to-align` 另写。
+  - 流程：`PAF → PSL → pgr pl ucsc（默认非 --syn）→ MAF → pgr maf to-paf → PAF`（chaining 不依赖 aligner 内置结果）。
+  - 输出：补齐 6.9.6 推荐 tag 的标准 PAF。
+  - 核心：先把 PAF 转为 PSL（供 `axtChain -psl` 消费，需新增 PAF→PSL），其余与 `from_lastz.rs` 一致；不产出 `.align`，仅在需要导出给外部 BISER 工具时按 6.9.7 的 `to-align` 另写。
 - `src/libs/sd/align_validator.rs`（可选）
   - 对转换后的 PAF 做一致性校验：
     - 验证 `cg:Z:` 总长度与 query/target 坐标差是否一致（类似 `biser/codon/mask.codon:18-29` 的 `validate_cigar`）；
     - 验证 CIGAR 展开后 query/target 长度分别等于 `query_end - query_start` 与 `target_end - target_start`。
 - `src/cmd_pgr/sd/import.rs`
   - CLI 入口，例如：
-    - `pgr sd import-lastz genome.hard.fa lav_out/ -o hits.paf`
-    - `pgr sd import-paf genome.hard.fa self.paf -o hits.paf`
+    - `pgr sd import-lastz genome.hard.fa lav_out/ -o hits.paf`（内部：LAV→PSL→`pgr pl ucsc`→MAF→`pgr maf to-paf`）
+    - `pgr sd import-paf genome.hard.fa self.paf -o hits.paf`（内部：PAF→PSL→`pgr pl ucsc`→MAF→`pgr maf to-paf`）
   - 命令内部可校验 uppercase run 映射表是否存在。
 - 与 `pgr sd run` 的集成
   - 在 `pgr sd run` 中增加 `--aligner biser|lastz|fastga` 选项，允许用户选择用原生 BISER 算法、lastz --self 还是 FastGA 生成 PAF。
-  - 选择 `lastz`/`fastga` 时，跳过 `search` + `align` 阶段，直接调用 `from_lastz.rs` / `from_paf.rs`，然后进入 `cluster` / `decompose` / `translate`（均以 PAF 为中间格式，见 6.9）。
+  - 选择 `lastz`/`fastga` 时，跳过 BISER 原生 search/align，由 `from_lastz.rs` / `from_paf.rs` 调用 `pgr pl ucsc`（非 `--syn`）完成 chaining/refine，再进入 `cluster` / `decompose` / `translate`（均以 PAF 为中间格式，见 6.9）。
 
 ### 6.8.9 与 6.3 自研路线的关系
 
 本节并非推翻 6.3 的迁移方案，而是提供**同一目标下的第二条实现路径**：
 
 - 若追求与 BISER bit-exact 一致，按 6.3 自研 `kmer_index.rs` + `plane_sweep.rs` + `refine.rs`。
-- 若追求快速复用 PGR 已有外部比对生态，按本节路线用 lastz --self 或 FastGA 生成 self-alignment，再按 6.9 转换为标准 PAF，`cluster` / `decompose` / `translate` 直接以 PAF 为输入。
+- 若追求快速复用 PGR 已有外部比对生态，按本节路线用 lastz --self 或 FastGA 生成 self-alignment，经 UCSC chain/net（`pgr pl ucsc`，SD 不加 `--syn`）精炼后按 6.9 转为标准 PAF，`cluster` / `decompose` / `translate` 直接以 PAF 为输入。
 - 两条路线的最终验证标准相同：转换后的 PAF 能被 `pgr sd cluster` 正确读取，且 `translate` 后坐标/CIGAR 与 BISER 原生输出一致。
 
 ## 6.9 用标准 PAF 替代 BISER `.align` 格式
@@ -1653,17 +1657,14 @@ PAF 已定为中间格式，建议统一以下 tag：
 
 ### 6.9.8 与 6.8 外部比对路线的关系
 
-将 `.align` 替换为 PAF 后，6.8 节描述的 lastz --self / FastGA 路线会变得更自然：
+将 `.align` 替换为 PAF、并固定 chaining 由 UCSC chain/net 承担后，6.8 节的 lastz --self / FastGA 路线会变得更自然：
 
-- **FastGA** 直接输出 PAF，无需再转换为 `.align`；只需确保：
-  - 输入序列名为 `species#chr` 格式（或附加 `sp:Z:` tag）；
-  - 输出带 `cg:Z:` CIGAR（`FastGA -pafx`）。
-- **lastz --self** 的推荐路径从 `LAV → PSL → chain → .align` 变为 `LAV → PSL → PAF` 或 `LAV → PAF`：
-  - PSL 本身与 PAF 的列高度相似，可直接转换；
-  - 跳过 chain 步骤也能工作，因为 SD 检测对 chaining 的需求可在 `cluster` 阶段通过 overlap 合并满足。
-- **minimap2 / wfmash** 等 PAF 原生工具也可直接接入 `pgr sd cluster`，不再需要任何中间格式转换。
+- **统一 chaining**：lastz 与 FastGA 内置的 chaining 都不采用，两条路线在自比对之后都走 `pgr pl ucsc`（默认非 `--syn`，SD 不做共线性筛选）。
+- **lastz --self**：`LAV → pgr lav to-psl → PSL → pgr pl ucsc → MAF → pgr maf to-paf → PAF`。
+- **FastGA / minimap2 / wfmash**：`PAF → PSL → pgr pl ucsc → MAF → pgr maf to-paf → PAF`（需 PAF→PSL 转换；chaining 同样不依赖 aligner 内置结果）。
+- **不能跳过 chain/net**：SD 检测需要的 chaining/边界精修由 UCSC chain/net 提供，不能在 `cluster` 阶段靠 overlap 合并替代。
 
-因此，**PAF 不仅替代了 `.align`，也统一了 6.8 中 lastz / FastGA / 原生 BISER 三条路线的中间表示**。
+因此，**UCSC chain/net 统一了各 aligner 的 chaining，PAF 统一了下游中间表示**；`pgr pl ucsc`（非 `--syn`）+ `pgr maf to-paf` 成为所有外部比对路线共用的精炼段。
 
 ### 6.9.9 优势、风险与落地建议
 
@@ -1679,7 +1680,7 @@ PAF 已定为中间格式，建议统一以下 tag：
 - CIGAR 语义差异：标准 `cg:Z:` 与 BISER `simple_cigar` 的转换点必须清晰文档化，避免 `translate` 输出错误。
 
 **落地建议**
-- PAF 为唯一中间格式：`pgr sd search` / `pgr sd align` / `pgr sd cluster` / `pgr sd translate` 全程使用 PAF，PGR 自身 pipeline 不产出 `.align`。
+- PAF 为下游统一中间格式：`pgr sd align`（chain/net 后）/ `pgr sd cluster` / `pgr sd translate` 使用 PAF；`pgr sd search` 输出原始 PSL 供 chain/net 消费。PGR 自身 pipeline 不产出 `.align`。
 - `pgr sd to-paf`（`.align` → PAF，用于导入 BISER 原生输出）与 `pgr sd to-align`（PAF → `.align`，用于导出给外部 BISER 工具）仅作互操作，不进入主流程。
 - 迁移验证：对照 BISER 原生 `.align` 输出，确认 PAF 的坐标、链向、CIGAR、错误率 tag 语义一致（见 6.9.4）。
 
@@ -1783,13 +1784,13 @@ PAF 已定为中间格式，建议统一以下 tag：
 
 - **BISER 优势**：
   - k-mer + plane-sweep 近似线性，适合人类尺度大基因组；
-  - 允许较高 error rate（默认 30%），能检测古老 SD；
+  - 默认允许较高 error rate（30%，低至 70% 同一性），能检测古老 SD（PGR 当前采用 >90% 标准，该能力不在需求范围内，见 4.2.1）；
   - 有系统化的 decomposition 步骤，输出 elementary SDs。
 - **App-Egaz 劣势（也是用户观察到效果不如 BISER 的原因）**：
-  - 依赖 lastz `--set set01` 默认参数，对低同一性古老 SD 灵敏度不足；
+  - 依赖 lastz `--set set01` 默认参数（面向 >90% 同一性），在 PGR 的 >90% 标准下正好匹配，但无法覆盖 BISER 的低同源性场景；
   - 中间步骤过多（lav/psl/chain/net/axt/blastn），每个环节都可能丢失信息；
   - blastmatch/blastlink 仅按 coverage 过滤，没有 BISER 的 error model；
-  - chain/net 过滤会去除大量非共线性重复，而 SD 本身常伴随重排；
+  - chain/net 若启用共线性筛选（`netFilter -syn`）会去除大量非共线性重复，而 SD 本身常伴随重排（SD 路线因此走非 `--syn`，见 6.8）；
   - 没有类似 BISER `decompose` 的 elementary SD 分解，只能得到 multilateral link clusters。
 
 **可借鉴之处**
@@ -1799,7 +1800,7 @@ PAF 已定为中间格式，建议统一以下 tag：
 1. **lastz 自比对作为种子来源**
    - App-Egaz 的 `egaz lastz --isself` 与 6.8 节的 `pgr lav lastz --self` 本质相同；
    - 可作为 BISER `search` 阶段的一种低灵敏度、高特异度替代，尤其适合小基因组或细菌；
-   - 其 `lpcnam` 流程（lav → psl → chain → net → axt）可被 PGR 的 `pgr lav to-psl` / `pgr psl to-chain` / `pgr chain to-axt` 等命令替代。
+   - 其 `lpcnam` 流程（lav → psl → chain → net → axt）可被 PGR 的 `pgr lav to-psl` + `pgr pl ucsc` 替代（后者内部串接 axtChain/chainNet/netToAxt 等步骤，见 6.8.4）。
 
 2. **blastn 扩展策略**
    - 用 lastz/blastn 的可靠长 hits 作为种子，再用 blastn 回贴基因组寻找更多 paralogs，是一种经典的“seed-and-expand”策略；
@@ -1827,21 +1828,21 @@ PAF 已定为中间格式，建议统一以下 tag：
 
 ### 6.10.4 对 PGR SD 迁移的启示
 
-- **不要直接复刻 App-Egaz 流程**：其 lastz + chain/net + blastn 的多步组合在灵敏度上已被 BISER 超越，且依赖大量外部程序，不适合作为 PGR SD 的主路径。
+- **不要直接复刻 App-Egaz 流程**：其 lastz + chain/net + blastn 的多步组合、coverage-only 过滤、缺少 elementary SD 分解，使整体灵敏度不如 BISER；PGR SD 复用其中的 chain/net 段（非 `--syn`），但下游接 BISER 的 cluster/decompose/translate，不照搬 App-Egaz。
 - **可取用的组件化思路**：
   - `src/libs/sd/seed.rs`：封装 lastz/blastn 种子生成；
   - `src/libs/sd/cluster_graph.rs`：用图连通分量替代 BISER interval coloring，输出 multilateral SD clusters；
   - `src/cmd_pgr/sd/clean.rs` / `filter.rs`：提供 `linkr clean` / `linkr filter` 风格的 SD hit 后处理；
   - `src/libs/sd/refine_poa.rs`：在 cluster 阶段用 POA 精修边界（补充 BISER 的 `align.refine`）。
 - **与 6.3 / 6.8 / 6.9 的关系**：
-  - 6.3 的 BISER 原生路线仍是主路径；
-  - 6.8 的 lastz/FastGA 外部比对路线可看作 App-Egaz 阶段 1 的现代化、标准化版本；
+  - 6.3 的 BISER 原生路线（k-mer search + PST refine）为远期目标；
+  - 6.8 的 lastz/FastGA 外部比对路线（UCSC chain/net + PAF）是近期主路径，可看作 App-Egaz 阶段 1 的现代化、标准化版本；
   - 6.9 的 PAF 替代 `.align` 可让 App-Egaz/linkr 的图工具更直接地消费 BISER 输出；
   - 6.10 的历史项目则为后处理（聚类、过滤、精修）提供了额外思路。
 
 ### 6.10.5 需要避免的历史项目缺陷
 
-- **过度依赖 chain/net**：UCSC chain/net 是为 syntenic alignment 设计的，会系统性地丢弃非共线性重复；SD 检测应慎用或跳过 net 过滤。
+- **共线性筛选与 SD**：UCSC chain/net 的 `netFilter -syn` 是为 syntenic alignment 设计的，会系统性地丢弃非共线性重复；SD 路线因此使用 `pgr pl ucsc` 默认（非 `--syn`）路径，只做 chain/net 结构化与边界精修，不做共线性筛选。
 - **coverage-only 过滤**：blastmatch/blastlink 仅按 coverage 过滤，没有区分 match/mismatch/gap，容易保留低质量 hits；应使用 BISER 的 `block_identity` 或 PAF 的 `er`/`gi` tag 做质量控制。
 - **1-based inclusive 坐标**：App-Egaz 的 range 格式使用 1-based inclusive，与 BISER/PGR 的 0-based half-open 不同，迁移时需小心转换。
 - **缺少 elementary SD 分解**：App-Egaz 只能输出 clusters，没有 BISER `decompose` 的 nested SD 拆解能力；PGR 应保留 BISER 的 decomposition 阶段。
@@ -1890,8 +1891,8 @@ BISER `search` 阶段的输出是**putative SD pairs**（成对的同源区间�
 
 **算法层面：不等价**
 
-- **BISER `search`**：基于 exact k-mer（`KMER_SIZE=14`）+ winnowing + plane-sweep，使用有序 Jaccard 下界做过滤。对 error rate 容忍度高（默认 `MAX_ERROR=0.3`），能检测较古老、分化较严重的 SD。
-- **`pgr-repeat.sh`**：基于 lastz 局部比对 + 覆盖度阈值。lastz 的 `set01` 参数（`K=3000 L=2200`）是为近缘物种比对设计的，对低同一性、短 match 的 ancient SD 灵敏度可能不足；同时 200 bp 窗口分辨率也限制了边界精度。
+- **BISER `search`**：基于 exact k-mer（`KMER_SIZE=14`）+ winnowing + plane-sweep，使用有序 Jaccard 下界做过滤。对 error rate 容忍度高（默认 `MAX_ERROR=0.3`，即低至 70% 同一性），能检测较古老、分化较严重的 SD（PGR 采用 >90% 标准，该能力不在需求范围内）。
+- **`pgr-repeat.sh`**：基于 lastz 局部比对 + 覆盖度阈值。lastz 的 `set01` 参数（`K=3000 L=2200`）面向 >90% 同一性，与 PGR 的 SD 标准匹配；200 bp 窗口分辨率限制了边界精度。
 
 **输出层面：不等价**
 
@@ -1923,7 +1924,7 @@ BISER `search` 阶段的输出是**putative SD pairs**（成对的同源区间�
    - `set01` 的 `K=3000` 阈值较高，对 SD 检测偏严格。建议对自匹配步骤使用更敏感的参数：
      - 降低 `K/L`（如 `K=1500 L=1500` 或更低）；
      - 使用 `--self` 模式（`pgr lav lastz --self`）而非 target/query 模式；
-     - 或改用 `minimap2 -DP -k19 -w19 -m200`（如 `doc/Scer-self.md` 中的示例），直接输出 PAF。
+     - 或改用 `minimap2 -DP -k19 -w19 -m200`（如 `doc/Scer-self.md` 中的示例）输出 PAF，再按 6.8 经 `PAF → PSL → pgr pl ucsc（非 --syn）→ MAF → pgr maf to-paf → PAF` 完成精炼。
 
 4. **坐标系统一致性**
    - `pgr fa window`、`pgr psl lift`、`pgr psl to-range` 均使用 1-based inclusive 坐标；
@@ -1933,7 +1934,7 @@ BISER `search` 阶段的输出是**putative SD pairs**（成对的同源区间�
 5. **无法直接替代 BISER `search` 的 colinearity 保证**
    - BISER 的 ordered Jaccard 通过 k-mer 顺序隐式保证 putative pairs 大致共线；
    - 覆盖度方法只告诉你"这里重复"，不保证两个候选区间之间的 match 是共线的；
-   - 自比对后的结果仍需用 chaining（如 6.3.3/6.5.1 的 segment tree PST）过滤重排、 inversion 等非共线假阳性。
+   - 自比对后的结果经 UCSC chain/net（`pgr pl ucsc`，非 `--syn`）做 chaining/边界精修（见 6.8）；SD 不做共线性筛选，重排/inversion 形式的 SD 作为独立 chain/net 条目保留，交由 `cluster`/`decompose` 处理。
 
 ### 6.11.5 优势与局限
 
@@ -1946,7 +1947,7 @@ BISER `search` 阶段的输出是**putative SD pairs**（成对的同源区间�
 
 **局限**
 
-- **灵敏度受 lastz  preset 限制**：`set01` 为近缘物种优化，可能漏检古老 SD。
+- **灵敏度受 lastz preset 限制**：`set01` 面向 >90% 同一性，与 PGR SD 标准匹配，但无法覆盖 BISER 的低同源性场景（PGR 当前不需要）。
 - **分辨率受窗口大小限制**：200 bp 窗口会模糊 SD 边界，需要后续 refine。
 - **计算成本高**：全基因组 lastz + 候选区间 all-vs-all 自比对的总开销通常高于 BISER 的 k-mer plane-sweep。
 - **不能直接输出 pairs**：需要额外一步自匹配才能产生 putative SD mates。
@@ -1966,14 +1967,14 @@ BISER `search` 阶段的输出是**putative SD pairs**（成对的同源区间�
   - CLI：`pgr sd coverage <genome.fa> -o candidates.bed`，内部调用 `libs/sd/coverage.rs`。
 - `src/cmd_pgr/sd/search.rs` 的 `--mode coverage` 选项
   - 在 BISER 原生 k-mer search 之外，提供 `coverage` 模式作为备选；
-  - 输出格式与 BISER putative hits 一致（PAF，见 6.9），方便下游 `refine`/`cluster`/`decompose` 复用。
+  - 输出格式与 `--mode lastz` 一致（PSL，见 6.9），供 `pgr sd align` 的 UCSC chain/net 消费；不直接产出 PAF。
 - `src/cmd_pgr/sd/mask.rs`
   - 把 `pgr-repeat.sh` 当前输出 `mask_regions.json` 转换为标准的 BED/runlist，便于与 RepeatMasker 结果做集合运算。
 
 ### 6.11.7 与 6.3 / 6.8 / 6.10 的关系
 
-- **6.3 的 BISER 原生路线**：仍是主路径，尤其适合大基因组和高 error-rate 场景。
-- **6.8 的外部比对路线**：`pgr-repeat.sh` 可视为 6.8 中 `lastz --self` 思想的延伸，但它从"找重复区"出发，而不是直接输出 pairwise alignments。
+- **6.3 的 BISER 原生路线**：远期目标（k-mer search + PST refine），在外部路线稳定后再实现；理论上更适合大基因组场景。PGR 当前采用 >90% 同一性标准（见 4.2.1），BISER 的高 error-rate 能力不在需求范围内。
+- **6.8 的外部比对路线**：近期主路径（UCSC chain/net + PAF）；`pgr-repeat.sh` 可视为 6.8 中 `lastz --self` 思想的延伸，但它从“找重复区”出发，而不是直接输出 pairwise alignments。
 - **6.10 的 App-Egaz 种子扩展**：App-Egaz 用 lastz/blastn 找可靠长 hits 作种子，再用 blastn 回贴扩展；`pgr-repeat.sh` 的"候选区自匹配"步骤与此类似，只是候选区来源从 lastz hits 改为覆盖度高深区。
 
 **结论**：`pgr-repeat.sh` 经过 TE 差集和候选区自匹配后，**可以在功能上近似 BISER `search` 阶段输出的 putative SD 区间集合**，但算法机制、灵敏度、输出形式均有差异。最稳妥的做法不是直接替换，而是把它作为 BISER k-mer search 的**补充验证路线**或**小基因组快速原型路线**，在 PGR 中封装为 `pgr sd coverage` / `pgr sd search --mode coverage`。
