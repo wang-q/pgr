@@ -459,33 +459,69 @@ IGC 会导致某个 haplotype 上的 SD 序列与其参考位置上的 ortholog 
 
 ### 6.2 坐标系统约定
 
-PGR 内部各模块使用的坐标约定不统一，迁移时必须明确每个调用点的坐标系统，避免
-`off-by-one` 或区间开闭错误。
+PGR 内部不同模块混用 0-based half-open 与 1-based inclusive 两种约定。迁移前必须逐
+个核对调用点，否则 `mask`、`translate`、`loc` 三个环节极易出现 `off-by-one` 或区间
+开闭错误。
 
-- **0-based half-open `[start, end)`**
-  - BISER 内部大量坐标（putative SD 区间、anchor 坐标、elementary SD 边界）使用 0-based half-open。
-  - `src/libs/chain/record.rs` 的 `ChainHeader` / `Block`。
-  - `src/libs/chain/connect.rs` 的 `ChainableBlock`。
-  - `src/libs/paf/cigar.rs` 的 `slice_cigar_by_target` 与 `project` 函数。
-  - `src/libs/paf/fasta.rs::FastaStore::fetch_range(start, end)`。
-  - `src/libs/io.rs::SequenceReader::read_sequence(start, end)`。
-  - `src/libs/fmt/twobit.rs::TwoBitFile::read_sequence(start, end, no_mask)`。
-  - `src/libs/ds/bitmap.rs::BitMap` 与 `src/libs/ds/dupe_tree.rs::DupeTree`。
-  - `src/libs/fmt/fa.rs::windows` 内部切片使用 0-based half-open，只是输出名称中把 `start` 转换为 1-based、把 `end` 作为 1-based inclusive 显示。
+#### 6.2.1 0-based half-open `[start, end)`
 
-- **1-based inclusive `[start, end]`**
-  - `src/libs/fmt/fa.rs::mask_sequence(seq, spans, hard)` 的 `spans` 是 `intspan::IntSpan`，1-based inclusive。
-  - `src/libs/loc.rs` 的 `intspan::Range`（支持 `chr:start-end` 与 `chr(-):start-end`）。
-  - `src/libs/loc.rs::slice_record` 与 `fetch_range_seq` 接收 1-based inclusive 的 `Range`。
-  - `src/libs/alignment/coords.rs` 的 `chr_to_align` / `align_to_chr` 配合 `IntSpan` 使用 1-based inclusive。
+- **BISER 内部**: putative SD 区间、anchor 坐标、elementary SD 边界、hard-masked 坐标
+  均使用 0-based half-open。
+- **`src/libs/chain/record.rs`**: `ChainHeader` 与 `Block` 的 `t_start/t_end/q_start/q_end`
+  均为 0-based half-open；`ChainData` 的 `size/dt/dq` 也是相对增量。
+- **`src/libs/chain/connect.rs`**: `ChainableBlock` 的 `t_start/t_end/q_start/q_end` 为
+  0-based half-open；`chain_blocks` 内部 gap 计算 `dt = target.t_start - cand.t_end`、
+  `dq = target.q_start - cand.q_end`，负值表示重叠。
+- **`src/libs/ds/kdtree.rs`**: `KdTreeItem` 要求 `x_start/y_start` 为 0-based inclusive，
+  `x_end/y_end` 为 0-based exclusive。自定义 anchor 类型实现该 trait 时务必注意这一
+  开闭差异。
+- **`src/libs/paf/cigar.rs`**: `slice_cigar_by_target(cigar, target_start, ts, te)` 的
+  `ts/te` 为 0-based half-open；`project` 内部投影也按 half-open 处理。
+- **`src/libs/paf/record.rs`**: `PafRecord` 的 `query_start/target_start` 为 0-based
+  inclusive，`query_end/target_end` 为 0-based exclusive，符合 PAF 规范。
+- **`src/libs/paf/fasta.rs::FastaStore::fetch_range(name, start, end)`**: `start/end` 为
+  0-based half-open 的 `i32`，函数内部转成 `noodles` 的 1-based inclusive position。
+- **`src/libs/io.rs::SequenceReader::read_sequence(name, start, end)`**: `start/end` 为
+  `Option<usize>`，0-based half-open；`None` 表示从头/到尾。
+- **`src/libs/fmt/twobit.rs::TwoBitFile::read_sequence(name, start, end, no_mask)`**: 参数
+  为 0-based half-open；`no_mask=true` 时返回 uppercase，否则保留 soft-mask。
+- **`src/libs/ds/bitmap.rs::BitMap`**: `set_range(start, len)` 与 `is_fully_set(start, len)`
+  都按 0-based half-open `[start, start+len)` 解释。
+- **`src/libs/ds/dupe_tree.rs::DupeTree`**: `add(start, end)`、`subtract(start, end)`、
+  `count_over(start, end, threshold)` 均为 0-based half-open。
+- **`src/libs/alignment/coords.rs`**: `reverse_range_pair(start, end, size)` 与
+  `reverse_range_1based_pair(start, end, size)` 分别处理 0-based half-open 与
+  1-based inclusive 链向反转。
 
-- **SD 模块内部建议**
-  - 在 `src/libs/sd/` 内部统一使用 0-based half-open，仅在调用 `loc`、`fa::mask_sequence`、输出 BED/文件名时做显式转换。
-  - hard-masked 坐标 ↔ original 坐标的映射表也用 0-based half-open：`[(orig_start, orig_end, masked_start, masked_end)]`。
+#### 6.2.2 1-based inclusive `[start, end]`
+
+- **`src/libs/fmt/fa.rs::mask_sequence(seq, spans, hard)`**: `spans` 是
+  `intspan::IntSpan`，1-based inclusive；函数内部通过 `offset = lower - 1` 转成切片
+  索引。
+- **`src/libs/fmt/fa.rs::find_masked_regions(seq, gap_only)`**: 返回 0-based inclusive
+  的 `(begin, end)` 对，与 `mask_sequence` 的输入约定不同，不要直接混用。
+- **`src/libs/fmt/fa.rs::windows`**: 内部切片是 0-based half-open，但输出名称格式为
+  `name:start-end`，其中 `start = 原 start + 1`（1-based inclusive），`end` 保持为
+  切片末尾位置（同样按 1-based inclusive 显示）。
+- **`src/libs/loc.rs`**: `intspan::Range`（支持 `chr:start-end` 与 `chr(-):start-end`）
+  为 1-based inclusive；`slice_record` 与 `fetch_range_seq` 接收该 `Range`。
+- **`src/libs/alignment/coords.rs`**: `chr_to_align` / `align_to_chr` 的输入位置是
+  1-based inclusive，且配合 `IntSpan`（由 `seq_intspan` 从对齐序列的 gap 列生成）使用。
+
+#### 6.2.3 SD 模块内部建议
+
+- 在 `src/libs/sd/` 内部统一使用 **0-based half-open**，仅在以下边界做显式转换：
+  - 调用 `loc::fetch_range_seq` / `slice_record` 时，把 0-based half-open 区间转为
+    `intspan::Range` 的 1-based inclusive；
+  - 调用 `fa::mask_sequence` 时，把 0-based half-open 区间转为 `IntSpan` 的
+    1-based inclusive；
+  - 输出 BED/文件名时，若需与 BISER 保持一致，再决定使用 0-based 还是 1-based。
+- hard-masked 坐标 ↔ original 坐标的映射表建议保存为 0-based half-open：
+  `Vec<(orig_start, orig_end, masked_start, masked_end)>`。
 
 ### 6.3 BISER 算法阶段与 PGR 组件映射
 
-#### 6.2.1 Hard-masking（`mask.codon`）
+#### 6.3.1 Hard-masking（`mask.codon`）
 
 - **BISER 实现**
   - 文件: `biser/codon/mask.codon:7-15`
@@ -495,12 +531,15 @@ PGR 内部各模块使用的坐标约定不统一，迁移时必须明确每个�
   - `src/libs/fmt/fa.rs`:
     - `reader(infile) -> Result<fasta::io::Reader<...>>`: 顺序读取 FASTA，支持 stdin 与 gzip。
     - `writer_with_wrap(outfile, 80) -> Result<fasta::io::Writer<...>>`: 按 80 bp 换行输出（与 BISER 的 `width=80` 一致）。
-    - `find_masked_regions(seq, gap_only=false) -> Vec<(usize, usize)>`: 返回 lowercase 或 N/n 区域的 0-based inclusive 区间（`gap_only=true` 时只统计 N/n）。
-    - `mask_sequence(seq, spans, hard=true) -> Result<String>`: 将 `spans`（1-based inclusive `IntSpan`）指定区间替换为 `N`（hard）或小写（soft）。注意它**保留序列长度**，与 BISER 的“删除 lowercase”行为不同，因此不能直接用于生成 hard-masked FASTA。
+    - `find_masked_regions(seq, gap_only) -> Vec<(usize, usize)>`: 返回 0-based inclusive 的 masked 区间。`gap_only=false` 时返回 lowercase 或 `nt::is_n` 为 true 的字符（即 N/n 与 IUPAC ambiguity）所在区间；`gap_only=true` 时只返回 N/n 与 IUPAC ambiguity 所在区间。**注意** lowercase 的 A/C/G/T 属于 `gap_only=false` 的返回范围，但它们不是 `nt::is_n`。
+    - `mask_sequence(seq, spans, hard) -> Result<String>`: 将 1-based inclusive 的 `IntSpan` 区间替换为 `N`（hard）或小写（soft）。它**保留序列长度**，与 BISER 的“删除 lowercase”行为不同，因此不能直接用于生成 hard-masked FASTA。
   - `src/libs/nt.rs`:
-    - `NT_VAL: &[usize; 256]`: A/a/C/c/G/g/T/t/U/u 映射到 0/1/2/3，IUPAC ambiguity codes 与 N/n 映射到 4，其余为 255 (Invalid)。
-    - `is_lower(b) -> bool`: 判断小写碱基。
-    - `is_n(b) -> bool`: 判断 N 或 IUPAC ambiguous（含 M/R/W/S/Y/K/V/H/D/B）。
+    - `NT_VAL: &[usize; 256]`: A/a/C/c/G/g/T/t/U/u 映射到 0/1/2/3；M/R/W/S/Y/K/V/H/D/B 及其小写，以及 N/n，映射到 4；其余字符（包括 gap `-`、`*` 等）映射到 255 (Invalid)。
+    - `is_n(b) -> bool`: 当 `NT_VAL[b] == 4` 时返回 true，即 N/n 与所有 IUPAC ambiguity codes。**注意** lowercase a/c/g/t 返回 false，因为它们映射到 0/1/2/3。
+    - `is_lower(b) -> bool`: 判断字符是否为小写 ASCII。
+    - `to_nt(nt) -> Nt`: 将字节映射到 `Nt` 枚举（A/C/G/T/N/Invalid）。
+    - `count_n(seq) -> usize`: 统计 `is_n` 为 true 的字符数量。
+    - `complement(seq) -> impl DoubleEndedIterator<Item = u8>`: 正序互补迭代器。
     - `rev_comp(seq) -> impl Iterator<Item = u8>`: 反向互补迭代器，在 cluster 阶段构造反向链序列时可直接使用。
 - **需要新增的实现**
   - BISER 的 `mask` 是**删除 lowercase bases**并输出 hard-masked FASTA（序列长度变短），没有现成函数。
@@ -509,7 +548,7 @@ PGR 内部各模块使用的坐标约定不统一，迁移时必须明确每个�
   - 输出用 `fa::writer_with_wrap(outfile, 80)`。
   - 注意：`fa::reader` 会一次性将整条 record 读入内存（`noodles_fasta` 的 `Record.sequence()` 返回完整序列）。人类尺度染色体（~250 Mbp）尚可接受，但若要在更大基因组或内存受限场景下处理，建索引阶段可改用 `src/libs/fmt/twobit.rs::TwoBitFile` 顺序扫描，区间提取再用 `twobit` 或 `loc`。
 
-#### 6.2.2 Putative SD detection（`search.codon`）
+#### 6.3.2 Putative SD detection（`search.codon`）
 
 - **BISER 实现**
   - 文件: `biser/codon/search.codon:189-343`
@@ -534,7 +573,7 @@ PGR 内部各模块使用的坐标约定不统一，迁移时必须明确每个�
   - `src/libs/sd/hit.rs`: SD hit 数据结构（坐标、species、chromosome、strand、CIGAR、
     error rate），可参考 `src/libs/chain/record.rs` 的 `Chain` / `Block` 设计。
 
-#### 6.2.3 Alignment refinement（`align.codon` + `hit.codon`）
+#### 6.3.3 Alignment refinement（`align.codon` + `hit.codon`）
 
 - **BISER 实现**
   - 文件: `biser/codon/align.codon:5-112`、`biser/codon/hit.codon:325-348`
@@ -625,7 +664,7 @@ PGR 内部各模块使用的坐标约定不统一，迁移时必须明确每个�
     两端 score-based `ltrim`/`rtrim`、生成最终 CIGAR。小 gap（≤1000 bp）调用 `ScalarAlignmentEngine`
     并把 path 转为 CIGAR；大 gap 按 BISER 策略（两端各比对 1000 bp，中间用 `I`/`D`）处理。
 
-#### 6.2.4 SD clustering（`cluster.codon`）
+#### 6.3.4 SD clustering（`cluster.codon`）
 
 - **BISER 实现**
   - 文件: `biser/codon/cluster.codon:53-165`
@@ -669,7 +708,7 @@ PGR 内部各模块使用的坐标约定不统一，迁移时必须明确每个�
   - `src/libs/sd/cluster.rs`: 将 hit 端点排序，用 `Dsu` 合并重叠端点，输出每个 cluster 的
     FASTA（序列名采用 `species#chrom+/-#start#end` 格式）。
 
-#### 6.2.5 SD decomposition（`decompose.codon`）
+#### 6.3.5 SD decomposition（`decompose.codon`）
 
 - **BISER 实现**
   - 文件: `biser/codon/decompose.codon:52-277`
@@ -684,7 +723,7 @@ PGR 内部各模块使用的坐标约定不统一，迁移时必须明确每个�
   - `src/libs/sd/decompose.rs`: 在 cluster FASTA 上调用 10-mer 索引 + 多拷贝 plane-sweep + merge，
     输出 `.elem` 格式 BED。
 
-#### 6.2.6 Core duplicon identification（`cover.py`）
+#### 6.3.6 Core duplicon identification（`cover.py`）
 
 - **BISER 实现**
   - 文件: `biser/cover.py:1-102`
@@ -704,7 +743,7 @@ PGR 内部各模块使用的坐标约定不统一，迁移时必须明确每个�
   - `src/libs/sd/cover.rs`: 组装 interval overlap + set cover 流程，在 `.elem` 文件中追加
     `CORE` 标记。
 
-#### 6.2.7 Coordinate translation（`mask.codon:32-154`）
+#### 6.3.7 Coordinate translation（`mask.codon:32-154`）
 
 - **BISER 实现**
   - 文件: `biser/codon/mask.codon:32-154`
@@ -732,7 +771,7 @@ PGR 内部各模块使用的坐标约定不统一，迁移时必须明确每个�
       `S`（soft-mask）或 `N`（hard-mask），以反映原始基因组中这些碱基并非真正参与比对。
     - BISER 内部将 CIGAR 操作重新归类为 `M`/`S`/`N`；translate 阶段应产生与 BISER 输出语义一致的 CIGAR。
 
-### 6.3 其他值得复用的工具
+### 6.4 其他值得复用的工具
 
 除了按算法阶段映射的组件外，以下通用工具在 SD 流程中也 likely 有用：
 
@@ -758,9 +797,9 @@ PGR 内部各模块使用的坐标约定不统一，迁移时必须明确每个�
 - `src/libs/alignment/trim.rs`
   - 提供 MSA 后处理的 trim 函数。SD refine 阶段若需要对齐后修剪，可参考，但 BISER 的 score-based `ltrim`/`rtrim` 仍需自行实现。
 
-### 6.4 建议的模块与命令结构
+### 6.5 建议的模块与命令结构
 
-#### 6.4.1 `src/libs/sd/` 目录（新增）
+#### 6.5.1 `src/libs/sd/` 目录（新增）
 
 - `kmer_index.rs`: exact 2-bit k-mer 索引 + winnowing + 频率过滤。
 - `plane_sweep.rs`: plane-sweep 链表与 hit 输出。
@@ -774,7 +813,7 @@ PGR 内部各模块使用的坐标约定不统一，迁移时必须明确每个�
 - `translate.rs`: hard-masked 与原基因组坐标互转。注意 `src/libs/translate.rs` 已存在（蛋白质翻译），
   新增 SD 的 `translate.rs` 位于 `src/libs/sd/translate.rs`，不会冲突。
 
-#### 6.4.2 `src/cmd_pgr/sd/` 目录（新增）
+#### 6.5.2 `src/cmd_pgr/sd/` 目录（新增）
 
 - `mod.rs`: 子命令注册与分发。
 - `mask.rs`: `pgr sd mask <genome.fa> -o <masked.fa>`。
@@ -786,7 +825,7 @@ PGR 内部各模块使用的坐标约定不统一，迁移时必须明确每个�
 - `translate.rs`: `pgr sd translate <hits.align.bed> <genomes...> -o <out.bed>`。
 - `run.rs`: `pgr sd run <genomes...> -o <out.bed>`，按 BISER 顺序串接上述步骤。
 
-### 6.5 分阶段实施计划
+### 6.6 分阶段实施计划
 
 #### 第一阶段：索引与 plane-sweep（验证：human chr21 自比对命中数与 BISER 一致）
 
@@ -834,7 +873,7 @@ PGR 内部各模块使用的坐标约定不统一，迁移时必须明确每个�
 2. 实现 `cross_search` / `cross_align` 等价逻辑（复用 search/align，只是 query 为另一基因组）。
 3. 验证: 多基因组场景下最终 `out.bed` 与 `.elem.txt` 与 BISER 等价。
 
-### 6.6 风险与注意事项
+### 6.7 风险与注意事项
 
 - **比对器依赖（基本可解决，但性能有差异）**: BISER 的 alignment 精修依赖 `bio.seq.align()` 这个内置 SIMD aligner。
   PGR 的 `src/libs/poa/align.rs::ScalarAlignmentEngine` 提供 Global、Local、SemiGlobal 三种模式以及自定义
