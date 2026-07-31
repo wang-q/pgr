@@ -4,23 +4,27 @@
 [![codecov](https://codecov.io/gh/wang-q/pgr/branch/master/graph/badge.svg)](https://codecov.io/gh/wang-q/pgr)
 [![license](https://img.shields.io/github/license/wang-q/pgr)](https://github.com//wang-q/pgr)
 
-`pgr` is a command-line toolkit for working with genomes and genome-derived
-data: sequences, alignments, variation, and related formats.
+`pgr` is a command-line toolkit for working with genomes and genome-derived data: sequences,
+alignments, variation, and related formats.
 
-It is designed as a practical “Swiss Army knife” for day-to-day bioinformatics
-workflows, with a focus on:
+It is designed as a practical “Swiss Army knife” for day-to-day bioinformatics workflows, with a
+focus on:
 
-- Format-aware utilities for common genomics file types (FASTA/FASTQ/2bit, AXT/PSL/Chain/Net/MAF, GFF)
+- Format-aware utilities for common genomics file types (FASTA/FASTQ/2bit, AXT/PSL/Chain/Net/MAF,
+  GFF)
 - Interoperable outputs (tabular conventions, FASTA/MAF for alignments)
-- Pipeline-friendly behavior (stdin/stdout where possible, predictable output, composable subcommands)
+- Pipeline-friendly behavior (stdin/stdout where possible, predictable output, composable
+  subcommands)
 - Performance and robustness (Rust implementation, zero-panic policy for malformed inputs)
 
 High-level capabilities include:
 
-- Sequences: FASTA/FASTQ inspection, filtering, slicing, conversion, 2bit querying, and pbit population archive compression
+- Sequences: FASTA/FASTQ inspection, filtering, slicing, conversion, 2bit querying, and pbit
+  population archive compression
 - Alignments: sorting, filtering, conversion, and coordinate/range utilities across UCSC formats
 - Pangenome: PAF implicit graph indexing, querying, and conversion (BED/MAF/GFA/VCF)
-- Pipelines & plots: integrated workflows (optionally using external tools) and LaTeX/TikZ figure generation
+- Pipelines & plots: integrated workflows (optionally using external tools) and LaTeX/TikZ figure
+  generation
 
 ## Install
 
@@ -45,8 +49,8 @@ pgr fas --help
 
 ## Examples
 
-This repository contains many subcommands and end-to-end workflows. Extended
-and curated examples are collected in:
+This repository contains many subcommands and end-to-end workflows. Extended and curated examples
+are collected in:
 
 - docs/usage_examples.md
 
@@ -73,10 +77,10 @@ pgr pbit range tmp.pbit scaffold_1:1-1000 -o tmp.fa
 
 Some subcommands depend on external executables:
 
-- `pgr pl ucsc` requires the UCSC kent-tools suite, including programs such as
-  `faToTwoBit`, `axtChain`, `chainAntiRepeat`, `chainMergeSort`, `chainPreNet`,
-  `chainNet`, `netSyntenic`, `netChainSubset`, `chainStitchId`, `netSplit`,
-  `netToAxt`, `axtSort`, `axtToMaf`, `netFilter`, `netClass`, and `chainSplit`.
+- `pgr pl ucsc` requires the UCSC kent-tools suite, including programs such as `faToTwoBit`,
+  `axtChain`, `chainAntiRepeat`, `chainMergeSort`, `chainPreNet`,`chainNet`, `netSyntenic`,
+  `netChainSubset`, `chainStitchId`, `netSplit`,`netToAxt`, `axtSort`, `axtToMaf`, `netFilter`,
+  `netClass`, and `chainSplit`.
 - `pgr pl trf` depends on `trf` and `spanr`.
 - `pgr pl rept` and `pgr pl ir` depend on `FastK`, `Profex`, and `spanr`.
 - `pgr pl p2m` depends on `spanr`.
@@ -85,7 +89,7 @@ Some subcommands depend on external executables:
 
 ## Author
 
-Qiang Wang <wang-q@outlook.com>
+Qiang Wang [wang-q@outlook.com](mailto:wang-q@outlook.com)
 
 ## License
 
@@ -93,4 +97,5 @@ MIT.
 
 Copyright by Qiang Wang.
 
-Written by Qiang Wang <wang-q@outlook.com>, 2024-
+Written by Qiang Wang [wang-q@outlook.com](mailto:wang-q@outlook.com), 2024-
+
