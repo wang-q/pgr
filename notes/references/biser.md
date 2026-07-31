@@ -452,6 +452,10 @@ IGC 会导致某个 haplotype 上的 SD 序列与其参考位置上的 ortholog 
 - **目标**: 在 PGR 中新增 `pgr sd` 命令族，实现与 BISER 等价的功能：
   putative SD 检测、局部比对精修、跨基因组映射、SD 聚类、elementary SD 分解、
   core duplicon 识别、hard-mask 坐标与原基因组坐标互转。
+- **策略调整（简化）**: 不从头实现 BISER 的 k-mer 索引 + plane-sweep 搜索，而是先用 LASTZ
+  （或基于 LASTZ 的覆盖度方法）生成候选 SD 区间，再接入 BISER 后续的 align / refine /
+  cluster / decompose / translate 算法。这样可以用 PGR 已成熟的 lastz 封装快速验证端到端
+  pipeline，同时保留未来替换为原生 k-mer search 的接口空间。
 - **边界**: 本次迁移聚焦算法实现与命令接口；多进程调度、临时目录管理、 resume 等工程特性
   可在核心算法稳定后按 PGR 已有模式（如 `pgr pl` pipeline）补充。
 - **原则**: 复杂算法放 `src/libs/`，`cmd_pgr/` 仅做参数解析、I/O 转换与调用。单命令专用的
@@ -578,36 +582,63 @@ PGR 内部不同模块混用 0-based half-open 与 1-based inclusive 两种约�
   - 输出用 `fa::writer_with_wrap(outfile, 80)`。
   - 注意：`fa::reader` 会一次性将整条 record 读入内存（`noodles_fasta` 的 `Record.sequence()` 返回完整序列）。人类尺度染色体（~250 Mbp）尚可接受，但若要在更大基因组或内存受限场景下处理，建索引阶段可改用 `src/libs/fmt/twobit.rs::TwoBitFile` 顺序扫描，区间提取再用 `twobit` 或 `loc`。
   - 与现有 `pgr fa mask` / `pgr fa masked` 的关系：`pgr fa mask` 基于 runlist 做长度保留的 hard/soft mask；`pgr fa masked` 只负责找出 masked 区域。BISER 的 `mask` 是独立功能，建议放在 `pgr sd mask` 中实现。
+- **与 LASTZ-based search 的关系**
+  - 原生 BISER search 必须在 hard-masked 序列上建 k-mer 索引，因此 `mask` 是前置步骤。
+  - 改用 LASTZ 后，`mask` 不再是 search 的前置条件：可以直接对原始（或 soft-masked）基因组跑 lastz，
+    再通过 RepeatMasker 差集或 PAF 过滤去除 TE 命中。
+  - 但如果希望下游 `align` / `refine` / `cluster` 保持与 BISER 完全一致的 hard-masked 坐标系，
+    仍建议实现 `pgr sd mask`，并基于 hard-masked 基因组做 lastz 自比对；此时 `translate` 步骤负责把
+    hard-masked 坐标映射回原基因组。
 
 #### 6.3.2 Putative SD detection（`search.codon`）
 
 - **BISER 实现**
   - 文件: `biser/codon/search.codon:189-343`
   - 核心: 2-bit 滚动哈希 + winnowing + plane-sweep 链表 + tau 阈值 + 输出候选 hit。
+- **简化策略：用 LASTZ 替代原生 search**
+  - 基于当前实施计划简化要求，第一阶段不实现 BISER 的 k-mer 索引与 plane-sweep，而是复用 PGR
+    已有的 lastz 基础设施生成候选 SD 区间。两种具体形态可选：
+    - **形态 A：全基因组自比对（`lastz --self`）**
+      - 直接调用 `pgr lav lastz --self <genome.fa> <genome.fa>`，输出 LAV；
+      - 经 `pgr lav to-psl` / `pgr psl to-chain` 或直接转 PAF 后得到 pairwise alignments；
+      - 过滤短命中（< 1 kbp）、低同一性命中，得到 putative SD pairs。
+    - **形态 B：滑动窗口覆盖度（`scripts/pgr-repeat.sh`）**
+      - 把基因组切成 200 bp 重叠窗口，用 lastz 回贴到基因组；
+      - 计算每个碱基的覆盖深度，取深度 ≥ 4 的区域作为重复区；
+      - 用 RepeatMasker 区间做差集，过滤 TE；
+      - 剩余区间作为候选 SD 区，再相互比对生成 pairs。
+  - 形态 A 更直接，输出本身就是 pairwise hits，可跳过"候选区 → pairs"的二次匹配；形态 B 更稳健，
+    能显式控制 TE 污染，但需要额外一步候选区自匹配。
 - **PGR 可复用组件**
-  - `src/libs/nt.rs`:
-    - `NT_VAL: &[usize; 256]` 将 A/a→0, C/c→1, G/g→2, T/t→3, U/u→3（U/u 与 T/t 共用 3）。该表可直接用于 BISER 风格的 2-bit 滚动哈希，但**前提是序列已经过 hard-mask**：只保留 uppercase A/C/G/T，其余字符（lowercase a/c/g/t/u、N、IUPAC ambiguity、gap 等）均已删除。
-    - 编码方式：对 hard-masked 后的字节 `b`，若 `NT_VAL[b] <= 3 && !b.is_ascii_lowercase()`，则 2-bit 值为 `NT_VAL[b] & 3`（即 A=0, C=1, G=2, T=3，与 BISER 一致）；否则应作为无效字符跳过。注意 2bit 文件内部位编码与 BISER 不同，不要直接对 2bit packed bytes 使用 `NT_VAL`。
-  - `src/libs/fmt/fa.rs`:
-    - `reader()`: 顺序读取 FASTA，适合建 k-mer 索引。注意它会将整条 record 载入内存。
+  - `src/libs/lastz.rs`:
+    - `PRESETS` 提供 lastz 参数集；对 SD 自比对建议降低 `K/L`（如 `K=1500 L=1500`）以提高灵敏度，
+      或直接使用 `--self` 模式。
+    - `run_lastz` 负责并行调用 lastz 并输出 LAV。
+  - `src/libs/fmt/lav.rs` / `src/cmd_pgr/lav/to_psl.rs`:
+    - 解析 LAV 并转为 PSL；PSL 与 PAF 列语义相近，可继续转为 PAF（见 6.9）。
+  - `src/libs/fmt/psl.rs`:
+    - `PslRecord` 数据结构、`to_chain` 等方法可用于坐标转换与链向处理。
+  - `src/libs/paf/cigar.rs` / `src/libs/paf/parser.rs`:
+    - 若最终输出 PAF，可用 `parse_cigar`、`block_identity` 计算 error rate。
   - `src/libs/ds/bitmap.rs`:
-    - `BitMap::new(size)` + `set_range(start, len)` + `is_fully_set(start, len)`: 0-based 位图，可用于标记 plane-sweep 或 decomposition 中已访问/已输出的基因组位置，避免同一碱基被重复命中。
-- **不可直接复用**
-  - `src/libs/hash.rs`: 提供 canonical minimizer 采样与 Jaccard/Mash 距离计算：
-    - `seq_sketch(seq, seq_id, k, w, soft_mask, filter) -> Vec<MinimizerInfo>`: 使用 `minimizer_iter` 的 canonical minimizer，返回每个 minimizer 的 hash、seq_id、pos、strand。`soft_mask=true` 时丢弃包含 lowercase 碱基的 k-mer；`filter` 用于按 hash 值过滤保留的 minimizer。
-    - `seq_mins(seq, opt_hasher, opt_kmer, opt_window) -> Result<RapidHashSet<u64>>`: 基于 `JumpingMinimizer`（fxhash/rapidhash/murmurhash/mod）返回 minimizer hash 集合，用于 `pgr dist seq` 等 sketch 场景。
-    - `seq_sketch` 返回 `Vec<MinimizerInfo>`，包含 hash、seq_id、pos、strand，形式上类似 BISER 的
-      winnowing 输出，但本质不同：
-      - `hash.rs` 使用 fxhash/rapidhash/murmurhash 等哈希函数，且支持 canonical k-mer；
-      - BISER search/decompose 依赖 exact 2-bit k-mer + winnowing（非 canonical、非 hash-based）。
-    因此 `hash.rs` 的 minimizer 流程不能直接复用，仅可作为 sketch 验证或后续扩展使用。
+    - `BitMap::new(size)` + `set_range(start, len)` + `is_fully_set(start, len)`: 0-based 位图，可用于标记已输出的基因组位置，避免同一碱基被重复命中；在 TE 差集与候选区合并时亦可复用。
 - **需要新增的实现**
-  - `src/libs/sd/kmer_index.rs`: exact 2-bit k-mer 滚动哈希、winnowing 采样、
-    `kmer -> Vec<(chr_id, pos)>` 索引、频率阈值过滤（0.1%）。
-  - `src/libs/sd/plane_sweep.rs`: `ListNode` 链表、`update_list()` 三种分支逻辑、
-    `save_sd()` 输出、tau 计算。
-  - `src/libs/sd/hit.rs`: SD hit 数据结构（坐标、species、chromosome、strand、CIGAR、
-    error rate），可参考 `src/libs/chain/record.rs` 的 `Chain` / `Block` 设计。
+  - `src/libs/sd/search_lastz.rs`（或复用 `src/libs/sd/from_lastz.rs`）:
+    - 封装"lastz 自比对 → 格式转换 → 过滤 → 输出 putative hits"的完整流程。
+    - 输入：基因组 FASTA、lastz 参数、最小 hit 长度、最大 error rate。
+    - 输出：BEDPE 或 PAF（推荐 PAF，见 6.9），坐标统一为 0-based half-open。
+  - `src/libs/sd/coverage.rs`（形态 B 需要）:
+    - 封装 `pgr-repeat.sh` 中的窗口化、自比对、lift、覆盖度计算逻辑，输出候选重复区 BED。
+  - `src/libs/sd/subtract_repeatmasker.rs`（形态 B 需要）:
+    - 读取 RepeatMasker 输出，与候选区做差集。
+  - `src/libs/sd/hit.rs`: SD hit 数据结构（坐标、species、chromosome、strand、CIGAR、error rate），
+    可参考 `src/libs/chain/record.rs` 的 `Chain` / `Block` 设计。
+- **原生 BISER search 的保留信息（未来可替换）**
+  - 若后续要替换为原生 k-mer plane-sweep，需要实现 `src/libs/sd/kmer_index.rs` 与
+    `src/libs/sd/plane_sweep.rs`。`src/libs/nt.rs::NT_VAL` 与 `src/libs/fmt/fa.rs::reader`
+    可复用；`src/libs/hash.rs` 的 minimizer 流程与 BISER exact 2-bit k-mer 不同，不能直接复用。
+  - 为保持接口统一，建议 `pgr sd search` 设计为 `--mode lastz|coverage|kmer`，默认 `lastz`，
+    未来 `kmer` 模式输出格式与 `lastz` 模式完全一致。
 
 #### 6.3.3 Alignment refinement（`align.codon` + `hit.codon`）
 
@@ -1093,9 +1124,15 @@ PGR 内部不同模块混用 0-based half-open 与 1-based inclusive 两种约�
 
 #### 6.5.1 `src/libs/sd/` 目录（新增）
 
-- `kmer_index.rs`: exact 2-bit k-mer 索引 + winnowing + 频率过滤。
-- `plane_sweep.rs`: plane-sweep 链表与 hit 输出。
+**第一阶段（LASTZ-based search，优先实现）**
+
+- `search_lastz.rs`: 封装 lastz 自比对 → 格式转换 → 过滤 → putative hits 输出。
+- `coverage.rs`（可选）: 滑动窗口覆盖度重复区检测，复用 `pgr-repeat.sh` 逻辑。
+- `subtract_repeatmasker.rs`（可选）: 用 RepeatMasker 结果过滤候选重复区。
 - `hit.rs`: SD hit 数据结构（坐标、species、strand、CIGAR、error rate）。
+
+**第二阶段及以后（BISER 后续算法）**
+
 - `anchor.rs`: 10-mer exact-match anchor 生成。
 - `refine.rs`: 基于 y 坐标离散化 + segment tree / Fenwick tree 的 event-driven PST
   chaining + sparse DP 的比对精修；包含 `path_to_cigar` 辅助函数。
@@ -1106,27 +1143,52 @@ PGR 内部不同模块混用 0-based half-open 与 1-based inclusive 两种约�
 - `translate.rs`: hard-masked 与原基因组坐标互转。注意 `src/libs/translate.rs` 已存在（蛋白质翻译），
   新增 SD 的 `translate.rs` 位于 `src/libs/sd/translate.rs`，不会冲突。
 
+**未来可选（原生 BISER search）**
+
+- `kmer_index.rs`: exact 2-bit k-mer 索引 + winnowing + 频率过滤。
+- `plane_sweep.rs`: plane-sweep 链表与 hit 输出。
+
 #### 6.5.2 `src/cmd_pgr/sd/` 目录（新增）
 
 - `mod.rs`: 子命令注册与分发。
 - `mask.rs`: `pgr sd mask <genome.fa> -o <masked.fa>`。
-- `search.rs`: `pgr sd search <genome.fa> -o <hits.bed>`。
-- `align.rs`: `pgr sd align <genome.fa> <hits.bed> -o <hits.align.bed>`。
-- `cluster.rs`: `pgr sd cluster <genomes...> <hits.align.bed> -o <clusters.dir>`。
+- `search.rs`: `pgr sd search <genome.fa> -o <hits.paf> [--mode lastz|coverage|kmer]`。
+  默认 `lastz`，未来可扩展 `kmer` 原生模式。
+- `align.rs`: `pgr sd align <genome.fa> <hits.paf> -o <hits.align.paf>`。
+- `cluster.rs`: `pgr sd cluster <genomes...> <hits.align.paf> -o <clusters.dir>`。
 - `decompose.rs`: `pgr sd decompose <cluster.fa> -o <cluster.elem.bed>`。
-- `cover.rs`: `pgr sd cover <hits.align.bed> <elems.txt> -o <elems.covered.txt>`。
-- `translate.rs`: `pgr sd translate <hits.align.bed> <genomes...> -o <out.bed>`。
+- `cover.rs`: `pgr sd cover <hits.align.paf> <elems.txt> -o <elems.covered.txt>`。
+- `translate.rs`: `pgr sd translate <hits.align.paf> <genomes...> -o <out.paf>`。
 - `run.rs`: `pgr sd run <genomes...> -o <out.bed>`，按 BISER 顺序串接上述步骤。
 
 ### 6.6 分阶段实施计划
 
-#### 第一阶段：索引与 plane-sweep（验证：human chr21 自比对命中数与 BISER 一致）
+#### 第一阶段：LASTZ-based putative SD 检测（验证：输出格式正确、下游可消费）
 
-1. 实现 `libs/sd/kmer_index.rs`：2-bit k-mer + winnowing + 频率过滤。
-2. 实现 `libs/sd/plane_sweep.rs`：ListNode、update_list、tau、save_sd。
-3. 实现 `libs/sd/hit.rs`：hit 数据结构。
-4. 实现 `cmd_pgr/sd/search.rs`：单基因组 putative SD 检测。
-5. 验证: 在相同参数下，PGR 输出的 hit 数量与坐标与 BISER `search` 子命令高度一致。
+1. 实现 `libs/sd/hit.rs`：统一的 SD hit 数据结构，支持从 PAF / BEDPE / chain 初始化。
+2. 实现 `libs/sd/search_lastz.rs`：
+   - 调用 `pgr::libs::lastz::run_lastz` 做 `--self` 自比对，或按用户指定做 target/query 比对；
+   - 用 `pgr::libs::fmt::lav` 解析 LAV，或先 `pgr lav to-psl` 再读 PSL；
+   - 将 LAV/PSL 记录转换为 PAF（复用 6.9 的字段映射思想），或直接输出 BEDPE；
+   - 过滤：长度 < 1 kbp、error rate > 0.3（用 `block_identity` 计算）、低复杂度（`TopKPurity`）。
+3. 实现 `cmd_pgr/sd/search.rs`：
+   - CLI：`pgr sd search <genome.fa> -o <hits.paf> [--mode lastz]`；
+   - 默认输出 PAF，坐标 0-based half-open；
+   - 序列名按 `species#chr` 编码（为 `cluster` 阶段输出 FASTA 头做准备）。
+4. 验证:
+   - `pgr sd search` 能在人类 chr21 上成功运行并输出合法 PAF；
+   - 输出 PAF 可被 `pgr paf index` 索引、`pgr sd align` 消费；
+   - hit 数量级与 BISER `search` 同数量级（不必 bit-exact，但不应差一个数量级）。
+
+**可选（若选择形态 B：pgr-repeat.sh 覆盖度路线）**
+
+1. 实现 `libs/sd/coverage.rs`：封装窗口化、lastz 回贴、lift、覆盖度计算，输出候选重复区 BED。
+2. 实现 `libs/sd/subtract_repeatmasker.rs`：读取 RepeatMasker `.out`/BED，做区间差集。
+3. 在 `cmd_pgr/sd/search.rs` 中增加 `--mode coverage`：
+   - 先调用 `coverage.rs` 得到候选区；
+   - 减 TE；
+   - 提取候选区序列，调用 lastz/minimap2 做 all-vs-all 自比对；
+   - 输出与 `--mode lastz` 格式一致的 PAF。
 
 #### 第二阶段：比对精修（验证：hit 的 CIGAR 与 error rate 与 BISER align 一致）
 
@@ -1187,9 +1249,10 @@ PGR 内部不同模块混用 0-based half-open 与 1-based inclusive 两种约�
   `MISMATCH * mi + GAPOPEN + GAP * (ma - mi)`，不能简单套用 `GapCalc::affine`。
 - **`Dsu` 需要迁移到 `src/libs/ds/`**: `src/libs/paf/graph/dsu.rs::Dsu` 是 `pub(super)`，不能作为公共 API。
   根据项目约束，纯数据结构应放 `src/libs/ds/`。建议迁移到 `src/libs/ds/dsu.rs` 并公开，原文件通过 `pub use` 保持兼容。
-- **`hash.rs` 不是 exact k-mer 索引**: `src/libs/hash.rs` 提供基于哈希的 canonical minimizer 采样（`seq_sketch`、`JumpingMinimizer`），
-  而 BISER 的 search/decompose 依赖 exact 2-bit k-mer + winnowing，因此 k-mer 索引必须重新实现，
-  `hash.rs` 仅可作为 sketch 验证或后续扩展使用。
+- **`hash.rs` 不是 exact k-mer 索引（当前阶段不实现）**: `src/libs/hash.rs` 提供基于哈希的 canonical minimizer 采样（`seq_sketch`、`JumpingMinimizer`），
+  而 BISER 的 search/decompose 依赖 exact 2-bit k-mer + winnowing。由于第一阶段改用 LASTZ-based search，
+  k-mer 索引与 plane-sweep 暂时不需要实现；未来若要替换为原生 BISER search，再新增 `src/libs/sd/kmer_index.rs`
+  与 `src/libs/sd/plane_sweep.rs`，`hash.rs` 仅可作为 sketch 验证或后续扩展使用。
 - **坐标系统不一致**: PGR 内部不同模块使用不同坐标约定：
   - `chain`、`paf`、`twobit`、`FastaStore`、`BitMap`、`DupeTree`、`io::SequenceReader` 使用 0-based half-open。
   - `loc.rs` 的 `intspan::Range` 和 `slice_record` 使用 1-based inclusive，支持链向。
@@ -1204,12 +1267,21 @@ PGR 内部不同模块混用 0-based half-open 与 1-based inclusive 两种约�
   区间提取 mate 序列时，优先使用 `loc` 或 `twobit`，避免加载完整染色体。
 - **反向互补**: BISER 在 chromosome 级别同时索引 forward 与 reverse complement，
   PGR 中可用 `nt::rev_comp` 生成反向链序列，或按 BISER 方式在索引阶段同时扫描两条链。
+- **LASTZ-based search 的灵敏度与计算代价**: 用 lastz 替代 BISER k-mer plane-sweep 可以快速拿到
+  putative hits，但默认 `set01`（`K=3000 L=2200`）对低同一性 ancient SD 可能偏严；建议对 SD 自比对
+  降低 `K/L` 或使用 `--self` 模式。另外，全基因组 lastz 自比对 + 后续 all-vs-all 候选区比对的计算量
+  通常大于 BISER 的 plane-sweep，人类尺度基因组需充分并行化。
 - **性能**: BISER 的 Codon 实现经编译为原生代码，plane-sweep 是其性能关键。
-  Rust 实现应可达到相近性能，但需对 k-mer 索引做内存优化（如 `u64` key + `Vec<(u32, u32)>`）。
+  当前阶段不实现 plane-sweep，因此该风险暂时规避；未来若替换为原生 BISER search，
+  Rust 实现需对 k-mer 索引做内存优化（如 `u64` key + `Vec<(u32, u32)>`）。
 
 ## 6.8 外部全基因组自比对替代路线：lastz --self 与 FastGA
 
 > 本节从“复用 PGR 已有的外部比对基础设施”出发，讨论是否可以用 lastz --self 或 FastGA 替代 BISER 内部的 `search` + `align` 阶段，直接把外部比对结果转换成 BISER hit 格式后接入 `cluster` / `decompose` / `translate`。所有分析均结合 BISER 源码中的实际输入输出格式与 PGR 现有命令能力，并给出可落地的模块与命令设计。
+>
+> **注意**：在 6.1/6.3.2/6.6 的简化实施策略中，`lastz --self` 已被选为第一阶段 putative SD 检测的
+> 主要实现路径。本节的技术细节（LAV/PSL/PAF 转换、字段映射、tag schema）因此成为当前迁移方案的核心
+> 参考，而不再只是“替代路线”。
 
 ### 6.8.1 BISER search/align 的内部数据契约
 
@@ -1770,6 +1842,138 @@ PAF 本身没有物种列，需要额外约定：
 - **coverage-only 过滤**：blastmatch/blastlink 仅按 coverage 过滤，没有区分 match/mismatch/gap，容易保留低质量 hits；应使用 BISER 的 `block_identity` 或 PAF 的 `er`/`gi` tag 做质量控制。
 - **1-based inclusive 坐标**：App-Egaz 的 range 格式使用 1-based inclusive，与 BISER/PGR 的 0-based half-open 不同，迁移时需小心转换。
 - **缺少 elementary SD 分解**：App-Egaz 只能输出 clusters，没有 BISER `decompose` 的 nested SD 拆解能力；PGR 应保留 BISER 的 decomposition 阶段。
+
+## 6.11 基于覆盖度的重复区检测：`pgr-repeat.sh` 与 BISER `search` 的关系
+
+`scripts/pgr-repeat.sh` 是 PGR 自带的一个 Cactus-style 重复屏蔽示例脚本。用户提出：该脚本找出的"重复区"包含转座子与 SD 两类，若用 RepeatMasker 区间做差集得到候选 SD 区，再对这些候选区做相互匹配，是否就等价于 BISER 流程前面"找到潜在 SD 区间"的步骤？本节分析这一思路与 BISER `search` 阶段的异同，并给出集成建议。
+
+### 6.11.1 `pgr-repeat.sh` 的工作流程
+
+该脚本本质上是一个"滑动窗口自比对 + 覆盖度阈值"的重复检测器，具体流程如下：
+
+1. **窗口化**：`pgr fa window -l 200 -s 100` 把基因组切成大量 200 bp、步长 100 bp 的重叠窗口，输出头为 `>seq_name:start-end`（1-based inclusive）。
+2. **自比对**：`pgr lav lastz` 以基因组染色体为 target、窗口为 query 做全基因组比对；默认使用 `--preset set01`（`C=0 E=30 K=3000 L=2200 O=400 Y=3400 Q=similar`，源自 UCSC Human vs Chimp）。
+3. **格式转换**：`pgr lav to-psl` 把 LAV 转为 PSL；`pgr psl lift --q-sizes` 将窗口坐标提升回原始基因组坐标。
+4. **提取范围**：`pgr psl to-range` 把 query 端比对坐标转为 `.rg` 范围（1-based inclusive）。
+5. **覆盖度过滤**：`spanr coverage -m 4` 计算每个碱基被多少条比对覆盖，输出深度 ≥ 4 的区域。
+
+其逻辑是：2x 覆盖窗口自身会产生约 2 的深度基线；若某区域存在 paralog，则来自同源拷贝的额外比对会使深度 ≥ 4，从而把重复/ duplicated 区域标记出来。
+
+### 6.11.2 "重复区"与 SD 的关系
+
+`pgr-repeat.sh` 检测的是广义的**高深度重复信号**，它至少包含两类：
+
+- **可移动元件（TE）**：转座子、逆转录转座子等，通常已被 RepeatMasker 标注。
+- **Segmental duplications（SD）**：较大的（≥1 kbp）、高同一性的 paralog 片段。
+
+此外还可能混入：
+
+- 低复杂度序列 / 卫星 DNA；
+- 多拷贝基因家族的小外显子；
+- 假基因、rDNA 簇等。
+
+因此脚本输出的 `mask_regions.json` 并不是纯 SD 集合。用户提出的"用 RepeatMasker 区间做差集"是合理的**第一步过滤**：减去已知的 TE 区间后，剩余的高深度区间更有可能是 SD 候选区。但这仍不足以区分 SD 与其他非 TE 重复，需要后续步骤做长度、同一性、成对关系验证。
+
+### 6.11.3 与 BISER `search` 阶段的等价性分析
+
+**概念层面：部分等价**
+
+BISER `search` 阶段的输出是**putative SD pairs**（成对的同源区间），其目标是快速缩小后续精确比对的搜索空间。`pgr-repeat.sh` + TE 差集后得到的是**候选 SD 区间集合**（单端区间），它回答了"基因组哪些地方像是重复的"，但还没有回答"这些重复区之间如何成对匹配"。
+
+因此：
+
+- 若把 BISER `search` 理解为"找出基因组中可能属于 SD 的候选区域"，那么 `pgr-repeat.sh` 的输出（经 TE 过滤后）可以作为其替代品。
+- 若把 BISER `search` 严格理解为"输出成对的 putative SD mates 并带有近似坐标"，那么 `pgr-repeat.sh` 还需要额外一步：把这些候选区间相互比对，才能产生可比拟的成对关系。
+
+**算法层面：不等价**
+
+- **BISER `search`**：基于 exact k-mer（`KMER_SIZE=14`）+ winnowing + plane-sweep，使用有序 Jaccard 下界做过滤。对 error rate 容忍度高（默认 `MAX_ERROR=0.3`），能检测较古老、分化较严重的 SD。
+- **`pgr-repeat.sh`**：基于 lastz 局部比对 + 覆盖度阈值。lastz 的 `set01` 参数（`K=3000 L=2200`）是为近缘物种比对设计的，对低同一性、短 match 的 ancient SD 灵敏度可能不足；同时 200 bp 窗口分辨率也限制了边界精度。
+
+**输出层面：不等价**
+
+- BISER `search` 输出的是 bedPE-like 的 putative hit pairs，包含坐标、链向、近似长度。
+- `pgr-repeat.sh` 输出的是单端深度区间（JSON runlist），没有直接给出哪些区间互为 paralog。
+
+### 6.11.4 "覆盖度 + TE 差集 + 自匹配"路线的可行性
+
+用户提出的完整路线可以概括为：
+
+1. 运行 `pgr-repeat.sh` 得到高深度重复区；
+2. 用 RepeatMasker 区间做差集，得到候选 SD 区间；
+3. 把这些候选区间从基因组提取出来，相互做 all-vs-all 自比对；
+4. 将自比对结果作为 putative SD pairs，供后续 refine / cluster / decompose 使用。
+
+**这条路是可行的，且与 BISER `search` 在功能上互补，但需要注意以下几点**：
+
+1. **候选区间的长度与质量**
+   - `pgr-repeat.sh` 的 200 bp 窗口会得到大量碎片化的候选区间，需要合并相邻或重叠区间（可用 `spanr merge` 或 PGR 的 range 工具）。
+   - 建议过滤掉过短（如 < 1 kbp）的区间，因为 SD 定义通常要求 ≥ 1 kbp。
+   - 候选区间内部可能仍残留未标注的 TE 片段，建议结合 `TopKPurity`（`src/libs/ds/top_k_purity.rs`）做低复杂度过滤。
+
+2. **自比对的计算代价**
+   - 若候选 SD 区间数量为 N，all-vs-all 自比对是 O(N²)。人类基因组经 TE 过滤后通常仍有数万个候选区间，直接全矩阵比对开销巨大。
+   - 可以先对候选区间建 k-mer 索引（复用 `src/libs/sd/kmer_index.rs` 的设计），只让可能相似的区间对进入 lastz/minimap2 精确比对。
+   - 也可以把候选区间作为 query，全基因组作为 target 做 one-vs-all 回贴（类似 App-Egaz 的 blastn 扩展策略），降低组合爆炸。
+
+3. **lastz 参数需要调整**
+   - `set01` 的 `K=3000` 阈值较高，对 SD 检测偏严格。建议对自匹配步骤使用更敏感的参数：
+     - 降低 `K/L`（如 `K=1500 L=1500` 或更低）；
+     - 使用 `--self` 模式（`pgr lav lastz --self`）而非 target/query 模式；
+     - 或改用 `minimap2 -DP -k19 -w19 -m200`（如 `doc/Scer-self.md` 中的示例），直接输出 PAF。
+
+4. **坐标系统一致性**
+   - `pgr fa window`、`pgr psl lift`、`pgr psl to-range` 均使用 1-based inclusive 坐标；
+   - BISER 内部与 PAF 使用 0-based half-open；
+   - 在把候选区间喂给自比对工具前，必须统一转换为 0-based half-open，避免 off-by-one 错误。
+
+5. **无法直接替代 BISER `search` 的 colinearity 保证**
+   - BISER 的 ordered Jaccard 通过 k-mer 顺序隐式保证 putative pairs 大致共线；
+   - 覆盖度方法只告诉你"这里重复"，不保证两个候选区间之间的 match 是共线的；
+   - 自比对后的结果仍需用 chaining（如 6.3.3/6.5.1 的 segment tree PST）过滤重排、 inversion 等非共线假阳性。
+
+### 6.11.5 优势与局限
+
+**优势**
+
+- **复用现有 PGR 命令**：`pgr fa window`、`pgr lav lastz`、`pgr psl lift`、`pgr psl to-range` 都已存在，无需新增核心算法。
+- **TE 控制更直接**：通过 RepeatMasker 差集显式去除已知转座子，比 BISER 的 soft-mask 依赖更清晰、可调试。
+- **结果直观**：覆盖度深度是生物学上易解释的指标，便于阈值调优。
+- **与 Cactus RepeatMasking 流程一致**：该脚本本来就是为 Cactus 重复屏蔽设计的，可与现有基因组比对 pipeline 无缝衔接。
+
+**局限**
+
+- **灵敏度受 lastz  preset 限制**：`set01` 为近缘物种优化，可能漏检古老 SD。
+- **分辨率受窗口大小限制**：200 bp 窗口会模糊 SD 边界，需要后续 refine。
+- **计算成本高**：全基因组 lastz + 候选区间 all-vs-all 自比对的总开销通常高于 BISER 的 k-mer plane-sweep。
+- **不能直接输出 pairs**：需要额外一步自匹配才能产生 putative SD mates。
+- **假阳性来源多**：未标注 TE、低复杂度区、基因家族都会表现为高深度，需要多层过滤。
+
+### 6.11.6 对 PGR SD 流程的集成建议
+
+若要在 PGR 中把 `pgr-repeat.sh` 的思路固化为 BISER `search` 的替代或补充路线，建议新增以下模块/命令：
+
+- `src/libs/sd/coverage.rs`
+  - 封装"滑动窗口 → 自比对 → lift → 覆盖度"逻辑，输出候选 SD 区间（0-based half-open BED）。
+  - 参数化窗口大小、步长、深度阈值、lastz preset，方便针对不同基因组调参。
+- `src/libs/sd/subtract_repeatmasker.rs`
+  - 读取 RepeatMasker `.out` / `.gff` / BED，与候选 SD 区间做差集，输出过滤后的候选区。
+  - 可复用 `intspan` 的区间操作思路，但统一使用 0-based half-open 坐标。
+- `src/cmd_pgr/sd/coverage.rs`
+  - CLI：`pgr sd coverage <genome.fa> -o candidates.bed`，内部调用 `libs/sd/coverage.rs`。
+- `src/cmd_pgr/sd/search.rs` 的 `--mode coverage` 选项
+  - 在 BISER 原生 k-mer search 之外，提供 `coverage` 模式作为备选；
+  - 输出格式与 BISER putative hits 一致（BEDPE 或 PAF），方便下游 `refine`/`cluster`/`decompose` 复用。
+- `src/cmd_pgr/sd/mask.rs`
+  - 把 `pgr-repeat.sh` 当前输出 `mask_regions.json` 转换为标准的 BED/runlist，便于与 RepeatMasker 结果做集合运算。
+
+### 6.11.7 与 6.3 / 6.8 / 6.10 的关系
+
+- **6.3 的 BISER 原生路线**：仍是主路径，尤其适合大基因组和高 error-rate 场景。
+- **6.8 的外部比对路线**：`pgr-repeat.sh` 可视为 6.8 中 `lastz --self` 思想的延伸，但它从"找重复区"出发，而不是直接输出 pairwise alignments。
+- **6.10 的 App-Egaz 种子扩展**：App-Egaz 用 lastz/blastn 找可靠长 hits 作种子，再用 blastn 回贴扩展；`pgr-repeat.sh` 的"候选区自匹配"步骤与此类似，只是候选区来源从 lastz hits 改为覆盖度高深区。
+
+**结论**：`pgr-repeat.sh` 经过 TE 差集和候选区自匹配后，**可以在功能上近似 BISER `search` 阶段输出的 putative SD 区间集合**，但算法机制、灵敏度、输出形式均有差异。最稳妥的做法不是直接替换，而是把它作为 BISER k-mer search 的**补充验证路线**或**小基因组快速原型路线**，在 PGR 中封装为 `pgr sd coverage` / `pgr sd search --mode coverage`。
 
 ## 7. 参考文献
 
