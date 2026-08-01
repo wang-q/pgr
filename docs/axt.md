@@ -29,9 +29,9 @@
   - `--by-query`: 按 Query 的名称和起始位置排序。
   - `--by-score`: 按比对得分（Score）降序排列。
 - **选项互斥**: `--by-query` 与 `--by-score` 不能同时指定。
-- **重编号 (`--renumber`/`-r`)**:
-  - 排序后重新分配 ID（从 0 开始），确保 ID 的唯一性和顺序性。
-  - 类似 UCSC `axtSort` 的行为。
+- **ID 重编号（默认）**:
+  - 排序后默认重新分配 ID（从 0 开始），与 UCSC `axtSort` 行为一致（`axtWrite` 使用 `static int ix = 0` 自动递增）。
+  - `--keep-ids`: 保留原始 AXT ID，不重编号。
 
 ### 2. `pgr axt to-fas`: 转换为 Block FA
 

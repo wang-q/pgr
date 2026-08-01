@@ -13,9 +13,11 @@ Sorts AXT files by target, query, or score.
 
 Notes:
 * --by-query and --by-score are mutually exclusive
+* IDs are renumbered from 0 by default (matching UCSC axtSort).
+  Use --keep-ids to preserve original IDs.
 
 Examples:
-1. Sort by target (default):
+1. Sort by target (default), renumber IDs:
    pgr axt sort in.axt -o out.axt
 
 2. Sort by query:
@@ -23,6 +25,9 @@ Examples:
 
 3. Sort by score (descending):
    pgr axt sort in.axt --by-score -o out.axt
+
+4. Sort, keep original IDs:
+   pgr axt sort in.axt --keep-ids -o out.axt
 "###,
         )
         .arg(crate::cmd_pgr::args::infile_arg().help("Input AXT file. [stdin] for standard input"))
@@ -39,10 +44,10 @@ Examples:
                 .help("Sort by score"),
         )
         .arg(
-            Arg::new("renumber")
-                .long("renumber")
+            Arg::new("keep_ids")
+                .long("keep-ids")
                 .action(ArgAction::SetTrue)
-                .help("Renumber AXT records"),
+                .help("Keep original AXT IDs (default: renumber starting from 0)"),
         )
 }
 /// Execute the sort command.
@@ -51,7 +56,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let output = crate::cmd_pgr::args::get_outfile(args);
     let by_query = args.get_flag("by_query");
     let by_score = args.get_flag("by_score");
-    let renumber = args.get_flag("renumber");
+    let keep_ids = args.get_flag("keep_ids");
 
     let reader =
         pgr::reader(input).with_context(|| format!("Failed to open reader for {}", input))?;
@@ -77,7 +82,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         pgr::libs::fmt::axt::AxtSortBy::Target
     };
 
-    pgr::libs::fmt::axt::sort_axts(&mut axts, by, renumber);
+    pgr::libs::fmt::axt::sort_axts(&mut axts, by, !keep_ids);
 
     for axt in &axts {
         write_axt(&mut writer, axt)?;

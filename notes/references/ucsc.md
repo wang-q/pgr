@@ -8,6 +8,48 @@ Rust 重实现参照基准。
 
 **关联文档**：[[cactus.md]]（§1.11 Cactus vs UCSC Chain/Net 数据结构对比）。
 
+## 0. 工具位置参考
+
+### UCSC kent-tools 二进制
+
+所有 UCSC 工具（含 `lastz`）安装在 `/home/wangq/.cbp/bin/`：
+
+| 工具 | 路径 |
+|---|---|
+| `faToTwoBit` | `/home/wangq/.cbp/bin/faToTwoBit` |
+| `lavToPsl` | `/home/wangq/.cbp/bin/lavToPsl` |
+| `axtChain` | `/home/wangq/.cbp/bin/axtChain` |
+| `chainAntiRepeat` | `/home/wangq/.cbp/bin/chainAntiRepeat` |
+| `chainMergeSort` | `/home/wangq/.cbp/bin/chainMergeSort` |
+| `chainPreNet` | `/home/wangq/.cbp/bin/chainPreNet` |
+| `chainNet` | `/home/wangq/.cbp/bin/chainNet` |
+| `netSyntenic` | `/home/wangq/.cbp/bin/netSyntenic` |
+| `netChainSubset` | `/home/wangq/.cbp/bin/netChainSubset` |
+| `chainStitchId` | `/home/wangq/.cbp/bin/chainStitchId` |
+| `netSplit` | `/home/wangq/.cbp/bin/netSplit` |
+| `netToAxt` | `/home/wangq/.cbp/bin/netToAxt` |
+| `axtSort` | `/home/wangq/.cbp/bin/axtSort` |
+| `axtToMaf` | `/home/wangq/.cbp/bin/axtToMaf` |
+| `netFilter` | `/home/wangq/.cbp/bin/netFilter` |
+| `chainSplit` | `/home/wangq/.cbp/bin/chainSplit` |
+| `lastz` | `/home/wangq/.cbp/bin/lastz` |
+
+> 注：这些二进制不在默认 PATH 中，使用时需 `export PATH="/home/wangq/.cbp/bin:$PATH"`。
+
+### chainnet 源码
+
+UCSC chainnet 源码（kent-utils 子集）位于 `/home/wangq/Scripts/chainnet/`：
+
+- **仓库**：`https://github.com/wang-q/chainnet.git`
+- **结构**：
+  - `src/*.c` — 各工具的 main 文件（`axtChain.c`, `chainNet.c`, `axtToMaf.c` 等）
+  - `src/lib/` — 共享库（`chain.c`, `chainConnect.c`, `gapCalc.c`, `axt.c`, `chainBlock.c` 等）
+- **关键参考文件**：
+  - `src/lib/gapCalc.c` — 间隙成本计算（`gapCalcCost`, `defaultGapCosts`, `originalGapCosts`）
+  - `src/lib/chainConnect.c` — DP 链化成本函数（`chainConnectCost`, `cBlockFindCrossover`）
+  - `src/lib/chainBlock.c` — 链化 DP 主逻辑（`chainBlocks`）
+  - `src/lib/axt.c` — AXT 读写（`axtWrite` 的 `static int ix = 0` 自动重编号）
+
 ## 1. Pseudocat and pseudopig
 
 ```bash
@@ -193,7 +235,7 @@ axtToMaf tests/pgr/synNet/cat.axt \
 | `chainStitchId` | `pgr chain stitch` | 按 ID 合并片段、分数求和 |
 | `netSplit` | `pgr net split` | 按染色体切分到目录 |
 | `netToAxt` | `pgr net to-axt` | 输出用 `-o` 指定（UCSC 为位置参数） |
-| `axtSort` | `pgr axt sort` | `--by-query`/`--by-score`/`--renumber` |
+| `axtSort` | `pgr axt sort` | `--by-query`/`--by-score`/`--keep-ids`（默认重编号） |
 | `axtToMaf` | `pgr axt to-maf` | `-t`/`-q`/`-o` 标志式（UCSC 为位置参数） |
 | `netFilter` | `pgr net filter` | 支持 `--syn`/`--nonsyn` 及多种区间过滤 |
 | `chainSplit` | `pgr chain split` | `--by-query`/`--lump` |
@@ -329,8 +371,9 @@ pgr axt to-maf tests/pgr/synNet/cat.axt \
 * `pgr chain sort` 已等价 `chainMergeSort`（多文件合并排序 + `--input-list` + `--save-id`），无需再经 `pgr pl ucsc`。
 * 部分命令参数风格差异：`pgr net to-axt` 的输出用 `-o` 指定（target/query 仍为位置参数），`pgr axt to-maf` 的 sizes 与输出均用 `-t` / `-q` / `-o` 标志；UCSC 对应工具均为纯位置参数。
 * `pgr chain net` 默认 `--min-space 25`，UCSC 脚本用 `-minSpace=1`，需显式 `--min-space 1` 对齐。
+* `pgr axt sort` **默认重编号** AXT ID（从 0 开始），与 UCSC `axtSort` 一致（`axtWrite` 使用 `static int ix = 0`）。`--keep-ids` 可保留原始 ID。
 
-## 4. 隔离测试验证报告（2026-08-01，GapCalc 修复后状态）
+## 4. 隔离测试验证报告（2026-08-01，全面核对）
 
 以 `pseudocat` vs `pseudopig` 为测试数据，控制相同输入，逐命令对比 UCSC kent-tool 与 pgr 实现的输出。隔离测试用料已在验证完成后合并为正式测试 fixtures（`tests/pgr/`）与集成测试（`tests/cli_ucsc.rs`，18 个测试覆盖 16 个命令）。
 
@@ -350,14 +393,14 @@ pgr axt to-maf tests/pgr/synNet/cat.axt \
 | 10 | `chainStitchId` | `pgr chain stitch` | 完全一致 ✓ | 字节级一致 |
 | 11 | `netSplit` | `pgr net split` | 完全一致 ✓ | 修复后注释行排序一致 |
 | 12 | `netToAxt` | `pgr net to-axt` | 完全一致 ✓ | 修复后输出顺序匹配 UCSC net 树 pre-order 遍历，`cat.tmp.axt` 字节级一致 |
-| 13 | `axtSort` | `pgr axt sort` | 完全一致 ✓ | 字节级一致 |
-| 14 | `axtToMaf` | `pgr axt to-maf` | pgr 验证正确 | UCSC `axtToMaf` 在 macOS arm64 崩溃（Trace/BPT trap, exit=133）。pgr 输出经逐条验证：6 条记录的 score、坐标、strand、序列内容均与 AXT 输入一致 |
+| 13 | `axtSort` | `pgr axt sort` | 完全一致 ✓ | **字节级一致**。修复 `--renumber` 为默认行为（UCSC `axtWrite` 的 `static int ix=0` 自动递增），`--keep-ids` 可保留原始 ID |
+| 14 | `axtToMaf` | `pgr axt to-maf` | pgr 验证正确 | UCSC `axtToMaf` 在 Linux x86_64 也崩溃（`intToPt` null pointer, exit=134），非 pgr 问题。pgr 输出经逐条验证：6 条记录的 score、坐标、strand、序列内容均与 AXT 输入一致 |
 | 15 | `netFilter -syn` | `pgr net filter --syn` | 一致 ✓ | 两边均输出空文件（top score 124204 < 默认 minTopScore 300000）。`--nonsyn` 排除注释行后一致 |
 | 16 | `chainSplit` | `pgr chain split` | 一致 ✓ | chain 数据完全一致；UCSC 按 ID 排序，pgr 保留输入顺序，排序后一致 |
 
-### 4.2 GapCalc 修复详情（2026-08-01）
+### 4.2 修复详情（2026-08-01）
 
-此前 `axtChain` vs `pgr psl chain` 存在链数差异（UCSC 5 条 vs pgr 7 条），根因是 `GapCalc` 实现中有两处 bug：
+#### GapCalc 两处 bug（影响 `axtChain` vs `pgr psl chain`）
 
 **Bug 1：`loose` 与 `medium` 的间隙成本表互换**
 
@@ -371,20 +414,54 @@ pgr 的 `GapCalc::loose()` 和 `GapCalc::medium()` 恰好将两张表互换，�
 
 UCSC `gapCalcCost` 在 `dq > 0 && dt > 0` 时使用 `both = dq + dt`（两轴间隙长度之和）查 `bothGap` 表。pgr 错误地使用 `max(dq, dt)`，导致同时间隙的成本被低估。修复后改用 `dq + dt`，并加上 UCSC 的 `BIGNUM` 外推保护（外推为负值时返回 `0x3fffffff`）。
 
-**附带修复：chain ID 全局重编号**
+#### axtChain 一致性修复
 
-UCSC `axtChain` 在全局按 score 降序排序所有 chain 后，通过 `chainWriteHead → chainIdNext` 按排序顺序分配 ID 1, 2, 3, ...。pgr 此前按分组处理顺序分配 ID，导致 ID 与 UCSC 不一致。修复后在 `chain_psl` 中全局排序后统一重编号。
+**chain ID 全局重编号**：UCSC `axtChain` 在全局按 score 降序排序所有 chain 后，通过 `chainWriteHead → chainIdNext` 按排序顺序分配 ID 1, 2, 3, ...。pgr 此前按分组处理顺序分配 ID，导致 ID 与 UCSC 不一致。修复后在 `chain_psl` 中全局排序后统一重编号。
 
-**附带修复：axtChain 头注释**
+**axtChain 头注释**：UCSC `axtChain` 通过 `axtScoreSchemeDnaWrite` 在文件开头写入 `##matrix=axtChain` 和 `##gapPenalties=axtChain` 两行元数据。pgr 此前不输出这两行。修复后 `SubMatrix::axt_chain_header()` 生成对应格式，在 PSL 注释行之前写入。
 
-UCSC `axtChain` 通过 `axtScoreSchemeDnaWrite` 在文件开头写入 `##matrix=axtChain` 和 `##gapPenalties=axtChain` 两行元数据。pgr 此前不输出这两行。修复后 `SubMatrix::axt_chain_header()` 生成对应格式，在 PSL 注释行之前写入。
+#### axtSort 重编号修复
+
+UCSC `axtWrite`（`src/lib/axt.c`）使用 `static int ix = 0` 自动递增，每次调用 `axtWrite` 输出时 ID 从 0 开始递增，忽略原始 ID。因此 `axtSort` 排序后输出的 AXT 记录 ID 总是被重编号为 0, 1, 2, ...。
+
+pgr 此前 `axt sort` 默认保留原始 ID，`--renumber` 为可选标志。修复后改为**默认重编号**（与 UCSC 和 `pgr chain sort` 一致），`--renumber` 标志替换为 `--keep-ids`（opt-out）。
 
 ### 4.3 剩余差异
 
-**`netFilter` 注释行保留——pgr 更保守**
+**A. `netFilter` 注释行保留——pgr 更保守**
 
 pgr `net filter` 保留输入 net 中的 `##matrix`/`##gapPenalties` 注释行，UCSC `netFilter` 会剥离。排除注释行后数据完全一致。pgr 的行为是设计选择（注释透传不丢失元数据）。
 
-### 4.4 结论
+**B. `axtToMaf` — UCSC 崩溃，pgr 正常**
 
-经 GapCalc 两处 bug 修复后，`pgr psl chain --gap-model loose` 的输出与 `axtChain -linearGap=loose` **字节级完全一致**（`diff` 无差异）。16 个命令的隔离测试表明 pgr 重实现与 UCSC kent-tool 的输出在核心数据层面完全一致。剩余 1 处差异为预期行为（`netFilter` 注释保留是 pgr 设计选择）。pgr 的 chain-net-axt-maf 管线可作为 UCSC kent-tool 的 Rust 替代。
+UCSC `axtToMaf`（chainnet 构建）在 Linux x86_64 上崩溃：`intToPt` 函数对 null 指针施加非零偏移（`obscure.c:330`），exit code=134（Aborted）。此为 chainnet 源码 bug，非 pgr 问题。pgr `axt to-maf` 正常输出，经逐条验证内容正确。
+
+**C. `chainSplit` 注释行——pgr 不透传**
+
+UCSC `chainSplit` 将输入 chain 文件的 `##` 注释行透传到各切分子文件，pgr `chain split` 不透传。排除注释行后 chain 数据完全一致。
+
+### 4.4 全管线端到端验证
+
+2026-08-01 全面重跑两端 12 步主流程 + synteny 模式，逐文件 `diff` 对比：
+
+| 步骤 | UCSC 输出 | pgr 输出 | diff 结果 |
+|---|---|---|---|
+| 1. axtChain / psl chain | `lastz.raw.chain` | `lastz.raw.chain` | **IDENTICAL** |
+| 2. chainAntiRepeat | `lastz.chain` | `lastz.chain` | **IDENTICAL** |
+| 3. chainMergeSort | `all.chain` | `all.chain` | **IDENTICAL** |
+| 4. chainPreNet | `all.pre.chain` | `all.pre.chain` | **IDENTICAL** |
+| 5a. chainNet (target) | `pseudocat.chainnet` | `pseudocat.chainnet` | **IDENTICAL** |
+| 5b. chainNet (query) | `pseudopig.chainnet` | `pseudopig.chainnet` | **IDENTICAL** |
+| 6. netSyntenic | `noClass.net` | `noClass.net` | **IDENTICAL** |
+| 7. netChainSubset | `subset.chain` | `subset.chain` | **IDENTICAL** |
+| 8. chainStitchId | `over.chain` | `over.chain` | **IDENTICAL** |
+| 9. netSplit | `net/cat.net` | `net/cat.net` | **IDENTICAL** |
+| 10. netToAxt | `axtNet/cat.tmp.axt` | `axtNet/cat.tmp.axt` | **IDENTICAL** |
+| 11. axtSort | `axtNet/cat.axt` | `axtNet/cat.axt` | **IDENTICAL** |
+| 12. axtToMaf | *(UCSC 崩溃，无输出)* | `axtNet/cat.maf` (18409 bytes) | pgr 正常 |
+| — netFilter -syn | `synNet.net` (空) | `synNet.net` (空) | **IDENTICAL** |
+| — chainSplit | `synNet/cat.chain` | `synNet/cat.chain` | chain 数据 IDENTICAL（注释行差异） |
+
+### 4.5 结论
+
+经 GapCalc 两处 bug 修复 + axtSort 重编号修复后，pgr 的 12 步 chain-net-axt 管线中 **11 步与 UCSC 字节级完全一致**（`diff` 无差异）。剩余差异均为预期行为或 UCSC bug：`axtToMaf` UCSC 崩溃（pgr 正常）；`netFilter`/`chainSplit` 注释行保留是 pgr 设计选择。pgr 的 chain-net-axt-maf 管线可作为 UCSC kent-tool 的 Rust 替代。

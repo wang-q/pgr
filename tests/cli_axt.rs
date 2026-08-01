@@ -159,6 +159,7 @@ TTTT
             "axt",
             "sort",
             "--by-score",
+            "--keep-ids",
             input_path.to_str().unwrap(),
             "-o",
             output_path.to_str().unwrap(),
@@ -416,6 +417,7 @@ TTTT
             "axt",
             "sort",
             "--by-query",
+            "--keep-ids",
             input_path.to_str().unwrap(),
             "-o",
             output_path.to_str().unwrap(),
@@ -433,7 +435,7 @@ TTTT
 }
 
 #[test]
-fn command_axt_sort_renumber() {
+fn command_axt_sort_default_renumber() {
     let dir = TempDir::new().unwrap();
     let input_path = dir.path().join("input.axt");
     let output_path = dir.path().join("output.axt");
@@ -457,7 +459,6 @@ TTTT
         .args(&[
             "axt",
             "sort",
-            "--renumber",
             input_path.to_str().unwrap(),
             "-o",
             output_path.to_str().unwrap(),
