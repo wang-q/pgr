@@ -1,6 +1,8 @@
 # UCSC chain-net pipeline
 
 > 整理于 2026-06，源自对 UCSC kent-tools chain-net pipeline 脚本的整理。目的：为 pgr 的 chain/net/axt/maf 模块提供 Rust 重实现的参照基准。
+> 复核于 2026-08-01：在 `pseudocat` vs `pseudopig` 上本机重跑 UCSC 工具链与 pgr（0.3.1）工具链，
+> 逐文件 `diff` 验证了 §4 的字节级结论，并修正 lastz/2bit/meta.tmp 等边界差异（见 §3.6、§4.4）。
 
 本文件记录了 UCSC kent-tools 中 chain→net→axt→maf 标准 pairwise 比对流程的完整 shell 脚本，
 以 `pseudocat` vs `pseudopig` 为示例。该流程是 pgr `chain`/`net`/`axt`/`psl`/`lav`/`maf` 模块的
@@ -35,6 +37,10 @@ Rust 重实现参照基准。
 | `lastz` | `/home/wangq/.cbp/bin/lastz` |
 
 > 注：这些二进制不在默认 PATH 中，使用时需 `export PATH="/home/wangq/.cbp/bin:$PATH"`。
+>
+> ⚠️ `.cbp/bin/` 里还装着一个 **pgr 0.2.0 旧二进制**；若把该目录放在 PATH 前面，`pgr` 会解析到旧版
+> （没有 `pl chainnet` 等 0.3.x 命令）。字节级复现请保证当前构建的 pgr 优先，例如：
+> `export PATH="/home/wangq/Scripts/pgr/target/debug:$PATH"`，或把新版本安装覆盖到 `.cbp/bin`。
 
 ### chainnet 源码
 
@@ -240,7 +246,9 @@ axtToMaf tests/pgr/synNet/cat.axt \
 | `netFilter` | `pgr net filter` | 支持 `--syn`/`--nonsyn` 及多种区间过滤 |
 | `chainSplit` | `pgr chain split` | `--by-query`/`--lump` |
 
-**外部依赖说明：** 唯一的外部依赖是 `lastz` 比对器本身（由 `pgr lav lastz` 封装调用，需 PATH 中存在 `lastz`）。这属于比对器而非 kent-tool，符合预期。除此之外，整个 pairwise 流程已无任何 kent-tool 依赖。
+**外部依赖说明：** 唯一的外部依赖是 `lastz` 比对器本身（需 PATH 中存在 `lastz`）。注意：**字节级
+复现时 lastz 必须裸调用**（参数与 §1 完全一致），`pgr lav lastz` 封装器不是字节透明的（见 §3.6）。
+除此之外，整个 pairwise 流程已无任何 kent-tool 依赖。
 
 **关键结论：**
 
@@ -256,12 +264,14 @@ axtToMaf tests/pgr/synNet/cat.axt \
 ### 3.1 准备阶段（对应 §1 L14–L24）
 
 ```bash
-# Lastz（封装外部 lastz；输出到目录 lastz_out/，每个 target/query 对一个 .lav）
-pgr lav lastz tests/pgr/pseudocat.fa tests/pgr/pseudopig.fa \
-    --preset set01 -o tests/pgr/lastz_out
+# Lastz —— 必须与 §1 完全一致的裸调用（默认参数，lastz v1.04.41）
+# ⚠️ 不要用 `pgr lav lastz`：preset（如 set01）会更换打分矩阵/参数产生不同比对；
+# 即使不带 preset，包装器也会附加 [nameparse=darkspace]、--querydepth/--format=lav/
+# --markend/--ambiguous=iupac/--output= 等，改变 d stanza 并多输出一行
+# "# lastz end-of-file"（比对内容一致，但字节不同）。
+lastz tests/pgr/pseudocat.fa tests/pgr/pseudopig.fa > tests/pgr/lastz.lav
 
-# 合并目录内所有 .lav 为单个文件，再转 PSL
-cat tests/pgr/lastz_out/*.lav > tests/pgr/lastz.lav
+# 转 PSL（pgr 与 lavToPsl 字节级一致，含 ## 注释行）
 pgr lav to-psl tests/pgr/lastz.lav -o tests/pgr/lastz.psl
 
 # Prep
@@ -367,6 +377,26 @@ pgr axt to-maf tests/pgr/synNet/cat.axt \
 ### 3.6 与 UCSC 原流程的行为差异
 
 * `pgr lav lastz` 输出到**目录**（每个 target/query 对一个 .lav），非单个 stdout 文件；需 `cat *.lav` 合并后再 `pgr lav to-psl`。它封装外部 `lastz` 二进制，需 PATH 中存在 `lastz`。
+* **lastz 是字节级复现的前提，必须裸调用**（参数、版本与 §1 完全一致：默认矩阵 + O=400/E=30/
+  K=3000/L=3000/M=0，v1.04.41）。`pgr lav lastz` **不是字节透明**的：
+  - `--preset set01` 等 preset 使用不同矩阵/参数（Q=similar、L=2200、Y=3400 等），实测在该
+    数据集上几乎找不到比对（输出仅 15 行/449 字节，默认 lastz 为 354 行/8528 字节）；
+  - 即使不带 preset，包装器也附加 `[nameparse=darkspace]`、`--querydepth=keep,nowarn:50`、
+    `--format=lav`、`--markend`、`--ambiguous=iupac`、`--output=<path>`：d stanza 命令行不同，
+    `--markend` 多一行 `# lastz end-of-file` 注释（比对内容本身与裸调用一致）。
+* **2bit 头部格式（格式演进，pgr 有意保持 v1）**：`pgr fa to-2bit` 恒写 **version=1 + u64
+  索引偏移**；UCSC `faToTwoBit` 默认写 **version=0 + u32 偏移**（`-long` 选项才用 v1/u64，
+  用于 >4Gb 组装）。v0/u32 是十几年前的旧格式：u32 索引偏移把单个 2bit 文件的上限卡在 4Gb
+  序列，早已被 UCSC 官方废弃（`faToTwoBit -long` 帮助文本即注明 v1 "NOT COMPATIBLE WITH
+  OLDER CODE"，指的就是读不了 v1 的旧代码）；第三方实现里"+2bit-version+ 0 The only valid
+  version"之类的说法是旧解读，不成立。pgr 坚持 v1/u64 是跟随 UCSC 官方演进方向的正确选择，
+  **不做字节对齐**。序列数据与 v0 完全一致，差异仅每序列索引多 4 字节 + version 字段；且
+  双向互通已验证：UCSC 工具能读 pgr 的 v1 文件（`axtChain` 用 pgr 生成的 2bit 产出相同
+  chain），pgr 也能读 UCSC 的 v0 文件。
+* **`meta.tmp`**：UCSC `netSplit`/`chainSplit` 会在输出目录额外写一个 `meta.tmp` 元数据文件，
+  pgr 不生成。目录级对比会有此差异，对下游命令无影响。
+* **LAV 解析**：`pgr lav to-psl` 会跳过不认识的 LAV stanza 并告警（本数据为 `m { n 0 }` 空
+  match-list stanza），实测不影响 PSL 输出（仍字节级一致）；但含真实 match-list 的 LAV 输入需注意。
 * `pgr chain net` **强制要求输入按 score 降序**（否则报错），因此 `pgr chain sort` 必须先于 `pgr chain net`。UCSC `chainNet` 不强制；本管线中 `chain sort` 已在 `pre-net` 之前执行，天然满足。
 * `pgr chain sort` 已等价 `chainMergeSort`（多文件合并排序 + `--input-list` + `--save-id`），无需再经 `pgr pl ucsc`。
 * 部分命令参数风格差异：`pgr net to-axt` 的输出用 `-o` 指定（target/query 仍为位置参数），`pgr axt to-maf` 的 sizes 与输出均用 `-t` / `-q` / `-o` 标志；UCSC 对应工具均为纯位置参数。
@@ -381,7 +411,7 @@ pgr axt to-maf tests/pgr/synNet/cat.axt \
 
 | # | UCSC 工具 | pgr 命令 | 结果 | 差异说明 |
 |---|---|---|---|---|
-| 1 | `faToTwoBit` | `pgr fa to-2bit` | 序列一致 ✓ | 2bit 文件大小差 4 字节：UCSC version=0，pgr version=1；序列数据完全相同 |
+| 1 | `faToTwoBit` | `pgr fa to-2bit` | 序列一致 ✓ | 序列数据完全相同；头部不同：UCSC 默认 version=0 + u32 偏移（旧格式，4Gb 上限，已废弃），pgr 恒 version=1 + u64 偏移（跟随官方 `-long` 演进方向，每序列 +4 字节）。互通已验证（UCSC 可读 pgr v1，pgr 可读 UCSC v0），pgr 有意不做字节对齐（见 §3.6） |
 | 2 | `lavToPsl` | `pgr lav to-psl` | 完全一致 ✓ | 字节级一致（含 `##` 注释行） |
 | 3 | `axtChain` | `pgr psl chain` | 完全一致 ✓ | **字节级一致**。`--gap-model loose` 输出与 `axtChain -linearGap=loose` 完全相同 |
 | 4 | `chainAntiRepeat` | `pgr chain anti-repeat` | 完全一致 ✓ | 字节级一致（含注释行） |
@@ -443,4 +473,19 @@ pgr axt to-maf tests/pgr/synNet/cat.axt \
 
 ### 4.4 结论
 
-pgr 的 12 步 chain-net-axt 管线中 **11 步与 UCSC 字节级完全一致**（`diff` 无差异）。剩余差异：`axtToMaf` UCSC 链化库构建的 `axtToMaf` 在 Linux x86_64 上崩溃（`intToPt` null pointer, exit=134），pgr 正常输出；`netFilter`/`chainSplit` 注释行保留是 pgr 设计选择。pgr 的 chain-net-axt-maf 管线可作为 UCSC kent-tool 的 Rust 替代。
+2026-08-01 本机重跑（pgr 0.3.1，两侧使用同一 `lastz.lav`/sizes 输入）确认：**12 步 chain-net-axt
+主流程中可对比的 11 步全部与 UCSC 字节级完全一致**（逐文件 `diff` 无差异）；第 12 步 `axtToMaf`
+因 UCSC 二进制在本机 Linux x86_64 崩溃而无法直接对比，pgr 输出（18409 字节 MAF）经逐条验证正确。
+剩余差异全部在**准备/边界步骤**，不影响比对数据本身：
+
+* `axtToMaf`：UCSC 链化库构建的二进制在 Linux x86_64 崩溃（`intToPt` null pointer at
+  `obscure.c:330` in `loadIntHash` @ `axtToMaf.c:63`，exit=134），pgr 正常输出。
+* `faToTwoBit` vs `pgr fa to-2bit`：2bit 头部格式不同（v0/u32 vs v1/u64，每序列 +4 字节）。
+  v0/u32 是十几年前的旧格式（4Gb 上限），UCSC 官方自己用 `-long`/v1 支持 >4Gb，pgr 有意
+  保持 v1/u64 不做字节对齐；序列数据一致且双向互通（详见 §3.6）。
+* `netFilter`/`chainSplit`：注释行保留策略不同（pgr 的 `net filter` 保留 `##` 行、`chain split`
+  不透传注释；UCSC 相反）。
+* `netSplit`/`chainSplit`：UCSC 额外生成 `meta.tmp` 文件。
+* lastz：必须裸调用复现（`pgr lav lastz` 非字节透明，见 §3.6）。
+
+pgr 的 chain-net-axt-maf 管线可作为 UCSC kent-tool 的 Rust 替代，达到字节级复制要求。

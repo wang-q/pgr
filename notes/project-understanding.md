@@ -381,7 +381,9 @@ pgr 的 `chain`/`net`/`axt`/`psl` 模块是 UCSC kent-tools 对应功能的**Rus
   - `pgr axt to-maf`（等价 `axtToMaf`；UCSC 构建的二进制在 Linux 上崩溃）
   - `pgr net filter`（等价 `netFilter`）
   - `pgr chain split`（等价 `chainSplit`）
-  - `pgr fa to-2bit`（等价 `faToTwoBit`；序列数据一致，仅 version 字段差 4 字节）
+  - `pgr fa to-2bit`（等价 `faToTwoBit`；序列数据一致。头部不同是格式演进：pgr 恒写
+    version=1 + u64 偏移，UCSC 默认 version=0 + u32 偏移是十几年前的旧格式、4Gb 上限，
+    已废弃；pgr 有意保持 v1，见 `notes/references/ucsc.md` §3.6）
   - `pgr lav to-psl`（等价 `lavToPsl`）
 - **完全原生管道**：`pgr pl chainnet` 使用纯 pgr 命令完成全流程，已验证与 `pgr pl ucsc`（kent-tools）的输出字节级一致。
 - **唯一外部依赖**：`lastz` 比对器本身（由 `pgr lav lastz` 封装调用，需 PATH 中存在 `lastz` 二进制）。
