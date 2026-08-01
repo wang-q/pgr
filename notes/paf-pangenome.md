@@ -426,8 +426,10 @@ verify-pangenome.sh 的 fixture 变体生成）。release 实测（单核）：
 **MSA 输入去重**（2026-08-02，见 [[ecoli-cohort.md]] §4）：传递 BFS 对同一区域会按
 路径反复报告同一条序列（10kb 区域 73 条结果 → ~90 条 POA 输入，release 5 分钟不
 结束）。`build_msa_entries` 现在按 `(name, strand, qs)` 排序后精确去重 + 合并重叠
-区间，POA 输入降到每株 1-2 条（10kb MSA/VCF/FAS ~54s）。对 to-maf --msa /
-to-fas --msa / to-vcf / to-gfa（poa_compact）全部生效。
+区间，再按 name 保留一条代表序列（MAF 块内序列名必须唯一、VCF 样本列不得重复；
+基因组内部重复位点如 rrn 操纵子只保留正链优先的代表），POA 输入降到每株 1 条
+（10kb MSA/VCF/FAS ~29s）。对 to-maf --msa / to-fas --msa / to-vcf /
+to-gfa（poa_compact）全部生效。
 
 ### 5.0.1 测试改进（借鉴 impg/seqwish）
 

@@ -251,10 +251,20 @@ progressive 逐条加入），属 [[fas-multiz.md]] 已记录的 profile-profile
 
 **下游回归已固化**（`scripts/verify-pangenome.sh` 步骤 7-10）：脚本在 45 对
 chainnet 之后自动生成带前缀名的 BGZF FASTA + fasta-tsv，对
-`mg1655.NC_000913:100000-110000` 跑 to-maf --msa（断言 1 个块且 10 株全出现）、
-to-vcf（变异行 > 0）、to-fas --msa（≥ 10 条记录）、to-gfa（S/P 行存在；
-实测 9089 节点 / 12599 边 / 13 条路径）。脚本默认优先 target/release/pgr
-（POA 步骤 debug 太慢），全流程约 4.5 分钟一键 PASS。
+`mg1655.NC_000913:100000-110000` 跑 to-maf --msa（断言 1 个块、唯一 10 行）、
+to-vcf（变异行 > 0、唯一 10 样本列）、to-fas --msa（恰 10 条记录）、to-gfa
+（S/P 行存在；修复后实测 884 节点 / 1184 边 / 10 条路径）。脚本默认优先
+target/release/pgr（POA 步骤 debug 太慢），全流程一键 PASS。
+
+**MSA/VCF 每基因组一条（2026-08-02 修复）**：10 基因组验证暴露了同一基因组在区域
+内有多个同源副本（如 rrn 操纵子、环形起点回绕）时，`build_msa_entries` 会把
+'+' 和 '-' 两条副本都塞进同一个 MAF 块/同一个 VCF——违反 MAF 块内序列名唯一，
+且 VCF 出现重复样本列（e24377a/ec958/nissle1917 各两列），同一基因组基因型互相
+矛盾（一列 0 一列 1），变异行被虚增 16 倍（4875 → 修正后 295）。修复：按 name
+保留一条代表序列（排序 '+' 优先），10 株 MSA 恰 10 行、VCF 恰 10 个样本列、
+FAS 恰 10 条；POA 输入 13 → 10 条，10kb 各命令 ~54s → ~29s。回归测试：
+`command_paf_to_maf_msa_one_entry_per_genome`。verify-pangenome.sh 断言同步加强
+（MSA 唯一 10 行、VCF 唯一 10 样本列、FAS 恰 10 条）。
 
 **EC958 数据注意**：必须用 GCF_000285655.3 完整版（EC958.v1，chr + 2 质粒）；
 `.2` 是 WGS scaffold（240 条 contig），不要用。
@@ -272,6 +282,9 @@ to-vcf（变异行 > 0）、to-fas --msa（≥ 10 条记录）、to-gfa（S/P �
 ---
 ## 6. 变更日志
 
+- 2026-08-02：修复 MSA/VCF 的重复样本问题——`build_msa_entries` 按 name 保留一条
+  代表序列（MAF 块唯一性 / VCF 样本列不重复），变异行 4875 → 295，10kb 各命令
+  ~54s → ~29s；verify-pangenome.sh 断言加强。
 - 2026-08-02：修复 `paf index` 的 '-' 链镜像缺口——镜像不再限定 '+' 记录，
   '-' 记录保留 strand 并用反转 CIGAR 建镜像（BFS 从 query 侧可跨 '-' 边）。
 - 2026-08-02：§4 下游验证固化进 verify-pangenome.sh（步骤 7-10：msa/vcf/fas/gfa

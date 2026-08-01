@@ -377,6 +377,43 @@ C\t10\t0\t10\t+\tA\t10\t0\t10\t10\t10\t255\tcg:Z:10=\n";
 }
 
 #[test]
+fn command_paf_to_maf_msa_one_entry_per_genome() {
+    // A has two homologous copies of the queried region: A[0,10) on '+'
+    // strand and A[5,15) on '-' strand, both aligning to B[0,10). A MAF
+    // block requires unique sequence names (and VCF sample columns must not
+    // repeat), so the MSA must contain A exactly once.
+    let paf = "\
+A\t15\t0\t10\t+\tB\t15\t0\t10\t10\t10\t255\tcg:Z:10=\n\
+A\t15\t5\t15\t-\tB\t15\t0\t10\t10\t10\t255\tcg:Z:10=\n";
+    let (stdout, _stderr) = PgrCmd::new()
+        .args(&[
+            "paf",
+            "to-maf",
+            "stdin",
+            "B:0-10",
+            "--transitive",
+            "--msa",
+            "-f",
+            fixture("ABC_15del.tsv").to_str().unwrap(),
+        ])
+        .stdin(paf)
+        .run();
+    let s_lines: Vec<&str> = stdout.lines().filter(|l| l.starts_with("s\t")).collect();
+    assert_eq!(
+        s_lines.len(),
+        2,
+        "expected 2 s-lines (B + one A), got {:?}",
+        s_lines
+    );
+    assert_eq!(
+        s_lines.iter().filter(|l| l.starts_with("s\tA\t")).count(),
+        1,
+        "expected exactly one A s-line, got {:?}",
+        s_lines
+    );
+}
+
+#[test]
 fn command_paf_to_maf_msa_with_snp() {
     // B = ACGTACGTAC, A = ACGTACGTAC, C = ACGTTCGTAC (SNP at pos 4).
     let paf = "\

@@ -112,6 +112,8 @@ echo "==> 8. to-maf --msa (10-way POA MSA)"
 "$PGR" paf to-maf -f "$WORK/seqs.tsv" "$WORK/pangenome.paf.idx" \
     mg1655.NC_000913:100000-110000 --transitive --msa -o "$WORK/region.maf" >/dev/null 2>&1
 [ "$(grep -c '^a' "$WORK/region.maf")" -eq 1 ] # one block per queried region
+[ "$(awk '/^s/{print $2}' "$WORK/region.maf" | sort -u | wc -l)" -eq 10 ] # one s-line per genome
+[ "$(awk '/^s/{c++} END{print c}' "$WORK/region.maf")" -eq 10 ]           # no duplicate names in block
 for f in "${GENOMES[@]}"; do
     strain=$(basename "$f" .fa.gz)
     grep -qF "$strain." "$WORK/region.maf" \
@@ -122,11 +124,12 @@ echo "==> 9. to-vcf (10-way variants)"
 "$PGR" paf to-vcf -f "$WORK/seqs.tsv" "$WORK/pangenome.paf.idx" \
     mg1655.NC_000913:100000-110000 --transitive -o "$WORK/region.vcf" >/dev/null 2>&1
 [ "$(grep -vc '^#' "$WORK/region.vcf")" -gt 0 ]
+[ "$(grep -v '^##' "$WORK/region.vcf" | head -n1 | awk -F'\t' '{print NF-9}')" -eq 10 ] # unique sample columns
 
 echo "==> 10. to-fas --msa (block FA) + to-gfa (local graph)"
 "$PGR" paf to-fas -f "$WORK/seqs.tsv" "$WORK/pangenome.paf.idx" \
     mg1655.NC_000913:100000-110000 --transitive --msa -o "$WORK/region.fas" >/dev/null 2>&1
-[ "$(grep -c '^>' "$WORK/region.fas")" -ge 10 ]
+[ "$(grep -c '^>' "$WORK/region.fas")" -eq 10 ]
 "$PGR" paf to-gfa -f "$WORK/seqs.tsv" "$WORK/pangenome.paf.idx" \
     mg1655.NC_000913:100000-110000 --transitive -o "$WORK/region.gfa" >/dev/null 2>&1
 grep -q '^S' "$WORK/region.gfa"

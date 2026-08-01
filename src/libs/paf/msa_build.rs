@@ -184,8 +184,17 @@ pub fn build_msa_entries(
         merged.push((qname, qs, qe, strand));
     }
 
-    // Query entries. Skip a query that duplicates the target entry.
+    // Query entries. One block per region -> each genome appears at most once:
+    // MAF blocks require unique sequence names and VCF sample columns must not
+    // repeat. Genome-internal duplicate loci (e.g. rrn operons, origin-crossing
+    // wraparound) surface as extra entries; keep the first per name (sorted
+    // '+' before '-' for the same name, so the near-reference-strand copy wins).
+    // Skip a query that duplicates the target entry.
+    let mut seen_names: HashSet<String> = HashSet::new();
     for (qname, qs, qe, strand) in merged {
+        if !seen_names.insert(qname.clone()) {
+            continue;
+        }
         let (q_seq_fwd, q_src_size) = fasta_store.fetch_range(&qname, qs, qe)?;
         let (seq, start, strand_char) = if strand == '-' {
             (
