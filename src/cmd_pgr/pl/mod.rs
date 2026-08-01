@@ -1,3 +1,4 @@
+pub mod chainnet;
 pub mod ir;
 pub mod p2m;
 pub mod prefilter;
@@ -12,6 +13,7 @@ pub fn make_subcommand() -> Command {
         .about("Runs integrated pipelines")
         .subcommand_required(true)
         .arg_required_else_help(true)
+        .subcommand(chainnet::make_subcommand())
         .subcommand(p2m::make_subcommand())
         .subcommand(prefilter::make_subcommand())
         .subcommand(trf::make_subcommand())
@@ -22,6 +24,7 @@ pub fn make_subcommand() -> Command {
 /// Execute the pl command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     match args.subcommand() {
+        Some(("chainnet", sub_matches)) => chainnet::execute(sub_matches),
         Some(("p2m", sub_matches)) => p2m::execute(sub_matches),
         Some(("prefilter", sub_matches)) => prefilter::execute(sub_matches),
         Some(("trf", sub_matches)) => trf::execute(sub_matches),
