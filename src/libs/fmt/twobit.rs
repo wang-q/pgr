@@ -289,6 +289,37 @@ pub fn read_blocks<R: Read>(reader: &mut R, is_swapped: bool) -> Result<Blocks> 
     Ok(Blocks(blocks))
 }
 
+/// Read a complete 2bit record (positioned at its dna_size field) and return
+/// its N-blocks, soft-mask blocks, and unmasked sequence.
+fn load_full_record<R: Read + Seek>(
+    reader: &mut R,
+    is_swapped: bool,
+) -> Result<(Blocks, Blocks, String)> {
+    let dna_size = read_u32(reader, is_swapped)? as usize;
+
+    let n_blocks = read_blocks(reader, is_swapped)?;
+    let mask_blocks = read_blocks(reader, is_swapped)?;
+
+    let _reserved = read_u32(reader, is_swapped)?;
+
+    let mut packed_buf = vec![0u8; dna_size.div_ceil(4)];
+    reader.read_exact(&mut packed_buf)?;
+
+    let table = [b'T', b'C', b'A', b'G'];
+
+    let mut seq_vec = Vec::with_capacity(dna_size);
+    for i in 0..dna_size {
+        let byte = packed_buf[i / 4];
+        let bit_offset = 6 - 2 * (i % 4); // 0->6, 1->4, 2->2, 3->0
+        seq_vec.push(table[((byte >> bit_offset) & 3) as usize]);
+    }
+
+    let seq =
+        String::from_utf8(seq_vec).map_err(|e| anyhow!("invalid UTF-8 in 2bit sequence: {}", e))?;
+
+    Ok((n_blocks, mask_blocks, seq))
+}
+
 /// A writer for the 2bit binary sequence format.
 pub struct TwoBitWriter<W> {
     writer: W,
@@ -367,6 +398,18 @@ pub struct TwoBitFile<R> {
     is_swapped: bool,
     /// 2bit file format version (0 or 1).
     pub version: u32,
+    /// Cache of the most recently loaded full sequence (unmasked) plus its
+    /// N/mask blocks, so repeated reads on the same chromosome avoid
+    /// per-call seek+read syscalls (mirrors UCSC loadIfNewSeq).
+    cached: Option<CachedRecord>,
+}
+
+#[derive(Debug)]
+struct CachedRecord {
+    name: String,
+    n_blocks: Blocks,
+    mask_blocks: Blocks,
+    seq: String,
 }
 
 impl TwoBitFile<BufReader<File>> {
@@ -445,6 +488,7 @@ impl<R: Read + Seek> TwoBitFile<R> {
             sequence_order,
             is_swapped,
             version,
+            cached: None,
         })
     }
 
@@ -475,9 +519,39 @@ impl<R: Read + Seek> TwoBitFile<R> {
             .get(name)
             .ok_or_else(|| anyhow!("Sequence not found: {}", name))?;
 
-        self.reader.seek(SeekFrom::Start(offset))?;
+        if self.cached.as_ref().is_none_or(|c| c.name != name) {
+            self.reader.seek(SeekFrom::Start(offset))?;
+            let (n_blocks, mask_blocks, seq) = load_full_record(&mut self.reader, self.is_swapped)?;
+            self.cached = Some(CachedRecord {
+                name: name.to_string(),
+                n_blocks,
+                mask_blocks,
+                seq,
+            });
+        }
 
-        read_2bit_record(&mut self.reader, self.is_swapped, start, end, no_mask)
+        let cached = self.cached.as_ref().unwrap();
+        let start_pos = start.unwrap_or(0);
+        let end_pos = end.unwrap_or(cached.seq.len()).min(cached.seq.len());
+
+        if start_pos > cached.seq.len() {
+            return Err(anyhow!(
+                "start {} exceeds sequence length {}",
+                start_pos,
+                cached.seq.len()
+            ));
+        }
+        if start_pos >= end_pos {
+            return Ok(String::new());
+        }
+
+        let mut seq_vec: Vec<u8> = cached.seq.as_bytes()[start_pos..end_pos].to_vec();
+        cached.n_blocks.apply_hard_mask(&mut seq_vec, start_pos);
+        if !no_mask {
+            cached.mask_blocks.apply_soft_mask(&mut seq_vec, start_pos);
+        }
+
+        String::from_utf8(seq_vec).map_err(|e| anyhow!("invalid UTF-8 in 2bit sequence: {}", e))
     }
 
     /// Return the total length (including Ns) of the named sequence.

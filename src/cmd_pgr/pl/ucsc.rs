@@ -98,7 +98,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         if tname.is_empty() {
             "".to_string()
         } else {
-            format!("{}.", tname)
+            format!("{}.", tname.trim_end_matches('.'))
         }
     } else {
         format!("{}.", pgr::libs::io::basename_or_err(&abs_target)?)
@@ -107,7 +107,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         if qname.is_empty() {
             "".to_string()
         } else {
-            format!("{}.", qname)
+            format!("{}.", qname.trim_end_matches('.'))
         }
     } else {
         format!("{}.", pgr::libs::io::basename_or_err(&abs_query)?)
@@ -230,8 +230,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         // netSyntenic - Add synteny info to net.
         // usage:
         //   netSyntenic in.net out.net
+        // chainNet's first output is the target net; it is piped into
+        // netSyntenic (target orientation, matching `pgr pl chainnet`).  The
+        // query net goes to query.chainnet and is not used downstream.
         run_cmd!(
-            chainNet -minSpace=1 all.pre.chain target.chr.sizes query.chr.sizes stdout query.chainnet |
+            chainNet all.pre.chain target.chr.sizes query.chr.sizes stdout query.chainnet |
                 netSyntenic stdin noClass.net
         )?;
 
@@ -255,7 +258,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         // usage:
         //    chainStitchId in.chain out.chain
         run_cmd!(
-            netChainSubset -verbose=0 noClass.net all.chain stdout |
+            netChainSubset -verbose=0 noClass.net all.pre.chain stdout |
                 chainStitchId stdin over.chain
         )?;
 
@@ -305,13 +308,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             } else {
                 format!("{}/{}.maf", abs_outdir, stem)
             };
-            let prefix_args = if opt_tname.is_empty() {
-                "".to_string()
-            } else {
-                format!("-tPrefix={} -qPrefix={}", opt_tname, opt_qname)
-            };
+            let t_prefix_arg = format!("-tPrefix={}", opt_tname);
+            let q_prefix_arg = format!("-qPrefix={}", opt_qname);
             run_cmd!(
-                axtToMaf ${prefix_args} ${file} target.chr.sizes query.chr.sizes ${maf_output}
+                axtToMaf ${t_prefix_arg} ${q_prefix_arg} ${file} target.chr.sizes query.chr.sizes ${maf_output}
             )?;
         }
     } else {
@@ -353,15 +353,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             } else {
                 format!("{}/{}.maf", abs_outdir, stem)
             };
-            let prefix_args = if opt_tname.is_empty() {
-                "".to_string()
-            } else {
-                format!("-tPrefix={} -qPrefix={}", opt_tname, opt_qname)
-            };
+            let t_prefix_arg = format!("-tPrefix={}", opt_tname);
+            let q_prefix_arg = format!("-qPrefix={}", opt_qname);
             run_cmd!(
                 netToAxt ${file} ${chain_file} target.chr.2bit query.chr.2bit stdout |
                     axtSort stdin stdout |
-                    axtToMaf ${prefix_args} stdin target.chr.sizes query.chr.sizes ${maf_output}
+                    axtToMaf ${t_prefix_arg} ${q_prefix_arg} stdin target.chr.sizes query.chr.sizes ${maf_output}
             )?;
         }
     }

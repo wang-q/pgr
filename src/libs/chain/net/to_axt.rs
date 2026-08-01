@@ -23,6 +23,7 @@ pub fn net_to_axt<S: SequenceReader, W: Write>(
     t_2bit: &mut S,
     q_2bit: &mut S,
     matrix: &SubMatrix,
+    max_gap: i64,
     writer: &mut W,
 ) -> anyhow::Result<usize> {
     // Write header comments from the first net (if any).
@@ -40,6 +41,7 @@ pub fn net_to_axt<S: SequenceReader, W: Write>(
             t_2bit,
             q_2bit,
             matrix,
+            max_gap,
             writer,
             &mut counter,
         )?;
@@ -47,12 +49,14 @@ pub fn net_to_axt<S: SequenceReader, W: Write>(
     Ok(counter)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn r_convert<S: SequenceReader, W: Write>(
     gap: &Rc<RefCell<Gap>>,
     chains: &HashMap<u64, Chain>,
     t_2bit: &mut S,
     q_2bit: &mut S,
     matrix: &SubMatrix,
+    max_gap: i64,
     writer: &mut W,
     counter: &mut usize,
 ) -> anyhow::Result<()> {
@@ -61,12 +65,16 @@ fn r_convert<S: SequenceReader, W: Write>(
         let f = fill.borrow();
         if f.chain_id != 0 {
             if let Some(chain) = chains.get(&f.chain_id) {
-                convert_fill(&f, chain, chains, t_2bit, q_2bit, matrix, writer, counter)?;
+                convert_fill(
+                    &f, chain, chains, t_2bit, q_2bit, matrix, max_gap, writer, counter,
+                )?;
             }
         } else {
             // If no chain, just recurse into gaps
             for gap_rc in &f.gaps {
-                r_convert(gap_rc, chains, t_2bit, q_2bit, matrix, writer, counter)?;
+                r_convert(
+                    gap_rc, chains, t_2bit, q_2bit, matrix, max_gap, writer, counter,
+                )?;
             }
         }
     }
@@ -81,6 +89,7 @@ fn convert_fill<S: SequenceReader, W: Write>(
     t_2bit: &mut S,
     q_2bit: &mut S,
     matrix: &SubMatrix,
+    max_gap: i64,
     writer: &mut W,
     counter: &mut usize,
 ) -> anyhow::Result<()> {
@@ -105,7 +114,9 @@ fn convert_fill<S: SequenceReader, W: Write>(
 
         if should_split {
             if g_start > cur {
-                convert_segment(cur, g_start, chain, t_2bit, q_2bit, matrix, writer, counter)?;
+                convert_segment(
+                    cur, g_start, chain, t_2bit, q_2bit, matrix, max_gap, writer, counter,
+                )?;
             }
             cur = cur.max(g_end);
             if has_children {
@@ -117,13 +128,15 @@ fn convert_fill<S: SequenceReader, W: Write>(
     // Tail segment.
     if cur < fill.end {
         convert_segment(
-            cur, fill.end, chain, t_2bit, q_2bit, matrix, writer, counter,
+            cur, fill.end, chain, t_2bit, q_2bit, matrix, max_gap, writer, counter,
         )?;
     }
 
     // Second pass: recurse into children (UCSC rConvert behavior).
     for gap_rc in child_gaps {
-        r_convert(&gap_rc, chains, t_2bit, q_2bit, matrix, writer, counter)?;
+        r_convert(
+            &gap_rc, chains, t_2bit, q_2bit, matrix, max_gap, writer, counter,
+        )?;
     }
 
     Ok(())
@@ -137,6 +150,7 @@ fn convert_segment<S: SequenceReader, W: Write>(
     t_2bit: &mut S,
     q_2bit: &mut S,
     matrix: &SubMatrix,
+    max_gap: i64,
     writer: &mut W,
     counter: &mut usize,
 ) -> anyhow::Result<()> {
@@ -146,7 +160,6 @@ fn convert_segment<S: SequenceReader, W: Write>(
     // double-sided (dq > 0 && dt > 0) or a single-sided gap exceeds maxGap.
     // Splits happen at block boundaries; the first split point may be before
     // t_start when the segment begins mid-gap, so clamp to t_start.
-    const MAX_GAP: i64 = 100;
     let mut segments: Vec<(u64, u64)> = Vec::new();
     let mut seg_start = t_start;
 
@@ -161,7 +174,7 @@ fn convert_segment<S: SequenceReader, W: Write>(
         }
         let dq = b.q_start as i64 - a.q_end as i64;
         let dt = b.t_start as i64 - a.t_end as i64;
-        if (dq > 0 && dt > 0) || dt > MAX_GAP || dq > MAX_GAP {
+        if (dq > 0 && dt > 0) || dt > max_gap || dq > max_gap {
             // Mirror UCSC chainToAxt/axtFromBlocks: the segment ends at the
             // last block before the split gap (a.t_end) and the next segment
             // starts at the following block (b.t_start); the gap itself is

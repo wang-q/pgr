@@ -173,7 +173,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         prune_gap(&chrom.root, &criteria);
 
         if !chrom.root.borrow().fills.is_empty() {
-            chrom.write(&mut writer)?;
+            // UCSC netFilter does not propagate the ## metadata lines, so
+            // write the net without comments to stay byte-identical.
+            writeln!(writer, "net {} {}", chrom.name, chrom.size)?;
+            for fill in &chrom.root.borrow().fills {
+                fill.borrow().write(&mut writer, 1)?;
+            }
         }
     }
 

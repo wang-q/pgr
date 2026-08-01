@@ -90,8 +90,11 @@ impl KdTree {
         q_indices.sort_by_key(|&i| items[i].x_start());
         let mut t_indices: Vec<usize> = indices.to_vec();
         t_indices.sort_by_key(|&i| items[i].y_start());
+        let mut hit = vec![0u32; items.len()];
         KdTree {
-            root: Some(Self::build_recursive(q_indices, t_indices, items, 0)),
+            root: Some(Self::build_recursive(
+                q_indices, t_indices, items, 0, &mut hit,
+            )),
         }
     }
 
@@ -100,14 +103,15 @@ impl KdTree {
         t_indices: Vec<usize>,
         items: &[T],
         dim: usize,
+        hit: &mut [u32],
     ) -> Box<KdNode> {
-        let dim_list: Vec<usize> = if dim == 0 {
-            q_indices.clone()
+        let node_count = if dim == 0 {
+            q_indices.len()
         } else {
-            t_indices.clone()
+            t_indices.len()
         };
-        if dim_list.len() == 1 {
-            let idx = dim_list[0];
+        if node_count == 1 {
+            let idx = if dim == 0 { q_indices[0] } else { t_indices[0] };
             let item = &items[idx];
             return Box::new(KdNode::Leaf {
                 leaf_idx: idx,
@@ -117,7 +121,7 @@ impl KdTree {
             });
         }
 
-        let mid = dim_list.len() / 2;
+        let mid = node_count / 2;
         // Mirror UCSC chainBlock.c medianVal/kdBuild: the split value is the
         // coordinate of the LAST element of the "lo" half (index mid-1), and
         // the "lo" half is indices[..mid] with "hi" being indices[mid..].
@@ -125,31 +129,45 @@ impl KdTree {
         // subtree is explored first for targets whose coordinate equals the
         // boundary, and therefore which predecessor wins on ties/edge cases.
         let cut_coord = if dim == 0 {
-            items[dim_list[mid - 1]].x_start()
+            items[q_indices[mid - 1]].x_start()
         } else {
-            items[dim_list[mid - 1]].y_start()
+            items[t_indices[mid - 1]].y_start()
         };
 
-        let (lo_dim, hi_dim) = dim_list.split_at(mid);
-        let lo_set: std::collections::HashSet<usize> = lo_dim.iter().copied().collect();
-
-        // UCSC splitList peels non-hit elements (hi) from the other list while
-        // preserving its order; the hit elements (lo) stay in place.
-        let (lo_other, hi_other): (Vec<usize>, Vec<usize>) = if dim == 0 {
-            t_indices.into_iter().partition(|i| lo_set.contains(i))
+        // Mirror UCSC medianVal/splitList: mark the lo-half indices as hit,
+        // then peel the non-hit elements (hi) from the other list while
+        // preserving its order.  A stamp-array replaces a per-node HashSet so
+        // the tree build stays O(n log n) with a single O(n) allocation.
+        let consume_hit = |hit: &mut [u32], i: usize| {
+            let h = hit[i] == 1;
+            if h {
+                hit[i] = 0;
+            }
+            h
+        };
+        let (lo_dim, hi_dim) = if dim == 0 {
+            (q_indices[..mid].to_vec(), q_indices[mid..].to_vec())
         } else {
-            q_indices.into_iter().partition(|i| lo_set.contains(i))
+            (t_indices[..mid].to_vec(), t_indices[mid..].to_vec())
+        };
+        for &i in &lo_dim {
+            hit[i] = 1;
+        }
+        let (lo_other, hi_other): (Vec<usize>, Vec<usize>) = if dim == 0 {
+            t_indices.into_iter().partition(|&i| consume_hit(hit, i))
+        } else {
+            q_indices.into_iter().partition(|&i| consume_hit(hit, i))
         };
 
         let (lo, hi) = if dim == 0 {
             (
-                Self::build_recursive(lo_dim.to_vec(), lo_other, items, 1 - dim),
-                Self::build_recursive(hi_dim.to_vec(), hi_other, items, 1 - dim),
+                Self::build_recursive(lo_dim, lo_other, items, 1 - dim, hit),
+                Self::build_recursive(hi_dim, hi_other, items, 1 - dim, hit),
             )
         } else {
             (
-                Self::build_recursive(lo_other, lo_dim.to_vec(), items, 1 - dim),
-                Self::build_recursive(hi_other, hi_dim.to_vec(), items, 1 - dim),
+                Self::build_recursive(lo_other, lo_dim, items, 1 - dim, hit),
+                Self::build_recursive(hi_other, hi_dim, items, 1 - dim, hit),
             )
         };
 

@@ -3,21 +3,6 @@ use super::psl::Psl;
 use std::collections::BTreeMap;
 use std::io::{BufRead, Write};
 
-/// Reads the `##` metadata lines from an AXT file (UCSC lineFile metadata).
-fn read_axt_comments(input: &str) -> anyhow::Result<Vec<String>> {
-    let mut comments = Vec::new();
-    let reader = crate::libs::io::reader(input)?;
-    for line in reader.lines() {
-        let line = line?;
-        if line.starts_with('#') {
-            comments.push(line);
-        } else {
-            break;
-        }
-    }
-    Ok(comments)
-}
-
 #[derive(Debug, Clone, Default)]
 pub struct Axt {
     pub id: u64, // The first number in the header line
@@ -105,10 +90,10 @@ pub fn axt_to_maf(
     use std::path::Path;
 
     let reader = crate::libs::io::reader(input)?;
-    let axt_reader = AxtReader::new(reader);
+    let mut axt_reader = AxtReader::new(reader);
     // UCSC axtToMaf propagates the AXT metadata (## lines) after the maf
     // version header via lineFileSetMetaDataOutput.
-    let comments = read_axt_comments(input)?;
+    let comments = axt_reader.read_metadata()?;
 
     let mut current_t_name = String::new();
     let mut single_writer: Option<MafWriter<Box<dyn std::io::Write>>> = None;
@@ -164,6 +149,9 @@ pub struct AxtReader<R> {
     reader: std::io::BufReader<R>,
     line_buf: String,
     pub headers: Vec<String>,
+    /// True when `line_buf` holds the first non-comment line already read by
+    /// `read_metadata` (the next AXT header), so `next` must not read again.
+    pending: bool,
 }
 
 impl<R: std::io::Read> AxtReader<R> {
@@ -172,12 +160,34 @@ impl<R: std::io::Read> AxtReader<R> {
             reader: std::io::BufReader::new(inner),
             line_buf: String::new(),
             headers: Vec::new(),
+            pending: false,
         }
     }
 
     fn read_line(&mut self) -> std::io::Result<usize> {
         self.line_buf.clear();
         self.reader.read_line(&mut self.line_buf)
+    }
+
+    /// Reads and returns the leading `##` metadata lines, leaving the first
+    /// non-comment line buffered for the next `next()` call.  Unlike reading
+    /// the input separately, this works with single-pass streams such as
+    /// stdin.
+    pub fn read_metadata(&mut self) -> std::io::Result<Vec<String>> {
+        let mut comments = Vec::new();
+        loop {
+            self.line_buf.clear();
+            if self.reader.read_line(&mut self.line_buf)? == 0 {
+                return Ok(comments);
+            }
+            let line = self.line_buf.trim();
+            if line.starts_with('#') {
+                comments.push(line.to_string());
+            } else {
+                self.pending = true;
+                return Ok(comments);
+            }
+        }
     }
 }
 
@@ -187,7 +197,12 @@ impl<R: std::io::Read> Iterator for AxtReader<R> {
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             // Read first line (header)
-            match self.read_line() {
+            let pending = std::mem::take(&mut self.pending);
+            match if pending {
+                Ok(self.line_buf.len())
+            } else {
+                self.read_line()
+            } {
                 Ok(0) => return None, // EOF
                 Ok(_) => {
                     let line = self.line_buf.trim();

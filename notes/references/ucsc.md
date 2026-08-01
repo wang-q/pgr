@@ -433,7 +433,7 @@ pgr axt to-maf tests/pgr/synNet/cat.axt \
 | 11 | `netSplit` | `pgr net split` | 完全一致 ✓ | 字节级一致（含注释行） |
 | 12 | `netToAxt` | `pgr net to-axt` | 完全一致 ✓ | 字节级一致 |
 | 13 | `axtSort` | `pgr axt sort` | 完全一致 ✓ | **字节级一致**。默认重编号 AXT ID（匹配 UCSC `axtWrite` 的 `static int ix=0`）；`--keep-ids` 可保留原始 ID |
-| 14 | `axtToMaf` | `pgr axt to-maf` | pgr 验证正确 | UCSC `axtToMaf` 在 Linux x86_64 崩溃（`intToPt` null pointer, exit=134），非 pgr 问题。pgr 输出经逐条验证：6 条记录的 score、坐标、strand、序列内容均与 AXT 输入一致 |
+| 14 | `axtToMaf` | `pgr axt to-maf` | 完全一致 ✓ | **字节级一致**。此前 UCSC `axtToMaf` 在 Linux x86_64 崩溃（`intToPt` null pointer, exit=134）；用户重新打包 chainnet 后崩溃消失，两端 MAF 逐字节相同 |
 | 15 | `netFilter -syn` | `pgr net filter --syn` | 一致 ✓ | 两边均输出空文件（top score 124204 < 默认 minTopScore 300000）。`--nonsyn` 排除注释行后一致 |
 | 16 | `chainSplit` | `pgr chain split` | 一致 ✓ | chain 数据完全一致；pgr 不透传注释行，UCSC 透传 |
 
@@ -455,7 +455,7 @@ pgr axt to-maf tests/pgr/synNet/cat.axt \
 | 9. netSplit | `net/cat.net` | `net/cat.net` | **IDENTICAL** |
 | 10. netToAxt | `axtNet/cat.tmp.axt` | `axtNet/cat.tmp.axt` | **IDENTICAL** |
 | 11. axtSort | `axtNet/cat.axt` | `axtNet/cat.axt` | **IDENTICAL** |
-| 12. axtToMaf | *(UCSC 崩溃，无输出)* | `axtNet/cat.maf` (18409 bytes) | pgr 正常 |
+| 12. axtToMaf | `axtNet/cat.maf` | `axtNet/cat.maf` | **IDENTICAL**（chainnet 重新打包后） |
 | — netFilter -syn | `synNet.net` (空) | `synNet.net` (空) | **IDENTICAL** |
 | — chainSplit | `synNet/cat.chain` | `synNet/cat.chain` | chain 数据 IDENTICAL（注释行差异） |
 
@@ -472,7 +472,7 @@ pgr axt to-maf tests/pgr/synNet/cat.axt \
 | `net/cat.net`（netSplit） | **IDENTICAL** |
 | `axtNet/cat.tmp.axt`（netToAxt） | **IDENTICAL** |
 | `axtNet/cat.axt`（axtSort） | **IDENTICAL** |
-| MAF（axtToMaf） | UCSC 崩溃，pgr 正常 |
+| MAF（axtToMaf） | **IDENTICAL**（chainnet 重新打包后） |
 
 **管道脚本差异说明：**
 
@@ -483,12 +483,11 @@ pgr axt to-maf tests/pgr/synNet/cat.axt \
 ### 4.4 结论
 
 2026-08-01 本机重跑（pgr 0.3.1，两侧使用同一 `lastz.lav`/sizes 输入）确认：**12 步 chain-net-axt
-主流程中可对比的 11 步全部与 UCSC 字节级完全一致**（逐文件 `diff` 无差异）；第 12 步 `axtToMaf`
-因 UCSC 二进制在本机 Linux x86_64 崩溃而无法直接对比，pgr 输出（18409 字节 MAF）经逐条验证正确。
-剩余差异全部在**准备/边界步骤**，不影响比对数据本身：
+主流程 12 步全部与 UCSC 字节级完全一致**（逐文件 `diff` 无差异）。此前唯一的对比缺口
+`axtToMaf`（UCSC 二进制在本机 Linux x86_64 崩溃，`intToPt` null pointer at `obscure.c:330`）在
+用户重新打包 chainnet 后已消失，MAF 现在也逐字节相同。剩余差异全部在**准备/边界步骤**，
+不影响比对数据本身：
 
-* `axtToMaf`：UCSC 链化库构建的二进制在 Linux x86_64 崩溃（`intToPt` null pointer at
-  `obscure.c:330` in `loadIntHash` @ `axtToMaf.c:63`，exit=134），pgr 正常输出。
 * `faToTwoBit` vs `pgr fa to-2bit`：2bit 头部格式不同（v0/u32 vs v1/u64，每序列 +4 字节）。
   v0/u32 是十几年前的旧格式（4Gb 上限），UCSC 官方自己用 `-long`/v1 支持 >4Gb，pgr 有意
   保持 v1/u64 不做字节对齐；序列数据一致且双向互通（详见 §3.6）。
@@ -498,3 +497,51 @@ pgr axt to-maf tests/pgr/synNet/cat.axt \
 * lastz：必须裸调用复现（`pgr lav lastz` 非字节透明，见 §3.6）。
 
 pgr 的 chain-net-axt-maf 管线可作为 UCSC kent-tool 的 Rust 替代，达到字节级复制要求。
+
+### 4.5 大肠杆菌全流程验证（MG1655 × Sakai）
+
+2026-08-01 以两株大肠杆菌基因组（MG1655 K-12 × Sakai O157:H7，约 4.6 Mb + 5.5 Mb，
+47,100 个链化块）为真实数据，跑通完整 UCSC 管线并逐文件对比：
+
+| 阶段 | 输入/输出 | 结果 |
+|---|---|---|
+| lastz → LAV | 裸调用 lastz（预存 `tests/genome/mg1655-sakai.lastz.lav`） | 两侧共用同一 LAV |
+| axtChain / psl chain | `01.chain` | **字节级一致** |
+| chainAntiRepeat | `02.ar.chain` | **字节级一致** |
+| chainMergeSort / chain sort | `03.all.chain` | **字节级一致** |
+| chainPreNet / pre-net | `04.pre.chain` | **字节级一致** |
+| chainNet / chain net | `05.target.net` + `05.query.net` | **字节级一致** |
+| netSyntenic / net syntenic | `06.syn.net` | **字节级一致** |
+| netChainSubset / net subset | `07.subset.chain` | **字节级一致** |
+| chainStitchId / chain stitch | `08.over.chain` | **字节级一致** |
+| netSplit / net split | `net/NC_000913.net` | **字节级一致** |
+| netToAxt / net to-axt | `09.axt` | **字节级一致** |
+| axtSort / axt sort | `10.sorted.axt` | **字节级一致** |
+| axtToMaf / axt to-maf | `11.maf` | **字节级一致** |
+| netFilter -syn + 全套 | `syn` MAF | **字节级一致** |
+
+验证已固化为脚本 `scripts/verify-ucsc-pipeline.sh`（PASS 后 12 个中间文件 + MAF 全部
+`cmp` 相同；支持 `GAP_MODEL=loose/medium`、`MIN_SCORE=1000/5000`）。结论：**在真实大肠杆菌
+基因组上，pgr 与 UCSC kent-tool 从 PSL 到 MAF 实现字节级一致**，且 `pgr psl chain` 在
+优化 2bit 序列缓存后（~0.3 s）比 UCSC `axtChain`（~1.0 s）更快。
+
+脚本用法：
+
+```bash
+export PATH="/home/wangq/.cbp/bin:$PATH"
+scripts/verify-ucsc-pipeline.sh
+GAP_MODEL=medium MIN_SCORE=5000 scripts/verify-ucsc-pipeline.sh
+```
+
+### 4.6 后续工作
+
+主流程字节级一致已达成，剩余均为验证/边界完善，按优先级：
+
+1. **多染色体 target 反向验证固化**：Sakai 3 染色体作 target 的反向跑法已手工验证
+   字节级一致，但验证脚本只覆盖正向单染色体 target；把反向跑法（如 `REVERSE=1`）
+   固化进脚本，防止该路径回归。
+2. **人类规模（~3 Gb）性能/内存验证**：E. coli 秒级完成，但人类基因组规模的
+   kdtree 构建、net 递归处理、批量 chainMergeSort 的时间与内存未测，等真实数据集
+   用 `/usr/bin/time -v` 摸底峰值内存与耗时。
+3. **边界差异对齐（可选，不影响比对数据）**：`chain split` 注释行保留策略、
+   `meta.tmp` 生成、lastz 裸调用要求等（见 §4.4），如需 strict 对齐再逐个处理。

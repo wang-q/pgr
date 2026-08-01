@@ -96,7 +96,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         if tname.is_empty() {
             "".to_string()
         } else {
-            format!("{}.", tname)
+            format!("{}.", tname.trim_end_matches('.'))
         }
     } else {
         format!("{}.", pgr::libs::io::basename_or_err(&abs_target)?)
@@ -105,7 +105,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         if qname.is_empty() {
             "".to_string()
         } else {
-            format!("{}.", qname)
+            format!("{}.", qname.trim_end_matches('.'))
         }
     } else {
         format!("{}.", pgr::libs::io::basename_or_err(&abs_query)?)
@@ -195,7 +195,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
         // netChainSubset + chainStitchId
         run_cmd!(
-            ${pgr} net subset noClass.net all.chain subset.chain;
+            ${pgr} net subset noClass.net all.pre.chain subset.chain;
             ${pgr} chain stitch subset.chain -o over.chain;
         )?;
 

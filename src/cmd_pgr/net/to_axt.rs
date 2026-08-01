@@ -14,6 +14,14 @@ pub fn make_subcommand() -> Command {
         .arg(crate::cmd_pgr::args::in_chain_arg())
         .arg(Arg::new("target").required(true).help("Target 2bit file"))
         .arg(Arg::new("query").required(true).help("Query 2bit file"))
+        .arg(
+            Arg::new("max_gap")
+                .long("max-gap")
+                .value_name("N")
+                .default_value("100")
+                .value_parser(clap::value_parser!(i64))
+                .help("Maximum gap size before breaking an AXT record (UCSC netToAxt -maxGap)"),
+        )
         .arg(crate::cmd_pgr::args::outfile_arg_required())
 }
 /// Execute the to-axt command.
@@ -22,6 +30,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let in_chain = args.get_one::<String>("in_chain").unwrap();
     let target = args.get_one::<String>("target").unwrap();
     let query = args.get_one::<String>("query").unwrap();
+    let max_gap = *args.get_one::<i64>("max_gap").unwrap();
     let out_axt = crate::cmd_pgr::args::get_outfile(args);
 
     let mut t_2bit =
@@ -52,6 +61,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         &mut t_2bit,
         &mut q_2bit,
         &matrix,
+        max_gap,
         &mut writer,
     )?;
 
