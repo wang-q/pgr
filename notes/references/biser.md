@@ -3,6 +3,10 @@
 > 整理于 2026-07，源自对 `biser-master/` 目录源码及 published paper 的通读。目的：理解 BISER 在
 > segmental duplication (SD) 检测与分解中的算法设计，并为 pgr 中重复/同源区域分析提供参考。
 
+> **实施状态（2026-08-02）**：§6.6 第一阶段已落地——`pgr sd search`（LASTZ-based putative SD
+> 检测）已实现并验证，见 §6.6 第一阶段；§6.8 的 chain/net 链路改用 `pgr pl chainnet`（原生实现，
+> 与 UCSC 字节级一致，替代有 Linux 崩溃风险的 `pgr pl ucsc`）。
+
 ## 1. BISER 概览
 
 ### 1.1 工具定位
@@ -1371,6 +1375,15 @@ PGR 内部不同模块混用 0-based half-open 与 1-based inclusive 两种约�
     - 输出 PSL 可被 `pgr sd align`（封装 `pgr pl ucsc`）消费；
     - hit 数量级与 BISER `search` 同数量级（不必 bit-exact，但不应差一个数量级）。
 
+> **已实现（2026-08-02）**：`pgr sd search <genome.fa> -o hits.psl` 落地
+> （`src/libs/sd/search_lastz.rs` + `src/cmd_pgr/sd/search.rs`）。流程：lastz --self
+> （.gz 输入自动解压）→ LAV → PSL → 按 block_len ≥ `--min-len`（默认 1000）且
+> block_identity ≥ `--min-identity`（默认 0.90，`(matches+rep)/block_len`，含 insert 碱基）
+> 过滤。MG1655 实测：81 秒，264 条 putative hits。下游链路已验证：
+> `pgr pl chainnet`（**非 --syn**，原生实现替代 `pgr pl ucsc`）→ `pgr maf to-paf`
+> 产出 90 条 PAF，可直接接 cluster/decompose。`pgr sd align`（封装上述 chainnet + to-paf）
+> 属第二阶段，尚未实现。
+
 **可选（若选择形态 B：pgr-repeat.sh 覆盖度路线）**
 
 1. 实现 `libs/sd/coverage.rs`：封装窗口化、lastz 回贴、lift、覆盖度计算，输出候选重复区 BED。
@@ -2378,4 +2391,3 @@ BISER `search` 阶段的输出是**putative SD pairs**（成对的同源区间�
   . Nature. 2023;617:335–344.
   [https://doi.org/10.1038/s41586-023-05895-y](https://doi.org/10.1038/s41586-023-05895-y)
 - BISER GitHub Repository: [https://github.com/0xTCG/biser](https://github.com/0xTCG/biser)
-

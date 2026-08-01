@@ -19,6 +19,7 @@ pub mod pbit;
 pub mod pl;
 pub mod plot;
 pub mod poa;
+pub mod sd;
 pub mod syncmer;
 pub mod translate;
 

@@ -1,0 +1,199 @@
+//! LASTZ-based putative SD detection (migration design: notes/references/biser.md §6.8).
+
+use crate::libs::fmt::lav::lav_to_psl;
+use crate::libs::fmt::psl::{parse_or_warn, Psl};
+use crate::libs::lastz::{find_preset, run_lastz, RunLastzOptions};
+use anyhow::Context;
+use std::io::{BufRead, Write};
+
+/// Options for LASTZ-based SD search.
+pub struct SearchLastzOptions {
+    /// lastz preset (set01..set07); defaults to set01 when `None`.
+    pub preset: Option<String>,
+    /// lastz query-depth threshold (`--querydepth=keep,nowarn:N`).
+    pub query_depth: usize,
+    /// Minimum alignment block length in bp (T2T-CHM13 SD standard: 1000).
+    pub min_len: u32,
+    /// Minimum block identity, 0.0-1.0 (T2T-CHM13 SD standard: 0.90).
+    pub min_identity: f64,
+    /// Worker threads for the lastz batch.
+    pub parallel: usize,
+}
+
+impl Default for SearchLastzOptions {
+    fn default() -> Self {
+        Self {
+            preset: Some("set01".to_string()),
+            query_depth: 50,
+            min_len: 1000,
+            min_identity: 0.90,
+            parallel: 4,
+        }
+    }
+}
+
+/// Alignment block length of a PSL record
+/// (matches + mismatches + repeats + Ns + query/target insert bases).
+pub fn psl_block_len(p: &Psl) -> u32 {
+    p.match_count
+        + p.mismatch_count
+        + p.rep_match
+        + p.n_count
+        + p.q_base_insert.max(0) as u32
+        + p.t_base_insert.max(0) as u32
+}
+
+/// Block identity of a PSL record: `(matches + repeats) / block_len`.
+pub fn psl_identity(p: &Psl) -> f64 {
+    let blk = psl_block_len(p);
+    if blk == 0 {
+        0.0
+    } else {
+        (p.match_count + p.rep_match) as f64 / blk as f64
+    }
+}
+
+/// Whether a PSL record passes the SD filters (min block length + identity).
+pub fn passes_sd_filters(p: &Psl, min_len: u32, min_identity: f64) -> bool {
+    psl_block_len(p) >= min_len && psl_identity(p) >= min_identity
+}
+
+/// Build lastz common arguments (query-depth, LAV format, preset params + matrix).
+///
+/// The optional `NamedTempFile` holds the preset substitution matrix alive for
+/// the caller's lastz invocation; dropping it deletes the file.
+fn build_lastz_args(
+    opts: &SearchLastzOptions,
+) -> anyhow::Result<(Vec<String>, Option<tempfile::NamedTempFile>)> {
+    let mut args = vec![
+        format!("--querydepth=keep,nowarn:{}", opts.query_depth),
+        "--format=lav".to_string(),
+        "--markend".to_string(),
+        "--ambiguous=iupac".to_string(),
+    ];
+    let mut matrix_handle: Option<tempfile::NamedTempFile> = None;
+    if let Some(name) = &opts.preset {
+        let preset = find_preset(name).ok_or_else(|| anyhow::anyhow!("unknown preset: {name}"))?;
+        for arg in preset.params.split_whitespace() {
+            if !arg.starts_with("Q=") {
+                args.push(arg.to_string());
+            }
+        }
+        if let Some(matrix) = preset.matrix {
+            let mut t = tempfile::NamedTempFile::new()?;
+            t.write_all(matrix.as_bytes())?;
+            args.push(format!("Q={}", t.path().display()));
+            matrix_handle = Some(t);
+        }
+    }
+    Ok((args, matrix_handle))
+}
+
+/// Run `lastz --self` on a genome, convert LAV to PSL, and filter hits by
+/// `min_len` / `min_identity`. Returns the surviving PSL records.
+///
+/// `workdir` receives the intermediate `.lav` files; it must exist and be
+/// writable. Chaining/refinement is intentionally NOT done here — the caller
+/// passes the PSL through UCSC chain/net (see the migration design).
+pub fn search_lastz(
+    genome: &str,
+    workdir: &str,
+    opts: &SearchLastzOptions,
+) -> anyhow::Result<Vec<Psl>> {
+    if which::which("lastz").is_err() {
+        anyhow::bail!("lastz not found in PATH. Please install lastz first.");
+    }
+
+    let mut files = crate::libs::fmt::fa::find_fasta_files(genome);
+    files.sort();
+    if files.is_empty() {
+        anyhow::bail!("no FASTA files found in {genome}");
+    }
+
+    // lastz cannot read gzipped input; decompress .gz files into the workdir.
+    let mut plain_files = Vec::with_capacity(files.len());
+    for f in files {
+        let is_gz = f.extension().and_then(|e| e.to_str()) == Some("gz");
+        if !is_gz {
+            plain_files.push(f);
+            continue;
+        }
+        let base = crate::libs::io::get_basename(&f.to_string_lossy()).unwrap_or_default();
+        let out = std::path::Path::new(workdir).join(format!("{base}.plain.fa"));
+        let mut reader = crate::libs::io::reader(&f.to_string_lossy())
+            .with_context(|| format!("failed to open {}", f.display()))?;
+        let mut writer = std::io::BufWriter::new(std::fs::File::create(&out)?);
+        std::io::copy(&mut reader, &mut writer)?;
+        plain_files.push(out);
+    }
+
+    let (common_args, _matrix_handle) = build_lastz_args(opts)?;
+    let run_opts = RunLastzOptions {
+        depth: opts.query_depth,
+        is_self: true,
+        common_args,
+        output_dir: workdir.to_string(),
+        parallel: opts.parallel,
+    };
+    run_lastz(plain_files.clone(), plain_files, run_opts)?;
+
+    // Convert every LAV in the workdir to PSL and apply the SD filters.
+    let mut hits = Vec::new();
+    for entry in std::fs::read_dir(workdir)? {
+        let path = entry?.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("lav") {
+            continue;
+        }
+        let reader = crate::libs::io::reader(&path.to_string_lossy())
+            .with_context(|| format!("failed to open LAV {}", path.display()))?;
+        let mut psl_bytes = Vec::new();
+        lav_to_psl(reader, &mut psl_bytes, None, false)?;
+        for line in std::io::Cursor::new(psl_bytes).lines() {
+            let line = line?;
+            if let Some(psl) = parse_or_warn(&line, false)? {
+                if passes_sd_filters(&psl, opts.min_len, opts.min_identity) {
+                    hits.push(psl);
+                }
+            }
+        }
+    }
+    Ok(hits)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn psl(m: u32, mm: u32, ins: u32) -> Psl {
+        Psl {
+            match_count: m,
+            mismatch_count: mm,
+            q_base_insert: ins as i32,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn block_len_and_identity() {
+        let p = psl(900, 50, 50);
+        assert_eq!(psl_block_len(&p), 1000);
+        assert!((psl_identity(&p) - 0.90).abs() < 1e-9);
+    }
+
+    #[test]
+    fn identity_excludes_inserts() {
+        let p = psl(80, 0, 20);
+        assert_eq!(psl_block_len(&p), 100);
+        assert!((psl_identity(&p) - 0.80).abs() < 1e-9);
+    }
+
+    #[test]
+    fn sd_filters_respect_length_and_identity() {
+        let good = psl(900, 50, 50); // len 1000, id 0.90
+        assert!(passes_sd_filters(&good, 1000, 0.90));
+        let too_short = psl(800, 100, 50); // len 950
+        assert!(!passes_sd_filters(&too_short, 1000, 0.90));
+        let low_id = psl(800, 150, 50); // len 1000, id 0.80
+        assert!(!passes_sd_filters(&low_id, 1000, 0.90));
+    }
+}
