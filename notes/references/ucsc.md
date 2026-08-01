@@ -3,6 +3,15 @@
 > 整理于 2026-06，源自对 UCSC kent-tools chain-net pipeline 脚本的整理。目的：为 pgr 的 chain/net/axt/maf 模块提供 Rust 重实现的参照基准。
 > 复核于 2026-08-01：在 `pseudocat` vs `pseudopig` 上本机重跑 UCSC 工具链与 pgr（0.3.1）工具链，
 > 逐文件 `diff` 验证了 §4 的字节级结论，并修正 lastz/2bit/meta.tmp 等边界差异（见 §3.6、§4.4）。
+>
+> **真实基因组验证（2026-08-01）**：在**大肠杆菌 MG1655（NC_000913）vs Sakai（O157:H7，
+> NC_002695/NC_002127/NC_002128）** 两株基因组上，以同一份 lastz LAV（已保存为
+> `tests/genome/mg1655-sakai.lastz.lav`）为输入，分别跑 UCSC kent-tools 工具链与 pgr 原生
+> `pl chainnet`，对 **axtChain → chainAntiRepeat → chainMergeSort → chainPreNet → chainNet →
+> netSyntenic → netChainSubset → chainStitchId → netSplit → netToAxt → axtSort → axtToMaf**
+> 的全部中间文件及最终 MAF 逐文件 `cmp`，结果**字节级完全一致**（41,936 条链 / 1,388 条
+> MAF 比对记录）。该验证覆盖了 pseudocat/pseudopig 小样本之外的真实规模数据（4.6 Mb vs
+> 5.5 Mb，47,100+52,396 个链化块）。
 
 本文件记录了 UCSC kent-tools 中 chain→net→axt→maf 标准 pairwise 比对流程的完整 shell 脚本，
 以 `pseudocat` vs `pseudopig` 为示例。该流程是 pgr `chain`/`net`/`axt`/`psl`/`lav`/`maf` 模块的
