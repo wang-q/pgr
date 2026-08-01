@@ -1,5 +1,5 @@
 use crate::libs::chain::{
-    calc_block_score, chain_blocks, Chain, ChainableBlock, GapCalc, ScoreContext,
+    calc_block_score, chain_blocks, Chain, ChainableBlock, GapCalc, ScoreContext, SubMatrix,
 };
 use crate::libs::fmt::psl::Psl;
 use crate::libs::io::SequenceReader;
@@ -111,6 +111,7 @@ pub fn chain_psl<R: BufRead, W: Write, S: SequenceReader>(
     gap_calc: &GapCalc,
     min_score: f64,
     score_context: &mut Option<ScoreContext<S>>,
+    matrix: &SubMatrix,
 ) -> anyhow::Result<()> {
     let (groups, comments) = group_psl_blocks(reader, score_context)?;
 
@@ -152,8 +153,17 @@ pub fn chain_psl<R: BufRead, W: Write, S: SequenceReader>(
 
     all_chains.sort_by(|a, b| b.header.score.total_cmp(&a.header.score));
 
-    // UCSC axtChain propagates `##` metadata from the PSL input to the chain
-    // output via lineFileSetMetaDataOutput.
+    // UCSC axtChain sorts all chains globally by score, then assigns IDs
+    // 1, 2, 3, ... in that order via chainWriteHead -> chainIdNext.
+    // Renumber to match, so downstream tools see the same ID ordering.
+    for (i, chain) in all_chains.iter_mut().enumerate() {
+        chain.header.id = (i + 1) as u64;
+    }
+
+    // UCSC axtChain writes the scoring scheme header first (via
+    // axtScoreSchemeDnaWrite), then propagates `##` metadata from the PSL
+    // input (via lineFileSetMetaDataOutput).
+    writeln!(writer, "{}", matrix.axt_chain_header())?;
     for comment in &comments {
         writeln!(writer, "{}", comment)?;
     }

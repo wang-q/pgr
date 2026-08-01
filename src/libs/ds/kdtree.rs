@@ -175,9 +175,14 @@ impl KdTree {
                     items[target_idx].y_start()
                 };
 
-                if coord < *cut_coord {
+                // Mirror UCSC updateScoresOnWay: when coord == cut_coord, the
+                // leaf could be in either subtree, so update both. Using strict
+                // < / else here would miss one subtree and leave its max_score
+                // stale, causing premature pruning in later predecessor searches.
+                if coord <= *cut_coord {
                     Self::update_recursive(lo, target_idx, score, items, 1 - dim);
-                } else {
+                }
+                if coord >= *cut_coord {
                     Self::update_recursive(hi, target_idx, score, items, 1 - dim);
                 }
             }

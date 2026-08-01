@@ -330,17 +330,17 @@ pgr axt to-maf tests/pgr/synNet/cat.axt \
 * 部分命令参数风格差异：`pgr net to-axt` 的输出用 `-o` 指定（target/query 仍为位置参数），`pgr axt to-maf` 的 sizes 与输出均用 `-t` / `-q` / `-o` 标志；UCSC 对应工具均为纯位置参数。
 * `pgr chain net` 默认 `--min-space 25`，UCSC 脚本用 `-minSpace=1`，需显式 `--min-space 1` 对齐。
 
-## 4. 隔离测试验证报告（2026-08-01，修复后状态）
+## 4. 隔离测试验证报告（2026-08-01，GapCalc 修复后状态）
 
 以 `pseudocat` vs `pseudopig` 为测试数据，控制相同输入，逐命令对比 UCSC kent-tool 与 pgr 实现的输出。隔离测试用料已在验证完成后合并为正式测试 fixtures（`tests/pgr/`）与集成测试（`tests/cli_ucsc.rs`，18 个测试覆盖 16 个命令）。
 
-### 4.1 逐命令对比结果（7 处差异修复后）
+### 4.1 逐命令对比结果
 
 | # | UCSC 工具 | pgr 命令 | 结果 | 差异说明 |
 |---|---|---|---|---|
 | 1 | `faToTwoBit` | `pgr fa to-2bit` | 序列一致 ✓ | 2bit 文件大小差 4 字节：UCSC version=0，pgr version=1；序列数据完全相同 |
 | 2 | `lavToPsl` | `pgr lav to-psl` | 完全一致 ✓ | 修复后 pgr 保留 `##` 注释行，字节级一致 |
-| 3 | `axtChain` | `pgr psl chain` | 链数不同 | UCSC 5 条链，pgr（HOXD55 默认）7 条链。算法差异：pgr DP 链化对大 gap 桥接策略不同。经 `chainAntiRepeat` 后两边均收敛到 5 条链 |
+| 3 | `axtChain` | `pgr psl chain` | 完全一致 ✓ | **字节级一致**。修复 GapCalc 表互换 + `both=dq+dt` + ID 全局重编号 + axtChain 头注释后，`pgr psl chain --gap-model loose` 输出与 `axtChain -linearGap=loose` 完全相同 |
 | 4 | `chainAntiRepeat` | `pgr chain anti-repeat` | 完全一致 ✓ | 修复后注释行透传，排除注释后字节级一致 |
 | 5 | `chainMergeSort` | `pgr chain sort` | 完全一致 ✓ | 修复后注释行透传 |
 | 6 | `chainPreNet` | `pgr chain pre-net` | 完全一致 ✓ | 修复后注释行透传 |
@@ -355,16 +355,36 @@ pgr axt to-maf tests/pgr/synNet/cat.axt \
 | 15 | `netFilter -syn` | `pgr net filter --syn` | 一致 ✓ | 两边均输出空文件（top score 124204 < 默认 minTopScore 300000）。`--nonsyn` 排除注释行后一致 |
 | 16 | `chainSplit` | `pgr chain split` | 一致 ✓ | chain 数据完全一致；UCSC 按 ID 排序，pgr 保留输入顺序，排序后一致 |
 
-### 4.2 修复后剩余差异
+### 4.2 GapCalc 修复详情（2026-08-01）
 
-**A. 链化策略差异（`axtChain` vs `pgr psl chain`）——算法差异，非缺陷**
+此前 `axtChain` vs `pgr psl chain` 存在链数差异（UCSC 5 条 vs pgr 7 条），根因是 `GapCalc` 实现中有两处 bug：
 
-pgr 生成 7 条链（HOXD55 打分），UCSC 生成 5 条链。差异在于 UCSC `axtChain` 对大 gap 的桥接策略与 pgr 的 DP 链化算法不同。`chainAntiRepeat` 后两边均收敛到 5 条链，后续步骤完全一致。pgr 的打分逻辑符合 HOXD55 矩阵定义。
+**Bug 1：`loose` 与 `medium` 的间隙成本表互换**
 
-**B. `netFilter` 注释行保留——pgr 更保守**
+UCSC `gapCalc.c` 中：
+- `defaultGapCosts`（`-linearGap=loose` 别名）：qGap `[325, 360, 400, 450, 600, 1100, 3600, 7600, 15600, 31600, 56600]`
+- `originalGapCosts`（`-linearGap=medium` 别名）：qGap `[350, 425, 450, 600, 900, 2900, 22900, 57900, 117900, 217900, 317900]`
+
+pgr 的 `GapCalc::loose()` 和 `GapCalc::medium()` 恰好将两张表互换，导致 `--gap-model loose` 实际使用的是 UCSC `medium`（更高成本，不桥接大 gap），`--gap-model medium` 实际使用 UCSC `loose`。修复后两表与 UCSC 语义对齐。
+
+**Bug 2：`calc()` 同时间隙用 `max(dq, dt)` 而非 `dq + dt`**
+
+UCSC `gapCalcCost` 在 `dq > 0 && dt > 0` 时使用 `both = dq + dt`（两轴间隙长度之和）查 `bothGap` 表。pgr 错误地使用 `max(dq, dt)`，导致同时间隙的成本被低估。修复后改用 `dq + dt`，并加上 UCSC 的 `BIGNUM` 外推保护（外推为负值时返回 `0x3fffffff`）。
+
+**附带修复：chain ID 全局重编号**
+
+UCSC `axtChain` 在全局按 score 降序排序所有 chain 后，通过 `chainWriteHead → chainIdNext` 按排序顺序分配 ID 1, 2, 3, ...。pgr 此前按分组处理顺序分配 ID，导致 ID 与 UCSC 不一致。修复后在 `chain_psl` 中全局排序后统一重编号。
+
+**附带修复：axtChain 头注释**
+
+UCSC `axtChain` 通过 `axtScoreSchemeDnaWrite` 在文件开头写入 `##matrix=axtChain` 和 `##gapPenalties=axtChain` 两行元数据。pgr 此前不输出这两行。修复后 `SubMatrix::axt_chain_header()` 生成对应格式，在 PSL 注释行之前写入。
+
+### 4.3 剩余差异
+
+**`netFilter` 注释行保留——pgr 更保守**
 
 pgr `net filter` 保留输入 net 中的 `##matrix`/`##gapPenalties` 注释行，UCSC `netFilter` 会剥离。排除注释行后数据完全一致。pgr 的行为是设计选择（注释透传不丢失元数据）。
 
-### 4.3 结论
+### 4.4 结论
 
-经 7 处差异修复后，16 个命令的隔离测试表明 pgr 重实现与 UCSC kent-tool 的输出在**核心数据层面完全一致**。剩余 2 处差异均为预期行为（链化算法差异在 `chainAntiRepeat` 后收敛；`netFilter` 注释保留是 pgr 设计选择）。pgr 的 chain-net-axt-maf 管线可作为 UCSC kent-tool 的 Rust 替代。
+经 GapCalc 两处 bug 修复后，`pgr psl chain --gap-model loose` 的输出与 `axtChain -linearGap=loose` **字节级完全一致**（`diff` 无差异）。16 个命令的隔离测试表明 pgr 重实现与 UCSC kent-tool 的输出在核心数据层面完全一致。剩余 1 处差异为预期行为（`netFilter` 注释保留是 pgr 设计选择）。pgr 的 chain-net-axt-maf 管线可作为 UCSC kent-tool 的 Rust 替代。

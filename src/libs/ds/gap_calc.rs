@@ -1,5 +1,7 @@
 use anyhow::{bail, Result};
-use std::cmp;
+
+/// Large sentinel cost used when extrapolation goes negative (UCSC `BIGNUM`).
+const BIGNUM: i32 = 0x3fffffff;
 
 /// A gap cost calculator using linear interpolation for efficient scoring.
 ///
@@ -28,9 +30,9 @@ pub struct GapCalc {
 }
 
 impl GapCalc {
-    /// Creates a standard "medium" gap calculator (suitable for mouse/human).
-    pub fn medium() -> Self {
-        // "medium" (mouse/human)
+    /// Creates a "loose" gap calculator (UCSC `defaultGapCosts`, chicken/human).
+    pub fn loose() -> Self {
+        // UCSC defaultGapCosts (aliased as "loose" by axtChain -linearGap=loose).
         // position: 1, 2, 3, 11, 111, 2111, 12111, 32111, 72111, 152111, 252111
         let pos = vec![1, 2, 3, 11, 111, 2111, 12111, 32111, 72111, 152111, 252111];
         let q_gap = vec![
@@ -45,9 +47,9 @@ impl GapCalc {
         Self::new(pos, q_gap, t_gap, b_gap).expect("built-in GapCalc tables are valid")
     }
 
-    /// Creates a "loose" gap calculator (suitable for distant species like chicken/human).
-    pub fn loose() -> Self {
-        // "loose" (chicken/human)
+    /// Creates a "medium" gap calculator (UCSC `originalGapCosts`, mouse/human).
+    pub fn medium() -> Self {
+        // UCSC originalGapCosts (aliased as "medium" by axtChain -linearGap=medium).
         // position: 1, 2, 3, 11, 111, 2111, 12111, 32111, 72111, 152111, 252111
         let pos = vec![1, 2, 3, 11, 111, 2111, 12111, 32111, 72111, 152111, 252111];
         let q_gap = vec![
@@ -207,6 +209,9 @@ impl GapCalc {
     }
 
     /// Calculates the gap cost for a given distance in query (`dq`) and target (`dt`).
+    ///
+    /// Mirrors UCSC `gapCalcCost`: `both = dq + dt` for simultaneous gaps, and
+    /// extrapolation that goes negative returns `BIGNUM`.
     pub fn calc(&self, dq: i32, dt: i32) -> i32 {
         let dt = if dt < 0 { 0 } else { dt };
         let dq = if dq < 0 { 0 } else { dq };
@@ -216,6 +221,9 @@ impl GapCalc {
                 self.q_small[dq as usize]
             } else if dq >= self.q_last_pos {
                 let cost = self.q_last_pos_val + self.q_last_slope * (dq - self.q_last_pos) as f64;
+                if cost < 0.0 {
+                    return BIGNUM;
+                }
                 cost as i32
             } else {
                 Self::interpolate(dq, &self.long_pos, &self.q_long) as i32
@@ -225,18 +233,23 @@ impl GapCalc {
                 self.t_small[dt as usize]
             } else if dt >= self.t_last_pos {
                 let cost = self.t_last_pos_val + self.t_last_slope * (dt - self.t_last_pos) as f64;
+                if cost < 0.0 {
+                    return BIGNUM;
+                }
                 cost as i32
             } else {
                 Self::interpolate(dt, &self.long_pos, &self.t_long) as i32
             }
         } else {
-            // For simultaneous gaps, we use max(dq, dt) to determine the cost
-            let both = cmp::max(dq, dt);
+            let both = dq + dt;
             if (both as usize) < self.small_size {
                 self.b_small[both as usize]
             } else if both >= self.b_last_pos {
                 let cost =
                     self.b_last_pos_val + self.b_last_slope * (both - self.b_last_pos) as f64;
+                if cost < 0.0 {
+                    return BIGNUM;
+                }
                 cost as i32
             } else {
                 Self::interpolate(both, &self.long_pos, &self.b_long) as i32
@@ -250,12 +263,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_gap_calc_medium() {
-        let calc = GapCalc::medium();
+    fn test_gap_calc_loose_and_medium() {
+        // UCSC defaultGapCosts ("loose"): pos 1 -> qGap 325, bothGap 625
+        let loose = GapCalc::loose();
+        assert_eq!(loose.calc(1, 0), 325);
+        assert_eq!(loose.calc(0, 1), 325);
+        // both = dq + dt = 2; bothGap at pos 2 -> 660
+        assert_eq!(loose.calc(1, 1), 660);
 
-        // Test small values (should be in small table)
-        // pos: 1 -> 325.0
-        assert_eq!(calc.calc(1, 0), 325);
-        assert_eq!(calc.calc(0, 1), 325);
+        // UCSC originalGapCosts ("medium"): pos 1 -> qGap 350, bothGap 750
+        let medium = GapCalc::medium();
+        assert_eq!(medium.calc(1, 0), 350);
+        assert_eq!(medium.calc(0, 1), 350);
+        // both = dq + dt = 2; bothGap at pos 2 -> 825
+        assert_eq!(medium.calc(1, 1), 825);
     }
 }

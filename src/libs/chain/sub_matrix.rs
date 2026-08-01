@@ -58,6 +58,27 @@ impl SubMatrix {
         self.matrix[(c1 as usize) * 256 + (c2 as usize)]
     }
 
+    /// Format the 4x4 ACGT matrix and gap penalties as UCSC `axtChain` header lines.
+    ///
+    /// Returns the two `##matrix=axtChain` / `##gapPenalties=axtChain` lines that
+    /// UCSC `axtChain` writes via `axtScoreSchemeDnaWrite`.
+    pub fn axt_chain_header(&self) -> String {
+        let bases = b"ACGT";
+        let vals: Vec<String> = (0..4)
+            .flat_map(|i| {
+                (0..4).map(move |j| {
+                    self.matrix[(bases[i] as usize) * 256 + (bases[j] as usize)].to_string()
+                })
+            })
+            .collect();
+        format!(
+            "##matrix=axtChain 16 {}\n##gapPenalties=axtChain O={} E={}",
+            vals.join(","),
+            self.gap_open,
+            self.gap_extend
+        )
+    }
+
     /// Load from name (preset) or file.
     pub fn from_name(name: &str) -> Result<Self> {
         match name.to_lowercase().as_str() {

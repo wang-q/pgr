@@ -5,6 +5,7 @@ use crate::libs::ds::{GapCalc, KdTree, KdTreeItem};
 use crate::libs::io::SequenceReader;
 use crate::libs::nt;
 use anyhow::Context;
+use std::cell::RefCell;
 
 /// Represents a single alignment block that can be chained.
 ///
@@ -98,6 +99,12 @@ pub fn chain_blocks<S: SequenceReader>(
     let mut leaf_indices: Vec<usize> = (0..dp_entries.len()).collect();
     let mut tree = KdTree::build(&mut leaf_indices, blocks);
 
+    // Wrap score_ctx in a RefCell so the DP closure can borrow it mutably to
+    // compute precise crossover costs. This mirrors UCSC chainConnectCost,
+    // which calls cBlockFindCrossover (requiring sequence access) inside the
+    // DP predecessor search.
+    let score_ctx_cell = RefCell::new(score_ctx);
+
     // 3. Find best predecessors
     for i in 0..dp_entries.len() {
         let current_score = dp_entries[i].total_score;
@@ -105,48 +112,72 @@ pub fn chain_blocks<S: SequenceReader>(
             let cand = &blocks[cand_idx];
             let target = &blocks[target_idx];
 
-            // Ensure monotonic order for chaining
-            if cand.t_start > target.t_start {
-                return None;
-            }
-            // For q_start, strictly increasing is required for a linear chain
-            if cand.q_start > target.q_start {
+            // UCSC chainConnectCost requires a strictly before b on both axes.
+            if cand.q_start >= target.q_start || cand.t_start >= target.t_start {
                 return None;
             }
 
-            let dt = target.t_start as i64 - cand.t_end as i64;
             let dq = target.q_start as i64 - cand.q_end as i64;
+            let dt = target.t_start as i64 - cand.t_end as i64;
 
-            let mut overlap_penalty = 0.0;
+            let cost = if dq >= 0 && dt >= 0 {
+                // No overlap: plain gap cost.
+                gap_calc.calc(dq as i32, dt as i32) as f64
+            } else {
+                // Overlapping blocks: mirror UCSC chainConnectCost.
+                let b_size = (target.q_end - target.q_start) as i64;
+                let a_size = (cand.q_end - cand.q_start) as i64;
+                let overlap = -std::cmp::min(dq, dt);
 
-            // Handle overlaps (negative distance)
-            if dt < 0 || dq < 0 {
-                let ov_t = if dt < 0 { -dt } else { 0 };
-                let ov_q = if dq < 0 { -dq } else { 0 };
-                let overlap_len = std::cmp::max(ov_t, ov_q) as f64;
-
-                // Estimate overlap penalty using score density
-                // We use the maximum density of the two blocks as a conservative estimate
-                let cand_len = (cand.t_end - cand.t_start) as f64;
-                let target_len = (target.t_end - target.t_start) as f64;
-
-                let cand_density = if cand_len > 0.0 {
-                    cand.score / cand_len
+                if overlap >= b_size || overlap >= a_size {
+                    // One block fully enclosed on one axis: discourage.
+                    100000000.0
                 } else {
-                    0.0
-                };
-                let target_density = if target_len > 0.0 {
-                    target.score / target_len
-                } else {
-                    0.0
-                };
+                    // Adjust dq/dt to the non-overlapping gap, then add the
+                    // precise overlap adjustment from sequence scoring.
+                    let adjusted_dq = dq + overlap;
+                    let adjusted_dt = dt + overlap;
+                    let mut ctx_ref = score_ctx_cell.borrow_mut();
+                    match ctx_ref.as_mut() {
+                        Some(ctx) => {
+                            let (_, overlap_adjustment) = find_crossover(
+                                cand,
+                                target,
+                                overlap as usize,
+                                ctx,
+                                q_name,
+                                t_name,
+                                q_size,
+                                q_strand,
+                            )
+                            .ok()?;
+                            overlap_adjustment
+                                + gap_calc.calc(adjusted_dq as i32, adjusted_dt as i32) as f64
+                        }
+                        None => {
+                            // No sequence context: fall back to score-density
+                            // estimate for the overlap penalty.
+                            let cand_len = (cand.t_end - cand.t_start) as f64;
+                            let target_len = (target.t_end - target.t_start) as f64;
+                            let cand_density = if cand_len > 0.0 {
+                                cand.score / cand_len
+                            } else {
+                                0.0
+                            };
+                            let target_density = if target_len > 0.0 {
+                                target.score / target_len
+                            } else {
+                                0.0
+                            };
+                            let overlap_len = overlap as f64;
+                            overlap_len * cand_density.max(target_density)
+                                + gap_calc.calc(adjusted_dq as i32, adjusted_dt as i32) as f64
+                        }
+                    }
+                }
+            };
 
-                let density = cand_density.max(target_density);
-                overlap_penalty = overlap_len * density;
-            }
-
-            let cost = gap_calc.calc(dq as i32, dt as i32) as f64;
-            Some(dp_entries[cand_idx].total_score + target.score - cost - overlap_penalty)
+            Some(dp_entries[cand_idx].total_score + target.score - cost)
         };
         let lower_bound_func =
             |dq: u64, dt: u64| -> f64 { gap_calc.calc(dq as i32, dt as i32) as f64 };
@@ -155,11 +186,26 @@ pub fn chain_blocks<S: SequenceReader>(
             tree.best_predecessor(i, current_score, blocks, &cost_func, &lower_bound_func);
 
         if best_score > dp_entries[i].total_score {
+            log::debug!(
+                "DP[{}] T {}-{} Q {}-{} self={} -> total={} pred={:?} (pred_self={})",
+                i,
+                blocks[i].t_start,
+                blocks[i].t_end,
+                blocks[i].q_start,
+                blocks[i].q_end,
+                blocks[i].score,
+                best_score,
+                best_pred,
+                best_pred.map(|p| dp_entries[p].total_score).unwrap_or(0.0)
+            );
             dp_entries[i].total_score = best_score;
             dp_entries[i].best_pred = best_pred;
         }
         tree.update_scores(i, dp_entries[i].total_score, blocks);
     }
+
+    // Restore score_ctx for use in trim_overlaps / score_chain below.
+    let score_ctx = score_ctx_cell.into_inner();
 
     // 4. Peel chains
     let mut sorted_indices: Vec<usize> = (0..dp_entries.len()).collect();
@@ -285,7 +331,7 @@ fn trim_overlaps<S: SequenceReader>(
 
         if overlap > 0 {
             let overlap = overlap as usize;
-            let cut_pos = find_crossover(
+            let (cut_pos, _) = find_crossover(
                 &blocks[i],
                 &blocks[i + 1],
                 overlap,
@@ -312,7 +358,9 @@ fn trim_overlaps<S: SequenceReader>(
 
 /// Finds the optimal crossover point for two overlapping blocks.
 ///
-/// Returns the best cut position within the overlap.
+/// Mirrors UCSC `cBlockFindCrossover`. Returns `(best_pos, overlap_adjustment)`
+/// where `overlap_adjustment = r_score + l_score - best_score` is the score loss
+/// incurred by the overlap (always non-negative).
 #[allow(clippy::too_many_arguments)]
 fn find_crossover<S: SequenceReader>(
     left: &ChainableBlock,
@@ -323,7 +371,7 @@ fn find_crossover<S: SequenceReader>(
     t_name: &str,
     q_size: u64,
     q_strand: char,
-) -> anyhow::Result<usize> {
+) -> anyhow::Result<(usize, f64)> {
     let l_t_seq = ctx
         .t_2bit
         .read_sequence(
@@ -450,7 +498,11 @@ fn find_crossover<S: SequenceReader>(
         }
     }
 
-    Ok(best_pos)
+    // After the loop, current_l holds sum(l[0..overlap]) = l_score.
+    // overlap_adjustment = r_score + l_score - best_score (UCSC cBlockFindCrossover).
+    let overlap_adjustment = r_score + current_l - best_score;
+
+    Ok((best_pos, overlap_adjustment))
 }
 
 /// Removes duplicate blocks that have exact same coordinates.
@@ -610,7 +662,7 @@ mod tests {
 
     #[test]
     fn test_chain_blocks_basic() {
-        // Gap costs in GapCalc::medium() are quite high (e.g., ~750 for length 10).
+        // Gap costs in GapCalc::loose() are moderate (e.g., ~763 for dq=dt=10).
         // We need high block scores to justify chaining.
         let blocks = vec![
             ChainableBlock {
@@ -636,7 +688,7 @@ mod tests {
             }, // Overlapping/conflicting
         ];
 
-        let gap_calc = GapCalc::medium();
+        let gap_calc = GapCalc::loose();
         // Pass None for score_ctx — type must implement SequenceReader but is never constructed.
         let mut score_ctx: Option<ScoreContext<TwoBitFile<Cursor<Vec<u8>>>>> = None;
         let mut chain_id = 0;

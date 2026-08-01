@@ -112,6 +112,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         &gap_calc,
         min_score,
         &mut score_context,
+        &score_matrix,
     )?;
 
     writer.flush()?;
