@@ -3,9 +3,11 @@
 > 整理于 2026-07，源自对 `biser-master/` 目录源码及 published paper 的通读。目的：理解 BISER 在
 > segmental duplication (SD) 检测与分解中的算法设计，并为 pgr 中重复/同源区域分析提供参考。
 
-> **实施状态（2026-08-02）**：§6.6 第一阶段已落地——`pgr sd search`（LASTZ-based putative SD
-> 检测）已实现并验证，见 §6.6 第一阶段；§6.8 的 chain/net 链路改用 `pgr pl chainnet`（原生实现，
-> 与 UCSC 字节级一致，替代有 Linux 崩溃风险的 `pgr pl ucsc`）。
+> **实施状态（2026-08-02）**：§6.6 第一、二、三阶段已落地——`pgr sd search`（LASTZ-based putative SD
+> 检测）、`pgr sd align`（chain/net 精修 → PAF）、`pgr sd cluster` + `pgr sd decompose` 均已
+> 实现并验证，见 §6.6 对应阶段；
+> §6.8 的 chain/net 链路改用 `pgr pl chainnet`（原生实现，与 UCSC 字节级一致，替代有 Linux
+> 崩溃风险的 `pgr pl ucsc`）。
 
 ## 1. BISER 概览
 
@@ -1381,8 +1383,12 @@ PGR 内部不同模块混用 0-based half-open 与 1-based inclusive 两种约�
 > block_identity ≥ `--min-identity`（默认 0.90，`(matches+rep)/block_len`，含 insert 碱基）
 > 过滤。MG1655 实测：81 秒，264 条 putative hits。下游链路已验证：
 > `pgr pl chainnet`（**非 --syn**，原生实现替代 `pgr pl ucsc`）→ `pgr maf to-paf`
-> 产出 90 条 PAF，可直接接 cluster/decompose。`pgr sd align`（封装上述 chainnet + to-paf）
-> 属第二阶段，尚未实现。
+> 产出 90 条 PAF，可直接接 cluster/decompose。
+>
+> **第二阶段 `pgr sd align` 已实现（2026-08-02）**：`pgr sd align <genome.fa> <hits.psl> -o
+> hits.paf` 封装 chainnet（非 --syn）+ MAF→PAF 合并（`src/cmd_pgr/sd/align.rs`），MG1655
+> 实测 0.2 秒、90 条 PAF。原生 BISER 路线（`anchor.rs` / `refine.rs` PST chaining）仍延后——
+> 外部比对路线的精修由 UCSC chain/net 承担（见 6.3.3 注）。
 
 **可选（若选择形态 B：pgr-repeat.sh 覆盖度路线）**
 
@@ -1425,6 +1431,22 @@ PGR 内部不同模块混用 0-based half-open 与 1-based inclusive 两种约�
 3. 实现 `libs/sd/decompose.rs`：多拷贝 plane-sweep。
 4. 实现 `cmd_pgr/sd/cluster.rs` 与 `cmd_pgr/sd/decompose.rs`。
 5. 验证: cluster 数量与覆盖范围、elementary SD 数量与 `.elem` 内容一致。
+
+> **已实现（2026-08-02）**：
+> - 前置 `Dsu` 已迁移到 `src/libs/ds/dsu.rs` 并公开为 pub（`src/libs/paf/graph/dsu.rs`
+>   改为 re-export 保持兼容）。
+> - `pgr sd cluster <genome.fa> <hits.paf> -o clusters.dir/`
+>   （`src/libs/sd/cluster.rs` + `src/cmd_pgr/sd/cluster.rs`）：PAF 双 mate 绑定 +
+>   同染色体重叠区间 union-find，按连通分量输出 `cluster_N.fa`，头格式
+>   `{species}#{chrom}{strand}#{start}#{end}`（0-based），序列经 `loc` 提取（'-' 链自动 RC）。
+>   MG1655 实测：90 条 PAF → 25 个 cluster。
+> - `pgr sd decompose <cluster.fa> -o out.bed`
+>   （`src/libs/sd/decompose.rs` + `src/cmd_pgr/sd/decompose.rs`）：k=10 完整 k-mer 索引，
+>   标记出现在 ≥2 条序列的共享 k-mer，按 `MAX_GAP=50` 链式合并、`MIN_LEN=100` 过滤，
+>   输出 BED `species\tchrom\tbegin\tend\tset_id\tlength\tscore\tstrand`。实测：cluster_1
+>   （2 条）→ 2 个 elementary SD（~1.5 kb），cluster_3（6 条）→ 4 个，cluster_10（8 条）→ 6 个。
+>   **简化项**：`set_id` 按片段输出顺序编号，未做 BISER 的跨拷贝 k-mer 归组（与 BISER
+>   bit-exact 需源码对照，`biser-master/` 目录当前不可用）。
 
 #### 第四阶段：core duplicon 与坐标转换（验证：CORE 标记与 translate 后坐标一致）
 
