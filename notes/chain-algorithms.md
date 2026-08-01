@@ -85,14 +85,17 @@ PSL / chain 文件
 
 1. 必须满足 `cand.t_start <= target.t_start` 且 `cand.q_start <= target.q_start`（单调性）。
 2. 计算 `dt = target.t_start - cand.t_end`，`dq = target.q_start - cand.q_end`。
-3. 若 `dt < 0` 或 `dq < 0`，说明存在重叠：
-   - `overlap_len = max(|dt|, |dq|)`。
-   - `density = max(cand.score/len_cand, target.score/len_target)`。
-   - `overlap_penalty = overlap_len * density`。
-4. `cost = gap_calc.calc(dq, dt)`。
-5. 新总分 = `cand.total_score + target.score - cost - overlap_penalty`。
+3. `cost = gap_calc.calc(dq, dt)`。
+4. 若 `dt >= 0 && dq >= 0`（无重叠）：新总分 = `cand.total_score + target.score - cost`。
+5. 若 `dt < 0 || dq < 0`（存在重叠）：
+   - `overlap = min(|dt|, |dq|)`。
+   - 若 `overlap >= b_size || overlap >= a_size`（一方完全包含另一方）：惩罚 `100000000.0`，阻止连接。
+   - 否则调整 dq/dt 到非重叠部分，外加精确重叠调整：
+     - 若有 `ScoreContext`：调用 `find_crossover` 用替换矩阵精确计算重叠调整成本。
+     - 若无：按密度估算 `overlap * max(density_cand, density_target)`。
+6. 新总分 = `cand.total_score + target.score - cost`。
 
-注意：即使候选与当前 block 坐标有重叠，也会尝试连接并用 penalty 惩罚，不是直接丢弃。
+注意：重叠块通过调整 dq/dt（缩到非重叠区间）再查 gap 表 + 精确 crossover 惩罚，此逻辑复刻 UCSC `chainConnectCost`。
 
 #### 3.2.4 提取链（peeling）
 
@@ -122,7 +125,7 @@ PSL / chain 文件
 - `calc(dq, dt)`：
   - `dt == 0`：查 query gap 表。
   - `dq == 0`：查 target gap 表（通常与 query 相同）。
-  - 否则：用 `max(dq, dt)` 查 both gap 表。
+  - 否则：用 `dq + dt` 查 both gap 表（与 UCSC `gapCalcCost` 一致）。
 - 负距离会被截断为 0。
 
 **通用复用点**：

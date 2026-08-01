@@ -176,33 +176,31 @@ UCSC pipeline 已大量调用 chain 子命令（`chain sort`、`chain pre-net`�
 
 若后续决定真正复用，可按以下顺序推进：
 
-1. **创建通用 1D 插值模块**
-   - 将 `src/libs/chain/gap_calc.rs` 中的插值逻辑提取为 `src/libs/ds/gap_calc.rs`。
-   - `GapCalc` 保持链式 gap 代价语义，同时可被其他模块直接复用。
-   - 验证 `fas_multiz/banded_align.rs` 仍正常工作。
+1. ~~**创建通用 1D 插值模块**~~ ✅ 已完成
+   - `GapCalc` 已位于 `src/libs/ds/gap_calc.rs`，`chain` 模块通过 `pub use` 保持向后兼容。
+   - `fas_multiz/banded_align.rs` 已验证正常工作。
 
-2. **创建通用位图模块**
-   - 将 `src/libs/chain/bitmap.rs` 提升为 `src/libs/ds/bitmap.rs`。
-   - 在 `src/libs/paf/query.rs` syntenic filter 中试用，替换 `HashMap<(t,q), Vec<(u64,u64)>>`。
-   - 补充基准测试，对比 `IntSpan` 在密集场景下的内存/速度。
+2. ~~**创建通用位图模块**~~ ✅ 已完成
+   - `BitMap` 已位于 `src/libs/ds/bitmap.rs`。
+   - 在 `src/libs/paf/query.rs` syntenic filter 中试用（待实际编码替换线性扫描）。
+   - 已有基准测试 `benches/bitmap_intspan_benchmark.rs`。
 
-3. **创建通用区间深度模块**
-   - 将 `src/libs/chain/net/syntenic.rs::DupeTree` 提升为 `src/libs/ds/dupe_tree.rs`。
-   - 替换 `src/libs/fas_multiz/windows.rs` 中的手动覆盖判断。
-   - 考虑扩展为按深度分层输出区间的 API。
+3. ~~**创建通用区间深度模块**~~ ✅ 已完成
+   - `DupeTree` 已位于 `src/libs/ds/dupe_tree.rs`。
+   - 替换 `src/libs/fas_multiz/windows.rs` 中的手动覆盖判断（待实际编码）。
 
 4. **最优剪切泛化**
    - 将 `src/libs/chain/connect.rs::find_crossover` 的核心“重叠区间最佳 cut”逻辑提取为通用函数。
    - 在 `src/libs/fas_multiz/merge.rs` 中试点，处理参考序列冲突合并。
 
-5. **Top-K 纯度检测泛化**
-   - 将 `src/libs/chain/anti_repeat.rs` 中的 Top-K 占比惩罚逻辑提取为 `src/libs/ds/top_k_purity.rs`。
-   - 在 `src/libs/chain/anti_repeat.rs` 中直接调用通用实现。
-   - 评估是否在 `libs/alignment/stat.rs` / `msa.rs` 的列质量评估中复用。
+5. ~~**Top-K 纯度检测泛化**~~ ✅ 已完成
+   - `TopKPurity` 已位于 `src/libs/ds/top_k_purity.rs`。
+   - `chain/anti_repeat.rs` 已直接调用通用实现。
+   - 评估是否在 `libs/alignment/stat.rs` / `msa.rs` 的列质量评估中复用（待定）。
 
-6. **KD-tree 泛化**
-   - 将 `src/libs/chain/kdtree.rs` 的 `ChainItem` trait 重命名为更通用的 `RectItem` 或 `IntervalItem2D`。
-   - 评估是否在 PAF 链式化或 POA 序列排序中使用。
+6. ~~**KD-tree 泛化**~~ ✅ 已完成
+   - `KdTree` 已位于 `src/libs/ds/kdtree.rs`，`KdTreeItem` trait 已泛化。
+   - 评估是否在 PAF 链式化或 POA 序列排序中使用（待定）。
 
 7. **文档与测试**
    - 为下沉后的通用模块补充单元测试。

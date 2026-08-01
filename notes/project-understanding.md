@@ -1,7 +1,7 @@
 # pgr 项目理解
 
 本文档是我对 pgr (Practical Genome Refiner) 项目的整体理解，涵盖架构、设计哲学、代码模式、
-当前能力与未来方向。写作时间：2026-06-27，最后更新：2026-07-21。
+当前能力与未来方向。写作时间：2026-06-27，最后更新：2026-08-01（2026-08-01：更新 §3.5 pl 子命令数、§4.2 ds 下沉说明、§8.4 nwk 引用、§6.2 pbit 状态）。
 
 > **2026-07 迁移说明**：`clust`/`cut`/`eval`/`mat`/`nwk` 命令模块及对应库
 > (`libs/phylo/`、`libs/clust/`、`libs/cut/`、`libs/eval/`、`libs/pairmat/`)
@@ -180,7 +180,7 @@ axtToMaf 标准化流程中的大部分步骤。`chain`/`net` 模块在功能上
 | 模块   | 子命令数 | 核心能力                                          |
 |--------|----------|---------------------------------------------------|
 | `ms`   | 1        | Hudson's ms 模拟器输出转 DNA 序列                 |
-| `pl`   | 6        | 集成流程：p2m、trf、ir、rept、ucsc、prefilter     |
+| `pl`   | 7        | 集成流程：chainnet、p2m、trf、ir、rept、ucsc、prefilter |
 | `plot` | 3        | TikZ/LaTeX 图：Venn、HH (hedgehog)、NRPS          |
 
 `pl` (pipelines) 模块定位特殊——它**编排外部工具**（UCSC kent-tools、trf、FastK、Profex、
@@ -201,11 +201,10 @@ clustalw/muscle/mafft），充当工作流 glue。这与 `chain`/`net` 模块的
 
 - `record.rs`：Chain 记录定义与解析
 - `connect.rs`：Chain 连接（核心 chaining 算法）
-- `gap_calc.rs`：Gap 计算（线性和仿射罚分）
 - `sub_matrix.rs`：DNA 替换矩阵（如 HoxD55）
-- `kdtree.rs`：高效前驱搜索的数据结构
 - `anti_repeat.rs`：反重复处理
 - `net/`：Net 格式处理子模块（builder/class/filter/finalize/reader/subset/syntenic/to-axt/types/writer）
+- 注：`GapCalc`、`KdTree`、`BitMap`、`DupeTree`、`TopKPurity` 已下沉到 `src/libs/ds/`，`chain` 模块通过 `pub use` 保持向后兼容
 
 ### 4.3 `libs/fmt/` — 格式解析
 
@@ -312,13 +311,13 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
 ### 6.2 进行中的（活跃开发）
 
 - **`pbit` 归档压缩**：`pgr pbit` 的 `create`/`append`/`stat`/`range`/`some`/`to-fa` 六个子命令已实现并文档化
-  （用户文档见 `docs/pbit.md`，设计笔记见 `notes/design/pbit.md`），归入 §6.1。
+  （用户文档见 `docs/pbit.md`，设计笔记见 `notes/design/pbit.md`）。
 
 - **泛基因组方向**：已形成完整路线图，整合在 `notes/paf-pangenome.md`（路线决策 + 已实现能力 +
   代码结构 + 后续规划）。`pgr paf` 的 query / to-bed / to-fas / to-maf / graph / to-gfa / to-vcf / stat 子命令已全部完成。
   **2026-06 发现：`libs/loc.rs` 的 IO 抽象层可直接支撑 PAF 的 CIGAR 懒加载和 BGZF 访问， 实际实现量比最初估计少约 30%**。
 
-- **`pl` 流程模块**：`ucsc`、`trf`、`rept`、`ir` 等 pipeline 在补充。
+- **`pl` 流程模块**：`chainnet`（纯 pgr 原生管道，已验证与 UCSC 字节级一致）、`ucsc`、`trf`、`rept`、`ir` 等 pipeline。
 
 ### 6.3 待补全的（TODO / 设计阶段）
 
@@ -339,12 +338,27 @@ PAF 泛基因组方向（query / to-maf / graph / to-gfa / to-vcf / stat）已�
 
 ### 7.1 UCSC kent-tools 的关系
 
-pgr 的 `chain`/`net`/`axt`/`psl` 模块是 UCSC kent-tools 对应功能的**Rust 重实现**， 但并非完全替代：
+pgr 的 `chain`/`net`/`axt`/`psl` 模块是 UCSC kent-tools 对应功能的**Rust 重实现**。经逐命令和全管线验证，pgr 与 UCSC 的输出字节级一致：
 
-- **pgr 自己实现的**：chain sort/split/stitch、net filter/split/subset/class、axt sort/to_fas、 psl
-  stats/lift/swap
-- **仍依赖 kent-tools 的**（通过 `pgr pl ucsc` 编排）：chainAntiRepeat、chainMergeSort、
-  chainPreNet、chainNet、netSyntenic、netChainSubset 等复杂步骤
+- **pgr 已完整实现**（全 16 个命令，零外部依赖）：
+  - `pgr psl chain`（等价 `axtChain`）
+  - `pgr chain anti-repeat`（等价 `chainAntiRepeat`）
+  - `pgr chain sort`（等价 `chainMergeSort`）
+  - `pgr chain pre-net`（等价 `chainPreNet`）
+  - `pgr chain net`（等价 `chainNet`）
+  - `pgr net syntenic`（等价 `netSyntenic`）
+  - `pgr net subset`（等价 `netChainSubset`）
+  - `pgr chain stitch`（等价 `chainStitchId`）
+  - `pgr net split`（等价 `netSplit`）
+  - `pgr net to-axt`（等价 `netToAxt`）
+  - `pgr axt sort`（等价 `axtSort`）
+  - `pgr axt to-maf`（等价 `axtToMaf`；UCSC 构建的二进制在 Linux 上崩溃）
+  - `pgr net filter`（等价 `netFilter`）
+  - `pgr chain split`（等价 `chainSplit`）
+  - `pgr fa to-2bit`（等价 `faToTwoBit`；序列数据一致，仅 version 字段差 4 字节）
+  - `pgr lav to-psl`（等价 `lavToPsl`）
+- **完全原生管道**：`pgr pl chainnet` 使用纯 pgr 命令完成全流程，已验证与 `pgr pl ucsc`（kent-tools）的输出字节级一致。
+- **唯一外部依赖**：`lastz` 比对器本身（由 `pgr lav lastz` 封装调用，需 PATH 中存在 `lastz` 二进制）。
 
 ### 7.2 impg 的关系
 
@@ -366,9 +380,10 @@ pgr 的 `chain`/`net`/`axt`/`psl` 模块是 UCSC kent-tools 对应功能的**Rus
 2. **maf 模块扩展**：`maf` 目前有 `to-fas` 和 `to-paf` 两个子命令。仍需 `filter`、`subset` 等扩展以支撑泛基因组管道。
 3. **命令树深度嵌套**：三跳 dispatch (`pgr.rs` → `mod.rs` → `leaf.rs`) 在新增命令时容易遗漏
    某一层的注册。可以考虑宏简化。
-4. **测试覆盖不均衡**：`fa`、`nwk` 等大模块有较全的集成测试，但 `chain`/`net`/`pl` 的覆盖 可能不足
+4. **测试覆盖不均衡**：`fa`、`fas` 等大模块有较全的集成测试，但 `chain`/`net`/`pl` 的覆盖 可能不足
    （`pl` 依赖外部工具，测试困难）。
-5. **外部工具依赖的文档化**：`pl ucsc` 需要安装一整套 kent-tools，但错误提示不够友好。
+5. **外部工具依赖**：`pgr pl ucsc` 需要安装一整套 kent-tools，但 `pgr pl chainnet` 已完全原生；
+   `lastz` 仍为唯一必需的外部二进制。
 6. **`fas` 模块职责过重**：20 个子命令塞在一个模块下，`fas multiz` 等复杂逻辑可能需要
    拆分为独立顶层命令。
 
