@@ -2,6 +2,27 @@
 
 ## Unreleased - ReleaseDate
 
+### New Features
+
+* **`pgr pl chainnet`** - Native chain→net→axt→maf pipeline subcommand.
+* **Syncmer sampling** - Closed syncmer sampling for `pgr dist seq`/`hv`;
+  new `src/libs/syncmer.rs` module.
+* **`pgr lav`** - LAV format I/O support (`src/libs/fmt/lav.rs`).
+
+### Fixes
+
+* **UCSC alignment** - Fixed axtChain gap cost, chain connection, and ID
+  renumbering to match UCSC kent-tools exactly. All chain/net tools aligned
+  to UCSC behavior.
+
+### Refactors
+
+* **`pgr axt sort`** - Renumbering is now default (opt-out via `--no-renumber`).
+
+### Tests
+
+* Added chainSplit/nonSyn net fixtures; extended UCSC pipeline integration tests.
+
 ## 0.3.0 - 2026-07-21
 
 ### New Features
