@@ -26,12 +26,51 @@ pub fn pack_kmer(seq: &[u8], k: usize) -> Option<u128> {
 
 /// Reverse-complement a 2-bit encoded k-mer key in place of orientation.
 pub fn rc_key(x: u128, k: usize) -> u128 {
+    // x's lowest 2-bit group is the last base; the RC key's highest group is
+    // the complement of that base, so iterate the groups low -> high.
     let mut r: u128 = 0;
-    for i in (0..k).rev() {
+    for i in 0..k {
         let c = ((x >> (2 * i)) & 3) ^ 3;
         r = (r << 2) | c;
     }
     r
+}
+
+/// Rolling 2-bit k-mer keys: `out[p]` is the key of `seq[p..p+k)`, or `None`
+/// if that window contains a non-ACGT base (e.g. N).
+pub fn rolling_kmer_keys(seq: &[u8], k: usize) -> Vec<Option<u128>> {
+    let n = seq.len();
+    if n < k {
+        return Vec::new();
+    }
+    let mask = if k * 2 >= 128 {
+        u128::MAX
+    } else {
+        (1u128 << (2 * k)) - 1
+    };
+    let mut out = vec![None; n - k + 1];
+    let mut x: u128 = 0;
+    let mut valid = 0usize;
+    for (i, &b) in seq.iter().enumerate() {
+        let c = match b {
+            b'A' | b'a' => 0u128,
+            b'C' | b'c' => 1,
+            b'G' | b'g' => 2,
+            b'T' | b't' => 3,
+            _ => 4,
+        };
+        if c == 4 {
+            x = 0;
+            valid = 0;
+        } else {
+            x = ((x << 2) | c) & mask;
+            valid += 1;
+        }
+        if i + 1 >= k && valid >= k {
+            out[i + 1 - k] = Some(x);
+        }
+    }
+    out
 }
 
 /// Build an index from named sequences.
@@ -55,46 +94,78 @@ pub fn build_from_seqs(
     };
     params.validate()?;
 
-    // (key, contig_id, pos, strand)
-    let mut records: Vec<(u128, u32, u32, u8)> = Vec::new();
+    // Collect raw (key, contig, pos, strand) records into one growable vector
+    // (a single vector reallocates far less than 256 per-key buckets).
+    // Capacity estimate: ~2 syncmer-sampled positions per window of
+    // `window+1` bases, doubled for both strands.
+    let est: usize = contigs
+        .iter()
+        .map(|(_, s)| (s.len() / (window + 1)).saturating_mul(2) * 2)
+        .sum();
+    let mut records: Vec<(u128, u32, u32, u8)> = Vec::with_capacity(est);
     for (cid, (_, seq)) in contigs.iter().enumerate() {
         if seq.len() < k {
             continue;
         }
         let sm = syncmer_dna(seq, &params)?;
+        let keys = rolling_kmer_keys(seq, k);
         for (_h, pos, _is_fwd) in sm {
             let p = pos;
             if p + k > seq.len() {
                 continue;
             }
-            let Some(key_fwd) = pack_kmer(&seq[p..p + k], k) else {
+            let Some(key_fwd) = keys[p] else {
                 continue; // k-mer contains N or ambiguity; skip
             };
             records.push((key_fwd, cid as u32, p as u32, 0));
             if !no_rev {
-                records.push((rc_key(key_fwd, k), cid as u32, p as u32, 1));
+                let rev = rc_key(key_fwd, k);
+                records.push((rev, cid as u32, p as u32, 1));
             }
         }
     }
-    records.sort_unstable();
 
+    // Counting-sort bucketing by the key's lowest byte; bucket-internal sort
+    // keeps the merged order equal to a full sort.
+    const NBUCKETS: usize = 256;
+    let mut counts = [0usize; NBUCKETS];
+    for r in &records {
+        counts[(r.0 & 0xff) as usize] += 1;
+    }
+    let mut offsets = [0usize; NBUCKETS];
+    let mut cum = 0usize;
+    for b in 0..NBUCKETS {
+        offsets[b] = cum;
+        cum += counts[b];
+    }
+    let mut bucketed = vec![(0u128, 0u32, 0u32, 0u8); records.len()];
+    let mut next = offsets;
+    for r in records {
+        let b = (r.0 & 0xff) as usize;
+        bucketed[next[b]] = r;
+        next[b] += 1;
+    }
     let mut entries: Vec<PgiEntry> = Vec::new();
-    let mut positions: Vec<(u32, u32, u8)> = Vec::with_capacity(records.len());
-    let mut i = 0usize;
-    while i < records.len() {
-        let key = records[i].0;
-        let pos_start = positions.len() as u32;
-        let mut j = i;
-        while j < records.len() && records[j].0 == key {
-            positions.push((records[j].1, records[j].2, records[j].3));
-            j += 1;
+    let mut positions: Vec<(u32, u32, u8)> = Vec::with_capacity(bucketed.len());
+    for b in 0..NBUCKETS {
+        let (s, e) = (offsets[b], offsets[b] + counts[b]);
+        bucketed[s..e].sort_unstable();
+        let mut i = 0usize;
+        while i < e - s {
+            let key = bucketed[s + i].0;
+            let pos_start = positions.len() as u32;
+            let mut j = i;
+            while j < e - s && bucketed[s + j].0 == key {
+                positions.push((bucketed[s + j].1, bucketed[s + j].2, bucketed[s + j].3));
+                j += 1;
+            }
+            entries.push(PgiEntry {
+                kmer: key,
+                pos_start,
+                freq: (j - i) as u32,
+            });
+            i = j;
         }
-        entries.push(PgiEntry {
-            kmer: key,
-            pos_start,
-            freq: (j - i) as u32,
-        });
-        i = j;
     }
 
     Ok(PgiIndex {
@@ -167,9 +238,10 @@ mod tests {
     fn pack_and_rc() {
         // A=0 C=1 G=2 T=3, high bits first: "ACGT" -> 0b00011011
         assert_eq!(pack_kmer(b"ACGT", 4), Some(0b00011011));
-        // RC("ACGT") = "TGCA"; double RC restores the original.
+        // RC("ACGT") = "ACGT" (reverse-complement palindrome); double RC
+        // restores the original for any sequence.
         let x = pack_kmer(b"ACGT", 4).unwrap();
-        assert_eq!(rc_key(x, 4), pack_kmer(b"TGCA", 4).unwrap());
+        assert_eq!(rc_key(x, 4), x);
         assert_eq!(rc_key(rc_key(x, 4), 4), x);
         // RC("AAAA") = "TTTT"
         let a = pack_kmer(b"AAAA", 4).unwrap();
@@ -196,6 +268,27 @@ mod tests {
         // forward and reverse keys both present for the first syncmer position
         assert_eq!(idx.contigs[0].0, "c1");
         assert!(idx.entries.iter().all(|e| e.freq >= 1));
+    }
+
+    #[test]
+    fn rolling_keys_match_pack() {
+        let seq = b"ACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT";
+        let keys = rolling_kmer_keys(seq, 10);
+        assert_eq!(keys.len(), seq.len() - 10 + 1);
+        for (p, k) in keys.iter().enumerate() {
+            assert_eq!(*k, pack_kmer(&seq[p..p + 10], 10), "position {p}");
+        }
+    }
+
+    #[test]
+    fn rolling_keys_handle_n() {
+        let seq = b"ACGTACGTACNTACGTACGTACGTACGTACGTACGTACGTACGTACGT";
+        let keys = rolling_kmer_keys(seq, 10);
+        // windows containing the N (positions covering index 9) are None
+        assert!(keys[0].is_some());
+        assert!(keys[1].is_none()); // window [1,11) includes the N at index 9
+        assert!(keys[10].is_none()); // window [10,20) starts at N
+        assert!(keys[11].is_some()); // window [11,21) clear
     }
 
     #[test]
