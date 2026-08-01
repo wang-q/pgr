@@ -347,9 +347,9 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
 
 ### 6.3 待补全的（TODO / 设计阶段）
 
-- `notes/design/` 下的规划文档（详见 §9 设计笔记索引）
-
-PAF 泛基因组方向（query / to-maf / graph / to-gfa / to-vcf / stat）已全部完成，后续规划见 [[paf-pangenome.md]] §5（图质量与归一化 / 规模扩展 / 应用层）。
+设计笔记（§9 索引）均已落地；PAF 泛基因组方向（query / to-maf / graph / to-gfa / to-vcf /
+stat）已全部完成，后续规划见 [[paf-pangenome.md]] §5（规模扩展与应用层，均待真实 cohort
+数据）。当前无待补全的具体功能。
 
 ### 6.4 不做 / 不适合做的
 
@@ -458,5 +458,4 @@ pgr 的 `chain`/`net`/`axt`/`psl` 模块是 UCSC kent-tools 对应功能的**Rus
 |------|------|
 | [[paf-pangenome.md]] | PAF 隐式图核心目标、路线与已实现能力（泛基因组方向枢纽） |
 | [[ecoli-cohort.md]] | 4 万大肠杆菌基因组泛基因组端到端 pipeline |
-| [[chain-algorithms.md]] | pgr chain 模块各算法的实际运行流程（实现细节） |
-| [[chain-algorithm-reuse.md]] | chain 算法通用化/下沉到 `libs/` 的复用场景分析 |
+| [[chain-algorithms.md]] | pgr chain 模块各算法的运行流程（实现细节）+ 通用算法复用地图（§12） |

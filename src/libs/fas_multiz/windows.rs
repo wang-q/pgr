@@ -5,7 +5,7 @@
 //! windows satisfying the `min_width` and per-mode coverage requirements.
 
 use super::{find_ref_entry, FasMultizConfig, FasMultizMode, Window};
-use crate::libs::ds::DupeTree;
+use crate::libs::ds::{merge_intervals, DupeTree};
 use crate::libs::fmt::fas::FasBlock;
 use std::collections::BTreeMap;
 
@@ -14,8 +14,6 @@ pub(super) fn derive_windows_from_blocks(
     blocks_per_input: &[Vec<FasBlock>],
     cfg: &FasMultizConfig,
 ) -> Vec<Window> {
-    use std::cmp::max;
-
     let mut per_chr: BTreeMap<String, Vec<(u64, u64)>> = BTreeMap::new();
 
     for group in blocks_per_input {
@@ -38,34 +36,13 @@ pub(super) fn derive_windows_from_blocks(
         if intervals.is_empty() {
             continue;
         }
-        intervals.sort_by_key(|(s, _)| *s);
-
-        let mut current = intervals[0];
-        for &(s, e) in &intervals[1..] {
-            if s <= current.1 {
-                current.1 = max(current.1, e);
-            } else {
-                if current.1 > current.0 {
-                    let width = current.1 - current.0;
-                    if width >= cfg.min_width as u64 {
-                        windows.push(Window {
-                            chr: chr.clone(),
-                            start: current.0,
-                            end: current.1,
-                        });
-                    }
-                }
-                current = (s, e);
-            }
-        }
-
-        if current.1 > current.0 {
-            let width = current.1 - current.0;
+        for (s, e) in merge_intervals(&mut intervals) {
+            let width = e - s;
             if width >= cfg.min_width as u64 {
                 windows.push(Window {
-                    chr,
-                    start: current.0,
-                    end: current.1,
+                    chr: chr.clone(),
+                    start: s,
+                    end: e,
                 });
             }
         }
@@ -96,19 +73,8 @@ pub(super) fn derive_windows_from_blocks(
             }
         }
         for (chr, mut intervals) in by_chr {
-            intervals.sort_unstable_by_key(|&(s, _)| s);
-            let mut merged: Vec<(u64, u64)> = Vec::new();
-            for (s, e) in intervals {
-                if let Some(last) = merged.last_mut() {
-                    if s <= last.1 {
-                        last.1 = last.1.max(e);
-                        continue;
-                    }
-                }
-                merged.push((s, e));
-            }
             let tree = cov_trees.entry(chr).or_default();
-            for (s, e) in merged {
+            for (s, e) in merge_intervals(&mut intervals) {
                 tree.add(s, e);
             }
         }

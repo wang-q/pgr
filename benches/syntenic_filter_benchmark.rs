@@ -2,7 +2,7 @@
 //!
 //! `pgr paf query --syntenic-filter` originally checked each query interval
 //! against every chain span linearly; the DupeTree rewrite turns that into a
-//! tree query (see notes/chain-algorithm-reuse.md).
+//! tree query (see notes/chain-algorithms.md §12).
 
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use pgr::libs::ds::DupeTree;

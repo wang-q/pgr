@@ -211,7 +211,7 @@ pgr 读取固定大小小端整数的模式。Phase 0 已将这些函数改为 `
 输出多 FASTA）：
 
 ```rust
-// twobit/range.rs (现有)                     // pbit/range.rs (待实现)
+// twobit/range.rs (现有)                     // pbit/range.rs (现有)
 let mut tb = TwoBitFile::open(infile)?;        let mut pbit = Decompressor::open(infile)?;
 for el in ranges.iter() {                      for el in ranges.iter() {
     let rg = intspan::Range::from_str(el);         let rg = intspan::Range::from_str(el);
@@ -1400,4 +1400,3 @@ PAF 驱动的 CIGAR delta 编码已在 8a–8e 实现并测试通过；8f 为可
 - pgr loc 模块: [libs/loc.rs](file:///Volumes/ExtHome/Scripts/pgr/src/libs/loc.rs)
 - pgr 2bit 模块: [libs/fmt/twobit](file:///Volumes/ExtHome/Scripts/pgr/src/libs/fmt/twobit.rs)
 - pgr FASTA I/O: [libs/fmt/fa](file:///Volumes/ExtHome/Scripts/pgr/src/libs/fmt/fa.rs)
-

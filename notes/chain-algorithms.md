@@ -390,3 +390,48 @@ Degeneracy 检查本质是一个**Top-K 类别占比惩罚**算法。
 5. `anti-repeat` 中的 `nt_val` 映射是独立的，不要与 `crate::libs::nt::NT_VAL` 混用。
 6. `stitch` 不检测片段重叠，依赖调用方保证。
 7. `remove_exact_overlaps` 不会累加重复 block 的分数。
+
+## 12. 通用算法复用地图
+
+> 本节约自原 `chain-algorithm-reuse.md`（2026-08 合并）。`libs/chain` 中与生物序列语义
+> 解耦的算法多数已下沉到 `libs/ds/` 或完成泛化，供其他模块复用；`chain` 侧通过 `pub use`
+> 保持向后兼容。
+
+### 12.1 通用算法清单
+
+| 算法 | 位置 | 通用问题抽象 | 状态 |
+|------|------|--------------|------|
+| KD-tree 前驱搜索 | `libs/ds/kdtree.rs` | 二维区间带权最长路径 | 已泛化；PAF 链式化 / POA 排序待评估 |
+| 分段插值 Gap 代价 | `libs/ds/gap_calc.rs` | 一维标量函数查表 + 插值 | 已下沉；`fas_multiz` 已复用 |
+| 最优重叠剪切 | `libs/ds/crossover.rs` | 重叠区间按评分选最佳 cut | 已泛化；`fas_multiz` merge 已试点 |
+| Top-K 成分纯度检测 | `libs/ds/top_k_purity.rs` | 前 K 类占比过高惩罚 | 已下沉；MSA 列质量已接入（`alignment/stat.rs::dominated_column_count`） |
+| 位图范围覆盖 | `libs/ds/bitmap.rs` | 布尔范围集合 | 已下沉；`fas cover` 大规模可换 |
+| 层次化区间填充 | `libs/chain/net/builder.rs::fill_space` | 嵌套区间按优先级填充 | 未下沉；paf graph 布局可借鉴 |
+| 区间深度统计 | `libs/ds/dupe_tree.rs` | 带符号覆盖深度 | 已下沉；query syntenic filter、fas windows 已用 |
+| 排序/拆分/合并模式 | `libs/chain/sort.rs` / `stitch.rs` / `cmd_pgr/chain/split.rs` | 排序 / 分桶 / 同 ID 合并 | 未下沉；收益有限 |
+
+### 12.2 各模块复用机会（现状）
+
+- **PAF**：syntenic filter 已用 `DupeTree` 替换线性扫描（~49× 加速，见
+  `benches/syntenic_filter_benchmark.rs`）；`split_alignment` 切分后天然满足
+  `ChainableBlock`，未来可链式化复用 KD-tree DP；GFA 布局可借鉴 `fill_space`。
+- **FAS / multiz**：`banded_align` 已复用 `GapCalc` + `SubMatrix`（最佳案例）；
+  `merge.rs` 参考冲突已用 `best_crossover` 拼接试点；`windows.rs` 覆盖判断已用
+  `DupeTree`；`cover.rs` 大规模染色体可换 `BitMap`（内存约 1/3、查询快 1500×，基准
+  `benches/bitmap_intspan_benchmark.rs`）。
+- **Alignment**：`trim.rs` indel 区间可用 `DupeTree` 统一（待定）；`stat.rs` / `msa.rs`
+  列质量可借鉴 Top-K 纯度（待定）。
+- **POA**：序列加入顺序可借鉴 `chain_blocks` 的 peeling 骨架选择（理念借鉴，低优先）。
+- **Net / PSL**：`libs/chain::net` 已是通用 Net 处理库；`group_psl_blocks` 可泛化为
+  成对比对 → 链式块转换器。
+- **Pipeline**：`pl ucsc` 可把子命令调用下沉为 `libs/chain` 库调用（长期重构，低优先）。
+
+### 12.3 剩余待定项
+
+- KD-tree 在 PAF 链式化或 POA 排序使用（PAF 当前未明确需要链式化）。
+- `best_crossover` 在 `fas_multiz` merge 的试点输出质量需真实数据验证。
+- 任何下沉都应伴随单元测试 + 至少一个实际使用场景（避免为抽象而抽象）。
+
+> 2026-08-02 更新：Top-K 纯度已接入 MSA 列质量（`dominated_column_count`，
+> 5 类 A/C/G/T/other，k 与 ok_ratio 可调）；区间"排序+合并"已提取为
+> `libs/ds::merge_intervals`（`fas_multiz/windows.rs` 两处手写合并已替换）。

@@ -1,6 +1,6 @@
 //! Benchmark: BitMap vs IntSpan for dense range coverage on a single chromosome.
 //!
-//! Tests the claim in `notes/chain-algorithm-reuse.md` that BitMap's bit-vector
+//! Tests the claim in `notes/chain-algorithms.md` §12 that BitMap's bit-vector
 //! layout is more compact and potentially faster than IntSpan's interval list
 //! for large chromosome coverage aggregation.
 
