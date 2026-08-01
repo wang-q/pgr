@@ -463,10 +463,12 @@ chainnet 后消失。`pgr psl chain` 在 2bit 序列缓存优化后（~0.3 s）�
 |------|------|
 | [[agc-cpp.md]] | AGC (Assembled Genomes Compressor) C++ 源码分析（pbit 算法参考：LZ-diff、段级参考压缩） |
 | [[biser.md]] | BISER 分段重复 (SD) 检测源码与论文分析 |
+| [[fastga.md]] | FastGA 快速全基因组比对器源码分析（adaptive seeds + wave aligner + trace points） |
 | [[impg.md]] | impg 隐式泛基因组图设计（PAF + 区间树投影） |
 | [[seqwish.md]] | seqwish 从 PAF 诱导 GFA 变异图（DSU 传递闭包） |
 | [[smoothxg.md]] | smoothxg GFA 图归一化（POA 块分解 + 平滑） |
 | [[minigraph.md]] | minigraph 参考锚定增量图构建（rGFA） |
+| [[ropebwt3.md]] | Ropebwt3 泛基因组 FM-index（RLE-BWT + SMEM + BWA-SW，无 pairwise 路线）|
 | [[syng.md]] | syng syncmer 图分析（closed syncmer 移植参考，参数约定与 pgr 差异） |
 | [[cactus.md]] | Cactus 渐进式比对与 Minigraph-Cactus 架构 |
 | [[cactus_lastz.md]] | Cactus lastzRepeatMasking 子模块深度分析 |
