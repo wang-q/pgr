@@ -1,7 +1,10 @@
 # pgr 项目理解
 
 本文档是我对 pgr (Practical Genome Refiner) 项目的整体理解，涵盖架构、设计哲学、代码模式、
-当前能力与未来方向。写作时间：2026-06-27，最后更新：2026-08-01（2026-08-01：更新 §3.5 pl 子命令数、§4.2 ds 下沉说明、§8.4 nwk 引用、§6.2 pbit 状态）。
+当前能力与未来方向。写作时间：2026-06-27，最后更新：2026-08-01
+（2026-08-01 晚：版本升至 0.3.1、补全 §2.1 目录树（args/pbit/ds/pl/syncmer）、更新 §2.3 依赖、
+§3.4 dist syncmer 采样、§10/§11 笔记索引；2026-08-01 早：更新 §3.5 pl 子命令数、§4.2 ds 下沉说明、
+§6.2 pbit 状态）。
 
 > **2026-07 迁移说明**：`clust`/`cut`/`eval`/`mat`/`nwk` 命令模块及对应库
 > (`libs/phylo/`、`libs/clust/`、`libs/cut/`、`libs/eval/`、`libs/pairmat/`)
@@ -13,7 +16,7 @@
 pgr 是一个**生物信息学 CLI 工具集**，定位是"基因组数据处理瑞士军刀"。它不追求成为某个领域的
 一站式平台，而是在日常生信流程中充当格式转换、数据查询、快速分析的胶水层。
 
-当前版本 0.2.0，作者 wang-q，MIT 协议，Rust 2021 edition。
+当前版本 0.3.1，作者 wang-q，MIT 协议，Rust 2021 edition。
 
 ### 1.1 与同类工具的差异
 
@@ -46,6 +49,7 @@ src/
 ├── lib.rs              # 库入口：re-export io 工具 + reverse_range
 ├── cmd_pgr/            # 命令层：每个模块 = 一组子命令
 │   ├── mod.rs          #   声明所有命令模块
+│   ├── args.rs         #   共享 clap 参数构建器（outfile/infile 等标准参数）
 │   ├── fa/             #   每个模块含 make_subcommand() + execute()
 │   ├── fas/
 │   ├── fq/
@@ -58,6 +62,7 @@ src/
 │   ├── lav/
 │   ├── maf/
 │   ├── paf/            #   PAF 泛基因组图操作
+│   ├── pbit/           #   群体基因组压缩
 │   ├── dist/
 │   ├── ms/
 │   ├── pl/             #   Pipelines：编排外部工具
@@ -68,6 +73,7 @@ src/
     ├── poa/            #   偏序比对 (Partial Order Alignment)
     ├── chain/          #   Chain 算法 (连接、gap 计算、替换矩阵)
     │   └── net/        #     Net 格式处理 (class/filter/to-axt)
+    ├── ds/             #   通用数据结构 (KdTree/GapCalc/BitMap/DupeTree/TopKPurity)
     ├── fas_multiz/     #   fas-multiz 多序列比对合并 (banded_align/merge/windows)
     ├── fasta/          #   FASTA 操作 (chunk/dedup/filter/stat)
     ├── fmt/            #   格式解析 (AXT/FAS/FA/FQ/LAV/MAF/PSL/2bit/VCF)
@@ -75,10 +81,13 @@ src/
     ├── paf/            #   PAF 隐式图核心
     │   ├── index/      #     区间树索引 + BFS 传递闭包
     │   └── graph/      #     DSU 图构建 + GFA 输出
+    ├── pbit/           #   群体基因组压缩核心 (LZ-diff/CIGAR delta/PAF 索引)
+    ├── pl/             #   pipeline 共享逻辑 (PipelineCtx/FastK/Profex/spanr)
     ├── plot/           #   可视化 (histogram/nrps/venn)
     ├── fas_xlsx.rs     #   FAS xlsx 输出
     ├── lastz.rs        #   lastz 封装
     ├── par.rs          #   并行工具
+    ├── syncmer.rs      #   closed syncmer 采样 (Edgar 2021)
     ├── translate.rs    #   翻译工具
     └── (io/hash/hv/linalg/loc/nt)
 ```
@@ -105,13 +114,16 @@ src/
 - **解析**: `regex`
 - **并发**: `rayon` (数据并行)、`crossbeam`
 - **生物信息学**: `noodles` (FASTA/FASTQ/BGZF/GFF)、`bio` (生物信息学基础类型)
-- **数据结构**: `petgraph` (图)、`indexmap` (保序 HashMap)、`intspan` (区间集合)
-- **哈希**: 多哈希支持 — `rapidhash`、`fxhash`、`murmurhash3`
-- **输出**: `rust_xlsxwriter` (Excel)、`tera` (模板引擎)
+- **数据结构**: `petgraph` (图)、`indexmap` (保序 HashMap)、`intspan` (区间集合)、
+  `coitrees` (区间树)、`lru` (LRU 缓存)、`itertools` (迭代器工具)
+- **哈希/采样**: 多哈希支持 — `rapidhash`、`fxhash`、`murmurhash3`；
+  采样 — `minimizer-iter` (minimizer)、`rand` (随机种子)；自研 `libs/syncmer.rs` (closed syncmer)
+- **输出**: `rust_xlsxwriter` (Excel)、`tera` (模板引擎)、`csv` (CSV/TSV)、`flate2` (gzip)
 - **外部工具编排**: `cmd_lib`、`which`
 
 **没有引入的**：`tokio`（纯同步 CLI 工具，不需要异步运行时）、`sled`/`rocksdb`（不做嵌入式数据库）。
-**已引入的**：`serde`（带 derive）+ `bincode`（用于 PAF 索引的 `.paf.idx` 持久化）。
+**已引入的**：`serde`（带 derive）+ `bincode`/`serde_json`（PAF 索引 `.paf.idx` 与 pbit
+格式的持久化）；`tempfile`（测试与临时文件）。
 
 ### 2.4 构建配置
 
@@ -171,9 +183,9 @@ axtToMaf 标准化流程中的大部分步骤。`chain`/`net` 模块在功能上
 
 ### 3.4 距离 (Distance)
 
-| 模块   | 子命令数 | 核心能力                            |
-|--------|----------|-------------------------------------|
-| `dist` | 2        | 距离计算：hv (hypervariable)、seq   |
+| 模块   | 子命令数 | 核心能力                                                  |
+|--------|----------|-----------------------------------------------------------|
+| `dist` | 2        | 距离计算：hv (hypervariable)、seq (minimizer/closed syncmer 双采样器) |
 
 ### 3.5 模拟、流程、可视化 (Simulation, Pipelines, Plot)
 
@@ -240,6 +252,10 @@ clustalw/muscle/mafft），充当工作流 glue。这与 `chain`/`net` 模块的
 - `libs/fas_xlsx.rs`：FAS (block FA) 到 Excel 转换
 - `libs/fasta/`：FASTA 处理工具（dedup/filter/stat）
 - `libs/paf/`：PAF 隐式图核心（索引、查询、图构建、VCF 导出）
+- `libs/pbit/`：pbit 压缩核心（LZ-diff、CIGAR delta、PAF 驱动参考索引、segment）
+- `libs/ds/`：通用数据结构（KdTree、GapCalc、BitMap、DupeTree、TopKPurity，自 chain 模块下沉）
+- `libs/pl/`：pipeline 共享逻辑（PipelineCtx、CwdGuard、FastK/Profex/spanr 驱动、TRF 输出解析）
+- `libs/syncmer.rs`：closed syncmer 采样（Edgar 2021，syng 移植参考），支撑 `dist` 采样
 - `libs/ms/`：Hudson's ms 模拟器（解析器 + DNA 生成）
 - `libs/plot/`：绘图工具（histogram/nrps/venn）
 - `libs/lastz.rs`：lastz 调用封装
@@ -274,6 +290,7 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
 
 - 用 `anyhow::Result<()>` 做返回值（CLAUDE.md 硬性要求）
 - 不使用 clap derive 宏，手写 `Command` 构建
+- 共享参数通过 `cmd_pgr::args` 复用（`outfile`/`infile` 等标准定义，2026-07 CLI 标准化）
 - `about` 用第三人称单数
 - 输入参数统一命名：`infile`（单文件）或 `infiles`（多文件）
 
@@ -306,7 +323,8 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
   `lav`/`maf` 六个模块中基本完整，且是纯 Rust 实现（不依赖 kent-tools）。
 - **FASTA/FASTQ/2bit/pbit 处理**：`fa`(18 子命令) + `fas`(20 子命令) + `fq`(2) + `twobit`(5) + `pbit`(6)，
   日常序列操作与群体基因组归档压缩需求基本覆盖。
-- **距离工具**：`dist` 的 hv/seq 子命令已实现。
+- **距离工具**：`dist` 的 hv/seq 子命令已实现；`seq` 支持 minimizer/closed syncmer 双采样器，
+  DNA/protein 均提供 syng 风格默认参数。
 
 ### 6.2 进行中的（活跃开发）
 
@@ -401,10 +419,13 @@ pgr 的 `chain`/`net`/`axt`/`psl` 模块是 UCSC kent-tools 对应功能的**Rus
 
 | 文档 | 定位 |
 |------|------|
+| [[agc-cpp.md]] | AGC (Assembled Genomes Compressor) C++ 源码分析（pbit 算法参考：LZ-diff、段级参考压缩） |
+| [[biser.md]] | BISER 分段重复 (SD) 检测源码与论文分析 |
 | [[impg.md]] | impg 隐式泛基因组图设计（PAF + 区间树投影） |
 | [[seqwish.md]] | seqwish 从 PAF 诱导 GFA 变异图（DSU 传递闭包） |
 | [[smoothxg.md]] | smoothxg GFA 图归一化（POA 块分解 + 平滑） |
 | [[minigraph.md]] | minigraph 参考锚定增量图构建（rGFA） |
+| [[syng.md]] | syng syncmer 图分析（closed syncmer 移植参考，参数约定与 pgr 差异） |
 | [[cactus.md]] | Cactus 渐进式比对与 Minigraph-Cactus 架构 |
 | [[cactus_lastz.md]] | Cactus lastzRepeatMasking 子模块深度分析 |
 | [[pangenome-tools.md]] | 泛基因组工具生态全景与 pgr 定位 |
@@ -420,4 +441,5 @@ pgr 的 `chain`/`net`/`axt`/`psl` 模块是 UCSC kent-tools 对应功能的**Rus
 |------|------|
 | [[paf-pangenome.md]] | PAF 隐式图核心目标、路线与已实现能力（泛基因组方向枢纽） |
 | [[ecoli-cohort.md]] | 4 万大肠杆菌基因组泛基因组端到端 pipeline |
-
+| [[chain-algorithms.md]] | pgr chain 模块各算法的实际运行流程（实现细节） |
+| [[chain-algorithm-reuse.md]] | chain 算法通用化/下沉到 `libs/` 的复用场景分析 |
