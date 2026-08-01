@@ -232,6 +232,16 @@ FastGA -psl（3 对）→ pgr pl chainnet --syn（每对）→ maf to-paf → pa
 E2348/69 / 042，质粒弱链被 --syn 滤掉、图以染色体为主）；graph / stat 一并通过。
 `scripts/verify-pangenome.sh` 已按 seed 在 target 侧 + pair 前缀命名固化。
 
+**10 基因组下游验证（to-maf --msa / to-vcf / to-fas）**：区域查询在 10 基因组规模
+暴露了 MSA 输入爆炸——传递 BFS 对 10kb 区域返回 73 条结果（同一条序列经不同路径
+反复到达），`build_msa_entries` 不去重就把 ~90 条序列喂给 POA，10kb 区域 release
+跑 5 分钟不结束。修复：同名同链结果先精确去重、再合并重叠区间（排序键
+`(name, strand, qs)`，否则 '-' 链区间会插在两条 '+' 区间中间挡住合并），输入降到
+每株 1-2 条。修复后 10kb MSA / VCF / block FA 均在 ~54s 完成（release），MSA 行
+序列与源文件逐字一致；VCF 4875 行。剩余瓶颈是 POA 引擎本身（O(节点数×序列长)，
+progressive 逐条加入），属 [[fas-multiz.md]] 已记录的 profile-profile DP 优化方向。
+回归测试：`command_paf_to_maf_msa_dedup_transitive_duplicates`（菱形拓扑 → 3 行）。
+
 **EC958 数据注意**：必须用 GCF_000285655.3 完整版（EC958.v1，chr + 2 质粒）；
 `.2` 是 WGS scaffold（240 条 contig），不要用。
 
@@ -250,6 +260,9 @@ E2348/69 / 042，质粒弱链被 --syn 滤掉、图以染色体为主）；graph
 
 - 2026-08-02：§4 完成 10 基因组验证（45 对全跑 PASS）——cohort 从 3 扩到 10，
   脚本固化 FastGA(b,a) → chainnet(a,b) 方向与 pair 前缀 PAF 命名。
+- 2026-08-02：§4 补充下游验证与 MSA 输入修复——传递 BFS 重复结果导致 POA 爆炸，
+  `build_msa_entries` 增加同名同链去重 + 重叠区间合并（10kb MSA/VCF/FAS 从 >5min
+  降到 ~54s），新增菱形拓扑回归测试。
 - 2026-08-02：§4 补充 cohort 扩展说明（3 → 10 基因组）——预选 7 株典型 pathotype
   菌株（CFT073 / E2348/69 / 042 / 2011C-3493 / E24377A / EC958 / Nissle 1917），
   下载命令见 [[ecoli-genome.md]] "Typical strains"。

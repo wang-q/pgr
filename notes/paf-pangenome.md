@@ -421,6 +421,12 @@ verify-pangenome.sh 的 fixture 变体生成）。release 实测（单核）：
 10 基因组规模下索引/查询/BFS/图构建均远非瓶颈；"选路径 A 哪几项优化"的量化决策需等
 4 万大肠杆菌数据可用后重跑同一基准（届时按 §5.2 判断标准决定）。
 
+**MSA 输入去重**（2026-08-02，见 [[ecoli-cohort.md]] §4）：传递 BFS 对同一区域会按
+路径反复报告同一条序列（10kb 区域 73 条结果 → ~90 条 POA 输入，release 5 分钟不
+结束）。`build_msa_entries` 现在按 `(name, strand, qs)` 排序后精确去重 + 合并重叠
+区间，POA 输入降到每株 1-2 条（10kb MSA/VCF/FAS ~54s）。对 to-maf --msa /
+to-fas --msa / to-vcf / to-gfa（poa_compact）全部生效。
+
 ### 5.0.1 测试改进（借鉴 impg/seqwish）
 
 对照 impg `test_transitive_integrity.rs`（8 个传递闭包不变量）和 seqwish

@@ -4,6 +4,7 @@ use crate::libs::paf::cigar::CigarOp;
 use crate::libs::paf::fasta::FastaStore;
 use crate::libs::paf::index::{PafIndex, QueryResult};
 use crate::libs::poa::{self, AlignmentParams};
+use std::collections::HashSet;
 
 /// Return `(start, end)` with `start <= end` from an oriented interval.
 /// PAF intervals may be stored as `(first, last)` in either order; this
@@ -154,13 +155,39 @@ pub fn build_msa_entries(
         seq: t_seq,
     });
 
-    // Query entries. Skip a query that duplicates the target entry.
+    // Transitive BFS can report the same query fragment once per alignment
+    // path (10 genomes -> dozens of near-identical copies). Deduplicate exact
+    // duplicates, then merge overlapping same-strand intervals of the same
+    // query, so POA receives one entry per fragment instead of N copies.
     let t_key = (tname.to_string(), ts, '+', t_src_size);
+    let mut seen: HashSet<(String, i32, i32, char)> = HashSet::new();
+    let mut intervals: Vec<(String, i32, i32, char)> = Vec::new();
     for (query_id, q_iv, _t_iv, _cigar, _rec_ts, _rec_qs, strand) in results {
         let qname = idx.id_to_name(*query_id).unwrap_or("?");
         let (qs, qe) = orient_interval(q_iv.first, q_iv.last);
-        let (q_seq_fwd, q_src_size) = fasta_store.fetch_range(qname, qs, qe)?;
-        let (seq, start, strand_char) = if *strand == '-' {
+        if seen.insert((qname.to_string(), qs, qe, *strand)) {
+            intervals.push((qname.to_string(), qs, qe, *strand));
+        }
+    }
+    // Group by (name, strand) so same-strand intervals are contiguous for the
+    // overlap merge below; a '-' strand copy of the same region would
+    // otherwise sit between two '+' fragments and block their merge.
+    intervals.sort_by(|a, b| a.0.cmp(&b.0).then(a.3.cmp(&b.3)).then(a.1.cmp(&b.1)));
+    let mut merged: Vec<(String, i32, i32, char)> = Vec::new();
+    for (qname, qs, qe, strand) in intervals {
+        if let Some(last) = merged.last_mut() {
+            if last.0 == qname && last.3 == strand && qs < last.2 {
+                last.2 = last.2.max(qe);
+                continue;
+            }
+        }
+        merged.push((qname, qs, qe, strand));
+    }
+
+    // Query entries. Skip a query that duplicates the target entry.
+    for (qname, qs, qe, strand) in merged {
+        let (q_seq_fwd, q_src_size) = fasta_store.fetch_range(&qname, qs, qe)?;
+        let (seq, start, strand_char) = if strand == '-' {
             (
                 nt::rev_comp(&q_seq_fwd).collect::<Vec<u8>>(),
                 coords::reverse_range_pair(qs, qe, q_src_size as i32).0,
@@ -169,12 +196,12 @@ pub fn build_msa_entries(
         } else {
             (q_seq_fwd, qs, '+')
         };
-        let q_key = (qname.to_string(), start, strand_char, q_src_size);
+        let q_key = (qname.clone(), start, strand_char, q_src_size);
         if q_key == t_key {
             continue;
         }
         entries.push(MsaEntry {
-            name: qname.to_string(),
+            name: qname,
             start,
             strand: strand_char,
             src_size: q_src_size,

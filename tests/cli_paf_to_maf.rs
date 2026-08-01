@@ -340,6 +340,43 @@ C\t10\t0\t10\t+\tA\t10\t0\t10\t10\t10\t255\tcg:Z:10=\n";
 }
 
 #[test]
+fn command_paf_to_maf_msa_dedup_transitive_duplicates() {
+    // Diamond topology: C is reachable from B both directly (C->B) and via A
+    // (C->A + A->B). The transitive BFS reports C twice; the MSA must emit it
+    // once (build_msa_entries deduplicates/merges same-name intervals).
+    let paf = "\
+A\t10\t0\t10\t+\tB\t10\t0\t10\t10\t10\t255\tcg:Z:10=\n\
+C\t10\t0\t10\t+\tB\t10\t0\t10\t10\t10\t255\tcg:Z:10=\n\
+C\t10\t0\t10\t+\tA\t10\t0\t10\t10\t10\t255\tcg:Z:10=\n";
+    let (stdout, _stderr) = PgrCmd::new()
+        .args(&[
+            "paf",
+            "to-maf",
+            "stdin",
+            "B:0-10",
+            "--transitive",
+            "--msa",
+            "-f",
+            fixture("ABC.tsv").to_str().unwrap(),
+        ])
+        .stdin(paf)
+        .run();
+    let s_lines: Vec<&str> = stdout.lines().filter(|l| l.starts_with("s\t")).collect();
+    assert_eq!(
+        s_lines.len(),
+        3,
+        "expected 3 s-lines after dedup, got {:?}",
+        s_lines
+    );
+    assert_eq!(
+        s_lines.iter().filter(|l| l.starts_with("s\tC\t")).count(),
+        1,
+        "expected exactly one C s-line, got {:?}",
+        s_lines
+    );
+}
+
+#[test]
 fn command_paf_to_maf_msa_with_snp() {
     // B = ACGTACGTAC, A = ACGTACGTAC, C = ACGTTCGTAC (SNP at pos 4).
     let paf = "\
