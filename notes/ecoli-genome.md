@@ -31,9 +31,12 @@ pgr pl ucsc -t="" tests/genome/mg1655.fa.gz tests/genome/sakai.fa.gz tmp.psl > t
 pgr pl ucsc --syn -t="" tests/genome/mg1655.fa.gz tests/genome/sakai.fa.gz tmp.psl > tmp.syn.maf
 
 # LASTZ alignment
-lastz <(gzip -dcf tests/genome/mg1655.fa.gz) <(gzip -dcf tests/genome/sakai.fa.gz) |
-    lavToPsl stdin stdout \
-    > tmp.lastz.psl
+# 1. Generate LAV with lastz (~2 min).  A pre-computed copy is saved in the
+#    repo as tests/genome/mg1655-sakai.lastz.lav, so this step can be skipped.
+lastz <(gzip -dcf tests/genome/mg1655.fa.gz) <(gzip -dcf tests/genome/sakai.fa.gz) \
+    > tmp.lastz.lav
+# 2. Convert LAV to PSL (use the saved LAV, or tmp.lastz.lav if regenerated).
+lavToPsl tests/genome/mg1655-sakai.lastz.lav tmp.lastz.psl
 pgr pl ucsc --syn -t="" tests/genome/mg1655.fa.gz tests/genome/sakai.fa.gz tmp.lastz.psl > tmp.lastz.maf
 
 # Dotplot visualization
