@@ -4,7 +4,8 @@
 //! block sets, unions overlapping intervals (expanded by `radius`), and keeps
 //! windows satisfying the `min_width` and per-mode coverage requirements.
 
-use super::{find_ref_entry, ref_overlaps_window, FasMultizConfig, FasMultizMode, Window};
+use super::{find_ref_entry, FasMultizConfig, FasMultizMode, Window};
+use crate::libs::ds::DupeTree;
 use crate::libs::fmt::fas::FasBlock;
 use std::collections::BTreeMap;
 
@@ -74,31 +75,54 @@ pub(super) fn derive_windows_from_blocks(
         return windows;
     }
 
-    let total_inputs = blocks_per_input.len();
     let required_inputs = match cfg.mode {
-        FasMultizMode::Core => total_inputs,
+        FasMultizMode::Core => blocks_per_input.len() as i32,
         FasMultizMode::Union => 1,
     };
 
-    let mut filtered = Vec::new();
-
-    for window in windows {
-        let mut covered = 0usize;
-        for group in blocks_per_input {
-            let has_overlap = group.iter().any(|block| {
-                find_ref_entry(block, ref_name)
-                    .map(|entry| ref_overlaps_window(entry, &window))
-                    .unwrap_or(false)
-            });
-            if has_overlap {
-                covered += 1;
-            }
-            if covered >= required_inputs {
-                break;
+    // Per-chromosome DupeTree: each input contributes at most 1 depth over its
+    // (merged) reference intervals, so `count_over(window, required) > 0`
+    // means the window overlaps at least `required` distinct inputs.
+    let mut cov_trees: BTreeMap<String, DupeTree> = BTreeMap::new();
+    for group in blocks_per_input {
+        let mut by_chr: BTreeMap<String, Vec<(u64, u64)>> = BTreeMap::new();
+        for block in group {
+            if let Some(entry) = find_ref_entry(block, ref_name) {
+                let range = entry.range();
+                by_chr
+                    .entry(range.chr().to_string())
+                    .or_default()
+                    .push((*range.start() as u64, *range.end() as u64));
             }
         }
+        for (chr, mut intervals) in by_chr {
+            intervals.sort_unstable_by_key(|&(s, _)| s);
+            let mut merged: Vec<(u64, u64)> = Vec::new();
+            for (s, e) in intervals {
+                if let Some(last) = merged.last_mut() {
+                    if s <= last.1 {
+                        last.1 = last.1.max(e);
+                        continue;
+                    }
+                }
+                merged.push((s, e));
+            }
+            let tree = cov_trees.entry(chr).or_default();
+            for (s, e) in merged {
+                tree.add(s, e);
+            }
+        }
+    }
+    for tree in cov_trees.values_mut() {
+        tree.build();
+    }
 
-        if covered >= required_inputs {
+    let mut filtered = Vec::new();
+    for window in windows {
+        let covered = cov_trees.get(&window.chr).map_or(0, |tree| {
+            tree.count_over(window.start, window.end, required_inputs)
+        });
+        if covered > 0 {
             filtered.push(window);
         }
     }

@@ -182,12 +182,21 @@ UCSC pipeline 已大量调用 chain 子命令（`chain sort`、`chain pre-net`�
 
 2. ~~**创建通用位图模块**~~ ✅ 已完成
    - `BitMap` 已位于 `src/libs/ds/bitmap.rs`。
-   - 在 `src/libs/paf/query.rs` syntenic filter 中试用（待实际编码替换线性扫描）。
+   - ✅ **已替换（2026-08-01）**：`src/libs/paf/query.rs` syntenic filter 由线性扫描改为
+     `DupeTree::count_over(..., 1) > 0`（语义与原有 any-overlap 完全等价，且不需要
+     染色体长度；BitMap 只有 `is_fully_set`，不匹配 any-overlap 语义）。
    - 已有基准测试 `benches/bitmap_intspan_benchmark.rs`。
+   - 新增基准 `benches/syntenic_filter_benchmark.rs`：1k/10k/50k 条 chain 下
+     linear 117.7 µs / 11.88 ms / 300.6 ms → DupeTree 42.4 µs / 578 µs / 6.18 ms
+     （约 2.8× / 20.5× / 48.6× 加速）。
 
 3. ~~**创建通用区间深度模块**~~ ✅ 已完成
    - `DupeTree` 已位于 `src/libs/ds/dupe_tree.rs`。
-   - 替换 `src/libs/fas_multiz/windows.rs` 中的手动覆盖判断（待实际编码）。
+   - ✅ **已替换（2026-08-01）**：`src/libs/fas_multiz/windows.rs` 的窗口覆盖判断改用
+     `DupeTree`（每个输入先合并自身区间再入树，`count_over(window, required) > 0`
+     判定 core/union）。core 语义由"任意输入与窗口重叠"收紧为"窗口内存在被
+     `required` 个输入共同覆盖的位置"（更符合 multiz core 定义）；现有测试数据
+     （S288c × 3 酵母）替换前后输出逐字节一致。
 
 4. **最优剪切泛化**
    - 将 `src/libs/chain/connect.rs::find_crossover` 的核心“重叠区间最佳 cut”逻辑提取为通用函数。

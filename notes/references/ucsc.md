@@ -524,8 +524,10 @@ pgr 的 chain-net-axt-maf 管线可作为 UCSC kent-tool 的 Rust 替代，达�
 `cmp` 相同；支持 `GAP_MODEL=loose/medium`、`MIN_SCORE=1000/5000`）。除上述单染色体
 target 流程外，脚本还内置 **SE11（7 replicon，含 6 质粒）作 target × Sakai 作 query**
 的反向多染色体验证：9 个中间文件 + 6 个 target 染色体的 MAF 逐文件 `cmp` 全部一致
-（netSplit 按染色体拆分、netToAxt/axtToMaf 逐染色体对比；`loose/1000` 与 `medium/5000`
-两种配置均验证一致）。结论：**在真实大肠杆菌
+（netSplit 按染色体拆分、netToAxt/axtToMaf 逐染色体对比）；反向 `--syn` 模式
+（netFilter + chainSplit）下 4 个通过 syntenic 过滤的染色体 MAF 同样全部一致。
+`loose/1000` 与 `medium/5000` 两种配置、normal 与 `--syn` 两种模式均验证通过。
+结论：**在真实大肠杆菌
 基因组上，pgr 与 UCSC kent-tool 从 PSL 到 MAF 实现字节级一致**，且 `pgr psl chain` 在
 优化 2bit 序列缓存后（~0.3 s）比 UCSC `axtChain`（~1.0 s）更快。
 

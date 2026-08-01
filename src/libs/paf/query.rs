@@ -10,6 +10,7 @@ use super::fasta::FastaStore;
 use super::index::{PafIndex, QueryResult};
 use super::msa_build::orient_interval;
 use crate::libs::chain::record::read_chains;
+use crate::libs::ds::DupeTree;
 use std::collections::{HashMap, HashSet};
 use std::io::{self, BufRead, Write};
 
@@ -112,17 +113,21 @@ pub fn run_query(
         .transpose()?;
 
     // Optional syntenic filter: load UCSC chain file and build
-    // (t_name, q_name) -> Vec<(q_start, q_end)> map for chain-level query coverage check.
-    let syntenic_map: Option<HashMap<(String, String), Vec<(u64, u64)>>> =
+    // (t_name, q_name) -> DupeTree of q-side spans, so the per-region overlap
+    // check is a tree query instead of a linear scan.
+    let syntenic_map: Option<HashMap<(String, String), DupeTree>> =
         if let Some(path) = &opts.syntenic_filter {
             log::info!("Loading syntenic chains from {path}...");
             let chains = read_chains(crate::reader(path)?)?;
-            let mut map: HashMap<(String, String), Vec<(u64, u64)>> = HashMap::new();
+            let mut map: HashMap<(String, String), DupeTree> = HashMap::new();
             for c in &chains {
                 let key = (c.header.t_name.clone(), c.header.q_name.clone());
                 map.entry(key)
                     .or_default()
-                    .push((c.header.q_start, c.header.q_end));
+                    .add(c.header.q_start, c.header.q_end);
+            }
+            for tree in map.values_mut() {
+                tree.build();
             }
             log::info!(
                 "  loaded {} chains ({} unique name pairs)",
@@ -195,10 +200,10 @@ pub fn run_query(
                 let key = (target_name.clone(), q_name.to_string());
                 match syntenic.get(&key) {
                     None => false,
-                    Some(spans) => {
+                    Some(tree) => {
                         let qs = qiv.first as u64;
                         let qe = qiv.last as u64;
-                        spans.iter().any(|&(cs, ce)| qs < ce && qe > cs)
+                        tree.count_over(qs, qe, 1) > 0
                     }
                 }
             });

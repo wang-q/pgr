@@ -189,6 +189,23 @@ if [ -f "$LAV_SE11" ] && [ -f "$FA_SE11" ]; then
             "$RV/target.sizes" "$RV/query.sizes" "$RV/kent/$chrom.maf"
         compare "$RV/kent/$chrom.maf" "$RV/pgr_maf/$chrom.maf"
     done
+
+    echo "==> Reverse multi-replicon target --syn (SE11 x Sakai)"
+    mkdir -p "$RV/syn"
+    netFilter -syn "$RV/kent/06.syn.net" > "$RV/syn/syn.net"
+    netSplit "$RV/syn/syn.net" "$RV/syn/net"
+    chainSplit "$RV/syn/chains" "$RV/kent/04.pre.chain"
+    "$PGR" pl chainnet --syn --gap-model "$GAP_MODEL" --min-score "$MIN_SCORE" \
+        "$FA_SE11" "$FA_Q" "$RV/in.psl" -o "$RV/syn_pgr" >/dev/null 2>&1
+    for netfile in "$RV/syn/net"/*.net; do
+        chrom="$(basename "$netfile" .net)"
+        netToAxt "$netfile" "$RV/syn/chains/$chrom.chain" \
+            "$RV/target.2bit" "$RV/query.2bit" "$RV/syn/$chrom.axt" 2>/dev/null
+        axtSort "$RV/syn/$chrom.axt" "$RV/syn/$chrom.sorted.axt"
+        axtToMaf -tPrefix=se11. -qPrefix=sakai. "$RV/syn/$chrom.sorted.axt" \
+            "$RV/target.sizes" "$RV/query.sizes" "$RV/syn/$chrom.maf"
+        compare "$RV/syn/$chrom.maf" "$RV/syn_pgr/$chrom.maf"
+    done
 else
     echo "  SKIP (se11-sakai.lastz.lav / se11.fa.gz missing; see notes/ecoli-genome.md)"
 fi
