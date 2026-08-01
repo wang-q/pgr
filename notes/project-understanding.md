@@ -425,7 +425,6 @@ pgr 的 `chain`/`net`/`axt`/`psl` 模块是 UCSC kent-tools 对应功能的**Rus
 | [[fas-multiz.md]] | `libs::fas_multiz` 设计与实现（banded DP 合并） | 已实现（CLI 已落地） |
 | [[spoa_port.md]] | Spoa C++ → Rust 移植（POA 引擎） | 已完成（双引擎集成已落地） |
 | [[ms2dna_port.md]] | ms2dna C → Rust 迁移设计 | 已实现（实际命令为 `pgr ms to-dna`） |
-| [[dist-roadmap.md]] | dist 模块距离计算路线图（K2P/JC69 等） | 部分实现（hv/seq 已落地，模型距离未实现） |
 | [[ucsc.md]] | UCSC chain/net/axt/maf pipeline 源码分析与字节级复现验证（E. coli 全流程一致） | 主流程已字节级一致；后续工作见 §4.6 |
 
 ## 10. 外部工具参考索引（notes/references/）

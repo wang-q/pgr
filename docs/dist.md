@@ -96,6 +96,5 @@ pgr dist hv genome1.fa genome2.fa
 
 ## 未来规划 (Roadmap)
 
-Alignment-based Metrics (K2P/JC69/p-distance)、Scikit-learn 兼容性架构优化、SciPy 标准度量扩展等
-功能尚未实现。通用向量距离度量（euclid/cosine/jaccard）目前仅在 `libs::linalg` 中提供，
-`pgr dist vector` CLI 已于 2026-07 移除（见 `notes/design/dist-roadmap.md`）。
+通用向量距离度量（euclid/cosine/jaccard）目前仅在 `libs::linalg` 中提供，
+`pgr dist vector` CLI 已于 2026-07 移除，暂无恢复规划。
