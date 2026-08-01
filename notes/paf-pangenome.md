@@ -350,8 +350,10 @@ pub struct PafIndex {
 - **`IndexMap` 而非 impg 的 `SequenceIndex`**：与 pgr 既有 `loc.rs`、`phylo/tree.rs` 风格一致。
 - **不用 `RwLock`**：单线程构建+查询。rayon 化时再包 `Arc<RwLock<>>`。
 - **`Arc<BasicCOITree>`**：查询回调借用方便（非 disk-backed 需求）。
-- **双向索引 `reverse_trees`**：`+` 链 record 在 `trees[target_id]` 和 `reverse_trees[query_id]`
-  各插一条，mirror 条目 CIGAR 经 `reverse_cigar` 反转并交换 I/D。BFS 可双向传播。负链不建 mirror。
+- **双向索引 `reverse_trees`**：每条 record 都在 `trees[target_id]` 和 `reverse_trees[query_id]`
+  各插一条，mirror 条目 CIGAR 经 `reverse_cigar` 反转并交换 I/D，strand 保留原值
+  （'-' 链镜像的 target 轴 = forward query 坐标、query 轴 = forward target 坐标，
+  配合 `project` 的 RC 换算给出正确投影，见 [[ecoli-cohort.md]] §4）。BFS 可双向传播。
 - **不需要 `ForestMap`**：纯内存，bincode 整体持久化（v3 格式含 `reverse_intervals`）。
 - **不需要 `ImpgIndex` trait**：当前只有一种 `PafIndex`，无 `MultiPafIndex`。
 - **lazy CIGAR**：大 cohort 场景 CIGAR 全量驻留内存成本过高（4 万大肠杆菌 × 5K 比对 × 100bp CIGAR ≈

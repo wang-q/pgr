@@ -26,6 +26,44 @@ fn command_paf_query_bidirectional_mirror_finds_target() {
 }
 
 #[test]
+fn command_paf_query_bidirectional_mirror_minus_strand() {
+    // A→B on '-' strand. The mirror in reverse_trees[A] must preserve the '-'
+    // orientation (previously only '+' records got a mirror, so BFS from the
+    // query side could not leave a '-' record). With the mirror, forward
+    // A[j] ↔ B[L-1-j], so A:10-30 projects to B:70-90.
+    let paf = "A\t100\t0\t100\t-\tB\t100\t0\t100\t95\t100\t255\tcg:Z:100M\n";
+    let (stdout, _) = PgrCmd::new()
+        .args(&["paf", "query", "stdin", "A:10-30", "--transitive"])
+        .stdin(paf)
+        .run();
+    assert!(
+        stdout.contains("B\t0\t70\t90\t-\tA\t0\t10\t30"),
+        "B should be found via '-' mirror with RC-corrected coordinates, got: {stdout}"
+    );
+}
+
+#[test]
+fn command_paf_query_bidirectional_multi_hop_via_minus_mirror() {
+    // A→B on '-' strand plus C→B on '+' strand. BFS from A reaches B through
+    // the '-' mirror, then C through trees[B]: both hops must work.
+    let paf = "\
+A\t100\t0\t100\t-\tB\t100\t0\t100\t95\t100\t255\tcg:Z:100M\n\
+C\t100\t0\t100\t+\tB\t100\t0\t100\t95\t100\t255\tcg:Z:100M\n";
+    let (stdout, _) = PgrCmd::new()
+        .args(&["paf", "query", "stdin", "A:0-100", "--transitive"])
+        .stdin(paf)
+        .run();
+    assert!(
+        stdout.contains("B\t0\t0\t100\t-\tA"),
+        "B should be found via '-' mirror, got: {stdout}"
+    );
+    assert!(
+        stdout.contains("C\t0\t0\t100\t+\tB"),
+        "C should be found via trees[B] after the '-' mirror hop, got: {stdout}"
+    );
+}
+
+#[test]
 fn command_paf_query_short_flag_transitive() {
     // `-t` should be equivalent to `--transitive`.
     let paf = "A\t100\t0\t100\t+\tB\t100\t0\t100\t95\t100\t255\tcg:Z:100M\n";
@@ -89,21 +127,6 @@ fn command_paf_query_mirror_cigar_reversed() {
     assert!(
         stdout.contains("cg:Z:50M200D50M"),
         "mirror entry should have reversed CIGAR with I/D swapped"
-    );
-}
-
-#[test]
-fn command_paf_query_reverse_strand_no_mirror() {
-    // Minus-strand records do not get mirror entries (coordinate transform
-    // is non-trivial). Query from A should find nothing via mirror.
-    let paf = "A\t100\t0\t100\t-\tB\t100\t0\t100\t95\t100\t255\tcg:Z:100M\n";
-    let (_, stderr) = PgrCmd::new()
-        .args(&["paf", "query", "stdin", "A:0-100", "--transitive"])
-        .stdin(paf)
-        .run();
-    assert!(
-        stderr.contains("No results found"),
-        "minus-strand should not have mirror entry"
     );
 }
 

@@ -212,11 +212,18 @@ FastGA -psl（3 对）→ pgr pl chainnet --syn（每对）→ maf to-paf → pa
 - 小 replicon（质粒）的弱链会被 chainnet --syn 过滤，小 cohort 的图以染色体为主。
 - **PAF 方向要保证 seed 在 target 侧**：`paf query` 直接查询只查 `trees`
   （seed 作为 target 的记录），`--transitive` 的 BFS 额外走 `reverse_trees`
-  （镜像），但镜像**只为 '+' 链记录创建**。若 seed 落在 '-' 链记录的 query 侧，
-  BFS 无法跨过它（实测：mg1655 作 query 时 ec2011c_3493 的覆盖记录是 '-' 链，
-  传递查询到达不了）。因此脚本统一 `FastGA(b,a) → chainnet(a,b)`，让 mg1655
-  （种子所在序列）恒为每对的 target，深度 1 即可直达所有株。这是 pgr 的一个
-  已知缺口：`paf index` 应对 '-' 记录也建镜像（需处理反向 CIGAR 语义）。
+  （镜像）。脚本统一 `FastGA(b,a) → chainnet(a,b)`，让 mg1655（种子所在序列）
+  恒为每对的 target，深度 1 即可直达所有株——直接查询不受镜像影响，这一约定
+  仍必要。镜像缺口的修复见下条。
+- **'-' 链镜像缺口（已修复，2026-08-02）**：镜像曾**只为 '+' 链记录创建**，seed
+  落在 '-' 记录 query 侧时 BFS 无法跨过（实测 mg1655 作 query 时 ec2011c_3493
+  的覆盖记录是 '-' 链，传递查询到达不了）。修复：`insert_record` 对 '-' 记录也建
+  镜像，strand 保留 '-'，CIGAR 用 `reverse_cigar`（两种存储模式都已支持）；因
+  `project` 对 '-' 链按 `query_end - rc` 换算，镜像的 target 轴 = forward query
+  坐标、query 轴 = forward target 坐标时自然给出正确投影（A[j]↔B[L-1-j]，
+  实测 A:10-30 → B:70-90）。回归测试：`command_paf_query_bidirectional_
+  mirror_minus_strand` / `..._multi_hop_via_minus_mirror`；原
+  `reverse_strand_no_mirror` 测试（记录旧限制）已删除。10 基因组全管线复跑 PASS。
 - 扩展脚本曾把 PAF 输出名写成裸 basename（`NC_004431.paf`），同一 replicon 在
   多个 pair 里作 target 时被互相覆盖，导致 mg1655 侧的记录丢失、BFS 够不到对应
   菌株——必须带 pair 前缀（`$pa-$pb-*.paf`）。
@@ -242,6 +249,13 @@ E2348/69 / 042，质粒弱链被 --syn 滤掉、图以染色体为主）；graph
 progressive 逐条加入），属 [[fas-multiz.md]] 已记录的 profile-profile DP 优化方向。
 回归测试：`command_paf_to_maf_msa_dedup_transitive_duplicates`（菱形拓扑 → 3 行）。
 
+**下游回归已固化**（`scripts/verify-pangenome.sh` 步骤 7-10）：脚本在 45 对
+chainnet 之后自动生成带前缀名的 BGZF FASTA + fasta-tsv，对
+`mg1655.NC_000913:100000-110000` 跑 to-maf --msa（断言 1 个块且 10 株全出现）、
+to-vcf（变异行 > 0）、to-fas --msa（≥ 10 条记录）、to-gfa（S/P 行存在；
+实测 9089 节点 / 12599 边 / 13 条路径）。脚本默认优先 target/release/pgr
+（POA 步骤 debug 太慢），全流程约 4.5 分钟一键 PASS。
+
 **EC958 数据注意**：必须用 GCF_000285655.3 完整版（EC958.v1，chr + 2 质粒）；
 `.2` 是 WGS scaffold（240 条 contig），不要用。
 
@@ -258,6 +272,10 @@ progressive 逐条加入），属 [[fas-multiz.md]] 已记录的 profile-profile
 ---
 ## 6. 变更日志
 
+- 2026-08-02：修复 `paf index` 的 '-' 链镜像缺口——镜像不再限定 '+' 记录，
+  '-' 记录保留 strand 并用反转 CIGAR 建镜像（BFS 从 query 侧可跨 '-' 边）。
+- 2026-08-02：§4 下游验证固化进 verify-pangenome.sh（步骤 7-10：msa/vcf/fas/gfa
+  断言），脚本默认优先 release 二进制，全流程一键 PASS。
 - 2026-08-02：§4 完成 10 基因组验证（45 对全跑 PASS）——cohort 从 3 扩到 10，
   脚本固化 FastGA(b,a) → chainnet(a,b) 方向与 pair 前缀 PAF 命名。
 - 2026-08-02：§4 补充下游验证与 MSA 输入修复——传递 BFS 重复结果导致 POA 爆炸，

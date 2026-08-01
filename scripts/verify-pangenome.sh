@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
 
 # verify-pangenome.sh
-# Ten-E. coli pangenome smoke test: FastGA pairwise PSL -> pgr pl chainnet
+# Ten-E. coli pangenome test: FastGA pairwise PSL -> pgr pl chainnet
 # (chain -> net -> axt -> maf, the mandatory syntenic route) -> maf to-paf ->
-# multi-file index -> transitive query -> coarse graph -> stat.  Requires:
-#   - pgr binary (defaults to target/debug/pgr; use PGR=... to override)
+# multi-file index -> transitive query -> coarse graph -> stat -> downstream
+# (to-maf --msa / to-vcf / to-fas --msa / to-gfa) on one 10 kb MG1655 region.
+# Requires:
+#   - pgr binary (prefers target/release/pgr for the POA-heavy downstream
+#     steps, falls back to target/debug/pgr; use PGR=... to override)
 #   - FastGA in PATH (pangenome-route upstream aligner, see notes/ecoli-cohort.md)
 #
 # Usage:
@@ -13,7 +16,12 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
-PGR="${PGR:-$PWD/target/debug/pgr}"
+PGR="${PGR:-}"
+if [ -z "$PGR" ] && [ -x "$PWD/target/release/pgr" ]; then
+    PGR="$PWD/target/release/pgr"
+else
+    PGR="${PGR:-$PWD/target/debug/pgr}"
+fi
 
 GENOMES=(
     "$PWD/tests/genome/mg1655.fa.gz"
@@ -88,4 +96,40 @@ echo "==> 6. Coarse graph + stats"
 grep -q "^segments" "$WORK/pangenome.stat"
 grep -q "^paths" "$WORK/pangenome.stat"
 
-echo "PASS: 10-genome pangenome pipeline (FastGA -> chainnet --syn -> maf-to-paf -> index -> query -> graph -> stat)."
+echo "==> 7. Downstream: prefixed BGZF FASTA + fasta-tsv for MSA emitters"
+mkdir -p "$WORK/fas"
+for f in "${GENOMES[@]}"; do
+    s=$(basename "$f" .fa.gz)
+    gzip -dc "$f" \
+        | awk -v p="$s" '/^>/{sub(/^>/,"",$1); print ">"p"."$1; next} {print}' \
+        | "$PGR" fa gz stdin -o "$WORK/fas/$s.fa.gz" >/dev/null 2>&1
+done
+cut -f1,6 "$WORK/all.paf" | tr '\t' '\n' | sort -u \
+    | while read -r n; do printf '%s\t%s/fas/%s.fa.gz\n' "$n" "$WORK" "${n%%.*}"; done \
+    > "$WORK/seqs.tsv"
+
+echo "==> 8. to-maf --msa (10-way POA MSA)"
+"$PGR" paf to-maf -f "$WORK/seqs.tsv" "$WORK/pangenome.paf.idx" \
+    mg1655.NC_000913:100000-110000 --transitive --msa -o "$WORK/region.maf" >/dev/null 2>&1
+[ "$(grep -c '^a' "$WORK/region.maf")" -eq 1 ] # one block per queried region
+for f in "${GENOMES[@]}"; do
+    strain=$(basename "$f" .fa.gz)
+    grep -qF "$strain." "$WORK/region.maf" \
+        || { echo "Error: $strain missing from 10-way MSA" >&2; exit 1; }
+done
+
+echo "==> 9. to-vcf (10-way variants)"
+"$PGR" paf to-vcf -f "$WORK/seqs.tsv" "$WORK/pangenome.paf.idx" \
+    mg1655.NC_000913:100000-110000 --transitive -o "$WORK/region.vcf" >/dev/null 2>&1
+[ "$(grep -vc '^#' "$WORK/region.vcf")" -gt 0 ]
+
+echo "==> 10. to-fas --msa (block FA) + to-gfa (local graph)"
+"$PGR" paf to-fas -f "$WORK/seqs.tsv" "$WORK/pangenome.paf.idx" \
+    mg1655.NC_000913:100000-110000 --transitive --msa -o "$WORK/region.fas" >/dev/null 2>&1
+[ "$(grep -c '^>' "$WORK/region.fas")" -ge 10 ]
+"$PGR" paf to-gfa -f "$WORK/seqs.tsv" "$WORK/pangenome.paf.idx" \
+    mg1655.NC_000913:100000-110000 --transitive -o "$WORK/region.gfa" >/dev/null 2>&1
+grep -q '^S' "$WORK/region.gfa"
+grep -q '^P' "$WORK/region.gfa"
+
+echo "PASS: 10-genome pangenome pipeline (FastGA -> chainnet --syn -> maf-to-paf -> index -> query -> graph -> stat -> msa/vcf/fas/gfa)."

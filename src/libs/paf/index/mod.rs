@@ -176,27 +176,29 @@ fn insert_record(
         fwd_meta,
     ));
 
-    // Mirror entry (reverse index): only for '+' strand records.
-    // Interval is on the query coordinates; metadata.query_id is the
-    // original target; query_start/end hold the original target coordinates.
-    // Mirror strand is '+' because the mirror represents the query-side view
-    // of an originally '+' record (query ↔ target swap preserves orientation).
-    if rec.strand == '+' {
-        let rev_meta = PafMetadata {
-            query_id: target_id,
-            target_start: rec.query_start as i32,
-            target_end: rec.query_end as i32,
-            query_start: rec.target_start as i32,
-            query_end: rec.target_end as i32,
-            strand: '+',
-            cigar: rev_store,
-        };
-        by_query.entry(query_id).or_default().push(Interval::new(
-            rec.query_start as i32,
-            rec.query_end as i32,
-            rev_meta,
-        ));
-    }
+    // Mirror entry (reverse index): swap query/target roles so transitive BFS
+    // can traverse from any sequence in both directions. Interval is on the
+    // query coordinates; metadata.query_id is the original target;
+    // query_start/end hold the original target coordinates. For '-' records
+    // the mirror keeps strand '-' and the reversed CIGAR: the mirror's target
+    // axis is the forward query coordinates and its query axis is the forward
+    // target coordinates, so `project` (which maps RC offsets back via
+    // `query_end` for '-' strand) yields correct forward target coordinates
+    // (forward A[j] ↔ B[L-1-j] implies A[qs:qe) ↔ B[L-qe : L-qs)).
+    let rev_meta = PafMetadata {
+        query_id: target_id,
+        target_start: rec.query_start as i32,
+        target_end: rec.query_end as i32,
+        query_start: rec.target_start as i32,
+        query_end: rec.target_end as i32,
+        strand: rec.strand,
+        cigar: rev_store,
+    };
+    by_query.entry(query_id).or_default().push(Interval::new(
+        rec.query_start as i32,
+        rec.query_end as i32,
+        rev_meta,
+    ));
 
     Ok(())
 }
