@@ -78,7 +78,7 @@ seek 距离短。
 - 物理组织 = pgr 自研单文件（排序数组 `Vec<(u64, u32)>` + 附列），可 mmap，
   不用 GIX 的代理 + `.ktab` 分片 ensemble（见 [[fastga.md]] §10）；
 - 采样参数（k 大小、syncmer 密度）写入 Header，供读取端对齐；
-- 独立命令生成（如 `pgr idx build`）与内嵌 pbit 共享同一读写实现。
+- 独立命令生成（`pgr pgi build`）与内嵌 pbit 共享同一读写实现。
 
 ## 4. 追加语义
 
@@ -135,7 +135,52 @@ seek 距离短。
 - 精确距离（.pgi 已存在）：`dist pgi`（归并）；
 - 超大规模粗筛（.pgi 已存在）：`pgi to-hv` + HV 比较（O(dim)）。
 
-## 7. 相关文档
+## 7. CLI 设计（pgr pgi 命令族）
+
+```
+pgr pgi — Manages pgr genome index (.pgi) files
+
+Commands:
+  build   构建 .pgi（输入 .2bit 优先，FASTA fallback）
+  stat    索引统计（k/syncmer 参数、条目数、文件大小）
+  to-hv   投影为 hypervector（供 dist 快速比较）
+  show    查看索引条目（调试用，可选）
+```
+
+> **明确不做**：`import-gix`（从 FastGA GIX 导入）——格式逆向成本高、收益低，
+> 互通通过"调用 FastGA 时保留其 GIX"实现，pgr 不读 GIX 字节。连 TODO 也不留。
+
+### 7.1 `pgr pgi build`
+
+```
+pgr pgi build <infile> -o out.pgi
+  <infile>       FASTA（.fa/.fa.gz）或 .2bit（推荐，构建最快）
+  -k, --kmer <40>        k-mer 大小
+      --smer <12>        syncmer 长度
+      --window <8>       窗口 s-mer 数（密度 2/(w+1)）
+      --no-rev           只索引正链（默认正反链）
+  -t, --threads <4>      线程
+```
+
+- 默认参数与 FastGA GIX 对齐（k=40、(12,8) syncmer），服务"类似 FastGA 功能"
+  与后续互通；
+- `to-hv` / `dist pgi` 的距离语义跟随索引 Header 参数，不额外指定。
+
+### 7.2 配套入口
+
+```
+pgr dist pgi <idx1> <idx2> [--list files.txt]   # 索引归并距离（见 §6.1）
+pgr pgi to-hv <in.pgi> -o out.hv [--dim 1024]   # 索引 → HV（见 §6.2）
+pgr dist hv <out1.hv> <out2.hv>                 # HV 比较（复用现有向量距离核心）
+pgr pbit create/append ... --index              # 内嵌索引段（触发方式待定，见 §8）
+```
+
+### 7.3 待定
+
+- pbit 内嵌索引段的 CLI 触发方式（`--index` flag？自动？细粒度控制？）——暂不决定；
+- `show` 是否纳入首版（调试期可能不需要）。
+
+## 8. 相关文档
 
 - pbit 格式基线：[pbit.md](pbit.md)（文件格式规范 v1001、决策记录）
 - 序列索引选型：[fastga.md](../references/fastga.md) §10/§12（GIX 评估、索引选型）

@@ -1,4 +1,5 @@
 pub mod hv;
+pub mod pgi;
 pub mod seq;
 
 use clap::{ArgMatches, Command};
@@ -9,19 +10,21 @@ pub fn make_subcommand() -> Command {
         .after_help(
             r###"Subcommand groups:
 
-* distance: hv / seq
+* distance: hv / seq / pgi
 
 "###,
         )
         .subcommand_required(true)
         .arg_required_else_help(true)
         .subcommand(hv::make_subcommand())
+        .subcommand(pgi::make_subcommand())
         .subcommand(seq::make_subcommand())
 }
 /// Execute the dist command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     match args.subcommand() {
         Some(("hv", sub_matches)) => hv::execute(sub_matches),
+        Some(("pgi", sub_matches)) => pgi::execute(sub_matches),
         Some(("seq", sub_matches)) => seq::execute(sub_matches),
         _ => Ok(()),
     }

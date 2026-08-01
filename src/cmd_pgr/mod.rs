@@ -14,6 +14,7 @@ pub mod ms;
 pub mod net;
 pub mod paf;
 pub mod pbit;
+pub mod pgi;
 pub mod pl;
 pub mod plot;
 pub mod psl;

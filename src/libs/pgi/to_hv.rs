@@ -1,0 +1,112 @@
+//! Project a `.pgi` index onto a hypervector for cheap distance comparisons.
+
+use super::PgiIndex;
+use anyhow::Context;
+use std::io::{Read, Write};
+
+/// Hypervector file magic.
+pub const HV_MAGIC: &[u8; 4] = b"PGV1";
+/// Hypervector file version.
+pub const HV_VERSION: u32 = 1;
+
+/// Fold a u128 k-mer key into a u64 seed for HV projection.
+fn key_to_seed(kmer: u128) -> u64 {
+    (kmer as u64) ^ ((kmer >> 64) as u64)
+}
+
+/// Project the index's unique k-mer keys onto a `dim`-dimension hypervector.
+pub fn index_to_hv(idx: &PgiIndex, dim: usize) -> Vec<i32> {
+    let seeds: Vec<u64> = idx.entries.iter().map(|e| key_to_seed(e.kmer)).collect();
+    crate::libs::hv::hash_hv_i8(&seeds, dim)
+}
+
+/// Serialize a hypervector to the `.hv` file format.
+pub fn write_hv<W: Write>(
+    w: &mut W,
+    name: &str,
+    k: usize,
+    dim: usize,
+    hv: &[i32],
+) -> anyhow::Result<()> {
+    anyhow::ensure!(hv.len() == dim, "hv length mismatch");
+    w.write_all(HV_MAGIC)?;
+    w.write_all(&HV_VERSION.to_le_bytes())?;
+    w.write_all(&(k as u32).to_le_bytes())?;
+    w.write_all(&(dim as u32).to_le_bytes())?;
+    let nb = name.len() as u32;
+    w.write_all(&nb.to_le_bytes())?;
+    w.write_all(name.as_bytes())?;
+    for v in hv {
+        w.write_all(&v.to_le_bytes())?;
+    }
+    Ok(())
+}
+
+/// Deserialize a hypervector from the `.hv` file format.
+pub struct HvFile {
+    pub name: String,
+    pub k: usize,
+    pub dim: usize,
+    pub hv: Vec<i32>,
+}
+
+/// Load a `.hv` file.
+pub fn read_hv<R: Read>(r: &mut R) -> anyhow::Result<HvFile> {
+    let mut magic = [0u8; 4];
+    r.read_exact(&mut magic).context("reading hv magic")?;
+    if &magic != HV_MAGIC {
+        anyhow::bail!("not a pgr hv file (bad magic)");
+    }
+    let version = read_u32(r)?;
+    if version != HV_VERSION {
+        anyhow::bail!("unsupported hv version {version}");
+    }
+    let k = read_u32(r)? as usize;
+    let dim = read_u32(r)? as usize;
+    let nb = read_u32(r)? as usize;
+    let mut name = vec![0u8; nb];
+    r.read_exact(&mut name)?;
+    let name = String::from_utf8(name).context("hv name utf8")?;
+    let mut hv = vec![0i32; dim];
+    for v in &mut hv {
+        let mut b = [0u8; 4];
+        r.read_exact(&mut b)?;
+        *v = i32::from_le_bytes(b);
+    }
+    Ok(HvFile { name, k, dim, hv })
+}
+
+fn read_u32<R: Read>(r: &mut R) -> anyhow::Result<u32> {
+    let mut b = [0u8; 4];
+    r.read_exact(&mut b)?;
+    Ok(u32::from_le_bytes(b))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::libs::pgi::build::build_from_seqs;
+
+    #[test]
+    fn hv_roundtrip_file() {
+        let idx = build_from_seqs(
+            vec![(
+                String::from("c"),
+                b"ACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT".to_vec(),
+            )],
+            10,
+            4,
+            2,
+            true,
+        )
+        .unwrap();
+        let hv = index_to_hv(&idx, 1024);
+        let mut buf = Vec::new();
+        write_hv(&mut buf, "test", 10, 1024, &hv).unwrap();
+        let loaded = read_hv(&mut std::io::Cursor::new(&buf)).unwrap();
+        assert_eq!(loaded.name, "test");
+        assert_eq!(loaded.k, 10);
+        assert_eq!(loaded.dim, 1024);
+        assert_eq!(loaded.hv, hv);
+    }
+}

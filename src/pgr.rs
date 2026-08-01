@@ -23,6 +23,7 @@ fn main() -> anyhow::Result<()> {
         .subcommand(cmd_pgr::net::make_subcommand())
         .subcommand(cmd_pgr::paf::make_subcommand())
         .subcommand(cmd_pgr::pbit::make_subcommand())
+        .subcommand(cmd_pgr::pgi::make_subcommand())
         .subcommand(cmd_pgr::psl::make_subcommand())
         .subcommand(cmd_pgr::sd::make_subcommand())
         .subcommand(cmd_pgr::pl::make_subcommand())
@@ -78,6 +79,7 @@ fn main() -> anyhow::Result<()> {
         Some(("net", sub_matches)) => cmd_pgr::net::execute(sub_matches),
         Some(("paf", sub_matches)) => cmd_pgr::paf::execute(sub_matches),
         Some(("pbit", sub_matches)) => cmd_pgr::pbit::execute(sub_matches),
+        Some(("pgi", sub_matches)) => cmd_pgr::pgi::execute(sub_matches),
         Some(("psl", sub_matches)) => cmd_pgr::psl::execute(sub_matches),
         Some(("sd", sub_matches)) => cmd_pgr::sd::execute(sub_matches),
         Some(("pl", sub_matches)) => cmd_pgr::pl::execute(sub_matches),

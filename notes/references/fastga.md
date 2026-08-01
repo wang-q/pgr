@@ -285,8 +285,8 @@ PAF / PSL
 
 GIX（GIXmake.c）是每个基因组的**syncmer 稀疏 k-mer 索引**：只取"以 (12,8) canonical
 syncmer 起始"的 k=40 的 k-mer（2-bit 压缩 10 字节），按字典序桶排序（首字节 1024 桶 +
-`Ksplit` 均衡分割 + 多线程），排序后每个条目附位置信息（contig #、anti-diagonal 坐标）
-与 lcp。README 实测体量约 **14 GB / Gbp**（`.gix` 代理 + `-T` 个 `.ktab.<int>` 隐藏
+`Ksplit` 均衡分割 + 多线程），排序后每个条目附位置信息（contig #、contig 内偏移、
+方向位）与 lcp。README 实测体量约 **14 GB / Gbp**（`.gix` 代理 + `-T` 个 `.ktab.<int>` 隐藏
 分片），但 **FastGA 默认退出时自动删除**（`Clean_Exit` → `GIXrm`，`-k` 才保留）；
 构建/运行的临时分片在 `TMPDIR` 或 `-P` 目录。
 
@@ -309,9 +309,10 @@ syncmer 起始"的 k=40 的 k-mer（2-bit 压缩 10 字节），按字典序桶�
 2. **lcp 连续传播 → 种子长度自适应**：排序流中相邻相同 k-mer 的 lcp（最长公共前缀）
    直接给出共享长度，40-mer 命中自然扩展为任意长度的最长共享字符串（adaptamer），
    无需对不同 k 反复查询，且天然支持"频率过滤后最长种子"的语义。
-3. **位置预编码（anti-diagonal 坐标）**：排序条目已含 (contig, 对角线, 反对角线) 编码，
-   命中后直接进入对角线/反对角线空间的链扫描（`align_contigs` 的 tube 逻辑），
-   无需二次坐标变换。
+3. **anti-diagonal 坐标（在种子流中计算，不在 GIX 里）**：`.ktab` 条目只存
+   contig + 位置；两索引归并产种子命中 (i,j) 时**即时**算 `diag = i−j`、
+   `anti = i+j` 写入种子流条目，链扫描（`align_contigs` 的 tube 逻辑）直接使用。
+   "预编码"是归并阶段的 O(1) 实现选择，不是 GIX 的数据内容。
 4. **流式 + 定宽条目**：`Post_List` 按块流式读入（POST_BLOCK），固定宽度条目
    （swide）顺序扫描，内存驻留可控。
 5. **桶排序近线性构建**：MSD radix 风格（首字节 1024 桶 + Ksplit 负载均衡），
@@ -344,11 +345,11 @@ syncmer 起始"的 k=40 的 k-mer（2-bit 压缩 10 字节），按字典序桶�
    降密度，代价是灵敏度（syncmer 只保采样点）。
 2. **lcp 连续传播 → 种子长度自适应**——固定 k-mer 的"最短种子"思路（如 minimap2）
    会漏掉短于 k 的同源；lcp 扩展天然得到"该位置的最长共享字符串"，灵敏度更高。
-3. **位置预编码 + 桶排序 + 流式**——对角线坐标进索引、MSD 桶排序、定宽流式扫描，
-   都是实现高效种子检测的成熟工程模式，可整体迁移到 Rust（`libs/sd/kmer_index.rs` +
-   `plane_sweep.rs` 蓝图）。
+3. **anti-diagonal 坐标变换 + 桶排序 + 流式**——种子命中 (i,j) 即时算 diag/anti 进
+   种子流、MSD 桶排序、定宽流式扫描，都是实现高效种子检测的成熟工程模式，可整体
+   迁移到 Rust（`libs/sd/kmer_index.rs` + `plane_sweep.rs` 蓝图）。
 
-**一句话结论**：GIX 的"归并 + lcp + 预编码"是高效的序列索引设计，但 pgr 的
+**一句话结论**：GIX 的"归并 + lcp + anti-diagonal 坐标"是高效的序列索引设计，但 pgr 的
 架构（外部比对 + PAF 图）和规模（4 万细菌）决定了它**现在不引入**；等有原生
 同源检测需求时，以 syncmer 稀疏化 + 两流归并的形式借鉴其思想，而不是照搬
 14 GB/Gbp 的截断后缀数组。
@@ -466,7 +467,7 @@ alncode.c）；ALNtoPAF/ALNtoPSL 多线程线性展开 trace → CIGAR（`-pafx`
 |------|----------|--------|
 | GIX | (12,8) syncmer 稀疏 + 首字节桶排序 | 近线性构建 |
 | 归并 | 两排序流前缀面板 join + lcp 传播 | O(|A|+|B|) |
-| 链 | anti-diagonal 预编码 + tube 扫描 | 线性（链稀疏）|
+| 链 | anti-diagonal 坐标 + tube 扫描 | 线性（链稀疏）|
 | Wave | Myers wavefront（V/M/T + Pebble cells）| 与差异数成正比，优于 O(nm) |
 | Trace | Hirschberg 分治 + tspace 采样 | 线性于路径长 |
 
