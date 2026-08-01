@@ -5,6 +5,7 @@ use crate::libs::chain::{
 use crate::libs::fmt::psl::Psl;
 use crate::libs::io::SequenceReader;
 use indexmap::IndexMap;
+use std::collections::HashSet;
 use std::io::{BufRead, Write};
 use std::str::FromStr;
 
@@ -33,6 +34,9 @@ pub fn group_psl_blocks<R: BufRead, S: SequenceReader>(
     // UCSC axtChain mirrors by prepending new seqPairs with slAddHead.
     let mut groups: IndexMap<GroupKey, GroupData> = IndexMap::new();
     let mut comments: Vec<String> = Vec::new();
+    // UCSC axtChain reads PSL with pslFileOpenWithUniqueMeta, which suppresses
+    // duplicate `##` header lines (e.g. repeated after merged LAV blocks).
+    let mut seen_comments: HashSet<String> = HashSet::new();
 
     for line in reader.lines() {
         let line = line?;
@@ -40,7 +44,9 @@ pub fn group_psl_blocks<R: BufRead, S: SequenceReader>(
             continue;
         }
         if line.starts_with('#') {
-            comments.push(line);
+            if seen_comments.insert(line.clone()) {
+                comments.push(line);
+            }
             continue;
         }
 

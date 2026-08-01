@@ -83,6 +83,55 @@ fn test_chaining_psl_basic() -> anyhow::Result<()> {
 }
 
 #[test]
+fn test_psl_chain_dedups_duplicate_meta_comments() -> anyhow::Result<()> {
+    let temp = TempDir::new()?;
+
+    let t_seq = ">chr1\n".to_string() + &"A".repeat(1000);
+    let q_seq = ">chr2\n".to_string() + &"A".repeat(1000);
+    let t_2bit = create_2bit(&temp, "t", &t_seq)?;
+    let q_2bit = create_2bit(&temp, "q", &q_seq)?;
+
+    // Merged LAV files produce repeated `##` metadata groups in the PSL.
+    // UCSC axtChain reads with pslFileOpenWithUniqueMeta, which suppresses
+    // duplicate header lines; pgr must match that byte-for-byte.
+    let meta = "##aligner=lastz.v1.04.41\n\
+        ##matrix=lastz.v1.04.41 16 91,-114,-31,-123,-114,100,-125,-31,-31,-125,100,-114,-123,-31,-114,91\n\
+        ##gapPenalties=lastz.v1.04.41 O=400 E=30\n\
+        ##blastzParms=O=400,E=30,K=3000,L=3000,M=0\n";
+    let psl_content = format!(
+        "{}100\t0\t0\t0\t0\t0\t0\t0\t+\tchr2\t1000\t0\t100\tchr1\t1000\t0\t100\t1\t100,\t0,\t0,\n{}",
+        meta, meta
+    );
+    let psl_path = temp.path().join("in.psl");
+    fs::write(&psl_path, psl_content)?;
+
+    let output_path = temp.path().join("out.chain");
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
+    cmd.arg("psl")
+        .arg("chain")
+        .arg(&t_2bit)
+        .arg(&q_2bit)
+        .arg(&psl_path)
+        .arg("-o")
+        .arg(&output_path)
+        .arg("--min-score=0");
+    cmd.assert().success();
+
+    let output = fs::read_to_string(&output_path)?;
+    // Duplicate `##` header lines must be kept only once each.
+    assert_eq!(output.matches("##aligner=lastz.v1.04.41").count(), 1);
+    assert_eq!(
+        output
+            .matches("##blastzParms=O=400,E=30,K=3000,L=3000,M=0")
+            .count(),
+        1
+    );
+    assert!(output.contains("chain"));
+
+    Ok(())
+}
+
+#[test]
 fn test_chaining_default_score_filtering() -> anyhow::Result<()> {
     let temp = TempDir::new()?;
 

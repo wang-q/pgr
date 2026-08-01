@@ -521,7 +521,10 @@ pgr 的 chain-net-axt-maf 管线可作为 UCSC kent-tool 的 Rust 替代，达�
 | netFilter -syn + 全套 | `syn` MAF | **字节级一致** |
 
 验证已固化为脚本 `scripts/verify-ucsc-pipeline.sh`（PASS 后 12 个中间文件 + MAF 全部
-`cmp` 相同；支持 `GAP_MODEL=loose/medium`、`MIN_SCORE=1000/5000`）。结论：**在真实大肠杆菌
+`cmp` 相同；支持 `GAP_MODEL=loose/medium`、`MIN_SCORE=1000/5000`）。除上述单染色体
+target 流程外，脚本还内置 **SE11（7 replicon，含 6 质粒）作 target × Sakai 作 query**
+的反向多染色体验证：9 个中间文件 + 6 个 target 染色体的 MAF 逐文件 `cmp` 全部一致
+（netSplit 按染色体拆分、netToAxt/axtToMaf 逐染色体对比）。结论：**在真实大肠杆菌
 基因组上，pgr 与 UCSC kent-tool 从 PSL 到 MAF 实现字节级一致**，且 `pgr psl chain` 在
 优化 2bit 序列缓存后（~0.3 s）比 UCSC `axtChain`（~1.0 s）更快。
 
@@ -537,9 +540,11 @@ GAP_MODEL=medium MIN_SCORE=5000 scripts/verify-ucsc-pipeline.sh
 
 主流程字节级一致已达成，剩余均为验证/边界完善，按优先级：
 
-1. **多染色体 target 反向验证固化**：Sakai 3 染色体作 target 的反向跑法已手工验证
-   字节级一致，但验证脚本只覆盖正向单染色体 target；把反向跑法（如 `REVERSE=1`）
-   固化进脚本，防止该路径回归。
+1. ~~**多染色体 target 反向验证固化**~~：**已完成（2026-08-01）**——SE11（1 染色体 +
+   6 质粒，共 7 replicon）作 target × Sakai 作 query 的反向跑法已固化进
+   `scripts/verify-ucsc-pipeline.sh`，9 个中间文件 + 6 个染色体 MAF 全部字节级一致
+   （期间顺带修复 `psl chain` 对 PSL 重复 `##` 注释行的保留策略，与 kent
+   `pslFileOpenWithUniqueMeta` 的去重行为对齐）。
 2. **人类规模（~3 Gb）性能/内存验证**：E. coli 秒级完成，但人类基因组规模的
    kdtree 构建、net 递归处理、批量 chainMergeSort 的时间与内存未测，等真实数据集
    用 `/usr/bin/time -v` 摸底峰值内存与耗时。

@@ -3,8 +3,11 @@
 # verify-ucsc-pipeline.sh
 # Byte-for-byte regression check: pgr native chainnet vs UCSC kent-tools pipeline.
 #
-# Uses the saved E. coli LAV (tests/genome/mg1655-sakai.lastz.lav) as input so
-# lastz (~2 min) does not have to be re-run.  Requires:
+# Uses saved E. coli LAV files (tests/genome/mg1655-sakai.lastz.lav and, if
+# present, se11-sakai.lastz.lav) as input so lastz does not have to be re-run.
+# Covers the single-chromosome target pipeline (normal + --syn) and the
+# reverse multi-replicon target pipeline (SE11 7 replicons as target).
+# Requires:
 #   - pgr binary (defaults to target/debug/pgr; use PGR=... to override)
 #   - kent-tools in PATH (axtChain, chainAntiRepeat, ..., axtToMaf)
 #
@@ -124,6 +127,71 @@ axtToMaf -tPrefix=mg1655. -qPrefix=sakai. "$WORK/syn/sorted.axt" \
 "$PGR" pl chainnet --syn --gap-model "$GAP_MODEL" --min-score "$MIN_SCORE" \
     "$FA_T" "$FA_Q" "$WORK/in.psl" -o "$WORK/syn_pgr" >/dev/null
 compare "$WORK/syn/out.maf" "$WORK/syn_pgr/NC_000913.maf"
+
+echo "==> Reverse multi-replicon target (SE11 x Sakai)"
+LAV_SE11="$PWD/tests/genome/se11-sakai.lastz.lav"
+FA_SE11="$PWD/tests/genome/se11.fa.gz"
+RV="$WORK/se11_reverse"
+if [ -f "$LAV_SE11" ] && [ -f "$FA_SE11" ]; then
+    mkdir -p "$RV/kent" "$RV/pgr"
+    lavToPsl "$LAV_SE11" "$RV/in.psl"
+    "$PGR" fa size "$FA_SE11" -o "$RV/target.sizes"
+    "$PGR" fa size "$FA_Q" -o "$RV/query.sizes"
+    "$PGR" fa to-2bit "$FA_SE11" -o "$RV/target.2bit"
+    "$PGR" fa to-2bit "$FA_Q" -o "$RV/query.2bit"
+
+    axtChain -minScore="$MIN_SCORE" -linearGap="$GAP_MODEL" -psl "$RV/in.psl" \
+        "$RV/target.2bit" "$RV/query.2bit" "$RV/kent/01.chain" 2>/dev/null
+    chainAntiRepeat "$RV/target.2bit" "$RV/query.2bit" \
+        "$RV/kent/01.chain" "$RV/kent/02.ar.chain"
+    chainMergeSort "$RV/kent/02.ar.chain" > "$RV/kent/03.all.chain"
+    chainPreNet "$RV/kent/03.all.chain" "$RV/target.sizes" "$RV/query.sizes" \
+        "$RV/kent/04.pre.chain"
+    chainNet "$RV/kent/04.pre.chain" "$RV/target.sizes" "$RV/query.sizes" \
+        "$RV/kent/05.target.net" "$RV/kent/05.query.net"
+    netSyntenic "$RV/kent/05.target.net" "$RV/kent/06.syn.net"
+    netChainSubset "$RV/kent/06.syn.net" "$RV/kent/04.pre.chain" "$RV/kent/07.subset.chain"
+    chainStitchId "$RV/kent/07.subset.chain" "$RV/kent/08.over.chain"
+    netSplit "$RV/kent/06.syn.net" "$RV/kent/net"
+
+    "$PGR" psl chain "$RV/target.2bit" "$RV/query.2bit" "$RV/in.psl" \
+        --min-score "$MIN_SCORE" --gap-model "$GAP_MODEL" -o "$RV/pgr/01.tmp" 2>/dev/null
+    "$PGR" chain anti-repeat --target-2bit "$RV/target.2bit" \
+        --query-2bit "$RV/query.2bit" "$RV/pgr/01.tmp" -o "$RV/pgr/02.ar.chain" 2>/dev/null
+    "$PGR" chain sort "$RV/pgr/02.ar.chain" -o "$RV/pgr/03.all.chain"
+    "$PGR" chain pre-net "$RV/pgr/03.all.chain" \
+        "$RV/target.sizes" "$RV/query.sizes" -o "$RV/pgr/04.pre.chain"
+    "$PGR" chain net "$RV/pgr/04.pre.chain" \
+        "$RV/target.sizes" "$RV/query.sizes" \
+        "$RV/pgr/05.target.net" "$RV/pgr/05.query.net"
+    "$PGR" net syntenic "$RV/pgr/05.target.net" -o "$RV/pgr/06.syn.net"
+    "$PGR" net subset "$RV/pgr/06.syn.net" "$RV/pgr/04.pre.chain" "$RV/pgr/07.subset.chain"
+    "$PGR" chain stitch "$RV/pgr/07.subset.chain" -o "$RV/pgr/08.over.chain"
+
+    compare "$RV/kent/01.chain"       "$RV/pgr/01.tmp"
+    compare "$RV/kent/02.ar.chain"    "$RV/pgr/02.ar.chain"
+    compare "$RV/kent/03.all.chain"   "$RV/pgr/03.all.chain"
+    compare "$RV/kent/04.pre.chain"   "$RV/pgr/04.pre.chain"
+    compare "$RV/kent/05.target.net"  "$RV/pgr/05.target.net"
+    compare "$RV/kent/05.query.net"   "$RV/pgr/05.query.net"
+    compare "$RV/kent/06.syn.net"     "$RV/pgr/06.syn.net"
+    compare "$RV/kent/07.subset.chain" "$RV/pgr/07.subset.chain"
+    compare "$RV/kent/08.over.chain"  "$RV/pgr/08.over.chain"
+
+    "$PGR" pl chainnet --gap-model "$GAP_MODEL" --min-score "$MIN_SCORE" \
+        "$FA_SE11" "$FA_Q" "$RV/in.psl" -o "$RV/pgr_maf" >/dev/null 2>&1
+    for netfile in "$RV/kent/net"/*.net; do
+        chrom="$(basename "$netfile" .net)"
+        netToAxt "$netfile" "$RV/kent/04.pre.chain" "$RV/target.2bit" "$RV/query.2bit" \
+            "$RV/kent/$chrom.axt" 2>/dev/null
+        axtSort "$RV/kent/$chrom.axt" "$RV/kent/$chrom.sorted.axt"
+        axtToMaf -tPrefix=se11. -qPrefix=sakai. "$RV/kent/$chrom.sorted.axt" \
+            "$RV/target.sizes" "$RV/query.sizes" "$RV/kent/$chrom.maf"
+        compare "$RV/kent/$chrom.maf" "$RV/pgr_maf/$chrom.maf"
+    done
+else
+    echo "  SKIP (se11-sakai.lastz.lav / se11.fa.gz missing; see notes/ecoli-genome.md)"
+fi
 
 if [ "$FAIL" -eq 0 ]; then
     echo "PASS: pgr chainnet (gap-model=$GAP_MODEL, min-score=$MIN_SCORE, normal + --syn) is byte-for-byte identical."
