@@ -177,20 +177,6 @@ pgr pbit create -r ref.fa -i sample.fa -p sample.paf -o out.pbit
 
 ### Genomes and plots
 
-#### Download genomes
-
-```bash
-curl -L https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/005/845/GCF_000005845.2_ASM584v2/GCF_000005845.2_ASM584v2_genomic.fna.gz |
-    gzip -dc |
-    pgr fa filter stdin --simplify |
-    pgr fa gz stdin -o tests/pgr/mg1655.fa
-
-curl -L https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/008/865/GCF_000008865.2_ASM886v2/GCF_000008865.2_ASM886v2_genomic.fna.gz |
-    gzip -dc |
-    pgr fa filter stdin --simplify |
-    pgr fa gz stdin -o tests/pgr/sakai.fa
-```
-
 #### Distance with pgr
 
 ```bash
@@ -226,36 +212,6 @@ echo -e "tests/pgr/sakai.fa.gz\ntests/pgr/mg1655.fa.gz" |
 #tests/pgr/mg1655.fa.gz  tests/pgr/mg1655.fa.gz  4543891 4543891 4543891 4543891 0.0000  1.0000  1.0000
 
 ```
-
-#### Plotting alignments
-
-```bash
-FastGA -v -pafx tests/pgr/sakai.fa.gz tests/pgr/mg1655.fa.gz > tmp.paf
-FastGA -v -psl tests/pgr/sakai.fa.gz tests/pgr/mg1655.fa.gz > tmp.psl
-
-pgr pl ucsc -t="" tests/pgr/mg1655.fa.gz tests/pgr/sakai.fa.gz tmp.psl > tmp.chain.maf
-pgr pl ucsc --syn -t="" tests/pgr/mg1655.fa.gz tests/pgr/sakai.fa.gz tmp.psl > tmp.syn.maf
-
-lastz <(gzip -dcf tests/pgr/mg1655.fa.gz) <(gzip -dcf tests/pgr/sakai.fa.gz) |
-    lavToPsl stdin stdout \
-    > tmp.lastz.psl
-pgr pl ucsc --syn -t="" tests/pgr/mg1655.fa.gz tests/pgr/sakai.fa.gz tmp.lastz.psl > tmp.lastz.maf
-
-wgatools dotplot -f paf tmp.paf > tmp.html
-wgatools dotplot tmp.chain.maf > tmp.chain.html
-wgatools dotplot tmp.syn.maf > tmp.syn.html
-wgatools dotplot tmp.lastz.maf > tmp.lastz.html
-```
-
-
-| ![paf.png](images/paf.png) | ![chain.png](images/chain.png) |
-|:--------------------------:|:------------------------------:|
-|            paf             |             chain              |
-
-| ![syn.png](images/syn.png) | ![lastz.png](images/lastz.png) |
-|:--------------------------:|:------------------------------:|
-|            syn             |             lastz              |
-
 
 ### Repeats and RepeatMasker
 
