@@ -242,12 +242,15 @@ pub fn chain_blocks<S: SequenceReader>(
         chain_blocks_rev.reverse();
 
         remove_exact_overlaps(&mut chain_blocks_rev);
-        merge_abutting_blocks(&mut chain_blocks_rev);
 
         // Trim overlaps if we have score context
+        // Trim partial overlaps on either axis, then merge exactly abutting
+        // blocks. This mirrors UCSC axtChain's chainPair:
+        //   chainRemovePartialOverlaps -> chainMergeAbutting -> chainCalcScore
         if let Some(ctx) = score_ctx {
             trim_overlaps(&mut chain_blocks_rev, ctx, q_name, t_name, q_size, q_strand)?;
         }
+        merge_abutting_blocks(&mut chain_blocks_rev);
 
         let first = &chain_blocks_rev[0];
         let last = &chain_blocks_rev[chain_blocks_rev.len() - 1];
@@ -263,7 +266,7 @@ pub fn chain_blocks<S: SequenceReader>(
             q_strand,
         )?;
 
-        if score <= 0.0 {
+        if score < 0.0 {
             continue;
         }
 
@@ -303,33 +306,59 @@ pub fn chain_blocks<S: SequenceReader>(
     Ok(chains)
 }
 
-/// Trims overlaps between adjacent blocks in a chain using sequence data.
+/// Trims partial overlaps between adjacent blocks in a chain using sequence
+/// data, mirroring UCSC `chainRemovePartialOverlaps` (chainConnect.c).
 ///
-/// Adjusts the boundaries of overlapping blocks to maximize the score.
+/// The DP allows predecessor/successor blocks that partially overlap on either
+/// axis (dq < 0 or dt < 0, with the overlap penalized by `find_crossover`).
+/// The output chain must have non-negative gaps on both axes, so any such
+/// overlap is cut at the best crossover point; blocks that are trimmed down to
+/// zero or negative length are dropped, and the scan restarts (the overlap
+/// pattern can change after a block removal).
 fn trim_overlaps<S: SequenceReader>(
-    blocks: &mut [ChainableBlock],
+    blocks: &mut Vec<ChainableBlock>,
     ctx: &mut ScoreContext<S>,
     q_name: &str,
     t_name: &str,
     q_size: u64,
     q_strand: char,
 ) -> anyhow::Result<()> {
-    if blocks.len() < 2 {
-        return Ok(());
-    }
+    // UCSC chainRemovePartialOverlaps loops until a full pass finds no
+    // negative gap, restarting whenever a left block is trimmed out
+    // completely.
+    loop {
+        let mut trimmed_all = false;
+        let mut i = 0;
 
-    let mut i = 0;
-    while i < blocks.len() - 1 {
-        let curr = &blocks[i];
-        let next = &blocks[i + 1];
+        while i < blocks.len().saturating_sub(1) {
+            let (dq, dt) = {
+                let a = &blocks[i];
+                let b = &blocks[i + 1];
+                // The DP guarantees starts strictly increase on both axes,
+                // so only the ends can overlap.
+                (
+                    b.q_start as i64 - a.q_end as i64,
+                    b.t_start as i64 - a.t_end as i64,
+                )
+            };
 
-        let overlap = if curr.t_end > next.t_start {
-            (curr.t_end - next.t_start) as i64
-        } else {
-            0
-        };
+            if dq >= 0 && dt >= 0 {
+                i += 1;
+                continue;
+            }
 
-        if overlap > 0 {
+            let overlap = -std::cmp::min(dq, dt);
+            let a_size = (blocks[i].q_end - blocks[i].q_start) as i64;
+            let b_size = (blocks[i + 1].q_end - blocks[i + 1].q_start) as i64;
+
+            if overlap >= a_size || overlap >= b_size {
+                // One block is enclosed completely on one dimension by the
+                // other (UCSC marks totalTrimB and drops block b).
+                blocks.remove(i + 1);
+                trimmed_all = true;
+                continue;
+            }
+
             let overlap = overlap as usize;
             let (cut_pos, _) = find_crossover(
                 &blocks[i],
@@ -342,17 +371,39 @@ fn trim_overlaps<S: SequenceReader>(
                 q_strand,
             )?;
 
-            let trim_left = overlap as i64 - cut_pos as i64;
-            let trim_right = cut_pos as i64;
+            let trim_left = overlap as u64 - cut_pos as u64;
+            let trim_right = cut_pos as u64;
 
-            blocks[i].t_end -= trim_left as u64;
-            blocks[i].q_end -= trim_left as u64;
+            blocks[i].t_end -= trim_left;
+            blocks[i].q_end -= trim_left;
+            blocks[i + 1].t_start += trim_right;
+            blocks[i + 1].q_start += trim_right;
 
-            blocks[i + 1].t_start += trim_right as u64;
-            blocks[i + 1].q_start += trim_right as u64;
+            if blocks[i].q_end <= blocks[i].q_start || blocks[i].t_end <= blocks[i].t_start {
+                // Left block was trimmed out completely: remove it and
+                // restart the scan (UCSC totalTrimA).
+                blocks.remove(i);
+                trimmed_all = true;
+                break;
+            }
+
+            if blocks[i + 1].q_end <= blocks[i + 1].q_start
+                || blocks[i + 1].t_end <= blocks[i + 1].t_start
+            {
+                // Right block was trimmed out completely (UCSC totalTrimB).
+                blocks.remove(i + 1);
+                trimmed_all = true;
+                continue;
+            }
+
+            i += 1;
         }
-        i += 1;
+
+        if !trimmed_all {
+            break;
+        }
     }
+
     Ok(())
 }
 
@@ -535,6 +586,50 @@ fn remove_exact_overlaps(blocks: &mut Vec<ChainableBlock>) {
         }
     }
     blocks.truncate(write_idx + 1);
+}
+
+/// Mirrors UCSC axtChain's input cleaning (`slReverse` + `removeExactOverlaps`
+/// in axtChain.c): the block list is reversed back to PSL order, sorted by
+/// (qStart, tStart), blocks that start at the same coordinates are folded into
+/// one block with extended ends, and the list is reversed again so that the
+/// subsequent tStart sort sees the same tie order as kent's chainBlocks.
+pub fn clean_input_overlaps(blocks: &mut Vec<ChainableBlock>) {
+    if blocks.len() < 2 {
+        return;
+    }
+
+    // axtChain main loop: slReverse(&sp->blockList) restores PSL order.
+    blocks.reverse();
+
+    // removeExactOverlaps: slSort by (qStart, tStart), fold same-start
+    // blocks (extending ends), then slReverse.
+    blocks.sort_by_key(|b| (b.q_start, b.t_start));
+
+    let mut write_idx = 0;
+    for read_idx in 1..blocks.len() {
+        let fold = {
+            let prev = &blocks[write_idx];
+            let curr = &blocks[read_idx];
+            curr.q_start == prev.q_start && curr.t_start == prev.t_start
+        };
+
+        if fold {
+            if blocks[read_idx].q_end > blocks[write_idx].q_end {
+                blocks[write_idx].q_end = blocks[read_idx].q_end;
+            }
+            if blocks[read_idx].t_end > blocks[write_idx].t_end {
+                blocks[write_idx].t_end = blocks[read_idx].t_end;
+            }
+        } else {
+            write_idx += 1;
+            if write_idx != read_idx {
+                blocks[write_idx] = blocks[read_idx].clone();
+            }
+        }
+    }
+    blocks.truncate(write_idx + 1);
+
+    blocks.reverse();
 }
 
 /// Merges adjacent blocks that abut perfectly.

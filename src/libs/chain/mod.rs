@@ -35,7 +35,9 @@ pub mod stitch;
 pub mod sub_matrix;
 
 pub use crate::libs::ds::GapCalc;
-pub use connect::{calc_block_score, chain_blocks, ChainableBlock, ScoreContext};
+pub use connect::{
+    calc_block_score, chain_blocks, clean_input_overlaps, ChainableBlock, ScoreContext,
+};
 pub use pre_net::{is_haplotype, pre_net, PreNetOptions};
 pub use psl_chain::{chain_psl, group_psl_blocks, GroupData, GroupKey};
 pub use record::{read_chains, Block, Chain, ChainData, ChainHeader, ChainReader};

@@ -1,5 +1,6 @@
 use crate::libs::chain::{
-    calc_block_score, chain_blocks, Chain, ChainableBlock, GapCalc, ScoreContext, SubMatrix,
+    calc_block_score, chain_blocks, clean_input_overlaps, Chain, ChainableBlock, GapCalc,
+    ScoreContext, SubMatrix,
 };
 use crate::libs::fmt::psl::Psl;
 use crate::libs::io::SequenceReader;
@@ -123,6 +124,13 @@ pub fn chain_psl<R: BufRead, W: Write, S: SequenceReader>(
             continue;
         }
 
+        // UCSC axtChain cleans the per-pair block list (slReverse +
+        // removeExactOverlaps, which sorts by qStart then tStart and folds
+        // same-start blocks), then chainBlocks sorts the leaves by tStart.
+        // kent's slSort is stable for equal keys, so replicating both steps
+        // gives the same tie order (and therefore the same KD-tree
+        // split/search order) for the DP.
+        clean_input_overlaps(&mut data.blocks);
         data.blocks.sort_by_key(|a| a.t_start);
 
         log::debug!("Group: {} {} {}", t_name, q_name, q_strand);

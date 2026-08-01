@@ -80,18 +80,34 @@ impl KdTree {
         if indices.is_empty() {
             return KdTree { root: None };
         }
+        // Mirror UCSC chainBlock.c kdTreeMake: keep one list sorted per
+        // dimension.  The dimension-1 list is the leaf list order (already
+        // tStart-sorted by chainBlocks), and the dimension-0 list is sorted by
+        // qStart.  Recursion inherits each list's order into the child nodes
+        // instead of re-sorting, which is what makes the tree (and therefore
+        // the predecessor search) identical to kent's.
+        let mut q_indices: Vec<usize> = indices.to_vec();
+        q_indices.sort_by_key(|&i| items[i].x_start());
+        let mut t_indices: Vec<usize> = indices.to_vec();
+        t_indices.sort_by_key(|&i| items[i].y_start());
         KdTree {
-            root: Some(Self::build_recursive(indices, items, 0)),
+            root: Some(Self::build_recursive(q_indices, t_indices, items, 0)),
         }
     }
 
     fn build_recursive<T: KdTreeItem>(
-        indices: &mut [usize],
+        q_indices: Vec<usize>,
+        t_indices: Vec<usize>,
         items: &[T],
         dim: usize,
     ) -> Box<KdNode> {
-        if indices.len() == 1 {
-            let idx = indices[0];
+        let dim_list: Vec<usize> = if dim == 0 {
+            q_indices.clone()
+        } else {
+            t_indices.clone()
+        };
+        if dim_list.len() == 1 {
+            let idx = dim_list[0];
             let item = &items[idx];
             return Box::new(KdNode::Leaf {
                 leaf_idx: idx,
@@ -101,23 +117,41 @@ impl KdTree {
             });
         }
 
-        if dim == 0 {
-            indices.sort_by_key(|&i| items[i].x_start());
-        } else {
-            indices.sort_by_key(|&i| items[i].y_start());
-        }
-
-        let mid = indices.len() / 2;
+        let mid = dim_list.len() / 2;
+        // Mirror UCSC chainBlock.c medianVal/kdBuild: the split value is the
+        // coordinate of the LAST element of the "lo" half (index mid-1), and
+        // the "lo" half is indices[..mid] with "hi" being indices[mid..].
+        // Using the first "hi" element (index mid) instead would change which
+        // subtree is explored first for targets whose coordinate equals the
+        // boundary, and therefore which predecessor wins on ties/edge cases.
         let cut_coord = if dim == 0 {
-            items[indices[mid]].x_start()
+            items[dim_list[mid - 1]].x_start()
         } else {
-            items[indices[mid]].y_start()
+            items[dim_list[mid - 1]].y_start()
         };
 
-        let (left_indices, right_indices) = indices.split_at_mut(mid);
+        let (lo_dim, hi_dim) = dim_list.split_at(mid);
+        let lo_set: std::collections::HashSet<usize> = lo_dim.iter().copied().collect();
 
-        let lo = Self::build_recursive(left_indices, items, 1 - dim);
-        let hi = Self::build_recursive(right_indices, items, 1 - dim);
+        // UCSC splitList peels non-hit elements (hi) from the other list while
+        // preserving its order; the hit elements (lo) stay in place.
+        let (lo_other, hi_other): (Vec<usize>, Vec<usize>) = if dim == 0 {
+            t_indices.into_iter().partition(|i| lo_set.contains(i))
+        } else {
+            q_indices.into_iter().partition(|i| lo_set.contains(i))
+        };
+
+        let (lo, hi) = if dim == 0 {
+            (
+                Self::build_recursive(lo_dim.to_vec(), lo_other, items, 1 - dim),
+                Self::build_recursive(hi_dim.to_vec(), hi_other, items, 1 - dim),
+            )
+        } else {
+            (
+                Self::build_recursive(lo_other, lo_dim.to_vec(), items, 1 - dim),
+                Self::build_recursive(hi_other, hi_dim.to_vec(), items, 1 - dim),
+            )
+        };
 
         let max_x = std::cmp::max(lo.max_x(), hi.max_x());
         let max_y = std::cmp::max(lo.max_y(), hi.max_y());
@@ -302,52 +336,15 @@ impl KdTree {
                     target_item.y_start()
                 };
 
-                // Search the subtree containing the target coordinate first.
-                let (near, far) = if dim_coord > *cut_coord {
-                    (hi, lo)
-                } else {
-                    (lo, hi)
-                };
-                let res = Self::best_recursive(
-                    near,
-                    target_idx,
-                    items,
-                    cost_func,
-                    lower_bound_func,
-                    1 - dim,
-                    best_score,
-                    best_pred,
-                );
-                best_score = res.0;
-                best_pred = res.1;
-
-                // Determine whether the far subtree could contain a better predecessor.
-                // The closest point in the far subtree is separated from the target by at
-                // least the distance to the splitting plane in this dimension.
-                let far_dist = dim_coord.abs_diff(*cut_coord);
-                let (dx_far, dy_far) = if dim == 0 {
-                    (
-                        far_dist,
-                        if target_item.y_start() > far.max_y() {
-                            target_item.y_start() - far.max_y()
-                        } else {
-                            0
-                        },
-                    )
-                } else {
-                    (
-                        if target_item.x_start() > far.max_x() {
-                            target_item.x_start() - far.max_x()
-                        } else {
-                            0
-                        },
-                        far_dist,
-                    )
-                };
-                let far_cost = lower_bound_func(dx_far, dy_far);
-                if far.max_score() + target_item.score() - far_cost >= best_score {
+                // Mirror UCSC chainBlock.c bestPredecessor: the hi branch is
+                // explored first, but only when the target coordinate is
+                // strictly greater than the cut (equal coordinates are kept in
+                // the lo branch); the lo branch is always explored.  Each
+                // subtree prunes itself at entry with its own max ends, so no
+                // separate far-subtree bound is needed here.
+                if dim_coord > *cut_coord {
                     let res = Self::best_recursive(
-                        far,
+                        hi,
                         target_idx,
                         items,
                         cost_func,
@@ -359,6 +356,19 @@ impl KdTree {
                     best_score = res.0;
                     best_pred = res.1;
                 }
+
+                let res = Self::best_recursive(
+                    lo,
+                    target_idx,
+                    items,
+                    cost_func,
+                    lower_bound_func,
+                    1 - dim,
+                    best_score,
+                    best_pred,
+                );
+                best_score = res.0;
+                best_pred = res.1;
             }
         }
         (best_score, best_pred)
