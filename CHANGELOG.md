@@ -2,6 +2,8 @@
 
 ## Unreleased - ReleaseDate
 
+## 0.3.1 - 2026-08-01
+
 ### New Features
 
 * **`pgr pl chainnet`** - Native chain→net→axt→maf pipeline subcommand.
