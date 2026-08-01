@@ -59,6 +59,8 @@ cat NC_011415.lav NC_011419.lav NC_011413.lav NC_011416.lav \
 实测 7 个 replicon 中 6 个与 Sakai 有链（仅 4 kb 的 pSE11-6 无比对），链数
 13999+132+55+32+2+1 块。
 
+泛基因组场景（3 基因组 FastGA → chainnet --syn → PAF 图）见 [[ecoli-cohort.md]] §4。
+
 ## Alignment and visualization
 
 ```bash

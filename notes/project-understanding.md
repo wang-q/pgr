@@ -2,7 +2,10 @@
 
 本文档是我对 pgr (Practical Genome Refiner) 项目的整体理解，涵盖架构、设计哲学、代码模式、
 当前能力与未来方向。写作时间：2026-06-27，最后更新：2026-08-01
-（2026-08-01 深夜：全量通读 src/ 后复核——修正 §2.3 serde_json 用途、§2.4 nightly 固定版本、
+（2026-08-02：全量通读 src/ 复核——更新 §2.1/§4 的 ds 新成员（best_crossover/merge_intervals）、
+§4.4 paf/pl 描述、§6 现状（UCSC 全链路字节级一致）、§7.1 UCSC 验证矩阵（axtToMaf 已修复、
+SE11 多染色体反向验证）、§9 索引状态；
+2026-08-01 深夜：全量通读 src/ 后复核——修正 §2.3 serde_json 用途、§2.4 nightly 固定版本、
 §3.1 gff rg 描述、§3.3 paf 双向镜像索引、§4.1 poa 文件清单、§4.3 maf 行数，§8 新增帮助文本脱节风险；
 2026-08-01 晚：版本升至 0.3.1、补全 §2.1 目录树（args/pbit/ds/pl/syncmer）、更新 §2.3 依赖、
 §3.4 dist syncmer 采样、§10/§11 笔记索引；2026-08-01 早：更新 §3.5 pl 子命令数、§4.2 ds 下沉说明、
@@ -75,7 +78,7 @@ src/
     ├── poa/            #   偏序比对 (Partial Order Alignment)
     ├── chain/          #   Chain 算法 (连接、gap 计算、替换矩阵)
     │   └── net/        #     Net 格式处理 (class/filter/to-axt)
-    ├── ds/             #   通用数据结构 (KdTree/GapCalc/BitMap/DupeTree/TopKPurity)
+    ├── ds/             #   通用数据结构 (KdTree/GapCalc/BitMap/DupeTree/TopKPurity/best_crossover/merge_intervals)
     ├── fas_multiz/     #   fas-multiz 多序列比对合并 (banded_align/merge/windows)
     ├── fasta/          #   FASTA 操作 (chunk/dedup/filter/stat)
     ├── fmt/            #   格式解析 (AXT/FAS/FA/FQ/LAV/MAF/PSL/2bit/VCF)
@@ -167,8 +170,9 @@ src/
 
 **这是 pgr 最成熟的模块群**。完整覆盖了 UCSC 的 lastz → axtChain → chainAntiRepeat →
 chainMergeSort → chainPreNet → chainNet → netSyntenic → netChainSubset → netToAxt →
-axtToMaf 标准化流程中的大部分步骤。`chain`/`net` 模块在功能上可以替代 kent-tools 的 核心步骤
-（虽然部分高级功能仍依赖外部工具）。
+axtToMaf 标准化流程中的全部 12 步主流程。`chain`/`net`/`axt`/`psl`/`lav`/`maf` 六模块
+与 kent-tools **字节级一致**（含 `--syn`、medium gap model、多染色体反向场景，见 §7.1 与
+[[ucsc.md]]）。
 
 ### 3.3 泛基因组 (Pangenome)
 
@@ -224,7 +228,8 @@ clustalw/muscle/mafft），充当工作流 glue。这与 `chain`/`net` 模块的
 - `sub_matrix.rs`：DNA 替换矩阵（如 HoxD55）
 - `anti_repeat.rs`：反重复处理
 - `net/`：Net 格式处理子模块（builder/class/filter/finalize/reader/subset/syntenic/to-axt/types/writer）
-- 注：`GapCalc`、`KdTree`、`BitMap`、`DupeTree`、`TopKPurity` 已下沉到 `src/libs/ds/`，`chain` 模块通过 `pub use` 保持向后兼容
+- 注：`GapCalc`、`KdTree`、`BitMap`、`DupeTree`、`TopKPurity`、`best_crossover`、
+  `merge_intervals` 已下沉到 `src/libs/ds/`，`chain` 模块通过 `pub use` 保持向后兼容
 
 ### 4.3 `libs/fmt/` — 格式解析
 
@@ -259,10 +264,13 @@ clustalw/muscle/mafft），充当工作流 glue。这与 `chain`/`net` 模块的
 - `libs/fas_multiz/`：Multiz 多序列比对处理（banded DP 合并）
 - `libs/fas_xlsx.rs`：FAS (block FA) 到 Excel 转换
 - `libs/fasta/`：FASTA 处理工具（dedup/filter/stat）
-- `libs/paf/`：PAF 隐式图核心（索引、查询、图构建、VCF 导出）
+- `libs/paf/`：PAF 隐式图核心（`index/` 区间树 + BFS、`graph/` DSU 图构建、`cigar.rs`
+  CIGAR 解析、`persist.rs` 索引持久化、`msa_build.rs` POA MSA 构建、`query.rs` 查询过滤）
 - `libs/pbit/`：pbit 压缩核心（LZ-diff、CIGAR delta、PAF 驱动参考索引、segment）
-- `libs/ds/`：通用数据结构（KdTree、GapCalc、BitMap、DupeTree、TopKPurity，自 chain 模块下沉）
-- `libs/pl/`：pipeline 共享逻辑（PipelineCtx、CwdGuard、FastK/Profex/spanr 驱动、TRF 输出解析）
+- `libs/ds/`：通用数据结构（KdTree、GapCalc、BitMap、DupeTree、TopKPurity、best_crossover、
+  merge_intervals，前五项自 chain 模块下沉）
+- `libs/pl/`：pipeline 共享逻辑（`ctx.rs`：PipelineCtx/CwdGuard；`repeat.rs`：FastK →
+  Profex → spanr 重复识别驱动）
 - `libs/syncmer.rs`：closed syncmer 采样（Edgar 2021，syng 移植参考），支撑 `dist` 采样
 - `libs/ms/`：Hudson's ms 模拟器（解析器 + DNA 生成）
 - `libs/plot/`：绘图工具（histogram/nrps/venn）
@@ -327,23 +335,30 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
 
 ### 6.1 已完成的（成熟）
 
-- **pairwise 比对全链路**：lastz → chain → net → axt → maf 的工具链在 `chain`/`net`/ `axt`/`psl`/
-  `lav`/`maf` 六个模块中基本完整，且是纯 Rust 实现（不依赖 kent-tools）。
+- **UCSC pairwise 比对全链路**：lastz → chain → net → axt → maf 的工具链在 `chain`/`net`/
+  `axt`/`psl`/`lav`/`maf` 六个模块中完整且纯 Rust 实现（不依赖 kent-tools），并与 UCSC
+  **字节级一致**（主流程 + `--syn` + medium + SE11 多染色体反向，验证固化于
+  `scripts/verify-ucsc-pipeline.sh`，见 §7.1）。
 - **FASTA/FASTQ/2bit/pbit 处理**：`fa`(18 子命令) + `fas`(20 子命令) + `fq`(2) + `twobit`(5) + `pbit`(6)，
   日常序列操作与群体基因组归档压缩需求基本覆盖。
 - **距离工具**：`dist` 的 hv/seq 子命令已实现；`seq` 支持 minimizer/closed syncmer 双采样器，
   DNA/protein 均提供 syng 风格默认参数。
+- **通用算法下沉**：chain 的通用算法（KdTree/GapCalc/BitMap/DupeTree/TopKPurity/
+  best_crossover/merge_intervals）已下沉 `libs/ds/`，并被 PAF syntenic filter、
+  fas-multiz 窗口/合并等复用（见 [[chain-algorithms.md]] §12）。
 
 ### 6.2 进行中的（活跃开发）
 
-- **`pbit` 归档压缩**：`pgr pbit` 的 `create`/`append`/`stat`/`range`/`some`/`to-fa` 六个子命令已实现并文档化
-  （用户文档见 `docs/pbit.md`，设计笔记见 `notes/design/pbit.md`）。
+- **`pbit` 归档压缩**：`pgr pbit` 的 `create`/`append`/`stat`/`range`/`some`/`to-fa` 六个子命令
+  已实现并文档化（用户文档见 `docs/pbit.md`，设计笔记见 `notes/design/pbit.md`）；PAF 驱动
+  CIGAR delta 模式为正式组成部分。
 
-- **泛基因组方向**：已形成完整路线图，整合在 `notes/paf-pangenome.md`（路线决策 + 已实现能力 +
-  代码结构 + 后续规划）。`pgr paf` 的 query / to-bed / to-fas / to-maf / graph / to-gfa / to-vcf / stat 子命令已全部完成。
-  **2026-06 发现：`libs/loc.rs` 的 IO 抽象层可直接支撑 PAF 的 CIGAR 懒加载和 BGZF 访问， 实际实现量比最初估计少约 30%**。
+- **泛基因组方向**：`pgr paf` 的 query / to-bed / to-fas / to-maf / graph / to-gfa / to-vcf /
+  stat 子命令已全部完成（路线见 `notes/paf-pangenome.md`）；规模扩展与应用层待真实 cohort
+  数据（§6.3）。
 
-- **`pl` 流程模块**：`chainnet`（纯 pgr 原生管道，已验证与 UCSC 字节级一致）、`ucsc`、`trf`、`rept`、`ir` 等 pipeline。
+- **`pl` 流程模块**：`chainnet`（纯 pgr 原生管道，与 UCSC 字节级一致）、`ucsc`、`trf`、
+  `rept`、`ir`、`p2m`、`prefilter` 等 pipeline。
 
 ### 6.3 待补全的（TODO / 设计阶段）
 
@@ -377,7 +392,7 @@ pgr 的 `chain`/`net`/`axt`/`psl` 模块是 UCSC kent-tools 对应功能的**Rus
   - `pgr net split`（等价 `netSplit`）
   - `pgr net to-axt`（等价 `netToAxt`）
   - `pgr axt sort`（等价 `axtSort`）
-  - `pgr axt to-maf`（等价 `axtToMaf`；UCSC 构建的二进制在 Linux 上崩溃）
+  - `pgr axt to-maf`（等价 `axtToMaf`）
   - `pgr net filter`（等价 `netFilter`）
   - `pgr chain split`（等价 `chainSplit`）
   - `pgr fa to-2bit`（等价 `faToTwoBit`；序列数据一致。头部不同是格式演进：pgr 恒写
@@ -386,6 +401,16 @@ pgr 的 `chain`/`net`/`axt`/`psl` 模块是 UCSC kent-tools 对应功能的**Rus
   - `pgr lav to-psl`（等价 `lavToPsl`）
 - **完全原生管道**：`pgr pl chainnet` 使用纯 pgr 命令完成全流程，已验证与 `pgr pl ucsc`（kent-tools）的输出字节级一致。
 - **唯一外部依赖**：`lastz` 比对器本身（由 `pgr lav lastz` 封装调用，需 PATH 中存在 `lastz` 二进制）。
+
+**验证矩阵（2026-08-02 确认）**：在 E. coli MG1655 × Sakai 上，12 步主流程（axtChain →
+chainAntiRepeat → chainMergeSort → chainPreNet → chainNet → netSyntenic → netChainSubset →
+chainStitchId → netSplit → netToAxt → axtSort → axtToMaf）与 `--syn` 模式、medium gap
+model（min-score 5000）、SE11（7 replicon，含 6 质粒）作 target 的多染色体反向场景，
+全部中间文件 + MAF **逐字节一致**。回归固化于 `scripts/verify-ucsc-pipeline.sh`
+（`loose/1000` 与 `medium/5000`、normal 与 `--syn` 全参数化；SE11 反向段在数据缺失时自动
+SKIP）。此前 `axtToMaf` 的 UCSC 二进制崩溃（`intToPt` null pointer）在用户重新打包
+chainnet 后消失。`pgr psl chain` 在 2bit 序列缓存优化后（~0.3 s）快于 UCSC `axtChain`
+（~1.0 s），详见 [[ucsc.md]] §4–§4.6。
 
 ### 7.2 impg 的关系
 
@@ -430,7 +455,7 @@ pgr 的 `chain`/`net`/`axt`/`psl` 模块是 UCSC kent-tools 对应功能的**Rus
 | [[fas-multiz.md]] | `libs::fas_multiz` 设计与实现（banded DP 合并） | 已实现（CLI 已落地） |
 | [[spoa_port.md]] | Spoa C++ → Rust 移植（POA 引擎） | 已完成（双引擎集成已落地） |
 | [[ms2dna_port.md]] | ms2dna C → Rust 迁移设计 | 已实现（实际命令为 `pgr ms to-dna`） |
-| [[ucsc.md]] | UCSC chain/net/axt/maf pipeline 源码分析与字节级复现验证（E. coli 全流程一致） | 主流程已字节级一致；后续工作见 §4.6 |
+| [[ucsc.md]] | UCSC chain/net/axt/maf pipeline 源码分析与字节级复现验证（E. coli 全流程一致） | 12 步主流程 + `--syn` + medium + SE11 多染色体反向全部字节级一致；剩余见 §4.6 |
 
 ## 10. 外部工具参考索引（notes/references/）
 
@@ -457,5 +482,6 @@ pgr 的 `chain`/`net`/`axt`/`psl` 模块是 UCSC kent-tools 对应功能的**Rus
 | 文档 | 定位 |
 |------|------|
 | [[paf-pangenome.md]] | PAF 隐式图核心目标、路线与已实现能力（泛基因组方向枢纽） |
-| [[ecoli-cohort.md]] | 4 万大肠杆菌基因组泛基因组端到端 pipeline |
+| [[ecoli-cohort.md]] | E. coli 泛基因组端到端路线：4 万 cohort 去冗余/sparsify + 小 cohort（3 基因组）先行验证 |
 | [[chain-algorithms.md]] | pgr chain 模块各算法的运行流程（实现细节）+ 通用算法复用地图（§12） |
+| [[ecoli-genome.md]] | 测试基因组数据（MG1655/Sakai/SE11）下载与使用说明 |

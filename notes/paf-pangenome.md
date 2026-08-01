@@ -481,9 +481,10 @@ lace）。但 pgr 的 `to-gfa` 已是 POA MSA 的直接产物，再套 smooth �
 
 ### 5.2 规模扩展（4 万大肠杆菌级，待数据可用）
 
-当前 `graph` 在小 cohort（数十基因组）验证通过。扩到 [[ecoli-cohort.md]] 的 4 万大肠杆菌需要真实 cohort
-数据（Mash 去冗余 + FastGA sparsify 产出的 PAF），**目前不可用，本阶段整体推迟**。数据就绪后两条
-互补路径：
+当前 `graph` 在 3 基因组小 cohort 端到端验证通过（FastGA → chainnet --syn → PAF，
+见 [[ecoli-cohort.md]] §4）。扩到 [[ecoli-cohort.md]] 的 4 万大肠杆菌需要真实 cohort
+数据（Mash 去冗余 + FastGA sparsify 产出的 PAF），**目前不可用，本阶段整体推迟**。
+数据就绪后两条互补路径：
 
 **路径 A：单图工程优化**（按收益/复杂度排序）
 

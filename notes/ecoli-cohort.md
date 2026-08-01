@@ -182,7 +182,40 @@ sparsify 是必需的（不是可选的）。传递闭包负责推断 sparsify �
 （Gbp 级）时可考虑引入此兜底机制。详见 [[seqwish.md]] §3.3、§7.2。
 
 ---
-## 4. 与 pgr 核心目标的关系
+## 4. 小 cohort 先行验证（3 基因组，2026-08-02）
+
+在 4 万数据可用前，用 MG1655 × Sakai × SE11（11 replicon，数据见 [[ecoli-genome.md]]）
+跑通端到端管线，验证 `pgr paf` 在真实数据上的行为并固化回归。**流程（用户指定）**：
+
+```
+FastGA -psl（3 对）→ pgr pl chainnet --syn（每对）→ maf to-paf → paf index
+→ query --transitive → graph / stat
+```
+
+要点：FastGA 产出 PSL 后**必须过 `pgr pl chainnet --syn`**（syntenic 过滤），
+不直接用原始 PAF。完整命令见 `scripts/verify-pangenome.sh`。
+
+**结果**：chainnet --syn 把 10 条序列过滤到 5 条（只留有 syntenic 链的 replicon，
+如 sakai 的 NC_002127 被滤掉）；`query --transitive` 从 `mg1655.NC_000913:100000-110000`
+出发，BFS 深度 2 找到 Sakai（`sakai.NC_002695`）与 SE11（`se11.NC_011415`）染色体及两者
+间中转连接——三方同源成立；`graph`/`stat`/`to-vcf`/`to-maf --msa`/`to-gfa`/`to-fas`
+全部跑通。回归脚本一键 PASS。
+
+**踩坑记录**（4 万扩展同样适用）：
+
+- chainnet 的 MAF 序列名带文件名前缀（`mg1655.NC_000913`），查询 region 必须用带
+  前缀的名字。
+- `paf query` 只认 `.paf.idx` 后缀的索引（`ends_with(".paf.idx")`），其它后缀会被当
+  PAF 文件解析报 UTF-8 错。
+- 不同 pair 的 MAF 可能同名（都是 `NC_000913.maf`），转 PAF 时输出名必须按 pair
+  区分，否则互相覆盖。
+- 小 replicon（质粒）的弱链会被 chainnet --syn 过滤，小 cohort 的图以染色体为主。
+
+**对 4 万扩展**：脚本遍历 chainnet 输出目录内所有 maf（不硬编码染色体），把 PAF 来源
+换成步骤 1-2 的去冗余 + sparsify 产出即可直接复用；规模相关待调参数见 §3.1。
+
+---
+## 5. 与 pgr 核心目标的关系
 
 回到 [[paf-pangenome.md]] 开篇的核心目标——"复用 pairwise 资产，构建 PAF 隐式图"——4 万 E. coli
 是这条路线的**应用场景**，不是目标本身。步骤 1（去冗余）是场景的前置条件，步骤 2（pair-selection）
@@ -192,7 +225,11 @@ sparsify 是必需的（不是可选的）。传递闭包负责推断 sparsify �
 能力稳定后再考虑是否封装（方案 B/C）。
 
 ---
-## 5. 变更日志
+## 6. 变更日志
+
+- 2026-08-02：新增 §4 小 cohort 先行验证（3 基因组）——吸收原独立文档
+  `ecoli-pangenome-3way.md`（已删除），记录 FastGA → chainnet --syn 流程的执行结果
+  与踩坑。
 
 - 2026-06-28：初稿。记录步骤 1（去冗余）的 Mash + FastGA + 1e-5 方法（已落地，4 万→~27000），
   步骤 2-5 引用已有文档。
