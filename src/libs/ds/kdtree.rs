@@ -183,12 +183,15 @@ impl KdTree {
         dim: usize,
     ) {
         match node {
-            KdNode::Leaf {
-                leaf_idx,
-                max_score,
-                ..
-            } => {
-                if *leaf_idx == target_idx && score > *max_score {
+            KdNode::Leaf { max_score, .. } => {
+                // Mirror UCSC updateScoresOnWay: every branch on the update
+                // path gets max_score raised, including leaves that are not
+                // the target.  When the target coordinate equals a cut, the
+                // path forks into both subtrees, so leaves in either subtree
+                // can receive a score from a block that lives elsewhere in the
+                // tree; the search relies on this (arguably over-conservative)
+                // max_score to avoid pruning candidates kent keeps.
+                if score > *max_score {
                     *max_score = score;
                 }
             }

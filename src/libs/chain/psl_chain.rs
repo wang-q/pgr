@@ -4,7 +4,7 @@ use crate::libs::chain::{
 };
 use crate::libs::fmt::psl::Psl;
 use crate::libs::io::SequenceReader;
-use std::collections::HashMap;
+use indexmap::IndexMap;
 use std::io::{BufRead, Write};
 use std::str::FromStr;
 
@@ -28,8 +28,10 @@ pub type GroupKey = (String, String, char);
 pub fn group_psl_blocks<R: BufRead, S: SequenceReader>(
     reader: R,
     score_ctx: &mut Option<ScoreContext<S>>,
-) -> anyhow::Result<(HashMap<GroupKey, GroupData>, Vec<String>)> {
-    let mut groups: HashMap<GroupKey, GroupData> = HashMap::new();
+) -> anyhow::Result<(IndexMap<GroupKey, GroupData>, Vec<String>)> {
+    // IndexMap preserves the first-seen (PSL input) order of the groups, which
+    // UCSC axtChain mirrors by prepending new seqPairs with slAddHead.
+    let mut groups: IndexMap<GroupKey, GroupData> = IndexMap::new();
     let mut comments: Vec<String> = Vec::new();
 
     for line in reader.lines() {
@@ -114,12 +116,23 @@ pub fn chain_psl<R: BufRead, W: Write, S: SequenceReader>(
     score_context: &mut Option<ScoreContext<S>>,
     matrix: &SubMatrix,
 ) -> anyhow::Result<()> {
-    let (groups, comments) = group_psl_blocks(reader, score_context)?;
+    let (mut groups, comments) = group_psl_blocks(reader, score_context)?;
 
     let mut all_chains: Vec<Chain> = Vec::new();
     let mut chain_id_counter = 1;
 
-    for ((t_name, q_name, q_strand), mut data) in groups {
+    // UCSC axtChain accumulates each pair's chains with slAddHead, so the
+    // global list before the score sort is (first-seen pair first, chains in
+    // reverse order): readPslBlocks prepends new pairs, so the first-read pair
+    // is chained last and its chains end up at the head of the global list via
+    // slAddHead.  slSort is stable, so equal-score chains keep that order.
+    // Mirror it by iterating groups in first-seen order and reversing each
+    // group's chains before the final stable score sort.
+    let group_order: Vec<GroupKey> = groups.keys().cloned().collect();
+    for (t_name, q_name, q_strand) in group_order {
+        let mut data = groups
+            .shift_remove(&(t_name.clone(), q_name.clone(), q_strand))
+            .expect("group key present");
         if data.blocks.is_empty() {
             continue;
         }
@@ -156,7 +169,7 @@ pub fn chain_psl<R: BufRead, W: Write, S: SequenceReader>(
             data.t_size as u64,
             &mut chain_id_counter,
         )?;
-        all_chains.extend(chains);
+        all_chains.extend(chains.into_iter().rev());
     }
 
     all_chains.sort_by(|a, b| b.header.score.total_cmp(&a.header.score));
