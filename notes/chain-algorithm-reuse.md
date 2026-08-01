@@ -198,9 +198,15 @@ UCSC pipeline 已大量调用 chain 子命令（`chain sort`、`chain pre-net`�
      `required` 个输入共同覆盖的位置"（更符合 multiz core 定义）；现有测试数据
      （S288c × 3 酵母）替换前后输出逐字节一致。
 
-4. **最优剪切泛化**
-   - 将 `src/libs/chain/connect.rs::find_crossover` 的核心“重叠区间最佳 cut”逻辑提取为通用函数。
-   - 在 `src/libs/fas_multiz/merge.rs` 中试点，处理参考序列冲突合并。
+4. ~~**最优剪切泛化**~~ ✅ 已完成（2026-08-01）
+   - `best_crossover` 已位于 `src/libs/ds/crossover.rs`（通用函数，接受四个
+     序列切片 + 打分闭包），`connect.rs::find_crossover` 改为调用它（UCSC
+     全量验证仍字节级一致）。
+   - `src/libs/fas_multiz/merge.rs` 已试点：参考序列存在实质差异（`ungapped_equal`
+     失败）时不再直接放弃，而是用 `best_crossover` 找切点，前段取第一个 block 的
+     列、后段取第二个 block 的列拼接合并（需存在共有非参考物种用于打分）。
+     新增集成测试 `command_fas_multiz_merges_conflicting_refs` 与单元测试
+     `merge_window_mismatched_reference_splices_at_crossover`。
 
 5. ~~**Top-K 纯度检测泛化**~~ ✅ 已完成
    - `TopKPurity` 已位于 `src/libs/ds/top_k_purity.rs`。

@@ -2,6 +2,8 @@
 
 use super::banded_align::banded_align_refs;
 use super::{find_ref_entry, ref_overlaps_window, FasMultizConfig, FasMultizMode, Window};
+use crate::libs::chain::sub_matrix::SubMatrix;
+use crate::libs::ds::best_crossover;
 use crate::libs::fmt::fas::{FasBlock, FasEntry};
 use std::collections::BTreeMap;
 
@@ -15,6 +17,143 @@ fn ungapped_equal(a: &FasEntry, b: &FasEntry) -> bool {
     let ua: Vec<u8> = sa.iter().copied().filter(|c| *c != b'-').collect();
     let ub: Vec<u8> = sb.iter().copied().filter(|c| *c != b'-').collect();
     ua == ub
+}
+
+fn find_species_entry<'a>(block: &'a FasBlock, name: &str) -> Option<&'a FasEntry> {
+    block
+        .entries
+        .iter()
+        .zip(block.names.iter())
+        .find_map(|(entry, n)| if n == name { Some(entry) } else { None })
+}
+
+/// Try merging two blocks whose reference sequences differ beyond gap
+/// placement: align the two column profiles, cut the overlap at the best
+/// crossover point, and splice the left part from `blocks[0]` with the right
+/// part from `blocks[1]` (mirrors the `best_crossover` idea from UCSC).
+fn merge_conflicting_refs(
+    ref_name: &str,
+    blocks: [&FasBlock; 2],
+    cfg: &FasMultizConfig,
+) -> anyhow::Result<Option<FasBlock>> {
+    let ref_a = match find_ref_entry(blocks[0], ref_name) {
+        Some(v) => v,
+        None => return Ok(None),
+    };
+    let ref_b = match find_ref_entry(blocks[1], ref_name) {
+        Some(v) => v,
+        None => return Ok(None),
+    };
+
+    // A shared non-reference species is required to score the two profiles.
+    let shared = blocks[0]
+        .names
+        .iter()
+        .find(|n| *n != ref_name && blocks[1].names.iter().any(|m| m == *n));
+    let Some(shared_name) = shared else {
+        return Ok(None);
+    };
+    let x_a = find_species_entry(blocks[0], shared_name);
+    let x_b = find_species_entry(blocks[1], shared_name);
+    let (Some(x_a), Some(x_b)) = (x_a, x_b) else {
+        return Ok(None);
+    };
+
+    let (map_a, map_b) = match banded_align_refs(blocks, ref_name, cfg)? {
+        Some(v) => v,
+        None => return Ok(None),
+    };
+    let out_len = map_a.len();
+
+    let submat = match &cfg.score_matrix {
+        Some(name) => SubMatrix::from_name(name)?,
+        None => SubMatrix::hoxd55(),
+    };
+
+    let col = |map: &[Option<usize>], seq: &[u8], i: usize| -> u8 {
+        map[i].and_then(|idx| seq.get(idx).copied()).unwrap_or(b'-')
+    };
+
+    let mut l_t = Vec::with_capacity(out_len);
+    let mut l_q = Vec::with_capacity(out_len);
+    let mut r_t = Vec::with_capacity(out_len);
+    let mut r_q = Vec::with_capacity(out_len);
+    for i in 0..out_len {
+        l_t.push(col(&map_a, ref_a.seq(), i));
+        l_q.push(col(&map_a, x_a.seq(), i));
+        r_t.push(col(&map_b, ref_b.seq(), i));
+        r_q.push(col(&map_b, x_b.seq(), i));
+    }
+
+    let (cut, _) = best_crossover(&l_t, &l_q, &r_t, &r_q, |a, b| {
+        submat.get_score(a as char, b as char) as f64
+    });
+
+    let ref_range = ref_a.range().clone();
+    let mut species_map: BTreeMap<String, [Option<&FasEntry>; 2]> = BTreeMap::new();
+    for (idx, block) in blocks.iter().enumerate() {
+        for (entry, name) in block.entries.iter().zip(block.names.iter()) {
+            let v = species_map.entry(name.clone()).or_insert([None, None]);
+            v[idx] = Some(entry);
+        }
+    }
+
+    let mut species: Vec<String> = species_map.keys().cloned().collect();
+    species.sort();
+    species.sort_by_key(|n| if n == ref_name { 0 } else { 1 });
+
+    let mut entries = Vec::new();
+    let mut names = Vec::new();
+    let mut headers = Vec::new();
+
+    for name in species {
+        let group = species_map.get(&name).unwrap();
+        if matches!(cfg.mode, FasMultizMode::Core) && (group[0].is_none() || group[1].is_none()) {
+            continue;
+        }
+
+        let mut seq = Vec::with_capacity(out_len);
+        for pos in 0..out_len {
+            let (map, entry) = if pos < cut {
+                (&map_a, group[0])
+            } else {
+                (&map_b, group[1])
+            };
+            let base = match entry {
+                Some(e) => col(map, e.seq(), pos),
+                None => b'-',
+            };
+            seq.push(base);
+        }
+
+        let range = if name == ref_name {
+            ref_range.clone()
+        } else {
+            let chosen = if group[0].is_some() {
+                group[0]
+            } else {
+                group[1]
+            }
+            .unwrap();
+            chosen.range().clone()
+        };
+
+        let entry = FasEntry::from(&range, &seq);
+        let header = format!("{}", range);
+        entries.push(entry);
+        names.push(name.clone());
+        headers.push(header);
+    }
+
+    if entries.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(FasBlock {
+            entries,
+            names,
+            headers,
+        }))
+    }
 }
 
 fn merge_two_blocks_with_dp(
@@ -32,7 +171,7 @@ fn merge_two_blocks_with_dp(
     };
 
     if !ungapped_equal(ref_a, ref_b) {
-        return Ok(None);
+        return merge_conflicting_refs(ref_name, blocks, cfg);
     }
 
     let (map_a, map_b) = match banded_align_refs(blocks, ref_name, cfg)? {

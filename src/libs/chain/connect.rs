@@ -1,7 +1,7 @@
 use crate::libs::alignment::coords::reverse_range_pair;
 use crate::libs::chain::record::{Chain, ChainData, ChainHeader};
 use crate::libs::chain::sub_matrix::SubMatrix;
-use crate::libs::ds::{GapCalc, KdTree, KdTreeItem};
+use crate::libs::ds::{best_crossover, GapCalc, KdTree, KdTreeItem};
 use crate::libs::io::SequenceReader;
 use crate::libs::nt;
 use anyhow::Context;
@@ -519,41 +519,13 @@ fn find_crossover<S: SequenceReader>(
             .with_context(|| "reverse-complemented query is not valid UTF-8 (right block)")?
     };
 
-    let mut best_pos = 0;
-    let mut best_score = -1e9;
-
-    let mut r_score = 0.0;
-
-    let l_t_chars: Vec<char> = l_t_seq.chars().collect();
-    let l_q_chars: Vec<char> = l_q_seq.chars().collect();
-    let r_t_chars: Vec<char> = r_t_seq.chars().collect();
-    let r_q_chars: Vec<char> = r_q_seq.chars().collect();
-
-    for i in 0..overlap {
-        r_score += ctx.matrix.get_score(r_t_chars[i], r_q_chars[i]) as f64;
-    }
-
-    let mut current_l = 0.0;
-    let mut current_r = r_score;
-
-    for i in 0..=overlap {
-        let score = current_l + current_r;
-        if score > best_score {
-            best_score = score;
-            best_pos = i;
-        }
-
-        if i < overlap {
-            current_l += ctx.matrix.get_score(l_t_chars[i], l_q_chars[i]) as f64;
-            current_r -= ctx.matrix.get_score(r_t_chars[i], r_q_chars[i]) as f64;
-        }
-    }
-
-    // After the loop, current_l holds sum(l[0..overlap]) = l_score.
-    // overlap_adjustment = r_score + l_score - best_score (UCSC cBlockFindCrossover).
-    let overlap_adjustment = r_score + current_l - best_score;
-
-    Ok((best_pos, overlap_adjustment))
+    Ok(best_crossover(
+        l_t_seq.as_bytes(),
+        l_q_seq.as_bytes(),
+        r_t_seq.as_bytes(),
+        r_q_seq.as_bytes(),
+        |a, b| ctx.matrix.get_score(a as char, b as char) as f64,
+    ))
 }
 
 /// Removes duplicate blocks that have exact same coordinates.

@@ -411,14 +411,16 @@ pgr 的 `chain`/`net`/`axt`/`psl` 模块是 UCSC kent-tools 对应功能的**Rus
    实现 filter/subset。
 3. **命令树深度嵌套**：三跳 dispatch (`pgr.rs` → `mod.rs` → `leaf.rs`) 在新增命令时容易遗漏
    某一层的注册。可以考虑宏简化。
-4. **测试覆盖不均衡**：`fa`、`fas` 等大模块有较全的集成测试，但 `chain`/`net`/`pl` 的覆盖 可能不足
-   （`pl` 依赖外部工具，测试困难）。
+4. **测试覆盖不均衡（已改善）**：`fa`/`fas` 覆盖最全；`chain`/`net`/`pl` 经 UCSC 字节级
+   复现工作后已有相当覆盖（cli_chain 12、cli_net 11、cli_ucsc 18、cli_pl 7、
+   cli_chain_net_complex 2），`pl` 依赖外部工具的部分仍较难测试。
 5. **外部工具依赖**：`pgr pl ucsc` 需要安装一整套 kent-tools，但 `pgr pl chainnet` 已完全原生；
    `lastz` 仍为唯一必需的外部二进制。
 6. **`fas` 模块职责过重**：20 个子命令塞在一个模块下，`fas multiz` 等复杂逻辑可能需要
    拆分为独立顶层命令。
-7. **帮助文本与注册脱节**：`pgr.rs` 的 after_help 手工维护，已与 `cmd_pgr/pl`（缺 `chainnet`）
-   和 `cmd_pgr/pbit`（缺 `append`）的实际子命令不一致，容易在增删命令时遗忘同步。
+7. **帮助文本与注册脱节（风险提示）**：`pgr.rs` 的 after_help 手工维护，增删命令时需
+   同步 `pgr.rs` 的 after_help 与 `cmd_pgr/*/mod.rs` 注册（当前已一致：`pl` 含
+   `chainnet`，`pbit` 含 `append`）。
 
 ## 9. 设计笔记索引（notes/design/）
 

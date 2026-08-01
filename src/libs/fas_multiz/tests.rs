@@ -196,7 +196,7 @@ fn merge_window_union_species_union() {
 }
 
 #[test]
-fn merge_window_mismatched_reference_returns_none() {
+fn merge_window_mismatched_reference_splices_at_crossover() {
     let (ref_entry1, ref_name1, ref_header1) = make_entry("ref", 1, 4, "ACGT");
     let (a_entry1, a_name1, a_header1) = make_entry("A", 1, 4, "ACGT");
     let block1 = make_block(vec![
@@ -221,6 +221,41 @@ fn merge_window_mismatched_reference_returns_none() {
     };
 
     let merged = merge_window("ref", &window, &blocks_per_input, &cfg).unwrap();
+    // Mismatched reference sequences are spliced at the best crossover point
+    // instead of being dropped; the merged block keeps both species.
+    let block = merged.expect("mismatched refs should merge via crossover");
+    assert!(block.names.contains(&"ref".to_string()));
+    assert!(block.names.contains(&"A".to_string()));
+}
+
+#[test]
+fn merge_window_mismatched_reference_no_shared_species_returns_none() {
+    let (ref_entry1, ref_name1, ref_header1) = make_entry("ref", 1, 4, "ACGT");
+    let (a_entry1, a_name1, a_header1) = make_entry("A", 1, 4, "ACGT");
+    let block1 = make_block(vec![
+        (ref_entry1, ref_name1, ref_header1),
+        (a_entry1, a_name1, a_header1),
+    ]);
+
+    let (ref_entry2, ref_name2, ref_header2) = make_entry("ref", 1, 4, "AGGT");
+    let (b_entry2, b_name2, b_header2) = make_entry("B", 1, 4, "AGGT");
+    let block2 = make_block(vec![
+        (ref_entry2, ref_name2, ref_header2),
+        (b_entry2, b_name2, b_header2),
+    ]);
+
+    let blocks_per_input = vec![vec![block1], vec![block2]];
+
+    let cfg = default_config(FasMultizMode::Union);
+    let window = Window {
+        chr: "ref".to_string(),
+        start: 1,
+        end: 4,
+    };
+
+    let merged = merge_window("ref", &window, &blocks_per_input, &cfg).unwrap();
+    // Without a shared non-reference species there is nothing to score the
+    // crossover with, so the merge is still refused.
     assert!(merged.is_none());
 }
 
