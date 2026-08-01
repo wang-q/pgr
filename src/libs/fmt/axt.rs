@@ -3,6 +3,21 @@ use super::psl::Psl;
 use std::collections::BTreeMap;
 use std::io::{BufRead, Write};
 
+/// Reads the `##` metadata lines from an AXT file (UCSC lineFile metadata).
+fn read_axt_comments(input: &str) -> anyhow::Result<Vec<String>> {
+    let mut comments = Vec::new();
+    let reader = crate::libs::io::reader(input)?;
+    for line in reader.lines() {
+        let line = line?;
+        if line.starts_with('#') {
+            comments.push(line);
+        } else {
+            break;
+        }
+    }
+    Ok(comments)
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct Axt {
     pub id: u64, // The first number in the header line
@@ -91,6 +106,9 @@ pub fn axt_to_maf(
 
     let reader = crate::libs::io::reader(input)?;
     let axt_reader = AxtReader::new(reader);
+    // UCSC axtToMaf propagates the AXT metadata (## lines) after the maf
+    // version header via lineFileSetMetaDataOutput.
+    let comments = read_axt_comments(input)?;
 
     let mut current_t_name = String::new();
     let mut single_writer: Option<MafWriter<Box<dyn std::io::Write>>> = None;
@@ -103,6 +121,7 @@ pub fn axt_to_maf(
         let writer: Box<dyn std::io::Write> = Box::new(crate::libs::io::writer(output)?);
         let mut writer = MafWriter::new(writer);
         writer.write_header("blastz")?;
+        writer.write_comments(&comments)?;
         single_writer = Some(writer);
     }
 
@@ -124,6 +143,7 @@ pub fn axt_to_maf(
                     let w: Box<dyn std::io::Write> = Box::new(crate::libs::io::writer(path_str)?);
                     let mut w = MafWriter::new(w);
                     w.write_header("blastz")?;
+                    w.write_comments(&comments)?;
                     split_writers.insert(axt.t_name.clone(), w);
                 }
                 current_t_name = axt.t_name.clone();

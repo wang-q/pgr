@@ -60,9 +60,16 @@ pub fn stitch_chains<R: BufRead, W: Write>(reader: R, mut writer: W) -> Result<(
             .or_insert(chain);
     }
 
-    // Collect and sort by score (descending)
+    // Collect and sort by score (descending); equal scores keep the original
+    // chain id order, mirroring chainStitchId's stable score sort over chains
+    // that were accumulated in ascending id order.
     let mut chain_list: Vec<Chain> = chains.into_values().collect();
-    chain_list.sort_by(|a, b| b.header.score.total_cmp(&a.header.score));
+    chain_list.sort_by(|a, b| {
+        b.header
+            .score
+            .total_cmp(&a.header.score)
+            .then(a.header.id.cmp(&b.header.id))
+    });
 
     for chain in chain_list {
         chain.write(&mut writer)?;

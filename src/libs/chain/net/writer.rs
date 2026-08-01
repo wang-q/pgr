@@ -217,7 +217,8 @@ fn subchain_info(chain: &Chain, start: u64, end: u64, is_q: bool) -> (u64, f64) 
     (sub_size, sub_score)
 }
 
-/// Sort chroms by name and write each to `writer` via `finalize_net` + `write_net`.
+/// Write chroms in sizes-file order (UCSC chainNet order) to `writer` via
+/// `finalize_net` + `write_net`.
 pub fn write_sorted_net<W: Write>(
     net: &super::builder::ChainNet,
     writer: &mut W,
@@ -225,10 +226,8 @@ pub fn write_sorted_net<W: Write>(
     min_score: f64,
     min_fill: u64,
 ) -> anyhow::Result<()> {
-    let mut chrom_names: Vec<_> = net.chroms.keys().cloned().collect();
-    chrom_names.sort();
-    for name in chrom_names {
-        if let Some(chrom_cell) = net.chroms.get(&name) {
+    for name in &net.chrom_order {
+        if let Some(chrom_cell) = net.chroms.get(name) {
             let mut chrom = chrom_cell.borrow_mut();
             super::finalize::finalize_net(&mut chrom, is_q);
             write_net(&chrom, writer, is_q, min_score, min_fill)?;

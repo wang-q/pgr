@@ -92,14 +92,16 @@ fn convert_fill<S: SequenceReader, W: Write>(
 
     // First pass: emit all segments (UCSC splitWrite behavior).
     for gap_rc in &fill.gaps {
-        let (g_start, g_end, has_children, q_gap_size) = {
+        let (g_start, g_end, has_children) = {
             let g = gap_rc.borrow();
-            (g.start, g.end, !g.fills.is_empty(), g.o_end - g.o_start)
+            (g.start, g.end, !g.fills.is_empty())
         };
 
-        // Split if: has_children OR q_gap_size > 0 (double-sided gap)
-        // Merge if: !has_children AND q_gap_size == 0 (single-sided gap / indel)
-        let should_split = has_children || q_gap_size > 0;
+        // Mirror UCSC splitWrite: split only at gaps that carry an inserted
+        // child fill; plain gaps are covered by the surrounding segment and
+        // rendered as dashes (chainToAxt then splits single-sided gaps that
+        // exceed maxGap).
+        let should_split = has_children;
 
         if should_split {
             if g_start > cur {
@@ -110,8 +112,6 @@ fn convert_fill<S: SequenceReader, W: Write>(
                 child_gaps.push(gap_rc.clone());
             }
         }
-        // else: Merge — extend the current segment over this gap (indel).
-        // convert_segment will handle the gap by inserting dashes.
     }
 
     // Tail segment.
@@ -140,6 +140,57 @@ fn convert_segment<S: SequenceReader, W: Write>(
     writer: &mut W,
     counter: &mut usize,
 ) -> anyhow::Result<()> {
+    let blocks = chain.to_blocks();
+
+    // Mirror UCSC chainToAxt: break the segment wherever a block gap is
+    // double-sided (dq > 0 && dt > 0) or a single-sided gap exceeds maxGap.
+    // Splits happen at block boundaries; the first split point may be before
+    // t_start when the segment begins mid-gap, so clamp to t_start.
+    const MAX_GAP: i64 = 100;
+    let mut segments: Vec<(u64, u64)> = Vec::new();
+    let mut seg_start = t_start;
+
+    for pair in blocks.windows(2) {
+        let a = &pair[0];
+        let b = &pair[1];
+        if b.t_start <= t_start {
+            continue;
+        }
+        if a.t_end >= t_end {
+            break;
+        }
+        let dq = b.q_start as i64 - a.q_end as i64;
+        let dt = b.t_start as i64 - a.t_end as i64;
+        if (dq > 0 && dt > 0) || dt > MAX_GAP || dq > MAX_GAP {
+            // Mirror UCSC chainToAxt/axtFromBlocks: the segment ends at the
+            // last block before the split gap (a.t_end) and the next segment
+            // starts at the following block (b.t_start); the gap itself is
+            // skipped.
+            if a.t_end > seg_start && a.t_end < t_end {
+                segments.push((seg_start, a.t_end));
+                seg_start = b.t_start;
+            }
+        }
+    }
+    segments.push((seg_start, t_end));
+
+    for (s, e) in segments {
+        emit_axt_segment(s, e, chain, t_2bit, q_2bit, matrix, writer, counter)?;
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn emit_axt_segment<S: SequenceReader, W: Write>(
+    t_start: u64,
+    t_end: u64,
+    chain: &Chain,
+    t_2bit: &mut S,
+    q_2bit: &mut S,
+    matrix: &SubMatrix,
+    writer: &mut W,
+    counter: &mut usize,
+) -> anyhow::Result<()> {
     // Get subset of chain
     let blocks = chain.to_blocks();
 
@@ -154,6 +205,10 @@ fn convert_segment<S: SequenceReader, W: Write>(
             }
             idx_end = Some(i);
         }
+    }
+
+    if idx_start.is_none() {
+        return Ok(());
     }
 
     if idx_start.is_none() {
@@ -206,8 +261,11 @@ fn convert_segment<S: SequenceReader, W: Write>(
     for i in idx_start..=idx_end {
         let block = &blocks[i];
 
-        // 1. Handle gap BEFORE this block (if i > 0, OR i == idx_start and we overlap the gap)
-        if i > 0 {
+        // 1. Handle gap BEFORE this block, but only when the previous block is
+        // inside this segment (i > idx_start).  UCSC axtFromBlocks starts at
+        // the first block of the segment, so gaps before idx_start are not
+        // part of the AXT.
+        if i > idx_start {
             let prev = &blocks[i - 1];
             // Gap range on T: [prev.t_end, block.t_start)
             let gap_start_t = prev.t_end;
@@ -264,39 +322,6 @@ fn convert_segment<S: SequenceReader, W: Write>(
             let q_end_seg = q_start_seg + len;
             let q_chunk = read_q(q_start_seg, q_end_seg, q_2bit)?;
             q_seq_all.push_str(&q_chunk);
-        }
-
-        // 3. Handle gap AFTER this block (only if this is the last processed block)
-        if i == idx_end && t_end > block.t_end && i + 1 < blocks.len() {
-            let next = &blocks[i + 1];
-            let gap_start_t = block.t_end;
-            let gap_end_t = next.t_start;
-
-            let overlap_start = gap_start_t.max(t_start);
-            let overlap_end = gap_end_t.min(t_end);
-
-            if overlap_start < overlap_end {
-                let t_chunk = t_2bit.read_sequence(
-                    &chain.header.t_name,
-                    Some(overlap_start as usize),
-                    Some(overlap_end as usize),
-                )?;
-                t_seq_all.push_str(&t_chunk);
-                for _ in 0..(overlap_end - overlap_start) {
-                    q_seq_all.push('-');
-                }
-            }
-
-            if t_start <= gap_start_t && gap_start_t < t_end {
-                let dq_len = next.q_start - block.q_end;
-                if dq_len > 0 {
-                    let q_chunk = read_q(block.q_end, next.q_start, q_2bit)?;
-                    q_seq_all.push_str(&q_chunk.to_ascii_uppercase());
-                    for _ in 0..dq_len {
-                        t_seq_all.push('-');
-                    }
-                }
-            }
         }
     }
 

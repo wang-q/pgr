@@ -14,19 +14,26 @@ use std::rc::Rc;
 pub struct ChainNet {
     /// Map from chromosome name to its mutable net tree.
     pub chroms: HashMap<String, RefCell<Chrom>>,
+    /// Chromosome names in sizes-file order; the net file is written in this
+    /// order (UCSC chainNet emits nets in chromSizes file order).
+    pub chrom_order: Vec<String>,
     /// Source chains added to this net (retained for subchain scoring).
     pub chains: Vec<Rc<Chain>>,
 }
 
 impl ChainNet {
     /// Creates an empty `ChainNet` from a map of chromosome sizes.
-    pub fn new(target_sizes: &BTreeMap<String, u64>) -> Self {
+    pub fn new(target_sizes: &BTreeMap<String, u64>, chrom_order: Vec<String>) -> Self {
         let mut chroms = HashMap::new();
-        for (name, size) in target_sizes {
+        for name in &chrom_order {
+            let size = target_sizes
+                .get(name)
+                .expect("chromosome in order must exist in sizes");
             chroms.insert(name.clone(), RefCell::new(Chrom::new(name, *size)));
         }
         Self {
             chroms,
+            chrom_order,
             chains: Vec::new(),
         }
     }

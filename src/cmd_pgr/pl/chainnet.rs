@@ -185,7 +185,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         // chainNet: write target.net and query.net
         run_cmd!(
             ${pgr} chain net all.pre.chain target.chr.sizes query.chr.sizes
-                target.chainnet query.chainnet --min-space 1
+                target.chainnet query.chainnet
         )?;
 
         // netSyntenic: add synteny info to target net

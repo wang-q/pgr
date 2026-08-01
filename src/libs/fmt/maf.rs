@@ -193,13 +193,58 @@ impl<W: Write> MafWriter<W> {
         writeln!(self.writer, "##maf version=1 scoring={}", program)
     }
 
+    /// Write metadata comment lines (e.g. propagated AXT `##` headers).
+    pub fn write_comments(&mut self, comments: &[String]) -> io::Result<()> {
+        for c in comments {
+            writeln!(self.writer, "{}", c)?;
+        }
+        Ok(())
+    }
+
     pub fn write_ali(&mut self, ali: &MafAli) -> io::Result<()> {
-        writeln!(self.writer, "a score={:.1}", ali.score.unwrap_or(0.0))?;
+        // UCSC axtToMaf writes the score with six decimals.
+        writeln!(self.writer, "a score={:.6}", ali.score.unwrap_or(0.0))?;
+        // UCSC mafWriteDelimiter pads each field to the widest value among the
+        // components of this alignment: src left-aligned, numeric fields
+        // right-aligned.
+        let src_chars = ali
+            .components
+            .iter()
+            .map(|c| c.src.len())
+            .max()
+            .unwrap_or(0);
+        let start_chars = ali
+            .components
+            .iter()
+            .map(|c| c.start.to_string().len())
+            .max()
+            .unwrap_or(0);
+        let size_chars = ali
+            .components
+            .iter()
+            .map(|c| c.size.to_string().len())
+            .max()
+            .unwrap_or(0);
+        let src_size_chars = ali
+            .components
+            .iter()
+            .map(|c| c.src_size.to_string().len())
+            .max()
+            .unwrap_or(0);
         for comp in &ali.components {
             writeln!(
                 self.writer,
-                "s {:<20} {:10} {:10} {} {:10} {}",
-                comp.src, comp.start, comp.size, comp.strand, comp.src_size, comp.text
+                "s {:<src_w$} {:>start_w$} {:>size_w$} {} {:>srcsize_w$} {}",
+                comp.src,
+                comp.start,
+                comp.size,
+                comp.strand,
+                comp.src_size,
+                comp.text,
+                src_w = src_chars,
+                start_w = start_chars,
+                size_w = size_chars,
+                srcsize_w = src_size_chars,
             )?;
         }
         writeln!(self.writer)?;

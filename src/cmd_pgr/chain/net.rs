@@ -83,8 +83,13 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let t_sizes = pgr::read_sizes::<u64>(target_sizes_path)?;
     let q_sizes = pgr::read_sizes::<u64>(query_sizes_path)?;
 
-    let mut t_net = ChainNet::new(&t_sizes);
-    let mut q_net = ChainNet::new(&q_sizes);
+    // UCSC chainNet emits nets in chromSizes file order, so keep the file
+    // order (read_sizes returns a sorted map and loses it).
+    let t_order = size_order(target_sizes_path)?;
+    let q_order = size_order(query_sizes_path)?;
+
+    let mut t_net = ChainNet::new(&t_sizes, t_order);
+    let mut q_net = ChainNet::new(&q_sizes, q_order);
 
     let mut reader = ChainReader::new(
         pgr::reader(input_path)
@@ -142,4 +147,15 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     )?;
 
     Ok(())
+}
+
+/// Returns chromosome names in the order they appear in a `.sizes` file.
+fn size_order(path: &str) -> anyhow::Result<Vec<String>> {
+    let mut order = Vec::new();
+    for line in pgr::read_lines(path)? {
+        if let Some(name) = line.split_whitespace().next() {
+            order.push(name.to_string());
+        }
+    }
+    Ok(order)
 }

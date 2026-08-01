@@ -215,7 +215,7 @@ ACTG
 
     // AXT: chr1 11 14 (1-based, inclusive). Length 4.
     // MAF: start 10 (0-based), size 4.
-    assert!(output.contains("chr1                         10          4"));
+    assert!(output.contains("s chr1 10 4 + 1000 ACTG"));
 }
 
 #[test]
@@ -260,12 +260,12 @@ ACTG
     assert!(output_dir.join("chr2.maf").exists());
 
     let output_chr1 = fs::read_to_string(output_dir.join("chr1.maf")).unwrap();
-    assert!(output_chr1.contains("s chr1                         10"));
-    assert!(!output_chr1.contains("s chr2                         20")); // Should not contain the second record
+    assert!(output_chr1.contains("s chr1 10 4 + 1000 ACTG"));
+    assert!(!output_chr1.contains("s chr2 20 4 + 1000 ACTG")); // Should not contain the second record
 
     let output_chr2 = fs::read_to_string(output_dir.join("chr2.maf")).unwrap();
-    assert!(output_chr2.contains("s chr2                         20"));
-    assert!(!output_chr2.contains("s chr1                         10")); // Should not contain the first record
+    assert!(output_chr2.contains("s chr2 20 4 + 1000 ACTG"));
+    assert!(!output_chr2.contains("s chr1 10 4 + 1000 ACTG")); // Should not contain the first record
 }
 
 #[test]
