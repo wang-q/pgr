@@ -37,6 +37,10 @@ rGFA（粗全局）/ 局部 GFA（区域）→ MAF/VCF
 **关键边界**：步骤 1-2 是 pgr 的**上游**，步骤 3-5 是 pgr 的**核心**。本文档重点记录步骤 1
 （用户已明确），步骤 2-5 引用已有规划。
 
+> MAF 是上游工具（FastGA/lastz）的**输出格式**，在 pgr 入口处转成内部格式：
+> 隐式图路径 `maf to-paf` → `paf index`，多序列比对/核心基因组路径 `maf to-fas`
+> → `pgr pl p2m`（`fas` 层 cover/slice/join/refine）。内部链路不使用 MAF。
+
 ---
 ## 2. 步骤 1：去冗余（4 万 → ~27000）
 

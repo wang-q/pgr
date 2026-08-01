@@ -2,6 +2,13 @@
 
 `pgr maf` provides tools for manipulating **MAF** (Multiple Alignment Format) files.
 
+MAF is treated as an **exchange format** with external tools: upstream aligners
+(lastz/FastGA) produce MAF, and downstream ecosystems consume it. Inside `pgr`,
+multiple-sequence alignment and core-genome work happens in **Block FA** (the
+`fas` command family, e.g. `pgr pl p2m`), and the pangenome implicit graph works
+in PAF. Therefore `pgr maf` intentionally stays thin — conversions only, no
+filter/subset commands (use `pgr fas` for those).
+
 ## Subcommands
 
 *   `to-fas`: Convert MAF files to block FA format.

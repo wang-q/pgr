@@ -26,6 +26,10 @@ seqwish（DSU 传递闭包）、Cactus（Caf 退火-熔化）。
 2. **复用 pairwise 资产，大 cohort 用 Mash KNN sparsify** — pgr 已有成熟的 pairwise 比对链
    （`pgr lav lastz` → chain → net → axt → maf）。小 cohort + 已有 MAF 直接复用；大 cohort + 无先验
    （如 4 万 E. coli）用 Mash KNN sparsify 把 N² 降到 N×K，传递闭包推断未比对的对。
+   **注意：MAF 只是与外部工具的交换格式**。上游比对工具产出 MAF，pgr 在入口用
+   `maf to-fas` / `maf to-paf` 转成内部工作格式；多序列比对 / 核心基因组操作在
+   **Block FA（`fas` 层）** 完成（如 `pgr pl p2m` 的 cover/slice/join/refine 链），
+   PAF 隐式图在 PAF 层完成。不要在 MAF 层重复实现 fas 已有的过滤/subset 功能。
 3. **查询层全量，图构建层粗框架** — 查询层（query / to-bed / to-maf）全量返回同源区段，用户用 `--merge-distance`
    控制粗细；图构建层（graph / to-gfa / to-vcf / stat）物化 GFA 时才引入 `--min-var-len`（默认 100）粗框架过滤，对齐
    minigraph。
@@ -67,6 +71,9 @@ pgr 是否需要 sparsify **取决于 cohort 规模和已有资产**：
 **大 cohort**：Mash KNN 把 27000² 降到 27000×K（K≈50，~270 倍缩减）；用 FastGA 比对产 MAF → 转 PAF；
 稀疏比对的缺口由查询时 BFS 推断。
 
+> MAF 出现在这里是因为外部工具（lastz/FastGA）以 MAF 输出；进入 pgr 后立即转成内部格式
+> （PAF 给隐式图、Block FA 给多序列比对），内部链路不再依赖 MAF。
+
 > **spanning tree 优化（远期）**：seqwish 在传递闭包前用最大权生成树剪枝，把 N(N-1)/2 边压缩到 N-1
 > 边。pgr 查询层 BFS 若性能瓶颈显现，可在加载 PAF 阶段预计算生成树。当前不做，待性能数据出来再评估。
 
@@ -77,6 +84,10 @@ pgr 是否需要 sparsify **取决于 cohort 规模和已有资产**：
 | **impg**      | BFS 传递闭包 → POA → GFA → gfaffix → gfasort  | 标准 GFA 1.0         |      to-gfa 参考      |
 | **minigraph** | k-mer seeds → linear chain DP → gchain → rGFA | rGFA 1.0（SN/SO/SR） | graph 参考（DSU 风格） |
 | **pgr**       | MAF → PAF → PafIndex → BFS → POA → MSA/GFA    | MAF/GFA/VCF          |      ✅ 已实现       |
+
+> 表中 "MAF →" 是**边界入口**：MAF 由外部比对工具产出，经 `maf to-paf` / `maf to-fas`
+> 进入 pgr；内部的多序列比对（`fas join`/`fas refine`/`fas multiz`/`fas consensus`）与
+> 隐式图（PAF）都不依赖 MAF，MAF 只在最终输出时按需转回。
 
 pgr 的独特起点：已有 PAF index + BFS 查询，不需要重新做比对；`libs/poa/` 纯 Rust POA，零外部依赖。
 
@@ -98,8 +109,10 @@ PAF 是图的边，Chain/Net 是查询层的 syntenic 过滤器。理由（详�
 
 ### 2.2 PAF 来源：MAF → PAF 转换，不跑新比对
 
-pgr 已有的两序列 MAF 直接转换为 PAF。两序列 MAF 的每个 block 等价于一条 pairwise alignment—— `s`
-行给出坐标和链向，可直接映射到 PAF 的 12 列。
+外部工具（lastz/FastGA）产出的两序列 MAF 是 pgr 的**边界输入**，直接转换为 PAF。两序列 MAF
+的每个 block 等价于一条 pairwise alignment—— `s` 行给出坐标和链向，可直接映射到 PAF 的 12 列。
+这是 PAF 隐式图（query / graph / to-gfa / to-vcf / stat）的入口；多序列比对 / 核心基因组
+路径（`pgr pl p2m`）则走 `maf to-fas` 转 Block FA，内部工作格式是 fas 而非 MAF。
 
 ### 2.3 索引全量装入，挑选发生在查询层
 
@@ -661,4 +674,3 @@ Minigraph 骨架构建 → 图映射定位 → rgfa-split 切分 → 批量 Cact
 | minigraph `gfa_t` 对应实现              | pgr 走 seqwish DSU 路线                    | 永不                                                                  |
 | 1ALN/TPA 格式支持                       | pgr 用 PAF/MAF                             | 永不                                                                  |
 | `--end-trim` 比对边缘修剪               | 需要 per-interval 修剪 CIGAR 两端，与当前"区间整体投影"模型不兼容 | 引入序列级输出时一并处理（见 §6.4）                                   |
-

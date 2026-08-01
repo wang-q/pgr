@@ -347,7 +347,6 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
 
 ### 6.3 待补全的（TODO / 设计阶段）
 
-- `pgr.rs` 末尾注释的 TODO：paralog、fas match、去完全包含序列
 - `notes/design/` 下的规划文档（详见 §9 设计笔记索引）
 
 PAF 泛基因组方向（query / to-maf / graph / to-gfa / to-vcf / stat）已全部完成，后续规划见 [[paf-pangenome.md]] §5（图质量与归一化 / 规模扩展 / 应用层）。
@@ -405,7 +404,11 @@ pgr 的 `chain`/`net`/`axt`/`psl` 模块是 UCSC kent-tools 对应功能的**Rus
 
 1. **nightly 依赖**：`#![feature(portable_simd)]` 是 nightly-only，`rust-toolchain.toml`
    固定 `nightly-2026-01-26`。如果 portable_simd 迟迟不稳定，可能成为包袱。
-2. **maf 模块扩展**：`maf` 目前有 `to-fas` 和 `to-paf` 两个子命令。仍需 `filter`、`subset` 等扩展以支撑泛基因组管道。
+2. **maf 保持边界转换定位（设计约束，非欠账）**：`maf` 目前有 `to-fas` 和 `to-paf` 两个
+   子命令，这是有意的——MAF 只是与外部工具的**交换格式**（上游比对工具产出、下游生态
+   消费），pgr 内部的多序列比对/核心基因组工作格式是 **Block FA（`fas` 层）**，过滤、
+   subset、slice、cover、join、refine 等操作均由 `pgr fas` 提供。不要在 `maf` 层重复
+   实现 filter/subset。
 3. **命令树深度嵌套**：三跳 dispatch (`pgr.rs` → `mod.rs` → `leaf.rs`) 在新增命令时容易遗漏
    某一层的注册。可以考虑宏简化。
 4. **测试覆盖不均衡**：`fa`、`fas` 等大模块有较全的集成测试，但 `chain`/`net`/`pl` 的覆盖 可能不足
