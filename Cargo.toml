@@ -73,6 +73,14 @@ harness = false
 name = "syntenic_filter_benchmark"
 harness = false
 
+[[bench]]
+name = "paf_index_benchmark"
+harness = false
+
+[[bench]]
+name = "paf_graph_benchmark"
+harness = false
+
 [build-dependencies]
 
 [dev-dependencies]

@@ -406,9 +406,20 @@ target 先 注册，故 target 优先），novel 节点 origin 取其填充时�
 相应调整 indel 序列。POA MSA 通常已将 gap 左对齐到重复序列边界，`left_align_indels` 在此基础上做
 二次规范化，确保不依赖 `bcftools norm` 后处理。
 
-**基准测试**：`Cargo.toml` 仅有 `hier_benchmark`。扩规模前应补 `paf_index_bench`（构建/查询
-/BFS）和 `paf_graph_bench`（graph DSU），为"选路径 A 哪几项优化"提供量化依据。基准测试依赖 4
-万大肠杆菌 真实数据，目前不可用，随规模扩展一并推迟。
+**基准测试** ✅（2026-08-02，10 基因组真实数据，见 [[ecoli-cohort.md]] §4）：
+`benches/paf_index_benchmark.rs` + `benches/paf_graph_benchmark.rs`，fixture 为
+`benches/data/ecoli10.paf.gz`（45 对 chainnet --syn 的 30503 条 PAF，6.5 MB，由
+verify-pangenome.sh 的 fixture 变体生成）。release 实测（单核）：
+
+| 基准 | 耗时 |
+|------|------|
+| `paf_index_build/ecoli10`（索引构建，30503 记录）| 104.8 ms |
+| `paf_index_query/ecoli10_mg1655_100k`（单跳查询）| 22.2 µs |
+| `paf_index_bfs/ecoli10_mg1655_100k_depth2`（传递 BFS）| 284 µs |
+| `paf_graph_build/ecoli10_100`（粗图 DSU 构建）| 87.1 ms |
+
+10 基因组规模下索引/查询/BFS/图构建均远非瓶颈；"选路径 A 哪几项优化"的量化决策需等
+4 万大肠杆菌数据可用后重跑同一基准（届时按 §5.2 判断标准决定）。
 
 ### 5.0.1 测试改进（借鉴 impg/seqwish）
 
