@@ -330,53 +330,41 @@ pgr axt to-maf tests/pgr/synNet/cat.axt \
 * 部分命令参数风格差异：`pgr net to-axt` 的输出用 `-o` 指定（target/query 仍为位置参数），`pgr axt to-maf` 的 sizes 与输出均用 `-t` / `-q` / `-o` 标志；UCSC 对应工具均为纯位置参数。
 * `pgr chain net` 默认 `--min-space 25`，UCSC 脚本用 `-minSpace=1`，需显式 `--min-space 1` 对齐。
 
-## 4. 隔离测试验证报告（2026-08-01）
+## 4. 隔离测试验证报告（2026-08-01，修复后状态）
 
-以 `pseudocat` vs `pseudopig` 为测试数据，控制相同输入，逐命令对比 UCSC kent-tool 与 pgr 实现的输出。测试数据位于 `tests/pgr/cmp/`，UCSC 输出在 `ucsc/`，pgr 输出在 `pgr/`，共享输入在 `shared/`。
+以 `pseudocat` vs `pseudopig` 为测试数据，控制相同输入，逐命令对比 UCSC kent-tool 与 pgr 实现的输出。隔离测试用料已在验证完成后合并为正式测试 fixtures（`tests/pgr/`）与集成测试（`tests/cli_ucsc.rs`，18 个测试覆盖 16 个命令）。
 
-### 4.1 逐命令对比结果
+### 4.1 逐命令对比结果（7 处差异修复后）
 
 | # | UCSC 工具 | pgr 命令 | 结果 | 差异说明 |
 |---|---|---|---|---|
 | 1 | `faToTwoBit` | `pgr fa to-2bit` | 序列一致 ✓ | 2bit 文件大小差 4 字节：UCSC version=0，pgr version=1；序列数据完全相同 |
-| 2 | `lavToPsl` | `pgr lav to-psl` | 一致 ✓ | UCSC 保留 4 行 `##` 注释（aligner/matrix/gapPenalties/blastzParms），pgr 不输出 |
-| 3 | `axtChain` | `pgr psl chain` | 链数不同 | UCSC 5 条链，pgr（HOXD55）7 条链；pgr 将 UCSC 的大 gap 链拆分为两条。经 `chainAntiRepeat` 后两边均 5 条 |
-| 4 | `chainAntiRepeat` | `pgr chain anti-repeat` | 一致 ✓ | 排除 `##` 注释行后完全一致 |
-| 5 | `chainMergeSort` | `pgr chain sort` | 一致 ✓ | 排除 `##` 注释行后完全一致 |
-| 6 | `chainPreNet` | `pgr chain pre-net` | 一致 ✓ | 排除 `##` 注释行后完全一致 |
+| 2 | `lavToPsl` | `pgr lav to-psl` | 完全一致 ✓ | 修复后 pgr 保留 `##` 注释行，字节级一致 |
+| 3 | `axtChain` | `pgr psl chain` | 链数不同 | UCSC 5 条链，pgr（HOXD55 默认）7 条链。算法差异：pgr DP 链化对大 gap 桥接策略不同。经 `chainAntiRepeat` 后两边均收敛到 5 条链 |
+| 4 | `chainAntiRepeat` | `pgr chain anti-repeat` | 完全一致 ✓ | 修复后注释行透传，排除注释后字节级一致 |
+| 5 | `chainMergeSort` | `pgr chain sort` | 完全一致 ✓ | 修复后注释行透传 |
+| 6 | `chainPreNet` | `pgr chain pre-net` | 完全一致 ✓ | 修复后注释行透传 |
 | 7 | `chainNet` | `pgr chain net` | 完全一致 ✓ | 字节级一致 |
 | 8 | `netSyntenic` | `pgr net syntenic` | 完全一致 ✓ | 字节级一致 |
-| 9 | `netChainSubset` | `pgr net subset` | 内容一致 ✓ | 排除 `##` 注释行后一致；chain 3 score 差异：UCSC=38520（重算子链 score），pgr=70529（保留原 score）。block 数据完全相同 |
+| 9 | `netChainSubset` | `pgr net subset` | 完全一致 ✓ | 修复后 pgr 按 UCSC `chainFastSubsetOnT` 逻辑重算子链 score（t 坐标跨度比），字节级一致 |
 | 10 | `chainStitchId` | `pgr chain stitch` | 完全一致 ✓ | 字节级一致 |
-| 11 | `netSplit` | `pgr net split` | 一致 ✓ | `##gapPenalties` 与 `##matrix` 注释行顺序不同，数据完全一致 |
-| 12 | `netToAxt` | `pgr net to-axt` | 记录一致 ✓ | 排序前记录顺序不同（ID 不同）；经 `axtSort` 后完全一致 |
+| 11 | `netSplit` | `pgr net split` | 完全一致 ✓ | 修复后注释行排序一致 |
+| 12 | `netToAxt` | `pgr net to-axt` | 完全一致 ✓ | 修复后输出顺序匹配 UCSC net 树 pre-order 遍历，`cat.tmp.axt` 字节级一致 |
 | 13 | `axtSort` | `pgr axt sort` | 完全一致 ✓ | 字节级一致 |
-| 14 | `axtToMaf` | `pgr axt to-maf` | pgr 验证正确 | UCSC `axtToMaf` 在 macOS arm64 崩溃（Trace/BPT trap, exit=133），无法直接对比。pgr 输出经逐条验证：6 条记录的 score、坐标（1-based→0-based）、strand、序列内容、非-gap 碱基数均与 AXT 输入一致 |
-| 15 | `netFilter -syn` | `pgr net filter --syn` | 一致 ✓ | 两边均输出空文件（top score 124204 < 默认 minTopScore 300000）。`-nonsyn` 排除注释行后一致 |
-| 16 | `chainSplit` | `pgr chain split` | 完全一致 ✓ | 按 target 和 query 分割均字节级一致 |
+| 14 | `axtToMaf` | `pgr axt to-maf` | pgr 验证正确 | UCSC `axtToMaf` 在 macOS arm64 崩溃（Trace/BPT trap, exit=133）。pgr 输出经逐条验证：6 条记录的 score、坐标、strand、序列内容均与 AXT 输入一致 |
+| 15 | `netFilter -syn` | `pgr net filter --syn` | 一致 ✓ | 两边均输出空文件（top score 124204 < 默认 minTopScore 300000）。`--nonsyn` 排除注释行后一致 |
+| 16 | `chainSplit` | `pgr chain split` | 一致 ✓ | chain 数据完全一致；UCSC 按 ID 排序，pgr 保留输入顺序，排序后一致 |
 
-### 4.2 差异分类
+### 4.2 修复后剩余差异
 
-**A. 注释行保留策略（非实质性差异）**
-
-pgr 在 chain/PSL 格式转换时不保留 `##matrix`/`##gapPenalties` 等注释行，UCSC 保留。这些注释行不影响任何下游工具的数据处理。
-
-**B. chain 文件注释行（`lastz.ar.chain`/`all.chain`/`all.pre.chain`/`subset.chain`）**
-
-UCSC `chainAntiRepeat` 输出保留 `##matrix`/`##gapPenalties`，pgr 不保留。排除注释行后 chain 数据完全一致。
-
-**C. 链化策略差异（`axtChain` vs `pgr psl chain`）**
+**A. 链化策略差异（`axtChain` vs `pgr psl chain`）——算法差异，非缺陷**
 
 pgr 生成 7 条链（HOXD55 打分），UCSC 生成 5 条链。差异在于 UCSC `axtChain` 对大 gap 的桥接策略与 pgr 的 DP 链化算法不同。`chainAntiRepeat` 后两边均收敛到 5 条链，后续步骤完全一致。pgr 的打分逻辑符合 HOXD55 矩阵定义。
 
-**D. netChainSubset score 重算（`netChainSubset` vs `pgr net subset`）**
+**B. `netFilter` 注释行保留——pgr 更保守**
 
-UCSC `netChainSubset` 对切分后的子链重算 score（chain 3: 38520），pgr 保留原 chain 的 score（70529）。block 数据完全相同，score 差异不影响后续 `chainStitchId`/`netToAxt`/`axtSort` 的输出（已验证字节级一致）。
-
-**E. netToAxt 输出顺序**
-
-`netToAxt` 的直接输出（`cat.tmp.axt`）记录顺序不同，但经 `axtSort` 后完全一致。这是 net 遍历顺序的差异，不影响最终结果。
+pgr `net filter` 保留输入 net 中的 `##matrix`/`##gapPenalties` 注释行，UCSC `netFilter` 会剥离。排除注释行后数据完全一致。pgr 的行为是设计选择（注释透传不丢失元数据）。
 
 ### 4.3 结论
 
-16 个命令的隔离测试表明，pgr 重实现与 UCSC kent-tool 的输出在**核心数据层面完全一致**。所有差异均为非实质性差异（注释行、score 重算策略、链化策略、输出顺序），且这些差异在管线末端（`axtSort`/`cat.axt`）收敛为字节级一致。pgr 的 chain-net-axt-maf 管线可作为 UCSC kent-tool 的 Rust 替代。
+经 7 处差异修复后，16 个命令的隔离测试表明 pgr 重实现与 UCSC kent-tool 的输出在**核心数据层面完全一致**。剩余 2 处差异均为预期行为（链化算法差异在 `chainAntiRepeat` 后收敛；`netFilter` 注释保留是 pgr 设计选择）。pgr 的 chain-net-axt-maf 管线可作为 UCSC kent-tool 的 Rust 替代。
