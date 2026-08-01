@@ -35,6 +35,9 @@ This command implements the UCSC pipeline for pairwise genome alignments, psl-ch
     * netFilter (migrated as `pgr net filter`)
     * chainSplit (migrated as `pgr chain split`)
 
+* Note: axtToMaf built from chainnet may crash on Linux x86_64
+  (intToPt null pointer). Use `pgr pl chainnet` (fully native) instead.
+
 Definitions:
 
 * The *target* is the reference genome sequence

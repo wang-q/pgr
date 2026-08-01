@@ -10,6 +10,9 @@ pub fn make_subcommand() -> Command {
 This command runs the pairwise genome alignment pipeline (psl-chain-net-axt-maf)
 entirely with native pgr commands — no external kent-tools required.
 
+* Output has been verified byte-for-byte identical against the UCSC kent-tools
+  pipeline (`pgr pl ucsc`) for all intermediate files (chain, net, axt).
+
 * <target> and <query> are fasta files
 * <psl> can be a .psl file or a directory containing multiple .psl files
 * Default names of target and query in the output .maf are derived from the
