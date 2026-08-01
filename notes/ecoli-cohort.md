@@ -182,7 +182,7 @@ sparsify 是必需的（不是可选的）。传递闭包负责推断 sparsify �
 （Gbp 级）时可考虑引入此兜底机制。详见 [[seqwish.md]] §3.3、§7.2。
 
 ---
-## 4. 小 cohort 先行验证（3 基因组，2026-08-02）
+## 4. 小 cohort 先行验证（3 → 10 基因组，2026-08-02）
 
 在 4 万数据可用前，用 MG1655 × Sakai × SE11（11 replicon，数据见 [[ecoli-genome.md]]）
 跑通端到端管线，验证 `pgr paf` 在真实数据上的行为并固化回归。**流程（用户指定）**：
@@ -210,9 +210,30 @@ FastGA -psl（3 对）→ pgr pl chainnet --syn（每对）→ maf to-paf → pa
 - 不同 pair 的 MAF 可能同名（都是 `NC_000913.maf`），转 PAF 时输出名必须按 pair
   区分，否则互相覆盖。
 - 小 replicon（质粒）的弱链会被 chainnet --syn 过滤，小 cohort 的图以染色体为主。
+- **PAF 方向要保证 seed 在 target 侧**：`paf query` 直接查询只查 `trees`
+  （seed 作为 target 的记录），`--transitive` 的 BFS 额外走 `reverse_trees`
+  （镜像），但镜像**只为 '+' 链记录创建**。若 seed 落在 '-' 链记录的 query 侧，
+  BFS 无法跨过它（实测：mg1655 作 query 时 ec2011c_3493 的覆盖记录是 '-' 链，
+  传递查询到达不了）。因此脚本统一 `FastGA(b,a) → chainnet(a,b)`，让 mg1655
+  （种子所在序列）恒为每对的 target，深度 1 即可直达所有株。这是 pgr 的一个
+  已知缺口：`paf index` 应对 '-' 记录也建镜像（需处理反向 CIGAR 语义）。
+- 扩展脚本曾把 PAF 输出名写成裸 basename（`NC_004431.paf`），同一 replicon 在
+  多个 pair 里作 target 时被互相覆盖，导致 mg1655 侧的记录丢失、BFS 够不到对应
+  菌株——必须带 pair 前缀（`$pa-$pb-*.paf`）。
 
 **对 4 万扩展**：脚本遍历 chainnet 输出目录内所有 maf（不硬编码染色体），把 PAF 来源
 换成步骤 1-2 的去冗余 + sparsify 产出即可直接复用；规模相关待调参数见 §3.1。
+
+**cohort 扩展（3 → 10）**：数据侧已预选 7 株覆盖主要 pathotype 的典型菌株
+（CFT073 / E2348/69 / 042 / 2011C-3493 / E24377A / EC958 / Nissle 1917，
+下载命令见 [[ecoli-genome.md]] "Typical strains"），10 基因组验证**已完成并 PASS**
+（2026-08-02，45 对全跑，约 7 分钟）：`mg1655.NC_000913:100000-110000` 的传递查询
+深度 1 直达全部 10 株染色体（含多质粒菌株 E24377A / 2011C-3493 / EC958 /
+E2348/69 / 042，质粒弱链被 --syn 滤掉、图以染色体为主）；graph / stat 一并通过。
+`scripts/verify-pangenome.sh` 已按 seed 在 target 侧 + pair 前缀命名固化。
+
+**EC958 数据注意**：必须用 GCF_000285655.3 完整版（EC958.v1，chr + 2 质粒）；
+`.2` 是 WGS scaffold（240 条 contig），不要用。
 
 ---
 ## 5. 与 pgr 核心目标的关系
@@ -227,6 +248,11 @@ FastGA -psl（3 对）→ pgr pl chainnet --syn（每对）→ maf to-paf → pa
 ---
 ## 6. 变更日志
 
+- 2026-08-02：§4 完成 10 基因组验证（45 对全跑 PASS）——cohort 从 3 扩到 10，
+  脚本固化 FastGA(b,a) → chainnet(a,b) 方向与 pair 前缀 PAF 命名。
+- 2026-08-02：§4 补充 cohort 扩展说明（3 → 10 基因组）——预选 7 株典型 pathotype
+  菌株（CFT073 / E2348/69 / 042 / 2011C-3493 / E24377A / EC958 / Nissle 1917），
+  下载命令见 [[ecoli-genome.md]] "Typical strains"。
 - 2026-08-02：新增 §4 小 cohort 先行验证（3 基因组）——吸收原独立文档
   `ecoli-pangenome-3way.md`（已删除），记录 FastGA → chainnet --syn 流程的执行结果
   与踩坑。

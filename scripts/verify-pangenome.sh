@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # verify-pangenome.sh
-# Three-E. coli pangenome smoke test: FastGA pairwise PSL -> pgr pl chainnet
+# Ten-E. coli pangenome smoke test: FastGA pairwise PSL -> pgr pl chainnet
 # (chain -> net -> axt -> maf, the mandatory syntenic route) -> maf to-paf ->
 # multi-file index -> transitive query -> coarse graph -> stat.  Requires:
 #   - pgr binary (defaults to target/debug/pgr; use PGR=... to override)
@@ -14,51 +14,73 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 PGR="${PGR:-$PWD/target/debug/pgr}"
-FA_M="$PWD/tests/genome/mg1655.fa.gz"
-FA_K="$PWD/tests/genome/sakai.fa.gz"
-FA_S="$PWD/tests/genome/se11.fa.gz"
+
+GENOMES=(
+    "$PWD/tests/genome/mg1655.fa.gz"
+    "$PWD/tests/genome/sakai.fa.gz"
+    "$PWD/tests/genome/se11.fa.gz"
+    "$PWD/tests/genome/cft073.fa.gz"
+    "$PWD/tests/genome/e2348_69.fa.gz"
+    "$PWD/tests/genome/ec042.fa.gz"
+    "$PWD/tests/genome/ec2011c_3493.fa.gz"
+    "$PWD/tests/genome/e24377a.fa.gz"
+    "$PWD/tests/genome/ec958.fa.gz"
+    "$PWD/tests/genome/nissle1917.fa.gz"
+)
 
 if [ ! -x "$PGR" ]; then
     echo "Error: pgr binary not found at $PGR (run 'cargo build' first)." >&2
     exit 1
 fi
 command -v FastGA >/dev/null || { echo "Error: FastGA not in PATH." >&2; exit 1; }
+for f in "${GENOMES[@]}"; do
+    [ -f "$f" ] || { echo "Error: missing genome $f" >&2; exit 1; }
+done
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
-echo "==> 1. FastGA pairwise PSL (query-target)"
-FastGA -v -psl "$FA_K" "$FA_M" > "$WORK/sakai-mg1655.psl" 2>/dev/null
-FastGA -v -psl "$FA_S" "$FA_M" > "$WORK/se11-mg1655.psl" 2>/dev/null
-FastGA -v -psl "$FA_S" "$FA_K" > "$WORK/se11-sakai.psl" 2>/dev/null
-
-echo "==> 2. pgr pl chainnet --syn (mandatory syntenic route)"
-"$PGR" pl chainnet --syn "$FA_M" "$FA_K" "$WORK/sakai-mg1655.psl" -o "$WORK/cn_sm" >/dev/null 2>&1
-"$PGR" pl chainnet --syn "$FA_M" "$FA_S" "$WORK/se11-mg1655.psl" -o "$WORK/cn_sm11" >/dev/null 2>&1
-"$PGR" pl chainnet --syn "$FA_K" "$FA_S" "$WORK/se11-sakai.psl" -o "$WORK/cn_ss" >/dev/null 2>&1
-
-echo "==> 3. MAF -> PAF (per-pair dirs avoid same-name collisions) and merge"
-mkdir -p "$WORK/paf_sm" "$WORK/paf_sm11" "$WORK/paf_ss"
-for m in "$WORK"/cn_sm/*.maf; do
-    "$PGR" maf to-paf "$m" -o "$WORK/paf_sm/$(basename "$m" .maf).paf" >/dev/null 2>&1
+echo "==> 1-3. FastGA pairwise PSL -> pgr pl chainnet --syn -> MAF -> PAF"
+shopt -s nullglob
+mkdir -p "$WORK/paf"
+n=${#GENOMES[@]}
+p=0
+for ((i = 0; i < n; i++)); do
+    for ((j = i + 1; j < n; j++)); do
+        a="${GENOMES[$i]}"
+        b="${GENOMES[$j]}"
+        pa=$(basename "$a" .fa.gz)
+        pb=$(basename "$b" .fa.gz)
+        p=$((p + 1))
+        echo "==> [pair $p/$((n * (n - 1) / 2))] $pa x $pb"
+        # Orientation (verified against the 3-genome run): FastGA(b, a) then
+        # chainnet(a, b) yields PAF query=b / target=a, so MG1655 (always "a"
+        # here, index 0) is the target of every pair.  The seed region is then
+        # found in `trees` regardless of strand ('+' or '-'); BFS from the
+        # query side relies on '+' mirrors only and would miss '-' records.
+        FastGA -v -psl "$b" "$a" > "$WORK/$pa-$pb.psl" 2>/dev/null
+        "$PGR" pl chainnet --syn "$a" "$b" "$WORK/$pa-$pb.psl" -o "$WORK/cn_$p" >/dev/null 2>&1
+        for m in "$WORK"/cn_$p/*.maf; do
+            # Pair-prefixed names: the same replicon appears as target in
+            # multiple pairs (e.g. NC_004431 for cft073 x mg1655/sakai/se11),
+            # so bare basenames would collide and overwrite each other.
+            "$PGR" maf to-paf "$m" -o "$WORK/paf/$pa-$pb-$(basename "$m" .maf).paf" >/dev/null 2>&1
+        done
+    done
 done
-for m in "$WORK"/cn_sm11/*.maf; do
-    "$PGR" maf to-paf "$m" -o "$WORK/paf_sm11/$(basename "$m" .maf).paf" >/dev/null 2>&1
-done
-for m in "$WORK"/cn_ss/*.maf; do
-    "$PGR" maf to-paf "$m" -o "$WORK/paf_ss/$(basename "$m" .maf).paf" >/dev/null 2>&1
-done
-cat "$WORK"/paf_sm/*.paf "$WORK"/paf_sm11/*.paf "$WORK"/paf_ss/*.paf > "$WORK/all.paf"
+shopt -u nullglob
+cat "$WORK"/paf/*.paf > "$WORK/all.paf"
 
 echo "==> 4. Multi-file PAF index"
-"$PGR" paf index "$WORK"/paf_sm/*.paf "$WORK"/paf_sm11/*.paf "$WORK"/paf_ss/*.paf \
-    -o "$WORK/pangenome.paf.idx" >/dev/null 2>&1
+"$PGR" paf index "$WORK"/paf/*.paf -o "$WORK/pangenome.paf.idx" >/dev/null 2>&1
 
-echo "==> 5. Transitive query (three-way synteny from MG1655)"
+echo "==> 5. Transitive query (10-way synteny from MG1655)"
 "$PGR" paf query "$WORK/pangenome.paf.idx" mg1655.NC_000913:100000-110000 \
     --transitive -o "$WORK/tri.paf" >/dev/null 2>&1
-grep -q "se11.NC_011415" "$WORK/tri.paf"  # SE11 chromosome reached via BFS
-grep -q "sakai.NC_002695" "$WORK/tri.paf" # Sakai chromosome reached via BFS
+for f in "${GENOMES[@]}"; do
+    strain=$(basename "$f" .fa.gz)
+    grep -qF "$strain." "$WORK/tri.paf" || { echo "Error: $strain not reached by transitive query" >&2; exit 1; }
+done
 
 echo "==> 6. Coarse graph + stats"
 "$PGR" paf graph "$WORK/all.paf" -o "$WORK/pangenome.gfa" >/dev/null 2>&1
@@ -66,4 +88,4 @@ echo "==> 6. Coarse graph + stats"
 grep -q "^segments" "$WORK/pangenome.stat"
 grep -q "^paths" "$WORK/pangenome.stat"
 
-echo "PASS: 3-genome pangenome pipeline (FastGA -> chainnet --syn -> maf-to-paf -> index -> query -> graph -> stat)."
+echo "PASS: 10-genome pangenome pipeline (FastGA -> chainnet --syn -> maf-to-paf -> index -> query -> graph -> stat)."
