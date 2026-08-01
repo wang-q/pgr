@@ -8,6 +8,7 @@ Integrated pipelines for genomic analysis.
 
 | Subcommand | Description |
 | :--- | :--- |
+| `chainnet` | Native chain/net pipeline (psl -> chain -> net -> axt -> maf, no kent-tools) |
 | `ir` | Identify interspersed repeats (RepeatMasker-like) |
 | `p2m` | Pairwise to Multiple alignment pipeline |
 | `prefilter` | Prefilter genome/metagenome by amino acid minimizers |
@@ -155,6 +156,50 @@ pgr pl trf [OPTIONS] <infile>
 
 *   `trf`
 *   `spanr`
+
+---
+
+## chainnet
+
+Native chain/net pipeline. Runs the pairwise genome alignment workflow
+(psl -> chain -> net -> axt -> maf) entirely with `pgr` commands — no external
+kent-tools required. Output has been verified byte-for-byte identical to the
+UCSC kent-tools pipeline (`pgr pl ucsc`) for all intermediate files.
+
+### Usage
+
+```bash
+pgr pl chainnet [OPTIONS] <target> <query> <psl>
+```
+
+### Arguments
+
+| Argument | Short | Long | Value | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| `target` | | | File | Target (reference) genome FASTA |
+| `query` | | | File | Query genome FASTA |
+| `psl` | | | Path | PSL file or directory containing PSL files |
+| `outdir` | `-o` | `--outdir` | Dir | Output directory (default: stdout) |
+| `gap_model` | | `--gap-model` | Str | Linear gap cost: "loose" (default) or "medium" |
+| `min_score` | | `--min-score` | Int | Min alignment score (default: 1000) |
+| `tname` | | `--t-name` | Str | Custom target name prefix |
+| `qname` | | `--q-name` | Str | Custom query name prefix |
+| `syn` | | `--syn` | Flag | Generate syntenic alignments only |
+
+### Pipeline Steps
+
+1.  **Prep**: `pgr fa size` + `pgr fa to-2bit` for target and query.
+2.  **Chain**: `pgr psl chain` + `pgr chain anti-repeat`.
+3.  **Merge**: `pgr chain sort`.
+4.  **PreNet**: `pgr chain pre-net`.
+5.  **Net**: `pgr chain net` + `pgr net syntenic` + `pgr net subset` +
+    `pgr chain stitch` + `pgr net split`.
+6.  **Axt**: `pgr net to-axt` | `pgr axt sort`.
+7.  **Maf**: `pgr axt to-maf`.
+
+### Dependencies
+
+None external — uses only the `pgr` binary itself.
 
 ---
 

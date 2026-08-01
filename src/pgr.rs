@@ -40,7 +40,7 @@ fn main() -> anyhow::Result<()> {
     * fas  - Block FA operations: info, subset, transform, file, variation
     * fq   - FASTQ interleaving and conversion
     * gff  - GFF operations: rg
-    * pbit - Population 2bit + delta: create, stat, range, some, to-fa
+    * pbit - Population 2bit + delta: create, append, stat, range, some, to-fa
 
 * Genome alignments:
     * chain - Chain operations: sort, filter, transform, to-net
@@ -58,7 +58,7 @@ fn main() -> anyhow::Result<()> {
     * ms    - Hudson's ms simulator tools: to-dna
 
 * Pipelines:
-    * pl - Workflows: p2m, prefilter, trf, ir, rept, ucsc
+    * pl - Workflows: chainnet, p2m, prefilter, trf, ir, rept, ucsc
 
 * Plotting:
     * plot - Plotting tools: hh, nrps, venn

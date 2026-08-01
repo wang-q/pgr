@@ -1,6 +1,8 @@
 # dist 未来规划
 
-> **实现状态注记**：本文档列出 `pgr dist` 尚未实现的距离度量与架构优化规划。当前已实现 seq/hv/vector 三个子命令。
+> **实现状态注记**：本文档列出 `pgr dist` 尚未实现的距离度量与架构优化规划。当前已实现
+> `seq`/`hv` 两个子命令（`pgr dist vector` 已于 2026-07-19 移除，euclid/cosine/jaccard
+> 等向量度量仅保留在 `libs::linalg`，供未来 CLI 复用）。
 
 ## 1. Alignment-based Metrics (计划中)
 

@@ -2,7 +2,9 @@
 
 本文档是我对 pgr (Practical Genome Refiner) 项目的整体理解，涵盖架构、设计哲学、代码模式、
 当前能力与未来方向。写作时间：2026-06-27，最后更新：2026-08-01
-（2026-08-01 晚：版本升至 0.3.1、补全 §2.1 目录树（args/pbit/ds/pl/syncmer）、更新 §2.3 依赖、
+（2026-08-01 深夜：全量通读 src/ 后复核——修正 §2.3 serde_json 用途、§2.4 nightly 固定版本、
+§3.1 gff rg 描述、§3.3 paf 双向镜像索引、§4.1 poa 文件清单、§4.3 maf 行数，§8 新增帮助文本脱节风险；
+2026-08-01 晚：版本升至 0.3.1、补全 §2.1 目录树（args/pbit/ds/pl/syncmer）、更新 §2.3 依赖、
 §3.4 dist syncmer 采样、§10/§11 笔记索引；2026-08-01 早：更新 §3.5 pl 子命令数、§4.2 ds 下沉说明、
 §6.2 pbit 状态）。
 
@@ -122,14 +124,17 @@ src/
 - **外部工具编排**: `cmd_lib`、`which`
 
 **没有引入的**：`tokio`（纯同步 CLI 工具，不需要异步运行时）、`sled`/`rocksdb`（不做嵌入式数据库）。
-**已引入的**：`serde`（带 derive）+ `bincode`/`serde_json`（PAF 索引 `.paf.idx` 与 pbit
-格式的持久化）；`tempfile`（测试与临时文件）。
+**已引入的**：`serde`（带 derive）+ `bincode`（PAF 索引 `.paf.idx` 持久化，PGRI magic + 版本号）；
+`serde_json`（runlist JSON 解析，如 `fa mask`/`fas slice`）；`tempfile`（pipeline 临时目录与原子写入）。
 
 ### 2.4 构建配置
 
 - `#![feature(portable_simd)]` — 使用了 nightly 的 portable SIMD
+- `rust-toolchain.toml` 固定 `nightly-2026-01-26`（与 portable_simd 同步），组件含 clippy/miri/rust-src
 - `lto = true` — release 构建启用链接时优化
 - 测试框架：`assert_cmd` + `predicates` 做 CLI 集成测试，`criterion` 做基准测试
+- 发布流程：`release.toml`（cargo release 预处理 README/CHANGELOG 版本与日期），CI 在
+  `.github/workflows/`（build/codecov/publish）
 
 ## 3. 命令模块全景
 
@@ -144,7 +149,7 @@ src/
 | `fq`     | 2        | FASTQ 交叉合并、转 FASTA                              |
 | `twobit` | 5        | 2bit 二进制格式查询：range、sequence、masked 统计     |
 | `pbit`   | 6        | 群体基因组 2bit + delta 压缩与随机访问                |
-| `gff`    | 1        | GFF 注释：rg (read group)                             |
+| `gff`    | 1        | GFF 注释：rg (提取 feature 区间为 range 列表)         |
 
 **fa 和 fas 是序列模块的核心**，子命令最多、功能最全。`fas` 的 `multiz`、`variation`、 `refine`、
 `to_vcf` 已经触及多序列比对和变异检测。
@@ -176,6 +181,8 @@ axtToMaf 标准化流程中的大部分步骤。`chain`/`net` 模块在功能上
 
 - **索引层**：`pgr paf index` 把 PAF 全量装入区间树，支持 `.paf.idx` 持久化
 - **查询层**：`query` / `to-bed` / `to-maf` 按需投影目标区间，BFS 传递闭包找全同源片段
+- **双向镜像索引**：除 target→query 正向区间树外，对 `+` 链记录再插入一份 query→target 反向树
+  （CIGAR 反转并交换 I/D），使 BFS 无需反向 PAF 记录即可双向遍历；`.paf.idx` v4 已持久化镜像树
 - **图构建层**：`graph` 粗全局 GFA（seqwish DSU 风格，零序列依赖拓扑模式）；`to-gfa` 区域精细 GFA；
   `to-vcf` POA MSA 导出变异；`stat` 图拓扑统计报告
 
@@ -204,6 +211,7 @@ clustalw/muscle/mafft），充当工作流 glue。这与 `chain`/`net` 模块的
 ### 4.1 `libs/poa/` — 偏序比对
 
 - 实现 Partial Order Alignment 算法（参考 SPOA）
+- `poa.rs`：`Poa` 引擎封装（序列逐条入图 → 产出 consensus / MSA / 图+路径）
 - `graph.rs`：POA 图结构
 - `align.rs`：序列到图的比对
 - `consensus.rs`：从 POA 图提取一致性序列
@@ -228,7 +236,7 @@ clustalw/muscle/mafft），充当工作流 glue。这与 `chain`/`net` 模块的
 
 > **MAF 支持现状**（2026-07 确认）：
 
-> - `maf.rs`（363 行）：完整的读写支持
+> - `maf.rs`（372 行）：完整的读写支持
 >   - 读取：`MafComp`（s 行结构体）、`MafAli`（a 行 + components，含 `score=` 解析）、`next_maf_block()`（流式读取）、`parse_maf_block()`
 >   - 写入：`MafWriter`（header + block 输出）
 >   - 坐标转换：`MafComp::to_range()`（0-based → 1-based inclusive，含负链处理）
@@ -393,8 +401,8 @@ pgr 的 `chain`/`net`/`axt`/`psl` 模块是 UCSC kent-tools 对应功能的**Rus
 
 ## 8. 关键风险与技术债
 
-1. **nightly 依赖**：`#![feature(portable_simd)]` 是 nightly-only，锁死了编译器版本。 如果
-   portable_simd 迟迟不稳定，可能成为包袱。
+1. **nightly 依赖**：`#![feature(portable_simd)]` 是 nightly-only，`rust-toolchain.toml`
+   固定 `nightly-2026-01-26`。如果 portable_simd 迟迟不稳定，可能成为包袱。
 2. **maf 模块扩展**：`maf` 目前有 `to-fas` 和 `to-paf` 两个子命令。仍需 `filter`、`subset` 等扩展以支撑泛基因组管道。
 3. **命令树深度嵌套**：三跳 dispatch (`pgr.rs` → `mod.rs` → `leaf.rs`) 在新增命令时容易遗漏
    某一层的注册。可以考虑宏简化。
@@ -404,6 +412,8 @@ pgr 的 `chain`/`net`/`axt`/`psl` 模块是 UCSC kent-tools 对应功能的**Rus
    `lastz` 仍为唯一必需的外部二进制。
 6. **`fas` 模块职责过重**：20 个子命令塞在一个模块下，`fas multiz` 等复杂逻辑可能需要
    拆分为独立顶层命令。
+7. **帮助文本与注册脱节**：`pgr.rs` 的 after_help 手工维护，已与 `cmd_pgr/pl`（缺 `chainnet`）
+   和 `cmd_pgr/pbit`（缺 `append`）的实际子命令不一致，容易在增删命令时遗忘同步。
 
 ## 9. 设计笔记索引（notes/design/）
 
