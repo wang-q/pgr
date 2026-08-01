@@ -3,9 +3,10 @@
 > 整理于 2026-07，源自对 `biser-master/` 目录源码及 published paper 的通读。目的：理解 BISER 在
 > segmental duplication (SD) 检测与分解中的算法设计，并为 pgr 中重复/同源区域分析提供参考。
 
-> **实施状态（2026-08-02）**：§6.6 第一、二、三阶段已落地——`pgr sd search`（LASTZ-based putative SD
-> 检测）、`pgr sd align`（chain/net 精修 → PAF）、`pgr sd cluster` + `pgr sd decompose` 均已
-> 实现并验证，见 §6.6 对应阶段；
+> **实施状态（2026-08-02）**：§6.6 第一至四阶段已落地——`pgr sd search`（LASTZ-based putative SD
+> 检测）、`pgr sd align`（chain/net 精修 → PAF）、`pgr sd cluster` + `pgr sd decompose`
+> （聚类 + elementary SD 分解）、`pgr sd cover`（core duplicon 标记）、`pgr sd run`
+> （全流程串联）均已实现并验证，见 §6.6 对应阶段；
 > §6.8 的 chain/net 链路改用 `pgr pl chainnet`（原生实现，与 UCSC 字节级一致，替代有 Linux
 > 崩溃风险的 `pgr pl ucsc`）。
 
@@ -1445,8 +1446,21 @@ PGR 内部不同模块混用 0-based half-open 与 1-based inclusive 两种约�
 >   标记出现在 ≥2 条序列的共享 k-mer，按 `MAX_GAP=50` 链式合并、`MIN_LEN=100` 过滤，
 >   输出 BED `species\tchrom\tbegin\tend\tset_id\tlength\tscore\tstrand`。实测：cluster_1
 >   （2 条）→ 2 个 elementary SD（~1.5 kb），cluster_3（6 条）→ 4 个，cluster_10（8 条）→ 6 个。
->   **简化项**：`set_id` 按片段输出顺序编号，未做 BISER 的跨拷贝 k-mer 归组（与 BISER
->   bit-exact 需源码对照，`biser-master/` 目录当前不可用）。
+>   **set_id 归组**：共享 ≥ `MIN_SHARED_KMERS=5` 个不同 k-mer 的片段经 Dsu 传递闭包归为同一
+>   elementary SD 集合；坐标投影回基因组（FASTA 头 start/strand）。
+>   **注意**：decompose 输出的是**基因组坐标**（BISER `.elem` 为 cluster 内坐标），便于
+>   cover 直接比较；`set_id` 在每个 cluster 内从 1 开始，`pgr sd run` 合并时跨 cluster 重编号。
+>
+> **第四阶段 `pgr sd cover` 已实现（2026-08-02）**（`src/libs/sd/cover.rs` +
+> `src/cmd_pgr/sd/cover.rs`）：elementary set 覆盖 SD hit（与 query/target 区间重叠，
+> hit 名剥离 `species.` 前缀后与 chrom 比较），贪心 set-cover 选出覆盖全部 hits 的最小
+> elementary 集合，输出追加 `CORE`/`non-core` 列。MG1655 实测：23 个 elementary sets
+> （91 行），22 个标 CORE——各重复家族互不覆盖、每族需保留代表，接近全选符合数据特征。
+>
+> **第五阶段 `pgr sd run` 已实现（2026-08-02）**（`src/cmd_pgr/sd/run.rs`）：串联
+> search → align → cluster → decompose（set_id 重编号）→ cover，输出
+> `<outdir>/out.elem.bed`，MG1655 全程 82 秒。`cross_search`/`cross_align`（多基因组）
+> 仍延后。
 
 #### 第四阶段：core duplicon 与坐标转换（验证：CORE 标记与 translate 后坐标一致）
 

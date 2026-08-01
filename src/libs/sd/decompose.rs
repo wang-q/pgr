@@ -1,5 +1,6 @@
 //! Elementary SD decomposition from cluster FASTA (BISER decompose, k-mer based).
 
+use crate::libs::ds::Dsu;
 use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, Write};
 
@@ -9,13 +10,16 @@ pub const KMER: usize = 10;
 pub const MAX_GAP: usize = 50;
 /// Minimum elementary SD length in bp.
 pub const MIN_LEN: usize = 100;
+/// Minimum number of distinct shared k-mers for two fragments to be grouped
+/// into the same elementary SD set (avoids over-grouping via conserved kmers).
+pub const MIN_SHARED_KMERS: u32 = 5;
 
-/// One elementary SD fragment within a cluster sequence.
+/// One elementary SD fragment, projected to genome coordinates.
 #[derive(Debug, Clone)]
 pub struct ElemSd {
     pub species: String,
     pub chrom: String,
-    /// 0-based half-open coordinates within the cluster sequence.
+    /// 0-based half-open genome coordinates (strand-corrected).
     pub begin: usize,
     pub end: usize,
     pub set_id: u32,
@@ -25,11 +29,11 @@ pub struct ElemSd {
     pub strand: char,
 }
 
-/// Parsed cluster FASTA record: (species, chrom, strand, sequence).
-type SeqRecord = (String, String, char, Vec<u8>);
+/// Parsed cluster FASTA record: (species, chrom, strand, gstart, gend, sequence).
+type SeqRecord = (String, String, char, usize, usize, Vec<u8>);
 
 /// Parse a cluster FASTA header `{species}#{chrom}{strand}#{start}#{end}`.
-fn parse_header(header: &str) -> Option<(String, String, char)> {
+fn parse_header(header: &str) -> Option<(String, String, char, usize, usize)> {
     let mut parts = header.split('#');
     let species = parts.next()?.to_string();
     let chrom_strand = parts.next()?;
@@ -38,7 +42,9 @@ fn parse_header(header: &str) -> Option<(String, String, char)> {
         return None;
     }
     let chrom = chrom_strand[..chrom_strand.len() - 1].to_string();
-    Some((species, chrom, strand))
+    let start: usize = parts.next()?.parse().ok()?;
+    let end: usize = parts.next()?.parse().ok()?;
+    Some((species, chrom, strand, start, end))
 }
 
 /// 2-bit rolling k-mer hash (A=0, C=1, G=2, T=3; non-ACGT breaks the window).
@@ -73,8 +79,9 @@ fn kmer_hashes(seq: &[u8]) -> Vec<u64> {
 ///
 /// Shared k-mer seeds (a k-mer present in >= 2 distinct sequences) are merged
 /// into fragments with a gap tolerance of [`MAX_GAP`]; fragments shorter than
-/// [`MIN_LEN`] are dropped. `set_id` is assigned per fragment in output order
-/// (simplified vs BISER's cross-copy set grouping).
+/// [`MIN_LEN`] are dropped. Fragments that share a k-mer are unioned into the
+/// same elementary SD set (BISER `set_id` semantics); coordinates are
+/// projected back to the genome using the cluster header's start/strand.
 pub fn decompose_fasta<R: BufRead, W: Write>(reader: R, writer: &mut W) -> anyhow::Result<()> {
     let seqs = parse_fasta(reader)?;
     if seqs.is_empty() {
@@ -83,7 +90,7 @@ pub fn decompose_fasta<R: BufRead, W: Write>(reader: R, writer: &mut W) -> anyho
 
     // k-mer index: hash -> positions (seq_idx, pos).
     let mut index: HashMap<u64, Vec<(usize, usize)>> = HashMap::new();
-    for (si, (_, _, _, s)) in seqs.iter().enumerate() {
+    for (si, (_, _, _, _, _, s)) in seqs.iter().enumerate() {
         let hs = kmer_hashes(s);
         for (pos, h) in hs.iter().enumerate() {
             index.entry(*h).or_default().push((si, pos));
@@ -93,7 +100,7 @@ pub fn decompose_fasta<R: BufRead, W: Write>(reader: R, writer: &mut W) -> anyho
     // Mark shared k-mer positions (hash seen in >= 2 distinct sequences).
     let mut shared: Vec<Vec<bool>> = seqs
         .iter()
-        .map(|(_, _, _, s)| vec![false; s.len()])
+        .map(|(_, _, _, _, _, s)| vec![false; s.len()])
         .collect();
     for positions in index.values() {
         let distinct: HashSet<usize> = positions.iter().map(|&(si, _)| si).collect();
@@ -106,8 +113,12 @@ pub fn decompose_fasta<R: BufRead, W: Write>(reader: R, writer: &mut W) -> anyho
     }
 
     // Merge shared runs into fragments (gap tolerance MAX_GAP).
-    let mut set_id = 0u32;
-    for (si, (species, chrom, strand, s)) in seqs.iter().enumerate() {
+    let mut frags: Vec<(usize, usize, usize, u32)> = Vec::new();
+    let mut pos_to_frag: Vec<Vec<Option<usize>>> = seqs
+        .iter()
+        .map(|(_, _, _, _, _, s)| vec![None; s.len()])
+        .collect();
+    for (si, (_, _, _, _, _, s)) in seqs.iter().enumerate() {
         let mut i = 0usize;
         while i < s.len() {
             if !shared[si][i] {
@@ -126,21 +137,79 @@ pub fn decompose_fasta<R: BufRead, W: Write>(reader: R, writer: &mut W) -> anyho
             }
             let end = last + 1;
             if end - begin >= MIN_LEN {
-                set_id += 1;
-                writeln!(
-                    writer,
-                    "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
-                    species,
-                    chrom,
-                    begin,
-                    end,
-                    set_id,
-                    end - begin,
-                    score,
-                    strand
-                )?;
+                let frag_id = frags.len();
+                for p in begin..end {
+                    if shared[si][p] {
+                        pos_to_frag[si][p] = Some(frag_id);
+                    }
+                }
+                frags.push((si, begin, end, score));
             }
         }
+    }
+
+    // Fragments sharing >= MIN_SHARED_KMERS distinct k-mers belong to the same
+    // elementary SD set. A single conserved k-mer is not enough (it would
+    // over-group every fragment in the cluster).
+    let mut dsu = Dsu::new(frags.len());
+    let mut kmer_frags: HashMap<u64, Vec<usize>> = HashMap::new();
+    for (h, positions) in &index {
+        let mut fs: Vec<usize> = positions
+            .iter()
+            .filter_map(|&(si, pos)| pos_to_frag[si][pos])
+            .collect();
+        fs.sort_unstable();
+        fs.dedup();
+        if fs.len() >= 2 {
+            kmer_frags.insert(*h, fs);
+        }
+    }
+    let mut pair_count: HashMap<(usize, usize), u32> = HashMap::new();
+    for fs in kmer_frags.values() {
+        for i in 0..fs.len() {
+            for j in (i + 1)..fs.len() {
+                *pair_count.entry((fs[i], fs[j])).or_default() += 1;
+            }
+        }
+    }
+    for ((a, b), c) in pair_count {
+        if c >= MIN_SHARED_KMERS {
+            dsu.union(a, b);
+        }
+    }
+
+    // Assign set_ids by connected component (order of first occurrence).
+    let mut set_of: Vec<u32> = vec![0; frags.len()];
+    let mut next_set = 0u32;
+    let mut seen_set: HashMap<usize, u32> = HashMap::new();
+    for (i, sid_out) in set_of.iter_mut().enumerate() {
+        let root = dsu.find(i);
+        *sid_out = *seen_set.entry(root).or_insert_with(|| {
+            next_set += 1;
+            next_set
+        });
+    }
+
+    // Project each fragment to genome coordinates and emit BED rows.
+    for (frag_id, &(si, begin, end, score)) in frags.iter().enumerate() {
+        let (species, chrom, strand, gstart, gend, _s) = &seqs[si];
+        let (gb, ge) = if *strand == '-' {
+            (gend - end, gend - begin)
+        } else {
+            (gstart + begin, gstart + end)
+        };
+        writeln!(
+            writer,
+            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+            species,
+            chrom,
+            gb,
+            ge,
+            set_of[frag_id],
+            ge - gb,
+            score,
+            strand
+        )?;
     }
     Ok(())
 }
@@ -154,8 +223,8 @@ fn parse_fasta<R: BufRead>(reader: R) -> anyhow::Result<Vec<SeqRecord>> {
         let line = line?;
         if let Some(rest) = line.strip_prefix('>') {
             if !name.is_empty() {
-                if let Some((sp, chr, strand)) = parse_header(&name) {
-                    seqs.push((sp, chr, strand, std::mem::take(&mut seq)));
+                if let Some((sp, chr, strand, gs, ge)) = parse_header(&name) {
+                    seqs.push((sp, chr, strand, gs, ge, std::mem::take(&mut seq)));
                 }
             }
             name = rest.trim().to_string();
@@ -165,8 +234,8 @@ fn parse_fasta<R: BufRead>(reader: R) -> anyhow::Result<Vec<SeqRecord>> {
         }
     }
     if !name.is_empty() {
-        if let Some((sp, chr, strand)) = parse_header(&name) {
-            seqs.push((sp, chr, strand, seq));
+        if let Some((sp, chr, strand, gs, ge)) = parse_header(&name) {
+            seqs.push((sp, chr, strand, gs, ge, seq));
         }
     }
     Ok(seqs)
@@ -178,11 +247,12 @@ mod tests {
 
     #[test]
     fn parse_cluster_header() {
-        let (sp, chr, st) = parse_header("mg1655#NC_000913+#100#200").unwrap();
+        let (sp, chr, st, gs, ge) = parse_header("mg1655#NC_000913+#100#200").unwrap();
         assert_eq!(sp, "mg1655");
         assert_eq!(chr, "NC_000913");
         assert_eq!(st, '+');
-        let (_, _, st) = parse_header("mg1655#NC_000913-#100#200").unwrap();
+        assert_eq!((gs, ge), (100, 200));
+        let (_, _, st, _, _) = parse_header("mg1655#NC_000913-#100#200").unwrap();
         assert_eq!(st, '-');
     }
 
@@ -194,16 +264,24 @@ mod tests {
 
     #[test]
     fn decompose_detects_shared_fragment() {
-        // Two sequences sharing a 150 bp identical fragment (shared k-mers),
-        // plus distinct flanks so only the shared part survives MIN_LEN.
-        let shared = "ACGT".repeat(38); // 152 bp
+        // Two sequences sharing a 152 bp non-periodic fragment (deterministic
+        // LCG); cluster spans genome [100, 100+len).
+        let mut x = 12345u64;
+        let shared: String = (0..152)
+            .map(|_| {
+                x = x
+                    .wrapping_mul(6364136223846793005)
+                    .wrapping_add(1442695040888963407);
+                b"ACGT"[(x >> 33) as usize % 4] as char
+            })
+            .collect();
         let a = format!("TTTT{}AAAA", shared);
         let b = format!("CCCC{}GGGG", shared);
         let fa = format!(
-            ">sp#chr+#0#{}\n{}\n>sp#chr+#0#{}\n{}\n",
-            a.len(),
+            ">sp#chr+#100#{}\n{}\n>sp#chr+#100#{}\n{}\n",
+            100 + a.len(),
             a,
-            b.len(),
+            100 + b.len(),
             b
         );
         let mut out = Vec::new();
@@ -215,10 +293,14 @@ mod tests {
             2,
             "expected one fragment per sequence, got {text}"
         );
+        // Both fragments belong to the same elementary SD set.
+        let set_ids: HashSet<&str> = rows.iter().map(|r| r.split('\t').nth(4).unwrap()).collect();
+        assert_eq!(set_ids.len(), 1, "expected shared set_id, got {text}");
         for row in &rows {
             let fields: Vec<&str> = row.split('\t').collect();
-            let len: usize = fields[5].parse().unwrap();
-            assert!(len >= 100, "fragment should cover the shared region: {row}");
+            let begin: usize = fields[2].parse().unwrap();
+            let end: usize = fields[3].parse().unwrap();
+            assert!(begin >= 100 && end - begin >= 100, "unexpected row: {row}");
         }
     }
 }
