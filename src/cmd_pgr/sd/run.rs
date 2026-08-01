@@ -89,7 +89,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             if line.is_empty() {
                 continue;
             }
-            let mut f: Vec<&str> = line.split('\t').collect();
+            let f: Vec<&str> = line.split('\t').collect();
             let sid: u32 = f[4].parse()?;
             cluster_max = cluster_max.max(sid);
             elems.push_str(&format!(

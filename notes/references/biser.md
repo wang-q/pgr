@@ -3,10 +3,10 @@
 > 整理于 2026-07，源自对 `biser-master/` 目录源码及 published paper 的通读。目的：理解 BISER 在
 > segmental duplication (SD) 检测与分解中的算法设计，并为 pgr 中重复/同源区域分析提供参考。
 
-> **实施状态（2026-08-02）**：§6.6 第一至四阶段已落地——`pgr sd search`（LASTZ-based putative SD
+> **实施状态（2026-08-02）**：§6.6 第一至五阶段已落地——`pgr sd search`（LASTZ-based putative SD
 > 检测）、`pgr sd align`（chain/net 精修 → PAF）、`pgr sd cluster` + `pgr sd decompose`
 > （聚类 + elementary SD 分解）、`pgr sd cover`（core duplicon 标记）、`pgr sd run`
-> （全流程串联）均已实现并验证，见 §6.6 对应阶段；
+> （全流程串联）、`pgr sd cross`（跨基因组 SD 映射）均已实现并验证，见 §6.6 对应阶段；
 > §6.8 的 chain/net 链路改用 `pgr pl chainnet`（原生实现，与 UCSC 字节级一致，替代有 Linux
 > 崩溃风险的 `pgr pl ucsc`）。
 
@@ -1459,8 +1459,13 @@ PGR 内部不同模块混用 0-based half-open 与 1-based inclusive 两种约�
 >
 > **第五阶段 `pgr sd run` 已实现（2026-08-02）**（`src/cmd_pgr/sd/run.rs`）：串联
 > search → align → cluster → decompose（set_id 重编号）→ cover，输出
-> `<outdir>/out.elem.bed`，MG1655 全程 82 秒。`cross_search`/`cross_align`（多基因组）
-> 仍延后。
+> `<outdir>/out.elem.bed`，MG1655 全程 82 秒。
+>
+> **第五阶段 `pgr sd cross` 已实现（2026-08-02）**（`src/cmd_pgr/sd/cross.rs`）：
+> 非 self 版的 search+align（BISER cross_search/cross_align 的外部路线等价）——
+> lastz 以第二个基因组为 query、第一个为 target（非 `--self`）→ LAV → PSL →
+> T2T-CHM13 过滤 → `pgr pl chainnet`（非 --syn）→ MAF → PAF。
+> 实测 MG1655 × Sakai：2 分 5 秒，303 条跨基因组同源区段。
 
 #### 第四阶段：core duplicon 与坐标转换（验证：CORE 标记与 translate 后坐标一致）
 

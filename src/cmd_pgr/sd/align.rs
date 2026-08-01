@@ -1,10 +1,6 @@
 //! `pgr sd align` — chain/net refinement of SD hits into PAF.
 
-use anyhow::Context;
 use clap::{Arg, ArgMatches, Command};
-use cmd_lib::run_cmd;
-use pgr::libs::paf::record::write_paf_record;
-use std::io::Write;
 
 /// Build the clap subcommand for align.
 pub fn make_subcommand() -> Command {
@@ -45,38 +41,5 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let genome = args.get_one::<String>("genome").unwrap();
     let psl = args.get_one::<String>("psl").unwrap();
     let outfile = crate::cmd_pgr::args::get_outfile(args);
-
-    let ctx = pgr::libs::pl::PipelineCtx::new("pgr_sd_align_")?;
-    let pgr = ctx.pgr.clone();
-    let abs_genome = ctx.abs_path(genome)?;
-    let abs_psl = ctx.abs_path(psl)?;
-    let abs_outfile = if outfile == "stdout" {
-        outfile.to_string()
-    } else {
-        ctx.abs_path(outfile)?
-    };
-    let _cwd_guard = ctx.enter()?;
-
-    // Chain/net refinement: no --syn so non-syntenic (rearranged) SDs survive.
-    run_cmd!(${pgr} pl chainnet ${abs_genome} ${abs_genome} ${abs_psl} -o chainnet_out)?;
-
-    // Merge every MAF block into one PAF.
-    let mut writer = pgr::writer(&abs_outfile)
-        .with_context(|| format!("failed to open writer for {}", abs_outfile))?;
-    for maf in pgr::libs::io::list_files_ext("chainnet_out", "maf") {
-        let mut reader =
-            pgr::reader(&maf).with_context(|| format!("failed to open MAF {}", maf))?;
-        loop {
-            let block = match pgr::libs::fmt::maf::next_maf_block(&mut reader) {
-                Ok(b) => b,
-                Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => break,
-                Err(e) => return Err(e.into()),
-            };
-            if let Some(rec) = pgr::libs::paf::maf_import::maf_block_to_paf(&block)? {
-                write_paf_record(&mut writer, &rec)?;
-            }
-        }
-    }
-    writer.flush()?;
-    Ok(())
+    super::chainnet_to_paf(genome, genome, psl, outfile)
 }
