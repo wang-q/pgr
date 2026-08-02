@@ -478,6 +478,45 @@ kb）；Nissle 84.4% 保持；耗时不变（~1.5s）。
 28%、共享 40-mer 为 0），FastGA 靠 adaptamer 部分种子 + wave 跨越内部漂移。
 这属于剩余的 adaptamer 种子选择工作。
 
+## 5.18 调用数骤降与排序优化（2026-08-02，总耗时 1.5s→1.0s）
+
+anti 序合并修复的连锁效应：**tube 结构与 FastGA 对齐**（748 个 tube、平均
+15.4 kb vs FastGA 815 条/14.8 kb），调用数从 58,370 骤降到 **883**（FastGA
+1062），每 tube 平均 1.03 次调用；顺序耗时 11.4s → 2.7s。
+
+剩余瓶颈变为流水线开销，阶段实测（8 线程）：
+
+| 阶段 | 耗时 |
+|---|---:|
+| merge_seed_hits（顺序） | 139 ms |
+| chain_tubes 排序 | 275 ms（原 741 ms） |
+| extend（wave 调用） | 414 ms |
+| 加载（pgi×2 + fasta×2）+ PSL 写 | ~0.4 s |
+
+排序优化：sort key 打包成单个 u128（contig/strand/对角桶+偏移/anti），并改用
+rayon `par_sort_unstable_by_key`（741→275 ms）。
+
+**最终对照（8 线程）**：
+
+| 对 | chainnet 覆盖 | 耗时 | 峰值内存 |
+|---|---:|---:|---:|
+| MG1655 vs Sakai | 88.9%（520 块） | **0.97s** | 569 MB |
+| MG1655 vs Nissle | 84.4%（744 块） | **1.17s** | 783 MB |
+| FastGA | 89.3% / 85.3% | 0.7s | ~0 MB |
+
+距 FastGA：速度 1.4-1.7×，覆盖差 0.4-0.9%。剩余瓶颈：extend 的 wave 每调用
+成本（~0.47ms，Rust vs C 单元开销）、merge 顺序扫描、加载开销；indel 复杂区
+覆盖需 adaptamer 部分种子。
+
+## 5.19 pgi 读取批量解析（2026-08-02）
+
+阶段实测发现 **pgi 索引加载（114 MB × 2 个文件）占 ~0.5s，是全流程最大单项**。
+`PgiIndex::read` 原来逐记录 `read_exact`（380 万条 × trait 对象虚拟分发），
+改为 **1 MB 分块批量读取 + 切片解析**（块大小按 `rec_size` 对齐，避免错位）。
+加载从 ~0.7s 降到 ~0.5s（greedy 无序列路径实测 0.70→0.52s）。
+
+最终全流程 ~1.0-1.2s（8 线程，Sakai），903 测试全过（含 pgi 读写测试）。
+
 **剩余差距与方向**：
 
 1. 性能：把 D&C 回溯换成 wave 内嵌的 Pebble 稀疏 trace（trace point 间隔

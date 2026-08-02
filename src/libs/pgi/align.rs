@@ -228,15 +228,19 @@ pub fn chain_tubes(hits: &[SeedHit], k: u32) -> Vec<Tube> {
     // (diagonal bucket, anti) so adjacent buckets are contiguous and each
     // bucket is anti-ordered (FastGA merges its stream by ipost = anti).
     let mut sorted: Vec<&SeedHit> = hits.iter().collect();
-    sorted.sort_by_key(|h| {
+    // Pack the sort key into one u128: (a_contig, b_contig, strand,
+    // diagonal bucket + offset, anti). The bucket offset keeps negative
+    // diagonals orderable under unsigned packing.
+    const BUCK_OFF: i64 = 1_000_000;
+    sorted.par_sort_unstable_by_key(|h| {
         let diag = h.a_pos as i64 - h.b_pos as i64;
-        (
-            h.a_contig,
-            h.b_contig,
-            h.strand,
-            diag.div_euclid(64),
-            h.a_pos as i64 + h.b_pos as i64,
-        )
+        let bucket = (diag.div_euclid(64) + BUCK_OFF) as u64;
+        let anti = (h.a_pos as i64 + h.b_pos as i64) as u64;
+        ((h.a_contig as u128) << 88)
+            | ((h.b_contig as u128) << 72)
+            | ((h.strand as u128) << 71)
+            | ((bucket as u128) << 24)
+            | anti as u128
     });
 
     let mut tubes = Vec::new();
@@ -901,18 +905,6 @@ pub fn align_to_psl_ext(
         // FastGA's sequential scan is replaced by a parallel pass plus a
         // containment dedup on the emitted blocks.
         let tubes = chain_tubes(&hits, a.k as u32);
-        if std::env::var("PGR_TUBE").is_ok() {
-            let sizes: Vec<i64> = tubes.iter().map(|t| t.anti_high - t.anti_low).collect();
-            let sum: i64 = sizes.iter().sum();
-            let big = sizes.iter().filter(|&&s| s > 100_000).count();
-            eprintln!(
-                "TUBES2 n={} avg={} max={} >100kb:{}",
-                sizes.len(),
-                sum / sizes.len().max(1) as i64,
-                sizes.iter().max().copied().unwrap_or(0),
-                big
-            );
-        }
         // FastGA's chains break at ~100 kb (its adaptive seed stream is
         // sparser); cap oversized tubes so one giant tube cannot serialize
         // the mid-line slides.

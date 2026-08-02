@@ -153,34 +153,45 @@ impl PgiIndex {
             contigs.push((name, len));
         }
 
-        let mut rec = vec![0u8; kmer_bytes + pos_bytes + cont_bytes];
+        let rec_size = kmer_bytes + pos_bytes + cont_bytes;
         let mut entries: Vec<PgiEntry> = Vec::new();
         let mut positions: Vec<(u32, u32, u8)> = Vec::with_capacity(n_records);
         let mut last_kmer: Option<u128> = None;
-        for _ in 0..n_records {
-            r.read_exact(&mut rec)?;
-            let kmer = unpack_kmer(&rec[..kmer_bytes], k);
-            let mut pos: u32 = 0;
-            for (i, byte) in rec[kmer_bytes..kmer_bytes + pos_bytes].iter().enumerate() {
-                pos |= (*byte as u32) << (8 * i);
-            }
-            let mut cont: u32 = 0;
-            for (i, byte) in rec[kmer_bytes + pos_bytes..].iter().enumerate() {
-                cont |= (*byte as u32) << (8 * i);
-            }
-            let strand = (cont & strand_bit != 0) as u8;
-            let cid = cont & (strand_bit - 1);
-            let pos_start = positions.len() as u32;
-            positions.push((cid, pos, strand));
-            if last_kmer == Some(kmer) {
-                entries.last_mut().unwrap().freq += 1;
-            } else {
-                entries.push(PgiEntry {
-                    kmer,
-                    pos_start,
-                    freq: 1,
-                });
-                last_kmer = Some(kmer);
+        // Read the records in large chunks and parse from the slice (a
+        // per-record `read_exact` through the trait object costs a virtual
+        // dispatch for every one of the millions of records).
+        let mut recs_left = n_records;
+        let mut buf: Vec<u8> = Vec::with_capacity(1 << 20);
+        while recs_left > 0 {
+            let want = (recs_left * rec_size).min(buf.capacity()) / rec_size * rec_size;
+            anyhow::ensure!(want > 0, "truncated index records");
+            buf.resize(want, 0);
+            r.read_exact(&mut buf).context("reading index records")?;
+            for rec in buf.chunks_exact(rec_size) {
+                let kmer = unpack_kmer(&rec[..kmer_bytes], k);
+                let mut pos: u32 = 0;
+                for (i, byte) in rec[kmer_bytes..kmer_bytes + pos_bytes].iter().enumerate() {
+                    pos |= (*byte as u32) << (8 * i);
+                }
+                let mut cont: u32 = 0;
+                for (i, byte) in rec[kmer_bytes + pos_bytes..].iter().enumerate() {
+                    cont |= (*byte as u32) << (8 * i);
+                }
+                let strand = (cont & strand_bit != 0) as u8;
+                let cid = cont & (strand_bit - 1);
+                let pos_start = positions.len() as u32;
+                positions.push((cid, pos, strand));
+                if last_kmer == Some(kmer) {
+                    entries.last_mut().unwrap().freq += 1;
+                } else {
+                    entries.push(PgiEntry {
+                        kmer,
+                        pos_start,
+                        freq: 1,
+                    });
+                    last_kmer = Some(kmer);
+                }
+                recs_left -= 1;
             }
         }
 
