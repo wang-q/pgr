@@ -349,6 +349,12 @@ syncmer 起始"的 k=40 的 k-mer（2-bit 压缩 10 字节），按字典序桶�
    种子流、MSD 桶排序、定宽流式扫描，都是实现高效种子检测的成熟工程模式，可整体
    迁移到 Rust（`libs/sd/kmer_index.rs` + `plane_sweep.rs` 蓝图）。
 
+> **已落地（2026-08-02）**：GIXmake 的 MSD 桶排序（American-flag 原地版，
+> `MSDsort.c`）已移植为通用数据结构 `src/libs/ds/radix_sort.rs`，并用于
+> `pgr pgi build`（顶字节 256 桶 + rayon 并行桶内排序），使 pgi 构建反超
+> GIXmake（详见 [[../benchmarks/bench-pgi-vs-gixmake.md]]）。"两个排序 k-mer 流
+> 归并找命中"也已以 `pgr dist pgi`（`libs/pgi/dist.rs`）的形式落地。
+
 **一句话结论**：GIX 的"归并 + lcp + anti-diagonal 坐标"是高效的序列索引设计，但 pgr 的
 架构（外部比对 + PAF 图）和规模（4 万细菌）决定了它**现在不引入**；等有原生
 同源检测需求时，以 syncmer 稀疏化 + 两流归并的形式借鉴其思想，而不是照搬

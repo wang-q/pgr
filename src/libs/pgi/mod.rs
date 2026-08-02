@@ -71,15 +71,20 @@ impl PgiIndex {
             w.write_all(name.as_bytes())?;
             w.write_all(&len.to_le_bytes())?;
         }
+        // Batch each fixed-size record into one write to cut call overhead.
+        let mut rec = [0u8; 24];
         for e in &self.entries {
-            w.write_all(&e.kmer.to_le_bytes())?;
-            w.write_all(&e.pos_start.to_le_bytes())?;
-            w.write_all(&e.freq.to_le_bytes())?;
+            rec[..16].copy_from_slice(&e.kmer.to_le_bytes());
+            rec[16..20].copy_from_slice(&e.pos_start.to_le_bytes());
+            rec[20..24].copy_from_slice(&e.freq.to_le_bytes());
+            w.write_all(&rec)?;
         }
+        let mut posrec = [0u8; 9];
         for (cid, pos, strand) in &self.positions {
-            w.write_all(&cid.to_le_bytes())?;
-            w.write_all(&pos.to_le_bytes())?;
-            w.write_all(&[*strand])?;
+            posrec[..4].copy_from_slice(&cid.to_le_bytes());
+            posrec[4..8].copy_from_slice(&pos.to_le_bytes());
+            posrec[8] = *strand;
+            w.write_all(&posrec)?;
         }
         Ok(())
     }
