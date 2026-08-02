@@ -87,7 +87,7 @@ impl<R: Read + Seek> Decompressor<R> {
         let header = PbitHeader::read_from(&mut reader)?;
 
         // Read footer.
-        let footer = PbitFooter::read_at_end(&mut reader, header.version)?;
+        let footer = PbitFooter::read_at_end(&mut reader)?;
 
         // Read reference index.
         reader.seek(SeekFrom::Start(footer.ref_index_offset))?;

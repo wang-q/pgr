@@ -10,8 +10,8 @@
 > 默认 k=40/syncmer 8/5），Footer 40 字节（`idx_offset`/`idx_size`），
 > `pgr pbit to-index` 提取后可直接喂 `pgr pgi align`（E. coli 验证：
 > 提取索引与独立构建字节一致、比对结果一致）；append 样本时索引段保留。
-> 读取端兼容 1001（24 字节 Footer 分支）。多参考（ref_id）与每参考独立
-> 索引段仍未实现，见 §5 待定项。
+> 开发早期不做旧版本兼容（pbit.md 既有立场）。多参考（ref_id）与每参考
+> 独立索引段仍未实现，见 §5 待定项。
 
 ## 1. 背景与架构决策
 
