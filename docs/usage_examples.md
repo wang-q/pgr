@@ -306,6 +306,26 @@ pgr pl prefilter tests/metagenome/3300030246.fna.gz "tests/metagenome/APH(3')-II
 
 ---
 
+### SD (segmental duplication)
+
+```bash
+# Full SD pipeline (pgi engine, fully native):
+# search -> align -> cluster -> decompose -> cover
+pgr sd run tests/genome/mg1655.fa.gz -o sd_out/
+
+# Step-by-step with intermediate files
+pgr sd search tests/genome/mg1655.fa.gz --engine pgi -o hits.psl
+pgr sd align tests/genome/mg1655.fa.gz hits.psl -o hits.paf
+pgr sd cluster tests/genome/mg1655.fa.gz hits.paf -o clusters/
+pgr sd decompose clusters/cluster_1.fa -o cluster_1.elem.bed
+pgr sd cover hits.paf elems.bed -o covered.bed
+
+# Cross-genome SD mapping
+pgr sd cross tests/genome/mg1655.fa.gz tests/genome/sakai.fa.gz --engine pgi -o cross.paf
+```
+
+See `docs/sd.md` for the full command reference.
+
 ## External Dependencies (Details)
 
 Some subcommands in `pgr` invoke external executables. In particular:

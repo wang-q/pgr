@@ -43,13 +43,13 @@ pub fn pgi_to_hits(
     let ctx = PipelineCtx::new("pgr_sd_search_pgi_")?;
     let pgr = ctx.pgr.clone();
     let abs_target = ctx.abs_path(target)?;
+    let abs_query = ctx.abs_path(query)?;
     let raw = ctx.abs_path(&Path::new(workdir).join("hits.raw.psl").to_string_lossy())?;
     let _cwd_guard = ctx.enter()?;
     let parallel = opts.parallel;
     if is_self {
         run_cmd!(${pgr} align pgi ${abs_target} -o ${raw} --parallel ${parallel})?;
     } else {
-        let abs_query = ctx.abs_path(query)?;
         run_cmd!(${pgr} align pgi ${abs_target} ${abs_query} -o ${raw} --parallel ${parallel})?;
     }
 

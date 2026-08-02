@@ -140,3 +140,46 @@ fn command_sd_cross_pgi_engine() {
         "pgi cross found no cross-genome homology"
     );
 }
+
+#[test]
+fn command_sd_cross_pgi_engine_relative_paths() {
+    // Regression: the query path must resolve before the pipeline chdirs
+    // into its tempdir; relative query paths used to break pgi cross.
+    let temp = tempfile::TempDir::new().unwrap();
+    let dup = random_seq(3000, 11);
+    fs::write(
+        temp.path().join("a.fa"),
+        format!(">a\n{}\n{dup}\n", random_seq(500, 12)),
+    )
+    .unwrap();
+    fs::write(
+        temp.path().join("b.fa"),
+        format!(">b\n{}\n{dup}\n", random_seq(500, 13)),
+    )
+    .unwrap();
+
+    let (_, stderr) = PgrCmd::new()
+        .current_dir(temp.path())
+        .args(&[
+            "sd",
+            "cross",
+            "a.fa",
+            "b.fa",
+            "--engine",
+            "pgi",
+            "-o",
+            "cross.paf",
+        ])
+        .run();
+    assert!(
+        !stderr.contains("error:"),
+        "relative-path cross failed: {stderr}"
+    );
+    assert!(
+        !fs::read_to_string(temp.path().join("cross.paf"))
+            .unwrap()
+            .trim()
+            .is_empty(),
+        "pgi cross found no cross-genome homology"
+    );
+}
