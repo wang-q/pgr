@@ -108,8 +108,11 @@ local alignment into scored PSL records with real blocks; chains longer than
 ## Notes
 
 * 2bit inputs are preferred for speed and random access.
-* `.pgi` files are not gzip-compressed and are loaded whole into memory
-  (bacterial-scale; large genomes are future work).
+* `.pgi` files are not gzip-compressed. `pgr pgi align` streams the
+  reference index and memory-maps the query index (positions are decoded on
+  demand from mapped pages), so neither index is materialized in full.
+* The query .pgi for `pgr pgi align` must be a regular file; `stdin` and
+  gzipped query indexes are not supported.
 * Both indexes in a comparison must use identical `-k/--smer/--window`.
 
 ## Examples

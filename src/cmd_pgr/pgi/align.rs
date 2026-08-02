@@ -18,6 +18,8 @@ plain blocks).
 
 Notes:
 * Both indexes must use identical sampling parameters (k, syncmer, window).
+* The query .pgi is memory-mapped and must be a regular file ('stdin' and
+  gzipped query indexes are not supported).
 * K-mers occurring more than --freq times on either side are skipped.
 * Chains shorter than --min-span on either axis are dropped.
 * --ref-seq/--query-seq accept FASTA (.fa/.fa.gz) or .2bit files whose
@@ -131,13 +133,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         },
     };
 
-    // The reference index is consumed as a stream by the merge; only the
-    // query index is fully resident (FastGA's GIX is memory-mapped, which
-    // this pure-std streaming approximates without new dependencies).
+    // The reference index is consumed as a stream by the merge; the query
+    // index is memory-mapped (FastGA's GIX model) and decoded on demand, so
+    // neither index is materialized in full.
     let mut r1 = pgr::reader(ref_idx)?;
     let mut a = pgr::libs::pgi::PgiStream::open(&mut r1)?;
-    let mut r2 = pgr::reader(query_idx)?;
-    let b = pgr::libs::pgi::PgiIndex::read(&mut r2)?;
+    let b = pgr::libs::pgi::PgiMmap::open(std::path::Path::new(query_idx))?;
 
     // A dedicated pool bounds the parallel tube extension: the wave/dandc
     // scratch scales with concurrent tubes, and 8 threads (FastGA's `-T`

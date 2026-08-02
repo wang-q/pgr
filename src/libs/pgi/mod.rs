@@ -8,9 +8,13 @@
 pub mod align;
 pub mod build;
 pub mod dist;
+pub mod mmap;
 pub mod to_hv;
 
+pub use mmap::PgiMmap;
+
 use anyhow::Context;
+use mmap::MmapPosIter;
 use std::io::{Read, Write};
 
 /// File magic.
@@ -60,7 +64,7 @@ pub struct PgiHeader {
 
 /// Per-record byte layout of the v2 packed occurrence stream.
 #[derive(Debug, Clone, Copy)]
-struct RecordLayout {
+pub(crate) struct RecordLayout {
     kmer_bytes: usize,
     pos_bytes: usize,
     cont_bytes: usize,
@@ -72,27 +76,41 @@ impl RecordLayout {
     }
 }
 
-/// Read and validate the header (magic/version/params/contigs) plus the
-/// per-record layout; returns the number of occurrence records.
-fn read_header<R: Read>(r: &mut R) -> anyhow::Result<(PgiHeader, usize, RecordLayout)> {
-    let mut magic = [0u8; 4];
-    r.read_exact(&mut magic).context("reading magic")?;
-    if &magic != PGI_MAGIC {
+/// Fixed-size header fields (magic .. reserved), before the contig table.
+const HEADER_FIXED: usize = 48;
+
+/// Bounds-checked slice take that advances `off`.
+fn take_bytes<'a>(buf: &'a [u8], off: &mut usize, n: usize) -> anyhow::Result<&'a [u8]> {
+    let end = off.checked_add(n).context("header offset overflow")?;
+    let s = buf.get(*off..end).context("truncated pgi header")?;
+    *off = end;
+    Ok(s)
+}
+
+/// Parse and validate the header (magic/version/params/contigs) plus the
+/// per-record layout from a byte slice; returns the header, the number of
+/// occurrence records, the layout, and the bytes consumed by the header.
+pub(crate) fn parse_header_bytes(
+    buf: &[u8],
+) -> anyhow::Result<(PgiHeader, usize, RecordLayout, usize)> {
+    let mut off = 0usize;
+    let magic = take_bytes(buf, &mut off, 4)?;
+    if magic != PGI_MAGIC {
         anyhow::bail!("not a pgr genome index (bad magic)");
     }
-    let version = read_u32(r)?;
+    let version = u32::from_le_bytes(take_bytes(buf, &mut off, 4)?.try_into().unwrap());
     if version != PGI_VERSION {
         anyhow::bail!("unsupported pgi version {version} (expected {PGI_VERSION})");
     }
-    let k = read_u32(r)? as usize;
-    let smer = read_u32(r)? as usize;
-    let window = read_u32(r)? as usize;
-    let n_contigs = read_u32(r)? as usize;
-    let n_records = read_u64(r)? as usize;
-    let kmer_bytes = read_u32(r)? as usize;
-    let pos_bytes = read_u32(r)? as usize;
-    let cont_bytes = read_u32(r)? as usize;
-    let _reserved = read_u32(r)?;
+    let k = u32::from_le_bytes(take_bytes(buf, &mut off, 4)?.try_into().unwrap()) as usize;
+    let smer = u32::from_le_bytes(take_bytes(buf, &mut off, 4)?.try_into().unwrap()) as usize;
+    let window = u32::from_le_bytes(take_bytes(buf, &mut off, 4)?.try_into().unwrap()) as usize;
+    let n_contigs = u32::from_le_bytes(take_bytes(buf, &mut off, 4)?.try_into().unwrap()) as usize;
+    let n_records = u64::from_le_bytes(take_bytes(buf, &mut off, 8)?.try_into().unwrap()) as usize;
+    let kmer_bytes = u32::from_le_bytes(take_bytes(buf, &mut off, 4)?.try_into().unwrap()) as usize;
+    let pos_bytes = u32::from_le_bytes(take_bytes(buf, &mut off, 4)?.try_into().unwrap()) as usize;
+    let cont_bytes = u32::from_le_bytes(take_bytes(buf, &mut off, 4)?.try_into().unwrap()) as usize;
+    let _reserved = u32::from_le_bytes(take_bytes(buf, &mut off, 4)?.try_into().unwrap());
     anyhow::ensure!(
         kmer_bytes == k.div_ceil(4),
         "bad kmer_bytes {kmer_bytes} for k={k}"
@@ -102,11 +120,10 @@ fn read_header<R: Read>(r: &mut R) -> anyhow::Result<(PgiHeader, usize, RecordLa
 
     let mut contigs = Vec::with_capacity(n_contigs);
     for _ in 0..n_contigs {
-        let nb = read_u32(r)? as usize;
-        let mut name = vec![0u8; nb];
-        r.read_exact(&mut name).context("reading contig name")?;
-        let name = String::from_utf8(name).context("contig name utf8")?;
-        let len = read_u64(r)?;
+        let nb = u32::from_le_bytes(take_bytes(buf, &mut off, 4)?.try_into().unwrap()) as usize;
+        let name = take_bytes(buf, &mut off, nb)?;
+        let name = String::from_utf8(name.to_vec()).context("contig name utf8")?;
+        let len = u64::from_le_bytes(take_bytes(buf, &mut off, 8)?.try_into().unwrap());
         contigs.push((name, len));
     }
 
@@ -123,11 +140,36 @@ fn read_header<R: Read>(r: &mut R) -> anyhow::Result<(PgiHeader, usize, RecordLa
             pos_bytes,
             cont_bytes,
         },
+        off,
     ))
 }
 
+/// Read and validate the header (magic/version/params/contigs) plus the
+/// per-record layout; returns the number of occurrence records.
+fn read_header<R: Read>(r: &mut R) -> anyhow::Result<(PgiHeader, usize, RecordLayout)> {
+    let mut buf = vec![0u8; HEADER_FIXED];
+    r.read_exact(&mut buf).context("reading header")?;
+    let n_contigs = u32::from_le_bytes(buf[20..24].try_into().unwrap()) as usize;
+    buf.reserve(n_contigs * 16);
+    for _ in 0..n_contigs {
+        let mut nb_bytes = [0u8; 4];
+        r.read_exact(&mut nb_bytes)
+            .context("reading contig name length")?;
+        let nb = u32::from_le_bytes(nb_bytes) as usize;
+        buf.extend_from_slice(&nb_bytes);
+        let start = buf.len();
+        buf.resize(start + nb, 0);
+        r.read_exact(&mut buf[start..])
+            .context("reading contig name")?;
+        let mut len = [0u8; 8];
+        r.read_exact(&mut len).context("reading contig length")?;
+        buf.extend_from_slice(&len);
+    }
+    parse_header_bytes(&buf).map(|(h, n, l, _)| (h, n, l))
+}
+
 /// Decode one packed occurrence record into `(kmer, contig_id, pos, strand)`.
-fn parse_record(rec: &[u8], k: usize, layout: RecordLayout) -> (u128, u32, u32, u8) {
+pub(crate) fn parse_record(rec: &[u8], k: usize, layout: RecordLayout) -> (u128, u32, u32, u8) {
     let kmer = unpack_kmer(&rec[..layout.kmer_bytes], k);
     let mut pos: u32 = 0;
     for (i, byte) in rec[layout.kmer_bytes..layout.kmer_bytes + layout.pos_bytes]
@@ -157,7 +199,7 @@ const POS_MASK: u64 = (1 << 32) - 1;
 const STRAND_OFF: u32 = 32 + CID_BITS;
 
 /// Pack `(contig_id, pos, strand)` into a `u64` position record.
-fn pack_position(cid: u32, pos: u32, strand: u8) -> u64 {
+pub(crate) fn pack_position(cid: u32, pos: u32, strand: u8) -> u64 {
     debug_assert!(cid >> CID_BITS == 0, "contig id exceeds packed range");
     (pos as u64) | ((cid as u64) << 32) | (((strand & 1) as u64) << STRAND_OFF)
 }
@@ -169,6 +211,105 @@ fn unpack_position(rec: u64) -> (u32, u32, u8) {
         (rec & POS_MASK) as u32,
         ((rec >> STRAND_OFF) & 1) as u8,
     )
+}
+
+/// Read-only view over a pgi index's k-mer table, shared by the resident
+/// [`PgiIndex`] and the memory-mapped [`PgiMmap`] query path.
+///
+/// Entries are addressable by an opaque `usize` index returned from
+/// [`PgiQuery::entry_range`]; resident and mapped indexes differ in how
+/// positions are stored (materialized `u64` records vs packed pages), so
+/// only the decoded accessors are exposed here.
+pub trait PgiQuery {
+    /// K-mer length (bp).
+    fn k(&self) -> usize;
+    /// Syncmer length (bp).
+    fn smer(&self) -> usize;
+    /// Syncmer window (bp).
+    fn window(&self) -> usize;
+    /// `(name, length)` pairs in file order.
+    fn contigs(&self) -> &[(String, u64)];
+    /// Entry range whose k-mers lie in `[lo, hi)`.
+    fn entry_range(&self, lo: u128, hi: u128) -> (usize, usize);
+    /// Index one past the entry at `i` (entries may have a non-unit stride
+    /// in the underlying storage).
+    fn entry_next(&self, i: usize) -> usize;
+    /// K-mer of the entry at index `i`.
+    fn entry_kmer(&self, i: usize) -> u128;
+    /// Position count of the entry at index `i`.
+    fn entry_freq(&self, i: usize) -> u32;
+    /// Packed position records of the entry at index `i`.
+    fn entry_positions(&self, i: usize) -> Positions<'_>;
+}
+
+/// Position records of one entry: a resident slice or a decoder over the
+/// mapped pages of a [`PgiMmap`].
+pub enum Positions<'a> {
+    /// Already-materialized packed records.
+    Slice(std::slice::Iter<'a, u64>),
+    /// Records decoded on demand from a memory-mapped index.
+    Mmap(MmapPosIter<'a>),
+}
+
+impl Iterator for Positions<'_> {
+    type Item = u64;
+
+    fn next(&mut self) -> Option<u64> {
+        match self {
+            Positions::Slice(it) => it.next().copied(),
+            Positions::Mmap(it) => it.next(),
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        match self {
+            Positions::Slice(it) => it.size_hint(),
+            Positions::Mmap(it) => it.size_hint(),
+        }
+    }
+}
+
+impl PgiQuery for PgiIndex {
+    fn k(&self) -> usize {
+        self.k
+    }
+
+    fn smer(&self) -> usize {
+        self.smer
+    }
+
+    fn window(&self) -> usize {
+        self.window
+    }
+
+    fn contigs(&self) -> &[(String, u64)] {
+        &self.contigs
+    }
+
+    fn entry_range(&self, lo: u128, hi: u128) -> (usize, usize) {
+        let i0 = self.entries.partition_point(|e| e.kmer < lo);
+        let i1 = self.entries.partition_point(|e| e.kmer < hi);
+        (i0, i1)
+    }
+
+    fn entry_next(&self, i: usize) -> usize {
+        i + 1
+    }
+
+    fn entry_kmer(&self, i: usize) -> u128 {
+        self.entries[i].kmer
+    }
+
+    fn entry_freq(&self, i: usize) -> u32 {
+        self.entries[i].freq
+    }
+
+    fn entry_positions(&self, i: usize) -> Positions<'_> {
+        let e = &self.entries[i];
+        Positions::Slice(
+            self.positions[e.pos_start as usize..(e.pos_start + e.freq) as usize].iter(),
+        )
+    }
 }
 
 impl PgiIndex {
@@ -391,7 +532,7 @@ impl<R: Read> PgiStream<R> {
 
 /// Pack a 2-bit k-mer (high bits first) into `kmer_bytes = ceil(k/4)` bytes,
 /// big-endian, low bits zero-padded.
-fn pack_kmer(kmer: u128, k: usize, out: &mut [u8]) {
+pub(crate) fn pack_kmer(kmer: u128, k: usize, out: &mut [u8]) {
     for (i, byte) in out.iter_mut().enumerate() {
         // Bases 4i..4i+3 high-aligned within the byte; missing trailing
         // bases (k % 4 != 0) leave the low bits zero.
@@ -408,24 +549,12 @@ fn pack_kmer(kmer: u128, k: usize, out: &mut [u8]) {
 }
 
 /// Unpack a big-endian 2-bit k-mer byte array back to a `u128`.
-fn unpack_kmer(bytes: &[u8], k: usize) -> u128 {
+pub(crate) fn unpack_kmer(bytes: &[u8], k: usize) -> u128 {
     let mut x: u128 = 0;
     for &b in bytes {
         x = (x << 8) | b as u128;
     }
     x >> (8 * bytes.len() - 2 * k)
-}
-
-fn read_u32<R: Read>(r: &mut R) -> anyhow::Result<u32> {
-    let mut b = [0u8; 4];
-    r.read_exact(&mut b)?;
-    Ok(u32::from_le_bytes(b))
-}
-
-fn read_u64<R: Read>(r: &mut R) -> anyhow::Result<u64> {
-    let mut b = [0u8; 8];
-    r.read_exact(&mut b)?;
-    Ok(u64::from_le_bytes(b))
 }
 
 #[cfg(test)]

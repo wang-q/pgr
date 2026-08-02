@@ -1,7 +1,7 @@
 //! Two-index merge alignment: seed hits -> anti-diagonal chains -> PSL blocks.
 
 use super::dist::validate_compatible;
-use super::{unpack_position, PgiIndex, PgiStream};
+use super::{unpack_position, PgiIndex, PgiQuery, PgiStream};
 use crate::libs::alignment::align_banded_local;
 use crate::libs::alignment::coords::{reverse_range, reverse_range_pair};
 use crate::libs::alignment::wave::local_alignment;
@@ -116,11 +116,12 @@ pub fn merge_seed_hits(
 }
 
 /// FastGA-style seed merge with the reference index streamed from disk: `a`
-/// entries are read in batches and merged in parallel against the fully
-/// loaded `b`, so only the query index stays resident.
-pub fn merge_seed_hits_from_stream<R: Read + Send>(
+/// entries are read in batches and merged in parallel against the query
+/// index `b` (resident or memory-mapped), so neither index is materialized
+/// in full.
+pub fn merge_seed_hits_from_stream<R: Read + Send, B: PgiQuery + Sync>(
     a: &mut PgiStream<R>,
-    b: &PgiIndex,
+    b: &B,
     freq: u32,
     min_shared: usize,
 ) -> anyhow::Result<Vec<SeedHit>> {
@@ -169,11 +170,11 @@ pub fn merge_seed_hits_from_stream<R: Read + Send>(
 /// streamed batch). Each entry seeds only its longest shared prefix, and the
 /// frequency filter applies to the extended range at that length.
 #[allow(clippy::too_many_arguments)]
-fn emit_entry_hits(
+fn emit_entry_hits<B: PgiQuery>(
     ea_kmer: u128,
     ea_freq: u32,
     a_positions: &[u64],
-    b: &PgiIndex,
+    b: &B,
     freq: u32,
     min_shared: usize,
     k: usize,
@@ -199,12 +200,7 @@ fn emit_entry_hits(
         let r = 1u128 << (k_bits - 2 * len);
         let lo = ea_kmer & !(r - 1) & mask;
         let hi = lo + r;
-        let i0 = b.entries.partition_point(|e| e.kmer < lo);
-        let mut i1 = i0;
-        while i1 < b.entries.len() && b.entries[i1].kmer < hi {
-            i1 += 1;
-        }
-        (i0, i1)
+        b.entry_range(lo, hi)
     };
     let (j0, j) = window(min_shared);
     if j == j0 {
@@ -213,11 +209,14 @@ fn emit_entry_hits(
     // Maximal shared prefix over the floor window (FastGA extends each entry
     // to its longest match before filtering).
     let mut m: u32 = 0;
-    for eb in &b.entries[j0..j] {
-        if eb.freq > freq {
+    let mut i = j0;
+    while i < j {
+        if b.entry_freq(i) > freq {
+            i = b.entry_next(i);
             continue;
         }
-        m = m.max(shared_prefix(ea_kmer, eb.kmer, k));
+        m = m.max(shared_prefix(ea_kmer, b.entry_kmer(i), k));
+        i = b.entry_next(i);
     }
     if m < min_shared as u32 {
         return hits;
@@ -225,40 +224,44 @@ fn emit_entry_hits(
     // Restrict to the maximal-prefix range; its occurrence count must stay
     // under `freq` (extended-range filter, not the floor window).
     let (m0, m1) = window(m as usize);
-    let occ: u32 = b.entries[m0..m1]
-        .iter()
-        .filter(|e| e.freq <= freq)
-        .map(|e| e.freq)
-        .sum();
+    let mut occ: u32 = 0;
+    let mut i = m0;
+    while i < m1 {
+        let f = b.entry_freq(i);
+        if f <= freq {
+            occ += f;
+        }
+        i = b.entry_next(i);
+    }
     if occ == 0 || occ >= freq {
         return hits;
     }
-    for eb in &b.entries[m0..m1] {
-        if eb.freq > freq {
-            continue;
-        }
-        let bp = &b.positions[eb.pos_start as usize..(eb.pos_start + eb.freq) as usize];
-        for &arec in a_positions {
-            let (ac, apos, astrand) = unpack_position(arec);
-            for &brec in bp {
-                let (bc, bpos, bstrand) = unpack_position(brec);
-                let fwd = astrand == bstrand;
-                let b_len = b.contigs[bc as usize].1;
-                let oriented = if fwd {
-                    bpos as u64
-                } else {
-                    b_len - k as u64 - bpos as u64
-                };
-                hits.push(SeedHit {
-                    a_contig: ac as u16,
-                    a_pos: apos,
-                    b_contig: bc as u16,
-                    b_pos: oriented as u32,
-                    shared: m as u16,
-                    strand: u8::from(!fwd),
-                });
+    let mut i = m0;
+    while i < m1 {
+        if b.entry_freq(i) <= freq {
+            for &arec in a_positions {
+                let (ac, apos, astrand) = unpack_position(arec);
+                for brec in b.entry_positions(i) {
+                    let (bc, bpos, bstrand) = unpack_position(brec);
+                    let fwd = astrand == bstrand;
+                    let b_len = b.contigs()[bc as usize].1;
+                    let oriented = if fwd {
+                        bpos as u64
+                    } else {
+                        b_len - k as u64 - bpos as u64
+                    };
+                    hits.push(SeedHit {
+                        a_contig: ac as u16,
+                        a_pos: apos,
+                        b_contig: bc as u16,
+                        b_pos: oriented as u32,
+                        shared: m as u16,
+                        strand: u8::from(!fwd),
+                    });
+                }
             }
         }
+        i = b.entry_next(i);
     }
     hits
 }
@@ -541,7 +544,7 @@ fn extend_tube(
     tube: &Tube,
     alast: &mut i64,
     a: &PgiIndex,
-    b: &PgiIndex,
+    b: &impl PgiQuery,
     a_seqs: &[(String, Vec<u8>)],
     b_seqs: &[(String, Vec<u8>)],
     a_revs: &[Vec<u8>],
@@ -601,12 +604,12 @@ fn extend_tube(
                     reverse_range(
                         &mut q_start,
                         &mut q_end,
-                        b.contigs[tube.b_contig as usize].1 as i32,
+                        b.contigs()[tube.b_contig as usize].1 as i32,
                     );
                 }
                 if let Some(psl) = Psl::from_align(
-                    &b.contigs[tube.b_contig as usize].0,
-                    b.contigs[tube.b_contig as usize].1 as u32,
+                    &b.contigs()[tube.b_contig as usize].0,
+                    b.contigs()[tube.b_contig as usize].1 as u32,
                     q_start,
                     q_end,
                     &String::from_utf8_lossy(&aln.q_aln),
@@ -831,13 +834,13 @@ fn push_chain(chains: &mut Vec<Chain>, cur: &Option<ChainCursor>, k: u32, min_sp
 ///
 /// Reverse-strand blocks carry `q_start`/`q_end` in original query coordinates
 /// (converted from orientation space), matching the pgr/UCSC PSL convention.
-pub fn chain_to_psl(chain: &Chain, a: &PgiIndex, b: &PgiIndex) -> Psl {
+pub fn chain_to_psl(chain: &Chain, a: &PgiIndex, b: &impl PgiQuery) -> Psl {
     let (a_name, a_len) = {
         let (name, len) = &a.contigs[chain.a_contig as usize];
         (name, *len as u32)
     };
     let (b_name, b_len) = {
-        let (name, len) = &b.contigs[chain.b_contig as usize];
+        let (name, len) = &b.contigs()[chain.b_contig as usize];
         (name, *len as u32)
     };
     let (q_start, q_end, strand) = if chain.strand == 0 {
@@ -889,9 +892,9 @@ pub fn align_to_psl(a: &PgiIndex, b: &PgiIndex, params: &AlignParams) -> anyhow:
 }
 
 /// Same as [`align_to_psl`] with the reference index streamed from disk.
-pub fn align_to_psl_streaming<R: Read + Send>(
+pub fn align_to_psl_streaming<R: Read + Send, B: PgiQuery + Sync>(
     a: &mut PgiStream<R>,
-    b: &PgiIndex,
+    b: &B,
     params: &AlignParams,
 ) -> anyhow::Result<Vec<Psl>> {
     let k = a.header().k;
@@ -1003,7 +1006,7 @@ fn extend_window(
     job: &WindowJob,
     chain: &Chain,
     a: &PgiIndex,
-    b: &PgiIndex,
+    b: &impl PgiQuery,
     a_seqs: &[(String, Vec<u8>)],
     b_seqs: &[(String, Vec<u8>)],
     dp_band: usize,
@@ -1044,13 +1047,13 @@ fn extend_window(
         reverse_range(
             &mut q_abs,
             &mut q_abs_end,
-            b.contigs[chain.b_contig as usize].1 as i32,
+            b.contigs()[chain.b_contig as usize].1 as i32,
         );
     }
     let strand = if chain.strand == 0 { "+" } else { "-" };
     Psl::from_align(
-        &b.contigs[chain.b_contig as usize].0,
-        b.contigs[chain.b_contig as usize].1 as u32,
+        &b.contigs()[chain.b_contig as usize].0,
+        b.contigs()[chain.b_contig as usize].1 as u32,
         q_abs,
         q_abs_end,
         &String::from_utf8_lossy(&q_aln),
@@ -1067,7 +1070,7 @@ fn extend_window(
 /// falling back to plain blocks otherwise.
 pub fn align_to_psl_ext(
     a: PgiIndex,
-    b: PgiIndex,
+    mut b: PgiIndex,
     params: &AlignParams,
     a_seqs: &[(String, Vec<u8>)],
     b_seqs: &[(String, Vec<u8>)],
@@ -1080,15 +1083,20 @@ pub fn align_to_psl_ext(
         params.freq
     );
     log::debug!("peak RSS after merge: {} MB", peak_rss_mb());
+    // The extension phase only needs the contig tables; free the resident
+    // query tables before the parallel pass (the mmap path never allocates
+    // them in the first place).
+    b.entries = Vec::new();
+    b.positions = Vec::new();
     psls_from_hits(a, b, params, hits, a_seqs, b_seqs)
 }
 
-/// Align two indexes with the reference (`a`) streamed from disk instead of
-/// loaded in full: the merge reads `a` in batches, so only the query index
-/// (`b`) stays resident.
-pub fn align_to_psl_ext_streaming<R: Read + Send>(
+/// Align two indexes with the reference (`a`) streamed from disk and the
+/// query (`b`) read through a [`PgiQuery`] view (resident or mmap'd): the
+/// merge reads `a` in batches, so no index is materialized in full.
+pub fn align_to_psl_ext_streaming<R: Read + Send, B: PgiQuery + Sync>(
     mut a: PgiStream<R>,
-    b: PgiIndex,
+    b: B,
     params: &AlignParams,
     a_seqs: &[(String, Vec<u8>)],
     b_seqs: &[(String, Vec<u8>)],
@@ -1122,7 +1130,7 @@ pub fn align_to_psl_ext_streaming<R: Read + Send>(
 /// index with empty tables when the reference was streamed.
 fn psls_from_hits(
     mut a: PgiIndex,
-    mut b: PgiIndex,
+    b: impl PgiQuery + Sync,
     params: &AlignParams,
     hits: Vec<SeedHit>,
     a_seqs: &[(String, Vec<u8>)],
@@ -1162,11 +1170,9 @@ fn psls_from_hits(
         log::debug!("peak RSS after chain_tubes: {} MB", peak_rss_mb());
         drop(hits); // the tubes and sequences are enough for extension
                     // The k-mer entries/positions are only needed for the merge; drop the
-                    // ~140 MB per index before the parallel extension phase.
+                    // reference index's tables before the parallel extension phase.
         drop(std::mem::take(&mut a.entries));
         drop(std::mem::take(&mut a.positions));
-        drop(std::mem::take(&mut b.entries));
-        drop(std::mem::take(&mut b.positions));
         log::debug!("peak RSS after dropping indexes: {} MB", peak_rss_mb());
         let a_revs: Vec<Vec<u8>> = a_seqs
             .iter()
@@ -1208,8 +1214,6 @@ fn psls_from_hits(
     drop(hits);
     drop(std::mem::take(&mut a.entries));
     drop(std::mem::take(&mut a.positions));
-    drop(std::mem::take(&mut b.entries));
-    drop(std::mem::take(&mut b.positions));
     log::debug!("peak RSS after chain_hits: {} MB", peak_rss_mb());
     // Flatten all extension windows across chains into one parallel stream so
     // a giant chain cannot serialize behind smaller chains on a single task.
@@ -1313,6 +1317,58 @@ mod tests {
         let rnd_idx = build(&rnd);
         let hits = merge_seed_hits(&rnd_idx, &rnd_idx, 2, 10).unwrap();
         assert!(!hits.is_empty(), "unique k-mers pass freq=2");
+    }
+
+    #[test]
+    fn streamed_merge_matches_resident_query() {
+        // The memory-mapped query view must decode the same seed hits as the
+        // fully loaded index (entry ranges, frequencies, positions).
+        let a = build_from_seqs(
+            vec![
+                (String::from("c1"), pseudo_random_seq(2000, 11)),
+                (String::from("c2"), pseudo_random_seq(1500, 5)),
+            ],
+            10,
+            4,
+            2,
+            false,
+        )
+        .unwrap();
+        let b = build_from_seqs(
+            vec![
+                (String::from("c1"), pseudo_random_seq(2000, 12)),
+                (String::from("c2"), pseudo_random_seq(1500, 6)),
+            ],
+            10,
+            4,
+            2,
+            false,
+        )
+        .unwrap();
+        let mut ref_bytes = Vec::new();
+        a.write(&mut ref_bytes).unwrap();
+        let mut q_bytes = Vec::new();
+        b.write(&mut q_bytes).unwrap();
+        let dir = tempfile::TempDir::new().unwrap();
+        let q_path = dir.path().join("query.pgi");
+        std::fs::write(&q_path, &q_bytes).unwrap();
+        let mapped = crate::libs::pgi::PgiMmap::open(&q_path).unwrap();
+
+        let resident = {
+            let mut s = PgiStream::open(std::io::Cursor::new(&ref_bytes)).unwrap();
+            merge_seed_hits_from_stream(&mut s, &b, 10, 10).unwrap()
+        };
+        let mmap = {
+            let mut s = PgiStream::open(std::io::Cursor::new(&ref_bytes)).unwrap();
+            merge_seed_hits_from_stream(&mut s, &mapped, 10, 10).unwrap()
+        };
+        let key = |h: &SeedHit| (h.a_contig, h.a_pos, h.b_contig, h.b_pos, h.shared, h.strand);
+        let mut rk: Vec<_> = resident.iter().map(key).collect();
+        let mut mk: Vec<_> = mmap.iter().map(key).collect();
+        rk.sort_unstable();
+        mk.sort_unstable();
+        assert_eq!(rk, mk, "mmap query must produce identical seed hits");
+        assert!(!rk.is_empty(), "expected shared seeds");
     }
 
     #[test]

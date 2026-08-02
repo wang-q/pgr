@@ -852,6 +852,33 @@ extend 245 ms（合计 ~0.67 s；墙钟 0.89 s 另含参考索引流式读取、
 PSL 写盘）。与 FastGA（~0.7 s）的差距主要在索引读取（mmap 可消除）和
 wave 每调用开销。908 测试全过。
 
+## 5.35 query 索引改 mmap 零拷贝（PgiMmap，2026-08-02）
+
+query 索引不再全量读入：新增 `libs::pgi::mmap::PgiMmap`（memmap2，
+MAP_PRIVATE 只读映射），记录驻留映射页——条目通过 packed k-mer 字节二分
+定位（`entry_range`），位置按需解码（`entry_positions`），与 FastGA GIX
+的 memory-mapped 模型一致。reference 仍走 `PgiStream` 流式读取。
+
+- `PgiQuery` trait：resident `PgiIndex` 与 `PgiMmap` 共用的只读视图
+  （k/smer/window/contigs + entry_range/entry_next/entry_kmer/entry_freq/
+  entry_positions），merge 泛型化；扩展阶段只读 contigs，resident 路径在
+  merge 后释放条目表，mmap 路径则从未分配。
+- 修过的两个语义坑：
+  1. prefix 哨兵键：`hi = lo + r` 可等于 `2^(2k)`，resident 的
+     `partition_point(kmer < hi)` 天然容纳，mmap 二分必须把该值 clamp 到
+     记录数，否则 key 打包后高位移出、二分错位；
+  2. mmap 的 `entry_range` 返回记录区间，组内多条记录不能当作独立条目
+     迭代——新增 `entry_next`（resident 为 i+1，mmap 为组尾）按条目推进，
+     否则同一 k-mer 组内的每条记录都会被当作条目重复发射命中。
+- 实测（合成 2×2 Mb、k=10、smer 4/2、tube + --ref-seq/--query-seq、
+  8 线程、release）：旧版（query 全量读入）max RSS 328 MB / 0.80 s；
+  mmap 版 298 MB / 0.76 s；merge 191 ms，峰值已被链化暂存（hits/radix/
+  tubes）占据。2% 突变 query 的端到端 PSL 输出与旧二进制逐字节一致
+  （同一 .pgi 输入）。query.pgi 28 MB → resident 表约 53 MB（positions
+  4M×8 + entries 890k×24），Sakai 规模对应 ~140 MB，均已消除。
+- 注意：query 索引必须是真实文件（mmap 不支持 stdin/gzip）；`dist pgi`
+  / `stat` / `to-hv` 仍走全量 `PgiIndex::read`，暂未改。
+
 ## 6. 相关文档
 
 - 索引格式与消费者规划：[[pbit.md]]（多参考节 + .pgi 距离消费者层级）

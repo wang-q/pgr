@@ -1,6 +1,6 @@
 //! Two-index merge distance (deterministic Jaccard/containment/Mash).
 
-use super::PgiIndex;
+use super::{PgiIndex, PgiQuery};
 
 /// Distance metrics between two indexes (by unique k-mer set).
 #[derive(Debug, Clone, Copy)]
@@ -15,19 +15,24 @@ pub struct PgiDist {
 }
 
 /// Validate that two indexes use identical sampling parameters.
-pub fn validate_compatible(a: &PgiIndex, b: &PgiIndex) -> anyhow::Result<()> {
-    anyhow::ensure!(a.k == b.k, "k-mer size mismatch: {} vs {}", a.k, b.k);
+pub fn validate_compatible(a: &impl PgiQuery, b: &impl PgiQuery) -> anyhow::Result<()> {
     anyhow::ensure!(
-        a.smer == b.smer,
-        "syncmer smer mismatch: {} vs {}",
-        a.smer,
-        b.smer
+        a.k() == b.k(),
+        "k-mer size mismatch: {} vs {}",
+        a.k(),
+        b.k()
     );
     anyhow::ensure!(
-        a.window == b.window,
+        a.smer() == b.smer(),
+        "syncmer smer mismatch: {} vs {}",
+        a.smer(),
+        b.smer()
+    );
+    anyhow::ensure!(
+        a.window() == b.window(),
         "syncmer window mismatch: {} vs {}",
-        a.window,
-        b.window
+        a.window(),
+        b.window()
     );
     Ok(())
 }
