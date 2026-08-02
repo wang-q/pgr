@@ -1,48 +1,110 @@
-# pgi 两索引归并比对（设计定稿：v1 最小闭环）
+# pgr pgi align：两索引归并比对（设计定稿 + 开发记录）
 
-> 定位：`.pgi` 的第一个比对消费者。输入两个已构建的 .pgi，
-> 输出 PSL 块，喂给 `pgr pl chainnet`（UCSC 链化由 pgr 承担，见
-> [[fastga.md]] §12.3 决策 3）。
-> 状态：2026-08-02 定稿，随实现迭代。
+> 定位：`.pgi` 的第一个比对消费者。输入两个已构建 .pgi，输出 PSL 块，
+> 喂给 `pgr pl chainnet`（UCSC 链化由 pgr 承担，见 [[fastga.md]] §12.3 决策 3）。
+> 状态：2026-08-02 定稿。质量（chainnet 覆盖）与 FastGA 持平、速度持平、
+> 峰值内存低于 FastGA（query 索引 mmap 零拷贝）。
+>
+> 结构：§0 当前状态 → §1 设计 → §2 验证与基准 → §3 开发历史 →
+> §4 已排除方向 → §5 勘误与基准方法 → §6 相关文档。
 
-## 1. 范围（v1 做什么、不做什么）
+## 0. 当前状态
+
+**一句话**：`pgr pgi align` 已完整实现"种子归并 → 链化（greedy/tube）→
+扩展（banded 仿射 gap / Myers wave）→ PSL"，MG1655 vs Sakai/EC958/Nissle
+三项基准的 chainnet 覆盖与 FastGA 持平（差 0.0-0.015%）、耗时持平
+（~0.8s vs ~0.7s）、峰值内存更低（224 vs 332 MB，Sakai）。
+
+**实现构成**（2026-08-02 快照）：
+
+- 索引读取：ref 走 `PgiStream` 流式分块；query 走 `PgiMmap` mmap 零拷贝
+  （FastGA GIX 模型）；merge 经 `PgiQuery` trait 统一两种视图；
+- 种子语义：最大共享前缀（plen）+ 扩展范围频率过滤 + canonical 去重
+  （FastGA `new_merge_thread` 语义，§1.3.2）；
+- 链化：greedy（默认）/ tube（`--workflow tube`，FastGA `align_contigs`）；
+- 扩展：banded 仿射 gap（greedy 默认）与 mid-line Myers wave（tube）；
+- PSL：负链 qStart/qEnd 用正链帧、内部 qStarts 用 RC 帧（UCSC 约定）。
+
+**默认参数**（对齐 FastGA：-f 10 / -c 85 / -s 1000，本实现为未加倍空间）：
+
+| 参数 | 默认 | 说明 |
+|---|---|---|
+| `-k` / `--smer` / `--window` | 40 / 8 / 5 | 与 FastGA GIX (12,8) 同源 |
+| `-f` / `--freq` | 10 | 任一侧频率超限即跳过 |
+| `-c` / `--min-span` | 85 | FastGA CHAIN_MIN |
+| `-s` / `--max-gap` | 1000 | FastGA CHAIN_BREAK/2 |
+| `--band` | 128 | 对角线带半宽 |
+| `--merge-gap` | 5000 | 相邻共线链合并阈值（IS 元件断链） |
+| `--min-shared` | tube=12 / greedy=k | tube 取 FastGA plen 下限 |
+| `--workflow` | greedy | tube 需要 `--ref-seq/--query-seq` |
+| `--parallel` | 8 | 专用 rayon 池（FastGA `-T` 默认） |
+
+**当前基准**（2026-08-02，tests/genome 真实数据，8 线程，release，详见 §2.2）：
+
+| 对（MG1655 vs） | pgr 覆盖 | FastGA 覆盖 | pgr 耗时 | FastGA 耗时 | pgr 峰值内存 | FastGA 峰值内存 |
+|---|---:|---:|---:|---:|---:|---:|
+| Sakai | 89.33% | 89.3% | 0.78s | ~0.7s | **224 MB** | 332 MB |
+| EC958 | 86.38% | 86.3% | 0.84s | ~0.7s | **206 MB** | — |
+| Nissle | 85.28% | 85.30% | 0.79s | ~0.7s | **210 MB** | — |
+
+**剩余工作**：
+
+1. indel 复杂区覆盖 ~0.7 kb（Nissle，噪声级）——需 adaptamer 最小种子
+   **选择**或 FastGA 式 tube/wave 桥接，见 §4；
+2. `dist pgi` / `stat` / `to-hv` 仍全量 `PgiIndex::read`，可复用 `PgiMmap`
+   进一步降内存；
+3. 人类规模（~3 Gb）未验证：`pos_start` u32、`SeedHit` contig u16、
+   `PgiEntry` 24 B/条 等字段上限需按规模复核（§3.4 有上限记录）。
+
+**重要勘误索引**（详情见 §5.2）：
+
+- FastGA 内存 "~0 MB" → 实测 332 MB（§5.1）；
+- Nissle 基线曾误判无效 → 有效；其 0.32% 差距曾归因 chainnet 过滤 →
+  实为负链 PSL 坐标 bug（§3.3）；
+- `is_minimal` 曾读作噪声抑制 → canonical 方向判断；
+- 早期验证曾用合成随机序列 → 统一为 tests/genome 真实数据。
+
+## 1. 设计
+
+### 1.1 范围（当前做/不做）
 
 **做**：
 
-1. 两个排序 .pgi 流的线性归并 → 种子命中（频率过滤）；
-2. anti-diagonal 空间贪心链化 → 链（tube 语义简化）；
-3. 每条链输出一个 PSL 块（链覆盖区间，无 CIGAR 细节）；
-4. `pgr pgi align` CLI + 集成测试 + E. coli 验证。
+1. 两个排序 .pgi 流的归并 → 种子命中（plen 最大共享前缀 + 频率过滤）；
+2. anti-diagonal 空间链化 → 链（greedy 贪心 / tube 两种语义）；
+3. 链扩展：banded 仿射 gap 局部比对（greedy）或 Myers wave（tube），无
+   序列输入时每条链输出一个 PSL 块；
+4. ref 流式 + query mmap 读取（E. coli 规模起不再整体载入内存）；
+5. `pgr pgi align` CLI + 集成测试 + E. coli 三株系验证（§2）。
 
-**不做（v2 及以后）**：
+**不做（未来工作）**：
 
-- 局部扩展（banded/POA DP 细化 CIGAR，需要序列输入）——v1 链块直接由
-  `pgr psl to_chain` / chainnet 接手（块结构即输入，UCSC 链化自算 score）；
-- lcp 连续传播（adaptamer 变长种子）——固定 k 种子先行；
-- ~~pbit 内嵌索引段消费~~（已按决策 A 放弃：索引不进 pbit，见 [[pbit.md]]）；
-- mmap/流式读取（E. coli 规模直接整体载入内存）。
+- lcp 连续传播的完整 adaptamer（固定 k + plen 最大选择已实现；最小种子
+  选择未做，见 §4）；
+- ~~pbit 内嵌索引段消费~~（已按决策 A 放弃，见 [[pbit.md]]）；
+- 人类规模验证（见 §0 剩余工作 3）。
 
-## 2. 数据流
+### 1.2 数据流
 
 ```
-ref.pgi + query.pgi（v1 无需序列文件：链块只依赖索引的 k-mer/位置/contig 表）
-  │ 1. 排序流归并（频率过滤）→ 种子命中
+ref.pgi（流式）+ query.pgi（mmap）
+  │ 1. 归并（plen 最大共享前缀 + 频率过滤）→ 种子命中
   ▼
 hit = (key, a_contig, a_pos, a_strand, b_contig, b_pos, b_strand)
   │ 2. 方向解析 + diag/anti 坐标变换
   ▼
-fwd/rev 两个空间：(pos_a, pos_b'), diag = pos_a − pos_b', anti = pos_a + pos_b'
-  │ 3. 按 (contig_a, contig_b, 方向) 贪心链化
+fwd/rev 两个空间：(pos_a, pos_b')，diag = pos_a − pos_b'，anti = pos_a + pos_b'
+  │ 3. 按 (contig_a, contig_b, 方向) 链化（greedy / tube）
   ▼
 chain = 区间 + 对角线带（间距/带宽容忍，跨度过滤）
-  │ 4. PSL 块输出（q=query, t=ref）
+  │ 4. 扩展（banded 仿射 gap / mid-line wave）+ PSL 输出
   ▼
-out.psl → pgr psl to_chain → pgr pl chainnet（现有字节级验证的链化主场）
+out.psl → pgr psl to-chain → pgr pl chainnet（现有字节级验证的链化主场）
 ```
 
-## 3. 关键语义
+### 1.3 关键语义
 
-### 3.1 种子方向（pgi 双链条目）
+#### 1.3.1 种子方向（pgi 双链条目）
 
 `.pgi` 每条位置带 strand 标记（0=正向 k-mer，1=RC k-mer）。两索引归并时
 key 相等按 (a_strand, b_strand) 解析方向：
@@ -52,125 +114,101 @@ key 相等按 (a_strand, b_strand) 解析方向：
 | (0,0) / (1,1) | 正链命中（两侧实际窗口相等） | `pos_b' = pos_b` |
 | (0,1) / (1,0) | 负链命中（b 窗口 = RC(a 窗口)） | `pos_b' = b_len − k − pos_b` |
 
-负链 `pos_b'` 是 RC(b) 空间坐标；PSL 输出时用
-`reverse_range(q_start, q_end, q_size)` 还原原始坐标、strand 记 `-`。
+负链 `pos_b'` 是 RC(b) 空间坐标；PSL 输出时按 §1.3.4 还原。
 
-### 3.2 链化（简化 tube）
+#### 1.3.2 种子选择（FastGA `new_merge_thread` 语义，2026-08-02 移植）
 
-按 (contig_a, contig_b, 方向) 分组，命中按 (diag, pos_a) 排序后贪心：
+1. **最大共享前缀（plen）**：a 条目只对其在 b 中的最长匹配发种子，仅共享
+   plen 碱基的范围参与配对；短的部分匹配只有在它是该条目最长匹配时存活。
+2. **扩展范围频率过滤**：`freq` 作用于 plen 处的出现数（`occ < freq` 才
+   保留），而非固定窗口的条目数。
+3. **canonical 去重**：`pgi build` 每个位置同时存 fwd/RC 两个 key，a 侧只
+   保留 `kmer <= rc(kmer)` 的 canonical 条目（物理命中只发一次）。
+4. **floor = 12**：tube 默认 `min-shared` 为 FastGA 的 plen 下限 12；
+   greedy 默认 = k（精确匹配）。
 
-- 当前链从首个命中开始；
-- 延伸条件：`|diag − 链均线| ≤ band` 且 `Δpos_a ≤ max_gap` 且 `Δpos_b ≤ max_gap`；
-- 否则收链：两侧轴向上种子跨度 `(last + k − first) ≥ min_span` 才保留。
+#### 1.3.3 链化
 
-参数默认对齐 FastGA（-f 10 / -c 85 / -s 1000，本实现为未加倍空间）：
+- **greedy（默认）**：按 (contig_a, contig_b, 方向) 分组，命中按
+  (diag, pos_a) 排序后贪心延伸（`|diag−均线| ≤ band` 且 Δpos ≤ max_gap），
+  跨度 ≥ min_span 才保留；`--merge-gap` 合并相邻共线链（IS 元件等对角线
+  平移断链）。
+- **tube**：种子按对角线分桶（宽 64）→ 相邻桶对按 anti 归并（排序键
+  (diag 桶, anti)，§3.3 修过顺序 bug）→ tube 维护 anti 覆盖与对角线范围，
+  CHAIN_BREAK（1000 bp）断开、CHAIN_MIN（85 bp）触发。tube 扩展用
+  mid-line wave（BUCK_ANTI=128 滑动），`alast` 同组去重 + 输出端
+  `dedupe_contained`（0.95 阈值，§3.3 修过误删）。
 
-| 参数 | 默认 | FastGA 对应 |
-|---|---|---|
-| `--freq` | 10 | `-f`（任一侧频率超限即跳过） |
-| `--min-span` | 85 | `-c`（CHAIN_MIN） |
-| `--max-gap` | 1000 | `-s`（CHAIN_BREAK/2） |
-| `--band` | 128 | 对角线带宽（tube dgmin..dgmax） |
+#### 1.3.4 PSL 输出（UCSC 约定，负链是坑）
 
-### 3.3 PSL 输出
+- q = query、t = ref（`pgr pgi align <ref> <query>`）；
+- 每条链（greedy）/ 每窗（扩展）= 一个块；
+- **负链**：qStart/qEnd 必须正链帧、内部 qStarts 必须 RC 帧（与 `psl chain`
+  的 `calc_block_score` 一致）——§3.3 记录过整类 '-' 块被静默丢弃的 bug；
+- match/mismatch 计数来自扩展（v1 链块为 0，由 `psl chain` 重算）。
 
-- q = query 基因组，t = ref 基因组（`pgr pgi align <ref> <query>`）；
-- 每条链 = 一个块：q 区间 `[min_pos_b'..max_pos_b'+k)`，t 区间 `[min_a..max_a+k)`；
-- 负链块 q_start/q_end 走 RC 空间 → `reverse_range` 还原；
-- match/mismatch 计数置 0（链化只消费块结构；真实计数待 v2 扩展）。
-
-## 4. CLI
+### 1.4 CLI
 
 ```
 pgr pgi align <ref.pgi> <query.pgi> -o out.psl
   [--freq 10] [--min-span 85] [--max-gap 1000] [--band 128] [--merge-gap 5000]
+  [--min-shared N] [--workflow greedy|tube] [--parallel 8]
   [--ref-seq ref.fa|2bit] [--query-seq query.fa|2bit]
 ```
 
-- 参数默认对齐 FastGA（见 §3.2）；两侧索引参数必须一致（复用 `dist pgi` 校验）。
-- `--merge-gap`：相邻共线性链的合并阈值（插入序列造成的对角线平移断链，
-  见 §5.7）；
-- `--ref-seq`/`--query-seq`：提供序列后进入 v3 分窗 banded 扩展（16 kb 窗口 +
-  2 kb 重叠，巨型链也获得真实身份率，见 §5.4）。
+- 两侧索引参数必须一致（复用 `dist pgi` 校验）；
+- 无序列文件：每条链一个 PSL 块；有 `--ref-seq/--query-seq`：链细化成
+  带真实身份率的块（16 kb 窗口 + 2 kb 重叠滑动）；
+- query 索引必须是真实文件（mmap 不支持 stdin/gzip）。
 
-## 5. 验证
+## 2. 验证与基准
 
-1. 单元测试：归并方向解析（fwd/rev）、频率过滤、链化（band/gap/span 边界）；
-2. 集成测试：小序列人工 PSL 形状断言；
-3. E. coli：MG1655 自比对（`pgr pgi align`）全基因组覆盖 ~100%；
-   MG1655 vs 近缘株与 `FastGA -psl` 结果做覆盖/共线性结构对照（非字节一致）。
+### 2.1 测试基线
 
-## 5.1 实测结果（2026-08-02，release，默认参数）
+**912 测试全过**（2026-08-02；5.34 记录 908，+4 为 §3.6 的 mmap 测试）。
+回归覆盖：方向解析（fwd/rev）、频率过滤、链化边界（band/gap/span）、
+tube anti 序、dedupe 0.95 保留延伸块、最大前缀/扩展范围过滤、负链 RC 帧、
+多 contig（RC contig + 2% 突变）、mmap 与全量读入等价性；集成测试
+`tests/cli_pgi_align.rs`（identical / RC / mutation / tube）。
 
-**MG1655 自比对**（`mg1655.pgi` vs 自身）：
+### 2.2 当前基准（2026-08-02，真实数据，8 线程，release）
 
-- 745 块；其中**正链主链 = 1 块覆盖 4,641,650 / 4,641,652 bp（99.9999%）**；
-- 其余小块为真实重复结构（rRNA 操纵子、IS 元件等），负链 186 块对应反向重复
-  （rRNA 操纵子的反向拷贝）。
+| 对（MG1655 vs） | pgr chainnet 覆盖 | 块数 | pgr 耗时 | FastGA 覆盖/耗时 | pgr 峰值内存 | FastGA 峰值内存 |
+|---|---:|---:|---:|---:|---:|---:|
+| Sakai | 89.33% | 681 | 0.78s | 89.3% / ~0.7s | **224 MB** | 332 MB |
+| EC958 | 86.38% | 745 | 0.84s | 86.3% / ~0.7s | **206 MB** | — |
+| Nissle | 85.28% | 1205 | 0.79s | 85.30% / ~0.7s | **210 MB** | — |
 
-**MG1655 vs Sakai（O157）**：
+> 注：块数/覆盖按当前默认 `min-shared=12`（tube）实测；早期记录的
+> 588/794/793 块对应 k/2=20 时代（§3.2）。三对 PSL 与全量读入版
+> **逐字节一致**（mmap 改动验证）。FastGA 内存实测见 §5.1。
 
-| 指标 | pgr pgi align | FastGA -psl |
-|---|---|---|
-| 块数 | 1019 | 701 |
-| 正/负链 | 924 / 95 | 553 / 148 |
-| 查询覆盖总和（span 求和） | 4.44 Mb（95.7%） | 4.63 Mb（99.7%） |
-| 最大块 | 58 kb | 108 kb |
+阶段分布（Sakai，`RUST_LOG=debug` 探针）：merge **198 ms / 171 MB**、
+chain_tubes **244 ms / 218 MB**、extend **273 ms / 229 MB**，墙钟 0.78 s
+（另含索引流式读取、序列加载、PSL 写盘）；merge 命中 2,471,561。
 
-> 真实并集覆盖（2026-08-02 复核）：Sakai 75.8% vs FastGA 78.2%、Nissle
-> 双方均 77.3%——span 求和的 95.7%/99.7% 有重叠重复计数，**真实差距仅
-> ~2%**，且未覆盖区是株系特异序列。详见
-> [[../benchmarks/bench-pgi-align-vs-fastga.md]]。
+### 2.3 端到端管线验证（2026-08-02）
 
-差异符合 v1 预期：固定 k=40 精确种子在 ~5% 分歧区段断链，FastGA 的
-adaptamer（lcp 扩展）+ wave 对齐补平间隙。两者 PSL 均可被
-`pgr psl to-chain` 正常消费（pgr 2038 行 / FastGA 12007 行 chain）。
+`pgr pgi align` → `pgr psl to-chain` → `pgr pl chainnet --syn` 全链路，与
+FastGA 驱动版本对比 syntenic MAF：
 
-## 5.2 v2 局部扩展实测（2026-08-02，banded SW + `--ref-seq/--query-seq`）
+| 输入对 | 指标 | pgr 管线 | FastGA 管线 |
+|---|---|---:|---:|
+| MG1655 vs Sakai | syntenic 覆盖 | **87.7%**（392 块） | 89.3%（506 块） |
+| MG1655 vs Nissle | syntenic 覆盖 | **82.9%**（541 块） | 85.3%（711 块） |
 
-- 1019 块中 **1015 块被 banded 局部比对细化**（>30 kb 链回退为块，4 块）；
-- 扩展身份率 **98.41%**（4.20M match / 68k mismatch），FastGA 为 **97.83%**
-  （4.52M / 100k）——同区间参数下高度一致（差异来自块边界与覆盖范围）；
-- 并行化：扩展链 rayon `par_iter`，1019 块 20.5s → 2.0s（32 核），
-  输出与单线程逐字节一致。
+结论：管线端到端可用（0.4s），块结构比 FastGA 更平滑（392 vs 506 /
+541 vs 711）；覆盖差 1.6-2.4% 来自分歧区（FastGA 的 wave 能桥接 banded
+窗口跳过的低分区间）。角色约定：`pgr pgi align <ref> <query>` 的 PSL 是
+q=query/t=ref，FastGA 输出相反，喂 chainnet 前需 `pgr psl swap`。
 
-**v2 边界与已知取舍**：
+### 2.4 10 株 cohort 两两验证（45 对）
 
-- ~~>30 kb 链不扩展~~（v3 已解决：16 kb 窗口 + 2 kb 重叠沿链对角线滑动，
-  巨型链获得真实身份率，见 §5.4）；
-- ~~banded 局部比对用线性 gap~~（v3.1 已改为**仿射 gap**：M/I/D 三状态，
-  open -8 + extend -6；长 indel 表示为正确 gap 游程，块数 -25%，见 §5.8）；
-- 块内多段同源时只取最佳局部段（FastGA 同语义）。
-
-## 5.3 株系验证（2026-08-02，MG1655 vs 三株，v2 扩展）
-
-| query | pgr 扩展身份率 | FastGA 身份率 | 结构 |
-|---|---|---|---|
-| nissle1917（Nissle，重排株） | 97.62% | 97.09% | 双方均为 ~30–70 kb 共线性碎片块（大规模倒位） |
-| sakai（O157:H7） | 98.41% | 97.83% | 最大块 pgr 58 kb / FastGA 108 kb |
-| ec958（UPEC） | 97.60% | — | 最大块 ~30 kb |
-
-pgr 身份率稳定高于 FastGA ~0.5%（banded 局部比对取精确匹配核心；
-FastGA 的 wave 延伸进分歧区、覆盖更广）。注意：此表为 v2 时代数据，
-身份率只统计 ≤30 kb 的扩展块（>30 kb 链回退为无计数块）；v3 分窗扩展
-后全部链均有真实身份率（见 §5.4）。
-
-## 5.4 v3 分窗扩展实测（2026-08-02）
-
-- **自比对**：主链 331 个窗口（≥10 kb 块）身份率**精确 1.0000000**
-  （5.30M match / 0 mismatch）；整体 99.93%（其余为 rRNA/IS/反向重复
-  等真实重复结构的微小差异）；
-- **MG1655 vs Sakai**：全部 1093 块扩展，身份率 **98.42%**（4.49M/72k），
-  FastGA 97.83%（4.52M/100k）——匹配碱基量从 v2 的 4.20M 提升到 4.49M，
-  大链不再缺失；
-- 运行时间 2.0s（并行）。
-
-## 5.5 10 株 cohort 两两验证（2026-08-02，45 对，默认参数含 --merge-gap 5000）
-
-扩展块身份率矩阵（行×列 = ref×query；块数为扩展块数）：
+扩展块身份率矩阵（行×列 = ref×query；块数为扩展块数；默认参数含
+`--merge-gap 5000`）：
 
 | pair | 块数 | 身份率 |
-|---|---|---|
+|---|---:|---:|
 | mg1655–sakai | 862 | 0.9834 |
 | mg1655–nissle1917 | 1378 | 0.9746 |
 | mg1655–cft073 | 884 | 0.9739 |
@@ -217,667 +255,236 @@ FastGA 的 wave 延伸进分歧区、覆盖更广）。注意：此表为 v2 时
 | ec2011c_3493–se11 | 829 | 0.9908 |
 | ec958–se11 | 942 | 0.9727 |
 
-全部 45 对 ~60s 完成（并行扩展 + 链合并）。分布 97.0–99.6%，与 E. coli 株系亲缘
-关系一致（e24377a/se11/ec2011c_3493 聚类 99.1%+、nissle–cft073 99.6%）。
-合并块后身份率比无合并低 ~0.2–0.5%（合并块把分歧间隙区域计入计数，更接近真实）。
-注意：身份率基于种子链发现的块（偏保守区段），且块身份计数整体比 FastGA
-高 ~0.5%（banded 局部取精确核心）。
-
-## 5.6 性能（2026-08-02，与 FastGA 端到端持平）
-
-`pgr pgi align` 全流程（索引 ×2 + 扩展比对）1.32s vs FastGA 单命令 1.22s
-（**1.08×**，MG1655 vs Sakai）。优化两个关键点：
-
-1. **banded DP 内层按带限列迭代**：只扫 `|j−i−diag0|≤band` 的 65 列而非
-   全部 16000 列（原实现 246× 浪费）；
-2. **窗口级负载均衡**：所有链的所有窗口摊平进同一 rayon 流——自比对主链
-   332 窗口不再成为单线程长尾（37.8s → 0.84s，45×）；跨株 2.0s → 0.66s。
-
-修复前后输出逐字节一致。详见
-[[../benchmarks/bench-pgi-align-vs-fastga.md]]。
-
-## 5.7 链合并（--merge-gap，2026-08-02）
-
-插入序列（IS 元件等）使局部对角线平移超出 band，把同一共线性块切成多条
-贪心链。新增链后合并：同 (contig_a, contig_b, strand) 组、间距 ≤
-`--merge-gap`（默认 5000）、对角线差 ≤ band 的相邻链合并为一个块。
-
-| 输入对 | merge-gap 0 | merge-gap 5000 |
-|---|---:|---:|
-| MG1655 vs Sakai | 1019 块 / 最大 58 kb / 覆盖 4.44 Mb | 718 块 / 最大 83 kb / 4.51 Mb |
-| MG1655 vs Nissle | 1634 块 / 最大 30 kb / 4.46 Mb | 1259 块 / 最大 64 kb / 4.54 Mb |
-
-块数 -23~30%、最大块 +40~100%、覆盖 +1.6~1.8%。剩余断链主要来自真实
-重排（对角线差超 band，不合并）与分歧区（>5 kb 间隙），后者需
-adaptamer/lcp 变长种子（未来工作）。
-
-## 5.8 仿射 gap 扩展（2026-08-02，v3.1）
-
-banded 局部比对从线性 gap（每次 -8）升级为**仿射 gap**（M/I/D 三状态：
-open -8 + extend -6，`AlignmentParams` 默认参数），长插入（IS 元件等）
-被表示为正确的 gap 游程而非碎成多个块。
-
-| 输入对 | 线性 gap 块数 | 仿射 gap 块数 | 缩减 |
-|---|---:|---:|---:|
-| MG1655 vs Sakai | 4710 | **3512** | -25% |
-| MG1655 vs Nissle | 7451 | **5609** | -25% |
-
-身份率不变（0.9834/0.9747——对齐内容等价，仅 indel 结构更干净）。
-匹配碱基 +225、错配 -44（Sakai），CIGAR 质量明显改善。
-
-## 5.9 adaptamer 部分种子：负结果（2026-08-02）
-
-按 FastGA 的 lcp 归并机制（plen ≥ 12 的部分匹配种子，`--min-shared`）实现
-并实测，**所有阈值均劣于精确匹配**（MG1655 vs Sakai，默认参数）：
-
-| min_shared | records | blocks | identity |
-|---|---:|---:|---:|
-| 40（精确，默认） | 862 | 3512 | 0.9834 |
-| 30 | 1130 | 4657 | 0.9827 |
-| 25 | 1302 | 6072 | 0.9810 |
-| 20 | 1614 | 8680 | 0.9781 |
-| 12（FastGA plen 下限） | 3375 | 53015 | 0.9496 |
-
-**原因**：部分种子（共享 12-39 碱基）在分歧区既补充同源种子，也带来大量
-假阳性弱种子；我们的贪心链化 + banded 扩展没有 FastGA tube/wave 那样的
-种子质量区分机制，弱种子生成大量低质量新链并拉低身份率。
-
-**结论**：adaptamer 的收益依赖 FastGA 的链化/扩展机制，不能直接移植到当前
-管线。保留 `--min-shared` 作为实验开关（默认 = k 精确匹配），后续若引入
-FastGA 式 tube 链化再重新评估。
-
-## 5.10 端到端管线验证（2026-08-02）
-
-`pgr pgi align` → `pgr psl to-chain`（chainnet 内部）→ `pgr pl chainnet
---syn` 全链路，与 FastGA 驱动版本（`FastGA -psl` → `pgr psl swap` 对齐
-q/t 角色 → 同一 chainnet）对比 syntenic MAF：
-
-| 输入对 | 指标 | pgr 管线 | FastGA 管线 |
-|---|---|---:|---:|
-| MG1655 vs Sakai | syntenic 覆盖 | **87.7%**（392 块） | 89.3%（506 块） |
-| MG1655 vs Nissle | syntenic 覆盖 | **82.9%**（541 块） | 85.3%（711 块） |
-
-结论：
-- 管线端到端可用（0.4s 产出 syntenic MAF），块结构**比 FastGA 更平滑**
-  （块更少：392 vs 506 / 541 vs 711）；
-- 覆盖差 1.6-2.4%，来源是分歧区：FastGA 的 wave aligner 能桥接 banded
-  窗口跳过的低分区间（同 §5.4 观察）；
-- 角色约定：`pgr pgi align <ref> <query>` 的 PSL 是 q=query/t=ref；
-  FastGA 的 PSL 是 q=source1/t=source2，两者互换，喂 chainnet 前需
-  `pgr psl swap`（或调整参数顺序）。
-
-## 5.11 Myers wavefront 扩展器：移植与负结果（2026-08-02）
-
-按 FastGA 技术路径移植了 `align.c forward_wave` 的 Myers wavefront 核心
-（V[k] 波前 + 三分支更新 + snake + 逐波前驱精确回溯，锚点双向扩展），
-见 `src/libs/alignment/wave.rs`（单元测试通过：全等/单错配/插入路径）。
-作为独立实现保留，**不接入当前管线**。
-
-接入测试（替换 banded 作为窗口扩展引擎，两种锚点策略）：
-
-| 引擎 | PSL 块数 | chainnet syntenic 覆盖 |
-|---|---:|---:|
-| banded（当前） | 3512 | **87.7%** |
-| wave（窗口中心锚点） | 6477 | 71.6% |
-| wave（最近匹配锚点） | 12184 | 32.7% |
-
-**负结果**：unit-cost 波前对 indel 无 gap 结构偏好，CIGAR 碎片化（块数
-3-4×）；且波前从锚点贪心延伸，产出大量无法通过 syntenic 过滤的低质量块。
-**根因**：FastGA 的 wave 依赖其 tube 链化（`align_contigs`）提供的锚定
-上下文与阈值（ALIGN_MIN/ALIGN_RATE）；脱离该上下文单独移植扩展器不成立。
-
-**下一步**：移植 tube 链化（种子流 → anti-diagonal 桶 → tube → 每 tube
-wave 扩展），届时 wave 引擎按 FastGA 语义接入；在此之前 banded 保持默认。
-
-## 5.12 tube 链化移植
-
-按 FastGA `align_contigs` 移植了 **tube 链化**（`chain_tubes`）：
-种子按对角线分桶（宽 64）→ 相邻桶对按 a 位置归并 → 维护 tube
-（anti 覆盖 = 种子区间并集、对角线范围），`CHAIN_BREAK`（1000 bp）断开、
-`CHAIN_MIN`（85 bp）触发。单元测试通过（共线合并/断链/覆盖过滤）。
-
-## 5.13 FastGA `Local_Alignment` 移植完成（2026-08-02）
-
-按 FastGA `align.c` 完整移植了 mid-line wave 局部比对器：
-
-1. **`forward_wave_mid`**（`src/libs/alignment/wave.rs`）：0-wave 在 tube 对角
-   带 [dgmin..dgmax] 的每个对角线上从 mid-line（anti=amid）起 snake，波前每
-   波扩展 ±1 对角线；保留 `PATH_LEN=60` 位匹配向量 + `PATH_AVE=42` 门控
-   （trim point = 最后一个窗口匹配数达标的 best），`TRIM_MLAG=250` 终止、
-   `WAVE_LAG=70` 剪枝，内存与波带宽度成正比（不存全历史）；
-2. **Myers O(ND) 分治回溯**（`split_nd` + `dandc_nd`，FastGA 的
-   substitution=1 度量）：两个 wave 端点之间的 span 由 D&C 精确重建编辑脚本
-   （D/I 操作，替换为隐式），`ops_to_columns` 还原 CIGAR 列；
-3. **`local_alignment`**：正向 wave（向上）+ 镜像反向 wave（向下）+
-   `DUB_TRIM` 短扩展重试，输出 q/t 对齐列；
-4. **tube 循环**（`extend_tube`）：`BUCK_ANTI=128` 滑动 mid-line，`alow` 推进
-   到 forward 端点（eant），`alast` 按（contig 对、strand、对角线桶）分组去重
-   （FastGA 的 `alast` 每对相邻桶重置，不能跨组携带）。
-
-**MG1655 vs Sakai 对照**（`--workflow tube`，默认 greedy 未变）：
-
-| 方案 | PSL 块 | chainnet syntenic 覆盖 | 耗时 | 峰值内存 |
-|---|---:|---:|---:|---:|
-| 贪心链 + banded（默认） | 862 | 87.7%（392 块） | 1.36s | 1.38 GB |
-| **tube + Myers wave（新）** | 643 | **88.2%**（517 块） | 8.7s | 425 MB |
-| FastGA 管线 | 701 | 89.3%（506 块） | ~0.7s | ~0 MB |
-
-结论：质量已超过贪心基线并逼近 FastGA（覆盖差 1.1%）；内存比 banded 低 3×。
-**速度仍是短板**（8.7s vs FastGA 0.7s）：单次 `Local_Alignment` 成本 ~0.18ms、
-调用数 ~4 万（FastGA 写入 967 条比对，失败调用也远少于我们），差距来自：
-
-- FastGA 的 CIGAR 由 wave 自身的 Pebble 稀疏 trace 产生（`dandc_nd` /
-  `Compute_Alignment` 在 FastGA 源码中是**死代码**，从未被调用）；我们每次
-  调用都跑完整 D&C + 列重建；
-- FastGA 失败调用的 trim 终止更快、波带内单元更简单（C 内联数组）。
-
-## 5.14 性能对齐：调用数与 tube 结构（2026-08-02）
-
-给 FastGA 源码加计数器重新编译后实测（MG1655 vs Sakai）：
-
-**FastGA 总共只有 1062 次 `Local_Alignment` 调用**（含失败），每 tube 平均
-1.4 次；其 tube 平均 7.7 kb、最大 119 kb。我们 8.7s 的根因是 **~4 万次调用**
-（tube 平均 30 kb、最大 2.4 Mb——精确 40-mer 种子太密，把 ~45-70% 身份的
-分歧岛桥接成巨型 tube，mid-line 以 ~90-230 bp 步长在里面滑动）。
-
-已应用的优化（质量不变：Sakai 88.2% / Nissle 84.0%）：
-
-1. **tube 并行化**：tube 间无依赖（`alast` 重叠跳过被并行 + 输出端
-   `dedupe_contained`（双轴 ≥80% 重叠去重）替代）；
-2. **反向/互补序列预计算**：`rt`/`rq` 从每 tube 分配改为每 contig 一次；
-3. **tube anti 上限 40 kb**：巨型 tube 切片成并行任务（负载均衡）。
-
-最终：8.7s → **1.7-1.9s**（8 线程），峰值内存 ~0.8 GB。
-
-**进一步实验（2026-08-02，均记录避免重试）**：
-
-- 调用统计：58,370 次调用中 **386 个零块 tube 消耗 53,333 次（91%）**——失败
-  调用都在 ~45-70% 身份的分歧岛内（wave trim 冻结后空转 ~70-99 波）；
-- **trim 冻结早退**（保留）：`last_good` 连续 60 波不更新即提前终止——失败
-  调用的端点其实在 wave ~10-20 波就冻结了，早退只省空转、质量不变
-  （88.2% 保持，1.85s→1.73s）；
-- `CHAIN_BREAK` 调小（300/100 bp）：更慢（tube 碎片化、重叠调用更多）且掉
-  质量（87.3%）——不是正确的杠杆；
-- 中心对角线滑窗身份率门控：太激进（覆盖 88.2%→70.9%，薄保守区/偏移对角线
-  被误杀）；
-- 种子覆盖密度门控（cov/span）：零块与生产性 tube 分布重叠，无法干净区分；
-- 种子邻近门控（amid ±300bp 内无种子则跳过）：无效——失败调用的 amid 本来
-  就在种子附近（分歧岛内也有稀疏 exact-40 hit）。
-
-结论：剩余差距（~1.7s vs FastGA 0.7s）来自失败调用数量，而失败调用根植于
-种子结构（我们的 exact-40 hit 桥接分歧岛、tube 平均 19.8kb vs FastGA 7.4kb；
-FastGA 的链在岛边缘断开，其链形成种子同为 363 万条密集分布，断链机制与其
-adaptamer 种子选择/对角桶处理相关，尚未完全复刻）。
-
-## 5.15 大 tube 同源门控（2026-08-02，保留）
-
-前一轮尝试的各种门控失败后，最终找到可用的版本：**对 span > 10 kb 的大 tube
-做多对角线滑窗身份检查**：
-
-- 9 条对角线横跨 tube 带（[dgmin..dgmax] 均匀采样），每条对角线上沿 anti
-  轴滑 64 bp 窗口，取最大窗口身份率；
-- 所有对角线、所有窗口的最大值 < 50%（64 bp 窗口内匹配 < 32）→ 跳过整个
-  tube（只产生被拒绝的调用）；
-- 只查大 tube（小 tube 便宜、薄保守区由 wave 兜底），成本 ~0.05s。
-
-为什么之前的门控不行、这个行：128 bp 窗口会混入分歧侧翼把身份率拉低（误杀
-薄块）；只查中心对角线会漏掉偏移对角线上的同源；多对角线 + 64 bp 窗口 +
-50% 阈值三者组合后误杀率≈0（Sakai/Nissle 覆盖与无门控完全一致）。
-
-最终效果（8 线程）：
-
-| 对 | chainnet 覆盖 | 耗时 | 峰值内存 |
-|---|---:|---:|---:|
-| MG1655 vs Sakai | 88.2%（512 块） | **1.52s** | ~0.8 GB |
-| MG1655 vs Nissle | 83.9%（741 块） | **1.55s** | 0.74 GB |
-
-与上轮（无门控 1.73-1.85s）比再快 ~15%，质量不变；累计相对最初 8.7s 为
-**5.7×**。距 FastGA（0.7s / 89.3%）仍有 ~2.2× 速度差与 ~1.1% 覆盖差。
-
-## 5.16 tube 合并顺序 bug 修复（2026-08-02，质量 +0.7%）
-
-追查 1.1% 覆盖差时发现 `chain_tubes` 的一个真实 bug：桶内种子按
-**(diag, a_pos)** 排序、合并按 **a_pos**——当对角线在桶内漂移时（真实案例：
-diag -4492 的种子在 a_pos 112701，diag -4490 的种子在 a_pos 111544+），
-anti 顺序与 a_pos 顺序相反，导致：
-
-- 高 anti 的种子先被处理并抬高 `ahgh`，低 anti 的稠密种子随后全部落入
-  `anti < ahgh` 分支，`cov` 不累计（实测 cov=42 < CHAIN_MIN=85）→ **整管被
-  丢弃**；
-- 缺失区域（t 111544-121197，98.4% 身份、7762 个 hit）因此完全无 tube。
-
-修复：排序键改为 **(diag 桶, anti)**，合并按 **anti**（FastGA 的
-`ipost`-ordered merge，`if (apost < ipost)` 取小者）。新增回归测试
-（`tube_merge_uses_anti_order_when_diagonal_drifts`）。
-
-效果（8 线程）：
-
-| 对 | 修复前 | 修复后 | FastGA |
-|---|---:|---:|---:|
-| MG1655 vs Sakai | 88.2% / 512 块 / 1.52s | **88.9%** / 517 块 / 1.52s | 89.3% |
-| MG1655 vs Nissle | 83.9% / 741 块 / 1.55s | **84.4%** / 743 块 / 1.43s | 85.3% |
-
-与 FastGA 的覆盖差从 ~1.1-1.4% 缩小到 **0.4-0.9%**；缺失区域从 55 kb 降到
-25 kb。速度不变（tube 结构修正后并行负载更均衡）。
-
-## 5.17 dedupe 误删延伸块（2026-08-02，覆盖 +3.2 kb）
-
-继续追剩余缺失区发现第二个 bug：`dedupe_contained` 的 80% 双轴重叠阈值
-会删除**延伸块**——同一 tube 连续两次调用产生的块重叠 ~87%（第二次反向
-波延伸更远），若第二次的延伸恰好是真实覆盖（实测：t=4094559..4118787
-比 t=4094464..4115709 多覆盖 3.1 kb 的 90.9% 身份区），会被误判为重复删掉。
-
-修复：重叠阈值 0.8 → **0.95**（只删相邻桶 tube 的近似完全重复块，保留有
-真实延伸的块）。新增回归测试 `dedupe_keeps_blocks_that_extend_earlier_ones`。
-
-效果：Sakai 覆盖 4,124,601 → **4,127,886 bp**（88.9% 不变，缺失 24.9→21.7
-kb）；Nissle 84.4% 保持；耗时不变（~1.5s）。
-
-剩余缺失（21.7 kb / 324 个小区域）经查均为 **indel 复杂区**：精确 40-mer 在
-固定对角线上 0 或极少共享（如 t 2451275-2455928 与 FastGA 块同偏移身份仅
-28%、共享 40-mer 为 0），FastGA 靠 adaptamer 部分种子 + wave 跨越内部漂移。
-这属于剩余的 adaptamer 种子选择工作。
-
-## 5.18 调用数骤降与排序优化（2026-08-02，总耗时 1.5s→1.0s）
-
-anti 序合并修复的连锁效应：**tube 结构与 FastGA 对齐**（748 个 tube、平均
-15.4 kb vs FastGA 815 条/14.8 kb），调用数从 58,370 骤降到 **883**（FastGA
-1062），每 tube 平均 1.03 次调用；顺序耗时 11.4s → 2.7s。
-
-剩余瓶颈变为流水线开销，阶段实测（8 线程）：
-
-| 阶段 | 耗时 |
-|---|---:|
-| merge_seed_hits（顺序） | 139 ms |
-| chain_tubes 排序 | 275 ms（原 741 ms） |
-| extend（wave 调用） | 414 ms |
-| 加载（pgi×2 + fasta×2）+ PSL 写 | ~0.4 s |
-
-排序优化：sort key 打包成单个 u128（contig/strand/对角桶+偏移/anti），并改用
-rayon `par_sort_unstable_by_key`（741→275 ms）。
-
-**最终对照（8 线程）**：
-
-| 对 | chainnet 覆盖 | 耗时 | 峰值内存 |
-|---|---:|---:|---:|
-| MG1655 vs Sakai | 88.9%（520 块） | **0.97s** | 569 MB |
-| MG1655 vs Nissle | 84.4%（744 块） | **1.17s** | 783 MB |
-| FastGA | 89.3% / 85.3% | 0.7s | ~0 MB |
-
-距 FastGA：速度 1.4-1.7×，覆盖差 0.4-0.9%。剩余瓶颈：extend 的 wave 每调用
-成本（~0.47ms，Rust vs C 单元开销）、merge 顺序扫描、加载开销；indel 复杂区
-覆盖需 adaptamer 部分种子。
-
-## 5.19 pgi 读取批量解析（2026-08-02）
-
-阶段实测发现 **pgi 索引加载（114 MB × 2 个文件）占 ~0.5s，是全流程最大单项**。
-`PgiIndex::read` 原来逐记录 `read_exact`（380 万条 × trait 对象虚拟分发），
-改为 **1 MB 分块批量读取 + 切片解析**（块大小按 `rec_size` 对齐，避免错位）。
-加载从 ~0.7s 降到 ~0.5s（greedy 无序列路径实测 0.70→0.52s）。
-
-最终全流程 ~1.0-1.2s（8 线程，Sakai），903 测试全过（含 pgi 读写测试）。
-
-## 5.20 tube workflow 默认部分种子（2026-08-02，质量 89.1%/84.7%）
-
-剩余 21.7 kb 覆盖差是 indel 复杂区（精确 40-mer 在固定对角线 0 共享）。anti
-修复后重测 `--min-shared`：
-
-- `--min-shared 20`（k/2）：Sakai **89.1%**（+0.2%）、Nissle **84.7%**（+0.3%），
-  耗时 ~1.2-1.4s；freq 过滤把 hit 增量限制在 +20%（393.9 万 vs 326.8 万）；
-- `--min-shared 30`：反而更差（88.8%）——部分匹配噪声未被抑制；
-- 结论：FastGA 默认就是部分种子（adaptamer 共享 ~31/40 bp），把 **tube
-  workflow 的默认 min-shared 改为 k/2**（greedy 保持 exact 默认，862 块不变）。
-
-最终（8 线程，tube 默认参数）：
-
-| 对 | chainnet 覆盖 | 耗时 |
-|---|---:|---:|
-| MG1655 vs Sakai | **89.1%**（586 块） | 1.24s |
-| MG1655 vs Nissle | **84.7%**（793 块） | 1.22s |
-| FastGA | 89.3% / 85.3% | 0.7s |
-
-覆盖差缩至 **0.2-0.6%**；剩余缺失 ~15 kb 需 adaptamer 最小种子**选择**（抑制
-部分匹配噪声，FastGA 的 `is_minimal` 语义）而非盲目的部分匹配。
-
-## 5.21 merge 并行化（2026-08-02）
-
-`merge_seed_hits` 的每条目前缀查询彼此独立，按 4096 条分块用 rayon 并行合并
-（输出顺序自由——链化都会重排）：139 ms → **61 ms**。pgi 解析并行化试验无益
-（瓶颈是 114 MB 的磁盘读取而非解析，已回退）。
-
-最终（8 线程，tube 默认参数）：Sakai 89.1%/586 块/~1.1s，Nissle
-84.7%/793 块/~1.2s；903 测试全过。剩余瓶颈：pgi 加载（磁盘 I/O，~0.4s）、
-chain 排序、extend 的 wave 每调用成本、15 kb indel 复杂区。
-
-## 5.22 移除大 tube 同源门控（2026-08-02，Sakai 与 FastGA 持平 89.3%）
-
-追查最大缺失区（t 367590-374927，7.3 kb，99% 身份、4160 个共享 40-mer）发现
-是**门控误杀**：门控的对角线采样步长 ~13 bp，真实比对对角线 -58601 落在采样
-点之间——采样对角线与真实差 2 bp（两轴各 1 bp 反向偏移）时，滑窗身份率只有
-~25%（best=31 < 32）→ 整管被跳过。
-
-门控当初是为 91% 的空转调用加的；**anti 序修复后调用数已从 58k 降到 ~900**，
-零块 tube 只剩 83 个（18 次调用），门控收益消失、只剩误杀。直接移除。
-
-效果：
-
-| 对 | 移除前 | 移除后 | FastGA |
-|---|---:|---:|---:|
-| MG1655 vs Sakai | 89.1%（586 块） | **89.3%**（588 块） | 89.3%（506 块） |
-| MG1655 vs Nissle | 84.7%（793 块） | **84.7%**（793 块） | 85.3%（711 块） |
-
-Sakai 覆盖与 FastGA **完全持平**；缺失从 15 kb 降到 7.7 kb（剩余为 indel 复杂
-小区域）；耗时不变（~1.2s）。教训：门控类启发式在根因修复后要及时复核，
-否则会从"省时"变成"漏块"。
-
-## 5.23 并行瓶颈修复：速度与 FastGA 持平（2026-08-02，~0.7s）
-
-阶段计时发现并行效率差：chain 316ms、extend 470ms（32 线程时反而比 8 线程
-慢）——不是算法问题而是**资源争用**：
-
-1. **每 tube 的 q 分配**：正链 tube 也 `to_vec()` 复制 5.5 MB 主染色体，857
-   个 tube 的分配在 allocator 上串行。改为 `Cow<[u8]>`——正链零拷贝借用、
-   仅负链分配 RC：extend 32T 从 470→179ms；
-2. **tube 形成串行**：`tubes_for_group` 的相邻桶对合并彼此独立，改用 rayon
-   并行（collect 保序）：chain 312→198ms。
-
-最终（默认 32 线程）：
-
-| 对 | chainnet 覆盖 | 耗时 | 峰值内存 |
-|---|---:|---:|---:|
-| MG1655 vs Sakai | **89.3%**（588 块） | **0.69-0.79s** | ~0.96 GB |
-| MG1655 vs Nissle | **84.7%**（793 块） | **0.74s** | 0.79 GB |
-| FastGA | 89.3% / 85.3% | 0.7s | ~0 MB |
-
-**速度已与 FastGA 持平**；Sakai 质量持平，Nissle 差 0.6%（7.7 kb indel 复杂
-小区域）。剩余：内存（~0.8-1 GB，pgi 全量载入 vs FastGA mmap）、Nissle 0.6%。
-
-## 5.24 内存 33% 削减（2026-08-02，~0.64 GB @ 8 线程）
-
-- `drop(hits)`：tube 形成后 hits（~95 MB）不再需要，提前释放；
-- 加上上轮的 q `Cow`（消除每 tube 5.5 MB 正链复制），8 线程峰值内存
-  **~960 → 639 MB**，32 线程 ~825 MB；耗时不变（0.69-0.76s）。
-
-剩余内存构成：pgi 全量载入（entries+positions ~274 MB × 2 索引）、并行 dandc
-暂存（大 span 的 `split_nd` 数组）、链化临时排序。FastGA 用 mmap 保持 ~0 MB
-RSS；pgi 侧做 mmap/惰性加载可进一步降低，但需新依赖或 unsafe。
-
-## 5.25 Nissle 基线核实（2026-08-02，结论修正）
-
-追查 Nissle 0.6% 覆盖差时曾怀疑 `nissle1917.fa.gz` 被替换、FastGA 基线无效。
-深入核实后**撤回该结论**：
-
-- `git HEAD` 与工作树的 nissle1917.fa.gz 内容**逐字节相同**（文件未变）；
-- 所谓"坐标不一致"是 **naive 偏移身份检查的误区**：该区域含密集 indel
-  （每 ~300 bp 一个），naive 同偏移身份 ~25% 但共享 40-mer 达 8990/10258
-  （~99% 相关）——对齐真实存在、坐标正确；
-- 我们自己的块（t 4508973-4519270 ↔ ns 261268 负链，10231 匹配）经同样
-  验证是真实的。
-
-结论：Nissle 的 85.3% FastGA 基线**有效**；我们 84.7% 的 0.6% 差距是真实的
-（Nissle 更分歧，indel 复杂区占比更高——同 §5.20 的 adaptamer 部分种子
-范畴）。调查过程再次验证"对含 indel 的对齐不能用 naive 偏移身份判断"。
-
-进一步分析（§5.27 前）：抽查最大缺失区（t 2058021-2062339，2.2 kb）发现
-**对齐本身是正确的**——wave 产出 t=2057983..2062365（4257 匹配、diffs=135），
-PSL 中存在，但 chainnet 在重复区把该块过滤出 syntenic MAF。因此 Nissle 的
-"缺失"包含两个成分：(1) chainnet 对重复区单块的过滤差异；(2) 真正无种子的
-indel 复杂区。对齐层面的质量与 FastGA 一致。
-
-## 5.26 第三基准验证：MG1655 vs EC958（2026-08-02）
-
-用第三个基准对验证泛化性（ec958.fa.gz 今天 02:23 也改过，但 FastGA 输出与
-当前文件坐标一致，基线有效）：
-
-| 方案 | chainnet 覆盖 | 块数 | 耗时 |
-|---|---:|---:|---:|
-| 我们（tube，默认参数） | **86.2%** | 794 | 0.71s |
-| FastGA | 86.3% | 707 | ~0.7s |
-
-覆盖差 **0.1%**（缺失 18.9 kb，但多覆盖 12.6 kb——净差很小）；速度持平。
-
-三个基准汇总（有效基线的两个）：
-
-| 对 | 我们 | FastGA | 差 |
-|---|---:|---:|---:|
-| MG1655 vs Sakai | 89.3% | 89.3% | 0.0% |
-| MG1655 vs EC958 | 86.2% | 86.3% | 0.1% |
-| MG1655 vs Nissle | 84.7% | 85.3% | 0.6% |
-
-## 5.27 链化排序索引键与最终状态（2026-08-02）
-
-`chain_tubes` 的并行排序改用 `(u128 key, u32 index)` 元组（替代 `&SeedHit`
-引用），瞬态缓冲减半；903 测试全过，质量/速度不变。
-
-进一步的内存优化：`align_to_psl_ext` 改为按值接收 PgiIndex，在链化完成后
-`mem::take` 释放 entries/positions（每索引 ~140 MB）——extend 阶段不再持有
-k-mer 索引。32 线程峰值内存 **875 → 639 MB**（Sakai）、EC958 566 MB，8/32
-线程峰值一致；质量/速度不变。
-
-**最终状态**（8-32 线程，tube 默认参数 = min-shared k/2）：
-
-| 对 | 我们 | FastGA | 差 |
-|---|---:|---:|---:|
-| MG1655 vs Sakai | 89.3% / 588 块 / 0.7-0.84s | 89.3% / 506 块 / 0.7s | **0.0%** |
-| MG1655 vs EC958 | 86.2% / 794 块 / 0.71s | 86.3% / 707 块 | **0.1%** |
-| MG1655 vs Nissle | 84.7% / 793 块 / 0.66s | 85.3% / 711 块 | 0.6% |
-| 峰值内存 | 0.64-0.88 GB | ~0 MB（mmap） | — |
-
-质量（对齐层面，两个有效基线）与速度均与 FastGA 持平。剩余差距与方向：
-
-1. **Nissle 0.6%**：当时归因为 chainnet 对重复区单块的过滤差异 + 真正无
-   种子的 indel 复杂区（需 adaptamer 最小种子选择，`is_minimal` 语义；
-   mid-line 窗口身份率预过滤**不可行**，会误杀反向延伸穿过分歧口袋的
-   有效调用）。**事后更正**：主要成分是 §5.30 的负链 PSL 坐标 bug，修复后
-   差缩至 0.015%（种子选择移植见 §5.29，`is_minimal` 实为 canonical
-   方向判断而非噪声抑制）；
-2. **内存 0.64-0.88 GB**：pgi 全量载入（entries+positions ~274 MB × 2 索引）
-   + 并行 dandc 暂存；FastGA 用 mmap 保持 ~0 MB RSS，mmap/惰性加载需新
-   依赖或 unsafe（AGENTS.md 限制）。
-
-`chain_tubes`（`src/libs/pgi/align.rs`）与 wave 引擎
-（`src/libs/alignment/wave.rs`）均为独立可测组件。
-
-## 5.28 位置表 u64 位域打包（2026-08-02，内存再降 ~5%）
-
-`PgiIndex::positions` 由 `Vec<(u32, u32, u8)>`（12 B/元素）改为 `Vec<u64>`
-位域（pos 32 bit | cid 20 bit | strand 1 bit，8 B/元素），**磁盘格式不变**
-（v2 序列化循环只是改了解包/打包方向）。`pack_position`/`unpack_position`
-在 `src/libs/pgi/mod.rs`，build/read/write/merge 同步更新；cid 上限 2^20
-（约 10^6 contigs，debug_assert 防越界）。
-
-实测（32 线程，tube 默认参数）：
-
-| 对 | chainnet 覆盖 | 块数 | 耗时 | 峰值内存 |
-|---|---:|---:|---:|---:|
-| MG1655 vs Sakai | 89.3% | 588 | 0.82s | 639 → 607 MB |
-| MG1655 vs EC958 | 86.2% | 794 | 0.72s | 566 → 535 MB |
-| MG1655 vs Nissle | 84.7% | 793 | 0.77s | 538 MB |
-
-质量/速度不变；904 测试全过（新增 pack/unpack 往返测试）。positions 在
-内存构成中占比 ~15%，8 B/记录已接近该结构的物理下限；再降需动 entries
-（kmer u128 + 偏移 u32×2 = 24 B，可压缩 kmer 位宽或改 mmap/惰性加载，
-后者受 AGENTS.md 新依赖/unsafe 限制）。
-
-## 5.29 adaptamer 种子选择移植：最大共享前缀 + canonical 去重（2026-08-02）
-
-对照 FastGA 源码（`FASTGA-main/FastGA.c` 的 `new_merge_thread`）修正
-`merge_seed_hits` 的种子选择语义：
-
-1. **最大共享前缀（plen）**：FastGA 每个 T1（a）条目只对其在 T2（b）中的
-   最长匹配发种子——扩展出 `plen = max lcp` 后仅共享 `plen` 碱基的范围参与
-   配对；短的部分匹配只有在它是该条目**最长**匹配时才存活。旧实现是固定
-   窗口内全发射（每个 lcp ≥ min_shared 的 b 条目都配对），弱种子制造大量
-   低质量链。
-2. **扩展范围频率过滤**：`freq` 过滤作用于 **plen 处的出现数**
-   （`occ < freq` 才保留，FastGA `hgh >= top` 即跳过），而非固定窗口的
-   条目数。
-3. **canonical 去重**：`pgi build` 每个位置同时存 fwd/RC 两个 key，导致
-   每个物理命中发射两次；按 FastGA 单方向存储语义，a 侧只保留
-   `kmer <= rc(kmer)` 的 canonical 条目（与 `is_minimal` 同思路——更正
-   §5.20 的误解：`is_minimal` 是 canonical 方向判断，不是噪声抑制；真正的
-   噪声抑制是 plen 最大选择 + 扩展范围过滤）。
-4. **floor = 12**：tube 默认 `min-shared` 由 k/2=20 改为 FastGA 的 plen
-   下限 12。配合最大选择后 12-19 bp 的锚点补上 indel 复杂区（§5.9 的
-   min-shared 12 灾难是"无最大选择 + 贪心链化"所致，机制不同）。
-
-实测（32 线程，tube 默认参数）：
-
-| 对 | 种子数 | chainnet 覆盖（前 → 后） | 块数 | 耗时 | 峰值内存（前 → 后） |
-|---|---:|---:|---:|---:|---:|
-| MG1655 vs Sakai | 247 万 | 89.26% → **89.31%** | 589 | 0.78s | 607 → **586 MB** |
-| MG1655 vs EC958 | 227 万 | 86.17% → **86.36%** | 845 | 0.71s | 535 → **475 MB** |
-| MG1655 vs Nissle | 233 万 | 84.74% → **84.98%** | 842 | 0.76s | 538 → **463 MB** |
-| FastGA | 190 万 | 89.3% / 86.3% / 85.3% | — | ~0.7s | ~0 MB |
-
-覆盖三项全部达到或超过 FastGA（Nissle 差 0.32%），速度持平，内存不升反降
-（种子减半）。身份率同步上升（Sakai 97.52→97.65%，Nissle 96.68→96.73%）。
-906 测试全过（新增最大前缀/扩展范围过滤单元测试）。
-
-## 5.30 负链 PSL 坐标约定 bug：所有 '-' 块被 psl chain 静默丢弃（2026-08-02）
-
-追查 Nissle 剩余差时发现一个**覆盖级的 bug**：`pgi align` 写出的负链 PSL 块
-坐标帧与 UCSC/`psl chain` 约定相反——我们输出 qStart/qEnd 用 RC 空间、内部
-qStarts 用正链坐标，而约定（FastGA 与 kent 工具）是 **qStart/qEnd 用正链、
-内部 qStarts 用 RC 帧**。后果：`psl chain` 的精确打分（`calc_block_score`
-按 RC 帧读 qStarts）对每个 '-' 块得到大额负分 → 全部低于 min-score →
-**所有负链比对在链化阶段被静默丢弃**。此前 MAF 中 '-' 块数为 0（FastGA
-Sakai 3 个 / EC958 11 个 / Nissle 9 个）。
-
-根因：`Psl::from_align` 期望调用方传正链坐标（axt 路径已预先 reverse_range，
-有 `axtToPsl.c` 注释为证），而 pgi 两个调用点（`extend_tube`、
-`extend_window`）和 `chain_to_psl` 直接传了 orientation/RC 空间坐标。
-
-修复（`src/libs/pgi/align.rs`）：
-
-1. `extend_tube` / `extend_window`：负链时先把对齐坐标 reverse_range 成
-   正链再交给 `from_align`（与 axt 路径一致）；
-2. `chain_to_psl`：qStart/qEnd 保持正链，qStarts 改为 `b_len - q_end`（RC 帧）。
-
-实测（32 线程，tube 默认参数）：
-
-| 对 | chainnet 覆盖（修复前 → 后） | 块数 | 耗时 | 峰值内存 | FastGA |
-|---|---:|---:|---:|---:|---:|
-| MG1655 vs Sakai | 89.31% → **89.33%** | 588 | 0.80s | 604 MB | 89.3% |
-| MG1655 vs EC958 | 86.36% → **86.38%** | 846 | 0.74s | 512 MB | 86.3% |
-| MG1655 vs Nissle | 84.98% → **85.28%** | 847 | 0.74s | 464 MB | 85.30% |
-
-**Nissle 的"0.32% 差距"绝大部分就是这个 bug**（§5.25/§5.27 把原因归为
-"chainnet 对重复区单块的过滤差异"是误判——块确实在 PSL 里，但被更前面的
-`psl chain` 精确打分环节丢弃，chainnet 从未见过它）。修复后三项全部与
-FastGA 持平（Nissle 差 0.015% ≈ 0.7 kb，属噪声级）。906 测试全过，新增
-`extend_chain_rc_query` 回归断言：负链 qStarts 必须在 RC 帧且逐段序列
-identity 验证通过。
-
-## 5.31 参考索引流式读取（2026-08-02，内存再降 ~34%）
-
-merge 只顺序扫描 a（参考）索引，因此不必全量载入。新增 `PgiStream`
-（`src/libs/pgi/mod.rs`，纯 std 分块读取、按条目批量产出、条目不跨批），
-`merge_seed_hits_from_stream` 用 rayon `par_bridge` 并行处理批次；
-`pgr pgi align` 的 ref 侧改为流式（query 侧仍全量——partition_point
-需要随机访问）。`pgr::reader` 返回类型加 `+ Send` 以支持 par_bridge。
-此实现修正了 §5.24 里"惰性加载需新依赖或 unsafe"的结论——纯 std 流式即可。
-
-阶段峰值探针（`log::debug`，Linux `/proc/self/status` VmHWM）：
-
-| 对 | 峰值内存（前 → 后） | 耗时 | chainnet 覆盖 |
-|---|---:|---:|---:|
-| MG1655 vs Sakai | 604 → **398 MB** | 0.83s | 89.33%（不变） |
-| MG1655 vs EC958 | 512 → **374 MB** | 0.78s | 86.38%（不变） |
-| MG1655 vs Nissle | 464 → **378 MB** | 0.81s | 85.28%（不变） |
-
-覆盖/块数与全量载入完全一致（Sakai 588 / EC958 846 / Nissle 847 块）。
-阶段峰值（Sakai）：merge 380→298 MB、chain 471→388 MB、extend 不再
-超过 chain 峰值（此前 +100 MB）。剩余构成：b 索引全量（~140 MB）、
-链化排序缓冲、rayon 栈；再降需 mmap 或 query 侧惰性访问（新依赖/unsafe，
-待用户决策）。907 测试全过（新增 `PgiStream` 全量等价性测试）。
-
-## 5.32 命中打包 + 链排序基数化（2026-08-02，内存再降）
-
-- `SeedHit` 24 → 16 B（a/b contig 与 shared 改 u16，位置仍 u32）：merge 与
-  chain 阶段常驻内存约 -19 MB；
-- `chain_tubes` 的 `(u128, u32)` 键数组（32 B/元素 ≈ 77 MB）改为并行
-  `Vec<u128>` 键 + `Vec<u32>` 序数组（≈ 48 MB）配现有 MSD 基数排序
-  （`libs/ds/radix_sort`），并去掉 `Vec<&SeedHit>` 引用数组与 par_sort 的
-  隐式键/引用缓冲：链化阶段约 -30 MB。
-
-实测（32 线程，tube 默认；PSL 与全量载入**逐字节一致**）：
-
-| 对 | 峰值内存（前 → 后） | 耗时 |
-|---|---:|---:|
-| MG1655 vs Sakai | 398 → **~381 MB**（extend 为峰） | 0.79-0.93s |
-| MG1655 vs EC958 | 374 → **321 MB** | 0.83s |
-| MG1655 vs Nissle | 378 → **310 MB** | 0.86s |
-
-Sakai 的 extend 阶段（wave dandc 并行暂存，+60 MB）重新成为峰值；EC958/
-Nissle 仍以链化为峰。907 测试全过（链化排序行为不变，tube 测试原样通过）。
-
-## 5.33 extend 峰值收敛：共享 RC + wave 预留收敛 + 8 线程池（2026-08-02）
-
-追查 Sakai 的 extend 峰值（32 线程时 +60 MB）：
-
-1. **负链 tube 每调用复制整条染色体 RC**（~5.5 MB/调用，并行叠加）：改为
-   `b_rcs` 预计算一次、全部负链 tube 共享借用（`Cow::Borrowed`）；
-2. **`forward_wave` 预分配 `4096 × width` 单元**（v 8 B + trace 16 B），而
-   波数被 TRIM_MLAG 限制在 ~250 附近——预留比实际多几十倍；改为
-   `256 × width`（上限 D_CAP=500k），不足时 Vec 自动增长；
-3. **并行度**：extend 的 wave/dandc 暂存随并发 tube 数线性增长。`pgr pgi
-   align` 新增 `--parallel`（默认 8，即 FastGA `-T` 默认），整个对齐在专用
-   rayon 池中执行——8 并发下 extend 峰值不再超过链化阶段，速度不变
-   （0.78-0.89s）。
-
-实测（默认 8 线程，tube 默认参数；PSL 逐字节一致）：
-
-| 对 | 峰值内存（前 → 后） | 耗时 | chainnet 覆盖 |
-|---|---:|---:|---:|
-| MG1655 vs Sakai | 381 → **296 MB** | 0.89s | 89.33%（不变） |
-| MG1655 vs EC958 | 321 → **281 MB** | 0.78s | 86.38%（不变） |
-| MG1655 vs Nissle | 310 → **284 MB** | 0.78s | 85.28%（不变） |
-
-全流程峰值现在就是链化阶段；剩余 = query 索引全量（~140 MB）+ 链化暂存。
-907 测试全过。
-
-## 5.34 多 contig 验证 + 阶段耗时分布（2026-08-02）
-
-- `SeedHit` 的 contig id 收窄为 u16 后，`build_from_seqs` 增加 contig 数
-  守卫（> 65535 直接报错，防止静默截断）；
-- 新增多 contig 回归测试：3 个 contig，query 第二个为反向互补、第三个带
-  分散点突变——覆盖 contig 分组、流式 merge、负链 PSL 约定。
-
-端到端多 contig 实测（k=10，tube）：c1 正链 20000/20000、c2 负链
-15000/15000（RC 正确识别）、c3 正链 9858/10000（2% 突变 → 142 错配）。
-
-阶段耗时探针（debug 级，8 线程 Sakai）：merge 193 ms、chain_tubes 236 ms、
-extend 245 ms（合计 ~0.67 s；墙钟 0.89 s 另含参考索引流式读取、序列加载、
-PSL 写盘）。与 FastGA（~0.7 s）的差距主要在索引读取（mmap 可消除）和
-wave 每调用开销。908 测试全过。
-
-## 5.35 query 索引改 mmap 零拷贝（PgiMmap，2026-08-02）
-
-query 索引不再全量读入：新增 `libs::pgi::mmap::PgiMmap`（memmap2，
-MAP_PRIVATE 只读映射），记录驻留映射页——条目通过 packed k-mer 字节二分
-定位（`entry_range`），位置按需解码（`entry_positions`），与 FastGA GIX
-的 memory-mapped 模型一致。reference 仍走 `PgiStream` 流式读取。
-
-- `PgiQuery` trait：resident `PgiIndex` 与 `PgiMmap` 共用的只读视图
-  （k/smer/window/contigs + entry_range/entry_next/entry_kmer/entry_freq/
-  entry_positions），merge 泛型化；扩展阶段只读 contigs，resident 路径在
-  merge 后释放条目表，mmap 路径则从未分配。
-- 修过的两个语义坑：
-  1. prefix 哨兵键：`hi = lo + r` 可等于 `2^(2k)`，resident 的
-     `partition_point(kmer < hi)` 天然容纳，mmap 二分必须把该值 clamp 到
-     记录数，否则 key 打包后高位移出、二分错位；
-  2. mmap 的 `entry_range` 返回记录区间，组内多条记录不能当作独立条目
-     迭代——新增 `entry_next`（resident 为 i+1，mmap 为组尾）按条目推进，
-     否则同一 k-mer 组内的每条记录都会被当作条目重复发射命中。
-- 实测（合成 2×2 Mb、k=10、smer 4/2、tube + --ref-seq/--query-seq、
-  8 线程、release）：旧版（query 全量读入）max RSS 328 MB / 0.80 s；
-  mmap 版 298 MB / 0.76 s；merge 191 ms，峰值已被链化暂存（hits/radix/
-  tubes）占据。2% 突变 query 的端到端 PSL 输出与旧二进制逐字节一致
-  （同一 .pgi 输入）。query.pgi 28 MB → resident 表约 53 MB（positions
-  4M×8 + entries 890k×24），Sakai 规模对应 ~140 MB，均已消除。
-- 注意：query 索引必须是真实文件（mmap 不支持 stdin/gzip）；`dist pgi`
-  / `stat` / `to-hv` 仍走全量 `PgiIndex::read`，暂未改。
+全部 45 对 ~60s 完成。分布 97.0-99.6%，与亲缘关系一致（e24377a/se11/
+ec2011c_3493 聚类 99.1%+、nissle–cft073 99.6%）。合并块后身份率比无合并
+低 ~0.2-0.5%（分歧间隙计入计数，更接近真实）；身份率基于种子链发现的
+块（偏保守区段），且整体比 FastGA 高 ~0.5%（banded 局部取精确核心）。
+
+## 3. 开发历史（按主题；日期均为 2026-08-02）
+
+> 历史条目保留原 "5.x" 编号以便对照旧引用。勘误以 §5.2 清单为准，
+> 早期条目里的中间结论已被更正，阅读时注意。
+
+### 3.1 链化与扩展引擎演进
+
+- **v1 链块（最小闭环）**：两条目线性归并 + 贪心链化 + 每链一个 PSL 块。
+  首个实测：MG1655 自比对主链 1 块覆盖 4,641,650/4,641,652 bp
+  （99.9999%），其余为 rRNA/IS 等真实重复（负链 186 块）；vs Sakai
+  1019 块（span 覆盖 95.7%）vs FastGA 701 块（99.7%）——真实并集覆盖
+  Sakai 75.8% vs 78.2%、Nissle 77.3% vs 77.3%（span 求和有重复计数）。
+- **5.2 v2 banded SW 扩展**：1015/1019 块被细化，身份率 98.41%
+  （FastGA 97.83%）；并行化 20.5s→2.0s（32 核）。>30 kb 链当时回退为块。
+- **5.3 株系验证（v2）**：nissle 97.62%（FastGA 97.09%）、sakai 98.41%
+  （97.83%）、ec958 97.60%（FastGA 无基线）。
+- **5.4 v3 分窗扩展**：16 kb 窗口 + 2 kb 重叠沿链对角线滑动；自比对主链
+  331 窗口身份率精确 1.0000000（5.30M/0），整体 99.93%；Sakai 1093 块
+  全部扩展，身份率 98.42%（FastGA 97.83%）。
+- **5.6 性能**：banded DP 按带限列迭代（65 列而非 16000 列，246× 浪费）；
+  窗口级负载均衡（自比对 37.8s→0.84s、跨株 2.0s→0.66s）。端到端
+  （建索引 ×2 + 扩展）1.32s vs FastGA 1.22s（1.08×）。
+- **5.7 链合并（--merge-gap）**：IS 插入使对角线平移超 band 断链。
+  Sakai 1019→718 块 / 覆盖 4.44→4.51 Mb / 最大 58→83 kb；Nissle
+  1634→1259 块 / 4.46→4.54 Mb。块数 -23~30%、覆盖 +1.6~1.8%。
+- **5.8 仿射 gap**（M/I/D，open -8 + extend -6）：Sakai 块数 4710→3512、
+  Nissle 7451→5609（-25%）；身份率不变，仅 indel 结构更干净。
+- **5.11 Myers wavefront 独立移植（负结果）**：wave 核心单元测试通过，
+  但单独接入 banded 路径更差（块数 3-4×，覆盖 71.6% / 32.7% 取决于锚点
+  策略）——wave 依赖 tube 的锚定上下文；保留为独立实现
+  （`src/libs/alignment/wave.rs`），按 FastGA 语义接入见 5.13。
+- **5.12 tube 链化移植**（FastGA `align_contigs`）：对角桶 + anti 归并 +
+  tube（§1.3.3）。
+- **5.13 Myers wave + `Local_Alignment` 移植**：forward_wave_mid +
+  Myers O(ND) D&C 回溯 + extend_tube（BUCK_ANTI=128）。对照（tube）：
+  banded 基线 862 块/87.7%/1.36s/1.38 GB → tube+wave 643 块/**88.2%**/
+  8.7s/425 MB → FastGA 701 块/89.3%/~0.7s。质量逼近、内存 -3×，
+  速度是短板（~4 万次 wave 调用，单次 ~0.18ms）。
+- **5.14 调用数与 tube 结构对齐**：FastGA 全程仅 1062 次调用（tube 平均
+  7.7 kb）；我们 ~4 万次（exact-40 种子把分歧岛桥接成巨型 tube，平均
+  30 kb）。优化：tube 并行 + RC/互补预计算 + tube anti 上限 40 kb →
+  8.7s→1.7-1.9s。
+- **5.15 大 tube 同源门控（曾保留）**：>10 kb tube 做多对角线（9 条 ×
+  64 bp 窗）滑窗身份检查，<50% 则跳过；Sakai 88.2%/1.52s、Nissle
+  83.9%/1.55s，误杀率≈0。后被 5.22 移除（见 §3.3）。
+- **5.18 排序优化**：链排序键打包 u128 + rayon `par_sort_unstable_by_key`
+  （741→275 ms）；anti 序修复连锁使调用 58,370→883（FastGA 1062），
+  顺序耗时 11.4s→2.7s；总 1.5s→1.0s。
+- **5.23 速度与 FastGA 持平**：正链 tube 的 q 复制改 `Cow` 零拷贝
+  （extend 470→179 ms）+ tube 形成并行（chain 312→198 ms）→
+  **~0.7s**（Sakai 0.69-0.79s）。
+
+### 3.2 种子语义演进
+
+- **5.9 盲目部分匹配：负结果**。无 plen 最大选择的部分种子全部劣于精确
+  匹配（MG1655 vs Sakai）：
+
+  | min_shared | records | blocks | identity |
+  |---|---|---:|---:|
+  | 40（精确） | 862 | 3512 | 0.9834 |
+  | 30 | 1130 | 4657 | 0.9827 |
+  | 25 | 1302 | 6072 | 0.9810 |
+  | 20 | 1614 | 8680 | 0.9781 |
+  | 12 | 3375 | 53015 | 0.9496 |
+
+  结论：部分种子的收益依赖 FastGA 的 tube/wave 种子质量机制，不能直接
+  移植到贪心链化。
+- **5.20 tube 默认 k/2=20**：Sakai 89.1%（+0.2%）、Nissle 84.7%（+0.3%），
+  hit +20%；min-shared 30 反而更差。
+- **5.29 种子选择移植**（§1.3.2 四项）：Sakai 247 万种子、89.26→89.31%；
+  EC958 227 万、86.17→86.36%；Nissle 233 万、84.74→84.98%；内存不升反降
+  （种子减半）；tube 默认 floor 定为 12（配合最大选择，12-19 bp 锚点补
+  indel 复杂区，与 5.9 的"无最大选择"机制不同）。
+
+### 3.3 bug 修复清单
+
+| 条目 | 症状 | 根因 | 修复 | 回归测试 |
+|---|---|---|---|---|
+| 5.16 tube 合并顺序 | 高 anti 种子先处理抬高 ahgh，稠密种子 cov 不累计，整管丢弃（Sakai 缺失 55 kb） | 桶内按 (diag,a_pos) 排序，对角线漂移时 anti 序与 a_pos 序相反 | 排序键 (diag 桶, anti)，按 anti 归并 | `tube_merge_uses_anti_order_when_diagonal_drifts` |
+| 5.17 dedupe 误删 | 同 tube 连续调用重叠 ~87% 的延伸块被删，丢 3.1 kb 真实覆盖 | 双轴 80% 重叠阈值过低 | 阈值 0.95 | `dedupe_keeps_blocks_that_extend_earlier_ones` |
+| 5.22 门控误杀 | Sakai 最大缺失区 7.3 kb（99% 身份、4160 个共享 40-mer）整管被跳过 | 对角线采样步长 ~13 bp，真实 diag 落采样点之间（差 2 bp）时滑窗身份率 ~25% | 直接移除（anti 修复后调用数已 58k→~900，门控只剩误杀） | — |
+| 5.30 负链 PSL 帧 | 所有 '-' 块被 `psl chain` 静默丢弃（MAF 中 '-' 块为 0） | qStart/qEnd 用 RC 帧、内部 qStarts 用正链帧，与 UCSC 约定相反，`calc_block_score` 得大额负分 | qStart/qEnd 正链帧、qStarts RC 帧 | `extend_chain_rc_query` |
+
+5.16 修复效果：Sakai 88.2→88.9%、Nissle 83.9→84.4%，缺失 55→25 kb；
+5.17：Sakai 覆盖 4,124,601→4,127,886 bp，缺失 24.9→21.7 kb；
+5.22：Sakai 89.1→89.3%，缺失 15→7.7 kb（教训：门控类启发式在根因修复
+后要及时复核，否则从"省时"变"漏块"）；
+5.30：Sakai 89.31→89.33%、EC958 86.36→86.38%、Nissle 84.98→**85.28%**
+——Nissle 的"0.32% 差距"绝大部分就是这个 bug。
+
+### 3.4 内存优化时间线（Sakai 峰值，8 线程，另有标注除外）
+
+| 条目 | 变更 | 峰值 |
+|---|---|---:|
+| 基线 | 双索引全量载入 + 并行 dandc | ~0.96 GB（32T） |
+| 5.24 | `drop(hits)` + q `Cow` | 8T 960→639 / 32T ~825 MB |
+| 5.27 | `align_to_psl_ext` 按值 + `mem::take` 释放 entries/positions | 875→639 MB（32T） |
+| 5.28 | positions u64 位域打包（`pos 32\|cid 20\|strand 1`，12→8 B/条） | 639→607 MB（32T 表） |
+| 5.29 | 种子选择（种子减半） | 607→586 MB（32T） |
+| 5.31 | ref 索引流式 `PgiStream` | Sakai 604→398 / EC958 512→374 / Nissle 464→378 MB |
+| 5.32 | `SeedHit` 24→16 B + 链排序基数化（u128 键 + u32 序数组） | ~381 / 321 / 310 MB（32T） |
+| 5.33 | 共享 RC 预计算 + wave 预留收敛（4096→256×width）+ `--parallel 8` 专用池 | 296 / 281 / 284 MB |
+| 5.35 | query mmap 零拷贝 `PgiMmap` | **224 / 206 / 210 MB** |
+
+> 5.35 实测对照（同一输入、旧版全量读入）：Sakai 289→224、EC958
+> 272→206、Nissle 277→210 MB（-23%）；阶段峰值（Sakai）：merge
+> 171 MB、chain_tubes 218 MB、extend 229 MB。FastGA 同输入实测 332 MB
+> （§5.1）——pgr 峰值已低于 FastGA。
+
+结构上限记录：`SeedHit` contig u16（5.34 起 `build_from_seqs` 守卫
+>65535 报错）；`pack_position` cid 上限 2^20（debug_assert）；
+`PgiEntry` 24 B/条（kmer u128 + pos_start/freq u32×2）是 positions 位域
+之后的下一优化对象。
+
+### 3.5 性能优化时间线（Sakai，8 线程）
+
+| 条目 | 变更 | 耗时 |
+|---|---|---:|
+| v3 分窗后 | 窗口级负载均衡（§3.1） | ~0.97s |
+| 5.18 | 链排序 u128 键 + rayon（741→275 ms）+ 调用数骤降 | ~1.0s |
+| 5.19 | pgi 批量解析（1 MB 分块、按 rec_size 对齐；加载 0.7→0.5s） | ~1.0-1.2s |
+| 5.21 | merge 并行（4096 条分块，139→61 ms） | ~1.1s |
+| 5.23 | q `Cow` + tube 并行 | ~0.7s |
+| 5.34 | 阶段探针实测：merge 193 / chain_tubes 236 / extend 245 ms | ~0.89s |
+| 当前 | 探针：merge 198 / chain_tubes 244 / extend 273 ms | 0.78s |
+
+> 5.21 同时试过 pgi 解析并行化：**无益**（瓶颈是磁盘读取而非解析，已回退，
+> 见 §4）。与 FastGA 的剩余差距是 wave 每调用成本（~0.47ms，Rust vs C）。
+
+### 3.6 结构与读取演进（近期）
+
+- **5.19 pgi 批量解析**：`PgiIndex::read` 由逐记录 `read_exact`（trait 对象
+  虚拟分发）改为 1 MB 分块 + 切片解析，加载 0.7→0.5s。
+- **5.31 `PgiStream`**：ref 侧流式分块、按条目批量产出、条目不跨批；
+  `merge_seed_hits_from_stream` 用 rayon `par_bridge`；修正 5.24
+  "惰性加载需新依赖或 unsafe"的结论（纯 std 流式即可）。
+- **5.34 多 contig 支持**：`SeedHit` contig u16 + 守卫；3 contig 回归
+  （c1 正 20000/20000、c2 负 15000/15000 RC 正确、c3 正 9858/10000 含
+  2% 突变）；阶段耗时探针。
+- **5.35 `PgiMmap`（mmap 零拷贝）**：query 侧记录驻留映射页，条目经
+  packed k-mer 字节二分定位、位置按需解码；`PgiQuery` trait 统一
+  resident/mmap 视图。修两个语义坑：prefix 哨兵键 `hi=2^(2k)` 需 clamp
+  （打包后高位移出）；`entry_range` 返回记录区间、组内记录不能当独立
+  条目（新增 `entry_next` 按组推进）。912 测试（新增 roundtrip/区间/
+  截断/merge 等价性 4 项）。
+- **5.36 FastGA 内存勘误**：见 §5.1。
+
+## 4. 已排除方向（避免重试）
+
+| 方向 | 结论 | 原因 / 出处 |
+|---|---|---|
+| adaptamer 部分种子（盲目，无最大选择） | 不可用 | 弱种子大量假阳性，min-shared 12 → 53015 块/0.9496（§3.2 5.9） |
+| wave 单独接入 banded 路径 | 不可用 | unit-cost 波前无 indel 偏好 + 贪心延伸：块数 3-4×，覆盖 71.6% / 32.7%（锚点策略）；wave 依赖 tube 锚定上下文（§3.1 5.11） |
+| 大 tube 同源门控（多对角线滑窗） | 已移除 | 采样漏真实对角线（差 2 bp 时窗口身份 ~25%）→ 误杀整管；根因修复后收益消失（§3.3 5.22） |
+| 中心对角线滑窗身份率门控 | 不可用 | 覆盖 88.2%→70.9%，误杀薄保守区/偏移对角线（§3.1 5.14） |
+| 种子覆盖密度门控 | 不可用 | 零块与生产性 tube 分布重叠，无法干净区分（5.14） |
+| 种子邻近门控（amid ±300bp） | 无效 | 失败调用的 amid 本来就在种子附近（5.14） |
+| CHAIN_BREAK 调小（300/100） | 更差 | tube 碎片化、重叠调用更多，质量 87.3%（5.14） |
+| tube 默认 min-shared 30 | 更差 | 部分匹配噪声未被抑制（§3.2 5.20） |
+| pgi 解析并行化 | 无益 | 瓶颈是磁盘读取而非解析（§3.5 5.21） |
+| wave 死代码路径（D&C 回溯每次调用全跑） | 已改 | FastGA 的 `dandc_nd` 是死代码；我们曾每次调用跑完整 D&C（5.13，优化后非每次） |
+
+## 5. 勘误与基准方法
+
+### 5.1 FastGA 内存实测与 "~0 MB" 勘误（2026-08-02）
+
+此前各节对照表把 FastGA 峰值内存记为 "~0 MB"，理由是"FastGA 用 mmap 保持
+低 RSS"。直接实测（MG1655 vs Sakai，-T8，`/usr/bin/time -v`）推翻该结论：
+
+| 阶段 | 进程 | 峰值 RSS |
+|---|---|---:|
+| FAtoGDB（FASTA → 2bit GDB） | 子进程 | ~7 MB |
+| GIXmake -T8（k-mer 排序建索引） | 子进程 | ~160 MB |
+| FastGA -psl 比对（-T8，主流程） | 主进程 | **332 MB** |
+
+源码核查（仓库内 FASTGA-main）：
+
+- **全项目无任何 mmap 调用**（rg 无命中）。GIX 经 `Open_Kmer_Stream`
+  （libfastk.c:785）用 `read()` + `STREAM_BLOCK` 缓冲**流式读取**；
+  GDB 序列默认 `seqstate == EXTERNAL`（不整库载入，每线程 fopen 一个
+  .bps 句柄按需 fseeko），`Load_Sequences` 整库载入被 `#ifdef LOAD_SEQS`
+  编译开关关闭；
+- 比对阶段真实内存大头：`(nelmax+1)*swide` 种子排序数组
+  （`swide = 2*DBYTE + JCONT + 2` ≈ 10 B，种子 ~360 万 → ~36 MB）、
+  GIX 流缓冲、N 线程对齐缓冲与 contig 序列缓存。
+
+"~0 MB" 的来源：**无测量记录**，系 9930353 起从参考笔记 fastga.md §9.4
+的"可 mmap 整库"能力描述错误外推（该描述本身也不准确：GDB.c 的 COMPRESSED
+态是 Malloc + read 整库读入，`Load_Sequences` 无 mmap），5.13/5.18/5.23/
+5.24/5.27 沿用未核。
+
+修正后的对照（8 线程，仅比对进程）：FastGA **332 MB** vs pgr mmap 版
+**224 MB** / 全量读入版 289 MB——**pgr 的 mmap 版峰值已低于 FastGA**。
+
+### 5.2 结论勘误清单
+
+1. **Nissle 基线（5.25）**：曾怀疑 `nissle1917.fa.gz` 被替换、FastGA 基线
+   无效 → 文件逐字节相同、基线有效。过程中验证"对含 indel 的对齐不能用
+   naive 偏移身份判断"（该区域每 ~300 bp 一个 indel，同偏移身份 ~25% 但
+   共享 40-mer 8990/10258 ≈ 99% 相关）。
+   另：5.25 进一步抽查最大缺失区（t 2058021-2062339，2.2 kb）确认对齐
+   本身正确，只是 chainnet 在重复区过滤了该块。
+2. **EC958 基线（5.26）**：`ec958.fa.gz` 当天改过，但 FastGA 输出与当前
+   文件坐标一致，基线有效；我们 86.2% vs FastGA 86.3%（缺失 18.9 kb、
+   多覆盖 12.6 kb，净差很小）。
+3. **Nissle 0.32% 差距归因（5.27→5.30）**：曾归因 chainnet 对重复区单块
+   过滤 + indel 复杂区 → 主因是负链 PSL 坐标帧 bug（§3.3），修复后差
+   0.015%（~0.7 kb）。
+4. **`is_minimal` 语义（5.20→5.29）**：曾读作噪声抑制 → canonical 方向
+   判断；真正的噪声抑制是 plen 最大选择 + 扩展范围过滤。
+5. **FastGA 内存（5.13→5.36）**：曾记 "~0 MB" → 实测 332 MB（§5.1）。
+6. **验证数据（5.35→5.36）**：早期 mmap 验证曾用合成 2×2 Mb 随机序列 →
+   统一为 tests/genome 真实数据重测（数字以 §2.2 为准）。
+
+### 5.3 基准方法
+
+- 数据：`tests/genome/{mg1655,sakai,nissle1917,ec958}.fa.gz`（另有
+  cft073/e2348_69/e24377a/ec042/se11 等 cohort 株）；
+- 命令：`pgr pgi align <ref> <query> --ref-seq --query-seq
+  --workflow tube`（8 线程默认），release；`/usr/bin/time -v` +
+  `RUST_LOG=debug` 阶段探针（merge/chain_tubes/extend + VmHWM）；
+- 覆盖：`pgr psl to-chain` → `pgr pl chainnet --syn` syntenic 覆盖；
+- 端到端（含建索引 ×2）见 [[benchmarks/bench-pgi-align-vs-fastga.md]]；
+- 10 株 cohort 验证见 [[benchmarks/dist-cohort-validation.md]]（引用
+  §2.4 的身份率矩阵）。
 
 ## 6. 相关文档
 
