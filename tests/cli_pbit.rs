@@ -69,6 +69,92 @@ fn test_pbit_create_basic() {
 }
 
 #[test]
+fn test_pbit_create_with_index_and_to_index() {
+    let temp = TempDir::new().unwrap();
+    let out_pbit = temp.path().join("out.pbit");
+    let ref_fa = fixture("ref_2000.fa");
+
+    let _ = PgrCmd::new()
+        .args(&[
+            "pbit",
+            "create",
+            "-r",
+            ref_fa.to_str().unwrap(),
+            "-i",
+            fixture("sample_2000_identical.fa").to_str().unwrap(),
+            "--index",
+            "-o",
+            out_pbit.to_str().unwrap(),
+        ])
+        .run();
+    assert!(out_pbit.exists());
+
+    // The embedded index must be byte-identical to a fresh `pgr pgi build`.
+    let out_pgi = temp.path().join("ref.pgi");
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "pbit",
+            "to-index",
+            out_pbit.to_str().unwrap(),
+            "-o",
+            out_pgi.to_str().unwrap(),
+        ])
+        .run();
+    assert!(stderr.contains("wrote"), "to-index failed: {stderr}");
+
+    let fresh_pgi = temp.path().join("fresh.pgi");
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "pgi",
+            "build",
+            ref_fa.to_str().unwrap(),
+            "-o",
+            fresh_pgi.to_str().unwrap(),
+        ])
+        .run();
+    assert!(stderr.contains("wrote"));
+    assert_eq!(
+        fs::read(&out_pgi).unwrap(),
+        fs::read(&fresh_pgi).unwrap(),
+        "embedded index must match a fresh build"
+    );
+}
+
+#[test]
+fn test_pbit_to_index_without_index_fails() {
+    let temp = TempDir::new().unwrap();
+    let out_pbit = temp.path().join("out.pbit");
+    let _ = PgrCmd::new()
+        .args(&[
+            "pbit",
+            "create",
+            "-r",
+            fixture("ref_2000.fa").to_str().unwrap(),
+            "-i",
+            fixture("sample_2000_identical.fa").to_str().unwrap(),
+            "-o",
+            out_pbit.to_str().unwrap(),
+        ])
+        .run();
+    assert!(out_pbit.exists());
+
+    let out_pgi = temp.path().join("ref.pgi");
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "pbit",
+            "to-index",
+            out_pbit.to_str().unwrap(),
+            "-o",
+            out_pgi.to_str().unwrap(),
+        ])
+        .run_fail();
+    assert!(
+        stderr.contains("no embedded reference index"),
+        "expected missing-index error: {stderr}"
+    );
+}
+
+#[test]
 fn test_pbit_stat_overview() {
     let temp = TempDir::new().unwrap();
     let out_pbit = temp.path().join("out.pbit");

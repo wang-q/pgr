@@ -22,8 +22,9 @@
 `pbit`（p = population 或 plus；2bit 记录 + delta），集成到 pgr 作为 `pgr pbit` 命令族。**不兼容**
 C++ AGC 的 `.agc` 文件格式。
 
-当前 pbit 格式版本为 **1001**（`PBIT_VERSION_MAJOR = 1`, `PBIT_VERSION_MINOR = 1`），
-仅支持按当前版本读写，不提供对旧版本的兼容读取。完整二进制格式见
+当前 pbit 格式版本为 **1002**（`PBIT_VERSION_MAJOR = 1`, `PBIT_VERSION_MINOR = 2`），
+可读取 1001–1002（v1002 新增可选的内嵌参考索引段，见 §文件格式规范与
+[[pbit-index-extension.md]]）。完整二进制格式见
 [§文件格式规范](#文件格式规范)。
 
 **关键约束**：
@@ -655,7 +656,10 @@ pgr pbit stat      in.pbit [--samples | --refs | --contigs [-s sample]]  # 统�
 
 ## 文件格式规范
 
-本文档描述 **pbit 格式版本 1001**（`PBIT_VERSION_MAJOR = 1`, `PBIT_VERSION_MINOR = 1`）。
+本文档描述 **pbit 格式版本 1001**（`PBIT_VERSION_MAJOR = 1`, `PBIT_VERSION_MINOR = 1`）；
+**v1002 扩展**（2026-08-02 已实现）：Reference Records 之后可选地内嵌参考
+`.pgi` 索引段（`pgr pbit create --index`），Footer 由 24 字节扩为 40 字节
+（新增 `idx_offset`/`idx_size`，0 表示无索引）；读取端按 Header 版本分支。
 pbit 为原生"2bit + delta"格式（扩展名 `.pbit`，区别于 C++ AGC 的 `.agc`）。所有整数使用
 **固定大小 小端序**（u32 = 4 字节，u64 = 8 字节），不使用 varint / 前缀编码。字符串采用**长度前缀**
 （u32 len + UTF-8 bytes），不使用 null 终止。
@@ -688,7 +692,7 @@ pbit 为原生"2bit + delta"格式（扩展名 `.pbit`，区别于 C++ AGC 的 `
 ```
 offset  size  field              说明
 0       4     magic              0x54494250 ('PBIT', 小端)
-4       4     version            major*1000 + minor (当前 1001)
+4       4     version            major*1000 + minor (当前 1002)
 8       4     segment_size       分段大小（bp，如 4096）
 12      4     kmer_len           k-mer 长度（如 15）
 16      4     min_match_len      LZ-diff 最小匹配长度（如 18，对应 -l 参数）
@@ -1313,7 +1317,7 @@ PAF 驱动的 CIGAR delta 编码已在 8a–8e 实现并测试通过；8f 为可
 #### Phase 8b: 格式扩展 — 已实现
 - `format.rs`：`DeltaMeta`/`DeltaEntry` 含 `encoding` 字段（10 字节头）；
   `SegmentDesc` 固定大小存储（含 ref_start/ref_end，LZ-diff 段填 0，见 §5.2）
-- Header 版本号为 1001
+- Header 版本号为 1002（可读 1001；v1002 多两个 Footer 字段）
 
 #### Phase 8c: 压缩端（PAF 驱动）— 已实现
 - `compressor.rs`：实现 `append_sample_with_paf` 方法

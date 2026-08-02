@@ -13,9 +13,11 @@ pub const PBIT_MAGIC: u32 = 0x54494250;
 /// pbit format major version.
 pub const PBIT_VERSION_MAJOR: u32 = 1;
 /// pbit format minor version.
-pub const PBIT_VERSION_MINOR: u32 = 1;
+pub const PBIT_VERSION_MINOR: u32 = 2;
 /// Current file version encoded as major*1000 + minor.
 pub const PBIT_VERSION: u32 = PBIT_VERSION_MAJOR * 1000 + PBIT_VERSION_MINOR;
+/// Oldest version this reader accepts (v1001 has no reference index segment).
+pub const PBIT_VERSION_MIN: u32 = 1001;
 
 /// Delta encoding type stored in the on-disk delta header (10th byte).
 #[repr(u8)]
@@ -80,11 +82,10 @@ impl PbitHeader {
             ));
         }
         let version = read_u32_le(reader)?;
-        if version != PBIT_VERSION {
+        if !(PBIT_VERSION_MIN..=PBIT_VERSION).contains(&version) {
             return Err(anyhow!(
-                "unsupported pbit version {} (expected {})",
+                "unsupported pbit version {} (supported {PBIT_VERSION_MIN}..={PBIT_VERSION})",
                 version,
-                PBIT_VERSION
             ));
         }
         let segment_size = read_u32_le(reader)?;
@@ -119,48 +120,63 @@ impl PbitHeader {
     }
 }
 
-/// File footer (fixed 24 bytes, at end of file).
+/// File footer (24 bytes in v1001; 40 bytes in v1002 with the optional
+/// embedded reference index segment offsets).
 ///
-/// Located by seeking to `file_size - 24`.
+/// Located by seeking to `file_size - 24` (v1001) or `file_size - 40` (v1002).
 #[derive(Debug, Clone, Default)]
 pub struct PbitFooter {
     pub ref_index_offset: u64,
     pub delta_data_offset: u64,
     pub sample_index_offset: u64,
+    /// Offset of the embedded reference index segment (0 when absent).
+    pub idx_offset: u64,
+    /// Size in bytes of the embedded reference index segment (0 when absent).
+    pub idx_size: u64,
 }
 
 impl PbitFooter {
-    /// Read a 24-byte footer from the current reader position.
-    pub fn read_from<R: Read>(reader: &mut R) -> Result<Self> {
+    /// Read a footer from the current reader position; the field count
+    /// depends on the file version.
+    pub fn read_from<R: Read>(reader: &mut R, version: u32) -> Result<Self> {
         let ref_index_offset = read_u64_le(reader)?;
         let delta_data_offset = read_u64_le(reader)?;
         let sample_index_offset = read_u64_le(reader)?;
-        Ok(Self {
+        let mut footer = Self {
             ref_index_offset,
             delta_data_offset,
             sample_index_offset,
-        })
+            ..Default::default()
+        };
+        if version >= 1002 {
+            footer.idx_offset = read_u64_le(reader)?;
+            footer.idx_size = read_u64_le(reader)?;
+        }
+        Ok(footer)
     }
 
-    /// Write the footer (24 bytes) to the writer.
+    /// Write the footer (40 bytes, v1002) to the writer.
     pub fn write_to<W: Write>(&self, writer: &mut W) -> Result<()> {
         writer.write_all(&self.ref_index_offset.to_le_bytes())?;
         writer.write_all(&self.delta_data_offset.to_le_bytes())?;
         writer.write_all(&self.sample_index_offset.to_le_bytes())?;
+        writer.write_all(&self.idx_offset.to_le_bytes())?;
+        writer.write_all(&self.idx_size.to_le_bytes())?;
         Ok(())
     }
 
     /// Read the footer from the end of a seekable reader.
-    pub fn read_at_end<R: Read + Seek>(reader: &mut R) -> Result<Self> {
+    pub fn read_at_end<R: Read + Seek>(reader: &mut R, version: u32) -> Result<Self> {
+        let footer_size = if version >= 1002 { 40 } else { 24 };
         let file_size = reader.seek(SeekFrom::End(0))?;
-        if file_size < 24 {
+        if file_size < footer_size {
             return Err(anyhow!(
-                "pbit file too small for footer: {} bytes",
+                "pbit file too small for {footer_size}-byte footer: {} bytes",
                 file_size
             ));
         }
-        reader.seek(SeekFrom::Start(file_size - 24))?;
-        Self::read_from(reader)
+        reader.seek(SeekFrom::Start(file_size - footer_size))?;
+        Self::read_from(reader, version)
     }
 }
 
@@ -403,16 +419,35 @@ mod tests {
             ref_index_offset: 1024,
             delta_data_offset: 2048,
             sample_index_offset: 4096,
+            ..Default::default()
         };
         let mut buf = Vec::new();
         footer.write_to(&mut buf)?;
-        assert_eq!(buf.len(), 24);
+        assert_eq!(buf.len(), 40);
 
         let mut cursor = Cursor::new(buf);
-        let read = PbitFooter::read_from(&mut cursor)?;
+        let read = PbitFooter::read_from(&mut cursor, 1002)?;
         assert_eq!(read.ref_index_offset, 1024);
         assert_eq!(read.delta_data_offset, 2048);
         assert_eq!(read.sample_index_offset, 4096);
+        assert_eq!(read.idx_size, 0);
+        Ok(())
+    }
+
+    #[test]
+    fn test_footer_v1001_has_no_index_fields() -> Result<()> {
+        // v1001 footer: three u64 offsets, no embedded-index fields.
+        let mut buf = Vec::new();
+        for v in [100u64, 200, 300] {
+            buf.extend_from_slice(&v.to_le_bytes());
+        }
+        let mut cursor = Cursor::new(buf);
+        let read = PbitFooter::read_from(&mut cursor, 1001)?;
+        assert_eq!(read.ref_index_offset, 100);
+        assert_eq!(read.delta_data_offset, 200);
+        assert_eq!(read.sample_index_offset, 300);
+        assert_eq!(read.idx_offset, 0);
+        assert_eq!(read.idx_size, 0);
         Ok(())
     }
 
@@ -422,6 +457,7 @@ mod tests {
             ref_index_offset: 100,
             delta_data_offset: 200,
             sample_index_offset: 300,
+            ..Default::default()
         };
         // Prepend some padding before the footer
         let mut buf = vec![0xABu8; 50];
@@ -430,7 +466,7 @@ mod tests {
         buf.extend_from_slice(&footer_buf);
 
         let mut cursor = Cursor::new(buf);
-        let read = PbitFooter::read_at_end(&mut cursor)?;
+        let read = PbitFooter::read_at_end(&mut cursor, 1002)?;
         assert_eq!(read.ref_index_offset, 100);
         assert_eq!(read.delta_data_offset, 200);
         assert_eq!(read.sample_index_offset, 300);
@@ -540,6 +576,7 @@ mod tests {
             ref_index_offset: 0,
             delta_data_offset: 0,
             sample_index_offset: 0,
+            ..Default::default()
         };
 
         let mut buf = Vec::new();
@@ -548,14 +585,14 @@ mod tests {
         // No ref index / delta data / sample index sections
         footer.write_to(&mut buf)?;
 
-        assert_eq!(buf.len(), 60); // 36 + 24
+        assert_eq!(buf.len(), 76); // 36 + 40
 
         let mut cursor = Cursor::new(buf);
         let read_header = PbitHeader::read_from(&mut cursor)?;
         assert_eq!(read_header.ref_group_count, 0);
         assert_eq!(read_header.sample_count, 0);
 
-        let read_footer = PbitFooter::read_at_end(&mut cursor)?;
+        let read_footer = PbitFooter::read_at_end(&mut cursor, read_header.version)?;
         assert_eq!(read_footer.ref_index_offset, 0);
         assert_eq!(read_footer.delta_data_offset, 0);
         assert_eq!(read_footer.sample_index_offset, 0);
@@ -601,6 +638,7 @@ mod tests {
             ref_index_offset,
             delta_data_offset,
             sample_index_offset,
+            ..Default::default()
         };
         footer.write_to(&mut buf)?;
 
@@ -610,7 +648,7 @@ mod tests {
         assert_eq!(read_header.ref_group_count, 1);
         assert_eq!(read_header.sample_count, 0);
 
-        let read_footer = PbitFooter::read_at_end(&mut cursor)?;
+        let read_footer = PbitFooter::read_at_end(&mut cursor, read_header.version)?;
 
         // Read reference index
         cursor.seek(SeekFrom::Start(read_footer.ref_index_offset))?;

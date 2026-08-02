@@ -87,7 +87,7 @@ impl<R: Read + Seek> Decompressor<R> {
         let header = PbitHeader::read_from(&mut reader)?;
 
         // Read footer.
-        let footer = PbitFooter::read_at_end(&mut reader)?;
+        let footer = PbitFooter::read_at_end(&mut reader, header.version)?;
 
         // Read reference index.
         reader.seek(SeekFrom::Start(footer.ref_index_offset))?;
@@ -241,6 +241,17 @@ impl<R: Read + Seek> Decompressor<R> {
     /// Return the footer (for `Compressor::open_for_append`).
     pub fn footer(&self) -> &PbitFooter {
         &self.footer
+    }
+
+    /// Read the embedded reference index segment (a `.pgi`), if present.
+    pub fn read_reference_index(&mut self) -> Result<Option<crate::libs::pgi::PgiIndex>> {
+        if self.footer.idx_size == 0 {
+            return Ok(None);
+        }
+        self.reader.seek(SeekFrom::Start(self.footer.idx_offset))?;
+        let idx = crate::libs::pgi::PgiIndex::read(&mut self.reader)
+            .context("failed to read embedded reference index")?;
+        Ok(Some(idx))
     }
 
     /// Return an owned clone of the collection (for `Compressor::open_for_append`).
@@ -877,8 +888,8 @@ mod tests {
         // Delta data layout: delta_data_offset + 4 (ref_group_count) + 4 (delta_count)
         // + 1 (is_rev_comp) -> raw_length u32.
         let mut file = std::fs::File::open(&out_path)?;
-        file.seek(SeekFrom::End(-24))?;
-        let mut footer_buf = [0u8; 24];
+        file.seek(SeekFrom::End(-40))?;
+        let mut footer_buf = [0u8; 40];
         file.read_exact(&mut footer_buf)?;
         let delta_data_offset = u64::from_le_bytes([
             footer_buf[8],
@@ -931,8 +942,8 @@ mod tests {
 
         // Patch the first delta's raw_length to be larger than the decoded segment.
         let mut file = std::fs::File::open(&out_path)?;
-        file.seek(SeekFrom::End(-24))?;
-        let mut footer_buf = [0u8; 24];
+        file.seek(SeekFrom::End(-40))?;
+        let mut footer_buf = [0u8; 40];
         file.read_exact(&mut footer_buf)?;
         let delta_data_offset = u64::from_le_bytes([
             footer_buf[8],

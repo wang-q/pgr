@@ -4,6 +4,7 @@ pub mod range;
 pub mod some;
 pub mod stat;
 pub mod to_fa;
+pub mod to_index;
 
 use anyhow::{Context, Result};
 use clap::{ArgMatches, Command};
@@ -96,6 +97,7 @@ pub fn make_subcommand() -> Command {
             r###"Subcommand groups:
 
 * build:     create / append
+* index:     to-index
 * info:      stat
 * subset:    range / some
 * transform: to-fa
@@ -109,6 +111,7 @@ pub fn make_subcommand() -> Command {
         .subcommand(range::make_subcommand())
         .subcommand(some::make_subcommand())
         .subcommand(stat::make_subcommand())
+        .subcommand(to_index::make_subcommand())
         .subcommand(to_fa::make_subcommand())
 }
 
@@ -120,6 +123,7 @@ pub fn execute(args: &ArgMatches) -> Result<()> {
         Some(("range", sub_matches)) => range::execute(sub_matches),
         Some(("some", sub_matches)) => some::execute(sub_matches),
         Some(("stat", sub_matches)) => stat::execute(sub_matches),
+        Some(("to-index", sub_matches)) => to_index::execute(sub_matches),
         Some(("to-fa", sub_matches)) => to_fa::execute(sub_matches),
         _ => Ok(()),
     }

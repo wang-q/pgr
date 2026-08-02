@@ -18,6 +18,8 @@
 *   **build**: 创建或追加归档。
     *   `create`: 从参考 FASTA 和样本 FASTA 创建新的 pbit 归档。
     *   `append`: 向已有 pbit 归档追加新样本。
+*   **index**: 提取归档内嵌的参考索引。
+    *   `to-index`: 提取内嵌的参考 `.pgi` 索引（供 `pgr pgi align` / `pgr dist pgi` 消费）。
 *   **info**: 查看归档元信息。
     *   `stat`: 显示归档统计信息、样本列表、参考 contig 列表或样本 contig 列表。
 *   **subset**: 按名称或坐标提取序列。
@@ -50,6 +52,8 @@ pgr pbit create [OPTIONS] -r <ref.fa> -i <sample.fa>... -o <out.pbit>
 *   `-s, --segment-size <int>`: 参考序列分段大小，默认 4096 bp。
 *   `-k, --kmer-len <int>`: LZ-diff 哈希 k-mer 长度，默认 15。
 *   `-l, --min-match-len <int>`: LZ-diff 最小匹配长度，默认 18。
+*   `--index`: 内嵌参考的 `.pgi` 索引段（默认 k=40、syncmer 8/5），
+    之后可用 `pgr pbit to-index` 提取。
 *   `-o, --outfile <file>`: 输出文件名（必需）。
 
 #### Notes
@@ -83,6 +87,13 @@ pgr pbit create [OPTIONS] -r <ref.fa> -i <sample.fa>... -o <out.pbit>
     # sample1	/path/to/s1.fa	/path/to/s1.paf
     # sample2	/path/to/s2.fa
     pgr pbit create -r ref.fa --name samples.tsv -o cohort.pbit
+    ```
+
+5.  **内嵌参考索引**:
+    ```bash
+    pgr pbit create -r ref.fa -i sample.fa --index -o out.pbit
+    pgr pbit to-index out.pbit -o ref.pgi
+    pgr pgi align ref.pgi query.pgi --ref-seq ref.fa --query-seq query.fa -o out.psl
     ```
 
 ---

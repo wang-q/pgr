@@ -265,6 +265,12 @@ pub struct Compressor<W: Write + Seek> {
     segments: Vec<Segment>,
     /// Map: contig_name → Vec<ref_group_id> (reference segment indices).
     contig_ref_groups: IndexMap<String, Vec<u32>>,
+    /// Raw `.pgi` bytes to embed after the reference records at `finish`
+    /// (create path with `--index`).
+    ref_index: Option<Vec<u8>>,
+    /// (offset, size) of an index segment already present in the file being
+    /// appended to (preserved across the truncation at `ref_index_offset`).
+    preserved_idx: (u64, u64),
     segment_size: usize,
     kmer_len: usize,
 }
@@ -317,6 +323,8 @@ impl Compressor<std::io::BufWriter<std::fs::File>> {
             collection: Collection::new(),
             segments: Vec::new(),
             contig_ref_groups: IndexMap::new(),
+            ref_index: None,
+            preserved_idx: (0, 0),
             segment_size,
             kmer_len,
         };
@@ -438,6 +446,8 @@ impl Compressor<std::io::BufWriter<std::fs::File>> {
             collection,
             segments,
             contig_ref_groups,
+            ref_index: None,
+            preserved_idx: (footer.idx_offset, footer.idx_size),
             segment_size,
             kmer_len,
         })
@@ -819,6 +829,17 @@ impl<W: Write + Seek> Compressor<W> {
         // Patch header sample_count.
         self.header.sample_count = self.collection.sample_count() as u32;
 
+        // Embedded reference index segment, right after the reference records
+        // (before the Reference Index) for locality; on append, preserve the
+        // offsets of an index already in the file.
+        let (idx_offset, idx_size) = if let Some(bytes) = &self.ref_index {
+            let off = self.writer.stream_position()?;
+            self.writer.write_all(bytes)?;
+            (off, bytes.len() as u64)
+        } else {
+            self.preserved_idx
+        };
+
         // Seek to the end of reference records (current writer position).
         let ref_index_offset = self.writer.stream_position()?;
 
@@ -845,6 +866,8 @@ impl<W: Write + Seek> Compressor<W> {
             ref_index_offset,
             delta_data_offset,
             sample_index_offset,
+            idx_offset,
+            idx_size,
         };
         footer.write_to(&mut self.writer)?;
 
@@ -853,6 +876,17 @@ impl<W: Write + Seek> Compressor<W> {
         self.header.write_to(&mut self.writer)?;
 
         self.writer.flush()?;
+        Ok(())
+    }
+
+    /// Build a `.pgi` index for the reference genome (default k=40, syncmer
+    /// 8/5) and mark it for embedding after the reference records at
+    /// `finish`. Extracted later with `pgr pbit to-index`.
+    pub fn embed_reference_index_from_fasta(&mut self, ref_fasta: &str) -> Result<()> {
+        let idx = crate::libs::pgi::build::build_from_path(ref_fasta, 40, 8, 5, false)?;
+        let mut buf = Vec::new();
+        idx.write(&mut buf)?;
+        self.ref_index = Some(buf);
         Ok(())
     }
 
