@@ -521,6 +521,11 @@ alncode.c）；ALNtoPAF/ALNtoPSL 多线程线性展开 trace → CIGAR（`-pafx`
 2. 性能版（+~1200 行）：syncmer 稀疏索引 + wavefront 扩展器，替换步骤 1 的两个
    热点，按需启用。
 
+> **已落地（2026-08-02）**：路线 1 已以 `pgr pgi align` 实现（两 .pgi 排序流
+> 归并 → anti-diagonal 链化 → banded SW 局部扩展 → PSL），详见
+> [[../design/pgi-align.md]]；E. coli 自比对 99.9999% 覆盖，跨株身份率
+> 98.4% vs FastGA 97.8%。路线 2 的 wavefront 扩展器仍为未来优化。
+
 ### 12.5 索引选型结论
 
 - **第一版不需要 GIX 式索引**：pgr 是单基因组逐个比对，E. coli 5 Mb 的全 40-mer

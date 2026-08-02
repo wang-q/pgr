@@ -5,6 +5,7 @@
 //! (distance / seed discovery) and hypervector projection. Design notes:
 //! `notes/design/pbit-index-extension.md`.
 
+pub mod align;
 pub mod build;
 pub mod dist;
 pub mod to_hv;

@@ -453,6 +453,7 @@ chainnet 后消失。`pgr psl chain` 在 2bit 序列缓存优化后（~0.3 s）�
 |------|------|------|
 | [[pbit.md]] | `pgr pbit` 压缩格式设计（LZ-diff + PAF 驱动 CIGAR delta） | 已实现 |
 | [[pbit-index-extension.md]] | pbit 多参考 + 内嵌参考索引段扩展（泛基因组增量） | 设计草案 |
+| [[pgi-align.md]] | `.pgi` 两索引归并比对（种子→链→PSL 块，v1 已实现） | v1 已实现 |
 | [[fas-multiz.md]] | `libs::fas_multiz` 设计与实现（banded DP 合并） | 已实现（CLI 已落地） |
 | [[spoa_port.md]] | Spoa C++ → Rust 移植（POA 引擎） | 已完成（双引擎集成已落地） |
 | [[ms2dna_port.md]] | ms2dna C → Rust 迁移设计 | 已实现（实际命令为 `pgr ms to-dna`） |
