@@ -346,12 +346,14 @@ pub struct Tube {
 ///
 /// Seeds are bucketed by diagonal (`diag >> 6`, width 64), and adjacent
 /// buckets are merged in a-position order into tubes. A tube extends while
-/// the next seed's anti-diagonal stays within `CHAIN_BREAK` (1000 bp) of the
-/// current high; its anti coverage is the union of seed extents (`shared`),
-/// and a tube with coverage at least `CHAIN_MIN` (85 bp) is emitted.
+/// the next seed's anti-diagonal stays within `CHAIN_BREAK` (2000 bp, FastGA's
+/// internal value: `-s 1000` is doubled into anti-diagonal space) of the
+/// current high; its anti coverage is the union of seed extents (`shared`,
+/// single-axis, so `CHAIN_MIN` 85 == FastGA's 170 in anti space), and a tube
+/// with coverage at least `CHAIN_MIN` (85 bp) is emitted.
 pub fn chain_tubes(hits: &[SeedHit], k: u32) -> Vec<Tube> {
     const BUCK: i64 = 64;
-    const BREAK: i64 = 1000;
+    const BREAK: i64 = 2000;
     const MIN_COV: u64 = 85;
 
     // Group by (a_contig, b_contig, strand); within a group sort by

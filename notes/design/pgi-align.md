@@ -39,13 +39,19 @@
 | `--workflow` | greedy | tube 需要 `--ref-seq/--query-seq` |
 | `--parallel` | 8 | 专用 rayon 池（FastGA `-T` 默认） |
 
+> 口径说明：FastGA 的 `-c`/`-s` 在内部**翻倍**为 anti 空间值
+> （`CHAIN_MIN=170`、`CHAIN_BREAK=2000`，源码注释 "2x in anti-diagonal
+> space"）。`-c/-s/--band` 只作用于 greedy 链化（单轴语义）；tube 路径用
+> FastGA 语义的硬编码常量：`MIN_COV=85`（单轴口径 = FastGA 170 anti）、
+> `BREAK=2000`（anti，= `-s 1000` 翻倍）、`BUCK_ANTI=128`。
+
 **当前基准**（2026-08-02，tests/genome 真实数据，8 线程，release，详见 §2.2）：
 
 | 对（MG1655 vs） | pgr 覆盖 | FastGA 覆盖 | pgr 耗时 | FastGA 耗时 | pgr 峰值内存 | FastGA 峰值内存 |
 |---|---:|---:|---:|---:|---:|---:|
-| Sakai | 89.33% | 89.3% | 0.78s | ~0.7s | **224 MB** | 332 MB |
-| EC958 | 86.38% | 86.3% | 0.84s | ~0.7s | **206 MB** | — |
-| Nissle | 85.28% | 85.30% | 0.79s | ~0.7s | **210 MB** | — |
+| Sakai | 89.33% | 89.3% | 0.77s | ~0.7s | **224 MB** | 332 MB |
+| EC958 | 86.38% | 86.3% | 0.81s | ~0.7s | **205 MB** | — |
+| Nissle | 85.28% | 85.30% | 0.65s | ~0.7s | **207 MB** | — |
 
 **剩余工作**：
 
@@ -135,9 +141,11 @@ key 相等按 (a_strand, b_strand) 解析方向：
   平移断链）。
 - **tube**：种子按对角线分桶（宽 64）→ 相邻桶对按 anti 归并（排序键
   (diag 桶, anti)，§3.3 修过顺序 bug）→ tube 维护 anti 覆盖与对角线范围，
-  CHAIN_BREAK（1000 bp）断开、CHAIN_MIN（85 bp）触发。tube 扩展用
-  mid-line wave（BUCK_ANTI=128 滑动），`alast` 同组去重 + 输出端
-  `dedupe_contained`（0.95 阈值，§3.3 修过误删）。
+  种子 anti 间隔超 `CHAIN_BREAK`（2000 bp，FastGA 内部值）断开、覆盖达
+  `CHAIN_MIN`（85 bp，单轴口径 = FastGA 170 anti）触发。tube 扩展用
+  mid-line wave（BUCK_ANTI=128 滑动），每个 tube 独立 `alast`（并行化
+  替代 FastGA 的逐对桶共享）+ 输出端 `dedupe_contained`（0.95 阈值，
+  §3.3 修过误删）。
 
 #### 1.3.4 PSL 输出（UCSC 约定，负链是坑）
 
@@ -175,16 +183,19 @@ tube anti 序、dedupe 0.95 保留延伸块、最大前缀/扩展范围过滤、
 
 | 对（MG1655 vs） | pgr chainnet 覆盖 | 块数 | pgr 耗时 | FastGA 覆盖/耗时 | pgr 峰值内存 | FastGA 峰值内存 |
 |---|---:|---:|---:|---:|---:|---:|
-| Sakai | 89.33% | 681 | 0.78s | 89.3% / ~0.7s | **224 MB** | 332 MB |
-| EC958 | 86.38% | 745 | 0.84s | 86.3% / ~0.7s | **206 MB** | — |
-| Nissle | 85.28% | 1205 | 0.79s | 85.30% / ~0.7s | **210 MB** | — |
+| Sakai | 89.33% | 691 | 0.77s | 89.3% / ~0.7s | **224 MB** | 332 MB |
+| EC958 | 86.38% | 756 | 0.81s | 86.3% / ~0.7s | **205 MB** | — |
+| Nissle | 85.28% | 1213 | 0.65s | 85.30% / ~0.7s | **207 MB** | — |
 
 > 注：块数/覆盖按当前默认 `min-shared=12`（tube）实测；早期记录的
 > 588/794/793 块对应 k/2=20 时代（§3.2）。三对 PSL 与全量读入版
-> **逐字节一致**（mmap 改动验证）。FastGA 内存实测见 §5.1。
+> **逐字节一致**（mmap 改动验证）。BREAK=1000→2000 对齐 FastGA 后
+> 实测（§5.2 勘误 7）：块数 +1.5%，syntenic 覆盖 Sakai +0.02%、
+> EC958 -0.09%、Nissle ±0.00%（噪声级），耗时/内存持平。
+> FastGA 内存实测见 §5.1。
 
 阶段分布（Sakai，`RUST_LOG=debug` 探针）：merge **198 ms / 171 MB**、
-chain_tubes **244 ms / 218 MB**、extend **273 ms / 229 MB**，墙钟 0.78 s
+chain_tubes **237 ms / 218 MB**、extend **278 ms / 229 MB**，墙钟 0.77 s
 （另含索引流式读取、序列加载、PSL 写盘）；merge 命中 2,471,561。
 
 ### 2.3 端到端管线验证（2026-08-02）
@@ -291,10 +302,13 @@ ec2011c_3493 聚类 99.1%+、nissle–cft073 99.6%）。合并块后身份率比
   但单独接入 banded 路径更差（块数 3-4×，覆盖 71.6% / 32.7% 取决于锚点
   策略）——wave 依赖 tube 的锚定上下文；保留为独立实现
   （`src/libs/alignment/wave.rs`），按 FastGA 语义接入见 5.13。
-- **5.12 tube 链化移植**（FastGA `align_contigs`）：对角桶 + anti 归并 +
-  tube（§1.3.3）。
+- **5.12 tube 链化移植**（FastGA `align_contigs`）：对角桶（宽 64）+
+  anti 归并 + tube（§1.3.3）。常量对齐 FastGA：`BREAK=2000`（anti，
+  `-s 1000` 内部翻倍）、`MIN_COV=85`（单轴 = FastGA 170 anti）。
 - **5.13 Myers wave + `Local_Alignment` 移植**：forward_wave_mid +
-  Myers O(ND) D&C 回溯 + extend_tube（BUCK_ANTI=128）。对照（tube）：
+  Myers O(ND) D&C 回溯 + extend_tube（BUCK_ANTI=128；`alast` 每 tube
+  独立，并行化替代 FastGA 的逐对桶共享，重叠由 `dedupe_contained` 兜底）。
+  对照（tube）：
   banded 基线 862 块/87.7%/1.36s/1.38 GB → tube+wave 643 块/**88.2%**/
   8.7s/425 MB → FastGA 701 块/89.3%/~0.7s。质量逼近、内存 -3×，
   速度是短板（~4 万次 wave 调用，单次 ~0.18ms）。
@@ -473,6 +487,12 @@ ec2011c_3493 聚类 99.1%+、nissle–cft073 99.6%）。合并块后身份率比
 5. **FastGA 内存（5.13→5.36）**：曾记 "~0 MB" → 实测 332 MB（§5.1）。
 6. **验证数据（5.35→5.36）**：早期 mmap 验证曾用合成 2×2 Mb 随机序列 →
    统一为 tests/genome 真实数据重测（数字以 §2.2 为准）。
+7. **tube `CHAIN_BREAK` 口径（5.12→本次核对）**：曾把 `BREAK=1000`
+   （未加倍值）用于 anti 空间间隔比较；FastGA 的 `-s 1000` 在内部翻倍为
+   `CHAIN_BREAK=2000`（anti）。已修正为 2000（`MIN_COV=85` 因 cov 用
+   单轴投影，与 FastGA 的 170 anti 等价，不动）。修正后实测：块数
+   +1.5%，三对 syntenic 覆盖 ±0.1% 内（Sakai +0.02%、EC958 -0.09%、
+   Nissle ±0.00%），耗时/内存持平（§2.2 数字以修正后为准）。
 
 ### 5.3 基准方法
 
