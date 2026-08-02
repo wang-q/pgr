@@ -1,5 +1,6 @@
 //! `pgr pgi align` — two-index merge alignment into PSL blocks.
 
+use anyhow::Context;
 use clap::{value_parser, Arg, ArgMatches, Command};
 
 /// Build the clap subcommand for align.
@@ -109,6 +110,7 @@ Examples:
                 .long("query-seq")
                 .help("Query sequence file (FASTA or .2bit) for chain refinement"),
         )
+        .arg(crate::cmd_pgr::args::parallel_arg_with_default("8"))
 }
 
 /// Execute the align command.
@@ -129,22 +131,36 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         },
     };
 
+    // The reference index is consumed as a stream by the merge; only the
+    // query index is fully resident (FastGA's GIX is memory-mapped, which
+    // this pure-std streaming approximates without new dependencies).
     let mut r1 = pgr::reader(ref_idx)?;
-    let a = pgr::libs::pgi::PgiIndex::read(&mut r1)?;
+    let mut a = pgr::libs::pgi::PgiStream::open(&mut r1)?;
     let mut r2 = pgr::reader(query_idx)?;
     let b = pgr::libs::pgi::PgiIndex::read(&mut r2)?;
 
-    let psls = match (
-        args.get_one::<String>("ref_seq"),
-        args.get_one::<String>("query_seq"),
-    ) {
-        (Some(rp), Some(qp)) => {
-            let rs = read_seqs(rp)?;
-            let qs = read_seqs(qp)?;
-            pgr::libs::pgi::align::align_to_psl_ext(a, b, &params, &rs, &qs)?
+    // A dedicated pool bounds the parallel tube extension: the wave/dandc
+    // scratch scales with concurrent tubes, and 8 threads (FastGA's `-T`
+    // default) keep the extend peak at the chaining footprint with no speed
+    // loss on these benchmarks.
+    let parallel = *args.get_one::<usize>("parallel").unwrap();
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(parallel)
+        .build()
+        .context("building align thread pool")?;
+    let psls = pool.install(|| -> anyhow::Result<Vec<pgr::libs::fmt::psl::Psl>> {
+        match (
+            args.get_one::<String>("ref_seq"),
+            args.get_one::<String>("query_seq"),
+        ) {
+            (Some(rp), Some(qp)) => {
+                let rs = read_seqs(rp)?;
+                let qs = read_seqs(qp)?;
+                pgr::libs::pgi::align::align_to_psl_ext_streaming(a, b, &params, &rs, &qs)
+            }
+            _ => pgr::libs::pgi::align::align_to_psl_streaming(&mut a, &b, &params),
         }
-        _ => pgr::libs::pgi::align::align_to_psl(&a, &b, &params)?,
-    };
+    })?;
     let mut writer = pgr::writer(outfile)?;
     for p in &psls {
         p.write_to(&mut writer)?;

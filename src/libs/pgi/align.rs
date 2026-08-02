@@ -1,14 +1,15 @@
 //! Two-index merge alignment: seed hits -> anti-diagonal chains -> PSL blocks.
 
 use super::dist::validate_compatible;
-use super::PgiIndex;
+use super::{unpack_position, PgiIndex, PgiStream};
 use crate::libs::alignment::align_banded_local;
-use crate::libs::alignment::coords::reverse_range_pair;
+use crate::libs::alignment::coords::{reverse_range, reverse_range_pair};
 use crate::libs::alignment::wave::local_alignment;
 use crate::libs::fmt::psl::Psl;
-use crate::libs::nt::{complement, rev_comp};
+use crate::libs::nt::{complement, rc_key, rev_comp};
 use crate::libs::poa::align::AlignmentParams;
 use rayon::prelude::*;
+use std::io::Read;
 
 /// Alignment parameters; defaults follow FastGA (`-f 10`, `-c 85`, `-s 1000`).
 #[derive(Debug, Clone, Copy)]
@@ -23,9 +24,8 @@ pub struct AlignParams {
     pub band: u32,
     /// Maximum gap (bp) between adjacent colinear chains to merge.
     pub merge_gap: u32,
-    /// Minimum shared seed length (bp); `None` means exact k-mers (default).
-    /// Lower values enable adaptamer-style partial seeds, which are
-    /// experimental: they degrade block structure (see pgi-align.md §5.9).
+    /// Minimum shared seed length (bp); `None` selects the workflow default
+    /// (FastGA's plen floor of 12 for tube, exact k-mers for greedy).
     pub min_shared: Option<usize>,
     /// Chaining workflow: FastGA tube chaining or the default greedy chains.
     pub workflow: Workflow,
@@ -60,27 +60,28 @@ impl Default for AlignParams {
 #[derive(Debug, Clone, Copy)]
 pub struct SeedHit {
     /// Reference (a) contig id.
-    pub a_contig: u32,
+    pub a_contig: u16,
     /// Reference position, forward coordinates.
     pub a_pos: u32,
     /// Query (b) contig id.
-    pub b_contig: u32,
+    pub b_contig: u16,
     /// Query position in orientation space (RC space when `strand` is 1).
     pub b_pos: u32,
     /// Shared prefix length (bp) of the two k-mers.
-    pub shared: u32,
+    pub shared: u16,
     /// 0 = forward, 1 = reverse (query window is the RC of the reference).
     pub strand: u8,
 }
 
 /// Merge two sorted k-mer indexes, emitting adaptamer-style seed hits for
 /// every k-mer pair sharing at least `min_shared` bases (mirroring FastGA's
-/// lcp-driven merge; exact k-mers are the `min_shared == k` special case).
+/// lcp-driven merge with FastGA's adaptamer seed selection: each `a` entry
+/// seeds only its *longest* shared prefix against `b`, and the frequency
+/// filter applies to the extended range at that length (not the fixed
+/// `min_shared` floor window). Exact k-mers are the `min_shared == k` case.
 ///
 /// Both-strand entries are emitted by `pgi build`, so shared keys with equal
-/// strand flags mean a forward hit, and differing flags a reverse hit. A
-/// k-mer whose matching prefix range in the other index exceeds `freq`
-/// entries is skipped (FastGA's frequency filter).
+/// strand flags mean a forward hit, and differing flags a reverse hit.
 pub fn merge_seed_hits(
     a: &PgiIndex,
     b: &PgiIndex,
@@ -93,73 +94,173 @@ pub fn merge_seed_hits(
         min_shared >= 1 && min_shared <= k,
         "min_shared must be in 1..={k}"
     );
+    // The per-entry prefix query against `b` is independent, so split the
+    // `a` entries into chunks and merge them in parallel (the chaining passes
+    // re-sort the hits, so the output order is free). `flat_map_iter` keeps
+    // only the in-flight chunk buffers instead of all part vectors at once.
+    let hits: Vec<SeedHit> = a
+        .entries
+        .par_chunks(4096)
+        .flat_map_iter(|ents| {
+            let mut hits = Vec::new();
+            for ea in ents {
+                let ap = &a.positions[ea.pos_start as usize..(ea.pos_start + ea.freq) as usize];
+                hits.extend(emit_entry_hits(
+                    ea.kmer, ea.freq, ap, b, freq, min_shared, k,
+                ));
+            }
+            hits
+        })
+        .collect();
+    Ok(hits)
+}
+
+/// FastGA-style seed merge with the reference index streamed from disk: `a`
+/// entries are read in batches and merged in parallel against the fully
+/// loaded `b`, so only the query index stays resident.
+pub fn merge_seed_hits_from_stream<R: Read + Send>(
+    a: &mut PgiStream<R>,
+    b: &PgiIndex,
+    freq: u32,
+    min_shared: usize,
+) -> anyhow::Result<Vec<SeedHit>> {
+    validate_compatible(
+        &PgiIndex {
+            k: a.header().k,
+            smer: a.header().smer,
+            window: a.header().window,
+            contigs: Vec::new(),
+            entries: Vec::new(),
+            positions: Vec::new(),
+        },
+        b,
+    )?;
+    let k = a.header().k;
+    anyhow::ensure!(
+        min_shared >= 1 && min_shared <= k,
+        "min_shared must be in 1..={k}"
+    );
+    // One rayon task per batch keeps a handful of batches in flight instead
+    // of the whole reference index.
+    const BATCH_ENTRIES: usize = 8192;
+    let batches =
+        std::iter::from_fn(|| Some(a.next_batch(BATCH_ENTRIES))).take_while(|r| match r {
+            Ok(v) => !v.is_empty(),
+            Err(_) => true,
+        });
+    let parts: Vec<Vec<SeedHit>> = batches
+        .par_bridge()
+        .map(|batch| {
+            let mut hits = Vec::new();
+            for (ea, poss) in batch? {
+                hits.extend(emit_entry_hits(
+                    ea.kmer, ea.freq, &poss, b, freq, min_shared, k,
+                ));
+            }
+            Ok(hits)
+        })
+        .collect::<anyhow::Result<Vec<_>>>()?;
+    Ok(parts.into_iter().flatten().collect())
+}
+
+/// Emit FastGA-style seed hits for one `a` entry against the full `b` index.
+///
+/// `a_positions` is the entry's packed positions (from the full index or a
+/// streamed batch). Each entry seeds only its longest shared prefix, and the
+/// frequency filter applies to the extended range at that length.
+#[allow(clippy::too_many_arguments)]
+fn emit_entry_hits(
+    ea_kmer: u128,
+    ea_freq: u32,
+    a_positions: &[u64],
+    b: &PgiIndex,
+    freq: u32,
+    min_shared: usize,
+    k: usize,
+) -> Vec<SeedHit> {
+    let mut hits = Vec::new();
+    if ea_freq > freq {
+        return hits;
+    }
+    // FastGA stores each position under its canonical orientation only; the
+    // reverse-complement key would duplicate every physical hit (both strands
+    // are emitted by `pgi build`).
+    if ea_kmer > rc_key(ea_kmer, k) {
+        return hits;
+    }
     let k_bits = 2 * k;
-    let drop_bits = k_bits - 2 * min_shared;
-    let range = 1u128 << drop_bits;
     let mask = if k_bits >= 128 {
         u128::MAX
     } else {
         (1u128 << k_bits) - 1
     };
-    // The per-entry prefix query against `b` is independent, so split the
-    // `a` entries into chunks and merge them in parallel (the chaining passes
-    // re-sort the hits, so the output order is free).
-    let parts: Vec<Vec<SeedHit>> = a
-        .entries
-        .par_chunks(4096)
-        .map(|ents| {
-            let mut hits = Vec::new();
-            for ea in ents {
-                if ea.freq > freq {
-                    continue;
-                }
-                // Prefix range in b: keys sharing the first `min_shared` bases.
-                let lo = ea.kmer & !(range - 1) & mask;
-                let hi = lo + range;
-                let j0 = b.entries.partition_point(|e| e.kmer < lo);
-                let mut j = j0;
-                while j < b.entries.len() && b.entries[j].kmer < hi {
-                    j += 1;
-                }
-                let range_size = (j - j0) as u32;
-                if range_size == 0 || range_size > freq {
-                    continue;
-                }
-                let ap = &a.positions[ea.pos_start as usize..(ea.pos_start + ea.freq) as usize];
-                for eb in &b.entries[j0..j] {
-                    if eb.freq > freq {
-                        continue;
-                    }
-                    let shared = shared_prefix(ea.kmer, eb.kmer, k);
-                    if shared < min_shared as u32 {
-                        continue;
-                    }
-                    let bp = &b.positions[eb.pos_start as usize..(eb.pos_start + eb.freq) as usize];
-                    for &(ac, apos, astrand) in ap {
-                        for &(bc, bpos, bstrand) in bp {
-                            let fwd = astrand == bstrand;
-                            let b_len = b.contigs[bc as usize].1;
-                            let oriented = if fwd {
-                                bpos as u64
-                            } else {
-                                b_len - k as u64 - bpos as u64
-                            };
-                            hits.push(SeedHit {
-                                a_contig: ac,
-                                a_pos: apos,
-                                b_contig: bc,
-                                b_pos: oriented as u32,
-                                shared,
-                                strand: u8::from(!fwd),
-                            });
-                        }
-                    }
-                }
+    // Prefix range of `b` entries sharing the first `len` bases with the key.
+    let window = |len: usize| -> (usize, usize) {
+        let r = 1u128 << (k_bits - 2 * len);
+        let lo = ea_kmer & !(r - 1) & mask;
+        let hi = lo + r;
+        let i0 = b.entries.partition_point(|e| e.kmer < lo);
+        let mut i1 = i0;
+        while i1 < b.entries.len() && b.entries[i1].kmer < hi {
+            i1 += 1;
+        }
+        (i0, i1)
+    };
+    let (j0, j) = window(min_shared);
+    if j == j0 {
+        return hits;
+    }
+    // Maximal shared prefix over the floor window (FastGA extends each entry
+    // to its longest match before filtering).
+    let mut m: u32 = 0;
+    for eb in &b.entries[j0..j] {
+        if eb.freq > freq {
+            continue;
+        }
+        m = m.max(shared_prefix(ea_kmer, eb.kmer, k));
+    }
+    if m < min_shared as u32 {
+        return hits;
+    }
+    // Restrict to the maximal-prefix range; its occurrence count must stay
+    // under `freq` (extended-range filter, not the floor window).
+    let (m0, m1) = window(m as usize);
+    let occ: u32 = b.entries[m0..m1]
+        .iter()
+        .filter(|e| e.freq <= freq)
+        .map(|e| e.freq)
+        .sum();
+    if occ == 0 || occ >= freq {
+        return hits;
+    }
+    for eb in &b.entries[m0..m1] {
+        if eb.freq > freq {
+            continue;
+        }
+        let bp = &b.positions[eb.pos_start as usize..(eb.pos_start + eb.freq) as usize];
+        for &arec in a_positions {
+            let (ac, apos, astrand) = unpack_position(arec);
+            for &brec in bp {
+                let (bc, bpos, bstrand) = unpack_position(brec);
+                let fwd = astrand == bstrand;
+                let b_len = b.contigs[bc as usize].1;
+                let oriented = if fwd {
+                    bpos as u64
+                } else {
+                    b_len - k as u64 - bpos as u64
+                };
+                hits.push(SeedHit {
+                    a_contig: ac as u16,
+                    a_pos: apos,
+                    b_contig: bc as u16,
+                    b_pos: oriented as u32,
+                    shared: m as u16,
+                    strand: u8::from(!fwd),
+                });
             }
-            hits
-        })
-        .collect();
-    Ok(parts.into_iter().flatten().collect())
+        }
+    }
+    hits
 }
 
 /// Longest common prefix (in bases) of two 2-bit k-mer keys.
@@ -174,14 +275,27 @@ fn shared_prefix(a: u128, b: u128, k: usize) -> u32 {
 
 /// Effective minimum shared seed length: `params.min_shared` or `k` (exact
 /// k-mers), capped at `k`.
-fn effective_min_shared(idx: &PgiIndex, params: &AlignParams) -> usize {
+fn effective_min_shared(k: usize, params: &AlignParams) -> usize {
     match params.min_shared {
-        Some(v) => v.min(idx.k),
-        // FastGA's adaptamer seeds share ~31 of its 40 bp; the tube workflow
-        // defaults to partial seeds (k/2) to recover indel-shifted regions.
-        None if params.workflow == Workflow::Tube => (idx.k / 2).max(1),
-        None => idx.k,
+        Some(v) => v.min(k),
+        // FastGA's adaptamer merge emits seeds with plen in 12..=k; the tube
+        // workflow uses that floor to recover indel-shifted regions.
+        None if params.workflow == Workflow::Tube => 12.min(k),
+        None => k,
     }
+}
+
+/// Current peak RSS in MB, read from `/proc/self/status` (Linux only).
+fn peak_rss_mb() -> u64 {
+    let Ok(s) = std::fs::read_to_string("/proc/self/status") else {
+        return 0;
+    };
+    s.lines()
+        .find(|l| l.starts_with("VmHWM:"))
+        .and_then(|l| l.split_whitespace().nth(1))
+        .and_then(|v| v.parse::<u64>().ok())
+        .map(|kb| kb / 1024)
+        .unwrap_or(0)
 }
 /// One chained diagonal segment on a single (contig_a, contig_b, strand) pair.
 #[derive(Debug, Clone, Copy)]
@@ -244,42 +358,43 @@ pub fn chain_tubes(hits: &[SeedHit], k: u32) -> Vec<Tube> {
     // diagonal bucket + offset, anti). The bucket offset keeps negative
     // diagonals orderable under unsigned packing.
     const BUCK_OFF: i64 = 1_000_000;
-    // Precompute the keys once: the key closure is otherwise re-evaluated on
-    // every comparison inside the parallel sort.
-    let mut keyed: Vec<(u128, &SeedHit)> = hits
-        .iter()
-        .map(|h| {
-            let diag = h.a_pos as i64 - h.b_pos as i64;
-            let bucket = (diag.div_euclid(64) + BUCK_OFF) as u64;
-            let anti = (h.a_pos as i64 + h.b_pos as i64) as u64;
-            let key = ((h.a_contig as u128) << 88)
+    // Precompute the packed keys into a flat key array and radix-sort the
+    // index permutation alongside (the MSD radix keeps a `u128` key array
+    // plus a `u32` index array, ~40% smaller than `(u128, u32)` tuples).
+    let mut keys: Vec<u128> = Vec::with_capacity(hits.len());
+    for h in hits {
+        let diag = h.a_pos as i64 - h.b_pos as i64;
+        let bucket = (diag.div_euclid(64) + BUCK_OFF) as u64;
+        let anti = (h.a_pos as i64 + h.b_pos as i64) as u64;
+        keys.push(
+            ((h.a_contig as u128) << 88)
                 | ((h.b_contig as u128) << 72)
                 | ((h.strand as u128) << 71)
                 | ((bucket as u128) << 24)
-                | anti as u128;
-            (key, h)
-        })
-        .collect();
-    keyed.par_sort_unstable_by_key(|(k, _)| *k);
-    let sorted: Vec<&SeedHit> = keyed.into_iter().map(|(_, h)| h).collect();
+                | anti as u128,
+        );
+    }
+    let mut order: Vec<u32> = (0..hits.len() as u32).collect();
+    crate::libs::ds::radix_sort::radix_sort_u128_par(&mut keys, &mut order, 104);
 
     let mut tubes = Vec::new();
     let mut start = 0usize;
-    while start < sorted.len() {
-        let g = sorted[start];
+    while start < order.len() {
+        let g = &hits[order[start] as usize];
         let mut end = start + 1;
-        while end < sorted.len()
-            && sorted[end].a_contig == g.a_contig
-            && sorted[end].b_contig == g.b_contig
-            && sorted[end].strand == g.strand
+        while end < order.len()
+            && hits[order[end] as usize].a_contig == g.a_contig
+            && hits[order[end] as usize].b_contig == g.b_contig
+            && hits[order[end] as usize].strand == g.strand
         {
             end += 1;
         }
         tubes_for_group(
-            &sorted[start..end],
+            &order[start..end],
+            hits,
             k,
-            g.a_contig,
-            g.b_contig,
+            g.a_contig as u32,
+            g.b_contig as u32,
             g.strand,
             BUCK,
             BREAK,
@@ -293,7 +408,8 @@ pub fn chain_tubes(hits: &[SeedHit], k: u32) -> Vec<Tube> {
 
 #[allow(clippy::too_many_arguments)]
 fn tubes_for_group(
-    seeds: &[&SeedHit],
+    seeds: &[u32],
+    hits: &[SeedHit],
     k: u32,
     a_contig: u32,
     b_contig: u32,
@@ -304,13 +420,14 @@ fn tubes_for_group(
     tubes: &mut Vec<Tube>,
 ) {
     // Bucket the seeds by diagonal.
-    let mut buckets: Vec<(i64, Vec<&SeedHit>)> = Vec::new();
-    for h in seeds {
+    let mut buckets: Vec<(i64, Vec<u32>)> = Vec::new();
+    for &s in seeds {
+        let h = &hits[s as usize];
         let diag = h.a_pos as i64 - h.b_pos as i64;
         let b = diag.div_euclid(buck);
         match buckets.last_mut() {
-            Some((last, v)) if *last == b => v.push(h),
-            _ => buckets.push((b, vec![*h])),
+            Some((last, v)) if *last == b => v.push(s),
+            _ => buckets.push((b, vec![s])),
         }
     }
 
@@ -321,7 +438,7 @@ fn tubes_for_group(
         .into_par_iter()
         .map(|w| {
             let (cb, b_seeds) = &buckets[w];
-            let m_seeds: &[&SeedHit] = if w + 1 < buckets.len() && buckets[w + 1].0 == cb + 1 {
+            let m_seeds: &[u32] = if w + 1 < buckets.len() && buckets[w + 1].0 == cb + 1 {
                 &buckets[w + 1].1
             } else {
                 &[]
@@ -338,12 +455,16 @@ fn tubes_for_group(
             let mut dgmin = 2 * buck;
             let mut dgmax = 0i64;
             while bi < b_seeds.len() || mi < m_seeds.len() {
-                let anti_b = b_seeds.get(bi).map(|h| h.a_pos as i64 + h.b_pos as i64);
-                let anti_m = m_seeds.get(mi).map(|h| h.a_pos as i64 + h.b_pos as i64);
+                let anti_b = b_seeds
+                    .get(bi)
+                    .map(|&s| hits[s as usize].a_pos as i64 + hits[s as usize].b_pos as i64);
+                let anti_m = m_seeds
+                    .get(mi)
+                    .map(|&s| hits[s as usize].a_pos as i64 + hits[s as usize].b_pos as i64);
                 let (h, side) = match (anti_b, anti_m) {
-                    (Some(ab), Some(am)) if am < ab => (m_seeds[mi], 2u8),
-                    (Some(_), _) => (b_seeds[bi], 1u8),
-                    (None, Some(_)) => (m_seeds[mi], 2u8),
+                    (Some(ab), Some(am)) if am < ab => (&hits[m_seeds[mi] as usize], 2u8),
+                    (Some(_), _) => (&hits[b_seeds[bi] as usize], 1u8),
+                    (None, Some(_)) => (&hits[m_seeds[mi] as usize], 2u8),
                     (None, None) => unreachable!(),
                 };
                 if side == 1 {
@@ -426,6 +547,7 @@ fn extend_tube(
     a_revs: &[Vec<u8>],
     b_revs: &[Vec<u8>],
     b_comps: &[Vec<u8>],
+    b_rcs: &[Vec<u8>],
 ) -> Vec<Psl> {
     let Some((_, a_int)) = a_seqs.get(tube.a_contig as usize) else {
         return Vec::new();
@@ -433,14 +555,13 @@ fn extend_tube(
     let Some((_, b_int)) = b_seqs.get(tube.b_contig as usize) else {
         return Vec::new();
     };
-    // Query contig in orientation space (RC for minus strand), once.
-    // Orientation-space query: a slice for forward strands (no copy), owned
-    // RC only for reverse strands. The main-chromosome reverse tubes would
-    // otherwise allocate ~5.5 MB per tube and serialize on the allocator.
+    // Query contig in orientation space (RC for minus strand). The RC copies
+    // are precomputed once and shared: per-tube copies of the ~5.5 MB main
+    // chromosome used to serialize the allocator and inflate the extend peak.
     let q = if tube.strand == 0 {
         std::borrow::Cow::Borrowed(b_int)
     } else {
-        std::borrow::Cow::Owned(rev_comp(b_int).collect())
+        std::borrow::Cow::Borrowed(&b_rcs[tube.b_contig as usize])
     };
     let q: &[u8] = &q;
     let rt = &a_revs[tube.a_contig as usize];
@@ -472,11 +593,22 @@ fn extend_tube(
             let rlen = (aln.t_end - aln.t_start) as i64;
             if rlen >= TUBE_MIN_LEN && TUBE_MIN_RATE * rlen as f64 >= aln.diffs as f64 {
                 let strand = if tube.strand == 0 { "+" } else { "-" };
+                let mut q_start = aln.q_start as i32;
+                let mut q_end = aln.q_end as i32;
+                if tube.strand == 1 {
+                    // `Psl::from_align` expects plus-strand coordinates; wave
+                    // alignments are in RC space for minus-strand tubes.
+                    reverse_range(
+                        &mut q_start,
+                        &mut q_end,
+                        b.contigs[tube.b_contig as usize].1 as i32,
+                    );
+                }
                 if let Some(psl) = Psl::from_align(
                     &b.contigs[tube.b_contig as usize].0,
                     b.contigs[tube.b_contig as usize].1 as u32,
-                    aln.q_start as i32,
-                    aln.q_end as i32,
+                    q_start,
+                    q_end,
                     &String::from_utf8_lossy(&aln.q_aln),
                     &a.contigs[tube.a_contig as usize].0,
                     a.contigs[tube.a_contig as usize].1 as u32,
@@ -573,7 +705,10 @@ pub fn chain_hits(
     for h in &sorted {
         let diag = h.a_pos as i64 - h.b_pos as i64;
         if let Some(c) = cur {
-            if h.a_contig == c.a_contig && h.b_contig == c.b_contig && h.strand == c.strand {
+            if h.a_contig as u32 == c.a_contig
+                && h.b_contig as u32 == c.b_contig
+                && h.strand == c.strand
+            {
                 let mean = c.diag_sum / c.count as i64;
                 let gap_a = h.a_pos as i64 - c.last_a as i64;
                 let gap_b = h.b_pos as i64 - c.last_b as i64;
@@ -598,8 +733,8 @@ pub fn chain_hits(
             push_chain(&mut chains, &cur, k, min_span);
         }
         cur = Some(ChainCursor {
-            a_contig: h.a_contig,
-            b_contig: h.b_contig,
+            a_contig: h.a_contig as u32,
+            b_contig: h.b_contig as u32,
             strand: h.strand,
             first_a: h.a_pos,
             last_a: h.a_pos,
@@ -723,14 +858,18 @@ pub fn chain_to_psl(chain: &Chain, a: &PgiIndex, b: &PgiIndex) -> Psl {
     psl.strand = strand.to_string();
     psl.block_count = 1;
     psl.block_sizes.push(q_end - q_start);
-    psl.q_starts.push(q_start);
+    psl.q_starts.push(if chain.strand == 0 {
+        q_start
+    } else {
+        b_len - q_end
+    });
     psl.t_starts.push(chain.a_start);
     psl
 }
 
 /// Align two compatible indexes: merge seeds, chain, and emit PSL blocks.
 pub fn align_to_psl(a: &PgiIndex, b: &PgiIndex, params: &AlignParams) -> anyhow::Result<Vec<Psl>> {
-    let hits = merge_seed_hits(a, b, params.freq, effective_min_shared(a, params))?;
+    let hits = merge_seed_hits(a, b, params.freq, effective_min_shared(a.k, params))?;
     match params.workflow {
         Workflow::Tube => anyhow::bail!(
             "the tube workflow needs --ref-seq/--query-seq (wave extension requires sequences)"
@@ -745,6 +884,40 @@ pub fn align_to_psl(a: &PgiIndex, b: &PgiIndex, params: &AlignParams) -> anyhow:
                 params.merge_gap,
             );
             Ok(chains.iter().map(|c| chain_to_psl(c, a, b)).collect())
+        }
+    }
+}
+
+/// Same as [`align_to_psl`] with the reference index streamed from disk.
+pub fn align_to_psl_streaming<R: Read + Send>(
+    a: &mut PgiStream<R>,
+    b: &PgiIndex,
+    params: &AlignParams,
+) -> anyhow::Result<Vec<Psl>> {
+    let k = a.header().k;
+    let hits = merge_seed_hits_from_stream(a, b, params.freq, effective_min_shared(k, params))?;
+    match params.workflow {
+        Workflow::Tube => anyhow::bail!(
+            "the tube workflow needs --ref-seq/--query-seq (wave extension requires sequences)"
+        ),
+        Workflow::Greedy => {
+            let chains = chain_hits(
+                &hits,
+                k as u32,
+                params.min_span,
+                params.max_gap,
+                params.band,
+                params.merge_gap,
+            );
+            let a = PgiIndex {
+                k,
+                smer: a.header().smer,
+                window: a.header().window,
+                contigs: a.header().contigs.clone(),
+                entries: Vec::new(),
+                positions: Vec::new(),
+            };
+            Ok(chains.iter().map(|c| chain_to_psl(c, &a, b)).collect())
         }
     }
 }
@@ -863,15 +1036,23 @@ fn extend_window(
     if q_covered == 0 || t_covered == 0 {
         return None;
     }
-    let q_abs = q_win + q_start;
-    // Reverse-strand PSLs use whole-contig RC-space coordinates here;
-    // `Psl::from_align` converts them to original ascending coordinates.
+    let mut q_abs = (q_win + q_start) as i32;
+    let mut q_abs_end = q_abs + q_covered as i32;
+    if chain.strand == 1 {
+        // `Psl::from_align` expects plus-strand coordinates; chain windows are
+        // in RC space for minus-strand chains.
+        reverse_range(
+            &mut q_abs,
+            &mut q_abs_end,
+            b.contigs[chain.b_contig as usize].1 as i32,
+        );
+    }
     let strand = if chain.strand == 0 { "+" } else { "-" };
     Psl::from_align(
         &b.contigs[chain.b_contig as usize].0,
         b.contigs[chain.b_contig as usize].1 as u32,
-        q_abs as i32,
-        (q_abs + q_covered) as i32,
+        q_abs,
+        q_abs_end,
         &String::from_utf8_lossy(&q_aln),
         &a.contigs[chain.a_contig as usize].0,
         a.contigs[chain.a_contig as usize].1 as u32,
@@ -885,13 +1066,66 @@ fn extend_window(
 /// Align two indexes, extending chains when sequences are provided and
 /// falling back to plain blocks otherwise.
 pub fn align_to_psl_ext(
-    a: &PgiIndex,
-    b: &PgiIndex,
+    a: PgiIndex,
+    b: PgiIndex,
     params: &AlignParams,
     a_seqs: &[(String, Vec<u8>)],
     b_seqs: &[(String, Vec<u8>)],
 ) -> anyhow::Result<Vec<Psl>> {
-    let hits = merge_seed_hits(a, b, params.freq, effective_min_shared(a, params))?;
+    let min_shared = effective_min_shared(a.k, params);
+    let hits = merge_seed_hits(&a, &b, params.freq, min_shared)?;
+    log::info!(
+        "merge: {} seed hits (min-shared={min_shared}, freq={})",
+        hits.len(),
+        params.freq
+    );
+    log::debug!("peak RSS after merge: {} MB", peak_rss_mb());
+    psls_from_hits(a, b, params, hits, a_seqs, b_seqs)
+}
+
+/// Align two indexes with the reference (`a`) streamed from disk instead of
+/// loaded in full: the merge reads `a` in batches, so only the query index
+/// (`b`) stays resident.
+pub fn align_to_psl_ext_streaming<R: Read + Send>(
+    mut a: PgiStream<R>,
+    b: PgiIndex,
+    params: &AlignParams,
+    a_seqs: &[(String, Vec<u8>)],
+    b_seqs: &[(String, Vec<u8>)],
+) -> anyhow::Result<Vec<Psl>> {
+    let header = a.header().clone();
+    let min_shared = effective_min_shared(header.k, params);
+    let hits = merge_seed_hits_from_stream(&mut a, &b, params.freq, min_shared)?;
+    log::info!(
+        "merge: {} seed hits (min-shared={min_shared}, freq={})",
+        hits.len(),
+        params.freq
+    );
+    log::debug!("peak RSS after merge: {} MB", peak_rss_mb());
+    let a = PgiIndex {
+        k: header.k,
+        smer: header.smer,
+        window: header.window,
+        contigs: header.contigs,
+        entries: Vec::new(),
+        positions: Vec::new(),
+    };
+    psls_from_hits(a, b, params, hits, a_seqs, b_seqs)
+}
+
+/// Chain and extend a seed-hit list into PSL blocks.
+///
+/// `a` only contributes its contig table after the merge (its entries and
+/// positions are dropped before the extension phase); callers may pass an
+/// index with empty tables when the reference was streamed.
+fn psls_from_hits(
+    mut a: PgiIndex,
+    mut b: PgiIndex,
+    params: &AlignParams,
+    hits: Vec<SeedHit>,
+    a_seqs: &[(String, Vec<u8>)],
+    b_seqs: &[(String, Vec<u8>)],
+) -> anyhow::Result<Vec<Psl>> {
     if params.workflow == Workflow::Tube {
         // Tubes are independent alignment tasks; the `alast` overlap skip of
         // FastGA's sequential scan is replaced by a parallel pass plus a
@@ -921,7 +1155,15 @@ pub fn align_to_psl_ext(
                 }
             })
             .collect();
+        log::debug!("peak RSS after chain_tubes: {} MB", peak_rss_mb());
         drop(hits); // the tubes and sequences are enough for extension
+                    // The k-mer entries/positions are only needed for the merge; drop the
+                    // ~140 MB per index before the parallel extension phase.
+        drop(std::mem::take(&mut a.entries));
+        drop(std::mem::take(&mut a.positions));
+        drop(std::mem::take(&mut b.entries));
+        drop(std::mem::take(&mut b.positions));
+        log::debug!("peak RSS after dropping indexes: {} MB", peak_rss_mb());
         let a_revs: Vec<Vec<u8>> = a_seqs
             .iter()
             .map(|(_, s)| s.iter().rev().copied().collect())
@@ -934,17 +1176,19 @@ pub fn align_to_psl_ext(
             .iter()
             .map(|(_, s)| complement(s).collect())
             .collect();
+        let b_rcs: Vec<Vec<u8>> = b_seqs.iter().map(|(_, s)| rev_comp(s).collect()).collect();
         let records: Vec<Vec<Psl>> = tubes
             .par_iter()
             .map(|t| {
                 let mut alast = 0i64;
                 extend_tube(
-                    t, &mut alast, a, b, a_seqs, b_seqs, &a_revs, &b_revs, &b_comps,
+                    t, &mut alast, &a, &b, a_seqs, b_seqs, &a_revs, &b_revs, &b_comps, &b_rcs,
                 )
             })
             .collect();
         let mut out: Vec<Psl> = records.into_iter().flatten().collect();
         dedupe_contained(&mut out);
+        log::debug!("peak RSS after extend: {} MB", peak_rss_mb());
         return Ok(out);
     }
     let chains = chain_hits(
@@ -955,6 +1199,12 @@ pub fn align_to_psl_ext(
         params.band,
         params.merge_gap,
     );
+    drop(hits);
+    drop(std::mem::take(&mut a.entries));
+    drop(std::mem::take(&mut a.positions));
+    drop(std::mem::take(&mut b.entries));
+    drop(std::mem::take(&mut b.positions));
+    log::debug!("peak RSS after chain_hits: {} MB", peak_rss_mb());
     // Flatten all extension windows across chains into one parallel stream so
     // a giant chain cannot serialize behind smaller chains on a single task.
     let jobs: Vec<WindowJob> = chains
@@ -967,7 +1217,7 @@ pub fn align_to_psl_ext(
         .map(|job| {
             let chain = &chains[job.chain_id];
             let dp_band = (chain.diag_span as usize + 32).min(128);
-            extend_window(job, chain, a, b, a_seqs, b_seqs, dp_band)
+            extend_window(job, chain, &a, &b, a_seqs, b_seqs, dp_band)
         })
         .collect();
     let mut covered = vec![false; chains.len()];
@@ -980,9 +1230,10 @@ pub fn align_to_psl_ext(
     }
     for (id, chain) in chains.iter().enumerate() {
         if !covered[id] {
-            out.push(chain_to_psl(chain, a, b));
+            out.push(chain_to_psl(chain, &a, &b));
         }
     }
+    log::debug!("peak RSS after extend (greedy): {} MB", peak_rss_mb());
     Ok(out)
 }
 
@@ -990,6 +1241,7 @@ pub fn align_to_psl_ext(
 mod tests {
     use super::*;
     use crate::libs::pgi::build::build_from_seqs;
+    use crate::libs::pgi::PgiEntry;
 
     fn pseudo_random_seq(len: usize, seed: u64) -> Vec<u8> {
         let bases = [b'A', b'C', b'G', b'T'];
@@ -1049,11 +1301,100 @@ mod tests {
         let hits = merge_seed_hits(&idx, &idx, 200, 10).unwrap();
         assert!(!hits.is_empty(), "high threshold keeps repeats");
 
-        // Random sequence: k-mers are mostly unique, so freq=1 keeps hits.
+        // Random sequence: k-mers are mostly unique, so freq=2 keeps hits
+        // (FastGA's filter skips ranges with `>= freq` occurrences).
         let rnd = pseudo_random_seq(300, 7);
         let rnd_idx = build(&rnd);
-        let hits = merge_seed_hits(&rnd_idx, &rnd_idx, 1, 10).unwrap();
-        assert!(!hits.is_empty(), "unique k-mers pass freq=1");
+        let hits = merge_seed_hits(&rnd_idx, &rnd_idx, 2, 10).unwrap();
+        assert!(!hits.is_empty(), "unique k-mers pass freq=2");
+    }
+
+    #[test]
+    fn merge_keeps_only_maximal_shared_prefix() {
+        // k=32, all-A key against a 31-base and a 25-base match: only the
+        // longest match is emitted (FastGA adaptamer semantics).
+        let mk = |entries: Vec<PgiEntry>, positions: Vec<u64>| PgiIndex {
+            k: 32,
+            smer: 8,
+            window: 5,
+            contigs: vec![(String::from("c"), 1000)],
+            entries,
+            positions,
+        };
+        let a = mk(
+            vec![PgiEntry {
+                kmer: 0,
+                pos_start: 0,
+                freq: 1,
+            }],
+            vec![crate::libs::pgi::pack_position(0, 10, 0)],
+        );
+        // First 31 bases shared (A..AT), then first 25 bases shared (A..AT);
+        // entries must stay ascending by k-mer.
+        let b = mk(
+            vec![
+                PgiEntry {
+                    kmer: 3,
+                    pos_start: 0,
+                    freq: 1,
+                },
+                PgiEntry {
+                    kmer: 3 << 12,
+                    pos_start: 1,
+                    freq: 1,
+                },
+            ],
+            vec![
+                crate::libs::pgi::pack_position(0, 50, 0),
+                crate::libs::pgi::pack_position(0, 60, 0),
+            ],
+        );
+        let hits = merge_seed_hits(&a, &b, 10, 20).unwrap();
+        assert_eq!(hits.len(), 1, "only the maximal match is emitted");
+        assert_eq!(hits[0].shared, 31);
+        assert_eq!((hits[0].a_pos, hits[0].b_pos), (10, 50));
+    }
+
+    #[test]
+    fn merge_filters_extended_range_by_occurrences() {
+        // The 31-base match occurs `freq` times in `b`: the whole entry is
+        // skipped even though a rare 25-base match also exists.
+        let mk_a = PgiIndex {
+            k: 32,
+            smer: 8,
+            window: 5,
+            contigs: vec![(String::from("c"), 1000)],
+            entries: vec![PgiEntry {
+                kmer: 0,
+                pos_start: 0,
+                freq: 1,
+            }],
+            positions: vec![crate::libs::pgi::pack_position(0, 10, 0)],
+        };
+        let b = PgiIndex {
+            k: 32,
+            smer: 8,
+            window: 5,
+            contigs: vec![(String::from("c"), 1000)],
+            entries: vec![
+                PgiEntry {
+                    kmer: 3,
+                    pos_start: 0,
+                    freq: 10,
+                },
+                PgiEntry {
+                    kmer: 3 << 12,
+                    pos_start: 10,
+                    freq: 1,
+                },
+            ],
+            positions: (0..10)
+                .map(|i| crate::libs::pgi::pack_position(0, i, 0))
+                .chain(std::iter::once(crate::libs::pgi::pack_position(0, 60, 0)))
+                .collect(),
+        };
+        let hits = merge_seed_hits(&mk_a, &b, 10, 20).unwrap();
+        assert!(hits.is_empty(), "extended range is too frequent");
     }
 
     #[test]
@@ -1486,7 +1827,7 @@ mod tests {
         let a_seqs = vec![(String::from("c"), seq.clone())];
         let b_seqs = vec![(String::from("c"), seq)];
         let params = AlignParams::default();
-        let psls = align_to_psl_ext(&ia, &ib, &params, &a_seqs, &b_seqs).unwrap();
+        let psls = align_to_psl_ext(ia, ib, &params, &a_seqs, &b_seqs).unwrap();
         assert!(!psls.is_empty());
         assert!(
             psls.iter().all(|p| p.match_count + p.mismatch_count > 0),
@@ -1507,22 +1848,57 @@ mod tests {
         let (ia, ir) = (build(&seq), build(&rev_comp(&seq).collect::<Vec<u8>>()));
         let a_seqs = vec![(String::from("c"), seq.clone())];
         let rc: Vec<u8> = rev_comp(&seq).collect();
-        let b_seqs = vec![(String::from("c"), rc)];
+        let b_seqs = vec![(String::from("c"), rc.clone())];
         // Exact-only seeds: partial matches could pair unrelated same-strand
         // positions in this tiny random sequence and break the pure-RC check.
         let params = AlignParams {
             min_shared: Some(10),
             ..AlignParams::default()
         };
-        let psls = align_to_psl_ext(&ia, &ir, &params, &a_seqs, &b_seqs).unwrap();
+        let psls = align_to_psl_ext(ia, ir, &params, &a_seqs, &b_seqs).unwrap();
         assert!(!psls.is_empty());
         assert!(
             psls.iter().all(|p| p.strand == "-" && p.match_count > 0),
             "RC query must extend to minus-strand PSL"
         );
-        assert!(psls
-            .iter()
-            .all(|p| p.q_start >= 0 && p.q_end <= p.q_size as i32));
+        for p in &psls {
+            assert!(p.q_start >= 0 && p.q_end <= p.q_size as i32);
+            // UCSC/`psl chain` minus-strand convention: qStart/qEnd are on the
+            // plus strand and the internal qStarts are in RC frame (the first
+            // internal start mirrors qEnd; `calc_block_score` reads them as
+            // RC coordinates). Regression: a swapped frame scored negative in
+            // `psl chain` and silently dropped every minus-strand block.
+            assert_eq!(
+                p.q_starts[0] as i32,
+                p.q_size as i32 - p.q_end,
+                "minus-strand qStarts must be in RC frame"
+            );
+            assert!(
+                p.q_starts.windows(2).all(|w| w[1] > w[0]),
+                "minus-strand qStarts must ascend"
+            );
+            for (i, ((&sz, &qs), &ts)) in p
+                .block_sizes
+                .iter()
+                .zip(&p.q_starts)
+                .zip(&p.t_starts)
+                .enumerate()
+            {
+                let q_plus = (p.q_size as i32 - (qs + sz) as i32) as usize;
+                let q_seg = &rc[q_plus..q_plus + sz as usize];
+                let t_seg = &seq[ts as usize..(ts + sz) as usize];
+                let rev_comp_seg: Vec<u8> = rev_comp(q_seg).collect();
+                let mm = rev_comp_seg
+                    .iter()
+                    .zip(t_seg)
+                    .filter(|(a, b)| a != b)
+                    .count();
+                assert!(
+                    mm <= (sz / 10) as usize,
+                    "segment {i} must match the RC query ({mm} mismatches)"
+                );
+            }
+        }
     }
 
     #[test]

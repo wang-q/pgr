@@ -37,7 +37,7 @@ pub trait SequenceReader {
 /// let reader = pgr::reader("tests/mat/IBPA.list").unwrap();
 /// assert_eq!(reader.lines().collect::<Vec<_>>().len(), 3);
 /// ```
-pub fn reader(input: &str) -> anyhow::Result<Box<dyn BufRead>> {
+pub fn reader(input: &str) -> anyhow::Result<Box<dyn BufRead + Send>> {
     if input == "stdin" {
         return Ok(Box::new(BufReader::new(std::io::stdin())));
     }

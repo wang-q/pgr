@@ -1,6 +1,6 @@
 //! Build a `.pgi` index from FASTA or 2bit sequences.
 
-use super::{PgiEntry, PgiIndex};
+use super::{pack_position, PgiEntry, PgiIndex};
 use crate::libs::syncmer::SyncmerParams;
 use anyhow::Context;
 use std::collections::VecDeque;
@@ -8,7 +8,7 @@ use std::collections::VecDeque;
 /// Parallel growable buffers for (key, contig, pos, strand) records.
 struct RecordBuf {
     keys: Vec<u128>,
-    payloads: Vec<(u32, u32, u8)>,
+    payloads: Vec<u64>,
 }
 
 /// Single-pass collection of (key, contig, pos, strand) records for one contig.
@@ -94,10 +94,10 @@ fn collect_one_contig(
             pending.pop_front();
             if kvalid >= k && i + 1 >= k {
                 out.keys.push(kx);
-                out.payloads.push((cid, pos as u32, 0));
+                out.payloads.push(pack_position(cid, pos as u32, 0));
                 if !no_rev {
                     out.keys.push(kxr);
-                    out.payloads.push((cid, pos as u32, 1));
+                    out.payloads.push(pack_position(cid, pos as u32, 1));
                 }
             }
         }
@@ -187,7 +187,7 @@ pub fn build_from_seqs(
     let payloads = buf.payloads;
 
     let mut entries: Vec<PgiEntry> = Vec::with_capacity(keys.len());
-    let mut positions: Vec<(u32, u32, u8)> = Vec::with_capacity(keys.len());
+    let mut positions: Vec<u64> = Vec::with_capacity(keys.len());
     let mut i = 0usize;
     while i < keys.len() {
         let kmer = keys[i];
@@ -271,6 +271,7 @@ pub fn build_from_path(
 mod tests {
     use super::*;
     use crate::libs::nt::{rc_key, rolling_kmer_keys};
+    use crate::libs::pgi::unpack_position;
 
     #[test]
     fn build_small_index() {
@@ -315,7 +316,10 @@ mod tests {
                 .keys
                 .into_iter()
                 .zip(buf.payloads)
-                .map(|(key, (cid, pos, strand))| (key, cid, pos, strand))
+                .map(|(key, rec)| {
+                    let (cid, pos, strand) = unpack_position(rec);
+                    (key, cid, pos, strand)
+                })
                 .collect();
             single_recs.sort_unstable();
 
@@ -352,7 +356,10 @@ mod tests {
             .keys
             .into_iter()
             .zip(buf.payloads)
-            .map(|(key, (cid, pos, strand))| (key, cid, pos, strand))
+            .map(|(key, rec)| {
+                let (cid, pos, strand) = unpack_position(rec);
+                (key, cid, pos, strand)
+            })
             .collect();
         single_recs.sort_unstable();
         let sm = crate::libs::syncmer::syncmer_dna(&long, &params).unwrap();
@@ -389,7 +396,10 @@ mod tests {
             .keys
             .into_iter()
             .zip(buf.payloads)
-            .map(|(key, (cid, pos, strand))| (key, cid, pos, strand))
+            .map(|(key, rec)| {
+                let (cid, pos, strand) = unpack_position(rec);
+                (key, cid, pos, strand)
+            })
             .collect();
         single_recs.sort_unstable();
         let sm = crate::libs::syncmer::syncmer_dna(&with_n, &params).unwrap();

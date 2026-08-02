@@ -769,6 +769,74 @@ FastGA 持平（Nissle 差 0.015% ≈ 0.7 kb，属噪声级）。906 测试全�
 `extend_chain_rc_query` 回归断言：负链 qStarts 必须在 RC 帧且逐段序列
 identity 验证通过。
 
+## 5.31 参考索引流式读取（2026-08-02，内存再降 ~34%）
+
+merge 只顺序扫描 a（参考）索引，因此不必全量载入。新增 `PgiStream`
+（`src/libs/pgi/mod.rs`，纯 std 分块读取、按条目批量产出、条目不跨批），
+`merge_seed_hits_from_stream` 用 rayon `par_bridge` 并行处理批次；
+`pgr pgi align` 的 ref 侧改为流式（query 侧仍全量——partition_point
+需要随机访问）。`pgr::reader` 返回类型加 `+ Send` 以支持 par_bridge。
+此实现修正了 §5.24 里"惰性加载需新依赖或 unsafe"的结论——纯 std 流式即可。
+
+阶段峰值探针（`log::debug`，Linux `/proc/self/status` VmHWM）：
+
+| 对 | 峰值内存（前 → 后） | 耗时 | chainnet 覆盖 |
+|---|---:|---:|---:|
+| MG1655 vs Sakai | 604 → **398 MB** | 0.83s | 89.33%（不变） |
+| MG1655 vs EC958 | 512 → **374 MB** | 0.78s | 86.38%（不变） |
+| MG1655 vs Nissle | 464 → **378 MB** | 0.81s | 85.28%（不变） |
+
+覆盖/块数与全量载入完全一致（Sakai 588 / EC958 846 / Nissle 847 块）。
+阶段峰值（Sakai）：merge 380→298 MB、chain 471→388 MB、extend 不再
+超过 chain 峰值（此前 +100 MB）。剩余构成：b 索引全量（~140 MB）、
+链化排序缓冲、rayon 栈；再降需 mmap 或 query 侧惰性访问（新依赖/unsafe，
+待用户决策）。907 测试全过（新增 `PgiStream` 全量等价性测试）。
+
+## 5.32 命中打包 + 链排序基数化（2026-08-02，内存再降）
+
+- `SeedHit` 24 → 16 B（a/b contig 与 shared 改 u16，位置仍 u32）：merge 与
+  chain 阶段常驻内存约 -19 MB；
+- `chain_tubes` 的 `(u128, u32)` 键数组（32 B/元素 ≈ 77 MB）改为并行
+  `Vec<u128>` 键 + `Vec<u32>` 序数组（≈ 48 MB）配现有 MSD 基数排序
+  （`libs/ds/radix_sort`），并去掉 `Vec<&SeedHit>` 引用数组与 par_sort 的
+  隐式键/引用缓冲：链化阶段约 -30 MB。
+
+实测（32 线程，tube 默认；PSL 与全量载入**逐字节一致**）：
+
+| 对 | 峰值内存（前 → 后） | 耗时 |
+|---|---:|---:|
+| MG1655 vs Sakai | 398 → **~381 MB**（extend 为峰） | 0.79-0.93s |
+| MG1655 vs EC958 | 374 → **321 MB** | 0.83s |
+| MG1655 vs Nissle | 378 → **310 MB** | 0.86s |
+
+Sakai 的 extend 阶段（wave dandc 并行暂存，+60 MB）重新成为峰值；EC958/
+Nissle 仍以链化为峰。907 测试全过（链化排序行为不变，tube 测试原样通过）。
+
+## 5.33 extend 峰值收敛：共享 RC + wave 预留收敛 + 8 线程池（2026-08-02）
+
+追查 Sakai 的 extend 峰值（32 线程时 +60 MB）：
+
+1. **负链 tube 每调用复制整条染色体 RC**（~5.5 MB/调用，并行叠加）：改为
+   `b_rcs` 预计算一次、全部负链 tube 共享借用（`Cow::Borrowed`）；
+2. **`forward_wave` 预分配 `4096 × width` 单元**（v 8 B + trace 16 B），而
+   波数被 TRIM_MLAG 限制在 ~250 附近——预留比实际多几十倍；改为
+   `256 × width`（上限 D_CAP=500k），不足时 Vec 自动增长；
+3. **并行度**：extend 的 wave/dandc 暂存随并发 tube 数线性增长。`pgr pgi
+   align` 新增 `--parallel`（默认 8，即 FastGA `-T` 默认），整个对齐在专用
+   rayon 池中执行——8 并发下 extend 峰值不再超过链化阶段，速度不变
+   （0.78-0.89s）。
+
+实测（默认 8 线程，tube 默认参数；PSL 逐字节一致）：
+
+| 对 | 峰值内存（前 → 后） | 耗时 | chainnet 覆盖 |
+|---|---:|---:|---:|
+| MG1655 vs Sakai | 381 → **296 MB** | 0.89s | 89.33%（不变） |
+| MG1655 vs EC958 | 321 → **281 MB** | 0.78s | 86.38%（不变） |
+| MG1655 vs Nissle | 310 → **284 MB** | 0.78s | 85.28%（不变） |
+
+全流程峰值现在就是链化阶段；剩余 = query 索引全量（~140 MB）+ 链化暂存。
+907 测试全过。
+
 ## 6. 相关文档
 
 - 索引格式与消费者规划：[[pbit.md]]（多参考节 + .pgi 距离消费者层级）

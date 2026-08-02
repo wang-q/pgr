@@ -617,8 +617,11 @@ fn forward_wave(q: &[u8], t: &[u8], anchor: (i64, i64), band: usize) -> Option<W
     const D_CAP: usize = 500_000;
 
     let mut history = WaveHistory {
-        v: Vec::with_capacity(4096 * width),
-        trace: Vec::with_capacity(4096 * width),
+        // Reserve ~256 waves of cells (the trim stops ~TRIM_MLAG waves after
+        // the best point); a 4096-wave reservation wasted most of its memory
+        // (24 B/cell) on every tube call.
+        v: Vec::with_capacity((256 * width).min(D_CAP)),
+        trace: Vec::with_capacity((256 * width).min(D_CAP)),
         width,
         k_lo,
         best_d: 0,
