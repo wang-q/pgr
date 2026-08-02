@@ -659,7 +659,7 @@ PGR 内部不同模块混用 0-based half-open 与 1-based inclusive 两种约�
     - 基于当前实施计划简化要求，第一阶段不实现 BISER 的 k-mer 索引与 plane-sweep，而是复用 PGR
       已有的 lastz 基础设施生成候选 SD 区间。两种具体形态可选：
         - **形态 A：全基因组自比对（`lastz --self`）**
-            - 直接调用 `pgr lav lastz --self <genome.fa> <genome.fa>`，输出 LAV；
+            - 直接调用 `pgr align lastz --self <genome.fa> <genome.fa>`，输出 LAV；
             - 经 `pgr lav to-psl` 转为 PSL，得到 pairwise alignments（chaining/refine 交由 UCSC
               chain/net，见 6.3.3 与 6.8）；
             - 过滤短命中（< 1 kbp）和同一性 < 90% 的命中（T2T-CHM13 SD 标准，见 4.2.1），得到
@@ -1628,7 +1628,7 @@ PGR 已经具备成熟的外部比对调用与格式转换能力，这为该替�
 
 ### 6.8.4 lastz --self 路线
 
-PGR 已有 `pgr lav lastz` 命令（`src/cmd_pgr/lav/lastz.rs:86-194`），其 `RunLastzOptions.is_self`
+PGR 已有 `pgr align lastz` 命令（`src/cmd_pgr/align/lastz.rs:86-194`），其 `RunLastzOptions.is_self`
 会在 target 与 query 为同一文件时调用 lastz 的 `--self` 标志（`src/libs/lastz.rs:138-247`），
 避免冗余计算。
 
@@ -1645,7 +1645,7 @@ PGR 已有 `pgr lav lastz` 命令（`src/cmd_pgr/lav/lastz.rs:86-194`），其 `
 2. **lastz 自比对**：
 
   ```bash
-  pgr lav lastz genome.hard.fa genome.hard.fa --self --preset set01 -o lav_out/
+  pgr align lastz genome.hard.fa genome.hard.fa --self --preset set01 -o lav_out/
   ```
 输出为 LAV 文件（`src/libs/fmt/lav.rs`）。lastz 的 `--self` 会自动跳过 query 与 target
    完全相同且同方向的 trivial 比对，只保留有意义的同源区段。
@@ -1731,7 +1731,7 @@ FastGA 在 PGR 文档中被描述为 impg 支持的备选 aligner（`docs/paf.md
       标准（> 1 kbp、> 90% 同一性，见 4.2.1），lastz 默认参数正好匹配，无需为低同源性额外调参。
 - **速度**
     - **BISER**：原生 plane-sweep 近似线性。
-    - **lastz --self**：在全基因组上寻找所有局部比对开销大，但 PGR 的 `pgr lav lastz` 已用 rayon
+    - **lastz --self**：在全基因组上寻找所有局部比对开销大，但 PGR 的 `pgr align lastz` 已用 rayon
       并行化。
     - **FastGA**：针对细菌规模优化，在人类尺度染色体上的行为需实测。
 - **坐标一致性**
@@ -2186,7 +2186,7 @@ PAF 已定为中间格式，建议统一以下 tag：
 尽管效果不如 BISER，以下流程与工具对 PGR 的 SD 迁移仍有参考价值：
 
 1. **lastz 自比对作为种子来源**
-    - App-Egaz 的 `egaz lastz --isself` 与 6.8 节的 `pgr lav lastz --self` 本质相同；
+    - App-Egaz 的 `egaz lastz --isself` 与 6.8 节的 `pgr align lastz --self` 本质相同；
     - 可作为 BISER `search` 阶段的一种低灵敏度、高特异度替代，尤其适合小基因组或细菌；
     - 其 `lpcnam` 流程（lav → psl → chain → net → axt）可被 PGR 的 `pgr lav to-psl` + `pgr pl ucsc`
       替代（后者内部串接 axtChain/chainNet/netToAxt 等步骤，见 6.8.4）。
@@ -2262,7 +2262,7 @@ BISER `search` 阶段的异同，并给出集成建议。
 
 1. **窗口化**：`pgr fa window -l 200 -s 100` 把基因组切成大量 200 bp、步长 100 bp 的重叠窗口，
    输出头为 `>seq_name:start-end`（1-based inclusive）。
-2. **自比对**：`pgr lav lastz` 以基因组染色体为 target、窗口为 query 做全基因组比对；默认使用
+2. **自比对**：`pgr align lastz` 以基因组染色体为 target、窗口为 query 做全基因组比对；默认使用
    `--preset set01`（`C=0 E=30 K=3000 L=2200 O=400 Y=3400 Q=similar`，源自 UCSC Human vs Chimp）。
 3. **格式转换**：`pgr lav to-psl` 把 LAV 转为 PSL；`pgr psl lift --q-sizes`
    将窗口坐标提升回原始基因组坐标。
@@ -2344,7 +2344,7 @@ BISER `search` 阶段的输出是**putative SD pairs**（成对的同源区间�
 3. **lastz 参数需要调整**
     - `set01` 的 `K=3000` 阈值较高，对 SD 检测偏严格。建议对自匹配步骤使用更敏感的参数：
         - 降低 `K/L`（如 `K=1500 L=1500` 或更低）；
-        - 使用 `--self` 模式（`pgr lav lastz --self`）而非 target/query 模式；
+        - 使用 `--self` 模式（`pgr align lastz --self`）而非 target/query 模式；
         - 或改用 `minimap2 -DP -k19 -w19 -m200`（如 `doc/Scer-self.md` 中的示例）输出 PAF，再按 6.8
           经 `PAF → PSL → pgr pl ucsc（非 --syn）→ MAF → pgr maf to-paf → PAF` 完成精炼。
 4. **坐标系统一致性**
@@ -2362,7 +2362,7 @@ BISER `search` 阶段的输出是**putative SD pairs**（成对的同源区间�
 
 **优势**
 
-- **复用现有 PGR 命令**：`pgr fa window`、`pgr lav lastz`、`pgr psl lift`、`pgr psl to-range`
+- **复用现有 PGR 命令**：`pgr fa window`、`pgr align lastz`、`pgr psl lift`、`pgr psl to-range`
   都已存在，无需新增核心算法。
 - **TE 控制更直接**：通过 RepeatMasker 差集显式去除已知转座子，比 BISER 的 soft-mask 依赖更清晰、
   可调试。

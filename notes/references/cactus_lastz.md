@@ -259,9 +259,9 @@ Cactus 采用复杂的 "分块-采样-物理合并" 策略来构建 Target，旨
         - **避免边界问题**: 染色体内部连续。
         - **实现简单**: 无需复杂的随机采样和重组逻辑。
 
-### 5.5 `pgr lav lastz` vs `lastz` (Wrapper)
+### 5.5 `pgr align lastz` vs `lastz` (Wrapper)
 
-为了简化复杂的 Lastz 调用流程，我们实现了 `pgr lav lastz` 命令：
+为了简化复杂的 Lastz 调用流程，我们实现了 `pgr align lastz` 命令：
 
 - **功能**:
 
@@ -283,13 +283,13 @@ Cactus 采用复杂的 "分块-采样-物理合并" 策略来构建 Target，旨
 - **用法示例**:
   ```bash
   # 使用预设参数进行比对 (Human vs Chimp)
-  pgr lav lastz target.fa query.fa --preset set01 -o lastz_out
+  pgr align lastz target.fa query.fa --preset set01 -o lastz_out
 
   # 目录递归与并行执行
-  pgr lav lastz target_dir/ query_dir/ --preset set03 --parallel 8
+  pgr align lastz target_dir/ query_dir/ --preset set03 --parallel 8
 
   # 自比对
-  pgr lav lastz genome.fa genome.fa --self --preset set01
+  pgr align lastz genome.fa genome.fa --self --preset set01
   ```
 
 ### 5.6 实战指南：从头构建 RepeatMasking 流程
@@ -322,7 +322,7 @@ pgr fa window $INPUT_FA --len 200 --step 100 --out $WORK_DIR/fragments.fa
 # 将切片后的片段比对回原始基因组 (Self-Alignment)
 # 使用 preset set01 (高灵敏度)，输出为 LAV 格式
 # 这一步对应 lastz 的执行
-pgr lav lastz $INPUT_FA $WORK_DIR/fragments.fa --preset set01 --self -o $WORK_DIR/fragments.lav
+pgr align lastz $INPUT_FA $WORK_DIR/fragments.fa --preset set01 --self -o $WORK_DIR/fragments.lav
 
 # 4. 格式转换与坐标还原
 # 4.1 LAV -> PSL

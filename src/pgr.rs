@@ -46,7 +46,7 @@ fn main() -> anyhow::Result<()> {
     * pbit - Population 2bit + delta: create, append, append-ref, stat, range, some, to-fa
 
 * Genome alignments:
-    * align - Pairwise genome alignment: pgi
+    * align - Pairwise genome alignment: pgi, lastz
     * chain - Chain operations: sort, filter, transform, to-net
     * net   - Net operations: info, subset, transform, convert
     * axt   - AXT sorting and conversion

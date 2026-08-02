@@ -171,7 +171,7 @@ src/
 | `net`   | 6        | Net 分类、过滤、split、subset、syntenic、转 AXT      |
 | `axt`   | 4        | AXT 排序、转 FAS/MAF/PSL                             |
 | `psl`   | 8        | PSL 统计、直方图、lift、swap、转 chain、转 range     |
-| `lav`   | 2        | LAV (lastz 原生输出) 转 PSL、lastz 调用封装          |
+| `lav`   | 1        | LAV (lastz 原生输出) 转 PSL；lastz 调用封装在 `align` |
 | `maf`   | 2        | MAF (multiple alignment format) 转 Block FA、转 PAF  |
 
 **这是 pgr 最成熟的模块群**。完整覆盖了 UCSC 的 lastz → axtChain → chainAntiRepeat →
@@ -430,7 +430,7 @@ pgr 的 `chain`/`net`/`axt`/`psl` 模块是 UCSC kent-tools 对应功能的**Rus
     已废弃；pgr 有意保持 v1，见 `notes/references/ucsc.md` §3.6）
   - `pgr lav to-psl`（等价 `lavToPsl`）
 - **完全原生管道**：`pgr pl chainnet` 使用纯 pgr 命令完成全流程，已验证与 `pgr pl ucsc`（kent-tools）的输出字节级一致。
-- **唯一外部依赖**：`lastz` 比对器本身（由 `pgr lav lastz` 封装调用，需 PATH 中存在 `lastz` 二进制）。
+- **唯一外部依赖**：`lastz` 比对器本身（由 `pgr align lastz` 封装调用，需 PATH 中存在 `lastz` 二进制）。
 
 **验证矩阵（2026-08-02 确认）**：在 E. coli MG1655 × Sakai 上，12 步主流程（axtChain →
 chainAntiRepeat → chainMergeSort → chainPreNet → chainNet → netSyntenic → netChainSubset →
@@ -452,7 +452,7 @@ chainnet 后消失。`pgr psl chain` 在 2bit 序列缓存优化后（~0.3 s）�
 
 ### 7.3 Cactus 的关系
 
-参见 `notes/references/cactus.md` 和 `notes/references/cactus_lastz.md`。pgr 的 `pgr lav lastz` 子命令封装了 lastz 调用，
+参见 `notes/references/cactus.md` 和 `notes/references/cactus_lastz.md`。pgr 的 `pgr align lastz` 子命令封装了 lastz 调用，
 采用了 Cactus 风格的参数。Cactus 的 transitive alignment 机制对 pgr 泛基因组 方向有参考价值。
 
 ## 8. 关键风险与技术债

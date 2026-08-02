@@ -238,7 +238,7 @@ axtToMaf tests/pgr/synNet/cat.axt \
 | UCSC 工具 | pgr 命令 | 说明 |
 |---|---|---|
 | `faToTwoBit` | `pgr fa to-2bit` | FASTA → 2bit；支持多文件、`--no-mask` |
-| `lastz` | `pgr lav lastz` | 封装外部 lastz 二进制（非原生算法）；输出到目录 |
+| `lastz` | `pgr align lastz` | 封装外部 lastz 二进制（非原生算法）；输出到目录 |
 | `lavToPsl` | `pgr lav to-psl` | LAV → PSL |
 | `axtChain` | `pgr psl chain` | 复用 `libs::chain` DP 引擎；`--gap-model`/`--min-score` |
 | `chainAntiRepeat` | `pgr chain anti-repeat` | `--target-2bit`/`--query-2bit`/`--min-score` |
@@ -256,7 +256,7 @@ axtToMaf tests/pgr/synNet/cat.axt \
 | `chainSplit` | `pgr chain split` | `--by-query`/`--lump` |
 
 **外部依赖说明：** 唯一的外部依赖是 `lastz` 比对器本身（需 PATH 中存在 `lastz`）。注意：**字节级
-复现时 lastz 必须裸调用**（参数与 §1 完全一致），`pgr lav lastz` 封装器不是字节透明的（见 §3.6）。
+复现时 lastz 必须裸调用**（参数与 §1 完全一致），`pgr align lastz` 封装器不是字节透明的（见 §3.6）。
 除此之外，整个 pairwise 流程已无任何 kent-tool 依赖。
 
 **关键结论：**
@@ -274,7 +274,7 @@ axtToMaf tests/pgr/synNet/cat.axt \
 
 ```bash
 # Lastz —— 必须与 §1 完全一致的裸调用（默认参数，lastz v1.04.41）
-# ⚠️ 不要用 `pgr lav lastz`：preset（如 set01）会更换打分矩阵/参数产生不同比对；
+# ⚠️ 不要用 `pgr align lastz`：preset（如 set01）会更换打分矩阵/参数产生不同比对；
 # 即使不带 preset，包装器也会附加 [nameparse=darkspace]、--querydepth/--format=lav/
 # --markend/--ambiguous=iupac/--output= 等，改变 d stanza 并多输出一行
 # "# lastz end-of-file"（比对内容一致，但字节不同）。
@@ -385,9 +385,9 @@ pgr axt to-maf tests/pgr/synNet/cat.axt \
 
 ### 3.6 与 UCSC 原流程的行为差异
 
-* `pgr lav lastz` 输出到**目录**（每个 target/query 对一个 .lav），非单个 stdout 文件；需 `cat *.lav` 合并后再 `pgr lav to-psl`。它封装外部 `lastz` 二进制，需 PATH 中存在 `lastz`。
+* `pgr align lastz` 输出到**目录**（每个 target/query 对一个 .lav），非单个 stdout 文件；需 `cat *.lav` 合并后再 `pgr lav to-psl`。它封装外部 `lastz` 二进制，需 PATH 中存在 `lastz`。
 * **lastz 是字节级复现的前提，必须裸调用**（参数、版本与 §1 完全一致：默认矩阵 + O=400/E=30/
-  K=3000/L=3000/M=0，v1.04.41）。`pgr lav lastz` **不是字节透明**的：
+  K=3000/L=3000/M=0，v1.04.41）。`pgr align lastz` **不是字节透明**的：
   - `--preset set01` 等 preset 使用不同矩阵/参数（Q=similar、L=2200、Y=3400 等），实测在该
     数据集上几乎找不到比对（输出仅 15 行/449 字节，默认 lastz 为 354 行/8528 字节）；
   - 即使不带 preset，包装器也附加 `[nameparse=darkspace]`、`--querydepth=keep,nowarn:50`、
@@ -494,7 +494,7 @@ pgr axt to-maf tests/pgr/synNet/cat.axt \
 * `netFilter`/`chainSplit`：注释行保留策略不同（pgr 的 `net filter` 保留 `##` 行、`chain split`
   不透传注释；UCSC 相反）。
 * `netSplit`/`chainSplit`：UCSC 额外生成 `meta.tmp` 文件。
-* lastz：必须裸调用复现（`pgr lav lastz` 非字节透明，见 §3.6）。
+* lastz：必须裸调用复现（`pgr align lastz` 非字节透明，见 §3.6）。
 
 pgr 的 chain-net-axt-maf 管线可作为 UCSC kent-tool 的 Rust 替代，达到字节级复制要求。
 

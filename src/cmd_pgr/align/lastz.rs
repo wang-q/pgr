@@ -27,13 +27,13 @@ It handles:
 {}
 Examples:
 1. Single target with set01:
-   pgr lav lastz target.fa query.fa --preset set01 -o lastz_out
+   pgr align lastz target.fa query.fa --preset set01 -o lastz_out
 
 2. Directory inputs:
-   pgr lav lastz target_dir/ query_dir/ --preset set03 -o lastz_out
+   pgr align lastz target_dir/ query_dir/ --preset set03 -o lastz_out
 
 3. Show parameters and matrix for set01:
-   pgr lav lastz --preset set01 --show-preset
+   pgr align lastz --preset set01 --show-preset
 
 "###,
             pgr::libs::lastz::preset_help()

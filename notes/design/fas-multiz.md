@@ -71,8 +71,8 @@
 
 在 UCSC 的典型 WGA 流程中，`multiz` 位于"pairwise 比对 + 链化 + net + mafFromNet"之后，只消费已经整理好的 MAF。`pgr` 目前在这一前置链路上，也已经有相当完整的 Rust 封装，主要对应到：
 
-*   `pgr lav lastz`：LASTZ 前端
-    *   位置：`src/cmd_pgr/lav/lastz.rs`。
+*   `pgr align lastz`：LASTZ 前端
+    *   位置：`src/cmd_pgr/align/lastz.rs`。
     *   作用：包装 `lastz`，生成 LAV 格式输出，参数设计对齐 Cactus/UCSC 风格。
     *   特点：
         *   内置 UCSC 风格 preset（`set01`..`set07`），包括常见物种组合（Hg vs Pan/Mm/Bos/DanRer 等），每个 preset 绑定一套参数串和一个 4x4 替换矩阵（通过临时文件写给 `Q=` 选项）。
@@ -97,7 +97,7 @@
     *   对 multiz 的意义：
         *   在 `pgr` 里，这一步提供了与 UCSC 链化阶段等价的"整理过的 syntenic 对齐骨架"，可以作为（通过 AXT/MAF/FA 转换后）fas-multiz 的上游输入。
 
-综上，`pgr lav lastz` + `pgr psl chain` 组合，大致覆盖了 UCSC 链路中 "blastz/lastz 比对 + axtChain 链化" 这两步。它们提供了 multiz/fas-multiz 所需的 pairwise 对齐基础，而 `libs::fas_multiz` 则承担了更上游的 profile 合并角色：在已经有 syntenic 对齐骨架的前提下，对多个 `.fas` profile 做带状 DP 合并，构建 union/mesh 风格的多序列比对。
+综上，`pgr align lastz` + `pgr psl chain` 组合，大致覆盖了 UCSC 链路中 "blastz/lastz 比对 + axtChain 链化" 这两步。它们提供了 multiz/fas-multiz 所需的 pairwise 对齐基础，而 `libs::fas_multiz` 则承担了更上游的 profile 合并角色：在已经有 syntenic 对齐骨架的前提下，对多个 `.fas` profile 做带状 DP 合并，构建 union/mesh 风格的多序列比对。
 
 ## 2. fas-multiz 设计与实现
 

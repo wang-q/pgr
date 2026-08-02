@@ -24,7 +24,7 @@ seqwish（DSU 传递闭包）、Cactus（Caf 退火-熔化）。
    不物化 GFA。粗全局 GFA 是索引的**显式投影**（graph），数据源仍是 PAF 索引。粒度差异：seqwish
    传递闭包是全局一次性，pgr 是局部按需（每次查询从一个区间出发 BFS）——见 [[seqwish.md]] §6。
 2. **复用 pairwise 资产，大 cohort 用 Mash KNN sparsify** — pgr 已有成熟的 pairwise 比对链
-   （`pgr lav lastz` → chain → net → axt → maf）。小 cohort + 已有 MAF 直接复用；大 cohort + 无先验
+   （`pgr align lastz` → chain → net → axt → maf）。小 cohort + 已有 MAF 直接复用；大 cohort + 无先验
    （如 4 万 E. coli）用 Mash KNN sparsify 把 N² 降到 N×K，传递闭包推断未比对的对。
    **注意：MAF 只是与外部工具的交换格式**。上游比对工具产出 MAF，pgr 在入口用
    `maf to-fas` / `maf to-paf` 转成内部工作格式；多序列比对 / 核心基因组操作在
@@ -51,7 +51,7 @@ pgr 走向泛基因组时，面对的问题与 impg **完全不同**。impg 的�
 | 比对来源 | 从 FASTA 跑 wfmash/sweepga | 已有两序列 MAF（可转 PAF）       |
 | 挑选时机 | align 阶段（无先验）       | 可借已有 MAF 先验                |
 | 核心问题 | 选哪些对比对               | 复用已有 pairwise，做 PAF 隐式图 |
-| 比对工具 | wfmash/FastGA              | pgr 已有 `pgr lav lastz` 全套    |
+| 比对工具 | wfmash/FastGA              | pgr 已有 `pgr align lastz` 全套    |
 
 ### 1.3 与 `--sparsify` 的关系：分场景
 
@@ -158,7 +158,7 @@ B↔C 在同一区段有比对，则 A↔C 间接同源。所有 pairwise 比对
 | 策略                | 来源                   | 适用                   | pgr 实现门槛           |
 |---------------------|------------------------|------------------------|------------------------|
 | 已有 PAF 覆盖度先验 | pgr 独有               | 已有部分 PAF 的 cohort | **推荐**，复用已有 PAF |
-| `pgr lav lastz`     | pgr + Cactus 风格      | 特定 pair 需要新比对   | 已有（不含 `--self`）  |
+| `pgr align lastz`     | pgr + Cactus 风格      | 特定 pair 需要新比对   | 已有（不含 `--self`）  |
 | 系统发育树引导      | Cactus 风格            | 有 phylogeny           | 复用 `pgr nwk` 模块    |
 | Mash KNN            | impg `--sparsify auto` | 无先验全选             | 需引入 mash crate      |
 
@@ -166,13 +166,13 @@ B↔C 在同一区段有比对，则 A↔C 间接同源。所有 pairwise 比对
 query_i、query_j 计算 |C_i ∩ C_j| / |C_i ∪ C_j|（Jaccard）；选 Jaccard 高于阈值且尚未跑过 pairwise
 的对补充比对。这样把 N² 降到"PAF 覆盖度共享的子集"。
 
-> `pgr lav lastz --self` 是 Cactus 风格的**重复屏蔽**管道的一部分（碎片自比对检测基因组内重复），
-> **不是**泛基因组比对工具。泛基因组 pairwise 用 `pgr lav lastz`（不含 `--self`）。
+> `pgr align lastz --self` 是 Cactus 风格的**重复屏蔽**管道的一部分（碎片自比对检测基因组内重复），
+> **不是**泛基因组比对工具。泛基因组 pairwise 用 `pgr align lastz`（不含 `--self`）。
 > 详见 [[cactus_lastz.md]] §5.6。
 
 **第三层：region 级精细比对挑选** — 已有 MAF 是粗粒度的。某些 region（HLA、KIR、C4）需要更精细
 pairwise，但全基因组精细比对代价高。从已有 PAF 的 gap/low-identity 区段筛选候选 region，对候选
-region 跑 `pgr lav lastz`，合并回 PAF 网络。**这一层是第一层的补充**，不是泛基因组的核心路径，
+region 跑 `pgr align lastz`，合并回 PAF 网络。**这一层是第一层的补充**，不是泛基因组的核心路径，
 按需开启。
 
 ### 2.8 paf query 的输出格式策略
@@ -657,10 +657,10 @@ Minigraph 骨架构建 → 图映射定位 → rgfa-split 切分 → 批量 Cact
 - **粗拆分**：用已有的 Chain/Net syntenic 信息做染色体级拆分（类似 `cactus_graphmap_split.py` 的
   heuristic contig selection：regex + size + dropoff，见 `cactus.md` §2.4.2）
 - **细拆分**：在每个大区块内，用传递闭包 BFS + masking 去重切分成 per-locus 批次
-- **比对**：per-locus 跑 `pgr lav lastz`（不含 `--self`）生成局部 pairwise
+- **比对**：per-locus 跑 `pgr align lastz`（不含 `--self`）生成局部 pairwise
 - **合并**：per-locus PAF 汇总回全 cohort 区间树
 
-这个路线复用了 pgr 的三项已有资产：Chain/Net syntenic 信息、`pgr lav lastz`、PAF 区间树。 但这是
+这个路线复用了 pgr 的三项已有资产：Chain/Net syntenic 信息、`pgr align lastz`、PAF 区间树。 但这是
 **第二步或第三步的任务**，第一步不需要 partition。
 
 ### 6.6 pgr 已有的 MSA 资产（供后续阶段按需使用）
@@ -686,7 +686,7 @@ Minigraph 骨架构建 → 图映射定位 → rgfa-split 切分 → 批量 Cact
 |-----------------------------------------|--------------------------------------------|-----------------------------------------------------------------------|
 | 补充 pairwise 比对（第二层）            | 已有 MAF/PAF 复用已足够                    | 传递闭包覆盖率不足                                                    |
 | Mash KNN pair-selection                 | 小 cohort 有 MAF 先验时不需要              | 大 cohort 无先验（如 4 万 E. coli，见 [[ecoli-cohort.md]]）           |
-| `pgr lav lastz --self` 全自比对         | 此 flag 用于重复屏蔽管道，非泛基因组比对   | 需要全新 cohort 的 pairwise 比对时评估 `pgr lav lastz`（不含 --self） |
+| `pgr align lastz --self` 全自比对         | 此 flag 用于重复屏蔽管道，非泛基因组比对   | 需要全新 cohort 的 pairwise 比对时评估 `pgr align lastz`（不含 --self） |
 | syng 免比对后端                         | [[impg.md]] §1.1 已明确不参考              | 永不                                                                  |
 | partition / lace / refine               | 处理 >100 基因组的 cohort 时需要           | N > 50                                                                |
 | stage DSL                               | 单命令不需要管道化                         | 出现三个以上 stage 串联                                               |

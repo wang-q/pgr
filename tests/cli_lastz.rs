@@ -11,9 +11,9 @@ fn check_lastz_installed() -> bool {
 }
 
 #[test]
-fn test_lav_lastz() {
+fn test_align_lastz() {
     if !check_lastz_installed() {
-        eprintln!("Skipping test_lav_lastz: lastz not installed");
+        eprintln!("Skipping test_align_lastz: lastz not installed");
         return;
     }
 
@@ -23,7 +23,7 @@ fn test_lav_lastz() {
     // Case 1: Run lastz with default settings
     PgrCmd::new()
         .args(&[
-            "lav",
+            "align",
             "lastz",
             t_path.join("pseudocat.fa").to_str().unwrap(),
             t_path.join("pseudopig.fa").to_str().unwrap(),
@@ -60,9 +60,9 @@ fn test_lav_lastz() {
 }
 
 #[test]
-fn test_lav_lastz_preset() {
+fn test_align_lastz_preset() {
     if !check_lastz_installed() {
-        eprintln!("Skipping test_lav_lastz_preset: lastz not installed");
+        eprintln!("Skipping test_align_lastz_preset: lastz not installed");
         return;
     }
 
@@ -72,7 +72,7 @@ fn test_lav_lastz_preset() {
     // Case 2: Run lastz with preset
     PgrCmd::new()
         .args(&[
-            "lav",
+            "align",
             "lastz",
             t_path.join("pseudocat.fa").to_str().unwrap(),
             t_path.join("pseudocat.fa").to_str().unwrap(), // Self-alignment to ensure matches with strict preset
@@ -96,10 +96,10 @@ fn test_lav_lastz_preset() {
 }
 
 #[test]
-fn test_lav_lastz_missing_inputs() {
+fn test_align_lastz_missing_inputs() {
     PgrCmd::new()
         .args(&[
-            "lav",
+            "align",
             "lastz",
             "non_existent_target.fa",
             "non_existent_query.fa",
