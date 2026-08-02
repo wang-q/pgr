@@ -921,6 +921,7 @@ pub fn align_to_psl_ext(
                 }
             })
             .collect();
+        drop(hits); // the tubes and sequences are enough for extension
         let a_revs: Vec<Vec<u8>> = a_seqs
             .iter()
             .map(|(_, s)| s.iter().rev().copied().collect())

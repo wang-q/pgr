@@ -592,6 +592,32 @@ Sakai 覆盖与 FastGA **完全持平**；缺失从 15 kb 降到 7.7 kb（剩余
 **速度已与 FastGA 持平**；Sakai 质量持平，Nissle 差 0.6%（7.7 kb indel 复杂
 小区域）。剩余：内存（~0.8-1 GB，pgi 全量载入 vs FastGA mmap）、Nissle 0.6%。
 
+## 5.24 内存 33% 削减（2026-08-02，~0.64 GB @ 8 线程）
+
+- `drop(hits)`：tube 形成后 hits（~95 MB）不再需要，提前释放；
+- 加上上轮的 q `Cow`（消除每 tube 5.5 MB 正链复制），8 线程峰值内存
+  **~960 → 639 MB**，32 线程 ~825 MB；耗时不变（0.69-0.76s）。
+
+剩余内存构成：pgi 全量载入（entries+positions ~274 MB × 2 索引）、并行 dandc
+暂存（大 span 的 `split_nd` 数组）、链化临时排序。FastGA 用 mmap 保持 ~0 MB
+RSS；pgi 侧做 mmap/惰性加载可进一步降低，但需新依赖或 unsafe。
+
+## 5.25 Nissle 基线不可信（2026-08-02）
+
+追查 Nissle 0.6% 覆盖差时发现 **`tests/genome/nissle1917.fa.gz` 在
+2026-08-02 01:57 被替换过**，而 §5.10 的 FastGA Nissle 基线（85.3%）与
+`pipe_fastga_n` MAF 来自旧文件：
+
+- FastGA MAF 声称 nissle[261307..] 的对齐文本为 "GGAAAAACCGTCCTG..."，但
+  当前 fasta 在该位置是 "TTTAATGCC..."；该序列实际在 nissle 5282283；
+- 系统安装的 FastGA（`~/.cbp/bin/FastGA`）对 mg1655 和 nissle 生成**精确相同
+  大小（134,742,092 B）的 GIX**——位置编码可疑，输出与当前 fasta 不一致；
+- 源码构建的 FastGA 有 `.1aln` schema 不匹配，无法产出 PSL。
+
+结论：Nissle 的 85.3% 基线对当前文件**无效**；我们的 84.7%（基于当前
+nissle1917_v2.pgi）自洽但缺少可比的 FastGA 参考。待用户确认 nissle 文件
+版本或提供可用的 FastGA 后重测。
+
 **剩余差距与方向**：
 
 1. 性能：把 D&C 回溯换成 wave 内嵌的 Pebble 稀疏 trace（trace point 间隔
