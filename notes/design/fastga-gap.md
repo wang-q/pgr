@@ -43,7 +43,9 @@
 `mask` 参数；FASTA 小写与 2bit mask_blocks 统一转 N 跳过）。单元测试
 `mask_skips_lowercase_fasta_kmers` / `mask_skips_2bit_mask_blocks` 验证
 mask 后 k-mer 是未 mask 的子集；真实数据（MG1655，100 kb 区间小写）positions
-下降 ~2.2%，与区间比例一致。923 测试全过。
+下降 ~2.2%，与区间比例一致；CLI 集成测试
+`command_pgi_build_mask_fasta_2bit_equivalent` 验证小写 FASTA 与 2bit
+mask_blocks 在 `--mask` 下产出相同索引。923 测试全过。
 
 ## 3. P1：自比对模式（已实施 2026-08-03）
 
@@ -59,8 +61,8 @@ mask 后 k-mer 是未 mask 的子集；真实数据（MG1655，100 kb 区间小�
 
 **验证**：
 1. 单元测试：含串联重复的序列自比对，输出含重复块且不含 trivially 自身块；
-2. 集成测试：`pgr align pgi genome.fa` 与 `sd search` 的重复区结果对照
-   （重合的重复家族）；
+2. ~~集成测试：与 `sd search` 的重复区结果对照~~（**已取消 2026-08-03**：
+   `sd search` 引擎随后切换为 pgi（替代 lastz），lastz 对照失去意义）；
 3. E. coli 自比对：主链外出现 rRNA/IS 等真实重复块（对照 pgi-align.md
    §3.1 v1 自比对 745 块、负链 186 块的已知结构）。
 
@@ -86,6 +88,9 @@ roundtrip 可逆；`pgr paf` 下游（to-gfa/to-vcf）不受影响。
 `cs_from_alignment_mixed_ops` / `cs_from_alignment_indels_and_length_check`
 （= / X / I / D 混合、长度校验）+ `command_maf_to_paf_basic` 断言 cs:Z；
 端到端 `cs:Z::8+A+A`。925 测试全过。
+
+> 三个实施项合计 930 测试全过（2026-08-03 复核；sd 交叉验证测试随
+> `sd search` 引擎切换方案取消，见 §3 验证点 2）。
 
 ## 5. 不做项与理由
 

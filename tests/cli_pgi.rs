@@ -12,6 +12,81 @@ fn write_fa(dir: &std::path::Path, name: &str, seq: &str) -> String {
     path.to_string_lossy().to_string()
 }
 
+/// Parse the unique k-mer count from a `pgr pgi build` log line.
+fn unique_from_build(stderr: &str) -> u64 {
+    stderr
+        .split(" unique k-mers")
+        .next()
+        .unwrap()
+        .split_whitespace()
+        .last()
+        .unwrap()
+        .parse()
+        .unwrap()
+}
+
+#[test]
+fn command_pgi_build_mask_fasta_2bit_equivalent() {
+    // --mask must skip soft-masked regions identically whether the mask comes
+    // from lowercase FASTA or from 2bit mask blocks.
+    let temp = tempfile::TempDir::new().unwrap();
+    let upper: String = (0..200u32)
+        .map(|i| b"ACGT"[(i % 4) as usize] as char)
+        .collect();
+    let lower: String = (0..200u32)
+        .map(|i| {
+            let b = b"TGCA"[(i % 4) as usize];
+            (b as char).to_ascii_lowercase()
+        })
+        .collect();
+    let fa = write_fa(temp.path(), "g", &format!("{upper}{lower}"));
+
+    // Plain build keeps every k-mer; both masked builds must agree and be smaller.
+    let out_plain = temp.path().join("plain.pgi");
+    let (_, stderr) = PgrCmd::new()
+        .args(&["pgi", "build", &fa, "-o", out_plain.to_str().unwrap()])
+        .run();
+    let plain = unique_from_build(&stderr);
+
+    let out_fa = temp.path().join("masked_fa.pgi");
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "pgi",
+            "build",
+            &fa,
+            "--mask",
+            "-o",
+            out_fa.to_str().unwrap(),
+        ])
+        .run();
+    let masked_fa = unique_from_build(&stderr);
+
+    // The lowercase FASTA becomes 2bit mask blocks (fa to-2bit keeps masking).
+    let tb = temp.path().join("g.2bit");
+    let (_, stderr) = PgrCmd::new()
+        .args(&["fa", "to-2bit", &fa, "-o", tb.to_str().unwrap()])
+        .run();
+    assert!(!stderr.contains("error:"), "to-2bit failed: {stderr}");
+    let out_tb = temp.path().join("masked_tb.pgi");
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "pgi",
+            "build",
+            tb.to_str().unwrap(),
+            "--mask",
+            "-o",
+            out_tb.to_str().unwrap(),
+        ])
+        .run();
+    let masked_tb = unique_from_build(&stderr);
+
+    assert!(masked_fa < plain, "mask must drop k-mers");
+    assert_eq!(
+        masked_fa, masked_tb,
+        "FASTA lowercase and 2bit mask blocks must be equivalent"
+    );
+}
+
 #[test]
 fn command_pgi_build_stat() {
     let temp = tempfile::TempDir::new().unwrap();
