@@ -138,8 +138,8 @@ adaptamer（lcp 扩展）+ wave 对齐补平间隙。两者 PSL 均可被
 
 - ~~>30 kb 链不扩展~~（v3 已解决：16 kb 窗口 + 2 kb 重叠沿链对角线滑动，
   巨型链获得真实身份率，见 §5.4）；
-- banded 局部比对用线性 gap（`AlignmentParams` 默认 +5/-4/-8/-6 的 open 部分），
-  CIGAR 的 gap 精度不如 affine/wave；
+- ~~banded 局部比对用线性 gap~~（v3.1 已改为**仿射 gap**：M/I/D 三状态，
+  open -8 + extend -6；长 indel 表示为正确 gap 游程，块数 -25%，见 §5.8）；
 - 块内多段同源时只取最佳局部段（FastGA 同语义）。
 
 ## 5.3 株系验证（2026-08-02，MG1655 vs 三株，v2 扩展）
@@ -250,6 +250,61 @@ FastGA 的 wave 延伸进分歧区、覆盖更广）。注意：此表为 v2 时
 块数 -23~30%、最大块 +40~100%、覆盖 +1.6~1.8%。剩余断链主要来自真实
 重排（对角线差超 band，不合并）与分歧区（>5 kb 间隙），后者需
 adaptamer/lcp 变长种子（未来工作）。
+
+## 5.8 仿射 gap 扩展（2026-08-02，v3.1）
+
+banded 局部比对从线性 gap（每次 -8）升级为**仿射 gap**（M/I/D 三状态：
+open -8 + extend -6，`AlignmentParams` 默认参数），长插入（IS 元件等）
+被表示为正确的 gap 游程而非碎成多个块。
+
+| 输入对 | 线性 gap 块数 | 仿射 gap 块数 | 缩减 |
+|---|---:|---:|---:|
+| MG1655 vs Sakai | 4710 | **3512** | -25% |
+| MG1655 vs Nissle | 7451 | **5609** | -25% |
+
+身份率不变（0.9834/0.9747——对齐内容等价，仅 indel 结构更干净）。
+匹配碱基 +225、错配 -44（Sakai），CIGAR 质量明显改善。
+
+## 5.9 adaptamer 部分种子：负结果（2026-08-02）
+
+按 FastGA 的 lcp 归并机制（plen ≥ 12 的部分匹配种子，`--min-shared`）实现
+并实测，**所有阈值均劣于精确匹配**（MG1655 vs Sakai，默认参数）：
+
+| min_shared | records | blocks | identity |
+|---|---:|---:|---:|
+| 40（精确，默认） | 862 | 3512 | 0.9834 |
+| 30 | 1130 | 4657 | 0.9827 |
+| 25 | 1302 | 6072 | 0.9810 |
+| 20 | 1614 | 8680 | 0.9781 |
+| 12（FastGA plen 下限） | 3375 | 53015 | 0.9496 |
+
+**原因**：部分种子（共享 12-39 碱基）在分歧区既补充同源种子，也带来大量
+假阳性弱种子；我们的贪心链化 + banded 扩展没有 FastGA tube/wave 那样的
+种子质量区分机制，弱种子生成大量低质量新链并拉低身份率。
+
+**结论**：adaptamer 的收益依赖 FastGA 的链化/扩展机制，不能直接移植到当前
+管线。保留 `--min-shared` 作为实验开关（默认 = k 精确匹配），后续若引入
+FastGA 式 tube 链化再重新评估。
+
+## 5.10 端到端管线验证（2026-08-02）
+
+`pgr pgi align` → `pgr psl to-chain`（chainnet 内部）→ `pgr pl chainnet
+--syn` 全链路，与 FastGA 驱动版本（`FastGA -psl` → `pgr psl swap` 对齐
+q/t 角色 → 同一 chainnet）对比 syntenic MAF：
+
+| 输入对 | 指标 | pgr 管线 | FastGA 管线 |
+|---|---|---:|---:|
+| MG1655 vs Sakai | syntenic 覆盖 | **87.7%**（392 块） | 89.3%（506 块） |
+| MG1655 vs Nissle | syntenic 覆盖 | **82.9%**（541 块） | 85.3%（711 块） |
+
+结论：
+- 管线端到端可用（0.4s 产出 syntenic MAF），块结构**比 FastGA 更平滑**
+  （块更少：392 vs 506 / 541 vs 711）；
+- 覆盖差 1.6-2.4%，来源是分歧区：FastGA 的 wave aligner 能桥接 banded
+  窗口跳过的低分区间（同 §5.4 观察）；
+- 角色约定：`pgr pgi align <ref> <query>` 的 PSL 是 q=query/t=ref；
+  FastGA 的 PSL 是 q=source1/t=source2，两者互换，喂 chainnet 前需
+  `pgr psl swap`（或调整参数顺序）。
 
 ## 6. 相关文档
 

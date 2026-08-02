@@ -37,8 +37,17 @@ pub fn align_banded_local(
         return None;
     }
     let width = 2 * band + 1;
-    let mut score = vec![0i32; (n + 1) * width];
-    let mut trace = vec![0u8; (n + 1) * width]; // 0=reset, 1=diag, 2=up, 3=left
+    let neg = i32::MIN / 4;
+    // Affine-gap local alignment (M/I/D states). M resets to 0 (local);
+    // I = insertion in q (q base vs gap), D = deletion (gap vs t base).
+    let mut mscore = vec![0i32; (n + 1) * width];
+    let mut iscore = vec![neg; (n + 1) * width];
+    let mut dscore = vec![neg; (n + 1) * width];
+    // Packed traces, 2 bits per state:
+    //   M: 0=reset, 1=from M diag, 2=from I diag, 3=from D diag
+    //   I: 0=none, 1=open from M, 2=extend from I
+    //   D: 0=none, 1=open from M, 2=extend from D
+    let mut trace = vec![0u8; (n + 1) * width];
     let sub = |a: u8, b: u8| {
         if a == b {
             params.match_score
@@ -46,6 +55,8 @@ pub fn align_banded_local(
             params.mismatch_score
         }
     };
+    let go = params.gap_open;
+    let ge = params.gap_extend;
 
     let mut best = 0i32;
     let mut best_off = 0usize;
@@ -56,34 +67,57 @@ pub fn align_banded_local(
         for j in j_lo..=j_hi {
             let off = (j as i64 - i as i64 - diag0 + band as i64) as usize;
             let c = i * width + off;
-            let mut s = 0i32;
-            let mut tr = 0u8;
-            // Diagonal predecessor (i-1, j-1) sits on the same band offset.
-            let v = score[(i - 1) * width + off] + sub(q[i - 1], t[j - 1]);
-            if v > s {
-                s = v;
-                tr = 1;
-            }
-            // Up predecessor (i-1, j) shifts the offset by +1.
+            // I: insertion in q, predecessor (i-1, j) at off+1.
+            let mut iv = neg;
+            let mut it = 0u8;
             if off + 1 < width {
-                let v = score[(i - 1) * width + off + 1] + params.gap_open;
-                if v > s {
-                    s = v;
-                    tr = 2;
+                let up = (i - 1) * width + off + 1;
+                let open = mscore[up].saturating_add(go);
+                let ext = iscore[up].saturating_add(ge);
+                if open >= ext {
+                    iv = open;
+                    it = 1;
+                } else {
+                    iv = ext;
+                    it = 2;
                 }
             }
-            // Left predecessor (i, j-1) shifts the offset by -1.
+            // D: deletion, predecessor (i, j-1) at off-1.
+            let mut dv = neg;
+            let mut dt = 0u8;
             if off > 0 {
-                let v = score[c - 1] + params.gap_open;
-                if v > s {
-                    s = v;
-                    tr = 3;
+                let left = c - 1;
+                let open = mscore[left].saturating_add(go);
+                let ext = dscore[left].saturating_add(ge);
+                if open >= ext {
+                    dv = open;
+                    dt = 1;
+                } else {
+                    dv = ext;
+                    dt = 2;
                 }
             }
-            score[c] = s;
-            trace[c] = tr;
-            if s > best {
-                best = s;
+            // M: diagonal predecessor (i-1, j-1) at the same offset; local
+            // reset to 0. Tie-break M > I > D for deterministic traceback.
+            let diag = (i - 1) * width + off;
+            let mut cand = mscore[diag];
+            let mut st = 1u8;
+            if iscore[diag] > cand {
+                cand = iscore[diag];
+                st = 2;
+            }
+            if dscore[diag] > cand {
+                cand = dscore[diag];
+                st = 3;
+            }
+            let v = cand.saturating_add(sub(q[i - 1], t[j - 1]));
+            let (mv, mt) = if v > 0 { (v, st) } else { (0, 0) };
+            mscore[c] = mv;
+            iscore[c] = iv;
+            dscore[c] = dv;
+            trace[c] = mt | (it << 2) | (dt << 4);
+            if mv > best {
+                best = mv;
                 best_off = c;
             }
         }
@@ -101,27 +135,67 @@ pub fn align_banded_local(
     let mut q_aln = Vec::with_capacity(n);
     let mut t_aln = Vec::with_capacity(m);
     let (mut i, mut j) = (bi, bj);
+    let mut state = 0u8; // 0=M, 1=I, 2=D
     while i > 0 && j > 0 {
         let d = j as i64 - i as i64 - diag0;
         let c = i * width + (d + band as i64) as usize;
-        match trace[c] {
-            0 => break,
-            1 => {
-                q_aln.push(q[i - 1]);
-                t_aln.push(t[j - 1]);
-                i -= 1;
-                j -= 1;
-            }
-            2 => {
-                q_aln.push(q[i - 1]);
-                t_aln.push(b'-');
-                i -= 1;
-            }
-            3 => {
-                q_aln.push(b'-');
-                t_aln.push(t[j - 1]);
-                j -= 1;
-            }
+        let tr = trace[c];
+        match state {
+            0 => match tr & 3 {
+                0 => break,
+                1 => {
+                    q_aln.push(q[i - 1]);
+                    t_aln.push(t[j - 1]);
+                    i -= 1;
+                    j -= 1;
+                    state = 0;
+                }
+                2 => {
+                    q_aln.push(q[i - 1]);
+                    t_aln.push(t[j - 1]);
+                    i -= 1;
+                    j -= 1;
+                    state = 1;
+                }
+                3 => {
+                    q_aln.push(q[i - 1]);
+                    t_aln.push(t[j - 1]);
+                    i -= 1;
+                    j -= 1;
+                    state = 2;
+                }
+                _ => unreachable!(),
+            },
+            1 => match (tr >> 2) & 3 {
+                1 => {
+                    q_aln.push(q[i - 1]);
+                    t_aln.push(b'-');
+                    i -= 1;
+                    state = 0;
+                }
+                2 => {
+                    q_aln.push(q[i - 1]);
+                    t_aln.push(b'-');
+                    i -= 1;
+                    state = 1;
+                }
+                _ => break,
+            },
+            2 => match (tr >> 4) & 3 {
+                1 => {
+                    q_aln.push(b'-');
+                    t_aln.push(t[j - 1]);
+                    j -= 1;
+                    state = 0;
+                }
+                2 => {
+                    q_aln.push(b'-');
+                    t_aln.push(t[j - 1]);
+                    j -= 1;
+                    state = 2;
+                }
+                _ => break,
+            },
             _ => unreachable!(),
         }
     }
@@ -156,8 +230,9 @@ mod tests {
     #[test]
     fn internal_insertion_is_kept() {
         // q has an internal 2-base insertion ("TT") between two 12-base
-        // conserved flanks; the gapped solution (104) clearly beats the best
-        // gapless one (60), so the gap must survive local trimming.
+        // conserved flanks; the affine-gapped solution (106 = 24*5 - 8 - 6)
+        // clearly beats the best gapless one (60), so the gap must survive
+        // local trimming.
         let mut q = b"ACGTACGTACGT".to_vec();
         q.extend_from_slice(b"TT");
         q.extend_from_slice(b"ACGTACGTACGT");
@@ -171,7 +246,7 @@ mod tests {
         );
         assert_eq!(r.q_aln, q);
         assert_eq!(r.t_aln.len(), t.len() + 2);
-        assert_eq!(r.score, 24 * 5 + 2 * (-8));
+        assert_eq!(r.score, 24 * 5 - 8 - 6);
     }
 
     #[test]

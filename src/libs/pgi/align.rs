@@ -22,6 +22,10 @@ pub struct AlignParams {
     pub band: u32,
     /// Maximum gap (bp) between adjacent colinear chains to merge.
     pub merge_gap: u32,
+    /// Minimum shared seed length (bp); `None` means exact k-mers (default).
+    /// Lower values enable adaptamer-style partial seeds, which are
+    /// experimental: they degrade block structure (see pgi-align.md §5.9).
+    pub min_shared: Option<usize>,
 }
 
 impl Default for AlignParams {
@@ -32,6 +36,7 @@ impl Default for AlignParams {
             max_gap: 1000,
             band: 128,
             merge_gap: 5000,
+            min_shared: None,
         }
     }
 }
@@ -48,55 +53,108 @@ pub struct SeedHit {
     pub b_contig: u32,
     /// Query position in orientation space (RC space when `strand` is 1).
     pub b_pos: u32,
+    /// Shared prefix length (bp) of the two k-mers.
+    pub shared: u32,
     /// 0 = forward, 1 = reverse (query window is the RC of the reference).
     pub strand: u8,
 }
 
-/// Merge two sorted k-mer indexes, emitting one hit per shared-k-mer position
-/// pair whose frequency on both sides is at most `freq`.
+/// Merge two sorted k-mer indexes, emitting adaptamer-style seed hits for
+/// every k-mer pair sharing at least `min_shared` bases (mirroring FastGA's
+/// lcp-driven merge; exact k-mers are the `min_shared == k` special case).
 ///
-/// Both-strand entries are emitted by `pgi build`, so a shared key with equal
-/// strand flags means a forward hit, and differing flags a reverse hit.
-pub fn merge_seed_hits(a: &PgiIndex, b: &PgiIndex, freq: u32) -> anyhow::Result<Vec<SeedHit>> {
+/// Both-strand entries are emitted by `pgi build`, so shared keys with equal
+/// strand flags mean a forward hit, and differing flags a reverse hit. A
+/// k-mer whose matching prefix range in the other index exceeds `freq`
+/// entries is skipped (FastGA's frequency filter).
+pub fn merge_seed_hits(
+    a: &PgiIndex,
+    b: &PgiIndex,
+    freq: u32,
+    min_shared: usize,
+) -> anyhow::Result<Vec<SeedHit>> {
     validate_compatible(a, b)?;
-    let k = a.k as u64;
+    let k = a.k;
+    anyhow::ensure!(
+        min_shared >= 1 && min_shared <= k,
+        "min_shared must be in 1..={k}"
+    );
+    let k_bits = 2 * k;
+    let drop_bits = k_bits - 2 * min_shared;
+    let range = 1u128 << drop_bits;
+    let mask = if k_bits >= 128 {
+        u128::MAX
+    } else {
+        (1u128 << k_bits) - 1
+    };
     let mut hits = Vec::new();
-    let (mut i, mut j) = (0usize, 0usize);
-    while i < a.entries.len() && j < b.entries.len() {
+    let mut i = 0usize;
+    while i < a.entries.len() {
         let ea = &a.entries[i];
-        let eb = &b.entries[j];
-        if ea.kmer == eb.kmer {
-            if ea.freq <= freq && eb.freq <= freq {
-                let ap = &a.positions[ea.pos_start as usize..(ea.pos_start + ea.freq) as usize];
-                let bp = &b.positions[eb.pos_start as usize..(eb.pos_start + eb.freq) as usize];
-                for &(ac, apos, astrand) in ap {
-                    for &(bc, bpos, bstrand) in bp {
-                        let fwd = astrand == bstrand;
-                        let b_len = b.contigs[bc as usize].1;
-                        let oriented = if fwd {
-                            bpos as u64
-                        } else {
-                            b_len - k - bpos as u64
-                        };
-                        hits.push(SeedHit {
-                            a_contig: ac,
-                            a_pos: apos,
-                            b_contig: bc,
-                            b_pos: oriented as u32,
-                            strand: u8::from(!fwd),
-                        });
-                    }
+        i += 1;
+        if ea.freq > freq {
+            continue;
+        }
+        // Prefix range in b: keys sharing the first `min_shared` bases.
+        let lo = ea.kmer & !(range - 1) & mask;
+        let hi = lo + range;
+        let j0 = b.entries.partition_point(|e| e.kmer < lo);
+        let mut j = j0;
+        while j < b.entries.len() && b.entries[j].kmer < hi {
+            j += 1;
+        }
+        let range_size = (j - j0) as u32;
+        if range_size == 0 || range_size > freq {
+            continue;
+        }
+        let ap = &a.positions[ea.pos_start as usize..(ea.pos_start + ea.freq) as usize];
+        for eb in &b.entries[j0..j] {
+            if eb.freq > freq {
+                continue;
+            }
+            let shared = shared_prefix(ea.kmer, eb.kmer, k);
+            if shared < min_shared as u32 {
+                continue;
+            }
+            let bp = &b.positions[eb.pos_start as usize..(eb.pos_start + eb.freq) as usize];
+            for &(ac, apos, astrand) in ap {
+                for &(bc, bpos, bstrand) in bp {
+                    let fwd = astrand == bstrand;
+                    let b_len = b.contigs[bc as usize].1;
+                    let oriented = if fwd {
+                        bpos as u64
+                    } else {
+                        b_len - k as u64 - bpos as u64
+                    };
+                    hits.push(SeedHit {
+                        a_contig: ac,
+                        a_pos: apos,
+                        b_contig: bc,
+                        b_pos: oriented as u32,
+                        shared,
+                        strand: u8::from(!fwd),
+                    });
                 }
             }
-            i += 1;
-            j += 1;
-        } else if ea.kmer < eb.kmer {
-            i += 1;
-        } else {
-            j += 1;
         }
     }
     Ok(hits)
+}
+
+/// Longest common prefix (in bases) of two 2-bit k-mer keys.
+fn shared_prefix(a: u128, b: u128, k: usize) -> u32 {
+    let x = a ^ b;
+    if x == 0 {
+        return k as u32;
+    }
+    let bitlen = 128 - x.leading_zeros();
+    ((2 * k).saturating_sub(bitlen as usize) / 2) as u32
+}
+
+/// Effective minimum shared seed length: `params.min_shared` or `k` (exact
+/// k-mers), capped at `k`.
+fn effective_min_shared(idx: &PgiIndex, params: &AlignParams) -> usize {
+    params.min_shared.unwrap_or(idx.k).min(idx.k)
 }
 
 /// One chained diagonal segment on a single (contig_a, contig_b, strand) pair.
@@ -309,7 +367,7 @@ pub fn chain_to_psl(chain: &Chain, a: &PgiIndex, b: &PgiIndex) -> Psl {
 
 /// Align two compatible indexes: merge seeds, chain, and emit PSL blocks.
 pub fn align_to_psl(a: &PgiIndex, b: &PgiIndex, params: &AlignParams) -> anyhow::Result<Vec<Psl>> {
-    let hits = merge_seed_hits(a, b, params.freq)?;
+    let hits = merge_seed_hits(a, b, params.freq, effective_min_shared(a, params))?;
     let chains = chain_hits(
         &hits,
         a.k as u32,
@@ -459,7 +517,7 @@ pub fn align_to_psl_ext(
     a_seqs: &[(String, Vec<u8>)],
     b_seqs: &[(String, Vec<u8>)],
 ) -> anyhow::Result<Vec<Psl>> {
-    let hits = merge_seed_hits(a, b, params.freq)?;
+    let hits = merge_seed_hits(a, b, params.freq, effective_min_shared(a, params))?;
     let chains = chain_hits(
         &hits,
         a.k as u32,
@@ -525,7 +583,7 @@ mod tests {
     fn merge_forward_and_reverse_hits() {
         let seq_a = pseudo_random_seq(300, 42);
         let (ia, ib) = (build(&seq_a), build(&seq_a));
-        let hits = merge_seed_hits(&ia, &ib, 10).unwrap();
+        let hits = merge_seed_hits(&ia, &ib, 10, 10).unwrap();
         assert!(!hits.is_empty());
         assert!(
             hits.iter().all(|h| h.strand == 0),
@@ -540,7 +598,7 @@ mod tests {
         // oriented query position equals the reference position.
         let rc: Vec<u8> = crate::libs::nt::rev_comp(&seq_a).collect();
         let ir = build(&rc);
-        let rev = merge_seed_hits(&ia, &ir, 10).unwrap();
+        let rev = merge_seed_hits(&ia, &ir, 10, 10).unwrap();
         assert!(!rev.is_empty());
         assert!(
             rev.iter().all(|h| h.strand == 1),
@@ -557,15 +615,15 @@ mod tests {
         // Periodic sequence: each 10-mer repeats ~30x, so freq=1 drops all.
         let seq: Vec<u8> = (0..128u32).map(|i| b"ACGT"[(i % 4) as usize]).collect();
         let idx = build(&seq);
-        let hits = merge_seed_hits(&idx, &idx, 1).unwrap();
+        let hits = merge_seed_hits(&idx, &idx, 1, 10).unwrap();
         assert!(hits.is_empty(), "repetitive k-mers must be filtered");
-        let hits = merge_seed_hits(&idx, &idx, 200).unwrap();
+        let hits = merge_seed_hits(&idx, &idx, 200, 10).unwrap();
         assert!(!hits.is_empty(), "high threshold keeps repeats");
 
         // Random sequence: k-mers are mostly unique, so freq=1 keeps hits.
         let rnd = pseudo_random_seq(300, 7);
         let rnd_idx = build(&rnd);
-        let hits = merge_seed_hits(&rnd_idx, &rnd_idx, 1).unwrap();
+        let hits = merge_seed_hits(&rnd_idx, &rnd_idx, 1, 10).unwrap();
         assert!(!hits.is_empty(), "unique k-mers pass freq=1");
     }
 
@@ -577,6 +635,7 @@ mod tests {
                 a_pos: 100,
                 b_contig: 0,
                 b_pos: 200,
+                shared: 10,
                 strand: 0,
             },
             SeedHit {
@@ -584,6 +643,7 @@ mod tests {
                 a_pos: 110,
                 b_contig: 0,
                 b_pos: 210,
+                shared: 10,
                 strand: 0,
             },
             SeedHit {
@@ -591,6 +651,7 @@ mod tests {
                 a_pos: 120,
                 b_contig: 0,
                 b_pos: 220,
+                shared: 10,
                 strand: 0,
             },
             SeedHit {
@@ -598,6 +659,7 @@ mod tests {
                 a_pos: 100,
                 b_contig: 0,
                 b_pos: 200,
+                shared: 10,
                 strand: 1,
             },
             SeedHit {
@@ -605,6 +667,7 @@ mod tests {
                 a_pos: 110,
                 b_contig: 0,
                 b_pos: 210,
+                shared: 10,
                 strand: 1,
             },
             SeedHit {
@@ -612,6 +675,7 @@ mod tests {
                 a_pos: 120,
                 b_contig: 0,
                 b_pos: 220,
+                shared: 10,
                 strand: 1,
             },
         ];
@@ -632,6 +696,7 @@ mod tests {
                 a_pos: 100,
                 b_contig: 0,
                 b_pos: 100,
+                shared: 10,
                 strand: 0,
             },
             SeedHit {
@@ -639,6 +704,7 @@ mod tests {
                 a_pos: 130,
                 b_contig: 0,
                 b_pos: 130,
+                shared: 10,
                 strand: 0,
             },
             SeedHit {
@@ -646,6 +712,7 @@ mod tests {
                 a_pos: 5000,
                 b_contig: 0,
                 b_pos: 5000,
+                shared: 10,
                 strand: 0,
             },
             SeedHit {
@@ -653,6 +720,7 @@ mod tests {
                 a_pos: 5030,
                 b_contig: 0,
                 b_pos: 5030,
+                shared: 10,
                 strand: 0,
             },
         ];
@@ -672,6 +740,7 @@ mod tests {
                 a_pos: 100,
                 b_contig: 0,
                 b_pos: 100,
+                shared: 10,
                 strand: 0,
             },
             SeedHit {
@@ -679,6 +748,7 @@ mod tests {
                 a_pos: 300,
                 b_contig: 0,
                 b_pos: 300,
+                shared: 10,
                 strand: 0,
             },
             SeedHit {
@@ -686,6 +756,7 @@ mod tests {
                 a_pos: 200,
                 b_contig: 0,
                 b_pos: 120,
+                shared: 10,
                 strand: 0,
             },
         ];
@@ -706,6 +777,7 @@ mod tests {
                 a_pos: 100,
                 b_contig: 0,
                 b_pos: 100,
+                shared: 10,
                 strand: 0,
             },
             SeedHit {
@@ -713,6 +785,7 @@ mod tests {
                 a_pos: 150,
                 b_contig: 0,
                 b_pos: 150,
+                shared: 10,
                 strand: 0,
             },
             SeedHit {
@@ -720,6 +793,7 @@ mod tests {
                 a_pos: 200,
                 b_contig: 0,
                 b_pos: 190,
+                shared: 10,
                 strand: 0,
             },
         ];
@@ -744,6 +818,7 @@ mod tests {
                 a_pos: 100,
                 b_contig: 0,
                 b_pos: 100,
+                shared: 10,
                 strand: 0,
             },
             SeedHit {
@@ -751,6 +826,7 @@ mod tests {
                 a_pos: 130,
                 b_contig: 0,
                 b_pos: 130,
+                shared: 10,
                 strand: 0,
             },
             SeedHit {
@@ -758,6 +834,7 @@ mod tests {
                 a_pos: 1300,
                 b_contig: 0,
                 b_pos: 1300,
+                shared: 10,
                 strand: 0,
             },
             SeedHit {
@@ -765,6 +842,7 @@ mod tests {
                 a_pos: 1330,
                 b_contig: 0,
                 b_pos: 1330,
+                shared: 10,
                 strand: 0,
             },
         ];
@@ -782,6 +860,7 @@ mod tests {
                 a_pos: 100,
                 b_contig: 0,
                 b_pos: 100,
+                shared: 10,
                 strand: 0,
             },
             SeedHit {
@@ -789,6 +868,7 @@ mod tests {
                 a_pos: 2000,
                 b_contig: 0,
                 b_pos: 1800,
+                shared: 10,
                 strand: 0,
             },
         ];
@@ -858,7 +938,12 @@ mod tests {
         let a_seqs = vec![(String::from("c"), seq.clone())];
         let rc: Vec<u8> = rev_comp(&seq).collect();
         let b_seqs = vec![(String::from("c"), rc)];
-        let params = AlignParams::default();
+        // Exact-only seeds: partial matches could pair unrelated same-strand
+        // positions in this tiny random sequence and break the pure-RC check.
+        let params = AlignParams {
+            min_shared: Some(10),
+            ..AlignParams::default()
+        };
         let psls = align_to_psl_ext(&ia, &ir, &params, &a_seqs, &b_seqs).unwrap();
         assert!(!psls.is_empty());
         assert!(
@@ -877,7 +962,7 @@ mod tests {
         let a_seqs = vec![(String::from("c"), seq.clone())];
         let b_seqs = vec![(String::from("c"), seq)];
         let params = AlignParams::default();
-        let hits = merge_seed_hits(&ia, &ib, params.freq).unwrap();
+        let hits = merge_seed_hits(&ia, &ib, params.freq, 10).unwrap();
         let chains = chain_hits(
             &hits,
             ia.k as u32,

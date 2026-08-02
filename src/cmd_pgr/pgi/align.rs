@@ -31,6 +31,8 @@ Examples:
    pgr pgi align ref.pgi query.pgi --ref-seq ref.fa --query-seq query.fa -o out.psl
 4. Stitch chains across small insertions:
    pgr pgi align ref.pgi query.pgi --merge-gap 10000 -o out.psl
+5. Partial seeds are experimental and degrade results; exact k-mers default:
+   pgr pgi align ref.pgi query.pgi --min-shared 30 -o out.psl
 "###,
         )
         .arg(
@@ -85,6 +87,12 @@ Examples:
                 .help("Maximum gap (bp) between adjacent colinear chains to merge"),
         )
         .arg(
+            Arg::new("min_shared")
+                .long("min-shared")
+                .value_parser(value_parser!(usize))
+                .help("Minimum shared seed length (bp); default = k (exact, recommended)"),
+        )
+        .arg(
             Arg::new("ref_seq")
                 .long("ref-seq")
                 .help("Reference sequence file (FASTA or .2bit) for chain refinement"),
@@ -107,6 +115,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         max_gap: *args.get_one::<u32>("max_gap").unwrap(),
         band: *args.get_one::<u32>("band").unwrap(),
         merge_gap: *args.get_one::<u32>("merge_gap").unwrap(),
+        min_shared: args.get_one::<usize>("min_shared").copied(),
     };
 
     let mut r1 = pgr::reader(ref_idx)?;
