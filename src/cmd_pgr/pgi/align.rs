@@ -93,6 +93,13 @@ Examples:
                 .help("Minimum shared seed length (bp); default = k (exact, recommended)"),
         )
         .arg(
+            Arg::new("workflow")
+                .long("workflow")
+                .default_value("greedy")
+                .value_parser(["greedy", "tube"])
+                .help("Chaining workflow: greedy chains (default) or FastGA tubes"),
+        )
+        .arg(
             Arg::new("ref_seq")
                 .long("ref-seq")
                 .help("Reference sequence file (FASTA or .2bit) for chain refinement"),
@@ -116,6 +123,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         band: *args.get_one::<u32>("band").unwrap(),
         merge_gap: *args.get_one::<u32>("merge_gap").unwrap(),
         min_shared: args.get_one::<usize>("min_shared").copied(),
+        workflow: match args.get_one::<String>("workflow").unwrap().as_str() {
+            "tube" => pgr::libs::pgi::align::Workflow::Tube,
+            _ => pgr::libs::pgi::align::Workflow::Greedy,
+        },
     };
 
     let mut r1 = pgr::reader(ref_idx)?;

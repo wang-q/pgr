@@ -4,8 +4,9 @@ use super::dist::validate_compatible;
 use super::PgiIndex;
 use crate::libs::alignment::align_banded_local;
 use crate::libs::alignment::coords::reverse_range_pair;
+use crate::libs::alignment::wave::local_alignment;
 use crate::libs::fmt::psl::Psl;
-use crate::libs::nt::rev_comp;
+use crate::libs::nt::{complement, rev_comp};
 use crate::libs::poa::align::AlignmentParams;
 use rayon::prelude::*;
 
@@ -26,6 +27,18 @@ pub struct AlignParams {
     /// Lower values enable adaptamer-style partial seeds, which are
     /// experimental: they degrade block structure (see pgi-align.md §5.9).
     pub min_shared: Option<usize>,
+    /// Chaining workflow: FastGA tube chaining or the default greedy chains.
+    pub workflow: Workflow,
+}
+
+/// Chaining workflow.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Workflow {
+    /// FastGA `align_contigs` tube chaining.
+    Tube,
+    /// Default greedy anti-diagonal chains.
+    #[default]
+    Greedy,
 }
 
 impl Default for AlignParams {
@@ -37,6 +50,7 @@ impl Default for AlignParams {
             band: 128,
             merge_gap: 5000,
             min_shared: None,
+            workflow: Workflow::Greedy,
         }
     }
 }
@@ -272,6 +286,17 @@ fn tubes_for_group(
     // Process each adjacent bucket pair (c, c+1), merging by a_pos.
     for w in 0..buckets.len() {
         let (cb, b_seeds) = &buckets[w];
+        if std::env::var("PGR_TUBE").is_ok() && *cb == -71 {
+            eprintln!(
+                "BUCKET cb={} n={} first_anti={}",
+                cb,
+                b_seeds.len(),
+                b_seeds
+                    .first()
+                    .map(|h| h.a_pos as i64 + h.b_pos as i64)
+                    .unwrap_or(-1)
+            );
+        }
         let m_seeds: &[&SeedHit] = if w + 1 < buckets.len() && buckets[w + 1].0 == cb + 1 {
             &buckets[w + 1].1
         } else {
@@ -345,6 +370,204 @@ fn tubes_for_group(
             });
         }
     }
+}
+
+/// FastGA `BUCK_ANTI`: tube processing slides the mid-line by 128 bp.
+const BUCK_ANTI: i64 = 128;
+/// FastGA `alnMin = ALIGN_MIN - 50` (default `-l 100`).
+const TUBE_MIN_LEN: i64 = 50;
+/// FastGA `alnRate = ALIGN_RATE + 0.05` (default `-i 0.7`, mismatch = 1).
+const TUBE_MIN_RATE: f64 = 0.35;
+
+/// Extend one tube with FastGA `align_contigs` semantics: slide the mid-line
+/// anti-diagonal by `BUCK_ANTI` through the tube box and call the mid-line
+/// wave `Local_Alignment` (full contig sequences, tube diagonal band) at each
+/// position. `alast` carries the furthest anti already aligned by an earlier
+/// tube of the same (contig pair, strand) group.
+#[allow(clippy::too_many_arguments)]
+fn extend_tube(
+    tube: &Tube,
+    alast: &mut i64,
+    a: &PgiIndex,
+    b: &PgiIndex,
+    a_seqs: &[(String, Vec<u8>)],
+    b_seqs: &[(String, Vec<u8>)],
+    a_revs: &[Vec<u8>],
+    b_revs: &[Vec<u8>],
+    b_comps: &[Vec<u8>],
+) -> Vec<Psl> {
+    let Some((_, a_int)) = a_seqs.get(tube.a_contig as usize) else {
+        return Vec::new();
+    };
+    let Some((_, b_int)) = b_seqs.get(tube.b_contig as usize) else {
+        return Vec::new();
+    };
+    // Query contig in orientation space (RC for minus strand), once.
+    let q: Vec<u8> = if tube.strand == 0 {
+        b_int.to_vec()
+    } else {
+        rev_comp(b_int).collect()
+    };
+    let rt = &a_revs[tube.a_contig as usize];
+    let rq = if tube.strand == 0 {
+        &b_revs[tube.b_contig as usize]
+    } else {
+        &b_comps[tube.b_contig as usize]
+    };
+    let mut alow = tube.anti_low.max(*alast);
+    let ahgh = tube.anti_high - BUCK_ANTI;
+    let mut dgmin = tube.diag_min;
+    let dgmax = tube.diag_max;
+    let dbg_region = std::env::var("PGR_TUBE").is_ok()
+        && tube.anti_low < 246_884
+        && tube.anti_high > 227_578;
+    if dbg_region {
+        eprintln!(
+            "REGIONTUBE anti={}..{} dg={}..{} span={}",
+            tube.anti_low,
+            tube.anti_high,
+            dgmin,
+            dgmax,
+            tube.anti_high - tube.anti_low
+        );
+    }
+    if ahgh <= *alast {
+        return Vec::new(); // already covered by an earlier tube
+    }
+    // Large-tube homology gate: tubes whose region never reaches ~55%
+    // identity on any sampled diagonal of the band can only produce rejected
+    // wave calls (91% of all calls come from such tubes), so skip them.
+    // Only large tubes are checked (small tubes are cheap and thin conserved
+    // regions there are caught by the waves).
+    if ahgh - alow > 10_000 {
+        if dbg_region {
+            eprintln!("REGIONTUBE gate-check start");
+        }
+        let a_len = a_int.len() as i64;
+        let b_len = q.len() as i64;
+        let mut best = 0i64;
+        for dgi in 0..9 {
+            let dg = dgmin + (dgmax - dgmin) * dgi / 8;
+            let mut m = 0i64;
+            let mut anti = alow;
+            while anti < ahgh + 128 {
+                let a = (anti + dg) / 2;
+                let b = (anti - dg) / 2;
+                if a >= 0 && b >= 0 && a < a_len && b < b_len && q[b as usize] == a_int[a as usize]
+                {
+                    m += 1;
+                }
+                if anti >= alow + 128 {
+                    let a0 = (anti - 128 + dg) / 2;
+                    let b0 = (anti - 128 - dg) / 2;
+                    if a0 >= 0
+                        && b0 >= 0
+                        && a0 < a_len
+                        && b0 < b_len
+                        && q[b0 as usize] == a_int[a0 as usize]
+                    {
+                        m -= 1;
+                    }
+                    best = best.max(m);
+                }
+                anti += 2;
+            }
+        }
+        if best < 32 {
+            if dbg_region {
+                eprintln!("REGIONTUBE gate-skipped best={}", best);
+            }
+            return Vec::new();
+        }
+        if dbg_region {
+            eprintln!("REGIONTUBE gate-passed best={}", best);
+        }
+    }
+    let mut out = Vec::new();
+    while alow < ahgh {
+        let mut amid = alow + BUCK_ANTI;
+        if amid > ahgh {
+            amid = ahgh;
+        }
+        if amid + dgmin < 0 {
+            dgmin = -amid;
+            if dgmin > dgmax {
+                break;
+            }
+        }
+        if let Some(aln) = local_alignment(&q, a_int, rt, rq, dgmin, dgmax, amid) {
+            let rlen = (aln.t_end - aln.t_start) as i64;
+            if rlen >= TUBE_MIN_LEN && TUBE_MIN_RATE * rlen as f64 >= aln.diffs as f64 {
+                let strand = if tube.strand == 0 { "+" } else { "-" };
+                if let Some(psl) = Psl::from_align(
+                    &b.contigs[tube.b_contig as usize].0,
+                    b.contigs[tube.b_contig as usize].1 as u32,
+                    aln.q_start as i32,
+                    aln.q_end as i32,
+                    &String::from_utf8_lossy(&aln.q_aln),
+                    &a.contigs[tube.a_contig as usize].0,
+                    a.contigs[tube.a_contig as usize].1 as u32,
+                    aln.t_start as i32,
+                    aln.t_end as i32,
+                    &String::from_utf8_lossy(&aln.t_aln),
+                    strand,
+                ) {
+                    out.push(psl);
+                }
+            }
+            let eant = (aln.t_end + aln.q_end) as i64;
+            alow = if eant <= alow { amid } else { eant };
+        } else {
+            alow = amid;
+        }
+    }
+    *alast = alow;
+    out
+}
+
+/// Drop blocks that overlap an earlier block of the same (contig pair,
+/// strand) on both axes by at least 80% of their own span.
+///
+/// Adjacent diagonal-bucket tubes align the same region twice; FastGA's
+/// sequential `alast` skip prevents that, the parallel tube pass needs this
+/// post-filter instead.
+fn dedupe_contained(blocks: &mut Vec<Psl>) {
+    if blocks.len() < 2 {
+        return;
+    }
+    blocks.sort_by_key(|p| {
+        (
+            p.t_name.clone(),
+            p.q_name.clone(),
+            p.strand.clone(),
+            p.t_start,
+            p.q_start,
+        )
+    });
+    let mut kept: Vec<Psl> = Vec::with_capacity(blocks.len());
+    for b in blocks.drain(..) {
+        let dup = kept.iter().rev().take(64).any(|k| {
+            k.t_name == b.t_name
+                && k.q_name == b.q_name
+                && k.strand == b.strand
+                && overlap_frac(k.t_start, k.t_end, b.t_start, b.t_end) >= 0.8
+                && overlap_frac(k.q_start, k.q_end, b.q_start, b.q_end) >= 0.8
+        });
+        if !dup {
+            kept.push(b);
+        }
+    }
+    *blocks = kept;
+}
+
+/// Fraction of `[b1, b2)` covered by `[a1, a2)`.
+fn overlap_frac(a1: i32, a2: i32, b1: i32, b2: i32) -> f64 {
+    let own = b2 - b1;
+    if own <= 0 {
+        return 0.0;
+    }
+    let ov = a2.min(b2) - a1.max(b1);
+    (ov.max(0) as f64) / own as f64
 }
 
 /// Greedy anti-diagonal chaining of seed hits.
@@ -533,15 +756,22 @@ pub fn chain_to_psl(chain: &Chain, a: &PgiIndex, b: &PgiIndex) -> Psl {
 /// Align two compatible indexes: merge seeds, chain, and emit PSL blocks.
 pub fn align_to_psl(a: &PgiIndex, b: &PgiIndex, params: &AlignParams) -> anyhow::Result<Vec<Psl>> {
     let hits = merge_seed_hits(a, b, params.freq, effective_min_shared(a, params))?;
-    let chains = chain_hits(
-        &hits,
-        a.k as u32,
-        params.min_span,
-        params.max_gap,
-        params.band,
-        params.merge_gap,
-    );
-    Ok(chains.iter().map(|c| chain_to_psl(c, a, b)).collect())
+    match params.workflow {
+        Workflow::Tube => anyhow::bail!(
+            "the tube workflow needs --ref-seq/--query-seq (wave extension requires sequences)"
+        ),
+        Workflow::Greedy => {
+            let chains = chain_hits(
+                &hits,
+                a.k as u32,
+                params.min_span,
+                params.max_gap,
+                params.band,
+                params.merge_gap,
+            );
+            Ok(chains.iter().map(|c| chain_to_psl(c, a, b)).collect())
+        }
+    }
 }
 
 /// Default window size (bp) for chain extension.
@@ -687,6 +917,123 @@ pub fn align_to_psl_ext(
     b_seqs: &[(String, Vec<u8>)],
 ) -> anyhow::Result<Vec<Psl>> {
     let hits = merge_seed_hits(a, b, params.freq, effective_min_shared(a, params))?;
+    if std::env::var("PGR_TUBE").is_ok() {
+        let in_region = hits
+            .iter()
+            .filter(|h| {
+                (111_544..121_197).contains(&h.a_pos) && (116_034..125_687).contains(&h.b_pos)
+            })
+            .count();
+        eprintln!("REGIONHITS={}", in_region);
+        let fwd = hits
+            .iter()
+            .filter(|h| {
+                h.strand == 0
+                    && (111_544..121_197).contains(&h.a_pos)
+                    && (116_034..125_687).contains(&h.b_pos)
+            })
+            .count();
+        eprintln!("REGIONFWD={}", fwd);
+        let diags: std::collections::BTreeMap<i64, usize> = hits
+            .iter()
+            .filter(|h| (111_544..121_197).contains(&h.a_pos))
+            .fold(std::collections::BTreeMap::new(), |mut m, h| {
+                *m.entry(h.a_pos as i64 - h.b_pos as i64).or_default() += 1;
+                m
+            });
+        let top: Vec<_> = diags.iter().take(3).collect();
+        eprintln!("REGIONDIAGS top={top:?} total={}", diags.len());
+        eprintln!(
+            "REGIONDIAG4490={}",
+            diags.get(&-4_490).copied().unwrap_or(0)
+        );
+        let head = hits
+            .iter()
+            .filter(|h| {
+                (111_544..112_702).contains(&h.a_pos)
+                    && (116_034..117_192).contains(&h.b_pos)
+            })
+            .count();
+        eprintln!("REGIONHEAD={}", head);
+    }
+    if params.workflow == Workflow::Tube {
+        // Tubes are independent alignment tasks; the `alast` overlap skip of
+        // FastGA's sequential scan is replaced by a parallel pass plus a
+        // containment dedup on the emitted blocks.
+        let tubes = chain_tubes(&hits, a.k as u32);
+        if std::env::var("PGR_TUBE").is_ok() {
+            let covering = tubes
+                .iter()
+                .filter(|t| {
+                    t.anti_low < 246_884
+                        && t.anti_high > 227_578
+                        && t.diag_min <= -4_400
+                        && t.diag_max >= -4_600
+                })
+                .count();
+            eprintln!("REGIONTUBES={}", covering);
+            for t in tubes.iter().filter(|t| t.anti_low < 246_884 && t.anti_high > 227_578) {
+                eprintln!(
+                    "TUBEINFO anti={}..{} dg={}..{}",
+                    t.anti_low, t.anti_high, t.diag_min, t.diag_max
+                );
+            }
+            let d4490: Vec<_> = tubes
+                .iter()
+                .filter(|t| t.diag_min >= -4_495 && t.diag_max <= -4_485)
+                .map(|t| (t.anti_low, t.anti_high, t.diag_min, t.diag_max))
+                .collect();
+            eprintln!("TUBES4490={:?}", d4490);
+        }
+        // FastGA's chains break at ~100 kb (its adaptive seed stream is
+        // sparser); cap oversized tubes so one giant tube cannot serialize
+        // the mid-line slides.
+        const TUBE_ANTI_CAP: i64 = 40_000;
+        let tubes: Vec<Tube> = tubes
+            .into_iter()
+            .flat_map(|t| {
+                let span = t.anti_high - t.anti_low;
+                if span <= TUBE_ANTI_CAP {
+                    vec![t]
+                } else {
+                    let n = (span + TUBE_ANTI_CAP - 1) / TUBE_ANTI_CAP;
+                    (0..n)
+                        .map(|i| {
+                            let mut piece = t;
+                            piece.anti_low = t.anti_low + i * TUBE_ANTI_CAP;
+                            piece.anti_high =
+                                (t.anti_low + (i + 1) * TUBE_ANTI_CAP).min(t.anti_high);
+                            piece
+                        })
+                        .collect()
+                }
+            })
+            .collect();
+        let a_revs: Vec<Vec<u8>> = a_seqs
+            .iter()
+            .map(|(_, s)| s.iter().rev().copied().collect())
+            .collect();
+        let b_revs: Vec<Vec<u8>> = b_seqs
+            .iter()
+            .map(|(_, s)| s.iter().rev().copied().collect())
+            .collect();
+        let b_comps: Vec<Vec<u8>> = b_seqs
+            .iter()
+            .map(|(_, s)| complement(s).collect())
+            .collect();
+        let records: Vec<Vec<Psl>> = tubes
+            .par_iter()
+            .map(|t| {
+                let mut alast = 0i64;
+                extend_tube(
+                    t, &mut alast, a, b, a_seqs, b_seqs, &a_revs, &b_revs, &b_comps,
+                )
+            })
+            .collect();
+        let mut out: Vec<Psl> = records.into_iter().flatten().collect();
+        dedupe_contained(&mut out);
+        return Ok(out);
+    }
     let chains = chain_hits(
         &hits,
         a.k as u32,

@@ -329,33 +329,125 @@ q/t 角色 → 同一 chainnet）对比 syntenic MAF：
 **下一步**：移植 tube 链化（种子流 → anti-diagonal 桶 → tube → 每 tube
 wave 扩展），届时 wave 引擎按 FastGA 语义接入；在此之前 banded 保持默认。
 
-## 5.12 tube 链化移植：状态与剩余工作（2026-08-02）
+## 5.12 tube 链化移植
 
 按 FastGA `align_contigs` 移植了 **tube 链化**（`chain_tubes`）：
 种子按对角线分桶（宽 64）→ 相邻桶对按 a 位置归并 → 维护 tube
 （anti 覆盖 = 种子区间并集、对角线范围），`CHAIN_BREAK`（1000 bp）断开、
 `CHAIN_MIN`（85 bp）触发。单元测试通过（共线合并/断链/覆盖过滤）。
 
-**整合试验（均回退，banded+贪心链保持默认）**：
+## 5.13 FastGA `Local_Alignment` 移植完成（2026-08-02）
 
-| 方案 | chainnet syntenic 覆盖 |
-|---|---:|
-| 贪心链 + banded（当前） | 87.7% |
-| tube → chain 转换 + banded 分窗 | 86.6%（但块数 78 万，碎片化） |
-| tube → anti 分块 + wave（窄带切片） | 37.2% |
+按 FastGA `align.c` 完整移植了 mid-line wave 局部比对器：
 
-**诊断出的剩余工作**（完整 Myers 方案所需）：
-1. **wave 需要整条 contig 序列 + tube 对角线带**（FastGA 的 `Local_Alignment`
-   输入是全长序列，wave 自由延伸、trim 停止），不能切成 band 宽的窄盒子；
-2. **wave 内存有界化**：当前 `forward_wave` 存 `d_cap × band` 全历史（全长
-   contig 会爆内存），需改为只保留 best±TRIM_MLAG 窗口的波前（FastGA 用
-   Pebble 稀疏 trace 解决）；
-3. **tube 去重**：相邻桶对产生的 tube 盒子重叠，需去重/合并；
-4. 完成后用 adaptamer 部分种子在 tube 上下文重测（此前负结果可能逆转）。
+1. **`forward_wave_mid`**（`src/libs/alignment/wave.rs`）：0-wave 在 tube 对角
+   带 [dgmin..dgmax] 的每个对角线上从 mid-line（anti=amid）起 snake，波前每
+   波扩展 ±1 对角线；保留 `PATH_LEN=60` 位匹配向量 + `PATH_AVE=42` 门控
+   （trim point = 最后一个窗口匹配数达标的 best），`TRIM_MLAG=250` 终止、
+   `WAVE_LAG=70` 剪枝，内存与波带宽度成正比（不存全历史）；
+2. **Myers O(ND) 分治回溯**（`split_nd` + `dandc_nd`，FastGA 的
+   substitution=1 度量）：两个 wave 端点之间的 span 由 D&C 精确重建编辑脚本
+   （D/I 操作，替换为隐式），`ops_to_columns` 还原 CIGAR 列；
+3. **`local_alignment`**：正向 wave（向上）+ 镜像反向 wave（向下）+
+   `DUB_TRIM` 短扩展重试，输出 q/t 对齐列；
+4. **tube 循环**（`extend_tube`）：`BUCK_ANTI=128` 滑动 mid-line，`alow` 推进
+   到 forward 端点（eant），`alast` 按（contig 对、strand、对角线桶）分组去重
+   （FastGA 的 `alast` 每对相邻桶重置，不能跨组携带）。
+
+**MG1655 vs Sakai 对照**（`--workflow tube`，默认 greedy 未变）：
+
+| 方案 | PSL 块 | chainnet syntenic 覆盖 | 耗时 | 峰值内存 |
+|---|---:|---:|---:|---:|
+| 贪心链 + banded（默认） | 862 | 87.7%（392 块） | 1.36s | 1.38 GB |
+| **tube + Myers wave（新）** | 643 | **88.2%**（517 块） | 8.7s | 425 MB |
+| FastGA 管线 | 701 | 89.3%（506 块） | ~0.7s | ~0 MB |
+
+结论：质量已超过贪心基线并逼近 FastGA（覆盖差 1.1%）；内存比 banded 低 3×。
+**速度仍是短板**（8.7s vs FastGA 0.7s）：单次 `Local_Alignment` 成本 ~0.18ms、
+调用数 ~4 万（FastGA 写入 967 条比对，失败调用也远少于我们），差距来自：
+
+- FastGA 的 CIGAR 由 wave 自身的 Pebble 稀疏 trace 产生（`dandc_nd` /
+  `Compute_Alignment` 在 FastGA 源码中是**死代码**，从未被调用）；我们每次
+  调用都跑完整 D&C + 列重建；
+- FastGA 失败调用的 trim 终止更快、波带内单元更简单（C 内联数组）。
+
+## 5.14 性能对齐：调用数与 tube 结构（2026-08-02）
+
+给 FastGA 源码加计数器重新编译后实测（MG1655 vs Sakai）：
+
+**FastGA 总共只有 1062 次 `Local_Alignment` 调用**（含失败），每 tube 平均
+1.4 次；其 tube 平均 7.7 kb、最大 119 kb。我们 8.7s 的根因是 **~4 万次调用**
+（tube 平均 30 kb、最大 2.4 Mb——精确 40-mer 种子太密，把 ~45-70% 身份的
+分歧岛桥接成巨型 tube，mid-line 以 ~90-230 bp 步长在里面滑动）。
+
+已应用的优化（质量不变：Sakai 88.2% / Nissle 84.0%）：
+
+1. **tube 并行化**：tube 间无依赖（`alast` 重叠跳过被并行 + 输出端
+   `dedupe_contained`（双轴 ≥80% 重叠去重）替代）；
+2. **反向/互补序列预计算**：`rt`/`rq` 从每 tube 分配改为每 contig 一次；
+3. **tube anti 上限 40 kb**：巨型 tube 切片成并行任务（负载均衡）。
+
+最终：8.7s → **1.7-1.9s**（8 线程），峰值内存 ~0.8 GB。
+
+**进一步实验（2026-08-02，均记录避免重试）**：
+
+- 调用统计：58,370 次调用中 **386 个零块 tube 消耗 53,333 次（91%）**——失败
+  调用都在 ~45-70% 身份的分歧岛内（wave trim 冻结后空转 ~70-99 波）；
+- **trim 冻结早退**（保留）：`last_good` 连续 60 波不更新即提前终止——失败
+  调用的端点其实在 wave ~10-20 波就冻结了，早退只省空转、质量不变
+  （88.2% 保持，1.85s→1.73s）；
+- `CHAIN_BREAK` 调小（300/100 bp）：更慢（tube 碎片化、重叠调用更多）且掉
+  质量（87.3%）——不是正确的杠杆；
+- 中心对角线滑窗身份率门控：太激进（覆盖 88.2%→70.9%，薄保守区/偏移对角线
+  被误杀）；
+- 种子覆盖密度门控（cov/span）：零块与生产性 tube 分布重叠，无法干净区分；
+- 种子邻近门控（amid ±300bp 内无种子则跳过）：无效——失败调用的 amid 本来
+  就在种子附近（分歧岛内也有稀疏 exact-40 hit）。
+
+结论：剩余差距（~1.7s vs FastGA 0.7s）来自失败调用数量，而失败调用根植于
+种子结构（我们的 exact-40 hit 桥接分歧岛、tube 平均 19.8kb vs FastGA 7.4kb；
+FastGA 的链在岛边缘断开，其链形成种子同为 363 万条密集分布，断链机制与其
+adaptamer 种子选择/对角桶处理相关，尚未完全复刻）。
+
+## 5.15 大 tube 同源门控（2026-08-02，保留）
+
+前一轮尝试的各种门控失败后，最终找到可用的版本：**对 span > 10 kb 的大 tube
+做多对角线滑窗身份检查**：
+
+- 9 条对角线横跨 tube 带（[dgmin..dgmax] 均匀采样），每条对角线上沿 anti
+  轴滑 64 bp 窗口，取最大窗口身份率；
+- 所有对角线、所有窗口的最大值 < 50%（64 bp 窗口内匹配 < 32）→ 跳过整个
+  tube（只产生被拒绝的调用）；
+- 只查大 tube（小 tube 便宜、薄保守区由 wave 兜底），成本 ~0.05s。
+
+为什么之前的门控不行、这个行：128 bp 窗口会混入分歧侧翼把身份率拉低（误杀
+薄块）；只查中心对角线会漏掉偏移对角线上的同源；多对角线 + 64 bp 窗口 +
+50% 阈值三者组合后误杀率≈0（Sakai/Nissle 覆盖与无门控完全一致）。
+
+最终效果（8 线程）：
+
+| 对 | chainnet 覆盖 | 耗时 | 峰值内存 |
+|---|---:|---:|---:|
+| MG1655 vs Sakai | 88.2%（512 块） | **1.52s** | ~0.8 GB |
+| MG1655 vs Nissle | 83.9%（741 块） | **1.55s** | 0.74 GB |
+
+与上轮（无门控 1.73-1.85s）比再快 ~15%，质量不变；累计相对最初 8.7s 为
+**5.7×**。距 FastGA（0.7s / 89.3%）仍有 ~2.2× 速度差与 ~1.1% 覆盖差。
+
+**剩余差距与方向**：
+
+1. 性能：把 D&C 回溯换成 wave 内嵌的 Pebble 稀疏 trace（trace point 间隔
+   `tspace=100`，消费端补全间隙），消除每次调用的 O(span) 重建开销；
+2. **调用数**：真实差距在种子结构——FastGA 的链在分歧区断开（tube≈块，
+   每 tube ~1 次调用）。但简单部分种子（`--min-shared 20`，3.9s / 754 块）
+   实测更慢：部分匹配使 hit 爆炸、tube 更密。FastGA 的优势在其 adaptamer
+   **选择**（稀疏最小种子 + 方向不对称），不是部分匹配本身，需按
+   `libfastk.c` 的 `is_minimal` 语义移植；mid-line 窗口身份率预过滤
+   **不可行**（会误杀反向延伸穿过分歧口袋的有效调用，覆盖 88.2%→55%）；
+3. 与 FastGA 对齐 `BUCK_ANTI`（FastGA 为加倍空间 128 = 未加倍 64）后重测。
 
 `chain_tubes`（`src/libs/pgi/align.rs`）与 wave 引擎
-（`src/libs/alignment/wave.rs`）均为独立可测组件，待上述 1-3 完成后按
-FastGA 语义整合。
+（`src/libs/alignment/wave.rs`）均为独立可测组件。
 
 ## 6. 相关文档
 
