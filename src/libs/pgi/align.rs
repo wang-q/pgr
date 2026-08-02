@@ -225,11 +225,18 @@ pub fn chain_tubes(hits: &[SeedHit], k: u32) -> Vec<Tube> {
     const MIN_COV: u64 = 85;
 
     // Group by (a_contig, b_contig, strand); within a group sort by
-    // (diagonal, a_pos) so adjacent buckets are contiguous.
+    // (diagonal bucket, anti) so adjacent buckets are contiguous and each
+    // bucket is anti-ordered (FastGA merges its stream by ipost = anti).
     let mut sorted: Vec<&SeedHit> = hits.iter().collect();
     sorted.sort_by_key(|h| {
         let diag = h.a_pos as i64 - h.b_pos as i64;
-        (h.a_contig, h.b_contig, h.strand, diag, h.a_pos)
+        (
+            h.a_contig,
+            h.b_contig,
+            h.strand,
+            diag.div_euclid(64),
+            h.a_pos as i64 + h.b_pos as i64,
+        )
     });
 
     let mut tubes = Vec::new();
@@ -286,23 +293,14 @@ fn tubes_for_group(
     // Process each adjacent bucket pair (c, c+1), merging by a_pos.
     for w in 0..buckets.len() {
         let (cb, b_seeds) = &buckets[w];
-        if std::env::var("PGR_TUBE").is_ok() && *cb == -71 {
-            eprintln!(
-                "BUCKET cb={} n={} first_anti={}",
-                cb,
-                b_seeds.len(),
-                b_seeds
-                    .first()
-                    .map(|h| h.a_pos as i64 + h.b_pos as i64)
-                    .unwrap_or(-1)
-            );
-        }
         let m_seeds: &[&SeedHit] = if w + 1 < buckets.len() && buckets[w + 1].0 == cb + 1 {
             &buckets[w + 1].1
         } else {
             &[]
         };
-        // Merge by a_pos (ties prefer the lower bucket, like FastGA).
+        // Merge by anti (ties prefer the lower bucket, like FastGA's
+        // ipost-ordered merge; a_pos order breaks when the diagonal drifts
+        // inside a bucket and starves the coverage accounting).
         let mut bi = 0usize;
         let mut mi = 0usize;
         let mut alow: i64 = i64::MAX;
@@ -311,12 +309,13 @@ fn tubes_for_group(
         let mut dgmin = 2 * buck;
         let mut dgmax = 0i64;
         while bi < b_seeds.len() || mi < m_seeds.len() {
-            let (h, side) = if mi >= m_seeds.len()
-                || (bi < b_seeds.len() && b_seeds[bi].a_pos <= m_seeds[mi].a_pos)
-            {
-                (b_seeds[bi], 1u8)
-            } else {
-                (m_seeds[mi], 2u8)
+            let anti_b = b_seeds.get(bi).map(|h| h.a_pos as i64 + h.b_pos as i64);
+            let anti_m = m_seeds.get(mi).map(|h| h.a_pos as i64 + h.b_pos as i64);
+            let (h, side) = match (anti_b, anti_m) {
+                (Some(ab), Some(am)) if am < ab => (m_seeds[mi], 2u8),
+                (Some(_), _) => (b_seeds[bi], 1u8),
+                (None, Some(_)) => (m_seeds[mi], 2u8),
+                (None, None) => unreachable!(),
             };
             if side == 1 {
                 bi += 1;
@@ -418,19 +417,6 @@ fn extend_tube(
     let ahgh = tube.anti_high - BUCK_ANTI;
     let mut dgmin = tube.diag_min;
     let dgmax = tube.diag_max;
-    let dbg_region = std::env::var("PGR_TUBE").is_ok()
-        && tube.anti_low < 246_884
-        && tube.anti_high > 227_578;
-    if dbg_region {
-        eprintln!(
-            "REGIONTUBE anti={}..{} dg={}..{} span={}",
-            tube.anti_low,
-            tube.anti_high,
-            dgmin,
-            dgmax,
-            tube.anti_high - tube.anti_low
-        );
-    }
     if ahgh <= *alast {
         return Vec::new(); // already covered by an earlier tube
     }
@@ -440,9 +426,6 @@ fn extend_tube(
     // Only large tubes are checked (small tubes are cheap and thin conserved
     // regions there are caught by the waves).
     if ahgh - alow > 10_000 {
-        if dbg_region {
-            eprintln!("REGIONTUBE gate-check start");
-        }
         let a_len = a_int.len() as i64;
         let b_len = q.len() as i64;
         let mut best = 0i64;
@@ -474,13 +457,7 @@ fn extend_tube(
             }
         }
         if best < 32 {
-            if dbg_region {
-                eprintln!("REGIONTUBE gate-skipped best={}", best);
-            }
             return Vec::new();
-        }
-        if dbg_region {
-            eprintln!("REGIONTUBE gate-passed best={}", best);
         }
     }
     let mut out = Vec::new();
@@ -526,11 +503,13 @@ fn extend_tube(
 }
 
 /// Drop blocks that overlap an earlier block of the same (contig pair,
-/// strand) on both axes by at least 80% of their own span.
+/// strand) on both axes by at least 95% of their own span.
 ///
 /// Adjacent diagonal-bucket tubes align the same region twice; FastGA's
 /// sequential `alast` skip prevents that, the parallel tube pass needs this
-/// post-filter instead.
+/// post-filter instead. The threshold is high on purpose: blocks from the
+/// same tube's successive calls can overlap ~87% while one extends the
+/// other (dropping the extension would lose real coverage).
 fn dedupe_contained(blocks: &mut Vec<Psl>) {
     if blocks.len() < 2 {
         return;
@@ -550,8 +529,8 @@ fn dedupe_contained(blocks: &mut Vec<Psl>) {
             k.t_name == b.t_name
                 && k.q_name == b.q_name
                 && k.strand == b.strand
-                && overlap_frac(k.t_start, k.t_end, b.t_start, b.t_end) >= 0.8
-                && overlap_frac(k.q_start, k.q_end, b.q_start, b.q_end) >= 0.8
+                && overlap_frac(k.t_start, k.t_end, b.t_start, b.t_end) >= 0.95
+                && overlap_frac(k.q_start, k.q_end, b.q_start, b.q_end) >= 0.95
         });
         if !dup {
             kept.push(b);
@@ -917,73 +896,22 @@ pub fn align_to_psl_ext(
     b_seqs: &[(String, Vec<u8>)],
 ) -> anyhow::Result<Vec<Psl>> {
     let hits = merge_seed_hits(a, b, params.freq, effective_min_shared(a, params))?;
-    if std::env::var("PGR_TUBE").is_ok() {
-        let in_region = hits
-            .iter()
-            .filter(|h| {
-                (111_544..121_197).contains(&h.a_pos) && (116_034..125_687).contains(&h.b_pos)
-            })
-            .count();
-        eprintln!("REGIONHITS={}", in_region);
-        let fwd = hits
-            .iter()
-            .filter(|h| {
-                h.strand == 0
-                    && (111_544..121_197).contains(&h.a_pos)
-                    && (116_034..125_687).contains(&h.b_pos)
-            })
-            .count();
-        eprintln!("REGIONFWD={}", fwd);
-        let diags: std::collections::BTreeMap<i64, usize> = hits
-            .iter()
-            .filter(|h| (111_544..121_197).contains(&h.a_pos))
-            .fold(std::collections::BTreeMap::new(), |mut m, h| {
-                *m.entry(h.a_pos as i64 - h.b_pos as i64).or_default() += 1;
-                m
-            });
-        let top: Vec<_> = diags.iter().take(3).collect();
-        eprintln!("REGIONDIAGS top={top:?} total={}", diags.len());
-        eprintln!(
-            "REGIONDIAG4490={}",
-            diags.get(&-4_490).copied().unwrap_or(0)
-        );
-        let head = hits
-            .iter()
-            .filter(|h| {
-                (111_544..112_702).contains(&h.a_pos)
-                    && (116_034..117_192).contains(&h.b_pos)
-            })
-            .count();
-        eprintln!("REGIONHEAD={}", head);
-    }
     if params.workflow == Workflow::Tube {
         // Tubes are independent alignment tasks; the `alast` overlap skip of
         // FastGA's sequential scan is replaced by a parallel pass plus a
         // containment dedup on the emitted blocks.
         let tubes = chain_tubes(&hits, a.k as u32);
         if std::env::var("PGR_TUBE").is_ok() {
-            let covering = tubes
-                .iter()
-                .filter(|t| {
-                    t.anti_low < 246_884
-                        && t.anti_high > 227_578
-                        && t.diag_min <= -4_400
-                        && t.diag_max >= -4_600
-                })
-                .count();
-            eprintln!("REGIONTUBES={}", covering);
-            for t in tubes.iter().filter(|t| t.anti_low < 246_884 && t.anti_high > 227_578) {
-                eprintln!(
-                    "TUBEINFO anti={}..{} dg={}..{}",
-                    t.anti_low, t.anti_high, t.diag_min, t.diag_max
-                );
-            }
-            let d4490: Vec<_> = tubes
-                .iter()
-                .filter(|t| t.diag_min >= -4_495 && t.diag_max <= -4_485)
-                .map(|t| (t.anti_low, t.anti_high, t.diag_min, t.diag_max))
-                .collect();
-            eprintln!("TUBES4490={:?}", d4490);
+            let sizes: Vec<i64> = tubes.iter().map(|t| t.anti_high - t.anti_low).collect();
+            let sum: i64 = sizes.iter().sum();
+            let big = sizes.iter().filter(|&&s| s > 100_000).count();
+            eprintln!(
+                "TUBES2 n={} avg={} max={} >100kb:{}",
+                sizes.len(),
+                sum / sizes.len().max(1) as i64,
+                sizes.iter().max().copied().unwrap_or(0),
+                big
+            );
         }
         // FastGA's chains break at ~100 kb (its adaptive seed stream is
         // sparser); cap oversized tubes so one giant tube cannot serialize
@@ -1424,6 +1352,76 @@ mod tests {
         assert_eq!(tubes.len(), 1);
         assert_eq!((tubes[0].anti_low, tubes[0].anti_high), (200, 360));
         assert_eq!((tubes[0].diag_min, tubes[0].diag_max), (0, 0));
+    }
+
+    #[test]
+    fn tube_merge_uses_anti_order_when_diagonal_drifts() {
+        // Seeds in one diagonal bucket whose anti order differs from a_pos
+        // order (the diagonal drifts inside the bucket): the tube must start
+        // at the smallest anti and accumulate full coverage. Merging by a_pos
+        // starves the coverage (cov < CHAIN_MIN) and drops the tube.
+        let mut hits = Vec::new();
+        // diag -4492 at a_pos 112701 (anti 229894), sorted before -4490.
+        hits.push(SeedHit {
+            a_contig: 0,
+            a_pos: 112_701,
+            b_contig: 0,
+            b_pos: 117_193,
+            strand: 0,
+            shared: 40,
+        });
+        // diag -4490, dense run starting at a_pos 111544 (anti 227578).
+        for i in (0..200).step_by(2) {
+            hits.push(SeedHit {
+                a_contig: 0,
+                a_pos: 111_544 + i,
+                b_contig: 0,
+                b_pos: 116_034 + i,
+                strand: 0,
+                shared: 40,
+            });
+        }
+        let tubes = chain_tubes(&hits, 40);
+        assert!(!tubes.is_empty(), "dense collinear seeds must form a tube");
+        let t = &tubes[0];
+        assert!(
+            t.anti_low <= 227_578,
+            "tube must start at the smallest anti, got {}",
+            t.anti_low
+        );
+        assert!(
+            t.anti_high >= 227_578 + 200 + 40,
+            "tube must cover the dense run, got {}",
+            t.anti_high
+        );
+    }
+
+    #[test]
+    fn dedupe_keeps_blocks_that_extend_earlier_ones() {
+        // Two blocks from successive calls of one tube: ~87% overlap on both
+        // axes while the later one extends further (the extension carries
+        // real coverage). The dedupe must keep both.
+        let mk = |t_start: i32, t_end: i32, q_start: i32, q_end: i32| Psl {
+            q_name: String::from("q"),
+            q_size: 5_000_000,
+            q_start,
+            q_end,
+            t_name: String::from("t"),
+            t_size: 5_000_000,
+            t_start,
+            t_end,
+            strand: String::from("+"),
+            block_count: 1,
+            block_sizes: vec![(t_end - t_start) as u32],
+            q_starts: vec![q_start as u32],
+            t_starts: vec![t_start as u32],
+            ..Default::default()
+        };
+        let short = mk(4_094_464, 4_115_709, 4_894_644, 4_915_804);
+        let extended = mk(4_094_559, 4_118_787, 4_894_644, 4_918_971);
+        let mut blocks = vec![extended, short];
+        dedupe_contained(&mut blocks);
+        assert_eq!(blocks.len(), 2, "the extended block must not be dropped");
     }
 
     #[test]
