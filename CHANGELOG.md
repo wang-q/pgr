@@ -2,6 +2,51 @@
 
 ## Unreleased - ReleaseDate
 
+### New Features
+
+* **`pgr align`** - New top-level command with two pairwise-genome alignment
+  subcommands: `pgi` (FastGA-style, with a memory-mapped packed index) and
+  `lastz`.
+* **`pgr pgi`** - New top-level command managing `.pgi` genome indexes:
+  `build`, `stat`, `to-hv`.
+* **`pgr sd`** - New top-level command for segmental-duplication detection:
+  `search` (pgi/lastz engines), `align`, `cluster`, `decompose`, `cover`,
+  `cross`, `run`.
+* **`pgr dist pgi`** - pgi-based distance calculation as a new `dist`
+  subcommand.
+* **`pgr plot dot`** - PAF collinear dot plot rendered as standalone SVG
+  (identity color scale, `--range` zoom-in, `--square`, scaled axes).
+* **`pgr psl to-paf`** - Convert PSL alignments to PAF.
+* **`pgr pbit append-ref`** - Multi-reference support for pbit archives.
+
+### Enhancements
+
+* `chain`/`net` scoring and stitching aligned further with UCSC kent-tools.
+* `fas multiz` merge/window handling improved.
+
+### Fixes
+
+* `pgr psl to-chain` duplicate-header handling aligned with UCSC.
+* `pgr paf` MSA/VCF input deduplicated and merged per genome (fixes POA input
+  explosion on duplicated loci).
+* `pgr dist hv` sparse hypervector projection.
+
+### Refactors
+
+* LASTZ wrapper moved from `pgr lav` into `pgr align lastz`.
+* SD search split into pgi/lastz engines with shared filters.
+* k-mer utilities extracted from pgi into the shared `nt` module.
+
+### Tests
+
+* Benchmark suites for PAF index/graph and syntenic filters.
+* 3-genome E. coli pangenome test suite and 7 new test genomes.
+
+### Docs
+
+* Added `fastga.md`, `ropebwt3.md`, repeat-masking notes, `plot-dot.md`;
+  updated `pgi-align.md`, `sd.md`, `ucsc.md`, `ecoli-genome.md`, and others.
+
 ## 0.3.1 - 2026-08-01
 
 ### New Features
