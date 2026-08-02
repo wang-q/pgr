@@ -397,3 +397,34 @@ fn command_align_pgi_cached_param_conflict() {
         "expected cached-index conflict error: {stderr}"
     );
 }
+
+#[test]
+fn command_align_pgi_self() {
+    // A tandem repeat (two copies of the same 400 bp sequence): self-alignment
+    // must find the copy pair and must not emit an exact self-identity block.
+    let temp = tempfile::TempDir::new().unwrap();
+    let seq = random_seq(400, 42);
+    let genome = format!(">genome\n{seq}\n{seq}\n");
+    let fa = temp.path().join("genome.fa");
+    fs::write(&fa, &genome).unwrap();
+
+    let out = temp.path().join("out.psl");
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "align",
+            "pgi",
+            fa.to_str().unwrap(),
+            "-o",
+            out.to_str().unwrap(),
+        ])
+        .run();
+    assert!(stderr.contains("wrote"), "self-align failed: {stderr}");
+    let records = parse_psl(&fs::read_to_string(&out).unwrap());
+    assert!(!records.is_empty(), "expected repeat blocks");
+    assert!(
+        records
+            .iter()
+            .all(|r| !(r.0 == "+" && r.1 == r.3 && r.2 == r.4)),
+        "an exact self-identity block was emitted"
+    );
+}

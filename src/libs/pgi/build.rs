@@ -239,15 +239,16 @@ pub fn read_fasta(path: &str) -> anyhow::Result<Vec<(String, Vec<u8>)>> {
     Ok(contigs)
 }
 
-/// Read all sequences from a 2bit file.
-pub fn read_2bit(path: &str) -> anyhow::Result<Vec<(String, Vec<u8>)>> {
+/// Read all sequences from a 2bit file; `mask` applies the stored soft-mask
+/// blocks (lowercased bases).
+pub fn read_2bit(path: &str, mask: bool) -> anyhow::Result<Vec<(String, Vec<u8>)>> {
     let mut tb = crate::libs::fmt::twobit::TwoBitFile::open(path)
         .with_context(|| format!("failed to open 2bit {path}"))?;
     let names = tb.get_sequence_names();
     let mut contigs = Vec::with_capacity(names.len());
     for name in names {
         let seq = tb
-            .read_sequence(&name, None, None, true)
+            .read_sequence(&name, None, None, !mask)
             .with_context(|| format!("reading {name} from 2bit"))?
             .into_bytes();
         contigs.push((name, seq));
@@ -255,31 +256,75 @@ pub fn read_2bit(path: &str) -> anyhow::Result<Vec<(String, Vec<u8>)>> {
     Ok(contigs)
 }
 
+/// Replace soft-masked (lowercase) bases with N so windows touching them are
+/// skipped by the syncmer/k-mer scan.
+fn harden_soft_mask(contigs: &mut [(String, Vec<u8>)]) {
+    for (_, seq) in contigs {
+        for b in seq.iter_mut() {
+            if b.is_ascii_lowercase() {
+                *b = b'N';
+            }
+        }
+    }
+}
+
 /// Build an index from a FASTA or 2bit input file (extension decides).
+/// `mask` skips soft-masked regions (FASTA lowercase / 2bit mask blocks),
+/// matching FastGA `-M` semantics.
 pub fn build_from_path(
     path: &str,
     k: usize,
     smer: usize,
     window: usize,
     no_rev: bool,
+    mask: bool,
 ) -> anyhow::Result<PgiIndex> {
     let is_2bit = std::path::Path::new(path)
         .extension()
         .and_then(|e| e.to_str())
         == Some("2bit");
-    let contigs = if is_2bit {
-        read_2bit(path)?
+    let mut contigs = if is_2bit {
+        read_2bit(path, mask)?
     } else {
         read_fasta(path)?
     };
+    if mask {
+        harden_soft_mask(&mut contigs);
+    }
     build_from_seqs(contigs, k, smer, window, no_rev)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::libs::fmt::twobit::TwoBitWriter;
     use crate::libs::nt::{rc_key, rolling_kmer_keys};
     use crate::libs::pgi::unpack_position;
+    use std::collections::HashSet;
+
+    fn pseudo_random_seq(len: usize, seed: u64) -> Vec<u8> {
+        let bases = [b'A', b'C', b'G', b'T'];
+        let mut x = seed;
+        (0..len)
+            .map(|_| {
+                x = x
+                    .wrapping_mul(6364136223846793005)
+                    .wrapping_add(1442695040888963407);
+                bases[(x >> 33) as usize & 3]
+            })
+            .collect()
+    }
+
+    fn write_fasta(dir: &std::path::Path, name: &str, seq: &[u8]) -> String {
+        let path = dir.join(name);
+        let mut text = String::from(">c1\n");
+        for chunk in seq.chunks(60) {
+            text.push_str(std::str::from_utf8(chunk).unwrap());
+            text.push('\n');
+        }
+        std::fs::write(&path, text).unwrap();
+        path.to_string_lossy().into_owned()
+    }
 
     #[test]
     fn build_small_index() {
@@ -429,6 +474,69 @@ mod tests {
             "record count mismatch with N"
         );
         assert_eq!(single_recs, ref_recs, "single-pass mismatch with N");
+    }
+
+    #[test]
+    fn mask_skips_lowercase_fasta_kmers() {
+        // An uppercase zone plus a lowercase (soft-masked) zone with a
+        // different sequence: masked zones must not contribute k-mers.
+        let upper = pseudo_random_seq(200, 1);
+        let lower: Vec<u8> = pseudo_random_seq(200, 2)
+            .iter()
+            .map(|b| b.to_ascii_lowercase())
+            .collect();
+        let mut seq = upper.clone();
+        seq.extend_from_slice(&lower);
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = write_fasta(dir.path(), "g.fa", &seq);
+        let masked = build_from_path(&path, 10, 4, 2, false, true).unwrap();
+        let plain = build_from_path(&path, 10, 4, 2, false, false).unwrap();
+        assert!(
+            masked.n_unique() < plain.n_unique(),
+            "masking must drop k-mers ({} vs {})",
+            masked.n_unique(),
+            plain.n_unique()
+        );
+        let plain_keys: HashSet<u128> = plain.entries.iter().map(|e| e.kmer).collect();
+        assert!(
+            masked.entries.iter().all(|e| plain_keys.contains(&e.kmer)),
+            "masked k-mers must be a subset of the unmasked ones"
+        );
+    }
+
+    #[test]
+    fn mask_skips_2bit_mask_blocks() {
+        let upper = pseudo_random_seq(200, 1);
+        let lower: Vec<u8> = pseudo_random_seq(200, 2)
+            .iter()
+            .map(|b| b.to_ascii_lowercase())
+            .collect();
+        let mut dna = String::from_utf8(upper).unwrap();
+        dna.push_str(&String::from_utf8(lower).unwrap());
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("g.2bit");
+        let mut file = std::fs::File::create(&path).unwrap();
+        TwoBitWriter::new(&mut file)
+            .write(&[("c1", &dna)], true)
+            .unwrap();
+        drop(file);
+
+        let path = path.to_string_lossy().into_owned();
+        // Without mask the 2bit reads unmasked (all uppercase); with mask the
+        // stored mask blocks come back as lowercase and are skipped by build.
+        let unmasked = read_2bit(&path, false).unwrap();
+        let masked = read_2bit(&path, true).unwrap();
+        assert!(
+            unmasked[0].1.iter().any(|b| b.is_ascii_uppercase()),
+            "unmasked 2bit read is uppercase"
+        );
+        assert!(
+            masked[0].1.iter().any(|b| b.is_ascii_lowercase()),
+            "masked 2bit read applies soft mask"
+        );
+        let idx_masked = build_from_path(&path, 10, 4, 2, false, true).unwrap();
+        let idx_plain = build_from_path(&path, 10, 4, 2, false, false).unwrap();
+        assert!(idx_masked.n_unique() < idx_plain.n_unique());
     }
 
     #[test]

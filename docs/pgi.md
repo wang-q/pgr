@@ -48,13 +48,16 @@ match for any two-index operation (`dist pgi`, `align`).
 Builds a `.pgi` index from FASTA or 2bit.
 
 ```
-pgr pgi build <infile> -o out.pgi [-k 40] [--smer 8] [--window 5] [--no-rev]
+pgr pgi build <infile> -o out.pgi [-k 40] [--smer 8] [--window 5] [--no-rev] [--mask]
 ```
 
 - `-k`/`--kmer`: k-mer size, at most 64 (default 40, matching FastGA GIX);
 - `--smer`/`--window`: closed-syncmer sampling parameters (default 8/5,
   span = smer + window - 1);
-- `--no-rev`: index the forward strand only.
+- `--no-rev`: index the forward strand only;
+- `--mask`: skip soft-masked regions (lowercase FASTA bases / 2bit mask
+  blocks), matching FastGA `-M` — masked repeats and low-complexity regions
+  produce no seeds.
 
 The default parameters align with FastGA's GIX so indexes can be compared
 against the C tool. 2bit input is fastest (no FASTA decoding).

@@ -62,6 +62,14 @@
 3. 人类规模（~3 Gb）未验证：`pos_start` u32、`SeedHit` contig u16、
    `PgiEntry` 24 B/条 等字段上限需按规模复核（§3.4 有上限记录）。
 
+**2026-08-03 新增**（对齐 FastGA，见 [[fastga-gap.md]]）：
+
+- `pgr pgi build --mask`：跳过 soft-mask 区（FASTA 小写 / 2bit mask_blocks
+  转 N），抑制重复/低复杂度区种子（FastGA `-M`）；
+- `pgr align pgi` 单输入自比对：`drop_self_hits` 过滤完全自身命中（同
+  contig 同位置同方向，FastGA 跳过 diag=0 语义），保留内部重复与反向重复；
+  MG1655 自比对 689 块、无全长主链、无完全自身子块。
+
 **重要勘误索引**（详情见 §5.2）：
 
 - FastGA 内存 "~0 MB" → 实测 332 MB（§5.1）；

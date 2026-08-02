@@ -361,6 +361,48 @@ pub fn cigar_from_alignment(r#ref: &[u8], qry: &[u8]) -> anyhow::Result<Vec<Ciga
     Ok(ops)
 }
 
+/// Compact reversible CIGAR (`cs:Z`) from an aligned pair, FastGA `-pafs`
+/// style: `:N` match runs, `*<ref><qry>` mismatches, `+<qry>` insertions,
+/// `-<ref>` deletions.
+pub fn cs_from_alignment(r#ref: &[u8], qry: &[u8]) -> anyhow::Result<String> {
+    if r#ref.len() != qry.len() {
+        anyhow::bail!("alignment vectors must have equal length");
+    }
+    let mut cs = String::new();
+    let mut run = 0usize;
+    let flush = |run: &mut usize, cs: &mut String| {
+        if *run > 0 {
+            cs.push(':');
+            cs.push_str(&run.to_string());
+            *run = 0;
+        }
+    };
+    for (&rc, &qc) in r#ref.iter().zip(qry.iter()) {
+        match (rc, qc) {
+            (b'-', b'-') => continue, // both gaps — degenerate, skip
+            (b'-', q) => {
+                flush(&mut run, &mut cs);
+                cs.push('+');
+                cs.push(q.to_ascii_uppercase() as char);
+            }
+            (r, b'-') => {
+                flush(&mut run, &mut cs);
+                cs.push('-');
+                cs.push(r.to_ascii_uppercase() as char);
+            }
+            (r, q) if r.eq_ignore_ascii_case(&q) => run += 1,
+            (r, q) => {
+                flush(&mut run, &mut cs);
+                cs.push('*');
+                cs.push(r.to_ascii_uppercase() as char);
+                cs.push(q.to_ascii_uppercase() as char);
+            }
+        }
+    }
+    flush(&mut run, &mut cs);
+    Ok(cs)
+}
+
 // ── Tests ─────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -376,6 +418,30 @@ mod tests {
             assert_eq!(op.op(), op_char, "op mismatch");
             assert_eq!(op.len(), len, "len mismatch");
         }
+    }
+
+    #[test]
+    fn cs_from_alignment_mixed_ops() {
+        // ref:  ACGTACGTACGT
+        // qry:  ACGTAAGTA-GT
+        // 5 matches, mismatch C/A, 3 matches, deletion C, 2 matches
+        let r = b"ACGTACGTACGT";
+        let q = b"ACGTAAGTA-GT";
+        assert_eq!(
+            cs_from_alignment(r, q).unwrap(),
+            ":5*CA:3-C:2",
+            "FastGA -pafs style cs string"
+        );
+    }
+
+    #[test]
+    fn cs_from_alignment_indels_and_length_check() {
+        // Insertions and deletions carry their bases; the string reproduces
+        // the alignment columns.
+        let r = b"AC-GTACGT";
+        let q = b"ACGGTACGT";
+        assert_eq!(cs_from_alignment(r, q).unwrap(), ":2+G:6");
+        assert!(cs_from_alignment(r, &q[..5]).is_err(), "length mismatch");
     }
 
     #[test]

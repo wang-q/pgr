@@ -24,6 +24,9 @@ mixed freely:
   itself is then used to refine the chains.
 * A .pgi index is used directly; --ref-seq/--query-seq may then supply the
   sequences for chain refinement, and are validated against the index.
+With a single input the genome is aligned to itself (internal repeats and
+haplotype-level homology, FastGA's self mode); exact self-identity hits are
+dropped.
 
 Notes:
 * Both sides must use identical sampling parameters (k, syncmer, window).
@@ -61,8 +64,7 @@ Examples:
         .arg(
             Arg::new("query")
                 .index(2)
-                .required(true)
-                .help("Query genome (FASTA/2bit) or .pgi index"),
+                .help("Query genome (FASTA/2bit) or .pgi index; omit for self-alignment"),
         )
         .arg(crate::cmd_pgr::args::outfile_arg_required())
         .arg(
@@ -167,7 +169,9 @@ struct SideInput {
 /// Execute the align command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let ref_input = args.get_one::<String>("ref").unwrap();
-    let query_input = args.get_one::<String>("query").unwrap();
+    let query_input = args.get_one::<String>("query");
+    let self_mode = query_input.is_none();
+    let query_input = query_input.map(|s| s.as_str()).unwrap_or(ref_input);
     let outfile = args.get_one::<String>("outfile").unwrap();
     let params = pgr::libs::pgi::align::AlignParams {
         freq: *args.get_one::<u32>("freq").unwrap(),
@@ -191,7 +195,16 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let SideInput {
         index: query_index,
         seqs: query_side_seqs,
-    } = resolve_side(args, query_input, "query", &mut tmp, keep)?;
+    } = if self_mode {
+        // Self-alignment resolves the same input once and reuses it on both
+        // sides (the sequence copy is bounded by the input size).
+        SideInput {
+            index: ref_index.clone(),
+            seqs: ref_side_seqs.clone(),
+        }
+    } else {
+        resolve_side(args, query_input, "query", &mut tmp, keep)?
+    };
     let _tmp_guard = tmp;
 
     // The reference index is consumed as a stream by the merge; the query
@@ -226,9 +239,16 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         .context("building align thread pool")?;
     let psls = pool.install(|| -> anyhow::Result<Vec<pgr::libs::fmt::psl::Psl>> {
         if ref_seqs.is_empty() {
-            pgr::libs::pgi::align::align_to_psl_streaming(&mut a, &b, &params)
+            pgr::libs::pgi::align::align_to_psl_streaming(&mut a, &b, &params, self_mode)
         } else {
-            pgr::libs::pgi::align::align_to_psl_ext_streaming(a, b, &params, &ref_seqs, &query_seqs)
+            pgr::libs::pgi::align::align_to_psl_ext_streaming(
+                a,
+                b,
+                &params,
+                &ref_seqs,
+                &query_seqs,
+                self_mode,
+            )
         }
     })?;
     let mut writer = pgr::writer(outfile)?;
@@ -415,7 +435,7 @@ fn read_seqs(path: &str) -> anyhow::Result<Vec<(String, Vec<u8>)>> {
         .and_then(|e| e.to_str())
         == Some("2bit");
     if is_2bit {
-        pgr::libs::pgi::build::read_2bit(path)
+        pgr::libs::pgi::build::read_2bit(path, false)
     } else {
         pgr::libs::pgi::build::read_fasta(path)
     }

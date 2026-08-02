@@ -17,6 +17,8 @@ future FastGA-style seed discovery.
 Notes:
 * Input FASTA may be plain or gzipped; .2bit input is supported (fastest).
 * K-mers containing non-ACGT bases (e.g. N) are skipped.
+* --mask skips soft-masked regions (lowercase FASTA bases / 2bit mask blocks),
+  matching FastGA -M: masked repeats and low-complexity regions produce no seeds.
 
 Examples:
 1. Build from FASTA:
@@ -60,6 +62,12 @@ Examples:
                 .action(ArgAction::SetTrue)
                 .help("Index the forward strand only (default: both)"),
         )
+        .arg(
+            Arg::new("mask")
+                .long("mask")
+                .action(ArgAction::SetTrue)
+                .help("Skip soft-masked regions (lowercase FASTA / 2bit mask blocks)"),
+        )
 }
 /// Execute the build command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
@@ -69,8 +77,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let smer = *args.get_one::<usize>("smer").unwrap();
     let window = *args.get_one::<usize>("window").unwrap();
     let no_rev = args.get_flag("no_rev");
+    let mask = args.get_flag("mask");
 
-    let idx = pgr::libs::pgi::build::build_from_path(infile, k, smer, window, no_rev)?;
+    let idx = pgr::libs::pgi::build::build_from_path(infile, k, smer, window, no_rev, mask)?;
     let mut writer = pgr::writer(outfile)?;
     idx.write(&mut writer)?;
     log::info!(

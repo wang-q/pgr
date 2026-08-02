@@ -6,7 +6,8 @@
 
 use crate::libs::fmt::maf::MafAli;
 use crate::libs::paf::cigar::{
-    block_identity, cigar_from_alignment, cigar_stats, format_cigar, gap_compressed_identity,
+    block_identity, cigar_from_alignment, cigar_stats, cs_from_alignment, format_cigar,
+    gap_compressed_identity,
 };
 use crate::libs::paf::record::PafRecord;
 
@@ -30,11 +31,13 @@ pub fn maf_block_to_paf(block: &MafAli) -> anyhow::Result<Option<PafRecord>> {
     let gi = gap_compressed_identity(&cigar_ops);
     let bi = block_identity(&cigar_ops);
     let cigar_str = format_cigar(&cigar_ops);
+    let cs = cs_from_alignment(ref_entry.text.as_bytes(), qry_entry.text.as_bytes())?;
 
     let mut tags = vec![
         format!("gi:f:{gi:.6}"),
         format!("bi:f:{bi:.6}"),
         format!("cg:Z:{cigar_str}"),
+        format!("cs:Z:{cs}"),
     ];
     if let Some(s) = block.score {
         tags.push(format!("ms:i:{}", s as u64));
@@ -112,6 +115,10 @@ mod tests {
         assert_eq!(rec.query_start, 83);
         assert_eq!(rec.query_end, 95);
         assert_eq!(rec.query_length, 100);
+        assert!(
+            rec.tags.iter().any(|t| t.starts_with("cs:Z:")),
+            "MAF-to-PAF must emit a cs:Z tag"
+        );
     }
 
     #[test]

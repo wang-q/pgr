@@ -895,13 +895,26 @@ pub fn align_to_psl(a: &PgiIndex, b: &PgiIndex, params: &AlignParams) -> anyhow:
 }
 
 /// Same as [`align_to_psl`] with the reference index streamed from disk.
+/// Drop hits that coincide exactly with the query's own position (same contig,
+/// same coordinate, forward strand): a self-alignment must not report a
+/// segment as its own copy (FastGA's self mode skips identical diagonals).
+fn drop_self_hits(hits: &mut Vec<SeedHit>) {
+    hits.retain(|h| !(h.a_contig == h.b_contig && h.a_pos == h.b_pos && h.strand == 0));
+}
+
+/// Same as [`align_to_psl`] with the reference index streamed from disk;
+/// `is_self` drops the exact self-identity hits of a single-genome alignment.
 pub fn align_to_psl_streaming<R: Read + Send, B: PgiQuery + Sync>(
     a: &mut PgiStream<R>,
     b: &B,
     params: &AlignParams,
+    is_self: bool,
 ) -> anyhow::Result<Vec<Psl>> {
     let k = a.header().k;
-    let hits = merge_seed_hits_from_stream(a, b, params.freq, effective_min_shared(k, params))?;
+    let mut hits = merge_seed_hits_from_stream(a, b, params.freq, effective_min_shared(k, params))?;
+    if is_self {
+        drop_self_hits(&mut hits);
+    }
     match params.workflow {
         Workflow::Tube => anyhow::bail!(
             "the tube workflow needs extension sequences (genome inputs or \
@@ -1098,17 +1111,23 @@ pub fn align_to_psl_ext(
 /// Align two indexes with the reference (`a`) streamed from disk and the
 /// query (`b`) read through a [`PgiQuery`] view (resident or mmap'd): the
 /// merge reads `a` in batches, so no index is materialized in full.
+/// Same as [`align_to_psl_ext`] with the reference streamed and the query read
+/// through a [`PgiQuery`] view; `is_self` drops exact self-identity hits.
 pub fn align_to_psl_ext_streaming<R: Read + Send, B: PgiQuery + Sync>(
     mut a: PgiStream<R>,
     b: B,
     params: &AlignParams,
     a_seqs: &[(String, Vec<u8>)],
     b_seqs: &[(String, Vec<u8>)],
+    is_self: bool,
 ) -> anyhow::Result<Vec<Psl>> {
     let header = a.header().clone();
     let min_shared = effective_min_shared(header.k, params);
     let t0 = std::time::Instant::now();
-    let hits = merge_seed_hits_from_stream(&mut a, &b, params.freq, min_shared)?;
+    let mut hits = merge_seed_hits_from_stream(&mut a, &b, params.freq, min_shared)?;
+    if is_self {
+        drop_self_hits(&mut hits);
+    }
     log::debug!("merge: {} ms", t0.elapsed().as_millis());
     log::info!(
         "merge: {} seed hits (min-shared={min_shared}, freq={})",
@@ -1373,6 +1392,32 @@ mod tests {
         mk.sort_unstable();
         assert_eq!(rk, mk, "mmap query must produce identical seed hits");
         assert!(!rk.is_empty(), "expected shared seeds");
+    }
+
+    #[test]
+    fn drop_self_hits_filters_exact_identity() {
+        let mk = |a_contig: u16, a_pos: u32, b_contig: u16, b_pos: u32, strand: u8| SeedHit {
+            a_contig,
+            a_pos,
+            b_contig,
+            b_pos,
+            shared: 40,
+            strand,
+        };
+        let mut hits = vec![
+            mk(0, 100, 0, 100, 0), // exact self-identity -> dropped
+            mk(0, 100, 0, 500, 0), // intra-genome repeat -> kept
+            mk(0, 100, 0, 100, 1), // reverse copy at the same spot -> kept
+            mk(0, 100, 1, 100, 0), // cross-contig homology -> kept
+        ];
+        drop_self_hits(&mut hits);
+        assert_eq!(hits.len(), 3);
+        assert!(hits
+            .iter()
+            .all(|h| { !(h.a_contig == h.b_contig && h.a_pos == h.b_pos && h.strand == 0) }));
+        assert!(hits.iter().any(|h| h.b_pos == 500 && h.strand == 0));
+        assert!(hits.iter().any(|h| h.strand == 1));
+        assert!(hits.iter().any(|h| h.a_contig != h.b_contig));
     }
 
     #[test]

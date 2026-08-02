@@ -36,8 +36,8 @@ fn command_maf_to_paf_basic() {
     let fields: Vec<&str> = stdout.trim().split('\t').collect();
     assert_eq!(
         fields.len(),
-        16,
-        "PAF should have 12 cols + 4 tags = 16 fields"
+        17,
+        "PAF should have 12 cols + 5 tags = 17 fields"
     );
 
     // Column checks
@@ -58,6 +58,7 @@ fn command_maf_to_paf_basic() {
     assert!(stdout.contains("gi:f:"), "gi tag missing");
     assert!(stdout.contains("bi:f:"), "bi tag missing");
     assert!(stdout.contains("cg:Z:"), "cg tag missing");
+    assert!(stdout.contains("cs:Z:"), "cs tag missing");
     assert!(stdout.contains("ms:i:12345"), "score tag missing");
 }
 

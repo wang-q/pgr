@@ -22,6 +22,10 @@ pgr align pgi ref query -o out.psl
   the sequences for chain refinement, and are validated against the index
   contig table.
 
+With a single input the genome is aligned to itself (internal repeats and
+haplotype-level homology, FastGA's self mode); exact self-identity hits are
+dropped.
+
 ## Options
 
 - `-f`/`--freq`: drop k-mers occurring more than this many times on either
@@ -77,4 +81,8 @@ overlapping windows. The output feeds directly into
 4. Tune seed filtering and chaining:
    ```
    pgr align pgi a.fa b.fa -f 20 -c 100 -s 2000 --band 64 -o ab.psl
+   ```
+5. Detect internal repeats via self-alignment:
+   ```
+   pgr align pgi genome.fa -o self.psl
    ```

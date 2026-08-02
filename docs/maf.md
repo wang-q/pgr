@@ -62,6 +62,8 @@ pgr maf to-paf [OPTIONS] <infiles>...
 ### Custom PAF Tags
 
 *   `cg:Z:` – CIGAR string derived from the MAF alignment strings.
+*   `cs:Z:` – Reversible compact CIGAR (FastGA `-pafs` style: `:N` match runs,
+    `*<ref><qry>` mismatches, `+<qry>` insertions, `-<ref>` deletions).
 *   `gi:f:` – Gap-compressed identity.
 *   `bi:f:` – Block identity.
 *   `ms:i:` – MAF score (from the `a` line `score=` field).
