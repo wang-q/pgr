@@ -101,58 +101,65 @@ pub fn merge_seed_hits(
     } else {
         (1u128 << k_bits) - 1
     };
-    let mut hits = Vec::new();
-    let mut i = 0usize;
-    while i < a.entries.len() {
-        let ea = &a.entries[i];
-        i += 1;
-        if ea.freq > freq {
-            continue;
-        }
-        // Prefix range in b: keys sharing the first `min_shared` bases.
-        let lo = ea.kmer & !(range - 1) & mask;
-        let hi = lo + range;
-        let j0 = b.entries.partition_point(|e| e.kmer < lo);
-        let mut j = j0;
-        while j < b.entries.len() && b.entries[j].kmer < hi {
-            j += 1;
-        }
-        let range_size = (j - j0) as u32;
-        if range_size == 0 || range_size > freq {
-            continue;
-        }
-        let ap = &a.positions[ea.pos_start as usize..(ea.pos_start + ea.freq) as usize];
-        for eb in &b.entries[j0..j] {
-            if eb.freq > freq {
-                continue;
-            }
-            let shared = shared_prefix(ea.kmer, eb.kmer, k);
-            if shared < min_shared as u32 {
-                continue;
-            }
-            let bp = &b.positions[eb.pos_start as usize..(eb.pos_start + eb.freq) as usize];
-            for &(ac, apos, astrand) in ap {
-                for &(bc, bpos, bstrand) in bp {
-                    let fwd = astrand == bstrand;
-                    let b_len = b.contigs[bc as usize].1;
-                    let oriented = if fwd {
-                        bpos as u64
-                    } else {
-                        b_len - k as u64 - bpos as u64
-                    };
-                    hits.push(SeedHit {
-                        a_contig: ac,
-                        a_pos: apos,
-                        b_contig: bc,
-                        b_pos: oriented as u32,
-                        shared,
-                        strand: u8::from(!fwd),
-                    });
+    // The per-entry prefix query against `b` is independent, so split the
+    // `a` entries into chunks and merge them in parallel (the chaining passes
+    // re-sort the hits, so the output order is free).
+    let parts: Vec<Vec<SeedHit>> = a
+        .entries
+        .par_chunks(4096)
+        .map(|ents| {
+            let mut hits = Vec::new();
+            for ea in ents {
+                if ea.freq > freq {
+                    continue;
+                }
+                // Prefix range in b: keys sharing the first `min_shared` bases.
+                let lo = ea.kmer & !(range - 1) & mask;
+                let hi = lo + range;
+                let j0 = b.entries.partition_point(|e| e.kmer < lo);
+                let mut j = j0;
+                while j < b.entries.len() && b.entries[j].kmer < hi {
+                    j += 1;
+                }
+                let range_size = (j - j0) as u32;
+                if range_size == 0 || range_size > freq {
+                    continue;
+                }
+                let ap = &a.positions[ea.pos_start as usize..(ea.pos_start + ea.freq) as usize];
+                for eb in &b.entries[j0..j] {
+                    if eb.freq > freq {
+                        continue;
+                    }
+                    let shared = shared_prefix(ea.kmer, eb.kmer, k);
+                    if shared < min_shared as u32 {
+                        continue;
+                    }
+                    let bp = &b.positions[eb.pos_start as usize..(eb.pos_start + eb.freq) as usize];
+                    for &(ac, apos, astrand) in ap {
+                        for &(bc, bpos, bstrand) in bp {
+                            let fwd = astrand == bstrand;
+                            let b_len = b.contigs[bc as usize].1;
+                            let oriented = if fwd {
+                                bpos as u64
+                            } else {
+                                b_len - k as u64 - bpos as u64
+                            };
+                            hits.push(SeedHit {
+                                a_contig: ac,
+                                a_pos: apos,
+                                b_contig: bc,
+                                b_pos: oriented as u32,
+                                shared,
+                                strand: u8::from(!fwd),
+                            });
+                        }
+                    }
                 }
             }
-        }
-    }
-    Ok(hits)
+            hits
+        })
+        .collect();
+    Ok(parts.into_iter().flatten().collect())
 }
 
 /// Longest common prefix (in bases) of two 2-bit k-mer keys.
@@ -168,7 +175,13 @@ fn shared_prefix(a: u128, b: u128, k: usize) -> u32 {
 /// Effective minimum shared seed length: `params.min_shared` or `k` (exact
 /// k-mers), capped at `k`.
 fn effective_min_shared(idx: &PgiIndex, params: &AlignParams) -> usize {
-    params.min_shared.unwrap_or(idx.k).min(idx.k)
+    match params.min_shared {
+        Some(v) => v.min(idx.k),
+        // FastGA's adaptamer seeds share ~31 of its 40 bp; the tube workflow
+        // defaults to partial seeds (k/2) to recover indel-shifted regions.
+        None if params.workflow == Workflow::Tube => (idx.k / 2).max(1),
+        None => idx.k,
+    }
 }
 /// One chained diagonal segment on a single (contig_a, contig_b, strand) pair.
 #[derive(Debug, Clone, Copy)]
@@ -227,21 +240,28 @@ pub fn chain_tubes(hits: &[SeedHit], k: u32) -> Vec<Tube> {
     // Group by (a_contig, b_contig, strand); within a group sort by
     // (diagonal bucket, anti) so adjacent buckets are contiguous and each
     // bucket is anti-ordered (FastGA merges its stream by ipost = anti).
-    let mut sorted: Vec<&SeedHit> = hits.iter().collect();
     // Pack the sort key into one u128: (a_contig, b_contig, strand,
     // diagonal bucket + offset, anti). The bucket offset keeps negative
     // diagonals orderable under unsigned packing.
     const BUCK_OFF: i64 = 1_000_000;
-    sorted.par_sort_unstable_by_key(|h| {
-        let diag = h.a_pos as i64 - h.b_pos as i64;
-        let bucket = (diag.div_euclid(64) + BUCK_OFF) as u64;
-        let anti = (h.a_pos as i64 + h.b_pos as i64) as u64;
-        ((h.a_contig as u128) << 88)
-            | ((h.b_contig as u128) << 72)
-            | ((h.strand as u128) << 71)
-            | ((bucket as u128) << 24)
-            | anti as u128
-    });
+    // Precompute the keys once: the key closure is otherwise re-evaluated on
+    // every comparison inside the parallel sort.
+    let mut keyed: Vec<(u128, &SeedHit)> = hits
+        .iter()
+        .map(|h| {
+            let diag = h.a_pos as i64 - h.b_pos as i64;
+            let bucket = (diag.div_euclid(64) + BUCK_OFF) as u64;
+            let anti = (h.a_pos as i64 + h.b_pos as i64) as u64;
+            let key = ((h.a_contig as u128) << 88)
+                | ((h.b_contig as u128) << 72)
+                | ((h.strand as u128) << 71)
+                | ((bucket as u128) << 24)
+                | anti as u128;
+            (key, h)
+        })
+        .collect();
+    keyed.par_sort_unstable_by_key(|(k, _)| *k);
+    let sorted: Vec<&SeedHit> = keyed.into_iter().map(|(_, h)| h).collect();
 
     let mut tubes = Vec::new();
     let mut start = 0usize;
@@ -295,84 +315,92 @@ fn tubes_for_group(
     }
 
     // Process each adjacent bucket pair (c, c+1), merging by a_pos.
-    for w in 0..buckets.len() {
-        let (cb, b_seeds) = &buckets[w];
-        let m_seeds: &[&SeedHit] = if w + 1 < buckets.len() && buckets[w + 1].0 == cb + 1 {
-            &buckets[w + 1].1
-        } else {
-            &[]
-        };
-        // Merge by anti (ties prefer the lower bucket, like FastGA's
-        // ipost-ordered merge; a_pos order breaks when the diagonal drifts
-        // inside a bucket and starves the coverage accounting).
-        let mut bi = 0usize;
-        let mut mi = 0usize;
-        let mut alow: i64 = i64::MAX;
-        let mut ahgh: i64 = -brk;
-        let mut cov: u64 = 0;
-        let mut dgmin = 2 * buck;
-        let mut dgmax = 0i64;
-        while bi < b_seeds.len() || mi < m_seeds.len() {
-            let anti_b = b_seeds.get(bi).map(|h| h.a_pos as i64 + h.b_pos as i64);
-            let anti_m = m_seeds.get(mi).map(|h| h.a_pos as i64 + h.b_pos as i64);
-            let (h, side) = match (anti_b, anti_m) {
-                (Some(ab), Some(am)) if am < ab => (m_seeds[mi], 2u8),
-                (Some(_), _) => (b_seeds[bi], 1u8),
-                (None, Some(_)) => (m_seeds[mi], 2u8),
-                (None, None) => unreachable!(),
+    // Each adjacent bucket pair is an independent merge; process them in
+    // parallel and concatenate (rayon preserves the pair order).
+    let pair_tubes: Vec<Vec<Tube>> = (0..buckets.len())
+        .into_par_iter()
+        .map(|w| {
+            let (cb, b_seeds) = &buckets[w];
+            let m_seeds: &[&SeedHit] = if w + 1 < buckets.len() && buckets[w + 1].0 == cb + 1 {
+                &buckets[w + 1].1
+            } else {
+                &[]
             };
-            if side == 1 {
-                bi += 1;
-            } else {
-                mi += 1;
-            }
-            let anti = h.a_pos as i64 + h.b_pos as i64;
-            let ext = (h.shared as i64).clamp(1, k as i64);
-            let dg = h.a_pos as i64 - h.b_pos as i64 - cb * buck;
-            if anti < ahgh + brk {
-                let cps = anti + ext;
-                if cps > ahgh {
-                    if anti >= ahgh {
-                        cov += ext as u64;
-                    } else {
-                        cov += (cps - ahgh) as u64;
+            let mut local = Vec::new();
+            // Merge by anti (ties prefer the lower bucket, like FastGA's
+            // ipost-ordered merge; a_pos order breaks when the diagonal drifts
+            // inside a bucket and starves the coverage accounting).
+            let mut bi = 0usize;
+            let mut mi = 0usize;
+            let mut alow: i64 = i64::MAX;
+            let mut ahgh: i64 = -brk;
+            let mut cov: u64 = 0;
+            let mut dgmin = 2 * buck;
+            let mut dgmax = 0i64;
+            while bi < b_seeds.len() || mi < m_seeds.len() {
+                let anti_b = b_seeds.get(bi).map(|h| h.a_pos as i64 + h.b_pos as i64);
+                let anti_m = m_seeds.get(mi).map(|h| h.a_pos as i64 + h.b_pos as i64);
+                let (h, side) = match (anti_b, anti_m) {
+                    (Some(ab), Some(am)) if am < ab => (m_seeds[mi], 2u8),
+                    (Some(_), _) => (b_seeds[bi], 1u8),
+                    (None, Some(_)) => (m_seeds[mi], 2u8),
+                    (None, None) => unreachable!(),
+                };
+                if side == 1 {
+                    bi += 1;
+                } else {
+                    mi += 1;
+                }
+                let anti = h.a_pos as i64 + h.b_pos as i64;
+                let ext = (h.shared as i64).clamp(1, k as i64);
+                let dg = h.a_pos as i64 - h.b_pos as i64 - cb * buck;
+                if anti < ahgh + brk {
+                    let cps = anti + ext;
+                    if cps > ahgh {
+                        if anti >= ahgh {
+                            cov += ext as u64;
+                        } else {
+                            cov += (cps - ahgh) as u64;
+                        }
+                        ahgh = cps;
                     }
-                    ahgh = cps;
+                    dgmin = dgmin.min(dg);
+                    dgmax = dgmax.max(dg);
+                    alow = alow.min(anti);
+                } else {
+                    if cov >= min_cov {
+                        local.push(Tube {
+                            a_contig,
+                            b_contig,
+                            strand,
+                            anti_low: alow,
+                            anti_high: ahgh,
+                            diag_min: cb * buck + dgmin,
+                            diag_max: cb * buck + dgmax,
+                        });
+                    }
+                    alow = anti;
+                    ahgh = anti + ext;
+                    cov = ext as u64;
+                    dgmin = dg;
+                    dgmax = dg;
                 }
-                dgmin = dgmin.min(dg);
-                dgmax = dgmax.max(dg);
-                alow = alow.min(anti);
-            } else {
-                if cov >= min_cov {
-                    tubes.push(Tube {
-                        a_contig,
-                        b_contig,
-                        strand,
-                        anti_low: alow,
-                        anti_high: ahgh,
-                        diag_min: cb * buck + dgmin,
-                        diag_max: cb * buck + dgmax,
-                    });
-                }
-                alow = anti;
-                ahgh = anti + ext;
-                cov = ext as u64;
-                dgmin = dg;
-                dgmax = dg;
             }
-        }
-        if cov >= min_cov {
-            tubes.push(Tube {
-                a_contig,
-                b_contig,
-                strand,
-                anti_low: alow,
-                anti_high: ahgh,
-                diag_min: cb * buck + dgmin,
-                diag_max: cb * buck + dgmax,
-            });
-        }
-    }
+            if cov >= min_cov {
+                local.push(Tube {
+                    a_contig,
+                    b_contig,
+                    strand,
+                    anti_low: alow,
+                    anti_high: ahgh,
+                    diag_min: cb * buck + dgmin,
+                    diag_max: cb * buck + dgmax,
+                });
+            }
+            local
+        })
+        .collect();
+    tubes.extend(pair_tubes.into_iter().flatten());
 }
 
 /// FastGA `BUCK_ANTI`: tube processing slides the mid-line by 128 bp.
@@ -406,11 +434,15 @@ fn extend_tube(
         return Vec::new();
     };
     // Query contig in orientation space (RC for minus strand), once.
-    let q: Vec<u8> = if tube.strand == 0 {
-        b_int.to_vec()
+    // Orientation-space query: a slice for forward strands (no copy), owned
+    // RC only for reverse strands. The main-chromosome reverse tubes would
+    // otherwise allocate ~5.5 MB per tube and serialize on the allocator.
+    let q = if tube.strand == 0 {
+        std::borrow::Cow::Borrowed(b_int)
     } else {
-        rev_comp(b_int).collect()
+        std::borrow::Cow::Owned(rev_comp(b_int).collect())
     };
+    let q: &[u8] = &q;
     let rt = &a_revs[tube.a_contig as usize];
     let rq = if tube.strand == 0 {
         &b_revs[tube.b_contig as usize]
@@ -424,46 +456,6 @@ fn extend_tube(
     if ahgh <= *alast {
         return Vec::new(); // already covered by an earlier tube
     }
-    // Large-tube homology gate: tubes whose region never reaches ~55%
-    // identity on any sampled diagonal of the band can only produce rejected
-    // wave calls (91% of all calls come from such tubes), so skip them.
-    // Only large tubes are checked (small tubes are cheap and thin conserved
-    // regions there are caught by the waves).
-    if ahgh - alow > 10_000 {
-        let a_len = a_int.len() as i64;
-        let b_len = q.len() as i64;
-        let mut best = 0i64;
-        for dgi in 0..9 {
-            let dg = dgmin + (dgmax - dgmin) * dgi / 8;
-            let mut m = 0i64;
-            let mut anti = alow;
-            while anti < ahgh + 128 {
-                let a = (anti + dg) / 2;
-                let b = (anti - dg) / 2;
-                if a >= 0 && b >= 0 && a < a_len && b < b_len && q[b as usize] == a_int[a as usize]
-                {
-                    m += 1;
-                }
-                if anti >= alow + 128 {
-                    let a0 = (anti - 128 + dg) / 2;
-                    let b0 = (anti - 128 - dg) / 2;
-                    if a0 >= 0
-                        && b0 >= 0
-                        && a0 < a_len
-                        && b0 < b_len
-                        && q[b0 as usize] == a_int[a0 as usize]
-                    {
-                        m -= 1;
-                    }
-                    best = best.max(m);
-                }
-                anti += 2;
-            }
-        }
-        if best < 32 {
-            return Vec::new();
-        }
-    }
     let mut out = Vec::new();
     while alow < ahgh {
         let mut amid = alow + BUCK_ANTI;
@@ -476,7 +468,7 @@ fn extend_tube(
                 break;
             }
         }
-        if let Some(aln) = local_alignment(&q, a_int, rt, rq, dgmin, dgmax, amid) {
+        if let Some(aln) = local_alignment(q, a_int, rt, rq, dgmin, dgmax, amid) {
             let rlen = (aln.t_end - aln.t_start) as i64;
             if rlen >= TUBE_MIN_LEN && TUBE_MIN_RATE * rlen as f64 >= aln.diffs as f64 {
                 let strand = if tube.strand == 0 { "+" } else { "-" };

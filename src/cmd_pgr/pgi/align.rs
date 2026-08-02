@@ -90,7 +90,7 @@ Examples:
             Arg::new("min_shared")
                 .long("min-shared")
                 .value_parser(value_parser!(usize))
-                .help("Minimum shared seed length (bp); default = k (exact, recommended)"),
+                .help("Minimum shared seed length (bp); default = k for greedy, k/2 for tube"),
         )
         .arg(
             Arg::new("workflow")
