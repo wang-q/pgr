@@ -247,6 +247,6 @@ FastGA 的 wave 延伸进分歧区、覆盖更广）。注意身份率只统计 
 
 ## 6. 相关文档
 
-- 索引格式与消费者规划：[[pbit-index-extension.md]] §3.1
+- 索引格式与消费者规划：[[pbit.md]]（多参考与内嵌索引节）
 - FastGA 管线与简化移植评估：[[fastga.md]] §11/§12
 - 泛基因组场景：[[ecoli-cohort.md]]、[[paf-pangenome.md]]

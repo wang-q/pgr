@@ -16,7 +16,7 @@ merges for distance computation and seed discovery.
     (sketch distances from sequences).
   - Downstream: `pgr dist pgi` (exact merge distance), `pgr psl to-chain`
     and `pgr pl chainnet` (chain the PSL blocks from `align`).
-- **Design notes**: `notes/design/pbit-index-extension.md` (index consumers)
+- **Design notes**: `notes/design/pbit.md` (index consumers)
   and `notes/design/pgi-align.md` (alignment pipeline).
 
 ## Index format

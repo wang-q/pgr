@@ -1,5 +1,9 @@
 # pgr pbit
 
+> **状态**：pbit 处于开发早期、未对外发布；多参考与内嵌索引等新特性正在
+> 设计评审中（设计决策见 `notes/design/pbit.md` 顶部的开放项），命令接口
+> 和文件格式可能变化。
+
 `pgr pbit` 用于管理 **pbit**（population 2bit + delta）归档文件。pbit 是 pgr 原生的群体基因组压缩格式，
 它将参考基因组以标准 2bit 记录存储，并将每个样本以 LZ-diff 或 PAF 驱动的 CIGAR delta 编码压缩存储，
 适合在保留随机访问能力的同时压缩大量同源样本。

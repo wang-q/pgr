@@ -2,7 +2,7 @@
 
 > 目的：对比 `pgr pgi build` 与 FastGA `GIXmake` 的索引构建速度（hyperfine），
 > 评估 `.pgi` 索引构建的性能差距。GIXmake 是 C 的极致优化参照（syncmer 稀疏
-> k-mer 索引，见 [[fastga.md]] §10 / [[pbit-index-extension.md]] §3.1）。
+> k-mer 索引，见 [[fastga.md]] §10 / [[pbit.md]]）。
 
 ## 环境与输入
 

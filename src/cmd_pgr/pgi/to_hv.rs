@@ -10,7 +10,7 @@ pub fn make_subcommand() -> Command {
             r###"
 Projects the index's unique k-mer keys onto a fixed-dimension hypervector,
 enabling O(dim) distance comparisons for very large cohorts (see
-notes/design/pbit-index-extension.md §6). The projection is sparse: each
+notes/design/pbit.md). The projection is sparse: each
 k-mer updates --sparse random dimensions, so the shared-k-mer signal stays
 dominant for large k-mer sets and cosine similarity on the result
 approximates the k-mer set overlap.

@@ -3,7 +3,7 @@
 //! A `.pgi` file stores a genome's syncmer-sampled k-mers as a sorted,
 //! duplicate-free table with per-key positions, supporting two-index merges
 //! (distance / seed discovery) and hypervector projection. Design notes:
-//! `notes/design/pbit-index-extension.md`.
+//! `notes/design/pbit.md`.
 
 pub mod align;
 pub mod build;
