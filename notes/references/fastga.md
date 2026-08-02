@@ -49,7 +49,8 @@ PAF / PSL
 - GIX 很大（每 Gbp 约 14 GB），建议批量比对前构建、之后用 `GIXrm` 清理，保留 GDB。
 - 自比对模式（`FastGA A`）可检测基因组内部重复/单倍型间同源。
 - **方向不对称**：adaptamer 依赖 source1 的种子，`FastGA A B` ≠ `FastGA B A`；
-  `-S` 用两个基因组的 adaptamer 做对称（更慢，重复结构分析用；synteny 场景不建议）。
+  `-S` 用两个基因组的 adaptamer 做对称（更慢，重复结构分析用；synteny 场景不建议；
+  未文档化、仅 V1.5 源码支持，见 §5）。
 - **Soft mask**（V1.3+）：FASTA 小写=掩码，存入 GDB 的 `.1ano` 文件；默认忽略，
   `-M` 或 `#mask.1ano` 参数启用。
 
@@ -86,7 +87,8 @@ PAF / PSL
 - **最小化**：`is_minimal`（libfastk.c:590）把种子与其反向互补做字典序比较，保留更小者
   （canonical 方向），正反链统一——与 pgr 的 canonical minimizer/syncmer 思路一致。
 - **种子命中**：adaptamer 在 source2 的每个出现位置 (p, q) 都是一个 seed hit。
-- `-S` 对称模式取两个基因组的 adaptamer 并集。
+- `-S` 对称模式取两个基因组的 adaptamer 并集（`SYMMETRIC = flags['S']`，merge
+  互换 T1/T2 跑双向再合并；未文档化，仅 V1.5 源码支持，见 §5）。
 
 ### 3.4 种子链（chaining，FastGA.c align_contigs）
 
@@ -164,7 +166,7 @@ PAF / PSL
 | `-i` | 0.7 | 最小比对相似度（源码 `ALIGN_RATE = 1.-sim`，默认 .3；合法 [0.55,1)）| `ALIGN_RATE = .3` |
 | `-k` | 40 | GIX k-mer 大小（GIXmake）| — |
 | `-T` | 8 | 线程数 | `NTHREADS = 8` |
-| `-S` | off | 对称 adaptamer（两个基因组种子）| flags |
+| `-S` | off | 对称 adaptamer（两个基因组种子）；**未文档化**——帮助文本不解释，且安装版二进制（`[-vk]`，实测拒绝 `-S`/`-M`）不支持，仅仓库源码 V1.5（`ARG_FLAGS("vkMS")`）提供 | flags |
 | `-M` | off | 使用 GIX 中的 soft mask | flags |
 | `-v` / `-L` | — | 详细模式 / 日志文件 | flags |
 
@@ -203,6 +205,9 @@ PAF / PSL
 ## 8. 版本与许可
 
 - 当前 FASTGA-main 对应 V1.5（2025-12-30），含 ONEcode ANO 文件支持。
+- **版本差异**：本机安装版二进制（`~/.cbp/bin/FastGA`，benchmark 对照用）帮助为
+  `[-vk]` 且拒绝 `-M`/`-S`，是早于 V1.5 的版本；本文 §3-§7 的源码分析基于仓库
+  V1.5（`[-vkMS]`）。两者在 `-M`/`-S` 等未文档化选项上不一致。
 - LICENSE：MIT（ALNchain 单独标注 Chenxi Zhou，MIT）。
 - 参考：https://github.com/thegenemyers/FASTGA ；ONEcode:
   https://github.com/thegenemyers/ONEcode ；daligner:

@@ -6,7 +6,8 @@
 > 峰值内存低于 FastGA（query 索引 mmap 零拷贝）。
 >
 > 结构：§0 当前状态 → §1 设计 → §2 验证与基准 → §3 开发历史 →
-> §4 已排除方向 → §5 勘误与基准方法 → §6 相关文档。
+> §4 已排除方向 → §5 勘误与基准方法 → §6 FastGA 功能差距 →
+> §7 相关文档。
 
 ## 0. 当前状态
 
@@ -62,7 +63,7 @@
 3. 人类规模（~3 Gb）未验证：`pos_start` u32、`SeedHit` contig u16、
    `PgiEntry` 24 B/条 等字段上限需按规模复核（§3.4 有上限记录）。
 
-**2026-08-03 新增**（对齐 FastGA，见 [[fastga-gap.md]]）：
+**2026-08-03 新增**（对齐 FastGA，详见 §6）：
 
 - `pgr pgi build --mask`：跳过 soft-mask 区（FASTA 小写 / 2bit mask_blocks
   转 N），抑制重复/低复杂度区种子（FastGA `-M`）；
@@ -531,7 +532,40 @@ ec2011c_3493 聚类 99.1%+、nissle–cft073 99.6%）。合并块后身份率比
 - 10 株 cohort 验证见 [[benchmarks/dist-cohort-validation.md]]（引用
   §2.4 的身份率矩阵）。
 
-## 6. 相关文档
+## 6. FastGA 功能差距
+
+> 对照 [[fastga.md]]（参考笔记）与 `pgr align pgi` 现状，记录 FastGA 中相对
+> 重要、pgr 尚未实现的功能；已落地的三项见 §0/§3.6，此处仅作状态对照。
+> 日期：2026-08-03。
+
+### 6.1 状态总览
+
+| 功能 | 状态 |
+|---|---|
+| soft mask 感知的种子发现（`-M`） | **已落地**（`pgr pgi build --mask`） |
+| 自比对模式（`FastGA A`） | **已落地**（`pgr align pgi` 单输入 self） |
+| PAF `cs:Z` 输出（`-pafs/S`） | **已落地**（`pgr maf to-paf`） |
+| select 表达式 | 暂缓 |
+| Gap_Improver | 暂缓 |
+| 多 mask union | 暂缓 |
+| `-S` 对称 adaptamer | 暂缓（专门场景） |
+| trace points / `.1aln` 紧凑存储 | 不做 |
+| ALNchain | 不做 |
+| GDB / scaffold / 完整 GIX 分片 | 不做 |
+
+### 6.2 当前差距（未完成）
+
+| FastGA 功能 | pgr 现状 | 状态 | 说明 |
+|---|---|---|---|
+| **select 表达式**（只比对选定 contig/区间） | 无（需 fa range + 子索引间接实现） | 暂缓 | 低优先级 |
+| **Gap_Improver**（wave 后 gap 区二次精修） | banded 仿射 gap 已覆盖；wave 路径无等价物 | 暂缓 | 质量微调，收益不确定 |
+| **多 mask union**（.1ano 可叠加） | `fa mask` 单 runlist | 暂缓 | 低优先级 |
+| **`-S` 对称 adaptamer**（双输入 A vs B 双向种子；FastGA 未文档化选项，仅 V1.5 源码支持） | pgr 双输入同样单向（canonical 半方向单发，`A B` ≠ `B A`；对称需双方向合并，未实现） | 暂缓 | 专门场景（对称的跨基因组重复/结构分析）才有价值；`sd` 的 cross 目前单向够用 |
+| **trace points / ONEcode `.1aln` 紧凑存储** | PSL/MAF + BGZF | 不做 | 人类规模才需要，见 fastga.md §10 |
+| **ALNchain（.1aln 链化）** | UCSC chain/net（更标准） | 不做 | — |
+| **GDB 格式 / scaffold 语义 / 完整 GIX 分片** | pgr 2bit + `.pgi` | 不做 | 格式对比见 fastga.md §9 |
+
+## 7. 相关文档
 
 - 索引格式与消费者规划：[[pbit.md]]（多参考节 + .pgi 距离消费者层级）
 - FastGA 管线与简化移植评估：[[fastga.md]] §11/§12

@@ -3,14 +3,14 @@
 本文档是我对 pgr (Practical Genome Refiner) 项目的整体理解，涵盖架构、设计哲学、代码模式、
 当前能力与未来方向。写作时间：2026-06-27，最后更新：2026-08-01
 （2026-08-02：文档准确性审计——补全 pgi/sd 模块、pbit v1004 多参考、
-dist pgi 与 .hv 模式、align pgi 管线；内嵌索引按决策 A 移除；修正 §2.1/§3/§4/§6/§9）。
+  dist pgi 与 .hv 模式、align pgi 管线；内嵌索引按决策 A 移除；修正 §2.1/§3/§4/§6/§10）。
 （2026-08-02：全量通读 src/ 复核——更新 §2.1/§4 的 ds 新成员（best_crossover/merge_intervals）、
 §4.4 paf/pl 描述、§6 现状（UCSC 全链路字节级一致）、§7.1 UCSC 验证矩阵（axtToMaf 已修复、
-SE11 多染色体反向验证）、§9 索引状态；
+  SE11 多染色体反向验证）、§10 索引状态；
 2026-08-01 深夜：全量通读 src/ 后复核——修正 §2.3 serde_json 用途、§2.4 nightly 固定版本、
 §3.1 gff rg 描述、§3.3 paf 双向镜像索引、§4.1 poa 文件清单、§4.3 maf 行数，§8 新增帮助文本脱节风险；
 2026-08-01 晚：版本升至 0.3.1、补全 §2.1 目录树（args/pbit/ds/pl/syncmer）、更新 §2.3 依赖、
-§3.4 dist syncmer 采样、§10/§11 笔记索引；2026-08-01 早：更新 §3.5 pl 子命令数、§4.2 ds 下沉说明、
+  §3.4 dist syncmer 采样、§11/§12 笔记索引；2026-08-01 早：更新 §3.5 pl 子命令数、§4.2 ds 下沉说明、
 §6.2 pbit 状态）。
 
 > **2026-07 迁移说明**：`clust`/`cut`/`eval`/`mat`/`nwk` 命令模块及对应库
@@ -392,7 +392,7 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
 
 ### 6.3 待补全的（TODO / 设计阶段）
 
-设计笔记（§9 索引）均已落地；PAF 泛基因组方向（query / to-maf / graph / to-gfa / to-vcf /
+设计笔记（§10 索引）均已落地；PAF 泛基因组方向（query / to-maf / graph / to-gfa / to-vcf /
 stat）已全部完成，后续规划见 [[paf-pangenome.md]] §5（规模扩展与应用层，均待真实 cohort
 数据）。当前无待补全的具体功能。
 
@@ -477,7 +477,25 @@ chainnet 后消失。`pgr psl chain` 在 2bit 序列缓存优化后（~0.3 s）�
    同步 `pgr.rs` 的 after_help 与 `cmd_pgr/*/mod.rs` 注册（当前已一致：`pl` 含
    `chainnet`，`pbit` 含 `append`/`append-ref`，`pgi` 含 `align`）。
 
-## 9. 设计笔记索引（notes/design/）
+## 9. 主题链路索引（按技术线，跨目录）
+
+> 每条技术线的完整链路：参考分析（references/）→ 设计/实现（design/ 或根）→
+> 基准（benchmarks/）→ 相关命令/库。按主题找东西先看这张表。
+
+| 主题 | 参考分析 | 设计 / 实现 | 基准 | 相关命令 / 库 |
+|---|---|---|---|---|
+| FastGA 风格比对（pgi） | [[fastga.md]] | [[design/pgi-align.md]]（含 §6 功能差距） | [[benchmarks/bench-pgi-align-vs-fastga.md]]、[[benchmarks/bench-pgi-vs-gixmake.md]]、[[benchmarks/bench-pgi-vs-gix-storage.md]] | `pgr align pgi`（`libs/pgi`、`libs/alignment`） |
+| BISER / 分段重复（SD） | [[biser.md]]（含 §6.6 实施记录） | —（实现散于 `cmd_pgr/sd`） | — | `pgr sd search/align/cluster/decompose/cover/cross/run`（`libs/sd`） |
+| multiz / 多序列合并 | [[multiz.md]] | [[design/fas-multiz.md]] | — | `pgr fas multiz`（`libs/fas_multiz`） |
+| UCSC chain/net 管线 | [[ucsc.md]] | [[chain-algorithms.md]]（实现细节） | — | `pgr pl chainnet`、`pgr chain`、`pgr net`（`libs/chain`） |
+| Cactus / lastz 包装 | [[cactus.md]]、[[cactus_lastz.md]] | — | — | `pgr align lastz`、`sd search --engine lastz`（`libs/lastz`） |
+| POA / 一致性 | 外部 Spoa 源码（无参考笔记） | [[design/spoa_port.md]] | — | `pgr fas consensus`（`libs/poa`） |
+| PAF 隐式图 / 泛基因组 | [[impg.md]]、[[seqwish.md]]、[[smoothxg.md]]、[[minigraph.md]] | [[paf-pangenome.md]]（场景枢纽） | — | `pgr paf graph`（`libs/paf/graph`） |
+| syncmer / 采样 | [[syng.md]] | — | — | `libs/syncmer`（pgi build 依赖） |
+| pbit 压缩 | [[agc-cpp.md]] | [[design/pbit.md]] | — | `pgr pbit`（`libs/pbit`） |
+| 其他参考 | [[fastk.md]]、[[kaks.md]]、[[gfa.md]]、[[ropebwt3.md]]、[[pangenome-tools.md]] | [[design/ms2dna_port.md]]（ms→dna 移植） | — | `pgr ms to-dna`、`pgr paf to-gfa` 等 |
+
+## 10. 设计笔记索引（notes/design/）
 
 | 文档 | 定位 | 状态 |
 |------|------|------|
@@ -488,7 +506,7 @@ chainnet 后消失。`pgr psl chain` 在 2bit 序列缓存优化后（~0.3 s）�
 | [[ms2dna_port.md]] | ms2dna C → Rust 迁移设计 | 已实现（实际命令为 `pgr ms to-dna`） |
 | [[ucsc.md]] | UCSC chain/net/axt/maf pipeline 源码分析与字节级复现验证（E. coli 全流程一致） | 12 步主流程 + `--syn` + medium + SE11 多染色体反向全部字节级一致；剩余见 §4.6 |
 
-## 10. 外部工具参考索引（notes/references/）
+## 11. 外部工具参考索引（notes/references/）
 
 | 文档 | 定位 |
 |------|------|
@@ -510,7 +528,7 @@ chainnet 后消失。`pgr psl chain` 在 2bit 序列缓存优化后（~0.3 s）�
 | [[fastk.md]] | FastK k-mer 计数器（Super-mer + Minimizer） |
 | [[kaks.md]] | KaKs_Calculator3.0 与 PAML 源码分析 |
 
-## 11. 笔记根文件索引（notes/）
+## 12. 笔记根文件索引（notes/）
 
 | 文档 | 定位 |
 |------|------|
@@ -518,3 +536,12 @@ chainnet 后消失。`pgr psl chain` 在 2bit 序列缓存优化后（~0.3 s）�
 | [[ecoli-cohort.md]] | E. coli 泛基因组端到端路线：4 万 cohort 去冗余/sparsify + 小 cohort（3 基因组）先行验证 |
 | [[chain-algorithms.md]] | pgr chain 模块各算法的运行流程（实现细节）+ 通用算法复用地图（§12） |
 | [[ecoli-genome.md]] | 测试基因组数据（MG1655/Sakai/SE11）下载与使用说明 |
+
+## 13. 基准索引（notes/benchmarks/）
+
+| 文档 | 定位 |
+|------|------|
+| [[benchmarks/bench-pgi-align-vs-fastga.md]] | `pgr align pgi` 与 FastGA 端到端基准（耗时/覆盖） |
+| [[benchmarks/bench-pgi-vs-gixmake.md]] | `.pgi` 构建 vs FastGA GIXmake（内存/速度） |
+| [[benchmarks/bench-pgi-vs-gix-storage.md]] | `.pgi` v2 存储 vs GIX（体积/位宽） |
+| [[benchmarks/dist-cohort-validation.md]] | 距离消费者（dist pgi/hv/seq）10 株 cohort 验证 |
