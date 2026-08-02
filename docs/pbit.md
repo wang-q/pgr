@@ -18,8 +18,10 @@
 *   **build**: 创建或追加归档。
     *   `create`: 从参考 FASTA 和样本 FASTA 创建新的 pbit 归档。
     *   `append`: 向已有 pbit 归档追加新样本。
+    *   `append-ref`: 向已有 pbit 归档追加新参考基因组。
 *   **index**: 提取归档内嵌的参考索引。
-    *   `to-index`: 提取内嵌的参考 `.pgi` 索引（供 `pgr pgi align` / `pgr dist pgi` 消费）。
+    *   `to-index`: 按 `--ref`（名/序号，默认 0）提取内嵌的参考 `.pgi`
+        索引（供 `pgr pgi align` / `pgr dist pgi` 消费）。
 *   **info**: 查看归档元信息。
     *   `stat`: 显示归档统计信息、样本列表、参考 contig 列表或样本 contig 列表。
 *   **subset**: 按名称或坐标提取序列。
@@ -43,10 +45,10 @@ pgr pbit create [OPTIONS] -r <ref.fa> -i <sample.fa>... -o <out.pbit>
 
 #### Options
 
-*   `-r, --ref <file>`: 参考 FASTA 文件（必需，支持 plain 或 `.gz`）。
+*   `-r, --ref <file>`: 参考 FASTA 文件（必需，可重复指定多个参考，支持 plain 或 `.gz`）。
 *   `-i, --infile <file>`: 样本 FASTA 文件，可多次指定（与 `--name` 互斥）。
 *   `--name <file>`: TSV 文件，每行格式为 `sample_name<TAB>fasta_path[<TAB>paf_path]`
-    （与 `-i/--infile` 和 `--paf` 互斥）。
+    `[<TAB>ref_name]`（第 4 列选择参考，名或序号，默认 0；与 `-i/--infile` 和 `--paf` 互斥）。
 *   `-p, --paf <file>`: 与 `-i` 顺序对应的 PAF 文件；有 PAF 的样本使用 CIGAR delta 编码，
     无 PAF 的样本使用 LZ-diff（与 `--name` 互斥）。
 *   `-s, --segment-size <int>`: 参考序列分段大小，默认 4096 bp。
@@ -95,6 +97,24 @@ pgr pbit create [OPTIONS] -r <ref.fa> -i <sample.fa>... -o <out.pbit>
     pgr pbit to-index out.pbit -o ref.pgi
     pgr pgi align ref.pgi query.pgi --ref-seq ref.fa --query-seq query.fa -o out.psl
     ```
+
+6.  **多参考归档**（样本经 TSV 第 4 列路由到参考）:
+    ```bash
+    cat samples.tsv
+    # s1	/path/to/s1.fa		mg1655
+    # s2	/path/to/s2.fa		1
+    pgr pbit create -r ref1.fa -r ref2.fa --name samples.tsv --index -o cohort.pbit
+    pgr pbit to-index cohort.pbit --ref mg1655 -o ref1.pgi
+    ```
+
+### append-ref
+
+向已有归档追加新的参考基因组（2bit 段 + 可选 `.pgi` 索引），旧样本与
+索引段全部保留。
+
+```bash
+pgr pbit append-ref <archive.pbit> -r <ref.fa> [--index] [-o <out.pbit>]
+```
 
 ---
 

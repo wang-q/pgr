@@ -13,6 +13,40 @@
 > 开发早期不做旧版本兼容（pbit.md 既有立场）。多参考（ref_id）与每参考
 > 独立索引段仍未实现，见 §5 待定项。
 
+## 9. v1003 多参考定稿（2026-08-02）
+
+延续"不做旧版本兼容"，为多参考增量场景定稿：
+
+1. **RefGroupEntry 增加 `ref_id: u32`**：段所属参考基因组序号；
+   `ref_group_id` 全局唯一（跨参考连续编号）。
+2. **Reference Index 节**：group 条目之后追加 Reference Table：
+   ```
+   u32 ref_count
+   for each ref: (ref_name, idx_offset u64, idx_size u64,
+                  group_start u32, group_count u32)
+   ```
+   每个参考的 `.pgi` 索引段偏移存于此处；v1002 的 footer idx 字段删除，
+   **Footer 回到 24 字节**（ref_index/delta/sample 三偏移）。
+3. **Sample Index 不加 ref_id 字段**：样本段已带全局 `ref_group_id`，
+   反查即可得 ref_id（简洁优先，不存冗余）。
+4. **路由：用户指定**：`create -r` 可重复（一个参考一个文件）；
+   `--name` TSV 第 4 列为参考名/序号（默认 0）；`-i` 模式全部路由参考 0。
+   自动路由（按 contig 覆盖/k-mer 相似度选参考）留作后续。
+5. **`append-ref`**：追加参考 = Reference Records 尾部追加
+   [新参考 2bit 段 | 新参考 .pgi]，重写 Reference Index（旧条目不动 +
+   新条目 + ref table）+ delta + sample + footer（复用 open_for_append
+   的"截断重写"模式）。
+6. **版本 1003**。
+
+> **实现状态（2026-08-02）**：v1003 已全部落地——`create -r` 可重复（每参考
+> 一个文件）、`--name` TSV 第 4 列路由（名/序号，默认 0）、`-i` 模式路由
+> 参考 0、`to-index --ref <name|N>` 按参考提取、`append-ref` 追加参考
+> （`--index` 内嵌新参考 .pgi，旧样本/delta/索引全部保留）。
+> E. coli 验证：mg1655+sakai 双参考归档（2501 参考段、2 样本），两参考
+> 内嵌索引与独立构建字节一致，样本路由正确且重建完全精确
+> （4,641,652 / 5,594,605 bp）。集成测试覆盖多参考路由、跨参考同名
+> contig、append-ref 保留语义。
+
 ## 1. 背景与架构决策
 
 泛基因组增量工作流：少量基因组起步，逐个添加新基因组；参考（锚）被反复比对，

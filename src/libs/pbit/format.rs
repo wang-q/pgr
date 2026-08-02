@@ -13,7 +13,7 @@ pub const PBIT_MAGIC: u32 = 0x54494250;
 /// pbit format major version.
 pub const PBIT_VERSION_MAJOR: u32 = 1;
 /// pbit format minor version.
-pub const PBIT_VERSION_MINOR: u32 = 2;
+pub const PBIT_VERSION_MINOR: u32 = 3;
 /// Current file version encoded as major*1000 + minor.
 pub const PBIT_VERSION: u32 = PBIT_VERSION_MAJOR * 1000 + PBIT_VERSION_MINOR;
 
@@ -119,19 +119,15 @@ impl PbitHeader {
     }
 }
 
-/// File footer (40 bytes, with the optional embedded reference index segment
-/// offsets).
+/// File footer (24 bytes; embedded reference index offsets live in the
+/// Reference Index section's reference table).
 ///
-/// Located by seeking to `file_size - 40`.
+/// Located by seeking to `file_size - 24`.
 #[derive(Debug, Clone, Default)]
 pub struct PbitFooter {
     pub ref_index_offset: u64,
     pub delta_data_offset: u64,
     pub sample_index_offset: u64,
-    /// Offset of the embedded reference index segment (0 when absent).
-    pub idx_offset: u64,
-    /// Size in bytes of the embedded reference index segment (0 when absent).
-    pub idx_size: u64,
 }
 
 impl PbitFooter {
@@ -144,48 +140,47 @@ impl PbitFooter {
             ref_index_offset,
             delta_data_offset,
             sample_index_offset,
-            idx_offset: read_u64_le(reader)?,
-            idx_size: read_u64_le(reader)?,
         };
         Ok(footer)
     }
 
-    /// Write the footer (40 bytes) to the writer.
+    /// Write the footer (24 bytes) to the writer.
     pub fn write_to<W: Write>(&self, writer: &mut W) -> Result<()> {
         writer.write_all(&self.ref_index_offset.to_le_bytes())?;
         writer.write_all(&self.delta_data_offset.to_le_bytes())?;
         writer.write_all(&self.sample_index_offset.to_le_bytes())?;
-        writer.write_all(&self.idx_offset.to_le_bytes())?;
-        writer.write_all(&self.idx_size.to_le_bytes())?;
         Ok(())
     }
 
     /// Read the footer from the end of a seekable reader.
     pub fn read_at_end<R: Read + Seek>(reader: &mut R) -> Result<Self> {
-        let footer_size = 40;
         let file_size = reader.seek(SeekFrom::End(0))?;
-        if file_size < footer_size {
+        if file_size < 24 {
             return Err(anyhow!(
-                "pbit file too small for {footer_size}-byte footer: {} bytes",
+                "pbit file too small for footer: {} bytes",
                 file_size
             ));
         }
-        reader.seek(SeekFrom::Start(file_size - footer_size))?;
+        reader.seek(SeekFrom::Start(file_size - 24))?;
         Self::read_from(reader)
     }
 }
 
 /// Reference group index entry: one per reference segment (one 2bit record).
+/// `ref_id` identifies the reference genome the segment belongs to.
 #[derive(Debug, Clone)]
 pub struct RefGroupEntry {
     pub contig_name: String,
+    pub ref_id: u32,
     pub segment_offset: u64,
 }
 
 impl RefGroupEntry {
-    /// Write a single reference group entry (u32 name_len + name + u64 offset).
+    /// Write a single reference group entry
+    /// (u32 name_len + name + u32 ref_id + u64 offset).
     pub fn write_to<W: Write>(&self, writer: &mut W) -> Result<()> {
         write_string(writer, &self.contig_name)?;
+        writer.write_all(&self.ref_id.to_le_bytes())?;
         writer.write_all(&self.segment_offset.to_le_bytes())?;
         Ok(())
     }
@@ -193,9 +188,11 @@ impl RefGroupEntry {
     /// Read a single reference group entry from the current reader position.
     pub fn read_from<R: Read>(reader: &mut R) -> Result<Self> {
         let contig_name = read_string(reader)?;
+        let ref_id = read_u32_le(reader)?;
         let segment_offset = read_u64_le(reader)?;
         Ok(Self {
             contig_name,
+            ref_id,
             segment_offset,
         })
     }
@@ -218,6 +215,52 @@ pub fn read_ref_index<R: Read>(reader: &mut R) -> Result<Vec<RefGroupEntry>> {
         entries.push(RefGroupEntry::read_from(reader)?);
     }
     Ok(entries)
+}
+
+/// One reference genome in the archive: its name, the embedded `.pgi` index
+/// segment offsets (0/0 when absent), and its segment group range.
+#[derive(Debug, Clone, Default)]
+pub struct RefTableEntry {
+    pub ref_name: String,
+    pub idx_offset: u64,
+    pub idx_size: u64,
+    pub group_start: u32,
+    pub group_count: u32,
+}
+
+/// Write the reference table: u32 ref_count + entries (appended after the
+/// per-group entries in the Reference Index section).
+pub fn write_ref_table<W: Write>(writer: &mut W, refs: &[RefTableEntry]) -> Result<()> {
+    writer.write_all(&(refs.len() as u32).to_le_bytes())?;
+    for r in refs {
+        write_string(writer, &r.ref_name)?;
+        writer.write_all(&r.idx_offset.to_le_bytes())?;
+        writer.write_all(&r.idx_size.to_le_bytes())?;
+        writer.write_all(&r.group_start.to_le_bytes())?;
+        writer.write_all(&r.group_count.to_le_bytes())?;
+    }
+    Ok(())
+}
+
+/// Read a reference table (after the per-group entries).
+pub fn read_ref_table<R: Read>(reader: &mut R) -> Result<Vec<RefTableEntry>> {
+    let count = read_u32_le(reader)? as usize;
+    let mut refs = Vec::with_capacity(count);
+    for _ in 0..count {
+        let ref_name = read_string(reader)?;
+        let idx_offset = read_u64_le(reader)?;
+        let idx_size = read_u64_le(reader)?;
+        let group_start = read_u32_le(reader)?;
+        let group_count = read_u32_le(reader)?;
+        refs.push(RefTableEntry {
+            ref_name,
+            idx_offset,
+            idx_size,
+            group_start,
+            group_count,
+        });
+    }
+    Ok(refs)
 }
 
 /// In-memory delta header (10 bytes): properties of a delta encoding, loaded
@@ -414,18 +457,16 @@ mod tests {
             ref_index_offset: 1024,
             delta_data_offset: 2048,
             sample_index_offset: 4096,
-            ..Default::default()
         };
         let mut buf = Vec::new();
         footer.write_to(&mut buf)?;
-        assert_eq!(buf.len(), 40);
+        assert_eq!(buf.len(), 24);
 
         let mut cursor = Cursor::new(buf);
         let read = PbitFooter::read_from(&mut cursor)?;
         assert_eq!(read.ref_index_offset, 1024);
         assert_eq!(read.delta_data_offset, 2048);
         assert_eq!(read.sample_index_offset, 4096);
-        assert_eq!(read.idx_size, 0);
         Ok(())
     }
 
@@ -435,7 +476,6 @@ mod tests {
             ref_index_offset: 100,
             delta_data_offset: 200,
             sample_index_offset: 300,
-            ..Default::default()
         };
         // Prepend some padding before the footer
         let mut buf = vec![0xABu8; 50];
@@ -455,6 +495,7 @@ mod tests {
     fn test_ref_group_entry_roundtrip() -> Result<()> {
         let entry = RefGroupEntry {
             contig_name: "chr1".to_string(),
+            ref_id: 0,
             segment_offset: 12345,
         };
         let mut buf = Vec::new();
@@ -472,10 +513,12 @@ mod tests {
         let entries = vec![
             RefGroupEntry {
                 contig_name: "chr1".to_string(),
+                ref_id: 0,
                 segment_offset: 100,
             },
             RefGroupEntry {
                 contig_name: "chr2".to_string(),
+                ref_id: 0,
                 segment_offset: 200,
             },
         ];
@@ -554,7 +597,6 @@ mod tests {
             ref_index_offset: 0,
             delta_data_offset: 0,
             sample_index_offset: 0,
-            ..Default::default()
         };
 
         let mut buf = Vec::new();
@@ -563,7 +605,7 @@ mod tests {
         // No ref index / delta data / sample index sections
         footer.write_to(&mut buf)?;
 
-        assert_eq!(buf.len(), 76); // 36 + 40
+        assert_eq!(buf.len(), 60); // 36 + 24
 
         let mut cursor = Cursor::new(buf);
         let read_header = PbitHeader::read_from(&mut cursor)?;
@@ -597,6 +639,7 @@ mod tests {
         let ref_index_offset = buf.len() as u64;
         let entries = vec![RefGroupEntry {
             contig_name: "chr1".to_string(),
+            ref_id: 0,
             segment_offset: ref_offset,
         }];
         write_ref_index(&mut buf, &entries)?;
@@ -616,7 +659,6 @@ mod tests {
             ref_index_offset,
             delta_data_offset,
             sample_index_offset,
-            ..Default::default()
         };
         footer.write_to(&mut buf)?;
 

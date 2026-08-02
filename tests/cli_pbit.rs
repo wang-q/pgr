@@ -155,6 +155,186 @@ fn test_pbit_to_index_without_index_fails() {
 }
 
 #[test]
+fn test_pbit_multi_reference_routing_and_index() {
+    let temp = TempDir::new().unwrap();
+    let out_pbit = temp.path().join("out.pbit");
+    // Both references share the contig name "chr1"; routing via the TSV's
+    // 4th column must send s1 to ref_2000 and s2 to ref_1000.
+    let tsv = temp.path().join("samples.tsv");
+    let s1 = fixture("sample_2000_identical.fa");
+    let s2 = fixture("sample_1000_identical.fa");
+    fs::write(
+        &tsv,
+        format!(
+            "s1\t{}\t\tref_2000\ns2\t{}\t\t1\n",
+            s1.to_str().unwrap(),
+            s2.to_str().unwrap()
+        ),
+    )
+    .unwrap();
+
+    let _ = PgrCmd::new()
+        .args(&[
+            "pbit",
+            "create",
+            "-r",
+            fixture("ref_2000.fa").to_str().unwrap(),
+            "-r",
+            fixture("ref_1000.fa").to_str().unwrap(),
+            "--name",
+            tsv.to_str().unwrap(),
+            "--index",
+            "-o",
+            out_pbit.to_str().unwrap(),
+        ])
+        .run();
+    assert!(out_pbit.exists());
+
+    let (stdout, _) = PgrCmd::new()
+        .args(&["pbit", "stat", out_pbit.to_str().unwrap()])
+        .run();
+    assert!(stdout.contains("Samples: 2"), "got {stdout}");
+
+    // Per-reference embedded indexes must match standalone builds.
+    for (ref_idx, ref_fa, name) in [
+        ("0", "ref_2000.fa", "ref_2000"),
+        ("1", "ref_1000.fa", "ref_1000"),
+    ] {
+        let pgi = temp.path().join(format!("{name}.pgi"));
+        let _ = PgrCmd::new()
+            .args(&[
+                "pbit",
+                "to-index",
+                out_pbit.to_str().unwrap(),
+                "--ref",
+                ref_idx,
+                "-o",
+                pgi.to_str().unwrap(),
+            ])
+            .run();
+        let fresh = temp.path().join(format!("{name}_fresh.pgi"));
+        let _ = PgrCmd::new()
+            .args(&[
+                "pgi",
+                "build",
+                fixture(ref_fa).to_str().unwrap(),
+                "-o",
+                fresh.to_str().unwrap(),
+            ])
+            .run();
+        assert_eq!(
+            fs::read(&pgi).unwrap(),
+            fs::read(&fresh).unwrap(),
+            "embedded index {name} must match a fresh build"
+        );
+    }
+
+    // Routing: s1 (2000 bp contig) must reconstruct against ref_2000, s2
+    // (1000 bp) against ref_1000.
+    let out_dir = temp.path().join("out_fa");
+    let _ = PgrCmd::new()
+        .args(&[
+            "pbit",
+            "to-fa",
+            out_pbit.to_str().unwrap(),
+            "-o",
+            out_dir.to_str().unwrap(),
+        ])
+        .run();
+    let s1_out = read_fasta_seq(&out_dir.join("s1.fa"));
+    let s2_out = read_fasta_seq(&out_dir.join("s2.fa"));
+    assert_eq!(s1_out.len(), 2000, "s1 must route to ref_2000");
+    assert_eq!(s2_out.len(), 1000, "s2 must route to ref_1000");
+}
+
+#[test]
+fn test_pbit_append_ref_preserves_samples_and_index() {
+    let temp = TempDir::new().unwrap();
+    let out_pbit = temp.path().join("out.pbit");
+    let _ = PgrCmd::new()
+        .args(&[
+            "pbit",
+            "create",
+            "-r",
+            fixture("ref_2000.fa").to_str().unwrap(),
+            "-i",
+            fixture("sample_2000_identical.fa").to_str().unwrap(),
+            "--index",
+            "-o",
+            out_pbit.to_str().unwrap(),
+        ])
+        .run();
+
+    // Append a second reference with its index.
+    let out2 = temp.path().join("out2.pbit");
+    let _ = PgrCmd::new()
+        .args(&[
+            "pbit",
+            "append-ref",
+            out_pbit.to_str().unwrap(),
+            "-r",
+            fixture("ref_1000.fa").to_str().unwrap(),
+            "--index",
+            "-o",
+            out2.to_str().unwrap(),
+        ])
+        .run();
+    assert!(out2.exists());
+
+    // Both embedded indexes survive and match standalone builds.
+    for (ref_idx, ref_fa, name) in [
+        ("0", "ref_2000.fa", "ref_2000"),
+        ("1", "ref_1000.fa", "ref_1000"),
+    ] {
+        let pgi = temp.path().join(format!("{name}_a.pgi"));
+        let _ = PgrCmd::new()
+            .args(&[
+                "pbit",
+                "to-index",
+                out2.to_str().unwrap(),
+                "--ref",
+                ref_idx,
+                "-o",
+                pgi.to_str().unwrap(),
+            ])
+            .run();
+        let fresh = temp.path().join(format!("{name}_b.pgi"));
+        let _ = PgrCmd::new()
+            .args(&[
+                "pgi",
+                "build",
+                fixture(ref_fa).to_str().unwrap(),
+                "-o",
+                fresh.to_str().unwrap(),
+            ])
+            .run();
+        assert_eq!(
+            fs::read(&pgi).unwrap(),
+            fs::read(&fresh).unwrap(),
+            "embedded index {name} after append-ref must match a fresh build"
+        );
+    }
+
+    // The original sample still reconstructs fully.
+    let out_dir = temp.path().join("out_fa");
+    let _ = PgrCmd::new()
+        .args(&[
+            "pbit",
+            "to-fa",
+            out2.to_str().unwrap(),
+            "-o",
+            out_dir.to_str().unwrap(),
+        ])
+        .run();
+    let s1_out = read_fasta_seq(&out_dir.join("sample_2000_identical.fa"));
+    assert_eq!(
+        s1_out.len(),
+        2000,
+        "original sample must survive append-ref"
+    );
+}
+
+#[test]
 fn test_pbit_stat_overview() {
     let temp = TempDir::new().unwrap();
     let out_pbit = temp.path().join("out.pbit");

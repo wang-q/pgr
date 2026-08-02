@@ -45,6 +45,10 @@ Examples:
 
 6. Embed the reference .pgi index for later alignment:
    pgr pbit create -r ref.fa -i sample.fa --index -o out.pbit
+
+7. Multiple references (samples route to reference 0 by default, or via the
+   TSV's 4th column):
+   pgr pbit create -r ref1.fa -r ref2.fa --name samples.tsv --index -o out.pbit
 "###,
         )
         .arg(crate::cmd_pgr::args::pbit_ref_arg())
@@ -65,9 +69,11 @@ Examples:
 
 /// Execute the create command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
-    let ref_fasta = args
-        .get_one::<String>("ref")
-        .context("missing required argument: --ref")?;
+    let ref_fastas: Vec<&str> = args
+        .get_many::<String>("ref")
+        .context("missing required argument: --ref")?
+        .map(|s| s.as_str())
+        .collect();
     let outfile = args
         .get_one::<String>("outfile")
         .context("missing required argument: --outfile")?;
@@ -92,20 +98,27 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let samples = super::collect_samples_from_args(args)?;
 
-    let mut comp = Compressor::create(outfile, ref_fasta, segment_size, kmer_len, min_match_len)
-        .with_context(|| format!("failed to create pbit archive: {}", outfile))?;
+    let mut comp =
+        Compressor::create_multi(outfile, &ref_fastas, segment_size, kmer_len, min_match_len)
+            .with_context(|| format!("failed to create pbit archive: {}", outfile))?;
 
     let cmd_line = format!(
         "pgr pbit create -r {} -o {} -s {} -k {} -l {}",
-        ref_fasta, outfile, segment_size, kmer_len, min_match_len
+        ref_fastas.join(" -r "),
+        outfile,
+        segment_size,
+        kmer_len,
+        min_match_len
     );
     comp.set_cmd_line(&cmd_line);
     if args.get_flag("index") {
-        comp.embed_reference_index_from_fasta(ref_fasta)
-            .with_context(|| format!("failed to embed reference index: {}", ref_fasta))?;
+        comp.embed_reference_indexes(&ref_fastas)
+            .with_context(|| "failed to embed reference indexes".to_string())?;
     }
 
-    for (name, path, paf_opt) in &samples {
+    for (name, path, paf_opt, ref_spec) in &samples {
+        let ref_id = super::resolve_ref_id(ref_spec.as_deref(), &ref_fastas)?;
+        comp.set_cur_ref_id(ref_id);
         match paf_opt {
             Some(paf) => comp
                 .append_sample_with_paf(name, path, paf)

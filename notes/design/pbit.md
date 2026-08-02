@@ -22,10 +22,10 @@
 `pbit`（p = population 或 plus；2bit 记录 + delta），集成到 pgr 作为 `pgr pbit` 命令族。**不兼容**
 C++ AGC 的 `.agc` 文件格式。
 
-当前 pbit 格式版本为 **1002**（`PBIT_VERSION_MAJOR = 1`, `PBIT_VERSION_MINOR = 2`），
+当前 pbit 格式版本为 **1003**（`PBIT_VERSION_MAJOR = 1`, `PBIT_VERSION_MINOR = 3`），
 仅支持按当前版本读写（项目处于开发早期、未对外发布，**不做旧版本兼容**）。
-v1002 新增可选的内嵌参考索引段（见 §文件格式规范与 [[pbit-index-extension.md]]）。
-完整二进制格式见
+v1003 支持多参考 + 每参考内嵌 `.pgi` 索引段（见 §文件格式规范与
+[[pbit-index-extension.md]]）。完整二进制格式见
 [§文件格式规范](#文件格式规范)。
 
 **关键约束**：
@@ -658,9 +658,10 @@ pgr pbit stat      in.pbit [--samples | --refs | --contigs [-s sample]]  # 统�
 ## 文件格式规范
 
 本文档描述 **pbit 格式版本 1001**（`PBIT_VERSION_MAJOR = 1`, `PBIT_VERSION_MINOR = 1`）；
-**v1002 扩展**（2026-08-02 已实现）：Reference Records 之后可选地内嵌参考
-`.pgi` 索引段（`pgr pbit create --index`），Footer 扩为 40 字节
-（新增 `idx_offset`/`idx_size`，0 表示无索引）。不做旧版本兼容读取。
+**v1002/v1003 扩展**（2026-08-02 已实现）：Reference Records 之后可选地内嵌
+每参考的 `.pgi` 索引段（`--index`）；v1003 的 Reference Index 节追加
+Reference Table（ref_name/idx_offset/idx_size/group 范围），Footer 保持
+24 字节。不做旧版本兼容读取。
 pbit 为原生"2bit + delta"格式（扩展名 `.pbit`，区别于 C++ AGC 的 `.agc`）。所有整数使用
 **固定大小 小端序**（u32 = 4 字节，u64 = 8 字节），不使用 varint / 前缀编码。字符串采用**长度前缀**
 （u32 len + UTF-8 bytes），不使用 null 终止。
@@ -1318,7 +1319,7 @@ PAF 驱动的 CIGAR delta 编码已在 8a–8e 实现并测试通过；8f 为可
 #### Phase 8b: 格式扩展 — 已实现
 - `format.rs`：`DeltaMeta`/`DeltaEntry` 含 `encoding` 字段（10 字节头）；
   `SegmentDesc` 固定大小存储（含 ref_start/ref_end，LZ-diff 段填 0，见 §5.2）
-- Header 版本号为 1002（仅当前版本可读写；v1002 多两个 Footer 字段）
+- Header 版本号为 1003（仅当前版本可读写；多参考 + 每参考索引段）
 
 #### Phase 8c: 压缩端（PAF 驱动）— 已实现
 - `compressor.rs`：实现 `append_sample_with_paf` 方法

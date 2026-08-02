@@ -59,7 +59,11 @@ cat "$B/bench.md"
 ## 对照说明
 
 - 身份率：pgr 98.42% vs FastGA 97.83%（pgr banded 局部取精确核心，略高）；
-- 覆盖：FastGA 99.7% vs pgr 95.7%（pgr 固定 k=40 种子在分歧区断链，
-  lcp/adaptamer 变长种子是未来改进方向）；
+- 覆盖（**真实并集**，2026-08-02 复核）：MG1655 vs Sakai pgr 75.8% /
+  FastGA 78.2%；vs Nissle 两者均为 77.3%——**基本打平**。早前的
+  "95.7% vs 99.7%" 是块区间 span 求和（重叠重复计数）的假象；未覆盖的
+  ~22% 是株系特异序列（O157/Nissle 特有岛），任何比对器都无法映射到
+  MG1655。**lcp/adaptamer 变长种子因此不是当前优先级**；剩余小差距
+  （sakai +2.4%）来自分歧区的 wave 式补齐（banded 窗口对低分区间跳过）。
 - 时间可比：两流程均从 FASTA 开始（pgr 建索引 ×2 + 比对；FastGA 内部
   FAtoGDB + GIXmake + 比对）。

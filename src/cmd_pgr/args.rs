@@ -1187,8 +1187,9 @@ pub fn pbit_ref_arg() -> Arg {
         .long("ref")
         .short('r')
         .required(true)
+        .action(ArgAction::Append)
         .num_args(1)
-        .help("Reference FASTA file (plain or .gz)")
+        .help("Reference FASTA file (plain or .gz); repeatable for multiple references")
 }
 
 /// `-i/--infile` argument for `pbit create` / `pbit append`.

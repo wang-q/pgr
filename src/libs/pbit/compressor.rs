@@ -18,8 +18,8 @@ use super::cigar_delta::pack_cigar;
 use super::collection::Collection;
 use super::decompressor::Decompressor;
 use super::format::{
-    read_u32_le, write_ref_index, write_u32_le, DeltaEncoding, DeltaEntry, PbitFooter, PbitHeader,
-    RefGroupEntry,
+    read_u32_le, write_ref_index, write_ref_table, write_u32_le, DeltaEncoding, DeltaEntry,
+    PbitFooter, PbitHeader, RefGroupEntry, RefTableEntry,
 };
 use super::paf_index::PafQueryIndex;
 use super::segment::Segment;
@@ -265,12 +265,13 @@ pub struct Compressor<W: Write + Seek> {
     segments: Vec<Segment>,
     /// Map: contig_name → Vec<ref_group_id> (reference segment indices).
     contig_ref_groups: IndexMap<String, Vec<u32>>,
-    /// Raw `.pgi` bytes to embed after the reference records at `finish`
-    /// (create path with `--index`).
-    ref_index: Option<Vec<u8>>,
-    /// (offset, size) of an index segment already present in the file being
-    /// appended to (preserved across the truncation at `ref_index_offset`).
-    preserved_idx: (u64, u64),
+    /// Per-reference metadata (name, group range, embedded-index offsets).
+    ref_meta: Vec<RefTableEntry>,
+    /// Per-reference raw `.pgi` bytes to embed after that reference's records
+    /// at `finish` (create path with `--index`).
+    ref_indexes: Vec<Option<Vec<u8>>>,
+    /// Reference a sample routes to during `append_sample` (set per sample).
+    cur_ref_id: u32,
     segment_size: usize,
     kmer_len: usize,
 }
@@ -288,6 +289,30 @@ impl Compressor<std::io::BufWriter<std::fs::File>> {
         kmer_len: usize,
         min_match_len: u32,
     ) -> Result<Self> {
+        Self::create_multi(
+            out_path,
+            &[ref_fasta],
+            segment_size,
+            kmer_len,
+            min_match_len,
+        )
+    }
+
+    /// Create a new `.pbit` archive from one or more reference FASTA files.
+    ///
+    /// Each reference genome gets a distinct `ref_id` and its own segment
+    /// group range; samples route to one reference (see `append_sample`).
+    pub fn create_multi<P: AsRef<Path>>(
+        out_path: P,
+        ref_fastas: &[&str],
+        segment_size: usize,
+        kmer_len: usize,
+        min_match_len: u32,
+    ) -> Result<Self> {
+        anyhow::ensure!(
+            !ref_fastas.is_empty(),
+            "at least one reference FASTA is required"
+        );
         let file = std::fs::File::create(&out_path).with_context(|| {
             format!(
                 "failed to create output file: {}",
@@ -296,16 +321,19 @@ impl Compressor<std::io::BufWriter<std::fs::File>> {
         })?;
         let writer = std::io::BufWriter::new(file);
 
-        // Read reference FASTA and build ref_groups + segments.
-        let ref_contigs = read_fasta(ref_fasta)
-            .with_context(|| format!("failed to read reference FASTA: {}", ref_fasta))?;
-
         // We'll write the header first with a placeholder, then reference records.
         // The header's ref_records_offset is always 36 (right after the 36-byte header).
-        let ref_group_count = ref_contigs
-            .iter()
-            .map(|(_, seq)| segment_sequence(seq, segment_size).len())
-            .sum();
+        let mut ref_group_count = 0usize;
+        let mut all_ref_contigs: Vec<Vec<(String, Vec<u8>)>> = Vec::with_capacity(ref_fastas.len());
+        for ref_fasta in ref_fastas {
+            let ref_contigs = read_fasta(ref_fasta)
+                .with_context(|| format!("failed to read reference FASTA: {}", ref_fasta))?;
+            ref_group_count += ref_contigs
+                .iter()
+                .map(|(_, seq)| segment_sequence(seq, segment_size).len())
+                .sum::<usize>();
+            all_ref_contigs.push(ref_contigs);
+        }
 
         let header = PbitHeader::new(
             segment_size as u32,
@@ -323,8 +351,9 @@ impl Compressor<std::io::BufWriter<std::fs::File>> {
             collection: Collection::new(),
             segments: Vec::new(),
             contig_ref_groups: IndexMap::new(),
-            ref_index: None,
-            preserved_idx: (0, 0),
+            ref_meta: Vec::new(),
+            ref_indexes: vec![None; ref_fastas.len()],
+            cur_ref_id: 0,
             segment_size,
             kmer_len,
         };
@@ -334,34 +363,48 @@ impl Compressor<std::io::BufWriter<std::fs::File>> {
 
         // Write reference records and build the ref_groups index.
         let mut ref_group_id: u32 = 0;
-        for (contig_name, seq) in &ref_contigs {
-            let segs = segment_sequence(seq, segment_size);
-            let groups = comp
-                .contig_ref_groups
-                .entry(contig_name.clone())
-                .or_default();
-            for seg in segs {
-                let offset = comp.writer.stream_position()?;
-                // do_mask=true preserves soft-mask (lowercase) info in 2bit record.
-                let seg_str = std::str::from_utf8(seg)
-                    .with_context(|| "reference segment is not valid UTF-8")?;
-                write_2bit_record(&mut comp.writer, seg_str, true)?;
+        for (ref_id, ref_contigs) in all_ref_contigs.iter().enumerate() {
+            let group_start = ref_group_id;
+            let mut group_count = 0u32;
+            for (contig_name, seq) in ref_contigs {
+                let segs = segment_sequence(seq, segment_size);
+                let groups = comp
+                    .contig_ref_groups
+                    .entry(contig_name.clone())
+                    .or_default();
+                for seg in segs {
+                    let offset = comp.writer.stream_position()?;
+                    // do_mask=true preserves soft-mask (lowercase) info in 2bit record.
+                    let seg_str = std::str::from_utf8(seg)
+                        .with_context(|| "reference segment is not valid UTF-8")?;
+                    write_2bit_record(&mut comp.writer, seg_str, true)?;
 
-                let group_id = ref_group_id;
-                comp.ref_groups.push(RefGroupEntry {
-                    contig_name: contig_name.clone(),
-                    segment_offset: offset,
-                });
-                groups.push(group_id);
+                    let group_id = ref_group_id;
+                    comp.ref_groups.push(RefGroupEntry {
+                        contig_name: contig_name.clone(),
+                        ref_id: ref_id as u32,
+                        segment_offset: offset,
+                    });
+                    groups.push(group_id);
 
-                // Prepare a Segment for this reference group.
-                let mut lz = Segment::new(min_match_len);
-                lz.prepare(seg);
-                lz.prepare_index();
-                comp.segments.push(lz);
+                    // Prepare a Segment for this reference group.
+                    let mut lz = Segment::new(min_match_len);
+                    lz.prepare(seg);
+                    lz.prepare_index();
+                    comp.segments.push(lz);
 
-                ref_group_id += 1;
+                    ref_group_id += 1;
+                    group_count += 1;
+                }
             }
+            let ref_name = crate::libs::io::get_basename(ref_fastas[ref_id])
+                .unwrap_or_else(|| ref_fastas[ref_id].to_string());
+            comp.ref_meta.push(RefTableEntry {
+                ref_name,
+                group_start,
+                group_count,
+                ..Default::default()
+            });
         }
 
         // Verify ref_group_count matches.
@@ -389,6 +432,7 @@ impl Compressor<std::io::BufWriter<std::fs::File>> {
         let ref_groups = dec.ref_groups().to_vec();
         let collection = dec.collection_clone();
         let footer = dec.footer().clone();
+        let dec_ref_table = dec.ref_table().to_vec();
         let min_match_len = header.min_match_len;
         drop(dec); // release the read-only file handle
 
@@ -446,8 +490,9 @@ impl Compressor<std::io::BufWriter<std::fs::File>> {
             collection,
             segments,
             contig_ref_groups,
-            ref_index: None,
-            preserved_idx: (footer.idx_offset, footer.idx_size),
+            ref_meta: dec_ref_table.clone(),
+            ref_indexes: vec![None; dec_ref_table.len()],
+            cur_ref_id: 0,
             segment_size,
             kmer_len,
         })
@@ -455,6 +500,17 @@ impl Compressor<std::io::BufWriter<std::fs::File>> {
 }
 
 impl<W: Write + Seek> Compressor<W> {
+    /// Set the reference (ref_id) that the next `append_sample` call routes
+    /// to. Defaults to 0.
+    pub fn set_cur_ref_id(&mut self, ref_id: u32) {
+        self.cur_ref_id = ref_id;
+    }
+
+    /// Names of the reference genomes in the archive, in ref_id order.
+    pub fn ref_names(&self) -> Vec<&str> {
+        self.ref_meta.iter().map(|r| r.ref_name.as_str()).collect()
+    }
+
     /// Append a sample from a FASTA file. The sample name is provided by the
     /// caller (derived from the FASTA basename in the CLI layer).
     pub fn append_sample(&mut self, sample_name: &str, fasta_path: &str) -> Result<()> {
@@ -467,23 +523,45 @@ impl<W: Write + Seek> Compressor<W> {
         for (contig_name, seq) in &contigs {
             // Clone to release the immutable borrow on self before calling
             // &mut self methods (encode_segment_lzdiff).
-            let ref_group_ids: Vec<u32> = match self.contig_ref_groups.get(contig_name) {
-                Some(ids) => ids.clone(),
-                None => {
-                    log::warn!(
-                        "contig '{}' in sample '{}' not found in reference; skipping",
-                        contig_name,
-                        sample_name
-                    );
-                    continue;
-                }
-            };
-
             let segs = segment_sequence(seq, self.segment_size);
             if segs.is_empty() {
                 // Empty contig: register with no segments.
                 self.collection
                     .register_sample_contig(sample_name, contig_name);
+                continue;
+            }
+            let Some(meta) = self.ref_meta.get(self.cur_ref_id as usize) else {
+                anyhow::bail!(
+                    "invalid reference id {} ({} references)",
+                    self.cur_ref_id,
+                    self.ref_meta.len()
+                );
+            };
+            let ref_group_ids: Vec<u32> = match self.contig_ref_groups.get(contig_name) {
+                Some(ids) => ids
+                    .iter()
+                    .copied()
+                    .filter(|id| {
+                        *id >= meta.group_start && *id < meta.group_start + meta.group_count
+                    })
+                    .collect(),
+                None => {
+                    log::warn!(
+                        "contig '{}' in sample '{}' not found in reference {}; skipping",
+                        contig_name,
+                        sample_name,
+                        meta.ref_name
+                    );
+                    continue;
+                }
+            };
+            if ref_group_ids.is_empty() {
+                log::warn!(
+                    "contig '{}' in sample '{}' has no segments in reference {}; skipping",
+                    contig_name,
+                    sample_name,
+                    meta.ref_name
+                );
                 continue;
             }
 
@@ -680,8 +758,15 @@ impl<W: Write + Seek> Compressor<W> {
         }
 
         // 7. Map target contig → ref_group_id.
-        let ref_group_ids = match self.contig_ref_groups.get(&best.target_name) {
-            Some(ids) => ids,
+        let Some(meta) = self.ref_meta.get(self.cur_ref_id as usize) else {
+            return Ok(false);
+        };
+        let ref_group_ids: Vec<u32> = match self.contig_ref_groups.get(&best.target_name) {
+            Some(ids) => ids
+                .iter()
+                .copied()
+                .filter(|id| *id >= meta.group_start && *id < meta.group_start + meta.group_count)
+                .collect(),
             None => return Ok(false),
         };
         let t_seg_idx = t_seg_idx_start as usize;
@@ -829,22 +914,24 @@ impl<W: Write + Seek> Compressor<W> {
         // Patch header sample_count.
         self.header.sample_count = self.collection.sample_count() as u32;
 
-        // Embedded reference index segment, right after the reference records
-        // (before the Reference Index) for locality; on append, preserve the
-        // offsets of an index already in the file.
-        let (idx_offset, idx_size) = if let Some(bytes) = &self.ref_index {
-            let off = self.writer.stream_position()?;
-            self.writer.write_all(bytes)?;
-            (off, bytes.len() as u64)
-        } else {
-            self.preserved_idx
-        };
+        // Embedded reference index segments, in reference order, right after
+        // the reference records (before the Reference Index); on append the
+        // offsets of existing indexes are preserved in `ref_meta`.
+        for (i, bytes) in self.ref_indexes.iter().enumerate() {
+            if let Some(b) = bytes {
+                let off = self.writer.stream_position()?;
+                self.writer.write_all(b)?;
+                self.ref_meta[i].idx_offset = off;
+                self.ref_meta[i].idx_size = b.len() as u64;
+            }
+        }
 
         // Seek to the end of reference records (current writer position).
         let ref_index_offset = self.writer.stream_position()?;
 
-        // Write Reference Index.
+        // Write Reference Index: per-group entries + reference table.
         write_ref_index(&mut self.writer, &self.ref_groups)?;
+        write_ref_table(&mut self.writer, &self.ref_meta)?;
 
         // Write Delta Data.
         let delta_data_offset = self.writer.stream_position()?;
@@ -866,8 +953,6 @@ impl<W: Write + Seek> Compressor<W> {
             ref_index_offset,
             delta_data_offset,
             sample_index_offset,
-            idx_offset,
-            idx_size,
         };
         footer.write_to(&mut self.writer)?;
 
@@ -879,14 +964,88 @@ impl<W: Write + Seek> Compressor<W> {
         Ok(())
     }
 
-    /// Build a `.pgi` index for the reference genome (default k=40, syncmer
-    /// 8/5) and mark it for embedding after the reference records at
-    /// `finish`. Extracted later with `pgr pbit to-index`.
-    pub fn embed_reference_index_from_fasta(&mut self, ref_fasta: &str) -> Result<()> {
-        let idx = crate::libs::pgi::build::build_from_path(ref_fasta, 40, 8, 5, false)?;
-        let mut buf = Vec::new();
-        idx.write(&mut buf)?;
-        self.ref_index = Some(buf);
+    /// Build a `.pgi` index for every reference genome (default k=40,
+    /// syncmer 8/5) and mark it for embedding at `finish`. Extracted later
+    /// with `pgr pbit to-index --ref`.
+    pub fn embed_reference_indexes(&mut self, ref_fastas: &[&str]) -> Result<()> {
+        anyhow::ensure!(
+            ref_fastas.len() == self.ref_meta.len(),
+            "reference count mismatch: {} fastas vs {} registered",
+            ref_fastas.len(),
+            self.ref_meta.len()
+        );
+        for (i, ref_fasta) in ref_fastas.iter().enumerate() {
+            let idx = crate::libs::pgi::build::build_from_path(ref_fasta, 40, 8, 5, false)?;
+            let mut buf = Vec::new();
+            idx.write(&mut buf)?;
+            self.ref_indexes[i] = Some(buf);
+        }
+        Ok(())
+    }
+
+    /// Build `.pgi` indexes for the references most recently appended via
+    /// `append_reference` (matching the given FASTA order).
+    pub fn embed_reference_indexes_append(&mut self, ref_fastas: &[&str]) -> Result<()> {
+        let start = self
+            .ref_meta
+            .len()
+            .checked_sub(ref_fastas.len())
+            .ok_or_else(|| anyhow::anyhow!("no references registered"))?;
+        for (i, ref_fasta) in ref_fastas.iter().enumerate() {
+            let idx = crate::libs::pgi::build::build_from_path(ref_fasta, 40, 8, 5, false)?;
+            let mut buf = Vec::new();
+            idx.write(&mut buf)?;
+            self.ref_indexes[start + i] = Some(buf);
+        }
+        Ok(())
+    }
+
+    /// Append a new reference genome at the current writer position (which
+    /// must be the truncation point before the Reference Index, i.e. after
+    /// `open_for_append`). Register it in `ref_meta`; call
+    /// `embed_reference_indexes` afterwards to embed its index.
+    pub fn append_reference(&mut self, ref_fasta: &str) -> Result<()> {
+        let ref_id = self.ref_meta.len() as u32;
+        let ref_contigs = read_fasta(ref_fasta)
+            .with_context(|| format!("failed to read reference FASTA: {}", ref_fasta))?;
+        let group_start = self.ref_groups.len() as u32;
+        let mut group_count = 0u32;
+        for (contig_name, seq) in &ref_contigs {
+            let segs = segment_sequence(seq, self.segment_size);
+            let groups = self
+                .contig_ref_groups
+                .entry(contig_name.clone())
+                .or_default();
+            for seg in segs {
+                let offset = self.writer.stream_position()?;
+                let seg_str = std::str::from_utf8(seg)
+                    .with_context(|| "reference segment is not valid UTF-8")?;
+                write_2bit_record(&mut self.writer, seg_str, true)?;
+                let group_id = self.ref_groups.len() as u32;
+                self.ref_groups.push(RefGroupEntry {
+                    contig_name: contig_name.clone(),
+                    ref_id,
+                    segment_offset: offset,
+                });
+                groups.push(group_id);
+                let mut lz = Segment::new(self.header.min_match_len);
+                lz.prepare(seg);
+                lz.prepare_index();
+                self.segments.push(lz);
+                group_count += 1;
+            }
+        }
+        self.deltas.resize(self.ref_groups.len(), Vec::new());
+        self.header.ref_group_count = self.ref_groups.len() as u32;
+        let ref_name =
+            crate::libs::io::get_basename(ref_fasta).unwrap_or_else(|| ref_fasta.to_string());
+        self.ref_meta.push(RefTableEntry {
+            ref_name,
+            group_start,
+            group_count,
+            ..Default::default()
+        });
+        self.ref_indexes.push(None);
         Ok(())
     }
 

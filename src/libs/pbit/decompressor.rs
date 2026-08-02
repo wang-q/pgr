@@ -21,7 +21,8 @@ use crate::libs::nt;
 use super::cigar_delta::{apply_cigar, unpack_cigar};
 use super::collection::{Collection, SegmentDesc};
 use super::format::{
-    read_ref_index, read_u32_le, DeltaEncoding, DeltaMeta, PbitFooter, PbitHeader, RefGroupEntry,
+    read_ref_index, read_ref_table, read_u32_le, DeltaEncoding, DeltaMeta, PbitFooter, PbitHeader,
+    RefGroupEntry, RefTableEntry,
 };
 use super::segment::Segment;
 
@@ -34,6 +35,8 @@ pub struct Decompressor<R: Read + Seek> {
     header: PbitHeader,
     footer: PbitFooter,
     ref_groups: Vec<RefGroupEntry>,
+    /// Per-reference metadata (name, group range, embedded-index offsets).
+    ref_meta: Vec<RefTableEntry>,
     /// contig name → Vec<ref_group_id> (reference segments, ordered).
     contig_groups: IndexMap<String, Vec<u32>>,
     /// All contig names appearing in any sample's collection (for
@@ -98,6 +101,10 @@ impl<R: Read + Seek> Decompressor<R> {
                 header.ref_group_count,
                 ref_groups.len()
             ));
+        }
+        let ref_meta = read_ref_table(&mut reader)?;
+        if ref_meta.is_empty() {
+            return Err(anyhow!("reference table is empty"));
         }
 
         // Build contig_groups (contig name → ref_group_ids in order).
@@ -182,6 +189,7 @@ impl<R: Read + Seek> Decompressor<R> {
             header,
             footer,
             ref_groups,
+            ref_meta,
             contig_groups,
             contig_set,
             collection,
@@ -228,6 +236,11 @@ impl<R: Read + Seek> Decompressor<R> {
         &self.ref_groups
     }
 
+    /// Per-reference metadata (name, group range, embedded-index offsets).
+    pub fn ref_table(&self) -> &[RefTableEntry] {
+        &self.ref_meta
+    }
+
     /// Return the header (for `stat` overview).
     pub fn header(&self) -> &PbitHeader {
         &self.header
@@ -243,12 +256,23 @@ impl<R: Read + Seek> Decompressor<R> {
         &self.footer
     }
 
-    /// Read the embedded reference index segment (a `.pgi`), if present.
-    pub fn read_reference_index(&mut self) -> Result<Option<crate::libs::pgi::PgiIndex>> {
-        if self.footer.idx_size == 0 {
+    /// Read the embedded reference index segment (a `.pgi`) of one
+    /// reference, if present.
+    pub fn read_reference_index(
+        &mut self,
+        ref_id: usize,
+    ) -> Result<Option<crate::libs::pgi::PgiIndex>> {
+        let Some(meta) = self.ref_meta.get(ref_id) else {
+            anyhow::bail!(
+                "invalid reference id {} ({} references)",
+                ref_id,
+                self.ref_meta.len()
+            );
+        };
+        if meta.idx_size == 0 {
             return Ok(None);
         }
-        self.reader.seek(SeekFrom::Start(self.footer.idx_offset))?;
+        self.reader.seek(SeekFrom::Start(meta.idx_offset))?;
         let idx = crate::libs::pgi::PgiIndex::read(&mut self.reader)
             .context("failed to read embedded reference index")?;
         Ok(Some(idx))
@@ -888,8 +912,8 @@ mod tests {
         // Delta data layout: delta_data_offset + 4 (ref_group_count) + 4 (delta_count)
         // + 1 (is_rev_comp) -> raw_length u32.
         let mut file = std::fs::File::open(&out_path)?;
-        file.seek(SeekFrom::End(-40))?;
-        let mut footer_buf = [0u8; 40];
+        file.seek(SeekFrom::End(-24))?;
+        let mut footer_buf = [0u8; 24];
         file.read_exact(&mut footer_buf)?;
         let delta_data_offset = u64::from_le_bytes([
             footer_buf[8],
@@ -942,8 +966,8 @@ mod tests {
 
         // Patch the first delta's raw_length to be larger than the decoded segment.
         let mut file = std::fs::File::open(&out_path)?;
-        file.seek(SeekFrom::End(-40))?;
-        let mut footer_buf = [0u8; 40];
+        file.seek(SeekFrom::End(-24))?;
+        let mut footer_buf = [0u8; 24];
         file.read_exact(&mut footer_buf)?;
         let delta_data_offset = u64::from_le_bytes([
             footer_buf[8],

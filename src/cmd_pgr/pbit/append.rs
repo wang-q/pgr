@@ -5,38 +5,6 @@ use clap::{ArgMatches, Command};
 use pgr::libs::pbit::compressor::Compressor;
 use std::path::PathBuf;
 
-/// RAII guard that keeps a `tempfile::NamedTempFile` alive on drop unless
-/// disarmed. The temp file is deleted automatically when the guard is dropped;
-/// a successful in-place append disarms the guard before renaming the file.
-struct TempFileGuard {
-    file: Option<tempfile::NamedTempFile>,
-}
-
-impl TempFileGuard {
-    fn new(file: tempfile::NamedTempFile) -> Self {
-        Self { file: Some(file) }
-    }
-
-    /// Keep the temporary file so it can be renamed over the original archive.
-    fn disarm(mut self) -> anyhow::Result<PathBuf> {
-        let file = self
-            .file
-            .take()
-            .expect("disarm called on an empty TempFileGuard");
-        let (_, path) = file
-            .keep()
-            .context("failed to keep temp file for in-place rename")?;
-        Ok(path)
-    }
-}
-
-impl Drop for TempFileGuard {
-    fn drop(&mut self) {
-        // `NamedTempFile` deletes the underlying file on drop automatically.
-        let _ = self.file.take();
-    }
-}
-
 /// Build the clap subcommand for append.
 pub fn make_subcommand() -> Command {
     Command::new("append")
@@ -91,62 +59,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let samples = super::collect_samples_from_args(args)?;
 
-    // Determine the working path: copy if -o specified, else in-place via a
-    // temp file + atomic rename so a mid-append failure cannot corrupt the
-    // input archive.
     let in_place = outfile_opt.is_none();
-    let mut temp_guard: Option<TempFileGuard> = None;
-    let work_path = match outfile_opt {
-        Some(out) => {
-            // Refuse to overwrite the source archive in-place: fs::copy would
-            // truncate the source before reading, destroying the archive.
-            let in_path = std::path::Path::new(infile);
-            let out_path = std::path::Path::new(out);
-            if in_path == out_path {
-                anyhow::bail!("outfile must differ from infile; omit -o for in-place append");
-            }
-            // Canonicalize when both paths exist; treat failure as "not the
-            // same file" rather than aborting the operation.
-            let same_file = if in_path.exists() && out_path.exists() {
-                match (
-                    std::fs::canonicalize(in_path),
-                    std::fs::canonicalize(out_path),
-                ) {
-                    (Ok(i), Ok(o)) => i == o,
-                    _ => false,
-                }
-            } else {
-                false
-            };
-            if same_file {
-                anyhow::bail!("outfile must differ from infile; omit -o for in-place append");
-            }
-            std::fs::copy(infile, out)
-                .with_context(|| format!("failed to copy {} to {}", infile, out))?;
-            out.clone()
-        }
-        None => {
-            let in_path = std::path::Path::new(infile);
-            let parent = in_path
-                .parent()
-                .filter(|p| !p.as_os_str().is_empty())
-                .unwrap_or_else(|| std::path::Path::new("."));
-            let temp_file = tempfile::Builder::new()
-                .suffix(".pbit.tmp")
-                .tempfile_in(parent)
-                .with_context(|| {
-                    format!(
-                        "failed to create temp file for in-place append in {}",
-                        parent.display()
-                    )
-                })?;
-            let tmp_path = temp_file.path().to_path_buf();
-            std::fs::copy(infile, &tmp_path)
-                .with_context(|| "failed to stage temp file for in-place append")?;
-            temp_guard = Some(TempFileGuard::new(temp_file));
-            tmp_path.to_string_lossy().into_owned()
-        }
-    };
+    let (work_path, mut temp_guard) = super::stage_work_path(infile, outfile_opt)?;
 
     let mut comp = Compressor::open_for_append(&work_path)
         .with_context(|| format!("failed to open pbit archive for append: {}", work_path))?;
@@ -157,7 +71,27 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     }
     comp.set_cmd_line(&cmd_line);
 
-    for (name, path, paf_opt) in &samples {
+    for (name, path, paf_opt, ref_spec) in &samples {
+        let ref_id = match ref_spec {
+            Some(spec) => {
+                let names = comp.ref_names();
+                if let Ok(n) = spec.parse::<usize>() {
+                    anyhow::ensure!(
+                        n < names.len(),
+                        "reference index {} out of range ({} references)",
+                        n,
+                        names.len()
+                    );
+                    n as u32
+                } else {
+                    names.iter().position(|n| n == spec).ok_or_else(|| {
+                        anyhow::anyhow!("reference '{}' not found (available: {names:?})", spec)
+                    })? as u32
+                }
+            }
+            None => 0,
+        };
+        comp.set_cur_ref_id(ref_id);
         match paf_opt {
             Some(paf) => comp
                 .append_sample_with_paf(name, path, paf)

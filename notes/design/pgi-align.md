@@ -109,8 +109,13 @@ pgr pgi align <ref.pgi> <query.pgi> -o out.psl [--freq 10] [--min-span 85] [--ma
 |---|---|---|
 | 块数 | 1019 | 701 |
 | 正/负链 | 924 / 95 | 553 / 148 |
-| 查询覆盖总和 | 4.44 Mb（95.7%） | 4.63 Mb（99.7%） |
+| 查询覆盖总和（span 求和） | 4.44 Mb（95.7%） | 4.63 Mb（99.7%） |
 | 最大块 | 58 kb | 108 kb |
+
+> 真实并集覆盖（2026-08-02 复核）：Sakai 75.8% vs FastGA 78.2%、Nissle
+> 双方均 77.3%——span 求和的 95.7%/99.7% 有重叠重复计数，**真实差距仅
+> ~2%**，且未覆盖区是株系特异序列。详见
+> [[../benchmarks/bench-pgi-align-vs-fastga.md]]。
 
 差异符合 v1 预期：固定 k=40 精确种子在 ~5% 分歧区段断链，FastGA 的
 adaptamer（lcp 扩展）+ wave 对齐补平间隙。两者 PSL 均可被
