@@ -111,7 +111,7 @@ fn encode_base(b: u8) -> u64 {
 /// Splitmix64-style deterministic pseudo-random odd factor from a seed.
 /// syng uses libc `random()`; we use a portable equivalent. Exact factor
 /// values differ from syng but are deterministic and uniformly distributed.
-fn hash_factor(seed: u64) -> u64 {
+pub(crate) fn hash_factor(seed: u64) -> u64 {
     let mut z = seed.wrapping_add(0x9E37_79B9_7F4A_7C15);
     z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
     z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);

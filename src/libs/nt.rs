@@ -266,3 +266,161 @@ pub fn complement<'a>(seq: &'a [u8]) -> impl DoubleEndedIterator<Item = u8> + 'a
 pub fn rev_comp<'a>(seq: &'a [u8]) -> impl Iterator<Item = u8> + 'a {
     seq.iter().rev().map(|&b| NT_COMP[b as usize])
 }
+
+/// Encode `k` bases as 2-bit (A=0, C=1, G=2, T=3), high bits first.
+/// Returns `None` if any base is not A/C/G/T (e.g. N).
+pub fn pack_kmer(seq: &[u8], k: usize) -> Option<u128> {
+    if seq.len() < k {
+        return None;
+    }
+    let mut x: u128 = 0;
+    for &b in &seq[..k] {
+        let c = match b {
+            b'A' | b'a' => 0u128,
+            b'C' | b'c' => 1,
+            b'G' | b'g' => 2,
+            b'T' | b't' => 3,
+            _ => return None,
+        };
+        x = (x << 2) | c;
+    }
+    Some(x)
+}
+
+/// Reverse-complement a 2-bit encoded k-mer key in place of orientation.
+pub fn rc_key(x: u128, k: usize) -> u128 {
+    // 4-base lookup: the lowest byte holds the last 4 bases, whose RC becomes
+    // the highest byte of the result. Verified against the bitwise loop on
+    // 20000 random sequences for k in 10..=40.
+    let mut r: u128 = 0;
+    let nbytes = k / 4;
+    for block in 0..nbytes {
+        let byte = ((x >> (8 * block)) & 0xff) as usize;
+        r = (r << 8) | RC_TABLE[byte] as u128;
+    }
+    // The leftover high bases (0..k-4*nbytes) close the RC from the most
+    // significant one down to base 0.
+    for i in (0..k - 4 * nbytes).rev() {
+        let c = ((x >> (2 * (k - 1 - i))) & 3) ^ 3;
+        r = (r << 2) | c;
+    }
+    r
+}
+
+/// Reverse-complement table for one byte (4 x 2-bit bases): order reversed,
+/// each base complemented.
+const RC_TABLE: [u8; 256] = {
+    let mut array = [0u8; 256];
+    let mut x = 0usize;
+    while x < 256 {
+        let mut r = 0u8;
+        let mut i = 0usize;
+        while i < 4 {
+            let c = ((x >> (2 * i)) & 3) as u8;
+            r |= (3 - c) << (2 * (3 - i));
+            i += 1;
+        }
+        array[x] = r;
+        x += 1;
+    }
+    array
+};
+
+/// Rolling 2-bit k-mer keys: `out[p]` is the key of `seq[p..p+k)`, or `None`
+/// if that window contains a non-ACGT base (e.g. N).
+pub fn rolling_kmer_keys(seq: &[u8], k: usize) -> Vec<Option<u128>> {
+    let n = seq.len();
+    if n < k {
+        return Vec::new();
+    }
+    let mask = if k * 2 >= 128 {
+        u128::MAX
+    } else {
+        (1u128 << (2 * k)) - 1
+    };
+    let mut out = vec![None; n - k + 1];
+    let mut x: u128 = 0;
+    let mut valid = 0usize;
+    for (i, &b) in seq.iter().enumerate() {
+        let c = match b {
+            b'A' | b'a' => 0u128,
+            b'C' | b'c' => 1,
+            b'G' | b'g' => 2,
+            b'T' | b't' => 3,
+            _ => 4,
+        };
+        if c == 4 {
+            x = 0;
+            valid = 0;
+        } else {
+            x = ((x << 2) | c) & mask;
+            valid += 1;
+        }
+        if i + 1 >= k && valid >= k {
+            out[i + 1 - k] = Some(x);
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pack_and_rc() {
+        // A=0 C=1 G=2 T=3, high bits first: "ACGT" -> 0b00011011
+        assert_eq!(pack_kmer(b"ACGT", 4), Some(0b00011011));
+        // RC("ACGT") = "ACGT" (reverse-complement palindrome); double RC
+        // restores the original for any sequence.
+        let x = pack_kmer(b"ACGT", 4).unwrap();
+        assert_eq!(rc_key(x, 4), x);
+        assert_eq!(rc_key(rc_key(x, 4), 4), x);
+        // RC("AAAA") = "TTTT"
+        let a = pack_kmer(b"AAAA", 4).unwrap();
+        assert_eq!(rc_key(a, 4), pack_kmer(b"TTTT", 4).unwrap());
+        // N is rejected
+        assert_eq!(pack_kmer(b"ACNT", 4), None);
+    }
+
+    #[test]
+    fn rc_key_matches_bitwise_for_partial_bytes() {
+        // The 4-base lookup only covers whole bytes; the leftover bases (k % 4)
+        // must close the RC from the most significant one down (regression for
+        // k not divisible by 4).
+        let mut rng = rand::rngs::StdRng::seed_from_u64(5);
+        use rand::{Rng, SeedableRng};
+        for &k in &[9usize, 10, 13, 21] {
+            for _ in 0..200 {
+                let x: u128 = rng.random_range(0..(1u128 << (2 * k)));
+                let mut expect: u128 = 0;
+                for i in (0..k).rev() {
+                    let c = ((x >> (2 * (k - 1 - i))) & 3) ^ 3;
+                    expect = (expect << 2) | c;
+                }
+                assert_eq!(rc_key(x, k), expect, "k={k} x={x:x}");
+            }
+        }
+    }
+
+    #[test]
+    fn rolling_keys_match_pack() {
+        let seq = b"ACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT";
+        let keys = rolling_kmer_keys(seq, 10);
+        assert_eq!(keys.len(), seq.len() - 10 + 1);
+        for (p, k) in keys.iter().enumerate() {
+            assert_eq!(*k, pack_kmer(&seq[p..p + 10], 10), "position {p}");
+        }
+    }
+
+    #[test]
+    fn rolling_keys_handle_n() {
+        let seq = b"ACGTACGTACNTACGTACGTACGTACGTACGTACGTACGTACGTACGT";
+        let keys = rolling_kmer_keys(seq, 10);
+        // windows containing the N (positions covering index 9) are None
+        assert!(keys[0].is_some());
+        assert!(keys[1].is_none()); // window [1,11) includes the N at index 9
+        assert!(keys[10].is_none()); // window [10,20) starts at N
+        assert!(keys[11].is_some()); // window [11,21) clear
+    }
+}

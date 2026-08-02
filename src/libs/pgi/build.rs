@@ -5,109 +5,6 @@ use crate::libs::syncmer::SyncmerParams;
 use anyhow::Context;
 use std::collections::VecDeque;
 
-/// Encode `k` bases as 2-bit (A=0, C=1, G=2, T=3), high bits first.
-/// Returns `None` if any base is not A/C/G/T (e.g. N).
-pub fn pack_kmer(seq: &[u8], k: usize) -> Option<u128> {
-    if seq.len() < k {
-        return None;
-    }
-    let mut x: u128 = 0;
-    for &b in &seq[..k] {
-        let c = match b {
-            b'A' | b'a' => 0u128,
-            b'C' | b'c' => 1,
-            b'G' | b'g' => 2,
-            b'T' | b't' => 3,
-            _ => return None,
-        };
-        x = (x << 2) | c;
-    }
-    Some(x)
-}
-
-/// Reverse-complement a 2-bit encoded k-mer key in place of orientation.
-pub fn rc_key(x: u128, k: usize) -> u128 {
-    // 4-base lookup: the lowest byte holds the last 4 bases, whose RC becomes
-    // the highest byte of the result. Verified against the bitwise loop on
-    // 20000 random sequences for k in 10..=40.
-    let mut r: u128 = 0;
-    let nbytes = k / 4;
-    for block in 0..nbytes {
-        let byte = ((x >> (8 * block)) & 0xff) as usize;
-        r = (r << 8) | RC_TABLE[byte] as u128;
-    }
-    // The leftover high bases (0..k-4*nbytes) close the RC from the most
-    // significant one down to base 0.
-    for i in (0..k - 4 * nbytes).rev() {
-        let c = ((x >> (2 * (k - 1 - i))) & 3) ^ 3;
-        r = (r << 2) | c;
-    }
-    r
-}
-
-/// Reverse-complement table for one byte (4 x 2-bit bases); verified against
-/// the bitwise loop on 10000 random k=40 sequences.
-const RC_TABLE: [u8; 256] = [
-    255, 191, 127, 63, 239, 175, 111, 47, 223, 159, 95, 31, 207, 143, 79, 15, 251, 187, 123, 59,
-    235, 171, 107, 43, 219, 155, 91, 27, 203, 139, 75, 11, 247, 183, 119, 55, 231, 167, 103, 39,
-    215, 151, 87, 23, 199, 135, 71, 7, 243, 179, 115, 51, 227, 163, 99, 35, 211, 147, 83, 19, 195,
-    131, 67, 3, 254, 190, 126, 62, 238, 174, 110, 46, 222, 158, 94, 30, 206, 142, 78, 14, 250, 186,
-    122, 58, 234, 170, 106, 42, 218, 154, 90, 26, 202, 138, 74, 10, 246, 182, 118, 54, 230, 166,
-    102, 38, 214, 150, 86, 22, 198, 134, 70, 6, 242, 178, 114, 50, 226, 162, 98, 34, 210, 146, 82,
-    18, 194, 130, 66, 2, 253, 189, 125, 61, 237, 173, 109, 45, 221, 157, 93, 29, 205, 141, 77, 13,
-    249, 185, 121, 57, 233, 169, 105, 41, 217, 153, 89, 25, 201, 137, 73, 9, 245, 181, 117, 53,
-    229, 165, 101, 37, 213, 149, 85, 21, 197, 133, 69, 5, 241, 177, 113, 49, 225, 161, 97, 33, 209,
-    145, 81, 17, 193, 129, 65, 1, 252, 188, 124, 60, 236, 172, 108, 44, 220, 156, 92, 28, 204, 140,
-    76, 12, 248, 184, 120, 56, 232, 168, 104, 40, 216, 152, 88, 24, 200, 136, 72, 8, 244, 180, 116,
-    52, 228, 164, 100, 36, 212, 148, 84, 20, 196, 132, 68, 4, 240, 176, 112, 48, 224, 160, 96, 32,
-    208, 144, 80, 16, 192, 128, 64, 0,
-];
-
-/// Rolling 2-bit k-mer keys: `out[p]` is the key of `seq[p..p+k)`, or `None`
-/// if that window contains a non-ACGT base (e.g. N).
-pub fn rolling_kmer_keys(seq: &[u8], k: usize) -> Vec<Option<u128>> {
-    let n = seq.len();
-    if n < k {
-        return Vec::new();
-    }
-    let mask = if k * 2 >= 128 {
-        u128::MAX
-    } else {
-        (1u128 << (2 * k)) - 1
-    };
-    let mut out = vec![None; n - k + 1];
-    let mut x: u128 = 0;
-    let mut valid = 0usize;
-    for (i, &b) in seq.iter().enumerate() {
-        let c = match b {
-            b'A' | b'a' => 0u128,
-            b'C' | b'c' => 1,
-            b'G' | b'g' => 2,
-            b'T' | b't' => 3,
-            _ => 4,
-        };
-        if c == 4 {
-            x = 0;
-            valid = 0;
-        } else {
-            x = ((x << 2) | c) & mask;
-            valid += 1;
-        }
-        if i + 1 >= k && valid >= k {
-            out[i + 1 - k] = Some(x);
-        }
-    }
-    out
-}
-
-/// Splitmix64-style deterministic odd hash factor (matches `pgr dist` syncmers).
-fn hash_factor(seed: u64) -> u64 {
-    let mut z = seed.wrapping_add(0x9E37_79B9_7F4A_7C15);
-    z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
-    z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
-    (z ^ (z >> 31)) | 1
-}
-
 /// Parallel growable buffers for (key, contig, pos, strand) records.
 struct RecordBuf {
     keys: Vec<u128>,
@@ -134,7 +31,7 @@ fn collect_one_contig(
     if n < k.max(smer) || window == 0 {
         return;
     }
-    let factor = hash_factor(7);
+    let factor = crate::libs::syncmer::hash_factor(7);
     let smask = (1u64 << (2 * smer)) - 1;
     let sshift = (64 - 2 * smer) as u32;
     let kmask = if 2 * k >= 128 {
@@ -373,42 +270,7 @@ pub fn build_from_path(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn pack_and_rc() {
-        // A=0 C=1 G=2 T=3, high bits first: "ACGT" -> 0b00011011
-        assert_eq!(pack_kmer(b"ACGT", 4), Some(0b00011011));
-        // RC("ACGT") = "ACGT" (reverse-complement palindrome); double RC
-        // restores the original for any sequence.
-        let x = pack_kmer(b"ACGT", 4).unwrap();
-        assert_eq!(rc_key(x, 4), x);
-        assert_eq!(rc_key(rc_key(x, 4), 4), x);
-        // RC("AAAA") = "TTTT"
-        let a = pack_kmer(b"AAAA", 4).unwrap();
-        assert_eq!(rc_key(a, 4), pack_kmer(b"TTTT", 4).unwrap());
-        // N is rejected
-        assert_eq!(pack_kmer(b"ACNT", 4), None);
-    }
-
-    #[test]
-    fn rc_key_matches_bitwise_for_partial_bytes() {
-        // The 4-base lookup only covers whole bytes; the leftover bases (k % 4)
-        // must close the RC from the most significant one down (regression for
-        // k not divisible by 4).
-        let mut rng = rand::rngs::StdRng::seed_from_u64(5);
-        use rand::{Rng, SeedableRng};
-        for &k in &[9usize, 10, 13, 21] {
-            for _ in 0..200 {
-                let x: u128 = rng.random_range(0..(1u128 << (2 * k)));
-                let mut expect: u128 = 0;
-                for i in (0..k).rev() {
-                    let c = ((x >> (2 * (k - 1 - i))) & 3) ^ 3;
-                    expect = (expect << 2) | c;
-                }
-                assert_eq!(rc_key(x, k), expect, "k={k} x={x:x}");
-            }
-        }
-    }
+    use crate::libs::nt::{rc_key, rolling_kmer_keys};
 
     #[test]
     fn build_small_index() {
@@ -428,27 +290,6 @@ mod tests {
         // forward and reverse keys both present for the first syncmer position
         assert_eq!(idx.contigs[0].0, "c1");
         assert!(idx.entries.iter().all(|e| e.freq >= 1));
-    }
-
-    #[test]
-    fn rolling_keys_match_pack() {
-        let seq = b"ACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT";
-        let keys = rolling_kmer_keys(seq, 10);
-        assert_eq!(keys.len(), seq.len() - 10 + 1);
-        for (p, k) in keys.iter().enumerate() {
-            assert_eq!(*k, pack_kmer(&seq[p..p + 10], 10), "position {p}");
-        }
-    }
-
-    #[test]
-    fn rolling_keys_handle_n() {
-        let seq = b"ACGTACGTACNTACGTACGTACGTACGTACGTACGTACGTACGTACGT";
-        let keys = rolling_kmer_keys(seq, 10);
-        // windows containing the N (positions covering index 9) are None
-        assert!(keys[0].is_some());
-        assert!(keys[1].is_none()); // window [1,11) includes the N at index 9
-        assert!(keys[10].is_none()); // window [10,20) starts at N
-        assert!(keys[11].is_some()); // window [11,21) clear
     }
 
     #[test]
