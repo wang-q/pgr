@@ -42,7 +42,7 @@ fn main() -> anyhow::Result<()> {
     * fas  - Block FA operations: info, subset, transform, file, variation
     * fq   - FASTQ interleaving and conversion
     * gff  - GFF operations: rg
-    * pbit - Population 2bit + delta: create, append, stat, range, some, to-fa
+    * pbit - Population 2bit + delta: create, append, append-ref, to-index, stat, range, some, to-fa
 
 * Genome alignments:
     * chain - Chain operations: sort, filter, transform, to-net
@@ -54,7 +54,11 @@ fn main() -> anyhow::Result<()> {
     * psl   - PSL statistics, manipulation, and conversion
 
 * Distance:
-    * dist  - Metrics: hv, seq
+    * dist  - Metrics: hv, pgi, seq
+    * pgi   - Genome index (.pgi): build, stat, to-hv, align
+
+* Analysis:
+    * sd    - Segmental duplication detection: align, cluster, cover, cross, decompose, run, search
 
 * Simulation:
     * ms    - Hudson's ms simulator tools: to-dna

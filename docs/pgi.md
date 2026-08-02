@@ -79,7 +79,7 @@ shared seeds:
 
 ```
 pgr pgi align ref.pgi query.pgi -o out.psl
-  [-f 10] [-c 85] [-s 1000] [--band 128]
+  [-f 10] [-c 85] [-s 1000] [--band 128] [--merge-gap 5000]
   [--ref-seq ref.fa|ref.2bit] [--query-seq query.fa|query.2bit]
 ```
 
@@ -88,6 +88,8 @@ pgr pgi align ref.pgi query.pgi -o out.psl
 - `-c`/`--min-span`: minimum per-axis seed span (bp) for a chain;
 - `-s`/`--max-gap`: maximum bp gap between consecutive seeds in a chain;
 - `--band`: diagonal band half-width (bp) around the chain mean.
+- `--merge-gap`: merge adjacent colinear chains separated by at most this gap
+  (bp), stitching blocks split by insertions (IS elements).
 
 Without sequence files, each chain is emitted as a single PSL block. With
 `--ref-seq`/`--query-seq` (FASTA or 2bit), chains are refined by a banded

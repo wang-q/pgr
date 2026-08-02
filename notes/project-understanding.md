@@ -2,6 +2,8 @@
 
 本文档是我对 pgr (Practical Genome Refiner) 项目的整体理解，涵盖架构、设计哲学、代码模式、
 当前能力与未来方向。写作时间：2026-06-27，最后更新：2026-08-01
+（2026-08-02：文档准确性审计——补全 pgi/sd 模块、pbit v1003 多参考与
+append-ref/to-index、dist pgi 与 .hv 模式、pgi align 管线；修正 §2.1/§3/§4/§6/§9）。
 （2026-08-02：全量通读 src/ 复核——更新 §2.1/§4 的 ds 新成员（best_crossover/merge_intervals）、
 §4.4 paf/pl 描述、§6 现状（UCSC 全链路字节级一致）、§7.1 UCSC 验证矩阵（axtToMaf 已修复、
 SE11 多染色体反向验证）、§9 索引状态；
@@ -68,17 +70,19 @@ src/
 │   ├── maf/
 │   ├── paf/            #   PAF 泛基因组图操作
 │   ├── pbit/           #   群体基因组压缩
-│   ├── dist/
+│   ├── dist/           #   距离计算 (hv/pgi/seq)
+│   ├── pgi/            #   基因组索引 (.pgi)：build/stat/to-hv/align
+│   ├── sd/             #   分段重复检测 (align/cluster/cover/cross/decompose/run/search)
 │   ├── ms/
 │   ├── pl/             #   Pipelines：编排外部工具
 │   └── plot/           #   可视化输出 (TikZ/LaTeX)
 └── libs/               # 核心库层：数据结构与算法
     ├── mod.rs
-    ├── alignment/      #   序列比对工具 (coords/msa/slice/stat/trim/variation)
+    ├── alignment/      #   序列比对工具 (coords/msa/slice/stat/trim/variation/banded)
     ├── poa/            #   偏序比对 (Partial Order Alignment)
     ├── chain/          #   Chain 算法 (连接、gap 计算、替换矩阵)
     │   └── net/        #     Net 格式处理 (class/filter/to-axt)
-    ├── ds/             #   通用数据结构 (KdTree/GapCalc/BitMap/DupeTree/TopKPurity/best_crossover/merge_intervals)
+    ├── ds/             #   通用数据结构 (KdTree/GapCalc/BitMap/DupeTree/TopKPurity/best_crossover/merge_intervals/radix_sort)
     ├── fas_multiz/     #   fas-multiz 多序列比对合并 (banded_align/merge/windows)
     ├── fasta/          #   FASTA 操作 (chunk/dedup/filter/stat)
     ├── fmt/            #   格式解析 (AXT/FAS/FA/FQ/LAV/MAF/PSL/2bit/VCF)
@@ -87,6 +91,8 @@ src/
     │   ├── index/      #     区间树索引 + BFS 传递闭包
     │   └── graph/      #     DSU 图构建 + GFA 输出
     ├── pbit/           #   群体基因组压缩核心 (LZ-diff/CIGAR delta/PAF 索引)
+    ├── pgi/            #   基因组索引核心 (build/dist/to_hv/align)
+    ├── sd/             #   分段重复检测核心
     ├── pl/             #   pipeline 共享逻辑 (PipelineCtx/FastK/Profex/spanr)
     ├── plot/           #   可视化 (histogram/nrps/venn)
     ├── fas_xlsx.rs     #   FAS xlsx 输出
@@ -151,7 +157,7 @@ src/
 | `fas`    | 20       | Block FA (多序列比对块)：统计、筛选、subset、变异检测 |
 | `fq`     | 2        | FASTQ 交叉合并、转 FASTA                              |
 | `twobit` | 5        | 2bit 二进制格式查询：range、sequence、masked 统计     |
-| `pbit`   | 6        | 群体基因组 2bit + delta 压缩与随机访问                |
+| `pbit`   | 8        | 群体基因组 2bit + delta 压缩与随机访问（create/append/append-ref/to-index/stat/range/some/to-fa） |
 | `gff`    | 1        | GFF 注释：rg (提取 feature 区间为 range 列表)         |
 
 **fa 和 fas 是序列模块的核心**，子命令最多、功能最全。`fas` 的 `multiz`、`variation`、 `refine`、
@@ -192,11 +198,12 @@ axtToMaf 标准化流程中的全部 12 步主流程。`chain`/`net`/`axt`/`psl`
 
 详见 [[paf-pangenome.md]]。
 
-### 3.4 距离 (Distance)
+### 3.4 距离与索引 (Distance & Index)
 
 | 模块   | 子命令数 | 核心能力                                                  |
 |--------|----------|-----------------------------------------------------------|
-| `dist` | 2        | 距离计算：hv (hypervariable)、seq (minimizer/closed syncmer 双采样器) |
+| `dist` | 3        | 距离计算：hv (hypervector，支持 .hv 文件直接比较)、pgi (两索引归并精确距离)、seq (minimizer/closed syncmer 双采样器) |
+| `pgi`  | 4        | 基因组索引：build (syncmer 稀疏排序 k-mer 索引)、stat、to-hv (稀疏投影)、align (两索引归并→链→banded 扩展→PSL) |
 
 ### 3.5 模拟、流程、可视化 (Simulation, Pipelines, Plot)
 
@@ -209,6 +216,12 @@ axtToMaf 标准化流程中的全部 12 步主流程。`chain`/`net`/`axt`/`psl`
 `pl` (pipelines) 模块定位特殊——它**编排外部工具**（UCSC kent-tools、trf、FastK、Profex、
 clustalw/muscle/mafft），充当工作流 glue。这与 `chain`/`net` 模块的纯 Rust 实现形成互补：能用 Rust
 就自己实现，复杂/成熟的用外部工具。
+
+### 3.6 分析 (Analysis)
+
+| 模块 | 子命令数 | 核心能力 |
+|------|----------|----------|
+| `sd`  | 7        | 分段重复 (SD) 检测：align / cluster / cover / cross / decompose / run / search |
 
 ## 4. 核心库层详解
 
@@ -229,7 +242,8 @@ clustalw/muscle/mafft），充当工作流 glue。这与 `chain`/`net` 模块的
 - `anti_repeat.rs`：反重复处理
 - `net/`：Net 格式处理子模块（builder/class/filter/finalize/reader/subset/syntenic/to-axt/types/writer）
 - 注：`GapCalc`、`KdTree`、`BitMap`、`DupeTree`、`TopKPurity`、`best_crossover`、
-  `merge_intervals` 已下沉到 `src/libs/ds/`，`chain` 模块通过 `pub use` 保持向后兼容
+  `merge_intervals` 已下沉到 `src/libs/ds/`（自 chain）；`radix_sort`（MSD 基数排序，
+  自 FastGA `MSDsort.c` 移植）为 2026-08 新增，供 `pgi build` 使用
 
 ### 4.3 `libs/fmt/` — 格式解析
 
@@ -257,21 +271,26 @@ clustalw/muscle/mafft），充当工作流 glue。这与 `chain`/`net` 模块的
   **2026-06 发现：此 IO 抽象层可直接支撑 PAF 模块的 CIGAR 懒加载和 BGZF 随机访问，比 impg 的 `paf.rs` IO 层更成熟**。
   见 [[paf-pangenome.md]] §6.1。
 - `libs/nt.rs`：核苷酸类型
-- `libs/hv.rs`：hypervariable 区域
+- `libs/hv.rs`：hypervector 距离（哈希投影：dense bit/i8 与 sparse 三种编码，`calc_distances`）
 - `libs/fmt/twobit.rs`：2bit 格式读写
 - `libs/fmt/psl.rs`：PSL 格式
-- `libs/alignment/`：比对通用逻辑
+- `libs/alignment/`：比对通用逻辑（coords/msa/slice/stat/trim/variation/banded——banded
+  局部比对为 pgi align 的扩展器）
 - `libs/fas_multiz/`：Multiz 多序列比对处理（banded DP 合并）
 - `libs/fas_xlsx.rs`：FAS (block FA) 到 Excel 转换
 - `libs/fasta/`：FASTA 处理工具（dedup/filter/stat）
 - `libs/paf/`：PAF 隐式图核心（`index/` 区间树 + BFS、`graph/` DSU 图构建、`cigar.rs`
   CIGAR 解析、`persist.rs` 索引持久化、`msa_build.rs` POA MSA 构建、`query.rs` 查询过滤）
 - `libs/pbit/`：pbit 压缩核心（LZ-diff、CIGAR delta、PAF 驱动参考索引、segment）
+- `libs/pgi/`：基因组索引核心（build 排序 k-mer 索引、dist 两流归并、to_hv 稀疏投影、
+  align 归并→链化→banded 扩展→PSL）
+- `libs/sd/`：分段重复检测核心
 - `libs/ds/`：通用数据结构（KdTree、GapCalc、BitMap、DupeTree、TopKPurity、best_crossover、
-  merge_intervals，前五项自 chain 模块下沉）
+  merge_intervals、radix_sort）
 - `libs/pl/`：pipeline 共享逻辑（`ctx.rs`：PipelineCtx/CwdGuard；`repeat.rs`：FastK →
   Profex → spanr 重复识别驱动）
 - `libs/syncmer.rs`：closed syncmer 采样（Edgar 2021，syng 移植参考），支撑 `dist` 采样
+- `libs/nt.rs`：核苷酸类型与 2-bit k-mer 编解码（`pack_kmer`/`rc_key`/`rolling_kmer_keys`）
 - `libs/ms/`：Hudson's ms 模拟器（解析器 + DNA 生成）
 - `libs/plot/`：绘图工具（histogram/nrps/venn）
 - `libs/lastz.rs`：lastz 调用封装
@@ -339,19 +358,27 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
   `axt`/`psl`/`lav`/`maf` 六个模块中完整且纯 Rust 实现（不依赖 kent-tools），并与 UCSC
   **字节级一致**（主流程 + `--syn` + medium + SE11 多染色体反向，验证固化于
   `scripts/verify-ucsc-pipeline.sh`，见 §7.1）。
-- **FASTA/FASTQ/2bit/pbit 处理**：`fa`(18 子命令) + `fas`(20 子命令) + `fq`(2) + `twobit`(5) + `pbit`(6)，
-  日常序列操作与群体基因组归档压缩需求基本覆盖。
-- **距离工具**：`dist` 的 hv/seq 子命令已实现；`seq` 支持 minimizer/closed syncmer 双采样器，
-  DNA/protein 均提供 syng 风格默认参数。
+- **FASTA/FASTQ/2bit/pbit 处理**：`fa`(18 子命令) + `fas`(20 子命令) + `fq`(2) + `twobit`(5) +
+  `pbit`(8)（含多参考与内嵌索引），日常序列操作与群体基因组归档压缩需求基本覆盖。
+- **基因组索引与比对（.pgi）**：`pgr pgi` 的 build/stat/to-hv/align 已实现——syncmer 稀疏
+  排序 k-mer 索引（构建与 FastGA GIXmake 持平）、两索引归并精确距离、稀疏 HV 投影、
+  FastGA 式比对管线（归并→链→banded 扩展→PSL，与 FastGA 端到端 1.08× 持平，真实
+  并集覆盖基本一致），详见 [[pgi-align.md]]。
+- **距离工具**：`dist` 的 hv/pgi/seq 三个子命令已实现；`seq` 支持 minimizer/closed syncmer
+  双采样器，DNA/protein 均提供 syng 风格默认参数；`dist pgi` 为确定性精确归并距离，
+  `dist hv` 支持 `.hv` 文件直接比较（稀疏投影，与 `dist pgi` 排序 ρ=0.97、快 50×）。
 - **通用算法下沉**：chain 的通用算法（KdTree/GapCalc/BitMap/DupeTree/TopKPurity/
   best_crossover/merge_intervals）已下沉 `libs/ds/`，并被 PAF syntenic filter、
-  fas-multiz 窗口/合并等复用（见 [[chain-algorithms.md]] §12）。
+  fas-multiz 窗口/合并等复用（见 [[chain-algorithms.md]] §12）；`radix_sort`（FastGA
+  MSDsort 移植）供 `pgi build` 使用。
 
 ### 6.2 进行中的（活跃开发）
 
-- **`pbit` 归档压缩**：`pgr pbit` 的 `create`/`append`/`stat`/`range`/`some`/`to-fa` 六个子命令
-  已实现并文档化（用户文档见 `docs/pbit.md`，设计笔记见 `notes/design/pbit.md`）；PAF 驱动
-  CIGAR delta 模式为正式组成部分。
+- **`pbit` 归档压缩**：`pgr pbit` 的 `create`/`append`/`append-ref`/`to-index`/`stat`/
+  `range`/`some`/`to-fa` 八个子命令已实现（用户文档见 `docs/pbit.md`，设计笔记见
+  `notes/design/pbit.md`）；v1003 支持多参考 + 每参考内嵌 `.pgi` 索引段。
+  **⚠️ 暂停评审中**：多参考路由、ref_id 存储、内嵌索引触发方式等设计决策待作者定夺
+  （见设计笔记顶部开放项）。
 
 - **泛基因组方向**：`pgr paf` 的 query / to-bed / to-fas / to-maf / graph / to-gfa / to-vcf /
   stat 子命令已全部完成（路线见 `notes/paf-pangenome.md`）；规模扩展与应用层待真实 cohort
@@ -445,15 +472,14 @@ chainnet 后消失。`pgr psl chain` 在 2bit 序列缓存优化后（~0.3 s）�
    拆分为独立顶层命令。
 7. **帮助文本与注册脱节（风险提示）**：`pgr.rs` 的 after_help 手工维护，增删命令时需
    同步 `pgr.rs` 的 after_help 与 `cmd_pgr/*/mod.rs` 注册（当前已一致：`pl` 含
-   `chainnet`，`pbit` 含 `append`）。
+   `chainnet`，`pbit` 含 `append`/`append-ref`/`to-index`，`pgi` 含 `align`）。
 
 ## 9. 设计笔记索引（notes/design/）
 
 | 文档 | 定位 | 状态 |
 |------|------|------|
-| [[pbit.md]] | `pgr pbit` 压缩格式设计（LZ-diff + PAF 驱动 CIGAR delta） | 已实现 |
-| [[pbit.md]] | pbit 格式 + 多参考/内嵌索引扩展（已合并原扩展草案） | v1003 已实现，**暂停评审中** |
-| [[pgi-align.md]] | `.pgi` 两索引归并比对（种子→链→PSL 块，v1 已实现） | v1 已实现 |
+| [[pbit.md]] | `pgr pbit` 格式设计（LZ-diff + CIGAR delta + v1003 多参考/内嵌索引，已合并原扩展草案） | v1003 已实现，**暂停评审中** |
+| [[pgi-align.md]] | `.pgi` 两索引归并比对（种子→链→banded 扩展→PSL） | v1-v3 已实现（与 FastGA 端到端持平） |
 | [[fas-multiz.md]] | `libs::fas_multiz` 设计与实现（banded DP 合并） | 已实现（CLI 已落地） |
 | [[spoa_port.md]] | Spoa C++ → Rust 移植（POA 引擎） | 已完成（双引擎集成已落地） |
 | [[ms2dna_port.md]] | ms2dna C → Rust 迁移设计 | 已实现（实际命令为 `pgr ms to-dna`） |

@@ -4,8 +4,8 @@
 
 ## 核心定位
 
-- **定位**：多模式距离计算器（序列）。
-- **输入**：FASTA/蛋白序列文件。
+- **定位**：多模式距离计算器（序列 / 索引 / 超向量）。
+- **输入**：FASTA/蛋白序列文件、`.pgi` 索引、`.hv` 超向量文件。
 - **输出**：Pairwise TSV 格式（`Name1 Name2 Distance ...`），可用于下游分析或矩阵构建。
 - **互补**：
   - 上游：`pgr fa`/`pgr fq` (序列处理), `pgr fa six-frame` (蛋白翻译)。
@@ -58,6 +58,10 @@ syncmer）映射为固定维度的向量。*
 - **优势**:
   - 维度固定，计算复杂度与序列长度无关。
   - 适合超大规模数据集的快速预筛选。
+- **`.hv` 文件模式**: 输入为 `.hv` 文件（`pgr pgi to-hv` 产物）时直接比较，
+  无需重新采样序列；要求两侧 `k`、维度与稀疏更新数（`--sparse`）一致。
+  比较用余弦相似度恢复共享 k-mer 数（`inter = cos × √(n1·n2)`），是
+  `pgr dist pgi` 的约 50× 快近似（排序相关性 ρ≈0.97）。
 - **参数**（与 `seq` 共享 sampler/hash 参数，含义与默认值相同）:
   - `--dim`: 向量维度 (默认 4096，需为 32 的倍数)。
   - `--sampler`: `minimizer` (默认) 或 `syncmer`（syncmer 默认 DNA `-k 8 -w 55`、
@@ -68,6 +72,17 @@ syncmer）映射为固定维度的向量。*
   - `--sim`: 将 Mash 距离转为相似度输出。
   - `--list-files`: 将输入视为文件列表。
   - `-p`/`--parallel`: 并行线程数。
+
+### 3. `pgr dist pgi`: 基于 .pgi 索引归并的精确距离
+*将两个 `.pgi` 索引的排序 k-mer 流线性归并，计算确定性的 Jaccard/Containment/Mash 距离。*
+
+- **输入**：两个 `.pgi` 索引（`pgr pgi build` 生成）。
+- **算法**：两排序流线性归并（O(|K1|+|K2|)），共享 k-mer 集合精确计数。
+- **要求**：两侧索引采样参数（k/syncmer/window）必须一致，否则报错。
+- **输出格式**：`Name1 Name2 Total1 Total2 Inter Union Mash Jaccard Containment`。
+- **注意**：该距离是"采样集合的精确距离"（确定性、零采样方差），但 syncmer
+  采样位置随变异漂移，与真实身份率的排序相关性约 0.5；超大规模粗筛建议用
+  `dist seq`（k=8，相关性 0.82），`dist hv`（.hv 模式）为 `dist pgi` 的快速近似。
 
 ## 典型用法
 

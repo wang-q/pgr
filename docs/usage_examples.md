@@ -170,6 +170,14 @@ pgr pbit some out.pbit contigs.txt -o selected.fa
 # Export all samples as per-sample FASTA files
 pgr pbit to-fa out.pbit -o outdir
 
+# Embed the reference .pgi index and extract it later for `pgr pgi align`
+pgr pbit create -r ref.fa -i sample1.fa --index -o out.pbit
+pgr pbit to-index out.pbit -o ref.pgi
+
+# Append a new reference genome (with index) to an existing archive
+pgr pbit append-ref out.pbit -r ref2.fa --index -o out2.pbit
+pgr pbit to-index out2.pbit --ref ref2 -o ref2.pgi
+
 # CIGAR-driven encoding with PAF (recommended for samples with SVs)
 minimap2 -cx asm20 --eqx ref.fa sample.fa > sample.paf
 pgr pbit create -r ref.fa -i sample.fa -p sample.paf -o out.pbit
@@ -318,4 +326,3 @@ Some subcommands in `pgr` invoke external executables. In particular:
   - `clustalw` (default), or `muscle`, or `mafft`.
 
 Ensure these tools are installed and available in your `PATH` before running the corresponding pipelines.
-

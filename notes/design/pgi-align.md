@@ -82,11 +82,16 @@ key 相等按 (a_strand, b_strand) 解析方向：
 ## 4. CLI
 
 ```
-pgr pgi align <ref.pgi> <query.pgi> -o out.psl [--freq 10] [--min-span 85] [--max-gap 1000] [--band 128]
+pgr pgi align <ref.pgi> <query.pgi> -o out.psl
+  [--freq 10] [--min-span 85] [--max-gap 1000] [--band 128] [--merge-gap 5000]
+  [--ref-seq ref.fa|2bit] [--query-seq query.fa|2bit]
 ```
 
 - 参数默认对齐 FastGA（见 §3.2）；两侧索引参数必须一致（复用 `dist pgi` 校验）。
-- v2 局部扩展阶段再引入序列文件（2bit 随机访问 / FASTA 整载）。
+- `--merge-gap`：相邻共线性链的合并阈值（插入序列造成的对角线平移断链，
+  见 §5.7）；
+- `--ref-seq`/`--query-seq`：提供序列后进入 v3 分窗 banded 扩展（16 kb 窗口 +
+  2 kb 重叠，巨型链也获得真实身份率，见 §5.4）。
 
 ## 5. 验证
 
@@ -136,6 +141,19 @@ adaptamer（lcp 扩展）+ wave 对齐补平间隙。两者 PSL 均可被
 - banded 局部比对用线性 gap（`AlignmentParams` 默认 +5/-4/-8/-6 的 open 部分），
   CIGAR 的 gap 精度不如 affine/wave；
 - 块内多段同源时只取最佳局部段（FastGA 同语义）。
+
+## 5.3 株系验证（2026-08-02，MG1655 vs 三株，v2 扩展）
+
+| query | pgr 扩展身份率 | FastGA 身份率 | 结构 |
+|---|---|---|---|
+| nissle1917（Nissle，重排株） | 97.62% | 97.09% | 双方均为 ~30–70 kb 共线性碎片块（大规模倒位） |
+| sakai（O157:H7） | 98.41% | 97.83% | 最大块 pgr 58 kb / FastGA 108 kb |
+| ec958（UPEC） | 97.60% | — | 最大块 ~30 kb |
+
+pgr 身份率稳定高于 FastGA ~0.5%（banded 局部比对取精确匹配核心；
+FastGA 的 wave 延伸进分歧区、覆盖更广）。注意：此表为 v2 时代数据，
+身份率只统计 ≤30 kb 的扩展块（>30 kb 链回退为无计数块）；v3 分窗扩展
+后全部链均有真实身份率（见 §5.4）。
 
 ## 5.4 v3 分窗扩展实测（2026-08-02）
 
@@ -232,18 +250,6 @@ adaptamer（lcp 扩展）+ wave 对齐补平间隙。两者 PSL 均可被
 块数 -23~30%、最大块 +40~100%、覆盖 +1.6~1.8%。剩余断链主要来自真实
 重排（对角线差超 band，不合并）与分歧区（>5 kb 间隙），后者需
 adaptamer/lcp 变长种子（未来工作）。
-
-## 5.3 株系验证（2026-08-02，MG1655 vs 三株）
-
-| query | pgr 扩展身份率 | FastGA 身份率 | 结构 |
-|---|---|---|---|
-| nissle1917（Nissle，重排株） | 97.62% | 97.09% | 双方均为 ~30–70 kb 共线性碎片块（大规模倒位） |
-| sakai（O157:H7） | 98.41% | 97.83% | 最大块 pgr 58 kb / FastGA 108 kb |
-| ec958（UPEC） | 97.60% | — | 最大块 ~30 kb |
-
-pgr 身份率稳定高于 FastGA ~0.5%（banded 局部比对取精确匹配核心；
-FastGA 的 wave 延伸进分歧区、覆盖更广）。注意身份率只统计 ≤30 kb
-的扩展块（>30 kb 的链回退为无计数块）。
 
 ## 6. 相关文档
 
