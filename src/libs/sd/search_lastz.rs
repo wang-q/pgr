@@ -1,4 +1,4 @@
-//! LASTZ-based putative SD detection (migration design: notes/references/biser.md §6.8).
+//! LASTZ-based putative SD detection (migration design: notes/design/sd.md).
 
 use crate::libs::fmt::lav::lav_to_psl;
 use crate::libs::fmt::psl::{parse_or_warn, Psl};

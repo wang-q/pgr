@@ -14,7 +14,7 @@ form, as produced by `pgr sd cluster`) and writes elementary SD BED rows:
 
 Shared k-mers (present in >= 2 sequences of the cluster) seed fragments that
 are merged with a gap tolerance of 50 bp; fragments shorter than 100 bp are
-dropped (T2T-CHM13 style, see notes/references/biser.md §6.3.5).
+dropped (T2T-CHM13 style, see notes/design/sd.md §4.5).
 
 Examples:
 1. Decompose one cluster:

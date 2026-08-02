@@ -485,7 +485,7 @@ chainnet 后消失。`pgr psl chain` 在 2bit 序列缓存优化后（~0.3 s）�
 | 主题 | 参考分析 | 设计 / 实现 | 基准 | 相关命令 / 库 |
 |---|---|---|---|---|
 | FastGA 风格比对（pgi） | [[fastga.md]] | [[design/pgi-align.md]]（含 §6 功能差距） | [[benchmarks/bench-pgi-align-vs-fastga.md]]、[[benchmarks/bench-pgi-vs-gixmake.md]]、[[benchmarks/bench-pgi-vs-gix-storage.md]] | `pgr align pgi`（`libs/pgi`、`libs/alignment`） |
-| BISER / 分段重复（SD） | [[biser.md]]（含 §6.6 实施记录） | —（实现散于 `cmd_pgr/sd`） | — | `pgr sd search/align/cluster/decompose/cover/cross/run`（`libs/sd`） |
+| BISER / 分段重复（SD） | [[biser.md]] | [[design/sd.md]] | — | `pgr sd search/align/cluster/decompose/cover/cross/run`（`libs/sd`） |
 | multiz / 多序列合并 | [[multiz.md]] | [[design/fas-multiz.md]] | — | `pgr fas multiz`（`libs/fas_multiz`） |
 | UCSC chain/net 管线 | [[ucsc.md]] | [[chain-algorithms.md]]（实现细节） | — | `pgr pl chainnet`、`pgr chain`、`pgr net`（`libs/chain`） |
 | Cactus / lastz 包装 | [[cactus.md]]、[[cactus_lastz.md]] | — | — | `pgr align lastz`、`sd search --engine lastz`（`libs/lastz`） |
@@ -511,7 +511,7 @@ chainnet 后消失。`pgr psl chain` 在 2bit 序列缓存优化后（~0.3 s）�
 | 文档 | 定位 |
 |------|------|
 | [[agc-cpp.md]] | AGC (Assembled Genomes Compressor) C++ 源码分析（pbit 算法参考：LZ-diff、段级参考压缩） |
-| [[biser.md]] | BISER 分段重复 (SD) 检测源码与论文分析 |
+| [[biser.md]] | BISER 分段重复 (SD) 检测源码与论文分析（pgr 实现见 [[design/sd.md]]） |
 | [[fastga.md]] | FastGA 快速全基因组比对器源码分析（adaptive seeds + wave aligner + trace points） |
 | [[impg.md]] | impg 隐式泛基因组图设计（PAF + 区间树投影） |
 | [[seqwish.md]] | seqwish 从 PAF 诱导 GFA 变异图（DSU 传递闭包） |

@@ -39,7 +39,7 @@ fn split_species_name(full: &str) -> (String, String) {
 ///
 /// Two mates of the same PAF record always share a cluster; intervals
 /// overlapping on the same chromosome are unioned as well (BISER interval
-/// coloring semantics, notes/references/biser.md §6.3.4).
+/// coloring semantics, notes/design/sd.md §4.4).
 pub fn cluster_paf<R: BufRead>(
     paf_reader: R,
     genome: &str,
