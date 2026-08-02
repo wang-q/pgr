@@ -156,7 +156,6 @@ fn shared_prefix(a: u128, b: u128, k: usize) -> u32 {
 fn effective_min_shared(idx: &PgiIndex, params: &AlignParams) -> usize {
     params.min_shared.unwrap_or(idx.k).min(idx.k)
 }
-
 /// One chained diagonal segment on a single (contig_a, contig_b, strand) pair.
 #[derive(Debug, Clone, Copy)]
 pub struct Chain {
@@ -180,6 +179,172 @@ pub struct Chain {
     pub diag: i64,
     /// Seed diagonal spread (max - min).
     pub diag_span: i64,
+}
+
+/// One FastGA-style tube: a seed chain with its anti-diagonal range
+/// (`anti = a_pos + b_pos`) and diagonal band (`diag = a_pos - b_pos`).
+#[derive(Debug, Clone, Copy)]
+pub struct Tube {
+    pub a_contig: u32,
+    pub b_contig: u32,
+    pub strand: u8,
+    /// Anti-diagonal low end (bp).
+    pub anti_low: i64,
+    /// Anti-diagonal high end (bp, exclusive).
+    pub anti_high: i64,
+    /// Diagonal band low (bp).
+    pub diag_min: i64,
+    /// Diagonal band high (bp).
+    pub diag_max: i64,
+}
+
+/// FastGA `align_contigs` tube chaining over seed hits.
+///
+/// Seeds are bucketed by diagonal (`diag >> 6`, width 64), and adjacent
+/// buckets are merged in a-position order into tubes. A tube extends while
+/// the next seed's anti-diagonal stays within `CHAIN_BREAK` (1000 bp) of the
+/// current high; its anti coverage is the union of seed extents (`shared`),
+/// and a tube with coverage at least `CHAIN_MIN` (85 bp) is emitted.
+pub fn chain_tubes(hits: &[SeedHit], k: u32) -> Vec<Tube> {
+    const BUCK: i64 = 64;
+    const BREAK: i64 = 1000;
+    const MIN_COV: u64 = 85;
+
+    // Group by (a_contig, b_contig, strand); within a group sort by
+    // (diagonal, a_pos) so adjacent buckets are contiguous.
+    let mut sorted: Vec<&SeedHit> = hits.iter().collect();
+    sorted.sort_by_key(|h| {
+        let diag = h.a_pos as i64 - h.b_pos as i64;
+        (h.a_contig, h.b_contig, h.strand, diag, h.a_pos)
+    });
+
+    let mut tubes = Vec::new();
+    let mut start = 0usize;
+    while start < sorted.len() {
+        let g = sorted[start];
+        let mut end = start + 1;
+        while end < sorted.len()
+            && sorted[end].a_contig == g.a_contig
+            && sorted[end].b_contig == g.b_contig
+            && sorted[end].strand == g.strand
+        {
+            end += 1;
+        }
+        tubes_for_group(
+            &sorted[start..end],
+            k,
+            g.a_contig,
+            g.b_contig,
+            g.strand,
+            BUCK,
+            BREAK,
+            MIN_COV,
+            &mut tubes,
+        );
+        start = end;
+    }
+    tubes
+}
+
+#[allow(clippy::too_many_arguments)]
+fn tubes_for_group(
+    seeds: &[&SeedHit],
+    k: u32,
+    a_contig: u32,
+    b_contig: u32,
+    strand: u8,
+    buck: i64,
+    brk: i64,
+    min_cov: u64,
+    tubes: &mut Vec<Tube>,
+) {
+    // Bucket the seeds by diagonal.
+    let mut buckets: Vec<(i64, Vec<&SeedHit>)> = Vec::new();
+    for h in seeds {
+        let diag = h.a_pos as i64 - h.b_pos as i64;
+        let b = diag.div_euclid(buck);
+        match buckets.last_mut() {
+            Some((last, v)) if *last == b => v.push(h),
+            _ => buckets.push((b, vec![*h])),
+        }
+    }
+
+    // Process each adjacent bucket pair (c, c+1), merging by a_pos.
+    for w in 0..buckets.len() {
+        let (cb, b_seeds) = &buckets[w];
+        let m_seeds: &[&SeedHit] = if w + 1 < buckets.len() && buckets[w + 1].0 == cb + 1 {
+            &buckets[w + 1].1
+        } else {
+            &[]
+        };
+        // Merge by a_pos (ties prefer the lower bucket, like FastGA).
+        let mut bi = 0usize;
+        let mut mi = 0usize;
+        let mut alow: i64 = i64::MAX;
+        let mut ahgh: i64 = -brk;
+        let mut cov: u64 = 0;
+        let mut dgmin = 2 * buck;
+        let mut dgmax = 0i64;
+        while bi < b_seeds.len() || mi < m_seeds.len() {
+            let (h, side) = if mi >= m_seeds.len()
+                || (bi < b_seeds.len() && b_seeds[bi].a_pos <= m_seeds[mi].a_pos)
+            {
+                (b_seeds[bi], 1u8)
+            } else {
+                (m_seeds[mi], 2u8)
+            };
+            if side == 1 {
+                bi += 1;
+            } else {
+                mi += 1;
+            }
+            let anti = h.a_pos as i64 + h.b_pos as i64;
+            let ext = (h.shared as i64).clamp(1, k as i64);
+            let dg = h.a_pos as i64 - h.b_pos as i64 - cb * buck;
+            if anti < ahgh + brk {
+                let cps = anti + ext;
+                if cps > ahgh {
+                    if anti >= ahgh {
+                        cov += ext as u64;
+                    } else {
+                        cov += (cps - ahgh) as u64;
+                    }
+                    ahgh = cps;
+                }
+                dgmin = dgmin.min(dg);
+                dgmax = dgmax.max(dg);
+                alow = alow.min(anti);
+            } else {
+                if cov >= min_cov {
+                    tubes.push(Tube {
+                        a_contig,
+                        b_contig,
+                        strand,
+                        anti_low: alow,
+                        anti_high: ahgh,
+                        diag_min: cb * buck + dgmin,
+                        diag_max: cb * buck + dgmax,
+                    });
+                }
+                alow = anti;
+                ahgh = anti + ext;
+                cov = ext as u64;
+                dgmin = dg;
+                dgmax = dg;
+            }
+        }
+        if cov >= min_cov {
+            tubes.push(Tube {
+                a_contig,
+                b_contig,
+                strand,
+                anti_low: alow,
+                anti_high: ahgh,
+                diag_min: cb * buck + dgmin,
+                diag_max: cb * buck + dgmax,
+            });
+        }
+    }
 }
 
 /// Greedy anti-diagonal chaining of seed hits.
@@ -878,6 +1043,77 @@ mod tests {
         ];
         let chains = chain_hits(&shifted, 10, 5, 1000, 8, 2000);
         assert_eq!(chains.len(), 2, "diag shift beyond band must not merge");
+    }
+
+    #[test]
+    fn tubes_join_colinear_seeds() {
+        let hits = vec![
+            SeedHit {
+                a_contig: 0,
+                a_pos: 100,
+                b_contig: 0,
+                b_pos: 100,
+                strand: 0,
+                shared: 40,
+            },
+            SeedHit {
+                a_contig: 0,
+                a_pos: 130,
+                b_contig: 0,
+                b_pos: 130,
+                strand: 0,
+                shared: 40,
+            },
+            SeedHit {
+                a_contig: 0,
+                a_pos: 160,
+                b_contig: 0,
+                b_pos: 160,
+                strand: 0,
+                shared: 40,
+            },
+        ];
+        let tubes = chain_tubes(&hits, 40);
+        assert_eq!(tubes.len(), 1);
+        assert_eq!((tubes[0].anti_low, tubes[0].anti_high), (200, 360));
+        assert_eq!((tubes[0].diag_min, tubes[0].diag_max), (0, 0));
+    }
+
+    #[test]
+    fn tubes_break_on_anti_gap() {
+        let mk = |a: u32, b: u32| SeedHit {
+            a_contig: 0,
+            a_pos: a,
+            b_contig: 0,
+            b_pos: b,
+            strand: 0,
+            shared: 40,
+        };
+        let hits = vec![
+            mk(100, 100),
+            mk(130, 130),
+            mk(160, 160),
+            mk(2000, 2000),
+            mk(2030, 2030),
+            mk(2060, 2060),
+        ];
+        let tubes = chain_tubes(&hits, 40);
+        assert_eq!(tubes.len(), 2, "anti gap must split tubes");
+        assert_eq!(tubes[0].anti_high, 360);
+        assert_eq!(tubes[1].anti_low, 4000);
+    }
+
+    #[test]
+    fn isolated_seed_produces_no_tube() {
+        let hits = vec![SeedHit {
+            a_contig: 0,
+            a_pos: 100,
+            b_contig: 0,
+            b_pos: 100,
+            strand: 0,
+            shared: 40,
+        }];
+        assert!(chain_tubes(&hits, 40).is_empty(), "coverage 40 < CHAIN_MIN");
     }
 
     #[test]

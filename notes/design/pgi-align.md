@@ -329,6 +329,34 @@ q/t 角色 → 同一 chainnet）对比 syntenic MAF：
 **下一步**：移植 tube 链化（种子流 → anti-diagonal 桶 → tube → 每 tube
 wave 扩展），届时 wave 引擎按 FastGA 语义接入；在此之前 banded 保持默认。
 
+## 5.12 tube 链化移植：状态与剩余工作（2026-08-02）
+
+按 FastGA `align_contigs` 移植了 **tube 链化**（`chain_tubes`）：
+种子按对角线分桶（宽 64）→ 相邻桶对按 a 位置归并 → 维护 tube
+（anti 覆盖 = 种子区间并集、对角线范围），`CHAIN_BREAK`（1000 bp）断开、
+`CHAIN_MIN`（85 bp）触发。单元测试通过（共线合并/断链/覆盖过滤）。
+
+**整合试验（均回退，banded+贪心链保持默认）**：
+
+| 方案 | chainnet syntenic 覆盖 |
+|---|---:|
+| 贪心链 + banded（当前） | 87.7% |
+| tube → chain 转换 + banded 分窗 | 86.6%（但块数 78 万，碎片化） |
+| tube → anti 分块 + wave（窄带切片） | 37.2% |
+
+**诊断出的剩余工作**（完整 Myers 方案所需）：
+1. **wave 需要整条 contig 序列 + tube 对角线带**（FastGA 的 `Local_Alignment`
+   输入是全长序列，wave 自由延伸、trim 停止），不能切成 band 宽的窄盒子；
+2. **wave 内存有界化**：当前 `forward_wave` 存 `d_cap × band` 全历史（全长
+   contig 会爆内存），需改为只保留 best±TRIM_MLAG 窗口的波前（FastGA 用
+   Pebble 稀疏 trace 解决）；
+3. **tube 去重**：相邻桶对产生的 tube 盒子重叠，需去重/合并；
+4. 完成后用 adaptamer 部分种子在 tube 上下文重测（此前负结果可能逆转）。
+
+`chain_tubes`（`src/libs/pgi/align.rs`）与 wave 引擎
+（`src/libs/alignment/wave.rs`）均为独立可测组件，待上述 1-3 完成后按
+FastGA 语义整合。
+
 ## 6. 相关文档
 
 - 索引格式与消费者规划：[[pbit.md]]（多参考节 + .pgi 距离消费者层级）

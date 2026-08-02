@@ -22,4 +22,4 @@ pub use variation::{
     collect_indels, collect_subs, get_indels, get_subs, polarize_indels, polarize_subs,
     vcf_alt_bases, Indel, Substitution,
 };
-pub use wave::wave_extend;
+pub use wave::{wave_extend, WaveAlign};
