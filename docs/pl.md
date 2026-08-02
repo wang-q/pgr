@@ -45,6 +45,16 @@ pgr pl ir [OPTIONS] <repeat> <infile>
 *   `FastK`, `Profex` (from FastK suite)
 *   `spanr`
 
+### Differences from RepeatMasker
+
+`ir` is a fast k-mer-based approximation, not a full `RepeatMasker` replacement.
+
+*   **No repeat annotation**: `RepeatMasker` classifies each hit into a repeat family/class (`repeatmasker.out`). `ir` only reports genomic intervals — it never labels a region with its repeat family.
+*   **k-mer sensitivity**: detection relies on k-mers shared with the repeat database. Highly diverged copies sharing few exact k-mers are missed or split into fragments; the `--fill-kmer` / `--fill-fragment` steps bridge small gaps but cannot recover long diverged copies.
+*   **Intervals only**: the output is a runlist of `chr:start-end` intervals (JSON), not a masked sequence. Feed it to `pgr fa mask --runlist` to soft-mask the genome.
+*   **External tools**: requires `FastK` / `Profex` and `spanr` in `$PATH`, plus a repeat database (Dfam, RepBase, etc.) for `ir`.
+*   **Use case**: suitable for a quick, cheap repeat-masking pass on large genomes. For annotation-grade results (family/class labels, consensus coverage), use `RepeatMasker`.
+
 ---
 
 ## p2m

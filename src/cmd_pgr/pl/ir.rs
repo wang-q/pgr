@@ -15,7 +15,7 @@ This command identifies interspersed repeats in a genome, mimicking the function
 * All operations are running in a tempdir and no intermediate files are retained.
 
 * External dependencies
-    * FastK / Profex / Fastrm
+    * FastK / Profex
     * spanr
 
 "###,
