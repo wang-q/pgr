@@ -5,7 +5,74 @@ use super::{find_ref_entry, ref_overlaps_window, FasMultizConfig, FasMultizMode,
 use crate::libs::chain::sub_matrix::SubMatrix;
 use crate::libs::ds::best_crossover;
 use crate::libs::fmt::fas::{FasBlock, FasEntry};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
+
+/// Sorted species name set of a block.
+fn block_species(block: &FasBlock) -> BTreeSet<String> {
+    block.names.iter().cloned().collect()
+}
+
+/// Deterministic content key for ordering blocks: reference range plus the
+/// sorted species list. Depends only on block contents, never on input order.
+fn content_key(block: &FasBlock, ref_name: &str) -> (String, u64, u64, String) {
+    match find_ref_entry(block, ref_name) {
+        Some(entry) => {
+            let range = entry.range();
+            (
+                range.chr().to_string(),
+                *range.start() as u64,
+                *range.end() as u64,
+                block.names.join(","),
+            )
+        }
+        None => (String::new(), 0, 0, block.names.join(",")),
+    }
+}
+
+/// Pick the candidate with the largest species overlap with `union`, breaking
+/// ties by species count and then by content key.
+fn best_block(
+    blocks: &[&FasBlock],
+    species: &[BTreeSet<String>],
+    union: &BTreeSet<String>,
+    candidates: &[usize],
+    ref_name: &str,
+) -> usize {
+    let priority = |i: usize| {
+        (
+            species[i].intersection(union).count(),
+            species[i].len(),
+            content_key(blocks[i], ref_name),
+        )
+    };
+    let mut best = candidates[0];
+    for &idx in &candidates[1..] {
+        if priority(idx) > priority(best) {
+            best = idx;
+        }
+    }
+    best
+}
+
+/// Deterministic content-based merge order for progressive DP merging.
+///
+/// Greedy agglomeration: start with the block carrying the most species, then
+/// repeatedly attach the remaining block with the largest species overlap to
+/// the accumulated union. All tie-breaks use block contents, so the order is
+/// independent of the input file order.
+fn merge_order(blocks: &[&FasBlock], ref_name: &str) -> Vec<usize> {
+    let species: Vec<BTreeSet<String>> = blocks.iter().map(|b| block_species(b)).collect();
+    let mut remaining: Vec<usize> = (0..blocks.len()).collect();
+    let mut union: BTreeSet<String> = BTreeSet::new();
+    let mut order = Vec::with_capacity(blocks.len());
+    while !remaining.is_empty() {
+        let idx = best_block(blocks, &species, &union, &remaining, ref_name);
+        union.extend(species[idx].iter().cloned());
+        remaining.retain(|&i| i != idx);
+        order.push(idx);
+    }
+    order
+}
 
 fn entry_seq_equal(a: &FasEntry, b: &FasEntry) -> bool {
     a.seq() == b.seq()
@@ -220,7 +287,12 @@ fn merge_two_blocks_with_dp(
                 }
             }
 
-            if chosen.is_none() {
+            // The merged reference preserves the first block's reference
+            // sequence: filling ref_a gaps with ref_b bases would inflate the
+            // ungapped length and break the `ungapped_equal` invariant that
+            // downstream merges rely on. Non-reference species keep the
+            // two-block fallback.
+            if name != ref_name && chosen.is_none() {
                 if let Some(entry) = group[1] {
                     if let Some(idx) = map_b[pos] {
                         if idx < entry.seq().len() {
@@ -273,18 +345,21 @@ fn merge_blocks_with_dp(
         return Ok(None);
     }
 
-    let mut acc = match merge_two_blocks_with_dp(ref_name, [blocks[0], blocks[1]], cfg)? {
+    let order = merge_order(blocks, ref_name);
+    let ordered: Vec<&FasBlock> = order.iter().map(|&i| blocks[i]).collect();
+
+    let mut acc = match merge_two_blocks_with_dp(ref_name, [ordered[0], ordered[1]], cfg)? {
         Some(v) => v,
         None => return Ok(None),
     };
 
-    if blocks.len() == 2 {
+    if ordered.len() == 2 {
         return Ok(Some(acc));
     }
 
     match cfg.mode {
         FasMultizMode::Core => {
-            for &block in &blocks[2..] {
+            for &block in &ordered[2..] {
                 acc = match merge_two_blocks_with_dp(ref_name, [&acc, block], cfg)? {
                     Some(v) => v,
                     None => return Ok(None),
@@ -292,7 +367,7 @@ fn merge_blocks_with_dp(
             }
         }
         FasMultizMode::Union => {
-            for &block in &blocks[2..] {
+            for &block in &ordered[2..] {
                 if let Some(next) = merge_two_blocks_with_dp(ref_name, [&acc, block], cfg)? {
                     acc = next;
                 }
@@ -334,6 +409,10 @@ pub fn merge_window(
     if blocks.is_empty() {
         return Ok(None);
     }
+
+    // Deterministic order for the non-DP fallback below (first entry per
+    // species must not depend on input file order).
+    blocks.sort_by_key(|b| content_key(b, ref_name));
 
     if blocks.len() >= 2 {
         if let Some(block) = merge_blocks_with_dp(ref_name, &blocks, cfg)? {

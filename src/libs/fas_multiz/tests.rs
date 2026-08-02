@@ -443,3 +443,74 @@ fn merge_window_multi_input_dp_progressive() {
         ]
     );
 }
+
+#[test]
+fn merge_window_output_independent_of_input_order() {
+    // Same three blocks fed in every input-file permutation must produce an
+    // identical merged block (names and sequences). The progressive merge
+    // order is derived from block contents, never from input order.
+    let perms = [
+        [0usize, 1, 2],
+        [0, 2, 1],
+        [1, 0, 2],
+        [1, 2, 0],
+        [2, 0, 1],
+        [2, 1, 0],
+    ];
+
+    let build_blocks = || {
+        let (ref_entry1, ref_name1, ref_header1) = make_entry("ref", 1, 4, "AC--GT");
+        let (a_entry1, a_name1, a_header1) = make_entry("A", 1, 4, "AC--GT");
+        let block1 = make_block(vec![
+            (ref_entry1.clone(), ref_name1.clone(), ref_header1.clone()),
+            (a_entry1, a_name1, a_header1),
+        ]);
+
+        let (ref_entry2, ref_name2, ref_header2) = make_entry("ref", 1, 4, "A-C-GT");
+        let (b_entry2, b_name2, b_header2) = make_entry("B", 1, 4, "A-C-GT");
+        let block2 = make_block(vec![
+            (ref_entry2.clone(), ref_name2.clone(), ref_header2.clone()),
+            (b_entry2, b_name2, b_header2),
+        ]);
+
+        let (ref_entry3, ref_name3, ref_header3) = make_entry("ref", 1, 4, "ACG-T-");
+        let (c_entry3, c_name3, c_header3) = make_entry("C", 1, 4, "ACG-T-");
+        let block3 = make_block(vec![
+            (ref_entry3, ref_name3, ref_header3),
+            (c_entry3, c_name3, c_header3),
+        ]);
+
+        [block1, block2, block3]
+    };
+
+    let cfg = default_config(FasMultizMode::Union);
+    let window = Window {
+        chr: "ref".to_string(),
+        start: 1,
+        end: 4,
+    };
+
+    let mut outputs: Vec<(Vec<String>, Vec<String>)> = Vec::new();
+    for perm in perms {
+        let mut all = build_blocks();
+        let ordered: Vec<FasBlock> = perm
+            .iter()
+            .map(|&i| std::mem::replace(&mut all[i], make_block(vec![])))
+            .collect();
+        let blocks_per_input: Vec<Vec<FasBlock>> = ordered.into_iter().map(|b| vec![b]).collect();
+        let merged = merge_window("ref", &window, &blocks_per_input, &cfg)
+            .unwrap()
+            .expect("merge should succeed");
+        let seqs: Vec<String> = merged
+            .entries
+            .iter()
+            .map(|e| String::from_utf8(e.seq().to_vec()).unwrap())
+            .collect();
+        outputs.push((merged.names, seqs));
+    }
+
+    for (names, seqs) in &outputs[1..] {
+        assert_eq!(names, &outputs[0].0);
+        assert_eq!(seqs, &outputs[0].1);
+    }
+}

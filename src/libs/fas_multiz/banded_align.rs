@@ -105,14 +105,59 @@ fn banded_align_refs_inner(
             }
         };
 
-    let mut profiles: Vec<(&[u8], &[u8])> = Vec::new();
+    // All-species column profiles. `col_a[i]` holds the bases of every species
+    // in blocks[0] at column i (sorted by species name), `col_b[j]` for
+    // blocks[1]. A diagonal move is scored as sum-of-pairs over shared species
+    // self-pairs plus reference cross-pairs (each species scored against the
+    // reference anchor); gap-vs-base pairs contribute 0 so the gap cost stays
+    // entirely in the affine gap transitions (charging it per pair as well
+    // would dwarf the substitution scores and drag the alignment off the
+    // reference diagonal wherever a species carries a real indel).
+    let mut seqs_a: Vec<(&str, &[u8])> = Vec::new();
     let mut map_a: BTreeMap<&str, &FasEntry> = BTreeMap::new();
     for (entry, name) in blocks[0].entries.iter().zip(blocks[0].names.iter()) {
         map_a.insert(name.as_str(), entry);
     }
+    let mut names_a: Vec<&str> = map_a.keys().copied().collect();
+    names_a.sort_unstable();
+    for name in names_a {
+        seqs_a.push((name, map_a[name].seq()));
+    }
+
+    let mut seqs_b: Vec<(&str, &[u8])> = Vec::new();
+    let mut map_b: BTreeMap<&str, &FasEntry> = BTreeMap::new();
     for (entry, name) in blocks[1].entries.iter().zip(blocks[1].names.iter()) {
-        if let Some(ea) = map_a.get(name.as_str()) {
-            profiles.push((ea.seq(), entry.seq()));
+        map_b.insert(name.as_str(), entry);
+    }
+    let mut names_b: Vec<&str> = map_b.keys().copied().collect();
+    names_b.sort_unstable();
+    for name in names_b {
+        seqs_b.push((name, map_b[name].seq()));
+    }
+
+    let col_a: Vec<Vec<u8>> = (0..n)
+        .map(|i| {
+            seqs_a
+                .iter()
+                .map(|(_, s)| s.get(i).copied().unwrap_or(b'-'))
+                .collect()
+        })
+        .collect();
+    let col_b: Vec<Vec<u8>> = (0..m)
+        .map(|j| {
+            seqs_b
+                .iter()
+                .map(|(_, s)| s.get(j).copied().unwrap_or(b'-'))
+                .collect()
+        })
+        .collect();
+
+    let mut profiles: Vec<(usize, usize)> = Vec::new();
+    for (ia, (na, _)) in seqs_a.iter().enumerate() {
+        for (ib, (nb, _)) in seqs_b.iter().enumerate() {
+            if *na == *nb || *na == ref_name || *nb == ref_name {
+                profiles.push((ia, ib));
+            }
         }
     }
 
@@ -134,16 +179,11 @@ fn banded_align_refs_inner(
             if i > 0 && j > 0 {
                 if let Some(pk) = idx(i - 1, j - 1) {
                     let mut s = 0;
-                    for (pa, pb) in &profiles {
-                        let ba = pa[i - 1];
-                        let bb = pb[j - 1];
-                        if ba == b'-' && bb == b'-' {
-                            continue;
-                        } else if ba == b'-' || bb == b'-' {
-                            s += gap_open_pen + gap_extend_pen;
-                        } else {
-                            let raw = submat.get_score(ba as char, bb as char);
-                            s += raw / 50;
+                    for &(ia, ib) in &profiles {
+                        let ba = col_a[i - 1][ia];
+                        let bb = col_b[j - 1][ib];
+                        if ba != b'-' && bb != b'-' {
+                            s += submat.get_score(ba as char, bb as char) / 50;
                         }
                     }
                     let cand = score[pk].saturating_add(s);
