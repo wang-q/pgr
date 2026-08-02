@@ -1387,6 +1387,11 @@ PGR 内部不同模块混用 0-based half-open 与 1-based inclusive 两种约�
 > `pgr pl chainnet`（**非 --syn**，原生实现替代 `pgr pl ucsc`）→ `pgr maf to-paf`
 > 产出 90 条 PAF，可直接接 cluster/decompose。
 >
+> **引擎更新（2026-08-03）**：`sd search` 新增 `--engine pgi|lastz`（默认 pgi，原生
+> `pgr align pgi` 自比对）。库结构随之调整：pgi 引擎在 `libs/sd/search_pgi.rs`、
+> lastz 引擎在 `libs/sd/search_lastz.rs`，两引擎共用的 SD 过滤
+> （`psl_block_len`/`psl_identity`/`passes_sd_filters`）上移至 `libs/sd/mod.rs`。
+>
 > **第二阶段 `pgr sd align` 已实现（2026-08-02）**：`pgr sd align <genome.fa> <hits.psl> -o
 > hits.paf` 封装 chainnet（非 --syn）+ MAF→PAF 合并（`src/cmd_pgr/sd/align.rs`），MG1655
 > 实测 0.2 秒、90 条 PAF。原生 BISER 路线（`anchor.rs` / `refine.rs` PST chaining）仍延后——
@@ -1467,6 +1472,9 @@ PGR 内部不同模块混用 0-based half-open 与 1-based inclusive 两种约�
 > lastz 以第二个基因组为 query、第一个为 target（非 `--self`）→ LAV → PSL →
 > T2T-CHM13 过滤 → `pgr pl chainnet`（非 --syn）→ MAF → PAF。
 > 实测 MG1655 × Sakai：2 分 5 秒，303 条跨基因组同源区段。
+>
+> **引擎更新（2026-08-03）**：`pgr sd cross` 与 `search` 一样支持
+> `--engine pgi|lastz`（默认 pgi），参数集对齐（`--parallel`/`--query-depth`）。
 
 #### 第四阶段：core duplicon 与坐标转换（验证：CORE 标记与 translate 后坐标一致）
 

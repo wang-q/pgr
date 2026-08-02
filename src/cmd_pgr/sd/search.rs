@@ -1,9 +1,6 @@
 //! `pgr sd search` — putative SD detection via pgi or lastz self-alignment.
 
-use anyhow::Context;
 use clap::{value_parser, Arg, ArgMatches, Command};
-use cmd_lib::run_cmd;
-use std::io::BufRead;
 
 /// Build the clap subcommand for search.
 pub fn make_subcommand() -> Command {
@@ -92,7 +89,14 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let workdir = tempfile::tempdir()?;
     let hits = match engine {
-        "pgi" => search_pgi(genome, workdir.path(), parallel, min_len, min_identity)?,
+        "pgi" => {
+            let opts = pgr::libs::sd::search_pgi::SearchPgiOptions {
+                min_len,
+                min_identity,
+                parallel,
+            };
+            pgr::libs::sd::search_pgi::search_pgi(genome, workdir.path().to_str().unwrap(), &opts)?
+        }
         _ => {
             let opts = pgr::libs::sd::search_lastz::SearchLastzOptions {
                 preset: args.get_one::<String>("preset").cloned(),
@@ -114,37 +118,4 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         psl.write_to(&mut writer)?;
     }
     Ok(())
-}
-
-/// Run the native pgi self-alignment and keep hits passing the SD filters.
-fn search_pgi(
-    genome: &str,
-    workdir: &std::path::Path,
-    parallel: usize,
-    min_len: u32,
-    min_identity: f64,
-) -> anyhow::Result<Vec<pgr::libs::fmt::psl::Psl>> {
-    let ctx = pgr::libs::pl::PipelineCtx::new("pgr_sd_search_pgi_")?;
-    let pgr = ctx.pgr.clone();
-    let abs_genome = ctx.abs_path(genome)?;
-    let raw = ctx.abs_path(&workdir.join("hits.raw.psl").to_string_lossy())?;
-    let _cwd_guard = ctx.enter()?;
-    run_cmd!(${pgr} align pgi ${abs_genome} -o ${raw} --parallel ${parallel})?;
-
-    let mut hits = Vec::new();
-    let mut reader =
-        pgr::reader(&raw).with_context(|| format!("failed to open pgi SD hits {}", raw))?;
-    let mut line = String::new();
-    loop {
-        line.clear();
-        if reader.read_line(&mut line)? == 0 {
-            break;
-        }
-        if let Some(psl) = pgr::libs::fmt::psl::parse_or_warn(line.trim_end(), false)? {
-            if pgr::libs::sd::search_lastz::passes_sd_filters(&psl, min_len, min_identity) {
-                hits.push(psl);
-            }
-        }
-    }
-    Ok(hits)
 }

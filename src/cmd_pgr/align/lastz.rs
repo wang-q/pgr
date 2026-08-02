@@ -1,7 +1,6 @@
 use clap::builder::PossibleValuesParser;
 use clap::{value_parser, Arg, ArgAction, ArgMatches, Command};
 use std::io::Write;
-use tempfile::NamedTempFile;
 
 /// Build the clap subcommand for lastz.
 pub fn make_subcommand() -> Command {
@@ -151,49 +150,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         );
     }
 
-    // Resolve preset once (used for both matrix setup and params building)
-    let preset_info = if let Some(preset_name) = preset {
-        Some(
-            pgr::libs::lastz::find_preset(preset_name)
-                .ok_or_else(|| anyhow::anyhow!("unknown preset: {}", preset_name))?,
-        )
-    } else {
-        None
-    };
-
-    // Prepare matrix temp file if preset defines one.
-    // The `_` prefix retains the `NamedTempFile` handle for the rest of the
-    // function so its drop (which deletes the temp file) is deferred until
-    // `matrix_path` is no longer needed by the lastz subprocess.
-    let mut _temp_matrix_handle: Option<NamedTempFile> = None;
-    let mut matrix_path = String::new();
-
-    if let Some(p) = preset_info {
-        if let Some(matrix) = p.matrix {
-            let mut t = NamedTempFile::new()?;
-            t.write_all(matrix.as_bytes())?;
-            matrix_path = t.path().to_string_lossy().to_string();
-            _temp_matrix_handle = Some(t);
-        }
-    }
-
-    // Build common args (depth, format, preset params, user args)
-    let mut common_args = Vec::new();
-    common_args.push(format!("--querydepth=keep,nowarn:{}", opt_depth));
-    common_args.push("--format=lav".to_string());
-    common_args.push("--markend".to_string());
-    common_args.push("--ambiguous=iupac".to_string());
-
-    if let Some(p) = preset_info {
-        for arg in p.params.split_whitespace() {
-            if !arg.starts_with("Q=") {
-                common_args.push(arg.to_string());
-            }
-        }
-        if !matrix_path.is_empty() {
-            common_args.push(format!("Q={}", matrix_path));
-        }
-    }
+    // Common lastz arguments (query-depth, LAV format, preset params + matrix)
+    // come from the shared builder; user overrides are appended afterwards.
+    // The `_` prefix keeps the matrix temp file alive until lastz finishes.
+    let (mut common_args, _temp_matrix_handle) =
+        pgr::libs::lastz::build_common_args(preset.map(|s| s.as_str()), opt_depth)?;
 
     if let Some(args) = opt_lastz_args {
         for arg in args.split_whitespace() {

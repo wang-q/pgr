@@ -103,3 +103,40 @@ fn command_sd_search_lastz_engine() {
         "lastz engine found no SD hits"
     );
 }
+
+#[test]
+fn command_sd_cross_pgi_engine() {
+    // Two genomes sharing a duplicated region: the pgi engine maps the
+    // homology across genomes without lastz.
+    let temp = tempfile::TempDir::new().unwrap();
+    let dup = random_seq(3000, 11);
+    let fa_a = write_fa(
+        temp.path(),
+        "a",
+        &format!(">a\n{}\n{dup}\n", random_seq(500, 12)),
+    );
+    let fa_b = write_fa(
+        temp.path(),
+        "b",
+        &format!(">b\n{}\n{dup}\n", random_seq(500, 13)),
+    );
+
+    let out = temp.path().join("cross.paf");
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "sd",
+            "cross",
+            &fa_a,
+            &fa_b,
+            "--engine",
+            "pgi",
+            "-o",
+            out.to_str().unwrap(),
+        ])
+        .run();
+    assert!(!stderr.contains("error:"), "pgi cross failed: {stderr}");
+    assert!(
+        !fs::read_to_string(&out).unwrap().trim().is_empty(),
+        "pgi cross found no cross-genome homology"
+    );
+}

@@ -1,6 +1,7 @@
 //! Lastz aligner presets and scoring matrices ported from UCSC.
 
 use rayon::prelude::*;
+use std::io::Write;
 use std::path::PathBuf;
 
 /// Default scoring matrix for lastz (Human vs Mouse / Macaque / Cow).
@@ -110,6 +111,40 @@ pub fn preset_help() -> String {
         ));
     }
     help
+}
+
+/// Build the common lastz arguments shared by the align wrapper and the SD
+/// search engine: query-depth, LAV format, and the preset parameters with its
+/// scoring matrix (written to a temporary file, referenced via `Q=`).
+///
+/// The returned `NamedTempFile` keeps the substitution matrix alive until the
+/// caller's lastz invocation finishes; dropping it deletes the file.
+pub fn build_common_args(
+    preset: Option<&str>,
+    query_depth: usize,
+) -> anyhow::Result<(Vec<String>, Option<tempfile::NamedTempFile>)> {
+    let mut args = vec![
+        format!("--querydepth=keep,nowarn:{query_depth}"),
+        "--format=lav".to_string(),
+        "--markend".to_string(),
+        "--ambiguous=iupac".to_string(),
+    ];
+    let mut matrix_handle: Option<tempfile::NamedTempFile> = None;
+    if let Some(name) = preset {
+        let p = find_preset(name).ok_or_else(|| anyhow::anyhow!("unknown preset: {name}"))?;
+        for arg in p.params.split_whitespace() {
+            if !arg.starts_with("Q=") {
+                args.push(arg.to_string());
+            }
+        }
+        if let Some(matrix) = p.matrix {
+            let mut t = tempfile::NamedTempFile::new()?;
+            t.write_all(matrix.as_bytes())?;
+            args.push(format!("Q={}", t.path().display()));
+            matrix_handle = Some(t);
+        }
+    }
+    Ok((args, matrix_handle))
 }
 
 /// Options controlling a batch lastz run.
