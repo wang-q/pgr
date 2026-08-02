@@ -15,6 +15,7 @@ fn main() -> anyhow::Result<()> {
         .arg_required_else_help(true)
         .color(ColorChoice::Auto)
         .subcommand(cmd_pgr::ms::make_subcommand())
+        .subcommand(cmd_pgr::align::make_subcommand())
         .subcommand(cmd_pgr::axt::make_subcommand())
         .subcommand(cmd_pgr::chain::make_subcommand())
         .subcommand(cmd_pgr::dist::make_subcommand())
@@ -45,6 +46,7 @@ fn main() -> anyhow::Result<()> {
     * pbit - Population 2bit + delta: create, append, append-ref, stat, range, some, to-fa
 
 * Genome alignments:
+    * align - Pairwise genome alignment: pgi
     * chain - Chain operations: sort, filter, transform, to-net
     * net   - Net operations: info, subset, transform, convert
     * axt   - AXT sorting and conversion
@@ -55,7 +57,7 @@ fn main() -> anyhow::Result<()> {
 
 * Distance:
     * dist  - Metrics: hv, pgi, seq
-    * pgi   - Genome index (.pgi): build, stat, to-hv, align
+    * pgi   - Genome index (.pgi): build, stat, to-hv
 
 * Analysis:
     * sd    - Segmental duplication detection: align, cluster, cover, cross, decompose, run, search
@@ -75,6 +77,7 @@ fn main() -> anyhow::Result<()> {
     // Check which subcommand the user ran...
     match app.get_matches().subcommand() {
         Some(("ms", sub_matches)) => cmd_pgr::ms::execute(sub_matches),
+        Some(("align", sub_matches)) => cmd_pgr::align::execute(sub_matches),
         Some(("axt", sub_matches)) => cmd_pgr::axt::execute(sub_matches),
         Some(("chain", sub_matches)) => cmd_pgr::chain::execute(sub_matches),
         Some(("dist", sub_matches)) => cmd_pgr::dist::execute(sub_matches),

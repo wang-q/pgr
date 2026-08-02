@@ -1,6 +1,6 @@
-# pgr pgi align vs FastGA 端到端基准
+# pgr align pgi vs FastGA 端到端基准
 
-> 目的：对比 `pgr pgi align` 全流程（索引构建 ×2 + 扩展比对）与 FastGA 单命令
+> 目的：对比 `pgr align pgi` 全流程（索引构建 ×2 + 扩展比对）与 FastGA 单命令
 > 的端到端耗时。FastGA 是 C 的极致优化参照（GIX 归并 + wave aligner）。
 
 ## 环境与输入
@@ -20,7 +20,7 @@ REF="$PWD/tests/genome/mg1655.fa.gz"
 QUERY="$PWD/tests/genome/sakai.fa.gz"
 hyperfine --warmup 1 --runs 3 --export-markdown "$B/bench.md" \
   -n "pgr full (build 2x + align ext)" \
-    "$PGR pgi build $REF -o $B/r.pgi 2>/dev/null && $PGR pgi build $QUERY -o $B/q.pgi 2>/dev/null && $PGR pgi align $B/r.pgi $B/q.pgi --ref-seq $REF --query-seq $QUERY -o $B/o.psl 2>/dev/null" \
+    "$PGR pgi build $REF -o $B/r.pgi 2>/dev/null && $PGR pgi build $QUERY -o $B/q.pgi 2>/dev/null && $PGR align pgi $B/r.pgi $B/q.pgi --ref-seq $REF --query-seq $QUERY -o $B/o.psl 2>/dev/null" \
   -n "FastGA -psl (one-shot)" \
     "FastGA -psl -T8 -P$B $REF $QUERY > $B/f.psl 2>/dev/null"
 cat "$B/bench.md"

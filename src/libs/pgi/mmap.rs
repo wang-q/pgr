@@ -13,7 +13,7 @@ use std::path::Path;
 ///
 /// Records stay in the mapped pages: entries are located by binary search
 /// over the packed (big-endian) k-mer bytes and positions are decoded on
-/// demand, so the query index in `pgr pgi align` never materializes its
+/// demand, so the query index in `pgr align pgi` never materializes its
 /// position table in memory.
 pub struct PgiMmap {
     map: Mmap,

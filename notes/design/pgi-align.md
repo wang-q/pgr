@@ -1,4 +1,4 @@
-# pgr pgi align：两索引归并比对（设计定稿 + 开发记录）
+# pgr align pgi：两基因组归并比对（设计定稿 + 开发记录）
 
 > 定位：`.pgi` 的第一个比对消费者。输入两个已构建 .pgi，输出 PSL 块，
 > 喂给 `pgr pl chainnet`（UCSC 链化由 pgr 承担，见 [[fastga.md]] §12.3 决策 3）。
@@ -10,7 +10,7 @@
 
 ## 0. 当前状态
 
-**一句话**：`pgr pgi align` 已完整实现"种子归并 → 链化（greedy/tube）→
+**一句话**：`pgr align pgi` 已完整实现"种子归并 → 链化（greedy/tube）→
 扩展（banded 仿射 gap / Myers wave）→ PSL"，MG1655 vs Sakai/EC958/Nissle
 三项基准的 chainnet 覆盖与 FastGA 持平（差 0.0-0.015%）、耗时持平
 （~0.8s vs ~0.7s）、峰值内存更低（224 vs 332 MB，Sakai）。
@@ -81,7 +81,7 @@
 3. 链扩展：banded 仿射 gap 局部比对（greedy）或 Myers wave（tube），无
    序列输入时每条链输出一个 PSL 块；
 4. ref 流式 + query mmap 读取（E. coli 规模起不再整体载入内存）；
-5. `pgr pgi align` CLI + 集成测试 + E. coli 三株系验证（§2）。
+5. `pgr align pgi` CLI + 集成测试 + E. coli 三株系验证（§2）。
 
 **不做（未来工作）**：
 
@@ -149,7 +149,7 @@ key 相等按 (a_strand, b_strand) 解析方向：
 
 #### 1.3.4 PSL 输出（UCSC 约定，负链是坑）
 
-- q = query、t = ref（`pgr pgi align <ref> <query>`）；
+- q = query、t = ref（`pgr align pgi <ref> <query>`）；
 - 每条链（greedy）/ 每窗（扩展）= 一个块；
 - **负链**：qStart/qEnd 必须正链帧、内部 qStarts 必须 RC 帧（与 `psl chain`
   的 `calc_block_score` 一致）——§3.3 记录过整类 '-' 块被静默丢弃的 bug；
@@ -158,16 +158,24 @@ key 相等按 (a_strand, b_strand) 解析方向：
 ### 1.4 CLI
 
 ```
-pgr pgi align <ref.pgi> <query.pgi> -o out.psl
+pgr align pgi <ref> <query> -o out.psl
   [--freq 10] [--min-span 85] [--max-gap 1000] [--band 128] [--merge-gap 5000]
-  [--min-shared N] [--workflow greedy|tube] [--parallel 8]
+  [--min-shared N] [--workflow greedy|tube] [--parallel 8] [--keep-index]
+  [-k 40] [--smer 8] [--window 5]
   [--ref-seq ref.fa|2bit] [--query-seq query.fa|2bit]
 ```
 
-- 两侧索引参数必须一致（复用 `dist pgi` 校验）；
-- 无序列文件：每条链一个 PSL 块；有 `--ref-seq/--query-seq`：链细化成
-  带真实身份率的块（16 kb 窗口 + 2 kb 重叠滑动）；
-- query 索引必须是真实文件（mmap 不支持 stdin/gzip）。
+- 输入 `<ref>/<query>` 可以是基因组（FASTA/.gz/2bit）或 `.pgi`，任意混用：
+  基因组自动建索引（同目录同名 `.pgi` 存在则复用，否则临时目录，可选
+  `--keep-index` 保留），序列本身兼作扩展输入；`.pgi` 直接使用，扩展序列
+  由 `--ref-seq/--query-seq` 提供并做 contig 校验（防索引-序列不一致的
+  静默错误）；
+- 两侧参数必须一致（复用 `dist pgi` 校验）；`-k/--smer/--window` 仅序列
+  输入生效（`.pgi` 读索引头），显式传入与复用缓存冲突时报错；
+- 无序列：每条链一个 PSL 块；有序列：链细化成带真实身份率的块（16 kb
+  窗口 + 2 kb 重叠滑动）；
+- query 索引（或现场建的临时索引）必须是真实文件（mmap 不支持
+  stdin/gzip）。
 
 ## 2. 验证与基准
 
@@ -177,7 +185,8 @@ pgr pgi align <ref.pgi> <query.pgi> -o out.psl
 回归覆盖：方向解析（fwd/rev）、频率过滤、链化边界（band/gap/span）、
 tube anti 序、dedupe 0.95 保留延伸块、最大前缀/扩展范围过滤、负链 RC 帧、
 多 contig（RC contig + 2% 突变）、mmap 与全量读入等价性；集成测试
-`tests/cli_pgi_align.rs`（identical / RC / mutation / tube）。
+`tests/cli_align_pgi.rs`（identical / RC / mutation / tube + 序列直入 /
+复用 / 混用 / 校验拒绝）。
 
 ### 2.2 当前基准（2026-08-02，真实数据，8 线程，release）
 
@@ -200,7 +209,7 @@ chain_tubes **237 ms / 218 MB**、extend **278 ms / 229 MB**，墙钟 0.77 s
 
 ### 2.3 端到端管线验证（2026-08-02）
 
-`pgr pgi align` → `pgr psl to-chain` → `pgr pl chainnet --syn` 全链路，与
+`pgr align pgi` → `pgr psl to-chain` → `pgr pl chainnet --syn` 全链路，与
 FastGA 驱动版本对比 syntenic MAF：
 
 | 输入对 | 指标 | pgr 管线 | FastGA 管线 |
@@ -210,7 +219,7 @@ FastGA 驱动版本对比 syntenic MAF：
 
 结论：管线端到端可用（0.4s），块结构比 FastGA 更平滑（392 vs 506 /
 541 vs 711）；覆盖差 1.6-2.4% 来自分歧区（FastGA 的 wave 能桥接 banded
-窗口跳过的低分区间）。角色约定：`pgr pgi align <ref> <query>` 的 PSL 是
+窗口跳过的低分区间）。角色约定：`pgr align pgi <ref> <query>` 的 PSL 是
 q=query/t=ref，FastGA 输出相反，喂 chainnet 前需 `pgr psl swap`。
 
 ### 2.4 10 株 cohort 两两验证（45 对）
@@ -420,6 +429,14 @@ ec2011c_3493 聚类 99.1%+、nissle–cft073 99.6%）。合并块后身份率比
   条目（新增 `entry_next` 按组推进）。912 测试（新增 roundtrip/区间/
   截断/merge 等价性 4 项）。
 - **5.36 FastGA 内存勘误**：见 §5.1。
+- **命令迁移（2026-08-03）**：比对从 `pgr pgi align` 迁出为顶层
+  `pgr align pgi`（`pgr pgi` 收敛为纯索引管理）。输入自动分派：基因组
+  序列（FASTA/.gz/2bit）现场建索引——同目录同名 `.pgi` 存在则复用（显式
+  `-k/--smer/--window` 与缓存冲突时报错），否则临时目录、`--keep-index`
+  保留；`.pgi` 输入直接使用，`--ref-seq/--query-seq` 提供扩展序列并做
+  contig 一致性校验。理由：与 FastGA"两个基因组 → 比对"的直觉对齐，
+  索引从前置条件降级为可选复用（cohort 场景仍 10 次 build 支撑 45 对）。
+  测试 `tests/cli_align_pgi.rs`（11 项）。文档见 `docs/align-pgi.md`。
 
 ## 4. 已排除方向（避免重试）
 
@@ -498,7 +515,7 @@ ec2011c_3493 聚类 99.1%+、nissle–cft073 99.6%）。合并块后身份率比
 
 - 数据：`tests/genome/{mg1655,sakai,nissle1917,ec958}.fa.gz`（另有
   cft073/e2348_69/e24377a/ec042/se11 等 cohort 株）；
-- 命令：`pgr pgi align <ref> <query> --ref-seq --query-seq
+- 命令：`pgr align pgi <ref> <query> --ref-seq --query-seq
   --workflow tube`（8 线程默认），release；`/usr/bin/time -v` +
   `RUST_LOG=debug` 阶段探针（merge/chain_tubes/extend + VmHWM）；
 - 覆盖：`pgr psl to-chain` → `pgr pl chainnet --syn` syntenic 覆盖；

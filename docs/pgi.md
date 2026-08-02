@@ -15,7 +15,7 @@ merges for distance computation and seed discovery.
   - Upstream: `pgr fa to-2bit` (fastest index input), `pgr dist seq/hv`
     (sketch distances from sequences).
   - Downstream: `pgr dist pgi` (exact merge distance), `pgr psl to-chain`
-    and `pgr pl chainnet` (chain the PSL blocks from `align`).
+    and `pgr pl chainnet` (chain the PSL blocks from `pgr align pgi`).
 - **Design notes**: `notes/design/pbit.md` (index consumers)
   and `notes/design/pgi-align.md` (alignment pipeline).
 
@@ -80,50 +80,22 @@ overlap via cosine similarity (approximating `pgr dist pgi` at ~50x speed).
 Sampling parameters, sparse-update count, and dimension must match for
 comparisons; `.hv` files from different parameter sets are not comparable.
 
-### `pgr pgi align`
+### `pgr align pgi`
 
-Aligns two indexes by merging their sorted k-mer streams and chaining the
-shared seeds:
-
-```
-pgr pgi align ref.pgi query.pgi -o out.psl
-  [-f 10] [-c 85] [-s 1000] [--band 128] [--merge-gap 5000]
-  [--ref-seq ref.fa|ref.2bit] [--query-seq query.fa|query.2bit]
-```
-
-- `-f`/`--freq`: drop k-mers occurring more than this many times on either
-  side (repeats are not seeds);
-- `-c`/`--min-span`: minimum per-axis seed span (bp) for a chain;
-- `-s`/`--max-gap`: maximum bp gap between consecutive seeds in a chain;
-- `--band`: diagonal band half-width (bp) around the chain mean.
-- `--merge-gap`: merge adjacent colinear chains separated by at most this gap
-  (bp), stitching blocks split by insertions (IS elements).
-
-Without sequence files, each chain is emitted as a single PSL block. With
-`--ref-seq`/`--query-seq` (FASTA or 2bit), chains are refined by a banded
-local alignment into scored PSL records with real blocks; chains longer than
-16 kb are split into overlapping windows. The output feeds directly into
-`pgr psl to-chain` / `pgr pl chainnet`.
+The pairwise genome alignment consumer lives under `pgr align`; see
+[`align-pgi.md`](align-pgi.md). It accepts genome sequences directly
+(indexing them automatically, reusing a same-named `.pgi` when present) or
+explicit `.pgi` indexes.
 
 ## Notes
 
 * 2bit inputs are preferred for speed and random access.
-* `.pgi` files are not gzip-compressed. `pgr pgi align` streams the
-  reference index and memory-maps the query index (positions are decoded on
-  demand from mapped pages), so neither index is materialized in full.
-* The query .pgi for `pgr pgi align` must be a regular file; `stdin` and
-  gzipped query indexes are not supported.
+* `.pgi` files are not gzip-compressed.
 * Both indexes in a comparison must use identical `-k/--smer/--window`.
 
 ## Examples
 
-1. Build indexes and align two genomes:
-   ```
-   pgr pgi build a.fa.gz -o a.pgi
-   pgr pgi build b.2bit -o b.pgi
-   pgr pgi align a.pgi b.pgi --ref-seq a.fa.gz --query-seq b.2bit -o ab.psl
-   ```
-2. Compute the exact merge distance between two indexes:
+1. Compute the exact merge distance between two indexes:
    ```
    pgr dist pgi a.pgi b.pgi
    ```

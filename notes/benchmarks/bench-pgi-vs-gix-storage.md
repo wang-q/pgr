@@ -48,7 +48,7 @@ freq 4）+ positions 33 MB（3.70M × 9 B：cid 4 + pos 4 + strand 1）。
 | Sakai | 109.1 MiB | **59.5 MiB** | -45% |
 
 与 GIX 真实数据（49.4 MB）**持平**，且无 128 MB 固定前缀表开销。行为验证：
-`dist pgi` 输出与 v1 完全一致、`pgi align` 输出逐字节一致（862 块）。
+`dist pgi` 输出与 v1 完全一致、`align pgi` 输出逐字节一致（862 块）。
 格式 v2 未采用 GIX 的 128 MB 前缀表（细菌规模纯负担，且破坏独立文件直读）。
 
 ## 修正后的对比

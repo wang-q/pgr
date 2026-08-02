@@ -877,7 +877,8 @@ pub fn align_to_psl(a: &PgiIndex, b: &PgiIndex, params: &AlignParams) -> anyhow:
     let hits = merge_seed_hits(a, b, params.freq, effective_min_shared(a.k, params))?;
     match params.workflow {
         Workflow::Tube => anyhow::bail!(
-            "the tube workflow needs --ref-seq/--query-seq (wave extension requires sequences)"
+            "the tube workflow needs extension sequences (genome inputs or \
+             --ref-seq/--query-seq for .pgi inputs)"
         ),
         Workflow::Greedy => {
             let chains = chain_hits(
@@ -903,7 +904,8 @@ pub fn align_to_psl_streaming<R: Read + Send, B: PgiQuery + Sync>(
     let hits = merge_seed_hits_from_stream(a, b, params.freq, effective_min_shared(k, params))?;
     match params.workflow {
         Workflow::Tube => anyhow::bail!(
-            "the tube workflow needs --ref-seq/--query-seq (wave extension requires sequences)"
+            "the tube workflow needs extension sequences (genome inputs or \
+             --ref-seq/--query-seq for .pgi inputs)"
         ),
         Workflow::Greedy => {
             let chains = chain_hits(

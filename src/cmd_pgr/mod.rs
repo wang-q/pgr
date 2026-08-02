@@ -1,5 +1,6 @@
 //! Subcommand modules for the `pgr` binary.
 
+pub mod align;
 pub mod args;
 pub mod axt;
 pub mod chain;

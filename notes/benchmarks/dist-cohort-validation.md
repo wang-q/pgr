@@ -2,7 +2,7 @@
 
 > 目的：验证 `.pgi` 的两个距离消费者（`dist pgi` 精确归并、`pgi to-hv` +
 > `dist hv` 近似向量）在 10 株 E. coli 上的距离语义，与 `dist seq` 草图距离
-> 及比对身份率（`pgr pgi align` 实测，见 [[../design/pgi-align.md]] §2.4）
+> 及比对身份率（`pgr align pgi` 实测，见 [[../design/pgi-align.md]] §2.4）
 > 对照。日期：2026-08-02。
 
 ## 方法与数据

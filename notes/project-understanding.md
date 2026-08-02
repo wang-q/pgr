@@ -3,7 +3,7 @@
 本文档是我对 pgr (Practical Genome Refiner) 项目的整体理解，涵盖架构、设计哲学、代码模式、
 当前能力与未来方向。写作时间：2026-06-27，最后更新：2026-08-01
 （2026-08-02：文档准确性审计——补全 pgi/sd 模块、pbit v1004 多参考、
-dist pgi 与 .hv 模式、pgi align 管线；内嵌索引按决策 A 移除；修正 §2.1/§3/§4/§6/§9）。
+dist pgi 与 .hv 模式、align pgi 管线；内嵌索引按决策 A 移除；修正 §2.1/§3/§4/§6/§9）。
 （2026-08-02：全量通读 src/ 复核——更新 §2.1/§4 的 ds 新成员（best_crossover/merge_intervals）、
 §4.4 paf/pl 描述、§6 现状（UCSC 全链路字节级一致）、§7.1 UCSC 验证矩阵（axtToMaf 已修复、
 SE11 多染色体反向验证）、§9 索引状态；
@@ -275,7 +275,7 @@ clustalw/muscle/mafft），充当工作流 glue。这与 `chain`/`net` 模块的
 - `libs/fmt/twobit.rs`：2bit 格式读写
 - `libs/fmt/psl.rs`：PSL 格式
 - `libs/alignment/`：比对通用逻辑（coords/msa/slice/stat/trim/variation/banded——banded
-  局部比对为 pgi align 的扩展器）
+  局部比对为 align pgi 的扩展器）
 - `libs/fas_multiz/`：Multiz 多序列比对处理（banded DP 合并）
 - `libs/fas_xlsx.rs`：FAS (block FA) 到 Excel 转换
 - `libs/fasta/`：FASTA 处理工具（dedup/filter/stat）
@@ -482,7 +482,7 @@ chainnet 后消失。`pgr psl chain` 在 2bit 序列缓存优化后（~0.3 s）�
 | 文档 | 定位 | 状态 |
 |------|------|------|
 | [[pbit.md]] | `pgr pbit` 格式设计（LZ-diff + CIGAR delta + 多参考，已合并原扩展草案；索引不内嵌，决策 A） | v1004 已实现，**暂停评审中** |
-| [[pgi-align.md]] | `.pgi` 两索引归并比对（种子→链→banded 扩展→PSL） | v1-v3 已实现（与 FastGA 端到端持平） |
+| [[pgi-align.md]] | 两基因组归并比对（`pgr align pgi`，种子→链→banded 扩展→PSL） | v1-v3 已实现（与 FastGA 端到端持平） |
 | [[fas-multiz.md]] | `libs::fas_multiz` 设计与实现（banded DP 合并） | 已实现（CLI 已落地） |
 | [[spoa_port.md]] | Spoa C++ → Rust 移植（POA 引擎） | 已完成（双引擎集成已落地） |
 | [[ms2dna_port.md]] | ms2dna C → Rust 迁移设计 | 已实现（实际命令为 `pgr ms to-dna`） |
