@@ -31,8 +31,8 @@ Examples:
    pgr pgi align ref.pgi query.pgi --ref-seq ref.fa --query-seq query.fa -o out.psl
 4. Stitch chains across small insertions:
    pgr pgi align ref.pgi query.pgi --merge-gap 10000 -o out.psl
-5. Partial seeds are experimental and degrade results; exact k-mers default:
-   pgr pgi align ref.pgi query.pgi --min-shared 30 -o out.psl
+5. Lower the partial-seed floor (tube defaults to FastGA's plen floor of 12):
+   pgr pgi align ref.pgi query.pgi --min-shared 16 -o out.psl
 "###,
         )
         .arg(
@@ -90,7 +90,7 @@ Examples:
             Arg::new("min_shared")
                 .long("min-shared")
                 .value_parser(value_parser!(usize))
-                .help("Minimum shared seed length (bp); default = k for greedy, k/2 for tube"),
+                .help("Minimum shared seed length (bp); default = k for greedy, 12 for tube"),
         )
         .arg(
             Arg::new("workflow")
@@ -141,7 +141,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         (Some(rp), Some(qp)) => {
             let rs = read_seqs(rp)?;
             let qs = read_seqs(qp)?;
-            pgr::libs::pgi::align::align_to_psl_ext(&a, &b, &params, &rs, &qs)?
+            pgr::libs::pgi::align::align_to_psl_ext(a, b, &params, &rs, &qs)?
         }
         _ => pgr::libs::pgi::align::align_to_psl(&a, &b, &params)?,
     };
