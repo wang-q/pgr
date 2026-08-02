@@ -26,7 +26,8 @@ mixed freely:
   sequences for chain refinement, and are validated against the index.
 With a single input the genome is aligned to itself (internal repeats and
 haplotype-level homology, FastGA's self mode); exact self-identity hits are
-dropped.
+dropped. `--self` states the same explicitly and accepts the reference input
+again as the query.
 
 Notes:
 * Both sides must use identical sampling parameters (k, syncmer, window).
@@ -65,6 +66,12 @@ Examples:
             Arg::new("query")
                 .index(2)
                 .help("Query genome (FASTA/2bit) or .pgi index; omit for self-alignment"),
+        )
+        .arg(
+            Arg::new("self_align")
+                .long("self")
+                .action(clap::ArgAction::SetTrue)
+                .help("Self-alignment (query omitted or the same input as the reference)"),
         )
         .arg(crate::cmd_pgr::args::outfile_arg_required())
         .arg(
@@ -170,7 +177,17 @@ struct SideInput {
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let ref_input = args.get_one::<String>("ref").unwrap();
     let query_input = args.get_one::<String>("query");
-    let self_mode = query_input.is_none();
+    let is_self = args.get_flag("self_align");
+    if is_self {
+        if let Some(q) = query_input {
+            anyhow::ensure!(
+                q == ref_input,
+                "--self expects the query to be the same input as the reference \
+                 (omit the query or pass the same file)"
+            );
+        }
+    }
+    let self_mode = is_self || query_input.is_none();
     let query_input = query_input.map(|s| s.as_str()).unwrap_or(ref_input);
     let outfile = args.get_one::<String>("outfile").unwrap();
     let params = pgr::libs::pgi::align::AlignParams {

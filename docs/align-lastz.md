@@ -18,8 +18,9 @@ comparisons. The output is LAV format; convert it with `pgr lav to-psl`.
 *   `--query-depth <int>`: Query depth threshold (default: 50). This sets
     `--querydepth=keep,nowarn:N` for `lastz`, which stops processing a query
     sequence once the coverage depth exceeds N (approx. 50x coverage).
-*   `--self`: Perform self-alignment (align target against itself). In this
-    mode, `target` and `query` should point to the same file or directory.
+*   `--self`: Self-alignment (align the target against itself); the query
+    input may be omitted or must be the same path as the target. Omitting the
+    query implies `--self`.
 *   `-s, --preset <set01..set07>`: Use a predefined parameter set (see below).
 *   `--show-preset`: Display the configuration (parameters & matrix) for the
     selected preset and exit.
@@ -53,4 +54,8 @@ comparisons. The output is LAV format; convert it with `pgr lav to-psl`.
 3.  **Show parameters for a preset**:
     ```bash
     pgr align lastz --preset set01 --show-preset
+    ```
+4.  **Self-alignment with a single input**:
+    ```bash
+    pgr align lastz genome.fa --outdir self_out
     ```

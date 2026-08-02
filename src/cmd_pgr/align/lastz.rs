@@ -46,9 +46,8 @@ Examples:
         )
         .arg(
             Arg::new("query")
-                .required_unless_present("show_preset")
                 .index(2)
-                .help("Query FASTA file or directory"),
+                .help("Query FASTA file or directory; omit for self-alignment"),
         )
         .arg(
             Arg::new("query_depth")
@@ -61,7 +60,7 @@ Examples:
             Arg::new("is_self")
                 .long("self")
                 .action(clap::ArgAction::SetTrue)
-                .help("Self-alignment"),
+                .help("Self-alignment (query omitted or the same input as the target)"),
         )
         .arg(
             Arg::new("preset")
@@ -105,31 +104,51 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let arg_query = args.get_one::<String>("query").unwrap();
+    let arg_query = args.get_one::<String>("query");
     let arg_target = args.get_one::<String>("target").unwrap();
     let opt_depth = *args.get_one::<usize>("query_depth").unwrap();
     let opt_lastz_args = args.get_one::<String>("lastz_args");
     let opt_output = args.get_one::<String>("outdir").unwrap();
     let opt_parallel = *args.get_one::<usize>("parallel").unwrap();
     let is_self = args.get_flag("is_self");
+    if is_self {
+        if let Some(q) = arg_query {
+            anyhow::ensure!(
+                q == arg_target,
+                "--self expects the query to be the same input as the target \
+                 (omit the query or pass the same path)"
+            );
+        }
+    }
+    let self_mode = is_self || arg_query.is_none();
 
     // Check if lastz is installed
     if which::which("lastz").is_err() {
         anyhow::bail!("lastz not found in PATH. Please install lastz first.");
     }
 
-    // Expand files
-    let mut query_files = pgr::libs::fmt::fa::find_fasta_files(arg_query);
-    query_files.sort();
-
     let mut target_files = pgr::libs::fmt::fa::find_fasta_files(arg_target);
     target_files.sort();
 
-    if query_files.is_empty() {
-        anyhow::bail!("No query FASTA files found in {}", arg_query);
-    }
     if target_files.is_empty() {
         anyhow::bail!("No target FASTA files found in {}", arg_target);
+    }
+    let query_files = if self_mode {
+        target_files.clone()
+    } else {
+        let mut qf = pgr::libs::fmt::fa::find_fasta_files(arg_query.unwrap());
+        qf.sort();
+        qf
+    };
+    if query_files.is_empty() {
+        anyhow::bail!(
+            "No query FASTA files found in {}",
+            if self_mode {
+                arg_target
+            } else {
+                arg_query.unwrap()
+            }
+        );
     }
 
     // Resolve preset once (used for both matrix setup and params building)

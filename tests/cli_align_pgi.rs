@@ -428,3 +428,60 @@ fn command_align_pgi_self() {
         "an exact self-identity block was emitted"
     );
 }
+
+#[test]
+fn command_align_pgi_self_flag_with_query() {
+    // --self with the same input passed twice is equivalent to single-input
+    // self-alignment: no exact self-identity blocks.
+    let temp = tempfile::TempDir::new().unwrap();
+    let seq = random_seq(400, 42);
+    let genome = format!(">genome\n{seq}\n{seq}\n");
+    let fa = temp.path().join("genome.fa");
+    fs::write(&fa, &genome).unwrap();
+
+    let out = temp.path().join("out.psl");
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "align",
+            "pgi",
+            fa.to_str().unwrap(),
+            fa.to_str().unwrap(),
+            "--self",
+            "-o",
+            out.to_str().unwrap(),
+        ])
+        .run();
+    assert!(stderr.contains("wrote"), "self-align failed: {stderr}");
+    let records = parse_psl(&fs::read_to_string(&out).unwrap());
+    assert!(!records.is_empty(), "expected repeat blocks");
+    assert!(
+        records
+            .iter()
+            .all(|r| !(r.0 == "+" && r.1 == r.3 && r.2 == r.4)),
+        "an exact self-identity block was emitted"
+    );
+}
+
+#[test]
+fn command_align_pgi_self_flag_conflicting_query() {
+    // --self with a different query input must be rejected.
+    let temp = tempfile::TempDir::new().unwrap();
+    let ref_fa = write_fa(temp.path(), "ref", &random_seq(400, 42));
+    let query_fa = write_fa(temp.path(), "query", &random_seq(400, 7));
+
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "align",
+            "pgi",
+            &ref_fa,
+            &query_fa,
+            "--self",
+            "-o",
+            temp.path().join("out.psl").to_str().unwrap(),
+        ])
+        .run_fail();
+    assert!(
+        stderr.contains("--self expects the query"),
+        "expected conflicting-query error: {stderr}"
+    );
+}

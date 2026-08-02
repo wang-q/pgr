@@ -107,3 +107,59 @@ fn test_align_lastz_missing_inputs() {
         .assert()
         .failure();
 }
+
+#[test]
+fn test_align_lastz_single_input_self() {
+    if !check_lastz_installed() {
+        eprintln!("Skipping test_align_lastz_single_input_self: lastz not installed");
+        return;
+    }
+
+    let temp = TempDir::new().unwrap();
+    let t_path = std::env::current_dir().unwrap().join("tests/pgr");
+
+    // A single input implies self-alignment (no --self flag needed).
+    PgrCmd::new()
+        .args(&[
+            "align",
+            "lastz",
+            t_path.join("pseudocat.fa").to_str().unwrap(),
+            "--outdir",
+            temp.path().to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    let output_file = temp.path().join("[pseudocat]vs[pseudocat].lav");
+    assert!(output_file.exists());
+    let content = fs::read_to_string(&output_file).unwrap();
+    assert!(content.contains("#:lav"));
+    assert!(content.contains("s {"));
+}
+
+#[test]
+fn test_align_lastz_self_flag_conflicting_query() {
+    if !check_lastz_installed() {
+        eprintln!("Skipping test_align_lastz_self_flag_conflicting_query: lastz not installed");
+        return;
+    }
+
+    let temp = TempDir::new().unwrap();
+    let t_path = std::env::current_dir().unwrap().join("tests/pgr");
+
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "align",
+            "lastz",
+            t_path.join("pseudocat.fa").to_str().unwrap(),
+            t_path.join("pseudopig.fa").to_str().unwrap(),
+            "--self",
+            "--outdir",
+            temp.path().to_str().unwrap(),
+        ])
+        .run_fail();
+    assert!(
+        stderr.contains("--self expects the query"),
+        "expected conflicting-query error: {stderr}"
+    );
+}

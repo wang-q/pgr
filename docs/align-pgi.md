@@ -22,9 +22,9 @@ pgr align pgi ref query -o out.psl
   the sequences for chain refinement, and are validated against the index
   contig table.
 
-With a single input the genome is aligned to itself (internal repeats and
-haplotype-level homology, FastGA's self mode); exact self-identity hits are
-dropped.
+With a single input (or `--self` with the same input as query) the genome is
+aligned to itself (internal repeats and haplotype-level homology, FastGA's
+self mode); exact self-identity hits are dropped.
 
 ## Options
 
@@ -42,6 +42,8 @@ dropped.
 - `-k`/`--smer`/`--window`: sampling parameters for automatic indexing of
   genome inputs only (default 40/8/5, matching FastGA GIX);
 - `--keep-index`: write automatically built indexes next to the inputs;
+- `--self`: self-alignment; the query input may be omitted or must be the same
+  as the reference;
 - `--ref-seq`/`--query-seq`: sequences for chain refinement of `.pgi` inputs
   (FASTA or .2bit).
 
