@@ -117,6 +117,38 @@ pub fn hash_hv_i8(seed_vec: &[u64], hv_d: usize) -> Vec<i32> {
     hv
 }
 
+/// Splitmix64 step (deterministic, well-distributed for sparse projection).
+fn splitmix64(mut x: u64) -> u64 {
+    x = x.wrapping_add(0x9E37_79B9_7F4A_7C15);
+    x = (x ^ (x >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    x = (x ^ (x >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    x ^ (x >> 31)
+}
+
+/// Sparse hypervector projection: each seed updates `s` random dimensions
+/// with ±1 (locality-sensitive hashing style).
+///
+/// Dense encodings saturate for large seed sets (every dimension accumulates
+/// contributions from all seeds); the sparse projection keeps the shared-seed
+/// signal dominant, so cosine similarity on the result approximates the k-mer
+/// set overlap (see notes/benchmarks/dist-cohort-validation.md).
+pub fn hash_hv_sparse(seed_vec: &[u64], hv_d: usize, s: usize) -> Vec<i32> {
+    let mut hv = vec![0i32; hv_d];
+    for &seed in seed_vec {
+        let mut x = splitmix64(seed);
+        for _ in 0..s {
+            x = splitmix64(x);
+            let idx = (x % hv_d as u64) as usize;
+            if ((x >> 32) & 1) == 1 {
+                hv[idx] += 1;
+            } else {
+                hv[idx] -= 1;
+            }
+        }
+    }
+    hv
+}
+
 #[allow(dead_code)]
 fn hash_hv_i8_serial(seed_vec: &[u64], hv_d: usize) -> Vec<i32> {
     // Initialize HV with 0.

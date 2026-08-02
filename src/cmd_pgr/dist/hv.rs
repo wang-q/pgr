@@ -195,34 +195,46 @@ fn run_hv_files(
     let files2 = load(&paths2)?;
     let k = files1.first().map(|f| f.k).unwrap_or(0);
     let dim = files1.first().map(|f| f.dim).unwrap_or(0);
+    let sparse = files1.first().map(|f| f.sparse).unwrap_or(0);
     for f in files1.iter().chain(files2.iter()) {
         anyhow::ensure!(f.k == k, "hv k-mer size mismatch: {} vs {}", f.k, k);
         anyhow::ensure!(f.dim == dim, "hv dimension mismatch: {} vs {}", f.dim, dim);
+        anyhow::ensure!(
+            f.sparse == sparse,
+            "hv sparse-update mismatch: {} vs {}",
+            f.sparse,
+            sparse
+        );
     }
-    let entries1: Vec<pgr::libs::hv::HvEntry> = files1
-        .into_iter()
-        .map(|f| pgr::libs::hv::HvEntry {
-            name: f.name,
-            set: f.hv,
-        })
-        .collect();
-    let entries2: Vec<pgr::libs::hv::HvEntry> = files2
-        .into_iter()
-        .map(|f| pgr::libs::hv::HvEntry {
-            name: f.name,
-            set: f.hv,
-        })
-        .collect();
-    pgr::libs::par::par_run_pairs(&entries1, &entries2, &sender, |e1, e2| {
-        let d = pgr::libs::hv::calc_distances(&e1.set, &e2.set, k);
+    pgr::libs::par::par_run_pairs(&files1, &files2, &sender, |e1, e2| {
+        // Sparse HDC: cosine similarity approximates the k-mer set overlap
+        // (shared = cos * sqrt(n1 * n2)); stored k-mer counts give exact
+        // set cardinalities.
+        let dot: f64 = e1
+            .hv
+            .iter()
+            .zip(&e2.hv)
+            .map(|(x, y)| (*x as f64) * (*y as f64))
+            .sum();
+        let n1 = e1.n_kmer as f64;
+        let n2 = e2.n_kmer as f64;
+        let na: f64 = e1.hv.iter().map(|x| (*x as f64) * (*x as f64)).sum();
+        let nb: f64 = e2.hv.iter().map(|x| (*x as f64) * (*x as f64)).sum();
+        let sim = dot / (na.sqrt() * nb.sqrt());
+        let inter = (sim * (n1 * n2).sqrt()).round() as usize;
+        let inter = inter.min(e1.n_kmer).min(e2.n_kmer);
+        let union = e1.n_kmer + e2.n_kmer - inter;
+        let jaccard = inter as f32 / union as f32;
+        let containment = inter as f32 / e1.n_kmer as f32;
+        let mash = pgr::libs::hash::mash_distance(jaccard as f64, e1.k) as f32;
         let dist = if is_sim {
-            pgr::libs::hash::mash_to_sim(d.mash as f64) as f32
+            pgr::libs::hash::mash_to_sim(mash as f64) as f32
         } else {
-            d.mash
+            mash
         };
         Some(format!(
             "{}\t{}\t{}\t{}\t{}\t{}\t{:.4}\t{:.4}\t{:.4}\n",
-            e1.name, e2.name, d.card1, d.card2, d.inter, d.union, dist, d.jaccard, d.containment
+            e1.name, e2.name, e1.n_kmer, e2.n_kmer, inter, union, dist, jaccard, containment
         ))
     });
     drop(sender);

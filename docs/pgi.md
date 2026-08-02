@@ -62,12 +62,15 @@ Projects the index's k-mer set onto a fixed-dimension hypervector for fast
 pairwise comparison:
 
 ```
-pgr pgi to-hv in.pgi -o out.hv [--dim 1024]
+pgr pgi to-hv in.pgi -o out.hv [--dim 4096] [--sparse 3]
 ```
 
-The output `.hv` can be compared with `pgr dist hv`. Sampling parameters and
-dimension must match for comparisons; `.hv` files from different parameter
-sets are not mutually comparable.
+The projection is sparse: each k-mer updates `--sparse` random dimensions,
+so the shared-k-mer signal stays dominant for large k-mer sets. The output
+`.hv` can be compared with `pgr dist hv`, which recovers the k-mer set
+overlap via cosine similarity (approximating `pgr dist pgi` at ~50x speed).
+Sampling parameters, sparse-update count, and dimension must match for
+comparisons; `.hv` files from different parameter sets are not comparable.
 
 ### `pgr pgi align`
 

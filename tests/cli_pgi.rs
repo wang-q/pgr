@@ -168,8 +168,9 @@ fn command_pgi_to_hv() {
     assert!(stderr.contains("hypervector"), "to-hv failed: {stderr}");
     let bytes = fs::read(&hv).unwrap();
     assert_eq!(&bytes[0..4], b"PGV1", "bad hv magic");
-    // 4 magic + 4 ver + 4 k + 4 dim + 4 name_len + name(1) + 1024*4 hv bytes
-    assert_eq!(bytes.len(), 4 + 4 + 4 + 4 + 4 + 1 + 1024 * 4);
+    // 4 magic + 4 ver + 4 k + 4 dim + 4 sparse + 8 n_kmer + 4 name_len
+    // + name(1) + 4096*4 hv bytes (default dim)
+    assert_eq!(bytes.len(), 4 + 4 + 4 + 4 + 4 + 8 + 4 + 1 + 4096 * 4);
 }
 
 #[test]
