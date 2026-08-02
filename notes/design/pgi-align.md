@@ -306,6 +306,29 @@ q/t 角色 → 同一 chainnet）对比 syntenic MAF：
   FastGA 的 PSL 是 q=source1/t=source2，两者互换，喂 chainnet 前需
   `pgr psl swap`（或调整参数顺序）。
 
+## 5.11 Myers wavefront 扩展器：移植与负结果（2026-08-02）
+
+按 FastGA 技术路径移植了 `align.c forward_wave` 的 Myers wavefront 核心
+（V[k] 波前 + 三分支更新 + snake + 逐波前驱精确回溯，锚点双向扩展），
+见 `src/libs/alignment/wave.rs`（单元测试通过：全等/单错配/插入路径）。
+作为独立实现保留，**不接入当前管线**。
+
+接入测试（替换 banded 作为窗口扩展引擎，两种锚点策略）：
+
+| 引擎 | PSL 块数 | chainnet syntenic 覆盖 |
+|---|---:|---:|
+| banded（当前） | 3512 | **87.7%** |
+| wave（窗口中心锚点） | 6477 | 71.6% |
+| wave（最近匹配锚点） | 12184 | 32.7% |
+
+**负结果**：unit-cost 波前对 indel 无 gap 结构偏好，CIGAR 碎片化（块数
+3-4×）；且波前从锚点贪心延伸，产出大量无法通过 syntenic 过滤的低质量块。
+**根因**：FastGA 的 wave 依赖其 tube 链化（`align_contigs`）提供的锚定
+上下文与阈值（ALIGN_MIN/ALIGN_RATE）；脱离该上下文单独移植扩展器不成立。
+
+**下一步**：移植 tube 链化（种子流 → anti-diagonal 桶 → tube → 每 tube
+wave 扩展），届时 wave 引擎按 FastGA 语义接入；在此之前 banded 保持默认。
+
 ## 6. 相关文档
 
 - 索引格式与消费者规划：[[pbit.md]]（多参考节 + .pgi 距离消费者层级）

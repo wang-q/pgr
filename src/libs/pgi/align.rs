@@ -484,12 +484,16 @@ fn extend_window(
     // Window starts were placed on the chain diagonal, so the expected
     // within-window diagonal (q_i - t_j) is 0.
     let aln = align_banded_local(&q, t, dp_band, 0, &AlignmentParams::default())?;
-    let q_covered = aln.q_aln.iter().filter(|&&c| c != b'-').count();
-    let t_covered = aln.t_aln.iter().filter(|&&c| c != b'-').count();
+    let q_aln = aln.q_aln;
+    let t_aln = aln.t_aln;
+    let q_start = aln.q_start;
+    let t_start = aln.t_start;
+    let q_covered = q_aln.iter().filter(|&&c| c != b'-').count();
+    let t_covered = t_aln.iter().filter(|&&c| c != b'-').count();
     if q_covered == 0 || t_covered == 0 {
         return None;
     }
-    let q_abs = q_win + aln.q_start;
+    let q_abs = q_win + q_start;
     // Reverse-strand PSLs use whole-contig RC-space coordinates here;
     // `Psl::from_align` converts them to original ascending coordinates.
     let strand = if chain.strand == 0 { "+" } else { "-" };
@@ -498,12 +502,12 @@ fn extend_window(
         b.contigs[chain.b_contig as usize].1 as u32,
         q_abs as i32,
         (q_abs + q_covered) as i32,
-        &String::from_utf8_lossy(&aln.q_aln),
+        &String::from_utf8_lossy(&q_aln),
         &a.contigs[chain.a_contig as usize].0,
         a.contigs[chain.a_contig as usize].1 as u32,
-        (t_win_start + aln.t_start) as i32,
-        (t_win_start + aln.t_start + t_covered) as i32,
-        &String::from_utf8_lossy(&aln.t_aln),
+        (t_win_start + t_start) as i32,
+        (t_win_start + t_start + t_covered) as i32,
+        &String::from_utf8_lossy(&t_aln),
         strand,
     )
 }

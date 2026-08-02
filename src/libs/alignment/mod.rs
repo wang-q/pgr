@@ -5,6 +5,7 @@ pub mod slice;
 pub mod stat;
 pub mod trim;
 pub mod variation;
+pub mod wave;
 
 pub use banded::{align_banded_local, BandedAlign};
 pub use coords::{
@@ -21,3 +22,4 @@ pub use variation::{
     collect_indels, collect_subs, get_indels, get_subs, polarize_indels, polarize_subs,
     vcf_alt_bases, Indel, Substitution,
 };
+pub use wave::wave_extend;
