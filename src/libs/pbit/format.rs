@@ -13,7 +13,7 @@ pub const PBIT_MAGIC: u32 = 0x54494250;
 /// pbit format major version.
 pub const PBIT_VERSION_MAJOR: u32 = 1;
 /// pbit format minor version.
-pub const PBIT_VERSION_MINOR: u32 = 3;
+pub const PBIT_VERSION_MINOR: u32 = 4;
 /// Current file version encoded as major*1000 + minor.
 pub const PBIT_VERSION: u32 = PBIT_VERSION_MAJOR * 1000 + PBIT_VERSION_MINOR;
 
@@ -217,13 +217,10 @@ pub fn read_ref_index<R: Read>(reader: &mut R) -> Result<Vec<RefGroupEntry>> {
     Ok(entries)
 }
 
-/// One reference genome in the archive: its name, the embedded `.pgi` index
-/// segment offsets (0/0 when absent), and its segment group range.
+/// One reference genome in the archive: its name and segment group range.
 #[derive(Debug, Clone, Default)]
 pub struct RefTableEntry {
     pub ref_name: String,
-    pub idx_offset: u64,
-    pub idx_size: u64,
     pub group_start: u32,
     pub group_count: u32,
 }
@@ -234,8 +231,6 @@ pub fn write_ref_table<W: Write>(writer: &mut W, refs: &[RefTableEntry]) -> Resu
     writer.write_all(&(refs.len() as u32).to_le_bytes())?;
     for r in refs {
         write_string(writer, &r.ref_name)?;
-        writer.write_all(&r.idx_offset.to_le_bytes())?;
-        writer.write_all(&r.idx_size.to_le_bytes())?;
         writer.write_all(&r.group_start.to_le_bytes())?;
         writer.write_all(&r.group_count.to_le_bytes())?;
     }
@@ -248,14 +243,10 @@ pub fn read_ref_table<R: Read>(reader: &mut R) -> Result<Vec<RefTableEntry>> {
     let mut refs = Vec::with_capacity(count);
     for _ in 0..count {
         let ref_name = read_string(reader)?;
-        let idx_offset = read_u64_le(reader)?;
-        let idx_size = read_u64_le(reader)?;
         let group_start = read_u32_le(reader)?;
         let group_count = read_u32_le(reader)?;
         refs.push(RefTableEntry {
             ref_name,
-            idx_offset,
-            idx_size,
             group_start,
             group_count,
         });

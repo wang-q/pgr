@@ -42,7 +42,7 @@ fn main() -> anyhow::Result<()> {
     * fas  - Block FA operations: info, subset, transform, file, variation
     * fq   - FASTQ interleaving and conversion
     * gff  - GFF operations: rg
-    * pbit - Population 2bit + delta: create, append, append-ref, to-index, stat, range, some, to-fa
+    * pbit - Population 2bit + delta: create, append, append-ref, stat, range, some, to-fa
 
 * Genome alignments:
     * chain - Chain operations: sort, filter, transform, to-net

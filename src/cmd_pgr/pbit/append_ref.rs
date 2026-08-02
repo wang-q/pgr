@@ -1,7 +1,7 @@
 //! Append a new reference genome to an existing pbit archive.
 
 use anyhow::Context;
-use clap::{Arg, ArgAction, ArgMatches, Command};
+use clap::{ArgMatches, Command};
 use pgr::libs::pbit::compressor::Compressor;
 use std::path::PathBuf;
 
@@ -16,16 +16,13 @@ records are appended after the existing reference records, and the Reference
 Index + reference table are rewritten. Existing samples and their deltas are
 preserved; new samples can route to the new reference (TSV 4th column).
 
-With --index, a .pgi index is embedded for each new reference (extractable
-with `pgr pbit to-index --ref`).
-
 Notes:
 * If -o is omitted, the input archive is modified in place (atomic rename).
 * If -o is specified, the input archive is copied to the output path first.
 
 Examples:
-1. Append a reference with its index, in place:
-   pgr pbit append-ref cohort.pbit -r newref.fa --index
+1. Append a reference in place:
+   pgr pbit append-ref cohort.pbit -r newref.fa
 2. Append to a new archive:
    pgr pbit append-ref cohort.pbit -r newref.fa -o cohort2.pbit
 "###,
@@ -35,12 +32,6 @@ Examples:
         ))
         .arg(crate::cmd_pgr::args::pbit_ref_arg())
         .arg(crate::cmd_pgr::args::outfile_arg_optional())
-        .arg(
-            Arg::new("index")
-                .long("index")
-                .action(ArgAction::SetTrue)
-                .help("Embed a .pgi index segment for each new reference"),
-        )
 }
 
 /// Execute the append-ref command.
@@ -68,9 +59,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     for ref_fasta in &ref_fastas {
         comp.append_reference(ref_fasta)?;
-    }
-    if args.get_flag("index") {
-        comp.embed_reference_indexes_append(&ref_fastas)?;
     }
     comp.finish().context("failed to finalize pbit archive")?;
 

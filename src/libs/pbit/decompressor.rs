@@ -256,28 +256,6 @@ impl<R: Read + Seek> Decompressor<R> {
         &self.footer
     }
 
-    /// Read the embedded reference index segment (a `.pgi`) of one
-    /// reference, if present.
-    pub fn read_reference_index(
-        &mut self,
-        ref_id: usize,
-    ) -> Result<Option<crate::libs::pgi::PgiIndex>> {
-        let Some(meta) = self.ref_meta.get(ref_id) else {
-            anyhow::bail!(
-                "invalid reference id {} ({} references)",
-                ref_id,
-                self.ref_meta.len()
-            );
-        };
-        if meta.idx_size == 0 {
-            return Ok(None);
-        }
-        self.reader.seek(SeekFrom::Start(meta.idx_offset))?;
-        let idx = crate::libs::pgi::PgiIndex::read(&mut self.reader)
-            .context("failed to read embedded reference index")?;
-        Ok(Some(idx))
-    }
-
     /// Return an owned clone of the collection (for `Compressor::open_for_append`).
     pub fn collection_clone(&self) -> Collection {
         self.collection.clone()

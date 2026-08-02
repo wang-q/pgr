@@ -1,7 +1,7 @@
 # pgr pbit
 
-> **状态**：pbit 处于开发早期、未对外发布；多参考与内嵌索引等新特性正在
-> 设计评审中（设计决策见 `notes/design/pbit.md` 顶部的开放项），命令接口
+> **状态**：pbit 处于开发早期、未对外发布；多参考等新特性正在设计评审中
+> （设计决策见 `notes/design/pbit.md` 顶部的开放项），命令接口
 > 和文件格式可能变化。
 
 `pgr pbit` 用于管理 **pbit**（population 2bit + delta）归档文件。pbit 是 pgr 原生的群体基因组压缩格式，
@@ -23,9 +23,6 @@
     *   `create`: 从参考 FASTA 和样本 FASTA 创建新的 pbit 归档。
     *   `append`: 向已有 pbit 归档追加新样本。
     *   `append-ref`: 向已有 pbit 归档追加新参考基因组。
-*   **index**: 提取归档内嵌的参考索引。
-    *   `to-index`: 按 `--ref`（名/序号，默认 0）提取内嵌的参考 `.pgi`
-        索引（供 `pgr pgi align` / `pgr dist pgi` 消费）。
 *   **info**: 查看归档元信息。
     *   `stat`: 显示归档统计信息、样本列表、参考 contig 列表或样本 contig 列表。
 *   **subset**: 按名称或坐标提取序列。
@@ -58,8 +55,6 @@ pgr pbit create [OPTIONS] -r <ref.fa> -i <sample.fa>... -o <out.pbit>
 *   `-s, --segment-size <int>`: 参考序列分段大小，默认 4096 bp。
 *   `-k, --kmer-len <int>`: LZ-diff 哈希 k-mer 长度，默认 15。
 *   `-l, --min-match-len <int>`: LZ-diff 最小匹配长度，默认 18。
-*   `--index`: 内嵌参考的 `.pgi` 索引段（默认 k=40、syncmer 8/5），
-    之后可用 `pgr pbit to-index` 提取。
 *   `-o, --outfile <file>`: 输出文件名（必需）。
 
 #### Notes
@@ -95,29 +90,20 @@ pgr pbit create [OPTIONS] -r <ref.fa> -i <sample.fa>... -o <out.pbit>
     pgr pbit create -r ref.fa --name samples.tsv -o cohort.pbit
     ```
 
-5.  **内嵌参考索引**:
-    ```bash
-    pgr pbit create -r ref.fa -i sample.fa --index -o out.pbit
-    pgr pbit to-index out.pbit -o ref.pgi
-    pgr pgi align ref.pgi query.pgi --ref-seq ref.fa --query-seq query.fa -o out.psl
-    ```
-
-6.  **多参考归档**（样本经 TSV 第 4 列路由到参考）:
+5.  **多参考归档**（样本经 TSV 第 4 列路由到参考）:
     ```bash
     cat samples.tsv
     # s1	/path/to/s1.fa		mg1655
     # s2	/path/to/s2.fa		1
-    pgr pbit create -r ref1.fa -r ref2.fa --name samples.tsv --index -o cohort.pbit
-    pgr pbit to-index cohort.pbit --ref mg1655 -o ref1.pgi
+    pgr pbit create -r ref1.fa -r ref2.fa --name samples.tsv -o cohort.pbit
     ```
 
 ### append-ref
 
-向已有归档追加新的参考基因组（2bit 段 + 可选 `.pgi` 索引），旧样本与
-索引段全部保留。
+向已有归档追加新的参考基因组（2bit 段），旧样本全部保留。
 
 ```bash
-pgr pbit append-ref <archive.pbit> -r <ref.fa> [--index] [-o <out.pbit>]
+pgr pbit append-ref <archive.pbit> -r <ref.fa> [-o <out.pbit>]
 ```
 
 ---

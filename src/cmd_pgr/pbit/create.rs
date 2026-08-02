@@ -1,7 +1,7 @@
 //! Create a new pbit archive from a reference FASTA and sample FASTA files.
 
 use anyhow::Context;
-use clap::{Arg, ArgAction, ArgMatches, Command};
+use clap::{ArgMatches, Command};
 use pgr::libs::pbit::compressor::Compressor;
 
 /// Build the clap subcommand for create.
@@ -43,12 +43,9 @@ Examples:
 5. CIGAR-driven encoding with PAF:
    pgr pbit create -r ref.fa -i sample.fa -p sample.paf -o out.pbit
 
-6. Embed the reference .pgi index for later alignment:
-   pgr pbit create -r ref.fa -i sample.fa --index -o out.pbit
-
-7. Multiple references (samples route to reference 0 by default, or via the
+6. Multiple references (samples route to reference 0 by default, or via the
    TSV's 4th column):
-   pgr pbit create -r ref1.fa -r ref2.fa --name samples.tsv --index -o out.pbit
+   pgr pbit create -r ref1.fa -r ref2.fa --name samples.tsv -o out.pbit
 "###,
         )
         .arg(crate::cmd_pgr::args::pbit_ref_arg())
@@ -59,12 +56,6 @@ Examples:
         .arg(crate::cmd_pgr::args::pbit_min_match_len_arg())
         .arg(crate::cmd_pgr::args::pbit_name_arg())
         .arg(crate::cmd_pgr::args::pbit_paf_arg())
-        .arg(
-            Arg::new("index")
-                .long("index")
-                .action(ArgAction::SetTrue)
-                .help("Embed the reference .pgi index segment"),
-        )
 }
 
 /// Execute the create command.
@@ -111,10 +102,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         min_match_len
     );
     comp.set_cmd_line(&cmd_line);
-    if args.get_flag("index") {
-        comp.embed_reference_indexes(&ref_fastas)
-            .with_context(|| "failed to embed reference indexes".to_string())?;
-    }
 
     for (name, path, paf_opt, ref_spec) in &samples {
         let ref_id = super::resolve_ref_id(ref_spec.as_deref(), &ref_fastas)?;

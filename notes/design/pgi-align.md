@@ -19,7 +19,7 @@
 - 局部扩展（banded/POA DP 细化 CIGAR，需要序列输入）——v1 链块直接由
   `pgr psl to_chain` / chainnet 接手（块结构即输入，UCSC 链化自算 score）；
 - lcp 连续传播（adaptamer 变长种子）——固定 k 种子先行；
-- pbit 内嵌索引段消费（待 v1002 落地后接线）；
+- ~~pbit 内嵌索引段消费~~（已按决策 A 放弃：索引不进 pbit，见 [[pbit.md]]）；
 - mmap/流式读取（E. coli 规模直接整体载入内存）。
 
 ## 2. 数据流
@@ -253,6 +253,6 @@ adaptamer/lcp 变长种子（未来工作）。
 
 ## 6. 相关文档
 
-- 索引格式与消费者规划：[[pbit.md]]（多参考与内嵌索引节）
+- 索引格式与消费者规划：[[pbit.md]]（多参考节 + .pgi 距离消费者层级）
 - FastGA 管线与简化移植评估：[[fastga.md]] §11/§12
 - 泛基因组场景：[[ecoli-cohort.md]]、[[paf-pangenome.md]]

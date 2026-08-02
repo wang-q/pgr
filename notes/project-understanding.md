@@ -2,8 +2,8 @@
 
 本文档是我对 pgr (Practical Genome Refiner) 项目的整体理解，涵盖架构、设计哲学、代码模式、
 当前能力与未来方向。写作时间：2026-06-27，最后更新：2026-08-01
-（2026-08-02：文档准确性审计——补全 pgi/sd 模块、pbit v1003 多参考与
-append-ref/to-index、dist pgi 与 .hv 模式、pgi align 管线；修正 §2.1/§3/§4/§6/§9）。
+（2026-08-02：文档准确性审计——补全 pgi/sd 模块、pbit v1004 多参考、
+dist pgi 与 .hv 模式、pgi align 管线；内嵌索引按决策 A 移除；修正 §2.1/§3/§4/§6/§9）。
 （2026-08-02：全量通读 src/ 复核——更新 §2.1/§4 的 ds 新成员（best_crossover/merge_intervals）、
 §4.4 paf/pl 描述、§6 现状（UCSC 全链路字节级一致）、§7.1 UCSC 验证矩阵（axtToMaf 已修复、
 SE11 多染色体反向验证）、§9 索引状态；
@@ -157,7 +157,7 @@ src/
 | `fas`    | 20       | Block FA (多序列比对块)：统计、筛选、subset、变异检测 |
 | `fq`     | 2        | FASTQ 交叉合并、转 FASTA                              |
 | `twobit` | 5        | 2bit 二进制格式查询：range、sequence、masked 统计     |
-| `pbit`   | 8        | 群体基因组 2bit + delta 压缩与随机访问（create/append/append-ref/to-index/stat/range/some/to-fa） |
+| `pbit`   | 7        | 群体基因组 2bit + delta 压缩与随机访问（create/append/append-ref/stat/range/some/to-fa） |
 | `gff`    | 1        | GFF 注释：rg (提取 feature 区间为 range 列表)         |
 
 **fa 和 fas 是序列模块的核心**，子命令最多、功能最全。`fas` 的 `multiz`、`variation`、 `refine`、
@@ -359,7 +359,7 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
   **字节级一致**（主流程 + `--syn` + medium + SE11 多染色体反向，验证固化于
   `scripts/verify-ucsc-pipeline.sh`，见 §7.1）。
 - **FASTA/FASTQ/2bit/pbit 处理**：`fa`(18 子命令) + `fas`(20 子命令) + `fq`(2) + `twobit`(5) +
-  `pbit`(8)（含多参考与内嵌索引），日常序列操作与群体基因组归档压缩需求基本覆盖。
+  `pbit`(7)（含多参考），日常序列操作与群体基因组归档压缩需求基本覆盖。
 - **基因组索引与比对（.pgi）**：`pgr pgi` 的 build/stat/to-hv/align 已实现——syncmer 稀疏
   排序 k-mer 索引（构建与 FastGA GIXmake 持平）、两索引归并精确距离、稀疏 HV 投影、
   FastGA 式比对管线（归并→链→banded 扩展→PSL，与 FastGA 端到端 1.08× 持平，真实
@@ -374,11 +374,12 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
 
 ### 6.2 进行中的（活跃开发）
 
-- **`pbit` 归档压缩**：`pgr pbit` 的 `create`/`append`/`append-ref`/`to-index`/`stat`/
-  `range`/`some`/`to-fa` 八个子命令已实现（用户文档见 `docs/pbit.md`，设计笔记见
-  `notes/design/pbit.md`）；v1003 支持多参考 + 每参考内嵌 `.pgi` 索引段。
-  **⚠️ 暂停评审中**：多参考路由、ref_id 存储、内嵌索引触发方式等设计决策待作者定夺
-  （见设计笔记顶部开放项）。
+- **`pbit` 归档压缩**：`pgr pbit` 的 `create`/`append`/`append-ref`/`stat`/
+  `range`/`some`/`to-fa` 七个子命令已实现（用户文档见 `docs/pbit.md`，设计笔记见
+  `notes/design/pbit.md`）；v1004 支持多参考（每参考 2bit 段组 + Reference Table）。
+  **决策 A（2026-08-02）**：索引不进 pbit（体积 79× 压缩数据），`.pgi` 为独立
+  临时工作对象；HV sketch 内嵌暂缓。**⚠️ 暂停评审中**：多参考路由、ref_id 存储、
+  追加参考语义等设计决策待作者定夺（见设计笔记顶部开放项）。
 
 - **泛基因组方向**：`pgr paf` 的 query / to-bed / to-fas / to-maf / graph / to-gfa / to-vcf /
   stat 子命令已全部完成（路线见 `notes/paf-pangenome.md`）；规模扩展与应用层待真实 cohort
@@ -472,13 +473,13 @@ chainnet 后消失。`pgr psl chain` 在 2bit 序列缓存优化后（~0.3 s）�
    拆分为独立顶层命令。
 7. **帮助文本与注册脱节（风险提示）**：`pgr.rs` 的 after_help 手工维护，增删命令时需
    同步 `pgr.rs` 的 after_help 与 `cmd_pgr/*/mod.rs` 注册（当前已一致：`pl` 含
-   `chainnet`，`pbit` 含 `append`/`append-ref`/`to-index`，`pgi` 含 `align`）。
+   `chainnet`，`pbit` 含 `append`/`append-ref`，`pgi` 含 `align`）。
 
 ## 9. 设计笔记索引（notes/design/）
 
 | 文档 | 定位 | 状态 |
 |------|------|------|
-| [[pbit.md]] | `pgr pbit` 格式设计（LZ-diff + CIGAR delta + v1003 多参考/内嵌索引，已合并原扩展草案） | v1003 已实现，**暂停评审中** |
+| [[pbit.md]] | `pgr pbit` 格式设计（LZ-diff + CIGAR delta + 多参考，已合并原扩展草案；索引不内嵌，决策 A） | v1004 已实现，**暂停评审中** |
 | [[pgi-align.md]] | `.pgi` 两索引归并比对（种子→链→banded 扩展→PSL） | v1-v3 已实现（与 FastGA 端到端持平） |
 | [[fas-multiz.md]] | `libs::fas_multiz` 设计与实现（banded DP 合并） | 已实现（CLI 已落地） |
 | [[spoa_port.md]] | Spoa C++ → Rust 移植（POA 引擎） | 已完成（双引擎集成已落地） |

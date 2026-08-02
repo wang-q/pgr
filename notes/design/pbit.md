@@ -1,8 +1,14 @@
 # pbit 设计笔记（含多参考扩展）
 
 > **⚠️ 暂停（2026-08-02）**：pbit 相关实现工作暂停，等待作者对以下设计
-> 决策定夺。已落地的 v1003 代码保留在仓库中，但下列未定决策可能导致
+> 决策定夺。已落地的 v1004 代码保留在仓库中，但下列未定决策可能导致
 > 格式/CLI 回改，继续开发前请先决策。
+>
+> **已决策（2026-08-02）**：~~内嵌索引~~ → **决策 A：索引不进 pbit**。
+> 实测索引 ~92 MB vs 压缩归档 ~1.1 MB（79×），内嵌会让"压缩格式"失去意义；
+> `.pgi` 保持独立临时工作对象（用时现建 0.3s 或旁路缓存），与 FastGA 的
+> GIX"独立文件、用完即删"定位一致。HV sketch 内嵌（决策 B）暂缓，其算法
+> 设计仍需思考。格式已按决策 A 落地为 **v1004**（无索引字段）。
 >
 > **待作者决策的开放项**：
 > 1. **样本 vs 参考的路由**：v1 采用"用户指定"（TSV 第 4 列参考名/序号，
@@ -10,35 +16,32 @@
 >    相似度 / contig 覆盖选参考）？还是保留手动 + 后续加自动？
 > 2. **Sample Index 是否加 ref_id 字段**：当前不加（样本段已带全局
 >    `ref_group_id`，反查可得）。保留该简洁决策，还是显式存储？
-> 3. **内嵌索引的触发方式**：当前 `create/append-ref --index`（每参考一个
->    `.pgi`，默认 k=40/syncmer 8/5）。是否需要细粒度控制（按参考、
->    按索引参数）或自动嵌入？
-> 4. **追加参考的语义**：`append-ref` 当前"只加参考、不改已有样本路由"。
+> 3. **追加参考的语义**：`append-ref` 当前"只加参考、不改已有样本路由"。
 >    追加后已有样本是否需要重路由 / 重压缩（即"换锚"语义）？
-> 5. **多参考压缩模型**：样本只能路由到一个参考（当前）。是否允许跨参考
+> 4. **多参考压缩模型**：样本只能路由到一个参考（当前）。是否允许跨参考
 >    分段压缩（更复杂、压缩率可能更好）？
-> 6. **版本策略**：已确认不做旧版本兼容；后续格式改动直接 bump 版本。
+> 5. **版本策略**：已确认不做旧版本兼容；后续格式改动直接 bump 版本。
 
-## 当前状态（v1003，2026-08-02）
+## 当前状态（v1004，2026-08-02）
 
 pbit 为原生"2bit 参考 + delta 样本"群体基因组压缩格式（区别于 C++ AGC 的
 `.agc`）。已实现：
 
 - `pgr pbit create`（单/多参考，`-r` 可重复，TSV 第 4 列路由样本到参考）、
   `append`（追加样本）、`append-ref`（追加参考）、`stat` / `to-fa` /
-  `some` / `range`（读取）、`to-index`（按 `--ref` 提取内嵌 `.pgi`）；
-- 多参考 + 每参考内嵌 `.pgi` 索引段（`--index`）；E. coli 双参考归档验证
-  （索引与独立构建字节一致、样本路由正确、重建精确）；
-- 版本 1003，仅当前版本可读写（不做旧版本兼容）。
+  `some` / `range`（读取）；
+- 多参考（每参考一个 2bit 段组 + Reference Table），样本路由到指定参考；
+  E. coli 双参考归档验证（样本路由正确、重建精确）；
+- **不内嵌索引**（决策 A）：`.pgi` 为独立临时工作对象，比对/距离时现建；
+- 版本 1004，仅当前版本可读写（不做旧版本兼容）。
 
 ## 快速参考
 
 | 子命令 | 分组 | 用途 | 关键参数 |
 |--------|------|------|----------|
-| `create` | build | 创建归档（单/多参考） | `-r ref.fa`（可重复）, `-i sample.fa` / `--name tsv`, `--index`, `-o out.pbit` |
+| `create` | build | 创建归档（单/多参考） | `-r ref.fa`（可重复）, `-i sample.fa` / `--name tsv`, `-o out.pbit` |
 | `append` | build | 追加样本 | `in.pbit`, `-i sample.fa`, `-o out.pbit`（可选） |
-| `append-ref` | build | 追加参考（含可选 `--index`） | `in.pbit`, `-r ref.fa`, `-o out.pbit`（可选） |
-| `to-index` | index | 提取内嵌参考 `.pgi` | `in.pbit`, `--ref <名/序号>`（默认 0）, `-o out.pgi` |
+| `append-ref` | build | 追加参考 | `in.pbit`, `-r ref.fa`, `-o out.pbit`（可选） |
 | `to-fa` | transform | 提取所有样本为 FASTA | `in.pbit`, `-o out_dir/` |
 | `some` | subset | 按样本名列表提取 | `in.pbit`, `sample_list.txt`, `-o out.fa` |
 | `range` | subset | 按 contig/区间提取 | `in.pbit`, `chr1:1-1000`, `-o out.fa` |
@@ -47,7 +50,7 @@ pbit 为原生"2bit 参考 + delta 样本"群体基因组压缩格式（区别�
 样本名默认取输入 FASTA basename（`--name` TSV 可覆盖）。TSV 列：
 `sample_name<TAB>fasta_path[<TAB>paf_path][<TAB>ref_name]`。
 
-## 文件格式规范（v1003）
+## 文件格式规范（v1004）
 
 所有整数固定大小小端序（u32/u64），字符串为 u32 长度前缀 + UTF-8，不用
 varint/null 终止。参考层直接复用标准 2bit 记录（`read_2bit_record` /
@@ -60,8 +63,6 @@ varint/null 终止。参考层直接复用标准 2bit 记录（`read_2bit_record
 │ Header (固定 36 字节)               │
 ├─────────────────────────────────────┤
 │ Reference Records                   │  ← 每段一个标准 2bit 记录（跨参考连续）
-├─────────────────────────────────────┤
-│ Reference Index Segments（可选）    │  ← 每参考一个 .pgi 字节（ref 顺序，--index）
 ├─────────────────────────────────────┤  ← footer.ref_index_offset
 │ Reference Index                     │  ← 参考段条目 + Reference Table
 ├─────────────────────────────────────┤  ← footer.delta_data_offset
@@ -77,7 +78,7 @@ varint/null 终止。参考层直接复用标准 2bit 记录（`read_2bit_record
 
 ```
 0  4  magic              0x54494250 ('PBIT')
-4  4  version            major*1000 + minor（当前 1003）
+4  4  version            major*1000 + minor（当前 1004）
 8  4  segment_size       分段大小（bp，如 4096）
 12 4  kmer_len           LZ-diff 哈希 k-mer 长度（如 15）
 16 4  min_match_len      LZ-diff 最小匹配长度（如 18）
@@ -103,15 +104,13 @@ for each ref_group:
 u32 ref_count           Reference Table
 for each ref:
   str ref_name          参考名（FASTA basename）
-  u64 idx_offset        内嵌 .pgi 偏移（0 = 无）
-  u64 idx_size          .pgi 字节数
   u32 group_start       该参考首段的 group id
   u32 group_count       该参考段数
 ```
 
-> 内嵌 `.pgi` 段位于 Reference Records 之后、Reference Index 之前（按参考
-> 顺序连续），偏移记录在 Reference Table。`ref_group_id` 全局唯一（跨参考
-> 连续编号），样本段通过它反查所属参考，故 Sample Index 不重复存 ref_id。
+> `ref_group_id` 全局唯一（跨参考连续编号），样本段通过它反查所属参考，
+> 故 Sample Index 不重复存 ref_id。Reference Table 只负责参考命名与段范围
+> （索引不内嵌，决策 A）。
 
 ### Delta Data
 
@@ -183,24 +182,29 @@ u64 ref_index_offset / u64 delta_data_offset / u64 sample_index_offset
 - **无/坏 CIGAR**：记录级错误跳过 + 回退 LZ-diff（log 警告）；整个 PAF
   不可用则报错终止（避免"以为生效实为全回退"）。
 
-## 多参考与内嵌索引（v1003 扩展）
+## 多参考（v1003/v1004 扩展）
 
 泛基因组增量场景：少量基因组起步、逐个添加；参考（锚）被反复比对，样本
 逐个加入。最终产物是图（GFA），pbit 与索引都是可重建的中间产物，故格式
-演化不做长期兼容负担；内嵌单文件（参考 2bit + 参考 `.pgi` + 样本 delta）
-带来原子管理与分发简洁。内嵌索引量 = 参考数（几十），不随样本数增长。
+演化不做长期兼容负担。
+
+**索引定位（决策 A，2026-08-02）**：`.pgi` **不进 pbit**。实测单参考
+归档 1.1 MiB、内嵌索引后 92.8 MiB（索引/压缩数据 = 79×）——内嵌会让
+pbit 失去"压缩格式"的意义。参考索引在需要比对/距离时现建（~0.3s）或由
+工作流在归档旁缓存为 `ref.pgi` 兄弟文件；与 FastGA"GIX 独立文件、用完即删"
+定位一致。HV sketch 内嵌（决策 B）暂缓，其算法设计待后续思考。
 
 **追加语义**：
 - `append` 样本：尾部追加 delta → patch sample_count（v1001 起即有）；
-- `append-ref` 参考：Reference Records 尾部追加 [新参考 2bit 段]，可选
-  追加新参考 `.pgi`，重写 Reference Index（旧条目不动 + 新条目 +
-  Reference Table）+ delta + sample + Footer（截断重写模式，旧样本/索引
-  保留）；样本路由由压缩时的 `ref_group_id` 决定，追加参考不影响已有样本。
+- `append-ref` 参考：Reference Records 尾部追加新参考 2bit 段，重写
+  Reference Index（旧条目不动 + 新条目 + Reference Table）+ delta + sample
+  + Footer（截断重写模式，旧样本保留）；样本路由由压缩时的 `ref_group_id`
+  决定，追加参考不影响已有样本。
 
 **样本路由**：v1 为用户指定（TSV 第 4 列参考名/序号，默认参考 0）；自动
 路由（k-mer 相似度/contig 覆盖）为开放项（见顶部）。
 
-### .pgi 距离消费者层级（已实现并验证）
+### .pgi 距离消费者层级（已实现并验证，索引独立于 pbit）
 
 | 命令/模式 | 方式 | 复杂度 | 与身份率的 Spearman | 定位 |
 |---|---|---:|---:|---|
@@ -217,5 +221,5 @@ u64 ref_index_offset / u64 delta_data_offset / u64 sample_index_offset
 - 多参考扩展设计过程与 .pgi 消费者规划：旧 `pbit-index-extension.md` 已并入
   本文（该文件现为跳转 stub）；
 - 距离消费者验证数据：`notes/benchmarks/dist-cohort-validation.md`；
-- pgi 比对管线（内嵌索引的消费者）：`notes/design/pgi-align.md`；
+- pgi 比对管线（`.pgi` 的消费者）：`notes/design/pgi-align.md`；
 - AGC 算法参考：`notes/references/agc-cpp.md`。

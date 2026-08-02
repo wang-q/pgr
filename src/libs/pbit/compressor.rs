@@ -267,9 +267,6 @@ pub struct Compressor<W: Write + Seek> {
     contig_ref_groups: IndexMap<String, Vec<u32>>,
     /// Per-reference metadata (name, group range, embedded-index offsets).
     ref_meta: Vec<RefTableEntry>,
-    /// Per-reference raw `.pgi` bytes to embed after that reference's records
-    /// at `finish` (create path with `--index`).
-    ref_indexes: Vec<Option<Vec<u8>>>,
     /// Reference a sample routes to during `append_sample` (set per sample).
     cur_ref_id: u32,
     segment_size: usize,
@@ -352,7 +349,6 @@ impl Compressor<std::io::BufWriter<std::fs::File>> {
             segments: Vec::new(),
             contig_ref_groups: IndexMap::new(),
             ref_meta: Vec::new(),
-            ref_indexes: vec![None; ref_fastas.len()],
             cur_ref_id: 0,
             segment_size,
             kmer_len,
@@ -403,7 +399,6 @@ impl Compressor<std::io::BufWriter<std::fs::File>> {
                 ref_name,
                 group_start,
                 group_count,
-                ..Default::default()
             });
         }
 
@@ -491,7 +486,6 @@ impl Compressor<std::io::BufWriter<std::fs::File>> {
             segments,
             contig_ref_groups,
             ref_meta: dec_ref_table.clone(),
-            ref_indexes: vec![None; dec_ref_table.len()],
             cur_ref_id: 0,
             segment_size,
             kmer_len,
@@ -914,18 +908,6 @@ impl<W: Write + Seek> Compressor<W> {
         // Patch header sample_count.
         self.header.sample_count = self.collection.sample_count() as u32;
 
-        // Embedded reference index segments, in reference order, right after
-        // the reference records (before the Reference Index); on append the
-        // offsets of existing indexes are preserved in `ref_meta`.
-        for (i, bytes) in self.ref_indexes.iter().enumerate() {
-            if let Some(b) = bytes {
-                let off = self.writer.stream_position()?;
-                self.writer.write_all(b)?;
-                self.ref_meta[i].idx_offset = off;
-                self.ref_meta[i].idx_size = b.len() as u64;
-            }
-        }
-
         // Seek to the end of reference records (current writer position).
         let ref_index_offset = self.writer.stream_position()?;
 
@@ -964,46 +946,9 @@ impl<W: Write + Seek> Compressor<W> {
         Ok(())
     }
 
-    /// Build a `.pgi` index for every reference genome (default k=40,
-    /// syncmer 8/5) and mark it for embedding at `finish`. Extracted later
-    /// with `pgr pbit to-index --ref`.
-    pub fn embed_reference_indexes(&mut self, ref_fastas: &[&str]) -> Result<()> {
-        anyhow::ensure!(
-            ref_fastas.len() == self.ref_meta.len(),
-            "reference count mismatch: {} fastas vs {} registered",
-            ref_fastas.len(),
-            self.ref_meta.len()
-        );
-        for (i, ref_fasta) in ref_fastas.iter().enumerate() {
-            let idx = crate::libs::pgi::build::build_from_path(ref_fasta, 40, 8, 5, false)?;
-            let mut buf = Vec::new();
-            idx.write(&mut buf)?;
-            self.ref_indexes[i] = Some(buf);
-        }
-        Ok(())
-    }
-
-    /// Build `.pgi` indexes for the references most recently appended via
-    /// `append_reference` (matching the given FASTA order).
-    pub fn embed_reference_indexes_append(&mut self, ref_fastas: &[&str]) -> Result<()> {
-        let start = self
-            .ref_meta
-            .len()
-            .checked_sub(ref_fastas.len())
-            .ok_or_else(|| anyhow::anyhow!("no references registered"))?;
-        for (i, ref_fasta) in ref_fastas.iter().enumerate() {
-            let idx = crate::libs::pgi::build::build_from_path(ref_fasta, 40, 8, 5, false)?;
-            let mut buf = Vec::new();
-            idx.write(&mut buf)?;
-            self.ref_indexes[start + i] = Some(buf);
-        }
-        Ok(())
-    }
-
     /// Append a new reference genome at the current writer position (which
     /// must be the truncation point before the Reference Index, i.e. after
-    /// `open_for_append`). Register it in `ref_meta`; call
-    /// `embed_reference_indexes` afterwards to embed its index.
+    /// `open_for_append`). Register it in `ref_meta`.
     pub fn append_reference(&mut self, ref_fasta: &str) -> Result<()> {
         let ref_id = self.ref_meta.len() as u32;
         let ref_contigs = read_fasta(ref_fasta)
@@ -1043,9 +988,7 @@ impl<W: Write + Seek> Compressor<W> {
             ref_name,
             group_start,
             group_count,
-            ..Default::default()
         });
-        self.ref_indexes.push(None);
         Ok(())
     }
 
