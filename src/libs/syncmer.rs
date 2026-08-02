@@ -57,41 +57,67 @@ impl SyncmerParams {
 /// that endpoint index — preferring `i` (first) when both endpoints are
 /// minimal — so that a sequence and its reverse complement yield the same
 /// hash set (required for Mash/Jaccard). syng emits the window-start s-mer
-/// instead, which is fine for graph paths but not strand-symmetric. Uses a
-/// monotonic deque for O(n) sliding-window minimum.
+/// instead, which is fine for graph paths but not strand-symmetric.
+#[cfg(test)]
 fn closed_syncmers_from_hashes(hashes: &[u64], window: usize) -> Vec<usize> {
-    let n = hashes.len();
+    closed_syncmers_stream(window, hashes.iter().copied().map(|h| (h, ())))
+        .into_iter()
+        .map(|(pos, _, _)| pos)
+        .collect()
+}
+
+/// Streaming closed-syncmer detector over an on-the-fly s-mer hash stream.
+///
+/// O(window) memory: a monotonic deque of (position, hash) for the window
+/// minimum plus a ring buffer of the last `window` raw entries for endpoint
+/// checks. Emits `(endpoint_index, hash, extra)` per closed syncmer window;
+/// the extra (e.g. the canonical-strand flag) travels with the endpoint
+/// s-mer. Produces exactly the same output as [`closed_syncmers_from_hashes`]
+/// (which is now a thin wrapper over this).
+fn closed_syncmers_stream<E: Copy>(
+    window: usize,
+    hashes: impl IntoIterator<Item = (u64, E)>,
+) -> Vec<(usize, u64, E)> {
     let mut out = Vec::new();
-    if window == 0 || n < window {
+    if window == 0 {
         return out;
     }
-    // Deque of indices with hashes non-decreasing; front is the window minimum.
-    let mut dq: VecDeque<usize> = VecDeque::new();
-    for j in 0..n {
-        while let Some(&back) = dq.back() {
-            if hashes[back] <= hashes[j] {
+    // Monotonic deque of positions with non-decreasing hashes; front is the
+    // current window minimum. Ring buffer holds the last `window` raw entries
+    // so the window-start hash/extra can be recovered for endpoint checks.
+    let mut dq: VecDeque<(usize, u64)> = VecDeque::new();
+    let mut ring: VecDeque<(u64, E)> = VecDeque::new();
+    for (j, (h, e)) in hashes.into_iter().enumerate() {
+        while let Some(&(_, bh)) = dq.back() {
+            if bh <= h {
                 break;
             }
             dq.pop_back();
         }
-        dq.push_back(j);
+        dq.push_back((j, h));
+        ring.push_back((h, e));
+        if ring.len() > window {
+            ring.pop_front();
+        }
 
         if j >= window - 1 {
             let start = j + 1 - window;
-            while let Some(&front) = dq.front() {
-                if front < start {
+            while let Some(&(fp, _)) = dq.front() {
+                if fp < start {
                     dq.pop_front();
                 } else {
                     break;
                 }
             }
-            let min_val = hashes[*dq.front().expect("deque non-empty within full window")];
+            let min_val = dq.front().expect("deque non-empty within full window").1;
             // Closed syncmer: the minimum appears at the first or last s-mer.
-            // Check value (not argmin position) so ties are symmetric under reversal.
-            if hashes[start] == min_val {
-                out.push(start);
-            } else if hashes[j] == min_val {
-                out.push(j);
+            // Check value (not argmin position) so ties are symmetric under
+            // reversal; prefer the window start on ties.
+            let (sh, se) = *ring.front().expect("ring holds a full window");
+            if sh == min_val {
+                out.push((start, sh, se));
+            } else if h == min_val {
+                out.push((j, h, e));
             }
         }
     }
@@ -118,7 +144,7 @@ pub(crate) fn hash_factor(seed: u64) -> u64 {
     (z ^ (z >> 31)) | 1 // odd, like syng's | 0x01
 }
 
-/// Compute closed syncmers over a DNA sequence.
+/// Compute closed syncmers over a DNA sequence with O(window) memory.
 ///
 /// Returns `(canonical_hash, pos, is_forward)` per syncmer, where the
 /// hash/strand are those of the window's minimal s-mer. syng's
@@ -128,35 +154,29 @@ pub(crate) fn hash_factor(seed: u64) -> u64 {
 /// is `min(kHash(h), kHash(hRC))`.
 pub fn syncmer_dna(seq: &[u8], params: &SyncmerParams) -> anyhow::Result<Vec<(u64, usize, bool)>> {
     let w = params.window;
-    let (canonical, is_fwd) = dna_canonical_hashes(seq, params)?;
-    if canonical.len() < w {
-        return Ok(Vec::new());
-    }
-    let mins = closed_syncmers_from_hashes(&canonical, w);
-    Ok(mins
+    let syncs = closed_syncmers_stream(w, dna_canonical_hashes(seq, params)?);
+    Ok(syncs
         .into_iter()
-        .map(|m| (canonical[m], m, is_fwd[m]))
+        .map(|(pos, h, fwd)| (h, pos, fwd))
         .collect())
 }
 
-/// Compute the canonical hash and forward-strand flag for every s-mer in `seq`.
+/// Streaming canonical hash iterator over the s-mers of `seq`.
 ///
-/// Exposed for testing; `syncmer_dna` is the public entry point.
-fn dna_canonical_hashes(
-    seq: &[u8],
+/// Yields `(canonical_hash, is_forward)` per s-mer without materializing the
+/// hash array; `syncmer_dna` feeds it into the O(window) syncmer detector.
+fn dna_canonical_hashes<'a>(
+    seq: &'a [u8],
     params: &SyncmerParams,
-) -> anyhow::Result<(Vec<u64>, Vec<bool>)> {
+) -> anyhow::Result<impl Iterator<Item = (u64, bool)> + 'a> {
     params.validate()?;
     let k = params.smer;
     let n = seq.len();
-    if n < k {
-        return Ok((Vec::new(), Vec::new()));
-    }
     let mask: u64 = (1u64 << (2 * k)) - 1;
     let shift: u32 = (64 - 2 * k) as u32;
     let factor = hash_factor(params.seed);
     let pattern_rc: [u64; 4] = std::array::from_fn(|i| ((3 - i) as u64) << (2 * (k - 1)));
-    let k_hash = |x: u64| x.wrapping_mul(factor) >> shift;
+    let k_hash = move |x: u64| x.wrapping_mul(factor) >> shift;
 
     // First s-mer (positions 0..k).
     let mut h: u64 = 0;
@@ -166,25 +186,30 @@ fn dna_canonical_hashes(
         h = (h << 2) | b;
         h_rc = (h_rc >> 2) | pattern_rc[b as usize];
     }
-    let mut canonical: Vec<u64> = Vec::with_capacity(n - k + 1);
-    let mut is_fwd: Vec<bool> = Vec::with_capacity(n - k + 1);
-    let (hf, hr) = (k_hash(h), k_hash(h_rc));
-    canonical.push(if hf < hr { hf } else { hr });
-    is_fwd.push(hf < hr);
 
-    // Roll forward one base at a time.
-    for &byte in seq.iter().skip(k) {
-        let b = encode_base(byte);
-        h = ((h << 2) & mask) | b;
-        h_rc = (h_rc >> 2) | pattern_rc[b as usize];
+    let mut next_pos = k;
+    let mut first = true;
+    let exhausted = n < k;
+    let hasher = move || {
+        if exhausted {
+            return None;
+        }
+        if first {
+            first = false;
+        } else {
+            let byte = *seq.get(next_pos)?;
+            next_pos += 1;
+            let b = encode_base(byte);
+            h = ((h << 2) & mask) | b;
+            h_rc = (h_rc >> 2) | pattern_rc[b as usize];
+        }
         let (hf, hr) = (k_hash(h), k_hash(h_rc));
-        canonical.push(if hf < hr { hf } else { hr });
-        is_fwd.push(hf < hr);
-    }
-    Ok((canonical, is_fwd))
+        Some((if hf < hr { hf } else { hr }, hf < hr))
+    };
+    Ok(std::iter::from_fn(hasher))
 }
 
-/// Compute closed syncmers over a protein sequence.
+/// Compute closed syncmers over a protein sequence with O(window) memory.
 ///
 /// Uses the provided byte-string hasher on each s-mer; no canonical strand
 /// (proteins have no reverse complement). Returns `(hash, pos)` per syncmer.
@@ -197,12 +222,11 @@ pub fn syncmer_protein<H: Hasher>(
     let k = params.smer;
     let w = params.window;
     let n = seq.len();
-    if n < k + w - 1 {
+    if n < k {
         return Ok(Vec::new());
     }
-    let hashes: Vec<u64> = seq.windows(k).map(|smer| hasher.hash(smer)).collect();
-    let mins = closed_syncmers_from_hashes(&hashes, w);
-    Ok(mins.into_iter().map(|m| (hashes[m], m)).collect())
+    let syncs = closed_syncmers_stream(w, seq.windows(k).map(|smer| (hasher.hash(smer), ())));
+    Ok(syncs.into_iter().map(|(pos, h, _)| (h, pos)).collect())
 }
 
 /// Build a syncmer hash set, dispatching on sequence type.

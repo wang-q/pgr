@@ -143,7 +143,7 @@ pgr 现有实现在 [src/libs/hash.rs](file:///Users/wangq/Scripts/pgr/src/libs/
 
 - pgr 的 `JumpingMinimizer`（`hash.rs:43`）先对全文所有 k-mer 预算哈希（`hash_kmers`），再做"跳跃式"选最小——O(n) 内存且语义是经典 minimizer。
 - pgr 的另一条路径用 `minimizer_iter` crate（`hash.rs:111`、`seq_sketch`），已是滚动窗口式。
-- syng 的 syncmer 迭代器是 O(w) 内存的滚动式（环形缓冲区，无需预算全部哈希）。**pgr 的实际实现选择了更简单的 O(n) 路径**：`dna_canonical_hashes` / `syncmer_protein` 先预算全部 s-mer 哈希入 `Vec<u64>`，再用单调 deque 做窗口最小（[syncmer.rs:145-185](file:///Users/wangq/Scripts/pgr/src/libs/syncmer.rs#L145)）。这对 `pgr dist` 按单条记录流式处理（非基因组级）足够；O(w) 滚动迭代器可作为后续优化点。
+- syng 的 syncmer 迭代器是 O(w) 内存的滚动式（环形缓冲区，无需预算全部哈希）。**已优化（2026-08-03）**：`dna_canonical_hashes` 改为流式迭代器，`closed_syncmers_stream` 用单调 deque + 长度为 `window` 的环形缓冲做端点判定，DNA/蛋白路径均不再预算全部 s-mer 哈希（内存 O(window)）。`closed_syncmers_from_hashes` 现在是流式核心的薄包装，语义与输出完全一致（strand-symmetry / bounded-gap / density 测试全绿，pgi build 的 single-pass 对照测试亦通过）。
 
 ## 5. 对 pgr 的启示与实现计划
 

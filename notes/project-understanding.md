@@ -473,9 +473,11 @@ chainnet 后消失。`pgr psl chain` 在 2bit 序列缓存优化后（~0.3 s）�
    `lastz` 仍为唯一必需的外部二进制。
 6. **`fas` 模块职责过重**：20 个子命令塞在一个模块下，`fas multiz` 等复杂逻辑可能需要
    拆分为独立顶层命令。
-7. **帮助文本与注册脱节（风险提示）**：`pgr.rs` 的 after_help 手工维护，增删命令时需
-   同步 `pgr.rs` 的 after_help 与 `cmd_pgr/*/mod.rs` 注册（当前已一致：`pl` 含
-   `chainnet`，`pbit` 含 `append`/`append-ref`，`pgi` 含 `align`）。
+7. **帮助文本与注册脱节（已自动化）**：`pgr.rs` 的 after_help 手工维护，增删命令时需
+   同步 `pgr.rs` 的 after_help 与 `cmd_pgr/*/mod.rs` 注册。`tests/cli_consistency.rs`
+   （2026-08-03 新增）已把该约束固化为回归测试：after_help 提及的命令集合必须与
+   注册的顶层命令集合一致，且每个顶层命令必须有对应 docs（`2bit` 例外映射到
+   `twobit.md`）。首次运行即发现 `align` 缺 `docs/align.md`，已补上。
 
 ## 9. 主题链路索引（按技术线，跨目录）
 
