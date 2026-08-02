@@ -363,7 +363,9 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
 - **基因组索引与比对（.pgi）**：`pgr pgi` 的 build/stat/to-hv/align 已实现——syncmer 稀疏
   排序 k-mer 索引（构建与 FastGA GIXmake 持平）、两索引归并精确距离、稀疏 HV 投影、
   FastGA 式比对管线（归并→链→banded 扩展→PSL，与 FastGA 端到端 1.08× 持平，真实
-  并集覆盖基本一致），详见 [[pgi-align.md]]。
+  并集覆盖基本一致）；格式 v2（GIX 式 packed：按需字节位置 + 方向位折叠，体积
+  减半且与 GIX 真实数据持平），详见 [[pgi-align.md]] 与
+  `notes/benchmarks/bench-pgi-vs-gix-storage.md`。
 - **距离工具**：`dist` 的 hv/pgi/seq 三个子命令已实现；`seq` 支持 minimizer/closed syncmer
   双采样器，DNA/protein 均提供 syng 风格默认参数；`dist pgi` 为确定性精确归并距离，
   `dist hv` 支持 `.hv` 文件直接比较（稀疏投影，与 `dist pgi` 排序 ρ=0.97、快 50×）。

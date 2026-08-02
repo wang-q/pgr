@@ -21,13 +21,21 @@ merges for distance computation and seed discovery.
 
 ## Index format
 
-Each `.pgi` file starts with the magic `PGI1` and stores, in order:
+Each `.pgi` file (format v2, magic `PGI1`) stores, in order:
 
-1. Sampling parameters: `k` (k-mer size), syncmer `smer`/`window`;
+1. Sampling parameters: `k` (k-mer size), syncmer `smer`/`window`,
+   record field widths;
 2. The contig table (name, length);
-3. A sorted, duplicate-free entry table: `(kmer, pos_start, freq)` — k-mers
-   strictly ascending, with positions grouped per key;
-4. The position table: `(contig_id, pos, strand)` records.
+3. A sorted per-occurrence record stream: each record is the packed 2-bit
+   k-mer (`ceil(k/4)` bytes, big-endian) + the position in minimal
+   little-endian bytes + a packed `contig_id | (strand << high_bit)` byte.
+
+The packed layout follows FastGA's GIX (see
+`notes/benchmarks/bench-pgi-vs-gix-storage.md`): k-mers are stored at their
+true 2-bit width (10 bytes at k=40) and positions use only the bytes
+needed for the largest contig, with the strand flag folded into the contig
+field. Repeated k-mers are stored per occurrence on disk; readers re-group
+them into unique entries + position lists in memory.
 
 Both strands are indexed by default: each syncmer position emits the forward
 k-mer and its reverse complement (strand flag 0/1). Sampling parameters must
