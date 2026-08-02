@@ -17,10 +17,14 @@
 - **算法来源**: adaptive seed（Martin Frith 的 adaptamer 思想）+ 首个 wave-based
   local aligner（源自 daligner 2012）；数据编码用 Gene Myers 的 ONEcode 框架。
 
-**与 pgr 的关系**：pgr 的 pangenome 路线把 FastGA 当作上游比对器
-（`FastGA -v -psl/-pafx A B` → `pgr pl chainnet --syn`），FastGA 负责产出 pairwise
-alignment，pgr 负责 chain/net 精修与下游 PAF 图。FastGA 自己的 chaining 在 pgr 路线中
-不使用（统一由 UCSC chain/net 承担，见 [[biser.md]] §6.8）。
+**与 pgr 的关系**：pgr 曾以 `FastGA -v -psl/-pafx A B` 作为 pangenome 上游比对器
+（→ `pgr pl chainnet --syn`），FastGA 自己的 chaining 在 pgr 路线中不使用。2026-08
+起 pgr 已原生实现同一管线（`pgr align pgi`），FastGA 变为外部对照；移植与实测
+对照见 [[../design/pgi-align.md]]。
+
+**实测内存（2026-08-02，MG1655 vs Sakai，-T8）**：FAtoGDB ~7 MB、GIXmake -T8
+~160 MB、`FastGA -psl` 比对主进程 **332 MB**。全程无 mmap：GIX 用 `read()` 流式
+读、序列默认 EXTERNAL 文件态。
 
 ## 2. 整体架构与数据流
 
@@ -169,6 +173,8 @@ PAF / PSL
 - **PAF**（默认）：12 列标准 PAF；`-pafx` 追加 `cg:Z:`（`=`/`X`/`I`/`D`），
   `-pafm` 用 `M`，`-pafs/S` 追加 CS 字符串。
 - **PSL**（`-psl`）：UCSC PSL 格式，可直接喂给 `pgr pl chainnet` / `pgr psl chain`。
+  负链块约定：qStart/qEnd 用正链帧、内部 qStarts 用 RC 帧（`ALNtoPSL.c` 对 COMP
+  记录按 `blen − pos` 反算）。
 - **.1aln**（`-1:path`）：ONEcode 二进制（须指定输出文件），可用 ALNtoPAF/ALNtoPSL
   按需转换。
 
@@ -176,13 +182,14 @@ PAF / PSL
 
 1. **Adaptive seeds vs pgr 的 syncmer/minimizer**：FastGA 的 adaptamer 是"最长共享字符串"
   （长度自适应），pgr 的 closed syncmer（`src/libs/syncmer.rs`）是固定 k 的有界间隔采样。
-  FastGA 的 `is_minimal` canonical 判断与 pgr 的 canonical rolling hash 同思路；
-  若 pgr 未来做原生 k-mer search（如 [[biser.md]] 的 `pgr sd search --mode kmer`），
-  adaptive seed 的"频率自适应 + 最长共享"是比固定 k-mer 更灵敏的候选。
+  FastGA 的 `is_minimal` canonical 判断与 pgr 的 canonical rolling hash 同思路
+  （`is_minimal` 是 canonical 方向判断，不是噪声抑制）。pgr 的 pgi 比对管线已移植
+  其 merge 种子语义（见 [[../design/pgi-align.md]] §1.3.2）。
 2. **Wave aligner vs pgr 的 ScalarAlignmentEngine**：pgr 的 POA 对齐是标量 O(nm) 矩阵 DP；
   FastGA 的 wave-front（V/M/T 位向量 + Pebble cells）在线性空间内扩展，与 WFA 同族。
-  若 pgr 需要更快的小片段 pairwise 对齐（如 pbit 的 CIGAR 精修、SD refine），
-  wave-front 是明确的优化方向（远优于当前 O(nm)）。
+  pgr 已移植该 wavefront 用于 `pgr align pgi` 的 tube 扩展（wave 依赖 tube 锚定
+  上下文，不能单独替换 banded，见 [[../design/pgi-align.md]] §3.1）。pgr 的 POA
+  对齐仍是标量 O(nm)，wave-front 对 pbit CIGAR 精修 / SD refine 仍是候选优化方向。
 3. **Trace point 编码 vs pgr 的 PAF/MAF 存储**：FastGA 用轨迹点 + ONEcode 压缩比对集合
   （63.5 万比对 → 44.5 MB），支持线性时间重放为任意格式。pgr 的 paf index 已做
   CIGAR 懒加载（BGZF vpos），但完整比对的紧凑存储可借鉴 trace point 思路。
@@ -244,8 +251,9 @@ PAF / PSL
 ### 9.4 随机访问
 
 - **GDB**：`Get_Contig_Piece` 按 `boff + beg/4` 做 `fseeko`，读 `ceil((end-beg)/4)` 字节后
-  `Uncompress_Read`；也支持整库 mmap（`seqstate != EXTERNAL` 时 `Get_Contig` 直接
-  memcpy）。区间读取是 **O(区间长)**。
+  `Uncompress_Read`；`seqstate != EXTERNAL`（`Load_Sequences` 整库 `Malloc`+`read` 载入）
+  时 `Get_Contig` 直接 memcpy。区间读取是 **O(区间长)**。
+  FastGA 全项目无 mmap 调用，序列访问只有 fseeko 与整库读入两种。
 - **pgr 2bit**：`read_2bit_record` 同样 seek 到 `packed_dna_start + first_byte_idx`，
   只读区间字节后解压，**O(区间长)**——与 GDB 等价。
 - **pgr loc**：`fetch_range_seq` 先 `fetch_record` **读整条 record** 再切片
@@ -326,39 +334,17 @@ syncmer 起始"的 k=40 的 k-mer（2-bit 压缩 10 字节），按字典序桶�
   （-f 10）控制重复区域。
 - 私有格式，构建/读取绑定 FastGA 生态。
 
-### 10.4 pgr 是否需要借鉴
+### 10.4 GIX 的设计价值与 pgr 的借鉴
 
-**当前不需要**，理由：
+GIX 的三个核心设计——(1) 两排序 k-mer 流线性归并找同源（O(|A|+|B|)，免逐查询）；
+(2) 相邻条目 lcp 连续传播 → 种子长度自适应；(3) 归并时即时算 diag/anti 坐标 +
+MSD 桶排序 + 定宽流式扫描——构成其高效种子检测的全部要点。代价是 14 GB/Gbp 的
+空间与私有格式。
 
-1. **路线不符**：pgr 的 pangenome 路线明确"复用 pairwise 资产、不重新做比对"
-  （[[paf-pangenome.md]] §1），de novo 同源检测由 FastGA/lastz 等外部比对器承担；
-  pgr 的索引（paf index）消费的是**已比对的 PAF**，不是序列索引。
-2. **规模不匹配**：GIX 14 GB/Gbp 的代价对 4 万大肠杆菌（总 ~200 Gbp）完全不可行；
-  pgr 现有的 Mash/syncmer sketch 才是这一规模下的"近似同源过滤"正确工具。
-
-**未来值得借鉴的三个子项**（若 pgr 需要原生序列同源检测）：
-
-1. **两排序 k-mer 流归并找命中**——如果未来实现 [[biser.md]] 的 `pgr sd search
-   --mode kmer` 或自比对找重复（SD/重复家族），"两个排序流归并"比逐查询更优；
-   FastGA 自己就用 (12,8) syncmer 把索引稀疏化到 14 GB/Gbp；pgr 可沿用这一
-   模式，用 **closed syncmer**（已落地于 `src/libs/syncmer.rs`）或更大的 w 进一步
-   降密度，代价是灵敏度（syncmer 只保采样点）。
-2. **lcp 连续传播 → 种子长度自适应**——固定 k-mer 的"最短种子"思路（如 minimap2）
-   会漏掉短于 k 的同源；lcp 扩展天然得到"该位置的最长共享字符串"，灵敏度更高。
-3. **anti-diagonal 坐标变换 + 桶排序 + 流式**——种子命中 (i,j) 即时算 diag/anti 进
-   种子流、MSD 桶排序、定宽流式扫描，都是实现高效种子检测的成熟工程模式，可整体
-   迁移到 Rust（`libs/sd/kmer_index.rs` + `plane_sweep.rs` 蓝图）。
-
-> **已落地（2026-08-02）**：GIXmake 的 MSD 桶排序（American-flag 原地版，
-> `MSDsort.c`）已移植为通用数据结构 `src/libs/ds/radix_sort.rs`，并用于
-> `pgr pgi build`（顶字节 256 桶 + rayon 并行桶内排序），使 pgi 构建反超
-> GIXmake（详见 [[../benchmarks/bench-pgi-vs-gixmake.md]]）。"两个排序 k-mer 流
-> 归并找命中"也已以 `pgr dist pgi`（`libs/pgi/dist.rs`）的形式落地。
-
-**一句话结论**：GIX 的"归并 + lcp + anti-diagonal 坐标"是高效的序列索引设计，但 pgr 的
-架构（外部比对 + PAF 图）和规模（4 万细菌）决定了它**现在不引入**；等有原生
-同源检测需求时，以 syncmer 稀疏化 + 两流归并的形式借鉴其思想，而不是照搬
-14 GB/Gbp 的截断后缀数组。
+pgr 的 `.pgi` 索引与 `pgr align pgi` 比对管线以 **syncmer 稀疏 + 两流归并**的形式
+落地了这三点（细菌级几十 MB，远小于 GIX），详见 [[../design/pgi-align.md]] 与
+[[../benchmarks/bench-pgi-vs-gixmake.md]]；完整 GIX（.ktab 分片 + Kmer_Stream
+流式）未移植。
 
 ## 11. 从 GIX 到 Wave align 的完整算法管线
 
@@ -394,7 +380,7 @@ PAF / PSL（含 CIGAR）
 
 - **GDB**（GDB.c）：FASTA → 2-bit 压缩（`COMPRESSED_LEN = ceil(len/4)`），
   scaffold/contig 两级，N 按 `-n` 阈值拆 gap；元数据（.1gdb）与序列（.bps）分离，
-  可 mmap 整库。
+  序列默认 EXTERNAL 文件态（fseeko 随机访问，见 §9.4）。
 - **GIX**（GIXmake.c）：只索引"以 (12,8) canonical syncmer 起始"的 k=40 k-mer
   （`TMER=12, SMER=8, SOFF=4`；`is_syncmer` 对 12-mer 的 8 个 s-mer 窗口取
   正反链最小值）。排序：首字节 1024 桶 → `Ksplit` 均衡分片 → 多线程桶排序，
@@ -410,7 +396,8 @@ PAF / PSL（含 CIGAR）
 2. 对 T1 的每个前缀 `cpre`：T2 跳过前缀更小的条目，把前缀 == cpre 的 T2 条目
    载入小缓存（`cache`），然后做**前缀面板内的归并**。
 3. 面板内相同的 40-mer（T1 条目 vs T2 缓存）产出种子位置对，写 PAIR 流；
-   **频率过滤**：某 40-mer 出现次数 > `kfreq = FREQ × kbyte`（-f 10）则跳过。
+   **频率过滤**：共享该 40-mer 的记录数 ≥ `FREQ`（-f 10，指针比较
+   `hgh >= low + FREQ×kbyte`）则跳过。
 4. 种子条目 = (ipost, icont, jpost, jcont, lcp)：两侧位置 + contig + 与下一个
    相同 k-mer 的**最长公共前缀**（lcp 连续传播 → adaptamer 可扩展到任意长度）。
 
@@ -428,7 +415,9 @@ PAF / PSL（含 CIGAR）
 3. 链的 anti 覆盖 ≥ `CHAIN_MIN`（170，=2×-c 85）则触发"tube"处理
    （否则丢弃）。self 比对时跳过完全相同的对角线。
 4. tube 处理：加载两个 contig 序列，按 `amid = alow + BUCK_ANTI` 分块调用
-   `Local_Alignment`，每次对齐一个 anti-diagonal 子区间。
+  `Local_Alignment`，每次对齐一个 anti-diagonal 子区间；tube 内阈值放宽为
+  `alnMin = ALIGN_MIN − 50`、`alnRate = ALIGN_RATE + 0.05`（`align_contigs`），
+  即默认 50 bp / 35% 差异容忍。
 
 ### 11.4 步骤 5：Wave 局部对齐（Myers wavefront）
 
@@ -476,63 +465,3 @@ alncode.c）；ALNtoPAF/ALNtoPSL 多线程线性展开 trace → CIGAR（`-pafx`
 | 链 | anti-diagonal 坐标 + tube 扫描 | 线性（链稀疏）|
 | Wave | Myers wavefront（V/M/T + Pebble cells）| 与差异数成正比，优于 O(nm) |
 | Trace | Hirschberg 分治 + tspace 采样 | 线性于路径长 |
-
-## 12. 简化移植方案与代码量估算
-
-> 场景：pgr 原生实现"简化 FastGA"——输入基因组序列 → 输出 PSL 块（不做
-> chaining），接入 `pgr pl chainnet` 做 UCSC 链化。以下估算基于 Rust 实现 +
-> pgr 现有资产复用（nt.rs 2-bit 编码、syncmer.rs canonical hash、fmt/psl.rs
-> PSL 写入、ScalarAlignmentEngine 局部比对）。
-
-### 12.1 边界
-
-只移植 §11 的"种子发现 + 局部扩展"段，输出成块 PSL；FastGA 的种子链（tube）
-简化为"独立扩展 + 重叠块合并"（或直接去掉，由 chainnet 的块链化兜底）。
-
-### 12.2 两档估算（行数，含测试）
-
-| 组件 | 极简版（细菌可用）| 完整版（接近 FastGA）|
-|------|------------------|---------------------|
-| k-mer 索引（2-bit + canonical）| ~200（HashMap，5 Mb 约 70 MB）| ~400（(12,8) syncmer 稀疏 + 桶排序）|
-| 种子发现（频率过滤 + lcp 扩展）| ~100 | ~250（两流归并 / adaptamer）|
-| 种子链 / 归组 | 可去掉（扩展 + 重叠合并）| ~300（anti-diagonal tube）|
-| 局部扩展 | ~250（复用 `ScalarAlignmentEngine::Local`）| ~600（Myers wavefront：V/M/T + snake + 三分支 + trace cells）|
-| PSL 输出 | ~50（复用 `Psl::from_align`）| ~200（trace → PSL）|
-| 命令层 + 帮助 + 测试 | ~350 | ~500 |
-| **合计** | **~950** | **~2250** |
-
-复用 pgr 资产可省约 **400-600 行**（2-bit / canonical / PSL 写入 / 局部 DP）。
-
-### 12.3 三个关键决策
-
-1. **扩展器**：wavefront 是最难写的 ~600 行（V/M/T 位向量 + snake + 三分支更新 +
-   trace cells，调试成本高）。务实路径：先用 `ScalarAlignmentEngine::Local`
-   （O(nm)）验证正确性，再按 §11.4 把 wavefront 作为性能优化加入。
-2. **索引**：细菌级 HashMap 足够（~5 M 条目）；人类级才需要 syncmer 稀疏 + 流式
-   归并。第一版直接 HashMap，"稀疏化"留作未来开关。
-3. **chaining 交给 pgr**：简化版对种子直接扩展 + 合并重叠块，PSL 交给
-   `pgr pl chainnet`（非 --syn 或 --syn）做 UCSC 链化——这正是 pgr 已字节级验证
-   的主场（[[ucsc.md]]）。
-
-### 12.4 建议路线
-
-1. 极简版（~1000 行）：k-mer 种子 + ScalarAlignmentEngine 扩展 + PSL 输出，
-   E. coli 端到端验证（chainnet 接手链化）。
-2. 性能版（+~1200 行）：syncmer 稀疏索引 + wavefront 扩展器，替换步骤 1 的两个
-   热点，按需启用。
-
-> **已落地（2026-08-02）**：路线 1 已以 `pgr align pgi` 实现（两 .pgi 排序流
-> 归并 → anti-diagonal 链化 → banded SW 局部扩展 → PSL），详见
-> [[../design/pgi-align.md]]；E. coli 自比对 99.9999% 覆盖，跨株身份率
-> 98.4% vs FastGA 97.8%。路线 2 的 wavefront 扩展器仍为未来优化。
-
-### 12.5 索引选型结论
-
-- **第一版不需要 GIX 式索引**：pgr 是单基因组逐个比对，E. coli 5 Mb 的全 40-mer
-  HashMap 索引约 100-200 MB，逐查询种子发现 ~0.3 s；GIX 的两流归并/流式分片是
-  人类规模（14 GB/Gbp）才需要的工程，细菌规模收益可忽略，却要付几百行复杂度。
-- **若要优化，做"syncmer 稀疏 + 排序数组"**：closed syncmer 密度 ~2/(w+1) 把条目
-  降到 ~1/4（5 Mb 约 40 MB），`Vec<(u64,u32)>` 排序后二分替代 HashMap（省内存、
-  cache 友好），排序流天然支持相邻条目 lcp（种子扩展/归并所需）。
-- **完整 GIX（桶排序 + .ktab 分片 + Kmer_Stream 流式）不移植**：那是 14 GB/Gbp
-  规模的工程复杂度，见 §10.4。
