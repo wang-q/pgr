@@ -2,6 +2,8 @@
 
 ## Unreleased - ReleaseDate
 
+## 0.4.0 - 2026-08-02
+
 ### New Features
 
 * **`pgr align`** - New top-level command with two pairwise-genome alignment
