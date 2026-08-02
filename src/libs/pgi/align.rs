@@ -1095,7 +1095,9 @@ pub fn align_to_psl_ext_streaming<R: Read + Send>(
 ) -> anyhow::Result<Vec<Psl>> {
     let header = a.header().clone();
     let min_shared = effective_min_shared(header.k, params);
+    let t0 = std::time::Instant::now();
     let hits = merge_seed_hits_from_stream(&mut a, &b, params.freq, min_shared)?;
+    log::debug!("merge: {} ms", t0.elapsed().as_millis());
     log::info!(
         "merge: {} seed hits (min-shared={min_shared}, freq={})",
         hits.len(),
@@ -1130,7 +1132,9 @@ fn psls_from_hits(
         // Tubes are independent alignment tasks; the `alast` overlap skip of
         // FastGA's sequential scan is replaced by a parallel pass plus a
         // containment dedup on the emitted blocks.
+        let t0 = std::time::Instant::now();
         let tubes = chain_tubes(&hits, a.k as u32);
+        log::debug!("chain_tubes: {} ms", t0.elapsed().as_millis());
         // FastGA's chains break at ~100 kb (its adaptive seed stream is
         // sparser); cap oversized tubes so one giant tube cannot serialize
         // the mid-line slides.
@@ -1177,6 +1181,7 @@ fn psls_from_hits(
             .map(|(_, s)| complement(s).collect())
             .collect();
         let b_rcs: Vec<Vec<u8>> = b_seqs.iter().map(|(_, s)| rev_comp(s).collect()).collect();
+        let t_ext = std::time::Instant::now();
         let records: Vec<Vec<Psl>> = tubes
             .par_iter()
             .map(|t| {
@@ -1186,6 +1191,7 @@ fn psls_from_hits(
                 )
             })
             .collect();
+        log::debug!("extend: {} ms", t_ext.elapsed().as_millis());
         let mut out: Vec<Psl> = records.into_iter().flatten().collect();
         dedupe_contained(&mut out);
         log::debug!("peak RSS after extend: {} MB", peak_rss_mb());
@@ -1899,6 +1905,88 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn multi_contig_align_with_rc_query() {
+        // Three contigs; the query's second contig is the reverse complement
+        // and the third carries scattered point mutations. Regression:
+        // contig grouping, the streamed merge, and the minus-strand PSL
+        // convention must all hold on multi-contig inputs.
+        let c1 = pseudo_random_seq(2000, 1);
+        let c2 = pseudo_random_seq(1500, 2);
+        let c3 = pseudo_random_seq(1000, 3);
+        let qc2: Vec<u8> = rev_comp(&c2).collect();
+        let mut qc3 = c3.clone();
+        for i in (0..qc3.len()).step_by(50) {
+            qc3[i] = match qc3[i] {
+                b'A' => b'C',
+                b'C' => b'G',
+                b'G' => b'T',
+                _ => b'A',
+            };
+        }
+        let ia = build_from_seqs(
+            vec![
+                (String::from("c1"), c1.clone()),
+                (String::from("c2"), c2.clone()),
+                (String::from("c3"), c3.clone()),
+            ],
+            10,
+            4,
+            2,
+            false,
+        )
+        .unwrap();
+        let ib = build_from_seqs(
+            vec![
+                (String::from("c1"), c1.clone()),
+                (String::from("c2"), qc2.clone()),
+                (String::from("c3"), qc3.clone()),
+            ],
+            10,
+            4,
+            2,
+            false,
+        )
+        .unwrap();
+        let a_seqs = vec![
+            (String::from("c1"), c1.clone()),
+            (String::from("c2"), c2),
+            (String::from("c3"), c3),
+        ];
+        let b_seqs = vec![
+            (String::from("c1"), c1),
+            (String::from("c2"), qc2),
+            (String::from("c3"), qc3),
+        ];
+        let params = AlignParams {
+            min_shared: Some(10),
+            ..AlignParams::default()
+        };
+        let psls = align_to_psl_ext(ia, ib, &params, &a_seqs, &b_seqs).unwrap();
+        assert!(psls.len() >= 3, "expected one block per contig pair");
+        assert!(
+            psls.iter()
+                .any(|p| p.q_name == "c1" && p.strand == "+" && p.match_count >= 1900),
+            "c1 must align forward near full length"
+        );
+        assert!(
+            psls.iter()
+                .any(|p| p.q_name == "c2" && p.strand == "-" && p.match_count >= 1400),
+            "the RC query contig must align on the minus strand"
+        );
+        assert!(
+            psls.iter()
+                .any(|p| p.q_name == "c3" && p.strand == "+" && p.mismatch_count > 0),
+            "the mutated contig must align with mismatches"
+        );
+        assert!(psls.iter().all(|p| {
+            p.q_start >= 0
+                && p.q_end <= p.q_size as i32
+                && p.t_start >= 0
+                && p.t_end <= p.t_size as i32
+        }));
     }
 
     #[test]

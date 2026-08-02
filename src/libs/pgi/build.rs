@@ -151,6 +151,14 @@ pub fn build_from_seqs(
     anyhow::ensure!(k > 0 && k * 2 <= 128, "k must be in 1..=64, got {k}");
     anyhow::ensure!(smer > 0, "smer must be positive");
     anyhow::ensure!(window > 0, "window must be positive");
+    // `SeedHit` packs contig ids into `u16`; refuse inputs that would
+    // truncate silently.
+    anyhow::ensure!(
+        contigs.len() <= u16::MAX as usize,
+        "too many contigs: {} (max {})",
+        contigs.len(),
+        u16::MAX
+    );
     let params = SyncmerParams {
         smer,
         window,
