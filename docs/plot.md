@@ -48,6 +48,7 @@ pgr plot dot [OPTIONS] <infile>
 | `max_align` | | `--max-align` | Int | Maximum number of alignments to plot, longest first (default: 100000; 0 = all) |
 | `width` | | `--width` | Int | Plot width in pixels; height is scaled automatically (default: 1200) |
 | `range` | | `--range` | String | Target-side region to zoom into, `chr:start-end` (1-based); the query axis auto-focuses on the main aligned band |
+| `square` | | `--square` | Flag | Make the plot frame square (independent x/y scaling; distorts the collinear angle) |
 
 ### Notes
 
@@ -63,6 +64,14 @@ pgr plot dot [OPTIONS] <infile>
   (aligned bases >= 1% of the largest cluster), each as its own segment with
   true genomic coordinates. Matches far away on the same chromosome or on
   other chromosomes stay visible; only tiny noise fragments are dropped.
+* By default both axes use the same bp-to-pixel scale, so the frame height
+  follows the query/target length ratio. `--square` forces a square frame
+  with independent x/y scaling, at the cost of a distorted diagonal angle.
+* X-axis names are horizontal and y-axis names are rotated -90 degrees.
+  Adjacent names alternate black and dark gray so crowded segments stay
+  distinguishable; overlapping y-axis names move to separate columns.
+* Tick labels restart at 0 for each contig/plasmid segment; with `--range`
+  the single zoomed segment shows true genomic coordinates.
 
 ### Examples
 

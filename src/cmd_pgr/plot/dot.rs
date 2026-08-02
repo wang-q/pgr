@@ -1,5 +1,5 @@
 use anyhow::Context;
-use clap::{value_parser, Arg, ArgMatches, Command};
+use clap::{value_parser, Arg, ArgAction, ArgMatches, Command};
 use pgr::libs::paf::parser::parse_paf;
 use pgr::libs::plot::dot::{render_dot_svg, DotOpts, PlotRange};
 use std::io::Write;
@@ -82,6 +82,12 @@ This command draws a static collinear plot (dot plot) of PAF alignments.
                 .num_args(1)
                 .help("Target-side region to zoom into (chr:start-end, 1-based)"),
         )
+        .arg(
+            Arg::new("square")
+                .long("square")
+                .action(ArgAction::SetTrue)
+                .help("Make the plot frame square (independent x/y scaling)"),
+        )
 }
 
 /// Execute the dot command.
@@ -95,6 +101,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         identity_max: *args.get_one::<f64>("identity_max").unwrap(),
         max_align: *args.get_one::<usize>("max_align").unwrap(),
         width: *args.get_one::<u32>("width").unwrap(),
+        square: args.get_flag("square"),
         range: args
             .get_one::<String>("range")
             .map(|s| s.parse::<PlotRange>())

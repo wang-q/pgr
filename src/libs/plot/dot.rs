@@ -15,6 +15,8 @@ pub struct DotOpts {
     pub max_align: usize,
     /// Plot area width in pixels; height is scaled from the axis lengths.
     pub width: u32,
+    /// Make the plot frame square (independent x/y scaling).
+    pub square: bool,
     /// Target-side region to zoom into (1-based inclusive); the query axis
     /// auto-focuses on the aligned regions.
     pub range: Option<PlotRange>,
@@ -63,7 +65,6 @@ pub const DEFAULT_MAX_ALIGN: usize = 100_000;
 /// Default `--width` value.
 pub const DEFAULT_WIDTH: u32 = 1200;
 
-const MIN_LINE_PX: f64 = 4.0;
 const TICK_TARGET_PX: f64 = 120.0;
 /// Maximum gap (bp) between query alignments merged into one cluster.
 const CLUSTER_GAP: i64 = 100_000;
@@ -387,53 +388,143 @@ pub fn render_dot_svg(records: &[PafRecord], opts: &DotOpts) -> anyhow::Result<S
     }
 
     let plot_w = opts.width.max(1) as f64;
-    let scale = plot_w / t_axis.total as f64;
-    let plot_h = q_axis.total as f64 * scale;
+    let x_scale = plot_w / t_axis.total as f64;
+    let y_scale = if opts.square {
+        plot_w / q_axis.total as f64
+    } else {
+        x_scale
+    };
+    let plot_h = if opts.square {
+        plot_w
+    } else {
+        q_axis.total as f64 * x_scale
+    };
     let line_width = (opts.width.max(1) as f64 / 200.0).clamp(1.0, 20.0);
     let label_font = (plot_w / 60.0).clamp(12.0, 32.0);
     let tick_font = label_font * 0.8;
-    // Margins are derived from the fonts (which scale with --width), keeping
-    // the space between labels and the plot frame proportional at any size.
-    let margin_left = tick_font * 3.0 + label_font + 28.0;
-    let margin_bottom = tick_font * 3.0 + label_font * 2.0 + 50.0;
-    let margin_top = (plot_w * 0.02).clamp(12.0, 40.0);
-    let margin_right = margin_top;
-    let svg_w = margin_left + plot_w + margin_right;
-    let svg_h = margin_top + plot_h + margin_bottom;
-    let min_label_px = label_font * 3.0;
-    let plot_left = margin_left;
+    // Short segments are extended to at least 1.5x the stroke width so they
+    // stay line-like instead of collapsing into dots narrower than the line.
+    let min_line_px = (line_width * 1.5).max(4.0);
+    let mut margin_top = (plot_w * 0.02).clamp(12.0, 40.0);
+
+    // If the topmost query segment is too short for its rotated name, grow
+    // the top margin so the name stays inside the viewBox.
+    if let Some(last) = q_axis.names.last() {
+        let seg_px = q_axis.length[last] as f64 * y_scale;
+        let label = q_offset_of
+            .get(last)
+            .map(|i| i.label.chars().count())
+            .unwrap_or_else(|| last.chars().count());
+        let name_px = label as f64 * label_font;
+        if seg_px < name_px {
+            margin_top = margin_top.max(name_px / 2.0 - seg_px / 2.0 + 12.0);
+        }
+    }
+    // Keep room for the legend above the plot frame.
+    margin_top = margin_top.max(90.0);
+    let margin_right = (plot_w * 0.02).clamp(12.0, 40.0);
     let plot_top = margin_top;
     let plot_bottom = plot_top + plot_h;
+
+    // Y-axis names are rotated -90 degrees; overlapping ones move to columns
+    // to the left, with alternating black/dark-gray colors.
+    let mut y_place: Vec<(String, f64, f64, usize)> = Vec::new();
+    let mut y_cols: Vec<Vec<(f64, f64)>> = Vec::new();
+    for name in &q_axis.names {
+        let off = q_axis.offset[name];
+        let len = q_axis.length[name];
+        if len as f64 * y_scale < label_font {
+            continue;
+        }
+        let cy = plot_bottom - (off as f64 + len as f64 / 2.0) * y_scale;
+        let label = q_offset_of
+            .get(name)
+            .map(|i| i.label.as_str())
+            .unwrap_or(name);
+        let name_px = label.chars().count() as f64 * label_font;
+        let mut col = 0;
+        loop {
+            if col == y_cols.len() {
+                y_cols.push(Vec::new());
+            }
+            let overlap = y_cols[col]
+                .iter()
+                .any(|&(a, b)| cy - name_px / 2.0 < b && cy + name_px / 2.0 > a);
+            if !overlap {
+                y_cols[col].push((cy - name_px / 2.0, cy + name_px / 2.0));
+                break;
+            }
+            col += 1;
+        }
+        y_place.push((label.to_string(), cy, name_px, col));
+    }
+
+    let mut margin_left = tick_font * 3.0 + label_font + 28.0;
+    if y_cols.len() > 1 {
+        margin_left = margin_left.max(
+            8.0 + tick_font * 3.0
+                + label_font
+                + 10.0
+                + (y_cols.len() - 1) as f64 * (label_font + 8.0)
+                + 6.0,
+        );
+    }
+    let plot_left = margin_left;
     let name_x = plot_left - 8.0 - tick_font * 3.0 - label_font / 2.0 - 10.0;
+
+    // X-axis names are horizontal, alternating black/dark-gray per segment.
+    let mut x_place: Vec<(String, f64)> = Vec::new();
+    for name in &t_axis.names {
+        let off = t_axis.offset[name];
+        let len = t_axis.length[name];
+        if len as f64 * x_scale < label_font {
+            continue;
+        }
+        let cx = plot_left + (off as f64 + len as f64 / 2.0) * x_scale;
+        x_place.push((name.clone(), cx));
+    }
+
+    let flat_y = plot_bottom + tick_font + 8.0 + tick_font + 6.0 + label_font;
+    let mut margin_bottom = tick_font * 3.0 + label_font * 2.0 + 50.0;
+    margin_bottom = margin_bottom.max(flat_y - plot_bottom + label_font + 10.0);
+    let svg_w = margin_left + plot_w + margin_right;
+    let svg_h = plot_top + plot_h + margin_bottom;
 
     let mut segments = String::new();
     for rec in &filtered {
-        let mut x0 =
-            plot_left + (t_axis.offset[&rec.target_name] + rec.target_start as u64) as f64 * scale;
+        let mut x0 = plot_left
+            + (t_axis.offset[&rec.target_name] + rec.target_start as u64) as f64 * x_scale;
         let mut x1 =
-            plot_left + (t_axis.offset[&rec.target_name] + rec.target_end as u64) as f64 * scale;
+            plot_left + (t_axis.offset[&rec.target_name] + rec.target_end as u64) as f64 * x_scale;
+        // PAF stores reverse-strand query coordinates in forward orientation,
+        // so swap them to draw the segment with a negative slope.
+        let (qa, qb) = if rec.strand == '-' {
+            (rec.query_end, rec.query_start)
+        } else {
+            (rec.query_start, rec.query_end)
+        };
         // Flip the y axis so query position 0 sits at the bottom and forward
         // alignments run from bottom-left to top-right.
         let mut y0 = plot_top + plot_h
-            - (q_axis.offset[&rec.query_name] as i64 + rec.query_start as i64
+            - (q_axis.offset[&rec.query_name] as i64 + qa as i64
                 - q_offset_of
                     .get(&rec.query_name)
                     .map(|i| i.lo as i64)
                     .unwrap_or(0)) as f64
-                * scale;
+                * y_scale;
         let mut y1 = plot_top + plot_h
-            - (q_axis.offset[&rec.query_name] as i64 + rec.query_end as i64
+            - (q_axis.offset[&rec.query_name] as i64 + qb as i64
                 - q_offset_of
                     .get(&rec.query_name)
                     .map(|i| i.lo as i64)
                     .unwrap_or(0)) as f64
-                * scale;
+                * y_scale;
         // Sub-pixel segments are invisible; extend them to a minimum visible length.
         let dx = x1 - x0;
         let dy = y1 - y0;
         let len = (dx * dx + dy * dy).sqrt();
-        if len > 0.0 && len < MIN_LINE_PX {
-            let ext = (MIN_LINE_PX - len) / 2.0;
+        if len > 0.0 && len < min_line_px {
+            let ext = (min_line_px - len) / 2.0;
             let (ux, uy) = (dx / len, dy / len);
             x0 -= ux * ext;
             x1 += ux * ext;
@@ -461,21 +552,30 @@ pub fn render_dot_svg(records: &[PafRecord], opts: &DotOpts) -> anyhow::Result<S
     for name in &t_axis.names {
         let off = t_axis.offset[name];
         let len = t_axis.length[name];
-        let x0 = plot_left + off as f64 * scale;
+        let x0 = plot_left + off as f64 * x_scale;
         separators.push_str(&format!(
             r#"<line x1="{x0:.1}" y1="{plot_top:.1}" x2="{x0:.1}" y2="{plot_bottom:.1}"/>"#
         ));
-        for t in tick_positions(len, scale) {
-            let x = plot_left + (off as f64 + t as f64) * scale;
-            grid.push_str(&format!(
-                r#"<line x1="{x:.1}" y1="{plot_top:.1}" x2="{x:.1}" y2="{plot_bottom:.1}"/>"#
-            ));
-            let label = format_bp(x_offset + off + t);
-            x_ticks.push_str(&format!(
-                r#"<text x="{x:.1}" y="{}" font-size="{tick_font:.0}" text-anchor="middle">{}</text>"#,
-                plot_bottom + tick_font + 8.0,
-                label
-            ));
+        // Segments too short for tick labels keep only the separator line.
+        if len as f64 * x_scale >= tick_font {
+            for t in tick_positions(len, x_scale) {
+                let x = plot_left + (off as f64 + t as f64) * x_scale;
+                grid.push_str(&format!(
+                    r#"<line x1="{x:.1}" y1="{plot_top:.1}" x2="{x:.1}" y2="{plot_bottom:.1}"/>"#
+                ));
+                // Each axis segment starts its own scale at 0; in zoom mode
+                // the single segment shows true genomic coordinates.
+                let label = if opts.range.is_some() {
+                    format_bp(x_offset + off + t)
+                } else {
+                    format_bp(t)
+                };
+                x_ticks.push_str(&format!(
+                    r#"<text x="{x:.1}" y="{}" font-size="{tick_font:.0}" text-anchor="middle">{}</text>"#,
+                    plot_bottom + tick_font + 8.0,
+                    label
+                ));
+            }
         }
     }
 
@@ -483,57 +583,46 @@ pub fn render_dot_svg(records: &[PafRecord], opts: &DotOpts) -> anyhow::Result<S
         let off = q_axis.offset[name];
         let len = q_axis.length[name];
         let q_lo = q_offset_of.get(name).map(|i| i.lo as u64).unwrap_or(0);
-        let y0 = plot_bottom - off as f64 * scale;
+        let y0 = plot_bottom - off as f64 * y_scale;
         separators.push_str(&format!(
             r#"<line x1="{plot_left:.1}" y1="{y0:.1}" x2="{:.1}" y2="{y0:.1}"/>"#,
             plot_left + plot_w
         ));
-        for t in tick_positions(len, scale) {
-            let y = plot_bottom - (off as f64 + t as f64) * scale;
-            grid.push_str(&format!(
-                r#"<line x1="{plot_left:.1}" y1="{y:.1}" x2="{:.1}" y2="{y:.1}"/>"#,
-                plot_left + plot_w
-            ));
-            let label = format_bp(q_lo + t);
-            y_ticks.push_str(&format!(
-                r#"<text x="{:.1}" y="{y:.1}" font-size="{tick_font:.0}" text-anchor="end">{}</text>"#,
-                plot_left - 8.0,
-                label
-            ));
+        // Segments too short for tick labels keep only the separator line.
+        if len as f64 * y_scale >= tick_font {
+            for t in tick_positions(len, y_scale) {
+                let y = plot_bottom - (off as f64 + t as f64) * y_scale;
+                grid.push_str(&format!(
+                    r#"<line x1="{plot_left:.1}" y1="{y:.1}" x2="{:.1}" y2="{y:.1}"/>"#,
+                    plot_left + plot_w
+                ));
+                let label = format_bp(q_lo + t);
+                y_ticks.push_str(&format!(
+                    r#"<text x="{:.1}" y="{y:.1}" font-size="{tick_font:.0}" text-anchor="end">{}</text>"#,
+                    plot_left - 8.0,
+                    label
+                ));
+            }
         }
     }
 
     let mut x_labels = String::new();
-    for name in &t_axis.names {
-        let off = t_axis.offset[name];
-        let len = t_axis.length[name];
-        let px = len as f64 * scale;
-        if px >= min_label_px {
-            let cx = plot_left + (off as f64 + len as f64 / 2.0) * scale;
-            x_labels.push_str(&format!(
-                r#"<text x="{cx:.1}" y="{}" font-size="{label_font:.0}" font-weight="bold" text-anchor="middle">{}</text>"#,
-                plot_bottom + tick_font * 2.5 + 8.0 + label_font,
-                escape_xml(name)
-            ));
-        }
+    for (i, (name, cx)) in x_place.iter().enumerate() {
+        let color = if i % 2 == 0 { "#000000" } else { "#777777" };
+        x_labels.push_str(&format!(
+            r##"<text x="{cx:.1}" y="{flat_y:.1}" font-size="{label_font:.0}" font-weight="bold" fill="{color}" text-anchor="middle">{}</text>"##,
+            escape_xml(name)
+        ));
     }
 
     let mut y_labels = String::new();
-    for name in &q_axis.names {
-        let off = q_axis.offset[name];
-        let len = q_axis.length[name];
-        let px = len as f64 * scale;
-        if px >= min_label_px {
-            let cy = plot_bottom - (off as f64 + len as f64 / 2.0) * scale;
-            let label = q_offset_of
-                .get(name)
-                .map(|i| i.label.as_str())
-                .unwrap_or(name);
-            y_labels.push_str(&format!(
-                r#"<text x="{name_x:.1}" y="{cy:.1}" font-size="{label_font:.0}" font-weight="bold" text-anchor="middle" transform="rotate(-90 {name_x:.1} {cy:.1})">{}</text>"#,
-                escape_xml(label)
-            ));
-        }
+    for (i, (label, cy, _, col)) in y_place.iter().enumerate() {
+        let color = if i % 2 == 0 { "#000000" } else { "#777777" };
+        let x = name_x - *col as f64 * (label_font + 8.0);
+        y_labels.push_str(&format!(
+            r##"<text x="{x:.1}" y="{cy:.1}" font-size="{label_font:.0}" font-weight="bold" fill="{color}" text-anchor="middle" transform="rotate(-90 {x:.1} {cy:.1})">{}</text>"##,
+            escape_xml(label)
+        ));
     }
 
     let mut out = String::new();
@@ -556,8 +645,7 @@ pub fn render_dot_svg(records: &[PafRecord], opts: &DotOpts) -> anyhow::Result<S
         plot_top
     ));
     out.push_str(&format!(
-        r##"<g id="separators" stroke="#C0C0C0" stroke-width="{:.2}">{separators}</g>"##,
-        line_width * 0.6
+        r##"<g id="separators" stroke="#808080" stroke-width="{line_width:.1}">{separators}</g>"##
     ));
     out.push_str(&format!(
         r##"<g id="segments" stroke-width="{line_width:.1}" opacity="0.8" clip-path="url(#plot-clip)">{segments}</g>"##
@@ -566,20 +654,30 @@ pub fn render_dot_svg(records: &[PafRecord], opts: &DotOpts) -> anyhow::Result<S
     out.push_str(&y_ticks);
     out.push_str(&x_labels);
     out.push_str(&y_labels);
-    out.push_str(&legend(svg_w, svg_h, label_font, margin_right, opts));
+    out.push_str(&legend(plot_left, plot_top, plot_w, label_font, opts));
     out.push_str("</svg>\n");
 
     Ok(out)
 }
 
-/// Build the identity color-scale legend (bottom-right color bar with labels).
-fn legend(svg_w: f64, svg_h: f64, label_font: f64, margin_right: f64, opts: &DotOpts) -> String {
+/// Build the identity color-scale legend above the plot's top-right corner.
+fn legend(plot_left: f64, plot_top: f64, plot_w: f64, label_font: f64, opts: &DotOpts) -> String {
     let legend_w = 260.0;
     let legend_h = 14.0;
-    let lx = svg_w - margin_right - legend_w - 10.0;
-    let ly = svg_h - 52.0;
+    // Shift the legend left so the 100% label stays inside the plot frame.
+    let lx = plot_left + plot_w - legend_w - 80.0;
+    let ly = plot_top - 46.0;
+    let label_y = ly + legend_h / 2.0 + label_font * 0.5;
+    let lo = format!("{:.0}%", opts.min_identity * 100.0);
+    let hi = format!("{:.0}%", opts.identity_max * 100.0);
 
     let mut s = String::new();
+    s.push_str(&format!(
+        r#"<rect x="{:.1}" y="{:.1}" width="{:.1}" height="62" rx="4" fill="white" opacity="0.85"/>"#,
+        lx - 44.0,
+        plot_top - 86.0,
+        legend_w + 96.0
+    ));
     const STEPS: usize = 12;
     for i in 0..STEPS {
         let t = i as f64 / (STEPS - 1) as f64;
@@ -591,21 +689,18 @@ fn legend(svg_w: f64, svg_h: f64, label_font: f64, margin_right: f64, opts: &Dot
         ));
     }
     s.push_str(&format!(
-        r#"<text x="{:.1}" y="{}" font-size="{:.0}" text-anchor="end">forward blue / reverse red</text>"#,
-        lx + legend_w,
-        svg_h - 64.0,
+        r#"<text x="{:.1}" y="{}" font-size="{:.0}" text-anchor="middle">Forward blue / Reverse red</text>"#,
+        lx + legend_w / 2.0,
+        plot_top - 62.0,
         label_font
     ));
-    let lo = format!("{:.0}%", opts.min_identity * 100.0);
-    let hi = format!("{:.0}%", opts.identity_max * 100.0);
     s.push_str(&format!(
-        r#"<text x="{lx:.1}" y="{}" font-size="{label_font:.0}" font-weight="bold">{lo}</text>"#,
-        svg_h - 16.0
+        r#"<text x="{:.1}" y="{label_y:.1}" font-size="{label_font:.0}" text-anchor="end">{lo}</text>"#,
+        lx - 8.0
     ));
     s.push_str(&format!(
-        r#"<text x="{:.1}" y="{}" font-size="{label_font:.0}" font-weight="bold" text-anchor="end">{hi}</text>"#,
-        lx + legend_w,
-        svg_h - 16.0
+        r#"<text x="{:.1}" y="{label_y:.1}" font-size="{label_font:.0}">{hi}</text>"#,
+        lx + legend_w + 8.0
     ));
     s
 }
@@ -656,6 +751,7 @@ mod tests {
                 identity_max: 1.0,
                 max_align: 0,
                 width: 2000,
+                square: false,
                 range: None,
             },
         )
@@ -689,6 +785,7 @@ mod tests {
                 identity_max: 1.0,
                 max_align: 1,
                 width: 500,
+                square: false,
                 range: None,
             },
         )
@@ -710,6 +807,7 @@ mod tests {
                 identity_max: 0.9,
                 max_align: 0,
                 width: 500,
+                square: false,
                 range: None,
             },
         )
@@ -733,6 +831,7 @@ mod tests {
                 identity_max: 1.0,
                 max_align: 0,
                 width: 500,
+                square: false,
                 range: Some(range),
             },
         )
@@ -748,6 +847,81 @@ mod tests {
     }
 
     #[test]
+    fn square_makes_plot_frame_square() {
+        let records = vec![
+            rec("q1", 0, 1000, '+', "t1", 0, 1000, 1000, 1000),
+            rec("q1", 1000, 2000, '+', "t1", 1000, 2000, 1000, 1000),
+        ];
+        let svg = render_dot_svg(
+            &records,
+            &DotOpts {
+                min_len: 100,
+                min_identity: 0.7,
+                identity_max: 1.0,
+                max_align: 0,
+                width: 800,
+                square: true,
+                range: None,
+            },
+        )
+        .unwrap();
+        // the plot-frame rect must be square: width == height
+        let re = regex::Regex::new(
+            r#"<rect x="[0-9.]+" y="[0-9.]+" width="([0-9.]+)" height="([0-9.]+)" fill="none""#,
+        )
+        .unwrap();
+        let caps = re.captures(&svg).expect("missing plot frame rect");
+        let w: f64 = caps[1].parse().unwrap();
+        let h: f64 = caps[2].parse().unwrap();
+        assert!((w - h).abs() < 0.001, "frame {w} x {h}");
+    }
+
+    #[test]
+    fn strand_determines_segment_slope() {
+        // Forward strand: bottom-left to top-right; reverse: top-left to bottom-right.
+        let records = vec![
+            rec("q1", 100, 900, '+', "t1", 100, 900, 800, 800),
+            rec("q2", 100, 900, '-', "t2", 100, 900, 800, 800),
+        ];
+        let svg = render_dot_svg(
+            &records,
+            &DotOpts {
+                min_len: 100,
+                min_identity: 0.7,
+                identity_max: 1.0,
+                max_align: 0,
+                width: 1200,
+                square: false,
+                range: None,
+            },
+        )
+        .unwrap();
+        let re = regex::Regex::new(
+            r##"<line x1="([0-9.]+)" y1="([0-9.]+)" x2="([0-9.]+)" y2="([0-9.]+)" stroke="#([0-9A-F]{6})""##,
+        )
+        .unwrap();
+        let mut fwd_slope: Option<bool> = None;
+        let mut rev_slope: Option<bool> = None;
+        for c in re.captures_iter(&svg) {
+            let x1: f64 = c[1].parse().unwrap();
+            let y1: f64 = c[2].parse().unwrap();
+            let x2: f64 = c[3].parse().unwrap();
+            let y2: f64 = c[4].parse().unwrap();
+            let color = &c[5];
+            let is_blue = u8::from_str_radix(&color[4..6], 16).unwrap()
+                > u8::from_str_radix(&color[0..2], 16).unwrap();
+            let negative = y2 > y1;
+            if is_blue {
+                fwd_slope = Some(negative);
+            } else {
+                rev_slope = Some(negative);
+            }
+        }
+        assert_eq!(fwd_slope, Some(false), "forward must go up-right");
+        assert_eq!(rev_slope, Some(true), "reverse must go down-right");
+    }
+
+    #[test]
     fn errors_when_nothing_passes() {
         let records = vec![rec("q1", 0, 50, '+', "t1", 0, 50, 50, 50)];
         let err = render_dot_svg(
@@ -758,6 +932,7 @@ mod tests {
                 identity_max: 1.0,
                 max_align: 0,
                 width: 500,
+                square: false,
                 range: None,
             },
         )
