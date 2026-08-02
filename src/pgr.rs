@@ -69,7 +69,7 @@ fn main() -> anyhow::Result<()> {
     * pl - Workflows: chainnet, p2m, prefilter, trf, ir, rept, ucsc
 
 * Plotting:
-    * plot - Plotting tools: hh, nrps, venn
+    * plot - Plotting tools: dot, hh, nrps, venn
 
 "###,
         );

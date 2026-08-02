@@ -53,6 +53,31 @@ fn command_plot_venn4() {
 }
 
 #[test]
+fn command_plot_dot() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&["plot", "dot", "tests/plot/dot.paf", "--min-len", "400"])
+        .run();
+
+    assert!(stdout.starts_with("<?xml"));
+    assert!(stdout.contains(r#"<svg xmlns="http://www.w3.org/2000/svg""#));
+    // 4 records; two pass --min-len 400 (block 800 and 1250)
+    let seg = stdout.split(r#"id="segments""#).nth(1).unwrap();
+    assert_eq!(seg.matches("<line ").count(), 2);
+    assert!(stdout.contains(r#"id="segments""#));
+    // 2 identity-colored line strokes plus the border rect stroke
+    assert!(stdout.matches("stroke=\"#").count() >= 3);
+}
+
+#[test]
+fn command_plot_dot_filters_everything() {
+    let (_, stderr) = PgrCmd::new()
+        .args(&["plot", "dot", "tests/plot/dot.paf", "--min-len", "100000"])
+        .run_fail();
+
+    assert!(stderr.contains("no alignments pass filters"));
+}
+
+#[test]
 fn command_plot_hh() {
     let (stdout, _) = PgrCmd::new()
         .args(&["plot", "hh", "tests/plot/hist.tsv"])

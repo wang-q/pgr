@@ -545,3 +545,34 @@ fn test_psl_swap_trans() {
     let expected_content = fs::read_to_string(&expected).unwrap();
     assert_eq!(output_content, expected_content);
 }
+
+// psl to-paf
+//
+
+#[test]
+fn test_to_paf_basic() {
+    let temp = TempDir::new().unwrap();
+    let input = get_path("to_chain", "input", "mtor.psl");
+    let output = temp.path().join("out.paf");
+
+    PgrCmd::new()
+        .args(&[
+            "psl",
+            "to-paf",
+            input.to_str().unwrap(),
+            "-o",
+            output.to_str().unwrap(),
+        ])
+        .run();
+
+    let content = fs::read_to_string(&output).unwrap();
+    let first = content.lines().next().unwrap();
+    let fields: Vec<&str> = first.split('\t').collect();
+    assert_eq!(fields[0], "ENST00000361445.8");
+    assert_eq!(fields[1], "2549");
+    assert_eq!(fields[4], "+"); // first char of "+-"
+    assert_eq!(fields[5], "chr1");
+    assert_eq!(fields[9], "2542"); // match count
+    assert_eq!(fields[10], "2542"); // sum of block sizes
+    assert_eq!(fields[11], "255"); // mapq
+}

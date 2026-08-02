@@ -1255,6 +1255,46 @@ pub fn to_chain<R: BufRead, W: Write>(
     Ok(())
 }
 
+/// Convert PSL records to PAF format.
+///
+/// `strict` controls parse-failure behavior (see [`parse_or_warn`]). The PAF
+/// strand is the first character of the PSL strand; block length is the sum
+/// of the PSL block sizes; mapping quality is set to 255.
+pub fn to_paf<R: BufRead, W: Write>(reader: R, writer: &mut W, strict: bool) -> anyhow::Result<()> {
+    for line in reader.lines() {
+        let line = line?;
+        if line.trim().is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if line.starts_with("psLayout") || line.starts_with("match") || line.starts_with("------") {
+            continue;
+        }
+        let psl = match parse_or_warn(&line, strict)? {
+            Some(p) => p,
+            None => continue,
+        };
+        let strand = psl.strand.chars().next().unwrap_or('+');
+        let block_len: u32 = psl.block_sizes.iter().sum();
+        writeln!(
+            writer,
+            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+            psl.q_name,
+            psl.q_size,
+            psl.q_start,
+            psl.q_end,
+            strand,
+            psl.t_name,
+            psl.t_size,
+            psl.t_start,
+            psl.t_end,
+            psl.match_count,
+            block_len,
+            255
+        )?;
+    }
+    Ok(())
+}
+
 /// Lift PSL coordinates from fragment alignments to genomic coordinates.
 /// Preserves comment/blank lines verbatim. `q_sizes` / `t_sizes` are optional
 /// chromosome size maps; `strict` controls both parse-failure and lift-failure

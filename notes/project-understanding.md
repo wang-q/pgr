@@ -75,7 +75,7 @@ src/
 │   ├── sd/             #   分段重复检测 (align/cluster/cover/cross/decompose/run/search)
 │   ├── ms/
 │   ├── pl/             #   Pipelines：编排外部工具
-│   └── plot/           #   可视化输出 (TikZ/LaTeX)
+│   └── plot/           #   可视化输出 (TikZ/LaTeX 与 SVG)
 └── libs/               # 核心库层：数据结构与算法
     ├── mod.rs
     ├── alignment/      #   序列比对工具 (coords/msa/slice/stat/trim/variation/banded)
@@ -94,7 +94,7 @@ src/
     ├── pgi/            #   基因组索引核心 (build/dist/to_hv/align)
     ├── sd/             #   分段重复检测核心
     ├── pl/             #   pipeline 共享逻辑 (PipelineCtx/FastK/Profex/spanr)
-    ├── plot/           #   可视化 (histogram/nrps/venn)
+    ├── plot/           #   可视化 (dot/histogram/nrps/venn)
     ├── fas_xlsx.rs     #   FAS xlsx 输出
     ├── lastz.rs        #   lastz 封装
     ├── par.rs          #   并行工具
@@ -170,7 +170,7 @@ src/
 | `chain` | 6        | Chain 排序、过滤、split、stitch、反重复、转 net 准备 |
 | `net`   | 6        | Net 分类、过滤、split、subset、syntenic、转 AXT      |
 | `axt`   | 4        | AXT 排序、转 FAS/MAF/PSL                             |
-| `psl`   | 8        | PSL 统计、直方图、lift、swap、转 chain、转 range     |
+| `psl`   | 9        | PSL 统计、直方图、lift、swap、转 chain/range/PAF     |
 | `lav`   | 1        | LAV (lastz 原生输出) 转 PSL；lastz 调用封装在 `align` |
 | `maf`   | 2        | MAF (multiple alignment format) 转 Block FA、转 PAF  |
 
@@ -211,7 +211,7 @@ axtToMaf 标准化流程中的全部 12 步主流程。`chain`/`net`/`axt`/`psl`
 |--------|----------|---------------------------------------------------|
 | `ms`   | 1        | Hudson's ms 模拟器输出转 DNA 序列                 |
 | `pl`   | 7        | 集成流程：chainnet、p2m、trf、ir、rept、ucsc、prefilter |
-| `plot` | 3        | TikZ/LaTeX 图：Venn、HH (hedgehog)、NRPS          |
+| `plot` | 4        | 图：dot (SVG 共线性图)、Venn、HH (hedgehog)、NRPS   |
 
 `pl` (pipelines) 模块定位特殊——它**编排外部工具**（UCSC kent-tools、trf、FastK、Profex、
 clustalw/muscle/mafft），充当工作流 glue。这与 `chain`/`net` 模块的纯 Rust 实现形成互补：能用 Rust
@@ -292,7 +292,7 @@ clustalw/muscle/mafft），充当工作流 glue。这与 `chain`/`net` 模块的
 - `libs/syncmer.rs`：closed syncmer 采样（Edgar 2021，syng 移植参考），支撑 `dist` 采样
 - `libs/nt.rs`：核苷酸类型与 2-bit k-mer 编解码（`pack_kmer`/`rc_key`/`rolling_kmer_keys`）
 - `libs/ms/`：Hudson's ms 模拟器（解析器 + DNA 生成）
-- `libs/plot/`：绘图工具（histogram/nrps/venn）
+- `libs/plot/`：绘图工具（dot/histogram/nrps/venn）
 - `libs/lastz.rs`：lastz 调用封装
 - `libs/par.rs`：并行辅助
 - `libs/translate.rs`：序列翻译（六框翻译）

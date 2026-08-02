@@ -135,13 +135,15 @@ cat NC_011415.lav NC_011419.lav NC_011413.lav NC_011416.lav \
 ## Alignment and visualization
 
 ```bash
-# Pairwise alignment with FastGA
-FastGA -v -pafx tests/genome/sakai.fa.gz tests/genome/mg1655.fa.gz > tmp.paf
-FastGA -v -psl tests/genome/sakai.fa.gz tests/genome/mg1655.fa.gz > tmp.psl
+# Pairwise alignment with pgr pgi
+pgr align pgi tests/genome/mg1655.fa.gz tests/genome/sakai.fa.gz -o tmp.psl
+
+# Raw PAF of the pgi blocks
+pgr psl to-paf tmp.psl -o tmp.pgi.paf
 
 # UCSC pipeline: chain → net → axt → maf
-pgr pl ucsc -t="" tests/genome/mg1655.fa.gz tests/genome/sakai.fa.gz tmp.psl > tmp.chain.maf
-pgr pl ucsc --syn -t="" tests/genome/mg1655.fa.gz tests/genome/sakai.fa.gz tmp.psl > tmp.syn.maf
+pgr pl ucsc tests/genome/mg1655.fa.gz tests/genome/sakai.fa.gz tmp.psl > tmp.chain.maf
+pgr pl ucsc --syn tests/genome/mg1655.fa.gz tests/genome/sakai.fa.gz tmp.psl > tmp.syn.maf
 
 # LASTZ alignment
 # 1. Generate LAV with lastz (~2 min).  A pre-computed copy is saved in the
@@ -150,19 +152,25 @@ lastz <(gzip -dcf tests/genome/mg1655.fa.gz) <(gzip -dcf tests/genome/sakai.fa.g
     > tmp.lastz.lav
 # 2. Convert LAV to PSL (use the saved LAV, or tmp.lastz.lav if regenerated).
 lavToPsl tests/genome/mg1655-sakai.lastz.lav tmp.lastz.psl
-pgr pl ucsc --syn -t="" tests/genome/mg1655.fa.gz tests/genome/sakai.fa.gz tmp.lastz.psl > tmp.lastz.maf
+pgr pl ucsc --syn tests/genome/mg1655.fa.gz tests/genome/sakai.fa.gz tmp.lastz.psl > tmp.lastz.maf
 
-# Dotplot visualization
-wgatools dotplot -f paf tmp.paf > tmp.html
-wgatools dotplot tmp.chain.maf > tmp.chain.html
-wgatools dotplot tmp.syn.maf > tmp.syn.html
-wgatools dotplot tmp.lastz.maf > tmp.lastz.html
+# Dot plots with pgr
+pgr plot dot tmp.pgi.paf -o images/dot-pgi.svg
+pgr maf to-paf tmp.chain.maf -o tmp.chain.paf
+pgr plot dot tmp.chain.paf -o images/dot-pgi-chain.svg
+pgr maf to-paf tmp.syn.maf -o tmp.syn.paf
+pgr plot dot tmp.syn.paf -o images/dot-pgi-syn.svg
+pgr maf to-paf tmp.lastz.maf -o tmp.lastz.paf
+pgr plot dot tmp.lastz.paf -o images/dot-lastz.svg
+
+# Local zoom (target-side region; the query axis auto-focuses on matches)
+pgr plot dot tmp.pgi.paf --range mg1655.NC_000913:1000000-1500000 -o images/dot-pgi-zoom.svg
 ```
 
-| ![paf](../images/paf.png) | ![chain](../images/chain.png) |
+| ![pgi](../images/dot-pgi.svg) | ![chain](../images/dot-pgi-chain.svg) |
 |:--------------------------:|:------------------------------:|
-|            paf             |             chain              |
+|            pgi             |             chain              |
 
-| ![syn](../images/syn.png) | ![lastz](../images/lastz.png) |
+| ![syn](../images/dot-pgi-syn.svg) | ![lastz](../images/dot-lastz.svg) |
 |:--------------------------:|:------------------------------:|
 |            syn             |             lastz              |
