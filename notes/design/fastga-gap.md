@@ -8,13 +8,13 @@
 | FastGA 功能 | pgr 现状 | 重要性 | 建议 |
 |---|---|---:|---|
 | **soft mask 感知的种子发现**（`-M`/.1ano，mask 区不产生种子） | `pgi build` 把小写当正常碱基（codes 表映射 a/c/g/t）；`fa mask`、2bit mask_blocks 读取已存在 | 高 | **P1 做**：建索引跳过 soft-mask 区，抑制重复/低复杂度区假阳性 |
-| **自比对模式**（`FastGA A`，单输入检测内部重复） | `pgr align pgi` 需两个输入；`sd search` 用外部 lastz `--self` | 中高 | **P1 做**：`pgr align pgi` 支持单输入 self 语义 |
+| **自比对模式**（`FastGA A`，单输入检测内部重复） | `pgr align pgi` 需两个输入；`sd search` 用外部 lastz `--self`（2026-08-03 起支持 `--engine pgi`，默认） | 中高 | **P1 做**：`pgr align pgi` 支持单输入 self 语义 |
 | **PAF `cs:Z` 字符串输出**（`-pafs/S`） | PAF 已有 `cg:Z`，无 `cs:Z` | 中低 | **P2 可选**：CIGAR 可逆压缩标签，下游工具兼容 |
 | **select 表达式**（只比对选定 contig/区间） | 无（需 fa range + 子索引间接实现） | 低 | 可选，暂缓 |
 | **Gap_Improver**（wave 后 gap 区二次精修） | banded 仿射 gap 已覆盖；wave 路径无等价物 | 低 | 暂缓（质量微调，收益不确定） |
 | **多 mask union**（.1ano 可叠加） | `fa mask` 单 runlist | 低 | 暂缓 |
 | **trace points / ONEcode `.1aln` 紧凑存储** | PSL/MAF + BGZF | 低（人类规模才需要） | **不做**（规模不匹配，见 fastga.md §10） |
-| **`-S` 对称 adaptamer** | `sd` 管线已覆盖重复分析 | 低 | **不做**（更慢，专门场景） |
+| **`-S` 对称 adaptamer**（双输入 A vs B 双向种子） | pgr 双输入同样单向（canonical 半方向单发，`A B` ≠ `B A`；对称需双方向合并，未实现） | 低 | **暂缓**：专门场景（对称的跨基因组重复/结构分析）才有价值；`sd` 的 cross 目前单向够用 |
 | **ALNchain（.1aln 链化）** | UCSC chain/net（更标准） | — | **不做** |
 | **GDB 格式 / scaffold 语义 / 完整 GIX 分片** | pgr 2bit + `.pgi` | — | **不做**（格式对比见 fastga.md §9） |
 

@@ -3,8 +3,8 @@
 > 整理于 2026-07，源自对 `biser-master/` 目录源码及 published paper 的通读。目的：理解 BISER 在
 > segmental duplication (SD) 检测与分解中的算法设计，并为 pgr 中重复/同源区域分析提供参考。
 
-> **实施状态（2026-08-02）**：§6.6 第一至五阶段已落地——`pgr sd search`（LASTZ-based putative SD
-> 检测）、`pgr sd align`（chain/net 精修 → PAF）、`pgr sd cluster` + `pgr sd decompose`
+> **实施状态（2026-08-02）**：§6.6 第一至五阶段已落地——`pgr sd search`（putative SD
+> 检测，`--engine pgi|lastz`，默认原生 pgi，2026-08-03 起）、`pgr sd align`（chain/net 精修 → PAF）、`pgr sd cluster` + `pgr sd decompose`
 > （聚类 + elementary SD 分解）、`pgr sd cover`（core duplicon 标记）、`pgr sd run`
 > （全流程串联）、`pgr sd cross`（跨基因组 SD 映射）均已实现并验证，见 §6.6 对应阶段；
 > §6.8 的 chain/net 链路改用 `pgr pl chainnet`（原生实现，与 UCSC 字节级一致，替代有 Linux
@@ -705,8 +705,9 @@ PGR 内部不同模块混用 0-based half-open 与 1-based inclusive 两种约�
       可复用；`src/libs/hash.rs` 的 minimizer 流程与 BISER exact 2-bit k-mer 不同，不能直接复用。
       `src/libs/syncmer.rs` 的 DNA 路径已基于 2-bit canonical rolling hash（复用 `nt::NT_VAL`），
       编码与 BISER 一致，未来原生 search 的 k-mer 索引可优先基于它扩展。
-    - 为保持接口统一，建议 `pgr sd search` 设计为 `--mode lastz|coverage|kmer`，默认 `lastz`， 未来
-      `kmer` 模式输出格式与 `lastz` 模式完全一致。
+    - 为保持接口统一，`pgr sd search` 设计为 `--engine lastz|pgi`（默认 `pgi`；
+      pgi 即原生 k-mer 检测，对应原规划的 `kmer` 模式，2026-08-03 落地），
+      两引擎输出格式完全一致（PSL，供 `sd align` 消费）。
 
 #### 6.3.3 Alignment refinement（`align.codon` + `hit.codon`）
 
@@ -1346,9 +1347,9 @@ PGR 内部不同模块混用 0-based half-open 与 1-based inclusive 两种约�
 
 - `mod.rs`: 子命令注册与分发。
 - `mask.rs`: `pgr sd mask <genome.fa> -o <masked.fa>`。
-- `search.rs`: `pgr sd search <genome.fa> -o <hits.psl> [--mode lastz|coverage|kmer]`，输出原始
-  pairwise alignments（lastz LAV 经 `pgr lav to-psl`；FastGA PAF 需 PAF→PSL），供 `pgr sd align` 的
-  chain/net 消费。默认 `lastz`，未来可扩展 `kmer` 原生模式。
+- `search.rs`: `pgr sd search <genome.fa> -o <hits.psl> [--engine pgi|lastz]`，输出原始
+  pairwise alignments（pgi 原生自比对 / lastz LAV 经 `pgr lav to-psl`），供 `pgr sd align` 的
+  chain/net 消费。默认 `pgi`，`lastz` 为可选外部引擎。
 - `align.rs`: `pgr sd align <genome.fa> <hits.psl> -o <hits.align.paf>`，封装 `pgr pl ucsc`（不加
   `--syn`）+ `pgr maf to-paf`，用 UCSC chain/net 做 chaining/refine。
 - `cluster.rs`: `pgr sd cluster <genomes...> <hits.align.paf> -o <clusters.dir>`。
@@ -1370,7 +1371,7 @@ PGR 内部不同模块混用 0-based half-open 与 1-based inclusive 两种约�
     - 过滤：长度 < 1 kbp、error rate > 0.1（即同一性 < 90%，采用 T2T-CHM13 SD 标准，见 4.2.1；用
       `block_identity` 计算）、低复杂度（`TopKPurity`）。
 3. 实现 `cmd_pgr/sd/search.rs`：
-    - CLI：`pgr sd search <genome.fa> -o <hits.psl> [--mode lastz]`；
+    - CLI：`pgr sd search <genome.fa> -o <hits.psl> [--engine pgi|lastz]`；
     - 默认输出 PSL（lastz LAV 经 `pgr lav to-psl`；FastGA PAF 需 PAF→PSL），坐标 0-based half-open；
     - 序列名按 `species#chr` 编码（为 `cluster` 阶段输出 FASTA 头做准备）。
 4. 验证:

@@ -39,7 +39,14 @@ Examples:
                 .value_parser(clap::builder::PossibleValuesParser::new(
                     pgr::libs::lastz::preset_names(),
                 ))
-                .help("lastz parameter set for search"),
+                .help("lastz parameter set for search (lastz engine only)"),
+        )
+        .arg(
+            Arg::new("engine")
+                .long("engine")
+                .value_parser(["pgi", "lastz"])
+                .default_value("pgi")
+                .help("Self-alignment engine for search (default: pgi)"),
         )
         .arg(
             Arg::new("min_len")
@@ -61,6 +68,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let genome = args.get_one::<String>("genome").unwrap();
     let outdir = args.get_one::<String>("outdir").unwrap();
     let preset = args.get_one::<String>("preset").cloned();
+    let engine = args.get_one::<String>("engine").unwrap();
     let min_len = *args.get_one::<u32>("min_len").unwrap();
     let min_identity = *args.get_one::<f64>("min_identity").unwrap();
 
@@ -70,8 +78,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let abs_outdir = ctx.abs_path(outdir)?;
     let _cwd_guard = ctx.enter()?;
 
-    let preset_args = preset.map(|p| format!("--preset {p}")).unwrap_or_default();
-    run_cmd!(${pgr} sd search ${abs_genome} -o hits.psl ${preset_args} --min-len ${min_len} --min-identity ${min_identity})?;
+    let preset_args = if engine == "lastz" {
+        preset.map(|p| format!("--preset {p}")).unwrap_or_default()
+    } else {
+        String::new()
+    };
+    run_cmd!(${pgr} sd search ${abs_genome} -o hits.psl --engine ${engine} ${preset_args} --min-len ${min_len} --min-identity ${min_identity})?;
     run_cmd!(${pgr} sd align ${abs_genome} hits.psl -o hits.paf)?;
     run_cmd!(${pgr} sd cluster ${abs_genome} hits.paf -o clusters)?;
 
