@@ -2,8 +2,8 @@
 
 use super::dist::validate_compatible;
 use super::PgiIndex;
+use crate::libs::alignment::align_banded_local;
 use crate::libs::alignment::coords::reverse_range_pair;
-use crate::libs::alignment::{align_banded_local, BandedAlign};
 use crate::libs::fmt::psl::Psl;
 use crate::libs::nt::rev_comp;
 use crate::libs::poa::align::AlignmentParams;
@@ -20,6 +20,8 @@ pub struct AlignParams {
     pub max_gap: u32,
     /// Diagonal band half-width (bp) around the chain mean.
     pub band: u32,
+    /// Maximum gap (bp) between adjacent colinear chains to merge.
+    pub merge_gap: u32,
 }
 
 impl Default for AlignParams {
@@ -29,6 +31,7 @@ impl Default for AlignParams {
             min_span: 85,
             max_gap: 1000,
             band: 128,
+            merge_gap: 5000,
         }
     }
 }
@@ -130,7 +133,14 @@ pub struct Chain {
 /// must not split the chain), and only a group change or an over-`max_gap`
 /// jump closes the chain. Chains covering less than `min_span` on either
 /// axis are dropped.
-pub fn chain_hits(hits: &[SeedHit], k: u32, min_span: u32, max_gap: u32, band: u32) -> Vec<Chain> {
+pub fn chain_hits(
+    hits: &[SeedHit],
+    k: u32,
+    min_span: u32,
+    max_gap: u32,
+    band: u32,
+    merge_gap: u32,
+) -> Vec<Chain> {
     let mut sorted = hits.to_vec();
     sorted.sort_unstable_by_key(|h| {
         let diag = h.a_pos as i64 - h.b_pos as i64;
@@ -181,7 +191,46 @@ pub fn chain_hits(hits: &[SeedHit], k: u32, min_span: u32, max_gap: u32, band: u
         });
     }
     push_chain(&mut chains, &cur, k, min_span);
+    merge_adjacent_chains(&mut chains, band, merge_gap);
     chains
+}
+
+/// Merge adjacent chains on the same contig pair and strand whose spans are
+/// within `merge_gap` and whose diagonals are within `band` of each other.
+///
+/// Insertions (IS elements etc.) shift the local diagonal past the chaining
+/// band and split one syntenic block into several greedy chains; this pass
+/// stitches them back together.
+fn merge_adjacent_chains(chains: &mut Vec<Chain>, band: u32, merge_gap: u32) {
+    if chains.len() < 2 {
+        return;
+    }
+    chains.sort_by_key(|c| (c.a_contig, c.b_contig, c.strand, c.a_start));
+    let mut out: Vec<Chain> = Vec::with_capacity(chains.len());
+    for c in chains.drain(..) {
+        if let Some(last) = out.last_mut() {
+            let same_group = last.a_contig == c.a_contig
+                && last.b_contig == c.b_contig
+                && last.strand == c.strand;
+            let gap_a = c.a_start as i64 - last.a_end as i64;
+            let gap_b = c.b_start as i64 - last.b_end as i64;
+            if same_group
+                && (0..=merge_gap as i64).contains(&gap_a)
+                && (0..=merge_gap as i64).contains(&gap_b)
+                && (c.diag - last.diag).abs() <= band as i64
+            {
+                let span = last.diag_span.max(c.diag_span) + (c.diag - last.diag).abs();
+                last.a_end = last.a_end.max(c.a_end);
+                last.b_end = last.b_end.max(c.b_end);
+                last.seeds += c.seeds;
+                last.diag = (last.diag + c.diag) / 2;
+                last.diag_span = span;
+                continue;
+            }
+        }
+        out.push(c);
+    }
+    *chains = out;
 }
 
 /// Greedy chain cursor: the current chain under construction.
@@ -267,73 +316,135 @@ pub fn align_to_psl(a: &PgiIndex, b: &PgiIndex, params: &AlignParams) -> anyhow:
         params.min_span,
         params.max_gap,
         params.band,
+        params.merge_gap,
     );
     Ok(chains.iter().map(|c| chain_to_psl(c, a, b)).collect())
 }
 
-/// Maximum chain interval length (bp) for banded extension.
-const MAX_EXTEND_LEN: usize = 30_000;
+/// Default window size (bp) for chain extension.
+pub const EXTEND_WINDOW: usize = 16_000;
+/// Default step (bp) between extension windows (2 kb overlap).
+pub const EXTEND_STEP: usize = 14_000;
 
-/// Extend one chain into a real PSL record via banded local alignment.
+/// Extend one chain into scored PSL records via windowed banded alignment.
 ///
-/// Returns `None` when the interval exceeds [`MAX_EXTEND_LEN`] or the local
-/// alignment finds no scoring segment; callers fall back to [`chain_to_psl`].
+/// Chains longer than `window` are split into overlapping windows placed on
+/// the chain diagonal, so giant syntenic chains still get real identity
+/// counts. Returns empty when no window scores; callers fall back to
+/// [`chain_to_psl`].
 pub fn extend_chain(
     chain: &Chain,
     a: &PgiIndex,
     b: &PgiIndex,
     a_seqs: &[(String, Vec<u8>)],
     b_seqs: &[(String, Vec<u8>)],
+    window: usize,
+    step: usize,
+) -> Vec<Psl> {
+    let jobs = chain_windows(0, chain, a_seqs, b_seqs, window, step);
+    let dp_band = (chain.diag_span as usize + 32).min(128);
+    jobs.par_iter()
+        .filter_map(|job| extend_window(job, chain, a, b, a_seqs, b_seqs, dp_band))
+        .collect()
+}
+
+/// One banded extension window (chain id + oriented query range).
+#[derive(Debug, Clone, Copy)]
+struct WindowJob {
+    chain_id: usize,
+    q_win: usize,
+    win_end: usize,
+}
+
+/// Build the bounds-checked extension window list for one chain.
+fn chain_windows(
+    chain_id: usize,
+    chain: &Chain,
+    a_seqs: &[(String, Vec<u8>)],
+    b_seqs: &[(String, Vec<u8>)],
+    window: usize,
+    step: usize,
+) -> Vec<WindowJob> {
+    let Some((_, a_int)) = a_seqs.get(chain.a_contig as usize) else {
+        return Vec::new();
+    };
+    let Some((_, b_int)) = b_seqs.get(chain.b_contig as usize) else {
+        return Vec::new();
+    };
+    let a_len = a_int.len();
+    let b_len = b_int.len();
+    let q0 = chain.b_start as usize;
+    let q1 = chain.b_end as usize;
+    if q1 > b_len || q0 >= q1 || step == 0 {
+        return Vec::new();
+    }
+    let mut jobs = Vec::new();
+    let mut q_win = q0;
+    while q_win < q1 {
+        let win_end = (q_win + window).min(q1);
+        // Expected target window start from the chain diagonal (t = q + diag).
+        let t_start = q_win as i64 + chain.diag;
+        let t_end = t_start + (win_end - q_win) as i64;
+        if t_start >= 0 && t_end <= a_len as i64 {
+            jobs.push(WindowJob {
+                chain_id,
+                q_win,
+                win_end,
+            });
+        }
+        q_win += step;
+    }
+    jobs
+}
+
+/// Extend one window into a scored PSL record, if the banded alignment scores.
+fn extend_window(
+    job: &WindowJob,
+    chain: &Chain,
+    a: &PgiIndex,
+    b: &PgiIndex,
+    a_seqs: &[(String, Vec<u8>)],
+    b_seqs: &[(String, Vec<u8>)],
+    dp_band: usize,
 ) -> Option<Psl> {
     let (_, a_int) = a_seqs.get(chain.a_contig as usize)?;
     let (_, b_int) = b_seqs.get(chain.b_contig as usize)?;
-    let a_len = a_int.len();
     let b_len = b_int.len();
-    let (ai0, ai1) = (chain.a_start as usize, chain.a_end as usize);
-    if ai1 > a_len || ai1 - ai0 > MAX_EXTEND_LEN {
-        return None;
-    }
-    // Query interval in original coordinates (orientation space for reverse).
-    let (bi0, bi1) = if chain.strand == 0 {
-        (chain.b_start as usize, chain.b_end as usize)
-    } else {
-        (b_len - chain.b_end as usize, b_len - chain.b_start as usize)
-    };
-    if bi1 > b_len || bi1 - bi0 > MAX_EXTEND_LEN {
-        return None;
-    }
-    let t = &a_int[ai0..ai1];
+    let (q_win, win_end) = (job.q_win, job.win_end);
+    let t_start = q_win as i64 + chain.diag;
+    let (t_win_start, t_win_end) = (
+        t_start as usize,
+        (t_start + (win_end - q_win) as i64) as usize,
+    );
+    let t = &a_int[t_win_start..t_win_end];
     let q: Vec<u8> = if chain.strand == 0 {
-        b_int[bi0..bi1].to_vec()
+        b_int[q_win..win_end].to_vec()
     } else {
-        rev_comp(&b_int[bi0..bi1]).collect()
+        let orig = (b_len - win_end, b_len - q_win);
+        rev_comp(&b_int[orig.0..orig.1]).collect()
     };
-    let dp_band = (chain.diag_span as usize + 32).min(128);
-    let diag0 = chain.diag + chain.b_start as i64 - chain.a_start as i64;
-    let aln: BandedAlign = align_banded_local(&q, t, dp_band, diag0, &AlignmentParams::default())?;
+    // Window starts were placed on the chain diagonal, so the expected
+    // within-window diagonal (q_i - t_j) is 0.
+    let aln = align_banded_local(&q, t, dp_band, 0, &AlignmentParams::default())?;
     let q_covered = aln.q_aln.iter().filter(|&&c| c != b'-').count();
     let t_covered = aln.t_aln.iter().filter(|&&c| c != b'-').count();
     if q_covered == 0 || t_covered == 0 {
         return None;
     }
-    let (q_start, q_end, strand) = if chain.strand == 0 {
-        (bi0 + aln.q_start, bi0 + aln.q_start + q_covered, "+")
-    } else {
-        // Whole-contig RC-space coordinates; `Psl::from_align` converts them
-        // back to original ascending query coordinates.
-        let rc0 = chain.b_start as usize + aln.q_start;
-        (rc0, rc0 + q_covered, "-")
-    };
+    let q_abs = q_win + aln.q_start;
+    // Reverse-strand PSLs use whole-contig RC-space coordinates here;
+    // `Psl::from_align` converts them to original ascending coordinates.
+    let strand = if chain.strand == 0 { "+" } else { "-" };
     Psl::from_align(
         &b.contigs[chain.b_contig as usize].0,
         b.contigs[chain.b_contig as usize].1 as u32,
-        q_start as i32,
-        q_end as i32,
+        q_abs as i32,
+        (q_abs + q_covered) as i32,
         &String::from_utf8_lossy(&aln.q_aln),
         &a.contigs[chain.a_contig as usize].0,
         a.contigs[chain.a_contig as usize].1 as u32,
-        ai0 as i32 + aln.t_start as i32,
-        ai0 as i32 + aln.t_start as i32 + t_covered as i32,
+        (t_win_start + aln.t_start) as i32,
+        (t_win_start + aln.t_start + t_covered) as i32,
         &String::from_utf8_lossy(&aln.t_aln),
         strand,
     )
@@ -355,11 +466,37 @@ pub fn align_to_psl_ext(
         params.min_span,
         params.max_gap,
         params.band,
+        params.merge_gap,
     );
-    Ok(chains
+    // Flatten all extension windows across chains into one parallel stream so
+    // a giant chain cannot serialize behind smaller chains on a single task.
+    let jobs: Vec<WindowJob> = chains
+        .iter()
+        .enumerate()
+        .flat_map(|(id, c)| chain_windows(id, c, a_seqs, b_seqs, EXTEND_WINDOW, EXTEND_STEP))
+        .collect();
+    let records: Vec<Option<Psl>> = jobs
         .par_iter()
-        .map(|c| extend_chain(c, a, b, a_seqs, b_seqs).unwrap_or_else(|| chain_to_psl(c, a, b)))
-        .collect())
+        .map(|job| {
+            let chain = &chains[job.chain_id];
+            let dp_band = (chain.diag_span as usize + 32).min(128);
+            extend_window(job, chain, a, b, a_seqs, b_seqs, dp_band)
+        })
+        .collect();
+    let mut covered = vec![false; chains.len()];
+    let mut out = Vec::with_capacity(records.len());
+    for (job, rec) in jobs.iter().zip(records) {
+        if let Some(psl) = rec {
+            covered[job.chain_id] = true;
+            out.push(psl);
+        }
+    }
+    for (id, chain) in chains.iter().enumerate() {
+        if !covered[id] {
+            out.push(chain_to_psl(chain, a, b));
+        }
+    }
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -478,7 +615,7 @@ mod tests {
                 strand: 1,
             },
         ];
-        let chains = chain_hits(&hits, 10, 20, 1000, 8);
+        let chains = chain_hits(&hits, 10, 20, 1000, 8, 0);
         assert_eq!(
             chains.len(),
             2,
@@ -520,10 +657,10 @@ mod tests {
             },
         ];
         // max_gap=1000 splits the two diagonal runs; each run has span 40 > 20.
-        let chains = chain_hits(&hits, 10, 20, 1000, 8);
+        let chains = chain_hits(&hits, 10, 20, 1000, 8, 0);
         assert_eq!(chains.len(), 2);
         // min_span=50 drops both runs (span 40 each).
-        let chains = chain_hits(&hits, 10, 50, 1000, 8);
+        let chains = chain_hits(&hits, 10, 50, 1000, 8, 0);
         assert!(chains.is_empty());
     }
 
@@ -555,7 +692,7 @@ mod tests {
         // The diag-80 hit backtracks after the main diagonal ran: it must not
         // split the main chain (which covers 100..310), and its own tiny chain
         // (span 10) is dropped by min_span=200.
-        let chains = chain_hits(&hits, 10, 200, 1000, 8);
+        let chains = chain_hits(&hits, 10, 200, 1000, 8, 0);
         assert_eq!(chains.len(), 1);
         assert_eq!((chains[0].a_start, chains[0].a_end), (100, 310));
         assert_eq!(chains[0].seeds, 2);
@@ -587,14 +724,76 @@ mod tests {
             },
         ];
         // Third hit (diag 10) is in-gap but outside band=8: ignored.
-        let chains = chain_hits(&hits, 10, 5, 1000, 8);
+        let chains = chain_hits(&hits, 10, 5, 1000, 8, 0);
         assert_eq!(chains.len(), 1);
         assert_eq!(chains[0].seeds, 2);
         assert_eq!(chains[0].a_end, 160);
         // A wider band admits it.
-        let chains = chain_hits(&hits, 10, 5, 1000, 20);
+        let chains = chain_hits(&hits, 10, 5, 1000, 20, 0);
         assert_eq!(chains[0].seeds, 3);
         assert_eq!(chains[0].a_end, 210);
+    }
+
+    #[test]
+    fn merge_adjacent_chains_stitches_syntenic_blocks() {
+        // Two colinear diagonal runs separated by a 1.2 kb insertion: greedy
+        // chaining (max_gap 1000) splits them, the merge pass joins them back.
+        let hits = vec![
+            SeedHit {
+                a_contig: 0,
+                a_pos: 100,
+                b_contig: 0,
+                b_pos: 100,
+                strand: 0,
+            },
+            SeedHit {
+                a_contig: 0,
+                a_pos: 130,
+                b_contig: 0,
+                b_pos: 130,
+                strand: 0,
+            },
+            SeedHit {
+                a_contig: 0,
+                a_pos: 1300,
+                b_contig: 0,
+                b_pos: 1300,
+                strand: 0,
+            },
+            SeedHit {
+                a_contig: 0,
+                a_pos: 1330,
+                b_contig: 0,
+                b_pos: 1330,
+                strand: 0,
+            },
+        ];
+        let chains = chain_hits(&hits, 10, 20, 1000, 8, 0);
+        assert_eq!(chains.len(), 2, "large gap must split chains");
+        let chains = chain_hits(&hits, 10, 20, 1000, 8, 2000);
+        assert_eq!(chains.len(), 1, "merge gap must stitch chains");
+        assert_eq!((chains[0].a_start, chains[0].a_end), (100, 1340));
+        assert_eq!(chains[0].seeds, 4);
+
+        // A diagonal shift beyond the band must not merge.
+        let shifted = vec![
+            SeedHit {
+                a_contig: 0,
+                a_pos: 100,
+                b_contig: 0,
+                b_pos: 100,
+                strand: 0,
+            },
+            SeedHit {
+                a_contig: 0,
+                a_pos: 2000,
+                b_contig: 0,
+                b_pos: 1800,
+                strand: 0,
+            },
+        ];
+        let chains = chain_hits(&shifted, 10, 5, 1000, 8, 2000);
+        assert_eq!(chains.len(), 2, "diag shift beyond band must not merge");
     }
 
     #[test]
@@ -669,5 +868,34 @@ mod tests {
         assert!(psls
             .iter()
             .all(|p| p.q_start >= 0 && p.q_end <= p.q_size as i32));
+    }
+
+    #[test]
+    fn extend_chain_windows_long_interval() {
+        let seq = pseudo_random_seq(400, 21);
+        let (ia, ib) = (build(&seq), build(&seq));
+        let a_seqs = vec![(String::from("c"), seq.clone())];
+        let b_seqs = vec![(String::from("c"), seq)];
+        let params = AlignParams::default();
+        let hits = merge_seed_hits(&ia, &ib, params.freq).unwrap();
+        let chains = chain_hits(
+            &hits,
+            ia.k as u32,
+            params.min_span,
+            params.max_gap,
+            params.band,
+            params.merge_gap,
+        );
+        assert_eq!(chains.len(), 1);
+        // Tiny windows force the interval to be split into multiple records.
+        let psls = extend_chain(&chains[0], &ia, &ib, &a_seqs, &b_seqs, 100, 90);
+        assert!(
+            psls.len() >= 3,
+            "windowed extension must split: {}",
+            psls.len()
+        );
+        let covered: u32 = psls.iter().map(|p| (p.q_end - p.q_start) as u32).sum();
+        assert!(covered >= 300, "windowed coverage too low: {covered}");
+        assert!(psls.iter().all(|p| p.match_count > 0));
     }
 }

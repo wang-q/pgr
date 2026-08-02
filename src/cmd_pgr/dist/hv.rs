@@ -22,6 +22,9 @@ minimizers or closed syncmers, projected onto hypervectors.
       as the distance will always be 0 and the similarity will always be 1.
     * For two sequence files: Merge all sequences within each file into a single hypervector,
       and calculate distances between the two hypervectors.
+    * `.hv` inputs: When the inputs are `.hv` files (produced by `pgr pgi to-hv`),
+      they are compared directly; the stored sampling parameters and dimension
+      must match between the files.
     * When --list-files is set:
       - For each file listed in the list file, merge all sequences within that file
         into a single hypervector, and calculate distances between these hypervectors.
@@ -40,10 +43,15 @@ Examples:
 4. Treat input as a list file and calculate distances:
    pgr dist hv list.txt --list-files
 
-5. Use 4 threads for parallel processing:
+5. Compare two hypervectors from .pgi indexes:
+   pgr pgi to-hv a.pgi -o a.hv
+   pgr pgi to-hv b.pgi -o b.hv
+   pgr dist hv a.hv b.hv
+
+6. Use 4 threads for parallel processing:
    pgr dist hv input.fa --parallel 4
 
-6. Perform six-frame translation on a FA file and match to another
+7. Perform six-frame translation on a FA file and match to another
     pgr fa six-frame input.fa |
         pgr dist hv stdin match.fa
 
@@ -94,6 +102,15 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let opt_parallel = *args.get_one::<usize>("parallel").unwrap();
 
     let infiles = crate::cmd_pgr::args::collect_infiles(args);
+    if infiles.iter().any(|f| f.ends_with(".hv")) {
+        return run_hv_files(
+            &infiles,
+            is_list,
+            is_sim,
+            opt_parallel,
+            crate::cmd_pgr::args::get_outfile(args),
+        );
+    }
 
     let (sender, writer_thread) = pgr::libs::par::spawn_writer_and_pool(
         crate::cmd_pgr::args::get_outfile(args),
@@ -147,5 +164,75 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         anyhow::anyhow!("writer thread panicked: {}", msg)
     })?;
 
+    Ok(())
+}
+
+/// Compare `.hv` files directly (produced by `pgr pgi to-hv`).
+///
+/// Sampling parameters (k) and dimension must match between all compared
+/// files; the k-mer size stored in the files drives the Mash distance.
+fn run_hv_files(
+    infiles: &[&str],
+    is_list: bool,
+    is_sim: bool,
+    opt_parallel: usize,
+    outfile: &str,
+) -> anyhow::Result<()> {
+    let (sender, writer_thread) = pgr::libs::par::spawn_writer_and_pool(outfile, opt_parallel)?;
+    let load = |paths: &[String]| -> anyhow::Result<Vec<pgr::libs::pgi::to_hv::HvFile>> {
+        pgr::libs::par::load_entries(paths, |p| {
+            let mut r = pgr::reader(p)?;
+            Ok(vec![pgr::libs::pgi::to_hv::read_hv(&mut r)?])
+        })
+    };
+    let paths1 = pgr::libs::par::resolve_paths(infiles[0], is_list)?;
+    let paths2 = if infiles.len() > 1 {
+        pgr::libs::par::resolve_paths(infiles[1], is_list)?
+    } else {
+        paths1.clone()
+    };
+    let files1 = load(&paths1)?;
+    let files2 = load(&paths2)?;
+    let k = files1.first().map(|f| f.k).unwrap_or(0);
+    let dim = files1.first().map(|f| f.dim).unwrap_or(0);
+    for f in files1.iter().chain(files2.iter()) {
+        anyhow::ensure!(f.k == k, "hv k-mer size mismatch: {} vs {}", f.k, k);
+        anyhow::ensure!(f.dim == dim, "hv dimension mismatch: {} vs {}", f.dim, dim);
+    }
+    let entries1: Vec<pgr::libs::hv::HvEntry> = files1
+        .into_iter()
+        .map(|f| pgr::libs::hv::HvEntry {
+            name: f.name,
+            set: f.hv,
+        })
+        .collect();
+    let entries2: Vec<pgr::libs::hv::HvEntry> = files2
+        .into_iter()
+        .map(|f| pgr::libs::hv::HvEntry {
+            name: f.name,
+            set: f.hv,
+        })
+        .collect();
+    pgr::libs::par::par_run_pairs(&entries1, &entries2, &sender, |e1, e2| {
+        let d = pgr::libs::hv::calc_distances(&e1.set, &e2.set, k);
+        let dist = if is_sim {
+            pgr::libs::hash::mash_to_sim(d.mash as f64) as f32
+        } else {
+            d.mash
+        };
+        Some(format!(
+            "{}\t{}\t{}\t{}\t{}\t{}\t{:.4}\t{:.4}\t{:.4}\n",
+            e1.name, e2.name, d.card1, d.card2, d.inter, d.union, dist, d.jaccard, d.containment
+        ))
+    });
+    drop(sender);
+    writer_thread.join().map_err(|e| {
+        let msg = e
+            .downcast_ref::<String>()
+            .map(|s| s.as_str())
+            .or_else(|| e.downcast_ref::<&str>().copied())
+            .unwrap_or("<non-string panic payload>");
+        anyhow::anyhow!("writer thread panicked: {}", msg)
+    })?;
     Ok(())
 }

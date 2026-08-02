@@ -85,6 +85,68 @@ fn command_dist_hv_protein_rejects_mod_hasher() {
 }
 
 #[test]
+fn command_dist_hv_files_self_and_dim_mismatch() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let fa = temp.path().join("g.fa");
+    std::fs::write(&fa, format!(">g\n{}\n", "ACGT".repeat(50))).unwrap();
+    let idx = temp.path().join("g.pgi");
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "pgi",
+            "build",
+            fa.to_str().unwrap(),
+            "-o",
+            idx.to_str().unwrap(),
+        ])
+        .run();
+    assert!(stderr.contains("wrote"));
+
+    let hv1 = temp.path().join("g.hv");
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "pgi",
+            "to-hv",
+            idx.to_str().unwrap(),
+            "-o",
+            hv1.to_str().unwrap(),
+        ])
+        .run();
+    assert!(stderr.contains("hypervector"));
+
+    // Self-comparison of a .hv file: mash 0, jaccard 1.
+    let (stdout, _) = PgrCmd::new()
+        .args(&["dist", "hv", hv1.to_str().unwrap(), hv1.to_str().unwrap()])
+        .run();
+    let fields: Vec<&str> = stdout.split_whitespace().collect();
+    assert_eq!(fields.len(), 9, "bad hv output: {stdout}");
+    assert_eq!(fields[0], "g");
+    assert_eq!(fields[6], "0.0000", "self mash must be 0: {stdout}");
+    assert_eq!(fields[7], "1.0000", "self jaccard must be 1: {stdout}");
+
+    // Different dimensions must fail loudly.
+    let hv2 = temp.path().join("g512.hv");
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "pgi",
+            "to-hv",
+            idx.to_str().unwrap(),
+            "-o",
+            hv2.to_str().unwrap(),
+            "--dim",
+            "512",
+        ])
+        .run();
+    assert!(stderr.contains("hypervector"));
+    let (_, stderr) = PgrCmd::new()
+        .args(&["dist", "hv", hv1.to_str().unwrap(), hv2.to_str().unwrap()])
+        .run_fail();
+    assert!(
+        stderr.contains("dimension mismatch"),
+        "expected dim mismatch: {stderr}"
+    );
+}
+
+#[test]
 fn command_dist_seq() {
     let (stdout, _) = PgrCmd::new()
         .args(&[

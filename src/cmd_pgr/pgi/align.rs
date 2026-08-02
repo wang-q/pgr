@@ -29,6 +29,8 @@ Examples:
    pgr pgi align ref.pgi query.pgi -f 20 -c 100 -s 2000 --band 64 -o out.psl
 3. Refine chains with the source sequences:
    pgr pgi align ref.pgi query.pgi --ref-seq ref.fa --query-seq query.fa -o out.psl
+4. Stitch chains across small insertions:
+   pgr pgi align ref.pgi query.pgi --merge-gap 10000 -o out.psl
 "###,
         )
         .arg(
@@ -76,6 +78,13 @@ Examples:
                 .help("Diagonal band half-width (bp) around the chain mean"),
         )
         .arg(
+            Arg::new("merge_gap")
+                .long("merge-gap")
+                .default_value("5000")
+                .value_parser(value_parser!(u32))
+                .help("Maximum gap (bp) between adjacent colinear chains to merge"),
+        )
+        .arg(
             Arg::new("ref_seq")
                 .long("ref-seq")
                 .help("Reference sequence file (FASTA or .2bit) for chain refinement"),
@@ -97,6 +106,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         min_span: *args.get_one::<u32>("min_span").unwrap(),
         max_gap: *args.get_one::<u32>("max_gap").unwrap(),
         band: *args.get_one::<u32>("band").unwrap(),
+        merge_gap: *args.get_one::<u32>("merge_gap").unwrap(),
     };
 
     let mut r1 = pgr::reader(ref_idx)?;

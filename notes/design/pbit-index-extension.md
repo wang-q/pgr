@@ -135,6 +135,15 @@ seek 距离短。
 - 精确距离（.pgi 已存在）：`dist pgi`（归并）；
 - 超大规模粗筛（.pgi 已存在）：`pgi to-hv` + HV 比较（O(dim)）。
 
+> **实现状态（2026-08-02）**：`dist pgi` 已实现并验证（45 对 cohort）；
+> `pgi to-hv` + `dist hv <a.hv> <b.hv>` 已实现（`.hv` 直接比较）。
+> **关键实证**（详见 [[../benchmarks/dist-cohort-validation.md]]）：
+> `dist pgi` 是"采样集合的精确距离"（确定性，但与身份率 Spearman 0.54）；
+> `dist hv` 当前实现（`hash_hv_i8` + 现有 `calc_distances`）对 260 万
+> 种子饱和退化（containment 恒 1.0、mash 压缩 10×、与身份率 ρ≈0，dim 无关），
+> 大规模粗筛定位需重做 HV 距离后才成立；`dist seq`（k=8）仍是当前最优粗筛
+> 层（ρ=0.82）。
+
 ## 7. CLI 设计（pgr pgi 命令族）
 
 ```

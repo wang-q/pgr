@@ -37,22 +37,6 @@ pub fn align_banded_local(
         return None;
     }
     let width = 2 * band + 1;
-    let offset = |i: usize, j: usize| -> Option<usize> {
-        let d = j as i64 - i as i64 - diag0;
-        if (-(band as i64)..=band as i64).contains(&d) {
-            Some(i * width + (d + band as i64) as usize)
-        } else {
-            None
-        }
-    };
-
-    let cell = |i: usize, j: usize| -> Option<usize> {
-        if j > m {
-            return None;
-        }
-        offset(i, j)
-    };
-
     let mut score = vec![0i32; (n + 1) * width];
     let mut trace = vec![0u8; (n + 1) * width]; // 0=reset, 1=diag, 2=up, 3=left
     let sub = |a: u8, b: u8| {
@@ -66,26 +50,31 @@ pub fn align_banded_local(
     let mut best = 0i32;
     let mut best_off = 0usize;
     for i in 1..=n {
-        for j in 1..=m {
-            let Some(c) = cell(i, j) else { continue };
+        // Only columns inside the diagonal band: |j - i - diag0| <= band.
+        let j_lo = ((i as i64 + diag0 - band as i64).max(1).min(m as i64)) as usize;
+        let j_hi = ((i as i64 + diag0 + band as i64).clamp(1, m as i64)) as usize;
+        for j in j_lo..=j_hi {
+            let off = (j as i64 - i as i64 - diag0 + band as i64) as usize;
+            let c = i * width + off;
             let mut s = 0i32;
             let mut tr = 0u8;
-            if let Some(dc) = cell(i - 1, j - 1) {
-                let v = score[dc] + sub(q[i - 1], t[j - 1]);
-                if v > s {
-                    s = v;
-                    tr = 1;
-                }
+            // Diagonal predecessor (i-1, j-1) sits on the same band offset.
+            let v = score[(i - 1) * width + off] + sub(q[i - 1], t[j - 1]);
+            if v > s {
+                s = v;
+                tr = 1;
             }
-            if let Some(uc) = cell(i - 1, j) {
-                let v = score[uc] + params.gap_open;
+            // Up predecessor (i-1, j) shifts the offset by +1.
+            if off + 1 < width {
+                let v = score[(i - 1) * width + off + 1] + params.gap_open;
                 if v > s {
                     s = v;
                     tr = 2;
                 }
             }
-            if let Some(lc) = cell(i, j - 1) {
-                let v = score[lc] + params.gap_open;
+            // Left predecessor (i, j-1) shifts the offset by -1.
+            if off > 0 {
+                let v = score[c - 1] + params.gap_open;
                 if v > s {
                     s = v;
                     tr = 3;
@@ -113,7 +102,8 @@ pub fn align_banded_local(
     let mut t_aln = Vec::with_capacity(m);
     let (mut i, mut j) = (bi, bj);
     while i > 0 && j > 0 {
-        let c = offset(i, j).unwrap();
+        let d = j as i64 - i as i64 - diag0;
+        let c = i * width + (d + band as i64) as usize;
         match trace[c] {
             0 => break,
             1 => {
