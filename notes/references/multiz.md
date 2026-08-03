@@ -171,7 +171,7 @@ pgr `libs::fas_multiz` 的 `banded_align.rs` 已按 §2.3–§2.5 直译：
 实证：无 LB/RB 时自由端 gap 会把列差整段堆到块端、删掉真实内容（Spar
 4057→3724）；LB/RB 落地后 S288c 三输入合并各物种碱基数与输入逐碱基
 一致（ref 3826 / RM 3834 / Spar 4057 / YJM 3822）。细节见
-[[fas-multiz.md]] §2.11–§2.12。
+[[fas-multiz.md]] §4.1–§4.2。
 
 ### 3.2 已知差异（不追齐）
 
