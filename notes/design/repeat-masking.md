@@ -250,20 +250,110 @@ family/class、K2P、报告，详见附录 A.5）。我们只做**搜索侧的�
 
 ### 2.3 实现步骤
 
-不做注释时实现很轻，基础设施全在：
+新命令 `pgr rept e-align <repeats> <genome>`，输出 runlist JSON（与
+e-kmer/s-kmer/trf 同构，可直接喂 `pgr fa mask`）。管道整体在
+`PipelineCtx` 临时目录内执行；`--keep-index` 沿用 e-kmer 的缓存约定，
+把 `.pgi` 索引缓存到输入文件旁（见 §1.6）。
 
-1.  **库**：直接取 Dfam consensus FASTA 全库（不做物种筛选）；可选加简单重复
-    条目，或交给 `rept trf` 兜底低复杂度。具体下载与格式转换
-    （`Dfam-RepeatMasker.lib.gz` 直接可用，或 curated-only EMBL 转 FASTA）
-    见 [docs/rept.md](../../docs/rept.md) 的 Dfam 一节。
-2.  **比对**：使用 `pgr align pgi`（pgr 原生归并比对，输入 FASTA/2bit/.pgi）
-    跑"全库 vs 基因组"；或 `pgr align lastz`。`pgr align pgi` 是独立命令，
-    不是从 `sd search` 借用的引擎——`sd search --engine pgi` 只是它的一个
-    调用场景。注意 `sd search` 的过滤器（>1 kb、>90% identity）是给 SD 调的，
-    转座子拷贝分歧大（70–90%），直接跑 `pgr align pgi` 时需自行放宽
-    min-len / identity 过滤。
-3.  **区间合并**：`spanr cover / merge / fill` 一行管道。
-4.  **输出**：runlist → `pgr fa mask`。
+#### 2.3.1 处理管道（算法细节）
+
+```
+genome.fa + repeats.fa
+  │ 1. 建索引（.pgi，--keep-index 可缓存）
+  ▼
+pgr align pgi <genome> <repeats> -o hits.psl
+  │ 2. 比对：ref = genome（target），query = repeats（候选）
+  ▼
+PSL 过滤（Rust 内）：identity ≥ min-identity 且 block ≥ min-len
+  │ 3. 按 matches / (matches+mismatches+ins+del) 计算每条 alignment 的 identity
+  ▼
+target 侧 .rg（基因组坐标，1-based inclusive）
+  │ 4. pgr psl to-range --target-coords 语义
+  ▼
+spanr cover → spanr span --op excise -n <min> → spanr span --op fill -n <ff>
+  │ 5. 合并重叠、切短碎片、填邻近孔（同 e-kmer 的 spanr 管道）
+  ▼
+runlist JSON → pgr fa mask
+```
+
+要点：
+
+1.  **比对方向**：ref = 基因组、query = 库。理由：遮蔽要的是基因组坐标，
+    PSL 的 target 侧正是 ref；`pgr psl to-range --target-coords` 直接给出
+    基因组区间。query 索引按 pgi 约定 memory-map（库约 50 MB，无压力）。
+    注意 `pgr align pgi` 的 PSL 输出是"每链一个 block"，不是逐 hit 列表。
+2.  **身份过滤**：转座子拷贝与 consensus 的 identity 通常 70–90%（`sd search`
+    的 >90% 是给分段重复调的，不适用）。identity 在 Rust 内从 PSL 记录的
+    matches/mismatches/ins/del 计算，不依赖外部工具（复用 `pgr::libs::psl`
+    的记录解析）。`--min-identity` 初始 0.70、`--min-len` 初始 50，均为
+    可调参数。
+3.  **区间合并**：`spanr cover` 合并重叠块 → `spanr span --op excise -n
+    <min-len>` 切掉过短碎片 → `spanr span --op fill -n <fill-fragment>`
+    合并邻近片段（fill-fragment 默认 10，与 e-kmer 一致）。不做
+    RepeatMasker 的碎片整合/边界精修（§3.2）。
+4.  **库**：Dfam consensus FASTA 全库直接作 query（不做物种筛选，§2.2）；
+    下载与准备见 [docs/rept.md](../../docs/rept.md)。多库沿用 §1.3 决策
+    （每库跑一次 + `spanr merge`）。
+
+#### 2.3.2 参数初始值与调参空间
+
+`pgr align pgi` 参数与 RepeatMasker 配方（附录 A.3）不是一一对应，但方向
+可比。初始值如下，全部进 CLI 透传，实施后按 §2.5 验证调整：
+
+| pgi 参数 | 含义 | 初始值 | 方向 | 对应 RM 配方考量 |
+| :--- | :--- | :--- | :--- | :--- |
+| `-k/--smer/--window` | syncmer 种子参数 | 40 / 8 / 5（pgi 默认） | 待验证 | 种子敏感度（RM 靠 minmatch 档） |
+| `-f/--freq` | 高频 k-mer 跳过阈值 | 10（默认）→ 放宽 100 | **放宽** | 高拷贝家族（Alu 百万拷贝）种子会超频被丢 |
+| `-c/--min-span` | 链最小种子跨度 | 85（默认）→ 50 | 放宽 | RM 短重复配方 minmatch 低 |
+| `-s/--max-gap` | 链内种子最大 gap | 1000（默认） | 保持 | |
+| `--band` | 对角带半宽 | 128（默认） | 保持 | RM bandwidth 14（RMBlast 单位不同） |
+| `--merge-gap` | 共线链合并 gap | 5000（默认） | 保持 | |
+| `--min-shared` | 共享种子最小长度 | k（greedy 默认）→ 16 | 放宽 | 高分歧拷贝共享种子少 |
+| `--workflow` | greedy / tube | greedy | 对比 | FastGA tube 的 plen floor=12 更敏感 |
+| `-p` | 线程数 | 8 | — | |
+
+过滤参数（CLI 默认，实施后标定）：
+
+| 参数 | 含义 | 初始值 |
+| :--- | :--- | :--- |
+| `--min-identity` | PSL identity 下限 | 0.70 |
+| `--min-len` | 最小 block/碎片长度（bp） | 50 |
+| `--fill-fragment` | 邻近片段合并孔宽（bp） | 10 |
+
+#### 2.3.3 代码结构
+
+遵循分层原则：`src/cmd_pgr/rept/e_align.rs` 只做 clap 解析与参数转换；
+管道逻辑放 `src/libs/pl/repeat.rs`（与 e-kmer 同文件，新增
+`run_align_repeat_pipeline`）：
+
+```rust
+pub struct AlignRepeatOpts {
+    pgr: PathBuf,            // 自身二进制（子进程调用 align pgi）
+    abs_repeat: String,      // 库 FASTA 绝对路径
+    abs_infile: String,      // 基因组 FASTA 绝对路径
+    abs_outfile: String,
+    keep_index: bool,
+    // pgi 透传参数
+    kmer: usize, smer: usize, window: usize,
+    freq: usize, min_span: usize, max_gap: usize, band: usize,
+    merge_gap: usize, min_shared: usize, workflow: String,
+    // 过滤参数
+    min_identity: f64, min_len: usize, fill_fragment: usize,
+    parallel: usize,
+}
+```
+
+子进程调用：`pgr align pgi <genome> <repeats> -o hits.psl`，之后 Rust 读
+hits.psl 过滤 → 写 target .rg → `spanr` 合并 → runlist。PSL 记录解析复用
+`pgr::libs::psl`。
+
+#### 2.3.4 实施顺序
+
+1.  骨架：`e_align.rs` + `run_align_repeat_pipeline`，参数按 §2.3.2 初始值，
+    跑通 MG1655 + 现有三个库（冒烟，确认管道与坐标方向）。
+2.  真核验证与调参（§2.5）：拟南芥/玉米 + Dfam 全库，扫描关键参数
+    （`-f`、`--min-shared`、`--workflow`、`--min-identity`），确定默认值。
+3.  收尾：`docs/rept.md` 的 e-align 一节、集成测试（`tests/cli_rept.rs`）。
 
 工作量比完整 RepeatMasker 小一个数量级。遮蔽版需要的能力映射见附录 A.7。
 
@@ -284,15 +374,19 @@ family/class、K2P、报告，详见附录 A.5）。我们只做**搜索侧的�
 
 方向已定（§2.1），验证的目的是评估比对敏感度、确定过滤参数：
 
-1.  取转座子丰富基因组（拟南芥或玉米）；
-2.  用 Dfam consensus FASTA **全库**经 lastz/pgi 对一遍，放宽 hit 过滤；
+1.  取转座子丰富基因组（拟南芥或玉米），先跑 RepeatMasker 得到 masked
+    参考 runlist（沿用 §RepeatMasker (reference) 的 gff→runlist 流程）；
+2.  Dfam 全库作 query，跑 `pgr rept e-align` 骨架；**参数扫描**：
+    `-f ∈ {10, 50, 100}`、`--min-shared ∈ {12, 16, 40}`、
+    `--workflow ∈ {greedy, tube}`、`--min-identity ∈ {0.60, 0.70, 0.80}`，
+    其余保持默认；每次记录耗时、hits 数、覆盖区间；
 3.  对比数据：
-    *   时间与 hits 数量；
     *   覆盖区间 vs 现有 `e-kmer` 的差异；
-    *   与 RepeatMasker masked 输出的 recall；
+    *   与 RepeatMasker masked 输出的 recall（`spanr statop`，同 §1.8 流程）；
+    *   时间与内存；
     *   （可选）全库 vs 按物种取库的遮蔽量差异，评估 over-masking 代价。
-4.  依据 recall / over-masking / 耗时确定最终过滤参数（min-len、identity、
-    gap 模型），落成 `pgr rept e-align`（§1.3）命令的默认值。
+4.  依据 recall / over-masking / 耗时确定最终默认值，写回 §2.3.2 与
+    `pgr rept e-align` 帮助文本。
 
 > 命令命名见本文 §1.3（`pgr rept` 组的 2×2 组合形式）。
 
