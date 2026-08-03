@@ -141,6 +141,106 @@ pub fn run_repeat_pipeline(opts: &RepeatOpts) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Options for the alignment-based repeat pipeline (`pgr rept e-align`).
+pub struct AlignRepeatOpts {
+    /// Absolute path to the `pgr` executable.
+    pub pgr: String,
+    /// Absolute path to the repeat library FASTA (query).
+    pub abs_repeat: String,
+    /// Absolute path to the genome FASTA (reference).
+    pub abs_infile: String,
+    /// Absolute path to the output (or `stdout`).
+    pub abs_outfile: String,
+    /// Keep the built `.pgi` indexes next to the inputs for reuse.
+    pub keep_index: bool,
+    pub kmer: usize,
+    pub smer: usize,
+    pub window: usize,
+    pub freq: usize,
+    pub min_span: usize,
+    pub max_gap: usize,
+    pub band: usize,
+    pub merge_gap: usize,
+    pub min_shared: usize,
+    pub workflow: String,
+    /// Minimum alignment identity (fraction of aligned bases matching).
+    pub min_identity: f64,
+    /// Minimum length of repetitive fragments (bp).
+    pub min_len: usize,
+    /// Fill holes between repetitive fragments (bp).
+    pub fill_fragment: usize,
+    /// Number of threads for the alignment.
+    pub parallel: usize,
+}
+
+/// Run the `pgr align pgi` → PSL filter → spanr repeat pipeline.
+///
+/// The genome is the reference (PSL target) and the repeat library is the
+/// query. Alignment blocks are filtered by identity and target-span length,
+/// written as target-side `.rg`, then merged with the spanr pipeline.
+pub fn run_align_repeat_pipeline(opts: &AlignRepeatOpts) -> anyhow::Result<()> {
+    let pgr = &opts.pgr;
+    let abs_infile = &opts.abs_infile;
+    let abs_repeat = &opts.abs_repeat;
+    let kmer = opts.kmer;
+    let smer = opts.smer;
+    let window = opts.window;
+    let freq = opts.freq;
+    let min_span = opts.min_span;
+    let max_gap = opts.max_gap;
+    let band = opts.band;
+    let merge_gap = opts.merge_gap;
+    let min_shared = opts.min_shared;
+    let workflow = &opts.workflow;
+    let parallel = opts.parallel;
+    let keep_args = if opts.keep_index { "--keep-index" } else { "" };
+    run_cmd!(info "==> Align repeats vs genome")?;
+    run_cmd!(
+        ${pgr} align pgi ${abs_infile} ${abs_repeat}
+            -k ${kmer} --smer ${smer} --window ${window}
+            -f ${freq} -c ${min_span} -s ${max_gap}
+            --band ${band} --merge-gap ${merge_gap}
+            --min-shared ${min_shared} --workflow ${workflow}
+            -p ${parallel} ${keep_args} -o hits.psl
+    )?;
+
+    run_cmd!(info "==> Filter alignments")?;
+    let reader = crate::reader("hits.psl")?;
+    let mut writer = crate::writer("hits.rg")?;
+    for line in std::io::BufReader::new(reader)
+        .lines()
+        .map_while(Result::ok)
+    {
+        if line.is_empty() {
+            continue;
+        }
+        let Ok(psl) = line.parse::<crate::libs::fmt::psl::Psl>() else {
+            continue;
+        };
+        let span = (psl.t_end - psl.t_start) as usize;
+        if (psl.ident() as f64) < opts.min_identity || span < opts.min_len {
+            continue;
+        }
+        writer.write_fmt(format_args!(
+            "{}:{}-{}\n",
+            psl.t_name,
+            psl.t_start + 1,
+            psl.t_end
+        ))?;
+    }
+    drop(writer);
+
+    run_repeat_spanr_pipeline(
+        &["hits.rg".to_string()],
+        0,
+        opts.min_len,
+        opts.fill_fragment,
+        &opts.abs_outfile,
+    )?;
+
+    Ok(())
+}
+
 /// True when a complete cache for `cache_prefix` exists and is not older than
 /// `lib` (library unchanged). Completeness is guaranteed by the `.complete`
 /// marker written after all table files are copied.

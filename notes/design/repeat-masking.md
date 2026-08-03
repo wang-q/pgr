@@ -357,6 +357,78 @@ hits.psl 过滤 → 写 target .rg → `spanr` 合并 → runlist。PSL 记录�
 
 工作量比完整 RepeatMasker 小一个数量级。遮蔽版需要的能力映射见附录 A.7。
 
+### 2.3.5 首轮实测（2026-08-03）
+
+`pgr rept e-align` 骨架已落地（`e_align.rs` + `run_align_repeat_pipeline`，
+见 §2.3.1/§2.3.3），用三个库 × 三个基因组做了首轮冒烟。
+
+#### 库清洗（重要前置）
+
+repbase 库的 consensus 序列本身含简并碱基（IUPAC 码，分歧位点的固有
+表示）；**未清洗时 `pgr align pgi` 对 repbase 输出的 PSL 计数字段全为 0**
+（identity 恒 0，过滤后区间为空，spanr 管道报 101）。清洗后恢复。结论：
+**外部库先用 `pgr fa filter` 清洗**（转大写、简并碱基转 N、去 '-'、去重）：
+
+```bash
+pgr fa filter repbase.fa.gz --upper --iupac --dash --uniq |
+    gzip -9 -c > repbase.fa.gz
+```
+
+期间发现并修复一个 bug：`src/libs/nt.rs` 的 `NT_VAL` 表缺 `X/x` 映射——
+`X` 是常见的"未知碱基"符号（语义同 N），此前 `--iupac` 不会把它转成 N，
+repbase 里 14132 个 X 残留。已补表项，`pgr fa filter --iupac` 现在把
+X 一并转 N。
+
+清洗转 N 对 pgi 种子/比对的影响评估（每 N ±40 bp 种子空洞、链可桥接、
+实际密度可忽略）见 [[pgi-align.md]] §1.3.5。
+
+另外 tncentral 原始文件有格式瑕疵：21 条记录的 header 丢失换行、嵌入
+序列行中间；已在用户文档的下载流程里给出修复命令（perl 按 accession 以
+数字结尾的规律拆行，记录数 6073→6094），见 [docs/rept.md](../../docs/rept.md)。
+
+#### 首轮结果（e-align，默认参数：k40/s8/w5、f100、c50、min-shared 16、
+min-identity 0.70、min-len 50）
+
+| 基因组（大小） | tncentral | repbase | dfam |
+| :--- | :--- | :--- | :--- |
+| MG1655（4.64 Mb） | 1.30% | 1.09% | 1.13% |
+| Sakai（5.59 Mb，含 pO157） | 1.58%（主染色体 1.47%，pO157 7.66%） | 0.25% | 0.26% |
+| SE11（5.14 Mb，含 3 质粒） | 1.19%（主染色体 0.84%，质粒 4.7–17.7%） | — | — |
+
+对照：MG1655 的 e-kmer 覆盖 0.91–1.23%，RepeatMasker 参考 1.06%。
+
+其余 E. coli（`tests/genome/`，tncentral 库）：
+
+| 基因组 | 覆盖 bp / % |
+| :--- | :--- |
+| MG1655 | 60,423 / 1.30% |
+| Sakai (O157) | 88,131 / 1.58% |
+| SE11 | 61,030 / 1.19% |
+| cft073 | 104,275 / 1.99% |
+| e2348_69 (EPEC) | 130,126 / 2.57% |
+| e24377a (ETEC) | 177,244 / 3.38% |
+| ec042 (EAEC) | 114,121 / 2.13% |
+| ec2011c_3493 (STEC O104) | 191,567 / 3.52% |
+| ec958 (UPEC) | 132,108 / 2.52% |
+| nissle1917 (probiotic) | 93,020 / 1.71% |
+
+初步结论：
+
+*   e-align 对原核 IS 的敏感度 ≥ e-kmer（MG1655 上 1.09–1.30% vs
+    e-kmer 0.91–1.23%），且与 RM 参考（1.06%）同量级，坐标方向正确。
+*   同一物种内重复率差异很大（1.2–3.5%）：MG1655 属于最低档，Sakai
+    确认比 MG1655 多（1.58% vs 1.30%），而 e24377a/ec2011c_3493 更多
+    （3.4–3.5%）——IS 元件负荷因菌株而异，验证实验选基因组时可用
+    tncentral 先扫一遍挑高重复率的。
+*   **库选择比机制更关键**：Sakai/SE11 的转座子比 MG1655 多（质粒上尤其
+    密集：pO157 7.66%、SE11 质粒最高 17.7%），但只有 tncentral（原核 IS
+    专库）能覆盖到；repbase/dfam 对 Sakai 仅 0.25%——Dfam 是真核为主的
+    库，对细菌 IS 元件几乎无效。遮蔽原核基因组应优先 tncentral。
+*   耗时：debug build 下单次 e-align 约 20–90 s（pgi 建索引占大头），
+    release build 会快很多；库越大越慢（repbase 31491 条最慢）。
+*   参数尚未标定：本轮全用初始值；真核基因组（拟南芥/玉米）验证与
+    `-f`/`--min-shared`/`--workflow`/`--min-identity` 扫描见 §2.5。
+
 ### 2.4 关键风险
 
 *   **比对敏感度**：k-mer（k=17）对高分歧拷贝会漏；pgi 的 syncmer 种子对

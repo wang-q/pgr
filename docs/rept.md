@@ -27,6 +27,12 @@ Libraries are stored as gzipped FASTA; `pgr` reads any `.gz` directly, so no
 conversion is needed. BGZF is only relevant for random-access workflows
 (`pgr fa range`, paf graph TSVs), which repeat libraries are not part of.
 
+Before use, every library is normalized with `pgr fa filter` (uppercase,
+IUPAC codes -> N, dashes stripped, duplicate IDs removed). Cleaning is
+required for `pgr rept e-align`: RepBase consensus sequences contain
+ambiguous (IUPAC) codes — a native feature of repeat consensi — that
+otherwise make the alignment pass output nothing.
+
 ### TnCentral
 
 TnCentral is a database of prokaryotic insertion sequences. Download the
@@ -37,13 +43,21 @@ with a browser User-Agent). If that happens, download from a browser instead:
 open <https://tncentral.ncc.unesp.br/data_download>, click "download Fasta
 format" under "TnCentral Dataset", and save the archive into
 `$HOME/data/repeats/`. Unpack it, rename the FASTA inside to `tncentral.fa`,
-gzip it to `tncentral.fa.gz`, then run the sanity check below.
+then clean and gzip it as below.
 
 ```bash
 # Download and unpack
 curl -LO https://tncentral.ncc.unesp.br/api/download_blast/nc/tn_in_is
 unzip -j tn_in_is 'tncentral_integrall_isfinder.fa'
-gzip -9 -c 'tncentral_integrall_isfinder.fa' > tncentral.fa.gz
+
+# A few records in this file lost their header newline (embedded '>' in
+# sequence lines); split them back out first. The rule relies on NCBI
+# accessions ending in a digit, which holds for this file.
+# Then clean: uppercase, IUPAC -> N, strip dashes, drop duplicate IDs
+perl -ne 'if (/^>/) { print; next } if (/>/) { s/>([A-Za-z0-9_.]*\d)/\n>$1\n/g } print' \
+    'tncentral_integrall_isfinder.fa' |
+    pgr fa filter stdin --upper --iupac --dash --uniq |
+    gzip -9 -c > tncentral.fa.gz
 
 # Sanity check and quality filter
 pgr fa size tncentral.fa.gz
@@ -63,7 +77,10 @@ tar xvfz repeatmaskerlibraries-20140131.tar.gz Libraries/RepeatMaskerLib.embl
 
 # https://sourceforge.net/projects/readseq/
 java -jar ~/bin/readseq.jar -f fa Libraries/RepeatMaskerLib.embl
-gzip -9 -c Libraries/RepeatMaskerLib.embl.fasta > repbase.fa.gz
+
+# Clean: uppercase, IUPAC -> N, strip dashes, drop duplicate IDs
+pgr fa filter Libraries/RepeatMaskerLib.embl.fasta --upper --iupac --dash --uniq |
+    gzip -9 -c > repbase.fa.gz
 
 # Sanity check and quality filter
 pgr fa size repbase.fa.gz
@@ -89,7 +106,11 @@ latest release):
 ```bash
 # FASTA variant: ready to use, no conversion
 curl -LO https://dfam.org/releases/Dfam_4.0/families/Dfam-RepeatMasker.lib.gz
-mv Dfam-RepeatMasker.lib.gz dfam.fa.gz
+
+# Clean: uppercase, IUPAC -> N, strip dashes, drop duplicate IDs
+gzip -dc Dfam-RepeatMasker.lib.gz |
+    pgr fa filter stdin --upper --iupac --dash --uniq |
+    gzip -9 -c > dfam.fa.gz
 
 # Sanity check and quality filter
 pgr fa size dfam.fa.gz

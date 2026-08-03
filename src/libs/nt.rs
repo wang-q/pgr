@@ -78,6 +78,8 @@ pub static NT_VAL: &[usize; 256] = &{
     array[b'b' as usize] = 4;
     array[b'N' as usize] = 4;
     array[b'n' as usize] = 4;
+    array[b'X' as usize] = 4;
+    array[b'x' as usize] = 4;
 
     array
 };

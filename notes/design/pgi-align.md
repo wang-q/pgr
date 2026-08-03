@@ -164,6 +164,29 @@ key 相等按 (a_strand, b_strand) 解析方向：
   的 `calc_block_score` 一致）——§3.3 记录过整类 '-' 块被静默丢弃的 bug；
 - match/mismatch 计数来自扩展（v1 链块为 0，由 `psl chain` 重算）。
 
+#### 1.3.5 模糊碱基（N）与种子发射（2026-08-03 确认）
+
+`pgi build`（`build.rs::collect_one_contig`）对 N/简并碱基是两层处理：
+
+1. **s-mer 哈希：N 当作 A**（`let sb = if code == 4 { 0 } else { code }`，
+   注释 "N treated as A, matching pgr dist"）。**syncmer 的位置选择完全
+   不受 N 影响**——N 区域照常选出 closed syncmer 位置，也不会产生假种子。
+2. **k-mer key：窗口内出现 N 即失效**（`kx/kxr/kvalid` 清零，发射条件
+   `kvalid >= k`）。因此每个 N 会让它**前后约 k 个碱基（k=40 时 ±40 bp）
+   范围内的种子全部缺失**（该范围内每个 syncmer 的 k-mer 窗口都含 N）。
+
+影响评估（用于判断"清洗把 IUPAC 转 N"是否安全）：
+
+*   种子空洞是局部的：链化用 `max-gap=1000` / `merge-gap=5000` 桥接，
+    ±40 bp 的空洞远低于阈值，链照常跨过、区间照常合并。
+*   只要 N 密度远低于 1/k（实际清洗后 repbase 约 1.4 万个 N、每条序列
+    平均不到 1 个，tncentral/dfam 更少），种子密度损失可忽略；实测
+    repbase 清洗后 e-align 输出正常（50,784 bp，与预期一致）。
+*   边界：**长 N 区段**（scaffold 内的大段 N）会割出超过 merge-gap 的
+    种子空洞，敏感度才真正下降——那是输入质量问题，不是清洗引入的。
+*   反向安全：N 当 A 参与哈希只影响"选不选这个位置"，k-mer key 失效
+    保证不会发射错误序列内容的种子，无假阳性。
+
 ### 1.4 CLI
 
 ```
