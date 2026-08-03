@@ -9,7 +9,8 @@ mod repeat;
 pub use ctx::{abs_path_or_stdout, PipelineCtx};
 pub use repeat::{
     count_rg_lines, parse_trf_output, run_align_repeat_pipeline, run_profex_per_chr,
-    run_repeat_pipeline, run_repeat_spanr_pipeline, AlignRepeatOpts, RepeatOpts,
+    run_repeat_pipeline, run_repeat_spanr_pipeline, run_self_align_pipeline, AlignRepeatOpts,
+    RepeatOpts, SelfAlignOpts,
 };
 
 use std::path::PathBuf;

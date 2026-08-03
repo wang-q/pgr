@@ -204,3 +204,38 @@ fn command_rept_trf_end_to_end() -> anyhow::Result<()> {
     assert!(spans.contains('-'), "expected intervals, got: {spans}");
     Ok(())
 }
+
+#[test]
+fn command_rept_s_align_help() -> anyhow::Result<()> {
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
+    let output = cmd.arg("rept").arg("s-align").arg("--help").output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+
+    assert!(stdout.contains("Identifies repetitive regions by self alignment"));
+    Ok(())
+}
+
+/// s-align end-to-end on MG1655 (needs `lastz` and `spanr` in $PATH).
+#[test]
+fn command_rept_s_align_end_to_end() -> anyhow::Result<()> {
+    for tool in ["lastz", "spanr"] {
+        if which::which(tool).is_err() {
+            eprintln!("skipping: {tool} not found");
+            return Ok(());
+        }
+    }
+
+    let genome = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/genome/mg1655.fa.gz");
+    let temp = tempfile::TempDir::new()?;
+    let out = temp.path().join("out.json");
+
+    let (_, stderr) = common::PgrCmd::new()
+        .args(&["rept", "s-align", genome, "-o", out.to_str().unwrap()])
+        .run();
+    assert!(stderr.contains("==> Coverage"), "pipeline failed: {stderr}");
+
+    let json: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&out)?)?;
+    let spans = json["NC_000913"].as_str().expect("NC_000913 key missing");
+    assert!(spans.contains('-'), "expected intervals, got: {spans}");
+    Ok(())
+}

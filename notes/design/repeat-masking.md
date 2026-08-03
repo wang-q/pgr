@@ -101,7 +101,8 @@ pgr fa mask genome.fa --runlist repeats.json --hard -o masked.fa # hard-mask（N
 *   **字母自然**：external / self 首字母，配合单词后缀后整体可读。
 
 > 状态：2026-08-03 已迁移。`pgr rept e-kmer / s-kmer / trf` 落地，`pl` 下
-> 已移除 ir/rept/trf；`e-align` / `s-align` 随遮蔽版计划实现。
+> 已移除 ir/rept/trf；`e-align` 随遮蔽版实现；`s-align` 于同日移植
+> `scripts/pgr-repeat.sh`（Cactus 风格自比对）落地。
 
 ### 1.4 术语澄清：SD 序列不是真正的 repeats
 
@@ -122,6 +123,9 @@ pgr fa mask genome.fa --runlist repeats.json --hard -o masked.fa # hard-mask（N
 *   推论：若屏蔽后还要做 SD 搜索（对应 BISER 输入假设），屏蔽应**只用 `pgr rept e-kmer` +
     `pgr rept trf`**（≈ T2T-CHM13 的 TRF + RepeatMasker 预处理），**不要用 `pgr rept s-kmer`
     （自比较）**——它会把 SD 本身也当作"重复"屏蔽掉，屏蔽完 SD 搜索就找不到目标了。
+    `s-align` 同样如此（全基因组自比对会把 SD/分段重复一起检出），文档
+    [docs/rept.md](../../docs/rept.md) 的 s-align 一节已提醒"检出所有重复
+    区域、不限于转座子"。
     注意 `e-kmer` 需要重复库（Dfam/RepBase），无库时该组合退化为只用 `trf`：
 
     ```bash
@@ -445,6 +449,27 @@ min-identity 0.70、min-len 50）
     `-f`/`--min-shared`/`--workflow`/`--min-identity` 扫描见 §2.5。
 
 #### 遮蔽闭环与参数敏感性（2026-08-03，MG1655 + tncentral）
+
+#### s-align 落地（2026-08-03，移植 `scripts/pgr-repeat.sh`）
+
+`pgr rept s-align <genome>` 已实现：窗口化（200 bp / 100 bp 步长 = 2x
+覆盖）→ `fa split name` 拆染色体 → `align lastz`（genome vs fragments，
+preset set01）→ LAV→PSL → `psl lift` 回基因组坐标 → `psl to-range` →
+`spanr coverage -m 4`（深度 ≥4 = ≥2 拷贝）。管道在 tempdir 内、含
+soft-mask 警告与空输入兜底；集成测试（lastz/spanr 缺失时跳过）已加。
+
+实测（默认参数）：
+
+| 基因组 | s-align 覆盖 | 对照（e-align / e-kmer） |
+| :--- | :--- | :--- |
+| MG1655 | 244,455 bp / **5.27%** | 1.30% / 1.23% |
+| Sakai | 645,328 bp / **11.54%** | 1.58% / 1.24% |
+
+**覆盖明显偏高**（3–7 倍于库驱动命令）：自比对把**所有**重复出现区域
+（转座子 + rRNA/多拷贝基因家族 + lastz set01 在细菌上的噪音 hit）都计入，
+深度 4 阈值在 2x 窗口覆盖下只代表 2 拷贝。脚本原设计面向大基因组 Cactus
+遮蔽，对细菌过遮。参数（`--min-depth`、`--preset`）留作 CLI 可调，是否
+针对细菌调默认值待用户决定；闭环（fa mask）验证通过。
 
 **闭环验证**：e-align 输出直接喂 `pgr fa mask`（soft-mask），masked 序列
 中小写碱基数 = 60,423 = e-align 覆盖 bp，逐 bp 一致，检测→遮蔽闭环成立。

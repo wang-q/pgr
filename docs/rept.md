@@ -187,10 +187,12 @@ spanr gff tests/pgr/mg1655.rm.gff -o tests/pgr/mg1655.rm.json
 | Subcommand | Description |
 | :--- | :--- |
 | `e-kmer` | Identify repeats against an external library (k-mer) |
+| `e-align` | Identify repeats against an external library (alignment) |
 | `s-kmer` | Identify repetitive regions by self k-mer depth (no library) |
+| `s-align` | Identify repetitive regions by self alignment |
 | `trf` | Identify tandem repeats via `trf` |
 
-All three emit runlist JSON ready for `pgr fa mask`:
+All four emit runlist JSON ready for `pgr fa mask`:
 
 ```bash
 pgr rept e-kmer tests/pgr/tncentral.fa.gz tests/genome/mg1655.fa.gz \
@@ -203,6 +205,9 @@ pgr rept s-kmer tests/genome/mg1655.fa.gz \
 
 pgr rept trf tests/genome/mg1655.fa.gz \
     > tests/pgr/mg1655.trf.json
+
+pgr rept s-align tests/genome/mg1655.fa.gz \
+    > tests/pgr/mg1655.salign.json
 
 spanr stat tests/genome/mg1655.chr.sizes tests/pgr/mg1655.rm.json
 spanr statop tests/genome/mg1655.chr.sizes tests/pgr/mg1655.ir.json tests/pgr/mg1655.rm.json
@@ -276,6 +281,61 @@ Running per library keeps the `--keep-index` cache valid for each library and
 lets you tune parameters (and diagnose hits) per library. The genome is
 scanned once per library, which is negligible for typical repeat libraries.
 
+## e-align
+
+Identify repeats in a genome against an external repeat library (Dfam,
+RepBase, TnCentral) by alignment, mimicking the masking behavior of
+`RepeatMasker` without its annotation post-processing. The library is
+aligned to the genome with `pgr align pgi` (reference = genome, query =
+library); alignment blocks are filtered by identity and length, merged into
+intervals, and written as a runlist JSON ready for `pgr fa mask`.
+
+Compared with `e-kmer`, `e-align` is slower (full alignment instead of
+k-mer counting) but more accurate: it reports only blocks with enough
+identity, so it is the preferred choice when masking quality matters.
+
+### Usage
+
+```bash
+pgr rept e-align [OPTIONS] <repeat> <infile>
+```
+
+### Arguments
+
+| Argument | Short | Long | Value | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| `repeat` | | | File | Repeat database FASTA (Dfam, RepBase, etc.) |
+| `infile` | | | File | Input genome FASTA (`.fa.gz` supported) |
+| `outfile` | `-o` | `--outfile` | File | Output filename (default: stdout) |
+| `kmer` | `-k` | `--kmer` | Int | k-mer size for indexing (default: 40) |
+| `smer` | | `--smer` | Int | Syncmer s-mer length (default: 8) |
+| `window` | | `--window` | Int | Syncmer window (default: 5) |
+| `freq` | `-f` | `--freq` | Int | Max k-mer frequency to keep as seed (default: 100) |
+| `min_span` | `-c` | `--min-span` | Int | Min per-axis seed span for a chain (default: 50) |
+| `max_gap` | `-s` | `--max-gap` | Int | Max gap between seeds in a chain (default: 1000) |
+| `band` | | `--band` | Int | Diagonal band half-width (default: 128) |
+| `merge_gap` | | `--merge-gap` | Int | Max gap between colinear chains to merge (default: 5000) |
+| `min_shared` | | `--min-shared` | Int | Min shared seed length (default: 16) |
+| `workflow` | | `--workflow` | Str | Chaining workflow: greedy or tube (default: greedy) |
+| `min_identity` | | `--min-identity` | Float | Min alignment identity (default: 0.70) |
+| `min_len` | | `--min-len` | Int | Min length of repetitive fragments (default: 50) |
+| `fill_fragment` | | `--fill-fragment` | Int | Fill holes between fragments (default: 10) |
+| `parallel` | `-p` | `--parallel` | Int | Number of threads (default: 8) |
+| `keep_index` | | `--keep-index` | Flag | Keep built pgi indexes next to the inputs |
+
+### Dependencies
+
+*   `spanr`
+
+### Notes
+
+*   The input genome must not be soft-masked: lowercase (soft-masked) repeat
+    regions fragment the alignment and drastically underestimate coverage.
+    `e-align` warns when it detects lowercase; uppercase the genome first
+    (`tr a-z A-Z`) if warned. (`e-kmer` is case-insensitive and unaffected.)
+*   `--keep-index` caches the pgi indexes next to the inputs for reuse, same
+    convention as `pgr align pgi`.
+
 ---
 
 ## s-kmer
@@ -334,6 +394,57 @@ pgr rept trf [OPTIONS] <infile>
 ### Dependencies
 
 *   `trf`
+*   `spanr`
+
+## s-align
+
+Identify repetitive regions of a genome by self-alignment, without any
+repeat library. This is the pgr-native port of the Cactus-style pipeline of
+`scripts/pgr-repeat.sh`: the genome is split into overlapping windows, the
+windows are aligned back to the genome with `lastz`, lifted to genomic
+coordinates, and regions whose alignment depth exceeds a threshold are kept
+(with 50%-overlap windows the baseline depth is 2; `--min-depth 4` means
+at least two copies).
+
+> **What it detects**: self-alignment captures **every** region that appears
+> more than once in the genome — transposable elements, segmental
+> duplications (SD), tandem repeats, multi-copy gene families, etc. It does
+> not distinguish repeat types and does not restrict hits to transposable
+> elements (unlike the library-driven `e-kmer` / `e-align`, which only report
+> regions matching the repeat library). Use `s-align` when the goal is
+> broad "mask everything repetitive"; use `e-kmer` / `e-align` when only
+> known transposable elements should be masked.
+>
+> **Before an SD search**: if the masked genome is later fed to a segmental
+> duplication detector (the BISER-style workflow, which expects repeats —
+> but not SDs — to be masked first), do **not** use `s-align` (or `s-kmer`):
+> self-comparison would mask the SDs themselves and leave nothing to find.
+> Mask with interspersed-repeat detection against a library (`e-kmer` /
+> `e-align`) plus tandem repeats (`trf`) instead, following the reference
+> recipe of TRF + RepeatMasker preprocessing.
+
+### Usage
+
+```bash
+pgr rept s-align [OPTIONS] <infile>
+```
+
+### Arguments
+
+| Argument | Short | Long | Value | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| `infile` | | | File | Input genome FASTA (`.fa.gz` supported) |
+| `outfile` | `-o` | `--outfile` | File | Output filename (default: stdout) |
+| `window` | `-w` | `--window` | Int | Overlapping window length (default: 200) |
+| `step` | | `--step` | Int | Window step size (default: 100) |
+| `chunk_records` | | `--chunk-records` | Int | Split window output into chunks of N records (default: 10000) |
+| `preset` | | `--preset` | Str | lastz parameter set (default: set01) |
+| `parallel` | `-p` | `--parallel` | Int | Number of threads (default: 4) |
+| `min_depth` | `-m` | `--min-depth` | Int | Minimum alignment depth to keep a region (default: 4) |
+
+### Dependencies
+
+*   `lastz`
 *   `spanr`
 
 ## Notes

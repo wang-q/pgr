@@ -355,6 +355,112 @@ pub fn run_align_repeat_pipeline(opts: &AlignRepeatOpts) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Options for the self-alignment repeat pipeline (`pgr rept s-align`).
+pub struct SelfAlignOpts {
+    /// Absolute path to the `pgr` executable.
+    pub pgr: String,
+    /// Absolute path to the genome FASTA.
+    pub abs_infile: String,
+    /// Absolute path to the output (or `stdout`).
+    pub abs_outfile: String,
+    /// Overlapping window length (bp).
+    pub window: usize,
+    /// Window step size (bp).
+    pub step: usize,
+    /// Split window output into chunks of N records.
+    pub chunk_records: usize,
+    /// lastz preset name.
+    pub preset: String,
+    /// Number of threads for the alignment.
+    pub parallel: usize,
+    /// Minimum alignment depth for a region to be kept.
+    pub min_depth: usize,
+}
+
+/// Run the Cactus-style self-alignment repeat pipeline (`pgr-repeat.sh`):
+/// window the genome, align the windows back to the genome with lastz, lift
+/// to genomic coordinates, and keep regions whose alignment depth exceeds a
+/// threshold (baseline 2x from 50%-overlap windows; >= 4 means >= 2 copies).
+pub fn run_self_align_pipeline(opts: &SelfAlignOpts) -> anyhow::Result<()> {
+    let pgr = &opts.pgr;
+    let abs_infile = &opts.abs_infile;
+    let abs_outfile = &opts.abs_outfile;
+    let window = opts.window;
+    let step = opts.step;
+    let chunk_records = opts.chunk_records;
+    let preset = &opts.preset;
+    let parallel = opts.parallel;
+    let min_depth = opts.min_depth;
+
+    // Soft-masked (lowercase) repeats are skipped by lastz, so the pass
+    // underestimates coverage; detect and warn instead of silent bad data.
+    let masked_out = std::process::Command::new(pgr)
+        .args(["fa", "masked", abs_infile])
+        .output()
+        .context("running `pgr fa masked` for soft-mask detection")?;
+    if !masked_out.stdout.is_empty() {
+        log::warn!(
+            "input genome contains soft-masked (lowercase) regions; self \
+             alignment results will be underestimated, consider uppercasing \
+             first (`tr a-z A-Z`)"
+        );
+    }
+
+    run_cmd!(info "==> Windowing")?;
+    std::fs::create_dir_all("fragments")?;
+    run_cmd!(
+        ${pgr} fa window ${abs_infile} -w ${window} --step ${step}
+            --chunk-records ${chunk_records} -o fragments/fragments.fa
+    )?;
+
+    run_cmd!(info "==> Split genome by name")?;
+    run_cmd!(
+        ${pgr} fa split name ${abs_infile} -o genome
+    )?;
+
+    run_cmd!(info "==> Align windows to genome (lastz)")?;
+    run_cmd!(
+        ${pgr} align lastz genome fragments --preset ${preset}
+            --parallel ${parallel} -o lastz_out
+    )?;
+
+    run_cmd!(info "==> Convert LAV to PSL")?;
+    let lav_files = crate::libs::io::list_files_ext("lastz_out", "lav");
+    for lav in &lav_files {
+        run_cmd!(${pgr} lav to-psl ${lav} >> fragments.psl)?;
+    }
+
+    run_cmd!(info "==> Lift to genomic coordinates")?;
+    run_cmd!(
+        ${pgr} fa size ${abs_infile} -o chrom.sizes
+    )?;
+    run_cmd!(
+        ${pgr} psl lift fragments.psl --q-sizes chrom.sizes -o lifted.psl
+    )?;
+
+    run_cmd!(info "==> Extract ranges")?;
+    run_cmd!(
+        ${pgr} psl to-range lifted.psl -o coverage.rg
+    )?;
+
+    if count_rg_lines(&["coverage.rg".to_string()])? == 0 {
+        let empty = b"{}\n";
+        if abs_outfile == "stdout" {
+            std::io::stdout().write_all(empty)?;
+        } else {
+            std::fs::write(abs_outfile, empty)?;
+        }
+        return Ok(());
+    }
+
+    run_cmd!(info "==> Coverage")?;
+    run_cmd!(
+        spanr coverage coverage.rg -m ${min_depth} -o ${abs_outfile}
+    )?;
+
+    Ok(())
+}
+
 /// True when a complete cache for `cache_prefix` exists and is not older than
 /// `lib` (library unchanged). Completeness is guaranteed by the `.complete`
 /// marker written after all table files are copied.

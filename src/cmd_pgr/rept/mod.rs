@@ -2,6 +2,7 @@
 
 mod e_align;
 mod e_kmer;
+mod s_align;
 mod s_kmer;
 mod trf;
 
@@ -13,6 +14,7 @@ pub fn make_subcommand() -> Command {
         .about("Detects repetitive regions in a genome")
         .subcommand(e_kmer::make_subcommand())
         .subcommand(e_align::make_subcommand())
+        .subcommand(s_align::make_subcommand())
         .subcommand(s_kmer::make_subcommand())
         .subcommand(trf::make_subcommand())
 }
@@ -22,6 +24,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     match args.subcommand() {
         Some(("e-kmer", sub_matches)) => e_kmer::execute(sub_matches),
         Some(("e-align", sub_matches)) => e_align::execute(sub_matches),
+        Some(("s-align", sub_matches)) => s_align::execute(sub_matches),
         Some(("s-kmer", sub_matches)) => s_kmer::execute(sub_matches),
         Some(("trf", sub_matches)) => trf::execute(sub_matches),
         _ => unreachable!("rept subcommand match"),
