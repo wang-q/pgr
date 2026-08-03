@@ -3,6 +3,15 @@
 mod common;
 
 use common::PgrCmd;
+use std::path::PathBuf;
+
+fn fixture(name: &str) -> String {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/gff")
+        .join(name)
+        .to_string_lossy()
+        .into_owned()
+}
 
 #[test]
 fn command_rg_default() {
@@ -23,6 +32,63 @@ fn command_rg_tag() {
 
     assert!(stdout.contains("mRNA1\ttest.chr1(+):1000-2000"));
     assert!(!stdout.contains("gene1"));
+}
+
+#[test]
+fn command_runlist_gff() {
+    // Migrated from the external spanr `gff` command (intspan test suite).
+    let (stdout, _) = PgrCmd::new()
+        .args(&["gff", "runlist", &fixture("NC_007942.gff")])
+        .run();
+    let lines = stdout.lines().count();
+    assert!(lines == 2 || lines == 3, "line count {lines}");
+    assert!(stdout.contains("NC_007942"), "chromosomes exists: {stdout}");
+    assert!(stdout.contains("1-152218"), "full chr runlist: {stdout}");
+}
+
+#[test]
+fn command_runlist_gff_tag_and_merge() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let cds = dir.path().join("cds.json");
+    let repeat = dir.path().join("repeat.json");
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "gff",
+            "runlist",
+            &fixture("NC_007942.gff"),
+            "--tag",
+            "CDS",
+            "-o",
+            cds.to_str().unwrap(),
+        ])
+        .run();
+    assert_eq!(stdout, "");
+    assert!(cds.is_file());
+
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "gff",
+            "runlist",
+            &fixture("NC_007942.rm.gff"),
+            "-o",
+            repeat.to_str().unwrap(),
+        ])
+        .run();
+    assert_eq!(stdout, "");
+    assert!(repeat.is_file());
+
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "runlist",
+            "merge",
+            cds.to_str().unwrap(),
+            repeat.to_str().unwrap(),
+        ])
+        .run();
+    let lines = stdout.lines().count();
+    assert!(lines == 8 || lines == 9, "line count {lines}");
+    assert!(stdout.contains("cds"), "got: {stdout}");
+    assert!(stdout.contains("repeat"), "got: {stdout}");
 }
 
 #[test]

@@ -44,7 +44,7 @@ fn main() -> anyhow::Result<()> {
     * fa   - FASTA operations: info, records, transform, indexing
     * fas  - Block FA operations: info, subset, transform, file, variation
     * fq   - FASTQ interleaving and conversion
-    * gff  - GFF operations: rg
+    * gff  - GFF operations: rg, runlist
     * pbit - Population 2bit + delta: create, append, append-ref, stat, range, some, to-fa
 
 * Genome alignments:
@@ -64,7 +64,7 @@ fn main() -> anyhow::Result<()> {
 * Analysis:
     * sd    - Segmental duplication detection: align, cluster, cover, cross, decompose, run, search
     * rept  - Repeat detection: e-kmer, e-align, s-kmer, s-align, trf
-    * runlist - Runlist interval operations: cover, coverage, span, compare, merge
+    * runlist - Runlist interval operations: combine, compare, convert, cover, coverage, genome, merge, some, span, split, stat, statop
 
 * Simulation:
     * ms    - Hudson's ms simulator tools: to-dna

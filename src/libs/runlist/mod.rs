@@ -288,6 +288,226 @@ pub fn merge_files(
     Ok(out)
 }
 
+/// Combine all sets of a multi runlist into one, applying `op` between the
+/// first set and each subsequent one (spanr `combine` semantics).
+pub fn combine_sets(
+    set_of: &BTreeMap<String, BTreeMap<String, IntSpan>>,
+    op: CompareOp,
+) -> BTreeMap<String, IntSpan> {
+    let mut names: Vec<String> = set_of.keys().cloned().collect();
+    if names.is_empty() {
+        return BTreeMap::new();
+    }
+    let first = names.remove(0);
+    let mut wrapped = BTreeMap::new();
+    wrapped.insert(first.clone(), set_of[&first].clone());
+    let others: Vec<BTreeMap<String, IntSpan>> = names.iter().map(|n| set_of[n].clone()).collect();
+    compare_sets(&wrapped, &others, op)
+        .into_values()
+        .next()
+        .unwrap_or_default()
+}
+
+/// Ranges of one runlist set as `chr:start-end` lines (one per sub-span), or
+/// only the longest span per chromosome with `longest`.
+pub fn convert_set(set: &BTreeMap<String, IntSpan>, longest: bool) -> Vec<String> {
+    let mut out = Vec::new();
+    for (chr, ints) in set {
+        let mut intses = ints.intses();
+        if longest {
+            if intses.is_empty() {
+                continue;
+            }
+            intses.sort_by_cached_key(|e| -e.size());
+            out.push(format!("{}:{}", chr, intses.first().unwrap()));
+        } else {
+            for sub in &intses {
+                out.push(format!("{}:{}", chr, sub));
+            }
+        }
+    }
+    out
+}
+
+/// A runlist set covering every chromosome of `sizes` in full (1..size).
+pub fn genome_set(sizes: &BTreeMap<String, i32>) -> BTreeMap<String, IntSpan> {
+    sizes
+        .iter()
+        .map(|(k, &v)| (k.clone(), IntSpan::from_pair(1, v)))
+        .collect()
+}
+
+/// Parse GFF3 records into a runlist set; `tag` filters on the feature
+/// column when non-empty. Coordinates are 1-based inclusive.
+pub fn gff_to_set<R: BufRead>(reader: R, tag: &str) -> anyhow::Result<BTreeMap<String, IntSpan>> {
+    let mut res: BTreeMap<String, IntSpan> = BTreeMap::new();
+    for line in reader.lines() {
+        let line = line?;
+        if line.starts_with('#') {
+            continue;
+        }
+        let fields: Vec<&str> = line.split('\t').collect();
+        if fields.len() < 8 {
+            continue;
+        }
+        if !tag.is_empty() && fields[2] != tag {
+            continue;
+        }
+        let start: i32 = fields[3].parse()?;
+        let end: i32 = fields[4].parse()?;
+        res.entry(fields[0].to_string())
+            .or_default()
+            .add_pair(start, end);
+    }
+    Ok(res)
+}
+
+/// Subset of a runlist JSON whose top-level keys are in `names`.
+pub fn some_json(
+    json: &BTreeMap<String, serde_json::Value>,
+    names: &std::collections::BTreeSet<String>,
+) -> BTreeMap<String, serde_json::Value> {
+    json.iter()
+        .filter(|(k, _)| names.contains(*k))
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect()
+}
+
+/// Split a multi runlist JSON into `(key, compact JSON string)` pairs; errors
+/// when a value is not itself an object.
+pub fn split_json(
+    json: &BTreeMap<String, serde_json::Value>,
+) -> anyhow::Result<Vec<(String, String)>> {
+    json.iter()
+        .map(|(k, v)| {
+            if !v.is_object() {
+                anyhow::bail!("not a valid multi-key runlist json file (key {k})");
+            }
+            Ok((k.clone(), serde_json::to_string(v)?))
+        })
+        .collect()
+}
+
+/// Per-chromosome coverage stats as CSV lines (spanr `stat`); errors when a
+/// chromosome of `set` is missing from `sizes`.
+pub fn stat_lines(
+    set: &BTreeMap<String, IntSpan>,
+    sizes: &BTreeMap<String, i32>,
+    all: bool,
+    prefix: Option<&str>,
+) -> anyhow::Result<String> {
+    let mut lines = String::new();
+    let mut all_length: i64 = 0;
+    let mut all_size: i64 = 0;
+    for chr in set.keys() {
+        let length = *sizes
+            .get(chr)
+            .ok_or_else(|| anyhow::anyhow!("chromosome {chr} not found in sizes"))?;
+        let size = set[chr].cardinality();
+        if let Some(s) = prefix {
+            lines.push_str(&format!("{},", s));
+        }
+        lines.push_str(&format!(
+            "{},{},{},{:.4}\n",
+            chr,
+            length,
+            size,
+            size as f32 / length as f32
+        ));
+        all_length += i64::from(length);
+        all_size += i64::from(size);
+    }
+    let mut all_line = format!(
+        "{},{},{},{:.4}\n",
+        "all",
+        all_length,
+        all_size,
+        all_size as f64 / all_length as f64
+    );
+    if all {
+        lines = String::new();
+        all_line = all_line.replacen("all,", "", 1);
+    }
+    if let Some(s) = prefix {
+        all_line.insert_str(0, &format!("{},", s));
+    }
+    lines.push_str(all_line.trim_end());
+    Ok(lines)
+}
+
+/// Cross-set coverage stats as CSV lines (spanr `statop`); `set_op` is the
+/// per-chromosome result of `op` between `s1` and `s2`.
+#[allow(clippy::too_many_arguments)]
+pub fn statop_lines(
+    s1: &BTreeMap<String, IntSpan>,
+    sizes: &BTreeMap<String, i32>,
+    s2: &BTreeMap<String, IntSpan>,
+    set_op: &BTreeMap<String, IntSpan>,
+    all: bool,
+    prefix: Option<&str>,
+) -> anyhow::Result<String> {
+    let mut lines = String::new();
+    let mut all_length: i64 = 0;
+    let mut all_size: i64 = 0;
+    let mut all_s2_length: i64 = 0;
+    let mut all_s2_size: i64 = 0;
+    for chr in s1.keys() {
+        let length = *sizes
+            .get(chr)
+            .ok_or_else(|| anyhow::anyhow!("chromosome {chr} not found in sizes"))?;
+        let size = s1[chr].cardinality();
+        // Missing chromosomes in `s2`/`set_op` count as empty (0).
+        let s2_length = s2.get(chr).map(IntSpan::cardinality).unwrap_or(0);
+        let s2_size = set_op.get(chr).map(IntSpan::cardinality).unwrap_or(0);
+        let c1 = size as f64 / length as f64;
+        let c2 = if s2_length == 0 {
+            0.0
+        } else {
+            s2_size as f64 / s2_length as f64
+        };
+        let ratio = if (c1 - 0.0).abs() < 0.00001 {
+            0.0
+        } else {
+            c2 / c1
+        };
+        if let Some(s) = prefix {
+            lines.push_str(&format!("{},", s));
+        }
+        lines.push_str(&format!(
+            "{},{},{},{},{},{:.4},{:.4},{:.4}\n",
+            chr, length, size, s2_length, s2_size, c1, c2, ratio
+        ));
+        all_length += i64::from(length);
+        all_size += i64::from(size);
+        all_s2_length += i64::from(s2_length);
+        all_s2_size += i64::from(s2_size);
+    }
+    let all_c1 = all_size as f64 / all_length as f64;
+    let all_c2 = if all_s2_length == 0 {
+        0.0
+    } else {
+        all_s2_size as f64 / all_s2_length as f64
+    };
+    let all_ratio = if (all_c1 - 0.0).abs() < 0.00001 {
+        0.0
+    } else {
+        all_c2 / all_c1
+    };
+    let mut all_line = format!(
+        "{},{},{},{},{},{:.4},{:.4},{:.4}\n",
+        "all", all_length, all_size, all_s2_length, all_s2_size, all_c1, all_c2, all_ratio
+    );
+    if all {
+        lines = String::new();
+        all_line = all_line.replacen("all,", "", 1);
+    }
+    if let Some(s) = prefix {
+        all_line.insert_str(0, &format!("{},", s));
+    }
+    lines.push_str(all_line.trim_end());
+    Ok(lines)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -386,5 +606,106 @@ mod tests {
         assert_eq!(sets.len(), 1);
         assert!(sets.contains_key("__single__"));
         assert!(sets["__single__"].is_empty());
+    }
+
+    #[test]
+    fn combine_sets_unions_and_intersects() {
+        let mut set_of = BTreeMap::new();
+        let mut a = BTreeMap::new();
+        a.insert("chr1".to_string(), set("1-10,20-30"));
+        let mut b = BTreeMap::new();
+        b.insert("chr1".to_string(), set("5-25"));
+        b.insert("chr2".to_string(), set("1-50"));
+        set_of.insert("a".to_string(), a);
+        set_of.insert("b".to_string(), b);
+        assert_eq!(
+            combine_sets(&set_of, CompareOp::Union)["chr1"].to_string(),
+            "1-30"
+        );
+        assert_eq!(
+            combine_sets(&set_of, CompareOp::Intersect)["chr1"].to_string(),
+            "5-10,20-25"
+        );
+        assert_eq!(
+            combine_sets(&set_of, CompareOp::Intersect)["chr2"].to_string(),
+            "-"
+        );
+    }
+
+    #[test]
+    fn convert_set_longest_and_all() {
+        let mut runset = BTreeMap::new();
+        runset.insert("chr1".to_string(), set("1-10,20-30"));
+        assert_eq!(
+            convert_set(&runset, false),
+            vec!["chr1:1-10".to_string(), "chr1:20-30".to_string()]
+        );
+        assert_eq!(convert_set(&runset, true), vec!["chr1:20-30".to_string()]);
+    }
+
+    #[test]
+    fn genome_set_covers_full_length() {
+        let mut sizes = BTreeMap::new();
+        sizes.insert("chr1".to_string(), 1000);
+        sizes.insert("chr2".to_string(), 200);
+        let g = genome_set(&sizes);
+        assert_eq!(g["chr1"].to_string(), "1-1000");
+        assert_eq!(g["chr2"].to_string(), "1-200");
+    }
+
+    #[test]
+    fn gff_to_set_parses_and_filters() {
+        let gff = "chr1\tsrc\tgene\t1\t100\t+\t0\tx\n\
+                   chr2\tsrc\trRNA\t50\t80\t+\t0\tx\n";
+        let all = gff_to_set(std::io::Cursor::new(gff), "").unwrap();
+        assert_eq!(all["chr1"].to_string(), "1-100");
+        assert_eq!(all["chr2"].to_string(), "50-80");
+        let genes = gff_to_set(std::io::Cursor::new(gff), "gene").unwrap();
+        assert!(genes.contains_key("chr1"));
+        assert!(!genes.contains_key("chr2"));
+    }
+
+    #[test]
+    fn some_json_filters_keys() {
+        let mut json = BTreeMap::new();
+        json.insert("chr1".to_string(), serde_json::Value::String("1-5".into()));
+        json.insert("chr2".to_string(), serde_json::Value::String("6-9".into()));
+        let names: std::collections::BTreeSet<String> = ["chr1".to_string()].into_iter().collect();
+        let out = some_json(&json, &names);
+        assert_eq!(out.len(), 1);
+        assert!(out.contains_key("chr1"));
+    }
+
+    #[test]
+    fn split_json_requires_objects() {
+        let mut json = BTreeMap::new();
+        json.insert("a".to_string(), serde_json::json!({"chr1": "1-5"}));
+        json.insert("b".to_string(), serde_json::Value::String("1-5".into()));
+        assert!(split_json(&json).is_err());
+        json.remove("b");
+        let parts = split_json(&json).unwrap();
+        assert_eq!(parts.len(), 1);
+        assert_eq!(parts[0].0, "a");
+    }
+
+    #[test]
+    fn stat_lines_and_statop() {
+        let mut sizes = BTreeMap::new();
+        sizes.insert("chr1".to_string(), 1000);
+        let mut runset = BTreeMap::new();
+        runset.insert("chr1".to_string(), set("1-500"));
+        let s = stat_lines(&runset, &sizes, false, None).unwrap();
+        assert_eq!(s, "chr1,1000,500,0.5000\nall,1000,500,0.5000");
+        let s2 = runset.clone();
+        let op = runset.clone();
+        let so = statop_lines(&runset, &sizes, &s2, &op, false, None).unwrap();
+        assert_eq!(
+            so,
+            "chr1,1000,500,500,500,0.5000,1.0000,2.0000\nall,1000,500,500,500,0.5000,1.0000,2.0000"
+        );
+        // A chromosome missing from sizes is a friendly error, not a panic.
+        let mut bad = BTreeMap::new();
+        bad.insert("chrX".to_string(), set("1-5"));
+        assert!(stat_lines(&bad, &sizes, false, None).is_err());
     }
 }

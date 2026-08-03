@@ -179,7 +179,7 @@ singularity run ~/bin/repeatmasker_master.sif /app/RepeatMasker/RepeatMasker \
 singularity run ~/bin/repeatmasker_master.sif /app/RepeatMasker/util/rmOutToGFF3.pl \
     ./genome.fa.out > mg1655.rm.gff
 
-spanr gff tests/pgr/mg1655.rm.gff -o tests/pgr/mg1655.rm.json
+pgr gff runlist tests/pgr/mg1655.rm.gff -o tests/pgr/mg1655.rm.json
 ```
 
 ## Subcommands

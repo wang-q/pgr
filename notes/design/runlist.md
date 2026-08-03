@@ -11,11 +11,28 @@ pgr 内部命令族 `pgr runlist`（命名避免与旧 spanr 冲突，符合 pgr
 ## 结构
 
 * `libs/runlist/`：核心逻辑（rg 解析、深度扫描线、span/compare/merge、
-  JSON 读写），复用 `libs/ds::IntSpan` 与已迁入的 `set2json` 等辅助。
-* `cmd_pgr/runlist/`：五个薄壳子命令（cover/coverage/span/compare/merge），
-  与 spanr CLI 参数兼容（含 `--detailed`、`--op`、`--all` 等）。
+  combine/convert/genome/gff/some/split/stat/statop、JSON 读写），复用
+  `libs/ds::IntSpan` 与已迁入的 `set2json` 等辅助。
+* `cmd_pgr/runlist/`：**12 个子命令**（combine/compare/convert/cover/
+  coverage/genome/merge/some/span/split/stat/statop），与 spanr CLI
+  参数兼容（含 `--detailed`、`--op`、`--all`、`--longest`、`--tag` 等），
+  逐条与外部 spanr 输出 diff 验证一致。原 spanr 的 `gff` 子命令归位到
+  `pgr gff runlist`（GFF 输入转换归 GFF 命令管），参数与行为不变。
 * 管线改为进程内调用：`repeat.rs`（cover→fill→excise→fill、coverage）、
   `p2m.rs`（compare→span excise→merge）、`trf.rs`（cover）。
+
+统计类命令（stat/statop）的差异：spanr 在染色体缺失于 sizes 或输入非法
+（如 statop 的 infile2 为多层 JSON）时直接 panic；pgr 改为友好报错或按
+空集处理（statop 的 `s2`/`set_op` 缺失染色体按 0 计，Zero-Panic）。
+
+## 测试迁移
+
+外部 intspan 的 spanr 测试套件（`tests/cli_spanr.rs`，23 个用例）与 16 个
+真实夹具（`tests/spanr/`）已迁移：夹具复制到 `tests/runlist/`，用例改写为
+`pgr runlist` 调用（`tests/cli_runlist_compat.rs`），全部一次通过，覆盖
+全部子命令及各 op/flag 组合。gff 相关两个用例（含 --tag 与 merge 工作流）
+随命令移入 `tests/cli_gff.rs`，夹具移到 `tests/gff/`。另有自造的
+`tests/cli_runlist.rs`（13 个用例）与 `libs/runlist` 单元测试兜底边界行为。
 
 ## coverage 实现与性能
 

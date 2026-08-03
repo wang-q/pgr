@@ -144,3 +144,130 @@ fn command_runlist_merge() {
         "{\n  \"sample\": {\n    \"chr2\": \"6-9\"\n  }\n}\n"
     );
 }
+
+#[test]
+fn command_runlist_genome() {
+    let dir = TempDir::new().unwrap();
+    let sizes = dir.path().join("sizes.txt");
+    std::fs::write(&sizes, "chr1\t1000\nchr2\t2000\n").unwrap();
+    let (stdout, _) = PgrCmd::new()
+        .args(&["runlist", "genome", sizes.to_str().unwrap()])
+        .run();
+    assert_eq!(
+        stdout,
+        "{\n  \"chr1\": \"1-1000\",\n  \"chr2\": \"1-2000\"\n}\n"
+    );
+}
+
+#[test]
+fn command_runlist_combine() {
+    let dir = TempDir::new().unwrap();
+    let json = dir.path().join("multi.json");
+    std::fs::write(
+        &json,
+        r#"{"a":{"chr1":"1-10,20-30"},"b":{"chr1":"5-25","chr2":"1-50"}}"#,
+    )
+    .unwrap();
+    let (stdout, _) = PgrCmd::new()
+        .args(&["runlist", "combine", json.to_str().unwrap()])
+        .run();
+    assert_eq!(
+        stdout,
+        "{\n  \"chr1\": \"1-30\",\n  \"chr2\": \"1-50\"\n}\n"
+    );
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "runlist",
+            "combine",
+            json.to_str().unwrap(),
+            "--op",
+            "intersect",
+        ])
+        .run();
+    assert_eq!(
+        stdout,
+        "{\n  \"chr1\": \"5-10,20-25\",\n  \"chr2\": \"-\"\n}\n"
+    );
+}
+
+#[test]
+fn command_runlist_convert() {
+    let dir = TempDir::new().unwrap();
+    let json = dir.path().join("in.json");
+    std::fs::write(&json, r#"{"chr1":"1-10,20-30"}"#).unwrap();
+    let (stdout, _) = PgrCmd::new()
+        .args(&["runlist", "convert", json.to_str().unwrap()])
+        .run();
+    assert_eq!(stdout, "chr1:1-10\nchr1:20-30\n");
+    let (stdout, _) = PgrCmd::new()
+        .args(&["runlist", "convert", json.to_str().unwrap(), "--longest"])
+        .run();
+    assert_eq!(stdout, "chr1:20-30\n");
+}
+
+#[test]
+fn command_runlist_some() {
+    let dir = TempDir::new().unwrap();
+    let json = dir.path().join("in.json");
+    let names = dir.path().join("names.txt");
+    std::fs::write(&json, r#"{"chr1":"1-5","chr2":"6-9"}"#).unwrap();
+    std::fs::write(&names, "chr1\n").unwrap();
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "runlist",
+            "some",
+            json.to_str().unwrap(),
+            names.to_str().unwrap(),
+        ])
+        .run();
+    assert_eq!(stdout, "{\n  \"chr1\": \"1-5\"\n}\n");
+}
+
+#[test]
+fn command_runlist_split() {
+    let dir = TempDir::new().unwrap();
+    let json = dir.path().join("multi.json");
+    std::fs::write(&json, r#"{"a":{"chr1":"1-5"},"b":{"chr2":"6-9"}}"#).unwrap();
+    let out = dir.path().join("out");
+    PgrCmd::new()
+        .args(&[
+            "runlist",
+            "split",
+            json.to_str().unwrap(),
+            "-o",
+            out.to_str().unwrap(),
+        ])
+        .run();
+    assert_eq!(
+        std::fs::read_to_string(out.join("a.json")).unwrap(),
+        "{\"chr1\":\"1-5\"}\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(out.join("b.json")).unwrap(),
+        "{\"chr2\":\"6-9\"}\n"
+    );
+}
+
+#[test]
+fn command_runlist_stat() {
+    let dir = TempDir::new().unwrap();
+    let sizes = dir.path().join("sizes.txt");
+    let json = dir.path().join("in.json");
+    std::fs::write(&sizes, "chr1\t1000\nchr2\t2000\n").unwrap();
+    std::fs::write(&json, r#"{"chr1":"1-500","chr2":"1-100"}"#).unwrap();
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "runlist",
+            "stat",
+            sizes.to_str().unwrap(),
+            json.to_str().unwrap(),
+        ])
+        .run();
+    assert_eq!(
+        stdout,
+        "chr,chrLength,size,coverage\n\
+         chr1,1000,500,0.5000\n\
+         chr2,2000,100,0.0500\n\
+         all,3000,600,0.2000\n"
+    );
+}

@@ -1,6 +1,5 @@
 use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches, Command};
-use noodles_gff as gff;
 use std::io::Write;
 
 /// Build the clap subcommand for rg.
@@ -106,41 +105,36 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let reader =
         pgr::reader(infile).with_context(|| format!("Failed to open reader for {}", infile))?;
-    let mut reader = gff::io::Reader::new(reader);
+    let records = pgr::libs::fmt::gff::read_records(reader)?;
     let mut writer =
         pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
 
     let opt_tag_lower = opt_tag.to_ascii_lowercase();
-    for result in reader.record_bufs() {
-        let record = result?;
-        if record.ty().to_ascii_lowercase() != opt_tag_lower.as_bytes() {
+    for record in &records {
+        if record.ty.to_ascii_lowercase() != opt_tag_lower {
             continue;
         }
 
         // Attributes
-        let mut key = "NA".to_string();
-        if let Some(gff::feature::record_buf::attributes::field::Value::String(s)) =
-            record.attributes().get(opt_key.as_bytes())
-        {
-            key = s.to_string();
-        }
+        let mut key = record
+            .attributes
+            .get(opt_key)
+            .cloned()
+            .unwrap_or_else(|| "NA".to_string());
 
         if is_simplify {
             key = pgr::libs::io::simplify_name(&key).to_string();
         }
 
         // Range
-        let mut seq_name = record.reference_sequence_name().to_string();
+        let mut seq_name = record.seqid.clone();
         if is_seq_simplify {
             seq_name = pgr::libs::io::simplify_name(&seq_name).to_string();
         }
 
-        let strand = match record.strand() {
-            gff::feature::record::Strand::Reverse => "-",
-            _ => "+",
-        };
-        let start = record.start();
-        let end = record.end();
+        let strand = record.strand;
+        let start = record.start;
+        let end = record.end;
 
         writeln!(
             writer,

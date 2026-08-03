@@ -5,6 +5,7 @@
 ## Subcommands
 
 *   `rg`: Extract ranges and features from GFF files.
+*   `runlist`: Convert GFF files to per-chromosome runlist JSON.
 
 ---
 
@@ -45,6 +46,20 @@ The output is a tab-separated list with two columns:
     ```bash
     pgr gff rg tests/gff/test.gff --tag mRNA --asm Human -o output.tsv
     ```
+
+---
+
+## runlist
+
+Converts GFF records (start/end 1-based inclusive) into a per-chromosome
+runlist JSON ready for `pgr fa mask`. `--tag` restricts to one feature type
+(third column). Migrated from the external `spanr gff` command.
+
+```bash
+pgr gff runlist [OPTIONS] <infiles>...
+pgr gff runlist in.gff -o out.json
+pgr gff runlist in.gff --tag gene -o out.json
+```
 
 3.  **Use 'Name' attribute as the identifier**:
     ```bash
