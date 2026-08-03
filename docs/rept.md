@@ -48,14 +48,54 @@ gzip -9 -k repbase.fa
 
 ### Dfam
 
-Dfam is a curated database of transposable element families. Its full
-consensus FASTA can be used directly as the candidate set for masking
-workflows (`pgr rept e-kmer`, or a `pgr align pgi`-based masker):
+Dfam is a curated database of transposable element families, the repeat
+database RepeatMasker ships with. Each release provides consensus sequences
+in `families/`. Two products fit pgr's consensus-based masking workflows
+(`pgr rept e-kmer`, or a `pgr align pgi`-based masker):
 
-*   Dfam website: <https://www.dfam.org/>
-*   Dfam releases / downloads: <https://www.dfam.org/releases/>
-*   The full consensus FASTA from the releases page works with `pgr rept e-kmer`
-    and with RepeatMasker's `-lib` option.
+*   `Dfam-RepeatMasker.lib.gz` — curated family consensus in FASTA, the same
+    library RepeatMasker consumes via `-lib`. Download and use directly.
+*   `Dfam-curated_only-1.embl.gz` — the same curated families as EMBL records
+    with per-family metadata; convert to FASTA with readseq (same as RepBase).
+
+Download and prepare (Dfam 4.0; `current/` in the URL also points to the
+latest release):
+
+```bash
+# FASTA variant: ready to use, no conversion
+curl -LO https://dfam.org/releases/Dfam_4.0/families/Dfam-RepeatMasker.lib.gz
+curl -LO https://dfam.org/releases/Dfam_4.0/families/Dfam-RepeatMasker.lib.gz.md5
+md5sum -c Dfam-RepeatMasker.lib.gz.md5
+gzip -dc Dfam-RepeatMasker.lib.gz > dfam.fa
+
+# Sanity check
+pgr fa size dfam.fa
+pgr dist seq dfam.fa -k 17 -w 5 -p 8
+```
+
+The EMBL variant carries metadata (family name, classification) for each
+consensus; use it instead if that information matters:
+
+```bash
+curl -LO https://dfam.org/releases/Dfam_4.0/families/Dfam-curated_only-1.embl.gz
+curl -LO https://dfam.org/releases/Dfam_4.0/families/Dfam-curated_only-1.embl.gz.md5
+md5sum -c Dfam-curated_only-1.embl.gz.md5
+gzip -dc Dfam-curated_only-1.embl.gz > Dfam-curated_only-1.embl
+
+# https://sourceforge.net/projects/readseq/
+java -jar ~/bin/readseq.jar -f fa Dfam-curated_only-1.embl
+mv Dfam-curated_only-1.embl.fasta dfam.fa
+gzip -9 -k dfam.fa
+```
+
+Other release products are not suitable for pgr:
+
+*   `Dfam-1.embl.gz` (4.5 GB): EMBL records for all curated (DF) and uncurated
+    (DR) families; use the curated-only file above.
+*   `Dfam-1.hmm.gz` … `Dfam-17.hmm.gz` (~10 GB each) and
+    `Dfam-curated_only-1.hmm.gz` (1.7 GB): profile HMM partitions for
+    HMMER-based search; pgr masks by alignment, not HMM search.
+*   `FamDB/`: HDF5 partitions for RepeatMasker 4.1.1+, unusable by pgr.
 
 ## RepeatMasker (reference)
 

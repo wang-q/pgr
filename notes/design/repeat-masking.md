@@ -238,7 +238,9 @@ family/class、K2P、报告，详见附录 A.5）。我们只做**搜索侧的�
 不做注释时实现很轻，基础设施全在：
 
 1.  **库**：直接取 Dfam consensus FASTA 全库（不做物种筛选）；可选加简单重复
-    条目，或交给 `rept trf` 兜底低复杂度。
+    条目，或交给 `rept trf` 兜底低复杂度。具体下载与格式转换
+    （`Dfam-RepeatMasker.lib.gz` 直接可用，或 curated-only EMBL 转 FASTA）
+    见 [docs/rept.md](../../docs/rept.md) 的 Dfam 一节。
 2.  **比对**：使用 `pgr align pgi`（pgr 原生归并比对，输入 FASTA/2bit/.pgi）
     跑"全库 vs 基因组"；或 `pgr align lastz`。`pgr align pgi` 是独立命令，
     不是从 `sd search` 借用的引擎——`sd search --engine pgi` 只是它的一个
