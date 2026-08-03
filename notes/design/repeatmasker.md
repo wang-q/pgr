@@ -1,10 +1,182 @@
-# pgr 遮蔽版重复标记实现计划（Dfam 全库）
+# pgr 重复标记（Repeat Masking）方案
 
-> 设计笔记，日期：2026-08-03。场景笔记见 [[../repeat-masking.md]]（ir/rept/trf + fa mask
-> 的现状与 SD 关系）；FastK 分析见 [[../references/fastk.md]]；RepeatMasker 源码梳理见
-> 附录 A（依据仓库内 `RepeatMasker/` 目录，open-4.2.4）。
+> 本文档是 pgr 重复标记的总体方案：现状命令（ir/rept/trf 及其实现管道）、
+> 命令命名规划、遮蔽版计划（Dfam 全库 + pgi/lastz 比对）、以及与 RepeatMasker
+> 的差异。用户用法见 [docs/repeats.md](../../docs/repeats.md)；FastK 底层分析见
+> [[../references/fastk.md]]；RepeatMasker 源码梳理见附录 A（依据仓库内
+> `RepeatMasker/` 目录，open-4.2.4）。
 
-## 1. 决策
+## 1. 场景与现状
+
+### 1.1 背景与动机
+
+完整跑一遍 RepeatMasker（基于 Smith-Waterman 与 RepBase/Dfam 库）非常昂贵且耗时。
+pgr 的思路是用 FastK 系工具做**快速近似**：不做逐条 repeat 的分类注释，只回答
+"基因组上哪些区间是重复的"，然后把区间喂给 `pgr fa mask` 做 soft/hard masking。
+这适合大规模基因组的快速屏蔽；需要注释级结果（family/class 标签）时仍应使用 RepeatMasker。
+
+外部工具依赖（均须在 `$PATH`）：
+
+*   FastK + Profex（FastK 套件）
+*   spanr
+*   trf（仅 `pl trf`）
+
+### 1.2 命令分工与检测闭环
+
+| 命令 | 重复类型 | 原理 | 输入 |
+| :--- | :--- | :--- | :--- |
+| `pgr pl ir` | 散在重复（interspersed） | 与重复库做 k-mer 富集比对 | 基因组 + repeat 库（Dfam/RepBase/TnCentral） |
+| `pgr pl rept` | 基因组内重复（无库） | 自身 k-mer 深度比较 | 仅基因组 |
+| `pgr pl trf` | 串联重复（tandem） | trf 的周期搜索 | 仅基因组 |
+
+三者输出**同一种格式**：runlist JSON（`{"chr": "start-end,start-end,..."}`），
+可直接作为 `pgr fa mask --runlist` 的输入，因此检测结果与屏蔽步骤天然闭环：
+
+```bash
+# 检测 + 屏蔽闭环
+pgr pl rept genome.fa -o repeats.json
+pgr fa mask genome.fa --runlist repeats.json -o masked.fa        # soft-mask（小写）
+pgr fa mask genome.fa --runlist repeats.json --hard -o masked.fa # hard-mask（N）
+```
+
+### 1.3 命令命名规划
+
+#### 设计过程
+
+1. **问题**：`ir` / `rept` 缩写脱离上下文、难以理解；且未来还有两个命令
+   （库 + align 遮蔽版、自身 + align 自比对），加上现有的共 4 个组合，需要
+   成体系的命名。
+2. **头部命令**：仿照 `pgr align` / `pgr sd`，建 `pgr rept` 组，子命令承载
+   4 个组合。
+3. **维度取舍**：先讨论前缀表达哪个维度。机制（kmer/align）作前缀的直觉是
+   "技术直白"，但机制是可扩展维度（未来可能加 HMM 等），且 pgr 没有机制进
+   命令名的先例（`pgr sd search --engine pgi|lastz` 的引擎是参数）。最终选
+   **对象（库/自身）作前缀**。
+4. **形式**：单字母前缀 + 机制单词后缀——`e-kmer` / `e-align` / `s-kmer` /
+   `s-align`，避免单字母命令（`e`/`s` 单独作命令名）的不可读问题，也比
+   `repeat-lib` 这类全词组合短。
+5. **库文件作位置参数**：`e-*` 前缀已声明"要用库"，库文件直接作为第一个
+   位置参数（沿用 `pl ir <repeat> <infile>` 的接口），不引入 `--lib`。
+
+#### 命名规则
+
+重复检测有 4 个组合：
+
+* 库 + kmer → `pgr rept e-kmer <repeats> <genome>`（现 `pgr pl ir`）
+* 自身 + kmer → `pgr rept s-kmer <genome>`（现 `pgr pl rept`）
+* 库 + align → `pgr rept e-align <repeats> <genome>`（未来遮蔽版）
+* 自身 + align → `pgr rept s-align <genome>`（未来，`scripts/pgr-repeat.sh`）
+
+加上 `pgr rept trf`（串联重复）共 5 个命令。
+命名规则：前缀 `e` = 外部库 / `s` = 自身（对象），后缀 `kmer` / `align` = 机制。
+库文件是 `e-*` 的位置参数（沿用现 `pl ir <repeat> <infile>` 的接口），无需 `--lib`。
+
+#### 为什么选 e / s 前缀
+
+*   **对象决定输入**：用户选命令时第一个要判断的就是"我有重复库吗？"——
+    `e`（要库，需要准备库文件）/ `s`（纯基因组，不需要库）。这是最先、
+    最容易确认的事；而"kmer 还是 align"是第二步的、偏实现的问题。
+*   **对象是稳定维度，机制是可扩展维度**：库/自身是二元的、不会变；
+    kmer/align 只是当前两种机制，未来可能加 HMM、profile 比对等——扩展
+    维度放在后缀或参数里，命令名才稳定。如果前缀表达机制，每加一种机制
+    就要改命令族。
+*   **与 pgr 风格一致**：`pgr sd` 命令名（search / align / cluster）表达
+    "做什么"，机制用 `--engine pgi|lastz`；`pgr dist` 也按对象（hv / pgi /
+    seq）分命令。pgr 没有"机制进命令名"的先例——机制差异（kmer 快但粗、
+    align 慢但准）靠帮助文本和文档传达就够了。
+*   **字母自然**：external / self 首字母，配合单词后缀后整体可读。
+
+> 状态：2026-08-03 定稿（形式）。待实施：新建 `src/cmd_pgr/rept/`，`pl` 下移除
+> ir/rept/trf，更新注册、测试与文档。
+
+### 1.4 术语澄清：SD 序列不是真正的 repeats
+
+`pgr sd`（BISER 移植，见 [[sd.md]]）检测的**分段重复（segmental duplications, SD）**
+在重复标记语境里容易混淆，需要澄清：
+
+*   SD 是祖先复制事件产生的**旁系同源（paralogous）共享片段**（如 T2T-CHM13 标准：
+    > 1 kb 且 identity > 90%），它们虽然"序列重复出现"，但**不是转座子等真正的
+    重复元件（repeats）**。
+*   `pgr pl ir/rept/trf` 检测的是重复序列本身（转座子、rRNA 基因簇、串联重复等）；
+    `pgr sd` 检测的是旁系同源片段。两者目的不同，**不要把 `pgr sd` 的输出当成
+    repeat masking 的结果**。
+*   实践中 SD 在比对/组装中会造成假比对（旁系同源片段会被多处匹配），因此检测出 SD 后，
+    下游流程通常会把它们排除或特殊处理；但**先被屏蔽的从来不是 SD，而是真正的重复元件**——
+    BISER 的输入就要求预先 soft-mask 重复序列（RepeatMasker/TRF 等），SD 恰恰是
+    "屏蔽重复元件后仍剩余的高相似旁系同源片段"，BISER 找的就是它们。顺序是：
+    屏蔽 repeats 在前 → 检测 SD 在后 → 排除 SD 在下游比对中，三者并不矛盾。
+*   推论：若屏蔽后还要做 SD 搜索（对应 BISER 输入假设），屏蔽应**只用 `pgr pl ir` +
+    `pgr pl trf`**（≈ T2T-CHM13 的 TRF + RepeatMasker 预处理），**不要用 `pgr pl rept`
+    （自比较）**——它会把 SD 本身也当作"重复"屏蔽掉，屏蔽完 SD 搜索就找不到目标了。
+    注意 `ir` 需要重复库（Dfam/RepBase），无库时该组合退化为只用 `trf`：
+
+    ```bash
+    # SD 搜索前的正确屏蔽：IR + TRF
+    pgr pl ir genome.fa repeats.fa -o ir.json # 散在重复（需重复库）
+    pgr pl trf genome.fa -o trf.json          # 串联重复
+    spanr merge ir.json trf.json -o mask.json # 合并区间
+    pgr fa mask genome.fa --runlist mask.json -o masked.fa
+    ```
+
+### 1.5 检测管道实现
+
+#### 1.5.1 ir / rept：FastK → Profex → spanr
+
+共享管道在 `src/libs/pl/repeat.rs`：
+
+1.  **FastK**：
+    *   `ir`：跑两次——先用 `-t` 对 repeat 库建表（`-Nrepeat`），再对基因组用 `-p:repeat`
+        生成相对该表的 count profile（`-Ngenome`）。
+    *   `rept`：只跑一次，`-p` 自比较生成基因组自身的 profile。
+2.  **Profex per chr**：`pgr fa size` 得到染色体列表后，对每条染色体跑
+    `Profex -z genome <sn>`，解析输出中 `start-end`（rept 还会按 `depth` 过滤，`min_depth=2`），
+    写成 `<chr>:start-end` 的 `.rg` 文件（`run_profex_per_chr`）。
+3.  **spanr 区间处理**（`run_repeat_spanr_pipeline`）：
+
+    ```
+    spanr cover <rg files>
+        | spanr span --op fill   -n <fk>   # 填 k-mer 之间的孔
+        | spanr span --op excise -n <min>  # 切掉过短的碎片
+        | spanr span --op fill   -n <ff>   # 合并邻近片段
+        -o <outfile>
+    ```
+
+默认参数：`kmer=17`、`fill-kmer=2`、`fill-fragment=10`；`ir` 的 `min-len=300`，`rept` 的 `min-len=100`。
+
+#### 1.5.2 trf：trf → 解析 → spanr
+
+`src/cmd_pgr/pl/trf.rs`：按染色体拆分 FASTA，逐条跑
+`trf <chr>.fa <match> <mismatch> <delta> <pm> <pi> <minscore> <max_period> -d -h -ngs`，
+用 `parse_trf_output`（`src/libs/pl/repeat.rs`）解析 `.dat`（少于 15 列的短行跳过），
+再 `spanr cover` 合并输出。默认参数对应 TRF 常用设置（match=2、mismatch=7、delta=7、
+pm=80、pi=10、minscore=50、max_period=2000）。
+
+### 1.6 临时文件与 FastK 库文件清理
+
+用户曾担心 FastK 会在工作目录生成一批库文件（`*.ktab.*`）。该问题已由
+`src/libs/pl/ctx.rs` 的 `PipelineCtx` 内建解决：
+
+*   管道启动时创建 `tempfile::TempDir`（前缀 `pgr_rm_` / `pgr_rept_` / `pgr_trf_`）；
+*   `enter()` 把 CWD 切进 tempdir，此后 FastK 的 `genome.ktab.*` / `repeat.ktab.*`、
+    Profex 的 `prof.*.txt/.rg`、trf 的 `.dat` 全部落在 tempdir 内；
+*   ctx drop 时 TempDir 自动删除，`CwdGuard` 保证出错时 CWD 也能恢复。
+
+实测（2026-08-03，MG1655）：跑完 `pgr pl rept` 后 `/tmp` 无新增残留，tempdir 也不存在；
+FastK `-P` 默认丢到 /tmp 的排序块由 FastK 自身清理。因此**无需**在代码里额外做删除动作。
+
+### 1.7 实测记录
+
+| 命令 | 基因组 | 耗时 | 区间数 | 备注 |
+| :--- | :--- | :--- | :--- | :--- |
+| `pl rept` | MG1655 | ~0.35s | ~150 | 含 rRNA 3941442-3946950 等 |
+| `pl trf` | MG1655 | ~1.6s | 84 | 串联重复 |
+| `pl ir` | — | — | — | 本机无 Dfam/RepBase 库，未实测 |
+
+soft-mask 衔接验证：`aaaaaatgcgcggtcagaa` 等区间正确转为小写。
+
+## 2. 遮蔽版计划（Dfam 全库）
+
+### 2.1 决策
 
 **只实现遮蔽版重复标记**：把 Dfam consensus 全库与目标基因组做比对，输出
 runlist 区间交给 `pgr fa mask` 做遮蔽。不做 family/class 注释、不做
@@ -18,11 +190,11 @@ runlist 区间交给 `pgr fa mask` 做遮蔽。不做 family/class 注释、不�
     `pgr align pgi`（或 `pgr align lastz`）找区间——`pgr sd search --engine pgi`
     已验证 pgi 用于重复区间检测的模式；遮蔽管道 `fa mask` 已存在。
 *   遮蔽版只回答一个问题："基因组上哪些区间是重复的"，质量取决于比对敏感度
-    （验证见 §5）。
+    （验证见 §2.5）。
 
-## 2. 方案
+### 2.2 方案
 
-### 2.1 核心思路：Dfam 全库 + 一套通用比对
+#### 核心思路：Dfam 全库 + 一套通用比对
 
 RepeatMasker 完整流程 = 搜索（库 vs 基因组）+ 注释后处理（碎片整合、边界精修、
 family/class、K2P、报告，详见附录 A.5）。我们只做**搜索侧的遮蔽**。
@@ -40,20 +212,14 @@ family/class、K2P、报告，详见附录 A.5）。我们只做**搜索侧的�
 
 **代价**：全库比对会让近缘家族的 consensus 互相 hit（cross-family），造成
 一定过度遮蔽；物种特异配方（如灵长类年轻 Alu 的"先切除再补搜"）的灵敏度
-也会丢失。对"宁可多遮不漏"的遮蔽目标可接受，但要在验证里量化（§5）。
+也会丢失。对"宁可多遮不漏"的遮蔽目标可接受，但要在验证里量化（§2.5）。
 
-### 2.2 明确不做（RepeatMasker 的注释后处理）
-
-*   碎片整合（`cycleReJoin`）：遮蔽不在乎拼回完整元件，只在乎别漏区域；
-*   边界精修：区间级覆盖即可；
-*   family/class 注释、K2P %div、`.out/.tbl` 报告：全部不做。
-
-### 2.3 现状保留为对照与兜底
+#### 现状保留为对照与兜底
 
 `ir + trf + fa mask` 继续可用：方案落地后与之对比覆盖区间；低复杂度缺口
-（polyA 等，§4）由 `pl trf` 兜底。
+（polyA 等，§2.4）由 `pl trf` 兜底。
 
-## 3. 实现步骤
+### 2.3 实现步骤
 
 不做注释时实现很轻，基础设施全在：
 
@@ -70,7 +236,7 @@ family/class、K2P、报告，详见附录 A.5）。我们只做**搜索侧的�
 
 工作量比完整 RepeatMasker 小一个数量级。遮蔽版需要的能力映射见附录 A.7。
 
-## 4. 关键风险
+### 2.4 关键风险
 
 *   **比对敏感度**：k-mer（k=17）对高分歧拷贝会漏；pgi 的 syncmer 种子对
     70% identity 的拷贝同样不轻松。这是决定遮蔽质量的核心，必须实测。
@@ -83,9 +249,9 @@ family/class、K2P、报告，详见附录 A.5）。我们只做**搜索侧的�
 *   **验证基准**：E. coli 几乎无转座子，无参考价值。需用拟南芥/玉米等
     转座子丰富基因组，与 RepeatMasker 的 masked 输出对比 recall。
 
-## 5. 验证实验（实施前调参）
+### 2.5 验证实验（实施前调参）
 
-方向已定（§1），验证的目的是评估比对敏感度、确定过滤参数：
+方向已定（§2.1），验证的目的是评估比对敏感度、确定过滤参数：
 
 1.  取转座子丰富基因组（拟南芥或玉米）；
 2.  用 Dfam consensus FASTA **全库**经 lastz/pgi 对一遍，放宽 hit 过滤；
@@ -96,6 +262,33 @@ family/class、K2P、报告，详见附录 A.5）。我们只做**搜索侧的�
     *   （可选）全库 vs 按物种取库的遮蔽量差异，评估 over-masking 代价。
 4.  依据 recall / over-masking / 耗时确定最终过滤参数（min-len、identity、
     gap 模型），落成新命令（如 `pgr fa mask` 的比对模式）的默认值。
+
+> 命令命名见本文 §1.3（`pgr rept` 组的 2×2 组合形式）。
+
+## 3. 与 RepeatMasker 的差异
+
+### 3.1 现状命令的局限
+
+*   **无分类注释**：不输出 family/class 标签，只给区间。
+*   **k-mer 敏感度**：依赖与库共享的精确 k-mer，分化较远的拷贝会漏检或碎成小片段；
+    fill 步骤只能桥接短孔，无法恢复长距离分化的拷贝。
+*   **输出是区间而非序列**：mask 后的序列需另行用 `pgr fa mask` 生成。
+*   **依赖外部工具**：FastK / Profex / spanr（trf 还需 trf）。
+
+### 3.2 遮蔽版的边界
+
+遮蔽版明确不做 RepeatMasker 的注释后处理：
+
+*   碎片整合（`cycleReJoin`）：遮蔽不在乎拼回完整元件，只在乎别漏区域；
+*   边界精修：区间级覆盖即可；
+*   family/class 注释、K2P %div、`.out/.tbl` 报告：全部不做。
+
+## 4. 待办
+
+*   `ir` 需要用户自备重复库（Dfam/RepBase/TnCentral，下载与准备见
+    [docs/repeats.md](../../docs/repeats.md)），本机缺库，端到端测试待补。
+*   若未来要接近 RepeatMasker 能力，可考虑对检测出的区间补一步 family 注释（如对区间
+    重跑库比对），但目前无此需求，不做推测性设计。
 
 ## 附录 A：RepeatMasker 源码梳理
 
@@ -147,7 +340,7 @@ RepeatMasker 筛查 DNA 序列中的**散在重复**（interspersed repeats）�
 1. **TRF 阶段**：`runTRFStage` 找 perfect simple repeats（`-nolow` 跳过）。
 2. **用户库/物种库**：用 `general_search_parameters` 配方（`-cutoff` 改
    minscore），输出 `*.tmp.custom`。**注意：`-lib` 自定义库时根本不走物种
-   分类，直接用这一套通用配方**——这就是正文 §2.1"全库 + 统一参数"简化
+   分类，直接用这一套通用配方**——这就是正文 §2.2"全库 + 统一参数"简化
    所对应的官方路径。
 3. **物种特异阶段**：按分类学（primates/rodentia…）跑对应配方——如灵长类
    先 `cut_young_sines_in_primates` 切 Alu，再 `mask_*` 遮蔽其余 SINE；
@@ -235,14 +428,14 @@ complexity-adjusted scoring；`raw=1` 时用 basic scoring。
 
 ### A.7 与 pgr 的对应关系
 
-**遮蔽版需要的能力**（正文 §3）：
+**遮蔽版需要的能力**（正文 §2.3）：
 
 | 步骤 | pgr 现状 | 判断 |
 | :--- | :--- | :--- |
 | 库-基因组比对 | `pgr align pgi`（原生）或 `pgr align lastz` | 高可行，预计比 RMBlast 快一个数量级 |
 | 区间合并/覆盖 | `spanr cover / merge / fill` | ✅ 已有 |
 | 输出遮蔽 | `pgr fa mask --runlist` | ✅ 已有 |
-| 低复杂度兜底 | `pgr pl trf` | 已有（缺口见正文 §4） |
+| 低复杂度兜底 | `pgr pl trf` | 已有（缺口见正文 §2.4） |
 
 **遮蔽版明确不做**（对应 RepeatMasker 的注释后处理，A.5）：
 
