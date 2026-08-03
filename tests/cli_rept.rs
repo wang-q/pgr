@@ -57,14 +57,9 @@ fn random_seq(len: usize, seed: u64) -> String {
 }
 
 /// e-align on synthetic data: a 400 bp "repeat" inserted twice in a random
-/// genome should be reported as covered intervals (needs `spanr` in $PATH).
+/// genome should be reported as covered intervals.
 #[test]
 fn command_rept_e_align_end_to_end() -> anyhow::Result<()> {
-    if which::which("spanr").is_err() {
-        eprintln!("skipping: spanr not found");
-        return Ok(());
-    }
-
     let repeat = random_seq(400, 7);
     let genome = format!(
         "{}{}{}{}{}",
@@ -80,8 +75,8 @@ fn command_rept_e_align_end_to_end() -> anyhow::Result<()> {
     let genome_fa = temp.path().join("genome.fa");
     let out = temp.path().join("out.json");
     std::fs::write(&lib, format!(">rep1\n{}\n", repeat))?;
-    // Dotted contig name: `spanr cover` truncates these to the last '.'
-    // segment, and e-align must restore the full name in the runlist.
+    // Dotted contig name: the runlist parser truncates these to the last
+    // '.' segment, and e-align must restore the full name in the runlist.
     std::fs::write(&genome_fa, format!(">chr1.1\n{}\n", genome))?;
 
     let (_, stderr) = common::PgrCmd::new()
@@ -114,11 +109,11 @@ fn command_rept_e_align_end_to_end() -> anyhow::Result<()> {
 }
 
 /// s-kmer on a genome with a dotted contig name must report the full name
-/// in the runlist (regression for `spanr cover` truncation; needs FastK,
-/// Profex and spanr in $PATH).
+/// in the runlist (regression for runlist-name truncation; needs FastK and
+/// Profex in $PATH).
 #[test]
 fn command_rept_s_kmer_dotted_name() -> anyhow::Result<()> {
-    for tool in ["FastK", "Profex", "spanr"] {
+    for tool in ["FastK", "Profex"] {
         if which::which(tool).is_err() {
             eprintln!("skipping: {tool} not found");
             return Ok(());
@@ -149,7 +144,7 @@ fn command_rept_s_kmer_dotted_name() -> anyhow::Result<()> {
     let json: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&out)?)?;
     let spans = json["NC_000913.1"]
         .as_str()
-        .expect("NC_000913.1 key missing (spanr truncated the name?)");
+        .expect("NC_000913.1 key missing (runlist truncated the name?)");
     // A 2000 bp block duplicated head-to-tail: Profex reports the first copy
     // (depth 2) as 1-based inclusive [1, 2000] and omits the depth/end of the
     // tail run, so the conservative result is exactly the first copy.
@@ -159,10 +154,10 @@ fn command_rept_s_kmer_dotted_name() -> anyhow::Result<()> {
 
 /// e-kmer on a perfect tandem duplication must report the full duplicated
 /// interval, including the chromosome-tail run whose depth/end Profex omits
-/// (needs FastK, Profex and spanr in $PATH).
+/// (needs FastK and Profex in $PATH).
 #[test]
 fn command_rept_e_kmer_tandem_coordinates() -> anyhow::Result<()> {
-    for tool in ["FastK", "Profex", "spanr"] {
+    for tool in ["FastK", "Profex"] {
         if which::which(tool).is_err() {
             eprintln!("skipping: {tool} not found");
             return Ok(());
@@ -197,11 +192,11 @@ fn command_rept_e_kmer_tandem_coordinates() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// e-kmer end-to-end on the repo's small fixtures (needs FastK, Profex and
-/// spanr in $PATH). Guards the FastK pipeline and the dotted-name mapping.
+/// e-kmer end-to-end on the repo's small fixtures (needs FastK and Profex in
+/// $PATH). Guards the FastK pipeline and the dotted-name mapping.
 #[test]
 fn command_rept_e_kmer_end_to_end() -> anyhow::Result<()> {
-    for tool in ["FastK", "Profex", "spanr"] {
+    for tool in ["FastK", "Profex"] {
         if which::which(tool).is_err() {
             eprintln!("skipping: {tool} not found");
             return Ok(());
@@ -224,10 +219,10 @@ fn command_rept_e_kmer_end_to_end() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// trf end-to-end on MG1655 (needs `trf` and `spanr` in $PATH).
+/// trf end-to-end on MG1655 (needs `trf` in $PATH).
 #[test]
 fn command_rept_trf_end_to_end() -> anyhow::Result<()> {
-    for tool in ["trf", "spanr"] {
+    for tool in ["trf"] {
         if which::which(tool).is_err() {
             eprintln!("skipping: {tool} not found");
             return Ok(());
@@ -259,18 +254,18 @@ fn command_rept_s_align_help() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// s-align end-to-end on MG1655 (needs `lastz` and `spanr` in $PATH).
+/// s-align end-to-end on MG1655 (needs `lastz` in $PATH).
 #[test]
 fn command_rept_s_align_end_to_end() -> anyhow::Result<()> {
-    for tool in ["lastz", "spanr"] {
+    for tool in ["lastz"] {
         if which::which(tool).is_err() {
             eprintln!("skipping: {tool} not found");
             return Ok(());
         }
     }
 
-    // A 300 kb NC_000913 fragment keeps the end-to-end lastz+spanr guard
-    // while cutting the self-alignment from ~10 s to well under a second.
+    // A 300 kb NC_000913 fragment keeps the end-to-end lastz guard while
+    // cutting the self-alignment from ~10 s to well under a second.
     let genome = concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/tests/genome/mg1655.300k.fa.gz"
@@ -290,10 +285,10 @@ fn command_rept_s_align_end_to_end() -> anyhow::Result<()> {
 }
 
 /// s-align must restore dotted contig names in the runlist (regression for
-/// `spanr coverage` truncating `NC_000913.1` to `1`; needs lastz + spanr).
+/// runlist-name truncation; needs lastz in $PATH).
 #[test]
 fn command_rept_s_align_dotted_name() -> anyhow::Result<()> {
-    for tool in ["lastz", "spanr"] {
+    for tool in ["lastz"] {
         if which::which(tool).is_err() {
             eprintln!("skipping: {tool} not found");
             return Ok(());
@@ -328,7 +323,7 @@ fn command_rept_s_align_dotted_name() -> anyhow::Result<()> {
     let json: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&out)?)?;
     let spans = json["NC_000913.1"]
         .as_str()
-        .expect("NC_000913.1 key missing (spanr truncated the name?)");
+        .expect("NC_000913.1 key missing (runlist truncated the name?)");
     assert!(spans.contains('-'), "expected intervals, got: {spans}");
     Ok(())
 }
@@ -336,8 +331,8 @@ fn command_rept_s_align_dotted_name() -> anyhow::Result<()> {
 /// trf must resolve `fa split` names with special characters (sanitized).
 #[test]
 fn command_rept_trf_special_chars() -> anyhow::Result<()> {
-    if which::which("trf").is_err() || which::which("spanr").is_err() {
-        eprintln!("skipping: trf/spanr not found");
+    if which::which("trf").is_err() {
+        eprintln!("skipping: trf not found");
         return Ok(());
     }
 

@@ -50,6 +50,24 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             if !tag.is_empty() && record.ty != tag {
                 continue;
             }
+            // A malformed record with start > end used to panic inside
+            // add_pair; coordinates beyond i32 would wrap silently.
+            if record.start > record.end {
+                anyhow::bail!(
+                    "invalid GFF record: start {} > end {} for {}",
+                    record.start,
+                    record.end,
+                    record.seqid
+                );
+            }
+            if record.start > i32::MAX as u64 || record.end > i32::MAX as u64 {
+                anyhow::bail!(
+                    "GFF coordinates out of range for {}: {}-{}",
+                    record.seqid,
+                    record.start,
+                    record.end
+                );
+            }
             set.entry(record.seqid)
                 .or_default()
                 .add_pair(record.start as i32, record.end as i32);

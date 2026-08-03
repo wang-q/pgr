@@ -1,7 +1,8 @@
 //! Shared helpers for `pgr pl` pipeline subcommands.
 //!
 //! Pure pipeline orchestration logic (no clap dependency): workflow context,
-//! path resolution, and external-tool driver functions (FastK / Profex / spanr).
+//! path resolution, and external-tool driver functions (FastK / Profex) plus
+//! the internal runlist pipelines.
 
 mod ctx;
 mod repeat;

@@ -1,4 +1,4 @@
-//! Repeat-identification pipeline drivers (FastK → Profex → spanr).
+//! Repeat-identification pipeline drivers (FastK → Profex → runlist).
 
 use cmd_lib::run_cmd;
 use std::io::{BufRead, Write};
@@ -114,12 +114,12 @@ pub struct RepeatOpts {
     pub min_depth: Option<usize>,
 }
 
-/// Run the shared FastK → Profex → spanr repeat pipeline.
+/// Run the shared FastK → Profex → runlist repeat pipeline.
 ///
 /// When `opts.abs_repeat` is set, runs FastK twice (repeat + genome with
 /// `-p:repeat`); otherwise runs FastK once on the genome (`-p`). Then
 /// generates `chr.sizes`, runs Profex per chromosome, and finally the
-/// spanr cover/fill/excise/fill pipeline.
+/// internal cover/fill/excise/fill runlist pipeline.
 pub fn run_repeat_pipeline(opts: &RepeatOpts) -> anyhow::Result<()> {
     let pgr = &opts.pgr;
     let abs_infile = &opts.abs_infile;
@@ -177,9 +177,9 @@ pub fn run_repeat_pipeline(opts: &RepeatOpts) -> anyhow::Result<()> {
         }
     }
 
-    // `spanr cover` truncates dotted contig names (e.g. `NC_000913.1` ->
-    // `1`) at the last '.', so map real names to dot-free placeholders and
-    // restore them after the spanr pass.
+    // The runlist parser truncates dotted contig names (e.g. `NC_000913.1`
+    // -> `1`) at the last '.', so map real names to dot-free placeholders
+    // and restore them after the runlist pass.
     let mut name_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
     let mut safe_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
     let safe_chrs: Vec<String> = chrs
@@ -195,8 +195,7 @@ pub fn run_repeat_pipeline(opts: &RepeatOpts) -> anyhow::Result<()> {
     let rg_files = run_profex_per_chr(&safe_chrs, &lens, &opts.re_prof, opts.min_depth)?;
 
     if count_rg_lines(&rg_files)? == 0 {
-        // No repetitive intervals: emit an empty runlist instead of letting
-        // `spanr cover` fail on empty input.
+        // No repetitive intervals: emit an empty runlist directly.
         let empty = b"{}\n";
         if opts.abs_outfile == "stdout" {
             std::io::stdout().write_all(empty)?;
@@ -270,11 +269,11 @@ pub struct AlignRepeatOpts {
     pub parallel: usize,
 }
 
-/// Run the `pgr align pgi` → PSL filter → spanr repeat pipeline.
+/// Run the `pgr align pgi` → PSL filter → runlist repeat pipeline.
 ///
 /// The genome is the reference (PSL target) and the repeat library is the
 /// query. Alignment blocks are filtered by identity and target-span length,
-/// written as target-side `.rg`, then merged with the spanr pipeline.
+/// written as target-side `.rg`, then merged with the runlist pipeline.
 pub fn run_align_repeat_pipeline(opts: &AlignRepeatOpts) -> anyhow::Result<()> {
     let pgr = &opts.pgr;
     let abs_infile = &opts.abs_infile;
@@ -316,9 +315,9 @@ pub fn run_align_repeat_pipeline(opts: &AlignRepeatOpts) -> anyhow::Result<()> {
     run_cmd!(info "==> Filter alignments")?;
     let reader = crate::reader("hits.psl")?;
     let mut writer = crate::writer("hits.rg")?;
-    // `spanr cover` truncates dotted contig names (e.g. `NC_000913.1` ->
-    // `1`) at the last '.', so map real names to dot-free placeholders and
-    // restore them after the spanr pass.
+    // The runlist parser truncates dotted contig names (e.g. `NC_000913.1`
+    // -> `1`) at the last '.', so map real names to dot-free placeholders
+    // and restore them after the runlist pass.
     let mut name_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
     let mut safe_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
     let mut n_rg = 0usize;
@@ -357,8 +356,7 @@ pub fn run_align_repeat_pipeline(opts: &AlignRepeatOpts) -> anyhow::Result<()> {
     drop(writer);
 
     if n_rg == 0 {
-        // No alignments survived the filters: emit an empty runlist instead
-        // of letting `spanr cover` fail on empty input.
+        // No alignments survived the filters: emit an empty runlist directly.
         let empty = b"{}\n";
         if opts.abs_outfile == "stdout" {
             std::io::stdout().write_all(empty)?;
@@ -494,10 +492,10 @@ pub fn run_self_align_pipeline(opts: &SelfAlignOpts) -> anyhow::Result<()> {
         return Ok(());
     }
 
-    // `spanr coverage` truncates dotted contig names (e.g. `NC_000913.1` ->
-    // `1`) at the last '.', so map real names to dot-free placeholders and
-    // restore them after the spanr pass (same convention as the other
-    // spanr pipelines).
+    // The runlist parser truncates dotted contig names (e.g. `NC_000913.1`
+    // -> `1`) at the last '.', so map real names to dot-free placeholders
+    // and restore them after the runlist pass (same convention as the other
+    // runlist pipelines).
     let chrs = crate::libs::io::read_names::<Vec<String>>("chrom.sizes")?;
     let mut name_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
     let mut safe_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
@@ -641,8 +639,8 @@ pub fn run_repeat_runlist_pipeline(
             set.entry(chr).or_default().merge(&is);
         }
     }
-    // The original pipeline ran `spanr span` three times; folding them into
-    // sequential passes on the merged set gives identical results.
+    // The original spanr pipeline ran `spanr span` three times; folding them
+    // into sequential passes on the merged set gives identical results.
     let set = crate::libs::runlist::span_op(&set, crate::libs::runlist::SpanOp::Fill, fk as i32);
     let set = crate::libs::runlist::span_op(&set, crate::libs::runlist::SpanOp::Excise, min as i32);
     let set = crate::libs::runlist::span_op(&set, crate::libs::runlist::SpanOp::Fill, ff as i32);

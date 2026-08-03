@@ -73,7 +73,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let number = *args.get_one::<i32>("number").unwrap();
 
     let json = pgr::libs::runlist::read_json(infile)?;
-    let set_of = pgr::libs::runlist::json_to_sets(&json);
+    let set_of = pgr::libs::runlist::json_to_sets(&json)?;
     let res: std::collections::BTreeMap<_, _> = set_of
         .iter()
         .map(|(name, set)| (name.clone(), pgr::libs::runlist::span_op(set, op, number)))

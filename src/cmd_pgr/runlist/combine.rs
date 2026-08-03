@@ -44,7 +44,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         _ => unreachable!("invalid combine op"),
     };
     let json = pgr::libs::runlist::read_json(args.get_one::<String>("infile").unwrap())?;
-    let set_of = pgr::libs::runlist::json_to_sets(&json);
+    let set_of = pgr::libs::runlist::json_to_sets(&json)?;
     let res = pgr::libs::runlist::combine_sets(&set_of, op);
     let json = pgr::libs::ds::intspan::set2json(&res);
     pgr::libs::ds::intspan::write_json(outfile, &json)?;

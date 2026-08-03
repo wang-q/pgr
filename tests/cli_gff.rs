@@ -4,6 +4,7 @@ mod common;
 
 use common::PgrCmd;
 use std::path::PathBuf;
+use tempfile::TempDir;
 
 fn fixture(name: &str) -> String {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -89,6 +90,21 @@ fn command_runlist_gff_tag_and_merge() {
     assert!(lines == 8 || lines == 9, "line count {lines}");
     assert!(stdout.contains("cds"), "got: {stdout}");
     assert!(stdout.contains("repeat"), "got: {stdout}");
+}
+
+#[test]
+fn command_runlist_gff_reversed_record_errors() {
+    let dir = TempDir::new().unwrap();
+    let gff = dir.path().join("bad.gff");
+    std::fs::write(
+        &gff,
+        "##gff-version 3\nchr1\tsrc\tgene\t100\t1\t.\t+\t.\tID=g1\n",
+    )
+    .unwrap();
+    let (_, stderr) = PgrCmd::new()
+        .args(&["gff", "runlist", gff.to_str().unwrap()])
+        .run_fail();
+    assert!(stderr.contains("start 100 > end 1"), "got: {stderr}");
 }
 
 #[test]

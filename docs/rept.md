@@ -137,8 +137,8 @@ pgr rept trf tests/genome/mg1655.fa.gz -o trf.json
 
 # Coverage per library, and pairwise overlap
 pgr fa size tests/genome/mg1655.fa.gz > mg1655.sizes
-spanr stat mg1655.sizes tncentral.json
-spanr statop mg1655.sizes repbase.json dfam.json
+pgr runlist stat mg1655.sizes tncentral.json
+pgr runlist statop mg1655.sizes repbase.json dfam.json
 ```
 
 Measured on MG1655 (RepeatMasker reference output: 49,379 bp, 1.06%):
@@ -198,7 +198,7 @@ All four emit runlist JSON ready for `pgr fa mask`:
 pgr rept e-kmer tests/pgr/tncentral.fa.gz tests/genome/mg1655.fa.gz \
     > tests/pgr/mg1655.ir.json
 
-spanr stat tests/genome/mg1655.chr.sizes tests/pgr/mg1655.ir.json
+pgr runlist stat tests/genome/mg1655.chr.sizes tests/pgr/mg1655.ir.json
 
 pgr rept s-kmer tests/genome/mg1655.fa.gz \
     > tests/pgr/mg1655.rept.json
@@ -209,8 +209,8 @@ pgr rept trf tests/genome/mg1655.fa.gz \
 pgr rept s-align tests/genome/mg1655.fa.gz \
     > tests/pgr/mg1655.salign.json
 
-spanr stat tests/genome/mg1655.chr.sizes tests/pgr/mg1655.rm.json
-spanr statop tests/genome/mg1655.chr.sizes tests/pgr/mg1655.ir.json tests/pgr/mg1655.rm.json
+pgr runlist stat tests/genome/mg1655.chr.sizes tests/pgr/mg1655.rm.json
+pgr runlist statop tests/genome/mg1655.chr.sizes tests/pgr/mg1655.ir.json tests/pgr/mg1655.rm.json
 ```
 
 ---
@@ -329,8 +329,6 @@ insert bases in the denominator.
 
 ### Dependencies
 
-*   `spanr`
-
 ### Notes
 
 *   The input genome must not be soft-masked: lowercase (soft-masked) repeat
@@ -367,7 +365,6 @@ pgr rept s-kmer [OPTIONS] <infile>
 ### Dependencies
 
 *   `FastK`, `Profex`
-*   `spanr`
 
 ---
 
@@ -398,7 +395,6 @@ pgr rept trf [OPTIONS] <infile>
 ### Dependencies
 
 *   `trf`
-*   `spanr`
 
 ## s-align
 
@@ -453,7 +449,6 @@ pgr rept s-align [OPTIONS] <infile>
 ### Dependencies
 
 *   `lastz`
-*   `spanr`
 
 ## Notes
 

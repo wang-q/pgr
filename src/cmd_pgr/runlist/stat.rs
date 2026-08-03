@@ -43,7 +43,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let outfile = crate::cmd_pgr::args::get_outfile(args);
     let sizes = pgr::read_sizes::<i32>(args.get_one::<String>("chr.sizes").unwrap())?;
     let json = pgr::libs::runlist::read_json(args.get_one::<String>("infile").unwrap())?;
-    let set_of = pgr::libs::runlist::json_to_sets(&json);
+    let set_of = pgr::libs::runlist::json_to_sets(&json)?;
     let is_multi = set_of.len() > 1 || !set_of.contains_key("__single__");
     let is_all = args.get_flag("all");
 

@@ -42,7 +42,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut writer = pgr::writer(outfile)?;
     for infile in args.get_many::<String>("infiles").unwrap() {
         let json = pgr::libs::runlist::read_json(infile)?;
-        let set_of = pgr::libs::runlist::json_to_sets(&json);
+        let set_of = pgr::libs::runlist::json_to_sets(&json)?;
         for set in set_of.values() {
             for line in pgr::libs::runlist::convert_set(set, is_longest) {
                 writeln!(writer, "{}", line)?;

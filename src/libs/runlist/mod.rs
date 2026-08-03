@@ -27,7 +27,7 @@ pub fn rg_to_set<R: BufRead>(reader: R) -> anyhow::Result<BTreeMap<String, IntSp
             continue;
         }
         let range = crate::libs::ds::Range::from_str(line);
-        if !range.is_valid() {
+        if !range.is_valid() || range.start() > range.end() {
             continue;
         }
         set.entry(range.chr().clone())
@@ -49,7 +49,7 @@ pub fn rg_to_intervals<R: BufRead>(reader: R) -> anyhow::Result<BTreeMap<String,
             continue;
         }
         let range = crate::libs::ds::Range::from_str(line);
-        if !range.is_valid() {
+        if !range.is_valid() || range.start() > range.end() {
             continue;
         }
         iv_of
@@ -219,13 +219,24 @@ pub fn read_json(path: &str) -> anyhow::Result<BTreeMap<String, serde_json::Valu
 }
 
 /// Convert a single runlist JSON map into per-chromosome `IntSpan`s.
-pub fn json_to_set(json: &BTreeMap<String, serde_json::Value>) -> BTreeMap<String, IntSpan> {
-    json.iter()
-        .filter_map(|(chr, v)| {
-            let s = v.as_str()?;
-            Some((chr.clone(), IntSpan::from(s)))
-        })
-        .collect()
+///
+/// Non-string values and unparseable runlist strings are errors rather than
+/// being silently dropped (a multi runlist passed where a single one is
+/// expected used to become an empty set).
+pub fn json_to_set(
+    json: &BTreeMap<String, serde_json::Value>,
+) -> anyhow::Result<BTreeMap<String, IntSpan>> {
+    let mut set = BTreeMap::new();
+    for (chr, v) in json {
+        let s = v
+            .as_str()
+            .ok_or_else(|| anyhow::anyhow!("runlist value for {} is not a string", chr))?;
+        if !IntSpan::valid(s) {
+            anyhow::bail!("invalid runlist for {}: {}", chr, s);
+        }
+        set.insert(chr.clone(), IntSpan::from(s));
+    }
+    Ok(set)
 }
 
 /// Convert a runlist JSON map into `name -> chromosome -> IntSpan`; detects
@@ -233,20 +244,23 @@ pub fn json_to_set(json: &BTreeMap<String, serde_json::Value>) -> BTreeMap<Strin
 /// flat input is treated as a single set under the `__single__` key.
 pub fn json_to_sets(
     json: &BTreeMap<String, serde_json::Value>,
-) -> BTreeMap<String, BTreeMap<String, IntSpan>> {
+) -> anyhow::Result<BTreeMap<String, BTreeMap<String, IntSpan>>> {
     let is_multi = json.values().next().map(|v| v.is_object()).unwrap_or(false);
     if is_multi {
         json.iter()
-            .filter_map(|(name, v)| {
-                let inner = v.as_object()?;
-                let set = json_to_set(&inner.iter().map(|(k, v)| (k.clone(), v.clone())).collect());
-                Some((name.clone(), set))
+            .map(|(name, v)| {
+                let inner = v.as_object().ok_or_else(|| {
+                    anyhow::anyhow!("runlist value for {} is not an object", name)
+                })?;
+                let set =
+                    json_to_set(&inner.iter().map(|(k, v)| (k.clone(), v.clone())).collect())?;
+                Ok((name.clone(), set))
             })
             .collect()
     } else {
         let mut m = BTreeMap::new();
-        m.insert("__single__".to_string(), json_to_set(json));
-        m
+        m.insert("__single__".to_string(), json_to_set(json)?);
+        Ok(m)
     }
 }
 
@@ -330,36 +344,21 @@ pub fn convert_set(set: &BTreeMap<String, IntSpan>, longest: bool) -> Vec<String
 }
 
 /// A runlist set covering every chromosome of `sizes` in full (1..size).
-pub fn genome_set(sizes: &BTreeMap<String, i32>) -> BTreeMap<String, IntSpan> {
-    sizes
-        .iter()
-        .map(|(k, &v)| (k.clone(), IntSpan::from_pair(1, v)))
-        .collect()
-}
-
-/// Parse GFF3 records into a runlist set; `tag` filters on the feature
-/// column when non-empty. Coordinates are 1-based inclusive.
-pub fn gff_to_set<R: BufRead>(reader: R, tag: &str) -> anyhow::Result<BTreeMap<String, IntSpan>> {
-    let mut res: BTreeMap<String, IntSpan> = BTreeMap::new();
-    for line in reader.lines() {
-        let line = line?;
-        if line.starts_with('#') {
-            continue;
+///
+/// Non-positive sizes are rejected instead of panicking in
+/// `IntSpan::from_pair` (a sizes file can contain 0-length contigs).
+pub fn genome_set(sizes: &BTreeMap<String, i32>) -> anyhow::Result<BTreeMap<String, IntSpan>> {
+    let mut set = BTreeMap::new();
+    for (k, &v) in sizes {
+        if v <= 0 {
+            anyhow::bail!("invalid chromosome size {} for {}", v, k);
         }
-        let fields: Vec<&str> = line.split('\t').collect();
-        if fields.len() < 8 {
-            continue;
+        if v > IntSpan::new().get_pos_inf() {
+            anyhow::bail!("chromosome size {} out of range for {}", v, k);
         }
-        if !tag.is_empty() && fields[2] != tag {
-            continue;
-        }
-        let start: i32 = fields[3].parse()?;
-        let end: i32 = fields[4].parse()?;
-        res.entry(fields[0].to_string())
-            .or_default()
-            .add_pair(start, end);
+        set.insert(k.clone(), IntSpan::from_pair(1, v));
     }
-    Ok(res)
+    Ok(set)
 }
 
 /// Subset of a runlist JSON whose top-level keys are in `names`.
@@ -526,6 +525,15 @@ mod tests {
     }
 
     #[test]
+    fn rg_to_set_skips_reversed_ranges() {
+        // `chr1:10-5` parses as start > end and used to panic in add_pair.
+        let s = rg_to_set(std::io::Cursor::new("chr1:10-5\nchr1:1-10\n")).unwrap();
+        assert_eq!(s["chr1"].to_string(), "1-10");
+        let ivs = rg_to_intervals(std::io::Cursor::new("chr1:10-5\nchr1:1-10\n")).unwrap();
+        assert_eq!(ivs["chr1"], vec![(1, 11)]);
+    }
+
+    #[test]
     fn depth_at_least_basic() {
         let ivs = [(0u32, 10u32), (5, 15), (20, 25)];
         // depth 2 on [5,10), depth 1 on the rest of the union [0,15).
@@ -602,10 +610,41 @@ mod tests {
     #[test]
     fn empty_json_is_single_empty_set() {
         let json = BTreeMap::new();
-        let sets = json_to_sets(&json);
+        let sets = json_to_sets(&json).unwrap();
         assert_eq!(sets.len(), 1);
         assert!(sets.contains_key("__single__"));
         assert!(sets["__single__"].is_empty());
+    }
+
+    #[test]
+    fn json_to_set_rejects_invalid_values() {
+        let mut json = BTreeMap::new();
+        json.insert("chr1".to_string(), serde_json::Value::String("1-".into()));
+        assert!(json_to_set(&json).is_err());
+        let mut json = BTreeMap::new();
+        json.insert(
+            "chr1".to_string(),
+            serde_json::Value::String("99999999999".into()),
+        );
+        assert!(json_to_set(&json).is_err());
+        let mut json = BTreeMap::new();
+        json.insert("chr1".to_string(), serde_json::json!({"x": "1-5"}));
+        assert!(json_to_set(&json).is_err());
+    }
+
+    #[test]
+    fn json_to_sets_rejects_mixed_shapes() {
+        let mut json = BTreeMap::new();
+        json.insert("a".to_string(), serde_json::json!({"chr1": "1-5"}));
+        json.insert("b".to_string(), serde_json::Value::String("1-5".into()));
+        // First value is an object (multi form): the string entry is invalid.
+        assert!(json_to_sets(&json).is_err());
+
+        let mut flat = BTreeMap::new();
+        flat.insert("chr1".to_string(), serde_json::Value::String("1-5".into()));
+        flat.insert("chr2".to_string(), serde_json::json!({"x": "1-5"}));
+        // First value is a string (flat form): the object entry is invalid.
+        assert!(json_to_sets(&flat).is_err());
     }
 
     #[test]
@@ -648,21 +687,18 @@ mod tests {
         let mut sizes = BTreeMap::new();
         sizes.insert("chr1".to_string(), 1000);
         sizes.insert("chr2".to_string(), 200);
-        let g = genome_set(&sizes);
+        let g = genome_set(&sizes).unwrap();
         assert_eq!(g["chr1"].to_string(), "1-1000");
         assert_eq!(g["chr2"].to_string(), "1-200");
     }
 
     #[test]
-    fn gff_to_set_parses_and_filters() {
-        let gff = "chr1\tsrc\tgene\t1\t100\t+\t0\tx\n\
-                   chr2\tsrc\trRNA\t50\t80\t+\t0\tx\n";
-        let all = gff_to_set(std::io::Cursor::new(gff), "").unwrap();
-        assert_eq!(all["chr1"].to_string(), "1-100");
-        assert_eq!(all["chr2"].to_string(), "50-80");
-        let genes = gff_to_set(std::io::Cursor::new(gff), "gene").unwrap();
-        assert!(genes.contains_key("chr1"));
-        assert!(!genes.contains_key("chr2"));
+    fn genome_set_rejects_non_positive_sizes() {
+        let mut sizes = BTreeMap::new();
+        sizes.insert("chr1".to_string(), 0);
+        assert!(genome_set(&sizes).is_err());
+        sizes.insert("chr2".to_string(), -5);
+        assert!(genome_set(&sizes).is_err());
     }
 
     #[test]

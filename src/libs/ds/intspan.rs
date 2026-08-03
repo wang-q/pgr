@@ -263,6 +263,26 @@ mod create {
             ("abc", false),
             ("abc-def", false),
             ("abc,def", false),
+            // Trailing dash, empty upper and reversed pairs must be invalid,
+            // not panics (previously `1-` panicked on an out-of-bounds read
+            // and `1-0` panicked in add_pair).
+            ("1-", false),
+            ("1-0", false),
+            ("5-3", false),
+            ("1--1", false),
+            // Oversized digit runs are invalid instead of overflowing.
+            ("99999999999", false),
+            ("2147483648", false),
+            ("-2147483649", false),
+            // Coordinates above POS_INF - 1 are unrepresentable (add_pair
+            // would overflow when storing the upper + 1 edge).
+            ("2147483647", false),
+            ("-2147483648", true),
+            // `add_pair` stores upper + 1 as an edge, so coordinates above
+            // POS_INF - 1 (2147483645) are rejected instead of overflowing.
+            ("1-2147483645", true),
+            ("1-2147483646", false),
+            ("2147483646", false),
         ];
 
         // create new
@@ -407,10 +427,14 @@ impl IntSpan {
             return 0;
         }
 
-        self.spans()
-            .into_iter()
-            .map(|(lower, upper)| upper - lower + 1)
-            .sum()
+        // Spans can cover more than i32::MAX integers (e.g. a nearly full
+        // i32 range); accumulate in i64 and saturate instead of panicking
+        // (debug) or wrapping (release).
+        let mut total: i64 = 0;
+        for (lower, upper) in self.spans() {
+            total += i64::from(upper) - i64::from(lower) + 1;
+        }
+        total.min(i64::from(i32::MAX)) as i32
     }
 
     #[inline]
@@ -420,12 +444,12 @@ impl IntSpan {
 
     #[inline]
     pub fn is_neg_inf(&self) -> bool {
-        *self.edges.front().unwrap() == NEG_INF
+        self.edges.front().is_some_and(|e| *e == NEG_INF)
     }
 
     #[inline]
     pub fn is_pos_inf(&self) -> bool {
-        *self.edges.back().unwrap() == POS_INF
+        self.edges.back().is_some_and(|e| *e == POS_INF)
     }
 
     #[inline]
@@ -1116,10 +1140,10 @@ impl IntSpan {
             let mut upper = *self.edges.get(i * 2 + 1).unwrap() - 1;
 
             if lower != self.get_neg_inf() {
-                lower += n;
+                lower = lower.saturating_add(n).clamp(NEG_INF, POS_INF - 1);
             }
             if upper != self.get_pos_inf() {
-                upper -= n;
+                upper = upper.saturating_sub(n).clamp(NEG_INF, POS_INF - 1);
             }
 
             if lower <= upper {
@@ -1145,8 +1169,8 @@ impl IntSpan {
             let lower = *self.edges.get(i * 2).unwrap();
             let upper = *self.edges.get(i * 2 + 1).unwrap() - 1;
 
-            let span_len = upper - lower + 1;
-            if span_len >= min_len {
+            let span_len = i64::from(upper) - i64::from(lower) + 1;
+            if span_len >= i64::from(min_len) {
                 new.add_pair(lower, upper);
             }
         }
@@ -1162,8 +1186,8 @@ impl IntSpan {
             let lower = *holes.edges.get(i * 2).unwrap();
             let upper = *holes.edges.get(i * 2 + 1).unwrap() - 1;
 
-            let span_len = upper - lower + 1;
-            if span_len <= max_len {
+            let span_len = i64::from(upper) - i64::from(lower) + 1;
+            if span_len <= i64::from(max_len) {
                 new.add_pair(lower, upper);
             }
         }
@@ -1306,6 +1330,24 @@ mod span {
             // fill
             assert_eq!(set.fill(n).to_string(), exp_fill);
         }
+    }
+
+    #[test]
+    fn extreme_ops_do_not_overflow() {
+        // trim/pad with huge n used to overflow i32 arithmetic; the result
+        // is clamped to the representable coordinate range instead.
+        assert_eq!(
+            IntSpan::from("1-2").pad(2_147_483_647).to_string(),
+            "-2147483646-2147483645"
+        );
+        assert_eq!(IntSpan::from("1-2").trim(2_147_483_647).to_string(), "-");
+
+        // excise/fill/cardinality on a nearly full i32 range used to overflow
+        // `upper - lower + 1`; they must not panic.
+        let huge = IntSpan::from("-2147483647-2147483645");
+        assert_eq!(huge.excise(1).to_string(), "-2147483647-2147483645");
+        assert_eq!(huge.cardinality(), i32::MAX);
+        assert_eq!(huge.fill(100).to_string(), "-2147483647-2147483645");
     }
 
     #[test]
@@ -1581,7 +1623,7 @@ impl IntSpan {
 
         let bytes = runlist.as_bytes();
 
-        let radix = 10;
+        let radix = 10i64;
         let mut idx = 0; // index in runlist
         let len = bytes.len();
 
@@ -1596,24 +1638,25 @@ impl IntSpan {
                 i += 1;
             }
 
-            // ported from Java Integer.parseInt()
-            let mut lower: i32 = 0;
-            let mut upper: i32 = 0;
+            // Ported from Java Integer.parseInt(), accumulated negative so
+            // that i32::MIN parses without overflow. i64 accumulation makes
+            // oversized digit runs an error instead of a panic (debug) or a
+            // silent wrap (release).
+            let mut lower: i64 = 0;
+            let mut upper: i64 = 0;
 
             while idx + i < len {
                 let ch = bytes[idx + i];
                 if ch.is_ascii_digit() {
                     if !in_upper {
-                        lower *= radix;
-                        lower -= (ch as char).to_digit(10).unwrap() as i32;
+                        lower = lower * radix - i64::from(ch - b'0');
                     } else {
-                        upper *= radix;
-                        upper -= (ch as char).to_digit(10).unwrap() as i32;
+                        upper = upper * radix - i64::from(ch - b'0');
                     }
                 } else if ch == b'-' {
                     if !in_upper {
                         in_upper = true;
-                        if *bytes.get(idx + i + 1).unwrap() == b'-' {
+                        if idx + i + 1 < len && bytes[idx + i + 1] == b'-' {
                             upper_is_neg = true;
                         }
                     }
@@ -1632,13 +1675,39 @@ impl IntSpan {
                 i += 1;
             }
 
-            if !in_upper {
-                ranges.push(if lower_is_neg { lower } else { -lower }); // add lower
-                ranges.push(if lower_is_neg { lower } else { -lower }); // add lower again
+            let lower_val = if lower_is_neg { lower } else { -lower };
+            let upper_val = if in_upper {
+                if upper_is_neg {
+                    upper
+                } else {
+                    -upper
+                }
             } else {
-                ranges.push(if lower_is_neg { lower } else { -lower }); // add lower
-                ranges.push(if upper_is_neg { upper } else { -upper }); // add upper
+                lower_val
+            };
+            let i32_range = i64::from(i32::MIN)..=i64::from(i32::MAX);
+            if !i32_range.contains(&lower_val) || !i32_range.contains(&upper_val) {
+                return Err(anyhow!(
+                    "Number format error: out of range at {} of {}",
+                    idx,
+                    runlist
+                ));
             }
+            // `add_pair` stores upper + 1 as an edge, so the largest
+            // representable coordinate is POS_INF - 1; larger values used
+            // to panic in `find_pos(upper + 1)`.
+            if upper_val > i64::from(POS_INF - 1) {
+                return Err(anyhow!(
+                    "Number format error: out of range at {} of {}",
+                    idx,
+                    runlist
+                ));
+            }
+            if lower_val > upper_val {
+                return Err(anyhow!("Bad order: {},{}", lower_val, upper_val));
+            }
+            ranges.push(lower_val as i32);
+            ranges.push(upper_val as i32);
 
             // reset boolean flags
             lower_is_neg = false;
@@ -1731,5 +1800,17 @@ mod display {
 
         let empty = IntSpan::new();
         assert_eq!(empty.to_string(), "-");
+    }
+
+    #[test]
+    fn infinity_predicates_on_empty_set() {
+        // `is_neg_inf`/`is_pos_inf` used to panic on empty sets (unwrap of
+        // `front()`/`back()`); the empty set is finite and neither infinity.
+        let empty = IntSpan::new();
+        assert!(!empty.is_neg_inf());
+        assert!(!empty.is_pos_inf());
+        assert!(!empty.is_infinite());
+        assert!(empty.is_finite());
+        assert!(!empty.is_universal());
     }
 }

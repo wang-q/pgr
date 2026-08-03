@@ -66,9 +66,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let outfile = crate::cmd_pgr::args::get_outfile(args);
     let sizes = pgr::read_sizes::<i32>(args.get_one::<String>("chr.sizes").unwrap())?;
     let json1 = pgr::libs::runlist::read_json(args.get_one::<String>("infile1").unwrap())?;
-    let s1_of = pgr::libs::runlist::json_to_sets(&json1);
+    let s1_of = pgr::libs::runlist::json_to_sets(&json1)?;
     let json2 = pgr::libs::runlist::read_json(args.get_one::<String>("infile2").unwrap())?;
-    let s2 = pgr::libs::runlist::json_to_set(&json2);
+    let s2 = pgr::libs::runlist::json_to_set(&json2)?;
     let is_multi = s1_of.len() > 1 || !s1_of.contains_key("__single__");
     let is_all = args.get_flag("all");
     let base = match args.get_one::<String>("base") {

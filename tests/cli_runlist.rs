@@ -43,6 +43,16 @@ fn command_runlist_cover_stdin() {
 }
 
 #[test]
+fn command_runlist_cover_skips_reversed_ranges() {
+    // `chr1:10-5` (start > end) must be skipped, not panic.
+    let (stdout, _) = PgrCmd::new()
+        .args(&["runlist", "cover", "stdin"])
+        .stdin("chr1:10-5\nchr1:1-10\n")
+        .run();
+    assert_eq!(stdout, "{\n  \"chr1\": \"1-10\"\n}\n");
+}
+
+#[test]
 fn command_runlist_coverage() {
     let (dir, rg) = fixture_dir();
     let rg2 = dir.path().join("b.rg");
@@ -106,6 +116,33 @@ fn command_runlist_span_fill_excise() {
 }
 
 #[test]
+fn command_runlist_span_invalid_runlist_errors() {
+    for bad in ["1-", "abc", "99999999999", "5-3"] {
+        let (_, stderr) = PgrCmd::new()
+            .args(&["runlist", "span", "stdin"])
+            .stdin(format!("{{\"chr1\":\"{bad}\"}}\n"))
+            .run_fail();
+        assert!(stderr.contains("invalid runlist"), "{bad}: got: {stderr}");
+    }
+}
+
+#[test]
+fn command_runlist_span_extreme_ops_do_not_panic() {
+    // pad/trim with a huge n used to overflow i32 arithmetic.
+    let (stdout, _) = PgrCmd::new()
+        .args(&["runlist", "span", "stdin", "--op", "pad", "-n", "2147483647"])
+        .stdin("{\"chr1\":\"1-2\"}\n")
+        .run();
+    assert_eq!(stdout, "{\n  \"chr1\": \"-2147483646-2147483645\"\n}\n");
+    // Coordinates above the representable maximum are rejected, not panics.
+    let (_, stderr) = PgrCmd::new()
+        .args(&["runlist", "span", "stdin"])
+        .stdin("{\"chr1\":\"1-2147483646\"}\n")
+        .run_fail();
+    assert!(stderr.contains("invalid runlist"), "got: {stderr}");
+}
+
+#[test]
 fn command_runlist_compare_intersect() {
     let dir = TempDir::new().unwrap();
     let a = dir.path().join("a.json");
@@ -157,6 +194,22 @@ fn command_runlist_genome() {
         stdout,
         "{\n  \"chr1\": \"1-1000\",\n  \"chr2\": \"1-2000\"\n}\n"
     );
+}
+
+#[test]
+fn command_runlist_genome_invalid_size_errors() {
+    let dir = TempDir::new().unwrap();
+    let sizes = dir.path().join("sizes.txt");
+    std::fs::write(&sizes, "chr1\t0\nchr2\t-5\n").unwrap();
+    let (_, stderr) = PgrCmd::new()
+        .args(&["runlist", "genome", sizes.to_str().unwrap()])
+        .run_fail();
+    assert!(stderr.contains("invalid chromosome size"), "got: {stderr}");
+    std::fs::write(&sizes, "chr1\t2147483646\n").unwrap();
+    let (_, stderr) = PgrCmd::new()
+        .args(&["runlist", "genome", sizes.to_str().unwrap()])
+        .run_fail();
+    assert!(stderr.contains("out of range"), "got: {stderr}");
 }
 
 #[test]
@@ -270,4 +323,25 @@ fn command_runlist_stat() {
          chr2,2000,100,0.0500\n\
          all,3000,600,0.2000\n"
     );
+}
+
+#[test]
+fn command_runlist_statop_multi_second_errors() {
+    let dir = TempDir::new().unwrap();
+    let sizes = dir.path().join("sizes.txt");
+    let a = dir.path().join("a.json");
+    let b = dir.path().join("b.json");
+    std::fs::write(&sizes, "chr1\t100\n").unwrap();
+    std::fs::write(&a, "{\"chr1\":\"1-50\"}\n").unwrap();
+    std::fs::write(&b, "{\"x\":{\"chr1\":\"1-10\"}}\n").unwrap();
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "runlist",
+            "statop",
+            sizes.to_str().unwrap(),
+            a.to_str().unwrap(),
+            b.to_str().unwrap(),
+        ])
+        .run_fail();
+    assert!(stderr.contains("not a string"), "got: {stderr}");
 }

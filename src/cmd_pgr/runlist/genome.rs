@@ -28,7 +28,7 @@ Examples:
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let outfile = crate::cmd_pgr::args::get_outfile(args);
     let sizes = pgr::read_sizes::<i32>(args.get_one::<String>("infile").unwrap())?;
-    let set = pgr::libs::runlist::genome_set(&sizes);
+    let set = pgr::libs::runlist::genome_set(&sizes)?;
     let json = pgr::libs::ds::intspan::set2json(&set);
     pgr::libs::ds::intspan::write_json(outfile, &json)?;
     Ok(())

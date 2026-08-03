@@ -39,10 +39,6 @@ fn command_pl_prefilter_run() -> anyhow::Result<()> {
 
 #[test]
 fn command_pl_p2m() -> anyhow::Result<()> {
-    if which::which("spanr").is_err() {
-        return Ok(());
-    }
-
     let tempdir = TempDir::new()?;
     let tempdir_str = tempdir.path().to_str().unwrap();
 

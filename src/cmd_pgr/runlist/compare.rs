@@ -52,11 +52,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     };
 
     let first = pgr::libs::runlist::read_json(args.get_one::<String>("infile").unwrap())?;
-    let first = pgr::libs::runlist::json_to_sets(&first);
+    let first = pgr::libs::runlist::json_to_sets(&first)?;
     let mut others = Vec::new();
     for infile in args.get_many::<String>("infiles").unwrap() {
         let json = pgr::libs::runlist::read_json(infile)?;
-        others.push(pgr::libs::runlist::json_to_set(&json));
+        others.push(pgr::libs::runlist::json_to_set(&json)?);
     }
     let res = pgr::libs::runlist::compare_sets(&first, &others, op);
     pgr::libs::runlist::write_sets(outfile, &res)

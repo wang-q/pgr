@@ -82,9 +82,8 @@ Some subcommands depend on external executables:
   `axtChain`, `chainAntiRepeat`, `chainMergeSort`, `chainPreNet`,`chainNet`, `netSyntenic`,
   `netChainSubset`, `chainStitchId`, `netSplit`,`netToAxt`, `axtSort`, `axtToMaf`, `netFilter`,
   `netClass`, and `chainSplit`.
-- `pgr rept trf` depends on `trf` and `spanr`.
-- `pgr rept s-kmer` and `pgr rept e-kmer` depend on `FastK`, `Profex`, and `spanr`.
-- `pgr pl p2m` depends on `spanr`.
+- `pgr rept trf` depends on `trf`.
+- `pgr rept s-kmer` and `pgr rept e-kmer` depend on `FastK` and `Profex`.
 - `pgr fas refine` depends on an external multiple sequence alignment tool such as
   `clustalw` (default), `muscle`, or `mafft`.
 

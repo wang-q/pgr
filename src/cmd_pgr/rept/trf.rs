@@ -117,9 +117,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     )?;
     let chrs = pgr::libs::io::read_names::<Vec<String>>("chr.sizes")?;
 
-    // `spanr cover` truncates dotted contig names (e.g. `NC_000913.1` ->
-    // `1`) at the last '.', so map real names to dot-free placeholders and
-    // restore them after the spanr pass.
+    // The runlist parser truncates dotted contig names (e.g. `NC_000913.1`
+    // -> `1`) at the last '.', so map real names to dot-free placeholders
+    // and restore them after the runlist pass.
     let mut name_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
     let mut safe_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
     let safe_chrs: Vec<String> = chrs

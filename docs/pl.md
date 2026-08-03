@@ -40,7 +40,7 @@ pgr pl p2m [OPTIONS] <infiles>...
 
 ### Dependencies
 
-*   `spanr`
+*   None (runs `pgr` subcommands internally)
 
 ---
 
