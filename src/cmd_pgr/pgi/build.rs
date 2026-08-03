@@ -9,8 +9,8 @@ pub fn make_subcommand() -> Command {
         .after_help(
             r###"
 Builds a syncmer-sparse sorted k-mer index. Each syncmer position (default
-(12,8) canonical, matching FastGA GIX) seeds a k-mer of length -k on both
-strands (unless --no-rev). The result is a single binary file, usable for
+syncmer 8/5, matching FastGA GIX) seeds a k-mer of length k on both strands
+(unless --no-rev). The result is a single binary file, usable for
 `pgr dist pgi` (merge distance), `pgr pgi to-hv` (hypervector projection) and
 future FastGA-style seed discovery.
 

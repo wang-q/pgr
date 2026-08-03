@@ -240,6 +240,50 @@ fn command_rept_s_align_end_to_end() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// s-align must restore dotted contig names in the runlist (regression for
+/// `spanr coverage` truncating `NC_000913.1` to `1`; needs lastz + spanr).
+#[test]
+fn command_rept_s_align_dotted_name() -> anyhow::Result<()> {
+    for tool in ["lastz", "spanr"] {
+        if which::which(tool).is_err() {
+            eprintln!("skipping: {tool} not found");
+            return Ok(());
+        }
+    }
+
+    let temp = tempfile::TempDir::new()?;
+    let genome_fa = temp.path().join("genome.fa");
+    let out = temp.path().join("out.json");
+    let dup = random_seq(500, 31);
+    let seq = format!(
+        "{}{}{}{}{}",
+        random_seq(300, 32),
+        dup,
+        random_seq(200, 33),
+        dup,
+        random_seq(200, 34)
+    );
+    std::fs::write(&genome_fa, format!(">NC_000913.1\n{}\n", seq))?;
+
+    let (_, stderr) = common::PgrCmd::new()
+        .args(&[
+            "rept",
+            "s-align",
+            genome_fa.to_str().unwrap(),
+            "-o",
+            out.to_str().unwrap(),
+        ])
+        .run();
+    assert!(stderr.contains("==> Coverage"), "pipeline failed: {stderr}");
+
+    let json: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&out)?)?;
+    let spans = json["NC_000913.1"]
+        .as_str()
+        .expect("NC_000913.1 key missing (spanr truncated the name?)");
+    assert!(spans.contains('-'), "expected intervals, got: {spans}");
+    Ok(())
+}
+
 /// trf must resolve `fa split` names with special characters (sanitized).
 #[test]
 fn command_rept_trf_special_chars() -> anyhow::Result<()> {

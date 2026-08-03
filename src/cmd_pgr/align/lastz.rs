@@ -13,8 +13,8 @@ This command wraps lastz to perform alignments suitable for the Cactus RepeatMas
 It handles:
 *   Parallel execution for multiple target files.
 *   Directory recursion for target and query inputs.
-*   Adding required modifiers: [multiple][nameparse=darkspace].
 *   Setting output format to LAV.
+*   Adding the required modifier: [nameparse=darkspace].
 *   Setting query depth threshold: --querydepth=keep,nowarn:N.
     N is the depth of coverage threshold (aligned bases / query length).
     When the threshold is exceeded, processing stops for that query/strand to save time.
@@ -22,6 +22,13 @@ It handles:
     'nowarn' suppresses warnings about exceeded depth.
     Note: Reported alignments are the first found, not necessarily optimal.
     Default depth 50 allows ~50x coverage.
+
+Notes:
+*   Each FASTA file must contain a single sequence: LAV output is
+    incompatible with lastz's `[multiple]` action, so multi-contig files
+    fail. Split them with `pgr fa split name` or pass directories of
+    single-contig files.
+*   Inputs must be plain FASTA (lastz cannot read gzipped files).
 
 {}
 Examples:

@@ -88,6 +88,9 @@ pub fn lastz_to_hits(
         lav_to_psl(reader, &mut psl_bytes, None, false)?;
         for line in std::io::Cursor::new(psl_bytes).lines() {
             let line = line?;
+            if line.trim_start().starts_with('#') {
+                continue;
+            }
             if let Some(psl) = parse_or_warn(&line, false)? {
                 if super::passes_sd_filters(&psl, opts.min_len, opts.min_identity) {
                     hits.push(psl);

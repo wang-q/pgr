@@ -44,6 +44,9 @@ fn parse_header(header: &str) -> Option<(String, String, char, usize, usize)> {
     let chrom = chrom_strand[..chrom_strand.len() - 1].to_string();
     let start: usize = parts.next()?.parse().ok()?;
     let end: usize = parts.next()?.parse().ok()?;
+    if end < start {
+        return None; // reversed/empty interval
+    }
     Some((species, chrom, strand, start, end))
 }
 
@@ -194,9 +197,12 @@ pub fn decompose_fasta<R: BufRead, W: Write>(reader: R, writer: &mut W) -> anyho
     for (frag_id, &(si, begin, end, score)) in frags.iter().enumerate() {
         let (species, chrom, strand, gstart, gend, _s) = &seqs[si];
         let (gb, ge) = if *strand == '-' {
-            (gend - end, gend - begin)
+            // Saturating projection: a malformed header (span smaller than
+            // the sequence, or coordinates beyond the contig) must not
+            // underflow into a panic (Zero Panic).
+            (gend.saturating_sub(end), gend.saturating_sub(begin))
         } else {
-            (gstart + begin, gstart + end)
+            (gstart.saturating_add(begin), gstart.saturating_add(end))
         };
         writeln!(
             writer,
@@ -301,6 +307,43 @@ mod tests {
             let begin: usize = fields[2].parse().unwrap();
             let end: usize = fields[3].parse().unwrap();
             assert!(begin >= 100 && end - begin >= 100, "unexpected row: {row}");
+        }
+    }
+
+    #[test]
+    fn malformed_header_does_not_panic() {
+        // Regression: a minus-strand header with start > end (or a header
+        // span smaller than the sequence) used to underflow the projection
+        // (`gend - end`) into an arithmetic panic. It must be rejected or
+        // clamped, never panic.
+        let shared: String = (0..120)
+            .map(|i| b"ACGT"[(i % 4) as usize] as char)
+            .collect();
+        // start=100 > end=50 on the minus strand.
+        let reversed = format!(
+            ">sp#chr-#100#50\nAAAA{}TTTT\n>sp#chr+#0#200\nCCCC{}GGGG\n",
+            shared, shared
+        );
+        let mut out = Vec::new();
+        decompose_fasta(std::io::Cursor::new(reversed.as_bytes()), &mut out).unwrap();
+        // The reversed header is rejected at parse time.
+        assert!(out.is_empty(), "reversed header must be skipped: {out:?}");
+
+        // Header span (10 bp) smaller than the 200 bp sequence: the shared
+        // fragment [40, 160) projects beyond the declared span; the row must
+        // stay in range (clamped), not panic.
+        let short_span = format!(
+            ">sp#chr+#0#10\nAAAA{}TTTT\n>sp#chr+#0#200\nCCCC{}GGGG\n",
+            shared, shared
+        );
+        let mut out = Vec::new();
+        decompose_fasta(std::io::Cursor::new(short_span.as_bytes()), &mut out).unwrap();
+        let text = String::from_utf8(out).unwrap();
+        for row in text.lines() {
+            let fields: Vec<&str> = row.split('\t').collect();
+            let begin: usize = fields[2].parse().unwrap();
+            let end: usize = fields[3].parse().unwrap();
+            assert!(end >= begin, "clamped row must stay ordered: {row}");
         }
     }
 }

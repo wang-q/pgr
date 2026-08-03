@@ -60,7 +60,7 @@ Examples:
                 .long("min-identity")
                 .default_value("0.90")
                 .value_parser(value_parser!(f64))
-                .help("Minimum block identity (0.0-1.0)"),
+                .help("Minimum block identity (0, 1]"),
         )
         .arg(
             Arg::new("query_depth")

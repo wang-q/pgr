@@ -18,6 +18,8 @@ pgr align pgi ref query -o out.psl
   (e.g. `ref.fa` → `ref.pgi`) is reused when present; otherwise one is built
   in a temporary directory and removed afterwards. `--keep-index` keeps it
   next to the input. The sequence itself is then used to refine the chains.
+  For `.gz` inputs the sibling index is `<name-without-.gz>.pgi`
+  (e.g. `ref.fa.gz` → `ref.fa.pgi`).
 - A `.pgi` index is used directly; `--ref-seq`/`--query-seq` may then supply
   the sequences for chain refinement, and are validated against the index
   contig table.

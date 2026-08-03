@@ -27,7 +27,8 @@ pgr sd search <genome.fa> -o hits.psl
 
 * `--engine`: alignment engine — `pgi` (default, native `pgr align pgi`
   self-alignment, no external tools) or `lastz` (external `lastz --self`,
-  requires lastz in PATH);
+  requires lastz in PATH; each input FASTA must contain a single sequence —
+  split multi-contig genomes with `pgr fa split name` first);
 * `--min-len` / `--min-identity`: T2T-CHM13 SD filter (default 1000 bp /
   0.90 identity);
 * `--preset` / `--query-depth`: lastz-only parameters (set01..set07 presets,

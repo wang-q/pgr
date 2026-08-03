@@ -209,3 +209,195 @@ anti=25M 时桶被交错、tube 丢失的场景）。
 * `cargo fmt --check`、`cargo clippy -- -D warnings` 干净；
 * 全量 960 测试通过（新增 tube 排序键单测与索引一致性单测各 1）；
 * 修复后索引记录全部通过 (key, pos) 一致性校验。
+
+## 复核轮（第十轮，2026-08-03）
+
+聚焦 sd/rept/align 数据路径上的支持库（fmt/psl、fmt/lav、fmt/maf、
+paf/parser + maf_import、loc、pgi mmap/stream、cmd_pgr/pgi、to_hv）并做
+批量鲁棒性实验。修复 3 处小问题 + 1 处文档补充。960 测试全绿。
+
+### 修复（3 处小问题）
+
+1. **`pgr pgi build` 帮助文本残留**："(12,8) canonical" 与默认 syncmer 8/5
+   不符、"length -k" 笔误；改为 "syncmer 8/5" 与 "length k"。
+2. **`sd search --engine lastz` 过滤器的注释行噪音**：`lav_to_psl` 输出
+   `##aligner`/`##blastzParms` 等元数据行，PSL 过滤循环不跳过 `#` 行，
+   每行都触发 `parse_or_warn` 的 warn；改为跳过 `#` 开头的行（与
+   `parse_paf` 一致）。
+3. **e_align 的 span 过滤负数回绕**：`(psl.t_end - psl.t_start) as usize`
+   在畸形记录（t_end < t_start）时会回绕成超大 span 通过长度过滤；改为
+   `.max(0)`。pgr 自产 PSL 恒合法，属防御性修复。
+
+### 文档补充
+
+* align-pgi.md：注明 .gz 输入的同名索引约定为 `<name-without-.gz>.pgi`
+  （如 `ref.fa.gz` → `ref.fa.pgi`）。
+
+### 鲁棒性验证（无 panic）
+
+* N 密集（60% N）、poly-A、GC-rich 基因组：freq 过滤正确清零，无 panic；
+* 空 FASTA / 短于 k 的 contig / 空 PAF / 空 BED：友好报错或空输出；
+* `--min-shared 0` → "min_shared must be in 1..=40"；999 → 静默截断到 k；
+* gz 输入贯穿 sd search（pgi/lastz）、s-kmer、e-kmer；lastz 元数据行噪音
+  已消除；
+* s-align 无重复基因组输出 `{"chr2m": "-"}`（spanr 空区间占位），
+  `pgr fa mask` 对 `-` 占位处理正确（masked 输出与输入一致）；
+* sd run 端到端（pgi/lastz 两引擎）坐标正确（tandem 双拷贝 1189 bp、
+  CORE 标记）；psl lift 畸形行非严格模式跳过；sd cover 畸形 PAF 友好报错；
+* 索引/序列校验（contig 名与长度不匹配）友好报错。
+
+### 记录项（未改）
+
+* sd search lastz 的 `##` 注释行此前产生 warn 噪音（已修）；
+* `rept s-align` / `s-kmer` 无重复基因组的 `"-"` 占位属 spanr 约定，已确认
+  下游 `fa mask` 正确消费。
+
+## 复核轮（第十一轮，2026-08-03）
+
+畸形输入攻击（Zero Panic 专项）：发现并修复 2 处真实缺陷。962 测试全绿。
+
+### 修复 1：`sd decompose` 负链投影 usize 下溢 panic
+
+`decompose_fasta` 的负链投影 `(gend - end, gend - begin)` 在畸形 header
+（start > end，或 header 跨度小于序列长度导致片段 end > gend）时下溢，
+debug 构建直接 panic（"attempt to subtract with overflow"），违反 Zero
+Panic 原则。修复：`parse_header` 拒绝 end < start 的区间；投影改用
+`saturating_sub`/`saturating_add`（正链同样防护超大头坐标）。新增回归测试
+`malformed_header_does_not_panic`。
+
+### 修复 2：`rept s-align` 带点 contig 名被 spanr 截断
+
+除 s_align 外，所有 spanr 管线（e-kmer/s-kmer/e-align/trf）都做了
+`c1..cN` 名字映射以规避 spanr 对带点 contig 名的截断（`NC_000913.1` →
+`1`）；s_align 的 `run_self_align_pipeline` 漏了这一步，输出 runlist 的 key
+被截断（实测 `{"1": "1001-1500,1801-2300"}`），下游 `fa mask` 无法命中。
+修复：复用 chrom.sizes 建立映射，对 coverage.rg 改名后再跑 spanr，最后
+恢复真实名字并丢弃 `-` 占位（与其他管线一致）。新增集成测试
+`command_rept_s_align_dotted_name`。
+
+### 记录项（未改）
+
+1. `sd cluster` 引用基因组中不存在的 contig 时报错信息含混乱的 name 拼接
+   （`[?#missing+#0#50.missing(+):1-50]`），可读性差但正确报错、无 panic；
+2. `sd search --engine pgi` 传目录输入时内层 `align pgi` 报错被 cmd_lib
+   包装成不透明的 "Running [...] exited with error"（lastz 引擎支持目录）；
+3. 截断 .pgi 的报错不一致：query 侧（mmap）报 "truncated index records"，
+   reference 侧（stream）与 `pgi stat`（read）报 "reading index records /
+   failed to fill whole buffer"——均可读、无 panic，仅措辞不统一；
+4. 其余畸形输入（损坏 PSL/PAF/MAF、垃圾 .pgi、空 FASTA、超长坐标、负
+   span）均无 panic。
+
+### 复核验证结果
+
+* sd run 带点 contig 全管线（search→align→cluster→decompose→cover）端到端
+  正确（`NC_000913.1` 两个 1189 bp 拷贝、CORE 标记）；
+* e_align soft-mask 警告正常触发；
+* 全量 962 测试通过（新增 decompose 单测与 s_align 带点集成测试各 1），
+  fmt / clippy 干净。
+
+## 复核轮（第十二轮，2026-08-03）
+
+lastz 失败诊断专项。修复 2 处问题，962 测试全绿。
+
+### 修复 1：lastz 失败原因被吞掉
+
+`run_lastz` 用 `cmd.status()` 丢弃 lastz 的 stderr，任何失败都只报
+"lastz failed for N of M jobs"，无法诊断原因。改为 `cmd.output()` 并记录
+首个失败的 stderr，纳入最终报错。实测多 contig 输入现在报
+"target file contains more than one sequence..."，gz 输入报
+"bad fasta character ... (ascii 1F)"。
+
+### 修复 2：`align lastz` 帮助文本虚假的 `[multiple]` 声明
+
+帮助文本声称 "Adding required modifiers: [multiple][nameparse=darkspace]"，
+但 LAV 输出与 lastz 的 `[multiple]` action 不兼容（实测直接报错），代码也
+从未添加。修正帮助文本：删除 `[multiple]`，注明每个输入文件必须单序列
+（多 contig 需 `pgr fa split name` 拆分或传目录）、输入须为纯文本 FASTA
+（lastz 不读 gz）。docs/align-lastz.md 与 docs/sd.md 同步补充。
+
+### 复核验证结果
+
+* `sd search --engine lastz` 多 contig / gz 输入的报错现在可直接定位原因；
+* 单 contig 正常输入不受影响；
+* 全量 962 测试通过，fmt / clippy 干净。
+
+## 复核轮（第十三轮，2026-08-03）
+
+参数默认值与文档系统核对 + 输入格式边界测试。修复 1 处小问题，962 测试
+全绿。
+
+### 修复
+
+* sd search / sd cross 的 `--min-identity` 帮助文本写 "0.0-1.0"，与校验
+  `(0, 1]` 不符（第 8 轮收紧范围时未同步帮助）；改为 "(0, 1]"。
+
+### 验证结果
+
+* 全部 14 个 sd/rept/align 子命令的 --help 与 docs 逐一核对：默认值、短
+  选项、枚举值全部一致（此前轮次已修 align-lastz `-s`、align.md 示例等）；
+* `sd search` pgi 引擎接受 2bit 输入（align pgi 原生支持），docs 未声明但
+  可用；
+* `e-align` 的 gz 重复库输入正常；
+* `rept s-align` 传 2bit 报错不透明（cmd_lib 包装），但 2bit 不在其文档
+  范围内；
+* 全量 962 测试通过，fmt / clippy 干净。
+
+### 记录项（未改）
+
+* `s_align` / `sd search --engine pgi` 传不支持的类型（2bit / 目录）时，
+  内层命令错误被 cmd_lib 包装成不透明的 "Running [...] exited with
+  error"——不 panic、有报错，仅可读性差。
+
+## 复核轮（第十四轮，2026-08-03）
+
+引擎交叉验证 + lav 解析器噪音清理。修复 1 处小问题，962 测试全绿。
+
+### 修复
+
+* lav 解析器对 lastz 输出的 `m { ... }`（mask）stanza 没有专门处理，任何
+  非严格模式转换（如 `sd search --engine lastz`）都会对每个文件 warn 一次
+  "skipping unknown lav stanza: Unknown(\"m {\")"。新增 `LavStanza::Mask`
+  变体并静默跳过（严格模式也接受）。
+
+### 交叉验证
+
+* 同一 tandem 基因组上 pgi 引擎与 lastz 引擎的 SD 检出一致：两者都找到
+  两个 1200 bp 拷贝（t 0-1200 ↔ q 1200-2400 及反向），pgi 边界修剪 2 bp
+  （shared-k-mer 种子边界），lastz 精确 1200 bp——坐标一致性确认 pgi
+  修复后的输出可靠；
+* lastz 引擎 warn 噪音消除后输出不变（2 条命中）。
+
+### 复核验证结果
+
+* 全量 962 测试通过，fmt / clippy 干净。
+
+## 复核轮（第十五轮，2026-08-03）
+
+行为语义专项验证。**未发现新问题**——按约定（每轮发现问题则继续新的一轮），
+审计循环到此终止。
+
+### 验证内容（全部通过）
+
+1. **引擎交叉验证**：同一 tandem 基因组上 pgi 与 lastz 引擎检出同一对
+   1200 bp 拷贝（t 0-1200 ↔ q 1200-2400 及反向），pgi 边界修剪 2 bp
+   （shared-k-mer 种子边界），坐标一致；
+2. **重排 SD 保留**：倒位重复（fwd + RC 拷贝）经 `sd align`（chainnet
+   无 --syn）后产出两条 `-` 链 PAF，重排 SD 保留 ✓；
+3. **倒位重复全管线**：`sd run` 端到端输出两个 1155 bp 的 elementary SD，
+   坐标正确（fwd 1536-2691 `+`、RC 3209-4364 `-`），同 set_id、CORE ✓；
+4. **sd cluster minus 链序列提取**：按 pgr 内部 PAF 约定（qstart/qend 恒为
+   正向坐标），提取的序列 = 该区间反向互补，逐碱基一致（此前一次误报为
+   我构造的测试 PAF 坐标语义错误，非代码问题）；
+5. **e-kmer --keep-index 缓存**：首次构建（FastK on repeat）→ 二次复用
+   （reused repeat table）→ touch 库文件后失效重建，均符合文档；
+6. **sd cover 多集合**：三个 elementary set 各覆盖不同 hit，全部 CORE ✓；
+7. **e_align identity 过滤**：min-identity 1.0 只报精确拷贝（505-897），
+   0.95 同时报 1-mismatch 变体拷贝（1105-1497）✓；
+8. **s_align 多 contig**：chr1 重复检出、chr2 无重复不出现 ✓；
+9. **sd align 空 PSL**：chainnet 空 MAF → 空 PAF，无 panic。
+
+### 结论
+
+第 9-15 轮累计修复 9 处缺陷（2 处重大索引/链算法、2 处功能、5 处小问题/
+文档/噪音），全部有回归测试或端到端验证；当前 962 测试全绿、fmt /
+clippy 干净；第十五轮无新问题，审计循环结束。

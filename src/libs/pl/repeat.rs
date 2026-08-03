@@ -289,7 +289,9 @@ pub fn run_align_repeat_pipeline(opts: &AlignRepeatOpts) -> anyhow::Result<()> {
         let Ok(psl) = line.parse::<crate::libs::fmt::psl::Psl>() else {
             continue;
         };
-        let span = (psl.t_end - psl.t_start) as usize;
+        // Guard against a malformed record with t_end < t_start (a negative
+        // difference would wrap into a huge span and pass the length filter).
+        let span = (psl.t_end - psl.t_start).max(0) as usize;
         if (psl.ident() as f64) < opts.min_identity || span < opts.min_len {
             continue;
         }
@@ -449,10 +451,61 @@ pub fn run_self_align_pipeline(opts: &SelfAlignOpts) -> anyhow::Result<()> {
         return Ok(());
     }
 
+    // `spanr coverage` truncates dotted contig names (e.g. `NC_000913.1` ->
+    // `1`) at the last '.', so map real names to dot-free placeholders and
+    // restore them after the spanr pass (same convention as the other
+    // spanr pipelines).
+    let chrs = crate::libs::io::read_names::<Vec<String>>("chrom.sizes")?;
+    let mut name_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut safe_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    for c in &chrs {
+        let s = format!("c{}", name_map.len() + 1);
+        name_map.insert(c.clone(), s.clone());
+        safe_map.insert(s, c.clone());
+    }
+    let reader = crate::reader("coverage.rg")?;
+    let mut writer = crate::writer("coverage.safe.rg")?;
+    for line in std::io::BufReader::new(reader).lines() {
+        let line = line?;
+        if line.trim().is_empty() {
+            continue;
+        }
+        let (name, rest) = line
+            .split_once(':')
+            .ok_or_else(|| anyhow::anyhow!("invalid .rg line: {}", line))?;
+        let safe = name_map
+            .get(name)
+            .cloned()
+            .unwrap_or_else(|| name.to_string());
+        writer.write_fmt(format_args!("{}:{}\n", safe, rest))?;
+    }
+    drop(writer);
+
     run_cmd!(info "==> Coverage")?;
     run_cmd!(
-        spanr coverage coverage.rg -m ${min_depth} -o ${abs_outfile}
+        spanr coverage coverage.safe.rg -m ${min_depth} -o out.json
     )?;
+
+    // Restore the real contig names in the runlist json.
+    let mut val: serde_json::Value = serde_json::from_slice(&std::fs::read("out.json")?)?;
+    if let Some(obj) = val.as_object_mut() {
+        let old = std::mem::take(obj);
+        for (k, v) in old {
+            // Drop the empty marker `-` so the runlist stays clean.
+            if v.as_str() == Some("-") {
+                continue;
+            }
+            obj.insert(safe_map.get(&k).cloned().unwrap_or(k), v);
+        }
+    }
+    let out_bytes = serde_json::to_vec_pretty(&val)?;
+    if abs_outfile == "stdout" {
+        let mut w = crate::writer("stdout")?;
+        w.write_all(&out_bytes)?;
+        w.write_all(b"\n")?;
+    } else {
+        std::fs::write(abs_outfile, out_bytes)?;
+    }
 
     Ok(())
 }

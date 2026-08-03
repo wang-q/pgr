@@ -4,6 +4,7 @@ use rayon::prelude::*;
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Mutex;
 
 /// Default scoring matrix for lastz (Human vs Mouse / Macaque / Cow).
 pub const MATRIX_DEFAULT: &str = "   A    C    G    T
@@ -200,6 +201,9 @@ pub fn run_lastz(
     let is_self = opts.is_self;
     let failures = AtomicUsize::new(0);
     let n_jobs = jobs.len();
+    // First failure's stderr, so the final error explains *why* lastz failed
+    // (e.g. multi-contig input, gzipped input, missing sequence).
+    let first_err: Mutex<Option<String>> = Mutex::new(None);
 
     pool.install(|| {
         jobs.par_iter().for_each(|(target_file, query_file)| {
@@ -260,15 +264,22 @@ pub fn run_lastz(
 
             log::info!("{:?}", cmd);
 
-            match cmd.status() {
-                Ok(status) if status.success() => {}
-                Ok(status) => {
+            match cmd.output() {
+                Ok(out) if out.status.success() => {}
+                Ok(out) => {
                     log::warn!(
                         "lastz failed (exit {:?}) for {} vs {}",
-                        status,
+                        out.status,
                         t_base,
                         q_base
                     );
+                    let msg = String::from_utf8_lossy(&out.stderr).trim().to_string();
+                    if !msg.is_empty() {
+                        let mut guard = first_err.lock().unwrap();
+                        if guard.is_none() {
+                            *guard = Some(msg);
+                        }
+                    }
                     failures.fetch_add(1, Ordering::Relaxed);
                 }
                 Err(err) => {
@@ -286,7 +297,12 @@ pub fn run_lastz(
 
     let n_failures = failures.load(Ordering::Relaxed);
     if n_failures > 0 {
-        anyhow::bail!("lastz failed for {n_failures} of {n_jobs} jobs");
+        let detail = first_err.lock().unwrap().clone().unwrap_or_default();
+        if detail.is_empty() {
+            anyhow::bail!("lastz failed for {n_failures} of {n_jobs} jobs");
+        } else {
+            anyhow::bail!("lastz failed for {n_failures} of {n_jobs} jobs: {detail}");
+        }
     }
     Ok(())
 }

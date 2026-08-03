@@ -12,6 +12,10 @@ recursion, and provides predefined parameter sets (presets) for common species
 comparisons. The output is LAV format; convert it with `pgr lav to-psl`.
 
 **Note**: `lastz` must be installed and available in your `PATH`.
+**Note**: each input FASTA file must contain a single sequence (LAV output is
+incompatible with lastz's `[multiple]` action) and must be plain text —
+gzipped files are not read by lastz. Split multi-contig genomes with
+`pgr fa split name` or pass directories of single-contig files.
 
 ## Options
 

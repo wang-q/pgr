@@ -72,7 +72,7 @@ Examples:
                 .long("min-identity")
                 .default_value("0.90")
                 .value_parser(clap::value_parser!(f64))
-                .help("Minimum block identity (0.0-1.0)"),
+                .help("Minimum block identity (0, 1]"),
         )
         .arg(crate::cmd_pgr::args::parallel_arg_with_default("4"))
 }

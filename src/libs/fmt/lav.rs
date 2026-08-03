@@ -29,6 +29,8 @@ pub enum LavStanza {
     Alignment {
         blocks: Vec<Block>,
     },
+    /// The `m { ... }` mask stanza (lastz writes it; ignored by converters).
+    Mask,
     Unknown(String),
 }
 
@@ -59,6 +61,9 @@ impl<R: BufRead> LavReader<R> {
                 return Ok(Some(self.parse_d()?));
             } else if line.starts_with("a {") {
                 return Ok(Some(self.parse_a()?));
+            } else if line.starts_with("m {") {
+                self.skip_stanza()?;
+                return Ok(Some(LavStanza::Mask));
             } else if line.ends_with('{') {
                 self.skip_stanza()?;
                 return Ok(Some(LavStanza::Unknown(line.to_string())));
@@ -607,6 +612,7 @@ pub fn lav_to_psl<R: BufRead, W: Write>(
                     writeln!(writer, "{}", comment)?;
                 }
             }
+            LavStanza::Mask => {}
             other => {
                 if strict {
                     anyhow::bail!("unknown lav stanza: {:?}", other);
@@ -684,13 +690,11 @@ m {
             _ => panic!("Expected Alignment stanza, got {:?}", stanza),
         }
 
-        // 4. m stanza (Unknown)
+        // 4. m stanza (mask, ignored)
         let stanza = reader.next_stanza().unwrap().unwrap();
         match stanza {
-            LavStanza::Unknown(line) => {
-                assert!(line.contains("m {"));
-            }
-            _ => panic!("Expected Unknown stanza, got {:?}", stanza),
+            LavStanza::Mask => {}
+            _ => panic!("Expected Mask stanza, got {:?}", stanza),
         }
 
         // End
