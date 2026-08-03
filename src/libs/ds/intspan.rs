@@ -12,7 +12,7 @@ use std::vec::Vec;
 ///
 /// # SYNOPSIS
 ///
-/// ```ignore
+/// ```
 /// use pgr::libs::ds::IntSpan;
 ///
 /// let mut ints = IntSpan::new();
@@ -31,14 +31,14 @@ use std::vec::Vec;
 /// assert_eq!(ints.is_finite(), true);
 /// assert_eq!(ints.is_pos_inf(), false);
 /// assert_eq!(ints.is_neg_inf(), false);
-/// ```ignore
+/// ```
 ///
-/// ```ignore
+/// ```
 /// # use pgr::libs::ds::IntSpan;
 /// let ints = IntSpan::from("1-3,5,7,9,100-999,1001-10000");
 /// assert_eq!(ints.to_string(), "1-3,5,7,9,100-999,1001-10000");
 /// assert_eq!(ints.cardinality(), 9906);
-/// ```ignore
+/// ```
 ///
 /// # DESCRIPTION
 ///
@@ -61,7 +61,7 @@ use std::vec::Vec;
 /// fairly large integer. Specifically the constants `neg_inf` and `pos_inf` are defined to be (-2^31+1)
 /// and (2^31-2) respectively. To create an infinite set invert an empty one:
 ///
-/// ```ignore
+/// ```
 /// # use pgr::libs::ds::IntSpan;
 /// let mut ints = IntSpan::new();
 /// ints.invert();
@@ -73,12 +73,12 @@ use std::vec::Vec;
 /// assert_eq!(ints.is_finite(), false);
 /// assert_eq!(ints.is_pos_inf(), true);
 /// assert_eq!(ints.is_neg_inf(), true);
-/// ```ignore
+/// ```
 ///
 /// Sets need only be bounded in one direction - for example this is the set of all positive integers
 /// (assuming you accept the slightly feeble definition of infinity we're using):
 ///
-/// ```ignore
+/// ```
 /// # use pgr::libs::ds::IntSpan;
 /// let mut ints = IntSpan::new();
 /// ints.add_pair(1, ints.get_pos_inf());
@@ -90,7 +90,7 @@ use std::vec::Vec;
 /// assert_eq!(ints.is_finite(), false);
 /// assert_eq!(ints.is_pos_inf(), true);
 /// assert_eq!(ints.is_neg_inf(), false);
-/// ```ignore
+/// ```
 ///
 /// This Rust crate is ported from the Java class `jintspan` and the Perl module `AlignDB::IntSpan`,
 /// which contains many codes from `Set::IntSpan`, `Set::IntSpan::Fast` and `Set::IntSpan::Island`.
@@ -312,10 +312,10 @@ mod create {
 impl IntSpan {
     /// Returns the runs in IntSpan, as a vector of Tuple(lower, upper)
     ///
-    /// ```ignore
+    /// ```
     /// let ints = pgr::libs::ds::IntSpan::from("1-2,4-7");
     /// assert_eq!(ints.spans(), vec![(1, 2), (4, 7)]);
-    /// ```ignore
+    /// ```
     pub fn spans(&self) -> Vec<(i32, i32)> {
         (0..self.span_size())
             .map(|i| {
@@ -328,10 +328,10 @@ impl IntSpan {
 
     /// Returns the runs in IntSpan, as a vector of lower, upper
     ///
-    /// ```ignore
+    /// ```
     /// let ints = pgr::libs::ds::IntSpan::from("1-2,4-7");
     /// assert_eq!(ints.ranges(), vec![1, 2, 4, 7]);
-    /// ```ignore
+    /// ```
     pub fn ranges(&self) -> Vec<i32> {
         self.spans()
             .into_iter()
@@ -341,10 +341,10 @@ impl IntSpan {
 
     /// Returns the runs in IntSpan, as a vector of String
     ///
-    /// ```ignore
+    /// ```
     /// let ints = pgr::libs::ds::IntSpan::from("1-2,4-7");
     /// assert_eq!(ints.runs(), vec!["1-2".to_string(), "4-7".to_string()]);
-    /// ```ignore
+    /// ```
     pub fn runs(&self) -> Vec<String> {
         self.spans()
             .into_iter()
@@ -354,11 +354,11 @@ impl IntSpan {
 
     /// Returns the runs in IntSpan, as a vector of IntSpan
     ///
-    /// ```ignore
+    /// ```
     /// let ints = pgr::libs::ds::IntSpan::from("1-2,4-7");
     /// assert_eq!(ints.intses().iter().map(|e| e.to_string()).collect::<Vec<String>>(),
     ///     vec!["1-2".to_string(), "4-7".to_string()]);
-    /// ```ignore
+    /// ```
     pub fn intses(&self) -> Vec<IntSpan> {
         self.spans()
             .into_iter()
@@ -1339,7 +1339,7 @@ impl IntSpan {
     ///
     /// `set.overlap(&other)` equivalent to `set.intersect(&other).cardinality()`
     ///
-    /// ```ignore
+    /// ```
     /// # use pgr::libs::ds::IntSpan;
     /// let set = IntSpan::from("1");
     /// let other = IntSpan::from("1");
@@ -1352,7 +1352,7 @@ impl IntSpan {
     /// let set = IntSpan::from("1-5,6");
     /// let other = IntSpan::from("6-10");
     /// assert_eq!(set.overlap(&other), 1);
-    /// ```ignore
+    /// ```
     pub fn overlap(&self, other: &Self) -> i32 {
         self.intersect(other).cardinality()
     }
@@ -1364,7 +1364,7 @@ impl IntSpan {
     /// * If the sets do not overlap, $d is positive and given by the distance on the integer line
     ///   between the two closest islands of the sets.
     ///
-    /// ```ignore
+    /// ```
     /// # use pgr::libs::ds::IntSpan;
     /// let set = IntSpan::from("1");
     /// let other = IntSpan::from("1");
@@ -1396,7 +1396,7 @@ impl IntSpan {
     /// assert_eq!(set.distance(&other), 1);
     /// let other = IntSpan::from("17-20");
     /// assert_eq!(set.distance(&other), 2);
-    /// ```ignore
+    /// ```
     pub fn distance(&self, other: &Self) -> i32 {
         if self.is_empty() || other.is_empty() {
             0
@@ -1439,7 +1439,7 @@ impl IntSpan {
     ///
     /// If the integer is not in the ints, an empty ints is returned
     ///
-    /// ```ignore
+    /// ```
     /// # use pgr::libs::ds::IntSpan;
     /// let tests = vec![
     ///     ("1-5", 1, "1-5"),
@@ -1457,7 +1457,7 @@ impl IntSpan {
     ///
     ///     assert_eq!(res.to_string().as_str(), *exp_ints);
     /// }
-    /// ```ignore
+    /// ```
     pub fn find_islands_n(&self, val: i32) -> IntSpan {
         let mut island = Self::new();
 
@@ -1476,7 +1476,7 @@ impl IntSpan {
     ///
     /// If `ints` and `other` don't intersect, an empty ints is returned
     ///
-    /// ```ignore
+    /// ```
     /// # use pgr::libs::ds::IntSpan;
     /// let tests = vec![
     ///     ("1-8", "7-8", "1-8"),
@@ -1493,7 +1493,7 @@ impl IntSpan {
     ///
     ///     assert_eq!(res.to_string().as_str(), *exp_ints);
     /// }
-    /// ```ignore
+    /// ```
     pub fn find_islands_ints(&self, other: &Self) -> IntSpan {
         let mut island = Self::new();
 

@@ -11,7 +11,7 @@ use std::str;
 use super::coords::indel_intspan;
 use crate::reader;
 
-/// ```ignore
+/// ```
 /// match which::which("spoa") {
 ///     Ok(_) => {
 ///         let seqs = vec![
@@ -119,7 +119,7 @@ pub fn get_consensus_poa_external(
     Ok(seq)
 }
 
-/// ```ignore
+/// ```
 /// let seqs = vec![
 /// //              *
 ///     b"TTAGCCGCTGAGAAGC".as_ref(),
@@ -186,7 +186,7 @@ pub fn get_consensus_poa_builtin(
 
 /// Returns Strings to avoid lifetime issues
 ///
-/// ```ignore
+/// ```
 /// match which::which("clustalw") {
 ///     Ok(_) => {
 ///         let seqs = vec![

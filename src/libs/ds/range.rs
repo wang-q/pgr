@@ -65,13 +65,13 @@ impl Range {
 
     /// Constructed from chr, start and end
     ///
-    /// ```ignore
+    /// ```
     /// # use pgr::libs::ds::Range;
     /// let range = Range::from("I", 1, 100);
     /// # assert_eq!(*range.chr(), "I");
     /// # assert_eq!(*range.start(), 1);
     /// # assert_eq!(*range.end(), 100);
-    /// ```ignore
+    /// ```
     pub fn from(chr: &str, start: i32, end: i32) -> Self {
         Self {
             name: "".to_string(),
@@ -84,7 +84,7 @@ impl Range {
 
     /// Constructed from chr, start and end
     ///
-    /// ```ignore
+    /// ```
     /// # use pgr::libs::ds::Range;
     /// let range = Range::from_full("S288c", "I", "-", 1, 100);
     /// # assert_eq!(*range.name(), "S288c");
@@ -92,7 +92,7 @@ impl Range {
     /// # assert_eq!(*range.strand(), "-");
     /// # assert_eq!(*range.start(), 1);
     /// # assert_eq!(*range.end(), 100);
-    /// ```ignore
+    /// ```
     pub fn from_full(name: &str, chr: &str, strand: &str, start: i32, end: i32) -> Self {
         Self {
             name: name.to_string(),
@@ -105,7 +105,7 @@ impl Range {
 
     /// Constructed from string
     ///
-    /// ```ignore
+    /// ```
     /// # use pgr::libs::ds::Range;
     /// let range = Range::from_str("I:1-100");
     /// # assert_eq!(*range.chr(), "I");
@@ -121,7 +121,7 @@ impl Range {
     /// # assert_eq!(*range.name(), "S288c");
     /// # assert_eq!(*range.strand(), "-");
     /// # assert_eq!(range.to_string(), "S288c.I(-):27070-29557");
-    /// ```ignore
+    /// ```
     // Inherent `from_str` kept API-identical to the external intspan crate;
     // call sites use `Range::from_str`, not `str::parse`.
     #[allow(clippy::should_implement_trait)]
@@ -134,7 +134,7 @@ impl Range {
 
     /// Valid or not
     ///
-    /// ```ignore
+    /// ```
     /// # use pgr::libs::ds::Range;
     /// let range = Range::from("I", 1, 100);
     /// assert!(range.is_valid());
@@ -142,33 +142,33 @@ impl Range {
     /// assert!(range.is_valid());
     /// let range = Range::from_str("invalid");
     /// assert!(!range.is_valid());
-    /// ```ignore
+    /// ```
     pub fn is_valid(&self) -> bool {
         self.start != 0
     }
 
     /// IntSpan
     ///
-    /// ```ignore
+    /// ```
     /// # use pgr::libs::ds::Range;
     /// let range = Range::from("I", 1, 100);
     /// assert_eq!(range.intspan().to_string(), "1-100");
     /// let range = Range::from_str("I:100");
     /// assert_eq!(range.intspan().to_string(), "100");
-    /// ```ignore
+    /// ```
     pub fn intspan(&self) -> IntSpan {
         IntSpan::from_pair(self.start, self.end)
     }
 
     /// Trim both ends
     ///
-    /// ```ignore
+    /// ```
     /// # use pgr::libs::ds::Range;
     /// let range = Range::from_str("I:100-200");
     /// assert_eq!(range.trim(30).to_string(), "I:130-170");
     /// assert_eq!(range.trim(70).is_valid(), false);
     /// assert_eq!(range.trim(-30).to_string(), "I:70-230");
-    /// ```ignore
+    /// ```
     pub fn trim(&self, n: i32) -> Self {
         let mut start = self.start + n;
         let mut end = self.end - n;
@@ -185,7 +185,7 @@ impl Range {
 
     /// Trim 5p end
     ///
-    /// ```ignore
+    /// ```
     /// # use pgr::libs::ds::Range;
     /// let range = Range::from_str("I(+):100-200");
     /// assert_eq!(range.trim_5p(30).to_string(), "I(+):130-200");
@@ -193,7 +193,7 @@ impl Range {
     /// assert_eq!(range.trim_5p(30).to_string(), "I(-):100-170");
     /// assert_eq!(range.trim_5p(-30).to_string(), "I(-):100-230");
     /// assert_eq!(range.trim_5p(120).is_valid(), false);
-    /// ```ignore
+    /// ```
     pub fn trim_5p(&self, n: i32) -> Self {
         let mut start = if self.strand == "-" {
             self.start
@@ -218,14 +218,14 @@ impl Range {
 
     /// Trim 3p end
     ///
-    /// ```ignore
+    /// ```
     /// # use pgr::libs::ds::Range;
     /// let range = Range::from_str("I(+):100-200");
     /// assert_eq!(range.trim_3p(30).to_string(), "I(+):100-170");
     /// let range = Range::from_str("I(-):100-200");
     /// assert_eq!(range.trim_3p(30).to_string(), "I(-):130-200");
     /// assert_eq!(range.trim_3p(120).is_valid(), false);
-    /// ```ignore
+    /// ```
     pub fn trim_3p(&self, n: i32) -> Self {
         let mut start = if self.strand == "-" {
             self.start + n
@@ -250,14 +250,14 @@ impl Range {
 
     /// Shift to 5p end
     ///
-    /// ```ignore
+    /// ```
     /// # use pgr::libs::ds::Range;
     /// let range = Range::from_str("I(+):100-200");
     /// assert_eq!(range.shift_5p(30).to_string(), "I(+):70-170");
     /// assert_eq!(range.shift_5p(-30).to_string(), "I(+):130-230");
     /// let range = Range::from_str("I(-):100-200");
     /// assert_eq!(range.shift_5p(30).to_string(), "I(-):130-230");
-    /// ```ignore
+    /// ```
     pub fn shift_5p(&self, n: i32) -> Self {
         let mut start = if self.strand == "-" {
             self.start + n
@@ -282,14 +282,14 @@ impl Range {
 
     /// Shift to 3p end
     ///
-    /// ```ignore
+    /// ```
     /// # use pgr::libs::ds::Range;
     /// let range = Range::from_str("I(+):100-200");
     /// assert_eq!(range.shift_3p(30).to_string(), "I(+):130-230");
     /// assert_eq!(range.shift_3p(-30).to_string(), "I(+):70-170");
     /// let range = Range::from_str("I(-):100-200");
     /// assert_eq!(range.shift_3p(30).to_string(), "I(-):70-170");
-    /// ```ignore
+    /// ```
     pub fn shift_3p(&self, n: i32) -> Self {
         self.shift_5p(-n)
     }
@@ -297,7 +297,7 @@ impl Range {
     /// Flanking region of the 5p end.
     /// A negative value for 'n' indicates positions within the range.
     ///
-    /// ```ignore
+    /// ```
     /// # use pgr::libs::ds::Range;
     /// let range = Range::from_str("I(+):100-200");
     /// assert_eq!(range.flank_5p(30).to_string(), "I(+):70-99");
@@ -307,7 +307,7 @@ impl Range {
     /// assert_eq!(range.flank_5p(30).to_string(), "I(-):201-230");
     /// assert_eq!(range.flank_5p(-30).to_string(), "I(-):171-200");
     /// assert_eq!(range.flank_5p(0).is_valid(), false);
-    /// ```ignore
+    /// ```
     pub fn flank_5p(&self, n: i32) -> Self {
         let mut start = if n > 0 {
             if self.strand == "-" {
@@ -344,7 +344,7 @@ impl Range {
 
     /// Flanking region of the 3p end
     ///
-    /// ```ignore
+    /// ```
     /// # use pgr::libs::ds::Range;
     /// let range = Range::from_str("I(+):100-200");
     /// assert_eq!(range.flank_3p(30).to_string(), "I(+):201-230");
@@ -354,7 +354,7 @@ impl Range {
     /// assert_eq!(range.flank_3p(30).to_string(), "I(-):70-99");
     /// assert_eq!(range.flank_3p(-30).to_string(), "I(-):100-129");
     /// assert_eq!(range.flank_3p(0).is_valid(), false);
-    /// ```ignore
+    /// ```
     pub fn flank_3p(&self, n: i32) -> Self {
         let mut start = if n > 0 {
             if self.strand == "-" {
@@ -465,13 +465,13 @@ impl Range {
 
 /// To string
 ///
-/// ```ignore
+/// ```
 /// # use pgr::libs::ds::Range;
 /// let range = Range::from("I", 1, 100);
 /// assert_eq!(range.to_string(), "I:1-100");
 /// let range = Range::from("I", 100, 100);
 /// assert_eq!(range.to_string(), "I:100");
-/// ```ignore
+/// ```
 impl fmt::Display for Range {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.encode())?;

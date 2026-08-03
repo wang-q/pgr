@@ -32,8 +32,8 @@ impl FasEntry {
 
     /// Creates an entry from a range and sequence.
     ///
-    /// ```ignore
-    /// # use crate::libs::ds::Range;
+    /// ```
+    /// # use pgr::libs::ds::Range;
     /// # use pgr::libs::fmt::fas::FasEntry;
     /// let range = Range::from("I", 1, 10);
     /// let seq = "ACAGCTGA-AA".as_bytes().to_vec();
@@ -53,8 +53,8 @@ impl FasEntry {
 
 /// To string
 ///
-/// ```ignore
-/// # use crate::libs::ds::Range;
+/// ```
+/// # use pgr::libs::ds::Range;
 /// # use pgr::libs::fmt::fas::FasEntry;
 /// let range = Range::from("I", 1, 10);
 /// let seq = "ACAGCTGA-AA".as_bytes().to_vec();

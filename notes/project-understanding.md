@@ -82,7 +82,7 @@ src/
     ├── poa/            #   偏序比对 (Partial Order Alignment)
     ├── chain/          #   Chain 算法 (连接、gap 计算、替换矩阵)
     │   └── net/        #     Net 格式处理 (class/filter/to-axt)
-    ├── ds/             #   通用数据结构 (KdTree/GapCalc/BitMap/DupeTree/TopKPurity/best_crossover/merge_intervals/radix_sort)
+    ├── ds/             #   通用数据结构 (KdTree/GapCalc/BitMap/DupeTree/TopKPurity/best_crossover/merge_intervals/radix_sort/IntSpan/Range)
     ├── fas_multiz/     #   fas-multiz 多序列比对合并 (banded_align/merge/windows)
     ├── fasta/          #   FASTA 操作 (chunk/dedup/filter/stat)
     ├── fmt/            #   格式解析 (AXT/FAS/FA/FQ/LAV/MAF/PSL/2bit/VCF)
@@ -125,8 +125,9 @@ src/
 - **解析**: `regex`
 - **并发**: `rayon` (数据并行)、`crossbeam`
 - **生物信息学**: `noodles` (FASTA/FASTQ/BGZF/GFF)、`bio` (生物信息学基础类型)
-- **数据结构**: `petgraph` (图)、`indexmap` (保序 HashMap)、`intspan` (区间集合)、
-  `coitrees` (区间树)、`lru` (LRU 缓存)、`itertools` (迭代器工具)
+- **数据结构**: `petgraph` (图)、`indexmap` (保序 HashMap)、`coitrees` (区间树)、
+  `lru` (LRU 缓存)、`itertools` (迭代器工具)；区间集合 `IntSpan`/`Range` 已从
+  外部 `intspan` crate 迁入自研 `libs/ds/`
 - **哈希/采样**: 多哈希支持 — `rapidhash`、`fxhash`、`murmurhash3`；
   采样 — `minimizer-iter` (minimizer)、`rand` (随机种子)；自研 `libs/syncmer.rs` (closed syncmer)
 - **输出**: `rust_xlsxwriter` (Excel)、`tera` (模板引擎)、`csv` (CSV/TSV)、`flate2` (gzip)
@@ -286,7 +287,8 @@ clustalw/muscle/mafft），充当工作流 glue。这与 `chain`/`net` 模块的
   align 归并→链化→banded 扩展→PSL）
 - `libs/sd/`：分段重复检测核心
 - `libs/ds/`：通用数据结构（KdTree、GapCalc、BitMap、DupeTree、TopKPurity、best_crossover、
-  merge_intervals、radix_sort）
+  merge_intervals、radix_sort），以及从外部 `intspan` crate 迁入的区间集合
+  `IntSpan`（`intspan.rs`）与 `Range`（`range.rs`），API 与原 crate 一致
 - `libs/pl/`：pipeline 共享逻辑（`ctx.rs`：PipelineCtx/CwdGuard；`repeat.rs`：FastK →
   Profex → spanr 重复识别驱动）
 - `libs/syncmer.rs`：closed syncmer 采样（Edgar 2021，syng 移植参考），支撑 `dist` 采样

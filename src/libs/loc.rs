@@ -228,7 +228,7 @@ pub fn read_offset(reader: &mut Input, offset: u64, size: usize) -> anyhow::Resu
     Ok(data_buf)
 }
 
-/// ```ignore
+/// ```
 /// let seq = pgr::libs::loc::get_seq_loc("tests/fas/NC_000932.fa", "NC_000932:1-10").unwrap();
 /// assert_eq!(seq, "ATGGGCGAAC".to_string());
 /// let seq = pgr::libs::loc::get_seq_loc("tests/fas/NC_000932.fa", "NC_000932(-):1-10").unwrap();

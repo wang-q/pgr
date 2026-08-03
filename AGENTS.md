@@ -182,7 +182,6 @@ cargo test
 - **`rayon`**: 并行计算。
 - **`regex`**: 正则表达式。
 - **`coitrees`**: 区间树索引 (PAF/loc 模块核心)。
-- **`intspan`**: 区间集合数据结构。
 - **`petgraph`**: 图结构 (chain/paf 图构建)。
 - **`indexmap`**: 保序 HashMap (名称→id 映射统一模式)。
 - **`serde` + `bincode`**: PAF 索引 `.paf.idx` 持久化。
@@ -207,8 +206,8 @@ cargo test
 - **稳定性原则 (Zero Panic)**: 任何用户输入（包括畸形数据、二进制文件）都不应导致程序 Panic。必须捕获所有错误并返回友好的错误信息。
 - **基准测试**: 性能敏感的变更必须伴随 `benches/` 下的基准测试结果（使用 `criterion`）。
 
-- **文档示例**: 使用 `ignore` 属性标记文档中的代码示例，仅用于展示 API 用法，不作为测试执行
-  **原因**: doctest 编译和执行速度较慢，会显著增加 `cargo test` 的运行时间。将示例标记为 `ignore` 可以保持文档的完整性，同时确保测试快速执行。
+- **文档示例**: 文档中的代码示例默认作为 doctest 执行（不标记 `ignore`），
+  既展示 API 用法，也作为回归测试。
 
 ## 帮助文本规范 (Help Text Style Guide)
 
