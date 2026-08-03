@@ -97,6 +97,55 @@ pgr dist seq dfam.fa.gz -k 17 -w 5 -p 8 |
     tva filter stdin --ge 5:0.9
 ```
 
+## Example run: E. coli MG1655
+
+With the three libraries prepared above, an end-to-end pass on E. coli
+MG1655 (`tests/genome/mg1655.fa.gz`, NC_000913, 4,641,652 bp) looks like
+this:
+
+```bash
+# Run each library serially: FastK-based commands are not safe to run in
+# parallel (three concurrent e-kmer runs crashed FastK with SIGSEGV)
+for lib in tncentral repbase dfam; do
+    pgr rept e-kmer "$HOME/data/repeats/$lib.fa.gz" tests/genome/mg1655.fa.gz \
+        --keep-index -o "$lib.json"
+done
+
+# Tandem repeats complement the interspersed-repeats pass
+pgr rept trf tests/genome/mg1655.fa.gz -o trf.json
+
+# Coverage per library, and pairwise overlap
+pgr fa size tests/genome/mg1655.fa.gz > mg1655.sizes
+spanr stat mg1655.sizes tncentral.json
+spanr statop mg1655.sizes repbase.json dfam.json
+```
+
+Measured on MG1655 (RepeatMasker reference output: 49,379 bp, 1.06%):
+
+| Library | Intervals | Covered (bp / %) | RM overlap |
+| :--- | :--- | :--- | :--- |
+| TnCentral | 48 | 56,969 / 1.23% | 90.7% of RM |
+| RepBase | 38 | 42,763 / 0.92% | 86.0% of RM |
+| Dfam | 39 | 42,386 / 0.91% | 85.5% of RM |
+| `trf` | 84 | 18,768 / 0.40% | 0.8% of RM |
+
+Notes:
+
+*   The three libraries agree on a common core (~42.5 kb): 99.8% of Dfam
+    hits fall inside RepBase and 99.6% of RepBase hits inside TnCentral.
+    TnCentral adds ~14 kb of extra coverage (E. coli IS elements), which is
+    fine for a "mask more, miss less" masking pass.
+*   TnCentral covers 90.7% of the RepeatMasker intervals but masks ~15% more
+    than it; RepBase/Dfam cover 85–86% and miss ~7 kb. For a TE-poor
+    prokaryote all numbers are small; the real differences show on
+    TE-rich eukaryotic genomes.
+*   `trf` does not overlap `e-kmer` at all (tandem vs interspersed
+    complement). `e-kmer` (TnCentral) + `trf` covers ~75.7 kb (1.63%) and
+    ~91.5% of the RepeatMasker intervals.
+*   Run libraries serially: concurrent `e-kmer` runs crashed FastK with
+    SIGSEGV on RepBase. `--keep-index` caches each library table for reuse
+    (needs a writable directory next to the library).
+
 ## RepeatMasker (reference)
 
 RepeatMasker remains the reference annotation tool. Example run through a
