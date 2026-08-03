@@ -235,6 +235,44 @@ fn command_sd_run_end_to_end() {
     );
 }
 
+/// `sd run` on a plain-gzip (non-BGZF) genome must work end to end: the
+/// `.loc`-based cluster step used to fail on plain gzip (it only accepted
+/// plain or BGZF files), even though search/align already accept it.
+#[test]
+fn command_sd_run_gzipped_genome() {
+    use std::io::Write;
+
+    let temp = tempfile::TempDir::new().unwrap();
+    let fa = write_fa(temp.path(), "genome", &tandem_genome());
+    let gz = temp.path().join("genome.fa.gz");
+    let mut encoder = flate2::write::GzEncoder::new(
+        fs::File::create(&gz).unwrap(),
+        flate2::Compression::default(),
+    );
+    encoder
+        .write_all(fs::read_to_string(&fa).unwrap().as_bytes())
+        .unwrap();
+    encoder.finish().unwrap();
+
+    let outdir = temp.path().join("sd_out");
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "sd",
+            "run",
+            gz.to_str().unwrap(),
+            "-o",
+            outdir.to_str().unwrap(),
+        ])
+        .run();
+    assert!(stderr.contains("wrote"), "sd run on gz failed: {stderr}");
+    let bed = fs::read_to_string(outdir.join("out.elem.bed")).unwrap();
+    assert!(bed.contains("CORE"), "expected CORE rows, got: {bed}");
+    assert!(
+        !temp.path().join("genome.fa.gz.loc").exists(),
+        "no stray .loc may be written next to a gzip input"
+    );
+}
+
 /// Regression: `sd run --engine lastz --preset <p>` used to pass
 /// `"--preset set01"` as a single argv element to the inner `sd search`,
 /// which clap rejects ("unexpected argument"). The preset must expand to

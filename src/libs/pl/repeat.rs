@@ -8,12 +8,19 @@ use std::path::{Path, PathBuf};
 /// Run `Profex -z genome` per chromosome and write `.rg` files.
 ///
 /// For each chromosome, runs `Profex -z genome <sn>` writing `prof.<sn>.txt`,
-/// then scans lines with `re_prof` capturing `start` and `end` (1-based inclusive
-/// in output). If `min_depth` is set and the regex has a `depth` capture group,
-/// entries with depth below the threshold are skipped. Returns the list of
-/// `prof.<sn>.rg` file names.
+/// then scans lines with `re_prof` capturing `start` and `end`. Profex prints
+/// the 0-based k-mer start of each run and closes it with the 1-based inclusive
+/// end (start + run length + kmer - 1), so the `.rg` output is 1-based
+/// inclusive with `start + 1` and `end` as-is. If `min_depth` is set and the
+/// regex has a `depth` capture group, entries with depth below the threshold
+/// are skipped. `Profex -z` never closes the final run of a read (its end and
+/// depth are omitted); when no depth threshold is applied (e.g. e-kmer) the
+/// run is closed with the chromosome length from `lens`, and with a threshold
+/// (e.g. s-kmer) it is conservatively dropped since its depth is unknown.
+/// Returns the list of `prof.<sn>.rg` file names.
 pub fn run_profex_per_chr(
     chrs: &[String],
+    lens: &[usize],
     re_prof: &regex::Regex,
     min_depth: Option<usize>,
 ) -> anyhow::Result<Vec<String>> {
@@ -28,10 +35,15 @@ pub fn run_profex_per_chr(
 
         let rg_file = format!("prof.{}.rg", sn);
         let mut writer = crate::writer(&rg_file)?;
+        let mut tail_start: Option<usize> = None;
 
         for line in std::io::BufReader::new(reader).lines() {
             let line = line?;
             let Some(caps) = re_prof.captures(&line) else {
+                // The final run of a read is printed as a bare start.
+                if let Ok(start) = line.trim().parse::<usize>() {
+                    tail_start = Some(start);
+                }
                 continue;
             };
 
@@ -45,9 +57,15 @@ pub fn run_profex_per_chr(
             }
 
             let start = caps["start"].parse::<usize>()? + 1;
-            let end = caps["end"].parse::<usize>()? + 1;
+            let end = caps["end"].parse::<usize>()?;
 
             writer.write_fmt(format_args!("{}:{}-{}\n", chr, start, end))?;
+        }
+
+        if let Some(start) = tail_start {
+            if min_depth.is_none() {
+                writer.write_fmt(format_args!("{}:{}-{}\n", chr, start + 1, lens[i]))?;
+            }
         }
         rg_files.push(rg_file);
     }
@@ -130,7 +148,15 @@ pub fn run_repeat_pipeline(opts: &RepeatOpts) -> anyhow::Result<()> {
     run_cmd!(
         ${pgr} fa size ${abs_infile} -o chr.sizes
     )?;
-    let chrs = crate::libs::io::read_names::<Vec<String>>("chr.sizes")?;
+    let mut chrs = Vec::new();
+    let mut lens = Vec::new();
+    for line in crate::libs::io::read_lines("chr.sizes")? {
+        let mut fields = line.split_whitespace();
+        if let (Some(name), Some(len)) = (fields.next(), fields.next()) {
+            chrs.push(name.to_string());
+            lens.push(len.parse()?);
+        }
+    }
 
     // `spanr cover` truncates dotted contig names (e.g. `NC_000913.1` ->
     // `1`) at the last '.', so map real names to dot-free placeholders and
@@ -147,7 +173,7 @@ pub fn run_repeat_pipeline(opts: &RepeatOpts) -> anyhow::Result<()> {
         })
         .collect();
 
-    let rg_files = run_profex_per_chr(&safe_chrs, &opts.re_prof, opts.min_depth)?;
+    let rg_files = run_profex_per_chr(&safe_chrs, &lens, &opts.re_prof, opts.min_depth)?;
 
     if count_rg_lines(&rg_files)? == 0 {
         // No repetitive intervals: emit an empty runlist instead of letting

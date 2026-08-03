@@ -49,6 +49,10 @@ pub fn cluster_paf<R: BufRead>(
     if records.is_empty() {
         return Ok(Vec::new());
     }
+    // The `.loc` random-access index only supports plain and BGZF files; a
+    // plain-gzip (non-BGZF) genome is decompressed into a temp file so the
+    // cluster step accepts the same inputs as `sd search` / `sd align`.
+    let (genome_path, _tmp) = plain_gz_to_temp(genome)?;
 
     let mut intervals: Vec<SdInterval> = Vec::new();
     let mut index: HashMap<(String, String, i32, i32, char), usize> = HashMap::new();
@@ -114,7 +118,7 @@ pub fn cluster_paf<R: BufRead>(
     }
 
     // Extract sequences and write one FASTA per cluster.
-    let (mut reader, loc_of) = crate::libs::loc::open_indexed(genome, false)?;
+    let (mut reader, loc_of) = crate::libs::loc::open_indexed(&genome_path, false)?;
     let mut clusters: Vec<SdCluster> = Vec::new();
     for (_root, mut idxs) in groups {
         idxs.sort_by_key(|&i| (intervals[i].chrom.clone(), intervals[i].start));
@@ -149,6 +153,24 @@ pub fn cluster_paf<R: BufRead>(
         }
     }
     Ok(clusters)
+}
+
+/// Return a path the `.loc` index can open: `genome` itself, or a temp
+/// decompression when it is a plain-gzip (non-BGZF) `.gz` file.
+fn plain_gz_to_temp(genome: &str) -> anyhow::Result<(String, Option<tempfile::TempDir>)> {
+    let is_gz = std::path::Path::new(genome)
+        .extension()
+        .and_then(|e| e.to_str())
+        == Some("gz");
+    if !is_gz || crate::libs::io::is_bgzf(genome) {
+        return Ok((genome.to_string(), None));
+    }
+    let dir = tempfile::TempDir::new()?;
+    let out = dir.path().join("genome.plain.fa");
+    let mut reader = crate::libs::io::reader(genome)?;
+    let mut writer = std::io::BufWriter::new(std::fs::File::create(&out)?);
+    std::io::copy(&mut reader, &mut writer)?;
+    Ok((out.to_string_lossy().into_owned(), Some(dir)))
 }
 
 #[cfg(test)]
