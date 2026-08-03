@@ -176,7 +176,7 @@ pgr `libs::fas_multiz` 的 `banded_align.rs` 已按 §2.3–§2.5 直译：
 ### 3.2 已知差异（不追齐）
 
 *   **打分矩阵**：pgr 的 `hoxd55` 与 multiz HOX70 数值完全相同（见
-    §2.4），`--score-scheme hox70` 已作别名；
+    §2.4），直接用 `hoxd55`，未引入 `hox70` 别名；
 *   **v=0 模式**未实现（pgr 渐进合并天然等价 v=1，v=0 价值不明）；
 *   **输入/分块语义**：multiz 是 MAF 块流、逐重叠区合并；pgr 是 fas
     窗口合并。多块输入中"仅共享参考且参考去 gap 不等"的块对在 pgr 的

@@ -82,9 +82,7 @@ impl SubMatrix {
     /// Load from name (preset) or file.
     pub fn from_name(name: &str) -> Result<Self> {
         match name.to_lowercase().as_str() {
-            // `hox70` is multiz's name for the same matrix as `hoxd55`
-            // (HoxD70, gap open 400 / extend 30).
-            "hoxd55" | "hox70" => Ok(Self::hoxd55()),
+            "hoxd55" => Ok(Self::hoxd55()),
             _ => Self::from_file(name),
         }
     }
@@ -268,18 +266,16 @@ mod tests {
     }
 
     #[test]
-    fn test_hox70_alias_matches_hoxd55() {
-        // `hox70` is multiz's name for the same matrix as `hoxd55`
-        // (HoxD70, gap open 400 / extend 30).
-        let hox70 = SubMatrix::from_name("hox70").unwrap();
+    fn test_hoxd55_preset_matches_constructor() {
         let hoxd55 = SubMatrix::from_name("hoxd55").unwrap();
-        assert_eq!(hox70.gap_open, hoxd55.gap_open);
-        assert_eq!(hox70.gap_extend, hoxd55.gap_extend);
+        let expected = SubMatrix::hoxd55();
+        assert_eq!(hoxd55.gap_open, expected.gap_open);
+        assert_eq!(hoxd55.gap_extend, expected.gap_extend);
         for &b1 in b"ACGTacgt" {
             for &b2 in b"ACGTacgt" {
                 assert_eq!(
-                    hox70.get_score(b1 as char, b2 as char),
-                    hoxd55.get_score(b1 as char, b2 as char)
+                    hoxd55.get_score(b1 as char, b2 as char),
+                    expected.get_score(b1 as char, b2 as char)
                 );
             }
         }
