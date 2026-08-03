@@ -232,5 +232,59 @@ fn overlap_enumeration(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, construction, point_membership, overlap_enumeration);
+/// Depth coverage: the `runlist coverage` workload. Compares the sweep-line
+/// implementation against rust-lapper's `depth()` (which the external spanr
+/// used) on the same pre-built interval lists, excluding parsing cost.
+fn coverage_depth(c: &mut Criterion) {
+    let mut group = c.benchmark_group("coverage depth");
+    // rust-lapper's `depth()` is ~100x slower than the sweep line at 1M
+    // intervals (measured in release: 22.8 s vs 0.2 s), which would make
+    // this bench hang for minutes; cap the comparison at 100k.
+    for &n in &[10_000usize, 100_000] {
+        let intervals = random_intervals(n, &mut StdRng::seed_from_u64(n as u64));
+        let lap: Vec<LapInterval<u32, u32>> = intervals
+            .iter()
+            .map(|&(s, e)| LapInterval {
+                start: s,
+                stop: e,
+                val: 0u32,
+            })
+            .collect();
+        group.bench_with_input(
+            BenchmarkId::new("pgr sweep-line", n),
+            &intervals,
+            |b, iv| {
+                b.iter(|| {
+                    let is = pgr::libs::runlist::depth_at_least(black_box(iv), 3);
+                    black_box(is.to_string().len());
+                })
+            },
+        );
+        group.bench_with_input(BenchmarkId::new("lapper depth()", n), &lap, |b, iv| {
+            b.iter_batched(
+                || iv.clone(),
+                |iv| {
+                    let lapper = Lapper::new(iv);
+                    let mut covered = 0usize;
+                    for x in lapper.depth() {
+                        if x.val >= 3 {
+                            covered += (x.stop - x.start) as usize;
+                        }
+                    }
+                    black_box(covered)
+                },
+                criterion::BatchSize::SmallInput,
+            )
+        });
+    }
+    group.finish();
+}
+
+criterion_group!(
+    benches,
+    construction,
+    point_membership,
+    overlap_enumeration,
+    coverage_depth
+);
 criterion_main!(benches);

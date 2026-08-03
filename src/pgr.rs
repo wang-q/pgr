@@ -28,6 +28,7 @@ fn main() -> anyhow::Result<()> {
         .subcommand(cmd_pgr::psl::make_subcommand())
         .subcommand(cmd_pgr::sd::make_subcommand())
         .subcommand(cmd_pgr::rept::make_subcommand())
+        .subcommand(cmd_pgr::runlist::make_subcommand())
         .subcommand(cmd_pgr::pl::make_subcommand())
         .subcommand(cmd_pgr::plot::make_subcommand())
         .subcommand(cmd_pgr::twobit::make_subcommand())
@@ -63,6 +64,7 @@ fn main() -> anyhow::Result<()> {
 * Analysis:
     * sd    - Segmental duplication detection: align, cluster, cover, cross, decompose, run, search
     * rept  - Repeat detection: e-kmer, e-align, s-kmer, s-align, trf
+    * runlist - Runlist interval operations: cover, coverage, span, compare, merge
 
 * Simulation:
     * ms    - Hudson's ms simulator tools: to-dna
@@ -92,6 +94,7 @@ fn main() -> anyhow::Result<()> {
         Some(("psl", sub_matches)) => cmd_pgr::psl::execute(sub_matches),
         Some(("sd", sub_matches)) => cmd_pgr::sd::execute(sub_matches),
         Some(("rept", sub_matches)) => cmd_pgr::rept::execute(sub_matches),
+        Some(("runlist", sub_matches)) => cmd_pgr::runlist::execute(sub_matches),
         Some(("pl", sub_matches)) => cmd_pgr::pl::execute(sub_matches),
         Some(("plot", sub_matches)) => cmd_pgr::plot::execute(sub_matches),
         Some(("2bit", sub_matches)) => cmd_pgr::twobit::execute(sub_matches),

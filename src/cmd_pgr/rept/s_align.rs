@@ -25,7 +25,6 @@ written as a runlist JSON ready for `pgr fa mask`.
 
 * External dependencies
     * lastz
-    * spanr
 
 "###,
         )

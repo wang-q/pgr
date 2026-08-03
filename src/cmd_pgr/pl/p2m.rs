@@ -21,13 +21,12 @@ Key Features:
   reference target. All inputs must be pairwise alignments against this target.
 * Intersection Logic: Only regions present in ALL input files are retained.
   This results in a gap-free core alignment.
-* Automation: Runs `fas cover` (range extraction), `spanr intersect`
+* Automation: Runs `fas cover` (range extraction), `runlist compare`
   (range intersection), `fas slice` (sequence extraction), and `fas join`
   (alignment merging).
 
 Dependencies:
 * `pgr`: This binary itself.
-* `spanr`: A range operation tool (must be in $PATH).
 
 Notes:
 * <infiles> can be plain or gzipped (.fas.gz) block fasta files.
@@ -86,7 +85,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         info.push(outfile.to_string());
     }
 
-    run_cmd!(echo "==> spanr compare")?;
+    run_cmd!(echo "==> runlist compare")?;
     {
         let infiles: Vec<String> = info_of
             .iter()
@@ -96,15 +95,28 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                     .map(|s| s.to_string())
             })
             .collect::<Result<_, _>>()?;
-        let files = infiles.clone();
-        run_cmd!(
-            spanr compare --op intersect $[files] |
-                spanr span stdin --op excise -n 10 -o intersect.json
-        )?;
-        let files = infiles.clone();
-        run_cmd!(
-            spanr merge $[files] intersect.json -o merge.json
-        )?;
+        let first = pgr::libs::runlist::read_json(&infiles[0])?;
+        let first = pgr::libs::runlist::json_to_sets(&first);
+        let mut others = Vec::new();
+        for f in &infiles[1..] {
+            let json = pgr::libs::runlist::read_json(f)?;
+            others.push(pgr::libs::runlist::json_to_set(&json));
+        }
+        let mut res = pgr::libs::runlist::compare_sets(
+            &first,
+            &others,
+            pgr::libs::runlist::CompareOp::Intersect,
+        );
+        // Equivalent of the old `spanr span stdin --op excise -n 10`.
+        for set in res.values_mut() {
+            *set = pgr::libs::runlist::span_op(set, pgr::libs::runlist::SpanOp::Excise, 10);
+        }
+        pgr::libs::runlist::write_sets("intersect.json", &res)?;
+
+        let mut all = infiles.clone();
+        all.push("intersect.json".to_string());
+        let merged = pgr::libs::runlist::merge_files(&all, false)?;
+        pgr::libs::ds::intspan::write_json("merge.json", &merged)?;
     }
 
     run_cmd!(echo "==> pgr fas slice")?;

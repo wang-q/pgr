@@ -18,7 +18,6 @@ functionality of `RepeatMasker`.
 
 * External dependencies
     * FastK / Profex
-    * spanr
 
 "###,
         )

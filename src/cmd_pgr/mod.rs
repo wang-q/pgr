@@ -20,5 +20,6 @@ pub mod pl;
 pub mod plot;
 pub mod psl;
 pub mod rept;
+pub mod runlist;
 pub mod sd;
 pub mod twobit;

@@ -242,7 +242,6 @@ pgr rept e-kmer [OPTIONS] <repeat> <infile>
 ### Dependencies
 
 *   `FastK`, `Profex` (from FastK suite)
-*   `spanr`
 
 ### Differences from RepeatMasker
 
@@ -251,7 +250,7 @@ pgr rept e-kmer [OPTIONS] <repeat> <infile>
 *   **No repeat annotation**: `RepeatMasker` classifies each hit into a repeat family/class (`repeatmasker.out`). `e-kmer` only reports genomic intervals — it never labels a region with its repeat family.
 *   **k-mer sensitivity**: detection relies on k-mers shared with the repeat database. Highly diverged copies sharing few exact k-mers are missed or split into fragments; the `--fill-kmer` / `--fill-fragment` steps bridge small gaps but cannot recover long diverged copies.
 *   **Intervals only**: the output is a runlist of `chr:start-end` intervals (JSON), not a masked sequence. Feed it to `pgr fa mask --runlist` to soft-mask the genome.
-*   **External tools**: requires `FastK` / `Profex` and `spanr` in `$PATH`, plus a repeat database (Dfam, RepBase, etc.).
+*   **External tools**: requires `FastK` / `Profex` in `$PATH`, plus a repeat database (Dfam, RepBase, etc.). Interval merging is done internally by `pgr runlist`.
 *   **Use case**: suitable for a quick, cheap repeat-masking pass on large genomes. For annotation-grade results (family/class labels, consensus coverage), use `RepeatMasker`.
 
 ### Caching the repeat table
@@ -267,13 +266,13 @@ The cache is invalidated automatically when the library file changes
 
 `e-kmer` takes a single repeat library as its positional `repeat` argument.
 To mask against several libraries (e.g. RepBase and Dfam) at once, run once
-per library and merge the resulting runlists with `spanr merge`:
+per library and merge the resulting runlists with `pgr runlist merge`:
 
 ```bash
 pgr rept e-kmer repbase.fa.gz genome.fa -o repbase.json
 pgr rept e-kmer dfam.fa.gz   genome.fa -o dfam.json
 
-spanr merge repbase.json dfam.json -o libs.json
+pgr runlist merge repbase.json dfam.json -o libs.json
 pgr fa mask genome.fa --runlist libs.json -o masked.fa
 ```
 

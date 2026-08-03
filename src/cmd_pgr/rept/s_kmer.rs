@@ -16,7 +16,6 @@ analysis; no repeat library is needed.
 
 * External dependencies
     * FastK / Profex
-    * spanr
 
 "###,
         )

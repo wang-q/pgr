@@ -206,7 +206,7 @@ pub fn run_repeat_pipeline(opts: &RepeatOpts) -> anyhow::Result<()> {
         return Ok(());
     }
 
-    run_repeat_spanr_pipeline(
+    run_repeat_runlist_pipeline(
         &rg_files,
         opts.opt_fk,
         opts.opt_min,
@@ -368,7 +368,7 @@ pub fn run_align_repeat_pipeline(opts: &AlignRepeatOpts) -> anyhow::Result<()> {
         return Ok(());
     }
 
-    run_repeat_spanr_pipeline(
+    run_repeat_runlist_pipeline(
         &["hits.rg".to_string()],
         0,
         opts.min_len,
@@ -525,9 +525,18 @@ pub fn run_self_align_pipeline(opts: &SelfAlignOpts) -> anyhow::Result<()> {
     drop(writer);
 
     run_cmd!(info "==> Coverage")?;
-    run_cmd!(
-        spanr coverage coverage.safe.rg -m ${min_depth} -o out.json
-    )?;
+    let reader = crate::reader("coverage.safe.rg")?;
+    let iv_of = crate::libs::runlist::rg_to_intervals(reader)?;
+    let mut set: std::collections::BTreeMap<String, crate::libs::ds::IntSpan> =
+        std::collections::BTreeMap::new();
+    for (chr, ivs) in &iv_of {
+        set.insert(
+            chr.clone(),
+            crate::libs::runlist::depth_at_least(ivs, min_depth as u32),
+        );
+    }
+    let json = crate::libs::ds::intspan::set2json(&set);
+    std::fs::write("out.json", serde_json::to_vec_pretty(&json)?)?;
 
     // Restore the real contig names in the runlist json.
     let mut val: serde_json::Value = serde_json::from_slice(&std::fs::read("out.json")?)?;
@@ -615,8 +624,8 @@ fn atomic_copy(src: &str, dst: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Run the spanr cover → fill → excise → fill pipeline on `rg_files`.
-pub fn run_repeat_spanr_pipeline(
+/// Run the cover → fill → excise → fill pipeline on `rg_files`.
+pub fn run_repeat_runlist_pipeline(
     rg_files: &[String],
     fk: usize,
     min: usize,
@@ -624,12 +633,22 @@ pub fn run_repeat_spanr_pipeline(
     abs_outfile: &str,
 ) -> anyhow::Result<()> {
     run_cmd!(info "==> Outputs")?;
-    run_cmd!(
-        spanr cover $[rg_files] |
-            spanr span --op fill -n ${fk} stdin |
-            spanr span --op excise -n ${min} stdin |
-            spanr span --op fill -n ${ff} stdin -o ${abs_outfile}
-    )?;
+    let mut set: std::collections::BTreeMap<String, crate::libs::ds::IntSpan> =
+        std::collections::BTreeMap::new();
+    for rg in rg_files {
+        let reader = crate::reader(rg)?;
+        for (chr, is) in crate::libs::runlist::rg_to_set(reader)? {
+            set.entry(chr).or_default().merge(&is);
+        }
+    }
+    // The original pipeline ran `spanr span` three times; folding them into
+    // sequential passes on the merged set gives identical results.
+    let set = crate::libs::runlist::span_op(&set, crate::libs::runlist::SpanOp::Fill, fk as i32);
+    let set = crate::libs::runlist::span_op(&set, crate::libs::runlist::SpanOp::Excise, min as i32);
+    let set = crate::libs::runlist::span_op(&set, crate::libs::runlist::SpanOp::Fill, ff as i32);
+    let mut res = std::collections::BTreeMap::new();
+    res.insert("__single__".to_string(), set);
+    crate::libs::runlist::write_sets(abs_outfile, &res)?;
     Ok(())
 }
 

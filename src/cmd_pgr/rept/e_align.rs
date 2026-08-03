@@ -28,9 +28,6 @@ This command identifies repeats in a genome against an external repeat library
 
 * All operations are running in a tempdir and no intermediate files are retained.
 
-* External dependencies
-    * spanr
-
 "###,
         )
         .arg(

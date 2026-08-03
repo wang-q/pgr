@@ -17,7 +17,6 @@ This command identifies tandem repeats in a genome via `trf`.
 
 * External dependencies
     * trf
-    * spanr
 
 "###,
         )
@@ -178,9 +177,16 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         }
         return Ok(());
     }
-    run_cmd!(
-        spanr cover $[rg_files] -o out.json
-    )?;
+    let mut set: std::collections::BTreeMap<String, pgr::libs::ds::IntSpan> =
+        std::collections::BTreeMap::new();
+    for rg in &rg_files {
+        let reader = pgr::reader(rg)?;
+        for (chr, is) in pgr::libs::runlist::rg_to_set(reader)? {
+            set.entry(chr).or_default().merge(&is);
+        }
+    }
+    let json = pgr::libs::ds::intspan::set2json(&set);
+    std::fs::write("out.json", serde_json::to_vec_pretty(&json)?)?;
 
     // Restore the real contig names in the runlist json.
     let mut val: serde_json::Value = serde_json::from_slice(&std::fs::read("out.json")?)?;

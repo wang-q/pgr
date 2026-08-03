@@ -20,6 +20,7 @@ pub mod pgi;
 pub mod pl;
 pub mod plot;
 pub mod poa;
+pub mod runlist;
 pub mod sd;
 pub mod syncmer;
 pub mod translate;
