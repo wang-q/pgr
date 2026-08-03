@@ -53,6 +53,7 @@ This repository contains many subcommands and end-to-end workflows. Extended and
 are collected in:
 
 - docs/usage_examples.md
+- docs/repeats.md (repeat masking: libraries, RepeatMasker, pgr pl ir/rept/trf)
 
 Below are a few quick examples to get started:
 
@@ -98,4 +99,3 @@ MIT.
 Copyright by Qiang Wang.
 
 Written by Qiang Wang [wang-q@outlook.com](mailto:wang-q@outlook.com), 2024-
-

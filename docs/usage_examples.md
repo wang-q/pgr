@@ -216,55 +216,12 @@ echo -e "tests/pgr/sakai.fa.gz\ntests/pgr/mg1655.fa.gz" |
 
 ```
 
-### Repeats and RepeatMasker
+### Alignment pipelines (lastz, UCSC, multiz)
+
+Repeat masking (libraries, RepeatMasker, and pgr's `pl ir/rept/trf`) is
+documented in [repeats.md](repeats.md).
 
 ```bash
-# TnCentral
-curl -LO https://tncentral.ncc.unesp.br/api/download_blast/nc/tn_in_is
-
-unzip -j tn_in_is 'tncentral_integrall_isfinder.fa'
-gzip -9 -c 'tncentral_integrall_isfinder.fa' > tncentral.fa.gz
-
-pgr fa size tests/pgr/tncentral.fa.gz
-pgr dist seq tests/pgr/tncentral.fa.gz -k 17 -w 5 -p 8 |
-    spanr filter stdin --ge 5:0.9
-
-# RepBase for RepeatMasker
-curl -LO https://github.com/wang-q/ubuntu/releases/download/20190906/repeatmaskerlibraries-20140131.tar.gz
-
-tar xvfz repeatmaskerlibraries-20140131.tar.gz Libraries/RepeatMaskerLib.embl
-
-# https://sourceforge.net/projects/readseq/
-java -jar ~/bin/readseq.jar -f fa Libraries/RepeatMaskerLib.embl
-mv Libraries/RepeatMaskerLib.embl.fasta repbase.fa
-gzip -9 -k repbase.fa
-```
-
-```bash
-singularity run ~/bin/repeatmasker_master.sif /app/RepeatMasker/RepeatMasker \
-    ./genome.fa -xsmall -species "bacteria"
-
-singularity run ~/bin/repeatmasker_master.sif /app/RepeatMasker/util/rmOutToGFF3.pl \
-    ./genome.fa.out > mg1655.rm.gff
-
-spanr gff tests/pgr/mg1655.rm.gff -o tests/pgr/mg1655.rm.json
-```
-
-```bash
-pgr pl ir tests/pgr/tncentral.fa.gz tests/pgr/mg1655.fa.gz \
-    > tests/pgr/mg1655.ir.json
-
-spanr stat tests/pgr/mg1655.chr.sizes tests/pgr/mg1655.ir.json
-
-pgr pl rept tests/pgr/mg1655.fa.gz \
-    > tests/pgr/mg1655.rept.json
-
-pgr pl trf tests/pgr/mg1655.fa.gz \
-    > tests/pgr/mg1655.trf.json
-
-spanr stat tests/pgr/mg1655.chr.sizes tests/pgr/mg1655.rm.json
-spanr statop tests/pgr/mg1655.chr.sizes tests/pgr/mg1655.ir.json tests/pgr/mg1655.rm.json
-
 lastz tests/pgr/pseudocat.fa tests/pgr/pseudopig.fa |
     lavToPsl stdin stdout \
     > tests/pgr/lastz.psl

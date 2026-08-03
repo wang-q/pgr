@@ -508,7 +508,7 @@ chainnet 后消失。`pgr psl chain` 在 2bit 序列缓存优化后（~0.3 s）�
 | [[spoa_port.md]] | Spoa C++ → Rust 移植（POA 引擎） | 已完成（双引擎集成已落地） |
 | [[ms2dna_port.md]] | ms2dna C → Rust 迁移设计 | 已实现（实际命令为 `pgr ms to-dna`） |
 | [[ucsc.md]] | UCSC chain/net/axt/maf pipeline 源码分析与字节级复现验证（E. coli 全流程一致） | 12 步主流程 + `--syn` + medium + SE11 多染色体反向全部字节级一致；剩余见 §4.6 |
-| [[repeatmasker.md]] | 自研 RepeatMasker 替代的可行性评估（完整版 vs 遮蔽版 vs 维持现状，含验证实验设计） | 评估稿，待验证实验 |
+| [[repeatmasker.md]] | 遮蔽版重复标记实现计划（Dfam 全库 + pgi/lastz 比对 → runlist → `fa mask`；明确不做注释/自有库）+ 附录 A 源码梳理（open-4.2.4） | 计划已定，待 §5 验证后固化参数 |
 
 ## 11. 外部工具参考索引（notes/references/）
 

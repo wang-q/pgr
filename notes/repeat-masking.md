@@ -132,6 +132,8 @@ soft-mask 衔接验证：`aaaaaatgcgcggtcagaa` 等区间正确转为小写。
 
 ## 8. 待办 / 注意
 
-*   `ir` 需要用户自备重复库（Dfam/RepBase/TnCentral），本机缺库，端到端测试待补。
+*   `ir` 需要用户自备重复库（Dfam/RepBase/TnCentral，下载与准备见
+    [docs/repeats.md](../docs/repeats.md)），本机缺库，
+    端到端测试待补。
 *   若未来要接近 RepeatMasker 能力，可考虑对检测出的区间补一步 family 注释（如对区间
     重跑库比对），但目前无此需求，不做推测性设计。
