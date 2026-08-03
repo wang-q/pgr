@@ -93,7 +93,7 @@ src/
     ├── pbit/           #   群体基因组压缩核心 (LZ-diff/CIGAR delta/PAF 索引)
     ├── pgi/            #   基因组索引核心 (build/dist/to_hv/align)
     ├── sd/             #   分段重复检测核心
-    ├── pl/             #   pipeline 共享逻辑 (PipelineCtx/FastK/Profex/spanr)
+    ├── pl/             #   pipeline 共享逻辑 (PipelineCtx/FastK/Profex + 内建 runlist 管道)
     ├── plot/           #   可视化 (dot/histogram/nrps/venn)
     ├── fas_xlsx.rs     #   FAS xlsx 输出
     ├── lastz.rs        #   lastz 封装
@@ -290,7 +290,7 @@ clustalw/muscle/mafft），充当工作流 glue。这与 `chain`/`net` 模块的
   merge_intervals、radix_sort），以及从外部 `intspan` crate 迁入的区间集合
   `IntSpan`（`intspan.rs`）与 `Range`（`range.rs`），API 与原 crate 一致
 - `libs/pl/`：pipeline 共享逻辑（`ctx.rs`：PipelineCtx/CwdGuard；`repeat.rs`：FastK →
-  Profex → spanr 重复识别驱动）
+  Profex → runlist 重复识别驱动）
 - `libs/syncmer.rs`：closed syncmer 采样（Edgar 2021，syng 移植参考），支撑 `dist` 采样
 - `libs/nt.rs`：核苷酸类型与 2-bit k-mer 编解码（`pack_kmer`/`rc_key`/`rolling_kmer_keys`）
 - `libs/ms/`：Hudson's ms 模拟器（解析器 + DNA 生成）

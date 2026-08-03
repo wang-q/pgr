@@ -18,7 +18,6 @@ pgr 的思路是用 FastK 系工具做**快速近似**：不做逐条 repeat 的
 外部工具依赖（均须在 `$PATH`）：
 
 *   FastK + Profex（FastK 套件）
-*   spanr
 *   trf（仅 `rept trf`）
 
 ### 1.2 命令分工与检测闭环
@@ -64,7 +63,7 @@ pgr fa mask genome.fa --runlist repeats.json --hard -o masked.fa # hard-mask（N
 
 > **多库场景（2026-08-03 决策）**：`e-*` 命令只接受单个库位置参数；同时
 > 使用多个库（如 RepBase + Dfam）时**不引入 `--lib` 多值**，而是对每个库
-> 分别执行一次命令、再用 `spanr merge` 合并各 runlist（与 ir + trf 合并
+> 分别执行一次命令、再用 `pgr runlist merge` 合并各 runlist（与 ir + trf 合并
 > 同一模式，示例见 [docs/rept.md](../../docs/rept.md) e-kmer 一节）。
 > 理由：把多库合并进单 FastK 表会破坏 `--keep-index` 的缓存失效逻辑
 > （缓存 key 需按多文件 mtime 组合判断）、丧失每库独立调参与诊断能力；
@@ -132,13 +131,13 @@ pgr fa mask genome.fa --runlist repeats.json --hard -o masked.fa # hard-mask（N
     # SD 搜索前的正确屏蔽：IR + TRF
     pgr rept e-kmer genome.fa repeats.fa -o ir.json # 散在重复（需重复库）
     pgr rept trf genome.fa -o trf.json              # 串联重复
-    spanr merge ir.json trf.json -o mask.json # 合并区间
+    pgr runlist merge ir.json trf.json -o mask.json # 合并区间
     pgr fa mask genome.fa --runlist mask.json -o masked.fa
     ```
 
 ### 1.5 检测管道实现
 
-#### 1.5.1 e-kmer / s-kmer：FastK → Profex → spanr
+#### 1.5.1 e-kmer / s-kmer：FastK → Profex → runlist
 
 共享管道在 `src/libs/pl/repeat.rs`：
 
@@ -149,15 +148,12 @@ pgr fa mask genome.fa --runlist repeats.json --hard -o masked.fa # hard-mask（N
 2.  **Profex per chr**：`pgr fa size` 得到染色体列表后，对每条染色体跑
     `Profex -z genome <sn>`，解析输出中 `start-end`（rept 还会按 `depth` 过滤，`min_depth=2`），
     写成 `<chr>:start-end` 的 `.rg` 文件（`run_profex_per_chr`）。
-3.  **spanr 区间处理**（`run_repeat_spanr_pipeline`）：
-
-    ```
-    spanr cover <rg files>
-        | spanr span --op fill   -n <fk>   # 填 k-mer 之间的孔
-        | spanr span --op excise -n <min>  # 切掉过短的碎片
-        | spanr span --op fill   -n <ff>   # 合并邻近片段
-        -o <outfile>
-    ```
+3.  **runlist 区间处理**（`run_repeat_runlist_pipeline`，2026-08-04 起
+    spanr 已迁入 pgr 内部，见 notes/design/runlist.md）：`rg_to_set` 合并
+    各 `.rg`，再依次 `span_op(Fill, fk)` → `span_op(Excise, min)` →
+    `span_op(Fill, ff)`。与旧 spanr 管道 `spanr cover | spanr span
+    --op fill -n <fk> | spanr span --op excise -n <min> | spanr span
+    --op fill -n <ff>` 逐字节等价。
 
 默认参数：`kmer=17`、`fill-kmer=2`、`fill-fragment=10`；`e-kmer` 的 `min-len=300`，`s-kmer` 的 `min-len=100`。
 
@@ -168,12 +164,12 @@ pgr fa mask genome.fa --runlist repeats.json --hard -o masked.fa # hard-mask（N
 `FastK -p:<前缀>` 读缓存（验证过 `-p:` 接受路径、零复制）；库文件
 mtime 变新时缓存自动失效重建。
 
-#### 1.5.2 trf：trf → 解析 → spanr
+#### 1.5.2 trf：trf → 解析 → runlist
 
 `src/cmd_pgr/pl/trf.rs`：按染色体拆分 FASTA，逐条跑
 `trf <chr>.fa <match> <mismatch> <delta> <pm> <pi> <minscore> <max_period> -d -h -ngs`，
 用 `parse_trf_output`（`src/libs/pl/repeat.rs`）解析 `.dat`（少于 15 列的短行跳过），
-再 `spanr cover` 合并输出。默认参数对应 TRF 常用设置（match=2、mismatch=7、delta=7、
+再用 runlist cover（`rg_to_set`）合并输出。默认参数对应 TRF 常用设置（match=2、mismatch=7、delta=7、
 pm=80、pi=10、minscore=50、max_period=2000）。
 
 ### 1.6 临时文件与 FastK 库文件清理
@@ -253,7 +249,7 @@ family/class、K2P、报告，详见附录 A.5）。我们只做**搜索侧的�
 
 > **2026-08-03 库选择补充**：真核实测（S288c 去 mask）repbase 库 e-align
 > 检出 3.90%、dfam 仅 0.44%——**真核遮蔽优先 repbase**（Dfam 的酵母等
-> 真菌家族收录有限）。纯遮蔽可两者都跑再 `spanr merge`（§1.3 多库
+> 真菌家族收录有限）。纯遮蔽可两者都跑再 `pgr runlist merge`（§1.3 多库
 > 决策），细菌则 tncentral 优先（§2.3.5）。
 
 **代价**：全库比对会让近缘家族的 consensus 互相 hit（cross-family），造成
@@ -289,8 +285,8 @@ PSL 过滤（Rust 内）：identity ≥ min-identity 且 block ≥ min-len
 target 侧 .rg（基因组坐标，1-based inclusive）
   │ 4. pgr psl to-range --target-coords 语义
   ▼
-spanr cover → spanr span --op excise -n <min> → spanr span --op fill -n <ff>
-  │ 5. 合并重叠、切短碎片、填邻近孔（同 e-kmer 的 spanr 管道）
+runlist cover → span --op excise -n <min> → span --op fill -n <ff>
+  │ 5. 合并重叠、切短碎片、填邻近孔（同 e-kmer 的 runlist 管道）
   ▼
 runlist JSON → pgr fa mask
 ```
@@ -306,13 +302,14 @@ runlist JSON → pgr fa mask
     matches/mismatches/ins/del 计算，不依赖外部工具（复用 `pgr::libs::psl`
     的记录解析）。`--min-identity` 初始 0.70、`--min-len` 初始 50，均为
     可调参数。
-3.  **区间合并**：`spanr cover` 合并重叠块 → `spanr span --op excise -n
-    <min-len>` 切掉过短碎片 → `spanr span --op fill -n <fill-fragment>`
-    合并邻近片段（fill-fragment 默认 10，与 e-kmer 一致）。不做
+3.  **区间合并**：`pgr runlist cover` 合并重叠块 → `pgr runlist span
+    --op excise -n <min-len>` 切掉过短碎片 → `pgr runlist span --op fill
+    -n <fill-fragment>` 合并邻近片段（fill-fragment 默认 10，与 e-kmer
+    一致；实现为进程内 `run_repeat_runlist_pipeline`）。不做
     RepeatMasker 的碎片整合/边界精修（§3.2）。
 4.  **库**：Dfam consensus FASTA 全库直接作 query（不做物种筛选，§2.2）；
     下载与准备见 [docs/rept.md](../../docs/rept.md)。多库沿用 §1.3 决策
-    （每库跑一次 + `spanr merge`）。
+    （每库跑一次 + `pgr runlist merge`）。
 
 #### 2.3.2 参数初始值与调参空间
 
@@ -363,8 +360,8 @@ pub struct AlignRepeatOpts {
 ```
 
 子进程调用：`pgr align pgi <genome> <repeats> -o hits.psl`，之后 Rust 读
-hits.psl 过滤 → 写 target .rg → `spanr` 合并 → runlist。PSL 记录解析复用
-`pgr::libs::psl`。
+hits.psl 过滤 → 写 target .rg → runlist 合并 → runlist JSON。PSL 记录
+解析复用 `pgr::libs::psl`。
 
 #### 2.3.4 实施顺序
 
@@ -462,8 +459,8 @@ min-identity 0.70、min-len 50）
 `pgr rept s-align <genome>` 已实现：窗口化（200 bp / 100 bp 步长 = 2x
 覆盖）→ `fa split name` 拆染色体 → `align lastz`（genome vs fragments，
 preset set01）→ LAV→PSL → `psl lift` 回基因组坐标 → `psl to-range` →
-`spanr coverage -m 4`（深度 ≥4 = ≥2 拷贝）。管道在 tempdir 内、含
-soft-mask 警告与空输入兜底；集成测试（lastz/spanr 缺失时跳过）已加。
+`pgr runlist coverage -m 4`（深度 ≥4 = ≥2 拷贝）。管道在 tempdir 内、含
+soft-mask 警告与空输入兜底；集成测试（lastz 缺失时跳过）已加。
 
 实测（默认参数）：
 
@@ -530,7 +527,18 @@ json key 全部完整；集成测试改用带点名字 `chr1.1` 作回归保护�
 同样处理完毕；三个命令均加了"无区间时空输出 `{}`"兜底。四个 rept
 命令现已全部支持带点 contig 名。验证：`NC_000913.1` 在 e-kmer/s-kmer/
 trf/e-align 下 json key 均完整；三个 e-kmer **并行**（-P 修复后）结果
-一致且无 SIGSEGV。若之后要根治可再修 spanr（选项 1），pgr 侧无需改动。
+一致且无 SIGSEGV。
+
+**处置结论（2026-08-04）**：spanr 已整体迁入 pgr 内部（`pgr runlist`
+命令族 + `libs/runlist`，见 notes/design/runlist.md），"修 spanr"
+（选项 1）等价于改 pgr 自己的解析器。重新评估后决定**不修改解析语义**：
+`name.chr(strand):start-end` 是 `.rg` 格式的物种前缀约定（兼容测试断言
+`S288c.I(-):190-200` → 染色体 `I`、输出不含 `S288c`），且
+`Range::from_str` 的 `.` 拆分同时服务 FASTA 头解析、`psl to-range` 等
+消费者；全局去掉拆分是破坏性变更。继续沿用方案 3 的 `c1..cN` 映射
+（成本极低、已验证 `NC_000913.1` 与 Fusarium 44 条 scaffold 的 key
+完整）。完整论证见 notes/audit/audit-runlist.md「带点 contig 名截断
+bug 的处置结论」。
 
 #### 真核初探：Fusarium graminearum（2026-08-03）
 
@@ -761,7 +769,7 @@ identity 的支持——超出 e-align 命令本身，另立主题。
     每次记录耗时、hits 数、覆盖区间；
 3.  对比数据：
     *   覆盖区间 vs 现有 `e-kmer` 的差异；
-    *   与 RepeatMasker masked 输出的 recall（`spanr statop`，同 §1.8 流程）；
+    *   与 RepeatMasker masked 输出的 recall（`pgr runlist statop`，同 §1.8 流程）；
     *   时间与内存；
     *   （可选）全库 vs 按物种取库的遮蔽量差异，评估 over-masking 代价。
 4.  依据 recall / over-masking / 耗时确定最终默认值与命令定位（§2.1 修正
@@ -777,7 +785,7 @@ identity 的支持——超出 e-align 命令本身，另立主题。
 *   **k-mer 敏感度**：依赖与库共享的精确 k-mer，分化较远的拷贝会漏检或碎成小片段；
     fill 步骤只能桥接短孔，无法恢复长距离分化的拷贝。
 *   **输出是区间而非序列**：mask 后的序列需另行用 `pgr fa mask` 生成。
-*   **依赖外部工具**：FastK / Profex / spanr（trf 还需 trf）。
+*   **依赖外部工具**：FastK / Profex（trf 还需 trf）。
 
 ### 3.2 遮蔽版的边界
 
@@ -937,7 +945,7 @@ complexity-adjusted scoring；`raw=1` 时用 basic scoring。
 | 步骤 | pgr 现状 | 判断 |
 | :--- | :--- | :--- |
 | 库-基因组比对 | `pgr align pgi`（原生）或 `pgr align lastz` | 高可行，预计比 RMBlast 快一个数量级 |
-| 区间合并/覆盖 | `spanr cover / merge / fill` | ✅ 已有 |
+| 区间合并/覆盖 | `pgr runlist cover / merge / span` | ✅ 已有 |
 | 输出遮蔽 | `pgr fa mask --runlist` | ✅ 已有 |
 | 低复杂度兜底 | `pgr rept trf` | 已有（缺口见正文 §2.4） |
 
