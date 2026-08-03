@@ -12,12 +12,32 @@ Command names use two dimensions:
 ## Repeat libraries
 
 Repeat-masking workflows compare a genome against a library of known repeat
-consensus sequences.
+consensus sequences. Download every library into a dedicated directory and
+run the commands below from there:
+
+```bash
+mkdir -p "$HOME/data/repeats"
+cd "$HOME/data/repeats"
+```
+
+Files under `tests/pgr/` (e.g. `tncentral.fa.gz`) are small test fixtures for
+the test suite, not a working repeat database.
+
+Libraries are stored as gzipped FASTA; `pgr` reads any `.gz` directly, so no
+conversion is needed. BGZF is only relevant for random-access workflows
+(`pgr fa range`, paf graph TSVs), which repeat libraries are not part of.
 
 ### TnCentral
 
 TnCentral is a database of prokaryotic insertion sequences. Download the
 complete IS library and prepare it for `pgr rept e-kmer`:
+
+The site may reject command-line downloaders (`curl` returns HTTP 403 even
+with a browser User-Agent). If that happens, download from a browser instead:
+open <https://tncentral.ncc.unesp.br/data_download>, click "download Fasta
+format" under "TnCentral Dataset", and save the archive into
+`$HOME/data/repeats/`. Unpack it, rename the FASTA inside to `tncentral.fa`,
+gzip it to `tncentral.fa.gz`, then run the sanity check below.
 
 ```bash
 # Download and unpack
@@ -26,9 +46,9 @@ unzip -j tn_in_is 'tncentral_integrall_isfinder.fa'
 gzip -9 -c 'tncentral_integrall_isfinder.fa' > tncentral.fa.gz
 
 # Sanity check and quality filter
-pgr fa size tests/pgr/tncentral.fa.gz
-pgr dist seq tests/pgr/tncentral.fa.gz -k 17 -w 5 -p 8 |
-    spanr filter stdin --ge 5:0.9
+pgr fa size tncentral.fa.gz
+pgr dist seq tncentral.fa.gz -k 17 -w 5 -p 8 |
+    tva filter stdin --ge 5:0.9
 ```
 
 ### RepBase
@@ -37,13 +57,18 @@ RepBase is the classic repeat database used by RepeatMasker. The distribution
 tarball contains an EMBL-format library; convert it to FASTA with readseq:
 
 ```bash
+# Download and unpack
 curl -LO https://github.com/wang-q/ubuntu/releases/download/20190906/repeatmaskerlibraries-20140131.tar.gz
 tar xvfz repeatmaskerlibraries-20140131.tar.gz Libraries/RepeatMaskerLib.embl
 
 # https://sourceforge.net/projects/readseq/
 java -jar ~/bin/readseq.jar -f fa Libraries/RepeatMaskerLib.embl
-mv Libraries/RepeatMaskerLib.embl.fasta repbase.fa
-gzip -9 -k repbase.fa
+gzip -9 -c Libraries/RepeatMaskerLib.embl.fasta > repbase.fa.gz
+
+# Sanity check and quality filter
+pgr fa size repbase.fa.gz
+pgr dist seq repbase.fa.gz -k 17 -w 5 -p 8 |
+    tva filter stdin --ge 5:0.9
 ```
 
 ### Dfam
@@ -64,38 +89,13 @@ latest release):
 ```bash
 # FASTA variant: ready to use, no conversion
 curl -LO https://dfam.org/releases/Dfam_4.0/families/Dfam-RepeatMasker.lib.gz
-curl -LO https://dfam.org/releases/Dfam_4.0/families/Dfam-RepeatMasker.lib.gz.md5
-md5sum -c Dfam-RepeatMasker.lib.gz.md5
-gzip -dc Dfam-RepeatMasker.lib.gz > dfam.fa
+mv Dfam-RepeatMasker.lib.gz dfam.fa.gz
 
-# Sanity check
-pgr fa size dfam.fa
-pgr dist seq dfam.fa -k 17 -w 5 -p 8
+# Sanity check and quality filter
+pgr fa size dfam.fa.gz
+pgr dist seq dfam.fa.gz -k 17 -w 5 -p 8 |
+    tva filter stdin --ge 5:0.9
 ```
-
-The EMBL variant carries metadata (family name, classification) for each
-consensus; use it instead if that information matters:
-
-```bash
-curl -LO https://dfam.org/releases/Dfam_4.0/families/Dfam-curated_only-1.embl.gz
-curl -LO https://dfam.org/releases/Dfam_4.0/families/Dfam-curated_only-1.embl.gz.md5
-md5sum -c Dfam-curated_only-1.embl.gz.md5
-gzip -dc Dfam-curated_only-1.embl.gz > Dfam-curated_only-1.embl
-
-# https://sourceforge.net/projects/readseq/
-java -jar ~/bin/readseq.jar -f fa Dfam-curated_only-1.embl
-mv Dfam-curated_only-1.embl.fasta dfam.fa
-gzip -9 -k dfam.fa
-```
-
-Other release products are not suitable for pgr:
-
-*   `Dfam-1.embl.gz` (4.5 GB): EMBL records for all curated (DF) and uncurated
-    (DR) families; use the curated-only file above.
-*   `Dfam-1.hmm.gz` … `Dfam-17.hmm.gz` (~10 GB each) and
-    `Dfam-curated_only-1.hmm.gz` (1.7 GB): profile HMM partitions for
-    HMMER-based search; pgr masks by alignment, not HMM search.
-*   `FamDB/`: HDF5 partitions for RepeatMasker 4.1.1+, unusable by pgr.
 
 ## RepeatMasker (reference)
 
