@@ -110,7 +110,7 @@ Examples:
                 .long("merge-gap")
                 .default_value("5000")
                 .value_parser(value_parser!(u32))
-                .help("Maximum gap (bp) between adjacent colinear chains to merge"),
+                .help("Maximum gap (bp) to merge colinear chains shifted in diagonal (IS-element breaks)"),
         )
         .arg(
             Arg::new("min_shared")

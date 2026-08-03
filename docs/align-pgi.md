@@ -36,7 +36,8 @@ self mode); exact self-identity hits are dropped.
 - `-s`/`--max-gap`: maximum bp gap between consecutive seeds in a chain;
 - `--band`: diagonal band half-width (bp) around the chain mean;
 - `--merge-gap`: merge adjacent colinear chains separated by at most this gap
-  (bp), stitching blocks split by insertions (IS elements);
+  (bp), stitching blocks split by insertions (IS elements); only chains whose
+  diagonals differ are merged, same-diagonal gaps stay independent blocks;
 - `--min-shared`: minimum shared seed length (bp); default = k for greedy,
   12 for tube;
 - `--workflow`: chaining workflow, `greedy` (default) or FastGA-style `tube`;

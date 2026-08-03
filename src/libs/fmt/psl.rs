@@ -1031,12 +1031,17 @@ impl Psl {
         let is_neg = self.strand.as_bytes().first() == Some(&b'-');
         self.q_name = name_part;
         self.q_size = real_size;
-        let offset = if is_neg { real_size - end_0 } else { start_0 };
-        let offset_i32 = i32::try_from(offset).unwrap_or(i32::MAX);
-        self.q_start = self.q_start.saturating_add(offset_i32);
-        self.q_end = self.q_end.saturating_add(offset_i32);
+        // qStart/qEnd are always forward-strand coordinates of the query
+        // (UCSC PSL convention, shared by pgr's own aligners), so a subrange
+        // lifts them by its start. Only the block qStarts of a '-' strand
+        // record live in the reverse-complemented frame and lift by the
+        // complement of the subrange end (size - end).
+        let outer_offset = i32::try_from(start_0).unwrap_or(i32::MAX);
+        self.q_start = self.q_start.saturating_add(outer_offset);
+        self.q_end = self.q_end.saturating_add(outer_offset);
+        let block_offset = if is_neg { real_size - end_0 } else { start_0 };
         for q_start in &mut self.q_starts {
-            *q_start += offset;
+            *q_start += block_offset;
         }
         true
     }
@@ -1073,12 +1078,15 @@ impl Psl {
         let is_neg = self.strand.as_bytes().get(1) == Some(&b'-');
         self.t_name = name_part;
         self.t_size = real_size;
-        let offset = if is_neg { real_size - end_0 } else { start_0 };
-        let offset_i32 = i32::try_from(offset).unwrap_or(i32::MAX);
-        self.t_start = self.t_start.saturating_add(offset_i32);
-        self.t_end = self.t_end.saturating_add(offset_i32);
+        // Same convention as lift_query: tStart/tEnd are forward-strand
+        // coordinates; only the block tStarts of a '-' target strand are in
+        // the reverse-complemented frame.
+        let outer_offset = i32::try_from(start_0).unwrap_or(i32::MAX);
+        self.t_start = self.t_start.saturating_add(outer_offset);
+        self.t_end = self.t_end.saturating_add(outer_offset);
+        let block_offset = if is_neg { real_size - end_0 } else { start_0 };
         for t_start in &mut self.t_starts {
-            *t_start += offset;
+            *t_start += block_offset;
         }
         true
     }

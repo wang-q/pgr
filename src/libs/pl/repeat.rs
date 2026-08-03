@@ -1,9 +1,28 @@
 //! Repeat-identification pipeline drivers (FastK → Profex → spanr).
 
-use anyhow::Context;
 use cmd_lib::run_cmd;
 use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
+
+/// True when any base of the input FASTA is lowercase (soft-masked).
+///
+/// `pgr fa masked` also reports N/gap regions, so it cannot be used to
+/// detect soft-masking specifically; scan the sequences directly instead.
+fn has_soft_mask(infile: &str) -> anyhow::Result<bool> {
+    let mut reader = crate::libs::fmt::fa::reader(infile)?;
+    for result in reader.records() {
+        let rec = result?;
+        if rec
+            .sequence()
+            .as_ref()
+            .iter()
+            .any(|b| b.is_ascii_lowercase())
+        {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
 
 /// Run `Profex -z genome` per chromosome and write `.rg` files.
 ///
@@ -276,11 +295,7 @@ pub fn run_align_repeat_pipeline(opts: &AlignRepeatOpts) -> anyhow::Result<()> {
     // Soft-masked (lowercase) repeats fragment pgi's chain extension, so the
     // alignment pass massively underestimates coverage. Detect and warn
     // instead of silently returning bad numbers.
-    let masked_out = std::process::Command::new(pgr)
-        .args(["fa", "masked", abs_infile])
-        .output()
-        .context("running `pgr fa masked` for soft-mask detection")?;
-    if !masked_out.stdout.is_empty() {
+    if has_soft_mask(abs_infile)? {
         log::warn!(
             "input genome contains soft-masked (lowercase) regions; e-align \
              results will be underestimated, consider uppercasing first \
@@ -312,8 +327,12 @@ pub fn run_align_repeat_pipeline(opts: &AlignRepeatOpts) -> anyhow::Result<()> {
         if line.is_empty() {
             continue;
         }
-        let Ok(psl) = line.parse::<crate::libs::fmt::psl::Psl>() else {
-            continue;
+        let psl = match line.parse::<crate::libs::fmt::psl::Psl>() {
+            Ok(p) => p,
+            Err(e) => {
+                log::warn!("skipping unparseable psl line: {}: {}", line, e);
+                continue;
+            }
         };
         // Guard against a malformed record with t_end < t_start (a negative
         // difference would wrap into a huge span and pass the length filter).
@@ -420,11 +439,7 @@ pub fn run_self_align_pipeline(opts: &SelfAlignOpts) -> anyhow::Result<()> {
 
     // Soft-masked (lowercase) repeats are skipped by lastz, so the pass
     // underestimates coverage; detect and warn instead of silent bad data.
-    let masked_out = std::process::Command::new(pgr)
-        .args(["fa", "masked", abs_infile])
-        .output()
-        .context("running `pgr fa masked` for soft-mask detection")?;
-    if !masked_out.stdout.is_empty() {
+    if has_soft_mask(abs_infile)? {
         log::warn!(
             "input genome contains soft-masked (lowercase) regions; self \
              alignment results will be underestimated, consider uppercasing \
@@ -657,4 +672,38 @@ pub fn parse_trf_output<R: BufRead, W: Write>(
         writer.write_fmt(format_args!("{}:{}-{}\n", chr, start, end))?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn soft_mask_detection_ignores_n_gaps() {
+        // Regression: the s-align/e-align soft-mask warning used `pgr fa
+        // masked`, which reports N/gap regions too, so a genome with N runs
+        // but no lowercase bases warned about lowercase soft-masking.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("g.fa");
+        std::fs::write(
+            &path,
+            format!(
+                ">chr\n{}\n",
+                "ACGT".repeat(50) + &"N".repeat(100) + &"ACGT".repeat(50)
+            ),
+        )
+        .unwrap();
+        assert!(
+            !has_soft_mask(path.to_str().unwrap()).unwrap(),
+            "N gaps must not count as soft-masking"
+        );
+
+        let lower = dir.path().join("lower.fa");
+        std::fs::write(
+            &lower,
+            format!(">chr\n{}\n", "ACGT".repeat(50) + &"acgt".repeat(10)),
+        )
+        .unwrap();
+        assert!(has_soft_mask(lower.to_str().unwrap()).unwrap());
+    }
 }

@@ -62,7 +62,7 @@ fn main() -> anyhow::Result<()> {
 
 * Analysis:
     * sd    - Segmental duplication detection: align, cluster, cover, cross, decompose, run, search
-    * rept  - Repeat detection: e-kmer, s-kmer, trf
+    * rept  - Repeat detection: e-kmer, e-align, s-kmer, s-align, trf
 
 * Simulation:
     * ms    - Hudson's ms simulator tools: to-dna

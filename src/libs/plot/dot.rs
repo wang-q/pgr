@@ -709,6 +709,7 @@ fn legend(plot_left: f64, plot_top: f64, plot_w: f64, label_font: f64, opts: &Do
 mod tests {
     use super::*;
 
+    #[allow(clippy::too_many_arguments)]
     fn rec(
         qname: &str,
         qstart: u32,
@@ -903,9 +904,7 @@ mod tests {
         let mut fwd_slope: Option<bool> = None;
         let mut rev_slope: Option<bool> = None;
         for c in re.captures_iter(&svg) {
-            let x1: f64 = c[1].parse().unwrap();
             let y1: f64 = c[2].parse().unwrap();
-            let x2: f64 = c[3].parse().unwrap();
             let y2: f64 = c[4].parse().unwrap();
             let color = &c[5];
             let is_blue = u8::from_str_radix(&color[4..6], 16).unwrap()

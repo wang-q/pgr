@@ -76,6 +76,64 @@ fn command_sd_search_pgi_engine() {
     );
 }
 
+/// An inverted repeat flanked by non-homologous sequence must be detected by
+/// the pgi engine (regression: greedy chaining merged the two reciprocal
+/// chains - they share one diagonal - into a chimeric low-identity block
+/// that the SD filter dropped).
+#[test]
+fn command_sd_search_pgi_inverted_repeat() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let dup = random_seq(1200, 21);
+    let rc: String = dup
+        .chars()
+        .rev()
+        .map(|b| match b {
+            'A' => 'T',
+            'C' => 'G',
+            'G' => 'C',
+            _ => 'A',
+        })
+        .collect();
+    let genome = format!(
+        "{}{}{}{}{}",
+        random_seq(2000, 22),
+        dup,
+        random_seq(1800, 23),
+        rc,
+        random_seq(1500, 24)
+    );
+    let fa = write_fa(temp.path(), "genome", &format!(">chr\n{genome}\n"));
+
+    let out = temp.path().join("hits.psl");
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "sd",
+            "search",
+            &fa,
+            "--engine",
+            "pgi",
+            "-o",
+            out.to_str().unwrap(),
+        ])
+        .run();
+    assert!(stderr.contains("wrote"), "pgi search failed: {stderr}");
+
+    let hits = fs::read_to_string(&out).unwrap();
+    let blocks: Vec<Vec<&str>> = hits
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| l.split('\t').collect())
+        .collect();
+    assert_eq!(blocks.len(), 2, "expected two reciprocal blocks: {hits}");
+    for b in &blocks {
+        // Minus-strand, >= 1000 bp, no mismatches.
+        assert_eq!(b[8], "-", "inverted copies align on '-': {hits}");
+        let qlen: i32 = b[12].parse::<i32>().unwrap() - b[11].parse::<i32>().unwrap();
+        assert!(qlen >= 1000, "block too short: {hits}");
+        assert_eq!(b[1], "0", "no mismatches expected: {hits}");
+    }
+}
+
 #[test]
 fn command_sd_search_lastz_engine() {
     if which::which("lastz").is_err() {

@@ -22,6 +22,9 @@ This command identifies repeats in a genome against an external repeat library
 * Soft-masked (lowercase) genomes are detected and warned about: lowercase
   repeat regions fragment the alignment and drastically underestimate
   coverage, so uppercase the genome first (`tr a-z A-Z`) if warned.
+* `--min-identity` uses the gap-compressed identity (matches + repeat
+  matches over aligned bases, excluding insert bases), unlike `pgr sd`
+  whose block identity includes inserts.
 
 * All operations are running in a tempdir and no intermediate files are retained.
 
@@ -106,7 +109,7 @@ This command identifies repeats in a genome against an external repeat library
                 .value_parser(value_parser!(usize))
                 .num_args(1)
                 .default_value("5000")
-                .help("Maximum gap (bp) between adjacent colinear chains to merge"),
+                .help("Maximum gap (bp) to merge colinear chains shifted in diagonal (IS-element breaks)"),
         )
         .arg(
             Arg::new("min_shared")

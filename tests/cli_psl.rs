@@ -317,22 +317,21 @@ fn test_lift_basic() {
     // The input file contains two records.
     // First record: chr1:101-200 (+), qStart=10, qEnd=20 (on fragment).
     //   Lifted: chr1 (+), qStart=100+10=110, qEnd=100+20=120.
-    // Second record: chr1:101-200 (-), qStart=10, qEnd=20 (on RC fragment).
-    //   Lifted: chr1 (-), qStart=810, qEnd=820.
-    //   Calculation for (-):
-    //     q_size=1000. offset=100.
-    //     new_qStart = 1000 - (100 - 10 + 100) = 810.
-    //     new_qEnd = 1000 - (100 - 20 + 100) = 820.
+    // Second record: chr1:101-200 (-), qStart=10, qEnd=20 on the forward
+    // fragment (UCSC PSL: qStart/qEnd are forward coordinates even for '-',
+    // only the block qStarts are in the RC frame: qSize - qEnd = 80).
+    //   Lifted: chr1 (-), qStart=110, qEnd=120 (forward), and the block
+    //   qStarts lift in the chromosome RC frame: 80 + (1000 - 200) = 880.
 
     // Check first record
     assert!(output_content.contains("chr1\t1000\t110\t120"));
-    // Check second record
-    assert!(output_content.contains("chr1\t1000\t810\t820"));
+    // Check second record (outer coords are forward, so they match the first)
+    assert!(output_content.contains("chr1\t1000\t110\t120"));
     // Check that qStarts for blocks are also correct
     // First record block start: 110
     assert!(output_content.contains("110,\t500,"));
-    // Second record block start: 810
-    assert!(output_content.contains("810,\t500,"));
+    // Second record block start (RC frame): 880
+    assert!(output_content.contains("880,\t500,"));
 }
 
 #[test]
@@ -359,8 +358,10 @@ fn test_lift_target() {
     // Expected output check
     // First record: Target chr1:101-200 (+). tStart=10, tEnd=60.
     //   Lifted: chr1 (+). tStart=110, tEnd=160.
-    // Second record: Target chr1:101-200 (-). tStart=10, tEnd=60.
-    //   Lifted: chr1 (-). tStart=810, tEnd=860. (Size 1000)
+    // Second record: Target chr1:101-200 (-). tStart=10, tEnd=60 on the
+    // forward target (UCSC convention); tStarts are in the RC frame
+    // (tSize - tEnd = 40).
+    //   Lifted: chr1 (-). tStart=110, tEnd=160; block tStarts = 40 + 800 = 840.
 
     // Check first record
     // Target name: chr1
@@ -369,18 +370,77 @@ fn test_lift_target() {
     // Target end: 160
     assert!(output_content.contains("seq1\t100\t0\t50\tchr1\t1000\t110\t160"));
 
-    // Check second record
-    // Target name: chr1
-    // Target size: 1000
-    // Target start: 810
-    // Target end: 860
-    assert!(output_content.contains("seq1\t100\t0\t50\tchr1\t1000\t810\t860"));
+    // Check second record (outer coords are forward, so they match the first)
+    assert!(output_content.contains("seq1\t100\t0\t50\tchr1\t1000\t110\t160"));
 
     // Check tStarts
     // First: 110
     assert!(output_content.contains(",\t110,"));
-    // Second: 810
-    assert!(output_content.contains(",\t810,"));
+    // Second (RC frame): 840
+    assert!(output_content.contains(",\t840,"));
+}
+
+/// Negative-strand fragment lifts keep UCSC PSL semantics: qStart/qEnd stay
+/// forward-strand coordinates and only the block qStarts move to the
+/// chromosome RC frame (regression for a fragment window aligning on '-'
+/// strand, the `rept s-align` pipeline).
+#[test]
+fn test_lift_minus_strand_forward_coordinates() {
+    let temp = TempDir::new().unwrap();
+    let input = temp.path().join("minus.psl");
+    let sizes = temp.path().join("chrom.sizes");
+    let output = temp.path().join("lifted.psl");
+    std::fs::write(&sizes, "chr\t5600\n").unwrap();
+    // Window chr:1201-1400 (1-based inclusive) = genome [1200, 1400).
+    // '-' record: forward qStart/qEnd [0, 101), block qStarts in the window
+    // RC frame (qSize - qEnd = 99), matching pgr/UCSC convention.
+    std::fs::write(
+        &input,
+        "101\t0\t0\t0\t0\t0\t0\t0\t-\tchr:1201-1400\t200\t0\t101\tchr\t5600\t3299\t3400\t1\t101,\t99,\t3299,\n",
+    )
+    .unwrap();
+
+    PgrCmd::new()
+        .args(&[
+            "psl",
+            "lift",
+            input.to_str().unwrap(),
+            "-o",
+            output.to_str().unwrap(),
+            "--q-sizes",
+            sizes.to_str().unwrap(),
+        ])
+        .run();
+
+    let output_content = fs::read_to_string(&output).unwrap();
+    // qStart/qEnd must be forward genome coordinates [1200, 1301).
+    assert!(
+        output_content.contains("-\tchr\t5600\t1200\t1301"),
+        "qStart/qEnd must lift to forward coordinates: {output_content}"
+    );
+    // The block qStarts are in the chromosome RC frame: 5600 - 1301 = 4299.
+    assert!(
+        output_content.contains("4299,\t3299,"),
+        "qStarts must lift in the RC frame: {output_content}"
+    );
+
+    // `psl to-range` on the lifted record must recover the genomic span
+    // [1200, 1301) as 1-based inclusive "chr:1201-1301".
+    let range_out = temp.path().join("ranges.rg");
+    PgrCmd::new()
+        .args(&[
+            "psl",
+            "to-range",
+            output.to_str().unwrap(),
+            "-o",
+            range_out.to_str().unwrap(),
+        ])
+        .run();
+    let ranges = fs::read_to_string(&range_out).unwrap();
+    assert!(
+        ranges.contains("chr:1201-1301"),
+        "to-range must recover the genomic span: {ranges}"
+    );
 }
 
 #[test]
@@ -466,13 +526,14 @@ fn test_to_range_basic() {
     // 1. chr1:101-200 (+), qStart=10, qEnd=20.
     //    Range: chr1:101-200:11-20
     // 2. chr1:101-200 (-), qStart=10, qEnd=20.
-    //    qSize=100.
-    //    Range: chr1:101-200:81-90 (as calculated before)
+    //    qStart/qEnd are forward coordinates; the block qStarts (80, in the
+    //    RC frame) reverse back to the same genomic span.
+    //    Range: chr1:101-200:11-20
 
     let lines: Vec<&str> = output_content.lines().collect();
     assert_eq!(lines.len(), 2);
     assert_eq!(lines[0], "chr1:101-200:11-20");
-    assert_eq!(lines[1], "chr1:101-200:81-90");
+    assert_eq!(lines[1], "chr1:101-200:11-20");
 }
 
 //

@@ -94,7 +94,9 @@ pgr sd cross <target.fa> <query.fa> -o cross.paf
 ```
 
 `--engine` defaults to `pgi` (native two-genome alignment); `--preset` /
-`--query-depth` apply to the lastz engine only.
+`--query-depth` apply to the lastz engine only, which requires
+single-sequence FASTA inputs (split multi-contig genomes with
+`pgr fa split name` first).
 
 ## sd run
 

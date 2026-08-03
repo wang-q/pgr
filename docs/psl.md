@@ -81,6 +81,12 @@ pgr psl histo [OPTIONS] --field <TYPE> <input>
 
 Lifts PSL coordinates from fragment alignments (e.g., `chr1:100-200`) back to genomic coordinates.
 
+The subrange coordinates are 1-based, inclusive. `qStart`/`qEnd` (and
+`tStart`/`tEnd`) are always forward-strand coordinates, so they are lifted by
+the subrange start; only the block `qStarts`/`tStarts` of negative-strand
+records are in the reverse-complemented frame and are lifted by the
+complement of the subrange end (UCSC PSL convention).
+
 ```bash
 pgr psl lift [OPTIONS] <infile>
 ```

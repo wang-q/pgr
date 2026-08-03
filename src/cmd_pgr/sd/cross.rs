@@ -19,6 +19,8 @@ MAF into one PAF.
 Two engines (same as `pgr sd search`):
 * `pgi` (default): native `pgr align pgi`; no external tools.
 * `lastz`: external `lastz`; `--preset`/`--query-depth` apply to this engine.
+  lastz needs single-sequence FASTA inputs - split multi-contig genomes with
+  `pgr fa split name` first.
 
 Examples:
 1. Map genome B's homology onto genome A:
@@ -104,7 +106,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 target,
                 query,
                 false,
-                workdir.path().to_str().unwrap(),
+                pgr::libs::io::path_to_str(workdir.path())?,
                 &opts,
             )?
         }
@@ -120,7 +122,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 target,
                 query,
                 false,
-                workdir.path().to_str().unwrap(),
+                pgr::libs::io::path_to_str(workdir.path())?,
                 &opts,
             )?
         }
@@ -131,5 +133,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         psl.write_to(&mut w)?;
     }
     w.flush()?;
-    super::chainnet_to_paf(target, query, psl_path.to_str().unwrap(), outfile)
+    super::chainnet_to_paf(
+        target,
+        query,
+        pgr::libs::io::path_to_str(&psl_path)?,
+        outfile,
+    )
 }

@@ -32,7 +32,7 @@ impl PipelineCtx {
         let curdir = std::env::current_dir()?;
         let pgr = crate::libs::io::current_exe_string()?;
         let tempdir = tempfile::Builder::new().prefix(prefix).tempdir()?;
-        let tempdir_str = tempdir.path().to_str().unwrap();
+        let tempdir_str = crate::libs::io::path_to_str(tempdir.path())?;
 
         run_cmd!(info "==> Paths")?;
         run_cmd!(info "    \"pgr\"     = ${pgr}")?;
@@ -52,7 +52,7 @@ impl PipelineCtx {
     /// Returns a [`super::CwdGuard`] whose `Drop` restores the previous
     /// working directory, ensuring cleanup even when the pipeline errors out.
     pub fn enter(&self) -> anyhow::Result<super::CwdGuard> {
-        let tempdir_str = self.tempdir.path().to_str().unwrap();
+        let tempdir_str = crate::libs::io::path_to_str(self.tempdir.path())?;
         run_cmd!(info "==> Switch to tempdir")?;
         super::CwdGuard::enter(tempdir_str)
     }

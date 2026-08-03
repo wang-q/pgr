@@ -231,6 +231,8 @@ fn parse_fasta<R: BufRead>(reader: R) -> anyhow::Result<Vec<SeqRecord>> {
             if !name.is_empty() {
                 if let Some((sp, chr, strand, gs, ge)) = parse_header(&name) {
                     seqs.push((sp, chr, strand, gs, ge, std::mem::take(&mut seq)));
+                } else {
+                    log::warn!("skipping cluster record with unparseable header: {name}");
                 }
             }
             name = rest.trim().to_string();
@@ -242,6 +244,8 @@ fn parse_fasta<R: BufRead>(reader: R) -> anyhow::Result<Vec<SeqRecord>> {
     if !name.is_empty() {
         if let Some((sp, chr, strand, gs, ge)) = parse_header(&name) {
             seqs.push((sp, chr, strand, gs, ge, seq));
+        } else {
+            log::warn!("skipping cluster record with unparseable header: {name}");
         }
     }
     Ok(seqs)

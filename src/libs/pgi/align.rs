@@ -22,7 +22,8 @@ pub struct AlignParams {
     pub max_gap: u32,
     /// Diagonal band half-width (bp) around the chain mean.
     pub band: u32,
-    /// Maximum gap (bp) between adjacent colinear chains to merge.
+    /// Maximum gap (bp) to merge colinear chains shifted in diagonal
+    /// (IS-element breaks); same-diagonal gaps stay independent blocks.
     pub merge_gap: u32,
     /// Minimum shared seed length (bp); `None` selects the workflow default
     /// (FastGA's plen floor of 12 for tube, exact k-mers for greedy).
@@ -765,11 +766,16 @@ pub fn chain_hits(
 }
 
 /// Merge adjacent chains on the same contig pair and strand whose spans are
-/// within `merge_gap` and whose diagonals are within `band` of each other.
+/// within `merge_gap` and whose diagonals are within `band` of each other
+/// *and differ*.
 ///
 /// Insertions (IS elements etc.) shift the local diagonal past the chaining
 /// band and split one syntenic block into several greedy chains; this pass
-/// stitches them back together.
+/// stitches them back together. Two chains on exactly the same diagonal
+/// separated by a seed gap are distinct homology blocks (e.g. the two
+/// reciprocal chains of an inverted repeat in a self-alignment), not one
+/// split block; merging them produces a chimeric chain whose identity is
+/// diluted by the gap and drops both real hits at the SD filter.
 fn merge_adjacent_chains(chains: &mut Vec<Chain>, band: u32, merge_gap: u32) {
     if chains.len() < 2 {
         return;
@@ -787,6 +793,7 @@ fn merge_adjacent_chains(chains: &mut Vec<Chain>, band: u32, merge_gap: u32) {
                 && (0..=merge_gap as i64).contains(&gap_a)
                 && (0..=merge_gap as i64).contains(&gap_b)
                 && (c.diag - last.diag).abs() <= band as i64
+                && (c.diag - last.diag).abs() > 0
             {
                 let span = last.diag_span.max(c.diag_span) + (c.diag - last.diag).abs();
                 last.a_end = last.a_end.max(c.a_end);
@@ -1699,9 +1706,54 @@ mod tests {
 
     #[test]
     fn merge_adjacent_chains_stitches_syntenic_blocks() {
-        // Two colinear diagonal runs separated by a 1.2 kb insertion: greedy
-        // chaining (max_gap 1000) splits them, the merge pass joins them back.
+        // Two colinear diagonal runs separated by a seed gap with a small
+        // diagonal shift (a 4 bp insertion): greedy chaining (max_gap 1000)
+        // splits them, the merge pass stitches them back.
         let hits = vec![
+            SeedHit {
+                a_contig: 0,
+                a_pos: 100,
+                b_contig: 0,
+                b_pos: 100,
+                shared: 10,
+                strand: 0,
+            },
+            SeedHit {
+                a_contig: 0,
+                a_pos: 130,
+                b_contig: 0,
+                b_pos: 130,
+                shared: 10,
+                strand: 0,
+            },
+            SeedHit {
+                a_contig: 0,
+                a_pos: 1300,
+                b_contig: 0,
+                b_pos: 1296,
+                shared: 10,
+                strand: 0,
+            },
+            SeedHit {
+                a_contig: 0,
+                a_pos: 1330,
+                b_contig: 0,
+                b_pos: 1326,
+                shared: 10,
+                strand: 0,
+            },
+        ];
+        let chains = chain_hits(&hits, 10, 20, 1000, 8, 0);
+        assert_eq!(chains.len(), 2, "large gap must split chains");
+        let chains = chain_hits(&hits, 10, 20, 1000, 8, 2000);
+        assert_eq!(chains.len(), 1, "diagonal shift must stitch chains");
+        assert_eq!((chains[0].a_start, chains[0].a_end), (100, 1340));
+        assert_eq!(chains[0].seeds, 4);
+
+        // Identical-diagonal runs separated by a seed gap are two distinct
+        // homology blocks (the reciprocal chains of an inverted repeat); they
+        // must NOT merge into a chimeric chain.
+        let same_diag = vec![
             SeedHit {
                 a_contig: 0,
                 a_pos: 100,
@@ -1735,12 +1787,8 @@ mod tests {
                 strand: 0,
             },
         ];
-        let chains = chain_hits(&hits, 10, 20, 1000, 8, 0);
-        assert_eq!(chains.len(), 2, "large gap must split chains");
-        let chains = chain_hits(&hits, 10, 20, 1000, 8, 2000);
-        assert_eq!(chains.len(), 1, "merge gap must stitch chains");
-        assert_eq!((chains[0].a_start, chains[0].a_end), (100, 1340));
-        assert_eq!(chains[0].seeds, 4);
+        let chains = chain_hits(&same_diag, 10, 20, 1000, 8, 2000);
+        assert_eq!(chains.len(), 2, "identical diagonals must not merge");
 
         // A diagonal shift beyond the band must not merge.
         let shifted = vec![
@@ -1987,7 +2035,7 @@ mod tests {
             shared: 40,
         };
         // Two contigs, each with a dense run on diagonal -80,000,000.
-        let mut hits: Vec<SeedHit> = (0..200u32)
+        let hits: Vec<SeedHit> = (0..200u32)
             .flat_map(|i| vec![mk(0, i, 80_000_000 + i), mk(1, i, 80_000_000 + i)])
             .collect();
         let tubes = chain_tubes(&hits, 40);

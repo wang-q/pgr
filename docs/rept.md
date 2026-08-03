@@ -314,7 +314,7 @@ pgr rept e-align [OPTIONS] <repeat> <infile>
 | `min_span` | `-c` | `--min-span` | Int | Min per-axis seed span for a chain (default: 50) |
 | `max_gap` | `-s` | `--max-gap` | Int | Max gap between seeds in a chain (default: 1000) |
 | `band` | | `--band` | Int | Diagonal band half-width (default: 128) |
-| `merge_gap` | | `--merge-gap` | Int | Max gap between colinear chains to merge (default: 5000) |
+| `merge_gap` | | `--merge-gap` | Int | Max gap to merge colinear chains with different diagonals (IS-element breaks; default: 5000) |
 | `min_shared` | | `--min-shared` | Int | Min shared seed length (default: 16) |
 | `workflow` | | `--workflow` | Str | Chaining workflow: greedy or tube (default: greedy) |
 | `min_identity` | | `--min-identity` | Float | Min alignment identity (default: 0.70) |
@@ -322,6 +322,11 @@ pgr rept e-align [OPTIONS] <repeat> <infile>
 | `fill_fragment` | | `--fill-fragment` | Int | Fill holes between fragments (default: 10) |
 | `parallel` | `-p` | `--parallel` | Int | Number of threads (default: 8) |
 | `keep_index` | | `--keep-index` | Flag | Keep built pgi indexes next to the inputs |
+
+`--min-identity` uses the gap-compressed identity
+(`(matches + repeat_matches) / (matches + mismatches + repeat_matches)`,
+insert bases excluded) — unlike `pgr sd`, whose block identity includes
+insert bases in the denominator.
 
 ### Dependencies
 

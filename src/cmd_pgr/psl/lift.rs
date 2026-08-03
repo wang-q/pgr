@@ -13,6 +13,9 @@ Lifts PSL coordinates from query/target fragments to genomic coordinates.
 Notes:
 * The query or target name must be in the format `chr:start-end`.
 * The coordinates in the name are 1-based, inclusive.
+* qStart/qEnd (tStart/tEnd) are always forward-strand coordinates; for '-'
+  strand records only the block qStarts/tStarts live in the reverse-
+  complemented frame and are lifted accordingly (UCSC PSL convention).
 * Requires a chromosome sizes file for correct negative strand lifting.
 * Lines that fail to parse as PSL records are skipped with a warning.
   Use --strict to turn parse failures into hard errors.

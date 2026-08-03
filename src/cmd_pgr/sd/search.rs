@@ -17,7 +17,9 @@ Two engines:
 * `pgi` (default): native `pgr align pgi` self-alignment (FastGA-style
   syncmer seeds + tube chaining + banded/wave extension). No external tools.
 * `lastz`: external `lastz --self` (LAV -> PSL); requires lastz in PATH.
-  `--preset`/`--query-depth` apply to this engine only.
+  `--preset`/`--query-depth` apply to this engine only. lastz needs
+  single-sequence FASTA inputs - split multi-contig genomes with
+  `pgr fa split name` first.
 
 Notes:
 * Input FASTA may be plain or gzipped (.gz).
@@ -101,7 +103,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 min_identity,
                 parallel,
             };
-            pgr::libs::sd::search_pgi::search_pgi(genome, workdir.path().to_str().unwrap(), &opts)?
+            pgr::libs::sd::search_pgi::search_pgi(
+                genome,
+                pgr::libs::io::path_to_str(workdir.path())?,
+                &opts,
+            )?
         }
         _ => {
             let opts = pgr::libs::sd::search_lastz::SearchLastzOptions {
@@ -113,7 +119,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             };
             pgr::libs::sd::search_lastz::search_lastz(
                 genome,
-                workdir.path().to_str().unwrap(),
+                pgr::libs::io::path_to_str(workdir.path())?,
                 &opts,
             )?
         }
