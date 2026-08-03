@@ -181,8 +181,8 @@ pgr `libs::fas_multiz` 的 `banded_align.rs` 已按 §2.3–§2.5 直译：
 *   **输入/分块语义**：multiz 是 MAF 块流、逐重叠区合并；pgr 是 fas
     窗口合并。多块输入中"仅共享参考且参考去 gap 不等"的块对在 pgr 的
     crossover 路径会被拒绝（需共享非参考物种打分），为已知限制；
-*   **gap 参数**：multiz 固定 400/30，pgr 由 `--gap-model`/`--match-score`
-    推导（medium/loose 反推仿射近似）。
+*   **gap 参数**：multiz 固定 400/30，pgr 已硬编码同样的 400/30（不提供
+    打分 CLI 参数），与 multiz 一致。
 
 ## 4. pgr MAF 实现现状
 

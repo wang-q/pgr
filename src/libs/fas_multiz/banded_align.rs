@@ -9,9 +9,8 @@
 //! charged a gap-open penalty. The result is consumed by [`super::merge`] to
 //! merge blocks into a unified alignment.
 
-use super::{find_ref_entry, FasMultizConfig, FasMultizGapModel};
+use super::{find_ref_entry, FasMultizConfig};
 use crate::libs::chain::sub_matrix::SubMatrix;
-use crate::libs::chain::GapCalc;
 use crate::libs::fmt::fas::{FasBlock, FasEntry};
 use std::collections::BTreeMap;
 
@@ -20,12 +19,9 @@ pub(super) fn banded_align_refs(
     blocks: [&FasBlock; 2],
     ref_name: &str,
     cfg: &FasMultizConfig,
-) -> anyhow::Result<Option<(Vec<Option<usize>>, Vec<Option<usize>>)>> {
-    let submat = match &cfg.score_matrix {
-        Some(name) => SubMatrix::from_name(name)?,
-        None => SubMatrix::hoxd55(),
-    };
-    Ok(banded_align_refs_inner(blocks, ref_name, cfg, &submat))
+) -> Option<(Vec<Option<usize>>, Vec<Option<usize>>)> {
+    // Hardcoded multiz scoring: HOX70 (= hoxd55) substitution matrix.
+    banded_align_refs_inner(blocks, ref_name, cfg, &SubMatrix::hoxd55())
 }
 
 #[allow(clippy::type_complexity)]
@@ -125,34 +121,9 @@ fn banded_align_refs_inner(
         }
     };
 
-    let (gap_open_pen, gap_extend_pen) =
-        if let (Some(open), Some(extend)) = (cfg.gap_open, cfg.gap_extend) {
-            let scale = cfg.match_score as f64 / 100.0;
-            let open_scaled = (open as f64 * scale).round() as i32;
-            let extend_scaled = (extend as f64 * scale).round() as i32;
-            (-open_scaled, -extend_scaled)
-        } else {
-            match cfg.gap_model {
-                FasMultizGapModel::Constant => (cfg.gap_score, cfg.gap_score),
-                FasMultizGapModel::Medium | FasMultizGapModel::Loose => {
-                    let gap_calc = match cfg.gap_model {
-                        FasMultizGapModel::Medium => GapCalc::medium(),
-                        FasMultizGapModel::Loose => GapCalc::loose(),
-                        FasMultizGapModel::Constant => {
-                            unreachable!("Constant gap model already handled in outer branch")
-                        }
-                    };
-                    let c1 = gap_calc.calc(1, 0).max(1);
-                    let c2 = gap_calc.calc(2, 0).max(c1 + 1);
-                    let open_raw = 2 * c1 - c2;
-                    let extend_raw = c2 - c1;
-                    let scale = cfg.match_score as f64 / 100.0;
-                    let open_scaled = (open_raw as f64 * scale).round() as i32;
-                    let extend_scaled = (extend_raw as f64 * scale).round() as i32;
-                    (-open_scaled, -extend_scaled)
-                }
-            }
-        };
+    // Hardcoded multiz gap penalties (HOX70): open 400 / extend 30.
+    let gap_open_pen = -400;
+    let gap_extend_pen = -30;
 
     // All-species column profiles. `col_a[i]` holds the bases of every species
     // in blocks[0] at column i (sorted by species name), `col_b[j]` for
@@ -217,7 +188,7 @@ fn banded_align_refs_inner(
         } else if ba == b'-' || bb == b'-' {
             gap_extend_pen
         } else {
-            submat.get_score(ba as char, bb as char) / 50
+            submat.get_score(ba as char, bb as char)
         }
     };
     // Quasi-natural gap-open lookup (multiz `GAP`): of the 16 configurations

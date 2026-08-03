@@ -48,7 +48,8 @@ multiz 是同一套策略：以参考坐标为主轴做一体化 DP，在合并�
 
 - 窗口：任一输入覆盖即保留（窗口推导见 §3.2）。
 - 物种：取各输入的并集，缺失输入以 gap 填充。
-- DP 失败时跳过该输入继续合并，而不是整体放弃。
+- 单步合并失败时：起始两块失败 → 回退保守合并；后续某步失败 → 跳过该输入
+  继续（见 §3.3）。
 
 ### 2.3 与 multiz 的异同
 
@@ -74,24 +75,19 @@ DP 引擎本身未做简化——`banded_align.rs` 是 yama 的直接移植（§
 
 - `-r, --ref-name <NAME>`（必需）：参考序列名，须存在于所有输入。
 - `<infiles>...`：至少 2 个 block FA 文件。
-- `--radius <INT>`（默认 30）：带状 DP 半径。
+- `--radius <INT>`（默认 30）：带状 DP 半径；同时用于窗口推导时的区间扩展
+  （§3.2）。
 - `--min-width <INT>`（默认 1）：最小窗口宽度。
-- `--score-scheme <文件|预设>`：替换矩阵（LASTZ 格式文件，或 `hoxd55` 预设； 默认 `hoxd55`）。
-- `--gap-model constant|medium|loose`（默认 `medium`）；`--align-gap-open` / `--align-gap-extend`
-  显式覆盖。
-- `--match-score`（默认 2）/ `--mismatch-score`（默认 -1）/ `--gap-score`（默认 -2）。
 - `-o, --outfile`：输出文件（默认 stdout）。
+
+打分不提供任何 CLI 参数，硬编码 multiz 原版值：HOX70（= `hoxd55`）矩阵 +
+gap open 400 / extend 30（§3.5）。
 
 ### 2.5 与原版 CLI 的行为差异（待决策）
 
-以下两点是当前实现与原版 multiz 的行为差异，是否对齐原版尚未决定：
+当前实现与原版 multiz 的行为差异，是否对齐原版尚未决定：
 
-1. **打分参数**：原版硬编码 HOX70（= `hoxd55`）+ gap open 400 / extend 30；
-   pgr 当前暴露 `--score-scheme` / `--gap-model` / `--align-gap-open` /
-   `--align-gap-extend` / `--match-score` / `--mismatch-score` / `--gap-score`
-   供配置（其中 `--mismatch-score` 目前只存在于配置中、不参与打分）。
-   候选：删除这些参数，硬编码原版值。
-2. **未使用块与单行块输出**：原版支持 `out1 out2`（收集未参与合并的块）与
+- **未使用块与单行块输出**：原版支持 `out1 out2`（收集未参与合并的块）与
    `all`（默认不输出单行 block，指定 `all` 才输出）；pgr 当前没有这两个机制——
    合并失败的窗口直接丢弃，单输入窗口的 block 固定保留。
    候选：实现 `out1/out2` 与 `all`，对齐原版。
@@ -108,8 +104,8 @@ DP 引擎本身未做简化——`banded_align.rs` 是 yama 的直接移植（§
 | `banded_align.rs` | 单步 profile–profile 带状 DP（yama 直译）                                                                         |
 | `tests.rs`        | 10 个单元测试                                                                                                     |
 
-依赖：`fmt::fas`（block 数据结构）、`chain::SubMatrix`/`GapCalc`（打分）、 `ds`（区间合并/覆盖计数）。
-不依赖 `libs::alignment`。
+依赖：`fmt::fas`（block 数据结构）、`chain::SubMatrix`（打分，硬编码 `hoxd55`）、
+`ds`（区间合并/覆盖计数）。不依赖 `libs::alignment`。
 
 ### 3.2 窗口推导（merge_fas_files_auto_windows）
 
@@ -119,10 +115,13 @@ DP 引擎本身未做简化——`banded_align.rs` 是 yama 的直接移植（§
 
 ### 3.3 单窗口合并流程（merge_window）
 
-1. 每个输入取窗口内与参考重叠的 block；无 block 的输入直接跳过。
+1. 每个输入取窗口内第一个与参考重叠的 block；无 block 的输入直接跳过。
 2. block ≥ 2 时尝试 progressive DP 合并（§3.4）：
     - 按内容驱动的确定性次序（§4.1）两两合并；
-    - 任一步失败 → 跳过该输入继续；全部失败则回退保守合并。
+    - 单步合并先要求参考去 gap 后相同（ungapped equal）→ 走带状 DP；参考
+      去 gap 不同 → 尝试 crossover 拼接（需共享非参考物种打分，见 §4.3）；
+    - 起始两块合并失败 → 整体回退保守合并；后续某步失败 → 跳过该输入继续，
+      已合并的部分保留。
 3. 保守合并：所有 block 的参考 entry 完全相同（含 gap）时直接堆叠，取物种并集；
    否则放弃该窗口。
 
@@ -133,8 +132,9 @@ DP 引擎本身未做简化——`banded_align.rs` 是 yama 的直接移植（§
 - **C/D/I 三状态**：C=替换，D=删除（A 列配 B 全 dash），I=插入（B 列配 A 全 dash）；每格记录
   `flag_c | flag_d<<2 | flag_i<<4` 供回溯。
 - **准自然 GAP 查表**：16 种"最后两条边"构型中 6 种收 gap_open（`mz_scores.c` 直译）。
-- **全体物种对打分（K×L 笛卡尔积）**：base–base 用替换矩阵（/50 缩放）， base–gap 收一次 gap_extend，
-  gap–gap 为 0；I/D 按"插入列非 dash 数 × 对方行数 × gap_extend"收费。
+- **全体物种对打分（K×L 笛卡尔积）**：base–base 用替换矩阵原始值（`hoxd55`），
+  base–gap 收一次 gap_extend（-30），gap–gap 为 0；I/D 按"插入列非 dash 数 ×
+  对方行数 × gap_extend"收费。
 - **端部 gap 免费**：I 在末行、C 在起点列、D 在起点/终点列不收 gap-open （extend 照收）。
 - **参考锚定 LB/RB**：参考去 gap 逐位配对，平滑"香肠"扩展后每行只在 `[lb[i], rb[i]]` 内计算
   （变宽带）。
@@ -142,11 +142,11 @@ DP 引擎本身未做简化——`banded_align.rs` 是 yama 的直接移植（§
 
 ### 3.5 打分参数
 
-- 替换矩阵：`chain::SubMatrix`，DP 中除以 50 缩放（默认 `hoxd55`，可 `--score-scheme` 覆盖）。
-- gap：`--gap-model` 取 `GapCalc` 的 quasi-natural 曲线（`medium`/`loose`） 反推仿射参数，
-  `constant` 直接用 `gap_score`；也可 `--align-gap-open` /`--align-gap-extend` 显式指定。所有值按
-  `match_score/100` 缩放。
-- `--mismatch-score` 目前只存在于配置中，实际 base–base 打分由替换矩阵决定。
+打分全部硬编码 multiz 原版值（不提供 CLI 参数）：
+
+- 替换矩阵：`chain::SubMatrix::hoxd55()`（= multiz HOX70，A-A 91 / A-C -114
+  等原始值，不做缩放）。
+- gap：open 400 / extend 30；`SS('-',x) = -extend`，GAP 表按构型收 open。
 
 ## 4. 实现演进记录
 
@@ -159,6 +159,7 @@ DP 引擎本身未做简化——`banded_align.rs` 是 yama 的直接移植（§
     - 朴素全笛卡尔积会拖偏参考锚点：真实数据上产生 155 列错位（3981 bp vs 3826），因 base–gap
       逐对罚分远大于错配罚分，DP 倾向移位避开 gap 列。
     - 对角线上 gap 贡献改为 0，gap 成本全部由转移承担，避免与替换分数失衡。
+    （该打分方案在阶段 1.5 被"全体物种对（K×L 笛卡尔积）"替换，见 §4.2；当前行为以 §3.4 为准。）
 - **确定性合并次序**：不按输入顺序，而按内容贪心——先选物种最多的块，之后反复
   选与累计物种集重叠最大的块，并列时按内容键（参考区间 + 物种名）打破；输入 顺序无关已有回归测试。
 - **配套修正**：合并参考只保留第一块的参考序列（不再用第二块碱基填 gap）， 保证合并参考恒等于输入参考
@@ -176,6 +177,9 @@ DP 引擎本身未做简化——`banded_align.rs` 是 yama 的直接移植（§
 
 ### 4.3 P2 状态（2026-08-03）
 
+- **打分参数硬编码 ✅**：`--score-scheme` / `--gap-model` / `--align-gap-open` /
+  `--align-gap-extend` / `--match-score` / `--mismatch-score` / `--gap-score`
+  已全部删除，矩阵与 gap 罚分硬编码 multiz 原版值（§3.5）。
 - **hox70 别名（不做）**：multiz 的 HOX70 与 pgr 的 `hoxd55` 数值完全相同 （91/-114/-31/-123，gap
   open 400/extend 30），直接用 `hoxd55` 即可，不引入 `hox70` 别名。
 - **v=0 模式（未做）**：需要第二次 yama 对齐参考行；pgr 渐进合并以累计块 参考为锚（等价 multiz

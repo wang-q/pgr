@@ -126,16 +126,14 @@ fn merge_conflicting_refs(
         return Ok(None);
     };
 
-    let (map_a, map_b) = match banded_align_refs(blocks, ref_name, cfg)? {
+    let (map_a, map_b) = match banded_align_refs(blocks, ref_name, cfg) {
         Some(v) => v,
         None => return Ok(None),
     };
     let out_len = map_a.len();
 
-    let submat = match &cfg.score_matrix {
-        Some(name) => SubMatrix::from_name(name)?,
-        None => SubMatrix::hoxd55(),
-    };
+    // Hardcoded multiz scoring: HOX70 (= hoxd55) substitution matrix.
+    let submat = SubMatrix::hoxd55();
 
     let col = |map: &[Option<usize>], seq: &[u8], i: usize| -> u8 {
         map[i].and_then(|idx| seq.get(idx).copied()).unwrap_or(b'-')
@@ -238,7 +236,7 @@ fn merge_two_blocks_with_dp(
         return merge_conflicting_refs(ref_name, blocks, cfg);
     }
 
-    let (map_a, map_b) = match banded_align_refs(blocks, ref_name, cfg)? {
+    let (map_a, map_b) = match banded_align_refs(blocks, ref_name, cfg) {
         Some(v) => v,
         None => return Ok(None),
     };

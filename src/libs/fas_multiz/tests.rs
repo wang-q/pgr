@@ -29,13 +29,6 @@ fn default_config() -> FasMultizConfig {
         ref_name: "ref".to_string(),
         radius: 5,
         min_width: 1,
-        match_score: 2,
-        mismatch_score: -1,
-        gap_score: -2,
-        gap_model: FasMultizGapModel::Medium,
-        gap_open: None,
-        gap_extend: None,
-        score_matrix: None,
     }
 }
 

@@ -17,7 +17,7 @@ Notes:
   species across inputs.
 
 Examples:
-1. Core mode merge with default radius:
+1. Merge with default radius:
    pgr fas multiz -r S288c tests/fas/S288cvsRM11_1a.slice.fas tests/fas/S288cvsSpar.slice.fas
 
 2. Merge with a larger radius and minimum width:
@@ -55,38 +55,6 @@ Examples:
                 .default_value("1")
                 .help("Minimum window width to consider for merging"),
         )
-        .arg(crate::cmd_pgr::args::score_scheme_arg())
-        .arg(crate::cmd_pgr::args::gap_model_arg(
-            "medium",
-            &["constant", "medium", "loose"],
-            "Gap model: constant, medium, or loose",
-        ))
-        .arg(crate::cmd_pgr::args::align_gap_open_arg())
-        .arg(crate::cmd_pgr::args::align_gap_extend_arg())
-        .arg(
-            Arg::new("match_score")
-                .long("match-score")
-                .num_args(1)
-                .default_value("2")
-                .value_parser(value_parser!(i32))
-                .help("Match score for scoring matrix"),
-        )
-        .arg(
-            Arg::new("mismatch_score")
-                .long("mismatch-score")
-                .num_args(1)
-                .default_value("-1")
-                .value_parser(value_parser!(i32))
-                .help("Mismatch penalty for scoring matrix"),
-        )
-        .arg(
-            Arg::new("gap_score")
-                .long("gap-score")
-                .num_args(1)
-                .default_value("-2")
-                .value_parser(value_parser!(i32))
-                .help("Gap penalty for scoring matrix"),
-        )
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
 
@@ -95,33 +63,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let ref_name = args.get_one::<String>("ref_name").unwrap().to_string();
     let radius = *args.get_one::<usize>("radius").unwrap();
     let min_width = *args.get_one::<usize>("min_width").unwrap();
-    let gap_model_str = args.get_one::<String>("gap_model").unwrap();
-    let score_matrix = args.get_one::<String>("score_scheme").cloned();
-    let gap_open = args.get_one::<i32>("align_gap_open").copied();
-    let gap_extend = args.get_one::<i32>("align_gap_extend").copied();
-
-    let gap_model = match gap_model_str.as_str() {
-        "constant" => pgr::libs::fas_multiz::FasMultizGapModel::Constant,
-        "medium" => pgr::libs::fas_multiz::FasMultizGapModel::Medium,
-        "loose" => pgr::libs::fas_multiz::FasMultizGapModel::Loose,
-        _ => anyhow::bail!("unknown gap_model: {}", gap_model_str),
-    };
-
-    let match_score = *args.get_one::<i32>("match_score").unwrap();
-    let mismatch_score = *args.get_one::<i32>("mismatch_score").unwrap();
-    let gap_score = *args.get_one::<i32>("gap_score").unwrap();
 
     let cfg = pgr::libs::fas_multiz::FasMultizConfig {
         ref_name: ref_name.clone(),
         radius,
         min_width,
-        match_score,
-        mismatch_score,
-        gap_score,
-        gap_model,
-        gap_open,
-        gap_extend,
-        score_matrix,
     };
 
     let infiles: Vec<String> = args

@@ -264,16 +264,9 @@ pgr fas multiz [OPTIONS] --ref-name <name> <infiles>...
 - `-r, --ref-name <name>`：所有输入中都存在的参考序列名（必填）。
 - `--radius <int>`：参考对角线周围的带状 DP 半径（默认：30）。
 - `--min-width <int>`：参与合并的最小窗口宽度（默认：1）。
-- `--score-scheme <file>`：评分方案文件（LASTZ 格式）或预设名（如 `hoxd55`）。
-- `--gap-model <constant|medium|loose>`：gap 模型（默认：medium）。
-- `--align-gap-open <int>`：比对 gap 开放罚分，覆盖 `--gap-model` 的默认值。
-- `--align-gap-extend <int>`：比对 gap 延伸罚分，覆盖 `--gap-model` 的默认值。
-- `--match-score <int>`：匹配得分（默认：2）。
-- `--mismatch-score <int>`：不匹配罚分（默认：-1）。
-- `--gap-score <int>`：gap 罚分（默认：-2）。
 - `-o, --outfile <file>`：输出文件名（默认：stdout）。
 
-输出格式：block FA 格式。
+输出格式：block FA 格式。打分硬编码 multiz 原版值（HOX70 矩阵 + gap open 400 / extend 30）。
 
 ### refine
 

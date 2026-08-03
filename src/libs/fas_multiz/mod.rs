@@ -12,25 +12,11 @@ pub use merge::merge_window;
 use crate::libs::fmt::fas::{FasBlock, FasEntry};
 use std::path::Path;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum FasMultizGapModel {
-    Constant,
-    Medium,
-    Loose,
-}
-
 #[derive(Clone, Debug)]
 pub struct FasMultizConfig {
     pub ref_name: String,
     pub radius: usize,
     pub min_width: usize,
-    pub match_score: i32,
-    pub mismatch_score: i32,
-    pub gap_score: i32,
-    pub gap_model: FasMultizGapModel,
-    pub gap_open: Option<i32>,
-    pub gap_extend: Option<i32>,
-    pub score_matrix: Option<String>,
 }
 
 #[derive(Clone, Debug)]
