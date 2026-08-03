@@ -336,3 +336,86 @@ s-kmer 无重复基因组输出 `"-"` 占位，下游 `fa mask` 正确消费。
 34. **decompose 对无法解析的 FASTA 头静默丢弃（记录项落实）**：
     `decompose::parse_fasta` 对解析失败的记录头静默跳过，畸形 cluster
     FASTA 的输入被悄悄忽略。补 `log::warn!`（与 `parse_or_warn` 行为一致）。
+
+## 追加轮（2026-08-04 第三轮，#35-37）
+
+### 修复
+
+35. **`align_banded_local` 序列长度悬殊时 DP 数组越界 panic**：
+    `banded.rs` 的行循环把 j_lo 钳到 `[1, m]`（`min(m)`）而不是与对角带
+    求交；当一条序列远长于另一条时（如 q=2000、t=100、band=4），行尾的
+    `off = j - i - diag0 + band` 为负，`as usize` 回绕成超大下标，
+    `mscore[c]` 直接越界 panic（debug 实测 "attempt to add with overflow"）。
+    修复：j_lo/j_hi 改为 `max(1, i+diag0-band)` / `min(m, i+diag0+band)`，
+    空交集直接跳过该行；off 恒落在 `[0, width)`。当前 align 管线的调用
+    （等长窗口）不触发，但作为公开 lib API 必须零 panic。回归测试
+    `unbalanced_lengths_do_not_panic`。
+36. **lav `l` 行极值坐标减法溢出 panic**：`parse_a` 用 `parse::<i64>()? - 1`
+    解析 1-based 起点（i64::MIN 时下溢），跨度一致性检查
+    `(q_end - q_start) != (t_end - t_start)` 在 `q_end=i64::MAX`、
+    `q_start=-1` 时也溢出；构造输入在 debug 构建直接 panic。修复：起点
+    `checked_sub(1)`、跨度用 `checked_sub` 比较，越界值报 InvalidData。
+    回归测试 `extreme_l_line_values_do_not_panic`。
+37. **pgi merge 频率过滤两侧边界不一致**：A 侧 `ea_freq > freq` 保留
+    `== freq` 的 k-mer，B 侧扩展范围 `occ >= freq` 与 FastGA GIXmake
+    （"only k-mers whose count is less than the adaptamer frequency cutoff"）
+    都丢弃 `>= freq`。交叉比对时（A 侧恰好 freq 次、B 侧罕见）pgr 会多出
+    FastGA 不存在的种子。修复：A 侧改为 `ea_freq >= freq`；B 侧把
+    `== freq` 的条目整体视为"不在索引中"（FastGA GIX 在构建期就排除
+    `>= FREQ` 的 k-mer）——最大共享前缀扫描、occ 累计、发射循环三处统一
+    用 `>= freq` 跳过 / `< freq` 计入。原实现里 `== freq` 的 B 侧条目会
+    抬高 m 并触发整段丢弃，与 FastGA 不符（FastGA 中该条目不存在，同范围
+    的稀有条目仍可命中）。回归测试
+    `freq_boundary_drops_exact_freq_on_reference_side` 与
+    `exact_freq_query_entries_are_absent_not_range_killers`。
+
+### 本轮排除的疑点
+
+* **wave `forward_wave_mid` 初始 trim 越界**：无 PATH_AVE 质量匹配时返回
+  初始 trim 点，理论上一端可越界 1 bp 或超出序列；经几何推演（越界点
+  必然镜像到空盒 → 反向 wave 返回 None，或 `at <= ab || bt <= bb` 守卫
+  拦截）与 8×8 长度 × 全 band/amid 参数空间的 fuzz（约 20 万次调用）均
+  未触发 panic，判定不可达，不加防御代码。
+* **`spanr fill -n 0`（e-align 的 fk=0）**：实测 spanr 0.8.6 对 `-n 0`
+  fill 为 no-op，行为与设计文档（e-align 不做 k-mer 填补）一致，仅多一次
+  冗余进程，不改。
+* **`fa split name` 名称碰撞**（`chr(1)` 与 `chr_1` 同 sanitize 结果）：
+  trf 依赖 split 产物，但碰撞根因在 `fa split name`（共享命令），概率极低，
+  记录不修。
+* **LAV `s`/`h`  stanza 含空格文件名**（`[nameparse=darkspace]` 场景）：
+  `split_whitespace` 解析会把后续字段错位；与 UCSC lavToPsl 的简单解析
+  一致，pgr 自身产线文件名不含空格，记录不修。
+* **单 contig > 4.3 Gb 的 pgi 索引**：`pack_position` 的 pos 为 u32，
+  `write` 会为超长 contig 计算 pos_bytes=5 而 reader 拒绝 `> 4`，属自相
+  一致的上限（超长单 contig 不被支持），记录项。
+
+### 最终状态（第三轮）
+
+* 测试数 995（较上轮 +4，均为本轮回归测试），`cargo fmt --check` 与
+  `cargo clippy --all-targets -- -D warnings` 干净；全量测试通过。
+
+## 追加轮（2026-08-04 第四轮 #37 精修 + 第五/六轮确认）
+
+### 第四轮（#37 精修）
+
+复查 #37 修复时发现频率过滤还有两处残留不一致：B 侧"最大共享前缀 m 扫描"
+与"扩展范围 occ 累计"仍把 `== freq` 的条目视为存在（`> freq` / `<= freq`），
+而 FastGA GIXmake 在构建期就排除 `>= FREQ` 的 k-mer——这些条目应整体视为
+"不在索引中"。原实现会让 `== freq` 的 B 侧条目抬高 m 并触发整段丢弃，
+与 FastGA 不符（FastGA 中该条目不存在，同范围内其他稀有条目仍可命中）。
+统一改为：m 扫描 `>= freq` 跳过、occ 累计 `< freq` 计入、发射循环 `< freq`。
+原 `merge_filters_extended_range_by_occurrences` 测试断言的是旧行为
+（`== freq` 条目丢弃整段），按 FastGA 语义改写为"多个低于阈值的条目
+总和 >= freq 才丢弃整段"，并新增
+`exact_freq_query_entries_are_absent_not_range_killers`
+（`== freq` 条目旁稀有条目仍以 25 bp 前缀命中）。测试数 995。
+
+### 第五/六轮确认
+
+* 第五轮：重读本轮全部改动（banded 边界、lav checked 算术、pgi 频率过滤
+  三处调用点）与剩余高风险路径（mmap 越界守卫、tube 合并循环、wave 端点
+  几何推演），无新问题。
+* 第六轮：`cargo test` 全量 995 通过、`cargo fmt --check` 与
+  `cargo clippy --all-targets -- -D warnings` 干净；sd/rept/align 四组 CLI
+  端到端（38 测试）全绿。
+* 连续两轮无新问题，符合"修复后继续复核直到稳定"的审计约定。

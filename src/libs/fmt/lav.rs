@@ -193,14 +193,28 @@ impl<R: BufRead> LavReader<R> {
                         format!("malformed l line (need >=6 fields): {}", line),
                     ));
                 }
-                let t_start = parts[1]
+                // Coordinates are 1-based in the file; subtracting 1 from an
+                // extreme value (i64::MIN) overflows, and the span-mismatch
+                // check below subtracts the endpoints. Use checked arithmetic
+                // so crafted values produce a friendly error, never a panic.
+                let raw_t_start = parts[1]
                     .parse::<i64>()
-                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?
-                    - 1;
-                let q_start = parts[2]
+                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+                let raw_q_start = parts[2]
                     .parse::<i64>()
-                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?
-                    - 1;
+                    .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+                let t_start = raw_t_start.checked_sub(1).ok_or_else(|| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!("coordinate out of range in l line: {}", parts[1]),
+                    )
+                })?;
+                let q_start = raw_q_start.checked_sub(1).ok_or_else(|| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!("coordinate out of range in l line: {}", parts[2]),
+                    )
+                })?;
                 let t_end = parts[3]
                     .parse::<i64>()
                     .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
@@ -217,7 +231,19 @@ impl<R: BufRead> LavReader<R> {
                         format!("negative span in l line: {}", line),
                     ));
                 }
-                if (q_end - q_start) != (t_end - t_start) {
+                let q_span = q_end.checked_sub(q_start).ok_or_else(|| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!("coordinate span overflow in l line: {}", line),
+                    )
+                })?;
+                let t_span = t_end.checked_sub(t_start).ok_or_else(|| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!("coordinate span overflow in l line: {}", line),
+                    )
+                })?;
+                if q_span != t_span {
                     return Err(io::Error::new(
                         io::ErrorKind::InvalidData,
                         "Block size mismatch",
@@ -733,6 +759,40 @@ a {
         assert!(matches!(stanza, LavStanza::Header { .. }));
         let err = reader.next_stanza().unwrap_err();
         assert!(err.to_string().contains("negative span"), "got: {err}");
+    }
+
+    #[test]
+    fn extreme_l_line_values_do_not_panic() {
+        // Regression: `l` coordinates are parsed with `parse::<i64>() - 1`
+        // and the span-mismatch check subtracts i64 endpoints; crafted
+        // extreme values (i64::MIN starts, i64::MAX ends) used to overflow
+        // the subtraction (panic in debug builds). They must produce a
+        // friendly parse error instead.
+        let data = r#"#:lav
+s {
+    "/path/target.fa" 1 1000
+    "/path/query.fa" 1 500
+}
+h {
+    ">target"
+    ">query"
+}
+a {
+    s 100
+    l -9223372036854775808 1 1 1 95
+}
+"#;
+        let mut reader = LavReader::new(Cursor::new(data));
+        let mut stanza = reader.next_stanza().unwrap().unwrap();
+        assert!(matches!(stanza, LavStanza::Sizes { .. }));
+        stanza = reader.next_stanza().unwrap().unwrap();
+        assert!(matches!(stanza, LavStanza::Header { .. }));
+        let err = reader.next_stanza().unwrap_err();
+        assert!(
+            err.to_string().contains("coordinate out of range")
+                || err.to_string().contains("Invalid data"),
+            "extreme l line must error, got: {err}"
+        );
     }
 
     #[test]

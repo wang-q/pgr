@@ -80,7 +80,7 @@ Examples:
                 .long("freq")
                 .default_value("10")
                 .value_parser(value_parser!(u32))
-                .help("Maximum k-mer frequency on either side to keep as seed"),
+                .help("K-mers occurring at least this often on either side are skipped as seeds"),
         )
         .arg(
             Arg::new("min_span")

@@ -62,8 +62,17 @@ pub fn align_banded_local(
     let mut best_off = 0usize;
     for i in 1..=n {
         // Only columns inside the diagonal band: |j - i - diag0| <= band.
-        let j_lo = ((i as i64 + diag0 - band as i64).max(1).min(m as i64)) as usize;
-        let j_hi = ((i as i64 + diag0 + band as i64).clamp(1, m as i64)) as usize;
+        // The band must also be intersected with the sequence bounds; the
+        // previous `.min(m)`/clamp left cells at the sequence edge whose
+        // offset (j - i - diag0 + band) fell outside [0, width), wrapping a
+        // negative offset through `as usize` and indexing the DP arrays out
+        // of bounds whenever one input is much longer than the other.
+        let j_lo = (i as i64 + diag0 - band as i64).max(1);
+        let j_hi = (i as i64 + diag0 + band as i64).min(m as i64);
+        if j_lo > j_hi {
+            continue;
+        }
+        let (j_lo, j_hi) = (j_lo as usize, j_hi as usize);
         for j in j_lo..=j_hi {
             let off = (j as i64 - i as i64 - diag0 + band as i64) as usize;
             let c = i * width + off;
@@ -282,5 +291,20 @@ mod tests {
         let q = b"AAAAAAAA";
         let t = b"CCCCCCCC";
         assert!(align_banded_local(q, t, 4, 0, &AlignmentParams::default()).is_none());
+    }
+
+    #[test]
+    fn unbalanced_lengths_do_not_panic() {
+        // Regression: when the query is much longer than the target, the
+        // diagonal band at the sequence edge used to wrap a negative offset
+        // through `as usize` and index the DP arrays out of bounds (panic).
+        // The band must be intersected with both the sequence bounds and the
+        // diagonal band; cells outside either are simply not computed.
+        let q: Vec<u8> = (0..2000u32).map(|i| b"ACGT"[(i % 4) as usize]).collect();
+        let t: Vec<u8> = (0..100u32).map(|i| b"ACGT"[(i % 4) as usize]).collect();
+        let r = align_banded_local(&q, &t, 4, 0, &AlignmentParams::default());
+        // Whatever the result, it must not panic; the banded DP is allowed to
+        // find nothing when the lengths are this unbalanced.
+        let _ = r;
     }
 }

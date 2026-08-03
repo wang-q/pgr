@@ -14,7 +14,8 @@ use std::io::Read;
 /// Alignment parameters; defaults follow FastGA (`-f 10`, `-c 85`, `-s 1000`).
 #[derive(Debug, Clone, Copy)]
 pub struct AlignParams {
-    /// Maximum k-mer frequency on either side to keep as a seed.
+    /// K-mers occurring at least this often on either side are skipped as
+    /// seeds (FastGA's frequency cutoff).
     pub freq: u32,
     /// Minimum per-axis seed span (bp) for a chain to be kept.
     pub min_span: u32,
@@ -181,7 +182,13 @@ fn emit_entry_hits<B: PgiQuery>(
     k: usize,
 ) -> Vec<SeedHit> {
     let mut hits = Vec::new();
-    if ea_freq > freq {
+    // FastGA excludes k-mers whose count is >= the frequency cutoff on both
+    // sides at index-build time (GIXmake: "only k-mers whose count is less
+    // than the adaptamer frequency cutoff are in the index"); the query-side
+    // extended-range filter below drops `occ >= freq` for the same reason.
+    // Dropping only `> freq` here would let a k-mer occurring exactly `freq`
+    // times on the reference side seed hits that FastGA never emits.
+    if ea_freq >= freq {
         return hits;
     }
     // FastGA stores each position under its canonical orientation only; the
@@ -212,7 +219,10 @@ fn emit_entry_hits<B: PgiQuery>(
     let mut m: u32 = 0;
     let mut i = j0;
     while i < j {
-        if b.entry_freq(i) > freq {
+        // Entries with `freq >= cutoff` are absent from FastGA's GIX index;
+        // treat them as absent here too (they must not influence the maximal
+        // shared prefix).
+        if b.entry_freq(i) >= freq {
             i = b.entry_next(i);
             continue;
         }
@@ -229,7 +239,7 @@ fn emit_entry_hits<B: PgiQuery>(
     let mut i = m0;
     while i < m1 {
         let f = b.entry_freq(i);
-        if f <= freq {
+        if f < freq {
             occ += f;
         }
         i = b.entry_next(i);
@@ -239,7 +249,7 @@ fn emit_entry_hits<B: PgiQuery>(
     }
     let mut i = m0;
     while i < m1 {
-        if b.entry_freq(i) <= freq {
+        if b.entry_freq(i) < freq {
             for &arec in a_positions {
                 let (ac, apos, astrand) = unpack_position(arec);
                 for brec in b.entry_positions(i) {
@@ -1483,8 +1493,91 @@ mod tests {
 
     #[test]
     fn merge_filters_extended_range_by_occurrences() {
-        // The 31-base match occurs `freq` times in `b`: the whole entry is
-        // skipped even though a rare 25-base match also exists.
+        // The extended range at the maximal shared prefix holds `freq` or
+        // more total occurrences of *under-frequency* entries: the whole
+        // entry is skipped (FastGA's extended-range filter sums the index
+        // counts over the range and drops it at `>= FREQ`).
+        let mk_a = PgiIndex {
+            k: 32,
+            smer: 8,
+            window: 5,
+            contigs: vec![(String::from("c"), 1000)],
+            entries: vec![PgiEntry {
+                kmer: 0,
+                pos_start: 0,
+                freq: 1,
+            }],
+            positions: vec![crate::libs::pgi::pack_position(0, 10, 0)],
+        };
+        // Three distinct 25-base-matching k-mers, 4 occurrences each (each
+        // entry is under the cutoff, but 12 >= freq=10 in total).
+        let b = PgiIndex {
+            k: 32,
+            smer: 8,
+            window: 5,
+            contigs: vec![(String::from("c"), 1000)],
+            entries: vec![
+                PgiEntry {
+                    kmer: 1 << 12,
+                    pos_start: 0,
+                    freq: 4,
+                },
+                PgiEntry {
+                    kmer: 1 << 13,
+                    pos_start: 4,
+                    freq: 4,
+                },
+                PgiEntry {
+                    kmer: 3 << 12,
+                    pos_start: 8,
+                    freq: 4,
+                },
+            ],
+            positions: (0..10)
+                .map(|i| crate::libs::pgi::pack_position(0, 50 + i, 0))
+                .collect(),
+        };
+        let hits = merge_seed_hits(&mk_a, &b, 10, 20).unwrap();
+        assert!(hits.is_empty(), "extended range is too frequent: {hits:?}");
+    }
+
+    #[test]
+    fn freq_boundary_drops_exact_freq_on_reference_side() {
+        // Regression: the reference-side frequency check used `> freq`
+        // (keeping `== freq`) while the query side (and FastGA's GIX build)
+        // drop `>= freq`. A k-mer occurring exactly `freq` times on the
+        // reference but rarely on the query must not seed either.
+        let mk = |freq: u32, positions: Vec<u64>| PgiIndex {
+            k: 32,
+            smer: 8,
+            window: 5,
+            contigs: vec![(String::from("c"), 1000)],
+            entries: vec![PgiEntry {
+                kmer: 0,
+                pos_start: 0,
+                freq,
+            }],
+            positions,
+        };
+        let a = mk(
+            2,
+            vec![
+                crate::libs::pgi::pack_position(0, 10, 0),
+                crate::libs::pgi::pack_position(0, 20, 0),
+            ],
+        );
+        let b = mk(1, vec![crate::libs::pgi::pack_position(0, 50, 0)]);
+        let hits = merge_seed_hits(&a, &b, 2, 32).unwrap();
+        assert!(hits.is_empty(), "exact-freq k-mers must not seed: {hits:?}");
+    }
+
+    #[test]
+    fn exact_freq_query_entries_are_absent_not_range_killers() {
+        // FastGA's GIX index excludes k-mers with count >= FREQ at build
+        // time, so an `== freq` entry must behave as absent: it neither
+        // raises the maximal shared prefix nor drops the extended range. A
+        // rare (freq 1) 25-base match next to an `== freq` 31-base entry must
+        // still seed at the rare entry's prefix length.
         let mk_a = PgiIndex {
             k: 32,
             smer: 8,
@@ -1506,21 +1599,24 @@ mod tests {
                 PgiEntry {
                     kmer: 3,
                     pos_start: 0,
-                    freq: 10,
+                    freq: 2,
                 },
                 PgiEntry {
                     kmer: 3 << 12,
-                    pos_start: 10,
+                    pos_start: 2,
                     freq: 1,
                 },
             ],
-            positions: (0..10)
-                .map(|i| crate::libs::pgi::pack_position(0, i, 0))
-                .chain(std::iter::once(crate::libs::pgi::pack_position(0, 60, 0)))
-                .collect(),
+            positions: vec![
+                crate::libs::pgi::pack_position(0, 50, 0),
+                crate::libs::pgi::pack_position(0, 51, 0),
+                crate::libs::pgi::pack_position(0, 60, 0),
+            ],
         };
-        let hits = merge_seed_hits(&mk_a, &b, 10, 20).unwrap();
-        assert!(hits.is_empty(), "extended range is too frequent");
+        let hits = merge_seed_hits(&mk_a, &b, 2, 20).unwrap();
+        assert_eq!(hits.len(), 1, "rare entry must seed: {hits:?}");
+        assert_eq!(hits[0].shared, 25);
+        assert_eq!(hits[0].b_pos, 60);
     }
 
     #[test]

@@ -75,7 +75,7 @@ This command identifies repeats in a genome against an external repeat library
                 .value_parser(value_parser!(usize))
                 .num_args(1)
                 .default_value("100")
-                .help("Maximum k-mer frequency on either side to keep as seed"),
+                .help("K-mers occurring at least this often on either side are skipped as seeds"),
         )
         .arg(
             Arg::new("min_span")
