@@ -104,6 +104,35 @@ fn command_sd_search_lastz_engine() {
     );
 }
 
+/// Regression: `sd search --engine lastz` without `--preset` must use the
+/// documented set01 default (the CLI used to omit preset parameters entirely,
+/// running lastz with its own built-in defaults).
+#[test]
+fn command_sd_search_lastz_default_preset() {
+    if which::which("lastz").is_err() {
+        eprintln!("Skipping command_sd_search_lastz_default_preset: lastz not installed");
+        return;
+    }
+    let temp = tempfile::TempDir::new().unwrap();
+    let fa = write_fa(temp.path(), "genome", &tandem_genome());
+    let out = temp.path().join("hits.psl");
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "sd",
+            "search",
+            &fa,
+            "--engine",
+            "lastz",
+            "-o",
+            out.to_str().unwrap(),
+        ])
+        .run();
+    assert!(
+        stderr.contains("K=3000"),
+        "set01 preset params must be applied by default, got: {stderr}"
+    );
+}
+
 #[test]
 fn command_sd_cross_pgi_engine() {
     // Two genomes sharing a duplicated region: the pgi engine maps the
@@ -204,4 +233,41 @@ fn command_sd_run_end_to_end() {
         bed.lines().count() >= 2,
         "expected 2+ fragments, got: {bed}"
     );
+}
+
+/// Regression: `sd run --engine lastz --preset <p>` used to pass
+/// `"--preset set01"` as a single argv element to the inner `sd search`,
+/// which clap rejects ("unexpected argument"). The preset must expand to
+/// two separate arguments. When lastz is installed the full pipeline runs;
+/// otherwise the inner search still fails on the missing binary rather than
+/// on argument parsing.
+#[test]
+fn command_sd_run_lastz_preset_parses() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let fa = write_fa(temp.path(), "genome", &tandem_genome());
+    let outdir = temp.path().join("sd_out");
+
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "sd",
+            "run",
+            &fa,
+            "--engine",
+            "lastz",
+            "--preset",
+            "set01",
+            "-o",
+            outdir.to_str().unwrap(),
+        ])
+        .run();
+    assert!(
+        !stderr.contains("unexpected argument"),
+        "preset must expand to separate args, got: {stderr}"
+    );
+    if which::which("lastz").is_ok() {
+        assert!(
+            stderr.contains("wrote"),
+            "lastz present: the full run must succeed, got: {stderr}"
+        );
+    }
 }

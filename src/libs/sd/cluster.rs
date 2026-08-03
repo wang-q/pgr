@@ -51,15 +51,21 @@ pub fn cluster_paf<R: BufRead>(
     }
 
     let mut intervals: Vec<SdInterval> = Vec::new();
-    let mut index: HashMap<(String, i32, i32), usize> = HashMap::new();
+    let mut index: HashMap<(String, String, i32, i32, char), usize> = HashMap::new();
     let mut dsu = Dsu::new(records.len() * 2);
 
     let mut add = |chrom: &str, start: u32, end: u32, strand: char| -> usize {
-        let key = (chrom.to_string(), start as i32, end as i32);
+        let (species, chr) = split_species_name(chrom);
+        let key = (
+            species.clone(),
+            chr.clone(),
+            start as i32,
+            end as i32,
+            strand,
+        );
         if let Some(&i) = index.get(&key) {
             return i;
         }
-        let (species, chr) = split_species_name(chrom);
         let i = intervals.len();
         intervals.push(SdInterval {
             name: format!("{species}#{chr}{strand}#{start}#{end}"),
@@ -181,5 +187,42 @@ chr\t120\t30\t40\t+\tchr\t120\t30\t40\t10\t10\t255\n";
         .unwrap();
         assert_eq!(clusters.len(), 1);
         assert_eq!(clusters[0].intervals.len(), 3);
+    }
+
+    #[test]
+    fn same_coordinates_on_opposite_strands_are_distinct_copies() {
+        // Regression: the interval dedup key used to ignore the strand (and
+        // species), so two copies occupying the same coordinates on opposite
+        // strands (an inverted self-repeat) were collapsed into one interval
+        // with the first strand, losing the second copy.
+        let dir = tempfile::tempdir().unwrap();
+        let genome = dir.path().join("g.fa");
+        std::fs::write(&genome, format!(">chr\n{}\n", "A".repeat(1000))).unwrap();
+        // Record 1 aligns query [100,200] on the minus strand; record 2
+        // aligns the same query interval on the plus strand.
+        let paf = "\
+chr\t1000\t100\t200\t-\tchr\t1000\t500\t600\t100\t100\t255\n\
+chr\t1000\t100\t200\t+\tchr\t1000\t700\t800\t100\t100\t255\n";
+        let outdir = dir.path().join("clusters");
+        let clusters = cluster_paf(
+            std::io::Cursor::new(paf.as_bytes()),
+            genome.to_str().unwrap(),
+            outdir.to_str().unwrap(),
+        )
+        .unwrap();
+        assert_eq!(clusters.len(), 1);
+        let same_coords: Vec<&SdInterval> = clusters[0]
+            .intervals
+            .iter()
+            .filter(|iv| iv.chrom == "chr" && iv.start == 100 && iv.end == 200)
+            .collect();
+        assert_eq!(
+            same_coords.len(),
+            2,
+            "plus and minus copies must both survive: {:?}",
+            clusters[0].intervals
+        );
+        let strands: Vec<char> = same_coords.iter().map(|iv| iv.strand).collect();
+        assert!(strands.contains(&'+') && strands.contains(&'-'));
     }
 }

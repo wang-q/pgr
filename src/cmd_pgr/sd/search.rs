@@ -46,6 +46,7 @@ Examples:
                 .value_parser(clap::builder::PossibleValuesParser::new(
                     pgr::libs::lastz::preset_names(),
                 ))
+                .default_value("set01")
                 .help("lastz parameter set (default: set01; lastz engine only)"),
         )
         .arg(

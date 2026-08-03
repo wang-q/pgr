@@ -211,6 +211,12 @@ impl<R: BufRead> LavReader<R> {
                     .parse::<i32>()
                     .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
 
+                if t_end < t_start || q_end < q_start {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!("negative span in l line: {}", line),
+                    ));
+                }
                 if (q_end - q_start) != (t_end - t_start) {
                     return Err(io::Error::new(
                         io::ErrorKind::InvalidData,
@@ -362,7 +368,7 @@ pub fn parse_d_stanza_to_comments(lines: &[String]) -> anyhow::Result<Vec<String
         }
         header_idx += 1;
     }
-    if header_idx + 5 > lines.len() {
+    if header_idx + 6 > lines.len() {
         anyhow::bail!(
             "lastz d stanza missing matrix rows or params line (header at {}, need {} lines, have {})",
             header_idx,
@@ -702,6 +708,34 @@ m {
     }
 
     #[test]
+    fn negative_span_l_line_rejected() {
+        // Regression: an `l` line with t_end < t_start (and a matching q
+        // span) passed the size-mismatch check and wrapped the span through
+        // `as u32` into a huge block; it must error instead.
+        let data = r#"#:lav
+s {
+    "/path/target.fa" 1 1000
+    "/path/query.fa" 1 500
+}
+h {
+    ">target"
+    ">query"
+}
+a {
+    s 100
+    l 5 5 1 1 95
+}
+"#;
+        let mut reader = LavReader::new(Cursor::new(data));
+        let stanza = reader.next_stanza().unwrap().unwrap();
+        assert!(matches!(stanza, LavStanza::Sizes { .. }));
+        let stanza = reader.next_stanza().unwrap().unwrap();
+        assert!(matches!(stanza, LavStanza::Header { .. }));
+        let err = reader.next_stanza().unwrap_err();
+        assert!(err.to_string().contains("negative span"), "got: {err}");
+    }
+
+    #[test]
     fn test_parse_lav_rc() {
         let data = r#"
 h {
@@ -804,5 +838,28 @@ h {
         );
         assert_eq!(comments[2], "##gapPenalties=blastz.v7 O=400 E=30");
         assert_eq!(comments[3], "##blastzParms=O=400,E=30,K=3000,L=3000,M=50");
+    }
+
+    #[test]
+    fn truncated_d_stanza_errors_not_panics() {
+        // Regression: the bounds guard was off by one (header + 5 rows met
+        // the old check but the params line is at header + 5, indexing one
+        // past the end). A truncated d stanza with the matrix but no params
+        // line must error, not panic.
+        let lines = vec![
+            r#"  "lastz.v1.04.41 tests/pgr/pseudocat.fa tests/pgr/pseudopig.fa "#.to_string(),
+            "     A    C    G    T".to_string(),
+            "    91 -114  -31 -123".to_string(),
+            "  -114  100 -125  -31".to_string(),
+            "   -31 -125  100 -114".to_string(),
+            "  -123  -31 -114   91".to_string(),
+            // no "O = ..." params line
+        ];
+        let err = parse_d_stanza_to_comments(&lines).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("missing matrix rows or params line"),
+            "got: {err}"
+        );
     }
 }

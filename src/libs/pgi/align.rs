@@ -361,11 +361,16 @@ pub fn chain_tubes(hits: &[SeedHit], k: u32) -> Vec<Tube> {
     // bucket is anti-ordered (FastGA merges its stream by ipost = anti).
     // Pack the sort key into one u128: (a_contig, b_contig, strand,
     // diagonal bucket + offset, anti). The bucket offset keeps negative
-    // diagonals orderable under unsigned packing. `anti` needs 40 bits
-    // (a_pos + b_pos exceeds 2^24 on any genome larger than ~8 Mb and 2^32
-    // on >2.1 Gb contig pairs) and `bucket` 32; overflowing into the bucket
-    // field interleaves diagonal buckets and fragments tubes.
-    const BUCK_OFF: i64 = 1_000_000;
+    // diagonals orderable under unsigned packing: diag = a_pos - b_pos
+    // spans -2^32+1..2^32-1, so diag/64 spans -2^26..2^26-1 and the offset
+    // must be at least 2^26 — 1,000,000 only covered diagonals down to
+    // ~-64 Mb, and deeper negatives wrapped through `as u64`, spilling
+    // 0xFFFF into the strand/contig fields and interleaving contigs.
+    // `anti` needs 40 bits (a_pos + b_pos exceeds 2^24 on any genome larger
+    // than ~8 Mb and 2^32 on >2.1 Gb contig pairs) and `bucket` 32;
+    // overflowing into the bucket field interleaves diagonal buckets and
+    // fragments tubes.
+    const BUCK_OFF: i64 = 1 << 26;
     // Precompute the packed keys into a flat key array and radix-sort the
     // index permutation alongside (the MSD radix keeps a `u128` key array
     // plus a `u32` index array, ~40% smaller than `(u128, u32)` tuples).
@@ -1931,6 +1936,70 @@ mod tests {
             (tubes[0].anti_low, tubes[0].anti_high),
             (25_000_000, 25_000_120)
         );
+    }
+
+    #[test]
+    fn tube_sort_key_supports_deeply_negative_diagonals() {
+        // Regression: the diagonal bucket offset (1,000,000) only covered
+        // diagonals down to ~-64 Mb; a seed pair 80 Mb apart (diag -80M)
+        // made the bucket negative, which wrapped through `as u64` and
+        // spilled into the strand/contig fields of the packed sort key.
+        // Long-range repeats on large contigs must still form tubes.
+        let mk = |a: u32, b: u32| SeedHit {
+            a_contig: 0,
+            a_pos: a,
+            b_contig: 0,
+            b_pos: b,
+            strand: 0,
+            shared: 40,
+        };
+        // Dense run on diagonal -80,000,000 (a=0..200, b=80,000,000..).
+        let mut hits: Vec<SeedHit> = (0..200u32).map(|i| mk(i, 80_000_000 + i)).collect();
+        // A second dense run on diagonal 0.
+        hits.extend((0..200u32).map(|i| mk(1_000_000 + i, 1_000_000 + i)));
+        let tubes = chain_tubes(&hits, 40);
+        assert_eq!(
+            tubes.len(),
+            2,
+            "each diagonal run must form one tube: {tubes:?}"
+        );
+        let d0 = tubes.iter().find(|t| t.diag_min == -80_000_000).unwrap();
+        assert_eq!(d0.diag_max, -80_000_000);
+        assert_eq!((d0.anti_low, d0.anti_high), (80_000_000, 80_000_438));
+        let main = tubes.iter().find(|t| t.diag_min == 0).unwrap();
+        assert_eq!(main.diag_max, 0);
+        assert_eq!((main.anti_low, main.anti_high), (2_000_000, 2_000_438));
+    }
+
+    #[test]
+    fn tube_sort_key_does_not_mix_contigs_at_negative_diagonals() {
+        // Regression: with the 1,000,000 bucket offset, seeds on diagonals
+        // below ~-64 Mb wrapped their bucket through `as u64`, spilling
+        // 0xFFFF into the strand/contig key fields. Every wrapped seed then
+        // shared the same corrupted (contig, strand) fields, so seeds from
+        // different contigs interleaved by anti and their tubes fragmented.
+        let mk = |a_contig: u16, a: u32, b: u32| SeedHit {
+            a_contig,
+            a_pos: a,
+            b_contig: 0,
+            b_pos: b,
+            strand: 0,
+            shared: 40,
+        };
+        // Two contigs, each with a dense run on diagonal -80,000,000.
+        let mut hits: Vec<SeedHit> = (0..200u32)
+            .flat_map(|i| vec![mk(0, i, 80_000_000 + i), mk(1, i, 80_000_000 + i)])
+            .collect();
+        let tubes = chain_tubes(&hits, 40);
+        assert_eq!(
+            tubes.len(),
+            2,
+            "one tube per contig expected, got {tubes:?}"
+        );
+        let t0 = tubes.iter().find(|t| t.a_contig == 0).unwrap();
+        let t1 = tubes.iter().find(|t| t.a_contig == 1).unwrap();
+        assert_eq!((t0.anti_low, t0.anti_high), (80_000_000, 80_000_438));
+        assert_eq!((t1.anti_low, t1.anti_high), (80_000_000, 80_000_438));
     }
 
     #[test]

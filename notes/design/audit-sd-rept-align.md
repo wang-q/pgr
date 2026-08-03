@@ -401,3 +401,147 @@ lastz 失败诊断专项。修复 2 处问题，962 测试全绿。
 第 9-15 轮累计修复 9 处缺陷（2 处重大索引/链算法、2 处功能、5 处小问题/
 文档/噪音），全部有回归测试或端到端验证；当前 962 测试全绿、fmt /
 clippy 干净；第十五轮无新问题，审计循环结束。
+
+## 复核轮（第十六轮，2026-08-03）
+
+按"发现问题则继续下一轮"的约定重启审计，从当前工作树独立复核 sd / rept /
+align 全部相关代码（命令层 + libs/sd、libs/pgi、libs/lastz、libs/pl/repeat、
+libs/fmt/lav、libs/alignment）。本轮发现并修复 6 处缺陷。968 测试全绿。
+
+### 修复 1：lav d stanza 边界检查差一 → 越界 panic
+
+`parse_d_stanza_to_comments` 的守卫是 `header_idx + 5 > lines.len()`，但参数
+行在下标 `header_idx + 5`——当 d stanza 恰好有 matrix 头 + 4 行矩阵而无参数行
+（6 行）时守卫为 false，随后 `lines[header_idx + 5]` 越界 panic（debug 构建
+直接崩溃）。修复为 `header_idx + 6 > lines.len()`；新增单测
+`truncated_d_stanza_errors_not_panics`。
+
+### 修复 2：sd cluster 区间去重键忽略链向（与物种）
+
+`cluster_paf` 的去重键是 `(chrom, start, end)`，不含 strand 和 species。
+同坐标异链向的两个拷贝（如回文型倒位重复的自比对：query 区间与 target 区间
+完全重合但 strand 相反）被折叠成单个区间，丢失一个拷贝并可能错配链向。
+修复：键改为 `(species, chrom, start, end, strand)`；新增单测
+`same_coordinates_on_opposite_strands_are_distinct_copies`。
+
+### 修复 3：`sd run --engine lastz --preset <p>` 参数拼装错误
+
+`sd run` 把 `--preset set01` 拼成单个字符串经 `${preset_args}` 传给内层
+`sd search`——cmd_lib 的 `${var}` 不按空白分词，内层 clap 收到
+`"--preset set01"` 一个 argv，报 "unexpected argument '--preset set01'"。
+实测 `pgr sd run ... --engine lastz --preset set01` 必失败。修复：改用
+`Vec<String>` + `$[preset_args]` 列表展开；新增集成测试
+`command_sd_run_lastz_preset_parses`（lastz 在场时全管线成功）。
+
+### 修复 4：e-align span 过滤的 i32 减法溢出
+
+`(psl.t_end - psl.t_start).max(0)` 在极端坐标（t_start=i32::MIN、
+t_end=i32::MAX）下溢出 panic（debug）；改为 i64 运算。
+
+### 修复 5：构造 .pgi / .hv 头触发容量溢出 panic / 分配 abort
+
+`PgiIndex::read` 用未校验的 `n_records` 直接 `Vec::with_capacity`：n_records
+= u64::MAX 时 capacity overflow panic（`pgr pgi stat` 实测崩溃）；
+`read_header` 的 `buf.reserve(n_contigs * 16)` 在 n_contigs = u32::MAX 时
+尝试预留 ~64 GiB（多数机器直接 OOM abort）。修复：
+* `parse_header_bytes` / `read_header` 增加与构建器一致的上下限校验
+  （n_contigs ≤ u16::MAX、n_records ≤ u32::MAX），构造头转为友好报错；
+* `read` 的 positions/entries 预分配改用 `try_reserve_exact`；
+* 同类问题顺带修复 `to_hv::read_hv` 的 name/dim 未校验分配
+  （`dist hv` 路径，同属 pgi 家族）。
+新增单测 `crafted_record_count_rejected_not_panic`、
+`crafted_contig_count_rejected_not_panic`、
+`crafted_hv_header_rejected_not_panic`。
+
+### 验证
+
+* 畸形输入扫描：截断 lav、短 contig、越界 PAF、垃圾 BED、垃圾 .pgi、
+  空库、全 N 基因组、`/dev/urandom`、`-k 0`、`--step 0`、`--window 0`、
+  `--chunk-records 0`——全部友好报错或空输出，无 panic；
+* 倒位重复全管线回归（cluster 去重键改动）：fwd + RC 拷贝各自成 set，
+  坐标正确；
+* pgi / lastz 双引擎交叉验证：同一 tandem 基因组检出同一对拷贝
+  （pgi 边界修剪 2 bp，已知种子边界效应）；
+* 全量 972 测试通过，fmt / `cargo clippy -- -D warnings` 干净。
+
+## 复核轮（第十七轮，2026-08-03）
+
+继续深入链算法。发现并修复 1 处重大缺陷。970 测试全绿。
+
+### 修复 6：tube 排序键的负对角线回绕（>64 Mb 间距的重复失效）
+
+`chain_tubes` 的 u128 排序键用 `BUCK_OFF = 1,000,000` 把
+`diag.div_euclid(64)` 平移为非负。但 diag = a_pos - b_pos 覆盖
+±(2^32-1)，diag/64 最低 -2^26：对角线 < -64 Mb 时 bucket 为负，
+`as u64` 回绕后高 32 位 0xFFFF 直接污染 strand（bit 72）、b_contig
+（73..88）、a_contig（89..104）字段。后果：
+* 同一 (contig, strand) 组内负 bucket 与正 bucket 种子被拆成两个 run，
+  跨 -64 Mb 的对角线链被切断；
+* 多 contig 输入的负 bucket 种子共享同一份被污染的 contig 字段，按 anti
+  跨 contig 交错排序，每个 run 只剩零星种子，tube 覆盖率不足被整体丢弃
+  （实测两 contig × 200 个共享种子的场景 0 条 tube）。
+
+修复：`BUCK_OFF` 改为 `1 << 26`（67,108,864），bucket ∈ [0, 2^27-1]
+始终落在 32 位字段内；anti 字段 40 位不变。新增回归测试
+`tube_sort_key_supports_deeply_negative_diagonals`（修复前单 contig 恒
+对角线因回绕恰好保序而通过，`tube_sort_key_does_not_mix_contigs_at_
+negative_diagonals` 修复前 0 条 tube、修复后每条 contig 各 1 条）。
+
+### 验证
+
+* tube 三件套单测全绿；greedy 工作流不受影响（i64 diag 比较）；
+* 全量 970 测试通过，fmt / clippy 干净。
+
+## 复核轮（第十八轮，2026-08-03）
+
+补齐 LAV 负跨度校验与 lastz 预设默认值。972 测试全绿。
+
+### 修复 7：lav `l` 行负跨度静默产生回绕垃圾
+
+`parse_a` 只校验两侧跨度相等、跳过零长块；`l 5 5 1 1 95` 这类
+t_end < t_start（且 q 侧同样为负）的行通过后，
+`blocks_to_psl` 的 `(t_end - t_start) as u32` 回绕成超大 block，
+输出垃圾 PSL。修复：`t_end < t_start || q_end < q_start` 直接报
+InvalidData；新增单测 `negative_span_l_line_rejected`。
+
+### 修复 8：`sd search`/`sd cross` 的 `--preset` 帮助声称默认 set01 但未注册
+
+两处 `--preset` 的 help 写 "default: set01; lastz engine only"，clap 却没
+有 default_value——省略时 `build_common_args(None, ...)` 完全不应用任何
+预设参数（无 K/L/O/E、无 Q= 矩阵），与文档（`[--preset set01]`）及
+`SearchLastzOptions::default()`（Some("set01")）矛盾。修复：两处补
+`.default_value("set01")`；新增集成测试
+`command_sd_search_lastz_default_preset`（断言 lastz 命令行含 set01 的
+`K=3000`）。
+
+### 验证
+
+* `pgr sd search --engine lastz`（无 --preset）实测 now 含 `K=3000`；
+* 全量 972 测试通过，fmt / clippy 干净。
+
+## 复核轮（第十九轮，2026-08-03）
+
+对第 16-18 轮全部修复逐条复核 + 全命令畸形输入扫描。**未发现新问题**——
+按约定审计循环终止。
+
+### 复核结果
+
+1. lav 两处修复（越界守卫、负跨度）在位，含回归测试；
+2. cluster 去重键含 species/strand，倒位重复端到端输出正确；
+3. `sd run --engine lastz --preset` 全管线成功，`$[preset_args]` 展开正确；
+4. e-align span 过滤为 i64 运算；
+5. .pgi/.hv 构造头均友好报错（`pgr pgi stat` 实测 "implausible record
+   count"）；
+6. tube 排序键 BUCK_OFF=2^26，多 contig 深负对角线场景每条 contig 一条
+   tube；
+7. `sd search/cross --engine lastz` 默认应用 set01（K=3000 实测）；
+8. 畸形输入扫描（截断 lav / 负跨度 lav / 越界 PAF / 垃圾 BED / 垃圾
+   .pgi / 空库 / 全 N / `-k 0` / `--step 0` / `--window 0` /
+   `--chunk-records 0` / `/dev/urandom`）全部友好报错或空输出，无 panic。
+
+### 结论
+
+第 16-19 轮累计修复 8 处缺陷（2 处算法/索引、3 处鲁棒性/panic、3 处
+命令层/参数/文档），全部有回归测试；当前 972 测试全绿、fmt /
+`cargo clippy -- -D warnings` 干净（`--all-targets` 下 plot/dot.rs 的 3 个
+既有测试告警不在本次范围）。第十九轮未发现新问题，审计循环终止。

@@ -83,12 +83,16 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let abs_outdir = ctx.abs_path(outdir)?;
     let _cwd_guard = ctx.enter()?;
 
-    let preset_args = if engine == "lastz" {
-        preset.map(|p| format!("--preset {p}")).unwrap_or_default()
+    // `$[list]` expands each element to its own argv entry; a single
+    // `"--preset set01"` string would be passed as one (unparseable) arg.
+    let preset_args: Vec<String> = if engine == "lastz" {
+        preset
+            .map(|p| vec!["--preset".to_string(), p])
+            .unwrap_or_default()
     } else {
-        String::new()
+        Vec::new()
     };
-    run_cmd!(${pgr} sd search ${abs_genome} -o hits.psl --engine ${engine} ${preset_args} --min-len ${min_len} --min-identity ${min_identity})?;
+    run_cmd!(${pgr} sd search ${abs_genome} -o hits.psl --engine ${engine} $[preset_args] --min-len ${min_len} --min-identity ${min_identity})?;
     run_cmd!(${pgr} sd align ${abs_genome} hits.psl -o hits.paf)?;
     run_cmd!(${pgr} sd cluster ${abs_genome} hits.paf -o clusters)?;
 

@@ -291,7 +291,9 @@ pub fn run_align_repeat_pipeline(opts: &AlignRepeatOpts) -> anyhow::Result<()> {
         };
         // Guard against a malformed record with t_end < t_start (a negative
         // difference would wrap into a huge span and pass the length filter).
-        let span = (psl.t_end - psl.t_start).max(0) as usize;
+        // i64 arithmetic: extreme PSL coordinates would overflow the i32
+        // subtraction (e.g. t_start = i32::MIN, t_end = i32::MAX).
+        let span = (psl.t_end as i64 - psl.t_start as i64).max(0) as usize;
         if (psl.ident() as f64) < opts.min_identity || span < opts.min_len {
             continue;
         }

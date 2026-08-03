@@ -75,10 +75,15 @@ pub fn read_hv<R: Read>(r: &mut R) -> anyhow::Result<HvFile> {
     let sparse = read_u32(r)? as usize;
     let n_kmer = read_u64(r)? as usize;
     let nb = read_u32(r)? as usize;
-    let mut name = vec![0u8; nb];
+    let mut name = Vec::new();
+    name.try_reserve_exact(nb).context("hv name too large")?;
+    name.resize(nb, 0);
     r.read_exact(&mut name)?;
     let name = String::from_utf8(name).context("hv name utf8")?;
-    let mut hv = vec![0i32; dim];
+    let mut hv = Vec::new();
+    hv.try_reserve_exact(dim)
+        .context("hv dimension too large")?;
+    hv.resize(dim, 0);
     for v in &mut hv {
         let mut b = [0u8; 4];
         r.read_exact(&mut b)?;
@@ -134,5 +139,31 @@ mod tests {
         assert_eq!(loaded.sparse, 3);
         assert_eq!(loaded.n_kmer, idx.n_unique() as usize);
         assert_eq!(loaded.hv, hv);
+    }
+
+    #[test]
+    fn crafted_hv_header_rejected_not_panic() {
+        // Regression: dim = u32::MAX used to allocate ~17 GiB (abort) via
+        // `vec![0i32; dim]`; crafted headers must error instead.
+        let mut buf = Vec::new();
+        buf.extend_from_slice(HV_MAGIC);
+        buf.extend_from_slice(&HV_VERSION.to_le_bytes());
+        buf.extend_from_slice(&10u32.to_le_bytes()); // k
+        buf.extend_from_slice(&u32::MAX.to_le_bytes()); // dim
+        buf.extend_from_slice(&3u32.to_le_bytes()); // sparse
+        buf.extend_from_slice(&100u64.to_le_bytes()); // n_kmer
+        buf.extend_from_slice(&4u32.to_le_bytes()); // name length
+        buf.extend_from_slice(b"test");
+        let err = read_hv(&mut std::io::Cursor::new(&buf))
+            .err()
+            .expect("crafted hv header must fail");
+        // With memory overcommit the 17 GiB reserve may succeed and the
+        // subsequent read fails on the truncated body; without it the reserve
+        // itself errors. Either way it must be a friendly error, not an abort.
+        let msg = err.to_string();
+        assert!(
+            msg.contains("hv dimension too large") || msg.contains("failed to fill whole buffer"),
+            "got: {msg}"
+        );
     }
 }

@@ -117,6 +117,17 @@ pub(crate) fn parse_header_bytes(
     );
     anyhow::ensure!((1..=4).contains(&pos_bytes), "bad pos_bytes {pos_bytes}");
     anyhow::ensure!((1..=4).contains(&cont_bytes), "bad cont_bytes {cont_bytes}");
+    // Self-built indexes are capped at u16::MAX contigs and u32::MAX records
+    // (see `build_from_seqs`); rejecting implausible counts turns crafted
+    // headers into errors instead of allocation overflow/aborts.
+    anyhow::ensure!(
+        n_contigs <= u16::MAX as usize,
+        "implausible contig count {n_contigs}"
+    );
+    anyhow::ensure!(
+        n_records <= u32::MAX as usize,
+        "implausible record count {n_records}"
+    );
 
     let mut contigs = Vec::with_capacity(n_contigs);
     for _ in 0..n_contigs {
@@ -150,6 +161,10 @@ fn read_header<R: Read>(r: &mut R) -> anyhow::Result<(PgiHeader, usize, RecordLa
     let mut buf = vec![0u8; HEADER_FIXED];
     r.read_exact(&mut buf).context("reading header")?;
     let n_contigs = u32::from_le_bytes(buf[20..24].try_into().unwrap()) as usize;
+    anyhow::ensure!(
+        n_contigs <= u16::MAX as usize,
+        "implausible contig count {n_contigs}"
+    );
     buf.reserve(n_contigs * 16);
     for _ in 0..n_contigs {
         let mut nb_bytes = [0u8; 4];
@@ -395,7 +410,13 @@ impl PgiIndex {
         } = header;
         let rec_size = layout.size();
         let mut entries: Vec<PgiEntry> = Vec::new();
-        let mut positions: Vec<u64> = Vec::with_capacity(n_records);
+        let mut positions: Vec<u64> = Vec::new();
+        positions
+            .try_reserve_exact(n_records)
+            .context("allocating index positions")?;
+        entries
+            .try_reserve_exact(n_records)
+            .context("allocating index entries")?;
         let mut last_kmer: Option<u128> = None;
         // Read the records in large chunks and parse from the slice (a
         // per-record `read_exact` through the trait object costs a virtual
@@ -561,6 +582,45 @@ pub(crate) fn unpack_kmer(bytes: &[u8], k: usize) -> u128 {
 mod tests {
     use super::*;
     use crate::libs::pgi::build::build_from_seqs;
+
+    fn crafted_header(n_contigs: u32, n_records: u64) -> Vec<u8> {
+        let mut h = vec![0u8; HEADER_FIXED];
+        h[0..4].copy_from_slice(PGI_MAGIC);
+        h[4..8].copy_from_slice(&PGI_VERSION.to_le_bytes());
+        h[8..12].copy_from_slice(&40u32.to_le_bytes());
+        h[12..16].copy_from_slice(&8u32.to_le_bytes());
+        h[16..20].copy_from_slice(&5u32.to_le_bytes());
+        h[20..24].copy_from_slice(&n_contigs.to_le_bytes());
+        h[24..32].copy_from_slice(&n_records.to_le_bytes());
+        h[32..36].copy_from_slice(&10u32.to_le_bytes()); // kmer_bytes for k=40
+        h[36..40].copy_from_slice(&3u32.to_le_bytes()); // pos_bytes
+        h[40..44].copy_from_slice(&1u32.to_le_bytes()); // cont_bytes
+        h
+    }
+
+    #[test]
+    fn crafted_record_count_rejected_not_panic() {
+        // Regression: a header claiming u64::MAX records used to hit
+        // `Vec::with_capacity` capacity overflow (panic); it must error.
+        let err =
+            PgiIndex::read(&mut std::io::Cursor::new(crafted_header(0, u64::MAX))).unwrap_err();
+        assert!(
+            err.to_string().contains("implausible record count"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn crafted_contig_count_rejected_not_panic() {
+        // Regression: a header claiming u32::MAX contigs used to reserve
+        // ~64 GiB in `read_header` (allocation abort on most machines).
+        let err =
+            PgiIndex::read(&mut std::io::Cursor::new(crafted_header(u32::MAX, 0))).unwrap_err();
+        assert!(
+            err.to_string().contains("implausible contig count"),
+            "got: {err}"
+        );
+    }
 
     #[test]
     fn pack_unpack_kmer_roundtrip() {
