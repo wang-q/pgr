@@ -5,69 +5,51 @@
 > 阶段 1.5（yama 引擎直译：C/D/I 三状态 + 准自然 gap + 参考锚定 LB/RB）已于 2026-08-03 落地，见 §2.12。
 
 本文档是 `libs::fas_multiz` 的设计稿，基于对 multiz 源码的分析（见 [multiz.md](../references/multiz.md)）。
-涵盖 pgr 与 multiz 的策略对比（§1）以及 fas-multiz 的设计与实现（§2）。
+涵盖 pgr 的两条路径与 multiz 的关系（§1）以及 fas-multiz 的设计与实现（§2）。
 
-## 1. pgr 与 multiz 的异同分析
+## 1. pgr 的两条路径与 multiz 的关系
 
-`pgr` 采用 **"Stitch + Refine" (拼接+精炼)** 的分步策略，与 `multiz` 的 **"Integrated Alignment" (一体化比对)** 形成鲜明对比。
+`pgr` 里与 multiz 相关的工作分成两条路径，定位不同，但**不存在"策略层面"的对立**：
 
-### 1.1 pgr 的分步工作流
+1. **快速交集捷径**：`pgr pl p2m`（内部用 `fas cover` / `spanr intersect` / `fas slice` / `fas join` / `fas subset`）只做区间集合运算和机械堆叠，快速得到"所有输入共同覆盖"的交集比对，不做 gap 求解。
+2. **完整比对引擎**：`pgr fas multiz`（`libs::fas_multiz`）把 multiz 的 yama 引擎直译为 `.fas` 层 profile 合并，与 multiz 是同一套比对策略，输出 union/mesh 风格的完整比对。
 
-#### 第一步：机械拼接 (Stitch)
-*   **工具**: `pgr fas join` (或流程脚本 `pgr pl p2m`)
+`p2m` 之所以"快"，不是因为它采用了另一种比对策略，而是因为它**主动放弃了 multiz 会做的两件事**——gap 冲突求解和边缘覆盖保留——只回答一个更窄的问题："大家共同覆盖的那段区域长什么样"。
+
+### 1.1 快速交集捷径：p2m + join
+
+*   **工具**: `pgr pl p2m`，内部依次调用 `fas cover` → `spanr intersect` → `fas slice` → `fas join` → `fas name` / `fas subset`（后者按 name 列表统一各 block 的物种列顺序）。
 *   **实现细节**:
-    1.  **锚定**: 用户指定一个参考物种（Reference Target）。
-    2.  **交集计算**: `pgr pl p2m` 流程会调用 `fas cover` 和 `spanr intersect` 计算所有物种共有的基因组区域。
-    3.  **切片**: `fas slice` 根据交集范围从原始 Pairwise 文件中提取序列。
+    1.  **锚定**: 取第一个输入的第一个物种作为参考（Reference Target）。
+    2.  **交集计算**: `fas cover` 提取每个输入的参考区间（`--trim 10` 切边），`spanr intersect` 计算所有输入共有的基因组区域，`spanr merge` 把交集范围合并回各输入。
+    3.  **切片**: `fas slice` 按交集范围从原始 Pairwise 文件中提取序列。
     4.  **堆叠**: `fas join` 以参考序列的坐标范围为 Key，将来自不同文件的 Block 机械地堆叠在一起。
 *   **特点**:
     *   **极速**: 仅涉及 I/O 和坐标计算。
-    *   **局限**: 不处理 Gap。它假设所有输入文件在同一坐标下的参考序列片段是完全一致的。若不同 Pairwise Alignment 中参考序列的 Gap 状态不一致，直接 Join 会导致非参考序列错位。它没有 `multiz` 的 Yama 动态规划引擎来解决冲突。
+    *   **局限**: 不处理 Gap。它假设所有输入文件在同一坐标下的参考序列片段是完全一致的。若不同 Pairwise Alignment 中参考序列的 Gap 状态不一致，直接 Join 会导致非参考序列错位。
+*   **定位**: 这是 multiz 类比对的**低成本近似**：当只需要严格交集（core）且参考骨架一致时，可以跳过 DP 直接拿结果。它不是与 multiz 对立的"另一种策略"。`fas refine` 是独立的可选后处理命令，不在 `p2m` 流程内。
 
-#### 第二步：重新比对 (Refine)
-*   **工具**: `pgr fas refine`
-*   **逻辑**: 对拼接后的 Block 进行多序列比对 (MSA)。
-*   **作用**: 弥补第一步的缺陷。调用 `mafft`, `muscle` 或内置 POA 引擎，修正由于机械堆叠导致的 Gap 错位，生成最终的高质量比对。
+### 1.2 完整比对引擎：fas-multiz
 
-### 1.2 策略深度对比
-
-#### multiz (UCSC)
-*   **模式**: **一体化动态规划 (Integrated DP)**。
-*   **核心算法**: Yama (Sum-of-pairs + Gap Costs)。
-*   **处理逻辑**: 在合并过程中实时解决 Gap 冲突，插入新的 Gap 以对齐所有序列。
-*   **输出目标**: **Union/Mesh** (保留所有可能的比对区域)。
-
-#### pgr (p2m + join + refine)
-*   **模式**: **拼接后修正 (Post-hoc Refinement)**。
-*   **核心算法**: Set Ops (Intersection) -> Stacking -> MSA (Refinement)。
-*   **处理逻辑**: 先根据坐标"硬"合并，再通过 MSA 工具"软"调整。
-*   **输出目标**: **Core/Intersection** (通常仅关注严格的交集核心区)。
+*   `pgr fas multiz` 将 multiz 的 yama 引擎直译为 `libs::fas_multiz`（C/D/I 三状态 + 准自然 GAP + LB/RB 参考锚定 + 全体物种对打分，见 §2.12）。
+*   它与 multiz 的策略**相同**：以参考坐标为主轴做一体化 DP，在合并时实时解决参考 gap 冲突，输出 union/mesh 风格比对。
+*   与 `p2m` 的关系：`p2m` 解决不了的两类情况（参考 gap pattern 不一致、边缘覆盖差异），正是 fas-multiz 处理的场景；代价是需要跑 DP，比 `p2m` 慢。
 
 ### 1.3 结论
-*   `multiz` 适合构建复杂的、包含大量 Indel 和重排的全基因组比对 (WGA)。
-*   `pgr` 流程适合快速构建**核心基因组 (Core Genome)** 或处理**基于无 Gap 参考骨架**的数据。通过 `refine` 步骤，`pgr` 也能产出高质量的比对，但其依赖于"共同核心"的存在。
+
+*   只想要"所有输入共同覆盖的快速交集" → `pgr pl p2m`（无 DP）。
+*   想要 multiz 同款 union/mesh 完整比对、处理 gap 冲突 → `pgr fas multiz`（yama 直译）。
+*   两者是"快而粗"与"慢而全"的取舍，不是两种对齐哲学。
 
 ### 1.4 在 pgr 中是否需要 Yama DP
 
-结合以上分析，可以给出一个比较实用的结论（并补充当前实现现状）：
-
-*   对于最初设计的 `pgr` 主用例（构建严格交集的 core genome，比对区域由 `cover`/`slice` 控制，再由 `fas refine` 精修），**可以不直接复刻 multiz 的完整 Yama 动态规划引擎**。
-    *   这一路线本质上假设：在共同核心区域内，各个 pairwise/MAF 中的参考序列 gap 模式差异不大，或者差异可以在后续局部 MSA 中被吸收。
-    *   代价是：更偏向"交集/核心"，不会像 multiz 那样追求覆盖所有可能的比对区域（union/mesh）。
-*   在此基础上，`pgr` 目前在 `fas` 层引入了一个**简化版的带状 DP 引擎**（见第 2 节 `libs::fas_multiz`）：
-    *   在参考坐标网格上做带状 DP，用两个 profile 的物种交集上的 sum-of-pairs 打分（base–base 使用替换矩阵，base–gap 使用统一 gap 罚分），用于解决不同输入之间参考 gap 模式和列选择的冲突。
-    *   目前主要针对两个输入 `.fas` 的窗口合并场景，作为 `fas join` 的"智能版"补充，而不是完整的 yama 复刻。
-*   Yama DP 主要解决的是两类问题：
-    1.  **参考序列 gap 冲突**：不同 MAF 中参考序列的 gap pattern 不一致时，通过 DP 在合并过程中实时插入/调整 gap，使所有序列在同一参考坐标系下保持一致。
-    2.  **block 级冲突与 unused block 判定**：通过 sum-of-pairs 全局评分决定哪些 block 被合并，哪些落到 `out1`/`out2`。
-    在 `pgr` 当前的"Set Ops + Refine" 模式下，这两类问题分别由"交集窗口的选取"和"后续 MSA 的局部重比对"粗略处理，并不追求与 multiz 完全一致的行为。
-*   因此，**在如下前提下，舍弃 DP 是可接受的工程权衡**：
-    *   只关注严格交集区域，对边缘和稀有对齐不敏感。
-    *   参考骨架事先经过统一处理（同一版本、类似 masking/裁剪策略），大型重排通过 `chain/net` 等流程已先行解决。
-    *   `fas refine` 作用在规模适中的窗口上，用于修正机械堆叠引入的局部错位，而不负责重新定义 block 边界。
-*   若未来需要在 `pgr` 中支持接近 multiz 行为的 "Union/Mesh WGA" 模式，更自然的路径是：**在 `fas` 层实现 multiz 类功能**，而不是在 MAF 解析层再实现一次 `multiz`：
-    *   上游已经可以通过 `pgr axt/maf to-fas` 等命令，将 pairwise 或 MAF 转换为 block FA (`.fas`)。
-    *   在 `.fas` 层进行 profile 合并，可以直接对齐到 `pgr fas` 现有生态（`cover`/`slice`/`join`/`refine`/`stat` 等），避免重复造 MAF 级别的轮子。
+*   **结论：需要，且已实现**。`libs::fas_multiz` 就是 yama 的直接移植（§2.12），`pgr fas multiz` 提供 CLI。
+*   `p2m` 不需要 DP，不是因为它代表了另一种策略，而是因为它明确放弃了 gap 求解：只求交集、只信参考骨架一致的部分。
+*   Yama DP 解决的两类问题：
+    1.  **参考序列 gap 冲突**：不同输入中参考序列的 gap pattern 不一致时，通过 DP 在合并过程中实时插入/调整 gap，使所有序列在同一参考坐标系下保持一致。
+    2.  **合并取舍**：通过 sum-of-pairs 打分决定列如何合并、哪些区域保留，而不是机械堆叠。
+    在 `p2m` 里，这两类问题被"交集窗口的选取"直接绕开（只选大家一致的区域）；在 fas-multiz 里则交给 yama DP 解决。
+*   因此正确的表述是：**p2m = 快速交集捷径（无 DP）；fas-multiz = multiz 同策略的完整比对（有 DP）**。二者互补，不存在策略层面的核心差异。
 
 ### 1.5 pgr 中 multiz 前置链路：LASTZ 与链化
 
@@ -109,13 +91,13 @@
 
 *   **目标**：
     *   给定多个 block FA 文件（例如多个 pairwise-derived `.fas` 或不同 pipeline 生成的 `.fas`），在共享参考物种的坐标系下，将它们合并为一个"union/mesh 风格"的 block FA。
-    *   和现有 `p2m + join + refine` 所产出的 **Core/Intersection** 结果互为补充：一个偏交集（core），一个偏并集（union/mesh）。
+    *   和现有 `p2m + join`（可选加 `fas refine`）所产出的 **Core/Intersection** 结果互为补充：一个偏交集（core），一个偏并集（union/mesh）。
 *   **输入**：
     *   `k` 个 `.fas` 文件（`k >= 2`），它们的 block 中均包含同名的参考序列（例如 `ref`）。
     *   可选的：一个核心交集区域（来自 `fas cover` + `spanr`），用于限制计算范围。
 *   **输出**：
     *   一个新的 `.fas` 文件，包含合并后的多序列比对 block：
-        *   在交集区域内，行为应与当前 `p2m + join + refine` 相兼容。
+        *   在交集区域内，行为应与当前 `p2m + join` 相兼容。
         *   在边缘/非完全交集区域内，会尽量保留来自不同输入的对齐（union 行为）。
 
 ### 2.2 相对于 multiz 的主要差异
@@ -141,7 +123,7 @@
     *   按参考物种与坐标对 block 做分组，将"位置相近"的 block 视为候选合并单元。
     *   这一层可以重用 `fas cover` / `spanr` 得到的区间信息。
 3.  **profile 合并（multiz-like）**：
-    *   对每个候选区间内的多个 block profile，执行简化版的 profile–profile DP 或其他启发式：
+    *   对每个候选区间内的多个 block profile，执行 profile–profile 带状 DP（yama 直译，见 §2.12）：
         *   在参考坐标附近采用带状 DP（Radius R），解决不同 `.fas` 之间参考 gap 的不一致。
         *   根据 sum-of-pairs 打分决定保留哪些列/序列，以及如何插入额外 gap。
     *   输出合并后的单个 block（或少数几个 block）。
@@ -150,14 +132,14 @@
 
 ### 2.4 与现有 core 流程的互补关系
 
-*   `p2m + join + refine`：
+*   `p2m + join`：
     *   假设参考骨架在各数据源中基本一致。
     *   倾向于"只相信大家都同意的部分"（严格交集），适合构建 core genome。
 *   fas-multiz：
     *   允许不同数据源在边缘和 gap pattern 上存在一定差异，通过 profile 合并策略尽量"合在一起"。
     *   输出更偏 union/mesh，适合探索 union pan-genome 或 WGA 风格的结果。
 
-在实现层面，fas-multiz 可以作为一个新的子命令（例如 `pgr fas multiz` 或 `pgr fas merge-mesh`），并明确声明它与 `p2m + join + refine` 的适用场景不同：前者追求覆盖度（union），后者继续服务于一致性（intersection）。
+在实现层面，fas-multiz 作为一个独立子命令（`pgr fas multiz`），与 `p2m + join` 的适用场景不同：前者追求覆盖度（union），后者继续服务于一致性（intersection）。
 
 ### 2.5 命令行接口
 
@@ -192,7 +174,7 @@
 *   **输入准备**：依赖现有的 `pgr axt/maf to-fas` 和 `fas` 系列命令，将所有上游结果规整为块级 `.fas`。
 *   **区间计算**：复用 `fas cover` 和 `spanr` 的区间逻辑，定义候选合并窗口。
 *   **比对与 refine**：在新实现的 fas-multiz 中完成 profile 合并后，调用现有 `pgr fas refine` 作为可选的精修步骤。
-*   **下游分析**：输出 `.fas` 可以继续被 `fas stat`, `fas to-vcf`, `fas split` 等命令消费，与当前 `p2m + join + refine` 的结果处于同一生态。
+*   **下游分析**：输出 `.fas` 可以继续被 `fas stat`, `fas to-vcf`, `fas split` 等命令消费，与当前 `p2m + join` 的结果处于同一生态。
 
 ### 2.8 libs 实现概览
 
@@ -262,7 +244,7 @@
 
 ### 2.9 与 multiz-multiz 源码的异同
 
-这里的 fas-multiz 方案是从 `multiz-multiz` 的源码和算法抽象出来的一个 "pgr 版本"，既保留了一些核心思想，也刻意做了简化和调整。
+这里的 fas-multiz 是从 `multiz-multiz` 源码直译出来的 "pgr 版本"：DP 引擎逐条对应移植（§2.12），工作层级上做了调整（fas 层 vs MAF 层）。
 
 *   **共同点（继承 multiz 的部分）**：
     *   都是以参考物种坐标为主轴，在参考坐标上定义窗口/段落，再在每个窗口内做 profile 合并。
@@ -274,8 +256,8 @@
         *   multiz-multiz 在 MAF 层操作，直接对齐两个 MAF profile。
         *   fas-multiz 在 block FA 层操作，输入是多个 `.fas` 文件，链路由 `pgr axt/maf to-fas` 标准化过，因此语法和元数据更简单。
     *   **DP 引擎复杂度不同**：
-        *   multiz-multiz 的 `yama` 部分实现了一套完整的 profile–profile DP 引擎，并考虑了较丰富的状态与回溯（sum-of-pairs + 替换矩阵 + 仿射 gap 模型）。
-        *   fas-multiz 只在参考轨迹上做简化的带状对齐：采用 progressive pairwise DP 和可配置的 match/mismatch/gap 标量打分，重点解决参考 gap 冲突和列选择问题，不追求完全复刻 yama 的所有细节状态。
+        *   multiz-multiz 的 `yama` 部分实现了一套完整的 profile–profile DP 引擎（sum-of-pairs + 替换矩阵 + 准自然 gap 模型 + LB/RB 参考锚定）。
+        *   fas-multiz 的 `banded_align.rs` 是这套引擎的**直接移植**（C/D/I 三状态、GAP 构型查表、端部 gap 免费、LB/RB 锚定，见 §2.12），不在引擎复杂度上做简化；与 multiz 的差异只在工作层级（fas vs MAF）与整体合并次序（内容驱动贪心 vs guide tree）。
     *   **实现位置与职责边界不同**：
         *   multiz-multiz 是一个专门服务于 MAF/多序列比对构建的独立 C 项目。
         *   fas-multiz 被设计为 `pgr` 的一个 libs 模块（`libs::fas_multiz`），与现有 `fas cover/slice/join/refine` 等命令协作，而不是独立的 pipeline。
@@ -284,11 +266,11 @@
         *   在 pgr 中，上游的 pairwise 结果通常已经通过若干步骤转换、规范成 `.fas`，fas-multiz 可以假设这些输入已经做过一次清洗/规整。
     *   **目标偏好与使用场景不同**：
         *   multiz-multiz 更偏"通用 WGA 引擎"，追求在大范围基因组上做 mesh 式对齐。
-        *   fas-multiz 明确被设计成 pgr 的一个"union/mesh complement"：在 core/intersection 流程之外，提供一个额外的 union 视角，并保持与现有 `p2m + join + refine` 在交集区域内尽量兼容。
+        *   fas-multiz 明确被设计成 pgr 的一个"union/mesh complement"：在 core/intersection 流程之外，提供一个额外的 union 视角，并保持与现有 `p2m + join` 在交集区域内尽量兼容。
 
 ### 2.10 当前 fas-multiz 实现状态（2026-02）
 
-> 本节描述的是当前 `pgr` 仓库中已经落地的 `libs::fas_multiz` 实现，可与前文对 multiz 及 fas-multiz 的设计描述对照阅读。实现仍然是"轻量级 fas-multiz"，未来可以继续向更完整的 profile–profile DP 演进。
+> 本节描述的是当前 `pgr` 仓库中已经落地的 `libs::fas_multiz` 实现，可与前文对 multiz 及 fas-multiz 的设计描述对照阅读。单步合并的 DP 已升级为 yama 引擎直译（§2.11/§2.12），本节保留最初的工程描述作为实现记录。
 
 **实现位置与对外 API**
 
@@ -318,11 +300,11 @@
 *   对于给定窗口，先从每个输入文件中选出在窗口内与参考重叠的 block，组成 `blocks`。
 *   若 `blocks` 为空，或（在 Core 模式下）某些输入找不到参考 block，则直接返回 `None`。
 *   若 `blocks.len() >= 2`，先尝试 progressive 带状 DP 合并：
-*   使用内部函数 `merge_blocks_with_dp`，按顺序对 `blocks` 做两两 DP 合并。
+*   使用内部函数 `merge_blocks_with_dp`，按内容驱动的确定性顺序（§2.11）对 `blocks` 做两两 DP 合并。
 *   每一步都要求参与合并的参考 entry 在去掉 `'-'` 后的序列完全相同（ungapped equal），否则这一轮 DP 失败。
 *   在参考坐标网格上调用 `banded_align_refs`：
 *   只在 diagonal ± `radius` 的带内做 DP。
-*   对每个对角单元，使用两个 profile 上"共享物种自对 + 参考交叉对"的 sum-of-pairs 打分（阶段 1 起，见 §2.11）：base–base 组合通过 `libs::chain::SubMatrix::hoxd55` 获取替换分数并按固定比例缩放到与 `match_score` 相近的量级；gap–base 组合不计分（gap 成本由仿射转移承担）；横向/纵向移动收取一次仿射 gap 罚分。
+*   对每个对角单元，按 multiz yama 语义打分（阶段 1.5 起，见 §2.12）：全体物种对（K×L 笛卡尔积）参与 sum-of-pairs，base–base 用替换矩阵（/50 缩放），base–gap 收一次 gap_extend，gap–gap 为 0；I/D 状态按"插入列非 dash 数 × 对方行数 × gap_extend"收费，横向/纵向移动按准自然 GAP 构型查表收 gap-open。
 *   将 DP 生成的参考轨迹映射到所有物种：
 *   对每一列，优先从前一个累积结果（或第一个输入）的对应位置取碱基，不存在时再从当前输入取；两边都缺失则填 `'-'`。
 *   `Core` 模式下只合并在当前累积结果和新输入中都存在的物种；`Union` 模式下允许物种只存在于其中一边。
@@ -336,14 +318,14 @@
 
 **当前实现的局限与后续扩展方向**
 
-*   目前 DP 采用 progressive pairwise 策略，对多个输入的合并顺序敏感，尚未实现真正意义上的多维 profile–profile sum-of-pairs 动态规划。
-*   DP 网格仍然只在参考行的坐标上展开，非参考物种没有各自独立的坐标轴，它们通过物种交集上的 profile–profile sum-of-pairs 打分参与评分，但不改变 DP 网格结构，与 multiz/yama 中更完整的多维 DP 仍有差距。
+*   多输入通过 progressive 两两合并完成，每步只看到"当前累积块 + 一个新输入"的物种集合，尚未实现一次决策看到全体输入的 SP-DP（见下方演进方向）；合并次序已由内容驱动的贪心策略确定化（§2.11），不再依赖输入文件顺序。
+*   DP 网格是参考×参考的二维带状网格，与 multiz yama 的成对 profile 合并一致；非参考物种通过 sum-of-pairs 打分参与决策，但不拥有独立的坐标轴。
 *   替换分数已经复用 `libs::chain::SubMatrix` 做 base–base 的 sum-of-pairs 打分：默认使用 `hoxd55`，也支持通过 `--score-matrix` 读取 LASTZ 格式文件或预设名称（例如 `hoxd55`），并通过简单缩放与当前 `match_score` 的量级对齐。gap 支持三类模型：`constant`、`medium`/`loose`、以及显式仿射：
     *   `constant`：直接使用 `gap_score` 作为统一线性 gap 罚分。
     *   `medium`/`loose`：从 `GapCalc::medium`/`GapCalc::loose` 的 quasi-natural 曲线中取 `len=1,2` 两点，反推出一组近似的仿射参数 `(open, extend)`，再按 HoxD55 的打分尺度和 `match_score` 做线性缩放，在带状 DP 中用"open + extend × length"的形式累积 gap 罚分，从而实现长度依赖的 quasi-natural 近似。
     *   显式仿射：当通过 `--gap-open`/`--gap-extend` 提供 open/extend 时，fas-multiz 在 DP 中直接使用这一组仿射参数（同样按 `match_score` 缩放）进行三状态的仿射 gap 计分。
 *   已提供 CLI 子命令 `pgr fas multiz`，支持 `--mode core|union`、`--radius`、`--min-width`、`--gap-model`、`--gap-open`、`--gap-extend` 以及 `--score-matrix` 等参数；gap 配置风格与 `pgr psl chain` 保持一致，而替换矩阵也不再局限于内置的 HoxD55，可与链化阶段共享同一套 matrix 配置；`libs::fas_multiz` 仍作为底层引擎，便于在 pipeline 或其他子命令中复用。
-*   在 gap 行为上，对端部 gap（leading/trailing gap）增加了简单的"首尾特化"规则：在带状 DP 回溯得到参考物种之间的对齐路径后，会自动裁剪掉首尾连续的单侧 gap 列（即仅一侧为碱基、另一侧为 gap 的前缀/后缀列），使这些端部 gap 在行为上视为 free end gaps，而中间区域仍按标准仿射 gap 计分；若需要更复杂的端部 gap 放宽或偏置策略，可以在这一基础上继续细化。
+*   在 gap 行为上，端部 gap 与 multiz 语义一致视为免费（不收 gap-open，extend 照收），由 DP 状态机直接处理（§2.12）；回溯后只裁剪两端"全物种都是 gap"的列，不裁剪单侧 gap 列（旧规则会误删真实内容）。
 *   在上述基础上，仍可以在后续逐步接近 multiz 的完整行为，例如：
     *   将 progressive DP 升级为真正的多输入 profile–profile sum-of-pairs 动态规划。这里的"真正"并不是指在 K 条序列上做天真的 K 维 DP（那样复杂度是 O(L^K)，在 K 稍大时不可用），而是指在工程上尽量在同一个 DP 决策里综合所有输入对的 sum-of-pairs 打分，减少合并顺序对结果的影响。一个可行的演进路径可以分为三个阶段：
         1. **全体物种 SP 打分 + 合理的合并次序**：~~在仍保持当前"以参考为一维"的带状 DP 框架下，把 scoring 从"只看当前两个 block 的共同物种"升级为"在一个窗口内对全体物种做 sum-of-pairs（缺失视为 gap）"，并配合更合理的 merge 次序（例如基于 guide tree 或其他拓扑），这样即便 DP 依然是 pairwise reference–reference，决策时看到的是"全局 profile"的得分，progressive 的顺序敏感会明显减弱。~~ **✅ 已实现（2026-08-03，§2.11）**：共享物种自对 + 参考交叉对评分 + 内容驱动的确定性合并次序；输入顺序无关已有回归测试。
