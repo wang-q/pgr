@@ -2,6 +2,7 @@
 
 use cmd_lib::run_cmd;
 use std::io::{BufRead, Write};
+use std::path::{Path, PathBuf};
 
 /// Run `Profex -z genome` per chromosome and write `.rg` files.
 ///
@@ -68,6 +69,9 @@ pub struct RepeatOpts {
     pub opt_ff: usize,
     /// For `ir`: absolute path to the repeat database. `None` for `rept`.
     pub abs_repeat: Option<String>,
+    /// Keep the FastK repeat table (`repeat.ktab`) next to the library for
+    /// reuse on later runs (`--keep-index`).
+    pub keep_index: bool,
     /// Profex output regex (captures `start`/`end`, optionally `depth`).
     pub re_prof: regex::Regex,
     /// Minimum depth filter; `None` to skip. `Some(2)` for `rept`.
@@ -86,14 +90,31 @@ pub fn run_repeat_pipeline(opts: &RepeatOpts) -> anyhow::Result<()> {
     let opt_kmer = opts.opt_kmer;
 
     if let Some(abs_repeat) = &opts.abs_repeat {
-        run_cmd!(info "==> FastK on repeat")?;
-        run_cmd!(
-            FastK -t -k${opt_kmer} -Nrepeat ${abs_repeat}
-        )?;
-        run_cmd!(info "==> FastK on genome")?;
-        run_cmd!(
-            FastK -p:repeat -k${opt_kmer} -Ngenome ${abs_infile}
-        )?;
+        // Cache the FastK table built from the repeat library next to the
+        // library (`<lib>.repeat.k<k>.ktab`) when `keep_index` is set, and
+        // reuse it on later runs as long as the library has not changed.
+        let cache_prefix = format!("{}.repeat.k{}", abs_repeat, opt_kmer);
+        if opts.keep_index && cache_is_fresh(abs_repeat, &cache_prefix) {
+            run_cmd!(info "==> FastK on genome (reused repeat table)")?;
+            run_cmd!(
+                FastK -p:${cache_prefix} -k${opt_kmer} -Ngenome ${abs_infile}
+            )?;
+        } else {
+            run_cmd!(info "==> FastK on repeat")?;
+            run_cmd!(
+                FastK -t -k${opt_kmer} -Nrepeat ${abs_repeat}
+            )?;
+            if opts.keep_index {
+                let cache_path = format!("{}.ktab", cache_prefix);
+                if let Err(e) = save_repeat_cache("repeat", &cache_prefix) {
+                    log::warn!("failed to cache repeat table at {}: {}", cache_path, e);
+                }
+            }
+            run_cmd!(info "==> FastK on genome")?;
+            run_cmd!(
+                FastK -p:repeat -k${opt_kmer} -Ngenome ${abs_infile}
+            )?;
+        }
     } else {
         run_cmd!(info "==> FastK")?;
         run_cmd!(
@@ -117,6 +138,68 @@ pub fn run_repeat_pipeline(opts: &RepeatOpts) -> anyhow::Result<()> {
         &opts.abs_outfile,
     )?;
 
+    Ok(())
+}
+
+/// True when a complete cache for `cache_prefix` exists and is not older than
+/// `lib` (library unchanged). Completeness is guaranteed by the `.complete`
+/// marker written after all table files are copied.
+fn cache_is_fresh(lib: &str, cache_prefix: &str) -> bool {
+    let Ok(lib_meta) = std::fs::metadata(lib) else {
+        return false;
+    };
+    for suffix in [".ktab", ".complete"] {
+        let Ok(cache_meta) = std::fs::metadata(format!("{}{}", cache_prefix, suffix)) else {
+            return false;
+        };
+        if !cache_meta.is_file() {
+            return false;
+        }
+        if let (Ok(lib_m), Ok(cache_m)) = (lib_meta.modified(), cache_meta.modified()) {
+            if cache_m < lib_m {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+/// Copy the freshly built FastK table (`<prefix>.ktab` plus its hidden part
+/// files `.<prefix>.ktab.N`) to the cache path, renaming the prefix to the
+/// cache prefix basename. `-p:` needs both the main table and the part files.
+fn save_repeat_cache(src_prefix: &str, cache_prefix: &str) -> anyhow::Result<()> {
+    let cache_path = format!("{}.ktab", cache_prefix);
+    atomic_copy(&format!("{}.ktab", src_prefix), &cache_path)?;
+
+    let base = Path::new(cache_prefix)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .ok_or_else(|| anyhow::anyhow!("invalid cache prefix: {}", cache_prefix))?;
+    let dir = Path::new(cache_prefix)
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| PathBuf::from("."));
+
+    for entry in std::fs::read_dir(".")?.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if let Some(rest) = name.strip_prefix(&format!(".{}.ktab.", src_prefix)) {
+            let dst_name = format!(".{}.ktab.{}", base, rest);
+            atomic_copy(&name, &dir.join(&dst_name).display().to_string())?;
+        }
+    }
+    // Mark the cache complete only after every table file is in place.
+    atomic_copy(
+        &format!("{}.ktab", src_prefix),
+        &format!("{}.complete", cache_prefix),
+    )?;
+    Ok(())
+}
+
+/// Atomically copy `src` to `dst` (write a temp file, then rename).
+fn atomic_copy(src: &str, dst: &str) -> anyhow::Result<()> {
+    let tmp = format!("{}.tmp.{}", dst, std::process::id());
+    std::fs::copy(src, &tmp)?;
+    std::fs::rename(&tmp, dst)?;
     Ok(())
 }
 

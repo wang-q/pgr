@@ -1,6 +1,6 @@
 # FastK: 高保真 k-mer 计数器
 
-> 整理于 2026-06，源自对 FastK GitHub 仓库源码的分析。目的：理解 FastK 的 Super-mer + Minimizer k-mer 计数策略，为 pgr dist seq 与 pl rept/ir 命令提供参考。
+> 整理于 2026-06，源自对 FastK GitHub 仓库源码的分析。目的：理解 FastK 的 Super-mer + Minimizer k-mer 计数策略，为 pgr dist seq 与 rept s-kmer/e-kmer 命令提供参考。
 
 ## 1. 简介
 FastK 是一个专为处理高质量 DNA 组装数据（如 Illumina 或 PacBio HiFi 数据）而优化的 k-mer 计数工具。它采用了一种新颖的基于 Minimizer 的分发方案，能够利用磁盘存储来处理任意大小的数据集。
@@ -82,7 +82,7 @@ FastK 的内部处理逻辑主要分为四个阶段（Phase）：
 
 3. **两阶段排序策略**：FastK 的"先 Super-mer 排序，再 k-mer 加权排序"两阶段方案，在低错误率数据（HiFi/Illumina）上实现了极高速度。pgr 若未来需要原生 k-mer 计数能力，可借鉴此策略。
 
-4. **外部工具依赖**：pgr 的 `pgr pl rept`（重复序列分析）和 `pgr pl ir`（反向重复序列分析）流水线当前依赖外部 FastK 工具。理解 FastK 的内部机制有助于在管线中精确控制参数，也为未来 Rust 原生重实现提供参考。
+4. **外部工具依赖**：pgr 的 `pgr rept s-kmer`（基因组内重复）和 `pgr rept e-kmer`（库-based 散在重复）命令依赖外部 FastK 工具。理解 FastK 的内部机制有助于在管线中精确控制参数，也为未来 Rust 原生重实现提供参考。
 
 ---
 *参考来源: [FastK GitHub Repository](https://github.com/thegenemyers/FASTK)*

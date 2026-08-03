@@ -98,7 +98,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let opt_minscore_u = opt_minscore as usize;
     let opt_max_period = *args.get_one::<usize>("max_period").unwrap();
 
-    let ctx = pgr::libs::pl::PipelineCtx::new("pgr_trf_")?;
+    let ctx = pgr::libs::pl::PipelineCtx::new("pgr_rept_trf_")?;
     let pgr = ctx.pgr.clone();
 
     run_cmd!(info "==> Absolute paths")?;

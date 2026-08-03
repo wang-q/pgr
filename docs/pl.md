@@ -9,51 +9,9 @@ Integrated pipelines for genomic analysis.
 | Subcommand | Description |
 | :--- | :--- |
 | `chainnet` | Native chain/net pipeline (psl -> chain -> net -> axt -> maf, no kent-tools) |
-| `ir` | Identify interspersed repeats (RepeatMasker-like) |
 | `p2m` | Pairwise to Multiple alignment pipeline |
 | `prefilter` | Prefilter genome/metagenome by amino acid minimizers |
-| `rept` | Identify repetitive regions using k-mer analysis |
-| `trf` | Identify tandem repeats via `trf` |
 | `ucsc` | UCSC chain/net pipeline (psl -> chain -> net -> maf) |
-
----
-
-## ir
-
-Identify interspersed repeats in a genome. This command mimics the functionality of `RepeatMasker` by using k-mer analysis against a repeat database.
-
-### Usage
-
-```bash
-pgr pl ir [OPTIONS] <repeat> <infile>
-```
-
-### Arguments
-
-| Argument | Short | Long | Value | Description |
-| :--- | :--- | :--- | :--- | :--- |
-| `repeat` | | | File | Repeat database FASTA (Dfam, RepBase, etc.) |
-| `infile` | | | File | Input genome FASTA (`.fa.gz` supported) |
-| `outfile` | `-o` | `--outfile` | File | Output filename (default: stdout) |
-| `kmer` | `-k` | `--kmer` | Int | K-mer size (default: 17) |
-| `fk` | | `--fill-kmer` | Int | Fill holes between repetitive k-mers (default: 2) |
-| `min` | | `--min-len` | Int | Minimum length of repetitive fragments (default: 300) |
-| `ff` | | `--fill-fragment` | Int | Fill holes between repetitive fragments (default: 10) |
-
-### Dependencies
-
-*   `FastK`, `Profex` (from FastK suite)
-*   `spanr`
-
-### Differences from RepeatMasker
-
-`ir` is a fast k-mer-based approximation, not a full `RepeatMasker` replacement.
-
-*   **No repeat annotation**: `RepeatMasker` classifies each hit into a repeat family/class (`repeatmasker.out`). `ir` only reports genomic intervals — it never labels a region with its repeat family.
-*   **k-mer sensitivity**: detection relies on k-mers shared with the repeat database. Highly diverged copies sharing few exact k-mers are missed or split into fragments; the `--fill-kmer` / `--fill-fragment` steps bridge small gaps but cannot recover long diverged copies.
-*   **Intervals only**: the output is a runlist of `chr:start-end` intervals (JSON), not a masked sequence. Feed it to `pgr fa mask --runlist` to soft-mask the genome.
-*   **External tools**: requires `FastK` / `Profex` and `spanr` in `$PATH`, plus a repeat database (Dfam, RepBase, etc.) for `ir`.
-*   **Use case**: suitable for a quick, cheap repeat-masking pass on large genomes. For annotation-grade results (family/class labels, consensus coverage), use `RepeatMasker`.
 
 ---
 
@@ -110,64 +68,6 @@ pgr pl prefilter [OPTIONS] <infile> <reference>
 
 ---
 
-## rept
-
-Identify repetitive regions in a genome using k-mer analysis (self-comparison).
-
-### Usage
-
-```bash
-pgr pl rept [OPTIONS] <infile>
-```
-
-### Arguments
-
-| Argument | Short | Long | Value | Description |
-| :--- | :--- | :--- | :--- | :--- |
-| `infile` | | | File | Input genome FASTA (`.fa.gz` supported) |
-| `outfile` | `-o` | `--outfile` | File | Output filename (default: stdout) |
-| `kmer` | `-k` | `--kmer` | Int | K-mer size (default: 17) |
-| `fk` | | `--fill-kmer` | Int | Fill holes between repetitive k-mers (default: 2) |
-| `min` | | `--min-len` | Int | Min length of repetitive fragments (default: 100) |
-| `ff` | | `--fill-fragment` | Int | Fill holes between repetitive fragments (default: 10) |
-
-### Dependencies
-
-*   `FastK`, `Profex`
-*   `spanr`
-
----
-
-## trf
-
-Identify tandem repeats in a genome via `trf`.
-
-### Usage
-
-```bash
-pgr pl trf [OPTIONS] <infile>
-```
-
-### Arguments
-
-| Argument | Short | Long | Value | Description |
-| :--- | :--- | :--- | :--- | :--- |
-| `infile` | | | File | Input genome FASTA |
-| `outfile` | `-o` | `--outfile` | File | Output filename (default: stdout) |
-| `trf_match` | | `--trf-match` | Int | TRF matching weight (default: 2) |
-| `trf_mismatch` | | `--trf-mismatch` | Int | TRF mismatching penalty (default: 7) |
-| `delta` | | `--delta` | Int | Indel penalty (default: 7) |
-| `pm` | | `--pm` | Int | Match probability (default: 80) |
-| `pi` | | `--pi` | Int | Indel probability (default: 10) |
-| `min_score` | | `--min-score` | Int | Min alignment score (default: 50) |
-| `max_period` | | `--max-period` | Int | Max period size (default: 2000) |
-
-### Dependencies
-
-*   `trf`
-*   `spanr`
-
----
 
 ## chainnet
 

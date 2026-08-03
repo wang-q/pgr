@@ -495,7 +495,7 @@ chainnet 后消失。`pgr psl chain` 在 2bit 序列缓存优化后（~0.3 s）�
 | PAF 隐式图 / 泛基因组 | [[impg.md]]、[[seqwish.md]]、[[smoothxg.md]]、[[minigraph.md]] | [[paf-pangenome.md]]（场景枢纽） | — | `pgr paf graph`（`libs/paf/graph`） |
 | syncmer / 采样 | [[syng.md]] | — | — | `libs/syncmer`（pgi build 依赖） |
 | pbit 压缩 | [[agc-cpp.md]] | [[design/pbit.md]] | — | `pgr pbit`（`libs/pbit`） |
-| 重复标记（repeat masking） | [[fastk.md]] | [[design/repeatmasker.md]] | — | `pgr pl ir/rept/trf` + `pgr fa mask`（`libs/pl`） |
+| 重复标记（repeat masking） | [[fastk.md]] | [[design/repeatmasker.md]] | — | `pgr rept e-kmer/s-kmer/trf` + `pgr fa mask`（`libs/pl`、`cmd_pgr/rept`） |
 | 其他参考 | [[fastk.md]]、[[kaks.md]]、[[gfa.md]]、[[ropebwt3.md]]、[[pangenome-tools.md]] | [[design/ms2dna_port.md]]（ms→dna 移植） | — | `pgr ms to-dna`、`pgr paf to-gfa` 等 |
 
 ## 10. 设计笔记索引（notes/design/）

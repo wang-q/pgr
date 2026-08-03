@@ -53,7 +53,7 @@ This repository contains many subcommands and end-to-end workflows. Extended and
 are collected in:
 
 - docs/usage_examples.md
-- docs/repeats.md (repeat masking: libraries, RepeatMasker, pgr pl ir/rept/trf)
+- docs/rept.md (repeat masking: libraries, RepeatMasker, pgr rept e-kmer/s-kmer/trf)
 
 Below are a few quick examples to get started:
 
@@ -82,8 +82,8 @@ Some subcommands depend on external executables:
   `axtChain`, `chainAntiRepeat`, `chainMergeSort`, `chainPreNet`,`chainNet`, `netSyntenic`,
   `netChainSubset`, `chainStitchId`, `netSplit`,`netToAxt`, `axtSort`, `axtToMaf`, `netFilter`,
   `netClass`, and `chainSplit`.
-- `pgr pl trf` depends on `trf` and `spanr`.
-- `pgr pl rept` and `pgr pl ir` depend on `FastK`, `Profex`, and `spanr`.
+- `pgr rept trf` depends on `trf` and `spanr`.
+- `pgr rept s-kmer` and `pgr rept e-kmer` depend on `FastK`, `Profex`, and `spanr`.
 - `pgr pl p2m` depends on `spanr`.
 - `pgr fas refine` depends on an external multiple sequence alignment tool such as
   `clustalw` (default), `muscle`, or `mafft`.

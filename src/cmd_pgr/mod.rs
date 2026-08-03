@@ -19,5 +19,6 @@ pub mod pgi;
 pub mod pl;
 pub mod plot;
 pub mod psl;
+pub mod rept;
 pub mod sd;
 pub mod twobit;

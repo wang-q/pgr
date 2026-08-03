@@ -218,8 +218,8 @@ echo -e "tests/pgr/sakai.fa.gz\ntests/pgr/mg1655.fa.gz" |
 
 ### Alignment pipelines (lastz, UCSC, multiz)
 
-Repeat masking (libraries, RepeatMasker, and pgr's `pl ir/rept/trf`) is
-documented in [repeats.md](repeats.md).
+Repeat masking (libraries, RepeatMasker, and pgr's `rept e-kmer/s-kmer/trf`) is
+documented in [rept.md](rept.md).
 
 ```bash
 lastz tests/pgr/pseudocat.fa tests/pgr/pseudopig.fa |
@@ -291,8 +291,8 @@ Some subcommands in `pgr` invoke external executables. In particular:
   - `faToTwoBit`, `axtChain`, `chainAntiRepeat`, `chainMergeSort`, `chainPreNet`,
     `chainNet`, `netSyntenic`, `netChainSubset`, `chainStitchId`, `netSplit`,
     `netToAxt`, `axtSort`, `axtToMaf`, `netFilter`, `netClass`, `chainSplit`.
-- `pgr pl trf` depends on `trf` and `spanr`.
-- `pgr pl rept` and `pgr pl ir` depend on `FastK`, `Profex`, and `spanr`.
+- `pgr rept trf` depends on `trf` and `spanr`.
+- `pgr rept s-kmer` and `pgr rept e-kmer` depend on `FastK`, `Profex`, and `spanr`.
 - `pgr pl p2m` depends on `spanr`.
 - `pgr fas refine` depends on a multiple sequence alignment tool:
   - `clustalw` (default), or `muscle`, or `mafft`.
