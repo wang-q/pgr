@@ -86,10 +86,17 @@ pub fn cluster_paf<R: BufRead>(
     }
     for idxs in by_chrom.values_mut() {
         idxs.sort_by_key(|&i| intervals[i].start);
-        for w in idxs.windows(2) {
-            let (a, b) = (w[0], w[1]);
-            if intervals[b].start < intervals[a].end {
-                dsu.union(a, b);
+        // Adjacent pairs alone miss nested intervals (A contains B and C,
+        // B/C disjoint: A overlaps C but C never meets B in the scan).
+        // Union each interval with the furthest-extending one seen so far:
+        // any overlap with an earlier interval implies an overlap with it.
+        let mut last = idxs[0];
+        for &i in &idxs[1..] {
+            if intervals[i].start < intervals[last].end {
+                dsu.union(i, last);
+            }
+            if intervals[i].end > intervals[last].end {
+                last = i;
             }
         }
     }
@@ -152,5 +159,27 @@ mod tests {
             split_species_name("NC_000913"),
             ("?".into(), "NC_000913".into())
         );
+    }
+
+    #[test]
+    fn nested_overlapping_intervals_form_one_cluster() {
+        // A [0,100] contains B [10,20] and C [30,40]; B and C do not overlap
+        // each other, but both overlap A, so all three share a cluster.
+        let dir = tempfile::tempdir().unwrap();
+        let genome = dir.path().join("g.fa");
+        std::fs::write(&genome, format!(">chr\n{}\n", "A".repeat(120))).unwrap();
+        let paf = "\
+chr\t120\t0\t100\t+\tchr\t120\t0\t100\t100\t100\t255\n\
+chr\t120\t10\t20\t+\tchr\t120\t10\t20\t10\t10\t255\n\
+chr\t120\t30\t40\t+\tchr\t120\t30\t40\t10\t10\t255\n";
+        let outdir = dir.path().join("clusters");
+        let clusters = cluster_paf(
+            std::io::Cursor::new(paf.as_bytes()),
+            genome.to_str().unwrap(),
+            outdir.to_str().unwrap(),
+        )
+        .unwrap();
+        assert_eq!(clusters.len(), 1);
+        assert_eq!(clusters[0].intervals.len(), 3);
     }
 }

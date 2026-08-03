@@ -21,7 +21,7 @@ comparisons. The output is LAV format; convert it with `pgr lav to-psl`.
 *   `--self`: Self-alignment (align the target against itself); the query
     input may be omitted or must be the same path as the target. Omitting the
     query implies `--self`.
-*   `-s, --preset <set01..set07>`: Use a predefined parameter set (see below).
+*   `--preset <set01..set07>`: Use a predefined parameter set (see below).
 *   `--show-preset`: Display the configuration (parameters & matrix) for the
     selected preset and exit.
 *   `--lastz-args <string>`: Additional arguments passed directly to `lastz`

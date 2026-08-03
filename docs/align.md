@@ -34,5 +34,9 @@ Both engines output PSL blocks, which feed the UCSC-style chain pipeline
 2. LASTZ alignment:
 
    ```bash
-   pgr align lastz ref.fa query.fa -o out.psl
+   pgr align lastz ref.fa query.fa -o lastz_out
    ```
+
+   `align lastz` writes one LAV file per target/query pair into the output
+   directory; convert them with `pgr lav to-psl` (see
+   [align-lastz.md](align-lastz.md)).

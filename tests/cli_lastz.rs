@@ -134,7 +134,9 @@ fn test_align_lastz_single_input_self() {
     assert!(output_file.exists());
     let content = fs::read_to_string(&output_file).unwrap();
     assert!(content.contains("#:lav"));
-    assert!(content.contains("s {"));
+    // Self mode passes `--self` to lastz, which drops the trivial
+    // sequence-vs-itself alignment; the LAV header records the flag.
+    assert!(content.contains("--self"));
 }
 
 #[test]

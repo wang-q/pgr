@@ -165,7 +165,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // Delegate the parallel orchestration to libs::lastz
     let opts = pgr::libs::lastz::RunLastzOptions {
         depth: opt_depth,
-        is_self,
+        is_self: self_mode,
         common_args,
         output_dir: opt_output.clone(),
         parallel: opt_parallel,

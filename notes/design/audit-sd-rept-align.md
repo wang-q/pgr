@@ -80,3 +80,63 @@ clippy 干净。
 
 新增 5 个集成测试：trf 特殊字符名、e_align 非法 identity、s-align 端到端、
 sd run 端到端、pgi 溢出检查路径。全套 956 通过。
+
+## 复核轮（第八轮，2026-08-03）
+
+对上述 9 处修复逐条对照当前代码复核，全部在位；另发现并修复 3 处新缺陷、
+2 处文档错误。最终 958 测试全绿（956 + 新增 2），fmt 与
+`cargo clippy -- -D warnings` 干净。
+
+### 新修复（3 处）
+
+1. **cluster.rs 重叠 union 漏连嵌套区间**：按 start 排序后仅用 `windows(2)`
+   相邻对做 union-find。当 A 包含 B、C 且 B/C 不相交时（A 与 B、C 均重叠），
+   C 只与 B 相邻比较，漏掉与 A 的直接重叠，被拆成独立簇。改为扫描时跟踪
+   已见区间的最大右端：任何与先前区间重叠的当前区间必然与最大右端区间重叠。
+   新增回归测试 `nested_overlapping_intervals_form_one_cluster`。
+2. **align lastz 省略 query 未真正启用 self 模式**：`self_mode`（省略 query
+   或 `--self`）与传给 `RunLastzOptions` 的 `is_self` 分离——省略 query 时
+   `is_self` 仍为 false，目录输入会跑 n×n 全交叉、单文件不传 `--self`
+   （产生序列 vs 自身的平凡比对），与文档"省略 query 即 --self"相悖。改为
+   传 `self_mode`；`--self` 语义（丢弃平凡自比对）与 `align pgi` self 模式
+   一致。新增集成测试 `command_align_lastz_omitted_query_is_self`；既有
+   `test_align_lastz_single_input_self` 断言的是旧行为（"s {" 平凡 hit），
+   改为断言 LAV 头部记录 `--self`。
+3. **`--min-identity` 校验范围与文案不符**：sd run/search/cross 与 rept
+   e_align 四处写 `(0.0..=1.0)`（放行 0.0）但报错文案称 `(0, 1]`。统一收窄
+   为 `> 0.0 && <= 1.0`。
+
+### 文档修正（2 处）
+
+1. align-lastz.md：`-s, --preset` 的 `-s` 短选项实际不存在（clap 未注册），
+   改为 `--preset`。
+2. align.md：lastz 示例 `-o out.psl` 错误（lastz 输出为目录下的 LAV），改为
+   `-o lastz_out` 并注明输出为 LAV、需 `pgr lav to-psl` 转换。
+
+### 新增定位记录（未改）
+
+1. **decompose.rs 静默丢弃无法解析的 FASTA 头**：非 cluster 格式的普通 FASTA
+   输入逐条静默跳过（无警告、输出空），与 `parse_or_warn` 风格不一致；建议
+   后续加警告。
+2. **e-align PSL 过滤静默跳过畸形行**：`let Ok(psl) = ... else continue`
+   无日志；sd 引擎用 `parse_or_warn`。建议统一。
+3. **run_lastz self 模式仍构建 n×n job 列表**：内存 O(n²)，运行时才按
+   basename 跳过；大目录 self 对齐可提前过滤。
+4. **pgi u32 溢出防护无测试**：需 >42 亿 k-mer 记录，不现实；保持代码审查
+   覆盖。
+5. **e-align 的 identity 定义**：用 `Psl::ident()`（gap-compressed，不含
+   insert 碱基），与 sd 文档化的 `(matches+repeats)/block_len` 不同，rept.md
+   未说明；建议补注。
+6. **wave.rs 的 panic**（`unreachable!` / `panic!`）均为 Myers 算法不变量，
+   有穷举与随机测试兜底；未发现用户输入可触发的路径。
+
+### 复核验证结果
+
+* 原笔记 9 处修复全部对照确认在位（run.rs 越界检查、repeat.rs 两处吞 IO
+  错误、trf 特殊字符文件名、e_align 与 sd 的参数校验、lastz 失败统计 bail、
+  pgi u32 溢出防护、s_align soft-mask 文档、rept.md e-align 章节）。
+* `cargo fmt --check` 干净；`cargo clippy -- -D warnings` 干净；
+  `--all-targets` 有 3 个既有 `src/libs/plot/dot.rs` 测试告警（plot 模块，
+  不在本次范围，未改）。
+* 全量 958 测试通过（lib 463 + 各集成测试；新增 cluster 单测与 align-lastz
+  集成测试各 1）。

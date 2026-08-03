@@ -179,7 +179,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let min_identity = *args.get_one::<f64>("min_identity").unwrap();
     anyhow::ensure!(
-        (0.0..=1.0).contains(&min_identity),
+        min_identity > 0.0 && min_identity <= 1.0,
         "--min-identity must be in (0, 1]: {}",
         min_identity
     );
