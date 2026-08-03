@@ -406,6 +406,10 @@ coordinates, and regions whose alignment depth exceeds a threshold are kept
 (with 50%-overlap windows the baseline depth is 2; `--min-depth 4` means
 at least two copies).
 
+> Soft-masked (lowercase) genomes are detected and warned about: lowercase
+> repeat regions are skipped by `lastz` and underestimate coverage, so
+> uppercase the genome first (`tr a-z A-Z`) if warned.
+
 > **What it detects**: self-alignment captures **every** region that appears
 > more than once in the genome — transposable elements, segmental
 > duplications (SD), tandem repeats, multi-copy gene families, etc. It does

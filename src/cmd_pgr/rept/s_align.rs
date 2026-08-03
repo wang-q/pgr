@@ -17,6 +17,10 @@ written as a runlist JSON ready for `pgr fa mask`.
 
 * No repeat library is needed (self-comparison only).
 
+* Soft-masked (lowercase) genomes are detected and warned about: lowercase
+  repeat regions are skipped by lastz and underestimate coverage, so
+  uppercase the genome first (`tr a-z A-Z`) if warned.
+
 * All operations are running in a tempdir and no intermediate files are retained.
 
 * External dependencies

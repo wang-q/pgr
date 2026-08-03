@@ -85,6 +85,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let engine = args.get_one::<String>("engine").unwrap().as_str();
     let min_len = *args.get_one::<u32>("min_len").unwrap();
     let min_identity = *args.get_one::<f64>("min_identity").unwrap();
+    anyhow::ensure!(
+        (0.0..=1.0).contains(&min_identity),
+        "--min-identity must be in (0, 1]: {}",
+        min_identity
+    );
     let parallel = *args.get_one::<usize>("parallel").unwrap();
 
     let workdir = tempfile::tempdir()?;

@@ -71,6 +71,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let engine = args.get_one::<String>("engine").unwrap();
     let min_len = *args.get_one::<u32>("min_len").unwrap();
     let min_identity = *args.get_one::<f64>("min_identity").unwrap();
+    anyhow::ensure!(
+        (0.0..=1.0).contains(&min_identity),
+        "--min-identity must be in (0, 1]: {}",
+        min_identity
+    );
 
     let ctx = pgr::libs::pl::PipelineCtx::new("pgr_sd_run_")?;
     let pgr = ctx.pgr.clone();
@@ -102,6 +107,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 continue;
             }
             let f: Vec<&str> = line.split('\t').collect();
+            if f.len() < 8 {
+                continue;
+            }
             let sid: u32 = f[4].parse()?;
             cluster_max = cluster_max.max(sid);
             elems.push_str(&format!(

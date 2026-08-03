@@ -193,6 +193,12 @@ pub fn build_from_seqs(
     );
     let keys = buf.keys;
     let payloads = buf.payloads;
+    anyhow::ensure!(
+        payloads.len() <= u32::MAX as usize,
+        "too many k-mer records: {} (max {})",
+        payloads.len(),
+        u32::MAX
+    );
 
     let mut entries: Vec<PgiEntry> = Vec::with_capacity(keys.len());
     let mut positions: Vec<u64> = Vec::with_capacity(keys.len());

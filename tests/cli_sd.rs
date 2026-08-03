@@ -183,3 +183,25 @@ fn command_sd_cross_pgi_engine_relative_paths() {
         "pgi cross found no cross-genome homology"
     );
 }
+
+/// `sd run` end-to-end on a synthetic duplicated genome: the full pipeline
+/// (search -> align -> cluster -> decompose -> cover) must produce a
+/// CORE-annotated elementary BED.
+#[test]
+fn command_sd_run_end_to_end() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let fa = write_fa(temp.path(), "genome", &tandem_genome());
+    let outdir = temp.path().join("sd_out");
+
+    let (_, stderr) = PgrCmd::new()
+        .args(&["sd", "run", &fa, "-o", outdir.to_str().unwrap()])
+        .run();
+    assert!(stderr.contains("wrote"), "sd run failed: {stderr}");
+
+    let bed = fs::read_to_string(outdir.join("out.elem.bed")).unwrap();
+    assert!(bed.contains("CORE"), "expected CORE rows, got: {bed}");
+    assert!(
+        bed.lines().count() >= 2,
+        "expected 2+ fragments, got: {bed}"
+    );
+}

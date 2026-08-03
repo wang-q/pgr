@@ -177,6 +177,21 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let abs_infile = ctx.abs_path(args.get_one::<String>("infile").unwrap())?;
     let abs_outfile = pgr::libs::pl::abs_path_or_stdout(outfile)?;
 
+    let min_identity = *args.get_one::<f64>("min_identity").unwrap();
+    anyhow::ensure!(
+        (0.0..=1.0).contains(&min_identity),
+        "--min-identity must be in (0, 1]: {}",
+        min_identity
+    );
+    let kmer = *args.get_one::<usize>("kmer").unwrap();
+    let smer = *args.get_one::<usize>("smer").unwrap();
+    let window = *args.get_one::<usize>("window").unwrap();
+    let parallel = *args.get_one::<usize>("parallel").unwrap();
+    anyhow::ensure!(kmer > 0, "--kmer must be positive: {}", kmer);
+    anyhow::ensure!(smer > 0, "--smer must be positive: {}", smer);
+    anyhow::ensure!(window > 0, "--window must be positive: {}", window);
+    anyhow::ensure!(parallel > 0, "--parallel must be positive: {}", parallel);
+
     let _cwd_guard = ctx.enter()?;
 
     let opts = pgr::libs::pl::AlignRepeatOpts {
@@ -185,9 +200,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         abs_infile,
         abs_outfile,
         keep_index,
-        kmer: *args.get_one::<usize>("kmer").unwrap(),
-        smer: *args.get_one::<usize>("smer").unwrap(),
-        window: *args.get_one::<usize>("window").unwrap(),
+        kmer,
+        smer,
+        window,
         freq: *args.get_one::<usize>("freq").unwrap(),
         min_span: *args.get_one::<usize>("min_span").unwrap(),
         max_gap: *args.get_one::<usize>("max_gap").unwrap(),
@@ -195,10 +210,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         merge_gap: *args.get_one::<usize>("merge_gap").unwrap(),
         min_shared: *args.get_one::<usize>("min_shared").unwrap(),
         workflow: args.get_one::<String>("workflow").unwrap().clone(),
-        min_identity: *args.get_one::<f64>("min_identity").unwrap(),
+        min_identity,
         min_len: *args.get_one::<usize>("min_len").unwrap(),
         fill_fragment: *args.get_one::<usize>("fill_fragment").unwrap(),
-        parallel: *args.get_one::<usize>("parallel").unwrap(),
+        parallel,
     };
 
     pgr::libs::pl::run_align_repeat_pipeline(&opts)?;

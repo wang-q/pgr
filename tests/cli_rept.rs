@@ -239,3 +239,57 @@ fn command_rept_s_align_end_to_end() -> anyhow::Result<()> {
     assert!(spans.contains('-'), "expected intervals, got: {spans}");
     Ok(())
 }
+
+/// trf must resolve `fa split` names with special characters (sanitized).
+#[test]
+fn command_rept_trf_special_chars() -> anyhow::Result<()> {
+    if which::which("trf").is_err() || which::which("spanr").is_err() {
+        eprintln!("skipping: trf/spanr not found");
+        return Ok(());
+    }
+
+    let temp = tempfile::TempDir::new()?;
+    let genome_fa = temp.path().join("genome.fa");
+    let out = temp.path().join("out.json");
+    let seq = format!("{}{}", random_seq(500, 21), random_seq(500, 21));
+    std::fs::write(&genome_fa, format!(">chr(1):x\n{}\n", seq))?;
+
+    let (_, stderr) = common::PgrCmd::new()
+        .args(&[
+            "rept",
+            "trf",
+            genome_fa.to_str().unwrap(),
+            "-o",
+            out.to_str().unwrap(),
+        ])
+        .run();
+    assert!(stderr.contains("==> Outputs"), "pipeline failed: {stderr}");
+
+    let json: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&out)?)?;
+    let _ = json["chr(1):x"]
+        .as_str()
+        .expect("sanitized name not restored");
+    Ok(())
+}
+
+/// e-align rejects out-of-range `--min-identity`.
+#[test]
+fn command_rept_e_align_invalid_identity() -> anyhow::Result<()> {
+    let (_, stderr) = common::PgrCmd::new()
+        .args(&[
+            "rept",
+            "e-align",
+            concat!(env!("CARGO_MANIFEST_DIR"), "/tests/pgr/tncentral.fa.gz"),
+            concat!(env!("CARGO_MANIFEST_DIR"), "/tests/genome/mg1655.fa.gz"),
+            "--min-identity",
+            "1.5",
+            "-o",
+            "/tmp/never.json",
+        ])
+        .run_fail();
+    assert!(
+        stderr.contains("must be in (0, 1]"),
+        "expected range error, got: {stderr}"
+    );
+    Ok(())
+}

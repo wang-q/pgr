@@ -29,10 +29,8 @@ pub fn run_profex_per_chr(
         let rg_file = format!("prof.{}.rg", sn);
         let mut writer = crate::writer(&rg_file)?;
 
-        for line in std::io::BufReader::new(reader)
-            .lines()
-            .map_while(Result::ok)
-        {
+        for line in std::io::BufReader::new(reader).lines() {
+            let line = line?;
             let Some(caps) = re_prof.captures(&line) else {
                 continue;
             };
@@ -283,10 +281,8 @@ pub fn run_align_repeat_pipeline(opts: &AlignRepeatOpts) -> anyhow::Result<()> {
     let mut name_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
     let mut safe_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
     let mut n_rg = 0usize;
-    for line in std::io::BufReader::new(reader)
-        .lines()
-        .map_while(Result::ok)
-    {
+    for line in std::io::BufReader::new(reader).lines() {
+        let line = line?;
         if line.is_empty() {
             continue;
         }

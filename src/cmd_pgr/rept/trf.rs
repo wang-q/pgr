@@ -135,8 +135,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let mut rg_files = vec![];
     for (i, chr) in chrs.iter().enumerate() {
+        // `fa split name` names each file after `sanitize_filename(name)`;
+        // use the same sanitization so names with special chars resolve.
+        let chr_file = pgr::libs::io::sanitize_filename(chr);
         run_cmd!(
-            trf ${chr}.fa ${opt_trf_match} ${opt_trf_mismatch} ${opt_delta} ${opt_pm} ${opt_pi} ${opt_minscore_u} ${opt_max_period} -d -h -ngs > trf.${i}.dat
+            trf ${chr_file}.fa ${opt_trf_match} ${opt_trf_mismatch} ${opt_delta} ${opt_pm} ${opt_pi} ${opt_minscore_u} ${opt_max_period} -d -h -ngs > trf.${i}.dat
         )?;
 
         // 198 229 12 2.7 12 90 0 50 34 46 3 15 1.62 CATTACCACCAC CATTAGCACCACCATTACCACCACCATCACCA ATAGCGCACAGACAGATAAAAATTACAGAGTACACAACATCCATGAAACG TTACCACAGGTAACGGTGCGGGCTGACGCGTACAGGAAACACAGAAAAAA

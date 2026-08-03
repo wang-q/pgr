@@ -3,6 +3,7 @@
 use rayon::prelude::*;
 use std::io::Write;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// Default scoring matrix for lastz (Human vs Mouse / Macaque / Cow).
 pub const MATRIX_DEFAULT: &str = "   A    C    G    T
@@ -197,8 +198,10 @@ pub fn run_lastz(
     let common_args = opts.common_args;
     let output_dir = opts.output_dir;
     let is_self = opts.is_self;
+    let failures = AtomicUsize::new(0);
+    let n_jobs = jobs.len();
 
-    pool.install(move || {
+    pool.install(|| {
         jobs.par_iter().for_each(|(target_file, query_file)| {
             let t_base =
                 crate::libs::io::get_basename(&target_file.to_string_lossy()).unwrap_or_default();
@@ -266,6 +269,7 @@ pub fn run_lastz(
                         t_base,
                         q_base
                     );
+                    failures.fetch_add(1, Ordering::Relaxed);
                 }
                 Err(err) => {
                     log::error!(
@@ -274,10 +278,15 @@ pub fn run_lastz(
                         q_base,
                         err
                     );
+                    failures.fetch_add(1, Ordering::Relaxed);
                 }
             }
         });
     });
 
+    let n_failures = failures.load(Ordering::Relaxed);
+    if n_failures > 0 {
+        anyhow::bail!("lastz failed for {n_failures} of {n_jobs} jobs");
+    }
     Ok(())
 }
