@@ -118,6 +118,21 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     )?;
     let chrs = pgr::libs::io::read_names::<Vec<String>>("chr.sizes")?;
 
+    // `spanr cover` truncates dotted contig names (e.g. `NC_000913.1` ->
+    // `1`) at the last '.', so map real names to dot-free placeholders and
+    // restore them after the spanr pass.
+    let mut name_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut safe_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let safe_chrs: Vec<String> = chrs
+        .iter()
+        .map(|c| {
+            let s = format!("c{}", name_map.len() + 1);
+            name_map.insert(c.clone(), s.clone());
+            safe_map.insert(s.clone(), c.clone());
+            s
+        })
+        .collect();
+
     let mut rg_files = vec![];
     for (i, chr) in chrs.iter().enumerate() {
         run_cmd!(
@@ -144,15 +159,47 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         let rg_file = format!("trf.{}.rg", i);
         let mut writer = pgr::writer(&rg_file)
             .with_context(|| format!("Failed to open writer for {}", rg_file))?;
-        pgr::libs::pl::parse_trf_output(reader, chr, &mut writer)?;
+        pgr::libs::pl::parse_trf_output(reader, &safe_chrs[i], &mut writer)?;
         writer.flush()?;
         rg_files.push(rg_file);
     }
 
     run_cmd!(info "==> Outputs")?;
+    if pgr::libs::pl::count_rg_lines(&rg_files)? == 0 {
+        let empty = b"{}\n";
+        if abs_outfile == "stdout" {
+            use std::io::Write;
+            std::io::stdout().write_all(empty)?;
+        } else {
+            std::fs::write(&abs_outfile, empty)?;
+        }
+        return Ok(());
+    }
     run_cmd!(
-        spanr cover $[rg_files] -o ${abs_outfile}
+        spanr cover $[rg_files] -o out.json
     )?;
+
+    // Restore the real contig names in the runlist json.
+    let mut val: serde_json::Value = serde_json::from_slice(&std::fs::read("out.json")?)?;
+    if let Some(obj) = val.as_object_mut() {
+        let old = std::mem::take(obj);
+        for (k, v) in old {
+            // Drop the empty marker `-` so the runlist stays clean.
+            if v.as_str() == Some("-") {
+                continue;
+            }
+            obj.insert(safe_map.get(&k).cloned().unwrap_or(k), v);
+        }
+    }
+    let out_bytes = serde_json::to_vec_pretty(&val)?;
+    if abs_outfile == "stdout" {
+        use std::io::Write;
+        let mut w = pgr::writer("stdout")?;
+        w.write_all(&out_bytes)?;
+        w.write_all(b"\n")?;
+    } else {
+        std::fs::write(&abs_outfile, out_bytes)?;
+    }
 
     // Done
 

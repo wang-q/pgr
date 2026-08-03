@@ -19,6 +19,10 @@ This command identifies repeats in a genome against an external repeat library
   length, merged into intervals, and written as a runlist JSON ready for
   `pgr fa mask`.
 
+* Soft-masked (lowercase) genomes are detected and warned about: lowercase
+  repeat regions fragment the alignment and drastically underestimate
+  coverage, so uppercase the genome first (`tr a-z A-Z`) if warned.
+
 * All operations are running in a tempdir and no intermediate files are retained.
 
 * External dependencies

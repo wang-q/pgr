@@ -193,19 +193,19 @@ spanr gff tests/pgr/mg1655.rm.gff -o tests/pgr/mg1655.rm.json
 All three emit runlist JSON ready for `pgr fa mask`:
 
 ```bash
-pgr rept e-kmer tests/pgr/tncentral.fa.gz tests/pgr/mg1655.fa.gz \
+pgr rept e-kmer tests/pgr/tncentral.fa.gz tests/genome/mg1655.fa.gz \
     > tests/pgr/mg1655.ir.json
 
-spanr stat tests/pgr/mg1655.chr.sizes tests/pgr/mg1655.ir.json
+spanr stat tests/genome/mg1655.chr.sizes tests/pgr/mg1655.ir.json
 
-pgr rept s-kmer tests/pgr/mg1655.fa.gz \
+pgr rept s-kmer tests/genome/mg1655.fa.gz \
     > tests/pgr/mg1655.rept.json
 
-pgr rept trf tests/pgr/mg1655.fa.gz \
+pgr rept trf tests/genome/mg1655.fa.gz \
     > tests/pgr/mg1655.trf.json
 
-spanr stat tests/pgr/mg1655.chr.sizes tests/pgr/mg1655.rm.json
-spanr statop tests/pgr/mg1655.chr.sizes tests/pgr/mg1655.ir.json tests/pgr/mg1655.rm.json
+spanr stat tests/genome/mg1655.chr.sizes tests/pgr/mg1655.rm.json
+spanr statop tests/genome/mg1655.chr.sizes tests/pgr/mg1655.ir.json tests/pgr/mg1655.rm.json
 ```
 
 ---

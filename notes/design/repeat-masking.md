@@ -219,6 +219,16 @@ runlist 区间交给 `pgr fa mask` 做遮蔽。不做 family/class 注释、不�
 *   遮蔽版只回答一个问题："基因组上哪些区间是重复的"，质量取决于比对敏感度
     （验证见 §2.5）。
 
+> **2026-08-03 实测修正（先假后真）**：首轮实测曾得出"e-align 真核敏感度
+> 不足、e-kmer 是主力"的结论，后经用户提示查明是 **soft-mask 假象**
+> （下载的真核基因组都被 soft-mask，pgi 链延伸在 soft-masked 区域产出
+> 短碎片被过滤；FastK 大小写不敏感不受影响）。去 mask 后（§2.3.5
+> "soft-mask 假象与机制对比修正"）：e-align 在酵母 S288c 检出 3.90%、
+> 全面优于 e-kmer（2.98–3.59%）；细菌上 e-align 亦略优（Sakai 1.58% vs
+> 1.24%）。**结论恢复：e-align（pgi）做遮蔽版成立且真核可用**；使用前
+> 须确认基因组未 soft-mask。Dfam 全库对细菌/真菌覆盖有限（0.05–0.26%）
+> 的记录仍成立。
+
 ### 2.2 方案
 
 #### 核心思路：Dfam 全库 + 一套通用比对
@@ -236,6 +246,11 @@ family/class、K2P、报告，详见附录 A.5）。我们只做**搜索侧的�
     参数（可参考 `general_search_parameters` 的量级，放宽 min-len/identity）；
 *   这正好对应 RepeatMasker 自己的 `-lib` 模式——官方支持"用户给全库 +
     `general_search_parameters` 一套流程"的简化路径（附录 A.2）。
+
+> **2026-08-03 库选择补充**：真核实测（S288c 去 mask）repbase 库 e-align
+> 检出 3.90%、dfam 仅 0.44%——**真核遮蔽优先 repbase**（Dfam 的酵母等
+> 真菌家族收录有限）。纯遮蔽可两者都跑再 `spanr merge`（§1.3 多库
+> 决策），细菌则 tncentral 优先（§2.3.5）。
 
 **代价**：全库比对会让近缘家族的 consensus 互相 hit（cross-family），造成
 一定过度遮蔽；物种特异配方（如灵长类年轻 Alu 的"先切除再补搜"）的灵敏度
@@ -429,10 +444,257 @@ min-identity 0.70、min-len 50）
 *   参数尚未标定：本轮全用初始值；真核基因组（拟南芥/玉米）验证与
     `-f`/`--min-shared`/`--workflow`/`--min-identity` 扫描见 §2.5。
 
+#### 遮蔽闭环与参数敏感性（2026-08-03，MG1655 + tncentral）
+
+**闭环验证**：e-align 输出直接喂 `pgr fa mask`（soft-mask），masked 序列
+中小写碱基数 = 60,423 = e-align 覆盖 bp，逐 bp 一致，检测→遮蔽闭环成立。
+
+**参数扫描**（单变量，基线 f=100 / c=50 / min-shared=16 / greedy /
+min-identity=0.70 → 60,423 bp / 1.30%）：
+
+| 参数变化 | 覆盖 bp / % | 观察 |
+| :--- | :--- | :--- |
+| 基线（默认） | 60,423 / 1.30% | 与 RM 参考（1.06%）同量级，略 over-mask |
+| `-f 10` / `-f 500` | 75,170–75,413 / 1.62% | f 在 10–500 间影响小、非单调 |
+| `--min-identity 0.60` | 75,413 / 1.62% | 放宽略增 |
+| `--min-identity 0.80` | 64,449 / 1.39% | 收紧反而略增（碎片合并非线性） |
+| `--workflow tube` | 74,936 / 1.61% | tube 更敏感（plen floor=12） |
+| `--min-shared 12` | 269,287 / **5.80%** | **过度敏感，假阳性暴涨 4.5 倍** |
+
+结论：**min-shared 是敏感度主导参数**，默认 16 已是好平衡点（12 就失控）；
+f / min-identity / workflow 在细菌上影响温和。真核验证时优先扫描
+min-shared 与 workflow。
+
+#### spanr 对带点 contig 名的截断 bug（2026-08-03 发现）
+
+真核验证（Fusarium graminearum，NCBI scaffold 名 `JADPNH010000035.1`）时
+发现：`spanr cover` 输出的 runlist json 的 key 把染色体名**按 `.` 截断成
+最后一段**（`JADPNH010000035.1:100-200` → `{"1": "100-200"}`；
+`NC_000913.1` 同样变 `"1"`）。已复现于 spanr 4.x 独立输入，非 pgr 管道
+引入。
+
+影响：**e-kmer / s-kmer / trf / e-align 全部受影响**（四个命令的区间合并
+都经 `spanr cover`）——只要 contig 名带点（NCBI RefSeq/GenBank 版本号是
+常态）就截断；多 contig 时 `chr1.1`、`chr2.1` 会**冲突**成同一个 key。
+后续 `pgr fa mask` 按 json key 找序列名时会失配。
+
+处理选项（待决策）：
+
+1.  修 spanr（外部工具，`~/ .cbp/bin/spanr`，本机无源码）——若作者可控，
+    这是最正的解（`chr:start-end` 解析不应 split('.')）。
+2.  pgr 内建区间合并（读 rg → 排序合并 → json），替代 `spanr cover`；
+    彻底脱离该依赖，但 e-kmer/s-kmer/trf 的 spanr fill/excise 管道也要
+    一并处理，改动较大。
+3.  pgr 侧名字映射规避：管道内把 t_name 映射为 `c1..cN`，spanr 合并后
+    把 json key 映射回原名（映射在 pgr 内部已知、无冲突）；改动最小。
+
+**已落地（2026-08-03）：方案 3 用于 `e-align`**——`run_align_repeat_pipeline`
+过滤 PSL 时把 t_name 映射成 `c1..cN` 写 `.rg`，spanr 合并后按反向映射把
+json key 恢复原名；顺带处理了"无 hit 时空输入"（输出 `{}` 而不是 spanr
+报错）。已验证：`NC_000913.1` 与 Fusarium 44 条 `JADPNH...1` contig 的
+json key 全部完整；集成测试改用带点名字 `chr1.1` 作回归保护。
+**已扩展（2026-08-03）**：e-kmer/s-kmer（`run_repeat_pipeline` 的 chr
+名映射）与 trf（`fa split` 按原始名拆文件、trf 用原始名、rg 写 safe 名）
+同样处理完毕；三个命令均加了"无区间时空输出 `{}`"兜底。四个 rept
+命令现已全部支持带点 contig 名。验证：`NC_000913.1` 在 e-kmer/s-kmer/
+trf/e-align 下 json key 均完整；三个 e-kmer **并行**（-P 修复后）结果
+一致且无 SIGSEGV。若之后要根治可再修 spanr（选项 1），pgr 侧无需改动。
+
+#### 真核初探：Fusarium graminearum（2026-08-03）
+
+Fusarium graminearum（36.2 Mb，scaffold 级，44 条 contig）跑 e-align：
+
+| 库 | 覆盖 bp / % | 备注 |
+| :--- | :--- | :--- |
+| dfam | 17,256 / 0.05% | 覆盖极低 |
+| tncentral | （key 损坏时跑过，需重跑） | 预期更低（细菌 IS 库） |
+
+**Dfam 对真菌覆盖也很差**（同细菌）：Dfam 的家族以动物/植物为主，真菌
+转座子收录有限。e-align 的真核能力验证仍需植物基因组（拟南芥/玉米，
+§2.5）——真菌不是合适基准。
+
+#### 真核敏感度实锤：Saccharomyces cerevisiae S288c（2026-08-03）
+
+> **已修正（见下节"soft-mask 假象与机制对比修正"）**：本节的 e-align
+> 数字全部来自 soft-masked 基因组，是假象（S288c 真实为 3.90% 而非
+> 0.34%）。保留原始记录供追溯；结论以修正小节为准。
+
+S288c（12.16 Mb，17 条染色体）是更好的真核试金石：**库里有酵母家族**
+（dfam 1828 条酵母相关条目；repbase 10577 条，含完整的 `TY1-I` 5.2 kb
+consensus、`TY1-LTR` 等），酵母 Ty 元件约占基因组 ~3%（文献估计），但
+e-align 检出（soft-masked 版，已作废）：
+
+| 配置 | 覆盖 bp / % | 备注 |
+| :--- | :--- | :--- |
+| repbase，greedy / k40 / ms16 / id70（默认） | 41,266 / 0.34% | 17 条染色体、685 spans |
+| dfam，同上 | 19,967 / 0.16% | |
+| repbase，k20 / ms16 | 3,666 / 0.09% | **更少** |
+| repbase，tube / ms12 | 3,116 / 0.03% | **更少** |
+
+结论（§2.4 关键风险的实测确认）：
+
+*   **默认参数对真核高分歧转座子严重漏检**（估计漏 ~90%）：老 Ty 拷贝与
+    consensus 分歧大（70–85% identity），k=40 syncmer 精确种子不够。
+*   **k 与 freq 相互作用**：k 从 40 降到 20 反而更差——小 k 使种子在重复
+    家族内的出现频次升高，撞上 `-f 100` 的频次过滤被丢弃。调 k 时必须
+    同步放宽 freq。
+*   tube 模式在该场景输出异常少（2 条染色体），待查或换场景验证。
+*   真核 recall 基准需要 RepeatMasker（沙箱无，用户环境有 singularity +
+    sif）：参数标定（§2.5）应在用户机器上对酵母/拟南芥跑 RM 对照。
+
+#### soft-mask 假象与机制对比修正（2026-08-03 重要修正）
+
+**用户发现（关键）**：本机下载的真核基因组都已被 **soft-mask**
+（S288c `dna_sm` 文件名即 Ensembl soft-masked 版；eubayanus/paradoxus/
+Fusarium 的 NCBI 文件也含小写，6–12%）。小写区域正是被标记的重复序列。
+
+**两种机制对 soft-mask 的响应完全不同**（实测）：
+
+*   `e-kmer`（FastK）：**大小写不敏感**——同一基因组大写/小写版结果
+    逐 bp 一致（S288c 均为 362,321 bp / 2.98%；eubayanus 均 36,779 /
+    0.31%）。**此前所有 e-kmer 数据不受 mask 影响，可靠**。
+*   `e-align`（pgi）：**受 soft-mask 严重影响**——索引相同（大写/小写
+    建出的 .pgi 完全一致，6,688,732 k-mers），但**链延伸**在 soft-masked
+    区域（小写）产出 50–100 bp 短碎片（identity 高但 span 短，7849 个
+    id≥0.7 的块中 7841 个 span<100），被 `min-len 50` 过滤 → 严重低估。
+    此前所有 e-align 真核数据（S288c 0.34%、Fusarium 0.05% 等）都是
+    **soft-mask 假象**。
+
+**修正后的真核对比**（repbase 库，e-align 用去 mask 大写基因组）：
+
+| 基因组 | e-kmer（ml100） | e-align（去 mask） |
+| :--- | :--- | :--- |
+| S288c | 436,161 / 3.59% | 474,416 / **3.90%** |
+| eubayanus | 36,779 / 0.31% | 76,562 / **0.65%** |
+| paradoxus | 179,226 / 1.48% | 267,863 / **2.22%** |
+| Fusarium | 1,569 / 0.004% | 82,363 / **0.23%** |
+
+补：S288c 去 mask 后 dfam 库 e-align 仅 53,842 / 0.44%（repbase 3.90%）——
+真核上 **repbase 库覆盖远好于 dfam**（Dfam 酵母家族收录有限）；S288c
+去 mask 后 k20 为 397,609 / 3.27%（k40 3.90% 略优）——"k 下探碎片化"
+同样证实是 mask 假象，去 mask 后默认 k 即可。
+
+**结论推翻**：e-align 在真核上**全面优于 e-kmer**（3.90 vs 3.59、
+0.65 vs 0.31、2.22 vs 1.48），e-kmer 并非真核主力；§2.1"遮蔽版用
+e-align"的原始方案成立。之前"e-align 不适合高分歧真核"的结论作废。
+e-align 是慢但准（延伸+identity 过滤），e-kmer 快但粗（数 k-mer）。
+**使用 e-align 前必须确认基因组未 soft-mask**（或先 `tr a-z A-Z`）。
+
+细菌不受影响（MG1655/Sakai/SE11 均 0% 小写，未 mask），细菌结论
+（e-align 略优）仍成立。tube 模式异常、k 与 freq 相互作用等记录保留，
+但 k20 实验同样受 mask 影响（见下节），待去 mask 后重做。
+
+细菌补充数据（修复后回归确认，2026-08-03）：Sakai e-kmer（tncentral）
+= 69,525 bp / 1.24%，低于 e-align 的 1.58%——细菌上 e-align 略优；
+MG1655 e-kmer 三库（1.23/0.92/0.91%）与修复前完全一致。综合细菌 + 真核
+全部实测，两种机制的关系是**互补**：e-align 在细菌/高 identity 场景略
+敏感，e-kmer 在真核高分歧场景远敏感（酵母 2.98% vs 0.34%）。
+
+e-kmer 参数初扫（酵母 + repbase，2026-08-03）：
+
+| 配置 | 覆盖 bp / % |
+| :--- | :--- |
+| k17 / min-len 300（默认） | 362,321 / 2.98% |
+| k17 / min-len 100 | 436,161 / 3.59% |
+| k21 / min-len 300 | 337,129 / 2.77% |
+
+min-len 是 e-kmer 的明显旋钮（300→100 增 20%，solo LTR 等短片段被补
+上）；k 影响温和（21 vs 17 略降）。§2.5 真核标定时优先扫 min-len。
+
+野生酵母菌株验证（2026-08-03，e-kmer + repbase）：
+
+| 基因组 | min-len 300 | min-len 100 |
+| :--- | :--- | :--- |
+| S288c（实验室株） | 362,321 / 2.98% | 436,161 / 3.59% |
+| eubayanus（野生株） | **0 / 0%** | 36,779 / 0.31% |
+| paradoxus（野生株） | 99,347 / 0.82% | 179,226 / 1.48% |
+
+eubayanus 的关键发现：其与库共享的 k-mer 只覆盖 **<300 bp 短片段**，
+`excise -n 300` 把它们全部切掉（spanr 对空区间输出 `'-'` 占位）→
+默认参数下覆盖为 0。真核应用 e-kmer 时 **min-len 300 会漏掉短拷贝/
+solo LTR/碎片**，应下调（100 或更低）；eubayanus 的 Ty 含量确实低于
+S288c（0.31% vs 2.98%），野生株转座子少、拷贝年轻碎片化。paradoxus
+的 min-len 效应同样明显（+80%），三菌株一致指向 min-len 下调。
+
+**边界修复（2026-08-03）**：所有区间被 `excise` 切光时，spanr 管道在
+json 里给每个 chr 输出 `'-'` 占位值（eubayanus 默认参数场景：24 个
+`'-'`）。`pgr fa mask` 对 `'-'` 静默忽略（不报错），但 runlist 不干净。
+已在三处 json 重映射（e-kmer/s-kmer、e-align、trf）过滤 `'-'` 值，
+无区间时输出空 runlist `{}`。
+
+#### 补充实验：k 下探救不了 e-align（2026-08-03）
+
+> **已修正**：本实验在 soft-masked 基因组上进行，"延伸碎片化"实为
+> soft-mask 造成；去 mask 后 e-align 默认参数即可检出 3.90%（S288c），
+> 无需 k 下探。k 与 freq 的相互作用（小 k 撞 freq 过滤）仍成立，但
+> 与"救 e-align"无关。
+
+把"k 降到 20 + 放宽 freq"的方向实测（酵母 + repbase）：
+
+| 配置 | 覆盖 bp / % |
+| :--- | :--- |
+| k20 / f100 / id70（基线默认） | 3,666 / 0.09% |
+| k20 / f500 / id70 | 3,922 / 0.09% |
+| k20 / f500 / id50 | 6,321 / 0.08% |
+
+k20 时 pgi 有 99 万 seed hits / 1400 PSL blocks（种子不是瓶颈），但 PSL
+identity 分布显示 **90%（1265/1400）的块 identity < 0.1**（延伸碎片），
+真实 0.5–0.7 identity 的块仅 ~79 个；放宽 min-identity 到 0.50 后可用
+块也只从 24 → 36 个。**freq 不是瓶颈、identity 阈值也不是**——pgi 的链
+延伸对低 identity（<70%）序列本来就产出碎片化结果。
+
+结论强化：**e-align（pgi 引擎）不适合高分歧真核转座子**（种子 + 延伸
+双层都撑不住 60–75% identity 的老拷贝）；真核遮蔽主力是 e-kmer
+（FastK 只数 k-mer，天然免疫延伸问题）。e-align 的适用面是细菌 IS /
+近期高 identity 拷贝。若要让 e-align 覆盖真核，需改进 pgi 延伸对低
+identity 的支持——超出 e-align 命令本身，另立主题。
+
+#### Fusarium 复核 e-kmer + FastK 分块冲突修复（2026-08-03）
+
+**重要修正**：Fusarium graminearum + e-kmer（repbase 库）早期测得
+674,883 bp / 1.86% 是 **FastK 残留分块干扰的假象**（见下）；修复后真实
+结果为 1,569 bp / 0.004%。repbase 库虽含 FOT1_FO 等 Fusarium 家族
+（18 条匹配），但该基因组与其共享 k-mer 极少（Profex 只出深度 1 的
+碎片）——**RepBase 对镰刀菌覆盖也有限**。酵母的 2.98% 可靠（-P 前后
+多次复现一致）；Fusarium 不适合作为 e-kmer 真核基准。
+
+> e-align 侧修正：Fusarium 的 e-align 早期 0.05%（dfam）/ 0.004% 也受
+> soft-mask 影响；去 mask（大写）后 repbase 检出 82,363 bp / 0.23%
+> （仍低，库覆盖有限），dfam 未重测。Fusarium 整体不是好基准。
+
+**FastK 分块冲突（根因 + 修复）**：FastK 的 block-level sort 分块文件
+（`.repeat.ktab.N` / `.genome.ktab.N`）默认写到 **/tmp 全局目录**，并发
+或重复运行时互相覆盖/残留——这是此前三路并行 e-kmer 触发 SIGSEGV 的
+根因，也会让后续运行读到残留分块而产出**错误结果**（Fusarium 假象
+674,883 bp 的来源）。已修复：`run_repeat_pipeline` 的 FastK 调用加
+`-P<tempdir>`（进入 tempdir 后的 CWD），分块随 tempdir 一起隔离清理。
+验证：MG1655（1.23%）与酵母（2.98%）在 -P 前后结果一致，无副作用。
+顺带说明：手动跑 FastK 会在 /tmp 留下 74 MB 级分块，注意清理。
+
+实用坑：**FastK 不认 `.fna.gz` 扩展名**（只接受
+`f{ast}[aq][.gz]`，即 .fa/.fasta/.fq/.fastq 可选 .gz）。NCBI 下载的
+`*_genomic.fna.gz` 需先改名/软链成 `.fa.gz` 再喂 e-kmer。已记录，用户
+文档是否提示待定。
+
 ### 2.4 关键风险
 
-*   **比对敏感度**：k-mer（k=17）对高分歧拷贝会漏；pgi 的 syncmer 种子对
-    70% identity 的拷贝同样不轻松。这是决定遮蔽质量的核心，必须实测。
+*   **soft-mask 输入（重要）**：`e-align`（pgi 链延伸）对 soft-masked
+    基因组严重低估（S288c 0.34% → 去 mask 3.90%，差 11 倍）——小写重复
+    区延伸成短碎片被过滤。使用前须确认基因组未 soft-mask（小写比例 >0
+    先 `tr a-z A-Z`）；`e-kmer`（FastK）大小写不敏感不受影响。
+
+    **已实现警告（2026-08-03）**：`run_align_repeat_pipeline` 开头跑
+    `pgr fa masked <genome>` 检测小写区域，非空即 `log::warn!` 提示
+    "results will be underestimated, consider uppercasing first"。已验证：
+    soft-masked 酵母触发、未 mask 的 MG1655 不触发。不改行为，只告警。
+
+    **mask 影响面完整确认（2026-08-03）**：`e-kmer`（FastK）与 `trf`
+    均大小写不敏感（trf 对 MG1655 大写/小写版均 84 spans），**只有
+    e-align 受 soft-mask 影响**——警告只需加在 e-align。
+*   **比对敏感度**：早期"pgi 对 70% identity 拷贝不敏感"的结论是
+    soft-mask 假象，已作废；去 mask 后默认参数（k40/ms16/id70）在真核
+    表现良好（S288c 3.90%）。仍建议真核验证时扫 `-f`/`--min-shared`
+    确认最优值。
 *   **全库 cross-family 假阳性**：不做物种筛选后，保守的转座子区域可能让
     基因/其他序列被误遮蔽（over-masking）。遮蔽场景可接受，但需在验证中
     对比"全库 vs 物种库"的遮蔽量差异。
@@ -444,21 +706,27 @@ min-identity 0.70、min-len 50）
 
 ### 2.5 验证实验（实施前调参）
 
-方向已定（§2.1），验证的目的是评估比对敏感度、确定过滤参数：
+方向已定（§2.1，2026-08-03 实测后有修正项待确认），验证的目的是评估
+比对敏感度、确定过滤参数：
 
 1.  取转座子丰富基因组（拟南芥或玉米），先跑 RepeatMasker 得到 masked
     参考 runlist（沿用 §RepeatMasker (reference) 的 gff→runlist 流程）；
-2.  Dfam 全库作 query，跑 `pgr rept e-align` 骨架；**参数扫描**：
-    `-f ∈ {10, 50, 100}`、`--min-shared ∈ {12, 16, 40}`、
-    `--workflow ∈ {greedy, tube}`、`--min-identity ∈ {0.60, 0.70, 0.80}`，
-    其余保持默认；每次记录耗时、hits 数、覆盖区间；
+    沙箱无 RM，需用户环境执行；
+2.  **主推 `pgr rept e-align`**（修正后真核可用，S288c 3.90%）；e-kmer
+    作对照（FastK 大小写不敏感、快）。**前置：确认基因组未 soft-mask**
+    （小写比例 >0 时先 `tr a-z A-Z`），否则 e-align 严重低估。参数扫描：
+    e-kmer 侧 `--min-len ∈ {100, 300}`（真核建议 100）；e-align 侧
+    `-f ∈ {10, 100, 500}`、`--min-shared ∈ {12, 16}`（细菌实测
+    min-shared 是主导旋钮，12 过度敏感）、`--workflow ∈ {greedy, tube}`
+    （tube 在长重复元件场景异常，待查）、`--min-identity ∈ {0.60, 0.70}`；
+    每次记录耗时、hits 数、覆盖区间；
 3.  对比数据：
     *   覆盖区间 vs 现有 `e-kmer` 的差异；
     *   与 RepeatMasker masked 输出的 recall（`spanr statop`，同 §1.8 流程）；
     *   时间与内存；
     *   （可选）全库 vs 按物种取库的遮蔽量差异，评估 over-masking 代价。
-4.  依据 recall / over-masking / 耗时确定最终默认值，写回 §2.3.2 与
-    `pgr rept e-align` 帮助文本。
+4.  依据 recall / over-masking / 耗时确定最终默认值与命令定位（§2.1 修正
+    项），写回 §2.3.2 与对应命令帮助文本。
 
 > 命令命名见本文 §1.3（`pgr rept` 组的 2×2 组合形式）。
 

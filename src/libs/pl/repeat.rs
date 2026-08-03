@@ -1,5 +1,6 @@
 //! Repeat-identification pipeline drivers (FastK → Profex → spanr).
 
+use anyhow::Context;
 use cmd_lib::run_cmd;
 use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
@@ -88,6 +89,11 @@ pub fn run_repeat_pipeline(opts: &RepeatOpts) -> anyhow::Result<()> {
     let pgr = &opts.pgr;
     let abs_infile = &opts.abs_infile;
     let opt_kmer = opts.opt_kmer;
+    // FastK's block-level sort files go to a fixed global dir by default
+    // (/tmp), so concurrent or repeated runs clobber each other's partial
+    // tables (observed as SIGSEGV or corrupted profiles). Point -P at the
+    // pipeline tempdir (the current working directory after enter()).
+    let sort_dir = std::env::current_dir()?.display().to_string();
 
     if let Some(abs_repeat) = &opts.abs_repeat {
         // Cache the FastK table built from the repeat library next to the
@@ -97,12 +103,12 @@ pub fn run_repeat_pipeline(opts: &RepeatOpts) -> anyhow::Result<()> {
         if opts.keep_index && cache_is_fresh(abs_repeat, &cache_prefix) {
             run_cmd!(info "==> FastK on genome (reused repeat table)")?;
             run_cmd!(
-                FastK -p:${cache_prefix} -k${opt_kmer} -Ngenome ${abs_infile}
+                FastK -p:${cache_prefix} -k${opt_kmer} -Ngenome -P${sort_dir} ${abs_infile}
             )?;
         } else {
             run_cmd!(info "==> FastK on repeat")?;
             run_cmd!(
-                FastK -t -k${opt_kmer} -Nrepeat ${abs_repeat}
+                FastK -t -k${opt_kmer} -Nrepeat -P${sort_dir} ${abs_repeat}
             )?;
             if opts.keep_index {
                 let cache_path = format!("{}.ktab", cache_prefix);
@@ -112,13 +118,13 @@ pub fn run_repeat_pipeline(opts: &RepeatOpts) -> anyhow::Result<()> {
             }
             run_cmd!(info "==> FastK on genome")?;
             run_cmd!(
-                FastK -p:repeat -k${opt_kmer} -Ngenome ${abs_infile}
+                FastK -p:repeat -k${opt_kmer} -Ngenome -P${sort_dir} ${abs_infile}
             )?;
         }
     } else {
         run_cmd!(info "==> FastK")?;
         run_cmd!(
-            FastK -p -k${opt_kmer} -Ngenome ${abs_infile}
+            FastK -p -k${opt_kmer} -Ngenome -P${sort_dir} ${abs_infile}
         )?;
     }
 
@@ -128,15 +134,63 @@ pub fn run_repeat_pipeline(opts: &RepeatOpts) -> anyhow::Result<()> {
     )?;
     let chrs = crate::libs::io::read_names::<Vec<String>>("chr.sizes")?;
 
-    let rg_files = run_profex_per_chr(&chrs, &opts.re_prof, opts.min_depth)?;
+    // `spanr cover` truncates dotted contig names (e.g. `NC_000913.1` ->
+    // `1`) at the last '.', so map real names to dot-free placeholders and
+    // restore them after the spanr pass.
+    let mut name_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut safe_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let safe_chrs: Vec<String> = chrs
+        .iter()
+        .map(|c| {
+            let s = format!("c{}", name_map.len() + 1);
+            name_map.insert(c.clone(), s.clone());
+            safe_map.insert(s.clone(), c.clone());
+            s
+        })
+        .collect();
+
+    let rg_files = run_profex_per_chr(&safe_chrs, &opts.re_prof, opts.min_depth)?;
+
+    if count_rg_lines(&rg_files)? == 0 {
+        // No repetitive intervals: emit an empty runlist instead of letting
+        // `spanr cover` fail on empty input.
+        let empty = b"{}\n";
+        if opts.abs_outfile == "stdout" {
+            std::io::stdout().write_all(empty)?;
+        } else {
+            std::fs::write(&opts.abs_outfile, empty)?;
+        }
+        return Ok(());
+    }
 
     run_repeat_spanr_pipeline(
         &rg_files,
         opts.opt_fk,
         opts.opt_min,
         opts.opt_ff,
-        &opts.abs_outfile,
+        "out.json",
     )?;
+
+    // Restore the real contig names in the runlist json.
+    let mut val: serde_json::Value = serde_json::from_slice(&std::fs::read("out.json")?)?;
+    if let Some(obj) = val.as_object_mut() {
+        let old = std::mem::take(obj);
+        for (k, v) in old {
+            // Drop the empty marker `-` so the runlist stays clean.
+            if v.as_str() == Some("-") {
+                continue;
+            }
+            obj.insert(safe_map.get(&k).cloned().unwrap_or(k), v);
+        }
+    }
+    let out_bytes = serde_json::to_vec_pretty(&val)?;
+    if opts.abs_outfile == "stdout" {
+        let mut w = crate::writer("stdout")?;
+        w.write_all(&out_bytes)?;
+        w.write_all(b"\n")?;
+    } else {
+        std::fs::write(&opts.abs_outfile, out_bytes)?;
+    }
 
     Ok(())
 }
@@ -194,6 +248,22 @@ pub fn run_align_repeat_pipeline(opts: &AlignRepeatOpts) -> anyhow::Result<()> {
     let workflow = &opts.workflow;
     let parallel = opts.parallel;
     let keep_args = if opts.keep_index { "--keep-index" } else { "" };
+
+    // Soft-masked (lowercase) repeats fragment pgi's chain extension, so the
+    // alignment pass massively underestimates coverage. Detect and warn
+    // instead of silently returning bad numbers.
+    let masked_out = std::process::Command::new(pgr)
+        .args(["fa", "masked", abs_infile])
+        .output()
+        .context("running `pgr fa masked` for soft-mask detection")?;
+    if !masked_out.stdout.is_empty() {
+        log::warn!(
+            "input genome contains soft-masked (lowercase) regions; e-align \
+             results will be underestimated, consider uppercasing first \
+             (`tr a-z A-Z`)"
+        );
+    }
+
     run_cmd!(info "==> Align repeats vs genome")?;
     run_cmd!(
         ${pgr} align pgi ${abs_infile} ${abs_repeat}
@@ -207,6 +277,12 @@ pub fn run_align_repeat_pipeline(opts: &AlignRepeatOpts) -> anyhow::Result<()> {
     run_cmd!(info "==> Filter alignments")?;
     let reader = crate::reader("hits.psl")?;
     let mut writer = crate::writer("hits.rg")?;
+    // `spanr cover` truncates dotted contig names (e.g. `NC_000913.1` ->
+    // `1`) at the last '.', so map real names to dot-free placeholders and
+    // restore them after the spanr pass.
+    let mut name_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut safe_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut n_rg = 0usize;
     for line in std::io::BufReader::new(reader)
         .lines()
         .map_while(Result::ok)
@@ -221,22 +297,60 @@ pub fn run_align_repeat_pipeline(opts: &AlignRepeatOpts) -> anyhow::Result<()> {
         if (psl.ident() as f64) < opts.min_identity || span < opts.min_len {
             continue;
         }
-        writer.write_fmt(format_args!(
-            "{}:{}-{}\n",
-            psl.t_name,
-            psl.t_start + 1,
-            psl.t_end
-        ))?;
+        let safe = match name_map.get(&psl.t_name) {
+            Some(s) => s.clone(),
+            None => {
+                let s = format!("c{}", name_map.len() + 1);
+                name_map.insert(psl.t_name.clone(), s.clone());
+                safe_map.insert(s.clone(), psl.t_name.clone());
+                s
+            }
+        };
+        writer.write_fmt(format_args!("{}:{}-{}\n", safe, psl.t_start + 1, psl.t_end))?;
+        n_rg += 1;
     }
     drop(writer);
+
+    if n_rg == 0 {
+        // No alignments survived the filters: emit an empty runlist instead
+        // of letting `spanr cover` fail on empty input.
+        let empty = b"{}\n";
+        if opts.abs_outfile == "stdout" {
+            std::io::stdout().write_all(empty)?;
+        } else {
+            std::fs::write(&opts.abs_outfile, empty)?;
+        }
+        return Ok(());
+    }
 
     run_repeat_spanr_pipeline(
         &["hits.rg".to_string()],
         0,
         opts.min_len,
         opts.fill_fragment,
-        &opts.abs_outfile,
+        "out.json",
     )?;
+
+    // Restore the real contig names in the runlist json.
+    let mut val: serde_json::Value = serde_json::from_slice(&std::fs::read("out.json")?)?;
+    if let Some(obj) = val.as_object_mut() {
+        let old = std::mem::take(obj);
+        for (k, v) in old {
+            // Drop the empty marker `-` so the runlist stays clean.
+            if v.as_str() == Some("-") {
+                continue;
+            }
+            obj.insert(safe_map.get(&k).cloned().unwrap_or(k), v);
+        }
+    }
+    let out_bytes = serde_json::to_vec_pretty(&val)?;
+    if opts.abs_outfile == "stdout" {
+        let mut w = crate::writer("stdout")?;
+        w.write_all(&out_bytes)?;
+        w.write_all(b"\n")?;
+    } else {
+        std::fs::write(&opts.abs_outfile, out_bytes)?;
+    }
 
     Ok(())
 }
@@ -319,6 +433,21 @@ pub fn run_repeat_spanr_pipeline(
             spanr span --op fill -n ${ff} stdin -o ${abs_outfile}
     )?;
     Ok(())
+}
+
+/// Count the total number of `chr:start-end` lines across the given `.rg`
+/// files.
+pub fn count_rg_lines(rg_files: &[String]) -> anyhow::Result<usize> {
+    let mut n = 0usize;
+    for rg in rg_files {
+        let reader = crate::reader(rg)?;
+        for line in std::io::BufReader::new(reader).lines() {
+            if !line?.trim().is_empty() {
+                n += 1;
+            }
+        }
+    }
+    Ok(n)
 }
 
 /// Parse a TRF `.dat` file and write `chr:start-end` lines to `writer`.

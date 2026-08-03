@@ -8,8 +8,8 @@ mod repeat;
 
 pub use ctx::{abs_path_or_stdout, PipelineCtx};
 pub use repeat::{
-    parse_trf_output, run_align_repeat_pipeline, run_profex_per_chr, run_repeat_pipeline,
-    run_repeat_spanr_pipeline, AlignRepeatOpts, RepeatOpts,
+    count_rg_lines, parse_trf_output, run_align_repeat_pipeline, run_profex_per_chr,
+    run_repeat_pipeline, run_repeat_spanr_pipeline, AlignRepeatOpts, RepeatOpts,
 };
 
 use std::path::PathBuf;
