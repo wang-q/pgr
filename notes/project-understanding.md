@@ -495,7 +495,7 @@ chainnet 后消失。`pgr psl chain` 在 2bit 序列缓存优化后（~0.3 s）�
 | PAF 隐式图 / 泛基因组 | [[impg.md]]、[[seqwish.md]]、[[smoothxg.md]]、[[minigraph.md]] | [[paf-pangenome.md]]（场景枢纽） | — | `pgr paf graph`（`libs/paf/graph`） |
 | syncmer / 采样 | [[syng.md]] | — | — | `libs/syncmer`（pgi build 依赖） |
 | pbit 压缩 | [[agc-cpp.md]] | [[design/pbit.md]] | — | `pgr pbit`（`libs/pbit`） |
-| 重复标记（repeat masking） | [[fastk.md]] | [[design/repeatmasker.md]] | — | `pgr rept e-kmer/s-kmer/trf` + `pgr fa mask`（`libs/pl`、`cmd_pgr/rept`） |
+| 重复标记（repeat masking） | [[fastk.md]] | [[design/repeat-masking.md]] | — | `pgr rept e-kmer/s-kmer/trf` + `pgr fa mask`（`libs/pl`、`cmd_pgr/rept`） |
 | 其他参考 | [[fastk.md]]、[[kaks.md]]、[[gfa.md]]、[[ropebwt3.md]]、[[pangenome-tools.md]] | [[design/ms2dna_port.md]]（ms→dna 移植） | — | `pgr ms to-dna`、`pgr paf to-gfa` 等 |
 
 ## 10. 设计笔记索引（notes/design/）
@@ -508,7 +508,7 @@ chainnet 后消失。`pgr psl chain` 在 2bit 序列缓存优化后（~0.3 s）�
 | [[spoa_port.md]] | Spoa C++ → Rust 移植（POA 引擎） | 已完成（双引擎集成已落地） |
 | [[ms2dna_port.md]] | ms2dna C → Rust 迁移设计 | 已实现（实际命令为 `pgr ms to-dna`） |
 | [[ucsc.md]] | UCSC chain/net/axt/maf pipeline 源码分析与字节级复现验证（E. coli 全流程一致） | 12 步主流程 + `--syn` + medium + SE11 多染色体反向全部字节级一致；剩余见 §4.6 |
-| [[repeatmasker.md]] | pgr 重复标记总体方案：现状命令（ir/rept/trf 实现、命名规划 e/s 前缀）+ 遮蔽版计划（Dfam 全库 + pgi/lastz）+ 附录 A 源码梳理（open-4.2.4） | 计划已定；待命令迁移（`pgr rept`）与 §2.5 验证 |
+| [[repeat-masking.md]] | pgr 重复标记总体方案：现状命令（e-kmer/s-kmer/trf 实现、命名规划 e/s 前缀）+ 遮蔽版计划（Dfam 全库 + pgi/lastz）+ 附录 A 源码梳理（open-4.2.4） | 计划已定；命令已迁移（`pgr rept`），待 §2.5 验证 |
 
 ## 11. 外部工具参考索引（notes/references/）
 

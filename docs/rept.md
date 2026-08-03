@@ -215,4 +215,4 @@ pgr rept trf [OPTIONS] <infile>
     custom library via `-lib`.
 *   A native pgr masking plan (Dfam full library + `pgr align pgi` alignment
     -> runlist -> `fa mask`) is tracked in the design notes
-    [notes/design/repeatmasker.md](../notes/design/repeatmasker.md).
+    [notes/design/repeat-masking.md](../notes/design/repeat-masking.md).

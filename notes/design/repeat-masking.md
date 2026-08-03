@@ -1,6 +1,6 @@
 # pgr 重复标记（Repeat Masking）方案
 
-> 本文档是 pgr 重复标记的总体方案：现状命令（ir/rept/trf 及其实现管道）、
+> 本文档是 pgr 重复标记的总体方案：现状命令（e-kmer/s-kmer/trf 及其实现管道）、
 > 命令命名规划、遮蔽版计划（Dfam 全库 + pgi/lastz 比对）、以及与 RepeatMasker
 > 的差异。用户用法见 [docs/rept.md](../../docs/rept.md)；FastK 底层分析见
 > [[../references/fastk.md]]；RepeatMasker 源码梳理见附录 A（依据仓库内
