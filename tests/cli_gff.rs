@@ -129,3 +129,28 @@ fn command_rg_ss() {
     // For now, let's just check it runs without error and outputs valid lines.
     assert!(stdout.contains("gene1\ttest.chr1(+):1000-2000"));
 }
+
+#[test]
+fn command_rg_ucsc_mm10gencode() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&["gff", "rg", "tests/gff/input/mm10Gencode.gff3"])
+        .run();
+
+    assert!(stdout.contains("gene:ENSMUSG00000024186"));
+    assert!(stdout.contains("mm10Gencode.chr17(+):98013-106386"));
+}
+
+#[test]
+fn command_rg_ucsc_malformed_no_panic() {
+    // 87-byte GFF3 with bogus quotes: tolerated without panic.
+    PgrCmd::new()
+        .args(&["gff", "rg", "tests/gff/input/bogusQuotes.gff3"])
+        .assert()
+        .success();
+
+    // GFF2-era file with a frame bug: friendly error, no panic.
+    PgrCmd::new()
+        .args(&["gff", "rg", "tests/gff/input/frameBug.gff"])
+        .assert()
+        .failure();
+}

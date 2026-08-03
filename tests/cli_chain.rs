@@ -556,3 +556,39 @@ fn test_chain_anti_repeat_negative_strand() -> Result<(), Box<dyn std::error::Er
 
     Ok(())
 }
+
+#[test]
+fn test_chain_sort_ucsc_real_chain_files() {
+    let manifest = env!("CARGO_MANIFEST_DIR");
+    let dir = tempdir().unwrap();
+    let out = dir.path().join("sorted.chain");
+
+    // Real chains from kent: a negative-strand query chain (pslMap/negQ.chain)
+    // and a hg19->hg38 chainBridge input.
+    PgrCmd::new()
+        .args(&[
+            "chain",
+            "sort",
+            &format!("{}/tests/chain/input/negQ.chain", manifest),
+            &format!("{}/tests/chain/input/hg19ToHg38.noChange.chain", manifest),
+            "-o",
+            out.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    let out_content = fs::read_to_string(&out).unwrap();
+    let chains: Vec<&str> = out_content
+        .lines()
+        .filter(|l| l.starts_with("chain "))
+        .collect();
+    assert_eq!(
+        chains.len(),
+        2,
+        "both input chains must be parsed and written"
+    );
+    // Sorted by score descending: the chainBridge chain (61366978) first,
+    // then the negQ chain (score 0, negative query strand).
+    assert!(chains[0].contains("61366978"));
+    assert!(chains[1].contains("chr9 124000669 -"));
+}

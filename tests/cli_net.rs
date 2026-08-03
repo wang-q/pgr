@@ -9,6 +9,23 @@ mod common;
 
 use common::PgrCmd;
 
+#[test]
+fn test_net_class_ucsc_testdog() {
+    // Real hierarchical net from kent's netToAxt test.
+    let manifest = env!("CARGO_MANIFEST_DIR");
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "net",
+            "class",
+            &format!("{}/tests/net/input/testDog.net", manifest),
+        ])
+        .run();
+
+    assert!(stdout.contains("gap"));
+    assert!(stdout.contains("top"));
+    assert!(stdout.contains("nonSyn"));
+}
+
 fn create_2bit(
     dir: &TempDir,
     name: &str,

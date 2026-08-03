@@ -185,3 +185,24 @@ fn command_fq_interleave_fq_detailed() {
     assert_eq!(stdout.lines().filter(|e| e.ends_with("/1")).count(), 25);
     assert_eq!(stdout.lines().filter(|e| e.ends_with("/2")).count(), 25);
 }
+
+#[test]
+fn command_fq_to_fa_ucsc_real_reads() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&["fq", "to-fa", "tests/fastq/goodHg19.fastq"])
+        .run();
+
+    assert!(stdout.starts_with(">SOLEXA-1GA-2_0048_FC6242L:2:1:4066:1152#0/1"));
+    assert!(stdout.contains("TGAATAGCTGGAGGAATGCAGACCTCTG"));
+}
+
+#[test]
+fn command_fq_to_fa_ucsc_malformed_no_panic() {
+    // encodeValidate badDdf/bad.fastq: sequence record missing its description
+    // line. Must fail with a friendly error, not panic.
+    PgrCmd::new()
+        .args(&["fq", "to-fa", "tests/fastq/bad.fastq"])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("invalid description prefix"));
+}

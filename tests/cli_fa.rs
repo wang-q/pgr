@@ -616,3 +616,65 @@ fn command_fa_one_success() {
     assert!(stdout.contains(">seq2"));
     assert!(stdout.contains("ACGTACGT"));
 }
+
+#[test]
+fn command_fa_size_ucsc_facount_whitespace() {
+    // UCSC faCount/faSize ignore whitespace inside sequence lines; s1.fa.gz
+    // contains space-separated chunks and must count 83/137 bases.
+    let manifest = env!("CARGO_MANIFEST_DIR");
+    let s1 = format!("{}/tests/2bit/input/s1.fa.gz", manifest);
+    let s1s2 = format!("{}/tests/2bit/input/s1.s2.fa.gz", manifest);
+    let (stdout, _) = PgrCmd::new().args(&["fa", "size", &s1]).run();
+    assert!(stdout.contains("s1\t83"));
+
+    let (stdout, _) = PgrCmd::new().args(&["fa", "size", &s1s2]).run();
+    assert!(stdout.contains("s1\t83"));
+    assert!(stdout.contains("s2\t137"));
+}
+
+#[test]
+fn command_fa_filter_uniq_ucsc_gold_names() {
+    // faFilter test: duplicate basic.fa, then -uniq keeps the first of each
+    // duplicated id. UCSC's gold output differs only by dropping header
+    // descriptions, so compare record names.
+    let dir = TempDir::new().unwrap();
+    let dup = dir.path().join("dup.fa");
+    let basic = fs::read_to_string(fixture("ucsc_basic.fa").to_str().unwrap()).unwrap();
+    fs::write(&dup, format!("{}{}", basic, basic)).unwrap();
+
+    let (stdout, _) = PgrCmd::new()
+        .args(&["fa", "filter", dup.to_str().unwrap(), "--uniq"])
+        .run();
+
+    let names: Vec<&str> = stdout
+        .lines()
+        .filter(|l| l.starts_with('>'))
+        .map(|l| l.trim_start_matches('>').split_whitespace().next().unwrap())
+        .collect();
+    assert_eq!(names.len(), 10, "10 unique records after dedup");
+    assert_eq!(names[0], "size9");
+    assert_eq!(names[3], "foo9baz");
+    assert_eq!(names[9], "1acc");
+}
+
+#[test]
+fn command_fa_filter_max_len_ucsc_gold_names() {
+    // faFilter -maxSize=20 keeps 7 of the 10 basic.fa records.
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "fa",
+            "filter",
+            fixture("ucsc_basic.fa").to_str().unwrap(),
+            "--max-len",
+            "20",
+        ])
+        .run();
+
+    let names: Vec<&str> = stdout
+        .lines()
+        .filter(|l| l.starts_with('>'))
+        .map(|l| l.trim_start_matches('>').split_whitespace().next().unwrap())
+        .collect();
+    assert_eq!(names.len(), 7);
+    assert_eq!(names[6], "size20");
+}

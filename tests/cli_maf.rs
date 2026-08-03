@@ -123,3 +123,21 @@ fn command_maf_to_paf_with_gaps() {
     assert!(stdout.contains("bi:f:"), "bi tag present");
     assert!(stdout.contains("ms:i:200"), "score tag present");
 }
+
+#[test]
+fn command_maf_to_paf_ucsc_add_i_rows_fixture() {
+    // Real maf with I-rows (mafAddIRows test input). Pairwise blocks are
+    // converted; blocks with more than two sequences are skipped with a warning.
+    let manifest = env!("CARGO_MANIFEST_DIR");
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "maf",
+            "to-paf",
+            &format!("{}/tests/maf/input/addIRows_input.maf", manifest),
+        ])
+        .run();
+
+    assert!(stdout.contains("sp1.chr1"));
+    assert!(stdout.contains("testRef.chr1"));
+    assert!(stdout.contains("cg:Z:"), "CIGAR tag present");
+}

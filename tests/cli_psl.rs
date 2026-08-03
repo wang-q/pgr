@@ -16,6 +16,12 @@ fn get_path(subcommand: &str, dir: &str, filename: &str) -> PathBuf {
     path
 }
 
+fn shared_input(name: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/psl/input")
+        .join(name)
+}
+
 //
 // psl histo
 //
@@ -636,4 +642,35 @@ fn test_to_paf_basic() {
     assert_eq!(fields[9], "2542"); // match count
     assert_eq!(fields[10], "2542"); // sum of block sizes
     assert_eq!(fields[11], "255"); // mapq
+}
+
+#[test]
+fn test_stats_ucsc_real_psl() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "psl",
+            "stats",
+            shared_input("pslScore_test.psl").to_str().unwrap(),
+        ])
+        .run();
+
+    assert!(stdout.contains("NC_004161v1"));
+    assert!(stdout.contains("NC_014372v1"));
+    assert!(stdout.lines().count() > 2, "multiple real queries");
+}
+
+#[test]
+fn test_stats_ucsc_malformed_no_panic() {
+    // checkTableCoords deliberately-broken PSL (bad chrom, non-ascending
+    // blocks, overlaps): must be parsed without panicking.
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "psl",
+            "stats",
+            shared_input("pslCTCBad.psl").to_str().unwrap(),
+        ])
+        .run();
+
+    assert!(stdout.contains("badChrom"));
+    assert!(stdout.contains("bOverlap"));
 }

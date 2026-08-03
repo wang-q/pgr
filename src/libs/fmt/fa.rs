@@ -10,12 +10,63 @@
 use crate::libs::io;
 use noodles_bgzf as bgzf;
 use noodles_fasta as fasta;
-use std::io::{Read, Seek};
+use std::io::{BufRead, Read, Seek};
+
+/// A `BufRead` wrapper that strips ASCII whitespace from sequence lines,
+/// leaving definition (`>`) lines untouched, as UCSC's FASTA readers do.
+pub struct StripSeqWs<R> {
+    inner: R,
+    buf: Vec<u8>,
+}
+
+impl<R: BufRead> StripSeqWs<R> {
+    fn new(inner: R) -> Self {
+        Self {
+            inner,
+            buf: Vec::new(),
+        }
+    }
+}
+
+impl<R: BufRead> Read for StripSeqWs<R> {
+    fn read(&mut self, out: &mut [u8]) -> std::io::Result<usize> {
+        let buf = self.fill_buf()?;
+        let n = std::cmp::min(buf.len(), out.len());
+        out[..n].copy_from_slice(&buf[..n]);
+        self.consume(n);
+        Ok(n)
+    }
+}
+
+impl<R: BufRead> BufRead for StripSeqWs<R> {
+    fn fill_buf(&mut self) -> std::io::Result<&[u8]> {
+        if self.buf.is_empty() {
+            let mut line = Vec::new();
+            if self.inner.read_until(b'\n', &mut line)? == 0 {
+                return Ok(&[]);
+            }
+            self.buf = if line.first() == Some(&b'>') {
+                line
+            } else {
+                line.into_iter()
+                    .filter(|&b| b == b'\n' || !b.is_ascii_whitespace())
+                    .collect()
+            };
+        }
+        Ok(&self.buf)
+    }
+
+    fn consume(&mut self, amt: usize) {
+        self.buf.drain(..amt);
+    }
+}
 
 /// Open a FASTA reader from a path (supports stdin and gzip).
-pub fn reader(infile: &str) -> anyhow::Result<fasta::io::Reader<Box<dyn std::io::BufRead>>> {
+pub fn reader(
+    infile: &str,
+) -> anyhow::Result<fasta::io::Reader<StripSeqWs<Box<dyn std::io::BufRead>>>> {
     let r = io::reader(infile)?;
-    Ok(fasta::io::Reader::new(r))
+    Ok(fasta::io::Reader::new(StripSeqWs::new(r)))
 }
 
 /// Create a FASTA writer with no line wrapping (single-line sequences).

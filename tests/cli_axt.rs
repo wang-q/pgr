@@ -474,3 +474,59 @@ TTTT
     assert!(lines[3].starts_with("1 chr1 11 21"));
     assert!(lines[6].starts_with("2 chr1 31 41"));
 }
+
+#[test]
+fn command_axt_to_psl_ucsc_blockbug_gold() {
+    // UCSC's own axtToPsl test input (block-bug edge case) and its expected
+    // PSL output. pgr must match the reference byte-for-byte.
+    let manifest = env!("CARGO_MANIFEST_DIR");
+    let axt = format!("{}/tests/axt/input/blockBug.axt", manifest);
+    let sizes = format!("{}/tests/axt/input/blockBug.sizes", manifest);
+    let dir = TempDir::new().unwrap();
+    let out = dir.path().join("out.psl");
+
+    PgrCmd::new()
+        .args(&[
+            "axt",
+            "to-psl",
+            &axt,
+            "-t",
+            &sizes,
+            "-q",
+            &sizes,
+            "-o",
+            out.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    let got = fs::read_to_string(&out).unwrap();
+    let expected =
+        fs::read_to_string(format!("{}/tests/axt/expected/blockBug.psl", manifest)).unwrap();
+    assert_eq!(
+        got.trim_end(),
+        expected.trim_end(),
+        "pgr axt to-psl must match UCSC's expected output"
+    );
+}
+
+#[test]
+fn command_axt_to_maf_ucsc_zero_score_real_sizes() {
+    // UCSC's axtToMaf test passes rn3.sizes/hg15.sizes in the wrong order, so
+    // its expected srcSizes do not match the axt target/query. Here we feed the
+    // sizes files in the documented order and expect sizes consistent with them.
+    let manifest = env!("CARGO_MANIFEST_DIR");
+    let axt = format!("{}/tests/axt/input/zeroScore.axt", manifest);
+    let t_sizes = format!("{}/tests/axt/input/hg15.sizes", manifest);
+    let q_sizes = format!("{}/tests/axt/input/rn3.sizes", manifest);
+
+    let (stdout, _) = PgrCmd::new()
+        .args(&["axt", "to-maf", &axt, "-t", &t_sizes, "-q", &q_sizes])
+        .run();
+
+    // Target is chr8 (hg15, 145908738), query is chr19 (rn3, 59223525).
+    assert!(stdout.contains("chr8"));
+    assert!(stdout.contains("145908738"));
+    assert!(stdout.contains("chr19"));
+    assert!(stdout.contains("59223525"));
+}
