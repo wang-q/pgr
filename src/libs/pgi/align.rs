@@ -361,7 +361,10 @@ pub fn chain_tubes(hits: &[SeedHit], k: u32) -> Vec<Tube> {
     // bucket is anti-ordered (FastGA merges its stream by ipost = anti).
     // Pack the sort key into one u128: (a_contig, b_contig, strand,
     // diagonal bucket + offset, anti). The bucket offset keeps negative
-    // diagonals orderable under unsigned packing.
+    // diagonals orderable under unsigned packing. `anti` needs 40 bits
+    // (a_pos + b_pos exceeds 2^24 on any genome larger than ~8 Mb and 2^32
+    // on >2.1 Gb contig pairs) and `bucket` 32; overflowing into the bucket
+    // field interleaves diagonal buckets and fragments tubes.
     const BUCK_OFF: i64 = 1_000_000;
     // Precompute the packed keys into a flat key array and radix-sort the
     // index permutation alongside (the MSD radix keeps a `u128` key array
@@ -372,15 +375,15 @@ pub fn chain_tubes(hits: &[SeedHit], k: u32) -> Vec<Tube> {
         let bucket = (diag.div_euclid(64) + BUCK_OFF) as u64;
         let anti = (h.a_pos as i64 + h.b_pos as i64) as u64;
         keys.push(
-            ((h.a_contig as u128) << 88)
-                | ((h.b_contig as u128) << 72)
-                | ((h.strand as u128) << 71)
-                | ((bucket as u128) << 24)
+            ((h.a_contig as u128) << 89)
+                | ((h.b_contig as u128) << 73)
+                | ((h.strand as u128) << 72)
+                | ((bucket as u128) << 40)
                 | anti as u128,
         );
     }
     let mut order: Vec<u32> = (0..hits.len() as u32).collect();
-    crate::libs::ds::radix_sort::radix_sort_u128_par(&mut keys, &mut order, 104);
+    crate::libs::ds::radix_sort::radix_sort_u128_par(&mut keys, &mut order, 112);
 
     let mut tubes = Vec::new();
     let mut start = 0usize;
@@ -1896,6 +1899,38 @@ mod tests {
             shared: 40,
         }];
         assert!(chain_tubes(&hits, 40).is_empty(), "coverage 40 < CHAIN_MIN");
+    }
+
+    #[test]
+    fn tube_sort_key_supports_large_anti_coordinates() {
+        // anti = a_pos + b_pos > 2^24 must not corrupt the u128 sort key
+        // (the 24-bit anti field overflowed into the bucket field on
+        // genomes larger than ~8 Mb, interleaving diagonal buckets).
+        let mk = |a: u32, b: u32| SeedHit {
+            a_contig: 0,
+            a_pos: a,
+            b_contig: 0,
+            b_pos: b,
+            strand: 0,
+            shared: 40,
+        };
+        // Three collinear seeds on diagonal 0 with anti ~25,000,000 (> 2^24).
+        let mut hits = vec![
+            mk(12_500_000, 12_500_000),
+            mk(12_500_020, 12_500_020),
+            mk(12_500_040, 12_500_040),
+        ];
+        // One seed on diagonal 64 whose anti (~8.22M, < 2^24) sorts between
+        // the big seeds' anti_low values; with the overflow it interleaves
+        // and fragments the diagonal-0 run.
+        hits.push(mk(4_111_444, 4_111_380));
+        let tubes = chain_tubes(&hits, 40);
+        assert_eq!(tubes.len(), 1, "diag-0 run must stay one tube: {tubes:?}");
+        assert_eq!((tubes[0].diag_min, tubes[0].diag_max), (0, 0));
+        assert_eq!(
+            (tubes[0].anti_low, tubes[0].anti_high),
+            (25_000_000, 25_000_120)
+        );
     }
 
     #[test]

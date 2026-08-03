@@ -140,3 +140,72 @@ sd run 端到端、pgi 溢出检查路径。全套 956 通过。
   不在本次范围，未改）。
 * 全量 958 测试通过（lib 463 + 各集成测试；新增 cluster 单测与 align-lastz
   集成测试各 1）。
+
+## 复核轮（第九轮，2026-08-03）
+
+本轮深入核心比对算法（libs/pgi/align.rs 2125 行、libs/alignment/wave.rs、
+banded.rs、coords.rs、libs/pgi/build.rs）并做端到端验证，发现并修复 2 处
+重大缺陷。最终 960 测试全绿，fmt / clippy 干净。
+
+### 修复 1：tube 链排序键溢出（>8 Mb 基因组失效）
+
+`chain_tubes` 把 (contig, strand, diagonal bucket, anti) 打包进 u128 排序键：
+anti 只分配 24 位、bucket 24 位。任何 a_pos + b_pos >= 2^24（16.7 Mb）的
+命中都会把 anti 高位污染进 bucket 字段，破坏按 (bucket, anti) 的分桶排序，
+导致 tube 链被碎片化甚至完全丢失。影响：tube 工作流在基因组 > ~8 Mb 时
+结构性失效（8.9 Mb 串联重复实验：修复前 tube 输出 0 条正确块，修复后输出
+2 条完整 200 kb 块）。
+
+修复：anti 扩到 32 位（bits 0..31）、bucket 扩到 32 位（bits 32..63），
+strand/b_contig/a_contig 相应移位；`radix_sort_u128_par` 的 key_bits=104
+不变。新增单测 `tube_sort_key_supports_large_anti_coordinates`（复现
+anti=25M 时桶被交错、tube 丢失的场景）。
+
+### 修复 2：pgi 索引 k-mer key 与位置错配（所有 pgi 工作流受影响）
+
+**症状**：self 对齐纯随机基因组产出大量"伪自比对块"（2 Mb 随机序列 101 条、
+含 750-4371 bp 完全匹配块）；索引里同一 entry 混入多个不同 k-mer 的位置、
+同一位置重复出现。
+
+**根因**（`collect_one_contig` 两处叠加）：
+1. closed-syncmer 选择会把同一位置选中两次：位置 p 同时是窗口
+   [p-w+1, p] 的 last-min（`ch == min_val` 分支）和窗口 [p, p+w-1] 的
+   first-min（`min_idx == start` 分支）时，`pending` 入队两次。
+2. flush 循环用迭代 i 的当前滚动 key（seq[i-k+1..=i]）给所有"窗口已完成"
+   的待处理位置配 key。当多个位置在同一迭代弹出（重复选择或窗口起点 min
+   乱序入队导致后弹出的位置早已过窗）时，早期位置的 key 被错配成后来
+   位置的 k-mer。
+
+**影响**：pgi 索引（`pgr pgi build` / align 自动建索引）全部受影响；2 Mb
+随机基因组实测索引记录 159.3 万 → 修复后 114.7 万（+39% 错配/重复记录），
+直接污染 sd search、e_align、align pgi 的所有结果。
+
+**修复**：pending 入队去重（`HashSet`，位置最多入队一次）；flush 时仅当
+`pos + k - 1 == i` 才用滚动 key，否则按位置从序列重算（`kmer_key_at`，
+含 N 防护）；RC 记录改用 `rc_key(key, k)`。
+
+**验证**：
+* 新增回归测试 `index_records_match_sequence_positions`（每条记录的 key
+  必须等于该位置的 k-mer、无重复记录）；
+* `single_pass_matches_reference` 改为两侧去重后比较（参考实现
+  `closed_syncmers_stream` 同样会重复发射，测试此前未暴露）；
+* 端到端：纯随机 2 Mb self 对齐 101 条伪块 → 0 条；8.9 Mb 串联重复
+  genome：greedy 529 条杂块 → 30 条全部打分的 16 kb 窗口块，tube 输出
+  2 条正确的 200 kb 重复块；
+* sd/e_align/s_align/align 全部集成测试通过。
+
+### 备注（未改）
+
+1. `syncmer.rs` 的 `closed_syncmers_stream` 参考实现同样会重复发射同一
+   位置（test_core_bounded_gap_property 用 BTreeSet 去重掩盖）；当前消费方
+   （dist 等）用 HashSet 去重，无实际影响，留待后续统一。
+2. `collect_one_contig` 与 `closed_syncmers_stream` 是两套独立的 syncmer
+   实现，位置集合一致（测试验证）；后续可考虑合并为一份。
+3. 上轮记录的 tube "库 vs 基因组" 结构性失效结论基于修复前代码，syncmer
+   修复后 tube 行为可能显著改善，待真实数据重测。
+
+### 复核验证结果
+
+* `cargo fmt --check`、`cargo clippy -- -D warnings` 干净；
+* 全量 960 测试通过（新增 tube 排序键单测与索引一致性单测各 1）；
+* 修复后索引记录全部通过 (key, pos) 一致性校验。

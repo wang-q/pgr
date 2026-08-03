@@ -1,9 +1,10 @@
 //! Build a `.pgi` index from FASTA or 2bit sequences.
 
 use super::{pack_position, PgiEntry, PgiIndex};
+use crate::libs::nt::rc_key;
 use crate::libs::syncmer::SyncmerParams;
 use anyhow::Context;
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 
 /// Parallel growable buffers for (key, contig, pos, strand) records.
 struct RecordBuf {
@@ -72,6 +73,11 @@ fn collect_one_contig(
     let mut dq_tail = 0usize;
     // Syncmer positions awaiting their k-mer window.
     let mut pending: VecDeque<usize> = VecDeque::new();
+    // Positions already queued. The closed-syncmer rule can select the same
+    // position twice (it is the minimal s-mer at the last position of one
+    // window and at the first position of the next); dedupe so the index
+    // holds exactly one record per k-mer position.
+    let mut queued: HashSet<usize> = HashSet::new();
 
     for (i, &b) in seq.iter().enumerate() {
         let code = codes[b as usize];
@@ -92,11 +98,24 @@ fn collect_one_contig(
                 break;
             }
             pending.pop_front();
-            if kvalid >= k && i + 1 >= k {
-                out.keys.push(kx);
+            queued.remove(&pos);
+            // The rolling key is `seq[i-k+1..=i]`, which equals the k-mer at
+            // `pos` only when this iteration completes exactly that window
+            // (`pos + k - 1 == i`). Positions selected twice (already
+            // emitted) or queued out of order (a window-start minimum is
+            // discovered after its k-mer window completed) pop later; their
+            // key must be recomputed from the sequence instead of using the
+            // already-rolled key.
+            let key = if pos + k - 1 == i {
+                (kvalid >= k && i + 1 >= k).then_some(kx)
+            } else {
+                kmer_key_at(seq, pos, k, &codes)
+            };
+            if let Some(key) = key {
+                out.keys.push(key);
                 out.payloads.push(pack_position(cid, pos as u32, 0));
                 if !no_rev {
-                    out.keys.push(kxr);
+                    out.keys.push(rc_key(key, k));
                     out.payloads.push(pack_position(cid, pos as u32, 1));
                 }
             }
@@ -125,15 +144,28 @@ fn collect_one_contig(
                 let min_idx = dq_idx[dq_head & dq_mask];
                 let min_val = dq_hash[dq_head & dq_mask];
                 if min_idx == start {
-                    if start + k <= n {
+                    if start + k <= n && queued.insert(start) {
                         pending.push_back(start);
                     }
-                } else if ch == min_val && j + k <= n {
+                } else if ch == min_val && j + k <= n && queued.insert(j) {
                     pending.push_back(j);
                 }
             }
         }
     }
+}
+
+/// 2-bit key of the k-mer starting at `pos`; `None` when it contains an N.
+fn kmer_key_at(seq: &[u8], pos: usize, k: usize, codes: &[u64; 256]) -> Option<u128> {
+    let mut key = 0u128;
+    for &b in &seq[pos..pos + k] {
+        let code = codes[b as usize];
+        if code == 4 {
+            return None;
+        }
+        key = (key << 2) | code as u128;
+    }
+    Some(key)
 }
 
 /// Build an index from named sequences.
@@ -353,6 +385,57 @@ mod tests {
     }
 
     #[test]
+    fn index_records_match_sequence_positions() {
+        // Regression: syncmer positions selected twice (the minimum of two
+        // adjacent windows) or queued out of order used to be flushed with
+        // the current rolling key, pairing positions with the wrong k-mer
+        // and corrupting the index. Every record's key must equal the k-mer
+        // starting at its position, and no (key, pos, strand) may repeat.
+        let seq = pseudo_random_seq(100_000, 42);
+        let idx =
+            build_from_seqs(vec![(String::from("c1"), seq.clone())], 40, 8, 5, false).unwrap();
+        let codes: [u64; 256] = {
+            let mut c = [4u64; 256];
+            c[b'A' as usize] = 0;
+            c[b'C' as usize] = 1;
+            c[b'G' as usize] = 2;
+            c[b'T' as usize] = 3;
+            c[b'a' as usize] = 0;
+            c[b'c' as usize] = 1;
+            c[b'g' as usize] = 2;
+            c[b't' as usize] = 3;
+            c
+        };
+        let mut seen: HashSet<(u128, u32, u8)> = HashSet::new();
+        for e in &idx.entries {
+            for &rec in &idx.positions[e.pos_start as usize..(e.pos_start + e.freq) as usize] {
+                let (cid, pos, strand) = unpack_position(rec);
+                assert_eq!(cid, 0);
+                assert!(
+                    pos as usize + 40 <= seq.len(),
+                    "position out of range: {pos}"
+                );
+                let kmer = kmer_key_at(&seq, pos as usize, 40, &codes)
+                    .expect("indexed position must be N-free");
+                let expected = if strand == 0 {
+                    e.kmer
+                } else {
+                    rc_key(e.kmer, 40)
+                };
+                assert_eq!(
+                    kmer, expected,
+                    "key mismatch at pos {pos} (strand {strand})"
+                );
+                assert!(
+                    seen.insert((e.kmer, pos, strand)),
+                    "duplicate record at pos {pos}"
+                );
+            }
+        }
+        assert!(idx.n_positions() > 0);
+    }
+
+    #[test]
     fn single_pass_matches_reference() {
         // Reference: syncmer_dna + rolling keys (the two-pass approach).
         let seqs = [
@@ -381,6 +464,9 @@ mod tests {
                 })
                 .collect();
             single_recs.sort_unstable();
+            // The closed-syncmer rule can select one position twice (it is
+            // the minimum of two adjacent windows); dedupe both sides.
+            single_recs.dedup();
 
             let sm = crate::libs::syncmer::syncmer_dna(&seq, &params).unwrap();
             let keys = rolling_kmer_keys(&seq, k);
@@ -395,6 +481,7 @@ mod tests {
                 }
             }
             ref_recs.sort_unstable();
+            ref_recs.dedup();
             assert_eq!(single_recs, ref_recs, "single-pass mismatch");
         }
 
@@ -434,7 +521,8 @@ mod tests {
             }
         }
         ref_recs.sort_unstable();
-        assert_eq!(single_recs.len(), ref_recs.len(), "record count mismatch");
+        single_recs.dedup();
+        ref_recs.dedup();
         assert_eq!(
             single_recs, ref_recs,
             "single-pass mismatch at default params"
@@ -474,11 +562,8 @@ mod tests {
             }
         }
         ref_recs.sort_unstable();
-        assert_eq!(
-            single_recs.len(),
-            ref_recs.len(),
-            "record count mismatch with N"
-        );
+        single_recs.dedup();
+        ref_recs.dedup();
         assert_eq!(single_recs, ref_recs, "single-pass mismatch with N");
     }
 
