@@ -1,6 +1,39 @@
+//! Genomic range (`chr:start-end` with optional `name.` prefix and `(strand)`)
+//! parsing and manipulation.
+//!
+//! # Parsing semantics and the original regex
+//!
+//! [`Range::from_str`] now uses a hand-written byte scanner (see `decode`).
+//! The regex it replaced is kept here verbatim for reference — anyone
+//! comparing with the external `intspan` crate or debugging parser
+//! differences should consult it (the decoder also survives in the test
+//! module as an equivalence oracle):
+//!
+//! ```text
+//! r"(?xi)
+//!     (?:(?P<name>[\w_]+)\.)?
+//!     (?P<chr>[\w/-]+)
+//!     (?:\((?P<strand>.+)\))?
+//!     [:]                    # spacer
+//!     (?P<start>\d+)
+//!     [_\-]?                 # spacer
+//!     (?P<end>\d+)?
+//!     "
+//! ```
+//!
+//! The scanner replicates these semantics exactly:
+//! * unanchored **leftmost** match (e.g. `foo I:1-100` matches at `I:1-100`,
+//!   `a.b.c:1-2` matches `b.c:1-2` with name `b`);
+//! * greedy groups: `name` = longest word run before `.`, `chr` = longest
+//!   `[\w/-]+` run, `strand` = longest content between `(` and the last `)`
+//!   (at least one char);
+//! * a bare `start` (no `-end`) gives `end = start`; an explicit `end = 0` is
+//!   treated as "missing" and also defaults to `start` (regex-era behavior);
+//! * no match falls back to `chr` = first whitespace token;
+//! * digit runs too large for `i32` yield `0` (invalid) instead of the
+//!   regex path's `parse::<i32>().unwrap()` panic.
+
 use super::IntSpan;
-use regex::Regex;
-use std::collections::HashMap;
 use std::fmt;
 
 #[derive(Debug, Default, Clone)]
@@ -11,21 +44,6 @@ pub struct Range {
     pub start: i32,
     pub end: i32,
 }
-
-static RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
-    Regex::new(
-        r"(?xi)
-        (?:(?P<name>[\w_]+)\.)?
-        (?P<chr>[\w/-]+)
-        (?:\((?P<strand>.+)\))?
-        [:]                    # spacer
-        (?P<start>\d+)
-        [_\-]?                 # spacer
-        (?P<end>\d+)?
-        ",
-    )
-    .expect("valid range regex")
-});
 
 impl Range {
     // Immutable accessors
@@ -389,33 +407,32 @@ impl Range {
         }
     }
 
+    /// Parse `header` with the hand-written scanner (see the module docs for
+    /// the regex it replaces and the replicated semantics).
     fn decode(&mut self, header: &str) {
-        let caps = match RE.captures(header) {
-            Some(x) => x,
-            None => {
-                self.chr = header.split(' ').next().unwrap().to_string();
+        let s = header.as_bytes();
+        let n = s.len();
+        // Unanchored leftmost match, mirroring `regex::Regex::captures`.
+        for p in 0..n {
+            if !is_word_or_slash(s[p]) {
+                continue;
+            }
+            if let Some((name, chr, strand, start, end)) = match_at(s, p, n) {
+                self.name = name;
+                self.chr = chr;
+                self.strand = strand;
+                self.start = start;
+                self.end = end;
+                // Mirror `decode`: an `end` of 0 is treated as "missing"
+                // (e.g. `c:911_0` parses end=0, then defaults to start).
+                if self.start != 0 && self.end == 0 {
+                    self.end = self.start;
+                }
                 return;
             }
-        };
-        let dict: HashMap<String, String> = RE
-            .capture_names()
-            .flatten()
-            .filter_map(|n| Some((n.to_string(), caps.name(n)?.as_str().to_string())))
-            .collect();
-        for key in dict.keys() {
-            match key.as_str() {
-                "name" => self.name = dict.get(key).unwrap().to_owned(),
-                "chr" => self.chr = dict.get(key).unwrap().to_owned(),
-                "strand" => self.strand = dict.get(key).unwrap().to_owned(),
-                "start" => self.start = dict.get(key).unwrap().parse::<i32>().unwrap(),
-                "end" => self.end = dict.get(key).unwrap().parse::<i32>().unwrap(),
-                _ => {}
-            }
         }
-
-        if self.start != 0 && self.end == 0 {
-            self.end = self.start;
-        }
+        // Regex-miss fallback: `chr` is the first whitespace token.
+        self.chr = header.split(' ').next().unwrap().to_string();
     }
 
     fn encode(&self) -> String {
@@ -463,6 +480,113 @@ impl Range {
     }
 }
 
+fn is_word(c: u8) -> bool {
+    c.is_ascii_alphanumeric() || c == b'_'
+}
+
+fn is_word_or_slash(c: u8) -> bool {
+    // `[\w/-]` from the regex: word chars plus `/` and `-`.
+    is_word(c) || c == b'/' || c == b'-'
+}
+
+fn is_digit(c: u8) -> bool {
+    c.is_ascii_digit()
+}
+
+/// Try the whole range pattern at position `p` (leftmost-first, greedy).
+fn match_at(s: &[u8], p: usize, n: usize) -> Option<(String, String, String, i32, i32)> {
+    // Optional `name.` prefix: the regex's `[\w_]+` is greedy, and a shorter
+    // name cannot be followed by '.' (the char before is a word char), so
+    // only the full word run plus '.' needs trying; otherwise no name.
+    let mut k = p;
+    while k < n && is_word(s[k]) {
+        k += 1;
+    }
+    if k < n && s[k] == b'.' {
+        if let Some((chr, strand, start, end)) = rest_match(s, k + 1, n) {
+            let name = String::from_utf8_lossy(&s[p..k]).into_owned();
+            return Some((name, chr, strand, start, end));
+        }
+    }
+    rest_match(s, p, n).map(|(chr, strand, start, end)| (String::new(), chr, strand, start, end))
+}
+
+/// Match `chr` (greedy `[\w/-]+`), optional `(strand)` (greedy `.+` ending at
+/// the last `)`), then the `:start[-end]` tail.
+fn rest_match(s: &[u8], q: usize, n: usize) -> Option<(String, String, i32, i32)> {
+    let mut r = q;
+    while r < n && is_word_or_slash(s[r]) {
+        r += 1;
+    }
+    let mut chr_len = r - q;
+    while chr_len >= 1 {
+        let after = q + chr_len;
+        if after < n && s[after] == b'(' {
+            // `\(.+\)`: greedy `.+`, so try the last `)` first.
+            let mut close = n;
+            loop {
+                close = close.saturating_sub(1);
+                while close > after && s[close] != b')' {
+                    close -= 1;
+                }
+                // `.+` inside `\(.+\)` needs at least one character, so the
+                // closing `)` cannot immediately follow the opening `(`.
+                if close <= after + 1 {
+                    break;
+                }
+                if let Some((start, end)) = tail_match(s, close + 1, n) {
+                    let chr = String::from_utf8_lossy(&s[q..after]).into_owned();
+                    let strand = String::from_utf8_lossy(&s[after + 1..close]).into_owned();
+                    return Some((chr, strand, start, end));
+                }
+            }
+        } else if let Some((start, end)) = tail_match(s, after, n) {
+            let chr = String::from_utf8_lossy(&s[q..after]).into_owned();
+            return Some((chr, String::new(), start, end));
+        }
+        chr_len -= 1;
+    }
+    None
+}
+
+/// Match `:digits` with an optional single `_`/`-` spacer and optional
+/// trailing digits (`end` defaults to `start`). Overflowing digit runs give
+/// `0` (invalid) instead of panicking.
+fn tail_match(s: &[u8], t: usize, n: usize) -> Option<(i32, i32)> {
+    if t >= n || s[t] != b':' {
+        return None;
+    }
+    let mut u = t + 1;
+    while u < n && is_digit(s[u]) {
+        u += 1;
+    }
+    if u == t + 1 {
+        return None; // `\d+` needs at least one digit
+    }
+    let start = parse_i32(&s[t + 1..u]);
+    let mut v = u;
+    if v < n && (s[v] == b'_' || s[v] == b'-') {
+        v += 1;
+    }
+    let mut w = v;
+    while w < n && is_digit(s[w]) {
+        w += 1;
+    }
+    let end = if w > v { parse_i32(&s[v..w]) } else { start };
+    Some((start, end))
+}
+
+fn parse_i32(digits: &[u8]) -> i32 {
+    let mut v: i64 = 0;
+    for &d in digits {
+        v = v * 10 + i64::from(d - b'0');
+        if v > i64::from(i32::MAX) {
+            return 0;
+        }
+    }
+    v as i32
+}
+
 /// To string
 ///
 /// ```
@@ -491,4 +615,140 @@ fn fa_headers() {
         let range = Range::from_str(header);
         assert_eq!(range.to_string(), expected);
     }
+}
+
+#[test]
+fn regex_and_manual_decoders_agree() {
+    // Differential test: the hand-written scanner must produce exactly the
+    // same Range as the regex decoder, including the unanchored leftmost
+    // match quirks (`foo I:1-100`, `a.b.c:1-2`) and the fallback behavior.
+    let corpus = [
+        "1:-100",
+        "foo I:1-100",
+        "S288c.I(-):27070-29557",
+        "infile_0/1/0_514:19-25",
+        "chr1(+):1-100",
+        "I:100",
+        "invalid",
+        "S288c The baker's yeast",
+        "1-100",
+        "I:1-100x",
+        "I:1x-100",
+        "I(+-):1-100",
+        "a.b.c:1-2",
+        "chr1:1-100",
+        "chrM(+):1-16571",
+        "NC_000913:100-200",
+        "S288c.II(+):1-813184",
+        "1:1-23",
+        "I:100",
+        "I(+):100-200",
+        "I(-):100-200",
+        "infile_0/1/0_514:19-25",
+        "123:456",
+        "a-b:1-2",
+        "x/y:1-2",
+        "a(b)c:1-2",
+        "a(b)(c):1-2",
+        "I(a:b):1-2",
+        ":1-2",
+        "chr1:",
+        "chr1:1-",
+        "chr1:-2",
+        "chr1:1_2",
+        "chr1:1__2",
+        "",
+        " ",
+    ];
+    for &s in &corpus {
+        let regex = from_str_regex(s);
+        let manual = Range::from_str(s);
+        assert_eq!(
+            (regex.name, regex.chr, regex.strand, regex.start, regex.end),
+            (
+                manual.name,
+                manual.chr,
+                manual.strand,
+                manual.start,
+                manual.end
+            ),
+            "regex vs manual divergence on {s:?}"
+        );
+    }
+
+    // Randomized fuzz over the grammar's alphabet (coordinates kept small so
+    // the regex path never overflows i32).
+    let mut x = 0x9E3779B97F4A7C15u64;
+    let alphabet = b"abcXYZ019_/:-(). ";
+    for _ in 0..20_000 {
+        let len = (next_rand(&mut x) % 25) as usize;
+        let s: String = (0..len)
+            .map(|_| alphabet[(next_rand(&mut x) % alphabet.len() as u64) as usize] as char)
+            .collect();
+        let regex = from_str_regex(&s);
+        let manual = Range::from_str(&s);
+        assert_eq!(
+            (regex.name, regex.chr, regex.strand, regex.start, regex.end),
+            (
+                manual.name,
+                manual.chr,
+                manual.strand,
+                manual.start,
+                manual.end
+            ),
+            "regex vs manual divergence on {s:?}"
+        );
+    }
+}
+
+/// The original regex decoder, kept as the test oracle for the hand-written
+/// scanner (see the module docs for the regex pattern itself).
+#[cfg(test)]
+fn from_str_regex(range: &str) -> Range {
+    static RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(
+            r"(?xi)
+            (?:(?P<name>[\w_]+)\.)?
+            (?P<chr>[\w/-]+)
+            (?:\((?P<strand>.+)\))?
+            [:]                    # spacer
+            (?P<start>\d+)
+            [_\-]?                 # spacer
+            (?P<end>\d+)?
+            ",
+        )
+        .expect("valid range regex")
+    });
+    let mut new = Range::new();
+    let caps = match RE.captures(range) {
+        Some(x) => x,
+        None => {
+            new.chr = range.split(' ').next().unwrap().to_string();
+            return new;
+        }
+    };
+    for name in RE.capture_names().flatten() {
+        if let Some(m) = caps.name(name) {
+            match name {
+                "name" => new.name = m.as_str().to_string(),
+                "chr" => new.chr = m.as_str().to_string(),
+                "strand" => new.strand = m.as_str().to_string(),
+                "start" => new.start = m.as_str().parse::<i32>().unwrap(),
+                "end" => new.end = m.as_str().parse::<i32>().unwrap(),
+                _ => {}
+            }
+        }
+    }
+    if new.start != 0 && new.end == 0 {
+        new.end = new.start;
+    }
+    new
+}
+
+#[cfg(test)]
+fn next_rand(x: &mut u64) -> u64 {
+    *x = x
+        .wrapping_mul(6364136223846793005)
+        .wrapping_add(1442695040888963407);
+    *x >> 33
 }
