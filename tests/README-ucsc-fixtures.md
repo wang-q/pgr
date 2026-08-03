@@ -58,9 +58,6 @@ psl->chain, axtChain pipeline) share the same origin and are not repeated here.
 
 ## `tests/2bit`
 
-- `input/{s1,s2,s1.s2}.2bit`, `input/{s1,s2,s1.s2}.fa.gz`,
-  `expected/{s1,s2,s1.s2,s1.s2_2bit}.txt`
-  - `src/utils/faCount/tests/{input,expected}/` (same files as faSize tests)
 - `input/{creaGeno,testPcr}.2bit` — `src/gfServer/tests/input/`
 
 ## `tests/fasta`

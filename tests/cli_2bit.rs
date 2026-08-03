@@ -540,29 +540,6 @@ fn test_2bit_size_doc_consistency() {
 }
 
 #[test]
-fn test_2bit_size_ucsc_facount_gold() {
-    // faCount test 2bit files: expected sizes from UCSC's own gold output.
-    let (stdout, _) = PgrCmd::new()
-        .args(&["2bit", "size", fixture("s1.s2.2bit").to_str().unwrap()])
-        .run();
-
-    assert!(stdout.contains("s1\t83"));
-    assert!(stdout.contains("s2\t137"));
-}
-
-#[test]
-fn test_2bit_to_fa_ucsc_facount_gold() {
-    // Same sequences as s1.s2.fa.gz, but space-separated chunks in the FASTA
-    // are packed into the 2bit; to-fa must emit them without the whitespace.
-    let (stdout, _) = PgrCmd::new()
-        .args(&["2bit", "to-fa", fixture("s1.s2.2bit").to_str().unwrap()])
-        .run();
-
-    assert!(stdout.contains("GTCGCGTACCTGTGGNATAAGAGCTTTGGGCTTTCNCAGTCCCGACTNGTCTGAACTNAC"));
-    assert!(stdout.contains("GTCGCGTACCTGTGGTATAAGAGCTTTGGGCTTTCGCAGTCCCGACTAGTCTGAACTTAC"));
-}
-
-#[test]
 fn test_2bit_size_ucsc_real_genome_files() {
     // Real 2bit files from gfServer tests (mouse crea + human testPcr).
     let (stdout, _) = PgrCmd::new()

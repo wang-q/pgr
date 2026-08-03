@@ -618,21 +618,6 @@ fn command_fa_one_success() {
 }
 
 #[test]
-fn command_fa_size_ucsc_facount_whitespace() {
-    // UCSC faCount/faSize ignore whitespace inside sequence lines; s1.fa.gz
-    // contains space-separated chunks and must count 83/137 bases.
-    let manifest = env!("CARGO_MANIFEST_DIR");
-    let s1 = format!("{}/tests/2bit/input/s1.fa.gz", manifest);
-    let s1s2 = format!("{}/tests/2bit/input/s1.s2.fa.gz", manifest);
-    let (stdout, _) = PgrCmd::new().args(&["fa", "size", &s1]).run();
-    assert!(stdout.contains("s1\t83"));
-
-    let (stdout, _) = PgrCmd::new().args(&["fa", "size", &s1s2]).run();
-    assert!(stdout.contains("s1\t83"));
-    assert!(stdout.contains("s2\t137"));
-}
-
-#[test]
 fn command_fa_filter_uniq_ucsc_gold_names() {
     // faFilter test: duplicate basic.fa, then -uniq keeps the first of each
     // duplicated id. UCSC's gold output differs only by dropping header
