@@ -1,6 +1,6 @@
+use crate::libs::ds::IntSpan;
 use crate::libs::nt::NT_VAL;
 use anyhow::{anyhow, bail};
-use intspan::IntSpan;
 use itertools::Itertools;
 use std::cmp::min;
 use std::collections::BTreeMap;

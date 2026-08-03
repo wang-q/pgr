@@ -41,7 +41,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let ints_of = pgr::libs::plot::venn::build_venn_sets_from_files(&infiles)?;
 
-    let get_set = |i: usize| -> anyhow::Result<&intspan::IntSpan> {
+    let get_set = |i: usize| -> anyhow::Result<&pgr::libs::ds::IntSpan> {
         Ok(ints_of
             .get_index(i)
             .ok_or_else(|| anyhow!("missing set {}", i))?

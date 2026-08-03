@@ -37,7 +37,7 @@ impl std::str::FromStr for PlotRange {
     type Err = anyhow::Error;
 
     fn from_str(s: &str) -> anyhow::Result<Self> {
-        let r = intspan::Range::from_str(s);
+        let r = crate::libs::ds::Range::from_str(s);
         if !r.is_valid() {
             anyhow::bail!("invalid range: {s}");
         }

@@ -103,7 +103,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         .unwrap_or_default();
     let abs_files: Vec<String> = files
         .iter()
-        .map(|f| intspan::absolute_path(f).map(|p| p.display().to_string()))
+        .map(|f| pgr::libs::io::absolute_path(f).map(|p| p.display().to_string()))
         .collect::<Result<_, _>>()?;
     if verbose {
         if abs_files.is_empty() {

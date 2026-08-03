@@ -1,5 +1,5 @@
+use crate::libs::ds::Range;
 use indexmap::IndexMap;
-use intspan::Range;
 use noodles_bgzf as bgzf;
 use noodles_core;
 use noodles_fasta as fasta;
@@ -162,7 +162,7 @@ pub fn records_offset(
 /// complement for `-` strand. Returns the resulting owned sequence.
 pub fn slice_record(
     record: &fasta::Record,
-    rg: &intspan::Range,
+    rg: &crate::libs::ds::Range,
 ) -> anyhow::Result<fasta::record::Sequence> {
     let start = noodles_core::Position::new(*rg.start() as usize)
         .ok_or_else(|| anyhow::anyhow!("invalid start position: {}", *rg.start()))?;
@@ -182,7 +182,7 @@ pub fn slice_record(
 pub fn fetch_range_seq(
     reader: &mut Input,
     loc_of: &IndexMap<String, (u64, usize)>,
-    rg: &intspan::Range,
+    rg: &crate::libs::ds::Range,
 ) -> anyhow::Result<String> {
     let seq_id = rg.chr();
     if !loc_of.contains_key(seq_id) {

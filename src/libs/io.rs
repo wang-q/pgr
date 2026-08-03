@@ -68,8 +68,9 @@ pub fn read_lines(input: &str) -> anyhow::Result<Vec<String>> {
 }
 
 /// Safely read a runlist JSON file and convert to IntSpan map.
-/// Replaces intspan::read_json + intspan::json2set which panic on errors.
-pub fn read_runlist(path: &str) -> anyhow::Result<BTreeMap<String, intspan::IntSpan>> {
+/// Replaces the panicking `read_json` + `json2set` helpers of the old
+/// external intspan crate.
+pub fn read_runlist(path: &str) -> anyhow::Result<BTreeMap<String, crate::libs::ds::IntSpan>> {
     let mut reader = reader(path)?;
     let mut s = String::new();
     reader
@@ -77,14 +78,20 @@ pub fn read_runlist(path: &str) -> anyhow::Result<BTreeMap<String, intspan::IntS
         .with_context(|| format!("failed to read runlist: {}", path))?;
     let json: BTreeMap<String, serde_json::Value> = serde_json::from_str(&s)
         .with_context(|| format!("failed to parse runlist JSON: {}", path))?;
-    let mut set: BTreeMap<String, intspan::IntSpan> = BTreeMap::new();
+    let mut set: BTreeMap<String, crate::libs::ds::IntSpan> = BTreeMap::new();
     for (chr, value) in &json {
         let s = value
             .as_str()
             .ok_or_else(|| anyhow::anyhow!("runlist value for {} is not a string", chr))?;
-        set.insert(chr.clone(), intspan::IntSpan::from(s));
+        set.insert(chr.clone(), crate::libs::ds::IntSpan::from(s));
     }
     Ok(set)
+}
+
+/// Make `path` absolute, normalizing `.` and `..` components lexically
+/// without touching the filesystem.
+pub fn absolute_path(path: impl AsRef<std::path::Path>) -> std::io::Result<std::path::PathBuf> {
+    std::path::absolute(path)
 }
 
 /// Buffered writer that flushes on drop and reports flush errors to stderr.

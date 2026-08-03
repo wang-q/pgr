@@ -1,7 +1,7 @@
+use crate::libs::ds::IntSpan;
 use crate::libs::poa::{AlignmentParams, AlignmentType, Poa};
 use anyhow::anyhow;
 use bio::io::fasta;
-use intspan::IntSpan;
 use std::fs;
 use std::io::{BufRead, Write};
 use std::path::Path;

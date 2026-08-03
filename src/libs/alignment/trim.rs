@@ -1,4 +1,4 @@
-use intspan::{IntSpan, Range};
+use crate::libs::ds::{IntSpan, Range};
 
 use super::coords::indel_intspan;
 
@@ -294,9 +294,9 @@ pub fn trim_complex_indel(seqs: &mut [String]) -> anyhow::Result<String> {
 ///     "AAA--TT-GGCGCGCGCGCGCGCGCGC".to_string(),
 /// ];
 /// let ranges = vec![
-///     intspan::Range::from_str("I(+):101-124"),
-///     intspan::Range::from_str("1:1-23"),
-///     intspan::Range::from_str("a(-):101-124"),
+///     crate::libs::ds::Range::from_str("I(+):101-124"),
+///     crate::libs::ds::Range::from_str("1:1-23"),
+///     crate::libs::ds::Range::from_str("a(-):101-124"),
 /// ];
 ///
 /// let mut seqc = seqs.clone();
@@ -346,10 +346,10 @@ pub fn trim_complex_indel(seqs: &mut [String]) -> anyhow::Result<String> {
 ///     "AAA--TT-GGCATGCATG1234567--".to_string(),
 /// ];
 /// let ranges = vec![
-///     intspan::Range::from_str("I(+):101-124"),
-///     intspan::Range::from_str("1:1-23"),
-///     intspan::Range::from_str("a(-):101-124"),
-///     intspan::Range::from_str("b(-):1-22"),
+///     crate::libs::ds::Range::from_str("I(+):101-124"),
+///     crate::libs::ds::Range::from_str("1:1-23"),
+///     crate::libs::ds::Range::from_str("a(-):101-124"),
+///     crate::libs::ds::Range::from_str("b(-):1-22"),
 /// ];
 ///
 /// let mut seqc = seqs.clone();

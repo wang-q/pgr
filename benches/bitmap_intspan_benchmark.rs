@@ -5,8 +5,8 @@
 //! for large chromosome coverage aggregation.
 
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
-use intspan::IntSpan;
 use pgr::libs::ds::BitMap;
+use pgr::libs::ds::IntSpan;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 

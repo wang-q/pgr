@@ -396,7 +396,11 @@ pub fn find_fasta_files<P: AsRef<std::path::Path>>(path: P) -> Vec<std::path::Pa
 }
 
 /// Mask sequence regions. Soft-mask lowercases, hard-mask replaces with N.
-pub fn mask_sequence(seq: &str, spans: &intspan::IntSpan, hard: bool) -> anyhow::Result<String> {
+pub fn mask_sequence(
+    seq: &str,
+    spans: &crate::libs::ds::IntSpan,
+    hard: bool,
+) -> anyhow::Result<String> {
     let mut out = seq.to_string();
     for (lower, upper) in spans.spans().iter() {
         if *lower < 1 {

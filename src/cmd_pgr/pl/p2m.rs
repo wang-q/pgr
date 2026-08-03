@@ -62,8 +62,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     // Operating
     run_cmd!(echo "==> Basenames and absolute paths")?;
     for infile in args.get_many::<String>("infiles").unwrap() {
-        let basename = intspan::basename(infile)?;
-        let absolute = intspan::absolute_path(infile)?.display().to_string();
+        let basename = pgr::libs::io::basename_or_err(infile)?;
+        let absolute = pgr::libs::io::absolute_path(infile)?.display().to_string();
 
         info_of.insert(basename.to_string(), vec![absolute.to_string()]);
     }

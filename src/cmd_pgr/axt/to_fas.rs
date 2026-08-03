@@ -1,6 +1,6 @@
 use anyhow::Context;
 use clap::{ArgMatches, Command};
-use intspan::Range;
+use pgr::libs::ds::Range;
 use pgr::libs::fmt::axt::AxtReader;
 use pgr::libs::fmt::fas::FasEntry;
 use std::io::Write;

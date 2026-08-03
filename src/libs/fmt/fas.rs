@@ -1,5 +1,5 @@
+use crate::libs::ds::Range;
 use anyhow::Context;
-use intspan::Range;
 use std::collections::VecDeque;
 use std::io::Write;
 use std::{fmt, io, str};
@@ -33,7 +33,7 @@ impl FasEntry {
     /// Creates an entry from a range and sequence.
     ///
     /// ```ignore
-    /// # use intspan::Range;
+    /// # use crate::libs::ds::Range;
     /// # use pgr::libs::fmt::fas::FasEntry;
     /// let range = Range::from("I", 1, 10);
     /// let seq = "ACAGCTGA-AA".as_bytes().to_vec();
@@ -54,7 +54,7 @@ impl FasEntry {
 /// To string
 ///
 /// ```ignore
-/// # use intspan::Range;
+/// # use crate::libs::ds::Range;
 /// # use pgr::libs::fmt::fas::FasEntry;
 /// let range = Range::from("I", 1, 10);
 /// let seq = "ACAGCTGA-AA".as_bytes().to_vec();
@@ -401,7 +401,7 @@ pub fn aggregate_coverage_into<R: io::BufRead>(
     reader: &mut R,
     res_of: &mut std::collections::BTreeMap<
         String,
-        std::collections::BTreeMap<String, intspan::IntSpan>,
+        std::collections::BTreeMap<String, crate::libs::ds::IntSpan>,
     >,
     name_filter: &str,
     trim: i32,
@@ -684,7 +684,7 @@ pub fn compute_block_stat(block: &FasBlock, has_outgroup: bool) -> anyhow::Resul
     let (_, comparable, difference, gap, ambiguous, mean_d) =
         crate::libs::alignment::alignment_stat(&seqs)?;
 
-    let mut indel_ints = intspan::IntSpan::new();
+    let mut indel_ints = crate::libs::ds::IntSpan::new();
     for seq in &seqs {
         indel_ints.merge(&crate::libs::alignment::indel_intspan(seq));
     }
@@ -860,7 +860,7 @@ pub fn write_concat_output<W: Write>(
 }
 
 /// Create block FA content from a links-of-ranges TSV reader. For each line,
-/// splits on tab, parses each field as an intspan::Range, optionally overrides
+/// splits on tab, parses each field as an crate::libs::ds::Range, optionally overrides
 /// the species name, fetches the sequence via `get_seq_loc`, and writes
 /// `>{range}\n{seq}\n` per range with a blank line separating blocks.
 pub fn create_from_links<R: io::BufRead, W: Write>(

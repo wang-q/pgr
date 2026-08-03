@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 use std::io::Write;
 
+use crate::libs::ds::IntSpan;
 use anyhow::anyhow;
-use intspan::IntSpan;
 
 use crate::libs::alignment::{align_to_chr, chr_to_align, indel_intspan, seq_intspan};
 use crate::libs::fmt::fas::FasBlock;
@@ -85,8 +85,13 @@ pub fn slice_block<W: Write>(
                 range.start,
                 range.strand(),
             )?;
-            let ss_range =
-                intspan::Range::from_full(range.name(), range.chr(), range.strand(), start, end);
+            let ss_range = crate::libs::ds::Range::from_full(
+                range.name(),
+                range.chr(),
+                range.strand(),
+                start,
+                end,
+            );
 
             let seq = block.entries[i].seq();
             let seq_len_i32 = i32::try_from(seq.len())

@@ -6,8 +6,10 @@ pub mod dsu;
 pub mod dupe_tree;
 pub mod gap_calc;
 pub mod interval;
+pub mod intspan;
 pub mod kdtree;
 pub mod radix_sort;
+pub mod range;
 pub mod top_k_purity;
 
 pub use bitmap::BitMap;
@@ -16,5 +18,7 @@ pub use dsu::Dsu;
 pub use dupe_tree::{DupeTree, Segment};
 pub use gap_calc::GapCalc;
 pub use interval::merge_intervals;
+pub use intspan::IntSpan;
 pub use kdtree::{KdTree, KdTreeItem};
+pub use range::Range;
 pub use top_k_purity::TopKPurity;

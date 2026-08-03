@@ -55,7 +55,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         .map(|s| s.as_str())
         .unwrap_or("");
 
-    let mut res_of: BTreeMap<String, BTreeMap<String, intspan::IntSpan>> = BTreeMap::new();
+    let mut res_of: BTreeMap<String, BTreeMap<String, pgr::libs::ds::IntSpan>> = BTreeMap::new();
 
     for infile in args.get_many::<String>("infiles").unwrap() {
         let mut reader =
@@ -65,7 +65,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let out_json = if !opt_name.is_empty() {
         // Output coverage for a single species
-        intspan::set2json(
+        pgr::libs::ds::intspan::set2json(
             res_of
                 .values()
                 .next()
@@ -73,10 +73,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         )
     } else {
         // Output coverage for all species
-        intspan::set2json_m(&res_of)
+        pgr::libs::ds::intspan::set2json_m(&res_of)
     };
     // Write the JSON output to the specified file or stdout
-    intspan::write_json(crate::cmd_pgr::args::get_outfile(args), &out_json)?;
+    pgr::libs::ds::intspan::write_json(crate::cmd_pgr::args::get_outfile(args), &out_json)?;
 
     Ok(())
 }

@@ -1,9 +1,9 @@
 //! SD interval clustering and cluster FASTA extraction (BISER cluster, PAF-based).
 
 use crate::libs::ds::Dsu;
+use crate::libs::ds::Range;
 use crate::libs::paf::parser::parse_paf;
 use anyhow::Context;
-use intspan::Range;
 use std::collections::HashMap;
 use std::io::{BufRead, Write};
 

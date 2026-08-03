@@ -1,7 +1,7 @@
 //! Pipeline working-directory context and path helpers.
 
+use crate::libs::io::absolute_path;
 use cmd_lib::run_cmd;
-use intspan::absolute_path;
 
 /// Resolve `path` to an absolute path string. `stdout` is passed through as-is.
 pub fn abs_path_or_stdout(path: &str) -> anyhow::Result<String> {

@@ -1,6 +1,6 @@
+use crate::libs::ds::IntSpan;
 use anyhow::anyhow;
 use indexmap::IndexMap;
-use intspan::IntSpan;
 use std::path::Path;
 
 use super::common::{context_get_str, render_and_write, replace_section};

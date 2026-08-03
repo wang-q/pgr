@@ -1,5 +1,5 @@
 use super::*;
-use intspan::Range;
+use crate::libs::ds::Range;
 
 fn make_entry(name: &str, start: i32, end: i32, seq: &str) -> (FasEntry, String, String) {
     let range = Range::from(name, start, end);
@@ -192,7 +192,7 @@ fn merge_window_mismatched_reference_no_shared_species_returns_none() {
 
 #[test]
 fn merge_fas_files_multiple_windows() {
-    use intspan::Range;
+    use crate::libs::ds::Range;
     use std::fs::File;
     use std::io::Write;
 
@@ -262,7 +262,7 @@ fn merge_fas_files_multiple_windows() {
 
 #[test]
 fn merge_fas_files_auto_windows_matches_explicit() {
-    use intspan::Range;
+    use crate::libs::ds::Range;
     use std::fs::File;
     use std::io::Write;
 

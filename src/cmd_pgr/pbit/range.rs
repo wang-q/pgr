@@ -63,7 +63,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         .with_context(|| format!("Failed to open writer for {}", output_path))?;
 
     for el in ranges.iter() {
-        let rg = intspan::Range::from_str(el);
+        let rg = pgr::libs::ds::Range::from_str(el);
         let contig = rg.chr();
 
         if contig.is_empty() {

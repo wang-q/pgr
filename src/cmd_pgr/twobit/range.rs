@@ -58,7 +58,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut len_cache: HashMap<String, usize> = HashMap::new();
 
     for el in ranges.iter().filter(|s| !s.trim().is_empty()) {
-        let rg = intspan::Range::from_str(el);
+        let rg = pgr::libs::ds::Range::from_str(el);
         let seq_id = rg.chr();
 
         // Check if sequence exists

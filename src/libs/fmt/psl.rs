@@ -964,7 +964,7 @@ pub fn parse_or_warn(line: &str, strict: bool) -> anyhow::Result<Option<Psl>> {
 /// `(chr, start, end)` with `start`/`end` as u32. Returns `None` if `name`
 /// is not a valid range.
 pub fn parse_subrange(name: &str) -> Option<(String, u32, u32)> {
-    let rg = intspan::Range::from_str(name);
+    let rg = crate::libs::ds::Range::from_str(name);
     if rg.is_valid() {
         return Some((rg.chr().to_string(), *rg.start() as u32, *rg.end() as u32));
     }

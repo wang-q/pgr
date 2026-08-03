@@ -1,7 +1,7 @@
 use std::ops::Sub;
 
+use crate::libs::ds::IntSpan;
 use anyhow::anyhow;
-use intspan::IntSpan;
 
 /// Build an IntSpan of gap positions (1-based) from an aligned sequence.
 ///
