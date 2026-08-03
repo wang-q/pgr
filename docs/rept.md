@@ -188,6 +188,24 @@ library (`<library>.repeat.k<k>.ktab` plus hidden part files and a
 The cache is invalidated automatically when the library file changes
 (mtime). Same convention as `pgr align pgi --keep-index`.
 
+### Combining multiple libraries
+
+`e-kmer` takes a single repeat library as its positional `repeat` argument.
+To mask against several libraries (e.g. RepBase and Dfam) at once, run once
+per library and merge the resulting runlists with `spanr merge`:
+
+```bash
+pgr rept e-kmer repbase.fa.gz genome.fa -o repbase.json
+pgr rept e-kmer dfam.fa.gz   genome.fa -o dfam.json
+
+spanr merge repbase.json dfam.json -o libs.json
+pgr fa mask genome.fa --runlist libs.json -o masked.fa
+```
+
+Running per library keeps the `--keep-index` cache valid for each library and
+lets you tune parameters (and diagnose hits) per library. The genome is
+scanned once per library, which is negligible for typical repeat libraries.
+
 ---
 
 ## s-kmer

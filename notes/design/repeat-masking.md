@@ -62,6 +62,15 @@ pgr fa mask genome.fa --runlist repeats.json --hard -o masked.fa # hard-mask（N
 5. **库文件作位置参数**：`e-*` 前缀已声明"要用库"，库文件直接作为第一个
    位置参数（沿用原 `pl ir <repeat> <infile>` 的接口），不引入 `--lib`。
 
+> **多库场景（2026-08-03 决策）**：`e-*` 命令只接受单个库位置参数；同时
+> 使用多个库（如 RepBase + Dfam）时**不引入 `--lib` 多值**，而是对每个库
+> 分别执行一次命令、再用 `spanr merge` 合并各 runlist（与 ir + trf 合并
+> 同一模式，示例见 [docs/rept.md](../../docs/rept.md) e-kmer 一节）。
+> 理由：把多库合并进单 FastK 表会破坏 `--keep-index` 的缓存失效逻辑
+> （缓存 key 需按多文件 mtime 组合判断）、丧失每库独立调参与诊断能力；
+> 代价只是基因组多扫描几次，FastK 很快，对遮蔽场景可接受。若未来出现
+> "很多库 × 超大基因组"的真实需求，再考虑 `--lib` 可重复作为升级。
+
 #### 命名规则
 
 重复检测有 4 个组合：
