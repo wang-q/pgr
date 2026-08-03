@@ -7,7 +7,7 @@ use std::fs;
 use tempfile::TempDir;
 
 #[test]
-fn command_fas_multiz_core() {
+fn command_fas_multiz_merges_inputs() {
     let tempdir = TempDir::new().unwrap();
     let out_path = tempdir.path().join("merged.fas");
     let out_str = out_path.to_str().unwrap();

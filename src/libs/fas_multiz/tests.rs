@@ -24,12 +24,11 @@ fn make_block(entries: Vec<(FasEntry, String, String)>) -> FasBlock {
     }
 }
 
-fn default_config(mode: FasMultizMode) -> FasMultizConfig {
+fn default_config() -> FasMultizConfig {
     FasMultizConfig {
         ref_name: "ref".to_string(),
         radius: 5,
         min_width: 1,
-        mode,
         match_score: 2,
         mismatch_score: -1,
         gap_score: -2,
@@ -41,29 +40,7 @@ fn default_config(mode: FasMultizMode) -> FasMultizConfig {
 }
 
 #[test]
-fn merge_window_core_requires_blocks_in_all_inputs() {
-    let (ref_entry, ref_name, ref_header) = make_entry("ref", 1, 4, "ACGT");
-    let (a_entry, a_name, a_header) = make_entry("A", 1, 4, "ACGT");
-    let block1 = make_block(vec![
-        (ref_entry.clone(), ref_name.clone(), ref_header.clone()),
-        (a_entry, a_name, a_header),
-    ]);
-
-    let blocks_per_input = vec![vec![block1], Vec::new()];
-
-    let cfg = default_config(FasMultizMode::Union);
-    let window = Window {
-        chr: "chr1".to_string(),
-        start: 1,
-        end: 4,
-    };
-
-    let merged = merge_window("ref", &window, &blocks_per_input, &cfg).unwrap();
-    assert!(merged.is_none());
-}
-
-#[test]
-fn merge_window_core_requires_overlap_with_window() {
+fn merge_window_without_coverage_returns_none() {
     let (ref_entry, ref_name, ref_header) = make_entry("ref", 1, 4, "ACGT");
     let (a_entry, a_name, a_header) = make_entry("A", 1, 4, "ACGT");
     let block1 = make_block(vec![
@@ -73,7 +50,7 @@ fn merge_window_core_requires_overlap_with_window() {
 
     let blocks_per_input = vec![vec![block1]];
 
-    let cfg = default_config(FasMultizMode::Core);
+    let cfg = default_config();
     let window = Window {
         chr: ref_entry.range().chr().to_string(),
         start: 10,
@@ -85,7 +62,7 @@ fn merge_window_core_requires_overlap_with_window() {
 }
 
 #[test]
-fn merge_window_union_allows_missing_blocks() {
+fn merge_window_skips_missing_inputs() {
     let (ref_entry, ref_name, ref_header) = make_entry("ref", 1, 4, "ACGT");
     let (a_entry, a_name, a_header) = make_entry("A", 1, 4, "ACGT");
     let block1 = make_block(vec![
@@ -95,7 +72,7 @@ fn merge_window_union_allows_missing_blocks() {
 
     let blocks_per_input = vec![vec![block1], Vec::new()];
 
-    let cfg = default_config(FasMultizMode::Union);
+    let cfg = default_config();
     let window = Window {
         chr: ref_entry.range().chr().to_string(),
         start: *ref_entry.range().start() as u64,
@@ -111,7 +88,7 @@ fn merge_window_union_allows_missing_blocks() {
 }
 
 #[test]
-fn merge_window_core_species_intersection() {
+fn merge_window_keeps_species_union() {
     let (ref_entry1, ref_name1, ref_header1) = make_entry("ref", 1, 4, "ACGT");
     let (a_entry1, a_name1, a_header1) = make_entry("A", 1, 4, "ACGT");
     let (b_entry1, b_name1, b_header1) = make_entry("B", 1, 4, "ACGT");
@@ -132,46 +109,7 @@ fn merge_window_core_species_intersection() {
 
     let blocks_per_input = vec![vec![block1], vec![block2]];
 
-    let cfg = default_config(FasMultizMode::Core);
-    let window = Window {
-        chr: ref_entry1.range().chr().to_string(),
-        start: *ref_entry1.range().start() as u64,
-        end: *ref_entry1.range().end() as u64,
-    };
-
-    let merged = merge_window("ref", &window, &blocks_per_input, &cfg)
-        .unwrap()
-        .unwrap();
-
-    let names: Vec<String> = merged.names.clone();
-    assert!(names.contains(&"ref".to_string()));
-    assert!(names.contains(&"A".to_string()));
-    assert_eq!(names.len(), 2);
-}
-
-#[test]
-fn merge_window_union_species_union() {
-    let (ref_entry1, ref_name1, ref_header1) = make_entry("ref", 1, 4, "ACGT");
-    let (a_entry1, a_name1, a_header1) = make_entry("A", 1, 4, "ACGT");
-    let (b_entry1, b_name1, b_header1) = make_entry("B", 1, 4, "ACGT");
-    let block1 = make_block(vec![
-        (ref_entry1.clone(), ref_name1.clone(), ref_header1.clone()),
-        (a_entry1, a_name1, a_header1),
-        (b_entry1, b_name1, b_header1),
-    ]);
-
-    let (ref_entry2, ref_name2, ref_header2) = make_entry("ref", 1, 4, "ACGT");
-    let (a_entry2, a_name2, a_header2) = make_entry("A", 1, 4, "ACGT");
-    let (c_entry2, c_name2, c_header2) = make_entry("C", 1, 4, "ACGT");
-    let block2 = make_block(vec![
-        (ref_entry2.clone(), ref_name2.clone(), ref_header2.clone()),
-        (a_entry2, a_name2, a_header2),
-        (c_entry2, c_name2, c_header2),
-    ]);
-
-    let blocks_per_input = vec![vec![block1], vec![block2]];
-
-    let cfg = default_config(FasMultizMode::Union);
+    let cfg = default_config();
     let window = Window {
         chr: ref_entry1.range().chr().to_string(),
         start: *ref_entry1.range().start() as u64,
@@ -213,7 +151,7 @@ fn merge_window_mismatched_reference_splices_at_crossover() {
 
     let blocks_per_input = vec![vec![block1], vec![block2]];
 
-    let cfg = default_config(FasMultizMode::Union);
+    let cfg = default_config();
     let window = Window {
         chr: "ref".to_string(),
         start: 1,
@@ -246,7 +184,7 @@ fn merge_window_mismatched_reference_no_shared_species_returns_none() {
 
     let blocks_per_input = vec![vec![block1], vec![block2]];
 
-    let cfg = default_config(FasMultizMode::Union);
+    let cfg = default_config();
     let window = Window {
         chr: "ref".to_string(),
         start: 1,
@@ -312,7 +250,7 @@ fn merge_fas_files_multiple_windows() {
     ];
 
     let ref_name = "ref".to_string();
-    let mut cfg = default_config(FasMultizMode::Union);
+    let mut cfg = default_config();
     cfg.ref_name = ref_name.clone();
 
     let merged =
@@ -382,7 +320,7 @@ fn merge_fas_files_auto_windows_matches_explicit() {
     ];
 
     let ref_name = "ref".to_string();
-    let mut cfg = default_config(FasMultizMode::Union);
+    let mut cfg = default_config();
     cfg.ref_name = ref_name.clone();
 
     let merged_explicit =
@@ -421,7 +359,7 @@ fn merge_window_multi_input_dp_progressive() {
 
     let blocks_per_input = vec![vec![block1], vec![block2], vec![block3]];
 
-    let cfg = default_config(FasMultizMode::Union);
+    let cfg = default_config();
     let window = Window {
         chr: "ref".to_string(),
         start: 1,
@@ -483,7 +421,7 @@ fn merge_window_output_independent_of_input_order() {
         [block1, block2, block3]
     };
 
-    let cfg = default_config(FasMultizMode::Union);
+    let cfg = default_config();
     let window = Window {
         chr: "ref".to_string(),
         start: 1,
@@ -533,7 +471,7 @@ fn merge_window_preserves_species_content() {
         (b_entry2, b_name2, b_header2),
     ]);
 
-    let cfg = default_config(FasMultizMode::Union);
+    let cfg = default_config();
     let window = Window {
         chr: "ref".to_string(),
         start: 1,

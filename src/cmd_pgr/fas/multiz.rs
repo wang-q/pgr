@@ -13,14 +13,15 @@ Merge multiple block FA files in the shared reference coordinate system using a 
 Notes:
 * Takes two or more .fas inputs that share a reference name.
 * Automatically derives windows from reference coverage with radius padding.
-* Supports core (intersection) and union modes on windows and species.
+* Merges every window covered by at least one input and keeps the union of
+  species across inputs.
 
 Examples:
 1. Core mode merge with default radius:
    pgr fas multiz -r S288c tests/fas/S288cvsRM11_1a.slice.fas tests/fas/S288cvsSpar.slice.fas
 
-2. Union mode with larger radius and minimum width:
-   pgr fas multiz -r S288c --mode union --radius 30 --min-width 1000 tests/fas/S288cvsRM11_1a.slice.fas tests/fas/S288cvsYJM789.slice.fas tests/fas/S288cvsSpar.slice.fas
+2. Merge with a larger radius and minimum width:
+   pgr fas multiz -r S288c --radius 30 --min-width 1000 tests/fas/S288cvsRM11_1a.slice.fas tests/fas/S288cvsYJM789.slice.fas tests/fas/S288cvsSpar.slice.fas
 
 3. Write merged blocks to a file:
    pgr fas multiz -r S288c tests/fas/S288cvsRM11_1a.slice.fas tests/fas/S288cvsSpar.slice.fas -o merged.fas
@@ -54,11 +55,6 @@ Examples:
                 .default_value("1")
                 .help("Minimum window width to consider for merging"),
         )
-        .arg(crate::cmd_pgr::args::mode_arg(
-            "core",
-            &["core", "union"],
-            "Merge mode: core (strict intersection) or union",
-        ))
         .arg(crate::cmd_pgr::args::score_scheme_arg())
         .arg(crate::cmd_pgr::args::gap_model_arg(
             "medium",
@@ -99,17 +95,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let ref_name = args.get_one::<String>("ref_name").unwrap().to_string();
     let radius = *args.get_one::<usize>("radius").unwrap();
     let min_width = *args.get_one::<usize>("min_width").unwrap();
-    let mode_str = args.get_one::<String>("mode").unwrap();
     let gap_model_str = args.get_one::<String>("gap_model").unwrap();
     let score_matrix = args.get_one::<String>("score_scheme").cloned();
     let gap_open = args.get_one::<i32>("align_gap_open").copied();
     let gap_extend = args.get_one::<i32>("align_gap_extend").copied();
-
-    let mode = match mode_str.as_str() {
-        "core" => pgr::libs::fas_multiz::FasMultizMode::Core,
-        "union" => pgr::libs::fas_multiz::FasMultizMode::Union,
-        _ => anyhow::bail!("unknown mode: {}", mode_str),
-    };
 
     let gap_model = match gap_model_str.as_str() {
         "constant" => pgr::libs::fas_multiz::FasMultizGapModel::Constant,
@@ -126,7 +115,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         ref_name: ref_name.clone(),
         radius,
         min_width,
-        mode,
         match_score,
         mismatch_score,
         gap_score,

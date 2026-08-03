@@ -1090,14 +1090,14 @@ panel sequences/pangenome graph → implicit graph backend → sample evidence p
 `pgr` 的真正强项是**UCSC 体系的 pairwise 比对处理**（Chain/Net/MAF/AXT/PSL/LAV 全套， 见
 [docs/chain.md](../../../docs/chain.md)）与**Block FA 多序列比对**
 （`fas` 全套子命令 + `libs/poa/` 的 SPOA 移植 + `libs/fas_multiz/` 的 multiz 风格 banded DP 合并，
-其 `FasMultizMode::Core` 即"多基因组共享 core 比对"）。pairwise 与 core 比对均已成熟。
+union 风格合并）。pairwise 与 Block FA 比对均已成熟。
 
 **泛基因组图部分**：`pgr` 已通过 `pgr paf graph` / `pgr paf to-gfa` 实现 GFA 输出（见
 [docs/paf.md](../../../docs/paf.md)）；[notes/references/gfa.md](../../../notes/references/gfa.md)
 为 GFA 格式参考文档。本节聚焦"泛基因组图"这一维度对比，作为 §9 启示的依据。
 
 - **pairwise 比对** — `pgr` 成熟（AXT/MAF/PSL/Chain/Net/LAV）；`impg` 成熟（PAF/1ALN/TPA）
-- **core 比对** — `pgr` 已实现（`fas multiz --mode core` + `fas consensus` POA）；`impg` cohort
+- **core 比对** — `pgr` 已实现（`pgr pl p2m` 快速交集 + `fas consensus` POA）；`impg` cohort
   all-vs-all + 投影间接得到
 - **图模型** — `pgr` 显式 Chain/Net + `pgr paf` 隐式图（按需物化 GFA）；`impg` 隐式图（比对网络），按需物化 GFA
 - **核心数据结构** — `pgr` Newick 树 / PSL / Chain / Block FA；`impg` coitrees + 紧凑 CIGAR delta
@@ -1187,7 +1187,7 @@ with `=`/`X` CIGAR）。这是 pgr 复用已有 pairwise 基础设施的天然�
    `-x`）：从目标区间出发做 BFS，自动发现所有直接和间接同源片段。`-m` 控制深度，`-d` 控制 hop
    内最大 gap。
 4. **输出格式** — 复用 impg 的输出矩阵（bed/bedpe/paf/gfa/vcf/maf/fasta），pgr 的 MAF 输出
-   可直接复用 `libs/fas_multiz/` 的 banded DP 合并（`FasMultizMode::Core`），比 impg 的
+   可直接复用 `libs/fas_multiz/` 的 banded DP 合并，比 impg 的
    per-bubble POA 更适合 core 区段。
 
 **为何不用 Chain**：见 §9.1。Chain 是 star topology 的过滤产物，不适合做图边集。Chain 适合 做
@@ -1503,4 +1503,3 @@ fixture ×method 的 `fixture_class`/`tier`/`method_family`/`method_parameters`/
   working on crush have been flailing without a clear spec"时，强制写权威 spec 并要求 "No code
   change should be proposed without referencing this document"。`pgr` 的 `notes/design/spoa_port.md`
   等移植笔记已有类似性质，可强化。
-

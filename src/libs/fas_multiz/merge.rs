@@ -1,7 +1,7 @@
 //! FasBlock merging: pairwise DP merge and per-window block assembly.
 
 use super::banded_align::banded_align_refs;
-use super::{find_ref_entry, ref_overlaps_window, FasMultizConfig, FasMultizMode, Window};
+use super::{find_ref_entry, ref_overlaps_window, FasMultizConfig, Window};
 use crate::libs::chain::sub_matrix::SubMatrix;
 use crate::libs::ds::best_crossover;
 use crate::libs::fmt::fas::{FasBlock, FasEntry};
@@ -175,9 +175,6 @@ fn merge_conflicting_refs(
 
     for name in species {
         let group = species_map.get(&name).unwrap();
-        if matches!(cfg.mode, FasMultizMode::Core) && (group[0].is_none() || group[1].is_none()) {
-            continue;
-        }
 
         let mut seq = Vec::with_capacity(out_len);
         for pos in 0..out_len {
@@ -270,10 +267,6 @@ fn merge_two_blocks_with_dp(
     for name in species {
         let group = species_map.get(&name).unwrap();
 
-        if matches!(cfg.mode, FasMultizMode::Core) && (group[0].is_none() || group[1].is_none()) {
-            continue;
-        }
-
         let mut seq = Vec::with_capacity(out_len);
 
         for pos in 0..out_len {
@@ -357,21 +350,9 @@ fn merge_blocks_with_dp(
         return Ok(Some(acc));
     }
 
-    match cfg.mode {
-        FasMultizMode::Core => {
-            for &block in &ordered[2..] {
-                acc = match merge_two_blocks_with_dp(ref_name, [&acc, block], cfg)? {
-                    Some(v) => v,
-                    None => return Ok(None),
-                };
-            }
-        }
-        FasMultizMode::Union => {
-            for &block in &ordered[2..] {
-                if let Some(next) = merge_two_blocks_with_dp(ref_name, [&acc, block], cfg)? {
-                    acc = next;
-                }
-            }
+    for &block in &ordered[2..] {
+        if let Some(next) = merge_two_blocks_with_dp(ref_name, [&acc, block], cfg)? {
+            acc = next;
         }
     }
 
@@ -396,13 +377,10 @@ pub fn merge_window(
                 Some(entry) => ref_overlaps_window(entry, window),
                 None => false,
             });
-        match candidate {
-            Some(block) => blocks.push(block),
-            None => {
-                if matches!(cfg.mode, FasMultizMode::Core) {
-                    return Ok(None);
-                }
-            }
+        if let Some(block) = candidate {
+            blocks.push(block);
+        } else {
+            // Inputs without a block in this window are simply skipped.
         }
     }
 
@@ -460,10 +438,6 @@ pub fn merge_window(
 
     for name in species {
         let group = species_map.get(&name).unwrap();
-
-        if matches!(cfg.mode, FasMultizMode::Core) && group.iter().any(|e| e.is_none()) {
-            continue;
-        }
 
         let chosen = match group.iter().flatten().next() {
             Some(e) => e,

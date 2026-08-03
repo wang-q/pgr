@@ -944,25 +944,6 @@ pub fn runlist_arg() -> Arg {
         .help("JSON file of chromosome runlists")
 }
 
-/// `--mode` argument with possible values, a default, and a custom help text.
-pub fn mode_arg(
-    default: &'static str,
-    possible: &'static [&'static str],
-    help: &'static str,
-) -> Arg {
-    let values: Vec<builder::PossibleValue> = possible
-        .iter()
-        .map(|v| builder::PossibleValue::new(*v))
-        .collect();
-    Arg::new("mode")
-        .long("mode")
-        .num_args(1)
-        .action(ArgAction::Set)
-        .default_value(default)
-        .value_parser(values)
-        .help(help)
-}
-
 // ============================================================================
 // fa subcommand additional builders
 // ============================================================================

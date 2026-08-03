@@ -13,12 +13,6 @@ use crate::libs::fmt::fas::{FasBlock, FasEntry};
 use std::path::Path;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum FasMultizMode {
-    Core,
-    Union,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FasMultizGapModel {
     Constant,
     Medium,
@@ -30,7 +24,6 @@ pub struct FasMultizConfig {
     pub ref_name: String,
     pub radius: usize,
     pub min_width: usize,
-    pub mode: FasMultizMode,
     pub match_score: i32,
     pub mismatch_score: i32,
     pub gap_score: i32,

@@ -253,6 +253,7 @@ pgr fas join [OPTIONS] <infiles>...
 ### multiz
 
 在共享的参考坐标系下，使用类 multiz 的带状动态规划算法合并多个 block FA 文件。
+保留被任一输入覆盖的窗口，并取各输入物种的并集。
 
 ```bash
 pgr fas multiz [OPTIONS] --ref-name <name> <infiles>...
@@ -263,7 +264,6 @@ pgr fas multiz [OPTIONS] --ref-name <name> <infiles>...
 - `-r, --ref-name <name>`：所有输入中都存在的参考序列名（必填）。
 - `--radius <int>`：参考对角线周围的带状 DP 半径（默认：30）。
 - `--min-width <int>`：参与合并的最小窗口宽度（默认：1）。
-- `--mode <core|union>`：合并模式（默认：core）。
 - `--score-scheme <file>`：评分方案文件（LASTZ 格式）或预设名（如 `hoxd55`）。
 - `--gap-model <constant|medium|loose>`：gap 模型（默认：medium）。
 - `--align-gap-open <int>`：比对 gap 开放罚分，覆盖 `--gap-model` 的默认值。

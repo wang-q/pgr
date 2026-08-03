@@ -2,9 +2,9 @@
 //!
 //! [`derive_windows_from_blocks`] scans reference ranges across all input
 //! block sets, unions overlapping intervals (expanded by `radius`), and keeps
-//! windows satisfying the `min_width` and per-mode coverage requirements.
+//! windows satisfying the `min_width` and coverage requirements.
 
-use super::{find_ref_entry, FasMultizConfig, FasMultizMode, Window};
+use super::{find_ref_entry, FasMultizConfig, Window};
 use crate::libs::ds::{merge_intervals, DupeTree};
 use crate::libs::fmt::fas::FasBlock;
 use std::collections::BTreeMap;
@@ -52,10 +52,8 @@ pub(super) fn derive_windows_from_blocks(
         return windows;
     }
 
-    let required_inputs = match cfg.mode {
-        FasMultizMode::Core => blocks_per_input.len() as i32,
-        FasMultizMode::Union => 1,
-    };
+    // Union semantics: keep a window when at least one input covers it.
+    let required_inputs = 1;
 
     // Per-chromosome DupeTree: each input contributes at most 1 depth over its
     // (merged) reference intervals, so `count_over(window, required) > 0`
