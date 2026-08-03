@@ -83,11 +83,12 @@ pub fn read_hv<R: Read>(r: &mut R) -> anyhow::Result<HvFile> {
     let mut hv = Vec::new();
     hv.try_reserve_exact(dim)
         .context("hv dimension too large")?;
-    hv.resize(dim, 0);
-    for v in &mut hv {
-        let mut b = [0u8; 4];
-        r.read_exact(&mut b)?;
-        *v = i32::from_le_bytes(b);
+    // Read element by element: a crafted `dim` is rejected as soon as the
+    // input runs out, without first zero-filling a huge allocation.
+    let mut buf = [0u8; 4];
+    for _ in 0..dim {
+        r.read_exact(&mut buf)?;
+        hv.push(i32::from_le_bytes(buf));
     }
     Ok(HvFile {
         name,

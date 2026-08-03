@@ -269,7 +269,12 @@ fn command_rept_s_align_end_to_end() -> anyhow::Result<()> {
         }
     }
 
-    let genome = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/genome/mg1655.fa.gz");
+    // A 300 kb NC_000913 fragment keeps the end-to-end lastz+spanr guard
+    // while cutting the self-alignment from ~10 s to well under a second.
+    let genome = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/genome/mg1655.300k.fa.gz"
+    );
     let temp = tempfile::TempDir::new()?;
     let out = temp.path().join("out.json");
 
