@@ -108,6 +108,21 @@ fn command_runlist_gff_reversed_record_errors() {
 }
 
 #[test]
+fn command_runlist_gff_out_of_range_errors() {
+    let dir = TempDir::new().unwrap();
+    let gff = dir.path().join("huge.gff");
+    std::fs::write(
+        &gff,
+        "##gff-version 3\nchr1\tsrc\tgene\t1\t2147483647\t.\t+\t.\tID=g1\n",
+    )
+    .unwrap();
+    let (_, stderr) = PgrCmd::new()
+        .args(&["gff", "runlist", gff.to_str().unwrap()])
+        .run_fail();
+    assert!(stderr.contains("out of range"), "got: {stderr}");
+}
+
+#[test]
 fn command_rg_asm() {
     let (stdout, _) = PgrCmd::new()
         .args(&["gff", "rg", "tests/gff/test.gff", "--asm", "Human"])

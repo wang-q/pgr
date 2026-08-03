@@ -60,7 +60,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                     record.seqid
                 );
             }
-            if record.start > i32::MAX as u64 || record.end > i32::MAX as u64 {
+            let max_coord = pgr::libs::ds::IntSpan::new().get_pos_inf() as u64;
+            if record.start > max_coord || record.end > max_coord {
                 anyhow::bail!(
                     "GFF coordinates out of range for {}: {}-{}",
                     record.seqid,

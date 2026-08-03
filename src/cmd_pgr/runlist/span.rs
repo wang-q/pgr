@@ -52,7 +52,8 @@ Examples:
                 .short('n')
                 .num_args(1)
                 .value_parser(value_parser!(i32))
-                .default_value("0"),
+                .default_value("0")
+                .help("Number of bases to trim or pad; length threshold for excise/fill"),
         )
         .arg(crate::cmd_pgr::args::outfile_arg())
 }

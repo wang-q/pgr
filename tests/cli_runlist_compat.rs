@@ -30,6 +30,12 @@ fn command_invalid() {
 }
 
 #[test]
+fn bare_runlist_shows_help() {
+    let (_, stderr) = PgrCmd::new().args(&["runlist"]).run_fail();
+    assert!(stderr.contains("Usage: pgr runlist"), "got: {stderr}");
+}
+
+#[test]
 fn file_doesnt_provided() {
     let (_, stderr) = cmd(&["genome"]).run_fail();
     assert!(stderr.contains("not provided"), "got: {stderr}");

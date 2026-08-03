@@ -20,6 +20,7 @@ use std::io::BufRead;
 /// do not parse as valid ranges are skipped.
 pub fn rg_to_set<R: BufRead>(reader: R) -> anyhow::Result<BTreeMap<String, IntSpan>> {
     let mut set: BTreeMap<String, IntSpan> = BTreeMap::new();
+    let max_coord = IntSpan::new().get_pos_inf();
     for line in reader.lines() {
         let line = line?;
         let line = line.trim();
@@ -27,7 +28,13 @@ pub fn rg_to_set<R: BufRead>(reader: R) -> anyhow::Result<BTreeMap<String, IntSp
             continue;
         }
         let range = crate::libs::ds::Range::from_str(line);
-        if !range.is_valid() || range.start() > range.end() {
+        // Reversed pairs and coordinates above the representable maximum
+        // (POS_INF - 1) used to panic inside `add_pair`.
+        if !range.is_valid()
+            || range.start() > range.end()
+            || range.start() > &max_coord
+            || range.end() > &max_coord
+        {
             continue;
         }
         set.entry(range.chr().clone())
@@ -42,6 +49,7 @@ pub fn rg_to_set<R: BufRead>(reader: R) -> anyhow::Result<BTreeMap<String, IntSp
 /// `#` and unparseable lines are skipped.
 pub fn rg_to_intervals<R: BufRead>(reader: R) -> anyhow::Result<BTreeMap<String, Vec<(u32, u32)>>> {
     let mut iv_of: BTreeMap<String, Vec<(u32, u32)>> = BTreeMap::new();
+    let max_coord = IntSpan::new().get_pos_inf();
     for line in reader.lines() {
         let line = line?;
         let line = line.trim();
@@ -49,7 +57,11 @@ pub fn rg_to_intervals<R: BufRead>(reader: R) -> anyhow::Result<BTreeMap<String,
             continue;
         }
         let range = crate::libs::ds::Range::from_str(line);
-        if !range.is_valid() || range.start() > range.end() {
+        if !range.is_valid()
+            || range.start() > range.end()
+            || range.start() > &max_coord
+            || range.end() > &max_coord
+        {
             continue;
         }
         iv_of
@@ -531,6 +543,16 @@ mod tests {
         assert_eq!(s["chr1"].to_string(), "1-10");
         let ivs = rg_to_intervals(std::io::Cursor::new("chr1:10-5\nchr1:1-10\n")).unwrap();
         assert_eq!(ivs["chr1"], vec![(1, 11)]);
+
+        // Coordinates above POS_INF - 1 are skipped instead of overflowing
+        // `add_pair` (which stores upper + 1 as an edge).
+        let s = rg_to_set(std::io::Cursor::new(
+            "chr1:2147483647-2147483647\nchr1:1-10\n",
+        ))
+        .unwrap();
+        assert_eq!(s["chr1"].to_string(), "1-10");
+        let ivs = rg_to_intervals(std::io::Cursor::new("chr1:2147483647-2147483647\n")).unwrap();
+        assert!(ivs.is_empty());
     }
 
     #[test]

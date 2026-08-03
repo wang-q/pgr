@@ -19,6 +19,8 @@ use clap::{ArgMatches, Command};
 pub fn make_subcommand() -> Command {
     Command::new("runlist")
         .about("Runlist interval operations")
+        .subcommand_required(true)
+        .arg_required_else_help(true)
         .subcommand(combine::make_subcommand())
         .subcommand(compare::make_subcommand())
         .subcommand(convert::make_subcommand())

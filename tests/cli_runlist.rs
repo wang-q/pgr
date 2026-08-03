@@ -50,6 +50,12 @@ fn command_runlist_cover_skips_reversed_ranges() {
         .stdin("chr1:10-5\nchr1:1-10\n")
         .run();
     assert_eq!(stdout, "{\n  \"chr1\": \"1-10\"\n}\n");
+    // Coordinates above the representable maximum must be skipped too.
+    let (stdout, _) = PgrCmd::new()
+        .args(&["runlist", "cover", "stdin"])
+        .stdin("chr1:2147483647-2147483647\n")
+        .run();
+    assert_eq!(stdout, "{}\n");
 }
 
 #[test]
@@ -130,7 +136,15 @@ fn command_runlist_span_invalid_runlist_errors() {
 fn command_runlist_span_extreme_ops_do_not_panic() {
     // pad/trim with a huge n used to overflow i32 arithmetic.
     let (stdout, _) = PgrCmd::new()
-        .args(&["runlist", "span", "stdin", "--op", "pad", "-n", "2147483647"])
+        .args(&[
+            "runlist",
+            "span",
+            "stdin",
+            "--op",
+            "pad",
+            "-n",
+            "2147483647",
+        ])
         .stdin("{\"chr1\":\"1-2\"}\n")
         .run();
     assert_eq!(stdout, "{\n  \"chr1\": \"-2147483646-2147483645\"\n}\n");
