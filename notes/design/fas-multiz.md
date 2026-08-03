@@ -1,7 +1,8 @@
 # fas-multiz 设计与实现
 
 > **状态：已实现** — `libs::fas_multiz` 核心库与 `pgr fas multiz` CLI 均已落地，详见 §2.10；
-> 阶段 1（全体物种 SP 打分 + 确定性合并次序）已于 2026-08-03 落地，见 §2.11。
+> 阶段 1（全体物种 SP 打分 + 确定性合并次序）已于 2026-08-03 落地，见 §2.11；
+> 阶段 1.5（yama 引擎直译：C/D/I 三状态 + 准自然 gap + 参考锚定 LB/RB）已于 2026-08-03 落地，见 §2.12。
 
 本文档是 `libs::fas_multiz` 的设计稿，基于对 multiz 源码的分析（见 [multiz.md](../references/multiz.md)）。
 涵盖 pgr 与 multiz 的策略对比（§1）以及 fas-multiz 的设计与实现（§2）。
@@ -387,3 +388,61 @@ progressive 合并不再按输入文件顺序，而是按块内容做贪心聚�
 **范围边界**：物种间交叉对（YJM-vs-Spar 这类）暂不进 DP 打分；若未来要
 引入，需要先解决"逐对 gap 罚分与替换分数的量级校准"问题（阶段 1.5），
 否则会重新拖偏参考锚点。
+
+### 2.12 阶段 1.5 落地记录（2026-08-03）：yama 引擎直译
+
+对照 multiz 源码（`multiz-multiz/mz_yama.c` / `mz_preyama.c` /
+`mz_scores.c`）把 `banded_align.rs` 的 DP 升级为 yama 的完整语义：
+
+**1. C/D/I 三状态 + 准自然 gap（`mz_yama` 直译）**
+
+*   C（替换）/ D（删除，A 列插入 B 全 dash）/ I（插入，B 列插入 A 全 dash）
+    三状态，每格记录 `flag_c | flag_d<<2 | flag_i<<4` 供回溯；
+*   gap 成本用准自然 GAP(s,t,u,v) 查表：16 种"最后两条边"构型中 6 种收
+    gap_open，其余 0（`mz_scores.c` 的构型定义逐条直译）；
+*   对角列分 SS 为**全体物种对（K×L 笛卡尔积）**：base-base 用替换矩阵
+    （/50 缩放），base-gap 收一次 gap_extend（multiz `SS('-',x)=-extend`），
+    gap-gap 为 0——解决了 §2.11 记录的量级校准问题（multiz 的 per-pair
+    gap 成本是 extend 而非 open+extend，不会拖偏锚点）；
+*   I/D 状态按"插入列非 dash 数 × 对方行数 × gap_extend"收费；
+*   **端部 gap 免费**：I 在末行、C 在起点列、D 在起点/终点列不收 gap-open
+    （extend 照收），与 multiz "End-gaps are not charged a gap-open penalty"
+    一致。
+
+**2. 参考锚定 LB/RB（`mz_preyama` 直译）**
+
+*   把两个参考序列去 gap 后逐位配对（第 k 个碱基 ↔ 第 k 个碱基），为每个
+    ref_a 碱基列建立 (lb, rb) 点约束；
+*   `smooth`：先单调化（lb 前向、rb 后向），再做半径"香肠"扩展；
+*   DP 每行只在 [lb[i], rb[i]] 内计算，格点按行存储（变宽带，非固定对称
+    band）；
+*   **必要性实证**：无 LB/RB 时自由端 gap 会让 DP 把列数差（如 336 列）整段
+    堆到块端，随后被边缘裁剪删掉真实内容（Spar 4057→3724）；LB/RB 把路径
+    锚在参考对角线上，端部 overhang 被限制在 radius 内。
+
+**3. 边缘裁剪改为"全 gap 列"判定**
+
+旧裁剪删除"单侧列"（某侧 map 为 None），在自由端 gap 语义下会误删真实内容
+（ref 末尾碱基、边缘物种碱基）。现改为只删**两端全物种都是 gap 的列**：
+用两块的物种列剖面（`col_a`/`col_b`）判定该列是否真的空。
+
+**验证**：S288c 三输入 Union 合并后 4193 列，参考去 gap 恒 3826，
+RM11_1a 3834 / Spar 4057 / YJM789 3822 —— 与输入逐碱基一致，零丢失；
+`merge_window_preserves_species_content`（微型内容守恒测试）与全部既有
+测试通过。DP 的 gap 模型、LB/RB、端部处理均为 multiz 语义的直译，与
+`multiz-multiz/` 源码逐条对应。
+
+**P2 状态（2026-08-03）**：
+*   **hox70 矩阵预设 ✅**：`SubMatrix::from_name` 增加 `hox70` 别名——pgr 的
+    `hoxd55` 与 multiz 的 HOX70 数值完全相同（91/-114/-31/-123，gap
+    open 400 / extend 30），只是命名不同；`--score-scheme hox70` 现可显式选择。
+*   **v=0 模式（未做）**：两个参考都可调需要第二次 yama 对齐参考行；pgr 的
+    渐进合并以累计块参考为锚（等价 multiz v=1），v=0 对窗口模型的价值不明，
+    不做推测性实现。
+*   **multiz 对齐回归（部分受阻）**：两工具输入格式（MAF vs fas）与分块语义
+    （multiz 逐重叠区分块流 vs pgr 单窗口块）不同，字节级对比不可行。实测
+    MAF→fas 转换后喂 pgr 时发现一个**预先存在的输入模型限制**：多块输入中
+    部分重叠的块若只共享参考且参考去 gap 不等（`merge_conflicting_refs` 需要
+    共享非参考物种打分 crossover），合并被拒绝。这是 pairwise 切片输入模型
+    的边界，主流程（`tests/fas/*.slice.fas` 切片输入）不受影响；修复需要
+    重新设计"仅参考共享"的 crossover 打分，留待真实需求出现。

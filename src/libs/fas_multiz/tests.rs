@@ -514,3 +514,48 @@ fn merge_window_output_independent_of_input_order() {
         assert_eq!(seqs, &outputs[0].1);
     }
 }
+
+#[test]
+fn merge_window_preserves_species_content() {
+    // Two blocks with the same genome reference but different gap placements;
+    // every species must keep all its ungapped bases after the merge.
+    let (ref_entry1, ref_name1, ref_header1) = make_entry("ref", 1, 6, "AC--GT");
+    let (a_entry1, a_name1, a_header1) = make_entry("A", 1, 6, "AC--GT");
+    let block1 = make_block(vec![
+        (ref_entry1, ref_name1, ref_header1),
+        (a_entry1, a_name1, a_header1),
+    ]);
+
+    let (ref_entry2, ref_name2, ref_header2) = make_entry("ref", 1, 6, "ACG-T-");
+    let (b_entry2, b_name2, b_header2) = make_entry("B", 1, 6, "ACGTGT");
+    let block2 = make_block(vec![
+        (ref_entry2, ref_name2, ref_header2),
+        (b_entry2, b_name2, b_header2),
+    ]);
+
+    let cfg = default_config(FasMultizMode::Union);
+    let window = Window {
+        chr: "ref".to_string(),
+        start: 1,
+        end: 6,
+    };
+
+    let blocks_per_input = vec![vec![block1], vec![block2]];
+    let merged = merge_window("ref", &window, &blocks_per_input, &cfg)
+        .unwrap()
+        .expect("merge should succeed");
+
+    let seq_of = |name: &str| -> String {
+        merged
+            .entries
+            .iter()
+            .zip(merged.names.iter())
+            .find(|(_, n)| n.as_str() == name)
+            .map(|(e, _)| String::from_utf8(e.seq().to_vec()).unwrap())
+            .expect("species present")
+    };
+    // Reference and A keep "ACGT" (4 bases); B keeps its 6 bases.
+    assert_eq!(seq_of("ref").replace('-', ""), "ACGT");
+    assert_eq!(seq_of("A").replace('-', ""), "ACGT");
+    assert_eq!(seq_of("B").replace('-', ""), "ACGTGT");
+}

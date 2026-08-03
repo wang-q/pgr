@@ -181,6 +181,13 @@ pub(crate) fn collect_samples_from_args(args: &ArgMatches) -> Result<Vec<SampleS
 /// Resolve a user reference spec (index or name) against the `-r` list.
 pub(crate) fn resolve_ref_id(spec: Option<&str>, ref_fastas: &[&str]) -> Result<u32> {
     let Some(spec) = spec else {
+        if ref_fastas.len() > 1 {
+            log::warn!(
+                "no reference specified for sample; defaulting to reference 0 of {} \
+                 (route samples with the 4th TSV column or --name)",
+                ref_fastas.len()
+            );
+        }
         return Ok(0);
     };
     if let Ok(n) = spec.parse::<usize>() {

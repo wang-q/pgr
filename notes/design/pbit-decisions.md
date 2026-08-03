@@ -5,6 +5,10 @@
 > 日期：2026-08-03。所有证据来自 `src/libs/pbit/`、`src/cmd_pgr/pbit/`
 > 与 `notes/benchmarks/dist-cohort-validation.md` 的当前实现。
 
+> **✅ 已确认（2026-08-03）**：作者按推荐全部采纳（1A 2A 3A 4A 5A 6A）。
+> 1A 的"多参考未指定路由时警告"已实现于 `cmd_pgr/pbit/mod.rs`
+> `resolve_ref_id`。本文保留选项对比供未来重新评估。
+
 ## 背景事实（影响全部决策）
 
 1. **路由只影响压缩率，不影响正确性**：任何参考都能压缩任何样本（LZ-diff
