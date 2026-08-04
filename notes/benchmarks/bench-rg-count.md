@@ -2,13 +2,15 @@
 
 > 目的：对比 `pgr rg count`（`libs/runlist::RgIndex`，coitrees 区间树）与
 > 外部 `rgr count`（intspan 项目，rust-lapper）在命令行层（含解析、建索引、
-> 查询、输出）的耗时与内存，评估移植后的性能余量。2026-08-04 实测。
+> 查询、输出）的耗时与内存，评估移植后的性能余量。2026-08-04 实测，同日
+> 修复轮后复测（数值一致）。
 
 ## 环境与版本
 
 * pgr：本仓库 release 构建（`cargo build --release`，v0.4.0）
 * rgr：`~/.cbp/bin/rgr` 0.8.6（release）
-* 机器：本机（hyperfine 3.x，`/usr/bin/time -v` 量内存）
+* 机器：本机（hyperfine 1.19.0，`/usr/bin/time -v` 量内存；复测时主机有
+  并发负载，pgr 绝对时间略高于初测，相对差距不变）
 
 ## 数据（合成，种子 20260804）
 
@@ -31,14 +33,15 @@ hyperfine --warmup 1 --runs 3 \
   'rgr  count target.100k.rg iv.1m.normal.rg -o /dev/null'
 ```
 
-## 结果（1M 区间 + 100k target，3 次取均值）
+## 复测结果（1M 区间 + 100k target，5 次取均值，2026-08-04）
 
 | 实现 | 含病态长区间 | 普通 | RSS（1M 区间） |
 | :--- | ---: | ---: | ---: |
-| pgr `rg count` | 235.1 ± 16.9 ms | 223.8 ± 3.5 ms | 42.4 MB |
-| rgr `count` | 757.9 ± 32.5 ms | 753.2 ± 10.3 ms | 25.8 MB |
+| pgr `rg count` | 231.9 ± 1.5 ms | 231.2 ± 2.2 ms | 41.9 MB |
+| rgr `count` | 755.3 ± 19.1 ms | 742.8 ± 10.9 ms | 24.8 MB |
 
-pgr 约快 **3.4×**（普通 3.36×，病态 3.39×）；内存约为 rgr 的 1.6×。
+pgr 约快 **3.2–3.3×**（普通 3.21×，病态 3.27×）；内存约为 rgr 的 1.7×。
+病态长区间对 pgr 几乎无影响（231.9 vs 231.2 ms），与初测一致。
 
 ## 正确性验证
 

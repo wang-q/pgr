@@ -2,7 +2,7 @@
 
 > 目的：对比 `pgr pgi build` 与 FastGA `GIXmake` 的索引构建速度（hyperfine），
 > 评估 `.pgi` 索引构建的性能差距。GIXmake 是 C 的极致优化参照（syncmer 稀疏
-> k-mer 索引，见 [[fastga.md]] §10 / [[pbit.md]]）。
+> k-mer 索引，见 [[fastga.md]] §10 / [[pbit.md]]）。2026-08-04 复测。
 
 ## 环境与输入
 
@@ -40,19 +40,22 @@ cat "$B/bench-result.md"
 
 结果会打印到终端，同时保存在 `$B/bench-result.md`。
 
-## 结果（2026-08-02，MG1655，5 次；数值有正常波动）
+## 结果（2026-08-04 复测，MG1655，5 次；数值有正常波动）
 
-最终版本（MSD radix + 并行分桶 + 单遍扫描优化）：
+最终版本（MSD radix + 并行分桶 + 单遍扫描优化 + 索引一致性修复）：
 
 | Command | Mean [ms] | Min [ms] | Max [ms] | Relative |
 |:---|---:|---:|---:|---:|
-| `pgr pgi build (FASTA)` | 307.4 ± 8.1 | 299.6 | 318.2 | 1.02 ± 0.03 |
-| `pgr pgi build (2bit)` | 301.8 ± 3.3 | 296.7 | 306.1 | 1.00 |
-| `FAtoGDB+GIXmake (FASTA)` | 319.8 ± 2.8 | 316.0 | 322.2 | 1.06 ± 0.01 |
-| `GIXmake (GDB)` | 312.4 ± 4.0 | 307.9 | 316.6 | 1.04 ± 0.02 |
+| `pgr pgi build (FASTA)` | 348.0 ± 11.8 | 339.4 | 368.8 | 1.12 ± 0.04 |
+| `pgr pgi build (2bit)` | 344.0 ± 4.0 | 340.0 | 349.1 | 1.11 ± 0.02 |
+| `FAtoGDB+GIXmake (FASTA)` | 322.7 ± 1.7 | 321.6 | 325.6 | 1.04 ± 0.02 |
+| `GIXmake (GDB)` | 310.2 ± 4.5 | 305.3 | 316.3 | 1.00 |
 
-`pgr pgi build` 已与 GIXmake 持平并略快（2bit 路径 ~4% 快于 GIXmake、
-~6% 快于 FAtoGDB+GIXmake 全流程）。32 核机器、release 构建。
+`pgr pgi build` 与 GIXmake 仍基本持平，但 2bit 路径由初测的略快
+（301.8 ms）变为 ~11% 慢（344.0 ms）。差值来源是 **2026-08-03 的索引
+一致性修复**（f7461c1：pending 队列去重 + 出列位置重算 k-mer key）——
+单遍扫描为每个位置多做一次去重/重算；GIXmake 侧数值几乎不变（312.4 →
+310.2 ms）。32 核机器、release 构建（当前文档表为复测值，初测见下）。
 
 ### 优化历程
 
@@ -81,6 +84,15 @@ cat "$B/bench-result.md"
    entries 全局有序，会导致交集漏算。已由 radix 全局排序修复并加回归测试。
 2. **rc_key 查表路径在 k % 4 != 0 时错误**：剩余碱基的迭代顺序/位移写反，
    k=40（整字节）不受影响；测试用的 k=10 会出错。已修正并加随机回归测试。
+
+## 初测结果（2026-08-02，修复前）
+
+| Command | Mean [ms] | Min [ms] | Max [ms] | Relative |
+|:---|---:|---:|---:|---:|
+| `pgr pgi build (FASTA)` | 307.4 ± 8.1 | 299.6 | 318.2 | 1.02 ± 0.03 |
+| `pgr pgi build (2bit)` | 301.8 ± 3.3 | 296.7 | 306.1 | 1.00 |
+| `FAtoGDB+GIXmake (FASTA)` | 319.8 ± 2.8 | 316.0 | 322.2 | 1.06 ± 0.01 |
+| `GIXmake (GDB)` | 312.4 ± 4.0 | 307.9 | 316.6 | 1.04 ± 0.02 |
 
 ## 历史结果（优化前）
 

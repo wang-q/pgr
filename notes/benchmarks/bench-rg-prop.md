@@ -3,13 +3,14 @@
 > 目的：对比 `pgr rg prop`（`libs/runlist::range_prop`）与外部 `rgr prop`
 > 的耗时与内存。与 `rg count` 不同，两侧用的是**同一套 IntSpan 交集算法**
 > （pgr 已迁入 intspan crate 代码），预期接近持平；基准用于确认差距量级。
-> 2026-08-04 实测。
+> 2026-08-04 实测，同日修复轮后复测。
 
 ## 环境与版本
 
 * pgr：本仓库 release 构建（v0.4.0，含 `rg prop`）
 * rgr：`~/.cbp/bin/rgr` 0.8.6（release）
-* 机器：本机（hyperfine 3.x，`/usr/bin/time -v` 量内存）
+* 机器：本机（hyperfine 1.19.0，`/usr/bin/time -v` 量内存；复测时主机有
+  并发负载，绝对时间波动较大，详见下）
 
 ## 数据（合成，种子 20260805）
 
@@ -116,14 +117,14 @@ O(n·m)。据此把三个核心集合运算重写为线性双指针合并（O(n 
 场景仍是 O(1) 摊还）。正确性：新旧实现差分测试（含随机 200×200 集合对
 与空集/无穷集边界）逐字节一致；全量测试通过。
 
-`pgr runlist compare`（两个 154k-span runlist，8 次取均值）：
+`pgr runlist compare`（两个 154k-span runlist，8 次取均值；复测值）：
 
-| op | 旧实现 | 新实现 |
+| op | 旧实现 | 新实现（复测） |
 | :--- | ---: | ---: |
-| intersect | 183.7 ms | **23.6 ms**（~7.8×） |
-| union | 215.6 ms | **40.7 ms**（~5.3×） |
-| diff | 222.0 ms | **34.0 ms**（~6.5×） |
-| xor | 308.7 ms | **51.7 ms**（~6.0×） |
+| intersect | 183.7 ms | **32.5 ± 0.6 ms**（~5.7×） |
+| union | 215.6 ms | **48.4 ± 6.7 ms**（~4.5×） |
+| diff | 222.0 ms | **32.7 ± 1.4 ms**（~6.8×） |
+| xor | 308.7 ms | **50.0 ± 1.7 ms**（~6.2×） |
 
 剩余时间主要被 runlist JSON 加载（~16–25 ms）占据；集合运算本身已降到
 毫秒级。`runlist span` / `venn` / alignment trim 等 `intersect` 消费者
@@ -186,7 +187,7 @@ runlist 双重解析，可预期反超；当前量级（100k target 约 6 s）�
 同样的 span 数据，后按"数据结构不应拆散 IntSpan"的意见合并回
 `IntSpan::covered`，prop/runlist 直接调用。）
 
-复测（8 次取均值）：
+优化后初测（8 次取均值，2026-08-04 上午，主机空闲）：
 
 | 实现 | 时间 | RSS |
 | :--- | ---: | ---: |
@@ -194,7 +195,19 @@ runlist 双重解析，可预期反超；当前量级（100k target 约 6 s）�
 | pgr `rg prop`（二分，双解析） | 48.7 ± 1.1 ms | 15.6 MB |
 | rgr `prop` | 5.820 ± 0.022 s | 9.5 MB |
 
-* pgr 自优化前（6.2 s）提升 ~177×；相对 rgr 快 **~166×**。
+修复轮后复测（2026-08-04 下午，主机并发负载）：
+
+| 实现 | 时间 | RSS |
+| :--- | ---: | ---: |
+| pgr `rg prop`（二分 + try_from） | 53.9 ± 6.2 ms（3 次 41.1 ± 0.3 ms，10 次 40.1–59.3 ms） | 15.1 MB |
+| rgr `prop` | 5.846 ± 0.058 s | 9.7 MB |
+
+* pgr 自优化前（6.2 s）提升 ~120–180×；相对 rgr 快 **~100–140×**。
+* **A/B 无回归**：同机同负载下文档初版提交（aaa73c7，含 `IntSpan::covered`
+  直接实现）测得 54.7 ± 0.6 ms，与当前 HEAD（51.1 ± 7.7 ms）持平——
+  35.1 ms 是空闲主机上的记录，不是代码回归。覆盖溢出修复（i64 改宽，
+  0e48536）对热路径无实测影响；runlist overlap 的 A/B 同样一致
+  （19.3 vs 19.3 ms，见 [[bench-rg-runlist.md]]）。
 * 正确性：20k target 输出与优化前（已与 rgr 逐行一致）sort 后 diff 为空。
 * 顺带消除了每查询的 `IntSpan::new` + `add_pair` + `cardinality` 分配，
   并保留 `try_from`（runlist 单次解析，见下）。

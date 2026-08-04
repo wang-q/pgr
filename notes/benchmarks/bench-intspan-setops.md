@@ -2,7 +2,7 @@
 
 > 目的：把 `intersect`/`union`/`diff`/`xor` 线性化与 `from_pairs` 批量构建
 > 的收益固化为库级 criterion 基准，直接对比新旧实现（旧实现用公开 API
-> 在 bench 内重建）。2026-08-04 实测。
+> 在 bench 内重建）。2026-08-04 实测；同日复测（修复轮后）数值基本一致。
 
 ## 基准文件
 
@@ -21,16 +21,19 @@
 cargo bench --bench intspan_setops_benchmark
 ```
 
-## 结果（median，release，measurement-time 2s）
+## 结果（median，release，measurement-time 2s；2026-08-04 复测）
 
 ### setops
 
 | op | n=5k 旧 | n=5k 新 | 加速 | n=20k 旧 | n=20k 新 | 加速 |
 | :--- | ---: | ---: | ---: | ---: | ---: | ---: |
-| intersect | 672 µs | 29.7 µs | **23×** | 11.45 ms | 102.8 µs | **111×** |
-| union | 1.13 ms | 26.1 µs | **43×** | 15.2 ms | 87.9 µs | **173×** |
-| diff | 1.51 ms | 20.9 µs | **72×** | 16.9 ms | 76.2 µs | **221×** |
-| xor | 2.00 ms | 84.0 µs | **24×** | 32.8 ms | 445.8 µs | **74×** |
+| intersect | 673.1 µs | 30.6 µs | **22×** | 11.42 ms | 102.7 µs | **111×** |
+| union | 1.147 ms | 27.5 µs | **42×** | 15.26 ms | 96.4 µs* | **158×** |
+| diff | 1.548 ms | 28.9 µs | **54×** | 17.01 ms | 80.6 µs | **211×** |
+| xor | 2.084 ms | 84.8 µs | **25×** | 32.86 ms | 444.9 µs | **74×** |
+
+\* union 20k 整轮跑时为 128.1 µs（受前序重基准的热噪声影响），单独复测
+为 96.4 µs（91.1–101.8 µs），与初测 87.9 µs 同量级，取复测值。
 
 加速随 n 放大（O(n·m) → O(n+m)）；20k 时 74–221×，远高于 CLI 基准的
 5–8×（CLI 时间被 runlist JSON 加载占据）。
@@ -39,8 +42,8 @@ cargo bench --bench intspan_setops_benchmark
 
 | n | `from_pairs` | `add_pair` 循环 | 加速 |
 | :--- | ---: | ---: | ---: |
-| 10k | 124 µs | 2.24 ms | **18×** |
-| 100k | 1.66 ms | 173 ms | **105×** |
+| 10k | 125.0 µs | 2.241 ms | **18×** |
+| 100k | 1.738 ms | 185.9 ms | **107×** |
 
 `add_pair` 逐个插入无序区间是 O(n²)（VecDeque 中间搬移），`from_pairs`
 排序 + 单遍合并为 O(n log n)，差距随 n 放大。
@@ -49,9 +52,9 @@ cargo bench --bench intspan_setops_benchmark
 
 | 实现 | 2000 span | 5000 span |
 | :--- | ---: | ---: |
-| `IntSpan::covered`（as_slices 快路径） | 33.7 µs | 37.4 µs |
-| `partition_point` on Vec（SpanIndex 式） | 25.7 µs | 25.5 µs |
-| `intersect` + `cardinality`（线性基线） | 8.78 ms | ~22 ms |
+| `IntSpan::covered`（as_slices 快路径） | 34.0 µs | 39.2 µs |
+| `partition_point` on Vec（SpanIndex 式） | 27.0 µs | 35.2 µs |
+| `intersect` + `cardinality`（线性基线） | 8.89 ms | 22.25 ms |
 
 covered 每查询 ~13–19 ns，比线性 intersect 快两个数量级，比"抽成 Vec 再
 partition_point"慢 ~1.3×（VecDeque 索引/闭包开销）；代价是省掉了 SpanIndex

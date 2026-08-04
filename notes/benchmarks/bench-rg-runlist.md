@@ -1,7 +1,7 @@
 # `rg runlist` 命令行基准：pgr（IntSpan::covered 二分）vs rgr（IntSpan 交集）
 
 > 目的：对比 `pgr rg runlist`（按 runlist 过滤 `.rg` 行）与外部 `rgr
-> runlist` 的耗时与内存。2026-08-04 实测。
+> runlist` 的耗时与内存。2026-08-04 实测，同日修复轮后复测。
 
 ## 数据
 
@@ -13,12 +13,17 @@
 `overlap` 与 `superset` 两种 op 在 20k 目标上，pgr 与 rgr 输出 `sort` 后
 `diff` 为空（逐行一致）。
 
-## 结果（20k 目标，5 次取均值）
+## 复测结果（20k 目标，5 次取均值，2026-08-04）
 
 | op | pgr `rg runlist` | rgr `runlist` | 加速 | RSS（pgr / rgr） |
 | :--- | ---: | ---: | ---: | ---: |
-| overlap | 14.6 ± 0.4 ms | 1.210 ± 0.004 s | **~83×** | 15.7 / 9.8 MB |
-| superset | 15.0 ± 0.6 ms | 8.595 ± 0.025 s | **~588×** | — |
+| overlap | 19.5 ± 0.4 ms | 1.154 ± 0.016 s | **~59×** | 16.0 / 10.1 MB |
+| superset | 15.1 ± 1.0 ms | 8.851 ± 0.725 s | **~587×** | — |
+
+overlap 的 pgr 绝对时间高于初测（14.6 → 19.5 ms），但与文档初版提交
+（aaa73c7）同负载 A/B 完全一致（19.3 vs 19.3 ms），无回归；主机并发
+负载抬高了绝对时间。superset 与初测持平（15.1 ms），相对 rgr 两个数量级
+的差距稳定。
 
 ## 优化说明
 

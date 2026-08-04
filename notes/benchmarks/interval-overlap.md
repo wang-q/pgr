@@ -4,6 +4,7 @@
 > 时，三种候选结构的取舍。数据生成镜像 rust-lapper 官方基准
 > （`rust-lapper-master/benches/lapper_benchmark.rs`）：100 Mb 染色体、
 > 区间长度 500..80 kb，另加一条覆盖 90% 染色体的超长区间作为病态用例。
+> 2026-08-04 复测，数值与初测基本一致（±5%）。
 
 ## 三种结构（语义不同）
 
@@ -24,30 +25,30 @@
 cargo bench --offline --bench interval_overlap_benchmark
 ```
 
-## 结果（median，n = 1k / 10k / 100k 区间）
+## 复测结果（median，n = 1k / 10k / 100k 区间，2026-08-04）
 
 ### 构造
 
 | 方案 | 1k | 10k | 100k |
 | --- | ---: | ---: | ---: |
-| intspan add_pair（合并） | 0.047 ms | 1.066 ms | 2.417 ms |
-| coitrees new | 0.028 ms | 0.323 ms | 6.304 ms |
-| lapper new | 0.016 ms | 0.501 ms | 6.677 ms |
+| intspan add_pair（合并） | 0.0475 ms | 1.078 ms | 2.422 ms |
+| coitrees new | 0.0284 ms | 0.325 ms | 6.262 ms |
+| lapper new | 0.0161 ms | 0.519 ms | 6.870 ms |
 
 ### 点成员查询（n 个随机点；用户核心场景）
 
 | 方案 | 1k | 10k | 100k |
 | --- | ---: | ---: | ---: |
-| intspan contains（普通/超长） | 0.010 / 0.008 ms | 0.084 / 0.050 ms | 0.197 / 0.196 ms |
-| coitree point query（普通/超长） | 0.017 / 0.034 ms | 0.694 / 0.902 ms | 27.975 / 31.905 ms |
-| lapper count（普通/超长） | 0.015 / 0.014 ms | 0.803 / 0.804 ms | 11.980 / 12.098 ms |
+| intspan contains（普通/超长） | 0.0099 / 0.0077 ms | 0.0846 / 0.0500 ms | 0.197 / 0.200 ms |
+| coitree point query（普通/超长） | 0.0163 / 0.0339 ms | 0.688 / 0.914 ms | 28.460 / 32.512 ms |
+| lapper count（普通/超长） | 0.0146 / 0.0141 ms | 0.807 / 0.815 ms | 12.093 / 11.972 ms |
 
 ### 区间重叠枚举（n 个 2 kb 查询窗口）
 
 | 方案 | 1k | 10k | 100k |
 | --- | ---: | ---: | ---: |
-| coitree query（普通/超长） | 0.017 / 0.035 ms | 0.699 / 0.905 ms | 27.914 / 32.296 ms |
-| lapper find（普通/超长） | 0.008 / 0.200 ms | 0.622 / 15.952 ms | 22.164 / **1570.356 ms** |
+| coitree query（普通/超长） | 0.0173 / 0.0354 ms | 0.688 / 0.903 ms | 28.445 / 32.407 ms |
+| lapper find（普通/超长） | 0.0081 / 0.204 ms | 0.611 / 18.374 ms | 22.287 / **1583.1 ms** |
 
 ## 结论
 

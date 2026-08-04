@@ -2,6 +2,7 @@
 
 > 目的：对比 `pgr align pgi` 全流程（索引构建 ×2 + 扩展比对）与 FastGA 单命令
 > 的端到端耗时。FastGA 是 C 的极致优化参照（GIX 归并 + wave aligner）。
+> 2026-08-02 初测，2026-08-04 修复轮后复测。
 
 ## 环境与输入
 
@@ -26,7 +27,25 @@ hyperfine --warmup 1 --runs 3 --export-markdown "$B/bench.md" \
 cat "$B/bench.md"
 ```
 
-## 结果（2026-08-02，MG1655 vs Sakai，3 次）
+## 复测结果（2026-08-04，MG1655 vs Sakai，5 次）
+
+| Command | Mean [s] | Min [s] | Max [s] | Relative |
+|---|---:|---:|---:|---:|
+| `pgr full (build 2x + align ext)` | 1.674 ± 0.022 | 1.648 | 1.700 | 1.00 |
+| `FastGA -psl (one-shot)` | 3.861 ± 0.169 | 3.606 | 4.041 | 2.31 ± 0.11 |
+
+复测 pgr **反超 FastGA ~2.3×**（初测为 1.08× 持平）。变化来自两侧：
+FastGA 本次稳定在 ~3.9 s（初测 1.22 s，复测时主机并发负载 + 文件系统
+状态影响其大量小文件 IO，system 时间 ~19 s）；pgr 由 1.32 s 升至 1.67 s
+（同期负载）。两个数值都按同一次 hyperfine 内对比，结论方向一致
+（pgr 更快）。
+
+**输出结构（当前二进制）**：mg1655–sakai 默认参数 791 块、身份率
+0.9828；FastGA 700 块。初测的 862 块/0.9834 来自 2026-08-03 之前的管线
+（tube 链排序键修复 + syncmer 去重后块数略降、身份率基本不变，见
+[[../design/pgi-align.md]] §3.1）。
+
+## 初测结果（2026-08-02，MG1655 vs Sakai，3 次）
 
 | Command | Mean [s] | Min [s] | Max [s] | Relative |
 |---|---:|---:|---:|---:|
