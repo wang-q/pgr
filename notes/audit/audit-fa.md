@@ -226,3 +226,25 @@ ASCII、`split about` 边界、`n50` 统计与 Nx 边界、`rc`/`range` 非 IUPA
 `split about -c + stdout` 截断、`n50` `-N` 默认与 Append、`count` 跨文件
 total 聚合、`to-2bit` 名称去重顺序等）逐一重新核验，均属文档化一致行为或
 不可达的极端命名场景，非缺陷，无需改动。此轮未再发现任何新问题，审核收敛。
+
+**追加复审轮（2026-08-05）**：重新通读全部 18 个子命令的 `execute` 与核心库
+（`fmt/fa`、`nt`、`io`、`loc`、`translate`、`fasta/{stat,filter,chunk,dedup}`），
+并复核 `docs/fa.md` 一致性。重点核验：
+- `mask_sequence` 的 `upper < lower` 兜底：确认 `IntSpan::try_from` /
+  `runlist_to_ranges` 对反序范围（如 `5-3`）直接判非法并报错，`mask` 经
+  `read_runlist` 只会拿到 `lower <= upper` 的合法 span，故 `offset+length`
+  溢出路径在 `fa` 命令上下文不可达（此前记录的安全兜底逻辑描述有误，但
+  结论——实际不可达——成立）。
+- `window --chunk-records` 分块路径：`create_writer` 的 `same_path` 检查在
+  `truncate` 打开前执行，首个分块与流式中途分块对输入文件的碰撞均在截断前
+  拦截。
+- `rc`/`range` 负链的 `NT_COMP` 非 IUPAC 保留、`n50` 的 `>=` 边界、`count`
+  的 total 聚合、`to-2bit` 的 `u32` 长度上限等均正确。
+- 全部 `fa` 文件 `cargo fmt --check` 干净；`cargo clippy --all-targets -- -D
+  warnings` 干净；551 个 lib 单测 + 38 个 `cli_fa` + 12 个 `cli_fa_index`
+  集成测试全部通过。
+- 注：`cargo fmt --check` 在 `src/cmd_pgr/fas/to_xlsx.rs` 有一处既有格式差异，
+  属 `fas` 命令族（与 `fa` 无关，处于他人进行中的改动），不在本次 `fa` 审核
+  范围内。
+
+此追加轮未发现任何新的 `fa` 缺陷，审核保持收敛。
