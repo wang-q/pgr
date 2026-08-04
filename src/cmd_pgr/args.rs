@@ -1214,7 +1214,7 @@ pub fn pbit_name_arg() -> Arg {
     Arg::new("name")
         .long("name")
         .num_args(1)
-        .help("TSV file of `sample_name<TAB>fasta_path[<TAB>paf_path]` lines (overrides -i)")
+        .help("TSV file of `sample_name<TAB>fasta_path[<TAB>paf_path][<TAB>ref_name]` lines (overrides -i)")
 }
 
 /// `-p/--paf` argument for `pbit create` / `pbit append`.

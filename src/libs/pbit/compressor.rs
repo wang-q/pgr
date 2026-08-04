@@ -559,16 +559,6 @@ impl<W: Write + Seek> Compressor<W> {
                 continue;
             }
 
-            // Reference contig exists but is 0 bp (no segments); cannot encode.
-            if ref_group_ids.is_empty() {
-                log::warn!(
-                    "contig '{}' in sample '{}' has empty reference (0 bp); skipping",
-                    contig_name,
-                    sample_name
-                );
-                continue;
-            }
-
             // Detect orientation using the first segment vs first reference segment.
             let first_ref_group = ref_group_ids[0];
             let first_ref_dna = self.segments[first_ref_group as usize].reference_dna();

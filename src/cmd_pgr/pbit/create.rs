@@ -19,7 +19,7 @@ When `--paf` is provided, segments covered by PAF alignments are CIGAR-encoded
 
 Notes:
 * Sample names are derived from the input FASTA basenames (use `--name` to
-  override with a TSV file of `name<TAB>path[<TAB>paf_path]` lines)
+  override with a TSV file of `name<TAB>path[<TAB>paf_path][<TAB>ref_name]` lines)
 * Reference and sample FASTA files may be plain text or gzipped (.gz)
 * Contigs in sample FASTA that do not match any reference contig are skipped
 * Only ACGTN characters are supported; IUPAC degenerate codes (R, Y, S, W,
