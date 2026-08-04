@@ -12,6 +12,7 @@
 
 use crate::libs::ds::IntSpan;
 use anyhow::Context;
+use coitrees::{BasicCOITree, Interval as CoiInterval, IntervalTree};
 use std::collections::BTreeMap;
 use std::io::BufRead;
 
@@ -70,6 +71,51 @@ pub fn rg_to_intervals<R: BufRead>(reader: R) -> anyhow::Result<BTreeMap<String,
             .push((*range.start() as u32, *range.end() as u32 + 1));
     }
     Ok(iv_of)
+}
+
+/// Per-chromosome COITree index over `.rg` intervals, for overlap counting.
+pub struct RgIndex {
+    trees: BTreeMap<String, BasicCOITree<bool, u32>>,
+}
+
+impl RgIndex {
+    /// Build the index from one or more `.rg` files; lines that do not parse
+    /// as valid ranges are skipped.
+    pub fn from_files(files: &[String]) -> anyhow::Result<Self> {
+        let mut intervals_of: BTreeMap<String, Vec<CoiInterval<bool>>> = BTreeMap::new();
+        for f in files {
+            let reader = crate::reader(f)?;
+            for line in reader.lines() {
+                let line = line?;
+                let range = crate::libs::ds::Range::from_str(&line);
+                if !range.is_valid() || range.start() > range.end() {
+                    continue;
+                }
+                intervals_of
+                    .entry(range.chr().clone())
+                    .or_default()
+                    .push(CoiInterval::new(*range.start(), *range.end(), true));
+            }
+        }
+        let trees = intervals_of
+            .into_iter()
+            .map(|(chr, ivs)| (chr, BasicCOITree::new(&ivs)))
+            .collect();
+        Ok(Self { trees })
+    }
+
+    /// Number of intervals overlapping the inclusive range `[start, end]` on
+    /// `chr` (0 when the chromosome has no indexed intervals).
+    pub fn count(&self, chr: &str, start: i32, end: i32) -> usize {
+        match self.trees.get(chr) {
+            Some(tree) => {
+                let mut n = 0usize;
+                tree.query(start, end, |_| n += 1);
+                n
+            }
+            None => 0,
+        }
+    }
 }
 
 /// Regions of half-open `[start, end)` intervals covered by at least

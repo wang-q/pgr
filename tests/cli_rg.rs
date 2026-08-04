@@ -102,6 +102,46 @@ fn command_rg_coverage_detailed() {
 }
 
 #[test]
+fn command_rg_count() {
+    let dir = TempDir::new().unwrap();
+    let target = dir.path().join("target.rg");
+    let intervals = dir.path().join("iv.rg");
+    std::fs::write(&target, "chr1:1-10\nchr1:5-15\nchr2:100-200\nbad line\n").unwrap();
+    std::fs::write(&intervals, "chr1:1-10\nchr1:5-15\nchr2:150-160\n").unwrap();
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "rg",
+            "count",
+            target.to_str().unwrap(),
+            intervals.to_str().unwrap(),
+        ])
+        .run();
+    assert_eq!(stdout, "chr1:1-10\t2\nchr1:5-15\t2\nchr2:100-200\t1\n");
+}
+
+#[test]
+fn command_rg_count_stdin_intervals() {
+    let dir = TempDir::new().unwrap();
+    let target = dir.path().join("target.rg");
+    std::fs::write(&target, "chr1:1-5\nchr1:10-20\n").unwrap();
+    let (stdout, _) = PgrCmd::new()
+        .args(&["rg", "count", target.to_str().unwrap(), "stdin"])
+        .stdin("chr1:1-10\nchr1:15-16\n")
+        .run();
+    assert_eq!(stdout, "chr1:1-5\t1\nchr1:10-20\t2\n");
+}
+
+// Migrated from intspan `tests/cli_rgr.rs` `command_count` (.rg part; the
+// TSV `-f` part tests functionality dropped by the rg-family input contract).
+#[test]
+fn command_rg_count_fixture() {
+    let (stdout, _) = cmd(&["count", &fixture("S288c.rg"), &fixture("S288c.rg")]).run();
+    assert_eq!(stdout.lines().count(), 6);
+    assert!(stdout.contains("I:1-100\t2"), "got: {stdout}");
+    assert!(stdout.contains("21294-22075\t1"), "got: {stdout}");
+}
+
+#[test]
 fn command_cover() {
     let (stdout, _) = cmd(&["cover", &fixture("S288c.rg")]).run();
     let lines = stdout.lines().count();

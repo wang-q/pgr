@@ -1,5 +1,6 @@
 //! Subcommands for `pgr rg` — line-oriented operations on `.rg` range files.
 
+mod count;
 mod cover;
 mod coverage;
 
@@ -12,6 +13,7 @@ pub fn make_subcommand() -> Command {
         .subcommand_required(true)
         .arg_required_else_help(true)
         .subcommand(cover::make_subcommand())
+        .subcommand(count::make_subcommand())
         .subcommand(coverage::make_subcommand())
 }
 
@@ -19,6 +21,7 @@ pub fn make_subcommand() -> Command {
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     match args.subcommand() {
         Some(("cover", sub_matches)) => cover::execute(sub_matches),
+        Some(("count", sub_matches)) => count::execute(sub_matches),
         Some(("coverage", sub_matches)) => coverage::execute(sub_matches),
         _ => unreachable!("rg subcommand match"),
     }

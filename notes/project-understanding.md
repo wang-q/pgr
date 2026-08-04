@@ -552,3 +552,4 @@ chainnet 后消失。`pgr psl chain` 在 2bit 序列缓存优化后（~0.3 s）�
 | [[benchmarks/bench-pgi-vs-gixmake.md]] | `.pgi` 构建 vs FastGA GIXmake（内存/速度） |
 | [[benchmarks/bench-pgi-vs-gix-storage.md]] | `.pgi` v2 存储 vs GIX（体积/位宽） |
 | [[benchmarks/dist-cohort-validation.md]] | 距离消费者（dist pgi/hv/seq）10 株 cohort 验证 |
+| [[benchmarks/bench-rg-count.md]] | `pgr rg count`（coitrees）vs `rgr count`（lapper）命令行基准：快 ~3.4×，内存 1.6× |
