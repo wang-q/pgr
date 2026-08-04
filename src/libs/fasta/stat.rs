@@ -49,7 +49,11 @@ pub fn calc_n50_stats(
         }
 
         for (i, goal) in goals.iter().enumerate() {
-            if nx_sizes[i] == 0 && cumul_size > *goal {
+            // `>=` matches the standard Nx definition: the shortest contig whose
+            // cumulative length reaches or exceeds the goal. Using `>` would
+            // postpone the assignment when the cumulative sum lands exactly on
+            // the goal (e.g. N50 of [50,30,20] would be 30 instead of 50).
+            if nx_sizes[i] == 0 && cumul_size >= *goal {
                 nx_sizes[i] = cur_size;
             }
         }
@@ -97,4 +101,24 @@ pub fn count_bases(seq: &[u8]) -> (usize, [usize; 5]) {
     }
 
     (len, base_cnt)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn n50_boundary_exact_goal() {
+        // Total = 100, N50 goal = 50. The 50-length contig alone reaches the
+        // goal exactly, so N50 must be 50 (not 30 from the next contig).
+        let s = calc_n50_stats(vec![50, 30, 20], &[50], None);
+        assert_eq!(s.nx_sizes, vec![50]);
+    }
+
+    #[test]
+    fn n50_standard() {
+        // Total = 100, N50 goal = 50, reached by [40, 30] after two contigs.
+        let s = calc_n50_stats(vec![40, 30, 20, 10], &[50], None);
+        assert_eq!(s.nx_sizes, vec![30]);
+    }
 }

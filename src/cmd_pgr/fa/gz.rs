@@ -69,6 +69,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let infile = args.get_one::<String>("infile").unwrap();
 
     if args.get_flag("reindex") {
+        if args.contains_id("outfile") {
+            return Err(anyhow::anyhow!(
+                "--reindex writes the index beside the input file and cannot be combined with -o/--outfile"
+            ));
+        }
         if !std::path::Path::new(infile).exists() {
             return Err(anyhow::anyhow!("Input file not found: {}", infile));
         }
@@ -115,9 +120,17 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         Box::new(std::io::BufReader::with_capacity(64 * 1024, file))
     };
 
-    let inner_writer = Box::new(std::io::BufWriter::new(
-        std::fs::File::create(&outfile).with_context(|| format!("Failed to create: {outfile}"))?,
-    ));
+    // Honor the `stdout` sentinel (documented as "[stdout] for screen") instead
+    // of creating a literal file named `stdout`. Writing to a pipe means no
+    // `.gzi` index can be produced, so index generation is skipped below.
+    let inner_writer: Box<dyn std::io::Write + Send> = if outfile == "stdout" {
+        Box::new(std::io::stdout())
+    } else {
+        Box::new(std::io::BufWriter::new(
+            std::fs::File::create(&outfile)
+                .with_context(|| format!("Failed to create: {outfile}"))?,
+        ))
+    };
 
     let mut builder =
         bgzf::io::multithreaded_writer::Builder::default().set_worker_count(opt_parallel);
@@ -145,8 +158,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     }
     writer.finish()?;
 
-    // Generate GZI index
-    fa::build_gzi_index(&outfile)?;
+    // Generate GZI index (skipped when writing to stdout, which cannot be indexed)
+    if outfile != "stdout" {
+        fa::build_gzi_index(&outfile)?;
+    }
 
     Ok(())
 }

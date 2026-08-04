@@ -69,7 +69,17 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let infile = args.get_one::<String>("infile").unwrap();
 
     let outfile = crate::cmd_pgr::args::get_outfile(args);
-    crate::cmd_pgr::args::ensure_outfile_distinct(outfile, [infile.as_str()])?;
+    // The rgfile (-r) is an input read via `collect_ranges` *after* the output
+    // writer is opened, so `-o` must not overwrite it either. The `.loc`
+    // sidecar index is similarly read (`open_indexed`) after the output
+    // writer is opened, so `-o` naming `infile.loc` would truncate the index
+    // before it is loaded (silently yielding empty output on every range).
+    let mut protected: Vec<String> = vec![infile.to_string()];
+    if let Some(rgfile) = args.get_one::<String>("rgfile") {
+        protected.push(rgfile.clone());
+    }
+    protected.push(format!("{}.loc", infile));
+    crate::cmd_pgr::args::ensure_outfile_distinct(outfile, protected.iter().map(|s| s.as_str()))?;
     let mut fa_out = pgr::libs::fmt::fa::writer(outfile)
         .with_context(|| format!("Failed to open writer for {}", outfile))?;
 

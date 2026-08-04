@@ -108,7 +108,9 @@ pub fn six_frame_translation(dna: &[u8]) -> Vec<(String, usize, bool)> {
 
     // Forward frames.
     for frame in 0..3 {
-        let frame_dna = &dna[frame..];
+        // `get(frame..)` guards against sequences shorter than `frame` (e.g.
+        // a 1-base sequence), which would otherwise panic on `&dna[frame..]`.
+        let frame_dna = dna.get(frame..).unwrap_or(&[]);
         let protein = translate(frame_dna);
         translations.push((protein, frame, false));
     }
@@ -116,7 +118,7 @@ pub fn six_frame_translation(dna: &[u8]) -> Vec<(String, usize, bool)> {
     // Reverse-complement frames.
     let dna_rc = nt::rev_comp(dna).collect::<Vec<_>>();
     for frame in 0..3 {
-        let frame_dna = &dna_rc[frame..];
+        let frame_dna = dna_rc.get(frame..).unwrap_or(&[]);
         let protein = translate(frame_dna);
         translations.push((protein, frame, true));
     }
@@ -135,6 +137,11 @@ pub fn filter_and_convert_orfs(
     require_start_m: bool,
     require_end_star: bool,
 ) -> Vec<(usize, usize, String)> {
+    if orfs.is_empty() {
+        // Avoid `dna_len - frame` underflowing when a frame is entirely
+        // beyond the sequence (e.g. a 1-base sequence in frame 2/3).
+        return Vec::new();
+    }
     let dna_start = if is_reverse { dna_len - frame } else { frame };
 
     let mut result = Vec::new();
@@ -212,5 +219,15 @@ mod tests {
     fn test_translate_non_ascii() {
         // 255 is non-ascii
         assert_eq!(translate(&[255, b'A', b'T']), "X");
+    }
+
+    #[test]
+    fn test_six_frame_short_sequences_do_not_panic() {
+        // Sequences shorter than any frame offset must not panic (regression:
+        // `&dna[frame..]` with frame=2 on a 1-base sequence used to panic).
+        for dna in [&b""[..], &b"A"[..], &b"AT"[..], &b"ATG"[..]] {
+            let translations = six_frame_translation(dna);
+            assert_eq!(translations.len(), 6);
+        }
     }
 }

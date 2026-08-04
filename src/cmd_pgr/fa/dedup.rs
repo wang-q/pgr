@@ -104,6 +104,27 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let outfile = crate::cmd_pgr::args::get_outfile(args);
     crate::cmd_pgr::args::ensure_outfile_distinct(outfile, infiles.iter().copied())?;
+
+    // The dups file is opened with `File::create` (truncate) *after* the main
+    // output writer is already buffering records, so it must not be the same
+    // file as `-o` or it would truncate and interleave with the main output.
+    // Validate up front so no (empty) output file is left behind on error.
+    if let Some(opt_file) = args.get_one::<String>("dups_file") {
+        // Both to stdout is fine (no file is created/truncated); only a real
+        // file collision corrupts the main output.
+        if opt_file != "stdout"
+            && outfile != "stdout"
+            && pgr::libs::io::same_path(opt_file, outfile)
+        {
+            anyhow::bail!(
+                "--dups-file {} would overwrite the main output file {}",
+                opt_file,
+                outfile
+            );
+        }
+        crate::cmd_pgr::args::ensure_outfile_distinct(opt_file, infiles.iter().copied())?;
+    }
+
     let mut fa_out = pgr::libs::fmt::fa::writer(outfile)
         .with_context(|| format!("Failed to open writer for {}", outfile))?;
 
@@ -151,12 +172,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     if args.contains_id("dups_file") {
         let opt_file = args.get_one::<String>("dups_file").unwrap();
-        crate::cmd_pgr::args::ensure_outfile_distinct(
-            opt_file,
-            args.get_many::<String>("infiles")
-                .unwrap()
-                .map(|s| s.as_str()),
-        )?;
+
         let mut writer = pgr::writer(opt_file)
             .with_context(|| format!("Failed to open writer for {}", opt_file))?;
 

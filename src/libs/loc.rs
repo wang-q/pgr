@@ -74,7 +74,8 @@ pub fn open_input(infile: &str, is_bgzf: bool) -> anyhow::Result<Input> {
 }
 
 /// Open a FASTA file with .loc index for random access.
-/// Creates the .loc index if it doesn't exist (or if `force_update` is true).
+/// Creates the .loc index if it doesn't exist, if `force_update` is true, or
+/// if the existing index is older than the FASTA file (stale index).
 /// Returns the Input reader and the loaded .loc index.
 #[allow(clippy::type_complexity)]
 pub fn open_indexed(
@@ -83,12 +84,37 @@ pub fn open_indexed(
 ) -> anyhow::Result<(Input, IndexMap<String, (u64, usize)>)> {
     let is_bgzf = crate::is_bgzf(infile);
     let loc_file = format!("{}.loc", infile);
-    if !std::path::Path::new(&loc_file).is_file() || force_update {
+    if !std::path::Path::new(&loc_file).is_file()
+        || force_update
+        || !loc_is_fresh(infile, &loc_file)
+    {
         create_loc(infile, &loc_file, is_bgzf)?;
     }
     let loc_of = load_loc(&loc_file)?;
     let reader = open_input(infile, is_bgzf)?;
     Ok((reader, loc_of))
+}
+
+/// True when the `.loc` index exists and is not older than the FASTA file.
+///
+/// A stale index (e.g. the FASTA was edited after the index was built) would
+/// serve wrong offsets/sizes, so callers rebuild it instead.
+fn loc_is_fresh(infile: &str, loc_file: &str) -> bool {
+    let Ok(fa_meta) = std::fs::metadata(infile) else {
+        return false;
+    };
+    let Ok(loc_meta) = std::fs::metadata(loc_file) else {
+        return false;
+    };
+    if !loc_meta.is_file() {
+        return false;
+    }
+    match (fa_meta.modified(), loc_meta.modified()) {
+        (Ok(fa_m), Ok(loc_m)) => loc_m >= fa_m,
+        // mtimes unavailable (e.g. unusual filesystems): keep the existing
+        // index rather than rebuilding on every call.
+        _ => true,
+    }
 }
 
 pub fn load_loc(loc_file: &str) -> anyhow::Result<IndexMap<String, (u64, usize)>> {
@@ -174,7 +200,24 @@ pub fn slice_record(
         .slice(start..=end)
         .ok_or_else(|| anyhow::anyhow!("slice error for [{}]", rg))?;
     if rg.strand() == "-" {
-        slice = slice.complement().rev().collect::<Result<_, _>>()?;
+        // Reverse complement using the `NT_COMP` lookup table (standard and
+        // IUPAC bases complemented, case preserved; unknown bytes like `-`/`*`
+        // kept as-is). This matches `fa rc`'s documented behavior and avoids
+        // `Sequence::complement()`, which errors on non-IUPAC characters.
+        let seq_rc: Vec<u8> = slice
+            .as_ref()
+            .iter()
+            .rev()
+            .map(|&b| {
+                let c = crate::libs::nt::NT_COMP[b as usize];
+                if c == 255 {
+                    b
+                } else {
+                    c
+                }
+            })
+            .collect();
+        slice = fasta::record::Sequence::from(seq_rc);
     }
     Ok(slice)
 }
@@ -304,4 +347,37 @@ pub fn split_loc_file(
     }
 
     Ok(chunks)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{Duration, SystemTime};
+
+    /// Regression: a `.loc` index older than its FASTA was served as-is, so
+    /// an edited genome returned stale offsets/sizes (slice errors, or worse,
+    /// wrong sequence on same-length edits). The index must be rebuilt.
+    #[test]
+    fn stale_loc_index_is_rebuilt() {
+        let dir = tempfile::tempdir().unwrap();
+        let fa = dir.path().join("g.fa");
+        let loc = dir.path().join("g.fa.loc");
+        std::fs::write(&fa, format!(">chr1\n{}\n", "ACGT".repeat(250))).unwrap();
+
+        let (mut reader, loc_of) = open_indexed(fa.to_str().unwrap(), false).unwrap();
+        let seq = fetch_range_seq(&mut reader, &loc_of, &Range::from("chr1", 1, 100)).unwrap();
+        assert_eq!(seq, "ACGT".repeat(25));
+
+        // Edit the FASTA in place (same length, different content) and age
+        // the index so its mtime precedes the FASTA's.
+        std::fs::write(&fa, format!(">chr1\n{}\n", "TGCA".repeat(250))).unwrap();
+        std::fs::File::open(&loc)
+            .unwrap()
+            .set_modified(SystemTime::now() - Duration::from_secs(10))
+            .unwrap();
+
+        let (mut reader, loc_of) = open_indexed(fa.to_str().unwrap(), false).unwrap();
+        let seq = fetch_range_seq(&mut reader, &loc_of, &Range::from("chr1", 1, 100)).unwrap();
+        assert_eq!(seq, "TGCA".repeat(25));
+    }
 }

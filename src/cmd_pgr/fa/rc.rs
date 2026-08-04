@@ -88,11 +88,25 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             format!("RC_{}", name)
         };
 
+        // Reverse complement using the `NT_COMP` lookup table. Standard and
+        // IUPAC bases are complemented (case preserved); any other byte
+        // (e.g. `-`, `*`) is kept as-is, matching the documented behavior
+        // ("Non-IUPAC characters are preserved as-is"). The previous
+        // `noodles` `Sequence::complement()` errored on such characters.
         let seq_rc: Vec<u8> = record
             .sequence()
-            .complement()
+            .as_ref()
+            .iter()
             .rev()
-            .collect::<Result<_, _>>()?;
+            .map(|&b| {
+                let c = pgr::libs::nt::NT_COMP[b as usize];
+                if c == 255 {
+                    b
+                } else {
+                    c
+                }
+            })
+            .collect();
         let record_rc = pgr::libs::fmt::fa::new_record_preserving_desc(&new_name, &record, &seq_rc);
         fa_out.write_record(&record_rc)?;
     }

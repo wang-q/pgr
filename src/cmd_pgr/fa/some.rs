@@ -24,8 +24,8 @@ Examples:
 2. Extract sequences NOT in list.txt:
    pgr fa some input.fa list.txt -i
 
-3. Process gzipped files:
-   pgr fa some input.fa.gz list.txt -o output.fa.gz
+3. Process input from a gzipped file:
+   pgr fa some input.fa.gz list.txt -o output.fa
 
 "###,
         )

@@ -36,8 +36,8 @@ Examples:
 2. Hard-mask regions:
    pgr fa mask input.fa --runlist regions.json --hard -o output.fa
 
-3. Process gzipped files:
-   pgr fa mask input.fa.gz --runlist regions.json -o output.fa.gz
+3. Read a gzipped input:
+   pgr fa mask input.fa.gz --runlist regions.json -o output.fa
 
 "###,
         )

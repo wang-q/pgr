@@ -24,8 +24,8 @@ Examples:
 1. Extract sequences in order specified by list.txt:
    pgr fa order input.fa list.txt
 
-2. Process gzipped files:
-   pgr fa order input.fa.gz list.txt -o output.fa.gz
+2. Process input from a gzipped file:
+   pgr fa order input.fa.gz list.txt -o output.fa
 
 "###,
         )

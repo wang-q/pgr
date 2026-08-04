@@ -138,6 +138,17 @@ pub fn run_window(
             let new_path_str = new_path
                 .to_str()
                 .ok_or_else(|| anyhow::anyhow!("invalid chunked path: {}", new_path.display()))?;
+            // A chunk filename derived from `-o` (e.g. `out.001.fa`) can
+            // collide with the input file when the input happens to share that
+            // name; opening it with `truncate` would clobber the input while
+            // it is still being streamed. Reject before touching the file.
+            if chunk_size.is_some() && crate::libs::io::same_path(new_path_str, infile) {
+                anyhow::bail!(
+                    "chunked output file {} would overwrite input file {}",
+                    new_path_str,
+                    infile
+                );
+            }
             Ok(Box::new(io::writer(new_path_str)?))
         }
     };
