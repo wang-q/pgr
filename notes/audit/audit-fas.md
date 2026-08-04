@@ -55,7 +55,7 @@ Zero Panic（畸形输入不 panic）、坐标/长度边界处理、算法正确
   到 `errors` 后统一报错；对畸形 block 的 `next_fas_block` 错误则跳过并告警。
   行为一致，未改。
 
-## 修复的缺陷（共 10 处，含本轮 1 处回归）
+## 修复的缺陷（共 11 处，含本轮 2 处回归）
 
 ### 数据安全（`-o` / 输出路径同输入保护，5 处）
 
@@ -116,7 +116,7 @@ windows`）后开 writer，但 `-o` 若指向输入仍应在打开前拒绝，�
 的实际应来源于 A 块列物种数。修复：将物种数变量改名为 `k_a`，并用于全部 gap
 延伸计算（含首行插入链与 I 态延伸）。回归既有 `fas_multiz` 合并测试。
 
-### 回归修复（本轮，1 处）
+### 回归修复（本轮，2 处）
 
 **`refine_block` 误加等长校验，破坏 `refine` 的不等长重比对语义**：此前为防
 越界在 `refine_block` 开头加了"所有序列等长才继续"的校验。但 `refine` 的用途
@@ -128,6 +128,14 @@ default`/`command_refine_poa` 失败。修复：**移除** `refine_block` 中的
 `command_fas_refine_unequal_length_no_panic` 从"断言报错"改为"断言成功且三物种
 均输出"，以反映正确语义。`align_seqs_quick` 的等长校验予以保留（quick 模式
 前提是已对齐输入，语义不同）。
+
+**`to-xlsx` 外群含 IUPAC 歧义碱基时命令失败**：`--outgroup` 下绘制外群替代碱基
+时，单元格样式名 `sub_{obase}_unknown` 只对标准碱基（A/C/T/G/N）注册，外群出
+现歧义码（R/Y/S/W/K/M/B/D/H/V）时 `format_of.get` 返回 `None`，命令以
+"missing format for outgroup substitution" 报错退出。对合法 MSA 输入而言属
+崩溃缺陷。修复：在 `fas_xlsx.rs` 的该分支加入 `.or_else(|| format_of.get(
+"sub_N_unknown"))` 兜底，歧义外群碱基复用 N（黑色）样式而非失败。回归
+`command_to_xlsx_outgroup_ambiguity_no_error`。
 
 ## 验证
 
@@ -149,13 +157,15 @@ default`/`command_refine_poa` 失败。修复：**移除** `refine_block` 中的
 
 ## 结论
 
-`fas` 命令族审核完成（累计修复 10 处缺陷并补回归测试与文档澄清），并经多轮纵深
+`fas` 命令族审核完成（累计修复 11 处缺陷并补回归测试与文档澄清），并经多轮纵深
 复审（全部 20 个子命令的执行路径、`-o` 覆盖保护含 `create`/`check` 的 `.loc` 与
 `separate`/`split` 目录输出、`stat`/`variation`/`to-vcf`/`to-xlsx` 的不等长与
 外群越界、`slice_block`/`trim_head_tail` 全 gap 场景、`banded_align` I 态 gap
-成本、`fas_multiz` 合并顺序确定性、`docs/fas.md` 与帮助文本一致性）复核。
+成本、`fas_multiz` 合并顺序确定性、`to-xlsx` 外群歧义碱基样式兜底、`docs/fas.md`
+与帮助文本一致性）复核。
 
 **最终收敛轮**：对全部记录项（`separate`/`split` 文件名碰撞、`to-xlsx` 的
 `--no-single` 与 complex 重叠、`run_pipeline` 错误传播、`cover --trim` 负值、
-`refine --quick` 等长前提等）逐一重新核验，均属文档化一致行为或不可达的极端
-命名场景，非缺陷，无需改动。此轮未再发现任何新的 `fas` 缺陷，审核收敛。
+`refine --quick` 等长前提、由歧义码兜底引出的 `sub_{base}_unknown` 内群样式覆盖
+等）逐一重新核验，均属文档化一致行为或不可达的极端命名场景，非缺陷，无需改动。
+此轮未再发现任何新的 `fas` 缺陷，审核收敛。

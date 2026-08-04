@@ -227,6 +227,37 @@ fn command_to_xlsx_outgroup() -> anyhow::Result<()> {
 }
 
 #[test]
+fn command_to_xlsx_outgroup_ambiguity_no_error() -> anyhow::Result<()> {
+    // The outgroup (last sequence) has an IUPAC ambiguity code ('R') at a
+    // position where the ingroup sequences are polymorphic canonical bases.
+    // The outgroup-cell color style for 'R' is not registered, so the export
+    // must fall back to a default style instead of failing.
+    let input = tempfile::NamedTempFile::new()?;
+    std::io::Write::write_all(
+        &mut std::fs::File::create(input.path())?,
+        b">A.chr1(+):1-10\nAAAATTTTGG\n>B.chr2(+):1-10\nAAAATTTTAG\n>C.chr3(+):1-10\nAAAATTTTRG\n",
+    )?;
+    let out = tempfile::NamedTempFile::new()?;
+
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
+    let output = cmd
+        .arg("fas")
+        .arg("to-xlsx")
+        .arg(input.path())
+        .arg("--outgroup")
+        .arg("-o")
+        .arg(out.path())
+        .output()?;
+    assert!(
+        output.status.success(),
+        "to-xlsx must succeed with an ambiguous outgroup: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    Ok(())
+}
+
+#[test]
 fn command_variation_outgroup_unequal_length_no_panic() -> anyhow::Result<()> {
     // Last (outgroup) sequence is shorter than the ingroup sequences: the
     // polarization step must return a friendly error instead of panicking.

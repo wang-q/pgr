@@ -268,8 +268,12 @@ fn paint_sub(
 
     if opt.is_outgroup {
         let base_color = format!("sub_{}_unknown", sub.obase);
+        // `sub.obase` may be an IUPAC ambiguity code (R/Y/S/W/K/M/B/D/H/V)
+        // that has no registered color; fall back to the N (black) style so
+        // such outgroups do not fail the export.
         let format = format_of
             .get(&base_color)
+            .or_else(|| format_of.get("sub_N_unknown"))
             .ok_or_else(|| anyhow!("missing format for outgroup substitution: {}", base_color))?;
         worksheet.write_with_format(
             pos_row + opt.seq_count + 1,
