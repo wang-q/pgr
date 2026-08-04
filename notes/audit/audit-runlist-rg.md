@@ -334,3 +334,28 @@ same_as_input_rejected` 覆盖 `merge`/`compare`/`some`/`combine`/`span` 各
 与全部 8 个 rg、10 个 runlist 命令的执行路径、集合运算、`depth_runs` 扫描线、
 `rg_merge_mapping` 聚类、`covered` 二分、`stat`/`statop` 表头一致性、`-o`
 覆盖保护）复核，未再发现新问题，审核收敛。
+
+## 追加复审（2026-08-05）
+
+再作一轮独立复审，聚焦此前未逐条展开的路径，未发现新问题：
+
+* 逐命令通读全部 8 个 rg 与 10 个 runlist 命令的 `execute`，核对
+  `ensure_outfile_distinct` 覆盖、输出前打开校验、`#` 注释跳过、无效行
+  跳过、`clamp_to_domain`/`saturating_neg` 溢出收敛，均一致。
+* `Range` 扫描器（`decode`/`match_at`/`rest_match`/`tail_match`/`parse_i32`）
+  与参考正则的最左匹配、贪婪分组、`end=0` 缺省、溢出即无效、回退取首个
+  空白 token 语义逐一复核，含既有 40k fuzz 与 UTF-8 字宽处理，无分歧。
+* `depth_runs` 扫描线：事件合并、`run_depth` 归属、`pos>s` 关段、尾部开口
+  区间收尾，逐一推演相邻/相接/重叠区间，正确；`by_level` 键为精确深度串，
+  深度不会为负（受 `>= min_depth` 过滤）。
+* `rg_merge_mapping` 的 DSU + COITree 聚类、`part==merged` 自映射跳过、
+  HashSet 判重、f32 比例判据，复盘无误。
+* `covered` 的两次二分 + i64 累加 + 饱和，`holes` 直接取相邻间距（不构造
+  补集），`inset`/`trim`/`pad`/`excise`/`fill` 的 i64 长度与饱和，均无溢出。
+* `stat`/`statop` 表头与数据行字段数：multi/single 各 5/4 与 9/8 列、`--all`
+  下 4/3 与 8/7 列，与 all 行、per-chr 行逐列核对一致。
+* 重新运行 `cargo test`（全部通过，含 36 cli_rg、18 cli_runlist、19 lib
+  runlist、31 lib intspan 等）、`cargo clippy --all-targets -- -D warnings`
+  与 `cargo fmt --check`，均干净。
+* 已知范围外项维持原结论：`IntSpan::find_islands_n` 的 `val+1` 溢出现在仅
+  `fas slice` 可达且受序列长度约束，不属 `runlist rg` 范畴，留待后续审计。
