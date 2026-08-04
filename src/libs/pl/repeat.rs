@@ -631,14 +631,7 @@ pub fn run_repeat_runlist_pipeline(
     abs_outfile: &str,
 ) -> anyhow::Result<()> {
     run_cmd!(info "==> Outputs")?;
-    let mut set: std::collections::BTreeMap<String, crate::libs::ds::IntSpan> =
-        std::collections::BTreeMap::new();
-    for rg in rg_files {
-        let reader = crate::reader(rg)?;
-        for (chr, is) in crate::libs::runlist::rg_to_set(reader)? {
-            set.entry(chr).or_default().merge(&is);
-        }
-    }
+    let set = crate::libs::runlist::rg_files_to_set(rg_files)?;
     // The original spanr pipeline ran `spanr span` three times; folding them
     // into sequential passes on the merged set gives identical results.
     let set = crate::libs::runlist::span_op(&set, crate::libs::runlist::SpanOp::Fill, fk as i32);

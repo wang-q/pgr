@@ -129,6 +129,45 @@ O(n·m)。据此把三个核心集合运算重写为线性双指针合并（O(n 
 毫秒级。`runlist span` / `venn` / alignment trim 等 `intersect` 消费者
 同步受益。
 
+## 附：IntSpan 模块系统性审视（2026-08-04）
+
+`intersect` 的发现促使对整个 `libs/ds/intspan` 做了一轮系统性审查，重点
+是同类 O(n·m) / O(n²) 模式：
+
+### 已修复
+
+1. **批量构建 O(n²)（`add_pair` 逐个插入 unsorted 区间）**：`rg_to_set`
+   原逐行 `add_pair`，1M 随机稀疏区间 cover 需 2.5 s（有序输入 0.1 s，
+   差 25×）。新增 `IntSpan::from_pairs`（排序 + 单遍合并，O(n log n)），
+   `rg_to_set` 改为收集 pairs 后批量构建；再抽 `rg_files_to_set` 供
+   cover/trf/repeat 多文件共用（原多文件 `merge` 大集合又是 O(n·m)）：
+   * cover 单文件 1M 稀疏：2.5 s → 181 ms（~14×）
+   * cover 两文件 1M 稀疏：8.4 s → 299 ms（~28×）
+2. **`find_islands_ints` O(n·m) → O(n+m)**：原对每个 self span 做一次
+   `intersect`；改为双指针收集与 other 重叠的整段 island（alignment
+   trim/variation 使用）。
+3. **`distance` O(n·m) → O(n+m)**：双指针求最近相邻边界间隙；顺带消除
+   原 `(lower - upper).abs()` 的 i32 溢出风险（i64 中间量 + 饱和）。
+
+以上均带新旧实现差分测试（含空集/无穷集边界），全量测试通过。
+
+### 审查后确认可接受
+
+* `merge` / `subtract` / `add_pair` 保持增量 O(n) 搬移语义：重构后大集合
+  路径已避开（`union`/`diff`/`from_pairs`/`rg_files_to_set` 均为线性或
+  排序构建）；剩余调用点是 alignment 逐记录的小规模合并、`depth_runs`
+  扫描线的有序插入、GFF 有序文件。
+* `add_ranges` 对无序输入仍是 O(n²)，但调用方（`add_runlist`/`merge`）
+  传的是有序 span，安全。
+* `at`/`index`/`slice` 为 O(n) 扫描 + 文档化 panic，量级可接受。
+* `to_vec`/`elements` 对超大 span 有内存爆炸风险（vendored 语义，未用）。
+
+### 结论
+
+IntSpan 的"昂贵"集中在这类**经 `add_pair` 在 VecDeque 中间做 O(n) 搬移**
+的路径；凡能换成排序构建或双指针线性合并的地方都已替换。模块现在的主要
+热点是解析与 IO，集合运算均为线性或 O(n log n)。
+
 ## 结论
 
 `pgr rg prop` 与 `rgr prop` 性能基本持平（rgr 快 ~6%），内存多 ~1.7×，

@@ -30,7 +30,24 @@ pub fn usable_range(range: &crate::libs::ds::Range) -> bool {
 /// a per-chromosome merged `IntSpan`. Lines starting with `#` and lines that
 /// do not parse as valid ranges are skipped.
 pub fn rg_to_set<R: BufRead>(reader: R) -> anyhow::Result<BTreeMap<String, IntSpan>> {
-    let mut set: BTreeMap<String, IntSpan> = BTreeMap::new();
+    Ok(build_from_pairs(rg_pairs(reader)?))
+}
+
+/// Parse `.rg` lines from one or more files into a per-chromosome merged
+/// `IntSpan`, building each chromosome set in one sorted pass.
+pub fn rg_files_to_set(files: &[String]) -> anyhow::Result<BTreeMap<String, IntSpan>> {
+    let mut pairs_of: BTreeMap<String, Vec<(i32, i32)>> = BTreeMap::new();
+    for f in files {
+        let reader = crate::reader(f)?;
+        for (chr, pairs) in rg_pairs(reader)? {
+            pairs_of.entry(chr).or_default().extend(pairs);
+        }
+    }
+    Ok(build_from_pairs(pairs_of))
+}
+
+fn rg_pairs<R: BufRead>(reader: R) -> anyhow::Result<BTreeMap<String, Vec<(i32, i32)>>> {
+    let mut pairs_of: BTreeMap<String, Vec<(i32, i32)>> = BTreeMap::new();
     for line in reader.lines() {
         let line = line?;
         let line = line.trim();
@@ -41,11 +58,19 @@ pub fn rg_to_set<R: BufRead>(reader: R) -> anyhow::Result<BTreeMap<String, IntSp
         if !usable_range(&range) {
             continue;
         }
-        set.entry(range.chr().clone())
+        pairs_of
+            .entry(range.chr().clone())
             .or_default()
-            .add_pair(*range.start(), *range.end());
+            .push((*range.start(), *range.end()));
     }
-    Ok(set)
+    Ok(pairs_of)
+}
+
+fn build_from_pairs(pairs_of: BTreeMap<String, Vec<(i32, i32)>>) -> BTreeMap<String, IntSpan> {
+    pairs_of
+        .into_iter()
+        .map(|(chr, pairs)| (chr, IntSpan::from_pairs(pairs)))
+        .collect()
 }
 
 /// Parse `.rg` lines into per-chromosome half-open `[start, end+1)` interval

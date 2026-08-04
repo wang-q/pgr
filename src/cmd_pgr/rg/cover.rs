@@ -30,16 +30,12 @@ Examples:
 /// Execute the cover command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let outfile = crate::cmd_pgr::args::get_outfile(args);
-    let mut set = std::collections::BTreeMap::new();
-    for infile in args.get_many::<String>("infiles").unwrap() {
-        let reader = pgr::reader(infile)?;
-        let partial = pgr::libs::runlist::rg_to_set(reader)?;
-        for (chr, is) in partial {
-            set.entry(chr)
-                .or_insert_with(pgr::libs::ds::IntSpan::new)
-                .merge(&is);
-        }
-    }
+    let files: Vec<String> = args
+        .get_many::<String>("infiles")
+        .unwrap()
+        .cloned()
+        .collect();
+    let set = pgr::libs::runlist::rg_files_to_set(&files)?;
     let json = pgr::libs::ds::intspan::set2json(&set);
     pgr::libs::ds::intspan::write_json(outfile, &json)?;
     Ok(())

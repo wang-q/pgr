@@ -4,7 +4,7 @@
 
 use anyhow::anyhow;
 use std::borrow::Cow;
-use std::cmp::{min, Ordering};
+use std::cmp::Ordering;
 use std::collections::VecDeque;
 use std::vec::Vec;
 
@@ -141,6 +141,35 @@ impl IntSpan {
         new.add_pair(lower, upper);
 
         new
+    }
+
+    /// Build a set from inclusive `(lower, upper)` pairs, sorting and merging
+    /// them in a single pass (O(n log n)). Pairs with `lower > upper` or an
+    /// `upper` beyond the representable maximum (`POS_INF - 1`) are skipped.
+    pub fn from_pairs(pairs: impl IntoIterator<Item = (i32, i32)>) -> Self {
+        let mut pairs: Vec<(i32, i32)> = pairs
+            .into_iter()
+            .filter(|(l, u)| l <= u && *u < POS_INF)
+            .collect();
+        pairs.sort_unstable();
+        let mut edges: VecDeque<i32> = VecDeque::new();
+        let mut cur: Option<(i32, i32)> = None;
+        for (lo, hi) in pairs {
+            match cur {
+                Some((clo, chi)) if lo <= chi + 1 => cur = Some((clo, chi.max(hi))),
+                Some((clo, chi)) => {
+                    edges.push_back(clo);
+                    edges.push_back(chi + 1);
+                    cur = Some((lo, hi));
+                }
+                None => cur = Some((lo, hi)),
+            }
+        }
+        if let Some((lo, hi)) = cur {
+            edges.push_back(lo);
+            edges.push_back(hi + 1);
+        }
+        IntSpan { edges }
     }
 
     /// Returns the constant of POS_INF
@@ -307,6 +336,26 @@ mod create {
         assert!(IntSpan::try_from("abc").is_err());
         assert!(IntSpan::try_from("1-").is_err());
         assert!(IntSpan::try_from("5-3").is_err());
+    }
+
+    #[test]
+    fn from_pairs_matches_add_pair_build() {
+        let pairs = [
+            (5, 5),
+            (1, 3),
+            (10, 12),
+            (4, 5), // overlaps 1-3 (adjacent) and 5
+            (20, 25),
+            (3, 1), // reversed, skipped
+        ];
+        let mut expected = IntSpan::new();
+        for (l, u) in pairs {
+            if l <= u {
+                expected.add_pair(l, u);
+            }
+        }
+        assert_eq!(IntSpan::from_pairs(pairs).to_string(), expected.to_string());
+        assert!(IntSpan::from_pairs([(1, 2147483647)]).is_empty());
     }
 
     #[test]
@@ -989,6 +1038,69 @@ mod binary {
             }
         }
     }
+
+    #[test]
+    fn distance_and_islands_match_slow_implementations() {
+        fn distance_slow(a: &IntSpan, b: &IntSpan) -> i32 {
+            if a.is_empty() || b.is_empty() {
+                return 0;
+            }
+            let overlap = a.overlap(b);
+            if overlap > 0 {
+                return -overlap;
+            }
+            let mut min_d = 0;
+            for (lower1, upper1) in a.spans() {
+                for (lower2, upper2) in b.spans() {
+                    let d1 = (lower1 - upper2).abs();
+                    let d2 = (upper1 - lower2).abs();
+                    let d = d1.min(d2);
+                    if min_d == 0 || d < min_d {
+                        min_d = d;
+                    }
+                }
+            }
+            min_d
+        }
+        fn islands_slow(a: &IntSpan, b: &IntSpan) -> IntSpan {
+            let mut island = IntSpan::new();
+            if !a.intersect(b).is_empty() {
+                for (lower, upper) in a.spans() {
+                    let subints = IntSpan::from_pair(lower, upper);
+                    if !subints.intersect(b).is_empty() {
+                        island.merge(&subints);
+                    }
+                }
+            }
+            island
+        }
+
+        let runlists = [
+            "-",
+            "1",
+            "1-3,7-10",
+            "-2--1,5,100-200",
+            "3-9",
+            "5-12,20-25",
+            "1-5,6-10",
+        ];
+        for a in runlists {
+            for b in runlists {
+                let ia = IntSpan::from(a);
+                let ib = IntSpan::from(b);
+                assert_eq!(
+                    ia.distance(&ib),
+                    distance_slow(&ia, &ib),
+                    "distance a={a} b={b}"
+                );
+                assert_eq!(
+                    ia.find_islands_ints(&ib).to_string(),
+                    islands_slow(&ia, &ib).to_string(),
+                    "islands a={a} b={b}"
+                );
+            }
+        }
+    }
 }
 
 /// INTERFACE: Set relations
@@ -1662,25 +1774,27 @@ impl IntSpan {
             if overlap > 0 {
                 -overlap
             } else {
-                let mut min_d = 0;
-
-                for i in 0..self.span_size() {
-                    let lower1 = *self.edges.get(i * 2).unwrap();
-                    let upper1 = *self.edges.get(i * 2 + 1).unwrap() - 1;
-                    for j in 0..other.span_size() {
-                        let lower2 = *other.edges.get(j * 2).unwrap();
-                        let upper2 = *other.edges.get(j * 2 + 1).unwrap() - 1;
-
-                        let d1 = (lower1 - upper2).abs();
-                        let d2 = (upper1 - lower2).abs();
-                        let d = min(d1, d2);
-
-                        if min_d == 0 || d < min_d {
-                            min_d = d;
-                        }
+                // Two-pointer walk over the sorted span lists (O(n + m));
+                // with no overlap the minimum distance is the closest gap
+                // between the boundaries of adjacent spans.
+                let a = self.spans();
+                let b = other.spans();
+                let mut min_gap = i64::from(i32::MAX);
+                let (mut i, mut j) = (0usize, 0usize);
+                while i < a.len() && j < b.len() {
+                    let (a_lo, a_hi) = a[i];
+                    let (b_lo, b_hi) = b[j];
+                    if a_hi < b_lo {
+                        min_gap = min_gap.min(i64::from(b_lo) - i64::from(a_hi));
+                        i += 1;
+                    } else if b_hi < a_lo {
+                        min_gap = min_gap.min(i64::from(a_lo) - i64::from(b_hi));
+                        j += 1;
+                    } else {
+                        break; // unreachable: overlap is handled above
                     }
                 }
-                min_d
+                min_gap.min(i64::from(i32::MAX)) as i32
             }
         }
     }
@@ -1753,13 +1867,27 @@ impl IntSpan {
     pub fn find_islands_ints(&self, other: &Self) -> IntSpan {
         let mut island = Self::new();
 
-        if !self.intersect(other).is_empty() {
-            for (lower, upper) in &self.spans() {
-                let subints = Self::from_pair(*lower, *upper);
-                if !subints.intersect(other).is_empty() {
-                    island.merge(&subints);
+        if !self.is_empty() && !other.is_empty() {
+            // Two-pointer walk (O(n + m)): every self span overlapping any
+            // other span is an island, emitted whole.
+            let a = self.spans();
+            let b = other.spans();
+            let mut edges: VecDeque<i32> = VecDeque::new();
+            let (mut i, mut j) = (0usize, 0usize);
+            while i < a.len() && j < b.len() {
+                let (a_lo, a_hi) = a[i];
+                let (b_lo, b_hi) = b[j];
+                if a_hi < b_lo {
+                    i += 1;
+                } else if b_hi < a_lo {
+                    j += 1;
+                } else {
+                    edges.push_back(a_lo);
+                    edges.push_back(a_hi + 1);
+                    i += 1;
                 }
             }
+            island.edges = edges;
         }
 
         island

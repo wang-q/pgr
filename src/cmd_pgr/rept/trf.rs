@@ -177,14 +177,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         }
         return Ok(());
     }
-    let mut set: std::collections::BTreeMap<String, pgr::libs::ds::IntSpan> =
-        std::collections::BTreeMap::new();
-    for rg in &rg_files {
-        let reader = pgr::reader(rg)?;
-        for (chr, is) in pgr::libs::runlist::rg_to_set(reader)? {
-            set.entry(chr).or_default().merge(&is);
-        }
-    }
+    let set = pgr::libs::runlist::rg_files_to_set(&rg_files)?;
     let json = pgr::libs::ds::intspan::set2json(&set);
     std::fs::write("out.json", serde_json::to_vec_pretty(&json)?)?;
 
