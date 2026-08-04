@@ -564,6 +564,29 @@ fn command_rg_output_same_as_input_rejected() {
     );
 }
 
+// A file literally named `stdout` must not be mistaken for the screen
+// sentinel: writing to the screen cannot overwrite it, so the command must
+// read it normally instead of rejecting the run (`same_path` compares the
+// literal `stdout` output value against the input path).
+#[test]
+fn command_rg_stdout_named_input_allowed() {
+    let dir = TempDir::new().unwrap();
+    std::fs::write(dir.path().join("in.json"), r#"{"chr1":"1-10"}"#).unwrap();
+    std::fs::write(dir.path().join("stdout"), "chr1:1-10\n").unwrap();
+
+    let (stdout, _) = PgrCmd::new()
+        .current_dir(dir.path())
+        .args(&["rg", "runlist", "in.json", "stdout"])
+        .run();
+    assert_eq!(stdout, "chr1:1-10\n");
+
+    let (stdout, _) = PgrCmd::new()
+        .current_dir(dir.path())
+        .args(&["rg", "runlist", "in.json", "stdout", "-o", "stdout"])
+        .run();
+    assert_eq!(stdout, "chr1:1-10\n");
+}
+
 // Streaming commands used to create the output before opening the later
 // inputs; a missing input then truncated an existing output file and left
 // partial results. All inputs must be validated before the output is touched.

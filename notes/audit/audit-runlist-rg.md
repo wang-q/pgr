@@ -128,12 +128,32 @@ release 下 10k ≈ 2.7–2.9 ms、50k ≈ 17.8–18.4 ms，近线性），并�
   Unicode 名称，零 panic）、`rg runlist` 帮助文本与 docs/rg.md 示例逐一
   执行通过、全量测试 + doctest + `cargo fmt` + `cargo clippy --all-targets
   -- -D warnings` 干净——未再发现新问题，收束。
+* 第 26 轮（本轮）：换全新角度复核 `rg runlist`——与真实 rgr 二进制逐
+  字节对拍（5 组种子共 600 trial × 3 ops，全部一致）、与朴素实现差分
+  （普通域 750 trial、极端坐标域 450 trial，含 `i32::MIN` 起点的 runlist
+  与近 `POS_INF-1` 区间，全部一致）、畸形输入 fuzz（300 trial + 数据
+  安全断言，零 panic）。CRLF 输入输出归一化确认与 rgr 一致（`BufRead::
+  lines` 同语义）；tab 混合输入的分歧确认为决策 A 范围外的有意差异（rgr
+  在部分此类输入上直接 panic，pgr 友好跳过）。新发现 1 处缺陷（#38）：
+  `ensure_outfile_distinct` 未豁免屏幕哨兵 `stdout`，工作目录存在名为
+  `stdout` 的文件作为输入时，输出到屏幕也被误拒。修复后重跑全部差分 +
+  fuzz + 全量测试 + `cargo fmt` + `cargo clippy --all-targets -- -D
+  warnings`，全部通过。
+* 第 27 轮（复核轮）：对 #38 修复做全量回归——新种子差分（普通域 200
+  trial、极端坐标域 120 trial）、rgr 逐字节对拍 150 trial、畸形输入 fuzz
+  200 trial（含数据安全断言）全部通过；另探测畸形 JSON 形态（数组/语法
+  错误/非字符串值）、stdin 作为 runlist 与 infile、不可写输出路径、空
+  输入、`i32::MIN` runlist 的 superset 等边界，均友好处理；性能 sanity：
+  20 万行 × 5 万 span 的 runlist 过滤 0.29s（debug 构建，贴近真实查询
+  规模），无退化。CRLF 归一化（`BufRead::lines`）与 rgr 一致；行首空白
+  + `#` 视为注释为 pgr 全家族统一行为（#24），rgr 仅按行首 `#` 判断，
+  属记录在案的有意差异。未再发现新问题，收束。
 
-## 修复的缺陷（共 37 处）
+## 修复的缺陷（共 38 处）
 
 修复按发现顺序全局编号（#1-19 为 runlist 阶段、#20-25 为 rg 阶段、
 #26-27 为第 7 轮、#34 为第 18 轮、#35 为第 21 轮、#36-37 为第 24 轮），
-按类别分组。
+按类别分组（#38 为第 26 轮）。
 
 ### 崩溃 / 越界 / 溢出（Zero Panic，16 处）
 
@@ -413,6 +433,20 @@ for excise"，与 `runlist span -n` 一致）。
     相减（`i64::from(end.min(e)) - i64::from(start.max(s)) + 1`）。
     回归测试 `covered_wide_domain_does_not_overflow`。
 
+### 数据安全 / 参数校验（第 26 轮，1 处）
+
+38. **`ensure_outfile_distinct` 对屏幕哨兵 `stdout` 误判**：`-o stdout`
+    表示写屏幕（`writer` 特判、不会创建文件），但当工作目录存在一个恰好
+    名为 `stdout` 的文件并作为输入时（如 `pgr rg runlist rl.json
+    stdout`，默认输出即屏幕），`same_path("stdout", "stdout")` 判为同
+    路径而误拒命令，报 "output file stdout is also an input file"——实际
+    上输出去屏幕、不存在截断风险。影响所有调用 `ensure_outfile_distinct`
+    的流式命令（`rg runlist` / `rg prop` / `rg span` / `rg count` /
+    `runlist convert`）。修复：`outfile == "stdout"` 时直接跳过同路径
+    检查（屏幕输出不可能覆盖任何输入文件）。回归测试
+    `command_rg_stdout_named_input_allowed`（默认输出与显式 `-o stdout`
+    两种形态，输入文件被正常读取并过滤）。
+
 ### 文档修复（第 18 轮）
 
 * `notes/design/runlist.md` 仍写 `cmd_pgr/runlist/` 有 12 个子命令
@@ -565,6 +599,15 @@ for excise"，与 `runlist span -n` 一致）。
   残留部分输出，修复后五个流式命令均在报错前保持既有输出原样；
   修复后全量测试 + doctest + `cargo fmt` + `cargo clippy --all-targets
   -- -D warnings` 干净。
+* 第 26 轮：#38 修复前实测 `pgr rg runlist rl.json stdout`（工作目录有
+  名为 `stdout` 的文件、默认输出到屏幕）被误拒，修复后正常读取并过滤；
+  `runlist convert` 同路径形态一并验证通过。修复后重跑：与真实 rgr
+  二进制逐字节对拍 600 trial（5 种子 × 3 ops）、与朴素实现差分 1200
+  trial（普通域 + 极端坐标域，含 `i32::MIN` runlist / 近上限区间 / 大
+  span 数）、畸形输入 fuzz 300 trial（含数据安全断言：缺失输入不截断
+  既有输出、非法 op 退出码 2）——全部一致/零 panic；docs/rg.md 的
+  `runlist` 示例逐一执行通过；全量测试 + doctest + `cargo fmt` +
+  `cargo clippy --all-targets -- -D warnings` 干净。
 
 ### 最终状态
 
@@ -587,6 +630,8 @@ for excise"，与 `runlist span -n` 一致）。
   近全幅查询）、`command_rg_output_preserved_on_missing_input`
   （runlist/prop/span/count 四例）、
   `command_runlist_convert_output_preserved_on_missing_input`。
+  第 26 轮增补：`command_rg_stdout_named_input_allowed`（目录中名为
+  `stdout` 的输入文件 + 默认输出与显式 `-o stdout` 两种形态）。
 
 ## 提交状态
 

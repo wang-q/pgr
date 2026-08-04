@@ -309,6 +309,12 @@ pub fn ensure_outfile_distinct<'a>(
     outfile: &str,
     inputs: impl IntoIterator<Item = &'a str>,
 ) -> anyhow::Result<()> {
+    // `stdout` is the screen sentinel (`writer` never creates a file for
+    // it), so it cannot overwrite an input even when a file literally named
+    // `stdout` exists in the working directory.
+    if outfile == "stdout" {
+        return Ok(());
+    }
     for input in inputs {
         if pgr::libs::io::same_path(outfile, input) {
             anyhow::bail!("output file {} is also an input file", outfile);
