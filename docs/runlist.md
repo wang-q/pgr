@@ -110,22 +110,22 @@ pgr runlist split <infile> --suffix .json -o stdout
 
 ## stat
 
-Prints per-chromosome coverage as CSV (`key,chr,chrLength,size,coverage`
+Prints per-chromosome coverage as TSV (`key\tchr\tchrLength\tsize\tcoverage`
 plus an `all` row). `--all` keeps only the whole-genome stats.
 
 ```bash
 pgr runlist stat [OPTIONS] <chr.sizes> <infile>
-pgr runlist stat chr.sizes in.json -o stat.csv
+pgr runlist stat chr.sizes in.json -o stat.tsv
 ```
 
 ## statop
 
-Prints CSV stats comparing `infile1` (possibly multi) against `infile2`
-(single): `key,chr,chrLength,size,<base>Length,<base>Size,c1,c2,ratio`,
+Prints TSV stats comparing `infile1` (possibly multi) against `infile2`
+(single): `key\tchr\tchrLength\tsize\t<base>Length\t<base>Size\tc1\tc2\tratio`,
 where `<base>` is the stem of `infile2` (or `--base`). `--all` keeps only the
 whole-genome stats.
 
 ```bash
 pgr runlist statop [OPTIONS] <chr.sizes> <infile1> <infile2>
-pgr runlist statop chr.sizes a.json b.json -o statop.csv
+pgr runlist statop chr.sizes a.json b.json -o statop.tsv
 ```

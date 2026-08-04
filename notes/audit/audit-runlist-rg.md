@@ -9,14 +9,14 @@ merge/some/span/split/stat/statop）、`cmd_pgr/rg/` 8 个子
 spanr 调用的 `libs/pl/repeat`、`cmd_pgr/pl/p2m`、`cmd_pgr/rept/trf` 和全部
 测试/文档。
 
-缺陷按发现顺序全局编号 #1–#40，按类别分组记录如下；关键修复均附
+缺陷按发现顺序全局编号 #1–#42，按类别分组记录如下；关键修复均附
 回归测试（清单见文末），累计验证见文末"验证"一节。
 
-## 修复的缺陷（共 40 处）
+## 修复的缺陷（共 42 处）
 
 缺陷按发现顺序全局编号，按类别分组记录。
 
-### 崩溃 / 越界 / 溢出（Zero Panic，16 处）
+### 崩溃 / 越界 / 溢出（Zero Panic，18 处）
 
 1. **IntSpan runlist 解析器尾部 `-` 越界 panic**：`runlist_to_ranges` 在
    遇到 `-` 时无条件 `bytes.get(idx + i + 1).unwrap()`，输入 `"1-"` 直接
@@ -266,6 +266,34 @@ for excise"，与 `runlist span -n` 一致）。
     含与旧实现常规域一致断言）与 `command_runlist_span_holes_i32_min_
     no_panic`（CLI 层，holes + fill 两路径）。
 
+41. **`IntSpan::from` / `add_runlist` / `remove_runlist` 对非法 runlist
+    输入 panic**：`from` 走 `try_from(...).expect("invalid runlist
+    string")`，`add_runlist` / `remove_runlist` 对
+    `runlist_to_ranges(...).unwrap()`——`"1--1"`、`"abc"` 等畸形字符串
+    直接 panic。此前以"保持外部 crate 的 panic API（API 兼容）"为由
+    保留（CLI 已前置 `valid` 校验、不可达），但 IntSpan 已迁入 pgr
+    内部，运行时只需输出文件兼容、无需与外部 API 兼容。修复：`from`
+    对非法输入返回空集（需要严格性用 `try_from`），`add_runlist` /
+    `remove_runlist` 前置 `valid` 校验、非法输入整体忽略。回归测试
+    `invalid_runlists_are_ignored_not_panicked`。
+42. **IntSpan 其余 vendored API 的极端输入溢出 panic**：`contains` 的
+    `n + 1` 在 `n = i32::MAX` 溢出；`spans()` 的 `edges[i+1] - 1` 对
+    `invert`/`complement` 产生的 `i32::MIN` 上边下溢（#35 只绕开了 CLI
+    可达的 holes/fill，直接调用这两个 API 仍会 panic）；`at` 的
+    `i32::abs(i32::MIN)` 溢出，`at_pos`/`at_neg`/`index` 的
+    `span_len = upper - lower + 1` 对近全幅 span 溢出。修复：
+    `contains` 改 `checked_add`（越界返回 false）；`spans()` 用 i64
+    求上边并跳过退化 span（i32::MIN-1 以下不可表示部分），
+    `invert`/`complement` 因此安全；`at` 改 `unsigned_abs`，
+    `at_pos`/`at_neg`/`index` 的累计与 span_len 改 i64，`index` 结果
+    饱和到 `i32::MAX`（与 `cardinality` 饱和语义一致）。回归测试
+    `contains_wide_domain_does_not_overflow`、
+    `invert_and_complement_on_i32_min_set_do_not_overflow`、
+    `indexing_wide_spans_do_not_overflow`。`at`/`index`/`slice` 的参数
+    校验（空集、索引 0、越界、元素不存在）仍保留 panic 契约——这是
+    内部 API 的调用方不变式（先 `is_empty`/`contains` 再调用），与
+    外部兼容性无关，见"已知限制"。
+
 ### 数据安全 / 溢出（2 处）
 
 36. **五个流式命令在后续输入打开失败时截断/部分覆盖既有输出**：
@@ -360,7 +388,8 @@ for excise"，与 `runlist span -n` 一致）。
 逐条对照原始 spanr 0.6.7 源码（docs.rs）确认 runlist 家族未改语义：
 
 * `statop` 的 `c2 = s2_size / s2_length`、`ratio = c2 / c1`、`all` 行汇总
-  公式逐字段一致（含 f32/f64 格式化的差异保留）。
+  公式逐字段一致（含 f32/f64 格式化的差异保留）；输出分隔符为有意差异：
+  pgr 用 TSV（`\t`）、spanr 用 CSV（`,`），字段顺序与数值一致。
 * `stat` 的逐染色体行 + `all` 行、`--all` 只保留全基因组行一致。
 * `compare` 的 `chrs` 取并集、缺失染色体补空、多 others 顺序折叠一致。
 * `merge` 的 stem 命名（`--all` = 完整 stem）一致。
@@ -389,8 +418,8 @@ for excise"，与 `runlist span -n` 一致）。
 * **coitrees 输入顺序**：`BasicCOITree::new` 内部会按 (start, end) 排序，
   `RgIndex` / `rg merge` 按行序喂入不排序的区间不会错乱。
 * **stat / statop 的 `--all` 表头字段数**：multi 与 single 两种形态下
-  header 与数据行列数均一致（含 `--all` 去掉 `chr,` / `all,` 后），
-  spanr parity 测试通过。
+  header 与数据行列数均一致（含 `--all` 去掉 `chr\t` / `all\t` 后），
+  字段数与数值与 spanr 一致（分隔符为有意差异，见上）。
 * **`rg span` 饱和结果的取舍**：Range 层保留饱和语义（与 vendored crate
   对齐），CLI 层 `clamp_to_domain` 保证输出可回读（见 #23），两处职责
   分开，不在 Range 层重复夹紧。
@@ -416,14 +445,12 @@ for excise"，与 `runlist span -n` 一致）。
 
 ## 已知限制（有意保留）
 
-* `IntSpan::from` / `add_runlist` 保持外部 crate 的 panic API（API 兼容），
-  所有命令行入口已前置 `IntSpan::valid` 校验，CLI 不再可达。
 * `stat` / `statop` 对 0 长度染色体输出 inf/NaN，与 spanr 行为一致。
-* `banish` / `distance` / `at` / `index` / `slice` / `contains` 等 vendored
-  API 的极端输入溢出未修（runlist/rg 命令不经过这些路径）。
-* `complement` / `invert` 作为 vendored API 对含 `i32::MIN` 的集合仍会
-  溢出（`i32::MIN` 低于 NEG_INF 哨兵，域外输入）；#35 已让 CLI 可达的
-  `holes`/`fill` 不再经过补集路径，直接调用这两个 API 仍属已知限制。
+* `at` / `index` / `slice` 的参数校验保留 panic 契约（空集、索引 0、
+  越界、元素不存在）：这些是内部 API 的调用方不变式（调用方先
+  `is_empty` / `contains` 再调用），CLI 不经过这些路径，与外部兼容性
+  无关。`add_pair` 的 "Bad order" 校验同理（CLI 侧已由 `usable_range`
+  等前置校验）。
 
 ## 带点 contig 名截断 bug 的处置结论（对应 repeat-masking.md 记录）
 
@@ -502,4 +529,10 @@ for excise"，与 `runlist span -n` 一致）。
   两种形态）、`command_rg_output_preserved_on_directory_input`
   （runlist/prop/span/count 四例，目录输入在报错前保持既有输出原样）、
   `command_rg_stdin_sentinel_output_allowed`（stdin 流输入 + `-o stdin`
-  新建输出文件，命令成功且文件内容正确）。
+  新建输出文件，命令成功且文件内容正确）、
+  `invalid_runlists_are_ignored_not_panicked`（IntSpan 层，
+  `from`/`add_runlist`/`remove_runlist` 非法输入不再 panic）、
+  `contains_wide_domain_does_not_overflow`、
+  `invert_and_complement_on_i32_min_set_do_not_overflow`（IntSpan 层，
+  `spans()` 跳过退化 span）、`indexing_wide_spans_do_not_overflow`
+  （`at`/`index` 近全幅 span 不溢出、结果饱和）。

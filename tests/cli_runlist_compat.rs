@@ -116,11 +116,11 @@ fn command_stat() {
     .run();
     assert_eq!(stdout.lines().count(), 18, "line count");
     assert_eq!(
-        stdout.lines().next().unwrap().split(',').count(),
+        stdout.lines().next().unwrap().split('\t').count(),
         4,
         "field count"
     );
-    assert!(stdout.contains("all,12071326,1059702,"), "got: {stdout}");
+    assert!(stdout.contains("all\t12071326\t1059702\t"), "got: {stdout}");
 }
 
 #[test]
@@ -134,7 +134,7 @@ fn command_stat_all() {
     .run();
     assert_eq!(stdout.lines().count(), 2, "line count");
     assert_eq!(
-        stdout.lines().next().unwrap().split(',').count(),
+        stdout.lines().next().unwrap().split('\t').count(),
         3,
         "field count"
     );
@@ -152,14 +152,14 @@ fn command_statop() {
     .run();
     assert_eq!(stdout.lines().count(), 18, "line count");
     assert_eq!(
-        stdout.lines().next().unwrap().split(',').count(),
+        stdout.lines().next().unwrap().split('\t').count(),
         8,
         "field count"
     );
     assert!(stdout.contains("36721"), "sum exists: {stdout}");
-    assert!(stdout.contains(",repeatLength,"), "got: {stdout}");
-    assert!(stdout.contains("\nI,"), "got: {stdout}");
-    assert!(stdout.contains("\nXVI,"), "got: {stdout}");
+    assert!(stdout.contains("\trepeatLength\t"), "got: {stdout}");
+    assert!(stdout.contains("\nI\t"), "got: {stdout}");
+    assert!(stdout.contains("\nXVI\t"), "got: {stdout}");
 }
 
 #[test]
@@ -174,14 +174,14 @@ fn command_statop_all() {
     .run();
     assert_eq!(stdout.lines().count(), 2, "line count");
     assert_eq!(
-        stdout.lines().next().unwrap().split(',').count(),
+        stdout.lines().next().unwrap().split('\t').count(),
         7,
         "field count"
     );
     assert!(stdout.contains("36721"), "sum exists: {stdout}");
-    assert!(stdout.contains(",repeatLength,"), "got: {stdout}");
-    assert!(!stdout.contains("\nI,"), "got: {stdout}");
-    assert!(!stdout.contains("\nXVI,"), "got: {stdout}");
+    assert!(stdout.contains("\trepeatLength\t"), "got: {stdout}");
+    assert!(!stdout.contains("\nI\t"), "got: {stdout}");
+    assert!(!stdout.contains("\nXVI\t"), "got: {stdout}");
 }
 
 #[test]

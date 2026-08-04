@@ -326,10 +326,10 @@ fn command_runlist_stat() {
         .run();
     assert_eq!(
         stdout,
-        "chr,chrLength,size,coverage\n\
-         chr1,1000,500,0.5000\n\
-         chr2,2000,100,0.0500\n\
-         all,3000,600,0.2000\n"
+        "chr\tchrLength\tsize\tcoverage\n\
+         chr1\t1000\t500\t0.5000\n\
+         chr2\t2000\t100\t0.0500\n\
+         all\t3000\t600\t0.2000\n"
     );
 }
 

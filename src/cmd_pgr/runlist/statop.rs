@@ -10,14 +10,14 @@ pub fn make_subcommand() -> Command {
         .about("Coverage on chromosomes for one runlist crossed another")
         .after_help(
             r###"
-Prints CSV stats comparing `infile1` (possibly multi) against `infile2`
-(single): `key,chr,chrLength,size,<base>Length,<base>Size,c1,c2,ratio`,
+Prints TSV stats comparing `infile1` (possibly multi) against `infile2`
+(single): `key\tchr\tchrLength\tsize\t<base>Length\t<base>Size\tc1\tc2\tratio`,
 where `<base>` is the stem of `infile2` (or `--base`). `--all` keeps only
 the whole-genome stats.
 
 Examples:
 1. Intersection stats:
-   pgr runlist statop chr.sizes a.json b.json -o statop.csv
+   pgr runlist statop chr.sizes a.json b.json -o statop.tsv
 "###,
         )
         .arg(
@@ -125,12 +125,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let mut lines: Vec<String> = Vec::new();
     let mut header = format!(
-        "key,chr,chrLength,size,{}Length,{}Size,c1,c2,ratio",
+        "key\tchr\tchrLength\tsize\t{}Length\t{}Size\tc1\tc2\tratio",
         base, base
     );
     if is_multi {
         if is_all {
-            header = header.replacen("chr,", "", 1);
+            header = header.replacen("chr\t", "", 1);
         }
         lines.push(header);
         for (name, s1) in &filled_of {
@@ -144,9 +144,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             )?);
         }
     } else {
-        header = header.replacen("key,", "", 1);
+        header = header.replacen("key\t", "", 1);
         if is_all {
-            header = header.replacen("chr,", "", 1);
+            header = header.replacen("chr\t", "", 1);
         }
         lines.push(header);
         lines.push(pgr::libs::runlist::statop_lines(

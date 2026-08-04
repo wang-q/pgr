@@ -9,12 +9,12 @@ pub fn make_subcommand() -> Command {
         .about("Coverage on chromosomes for runlists")
         .after_help(
             r###"
-Prints per-chromosome coverage as CSV (`key,chr,chrLength,size,coverage`
+Prints per-chromosome coverage as TSV (`key\tchr\tchrLength\tsize\tcoverage`
 plus an `all` row). `--all` keeps only the whole-genome stats.
 
 Examples:
 1. Per-chromosome stats:
-   pgr runlist stat chr.sizes in.json -o stat.csv
+   pgr runlist stat chr.sizes in.json -o stat.tsv
 "###,
         )
         .arg(
@@ -48,10 +48,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let is_all = args.get_flag("all");
 
     let mut lines: Vec<String> = Vec::new();
-    let mut header = "key,chr,chrLength,size,coverage".to_string();
+    let mut header = "key\tchr\tchrLength\tsize\tcoverage".to_string();
     if is_multi {
         if is_all {
-            header = header.replacen("chr,", "", 1);
+            header = header.replacen("chr\t", "", 1);
         }
         lines.push(header);
         for (name, set) in &set_of {
@@ -63,9 +63,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             )?);
         }
     } else {
-        header = header.replacen("key,", "", 1);
+        header = header.replacen("key\t", "", 1);
         if is_all {
-            header = header.replacen("chr,", "", 1);
+            header = header.replacen("chr\t", "", 1);
         }
         lines.push(header);
         lines.push(pgr::libs::runlist::stat_lines(

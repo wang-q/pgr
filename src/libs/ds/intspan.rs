@@ -117,7 +117,10 @@ impl IntSpan {
     }
 
     pub fn from(runlist: &str) -> Self {
-        Self::try_from(runlist).expect("invalid runlist string")
+        // Invalid input is ignored (empty set) instead of panicking: the
+        // parser is pgr-internal now, so callers that need strictness use
+        // `try_from` and command paths pre-validate with `valid`.
+        Self::try_from(runlist).unwrap_or_default()
     }
 
     /// Parse `runlist` into a set, returning an error instead of panicking
@@ -213,7 +216,12 @@ impl IntSpan {
 
     #[inline]
     pub fn contains(&self, n: i32) -> bool {
-        let pos = self.find_pos(n + 1, 0);
+        // `n + 1` would overflow for i32::MAX; values at or beyond POS_INF
+        // are outside every representable set, so treat them as absent.
+        let Some(val) = n.checked_add(1) else {
+            return false;
+        };
+        let pos = self.find_pos(val, 0);
         (pos & 1) == 1
     }
 
@@ -428,19 +436,18 @@ mod create {
     }
 
     #[test]
-    #[should_panic(expected = "Bad order: 1,-1")]
-    fn panic_runlist() {
-        let mut set = IntSpan::new();
-        set.add_runlist("1--1");
-        println!("{:?}", set.ranges());
-    }
+    fn invalid_runlists_are_ignored_not_panicked() {
+        // The parser is pgr-internal now; invalid input contributes nothing
+        // instead of panicking (callers that need strictness use `try_from`,
+        // and command paths pre-validate with `valid`).
+        assert!(IntSpan::from("1--1").is_empty());
+        assert!(IntSpan::from("abc").is_empty());
+        assert!(IntSpan::from("1-3,4-2").is_empty());
 
-    #[test]
-    #[should_panic(expected = "Number format error: a at 0 of abc")]
-    fn panic_runlist_2() {
-        let mut set = IntSpan::new();
-        set.add_runlist("abc");
-        println!("{:?}", set.ranges());
+        let mut set = IntSpan::from("1-5");
+        set.add_runlist("7--3");
+        set.remove_runlist("9-");
+        assert_eq!(set.to_string(), "1-5");
     }
 
     // Read as 1-11
@@ -466,10 +473,14 @@ impl IntSpan {
     /// ```
     pub fn spans(&self) -> Vec<(i32, i32)> {
         (0..self.span_size())
-            .map(|i| {
+            .filter_map(|i| {
                 let lower = self.edges[i * 2];
-                let upper = self.edges[i * 2 + 1] - 1;
-                (lower, upper)
+                // Widen before subtracting: an upper edge of i32::MIN (only
+                // reachable via `invert` on a set containing i32::MIN) would
+                // underflow the i32 intermediate; the resulting span ends
+                // below the representable domain and is skipped.
+                let upper = i64::from(self.edges[i * 2 + 1]) - 1;
+                (upper >= i64::from(lower)).then_some((lower, upper as i32))
             })
             .collect()
     }
@@ -680,7 +691,7 @@ impl IntSpan {
     // https://hermanradtke.com/2015/05/06/creating-a-rust-function-that-accepts-string-or-str.html
     pub fn add_runlist(&mut self, runlist: &str) {
         // skip empty runlist
-        if !runlist.is_empty() && !runlist.eq(&*EMPTY_STRING) {
+        if !runlist.is_empty() && !runlist.eq(&*EMPTY_STRING) && Self::valid(runlist) {
             let ranges = self.runlist_to_ranges(runlist).unwrap();
             self.add_ranges(&ranges);
         }
@@ -743,7 +754,7 @@ impl IntSpan {
 
     pub fn remove_runlist(&mut self, runlist: &str) {
         // skip empty runlist
-        if !runlist.is_empty() && !runlist.eq(&*EMPTY_STRING) {
+        if !runlist.is_empty() && !runlist.eq(&*EMPTY_STRING) && Self::valid(runlist) {
             let ranges = self.runlist_to_ranges(runlist).unwrap();
             self.remove_ranges(&ranges);
         }
@@ -1029,6 +1040,29 @@ mod binary {
     }
 
     #[test]
+    fn contains_wide_domain_does_not_overflow() {
+        // `contains` used to compute `n + 1` in i32, overflowing at
+        // i32::MAX in debug builds.
+        let set = IntSpan::from("-2147483648-2147483645");
+        assert!(!set.contains(i32::MAX));
+        assert!(set.contains(2_147_483_645));
+        assert!(!IntSpan::new().contains(i32::MAX));
+    }
+
+    #[test]
+    fn invert_and_complement_on_i32_min_set_do_not_overflow() {
+        // `invert` pushes NEG_INF before a leading i32::MIN edge; the
+        // resulting degenerate first span ends at i32::MIN - 1, which used
+        // to underflow `spans()` in debug builds. It is now skipped, and the
+        // representable part of the complement is returned.
+        let set = IntSpan::from("-2147483648-5");
+        let mut inv = set.copy();
+        inv.invert();
+        assert_eq!(inv.to_string(), "6-2147483645");
+        assert_eq!(set.complement().to_string(), "6-2147483645");
+    }
+
+    #[test]
     fn intersect_matches_slow_implementation() {
         // The old complement+merge+invert implementation, kept as an oracle.
         fn slow(a: &IntSpan, b: &IntSpan) -> IntSpan {
@@ -1291,18 +1325,19 @@ mod relation {
 impl IntSpan {
     fn at_pos(&self, index: i32) -> i32 {
         let mut element = self.min();
-        let mut ele_before = 0;
+        let mut ele_before: i64 = 0;
+        let index = i64::from(index);
 
         for i in 0..self.span_size() {
             let lower = *self.edges.get(i * 2).unwrap();
-            let upper = *self.edges.get(i * 2 + 1).unwrap() - 1;
+            let upper = i64::from(*self.edges.get(i * 2 + 1).unwrap()) - 1;
 
-            let span_len = upper - lower + 1;
+            let span_len = upper - i64::from(lower) + 1;
 
             if index > ele_before + span_len {
                 ele_before += span_len;
             } else {
-                element = index - ele_before - 1 + lower;
+                element = (index - ele_before - 1 + i64::from(lower)) as i32;
                 break;
             }
         }
@@ -1312,18 +1347,19 @@ impl IntSpan {
 
     fn at_neg(&self, index: i32) -> i32 {
         let mut element = self.max();
-        let mut ele_after = 0;
+        let mut ele_after: i64 = 0;
+        let index = i64::from(index);
 
         for i in (0..self.span_size()).rev() {
             let lower = *self.edges.get(i * 2).unwrap();
-            let upper = *self.edges.get(i * 2 + 1).unwrap() - 1;
+            let upper = i64::from(*self.edges.get(i * 2 + 1).unwrap()) - 1;
 
-            let span_len = upper - lower + 1;
+            let span_len = upper - i64::from(lower) + 1;
 
             if index > ele_after + span_len {
                 ele_after += span_len;
             } else {
-                element = upper - (index - ele_after) + 1;
+                element = (upper - (index - ele_after) + 1) as i32;
                 break;
             }
         }
@@ -1338,16 +1374,21 @@ impl IntSpan {
         if self.is_empty() {
             panic!("Indexing on an empty set");
         }
-        if i32::abs(index) < 1 {
+        // `unsigned_abs` keeps i32::MIN well-defined (magnitude 2^31, which
+        // is always beyond the saturated cardinality and rejected below).
+        let magnitude = index.unsigned_abs();
+        if magnitude < 1 {
             panic!("Index can't be 0");
         }
-        if i32::abs(index) > self.cardinality() {
+        if magnitude > self.cardinality() as u32 {
             panic!("Out of max index");
         }
 
         if index > 0 {
             self.at_pos(index)
         } else {
+            // `index` is negative and |index| <= i32::MAX here, so `-index`
+            // cannot overflow.
             self.at_neg(-index)
         }
     }
@@ -1362,15 +1403,18 @@ impl IntSpan {
         }
 
         let mut index = -1; // not valid
-        let mut ele_before = 0;
+        let mut ele_before: i64 = 0;
 
         for i in 0..self.span_size() {
             let lower = *self.edges.get(i * 2).unwrap();
-            let upper = *self.edges.get(i * 2 + 1).unwrap() - 1;
-            let span_len = upper - lower + 1;
+            let upper = i64::from(*self.edges.get(i * 2 + 1).unwrap()) - 1;
+            let span_len = upper - i64::from(lower) + 1;
 
-            if element >= lower && element <= upper {
-                index = element - lower + 1 + ele_before;
+            if element >= lower && i64::from(element) <= upper {
+                // Saturate like `cardinality` when the set exceeds i32::MAX
+                // elements.
+                index = (i64::from(element) - i64::from(lower) + 1 + ele_before)
+                    .min(i64::from(i32::MAX)) as i32;
             } else {
                 ele_before += span_len;
             }
@@ -1450,6 +1494,23 @@ mod index {
                 assert_eq!(set.index(n), exp_element);
             }
         }
+    }
+
+    #[test]
+    fn indexing_wide_spans_do_not_overflow() {
+        // Per-span lengths and running positions were computed in i32, which
+        // overflows on spans wider than the i32 domain (debug builds). The
+        // cardinality saturates at i32::MAX; `at` returns the coordinate and
+        // `index` saturates the 1-based position like `cardinality`.
+        let set = IntSpan::from("-2147483647-2147483645");
+        assert_eq!(set.at(1), -2_147_483_647);
+        assert_eq!(set.at(-1), 2_147_483_645);
+        assert_eq!(set.index(-2_147_483_647), 1);
+        assert_eq!(set.index(2_147_483_645), i32::MAX);
+        // `at` with i32::MIN must not overflow `abs`; it is beyond the
+        // saturated cardinality and rejected by the documented check.
+        let err = std::panic::catch_unwind(|| set.at(i32::MIN));
+        assert!(err.is_err());
     }
 
     #[test]

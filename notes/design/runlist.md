@@ -15,7 +15,8 @@ pgr 内部命令族 `pgr runlist`（命名避免与旧 spanr 冲突，符合 pgr
   `libs/ds::IntSpan` 与已迁入的 `set2json` 等辅助。
 * `cmd_pgr/runlist/`：**10 个子命令**（combine/compare/convert/genome/
   merge/some/span/split/stat/statop），与 spanr CLI 参数兼容（含 `--op`、
-  `--all`、`--longest` 等），逐条与外部 spanr 输出 diff 验证一致。
+  `--all`、`--longest` 等），逐条与外部 spanr 输出 diff 验证一致
+  （stat/statop 输出分隔符为有意差异：pgr 用 TSV、spanr 用 CSV）。
   原 spanr 的 `cover`/`coverage`（.rg 输入）迁出到 `pgr rg` 家族，`gff`
   子命令归位到 `pgr gff runlist`（GFF 输入转换归 GFF 命令管），参数与
   行为不变。
@@ -25,6 +26,7 @@ pgr 内部命令族 `pgr runlist`（命名避免与旧 spanr 冲突，符合 pgr
 统计类命令（stat/statop）的差异：spanr 在染色体缺失于 sizes 或输入非法
 （如 statop 的 infile2 为多层 JSON）时直接 panic；pgr 改为友好报错或按
 空集处理（statop 的 `s2`/`set_op` 缺失染色体按 0 计，Zero-Panic）。
+输出用 TSV（tab 分隔）而非 spanr 的 CSV，字段顺序与数值公式一致。
 
 ## 测试迁移
 

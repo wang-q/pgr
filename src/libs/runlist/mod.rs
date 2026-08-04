@@ -615,7 +615,8 @@ pub fn split_json(
         .collect()
 }
 
-/// Per-chromosome coverage stats as CSV lines (spanr `stat`); errors when a
+/// Per-chromosome coverage stats as TSV lines (spanr `stat` fields, tab
+/// separators); errors when a
 /// chromosome of `set` is missing from `sizes`.
 pub fn stat_lines(
     set: &BTreeMap<String, IntSpan>,
@@ -632,10 +633,10 @@ pub fn stat_lines(
             .ok_or_else(|| anyhow::anyhow!("chromosome {chr} not found in sizes"))?;
         let size = set[chr].cardinality();
         if let Some(s) = prefix {
-            lines.push_str(&format!("{},", s));
+            lines.push_str(&format!("{}\t", s));
         }
         lines.push_str(&format!(
-            "{},{},{},{:.4}\n",
+            "{}\t{}\t{}\t{:.4}\n",
             chr,
             length,
             size,
@@ -645,7 +646,7 @@ pub fn stat_lines(
         all_size += i64::from(size);
     }
     let mut all_line = format!(
-        "{},{},{},{:.4}\n",
+        "{}\t{}\t{}\t{:.4}\n",
         "all",
         all_length,
         all_size,
@@ -653,16 +654,17 @@ pub fn stat_lines(
     );
     if all {
         lines = String::new();
-        all_line = all_line.replacen("all,", "", 1);
+        all_line = all_line.replacen("all\t", "", 1);
     }
     if let Some(s) = prefix {
-        all_line.insert_str(0, &format!("{},", s));
+        all_line.insert_str(0, &format!("{}\t", s));
     }
     lines.push_str(all_line.trim_end());
     Ok(lines)
 }
 
-/// Cross-set coverage stats as CSV lines (spanr `statop`); `set_op` is the
+/// Cross-set coverage stats as TSV lines (spanr `statop` fields, tab
+/// separators); `set_op` is the
 /// per-chromosome result of `op` between `s1` and `s2`.
 #[allow(clippy::too_many_arguments)]
 pub fn statop_lines(
@@ -698,10 +700,10 @@ pub fn statop_lines(
             c2 / c1
         };
         if let Some(s) = prefix {
-            lines.push_str(&format!("{},", s));
+            lines.push_str(&format!("{}\t", s));
         }
         lines.push_str(&format!(
-            "{},{},{},{},{},{:.4},{:.4},{:.4}\n",
+            "{}\t{}\t{}\t{}\t{}\t{:.4}\t{:.4}\t{:.4}\n",
             chr, length, size, s2_length, s2_size, c1, c2, ratio
         ));
         all_length += i64::from(length);
@@ -721,15 +723,15 @@ pub fn statop_lines(
         all_c2 / all_c1
     };
     let mut all_line = format!(
-        "{},{},{},{},{},{:.4},{:.4},{:.4}\n",
+        "{}\t{}\t{}\t{}\t{}\t{:.4}\t{:.4}\t{:.4}\n",
         "all", all_length, all_size, all_s2_length, all_s2_size, all_c1, all_c2, all_ratio
     );
     if all {
         lines = String::new();
-        all_line = all_line.replacen("all,", "", 1);
+        all_line = all_line.replacen("all\t", "", 1);
     }
     if let Some(s) = prefix {
-        all_line.insert_str(0, &format!("{},", s));
+        all_line.insert_str(0, &format!("{}\t", s));
     }
     lines.push_str(all_line.trim_end());
     Ok(lines)
@@ -969,13 +971,13 @@ mod tests {
         let mut runset = BTreeMap::new();
         runset.insert("chr1".to_string(), set("1-500"));
         let s = stat_lines(&runset, &sizes, false, None).unwrap();
-        assert_eq!(s, "chr1,1000,500,0.5000\nall,1000,500,0.5000");
+        assert_eq!(s, "chr1\t1000\t500\t0.5000\nall\t1000\t500\t0.5000");
         let s2 = runset.clone();
         let op = runset.clone();
         let so = statop_lines(&runset, &sizes, &s2, &op, false, None).unwrap();
         assert_eq!(
             so,
-            "chr1,1000,500,500,500,0.5000,1.0000,2.0000\nall,1000,500,500,500,0.5000,1.0000,2.0000"
+            "chr1\t1000\t500\t500\t500\t0.5000\t1.0000\t2.0000\nall\t1000\t500\t500\t500\t0.5000\t1.0000\t2.0000"
         );
         // A chromosome missing from sizes is a friendly error, not a panic.
         let mut bad = BTreeMap::new();
