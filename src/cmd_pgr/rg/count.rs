@@ -40,15 +40,24 @@ Examples:
 /// Execute the count command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let outfile = crate::cmd_pgr::args::get_outfile(args);
+    let target = args.get_one::<String>("target").unwrap();
     let files: Vec<String> = args
         .get_many::<String>("infiles")
         .unwrap()
         .cloned()
         .collect();
+    crate::cmd_pgr::args::ensure_outfile_distinct(
+        outfile,
+        std::iter::once(target.as_str()).chain(
+            args.get_many::<String>("infiles")
+                .unwrap()
+                .map(String::as_str),
+        ),
+    )?;
     let index = pgr::libs::runlist::RgIndex::from_files(&files)?;
 
     let mut writer = pgr::writer(outfile)?;
-    let reader = pgr::reader(args.get_one::<String>("target").unwrap())?;
+    let reader = pgr::reader(target)?;
     for line in reader.lines() {
         let line = line?;
         if line.trim_start().starts_with('#') {

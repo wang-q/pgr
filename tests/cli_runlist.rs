@@ -205,6 +205,27 @@ fn command_runlist_convert() {
 }
 
 #[test]
+fn command_runlist_convert_output_same_as_input_rejected() {
+    let dir = TempDir::new().unwrap();
+    let json = dir.path().join("in.json");
+    std::fs::write(&json, r#"{"chr1":"1-10,20-30"}"#).unwrap();
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "runlist",
+            "convert",
+            json.to_str().unwrap(),
+            "-o",
+            json.to_str().unwrap(),
+        ])
+        .run_fail();
+    assert!(stderr.contains("also an input file"), "got: {stderr}");
+    assert_eq!(
+        std::fs::read_to_string(&json).unwrap(),
+        r#"{"chr1":"1-10,20-30"}"#
+    );
+}
+
+#[test]
 fn command_runlist_some() {
     let dir = TempDir::new().unwrap();
     let json = dir.path().join("in.json");

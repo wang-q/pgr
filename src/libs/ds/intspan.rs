@@ -2276,6 +2276,7 @@ pub fn write_json(
     let mut s = serde_json::to_string_pretty(json)?;
     s.push('\n');
     writer.write_all(s.as_bytes())?;
+    writer.flush()?;
     Ok(())
 }
 

@@ -172,6 +172,8 @@ pub fn range_prop(
 pub fn rg_merge_mapping(files: &[String], coverage: f32) -> anyhow::Result<Vec<(String, String)>> {
     // Unique parts per chromosome: (line, start, end).
     let mut parts_of: BTreeMap<String, Vec<(String, i32, i32)>> = BTreeMap::new();
+    let mut seen_of: BTreeMap<String, std::collections::HashSet<(String, i32, i32)>> =
+        BTreeMap::new();
     for f in files {
         let reader = crate::reader(f)?;
         for line in reader.lines() {
@@ -183,10 +185,15 @@ pub fn rg_merge_mapping(files: &[String], coverage: f32) -> anyhow::Result<Vec<(
             if !usable_range(&range) {
                 continue;
             }
-            let parts = parts_of.entry(range.chr().clone()).or_default();
             let part = (line, *range.start(), *range.end());
-            if !parts.contains(&part) {
-                parts.push(part);
+            // A HashSet keeps the dedup linear; `parts` preserves input
+            // order for the stable output mapping.
+            if seen_of
+                .entry(range.chr().clone())
+                .or_default()
+                .insert(part.clone())
+            {
+                parts_of.entry(range.chr().clone()).or_default().push(part);
             }
         }
     }

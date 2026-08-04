@@ -89,7 +89,7 @@ Examples:
                 .num_args(1)
                 .value_parser(value_parser!(i32))
                 .default_value("0")
-                .help("Number of bases to trim, pad, shift or flank"),
+                .help("Number of bases to trim, pad, shift or flank; length threshold for excise"),
         )
         .arg(
             Arg::new("append")
@@ -108,6 +108,18 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mode = args.get_one::<String>("mode").unwrap().as_str();
     let number = *args.get_one::<i32>("number").unwrap();
     let is_append = args.get_flag("append");
+
+    // Validate the op/mode combination before reading any input, so an
+    // invalid invocation fails even when the input files are empty.
+    if matches!(op, "shift" | "flank") && mode == "both" {
+        anyhow::bail!("--mode both is invalid for {op}");
+    }
+    crate::cmd_pgr::args::ensure_outfile_distinct(
+        outfile,
+        args.get_many::<String>("infiles")
+            .unwrap()
+            .map(String::as_str),
+    )?;
 
     let mut writer = pgr::writer(outfile)?;
     for infile in args.get_many::<String>("infiles").unwrap() {
@@ -137,12 +149,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 "shift" => match mode {
                     "5p" => range.shift_5p(number),
                     "3p" => range.shift_3p(number),
-                    _ => anyhow::bail!("--mode both is invalid for shift"),
+                    _ => unreachable!("mode validated before reading input"),
                 },
                 "flank" => match mode {
                     "5p" => range.flank_5p(number),
                     "3p" => range.flank_3p(number),
-                    _ => anyhow::bail!("--mode both is invalid for flank"),
+                    _ => unreachable!("mode validated before reading input"),
                 },
                 "excise" => {
                     if range.intspan().size() >= number {

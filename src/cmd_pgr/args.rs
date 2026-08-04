@@ -303,6 +303,20 @@ pub fn get_outfile(args: &ArgMatches) -> &str {
     args.get_one::<String>("outfile").unwrap()
 }
 
+/// Reject an `-o` path that would overwrite an input file before it has been
+/// read (streaming commands open the output before consuming their inputs).
+pub fn ensure_outfile_distinct<'a>(
+    outfile: &str,
+    inputs: impl IntoIterator<Item = &'a str>,
+) -> anyhow::Result<()> {
+    for input in inputs {
+        if pgr::libs::io::same_path(outfile, input) {
+            anyhow::bail!("output file {} is also an input file", outfile);
+        }
+    }
+    Ok(())
+}
+
 /// Extract the `infile` value from `args` as `&str`.
 pub fn get_infile(args: &ArgMatches) -> &str {
     args.get_one::<String>("infile").unwrap()

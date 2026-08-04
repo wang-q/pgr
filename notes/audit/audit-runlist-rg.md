@@ -32,7 +32,39 @@ CLI 往返（`rg cover` → `runlist convert` → `rg cover` 并集一致、
 `runlist span trim/pad -n 0` 恒等）、5000 组 `Range` 解析-重编码
 往返——未发现新问题，确认收束条件成立。
 
-## 修复的缺陷（共 25 处）
+第 10 轮（复核轮）：换全新角度复核——CLI 参数组合的校验时机、输出文件
+与输入文件同路径时的数据安全、JSON 写出的错误传播、帮助文本完整性，并
+重跑四组差分对拍（rg count/prop/runlist/coverage 250 trial、runlist
+compare/combine/span/convert/some/split/genome 200 trial、rg merge
+300 trial、集合运算与 covered 150 trial）与两轮新种子畸形输入 fuzz
+（120 trial × 2）——发现 3 处缺陷（#28-#30）并修复；修复后重跑全部验证。
+
+第 11 轮（性能复核轮）：放大输入规模检查各命令复杂度，发现 `rg merge`
+去重为 O(n²)（`Vec::contains`），100k 条单染色体区间耗时 37.8 s
+（debug）；修复后同输入 0.28 s（约 135 倍）。新增 criterion 基准
+`benches/rg_merge_benchmark.rs`（disjoint / clustered × 10k / 50k，
+release 下 10k ≈ 2.7–2.9 ms、50k ≈ 17.8–18.4 ms，近线性），并补充
+去重语义回归测试。
+
+第 12–15 轮（复核轮，未发现新缺陷）：
+
+* 第 12 轮：把此前只手工核对的 `runlist stat` / `statop` 纳入差分对拍
+  （150 trial，覆盖 single/multi、`--all`、`--base`、四种 op，逐字段
+  一致）；multi 形态 `compare` 四种 op 120 trial 一致；500 区间链式
+  重叠验证 `rg merge` 传递聚类（全部映射到同一 merged）；将第 10 轮
+  五处同路径检查提取为共享 helper `ensure_outfile_distinct`
+  （`cmd_pgr/args.rs`，消除 5 份重复）。
+* 第 13 轮：对 `rg span` 全部 Range 运算（trim / trim_5p / trim_3p /
+  shift_5p / shift_3p / flank_5p / flank_3p / excise + CLI 层
+  `clamp_to_domain`）做逐公式差分对拍，三个种子共 700 trial（含近上限
+  坐标、负 `n`、i32 极值、name/strand 前缀），全部一致。
+* 第 14 轮：复核全部改动 diff；裸命令 `pgr rg` / `pgr runlist` 与未知
+  子命令均 exit 2 并显示帮助；全量测试 + doctest 通过。
+* 第 15 轮：`docs/rg.md` 与 `docs/runlist.md` 的全部示例命令逐一执行
+  验证（含 stdin、`--longest`、`--full`、`--all`、`--suffix`、
+  `--base` 等形态），全部按文档工作。
+
+## 修复的缺陷（共 31 处）
 
 修复按发现顺序全局编号（#1-19 为 runlist 阶段、#20-25 为 rg 阶段、
 #26-27 为第 7 轮），
@@ -184,6 +216,50 @@ CLI 往返（`rg cover` → `runlist convert` → `rg cover` 并集一致、
     只保留上界 `POS_INF - 1` 的截断。回归测试
     `inset_identity_at_i32_min`。
 
+### 参数校验 / 数据安全 / 错误传播（第 10 轮，3 处）
+
+28. **`rg span` 的 op/mode 组合校验推迟到逐行处理**：`--op shift/flank
+    -m both` 的报错发生在处理到第一条有效行时；输入为空或全注释/无效行
+    时命令静默成功（exit 0），有有效行时才失败（原版 rgr 这里直接
+    `unreachable!` panic）。修复：读取任何输入前先校验
+    `matches!(op, "shift" | "flank") && mode == "both"` 并提前报错，
+    逐行 match 的兜底分支改为 `unreachable!`。回归测试
+    `command_rg_span_invalid_mode_checked_before_input`（empty 与
+    comments-only 输入 × shift/flank 两条命令）。
+29. **流式命令 `-o` 与输入同路径时先截断输入文件，静默数据丢失**：
+    `rg span` / `rg prop` / `rg runlist` 在读取输入行之前创建 writer，
+    `rg count` 建立索引后创建 writer 再读 target，`runlist convert` 在
+    读取 JSON 之前创建 writer——`-o 同输入` 会把输入清空后继续执行
+    （`rg sort` 因先缓冲不受影响；先读后写的 cover/coverage/merge 及
+    runlist 其余子命令天然支持 in-place）。修复：`libs/io` 新增
+    `same_path`（`std::path::absolute` 词法归一化后比较，无文件系统访问），
+    五个命令在读取前对所有位置参数做同路径检查并报
+    "output file ... is also an input file"。回归测试
+    `command_rg_output_same_as_input_rejected`（span/prop/runlist/count
+    四例 + 断言输入文件未被改动）与
+    `command_runlist_convert_output_same_as_input_rejected`。
+30. **`IntSpan::write_json` 未显式 flush**：写盘失败时错误被
+    `PgrWriter::drop` 降级为 stderr warning 且进程以 0 退出，与其余命令
+    显式 `writer.flush()?` 传播错误的行为不一致（影响 `rg cover` /
+    `rg coverage` / `runlist span` / `combine` / `genome` / `merge` /
+    `some` / `gff runlist` 的 JSON 输出路径）。修复：`write_json` 末尾
+    增加 `writer.flush()?`。
+
+文档小修：`rg span -n` 的帮助文本补充 excise 阈值说明（"length threshold
+for excise"，与 `runlist span -n` 一致）。
+
+### 性能（第 11 轮，1 处）
+
+31. **`rg merge` 去重 O(n²) 退化**：`rg_merge_mapping` 用
+    `Vec::contains` 逐条去重，单染色体区间数 n 的去重为 O(n²)；
+    100k 条 disjoint 区间（debug 构建）耗时 37.8 s。修复：并行维护
+    `HashSet<(line, start, end)>` 做 O(1) 判重，`parts` 仍按输入顺序
+    保留以维持稳定输出；同一输入修复后 0.28 s。新增基准
+    `benches/rg_merge_benchmark.rs`（release：10k ≈ 2.7 ms、50k ≈
+    18 ms，disjoint 与 clustered 两种形态），新增回归测试
+    `command_rg_merge_dedups_identical_lines`（重复行只保留一份、
+    不产生自簇，第三条重叠区间正常入簇）。
+
 ## 与外部参考实现的语义一致性核对
 
 逐条对照原始 spanr 0.6.7 源码（docs.rs）确认 runlist 家族未改语义：
@@ -290,6 +366,16 @@ CLI 往返（`rg cover` → `runlist convert` → `rg cover` 并集一致、
   covered 3000 trial、rg merge 120 trial、Range 极端运算、CLI 近上限
   坐标 200 trial）全一致；300 trial × ~20 条命令的随机畸形输入 fuzz
   零 panic。修复 #26/#27 后全部单元/CLI 测试与 52 个测试目标通过。
+* 第 10 轮：修复 #28-#30 后重跑四组差分对拍（250 + 200 + 300 + 150
+  trial，全部一致）与两轮全新种子 fuzz（各 120 trial，含极端 `-n`、
+  畸形 JSON / 尺寸文件 / `.rg` 文本），零 panic；全量测试 + doctest
+  通过，`cargo fmt`、`cargo clippy --all-targets -- -D warnings` 干净。
+* 第 11 轮：`rg merge` 100k 区间从 37.8 s 降至 0.28 s（debug 实测）；
+  criterion 基准（release）10k ≈ 2.7–2.9 ms、50k ≈ 17.8–18.4 ms。
+* 第 12–15 轮：stat/statop 差分 150 trial、multi compare 120 trial、
+  Range 运算差分 700 trial 全部一致；docs 示例逐条执行通过；全量测试
+  + doctest 通过；`cargo fmt`、`cargo clippy --all-targets -- -D
+  warnings` 干净。
 
 ### 最终状态
 

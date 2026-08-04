@@ -438,6 +438,96 @@ fn command_rg_span_extreme_no_panic() {
     assert_eq!(stdout.lines().count(), 3);
 }
 
+// The shift/flank + `--mode both` combination used to be validated only
+// while processing lines, so an empty (or comment-only) input silently
+// succeeded while a non-empty one failed. The validation must happen before
+// any input is read.
+#[test]
+fn command_rg_span_invalid_mode_checked_before_input() {
+    let dir = TempDir::new().unwrap();
+    let empty = dir.path().join("empty.rg");
+    std::fs::write(&empty, "").unwrap();
+    let comments = dir.path().join("comments.rg");
+    std::fs::write(&comments, "# chr1:1-10\nbad line\n").unwrap();
+    for op in ["shift", "flank"] {
+        for infile in [&empty, &comments] {
+            let (_, stderr) = PgrCmd::new()
+                .args(&[
+                    "rg",
+                    "span",
+                    infile.to_str().unwrap(),
+                    "--op",
+                    op,
+                    "-m",
+                    "both",
+                ])
+                .run_fail();
+            assert!(
+                stderr.contains(&format!("invalid for {op}")),
+                "{op}: got: {stderr}"
+            );
+        }
+    }
+}
+
+// Writing the output over an input file used to truncate the input before it
+// was read (span/prop/runlist streamed line by line; count built its index
+// first but then truncated the target). The command must refuse instead.
+#[test]
+fn command_rg_output_same_as_input_rejected() {
+    let dir = TempDir::new().unwrap();
+    let rg = dir.path().join("a.rg");
+    let json = dir.path().join("in.json");
+    std::fs::write(&rg, "chr1:1-10\nchr1:20-30\n").unwrap();
+    std::fs::write(&json, r#"{"chr1":"1-5"}"#).unwrap();
+
+    let cases: Vec<Vec<&str>> = vec![
+        vec![
+            "rg",
+            "span",
+            rg.to_str().unwrap(),
+            "-o",
+            rg.to_str().unwrap(),
+        ],
+        vec![
+            "rg",
+            "prop",
+            json.to_str().unwrap(),
+            rg.to_str().unwrap(),
+            "-o",
+            rg.to_str().unwrap(),
+        ],
+        vec![
+            "rg",
+            "runlist",
+            json.to_str().unwrap(),
+            rg.to_str().unwrap(),
+            "-o",
+            rg.to_str().unwrap(),
+        ],
+        vec![
+            "rg",
+            "count",
+            rg.to_str().unwrap(),
+            rg.to_str().unwrap(),
+            "-o",
+            rg.to_str().unwrap(),
+        ],
+    ];
+    for args in cases {
+        let (_, stderr) = PgrCmd::new().args(&args).run_fail();
+        assert!(
+            stderr.contains("also an input file"),
+            "{args:?}: got: {stderr}"
+        );
+    }
+    // The input must be untouched.
+    assert_eq!(
+        std::fs::read_to_string(&rg).unwrap(),
+        "chr1:1-10\nchr1:20-30\n"
+    );
+}
+
 // New test: rgr's `command_merge` used a multi-part TSV fixture
 // (II.links.tsv), which decision A excludes; this covers the .rg adaptation.
 #[test]
@@ -457,6 +547,23 @@ fn command_rg_merge() {
         .args(&["rg", "merge", rg.to_str().unwrap(), "-c", "0.5"])
         .run();
     assert_eq!(stdout.lines().count(), 2);
+}
+
+// Identical lines are deduplicated per chromosome before clustering, so two
+// copies of the same range form a single part (no self-cluster) while a
+// third, overlapping range still joins it.
+#[test]
+fn command_rg_merge_dedups_identical_lines() {
+    let dir = TempDir::new().unwrap();
+    let rg = dir.path().join("dup.rg");
+    std::fs::write(&rg, "chr1:100-200\nchr1:100-200\nchr1:105-205\n").unwrap();
+    let (stdout, _) = PgrCmd::new()
+        .args(&["rg", "merge", rg.to_str().unwrap()])
+        .run();
+    assert_eq!(
+        stdout,
+        "chr1:100-200\tchr1(+):100-205\nchr1:105-205\tchr1(+):100-205\n"
+    );
 }
 
 #[test]

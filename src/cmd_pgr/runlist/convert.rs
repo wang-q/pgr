@@ -39,6 +39,12 @@ Examples:
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let outfile = crate::cmd_pgr::args::get_outfile(args);
     let is_longest = args.get_flag("longest");
+    crate::cmd_pgr::args::ensure_outfile_distinct(
+        outfile,
+        args.get_many::<String>("infiles")
+            .unwrap()
+            .map(String::as_str),
+    )?;
     let mut writer = pgr::writer(outfile)?;
     for infile in args.get_many::<String>("infiles").unwrap() {
         let json = pgr::libs::runlist::read_json(infile)?;

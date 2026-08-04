@@ -103,6 +103,15 @@ pub fn absolute_path(path: impl AsRef<std::path::Path>) -> std::io::Result<std::
     std::path::absolute(path)
 }
 
+/// Whether two paths point to the same file, compared after lexical
+/// absolute-path normalization (no filesystem access).
+pub fn same_path(a: &str, b: &str) -> bool {
+    match (std::path::absolute(a), std::path::absolute(b)) {
+        (Ok(pa), Ok(pb)) => pa == pb,
+        _ => a == b,
+    }
+}
+
 /// Buffered writer that flushes on drop and reports flush errors to stderr.
 ///
 /// Wraps a `BufWriter<Box<dyn Write>>` so that `BufWriter`'s silent flush-on-drop

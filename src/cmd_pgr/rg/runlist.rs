@@ -56,6 +56,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let json = pgr::libs::runlist::read_json(args.get_one::<String>("runlist").unwrap())?;
     let set = pgr::libs::runlist::json_to_set(&json)?;
+    crate::cmd_pgr::args::ensure_outfile_distinct(
+        outfile,
+        args.get_many::<String>("infiles")
+            .unwrap()
+            .map(String::as_str),
+    )?;
 
     let mut writer = pgr::writer(outfile)?;
     for infile in args.get_many::<String>("infiles").unwrap() {
