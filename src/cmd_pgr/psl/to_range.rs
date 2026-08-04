@@ -9,7 +9,7 @@ pub fn make_subcommand() -> Command {
         .after_help(
             r###"
 Extract alignment coordinates from PSL files and output in .rg format (chr:start-end).
-This is useful for depth calculation with `pgr runlist coverage`.
+This is useful for depth calculation with `pgr rg coverage`.
 
 Notes:
 * Coordinates are converted to 1-based inclusive.

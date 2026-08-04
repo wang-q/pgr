@@ -1,18 +1,16 @@
 # pgr runlist
 
-`pgr runlist` provides interval-set operations on **runlists** — either `.rg`
-lines (`chr:start-end`, 1-based inclusive) or runlist JSON
+`pgr runlist` provides interval-set operations on **runlist JSON**
 (`{"chr": "start-end,..."}`), the format consumed by `pgr fa mask`. The
 command family was migrated from the external `spanr` tool (intspan project)
-and produces identical output.
+and produces identical output. Line-oriented `.rg` input is handled by
+`pgr rg` instead.
 
 ## Subcommands
 
 *   `combine`: Combine multiple sets of a multi runlist JSON into one.
 *   `compare`: Set operations (intersect/union/diff/xor) between runlist JSON files.
 *   `convert`: Convert runlist JSON files to `.rg` range lines.
-*   `cover`: Merge `.rg` range lines into a runlist JSON (per-chromosome union).
-*   `coverage`: Compute depth of coverage over `.rg` ranges (sweep-line, O(n log n)).
 *   `genome`: Convert a chromosome sizes file to a full-genome runlist JSON.
 *   `merge`: Merge runlist JSON files into a multi runlist keyed by file stem.
 *   `some`: Extract selected top-level keys from a runlist JSON.
@@ -20,32 +18,6 @@ and produces identical output.
 *   `split`: Split a multi runlist JSON into per-key files.
 *   `stat`: Per-chromosome coverage stats of a runlist against chromosome sizes.
 *   `statop`: Cross-set coverage stats (one runlist compared to another).
-
----
-
-## cover
-
-Merges `chr:start-end` lines from one or more `.rg` files into a runlist JSON.
-Species/strand prefixes in the lines are dropped (e.g. `S288c.I(-):190-200`
-contributes to chromosome `I`).
-
-```bash
-pgr runlist cover [OPTIONS] <infiles>...
-pgr runlist cover a.rg b.rg -o out.json
-```
-
-## coverage
-
-Computes per-position coverage depth over `.rg` ranges with a sweep line over
-sorted start/end events (O(n log n); no interval tree needed for pure depth).
-Writes regions whose depth reaches `--minimum`. With `--detailed` the regions
-are grouped by their exact depth instead.
-
-```bash
-pgr runlist coverage [OPTIONS] <infiles>...
-pgr runlist coverage a.rg -m 4 -o cov.json
-pgr runlist coverage a.rg -m 2 -d -o cov.json
-```
 
 ## span
 

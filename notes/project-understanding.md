@@ -511,6 +511,7 @@ chainnet 后消失。`pgr psl chain` 在 2bit 序列缓存优化后（~0.3 s）�
 | [[ms2dna_port.md]] | ms2dna C → Rust 迁移设计 | 已实现（实际命令为 `pgr ms to-dna`） |
 | [[ucsc.md]] | UCSC chain/net/axt/maf pipeline 源码分析与字节级复现验证（E. coli 全流程一致） | 12 步主流程 + `--syn` + medium + SE11 多染色体反向全部字节级一致；剩余见 §4.6 |
 | [[repeat-masking.md]] | pgr 重复标记总体方案：现状命令（e-kmer/s-kmer/trf 实现、命名规划 e/s 前缀）+ 遮蔽版计划（Dfam 全库 + pgi/lastz）+ 附录 A 源码梳理（open-4.2.4） | 计划已定；命令已迁移（`pgr rept`），待 §2.5 验证 |
+| [[rgr-tva-audit.md]] | rgr 14 子命令功能梳理：6 个通用 TSV 命令被 tva 替代；8 个 range 命令中 count/prop/runlist 过滤为 pgr `rg` 家族候选，merge 被 `sd` 家族替代不做 | 规划中，待实现 |
 
 ## 11. 外部工具参考索引（notes/references/）
 

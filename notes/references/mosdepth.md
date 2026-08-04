@@ -111,13 +111,13 @@ proper pair 且两条 read 在同染色体、有重叠时（`rec.stop > matepos`
 * **游程输出**：mosdepth per-base 的 `(start, stop, depth)` 与 pgr runlist
   JSON 的 `"start-end"` span 都是对深度恒定段做压缩；mosdepth 输出 0 深度段
   （如 `0 80 1` 后跟 `80 16569 0`），pgr runlist 只输出覆盖段（语义更紧凑）。
-* **quantized ≈ `pgr runlist coverage -d`**：都按深度分组输出，mosdepth 按
+* **quantized ≈ `pgr rg coverage -d`**：都按深度分组输出，mosdepth 按
   bin 合并、pgr 按精确深度。
 * **thresholds/regions ≈ `pgr runlist stat/statop`**：区域覆盖率统计。
 
 ### 5.2 差异
 
-| 维度 | mosdepth | pgr runlist coverage |
+| 维度 | mosdepth | pgr rg coverage |
 | :--- | :--- | :--- |
 | 输入 | BAM/CRAM（需索引），CIGAR 粒度 | `.rg` 区间（来自 PSL block 等），block 粒度 |
 | 内存 | O(染色体长度) 差分数组 | O(区间数) 事件向量（稀疏友好） |
@@ -128,7 +128,7 @@ proper pair 且两条 read 在同染色体、有重叠时（`rec.stop > matepos`
 
 pgr 的 rept/s-align 管道本质上等价于 mosdepth 的 **fast-mode**（PSL block 的
 target 区间 → `.rg`，只计块、不校正 mate），因此 pgr 侧无需实现 CIGAR 解析与
-mate 校正；若未来要支持"直接读 BAM 算深度"（如 `pgr runlist coverage` 直连
+mate 校正；若未来要支持"直接读 BAM 算深度"（如 `pgr rg coverage` 直连
 samtools 输出），本笔记的 CIGAR 事件语义（deletion/N 计 0、ins 不推进）是
 对齐基准。
 

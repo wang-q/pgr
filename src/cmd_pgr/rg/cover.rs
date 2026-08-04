@@ -1,4 +1,4 @@
-//! `pgr runlist cover` — merge `.rg` lines into a runlist JSON.
+//! `pgr rg cover` — merge `.rg` lines into a runlist JSON.
 
 use clap::{Arg, ArgMatches, Command};
 
@@ -14,7 +14,7 @@ a runlist JSON ready for `pgr fa mask`.
 
 Examples:
 1. Merge ranges:
-   pgr runlist cover a.rg b.rg -o out.json
+   pgr rg cover a.rg b.rg -o out.json
 "###,
         )
         .arg(

@@ -334,43 +334,6 @@ fn command_span_invalid() {
 }
 
 #[test]
-fn command_cover() {
-    let (stdout, _) = cmd(&["cover", &fixture("S288c.rg")]).run();
-    let lines = stdout.lines().count();
-    assert!(lines == 3 || lines == 4, "line count {lines}");
-    assert!(!stdout.contains("S288c"), "species name: {stdout}");
-    assert!(!stdout.contains("1-100"), "merged: {stdout}");
-    assert!(stdout.contains("1-150"), "covered: {stdout}");
-
-    let (stdout, _) = cmd(&["cover", &fixture("dazzname.rg")]).run();
-    let lines = stdout.lines().count();
-    assert!(lines == 2 || lines == 3, "line count {lines}");
-    assert!(stdout.contains("infile_0/1/0_514"), "chr name: {stdout}");
-    assert!(stdout.contains("19-499"), "covered: {stdout}");
-}
-
-#[test]
-fn command_coverage() {
-    let (stdout, _) = cmd(&["coverage", &fixture("S288c.rg"), "-m", "2"]).run();
-    let lines = stdout.lines().count();
-    assert!(lines == 3 || lines == 4, "line count {lines}");
-    assert!(!stdout.contains("S288c"), "species name: {stdout}");
-    assert!(!stdout.contains("1-150"), "coverage 1: {stdout}");
-    assert!(stdout.contains("90-100"), "coverage 2: {stdout}");
-}
-
-#[test]
-fn command_coverage_detailed() {
-    let (stdout, _) = cmd(&["coverage", &fixture("S288c.rg"), "-m", "1", "-d"]).run();
-    let lines = stdout.lines().count();
-    assert!(lines == 9 || lines == 10, "line count {lines}");
-    assert!(!stdout.contains("S288c"), "species name: {stdout}");
-    assert!(stdout.contains("1-89"), "coverage 1: {stdout}");
-    assert!(stdout.contains("90-100"), "coverage 2: {stdout}");
-    assert!(stdout.contains("190-200"), "coverage 2: {stdout}");
-}
-
-#[test]
 fn command_convert() {
     let (stdout, _) = cmd(&["convert", &fixture("repeat.json")]).run();
     assert_eq!(stdout.lines().count(), 28, "line count");

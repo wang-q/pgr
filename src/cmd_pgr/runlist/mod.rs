@@ -3,8 +3,6 @@
 mod combine;
 mod compare;
 mod convert;
-mod cover;
-mod coverage;
 mod genome;
 mod merge;
 mod some;
@@ -24,8 +22,6 @@ pub fn make_subcommand() -> Command {
         .subcommand(combine::make_subcommand())
         .subcommand(compare::make_subcommand())
         .subcommand(convert::make_subcommand())
-        .subcommand(cover::make_subcommand())
-        .subcommand(coverage::make_subcommand())
         .subcommand(genome::make_subcommand())
         .subcommand(merge::make_subcommand())
         .subcommand(some::make_subcommand())
@@ -41,8 +37,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         Some(("combine", sub_matches)) => combine::execute(sub_matches),
         Some(("compare", sub_matches)) => compare::execute(sub_matches),
         Some(("convert", sub_matches)) => convert::execute(sub_matches),
-        Some(("cover", sub_matches)) => cover::execute(sub_matches),
-        Some(("coverage", sub_matches)) => coverage::execute(sub_matches),
         Some(("genome", sub_matches)) => genome::execute(sub_matches),
         Some(("merge", sub_matches)) => merge::execute(sub_matches),
         Some(("some", sub_matches)) => some::execute(sub_matches),

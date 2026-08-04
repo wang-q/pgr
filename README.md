@@ -47,6 +47,42 @@ pgr fa --help
 pgr fas --help
 ```
 
+## Command naming conventions
+
+`pgr` organizes commands in two levels. The naming rules make the command line
+predictable:
+
+**First-level commands are named after the input format or the task domain:**
+
+* Input formats: `fa`, `fas`, `fq`, `2bit`, `gff`, `axt`, `chain`, `net`,
+  `maf`, `paf`, `psl`, `lav`, `ms`
+* Task domains: `dist`, `sd`, `rept`, `runlist`, `pl`, `plot`, `align`,
+  `pgi`, `pbit`
+
+**Second-level commands follow one of three naming patterns:**
+
+1. **Operations within one format** (the majority, 70+ commands):
+   `fa mask/sort/dedup/filter/rc/size`, `psl lift/stats/swap`,
+   `paf query/graph`, `sd align/cluster/cross`,
+   `runlist span/compare/merge`. Because the input and output share the same
+   format, the operation name is what distinguishes one command from another.
+2. **Format conversions are named after the output**, with a uniform `to-`
+   prefix (about 25 commands across 12 families):
+   `to-psl`, `to-maf`, `to-fas`, `to-paf`, `to-vcf`, `to-gfa`, `to-bed`,
+   `to-chain`, `to-axt`, `to-hv`, `to-fa`, `to-2bit`, `to-dna`, `to-xlsx`,
+   `to-range`. This is the project-wide rule that answers "input or output":
+   conversion commands are named after the output format.
+3. **A few commands are named after the artifact or the argument**:
+   `gff rg`, `gff runlist` (output format, without the `to-` prefix),
+   `chain net`, `psl chain` (output format), `fa masked`, `2bit masked`
+   (output property), `fa range`, `2bit range`, `pbit range`,
+   `runlist genome` (input argument concept), `paf graph/index` (artifact),
+   `plot dot/hh/nrps/venn` (output chart type).
+
+**Rule of thumb**: a second-level command is named by its operation when the
+format does not change, by the output (`to-X`) when it crosses formats, and
+by the artifact or argument when neither applies.
+
 ## Examples
 
 This repository contains many subcommands and end-to-end workflows. Extended and curated examples

@@ -45,7 +45,7 @@ O(n log n)，不需要区间树——纯深度聚合场景下这是标准最优�
 
 | 实现 | 耗时 |
 | --- | ---: |
-| pgr runlist coverage（扫描线） | 2.5 s |
+| pgr rg coverage（扫描线） | 2.5 s |
 | 外部 spanr coverage（lapper depth） | 26.8 s |
 
 输出逐字节一致（100k 与 1M 两组都 diff 通过）。

@@ -302,7 +302,7 @@ runlist JSON → pgr fa mask
     matches/mismatches/ins/del 计算，不依赖外部工具（复用 `pgr::libs::psl`
     的记录解析）。`--min-identity` 初始 0.70、`--min-len` 初始 50，均为
     可调参数。
-3.  **区间合并**：`pgr runlist cover` 合并重叠块 → `pgr runlist span
+3.  **区间合并**：`pgr rg cover` 合并重叠块 → `pgr runlist span
     --op excise -n <min-len>` 切掉过短碎片 → `pgr runlist span --op fill
     -n <fill-fragment>` 合并邻近片段（fill-fragment 默认 10，与 e-kmer
     一致；实现为进程内 `run_repeat_runlist_pipeline`）。不做
@@ -459,7 +459,7 @@ min-identity 0.70、min-len 50）
 `pgr rept s-align <genome>` 已实现：窗口化（200 bp / 100 bp 步长 = 2x
 覆盖）→ `fa split name` 拆染色体 → `align lastz`（genome vs fragments，
 preset set01）→ LAV→PSL → `psl lift` 回基因组坐标 → `psl to-range` →
-`pgr runlist coverage -m 4`（深度 ≥4 = ≥2 拷贝）。管道在 tempdir 内、含
+`pgr rg coverage -m 4`（深度 ≥4 = ≥2 拷贝）。管道在 tempdir 内、含
 soft-mask 警告与空输入兜底；集成测试（lastz 缺失时跳过）已加。
 
 实测（默认参数）：
@@ -945,7 +945,7 @@ complexity-adjusted scoring；`raw=1` 时用 basic scoring。
 | 步骤 | pgr 现状 | 判断 |
 | :--- | :--- | :--- |
 | 库-基因组比对 | `pgr align pgi`（原生）或 `pgr align lastz` | 高可行，预计比 RMBlast 快一个数量级 |
-| 区间合并/覆盖 | `pgr runlist cover / merge / span` | ✅ 已有 |
+| 区间合并/覆盖 | `pgr rg cover` / `runlist merge / span` | ✅ 已有 |
 | 输出遮蔽 | `pgr fa mask --runlist` | ✅ 已有 |
 | 低复杂度兜底 | `pgr rept trf` | 已有（缺口见正文 §2.4） |
 

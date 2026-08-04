@@ -156,8 +156,8 @@ genome/merge/some/span/split/stat/statop）、`cmd_pgr/gff/runlist`、
    `fa mask` 失配）已由 `c1..cN` 映射完全修复并验证（`NC_000913.1` 与
    Fusarium 44 条 scaffold 均完整），且映射代码在管道内、成本极低。
 
-若未来希望带点 contig 名在 `pgr runlist cover/coverage` 输入中原生可用，
-正解是新增 runlist 专用的严格解析模式（或 `--no-species-prefix` 开关），
+若未来希望带点 contig 名在 `pgr rg cover/coverage` 输入中原生可用，
+正解是新增 rg 专用的严格解析模式（或 `--no-species-prefix` 开关），
 属于新特性，需与 spanr 兼容目标权衡，不建议按 bug 修复处理。
 
 ## 提交状态
