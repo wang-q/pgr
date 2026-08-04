@@ -554,3 +554,4 @@ chainnet 后消失。`pgr psl chain` 在 2bit 序列缓存优化后（~0.3 s）�
 | [[benchmarks/dist-cohort-validation.md]] | 距离消费者（dist pgi/hv/seq）10 株 cohort 验证 |
 | [[benchmarks/bench-rg-count.md]] | `pgr rg count`（coitrees）vs `rgr count`（lapper）命令行基准：快 ~3.4×，内存 1.6× |
 | [[benchmarks/bench-rg-prop.md]] | `pgr rg prop` vs `rgr prop`（同源 IntSpan 算法）命令行基准：持平（rgr 快 ~6%）；含二分重叠段优化方向 |
+| [[benchmarks/bench-intspan-setops.md]] | IntSpan 集合运算（intersect/union/diff/xor）线性化与 `from_pairs` 批量构建的 criterion 基准：20k span 时 ~100–220×、100k 构建 ~105× |

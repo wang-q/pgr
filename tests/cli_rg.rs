@@ -187,6 +187,46 @@ fn command_rg_prop_fixture() {
 }
 
 #[test]
+fn command_rg_sort() {
+    let dir = TempDir::new().unwrap();
+    let rg = dir.path().join("a.rg");
+    std::fs::write(
+        &rg,
+        "chr2:100-200\nchr1:50-60\nchr1:100-110\nbad line\nchr1:20-30\n",
+    )
+    .unwrap();
+    let (stdout, _) = PgrCmd::new()
+        .args(&["rg", "sort", rg.to_str().unwrap()])
+        .run();
+    assert_eq!(
+        stdout,
+        "chr1:20-30\nchr1:50-60\nchr1:100-110\nchr2:100-200\nbad line\n"
+    );
+}
+
+#[test]
+fn command_rg_sort_strand_order() {
+    let dir = TempDir::new().unwrap();
+    let rg = dir.path().join("a.rg");
+    std::fs::write(&rg, "chr1(+):50-60\nchr1(-):50-60\nchr1(+):20-30\n").unwrap();
+    let (stdout, _) = PgrCmd::new()
+        .args(&["rg", "sort", rg.to_str().unwrap()])
+        .run();
+    // Key is (chr, start, strand): start 20 first, then start 50 with "+"
+    // before "-" (ASCII '+' < '-').
+    assert_eq!(stdout, "chr1(+):20-30\nchr1(+):50-60\nchr1(-):50-60\n");
+}
+
+// Migrated from intspan `tests/cli_rgr.rs` `command_sort` (.rg part).
+#[test]
+fn command_rg_sort_fixture() {
+    let (stdout, _) = cmd(&["sort", &fixture("S288c.rg")]).run();
+    assert_eq!(stdout.lines().count(), 6);
+    assert_eq!(stdout.lines().next().unwrap(), "I:1-100");
+    assert_eq!(stdout.lines().last().unwrap(), "II:23537-24097");
+}
+
+#[test]
 fn command_cover() {
     let (stdout, _) = cmd(&["cover", &fixture("S288c.rg")]).run();
     let lines = stdout.lines().count();

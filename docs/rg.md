@@ -12,6 +12,7 @@ the external `spanr` tool. Set-level runlist JSON operations live under
 *   `coverage`: Compute depth of coverage over `.rg` ranges (sweep-line, O(n log n)).
 *   `count`: Count, for each range, the overlaps with other `.rg` range files.
 *   `prop`: Proportion of each range covered by a runlist.
+*   `sort`: Sort `.rg` lines by chromosome, start and strand.
 
 ---
 
@@ -62,4 +63,16 @@ without a valid range are skipped.
 pgr rg prop <runlist.json> <infiles>...
 pgr rg prop intergenic.json a.rg
 pgr rg prop intergenic.json a.rg --full
+```
+
+## sort
+
+Sorts `.rg` lines by the parsed (chromosome, start, strand) key. Lines without
+a valid range are written to the end of the output in their original order;
+lines with identical keys keep their input order (stable sort).
+
+```bash
+pgr rg sort <infiles>...
+pgr rg sort a.rg
+pgr rg sort a.rg b.rg -o sorted.rg
 ```

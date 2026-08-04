@@ -15,8 +15,10 @@
 * 文档：`docs/rg.md` 新建，`docs/runlist.md` 更新为 JSON-only。
 * 基准：`pgr rg count` vs `rgr count` 快 ~3.4×、输出逐行一致、内存 1.6×
   （见 notes/benchmarks/bench-rg-count.md）。
-* 待办：`rg runlist`（按 runlist 过滤）、行级 `rg span`、`rg sort`
-  （可选，均待定稿）。
+* `pgr rg sort` 已落地（2026-08-04）：按 (chr, start, strand) 稳定排序，
+  非法行置尾。理由：有序 `.rg` 是下游工具与人工查看的常见需求，且外部
+  `sort` 无法复刻解析键语义（见 §3.4）。
+* 待办：`rg runlist`（按 runlist 过滤）、行级 `rg span`（待定稿）。
 
 ## 1. 结论摘要
 
@@ -51,7 +53,7 @@
 | rgr 命令 | 功能 | pgr 落点（新 `rg` 家族） | 状态 |
 | :--- | :--- | :--- | :--- |
 | `field` | 从 chr/start/end 字段建 range | `gff rg` 覆盖思路 | 不做 |
-| `sort` | 按 range（chr/start/strand）排序 | `rg sort` | 待定（可选） |
+| `sort` | 按 range（chr/start/strand）排序 | `rg sort` | **✅ 已实现**（稳定排序，非法行置尾） |
 | `count` | 每条 range 与一组 range 的重叠数（lapper） | `rg count` | **✅ 已实现**（coitrees，快 ~3.4×） |
 | `prop` | 每条 range 与 runlist 的交集比例（--full 加 length/size） | `rg prop` | **✅ 已实现** |
 | `runlist` | 按 runlist 过滤行（overlap/non-overlap/superset） | `rg runlist`（沿用 rgr 命令名） | 待实现 |
@@ -164,7 +166,7 @@ cover/coverage 命令、测试迁至 `tests/cli_rg.rs`、新增 `docs/rg.md` 并
 
 ### 3.4 低价值 / 不建议
 
-* `rg sort`（待定稿）：**外部 `sort` 不可完整替代**——排序键是解析出的
+* `rg sort`（✅ 已实现，2026-08-04）：**外部 `sort` 不可完整替代**——排序键是解析出的
   `(chr, start, strand)` 三元组（`-k` 无法处理 `name.chr(strand)` 变长
   组合），且非法行置尾、`-H` 头保留、`-f` 指定字段、`--group` 分组均无
   对应（实测：带链向时 `chr1(-)` 被外部 sort 整体排到 `chr1(+)` 前、
@@ -200,4 +202,5 @@ cover/coverage 命令、测试迁至 `tests/cli_rg.rs`、新增 `docs/rg.md` 并
 3. ✅ `runlist cover/coverage` 迁移到 `rg cover`/`rg coverage`。
 4. ✅ `rg prop`——IntSpan 现成，含 rgr fixture 回归。
 5. `rg runlist`（overlap 过滤）——与 prop 同基础，几行代码（待实现）。
-6. 行级 `rg span`、`rg sort`——看需求（5p/3p 方向变换、有序输出是否真有场景）。
+6. ✅ `rg sort`——按 (chr, start, strand) 稳定排序、非法行置尾。
+7. 行级 `rg span`——看需求（5p/3p 方向变换是否真有场景）。

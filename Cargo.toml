@@ -70,6 +70,10 @@ name = "bitmap_intspan_benchmark"
 harness = false
 
 [[bench]]
+name = "intspan_setops_benchmark"
+harness = false
+
+[[bench]]
 name = "syntenic_filter_benchmark"
 harness = false
 
