@@ -3,8 +3,8 @@
 对 `pgr runlist` 与 `pgr rg` 两个命令族及相关库文件（`libs/runlist`、
 `libs/ds/intspan`、`libs/ds/range`、`libs/fmt/gff`、`libs/io`，以及迁移
 spanr 调用的 `libs/pl/repeat`、`cmd_pgr/pl/p2m`、`cmd_pgr/rept/trf`）和
-全部测试/文档进行审核。缺陷按发现顺序全局编号 #1–#42，按类别分组记录；
-关键修复均附回归测试（见文末），验证概况见文末"验证"一节。
+全部测试/文档进行审核。缺陷按类别分组记录；关键修复均附回归测试（见
+文末），验证概况见文末"验证"一节。
 
 ## 与外部参考实现的语义一致性核对
 
@@ -24,7 +24,7 @@ runlist 家族对照 spanr 0.6.7 源码、rg 家族对照 rgr 源码逐条核对
   容忍，各命令一致。
 * coitrees 会内部排序，`RgIndex`/`rg merge` 按行序喂入不排序区间不会错乱。
 * `stat`/`statop` 的 `--all` 表头字段数在 multi/single 形态下一致。
-* `rg span` 饱和在 Range 层保留、CLI 层 `clamp_to_domain`（#23），职责分开。
+* `rg span` 饱和在 Range 层保留、CLI 层 `clamp_to_domain`，职责分开。
 * `rg span` pad 越过坐标 1 输出空行、`1:-100` 回退整行作 chr：与
   vendored crate/rgr 一致，未改。
 
@@ -38,8 +38,6 @@ runlist 家族对照 spanr 0.6.7 源码、rg 家族对照 rgr 源码逐条核对
 ## 已知限制（有意保留）
 
 * `stat`/`statop` 对 0 长度染色体输出 inf/NaN（与 spanr 一致）。
-* `at`/`index`/`slice` 与 `add_pair` 的参数校验保留 panic 契约：内部 API
-  调用方不变式，CLI 前置校验不可达，与外部兼容性无关。
 
 ## 带点 contig 名截断 bug 的处置结论
 
@@ -50,142 +48,151 @@ spanr 时代 `chr:start-end` 按 `.` 截断 contig 名（`NC_000913.1` → `"1"`
 实际影响已由 `c1..cN` 映射修复验证。若需原生支持带点名，正解是新增严格
 解析模式（新特性，不建议按 bug 修）。
 
-## 修复的缺陷（共 42 处）
+## 修复的缺陷（共 43 处）
 
-### 崩溃 / 越界 / 溢出（Zero Panic，18 处）
+### 崩溃 / 越界 / 溢出（Zero Panic，19 处）
 
-1. **解析器尾部 `-` 越界 panic**：`runlist_to_ranges` 遇 `-` 时越界取字节
+**解析器尾部 `-` 越界 panic**：`runlist_to_ranges` 遇 `-` 时越界取字节
    （`"1-"`）。修复：先查长度再判 `upper_is_neg`。
-2. **解析器超大数字 i32 溢出**：digits 用 i32 累加，`"99999999999"`
+**解析器超大数字 i32 溢出**：digits 用 i32 累加，`"99999999999"`
    debug panic。修复：i64 累加 + i32 范围检查。
-3. **反转区间在 `add_pair` panic**（`"5-3"`、`"1--1"` 等）。修复：
+**反转区间在 `add_pair` panic**（`"5-3"`、`"1--1"` 等）。修复：
    `runlist_to_ranges` 对 `lower > upper` 报 `Bad order`，`valid` 返回 false。
-4. **坐标上限溢出（JSON/.rg/GFF 三入口）**：`upper + 1` 超 i32。修复：
+**坐标上限溢出（JSON/.rg/GFF 三入口）**：`upper + 1` 超 i32。修复：
    解析器拒绝 `> POS_INF - 1`；`rg_to_set`/`rg_to_intervals` 跳过越界行；
    `gff runlist` 报 "coordinates out of range"。
-5. **`.rg` 行 start > end panic**。修复：`rg_to_set`/`rg_to_intervals`
+**`.rg` 行 start > end panic**。修复：`rg_to_set`/`rg_to_intervals`
    跳过（不改 `is_valid`）。回归 `rg_to_set_skips_reversed_ranges`。
-6. **非法 runlist JSON 值 panic**（`json_to_set` 直接 `IntSpan::from`）。
+**非法 runlist JSON 值 panic**（`json_to_set` 直接 `IntSpan::from`）。
    修复：`json_to_set`/`json_to_sets` 返回 Result、先 `valid` 校验；
    `io::read_runlist` 同步。
-8. **genome size ≤ 0 或超上限 panic**。修复：`genome_set` 返回 Result。
-9. **span trim/pad 极端 `-n` 溢出 panic**。修复：`saturating_add/sub` +
+**genome size ≤ 0 或超上限 panic**。修复：`genome_set` 返回 Result。
+**span trim/pad 极端 `-n` 溢出 panic**。修复：`saturating_add/sub` +
    clamp。回归 `extreme_ops_do_not_overflow`。
-10. **excise/fill/cardinality 全幅跨度溢出**。修复：i64 计算，
+**excise/fill/cardinality 全幅跨度溢出**。修复：i64 计算，
     `cardinality` 饱和到 i32::MAX。
-11. **gff runlist start > end 记录 panic**。修复：命令层报错。
-12. **`pgr runlist` 裸调用 panic**（unreachable）。修复：
+**gff runlist start > end 记录 panic**。修复：命令层报错。
+**`pgr runlist` 裸调用 panic**（unreachable）。修复：
     `subcommand_required` + `arg_required_else_help`，exit 2。回归
     `bare_runlist_shows_help`。
-13. **空集 `is_neg_inf`/`is_pos_inf` unwrap panic**。修复：`is_some_and`。
+**空集 `is_neg_inf`/`is_pos_inf` unwrap panic**。修复：`is_some_and`。
     回归 `infinity_predicates_on_empty_set`。
-20. **`rg span` Range 运算加减溢出**（8 种 op × 近上限坐标 + 极端 `-n`）。
+**`rg span` Range 运算加减溢出**（8 种 op × 近上限坐标 + 极端 `-n`）。
     修复：saturating 算术；`shift_3p` 去掉取负。
-21. **`rg span` pad 路径 `-n=-2147483648` 取负溢出**。修复：
+**`rg span` pad 路径 `-n=-2147483648` 取负溢出**。修复：
     `saturating_neg()`（span.rs 与 `IntSpan::pad`）。
-22. **解析器 i64 累加溢出**（19+ 位数字串）。修复：每位累加后检查越界
+**解析器 i64 累加溢出**（19+ 位数字串）。修复：每位累加后检查越界
     提前退出。
-23. **`rg span` 合法结果超出可表示坐标域**。修复：CLI 层 `clamp_to_domain`
+**`rg span` 合法结果超出可表示坐标域**。修复：CLI 层 `clamp_to_domain`
     夹回 `1..=POS_INF - 1`。
-35. **`IntSpan::holes` 对 `i32::MIN` 集合补集溢出**（`spans()` 边下溢）。
+**`IntSpan::holes` 对 `i32::MIN` 集合补集溢出**（`spans()` 边下溢）。
     修复：`holes` 直接取相邻 span 空隙，不经过补集。回归
     `holes_fill_on_i32_min_coordinates_do_not_overflow` + CLI 用例。
-41. **`IntSpan::from`/`add_runlist`/`remove_runlist` 非法输入 panic**（原为
+**`IntSpan::from`/`add_runlist`/`remove_runlist` 非法输入 panic**（原为
     外部 API 兼容保留）。修复：`from` 非法输入返回空集，两个 runlist 方法
     前置 `valid` 忽略。回归 `invalid_runlists_are_ignored_not_panicked`。
-42. **IntSpan 其余 API 极端输入溢出**：`contains` 的 `n+1`、`spans()` 的
+**IntSpan 其余 API 极端输入溢出**：`contains` 的 `n+1`、`spans()` 的
     `i32::MIN` 上边、`at` 的 `abs(i32::MIN)`、`at_pos`/`at_neg`/`index`
     的 span_len。修复：`checked_add`/i64/`unsigned_abs`，`spans()` 跳过
     退化 span，`index` 结果饱和。回归
     `contains_wide_domain_does_not_overflow`、
     `invert_and_complement_on_i32_min_set_do_not_overflow`、
     `indexing_wide_spans_do_not_overflow`。
+**IntSpan 最后的参数校验 panic**：`at`/`index`/`slice` 对空集、索引
+    0、越界、元素不存在等直接 panic，`add_pair` 对反转区间 panic
+    （"Bad order"）。修复：`at`/`index`/`slice` 改为返回 `Option`
+    （非法输入为 `None`，`alignment/coords.rs` 两个调用方接
+    `ok_or_else` 报错），`add_pair` 对 `lower > upper` 跳过（与
+    `from_pairs` 语义一致）。回归
+    `reversed_pairs_are_skipped_not_panicked`、
+    `invalid_index_arguments_return_none`。
 
 ### 输入校验 / 静默错误（3 处）
 
-7. **multi 文件被当作 single 传参时静默变空集**（`statop`/`compare`）。
+**multi 文件被当作 single 传参时静默变空集**（`statop`/`compare`）。
    修复：非字符串值报 "runlist value for ... is not a string"。
-14. **`json_to_sets` 混合形态静默丢数据**。修复：flat/multi 两分支对异形
+**`json_to_sets` 混合形态静默丢数据**。修复：flat/multi 两分支对异形
     值均报错。
-15. **删除未使用且有 panic 隐患的 `gff_to_set`**。
+**删除未使用且有 panic 隐患的 `gff_to_set`**。
 
 ### 外部工具与参数 / CLI / 文档（1 处）
 
-19. **`span -n` 缺帮助文本**。补 "Number of bases to trim or pad; length
+**`span -n` 缺帮助文本**。补 "Number of bases to trim or pad; length
     threshold for excise/fill"。
 
 ### 迁移遗留 / 行为一致性（5 处）
 
-16. **rept/p2m 测试仍以 spanr 缺失为跳过条件**（管道已全部内建）。修复：
+**rept/p2m 测试仍以 spanr 缺失为跳过条件**（管道已全部内建）。修复：
     移除 spanr 守卫。
-17. **用户文档仍把 spanr 列为依赖**。修复：改为 trf/FastK/Profex 与
+**用户文档仍把 spanr 列为依赖**。修复：改为 trf/FastK/Profex 与
     `pgr runlist stat/statop` 示例。
-18. **src 注释残留 spanr 现态描述**。修复：改为 "runlist 解析器/管道"
+**src 注释残留 spanr 现态描述**。修复：改为 "runlist 解析器/管道"
     （历史出处保留）。
-24. **`#` 注释行在各 rg 子命令间不一致**。修复：所有 rg 命令统一跳过
+**`#` 注释行在各 rg 子命令间不一致**。修复：所有 rg 命令统一跳过
     `#` 行，文档补充说明。
-25. **`rg merge` 自映射 parity**：part 等于合并串时输出无意义映射行。
+**`rg merge` 自映射 parity**：part 等于合并串时输出无意义映射行。
     修复：`part == merged` 时跳过。
 
 ### 输入校验 / 静默错误（2 处）
 
-26. **`Range` end 坐标溢出被静默折叠为 start**（`chr1:5-99999999999` →
+**`Range` end 坐标溢出被静默折叠为 start**（`chr1:5-99999999999` →
     点区间）。修复：`parse_i32` 返回 Option，溢出使整行无效。回归
     `overflow_end_is_invalid_not_start` + `command_rg_overflow_end_skipped`。
-27. **`IntSpan::inset` clamp 下界把 i32::MIN 静默改写**。修复：下界改
+**`IntSpan::inset` clamp 下界把 i32::MIN 静默改写**。修复：下界改
     i32::MIN。回归 `inset_identity_at_i32_min`。
 
 ### 参数校验 / 数据安全 / 错误传播（3 处）
 
-28. **`rg span` op/mode 校验推迟到逐行**（空输入静默成功）。修复：读取前
+**`rg span` op/mode 校验推迟到逐行**（空输入静默成功）。修复：读取前
     校验 `shift/flank + both`。回归
     `command_rg_span_invalid_mode_checked_before_input`。
-29. **流式命令 `-o` 与输入同路径时先截断输入**。修复：`same_path` 检查
-    拒绝（#33 升级为 canonicalize + dev/inode）。回归
+**流式命令 `-o` 与输入同路径时先截断输入**。修复：`same_path` 检查
+    拒绝（后升级为 canonicalize + dev/inode 覆盖别名）。回归
     `command_rg_output_same_as_input_rejected`、
     `command_runlist_convert_output_same_as_input_rejected`。
-30. **`IntSpan::write_json` 未显式 flush**（写盘失败静默 0 退出）。修复：
+**`IntSpan::write_json` 未显式 flush**（写盘失败静默 0 退出）。修复：
     末尾 `writer.flush()?`。
 
 ### 性能（1 处）
 
-31. **`rg merge` 去重 O(n²) 退化**（100k 区间 37.8 s）。修复：HashSet 判重
+**`rg merge` 去重 O(n²) 退化**（100k 区间 37.8 s）。修复：HashSet 判重
     （0.28 s）。基准 `benches/rg_merge_benchmark.rs`（10k ≈ 2.7 ms、
     50k ≈ 18 ms）。回归 `command_rg_merge_dedups_identical_lines`。
 
 ### 解析一致性 / 数据安全（2 处）
 
-32. **`Range` 扫描器对非 ASCII 字符名静默失配**（Unicode `\w`）。修复：
+**`Range` 扫描器对非 ASCII 字符名静默失配**（Unicode `\w`）。修复：
     字符类按 UTF-8 字符判定，数字仍只收 ASCII。回归
     `regex_and_manual_decoders_agree` + `command_rg_unicode_contig_names_parsed`。
-33. **`-o` 同输入检查被 symlink/hardlink 别名绕过**。修复：canonicalize +
+**`-o` 同输入检查被 symlink/hardlink 别名绕过**。修复：canonicalize +
     dev/inode 比较。回归 `command_rg_output_alias_of_input_rejected`。
 
 ### 与 rgr 的数值一致性（1 处）
 
-34. **`rg merge` 覆盖度用 f64 判据，0.8 边界与 rgr 的 f32 分叉**。修复：
+**`rg merge` 覆盖度用 f64 判据，0.8 边界与 rgr 的 f32 分叉**。修复：
     比值改用 f32 算术。回归 `command_rg_merge_exact_threshold_parity`。
 
 ### 数据安全 / 溢出（2 处）
 
-36. **五个流式命令在后续输入打开失败时截断输出**。修复：先打开/读取全部
+**五个流式命令在后续输入打开失败时截断输出**。修复：先打开/读取全部
     输入再创建 writer。回归
     `command_rg_output_preserved_on_missing_input`、
     `command_runlist_convert_output_preserved_on_missing_input`。
-37. **`IntSpan::covered` 近全幅查询 per-span 累计 i32 溢出**。修复：i64
+**`IntSpan::covered` 近全幅查询 per-span 累计 i32 溢出**。修复：i64
     相减。回归 `covered_wide_domain_does_not_overflow`。
 
 ### 数据安全 / 参数校验（2 处）
 
-38. **`ensure_outfile_distinct` 对屏幕哨兵 `stdout` 误判**。修复：
+**`ensure_outfile_distinct` 对屏幕哨兵 `stdout` 误判**。修复：
     `outfile == "stdout"` 跳过检查。回归
     `command_rg_stdout_named_input_allowed`。
-40. **输入侧流哨兵 `stdin` 被同路径检查误拒**（#38 的镜像）。修复：跳过
-    字面 `stdin` 输入。回归 `command_rg_stdin_sentinel_output_allowed`。
+**输入侧流哨兵 `stdin` 被同路径检查误拒**（`stdout` 哨兵误判的镜像）。
+    修复：跳过字面 `stdin` 输入。回归
+    `command_rg_stdin_sentinel_output_allowed`。
 
 ### 数据安全（1 处）
 
-39. **目录作为输入通过打开探针、读取失败后输出被截断**。修复：
+**目录作为输入通过打开探针、读取失败后输出被截断**。修复：
     `libs/io::reader` 打开前拒绝目录。回归
     `command_rg_output_preserved_on_directory_input`。
 
@@ -204,7 +211,8 @@ spanr 时代 `chr:start-end` 按 `.` 截断 contig 名（`NC_000913.1` → `"1"`
   一致。
 * 畸形输入 fuzz：累计 5000+ trial（JSON/.rg/GFF/sizes/二进制、超大数字、
   反转区间、极端 `-n`、近上限坐标、缺失/目录输入），零 panic。
-* 数据安全：#36/#38/#39/#40 修复前后均实测复现，既有输出原样保留。
+* 数据安全：`-o` 同路径、缺失/目录输入、`stdout`/`stdin` 哨兵等修复
+  前后均实测复现，既有输出原样保留。
 * 性能：`rg merge` 100k 37.8 s → 0.28 s；criterion 10k ≈ 2.7 ms、
   50k ≈ 18 ms；`rg runlist` 20 万行 × 5 万 span 0.29 s。
 * `cargo fmt`、`cargo clippy --all-targets -- -D warnings` 干净；全部测试
@@ -224,4 +232,5 @@ spanr 时代 `chr:start-end` 按 `.` 截断 contig 名（`NC_000913.1` → `"1"`
   `invalid_runlists_are_ignored_not_panicked`、
   `contains_wide_domain_does_not_overflow`、
   `invert_and_complement_on_i32_min_set_do_not_overflow`、
-  `indexing_wide_spans_do_not_overflow` 等。
+  `indexing_wide_spans_do_not_overflow`、`reversed_pairs_are_skipped_
+  not_panicked`、`invalid_index_arguments_return_none` 等。

@@ -428,11 +428,10 @@ mod create {
     }
 
     #[test]
-    #[should_panic(expected = "Bad order: 1,-1")]
-    fn panic_pair() {
+    fn reversed_pairs_are_skipped_not_panicked() {
         let mut set = IntSpan::new();
         set.add_pair(1, -1);
-        println!("{:?}", set.ranges());
+        assert!(set.is_empty());
     }
 
     #[test]
@@ -614,7 +613,10 @@ impl IntSpan {
 impl IntSpan {
     pub fn add_pair(&mut self, mut lower: i32, mut upper: i32) {
         if lower > upper {
-            panic!("Bad order: {},{}", lower, upper)
+            // Skip reversed pairs (same semantics as `from_pairs`) instead
+            // of panicking; callers pre-validate, and the parser rejects
+            // them before reaching this API.
+            return;
         }
 
         upper += 1;
@@ -1369,37 +1371,36 @@ impl IntSpan {
 
     /// Returns the index-th element of set, indices start from `1`.
     ///
-    /// Negative indices count backwards from the end of the set.
-    pub fn at(&self, index: i32) -> i32 {
+    /// Negative indices count backwards from the end of the set. Returns
+    /// `None` for an empty set, index 0, or an out-of-range index.
+    pub fn at(&self, index: i32) -> Option<i32> {
         if self.is_empty() {
-            panic!("Indexing on an empty set");
+            return None;
         }
         // `unsigned_abs` keeps i32::MIN well-defined (magnitude 2^31, which
         // is always beyond the saturated cardinality and rejected below).
         let magnitude = index.unsigned_abs();
         if magnitude < 1 {
-            panic!("Index can't be 0");
+            return None;
         }
         if magnitude > self.cardinality() as u32 {
-            panic!("Out of max index");
+            return None;
         }
 
-        if index > 0 {
+        Some(if index > 0 {
             self.at_pos(index)
         } else {
             // `index` is negative and |index| <= i32::MAX here, so `-index`
             // cannot overflow.
             self.at_neg(-index)
-        }
+        })
     }
 
-    /// Returns the index of an element in the set, indices start from `1`
-    pub fn index(&self, element: i32) -> i32 {
-        if self.is_empty() {
-            panic!("Indexing on an empty set");
-        }
-        if !self.contains(element) {
-            panic!("Element doesn't exist");
+    /// Returns the index of an element in the set, indices start from `1`.
+    /// Returns `None` for an empty set or an element not in the set.
+    pub fn index(&self, element: i32) -> Option<i32> {
+        if self.is_empty() || !self.contains(element) {
+            return None;
         }
 
         let mut index = -1; // not valid
@@ -1420,28 +1421,30 @@ impl IntSpan {
             }
         }
 
-        index
+        (index >= 0).then_some(index)
     }
 
-    pub fn slice(&self, from: i32, to: i32) -> IntSpan {
+    /// Positions `from..=to` of the set as an `IntSpan`; `None` for an empty
+    /// set or invalid positions (`from < 1`, `to > size`, `from > to`).
+    pub fn slice(&self, from: i32, to: i32) -> Option<IntSpan> {
         if self.is_empty() {
-            panic!("Indexing on an empty set");
+            return None;
         }
         if from < 1 {
-            panic!("Index can't be 0 or negative");
+            return None;
         }
         if to > self.cardinality() {
-            panic!("Out of max index");
+            return None;
         }
         if from > to {
-            panic!("Bad order: {},{}", from, to)
+            return None;
         }
 
-        let lower = self.at(from);
-        let upper = self.at(to);
+        let lower = self.at(from)?;
+        let upper = self.at(to)?;
 
         let new = IntSpan::from_pair(lower, upper);
-        new.intersect(self)
+        Some(new.intersect(self))
     }
 }
 
@@ -1484,15 +1487,8 @@ mod index {
         for (runlist, n, exp_index, exp_element) in tests {
             let set = IntSpan::from(runlist);
 
-            // at
-            if let Some(exp_index) = exp_index {
-                assert_eq!(set.at(n), exp_index);
-            }
-
-            // index
-            if let Some(exp_element) = exp_element {
-                assert_eq!(set.index(n), exp_element);
-            }
+            assert_eq!(set.at(n), exp_index);
+            assert_eq!(set.index(n), exp_element);
         }
     }
 
@@ -1503,14 +1499,13 @@ mod index {
         // cardinality saturates at i32::MAX; `at` returns the coordinate and
         // `index` saturates the 1-based position like `cardinality`.
         let set = IntSpan::from("-2147483647-2147483645");
-        assert_eq!(set.at(1), -2_147_483_647);
-        assert_eq!(set.at(-1), 2_147_483_645);
-        assert_eq!(set.index(-2_147_483_647), 1);
-        assert_eq!(set.index(2_147_483_645), i32::MAX);
+        assert_eq!(set.at(1), Some(-2_147_483_647));
+        assert_eq!(set.at(-1), Some(2_147_483_645));
+        assert_eq!(set.index(-2_147_483_647), Some(1));
+        assert_eq!(set.index(2_147_483_645), Some(i32::MAX));
         // `at` with i32::MIN must not overflow `abs`; it is beyond the
-        // saturated cardinality and rejected by the documented check.
-        let err = std::panic::catch_unwind(|| set.at(i32::MIN));
-        assert!(err.is_err());
+        // saturated cardinality and rejected.
+        assert_eq!(set.at(i32::MIN), None);
     }
 
     #[test]
@@ -1526,56 +1521,24 @@ mod index {
         for (runlist, from, to, exp) in tests {
             let set = IntSpan::from(runlist);
 
-            assert_eq!(set.slice(from, to).to_string(), exp);
+            assert_eq!(set.slice(from, to).unwrap().to_string(), exp);
         }
     }
 
     #[test]
-    #[should_panic(expected = "Indexing on an empty set")]
-    fn panic_at_1() {
-        let set = IntSpan::new();
-        set.at(1);
-        println!("{:?}", set.ranges());
-    }
+    fn invalid_index_arguments_return_none() {
+        let empty = IntSpan::new();
+        assert_eq!(empty.at(1), None);
+        assert_eq!(empty.index(1), None);
+        assert!(empty.slice(1, 2).is_none());
 
-    #[test]
-    #[should_panic(expected = "Index can't be 0")]
-    fn panic_at_2() {
         let set = IntSpan::from("0-9");
-        set.at(0);
-        println!("{:?}", set.ranges());
-    }
-
-    #[test]
-    #[should_panic(expected = "Out of max index")]
-    fn panic_at_3() {
-        let set = IntSpan::from("0-9");
-        set.at(15);
-        println!("{:?}", set.ranges());
-    }
-
-    #[test]
-    #[should_panic(expected = "Indexing on an empty set")]
-    fn panic_index_1() {
-        let set = IntSpan::new();
-        set.index(1);
-        println!("{:?}", set.ranges());
-    }
-
-    #[test]
-    #[should_panic(expected = "Element doesn't exist")]
-    fn panic_index_2() {
-        let set = IntSpan::from("0-9");
-        set.index(15);
-        println!("{:?}", set.ranges());
-    }
-
-    #[test]
-    #[should_panic(expected = "Indexing on an empty set")]
-    fn panic_slice_1() {
-        let set = IntSpan::new();
-        set.slice(1, 2);
-        println!("{:?}", set.ranges());
+        assert_eq!(set.at(0), None);
+        assert_eq!(set.at(15), None);
+        assert_eq!(set.index(15), None);
+        assert!(set.slice(0, 2).is_none()); // from < 1
+        assert!(set.slice(1, 15).is_none()); // to > cardinality
+        assert!(set.slice(5, 2).is_none()); // from > to
     }
 }
 

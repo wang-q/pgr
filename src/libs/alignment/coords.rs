@@ -75,8 +75,12 @@ pub fn chr_to_align(ints: &IntSpan, pos: i32, chr_start: i32, strand: &str) -> a
     }
 
     let aln_pos = match strand {
-        "+" => ints.at(pos - chr_start + 1),
-        "-" => ints.at(-(pos - chr_start + 1)),
+        "+" => ints
+            .at(pos - chr_start + 1)
+            .ok_or_else(|| anyhow!("internal: index out of range in intspan"))?,
+        "-" => ints
+            .at(-(pos - chr_start + 1))
+            .ok_or_else(|| anyhow!("internal: index out of range in intspan"))?,
         _ => {
             return Err(anyhow!("Unrecognized strand: {}", strand));
         }
@@ -121,6 +125,7 @@ pub fn align_to_chr(ints: &IntSpan, pos: i32, chr_start: i32, strand: &str) -> a
 
     let mut chr_pos = if ints.contains(pos) {
         ints.index(pos)
+            .ok_or_else(|| anyhow!("internal: element not found in intspan"))?
     } else if pos < ints.min() {
         1
     } else if pos > ints.max() {
@@ -138,6 +143,7 @@ pub fn align_to_chr(ints: &IntSpan, pos: i32, chr_start: i32, strand: &str) -> a
         }
 
         ints.index(cursor)
+            .ok_or_else(|| anyhow!("internal: element not found in intspan"))?
     };
 
     chr_pos = match strand {
