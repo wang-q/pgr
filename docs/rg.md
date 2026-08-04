@@ -86,13 +86,16 @@ pgr rg sort a.rg b.rg -o sorted.rg
 
 ## runlist
 
-Keeps `.rg` lines whose range overlaps, does not overlap, or is contained by
-the runlist, according to `--op`. Lines without a valid range are skipped.
+Keeps `.rg` lines whose range overlaps, does not overlap, or is fully contained
+by the runlist, according to `--op`. `--op superset` keeps only lines whose
+range is entirely inside the runlist (the runlist is a superset of the range).
+Lines without a valid range are skipped.
 
 ```bash
 pgr rg runlist <runlist.json> <infiles>...
 pgr rg runlist intergenic.json a.rg
 pgr rg runlist intergenic.json a.rg --op non-overlap
+pgr rg runlist intergenic.json a.rg --op superset
 ```
 
 ## span

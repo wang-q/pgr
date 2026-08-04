@@ -9,14 +9,18 @@ pub fn make_subcommand() -> Command {
         .about("Filters .rg lines by comparing with a runlist file")
         .after_help(
             r###"
-Keeps `.rg` lines whose range overlaps, does not overlap, or is contained by
-the runlist, according to `--op`. Lines without a valid range are skipped.
+Keeps `.rg` lines whose range overlaps, does not overlap, or is fully contained
+by the runlist, according to `--op`. `--op superset` keeps only lines whose
+range is entirely inside the runlist (the runlist is a superset of the range).
+Lines without a valid range are skipped.
 
 Examples:
 1. Keep lines overlapping the runlist:
    pgr rg runlist intergenic.json a.rg
 2. Keep lines outside the runlist:
    pgr rg runlist intergenic.json a.rg --op non-overlap
+3. Keep lines fully contained in the runlist:
+   pgr rg runlist intergenic.json a.rg --op superset
 "###,
         )
         .arg(
@@ -44,7 +48,7 @@ Examples:
                     builder::PossibleValue::new("superset"),
                 ])
                 .default_value("overlap")
-                .help("Filter operation: overlap, non-overlap or superset"),
+                .help("Filter operation: overlap, non-overlap, or superset (fully contained)"),
         )
         .arg(crate::cmd_pgr::args::outfile_arg())
 }

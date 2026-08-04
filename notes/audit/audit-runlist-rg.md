@@ -234,3 +234,17 @@ spanr 时代 `chr:start-end` 按 `.` 截断 contig 名（`NC_000913.1` → `"1"`
   `invert_and_complement_on_i32_min_set_do_not_overflow`、
   `indexing_wide_spans_do_not_overflow`、`reversed_pairs_are_skipped_
   not_panicked`、`invalid_index_arguments_return_none` 等。
+
+## 后续补充（2026-08-04 复核）
+
+`rg runlist` 再次核对 rgr 源码：`superset` 语义确认为 `set.superset(range)`
+（range 完全落在 runlist 内，`size == length`），与 rgr 逐字节一致。补充：
+
+* 文档：`rg runlist` 的 `after_help` 与 `docs/rg.md` 补 `--op superset`
+  示例并澄清其"range 完全包含在 runlist 内"的语义（原描述仅说
+  "contained"，未点名 `superset`，且 op 名易与"range 是 runlist 超集"混淆）。
+* 测试：原 `command_rg_runlist` 只覆盖精确包含与完全不重叠，无法区分
+  `superset` 的正确语义（range 内含于 runlist）与另一种解释（range 包含某
+  span）。新增 `command_rg_runlist_superset_partial_overlap`，用
+  `chr1:5-25`（含 span 但非内含）锁死"range 在 runlist 内"语义，并断言
+  overlap / non-overlap 的包含/部分重叠/不相交三态输出。

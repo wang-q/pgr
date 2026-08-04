@@ -393,6 +393,33 @@ fn command_rg_runlist_invalid() {
     assert!(stderr.contains("invalid value"), "got: {stderr}");
 }
 
+// `superset` keeps only ranges fully contained in the runlist. A range that
+// merely overlaps or *contains* a runlist span is rejected — this locks in
+// the "range inside runlist" reading (rgr `set.superset(range)`) and rules
+// out the alternative "range contains a span" interpretation.
+#[test]
+fn command_rg_runlist_superset_partial_overlap() {
+    let dir = TempDir::new().unwrap();
+    let rl = dir.path().join("rl.json");
+    std::fs::write(&rl, "{\"chr1\": \"10-20\"}").unwrap();
+    let rg = dir.path().join("a.rg");
+    std::fs::write(&rg, "chr1:10-20\nchr1:5-15\nchr1:5-25\nchr1:25-30\n").unwrap();
+    let rl = rl.to_str().unwrap();
+    let rg = rg.to_str().unwrap();
+
+    // overlap: exact, partial and containing ranges all intersect the span.
+    let (stdout, _) = cmd(&["runlist", rl, rg]).run();
+    assert_eq!(stdout, "chr1:10-20\nchr1:5-15\nchr1:5-25\n");
+
+    // superset: only the exact-containment line is kept.
+    let (stdout, _) = cmd(&["runlist", rl, rg, "--op", "superset"]).run();
+    assert_eq!(stdout, "chr1:10-20\n");
+
+    // non-overlap: only the disjoint line is kept.
+    let (stdout, _) = cmd(&["runlist", rl, rg, "--op", "non-overlap"]).run();
+    assert_eq!(stdout, "chr1:25-30\n");
+}
+
 // Migrated from intspan `tests/cli_rgr.rs` `command_span` (.rg parts).
 #[test]
 fn command_rg_span() {
