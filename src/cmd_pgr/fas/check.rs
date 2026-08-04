@@ -32,13 +32,27 @@ Examples:"###,
 /// Execute the check command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let outfile = crate::cmd_pgr::args::get_outfile(args);
-    let mut writer =
-        pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
     let opt_genome = args.get_one::<String>("genome").unwrap();
     let opt_name: &str = args
         .get_one::<String>("name")
         .map(|s| s.as_str())
         .unwrap_or("");
+
+    // The writer is opened (truncating) before the block FA inputs and the
+    // reference genome are read, so reject an `-o` that would overwrite any of
+    // them. The genome's `.loc` sidecar is also protected: truncating it would
+    // make `open_indexed` treat it as fresh and serve an empty index.
+    let mut inputs: Vec<String> = args
+        .get_many::<String>("infiles")
+        .unwrap()
+        .map(|s| s.to_string())
+        .collect();
+    inputs.push(opt_genome.to_string());
+    inputs.push(format!("{}.loc", opt_genome));
+    crate::cmd_pgr::args::ensure_outfile_distinct(outfile, inputs.iter().map(|s| s.as_str()))?;
+
+    let mut writer =
+        pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
 
     let (mut genome_reader, loc_of) = loc::open_indexed(opt_genome, false)?;
 

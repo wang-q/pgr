@@ -88,7 +88,20 @@ impl fmt::Display for Substitution {
 /// ```
 pub fn get_subs(seqs: &[&[u8]]) -> anyhow::Result<Vec<Substitution>> {
     let seq_count = seqs.len();
+    if seq_count == 0 {
+        return Ok(vec![]);
+    }
     let length = seqs[0].len();
+    for (i, seq) in seqs.iter().enumerate() {
+        if seq.len() != length {
+            bail!(
+                "sequences in a block have unequal lengths: seq[0]={} but seq[{}]={}",
+                length,
+                i,
+                seq.len()
+            );
+        }
+    }
 
     // For each position, search for polymorphic sites
     let mut bases_of: BTreeMap<usize, Vec<u8>> = BTreeMap::new();
@@ -224,7 +237,14 @@ pub fn get_subs(seqs: &[&[u8]]) -> anyhow::Result<Vec<Substitution>> {
 pub fn polarize_subs(subs: &mut Vec<Substitution>, og: &[u8]) -> anyhow::Result<()> {
     for sub in subs {
         let pos = sub.pos;
-        let obase_u8 = og[(pos - 1) as usize].to_ascii_uppercase();
+        let og_idx = (pos - 1) as usize;
+        anyhow::ensure!(
+            og_idx < og.len(),
+            "outgroup sequence too short for substitution at position {} (outgroup length {})",
+            pos,
+            og.len()
+        );
+        let obase_u8 = og[og_idx].to_ascii_uppercase();
         let obase = String::from_utf8(vec![obase_u8])?;
 
         if sub.qbase.is_empty() {
@@ -372,6 +392,20 @@ impl fmt::Display for Indel {
 /// ```
 pub fn get_indels(seqs: &[&[u8]]) -> anyhow::Result<Vec<Indel>> {
     let seq_count = seqs.len();
+    if seq_count == 0 {
+        return Ok(vec![]);
+    }
+    let length = seqs[0].len();
+    for (i, seq) in seqs.iter().enumerate() {
+        if seq.len() != length {
+            bail!(
+                "sequences in a block have unequal lengths: seq[0]={} but seq[{}]={}",
+                length,
+                i,
+                seq.len()
+            );
+        }
+    }
 
     // Find all indel regions
     let mut indel_set = IntSpan::new();
@@ -521,7 +555,16 @@ pub fn polarize_indels(indels: &mut Vec<Indel>, og: &[u8]) -> anyhow::Result<()>
     let og_indel_set = indel_intspan(og);
 
     for indel in indels {
-        let og_seq = og[(indel.start - 1) as usize..indel.end as usize].to_vec();
+        let start = indel.start;
+        let end = indel.end;
+        anyhow::ensure!(
+            end as usize <= og.len(),
+            "outgroup sequence too short for indel at {}..{} (outgroup length {})",
+            start,
+            end,
+            og.len()
+        );
+        let og_seq = og[(start - 1) as usize..end as usize].to_vec();
         let og_seq = String::from_utf8(og_seq)?;
         indel.og_seq = og_seq.clone();
 

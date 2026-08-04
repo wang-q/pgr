@@ -39,10 +39,22 @@ Examples:
 /// Execute the slice command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let outfile = crate::cmd_pgr::args::get_outfile(args);
+    let runlist = args.get_one::<String>("runlist").unwrap();
+
+    // Protect both the block FA inputs and the runlist JSON: the writer is
+    // opened (truncating) before any of them is read.
+    let mut inputs: Vec<&str> = args
+        .get_many::<String>("infiles")
+        .unwrap()
+        .map(|s| s.as_str())
+        .collect();
+    inputs.push(runlist.as_str());
+    crate::cmd_pgr::args::ensure_outfile_distinct(outfile, inputs)?;
+
     let mut writer =
         pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
 
-    let set = pgr::libs::io::read_runlist(args.get_one::<String>("runlist").unwrap())?;
+    let set = pgr::libs::io::read_runlist(runlist)?;
 
     let mut name = args
         .get_one::<String>("name")

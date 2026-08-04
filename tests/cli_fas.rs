@@ -490,6 +490,63 @@ fn command_stat() {
 }
 
 #[test]
+fn command_fas_stat_unequal_length_no_panic() {
+    let temp = TempDir::new().unwrap();
+    let fas_file = temp.path().join("malformed.fas");
+    fs::write(
+        &fas_file,
+        ">a.chr1(+):1-10\nAAAATTTTGG\n>b.chr2(+):1-10\nAAAATTTTAG\n>c.chr3(+):1-8\nAAAATTTT\n",
+    )
+    .unwrap();
+
+    let (stdout, stderr) = PgrCmd::new()
+        .args(&["fas", "stat", fas_file.to_str().unwrap()])
+        .run();
+    assert!(
+        stderr.contains("unequal lengths"),
+        "expected a friendly error, not a panic; stderr={}",
+        stderr
+    );
+    assert!(stdout.trim().is_empty() || stdout.starts_with("target"));
+}
+
+#[test]
+fn command_fas_refine_unequal_length_no_panic() {
+    let temp = TempDir::new().unwrap();
+    let fas_file = temp.path().join("malformed.fas");
+    fs::write(
+        &fas_file,
+        ">a.chr1(+):1-10\nAAAATTTTGG\n>b.chr2(+):1-10\nAAAATTTTAG\n>c.chr3(+):1-8\nAAAATTTT\n",
+    )
+    .unwrap();
+
+    // `refine` realigns sequences of unequal length (its whole purpose), so it
+    // must succeed and emit the (shortest-anchored) alignment rather than
+    // error or panic.
+    let (stdout, stderr) = PgrCmd::new()
+        .args(&[
+            "fas",
+            "refine",
+            fas_file.to_str().unwrap(),
+            "--engine",
+            "none",
+            "--chop",
+            "2",
+        ])
+        .run();
+    assert!(
+        stderr.is_empty(),
+        "expected success, not an error or panic; stderr={}",
+        stderr
+    );
+    assert!(
+        stdout.contains(">a.chr1") && stdout.contains(">b.chr2") && stdout.contains(">c.chr3"),
+        "expected all three species in the refined output; stdout={}",
+        stdout
+    );
+}
+
+#[test]
 fn command_filter() {
     let (stdout, _) = PgrCmd::new()
         .args(&["fas", "filter", "tests/fas/example.fas"])
@@ -966,6 +1023,39 @@ fn command_create_skips_invalid_range() {
     assert!(
         stderr.contains("skipping invalid range"),
         "expected warning about invalid range, got {}",
+        stderr
+    );
+}
+
+#[test]
+fn command_create_output_not_overwrite_loc_index() {
+    // `create` opens the output writer (truncating) before reading the
+    // reference genome's `.loc` sidecar index. If `-o` names the `.loc` file,
+    // the index is truncated before `open_indexed` loads it, silently dropping
+    // every link. It must be rejected.
+    let temp = TempDir::new().unwrap();
+    let genome = temp.path().join("genome.fa");
+    fs::write(&genome, ">chr1\nACGTACGTACGTACGT\n").unwrap();
+    let loc = format!("{}.loc", genome.display());
+
+    let connect = temp.path().join("connect.tsv");
+    fs::write(&connect, "S288c.chr1:1-5\n").unwrap();
+
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "fas",
+            "create",
+            connect.to_str().unwrap(),
+            "-g",
+            genome.to_str().unwrap(),
+            "-o",
+            &loc,
+        ])
+        .run_fail();
+
+    assert!(
+        stderr.contains("is also an input file"),
+        "expected rejection of -o matching .loc, got {}",
         stderr
     );
 }

@@ -43,12 +43,25 @@ Examples:
 /// Execute the to-vcf command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let outfile = crate::cmd_pgr::args::get_outfile(args);
-    let mut writer =
-        pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
     let sizes_path = args
         .get_one::<String>("sizes")
         .map(|s| s.to_string())
         .unwrap_or_default();
+
+    // The writer is opened (truncating) before the block FA inputs and the
+    // optional sizes file are read, so reject an `-o` that matches any of them.
+    let mut inputs: Vec<&str> = args
+        .get_many::<String>("infiles")
+        .unwrap()
+        .map(|s| s.as_str())
+        .collect();
+    if !sizes_path.is_empty() {
+        inputs.push(sizes_path.as_str());
+    }
+    crate::cmd_pgr::args::ensure_outfile_distinct(outfile, inputs)?;
+
+    let mut writer =
+        pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
     let sizes: BTreeMap<String, i32> = if !sizes_path.is_empty() {
         pgr::read_sizes(&sizes_path)?
     } else {

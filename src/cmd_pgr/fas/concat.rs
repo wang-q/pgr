@@ -44,12 +44,23 @@ Examples:
 /// Execute the concat command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let outfile = crate::cmd_pgr::args::get_outfile(args);
+    let required = args.get_one::<String>("required").unwrap();
+
+    // The writer is opened (truncating) before the block FA inputs and the
+    // required-names file are read, so reject an `-o` that matches any of them.
+    let mut inputs: Vec<&str> = args
+        .get_many::<String>("infiles")
+        .unwrap()
+        .map(|s| s.as_str())
+        .collect();
+    inputs.push(required.as_str());
+    crate::cmd_pgr::args::ensure_outfile_distinct(outfile, inputs)?;
+
     let mut writer =
         pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
     let is_phylip = args.get_flag("phylip");
 
-    let needed =
-        pgr::libs::io::read_names::<Vec<String>>(args.get_one::<String>("required").unwrap())?;
+    let needed = pgr::libs::io::read_names::<Vec<String>>(required)?;
     anyhow::ensure!(!needed.is_empty(), "--required file is empty");
 
     let mut seq_of: BTreeMap<String, String> = BTreeMap::new();

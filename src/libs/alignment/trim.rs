@@ -397,7 +397,11 @@ pub fn trim_head_tail(seqs: &mut [String], ranges: &mut [Range], chop: usize) {
         let head_indel_ints = indel_ints.find_islands_ints(&head_ints);
 
         if !head_indel_ints.is_empty() {
-            for _ in 1..=(head_indel_ints.max() as usize) {
+            // Cap at the current length so an all-gap alignment (whose single
+            // island spans the whole sequence) cannot empty the sequences and
+            // leave the tail loop below malformed.
+            let head_remove = (head_indel_ints.max() as usize).min(seqs[0].len());
+            for _ in 1..=head_remove {
                 for i in 0..seq_count {
                     let base = seqs[i].remove(0);
                     if base != '-' {
@@ -421,6 +425,11 @@ pub fn trim_head_tail(seqs: &mut [String], ranges: &mut [Range], chop: usize) {
             for _ in (tail_indel_ints.min() as usize)..=align_len {
                 // record current length
                 let cur_len = seqs[0].len();
+                if cur_len == 0 {
+                    // Sequences already fully trimmed (e.g. an all-gap block);
+                    // nothing left to remove from the tail.
+                    break;
+                }
                 for i in 0..seq_count {
                     let base = seqs[i].remove(cur_len - 1);
                     if base != '-' {
@@ -433,5 +442,31 @@ pub fn trim_head_tail(seqs: &mut [String], ranges: &mut [Range], chop: usize) {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Regression: an all-gap alignment with `--chop` used to panic. The head
+    /// loop removed every character, then the tail loop called
+    /// `seqs[i].remove(cur_len - 1)` with `cur_len == 0`.
+    #[test]
+    fn trim_head_tail_all_gap_no_panic() {
+        let mut seqs = vec![
+            "---------".to_string(),
+            "---------".to_string(),
+            "---------".to_string(),
+        ];
+        let mut ranges = vec![
+            Range::from_str("I(+):101-109"),
+            Range::from_str("1:1-9"),
+            Range::from_str("a(-):101-109"),
+        ];
+        trim_head_tail(&mut seqs, &mut ranges, 3);
+        // All gap characters were trimmed from the head; the tail loop must
+        // not panic.
+        assert!(seqs.iter().all(|s| s.is_empty()));
     }
 }

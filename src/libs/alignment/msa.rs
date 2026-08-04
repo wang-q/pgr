@@ -370,6 +370,16 @@ pub fn align_seqs_quick(
         return Ok(Vec::new());
     }
     let align_len = seqs[0].len() as i32;
+    for (i, seq) in seqs.iter().enumerate() {
+        if seq.len() as i32 != align_len {
+            anyhow::bail!(
+                "sequences in a block have unequal lengths: seq[0]={} but seq[{}]={}",
+                align_len,
+                i,
+                seq.len()
+            );
+        }
+    }
 
     // realign regions
     let mut realign_ints = IntSpan::new();

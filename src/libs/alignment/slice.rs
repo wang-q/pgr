@@ -63,6 +63,11 @@ pub fn slice_block<W: Write>(
                 ss_ints.subtract(&island);
             }
         }
+        if ss_ints.is_empty() {
+            // The whole subslice fell inside an indel island (every column has
+            // a gap in some species), so there is nothing to slice out.
+            continue;
+        }
         sub_slices.push(ss_ints);
     }
 
@@ -117,4 +122,44 @@ pub fn slice_block<W: Write>(
     // blank line separating blocks
     writer.write_all(b"\n")?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::libs::ds::Range;
+    use crate::libs::fmt::fas::{FasBlock, FasEntry};
+
+    fn block_with_all_gap_second_species() -> FasBlock {
+        let target = Range::from_full("T", "chr1", "+", 1, 4);
+        let other = Range::from_full("O", "chr2", "+", 1, 4);
+        FasBlock {
+            entries: vec![
+                FasEntry::from(&target, b"ACGT"),
+                FasEntry::from(&other, b"----"),
+            ],
+            names: vec!["T".to_string(), "O".to_string()],
+            headers: vec![target.to_string(), other.to_string()],
+        }
+    }
+
+    /// Regression: when the whole subslice is covered by an indel island (a
+    /// second species is entirely gaps), trimming the indel borders emptied
+    /// the subslice and `ss.min()`/`ss.max()` panicked on the empty IntSpan.
+    #[test]
+    fn slice_block_all_gap_second_species_no_panic() {
+        let block = block_with_all_gap_second_species();
+        let mut set: BTreeMap<String, IntSpan> = BTreeMap::new();
+        set.insert("chr1".to_string(), IntSpan::from("1-4"));
+
+        let mut out: Vec<u8> = vec![];
+        // Target has no gaps and the subslice covers all four columns, while
+        // the other species is all gaps -> the subslice is a pure indel island.
+        let result = slice_block(&block, "T", &set, &mut out);
+        assert!(
+            result.is_ok(),
+            "slicing must not panic or error: {:?}",
+            result
+        );
+    }
 }

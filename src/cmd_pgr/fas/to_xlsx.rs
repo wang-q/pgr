@@ -108,6 +108,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         .unwrap()
         .cloned()
         .collect();
+    crate::cmd_pgr::args::ensure_outfile_distinct(outfile, infiles.iter().map(|s| s.as_str()))?;
 
     pgr::libs::fas_xlsx::export_to_xlsx(
         &infiles,

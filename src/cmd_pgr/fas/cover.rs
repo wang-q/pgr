@@ -57,6 +57,14 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let mut res_of: BTreeMap<String, BTreeMap<String, pgr::libs::ds::IntSpan>> = BTreeMap::new();
 
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
+    crate::cmd_pgr::args::ensure_outfile_distinct(
+        outfile,
+        args.get_many::<String>("infiles")
+            .unwrap()
+            .map(|s| s.as_str()),
+    )?;
+
     for infile in args.get_many::<String>("infiles").unwrap() {
         let mut reader =
             pgr::reader(infile).with_context(|| format!("Failed to open reader for {}", infile))?;
@@ -76,7 +84,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         pgr::libs::ds::intspan::set2json_m(&res_of)
     };
     // Write the JSON output to the specified file or stdout
-    pgr::libs::ds::intspan::write_json(crate::cmd_pgr::args::get_outfile(args), &out_json)?;
+    pgr::libs::ds::intspan::write_json(outfile, &out_json)?;
 
     Ok(())
 }

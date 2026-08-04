@@ -73,6 +73,16 @@ pub fn alignment_stat(seqs: &[&[u8]]) -> anyhow::Result<(i32, i32, i32, i32, i32
     }
 
     let length = seqs[0].len();
+    for (i, seq) in seqs.iter().enumerate() {
+        if seq.len() != length {
+            bail!(
+                "sequences in a block have unequal lengths: seq[0]={} but seq[{}]={}",
+                length,
+                i,
+                seq.len()
+            );
+        }
+    }
 
     let mut comparable = 0;
     let mut difference = 0;

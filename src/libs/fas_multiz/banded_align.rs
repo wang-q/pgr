@@ -169,7 +169,7 @@ fn banded_align_refs_inner(
         })
         .collect();
 
-    let k = col_a[0].len();
+    let k_a = col_a[0].len();
     let l = col_b[0].len();
     let na_col: Vec<usize> = col_a
         .iter()
@@ -222,7 +222,7 @@ fn banded_align_refs_inner(
     for j in 1..=rb[0] {
         let kj = cell(0, j)?;
         let prev = cell(0, j - 1)?;
-        let ext = (nb_col[j - 1] as i32) * (k as i32) * gap_extend_pen;
+        let ext = (nb_col[j - 1] as i32) * (k_a as i32) * gap_extend_pen;
         ins[kj] = ins[prev].saturating_add(ext);
         // The row-0 insertion chain always continues from the I state, so the
         // traceback keeps walking left (flag_i = 1, the I code).
@@ -261,7 +261,7 @@ fn banded_align_refs_inner(
                             }
                         }
                     }
-                    let ext = (nb_col[j - 1] as i32) * (k as i32) * gap_extend_pen;
+                    let ext = (nb_col[j - 1] as i32) * (k_a as i32) * gap_extend_pen;
                     if x >= y && x >= z {
                         i_best = x;
                         i_flag = 0;

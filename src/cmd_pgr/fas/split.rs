@@ -64,10 +64,16 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let is_chr = args.get_flag("chr");
     let is_simple = args.get_flag("simple");
 
+    let infiles: Vec<String> = args
+        .get_many::<String>("infiles")
+        .unwrap()
+        .cloned()
+        .collect();
+
     let mut file_of: BTreeMap<String, BufWriter<std::fs::File>> = BTreeMap::new();
     let stdout = std::io::stdout();
     let mut out = stdout.lock();
-    for infile in args.get_many::<String>("infiles").unwrap() {
+    for infile in &infiles {
         let mut reader =
             pgr::reader(infile).with_context(|| format!("Failed to open reader for {}", infile))?;
 
@@ -90,6 +96,19 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 } else {
                     let path =
                         std::path::Path::new(outdir).join(format!("{}{}", filename, opt_suffix));
+                    // The per-block output file is opened with `truncate` while
+                    // the input is still being streamed, so reject a path that
+                    // would overwrite any input file.
+                    let path_str = path.to_string_lossy().to_string();
+                    for infile in &infiles {
+                        if pgr::libs::io::same_path(&path_str, infile) {
+                            anyhow::bail!(
+                                "output file {} would overwrite input file {}",
+                                path_str,
+                                infile
+                            );
+                        }
+                    }
                     let file = std::fs::OpenOptions::new()
                         .create(true)
                         .write(true)

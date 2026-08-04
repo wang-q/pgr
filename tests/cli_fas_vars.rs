@@ -225,3 +225,68 @@ fn command_to_xlsx_outgroup() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn command_variation_outgroup_unequal_length_no_panic() -> anyhow::Result<()> {
+    // Last (outgroup) sequence is shorter than the ingroup sequences: the
+    // polarization step must return a friendly error instead of panicking.
+    let malformed = tempfile::NamedTempFile::new()?;
+    std::io::Write::write_all(
+        &mut std::fs::File::create(malformed.path())?,
+        b">A.chr1(+):1-10\nAAAATTTTGG\n>B.chr2(+):1-10\nAAAATTTTAG\n>C.chr3(+):1-8\nAAAATTTT\n",
+    )?;
+
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
+    let output = cmd
+        .arg("fas")
+        .arg("variation")
+        .arg(malformed.path())
+        .arg("--outgroup")
+        .output()?;
+    assert!(
+        !output.status.success(),
+        "expected a friendly error, not a panic"
+    );
+    let stderr = String::from_utf8(output.stderr)?;
+    assert!(
+        stderr.contains("outgroup sequence too short"),
+        "unexpected stderr: {}",
+        stderr
+    );
+
+    Ok(())
+}
+
+#[test]
+fn command_to_xlsx_unequal_length_no_panic() -> anyhow::Result<()> {
+    // Varying sequence lengths within a block must error gracefully, not panic.
+    let malformed = tempfile::NamedTempFile::new()?;
+    std::io::Write::write_all(
+        &mut std::fs::File::create(malformed.path())?,
+        b">A.chr1(+):1-10\nAAAATTTTGG\n>B.chr2(+):1-10\nAAAATTTTAG\n>C.chr3(+):1-8\nAAAATTTT\n",
+    )?;
+    let out = tempfile::NamedTempFile::new()?;
+
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
+    let output = cmd
+        .arg("fas")
+        .arg("to-xlsx")
+        .arg(malformed.path())
+        .arg("--indel")
+        .arg("--outgroup")
+        .arg("-o")
+        .arg(out.path())
+        .output()?;
+    assert!(
+        !output.status.success(),
+        "expected a friendly error, not a panic"
+    );
+    let stderr = String::from_utf8(output.stderr)?;
+    assert!(
+        stderr.contains("unequal lengths") || stderr.contains("outgroup sequence too short"),
+        "unexpected stderr: {}",
+        stderr
+    );
+
+    Ok(())
+}

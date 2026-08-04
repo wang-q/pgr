@@ -294,6 +294,11 @@ fn get_vars(
 
     let mut seq_count = seqs.len();
     let out_seq = if is_outgroup {
+        anyhow::ensure!(
+            seq_count >= 2,
+            "outgroup mode requires at least 2 sequences per block, got {}",
+            seq_count
+        );
         seq_count -= 1;
         Some(seqs[seq_count])
     } else {

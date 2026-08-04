@@ -36,11 +36,22 @@ Examples:
 /// Execute the replace command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let outfile = crate::cmd_pgr::args::get_outfile(args);
+    let replace_tsv = args.get_one::<String>("replace_tsv").unwrap();
+
+    // Protect both the block FA inputs and the replacement TSV: the writer is
+    // opened (truncating) before any of them is read.
+    let mut inputs: Vec<&str> = args
+        .get_many::<String>("infiles")
+        .unwrap()
+        .map(|s| s.as_str())
+        .collect();
+    inputs.push(replace_tsv.as_str());
+    crate::cmd_pgr::args::ensure_outfile_distinct(outfile, inputs)?;
+
     let mut writer =
         pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
 
-    let replace_of =
-        pgr::libs::io::read_replace_tsv(args.get_one::<String>("replace_tsv").unwrap())?;
+    let replace_of = pgr::libs::io::read_replace_tsv(replace_tsv)?;
 
     // Operating
     for infile in args.get_many::<String>("infiles").unwrap() {
