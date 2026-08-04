@@ -227,7 +227,7 @@ pub fn no_ns_arg() -> Arg {
     Arg::new("no_ns")
         .long("no-ns")
         .action(ArgAction::SetTrue)
-        .help("Output size without Ns")
+        .help("Output size without Ns and IUPAC ambiguous codes")
 }
 
 /// `-U/--upper` flag (convert sequences to uppercase).

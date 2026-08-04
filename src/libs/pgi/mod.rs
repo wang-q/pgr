@@ -655,7 +655,7 @@ mod tests {
         // resident reader and the streaming reader must reject it with a
         // friendly error.
         let seq: Vec<u8> = (0..200u32).map(|i| b"ACGT"[(i % 4) as usize]).collect();
-        let idx = build_from_seqs(vec![(String::from("c1"), seq)], 10, 4, 2, false).unwrap();
+        let idx = build_from_seqs(vec![(String::from("c1"), seq)], 10, 4, 2, false, false).unwrap();
         let mut buf = Vec::new();
         idx.write(&mut buf).unwrap();
         corrupt_first_record_contig(&mut buf);
@@ -707,7 +707,7 @@ mod tests {
     #[test]
     fn write_read_roundtrip() {
         let seq: Vec<u8> = (0..200u32).map(|i| b"ACGT"[(i % 4) as usize]).collect();
-        let idx = build_from_seqs(vec![(String::from("c1"), seq)], 10, 4, 2, false).unwrap();
+        let idx = build_from_seqs(vec![(String::from("c1"), seq)], 10, 4, 2, false, false).unwrap();
         let mut buf = Vec::new();
         idx.write(&mut buf).unwrap();
         let loaded = PgiIndex::read(&mut std::io::Cursor::new(&buf)).unwrap();
@@ -720,7 +720,7 @@ mod tests {
     #[test]
     fn stream_matches_full_read() {
         let seq: Vec<u8> = (0..200u32).map(|i| b"ACGT"[(i % 4) as usize]).collect();
-        let idx = build_from_seqs(vec![(String::from("c1"), seq)], 10, 4, 2, false).unwrap();
+        let idx = build_from_seqs(vec![(String::from("c1"), seq)], 10, 4, 2, false, false).unwrap();
         let mut buf = Vec::new();
         idx.write(&mut buf).unwrap();
         let loaded = PgiIndex::read(&mut std::io::Cursor::new(&buf)).unwrap();

@@ -111,17 +111,29 @@ pub fn cluster_paf<R: BufRead>(
         }
     }
 
-    // Group intervals by connected component.
-    let mut groups: HashMap<usize, Vec<usize>> = HashMap::new();
-    for i in 0..intervals.len() {
-        groups.entry(dsu.find(i)).or_default().push(i);
+    // Group intervals by connected component, then order the clusters by
+    // their first interval's (chrom, start). A HashMap iteration order is
+    // randomized per process, so the cluster numbers (and `sd run`'s global
+    // set_id renumbering) must not depend on it.
+    let mut groups: Vec<Vec<usize>> = {
+        let mut by_root: HashMap<usize, Vec<usize>> = HashMap::new();
+        for i in 0..intervals.len() {
+            by_root.entry(dsu.find(i)).or_default().push(i);
+        }
+        by_root.into_values().collect()
+    };
+    for idxs in &mut groups {
+        idxs.sort_by_key(|&i| (intervals[i].chrom.clone(), intervals[i].start));
     }
+    groups.sort_by_key(|idxs| {
+        let first = idxs[0];
+        (intervals[first].chrom.clone(), intervals[first].start)
+    });
 
     // Extract sequences and write one FASTA per cluster.
     let (mut reader, loc_of) = crate::libs::loc::open_indexed(&genome_path, false)?;
     let mut clusters: Vec<SdCluster> = Vec::new();
-    for (_root, mut idxs) in groups {
-        idxs.sort_by_key(|&i| (intervals[i].chrom.clone(), intervals[i].start));
+    for idxs in groups {
         let mut members = Vec::new();
         for i in idxs {
             let iv = &mut intervals[i];
@@ -142,6 +154,21 @@ pub fn cluster_paf<R: BufRead>(
     clusters.sort_by_key(|c| c.intervals[0].chrom.clone());
 
     std::fs::create_dir_all(outdir)?;
+    // Remove stale cluster files from a previous run into the same
+    // directory; a leftover `cluster_2.fa` would otherwise be silently
+    // consumed by `sd run` / `sd decompose` as if it were current output.
+    // Only pgr's own `cluster_<N>.fa` naming is touched, never other files.
+    if let Ok(entries) = std::fs::read_dir(outdir) {
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let num = name
+                .strip_prefix("cluster_")
+                .and_then(|rest| rest.strip_suffix(".fa"));
+            if num.is_some_and(|n| n.parse::<u32>().is_ok()) {
+                let _ = std::fs::remove_file(entry.path());
+            }
+        }
+    }
     for (ci, cluster) in clusters.iter().enumerate() {
         let path = std::path::Path::new(outdir).join(format!("cluster_{}.fa", ci + 1));
         let mut w = std::io::BufWriter::new(std::fs::File::create(&path)?);
@@ -246,5 +273,44 @@ chr\t1000\t100\t200\t+\tchr\t1000\t700\t800\t100\t100\t255\n";
         );
         let strands: Vec<char> = same_coords.iter().map(|iv| iv.strand).collect();
         assert!(strands.contains(&'+') && strands.contains(&'-'));
+    }
+
+    #[test]
+    fn stale_cluster_files_are_removed() {
+        // Regression: re-running `sd cluster` into a directory that already
+        // holds `cluster_N.fa` files from an earlier (larger) run left the
+        // stale files behind, so `sd run` / `sd decompose` silently consumed
+        // outdated families as if they were current output.
+        let dir = tempfile::tempdir().unwrap();
+        let genome = dir.path().join("g.fa");
+        std::fs::write(&genome, format!(">chr\n{}\n", "A".repeat(300))).unwrap();
+        let paf = "\
+chr\t300\t0\t100\t+\tchr\t300\t100\t200\t100\t100\t255\n";
+        let outdir = dir.path().join("clusters");
+        std::fs::create_dir_all(&outdir).unwrap();
+        std::fs::write(outdir.join("cluster_1.fa"), "stale").unwrap();
+        std::fs::write(outdir.join("cluster_2.fa"), "stale").unwrap();
+        std::fs::write(outdir.join("cluster_3.fa"), "stale").unwrap();
+        // A file that is not pgr's cluster naming must survive.
+        std::fs::write(outdir.join("notes.txt"), "keep me").unwrap();
+
+        let clusters = cluster_paf(
+            std::io::Cursor::new(paf.as_bytes()),
+            genome.to_str().unwrap(),
+            outdir.to_str().unwrap(),
+        )
+        .unwrap();
+        assert_eq!(clusters.len(), 1);
+        let mut names: Vec<String> = std::fs::read_dir(&outdir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        assert_eq!(
+            names,
+            vec!["cluster_1.fa".to_string(), "notes.txt".to_string()],
+            "stale cluster files must be removed, unrelated files kept"
+        );
     }
 }

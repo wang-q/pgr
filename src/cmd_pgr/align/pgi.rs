@@ -1,7 +1,6 @@
 //! `pgr align pgi` — pairwise genome alignment on the pgi k-mer pipeline.
 
 use anyhow::Context;
-use clap::parser::ValueSource;
 use clap::{value_parser, Arg, ArgAction, ArgMatches, Command};
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -190,6 +189,14 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let self_mode = is_self || query_input.is_none();
     let query_input = query_input.map(|s| s.as_str()).unwrap_or(ref_input);
     let outfile = args.get_one::<String>("outfile").unwrap();
+    let mut inputs: Vec<&str> = vec![ref_input, query_input];
+    if let Some(s) = args.get_one::<String>("ref_seq") {
+        inputs.push(s.as_str());
+    }
+    if let Some(s) = args.get_one::<String>("query_seq") {
+        inputs.push(s.as_str());
+    }
+    crate::cmd_pgr::args::ensure_outfile_distinct(outfile, inputs)?;
     let params = pgr::libs::pgi::align::AlignParams {
         freq: *args.get_one::<u32>("freq").unwrap(),
         min_span: *args.get_one::<u32>("min_span").unwrap(),
@@ -244,14 +251,25 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         // against the index, which matters when a sibling index was reused)
         // or from --ref-seq/--query-seq for .pgi inputs (validated the same
         // way).
-        let ref_seqs = resolve_seqs(
+        let mut ref_seqs = resolve_seqs(
             args,
             ref_side_seqs,
             a.header().contigs.as_slice(),
             "reference",
             "ref_seq",
         )?;
-        let query_seqs = resolve_seqs(args, query_side_seqs, b.contigs(), "query", "query_seq")?;
+        let mut query_seqs =
+            resolve_seqs(args, query_side_seqs, b.contigs(), "query", "query_seq")?;
+        // Self mode aligns one input to itself, so a single --ref-seq (or
+        // --query-seq) on a .pgi input supplies the extension sequences for
+        // both sides (previously it errored unless both flags were given).
+        if self_mode {
+            if query_seqs.is_empty() && !ref_seqs.is_empty() {
+                query_seqs = ref_seqs.clone();
+            } else if ref_seqs.is_empty() && !query_seqs.is_empty() {
+                ref_seqs = query_seqs.clone();
+            }
+        };
         if ref_seqs.is_empty() != query_seqs.is_empty() {
             anyhow::bail!(
                 "extension sequences are needed for both sides (genome inputs, or \
@@ -306,25 +324,27 @@ fn resolve_side(
 
     let input_path = Path::new(input);
     let cached = sibling_pgi_path(input_path);
-    if cached.exists() {
+    if cached.exists() && !sibling_index_stale(input, &cached) {
         let (ck, cs, cw) = read_index_params(&cached)?;
-        let explicit = |name: &str| args.value_source(name) == Some(ValueSource::CommandLine);
         let k = *args.get_one::<usize>("kmer").unwrap();
         let smer = *args.get_one::<usize>("smer").unwrap();
         let window = *args.get_one::<usize>("window").unwrap();
-        if explicit("kmer") && k != ck {
+        // The current parameters (explicit or the defaults) must match the
+        // cached index; a default `-k 40` run silently reusing a `k=20`
+        // sibling index would report k=40 semantics with k=20 seeds.
+        if k != ck {
             anyhow::bail!(
                 "--kmer {k} conflicts with the cached index {} (k={ck})",
                 cached.display()
             );
         }
-        if explicit("smer") && smer != cs {
+        if smer != cs {
             anyhow::bail!(
                 "--smer {smer} conflicts with the cached index {} (smer={cs})",
                 cached.display()
             );
         }
-        if explicit("window") && window != cw {
+        if window != cw {
             anyhow::bail!(
                 "--window {window} conflicts with the cached index {} (window={cw})",
                 cached.display()
@@ -342,7 +362,7 @@ fn resolve_side(
     let smer = *args.get_one::<usize>("smer").unwrap();
     let window = *args.get_one::<usize>("window").unwrap();
     let seqs = read_seqs(input)?;
-    let idx = pgr::libs::pgi::build::build_from_seqs(seqs.clone(), k, smer, window, false)?;
+    let idx = pgr::libs::pgi::build::build_from_seqs(seqs.clone(), k, smer, window, false, true)?;
     let out = if keep {
         cached.clone()
     } else {
@@ -361,6 +381,21 @@ fn resolve_side(
         index: out.display().to_string(),
         seqs: Some(seqs),
     })
+}
+
+/// Whether the genome input was modified after the sibling index was built.
+///
+/// The index stores only k-mers, so a FASTA edited in place (same contig
+/// names/lengths, different sequence) would otherwise silently reuse the
+/// stale index; rebuild instead (same mtime convention as the e-kmer cache).
+fn sibling_index_stale(input: &str, index: &Path) -> bool {
+    let (Ok(input_m), Ok(index_m)) = (
+        std::fs::metadata(input).and_then(|m| m.modified()),
+        std::fs::metadata(index).and_then(|m| m.modified()),
+    ) else {
+        return false;
+    };
+    input_m > index_m
 }
 
 /// Resolve the extension sequences for one side, validating them against the
@@ -408,7 +443,13 @@ fn is_pgi_input(path: &str) -> bool {
 fn sibling_pgi_path(path: &Path) -> PathBuf {
     let mut p = path.to_path_buf();
     if p.extension().and_then(|e| e.to_str()) == Some("gz") {
+        // `ref.fa.gz` -> `ref.fa.pgi`: drop the `.gz` and keep the `.fa` so
+        // the gzipped input has its own index, distinct from a plain
+        // `ref.fa` (which maps to `ref.pgi`). A shared sibling would reuse
+        // the wrong index when both files exist with the same contig
+        // names/lengths but different sequences.
         p.set_extension("");
+        return PathBuf::from(format!("{}.pgi", p.display()));
     }
     p.set_extension("pgi");
     p

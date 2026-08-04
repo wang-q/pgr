@@ -88,6 +88,10 @@ written as a runlist JSON ready for `pgr fa mask`.
 /// Execute the s-align command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let outfile = crate::cmd_pgr::args::get_outfile(args);
+    crate::cmd_pgr::args::ensure_outfile_distinct(
+        outfile,
+        [args.get_one::<String>("infile").unwrap().as_str()],
+    )?;
 
     let ctx = pgr::libs::pl::PipelineCtx::new("pgr_rept_sa_")?;
 

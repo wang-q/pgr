@@ -309,8 +309,9 @@ pub fn current_exe_string() -> anyhow::Result<String> {
 /// Read the first column of `path` (one name per line) into a collection.
 ///
 /// Lines are split on whitespace; only the first field is kept. Empty lines
-/// are skipped. Order is preserved. Use `read_names::<Vec<String>>` for a
-/// vector or `read_names::<HashSet<String>>` for a set.
+/// and lines starting with `#` are skipped. Order is preserved. Use
+/// `read_names::<Vec<String>>` for a vector or `read_names::<HashSet<String>>`
+/// for a set.
 ///
 /// ```
 /// let path = std::env::temp_dir().join("pgr_doctest_read_names.list");
@@ -323,7 +324,7 @@ pub fn read_names<T: FromIterator<String>>(path: &str) -> anyhow::Result<T> {
         .into_iter()
         .filter_map(|line| {
             let line = line.trim();
-            if line.is_empty() {
+            if line.is_empty() || line.starts_with('#') {
                 None
             } else {
                 line.split_whitespace().next().map(|s| s.to_string())

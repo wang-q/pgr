@@ -690,6 +690,13 @@ fn dedupe_contained(blocks: &mut Vec<Psl>) {
                 && k.strand == b.strand
                 && overlap_frac(k.t_start, k.t_end, b.t_start, b.t_end) >= 0.95
                 && overlap_frac(k.q_start, k.q_end, b.q_start, b.q_end) >= 0.95
+                // A genuinely smaller block contained in a much larger one
+                // (e.g. a copy-pair hit inside the exact self-identity
+                // diagonal of an explicit same-file pair) is a distinct
+                // alignment, not a duplicate; the adjacent-tube duplicates
+                // this filter targets have similar spans.
+                && (k.t_end - k.t_start) <= 4 * (b.t_end - b.t_start)
+                && (k.q_end - k.q_start) <= 4 * (b.q_end - b.q_start)
         });
         if !dup {
             kept.push(b);
@@ -905,6 +912,12 @@ fn merge_adjacent_chains(
 /// turn an unverifiable huge middle into a giant allocation, so middles
 /// beyond [`MIDDLE_CHECK_CAP`] are conservatively kept separate.
 const MIDDLE_CHECK_CAP: usize = 50_000;
+/// The middle-homology DP is O(middle * band); a user-raised `--band` must
+/// not turn it into a giant allocation either. The check only needs to
+/// detect homology inside the expected diagonal offset (a few hundred bp),
+/// so the DP band is capped here; beyond it the check conservatively fails
+/// (the blocks stay separate, which is fragmentation, not loss).
+const MIDDLE_DP_BAND_CAP: usize = 256;
 
 fn middle_is_homologous(
     last: &Chain,
@@ -980,8 +993,8 @@ fn middle_is_homologous_range(
     if b_mid.len() > MIDDLE_CHECK_CAP {
         return false;
     }
-    let Some(aln) =
-        align_banded_local(&b_mid, a_mid, band as usize, 0, &AlignmentParams::default())
+    let dp_band = (band as usize).min(MIDDLE_DP_BAND_CAP);
+    let Some(aln) = align_banded_local(&b_mid, a_mid, dp_band, 0, &AlignmentParams::default())
     else {
         return false;
     };
@@ -1501,7 +1514,15 @@ mod tests {
     }
 
     fn build(seq: &[u8]) -> PgiIndex {
-        build_from_seqs(vec![(String::from("c"), seq.to_vec())], 10, 4, 2, false).unwrap()
+        build_from_seqs(
+            vec![(String::from("c"), seq.to_vec())],
+            10,
+            4,
+            2,
+            false,
+            false,
+        )
+        .unwrap()
     }
 
     #[test]
@@ -1566,6 +1587,7 @@ mod tests {
             4,
             2,
             false,
+            false,
         )
         .unwrap();
         let b = build_from_seqs(
@@ -1576,6 +1598,7 @@ mod tests {
             10,
             4,
             2,
+            false,
             false,
         )
         .unwrap();
@@ -1612,7 +1635,15 @@ mod tests {
         // (`b.contigs()[bc]`). The lazy mmap decode must surface a friendly
         // error when the corrupted record is actually merged.
         let seq = pseudo_random_seq(2000, 77);
-        let idx = build_from_seqs(vec![(String::from("c"), seq.clone())], 10, 4, 2, false).unwrap();
+        let idx = build_from_seqs(
+            vec![(String::from("c"), seq.clone())],
+            10,
+            4,
+            2,
+            false,
+            false,
+        )
+        .unwrap();
         let mut bytes = Vec::new();
         idx.write(&mut bytes).unwrap();
         // Corrupt the first *canonical* record: non-canonical keys are never
@@ -2350,6 +2381,35 @@ mod tests {
     }
 
     #[test]
+    fn dedupe_keeps_small_block_inside_large_one() {
+        // Regression: a copy-pair hit (small block) contained on both axes in
+        // the exact self-identity diagonal (large block) of an explicit
+        // same-file pair used to be dropped as "duplicate", losing the real
+        // homology. A genuinely distinct alignment has a very different span.
+        let mk = |t_start: i32, t_end: i32, q_start: i32, q_end: i32| Psl {
+            q_name: String::from("q"),
+            q_size: 100_000,
+            q_start,
+            q_end,
+            t_name: String::from("t"),
+            t_size: 100_000,
+            t_start,
+            t_end,
+            strand: String::from("+"),
+            block_count: 1,
+            block_sizes: vec![(t_end - t_start) as u32],
+            q_starts: vec![q_start as u32],
+            t_starts: vec![t_start as u32],
+            ..Default::default()
+        };
+        let large = mk(0, 30_600, 0, 30_600);
+        let small = mk(10_004, 11_201, 13_204, 14_401);
+        let mut blocks = vec![large, small];
+        dedupe_contained(&mut blocks);
+        assert_eq!(blocks.len(), 2, "the pair hit must survive: {blocks:?}");
+    }
+
+    #[test]
     fn tubes_break_on_anti_gap() {
         let mk = |a: u32, b: u32| SeedHit {
             a_contig: 0,
@@ -2625,6 +2685,7 @@ mod tests {
             4,
             2,
             false,
+            false,
         )
         .unwrap();
         let ib = build_from_seqs(
@@ -2636,6 +2697,7 @@ mod tests {
             10,
             4,
             2,
+            false,
             false,
         )
         .unwrap();

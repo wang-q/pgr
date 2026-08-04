@@ -212,7 +212,11 @@ pub fn run_lastz(
             let q_base =
                 crate::libs::io::get_basename(&query_file.to_string_lossy()).unwrap_or_default();
 
-            if is_self && t_base != q_base {
+            // Self mode aligns each file to itself only: skip every pair
+            // whose paths differ. Comparing basenames would let two files
+            // that merely share a name (e.g. `a/dup.fa`, `b/dup.fa`) slip
+            // through as a spurious cross-alignment.
+            if is_self && target_file != query_file {
                 return;
             }
 

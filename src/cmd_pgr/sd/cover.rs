@@ -39,6 +39,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let paf = args.get_one::<String>("paf").unwrap();
     let elems = args.get_one::<String>("elems").unwrap();
     let outfile = crate::cmd_pgr::args::get_outfile(args);
+    crate::cmd_pgr::args::ensure_outfile_distinct(outfile, [paf.as_str(), elems.as_str()])?;
 
     let hits_reader = pgr::reader(paf).with_context(|| format!("failed to open PAF {}", paf))?;
     let elems_reader =

@@ -415,6 +415,33 @@ fn command_rept_trf_special_chars() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// `-o` pointing at an input must be rejected before the output is written;
+/// the genome/repeat FASTA would otherwise be silently overwritten with the
+/// runlist JSON.
+#[test]
+fn command_rept_output_same_as_input_rejected() -> anyhow::Result<()> {
+    let temp = tempfile::TempDir::new()?;
+    let fa = temp.path().join("genome.fa");
+    std::fs::write(&fa, format!(">chr\n{}\n", random_seq(1200, 71)))?;
+    let before = std::fs::read(&fa)?;
+
+    let (_, stderr) = common::PgrCmd::new()
+        .args(&[
+            "rept",
+            "s-kmer",
+            fa.to_str().unwrap(),
+            "-o",
+            fa.to_str().unwrap(),
+        ])
+        .run();
+    assert!(
+        stderr.contains("also an input file"),
+        "output-as-input must error, got: {stderr}"
+    );
+    assert_eq!(std::fs::read(&fa)?, before, "input must stay intact");
+    Ok(())
+}
+
 /// e-align rejects out-of-range `--min-identity`.
 #[test]
 fn command_rept_e_align_invalid_identity() -> anyhow::Result<()> {

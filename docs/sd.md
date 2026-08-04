@@ -35,6 +35,15 @@ pgr sd search <genome.fa> -o hits.psl
   query-depth coverage cutoff);
 * `--parallel`: worker threads (default 4).
 
+The `pgi` engine chains exact k-mer seeds (default k=40 with syncmer 8/5). For
+copies diverged near the SD identity limit (roughly 90-93% identity), shared
+seeds may anchor only a sub-block shorter than `--min-len`, so `pgi` can miss
+hits that `lastz` finds. Even at 100% identity, the chain's seed-anchored
+boundaries are typically 1-11 bp inside the true homology (no seed exactly at
+the copy edges), so a copy whose true length is right at `--min-len` (e.g.
+1000 bp) can fall a few bp short and be filtered. Lower `--min-len` or use
+`--engine lastz` for maximum sensitivity.
+
 The output PSL is **not** chained; feed it to `pgr sd align`.
 
 ## sd align
@@ -102,7 +111,9 @@ single-sequence FASTA inputs (split multi-contig genomes with
 
 Runs the whole pipeline in one command (search → align → cluster →
 decompose → cover) and writes the final CORE-annotated elementary BED to
-`<outdir>/out.elem.bed`.
+`<outdir>/out.elem.bed`. Rows are deduplicated: near-identical cluster
+copies (a 1 bp coordinate wobble from reciprocal blocks) that decompose to
+the same elementary interval are emitted once.
 
 ```
 pgr sd run <genome.fa> -o sd_out/
@@ -121,6 +132,11 @@ With `--engine lastz`, the genome FASTA must contain a single sequence
 * Chain/net refinement always runs without `--syn` (`pgr pl chainnet`), so
   SDs associated with rearrangements are kept.
 * Both `sd search` and `sd cross` share the same engines and parameters.
+* Soft-masked (lowercase) sequence is not aligned by either engine: the
+  `pgi` automatic index applies FastGA `-M` semantics (lowercase -> N) and
+  `lastz` treats lowercase as masked, so SD copies that are soft-masked in
+  the input are not detected. Uppercase the genome first (`tr a-z A-Z`) if
+  masked copies should count.
 
 ## Examples
 

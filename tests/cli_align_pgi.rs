@@ -121,6 +121,109 @@ fn command_align_pgi_crafted_index_errors_not_panics() {
     );
 }
 
+/// The sibling index of a `.fa.gz` input must be `ref.fa.pgi` (distinct from
+/// a plain `ref.fa`'s `ref.pgi`). Sharing one index would reuse the wrong
+/// k-mers when both files exist with the same contig names/lengths but
+/// different sequences (silently producing empty or wrong alignments).
+#[test]
+fn command_align_pgi_gz_sibling_index_distinct() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let fa = write_fa(temp.path(), "ref", &random_seq(400, 71));
+    let fa_gz = temp.path().join("ref.fa.gz");
+    let mut gz = flate2::write::GzEncoder::new(
+        std::fs::File::create(&fa_gz).unwrap(),
+        flate2::Compression::default(),
+    );
+    use std::io::Write;
+    write!(gz, ">ref\n{}\n", random_seq(400, 72)).unwrap();
+    gz.finish().unwrap();
+
+    // Build the index for the plain file first.
+    let out1 = temp.path().join("out1.psl");
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "align",
+            "pgi",
+            &fa,
+            "-o",
+            out1.to_str().unwrap(),
+            "--keep-index",
+        ])
+        .run();
+    assert!(
+        stderr.contains("built reference index") && !stderr.contains("out of range"),
+        "plain align failed: {stderr}"
+    );
+    assert!(
+        temp.path().join("ref.pgi").is_file(),
+        "ref.fa must map to ref.pgi"
+    );
+
+    // The gzipped file must get its own sibling index, not reuse ref.pgi.
+    let out2 = temp.path().join("out2.psl");
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "align",
+            "pgi",
+            fa_gz.to_str().unwrap(),
+            "-o",
+            out2.to_str().unwrap(),
+            "--keep-index",
+        ])
+        .run();
+    assert!(
+        stderr.contains("ref.fa.pgi"),
+        "ref.fa.gz must build its own ref.fa.pgi, got: {stderr}"
+    );
+}
+
+/// A FASTA edited in place (same contig names/lengths, different sequence)
+/// must not silently reuse the stale sibling index; the index is rebuilt
+/// when the input's mtime is newer (same convention as the e-kmer cache).
+#[test]
+fn command_align_pgi_stale_sibling_index_rebuilt() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let fa = temp.path().join("ref.fa");
+    std::fs::write(&fa, format!(">ref\n{}\n", random_seq(400, 91))).unwrap();
+
+    let out1 = temp.path().join("out1.psl");
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "align",
+            "pgi",
+            fa.to_str().unwrap(),
+            "-o",
+            out1.to_str().unwrap(),
+            "--keep-index",
+        ])
+        .run();
+    assert!(
+        stderr.contains("built reference index"),
+        "build failed: {stderr}"
+    );
+    assert!(temp.path().join("ref.pgi").is_file());
+
+    // Overwrite with a different sequence, same contig name/length.
+    std::thread::sleep(std::time::Duration::from_millis(1100));
+    std::fs::write(&fa, format!(">ref\n{}\n", random_seq(400, 92))).unwrap();
+
+    let out2 = temp.path().join("out2.psl");
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "align",
+            "pgi",
+            fa.to_str().unwrap(),
+            "-o",
+            out2.to_str().unwrap(),
+            "--keep-index",
+        ])
+        .run();
+    assert!(
+        stderr.contains("built reference index"),
+        "stale index must be rebuilt, got: {stderr}"
+    );
+}
+
 #[test]
 fn command_align_pgi_rc_query() {
     let temp = tempfile::TempDir::new().unwrap();
@@ -520,4 +623,162 @@ fn command_align_pgi_self_flag_conflicting_query() {
         stderr.contains("--self expects the query"),
         "expected conflicting-query error: {stderr}"
     );
+}
+
+#[test]
+fn command_align_pgi_default_kmer_conflicts_with_cached_index() {
+    // Regression: the sibling-index parameter check only fired when `-k` was
+    // given explicitly, so a default run (k=40) silently reused a `k=20`
+    // sibling index and reported k=40 semantics with k=20 seeds.
+    let temp = tempfile::TempDir::new().unwrap();
+    let fa = write_fa(temp.path(), "genome", &random_seq(400, 42));
+
+    let out = temp.path().join("out.psl");
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "align",
+            "pgi",
+            &fa,
+            "-k",
+            "20",
+            "--keep-index",
+            "-o",
+            out.to_str().unwrap(),
+        ])
+        .run();
+    assert!(stderr.contains("wrote"), "k20 build failed: {stderr}");
+
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "align",
+            "pgi",
+            &fa,
+            "--keep-index",
+            "-o",
+            temp.path().join("default.psl").to_str().unwrap(),
+        ])
+        .run_fail();
+    assert!(
+        stderr.contains("--kmer 40 conflicts with the cached index"),
+        "default k=40 must not reuse the k=20 index: {stderr}"
+    );
+}
+
+#[test]
+fn command_align_pgi_single_ref_seq_on_self_pgi() {
+    // Regression: a single-input .pgi self-alignment with only --ref-seq
+    // errored ("extension sequences are needed for both sides") because the
+    // query side received no sequences. Self mode must reuse the reference
+    // extension sequences, matching the direct FASTA output.
+    let temp = tempfile::TempDir::new().unwrap();
+    let seq = random_seq(400, 42);
+    let genome = format!(">genome\n{seq}\n{seq}\n"); // two copies -> repeat blocks
+    let fa = temp.path().join("genome.fa");
+    fs::write(&fa, &genome).unwrap();
+    let pgi = temp.path().join("genome.pgi");
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "pgi",
+            "build",
+            fa.to_str().unwrap(),
+            "-o",
+            pgi.to_str().unwrap(),
+        ])
+        .run();
+    assert!(stderr.contains("wrote"), "build failed: {stderr}");
+
+    let direct = temp.path().join("direct.psl");
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "align",
+            "pgi",
+            fa.to_str().unwrap(),
+            "-o",
+            direct.to_str().unwrap(),
+        ])
+        .run();
+    assert!(stderr.contains("wrote"), "self-align failed: {stderr}");
+
+    let out = temp.path().join("out.psl");
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "align",
+            "pgi",
+            pgi.to_str().unwrap(),
+            "--ref-seq",
+            fa.to_str().unwrap(),
+            "-o",
+            out.to_str().unwrap(),
+        ])
+        .run();
+    assert!(stderr.contains("wrote"), "failed: {stderr}");
+    assert_eq!(
+        fs::read_to_string(&direct).unwrap(),
+        fs::read_to_string(&out).unwrap(),
+        ".pgi + --ref-seq output differs from direct FASTA self-alignment"
+    );
+
+    // The symmetric case (only --query-seq) must behave identically.
+    let out = temp.path().join("out_q.psl");
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "align",
+            "pgi",
+            pgi.to_str().unwrap(),
+            "--query-seq",
+            fa.to_str().unwrap(),
+            "-o",
+            out.to_str().unwrap(),
+        ])
+        .run();
+    assert!(stderr.contains("wrote"), "failed: {stderr}");
+    assert_eq!(
+        fs::read_to_string(&direct).unwrap(),
+        fs::read_to_string(&out).unwrap(),
+        ".pgi + --query-seq output differs from direct FASTA self-alignment"
+    );
+}
+
+#[test]
+fn command_align_pgi_lowercase_copy_has_no_all_zero_blocks() {
+    // Regression: the automatic index used to encode lowercase (soft-masked)
+    // bases case-insensitively, so a lowercase copy shared seeds with its
+    // uppercase twin but the case-sensitive extension DP failed and the chain
+    // fell back to an unscored (all-zero) PSL block. The index must now apply
+    // FastGA `-M` semantics (skip lowercase), yielding no blocks at all.
+    let temp = tempfile::TempDir::new().unwrap();
+    let seq = random_seq(300, 42);
+    let genome = format!(
+        ">genome\n{}{}{}{}{}\n",
+        random_seq(300, 43),
+        seq,
+        random_seq(300, 44),
+        seq.to_ascii_lowercase(),
+        random_seq(300, 45)
+    );
+    let fa = temp.path().join("genome.fa");
+    fs::write(&fa, &genome).unwrap();
+
+    let out = temp.path().join("out.psl");
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "align",
+            "pgi",
+            fa.to_str().unwrap(),
+            "-o",
+            out.to_str().unwrap(),
+        ])
+        .run();
+    assert!(stderr.contains("wrote"), "align failed: {stderr}");
+    let text = fs::read_to_string(&out).unwrap();
+    for line in text.lines() {
+        let f: Vec<&str> = line.split_whitespace().collect();
+        let scored = f[0].parse::<u32>().unwrap()
+            + f[1].parse::<u32>().unwrap()
+            + f[2].parse::<u32>().unwrap();
+        assert!(
+            scored > 0,
+            "no all-zero (unscored) block may be emitted: {line}"
+        );
+    }
 }

@@ -84,6 +84,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let target = args.get_one::<String>("target").unwrap();
     let query = args.get_one::<String>("query").unwrap();
     let outfile = crate::cmd_pgr::args::get_outfile(args);
+    crate::cmd_pgr::args::ensure_outfile_distinct(outfile, [target.as_str(), query.as_str()])?;
     let engine = args.get_one::<String>("engine").unwrap().as_str();
     let min_len = *args.get_one::<u32>("min_len").unwrap();
     let min_identity = *args.get_one::<f64>("min_identity").unwrap();

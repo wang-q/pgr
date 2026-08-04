@@ -128,6 +128,7 @@ mod tests {
             4,
             2,
             true,
+            false,
         )
         .unwrap();
         let hv = index_to_hv(&idx, 1024, 3);

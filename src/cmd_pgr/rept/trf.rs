@@ -78,6 +78,10 @@ This command identifies tandem repeats in a genome via `trf`.
 /// Execute the trf command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let outfile = crate::cmd_pgr::args::get_outfile(args);
+    crate::cmd_pgr::args::ensure_outfile_distinct(
+        outfile,
+        [args.get_one::<String>("infile").unwrap().as_str()],
+    )?;
 
     let opt_trf_match = *args.get_one::<usize>("trf_match").unwrap();
     let opt_trf_mismatch = *args.get_one::<usize>("trf_mismatch").unwrap();

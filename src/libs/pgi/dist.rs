@@ -92,7 +92,15 @@ mod tests {
     use crate::libs::pgi::build::build_from_seqs;
 
     fn idx(seq: &[u8]) -> PgiIndex {
-        build_from_seqs(vec![(String::from("c"), seq.to_vec())], 10, 4, 2, true).unwrap()
+        build_from_seqs(
+            vec![(String::from("c"), seq.to_vec())],
+            10,
+            4,
+            2,
+            true,
+            false,
+        )
+        .unwrap()
     }
 
     #[test]
@@ -126,6 +134,7 @@ mod tests {
             4,
             2,
             true,
+            false,
         )
         .unwrap();
         assert!(dist_between(&a, &b).is_err());

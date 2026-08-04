@@ -250,6 +250,7 @@ mod tests {
             4,
             2,
             false,
+            false,
         )
         .unwrap();
         let mut buf = Vec::new();
@@ -281,8 +282,15 @@ mod tests {
 
     #[test]
     fn mmap_entry_range_partitions_by_key() {
-        let idx =
-            build_from_seqs(vec![(String::from("c"), seq(4000, 7))], 12, 4, 2, false).unwrap();
+        let idx = build_from_seqs(
+            vec![(String::from("c"), seq(4000, 7))],
+            12,
+            4,
+            2,
+            false,
+            false,
+        )
+        .unwrap();
         let mut buf = Vec::new();
         idx.write(&mut buf).unwrap();
         let dir = tempfile::TempDir::new().unwrap();
@@ -319,8 +327,15 @@ mod tests {
 
     #[test]
     fn mmap_truncated_records_rejected() {
-        let idx =
-            build_from_seqs(vec![(String::from("c"), seq(2000, 3))], 10, 4, 2, false).unwrap();
+        let idx = build_from_seqs(
+            vec![(String::from("c"), seq(2000, 3))],
+            10,
+            4,
+            2,
+            false,
+            false,
+        )
+        .unwrap();
         let mut buf = Vec::new();
         idx.write(&mut buf).unwrap();
         buf.truncate(buf.len() / 2);

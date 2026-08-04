@@ -41,5 +41,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let genome = args.get_one::<String>("genome").unwrap();
     let psl = args.get_one::<String>("psl").unwrap();
     let outfile = crate::cmd_pgr::args::get_outfile(args);
+    crate::cmd_pgr::args::ensure_outfile_distinct(outfile, [genome.as_str(), psl.as_str()])?;
     super::chainnet_to_paf(genome, genome, psl, outfile)
 }

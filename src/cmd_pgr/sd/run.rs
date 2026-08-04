@@ -4,6 +4,16 @@ use clap::{value_parser, Arg, ArgMatches, Command};
 use cmd_lib::run_cmd;
 use std::io::Write;
 
+/// Append an elementary BED row to the merged output unless an identical row
+/// was already appended. Near-identical cluster copies (a 1 bp coordinate
+/// wobble from reciprocal blocks) can decompose to the exact same row, which
+/// used to duplicate rows in `out.elem.bed`.
+fn push_unique_elem(elems: &mut String, seen: &mut std::collections::HashSet<String>, row: String) {
+    if seen.insert(row.clone()) {
+        elems.push_str(&row);
+    }
+}
+
 /// Build the clap subcommand for run.
 pub fn make_subcommand() -> Command {
     Command::new("run")
@@ -117,6 +127,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             .unwrap_or(u32::MAX)
     });
     let mut elems = String::new();
+    let mut seen_elems: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut set_offset = 0u32;
     for fa in cluster_fas {
         let stem = pgr::libs::io::basename_or_err(&fa)?;
@@ -134,7 +145,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             }
             let sid: u32 = f[4].parse()?;
             cluster_max = cluster_max.max(sid);
-            elems.push_str(&format!(
+            let row = format!(
                 "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n",
                 f[0],
                 f[1],
@@ -144,7 +155,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 f[5],
                 f[6],
                 f[7]
-            ));
+            );
+            push_unique_elem(&mut elems, &mut seen_elems, row);
         }
         set_offset += cluster_max;
     }
@@ -157,4 +169,27 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let mut w = pgr::writer("stdout")?;
     writeln!(w, "wrote {}", out)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn duplicate_elem_rows_are_emitted_once() {
+        let mut elems = String::new();
+        let mut seen = std::collections::HashSet::new();
+        let row = "s\tchr\t100\t200\t1\t100\t100\t+\n".to_string();
+        push_unique_elem(&mut elems, &mut seen, row.clone());
+        push_unique_elem(&mut elems, &mut seen, row.clone());
+        push_unique_elem(
+            &mut elems,
+            &mut seen,
+            "s\tchr\t300\t400\t1\t100\t100\t+\n".to_string(),
+        );
+        assert_eq!(
+            elems,
+            "s\tchr\t100\t200\t1\t100\t100\t+\ns\tchr\t300\t400\t1\t100\t100\t+\n"
+        );
+    }
 }

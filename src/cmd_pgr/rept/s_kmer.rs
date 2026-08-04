@@ -35,6 +35,10 @@ analysis; no repeat library is needed.
 /// Execute the s-kmer command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let outfile = crate::cmd_pgr::args::get_outfile(args);
+    crate::cmd_pgr::args::ensure_outfile_distinct(
+        outfile,
+        [args.get_one::<String>("infile").unwrap().as_str()],
+    )?;
 
     let opt_kmer = *args.get_one::<usize>("kmer").unwrap();
     let opt_fk = *args.get_one::<usize>("fill_kmer").unwrap();

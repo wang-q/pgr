@@ -85,6 +85,7 @@ Examples:
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let genome = args.get_one::<String>("genome").unwrap();
     let outfile = crate::cmd_pgr::args::get_outfile(args);
+    crate::cmd_pgr::args::ensure_outfile_distinct(outfile, [genome.as_str()])?;
     let engine = args.get_one::<String>("engine").unwrap().as_str();
     let min_len = *args.get_one::<u32>("min_len").unwrap();
     let min_identity = *args.get_one::<f64>("min_identity").unwrap();

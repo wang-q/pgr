@@ -19,10 +19,19 @@ pgr align pgi ref query -o out.psl
   in a temporary directory and removed afterwards. `--keep-index` keeps it
   next to the input. The sequence itself is then used to refine the chains.
   For `.gz` inputs the sibling index is `<name-without-.gz>.pgi`
-  (e.g. `ref.fa.gz` → `ref.fa.pgi`).
+  (e.g. `ref.fa.gz` → `ref.fa.pgi`, distinct from `ref.fa` → `ref.pgi`).
+  A sibling index whose mtime is older than the genome file is rebuilt
+  automatically (same convention as the e-kmer repeat-table cache). The
+  current `-k`/`--smer`/`--window` (explicit or the defaults) must match the
+  cached index's parameters; a mismatch is an error, never a silent reuse
+  with different seeds.
 - A `.pgi` index is used directly; `--ref-seq`/`--query-seq` may then supply
   the sequences for chain refinement, and are validated against the index
-  contig table.
+  contig table (count, names, lengths). The sequences must be the ones the
+  index was built from: a same-length, same-name but different sequence
+  passes the contig check and yields fragmented low-identity alignments
+  instead of an error, so keep index and sequences in sync (the automatic
+  sibling-index path does this via the mtime check).
 
 With a single input (or `--self` with the same input as query) the genome is
 aligned to itself (internal repeats and haplotype-level homology, FastGA's
@@ -75,6 +84,10 @@ overlapping windows. The output feeds directly into
 * `.pgi` files are not gzip-compressed. The reference index is streamed and
   the query index is memory-mapped (positions are decoded on demand from
   mapped pages), so neither index is materialized in full.
+* Automatic indexing applies FastGA `-M` semantics: soft-masked (lowercase)
+  bases are replaced by N and produce no seeds or blocks, so a lowercase
+  (soft-masked) copy is not aligned against its uppercase twin. Use
+  `pgr pgi build --mask` for the same behavior on explicitly built indexes.
 
 ## Examples
 

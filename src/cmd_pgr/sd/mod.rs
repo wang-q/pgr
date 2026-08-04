@@ -69,6 +69,11 @@ pub(crate) fn chainnet_to_paf(
             };
             if let Some(rec) = pgr::libs::paf::maf_import::maf_block_to_paf(&block)? {
                 write_paf_record(&mut writer, &rec)?;
+            } else {
+                log::warn!(
+                    "skipping MAF block with {} component(s) (expected 2)",
+                    block.components.len()
+                );
             }
         }
     }

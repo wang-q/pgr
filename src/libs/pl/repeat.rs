@@ -24,6 +24,19 @@ fn has_soft_mask(infile: &str) -> anyhow::Result<bool> {
     Ok(false)
 }
 
+/// True when the FASTA contains at least one record with a non-empty
+/// sequence. FastK segfaults on sequence-less inputs (e.g. an empty repeat
+/// library), so the pipeline rejects them up front with a friendly error.
+fn has_sequences(infile: &str) -> anyhow::Result<bool> {
+    let mut reader = crate::libs::fmt::fa::reader(infile)?;
+    for result in reader.records() {
+        if !result?.sequence().is_empty() {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 /// Run `Profex -z genome` per chromosome and write `.rg` files.
 ///
 /// For each chromosome, runs `Profex -z genome <sn>` writing `prof.<sn>.txt`,
@@ -124,6 +137,18 @@ pub fn run_repeat_pipeline(opts: &RepeatOpts) -> anyhow::Result<()> {
     let pgr = &opts.pgr;
     let abs_infile = &opts.abs_infile;
     let opt_kmer = opts.opt_kmer;
+    anyhow::ensure!(
+        has_sequences(abs_infile)?,
+        "input genome FASTA has no sequences: {}",
+        abs_infile
+    );
+    if let Some(abs_repeat) = &opts.abs_repeat {
+        anyhow::ensure!(
+            has_sequences(abs_repeat)?,
+            "repeat library FASTA has no sequences: {}",
+            abs_repeat
+        );
+    }
     // FastK's block-level sort files go to a fixed global dir by default
     // (/tmp), so concurrent or repeated runs clobber each other's partial
     // tables (observed as SIGSEGV or corrupted profiles). Point -P at the
@@ -568,16 +593,25 @@ pub fn run_self_align_pipeline(opts: &SelfAlignOpts) -> anyhow::Result<()> {
 
 /// True when a complete cache for `cache_prefix` exists and is not older than
 /// `lib` (library unchanged). Completeness is guaranteed by the `.complete`
-/// marker written after all table files are copied.
+/// marker written after all table files are copied; the marker is an exact
+/// copy of the `.ktab` table, so a size mismatch (e.g. a truncated table from
+/// an interrupted write) also marks the cache stale instead of letting FastK
+/// silently read a corrupt table and report empty/partial repeats.
 fn cache_is_fresh(lib: &str, cache_prefix: &str) -> bool {
     let Ok(lib_meta) = std::fs::metadata(lib) else {
         return false;
     };
+    let mut ktab_len: Option<u64> = None;
     for suffix in [".ktab", ".complete"] {
         let Ok(cache_meta) = std::fs::metadata(format!("{}{}", cache_prefix, suffix)) else {
             return false;
         };
         if !cache_meta.is_file() {
+            return false;
+        }
+        if suffix == ".ktab" {
+            ktab_len = Some(cache_meta.len());
+        } else if ktab_len != Some(cache_meta.len()) {
             return false;
         }
         if let (Ok(lib_m), Ok(cache_m)) = (lib_meta.modified(), cache_meta.modified()) {
@@ -721,5 +755,49 @@ mod tests {
         )
         .unwrap();
         assert!(has_soft_mask(lower.to_str().unwrap()).unwrap());
+    }
+
+    #[test]
+    fn truncated_cache_table_is_not_fresh() {
+        // Regression: a truncated `.ktab` (e.g. interrupted write) used to
+        // pass `cache_is_fresh` (existence + mtime only), so FastK silently
+        // read the corrupt table and e-kmer reported empty repeats. The
+        // `.complete` marker is an exact copy of `.ktab`, so a size mismatch
+        // must mark the cache stale and trigger a rebuild.
+        let dir = tempfile::tempdir().unwrap();
+        let lib = dir.path().join("lib.fa");
+        let prefix = dir.path().join("lib.fa.repeat.k17");
+        std::fs::write(&lib, ">seq\nACGT\n").unwrap();
+        let full = vec![b'x'; 4096];
+        std::fs::write(format!("{}.ktab", prefix.display()), &full).unwrap();
+        std::fs::write(format!("{}.complete", prefix.display()), &full).unwrap();
+        assert!(
+            cache_is_fresh(lib.to_str().unwrap(), prefix.to_str().unwrap()),
+            "intact cache must be fresh"
+        );
+
+        std::fs::write(format!("{}.ktab", prefix.display()), &full[..100]).unwrap();
+        assert!(
+            !cache_is_fresh(lib.to_str().unwrap(), prefix.to_str().unwrap()),
+            "truncated .ktab must not be fresh"
+        );
+    }
+
+    #[test]
+    fn sequence_less_fasta_is_detected() {
+        // Regression: a sequence-less repeat library made FastK segfault
+        // ("terminated by signal: 11"); the pipeline now rejects it up front.
+        let dir = tempfile::tempdir().unwrap();
+        let empty = dir.path().join("empty.fa");
+        std::fs::write(&empty, ">only_header\n").unwrap();
+        assert!(!has_sequences(empty.to_str().unwrap()).unwrap());
+
+        let normal = dir.path().join("normal.fa");
+        std::fs::write(&normal, ">chr\nACGT\n").unwrap();
+        assert!(has_sequences(normal.to_str().unwrap()).unwrap());
+
+        let no_records = dir.path().join("no_records.fa");
+        std::fs::write(&no_records, "").unwrap();
+        assert!(!has_sequences(no_records.to_str().unwrap()).unwrap());
     }
 }

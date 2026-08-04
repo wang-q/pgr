@@ -308,6 +308,32 @@ fn command_sd_search_rejects_pgi_input() {
     );
 }
 
+/// `-o` pointing at an input file must be rejected before the output is
+/// written (the FASTA/PAF/BED inputs would otherwise be silently overwritten
+/// with the transformed output).
+#[test]
+fn command_sd_output_same_as_input_rejected() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let fa = write_fa(temp.path(), "genome", &tandem_genome());
+
+    for args in [
+        vec!["sd", "search", &fa, "-o", &fa],
+        vec!["sd", "decompose", &fa, "-o", &fa],
+    ] {
+        let before = fs::read(&fa).unwrap();
+        let (_, stderr) = PgrCmd::new().args(&args).run();
+        assert!(
+            stderr.contains("also an input file"),
+            "output-as-input must error, got: {stderr}"
+        );
+        assert_eq!(
+            fs::read(&fa).unwrap(),
+            before,
+            "input must stay intact after rejected run"
+        );
+    }
+}
+
 #[test]
 fn command_sd_search_lastz_engine() {
     if which::which("lastz").is_err() {
@@ -503,6 +529,45 @@ fn command_sd_run_gzipped_genome() {
         !temp.path().join("genome.fa.gz.loc").exists(),
         "no stray .loc may be written next to a gzip input"
     );
+}
+
+/// `sd run` must produce byte-identical output across runs: the cluster
+/// numbering (and the global set_id renumbering) must not depend on the
+/// HashMap iteration order (which is randomized per process). Regression:
+/// two distinct repeat families used to swap set_id/row order between runs.
+#[test]
+fn command_sd_run_output_deterministic_across_runs() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let dup1 = random_seq(1200, 81);
+    let dup2 = random_seq(1100, 82);
+    let genome = format!(
+        "{}{}{}{}{}{}{}{}{}",
+        random_seq(8000, 83),
+        dup1,
+        random_seq(3000, 84),
+        dup1,
+        random_seq(2000, 85),
+        dup2,
+        random_seq(1500, 86),
+        dup2,
+        random_seq(8000, 87)
+    );
+    let fa = write_fa(temp.path(), "genome", &format!(">chr\n{genome}\n"));
+
+    let out1 = temp.path().join("out1");
+    let out2 = temp.path().join("out2");
+    let (_, stderr) = PgrCmd::new()
+        .args(&["sd", "run", &fa, "-o", out1.to_str().unwrap()])
+        .run();
+    assert!(stderr.contains("wrote"), "sd run failed: {stderr}");
+    let (_, stderr) = PgrCmd::new()
+        .args(&["sd", "run", &fa, "-o", out2.to_str().unwrap()])
+        .run();
+    assert!(stderr.contains("wrote"), "sd run failed: {stderr}");
+
+    let a = fs::read_to_string(out1.join("out.elem.bed")).unwrap();
+    let b = fs::read_to_string(out2.join("out.elem.bed")).unwrap();
+    assert_eq!(a, b, "sd run output must be deterministic");
 }
 
 /// Regression: `sd run --engine lastz --preset <p>` used to pass

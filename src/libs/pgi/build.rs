@@ -174,15 +174,24 @@ fn kmer_key_at(seq: &[u8], pos: usize, k: usize, codes: &[u64; 256]) -> Option<u
 /// resulting records are sorted by key (in-place MSD radix) and grouped into
 /// unique entries, globally ascending by k-mer.
 pub fn build_from_seqs(
-    contigs: Vec<(String, Vec<u8>)>,
+    mut contigs: Vec<(String, Vec<u8>)>,
     k: usize,
     smer: usize,
     window: usize,
     no_rev: bool,
+    mask: bool,
 ) -> anyhow::Result<PgiIndex> {
     anyhow::ensure!(k > 0 && k * 2 <= 128, "k must be in 1..=64, got {k}");
     anyhow::ensure!(smer > 0, "smer must be positive");
     anyhow::ensure!(window > 0, "window must be positive");
+    if mask {
+        // FastGA `-M` semantics: soft-masked (lowercase) bases become N so
+        // windows touching them are skipped. The k-mer code is otherwise
+        // case-insensitive, so without this a soft-masked copy shares seeds
+        // with its uppercase twin but the case-sensitive extension DP fails
+        // and the chain falls back to an unscored (all-zero) PSL block.
+        harden_soft_mask(&mut contigs);
+    }
     // `SeedHit` packs contig ids into `u16`; refuse inputs that would
     // truncate silently.
     anyhow::ensure!(
@@ -329,7 +338,7 @@ pub fn build_from_path(
     if mask {
         harden_soft_mask(&mut contigs);
     }
-    build_from_seqs(contigs, k, smer, window, no_rev)
+    build_from_seqs(contigs, k, smer, window, no_rev, false)
 }
 
 #[cfg(test)]
@@ -375,6 +384,7 @@ mod tests {
             4,
             2,
             false,
+            false,
         )
         .unwrap();
         assert_eq!(idx.k, 10);
@@ -392,8 +402,15 @@ mod tests {
         // and corrupting the index. Every record's key must equal the k-mer
         // starting at its position, and no (key, pos, strand) may repeat.
         let seq = pseudo_random_seq(100_000, 42);
-        let idx =
-            build_from_seqs(vec![(String::from("c1"), seq.clone())], 40, 8, 5, false).unwrap();
+        let idx = build_from_seqs(
+            vec![(String::from("c1"), seq.clone())],
+            40,
+            8,
+            5,
+            false,
+            false,
+        )
+        .unwrap();
         let codes: [u64; 256] = {
             let mut c = [4u64; 256];
             c[b'A' as usize] = 0;
@@ -706,7 +723,7 @@ mod tests {
         let seq: Vec<u8> = (0..300_000u32)
             .map(|_| b"ACGT"[rng.random_range(0..4) as usize])
             .collect();
-        let idx = build_from_seqs(vec![(String::from("c"), seq)], 40, 8, 5, false).unwrap();
+        let idx = build_from_seqs(vec![(String::from("c"), seq)], 40, 8, 5, false, false).unwrap();
         assert!(idx.entries.len() > 10_000, "too few unique k-mers");
         for w in idx.entries.windows(2) {
             assert!(w[0].kmer <= w[1].kmer, "entries not sorted by k-mer");
@@ -716,9 +733,16 @@ mod tests {
     #[test]
     fn no_rev_halves_strands() {
         let seq = b"ACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT".to_vec();
-        let both =
-            build_from_seqs(vec![(String::from("c1"), seq.clone())], 10, 4, 2, false).unwrap();
-        let fwd = build_from_seqs(vec![(String::from("c1"), seq)], 10, 4, 2, true).unwrap();
+        let both = build_from_seqs(
+            vec![(String::from("c1"), seq.clone())],
+            10,
+            4,
+            2,
+            false,
+            false,
+        )
+        .unwrap();
+        let fwd = build_from_seqs(vec![(String::from("c1"), seq)], 10, 4, 2, true, false).unwrap();
         assert!(both.n_positions() >= fwd.n_positions());
     }
 }
