@@ -241,6 +241,31 @@ fn command_runlist_convert_output_same_as_input_rejected() {
     );
 }
 
+// `runlist convert` used to create the output before reading the later
+// inputs; a missing input then truncated an existing output file. All
+// inputs must be validated before the output is touched.
+#[test]
+fn command_runlist_convert_output_preserved_on_missing_input() {
+    let dir = TempDir::new().unwrap();
+    let json = dir.path().join("in.json");
+    std::fs::write(&json, r#"{"chr1":"1-10,20-30"}"#).unwrap();
+    let missing = dir.path().join("missing.json");
+    let out = dir.path().join("out.rg");
+    std::fs::write(&out, "PRECIOUS\n").unwrap();
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "runlist",
+            "convert",
+            json.to_str().unwrap(),
+            missing.to_str().unwrap(),
+            "-o",
+            out.to_str().unwrap(),
+        ])
+        .run_fail();
+    assert!(stderr.contains("could not open"), "got: {stderr}");
+    assert_eq!(std::fs::read_to_string(&out).unwrap(), "PRECIOUS\n");
+}
+
 #[test]
 fn command_runlist_some() {
     let dir = TempDir::new().unwrap();

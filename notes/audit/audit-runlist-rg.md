@@ -115,11 +115,24 @@ release 下 10k ≈ 2.7–2.9 ms、50k ≈ 17.8–18.4 ms，近线性），并�
   notes/references/mosdepth.md、notes/project-understanding.md 的
   "runlist coverage" 现态引用与 notes/design/repeat-masking.md 的
   trf 路径/`rg_to_set` 函数名更新为当前命令（同第 18 轮文档修复）。
+* 第 24 轮（本轮）：换新角度复核流式命令的输出数据安全与
+  `IntSpan::covered` 的宽域查询——新发现 2 处缺陷（#36、#37）并修复：
+  ① 五个流式命令（`rg runlist` / `rg prop` / `rg span` / `rg count` /
+  `runlist convert`）在创建输出后才逐个打开输入，后续输入缺失/不可读时
+  输出已被截断并残留部分结果（#36）；② `IntSpan::covered` 对跨近全 i32
+  域的查询（如 `i32::MIN..2147483645`）在 per-span 累计处用 i32 中间值
+  计算差值，debug 构建溢出 panic（#37）。修复后重跑全部验证。
+* 第 25 轮（复核轮）：对 #36/#37 修复做全量回归——150 trial 差分对拍
+  （随机 runlist × overlap/non-overlap/superset，与朴素实现逐行一致）、
+  100 trial 畸形输入 fuzz（五条流式命令，含二进制/超大数字/反转区间/
+  Unicode 名称，零 panic）、`rg runlist` 帮助文本与 docs/rg.md 示例逐一
+  执行通过、全量测试 + doctest + `cargo fmt` + `cargo clippy --all-targets
+  -- -D warnings` 干净——未再发现新问题，收束。
 
-## 修复的缺陷（共 35 处）
+## 修复的缺陷（共 37 处）
 
 修复按发现顺序全局编号（#1-19 为 runlist 阶段、#20-25 为 rg 阶段、
-#26-27 为第 7 轮、#34 为第 18 轮、#35 为第 21 轮），
+#26-27 为第 7 轮、#34 为第 18 轮、#35 为第 21 轮、#36-37 为第 24 轮），
 按类别分组。
 
 ### 崩溃 / 越界 / 溢出（Zero Panic，16 处）
@@ -372,6 +385,34 @@ for excise"，与 `runlist span -n` 一致）。
     含与旧实现常规域一致断言）与 `command_runlist_span_holes_i32_min_
     no_panic`（CLI 层，holes + fill 两路径）。
 
+### 数据安全 / 溢出（第 24 轮，2 处）
+
+36. **五个流式命令在后续输入打开失败时截断/部分覆盖既有输出**：
+    `rg runlist` / `rg prop` / `rg span` 在循环内逐文件创建 reader，
+    `rg count` 在建立索引后才打开 target，`runlist convert` 在循环内
+    逐个读 JSON——writer 都在这些输入全部验证前创建。若第二个及以后的
+    输入文件缺失/不可读（如 `pgr rg runlist rl.json a.rg missing.rg
+    -o out`），命令报错退出（exit 1）之前已把既有 `out` 截断并写入
+    前面输入的部分结果，静默破坏用户此前保存的输出（此前轮次只覆盖了
+    `-o` 与输入同路径/别名的情况 #29/#33，未覆盖"输入打开失败"这一
+    路径）。修复：五个命令都先打开/读取全部输入、再创建 writer——
+    `rg runlist`/`prop`/`span` 先对全部 infile 做打开探针（不持有文件
+    描述符，避免大量输入文件时耗尽 FD），`rg count` 先打开 target，
+    `runlist convert` 先读完所有 JSON。回归测试
+    `command_rg_output_preserved_on_missing_input`
+    （runlist/prop/span/count 四例，断言输出文件内容不变）与
+    `command_runlist_convert_output_preserved_on_missing_input`。
+37. **`IntSpan::covered` 对跨近全 i32 域查询的 per-span 累计溢出 panic**：
+    `covered` 的累计项 `end.min(e) - start.max(s) + 1` 先用 i32 计算再
+    扩到 i64；对 `i32::MIN..2147483645` 的查询（集合
+    `"-2147483648-2147483645"` 上），差值 4294967294 超出 i32 上限，
+    debug 构建 "attempt to subtract with overflow" panic（release 回绕，
+    结果错误）。当前 CLI（`rg runlist` / `rg prop`）经 `Range` 解析的
+    start 恒 ≥ 1，暂不可达，但该函数是共享公共 API，且与 #10 的
+    `cardinality` / `span_len` 属同类近全幅计算。修复：先各自扩 i64 再
+    相减（`i64::from(end.min(e)) - i64::from(start.max(s)) + 1`）。
+    回归测试 `covered_wide_domain_does_not_overflow`。
+
 ### 文档修复（第 18 轮）
 
 * `notes/design/runlist.md` 仍写 `cmd_pgr/runlist/` 有 12 个子命令
@@ -517,6 +558,13 @@ for excise"，与 `runlist span -n` 一致）。
   集合代数/convert→cover 往返/prop/runlist/count/coverage/compare/
   span）全部与朴素实现一致；300 trial × 27 条命令畸形输入 fuzz 零
   panic；docs/rg.md 与 docs/runlist.md 的 20 条示例命令逐一执行通过。
+* 第 24 轮：#37 修复前在 debug 构建上以回归测试复现
+  `covered(i32::MIN, 2147483645)` 的 "attempt to subtract with overflow"
+  panic，修复后通过；#36 修复前实测
+  `pgr rg runlist rl.json a.rg missing.rg -o out` 已把既有 out 截断并
+  残留部分输出，修复后五个流式命令均在报错前保持既有输出原样；
+  修复后全量测试 + doctest + `cargo fmt` + `cargo clippy --all-targets
+  -- -D warnings` 干净。
 
 ### 最终状态
 
@@ -535,6 +583,10 @@ for excise"，与 `runlist span -n` 一致）。
   4 万 trial fuzz（8 种文字系统）、`command_rg_unicode_contig_names_parsed`
   （cover/span/count/sort）、`command_rg_output_alias_of_input_rejected`
   （hardlink/symlink 别名拒绝）。
+  第 24 轮增补：`covered_wide_domain_does_not_overflow`（IntSpan 层，
+  近全幅查询）、`command_rg_output_preserved_on_missing_input`
+  （runlist/prop/span/count 四例）、
+  `command_runlist_convert_output_preserved_on_missing_input`。
 
 ## 提交状态
 

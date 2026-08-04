@@ -564,6 +564,61 @@ fn command_rg_output_same_as_input_rejected() {
     );
 }
 
+// Streaming commands used to create the output before opening the later
+// inputs; a missing input then truncated an existing output file and left
+// partial results. All inputs must be validated before the output is touched.
+#[test]
+fn command_rg_output_preserved_on_missing_input() {
+    let dir = TempDir::new().unwrap();
+    let rg = dir.path().join("a.rg");
+    let json = dir.path().join("in.json");
+    std::fs::write(&rg, "chr1:1-10\n").unwrap();
+    std::fs::write(&json, r#"{"chr1":"1-5"}"#).unwrap();
+    let missing = dir.path().join("missing.rg");
+
+    let cases: Vec<Vec<&str>> = vec![
+        vec![
+            "rg",
+            "runlist",
+            json.to_str().unwrap(),
+            rg.to_str().unwrap(),
+            missing.to_str().unwrap(),
+        ],
+        vec![
+            "rg",
+            "prop",
+            json.to_str().unwrap(),
+            rg.to_str().unwrap(),
+            missing.to_str().unwrap(),
+        ],
+        vec![
+            "rg",
+            "span",
+            rg.to_str().unwrap(),
+            missing.to_str().unwrap(),
+        ],
+        vec![
+            "rg",
+            "count",
+            missing.to_str().unwrap(),
+            rg.to_str().unwrap(),
+        ],
+    ];
+    for args in cases {
+        let out = dir.path().join("out.txt");
+        std::fs::write(&out, "PRECIOUS\n").unwrap();
+        let mut full = args.clone();
+        full.extend_from_slice(&["-o", out.to_str().unwrap()]);
+        let (_, stderr) = PgrCmd::new().args(&full).run_fail();
+        assert!(stderr.contains("could not open"), "{full:?}: got: {stderr}");
+        assert_eq!(
+            std::fs::read_to_string(&out).unwrap(),
+            "PRECIOUS\n",
+            "{full:?}: output was truncated"
+        );
+    }
+}
+
 // `-o` pointing at the input through a symlink (or a hard link) used to
 // bypass the lexical `same_path` check and truncate the input while it was
 // still being read. Both aliases must be refused.

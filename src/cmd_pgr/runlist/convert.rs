@@ -45,9 +45,14 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             .unwrap()
             .map(String::as_str),
     )?;
-    let mut writer = pgr::writer(outfile)?;
+    // Read every input before creating the output, so a missing or
+    // unreadable input fails without truncating an existing output file.
+    let mut jsons = Vec::new();
     for infile in args.get_many::<String>("infiles").unwrap() {
-        let json = pgr::libs::runlist::read_json(infile)?;
+        jsons.push(pgr::libs::runlist::read_json(infile)?);
+    }
+    let mut writer = pgr::writer(outfile)?;
+    for json in jsons {
         let set_of = pgr::libs::runlist::json_to_sets(&json)?;
         for set in set_of.values() {
             for line in pgr::libs::runlist::convert_set(set, is_longest) {

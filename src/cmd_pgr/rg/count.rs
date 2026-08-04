@@ -56,8 +56,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     )?;
     let index = pgr::libs::runlist::RgIndex::from_files(&files)?;
 
-    let mut writer = pgr::writer(outfile)?;
+    // Open the target before creating the output, so a missing or
+    // unreadable target fails without truncating an existing output file.
     let reader = pgr::reader(target)?;
+    let mut writer = pgr::writer(outfile)?;
     for line in reader.lines() {
         let line = line?;
         if line.trim_start().starts_with('#') {

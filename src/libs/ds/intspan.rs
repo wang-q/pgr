@@ -265,7 +265,10 @@ impl IntSpan {
         for i in first..last {
             let s = edge_at(2 * i);
             let e = edge_at(2 * i + 1) - 1;
-            total += i64::from(end.min(e) - start.max(s) + 1);
+            // Widen before subtracting: a query spanning most of the i32
+            // domain (e.g. i32::MIN..2147483645) overflows the i32
+            // intermediate even though the result fits in i64.
+            total += i64::from(end.min(e)) - i64::from(start.max(s)) + 1;
         }
         total.min(i64::from(i32::MAX)) as i32
     }
@@ -1014,6 +1017,15 @@ mod binary {
         }
         assert_eq!(set.covered(5, 3), 0); // reversed
         assert_eq!(IntSpan::new().covered(1, 10), 0); // empty set
+    }
+
+    #[test]
+    fn covered_wide_domain_does_not_overflow() {
+        // A query spanning most of the i32 domain (start at i32::MIN) must
+        // not overflow the per-span size accumulation (the difference was
+        // computed in i32 before being widened to i64).
+        let set = IntSpan::from("-2147483648-2147483645");
+        assert_eq!(set.covered(i32::MIN, 2_147_483_645), i32::MAX);
     }
 
     #[test]

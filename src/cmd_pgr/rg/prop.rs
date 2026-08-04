@@ -58,6 +58,13 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             .map(String::as_str),
     )?;
 
+    // Validate that every input can be opened before creating the output,
+    // so a missing or unreadable input fails without truncating an existing
+    // output file. Files are re-opened for streaming below so the number of
+    // open descriptors stays bounded regardless of the input count.
+    for infile in args.get_many::<String>("infiles").unwrap() {
+        pgr::reader(infile)?;
+    }
     let mut writer = pgr::writer(outfile)?;
     for infile in args.get_many::<String>("infiles").unwrap() {
         let reader = pgr::reader(infile)?;
