@@ -47,6 +47,17 @@ runlist 家族对照 spanr 0.6.7 源码、rg 家族对照 rgr 源码逐条核对
 * 复核 `IntSpan::runlist_to_ranges` 解析器：负数坐标、`i32::MIN` 累积、
   `POS_INF-1` 上界、`lower>upper` 报错、`add_ranges` 边合并均正确（含
   既有 fuzz 覆盖）。
+* 追加深审（跨轮）复核无新增问题的项：
+  * `-o` 覆盖保护覆盖情况：rg 的 `count`/`prop`/`span`/`runlist`/`merge`/
+    `cover`/`coverage` 与全部 runlist 命令均调用 `ensure_outfile_distinct`；
+    例外仅 `rg sort`（先读全量再写，原地排序安全，有意为之）与 `split`
+    （已记录限制）。
+  * `IntSpan::add_pair`/`inset`/`excise`/`holes` 的边界坐标受 `POS_INF-1`
+    约束，`upper+1`/`edge-1` 均不溢出；`find_pos` 二分、`covered` 二分
+    无误。
+  * `stat`/`statop` 四种 `--all`×单/多 组合的表头与数据字段数一致。
+  * `rg_merge_mapping` 的 DSU/COITree 聚类正确；成员经传递连通均触及共同
+    区间，合并代表恒为连续单段，`chr(+):min-max` 文档描述准确。
 
 ## 记录项（未改，低风险 / 待决策）
 
@@ -74,6 +85,13 @@ runlist 家族对照 spanr 0.6.7 源码、rg 家族对照 rgr 源码逐条核对
   `stdout` 哨兵特判，`stdin` 专属输入流）。属全局约定（输出用 `stdout`、
   输入用 `stdin`），非 `runlist rg` 特有；用户误用 `-o stdin` 会得到名为
   `stdin` 的文件而非屏幕输出。低风险，未改（改动需全局处理，出本审核范围）。
+* **库级观察（范围外，未改动）**：`IntSpan::find_islands_n` 的
+  `self.find_pos(val + 1, 0)` 在 `val == i32::MAX` 时 `val + 1` 溢出（与
+  `contains` 已用 `checked_add` 修复的模式不一致）。该函数仅被
+  `libs/alignment/slice.rs`（`fas slice`）调用，且调用处坐标受序列长度
+  （i32 检查）约束，不会落在 `i32::MAX`，故当前不可达；若未来在 `val`
+  无上界的路径使用需先加 `checked_add`。属 alignment 子系统，留待后续
+  审计，不属 `runlist rg` 范畴。
 
 ## 已知限制（有意保留）
 
@@ -318,4 +336,7 @@ same_as_input_rejected` 覆盖 `merge`/`compare`/`some`/`combine`/`span` 各
 ## 结论
 
 `rg`/`runlist` 两个命令族审核完成（累计修复 47 处缺陷、补回归测试与文档
-澄清），未再发现新问题，审核收敛。
+澄清），并经多轮纵深复审（`libs/runlist`、`libs/ds/intspan`、`libs/ds/range`
+与全部 8 个 rg、10 个 runlist 命令的执行路径、集合运算、`depth_runs` 扫描线、
+`rg_merge_mapping` 聚类、`covered` 二分、`stat`/`statop` 表头一致性、`-o`
+覆盖保护）复核，未再发现新问题，审核收敛。
