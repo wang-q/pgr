@@ -108,7 +108,7 @@ spanr 时代 `chr:start-end` 按 `.` 截断 contig 名（`NC_000913.1` → `"1"`
 
 ## 修复的缺陷（共 47 处）
 
-### 崩溃 / 越界 / 溢出（Zero Panic，19 处）
+### 崩溃 / 越界 / 溢出（Zero Panic，20 处）
 
 **解析器尾部 `-` 越界 panic**：`runlist_to_ranges` 遇 `-` 时越界取字节
    （`"1-"`）。修复：先查长度再判 `upper_is_neg`。
@@ -165,13 +165,18 @@ spanr 时代 `chr:start-end` 按 `.` 截断 contig 名（`NC_000913.1` → `"1"`
     `reversed_pairs_are_skipped_not_panicked`、
     `invalid_index_arguments_return_none`。
 
-### 输入校验 / 静默错误（3 处）
+### 输入校验 / 静默错误（5 处）
 
 **multi 文件被当作 single 传参时静默变空集**（`statop`/`compare`）。
    修复：非字符串值报 "runlist value for ... is not a string"。
 **`json_to_sets` 混合形态静默丢数据**。修复：flat/multi 两分支对异形
     值均报错。
 **删除未使用且有 panic 隐患的 `gff_to_set`**。
+**`Range` end 坐标溢出被静默折叠为 start**（`chr1:5-99999999999` →
+    点区间）。修复：`parse_i32` 返回 Option，溢出使整行无效。回归
+    `overflow_end_is_invalid_not_start` + `command_rg_overflow_end_skipped`。
+**`IntSpan::inset` clamp 下界把 i32::MIN 静默改写**。修复：下界改
+    i32::MIN。回归 `inset_identity_at_i32_min`。
 
 ### 外部工具与参数 / CLI / 文档（2 处）
 
@@ -197,14 +202,6 @@ spanr 时代 `chr:start-end` 按 `.` 截断 contig 名（`NC_000913.1` → `"1"`
     `#` 行，文档补充说明。
 **`rg merge` 自映射 parity**：part 等于合并串时输出无意义映射行。
     修复：`part == merged` 时跳过。
-
-### 输入校验 / 静默错误（2 处）
-
-**`Range` end 坐标溢出被静默折叠为 start**（`chr1:5-99999999999` →
-    点区间）。修复：`parse_i32` 返回 Option，溢出使整行无效。回归
-    `overflow_end_is_invalid_not_start` + `command_rg_overflow_end_skipped`。
-**`IntSpan::inset` clamp 下界把 i32::MIN 静默改写**。修复：下界改
-    i32::MIN。回归 `inset_identity_at_i32_min`。
 
 ### 参数校验 / 数据安全 / 错误传播（3 处）
 
@@ -246,7 +243,11 @@ spanr 时代 `chr:start-end` 按 `.` 截断 contig 名（`NC_000913.1` → `"1"`
 **`IntSpan::covered` 近全幅查询 per-span 累计 i32 溢出**。修复：i64
     相减。回归 `covered_wide_domain_does_not_overflow`。
 
-### 数据安全 / 参数校验（2 处）
+### 数据安全 / 参数校验（`-o` 同输入保护，5 处）
+
+`rg count` 保护 target+infiles、`runlist convert` 保护全部输入已覆盖，但读出
+全量后再写输出的命令仍有两类缺口；`rg`/`runlist` 家族各 JSON 输出命令就地
+补齐（`rg sort` 输出格式与输入相同，原地排序安全合理，故**不**加入检查）。
 
 **`ensure_outfile_distinct` 对屏幕哨兵 `stdout` 误判**。修复：
     `outfile == "stdout"` 跳过检查。回归
@@ -254,19 +255,6 @@ spanr 时代 `chr:start-end` 按 `.` 截断 contig 名（`NC_000913.1` → `"1"`
 **输入侧流哨兵 `stdin` 被同路径检查误拒**（`stdout` 哨兵误判的镜像）。
     修复：跳过字面 `stdin` 输入。回归
     `command_rg_stdin_sentinel_output_allowed`。
-
-### 数据安全（1 处）
-
-**目录作为输入通过打开探针、读取失败后输出被截断**。修复：
-    `libs/io::reader` 打开前拒绝目录。回归
-    `command_rg_output_preserved_on_directory_input`。
-
-### 数据安全 / 参数校验（`-o` 同输入保护补齐，3 处）
-
-`rg count` 保护 target+infiles、`runlist convert` 保护全部输入已覆盖，但读出
-全量后再写输出的命令仍有两类缺口；`rg`/`runlist` 家族各 JSON 输出命令就地
-补齐（`rg sort` 输出格式与输入相同，原地排序安全合理，故**不**加入检查）。
-
 **`rg runlist`/`rg prop` 的 `ensure_outfile_distinct` 未含 runlist.json 参考
    文件**。`-o runlist.json` 会把 runlist 覆盖成过滤后的 `.rg` 行（exit 0，
    静默数据丢失）。修复：把 runlist.json 加入检查（与 `rg count` 的 target
@@ -285,6 +273,12 @@ spanr 时代 `chr:start-end` 按 `.` 截断 contig 名（`NC_000913.1` → `"1"`
 输入 `.rg` 各用例，并断言 runlist.json 未被改动；`command_runlist_output_
 same_as_input_rejected` 覆盖 `merge`/`compare`/`some`/`combine`/`span` 各
 用例，断言输入文件未被改动。
+
+### 数据安全（1 处）
+
+**目录作为输入通过打开探针、读取失败后输出被截断**。修复：
+    `libs/io::reader` 打开前拒绝目录。回归
+    `command_rg_output_preserved_on_directory_input`。
 
 ### 文档修复
 
