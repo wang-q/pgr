@@ -48,7 +48,7 @@ fn command_runlist_span_fill_excise() {
 
 #[test]
 fn command_runlist_span_invalid_runlist_errors() {
-    for bad in ["1-", "abc", "99999999999", "5-3"] {
+    for bad in ["1-", "abc", "99999999999", "99999999999999999999", "5-3"] {
         let (_, stderr) = PgrCmd::new()
             .args(&["runlist", "span", "stdin"])
             .stdin(format!("{{\"chr1\":\"{bad}\"}}\n"))
@@ -73,6 +73,13 @@ fn command_runlist_span_extreme_ops_do_not_panic() {
         .stdin("{\"chr1\":\"1-2\"}\n")
         .run();
     assert_eq!(stdout, "{\n  \"chr1\": \"-2147483646-2147483645\"\n}\n");
+    // `pad -n i32::MIN` used to panic on the `-n` negation in `pad`.
+    let (stdout, _) = PgrCmd::new()
+        .args(&["runlist", "span", "stdin", "--op", "pad", "-n=-2147483648"])
+        .stdin("{\"chr1\":\"1-2\"}\n")
+        .run();
+    // Shrinking by i32::MAX wipes the whole span.
+    assert_eq!(stdout, "{\n  \"chr1\": \"-\"\n}\n");
     // Coordinates above the representable maximum are rejected, not panics.
     let (_, stderr) = PgrCmd::new()
         .args(&["runlist", "span", "stdin"])

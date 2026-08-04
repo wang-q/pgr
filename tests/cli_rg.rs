@@ -69,6 +69,58 @@ fn command_rg_cover_skips_reversed_ranges() {
     assert_eq!(stdout, "{}\n");
 }
 
+// Comment lines starting with `#` must be skipped by every rg subcommand
+// (cover/coverage already did; count/span/sort/prop/runlist/merge used to
+// treat `# chr1:1-10` as data).
+#[test]
+fn command_rg_comments_skipped() {
+    let dir = TempDir::new().unwrap();
+    let rg = dir.path().join("cmt.rg");
+    std::fs::write(&rg, "# chr1:1-10\nchr1:5-15\n#chr2:1-5\nbad line\n").unwrap();
+
+    let (stdout, _) = PgrCmd::new()
+        .args(&["rg", "cover", rg.to_str().unwrap()])
+        .run();
+    assert_eq!(stdout, "{\n  \"chr1\": \"5-15\"\n}\n");
+
+    let (stdout, _) = PgrCmd::new()
+        .args(&["rg", "count", rg.to_str().unwrap(), rg.to_str().unwrap()])
+        .run();
+    assert_eq!(stdout, "chr1:5-15\t1\n");
+
+    let (stdout, _) = PgrCmd::new()
+        .args(&["rg", "span", rg.to_str().unwrap(), "-n", "5"])
+        .run();
+    assert_eq!(stdout, "chr1:10\n");
+
+    let (stdout, _) = PgrCmd::new()
+        .args(&["rg", "sort", rg.to_str().unwrap()])
+        .run();
+    assert_eq!(stdout, "chr1:5-15\nbad line\n");
+
+    let json = dir.path().join("in.json");
+    std::fs::write(&json, r#"{"chr1":"5-15"}"#).unwrap();
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "rg",
+            "runlist",
+            json.to_str().unwrap(),
+            rg.to_str().unwrap(),
+        ])
+        .run();
+    assert_eq!(stdout, "chr1:5-15\n");
+
+    let (stdout, _) = PgrCmd::new()
+        .args(&["rg", "prop", json.to_str().unwrap(), rg.to_str().unwrap()])
+        .run();
+    assert_eq!(stdout, "chr1:5-15\t1.0000\n");
+
+    let (stdout, _) = PgrCmd::new()
+        .args(&["rg", "merge", rg.to_str().unwrap()])
+        .run();
+    assert_eq!(stdout, "");
+}
+
 #[test]
 fn command_rg_coverage() {
     let (dir, rg) = fixture_dir();
@@ -297,6 +349,56 @@ fn command_rg_span() {
         2,
         "empty lines"
     );
+}
+
+// Extreme `-n` values used to overflow the Range op arithmetic (debug panic,
+// release wrap); they must not crash and must stay deterministic.
+#[test]
+fn command_rg_span_extreme_no_panic() {
+    let dir = TempDir::new().unwrap();
+    let rg = dir.path().join("mx.rg");
+    std::fs::write(
+        &rg,
+        "chr1:2147483645-2147483645\nchr2:2000000000-2100000000\nchr3(-):1-10\n",
+    )
+    .unwrap();
+    for (op, mode) in [
+        ("trim", "both"),
+        ("trim", "5p"),
+        ("trim", "3p"),
+        ("pad", "both"),
+        ("shift", "5p"),
+        ("shift", "3p"),
+        ("flank", "5p"),
+        ("flank", "3p"),
+    ] {
+        let (stdout, _) = PgrCmd::new()
+            .args(&[
+                "rg",
+                "span",
+                rg.to_str().unwrap(),
+                "--op",
+                op,
+                "-m",
+                mode,
+                "-n",
+                "2147483647",
+            ])
+            .run();
+        assert_eq!(stdout.lines().count(), 3, "{op}/{mode}: {stdout}");
+    }
+    // `pad -n i32::MIN` used to panic on `-number` negation.
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "rg",
+            "span",
+            rg.to_str().unwrap(),
+            "--op",
+            "pad",
+            "-n=-2147483648",
+        ])
+        .run();
+    assert_eq!(stdout.lines().count(), 3);
 }
 
 // New test: rgr's `command_merge` used a multi-part TSV fixture

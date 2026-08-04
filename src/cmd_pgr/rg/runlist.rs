@@ -62,6 +62,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         let reader = pgr::reader(infile)?;
         for line in reader.lines() {
             let line = line?;
+            if line.trim_start().starts_with('#') {
+                continue;
+            }
             let range = pgr::libs::ds::Range::from_str(&line);
             if !pgr::libs::runlist::usable_range(&range) {
                 continue;

@@ -188,8 +188,11 @@ impl Range {
     /// assert_eq!(range.trim(-30).to_string(), "I:70-230");
     /// ```
     pub fn trim(&self, n: i32) -> Self {
-        let mut start = self.start + n;
-        let mut end = self.end - n;
+        // Saturating arithmetic keeps extreme `n` (e.g. near i32::MAX) from
+        // overflowing; `check` turns the resulting out-of-order pair into
+        // the invalid (0, 0) range.
+        let mut start = self.start.saturating_add(n);
+        let mut end = self.end.saturating_sub(n);
         Self::check(&mut start, &mut end);
 
         Self {
@@ -216,10 +219,10 @@ impl Range {
         let mut start = if self.strand == "-" {
             self.start
         } else {
-            self.start + n
+            self.start.saturating_add(n)
         };
         let mut end = if self.strand == "-" {
-            self.end - n
+            self.end.saturating_sub(n)
         } else {
             self.end
         };
@@ -246,14 +249,14 @@ impl Range {
     /// ```
     pub fn trim_3p(&self, n: i32) -> Self {
         let mut start = if self.strand == "-" {
-            self.start + n
+            self.start.saturating_add(n)
         } else {
             self.start
         };
         let mut end = if self.strand == "-" {
             self.end
         } else {
-            self.end - n
+            self.end.saturating_sub(n)
         };
         Self::check(&mut start, &mut end);
 
@@ -278,14 +281,14 @@ impl Range {
     /// ```
     pub fn shift_5p(&self, n: i32) -> Self {
         let mut start = if self.strand == "-" {
-            self.start + n
+            self.start.saturating_add(n)
         } else {
-            self.start - n
+            self.start.saturating_sub(n)
         };
         let mut end = if self.strand == "-" {
-            self.end + n
+            self.end.saturating_add(n)
         } else {
-            self.end - n
+            self.end.saturating_sub(n)
         };
         Self::check(&mut start, &mut end);
 
@@ -309,7 +312,25 @@ impl Range {
     /// assert_eq!(range.shift_3p(30).to_string(), "I(-):70-170");
     /// ```
     pub fn shift_3p(&self, n: i32) -> Self {
-        self.shift_5p(-n)
+        let mut start = if self.strand == "-" {
+            self.start.saturating_sub(n)
+        } else {
+            self.start.saturating_add(n)
+        };
+        let mut end = if self.strand == "-" {
+            self.end.saturating_sub(n)
+        } else {
+            self.end.saturating_add(n)
+        };
+        Self::check(&mut start, &mut end);
+
+        Self {
+            name: self.name.to_string(),
+            chr: self.chr.to_string(),
+            strand: self.strand.to_string(),
+            start,
+            end,
+        }
     }
 
     /// Flanking region of the 5p end.
@@ -329,25 +350,25 @@ impl Range {
     pub fn flank_5p(&self, n: i32) -> Self {
         let mut start = if n > 0 {
             if self.strand == "-" {
-                self.end + 1
+                self.end.saturating_add(1)
             } else {
-                self.start - n
+                self.start.saturating_sub(n)
             }
         } else if self.strand == "-" {
-            self.end + n + 1
+            self.end.saturating_add(n).saturating_add(1)
         } else {
             self.start
         };
         let mut end = if n > 0 {
             if self.strand == "-" {
-                self.end + n
+                self.end.saturating_add(n)
             } else {
-                self.start - 1
+                self.start.saturating_sub(1)
             }
         } else if self.strand == "-" {
             self.end
         } else {
-            self.start - n - 1
+            self.start.saturating_sub(n).saturating_sub(1)
         };
         Self::check(&mut start, &mut end);
 
@@ -376,23 +397,23 @@ impl Range {
     pub fn flank_3p(&self, n: i32) -> Self {
         let mut start = if n > 0 {
             if self.strand == "-" {
-                self.start - n
+                self.start.saturating_sub(n)
             } else {
-                self.end + 1
+                self.end.saturating_add(1)
             }
         } else if self.strand == "-" {
             self.start
         } else {
-            self.end + n + 1
+            self.end.saturating_add(n).saturating_add(1)
         };
         let mut end = if n > 0 {
             if self.strand == "-" {
-                self.start - 1
+                self.start.saturating_sub(1)
             } else {
-                self.end + n
+                self.end.saturating_add(n)
             }
         } else if self.strand == "-" {
-            self.start - n - 1
+            self.start.saturating_sub(n).saturating_sub(1)
         } else {
             self.end
         };
@@ -615,6 +636,29 @@ fn fa_headers() {
         let range = Range::from_str(header);
         assert_eq!(range.to_string(), expected);
     }
+}
+
+#[test]
+fn extreme_ops_do_not_overflow() {
+    // Extreme `n` used to overflow `start + n` / `end - n` (debug panic,
+    // release wrap); all ops must stay deterministic and non-panicking.
+    // Out-of-order results collapse to the invalid (0, 0) range, while
+    // in-order results saturate at the i32 bounds.
+    let max = Range::from_str("chr1:2147483645-2147483645");
+    assert!(!max.trim(i32::MAX).is_valid());
+    assert!(!max.trim_5p(i32::MAX).is_valid());
+    assert!(!max.trim_3p(i32::MAX).is_valid());
+    assert!(!max.shift_5p(i32::MAX).is_valid());
+    assert!(!max.flank_5p(i32::MAX).is_valid());
+    assert_eq!(max.shift_3p(i32::MAX).to_string(), "chr1:2147483647");
+    assert_eq!(
+        max.flank_3p(i32::MAX).to_string(),
+        "chr1:2147483646-2147483647"
+    );
+    // i32::MIN negation paths used to panic on `-n`.
+    assert!(!max.trim(i32::MIN).is_valid());
+    assert!(!max.trim_5p(i32::MIN).is_valid());
+    assert!(!max.shift_3p(i32::MIN).is_valid());
 }
 
 #[test]

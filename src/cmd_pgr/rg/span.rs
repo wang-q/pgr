@@ -4,6 +4,26 @@ use clap::{builder, value_parser, Arg, ArgAction, ArgMatches, Command};
 use pgr::libs::ds::Range;
 use std::io::{BufRead, Write};
 
+/// Clamp a valid result back into the representable `.rg` coordinate domain
+/// (`1..=POS_INF - 1`). Saturating arithmetic in the Range ops can leave a
+/// valid-looking range above the maximum (e.g. `shift` by a huge `-n`); such
+/// output could never be re-read by the other rg commands, so it is clamped
+/// instead of silently dropped downstream.
+fn clamp_to_domain(range: Range) -> Range {
+    if !range.is_valid() {
+        return range;
+    }
+    let max = pgr::libs::ds::IntSpan::new().get_pos_inf();
+    let start = *range.start().min(&max).max(&1);
+    let end = *range.end().min(&max);
+    if start <= end {
+        Range::from_full(range.name(), range.chr(), range.strand(), start, end)
+    } else {
+        // Collapse to the invalid (0, 0) form, keeping the line identity.
+        Range::from_full(range.name(), range.chr(), range.strand(), 0, 0)
+    }
+}
+
 /// Build the clap subcommand for span.
 pub fn make_subcommand() -> Command {
     Command::new("span")
@@ -94,6 +114,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         let reader = pgr::reader(infile)?;
         for line in reader.lines() {
             let line = line?;
+            if line.trim_start().starts_with('#') {
+                continue;
+            }
             let range = pgr::libs::ds::Range::from_str(&line);
             if !pgr::libs::runlist::usable_range(&range) {
                 continue;
@@ -105,9 +128,11 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                     _ => range.trim(number),
                 },
                 "pad" => match mode {
-                    "5p" => range.trim_5p(-number),
-                    "3p" => range.trim_3p(-number),
-                    _ => range.trim(-number),
+                    // `saturating_neg` keeps `-n i32::MIN` from overflowing
+                    // before the (already saturating) Range ops run.
+                    "5p" => range.trim_5p(number.saturating_neg()),
+                    "3p" => range.trim_3p(number.saturating_neg()),
+                    _ => range.trim(number.saturating_neg()),
                 },
                 "shift" => match mode {
                     "5p" => range.shift_5p(number),
@@ -128,6 +153,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 }
                 _ => unreachable!("invalid span op"),
             };
+            let new = clamp_to_domain(new);
             if is_append {
                 writeln!(writer, "{}\t{}", line, new)?;
             } else {

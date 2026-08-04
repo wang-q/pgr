@@ -11,7 +11,8 @@ pub fn make_subcommand() -> Command {
             r###"
 Sorts `.rg` lines by the parsed (chromosome, start, strand) key. Lines without
 a valid range are written to the end of the output in their original order.
-Lines with identical keys keep their input order (stable sort).
+Lines starting with `#` are treated as comments and skipped. Lines with
+identical keys keep their input order (stable sort).
 
 Examples:
 1. Sort a .rg file:
@@ -40,6 +41,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         let reader = pgr::reader(infile)?;
         for line in reader.lines() {
             let line = line?;
+            if line.trim_start().starts_with('#') {
+                continue;
+            }
             let range = pgr::libs::ds::Range::from_str(&line);
             if pgr::libs::runlist::usable_range(&range) {
                 rows.push((line, range));

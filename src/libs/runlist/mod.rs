@@ -110,6 +110,9 @@ impl RgIndex {
             let reader = crate::reader(f)?;
             for line in reader.lines() {
                 let line = line?;
+                if line.trim_start().starts_with('#') {
+                    continue;
+                }
                 let range = crate::libs::ds::Range::from_str(&line);
                 if !usable_range(&range) {
                     continue;
@@ -173,6 +176,9 @@ pub fn rg_merge_mapping(files: &[String], coverage: f32) -> anyhow::Result<Vec<(
         let reader = crate::reader(f)?;
         for line in reader.lines() {
             let line = line?;
+            if line.trim_start().starts_with('#') {
+                continue;
+            }
             let range = crate::libs::ds::Range::from_str(&line);
             if !usable_range(&range) {
                 continue;
@@ -251,6 +257,11 @@ pub fn rg_merge_mapping(files: &[String], coverage: f32) -> anyhow::Result<Vec<(
             }
             let merged = format!("{}(+):{}", chr, ints);
             for &i in members {
+                if parts[i].0 == merged {
+                    // A part that already is the merged representative needs
+                    // no self-mapping (rgr `merge` parity).
+                    continue;
+                }
                 mapping.push((parts[i].0.clone(), merged.clone()));
             }
         }

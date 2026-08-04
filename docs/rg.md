@@ -6,6 +6,10 @@ It was migrated from `pgr runlist cover/coverage`, which in turn came from
 the external `spanr` tool. Set-level runlist JSON operations live under
 `pgr runlist`.
 
+Lines starting with `#` are treated as comments and skipped by every
+subcommand; lines without a valid range are skipped (or, for `sort`, written
+to the end of the output).
+
 ## Subcommands
 
 *   `cover`: Merge `.rg` range lines into a runlist JSON (per-chromosome union).

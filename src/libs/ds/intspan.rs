@@ -362,6 +362,11 @@ mod create {
             ("1--1", false),
             // Oversized digit runs are invalid instead of overflowing.
             ("99999999999", false),
+            // Digit runs longer than the i64 accumulator used to panic in
+            // `lower * radix`; they must be invalid instead.
+            ("99999999999999999999", false),
+            ("1-99999999999999999999", false),
+            ("-99999999999999999999", false),
             ("2147483648", false),
             ("-2147483649", false),
             // Coordinates above POS_INF - 1 are unrepresentable (add_pair
@@ -1565,7 +1570,7 @@ impl IntSpan {
     }
 
     pub fn pad(&self, n: i32) -> Self {
-        self.inset(-n)
+        self.inset(n.saturating_neg())
     }
 
     pub fn excise(&self, min_len: i32) -> Self {
@@ -2100,8 +2105,25 @@ impl IntSpan {
                 if ch.is_ascii_digit() {
                     if !in_upper {
                         lower = lower * radix - i64::from(ch - b'0');
+                        // Digit runs longer than the i32 range would overflow
+                        // the i64 accumulator; the accumulation is monotonic
+                        // below i32::MIN, so an early exit is safe.
+                        if lower < i64::from(i32::MIN) {
+                            return Err(anyhow!(
+                                "Number format error: out of range at {} of {}",
+                                idx + i,
+                                runlist
+                            ));
+                        }
                     } else {
                         upper = upper * radix - i64::from(ch - b'0');
+                        if upper < i64::from(i32::MIN) {
+                            return Err(anyhow!(
+                                "Number format error: out of range at {} of {}",
+                                idx + i,
+                                runlist
+                            ));
+                        }
                     }
                 } else if ch == b'-' {
                     if !in_upper {
