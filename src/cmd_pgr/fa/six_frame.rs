@@ -71,6 +71,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let is_end = args.get_flag("end");
 
     let outfile = crate::cmd_pgr::args::get_outfile(args);
+    crate::cmd_pgr::args::ensure_outfile_distinct(outfile, [infile.as_str()])?;
     let mut writer =
         pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
 

@@ -84,9 +84,15 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let stdout = std::io::stdout();
     let mut out = stdout.lock();
 
+    let infiles: Vec<String> = args
+        .get_many::<String>("infiles")
+        .unwrap()
+        .cloned()
+        .collect();
+
     // Operating
     if mode == "name" {
-        for infile in args.get_many::<String>("infiles").unwrap() {
+        for infile in &infiles {
             let mut fa_in = pgr::libs::fmt::fa::reader(infile)
                 .with_context(|| format!("Failed to open reader for {}", infile))?;
 
@@ -107,7 +113,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
                 let filename = pgr::libs::io::sanitize_filename(&name);
                 write_record_to_fh(
-                    outdir, &mut fh_of, &filename, &name, desc, seq_str, &mut out,
+                    outdir, &mut fh_of, &filename, &name, desc, seq_str, &mut out, &infiles,
                 )?;
             }
         }
@@ -125,7 +131,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             pgr::libs::fasta::chunk::SizeChunker::new(opt_count, is_even, opt_max_part);
         let part_width = (opt_max_part.checked_ilog10().unwrap_or(0) + 1) as usize;
 
-        'outer: for infile in args.get_many::<String>("infiles").unwrap() {
+        'outer: for infile in &infiles {
             let mut fa_in = pgr::libs::fmt::fa::reader(infile)
                 .with_context(|| format!("Failed to open reader for {}", infile))?;
 
@@ -151,7 +157,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
                 let filename = format!("{:0width$}", chunker.file_index(), width = part_width);
                 write_record_to_fh(
-                    outdir, &mut fh_of, &filename, &name, desc, seq_str, &mut out,
+                    outdir, &mut fh_of, &filename, &name, desc, seq_str, &mut out, &infiles,
                 )?;
                 chunker.advance(seq.len());
             } // record
@@ -171,9 +177,20 @@ fn gen_fh(
     outdir: &str,
     fh_of: &mut BTreeMap<String, BufWriter<std::fs::File>>,
     filename: &str,
+    infiles: &[String],
 ) -> anyhow::Result<()> {
     if !fh_of.contains_key(filename) {
         let path = std::path::Path::new(outdir).join(format!("{}.fa", filename));
+        let path_str = path.to_str().unwrap_or("<invalid>");
+        for input in infiles {
+            if pgr::libs::io::same_path(path_str, input) {
+                anyhow::bail!(
+                    "output file {} would overwrite input file {}",
+                    path_str,
+                    input
+                );
+            }
+        }
         let file = std::fs::OpenOptions::new()
             .create(true)
             .write(true)
@@ -185,6 +202,7 @@ fn gen_fh(
 }
 
 // Write a record either to stdout or to a file handle in fh_of.
+#[allow(clippy::too_many_arguments)]
 fn write_record_to_fh(
     outdir: &str,
     fh_of: &mut BTreeMap<String, BufWriter<std::fs::File>>,
@@ -193,6 +211,7 @@ fn write_record_to_fh(
     desc: Option<&str>,
     seq_str: &str,
     stdout_lock: &mut impl Write,
+    infiles: &[String],
 ) -> anyhow::Result<()> {
     let header = match desc {
         Some(d) if !d.is_empty() => format!(">{} {}", name, d),
@@ -201,7 +220,7 @@ fn write_record_to_fh(
     if outdir == "stdout" {
         write!(stdout_lock, "{}\n{}\n", header, seq_str)?;
     } else {
-        gen_fh(outdir, fh_of, filename)?;
+        gen_fh(outdir, fh_of, filename, infiles)?;
         let fh = fh_of
             .get_mut(filename)
             .ok_or_else(|| anyhow::anyhow!("file handle not found for: {}", filename))?;

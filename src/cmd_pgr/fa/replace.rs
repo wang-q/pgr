@@ -46,6 +46,14 @@ Examples:
 /// Execute the replace command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let infile = args.get_one::<String>("infile").unwrap();
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
+    crate::cmd_pgr::args::ensure_outfile_distinct(
+        outfile,
+        [
+            infile.as_str(),
+            args.get_one::<String>("replace_tsv").unwrap().as_str(),
+        ],
+    )?;
     let mut fa_in = pgr::libs::fmt::fa::reader(infile)
         .with_context(|| format!("Failed to open reader for {}", infile))?;
 
@@ -53,7 +61,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         pgr::libs::io::read_replace_tsv(args.get_one::<String>("replace_tsv").unwrap())?;
     let is_some = args.get_flag("some");
 
-    let outfile = crate::cmd_pgr::args::get_outfile(args);
     let mut fa_out = pgr::libs::fmt::fa::writer(outfile)
         .with_context(|| format!("Failed to open writer for {}", outfile))?;
 

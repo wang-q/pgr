@@ -87,6 +87,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let seed = *args.get_one::<u64>("seed").unwrap();
     let chunk_size = args.get_one::<usize>("chunk_records").copied();
     let outfile = crate::cmd_pgr::args::get_outfile(args);
+    crate::cmd_pgr::args::ensure_outfile_distinct(outfile, [infile.as_str()])?;
 
     anyhow::ensure!(len > 0, "--window must be positive");
     anyhow::ensure!(step > 0, "--step must be positive");

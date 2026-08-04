@@ -97,6 +97,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         format!("{}.gz", infile)
     };
 
+    crate::cmd_pgr::args::ensure_outfile_distinct(&outfile, [infile.as_str()])?;
+
     // Input
     let mut reader: Box<dyn std::io::BufRead> = if infile == "stdin" {
         // Use 64KB buffer (BGZF block size) to optimize read performance

@@ -109,6 +109,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let opt_nx: Vec<_> = args.get_many::<usize>("nx").unwrap().copied().collect();
     let opt_genome = args.get_one::<usize>("genome_size").copied();
     let outfile = crate::cmd_pgr::args::get_outfile(args);
+    crate::cmd_pgr::args::ensure_outfile_distinct(
+        outfile,
+        args.get_many::<String>("infiles")
+            .unwrap()
+            .map(|s| s.as_str()),
+    )?;
     let mut writer =
         pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
 

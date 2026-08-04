@@ -51,12 +51,17 @@ Examples:
 /// Execute the rc command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let infile = args.get_one::<String>("infile").unwrap();
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
+    let mut protected: Vec<&str> = vec![infile.as_str()];
+    if let Some(list) = args.get_one::<String>("name_list") {
+        protected.push(list.as_str());
+    }
+    crate::cmd_pgr::args::ensure_outfile_distinct(outfile, protected)?;
     let mut fa_in = pgr::libs::fmt::fa::reader(infile)
         .with_context(|| format!("Failed to open reader for {}", infile))?;
 
     let is_consistent = args.get_flag("consistent");
 
-    let outfile = crate::cmd_pgr::args::get_outfile(args);
     let mut fa_out = pgr::libs::fmt::fa::writer(outfile)
         .with_context(|| format!("Failed to open writer for {}", outfile))?;
 

@@ -109,6 +109,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let is_simplify = args.get_flag("simplify");
 
     let outfile = crate::cmd_pgr::args::get_outfile(args);
+    crate::cmd_pgr::args::ensure_outfile_distinct(
+        outfile,
+        args.get_many::<String>("infiles")
+            .unwrap()
+            .map(|s| s.as_str()),
+    )?;
     let mut fa_out = pgr::libs::fmt::fa::writer_with_wrap(outfile, opt_line)
         .with_context(|| format!("Failed to open writer for {}", outfile))?;
 

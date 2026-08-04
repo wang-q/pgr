@@ -57,6 +57,14 @@ Examples:
 /// Execute the mask command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let infile = args.get_one::<String>("infile").unwrap();
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
+    crate::cmd_pgr::args::ensure_outfile_distinct(
+        outfile,
+        [
+            infile.as_str(),
+            args.get_one::<String>("runlist").unwrap().as_str(),
+        ],
+    )?;
     let mut fa_in = pgr::libs::fmt::fa::reader(infile)
         .with_context(|| format!("Failed to open reader for {}", infile))?;
 
@@ -64,7 +72,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let is_hard = args.get_flag("hard");
 
-    let outfile = crate::cmd_pgr::args::get_outfile(args);
     let mut fa_out = pgr::libs::fmt::fa::writer(outfile)
         .with_context(|| format!("Failed to open writer for {}", outfile))?;
 
@@ -74,10 +81,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         let seq = record.sequence();
 
         if let Some(ints) = runlists.get(&name) {
-            let seq_str = String::from_utf8(seq[..].into())?;
-            let seq_out = pgr::libs::fmt::fa::mask_sequence(&seq_str, ints, is_hard)?;
+            let seq_out = pgr::libs::fmt::fa::mask_sequence(seq.as_ref(), ints, is_hard)?;
             let record_out =
-                pgr::libs::fmt::fa::new_record_preserving_desc(&name, &record, seq_out.as_bytes());
+                pgr::libs::fmt::fa::new_record_preserving_desc(&name, &record, &seq_out);
             fa_out.write_record(&record_out)?;
         } else {
             fa_out.write_record(&record)?;

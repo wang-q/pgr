@@ -96,13 +96,20 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         is_insensitive,
     };
 
+    let infiles: Vec<&str> = args
+        .get_many::<String>("infiles")
+        .unwrap()
+        .map(|s| s.as_str())
+        .collect();
+
     let outfile = crate::cmd_pgr::args::get_outfile(args);
+    crate::cmd_pgr::args::ensure_outfile_distinct(outfile, infiles.iter().copied())?;
     let mut fa_out = pgr::libs::fmt::fa::writer(outfile)
         .with_context(|| format!("Failed to open writer for {}", outfile))?;
 
     let mut subject_map: IndexMap<u64, Vec<String>> = IndexMap::new();
 
-    for infile in args.get_many::<String>("infiles").unwrap() {
+    for infile in infiles {
         let mut fa_in = pgr::libs::fmt::fa::reader(infile)
             .with_context(|| format!("Failed to open reader for {}", infile))?;
 
@@ -144,6 +151,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     if args.contains_id("dups_file") {
         let opt_file = args.get_one::<String>("dups_file").unwrap();
+        crate::cmd_pgr::args::ensure_outfile_distinct(
+            opt_file,
+            args.get_many::<String>("infiles")
+                .unwrap()
+                .map(|s| s.as_str()),
+        )?;
         let mut writer = pgr::writer(opt_file)
             .with_context(|| format!("Failed to open writer for {}", opt_file))?;
 

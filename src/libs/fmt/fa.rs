@@ -70,7 +70,9 @@ pub fn windows(name: &str, seq: &[u8], len: usize, step: usize) -> Vec<(String, 
     let mut result = Vec::new();
     let seq_len = seq.len();
     for start in (0..seq_len).step_by(step) {
-        let end = std::cmp::min(start + len, seq_len);
+        // `saturating_add` guards against a window length large enough that
+        // `start + len` would overflow `usize` (e.g. `--window` near the max).
+        let end = std::cmp::min(start.saturating_add(len), seq_len);
         if start >= end {
             continue;
         }
@@ -396,12 +398,16 @@ pub fn find_fasta_files<P: AsRef<std::path::Path>>(path: P) -> Vec<std::path::Pa
 }
 
 /// Mask sequence regions. Soft-mask lowercases, hard-mask replaces with N.
+///
+/// Operates on raw bytes so mask spans are interpreted as byte offsets; this
+/// also avoids panicking on char boundaries when a sequence contains
+/// multi-byte UTF-8 (a `&str` slice would panic mid-character).
 pub fn mask_sequence(
-    seq: &str,
+    seq: &[u8],
     spans: &crate::libs::ds::IntSpan,
     hard: bool,
-) -> anyhow::Result<String> {
-    let mut out = seq.to_string();
+) -> anyhow::Result<Vec<u8>> {
+    let mut out = seq.to_vec();
     for (lower, upper) in spans.spans().iter() {
         if *lower < 1 {
             anyhow::bail!("span lower bound must be >= 1, got {}", lower);
@@ -416,12 +422,11 @@ pub fn mask_sequence(
                 out.len()
             );
         }
-        let replacement = if hard {
-            "N".repeat(length)
+        if hard {
+            out[offset..offset + length].fill(b'N');
         } else {
-            out[offset..offset + length].to_lowercase()
-        };
-        out.replace_range(offset..offset + length, &replacement);
+            out[offset..offset + length].make_ascii_lowercase();
+        }
     }
     Ok(out)
 }
@@ -456,4 +461,40 @@ pub fn find_masked_regions(seq: &[u8], gap_only: bool) -> Vec<(usize, usize)> {
     }
 
     regions
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn windows_huge_length_does_not_overflow() {
+        // Regression: `start + len` used to overflow `usize` when `len` was
+        // near the max and a multi-window sequence produced a large `start`.
+        let seq = vec![b'A'; 200];
+        let windows = windows("seq", &seq, usize::MAX - 100, 1);
+        // One window per start position (window length far exceeds the
+        // sequence, so the window is always the whole remaining suffix).
+        assert_eq!(windows.len(), 200);
+    }
+
+    #[test]
+    fn windows_empty_and_zero_step() {
+        assert!(windows("seq", b"", 10, 5).is_empty());
+        assert!(windows("seq", b"ACGT", 10, 0).is_empty());
+    }
+
+    #[test]
+    fn mask_sequence_non_ascii_does_not_panic() {
+        // Regression: a multi-byte UTF-8 base used to panic on a `&str` byte
+        // slice when the mask span landed mid-character.
+        let seq = b"A\xc3\xa9C"; // A, é (2 bytes), C
+        let spans = crate::libs::ds::IntSpan::from_pair(2, 2);
+        // Soft mask: byte 2 = 0xc3; ASCII lowercase leaves it unchanged.
+        let masked = mask_sequence(seq, &spans, false).unwrap();
+        assert_eq!(masked, seq.to_vec());
+        // Hard mask: byte 2 (0xc3) is replaced with 'N'.
+        let hard = mask_sequence(seq, &spans, true).unwrap();
+        assert_eq!(hard, b"A\x4e\xa9C".to_vec());
+    }
 }

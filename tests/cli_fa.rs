@@ -151,6 +151,33 @@ fn command_fa_some_invert() {
 }
 
 #[test]
+fn command_fa_some_ignores_hash_comments() {
+    let temp = TempDir::new().unwrap();
+    let list = temp.path().join("list.txt");
+    let output = temp.path().join("out.fa");
+
+    // A `#` comment line must be ignored by the name list reader.
+    fs::write(&list, "# comment\nseq1\nseq3\n").unwrap();
+
+    PgrCmd::new()
+        .args(&[
+            "fa",
+            "some",
+            fixture("some.fa").to_str().unwrap(),
+            list.to_str().unwrap(),
+            "-o",
+            output.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    let content = fs::read_to_string(&output).unwrap();
+    assert!(content.contains(">seq1"));
+    assert!(content.contains(">seq3"));
+    assert!(!content.contains(">seq2"));
+}
+
+#[test]
 fn command_order() {
     let (stdout, _) = PgrCmd::new()
         .args(&[
@@ -591,6 +618,94 @@ fn command_six_frame() {
         .run();
 
     assert_eq!(stdout.lines().count(), 2);
+}
+
+#[test]
+fn command_six_frame_short_sequence_no_panic() {
+    // A 1-base sequence must not panic (regression: reverse frames used to
+    // underflow `dna_len - frame` and the forward frame-2 slice used to panic).
+    let temp = TempDir::new().unwrap();
+    let input = temp.path().join("short.fa");
+    fs::write(&input, ">s\nA\n").unwrap();
+
+    PgrCmd::new()
+        .args(&["fa", "six-frame", input.to_str().unwrap()])
+        .assert()
+        .success();
+}
+
+#[test]
+fn command_fa_output_same_as_input_rejected() {
+    // `-o` pointing at an input file must be rejected before the writer
+    // truncates the input (regression: it used to silently empty the file).
+    let temp = TempDir::new().unwrap();
+    let input = temp.path().join("in.fa");
+    let original = ">seq\nACGTACGT\n";
+    fs::write(&input, original).unwrap();
+
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "fa",
+            "filter",
+            input.to_str().unwrap(),
+            "--min-len",
+            "1",
+            "-o",
+            input.to_str().unwrap(),
+        ])
+        .run_fail();
+
+    assert!(stderr.contains("is also an input file"));
+    assert_eq!(fs::read_to_string(&input).unwrap(), original);
+}
+
+#[test]
+fn command_six_frame_output_same_as_input_rejected() {
+    // Same data-safety guarantee as the other fa subcommands: `-o` must not
+    // truncate the input before it is read.
+    let temp = TempDir::new().unwrap();
+    let input = temp.path().join("in.fa");
+    let original = ">seq\nATGACGTAG\n";
+    fs::write(&input, original).unwrap();
+
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "fa",
+            "six-frame",
+            input.to_str().unwrap(),
+            "-o",
+            input.to_str().unwrap(),
+        ])
+        .run_fail();
+
+    assert!(stderr.contains("is also an input file"));
+    assert_eq!(fs::read_to_string(&input).unwrap(), original);
+}
+
+#[test]
+fn command_fa_split_output_not_overwrite_input() {
+    // `split` writes into -o as a directory; an output file whose resolved
+    // path collides with an input must be rejected before it is truncated.
+    let temp = TempDir::new().unwrap();
+    let input = temp.path().join("chr.fa");
+    let original = ">chr\nACGTACGTACGT\n";
+    fs::write(&input, original).unwrap();
+
+    // `name` mode: sequence name `chr` -> output `outdir/chr.fa`, which is the
+    // input itself.
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "fa",
+            "split",
+            "name",
+            input.to_str().unwrap(),
+            "-o",
+            temp.path().to_str().unwrap(),
+        ])
+        .run_fail();
+
+    assert!(stderr.contains("would overwrite input file"));
+    assert_eq!(fs::read_to_string(&input).unwrap(), original);
 }
 
 #[test]
