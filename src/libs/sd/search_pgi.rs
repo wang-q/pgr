@@ -40,6 +40,11 @@ pub fn pgi_to_hits(
     workdir: &str,
     opts: &SearchPgiOptions,
 ) -> anyhow::Result<Vec<Psl>> {
+    anyhow::ensure!(
+        !super::is_pgi_input(target) && !super::is_pgi_input(query),
+        "sd search/cross needs genome FASTA (plain or .gz); a .pgi index \
+         aligns without extension sequences and every block would score 0"
+    );
     let ctx = PipelineCtx::new("pgr_sd_search_pgi_")?;
     let pgr = ctx.pgr.clone();
     let abs_target = ctx.abs_path(target)?;

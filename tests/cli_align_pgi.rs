@@ -35,6 +35,24 @@ fn build_pgi(dir: &std::path::Path, name: &str) -> (String, String) {
     (fa, out.to_string_lossy().to_string())
 }
 
+/// Corrupt the contig id of the first occurrence record (0x7f = 127, beyond
+/// any single-contig index table). The header stays valid, so a reader that
+/// skips per-record validation would only fail (or panic) later.
+fn corrupt_first_record_contig(path: &std::path::Path) {
+    let mut bytes = std::fs::read(path).unwrap();
+    let n_contigs = u32::from_le_bytes(bytes[20..24].try_into().unwrap()) as usize;
+    let kmer_bytes = u32::from_le_bytes(bytes[32..36].try_into().unwrap()) as usize;
+    let pos_bytes = u32::from_le_bytes(bytes[36..40].try_into().unwrap()) as usize;
+    let mut off = 48usize;
+    for _ in 0..n_contigs {
+        let nb = u32::from_le_bytes(bytes[off..off + 4].try_into().unwrap()) as usize;
+        off += 4 + nb + 8;
+    }
+    let cont_off = off + kmer_bytes + pos_bytes;
+    bytes[cont_off] = 0x7f;
+    std::fs::write(path, bytes).unwrap();
+}
+
 /// Parse PSL stdout into (strand, q_start, q_end, t_start, t_end, q_size).
 fn parse_psl(stdout: &str) -> Vec<(String, u32, u32, u32, u32, u32)> {
     stdout
@@ -83,6 +101,24 @@ fn command_align_pgi_identical() {
     );
     assert!(records.iter().all(|r| r.1 < r.2 && r.2 <= r.5));
     assert!(q_covered(&records) >= 200, "expected >50% query coverage");
+}
+
+/// A crafted .pgi with an out-of-range record contig id must produce a
+/// friendly error, not a panic (Zero Panic).
+#[test]
+fn command_align_pgi_crafted_index_errors_not_panics() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let (_, idx) = build_pgi(temp.path(), "ref");
+    corrupt_first_record_contig(std::path::Path::new(&idx));
+
+    let out = temp.path().join("out.psl");
+    let (_, stderr) = PgrCmd::new()
+        .args(&["align", "pgi", &idx, "-o", out.to_str().unwrap()])
+        .run();
+    assert!(
+        stderr.contains("out of range"),
+        "crafted index must error, got: {stderr}"
+    );
 }
 
 #[test]

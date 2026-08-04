@@ -15,6 +15,10 @@ Runs the whole segmental duplication pipeline on one genome:
 -> `pgr sd cover`. The final CORE-annotated elementary BED is written to
 `<outdir>/out.elem.bed`; intermediate files live in a temp workspace.
 
+Notes:
+* With `--engine lastz`, the genome FASTA must contain a single sequence -
+  split multi-contig genomes with `pgr fa split name` first.
+
 Examples:
 1. Full pipeline:
    pgr sd run genome.fa -o sd_out/
@@ -39,6 +43,7 @@ Examples:
                 .value_parser(clap::builder::PossibleValuesParser::new(
                     pgr::libs::lastz::preset_names(),
                 ))
+                .default_value("set01")
                 .help("lastz parameter set for search (lastz engine only)"),
         )
         .arg(
@@ -60,7 +65,7 @@ Examples:
                 .long("min-identity")
                 .default_value("0.90")
                 .value_parser(value_parser!(f64))
-                .help("Minimum SD block identity"),
+                .help("Minimum SD block identity (0, 1]"),
         )
 }
 /// Execute the run command.
@@ -97,10 +102,23 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     run_cmd!(${pgr} sd cluster ${abs_genome} hits.paf -o clusters)?;
 
     // Decompose each cluster and merge the elementary BEDs with global
-    // set_id renumbering (each cluster restarts set_id at 1).
+    // set_id renumbering (each cluster restarts set_id at 1). Sort the
+    // cluster files by their numeric index so the renumbered set_ids and the
+    // output row order are deterministic across runs (read_dir order is
+    // filesystem-dependent; a lexicographic sort would put cluster_10 before
+    // cluster_2).
+    let mut cluster_fas = pgr::libs::io::list_files_ext("clusters", "fa");
+    cluster_fas.sort_by_key(|f| {
+        std::path::Path::new(f)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .and_then(|s| s.strip_prefix("cluster_"))
+            .and_then(|n| n.parse::<u32>().ok())
+            .unwrap_or(u32::MAX)
+    });
     let mut elems = String::new();
     let mut set_offset = 0u32;
-    for fa in pgr::libs::io::list_files_ext("clusters", "fa") {
+    for fa in cluster_fas {
         let stem = pgr::libs::io::basename_or_err(&fa)?;
         let stem = stem.trim_end_matches(".fa");
         run_cmd!(${pgr} sd decompose ${fa} -o clusters/${stem}.elem.bed)?;

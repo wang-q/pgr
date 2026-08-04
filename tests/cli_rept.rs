@@ -324,7 +324,62 @@ fn command_rept_s_align_dotted_name() -> anyhow::Result<()> {
     let spans = json["NC_000913.1"]
         .as_str()
         .expect("NC_000913.1 key missing (runlist truncated the name?)");
-    assert!(spans.contains('-'), "expected intervals, got: {spans}");
+    // Regression: the lift used to misparse `NC_000913.1:1-200` as contig
+    // "1" and silently skip, so coverage came from unlifted window
+    // coordinates. With the lift fixed, the reported intervals are the real
+    // duplicated regions (0-based 300-800 and 1000-1500 -> 301-800 and
+    // 1001-1500).
+    assert_eq!(
+        spans, "301-800,1001-1500",
+        "unexpected s-align spans: {spans}"
+    );
+    Ok(())
+}
+
+/// s-align on a contig whose name contains ':' (`chr1:alt`) must keep the
+/// full name in the runlist key (regression: `split_once(':')` / the Range
+/// parser truncated it to "alt").
+#[test]
+fn command_rept_s_align_colon_name() -> anyhow::Result<()> {
+    if which::which("lastz").is_err() {
+        eprintln!("skipping: lastz not found");
+        return Ok(());
+    }
+
+    let temp = tempfile::TempDir::new()?;
+    let genome_fa = temp.path().join("genome.fa");
+    let out = temp.path().join("out.json");
+    let dup = random_seq(400, 41);
+    let seq = format!(
+        "{}{}{}{}{}",
+        random_seq(300, 42),
+        dup,
+        random_seq(200, 43),
+        dup,
+        random_seq(200, 44)
+    );
+    std::fs::write(&genome_fa, format!(">chr1:alt\n{}\n", seq))?;
+
+    let (_, stderr) = common::PgrCmd::new()
+        .args(&[
+            "rept",
+            "s-align",
+            genome_fa.to_str().unwrap(),
+            "-o",
+            out.to_str().unwrap(),
+        ])
+        .run();
+    assert!(stderr.contains("==> Coverage"), "pipeline failed: {stderr}");
+
+    let json: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&out)?)?;
+    let spans = json["chr1:alt"]
+        .as_str()
+        .expect("chr1:alt key missing (name truncated?)");
+    // Copies at 0-based 300-700 and 900-1300 (400 bp dup).
+    assert_eq!(
+        spans, "301-700,901-1300",
+        "unexpected s-align spans: {spans}"
+    );
     Ok(())
 }
 

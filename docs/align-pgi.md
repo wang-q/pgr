@@ -30,14 +30,23 @@ self mode); exact self-identity hits are dropped.
 
 ## Options
 
-- `-f`/`--freq`: drop k-mers occurring more than this many times on either
+- `-f`/`--freq`: drop k-mers occurring at least this many times on either
   side (repeats are not seeds);
 - `-c`/`--min-span`: minimum per-axis seed span (bp) for a chain;
-- `-s`/`--max-gap`: maximum bp gap between consecutive seeds in a chain;
+- `-s`/`--max-gap`: maximum bp gap between consecutive seeds in a chain.
+  When sequences are available, a gap of at least 200 bp on both axes is
+  bridged only if the intervening sequences are homologous, so the two
+  reciprocal chains of an inverted repeat whose copies are closer than
+  `max-gap` stay separate blocks (bridging them would dilute the identity
+  below the SD filter and lose the pair);
 - `--band`: diagonal band half-width (bp) around the chain mean;
 - `--merge-gap`: merge adjacent colinear chains separated by at most this gap
   (bp), stitching blocks split by insertions (IS elements); only chains whose
-  diagonals differ are merged, same-diagonal gaps stay independent blocks;
+  diagonals differ are merged, same-diagonal gaps stay independent blocks.
+  When both intervening spans are non-empty, the merge additionally requires
+  the intervening sequences to be homologous (verified by a banded
+  alignment), so independent copy pairs that happen to sit on nearby
+  diagonals stay separate;
 - `--min-shared`: minimum shared seed length (bp); default = k for greedy,
   12 for tube;
 - `--workflow`: chaining workflow, `greedy` (default) or FastGA-style `tube`;

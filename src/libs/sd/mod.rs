@@ -7,6 +7,25 @@ pub mod search_lastz;
 pub mod search_pgi;
 
 use crate::libs::fmt::psl::Psl;
+use std::io::Read;
+
+/// Whether `path` (a file) looks like a `.pgi` index, by magic or extension.
+///
+/// The SD search filters score the alignment blocks; a `.pgi` input aligns
+/// without extension sequences and every block scores 0, so the search would
+/// silently return nothing. Refuse it up front with a clear error instead.
+pub fn is_pgi_input(path: &str) -> bool {
+    if let Ok(mut f) = std::fs::File::open(path) {
+        let mut magic = [0u8; 4];
+        if f.read_exact(&mut magic).is_ok() {
+            return &magic == crate::libs::pgi::PGI_MAGIC;
+        }
+    }
+    std::path::Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        == Some("pgi")
+}
 
 /// Alignment block length of a PSL record
 /// (matches + mismatches + repeats + Ns + query/target insert bases).

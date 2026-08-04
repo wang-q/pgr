@@ -109,6 +109,9 @@ pgr sd run <genome.fa> -o sd_out/
   [--engine pgi|lastz] [--min-len 1000] [--min-identity 0.90] [--preset set01]
 ```
 
+With `--engine lastz`, the genome FASTA must contain a single sequence
+(split multi-contig genomes with `pgr fa split name` first).
+
 ## Notes
 
 * The SD filter follows the T2T-CHM13 standard: block length > 1 kbp and

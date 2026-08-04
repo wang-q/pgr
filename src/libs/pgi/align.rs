@@ -98,21 +98,23 @@ pub fn merge_seed_hits(
     );
     // The per-entry prefix query against `b` is independent, so split the
     // `a` entries into chunks and merge them in parallel (the chaining passes
-    // re-sort the hits, so the output order is free). `flat_map_iter` keeps
-    // only the in-flight chunk buffers instead of all part vectors at once.
+    // re-sort the hits, so the output order is free).
     let hits: Vec<SeedHit> = a
         .entries
         .par_chunks(4096)
-        .flat_map_iter(|ents| {
+        .map(|ents| -> anyhow::Result<Vec<SeedHit>> {
             let mut hits = Vec::new();
             for ea in ents {
                 let ap = &a.positions[ea.pos_start as usize..(ea.pos_start + ea.freq) as usize];
                 hits.extend(emit_entry_hits(
                     ea.kmer, ea.freq, ap, b, freq, min_shared, k,
-                ));
+                )?);
             }
-            hits
+            Ok(hits)
         })
+        .collect::<anyhow::Result<Vec<_>>>()?
+        .into_iter()
+        .flatten()
         .collect();
     Ok(hits)
 }
@@ -158,7 +160,7 @@ pub fn merge_seed_hits_from_stream<R: Read + Send, B: PgiQuery + Sync>(
             for (ea, poss) in batch? {
                 hits.extend(emit_entry_hits(
                     ea.kmer, ea.freq, &poss, b, freq, min_shared, k,
-                ));
+                )?);
             }
             Ok(hits)
         })
@@ -180,7 +182,7 @@ fn emit_entry_hits<B: PgiQuery>(
     freq: u32,
     min_shared: usize,
     k: usize,
-) -> Vec<SeedHit> {
+) -> anyhow::Result<Vec<SeedHit>> {
     let mut hits = Vec::new();
     // FastGA excludes k-mers whose count is >= the frequency cutoff on both
     // sides at index-build time (GIXmake: "only k-mers whose count is less
@@ -189,13 +191,13 @@ fn emit_entry_hits<B: PgiQuery>(
     // Dropping only `> freq` here would let a k-mer occurring exactly `freq`
     // times on the reference side seed hits that FastGA never emits.
     if ea_freq >= freq {
-        return hits;
+        return Ok(hits);
     }
     // FastGA stores each position under its canonical orientation only; the
     // reverse-complement key would duplicate every physical hit (both strands
     // are emitted by `pgi build`).
     if ea_kmer > rc_key(ea_kmer, k) {
-        return hits;
+        return Ok(hits);
     }
     let k_bits = 2 * k;
     let mask = if k_bits >= 128 {
@@ -212,7 +214,7 @@ fn emit_entry_hits<B: PgiQuery>(
     };
     let (j0, j) = window(min_shared);
     if j == j0 {
-        return hits;
+        return Ok(hits);
     }
     // Maximal shared prefix over the floor window (FastGA extends each entry
     // to its longest match before filtering).
@@ -230,7 +232,7 @@ fn emit_entry_hits<B: PgiQuery>(
         i = b.entry_next(i);
     }
     if m < min_shared as u32 {
-        return hits;
+        return Ok(hits);
     }
     // Restrict to the maximal-prefix range; its occurrence count must stay
     // under `freq` (extended-range filter, not the floor window).
@@ -245,7 +247,7 @@ fn emit_entry_hits<B: PgiQuery>(
         i = b.entry_next(i);
     }
     if occ == 0 || occ >= freq {
-        return hits;
+        return Ok(hits);
     }
     let mut i = m0;
     while i < m1 {
@@ -254,6 +256,7 @@ fn emit_entry_hits<B: PgiQuery>(
                 let (ac, apos, astrand) = unpack_position(arec);
                 for brec in b.entry_positions(i) {
                     let (bc, bpos, bstrand) = unpack_position(brec);
+                    crate::libs::pgi::validate_record(bc, bpos, k, b.contigs())?;
                     let fwd = astrand == bstrand;
                     let b_len = b.contigs()[bc as usize].1;
                     let oriented = if fwd {
@@ -274,7 +277,7 @@ fn emit_entry_hits<B: PgiQuery>(
         }
         i = b.entry_next(i);
     }
-    hits
+    Ok(hits)
 }
 
 /// Longest common prefix (in bases) of two 2-bit k-mer keys.
@@ -352,6 +355,10 @@ pub struct Tube {
     /// Diagonal band high (bp).
     pub diag_max: i64,
 }
+
+/// Reference and query extension sequences, passed to the adjacent-chain
+/// merge so it can verify the intervening region is homologous.
+type SeqPair<'a> = (&'a [(String, Vec<u8>)], &'a [(String, Vec<u8>)]);
 
 /// FastGA `align_contigs` tube chaining over seed hits.
 ///
@@ -701,6 +708,13 @@ fn overlap_frac(a1: i32, a2: i32, b1: i32, b2: i32) -> f64 {
     (ov.max(0) as f64) / own as f64
 }
 
+/// Seed gaps below this size (on both axes) are not homology-checked in the
+/// greedy loop. For SD-sized blocks (>= 1000 bp) an unchecked gap of this
+/// size keeps the chimeric identity at 2*1000/(2*1000+200) >= 0.909, above
+/// the 0.90 SD filter, so it cannot silently drop a real pair; skipping
+/// small gaps keeps dense seed streams cheap.
+const GREEDY_MIDDLE_MIN_GAP: u32 = 200;
+
 /// Greedy anti-diagonal chaining of seed hits.
 ///
 /// Hits are scanned per (contig_a, contig_b, strand) group sorted by diagonal
@@ -710,6 +724,10 @@ fn overlap_frac(a1: i32, a2: i32, b1: i32, b2: i32) -> f64 {
 /// must not split the chain), and only a group change or an over-`max_gap`
 /// jump closes the chain. Chains covering less than `min_span` on either
 /// axis are dropped.
+///
+/// `seqs` (when provided) lets the adjacent-chain merge verify that the
+/// intervening sequences are homologous before stitching; without it the
+/// merge is geometric only.
 pub fn chain_hits(
     hits: &[SeedHit],
     k: u32,
@@ -717,6 +735,7 @@ pub fn chain_hits(
     max_gap: u32,
     band: u32,
     merge_gap: u32,
+    seqs: Option<SeqPair<'_>>,
 ) -> Vec<Chain> {
     let mut sorted = hits.to_vec();
     sorted.sort_unstable_by_key(|h| {
@@ -739,22 +758,57 @@ pub fn chain_hits(
                 let in_gap =
                     (0..=max_gap as i64).contains(&gap_a) && (0..=max_gap as i64).contains(&gap_b);
                 if in_gap && (diag - mean).abs() <= band as i64 {
-                    cur = Some(ChainCursor {
-                        last_a: h.a_pos,
-                        last_b: h.b_pos,
-                        diag_sum: c.diag_sum + diag,
-                        count: c.count + 1,
-                        diag_min: c.diag_min.min(diag),
-                        diag_max: c.diag_max.max(diag),
-                        ..c
-                    });
-                    continue;
-                }
-                if in_gap {
+                    // A seed gap in BOTH sequences may be a genuine seed gap
+                    // inside one block, or the seam between two reciprocal
+                    // chains of an inverted repeat whose copies are closer
+                    // than `max_gap`. Bridging the latter produces a chimeric
+                    // chain whose diluted identity is dropped by the SD
+                    // filter, losing both real hits. With sequences
+                    // available, verify the intervening span before
+                    // bridging.
+                    let middle_ok = match seqs {
+                        Some((a_seqs, b_seqs))
+                            if gap_a >= GREEDY_MIDDLE_MIN_GAP as i64
+                                && gap_b >= GREEDY_MIDDLE_MIN_GAP as i64 =>
+                        {
+                            middle_is_homologous_range(
+                                c.a_contig,
+                                c.b_contig,
+                                c.strand,
+                                c.last_a.saturating_add(k),
+                                h.a_pos,
+                                c.last_b.saturating_add(k),
+                                h.b_pos,
+                                a_seqs,
+                                b_seqs,
+                                band,
+                            )
+                        }
+                        _ => true,
+                    };
+                    if middle_ok {
+                        cur = Some(ChainCursor {
+                            last_a: h.a_pos,
+                            last_b: h.b_pos,
+                            diag_sum: c.diag_sum + diag,
+                            count: c.count + 1,
+                            diag_min: c.diag_min.min(diag),
+                            diag_max: c.diag_max.max(diag),
+                            ..c
+                        });
+                        continue;
+                    }
+                    // Not homologous: close the current chain and let this
+                    // seed start a fresh one.
+                    push_chain(&mut chains, &cur, k, min_span);
+                } else if in_gap {
                     continue; // outside the diagonal band: ignore, keep chain
+                } else {
+                    push_chain(&mut chains, &cur, k, min_span);
                 }
+            } else {
+                push_chain(&mut chains, &cur, k, min_span);
             }
-            push_chain(&mut chains, &cur, k, min_span);
         }
         cur = Some(ChainCursor {
             a_contig: h.a_contig as u32,
@@ -771,7 +825,7 @@ pub fn chain_hits(
         });
     }
     push_chain(&mut chains, &cur, k, min_span);
-    merge_adjacent_chains(&mut chains, band, merge_gap);
+    merge_adjacent_chains(&mut chains, band, merge_gap, seqs);
     chains
 }
 
@@ -786,7 +840,19 @@ pub fn chain_hits(
 /// reciprocal chains of an inverted repeat in a self-alignment), not one
 /// split block; merging them produces a chimeric chain whose identity is
 /// diluted by the gap and drops both real hits at the SD filter.
-fn merge_adjacent_chains(chains: &mut Vec<Chain>, band: u32, merge_gap: u32) {
+///
+/// Two distinct homology blocks can also sit on nearly equal diagonals (the
+/// copy pairs of a multi-copy family) with both spans within `merge_gap`; a
+/// purely geometric merge would stitch them into a chimeric chain whose
+/// identity is diluted below the SD filter. When `seqs` are available and
+/// both intervening spans are non-empty, the merge additionally requires
+/// the intervening sequences to be homologous.
+fn merge_adjacent_chains(
+    chains: &mut Vec<Chain>,
+    band: u32,
+    merge_gap: u32,
+    seqs: Option<SeqPair<'_>>,
+) {
     if chains.len() < 2 {
         return;
     }
@@ -799,11 +865,18 @@ fn merge_adjacent_chains(chains: &mut Vec<Chain>, band: u32, merge_gap: u32) {
                 && last.strand == c.strand;
             let gap_a = c.a_start as i64 - last.a_end as i64;
             let gap_b = c.b_start as i64 - last.b_end as i64;
+            let middle_ok = match seqs {
+                Some((a_seqs, b_seqs)) if gap_a > 0 && gap_b > 0 => {
+                    middle_is_homologous(last, &c, a_seqs, b_seqs, band)
+                }
+                _ => true,
+            };
             if same_group
                 && (0..=merge_gap as i64).contains(&gap_a)
                 && (0..=merge_gap as i64).contains(&gap_b)
                 && (c.diag - last.diag).abs() <= band as i64
                 && (c.diag - last.diag).abs() > 0
+                && middle_ok
             {
                 let span = last.diag_span.max(c.diag_span) + (c.diag - last.diag).abs();
                 last.a_end = last.a_end.max(c.a_end);
@@ -817,6 +890,116 @@ fn merge_adjacent_chains(chains: &mut Vec<Chain>, band: u32, merge_gap: u32) {
         out.push(c);
     }
     *chains = out;
+}
+
+/// True when the sequence between two adjacent chains is homologous enough
+/// to be one continuous block (a seed gap), rather than two independent
+/// homology blocks that happen to sit on nearby diagonals.
+///
+/// The intervening target `[last.a_end, next.a_start)` and query span
+/// (orientation space) are aligned in the same diagonal band; both the
+/// aligned identity and the query coverage must stay high (>= 0.9) for the
+/// merge, matching the SD standard the chaining feeds.
+///
+/// The banded DP is O(middle * band); a user-raised `--merge-gap` must not
+/// turn an unverifiable huge middle into a giant allocation, so middles
+/// beyond [`MIDDLE_CHECK_CAP`] are conservatively kept separate.
+const MIDDLE_CHECK_CAP: usize = 50_000;
+
+fn middle_is_homologous(
+    last: &Chain,
+    next: &Chain,
+    a_seqs: &[(String, Vec<u8>)],
+    b_seqs: &[(String, Vec<u8>)],
+    band: u32,
+) -> bool {
+    middle_is_homologous_range(
+        last.a_contig,
+        last.b_contig,
+        last.strand,
+        last.a_end,
+        next.a_start,
+        last.b_end,
+        next.b_start,
+        a_seqs,
+        b_seqs,
+        band,
+    )
+}
+
+/// Range-based variant used by the greedy chain loop, where the "chains" are
+/// the chain under construction and the next seed rather than finished
+/// chains. An empty intervening range (seeds separated by less than `k`)
+/// trivially passes.
+#[allow(clippy::too_many_arguments)]
+fn middle_is_homologous_range(
+    a_contig: u32,
+    b_contig: u32,
+    strand: u8,
+    a_lo: u32,
+    a_hi: u32,
+    b_lo: u32,
+    b_hi: u32,
+    a_seqs: &[(String, Vec<u8>)],
+    b_seqs: &[(String, Vec<u8>)],
+    band: u32,
+) -> bool {
+    if a_hi <= a_lo || b_hi <= b_lo {
+        return true;
+    }
+    let Some((_, a_int)) = a_seqs.get(a_contig as usize) else {
+        return false;
+    };
+    let Some((_, b_int)) = b_seqs.get(b_contig as usize) else {
+        return false;
+    };
+    let a_mid = match a_int.get(a_lo as usize..a_hi as usize) {
+        Some(s) => s,
+        None => return false,
+    };
+    if a_mid.len() > MIDDLE_CHECK_CAP {
+        return false;
+    }
+    let b_len = b_int.len();
+    let (b_lo_f, b_hi_f) = if strand == 0 {
+        (b_lo as usize, b_hi as usize)
+    } else {
+        match (
+            b_len.checked_sub(b_hi as usize),
+            b_len.checked_sub(b_lo as usize),
+        ) {
+            (Some(lo), Some(hi)) => (lo, hi),
+            _ => return false,
+        }
+    };
+    let b_mid: Vec<u8> = match b_int.get(b_lo_f..b_hi_f) {
+        Some(s) if strand == 0 => s.to_vec(),
+        Some(s) => rev_comp(s).collect(),
+        None => return false,
+    };
+    if b_mid.len() > MIDDLE_CHECK_CAP {
+        return false;
+    }
+    let Some(aln) =
+        align_banded_local(&b_mid, a_mid, band as usize, 0, &AlignmentParams::default())
+    else {
+        return false;
+    };
+    let mut aligned = 0usize;
+    let mut matches = 0usize;
+    for (qb, tb) in aln.q_aln.iter().zip(&aln.t_aln) {
+        if *qb != b'-' && *tb != b'-' {
+            aligned += 1;
+            if qb == tb {
+                matches += 1;
+            }
+        }
+    }
+    if aligned == 0 {
+        return false;
+    }
+    let q_covered = aln.q_aln.iter().filter(|&&c| c != b'-').count();
+    matches as f64 / aligned as f64 >= 0.9 && q_covered as f64 / b_mid.len() as f64 >= 0.9
 }
 
 /// Greedy chain cursor: the current chain under construction.
@@ -913,6 +1096,7 @@ pub fn align_to_psl(a: &PgiIndex, b: &PgiIndex, params: &AlignParams) -> anyhow:
                 params.max_gap,
                 params.band,
                 params.merge_gap,
+                None,
             );
             Ok(chains.iter().map(|c| chain_to_psl(c, a, b)).collect())
         }
@@ -953,6 +1137,7 @@ pub fn align_to_psl_streaming<R: Read + Send, B: PgiQuery + Sync>(
                 params.max_gap,
                 params.band,
                 params.merge_gap,
+                None,
             );
             let a = PgiIndex {
                 k,
@@ -1258,6 +1443,7 @@ fn psls_from_hits(
         params.max_gap,
         params.band,
         params.merge_gap,
+        Some((a_seqs, b_seqs)),
     );
     drop(hits);
     drop(std::mem::take(&mut a.entries));
@@ -1417,6 +1603,43 @@ mod tests {
         mk.sort_unstable();
         assert_eq!(rk, mk, "mmap query must produce identical seed hits");
         assert!(!rk.is_empty(), "expected shared seeds");
+    }
+
+    #[test]
+    fn mmap_merge_rejects_out_of_range_contig() {
+        // Regression: a crafted query index whose occurrence record carries a
+        // contig id beyond the contig table used to panic in `emit_entry_hits`
+        // (`b.contigs()[bc]`). The lazy mmap decode must surface a friendly
+        // error when the corrupted record is actually merged.
+        let seq = pseudo_random_seq(2000, 77);
+        let idx = build_from_seqs(vec![(String::from("c"), seq.clone())], 10, 4, 2, false).unwrap();
+        let mut bytes = Vec::new();
+        idx.write(&mut bytes).unwrap();
+        // Corrupt the first *canonical* record: non-canonical keys are never
+        // merged (they are filtered in `emit_entry_hits`), so the corrupted
+        // record must be one the merge actually decodes.
+        let (header, _n, layout, records_off) =
+            crate::libs::pgi::parse_header_bytes(&bytes).unwrap();
+        let rec_size = layout.size();
+        for i in 0..(bytes.len() - records_off) / rec_size {
+            let off = records_off + i * rec_size;
+            let kmer =
+                crate::libs::pgi::unpack_kmer(&bytes[off..off + layout.kmer_bytes], header.k);
+            if kmer <= rc_key(kmer, header.k) {
+                bytes[off + layout.kmer_bytes + layout.pos_bytes] = 0x7f;
+                break;
+            }
+        }
+        let dir = tempfile::TempDir::new().unwrap();
+        let q_path = dir.path().join("bad.pgi");
+        std::fs::write(&q_path, &bytes).unwrap();
+        let mapped = crate::libs::pgi::PgiMmap::open(&q_path).unwrap();
+
+        let mut ref_bytes = Vec::new();
+        idx.write(&mut ref_bytes).unwrap();
+        let mut s = PgiStream::open(std::io::Cursor::new(&ref_bytes)).unwrap();
+        let err = merge_seed_hits_from_stream(&mut s, &mapped, 10, 10).unwrap_err();
+        assert!(err.to_string().contains("out of range"), "got: {err}");
     }
 
     #[test]
@@ -1671,7 +1894,7 @@ mod tests {
                 strand: 1,
             },
         ];
-        let chains = chain_hits(&hits, 10, 20, 1000, 8, 0);
+        let chains = chain_hits(&hits, 10, 20, 1000, 8, 0, None);
         assert_eq!(
             chains.len(),
             2,
@@ -1717,10 +1940,10 @@ mod tests {
             },
         ];
         // max_gap=1000 splits the two diagonal runs; each run has span 40 > 20.
-        let chains = chain_hits(&hits, 10, 20, 1000, 8, 0);
+        let chains = chain_hits(&hits, 10, 20, 1000, 8, 0, None);
         assert_eq!(chains.len(), 2);
         // min_span=50 drops both runs (span 40 each).
-        let chains = chain_hits(&hits, 10, 50, 1000, 8, 0);
+        let chains = chain_hits(&hits, 10, 50, 1000, 8, 0, None);
         assert!(chains.is_empty());
     }
 
@@ -1755,7 +1978,7 @@ mod tests {
         // The diag-80 hit backtracks after the main diagonal ran: it must not
         // split the main chain (which covers 100..310), and its own tiny chain
         // (span 10) is dropped by min_span=200.
-        let chains = chain_hits(&hits, 10, 200, 1000, 8, 0);
+        let chains = chain_hits(&hits, 10, 200, 1000, 8, 0, None);
         assert_eq!(chains.len(), 1);
         assert_eq!((chains[0].a_start, chains[0].a_end), (100, 310));
         assert_eq!(chains[0].seeds, 2);
@@ -1790,12 +2013,12 @@ mod tests {
             },
         ];
         // Third hit (diag 10) is in-gap but outside band=8: ignored.
-        let chains = chain_hits(&hits, 10, 5, 1000, 8, 0);
+        let chains = chain_hits(&hits, 10, 5, 1000, 8, 0, None);
         assert_eq!(chains.len(), 1);
         assert_eq!(chains[0].seeds, 2);
         assert_eq!(chains[0].a_end, 160);
         // A wider band admits it.
-        let chains = chain_hits(&hits, 10, 5, 1000, 20, 0);
+        let chains = chain_hits(&hits, 10, 5, 1000, 20, 0, None);
         assert_eq!(chains[0].seeds, 3);
         assert_eq!(chains[0].a_end, 210);
     }
@@ -1839,9 +2062,9 @@ mod tests {
                 strand: 0,
             },
         ];
-        let chains = chain_hits(&hits, 10, 20, 1000, 8, 0);
+        let chains = chain_hits(&hits, 10, 20, 1000, 8, 0, None);
         assert_eq!(chains.len(), 2, "large gap must split chains");
-        let chains = chain_hits(&hits, 10, 20, 1000, 8, 2000);
+        let chains = chain_hits(&hits, 10, 20, 1000, 8, 2000, None);
         assert_eq!(chains.len(), 1, "diagonal shift must stitch chains");
         assert_eq!((chains[0].a_start, chains[0].a_end), (100, 1340));
         assert_eq!(chains[0].seeds, 4);
@@ -1883,7 +2106,7 @@ mod tests {
                 strand: 0,
             },
         ];
-        let chains = chain_hits(&same_diag, 10, 20, 1000, 8, 2000);
+        let chains = chain_hits(&same_diag, 10, 20, 1000, 8, 2000, None);
         assert_eq!(chains.len(), 2, "identical diagonals must not merge");
 
         // A diagonal shift beyond the band must not merge.
@@ -1905,8 +2128,121 @@ mod tests {
                 strand: 0,
             },
         ];
-        let chains = chain_hits(&shifted, 10, 5, 1000, 8, 2000);
+        let chains = chain_hits(&shifted, 10, 5, 1000, 8, 2000, None);
         assert_eq!(chains.len(), 2, "diag shift beyond band must not merge");
+    }
+
+    #[test]
+    fn merge_requires_homologous_middle_with_sequences() {
+        // Two distinct homology blocks on nearby diagonals (shift 50 <= band)
+        // with both spans within merge_gap. Geometrically they are
+        // mergeable, but the intervening sequences are independent: the
+        // sequence-aware merge must keep them separate (regression: the
+        // geometric merge stitched them into a chimeric chain whose diluted
+        // identity was dropped by the SD filter, losing real hits).
+        let mk = |a_start: u32, b_start: u32| SeedHit {
+            a_contig: 0,
+            a_pos: a_start,
+            b_contig: 0,
+            b_pos: b_start,
+            shared: 40,
+            strand: 0,
+        };
+        let mut hits = Vec::new();
+        // Block 1: seeds a 1000..1900 <-> b 5000..5900 (diag -4000),
+        // span end 1940 / 5940 (last seed + k 40).
+        // Block 2: seeds a 6900..7800 <-> b 10850..11750 (diag -3950).
+        // gap_a = 6900 - 1940 = 4960, gap_b = 10850 - 5940 = 4910, both
+        // within merge_gap 5000; diagonal shift 50 within band 128.
+        for i in 0..10u32 {
+            hits.push(mk(1000 + i * 100, 5000 + i * 100));
+            hits.push(mk(6900 + i * 100, 10850 + i * 100));
+        }
+        let a_mid = pseudo_random_seq(4960, 31);
+        let a_int = pseudo_random_seq(1940, 32)
+            .into_iter()
+            .chain(a_mid.iter().copied())
+            .chain(pseudo_random_seq(20_000, 33))
+            .collect::<Vec<u8>>();
+        let make_b = |mid: Vec<u8>| {
+            pseudo_random_seq(5940, 34)
+                .into_iter()
+                .chain(mid)
+                .chain(pseudo_random_seq(15_000, 35))
+                .collect::<Vec<u8>>()
+        };
+
+        // Independent random middles: no merge.
+        let b_rand = make_b(pseudo_random_seq(4910, 36));
+        let a_seqs = vec![(String::from("a"), a_int.clone())];
+        let b_seqs = vec![(String::from("b"), b_rand)];
+        let chains = chain_hits(&hits, 40, 20, 1000, 128, 5000, Some((&a_seqs, &b_seqs)));
+        assert_eq!(
+            chains.len(),
+            2,
+            "distinct blocks must stay separate: {chains:?}"
+        );
+
+        // Homologous middle (4910 of 4960 bp shared): one continuous block.
+        let b_hom = make_b(a_mid[..4910].to_vec());
+        let b_seqs = vec![(String::from("b"), b_hom)];
+        let chains = chain_hits(&hits, 40, 20, 1000, 128, 5000, Some((&a_seqs, &b_seqs)));
+        assert_eq!(chains.len(), 1, "homologous middle must stitch: {chains:?}");
+    }
+
+    #[test]
+    fn merge_checks_minus_strand_middle_in_rc_space() {
+        // The b coordinates of a minus-strand chain live in RC space, so the
+        // intervening query span must be reverse-complemented before the
+        // homology check. Same geometry as the strand-0 test.
+        let mk = |a_start: u32, b_start: u32| SeedHit {
+            a_contig: 0,
+            a_pos: a_start,
+            b_contig: 0,
+            b_pos: b_start,
+            shared: 40,
+            strand: 1,
+        };
+        let mut hits = Vec::new();
+        for i in 0..10u32 {
+            hits.push(mk(1000 + i * 100, 5000 + i * 100));
+            hits.push(mk(6900 + i * 100, 10850 + i * 100));
+        }
+        let a_mid = pseudo_random_seq(4960, 51);
+        let a_int = pseudo_random_seq(1940, 52)
+            .into_iter()
+            .chain(a_mid.iter().copied())
+            .chain(pseudo_random_seq(20_000, 53))
+            .collect::<Vec<u8>>();
+        // The RC-space middle is [5940, 10850); its forward span is
+        // [b_len - 10850, b_len - 5940) = [15000, 19910). Place the RC of
+        // the a middle there so the RC-space middle (what the homology check
+        // aligns) equals a_mid.
+        let b_len = 5940 + 4910 + 15_000;
+        let fwd_mid: Vec<u8> = rev_comp(&a_mid[..4910]).collect();
+        let mut b_int: Vec<u8> = pseudo_random_seq(15_000, 54);
+        b_int.extend_from_slice(&fwd_mid);
+        b_int.extend(pseudo_random_seq(b_len - 15_000 - 4910, 55));
+        assert_eq!(b_int.len(), b_len);
+
+        let a_seqs = vec![(String::from("a"), a_int)];
+        let b_seqs = vec![(String::from("b"), b_int)];
+        let chains = chain_hits(&hits, 40, 20, 1000, 128, 5000, Some((&a_seqs, &b_seqs)));
+        assert_eq!(
+            chains.len(),
+            1,
+            "minus-strand middle must stitch: {chains:?}"
+        );
+
+        // Independent random RC-space middle: no merge.
+        let b_rand_int: Vec<u8> = pseudo_random_seq(b_len, 56);
+        let b_seqs = vec![(String::from("b"), b_rand_int)];
+        let chains = chain_hits(&hits, 40, 20, 1000, 128, 5000, Some((&a_seqs, &b_seqs)));
+        assert_eq!(
+            chains.len(),
+            2,
+            "distinct minus-strand blocks must stay separate: {chains:?}"
+        );
     }
 
     #[test]
@@ -2357,6 +2693,7 @@ mod tests {
             params.max_gap,
             params.band,
             params.merge_gap,
+            None,
         );
         assert_eq!(chains.len(), 1);
         // Tiny windows force the interval to be split into multiple records.

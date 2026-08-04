@@ -568,6 +568,71 @@ mod tests {
     }
 
     #[test]
+    fn randomized_single_pass_matches_reference() {
+        // Property test: on random sequences with randomly placed N runs
+        // (including at the very start/end) and different sampling
+        // parameters, the single-pass collection must emit exactly the
+        // reference (syncmer_dna + rolling keys) records.
+        let (k, smer, window) = (40usize, 8usize, 5usize);
+        let params = SyncmerParams {
+            smer,
+            window,
+            seed: 7,
+        };
+        use rand::SeedableRng;
+        let mut rng = rand::rngs::StdRng::seed_from_u64(2024);
+        use rand::Rng;
+        for trial in 0..30 {
+            let n = 300 + rng.random_range(0..3000);
+            let mut seq: Vec<u8> = (0..n).map(|_| b"ACGT"[rng.random_range(0..4)]).collect();
+            // 0-3 N runs of 1-80 bp at random positions (may overlap).
+            for _ in 0..rng.random_range(0..4) {
+                let start = rng.random_range(0..n);
+                let len = 1 + rng.random_range(0..80);
+                for b in &mut seq[start..n.min(start + len)] {
+                    *b = b'N';
+                }
+            }
+
+            let mut buf = RecordBuf {
+                keys: Vec::new(),
+                payloads: Vec::new(),
+            };
+            collect_one_contig(&seq, 0, k, &params, false, &mut buf);
+            let mut single_recs: Vec<(u128, u32, u32, u8)> = buf
+                .keys
+                .into_iter()
+                .zip(buf.payloads)
+                .map(|(key, rec)| {
+                    let (cid, pos, strand) = unpack_position(rec);
+                    (key, cid, pos, strand)
+                })
+                .collect();
+            single_recs.sort_unstable();
+            single_recs.dedup();
+
+            let sm = crate::libs::syncmer::syncmer_dna(&seq, &params).unwrap();
+            let keys = crate::libs::nt::rolling_kmer_keys(&seq, k);
+            let mut ref_recs: Vec<(u128, u32, u32, u8)> = Vec::new();
+            for (_h, pos, _fwd) in sm {
+                if pos + k > seq.len() {
+                    continue;
+                }
+                if let Some(key) = keys[pos] {
+                    ref_recs.push((key, 0, pos as u32, 0));
+                    ref_recs.push((rc_key(key, k), 0, pos as u32, 1));
+                }
+            }
+            ref_recs.sort_unstable();
+            ref_recs.dedup();
+            assert_eq!(
+                single_recs, ref_recs,
+                "single-pass mismatch at trial {trial} (n={n})"
+            );
+        }
+    }
+
+    #[test]
     fn mask_skips_lowercase_fasta_kmers() {
         // An uppercase zone plus a lowercase (soft-masked) zone with a
         // different sequence: masked zones must not contribute k-mers.

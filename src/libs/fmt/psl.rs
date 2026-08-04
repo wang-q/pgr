@@ -963,12 +963,48 @@ pub fn parse_or_warn(line: &str, strict: bool) -> anyhow::Result<Option<Psl>> {
 /// Parse a `chr:start-end` subrange name (1-based, inclusive) into
 /// `(chr, start, end)` with `start`/`end` as u32. Returns `None` if `name`
 /// is not a valid range.
+///
+/// Fragment names are `{contig}:{start}-{end}`; contig names may themselves
+/// contain '.' (e.g. `NC_000913.1`) or ':' (e.g. `chr1:alt`), which the
+/// shared `Range` parser would misread as name/chr separators and look up the
+/// wrong contig in the sizes map. The range suffix is therefore taken from
+/// the LAST colon followed by a digit, keeping the whole prefix as the
+/// contig name.
 pub fn parse_subrange(name: &str) -> Option<(String, u32, u32)> {
-    let rg = crate::libs::ds::Range::from_str(name);
-    if rg.is_valid() {
-        return Some((rg.chr().to_string(), *rg.start() as u32, *rg.end() as u32));
+    let bytes = name.as_bytes();
+    let mut cut = None;
+    for i in (0..bytes.len()).rev() {
+        if bytes[i] == b':' && i + 1 < bytes.len() && bytes[i + 1].is_ascii_digit() {
+            cut = Some(i);
+            break;
+        }
     }
-    None
+    let i = cut?;
+    let contig = &name[..i];
+    if contig.is_empty() {
+        return None;
+    }
+    let (start, end) = parse_range_tail(&name[i + 1..])?;
+    Some((contig.to_string(), start, end))
+}
+
+/// Parse a `start[-end]` tail (1-based inclusive, `end` defaults to `start`).
+fn parse_range_tail(tail: &str) -> Option<(u32, u32)> {
+    let (start_s, end_s) = match tail.split_once('-') {
+        Some((s, e)) => (s, e),
+        None => (tail, tail),
+    };
+    let all_digits = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit());
+    if !all_digits(start_s) || !all_digits(end_s) {
+        return None;
+    }
+    let start: u32 = start_s.parse().ok()?;
+    let end: u32 = end_s.parse().ok()?;
+    // 1-based inclusive; an empty or reversed range is invalid.
+    if start == 0 || end < start {
+        return None;
+    }
+    Some((start, end))
 }
 
 /// Compute (min, max) of `func` over a slice of Psl records.
@@ -1352,6 +1388,32 @@ pub fn lift<R: BufRead, W: Write>(
 #[allow(clippy::field_reassign_with_default)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parse_subrange_keeps_dotted_and_colon_contigs() {
+        // Regression: the shared Range parser read `NC_000913.1` as name + chr
+        // "1" and `chr1:alt` as chr "alt", so `psl lift` looked up the wrong
+        // contig in the sizes map and silently skipped the lift (s-align
+        // coverage then came from unlifted window coordinates).
+        assert_eq!(
+            parse_subrange("NC_000913.1:101-300"),
+            Some(("NC_000913.1".to_string(), 101, 300))
+        );
+        assert_eq!(
+            parse_subrange("chr1:alt:1-200"),
+            Some(("chr1:alt".to_string(), 1, 200))
+        );
+        assert_eq!(
+            parse_subrange("chr1:101-200"),
+            Some(("chr1".to_string(), 101, 200))
+        );
+        assert_eq!(parse_subrange("I:100"), Some(("I".to_string(), 100, 100)));
+        // Reversed/empty ranges and non-range names are invalid.
+        assert_eq!(parse_subrange("chr1:200-100"), None);
+        assert_eq!(parse_subrange("chr1:0-10"), None);
+        assert_eq!(parse_subrange("chr1"), None);
+        assert_eq!(parse_subrange("chr1:1x"), None);
+    }
 
     #[test]
     fn test_psl_display() {

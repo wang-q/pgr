@@ -54,7 +54,11 @@ pub(crate) fn chainnet_to_paf(
 
     let mut writer = pgr::writer(&abs_outfile)
         .with_context(|| format!("failed to open writer for {}", abs_outfile))?;
-    for maf in pgr::libs::io::list_files_ext("chainnet_out", "maf") {
+    // Sort the per-contig MAF files so the merged PAF order is deterministic
+    // across runs (read_dir order is filesystem-dependent).
+    let mut maf_files = pgr::libs::io::list_files_ext("chainnet_out", "maf");
+    maf_files.sort();
+    for maf in maf_files {
         let mut reader =
             pgr::reader(&maf).with_context(|| format!("failed to open MAF {}", maf))?;
         loop {

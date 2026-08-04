@@ -7,7 +7,8 @@ repetitive regions of a genome and emit runlist JSON ready for
 Command names use two dimensions:
 
 *   prefix `e` = external repeat library required, `s` = self (genome only);
-*   suffix `kmer` / `align` = detection mechanism (`align` variants are planned).
+*   suffix `kmer` / `align` = detection mechanism (k-mer counting or
+    alignment).
 
 ## Repeat libraries
 
@@ -192,7 +193,7 @@ pgr gff runlist tests/pgr/mg1655.rm.gff -o tests/pgr/mg1655.rm.json
 | `s-align` | Identify repetitive regions by self alignment |
 | `trf` | Identify tandem repeats via `trf` |
 
-All four emit runlist JSON ready for `pgr fa mask`:
+All five emit runlist JSON ready for `pgr fa mask`:
 
 ```bash
 pgr rept e-kmer tests/pgr/tncentral.fa.gz tests/genome/mg1655.fa.gz \
@@ -326,8 +327,6 @@ pgr rept e-align [OPTIONS] <repeat> <infile>
 (`(matches + repeat_matches) / (matches + mismatches + repeat_matches)`,
 insert bases excluded) — unlike `pgr sd`, whose block identity includes
 insert bases in the denominator.
-
-### Dependencies
 
 ### Notes
 

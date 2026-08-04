@@ -206,6 +206,30 @@ pub(crate) fn parse_record(rec: &[u8], k: usize, layout: RecordLayout) -> (u128,
     (kmer, cid, pos, strand)
 }
 
+/// Validate one decoded occurrence record against the index contig table.
+///
+/// The contig id must exist and the k-mer must start within the contig.
+/// Crafted indexes must fail with a friendly error here instead of
+/// panicking on the later contig-table lookups (Zero Panic).
+pub(crate) fn validate_record(
+    cid: u32,
+    pos: u32,
+    k: usize,
+    contigs: &[(String, u64)],
+) -> anyhow::Result<()> {
+    let Some((_, len)) = contigs.get(cid as usize) else {
+        anyhow::bail!(
+            "index record contig id {cid} out of range ({} contigs)",
+            contigs.len()
+        );
+    };
+    anyhow::ensure!(
+        pos as u64 + k as u64 <= *len,
+        "index record position {pos} beyond contig {cid} length {len}"
+    );
+    Ok(())
+}
+
 /// Bit width of the contig id within a packed position record (2^20 contigs).
 const CID_BITS: u32 = 20;
 /// Mask isolating the position bits of a packed position record.
@@ -430,6 +454,7 @@ impl PgiIndex {
             r.read_exact(&mut buf).context("reading index records")?;
             for rec in buf.chunks_exact(rec_size) {
                 let (kmer, cid, pos, strand) = parse_record(rec, k, layout);
+                validate_record(cid, pos, k, &contigs)?;
                 let pos_start = positions.len() as u32;
                 positions.push(pack_position(cid, pos, strand));
                 if last_kmer == Some(kmer) {
@@ -520,6 +545,7 @@ impl<R: Read> PgiStream<R> {
             self.buf_off += self.layout.size();
             self.recs_left -= 1;
             let (kmer, cid, pos, strand) = parse_record(rec, self.header.k, self.layout);
+            validate_record(cid, pos, self.header.k, &self.header.contigs)?;
             if let Some((e, poss)) = &mut cur {
                 if e.kmer == kmer {
                     poss.push(pack_position(cid, pos, strand));
@@ -620,6 +646,35 @@ mod tests {
             err.to_string().contains("implausible contig count"),
             "got: {err}"
         );
+    }
+
+    #[test]
+    fn crafted_record_contig_rejected_not_panic() {
+        // Regression: an occurrence record with a contig id beyond the
+        // contig table used to panic in the alignment contig lookups; the
+        // resident reader and the streaming reader must reject it with a
+        // friendly error.
+        let seq: Vec<u8> = (0..200u32).map(|i| b"ACGT"[(i % 4) as usize]).collect();
+        let idx = build_from_seqs(vec![(String::from("c1"), seq)], 10, 4, 2, false).unwrap();
+        let mut buf = Vec::new();
+        idx.write(&mut buf).unwrap();
+        corrupt_first_record_contig(&mut buf);
+
+        let err = PgiIndex::read(&mut std::io::Cursor::new(&buf)).unwrap_err();
+        assert!(err.to_string().contains("out of range"), "got: {err}");
+
+        let mut stream = PgiStream::open(std::io::Cursor::new(&buf)).unwrap();
+        let err = stream.next_batch(16).unwrap_err();
+        assert!(err.to_string().contains("out of range"), "got: {err}");
+    }
+
+    /// Set the contig id of the first occurrence record to 0x7f (127), which
+    /// is beyond any single-contig index's table.
+    fn corrupt_first_record_contig(buf: &mut [u8]) {
+        let (_h, _n, layout, records_off) =
+            parse_header_bytes(buf).expect("valid test index header");
+        let cont_off = records_off + layout.kmer_bytes + layout.pos_bytes;
+        buf[cont_off] = 0x7f;
     }
 
     #[test]

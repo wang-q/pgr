@@ -8,7 +8,7 @@ use clap::{ArgMatches, Command};
 /// Build the `pgr align` subcommand tree.
 pub fn make_subcommand() -> Command {
     Command::new("align")
-        .about("Aligns genomes or .pgi indexes into PSL blocks")
+        .about("Aligns genomes or .pgi indexes")
         .subcommand(lastz::make_subcommand())
         .subcommand(pgi::make_subcommand())
 }

@@ -45,6 +45,10 @@ pub fn lastz_to_hits(
     workdir: &str,
     opts: &SearchLastzOptions,
 ) -> anyhow::Result<Vec<Psl>> {
+    anyhow::ensure!(
+        !super::is_pgi_input(target) && !super::is_pgi_input(query),
+        "sd search/cross needs genome FASTA (plain or .gz), not a .pgi index"
+    );
     if which::which("lastz").is_err() {
         anyhow::bail!("lastz not found in PATH. Please install lastz first.");
     }
@@ -77,11 +81,14 @@ pub fn lastz_to_hits(
 
     // Convert every LAV in the workdir to PSL and apply the SD filters.
     let mut hits = Vec::new();
-    for entry in std::fs::read_dir(workdir)? {
-        let path = entry?.path();
-        if path.extension().and_then(|e| e.to_str()) != Some("lav") {
-            continue;
-        }
+    // Sort the LAV files so the output PSL order is deterministic across
+    // runs (read_dir order is filesystem-dependent).
+    let mut lav_files: Vec<std::path::PathBuf> = std::fs::read_dir(workdir)?
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("lav"))
+        .collect();
+    lav_files.sort();
+    for path in lav_files {
         let reader = crate::libs::io::reader(&path.to_string_lossy())
             .with_context(|| format!("failed to open LAV {}", path.display()))?;
         let mut psl_bytes = Vec::new();
@@ -116,14 +123,24 @@ fn decompress_if_gz(
     workdir: &str,
 ) -> anyhow::Result<Vec<std::path::PathBuf>> {
     let mut plain = Vec::with_capacity(files.len());
-    for f in files {
+    // Nested directories can hold same-named `.fa.gz` files whose basename
+    // (first dot segment) collides in the flat workdir; the second would
+    // silently overwrite the first. Suffix the duplicate outputs with the
+    // input index. The index is deterministic, so the self-mode second call
+    // over the same list reproduces the same paths.
+    let mut used: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for (idx, f) in files.iter().enumerate() {
         let is_gz = f.extension().and_then(|e| e.to_str()) == Some("gz");
         if !is_gz {
-            plain.push(f);
+            plain.push(f.clone());
             continue;
         }
         let base = crate::libs::io::get_basename(&f.to_string_lossy()).unwrap_or_default();
-        let out = std::path::Path::new(workdir).join(format!("{base}.plain.fa"));
+        let out = if used.insert(base.clone()) {
+            std::path::Path::new(workdir).join(format!("{base}.plain.fa"))
+        } else {
+            std::path::Path::new(workdir).join(format!("{base}.{idx}.plain.fa"))
+        };
         let mut reader = crate::libs::io::reader(&f.to_string_lossy())
             .with_context(|| format!("failed to open {}", f.display()))?;
         let mut writer = std::io::BufWriter::new(std::fs::File::create(&out)?);
@@ -169,5 +186,43 @@ mod tests {
         assert!(!passes_sd_filters(&too_short, 1000, 0.90));
         let low_id = psl(800, 150, 50); // len 1000, id 0.80
         assert!(!passes_sd_filters(&low_id, 1000, 0.90));
+    }
+
+    #[test]
+    fn decompress_colliding_basenames_stay_distinct() {
+        // Regression: two `.fa.gz` files with the same basename in different
+        // directories decompressed to the same flat output path, silently
+        // overwriting the first. Each input must keep its own plain file.
+        let dir = tempfile::TempDir::new().unwrap();
+        let workdir = dir.path().join("out");
+        std::fs::create_dir_all(&workdir).unwrap();
+        for (sub, name, seq) in [
+            ("a", "dup", "ACGTACGTACGTACGT"),
+            ("b", "dup", "TTTTCCCCAAAAGGGG"),
+        ] {
+            let subdir = dir.path().join(sub);
+            std::fs::create_dir_all(&subdir).unwrap();
+            let mut gz = flate2::write::GzEncoder::new(
+                std::fs::File::create(subdir.join(format!("{name}.fa.gz"))).unwrap(),
+                flate2::Compression::default(),
+            );
+            use std::io::Write;
+            write!(gz, ">{name}\n{seq}\n").unwrap();
+            gz.finish().unwrap();
+        }
+        let files = crate::libs::fmt::fa::find_fasta_files(dir.path());
+        assert_eq!(files.len(), 2);
+        let plain = decompress_if_gz(files, workdir.to_str().unwrap()).unwrap();
+        assert_eq!(plain.len(), 2);
+        assert_ne!(plain[0], plain[1], "colliding basenames must stay distinct");
+        let contents: Vec<String> = plain
+            .iter()
+            .map(|p| std::fs::read_to_string(p).unwrap())
+            .collect();
+        assert_eq!(contents.len(), 2);
+        assert!(
+            contents[0] != contents[1],
+            "each input must keep its own sequence"
+        );
     }
 }

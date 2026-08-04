@@ -203,58 +203,61 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         },
     };
     let keep = args.get_flag("keep_index");
-    let mut tmp: Option<tempfile::TempDir> = None;
-
-    let SideInput {
-        index: ref_index,
-        seqs: ref_side_seqs,
-    } = resolve_side(args, ref_input, "reference", &mut tmp, keep)?;
-    let SideInput {
-        index: query_index,
-        seqs: query_side_seqs,
-    } = if self_mode {
-        // Self-alignment resolves the same input once and reuses it on both
-        // sides (the sequence copy is bounded by the input size).
-        SideInput {
-            index: ref_index.clone(),
-            seqs: ref_side_seqs.clone(),
-        }
-    } else {
-        resolve_side(args, query_input, "query", &mut tmp, keep)?
-    };
-    let _tmp_guard = tmp;
-
-    // The reference index is consumed as a stream by the merge; the query
-    // index is memory-mapped (FastGA's GIX model) and decoded on demand, so
-    // neither index is materialized in full.
-    let mut r1 = pgr::reader(&ref_index)?;
-    let mut a = pgr::libs::pgi::PgiStream::open(&mut r1)?;
-    let b = pgr::libs::pgi::PgiMmap::open(std::path::Path::new(&query_index))?;
-
-    // Extension sequences come from genome inputs directly (validated against
-    // the index, which matters when a sibling index was reused) or from
-    // --ref-seq/--query-seq for .pgi inputs (validated the same way).
-    let ref_seqs = resolve_seqs(
-        args,
-        ref_side_seqs,
-        a.header().contigs.as_slice(),
-        "reference",
-        "ref_seq",
-    )?;
-    let query_seqs = resolve_seqs(args, query_side_seqs, b.contigs(), "query", "query_seq")?;
-    if ref_seqs.is_empty() != query_seqs.is_empty() {
-        anyhow::bail!(
-            "extension sequences are needed for both sides (genome inputs, or \
-             --ref-seq/--query-seq for .pgi inputs)"
-        );
-    }
-
     let parallel = *args.get_one::<usize>("parallel").unwrap();
     let pool = rayon::ThreadPoolBuilder::new()
         .num_threads(parallel)
         .build()
         .context("building align thread pool")?;
+    // Everything from the automatic index build through the merge/extension
+    // runs inside the `--parallel` pool, so the option caps rayon usage for
+    // the whole command (the sibling-index build used to run on the global
+    // pool regardless of --parallel).
     let psls = pool.install(|| -> anyhow::Result<Vec<pgr::libs::fmt::psl::Psl>> {
+        let mut tmp: Option<tempfile::TempDir> = None;
+        let SideInput {
+            index: ref_index,
+            seqs: ref_side_seqs,
+        } = resolve_side(args, ref_input, "reference", &mut tmp, keep)?;
+        let SideInput {
+            index: query_index,
+            seqs: query_side_seqs,
+        } = if self_mode {
+            // Self-alignment resolves the same input once and reuses it on
+            // both sides (the sequence copy is bounded by the input size).
+            SideInput {
+                index: ref_index.clone(),
+                seqs: ref_side_seqs.clone(),
+            }
+        } else {
+            resolve_side(args, query_input, "query", &mut tmp, keep)?
+        };
+        let _tmp_guard = tmp;
+
+        // The reference index is consumed as a stream by the merge; the query
+        // index is memory-mapped (FastGA's GIX model) and decoded on demand,
+        // so neither index is materialized in full.
+        let mut r1 = pgr::reader(&ref_index)?;
+        let mut a = pgr::libs::pgi::PgiStream::open(&mut r1)?;
+        let b = pgr::libs::pgi::PgiMmap::open(std::path::Path::new(&query_index))?;
+
+        // Extension sequences come from genome inputs directly (validated
+        // against the index, which matters when a sibling index was reused)
+        // or from --ref-seq/--query-seq for .pgi inputs (validated the same
+        // way).
+        let ref_seqs = resolve_seqs(
+            args,
+            ref_side_seqs,
+            a.header().contigs.as_slice(),
+            "reference",
+            "ref_seq",
+        )?;
+        let query_seqs = resolve_seqs(args, query_side_seqs, b.contigs(), "query", "query_seq")?;
+        if ref_seqs.is_empty() != query_seqs.is_empty() {
+            anyhow::bail!(
+                "extension sequences are needed for both sides (genome inputs, or \
+                 --ref-seq/--query-seq for .pgi inputs)"
+            );
+        }
         if ref_seqs.is_empty() {
             pgr::libs::pgi::align::align_to_psl_streaming(&mut a, &b, &params, self_mode)
         } else {
