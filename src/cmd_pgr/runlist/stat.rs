@@ -41,8 +41,12 @@ Examples:
 /// Execute the stat command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let outfile = crate::cmd_pgr::args::get_outfile(args);
-    let sizes = pgr::read_sizes::<i32>(args.get_one::<String>("chr.sizes").unwrap())?;
-    let json = pgr::libs::runlist::read_json(args.get_one::<String>("infile").unwrap())?;
+    let sizes_file = args.get_one::<String>("chr.sizes").unwrap();
+    let infile = args.get_one::<String>("infile").unwrap();
+    // The output is TSV, not a sizes or runlist file; refuse to overwrite one.
+    crate::cmd_pgr::args::ensure_outfile_distinct(outfile, [sizes_file.as_str(), infile.as_str()])?;
+    let sizes = pgr::read_sizes::<i32>(sizes_file)?;
+    let json = pgr::libs::runlist::read_json(infile)?;
     let set_of = pgr::libs::runlist::json_to_sets(&json)?;
     let is_multi = set_of.len() > 1 || !set_of.contains_key("__single__");
     let is_all = args.get_flag("all");

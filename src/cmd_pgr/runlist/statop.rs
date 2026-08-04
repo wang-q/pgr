@@ -64,10 +64,18 @@ Examples:
 /// Execute the statop command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let outfile = crate::cmd_pgr::args::get_outfile(args);
-    let sizes = pgr::read_sizes::<i32>(args.get_one::<String>("chr.sizes").unwrap())?;
-    let json1 = pgr::libs::runlist::read_json(args.get_one::<String>("infile1").unwrap())?;
+    let sizes_file = args.get_one::<String>("chr.sizes").unwrap();
+    let infile1 = args.get_one::<String>("infile1").unwrap();
+    let infile2 = args.get_one::<String>("infile2").unwrap();
+    // The output is TSV, not a sizes or runlist file; refuse to overwrite one.
+    crate::cmd_pgr::args::ensure_outfile_distinct(
+        outfile,
+        [sizes_file.as_str(), infile1.as_str(), infile2.as_str()],
+    )?;
+    let sizes = pgr::read_sizes::<i32>(sizes_file)?;
+    let json1 = pgr::libs::runlist::read_json(infile1)?;
     let s1_of = pgr::libs::runlist::json_to_sets(&json1)?;
-    let json2 = pgr::libs::runlist::read_json(args.get_one::<String>("infile2").unwrap())?;
+    let json2 = pgr::libs::runlist::read_json(infile2)?;
     let s2 = pgr::libs::runlist::json_to_set(&json2)?;
     let is_multi = s1_of.len() > 1 || !s1_of.contains_key("__single__");
     let is_all = args.get_flag("all");
