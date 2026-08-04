@@ -166,6 +166,97 @@ fn command_fa_gz_reindex_fail_not_bgzf() -> anyhow::Result<()> {
 }
 
 #[test]
+fn command_fa_gz_stdout_does_not_create_file() -> anyhow::Result<()> {
+    // Regression: `-o stdout` was opened with `File::create`, creating a literal
+    // file literally named `stdout` (plus `stdout.gzi`) in the CWD instead of
+    // writing the BGZF stream to standard output.
+    let tempdir = TempDir::new()?;
+    let tempdir_str = tempdir.path().to_str().unwrap();
+    let infile = std::path::absolute("tests/index/final.contigs.fa")?;
+
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
+    cmd.current_dir(tempdir_str)
+        .arg("fa")
+        .arg("gz")
+        .arg(infile)
+        .arg("-o")
+        .arg("stdout")
+        .assert()
+        .success();
+
+    // No literal `stdout` / `stdout.gzi` files may be created in the CWD.
+    assert!(!tempdir.path().join("stdout").exists());
+    assert!(!tempdir.path().join("stdout.gzi").exists());
+
+    tempdir.close()?;
+    Ok(())
+}
+
+#[test]
+fn command_fa_gz_reindex_rejects_outfile() -> anyhow::Result<()> {
+    // Regression: `--reindex` silently ignored `-o`, writing the index beside the
+    // input regardless. The combination is now rejected since the output location
+    // is fixed to the input file.
+    let temp = TempDir::new()?;
+    let raw_infile = "tests/fasta/ufasta.fa";
+    let bgzf_file = temp.path().join("work.fa.gz");
+    let out_arg = temp.path().join("out.fa.gz");
+
+    let mut cmd_compress = assert_cmd::Command::cargo_bin("pgr").unwrap();
+    cmd_compress
+        .arg("fa")
+        .arg("gz")
+        .arg(raw_infile)
+        .arg("-o")
+        .arg(bgzf_file.to_str().unwrap())
+        .assert()
+        .success();
+
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
+    cmd.arg("fa")
+        .arg("gz")
+        .arg(bgzf_file.to_str().unwrap())
+        .arg("--reindex")
+        .arg("-o")
+        .arg(out_arg.to_str().unwrap())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "cannot be combined with -o/--outfile",
+        ));
+
+    Ok(())
+}
+
+#[test]
+fn command_range_preserves_non_iupac_on_reverse_strand() -> anyhow::Result<()> {
+    // Regression: `range` on a `(-)` strand used noodles' `Sequence::complement()`,
+    // which errored on non-IUPAC characters like `-` (forward strand worked).
+    // Reverse complement of `ACGT-ACG` is `CGT-ACGT` (`-` preserved).
+    let tempdir = TempDir::new()?;
+    let tempdir_str = tempdir.path().to_str().unwrap();
+    let fa = format!("{}/g.fa", tempdir_str);
+    std::fs::write(&fa, ">chr1\nACGT-ACGT\n")?;
+
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
+    let output = cmd
+        .arg("fa")
+        .arg("range")
+        .arg(&fa)
+        .arg("chr1(-):1-8")
+        .output()?;
+    let stdout = String::from_utf8(output.stdout)?;
+    assert!(
+        stdout.contains(">chr1(-):1-8\nCGT-ACGT\n"),
+        "got: {}",
+        stdout
+    );
+
+    tempdir.close()?;
+    Ok(())
+}
+
+#[test]
 fn command_range() -> anyhow::Result<()> {
     let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
     let output = cmd
@@ -205,6 +296,36 @@ fn command_range_r() -> anyhow::Result<()> {
     assert_eq!(stdout.lines().count(), 12);
     assert!(stdout.contains(">k81_130:11-20\nGGTGAATCAA\n"));
 
+    Ok(())
+}
+
+#[test]
+fn command_range_output_not_overwrite_rgfile() -> anyhow::Result<()> {
+    // `-o` must not overwrite the `-r` rgfile, which is read *after* the
+    // output writer is opened (regression: it used to be truncated).
+    let tempdir = TempDir::new()?;
+    let tempdir_str = tempdir.path().to_str().unwrap();
+
+    let rgfile = format!("{}/regions.rg", tempdir_str);
+    std::fs::write(&rgfile, "k81_130:11-20\n")?;
+
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
+    cmd.arg("fa")
+        .arg("range")
+        .arg("tests/index/final.contigs.fa.gz")
+        .arg("-r")
+        .arg(&rgfile)
+        .arg("-o")
+        .arg(&rgfile)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("is also an input file"));
+
+    // The rgfile must be preserved.
+    let content = std::fs::read_to_string(&rgfile)?;
+    assert_eq!(content, "k81_130:11-20\n");
+
+    tempdir.close()?;
     Ok(())
 }
 

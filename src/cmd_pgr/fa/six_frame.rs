@@ -10,13 +10,14 @@ pub fn make_subcommand() -> Command {
             r###"
 This command translates DNA sequences in six frames and identifies ORFs.
 
-Translation frames:
-* Forward strand: +1, +2, +3 (starting at positions 0, 1, 2)
-* Reverse strand: -1, -2, -3 (complement sequence, then start at 0, 1, 2)
-
 Output format:
 >sequence_name(strand):start-end|frame=N
 MXXXXXX*
+
+Translation frames:
+* frame is the 0-based reading-frame offset within the strand (0, 1, or 2)
+* Forward strand: strand is '+'; the offset is applied to the sequence as-is
+* Reverse strand: strand is '-'; the offset is applied after reverse-complementing
 
 Notes:
 * Filters: --min-len N (min length), --start-met (starts with M), --end (ends with *)

@@ -65,18 +65,20 @@ Examples:
 /// Execute the interleave command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let outfile = crate::cmd_pgr::args::get_outfile(args);
+    let infiles: Vec<String> = args
+        .get_many::<String>("infiles")
+        .unwrap()
+        .cloned()
+        .collect();
+
+    crate::cmd_pgr::args::ensure_outfile_distinct(outfile, infiles.iter().map(String::as_str))?;
+
     let mut writer =
         pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
 
     let is_out_fq = args.get_flag("fq");
     let opt_prefix = args.get_one::<String>("name_prefix").unwrap();
     let opt_start = *args.get_one::<usize>("start_index").unwrap();
-
-    let infiles: Vec<String> = args
-        .get_many::<String>("infiles")
-        .unwrap()
-        .cloned()
-        .collect();
 
     let _final_idx =
         pgr::libs::fmt::fq::interleave(&mut writer, &infiles, opt_prefix, opt_start, is_out_fq)?;

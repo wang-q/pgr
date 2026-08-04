@@ -260,6 +260,23 @@ fn command_rc() {
 }
 
 #[test]
+fn command_rc_preserves_non_iupac_chars() {
+    // Regression: `rc` previously used noodles' `Sequence::complement()`, which
+    // errored on non-IUPAC characters like `-` and `*`. The documented behavior
+    // is "Non-IUPAC characters are preserved as-is". Sequence `ACGT-*NR-` should
+    // reverse-complement to `-YN*-ACGT` (standard bases and IUPAC `R`->`Y`
+    // complemented, `-`/`*` kept as-is).
+    let (stdout, stderr) = PgrCmd::new()
+        .args(&["fa", "rc", "stdin"])
+        .stdin(">s1\nACGT-*NR-\n")
+        .run();
+
+    assert!(stderr.is_empty(), "unexpected stderr: {}", stderr);
+    assert!(stdout.contains(">RC_s1"), "name");
+    assert!(stdout.contains("-YN*-ACGT"), "sequence");
+}
+
+#[test]
 fn command_count() {
     let (stdout, _) = PgrCmd::new()
         .args(&["fa", "count", "tests/fasta/ufasta.fa"])
@@ -418,6 +435,37 @@ fn command_dedup() {
     assert_eq!(stdout.lines().count(), 7);
     assert!(stdout.contains(">read0"));
     assert!(stdout.contains("read0\tread3"));
+}
+
+#[test]
+fn command_dedup_dups_file_not_overwrite_outfile() {
+    // `--dups-file` is opened with `File::create` (truncate) *after* the main
+    // `-o` writer is already buffering records, so pointing it at the same path
+    // must be rejected (regression: it used to truncate and interleave with the
+    // main output, corrupting it).
+    let tempdir = TempDir::new().unwrap();
+    let tempdir_str = tempdir.path().to_str().unwrap();
+    let outfile = format!("{}/out.fa", tempdir_str);
+
+    PgrCmd::new()
+        .args(&[
+            "fa",
+            "dedup",
+            "tests/fasta/dedup.fa",
+            "--seq",
+            "-o",
+            &outfile,
+            "--dups-file",
+            &outfile,
+        ])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("would overwrite the main output"));
+
+    // The outfile must not exist (nothing was written).
+    assert!(!std::path::Path::new(&outfile).exists());
+
+    tempdir.close().unwrap();
 }
 
 #[test]
@@ -701,6 +749,83 @@ fn command_fa_split_output_not_overwrite_input() {
             input.to_str().unwrap(),
             "-o",
             temp.path().to_str().unwrap(),
+        ])
+        .run_fail();
+
+    assert!(stderr.contains("would overwrite input file"));
+    assert_eq!(fs::read_to_string(&input).unwrap(), original);
+}
+
+#[test]
+fn command_fa_range_output_not_overwrite_loc_index() {
+    // `range` reads the `.loc` sidecar index after the output writer is
+    // opened, so `-o` naming `infile.loc` would truncate the index before it
+    // is loaded (silently yielding empty output). It must be rejected.
+    let temp = TempDir::new().unwrap();
+    let input = temp.path().join("g.fa");
+    let original = ">chr1\nACGTACGTACGTACGT\n";
+    fs::write(&input, original).unwrap();
+    let loc = format!("{}.loc", input.display());
+
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "fa",
+            "range",
+            input.to_str().unwrap(),
+            "chr1:1-4",
+            "-o",
+            &loc,
+        ])
+        .run_fail();
+
+    assert!(stderr.contains("is also an input file"));
+    assert_eq!(fs::read_to_string(&input).unwrap(), original);
+}
+
+#[test]
+fn command_fa_gz_directory_input_no_stray_output() {
+    // `gz` opens the input with `File::open` directly (which succeeds on
+    // directories on Unix), so a directory argument used to create the output
+    // file before failing on the first read. The directory must be rejected
+    // up front, leaving no stray output file behind.
+    let temp = TempDir::new().unwrap();
+    let dir = temp.path().join("some_dir");
+    fs::create_dir(&dir).unwrap();
+    let outfile = format!("{}.gz", dir.display());
+
+    let (_, stderr) = PgrCmd::new()
+        .args(&["fa", "gz", dir.to_str().unwrap()])
+        .run_fail();
+
+    assert!(stderr.contains("is a directory"));
+    assert!(!std::path::Path::new(&outfile).exists());
+}
+
+#[test]
+fn command_fa_window_chunk_output_not_overwrite_input() {
+    // `window --chunk-records` derives chunk filenames from `-o` (e.g.
+    // `out.001.fa`); a chunk name that collides with the input must be
+    // rejected before it truncates the input mid-stream.
+    let temp = TempDir::new().unwrap();
+    // Input named exactly like the first generated chunk file of `-o out.fa`.
+    let input = temp.path().join("out.001.fa");
+    let original = ">seq\nACGTACGTACGTACGT\n";
+    fs::write(&input, original).unwrap();
+    let outfile = temp.path().join("out.fa");
+
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "fa",
+            "window",
+            input.to_str().unwrap(),
+            "--window",
+            "4",
+            "--step",
+            "4",
+            "--chunk-records",
+            "2",
+            "-o",
+            outfile.to_str().unwrap(),
         ])
         .run_fail();
 

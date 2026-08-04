@@ -104,6 +104,14 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     crate::cmd_pgr::args::ensure_outfile_distinct(&outfile, [infile.as_str()])?;
 
+    // Unlike `io::reader`, the input here is opened with `File::open` directly,
+    // which succeeds on directories on Unix, deferring the "Is a directory"
+    // error to the first read — after the output file has already been
+    // created. Reject it up front so the stray output file is never made.
+    if infile != "stdin" && std::path::Path::new(infile).is_dir() {
+        anyhow::bail!("could not open {}: is a directory", infile);
+    }
+
     // Input
     let mut reader: Box<dyn std::io::BufRead> = if infile == "stdin" {
         // Use 64KB buffer (BGZF block size) to optimize read performance

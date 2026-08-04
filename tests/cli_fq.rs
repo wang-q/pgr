@@ -20,6 +20,75 @@ fn command_fq_to_fa() {
 }
 
 #[test]
+fn command_fq_to_fa_output_same_as_input_rejected() {
+    // Regression: `to-fa` used to open the output writer (truncate) before
+    // reading the input, so `-o` pointing at the input silently destroyed it.
+    let temp = tempfile::Builder::new().suffix(".fq").tempfile().unwrap();
+    let path = temp.path().to_str().unwrap().to_string();
+    std::fs::write(&path, "@SEQ\nACGT\n+\n!!!!\n").unwrap();
+
+    PgrCmd::new()
+        .args(&["fq", "to-fa", &path, "-o", &path])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("is also an input file"));
+
+    // The input must be left intact.
+    assert_eq!(
+        std::fs::read_to_string(&path).unwrap(),
+        "@SEQ\nACGT\n+\n!!!!\n"
+    );
+}
+
+#[test]
+fn command_fq_interleave_output_same_as_input_rejected() {
+    // Regression: `interleave` used to open the output writer (truncate)
+    // before reading the inputs, so `-o` pointing at an input destroyed it.
+    let temp = tempfile::Builder::new().suffix(".fq").tempfile().unwrap();
+    let path = temp.path().to_str().unwrap().to_string();
+    std::fs::write(&path, "@SEQ\nACGT\n+\n!!!!\n").unwrap();
+
+    PgrCmd::new()
+        .args(&["fq", "interleave", &path, "-o", &path])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("is also an input file"));
+
+    // The input must be left intact.
+    assert_eq!(
+        std::fs::read_to_string(&path).unwrap(),
+        "@SEQ\nACGT\n+\n!!!!\n"
+    );
+}
+
+#[test]
+fn command_fq_interleave_mismatched_read_counts_rejected() {
+    // Regression: two-file interleave used to silently truncate to the shorter
+    // file; it must now error instead of dropping reads.
+    let r1 = tempfile::Builder::new().suffix(".fq").tempfile().unwrap();
+    let r2 = tempfile::Builder::new().suffix(".fq").tempfile().unwrap();
+    let out_dir = tempfile::tempdir().unwrap();
+    let out = out_dir.path().join("out.fq");
+    std::fs::write(r1.path(), "@R1\nACGT\n+\n!!!!\n").unwrap();
+    std::fs::write(r2.path(), "@R2\nAC\n+\n!!\n@R2b\nACGT\n+\n!!!!\n").unwrap();
+
+    PgrCmd::new()
+        .args(&[
+            "fq",
+            "interleave",
+            r1.path().to_str().unwrap(),
+            r2.path().to_str().unwrap(),
+            "-o",
+            out.to_str().unwrap(),
+        ])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains(
+            "paired files have different numbers of reads",
+        ));
+}
+
+#[test]
 fn command_fq_interleave_coverage_gap() {
     // 1. 1 file (FQ) -> Output FA
     let (stdout, _) = PgrCmd::new()

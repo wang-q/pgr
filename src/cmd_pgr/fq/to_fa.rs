@@ -13,7 +13,7 @@ This command converts FASTQ format sequences to FASTA format.
 Features:
 * Automatic format detection
 * Preserves sequence names
-* Supports compressed input/output
+* Supports compressed input
 * Processes multiple input files
 
 Examples:
@@ -34,6 +34,12 @@ Examples:
 /// Execute the to-fa command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let outfile = crate::cmd_pgr::args::get_outfile(args);
+    crate::cmd_pgr::args::ensure_outfile_distinct(
+        outfile,
+        args.get_many::<String>("infiles")
+            .unwrap()
+            .map(|s| s.as_str()),
+    )?;
     let mut fa_out = pgr::libs::fmt::fa::writer(outfile)
         .with_context(|| format!("Failed to open writer for {}", outfile))?;
 
