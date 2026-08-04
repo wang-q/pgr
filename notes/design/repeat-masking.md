@@ -537,7 +537,7 @@ trf/e-align 下 json key 均完整；三个 e-kmer **并行**（-P 修复后）�
 `Range::from_str` 的 `.` 拆分同时服务 FASTA 头解析、`psl to-range` 等
 消费者；全局去掉拆分是破坏性变更。继续沿用方案 3 的 `c1..cN` 映射
 （成本极低、已验证 `NC_000913.1` 与 Fusarium 44 条 scaffold 的 key
-完整）。完整论证见 notes/audit/audit-runlist.md「带点 contig 名截断
+完整）。完整论证见 notes/audit/audit-runlist-rg.md「带点 contig 名截断
 bug 的处置结论」。
 
 #### 真核初探：Fusarium graminearum（2026-08-03）

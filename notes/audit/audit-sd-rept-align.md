@@ -1,41 +1,23 @@
-# sd / rept / align 代码与文档审核记录（合并版，2026-08-04）
+# sd / rept / align 命令族代码审核记录（2026-08-04）
 
-对新增命令族 sd / rept / align 的代码与文档进行多轮深入审核。范围：
-sd（8 命令 + libs/sd）、rept（6 命令 + libs/pl）、align（pgi/lastz +
-libs/pgi、libs/lastz、libs/fmt/lav、alignment DP），约 8000 行代码逐文件
-审完；文档 docs/{sd,rept,align-pgi,align-lastz}.md 全部核对。每轮发现
-问题后修复并进入下一轮复核。第一轮（#1-25）连续两轮无新问题后，应
-用户要求追加第二轮（#26-34，UCSC PSL 负链约定、greedy 链合并等），并
-对照 UCSC kent 与 FastGA 官方源码复核（#26a/26b/31a）确认修复方向。
-最终 977 测试全绿、fmt / clippy（--all-targets）干净。
+对新增命令族 sd / rept / align 的代码与文档进行多轮深入审核。范围：sd（8
+命令 + libs/sd）、rept（6 命令 + libs/pl）、align（pgi/lastz + libs/pgi、
+libs/lastz、libs/fmt/lav、alignment DP），约 8000 行代码逐文件审完；文档
+docs/{sd,rept,align-pgi,align-lastz}.md 全部核对。
 
-## 修复的缺陷（34 处）
+轮次：第一轮 #1-25；连续两轮无新问题后，应要求追加第二轮 #26-34（UCSC
+PSL 负链约定、greedy 链合并等），对照 UCSC kent 与 FastGA 官方源码复核
+（#26a/26b/31a）确认修复方向；第三轮 #35-37；第四轮 #37 精修；第五/六轮
+确认。每轮发现问题后修复并进入下一轮复核，连续两轮无新问题后收束。最终
+995 测试全绿、`cargo fmt` / `cargo clippy --all-targets -- -D warnings`
+干净。
 
-### 索引与链算法（3 处，重大）
+## 修复的缺陷（共 37 处）
 
-1. **pgi 索引 k-mer key 与位置错配（所有 pgi 工作流受影响）**：
-   `collect_one_contig` 两处叠加——closed-syncmer 会把同一位置选中两次
-   （窗口 last-min 与 first-min 重合），且 flush 循环用当前滚动 key 给所有
-   待处理位置配 key，多位置同迭代弹出时早期位置的 key 错配成后者的 k-mer。
-   实测 2 Mb 随机基因组索引多出 39% 错配/重复记录，self 对齐产出 101 条
-   伪自比对块。修复：pending 入队去重（HashSet）；flush 时仅当
-   `pos + k - 1 == i` 才用滚动 key，否则按位置重算（含 N 防护）；RC 记录
-   改用 `rc_key(key, k)`。回归测试
-   `index_records_match_sequence_positions`。
-2. **tube 排序键 anti/bucket 溢出（>8 Mb 基因组 tube 失效）**：
-   `chain_tubes` 的 u128 排序键中 anti 只分配 24 位，a_pos + b_pos ≥ 2^24
-   时高位污染 bucket 字段，tube 链被碎片化/丢失（8.9 Mb 串联重复修复前
-   tube 输出 0 条正确块）。修复：anti 扩到 32 位、bucket 扩到 32 位，
-   radix 键位不变。回归测试
-   `tube_sort_key_supports_large_anti_coordinates`。
-3. **tube 排序键负对角线回绕（>64 Mb 间距的重复失效）**：
-   `BUCK_OFF = 1,000,000` 只覆盖到 -64 Mb；更深负对角线 `as u64` 回绕后
-   高 32 位 0xFFFF 污染 strand/contig 字段，跨 contig 交错排序、链被切断
-   （多 contig 深负对角线场景实测 0 条 tube）。修复：`BUCK_OFF` 改为
-   `1 << 26`。回归测试 `tube_sort_key_supports_deeply_negative_diagonals`
-   与 `tube_sort_key_does_not_mix_contigs_at_negative_diagonals`。
+修复按发现顺序编号 #1-37，按类别分组；#26a/26b/31a 为外部源码复核，
+见「与外部参考实现的语义一致性核对」。
 
-### 崩溃 / 越界 / 溢出（8 处，Zero Panic）
+### 崩溃 / 越界 / 溢出（Zero Panic，10 处）
 
 4. **sd/run.rs 解析 elem.bed 越界 panic**：短行直接取 `f[4]`。加
    `f.len() < 8` 检查（与 cover.rs 一致）。
@@ -67,12 +49,49 @@ libs/pgi、libs/lastz、libs/fmt/lav、alignment DP），约 8000 行代码逐�
 10. **pgi build u32 溢出防护**：`pos_start: positions.len() as u32` 在
     >42 亿 k-mer 记录时静默截断索引。加 `payloads.len() <= u32::MAX` 防御
     检查（无法用真实规模测试，代码审查覆盖）。
-11. **repeat.rs 两处吞 IO 错误**：`map_while(Result::ok)` 在读取中途出错时
-    静默截断（e_align 的 PSL 过滤、run_profex_per_chr 的 Profex 输出）。
-    改为 `let line = line?;` 传播错误。
+29. **非 UTF-8 临时目录路径 panic（记录项落实）**：`PipelineCtx::new`/
+    `enter` 与 `sd search`/`sd cross` 对 `tempfile::TempDir` 路径做
+    `to_str().unwrap()`，`$TMPDIR` 含非 UTF-8 字节时 panic（Zero Panic
+    违反）。统一改用 `io::path_to_str` 返回友好错误。
+35. **`align_banded_local` 序列长度悬殊时 DP 数组越界 panic**：
+    `banded.rs` 的行循环把 j_lo 钳到 `[1, m]`（`min(m)`）而不是与对角带
+    求交；当一条序列远长于另一条时（如 q=2000、t=100、band=4），行尾的
+    `off = j - i - diag0 + band` 为负，`as usize` 回绕成超大下标，
+    `mscore[c]` 直接越界 panic（debug 实测 "attempt to add with overflow"）。
+    修复：j_lo/j_hi 改为 `max(1, i+diag0-band)` / `min(m, i+diag0+band)`，
+    空交集直接跳过该行；off 恒落在 `[0, width)`。当前 align 管线的调用
+    （等长窗口）不触发，但作为公开 lib API 必须零 panic。回归测试
+    `unbalanced_lengths_do_not_panic`。
+36. **lav `l` 行极值坐标减法溢出 panic**：`parse_a` 用 `parse::<i64>()? - 1`
+    解析 1-based 起点（i64::MIN 时下溢），跨度一致性检查
+    `(q_end - q_start) != (t_end - t_start)` 在 `q_end=i64::MAX`、
+    `q_start=-1` 时也溢出；构造输入在 debug 构建直接 panic。修复：起点
+    `checked_sub(1)`、跨度用 `checked_sub` 比较，越界值报 InvalidData。
+    回归测试 `extreme_l_line_values_do_not_panic`。
 
-### 功能正确性（7 处）
+### 功能正确性 / 算法（13 处；#1-3 为重大索引/链算法缺陷）
 
+1. **（重大）pgi 索引 k-mer key 与位置错配（所有 pgi 工作流受影响）**：
+   `collect_one_contig` 两处叠加——closed-syncmer 会把同一位置选中两次
+   （窗口 last-min 与 first-min 重合），且 flush 循环用当前滚动 key 给所有
+   待处理位置配 key，多位置同迭代弹出时早期位置的 key 错配成后者的 k-mer。
+   实测 2 Mb 随机基因组索引多出 39% 错配/重复记录，self 对齐产出 101 条
+   伪自比对块。修复：pending 入队去重（HashSet）；flush 时仅当
+   `pos + k - 1 == i` 才用滚动 key，否则按位置重算（含 N 防护）；RC 记录
+   改用 `rc_key(key, k)`。回归测试
+   `index_records_match_sequence_positions`。
+2. **（重大）tube 排序键 anti/bucket 溢出（>8 Mb 基因组 tube 失效）**：
+   `chain_tubes` 的 u128 排序键中 anti 只分配 24 位，a_pos + b_pos ≥ 2^24
+   时高位污染 bucket 字段，tube 链被碎片化/丢失（8.9 Mb 串联重复修复前
+   tube 输出 0 条正确块）。修复：anti 扩到 32 位、bucket 扩到 32 位，
+   radix 键位不变。回归测试
+   `tube_sort_key_supports_large_anti_coordinates`。
+3. **（重大）tube 排序键负对角线回绕（>64 Mb 间距的重复失效）**：
+   `BUCK_OFF = 1,000,000` 只覆盖到 -64 Mb；更深负对角线 `as u64` 回绕后
+   高 32 位 0xFFFF 污染 strand/contig 字段，跨 contig 交错排序、链被切断
+   （多 contig 深负对角线场景实测 0 条 tube）。修复：`BUCK_OFF` 改为
+   `1 << 26`。回归测试 `tube_sort_key_supports_deeply_negative_diagonals`
+   与 `tube_sort_key_does_not_mix_contigs_at_negative_diagonals`。
 12. **cluster.rs 重叠 union 漏连嵌套区间**：按 start 排序后仅用相邻对做
     union-find，A 包含 B、C 且 B/C 不相交时 C 被拆成独立簇。修复：扫描时
     跟踪已见区间的最大右端，与先前区间重叠者必与最大右端区间重叠。回归
@@ -107,8 +126,76 @@ libs/pgi、libs/lastz、libs/fmt/lav、alignment DP），约 8000 行代码逐�
     时 `is_self` 仍为 false，目录输入跑 n×n 全交叉、单文件不传 `--self`
     （产生序列 vs 自身的平凡比对），与文档"省略 query 即 --self"相悖。
     修复：传 `self_mode`。回归测试 `command_align_lastz_omitted_query_is_self`。
+26. **`psl lift` 负链记录的外层坐标提升错误（UCSC 约定违反）**：
+    `Psl::lift_query`/`lift_target` 对 `-` 链记录把 `qStart/qEnd`
+    （`tStart/tEnd`）按 `real_size - end_0` 平移。但按 UCSC PSL 规范（以及
+    pgr 自己的两个产出方 `pgi align` 与 `lav_to_psl`），`qStart/qEnd` 恒为
+    正向坐标，只有块级 `qStarts` 才在反向互补坐标系中。正确做法：
+    `qStart/qEnd += start_0`，`qStarts += (real_size - end_0)`。
+    实测影响：s-align 中间产物 `lifted.psl` 中 `-` 链记录
+    `chr:1201-1400` 窗口的 qStart/qEnd 输出 `[4200,4301)`，正确值应为
+    `[1200,1301)`。s-align 最终输出不受影响（`psl to-range` 只消费
+    `qStarts`，双重反转恰好抵消），但任何直接消费 lifted PSL 的下游会拿到
+    错误坐标。原 `test_lift_basic`/`test_lift_target` 夹具本身不符合 UCSC
+    约定（`-` 记录的 qStarts 与 qStart/qEnd 同框），把错误行为固化进了
+    测试。修复 `lift_query`/`lift_target`、夹具改为符合约定
+    （`qStarts = qSize - qEnd`），并新增回归测试
+    `test_lift_minus_strand_forward_coordinates`（含 to-range 往返校验）。
+27. **s-align / e-align 的 soft-mask 警告误报 N gap**：检测用
+    `pgr fa masked`（同时报告 lowercase 与 N 区域），纯 N gap 基因组也会
+    触发"lowercase soft-mask"警告并误导用户 `tr a-z A-Z`。改为
+    `has_soft_mask` 直接扫描 FASTA 的 lowercase 碱基（内存按记录有界），
+    新增单元回归测试 `soft_mask_detection_ignores_n_gaps`。
+31. **greedy 链合并导致倒位 SD 漏检（上一轮"待决策"项，已定方案 1 落实）**：
+    `merge_adjacent_chains` 把同一对角线、间隔在 `--merge-gap` 内的两条链
+    合并。倒位重复的两个互反链共享同一对角线（实测 diag 均为 500），间隔
+    1.8 kb 无种子，被合并成一条嵌合链；单窗口扩展（16 kb）把两端 100%
+    拷贝与中间非同源区连成一个 78% identity 大块，`sd search` identity
+    过滤整块丢弃。同一输入 lastz 与 tube 均能检出。修复：合并条件增加
+    `|diagA − diagB| > 0`——真实 IS 插入会平移对角线（与 merge 的设计初衷
+    "对角线平移断链"一致），同对角线纯间隔是两个独立同源块。同步更新
+    `merge_adjacent_chains_stitches_syntenic_blocks`（原"1.2 kb 插入"场景
+    对角线差为 0，与真实插入不符，改为 4 bp 平移）并新增
+    `command_sd_search_pgi_inverted_repeat` 回归测试（构造
+    rand+dup+rand+rc(dup)+rand，检出两条 100% 的 1200 bp 倒位块；
+    修复前 0 条）。`sd run` 端到端现在输出 2 set × 2 CORE 行。
+37. **pgi merge 频率过滤两侧边界不一致**：A 侧 `ea_freq > freq` 保留
+    `== freq` 的 k-mer，B 侧扩展范围 `occ >= freq` 与 FastGA GIXmake
+    （"only k-mers whose count is less than the adaptamer frequency cutoff"）
+    都丢弃 `>= freq`。交叉比对时（A 侧恰好 freq 次、B 侧罕见）pgr 会多出
+    FastGA 不存在的种子。修复：A 侧改为 `ea_freq >= freq`；B 侧把
+    `== freq` 的条目整体视为"不在索引中"（FastGA GIX 在构建期就排除
+    `>= FREQ` 的 k-mer）——最大共享前缀扫描、occ 累计、发射循环三处统一
+    用 `>= freq` 跳过 / `< freq` 计入。原实现里 `== freq` 的 B 侧条目会
+    抬高 m 并触发整段丢弃，与 FastGA 不符（FastGA 中该条目不存在，同范围
+    的稀有条目仍可命中）。回归测试
+    `freq_boundary_drops_exact_freq_on_reference_side` 与
+    `exact_freq_query_entries_are_absent_not_range_killers`。
+    （第四轮精修）复查时发现还有两处残留不一致：B 侧"最大共享前缀 m
+    扫描"与"扩展范围 occ 累计"仍把 `== freq` 的条目视为存在（`> freq` /
+    `<= freq`），而 FastGA GIXmake 在构建期就排除 `>= FREQ` 的 k-mer——
+    这些条目应整体视为"不在索引中"。统一改为：m 扫描 `>= freq` 跳过、
+    occ 累计 `< freq` 计入、发射循环 `< freq`。原
+    `merge_filters_extended_range_by_occurrences` 测试断言的是旧行为
+    （`== freq` 条目丢弃整段），按 FastGA 语义改写为"多个低于阈值的条目
+    总和 >= freq 才丢弃整段"，并新增
+    `exact_freq_query_entries_are_absent_not_range_killers`
+    （`== freq` 条目旁稀有条目仍以 25 bp 前缀命中）。
 
-### 外部工具与参数 / CLI（7 处）
+### 输入校验 / 静默错误（3 处）
+
+11. **repeat.rs 两处吞 IO 错误**：`map_while(Result::ok)` 在读取中途出错时
+    静默截断（e_align 的 PSL 过滤、run_profex_per_chr 的 Profex 输出）。
+    改为 `let line = line?;` 传播错误。
+32. **e-align PSL 过滤静默跳过畸形行（记录项落实）**：`run_align_repeat_
+    pipeline` 对解析失败的 PSL 行 `let Ok(psl) = ... else { continue }`
+    静默丢弃，与其余命令的 `parse_or_warn`（warn + 跳过）不一致，畸形输入
+    难以诊断。补 `log::warn!`。
+34. **decompose 对无法解析的 FASTA 头静默丢弃（记录项落实）**：
+    `decompose::parse_fasta` 对解析失败的记录头静默跳过，畸形 cluster
+    FASTA 的输入被悄悄忽略。补 `log::warn!`（与 `parse_or_warn` 行为一致）。
+
+### 外部工具与参数 / CLI / 文档（11 处）
 
 18. **lastz 静默失败**：`run_lastz` 对失败只打日志、返回 Ok，所有 job 失败
     时调用方拿到空结果无提示。改为统计失败数并 bail（实测损坏输入报
@@ -142,26 +229,102 @@ libs/pgi、libs/lastz、libs/fmt/lav、alignment DP），约 8000 行代码逐�
     行为补进帮助与用户文档；align-pgi 注明 `.gz` 输入的索引命名为
     `<name-without-.gz>.pgi`；docs/sd.md 同步 lastz 单序列/纯文本约束与
     SD 搜索前勿用自比对的提醒；TnCentral 示例路径修正。
+28. **帮助文本与文档不一致（lastz 单序列约束）**：docs/sd.md 已注明 lastz
+    引擎要求单序列 FASTA，但 `sd search`/`sd cross` 的命令内帮助漏掉该
+    说明；`sd cross` 的文档段落也未注明。已同步四处。
+30. **e-align identity 定义未说明（记录项落实）**：e-align 的
+    `--min-identity` 用 gap-compressed identity（不含 insert 碱基），与 sd
+    的 `(matches+repeats)/block_len` 不同，rept.md 与命令帮助均未说明。
+    已补文档说明。
+33. **主帮助文本 rept 子命令列表遗漏**：`src/pgr.rs` 的 about 帮助里
+    `rept - Repeat detection: e-kmer, s-kmer, trf` 少了 `e-align` 与
+    `s-align`，与实际注册的 5 个子命令不符。已补齐。
 
-## 排除的疑点
+## 与外部参考实现的语义一致性核对
+
+### #26 的 UCSC kent 源码复核
+
+用 UCSC 官方 kent 仓库源码
+`src/hg/utils/pslLiftSubrangeBlat/pslLiftSubrangeBlat.c` 的 `liftSide`
+逐字段复核 #26 的修复，结论一致：
+
+* kent 行为：`qStart/qEnd += subrange_start`；`-` 链时仅块级
+  `qStarts += (seqSize - subrange_end)`（`reverseIntRange` 的结果）。
+* kent 官方测试 `tests/input/qSubrange.psl` → `expected/qSubRangeTest.psl`
+  的 `-` 链记录（chr21:33043300-33104451，qSize 61151，qStart 12，
+  qEnd 61131，qStarts 首块 20）lift 后 qStart 33043312、qEnd 33104431、
+  qStarts 首块 15025464，满足 `qStarts[0] = seqSize - qEnd =
+  48129895 - 33104431 = 15025464`，且与同文件未子范围化的 chr21
+  记录逐字段一致。原夹具/实现的"负链 qStarts 与 qStart/qEnd 同帧"
+  在 kent 生态中不存在。
+
+**子范围命名约定：pgr 1-based vs kent 0-based（记录在案，不改）**：kent
+的 `liftSide` 把 `chr21:33043300-33104451` 的数字直接当 0-based 偏移用
+（`+regStart` 无 `-1`，测试输出证实；也因此才能与未子范围的记录完全吻合）。
+pgr 的 `parse_subrange`（intspan）按 1-based inclusive 解释
+（`start - 1` 为偏移）。两者正链 qStart/qEnd 差 1 bp；负链块级 `qStarts`
+偏移同为 `size - end`，不受影响。**决策：保持 pgr 1-based 约定**——生成端
+`fa window`（`name:start+1-end`）与消费端 `psl lift` 自洽，`rept s-align`
+端到端无 off-by-one，`psl lift` 帮助与 `docs/psl.md` 均已写明 1-based。
+若未来直接消费 UCSC/blat 生态产出的子范围名，需先确认其语义（blat 文档
+为 1-based，但 kent 工具按 0-based 处理）。
+
+### #31 的 FastGA 源码复核
+
+对照 `FASTGA-main/FastGA.c`（Gene Myers，V1.5）与 `ALNchain.c`，修复方向
+与 FastGA 语义一致：
+
+* `align_contigs`（FastGA.c:2973）链化是**单次 anti 扫描**：种子按
+  anti 归并，`anti < ahgh + CHAIN_BREAK`（2000 anti，=2×-s 1000）
+  并入当前链并累积 cov，否则**立即断链**；`cov >= CHAIN_MIN` 的链
+  各自触发 tube wave 对齐。源码中**没有任何事后合并/缝合相邻链的
+  步骤**——同对角线、间隔超阈值的链就是两条独立链。
+* 链只跨两个相邻对角线桶（cdiag/cdiag+1，桶宽 `BUCK_WIDTH=64` →
+  128 宽带）；对角线平移超带宽的种子落不同桶，不可能同链。FastGA
+  同样不缝合（IS 断开的两个块由下游 chainnet 连接）。
+* `ALNchain.c` 的 `localChain`/`KDRangeChain` 是比对块层面的 KD 树
+  范围 DP 链化，连接条件是 X/Y 二维 gap ≤ maxGap 且得分增益为正、
+  `backtrackLocal` 用 maxDrop 断链——也不缝合间隔超阈值的独立块。
+* 数值换算：同对角线时 anti 间距 = 2×pos 间距，FastGA
+  `CHAIN_BREAK=2000` anti 等价于 pgr greedy 的 `max_gap=1000`
+  （pos）；`merge_gap=5000` 是 pgr 独有的一层缝合阈值，FastGA 无
+  对应物。修复前 1.8 kb 间隔（>1000 bp，FastGA 会断链）被 pgr
+  merge 合并；修复后同对角线不合并，与 FastGA 行为一致。
+* 结论：#31 的"同对角线纯间隔 = 两个独立同源块、仅对角线平移才
+  缝合"与 FastGA 链化语义一致；pgr 的对角线平移缝合是自身扩展
+  （为 IS 场景），与 FastGA 无冲突（平移链在 FastGA 里也是独立
+  tube，由下游 chainnet 连接）。
+
+## 排除的疑点（经核验无需修复）
 
 * **`sd run` 的 cluster set_id 合并**：`sid + set_offset`、`set_offset +=
   cluster_max` 的重编号值域 `[offset+1, offset+max]` 各 cluster 两两不相交，
   即使 set_id 不连续（实际 `sd decompose` 从 1 连续编号）也不可能碰撞；
   空 cluster / 短行跳过与 `sd cover` 的 `read_elems` 一致。无需修复。
-* **tube 工作流对"库 vs 基因组"的结构性失效**：对照实验（酵母 + repbase）
-  greedy 出 2220 个 PSL 块、tube 只有 4 个，根因是 tube 按相邻对角桶对
-  独立 merge、库比对种子稀疏导致跨桶链被切断。该结论基于修复前代码，
-  syncmer/排序键修复后 tube 行为可能显著改善，待真实数据重测（记录项）。
 * **60,423 → 75,413 数据勘误**：e_align 对 MG1655+tncentral 的历史记录
   差异来自 tncentral 库更新（6073 → 6093 条）与编译产物时序，非代码 bug，
   笔记 repeat-masking.md §2.3.5 已加勘误。
 * **sd cluster minus 链序列提取误报**：一度怀疑提取序列错误，实为构造的
   测试 PAF 坐标语义问题；按 pgr 内部 PAF 约定（qstart/qend 恒为正向坐标）
   提取的序列与区间反向互补逐碱基一致。
+* **wave `forward_wave_mid` 初始 trim 越界**：无 PATH_AVE 质量匹配时返回
+  初始 trim 点，理论上一端可越界 1 bp 或超出序列；经几何推演（越界点
+  必然镜像到空盒 → 反向 wave 返回 None，或 `at <= ab || bt <= bb` 守卫
+  拦截）与 8×8 长度 × 全 band/amid 参数空间的 fuzz（约 20 万次调用）均
+  未触发 panic，判定不可达，不加防御代码。
+* **`spanr fill -n 0`（e-align 的 fk=0）**：实测 spanr 0.8.6 对 `-n 0`
+  fill 为 no-op，行为与设计文档（e-align 不做 k-mer 填补）一致，仅多一次
+  冗余进程，不改。
+* **LAV `s`/`h` stanza 含空格文件名**（`[nameparse=darkspace]` 场景）：
+  `split_whitespace` 解析会把后续字段错位；与 UCSC lavToPsl 的简单解析
+  一致，pgr 自身产线文件名不含空格，记录不修。
 
 ## 记录项（未改，低风险 / 待决策）
 
+* **tube 工作流对"库 vs 基因组"的结构性失效**：对照实验（酵母 + repbase）
+  greedy 出 2220 个 PSL 块、tube 只有 4 个，根因是 tube 按相邻对角桶对
+  独立 merge、库比对种子稀疏导致跨桶链被切断。该结论基于修复前代码，
+  syncmer/排序键修复后 tube 行为可能显著改善，待真实数据重测。
 * `decompose.rs` 负链投影依赖 header 与序列长度一致（cluster 内部保证）；
 * cluster/cover 的 u32→i32 坐标转换（仅 >2.1 Gb 染色体才溢出）；
 * `run_lastz` self 模式仍构建 n×n job 列表，运行时才按 basename 跳过
@@ -173,8 +336,21 @@ libs/pgi、libs/lastz、libs/fmt/lav、alignment DP），约 8000 行代码逐�
 * s_align / sd search --engine pgi 传不支持的类型（2bit / 目录）时，内层
   命令错误被 cmd_lib 包装成不透明的 "Running [...] exited with error"——
   不 panic、有报错，仅可读性差；
-* s-kmer 对染色体尾部的重复保守丢弃（Profex `-z` 不输出末 run 深度，无法
-  区分唯一尾与重复尾；与 anchr 参考管线一致）。
+* `fa split name` 名称碰撞（`chr(1)` 与 `chr_1` 同 sanitize 结果）：trf
+  依赖 split 产物，但碰撞根因在 `fa split name`（共享命令），概率极低，
+  记录不修。
+
+## 已知限制（有意保留）
+
+* **子范围命名约定：pgr 1-based vs kent 0-based**（#26b 决策）：pgr 的
+  `psl lift` 按 1-based inclusive 解释子范围名，与生成端 `fa window` 和
+  消费端 `psl to-range` 自洽；直接消费 UCSC/blat 生态的子范围名时需先
+  确认语义。
+* **s-kmer 对染色体尾部的重复保守丢弃**：Profex `-z` 不输出末 run 深度，
+  无法区分唯一尾与重复尾，有阈值时保守丢弃；与 anchr 参考管线一致。
+* **单 contig > 4.3 Gb 的 pgi 索引**：`pack_position` 的 pos 为 u32，
+  `write` 会为超长 contig 计算 pos_bytes=5 而 reader 拒绝 `> 4`，属自相
+  一致的上限（超长单 contig 不被支持）。
 
 ## 验证
 
@@ -211,207 +387,13 @@ s-kmer 无重复基因组输出 `"-"` 占位，下游 `fa mask` 正确消费。
 ### 最终状态
 
 * 测试数演进：956 → 958 → 960 → 962 → 968 → 970 → 972 → 973 → 974 →
-  975 → 976 → 977，每处修复均带回归测试或端到端验证；
+  975 → 976 → 977 → 995（每处修复均带回归测试或端到端验证；第四轮 #37
+  精修后 995）。
 * `cargo fmt --check` 与 `cargo clippy --all-targets -- -D warnings` 干净
   （plot/dot.rs 3 个与 pgi/align.rs 1 个测试目标既有告警，收尾轮已一并
-  修掉）；
-* 第一轮连续两轮无新问题后追加第二轮（#26-34）；两轮修复均经外部源码
-  复核（UCSC kent `pslLiftSubrangeBlat.c`、FastGA `align_contigs`），
-  无新增问题。
-
-## 追加轮（2026-08-04 第二轮，#26-34 及源码复核）
-
-### 修复
-
-26. **`psl lift` 负链记录的外层坐标提升错误（UCSC 约定违反）**：
-    `Psl::lift_query`/`lift_target` 对 `-` 链记录把 `qStart/qEnd`
-    （`tStart/tEnd`）按 `real_size - end_0` 平移。但按 UCSC PSL 规范（以及
-    pgr 自己的两个产出方 `pgi align` 与 `lav_to_psl`），`qStart/qEnd` 恒为
-    正向坐标，只有块级 `qStarts` 才在反向互补坐标系中。正确做法：
-    `qStart/qEnd += start_0`，`qStarts += (real_size - end_0)`。
-    实测影响：s-align 中间产物 `lifted.psl` 中 `-` 链记录
-    `chr:1201-1400` 窗口的 qStart/qEnd 输出 `[4200,4301)`，正确值应为
-    `[1200,1301)`。s-align 最终输出不受影响（`psl to-range` 只消费
-    `qStarts`，双重反转恰好抵消），但任何直接消费 lifted PSL 的下游会拿到
-    错误坐标。原 `test_lift_basic`/`test_lift_target` 夹具本身不符合 UCSC
-    约定（`-` 记录的 qStarts 与 qStart/qEnd 同框），把错误行为固化进了
-    测试。修复 `lift_query`/`lift_target`、夹具改为符合约定
-    （`qStarts = qSize - qEnd`），并新增回归测试
-    `test_lift_minus_strand_forward_coordinates`（含 to-range 往返校验）。
-    测试数 974 → 975。
-
-26a. **kent 源码对照确认（#26 的复核）**：用 UCSC 官方 kent 仓库源码
-     `src/hg/utils/pslLiftSubrangeBlat/pslLiftSubrangeBlat.c` 的 `liftSide`
-     逐字段复核 #26 的修复，结论一致：
-     * kent 行为：`qStart/qEnd += subrange_start`；`-` 链时仅块级
-       `qStarts += (seqSize - subrange_end)`（`reverseIntRange` 的结果）。
-     * kent 官方测试 `tests/input/qSubrange.psl` → `expected/qSubRangeTest.psl`
-       的 `-` 链记录（chr21:33043300-33104451，qSize 61151，qStart 12，
-       qEnd 61131，qStarts 首块 20）lift 后 qStart 33043312、qEnd 33104431、
-       qStarts 首块 15025464，满足 `qStarts[0] = seqSize - qEnd =
-       48129895 - 33104431 = 15025464`，且与同文件未子范围化的 chr21
-       记录逐字段一致。原夹具/实现的"负链 qStarts 与 qStart/qEnd 同帧"
-       在 kent 生态中不存在。
-26b. **子范围命名约定：pgr 1-based vs kent 0-based（记录在案，不改）**：
-     kent 的 `liftSide` 把 `chr21:33043300-33104451` 的数字直接当 0-based
-     偏移用（`+regStart` 无 `-1`，测试输出证实；也因此才能与未子范围的
-     记录完全吻合）。pgr 的 `parse_subrange`（intspan）按 1-based inclusive
-     解释（`start - 1` 为偏移）。两者正链 qStart/qEnd 差 1 bp；负链块级
-     `qStarts` 偏移同为 `size - end`，不受影响。**决策：保持 pgr 1-based
-     约定**——生成端 `fa window`（`name:start+1-end`）与消费端
-     `psl lift` 自洽，`rept s-align` 端到端无 off-by-one，`psl lift`
-     帮助与 `docs/psl.md` 均已写明 1-based。若未来直接消费 UCSC/blat
-     生态产出的子范围名，需先确认其语义（blat 文档为 1-based，但 kent
-     工具按 0-based 处理）。
-
-27. **s-align / e-align 的 soft-mask 警告误报 N gap**：检测用
-    `pgr fa masked`（同时报告 lowercase 与 N 区域），纯 N gap 基因组也会
-    触发"lowercase soft-mask"警告并误导用户 `tr a-z A-Z`。改为
-    `has_soft_mask` 直接扫描 FASTA 的 lowercase 碱基（内存按记录有界），
-    新增单元回归测试 `soft_mask_detection_ignores_n_gaps`。测试数 975 →
-    976。
-
-28. **帮助文本与文档不一致（lastz 单序列约束）**：docs/sd.md 已注明 lastz
-    引擎要求单序列 FASTA，但 `sd search`/`sd cross` 的命令内帮助漏掉该
-    说明；`sd cross` 的文档段落也未注明。已同步四处。
-
-29. **非 UTF-8 临时目录路径 panic（记录项落实）**：`PipelineCtx::new`/
-    `enter` 与 `sd search`/`sd cross` 对 `tempfile::TempDir` 路径做
-    `to_str().unwrap()`，`$TMPDIR` 含非 UTF-8 字节时 panic（Zero Panic
-    违反）。统一改用 `io::path_to_str` 返回友好错误。
-
-30. **e-align identity 定义未说明（记录项落实）**：e-align 的
-    `--min-identity` 用 gap-compressed identity（不含 insert 碱基），与 sd
-    的 `(matches+repeats)/block_len` 不同，rept.md 与命令帮助均未说明。
-    已补文档说明。
-
-31. **greedy 链合并导致倒位 SD 漏检（上一轮"待决策"项，已定方案 1 落实）**：
-    `merge_adjacent_chains` 把同一对角线、间隔在 `--merge-gap` 内的两条链
-    合并。倒位重复的两个互反链共享同一对角线（实测 diag 均为 500），间隔
-    1.8 kb 无种子，被合并成一条嵌合链；单窗口扩展（16 kb）把两端 100%
-    拷贝与中间非同源区连成一个 78% identity 大块，`sd search` identity
-    过滤整块丢弃。同一输入 lastz 与 tube 均能检出。修复：合并条件增加
-    `|diagA − diagB| > 0`——真实 IS 插入会平移对角线（与 merge 的设计初衷
-    "对角线平移断链"一致），同对角线纯间隔是两个独立同源块。同步更新
-    `merge_adjacent_chains_stitches_syntenic_blocks`（原"1.2 kb 插入"场景
-    对角线差为 0，与真实插入不符，改为 4 bp 平移）并新增
-    `command_sd_search_pgi_inverted_repeat` 回归测试（构造
-    rand+dup+rand+rc(dup)+rand，检出两条 100% 的 1200 bp 倒位块；
-    修复前 0 条）。`sd run` 端到端现在输出 2 set × 2 CORE 行。测试数
-    976 → 977。
-
-31a. **FastGA 源码对照确认（#31 复核，2026-08-04）**：对照 `FASTGA-main/
-     FastGA.c`（Gene Myers，V1.5）与 `ALNchain.c`，修复方向与 FastGA 语义
-     一致：
-     * `align_contigs`（FastGA.c:2973）链化是**单次 anti 扫描**：种子按
-       anti 归并，`anti < ahgh + CHAIN_BREAK`（2000 anti，=2×-s 1000）
-       并入当前链并累积 cov，否则**立即断链**；`cov >= CHAIN_MIN` 的链
-       各自触发 tube wave 对齐。源码中**没有任何事后合并/缝合相邻链的
-       步骤**——同对角线、间隔超阈值的链就是两条独立链。
-     * 链只跨两个相邻对角线桶（cdiag/cdiag+1，桶宽 `BUCK_WIDTH=64` →
-       128 宽带）；对角线平移超带宽的种子落不同桶，不可能同链。FastGA
-       同样不缝合（IS 断开的两个块由下游 chainnet 连接）。
-     * `ALNchain.c` 的 `localChain`/`KDRangeChain` 是比对块层面的 KD 树
-       范围 DP 链化，连接条件是 X/Y 二维 gap ≤ maxGap 且得分增益为正、
-       `backtrackLocal` 用 maxDrop 断链——也不缝合间隔超阈值的独立块。
-     * 数值换算：同对角线时 anti 间距 = 2×pos 间距，FastGA
-       `CHAIN_BREAK=2000` anti 等价于 pgr greedy 的 `max_gap=1000`
-       （pos）；`merge_gap=5000` 是 pgr 独有的一层缝合阈值，FastGA 无
-       对应物。修复前 1.8 kb 间隔（>1000 bp，FastGA 会断链）被 pgr
-       merge 合并；修复后同对角线不合并，与 FastGA 行为一致。
-     * 结论：#31 的"同对角线纯间隔 = 两个独立同源块、仅对角线平移才
-       缝合"与 FastGA 链化语义一致；pgr 的对角线平移缝合是自身扩展
-       （为 IS 场景），与 FastGA 无冲突（平移链在 FastGA 里也是独立
-       tube，由下游 chainnet 连接）。
-
-32. **e-align PSL 过滤静默跳过畸形行（记录项落实）**：`run_align_repeat_
-    pipeline` 对解析失败的 PSL 行 `let Ok(psl) = ... else { continue }`
-    静默丢弃，与其余命令的 `parse_or_warn`（warn + 跳过）不一致，畸形输入
-    难以诊断。补 `log::warn!`。
-
-33. **主帮助文本 rept 子命令列表遗漏**：`src/pgr.rs` 的 about 帮助里
-    `rept - Repeat detection: e-kmer, s-kmer, trf` 少了 `e-align` 与
-    `s-align`，与实际注册的 5 个子命令不符。已补齐。
-
-34. **decompose 对无法解析的 FASTA 头静默丢弃（记录项落实）**：
-    `decompose::parse_fasta` 对解析失败的记录头静默跳过，畸形 cluster
-    FASTA 的输入被悄悄忽略。补 `log::warn!`（与 `parse_or_warn` 行为一致）。
-
-## 追加轮（2026-08-04 第三轮，#35-37）
-
-### 修复
-
-35. **`align_banded_local` 序列长度悬殊时 DP 数组越界 panic**：
-    `banded.rs` 的行循环把 j_lo 钳到 `[1, m]`（`min(m)`）而不是与对角带
-    求交；当一条序列远长于另一条时（如 q=2000、t=100、band=4），行尾的
-    `off = j - i - diag0 + band` 为负，`as usize` 回绕成超大下标，
-    `mscore[c]` 直接越界 panic（debug 实测 "attempt to add with overflow"）。
-    修复：j_lo/j_hi 改为 `max(1, i+diag0-band)` / `min(m, i+diag0+band)`，
-    空交集直接跳过该行；off 恒落在 `[0, width)`。当前 align 管线的调用
-    （等长窗口）不触发，但作为公开 lib API 必须零 panic。回归测试
-    `unbalanced_lengths_do_not_panic`。
-36. **lav `l` 行极值坐标减法溢出 panic**：`parse_a` 用 `parse::<i64>()? - 1`
-    解析 1-based 起点（i64::MIN 时下溢），跨度一致性检查
-    `(q_end - q_start) != (t_end - t_start)` 在 `q_end=i64::MAX`、
-    `q_start=-1` 时也溢出；构造输入在 debug 构建直接 panic。修复：起点
-    `checked_sub(1)`、跨度用 `checked_sub` 比较，越界值报 InvalidData。
-    回归测试 `extreme_l_line_values_do_not_panic`。
-37. **pgi merge 频率过滤两侧边界不一致**：A 侧 `ea_freq > freq` 保留
-    `== freq` 的 k-mer，B 侧扩展范围 `occ >= freq` 与 FastGA GIXmake
-    （"only k-mers whose count is less than the adaptamer frequency cutoff"）
-    都丢弃 `>= freq`。交叉比对时（A 侧恰好 freq 次、B 侧罕见）pgr 会多出
-    FastGA 不存在的种子。修复：A 侧改为 `ea_freq >= freq`；B 侧把
-    `== freq` 的条目整体视为"不在索引中"（FastGA GIX 在构建期就排除
-    `>= FREQ` 的 k-mer）——最大共享前缀扫描、occ 累计、发射循环三处统一
-    用 `>= freq` 跳过 / `< freq` 计入。原实现里 `== freq` 的 B 侧条目会
-    抬高 m 并触发整段丢弃，与 FastGA 不符（FastGA 中该条目不存在，同范围
-    的稀有条目仍可命中）。回归测试
-    `freq_boundary_drops_exact_freq_on_reference_side` 与
-    `exact_freq_query_entries_are_absent_not_range_killers`。
-
-### 本轮排除的疑点
-
-* **wave `forward_wave_mid` 初始 trim 越界**：无 PATH_AVE 质量匹配时返回
-  初始 trim 点，理论上一端可越界 1 bp 或超出序列；经几何推演（越界点
-  必然镜像到空盒 → 反向 wave 返回 None，或 `at <= ab || bt <= bb` 守卫
-  拦截）与 8×8 长度 × 全 band/amid 参数空间的 fuzz（约 20 万次调用）均
-  未触发 panic，判定不可达，不加防御代码。
-* **`spanr fill -n 0`（e-align 的 fk=0）**：实测 spanr 0.8.6 对 `-n 0`
-  fill 为 no-op，行为与设计文档（e-align 不做 k-mer 填补）一致，仅多一次
-  冗余进程，不改。
-* **`fa split name` 名称碰撞**（`chr(1)` 与 `chr_1` 同 sanitize 结果）：
-  trf 依赖 split 产物，但碰撞根因在 `fa split name`（共享命令），概率极低，
-  记录不修。
-* **LAV `s`/`h`  stanza 含空格文件名**（`[nameparse=darkspace]` 场景）：
-  `split_whitespace` 解析会把后续字段错位；与 UCSC lavToPsl 的简单解析
-  一致，pgr 自身产线文件名不含空格，记录不修。
-* **单 contig > 4.3 Gb 的 pgi 索引**：`pack_position` 的 pos 为 u32，
-  `write` 会为超长 contig 计算 pos_bytes=5 而 reader 拒绝 `> 4`，属自相
-  一致的上限（超长单 contig 不被支持），记录项。
-
-### 最终状态（第三轮）
-
-* 测试数 995（较上轮 +4，均为本轮回归测试），`cargo fmt --check` 与
-  `cargo clippy --all-targets -- -D warnings` 干净；全量测试通过。
-
-## 追加轮（2026-08-04 第四轮 #37 精修 + 第五/六轮确认）
-
-### 第四轮（#37 精修）
-
-复查 #37 修复时发现频率过滤还有两处残留不一致：B 侧"最大共享前缀 m 扫描"
-与"扩展范围 occ 累计"仍把 `== freq` 的条目视为存在（`> freq` / `<= freq`），
-而 FastGA GIXmake 在构建期就排除 `>= FREQ` 的 k-mer——这些条目应整体视为
-"不在索引中"。原实现会让 `== freq` 的 B 侧条目抬高 m 并触发整段丢弃，
-与 FastGA 不符（FastGA 中该条目不存在，同范围内其他稀有条目仍可命中）。
-统一改为：m 扫描 `>= freq` 跳过、occ 累计 `< freq` 计入、发射循环 `< freq`。
-原 `merge_filters_extended_range_by_occurrences` 测试断言的是旧行为
-（`== freq` 条目丢弃整段），按 FastGA 语义改写为"多个低于阈值的条目
-总和 >= freq 才丢弃整段"，并新增
-`exact_freq_query_entries_are_absent_not_range_killers`
-（`== freq` 条目旁稀有条目仍以 25 bp 前缀命中）。测试数 995。
-
-### 第五/六轮确认
-
+  修掉）。
+* 第一轮连续两轮无新问题后追加第二轮；两轮修复均经外部源码复核（UCSC
+  kent `pslLiftSubrangeBlat.c`、FastGA `align_contigs`），无新增问题。
 * 第五轮：重读本轮全部改动（banded 边界、lav checked 算术、pgi 频率过滤
   三处调用点）与剩余高风险路径（mmap 越界守卫、tube 合并循环、wave 端点
   几何推演），无新问题。
@@ -419,3 +401,10 @@ s-kmer 无重复基因组输出 `"-"` 占位，下游 `fa mask` 正确消费。
   `cargo clippy --all-targets -- -D warnings` 干净；sd/rept/align 四组 CLI
   端到端（38 测试）全绿。
 * 连续两轮无新问题，符合"修复后继续复核直到稳定"的审计约定。
+
+## 提交状态
+
+* 本文件所述修复已随 sd/rept/align 系列提交逐步落地（`53a8a78`、
+  `b911869`、`bcc1a9e`、`801e21d`、`f752a3a` 等）。
+* 当前工作区仅含本文档结构调整（与 `audit-runlist-rg.md` 统一骨架），
+  无代码改动。
