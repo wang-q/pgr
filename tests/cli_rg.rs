@@ -158,6 +158,42 @@ fn command_rg_overflow_end_skipped() {
     );
 }
 
+// Unicode word characters in contig names used to fail the ASCII-only
+// scanner and were silently dropped by every rg subcommand; they must parse
+// like the reference regex's Unicode-mode `\w` did.
+#[test]
+fn command_rg_unicode_contig_names_parsed() {
+    let dir = TempDir::new().unwrap();
+    let rg = dir.path().join("uni.rg");
+    std::fs::write(&rg, "chr\u{3b1}:1-10\n\u{4e2d}(+):20-30\nbad line\n").unwrap();
+
+    let (stdout, _) = PgrCmd::new()
+        .args(&["rg", "cover", rg.to_str().unwrap()])
+        .run();
+    assert_eq!(
+        stdout,
+        "{\n  \"chr\u{3b1}\": \"1-10\",\n  \"\u{4e2d}\": \"20-30\"\n}\n"
+    );
+
+    let (stdout, _) = PgrCmd::new()
+        .args(&["rg", "span", rg.to_str().unwrap(), "-n", "5"])
+        .run();
+    // `chrα:1-10` trimmed by 5 collapses to an invalid (0, 0) range whose
+    // Display keeps the bare chromosome (vendored Range semantics), while
+    // `中(+):20-30` becomes the point range `中(+):25`.
+    assert_eq!(stdout, "chr\u{3b1}\n\u{4e2d}(+):25\n");
+
+    let (stdout, _) = PgrCmd::new()
+        .args(&["rg", "count", rg.to_str().unwrap(), rg.to_str().unwrap()])
+        .run();
+    assert_eq!(stdout, "chr\u{3b1}:1-10\t1\n\u{4e2d}(+):20-30\t1\n");
+
+    let (stdout, _) = PgrCmd::new()
+        .args(&["rg", "sort", rg.to_str().unwrap()])
+        .run();
+    assert_eq!(stdout, "chr\u{3b1}:1-10\n\u{4e2d}(+):20-30\nbad line\n");
+}
+
 #[test]
 fn command_rg_coverage() {
     let (dir, rg) = fixture_dir();
@@ -522,6 +558,50 @@ fn command_rg_output_same_as_input_rejected() {
         );
     }
     // The input must be untouched.
+    assert_eq!(
+        std::fs::read_to_string(&rg).unwrap(),
+        "chr1:1-10\nchr1:20-30\n"
+    );
+}
+
+// `-o` pointing at the input through a symlink (or a hard link) used to
+// bypass the lexical `same_path` check and truncate the input while it was
+// still being read. Both aliases must be refused.
+#[test]
+fn command_rg_output_alias_of_input_rejected() {
+    let dir = TempDir::new().unwrap();
+    let rg = dir.path().join("a.rg");
+    std::fs::write(&rg, "chr1:1-10\nchr1:20-30\n").unwrap();
+    let symlink = dir.path().join("sym.rg");
+    std::fs::hard_link(&rg, &symlink).unwrap();
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "rg",
+            "span",
+            rg.to_str().unwrap(),
+            "-o",
+            symlink.to_str().unwrap(),
+        ])
+        .run_fail();
+    assert!(stderr.contains("also an input file"), "got: {stderr}");
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::symlink;
+        let link = dir.path().join("ln.rg");
+        symlink(&rg, &link).unwrap();
+        let (_, stderr) = PgrCmd::new()
+            .args(&[
+                "rg",
+                "span",
+                rg.to_str().unwrap(),
+                "-o",
+                link.to_str().unwrap(),
+            ])
+            .run_fail();
+        assert!(stderr.contains("also an input file"), "got: {stderr}");
+    }
+    // Neither alias must have truncated the input.
     assert_eq!(
         std::fs::read_to_string(&rg).unwrap(),
         "chr1:1-10\nchr1:20-30\n"

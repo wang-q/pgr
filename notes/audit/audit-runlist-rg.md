@@ -13,7 +13,7 @@ spanr 调用的 `libs/pl/repeat`、`cmd_pgr/pl/p2m`、`cmd_pgr/rept/trf` 和全�
 （#20-25）。每轮发现问题后修复并进入下一轮复核；第 5 轮与第 6 轮均经全量
 重读 + 随机畸形输入 fuzz + 差分对拍未再发现新问题后收束。最终
 `cargo fmt`、`cargo clippy --all-targets -- -D warnings` 干净，全部测试
-二进制 + doctest 通过（1178 个断言）。
+二进制 + doctest 通过（后续每轮增补回归用例，断言数随轮次增长）。
 
 第 7 轮（本文件定稿后追加）：全量重读 `rg` / `runlist` 家族与
 `libs/ds/range.rs`、`libs/ds/intspan.rs`、`libs/runlist/mod.rs`，用暴力
@@ -63,8 +63,20 @@ release 下 10k ≈ 2.7–2.9 ms、50k ≈ 17.8–18.4 ms，近线性），并�
 * 第 15 轮：`docs/rg.md` 与 `docs/runlist.md` 的全部示例命令逐一执行
   验证（含 stdin、`--longest`、`--full`、`--all`、`--suffix`、
   `--base` 等形态），全部按文档工作。
+* 第 16 轮（本轮）：换全新角度复核——把 `Range` 手写扫描器与参考正则
+  逐字符差分对拍（含 8 种 Unicode 文字系统，20 万 trial），并把
+  `-o` 同输入检查的别名路径（symlink / hardlink）纳入验证——新发现
+  2 处缺陷（#32、#33）并修复；修复后全量测试 + doctest 通过，
+  `cargo fmt`、`cargo clippy --all-targets -- -D warnings` 干净。
+* 第 17 轮（复核轮）：对 #32/#33 修复做全量回归，并以全新种子重跑
+  语义差分（rg merge 120 trial、detailed coverage 80 trial、rg sort
+  属性 80 trial、runlist compare/combine 集合代数 80 trial、
+  convert→cover 往返 100 trial、prop/runlist/count/coverage/compare/
+  span 150 trial，全部与朴素实现一致）、畸形输入 fuzz（300 trial ×
+  27 条命令，零 panic）、20 条 docs 示例逐一执行——未再发现新问题，
+  收束。
 
-## 修复的缺陷（共 31 处）
+## 修复的缺陷（共 33 处）
 
 修复按发现顺序全局编号（#1-19 为 runlist 阶段、#20-25 为 rg 阶段、
 #26-27 为第 7 轮），
@@ -232,7 +244,8 @@ release 下 10k ≈ 2.7–2.9 ms、50k ≈ 17.8–18.4 ms，近线性），并�
     读取 JSON 之前创建 writer——`-o 同输入` 会把输入清空后继续执行
     （`rg sort` 因先缓冲不受影响；先读后写的 cover/coverage/merge 及
     runlist 其余子命令天然支持 in-place）。修复：`libs/io` 新增
-    `same_path`（`std::path::absolute` 词法归一化后比较，无文件系统访问），
+    `same_path`（当时为 `std::path::absolute` 词法归一化比较；#33 后续
+    升级为 canonicalize + dev/inode 覆盖 symlink/hardlink 别名），
     五个命令在读取前对所有位置参数做同路径检查并报
     "output file ... is also an input file"。回归测试
     `command_rg_output_same_as_input_rejected`（span/prop/runlist/count
@@ -259,6 +272,34 @@ for excise"，与 `runlist span -n` 一致）。
     18 ms，disjoint 与 clustered 两种形态），新增回归测试
     `command_rg_merge_dedups_identical_lines`（重复行只保留一份、
     不产生自簇，第三条重叠区间正常入簇）。
+
+### 解析一致性 / 数据安全（第 16 轮，2 处）
+
+32. **`Range` 手写扫描器对非 ASCII 字符名静默失配**：`decode` 的
+    字符类检查逐字节用 `is_ascii_alphanumeric`，而参考正则的
+    `[\w]` 是 Unicode 模式——`chrα:1-5`、`中(+):20-30` 这类行在
+    原正则解析器下正常解析，扫描器迁移后却落入"无匹配→整行作为
+    chr"分支，`is_valid` 为 false，rg 全部子命令静默丢弃这些行
+    （`rg sort` 静默排到 invalid 区），且与模块文档"完全复刻"的
+    承诺不符。修复：字符类判定改为按 UTF-8 字符（ASCII
+    `[0-9A-Za-z_]` + Unicode 字母数字），贪心 run 按字符字节长推进；
+    数字仍只收 ASCII（参考正则的 `\d` 会匹配 Unicode 数字后在
+    `parse::<i32>()` 处 panic，属更安全的方向，文档注明）。回归：
+    `regex_and_manual_decoders_agree` 增补 Unicode corpus 与含 8 种
+    文字系统的 4 万 trial fuzz；新增 CLI 用例
+    `command_rg_unicode_contig_names_parsed`（cover/span/count/sort
+    四条命令）。已知保留分歧：组合附加符（NFD 的分解重音）仍按
+    非 word 处理——std 无 mark 谓词，此类字符在名称中极罕见，
+    已在 `word_char_len` 文档注明。
+33. **`-o` 同输入检查被 symlink / hardlink 别名绕过**：`same_path`
+    只做词法绝对路径比较（无文件系统访问），`pgr rg span a.rg -o
+    link-to-a.rg` 或 `-o hardlink-to-a.rg` 时 writer 先截断输入再
+    读取，静默数据丢失（#29 只覆盖字面同路径）。修复：`same_path`
+    对已存在的路径先 `fs::canonicalize`（解析 symlink 与 `..`），
+    Unix 上再比较 dev/inode 覆盖 hardlink；任一路径尚不存在时回退
+    词法比较（新建输出不受影响）。回归测试
+    `command_rg_output_alias_of_input_rejected`（hardlink + symlink
+    两例，断言输入未被改动）。
 
 ## 与外部参考实现的语义一致性核对
 
@@ -376,11 +417,19 @@ for excise"，与 `runlist span -n` 一致）。
   Range 运算差分 700 trial 全部一致；docs 示例逐条执行通过；全量测试
   + doctest 通过；`cargo fmt`、`cargo clippy --all-targets -- -D
   warnings` 干净。
+* 第 16 轮：`Range` 扫描器 vs 参考正则差分对拍 20 万 trial（含希腊文/
+  中日韩/西里尔/阿拉伯/希伯来/天城文/谚文等 8 种文字系统与 ASCII
+  混杂形态），修复 #32 后全部一致；`-o` 别名（hardlink/symlink）路径
+  检查按 #33 修复后，`rg span` 拒绝写入并保持输入原样。
+* 第 17 轮：全新种子差分共 610 trial（merge/detailed coverage/sort/
+  集合代数/convert→cover 往返/prop/runlist/count/coverage/compare/
+  span）全部与朴素实现一致；300 trial × 27 条命令畸形输入 fuzz 零
+  panic；docs/rg.md 与 docs/runlist.md 的 20 条示例命令逐一执行通过。
 
 ### 最终状态
 
 * `cargo fmt`、`cargo clippy --all-targets -- -D warnings` 干净；全部测试
-  二进制 + doctest 通过（1178 个断言）。
+  二进制 + doctest 通过（断言数随各轮回归用例增补而增长）。
 * 新增回归测试：runlist 阶段 14 个函数（含 test_valid / genome / cover 等
   既有用例扩展）；rg 阶段 `command_rg_span_extreme_no_panic`（8 种 op/mode
   × 极端 `-n` + `pad i32::MIN`）、`command_rg_comments_skipped`（7 个子
@@ -390,6 +439,10 @@ for excise"，与 `runlist span -n` 一致）。
   第 7 轮增补：`overflow_end_is_invalid_not_start`（Range 层）、
   `inset_identity_at_i32_min`（IntSpan 层）、
   `command_rg_overflow_end_skipped`（cover/span/count/sort 四条命令）。
+  第 16 轮增补：`regex_and_manual_decoders_agree` 的 Unicode corpus 与
+  4 万 trial fuzz（8 种文字系统）、`command_rg_unicode_contig_names_parsed`
+  （cover/span/count/sort）、`command_rg_output_alias_of_input_rejected`
+  （hardlink/symlink 别名拒绝）。
 
 ## 提交状态
 

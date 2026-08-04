@@ -103,9 +103,28 @@ pub fn absolute_path(path: impl AsRef<std::path::Path>) -> std::io::Result<std::
     std::path::absolute(path)
 }
 
-/// Whether two paths point to the same file, compared after lexical
-/// absolute-path normalization (no filesystem access).
+/// Whether two paths point to the same file.
+///
+/// Existing paths are compared after canonicalization (resolving symlinks
+/// and `..`); when either path does not exist yet (e.g. a to-be-created
+/// output file), the comparison falls back to lexical absolute-path
+/// normalization so a fresh output path never blocks a command.
 pub fn same_path(a: &str, b: &str) -> bool {
+    if let (Ok(pa), Ok(pb)) = (std::fs::canonicalize(a), std::fs::canonicalize(b)) {
+        if pa == pb {
+            return true;
+        }
+        #[cfg(unix)]
+        {
+            // Canonical paths still differ for hard links to the same
+            // inode; compare device/inode to catch those too.
+            use std::os::unix::fs::MetadataExt;
+            if let (Ok(ma), Ok(mb)) = (std::fs::metadata(&pa), std::fs::metadata(&pb)) {
+                return ma.dev() == mb.dev() && ma.ino() == mb.ino();
+            }
+        }
+        return false;
+    }
     match (std::path::absolute(a), std::path::absolute(b)) {
         (Ok(pa), Ok(pb)) => pa == pb,
         _ => a == b,

@@ -34,7 +34,9 @@
 //!   regex path's `parse::<i32>().unwrap()` panic. An oversized `end` must
 //!   not be confused with a missing one (which defaults to `start`), or a
 //!   malformed line such as `chr1:5-99999999999` would be silently treated
-//!   as the point range `chr1:5`.
+//!   as the point range `chr1:5`. Unicode digits are likewise treated as
+//!   invalid (the regex path's `\d+` would match them and then panic in
+//!   `parse::<i32>()`).
 
 use super::IntSpan;
 use std::fmt;
@@ -438,7 +440,7 @@ impl Range {
         let n = s.len();
         // Unanchored leftmost match, mirroring `regex::Regex::captures`.
         for p in 0..n {
-            if !is_word_or_slash(s[p]) {
+            if word_or_slash_char_len(s, p) == 0 {
                 continue;
             }
             if let Some((name, chr, strand, start, end)) = match_at(s, p, n) {
@@ -504,13 +506,54 @@ impl Range {
     }
 }
 
-fn is_word(c: u8) -> bool {
-    c.is_ascii_alphanumeric() || c == b'_'
+/// Byte length of the UTF-8 character whose first byte is at `i` (the input
+/// is valid UTF-8; continuation bytes return 1 so iteration always advances).
+fn char_len_at(s: &[u8], i: usize) -> usize {
+    let b = s[i];
+    if b < 0x80 {
+        1
+    } else if (0xC2..=0xDF).contains(&b) {
+        2
+    } else if (0xE0..=0xEF).contains(&b) {
+        3
+    } else if (0xF0..=0xF4).contains(&b) {
+        4
+    } else {
+        1
+    }
 }
 
-fn is_word_or_slash(c: u8) -> bool {
-    // `[\w/-]` from the regex: word chars plus `/` and `-`.
-    is_word(c) || c == b'/' || c == b'-'
+/// Byte length of the character at byte position `i` when it is a word
+/// character (ASCII `[0-9A-Za-z_]` or a Unicode alphanumeric, mirroring the
+/// reference regex's Unicode-mode `\w`). Combining marks (e.g. a decomposed
+/// accent) are deliberately treated as non-word — std has no mark
+/// predicate, and such characters are not expected in names.
+fn word_char_len(s: &[u8], i: usize) -> usize {
+    let b = s[i];
+    if b < 0x80 {
+        return if matches!(b, b'0'..=b'9' | b'a'..=b'z' | b'A'..=b'Z' | b'_') {
+            1
+        } else {
+            0
+        };
+    }
+    let n = char_len_at(s, i);
+    if i + n > s.len() {
+        return 0;
+    }
+    match std::str::from_utf8(&s[i..i + n]) {
+        Ok(t) if t.chars().next().is_some_and(char::is_alphanumeric) => n,
+        _ => 0,
+    }
+}
+
+/// Word characters plus the ASCII `/` and `-` (`[\w/-]` from the regex).
+fn word_or_slash_char_len(s: &[u8], i: usize) -> usize {
+    if matches!(s[i], b'/' | b'-') {
+        1
+    } else {
+        word_char_len(s, i)
+    }
 }
 
 fn is_digit(c: u8) -> bool {
@@ -523,8 +566,12 @@ fn match_at(s: &[u8], p: usize, n: usize) -> Option<(String, String, String, i32
     // name cannot be followed by '.' (the char before is a word char), so
     // only the full word run plus '.' needs trying; otherwise no name.
     let mut k = p;
-    while k < n && is_word(s[k]) {
-        k += 1;
+    while k < n {
+        let len = word_char_len(s, k);
+        if len == 0 {
+            break;
+        }
+        k += len;
     }
     if k < n && s[k] == b'.' {
         if let Some((chr, strand, start, end)) = rest_match(s, k + 1, n) {
@@ -539,8 +586,12 @@ fn match_at(s: &[u8], p: usize, n: usize) -> Option<(String, String, String, i32
 /// the last `)`), then the `:start[-end]` tail.
 fn rest_match(s: &[u8], q: usize, n: usize) -> Option<(String, String, i32, i32)> {
     let mut r = q;
-    while r < n && is_word_or_slash(s[r]) {
-        r += 1;
+    while r < n {
+        let len = word_or_slash_char_len(s, r);
+        if len == 0 {
+            break;
+        }
+        r += len;
     }
     let mut chr_len = r - q;
     while chr_len >= 1 {
@@ -724,6 +775,15 @@ fn regex_and_manual_decoders_agree() {
         "chr1:-2",
         "chr1:1_2",
         "chr1:1__2",
+        // Unicode word characters must be accepted in name/chr/strand like
+        // the reference regex's Unicode-mode `\w` (an ASCII-only scanner
+        // used to treat these as non-matches and silently drop the line).
+        "chr\u{3b1}:1-5",
+        "\u{4e2d}(+):10-20",
+        "S288c.\u{30c8}(-):100-200",
+        "a.\u{0436}b:1-2",
+        "\u{d55c}\u{0627}:3-4",
+        "chr\u{00e9}:1-2",
         "",
         " ",
     ];
@@ -744,13 +804,19 @@ fn regex_and_manual_decoders_agree() {
     }
 
     // Randomized fuzz over the grammar's alphabet (coordinates kept small so
-    // the regex path never overflows i32).
+    // the regex path never overflows i32). Unicode letters are included;
+    // combining marks are deliberately excluded (the scanner treats them as
+    // non-word, see `word_char_len`).
     let mut x = 0x9E3779B97F4A7C15u64;
-    let alphabet = b"abcXYZ019_/:-(). ";
-    for _ in 0..20_000 {
-        let len = (next_rand(&mut x) % 25) as usize;
+    let alphabet = [
+        'a', 'b', 'c', 'Z', '0', '1', '9', '_', '/', '-', ':', '(', ')', '.', ' ', '\u{3b1}',
+        '\u{4e2d}', '\u{30c8}', '\u{00e9}', '\u{4e00}', '\u{0436}', '\u{0627}', '\u{05d0}',
+        '\u{0928}', '\u{d55c}',
+    ];
+    for _ in 0..40_000 {
+        let len = (next_rand(&mut x) % 24) as usize;
         let s: String = (0..len)
-            .map(|_| alphabet[(next_rand(&mut x) % alphabet.len() as u64) as usize] as char)
+            .map(|_| alphabet[(next_rand(&mut x) % alphabet.len() as u64) as usize])
             .collect();
         let regex = from_str_regex(&s);
         let manual = Range::from_str(&s);
