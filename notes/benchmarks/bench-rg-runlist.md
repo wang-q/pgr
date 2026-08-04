@@ -1,4 +1,4 @@
-# `rg runlist` 命令行基准：pgr（SpanIndex 二分）vs rgr（IntSpan 交集）
+# `rg runlist` 命令行基准：pgr（IntSpan::covered 二分）vs rgr（IntSpan 交集）
 
 > 目的：对比 `pgr rg runlist`（按 runlist 过滤 `.rg` 行）与外部 `rgr
 > runlist` 的耗时与内存。2026-08-04 实测。
@@ -23,7 +23,7 @@
 ## 优化说明
 
 初版 `rg runlist` 用 `IntSpan::intersect` 判定（对 19k-span 集合是线性
-O(n) 扫描），仅比 rgr 快 ~1.3×。改为复用 `SpanIndex`（有序 span 数组 +
+O(n) 扫描），仅比 rgr 快 ~1.3×。改为 `IntSpan::covered`（对有序 span 做
 两次二分，O(log n + k)）后：
 
 * overlap：覆盖数 > 0；
@@ -37,5 +37,5 @@ superset 走 `diff`（O(n·m) 旧实现），在 19k-span 集合上每行数毫�
 ## 结论
 
 与 prop 同源：性能差来自"线性交集 vs 二分重叠段"。`rg runlist` 已与
-`rg prop` 一样用 SpanIndex，三种过滤 op 均达毫秒级；相对 rgr 快两个
+`rg prop` 一样用 `IntSpan::covered`，三种过滤 op 均达毫秒级；相对 rgr 快两个
 数量级。

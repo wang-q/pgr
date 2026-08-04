@@ -217,6 +217,59 @@ impl IntSpan {
         (pos & 1) == 1
     }
 
+    /// Number of bases of the inclusive range `[start, end]` that are in the
+    /// set. Binary-searches the sorted spans, so it is O(log n + k) in the
+    /// number of spans overlapping the query.
+    pub fn covered(&self, start: i32, end: i32) -> i32 {
+        if self.is_empty() || end < start {
+            return 0;
+        }
+        let n = self.span_size();
+        // VecDeque keeps its buffer as one or two contiguous slices; reading
+        // through them avoids per-access ring-offset arithmetic (the common
+        // case is a single slice after append-built sets).
+        let (s1, s2) = self.edges.as_slices();
+        let n1 = s1.len();
+        let edge_at = |i: usize| -> i32 {
+            if i < n1 {
+                s1[i]
+            } else {
+                s2[i - n1]
+            }
+        };
+        // First span whose end >= start.
+        let mut lo = 0usize;
+        let mut hi = n;
+        while lo < hi {
+            let mid = (lo + hi) / 2;
+            if edge_at(2 * mid + 1) - 1 < start {
+                lo = mid + 1;
+            } else {
+                hi = mid;
+            }
+        }
+        let first = lo;
+        // One past the last span whose start <= end.
+        let mut lo = 0usize;
+        let mut hi = n;
+        while lo < hi {
+            let mid = (lo + hi) / 2;
+            if edge_at(2 * mid) <= end {
+                lo = mid + 1;
+            } else {
+                hi = mid;
+            }
+        }
+        let last = lo;
+        let mut total: i64 = 0;
+        for i in first..last {
+            let s = edge_at(2 * i);
+            let e = edge_at(2 * i + 1) - 1;
+            total += i64::from(end.min(e) - start.max(s) + 1);
+        }
+        total.min(i64::from(i32::MAX)) as i32
+    }
+
     #[inline]
     pub fn min(&self) -> i32 {
         if self.is_empty() {
@@ -932,6 +985,33 @@ mod binary {
     }
 
     #[test]
+    fn covered_matches_intersect() {
+        let set = IntSpan::from("1-10,20-30,50-100");
+        for (start, end, expected) in [
+            (1, 10, 10),   // full span
+            (5, 25, 12),   // 5-10 + 20-25
+            (11, 19, 0),   // gap
+            (30, 35, 1),   // boundary
+            (0, 5, 5),     // before the set
+            (1, 100, 72),  // 10 + 11 + 51
+            (120, 130, 0), // after the set
+            (5, 5, 1),     // single point inside
+            (15, 15, 0),   // single point in gap
+        ] {
+            let mut range = IntSpan::new();
+            range.add_pair(start, end);
+            assert_eq!(
+                set.covered(start, end),
+                set.intersect(&range).cardinality(),
+                "covered({start},{end})"
+            );
+            assert_eq!(set.covered(start, end), expected);
+        }
+        assert_eq!(set.covered(5, 3), 0); // reversed
+        assert_eq!(IntSpan::new().covered(1, 10), 0); // empty set
+    }
+
+    #[test]
     fn intersect_matches_slow_implementation() {
         // The old complement+merge+invert implementation, kept as an oracle.
         fn slow(a: &IntSpan, b: &IntSpan) -> IntSpan {
@@ -1525,7 +1605,12 @@ impl IntSpan {
     /// towards the negative direction
     pub fn banish(&self, start: i32, end: i32) -> Self {
         let mut new = IntSpan::new();
-        let remove_len = end - start + 1;
+        if start > end {
+            return self.copy(); // nothing to banish
+        }
+        // i64 keeps the length and the shifted coordinates from overflowing
+        // i32 for extreme arguments.
+        let remove_len = i64::from(end) - i64::from(start) + 1;
 
         // No elements in the tmp ints intersect with the range
         let ints = self.diff(&IntSpan::from_pair(start, end));
@@ -1533,7 +1618,15 @@ impl IntSpan {
             if *upper < start {
                 new.add_pair(*lower, *upper);
             } else if *lower > end {
-                new.add_pair(*lower - remove_len, *upper - remove_len);
+                let shifted_lower = (i64::from(*lower) - remove_len)
+                    .clamp(i64::from(i32::MIN), i64::from(i32::MAX))
+                    as i32;
+                let shifted_upper = (i64::from(*upper) - remove_len)
+                    .clamp(i64::from(i32::MIN), i64::from(i32::MAX))
+                    as i32;
+                if shifted_lower <= shifted_upper {
+                    new.add_pair(shifted_lower, shifted_upper);
+                }
             } else {
                 panic!("Something went wrong while banishing {}-{}", start, end);
             }
@@ -1695,6 +1788,21 @@ mod span {
 
             assert_eq!(ints.banish(start, end).to_string(), expected);
         }
+    }
+
+    #[test]
+    fn banish_extreme_args_do_not_overflow() {
+        // start > end: nothing to banish, the set is returned unchanged.
+        let set = IntSpan::from("1-10");
+        assert_eq!(set.banish(5, 3).to_string(), "1-10");
+        // Extreme span length used to overflow `end - start + 1`.
+        let full = IntSpan::from("-2147483647-2147483645");
+        assert_eq!(full.banish(-2147483647, 2147483645).to_string(), "-");
+        // Shifting elements above a huge range clamps to the i32 range.
+        let shifted = IntSpan::from("100-200").banish(-2147483647, 2147483645);
+        assert_eq!(shifted.to_string(), "-");
+        let partial = IntSpan::from("1-10,100-110").banish(1, 10);
+        assert_eq!(partial.to_string(), "90-100");
     }
 }
 

@@ -56,7 +56,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let json = pgr::libs::runlist::read_json(args.get_one::<String>("runlist").unwrap())?;
     let set = pgr::libs::runlist::json_to_set(&json)?;
-    let index = pgr::libs::runlist::SpanIndex::from_set(&set);
 
     let mut writer = pgr::writer(outfile)?;
     for infile in args.get_many::<String>("infiles").unwrap() {
@@ -67,9 +66,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             if !pgr::libs::runlist::usable_range(&range) {
                 continue;
             }
-            // `overlap` is O(log n + k) per line via binary search over the
-            // sorted spans; all three ops derive from the covered size.
-            let (size, length) = index.overlap(range.chr(), *range.start(), *range.end());
+            // `IntSpan::covered` is O(log n + k) per line; all three ops
+            // derive from the covered size.
+            let start = *range.start();
+            let end = *range.end();
+            let size = set.get(range.chr()).map_or(0, |s| s.covered(start, end));
+            let length = end - start + 1;
             let keep = match op {
                 "overlap" => size > 0,
                 "non-overlap" => size == 0,

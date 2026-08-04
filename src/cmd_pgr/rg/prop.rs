@@ -51,7 +51,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let json = pgr::libs::runlist::read_json(args.get_one::<String>("runlist").unwrap())?;
     let set = pgr::libs::runlist::json_to_set(&json)?;
-    let index = pgr::libs::runlist::SpanIndex::from_set(&set);
 
     let mut writer = pgr::writer(outfile)?;
     for infile in args.get_many::<String>("infiles").unwrap() {
@@ -63,7 +62,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 continue;
             }
             let (prop, length, size) =
-                pgr::libs::runlist::range_prop(&index, range.chr(), *range.start(), *range.end());
+                pgr::libs::runlist::range_prop(&set, range.chr(), *range.start(), *range.end());
             if is_full {
                 writeln!(writer, "{}\t{:.4}\t{}\t{}", line, prop, length, size)?;
             } else {

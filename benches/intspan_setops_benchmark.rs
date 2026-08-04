@@ -128,5 +128,71 @@ fn bench_construction(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_setops, bench_construction);
+fn bench_covered(c: &mut Criterion) {
+    let mut group = c.benchmark_group("covered");
+    // The `intersect+cardinality` baseline is O(n) per query, so keep both
+    // n and the query count small enough for criterion to finish quickly.
+    for &n in &[2_000usize, 5_000] {
+        let mut rng = StdRng::seed_from_u64(SEED ^ (n as u64) << 4);
+        let set = random_runlist(n, &mut rng);
+        let queries: Vec<(i32, i32)> = (0..2_000)
+            .map(|_| {
+                let s = rng.random_range(0..CHR_LEN - 2000);
+                (s, s + rng.random_range(100..=2000) - 1)
+            })
+            .collect();
+        // SpanIndex-style: the same spans as a flat Vec, queried with
+        // `partition_point` (the structure we merged back into IntSpan).
+        let spans: Vec<(i32, i32)> = set.spans();
+
+        group.bench_with_input(
+            BenchmarkId::new("covered", n),
+            &(&set, &queries),
+            |bb, (s, q)| {
+                bb.iter(|| {
+                    let mut total = 0i64;
+                    for &(a, b) in q.iter() {
+                        total += i64::from(s.covered(a, b));
+                    }
+                    black_box(total)
+                })
+            },
+        );
+        group.bench_with_input(
+            BenchmarkId::new("intersect+cardinality", n),
+            &(&set, &queries),
+            |bb, (s, q)| {
+                bb.iter(|| {
+                    let mut total = 0i64;
+                    for &(a, b) in q.iter() {
+                        let mut r = IntSpan::new();
+                        r.add_pair(a, b);
+                        total += i64::from(s.intersect(&r).cardinality());
+                    }
+                    black_box(total)
+                })
+            },
+        );
+        group.bench_with_input(
+            BenchmarkId::new("partition_point vec", n),
+            &(&spans, &queries),
+            |bb, (sp, q)| {
+                bb.iter(|| {
+                    let mut total = 0i64;
+                    for &(a, b) in q.iter() {
+                        let first = sp.partition_point(|&(_, e)| e < a);
+                        let last = sp.partition_point(|&(st, _)| st <= b);
+                        for &(st, e) in &sp[first..last] {
+                            total += i64::from(b.min(e) - a.max(st) + 1);
+                        }
+                    }
+                    black_box(total)
+                })
+            },
+        );
+    }
+    group.finish();
+}
+
+criterion_group!(benches, bench_setops, bench_construction, bench_covered);
 criterion_main!(benches);

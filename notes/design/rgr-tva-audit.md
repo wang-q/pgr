@@ -130,8 +130,8 @@ cover/coverage 命令、测试迁至 `tests/cli_rg.rs`、新增 `docs/rg.md` 并
 * 输入：runlist JSON + `.rg` 文件；输出：每行追加 `prop`（与 runlist 交集
   占比），`--full` 追加 `length`、`size`，即 `range<TAB>prop[<TAB>length
   <TAB>size]`。
-* 实现：`libs/runlist::SpanIndex`（每染色体有序 span 数组，两次二分定位
-  重叠段，O(log n + k)）+ `range_prop`；`.rg` 行解析复用 `usable_range`
+* 实现：`IntSpan::covered`（对有序 span 两次二分定位重叠段，O(log n +
+  k)）+ `range_prop`；`.rg` 行解析复用 `usable_range`
   守卫（与 `rg_to_set`/`count` 同款）。
 * 输出与 `rgr prop` 在 S288c fixture 上逐字节一致（`--full` 同样）。
 * 基准：100k target + 154k spans，48.7 ms vs `rgr prop` 5.82 s（快

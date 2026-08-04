@@ -180,9 +180,11 @@ runlist 双重解析，可预期反超；当前量级（100k target 约 6 s）�
 火焰图（perf + inferno，25556 采样）确认 6 s 的绝对主体是 `intersect`
 链中的 `add_pair`——在 ~19k 段 runlist 上做 O(n) VecDeque 搬移
 （`add_pair` 总耗时 66.7%，其中 `remove` 64.3% / `memmove` 21.6%）。
-据此实现 `libs/runlist::SpanIndex`：利用 IntSpan span 有序且互不相交的
-不变量，把重叠段定位从线性扫描换成两次 `partition_point` 二分
-（重叠段必为连续区间），单查询 O(spans) → O(log n + k)。
+据此给 IntSpan 加 `covered(start, end)`：利用 span 有序且互不相交的
+不变量，把重叠段定位从线性扫描换成两次二分（重叠段必为连续区间），
+单查询 O(spans) → O(log n + k)。（初版用独立的 `SpanIndex` 结构持有
+同样的 span 数据，后按"数据结构不应拆散 IntSpan"的意见合并回
+`IntSpan::covered`，prop/runlist 直接调用。）
 
 复测（8 次取均值）：
 
