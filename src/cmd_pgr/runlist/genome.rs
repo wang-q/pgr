@@ -27,7 +27,10 @@ Examples:
 /// Execute the genome command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let outfile = crate::cmd_pgr::args::get_outfile(args);
-    let sizes = pgr::read_sizes::<i32>(args.get_one::<String>("infile").unwrap())?;
+    let infile = args.get_one::<String>("infile").unwrap();
+    // The output is runlist JSON, not a sizes file; refuse to overwrite it.
+    crate::cmd_pgr::args::ensure_outfile_distinct(outfile, std::iter::once(infile.as_str()))?;
+    let sizes = pgr::read_sizes::<i32>(infile)?;
     let set = pgr::libs::runlist::genome_set(&sizes)?;
     let json = pgr::libs::ds::intspan::set2json(&set);
     pgr::libs::ds::intspan::write_json(outfile, &json)?;

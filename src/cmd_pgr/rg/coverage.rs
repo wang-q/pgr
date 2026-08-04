@@ -54,6 +54,14 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let minimum = *args.get_one::<u32>("minimum").unwrap();
     let is_detailed = args.get_flag("detailed");
 
+    // The output is runlist JSON, not `.rg`; refuse to overwrite an input.
+    crate::cmd_pgr::args::ensure_outfile_distinct(
+        outfile,
+        args.get_many::<String>("infiles")
+            .unwrap()
+            .map(String::as_str),
+    )?;
+
     let mut iv_of: BTreeMap<String, Vec<(u32, u32)>> = BTreeMap::new();
     for infile in args.get_many::<String>("infiles").unwrap() {
         let reader = pgr::reader(infile)?;

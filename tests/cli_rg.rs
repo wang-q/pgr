@@ -256,6 +256,31 @@ fn command_rg_count_stdin_intervals() {
     assert_eq!(stdout, "chr1:1-5\t1\nchr1:10-20\t2\n");
 }
 
+// The COITree index stores `.rg` ranges as inclusive `[start, end]`; a
+// target range that merely touches an indexed range at a shared endpoint must
+// still count as an overlap (positions are 1-based inclusive). Verify both
+// the start and end touch directions.
+#[test]
+fn command_rg_count_touching_endpoints_are_overlaps() {
+    let dir = TempDir::new().unwrap();
+    let target = dir.path().join("target.rg");
+    let intervals = dir.path().join("iv.rg");
+    std::fs::write(&target, "chr1:10-20\nchr1:20-20\nchr1:1-5\n").unwrap();
+    std::fs::write(&intervals, "chr1:20-20\nchr1:10-20\nchr1:5-5\n").unwrap();
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "rg",
+            "count",
+            target.to_str().unwrap(),
+            intervals.to_str().unwrap(),
+        ])
+        .run();
+    // `10-20` overlaps `10-20` and touches `20-20` (end); `20-20` overlaps
+    // `20-20` (self) and touches `10-20` (end); `1-5` touches `5-5` (end).
+    // `5-5` is disjoint from `10-20`/`20-20`.
+    assert_eq!(stdout, "chr1:10-20\t2\nchr1:20-20\t2\nchr1:1-5\t1\n");
+}
+
 // Migrated from intspan `tests/cli_rgr.rs` `command_count` (.rg part; the
 // TSV `-f` part tests functionality dropped by the rg-family input contract).
 #[test]
@@ -554,6 +579,27 @@ fn command_rg_output_same_as_input_rejected() {
         ],
         vec![
             "rg",
+            "cover",
+            rg.to_str().unwrap(),
+            "-o",
+            rg.to_str().unwrap(),
+        ],
+        vec![
+            "rg",
+            "coverage",
+            rg.to_str().unwrap(),
+            "-o",
+            rg.to_str().unwrap(),
+        ],
+        vec![
+            "rg",
+            "merge",
+            rg.to_str().unwrap(),
+            "-o",
+            rg.to_str().unwrap(),
+        ],
+        vec![
+            "rg",
             "prop",
             json.to_str().unwrap(),
             rg.to_str().unwrap(),
@@ -567,6 +613,22 @@ fn command_rg_output_same_as_input_rejected() {
             rg.to_str().unwrap(),
             "-o",
             rg.to_str().unwrap(),
+        ],
+        vec![
+            "rg",
+            "runlist",
+            json.to_str().unwrap(),
+            rg.to_str().unwrap(),
+            "-o",
+            json.to_str().unwrap(),
+        ],
+        vec![
+            "rg",
+            "prop",
+            json.to_str().unwrap(),
+            rg.to_str().unwrap(),
+            "-o",
+            json.to_str().unwrap(),
         ],
         vec![
             "rg",
@@ -584,11 +646,12 @@ fn command_rg_output_same_as_input_rejected() {
             "{args:?}: got: {stderr}"
         );
     }
-    // The input must be untouched.
+    // The inputs must be untouched.
     assert_eq!(
         std::fs::read_to_string(&rg).unwrap(),
         "chr1:1-10\nchr1:20-30\n"
     );
+    assert_eq!(std::fs::read_to_string(&json).unwrap(), r#"{"chr1":"1-5"}"#);
 }
 
 // A file literally named `stdout` must not be mistaken for the screen

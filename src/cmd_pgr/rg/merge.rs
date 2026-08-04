@@ -50,6 +50,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         .unwrap()
         .cloned()
         .collect();
+    // The output is a `part<TAB>merged` mapping, not `.rg`; refuse to
+    // overwrite an input file.
+    crate::cmd_pgr::args::ensure_outfile_distinct(outfile, files.iter().map(String::as_str))?;
     let mapping = pgr::libs::runlist::rg_merge_mapping(&files, coverage)?;
 
     let mut writer = pgr::writer(outfile)?;

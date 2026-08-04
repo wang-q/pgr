@@ -35,6 +35,15 @@ Examples:
 /// Execute the some command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let outfile = crate::cmd_pgr::args::get_outfile(args);
+    // The output is a runlist JSON, not the input runlist or names file;
+    // refuse to overwrite either.
+    crate::cmd_pgr::args::ensure_outfile_distinct(
+        outfile,
+        [
+            args.get_one::<String>("infile").unwrap().as_str(),
+            args.get_one::<String>("list").unwrap().as_str(),
+        ],
+    )?;
     let json = pgr::libs::runlist::read_json(args.get_one::<String>("infile").unwrap())?;
     let names: std::collections::BTreeSet<String> =
         pgr::libs::io::read_names(args.get_one::<String>("list").unwrap())?;

@@ -33,7 +33,27 @@ runlist 家族对照 spanr 0.6.7 源码、rg 家族对照 rgr 源码逐条核对
 * `__single__` 哨兵键与同名单集合理论上碰撞（与 spanr 一致）。
 * `runlist split` 的键含 `/` 或 `..` 时输出可写到 outdir 之外（与 spanr
   一致）。
+* `runlist split` 的 outdir 为输入所在目录且某键等于输入 basename 时，
+  输出 `<outdir>/<key><suffix>` 会覆盖输入文件（先读全量再写，计算不受
+  影响，仅磁盘输入被覆盖）。与 spanr 一致，且需键名匹配输入文件名，属
+  窄边角；未加 `ensure_outfile_distinct`（split 输出为目录内多文件，检查
+  需逐输出路径比对，成本高于收益）。
+* `runlist split -o stdout` 逐行打印各键的 JSON 值，但**丢弃键名**（文件
+  模式键名是文件名，stdout 模式无对应物）。实测输出仅为
+  `{"chr1":"1-5"}` 之类值，无法区分同值不同键。文档仅写"line by line"，
+  未承诺格式；`command_runlist_split` 只覆盖目录模式，stdout 模式无测试。
+  属低风险 UX 疑点，未改（若按管道扁平化设计则为有意）。
+* `runlist merge`（未加 `--all`）两个输入若首段 stem 相同（如
+  `sample.a.json` 与 `sample.b.json`）会以同一键写入，后者**静默覆盖**前者
+  （实测输出仅保留 `sample.b` 的数据）。属键控方案固有行为（与 spanr 一致，
+  用户自选键名），未见测试覆盖；非全功能键冲突本质为数据丢失，低风险，未改
+  （`--all` 用完整 stem 可规避，`command_runlist_merge_all_uses_full_stem`
+  已覆盖该路径）。
 * `combine --op intersect` 的空集折叠语义（见上），不追 spanr 逐字节。
+* `-o stdin` 会被 `pgr::writer` 当作字面文件名创建（`writer` 只对
+  `stdout` 哨兵特判，`stdin` 专属输入流）。属全局约定（输出用 `stdout`、
+  输入用 `stdin`），非 `runlist rg` 特有；用户误用 `-o stdin` 会得到名为
+  `stdin` 的文件而非屏幕输出。低风险，未改（改动需全局处理，出本审核范围）。
 
 ## 已知限制（有意保留）
 
@@ -235,6 +255,67 @@ spanr 时代 `chr:start-end` 按 `.` 截断 contig 名（`NC_000913.1` → `"1"`
   `indexing_wide_spans_do_not_overflow`、`reversed_pairs_are_skipped_
   not_panicked`、`invalid_index_arguments_return_none` 等。
 
+## 后续补充（2026-08-04 复核 3）
+
+`-o` 同输入保护在 `rg` 家族中不一致：`rg count` 保护 target+infiles、
+`runlist convert` 保护全部输入，但读出全量后再写输出的命令存在两类缺口：
+
+* `rg runlist`/`rg prop` 的 `ensure_outfile_distinct` 只传 `.rg` infiles，
+  未含 runlist.json 参考文件。`-o runlist.json` 会把 runlist 覆盖成过滤后的
+  `.rg` 行（exit 0，静默数据丢失）。修复：把 runlist.json 加入检查
+  （与 `rg count` 的 target 处理一致）。
+* `rg cover`/`rg merge`/`rg coverage` 完全没有调用 `ensure_outfile_distinct`，
+  `-o infile` 会把 `.rg` 输入覆盖成 JSON/映射输出。修复：三命令均加入检查
+  （输出格式与输入不同，不存在原地改写这一合法用法）。
+  `rg sort` 输出格式与输入相同（.rg），原地排序是安全且合理的用法，故**不**
+  加入检查。
+
+回归测试：`command_rg_output_same_as_input_rejected` 新增 `rg runlist`/
+`rg prop` 的输出指向 runlist.json、以及 `rg cover`/`rg coverage`/`rg merge`
+指向输入 `.rg` 的各用例，并断言 runlist.json 输入未被改动。
+
+## 后续补充（2026-08-04 复核 4）
+
+`-o` 同输入保护在 `runlist` 家族同样不完整：`runlist genome/stat/statop`
+已加保护，但 `runlist merge/compare/some/combine/span` 五个 JSON 输出命令
+仍缺 `ensure_outfile_distinct`。它们都先读全量输入再写 `-o`，`-o` 指向输入
+文件会把输入覆盖成变换后的 JSON（exit 0，静默数据丢失），与复核 3 修复的
+`rg runlist`/`rg prop` 场景同类。修复：五命令均加入检查（输出结构均与输入
+不同，不存在原地改写这一合法用法；`runlist some` 同时保护 runlist 与 names
+列表两个输入）。
+
+回归测试：`command_runlist_output_same_as_input_rejected` 覆盖 `merge`/
+`compare`/`some`/`combine`/`span` 的 `-o` 指向输入各用例，并断言输入文件
+未被改动。
+
+## 后续补充（2026-08-04 复核 5）
+
+复核 `rg`/`runlist` 全部子命令与 `libs/runlist`、`libs/ds/range`、
+`libs/ds/intspan` 的核心路径，未发现新的缺陷。重点核验并排除的疑点：
+
+* `stat`/`statop` 的 `--all` 表头与数据行在多/single 双形态下字段数一致
+  （实测：stat multi/single 各 4/3 列，statop multi/single 各 8/7 列，均与
+  数据行吻合）。
+* `rg count` 的 COITree 区间为**闭区间** `[start, end]`，目标与索引区间仅
+  端点相接（`chr1:10-20` 对 `chr1:20-20`）仍计为重叠。此前无测试覆盖此
+  边界；新增回归 `command_rg_count_touching_endpoints_are_overlaps`。
+* `depth_runs` 扫描线对相邻/相接区间的深度合并正确（`[0,10)`+`[10,20)`
+  → `0-19` 深度 1）。
+* `Range` 扫描器 unicode/缺省/溢出语义与参考正则一致（既有 fuzz 覆盖）。
+
+新增记录项：`runlist merge`（未加 `--all`）两输入首段 stem 相同会静默覆盖
+（见"记录项"）。
+
+## 后续补充（2026-08-04 复核 2）
+
+`runlist merge --all` 的帮助文本与代码/文档不一致：帮助写 "All parts of
+file stem, except the last one"，但代码（`merge_files`）在 `--all` 时用完整
+stem 作 key（`docs/runlist.md` 亦如此）。修复帮助文本为 "Use the full file
+stem as the key (without --all only the first dot-separated part is used)"，
+并补回归测试 `command_runlist_merge_all_uses_full_stem`（此前 `--all` 行为
+无测试覆盖，`sample.a.json`/`sample.b.json` 在 `--all` 下不再因共享 `sample`
+前缀而碰撞）。
+
 ## 后续补充（2026-08-04 复核）
 
 `rg runlist` 再次核对 rgr 源码：`superset` 语义确认为 `set.superset(range)`
@@ -248,3 +329,22 @@ spanr 时代 `chr:start-end` 按 `.` 截断 contig 名（`NC_000913.1` → `"1"`
   span）。新增 `command_rg_runlist_superset_partial_overlap`，用
   `chr1:5-25`（含 span 但非内含）锁死"range 在 runlist 内"语义，并断言
   overlap / non-overlap 的包含/部分重叠/不相交三态输出。
+
+## 后续补充（2026-08-04 复核 7）
+
+逐命令实测复核边界行为，并对剩余未细读路径做全量扫描，未发现新缺陷：
+
+* 实测：`runlist compare` 以 multi 文件作"other"报友好错误
+  （"runlist value for a is not a string"）；`rg span` 对 `I(-)` 链
+  `trim`/`flank` 结果正确；`stat` 对 sizes 缺失染色体报友好错误；
+  空 runlist 转换产物为空；`rg coverage -m 0` 按 1 处理；`rg merge`
+  对 5'链/`(-)` 链及同名不同链区间聚类正确（合并代表 `chr(+):min-max`）。
+* 全量扫描 `cmd_pgr/rg` 与 `cmd_pgr/runlist` 的 `unwrap()`/`unreachable!`：
+  全部为 clap `required` 参数或 `value_parser` 约束枚举，运行期不可达，无
+  潜在 panic（符合"稳定性原则"）。
+* 复核 `IntSpan::runlist_to_ranges` 解析器：负数坐标、`i32::MIN` 累积、
+  `POS_INF-1` 上界、`lower>upper` 报错、`add_ranges` 边合并均正确（含
+  既有 fuzz 覆盖）。
+
+至此 `rg`/`runlist` 两个命令族经 7 轮深审（累计修复 43+ 处缺陷、补
+回归测试与文档澄清），未再发现新问题，审核收敛。

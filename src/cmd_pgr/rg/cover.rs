@@ -35,6 +35,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         .unwrap()
         .cloned()
         .collect();
+    // The output is runlist JSON, not `.rg`; refuse to overwrite an input.
+    crate::cmd_pgr::args::ensure_outfile_distinct(outfile, files.iter().map(String::as_str))?;
     let set = pgr::libs::runlist::rg_files_to_set(&files)?;
     let json = pgr::libs::ds::intspan::set2json(&set);
     pgr::libs::ds::intspan::write_json(outfile, &json)?;

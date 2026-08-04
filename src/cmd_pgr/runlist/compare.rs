@@ -50,6 +50,16 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         "xor" => pgr::libs::runlist::CompareOp::Xor,
         _ => unreachable!("invalid compare op"),
     };
+    // The output is a runlist JSON, not one of the input files; refuse to
+    // overwrite an input.
+    crate::cmd_pgr::args::ensure_outfile_distinct(
+        outfile,
+        std::iter::once(args.get_one::<String>("infile").unwrap().as_str()).chain(
+            args.get_many::<String>("infiles")
+                .unwrap()
+                .map(String::as_str),
+        ),
+    )?;
 
     let first = pgr::libs::runlist::read_json(args.get_one::<String>("infile").unwrap())?;
     let first = pgr::libs::runlist::json_to_sets(&first)?;

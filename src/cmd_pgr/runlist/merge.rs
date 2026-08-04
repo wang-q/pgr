@@ -28,7 +28,7 @@ Examples:
             Arg::new("all")
                 .long("all")
                 .action(ArgAction::SetTrue)
-                .help("All parts of file stem, except the last one"),
+                .help("Use the full file stem as the key (without --all only the first dot-separated part is used)"),
         )
         .arg(crate::cmd_pgr::args::outfile_arg())
 }
@@ -41,6 +41,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         .unwrap()
         .cloned()
         .collect();
+    // The output is a multi runlist JSON, not a single runlist; refuse to
+    // overwrite an input file.
+    crate::cmd_pgr::args::ensure_outfile_distinct(outfile, files.iter().map(String::as_str))?;
     let out = pgr::libs::runlist::merge_files(&files, args.get_flag("all"))?;
     pgr::libs::ds::intspan::write_json(outfile, &out)?;
     Ok(())

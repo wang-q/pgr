@@ -72,6 +72,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         _ => unreachable!("invalid span op"),
     };
     let number = *args.get_one::<i32>("number").unwrap();
+    // The output is a runlist JSON, not the input runlist; refuse to
+    // overwrite it.
+    crate::cmd_pgr::args::ensure_outfile_distinct(outfile, std::iter::once(infile.as_str()))?;
 
     let json = pgr::libs::runlist::read_json(infile)?;
     let set_of = pgr::libs::runlist::json_to_sets(&json)?;

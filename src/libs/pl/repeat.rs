@@ -511,14 +511,20 @@ pub fn run_self_align_pipeline(opts: &SelfAlignOpts) -> anyhow::Result<()> {
         if line.trim().is_empty() {
             continue;
         }
-        let (name, rest) = line
-            .split_once(':')
-            .ok_or_else(|| anyhow::anyhow!("invalid .rg line: {}", line))?;
+        // The rg line is `{contig}:{start}-{end}`; `to-range` writes the real
+        // contig name, which may contain '.' or ':' (e.g. `NC_000913.1`,
+        // `chr1:alt`). Parse via the range suffix and rewrite with the
+        // dot/colon-free placeholder so the downstream rg parser cannot
+        // misread the name separators.
+        let Some((contig, start, end)) = crate::libs::fmt::psl::parse_subrange(&line) else {
+            log::warn!("skipping unparseable coverage .rg line: {}", line);
+            continue;
+        };
         let safe = name_map
-            .get(name)
+            .get(&contig)
             .cloned()
-            .unwrap_or_else(|| name.to_string());
-        writer.write_fmt(format_args!("{}:{}\n", safe, rest))?;
+            .unwrap_or_else(|| contig.clone());
+        writer.write_fmt(format_args!("{}:{}-{}\n", safe, start, end))?;
     }
     drop(writer);
 

@@ -60,11 +60,16 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let json = pgr::libs::runlist::read_json(args.get_one::<String>("runlist").unwrap())?;
     let set = pgr::libs::runlist::json_to_set(&json)?;
+    // Protect both the runlist reference and the streamed `.rg` inputs from
+    // being overwritten by `-o` (the runlist is read fully first, but the
+    // output still clobbers it on disk).
     crate::cmd_pgr::args::ensure_outfile_distinct(
         outfile,
-        args.get_many::<String>("infiles")
-            .unwrap()
-            .map(String::as_str),
+        std::iter::once(args.get_one::<String>("runlist").unwrap().as_str()).chain(
+            args.get_many::<String>("infiles")
+                .unwrap()
+                .map(String::as_str),
+        ),
     )?;
 
     // Validate that every input can be opened before creating the output,

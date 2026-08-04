@@ -43,6 +43,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         "xor" => pgr::libs::runlist::CompareOp::Xor,
         _ => unreachable!("invalid combine op"),
     };
+    // The output is a runlist JSON, not the input runlist; refuse to
+    // overwrite it.
+    crate::cmd_pgr::args::ensure_outfile_distinct(
+        outfile,
+        std::iter::once(args.get_one::<String>("infile").unwrap().as_str()),
+    )?;
     let json = pgr::libs::runlist::read_json(args.get_one::<String>("infile").unwrap())?;
     let set_of = pgr::libs::runlist::json_to_sets(&json)?;
     let res = pgr::libs::runlist::combine_sets(&set_of, op);

@@ -145,6 +145,30 @@ fn command_runlist_merge() {
 }
 
 #[test]
+fn command_runlist_merge_all_uses_full_stem() {
+    let dir = TempDir::new().unwrap();
+    let a = dir.path().join("sample.a.json");
+    let b = dir.path().join("sample.b.json");
+    std::fs::write(&a, r#"{"chr1":"1-5"}"#).unwrap();
+    std::fs::write(&b, r#"{"chr2":"6-9"}"#).unwrap();
+    // `--all` uses the full stem as the key, so `sample.a` and `sample.b`
+    // no longer collide (they share the `sample` first segment).
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "runlist",
+            "merge",
+            a.to_str().unwrap(),
+            b.to_str().unwrap(),
+            "--all",
+        ])
+        .run();
+    assert_eq!(
+        stdout,
+        "{\n  \"sample.a\": {\n    \"chr1\": \"1-5\"\n  },\n  \"sample.b\": {\n    \"chr2\": \"6-9\"\n  }\n}\n"
+    );
+}
+
+#[test]
 fn command_runlist_genome() {
     let dir = TempDir::new().unwrap();
     let sizes = dir.path().join("sizes.txt");
@@ -352,4 +376,91 @@ fn command_runlist_statop_multi_second_errors() {
         ])
         .run_fail();
     assert!(stderr.contains("not a string"), "got: {stderr}");
+}
+
+// All runlist JSON-output commands read their input fully and then write the
+// output to `-o`; a `-o` pointing at an input file would clobber it on disk
+// (the output structure differs from the input, so there is no legitimate
+// in-place use). These must be rejected, mirroring the `-o` protection added
+// for `runlist genome/stat/statop` and the `rg` family.
+#[test]
+fn command_runlist_output_same_as_input_rejected() {
+    let dir = TempDir::new().unwrap();
+    let single = dir.path().join("single.json");
+    let single2 = dir.path().join("other.json");
+    let multi = dir.path().join("multi.json");
+    let names = dir.path().join("names.txt");
+    std::fs::write(&single, "{\"chr1\":\"1-5\"}").unwrap();
+    std::fs::write(&single2, "{\"chr2\":\"6-9\"}").unwrap();
+    std::fs::write(
+        &multi,
+        "{\"a\":{\"chr1\":\"1-5\"},\"b\":{\"chr2\":\"6-9\"}}",
+    )
+    .unwrap();
+    std::fs::write(&names, "chr1\n").unwrap();
+
+    let cases: Vec<Vec<&str>> = vec![
+        // merge: output (multi) would clobber a single input.
+        vec![
+            "runlist",
+            "merge",
+            single.to_str().unwrap(),
+            single2.to_str().unwrap(),
+            "-o",
+            single.to_str().unwrap(),
+        ],
+        // compare: output would clobber the first input.
+        vec![
+            "runlist",
+            "compare",
+            single.to_str().unwrap(),
+            single2.to_str().unwrap(),
+            "-o",
+            single.to_str().unwrap(),
+        ],
+        // some: output would clobber the runlist (or the names list).
+        vec![
+            "runlist",
+            "some",
+            single.to_str().unwrap(),
+            names.to_str().unwrap(),
+            "-o",
+            single.to_str().unwrap(),
+        ],
+        // combine: output would clobber the multi input.
+        vec![
+            "runlist",
+            "combine",
+            multi.to_str().unwrap(),
+            "-o",
+            multi.to_str().unwrap(),
+        ],
+        // span: output would clobber the input.
+        vec![
+            "runlist",
+            "span",
+            single.to_str().unwrap(),
+            "-o",
+            single.to_str().unwrap(),
+        ],
+    ];
+
+    for args in cases {
+        let (_, stderr) = PgrCmd::new().args(&args).run_fail();
+        assert!(
+            stderr.contains("also an input file"),
+            "{}: got: {stderr}",
+            args.join(" ")
+        );
+    }
+
+    // The inputs must be untouched.
+    assert_eq!(
+        std::fs::read_to_string(&single).unwrap(),
+        "{\"chr1\":\"1-5\"}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&multi).unwrap(),
+        "{\"a\":{\"chr1\":\"1-5\"},\"b\":{\"chr2\":\"6-9\"}}"
+    );
 }
