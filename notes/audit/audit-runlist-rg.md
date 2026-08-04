@@ -1,8 +1,8 @@
 # runlist / rg 命令族代码审核记录（2026-08-04）
 
 对新增的 `pgr runlist` 与 `pgr rg` 两个命令族及相关的库文件进行多轮深入
-审核。范围：`cmd_pgr/runlist/` 12 个子命令（combine/compare/convert/cover/
-coverage/genome/merge/some/span/split/stat/statop）、`cmd_pgr/rg/` 8 个子
+审核。范围：`cmd_pgr/runlist/` 10 个子命令（combine/compare/convert/genome/
+merge/some/span/split/stat/statop）、`cmd_pgr/rg/` 8 个子
 命令（cover/coverage/count/merge/prop/runlist/sort/span）、
 `cmd_pgr/gff/runlist`、`libs/runlist`、迁入的 `libs/ds/intspan` 与手写扫描
 器版 `libs/ds/range`、`libs/fmt/gff`、`libs/io::read_runlist`，以及迁移了
@@ -15,9 +15,27 @@ spanr 调用的 `libs/pl/repeat`、`cmd_pgr/pl/p2m`、`cmd_pgr/rept/trf` 和全�
 `cargo fmt`、`cargo clippy --all-targets -- -D warnings` 干净，全部测试
 二进制 + doctest 通过（1178 个断言）。
 
+第 7 轮（本文件定稿后追加）：全量重读 `rg` / `runlist` 家族与
+`libs/ds/range.rs`、`libs/ds/intspan.rs`、`libs/runlist/mod.rs`，用暴力
+实现差分对拍（集合运算、深度扫描线、`covered`、`rg merge` 聚类、Range
+极端运算、CLI 近上限坐标 200 trial）与 300 trial × 20 条命令的畸形输入
+fuzz 复核，新发现 2 处缺陷（#26、#27）并修复；修复后重跑全部验证。
+
+第 8 轮（复核轮）：对 #26/#27 修复做极端坐标差分对拍（[i32::MIN,
+POS_INF-1] 域 3000 trial 的 union/intersect/diff/xor/trim/pad，含无限臂
+与饱和语义）与 120 trial × 18 条命令的全新种子 fuzz，另手工核验
+`stat` / `statop` 的 `--all` 表头与行列对齐——未再发现新问题，收束。
+
+第 9 轮（终审轮）：换全新角度复核——5000 组随机集合的结构不变量
+（edges 严格递增 / 偶数 / span 不相邻）+ Display 往返解析一致、150 组
+CLI 往返（`rg cover` → `runlist convert` → `rg cover` 并集一致、
+`runlist span trim/pad -n 0` 恒等）、5000 组 `Range` 解析-重编码
+往返——未发现新问题，确认收束条件成立。
+
 ## 修复的缺陷（共 25 处）
 
-修复按发现顺序全局编号（#1-19 为 runlist 阶段、#20-25 为 rg 阶段），
+修复按发现顺序全局编号（#1-19 为 runlist 阶段、#20-25 为 rg 阶段、
+#26-27 为第 7 轮），
 按类别分组。
 
 ### 崩溃 / 越界 / 溢出（Zero Panic，16 处）
@@ -145,6 +163,27 @@ spanr 调用的 `libs/pl/repeat`、`cmd_pgr/pl/p2m`、`cmd_pgr/rept/trf` 和全�
     输出无意义的映射行。修复：`rg_merge_mapping` 在
     `parts[i].0 == merged` 时跳过。
 
+### 输入校验 / 静默错误（第 7 轮，2 处）
+
+26. **`Range::from_str` 的 end 坐标溢出被静默折叠为 start**：
+    `tail_match` 对超过 i32 的数字串返回 0（意图是"无效"），但 `decode`
+    把 `end == 0` 当作"缺失"并默认成 start，导致
+    `chr1:5-99999999999` 被解析为合法的点区间 `chr1:5`——`rg count /
+    span / sort / prop / runlist` 全部基于错误坐标计算而输出原行，
+    静默产生错误结果（`rg span` 还会把错误结果写进输出）。修复：
+    `parse_i32` 改为返回 `Option<i32>`（溢出返回 `None`），
+    `tail_match` 传播 `None` 使整行不匹配（落入无效行分支）；字面量
+    `end = 0`、缺失 end、裸 start 的默认行为不变。回归测试
+    `overflow_end_is_invalid_not_start` 与 CLI 用例
+    `command_rg_overflow_end_skipped`。
+27. **`IntSpan::inset` 的 clamp 下界把可表示坐标 i32::MIN 静默改写**：
+    `inset` 把饱和结果 `clamp(NEG_INF, POS_INF - 1)`，而解析器接受
+    `-2147483648`（`test_valid` 显式断言），于是 `runlist span --op
+    trim/pad -n 0`（恒等操作）会把 `{-2147483648}` 变成
+    `{-2147483647}`。修复：clamp 下界改为 `i32::MIN`（与解析器域一致），
+    只保留上界 `POS_INF - 1` 的截断。回归测试
+    `inset_identity_at_i32_min`。
+
 ## 与外部参考实现的语义一致性核对
 
 逐条对照原始 spanr 0.6.7 源码（docs.rs）确认 runlist 家族未改语义：
@@ -183,11 +222,20 @@ spanr 调用的 `libs/pl/repeat`、`cmd_pgr/pl/p2m`、`cmd_pgr/rept/trf` 和全�
 * **`rg span` 饱和结果的取舍**：Range 层保留饱和语义（与 vendored crate
   对齐），CLI 层 `clamp_to_domain` 保证输出可回读（见 #23），两处职责
   分开，不在 Range 层重复夹紧。
+* **`rg span` pad 使 start 越过 1 时输出空行**：`Range::check` 把负坐标
+  夹到 0（0 即"无效"哨兵），pad 处于坐标 1 的区间会得到无效行——与
+  vendored crate / rgr 行为一致，未改（改动会破坏 spanr parity）。
+* **`Range::from_str` 对 `1:-100` 等以 `-` 开头坐标的 fallback**：`:`
+  后不是数字时不匹配，回退为整行作为 chr（`fa_headers` 固定语义），
+  修复 #26 不影响该路径。
 
 ## 记录项（未改，低风险 / 待决策）
 
 * `__single__` 哨兵键与"恰好命名为 `__single__` 的单集合"理论上碰撞，
   与原始 spanr 的 `__single` 设计一致，未处理。
+* `runlist split` 的 `<key><suffix>` 文件名直接由 JSON 顶层键拼出：键含
+  `/` 或 `..` 时文件会写到 outdir 之外（或嵌套目录）。与 spanr 行为一致，
+  本地工具由用户自持输入，未加防御。
 
 ## 已知限制（有意保留）
 
@@ -238,6 +286,10 @@ spanr 调用的 `libs/pl/repeat`、`cmd_pgr/pl/p2m`、`cmd_pgr/rept/trf` 和全�
 * 第 6 轮：rg 家族两轮 fuzz 共 1000+ trial（随机畸形行 + 近上限坐标 +
   极端 `-n`，每 trial 覆盖 16~19 条命令调用）、runlist 家族 400 trial
   （随机 JSON / 尺寸文件 + 极端 `-n`）、收尾轮 500 trial 新种子——零 panic。
+* 第 7 轮：暴力差分对拍（set ops 3000 trial、depth 3000 trial、
+  covered 3000 trial、rg merge 120 trial、Range 极端运算、CLI 近上限
+  坐标 200 trial）全一致；300 trial × ~20 条命令的随机畸形输入 fuzz
+  零 panic。修复 #26/#27 后全部单元/CLI 测试与 52 个测试目标通过。
 
 ### 最终状态
 
@@ -249,6 +301,9 @@ spanr 调用的 `libs/pl/repeat`、`cmd_pgr/pl/p2m`、`cmd_pgr/rept/trf` 和全�
   命令）、`extreme_ops_do_not_overflow`（Range 层）、
   `command_runlist_span_invalid_runlist_errors` 增补 20 位数字串、
   `command_runlist_span_extreme_ops_do_not_panic` 增补 `pad i32::MIN`。
+  第 7 轮增补：`overflow_end_is_invalid_not_start`（Range 层）、
+  `inset_identity_at_i32_min`（IntSpan 层）、
+  `command_rg_overflow_end_skipped`（cover/span/count/sort 四条命令）。
 
 ## 提交状态
 
@@ -258,3 +313,5 @@ spanr 调用的 `libs/pl/repeat`、`cmd_pgr/pl/p2m`、`cmd_pgr/rept/trf` 和全�
 * 第 2 阶段（rg 家族深审）的代码与测试改动已在 `aac5c50` 提交；本文档的
   合并、重命名与结构调整（与 `audit-sd-rept-align.md` 统一骨架）暂存待
   提交。
+* 第 7 轮的 #26/#27 修复与回归测试、第 8 轮核验记录在工作区（本环境
+  `.git` 只读，无法创建提交；用户侧可自行 `git commit`）。

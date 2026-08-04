@@ -1551,10 +1551,14 @@ impl IntSpan {
             let mut upper = *self.edges.get(i * 2 + 1).unwrap() - 1;
 
             if lower != self.get_neg_inf() {
-                lower = lower.saturating_add(n).clamp(NEG_INF, POS_INF - 1);
+                // The parser accepts coordinates down to i32::MIN, so the
+                // saturated result must not be clamped above that (clamping
+                // to NEG_INF would silently rewrite `-2147483648` even when
+                // `n` is 0).
+                lower = lower.saturating_add(n).clamp(i32::MIN, POS_INF - 1);
             }
             if upper != self.get_pos_inf() {
-                upper = upper.saturating_sub(n).clamp(NEG_INF, POS_INF - 1);
+                upper = upper.saturating_sub(n).clamp(i32::MIN, POS_INF - 1);
             }
 
             if lower <= upper {
@@ -1772,6 +1776,20 @@ mod span {
         assert_eq!(huge.excise(1).to_string(), "-2147483647-2147483645");
         assert_eq!(huge.cardinality(), i32::MAX);
         assert_eq!(huge.fill(100).to_string(), "-2147483647-2147483645");
+    }
+
+    #[test]
+    fn inset_identity_at_i32_min() {
+        // The parser accepts i32::MIN as a coordinate; trim(0)/pad(0) must
+        // be identity on it (clamping the saturated result to NEG_INF used
+        // to silently rewrite `-2147483648` even with n = 0).
+        let s = IntSpan::from("-2147483648-5");
+        assert_eq!(s.trim(0).to_string(), "-2147483648-5");
+        assert_eq!(s.pad(0).to_string(), "-2147483648-5");
+        assert_eq!(s.trim(1).to_string(), "-2147483647-4");
+        let s = IntSpan::from("-2147483648");
+        assert_eq!(s.trim(0).to_string(), "-2147483648");
+        assert_eq!(s.pad(0).to_string(), "-2147483648");
     }
 
     #[test]

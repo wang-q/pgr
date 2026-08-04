@@ -121,6 +121,43 @@ fn command_rg_comments_skipped() {
     assert_eq!(stdout, "");
 }
 
+// An oversized `end` coordinate (`chr1:5-99999999999`) used to be parsed as
+// the point range `chr1:5` (overflow defaulted to start); it must be
+// treated as an invalid line instead of silently corrupting coordinates.
+#[test]
+fn command_rg_overflow_end_skipped() {
+    let dir = TempDir::new().unwrap();
+    let rg = dir.path().join("ov.rg");
+    std::fs::write(
+        &rg,
+        "chr1:5-99999999999\nchr1:1-10\nS288c.I(-):5-99999999999\n",
+    )
+    .unwrap();
+
+    let (stdout, _) = PgrCmd::new()
+        .args(&["rg", "cover", rg.to_str().unwrap()])
+        .run();
+    assert_eq!(stdout, "{\n  \"chr1\": \"1-10\"\n}\n");
+
+    let (stdout, _) = PgrCmd::new()
+        .args(&["rg", "span", rg.to_str().unwrap()])
+        .run();
+    assert_eq!(stdout, "chr1:1-10\n");
+
+    let (stdout, _) = PgrCmd::new()
+        .args(&["rg", "count", rg.to_str().unwrap(), rg.to_str().unwrap()])
+        .run();
+    assert_eq!(stdout, "chr1:1-10\t1\n");
+
+    let (stdout, _) = PgrCmd::new()
+        .args(&["rg", "sort", rg.to_str().unwrap()])
+        .run();
+    assert_eq!(
+        stdout,
+        "chr1:1-10\nchr1:5-99999999999\nS288c.I(-):5-99999999999\n"
+    );
+}
+
 #[test]
 fn command_rg_coverage() {
     let (dir, rg) = fixture_dir();

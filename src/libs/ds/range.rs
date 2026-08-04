@@ -30,8 +30,11 @@
 //! * a bare `start` (no `-end`) gives `end = start`; an explicit `end = 0` is
 //!   treated as "missing" and also defaults to `start` (regex-era behavior);
 //! * no match falls back to `chr` = first whitespace token;
-//! * digit runs too large for `i32` yield `0` (invalid) instead of the
-//!   regex path's `parse::<i32>().unwrap()` panic.
+//! * digit runs too large for `i32` fail to match (invalid) instead of the
+//!   regex path's `parse::<i32>().unwrap()` panic. An oversized `end` must
+//!   not be confused with a missing one (which defaults to `start`), or a
+//!   malformed line such as `chr1:5-99999999999` would be silently treated
+//!   as the point range `chr1:5`.
 
 use super::IntSpan;
 use std::fmt;
@@ -571,8 +574,8 @@ fn rest_match(s: &[u8], q: usize, n: usize) -> Option<(String, String, i32, i32)
 }
 
 /// Match `:digits` with an optional single `_`/`-` spacer and optional
-/// trailing digits (`end` defaults to `start`). Overflowing digit runs give
-/// `0` (invalid) instead of panicking.
+/// trailing digits (`end` defaults to `start`). Overflowing digit runs do
+/// not match (invalid) instead of panicking.
 fn tail_match(s: &[u8], t: usize, n: usize) -> Option<(i32, i32)> {
     if t >= n || s[t] != b':' {
         return None;
@@ -584,7 +587,7 @@ fn tail_match(s: &[u8], t: usize, n: usize) -> Option<(i32, i32)> {
     if u == t + 1 {
         return None; // `\d+` needs at least one digit
     }
-    let start = parse_i32(&s[t + 1..u]);
+    let start = parse_i32(&s[t + 1..u])?;
     let mut v = u;
     if v < n && (s[v] == b'_' || s[v] == b'-') {
         v += 1;
@@ -593,19 +596,19 @@ fn tail_match(s: &[u8], t: usize, n: usize) -> Option<(i32, i32)> {
     while w < n && is_digit(s[w]) {
         w += 1;
     }
-    let end = if w > v { parse_i32(&s[v..w]) } else { start };
+    let end = if w > v { parse_i32(&s[v..w])? } else { start };
     Some((start, end))
 }
 
-fn parse_i32(digits: &[u8]) -> i32 {
+fn parse_i32(digits: &[u8]) -> Option<i32> {
     let mut v: i64 = 0;
     for &d in digits {
         v = v * 10 + i64::from(d - b'0');
         if v > i64::from(i32::MAX) {
-            return 0;
+            return None;
         }
     }
-    v as i32
+    Some(v as i32)
 }
 
 /// To string
@@ -659,6 +662,26 @@ fn extreme_ops_do_not_overflow() {
     assert!(!max.trim(i32::MIN).is_valid());
     assert!(!max.trim_5p(i32::MIN).is_valid());
     assert!(!max.shift_3p(i32::MIN).is_valid());
+}
+
+#[test]
+fn overflow_end_is_invalid_not_start() {
+    // An oversized `end` used to be treated as "missing" and defaulted to
+    // `start`, silently turning `chr1:5-99999999999` into the point range
+    // `chr1:5`. It must be invalid instead.
+    let overflow = Range::from_str("chr1:5-99999999999");
+    assert!(!overflow.is_valid());
+    let overflow = Range::from_str("chr1:5-99999999999999999999");
+    assert!(!overflow.is_valid());
+    let overflow = Range::from_str("S288c.I(-):5-99999999999");
+    assert!(!overflow.is_valid());
+    // Literal `0` and missing ends still default to `start` (regex-era
+    // behavior), and a plain start without a dash is unaffected.
+    assert_eq!(Range::from_str("chr1:5-0").to_string(), "chr1:5");
+    assert_eq!(Range::from_str("chr1:5-").to_string(), "chr1:5");
+    assert_eq!(Range::from_str("chr1:5").to_string(), "chr1:5");
+    // A normal end still parses.
+    assert_eq!(Range::from_str("chr1:5-100").to_string(), "chr1:5-100");
 }
 
 #[test]
