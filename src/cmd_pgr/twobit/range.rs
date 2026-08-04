@@ -48,6 +48,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let infile = args.get_one::<String>("infile").unwrap();
     let output_path = crate::cmd_pgr::args::get_outfile(args);
 
+    crate::cmd_pgr::args::ensure_outfile_distinct(
+        output_path,
+        std::iter::once(infile.as_str())
+            .chain(args.get_one::<String>("rgfile").map(|s| s.as_str())),
+    )?;
+
     let ranges = crate::cmd_pgr::args::collect_ranges(args)?;
 
     // Open files

@@ -552,3 +552,93 @@ fn test_2bit_size_ucsc_real_genome_files() {
         .run();
     assert!(stdout.lines().next().unwrap().contains('\t'));
 }
+
+/// Assert that `-o` pointing at the input 2bit file is rejected (rather than
+/// truncating it) and the input bytes are preserved.
+fn assert_output_not_overwrite_input(args: &[&str]) {
+    let temp = TempDir::new().unwrap();
+    // Copy a fixture to a writable temp path and use it as both input and output.
+    let input = temp.path().join("input.2bit");
+    fs::copy(fixture("mask.2bit"), &input).unwrap();
+    let orig = fs::read(&input).unwrap();
+
+    let mut cmd_args = vec![args[0], args[1], input.to_str().unwrap()];
+    cmd_args.extend_from_slice(&args[2..]);
+    cmd_args.push("-o");
+    cmd_args.push(input.to_str().unwrap());
+
+    let (_, stderr) = PgrCmd::new().args(&cmd_args).run_fail();
+    assert!(
+        stderr.contains("is also an input file"),
+        "expected reject, got: {}",
+        stderr
+    );
+    assert_eq!(
+        fs::read(&input).unwrap(),
+        orig,
+        "input 2bit file must be preserved"
+    );
+}
+
+#[test]
+fn test_2bit_output_not_overwrite_input() {
+    // to-fa
+    assert_output_not_overwrite_input(&["2bit", "to-fa"]);
+    // size
+    assert_output_not_overwrite_input(&["2bit", "size"]);
+    // masked
+    assert_output_not_overwrite_input(&["2bit", "masked"]);
+    // range (full-sequence request)
+    assert_output_not_overwrite_input(&["2bit", "range", "seq1"]);
+    // some (needs a list file; use a temp copy too)
+    let temp = TempDir::new().unwrap();
+    let input = temp.path().join("input.2bit");
+    fs::copy(fixture("some.2bit"), &input).unwrap();
+    let list = temp.path().join("list.txt");
+    fs::write(&list, "seq1\n").unwrap();
+    let orig = fs::read(&input).unwrap();
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "2bit",
+            "some",
+            input.to_str().unwrap(),
+            list.to_str().unwrap(),
+            "-o",
+            input.to_str().unwrap(),
+        ])
+        .run_fail();
+    assert!(
+        stderr.contains("is also an input file"),
+        "expected reject, got: {}",
+        stderr
+    );
+    assert_eq!(fs::read(&input).unwrap(), orig, "input 2bit preserved");
+}
+
+#[test]
+fn test_2bit_range_output_not_overwrite_rgfile() {
+    let temp = TempDir::new().unwrap();
+    let input = temp.path().join("input.2bit");
+    fs::copy(fixture("range.2bit"), &input).unwrap();
+    let rgfile = temp.path().join("ranges.txt");
+    fs::write(&rgfile, "seq1:1-2\n").unwrap();
+    let orig = fs::read(&rgfile).unwrap();
+
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "2bit",
+            "range",
+            input.to_str().unwrap(),
+            "--rgfile",
+            rgfile.to_str().unwrap(),
+            "-o",
+            rgfile.to_str().unwrap(),
+        ])
+        .run_fail();
+    assert!(
+        stderr.contains("is also an input file"),
+        "expected reject, got: {}",
+        stderr
+    );
+    assert_eq!(fs::read(&rgfile).unwrap(), orig, "rgfile preserved");
+}

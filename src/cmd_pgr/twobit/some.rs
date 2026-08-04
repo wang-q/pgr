@@ -46,6 +46,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let list_file = args.get_one::<String>("name_list").unwrap();
     let outfile = crate::cmd_pgr::args::get_outfile(args);
 
+    crate::cmd_pgr::args::ensure_outfile_distinct(outfile, [infile.as_str(), list_file.as_str()])?;
+
     // Load list, ignoring empty lines and comment lines starting with '#'.
     let lines = pgr::libs::io::read_lines(list_file)?;
     let set_list: HashSet<String> = lines
