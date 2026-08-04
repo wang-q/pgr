@@ -117,9 +117,18 @@ impl IntSpan {
     }
 
     pub fn from(runlist: &str) -> Self {
+        Self::try_from(runlist).expect("invalid runlist string")
+    }
+
+    /// Parse `runlist` into a set, returning an error instead of panicking
+    /// on invalid input.
+    pub fn try_from(runlist: &str) -> anyhow::Result<Self> {
         let mut new = Self::new();
-        new.add_runlist(runlist);
-        new
+        if !runlist.is_empty() && runlist != *EMPTY_STRING {
+            let ranges = new.runlist_to_ranges(runlist)?;
+            new.add_ranges(&ranges);
+        }
+        Ok(new)
     }
 
     pub fn valid(runlist: &str) -> bool {
@@ -288,6 +297,16 @@ mod create {
         for (runlist, exp) in &tests {
             assert_eq!(IntSpan::valid(runlist), *exp);
         }
+    }
+
+    #[test]
+    fn try_from_parses_once_and_errors() {
+        assert_eq!(IntSpan::try_from("1-3,5").unwrap().to_string(), "1-3,5");
+        assert!(IntSpan::try_from("").unwrap().is_empty());
+        assert!(IntSpan::try_from("-").unwrap().is_empty());
+        assert!(IntSpan::try_from("abc").is_err());
+        assert!(IntSpan::try_from("1-").is_err());
+        assert!(IntSpan::try_from("5-3").is_err());
     }
 
     #[test]
@@ -687,9 +706,47 @@ impl IntSpan {
     }
 
     pub fn union(&self, other: &Self) -> Self {
-        let mut new = self.copy();
-        new.merge(other);
-        new
+        if self.is_empty() {
+            return other.copy();
+        }
+        if other.is_empty() {
+            return self.copy();
+        }
+        // Linear merge of the two sorted, disjoint span lists (O(n + m)),
+        // coalescing overlapping or adjacent spans.
+        let a = self.spans();
+        let b = other.spans();
+        let mut edges: VecDeque<i32> = VecDeque::new();
+        let (mut i, mut j) = (0usize, 0usize);
+        let mut cur: Option<(i32, i32)> = None;
+        loop {
+            let next = if i < a.len() && (j >= b.len() || a[i].0 <= b[j].0) {
+                let s = a[i];
+                i += 1;
+                Some(s)
+            } else if j < b.len() {
+                let s = b[j];
+                j += 1;
+                Some(s)
+            } else {
+                None
+            };
+            let Some((lo, hi)) = next else { break };
+            match cur {
+                Some((clo, chi)) if lo <= chi + 1 => cur = Some((clo, chi.max(hi))),
+                Some((clo, chi)) => {
+                    edges.push_back(clo);
+                    edges.push_back(chi + 1);
+                    cur = Some((lo, hi));
+                }
+                None => cur = Some((lo, hi)),
+            }
+        }
+        if let Some((lo, hi)) = cur {
+            edges.push_back(lo);
+            edges.push_back(hi + 1);
+        }
+        IntSpan { edges }
     }
 
     pub fn complement(&self) -> Self {
@@ -701,10 +758,36 @@ impl IntSpan {
     pub fn diff(&self, other: &Self) -> Self {
         if self.is_empty() {
             Self::new()
+        } else if other.is_empty() {
+            self.copy()
         } else {
-            let mut new = self.copy();
-            new.subtract(other);
-            new
+            // Linear walk subtracting the sorted other spans from each self
+            // span (O(n + m)); pieces are emitted in ascending order.
+            let a = self.spans();
+            let b = other.spans();
+            let mut edges: VecDeque<i32> = VecDeque::new();
+            let mut j = 0usize;
+            for &(a_lo, a_hi) in &a {
+                while j < b.len() && b[j].1 < a_lo {
+                    j += 1;
+                }
+                let mut cur = a_lo;
+                let mut k = j;
+                while k < b.len() && b[k].0 <= a_hi {
+                    let (b_lo, b_hi) = b[k];
+                    if b_lo > cur {
+                        edges.push_back(cur);
+                        edges.push_back(b_lo);
+                    }
+                    cur = cur.max(b_hi + 1);
+                    k += 1;
+                }
+                if cur <= a_hi {
+                    edges.push_back(cur);
+                    edges.push_back(a_hi + 1);
+                }
+            }
+            IntSpan { edges }
         }
     }
 
@@ -712,18 +795,42 @@ impl IntSpan {
         if self.is_empty() || other.is_empty() {
             Self::new()
         } else {
-            let mut new = self.complement();
-            new.merge(&other.complement());
-            new.invert();
-            new
+            // Linear two-pointer merge over the sorted, disjoint span lists
+            // (O(n + m)). The previous complement+merge+invert chain called
+            // `add_pair` on large sets, whose VecDeque shifts made intersect
+            // O(n·m) in the worst case.
+            let a = self.spans();
+            let b = other.spans();
+            let mut edges: VecDeque<i32> = VecDeque::new();
+            let (mut i, mut j) = (0usize, 0usize);
+            while i < a.len() && j < b.len() {
+                let (a_lo, a_hi) = a[i];
+                let (b_lo, b_hi) = b[j];
+                let lo = a_lo.max(b_lo);
+                let hi = a_hi.min(b_hi);
+                if lo <= hi {
+                    // Result spans arrive in ascending order; extend the
+                    // last span when adjacent (defensive, normally impossible
+                    // given the non-adjacent input span invariant).
+                    if edges.back() == Some(&lo) {
+                        *edges.back_mut().unwrap() = hi + 1;
+                    } else {
+                        edges.push_back(lo);
+                        edges.push_back(hi + 1);
+                    }
+                }
+                if a_hi < b_hi {
+                    i += 1;
+                } else {
+                    j += 1;
+                }
+            }
+            IntSpan { edges }
         }
     }
 
     pub fn xor(&self, other: &Self) -> Self {
-        let mut new = self.union(other);
-        let intersect = self.intersect(other);
-        new.subtract(&intersect);
-        new
+        self.union(other).diff(&self.intersect(other))
     }
 }
 
@@ -772,6 +879,114 @@ mod binary {
 
             // diff B-A
             assert_eq!(ib.diff(&ia).to_string(), ba);
+        }
+    }
+
+    #[test]
+    fn intersect_matches_slow_implementation() {
+        // The old complement+merge+invert implementation, kept as an oracle.
+        fn slow(a: &IntSpan, b: &IntSpan) -> IntSpan {
+            if a.is_empty() || b.is_empty() {
+                return IntSpan::new();
+            }
+            let mut new = a.complement();
+            new.merge(&b.complement());
+            new.invert();
+            new
+        }
+
+        // Deterministic pseudo-random disjoint runlists over [-100, 100].
+        let mut x = 0x9E3779B97F4A7C15u64;
+        let mut next = move || {
+            x = x
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            (x >> 33) as i32
+        };
+        let mut runlists: Vec<String> = Vec::new();
+        for _ in 0..200 {
+            let mut runs: Vec<(i32, i32)> = Vec::new();
+            let n = next().rem_euclid(8);
+            let mut pos = -100i32;
+            for _ in 0..n {
+                pos += next().rem_euclid(20) + 1;
+                let len = next().rem_euclid(15) + 1;
+                runs.push((pos, pos + len - 1));
+                pos += len;
+            }
+            runlists.push(if runs.is_empty() {
+                "-".to_string()
+            } else {
+                runs.iter()
+                    .map(|(l, u)| format!("{}-{}", l, u))
+                    .collect::<Vec<_>>()
+                    .join(",")
+            });
+        }
+        for a in &runlists {
+            for b in &runlists {
+                let ia = IntSpan::from(a);
+                let ib = IntSpan::from(b);
+                assert_eq!(
+                    ia.intersect(&ib).to_string(),
+                    slow(&ia, &ib).to_string(),
+                    "a={a} b={b}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn union_diff_xor_match_slow_implementations() {
+        fn union_slow(a: &IntSpan, b: &IntSpan) -> IntSpan {
+            let mut new = a.copy();
+            new.merge(b);
+            new
+        }
+        fn diff_slow(a: &IntSpan, b: &IntSpan) -> IntSpan {
+            if a.is_empty() {
+                return IntSpan::new();
+            }
+            let mut new = a.copy();
+            new.subtract(b);
+            new
+        }
+        fn xor_slow(a: &IntSpan, b: &IntSpan) -> IntSpan {
+            let mut new = union_slow(a, b);
+            // The old `intersect` short-circuits on empty inputs.
+            let isect = if a.is_empty() || b.is_empty() {
+                IntSpan::new()
+            } else {
+                let mut isect = a.complement();
+                isect.merge(&b.complement());
+                isect.invert();
+                isect
+            };
+            new.subtract(&isect);
+            new
+        }
+
+        let runlists = ["-", "1", "1-3,7-10", "-2--1,5,100-200", "3-9", "5-12,20-25"];
+        for a in runlists {
+            for b in runlists {
+                let ia = IntSpan::from(a);
+                let ib = IntSpan::from(b);
+                assert_eq!(
+                    ia.union(&ib).to_string(),
+                    union_slow(&ia, &ib).to_string(),
+                    "union a={a} b={b}"
+                );
+                assert_eq!(
+                    ia.diff(&ib).to_string(),
+                    diff_slow(&ia, &ib).to_string(),
+                    "diff a={a} b={b}"
+                );
+                assert_eq!(
+                    ia.xor(&ib).to_string(),
+                    xor_slow(&ia, &ib).to_string(),
+                    "xor a={a} b={b}"
+                );
+            }
         }
     }
 }

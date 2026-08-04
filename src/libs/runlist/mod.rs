@@ -340,10 +340,10 @@ pub fn json_to_set(
         let s = v
             .as_str()
             .ok_or_else(|| anyhow::anyhow!("runlist value for {} is not a string", chr))?;
-        if !IntSpan::valid(s) {
-            anyhow::bail!("invalid runlist for {}: {}", chr, s);
-        }
-        set.insert(chr.clone(), IntSpan::from(s));
+        set.insert(
+            chr.clone(),
+            IntSpan::try_from(s).with_context(|| format!("invalid runlist for {}", chr))?,
+        );
     }
     Ok(set)
 }

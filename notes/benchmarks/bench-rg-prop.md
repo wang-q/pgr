@@ -84,17 +84,50 @@ rgr 约快 **1.06×**（pgr 慢 ~6%）；内存 pgr 约 1.7×。
 * **结论**：prop 持平（略慢 6%）是"算法同源 + 编译差异"的结果，不是 pgr
   代码回归；若要在 prop 上反超，唯一正道是换算法（§分析 4）。
 
-## 附：消除"双重解析"的尝试与还原（2026-08-04）
+## 附：消除"双重解析"（try_from）的两次尝试（2026-08-04）
 
 `json_to_set` / `read_runlist` 对每个 runlist 字符串先 `IntSpan::valid`
-再 `IntSpan::from`，解析两遍（154k spans 约多 6 ms 加载）。曾加
-`IntSpan::try_from`（一次性解析）替换之，加载确实降到 10.1 ms（vs
-16.2 ms），**但** prop 整体基准从 6.2 s 恶化到 7.1 s（+14%，8–10 次运行
-稳定）——查询循环逻辑未动，纯属新增 pub 函数 + `from` 委托改变后 LTO
-全程序优化的内联/布局决策（无 LTO 构建为 9.8 s，LTO 本身是增益，只是
-具体决策被扰动）。临时还原 try_from 后恢复 6.23 s。结论：**双重解析是
-微优化（~6 ms），不值得以 14% 查询循环回归为代价，保持现状**；若未来
-要动，需带基准验证并考虑给热路径函数加 `#[inline]` 稳定 LTO 决策。
+再 `IntSpan::from`，解析两遍（154k spans 约多 6 ms 加载）。
+
+* **第一次尝试（intersect 版热路径）**：加 `IntSpan::try_from` 后加载
+  16.2→10.1 ms，但 prop 从 6.2 s 恶化到 7.1 s（+14%，稳定）——查询循环
+  未动，纯属 LTO 全程序优化被新增 pub 函数扰动（无 LTO 构建 9.8 s）。
+  当时热路径是 memmove 密集的 intersect，14% 代价大，故还原。
+* **第二次尝试（二分版热路径）**：换算法后热循环只剩 ~35 ms，LTO 扰动
+  的影响面大幅缩小；实测 try_from 版 35.1 ms vs 双解析版 48.7 ms——
+  除 ~6 ms 加载收益外，LTO 决策这次还偏向有利（查询循环更快）。
+* **结论**：保留 `try_from`。代价与收益取决于热路径形态：intersect 时代
+  微优化不值得（14% 回归），二分时代净收益明显（~28%）。给热路径函数加
+  `#[inline]` 稳定 LTO 决策仍可作为后续保险。
+
+## 附：IntSpan 集合运算线性化（intersect/union/diff/xor，2026-08-04）
+
+prop 的火焰图暴露出 `intersect` 内部 `complement+merge+invert` 链的代价：
+`merge` 对每个区间调 `add_pair`，在大集合上做 O(n) VecDeque 搬移，最坏
+O(n·m)。据此把三个核心集合运算重写为线性双指针合并（O(n + m)，结果
+直接拼 edges，不再经 `add_pair`）：
+
+* `intersect`：两指针走重叠区间；
+* `union`：两指针归并 + 合并重叠/相邻 span；
+* `diff`：逐 self span 减去 other 的重叠段；
+* `xor`：`union(...).diff(&intersect(...))`，随三者变快。
+
+`merge`/`subtract`/`add_pair` 作为增量 API 保留（`rg_to_set` 等按序插入
+场景仍是 O(1) 摊还）。正确性：新旧实现差分测试（含随机 200×200 集合对
+与空集/无穷集边界）逐字节一致；全量测试通过。
+
+`pgr runlist compare`（两个 154k-span runlist，8 次取均值）：
+
+| op | 旧实现 | 新实现 |
+| :--- | ---: | ---: |
+| intersect | 183.7 ms | **23.6 ms**（~7.8×） |
+| union | 215.6 ms | **40.7 ms**（~5.3×） |
+| diff | 222.0 ms | **34.0 ms**（~6.5×） |
+| xor | 308.7 ms | **51.7 ms**（~6.0×） |
+
+剩余时间主要被 runlist JSON 加载（~16–25 ms）占据；集合运算本身已降到
+毫秒级。`runlist span` / `venn` / alignment trim 等 `intersect` 消费者
+同步受益。
 
 ## 结论
 
@@ -116,11 +149,13 @@ runlist 双重解析，可预期反超；当前量级（100k target 约 6 s）�
 
 | 实现 | 时间 | RSS |
 | :--- | ---: | ---: |
-| pgr `rg prop`（二分） | **48.7 ± 1.1 ms** | 15.6 MB |
+| pgr `rg prop`（二分 + try_from） | **35.1 ± 1.0 ms** | — |
+| pgr `rg prop`（二分，双解析） | 48.7 ± 1.1 ms | 15.6 MB |
 | rgr `prop` | 5.820 ± 0.022 s | 9.5 MB |
 
-* pgr 自优化前（6.2 s）提升 ~128×；相对 rgr 快 **~120×**。
+* pgr 自优化前（6.2 s）提升 ~177×；相对 rgr 快 **~166×**。
 * 正确性：20k target 输出与优化前（已与 rgr 逐行一致）sort 后 diff 为空。
-* 顺带消除了每查询的 `IntSpan::new` + `add_pair` + `cardinality` 分配。
+* 顺带消除了每查询的 `IntSpan::new` + `add_pair` + `cardinality` 分配，
+  并保留 `try_from`（runlist 单次解析，见下）。
 * 教训：基准里"持平/慢 6%"的结论是**算法同源**的必然，而换算法后是
   数量级反超——性能差异主要看数据结构，不是解析/常数。

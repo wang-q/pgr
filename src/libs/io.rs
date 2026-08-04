@@ -88,10 +88,11 @@ pub fn read_runlist(path: &str) -> anyhow::Result<BTreeMap<String, crate::libs::
         let s = value
             .as_str()
             .ok_or_else(|| anyhow::anyhow!("runlist value for {} is not a string", chr))?;
-        if !crate::libs::ds::IntSpan::valid(s) {
-            anyhow::bail!("invalid runlist for {}: {}", chr, s);
-        }
-        set.insert(chr.clone(), crate::libs::ds::IntSpan::from(s));
+        set.insert(
+            chr.clone(),
+            crate::libs::ds::IntSpan::try_from(s)
+                .with_context(|| format!("invalid runlist for {}", chr))?,
+        );
     }
     Ok(set)
 }
