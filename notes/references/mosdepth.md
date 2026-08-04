@@ -2,7 +2,7 @@
 
 > 整理于 2026-08，源自对 `mosdepth-master`（v0.3.14，Brent Pedersen，MIT）源码的分析。
 > 目的：理解 BAM 深度/覆盖度计算的主流实现（CIGAR 粒度事件差分 + 逐碱基数组），
-> 与 pgr 的 `runlist coverage`（.rg 区间扫描线）对比，评估可借鉴的语义与边界处理。
+> 与 pgr 的 `rg coverage`（.rg 区间扫描线）对比，评估可借鉴的语义与边界处理。
 > 源码：`mosdepth.nim`（989 行）+ `depthstat.nim`（统计）+ `int2str.nim`（整数格式化）。
 
 ## 1. 简介

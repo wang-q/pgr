@@ -1525,21 +1525,21 @@ impl IntSpan {
             // empty and universal set have no holes
             return new;
         }
-        let complement = self.complement();
-        let mut ranges = complement.ranges();
-
-        // Remove infinite arms of complement set
-        if complement.is_neg_inf() {
-            ranges.remove(0);
-            ranges.remove(0);
+        // Holes are the gaps between consecutive spans, bounded by the set's
+        // min and max — the same result as "complement minus its infinite
+        // arms", but without building the complement. The complement path
+        // pushed NEG_INF in front of a set whose min is i32::MIN, producing
+        // an edge of i32::MIN at an odd position where `spans()` subtracts 1
+        // and panics (the parser accepts i32::MIN, which lies one below the
+        // NEG_INF arm sentinel).
+        let spans = self.spans();
+        for w in spans.windows(2) {
+            let (_, u1) = w[0];
+            let (l2, _) = w[1];
+            if l2 > u1 + 1 {
+                new.add_pair(u1 + 1, l2 - 1);
+            }
         }
-        if complement.is_pos_inf() {
-            ranges.pop();
-            ranges.pop();
-        }
-
-        new.add_ranges(&ranges);
-
         new
     }
 
@@ -1790,6 +1790,27 @@ mod span {
         let s = IntSpan::from("-2147483648");
         assert_eq!(s.trim(0).to_string(), "-2147483648");
         assert_eq!(s.pad(0).to_string(), "-2147483648");
+    }
+
+    #[test]
+    fn holes_fill_on_i32_min_coordinates_do_not_overflow() {
+        // `holes` used to build the complement and strip its infinite arms;
+        // inverting a set whose min is i32::MIN put that value at an odd
+        // edge where `spans()` subtracts 1 and panics. Holes must be the
+        // plain gaps between spans, even when a span starts at i32::MIN.
+        assert_eq!(IntSpan::from("-2147483648-5").holes().to_string(), "-");
+        assert_eq!(
+            IntSpan::from("-2147483648-5,10-20").holes().to_string(),
+            "6-9"
+        );
+        assert_eq!(
+            IntSpan::from("-2147483648-5,10-20").fill(10).to_string(),
+            "-2147483648-20"
+        );
+        // Same results as the old complement-based implementation on a
+        // regular set that does not touch i32::MIN.
+        assert_eq!(IntSpan::from("1,3-5").holes().to_string(), "2");
+        assert_eq!(IntSpan::from("1-3,5,8-11").holes().to_string(), "4,6-7");
     }
 
     #[test]

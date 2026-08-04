@@ -88,6 +88,22 @@ fn command_runlist_span_extreme_ops_do_not_panic() {
     assert!(stderr.contains("invalid runlist"), "got: {stderr}");
 }
 
+// A runlist may contain coordinates down to i32::MIN (the parser accepts
+// them); `holes` used to panic building the complement of such a set.
+#[test]
+fn command_runlist_span_holes_i32_min_no_panic() {
+    let (stdout, _) = PgrCmd::new()
+        .args(&["runlist", "span", "stdin", "--op", "holes"])
+        .stdin("{\"chr1\":\"-2147483648-5,10-20\"}\n")
+        .run();
+    assert!(stdout.contains("6-9"), "holes: {stdout}");
+    let (stdout, _) = PgrCmd::new()
+        .args(&["runlist", "span", "stdin", "--op", "fill", "-n", "10"])
+        .stdin("{\"chr1\":\"-2147483648-5,10-20\"}\n")
+        .run();
+    assert!(stdout.contains("-2147483648-20"), "fill: {stdout}");
+}
+
 #[test]
 fn command_runlist_compare_intersect() {
     let dir = TempDir::new().unwrap();

@@ -75,11 +75,51 @@ release 下 10k ≈ 2.7–2.9 ms、50k ≈ 17.8–18.4 ms，近线性），并�
   span 150 trial，全部与朴素实现一致）、畸形输入 fuzz（300 trial ×
   27 条命令，零 panic）、20 条 docs 示例逐一执行——未再发现新问题，
   收束。
+* 第 18 轮（本轮）：换全新角度复核——把 `rg merge` 的覆盖度判据与 rgr
+  源码逐行对照，并做 250 trial f32 严格对拍，新发现 #34；同时全量核对
+  用户/开发文档现状，发现并修复 notes/design/runlist.md 与
+  notes/project-understanding.md 的过时描述（见下文文档修复）。修复后
+  重跑全部差分 + fuzz + 全量测试。
+* 第 19 轮（复核轮）：直接用外部 spanr / rgr 二进制做字节级对拍——
+  rg 家族 cover/coverage（spanr）、count/prop/runlist/span（rgr）各
+  80 trial 逐字节一致；rg merge 与 rgr 聚类成员 120 trial 一致（#34
+  修复后）；runlist 家族 span/compare/combine/stat/statop/convert/some/
+  merge 与 spanr 600+ trial 逐字节一致——唯一分歧是 `combine --op
+  intersect` 对"后续集合缺失的染色体"的处理（spanr 跳过、pgr 按空集
+  折叠），经核对 pgr 行为与自身文档/数学语义一致、且 spanr 行为属实现
+  怪癖，按有意差异记录（`combine_sets` 文档注释已写明），不改行为。
+  另确认 spanr 对空 `{}` 输入直接 panic、pgr 友好处理（既有改进）。
+* 第 20 轮（复核轮）：极端坐标（近 i32::MAX / i32::MIN 域、含
+  2147483645 上限）`rg span` 与 rgr 对拍 200 trial——分歧仅出现在 rgr
+  用裸算术回绕/panic 的路径（pgr 的 saturating + `clamp_to_domain` 为
+  已记录的有意改进 #20/#23），合法域内逐字节一致；`runlist split -o
+  stdout` 与写文件输出逐字节一致；`rg cover → runlist convert → rg
+  cover` 往返恒等；全量测试 + fmt + clippy 干净。
+* 第 21 轮（本轮）：针对解析器接受 `i32::MIN`（低于 NEG_INF 哨兵）的
+  域边界做定向验证，发现并修复 #35（`holes`/`fill` 对含 `i32::MIN`
+  坐标的集合 panic）；修复后 holes/fill 与 spanr 在常规域 120 trial
+  逐字节一致，`i32::MIN` 定向 fuzz（span 六 op × compare/combine/
+  convert，300 trial）零 panic，全量测试 + fmt + clippy 干净。
+* 第 22 轮（复核轮）：multi 形态 `runlist span` 六 op 与 spanr 100
+  trial 逐字节一致；`rg merge` 与 rgr 聚类成员（顺序无关比较）120
+  trial 一致——输出顺序差异（pgr 簇内按输入序、rgr 按成员排序）确认
+  为已知有意差异，补充进语义一致性核对；最终全部差分 + fuzz + 测试
+  通过。
+* 第 23 轮（收束轮）：重建二进制后重跑全部差分对拍（runlist 750 +
+  rg cover/coverage 250 + count/prop/runlist 350 + span/sort 520 +
+  merge 250 trial，全部一致）、docs/rg.md 与 docs/runlist.md 全部示例
+  逐一执行通过、全新种子畸形输入 fuzz（250 trial × 26 条命令）零
+  panic、全量测试 + doctest + `cargo fmt` + `cargo clippy --all-targets
+  -- -D warnings` 干净——未再发现新问题，收束。另补 README 输入格式
+  清单缺失 `rg` 的一处文档准确性问题，并把
+  notes/references/mosdepth.md、notes/project-understanding.md 的
+  "runlist coverage" 现态引用与 notes/design/repeat-masking.md 的
+  trf 路径/`rg_to_set` 函数名更新为当前命令（同第 18 轮文档修复）。
 
-## 修复的缺陷（共 33 处）
+## 修复的缺陷（共 35 处）
 
 修复按发现顺序全局编号（#1-19 为 runlist 阶段、#20-25 为 rg 阶段、
-#26-27 为第 7 轮），
+#26-27 为第 7 轮、#34 为第 18 轮、#35 为第 21 轮），
 按类别分组。
 
 ### 崩溃 / 越界 / 溢出（Zero Panic，16 处）
@@ -292,14 +332,57 @@ for excise"，与 `runlist span -n` 一致）。
     非 word 处理——std 无 mark 谓词，此类字符在名称中极罕见，
     已在 `word_char_len` 文档注明。
 33. **`-o` 同输入检查被 symlink / hardlink 别名绕过**：`same_path`
-    只做词法绝对路径比较（无文件系统访问），`pgr rg span a.rg -o
-    link-to-a.rg` 或 `-o hardlink-to-a.rg` 时 writer 先截断输入再
-    读取，静默数据丢失（#29 只覆盖字面同路径）。修复：`same_path`
-    对已存在的路径先 `fs::canonicalize`（解析 symlink 与 `..`），
-    Unix 上再比较 dev/inode 覆盖 hardlink；任一路径尚不存在时回退
-    词法比较（新建输出不受影响）。回归测试
-    `command_rg_output_alias_of_input_rejected`（hardlink + symlink
-    两例，断言输入未被改动）。
+   只做词法绝对路径比较（无文件系统访问），`pgr rg span a.rg -o
+   link-to-a.rg` 或 `-o hardlink-to-a.rg` 时 writer 先截断输入再
+   读取，静默数据丢失（#29 只覆盖字面同路径）。修复：`same_path`
+   对已存在的路径先 `fs::canonicalize`（解析 symlink 与 `..`），
+   Unix 上再比较 dev/inode 覆盖 hardlink；任一路径尚不存在时回退
+   词法比较（新建输出不受影响）。回归测试
+   `command_rg_output_alias_of_input_rejected`（hardlink + symlink
+   两例，断言输入未被改动）。
+
+### 与 rgr 的数值一致性（第 18 轮，1 处）
+
+34. **`rg merge` 的 reciprocal coverage 用 f64 判据，与 rgr 的 f32
+    语义在恰好等于阈值的边界分叉**：rgr 用
+    `intersect.cardinality() as f32 / intspan.cardinality() as f32 >=
+    opt_coverage`（两边都是 f32）；pgr 迁移时改成了 f64 比值对
+    `f64::from(coverage)`，而 `f64::from(0.8f32)` ≈ 0.8000000119 略高于
+    精确值 0.8，于是覆盖度恰好 0.8 的一对（如 200-249 与 208-247，
+    overlap 40 / len 50）在 pgr 中不并入簇、rgr 中并入——破坏连通性，
+    进而改变整簇成员。复现：`pgr rg merge` 输入 189-255 / 192-246 /
+    200-249 / 208-247，`--coverage 0.8` 时 pgr 漏掉 208-247，rgr 输出
+    三行映射。修复：比值改用 f32 算术（`overlap as f32 / len as f32`，
+    与 rgr 的 i32→f32 转换逐位一致），比较对象保持 f32 `coverage`。
+    回归测试 `command_rg_merge_exact_threshold_parity`（0.8 边界三成员
+    全部入簇）。
+
+### 崩溃 / 越界 / 溢出（第 21 轮，1 处）
+
+35. **`IntSpan::holes` 对含 `i32::MIN` 坐标的集合补集溢出 panic**：
+    `holes` 用 `complement()`（内部 `invert()`）求补后再剥无限臂；解析器
+    接受 `i32::MIN`（低于 NEG_INF 哨兵 -2147483647，`test_valid` 显式
+    断言），当集合以 `i32::MIN` 起始时 `invert` 把 NEG_INF 推到队首，
+    补集首段的奇数位边恰为 `i32::MIN`，`spans()` 的 `edges[i+1] - 1`
+    在 debug 构建 panic（release 回绕）。复现：`pgr runlist span
+    in.json --op holes/fill`，in.json 含 `"-2147483648-5"`（fill 内部
+    调 holes）。修复：`holes` 改为直接在相邻 span 之间取空隙（等价于
+    "补集减无限臂"，且不经过补集构造），`i32::MIN` 坐标安全。回归测试
+    `holes_fill_on_i32_min_coordinates_do_not_overflow`（IntSpan 层，
+    含与旧实现常规域一致断言）与 `command_runlist_span_holes_i32_min_
+    no_panic`（CLI 层，holes + fill 两路径）。
+
+### 文档修复（第 18 轮）
+
+* `notes/design/runlist.md` 仍写 `cmd_pgr/runlist/` 有 12 个子命令
+  （含已迁出的 cover/coverage）。修复：改为 10 个子命令，并注明
+  cover/coverage 迁出为 `pgr rg`、gff 归位 `pgr gff runlist`。
+* `notes/project-understanding.md` 缺 `rg`/`runlist` 两个命令族与
+  `libs/runlist` 目录描述（§2.1 树、§3 表格）、`gff` 子命令数仍写 1、
+  §10 的 rgr-tva-audit 行仍写 "规划中，待实现 / merge 不做"、§9 主题
+  链路缺区间操作行。修复：补全目录树与 §3.7 区间表格（rg 8 / runlist
+  10 / gff 2），更新 rgr-tva-audit 状态为已实现，新增 §9 区间操作链路行
+  与 §10 的 runlist.md / rgr-tva-audit.md 索引行。
 
 ## 与外部参考实现的语义一致性核对
 
@@ -324,7 +407,8 @@ for excise"，与 `runlist span -n` 一致）。
   `set[chr].superset(&intspan)` 一致。
 * `rg merge` 的 reciprocal coverage 判据与 `part == merged` 自映射跳过
   与 rgr 一致（rgr 用 petgraph 连通分量，pgr 用 coitrees + union-find，
-  聚类结果等价）。
+  聚类结果等价）。输出顺序为有意差异：pgr 簇内按输入顺序、rgr 按成员
+  排序后输出（聚类成员等价）。
 
 ## 排除的疑点（经核验无需修复）
 
@@ -353,6 +437,11 @@ for excise"，与 `runlist span -n` 一致）。
 * `runlist split` 的 `<key><suffix>` 文件名直接由 JSON 顶层键拼出：键含
   `/` 或 `..` 时文件会写到 outdir 之外（或嵌套目录）。与 spanr 行为一致，
   本地工具由用户自持输入，未加防御。
+* `runlist combine --op intersect` 对"后续集合缺失的染色体"：spanr 跳过
+  该集合（保留累积值），pgr 按空集参与折叠（真交集）。union/diff/xor
+  因空集是恒等元而行为一致；intersect 为有意差异，`combine_sets` 注释已
+  写明。若未来追求与 spanr 逐字节一致，需改为按染色体是否出现于后续
+  集合决定是否应用 op——不建议（语义更怪）。
 
 ## 已知限制（有意保留）
 
@@ -361,6 +450,9 @@ for excise"，与 `runlist span -n` 一致）。
 * `stat` / `statop` 对 0 长度染色体输出 inf/NaN，与 spanr 行为一致。
 * `banish` / `distance` / `at` / `index` / `slice` / `contains` 等 vendored
   API 的极端输入溢出未修（runlist/rg 命令不经过这些路径）。
+* `complement` / `invert` 作为 vendored API 对含 `i32::MIN` 的集合仍会
+  溢出（`i32::MIN` 低于 NEG_INF 哨兵，域外输入）；#35 已让 CLI 可达的
+  `holes`/`fill` 不再经过补集路径，直接调用这两个 API 仍属已知限制。
 
 ## 带点 contig 名截断 bug 的处置结论（对应 repeat-masking.md 记录）
 

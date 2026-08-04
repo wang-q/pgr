@@ -166,10 +166,10 @@ mtime 变新时缓存自动失效重建。
 
 #### 1.5.2 trf：trf → 解析 → runlist
 
-`src/cmd_pgr/pl/trf.rs`：按染色体拆分 FASTA，逐条跑
+`src/cmd_pgr/rept/trf.rs`：按染色体拆分 FASTA，逐条跑
 `trf <chr>.fa <match> <mismatch> <delta> <pm> <pi> <minscore> <max_period> -d -h -ngs`，
 用 `parse_trf_output`（`src/libs/pl/repeat.rs`）解析 `.dat`（少于 15 列的短行跳过），
-再用 runlist cover（`rg_to_set`）合并输出。默认参数对应 TRF 常用设置（match=2、mismatch=7、delta=7、
+再用 rg cover（`rg_files_to_set`）合并输出。默认参数对应 TRF 常用设置（match=2、mismatch=7、delta=7、
 pm=80、pi=10、minscore=50、max_period=2000）。
 
 ### 1.6 临时文件与 FastK 库文件清理
@@ -285,7 +285,7 @@ PSL 过滤（Rust 内）：identity ≥ min-identity 且 block ≥ min-len
 target 侧 .rg（基因组坐标，1-based inclusive）
   │ 4. pgr psl to-range --target-coords 语义
   ▼
-runlist cover → span --op excise -n <min> → span --op fill -n <ff>
+rg cover → span --op excise -n <min> → span --op fill -n <ff>
   │ 5. 合并重叠、切短碎片、填邻近孔（同 e-kmer 的 runlist 管道）
   ▼
 runlist JSON → pgr fa mask

@@ -73,6 +73,8 @@ src/
 │   ├── dist/           #   距离计算 (hv/pgi/seq)
 │   ├── pgi/            #   基因组索引 (.pgi)：build/stat/to-hv/align
 │   ├── sd/             #   分段重复检测 (align/cluster/cover/cross/decompose/run/search)
+│   ├── rg/             #   .rg 行级区间操作 (cover/coverage/count/merge/prop/runlist/sort/span)
+│   ├── runlist/        #   runlist JSON 集合操作 (combine/compare/convert/genome/merge/some/span/split/stat/statop)
 │   ├── ms/
 │   ├── pl/             #   Pipelines：编排外部工具
 │   └── plot/           #   可视化输出 (TikZ/LaTeX 与 SVG)
@@ -93,6 +95,7 @@ src/
     ├── pbit/           #   群体基因组压缩核心 (LZ-diff/CIGAR delta/PAF 索引)
     ├── pgi/            #   基因组索引核心 (build/dist/to_hv/align)
     ├── sd/             #   分段重复检测核心
+    ├── runlist/        #   runlist/.rg 区间核心 (IntSpan 构建、深度扫描线、merge 聚类、JSON I/O)
     ├── pl/             #   pipeline 共享逻辑 (PipelineCtx/FastK/Profex + 内建 runlist 管道)
     ├── plot/           #   可视化 (dot/histogram/nrps/venn)
     ├── fas_xlsx.rs     #   FAS xlsx 输出
@@ -159,7 +162,7 @@ src/
 | `fq`     | 2        | FASTQ 交叉合并、转 FASTA                              |
 | `twobit` | 5        | 2bit 二进制格式查询：range、sequence、masked 统计     |
 | `pbit`   | 7        | 群体基因组 2bit + delta 压缩与随机访问（create/append/append-ref/stat/range/some/to-fa） |
-| `gff`    | 1        | GFF 注释：rg (提取 feature 区间为 range 列表)         |
+| `gff`    | 2        | GFF 注释：rg (提取 feature 区间为 range 列表)、runlist (GFF → runlist JSON) |
 
 **fa 和 fas 是序列模块的核心**，子命令最多、功能最全。`fas` 的 `multiz`、`variation`、 `refine`、
 `to_vcf` 已经触及多序列比对和变异检测。
@@ -223,6 +226,17 @@ clustalw/muscle/mafft），充当工作流 glue。这与 `chain`/`net` 模块的
 | 模块 | 子命令数 | 核心能力 |
 |------|----------|----------|
 | `sd`  | 7        | 分段重复 (SD) 检测：align / cluster / cover / cross / decompose / run / search |
+
+### 3.7 区间 (Intervals)
+
+| 模块      | 子命令数 | 核心能力                                                                 |
+|-----------|----------|--------------------------------------------------------------------------|
+| `rg`      | 8        | `.rg` 行级操作：cover/coverage/count/merge/prop/runlist/sort/span（自 spanr/rgr 迁移，行级区间过滤、统计、变换与聚类） |
+| `runlist` | 10       | runlist JSON 集合操作：combine/compare/convert/genome/merge/some/span/split/stat/statop（自 spanr 迁移，集合代数、跨度运算与统计） |
+
+两个家族共享 `libs/runlist` 与 `libs/ds::{IntSpan, Range}`；`.rg` 输入归
+`rg`，runlist JSON 输入归 `runlist`，对应关系与外部 spanr/rgr 逐一核对
+（见 [[audit/audit-runlist-rg.md]] 与 §10 索引）。
 
 ## 4. 核心库层详解
 
@@ -498,6 +512,7 @@ chainnet 后消失。`pgr psl chain` 在 2bit 序列缓存优化后（~0.3 s）�
 | syncmer / 采样 | [[syng.md]] | — | — | `libs/syncmer`（pgi build 依赖） |
 | pbit 压缩 | [[agc-cpp.md]] | [[design/pbit.md]] | — | `pgr pbit`（`libs/pbit`） |
 | 重复标记（repeat masking） | [[fastk.md]] | [[design/repeat-masking.md]] | — | `pgr rept e-kmer/s-kmer/trf` + `pgr fa mask`（`libs/pl`、`cmd_pgr/rept`） |
+| 区间操作（runlist / rg） | — | [[design/runlist.md]]、[[design/rgr-tva-audit.md]] | [[benchmarks/bench-rg-count.md]]、[[benchmarks/bench-rg-prop.md]]、[[benchmarks/bench-rg-runlist.md]] | `pgr runlist`、`pgr rg`（`libs/runlist`、`libs/ds/{IntSpan,Range}`） |
 | 其他参考 | [[fastk.md]]、[[kaks.md]]、[[gfa.md]]、[[ropebwt3.md]]、[[pangenome-tools.md]] | [[design/ms2dna_port.md]]（ms→dna 移植） | — | `pgr ms to-dna`、`pgr paf to-gfa` 等 |
 
 ## 10. 设计笔记索引（notes/design/）
@@ -509,9 +524,10 @@ chainnet 后消失。`pgr psl chain` 在 2bit 序列缓存优化后（~0.3 s）�
 | [[fas-multiz.md]] | `libs::fas_multiz` 设计与实现（banded DP 合并） | 已实现（CLI 已落地） |
 | [[spoa_port.md]] | Spoa C++ → Rust 移植（POA 引擎） | 已完成（双引擎集成已落地） |
 | [[ms2dna_port.md]] | ms2dna C → Rust 迁移设计 | 已实现（实际命令为 `pgr ms to-dna`） |
+| [[runlist.md]] | runlist 命令族（spanr 迁移）结构、coverage 扫描线实现与性能、测试迁移 | 已实现；cover/coverage 迁出为 `pgr rg`，现为 10 个子命令（2026-08-04） |
+| [[rgr-tva-audit.md]] | rgr 14 子命令功能梳理与 pgr `rg` 家族落点（count/prop/runlist/sort/span/merge） | 已实现（2026-08-04，见 [[audit/audit-runlist-rg.md]]） |
 | [[ucsc.md]] | UCSC chain/net/axt/maf pipeline 源码分析与字节级复现验证（E. coli 全流程一致） | 12 步主流程 + `--syn` + medium + SE11 多染色体反向全部字节级一致；剩余见 §4.6 |
 | [[repeat-masking.md]] | pgr 重复标记总体方案：现状命令（e-kmer/s-kmer/trf 实现、命名规划 e/s 前缀）+ 遮蔽版计划（Dfam 全库 + pgi/lastz）+ 附录 A 源码梳理（open-4.2.4） | 计划已定；命令已迁移（`pgr rept`），待 §2.5 验证 |
-| [[rgr-tva-audit.md]] | rgr 14 子命令功能梳理：6 个通用 TSV 命令被 tva 替代；8 个 range 命令中 count/prop/runlist 过滤为 pgr `rg` 家族候选，merge 被 `sd` 家族替代不做 | 规划中，待实现 |
 
 ## 11. 外部工具参考索引（notes/references/）
 
@@ -533,7 +549,7 @@ chainnet 后消失。`pgr psl chain` 在 2bit 序列缓存优化后（~0.3 s）�
 | [[ucsc.md]] | UCSC chain-net pipeline 脚本（pgr 重实现参照基准） |
 | [[multiz.md]] | multiz profile–profile DP 算法源码分析 |
 | [[fastk.md]] | FastK k-mer 计数器（Super-mer + Minimizer） |
-| [[mosdepth.md]] | mosdepth BAM/CRAM 深度计算器源码分析（差分数组 + CIGAR 事件，对照 runlist coverage） |
+| [[mosdepth.md]] | mosdepth BAM/CRAM 深度计算器源码分析（差分数组 + CIGAR 事件，对照 rg coverage） |
 | [[kaks.md]] | KaKs_Calculator3.0 与 PAML 源码分析 |
 
 ## 12. 笔记根文件索引（notes/）

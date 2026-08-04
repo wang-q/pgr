@@ -239,9 +239,14 @@ pub fn rg_merge_mapping(files: &[String], coverage: f32) -> anyhow::Result<Vec<(
                 let (_, s_j, e_j) = parts[j];
                 let overlap = i64::from(e_i.min(e_j)) - i64::from(s_i.max(s_j)) + 1;
                 let len_j = i64::from(e_j) - i64::from(s_j) + 1;
-                let cov_i = overlap as f64 / len_i as f64;
-                let cov_j = overlap as f64 / len_j as f64;
-                if cov_i >= f64::from(coverage) && cov_j >= f64::from(coverage) {
+                // rgr computes both ratios in f32 (i32 cardinalities cast to
+                // f32) and compares against the f32 `--coverage`; using f64
+                // here would round the threshold slightly above the exact
+                // f32 value and split pairs whose ratio equals it exactly
+                // (e.g. 40/50 with `--coverage 0.8`).
+                let cov_i = overlap as f32 / len_i as f32;
+                let cov_j = overlap as f32 / len_j as f32;
+                if cov_i >= coverage && cov_j >= coverage {
                     union(&mut parent, i, j);
                 }
             });
@@ -519,7 +524,14 @@ pub fn merge_files(
 }
 
 /// Combine all sets of a multi runlist into one, applying `op` between the
-/// first set and each subsequent one (spanr `combine` semantics).
+/// first set and each subsequent one.
+///
+/// Chromosomes missing from a set count as empty for every op (like
+/// [`compare_sets`]). Note that spanr's `combine` instead skips chromosomes
+/// absent from a later set, so `intersect` there keeps the accumulated value
+/// for such chromosomes; pgr treats them as empty (a true intersection),
+/// which also matches this command's documented fold semantics. union/diff/
+/// xor are unaffected because the empty set is their identity.
 pub fn combine_sets(
     set_of: &BTreeMap<String, BTreeMap<String, IntSpan>>,
     op: CompareOp,

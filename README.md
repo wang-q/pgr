@@ -54,8 +54,8 @@ predictable:
 
 **First-level commands are named after the input format or the task domain:**
 
-* Input formats: `fa`, `fas`, `fq`, `2bit`, `gff`, `axt`, `chain`, `net`,
-  `maf`, `paf`, `psl`, `lav`, `ms`
+* Input formats: `fa`, `fas`, `fq`, `2bit`, `gff`, `rg`, `axt`, `chain`,
+  `net`, `maf`, `paf`, `psl`, `lav`, `ms`
 * Task domains: `dist`, `sd`, `rept`, `runlist`, `pl`, `plot`, `align`,
   `pgi`, `pbit`
 

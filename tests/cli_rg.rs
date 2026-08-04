@@ -646,6 +646,29 @@ fn command_rg_merge_dedups_identical_lines() {
     );
 }
 
+// rgr parity: both ratios are computed in f32, so a pair whose reciprocal
+// overlap equals the f32-rounded `--coverage` exactly (40/50 with 0.8) must
+// still be joined. Comparing in f64 used to round the threshold slightly
+// above the exact ratio and split such pairs, dropping 208-247 here.
+#[test]
+fn command_rg_merge_exact_threshold_parity() {
+    let dir = TempDir::new().unwrap();
+    let rg = dir.path().join("edge.rg");
+    std::fs::write(
+        &rg,
+        "chr1(+):189-255\nchr1(+):192-246\nchr1(+):200-249\nchr1(+):208-247\n",
+    )
+    .unwrap();
+    let (stdout, _) = PgrCmd::new()
+        .args(&["rg", "merge", rg.to_str().unwrap(), "--coverage", "0.8"])
+        .run();
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert_eq!(lines.len(), 3);
+    assert!(lines.contains(&"chr1(+):208-247\tchr1(+):189-255"));
+    assert!(lines.contains(&"chr1(+):192-246\tchr1(+):189-255"));
+    assert!(lines.contains(&"chr1(+):200-249\tchr1(+):189-255"));
+}
+
 #[test]
 fn command_cover() {
     let (stdout, _) = cmd(&["cover", &fixture("S288c.rg")]).run();

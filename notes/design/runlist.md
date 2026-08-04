@@ -13,11 +13,12 @@ pgr 内部命令族 `pgr runlist`（命名避免与旧 spanr 冲突，符合 pgr
 * `libs/runlist/`：核心逻辑（rg 解析、深度扫描线、span/compare/merge、
   combine/convert/genome/gff/some/split/stat/statop、JSON 读写），复用
   `libs/ds::IntSpan` 与已迁入的 `set2json` 等辅助。
-* `cmd_pgr/runlist/`：**12 个子命令**（combine/compare/convert/cover/
-  coverage/genome/merge/some/span/split/stat/statop），与 spanr CLI
-  参数兼容（含 `--detailed`、`--op`、`--all`、`--longest`、`--tag` 等），
-  逐条与外部 spanr 输出 diff 验证一致。原 spanr 的 `gff` 子命令归位到
-  `pgr gff runlist`（GFF 输入转换归 GFF 命令管），参数与行为不变。
+* `cmd_pgr/runlist/`：**10 个子命令**（combine/compare/convert/genome/
+  merge/some/span/split/stat/statop），与 spanr CLI 参数兼容（含 `--op`、
+  `--all`、`--longest` 等），逐条与外部 spanr 输出 diff 验证一致。
+  原 spanr 的 `cover`/`coverage`（.rg 输入）迁出到 `pgr rg` 家族，`gff`
+  子命令归位到 `pgr gff runlist`（GFF 输入转换归 GFF 命令管），参数与
+  行为不变。
 * 管线改为进程内调用：`repeat.rs`（cover→fill→excise→fill、coverage）、
   `p2m.rs`（compare→span excise→merge）、`trf.rs`（cover）。
 
