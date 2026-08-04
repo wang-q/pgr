@@ -5,6 +5,19 @@
 > 价值，并评估哪些值得移植进 pgr。源码：`~/Scripts/intspan/src/cmd_rgr/`
 > 与 `~/Scripts/tva/src/cmd_tva/`。
 
+## 0. 当前进度（2026-08-04）
+
+* `pgr rg` 家族已落地：`cover` / `coverage`（自 `runlist` 迁入）、`count`
+  （自 rgr 移植，coitrees 索引）、`prop`（自 rgr 移植，IntSpan 交集）。
+* `runlist` 家族已移除 cover/coverage，只收 runlist JSON 输入。
+* 测试迁移：`tests/cli_rg.rs`（14 个用例，含 rgr `command_count` 与
+  `command_prop` 原始测试的 .rg 部分；TSV `-f` 部分按决策 A 有意不迁）。
+* 文档：`docs/rg.md` 新建，`docs/runlist.md` 更新为 JSON-only。
+* 基准：`pgr rg count` vs `rgr count` 快 ~3.4×、输出逐行一致、内存 1.6×
+  （见 notes/benchmarks/bench-rg-count.md）。
+* 待办：`rg runlist`（按 runlist 过滤）、行级 `rg span`、`rg sort`
+  （可选，均待定稿）。
+
 ## 1. 结论摘要
 
 * rgr 是"杂烩"：6 个通用 TSV 工具 + 8 个 range 专用命令，靠 `extract_rg`
@@ -35,15 +48,15 @@
 
 ### 2.2 range 专用命令（8 个，tva 不覆盖）
 
-| rgr 命令 | 功能 | pgr 落点（新 `rg` 家族） | 移植价值 |
+| rgr 命令 | 功能 | pgr 落点（新 `rg` 家族） | 状态 |
 | :--- | :--- | :--- | :--- |
-| `field` | 从 chr/start/end 字段建 range | `gff rg` 覆盖思路 | 低（不建议） |
-| `sort` | 按 range（chr/start/strand）排序 | `rg sort` | 中低（外部 `sort` 不可完整替代；若做则原生做） |
-| `count` | 每条 range 与一组 range 的重叠数（lapper） | `rg count` | **高** |
-| `prop` | 每条 range 与 runlist 的交集比例（--full 加 length/size） | `rg prop` | **高** |
-| `runlist` | 按 runlist 过滤行（overlap/non-overlap/superset） | `rg runlist`（沿用 rgr 命令名） | **高** |
-| `span` | 行级 trim/pad/shift/flank/excise（5p/3p，保行） | `rg span` | 中 |
-| `merge` | 覆盖度阈值重叠图合并（petgraph，O(n²)） | 不做 | **不做**（找片段重复的旧实现，`pgr sd` 家族已覆盖该目标） |
+| `field` | 从 chr/start/end 字段建 range | `gff rg` 覆盖思路 | 不做 |
+| `sort` | 按 range（chr/start/strand）排序 | `rg sort` | 待定（可选） |
+| `count` | 每条 range 与一组 range 的重叠数（lapper） | `rg count` | **✅ 已实现**（coitrees，快 ~3.4×） |
+| `prop` | 每条 range 与 runlist 的交集比例（--full 加 length/size） | `rg prop` | **✅ 已实现** |
+| `runlist` | 按 runlist 过滤行（overlap/non-overlap/superset） | `rg runlist`（沿用 rgr 命令名） | 待实现 |
+| `span` | 行级 trim/pad/shift/flank/excise（5p/3p，保行） | `rg span` | 待定（可选） |
+| `merge` | 覆盖度阈值重叠图合并（petgraph，O(n²)） | 不做 | 不做（找片段重复的旧实现，`pgr sd` 家族已覆盖该目标） |
 | `pl-2rmp` | 两轮 merge+replace 管道（分片降 O(n²)） | 不做 | 不做（merge 的工程包装，随 merge 一起弃） |
 
 ## 3. 新家族 `pgr rg` 的候选命令设计
@@ -53,7 +66,7 @@
 > 集合级）严格区分。一级命令按输入格式命名，与 `fa`/`fas`/`psl`/`gff`
 > 一致。
 
-### 3.0 家族输入契约决策（2026-08-04，待定稿）
+### 3.0 家族输入契约决策（2026-08-04，已实施）
 
 **决策 A：`pgr rg` 只操作 `.rg` 单列文件**（每行整行是一个 range），不处理
 "TSV 行里含 range 字段"的混合输入，不引入 `-f/--field`、`-H/--header`、
@@ -73,10 +86,11 @@
 后果：要用 `rg count` 标注一张基因表，先 `tva select` 抽出 range 列转
 .rg 再进 pgr rg——显式一步，换来家族边界干净。
 
-本决策影响 §2.2 表中各命令的输入契约（均改为 .rg 单列）与 §3.1 设计，
-标记为**待定稿**：命令清单、命名、输出格式后续可能调整。
+本决策已落地于现有命令（cover/coverage/count 均为 .rg 单列输入、无
+-f/-H 双模式）；命令清单、命名、输出格式仍**待定稿**——后续新增命令
+（prop/runlist/span/sort）继续遵守同一契约。
 
-### 3.1 边界与迁移问题（待决策）
+### 3.1 边界与迁移问题（已迁移）
 
 现有 `runlist cover`（.rg → runlist JSON）与 `runlist coverage`（.rg →
 深度）的**输入就是 .rg**，按新体系逻辑上应属 `rg` 家族。`rg runlist`
@@ -92,24 +106,31 @@ cover/coverage 命令、测试迁至 `tests/cli_rg.rs`、新增 `docs/rg.md` 并
 
 ### 3.2 高价值
 
-**`pgr rg count`**——逐区间重叠计数（待定稿）
+**`pgr rg count`**——逐区间重叠计数（✅ 已实现，2026-08-04）
 
 * 输入：target `.rg` 文件 + 一个或多个 `.rg` 区间文件；输出：每行追加
   `count`（该 range 被多少区间覆盖），即 `range<TAB>count`。
-* 实现：pgr 已有 `coitrees` 依赖（paf/pbit 在用），每染色体建
-  `BasicCOITree`，对每条 target range 查询计数，O(n log n)，比 rgr 的
-  rust-lapper 更稳（病态长区间有保证）。也直接服务 mosdepth 讨论里
-  "per-region 计数 ≈ thresholds.bed.gz" 的缺口。
+* 实现：`libs/runlist::RgIndex`（每染色体 `BasicCOITree`，inclusive 坐标），
+  对每条 target range 查询计数，O(n log n)；非法行跳过（rgr parity）。
+  也直接服务 mosdepth 讨论里"per-region 计数 ≈ thresholds.bed.gz"的缺口。
 * 与 `rg coverage` 互补：`coverage` 是"按位置"的深度，`count` 是"按区间"的
   重叠数。
+* 基准：1M 区间 + 100k target，`pgr rg count` 224–235 ms vs `rgr count`
+  753–758 ms（快 ~3.4×），输出 sort 后 diff 为空；RSS 42 vs 26 MB。
+  详见 notes/benchmarks/bench-rg-count.md。
 
-**`pgr rg prop`**——交集比例（待定稿）
+**`pgr rg prop`**——交集比例（✅ 已实现，2026-08-04，二分版）
 
 * 输入：runlist JSON + `.rg` 文件；输出：每行追加 `prop`（与 runlist 交集
   占比），`--full` 追加 `length`、`size`，即 `range<TAB>prop[<TAB>length
   <TAB>size]`。
-* 实现：`IntSpan::intersect` + `cardinality` 现成（pgr 的 `json_to_set`
-  已有）；`.rg` 行解析复用 `rg_to_set` 同款 `Range::from_str`。
+* 实现：`libs/runlist::SpanIndex`（每染色体有序 span 数组，两次二分定位
+  重叠段，O(log n + k)）+ `range_prop`；`.rg` 行解析复用 `usable_range`
+  守卫（与 `rg_to_set`/`count` 同款）。
+* 输出与 `rgr prop` 在 S288c fixture 上逐字节一致（`--full` 同样）。
+* 基准：100k target + 154k spans，48.7 ms vs `rgr prop` 5.82 s（快
+  ~120×，优化前 6.2 s 持平；火焰图定位到 `intersect` 的 O(n) VecDeque
+  搬移后换算法）。详见 notes/benchmarks/bench-rg-prop.md。
 * 场景：评估一组区间（如基因、链）被重复库/比对区间覆盖的比例。
 
 **`pgr rg runlist`**（沿用 rgr 命令名，待定稿）
@@ -159,24 +180,24 @@ cover/coverage 命令、测试迁至 `tests/cli_rg.rs`、新增 `docs/rg.md` 并
 ## 4. 与命名体系 / 既有讨论的衔接
 
 * 按此前归纳的 pgr 命名体系，**一级命令按输入格式命名**：新家族
-  `rg`（输入 `.rg`/含 range 的 TSV）与 `fa`/`fas`/`psl`/`gff` 同规则；
+  `rg`（输入 `.rg` 单列）与 `fa`/`fas`/`psl`/`gff` 同规则；
   `count`/`prop`/`runlist`/`span`/`sort`/`merge` 是家族内**操作名**
   （不改变格式，行→行；`runlist` 沿用 rgr 的命令名，表示"按 runlist
   过滤行"）；若迁移 cover/coverage，用 `rg cover`/`rg coverage`（操作名，
   不用 `rg runlist`，避免与过滤命令撞名）。
 * rgr 的教训：把"通用 TSV"和"range 专用"混在一个二进制里，靠
   `extract_rg` 启发式统一，命令语义变得模糊。pgr 新建 `rg` 家族后，
-  输入域明确（`.rg`/含 range 字段的 TSV），通用 TSV 交给 tva，runlist
-  JSON 交给 `runlist`，三者各司其职，避免重蹈"杂烩"覆辙。
+  输入域明确（`.rg` 单列），通用 TSV 交给 tva（TSV+range 交给 rgr），
+  runlist JSON 交给 `runlist`，三者各司其职，避免重蹈"杂烩"覆辙。
 * 与 mosdepth 讨论衔接：`coverage --per-base`（逐位点，待实现）是"按
   位置"维度；`rg count`（逐区间）是"按区间"维度；`count` 的 per-region
   输出即 mosdepth `thresholds.bed.gz` 的对应物。
 
 ## 5. 建议实施顺序
 
-1. 搭建 `rg` 家族骨架（`make_subcommand`/`execute` + 注册 + `docs/rg.md`）。
-2. `rg count`——coitrees 现成、需求直接（重叠计数）。
-3. `rg prop`——IntSpan 现成，与 count 共用 `-f/--header` 输入层。
-4. `rg runlist`（overlap 过滤）——与 prop 同基础，几行代码。
-5. 行级 `rg span`、`rg sort`——看需求（5p/3p 方向变换、有序输出是否真有场景）。
-6. `runlist cover/coverage` 迁移到 `rg cover`/`rg coverage`（§3.0 决策后）。
+1. ✅ 搭建 `rg` 家族骨架（`make_subcommand`/`execute` + 注册 + `docs/rg.md`）。
+2. ✅ `rg count`——coitrees 现成、需求直接（重叠计数），含基准。
+3. ✅ `runlist cover/coverage` 迁移到 `rg cover`/`rg coverage`。
+4. ✅ `rg prop`——IntSpan 现成，含 rgr fixture 回归。
+5. `rg runlist`（overlap 过滤）——与 prop 同基础，几行代码（待实现）。
+6. 行级 `rg span`、`rg sort`——看需求（5p/3p 方向变换、有序输出是否真有场景）。

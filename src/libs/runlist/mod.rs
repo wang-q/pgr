@@ -16,12 +16,21 @@ use coitrees::{BasicCOITree, Interval as CoiInterval, IntervalTree};
 use std::collections::BTreeMap;
 use std::io::BufRead;
 
+/// Whether `range` is a usable `.rg` range: valid coordinates in ascending
+/// order and within the representable maximum (`POS_INF - 1`).
+pub fn usable_range(range: &crate::libs::ds::Range) -> bool {
+    let max_coord = IntSpan::new().get_pos_inf();
+    range.is_valid()
+        && range.start() <= range.end()
+        && range.start() <= &max_coord
+        && range.end() <= &max_coord
+}
+
 /// Parse `.rg` lines (`chr:start-end`, 1-based inclusive) from `reader` into
 /// a per-chromosome merged `IntSpan`. Lines starting with `#` and lines that
 /// do not parse as valid ranges are skipped.
 pub fn rg_to_set<R: BufRead>(reader: R) -> anyhow::Result<BTreeMap<String, IntSpan>> {
     let mut set: BTreeMap<String, IntSpan> = BTreeMap::new();
-    let max_coord = IntSpan::new().get_pos_inf();
     for line in reader.lines() {
         let line = line?;
         let line = line.trim();
@@ -29,13 +38,7 @@ pub fn rg_to_set<R: BufRead>(reader: R) -> anyhow::Result<BTreeMap<String, IntSp
             continue;
         }
         let range = crate::libs::ds::Range::from_str(line);
-        // Reversed pairs and coordinates above the representable maximum
-        // (POS_INF - 1) used to panic inside `add_pair`.
-        if !range.is_valid()
-            || range.start() > range.end()
-            || range.start() > &max_coord
-            || range.end() > &max_coord
-        {
+        if !usable_range(&range) {
             continue;
         }
         set.entry(range.chr().clone())
@@ -50,7 +53,6 @@ pub fn rg_to_set<R: BufRead>(reader: R) -> anyhow::Result<BTreeMap<String, IntSp
 /// `#` and unparseable lines are skipped.
 pub fn rg_to_intervals<R: BufRead>(reader: R) -> anyhow::Result<BTreeMap<String, Vec<(u32, u32)>>> {
     let mut iv_of: BTreeMap<String, Vec<(u32, u32)>> = BTreeMap::new();
-    let max_coord = IntSpan::new().get_pos_inf();
     for line in reader.lines() {
         let line = line?;
         let line = line.trim();
@@ -58,11 +60,7 @@ pub fn rg_to_intervals<R: BufRead>(reader: R) -> anyhow::Result<BTreeMap<String,
             continue;
         }
         let range = crate::libs::ds::Range::from_str(line);
-        if !range.is_valid()
-            || range.start() > range.end()
-            || range.start() > &max_coord
-            || range.end() > &max_coord
-        {
+        if !usable_range(&range) {
             continue;
         }
         iv_of
@@ -88,7 +86,7 @@ impl RgIndex {
             for line in reader.lines() {
                 let line = line?;
                 let range = crate::libs::ds::Range::from_str(&line);
-                if !range.is_valid() || range.start() > range.end() {
+                if !usable_range(&range) {
                     continue;
                 }
                 intervals_of
@@ -116,6 +114,59 @@ impl RgIndex {
             None => 0,
         }
     }
+}
+
+/// Sorted, disjoint per-chromosome span lists for O(log n + k) intersection
+/// queries against a runlist set.
+pub struct SpanIndex {
+    spans_of: BTreeMap<String, Vec<(i32, i32)>>,
+}
+
+impl SpanIndex {
+    /// Build the index from a runlist set; each chromosome's spans are
+    /// disjoint and sorted in ascending order (an `IntSpan` invariant).
+    pub fn from_set(set: &BTreeMap<String, IntSpan>) -> Self {
+        let spans_of = set
+            .iter()
+            .map(|(chr, ints)| (chr.clone(), ints.spans()))
+            .collect();
+        Self { spans_of }
+    }
+
+    /// Size of the intersection of `[start, end]` with the indexed runlist
+    /// and the length of `[start, end]` (0 and `end - start + 1` when the
+    /// chromosome is absent).
+    pub fn overlap(&self, chr: &str, start: i32, end: i32) -> (i32, i32) {
+        let length = end - start + 1;
+        let size = match self.spans_of.get(chr) {
+            Some(spans) => {
+                // Spans are disjoint and sorted, so the ones overlapping
+                // `[start, end]` form a contiguous range: those with
+                // `end >= start` and `start <= end`.
+                let first = spans.partition_point(|&(_, sp_end)| sp_end < start);
+                let last = spans.partition_point(|&(sp_start, _)| sp_start <= end);
+                let mut total: i64 = 0;
+                for &(sp_start, sp_end) in &spans[first..last] {
+                    total += i64::from(end.min(sp_end) - start.max(sp_start) + 1);
+                }
+                total.min(i64::from(i32::MAX)) as i32
+            }
+            None => 0,
+        };
+        (size, length)
+    }
+}
+
+/// Proportion of `[start, end]` covered by `index`, plus the intersection
+/// size and the range length (0/0.0 when the chromosome is absent).
+pub fn range_prop(index: &SpanIndex, chr: &str, start: i32, end: i32) -> (f32, i32, i32) {
+    let (size, length) = index.overlap(chr, start, end);
+    let prop = if length == 0 {
+        0.0
+    } else {
+        size as f32 / length as f32
+    };
+    (prop, length, size)
 }
 
 /// Regions of half-open `[start, end)` intervals covered by at least
@@ -599,6 +650,27 @@ mod tests {
         assert_eq!(s["chr1"].to_string(), "1-10");
         let ivs = rg_to_intervals(std::io::Cursor::new("chr1:2147483647-2147483647\n")).unwrap();
         assert!(ivs.is_empty());
+    }
+
+    #[test]
+    fn span_index_overlap() {
+        let mut runset = BTreeMap::new();
+        runset.insert("chr1".to_string(), set("1-10,20-30"));
+        let idx = SpanIndex::from_set(&runset);
+        // Partial overlaps at both ends of the query.
+        assert_eq!(idx.overlap("chr1", 5, 25), (12, 21));
+        // Query entirely in a gap.
+        assert_eq!(idx.overlap("chr1", 11, 19), (0, 9));
+        // Query touching span boundaries.
+        assert_eq!(idx.overlap("chr1", 30, 35), (1, 6));
+        assert_eq!(idx.overlap("chr1", 0, 5), (5, 6));
+        // Query covering both spans plus the gap in between.
+        assert_eq!(idx.overlap("chr1", 1, 30), (21, 30));
+        // No overlap.
+        assert_eq!(idx.overlap("chr1", 31, 40), (0, 10));
+        assert_eq!(idx.overlap("chr1", 40, 50), (0, 11));
+        // Chromosome absent from the index.
+        assert_eq!(idx.overlap("chrX", 1, 10), (0, 10));
     }
 
     #[test]

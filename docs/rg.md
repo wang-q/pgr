@@ -11,6 +11,7 @@ the external `spanr` tool. Set-level runlist JSON operations live under
 *   `cover`: Merge `.rg` range lines into a runlist JSON (per-chromosome union).
 *   `coverage`: Compute depth of coverage over `.rg` ranges (sweep-line, O(n log n)).
 *   `count`: Count, for each range, the overlaps with other `.rg` range files.
+*   `prop`: Proportion of each range covered by a runlist.
 
 ---
 
@@ -48,4 +49,17 @@ Lines without a valid range are skipped.
 pgr rg count <target.rg> <infiles>...
 pgr rg count target.rg intervals.rg
 pgr rg count target.rg stdin
+```
+
+## prop
+
+For each range in the `.rg` files, appends the proportion of the range covered
+by the runlist (intersection size / range length, 4 decimals). With `--full`
+the range length and the intersection size are appended as well. Lines
+without a valid range are skipped.
+
+```bash
+pgr rg prop <runlist.json> <infiles>...
+pgr rg prop intergenic.json a.rg
+pgr rg prop intergenic.json a.rg --full
 ```

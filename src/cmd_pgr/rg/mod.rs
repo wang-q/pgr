@@ -3,6 +3,7 @@
 mod count;
 mod cover;
 mod coverage;
+mod prop;
 
 use clap::{ArgMatches, Command};
 
@@ -15,6 +16,7 @@ pub fn make_subcommand() -> Command {
         .subcommand(cover::make_subcommand())
         .subcommand(count::make_subcommand())
         .subcommand(coverage::make_subcommand())
+        .subcommand(prop::make_subcommand())
 }
 
 /// Dispatch `pgr rg` subcommands.
@@ -23,6 +25,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         Some(("cover", sub_matches)) => cover::execute(sub_matches),
         Some(("count", sub_matches)) => count::execute(sub_matches),
         Some(("coverage", sub_matches)) => coverage::execute(sub_matches),
+        Some(("prop", sub_matches)) => prop::execute(sub_matches),
         _ => unreachable!("rg subcommand match"),
     }
 }

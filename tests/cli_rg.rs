@@ -142,6 +142,51 @@ fn command_rg_count_fixture() {
 }
 
 #[test]
+fn command_rg_prop() {
+    let dir = TempDir::new().unwrap();
+    let json = dir.path().join("in.json");
+    let rg = dir.path().join("a.rg");
+    std::fs::write(&json, r#"{"chr1":"1-10,20-30"}"#).unwrap();
+    std::fs::write(&rg, "chr1:5-25\nchr1:50-60\nchr2:1-10\nbad line\n").unwrap();
+    let (stdout, _) = PgrCmd::new()
+        .args(&["rg", "prop", json.to_str().unwrap(), rg.to_str().unwrap()])
+        .run();
+    // chr1:5-25 intersects 5-10 (6 bp) + 20-25 (6 bp) = 12 of 21 bp.
+    assert_eq!(
+        stdout,
+        "chr1:5-25\t0.5714\nchr1:50-60\t0.0000\nchr2:1-10\t0.0000\n"
+    );
+}
+
+#[test]
+fn command_rg_prop_full() {
+    let dir = TempDir::new().unwrap();
+    let json = dir.path().join("in.json");
+    let rg = dir.path().join("a.rg");
+    std::fs::write(&json, r#"{"chr1":"1-10"}"#).unwrap();
+    std::fs::write(&rg, "chr1:1-20\n").unwrap();
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "rg",
+            "prop",
+            json.to_str().unwrap(),
+            rg.to_str().unwrap(),
+            "--full",
+        ])
+        .run();
+    assert_eq!(stdout, "chr1:1-20\t0.5000\t20\t10\n");
+}
+
+// Migrated from intspan `tests/cli_rgr.rs` `command_prop` (.rg part).
+#[test]
+fn command_rg_prop_fixture() {
+    let (stdout, _) = cmd(&["prop", &fixture("intergenic.json"), &fixture("S288c.rg")]).run();
+    assert_eq!(stdout.lines().count(), 6);
+    assert!(stdout.contains("I:1-100\t0.0000"), "got: {stdout}");
+    assert!(stdout.contains("II:21294-22075\t1.0000"), "got: {stdout}");
+}
+
+#[test]
 fn command_cover() {
     let (stdout, _) = cmd(&["cover", &fixture("S288c.rg")]).run();
     let lines = stdout.lines().count();

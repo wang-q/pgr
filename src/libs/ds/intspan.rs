@@ -119,7 +119,6 @@ impl IntSpan {
     pub fn from(runlist: &str) -> Self {
         let mut new = Self::new();
         new.add_runlist(runlist);
-
         new
     }
 

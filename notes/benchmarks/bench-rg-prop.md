@@ -1,0 +1,126 @@
+# `rg prop` 命令行基准：pgr vs rgr（同为 IntSpan 交集算法）
+
+> 目的：对比 `pgr rg prop`（`libs/runlist::range_prop`）与外部 `rgr prop`
+> 的耗时与内存。与 `rg count` 不同，两侧用的是**同一套 IntSpan 交集算法**
+> （pgr 已迁入 intspan crate 代码），预期接近持平；基准用于确认差距量级。
+> 2026-08-04 实测。
+
+## 环境与版本
+
+* pgr：本仓库 release 构建（v0.4.0，含 `rg prop`）
+* rgr：`~/.cbp/bin/rgr` 0.8.6（release）
+* 机器：本机（hyperfine 3.x，`/usr/bin/time -v` 量内存）
+
+## 数据（合成，种子 20260805）
+
+* runlist `rl.json`：8 条染色体（chr1..chr8）× 100 Mb，每染色体 25,000 个
+  随机区间（长度 100–2,000）合并后共 **154k spans**（约覆盖 30% 基因组，
+  JSON 2.7 MB）
+* `target.100k.rg`：100,000 条随机查询区间（与 count 基准同一文件）
+
+## 复现命令
+
+```bash
+pgr rg prop rl.json target.100k.rg -o /dev/null
+rgr  prop rl.json target.100k.rg -o /dev/null
+
+hyperfine --warmup 1 --runs 3 \
+  'pgr rg prop rl.json target.100k.rg -o /dev/null' \
+  'rgr  prop rl.json target.100k.rg -o /dev/null'
+```
+
+## 结果（100k target，3 次取均值）
+
+| 实现 | 时间 | RSS |
+| :--- | ---: | ---: |
+| pgr `rg prop` | 6.113 ± 0.040 s | 15.8 MB |
+| rgr `prop` | 5.773 ± 0.011 s | 9.5 MB |
+
+rgr 约快 **1.06×**（pgr 慢 ~6%）；内存 pgr 约 1.7×。
+
+补充验证（8 次运行）：pgr 6.208 ± 0.021 s，rgr 5.844 ± 0.037 s——差距
+稳定（~6%），非噪声。
+
+## 正确性验证
+
+20k target 上两者输出 `sort` 后 `diff` 为空（20,000 行逐行一致）。
+
+## 分析
+
+1. **算法同源，性能持平符合预期**：`prop` 的核心是每条 target 与 runlist
+   `IntSpan` 求交集并数基数；pgr 迁入的就是 intspan 的同一份代码，因此
+   没有 count（coitrees vs lapper）那种结构性的性能差。
+2. **耗时主因是逐查询的全量交集**：每染色体 ~19k spans，100k 次
+   `intersect`（O(spans)）共约 20 亿次操作，构成 6 s 的主体；解析/输出
+   占比很小。
+3. **~6% 差距的可能来源**：pgr 的 runlist 加载走 `IntSpan::valid` +
+   `IntSpan::from` **两次解析**（`json_to_set` 先校验再构造），rgr 只解析
+   一次；154k spans 的重复解析可解释大部分差距。次要来源是 pgr 的
+   `usable_range`/`Range` 守卫开销。
+4. **优化方向（未做）**：`prop` 可用"按染色体排序 span 数组 + 二分定位
+   重叠段"把单查询从 O(spans) 降到 O(log n + k)（k 为实际重叠段数），对
+   稀疏覆盖数据可再快一个量级；或对目标也建前缀和。属后续优化，本次仅
+   记录现状。
+
+## 为什么 pgr 没有像 count 那样领先？（2026-08-04 复核）
+
+* **count 的 3.4× 来自索引结构代差**：count 是区间查询——pgr 用 coitrees
+  （查询有界），rgr 用 rust-lapper；数据结构不同，差距是结构性的。
+* **prop 两边跑同一份代码**：`intersect`（complement→merge→invert，
+  O(spans)）在 intspan 0.8.6↔0.8.7 与 pgr vendored 版本间 diff 为空，
+  无索引可优化，持平是必然。
+* **定位实验**：
+  * 小 runlist（1 span/染色体）：pgr 50 ms vs rgr 90 ms——pgr 反而快
+    1.8×（手写 `Range` 扫描器 vs rgr 0.8.6 的正则解析，逐行解析优势）。
+  * 空 target（纯加载）：pgr 16 ms vs rgr 11 ms——加载差 5 ms，不是主因。
+  * 差距随 runlist 规模出现（小规模 pgr 赢、大规模 rgr 赢 6%）→ 差距在
+    交集热路径的常数因子，而该路径两侧代码相同。
+* **~6% 差距的最可能解释**：编译产物差异。rgr 0.8.6 二进制在 GitHub
+  Actions 上构建（`strings` 可见 `/home/runner/work/intspan/...` 路径），
+  优化参数未知（可能 LTO / target-cpu）；同一份代码在不同工具链下差
+  ±5–6% 属正常范围。pgr 侧的小开销（`json_to_set` 双重解析、跨模块
+  `usable_range`/`range_prop`、`cardinality` i64 版）只影响加载/常数，
+  不足以解释 340 ms 量级的差距。
+* **结论**：prop 持平（略慢 6%）是"算法同源 + 编译差异"的结果，不是 pgr
+  代码回归；若要在 prop 上反超，唯一正道是换算法（§分析 4）。
+
+## 附：消除"双重解析"的尝试与还原（2026-08-04）
+
+`json_to_set` / `read_runlist` 对每个 runlist 字符串先 `IntSpan::valid`
+再 `IntSpan::from`，解析两遍（154k spans 约多 6 ms 加载）。曾加
+`IntSpan::try_from`（一次性解析）替换之，加载确实降到 10.1 ms（vs
+16.2 ms），**但** prop 整体基准从 6.2 s 恶化到 7.1 s（+14%，8–10 次运行
+稳定）——查询循环逻辑未动，纯属新增 pub 函数 + `from` 委托改变后 LTO
+全程序优化的内联/布局决策（无 LTO 构建为 9.8 s，LTO 本身是增益，只是
+具体决策被扰动）。临时还原 try_from 后恢复 6.23 s。结论：**双重解析是
+微优化（~6 ms），不值得以 14% 查询循环回归为代价，保持现状**；若未来
+要动，需带基准验证并考虑给热路径函数加 `#[inline]` 稳定 LTO 决策。
+
+## 结论
+
+`pgr rg prop` 与 `rgr prop` 性能基本持平（rgr 快 ~6%），内存多 ~1.7×，
+输出逐行一致。若 prop 进入高频路径，优先做"二分重叠段"优化并消除
+runlist 双重解析，可预期反超；当前量级（100k target 约 6 s）对交互使用
+可接受。
+
+## 更新（2026-08-04）：二分重叠段优化已实现，pgr 反超 ~120×
+
+火焰图（perf + inferno，25556 采样）确认 6 s 的绝对主体是 `intersect`
+链中的 `add_pair`——在 ~19k 段 runlist 上做 O(n) VecDeque 搬移
+（`add_pair` 总耗时 66.7%，其中 `remove` 64.3% / `memmove` 21.6%）。
+据此实现 `libs/runlist::SpanIndex`：利用 IntSpan span 有序且互不相交的
+不变量，把重叠段定位从线性扫描换成两次 `partition_point` 二分
+（重叠段必为连续区间），单查询 O(spans) → O(log n + k)。
+
+复测（8 次取均值）：
+
+| 实现 | 时间 | RSS |
+| :--- | ---: | ---: |
+| pgr `rg prop`（二分） | **48.7 ± 1.1 ms** | 15.6 MB |
+| rgr `prop` | 5.820 ± 0.022 s | 9.5 MB |
+
+* pgr 自优化前（6.2 s）提升 ~128×；相对 rgr 快 **~120×**。
+* 正确性：20k target 输出与优化前（已与 rgr 逐行一致）sort 后 diff 为空。
+* 顺带消除了每查询的 `IntSpan::new` + `add_pair` + `cardinality` 分配。
+* 教训：基准里"持平/慢 6%"的结论是**算法同源**的必然，而换算法后是
+  数量级反超——性能差异主要看数据结构，不是解析/常数。

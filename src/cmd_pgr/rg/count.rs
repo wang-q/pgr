@@ -52,7 +52,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     for line in reader.lines() {
         let line = line?;
         let range = pgr::libs::ds::Range::from_str(&line);
-        if !range.is_valid() || range.start() > range.end() {
+        if !pgr::libs::runlist::usable_range(&range) {
             continue;
         }
         let n = index.count(range.chr(), *range.start(), *range.end());
