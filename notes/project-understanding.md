@@ -532,6 +532,7 @@ chainnet 后消失。`pgr psl chain` 在 2bit 序列缓存优化后（~0.3 s）�
 | [[ucsc.md]] | UCSC chain-net pipeline 脚本（pgr 重实现参照基准） |
 | [[multiz.md]] | multiz profile–profile DP 算法源码分析 |
 | [[fastk.md]] | FastK k-mer 计数器（Super-mer + Minimizer） |
+| [[mosdepth.md]] | mosdepth BAM/CRAM 深度计算器源码分析（差分数组 + CIGAR 事件，对照 runlist coverage） |
 | [[kaks.md]] | KaKs_Calculator3.0 与 PAML 源码分析 |
 
 ## 12. 笔记根文件索引（notes/）
