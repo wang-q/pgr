@@ -841,11 +841,31 @@ impl<W: Write + Seek> Compressor<W> {
         let contigs = read_fasta(fasta_path)
             .with_context(|| format!("failed to read sample FASTA: {}", fasta_path))?;
 
+        // Resolve the current reference's group range so the LZ-diff fallback
+        // (below) routes segments to the correct reference. Without this, a
+        // contig name shared across references would fall back against the
+        // wrong reference's segment in multi-reference archives.
+        // Copy the reference's group range into locals (u32 is Copy) so the
+        // filter closure below does not borrow `self` immutably while later
+        // calls borrow `self` mutably.
+        let (ref_group_start, ref_group_count) = match self.ref_meta.get(self.cur_ref_id as usize) {
+            Some(meta) => (meta.group_start, meta.group_count),
+            None => {
+                anyhow::bail!(
+                    "invalid reference id {} ({} references)",
+                    self.cur_ref_id,
+                    self.ref_meta.len()
+                );
+            }
+        };
+
         for (contig_name, seq) in &contigs {
-            // Clone to release the immutable borrow on self before calling
-            // &mut self methods (try_encode_segment_cigar / encode_segment_lzdiff).
             let ref_group_ids: Vec<u32> = match self.contig_ref_groups.get(contig_name) {
-                Some(ids) => ids.clone(),
+                Some(ids) => ids
+                    .iter()
+                    .copied()
+                    .filter(|id| *id >= ref_group_start && *id < ref_group_start + ref_group_count)
+                    .collect(),
                 None => {
                     log::warn!(
                         "contig '{}' in sample '{}' not found in reference; skipping",

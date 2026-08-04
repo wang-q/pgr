@@ -78,6 +78,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         let out_str = out_path
             .to_str()
             .ok_or_else(|| anyhow::anyhow!("invalid output path: {}", out_path.display()))?;
+        // Guard the generated `{outdir}/{sample}.fa` against overwriting the
+        // input archive: the writer truncates the file before `get_sample`
+        // reads the archive lazily.
+        if pgr::libs::io::same_path(out_str, input_path) {
+            anyhow::bail!("output file {} would overwrite the input archive", out_str);
+        }
         let mut writer = pgr::libs::io::writer(out_str)
             .with_context(|| format!("failed to open output file: {}", out_str))?;
         dec.get_sample(sample, &mut writer)

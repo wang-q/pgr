@@ -49,6 +49,13 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         .context("missing required argument: name_list")?;
     let outfile = crate::cmd_pgr::args::get_outfile(args);
 
+    // Guard -o against overwriting the input archive or the name-list file
+    // (the writer truncates the output before the archive is read lazily).
+    crate::cmd_pgr::args::ensure_outfile_distinct(
+        outfile,
+        vec![infile.as_str(), list_file.as_str()],
+    )?;
+
     // Load contig name list.
     let set_list = pgr::libs::io::read_names::<std::collections::HashSet<String>>(list_file)?;
 

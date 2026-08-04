@@ -87,7 +87,21 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     anyhow::ensure!(kmer_len > 0, "kmer-len must be positive");
     anyhow::ensure!(min_match_len > 0, "min-match-len must be positive");
 
+    // Guard against -o truncating an input file before it is read (e.g. a
+    // reference or sample FASTA, PAF, or the --name TSV). create_multi opens
+    // the output with File::create, which truncates, BEFORE reading inputs.
     let samples = super::collect_samples_from_args(args)?;
+    let mut inputs: Vec<&str> = ref_fastas.clone();
+    for (_, path, paf_opt, _) in &samples {
+        inputs.push(path.as_str());
+        if let Some(paf) = paf_opt {
+            inputs.push(paf.as_str());
+        }
+    }
+    if let Some(name_tsv) = args.get_one::<String>("name") {
+        inputs.push(name_tsv.as_str());
+    }
+    crate::cmd_pgr::args::ensure_outfile_distinct(outfile, inputs)?;
 
     let mut comp =
         Compressor::create_multi(outfile, &ref_fastas, segment_size, kmer_len, min_match_len)

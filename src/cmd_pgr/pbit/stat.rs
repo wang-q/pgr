@@ -59,6 +59,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let show_contigs = args.get_flag("contigs");
     let sample_filter = args.get_one::<String>("sample");
 
+    // Guard -o against overwriting the input archive (the writer truncates the
+    // output before stat reads the archive).
+    crate::cmd_pgr::args::ensure_outfile_distinct(outfile, vec![infile.as_str()])?;
+
     let dec = Decompressor::open(infile)
         .with_context(|| format!("Failed to open pbit file {}", infile))?;
     let mut writer = pgr::libs::io::writer(outfile)

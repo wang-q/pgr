@@ -46,6 +46,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         .collect();
     let outfile_opt = args.get_one::<String>("outfile");
 
+    // Guard -o against overwriting a reference input file (stage_work_path
+    // copies the archive to -o before the new reference is read).
+    if let Some(out) = outfile_opt {
+        crate::cmd_pgr::args::ensure_outfile_distinct(out, ref_fastas.iter().copied())?;
+    }
+
     let in_place = outfile_opt.is_none();
     let (work_path, mut temp_guard) = super::stage_work_path(infile, outfile_opt)?;
 

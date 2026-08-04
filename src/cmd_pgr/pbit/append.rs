@@ -59,6 +59,22 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let samples = super::collect_samples_from_args(args)?;
 
+    // Guard -o against overwriting a sample input file (stage_work_path copies
+    // the archive to -o before samples are read).
+    if let Some(out) = outfile_opt {
+        let mut inputs: Vec<&str> = Vec::new();
+        for (_, path, paf_opt, _) in &samples {
+            inputs.push(path.as_str());
+            if let Some(paf) = paf_opt {
+                inputs.push(paf.as_str());
+            }
+        }
+        if let Some(name_tsv) = args.get_one::<String>("name") {
+            inputs.push(name_tsv.as_str());
+        }
+        crate::cmd_pgr::args::ensure_outfile_distinct(out, inputs)?;
+    }
+
     let in_place = outfile_opt.is_none();
     let (work_path, mut temp_guard) = super::stage_work_path(infile, outfile_opt)?;
 

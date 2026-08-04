@@ -348,15 +348,16 @@ pgr fas consensus region.fa
 
 ### `--name` TSV 格式
 
-`--name` 文件每行三列（第三列可选），制表符分隔：
+`--name` 文件每行两到四列（后两列可选），制表符分隔：
 
 ```text
-sample_name<TAB>fasta_path[<TAB>paf_path]
+sample_name<TAB>fasta_path[<TAB>paf_path][<TAB>ref_name]
 ```
 
 *   空行和 `#` 开头的行被忽略。
 *   第三列缺失时，该样本使用 LZ-diff 编码。
 *   第三列存在时，使用该 PAF 文件进行 CIGAR delta 编码。
+*   第四列（多参考时）选择该样本所属参考，可为参考名或序号；缺省时路由到参考 0。
 
 ### pbit 文件限制
 

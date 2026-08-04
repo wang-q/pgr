@@ -55,6 +55,14 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         .context("missing required argument: infile")?;
     let output_path = crate::cmd_pgr::args::get_outfile(args);
 
+    // Guard -o against overwriting the input archive or the range-list file:
+    // the writer truncates the output before get_contig reads the archive lazily.
+    let mut guard_inputs: Vec<&str> = vec![infile.as_str()];
+    if let Some(rg) = args.get_one::<String>("rgfile") {
+        guard_inputs.push(rg.as_str());
+    }
+    crate::cmd_pgr::args::ensure_outfile_distinct(output_path, guard_inputs)?;
+
     let ranges = crate::cmd_pgr::args::collect_ranges(args)?;
 
     let mut dec = Decompressor::open(infile)
@@ -93,8 +101,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             let start_val = *rg.start();
             let end_val = *rg.end();
             anyhow::ensure!(
-                start_val > 0 && end_val > 0,
-                "range coordinates must be positive: {}",
+                start_val > 0 && end_val > 0 && start_val <= end_val,
+                "range coordinates must be positive and start <= end: {}",
                 el
             );
             // Convert 1-based inclusive to 0-based half-open.

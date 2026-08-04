@@ -1390,6 +1390,37 @@ fn test_pbit_range_invalid_range_warns() {
 }
 
 #[test]
+fn test_pbit_range_reversed_coordinates_rejected() {
+    let temp = TempDir::new().unwrap();
+    let out_pbit = temp.path().join("out.pbit");
+
+    PgrCmd::new()
+        .args(&[
+            "pbit",
+            "create",
+            "-r",
+            fixture("ref_2000.fa").to_str().unwrap(),
+            "-i",
+            fixture("sample_2000_identical.fa").to_str().unwrap(),
+            "-o",
+            out_pbit.to_str().unwrap(),
+        ])
+        .run();
+
+    // Reversed coordinates (start > end) must be rejected, not silently
+    // produce empty output.
+    let (stdout, stderr) = PgrCmd::new()
+        .args(&["pbit", "range", out_pbit.to_str().unwrap(), "chr1:100-50"])
+        .run_fail();
+    let combined = format!("{}{}", stdout, stderr);
+    assert!(
+        combined.contains("start <= end"),
+        "expected reversed-coordinate rejection, got: {}",
+        combined
+    );
+}
+
+#[test]
 fn test_pbit_create_invalid_name_tsv_line_number() {
     let temp = TempDir::new().unwrap();
     let name_tsv = temp.path().join("names.tsv");
@@ -1504,4 +1535,57 @@ fn test_pbit_empty_sample_fasta() {
             content
         );
     }
+}
+
+#[test]
+fn test_pbit_to_fa_output_not_overwrite_input() {
+    // Regression test: the generated `{outdir}/{sample}.fa` must not overwrite
+    // the input archive. Place the archive at `out/x.fa` with sample name `x`
+    // so the would-be output path collides with the archive.
+    let temp = TempDir::new().unwrap();
+    let sample_src = temp.path().join("sample_src");
+    fs::create_dir_all(&sample_src).unwrap();
+    let sample_fa = sample_src.join("x.fa"); // basename "x" -> sample name "x"
+    fs::copy(fixture("sample_1000_identical.fa"), &sample_fa).unwrap();
+
+    let out_dir = temp.path().join("out");
+    fs::create_dir_all(&out_dir).unwrap();
+    let out_pbit = out_dir.join("x.fa"); // == {outdir}/x.fa, the would-be output
+
+    PgrCmd::new()
+        .args(&[
+            "pbit",
+            "create",
+            "-r",
+            fixture("ref_1000.fa").to_str().unwrap(),
+            "-i",
+            sample_fa.to_str().unwrap(),
+            "-o",
+            out_pbit.to_str().unwrap(),
+        ])
+        .run();
+    assert!(out_pbit.exists());
+
+    // to-fa into the same directory must be rejected (would overwrite archive).
+    let (stdout, stderr) = PgrCmd::new()
+        .args(&[
+            "pbit",
+            "to-fa",
+            out_pbit.to_str().unwrap(),
+            "-o",
+            out_dir.to_str().unwrap(),
+        ])
+        .run_fail();
+    let combined = format!("{}{}", stdout, stderr);
+    assert!(
+        combined.contains("overwrite the input archive"),
+        "expected overwrite rejection, got: {}",
+        combined
+    );
+
+    // The archive must still be intact and readable.
+    let (stdout, _) = PgrCmd::new()
+        .args(&["pbit", "stat", out_pbit.to_str().unwrap()])
+        .run();
+    assert!(stdout.contains("Samples: 1"));
 }
