@@ -479,6 +479,57 @@ fn command_align_pgi_sequence_validation() {
 }
 
 #[test]
+fn command_align_pgi_output_not_overwrite_sibling_index() {
+    // Regression: `-o ref.pgi` must not silently overwrite the sibling index
+    // that `ref.fa` maps to. Doing so corrupted the index and broke the next
+    // run with a confusing "reading header / failed to fill whole buffer".
+    let temp = tempfile::TempDir::new().unwrap();
+    let ref_fa = write_fa(temp.path(), "ref", &random_seq(400, 42));
+
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "align",
+            "pgi",
+            &ref_fa,
+            "-o",
+            temp.path().join("ref.pgi").to_str().unwrap(),
+        ])
+        .run_fail();
+    assert!(
+        stderr.contains("also an input file"),
+        "expected -o ref.pgi to be rejected: {stderr}"
+    );
+    assert!(
+        !temp.path().join("ref.pgi").exists(),
+        "the sibling index must not be created/corrupted"
+    );
+
+    // The `.fa.gz` sibling (`ref.fa.pgi`) is protected too.
+    use std::io::Write;
+    let fa_gz = temp.path().join("ref.fa.gz");
+    let mut gz = flate2::write::GzEncoder::new(
+        std::fs::File::create(&fa_gz).unwrap(),
+        flate2::Compression::default(),
+    );
+    write!(gz, ">ref\n{}\n", random_seq(400, 43)).unwrap();
+    gz.finish().unwrap();
+
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "align",
+            "pgi",
+            fa_gz.to_str().unwrap(),
+            "-o",
+            temp.path().join("ref.fa.pgi").to_str().unwrap(),
+        ])
+        .run_fail();
+    assert!(
+        stderr.contains("also an input file"),
+        "expected -o ref.fa.pgi to be rejected: {stderr}"
+    );
+}
+
+#[test]
 fn command_align_pgi_keep_index() {
     let temp = tempfile::TempDir::new().unwrap();
     let ref_fa = write_fa(temp.path(), "ref", &random_seq(400, 42));
@@ -736,6 +787,71 @@ fn command_align_pgi_single_ref_seq_on_self_pgi() {
         fs::read_to_string(&direct).unwrap(),
         fs::read_to_string(&out).unwrap(),
         ".pgi + --query-seq output differs from direct FASTA self-alignment"
+    );
+}
+
+/// A soft-masked (lowercase) region must be skipped by automatic indexing
+/// identically whether the genome is a FASTA or a 2bit with stored mask
+/// blocks. Regression: `align pgi` read 2bit unmasked, so a masked repeat
+/// was indexed and aligned (1 block) while the equivalent FASTA produced 0.
+#[test]
+fn command_align_pgi_2bit_mask_matches_fasta() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let pre = random_seq(300, 43);
+    let rep = random_seq(200, 44);
+    let post = random_seq(300, 45);
+    let genome = format!("{pre}{}{post}", rep.to_ascii_lowercase());
+    let ref_fa = temp.path().join("ref.fa");
+    fs::write(&ref_fa, format!(">ref\n{genome}\n")).unwrap();
+    let query_fa = write_fa(temp.path(), "q", &rep);
+
+    // FASTA: the lowercase region is masked out -> no blocks.
+    let out_fa = temp.path().join("out_fa.psl");
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "align",
+            "pgi",
+            ref_fa.to_str().unwrap(),
+            &query_fa,
+            "-o",
+            out_fa.to_str().unwrap(),
+        ])
+        .run();
+    assert!(stderr.contains("wrote"), "failed: {stderr}");
+    assert!(
+        fs::read_to_string(&out_fa).unwrap().trim().is_empty(),
+        "masked FASTA region must not align"
+    );
+
+    // Convert to 2bit (keeps the lowercase as mask blocks) and align again.
+    let ref_2bit = temp.path().join("ref.2bit");
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "fa",
+            "to-2bit",
+            ref_fa.to_str().unwrap(),
+            "-o",
+            ref_2bit.to_str().unwrap(),
+        ])
+        .run();
+    assert!(stderr.is_empty(), "to-2bit failed: {stderr}");
+    assert!(ref_2bit.is_file(), "to-2bit must produce the 2bit file");
+
+    let out_2bit = temp.path().join("out_2bit.psl");
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "align",
+            "pgi",
+            ref_2bit.to_str().unwrap(),
+            &query_fa,
+            "-o",
+            out_2bit.to_str().unwrap(),
+        ])
+        .run();
+    assert!(stderr.contains("wrote"), "failed: {stderr}");
+    assert!(
+        fs::read_to_string(&out_2bit).unwrap().trim().is_empty(),
+        "2bit masked region must align exactly like the FASTA (none)"
     );
 }
 

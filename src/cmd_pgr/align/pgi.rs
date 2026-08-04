@@ -189,14 +189,23 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let self_mode = is_self || query_input.is_none();
     let query_input = query_input.map(|s| s.as_str()).unwrap_or(ref_input);
     let outfile = args.get_one::<String>("outfile").unwrap();
-    let mut inputs: Vec<&str> = vec![ref_input, query_input];
+    let mut inputs: Vec<String> = vec![ref_input.to_string(), query_input.to_string()];
+    // Also protect the sibling index each genome input maps to (`ref.fa` ->
+    // `ref.pgi`, `ref.fa.gz` -> `ref.fa.pgi`): `-o ref.pgi` must not silently
+    // overwrite the index the command creates or reuses, which would corrupt
+    // it and break the next run with a confusing "reading header" error.
+    for s in [ref_input, query_input] {
+        if s != "stdin" && !is_pgi_input(s) {
+            inputs.push(sibling_pgi_path(Path::new(s)).display().to_string());
+        }
+    }
     if let Some(s) = args.get_one::<String>("ref_seq") {
-        inputs.push(s.as_str());
+        inputs.push(s.clone());
     }
     if let Some(s) = args.get_one::<String>("query_seq") {
-        inputs.push(s.as_str());
+        inputs.push(s.clone());
     }
-    crate::cmd_pgr::args::ensure_outfile_distinct(outfile, inputs)?;
+    crate::cmd_pgr::args::ensure_outfile_distinct(outfile, inputs.iter().map(|s| s.as_str()))?;
     let params = pgr::libs::pgi::align::AlignParams {
         freq: *args.get_one::<u32>("freq").unwrap(),
         min_span: *args.get_one::<u32>("min_span").unwrap(),
@@ -366,10 +375,13 @@ fn resolve_side(
     let out = if keep {
         cached.clone()
     } else {
-        let dir = tmp.get_or_insert_with(|| {
-            tempfile::TempDir::new().expect("creating temporary index directory")
-        });
-        dir.path().join(format!("{label}.pgi"))
+        if tmp.is_none() {
+            *tmp = Some(tempfile::TempDir::new().context("creating temporary index directory")?);
+        }
+        tmp.as_ref()
+            .expect("temporary index directory initialized above")
+            .path()
+            .join(format!("{label}.pgi"))
     };
     let mut w = std::fs::File::create(&out)?;
     idx.write(&mut w)?;
@@ -438,8 +450,10 @@ fn is_pgi_input(path: &str) -> bool {
     p.extension().and_then(|e| e.to_str()) == Some("pgi")
 }
 
-/// Sibling index path for a genome input: ref.fa / ref.fa.gz / ref.2bit all
-/// map to ref.pgi.
+/// Sibling index path for a genome input: ref.fa and ref.2bit map to ref.pgi;
+/// a gzipped input (ref.fa.gz) gets its own ref.fa.pgi so it cannot silently
+/// reuse the index of a plain ref.fa when the two files hold different
+/// sequences (same contig names/lengths, different content).
 fn sibling_pgi_path(path: &Path) -> PathBuf {
     let mut p = path.to_path_buf();
     if p.extension().and_then(|e| e.to_str()) == Some("gz") {
@@ -496,7 +510,11 @@ fn read_seqs(path: &str) -> anyhow::Result<Vec<(String, Vec<u8>)>> {
         .and_then(|e| e.to_str())
         == Some("2bit");
     if is_2bit {
-        pgr::libs::pgi::build::read_2bit(path, false)
+        // Read soft-mask blocks lowercase so the automatic-index masking
+        // (build_from_seqs `mask=true`, FastGA `-M`) skips them exactly like
+        // FASTA lowercase regions. Reading unmasked would index and align
+        // masked repeats that a FASTA sibling silently skips.
+        pgr::libs::pgi::build::read_2bit(path, true)
     } else {
         pgr::libs::pgi::build::read_fasta(path)
     }

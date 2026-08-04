@@ -65,6 +65,12 @@
 * 子范围命名 pgr 1-based vs kent 0-based（记录在案）：pgr 生成端/消费端
   自洽，直接消费 UCSC/blat 生态子范围名时需先确认语义。
 * 单 contig > 4.3 Gb 的 pgi 索引：pos 为 u32，超长单 contig 不被支持。
+* `ref.2bit` 与 `ref.fa` 同 stem 时共享 `ref.pgi` 兄弟索引（有意保留）：
+  `.2bit` 是 `.fa` 的压缩变换，作为 drop-in 替换共享索引符合设计（docs
+  明确 "2bit inputs are preferred"）。与 `.fa`/`.fa.gz` 的分离不同（两者
+  可能是内容无关的独立文件），同目录下 `ref.fa` 与 `ref.2bit` 内容分歧属
+  罕见用户错误，且 mtime 新鲜度检查在 `ref.2bit` 更新时自动重建，已部分
+  缓解。若改为 `ref.2bit.pgi` 分离会破坏 drop-in 语义，故不修。
 
 ## 修复的缺陷（共 34 处：22 处代码/行为 + 12 处 CLI/帮助/文档）
 
@@ -245,3 +251,77 @@
 文档），并经多轮纵深复核（`libs/pgi` 索引构建/读取、`libs/lastz`、
 `libs/fmt/lav`、`libs/fmt/psl`、`alignment` DP、sibling/缓存索引新鲜度、
 `--parallel` 确定性、`-o` 覆盖保护）复核，未再发现新问题，审核收敛。
+
+### 追加轮（2026-08-05 复核）
+
+* 复核 `libs/pgi` 全部非测试代码的 `unwrap`/`expect`/`unreachable!`：均在
+  定长切片取值、`Some` 前置守卫或 while 循环条件下不可达，无生产 panic 风险。
+* 修复一处陈旧代码注释：`sibling_pgi_path` 的 doc 注释原写 "ref.fa /
+  ref.fa.gz / ref.2bit all map to ref.pgi"，与 `.gz` 分离为 `ref.fa.pgi` 的
+  实现不符，已更正（仅注释，无行为变化）。
+* 补充已知限制：`ref.2bit` 与 `ref.fa` 共享 `ref.pgi`（有意保留，见上文）。
+* 验证：`cargo build` 干净；`cli_align_pgi` 21 个测试、`libs::pgi` 53 个测试
+  全通过；`cargo fmt --check` 与 `cargo clippy --all-targets -- -D warnings`
+  干净。未发现新的代码/行为/文档缺陷。
+
+### 追加轮（2026-08-05 二轮复核）
+
+修复 2 处新缺陷：
+
+**（数据安全）`-o` 可静默覆盖兄弟索引**：`ensure_outfile_distinct` 只保护
+  `[ref, query, ref_seq, query_seq]`，未包含基因组输入映射的兄弟索引路径
+  （`ref.fa` → `ref.pgi`、`ref.fa.gz` → `ref.fa.pgi`）。实测 `align pgi
+  ref.fa -o ref.pgi`：命令把 PSL 输出写到 `ref.pgi`，覆盖/破坏该兄弟索引，
+  下一次正常运行时 `resolve_side` 把 PSL 当 pgi 读，报 "reading header /
+  failed to fill whole buffer"。修复：在 `execute` 中把每个基因组输入的
+  `sibling_pgi_path` 一并加入 `ensure_outfile_distinct`（跳过 `stdin`）。
+  实测 `-o ref.pgi`、`-o ref.fa.pgi`、`--keep-index -o ref.pgi` 均报 "output
+  file ... is also an input file" 且索引完好；正常 `-o out.psl` 不受影响。
+  回归 `command_align_pgi_output_not_overwrite_sibling_index`。
+
+**（Zero Panic）临时索引目录创建失败会 panic**：`resolve_side` 里
+  `TempDir::new().expect("creating temporary index directory")` 在系统临时
+  目录不可写/磁盘满时 panic。修复：改为 `?` 传播友好错误（内部
+  `tmp.as_ref().expect` 有刚赋值的前置保证，不可达）。无行为/输出变化。
+
+验证：`cargo build` 干净；`cli_align_pgi` 22 个测试、`libs::pgi` 53 个、
+  `libs::alignment` 44 个全通过；`cargo clippy --all-targets -- -D warnings`
+  干净。本文件 `align/pgi.rs` 与 `tests/cli_align_pgi.rs` fmt 干净；另有两处
+  **与本次审核无关**的既有 fmt 差异（`src/cmd_pgr/twobit/{range,some}.rs`，
+  属 prior session 未提交改动，按"精准修改"原则不动）。未再发现新的
+  代码/行为/文档缺陷。
+
+### 追加轮（2026-08-05 三轮复核）
+
+未发现新的代码/行为/文档缺陷。本轮要点：
+
+* **复核 reference 侧记录校验**：`chain_to_psl` 直接以 `chain.a_contig` 索引
+  `a.contigs[...]`（`align.rs`），此前的 `validate_record` 只覆盖 query 侧
+  （`emit_entry_hits` 仅对 `bc` 校验）。逐路径确认 reference 侧同样安全：
+  `align pgi` 命令只走 streaming 路径（`align_to_psl_streaming` /
+  `align_to_psl_ext_streaming`），reference 经 `PgiStream::next_batch` 逐记录
+  `validate_record(cid, pos, ...)`（`mod.rs`），`ac` 保证 `< contigs.len()`；
+  非 streaming 的 `merge_seed_hits` 其 `a` 来自 `PgiIndex::read`（逐记录校验）
+  或 `build_from_seqs`（构造即合法），同样安全。无 crafted reference 越界
+  panic 风险。
+* **记录项（低风险，未修）**：`--self` 只校验索引输入 `ref == query`，不校验
+  `--ref-seq` 与 `--query-seq` 是否一致。`align pgi ref.pgi --self --ref-seq
+  a.fa --query-seq b.fa`（两文件均匹配索引 contig 表但内容不同）会在 self 模式
+  下比对 a.fa vs b.fa，仅丢弃"精确自同一性"命中，对结果影响极小；属用户自相
+  矛盾的请求，且 contig 校验在文件名/长度不符时已能拦截。按"简洁优先"记录不修。
+* **环境阻塞（与本次审核无关）**：工作区存在**另一次独立审核（pbit/twobit）的
+  未提交 WIP**（`src/cmd_pgr/pbit/*`、`src/cmd_pgr/twobit/*`、
+  `src/libs/pbit/compressor.rs` 等），`compressor.rs` 当前有 borrow-checker
+  编译错误，导致 `cargo build`/`cargo test` 整库无法编译。按"精准修改"原则
+  **不触碰**这些非本次审核范围的改动。`align pgi` 本次改动（sibling 索引保护、
+  临时目录错误处理、2bit 软掩码、注释更正）经逐行 type-check 复核自洽，回归
+  测试 `command_align_pgi_2bit_mask_matches_fasta`、
+  `command_align_pgi_output_not_overwrite_sibling_index` 逻辑正确，待 pbit WIP
+  收尾后即可全量验证。
+
+  **（已解除）**：pbit/twobit WIP 的编译错误已由其独立审核解决，`cargo build`
+  恢复通过。已对 `align pgi` 本次改动做全量回归验证：`cli_align_pgi` 22 个测试
+  （含 2 个本轮回归测试）全通过；`libs::pgi` 53 个单测全通过；
+  `cargo clippy --all-targets -- -D warnings` 对本文件无告警；`cargo fmt --check`
+  对齐 `align/pgi.rs` 干净（修正了 temp-dir 错误处理那一行的单行格式，纯空白，
+  无逻辑变化）。未再发现新的代码/行为/文档缺陷。
