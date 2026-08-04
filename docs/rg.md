@@ -11,8 +11,11 @@ the external `spanr` tool. Set-level runlist JSON operations live under
 *   `cover`: Merge `.rg` range lines into a runlist JSON (per-chromosome union).
 *   `coverage`: Compute depth of coverage over `.rg` ranges (sweep-line, O(n log n)).
 *   `count`: Count, for each range, the overlaps with other `.rg` range files.
+*   `merge`: Cluster nearly-identical `.rg` ranges and emit mappings.
 *   `prop`: Proportion of each range covered by a runlist.
+*   `runlist`: Filter `.rg` lines by comparing with a runlist file.
 *   `sort`: Sort `.rg` lines by chromosome, start and strand.
+*   `span`: Apply line-level span operations (trim/pad/shift/flank/excise).
 
 ---
 
@@ -75,4 +78,42 @@ lines with identical keys keep their input order (stable sort).
 pgr rg sort <infiles>...
 pgr rg sort a.rg
 pgr rg sort a.rg b.rg -o sorted.rg
+```
+
+## runlist
+
+Keeps `.rg` lines whose range overlaps, does not overlap, or is contained by
+the runlist, according to `--op`. Lines without a valid range are skipped.
+
+```bash
+pgr rg runlist <runlist.json> <infiles>...
+pgr rg runlist intergenic.json a.rg
+pgr rg runlist intergenic.json a.rg --op non-overlap
+```
+
+## span
+
+Applies an operation to each `.rg` line and writes the new range (or appends
+it with `--append`): `trim`/`pad` remove or add N bases at both/5p/3p ends,
+`shift`/`flank` work on the 5p or 3p end, `excise` drops ranges smaller than
+N (written as an empty line).
+
+```bash
+pgr rg span <infiles>... [--op OP] [-m MODE] [-n N] [-a]
+pgr rg span a.rg --op trim -n 10
+pgr rg span a.rg --op flank -m 3p -n=-1 -a
+```
+
+## merge
+
+Clusters `.rg` ranges whose reciprocal overlap reaches `--coverage` and emits
+`range<TAB>merged` mapping lines for ranges in multi-member clusters. The
+merged representative is the union cover `chr(+):min-max`; ranges not joined
+with any other are omitted. Adapted from `rgr merge` to single-column `.rg`
+input.
+
+```bash
+pgr rg merge <infiles>... [--coverage FLOAT]
+pgr rg merge a.rg
+pgr rg merge a.rg b.rg --coverage 0.90 -o map.tsv
 ```

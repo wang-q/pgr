@@ -18,7 +18,11 @@
 * `pgr rg sort` 已落地（2026-08-04）：按 (chr, start, strand) 稳定排序，
   非法行置尾。理由：有序 `.rg` 是下游工具与人工查看的常见需求，且外部
   `sort` 无法复刻解析键语义（见 §3.4）。
-* 待办：`rg runlist`（按 runlist 过滤）、行级 `rg span`（待定稿）。
+* `pgr rg runlist` / `rg span` / `rg merge` 已落地（2026-08-04）：
+  runlist 过滤（overlap/non-overlap/superset）、行级 span（trim/pad/
+  shift/flank/excise，5p/3p）、merge（互覆盖聚类出映射）。merge 反转了
+  此前"被 sd 家族替代、不做"的决定（用户指示补做 .rg 版）。
+* **rg 家族全部命令已落地**，无待办。
 
 ## 1. 结论摘要
 
@@ -56,10 +60,10 @@
 | `sort` | 按 range（chr/start/strand）排序 | `rg sort` | **✅ 已实现**（稳定排序，非法行置尾） |
 | `count` | 每条 range 与一组 range 的重叠数（lapper） | `rg count` | **✅ 已实现**（coitrees，快 ~3.4×） |
 | `prop` | 每条 range 与 runlist 的交集比例（--full 加 length/size） | `rg prop` | **✅ 已实现** |
-| `runlist` | 按 runlist 过滤行（overlap/non-overlap/superset） | `rg runlist`（沿用 rgr 命令名） | 待实现 |
-| `span` | 行级 trim/pad/shift/flank/excise（5p/3p，保行） | `rg span` | 待定（可选） |
-| `merge` | 覆盖度阈值重叠图合并（petgraph，O(n²)） | 不做 | 不做（找片段重复的旧实现，`pgr sd` 家族已覆盖该目标） |
-| `pl-2rmp` | 两轮 merge+replace 管道（分片降 O(n²)） | 不做 | 不做（merge 的工程包装，随 merge 一起弃） |
+| `runlist` | 按 runlist 过滤行（overlap/non-overlap/superset） | `rg runlist`（沿用 rgr 命令名） | **✅ 已实现** |
+| `span` | 行级 trim/pad/shift/flank/excise（5p/3p，保行） | `rg span` | **✅ 已实现** |
+| `merge` | 覆盖度阈值重叠图合并（petgraph，O(n²)） | `rg merge`（.rg 版：coitrees + union-find） | **✅ 已实现**（反转此前"不做"决定，见 §3.3） |
+| `pl-2rmp` | 两轮 merge+replace 管道（分片降 O(n²)） | 不做 | 不做（merge 的工程包装，.rg 版无需分片） |
 
 ## 3. 新家族 `pgr rg` 的候选命令设计
 
@@ -144,7 +148,7 @@ cover/coverage 命令、测试迁至 `tests/cli_rg.rs`、新增 `docs/rg.md` 并
 
 ### 3.3 中价值
 
-**不做 `pgr rg merge` / `pl-2rmp`**
+**`pgr rg merge`（已实现，2026-08-04；反转此前"不做"决定）**
 
 * 背景：`rgr merge` 是老的"片段重复（SD）发现"实现——把互相重叠 ≥ 阈值
   （0.95/0.98）的区间（links 文件中的 part）归并成代表区间，靠
@@ -152,9 +156,13 @@ cover/coverage 命令、测试迁至 `tests/cli_rg.rs`、新增 `docs/rg.md` 并
 * 现状：pgr 已有完整的 `sd` 家族（`sd search/align/cluster/decompose/
   cover/cross/run`，见 notes/design/sd.md 与 notes/references/biser.md），
   覆盖了"找片段重复"的目标，且输出/语义比 rgr merge 更适合 pgr。
-* 结论：**不移植**。`rg merge` 的方案讨论（单命令直接替换 vs 两命令
-  镜像 rgr、链向处理、coitrees+union-find 优化）全部归档，不再推进；
-  若未来出现"links 类多 part 归一"的真实需求，再按当时场景重新评估。
+* 用户 2026-08-04 指示补做 .rg 版：`rg merge` 对单列 `.rg` 范围做互覆盖
+  （reciprocal ≥ `--coverage`，默认 0.95）聚类，输出 `range<TAB>merged`
+  映射（代表 = 并集 cover `chr(+):min-max`，单例省略）。实现用 coitrees
+  找候选邻居 + union-find，O(n log n + k)，无需 rgr 的 O(n²)+petgraph 与
+  `pl-2rmp` 分片。
+* rgr 原测试基于多 part TSV（II.links.tsv），按决策 A 不迁移；新增 .rg
+  版测试。
 
 **`pgr rg span`（行级 span，待定稿）**
 
@@ -201,6 +209,7 @@ cover/coverage 命令、测试迁至 `tests/cli_rg.rs`、新增 `docs/rg.md` 并
 2. ✅ `rg count`——coitrees 现成、需求直接（重叠计数），含基准。
 3. ✅ `runlist cover/coverage` 迁移到 `rg cover`/`rg coverage`。
 4. ✅ `rg prop`——IntSpan 现成，含 rgr fixture 回归。
-5. `rg runlist`（overlap 过滤）——与 prop 同基础，几行代码（待实现）。
+5. ✅ `rg runlist`（overlap 过滤）——与 prop 同基础。
 6. ✅ `rg sort`——按 (chr, start, strand) 稳定排序、非法行置尾。
-7. 行级 `rg span`——看需求（5p/3p 方向变换是否真有场景）。
+7. ✅ 行级 `rg span`——trim/pad/shift/flank/excise（5p/3p）。
+8. ✅ `rg merge`——互覆盖聚类 + union-find（coitrees 找邻居）。

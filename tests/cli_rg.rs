@@ -222,8 +222,102 @@ fn command_rg_sort_strand_order() {
 fn command_rg_sort_fixture() {
     let (stdout, _) = cmd(&["sort", &fixture("S288c.rg")]).run();
     assert_eq!(stdout.lines().count(), 6);
-    assert_eq!(stdout.lines().next().unwrap(), "I:1-100");
-    assert_eq!(stdout.lines().last().unwrap(), "II:23537-24097");
+    assert_eq!(
+        stdout.lines().next().unwrap().split('\t').count(),
+        1,
+        "field count"
+    );
+    assert!(
+        stdout.contains("S288c.I(-):190-200\nS288c"),
+        "got: {stdout}"
+    );
+}
+
+// Migrated from intspan `tests/cli_rgr.rs` `command_runlist` (.rg parts).
+#[test]
+fn command_rg_runlist() {
+    let rl = fixture("intergenic.json");
+    let rg = fixture("S288c.rg");
+    let (stdout, _) = cmd(&["runlist", &rl, &rg]).run();
+    assert_eq!(stdout.lines().count(), 2);
+    assert!(!stdout.contains("S288c"), "got: {stdout}");
+    assert!(stdout.contains("21294-22075"), "got: {stdout}");
+
+    let (stdout, _) = cmd(&["runlist", &rl, &rg, "--op", "non-overlap"]).run();
+    assert_eq!(stdout.lines().count(), 4);
+    assert!(stdout.contains("S288c"), "got: {stdout}");
+    assert!(!stdout.contains("21294-22075"), "got: {stdout}");
+
+    let (stdout, _) = cmd(&["runlist", &rl, &rg, "--op", "superset"]).run();
+    assert_eq!(stdout.lines().count(), 2);
+    assert!(!stdout.contains("S288c"), "got: {stdout}");
+    assert!(stdout.contains("21294-22075"), "got: {stdout}");
+}
+
+// Migrated from intspan `tests/cli_rgr.rs` `command_runlist_invalid`.
+#[test]
+fn command_rg_runlist_invalid() {
+    let (_, stderr) = cmd(&[
+        "runlist",
+        &fixture("intergenic.json"),
+        &fixture("S288c.rg"),
+        "--op",
+        "invalid",
+    ])
+    .run_fail();
+    assert!(stderr.contains("invalid value"), "got: {stderr}");
+}
+
+// Migrated from intspan `tests/cli_rgr.rs` `command_span` (.rg parts).
+#[test]
+fn command_rg_span() {
+    let rg = fixture("S288c.rg");
+    let (stdout, _) = cmd(&["span", &rg, "--op", "trim", "-n", "10"]).run();
+    assert_eq!(stdout.lines().count(), 6);
+    assert!(stdout.contains("I:11-90"), "got: {stdout}");
+    assert!(stdout.contains("II:21304-22065"), "got: {stdout}");
+
+    let (stdout, _) = cmd(&["span", &rg, "--op", "shift", "-m", "3p", "-n", "10"]).run();
+    assert_eq!(stdout.lines().count(), 6);
+    assert!(stdout.contains("I:11-110"), "got: {stdout}");
+    assert!(stdout.contains("S288c.I(-):180-190"), "got: {stdout}");
+
+    let (stdout, _) = cmd(&["span", &rg, "--op", "flank", "-m", "3p", "-n=-1", "-a"]).run();
+    assert_eq!(stdout.lines().count(), 6);
+    assert!(stdout.contains("I:1-100\tI:100"), "got: {stdout}");
+    assert!(
+        stdout.contains("S288c.I(-):190-200|Species=Yeast\tS288c.I(-):190"),
+        "got: {stdout}"
+    );
+
+    let (stdout, _) = cmd(&["span", &rg, "--op", "excise", "-n", "20"]).run();
+    assert_eq!(stdout.lines().count(), 6);
+    assert_eq!(
+        stdout.lines().filter(|e| e.is_empty()).count(),
+        2,
+        "empty lines"
+    );
+}
+
+// New test: rgr's `command_merge` used a multi-part TSV fixture
+// (II.links.tsv), which decision A excludes; this covers the .rg adaptation.
+#[test]
+fn command_rg_merge() {
+    let dir = TempDir::new().unwrap();
+    let rg = dir.path().join("a.rg");
+    std::fs::write(&rg, "chr1:100-200\nchr1:105-205\nchr1:1000-2000\n").unwrap();
+    let (stdout, _) = PgrCmd::new()
+        .args(&["rg", "merge", rg.to_str().unwrap()])
+        .run();
+    assert_eq!(
+        stdout,
+        "chr1:100-200\tchr1(+):100-205\nchr1:105-205\tchr1(+):100-205\n"
+    );
+    // Looser threshold still leaves the disjoint range unmerged.
+    let (stdout, _) = PgrCmd::new()
+        .args(&["rg", "merge", rg.to_str().unwrap(), "-c", "0.5"])
+        .run();
+    assert_eq!(stdout.lines().count(), 2);
 }
 
 #[test]

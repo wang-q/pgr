@@ -194,6 +194,105 @@ pub fn range_prop(index: &SpanIndex, chr: &str, start: i32, end: i32) -> (f32, i
     (prop, length, size)
 }
 
+/// Cluster `.rg` ranges by reciprocal overlap and return `(part, merged)`
+/// mapping pairs for multi-member clusters (rgr `merge` semantics, adapted
+/// to single-column `.rg` input).
+///
+/// Two ranges are joined when each covers at least `coverage` of the other.
+/// The merged representative is the union cover `chr(+):min-max`; parts in
+/// singleton clusters are omitted from the mapping.
+pub fn rg_merge_mapping(files: &[String], coverage: f32) -> anyhow::Result<Vec<(String, String)>> {
+    // Unique parts per chromosome: (line, start, end).
+    let mut parts_of: BTreeMap<String, Vec<(String, i32, i32)>> = BTreeMap::new();
+    for f in files {
+        let reader = crate::reader(f)?;
+        for line in reader.lines() {
+            let line = line?;
+            let range = crate::libs::ds::Range::from_str(&line);
+            if !usable_range(&range) {
+                continue;
+            }
+            let parts = parts_of.entry(range.chr().clone()).or_default();
+            let part = (line, *range.start(), *range.end());
+            if !parts.contains(&part) {
+                parts.push(part);
+            }
+        }
+    }
+
+    let mut mapping: Vec<(String, String)> = Vec::new();
+    for (chr, parts) in parts_of {
+        let n = parts.len();
+        if n < 2 {
+            continue;
+        }
+        // DSU over part indices.
+        let mut parent: Vec<usize> = (0..n).collect();
+        fn find(parent: &mut [usize], mut x: usize) -> usize {
+            while parent[x] != x {
+                parent[x] = parent[parent[x]];
+                x = parent[x];
+            }
+            x
+        }
+        fn union(parent: &mut [usize], a: usize, b: usize) {
+            let (ra, rb) = (find(parent, a), find(parent, b));
+            if ra != rb {
+                parent[rb] = ra;
+            }
+        }
+
+        // Candidate neighbours via a COITree whose metadata carries the part
+        // index.
+        let intervals: Vec<CoiInterval<usize>> = parts
+            .iter()
+            .enumerate()
+            .map(|(i, (_, s, e))| CoiInterval::new(*s, *e, i))
+            .collect();
+        let tree: BasicCOITree<usize, u32> = BasicCOITree::new(&intervals);
+        for i in 0..n {
+            let (_, s_i, e_i) = parts[i];
+            let len_i = i64::from(e_i) - i64::from(s_i) + 1;
+            tree.query(s_i, e_i, |iv| {
+                let j = iv.metadata;
+                if j == i {
+                    return;
+                }
+                let (_, s_j, e_j) = parts[j];
+                let overlap = i64::from(e_i.min(e_j)) - i64::from(s_i.max(s_j)) + 1;
+                let len_j = i64::from(e_j) - i64::from(s_j) + 1;
+                let cov_i = overlap as f64 / len_i as f64;
+                let cov_j = overlap as f64 / len_j as f64;
+                if cov_i >= f64::from(coverage) && cov_j >= f64::from(coverage) {
+                    union(&mut parent, i, j);
+                }
+            });
+        }
+
+        // Group parts by cluster root; emit `part -> merged` for clusters
+        // with at least two members.
+        let mut groups: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+        for i in 0..n {
+            groups.entry(find(&mut parent, i)).or_default().push(i);
+        }
+        for members in groups.values() {
+            if members.len() < 2 {
+                continue;
+            }
+            let mut ints = IntSpan::new();
+            for &i in members {
+                let (_, s, e) = parts[i];
+                ints.add_pair(s, e);
+            }
+            let merged = format!("{}(+):{}", chr, ints);
+            for &i in members {
+                mapping.push((parts[i].0.clone(), merged.clone()));
+            }
+        }
+    }
+    Ok(mapping)
+}
+
 /// Regions of half-open `[start, end)` intervals covered by at least
 /// `min_depth` intervals (sweep-line depth). Returns an inclusive `IntSpan`
 /// runlist. `min_depth` of 0 is treated as 1 (only covered positions exist).

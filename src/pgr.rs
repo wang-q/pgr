@@ -65,7 +65,7 @@ fn main() -> anyhow::Result<()> {
 * Analysis:
     * sd    - Segmental duplication detection: align, cluster, cover, cross, decompose, run, search
     * rept  - Repeat detection: e-kmer, e-align, s-kmer, s-align, trf
-    * rg    - Range (.rg) line operations: cover, coverage, count, prop, sort
+    * rg    - Range (.rg) line operations: cover, coverage, count, merge, prop, runlist, sort, span
     * runlist - Runlist interval operations: combine, compare, convert, genome, merge, some, span, split, stat, statop
 
 * Simulation:
