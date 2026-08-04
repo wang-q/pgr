@@ -46,6 +46,13 @@ pub fn reader(input: &str) -> anyhow::Result<Box<dyn BufRead + Send>> {
     }
 
     let path = Path::new(input);
+    // `File::open` succeeds on directories on Unix, deferring the "Is a
+    // directory" error to the first read — after streaming commands have
+    // already created/truncated their output. Reject them up front so the
+    // failure is reported before any output file is touched.
+    if path.is_dir() {
+        anyhow::bail!("could not open {}: is a directory", path.display());
+    }
     let file = File::open(path).with_context(|| format!("could not open {}", path.display()))?;
 
     if path.extension() == Some(std::ffi::OsStr::new("gz")) {

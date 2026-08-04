@@ -587,6 +587,28 @@ fn command_rg_stdout_named_input_allowed() {
     assert_eq!(stdout, "chr1:1-10\n");
 }
 
+// The `stdin` input sentinel denotes the standard-input stream, never a
+// file; an output path literally named `stdin` (a fresh file) cannot
+// overwrite it, so the same-path guard must not reject the run (mirror of
+// the `stdout` exemption).
+#[test]
+fn command_rg_stdin_sentinel_output_allowed() {
+    let dir = TempDir::new().unwrap();
+    std::fs::write(dir.path().join("in.json"), r#"{"chr1":"1-10"}"#).unwrap();
+
+    let (stdout, stderr) = PgrCmd::new()
+        .current_dir(dir.path())
+        .stdin("chr1:1-10\n")
+        .args(&["rg", "runlist", "in.json", "stdin", "-o", "stdin"])
+        .run();
+    assert_eq!(stdout, "", "stdout: {stdout}");
+    assert_eq!(stderr, "", "stderr: {stderr}");
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("stdin")).unwrap(),
+        "chr1:1-10\n"
+    );
+}
+
 // Streaming commands used to create the output before opening the later
 // inputs; a missing input then truncated an existing output file and left
 // partial results. All inputs must be validated before the output is touched.
@@ -634,6 +656,53 @@ fn command_rg_output_preserved_on_missing_input() {
         full.extend_from_slice(&["-o", out.to_str().unwrap()]);
         let (_, stderr) = PgrCmd::new().args(&full).run_fail();
         assert!(stderr.contains("could not open"), "{full:?}: got: {stderr}");
+        assert_eq!(
+            std::fs::read_to_string(&out).unwrap(),
+            "PRECIOUS\n",
+            "{full:?}: output was truncated"
+        );
+    }
+}
+
+// `File::open` succeeds on directories on Unix, so the pre-output open probe
+// used to pass for a directory input and the "Is a directory" error only
+// surfaced on the first read — after the output file had been truncated.
+// The reader must reject directories up front, before any output is touched.
+#[test]
+fn command_rg_output_preserved_on_directory_input() {
+    let dir = TempDir::new().unwrap();
+    let rg = dir.path().join("a.rg");
+    let json = dir.path().join("in.json");
+    std::fs::write(&rg, "chr1:1-10\n").unwrap();
+    std::fs::write(&json, r#"{"chr1":"1-5"}"#).unwrap();
+    let adir = dir.path().join("a_dir");
+    std::fs::create_dir(&adir).unwrap();
+
+    let cases: Vec<Vec<&str>> = vec![
+        vec![
+            "rg",
+            "runlist",
+            json.to_str().unwrap(),
+            rg.to_str().unwrap(),
+            adir.to_str().unwrap(),
+        ],
+        vec![
+            "rg",
+            "prop",
+            json.to_str().unwrap(),
+            rg.to_str().unwrap(),
+            adir.to_str().unwrap(),
+        ],
+        vec!["rg", "span", rg.to_str().unwrap(), adir.to_str().unwrap()],
+        vec!["rg", "count", adir.to_str().unwrap(), rg.to_str().unwrap()],
+    ];
+    for args in cases {
+        let out = dir.path().join("out.txt");
+        std::fs::write(&out, "PRECIOUS\n").unwrap();
+        let mut full = args.clone();
+        full.extend_from_slice(&["-o", out.to_str().unwrap()]);
+        let (_, stderr) = PgrCmd::new().args(&full).run_fail();
+        assert!(stderr.contains("is a directory"), "{full:?}: got: {stderr}");
         assert_eq!(
             std::fs::read_to_string(&out).unwrap(),
             "PRECIOUS\n",

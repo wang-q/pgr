@@ -1,16 +1,12 @@
 # sd / rept / align 命令族代码审核记录（2026-08-04）
 
-对新增命令族 sd / rept / align 的代码与文档进行多轮深入审核。范围：sd（8
+对新增命令族 sd / rept / align 的代码与文档进行深入审核。范围：sd（8
 命令 + libs/sd）、rept（6 命令 + libs/pl）、align（pgi/lastz + libs/pgi、
 libs/lastz、libs/fmt/lav、alignment DP），约 8000 行代码逐文件审完；文档
 docs/{sd,rept,align-pgi,align-lastz}.md 全部核对。
 
-轮次：第一轮 #1-25；连续两轮无新问题后，应要求追加第二轮 #26-34（UCSC
-PSL 负链约定、greedy 链合并等），对照 UCSC kent 与 FastGA 官方源码复核
-（#26a/26b/31a）确认修复方向；第三轮 #35-37；第四轮 #37 精修；第五/六轮
-确认。每轮发现问题后修复并进入下一轮复核，连续两轮无新问题后收束。最终
-995 测试全绿、`cargo fmt` / `cargo clippy --all-targets -- -D warnings`
-干净。
+缺陷按发现顺序全局编号 #1–#37，按类别分组记录如下；关键修复均附
+回归测试（清单见文末），累计验证见文末"验证"一节。
 
 ## 修复的缺陷（共 37 处）
 
@@ -146,7 +142,7 @@ PSL 负链约定、greedy 链合并等），对照 UCSC kent 与 FastGA 官方�
     触发"lowercase soft-mask"警告并误导用户 `tr a-z A-Z`。改为
     `has_soft_mask` 直接扫描 FASTA 的 lowercase 碱基（内存按记录有界），
     新增单元回归测试 `soft_mask_detection_ignores_n_gaps`。
-31. **greedy 链合并导致倒位 SD 漏检（上一轮"待决策"项，已定方案 1 落实）**：
+31. **greedy 链合并导致倒位 SD 漏检（记录项落实，已定方案 1）**：
     `merge_adjacent_chains` 把同一对角线、间隔在 `--merge-gap` 内的两条链
     合并。倒位重复的两个互反链共享同一对角线（实测 diag 均为 500），间隔
     1.8 kb 无种子，被合并成一条嵌合链；单窗口扩展（16 kb）把两端 100%
@@ -171,7 +167,7 @@ PSL 负链约定、greedy 链合并等），对照 UCSC kent 与 FastGA 官方�
     的稀有条目仍可命中）。回归测试
     `freq_boundary_drops_exact_freq_on_reference_side` 与
     `exact_freq_query_entries_are_absent_not_range_killers`。
-    （第四轮精修）复查时发现还有两处残留不一致：B 侧"最大共享前缀 m
+    复查时发现还有两处残留不一致：B 侧"最大共享前缀 m
     扫描"与"扩展范围 occ 累计"仍把 `== freq` 的条目视为存在（`> freq` /
     `<= freq`），而 FastGA GIXmake 在构建期就排除 `>= FREQ` 的 k-mer——
     这些条目应整体视为"不在索引中"。统一改为：m 扫描 `>= freq` 跳过、
@@ -387,24 +383,15 @@ s-kmer 无重复基因组输出 `"-"` 占位，下游 `fa mask` 正确消费。
 ### 最终状态
 
 * 测试数演进：956 → 958 → 960 → 962 → 968 → 970 → 972 → 973 → 974 →
-  975 → 976 → 977 → 995（每处修复均带回归测试或端到端验证；第四轮 #37
-  精修后 995）。
+  975 → 976 → 977 → 995（每处修复均带回归测试或端到端验证；#37 精修后
+  为 995）。
 * `cargo fmt --check` 与 `cargo clippy --all-targets -- -D warnings` 干净
-  （plot/dot.rs 3 个与 pgi/align.rs 1 个测试目标既有告警，收尾轮已一并
-  修掉）。
-* 第一轮连续两轮无新问题后追加第二轮；两轮修复均经外部源码复核（UCSC
-  kent `pslLiftSubrangeBlat.c`、FastGA `align_contigs`），无新增问题。
-* 第五轮：重读本轮全部改动（banded 边界、lav checked 算术、pgi 频率过滤
-  三处调用点）与剩余高风险路径（mmap 越界守卫、tube 合并循环、wave 端点
-  几何推演），无新问题。
-* 第六轮：`cargo test` 全量 995 通过、`cargo fmt --check` 与
-  `cargo clippy --all-targets -- -D warnings` 干净；sd/rept/align 四组 CLI
-  端到端（38 测试）全绿。
-* 连续两轮无新问题，符合"修复后继续复核直到稳定"的审计约定。
-
-## 提交状态
-
-* 本文件所述修复已随 sd/rept/align 系列提交逐步落地（`53a8a78`、
-  `b911869`、`bcc1a9e`、`801e21d`、`f752a3a` 等）。
-* 当前工作区仅含本文档结构调整（与 `audit-runlist-rg.md` 统一骨架），
-  无代码改动。
+  （plot/dot.rs 3 个与 pgi/align.rs 1 个测试目标既有告警已一并修掉）。
+* 外部源码复核（UCSC kent `pslLiftSubrangeBlat.c`、FastGA
+  `align_contigs`）确认修复方向，无新增问题。
+* 重读全部改动（banded 边界、lav checked 算术、pgi 频率过滤三处调用点）
+  与剩余高风险路径（mmap 越界守卫、tube 合并循环、wave 端点几何推演），
+  无新问题。
+* `cargo test` 全量 995 通过、`cargo fmt --check` 与 `cargo clippy
+  --all-targets -- -D warnings` 干净；sd/rept/align 四组 CLI 端到端
+  （38 测试）全绿。

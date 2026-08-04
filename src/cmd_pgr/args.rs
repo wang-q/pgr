@@ -316,6 +316,11 @@ pub fn ensure_outfile_distinct<'a>(
         return Ok(());
     }
     for input in inputs {
+        // `stdin` is the stream sentinel (`reader` never opens a file for
+        // it), so no input file exists that an output could overwrite.
+        if input == "stdin" {
+            continue;
+        }
         if pgr::libs::io::same_path(outfile, input) {
             anyhow::bail!("output file {} is also an input file", outfile);
         }

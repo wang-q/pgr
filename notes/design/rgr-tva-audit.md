@@ -34,10 +34,10 @@
 * rgr 的剩余价值全部在 **8 个 range 专用命令**上。按 pgr 一级命令以
   **输入格式**命名的规则，这批行级 range 命令应归属**新建的 `pgr rg`
   家族**（**只操作 `.rg` 单列文件**，决策见 §3.0），而不是并入 `runlist`。
-  其中 3 个高价值（`count`、`prop`、runlist 过滤），1 个中价值（行级
-  `span`），4 个低价值/不建议（`sort`、`field`、`merge`、`pl-2rmp`——
-  merge 是找片段重复的旧实现，已被 pgr `sd` 家族替代，不再移植）。
-  `runlist` 家族保持"输入 runlist JSON、集合级"的定位不变。
+  其中 3 个高价值（`count`、`prop`、runlist 过滤）与 1 个中价值（行级
+  `span`）均已移植；`sort`、`merge` 后续按需补做（sort 论证见 §3.4，
+  merge 反转"不做"决定见 §3.3）；仅 `field`、`pl-2rmp` 不做。`runlist`
+  家族保持"输入 runlist JSON、集合级"的定位不变。
 
 ## 2. rgr × tva 覆盖矩阵
 
@@ -93,8 +93,8 @@
 .rg 再进 pgr rg——显式一步，换来家族边界干净。
 
 本决策已落地于现有命令（cover/coverage/count 均为 .rg 单列输入、无
--f/-H 双模式）；命令清单、命名、输出格式仍**待定稿**——后续新增命令
-（prop/runlist/span/sort）继续遵守同一契约。
+-f/-H 双模式）；命令清单、命名、输出格式已定稿，后续新增的
+prop/runlist/span/sort 均遵守同一契约。
 
 ### 3.1 边界与迁移问题（已迁移）
 
@@ -139,7 +139,8 @@ cover/coverage 命令、测试迁至 `tests/cli_rg.rs`、新增 `docs/rg.md` 并
   搬移后换算法）。详见 notes/benchmarks/bench-rg-prop.md。
 * 场景：评估一组区间（如基因、链）被重复库/比对区间覆盖的比例。
 
-**`pgr rg runlist`**（沿用 rgr 命令名，待定稿）
+**`pgr rg runlist`**——按 runlist 过滤（✅ 已实现，2026-08-04；沿用
+rgr 命令名）
 
 * 按 runlist 过滤 `.rg` 行：`overlap`（与 runlist 相交）/ `non-overlap` /
   `superset`（被 runlist 包含）。与 rgr 的 `runlist` 子命令同名同义，
@@ -164,7 +165,7 @@ cover/coverage 命令、测试迁至 `tests/cli_rg.rs`、新增 `docs/rg.md` 并
 * rgr 原测试基于多 part TSV（II.links.tsv），按决策 A 不迁移；新增 .rg
   版测试。
 
-**`pgr rg span`（行级 span，待定稿）**
+**`pgr rg span`（行级 span，✅ 已实现，2026-08-04）**
 
 * 对 `.rg` 每行做 trim/pad/shift/flank/excise（5p/3p 方向），输出变换后的
   `.rg` 行（`--append` 可追加新 range 字段）。pgr 现有 `runlist span` 是
@@ -184,7 +185,9 @@ cover/coverage 命令、测试迁至 `tests/cli_rg.rs`、新增 `docs/rg.md` 并
   解析 + `sort_by_key`，stable 排序顺带修正 rgr 的整行去重副作用），
   属中低优先级、可选做。
 * `rg field`：`gff rg` 已覆盖"字段 → range"；通用 TSV 字段化属于 tva 域。
-* `rg merge` / `pl-2rmp`：找片段重复的旧实现，`pgr sd` 家族已替代（§3.2）。
+* `rg merge`：原判"找片段重复的旧实现、`pgr sd` 家族已替代（§3.2）"，后按
+  用户指示补做 .rg 版（§3.3，2026-08-04 已实现）；`pl-2rmp` 仍不做
+  （merge 的工程包装，.rg 版无需分片）。
 * 通用 TSV 六件套：不进 pgr（tva 是正主，重复实现无意义）。
 
 ## 4. 与命名体系 / 既有讨论的衔接

@@ -1,6 +1,6 @@
 # runlist / rg 命令族代码审核记录（2026-08-04）
 
-对新增的 `pgr runlist` 与 `pgr rg` 两个命令族及相关的库文件进行多轮深入
+对新增的 `pgr runlist` 与 `pgr rg` 两个命令族及相关的库文件进行深入
 审核。范围：`cmd_pgr/runlist/` 10 个子命令（combine/compare/convert/genome/
 merge/some/span/split/stat/statop）、`cmd_pgr/rg/` 8 个子
 命令（cover/coverage/count/merge/prop/runlist/sort/span）、
@@ -9,151 +9,12 @@ merge/some/span/split/stat/statop）、`cmd_pgr/rg/` 8 个子
 spanr 调用的 `libs/pl/repeat`、`cmd_pgr/pl/p2m`、`cmd_pgr/rept/trf` 和全部
 测试/文档。
 
-轮次：第 1–5 轮审 runlist 家族（#1-19），第 6 轮审 rg 家族并复核共享库
-（#20-25）。每轮发现问题后修复并进入下一轮复核；第 5 轮与第 6 轮均经全量
-重读 + 随机畸形输入 fuzz + 差分对拍未再发现新问题后收束。最终
-`cargo fmt`、`cargo clippy --all-targets -- -D warnings` 干净，全部测试
-二进制 + doctest 通过（后续每轮增补回归用例，断言数随轮次增长）。
+缺陷按发现顺序全局编号 #1–#40，按类别分组记录如下；关键修复均附
+回归测试（清单见文末），累计验证见文末"验证"一节。
 
-第 7 轮（本文件定稿后追加）：全量重读 `rg` / `runlist` 家族与
-`libs/ds/range.rs`、`libs/ds/intspan.rs`、`libs/runlist/mod.rs`，用暴力
-实现差分对拍（集合运算、深度扫描线、`covered`、`rg merge` 聚类、Range
-极端运算、CLI 近上限坐标 200 trial）与 300 trial × 20 条命令的畸形输入
-fuzz 复核，新发现 2 处缺陷（#26、#27）并修复；修复后重跑全部验证。
+## 修复的缺陷（共 40 处）
 
-第 8 轮（复核轮）：对 #26/#27 修复做极端坐标差分对拍（[i32::MIN,
-POS_INF-1] 域 3000 trial 的 union/intersect/diff/xor/trim/pad，含无限臂
-与饱和语义）与 120 trial × 18 条命令的全新种子 fuzz，另手工核验
-`stat` / `statop` 的 `--all` 表头与行列对齐——未再发现新问题，收束。
-
-第 9 轮（终审轮）：换全新角度复核——5000 组随机集合的结构不变量
-（edges 严格递增 / 偶数 / span 不相邻）+ Display 往返解析一致、150 组
-CLI 往返（`rg cover` → `runlist convert` → `rg cover` 并集一致、
-`runlist span trim/pad -n 0` 恒等）、5000 组 `Range` 解析-重编码
-往返——未发现新问题，确认收束条件成立。
-
-第 10 轮（复核轮）：换全新角度复核——CLI 参数组合的校验时机、输出文件
-与输入文件同路径时的数据安全、JSON 写出的错误传播、帮助文本完整性，并
-重跑四组差分对拍（rg count/prop/runlist/coverage 250 trial、runlist
-compare/combine/span/convert/some/split/genome 200 trial、rg merge
-300 trial、集合运算与 covered 150 trial）与两轮新种子畸形输入 fuzz
-（120 trial × 2）——发现 3 处缺陷（#28-#30）并修复；修复后重跑全部验证。
-
-第 11 轮（性能复核轮）：放大输入规模检查各命令复杂度，发现 `rg merge`
-去重为 O(n²)（`Vec::contains`），100k 条单染色体区间耗时 37.8 s
-（debug）；修复后同输入 0.28 s（约 135 倍）。新增 criterion 基准
-`benches/rg_merge_benchmark.rs`（disjoint / clustered × 10k / 50k，
-release 下 10k ≈ 2.7–2.9 ms、50k ≈ 17.8–18.4 ms，近线性），并补充
-去重语义回归测试。
-
-第 12–15 轮（复核轮，未发现新缺陷）：
-
-* 第 12 轮：把此前只手工核对的 `runlist stat` / `statop` 纳入差分对拍
-  （150 trial，覆盖 single/multi、`--all`、`--base`、四种 op，逐字段
-  一致）；multi 形态 `compare` 四种 op 120 trial 一致；500 区间链式
-  重叠验证 `rg merge` 传递聚类（全部映射到同一 merged）；将第 10 轮
-  五处同路径检查提取为共享 helper `ensure_outfile_distinct`
-  （`cmd_pgr/args.rs`，消除 5 份重复）。
-* 第 13 轮：对 `rg span` 全部 Range 运算（trim / trim_5p / trim_3p /
-  shift_5p / shift_3p / flank_5p / flank_3p / excise + CLI 层
-  `clamp_to_domain`）做逐公式差分对拍，三个种子共 700 trial（含近上限
-  坐标、负 `n`、i32 极值、name/strand 前缀），全部一致。
-* 第 14 轮：复核全部改动 diff；裸命令 `pgr rg` / `pgr runlist` 与未知
-  子命令均 exit 2 并显示帮助；全量测试 + doctest 通过。
-* 第 15 轮：`docs/rg.md` 与 `docs/runlist.md` 的全部示例命令逐一执行
-  验证（含 stdin、`--longest`、`--full`、`--all`、`--suffix`、
-  `--base` 等形态），全部按文档工作。
-* 第 16 轮（本轮）：换全新角度复核——把 `Range` 手写扫描器与参考正则
-  逐字符差分对拍（含 8 种 Unicode 文字系统，20 万 trial），并把
-  `-o` 同输入检查的别名路径（symlink / hardlink）纳入验证——新发现
-  2 处缺陷（#32、#33）并修复；修复后全量测试 + doctest 通过，
-  `cargo fmt`、`cargo clippy --all-targets -- -D warnings` 干净。
-* 第 17 轮（复核轮）：对 #32/#33 修复做全量回归，并以全新种子重跑
-  语义差分（rg merge 120 trial、detailed coverage 80 trial、rg sort
-  属性 80 trial、runlist compare/combine 集合代数 80 trial、
-  convert→cover 往返 100 trial、prop/runlist/count/coverage/compare/
-  span 150 trial，全部与朴素实现一致）、畸形输入 fuzz（300 trial ×
-  27 条命令，零 panic）、20 条 docs 示例逐一执行——未再发现新问题，
-  收束。
-* 第 18 轮（本轮）：换全新角度复核——把 `rg merge` 的覆盖度判据与 rgr
-  源码逐行对照，并做 250 trial f32 严格对拍，新发现 #34；同时全量核对
-  用户/开发文档现状，发现并修复 notes/design/runlist.md 与
-  notes/project-understanding.md 的过时描述（见下文文档修复）。修复后
-  重跑全部差分 + fuzz + 全量测试。
-* 第 19 轮（复核轮）：直接用外部 spanr / rgr 二进制做字节级对拍——
-  rg 家族 cover/coverage（spanr）、count/prop/runlist/span（rgr）各
-  80 trial 逐字节一致；rg merge 与 rgr 聚类成员 120 trial 一致（#34
-  修复后）；runlist 家族 span/compare/combine/stat/statop/convert/some/
-  merge 与 spanr 600+ trial 逐字节一致——唯一分歧是 `combine --op
-  intersect` 对"后续集合缺失的染色体"的处理（spanr 跳过、pgr 按空集
-  折叠），经核对 pgr 行为与自身文档/数学语义一致、且 spanr 行为属实现
-  怪癖，按有意差异记录（`combine_sets` 文档注释已写明），不改行为。
-  另确认 spanr 对空 `{}` 输入直接 panic、pgr 友好处理（既有改进）。
-* 第 20 轮（复核轮）：极端坐标（近 i32::MAX / i32::MIN 域、含
-  2147483645 上限）`rg span` 与 rgr 对拍 200 trial——分歧仅出现在 rgr
-  用裸算术回绕/panic 的路径（pgr 的 saturating + `clamp_to_domain` 为
-  已记录的有意改进 #20/#23），合法域内逐字节一致；`runlist split -o
-  stdout` 与写文件输出逐字节一致；`rg cover → runlist convert → rg
-  cover` 往返恒等；全量测试 + fmt + clippy 干净。
-* 第 21 轮（本轮）：针对解析器接受 `i32::MIN`（低于 NEG_INF 哨兵）的
-  域边界做定向验证，发现并修复 #35（`holes`/`fill` 对含 `i32::MIN`
-  坐标的集合 panic）；修复后 holes/fill 与 spanr 在常规域 120 trial
-  逐字节一致，`i32::MIN` 定向 fuzz（span 六 op × compare/combine/
-  convert，300 trial）零 panic，全量测试 + fmt + clippy 干净。
-* 第 22 轮（复核轮）：multi 形态 `runlist span` 六 op 与 spanr 100
-  trial 逐字节一致；`rg merge` 与 rgr 聚类成员（顺序无关比较）120
-  trial 一致——输出顺序差异（pgr 簇内按输入序、rgr 按成员排序）确认
-  为已知有意差异，补充进语义一致性核对；最终全部差分 + fuzz + 测试
-  通过。
-* 第 23 轮（收束轮）：重建二进制后重跑全部差分对拍（runlist 750 +
-  rg cover/coverage 250 + count/prop/runlist 350 + span/sort 520 +
-  merge 250 trial，全部一致）、docs/rg.md 与 docs/runlist.md 全部示例
-  逐一执行通过、全新种子畸形输入 fuzz（250 trial × 26 条命令）零
-  panic、全量测试 + doctest + `cargo fmt` + `cargo clippy --all-targets
-  -- -D warnings` 干净——未再发现新问题，收束。另补 README 输入格式
-  清单缺失 `rg` 的一处文档准确性问题，并把
-  notes/references/mosdepth.md、notes/project-understanding.md 的
-  "runlist coverage" 现态引用与 notes/design/repeat-masking.md 的
-  trf 路径/`rg_to_set` 函数名更新为当前命令（同第 18 轮文档修复）。
-* 第 24 轮（本轮）：换新角度复核流式命令的输出数据安全与
-  `IntSpan::covered` 的宽域查询——新发现 2 处缺陷（#36、#37）并修复：
-  ① 五个流式命令（`rg runlist` / `rg prop` / `rg span` / `rg count` /
-  `runlist convert`）在创建输出后才逐个打开输入，后续输入缺失/不可读时
-  输出已被截断并残留部分结果（#36）；② `IntSpan::covered` 对跨近全 i32
-  域的查询（如 `i32::MIN..2147483645`）在 per-span 累计处用 i32 中间值
-  计算差值，debug 构建溢出 panic（#37）。修复后重跑全部验证。
-* 第 25 轮（复核轮）：对 #36/#37 修复做全量回归——150 trial 差分对拍
-  （随机 runlist × overlap/non-overlap/superset，与朴素实现逐行一致）、
-  100 trial 畸形输入 fuzz（五条流式命令，含二进制/超大数字/反转区间/
-  Unicode 名称，零 panic）、`rg runlist` 帮助文本与 docs/rg.md 示例逐一
-  执行通过、全量测试 + doctest + `cargo fmt` + `cargo clippy --all-targets
-  -- -D warnings` 干净——未再发现新问题，收束。
-* 第 26 轮（本轮）：换全新角度复核 `rg runlist`——与真实 rgr 二进制逐
-  字节对拍（5 组种子共 600 trial × 3 ops，全部一致）、与朴素实现差分
-  （普通域 750 trial、极端坐标域 450 trial，含 `i32::MIN` 起点的 runlist
-  与近 `POS_INF-1` 区间，全部一致）、畸形输入 fuzz（300 trial + 数据
-  安全断言，零 panic）。CRLF 输入输出归一化确认与 rgr 一致（`BufRead::
-  lines` 同语义）；tab 混合输入的分歧确认为决策 A 范围外的有意差异（rgr
-  在部分此类输入上直接 panic，pgr 友好跳过）。新发现 1 处缺陷（#38）：
-  `ensure_outfile_distinct` 未豁免屏幕哨兵 `stdout`，工作目录存在名为
-  `stdout` 的文件作为输入时，输出到屏幕也被误拒。修复后重跑全部差分 +
-  fuzz + 全量测试 + `cargo fmt` + `cargo clippy --all-targets -- -D
-  warnings`，全部通过。
-* 第 27 轮（复核轮）：对 #38 修复做全量回归——新种子差分（普通域 200
-  trial、极端坐标域 120 trial）、rgr 逐字节对拍 150 trial、畸形输入 fuzz
-  200 trial（含数据安全断言）全部通过；另探测畸形 JSON 形态（数组/语法
-  错误/非字符串值）、stdin 作为 runlist 与 infile、不可写输出路径、空
-  输入、`i32::MIN` runlist 的 superset 等边界，均友好处理；性能 sanity：
-  20 万行 × 5 万 span 的 runlist 过滤 0.29s（debug 构建，贴近真实查询
-  规模），无退化。CRLF 归一化（`BufRead::lines`）与 rgr 一致；行首空白
-  + `#` 视为注释为 pgr 全家族统一行为（#24），rgr 仅按行首 `#` 判断，
-  属记录在案的有意差异。未再发现新问题，收束。
-
-## 修复的缺陷（共 38 处）
-
-修复按发现顺序全局编号（#1-19 为 runlist 阶段、#20-25 为 rg 阶段、
-#26-27 为第 7 轮、#34 为第 18 轮、#35 为第 21 轮、#36-37 为第 24 轮），
-按类别分组（#38 为第 26 轮）。
+缺陷按发现顺序全局编号，按类别分组记录。
 
 ### 崩溃 / 越界 / 溢出（Zero Panic，16 处）
 
@@ -280,7 +141,7 @@ release 下 10k ≈ 2.7–2.9 ms、50k ≈ 17.8–18.4 ms，近线性），并�
     输出无意义的映射行。修复：`rg_merge_mapping` 在
     `parts[i].0 == merged` 时跳过。
 
-### 输入校验 / 静默错误（第 7 轮，2 处）
+### 输入校验 / 静默错误（2 处）
 
 26. **`Range::from_str` 的 end 坐标溢出被静默折叠为 start**：
     `tail_match` 对超过 i32 的数字串返回 0（意图是"无效"），但 `decode`
@@ -301,7 +162,7 @@ release 下 10k ≈ 2.7–2.9 ms、50k ≈ 17.8–18.4 ms，近线性），并�
     只保留上界 `POS_INF - 1` 的截断。回归测试
     `inset_identity_at_i32_min`。
 
-### 参数校验 / 数据安全 / 错误传播（第 10 轮，3 处）
+### 参数校验 / 数据安全 / 错误传播（3 处）
 
 28. **`rg span` 的 op/mode 组合校验推迟到逐行处理**：`--op shift/flank
     -m both` 的报错发生在处理到第一条有效行时；输入为空或全注释/无效行
@@ -334,7 +195,7 @@ release 下 10k ≈ 2.7–2.9 ms、50k ≈ 17.8–18.4 ms，近线性），并�
 文档小修：`rg span -n` 的帮助文本补充 excise 阈值说明（"length threshold
 for excise"，与 `runlist span -n` 一致）。
 
-### 性能（第 11 轮，1 处）
+### 性能（1 处）
 
 31. **`rg merge` 去重 O(n²) 退化**：`rg_merge_mapping` 用
     `Vec::contains` 逐条去重，单染色体区间数 n 的去重为 O(n²)；
@@ -346,7 +207,7 @@ for excise"，与 `runlist span -n` 一致）。
     `command_rg_merge_dedups_identical_lines`（重复行只保留一份、
     不产生自簇，第三条重叠区间正常入簇）。
 
-### 解析一致性 / 数据安全（第 16 轮，2 处）
+### 解析一致性 / 数据安全（2 处）
 
 32. **`Range` 手写扫描器对非 ASCII 字符名静默失配**：`decode` 的
     字符类检查逐字节用 `is_ascii_alphanumeric`，而参考正则的
@@ -374,7 +235,7 @@ for excise"，与 `runlist span -n` 一致）。
    `command_rg_output_alias_of_input_rejected`（hardlink + symlink
    两例，断言输入未被改动）。
 
-### 与 rgr 的数值一致性（第 18 轮，1 处）
+### 与 rgr 的数值一致性（1 处）
 
 34. **`rg merge` 的 reciprocal coverage 用 f64 判据，与 rgr 的 f32
     语义在恰好等于阈值的边界分叉**：rgr 用
@@ -390,7 +251,7 @@ for excise"，与 `runlist span -n` 一致）。
     回归测试 `command_rg_merge_exact_threshold_parity`（0.8 边界三成员
     全部入簇）。
 
-### 崩溃 / 越界 / 溢出（第 21 轮，1 处）
+### 崩溃 / 越界 / 溢出（1 处）
 
 35. **`IntSpan::holes` 对含 `i32::MIN` 坐标的集合补集溢出 panic**：
     `holes` 用 `complement()`（内部 `invert()`）求补后再剥无限臂；解析器
@@ -405,7 +266,7 @@ for excise"，与 `runlist span -n` 一致）。
     含与旧实现常规域一致断言）与 `command_runlist_span_holes_i32_min_
     no_panic`（CLI 层，holes + fill 两路径）。
 
-### 数据安全 / 溢出（第 24 轮，2 处）
+### 数据安全 / 溢出（2 处）
 
 36. **五个流式命令在后续输入打开失败时截断/部分覆盖既有输出**：
     `rg runlist` / `rg prop` / `rg span` 在循环内逐文件创建 reader，
@@ -413,7 +274,7 @@ for excise"，与 `runlist span -n` 一致）。
     逐个读 JSON——writer 都在这些输入全部验证前创建。若第二个及以后的
     输入文件缺失/不可读（如 `pgr rg runlist rl.json a.rg missing.rg
     -o out`），命令报错退出（exit 1）之前已把既有 `out` 截断并写入
-    前面输入的部分结果，静默破坏用户此前保存的输出（此前轮次只覆盖了
+    前面输入的部分结果，静默破坏用户此前保存的输出（此前只覆盖了
     `-o` 与输入同路径/别名的情况 #29/#33，未覆盖"输入打开失败"这一
     路径）。修复：五个命令都先打开/读取全部输入、再创建 writer——
     `rg runlist`/`prop`/`span` 先对全部 infile 做打开探针（不持有文件
@@ -433,7 +294,7 @@ for excise"，与 `runlist span -n` 一致）。
     相减（`i64::from(end.min(e)) - i64::from(start.max(s)) + 1`）。
     回归测试 `covered_wide_domain_does_not_overflow`。
 
-### 数据安全 / 参数校验（第 26 轮，1 处）
+### 数据安全 / 参数校验（1 处）
 
 38. **`ensure_outfile_distinct` 对屏幕哨兵 `stdout` 误判**：`-o stdout`
     表示写屏幕（`writer` 特判、不会创建文件），但当工作目录存在一个恰好
@@ -447,7 +308,38 @@ for excise"，与 `runlist span -n` 一致）。
     `command_rg_stdout_named_input_allowed`（默认输出与显式 `-o stdout`
     两种形态，输入文件被正常读取并过滤）。
 
-### 文档修复（第 18 轮）
+### 数据安全（1 处）
+
+39. **目录作为输入时"打开探针"放行、读取失败后既有输出被截断**：
+    #36 的修复对四个流式命令（`rg runlist` / `rg prop` / `rg span` /
+    `rg count`）采用"先对全部输入做打开探针"的策略，但 Unix 上
+    `File::open` 对目录会成功，目录输入通过探针；writer 创建后首读才
+    报 "Is a directory (os error 21)"，此时既有输出已被截断并残留空
+    文件（实测 `pgr rg runlist rl.json adir -o out`：`out` 的既有内容
+    被清空后命令 exit 1）。修复：`libs/io::reader` 在 `File::open`
+    前检查 `path.is_dir()` 并报 "could not open {}: is a directory"，
+    所有经 `reader` 的入口在创建任何输出前统一失败；`rg runlist` /
+    `prop` / `span` 的探针阶段与 `rg count` 的 target 打开阶段因此直接
+    拒绝，`runlist convert` / `fa mask` / `fas slice` 等全读路径的错误
+    信息同时更明确（目录不再等到读 JSON 才报裸 EISDIR）。回归测试
+    `command_rg_output_preserved_on_directory_input`（runlist/prop/span/
+    count 四例，断言 stderr 含 "is a directory" 且既有输出原样保留）。
+
+### 数据安全 / 参数校验（1 处）
+
+40. **`ensure_outfile_distinct` 对输入侧流哨兵 `stdin` 误判**：`-o
+    stdin` 表示新建名为 `stdin` 的输出文件（`writer` 只特判 `stdout`），
+    而输入参数 `stdin` 表示标准输入流（`reader` 从不打开名为 `stdin`
+    的文件），两者不可能互相覆盖；但 `same_path("stdin", "stdin")` 判
+    为同路径，`pgr rg runlist rl.json stdin -o stdin` / `pgr rg prop
+    rl.json stdin -o stdin` 均被误拒 "output file stdin is also an input
+    file"。这是 #38（输出侧 `stdout` 哨兵豁免）的镜像：输入侧 `stdin`
+    哨兵同样不代表任何文件。修复：`ensure_outfile_distinct` 对字面
+    `stdin` 输入跳过同路径检查。回归测试
+    `command_rg_stdin_sentinel_output_allowed`（stdin 流输入 + `-o
+    stdin` 新建文件，命令成功且输出文件内容正确）。
+
+### 文档修复
 
 * `notes/design/runlist.md` 仍写 `cmd_pgr/runlist/` 有 12 个子命令
   （含已迁出的 cover/coverage）。修复：改为 10 个子命令，并注明
@@ -458,6 +350,10 @@ for excise"，与 `runlist span -n` 一致）。
   链路缺区间操作行。修复：补全目录树与 §3.7 区间表格（rg 8 / runlist
   10 / gff 2），更新 rgr-tva-audit 状态为已实现，新增 §9 区间操作链路行
   与 §10 的 runlist.md / rgr-tva-audit.md 索引行。
+* `notes/design/rgr-tva-audit.md` 内部状态标注自相矛盾——
+  §3.0 决策段、§3.2 runlist 条目、§3.3 span 条目残留"待定稿"、§1 摘要
+  仍写 sort/merge "不再移植"。修复：改为已实现标注并同步 §1 摘要与
+  §3.4 merge 条目。
 
 ## 与外部参考实现的语义一致性核对
 
@@ -565,81 +461,45 @@ for excise"，与 `runlist span -n` 一致）。
 
 ### 鲁棒性（Zero Panic）
 
-* 第 1–5 轮：1600+ 条随机畸形输入（JSON / .rg / GFF / sizes / 二进制）对
-  全部 runlist 命令及 `fa mask` / `gff runlist` fuzz，无 panic。
-* 第 6 轮：rg 家族两轮 fuzz 共 1000+ trial（随机畸形行 + 近上限坐标 +
-  极端 `-n`，每 trial 覆盖 16~19 条命令调用）、runlist 家族 400 trial
-  （随机 JSON / 尺寸文件 + 极端 `-n`）、收尾轮 500 trial 新种子——零 panic。
-* 第 7 轮：暴力差分对拍（set ops 3000 trial、depth 3000 trial、
-  covered 3000 trial、rg merge 120 trial、Range 极端运算、CLI 近上限
-  坐标 200 trial）全一致；300 trial × ~20 条命令的随机畸形输入 fuzz
-  零 panic。修复 #26/#27 后全部单元/CLI 测试与 52 个测试目标通过。
-* 第 10 轮：修复 #28-#30 后重跑四组差分对拍（250 + 200 + 300 + 150
-  trial，全部一致）与两轮全新种子 fuzz（各 120 trial，含极端 `-n`、
-  畸形 JSON / 尺寸文件 / `.rg` 文本），零 panic；全量测试 + doctest
-  通过，`cargo fmt`、`cargo clippy --all-targets -- -D warnings` 干净。
-* 第 11 轮：`rg merge` 100k 区间从 37.8 s 降至 0.28 s（debug 实测）；
-  criterion 基准（release）10k ≈ 2.7–2.9 ms、50k ≈ 17.8–18.4 ms。
-* 第 12–15 轮：stat/statop 差分 150 trial、multi compare 120 trial、
-  Range 运算差分 700 trial 全部一致；docs 示例逐条执行通过；全量测试
-  + doctest 通过；`cargo fmt`、`cargo clippy --all-targets -- -D
-  warnings` 干净。
-* 第 16 轮：`Range` 扫描器 vs 参考正则差分对拍 20 万 trial（含希腊文/
-  中日韩/西里尔/阿拉伯/希伯来/天城文/谚文等 8 种文字系统与 ASCII
-  混杂形态），修复 #32 后全部一致；`-o` 别名（hardlink/symlink）路径
-  检查按 #33 修复后，`rg span` 拒绝写入并保持输入原样。
-* 第 17 轮：全新种子差分共 610 trial（merge/detailed coverage/sort/
-  集合代数/convert→cover 往返/prop/runlist/count/coverage/compare/
-  span）全部与朴素实现一致；300 trial × 27 条命令畸形输入 fuzz 零
-  panic；docs/rg.md 与 docs/runlist.md 的 20 条示例命令逐一执行通过。
-* 第 24 轮：#37 修复前在 debug 构建上以回归测试复现
-  `covered(i32::MIN, 2147483645)` 的 "attempt to subtract with overflow"
-  panic，修复后通过；#36 修复前实测
-  `pgr rg runlist rl.json a.rg missing.rg -o out` 已把既有 out 截断并
-  残留部分输出，修复后五个流式命令均在报错前保持既有输出原样；
-  修复后全量测试 + doctest + `cargo fmt` + `cargo clippy --all-targets
-  -- -D warnings` 干净。
-* 第 26 轮：#38 修复前实测 `pgr rg runlist rl.json stdout`（工作目录有
-  名为 `stdout` 的文件、默认输出到屏幕）被误拒，修复后正常读取并过滤；
-  `runlist convert` 同路径形态一并验证通过。修复后重跑：与真实 rgr
-  二进制逐字节对拍 600 trial（5 种子 × 3 ops）、与朴素实现差分 1200
-  trial（普通域 + 极端坐标域，含 `i32::MIN` runlist / 近上限区间 / 大
-  span 数）、畸形输入 fuzz 300 trial（含数据安全断言：缺失输入不截断
-  既有输出、非法 op 退出码 2）——全部一致/零 panic；docs/rg.md 的
-  `runlist` 示例逐一执行通过；全量测试 + doctest + `cargo fmt` +
-  `cargo clippy --all-targets -- -D warnings` 干净。
+* 畸形输入 fuzz：累计 5000+ trial（JSON / .rg / GFF / sizes / 二进制、
+  超大数字、反转区间、Unicode 名称、极端 `-n`、近上限坐标、缺失/目录
+  输入），覆盖全部 runlist / rg 命令，零 panic。
+* 差分对拍：与外部 spanr / rgr 二进制逐字节对拍累计 2000+ trial
+  （runlist 家族 + rg 家族，普通域与极端坐标域，`rg runlist` 三 op
+  1500+ trial 全部一致）；与朴素/暴力实现差分 3000+ trial（集合运算、
+  深度扫描线、`covered`、`rg merge` 聚类、Range 极端运算、CLI 近上限
+  坐标）；`Range` 手写扫描器与参考正则 20 万 trial 对拍一致（含 8 种
+  Unicode 文字系统）。
+* 数据安全专项：#36/#38/#39/#40 修复前后均实测复现——缺失输入、目录
+  输入、`stdout`/`stdin` 哨兵误判的修复在触碰输出前失败或正常执行，
+  既有输出原样保留。
+* 性能：`rg merge` 100k 区间从 37.8 s 降至 0.28 s（debug 实测）；
+  criterion 基准（release）10k ≈ 2.7–2.9 ms、50k ≈ 17.8–18.4 ms；
+  `rg runlist` 20 万行 × 5 万 span 过滤 0.29 s（debug）。
+* docs/rg.md 与 docs/runlist.md 全部示例命令逐一执行通过。
 
 ### 最终状态
 
 * `cargo fmt`、`cargo clippy --all-targets -- -D warnings` 干净；全部测试
-  二进制 + doctest 通过（断言数随各轮回归用例增补而增长）。
-* 新增回归测试：runlist 阶段 14 个函数（含 test_valid / genome / cover 等
-  既有用例扩展）；rg 阶段 `command_rg_span_extreme_no_panic`（8 种 op/mode
-  × 极端 `-n` + `pad i32::MIN`）、`command_rg_comments_skipped`（7 个子
-  命令）、`extreme_ops_do_not_overflow`（Range 层）、
-  `command_runlist_span_invalid_runlist_errors` 增补 20 位数字串、
-  `command_runlist_span_extreme_ops_do_not_panic` 增补 `pad i32::MIN`。
-  第 7 轮增补：`overflow_end_is_invalid_not_start`（Range 层）、
+  二进制 + doctest 通过。
+* 新增回归测试：runlist 阶段 14 个函数（含 test_valid / genome / cover
+  等既有用例扩展）；rg 阶段 `command_rg_span_extreme_no_panic`（8 种
+  op/mode × 极端 `-n` + `pad i32::MIN`）、`command_rg_comments_skipped`
+  （7 个子命令）、`extreme_ops_do_not_overflow`（Range 层）、
+  `command_runlist_span_invalid_runlist_errors`（20 位数字串）、
+  `command_runlist_span_extreme_ops_do_not_panic`（`pad i32::MIN`）、
+  `overflow_end_is_invalid_not_start`（Range 层）、
   `inset_identity_at_i32_min`（IntSpan 层）、
-  `command_rg_overflow_end_skipped`（cover/span/count/sort 四条命令）。
-  第 16 轮增补：`regex_and_manual_decoders_agree` 的 Unicode corpus 与
-  4 万 trial fuzz（8 种文字系统）、`command_rg_unicode_contig_names_parsed`
+  `command_rg_overflow_end_skipped`（cover/span/count/sort 四条命令）、
+  `regex_and_manual_decoders_agree`（Unicode corpus + 4 万 trial fuzz，
+  8 种文字系统）、`command_rg_unicode_contig_names_parsed`
   （cover/span/count/sort）、`command_rg_output_alias_of_input_rejected`
-  （hardlink/symlink 别名拒绝）。
-  第 24 轮增补：`covered_wide_domain_does_not_overflow`（IntSpan 层，
-  近全幅查询）、`command_rg_output_preserved_on_missing_input`
+  （hardlink/symlink 别名拒绝）、`covered_wide_domain_does_not_overflow`
+  （IntSpan 层近全幅查询）、`command_rg_output_preserved_on_missing_input`
   （runlist/prop/span/count 四例）、
-  `command_runlist_convert_output_preserved_on_missing_input`。
-  第 26 轮增补：`command_rg_stdout_named_input_allowed`（目录中名为
-  `stdout` 的输入文件 + 默认输出与显式 `-o stdout` 两种形态）。
-
-## 提交状态
-
-* 第 1 阶段的大部分改动已在提交 `a20d2dc`，其余（裸命令帮助、`span -n`
-  帮助、`gff runlist` 坐标上限、`.rg` max_coord 守卫及回归测试）已在
-  `4dd6f8c` 落地。
-* 第 2 阶段（rg 家族深审）的代码与测试改动已在 `aac5c50` 提交；本文档的
-  合并、重命名与结构调整（与 `audit-sd-rept-align.md` 统一骨架）暂存待
-  提交。
-* 第 7 轮的 #26/#27 修复与回归测试、第 8 轮核验记录在工作区（本环境
-  `.git` 只读，无法创建提交；用户侧可自行 `git commit`）。
+  `command_runlist_convert_output_preserved_on_missing_input`、
+  `command_rg_stdout_named_input_allowed`（默认输出与显式 `-o stdout`
+  两种形态）、`command_rg_output_preserved_on_directory_input`
+  （runlist/prop/span/count 四例，目录输入在报错前保持既有输出原样）、
+  `command_rg_stdin_sentinel_output_allowed`（stdin 流输入 + `-o stdin`
+  新建输出文件，命令成功且文件内容正确）。
