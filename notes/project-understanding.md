@@ -294,8 +294,8 @@ clustalw/muscle/mafft），充当工作流 glue。这与 `chain`/`net` 模块的
 - `libs/hv.rs`：hypervector 距离（哈希投影：dense bit/i8 与 sparse 三种编码，`calc_distances`）
 - `libs/fmt/twobit.rs`：2bit 格式读写
 - `libs/fmt/psl.rs`：PSL 格式
-- `libs/alignment/`：比对通用逻辑（coords/msa/slice/stat/trim/variation/banded——banded
-  局部比对为 align pgi 的扩展器）
+- `libs/alignment/`：比对通用逻辑（coords/msa/slice/stat/trim/variation/banded；其中
+  `wave.rs` 的 mid-line wave 为 align pgi 的扩展器，banded 仅余通用工具用途）
 - `libs/fas_multiz/`：Multiz 多序列比对处理（banded DP 合并）
 - `libs/fas_xlsx.rs`：FAS (block FA) 到 Excel 转换
 - `libs/fasta/`：FASTA 处理工具（dedup/filter/stat）
@@ -383,9 +383,10 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
   `pbit`(7)（含多参考），日常序列操作与群体基因组归档压缩需求基本覆盖。
 - **基因组索引与比对（.pgi）**：`pgr pgi`（build/stat/to-hv）与 `pgr align pgi` 已实现——
   syncmer 稀疏排序 k-mer 索引（构建 348 ms vs GIXmake 310 ms，基本持平）、两索引归并
-  精确距离、稀疏 HV 投影、FastGA 式比对管线（归并→链→banded 扩展→PSL；2026-08-04
-  复测端到端 1.67 s vs FastGA 3.86 s，反超 ~2.3×，chainnet 覆盖 89.33% vs 89.3%
-  持平）；格式 v2（GIX 式 packed：按需字节位置 + 方向位折叠），复测后 35.5 MB，
+  精确距离、稀疏 HV 投影、FastGA 式比对管线（归并→tube 链→mid-line wave 扩展→PSL；
+  2026-08-04 复测端到端 1.67 s vs FastGA 3.86 s，反超 ~2.3×，chainnet 覆盖 89.33%
+  vs 89.3% 持平；2026-08-05 tube 成为唯一流程，greedy 链化/窗口扩展已移除）；
+  格式 v2（GIX 式 packed：按需字节位置 + 方向位折叠），复测后 35.5 MB，
   比 GIX 真实数据 48.2 MB 小 ~23%，详见 [[pgi-align.md]] 与
   `notes/benchmarks/bench-pgi-vs-gix-storage.md`。
 - **距离工具**：`dist` 的 hv/pgi/seq 三个子命令已实现；`seq` 支持 minimizer/closed syncmer
@@ -526,7 +527,7 @@ chainnet 后消失。`pgr psl chain` 在 2bit 序列缓存优化后（~0.3 s）�
 | 文档 | 定位 | 状态 |
 |------|------|------|
 | [[pbit.md]] | `pgr pbit` 格式设计（LZ-diff + CIGAR delta + 多参考，已合并原扩展草案；索引不内嵌，决策 A） | v1004 已实现，**暂停评审中** |
-| [[pgi-align.md]] | 两基因组归并比对（`pgr align pgi`，种子→链→banded 扩展→PSL） | v1-v3 已实现（2026-08-04 复测端到端反超 FastGA ~2.3×） |
+| [[pgi-align.md]] | 两基因组归并比对（`pgr align pgi`，种子→tube 链→mid-line wave 扩展→PSL） | 已实现（2026-08-05 tube 单流程定稿，端到端反超 FastGA ~2.3×） |
 | [[fas-multiz.md]] | `libs::fas_multiz` 设计与实现（banded DP 合并） | 已实现（CLI 已落地） |
 | [[spoa_port.md]] | Spoa C++ → Rust 移植（POA 引擎） | 已完成（双引擎集成已落地） |
 | [[ms2dna_port.md]] | ms2dna C → Rust 迁移设计 | 已实现（实际命令为 `pgr ms to-dna`） |
