@@ -176,7 +176,12 @@ pub fn build_msa_entries(
     let mut merged: Vec<(String, i32, i32, char)> = Vec::new();
     for (qname, qs, qe, strand) in intervals {
         if let Some(last) = merged.last_mut() {
-            if last.0 == qname && last.3 == strand && qs < last.2 {
+            // Merge overlapping OR exactly-touching same-strand intervals.
+            // Exact-touch (qs == last.2) happens when a target deletion splits
+            // one continuous query region into two abutting fragments; keeping
+            // them separate would let the per-name dedup below silently drop
+            // the second fragment's bases.
+            if last.0 == qname && last.3 == strand && qs <= last.2 {
                 last.2 = last.2.max(qe);
                 continue;
             }
@@ -227,12 +232,8 @@ pub struct PairwiseBlock {
     pub tname: String,
     pub q_aln: String,
     pub t_aln: String,
-    /// Forward-strand start (qs in PAF coords). Used by FAS emitter.
-    pub q_start_fwd: i32,
-    /// Forward-strand end (qe in PAF coords). Used by FAS emitter.
-    pub q_end_fwd: i32,
     /// MAF `start` field: forward-strand coord of first displayed base.
-    /// '+' strand: == q_start_fwd. '-' strand: src_size - q_end_fwd.
+    /// '+' strand: qs. '-' strand: src_size - q_end_fwd.
     pub q_start_maf: i32,
     pub q_strand: char,
     pub q_src_size: usize,
@@ -295,8 +296,6 @@ pub fn build_pairwise_block(
         tname,
         q_aln,
         t_aln,
-        q_start_fwd: qs,
-        q_end_fwd: qe,
         q_start_maf,
         q_strand,
         q_src_size,
@@ -315,4 +314,83 @@ pub fn run_poa_msa(entries: &[MsaEntry], params: AlignmentParams) -> Vec<String>
         poa.add_sequence(&e.seq);
     }
     poa.msa()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::libs::paf::index::PafIndex;
+    use coitrees::Interval;
+    use indexmap::IndexMap;
+    use std::collections::HashMap;
+    use std::io::Write;
+
+    /// Write a single-sequence BGZF FASTA and return its path (with .gzi built).
+    fn write_bgzf_fasta(dir: &std::path::Path, name: &str, seq: &str) -> String {
+        let path = dir.join(format!("{name}.fa.gz"));
+        let file = std::fs::File::create(&path).unwrap();
+        let mut writer = noodles_bgzf::io::Writer::new(file);
+        writeln!(writer, ">{name}").unwrap();
+        writeln!(writer, "{seq}").unwrap();
+        writer.flush().unwrap();
+        drop(writer);
+        crate::libs::fmt::fa::build_gzi_index(path.to_str().unwrap()).unwrap();
+        path.to_string_lossy().to_string()
+    }
+
+    #[test]
+    fn test_build_msa_entries_merges_touching_fragments() {
+        let dir = tempfile::tempdir().unwrap();
+        let q_path = write_bgzf_fasta(dir.path(), "Q", &"A".repeat(300));
+        let t_path = write_bgzf_fasta(dir.path(), "T", &"C".repeat(300));
+        let mut map = IndexMap::new();
+        map.insert("Q".to_string(), q_path);
+        map.insert("T".to_string(), t_path);
+        let mut store = super::super::fasta::FastaStore::new(&map).unwrap();
+
+        let mut names = IndexMap::new();
+        names.insert("Q".to_string(), 0u32);
+        names.insert("T".to_string(), 1u32);
+        let idx = PafIndex {
+            names,
+            trees: HashMap::new(),
+            reverse_trees: HashMap::new(),
+            lazy_source: None,
+            lazy_source_path: None,
+        };
+
+        // Two abutting same-strand fragments of Q (a target deletion splits one
+        // continuous query region into [0,100) and [100,200)). They must merge
+        // into a single [0,200) entry rather than being dropped by the
+        // per-name dedup.
+        let mk = |q_start: i32, q_end: i32| {
+            (
+                0u32, // query_id = Q
+                Interval::new(q_start, q_end, 0u32),
+                Interval::new(0, 100, 1u32), // target T [0,100)
+                vec![CigarOp::new((q_end - q_start) as u32, '=')],
+                0,
+                0,
+                '+',
+            )
+        };
+        let results = vec![mk(0, 100), mk(100, 200)];
+
+        let entries = build_msa_entries(&idx, "T", &results, &mut store).unwrap();
+        // Target entry + ONE merged query entry covering [0,200).
+        assert_eq!(
+            entries.len(),
+            2,
+            "expected target + one merged query entry, got {}",
+            entries.len()
+        );
+        let q_entry = entries.iter().find(|e| e.name == "Q").unwrap();
+        assert_eq!(q_entry.start, 0);
+        assert_eq!(
+            q_entry.seq.len(),
+            200,
+            "merged query must span [0,200), got {} bases",
+            q_entry.seq.len()
+        );
+    }
 }

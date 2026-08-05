@@ -2,7 +2,7 @@
 
 use crate::libs::paf::fasta::FastaStore;
 use crate::libs::paf::index::{PafIndex, QueryResult};
-use crate::libs::paf::msa_build::{build_msa_entries, run_poa_msa};
+use crate::libs::paf::msa_build::{build_msa_entries, run_poa_msa, MsaEntry};
 use crate::libs::poa::AlignmentParams;
 use std::io::Write;
 
@@ -81,12 +81,15 @@ fn left_align_indels(
         if !can_shift {
             break;
         }
-        // Shift: each non-empty seq pops its last base and pushes the old
-        // anchor. The new anchor becomes prev_base.
+        // Shift: each non-empty seq drops its last base and the old anchor
+        // takes its place at the *head* of the segment (the reference allele
+        // invariant is `anchor + segment`, so after shifting left the new
+        // segment is `[old_anchor, segment[0..n-1]]`). The new anchor becomes
+        // prev_base.
         for s in seqs.iter_mut() {
             if !s.is_empty() {
                 s.pop();
-                s.push(anchor);
+                s.insert(0, anchor);
             }
         }
         anchor = prev_base;
@@ -144,57 +147,168 @@ pub fn output_vcf<W: Write>(
             header_written = true;
         }
 
-        let n_seq = entries.len();
-        let aln_len = msa[0].len();
         let target = &entries[0];
+        emit_msa_variants(writer, target, &msa, fasta_store)?;
+    }
 
-        // Build extended target = prefix + aligned region (all uppercase) for
-        // indel left-alignment. prefix covers up to 1000bp before the region
-        // so the anchor can be shifted left within the reference.
-        const LEFT_ALIGN_BUFFER: i32 = 1000;
-        let prefix_start = (target.start - LEFT_ALIGN_BUFFER).max(0);
-        let (target_prefix, _) = if target.start > prefix_start {
-            fasta_store.fetch_range(&target.name, prefix_start, target.start)?
+    Ok(())
+}
+
+// Emit VCF variant rows for one region's MSA.
+//
+// Walks the MSA columns and emits SNP / INS / DEL rows. `target` is the
+// reference entry (the first row of `msa`); the remaining rows are samples.
+// Extracted from `output_vcf` so the DEL-after-INS handling can be unit-tested
+// with a hand-crafted MSA (POA rarely produces the raw INS-then-DEL shape on
+// its own, so driving it through the CLI is not a reliable regression test).
+fn emit_msa_variants<W: Write>(
+    writer: &mut W,
+    target: &MsaEntry,
+    msa: &[String],
+    fasta_store: &mut FastaStore,
+) -> anyhow::Result<()> {
+    let n_seq = msa.len();
+    let aln_len = msa[0].len();
+
+    // Build extended target = prefix + aligned region (all uppercase) for
+    // indel left-alignment. prefix covers up to 1000bp before the region
+    // so the anchor can be shifted left within the reference.
+    const LEFT_ALIGN_BUFFER: i32 = 1000;
+    let prefix_start = (target.start - LEFT_ALIGN_BUFFER).max(0);
+    let (target_prefix, _) = if target.start > prefix_start {
+        fasta_store.fetch_range(&target.name, prefix_start, target.start)?
+    } else {
+        (Vec::new(), 0)
+    };
+    let mut target_ext: Vec<u8> = target_prefix;
+    target_ext.extend_from_slice(&target.seq);
+    for b in target_ext.iter_mut() {
+        *b = b.to_ascii_uppercase();
+    }
+    // t_start_offset: index of target.start within target_ext.
+    let t_start_offset = (target.start - prefix_start) as usize;
+
+    // Walk MSA columns with a while loop so we can advance past indel
+    // regions. t_aln_pos counts target non-gap columns processed (used
+    // to derive VCF POS from target.start). Three cases:
+    //   1. INS: consecutive target gap columns (REF = 1bp anchor at the
+    //      preceding non-gap column, ALT = anchor + inserted bases).
+    //   2. DEL: consecutive target non-gap columns where ≥1 query has
+    //      gap (REF = target segment, ALT = per-query non-gap concat).
+    //   3. SNP: single target non-gap column with no gaps.
+    let mut col: usize = 0;
+    let mut t_aln_pos: i32 = 0;
+    while col < aln_len {
+        let t_base = msa[0].as_bytes()[col];
+        if t_base == b'-' {
+            // INS region: collect consecutive target gap columns.
+            let col_start = col;
+            while col < aln_len && msa[0].as_bytes()[col] == b'-' {
+                col += 1;
+            }
+            let col_end = col;
+            // Anchor = previous non-gap target column. Skip if none.
+            if col_start == 0 {
+                continue;
+            }
+            let anchor_byte = msa[0].as_bytes()[col_start - 1];
+            if anchor_byte == b'-' {
+                continue;
+            }
+            // Per-sample inserted bases (gaps and non-ACGT dropped).
+            let sample_inserted: Vec<Vec<u8>> = msa
+                .iter()
+                .take(n_seq)
+                .map(|seq| {
+                    (col_start..col_end)
+                        .filter_map(|c| {
+                            let b = seq.as_bytes()[c].to_ascii_uppercase();
+                            if matches!(b, b'A' | b'C' | b'G' | b'T') {
+                                Some(b)
+                            } else {
+                                None
+                            }
+                        })
+                        .collect()
+                })
+                .collect();
+            if !sample_inserted.iter().any(|s| !s.is_empty()) {
+                continue;
+            }
+            // Left-align: anchor offset in target_ext = t_aln_pos - 1
+            // + t_start_offset (anchor is the last target non-gap column
+            // before the INS gap, i.e. the (t_aln_pos)-th, 0-based idx
+            // t_aln_pos - 1 in the aligned region).
+            // Guard against underflow when no target non-gap column precedes
+            // the INS (defensive: current control flow guarantees t_aln_pos > 0
+            // here because col_start > 0 and msa[0][col_start - 1] is non-gap).
+            if t_aln_pos <= 0 {
+                continue;
+            }
+            let anchor_offset = (t_aln_pos - 1 + t_start_offset as i32) as usize;
+            let anchor_base = target_ext[anchor_offset];
+            let (new_offset, new_anchor, new_inserted) =
+                left_align_indels(anchor_offset, anchor_base, &sample_inserted, &target_ext);
+            let ref_allele = String::from(new_anchor as char);
+            let sample_alleles: Vec<String> = new_inserted
+                .iter()
+                .map(|ins| {
+                    let mut s = String::from(new_anchor as char);
+                    for &b in ins {
+                        s.push(b as char);
+                    }
+                    s
+                })
+                .collect();
+            let mut alt_alleles: Vec<String> = Vec::new();
+            for a in &sample_alleles {
+                if a != &ref_allele && !alt_alleles.contains(a) {
+                    alt_alleles.push(a.clone());
+                }
+            }
+            if alt_alleles.is_empty() {
+                continue;
+            }
+            // POS (1-based) = prefix_start + new_offset + 1.
+            let pos = prefix_start + new_offset as i32 + 1;
+            emit_vcf_row(
+                writer,
+                &target.name,
+                pos,
+                &ref_allele,
+                &alt_alleles,
+                &sample_alleles,
+            )?;
         } else {
-            (Vec::new(), 0)
-        };
-        let mut target_ext: Vec<u8> = target_prefix;
-        target_ext.extend_from_slice(&target.seq);
-        for b in target_ext.iter_mut() {
-            *b = b.to_ascii_uppercase();
-        }
-        // t_start_offset: index of target.start within target_ext.
-        let t_start_offset = (target.start - prefix_start) as usize;
-
-        // Walk MSA columns with a while loop so we can advance past indel
-        // regions. t_aln_pos counts target non-gap columns processed (used
-        // to derive VCF POS from target.start). Three cases:
-        //   1. INS: consecutive target gap columns (REF = 1bp anchor at the
-        //      preceding non-gap column, ALT = anchor + inserted bases).
-        //   2. DEL: consecutive target non-gap columns where ≥1 query has
-        //      gap (REF = target segment, ALT = per-query non-gap concat).
-        //   3. SNP: single target non-gap column with no gaps.
-        let mut col: usize = 0;
-        let mut t_aln_pos: i32 = 0;
-        while col < aln_len {
-            let t_base = msa[0].as_bytes()[col];
-            if t_base == b'-' {
-                // INS region: collect consecutive target gap columns.
+            // target non-gap: check if any query has a gap here.
+            let col_has_gap = msa.iter().take(n_seq).any(|s| s.as_bytes()[col] == b'-');
+            if col_has_gap {
+                // DEL region: collect consecutive target non-gap columns
+                // where ≥1 query has a gap.
                 let col_start = col;
-                while col < aln_len && msa[0].as_bytes()[col] == b'-' {
-                    col += 1;
+                while col < aln_len {
+                    let tb = msa[0].as_bytes()[col];
+                    if tb == b'-' {
+                        break;
+                    }
+                    let cg = msa.iter().take(n_seq).any(|s| s.as_bytes()[col] == b'-');
+                    if cg {
+                        col += 1;
+                    } else {
+                        break;
+                    }
                 }
                 let col_end = col;
-                // Anchor = previous non-gap target column. Skip if none.
+                // Anchor = previous non-gap target column. Skip if none
+                // (can't represent a deletion without a 1bp anchor in VCF).
                 if col_start == 0 {
+                    t_aln_pos += (col_end - col_start) as i32;
                     continue;
                 }
-                let anchor_byte = msa[0].as_bytes()[col_start - 1];
-                if anchor_byte == b'-' {
-                    continue;
-                }
-                // Per-sample inserted bases (gaps and non-ACGT dropped).
-                let sample_inserted: Vec<Vec<u8>> = msa
+                // Per-sample deleted segments: non-gap bases in
+                // [col_start, col_end). Index 0 is the target (REF);
+                // empty entries represent fully-deleted samples.
+                let sample_segments: Vec<Vec<u8>> = msa
                     .iter()
                     .take(n_seq)
                     .map(|seq| {
@@ -210,34 +324,41 @@ pub fn output_vcf<W: Write>(
                             .collect()
                     })
                     .collect();
-                if !sample_inserted.iter().any(|s| !s.is_empty()) {
+                if sample_segments[0].is_empty() {
+                    t_aln_pos += (col_end - col_start) as i32;
                     continue;
                 }
-                // Left-align: anchor offset in target_ext = t_aln_pos - 1
-                // + t_start_offset (anchor is the last target non-gap column
-                // before the INS gap, i.e. the (t_aln_pos)-th, 0-based idx
-                // t_aln_pos - 1 in the aligned region).
-                // Guard against underflow when no target non-gap column precedes
-                // the INS (defensive: current control flow guarantees t_aln_pos > 0
-                // here because col_start > 0 and msa[0][col_start - 1] is non-gap).
+                // Left-align all deleted segments together so sample
+                // alleles stay consistent with the shifted REF/ALT.
+                // Guard against underflow (defensive: see INS branch).
                 if t_aln_pos <= 0 {
+                    t_aln_pos += (col_end - col_start) as i32;
                     continue;
                 }
                 let anchor_offset = (t_aln_pos - 1 + t_start_offset as i32) as usize;
                 let anchor_base = target_ext[anchor_offset];
-                let (new_offset, new_anchor, new_inserted) =
-                    left_align_indels(anchor_offset, anchor_base, &sample_inserted, &target_ext);
-                let ref_allele = String::from(new_anchor as char);
-                let sample_alleles: Vec<String> = new_inserted
+                let (new_offset, new_anchor, new_segs) =
+                    left_align_indels(anchor_offset, anchor_base, &sample_segments, &target_ext);
+                // REF = new_anchor + target's left-aligned deleted segment.
+                let mut ref_allele = String::from(new_anchor as char);
+                for &b in &new_segs[0] {
+                    ref_allele.push(b as char);
+                }
+                // Per-sample allele: empty deleted segment -> anchor only
+                // (deletion); non-empty -> anchor + retained bases.
+                let sample_alleles: Vec<String> = new_segs
                     .iter()
-                    .map(|ins| {
+                    .map(|seg| {
                         let mut s = String::from(new_anchor as char);
-                        for &b in ins {
+                        for &b in seg {
                             s.push(b as char);
                         }
                         s
                     })
                     .collect();
+                // POS (1-based) = prefix_start + new_offset + 1.
+                let pos = prefix_start + new_offset as i32 + 1;
+                t_aln_pos += (col_end - col_start) as i32;
                 let mut alt_alleles: Vec<String> = Vec::new();
                 for a in &sample_alleles {
                     if a != &ref_allele && !alt_alleles.contains(a) {
@@ -247,8 +368,6 @@ pub fn output_vcf<W: Write>(
                 if alt_alleles.is_empty() {
                     continue;
                 }
-                // POS (1-based) = prefix_start + new_offset + 1.
-                let pos = prefix_start + new_offset as i32 + 1;
                 emit_vcf_row(
                     writer,
                     &target.name,
@@ -258,151 +377,138 @@ pub fn output_vcf<W: Write>(
                     &sample_alleles,
                 )?;
             } else {
-                // target non-gap: check if any query has a gap here.
-                let col_has_gap = msa.iter().take(n_seq).any(|s| s.as_bytes()[col] == b'-');
-                if col_has_gap {
-                    // DEL region: collect consecutive target non-gap columns
-                    // where ≥1 query has a gap.
-                    let col_start = col;
-                    while col < aln_len {
-                        let tb = msa[0].as_bytes()[col];
-                        if tb == b'-' {
-                            break;
-                        }
-                        let cg = msa.iter().take(n_seq).any(|s| s.as_bytes()[col] == b'-');
-                        if cg {
-                            col += 1;
+                // SNP: single target non-gap column, no gaps.
+                let ref_base = t_base.to_ascii_uppercase();
+                let ref_allele = String::from(ref_base as char);
+                let sample_alleles: Vec<String> = msa
+                    .iter()
+                    .take(n_seq)
+                    .map(|seq| {
+                        let b = seq.as_bytes()[col].to_ascii_uppercase();
+                        if matches!(b, b'A' | b'C' | b'G' | b'T') {
+                            String::from(b as char)
                         } else {
-                            break;
+                            String::new()
                         }
+                    })
+                    .collect();
+                let mut alt_alleles: Vec<String> = Vec::new();
+                for a in &sample_alleles {
+                    if !a.is_empty() && a != &ref_allele && !alt_alleles.contains(a) {
+                        alt_alleles.push(a.clone());
                     }
-                    let col_end = col;
-                    // Anchor = previous non-gap target column. Skip if none
-                    // (can't represent a deletion without a 1bp anchor in VCF).
-                    if col_start == 0 {
-                        t_aln_pos += (col_end - col_start) as i32;
-                        continue;
-                    }
-                    let anchor_byte = msa[0].as_bytes()[col_start - 1];
-                    if anchor_byte == b'-' {
-                        t_aln_pos += (col_end - col_start) as i32;
-                        continue;
-                    }
-                    // Per-sample deleted segments: non-gap bases in
-                    // [col_start, col_end). Index 0 is the target (REF);
-                    // empty entries represent fully-deleted samples.
-                    let sample_segments: Vec<Vec<u8>> = msa
-                        .iter()
-                        .take(n_seq)
-                        .map(|seq| {
-                            (col_start..col_end)
-                                .filter_map(|c| {
-                                    let b = seq.as_bytes()[c].to_ascii_uppercase();
-                                    if matches!(b, b'A' | b'C' | b'G' | b'T') {
-                                        Some(b)
-                                    } else {
-                                        None
-                                    }
-                                })
-                                .collect()
-                        })
-                        .collect();
-                    if sample_segments[0].is_empty() {
-                        t_aln_pos += (col_end - col_start) as i32;
-                        continue;
-                    }
-                    // Left-align all deleted segments together so sample
-                    // alleles stay consistent with the shifted REF/ALT.
-                    // Guard against underflow (defensive: see INS branch).
-                    if t_aln_pos <= 0 {
-                        t_aln_pos += (col_end - col_start) as i32;
-                        continue;
-                    }
-                    let anchor_offset = (t_aln_pos - 1 + t_start_offset as i32) as usize;
-                    let anchor_base = target_ext[anchor_offset];
-                    let (new_offset, new_anchor, new_segs) = left_align_indels(
-                        anchor_offset,
-                        anchor_base,
-                        &sample_segments,
-                        &target_ext,
-                    );
-                    // REF = new_anchor + target's left-aligned deleted segment.
-                    let mut ref_allele = String::from(new_anchor as char);
-                    for &b in &new_segs[0] {
-                        ref_allele.push(b as char);
-                    }
-                    // Per-sample allele: empty deleted segment -> anchor only
-                    // (deletion); non-empty -> anchor + retained bases.
-                    let sample_alleles: Vec<String> = new_segs
-                        .iter()
-                        .map(|seg| {
-                            let mut s = String::from(new_anchor as char);
-                            for &b in seg {
-                                s.push(b as char);
-                            }
-                            s
-                        })
-                        .collect();
-                    // POS (1-based) = prefix_start + new_offset + 1.
-                    let pos = prefix_start + new_offset as i32 + 1;
-                    t_aln_pos += (col_end - col_start) as i32;
-                    let mut alt_alleles: Vec<String> = Vec::new();
-                    for a in &sample_alleles {
-                        if a != &ref_allele && !alt_alleles.contains(a) {
-                            alt_alleles.push(a.clone());
-                        }
-                    }
-                    if alt_alleles.is_empty() {
-                        continue;
-                    }
-                    emit_vcf_row(
-                        writer,
-                        &target.name,
-                        pos,
-                        &ref_allele,
-                        &alt_alleles,
-                        &sample_alleles,
-                    )?;
-                } else {
-                    // SNP: single target non-gap column, no gaps.
-                    let ref_base = t_base.to_ascii_uppercase();
-                    let ref_allele = String::from(ref_base as char);
-                    let sample_alleles: Vec<String> = msa
-                        .iter()
-                        .take(n_seq)
-                        .map(|seq| {
-                            let b = seq.as_bytes()[col].to_ascii_uppercase();
-                            if matches!(b, b'A' | b'C' | b'G' | b'T') {
-                                String::from(b as char)
-                            } else {
-                                String::new()
-                            }
-                        })
-                        .collect();
-                    let mut alt_alleles: Vec<String> = Vec::new();
-                    for a in &sample_alleles {
-                        if !a.is_empty() && a != &ref_allele && !alt_alleles.contains(a) {
-                            alt_alleles.push(a.clone());
-                        }
-                    }
-                    let pos = target.start + t_aln_pos + 1;
-                    t_aln_pos += 1;
-                    col += 1;
-                    if alt_alleles.is_empty() {
-                        continue;
-                    }
-                    emit_vcf_row(
-                        writer,
-                        &target.name,
-                        pos,
-                        &ref_allele,
-                        &alt_alleles,
-                        &sample_alleles,
-                    )?;
                 }
+                let pos = target.start + t_aln_pos + 1;
+                t_aln_pos += 1;
+                col += 1;
+                if alt_alleles.is_empty() {
+                    continue;
+                }
+                emit_vcf_row(
+                    writer,
+                    &target.name,
+                    pos,
+                    &ref_allele,
+                    &alt_alleles,
+                    &sample_alleles,
+                )?;
             }
         }
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use indexmap::IndexMap;
+    use std::io::Write;
+
+    /// Write a single-sequence BGZF FASTA and return its path (with .gzi built).
+    fn write_bgzf_fasta(dir: &std::path::Path, name: &str, seq: &str) -> String {
+        let path = dir.join(format!("{name}.fa.gz"));
+        let file = std::fs::File::create(&path).unwrap();
+        let mut writer = noodles_bgzf::io::Writer::new(file);
+        writeln!(writer, ">{name}").unwrap();
+        writeln!(writer, "{seq}").unwrap();
+        writer.flush().unwrap();
+        drop(writer);
+        crate::libs::fmt::fa::build_gzi_index(path.to_str().unwrap()).unwrap();
+        path.to_string_lossy().to_string()
+    }
+
+    #[test]
+    fn test_emit_msa_variants_del_after_ins() {
+        // A hand-crafted MSA where an INS (consecutive target gaps) is
+        // immediately followed by a DEL (target non-gap with a query gap).
+        // The DEL's anchor must be the target base before the INS run, not the
+        // immediately preceding MSA column (which is a target gap). The old
+        // code inspected `msa[0][col_start-1]` and silently dropped the DEL.
+        //
+        //   col:  0  1  2  3  4  5
+        //   T:    A  -  -  C  G  T     (target.seq = "ACGT", start = 0)
+        //   Q:    A  T  T  -  G  T     (INS "TT" after A, then DEL of C)
+        let target = MsaEntry {
+            name: "B".to_string(),
+            start: 0,
+            strand: '+',
+            src_size: 4,
+            seq: b"ACGT".to_vec(),
+        };
+        let msa = vec!["A--CGT".to_string(), "ATT-GT".to_string()];
+
+        // fetch_range is never called (target.start == 0), but FastaStore must
+        // be constructible, so build one over a real file for name "B".
+        let dir = tempfile::tempdir().unwrap();
+        let gz = write_bgzf_fasta(dir.path(), "B", "ACGT");
+        let mut map = IndexMap::new();
+        map.insert("B".to_string(), gz);
+        let mut store = FastaStore::new(&map).unwrap();
+
+        let mut out: Vec<u8> = Vec::new();
+        emit_msa_variants(&mut out, &target, &msa, &mut store).unwrap();
+        let text = String::from_utf8(out).unwrap();
+
+        // DEL row: REF = anchor + deleted base = "AC", ALT = anchor = "A".
+        let del_rows: Vec<&str> = text
+            .lines()
+            .filter(|l| {
+                let f: Vec<&str> = l.split('\t').collect();
+                f.len() >= 5 && f[3] == "AC" && f[4] == "A"
+            })
+            .collect();
+        assert_eq!(
+            del_rows.len(),
+            1,
+            "DEL (REF=AC, ALT=A) must be emitted, got:\n{text}"
+        );
+        // INS row also emitted: REF = anchor = "A", ALT = anchor + inserted = "ATT".
+        assert!(
+            text.lines().any(|l| {
+                let f: Vec<&str> = l.split('\t').collect();
+                f.len() >= 5 && f[3] == "A" && f[4] == "ATT"
+            }),
+            "INS (REF=A, ALT=ATT) must be emitted, got:\n{text}"
+        );
+    }
+
+    #[test]
+    fn test_left_align_indels_anchor_prepended_not_appended() {
+        // Reference `CAGTC`, anchor = 'A' at index 1 (offset 1), DEL segment
+        // `GTC` (indices 2-4). prev_base = 'C' (index 0) == segment.last 'C',
+        // so one left shift is taken. The reference-allele invariant is
+        // `anchor + segment`, so after shifting the new segment must be
+        // `[old_anchor, segment[0..n-1]]` = "AGT" (head-prepend the old
+        // anchor), NOT "GTA" (tail-append). REF = 'C' + "AGT" = "CAGT".
+        let target_ext = b"CAGTC";
+        let anchor_offset = 1;
+        let anchor_base = b'A';
+        let sample = vec![b"GTC".to_vec()];
+        let (offset, anchor, seqs) =
+            left_align_indels(anchor_offset, anchor_base, &sample, target_ext);
+        assert_eq!(offset, 0);
+        assert_eq!(anchor, b'C');
+        assert_eq!(seqs[0], b"AGT".to_vec(), "segment must be head-prepended");
+    }
 }

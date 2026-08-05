@@ -42,6 +42,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         .collect();
     let count = infiles.len();
 
+    if let Some(outfile) = args.get_one::<String>("outfile") {
+        crate::cmd_pgr::args::ensure_outfile_distinct(outfile, infiles.iter().map(|s| s.as_str()))?;
+    }
+
     log::info!("Building PAF index from {count} file(s)...");
 
     // For single-file input: use build_from_path (enables lazy CIGAR for BGZF).

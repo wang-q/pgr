@@ -108,6 +108,46 @@ fn test_project_empty_cigar_outside() {
 }
 
 #[test]
+fn test_project_empty_cigar_left_overhang_clamps_len() {
+    // Query [0,50) starts left of the record's target [20,80). The projected
+    // query interval must reflect only the actual overlap [20,50) (30bp), not
+    // the raw queried width (which would over-project to 50bp of query).
+    let m = PafMetadata {
+        query_id: 0,
+        target_start: 20,
+        target_end: 80,
+        query_start: 100,
+        query_end: 160,
+        strand: '+',
+        cigar: CigarStore::owned(vec![]),
+    };
+    let (qs, qe, ts, te) = project(0, 50, &m, &[]).unwrap();
+    assert_eq!((qs, qe, ts, te), (100, 130, 20, 50));
+}
+
+#[test]
+fn test_project_empty_cigar_left_overhang_minus_strand() {
+    // Same left-overhang, but '-' strand: the projected query interval must be
+    // [query_end - off - len, query_end - off) with the clamped overlap.
+    // overlap [20,50) -> off=0, len=30 -> query [160-30, 160) = [130,160).
+    let m = PafMetadata {
+        query_id: 0,
+        target_start: 20,
+        target_end: 80,
+        query_start: 100,
+        query_end: 160,
+        strand: '-',
+        cigar: CigarStore::owned(vec![]),
+    };
+    let (qs, qe, ts, te) = project(0, 50, &m, &[]).unwrap();
+    assert_eq!((qs, qe, ts, te), (130, 160, 20, 50));
+
+    // And a fully-contains query [30,60) -> off=10, len=30 -> [160-10-30, 160-10) = [120,150).
+    let (qs, qe, _, _) = project(30, 60, &m, &[]).unwrap();
+    assert_eq!((qs, qe), (120, 150));
+}
+
+#[test]
 fn test_project_cigar_no_overlap() {
     let cigar = vec![CigarOp::new(50, 'M')];
     let m = PafMetadata {
@@ -235,6 +275,34 @@ fn test_project_minus_strand_with_insertion() {
     assert_eq!((qs, qe), (0, 5));
     let (qs, qe, _, _) = project(0, 7, &m, &cigar).unwrap();
     assert_eq!((qs, qe), (0, 10));
+}
+
+#[test]
+fn test_project_empty_cigar_minus_strand_subinterval() {
+    // Regression: the empty-CIGAR shortcut must mirror query coordinates
+    // for '-' strand records (query_start/end are forward coords, but the
+    // alignment reads the query in reverse). Without a CIGAR, target offset
+    // `off` maps to the *end* side of the query: [query_end - off - len,
+    // query_end - off). Querying target [0,5) of a '-' record spanning
+    // forward query [0,10) must project to forward [5,10), not [0,5).
+    let m = minus_metadata(0, 10, 0, 10);
+    let (qs, qe, ts, te) = project(0, 5, &m, &[]).unwrap();
+    assert_eq!((qs, qe, ts, te), (5, 10, 0, 5));
+    // And target [5,10) → forward [0,5).
+    let (qs, qe, ts, te) = project(5, 10, &m, &[]).unwrap();
+    assert_eq!((qs, qe, ts, te), (0, 5, 5, 10));
+    // '+' strand empty-CIGAR still maps offset directly.
+    let m_plus = PafMetadata {
+        query_id: 0,
+        target_start: 0,
+        target_end: 10,
+        query_start: 0,
+        query_end: 10,
+        strand: '+',
+        cigar: CigarStore::owned(vec![]),
+    };
+    let (qs, qe, _, _) = project(0, 5, &m_plus, &[]).unwrap();
+    assert_eq!((qs, qe), (0, 5));
 }
 
 #[test]

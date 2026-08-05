@@ -361,7 +361,7 @@ pub fn add_poa_args(cmd: Command, with_shorts: bool) -> Command {
         .long("match")
         .num_args(1)
         .default_value("5")
-        .value_parser(clap::value_parser!(i32))
+        .value_parser(parse_match_score)
         .allow_negative_numbers(true)
         .help("POA match score (default: 5)");
     if with_shorts {
@@ -372,7 +372,7 @@ pub fn add_poa_args(cmd: Command, with_shorts: bool) -> Command {
         .long("mismatch")
         .num_args(1)
         .default_value("-4")
-        .value_parser(clap::value_parser!(i32))
+        .value_parser(parse_poa_penalty("--mismatch"))
         .allow_negative_numbers(true)
         .help("POA mismatch score (default: -4)");
     if with_shorts {
@@ -383,7 +383,7 @@ pub fn add_poa_args(cmd: Command, with_shorts: bool) -> Command {
         .long("gap-open")
         .num_args(1)
         .default_value("-8")
-        .value_parser(clap::value_parser!(i32))
+        .value_parser(parse_poa_penalty("--gap-open"))
         .allow_negative_numbers(true)
         .help("POA gap open penalty (default: -8)");
     if with_shorts {
@@ -394,7 +394,7 @@ pub fn add_poa_args(cmd: Command, with_shorts: bool) -> Command {
         .long("gap-extend")
         .num_args(1)
         .default_value("-6")
-        .value_parser(clap::value_parser!(i32))
+        .value_parser(parse_poa_penalty("--gap-extend"))
         .allow_negative_numbers(true)
         .help("POA gap extend penalty (default: -6)");
     if with_shorts {
@@ -543,6 +543,63 @@ pub fn engine_arg(
 // paf subcommand builders (Command → Command transformers)
 // ============================================================================
 
+/// `--min-identity` value parser: a gap-compressed identity ratio must be in
+/// `[0.0, 1.0]`. clap's `Ranged*ValueParser` covers integers only, so validate
+/// the f64 here and reject out-of-range values at parse time.
+fn parse_min_identity(s: &str) -> Result<f64, String> {
+    let v: f64 = s
+        .parse()
+        .map_err(|_| format!("invalid float for --min-identity: {s}"))?;
+    if !(0.0..=1.0).contains(&v) {
+        return Err(format!("--min-identity must be in 0.0..=1.0, got {v}"));
+    }
+    Ok(v)
+}
+
+/// `--match` value parser: a POA match score must be positive (a reward).
+fn parse_match_score(s: &str) -> Result<i32, String> {
+    let v: i32 = s
+        .parse()
+        .map_err(|_| format!("invalid integer for --match: {s}"))?;
+    if v <= 0 {
+        return Err(format!("--match must be > 0, got {v}"));
+    }
+    Ok(v)
+}
+
+/// Value parser for POA penalty parameters (`--mismatch`, `--gap-open`,
+/// `--gap-extend`): they are penalties and must be non-positive.
+fn parse_poa_penalty(
+    flag: &'static str,
+) -> impl Fn(&str) -> Result<i32, String> + Clone + Send + Sync + 'static {
+    move |s: &str| {
+        let v: i32 = s
+            .parse()
+            .map_err(|_| format!("invalid integer for {flag}: {s}"))?;
+        if v > 0 {
+            return Err(format!("{flag} must be <= 0 (a penalty), got {v}"));
+        }
+        Ok(v)
+    }
+}
+
+/// Value parser for integer parameters that must be non-negative (distances,
+/// lengths). The query pipeline treats negative values as "off", which is
+/// almost certainly a user mistake; reject them at parse time.
+fn parse_non_negative_i32(
+    flag: &'static str,
+) -> impl Fn(&str) -> Result<i32, String> + Clone + Send + Sync + 'static {
+    move |s: &str| {
+        let v: i32 = s
+            .parse()
+            .map_err(|_| format!("invalid integer for {flag}: {s}"))?;
+        if v < 0 {
+            return Err(format!("{flag} must be >= 0, got {v}"));
+        }
+        Ok(v)
+    }
+}
+
 /// Add common query arguments to a clap Command.
 /// Shared by `paf query`, `paf to-bed`, `paf to-gfa`, `paf to-vcf`,
 /// `paf to-fas`, and `paf to-maf`.
@@ -593,7 +650,7 @@ pub fn add_query_args(cmd: Command) -> Command {
             .long("min-dist")
             .num_args(1)
             .default_value("10")
-            .value_parser(clap::value_parser!(i32))
+            .value_parser(parse_non_negative_i32("--min-dist"))
             .help("Minimum distance to merge adjacent intervals (default: 10)"),
     )
     .arg(
@@ -601,7 +658,7 @@ pub fn add_query_args(cmd: Command) -> Command {
             .long("min-identity")
             .num_args(1)
             .default_value("0.0")
-            .value_parser(clap::value_parser!(f64))
+            .value_parser(parse_min_identity)
             .help("Minimum gap-compressed identity (0.0-1.0, default: 0.0)"),
     )
     .arg(
@@ -609,7 +666,7 @@ pub fn add_query_args(cmd: Command) -> Command {
             .long("min-output-len")
             .num_args(1)
             .default_value("0")
-            .value_parser(clap::value_parser!(i32))
+            .value_parser(parse_non_negative_i32("--min-output-len"))
             .help("Minimum output interval length (default: 0 = no filter)"),
     )
     .arg(
@@ -617,7 +674,7 @@ pub fn add_query_args(cmd: Command) -> Command {
             .long("merge-distance")
             .num_args(1)
             .default_value("0")
-            .value_parser(clap::value_parser!(i32))
+            .value_parser(parse_non_negative_i32("--merge-distance"))
             .help("Merge adjacent output intervals within this distance (default: 0 = off)"),
     )
     .arg(
@@ -633,7 +690,7 @@ pub fn add_query_args(cmd: Command) -> Command {
             .long("min-chain-length")
             .num_args(1)
             .default_value("0")
-            .value_parser(clap::value_parser!(i32))
+            .value_parser(parse_non_negative_i32("--min-chain-length"))
             .help("Minimum total aligned length per query (default: 0 = off)"),
     )
     .arg(

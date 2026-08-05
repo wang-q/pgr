@@ -2,7 +2,8 @@
 
 `pgr paf` 用于处理**PAF** (Pairwise mApping Format) 文件。它把成对比对当作一张隐式泛基因组图，
 将目标区间通过比对网络投影出去，回答"哪些序列的哪些区域与该位点同源"这一问题。查询类子命令 （`query`
-/ `to-bed` / `to-maf` / `to-vcf` / `to-gfa`）按需遍历这张隐式图，不物化整张图；而 `graph` 和 `stat`
+/ `to-bed` / `to-fas` / `to-maf` / `to-vcf` / `to-gfa`）按需遍历这张隐式图，不物化整张图；而 `graph`
+和 `stat`
 子命令会物化一张**粗粒度**的全基因组图，只在 ≥ `--min-var-len`（默认 100 bp）的结构变异处切分节点，
 小 indel 留在节点内部。
 

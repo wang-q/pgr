@@ -89,17 +89,28 @@ pub(crate) fn project(
     cigar: &[CigarOp],
 ) -> Option<(i32, i32, i32, i32)> {
     if cigar.is_empty() {
-        let off = (ts - m.target_start).max(0);
-        let len = (te - ts).min((m.target_end - m.target_start) - off);
+        // The query is a diagonal projection of the target interval. Clamp the
+        // queried span to the record's aligned target extent so the projected
+        // query length matches the actual overlap (not the raw [ts,te) width,
+        // which over-counts when the query starts left of the record).
+        let overlap_start = ts.max(m.target_start);
+        let overlap_end = te.min(m.target_end);
+        let len = overlap_end - overlap_start;
         if len <= 0 {
             return None;
         }
-        return Some((
-            m.query_start + off,
-            m.query_start + off + len,
-            ts.max(m.target_start),
-            (ts + len).min(m.target_end),
-        ));
+        let off = overlap_start - m.target_start;
+        // For '-' strand PAF records, query_start/query_end are forward-strand
+        // coordinates but the alignment reads the query in reverse. The target
+        // offset `off` therefore maps to the *end* side of the query: the
+        // projected query interval is `[query_end - off - len, query_end - off)`,
+        // mirroring the non-empty-CIGAR `rc_to_forward` conversion.
+        let (qs, qe) = if m.strand == '-' {
+            (m.query_end - off - len, m.query_end - off)
+        } else {
+            (m.query_start + off, m.query_start + off + len)
+        };
+        return Some((qs, qe, overlap_start, overlap_end));
     }
     // Walk all CIGAR ops; accumulate the union of query/target intervals that
     // overlap [ts, te). Returning at the first overlap would truncate the

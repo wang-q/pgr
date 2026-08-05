@@ -64,12 +64,14 @@ Examples:
 /// Execute the to-vcf command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let opts = crate::cmd_pgr::args::query_options_from_args(args);
+    let outfile = crate::cmd_pgr::args::get_outfile(args);
+    let tsv = opts.fasta_tsv.as_deref().unwrap_or("stdin");
+    crate::cmd_pgr::args::ensure_outfile_distinct(outfile, [opts.infile.as_str(), tsv])?;
     let (idx, all_results, fasta_store_opt) = pgr::libs::paf::query::run_query(&opts)?;
     let mut fasta_store = fasta_store_opt.context("missing required argument: --fasta-tsv")?;
 
     let params = crate::cmd_pgr::args::get_poa_params(args);
 
-    let outfile = crate::cmd_pgr::args::get_outfile(args);
     let mut writer =
         pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
 

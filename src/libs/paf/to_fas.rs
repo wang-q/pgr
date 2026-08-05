@@ -30,16 +30,24 @@ pub fn write_pairwise_fas<W: Write>(
                 blk.tname, t_start_display, blk.t_end
             )?;
             writeln!(writer, "{}", blk.t_aln)?;
+            // Use `q_start_maf` (forward-strand coords of the first displayed
+            // base) for both strands, matching `write_msa_fas` and MAF output:
+            // for '-' strand the displayed sequence is the reverse complement,
+            // so the header must use the reverse coordinates (src_size - qe),
+            // not the forward query interval.
+            let q_start_display = blk
+                .q_start_maf
+                .checked_add(1)
+                .ok_or_else(|| anyhow!("q_start_maf {} overflow on display", blk.q_start_maf))?;
+            let q_bases = blk.q_aln.chars().filter(|c| *c != '-').count() as i32;
+            let q_end_display = blk
+                .q_start_maf
+                .checked_add(q_bases)
+                .ok_or_else(|| anyhow!("q_start_maf + size overflow on display"))?;
             writeln!(
                 writer,
                 ">{0}({1}):{2}-{3}",
-                blk.qname,
-                blk.q_strand,
-                blk.q_start_fwd.checked_add(1).ok_or_else(|| anyhow!(
-                    "q_start_fwd {} overflow on display",
-                    blk.q_start_fwd
-                ))?,
-                blk.q_end_fwd
+                blk.qname, blk.q_strand, q_start_display, q_end_display
             )?;
             writeln!(writer, "{}", blk.q_aln)?;
             writeln!(writer)?;

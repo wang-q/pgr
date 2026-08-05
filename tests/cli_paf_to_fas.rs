@@ -145,6 +145,36 @@ fn command_paf_to_fas_reverse_strand_perfect_match() {
     );
 }
 
+#[test]
+fn command_paf_to_fas_reverse_strand_partial_query_uses_rev_coords() {
+    // Regression: for a '-' strand query that only partially covers its
+    // sequence (query region [0,7) of a 10bp seq), the FAS header must use the
+    // reverse coordinates of the first displayed (RC'd) base, not the forward
+    // query interval. A_rc = "GTACGTACGT", region [0,7) → RC = "TACGTAC";
+    // forward coords of that RC region = [10-7,10-0) = [3,10) → "4-10".
+    let paf = "A\t10\t0\t7\t-\tB\t10\t0\t7\t7\t7\t255\tcg:Z:7=\n";
+    let (stdout, stderr) = PgrCmd::new()
+        .args(&[
+            "paf",
+            "to-fas",
+            "stdin",
+            "B:0-7",
+            "-f",
+            fixture("AB_rc.tsv").to_str().unwrap(),
+        ])
+        .stdin(paf)
+        .run();
+    assert!(stderr.contains("Total results: 1"), "expected 1 result");
+    assert!(
+        stdout.contains(">B(+):1-7\nACGTACG"),
+        "missing/incorrect target record"
+    );
+    assert!(
+        stdout.contains(">A(-):4-10\nTACGTAC"),
+        "query header must use reverse coordinates (got {stdout:?})"
+    );
+}
+
 // ── paf to-fas --msa (multi-way MSA via POA) ─────────────────────
 
 #[test]

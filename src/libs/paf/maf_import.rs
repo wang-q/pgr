@@ -40,15 +40,35 @@ pub fn maf_block_to_paf(block: &MafAli) -> anyhow::Result<Option<PafRecord>> {
         format!("cs:Z:{cs}"),
     ];
     if let Some(s) = block.score {
-        tags.push(format!("ms:i:{}", s as u64));
+        // MAF scores are f64 and may be negative; PAF `ms:i` is a signed
+        // integer tag. Casting to u64 would silently clamp negative scores
+        // to 0, so we round to the nearest integer and preserve the sign.
+        tags.push(format!("ms:i:{}", s.round() as i64));
     }
 
     // MAF `start` for '-' strand is relative to the reverse-complemented
     // source; PAF query coordinates must be forward-strand 0-based half-open.
     let (q_start, q_end) = if qry_entry.strand == '-' {
+        // Guard against malformed MAF where `start + size` exceeds `src_size`
+        // (would underflow the usize subtraction in `reverse_range_pair`).
+        let q_end_rc = qry_entry.start.checked_add(qry_entry.size).ok_or_else(|| {
+            anyhow::anyhow!(
+                "MAF query {} start+size overflow on reverse strand",
+                qry_entry.src
+            )
+        })?;
+        if q_end_rc > qry_entry.src_size {
+            anyhow::bail!(
+                "MAF query {} reverse-strand interval [{},{}) exceeds src_size {}",
+                qry_entry.src,
+                qry_entry.start,
+                q_end_rc,
+                qry_entry.src_size
+            );
+        }
         crate::libs::alignment::coords::reverse_range_pair(
             qry_entry.start,
-            qry_entry.start + qry_entry.size,
+            q_end_rc,
             qry_entry.src_size,
         )
     } else {
@@ -136,5 +156,47 @@ mod tests {
         assert_eq!(rec.strand, '+');
         assert_eq!(rec.query_start, 20);
         assert_eq!(rec.query_end, 32);
+    }
+
+    #[test]
+    fn test_minus_strand_interval_exceeding_src_size_rejected() {
+        // Malformed MAF: reverse-strand query interval [5, 200) exceeds
+        // src_size 100. Without the guard this would underflow the usize
+        // subtraction in `reverse_range_pair` (debug panic). It must instead
+        // return a friendly error.
+        let block = MafAli {
+            score: None,
+            components: vec![
+                comp("ref", 0, 12, '+', 12, "ACGTACGTACGT"),
+                comp("qry", 5, 195, '-', 100, "ACGTACGTACGT"),
+            ],
+        };
+        let err = maf_block_to_paf(&block).unwrap_err();
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("exceeds src_size"),
+            "expected a clear error, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_negative_score_preserved_in_ms_tag() {
+        // MAF alignment scores may be negative. The `ms:i` tag must keep the
+        // sign (→ i64), not clamp to 0 via a u64 cast.
+        let block = MafAli {
+            score: Some(-42.6),
+            components: vec![
+                comp("ref", 0, 12, '+', 12, "ACGTACGTACGT"),
+                comp("qry", 0, 12, '+', 12, "ACGTACGTACGT"),
+            ],
+        };
+        let rec = maf_block_to_paf(&block)
+            .unwrap()
+            .expect("expected Some(rec)");
+        assert!(
+            rec.tags.iter().any(|t| t == "ms:i:-43"),
+            "negative score must round to i64 and keep sign, tags={:?}",
+            rec.tags
+        );
     }
 }

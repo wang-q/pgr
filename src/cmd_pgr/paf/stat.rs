@@ -60,6 +60,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let min_var_len = args.get_one::<i32>("min_var_len").copied().unwrap();
     anyhow::ensure!(min_var_len > 0, "--min-var-len must be > 0");
     let outfile = crate::cmd_pgr::args::get_outfile(args);
+    let tsv_input = tsv_path.unwrap_or("stdin");
+    crate::cmd_pgr::args::ensure_outfile_distinct(outfile, [infile.as_str(), tsv_input])?;
 
     // Load FASTA sequences via TSV + FastaStore (optional for topology-only mode).
     let seqs = load_all_seqs(tsv_path)?;

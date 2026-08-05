@@ -169,7 +169,18 @@ impl PafGraph {
                     let s = seg.start.max(0) as usize;
                     let e = (seg.end as usize).min(seq_bytes.len());
                     if s < e {
-                        node_seqs[node] = seq_bytes[s..e].to_vec();
+                        let region = &seq_bytes[s..e];
+                        // The node's stored sequence must be expressed in the
+                        // representative segment's forward orientation (the
+                        // invariant `seg_orient` is defined against). If the
+                        // filling segment is oriented '-' relative to the rep,
+                        // store the reverse complement so the node sequence
+                        // stays in rep-forward orientation.
+                        node_seqs[node] = if seg_orient[seg_idx] == '-' {
+                            crate::libs::nt::rev_comp(region).collect()
+                        } else {
+                            region.to_vec()
+                        };
                         node_origins[node] = (name.to_string(), seg.start);
                         node_filled[node] = true;
                     }

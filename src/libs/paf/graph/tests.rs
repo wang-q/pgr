@@ -136,6 +136,32 @@ fn test_reverse_strand_path_orientation() {
 }
 
 #[test]
+fn test_node_sequence_revcomp_when_filling_from_minus_segment() {
+    // Regression: when the DSU representative segment's sequence is absent from
+    // `seqs` but a '-' oriented member segment's sequence is present, the node
+    // sequence must be stored in the representative's forward orientation
+    // (i.e. reverse-complement the member's forward region), so the member's
+    // path step '-' remains consistent with the stored node sequence.
+    //
+    // A's sequence is intentionally omitted; B is present. A is the
+    // representative (registered first as target), B links to it in reverse.
+    let paf = "B\t10\t0\t10\t-\tA\t10\t0\t10\t10\t10\t255\tcg:Z:10M\n";
+    let seqs = seqs_map(&[("B", "ACGTACGTAC")]); // A missing
+    let g = PafGraph::build(paf.as_bytes(), Some(&seqs), 100).unwrap();
+
+    // There is exactly one node; its sequence must be RC(B) = GTACGTACGT so
+    // that B's path step ('-') reconstructs B's forward strand.
+    assert_eq!(g.node_seqs.len(), 1, "expected a single node");
+    let node_seq = String::from_utf8_lossy(&g.node_seqs[0]);
+    assert_eq!(
+        node_seq, "GTACGTACGT",
+        "node sequence must be the reverse complement of B's forward region"
+    );
+    let b_path = g.paths.iter().find(|(n, _)| n == "B").unwrap();
+    assert_eq!(b_path.1[0].orient, '-', "B traverses the node reverse");
+}
+
+#[test]
 fn test_gfa_output_format() {
     let paf = "A\t100\t0\t100\t+\tB\t100\t0\t100\t95\t100\t255\tcg:Z:100M\n";
     let seqs = seqs_map(&[("A", &"ACGT".repeat(25)), ("B", &"TGCA".repeat(25))]);
