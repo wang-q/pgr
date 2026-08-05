@@ -303,7 +303,11 @@ fn main() -> anyhow::Result<()> {
 
     // Split profile of the production path (lcp on).
     let (p_hits, p) = profile_merge(&a, &b, true)?;
-    eprintln!("\nsplit profile (lcp, {:?}): {} seed hits", a.entries.len(), p_hits.len());
+    eprintln!(
+        "\nsplit profile (lcp, {:?}): {} seed hits",
+        a.entries.len(),
+        p_hits.len()
+    );
     eprintln!(
         "  a entries: {}\n  entry_range calls: {} ({} ns/entry {:.2} call/entry)",
         p.entries,

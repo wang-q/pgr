@@ -65,7 +65,8 @@ pub fn lastz_to_hits(
     }
 
     // lastz cannot read gzipped input; decompress .gz files into the workdir.
-    let (plain_target, plain_query) = decompress_target_query(&target_files, &query_files, workdir)?;
+    let (plain_target, plain_query) =
+        decompress_target_query(&target_files, &query_files, workdir)?;
 
     let (common_args, _matrix_handle) =
         build_common_args(opts.preset.as_deref(), opts.query_depth)?;
