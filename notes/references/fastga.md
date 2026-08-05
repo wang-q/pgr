@@ -3,6 +3,10 @@
 > 整理于 2026-08，源自对 `FASTGA-main/` 目录源码（约 4.6 万行 C）及 README 的通读。
 > 2026-08-05 复核：`-S`（对称 adaptamer）已由 README 文档化，本机安装版二进制
 > 更新为 `[-vkMS]`（与源码 V1.5 一致），§5/§8 相应修正。
+> 2026-08-06 通读论文 PDF（Bioinformatics Advances 5(1):vbaf238）全文，
+> 补 §12（灵敏度评估 + FastGA-gapfill）、§12.4（DToL 实验口径）及
+> §2-§3 若干工程细节（GIX 体量口径、MSD 排序、链编码、merge 算法、
+> trace points 参数、gap refinement 论文描述）。
 > 目的：理解 FastGA 的快速全基因组比对算法（adaptive seeds + wave aligner + trace points），
 > 为 pgr 的 pangenome 上游比对（verify-pangenome.sh 已用 `FastGA -psl/-pafx`）与对齐算法
 > 提供参考。
@@ -15,7 +19,9 @@
   V1.5（2025-12-30）为当前版本。
 - **核心假设**: 输入为近完整组装（至多几千 contig），序列质量 Q40+。
 - **性能**: 2 Gbp 蝙蝠基因组 vs（8 核）约 5 分钟找到几乎所有 >100 bp、≥70% 相似区域；
-  63.5 万个比对压缩到 44.5 MB `.1aln`。
+  63.5 万个比对压缩到 44.5 MB `.1aln`（README 口径）。**论文口径（§摘要）**：
+  2.1 分钟 / 8 线程 / 5.7 GB 内存 / 1.05M 条比对 / 覆盖各基因组 60%，
+  ALN 66 MB → 1.03 GB PAF 仅 6 s——两处数字统计口径不同，都来自蝙蝠实验。
 - **算法来源**: adaptive seed（Martin Frith 的 adaptamer 思想）+ 首个 wave-based
   local aligner（源自 daligner 2012）；数据编码用 Gene Myers 的 ONEcode 框架。
 
@@ -75,12 +81,27 @@ PAF / PSL
   `is_syncmer` 对 12-mer 的 8 个 s-mer 窗口取 canonical（正反链）最小值）。
 - 每个索引条目 = 40-mer + 位置 + 掩码前缀信息；排序表存为 `-T` 个隐藏
   `.ktab.<int>` 分片（`.gix` 只是代理文件）。
-- **体量**：README 实测约 14 GB / Gbp（人类 ~3 Gbp ≈ 42 GB）；但 **FastGA 默认在
-  退出时自动删除自己创建的 GIX/GDB**（`Clean_Exit` 调 `GIXrm`，`-k` 才保留），
-  运行时索引落在 `TMPDIR` 或 `-P` 指定目录。
+- **体量**：README 实测约 14 GB / Gbp；**论文口径 ~11 GB / Gbp、构建约
+  15 s/Gbp**（M4 Max 16 核、8 线程）——两个数字统计口径不同，都远大于
+  序列本身；人类 ~3 Gbp ≈ 33-42 GB。FastGA **默认在退出时自动删除自己
+  创建的 GIX/GDB**（`Clean_Exit` 调 `GIXrm`，`-k` 才保留），运行时索引落在
+  `TMPDIR` 或 `-P` 指定目录。
 - 关键设计：FastGA **直接比较两个 GIX**（两个排序的 k-mer 位置流线性归并找相同
   40-mer），而不是把一方的序列在另一方的索引中逐条查询——这是速度来源之一。
 - 索引用 2-bit 编码 + canonical 方向，正反链统一。
+- **论文的索引模型**：排序 40-mer 表 + lcp 数组 = "截断到深度 K 的后缀数组"
+  （truncated suffix array）；`(12,8)` syncmer 把 40-mer 数量削减一半以上，
+  adaptamer 短于 s=12 的种子会丢失（论文认为此类种子与真实匹配相关性低）。
+- **论文的 MSD 排序工程细节**（pgr 版 `radix_sort_u128_par` 的取舍对照）：
+  1. 顶层按**前 4 bp 预分到 T 个文件**（各文件区间有序，排序后直接拼接），
+     文件内只存相对上一个 40-mer 的**位置差**（<2 B/条）——GIX 磁盘格式；
+  2. 排序时记录**相邻条目的 lcp 到每条记录首字节**（GIX 记录 = kmer 后缀 7 B
+     + mask 1 B + lcp 1 B，见 [[../design/pgi-align.md]] §7.6）；
+  3. 空分区跳过（随深度增加空桶渐多）、已就位条目不搬（省 ~10% 移动）、
+     小分区退化为更简单排序。
+  pgr 的 radix_sort 已含：公共前缀跳过、空分区跳过、cycle 置换、insertion
+  fallback、并行桶排序（`src/libs/ds/radix_sort.rs`）；**未做**前 4 bp 预分片
+  与 lcp 入字节（GIX 私有格式细节，pgr 的 `.pgi` 不需要，见 pgi-align.md §7.6）。
 
 ### 3.3 Adaptive seeds（adaptamer，libfastk.c / FastGA.c）
 
@@ -89,6 +110,15 @@ PAF / PSL
 - **最小化**：`is_minimal`（libfastk.c:590）把种子与其反向互补做字典序比较，保留更小者
   （canonical 方向），正反链统一——与 pgr 的 canonical minimizer/syncmer 思路一致。
 - **种子命中**：adaptamer 在 source2 的每个出现位置 (p, q) 都是一个 seed hit。
+- **论文的归并算法（§3.1, Algorithm 1）**：对 G 的每个 K-mer 维护
+  `(fst, lst, L, cur, wall)` 五个 O(K) 辅助量——`[fst, lst)` 是 H 中与该
+  K-mer 共享前缀 ≥ L 的条目区间、`cur` 是区间内第一个 ≥ α 的条目、`wall[l]`
+  是共享前缀 ≥ l 的最小下标；相邻 G 条目靠 lcp（λ）增量推进，不用逐条目
+  二分。Theorem 1：单趟线性归并找出 G 中全部非重复 adaptamer。实测（蝙蝠，
+  2.23 Gbp vs 2.56 Gbp）：1.603B 条 syncmer 40-mer，交叠 2.646B 边、
+  4.356B 次字符比较（**每 adaptamer < 3 次**），区间 `[fst,lst)` 通常大小为 1。
+  pgr 的简化版（§3.3 lcp 起步窗口）语义等价、E. coli 上已无差距（见
+  [[../design/pgi-align.md]] §3.3/§7.6）。
 - `-S` 对称模式取两个基因组的 adaptamer 并集（`SYMMETRIC = flags['S']`，merge
   互换 T1/T2 跑双向再合并；README:199-207 已文档化，见 §5）。
 
@@ -120,6 +150,14 @@ wave 划定的搜索区域。pgr 移植时把 tube 提升为正式概念（`Tube
 `forward/reverse` 的对角线硬边界（`low >= minp` / `hgh <= maxp` 分支），
 保证路径不跨越精确自同线（diag 0）。
 
+**论文的链编码（§2.4）**：每个种子 hit 编码为六元组
+`(ci, cj, ⌊(pi−pj)/D⌋, pi+pj, (pi−pj) mod D, t)`——对角线桶 b、anti 值、
+桶内余数可重建两侧坐标；MSD 排序后同 contig 对、同对角线桶的种子按 anti
+连续，相邻桶对（b, b+1）归并扫描即可覆盖宽 ≤ 2D 的链（D=64 编译期常量、
+A=1000 为 anti 间距参数）。**冗余比对去除**：等价/包含（bounding box 内含）
+的比对只留一个，输出按 source1 起始坐标排序——pgr 侧对应
+`dedupe_contained`（0.95 阈值）与 PSL 排序输出（pgi-align.md §1.3.3）。
+
 ### 3.5 Wave-based local alignment（align.c）
 
 **术语：Wave**——Myers wavefront 算法的波前：`V[k]` 是"编辑距离恰好为
@@ -142,7 +180,15 @@ align.c:29-30），不是数据结构的名字。FastGA 用它做局部比对的
 - **Compute_Alignment**（align.c:5426）：divide-and-conquer trace（`dandc_nd` /
   `trace_nd` / `middle_np` / `iter_np`），用 sparse DP 在 wave 之间回溯完整比对路径，
   按 `tspace`（trace spacing）压缩轨迹。
-- **Gap_Improver**（align.c:6714）：对 gap 区域做二次精修。
+- **Gap_Improver**（align.c:6714）：对 gap 区域做二次精修。论文 §3.2.2 给出
+  算法描述：把 trace 转成 indel 数组，找同号且相邻值差 < R=50 的极大段
+  （即一个 gap 簇）→ 在 D×L 梯形区域内用**压缩 wave**（gap 起始代价 1、
+  延续 0，Hadlock 路径压缩）重算最少 gap 路径，O((G+S)D+L) 期望时间。
+  实测蝙蝠：初始 64.6M 个 gap，检查 11.93M 个梯形，移除 13.7M 个 gap，
+  平均 (G+S)D=88，精修约占 ALN→PAF 转换时间的 15%。**pgr 不接入**：
+  该精修只对 tspace 采样产生的次优 trace 有效，pgr wave 用 `dandc_nd`
+  全量精确回溯、无采样缺口，源码语义下必然无操作（完整论证见
+  [[../design/pgi-align.md]] §3.1）。
 
 > **术语对照（Wave / Tube / Cube）**：源码里只有 Wave（算法，`forward_/
 > reverse_wave`、`Local_Alignment`）与 Tube（种子链 + 比对盒，注释语）。
@@ -154,6 +200,11 @@ align.c:29-30），不是数据结构的名字。FastGA 用它做局部比对的
 
 - 每条比对记录为**轨迹点（trace points）**：按 tspace 采样的比对路径编码，配合
   diff/长度信息，在 ONEcode 二进制中极紧凑（63.5 万比对 → 44.5 MB）。
+- **论文的编码模型（§3.2.1）**：A 侧按 δ=100 bp 面板划分，trace-point 数组 =
+  每个面板对应 B 侧面板长度（bi 通常 ∈ [δ(1−ɛ), δ(1+ɛ)]，单字节）；配合四
+  端点与 δ 可重建整条比对，**重建 O(n+δd)**（逐面板用 Wu et al. 1990 的
+  skewed-wave）。1 万 bp 比对 ≈ 100 字节（与 ɛ 无关，CIGAR 要到 ɛ<1/100
+  才同规模）；ALN→PAF 展开约 1 亿 aligned bases/s。
 - `.1aln` 头：`1 3 aln 2 1`、`!` 记录 FastGA 版本与参数、`<` 引用两个 GDB。
 - **排序**：按 source1 contig # → source2 contig # → source1 start 排序，便于线性扫描。
 - ALNtoPAF / ALNtoPSL（多线程）在**线性时间**把轨迹展开为 PAF/PSL（含 CIGAR：
@@ -506,3 +557,66 @@ alncode.c）；ALNtoPAF/ALNtoPSL 多线程线性展开 trace → CIGAR（`-pafx`
 | 链 | anti-diagonal 坐标 + tube 扫描 | 线性（链稀疏）|
 | Wave | Myers wavefront（V/M/T + Pebble cells）| 与差异数成正比，优于 O(nm) |
 | Trace | Hirschberg 分治 + tspace 采样 | 线性于路径长 |
+
+## 12. 论文实验：灵敏度评估与 FastGA-gapfill（2026-08-06 通读 PDF 补充）
+
+> 来源：《FastGA: fast genome alignment》，Bioinformatics Advances 5(1):vbaf238
+> （2025），PDF 全文通读。§5 Experimental results 是唯一讲"灵敏度"的实验章节；
+> 其中 §5.2 的 FastGA-gapfill 就是 pgr 混合方案与 ALNfill 的论文原型。
+
+### 12.1 模拟数据灵敏度（§5.1，真值已知）
+
+- **数据构造**：模拟 A、B 两个基因组（各 84 Mb），由 10 kb 块组成；每个块 =
+  前端"相似区"（长度 100/200/500/1000/2000/5000 bp × 分歧度 1%–65%）+ 随机序列；
+  块顺序随机打乱，保证不存在跨块的长程比对。每个（长度, 分歧度）组合 100 个重复。
+- **分歧引入**：在 B 上随机引入 80% 单碱基替换 + 10% 插入 + 10% 缺失。
+- **灵敏度定义（核心）**：对每个（长度, 分歧度）组合统计"完整恢复的目标区数量"——
+  某目标区被比对覆盖 **≥95%**（A、B 两侧基因组都要）才计为恢复；Fig. 6 的 y 轴就是
+  100 个目标区里恢复几个。**不是按碱基覆盖率算，是按"目标区是否完整找回"算。**
+- **特异性定义**：false aligned bases = 落在模拟目标区之外的 aligned bases（在 A 上
+  统计）；FP 比对 = 跨多个目标区、或任一基因组上 >95% 的比对碱基在目标区外。
+  实测 wfmash 74.26% 的比对碱基是假阳性，其余工具 <0.06%。
+- **结论**：灵敏度随目标区变长而升、随分歧度升高而降；FastGA/minimap2 的衰减起点约
+  为 1%/10%/15%/20%/25%/30% 分歧度（对应 100/200/500/1000/2000/5000 bp）；FastGA
+  小目标区略逊 minimap2、大目标区更优；NUCmer 超过 200 bp 后落后；LastZ 全面最高，
+  且是唯一在 40% 分歧度（2000/5000 bp 区）仍有合理结果的工具。
+
+### 12.2 真实数据（§5.2，无真值 → 覆盖率代理指标）
+
+- 五个哺乳动物基因组（人类 GRCh38、黑猩猩、长臂猿、猪、小鼠）对齐 CHM13；没有真值，
+  用"被比对覆盖的基因组碱基数"作为间接灵敏度指标（只按比对 start/end 计覆盖，
+  比对内部的 gap 也算覆盖——对 minimap2/wfmash 这类大 gap chaining 有利）。
+- **覆盖率必须结合特异性看**：CHM13 chr16 52.3–96.3 Mb vs mouse chr8 的对照实验——
+  直接比对时 wfmash 覆盖 28.4 Mb、LastZ 14.30 Mb；打乱中间 mouse 序列后 wfmash
+  仍 bridging 出 22 Mb（多为假阳性），LastZ 掉到真实可比对区 3.69 Mb；反向互补中间
+  序列后 LastZ 恢复 11.42 Mb。说明 wfmash 的覆盖虚高来自假阳性 bridging。
+
+### 12.3 FastGA-gapfill：论文原版混合方案（§5.2）
+
+- **流程**：FastGA 比对为锚点 → 对每对"**顺序一致、方向一致、不重叠**"、间隔
+  ≤1 Mb（默认）的锚点，用两侧锚点在两个基因组上的 end/start 定义 bounding box →
+  box 与锚点允许 **1 kb（默认）重叠**以利 LastZ 播种 → 只保留最小 box（没有更小的
+  包含于其中）→ 每个 box 跑 LastZ → 合并 FastGA + LastZ 输出为最终结果。
+- **结论**：FastGA-gapfill 灵敏度接近 LastZ，速度比 LastZ 快 19.3×–137.5×。
+- **与 ALNfill 参数吻合**：c-zhou/alnfill 的 `alngap` 默认 `-l 100 / -m 1M / -e 1K`、
+  reciprocal best（`-f 0.5`）就是论文 gapfill 的工程化实现；ALNfill README 也承认
+  `-e` 造成的 FastGA/LastZ 重叠是已知问题（`-e 0` 又会漏掉从锚点延伸出去的比对）。
+- **"顺序一致、方向一致"即共线性前提**——证实 [[../design/pgi-lastz-hybrid.md]]
+  §3.4 的结论：hybrid 模式只适合 syntenic 搜索。
+
+### 12.4 其他物种与实验口径（§5.3 + §4 工程细节）
+
+- **DToL 12 物种**（昆虫/鱼/鸟/爬行/哺乳/两栖各一对，基因组几百 Mb 到 24 Gb）：
+  每个属做 (i) 种内单倍型 vs (ii) 种间比对两种。FastGA 种内覆盖
+  85.6%–99.0%，种间覆盖 25%–99%（蛾子 A. psi vs A. aceris 最远缘，
+  覆盖与 human vs mouse 相当）；两栖 L. vulgaris 24.2 Gb 是唯一全部
+  aligner 都完成的（4611 CPU 分钟 / 29 GB），LastZ 有 4 个染色体对
+  48 h 内未完成。
+- **真实数据的实验口径**（做对照实验时值得照抄）：
+  1. **soft-mask 只喂 LastZ**（重复区处理），其余 aligner 用未掩码序列；
+  2. LastZ/NUCmer **按染色体对逐个跑**（输入长度限制），CIGAR 输出
+     （FastGA `-pafx` / minimap2 `-c` / LastZ `--format=PAF:wfmash`）；
+  3. 覆盖统计**只按比对 start/end 计**（比对内 gap 也算覆盖）；
+  4. FastGA 索引构建（GIX 排序）峰值内存 ~29 GB，**比对主进程仅 ~1 GB**——
+     内存大头在索引排序，不在对齐（pgr 的 `.pgi` 构建同理，见
+     [[../benchmarks/bench-pgi-vs-gixmake.md]]）。

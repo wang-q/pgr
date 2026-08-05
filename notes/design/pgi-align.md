@@ -323,11 +323,13 @@ mismatch**。受控测试（1 个真实 indel + 1 个真实错配）显示长度
 > **删码（2026-08-06）**：确认无操作后，`gap_improve.rs`、benchmark、
 > 脚本及临时插桩已一并删除，机制链条见下（留存）。
 
-**对照源码**（align.c:6714-7140）：FastGA 盒内是 Myers 最远到达点（F/G/H
-数组）的 **unit-cost 稀疏 DP**（`n += 1`，mismatch 与 gap 同价，**无 gap
-open/extend 参数**）。它有效的根源是 FastGA 的 wave 输出为 **tspace=100
-采样的不完整 trace**，盒内 DP 负责补全；pgr 的 wave 用 `dandc_nd` 全量
-精确回溯，无采样缺口——**源码语义下 Gap_Improver 对 pgr 必然无操作**。
+**对照源码**（align.c:6714-7140；论文 §3.2.2 即该函数的算法描述——indel
+数组 + R=50 同号段检测 + D×L 梯形内压缩 wave）：FastGA 盒内是 Myers 最远
+到达点（F/G/H 数组）的 **unit-cost 稀疏 DP**（`n += 1`，mismatch 与 gap
+同价，**无 gap open/extend 参数**）。它有效的根源是 FastGA 的 wave 输出为
+**tspace=100 采样的不完整 trace**，盒内 DP 负责补全；pgr 的 wave 用
+`dandc_nd` 全量精确回溯，无采样缺口——**源码语义下 Gap_Improver 对 pgr
+必然无操作**。
 
 > **为什么没有作用（机制链条，删码后留存）**
 >
@@ -773,13 +775,13 @@ benchmark 明确非当前优先级（Sakai 剩余差距来自分歧区的 wave �
 
 ### 7.4 对称 adaptamer（`-S`）：不做
 
-FastGA `-S`（FastGA.c:2340，README:199-207 已文档化）：`P1->maxp >
-P2->maxp` 时交换 T1/T2，双向种子合并；用两方 adaptamer，结果与 A/B 顺序
-基本无关，但通常发现 B 中更多重复比对。README 明确 **synteny 场景不建议，
-仅重复结构分析时用**——pgr 的 `align pgi` 是 synteny 用途，且 `sd cross`
-当前单向够用，故**不做**（与 §3.4 select 同类判断：专门场景 + 无消费者）。
-若将来做对称跨基因组重复检测，按 FastGA.c:2340 语义实现（较小基因组做
-种子侧，双向合并）。
+FastGA `-S`（FastGA.c:2340，README:199-207 与论文 §3.1 均已文档化：
+两次单向 merge 的**并集**）：`P1->maxp > P2->maxp` 时交换 T1/T2，双向种子
+合并；用两方 adaptamer，结果与 A/B 顺序基本无关，但通常发现 B 中更多重复
+比对。README 明确 **synteny 场景不建议，仅重复结构分析时用**——pgr 的
+`align pgi` 是 synteny 用途，且 `sd cross` 当前单向够用，故**不做**
+（与 §3.4 select 同类判断：专门场景 + 无消费者）。若将来做对称跨基因组
+重复检测，按 FastGA.c:2340 语义实现（较小基因组做种子侧，双向合并）。
 
 **pbit 存储场景实测（2026-08-05，MG1655 ref × Sakai query）**：考虑
 `align → PAF → pbit`（CIGAR delta 压缩，见 [[pbit.md]]）时，-S 理论上

@@ -189,6 +189,9 @@ axtToMaf 标准化流程中的全部 12 步主流程。`chain`/`net`/`axt`/`psl`
 与 kent-tools **字节级一致**（含 `--syn`、medium gap model、多染色体反向场景，见 §7.1 与
 [[ucsc.md]]）。
 
+> 规划中：`pgr align hybrid`（pgi 锚点 + LASTZ 补 gap 的混合比对，见
+> [[design/pgi-lastz-hybrid.md]]）将挂在本模块下——不放 `pgr pl`，方便用户发现。
+
 ### 3.3 泛基因组 (Pangenome)
 
 | 模块  | 子命令数 | 核心能力                                                                 |
@@ -225,6 +228,9 @@ axtToMaf 标准化流程中的全部 12 步主流程。`chain`/`net`/`axt`/`psl`
 `pl` (pipelines) 模块定位特殊——它**编排外部工具**（UCSC kent-tools、trf、FastK、Profex、
 clustalw/muscle/mafft），充当工作流 glue。这与 `chain`/`net` 模块的纯 Rust 实现形成互补：能用 Rust
 就自己实现，复杂/成熟的用外部工具。
+
+> 注意（2026-08-06 与用户确认）：`pgr pl` 目前是"暂时没想好该放到哪边"的命令的
+> 临时存放处，定位可能随命令演化调整；新命令不要默认往 `pl` 里放。
 
 ### 3.6 分析 (Analysis)
 

@@ -36,6 +36,30 @@ aligned to itself (internal repeats and haplotype-level homology, FastGA's
 self mode); exact self-identity hits are dropped, and no same-contig forward
 block is emitted on diagonal 0 (FastGA's self-mode wave boundary).
 
+## Background
+
+`pgr align pgi` is a native reimplementation of the FastGA alignment pipeline
+(Myers, Durbin and Zhou, *FastGA: fast genome alignment*, Bioinformatics
+Advances 5(1):vbaf238, 2025, DOI 10.1093/bioadv/vbaf238): syncmer-sparse
+k-mer indexes, a linear merge of the two sorted index streams to find
+adaptive-seed hits, diagonal-bucket seed chaining, and a wavefront local
+aligner. FastGA is typically an order of magnitude faster than tools of
+comparable sensitivity (e.g. two 2 Gbp bat genomes in 2.1 min with 8 threads
+and 5.7 GB RAM), while its sensitivity is close to minimap2's and slightly
+below LastZ's, which remains the most sensitive aligner in the paper's
+benchmarks.
+
+Like FastGA, pgi deliberately separates *genome alignment* (finding all
+statistically significant local alignments, with maximal internal gaps of
+about 40 bp) from *homology inference* (chaining those alignments across
+larger gaps). The output is a PSL of local alignments; chaining and netting
+are left to `pgr psl to-chain` / `pgr pl chainnet`, exactly as FastGA leaves
+chaining to a second step. The paper also evaluates a FastGA + LastZ hybrid
+("FastGA-gapfill": FastGA anchors, LastZ fills the gaps between them with a
+1 kb overlap for seeding), whose sensitivity approaches LastZ's at
+19.3×–137.5× its speed; the same hybrid design with `pgr align pgi` anchors
+and `pgr align lastz` gap filling is tracked as a planned `pgr align hybrid`.
+
 ## Options
 
 - `-f`/`--freq`: drop k-mers occurring at least this many times on either
