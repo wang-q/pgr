@@ -91,3 +91,20 @@ SD 检测/分解最终采用 search → chain/net → cluster/decompose 路线�
 App-Egaz/linkr 的历史流程（lastz 自比对 + link 图聚类 + blastn 扩展）效果不如 BISER：中间步骤
 多、无 error model、无 elementary 分解；仅"lastz 自比对作为种子"和"图聚类思想"被吸收
 （对应 `sd search --engine lastz` 与 cluster 的连通分量）。
+
+### 4.8 忽略项：BISER 的 MAX_EXTEND 边界扩展未移植
+
+**BISER 原版**在 `save_sd()` 输出 hit 前对边界做 `MAX_EXTEND`（5000 bp）填充，
+再由后续局部比对（seed-and-extend + chaining + refinement）覆盖真实边界
+（见 [[references/biser.md]] §3.3）。**pgr 移植时忽略了这一步**：
+
+- `sd search`（pgi/lastz 引擎）：只比对 + 过滤，边界原样，无扩展；
+- `sd align`（chain/net 非 `--syn`）：只链化已有块，不扩展边界；
+- `sd cluster`：按 PAF 坐标直接提取序列，区间即比对块区间；
+- `sd decompose`：只有序列内 `MAX_GAP=50` bp 的共享 k-mer 片段合并，
+  无法发现比对块之外的同源（cluster FASTA 里没有那些碱基）。
+
+**影响**：pgi 引擎下块边界比真实短 1–11 bp（`docs/sd.md` 已说明），刚过
+`--min-len` 阈值的拷贝可能被过滤；SD 检测结果依赖比对块本身覆盖到边界。
+**后续可选改进**：在 `sd search` 检出 hit 后向两侧扩展一段（如 BISER 的
+5000 bp）再进 chain/net，与 BISER 语义对齐。
