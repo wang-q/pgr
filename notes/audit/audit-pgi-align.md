@@ -110,9 +110,9 @@
   罕见用户错误，且 mtime 新鲜度检查在 `ref.2bit` 更新时自动重建，已部分
   缓解。若改为 `ref.2bit.pgi` 分离会破坏 drop-in 语义，故不修。
 
-## 修复的缺陷（共 41 处：26 处代码/行为 + 15 处 CLI/帮助/文档）
+## 修复的缺陷（共 45 处：30 处代码/行为 + 15 处 CLI/帮助/文档）
 
-### 崩溃 / 越界 / 溢出（Zero Panic，10 处）
+### 崩溃 / 越界 / 溢出（Zero Panic，14 处）
 
 **lav d stanza 边界差一越界**。修复：守卫改 `+ 6`。回归
    `truncated_d_stanza_errors_not_panics`。
@@ -154,7 +154,34 @@
     `2^(2k)` 哨兵有 `k<64` 的特判，但 `2^128` 无法表示。修复：`hi` 改
     `lo.saturating_add(r)`——饱和后仅排除全 T 的 `u128::MAX` 单键，非真实 seed，
     可接受。回归 `merge_k64_high_key_no_prefix_overflow`（构造 index 直接触发
-    `window(12)` 的 `lo + r = 2^128` 路径）。
+   `window(12)` 的 `lo + r = 2^128` 路径）。
+**`build_from_seqs` 的 `k * 2` 参数校验溢出 panic**：`ensure!(k > 0 && k * 2
+   <= 128)` 在 `k` 为极端值（CLI `-k 18446744073709551615`）时 `k * 2` 溢出
+   panic（debug panic / release 静默回绕、校验失效）。修复：改为直接校验
+   `k <= 64`（`2*k` 显著位须存入 u128 kmer key），极端值报友好错误。回归
+   `command_align_pgi_extreme_kmer_errors_not_panics`。
+**`collect_one_contig` 的 `window + 2` 溢出 panic/OOM**：环缓冲容量
+   `(window + 2).next_power_of_two()` 在 `--window` 为极端值（如
+   `usize::MAX`）时 `window + 2` 溢出 panic；即使不溢出，超大 window 也会
+   迫使多 GB 的 `dq_idx`/`dq_hash` 分配（OOM）。修复：`SyncmerParams::validate`
+   增加 `window <= 1_000_000` 上限（默认 5，该上限极宽松），极端值报友好
+   错误。回归 `command_align_pgi_extreme_window_errors_not_panics` 与单测
+   `test_validate_rejects_extreme_window`。
+**`--parallel` 无范围校验导致 rayon 线程风暴**：`parallel_arg` /
+   `parallel_arg_with_default` 用 `value_parser!(usize)` 无界接收，`--parallel
+   18446744073709551615`（实测）会让 rayon 尝试创建近似无限线程，造成系统
+   级线程风暴（load 飙升至 1000+）；`--parallel 0` 也被静默当作默认值。
+   修复：改用 `RangedU64ValueParser::<usize>::new().range(1..=1024)`，clap
+   在构造任何线程池之前即拒绝 `0` 与 `>1024` 值（共享 helper，同时覆盖
+   lastz / sd / prefilter 等所有 `-p` 消费方）。回归
+   `command_align_pgi_extreme_parallel_errors_not_panics`。
+**构造 .pgi 头大 `k` 使 `pack_kmer`/`rc_key` 移位溢出 panic**：`parse_header_bytes`
+   读取头的 `k` 但未校验 `k <= 64`；构造 `k=2^20`（且 `kmer_bytes == k.div_ceil(4)`
+   通过、contig 长度容纳）的 .pgi 可被 `validate_compatible`（两 index 同 `k`）放行，
+   随后 merge 的 `lower_bound → pack_kmer` 对 u128 做 `>> 2*(k-1)`（移位 >= 128）
+   panic（实测"attempt to shift right with overflow"）。修复：`parse_header_bytes`
+   增加 `k in 1..=64` 校验（与 build 侧一致），恶意二进制 index 报友好错误。回归
+   `crafted_large_k_rejected_not_panic`。
 
 ### 功能正确性 / 算法（10 处，含 1 处重大索引缺陷）
 
@@ -349,11 +376,61 @@
 
 本轮未再发现新的代码/行为/CLI/文档问题，审核收敛状态得到确认。
 
+## 追加复核（2026-08-06）
+
+上一轮收敛后，继续对参数边界与极端输入做纵深压力测试，新发现并修复 4 处
+真实缺陷（均已计入上文"崩溃 / 越界 / 溢出"节，至此 14 处）：
+
+* `build_from_seqs` 的 `k * 2` 校验溢出 panic（`-k usize::MAX` 实测）。
+* `collect_one_contig` 的 `window + 2` 溢出 panic / OOM（`--window usize::MAX`
+  实测，需序列长度 >= k 才触发）。
+* `--parallel` 无界导致 rayon 线程风暴（`--parallel usize::MAX` 实测把系统 load
+  打到 1000+）：共享 helper 现在用 `RangedU64ValueParser::range(1..=1024)`，
+  在构建任何线程池前拒绝 `0` 与 `>1024`。
+* `parse_header_bytes` 未校验 `k <= 64`，构造 `k=2^20` 的 .pgi 使
+  `pack_kmer`/`rc_key` 移位溢出 panic。修复后在读头阶段即拒绝。
+
+新增回归：`command_align_pgi_extreme_kmer_errors_not_panics`、
+`command_align_pgi_extreme_window_errors_not_panics`、
+`command_align_pgi_extreme_parallel_errors_not_panics`、
+`test_validate_rejects_extreme_window`、`crafted_large_k_rejected_not_panic`。
+`cargo test --test cli_align_pgi` 26 通过、`cargo test --lib pgi` 65 通过，
+`cargo fmt --check` 与 `cargo clippy --all-targets -- -D warnings` 干净。
+
+## 收尾复核（2026-08-06）：tubes_for_group / extend_tube 边界
+
+对 `libs/pgi/align.rs` 的 `chain_tubes` / `tubes_for_group` / `extend_tube` 做
+最后一轮边界审计，逐项核验后**未发现新代码缺陷**：
+
+* **i64 算术域**：`anti = a_pos + b_pos` 最大 ~2^33、`diag = a_pos - b_pos` 最大
+  ~2^32、`bucket` 最大 ~2^26，均在 i64 内，无溢出。
+* **`tubes_for_group` 首种子**：`ahgh` 初始为 `-brk`（-2000），而 `anti >= 0`，
+  故首种子恒走 flush 分支正确起新 tube，`alow = i64::MAX` 的初值在 extend 分支
+  永不被读到。
+* **`cov` 覆盖计账**：extend 分支仅在 `cps > ahgh` 时才把 `cps - ahgh` 转
+  `u64`，无负值转 uint 的隐患。
+* **`(None, None) => unreachable!()`**：while 条件保证 `bi`/`mi` 至少一个在界，
+  两个 `get()` 同时为 None 不可能，`unreachable!` 安全。
+* **`extend_tube` 的 `eant`**：`LocalAlign.t_end`/`q_end` 是 `usize`（wave.rs），
+  `(t_end + q_end) as i64` 在 64 位上无现实溢出（需各 > 2^63）；此前审计笔记中
+  "i32 溢出"的担忧不成立，字段并非 i32。
+* **`alow`/`amid`/`ahgh`/`dgmin`/`dgmax` 推进**：`ahgh <= *alast` 提前返回正确
+  跳过已被前序 tube 覆盖的区域；`eant <= alow` 时回退到 `amid` 避免死循环，均正确。
+
+**确认的既有局限（记录不修）**：PSL 坐标字段为 32 位有符号（`q_start`/`q_end`/
+`t_start`/`t_end as i32`、`reverse_range` 用 `b_len as i32`），单 contig 超过
+~2^31（2.1 Gb）时坐标会回绕。这是 PSL 格式固有上限（UCSC 亦同），且低于既有记录
+的 4.3 Gb u32 位置上限；真实基因组最大 contig ~250 Mb，远达不到。更新大 contig
+局限说明：`u32 位置上限 4.3 Gb` + `PSL i32 坐标上限 2.1 Gb` 两者并存。
+
+回归：`cargo test --lib libs::pgi --test cli_align_pgi` 65 通过，状态绿。
+
 ## 结论
 
-`align` 命令族审核完成（累计修复 41 处缺陷：26 处代码/行为 + 15 处 CLI/帮助/
+`align` 命令族审核完成（累计修复 45 处缺陷：30 处代码/行为 + 15 处 CLI/帮助/
 文档），并经多轮纵深复核（`libs/pgi` 索引构建/读取、`libs/lastz`、
 `libs/fmt/lav`、`libs/fmt/psl`、`alignment` DP、sibling/缓存索引新鲜度与
 `-o` 覆盖保护、`--parallel` 确定性、`emit_entry_hits` 频率过滤与 k=64 前缀域、
-`chain_tubes` 排序键布局、负链坐标、reference 侧记录校验）复核，未再发现新的
-问题，审核收敛。
+`chain_tubes` 排序键布局、负链坐标、reference 侧记录校验、极端 `-k`/`--window`/
+`--parallel` 参数边界、构造 .pgi 头大 `k`、`tubes_for_group`/`extend_tube`
+边界复核），未再发现新的问题，审核收敛。

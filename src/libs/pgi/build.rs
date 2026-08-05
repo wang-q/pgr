@@ -181,7 +181,10 @@ pub fn build_from_seqs(
     no_rev: bool,
     mask: bool,
 ) -> anyhow::Result<PgiIndex> {
-    anyhow::ensure!(k > 0 && k * 2 <= 128, "k must be in 1..=64, got {k}");
+    // k must fit `2*k` significant bits in a u128 kmer key; check `k <= 64`
+    // directly so an extreme CLI value (e.g. `usize::MAX`) is rejected with a
+    // friendly error instead of overflowing `k * 2`.
+    anyhow::ensure!(k > 0 && k <= 64, "k must be in 1..=64, got {k}");
     anyhow::ensure!(smer > 0, "smer must be positive");
     anyhow::ensure!(window > 0, "window must be positive");
     if mask {

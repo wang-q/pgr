@@ -95,7 +95,7 @@ Examples:
                 .long("kmer")
                 .default_value("40")
                 .value_parser(value_parser!(usize))
-                .help("k-mer size for automatic indexing (genome inputs only)"),
+                .help("k-mer size for automatic indexing (genome inputs only, must be <= 64)"),
         )
         .arg(
             Arg::new("smer")

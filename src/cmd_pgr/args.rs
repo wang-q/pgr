@@ -201,14 +201,19 @@ pub fn q_sizes_arg() -> Arg {
 }
 
 /// Standard `-p/--parallel` argument (number of threads, usize, default 1).
+///
+/// Values must be in `1..=1024`: `0` is rejected (a positive thread count is
+/// required) and values above 1024 are rejected so an extreme `--parallel`
+/// (e.g. `usize::MAX`) cannot make rayon attempt to spawn an unbounded thread
+/// storm.
 pub fn parallel_arg() -> Arg {
     Arg::new("parallel")
         .long("parallel")
         .short('p')
         .num_args(1)
         .default_value("1")
-        .value_parser(clap::value_parser!(usize))
-        .help("Number of threads for parallel processing")
+        .value_parser(clap::builder::RangedU64ValueParser::<usize>::new().range(1..=1024))
+        .help("Number of threads for parallel processing (1..=1024)")
 }
 
 /// `-p/--parallel` with a custom default value.
@@ -218,8 +223,8 @@ pub fn parallel_arg_with_default(default: &'static str) -> Arg {
         .short('p')
         .num_args(1)
         .default_value(default)
-        .value_parser(clap::value_parser!(usize))
-        .help("Number of threads for parallel processing")
+        .value_parser(clap::builder::RangedU64ValueParser::<usize>::new().range(1..=1024))
+        .help("Number of threads for parallel processing (1..=1024)")
 }
 
 /// `--no-ns` flag (output size without Ns).

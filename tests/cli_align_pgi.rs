@@ -908,3 +908,83 @@ fn command_align_without_subcommand_errors_not_panics() {
     );
     assert!(!stderr.contains("panicked"), "got {stderr}");
 }
+
+/// An extreme `-k` value must be rejected with a friendly error, not overflow
+/// `k * 2` and panic (Zero Panic).
+#[test]
+fn command_align_pgi_extreme_kmer_errors_not_panics() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let fa = write_fa(temp.path(), "ref", &random_seq(400, 42));
+    let out = temp.path().join("out.psl");
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "align",
+            "pgi",
+            &fa,
+            &fa,
+            "-k",
+            "18446744073709551615",
+            "-o",
+            out.to_str().unwrap(),
+        ])
+        .run_fail();
+    assert!(
+        stderr.contains("k must be in 1..=64"),
+        "extreme -k must be rejected, got: {stderr}"
+    );
+    assert!(!stderr.contains("panicked"), "got {stderr}");
+}
+
+/// An extreme `--window` value must be rejected with a friendly error, not
+/// overflow `window + 2` in the index ring-buffer sizing and panic (Zero Panic).
+#[test]
+fn command_align_pgi_extreme_window_errors_not_panics() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let fa = write_fa(temp.path(), "ref", &random_seq(400, 42));
+    let out = temp.path().join("out.psl");
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "align",
+            "pgi",
+            &fa,
+            &fa,
+            "--window",
+            "18446744073709551615",
+            "-o",
+            out.to_str().unwrap(),
+        ])
+        .run_fail();
+    assert!(
+        stderr.contains("window must be <= 1000000"),
+        "extreme --window must be rejected, got: {stderr}"
+    );
+    assert!(!stderr.contains("panicked"), "got {stderr}");
+}
+
+/// An extreme `--parallel` value must be rejected by clap before any rayon
+/// pool is built, so it cannot spawn an unbounded thread storm (Zero Panic).
+#[test]
+fn command_align_pgi_extreme_parallel_errors_not_panics() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let fa = write_fa(temp.path(), "ref", &random_seq(400, 42));
+    let out = temp.path().join("out.psl");
+    for bad in ["0", "18446744073709551615", "1025"] {
+        let (_, stderr) = PgrCmd::new()
+            .args(&[
+                "align",
+                "pgi",
+                &fa,
+                &fa,
+                "--parallel",
+                bad,
+                "-o",
+                out.to_str().unwrap(),
+            ])
+            .run_fail();
+        assert!(
+            stderr.contains("not in 1..=1024"),
+            "--parallel {bad} must be rejected, got: {stderr}"
+        );
+        assert!(!stderr.contains("panicked"), "got {stderr}");
+    }
+}

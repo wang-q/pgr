@@ -126,6 +126,12 @@ pub(crate) fn parse_header_bytes(
     let pos_bytes = u32::from_le_bytes(take_bytes(buf, &mut off, 4)?.try_into().unwrap()) as usize;
     let cont_bytes = u32::from_le_bytes(take_bytes(buf, &mut off, 4)?.try_into().unwrap()) as usize;
     let _reserved = u32::from_le_bytes(take_bytes(buf, &mut off, 4)?.try_into().unwrap());
+    // `k` is untrusted (read from the header) and later used to shift a
+    // u128 k-mer key (`2*k` significant bits); a crafted large `k` (e.g.
+    // `2^20`) would otherwise overflow the shift in `pack_kmer`/`rc_key`
+    // and panic. Cap it at the build path's `1..=64` so hostile binary
+    // indexes fail with a friendly error instead of panicking (Zero Panic).
+    anyhow::ensure!((1..=64).contains(&k), "implausible k-mer size {k}");
     anyhow::ensure!(
         kmer_bytes == k.div_ceil(4),
         "bad kmer_bytes {kmer_bytes} for k={k}"
@@ -722,6 +728,35 @@ mod tests {
         let err = PgiIndex::read(&mut std::io::Cursor::new(&h)).unwrap_err();
         assert!(
             err.to_string().contains("contig name too long"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn crafted_large_k_rejected_not_panic() {
+        // Regression: a crafted header with a huge k (e.g. 2^20) that still
+        // satisfies `kmer_bytes == k.div_ceil(4)` used to reach
+        // `pack_kmer`/`rc_key`, where the `2*k`-bit u128 shift overflowed and
+        // panicked. `parse_header_bytes` must reject k > 64 up front.
+        let mut h = vec![0u8; HEADER_FIXED];
+        h[0..4].copy_from_slice(PGI_MAGIC);
+        h[4..8].copy_from_slice(&PGI_VERSION.to_le_bytes());
+        let k = 1usize << 20;
+        h[8..12].copy_from_slice(&(k as u32).to_le_bytes());
+        h[12..16].copy_from_slice(&8u32.to_le_bytes()); // smer
+        h[16..20].copy_from_slice(&5u32.to_le_bytes()); // window
+        h[20..24].copy_from_slice(&1u32.to_le_bytes()); // n_contigs
+        h[24..32].copy_from_slice(&1u64.to_le_bytes()); // n_records
+        h[32..36].copy_from_slice(&((k / 4) as u32).to_le_bytes()); // kmer_bytes
+        h[36..40].copy_from_slice(&3u32.to_le_bytes()); // pos_bytes
+        h[40..44].copy_from_slice(&1u32.to_le_bytes()); // cont_bytes
+        h.extend_from_slice(&0u32.to_le_bytes()); // contig nb
+        h.extend_from_slice(&(1u64 << 21).to_le_bytes()); // contig len
+        h.extend(std::iter::repeat_n(0u8, k / 4 + 4)); // one record
+
+        let err = PgiIndex::read(&mut std::io::Cursor::new(&h)).unwrap_err();
+        assert!(
+            err.to_string().contains("implausible k-mer size"),
             "got: {err}"
         );
     }

@@ -45,6 +45,13 @@ impl SyncmerParams {
         if self.window == 0 {
             anyhow::bail!("syncmer window must be positive");
         }
+        // Cap the window so the pgi build path's `(window + 2).next_power_of_two()`
+        // ring buffer cannot overflow (an extreme `--window` like `usize::MAX`
+        // would otherwise panic on `window + 2`) or force a multi-GB allocation.
+        // Real windows are tiny (default 5); 1,000,000 is a generous upper bound.
+        if self.window > 1_000_000 {
+            anyhow::bail!("syncmer window must be <= 1000000, got {}", self.window);
+        }
         Ok(())
     }
 }
@@ -320,6 +327,30 @@ mod tests {
             seed: 7,
         };
         assert!(syncmer_dna(b"ACGT", &p).is_err());
+    }
+
+    #[test]
+    fn test_validate_rejects_extreme_window() {
+        // An extreme window must be rejected (the pgi build sizes a ring
+        // buffer from `window + 2`; capping prevents overflow / OOM).
+        let p = SyncmerParams {
+            smer: 8,
+            window: usize::MAX,
+            seed: 7,
+        };
+        assert!(p.validate().is_err());
+        let p = SyncmerParams {
+            smer: 8,
+            window: 1_000_001,
+            seed: 7,
+        };
+        assert!(p.validate().is_err());
+        let p = SyncmerParams {
+            smer: 8,
+            window: 1_000_000,
+            seed: 7,
+        };
+        assert!(p.validate().is_ok());
     }
 
     #[test]
