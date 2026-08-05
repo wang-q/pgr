@@ -190,7 +190,7 @@ PAF / PSL
 2. **Wave aligner vs pgr 的 ScalarAlignmentEngine**：pgr 的 POA 对齐是标量 O(nm) 矩阵 DP；
   FastGA 的 wave-front（V/M/T 位向量 + Pebble cells）在线性空间内扩展，与 WFA 同族。
   pgr 已移植该 wavefront 用于 `pgr align pgi` 的 tube 扩展（wave 依赖 tube 锚定
-  上下文，不能单独替换 banded，见 [[../design/pgi-align.md]] §3.1）。pgr 的 POA
+  上下文，不能单独替换 banded，见 [[../design/pgi-align.md]] §3.5.1）。pgr 的 POA
   对齐仍是标量 O(nm)，wave-front 对 pbit CIGAR 精修 / SD refine 仍是候选优化方向。
 3. **Trace point 编码 vs pgr 的 PAF/MAF 存储**：FastGA 用轨迹点 + ONEcode 压缩比对集合
   （63.5 万比对 → 44.5 MB），支持线性时间重放为任意格式。pgr 的 paf index 已做
