@@ -290,6 +290,22 @@ pub trait PgiQuery {
     fn entry_positions(&self, i: usize) -> Positions<'_>;
 }
 
+/// Number of unique k-mer entries, walking the entry groups of `q`.
+///
+/// Resident and mapped indexes both expose the full key range via
+/// [`PgiQuery::entry_range`] with `entry_next` skipping each group, so a
+/// single walk counts unique k-mers without materializing either table.
+pub fn count_unique(q: &impl PgiQuery) -> u64 {
+    let (i0, i1) = q.entry_range(0, u128::MAX);
+    let mut n = 0u64;
+    let mut i = i0;
+    while i < i1 {
+        n += 1;
+        i = q.entry_next(i);
+    }
+    n
+}
+
 /// Position records of one entry: a resident slice or a decoder over the
 /// mapped pages of a [`PgiMmap`].
 pub enum Positions<'a> {

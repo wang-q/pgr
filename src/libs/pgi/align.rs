@@ -104,11 +104,13 @@ pub fn merge_seed_hits(
         .par_chunks(4096)
         .map(|ents| -> anyhow::Result<Vec<SeedHit>> {
             let mut hits = Vec::new();
+            let mut prev_kmer = None;
             for ea in ents {
                 let ap = &a.positions[ea.pos_start as usize..(ea.pos_start + ea.freq) as usize];
                 hits.extend(emit_entry_hits(
-                    ea.kmer, ea.freq, ap, b, freq, min_shared, k,
+                    ea.kmer, ea.freq, ap, b, freq, min_shared, k, prev_kmer,
                 )?);
+                prev_kmer = Some(ea.kmer);
             }
             Ok(hits)
         })
@@ -157,10 +159,12 @@ pub fn merge_seed_hits_from_stream<R: Read + Send, B: PgiQuery + Sync>(
         .par_bridge()
         .map(|batch| {
             let mut hits = Vec::new();
+            let mut prev_kmer = None;
             for (ea, poss) in batch? {
                 hits.extend(emit_entry_hits(
-                    ea.kmer, ea.freq, &poss, b, freq, min_shared, k,
+                    ea.kmer, ea.freq, &poss, b, freq, min_shared, k, prev_kmer,
                 )?);
+                prev_kmer = Some(ea.kmer);
             }
             Ok(hits)
         })
@@ -182,6 +186,7 @@ fn emit_entry_hits<B: PgiQuery>(
     freq: u32,
     min_shared: usize,
     k: usize,
+    prev_kmer: Option<u128>,
 ) -> anyhow::Result<Vec<SeedHit>> {
     let mut hits = Vec::new();
     // FastGA excludes k-mers whose count is >= the frequency cutoff on both
@@ -217,7 +222,19 @@ fn emit_entry_hits<B: PgiQuery>(
         let hi = lo.saturating_add(r);
         b.entry_range(lo, hi)
     };
-    let (j0, j) = window(min_shared);
+    // Lcp propagation (FastGA `new_merge_thread`'s `vlcp` table): an entry
+    // shares at least `lcp(prev, cur)` bases with every match its predecessor
+    // had, so the scan can start from that (usually much narrower) prefix
+    // window instead of the `min_shared` floor. When the predecessor's prefix
+    // does not carry over (empty narrow window), fall back to the floor
+    // window: the longest match may still reach `min_shared`.
+    let start = prev_kmer
+        .map(|pk| shared_prefix(pk, ea_kmer, k).max(min_shared as u32))
+        .unwrap_or(min_shared as u32);
+    let (mut j0, mut j) = window(start as usize);
+    if j0 == j && start as usize > min_shared {
+        (j0, j) = window(min_shared);
+    }
     if j == j0 {
         return Ok(hits);
     }
