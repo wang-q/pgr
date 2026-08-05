@@ -35,21 +35,23 @@ Notes:
 * --kmer/--smer/--window apply only to genome-sequence inputs; .pgi inputs carry
   their parameters in the index header.
 * K-mers occurring at least --freq times on either side are skipped.
-* Chains shorter than --min-span on either axis are dropped.
+* Without extension sequences (a .pgi pair without --ref-seq/--query-seq)
+  each tube is emitted as one geometric block; with sequences the tubes are
+  refined by FastGA's mid-line wave into scored multi-block records.
 * --ref-seq/--query-seq accept FASTA (.fa/.fa.gz) or .2bit files.
 
 Examples:
 1. Align two genomes directly (indexes built automatically):
    pgr align pgi ref.fa query.fa -o out.psl
 2. Tune seed filtering and chaining:
-   pgr align pgi ref.fa query.fa -f 20 -c 100 -s 2000 --band 64 -o out.psl
+   pgr align pgi ref.fa query.fa -f 20 -o out.psl
 3. Reuse self-built indexes:
    pgr pgi build ref.fa -o ref.pgi
    pgr pgi build query.fa -o query.pgi
    pgr align pgi ref.pgi query.pgi --ref-seq ref.fa --query-seq query.fa -o out.psl
-4. Stitch chains across small insertions:
-   pgr align pgi ref.fa query.fa --merge-gap 10000 -o out.psl
-5. Lower the partial-seed floor (tube defaults to FastGA's plen floor of 12):
+4. Chain without extension sequences (geometric blocks):
+   pgr align pgi ref.pgi query.pgi -o out.psl
+5. Lower the partial-seed floor (default is FastGA's plen floor of 12):
    pgr align pgi ref.fa query.fa --min-shared 16 -o out.psl
 6. Keep the automatically built indexes:
    pgr align pgi ref.fa query.fa --keep-index -o out.psl
@@ -82,47 +84,10 @@ Examples:
                 .help("K-mers occurring at least this often on either side are skipped as seeds"),
         )
         .arg(
-            Arg::new("min_span")
-                .short('c')
-                .long("min-span")
-                .default_value("85")
-                .value_parser(value_parser!(u32))
-                .help("Minimum per-axis seed span (bp) for a chain"),
-        )
-        .arg(
-            Arg::new("max_gap")
-                .short('s')
-                .long("max-gap")
-                .default_value("1000")
-                .value_parser(value_parser!(u32))
-                .help("Maximum bp gap between consecutive seeds in a chain"),
-        )
-        .arg(
-            Arg::new("band")
-                .long("band")
-                .default_value("128")
-                .value_parser(value_parser!(u32))
-                .help("Diagonal band half-width (bp) around the chain mean"),
-        )
-        .arg(
-            Arg::new("merge_gap")
-                .long("merge-gap")
-                .default_value("5000")
-                .value_parser(value_parser!(u32))
-                .help("Maximum gap (bp) to merge colinear chains shifted in diagonal (IS-element breaks)"),
-        )
-        .arg(
             Arg::new("min_shared")
                 .long("min-shared")
                 .value_parser(value_parser!(usize))
-                .help("Minimum shared seed length (bp); default = k for greedy, 12 for tube"),
-        )
-        .arg(
-            Arg::new("workflow")
-                .long("workflow")
-                .default_value("greedy")
-                .value_parser(["greedy", "tube"])
-                .help("Chaining workflow: greedy chains (default) or FastGA tubes"),
+                .help("Minimum shared seed length (bp); default = FastGA's plen floor (12)"),
         )
         .arg(
             Arg::new("kmer")
@@ -208,15 +173,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     crate::cmd_pgr::args::ensure_outfile_distinct(outfile, inputs.iter().map(|s| s.as_str()))?;
     let params = pgr::libs::pgi::align::AlignParams {
         freq: *args.get_one::<u32>("freq").unwrap(),
-        min_span: *args.get_one::<u32>("min_span").unwrap(),
-        max_gap: *args.get_one::<u32>("max_gap").unwrap(),
-        band: *args.get_one::<u32>("band").unwrap(),
-        merge_gap: *args.get_one::<u32>("merge_gap").unwrap(),
         min_shared: args.get_one::<usize>("min_shared").copied(),
-        workflow: match args.get_one::<String>("workflow").unwrap().as_str() {
-            "tube" => pgr::libs::pgi::align::Workflow::Tube,
-            _ => pgr::libs::pgi::align::Workflow::Greedy,
-        },
     };
     let keep = args.get_flag("keep_index");
     let parallel = *args.get_one::<usize>("parallel").unwrap();
@@ -303,12 +260,9 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         p.write_to(&mut writer)?;
     }
     log::info!(
-        "wrote {} PSL blocks (freq={}, min-span={}, max-gap={}, band={}) to {}",
+        "wrote {} PSL blocks (freq={}) to {}",
         psls.len(),
         params.freq,
-        params.min_span,
-        params.max_gap,
-        params.band,
         outfile
     );
     Ok(())

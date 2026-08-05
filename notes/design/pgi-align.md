@@ -16,8 +16,8 @@
 
 ### 0.1 一句话
 
-`pgr align pgi` 完整实现"种子归并 → 链化（greedy/tube）→ 扩展（banded
-仿射 gap / Myers wave）→ PSL"，与 FastGA 对照：chainnet 覆盖持平（差
+`pgr align pgi` 完整实现"种子归并 → tube 链化（FastGA `align_contigs`）→
+mid-line wave 扩展 → PSL"，与 FastGA 对照：chainnet 覆盖持平（差
 0.0-0.015%）、阶段耗时持平（~0.8s vs ~0.7s）、峰值内存更低（224 vs
 332 MB）、端到端反超 ~2.3×。
 
@@ -31,13 +31,19 @@
 
 ### 0.3 已落地（截至 2026-08-05）
 
-- **核心管线**（2026-08-02）：种子归并 → greedy/tube 链化 → banded/wave
-  扩展 → PSL；ref 流式 + query mmap；负链 PSL 帧按 UCSC 约定。
+- **核心管线**（2026-08-02）：种子归并 → tube 链化 → wave 扩展 → PSL；
+  ref 流式 + query mmap；负链 PSL 帧按 UCSC 约定。
 - **对齐 FastGA**（2026-08-03）：`pgi build --mask`（soft mask 感知种子）、
   单输入自比对。
 - **内部优化**（2026-08-05）：`dist pgi`/`stat`/`to-hv` 复用 `PgiMmap`
   （§3.2）；种子合并 lcp 连续传播（§3.3）——两者 PSL 输出均逐字节一致
   （lcp 种子级有 0~-50 差异，被链化吸收，见 §3.3）。
+- **greedy 移除 + self 特判**（2026-08-05）：实测 greedy 链化 + 窗口扩展
+  在 chainnet syntenic 覆盖上比 tube 低 3.4-3.7 pp（两对验证），且是
+  唯一需要 `--min-span/--max-gap/--band/--merge-gap` 与 `--workflow` 的
+  复杂流程；无序列场景改用 chain_tubes + tube 几何块（§3.5.5），greedy
+  整套已删除（§3.5.7）。self 模式补上 FastGA 的对角线 0 限制：同 contig
+  正链 wave/回溯路径不允许跨越 diag 0，跨 0 的 tube 整管跳过（§3.5.6）。
 
 ### 0.4 明确不做
 
@@ -110,8 +116,7 @@ key 相等按 (a_strand, b_strand) 解析方向：
    保留），而非固定窗口的条目数。
 3. **canonical 去重**：`pgi build` 每个位置同时存 fwd/RC 两个 key，a 侧只
    保留 `kmer <= rc(kmer)` 的 canonical 条目（物理命中只发一次）。
-4. **floor = 12**：tube 默认 `min-shared` 为 FastGA 的 plen 下限 12；
-   greedy 默认 = k（精确匹配）。
+4. **floor = 12**：默认 `min-shared` 为 FastGA 的 plen 下限 12。
 
 > 实现注记（2026-08-05）：merge 默认以相邻条目 lcp 起步窗口（FastGA
 > `vlcp` 传播的"匹配延续"近似，§3.3），会跳过 `[min_shared, lcp)` 的
@@ -119,10 +124,27 @@ key 相等按 (a_strand, b_strand) 解析方向：
 
 #### 1.3.3 链化
 
-- **greedy（默认）**：按 (contig_a, contig_b, 方向) 分组，命中按
-  (diag, pos_a) 排序后贪心延伸（`|diag−均线| ≤ band` 且 Δpos ≤ max_gap），
-  跨度 ≥ min_span 才保留；`--merge-gap` 合并相邻共线链（IS 元件等对角线
-  平移断链）。
+**tube（唯一流程，2026-08-05 起）**：FastGA `align_contigs` 的忠实移植。
+种子按对角线分桶（宽 64）→ 相邻桶对按 anti 归并（排序键 (diag 桶,
+anti)，§3.5.3 修过顺序 bug）→ tube 维护 anti 覆盖与对角线范围，种子
+anti 间隔超 `CHAIN_BREAK`（2000 bp，FastGA 内部值）断开、覆盖达
+`CHAIN_MIN`（85 bp，单轴口径 = FastGA 170 anti）触发。tube 扩展用
+mid-line wave（BUCK_ANTI=128 滑动），每个 tube 独立 `alast`（并行化
+替代 FastGA 的逐对桶共享）+ 输出端 `dedupe_contained`（0.95 阈值，
+§3.5.3 修过误删）。链化/扩展参数全部写死 FastGA 常量（BUCK=64、
+BREAK=2000、MIN_COV=85、BUCK_ANTI=128、TUBE_MIN_LEN=50、
+TUBE_MIN_RATE=0.35），CLI 仅暴露 `-f` 与 `--min-shared`。
+
+**无序列输入**（`.pgi` 对 `.pgi`、不带 `--ref-seq/--query-seq`）：
+`chain_tubes` 不需要序列，走 tube 几何块——每个 tube 按其种子跨度
+（`a_start/a_end/b_start/b_end`）输出一个单块 PSL（§3.5.7）。有序列时
+tube 用 mid-line wave 输出带真实身份率的多块 PSL。
+
+**为什么删掉 greedy**（2026-08-05 实测，见 §3.5.5/§3.5.7）：greedy 用
+精确 k-mer 种子 + 窗口扩展跳过低分区间，chainnet syntenic 覆盖比 tube
+低 3.4-3.7 pp（Nissle 81.85% vs 85.29%、EC958 82.56% vs 86.32%，8 线程
+release）；greedy 的身份率略高（97.73% vs 96.60%）但那是"挑容易的比对"，
+对 ChainNet 目的（覆盖）不合算；tube 反而更快（4.9s vs 6.3s，含建索引）。
 - **tube**：种子按对角线分桶（宽 64）→ 相邻桶对按 anti 归并（排序键
   (diag 桶, anti)，§3.5.3 修过顺序 bug）→ tube 维护 anti 覆盖与对角线范围，
   种子 anti 间隔超 `CHAIN_BREAK`（2000 bp，FastGA 内部值）断开、覆盖达
@@ -166,8 +188,7 @@ key 相等按 (a_strand, b_strand) 解析方向：
 
 ```
 pgr align pgi <ref> <query> -o out.psl
-  [--freq 10] [--min-span 85] [--max-gap 1000] [--band 128] [--merge-gap 5000]
-  [--min-shared N] [--workflow greedy|tube] [--parallel 8] [--keep-index]
+  [--freq 10] [--min-shared N] [--parallel 8] [--keep-index]
   [-k 40] [--smer 8] [--window 5]
   [--ref-seq ref.fa|2bit] [--query-seq query.fa|2bit]
 ```
@@ -179,8 +200,8 @@ pgr align pgi <ref> <query> -o out.psl
   静默错误）；
 - 两侧参数必须一致（复用 `dist pgi` 校验）；`-k/--smer/--window` 仅序列
   输入生效（`.pgi` 读索引头），显式传入与复用缓存冲突时报错；
-- 无序列：每条链一个 PSL 块；有序列：链细化成带真实身份率的块（16 kb
-  窗口 + 2 kb 重叠滑动）；
+- 无序列输入（`.pgi` 对 `.pgi`）：每个 tube 一个几何 PSL 块（种子跨度）；
+  有序列：mid-line wave 输出带真实身份率的多块 PSL；
 - query 索引（或现场建的临时索引）必须是真实文件（mmap 不支持
   stdin/gzip）。
 
@@ -206,9 +227,9 @@ pgr align pgi <ref> <query> -o out.psl
 | EC958 | 86.38% | 756 | 0.81s | 86.3% / ~0.7s | **205 MB** | — |
 | Nissle | 85.28% | 1213 | 0.65s | 85.30% / ~0.7s | **207 MB** | — |
 
-> 注：块数/覆盖按当前默认 `min-shared=12`（tube）实测；早期记录的
-> 588/794/793 块对应 k/2=20 时代（§3.5.2）。三对 PSL 与全量读入版
-> **逐字节一致**（mmap 改动验证）。BREAK=1000→2000 对齐 FastGA 后
+> 注：块数/覆盖按当前默认 `min-shared=12`（tube，2026-08-05 起默认）
+> 实测；早期记录的 588/794/793 块对应 k/2=20 时代（§3.5.2）。三对 PSL
+> 与全量读入版**逐字节一致**（mmap 改动验证）。BREAK=1000→2000 对齐 FastGA 后
 > 实测（§5.1 勘误 5）：块数 +1.5%，syntenic 覆盖 Sakai +0.02%、
 > EC958 -0.09%、Nissle ±0.00%（噪声级），耗时/内存持平。
 
@@ -239,7 +260,8 @@ FastGA 驱动版本对比 syntenic MAF。下表为早期管线快照（2026-08-0
 ### 2.4 10 株 cohort 两两验证（45 对）
 
 扩展块身份率矩阵（初测 2026-08-02；行×列 = ref×query，块数为扩展块数，
-默认参数含 `--merge-gap 5000`）：
+默认参数含 `--merge-gap 5000`；该参数随 greedy 在 2026-08-05 移除，
+当前默认即 tube 常量）：
 
 - 分布 97.0-99.6%，与亲缘关系一致（e24377a/se11/ec2011c_3493 聚类
   99.1%+、nissle–cft073 99.6%）；合并块后身份率低 ~0.2-0.5%；整体比
@@ -384,6 +406,7 @@ mmap/resident 等价性测试（dist 指标、hv 投影、unique 计数）。
 | dedupe 误删 | 丢 3.1 kb 真实覆盖 | 双轴重叠阈值 0.80→0.95 |
 | 大 tube 同源门控 | 误杀整管（7.3 kb，99% 身份） | 根因修复后直接移除（教训：门控类启发式要复核） |
 | 负链 PSL 帧 | 所有 '-' 块被 chainnet 丢弃（Nissle 0.32% 差距主因） | qStart/qEnd 正链帧、qStarts RC 帧（UCSC 约定） |
+| self 跨 diag 0（2026-08-05） | self 模式可能输出"同坐标自己 vs 自己"的假比对块 | wave 对角线限制（minp/maxp）+ banded 回溯路径（§3.5.6） |
 
 #### 3.5.4 内存与性能优化结论
 
@@ -398,6 +421,93 @@ mmap/resident 等价性测试（dist 指标、hv 投影、unique 计数）。
   收敛为纯索引管理 build/stat/to-hv）；基因组输入自动建索引（sibling 复用 +
   mtime 失效 + 参数一致性校验），`.pgi` 输入配 `--ref-seq/--query-seq`
   做 contig 校验。
+
+#### 3.5.5 默认 workflow 转 tube：greedy vs tube 实测（2026-08-05）
+
+**动机**：一直保留"greedy 默认、tube 可选"，但从未在同一代码上对比两者
+的最终产出。2026-08-05 实测（当前代码，8 线程 release，MG1655 为 ref，
+含自动建索引）：
+
+| 指标 | greedy（原默认） | tube（现默认） |
+|---|---:|---:|
+| Nissle chainnet syntenic 覆盖 | 81.85%（769 块） | **85.29%（846 块）** |
+| EC958 chainnet syntenic 覆盖 | 82.56%（724 块） | **86.32%（852 块）** |
+| Nissle PSL 记录 | 1,574（全单块） | 1,305（多块带 gap） |
+| Nissle PSL identity | 97.73% | 96.60% |
+| 种子 | exact k-mer（min-shared=k） | partial（floor 12） |
+| 端到端（含建索引×2） | 6.3 s | **4.9 s** |
+
+**greedy 为什么覆盖低**：
+
+1. 种子是精确 k-mer（§5.9 证明部分匹配在贪心链化下假阳性爆炸），indel
+   复杂区（Nissle 每 ~300 bp 一个 indel）链直接断；
+2. 16 kb 窗口 banded SW 在低分窗口返回 None，链回退几何块（identity 0）
+   被 chainnet 过滤——正是 bench 笔记里"Sakai 差距来自分歧区的 wave 式
+   补齐"所指。greedy identity 更高是"挑容易的比对"，对 ChainNet 覆盖
+   不合算。
+
+**结论**：默认与推荐流程全面转 tube（覆盖 +3.4-3.7 pp、更快）。无序列
+场景（`.pgi` 对 `.pgi`）本就是一点小例外，为此保留整套 greedy
+（链化 + 窗口扩展 + 5 个 CLI 参数）不合算——`chain_tubes` 不需要序列，
+无序列时直接输出 tube 几何块即可。**greedy 整套已删除**（§3.5.7）。
+
+#### 3.5.6 self 模式对角线 0 限制（2026-08-05）
+
+**动机**：self 模式（单输入自比对）是本工具重要功能；对照 FastGA 发现
+pgr 缺 `align_contigs` 的 self 分支（FastGA.c:3220-3240）：同 contig
+正向自比对时，wave 对角线不允许跨越 0（精确自同线）——tube 全正则
+`minp=1`、全负则 `maxp=-1`，跨 0 的 tube 整管跳过。
+
+**实现**（对照源码语义）：
+
+1. `wave.rs::local_alignment` 加 `selfie` 参数：`forward_wave_mid` 扩展
+   时用 `minp/maxp` 硬夹对角线（FastGA `forward_wave` 的 `low>=minp`/
+   `hgh<=maxp` 分支），反向 wave 的边界镜像换算（k' = m-n-k）；
+2. 回溯路径：FastGA 盒内 DP 带宽 = 端点 diag 差（align.c Gap_Improver
+   `Diag=|Fdag-d|+1`），pgr 的 `dandc_nd` 无带可能跨 0——新增
+   `banded_edit_ops`（unit-cost 带限 DP + 回溯），self 模式下带 =
+   **tube 原始带 ∪ 端点 diag** ∩ 单侧限制（端点会因拷贝边界漂移，如
+   tandem repeat 处 diag 从 -400 漂到 -381，只锁端点带会丢失匹配
+   对角线）；
+3. `extend_tube` 只在 `a_contig==b_contig && strand==0` 时启用 selfie
+   （FastGA `SELF && ctg1==ctg2 && !comp`）；跨 contig 的 repeat 拷贝
+   不受限。
+
+**验证**：wave 单测（正/负对角线路径不跨 0、跨 0 tube 返回 None）、
+align 单测（tandem repeat self 输出块无 diag 0）、真实数据 mg1655 self
+447 条记录 / 9,647 个 block，**零个 diag 0 块**。附带修复
+`align_to_psl_ext`（非流式）漏调 `drop_self_hits` 的不一致。
+
+#### 3.5.7 greedy 流程删除（2026-08-05）
+
+**动机**：上一轮把默认 workflow 转 tube 后，greedy 的唯一保留理由是
+"无序列回退路径"。用户指出：无序列场景（`.pgi` 对 `.pgi` 不带
+`--ref-seq/--query-seq`）很容易判断，为这一点例外保留整套复杂流程
+（贪心链化 + 中间同源验证 + 相邻链合并 + 16 kb 窗口 banded 扩展 + 5 个
+CLI 参数）不值得。
+
+**做法**：
+
+1. `Tube` 结构增加种子跨度字段（`a_start/a_end/b_start/b_end`，
+   `chain_tubes`/`tubes_for_group` 归并时累计，语义同原 greedy 链的
+   种子跨度）；
+2. 新增 `tube_to_psl`（原 `chain_to_psl` 逻辑，字段换 tube）；无序列的
+   `align_to_psl`/`align_to_psl_streaming` 改为 `chain_tubes` + 几何块；
+3. 删除：`Chain`/`ChainCursor`/`chain_hits`/`merge_adjacent_chains`/
+   `middle_is_homologous(_range)`/`push_chain`/`chain_to_psl`/
+   `extend_chain`/`chain_windows`/`extend_window`/`WindowJob`/
+   `EXTEND_WINDOW/STEP`/`GREEDY_MIDDLE_MIN_GAP`/`MIDDLE_*_CAP`/
+   `SeqPair`、`Workflow` 枚举、`AlignParams` 的
+   `min_span/max_gap/band/merge_gap/workflow` 字段；
+4. CLI：`align pgi` 与 `rept e-align` 删除
+   `--workflow/--min-span/--max-gap/--band/--merge-gap` 参数；
+   `AlignParams` 只剩 `freq` + `min_shared`；
+5. 测试：7 个链化单测 + 窗口扩展测试删除，`psl_block_coordinates` 改为
+   tube 版；CLI 无序列测试直接走 tube 几何块。
+
+**收益**：`align.rs` 从 ~2,800 行降到 ~1,800 行；CLI 更简单；无序列能力
+保留（tube 几何块与 greedy 几何块同为种子跨度单块 PSL）。`rept e-align`
+管线同步清理（RM 配方只用 `-f`/`--min-shared`，见 repeat-masking.md）。
 
 ### 3.6 完整 LCP（vlcp 表 / `.pgi` v3 LBYTE）：尝试 → 不做
 
@@ -481,9 +591,10 @@ PgiMmap 前缀掩码（`pack_kmer` 高位对齐，原 mask 取低位致 k%4≠0 
 
 - 数据：`tests/genome/{mg1655,sakai,nissle1917,ec958}.fa.gz`（另有
   cft073/e2348_69/e24377a/ec042/se11 等 cohort 株）；
-- 命令：`pgr align pgi <ref> <query> --ref-seq --query-seq --workflow tube`
-  （8 线程默认），release；`/usr/bin/time -v` + `RUST_LOG=debug` 阶段探针
-  （merge/chain_tubes/extend + VmHWM）；
+- 命令：`pgr align pgi <ref> <query> --ref-seq --query-seq`（8 线程默认，
+  2026-08-05 起 tube 是唯一流程，无 `--workflow`），release；
+  `/usr/bin/time -v` + `RUST_LOG=debug` 阶段探针（merge/chain_tubes/
+  extend + VmHWM）；
 - 覆盖：`pgr psl to-chain` → `pgr pl chainnet --syn` syntenic 覆盖；
 - 端到端（含建索引 ×2）见 [[benchmarks/bench-pgi-align-vs-fastga.md]]；
 - 10 株 cohort 验证见 [[benchmarks/dist-cohort-validation.md]]（引用

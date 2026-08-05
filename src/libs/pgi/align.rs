@@ -2,12 +2,10 @@
 
 use super::dist::validate_compatible;
 use super::{unpack_position, PgiIndex, PgiQuery, PgiStream};
-use crate::libs::alignment::align_banded_local;
 use crate::libs::alignment::coords::{reverse_range, reverse_range_pair};
 use crate::libs::alignment::wave::local_alignment;
 use crate::libs::fmt::psl::Psl;
 use crate::libs::nt::{complement, rc_key, rev_comp};
-use crate::libs::poa::align::AlignmentParams;
 use rayon::prelude::*;
 use std::io::Read;
 
@@ -17,42 +15,16 @@ pub struct AlignParams {
     /// K-mers occurring at least this often on either side are skipped as
     /// seeds (FastGA's frequency cutoff).
     pub freq: u32,
-    /// Minimum per-axis seed span (bp) for a chain to be kept.
-    pub min_span: u32,
-    /// Maximum bp gap between consecutive seeds in a chain.
-    pub max_gap: u32,
-    /// Diagonal band half-width (bp) around the chain mean.
-    pub band: u32,
-    /// Maximum gap (bp) to merge colinear chains shifted in diagonal
-    /// (IS-element breaks); same-diagonal gaps stay independent blocks.
-    pub merge_gap: u32,
     /// Minimum shared seed length (bp); `None` selects the workflow default
-    /// (FastGA's plen floor of 12 for tube, exact k-mers for greedy).
+    /// (FastGA's plen floor of 12).
     pub min_shared: Option<usize>,
-    /// Chaining workflow: FastGA tube chaining or the default greedy chains.
-    pub workflow: Workflow,
-}
-
-/// Chaining workflow.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum Workflow {
-    /// FastGA `align_contigs` tube chaining.
-    Tube,
-    /// Default greedy anti-diagonal chains.
-    #[default]
-    Greedy,
 }
 
 impl Default for AlignParams {
     fn default() -> Self {
         Self {
             freq: 10,
-            min_span: 85,
-            max_gap: 1000,
-            band: 128,
-            merge_gap: 5000,
             min_shared: None,
-            workflow: Workflow::Greedy,
         }
     }
 }
@@ -312,15 +284,14 @@ fn shared_prefix(a: u128, b: u128, k: usize) -> u32 {
     ((2 * k).saturating_sub(bitlen as usize) / 2) as u32
 }
 
-/// Effective minimum shared seed length: `params.min_shared` or `k` (exact
-/// k-mers), capped at `k`.
+/// Effective minimum shared seed length: `params.min_shared` or FastGA's
+/// adaptamer plen floor (12), capped at `k`.
 fn effective_min_shared(k: usize, params: &AlignParams) -> usize {
     match params.min_shared {
         Some(v) => v.min(k),
-        // FastGA's adaptamer merge emits seeds with plen in 12..=k; the tube
-        // workflow uses that floor to recover indel-shifted regions.
-        None if params.workflow == Workflow::Tube => 12.min(k),
-        None => k,
+        // FastGA's adaptamer merge emits seeds with plen in 12..=k; the
+        // floor recovers indel-shifted regions.
+        None => 12.min(k),
     }
 }
 
@@ -336,31 +307,6 @@ fn peak_rss_mb() -> u64 {
         .map(|kb| kb / 1024)
         .unwrap_or(0)
 }
-/// One chained diagonal segment on a single (contig_a, contig_b, strand) pair.
-#[derive(Debug, Clone, Copy)]
-pub struct Chain {
-    /// Reference contig id.
-    pub a_contig: u32,
-    /// Query contig id.
-    pub b_contig: u32,
-    /// 0 = forward, 1 = reverse.
-    pub strand: u8,
-    /// Seed span start on the reference.
-    pub a_start: u32,
-    /// Seed span end (exclusive, includes `k`) on the reference.
-    pub a_end: u32,
-    /// Seed span start on the query, in orientation space.
-    pub b_start: u32,
-    /// Seed span end (exclusive, includes `k`) on the query, orientation space.
-    pub b_end: u32,
-    /// Number of seed hits in the chain.
-    pub seeds: usize,
-    /// Mean diagonal (a_pos - b_pos in orientation space) of the seeds.
-    pub diag: i64,
-    /// Seed diagonal spread (max - min).
-    pub diag_span: i64,
-}
-
 /// One FastGA-style tube: a seed chain with its anti-diagonal range
 /// (`anti = a_pos + b_pos`) and diagonal band (`diag = a_pos - b_pos`).
 #[derive(Debug, Clone, Copy)]
@@ -376,11 +322,15 @@ pub struct Tube {
     pub diag_min: i64,
     /// Diagonal band high (bp).
     pub diag_max: i64,
+    /// Seed span start on the reference.
+    pub a_start: u32,
+    /// Seed span end (exclusive, includes `k`) on the reference.
+    pub a_end: u32,
+    /// Seed span start on the query, in orientation space.
+    pub b_start: u32,
+    /// Seed span end (exclusive, includes `k`) on the query, orientation space.
+    pub b_end: u32,
 }
-
-/// Reference and query extension sequences, passed to the adjacent-chain
-/// merge so it can verify the intervening region is homologous.
-type SeqPair<'a> = (&'a [(String, Vec<u8>)], &'a [(String, Vec<u8>)]);
 
 /// FastGA `align_contigs` tube chaining over seed hits.
 ///
@@ -507,6 +457,10 @@ fn tubes_for_group(
             let mut cov: u64 = 0;
             let mut dgmin = 2 * buck;
             let mut dgmax = 0i64;
+            let mut a_lo = i64::MAX;
+            let mut a_hi = 0i64;
+            let mut b_lo = i64::MAX;
+            let mut b_hi = 0i64;
             while bi < b_seeds.len() || mi < m_seeds.len() {
                 let anti_b = b_seeds
                     .get(bi)
@@ -541,6 +495,10 @@ fn tubes_for_group(
                     dgmin = dgmin.min(dg);
                     dgmax = dgmax.max(dg);
                     alow = alow.min(anti);
+                    a_lo = a_lo.min(h.a_pos as i64);
+                    a_hi = a_hi.max(h.a_pos as i64 + k as i64);
+                    b_lo = b_lo.min(h.b_pos as i64);
+                    b_hi = b_hi.max(h.b_pos as i64 + k as i64);
                 } else {
                     if cov >= min_cov {
                         local.push(Tube {
@@ -551,6 +509,10 @@ fn tubes_for_group(
                             anti_high: ahgh,
                             diag_min: cb * buck + dgmin,
                             diag_max: cb * buck + dgmax,
+                            a_start: a_lo as u32,
+                            a_end: a_hi as u32,
+                            b_start: b_lo as u32,
+                            b_end: b_hi as u32,
                         });
                     }
                     alow = anti;
@@ -558,6 +520,10 @@ fn tubes_for_group(
                     cov = ext as u64;
                     dgmin = dg;
                     dgmax = dg;
+                    a_lo = h.a_pos as i64;
+                    a_hi = h.a_pos as i64 + k as i64;
+                    b_lo = h.b_pos as i64;
+                    b_hi = h.b_pos as i64 + k as i64;
                 }
             }
             if cov >= min_cov {
@@ -569,6 +535,10 @@ fn tubes_for_group(
                     anti_high: ahgh,
                     diag_min: cb * buck + dgmin,
                     diag_max: cb * buck + dgmax,
+                    a_start: a_lo as u32,
+                    a_end: a_hi as u32,
+                    b_start: b_lo as u32,
+                    b_end: b_hi as u32,
                 });
             }
             local
@@ -601,6 +571,7 @@ fn extend_tube(
     b_revs: &[Vec<u8>],
     b_comps: &[Vec<u8>],
     b_rcs: &[Vec<u8>],
+    self_mode: bool,
 ) -> Vec<Psl> {
     let Some((_, a_int)) = a_seqs.get(tube.a_contig as usize) else {
         return Vec::new();
@@ -623,6 +594,9 @@ fn extend_tube(
     } else {
         &b_comps[tube.b_contig as usize]
     };
+    // FastGA self mode: only a same-contig forward tube is a self-alignment;
+    // its wave must not cross diagonal 0 (the exact self-identity line).
+    let selfie = self_mode && tube.a_contig == tube.b_contig && tube.strand == 0;
     let mut alow = tube.anti_low.max(*alast);
     let ahgh = tube.anti_high - BUCK_ANTI;
     let mut dgmin = tube.diag_min;
@@ -642,7 +616,7 @@ fn extend_tube(
                 break;
             }
         }
-        if let Some(aln) = local_alignment(q, a_int, rt, rq, dgmin, dgmax, amid) {
+        if let Some(aln) = local_alignment(q, a_int, rt, rq, dgmin, dgmax, amid, selfie) {
             let rlen = (aln.t_end - aln.t_start) as i64;
             if rlen >= TUBE_MIN_LEN && TUBE_MIN_RATE * rlen as f64 >= aln.diffs as f64 {
                 let strand = if tube.strand == 0 { "+" } else { "-" };
@@ -737,361 +711,24 @@ fn overlap_frac(a1: i32, a2: i32, b1: i32, b2: i32) -> f64 {
     (ov.max(0) as f64) / own as f64
 }
 
-/// Seed gaps below this size (on both axes) are not homology-checked in the
-/// greedy loop. For SD-sized blocks (>= 1000 bp) an unchecked gap of this
-/// size keeps the chimeric identity at 2*1000/(2*1000+200) >= 0.909, above
-/// the 0.90 SD filter, so it cannot silently drop a real pair; skipping
-/// small gaps keeps dense seed streams cheap.
-const GREEDY_MIDDLE_MIN_GAP: u32 = 200;
-
-/// Greedy anti-diagonal chaining of seed hits.
-///
-/// Hits are scanned per (contig_a, contig_b, strand) group sorted by diagonal
-/// then reference position. A chain extends while the next hit stays within
-/// `band` of the group mean diagonal and within `max_gap` on both axes; an
-/// in-gap hit outside the band is ignored (it belongs to another tube and
-/// must not split the chain), and only a group change or an over-`max_gap`
-/// jump closes the chain. Chains covering less than `min_span` on either
-/// axis are dropped.
-///
-/// `seqs` (when provided) lets the adjacent-chain merge verify that the
-/// intervening sequences are homologous before stitching; without it the
-/// merge is geometric only.
-pub fn chain_hits(
-    hits: &[SeedHit],
-    k: u32,
-    min_span: u32,
-    max_gap: u32,
-    band: u32,
-    merge_gap: u32,
-    seqs: Option<SeqPair<'_>>,
-) -> Vec<Chain> {
-    let mut sorted = hits.to_vec();
-    sorted.sort_unstable_by_key(|h| {
-        let diag = h.a_pos as i64 - h.b_pos as i64;
-        (h.a_contig, h.b_contig, h.strand, diag, h.a_pos)
-    });
-
-    let mut cur: Option<ChainCursor> = None;
-    let mut chains = Vec::new();
-    for h in &sorted {
-        let diag = h.a_pos as i64 - h.b_pos as i64;
-        if let Some(c) = cur {
-            if h.a_contig as u32 == c.a_contig
-                && h.b_contig as u32 == c.b_contig
-                && h.strand == c.strand
-            {
-                let mean = c.diag_sum / c.count as i64;
-                let gap_a = h.a_pos as i64 - c.last_a as i64;
-                let gap_b = h.b_pos as i64 - c.last_b as i64;
-                let in_gap =
-                    (0..=max_gap as i64).contains(&gap_a) && (0..=max_gap as i64).contains(&gap_b);
-                if in_gap && (diag - mean).abs() <= band as i64 {
-                    // A seed gap in BOTH sequences may be a genuine seed gap
-                    // inside one block, or the seam between two reciprocal
-                    // chains of an inverted repeat whose copies are closer
-                    // than `max_gap`. Bridging the latter produces a chimeric
-                    // chain whose diluted identity is dropped by the SD
-                    // filter, losing both real hits. With sequences
-                    // available, verify the intervening span before
-                    // bridging.
-                    let middle_ok = match seqs {
-                        Some((a_seqs, b_seqs))
-                            if gap_a >= GREEDY_MIDDLE_MIN_GAP as i64
-                                && gap_b >= GREEDY_MIDDLE_MIN_GAP as i64 =>
-                        {
-                            middle_is_homologous_range(
-                                c.a_contig,
-                                c.b_contig,
-                                c.strand,
-                                c.last_a.saturating_add(k),
-                                h.a_pos,
-                                c.last_b.saturating_add(k),
-                                h.b_pos,
-                                a_seqs,
-                                b_seqs,
-                                band,
-                            )
-                        }
-                        _ => true,
-                    };
-                    if middle_ok {
-                        cur = Some(ChainCursor {
-                            last_a: h.a_pos,
-                            last_b: h.b_pos,
-                            diag_sum: c.diag_sum + diag,
-                            count: c.count + 1,
-                            diag_min: c.diag_min.min(diag),
-                            diag_max: c.diag_max.max(diag),
-                            ..c
-                        });
-                        continue;
-                    }
-                    // Not homologous: close the current chain and let this
-                    // seed start a fresh one.
-                    push_chain(&mut chains, &cur, k, min_span);
-                } else if in_gap {
-                    continue; // outside the diagonal band: ignore, keep chain
-                } else {
-                    push_chain(&mut chains, &cur, k, min_span);
-                }
-            } else {
-                push_chain(&mut chains, &cur, k, min_span);
-            }
-        }
-        cur = Some(ChainCursor {
-            a_contig: h.a_contig as u32,
-            b_contig: h.b_contig as u32,
-            strand: h.strand,
-            first_a: h.a_pos,
-            last_a: h.a_pos,
-            first_b: h.b_pos,
-            last_b: h.b_pos,
-            diag_sum: diag,
-            diag_min: diag,
-            diag_max: diag,
-            count: 1,
-        });
-    }
-    push_chain(&mut chains, &cur, k, min_span);
-    merge_adjacent_chains(&mut chains, band, merge_gap, seqs);
-    chains
-}
-
-/// Merge adjacent chains on the same contig pair and strand whose spans are
-/// within `merge_gap` and whose diagonals are within `band` of each other
-/// *and differ*.
-///
-/// Insertions (IS elements etc.) shift the local diagonal past the chaining
-/// band and split one syntenic block into several greedy chains; this pass
-/// stitches them back together. Two chains on exactly the same diagonal
-/// separated by a seed gap are distinct homology blocks (e.g. the two
-/// reciprocal chains of an inverted repeat in a self-alignment), not one
-/// split block; merging them produces a chimeric chain whose identity is
-/// diluted by the gap and drops both real hits at the SD filter.
-///
-/// Two distinct homology blocks can also sit on nearly equal diagonals (the
-/// copy pairs of a multi-copy family) with both spans within `merge_gap`; a
-/// purely geometric merge would stitch them into a chimeric chain whose
-/// identity is diluted below the SD filter. When `seqs` are available and
-/// both intervening spans are non-empty, the merge additionally requires
-/// the intervening sequences to be homologous.
-fn merge_adjacent_chains(
-    chains: &mut Vec<Chain>,
-    band: u32,
-    merge_gap: u32,
-    seqs: Option<SeqPair<'_>>,
-) {
-    if chains.len() < 2 {
-        return;
-    }
-    chains.sort_by_key(|c| (c.a_contig, c.b_contig, c.strand, c.a_start));
-    let mut out: Vec<Chain> = Vec::with_capacity(chains.len());
-    for c in chains.drain(..) {
-        if let Some(last) = out.last_mut() {
-            let same_group = last.a_contig == c.a_contig
-                && last.b_contig == c.b_contig
-                && last.strand == c.strand;
-            let gap_a = c.a_start as i64 - last.a_end as i64;
-            let gap_b = c.b_start as i64 - last.b_end as i64;
-            let middle_ok = match seqs {
-                Some((a_seqs, b_seqs)) if gap_a > 0 && gap_b > 0 => {
-                    middle_is_homologous(last, &c, a_seqs, b_seqs, band)
-                }
-                _ => true,
-            };
-            if same_group
-                && (0..=merge_gap as i64).contains(&gap_a)
-                && (0..=merge_gap as i64).contains(&gap_b)
-                && (c.diag - last.diag).abs() <= band as i64
-                && (c.diag - last.diag).abs() > 0
-                && middle_ok
-            {
-                let span = last.diag_span.max(c.diag_span) + (c.diag - last.diag).abs();
-                last.a_end = last.a_end.max(c.a_end);
-                last.b_end = last.b_end.max(c.b_end);
-                last.seeds += c.seeds;
-                last.diag = (last.diag + c.diag) / 2;
-                last.diag_span = span;
-                continue;
-            }
-        }
-        out.push(c);
-    }
-    *chains = out;
-}
-
-/// True when the sequence between two adjacent chains is homologous enough
-/// to be one continuous block (a seed gap), rather than two independent
-/// homology blocks that happen to sit on nearby diagonals.
-///
-/// The intervening target `[last.a_end, next.a_start)` and query span
-/// (orientation space) are aligned in the same diagonal band; both the
-/// aligned identity and the query coverage must stay high (>= 0.9) for the
-/// merge, matching the SD standard the chaining feeds.
-///
-/// The banded DP is O(middle * band); a user-raised `--merge-gap` must not
-/// turn an unverifiable huge middle into a giant allocation, so middles
-/// beyond [`MIDDLE_CHECK_CAP`] are conservatively kept separate.
-const MIDDLE_CHECK_CAP: usize = 50_000;
-/// The middle-homology DP is O(middle * band); a user-raised `--band` must
-/// not turn it into a giant allocation either. The check only needs to
-/// detect homology inside the expected diagonal offset (a few hundred bp),
-/// so the DP band is capped here; beyond it the check conservatively fails
-/// (the blocks stay separate, which is fragmentation, not loss).
-const MIDDLE_DP_BAND_CAP: usize = 256;
-
-fn middle_is_homologous(
-    last: &Chain,
-    next: &Chain,
-    a_seqs: &[(String, Vec<u8>)],
-    b_seqs: &[(String, Vec<u8>)],
-    band: u32,
-) -> bool {
-    middle_is_homologous_range(
-        last.a_contig,
-        last.b_contig,
-        last.strand,
-        last.a_end,
-        next.a_start,
-        last.b_end,
-        next.b_start,
-        a_seqs,
-        b_seqs,
-        band,
-    )
-}
-
-/// Range-based variant used by the greedy chain loop, where the "chains" are
-/// the chain under construction and the next seed rather than finished
-/// chains. An empty intervening range (seeds separated by less than `k`)
-/// trivially passes.
-#[allow(clippy::too_many_arguments)]
-fn middle_is_homologous_range(
-    a_contig: u32,
-    b_contig: u32,
-    strand: u8,
-    a_lo: u32,
-    a_hi: u32,
-    b_lo: u32,
-    b_hi: u32,
-    a_seqs: &[(String, Vec<u8>)],
-    b_seqs: &[(String, Vec<u8>)],
-    band: u32,
-) -> bool {
-    if a_hi <= a_lo || b_hi <= b_lo {
-        return true;
-    }
-    let Some((_, a_int)) = a_seqs.get(a_contig as usize) else {
-        return false;
-    };
-    let Some((_, b_int)) = b_seqs.get(b_contig as usize) else {
-        return false;
-    };
-    let a_mid = match a_int.get(a_lo as usize..a_hi as usize) {
-        Some(s) => s,
-        None => return false,
-    };
-    if a_mid.len() > MIDDLE_CHECK_CAP {
-        return false;
-    }
-    let b_len = b_int.len();
-    let (b_lo_f, b_hi_f) = if strand == 0 {
-        (b_lo as usize, b_hi as usize)
-    } else {
-        match (
-            b_len.checked_sub(b_hi as usize),
-            b_len.checked_sub(b_lo as usize),
-        ) {
-            (Some(lo), Some(hi)) => (lo, hi),
-            _ => return false,
-        }
-    };
-    let b_mid: Vec<u8> = match b_int.get(b_lo_f..b_hi_f) {
-        Some(s) if strand == 0 => s.to_vec(),
-        Some(s) => rev_comp(s).collect(),
-        None => return false,
-    };
-    if b_mid.len() > MIDDLE_CHECK_CAP {
-        return false;
-    }
-    let dp_band = (band as usize).min(MIDDLE_DP_BAND_CAP);
-    let Some(aln) = align_banded_local(&b_mid, a_mid, dp_band, 0, &AlignmentParams::default())
-    else {
-        return false;
-    };
-    let mut aligned = 0usize;
-    let mut matches = 0usize;
-    for (qb, tb) in aln.q_aln.iter().zip(&aln.t_aln) {
-        if *qb != b'-' && *tb != b'-' {
-            aligned += 1;
-            if qb == tb {
-                matches += 1;
-            }
-        }
-    }
-    if aligned == 0 {
-        return false;
-    }
-    let q_covered = aln.q_aln.iter().filter(|&&c| c != b'-').count();
-    matches as f64 / aligned as f64 >= 0.9 && q_covered as f64 / b_mid.len() as f64 >= 0.9
-}
-
-/// Greedy chain cursor: the current chain under construction.
-#[derive(Debug, Clone, Copy)]
-struct ChainCursor {
-    a_contig: u32,
-    b_contig: u32,
-    strand: u8,
-    first_a: u32,
-    last_a: u32,
-    first_b: u32,
-    last_b: u32,
-    diag_sum: i64,
-    diag_min: i64,
-    diag_max: i64,
-    count: usize,
-}
-
-fn push_chain(chains: &mut Vec<Chain>, cur: &Option<ChainCursor>, k: u32, min_span: u32) {
-    if let Some(c) = cur {
-        let span_a = (c.last_a - c.first_a).saturating_add(k);
-        let span_b = (c.last_b - c.first_b).saturating_add(k);
-        if span_a >= min_span && span_b >= min_span {
-            let mean = c.diag_sum / c.count as i64;
-            chains.push(Chain {
-                a_contig: c.a_contig,
-                b_contig: c.b_contig,
-                strand: c.strand,
-                a_start: c.first_a,
-                a_end: c.last_a.saturating_add(k),
-                b_start: c.first_b,
-                b_end: c.last_b.saturating_add(k),
-                seeds: c.count,
-                diag: mean,
-                diag_span: c.diag_max - c.diag_min,
-            });
-        }
-    }
-}
-
-/// Convert one chain into a single-block PSL record (q = query, t = reference).
+/// Convert one tube into a single-block PSL record (q = query, t = reference)
+/// from its seed span; used when no extension sequences are available.
 ///
 /// Reverse-strand blocks carry `q_start`/`q_end` in original query coordinates
 /// (converted from orientation space), matching the pgr/UCSC PSL convention.
-pub fn chain_to_psl(chain: &Chain, a: &PgiIndex, b: &impl PgiQuery) -> Psl {
+pub fn tube_to_psl(tube: &Tube, a: &PgiIndex, b: &impl PgiQuery) -> Psl {
     let (a_name, a_len) = {
-        let (name, len) = &a.contigs[chain.a_contig as usize];
+        let (name, len) = &a.contigs[tube.a_contig as usize];
         (name, *len as u32)
     };
     let (b_name, b_len) = {
-        let (name, len) = &b.contigs()[chain.b_contig as usize];
+        let (name, len) = &b.contigs()[tube.b_contig as usize];
         (name, *len as u32)
     };
-    let (q_start, q_end, strand) = if chain.strand == 0 {
-        (chain.b_start, chain.b_end, "+")
+    let (q_start, q_end, strand) = if tube.strand == 0 {
+        (tube.b_start, tube.b_end, "+")
     } else {
-        let (s, e) = reverse_range_pair(chain.b_start, chain.b_end, b_len);
+        let (s, e) = reverse_range_pair(tube.b_start, tube.b_end, b_len);
         (s, e, "-")
     };
     let mut psl = Psl::new();
@@ -1101,41 +738,26 @@ pub fn chain_to_psl(chain: &Chain, a: &PgiIndex, b: &impl PgiQuery) -> Psl {
     psl.q_end = q_end as i32;
     psl.t_name = a_name.clone();
     psl.t_size = a_len;
-    psl.t_start = chain.a_start as i32;
-    psl.t_end = chain.a_end as i32;
+    psl.t_start = tube.a_start as i32;
+    psl.t_end = tube.a_end as i32;
     psl.strand = strand.to_string();
     psl.block_count = 1;
     psl.block_sizes.push(q_end - q_start);
-    psl.q_starts.push(if chain.strand == 0 {
+    psl.q_starts.push(if tube.strand == 0 {
         q_start
     } else {
         b_len - q_end
     });
-    psl.t_starts.push(chain.a_start);
+    psl.t_starts.push(tube.a_start);
     psl
 }
 
-/// Align two compatible indexes: merge seeds, chain, and emit PSL blocks.
+/// Align two compatible indexes: merge seeds, chain tubes, and emit one
+/// geometric PSL block per tube.
 pub fn align_to_psl(a: &PgiIndex, b: &PgiIndex, params: &AlignParams) -> anyhow::Result<Vec<Psl>> {
     let hits = merge_seed_hits(a, b, params.freq, effective_min_shared(a.k, params))?;
-    match params.workflow {
-        Workflow::Tube => anyhow::bail!(
-            "the tube workflow needs extension sequences (genome inputs or \
-             --ref-seq/--query-seq for .pgi inputs)"
-        ),
-        Workflow::Greedy => {
-            let chains = chain_hits(
-                &hits,
-                a.k as u32,
-                params.min_span,
-                params.max_gap,
-                params.band,
-                params.merge_gap,
-                None,
-            );
-            Ok(chains.iter().map(|c| chain_to_psl(c, a, b)).collect())
-        }
-    }
+    let tubes = chain_tubes(&hits, a.k as u32);
+    Ok(tubes.iter().map(|t| tube_to_psl(t, a, b)).collect())
 }
 
 /// Same as [`align_to_psl`] with the reference index streamed from disk.
@@ -1159,173 +781,16 @@ pub fn align_to_psl_streaming<R: Read + Send, B: PgiQuery + Sync>(
     if is_self {
         drop_self_hits(&mut hits);
     }
-    match params.workflow {
-        Workflow::Tube => anyhow::bail!(
-            "the tube workflow needs extension sequences (genome inputs or \
-             --ref-seq/--query-seq for .pgi inputs)"
-        ),
-        Workflow::Greedy => {
-            let chains = chain_hits(
-                &hits,
-                k as u32,
-                params.min_span,
-                params.max_gap,
-                params.band,
-                params.merge_gap,
-                None,
-            );
-            let a = PgiIndex {
-                k,
-                smer: a.header().smer,
-                window: a.header().window,
-                contigs: a.header().contigs.clone(),
-                entries: Vec::new(),
-                positions: Vec::new(),
-            };
-            Ok(chains.iter().map(|c| chain_to_psl(c, &a, b)).collect())
-        }
-    }
-}
-
-/// Default window size (bp) for chain extension.
-pub const EXTEND_WINDOW: usize = 16_000;
-/// Default step (bp) between extension windows (2 kb overlap).
-pub const EXTEND_STEP: usize = 14_000;
-
-/// Extend one chain into scored PSL records via windowed banded alignment.
-///
-/// Chains longer than `window` are split into overlapping windows placed on
-/// the chain diagonal, so giant syntenic chains still get real identity
-/// counts. Returns empty when no window scores; callers fall back to
-/// [`chain_to_psl`].
-pub fn extend_chain(
-    chain: &Chain,
-    a: &PgiIndex,
-    b: &PgiIndex,
-    a_seqs: &[(String, Vec<u8>)],
-    b_seqs: &[(String, Vec<u8>)],
-    window: usize,
-    step: usize,
-) -> Vec<Psl> {
-    let jobs = chain_windows(0, chain, a_seqs, b_seqs, window, step);
-    let dp_band = (chain.diag_span as usize + 32).min(128);
-    jobs.par_iter()
-        .filter_map(|job| extend_window(job, chain, a, b, a_seqs, b_seqs, dp_band))
-        .collect()
-}
-
-/// One banded extension window (chain id + oriented query range).
-#[derive(Debug, Clone, Copy)]
-struct WindowJob {
-    chain_id: usize,
-    q_win: usize,
-    win_end: usize,
-}
-
-/// Build the bounds-checked extension window list for one chain.
-fn chain_windows(
-    chain_id: usize,
-    chain: &Chain,
-    a_seqs: &[(String, Vec<u8>)],
-    b_seqs: &[(String, Vec<u8>)],
-    window: usize,
-    step: usize,
-) -> Vec<WindowJob> {
-    let Some((_, a_int)) = a_seqs.get(chain.a_contig as usize) else {
-        return Vec::new();
+    let tubes = chain_tubes(&hits, k as u32);
+    let a = PgiIndex {
+        k,
+        smer: a.header().smer,
+        window: a.header().window,
+        contigs: a.header().contigs.clone(),
+        entries: Vec::new(),
+        positions: Vec::new(),
     };
-    let Some((_, b_int)) = b_seqs.get(chain.b_contig as usize) else {
-        return Vec::new();
-    };
-    let a_len = a_int.len();
-    let b_len = b_int.len();
-    let q0 = chain.b_start as usize;
-    let q1 = chain.b_end as usize;
-    if q1 > b_len || q0 >= q1 || step == 0 {
-        return Vec::new();
-    }
-    let mut jobs = Vec::new();
-    let mut q_win = q0;
-    while q_win < q1 {
-        let win_end = (q_win + window).min(q1);
-        // Expected target window start from the chain diagonal (t = q + diag).
-        let t_start = q_win as i64 + chain.diag;
-        let t_end = t_start + (win_end - q_win) as i64;
-        if t_start >= 0 && t_end <= a_len as i64 {
-            jobs.push(WindowJob {
-                chain_id,
-                q_win,
-                win_end,
-            });
-        }
-        q_win += step;
-    }
-    jobs
-}
-
-/// Extend one window into a scored PSL record, if the banded alignment scores.
-fn extend_window(
-    job: &WindowJob,
-    chain: &Chain,
-    a: &PgiIndex,
-    b: &impl PgiQuery,
-    a_seqs: &[(String, Vec<u8>)],
-    b_seqs: &[(String, Vec<u8>)],
-    dp_band: usize,
-) -> Option<Psl> {
-    let (_, a_int) = a_seqs.get(chain.a_contig as usize)?;
-    let (_, b_int) = b_seqs.get(chain.b_contig as usize)?;
-    let b_len = b_int.len();
-    let (q_win, win_end) = (job.q_win, job.win_end);
-    let t_start = q_win as i64 + chain.diag;
-    let (t_win_start, t_win_end) = (
-        t_start as usize,
-        (t_start + (win_end - q_win) as i64) as usize,
-    );
-    let t = &a_int[t_win_start..t_win_end];
-    let q: Vec<u8> = if chain.strand == 0 {
-        b_int[q_win..win_end].to_vec()
-    } else {
-        let orig = (b_len - win_end, b_len - q_win);
-        rev_comp(&b_int[orig.0..orig.1]).collect()
-    };
-    // Window starts were placed on the chain diagonal, so the expected
-    // within-window diagonal (q_i - t_j) is 0.
-    let aln = align_banded_local(&q, t, dp_band, 0, &AlignmentParams::default())?;
-    let q_aln = aln.q_aln;
-    let t_aln = aln.t_aln;
-    let q_start = aln.q_start;
-    let t_start = aln.t_start;
-    let q_covered = q_aln.iter().filter(|&&c| c != b'-').count();
-    let t_covered = t_aln.iter().filter(|&&c| c != b'-').count();
-    if q_covered == 0 || t_covered == 0 {
-        return None;
-    }
-    let mut q_abs = (q_win + q_start) as i32;
-    let mut q_abs_end = q_abs + q_covered as i32;
-    if chain.strand == 1 {
-        // `Psl::from_align` expects plus-strand coordinates; chain windows are
-        // in RC space for minus-strand chains.
-        reverse_range(
-            &mut q_abs,
-            &mut q_abs_end,
-            b.contigs()[chain.b_contig as usize].1 as i32,
-        );
-    }
-    let strand = if chain.strand == 0 { "+" } else { "-" };
-    Psl::from_align(
-        &b.contigs()[chain.b_contig as usize].0,
-        b.contigs()[chain.b_contig as usize].1 as u32,
-        q_abs,
-        q_abs_end,
-        &String::from_utf8_lossy(&q_aln),
-        &a.contigs[chain.a_contig as usize].0,
-        a.contigs[chain.a_contig as usize].1 as u32,
-        (t_win_start + t_start) as i32,
-        (t_win_start + t_start + t_covered) as i32,
-        &String::from_utf8_lossy(&t_aln),
-        strand,
-    )
+    Ok(tubes.iter().map(|t| tube_to_psl(t, &a, b)).collect())
 }
 
 /// Align two indexes, extending chains when sequences are provided and
@@ -1336,9 +801,13 @@ pub fn align_to_psl_ext(
     params: &AlignParams,
     a_seqs: &[(String, Vec<u8>)],
     b_seqs: &[(String, Vec<u8>)],
+    is_self: bool,
 ) -> anyhow::Result<Vec<Psl>> {
     let min_shared = effective_min_shared(a.k, params);
-    let hits = merge_seed_hits(&a, &b, params.freq, min_shared)?;
+    let mut hits = merge_seed_hits(&a, &b, params.freq, min_shared)?;
+    if is_self {
+        drop_self_hits(&mut hits);
+    }
     log::info!(
         "merge: {} seed hits (min-shared={min_shared}, freq={})",
         hits.len(),
@@ -1350,7 +819,7 @@ pub fn align_to_psl_ext(
     // them in the first place).
     b.entries = Vec::new();
     b.positions = Vec::new();
-    psls_from_hits(a, b, params, hits, a_seqs, b_seqs)
+    psls_from_hits(a, b, hits, a_seqs, b_seqs, is_self)
 }
 
 /// Align two indexes with the reference (`a`) streamed from disk and the
@@ -1388,7 +857,7 @@ pub fn align_to_psl_ext_streaming<R: Read + Send, B: PgiQuery + Sync>(
         entries: Vec::new(),
         positions: Vec::new(),
     };
-    psls_from_hits(a, b, params, hits, a_seqs, b_seqs)
+    psls_from_hits(a, b, hits, a_seqs, b_seqs, is_self)
 }
 
 /// Chain and extend a seed-hit list into PSL blocks.
@@ -1399,120 +868,74 @@ pub fn align_to_psl_ext_streaming<R: Read + Send, B: PgiQuery + Sync>(
 fn psls_from_hits(
     mut a: PgiIndex,
     b: impl PgiQuery + Sync,
-    params: &AlignParams,
     hits: Vec<SeedHit>,
     a_seqs: &[(String, Vec<u8>)],
     b_seqs: &[(String, Vec<u8>)],
+    is_self: bool,
 ) -> anyhow::Result<Vec<Psl>> {
-    if params.workflow == Workflow::Tube {
-        // Tubes are independent alignment tasks; the `alast` overlap skip of
-        // FastGA's sequential scan is replaced by a parallel pass plus a
-        // containment dedup on the emitted blocks.
-        let t0 = std::time::Instant::now();
-        let tubes = chain_tubes(&hits, a.k as u32);
-        log::debug!("chain_tubes: {} ms", t0.elapsed().as_millis());
-        // FastGA's chains break at ~100 kb (its adaptive seed stream is
-        // sparser); cap oversized tubes so one giant tube cannot serialize
-        // the mid-line slides.
-        const TUBE_ANTI_CAP: i64 = 40_000;
-        let tubes: Vec<Tube> = tubes
-            .into_iter()
-            .flat_map(|t| {
-                let span = t.anti_high - t.anti_low;
-                if span <= TUBE_ANTI_CAP {
-                    vec![t]
-                } else {
-                    let n = (span + TUBE_ANTI_CAP - 1) / TUBE_ANTI_CAP;
-                    (0..n)
-                        .map(|i| {
-                            let mut piece = t;
-                            piece.anti_low = t.anti_low + i * TUBE_ANTI_CAP;
-                            piece.anti_high =
-                                (t.anti_low + (i + 1) * TUBE_ANTI_CAP).min(t.anti_high);
-                            piece
-                        })
-                        .collect()
-                }
-            })
-            .collect();
-        log::debug!("peak RSS after chain_tubes: {} MB", peak_rss_mb());
-        drop(hits); // the tubes and sequences are enough for extension
-                    // The k-mer entries/positions are only needed for the merge; drop the
-                    // reference index's tables before the parallel extension phase.
-        drop(std::mem::take(&mut a.entries));
-        drop(std::mem::take(&mut a.positions));
-        log::debug!("peak RSS after dropping indexes: {} MB", peak_rss_mb());
-        let a_revs: Vec<Vec<u8>> = a_seqs
-            .iter()
-            .map(|(_, s)| s.iter().rev().copied().collect())
-            .collect();
-        let b_revs: Vec<Vec<u8>> = b_seqs
-            .iter()
-            .map(|(_, s)| s.iter().rev().copied().collect())
-            .collect();
-        let b_comps: Vec<Vec<u8>> = b_seqs
-            .iter()
-            .map(|(_, s)| complement(s).collect())
-            .collect();
-        let b_rcs: Vec<Vec<u8>> = b_seqs.iter().map(|(_, s)| rev_comp(s).collect()).collect();
-        let t_ext = std::time::Instant::now();
-        let records: Vec<Vec<Psl>> = tubes
-            .par_iter()
-            .map(|t| {
-                let mut alast = 0i64;
-                extend_tube(
-                    t, &mut alast, &a, &b, a_seqs, b_seqs, &a_revs, &b_revs, &b_comps, &b_rcs,
-                )
-            })
-            .collect();
-        log::debug!("extend: {} ms", t_ext.elapsed().as_millis());
-        let mut out: Vec<Psl> = records.into_iter().flatten().collect();
-        dedupe_contained(&mut out);
-        log::debug!("peak RSS after extend: {} MB", peak_rss_mb());
-        return Ok(out);
-    }
-    let chains = chain_hits(
-        &hits,
-        a.k as u32,
-        params.min_span,
-        params.max_gap,
-        params.band,
-        params.merge_gap,
-        Some((a_seqs, b_seqs)),
-    );
-    drop(hits);
-    drop(std::mem::take(&mut a.entries));
-    drop(std::mem::take(&mut a.positions));
-    log::debug!("peak RSS after chain_hits: {} MB", peak_rss_mb());
-    // Flatten all extension windows across chains into one parallel stream so
-    // a giant chain cannot serialize behind smaller chains on a single task.
-    let jobs: Vec<WindowJob> = chains
-        .iter()
-        .enumerate()
-        .flat_map(|(id, c)| chain_windows(id, c, a_seqs, b_seqs, EXTEND_WINDOW, EXTEND_STEP))
-        .collect();
-    let records: Vec<Option<Psl>> = jobs
-        .par_iter()
-        .map(|job| {
-            let chain = &chains[job.chain_id];
-            let dp_band = (chain.diag_span as usize + 32).min(128);
-            extend_window(job, chain, &a, &b, a_seqs, b_seqs, dp_band)
+    // Tubes are independent alignment tasks; the `alast` overlap skip of
+    // FastGA's sequential scan is replaced by a parallel pass plus a
+    // containment dedup on the emitted blocks.
+    let t0 = std::time::Instant::now();
+    let tubes = chain_tubes(&hits, a.k as u32);
+    log::debug!("chain_tubes: {} ms", t0.elapsed().as_millis());
+    // FastGA's chains break at ~100 kb (its adaptive seed stream is
+    // sparser); cap oversized tubes so one giant tube cannot serialize
+    // the mid-line slides.
+    const TUBE_ANTI_CAP: i64 = 40_000;
+    let tubes: Vec<Tube> = tubes
+        .into_iter()
+        .flat_map(|t| {
+            let span = t.anti_high - t.anti_low;
+            if span <= TUBE_ANTI_CAP {
+                vec![t]
+            } else {
+                let n = (span + TUBE_ANTI_CAP - 1) / TUBE_ANTI_CAP;
+                (0..n)
+                    .map(|i| {
+                        let mut piece = t;
+                        piece.anti_low = t.anti_low + i * TUBE_ANTI_CAP;
+                        piece.anti_high = (t.anti_low + (i + 1) * TUBE_ANTI_CAP).min(t.anti_high);
+                        piece
+                    })
+                    .collect()
+            }
         })
         .collect();
-    let mut covered = vec![false; chains.len()];
-    let mut out = Vec::with_capacity(records.len());
-    for (job, rec) in jobs.iter().zip(records) {
-        if let Some(psl) = rec {
-            covered[job.chain_id] = true;
-            out.push(psl);
-        }
-    }
-    for (id, chain) in chains.iter().enumerate() {
-        if !covered[id] {
-            out.push(chain_to_psl(chain, &a, &b));
-        }
-    }
-    log::debug!("peak RSS after extend (greedy): {} MB", peak_rss_mb());
+    log::debug!("peak RSS after chain_tubes: {} MB", peak_rss_mb());
+    drop(hits); // the tubes and sequences are enough for extension
+                // The k-mer entries/positions are only needed for the merge; drop the
+                // reference index's tables before the parallel extension phase.
+    drop(std::mem::take(&mut a.entries));
+    drop(std::mem::take(&mut a.positions));
+    log::debug!("peak RSS after dropping indexes: {} MB", peak_rss_mb());
+    let a_revs: Vec<Vec<u8>> = a_seqs
+        .iter()
+        .map(|(_, s)| s.iter().rev().copied().collect())
+        .collect();
+    let b_revs: Vec<Vec<u8>> = b_seqs
+        .iter()
+        .map(|(_, s)| s.iter().rev().copied().collect())
+        .collect();
+    let b_comps: Vec<Vec<u8>> = b_seqs
+        .iter()
+        .map(|(_, s)| complement(s).collect())
+        .collect();
+    let b_rcs: Vec<Vec<u8>> = b_seqs.iter().map(|(_, s)| rev_comp(s).collect()).collect();
+    let t_ext = std::time::Instant::now();
+    let records: Vec<Vec<Psl>> = tubes
+        .par_iter()
+        .map(|t| {
+            let mut alast = 0i64;
+            extend_tube(
+                t, &mut alast, &a, &b, a_seqs, b_seqs, &a_revs, &b_revs, &b_comps, &b_rcs, is_self,
+            )
+        })
+        .collect();
+    log::debug!("extend: {} ms", t_ext.elapsed().as_millis());
+    let mut out: Vec<Psl> = records.into_iter().flatten().collect();
+    dedupe_contained(&mut out);
+    log::debug!("peak RSS after extend: {} MB", peak_rss_mb());
     Ok(out)
 }
 
@@ -1929,409 +1352,6 @@ mod tests {
     }
 
     #[test]
-    fn chain_groups_by_direction_and_contig() {
-        let hits = vec![
-            SeedHit {
-                a_contig: 0,
-                a_pos: 100,
-                b_contig: 0,
-                b_pos: 200,
-                shared: 10,
-                strand: 0,
-            },
-            SeedHit {
-                a_contig: 0,
-                a_pos: 110,
-                b_contig: 0,
-                b_pos: 210,
-                shared: 10,
-                strand: 0,
-            },
-            SeedHit {
-                a_contig: 0,
-                a_pos: 120,
-                b_contig: 0,
-                b_pos: 220,
-                shared: 10,
-                strand: 0,
-            },
-            SeedHit {
-                a_contig: 0,
-                a_pos: 100,
-                b_contig: 0,
-                b_pos: 200,
-                shared: 10,
-                strand: 1,
-            },
-            SeedHit {
-                a_contig: 0,
-                a_pos: 110,
-                b_contig: 0,
-                b_pos: 210,
-                shared: 10,
-                strand: 1,
-            },
-            SeedHit {
-                a_contig: 0,
-                a_pos: 120,
-                b_contig: 0,
-                b_pos: 220,
-                shared: 10,
-                strand: 1,
-            },
-        ];
-        let chains = chain_hits(&hits, 10, 20, 1000, 8, 0, None);
-        assert_eq!(
-            chains.len(),
-            2,
-            "forward and reverse strands must chain separately"
-        );
-        assert!(chains.iter().all(|c| c.seeds == 3));
-    }
-
-    #[test]
-    fn chain_breaks_on_gap_and_span_filter() {
-        let hits = vec![
-            SeedHit {
-                a_contig: 0,
-                a_pos: 100,
-                b_contig: 0,
-                b_pos: 100,
-                shared: 10,
-                strand: 0,
-            },
-            SeedHit {
-                a_contig: 0,
-                a_pos: 130,
-                b_contig: 0,
-                b_pos: 130,
-                shared: 10,
-                strand: 0,
-            },
-            SeedHit {
-                a_contig: 0,
-                a_pos: 5000,
-                b_contig: 0,
-                b_pos: 5000,
-                shared: 10,
-                strand: 0,
-            },
-            SeedHit {
-                a_contig: 0,
-                a_pos: 5030,
-                b_contig: 0,
-                b_pos: 5030,
-                shared: 10,
-                strand: 0,
-            },
-        ];
-        // max_gap=1000 splits the two diagonal runs; each run has span 40 > 20.
-        let chains = chain_hits(&hits, 10, 20, 1000, 8, 0, None);
-        assert_eq!(chains.len(), 2);
-        // min_span=50 drops both runs (span 40 each).
-        let chains = chain_hits(&hits, 10, 50, 1000, 8, 0, None);
-        assert!(chains.is_empty());
-    }
-
-    #[test]
-    fn off_band_hit_does_not_split_main_chain() {
-        let hits = vec![
-            SeedHit {
-                a_contig: 0,
-                a_pos: 100,
-                b_contig: 0,
-                b_pos: 100,
-                shared: 10,
-                strand: 0,
-            },
-            SeedHit {
-                a_contig: 0,
-                a_pos: 300,
-                b_contig: 0,
-                b_pos: 300,
-                shared: 10,
-                strand: 0,
-            },
-            SeedHit {
-                a_contig: 0,
-                a_pos: 200,
-                b_contig: 0,
-                b_pos: 120,
-                shared: 10,
-                strand: 0,
-            },
-        ];
-        // The diag-80 hit backtracks after the main diagonal ran: it must not
-        // split the main chain (which covers 100..310), and its own tiny chain
-        // (span 10) is dropped by min_span=200.
-        let chains = chain_hits(&hits, 10, 200, 1000, 8, 0, None);
-        assert_eq!(chains.len(), 1);
-        assert_eq!((chains[0].a_start, chains[0].a_end), (100, 310));
-        assert_eq!(chains[0].seeds, 2);
-    }
-
-    #[test]
-    fn in_gap_hits_respect_band() {
-        let hits = vec![
-            SeedHit {
-                a_contig: 0,
-                a_pos: 100,
-                b_contig: 0,
-                b_pos: 100,
-                shared: 10,
-                strand: 0,
-            },
-            SeedHit {
-                a_contig: 0,
-                a_pos: 150,
-                b_contig: 0,
-                b_pos: 150,
-                shared: 10,
-                strand: 0,
-            },
-            SeedHit {
-                a_contig: 0,
-                a_pos: 200,
-                b_contig: 0,
-                b_pos: 190,
-                shared: 10,
-                strand: 0,
-            },
-        ];
-        // Third hit (diag 10) is in-gap but outside band=8: ignored.
-        let chains = chain_hits(&hits, 10, 5, 1000, 8, 0, None);
-        assert_eq!(chains.len(), 1);
-        assert_eq!(chains[0].seeds, 2);
-        assert_eq!(chains[0].a_end, 160);
-        // A wider band admits it.
-        let chains = chain_hits(&hits, 10, 5, 1000, 20, 0, None);
-        assert_eq!(chains[0].seeds, 3);
-        assert_eq!(chains[0].a_end, 210);
-    }
-
-    #[test]
-    fn merge_adjacent_chains_stitches_syntenic_blocks() {
-        // Two colinear diagonal runs separated by a seed gap with a small
-        // diagonal shift (a 4 bp insertion): greedy chaining (max_gap 1000)
-        // splits them, the merge pass stitches them back.
-        let hits = vec![
-            SeedHit {
-                a_contig: 0,
-                a_pos: 100,
-                b_contig: 0,
-                b_pos: 100,
-                shared: 10,
-                strand: 0,
-            },
-            SeedHit {
-                a_contig: 0,
-                a_pos: 130,
-                b_contig: 0,
-                b_pos: 130,
-                shared: 10,
-                strand: 0,
-            },
-            SeedHit {
-                a_contig: 0,
-                a_pos: 1300,
-                b_contig: 0,
-                b_pos: 1296,
-                shared: 10,
-                strand: 0,
-            },
-            SeedHit {
-                a_contig: 0,
-                a_pos: 1330,
-                b_contig: 0,
-                b_pos: 1326,
-                shared: 10,
-                strand: 0,
-            },
-        ];
-        let chains = chain_hits(&hits, 10, 20, 1000, 8, 0, None);
-        assert_eq!(chains.len(), 2, "large gap must split chains");
-        let chains = chain_hits(&hits, 10, 20, 1000, 8, 2000, None);
-        assert_eq!(chains.len(), 1, "diagonal shift must stitch chains");
-        assert_eq!((chains[0].a_start, chains[0].a_end), (100, 1340));
-        assert_eq!(chains[0].seeds, 4);
-
-        // Identical-diagonal runs separated by a seed gap are two distinct
-        // homology blocks (the reciprocal chains of an inverted repeat); they
-        // must NOT merge into a chimeric chain.
-        let same_diag = vec![
-            SeedHit {
-                a_contig: 0,
-                a_pos: 100,
-                b_contig: 0,
-                b_pos: 100,
-                shared: 10,
-                strand: 0,
-            },
-            SeedHit {
-                a_contig: 0,
-                a_pos: 130,
-                b_contig: 0,
-                b_pos: 130,
-                shared: 10,
-                strand: 0,
-            },
-            SeedHit {
-                a_contig: 0,
-                a_pos: 1300,
-                b_contig: 0,
-                b_pos: 1300,
-                shared: 10,
-                strand: 0,
-            },
-            SeedHit {
-                a_contig: 0,
-                a_pos: 1330,
-                b_contig: 0,
-                b_pos: 1330,
-                shared: 10,
-                strand: 0,
-            },
-        ];
-        let chains = chain_hits(&same_diag, 10, 20, 1000, 8, 2000, None);
-        assert_eq!(chains.len(), 2, "identical diagonals must not merge");
-
-        // A diagonal shift beyond the band must not merge.
-        let shifted = vec![
-            SeedHit {
-                a_contig: 0,
-                a_pos: 100,
-                b_contig: 0,
-                b_pos: 100,
-                shared: 10,
-                strand: 0,
-            },
-            SeedHit {
-                a_contig: 0,
-                a_pos: 2000,
-                b_contig: 0,
-                b_pos: 1800,
-                shared: 10,
-                strand: 0,
-            },
-        ];
-        let chains = chain_hits(&shifted, 10, 5, 1000, 8, 2000, None);
-        assert_eq!(chains.len(), 2, "diag shift beyond band must not merge");
-    }
-
-    #[test]
-    fn merge_requires_homologous_middle_with_sequences() {
-        // Two distinct homology blocks on nearby diagonals (shift 50 <= band)
-        // with both spans within merge_gap. Geometrically they are
-        // mergeable, but the intervening sequences are independent: the
-        // sequence-aware merge must keep them separate (regression: the
-        // geometric merge stitched them into a chimeric chain whose diluted
-        // identity was dropped by the SD filter, losing real hits).
-        let mk = |a_start: u32, b_start: u32| SeedHit {
-            a_contig: 0,
-            a_pos: a_start,
-            b_contig: 0,
-            b_pos: b_start,
-            shared: 40,
-            strand: 0,
-        };
-        let mut hits = Vec::new();
-        // Block 1: seeds a 1000..1900 <-> b 5000..5900 (diag -4000),
-        // span end 1940 / 5940 (last seed + k 40).
-        // Block 2: seeds a 6900..7800 <-> b 10850..11750 (diag -3950).
-        // gap_a = 6900 - 1940 = 4960, gap_b = 10850 - 5940 = 4910, both
-        // within merge_gap 5000; diagonal shift 50 within band 128.
-        for i in 0..10u32 {
-            hits.push(mk(1000 + i * 100, 5000 + i * 100));
-            hits.push(mk(6900 + i * 100, 10850 + i * 100));
-        }
-        let a_mid = pseudo_random_seq(4960, 31);
-        let a_int = pseudo_random_seq(1940, 32)
-            .into_iter()
-            .chain(a_mid.iter().copied())
-            .chain(pseudo_random_seq(20_000, 33))
-            .collect::<Vec<u8>>();
-        let make_b = |mid: Vec<u8>| {
-            pseudo_random_seq(5940, 34)
-                .into_iter()
-                .chain(mid)
-                .chain(pseudo_random_seq(15_000, 35))
-                .collect::<Vec<u8>>()
-        };
-
-        // Independent random middles: no merge.
-        let b_rand = make_b(pseudo_random_seq(4910, 36));
-        let a_seqs = vec![(String::from("a"), a_int.clone())];
-        let b_seqs = vec![(String::from("b"), b_rand)];
-        let chains = chain_hits(&hits, 40, 20, 1000, 128, 5000, Some((&a_seqs, &b_seqs)));
-        assert_eq!(
-            chains.len(),
-            2,
-            "distinct blocks must stay separate: {chains:?}"
-        );
-
-        // Homologous middle (4910 of 4960 bp shared): one continuous block.
-        let b_hom = make_b(a_mid[..4910].to_vec());
-        let b_seqs = vec![(String::from("b"), b_hom)];
-        let chains = chain_hits(&hits, 40, 20, 1000, 128, 5000, Some((&a_seqs, &b_seqs)));
-        assert_eq!(chains.len(), 1, "homologous middle must stitch: {chains:?}");
-    }
-
-    #[test]
-    fn merge_checks_minus_strand_middle_in_rc_space() {
-        // The b coordinates of a minus-strand chain live in RC space, so the
-        // intervening query span must be reverse-complemented before the
-        // homology check. Same geometry as the strand-0 test.
-        let mk = |a_start: u32, b_start: u32| SeedHit {
-            a_contig: 0,
-            a_pos: a_start,
-            b_contig: 0,
-            b_pos: b_start,
-            shared: 40,
-            strand: 1,
-        };
-        let mut hits = Vec::new();
-        for i in 0..10u32 {
-            hits.push(mk(1000 + i * 100, 5000 + i * 100));
-            hits.push(mk(6900 + i * 100, 10850 + i * 100));
-        }
-        let a_mid = pseudo_random_seq(4960, 51);
-        let a_int = pseudo_random_seq(1940, 52)
-            .into_iter()
-            .chain(a_mid.iter().copied())
-            .chain(pseudo_random_seq(20_000, 53))
-            .collect::<Vec<u8>>();
-        // The RC-space middle is [5940, 10850); its forward span is
-        // [b_len - 10850, b_len - 5940) = [15000, 19910). Place the RC of
-        // the a middle there so the RC-space middle (what the homology check
-        // aligns) equals a_mid.
-        let b_len = 5940 + 4910 + 15_000;
-        let fwd_mid: Vec<u8> = rev_comp(&a_mid[..4910]).collect();
-        let mut b_int: Vec<u8> = pseudo_random_seq(15_000, 54);
-        b_int.extend_from_slice(&fwd_mid);
-        b_int.extend(pseudo_random_seq(b_len - 15_000 - 4910, 55));
-        assert_eq!(b_int.len(), b_len);
-
-        let a_seqs = vec![(String::from("a"), a_int)];
-        let b_seqs = vec![(String::from("b"), b_int)];
-        let chains = chain_hits(&hits, 40, 20, 1000, 128, 5000, Some((&a_seqs, &b_seqs)));
-        assert_eq!(
-            chains.len(),
-            1,
-            "minus-strand middle must stitch: {chains:?}"
-        );
-
-        // Independent random RC-space middle: no merge.
-        let b_rand_int: Vec<u8> = pseudo_random_seq(b_len, 56);
-        let b_seqs = vec![(String::from("b"), b_rand_int)];
-        let chains = chain_hits(&hits, 40, 20, 1000, 128, 5000, Some((&a_seqs, &b_seqs)));
-        assert_eq!(
-            chains.len(),
-            2,
-            "distinct minus-strand blocks must stay separate: {chains:?}"
-        );
-    }
-
-    #[test]
     fn tubes_join_colinear_seeds() {
         let hits = vec![
             SeedHit {
@@ -2601,30 +1621,31 @@ mod tests {
     fn psl_block_coordinates() {
         let seq: Vec<u8> = (0..100u32).map(|i| b"ACGT"[(i % 4) as usize]).collect();
         let (ia, ib) = (build(&seq), build(&seq));
-        let fwd = Chain {
+        let fwd = Tube {
             a_contig: 0,
             b_contig: 0,
             strand: 0,
+            anti_low: 30,
+            anti_high: 110,
+            diag_min: -10,
+            diag_max: -10,
             a_start: 10,
             a_end: 50,
             b_start: 20,
             b_end: 60,
-            seeds: 1,
-            diag: -10,
-            diag_span: 0,
         };
-        let p = chain_to_psl(&fwd, &ia, &ib);
+        let p = tube_to_psl(&fwd, &ia, &ib);
         assert_eq!(p.strand, "+");
         assert_eq!((p.q_start, p.q_end), (20, 60));
         assert_eq!((p.t_start, p.t_end), (10, 50));
 
-        let rev = Chain {
+        let rev = Tube {
             strand: 1,
             b_start: 20,
             b_end: 60,
             ..fwd
         };
-        let p = chain_to_psl(&rev, &ia, &ib);
+        let p = tube_to_psl(&rev, &ia, &ib);
         assert_eq!(p.strand, "-");
         // original query coordinates: reverse_range(20..60, len 100) = (40, 80)
         assert_eq!((p.q_start, p.q_end), (40, 80));
@@ -2637,7 +1658,7 @@ mod tests {
         let a_seqs = vec![(String::from("c"), seq.clone())];
         let b_seqs = vec![(String::from("c"), seq)];
         let params = AlignParams::default();
-        let psls = align_to_psl_ext(ia, ib, &params, &a_seqs, &b_seqs).unwrap();
+        let psls = align_to_psl_ext(ia, ib, &params, &a_seqs, &b_seqs, false).unwrap();
         assert!(!psls.is_empty());
         assert!(
             psls.iter().all(|p| p.match_count + p.mismatch_count > 0),
@@ -2665,7 +1686,7 @@ mod tests {
             min_shared: Some(10),
             ..AlignParams::default()
         };
-        let psls = align_to_psl_ext(ia, ir, &params, &a_seqs, &b_seqs).unwrap();
+        let psls = align_to_psl_ext(ia, ir, &params, &a_seqs, &b_seqs, false).unwrap();
         assert!(!psls.is_empty());
         assert!(
             psls.iter().all(|p| p.strand == "-" && p.match_count > 0),
@@ -2707,6 +1728,45 @@ mod tests {
                     mm <= (sz / 10) as usize,
                     "segment {i} must match the RC query ({mm} mismatches)"
                 );
+            }
+        }
+    }
+
+    #[test]
+    fn tube_self_keeps_diagonal_away_from_zero() {
+        // Tandem repeat of two 400 bp copies: self-alignment must find the
+        // copy pairs and must not emit a same-contig forward block whose
+        // target/query intervals overlap (FastGA self mode forbids crossing
+        // diagonal 0, the exact self-identity line).
+        let copy = pseudo_random_seq(400, 7);
+        let seq: Vec<u8> = copy.iter().chain(copy.iter()).copied().collect();
+        let (ia, ib) = (build(&seq), build(&seq));
+        let a_seqs = vec![(String::from("c"), seq.clone())];
+        let b_seqs = vec![(String::from("c"), seq)];
+        let params = AlignParams::default();
+        let psls = align_to_psl_ext(ia, ib, &params, &a_seqs, &b_seqs, true).unwrap();
+        assert!(!psls.is_empty(), "copy pair must be found");
+        for p in &psls {
+            if p.q_name == p.t_name && p.strand == "+" {
+                // Each block is a gapless run with a constant diagonal; self
+                // mode must never emit a block on diagonal 0 (same-position
+                // self-identity).
+                for (i, ((&sz, &qs), &ts)) in p
+                    .block_sizes
+                    .iter()
+                    .zip(&p.q_starts)
+                    .zip(&p.t_starts)
+                    .enumerate()
+                {
+                    assert!(
+                        ts as i64 != qs as i64,
+                        "self block {i} sits on diagonal 0: q {}..{} t {}..{}",
+                        qs,
+                        qs + sz,
+                        ts,
+                        ts + sz
+                    );
+                }
             }
         }
     }
@@ -2770,7 +1830,7 @@ mod tests {
             min_shared: Some(10),
             ..AlignParams::default()
         };
-        let psls = align_to_psl_ext(ia, ib, &params, &a_seqs, &b_seqs).unwrap();
+        let psls = align_to_psl_ext(ia, ib, &params, &a_seqs, &b_seqs, false).unwrap();
         assert!(psls.len() >= 3, "expected one block per contig pair");
         assert!(
             psls.iter()
@@ -2793,35 +1853,5 @@ mod tests {
                 && p.t_start >= 0
                 && p.t_end <= p.t_size as i32
         }));
-    }
-
-    #[test]
-    fn extend_chain_windows_long_interval() {
-        let seq = pseudo_random_seq(400, 21);
-        let (ia, ib) = (build(&seq), build(&seq));
-        let a_seqs = vec![(String::from("c"), seq.clone())];
-        let b_seqs = vec![(String::from("c"), seq)];
-        let params = AlignParams::default();
-        let hits = merge_seed_hits(&ia, &ib, params.freq, 10).unwrap();
-        let chains = chain_hits(
-            &hits,
-            ia.k as u32,
-            params.min_span,
-            params.max_gap,
-            params.band,
-            params.merge_gap,
-            None,
-        );
-        assert_eq!(chains.len(), 1);
-        // Tiny windows force the interval to be split into multiple records.
-        let psls = extend_chain(&chains[0], &ia, &ib, &a_seqs, &b_seqs, 100, 90);
-        assert!(
-            psls.len() >= 3,
-            "windowed extension must split: {}",
-            psls.len()
-        );
-        let covered: u32 = psls.iter().map(|p| (p.q_end - p.q_start) as u32).sum();
-        assert!(covered >= 300, "windowed coverage too low: {covered}");
-        assert!(psls.iter().all(|p| p.match_count > 0));
     }
 }

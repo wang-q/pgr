@@ -278,12 +278,7 @@ pub struct AlignRepeatOpts {
     pub smer: usize,
     pub window: usize,
     pub freq: usize,
-    pub min_span: usize,
-    pub max_gap: usize,
-    pub band: usize,
-    pub merge_gap: usize,
     pub min_shared: usize,
-    pub workflow: String,
     /// Minimum alignment identity (fraction of aligned bases matching).
     pub min_identity: f64,
     /// Minimum length of repetitive fragments (bp).
@@ -307,12 +302,7 @@ pub fn run_align_repeat_pipeline(opts: &AlignRepeatOpts) -> anyhow::Result<()> {
     let smer = opts.smer;
     let window = opts.window;
     let freq = opts.freq;
-    let min_span = opts.min_span;
-    let max_gap = opts.max_gap;
-    let band = opts.band;
-    let merge_gap = opts.merge_gap;
     let min_shared = opts.min_shared;
-    let workflow = &opts.workflow;
     let parallel = opts.parallel;
     let keep_args = if opts.keep_index { "--keep-index" } else { "" };
 
@@ -331,9 +321,7 @@ pub fn run_align_repeat_pipeline(opts: &AlignRepeatOpts) -> anyhow::Result<()> {
     run_cmd!(
         ${pgr} align pgi ${abs_infile} ${abs_repeat}
             -k ${kmer} --smer ${smer} --window ${window}
-            -f ${freq} -c ${min_span} -s ${max_gap}
-            --band ${band} --merge-gap ${merge_gap}
-            --min-shared ${min_shared} --workflow ${workflow}
+            -f ${freq} --min-shared ${min_shared}
             -p ${parallel} ${keep_args} -o hits.psl
     )?;
 

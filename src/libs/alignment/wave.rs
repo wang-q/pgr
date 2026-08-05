@@ -226,6 +226,108 @@ fn dandc_nd(q: &[u8], t: &[u8], q_abs: usize, t_abs: usize, ops: &mut Vec<EditOp
     }
 }
 
+/// Banded unit-cost edit script for a diagonal-restricted path (FastGA's
+/// in-box DP): every aligned column keeps `t_pos - q_pos` inside
+/// `[k_lo, k_hi]` (absolute coordinates), with `k_lo == k_hi` degenerating
+/// to a single diagonal. Used by self mode, where the wave anchors are
+/// clipped to one side of diagonal 0 and the exact D&C path must not cross
+/// it either. Returns the edit distance.
+fn banded_edit_ops(
+    q: &[u8],
+    t: &[u8],
+    q_abs: usize,
+    t_abs: usize,
+    k_lo: i64,
+    k_hi: i64,
+    ops: &mut Vec<EditOp>,
+) -> usize {
+    let m = q.len() as i64;
+    let n = t.len() as i64;
+    let d0 = t_abs as i64 - q_abs as i64;
+    let width = (k_hi - k_lo + 1) as usize;
+    let inf = u32::MAX / 4;
+    let mut dp = vec![inf; (m as usize + 1) * width];
+    let mut tr = vec![0u8; (m as usize + 1) * width];
+    dp[(d0 - k_lo) as usize] = 0; // (0, 0): the path starts on the anchor diagonal
+    for i in 0..=m {
+        let j_lo = (i + k_lo - d0).max(0);
+        let j_hi = (i + k_hi - d0).min(n);
+        for j in j_lo..=j_hi {
+            if i == 0 && j == 0 {
+                continue;
+            }
+            let k = d0 + j - i;
+            let off = (k - k_lo) as usize;
+            let c = (i as usize) * width + off;
+            let mut best = inf;
+            let mut best_op = 0u8;
+            if i > 0 {
+                let kp = d0 + j - (i - 1);
+                if (k_lo..=k_hi).contains(&kp) {
+                    let pv = dp[((i - 1) as usize) * width + (kp - k_lo) as usize];
+                    if pv + 1 < best {
+                        best = pv + 1;
+                        best_op = 1; // delete q[i-1]
+                    }
+                }
+            }
+            if j > 0 {
+                let kp = d0 + (j - 1) - i;
+                if (k_lo..=k_hi).contains(&kp) {
+                    let pv = dp[(i as usize) * width + (kp - k_lo) as usize];
+                    if pv + 1 < best {
+                        best = pv + 1;
+                        best_op = 2; // insert t[j-1]
+                    }
+                }
+            }
+            if i > 0 && j > 0 {
+                let pv = dp[((i - 1) as usize) * width + off];
+                let sub = u32::from(q[(i - 1) as usize] != t[(j - 1) as usize]);
+                if pv + sub < best {
+                    best = pv + sub;
+                    best_op = 3; // match / substitution
+                }
+            }
+            dp[c] = best;
+            tr[c] = best_op;
+        }
+    }
+    let d_end = d0 + n - m;
+    debug_assert!((k_lo..=k_hi).contains(&d_end), "end diagonal outside band");
+    let total = dp[(m as usize) * width + (d_end - k_lo) as usize];
+    debug_assert!(total < inf, "no banded path found");
+    let mut i = m;
+    let mut j = n;
+    let mut stack = Vec::new();
+    while i > 0 || j > 0 {
+        let k = d0 + j - i;
+        let off = (k - k_lo) as usize;
+        match tr[(i as usize) * width + off] {
+            1 => {
+                stack.push(EditOp::Del {
+                    q_pos: q_abs + i as usize - 1,
+                    t_pos: t_abs + j as usize,
+                });
+                i -= 1;
+            }
+            2 => {
+                stack.push(EditOp::Ins {
+                    q_pos: q_abs.saturating_sub(1),
+                    t_pos: t_abs + j as usize - 1,
+                });
+                j -= 1;
+            }
+            _ => {
+                i -= 1;
+                j -= 1;
+            }
+        }
+    }
+    ops.extend(stack.into_iter().rev());
+    total as usize
+}
+
 /// Expand an edit script into aligned columns; returns `(q_aln, t_aln, matches)`.
 fn ops_to_columns(
     q: &[u8],
@@ -301,17 +403,32 @@ const D_CAP: usize = 5_000_000;
 
 /// FastGA `forward_wave` from a mid-line: for every diagonal of the band
 /// `[k_lo, k_hi]`, the 0-wave starts a match snake at `(mida + k) / 2` and the
-/// wavefront expands one diagonal per edit.
+/// wavefront expands one diagonal per edit. `minp`/`maxp` hard-clip the
+/// diagonal range during the expansion (FastGA's self-mode boundaries).
 ///
 /// Only the tip is kept (no per-wave history): the endpoint is the last wave
 /// maximum whose `PATH_LEN`-column window has at least `PATH_AVE` matches
 /// (FastGA's trim point). Returns the trim point as `(a, b)` coordinates
 /// (exclusive end), or `None` when nothing extends.
-fn forward_wave_mid(a: &[u8], b: &[u8], k_lo: i64, k_hi: i64, mida: i64) -> Option<(i64, i64)> {
+fn forward_wave_mid(
+    a: &[u8],
+    b: &[u8],
+    k_lo: i64,
+    k_hi: i64,
+    mida: i64,
+    minp: Option<i64>,
+    maxp: Option<i64>,
+) -> Option<(i64, i64)> {
     let n = a.len() as i64;
     let m = b.len() as i64;
     let mut low = k_lo.max(-m);
     let mut high = k_hi.min(n);
+    if let Some(p) = minp {
+        low = low.max(p);
+    }
+    if let Some(p) = maxp {
+        high = high.min(p);
+    }
     if low > high {
         return None;
     }
@@ -368,9 +485,19 @@ fn forward_wave_mid(a: &[u8], b: &[u8], k_lo: i64, k_hi: i64, mida: i64) -> Opti
     let mut last_good_d = 0usize;
     let mut cur: Vec<WaveCell> = Vec::new();
     loop {
-        // Expand the band by one diagonal on each side.
-        low -= 1;
-        high += 1;
+        // Expand the band by one diagonal on each side, clipped by the
+        // hard boundaries and the sequence length.
+        low = (low - 1).max(-m);
+        high = (high + 1).min(n);
+        if let Some(p) = minp {
+            low = low.max(p);
+        }
+        if let Some(p) = maxp {
+            high = high.min(p);
+        }
+        if low > high {
+            break;
+        }
         d += 1;
         if d >= D_CAP {
             break;
@@ -518,6 +645,11 @@ pub struct LocalAlign {
 /// `q` is the query (orientation space), `t` the target; `rt`/`rq` are the
 /// reversed sequences (reused across calls of one tube); `amid` is the
 /// mid-line anti-diagonal and `[dgmin, dgmax]` the tube's diagonal band.
+/// `selfie` applies FastGA's self-mode diagonal boundaries: a same-contig
+/// forward self-alignment must not cross diagonal 0 (the exact self-identity
+/// line), so tubes entirely on one side are clipped there and tubes
+/// straddling 0 are skipped.
+#[allow(clippy::too_many_arguments)]
 pub fn local_alignment(
     q: &[u8],
     t: &[u8],
@@ -526,6 +658,7 @@ pub fn local_alignment(
     dgmin: i64,
     dgmax: i64,
     amid: i64,
+    selfie: bool,
 ) -> Option<LocalAlign> {
     const DUB_TRIM: i64 = 45;
     let n = q.len() as i64;
@@ -533,13 +666,27 @@ pub fn local_alignment(
     if n == 0 || m == 0 {
         return None;
     }
+    let (minp, maxp) = if selfie {
+        if dgmin > 0 {
+            (Some(1), None)
+        } else if dgmax < 0 {
+            (None, Some(-1))
+        } else {
+            return None;
+        }
+    } else {
+        (None, None)
+    };
+    // The reverse wave runs on mirrored sequences (k' = m - n - k), so its
+    // hard boundaries are the mirror of the forward ones.
+    let (r_minp, r_maxp) = (maxp.map(|p| (m - n) - p), minp.map(|p| (m - n) - p));
     // Forward wave from the mid-line up (a = target, b = query).
-    let (at, bt) = forward_wave_mid(t, q, dgmin, dgmax, amid)?;
+    let (at, bt) = forward_wave_mid(t, q, dgmin, dgmax, amid, minp, maxp)?;
     // Reverse wave on mirrored sequences (extends downward in original space).
     let mida_rev = n + m - 2 - amid;
     let k_lo = (m - n) - dgmax;
     let k_hi = (m - n) - dgmin;
-    let (ar, br) = forward_wave_mid(rt, rq, k_lo, k_hi, mida_rev)?;
+    let (ar, br) = forward_wave_mid(rt, rq, k_lo, k_hi, mida_rev, r_minp, r_maxp)?;
     // The mirrored trim point is an exclusive end; the original path start
     // (inclusive) is the mirror of `end - 1`.
     let (ab, bb) = (m - ar, n - br);
@@ -548,13 +695,13 @@ pub fn local_alignment(
     let (at, bt, ab, bb) = match (fshort, rshort) {
         (true, true) => return None,
         (true, false) => {
-            let (at, bt) = forward_wave_mid(t, q, ab - bb, ab - bb, ab + bb)?;
+            let (at, bt) = forward_wave_mid(t, q, ab - bb, ab - bb, ab + bb, minp, maxp)?;
             (at, bt, ab, bb)
         }
         (false, true) => {
             let mida_rev = n + m - 2 - (at + bt);
             let k = (m - n) - (at - bt);
-            let (ar, br) = forward_wave_mid(rt, rq, k, k, mida_rev)?;
+            let (ar, br) = forward_wave_mid(rt, rq, k, k, mida_rev, r_minp, r_maxp)?;
             (at, bt, m - ar, n - br)
         }
         (false, false) => (at, bt, ab, bb),
@@ -565,7 +712,20 @@ pub fn local_alignment(
     let q_span = &q[bb as usize..bt as usize];
     let t_span = &t[ab as usize..at as usize];
     let mut ops = Vec::new();
-    let diffs = dandc_nd(q_span, t_span, bb as usize, ab as usize, &mut ops);
+    let diffs = if selfie {
+        // FastGA's in-box DP keeps the path near the wave (its band is the
+        // trace-point diagonal spread); pgr has only the anchors, whose
+        // diagonals can drift from the tube band at copy boundaries, so the
+        // band is the union of the tube band and the anchor diagonals,
+        // clipped to the non-zero side in self mode.
+        let dg0 = ab - bb;
+        let dg1 = at - bt;
+        let lo = dg0.min(dg1).min(dgmin).max(minp.unwrap_or(i64::MIN));
+        let hi = dg0.max(dg1).max(dgmax).min(maxp.unwrap_or(i64::MAX));
+        banded_edit_ops(q_span, t_span, bb as usize, ab as usize, lo, hi, &mut ops)
+    } else {
+        dandc_nd(q_span, t_span, bb as usize, ab as usize, &mut ops)
+    };
     let (q_aln, t_aln, matches) = ops_to_columns(
         q,
         t,
@@ -944,7 +1104,7 @@ mod tests {
     fn forward_wave_mid_extends_identical_sequences_to_end() {
         let s = b"ACGTACGTACGT";
         // Mid-line at anti 11 (odd parity): the snake still reaches the end.
-        let (x, y) = forward_wave_mid(s, s, -4, 4, 11).unwrap();
+        let (x, y) = forward_wave_mid(s, s, -4, 4, 11, None, None).unwrap();
         assert_eq!((x, y), (12, 12), "identical sequences must align fully");
     }
 
@@ -960,7 +1120,7 @@ mod tests {
         // Mid-line anti through the middle of the conserved block.
         let rt: Vec<u8> = t.iter().rev().copied().collect();
         let rq: Vec<u8> = q.iter().rev().copied().collect();
-        let aln = local_alignment(&q, &t, &rt, &rq, -2, 2, 114).unwrap();
+        let aln = local_alignment(&q, &t, &rt, &rq, -2, 2, 114, false).unwrap();
         assert!(
             aln.q_start <= 7 && aln.q_end >= 7 + cons.len(),
             "query span {:?}..{:?}",
@@ -978,6 +1138,94 @@ mod tests {
         let tt: Vec<u8> = aln.t_aln.iter().copied().filter(|&c| c != b'-').collect();
         assert_eq!(qq, &q[aln.q_start..aln.q_end]);
         assert_eq!(tt, &t[aln.t_start..aln.t_end]);
+    }
+
+    #[test]
+    fn local_alignment_self_clips_diagonal_zero() {
+        // q/t are the same length; the conserved block sits on a positive
+        // diagonal (+3) in the first case and a negative one (-3) in the
+        // second. Self mode must never let the path cross diagonal 0.
+        let cons = b"ACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT"; // 100 bp
+        let pad = |n: usize, seed: u64| {
+            let mut x = seed;
+            (0..n)
+                .map(|_| {
+                    x = x
+                        .wrapping_mul(6364136223846793005)
+                        .wrapping_add(1442695040888963407);
+                    b"ACGT"[(x >> 33) as usize & 3]
+                })
+                .collect::<Vec<u8>>()
+        };
+
+        // Positive diagonal: q's block is 3 bp left of t's.
+        let t = {
+            let mut v = pad(20, 1);
+            v.extend_from_slice(cons);
+            v.extend_from_slice(&pad(20, 2));
+            v
+        };
+        let q = {
+            let mut v = pad(17, 3);
+            v.extend_from_slice(cons);
+            v.extend_from_slice(&pad(23, 4));
+            v
+        };
+        let rt: Vec<u8> = t.iter().rev().copied().collect();
+        let rq: Vec<u8> = q.iter().rev().copied().collect();
+        let aln = local_alignment(&q, &t, &rt, &rq, 3, 3, 137, true).unwrap();
+        let mut t_i = aln.t_start as i64;
+        let mut q_i = aln.q_start as i64;
+        let mut min_dg = i64::MAX;
+        for (qc, tc) in aln.q_aln.iter().zip(&aln.t_aln) {
+            if *qc != b'-' && *tc != b'-' {
+                min_dg = min_dg.min(t_i - q_i);
+            }
+            if *qc != b'-' {
+                q_i += 1;
+            }
+            if *tc != b'-' {
+                t_i += 1;
+            }
+        }
+        assert!(
+            min_dg >= 1,
+            "positive-diagonal self path crossed 0: {min_dg}"
+        );
+
+        // Negative diagonal: q's block is 3 bp right of t's.
+        let q = {
+            let mut v = pad(23, 5);
+            v.extend_from_slice(cons);
+            v.extend_from_slice(&pad(17, 6));
+            v
+        };
+        let rq: Vec<u8> = q.iter().rev().copied().collect();
+        let aln = local_alignment(&q, &t, &rt, &rq, -3, -3, 137, true).unwrap();
+        let mut t_i = aln.t_start as i64;
+        let mut q_i = aln.q_start as i64;
+        let mut max_dg = i64::MIN;
+        for (qc, tc) in aln.q_aln.iter().zip(&aln.t_aln) {
+            if *qc != b'-' && *tc != b'-' {
+                max_dg = max_dg.max(t_i - q_i);
+            }
+            if *qc != b'-' {
+                q_i += 1;
+            }
+            if *tc != b'-' {
+                t_i += 1;
+            }
+        }
+        assert!(
+            max_dg <= -1,
+            "negative-diagonal self path crossed 0: {max_dg}"
+        );
+
+        // A tube straddling diagonal 0 is skipped entirely.
+        assert!(
+            local_alignment(&q, &t, &rt, &rq, -2, 2, 137, true).is_none(),
+            "straddling tube must be skipped in self mode"
+        );
     }
 
     #[test]

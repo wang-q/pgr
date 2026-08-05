@@ -75,54 +75,12 @@ This command identifies repeats in a genome against an external repeat library
                 .help("K-mers occurring at least this often on either side are skipped as seeds"),
         )
         .arg(
-            Arg::new("min_span")
-                .long("min-span")
-                .short('c')
-                .value_parser(value_parser!(usize))
-                .num_args(1)
-                .default_value("50")
-                .help("Minimum per-axis seed span (bp) for a chain"),
-        )
-        .arg(
-            Arg::new("max_gap")
-                .long("max-gap")
-                .short('s')
-                .value_parser(value_parser!(usize))
-                .num_args(1)
-                .default_value("1000")
-                .help("Maximum bp gap between consecutive seeds in a chain"),
-        )
-        .arg(
-            Arg::new("band")
-                .long("band")
-                .value_parser(value_parser!(usize))
-                .num_args(1)
-                .default_value("128")
-                .help("Diagonal band half-width (bp) around the chain mean"),
-        )
-        .arg(
-            Arg::new("merge_gap")
-                .long("merge-gap")
-                .value_parser(value_parser!(usize))
-                .num_args(1)
-                .default_value("5000")
-                .help("Maximum gap (bp) to merge colinear chains shifted in diagonal (IS-element breaks)"),
-        )
-        .arg(
             Arg::new("min_shared")
                 .long("min-shared")
                 .value_parser(value_parser!(usize))
                 .num_args(1)
                 .default_value("16")
                 .help("Minimum shared seed length (bp)"),
-        )
-        .arg(
-            Arg::new("workflow")
-                .long("workflow")
-                .value_parser(["greedy", "tube"])
-                .num_args(1)
-                .default_value("greedy")
-                .help("Chaining workflow"),
         )
         .arg(
             Arg::new("min_identity")
@@ -211,12 +169,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         smer,
         window,
         freq: *args.get_one::<usize>("freq").unwrap(),
-        min_span: *args.get_one::<usize>("min_span").unwrap(),
-        max_gap: *args.get_one::<usize>("max_gap").unwrap(),
-        band: *args.get_one::<usize>("band").unwrap(),
-        merge_gap: *args.get_one::<usize>("merge_gap").unwrap(),
         min_shared: *args.get_one::<usize>("min_shared").unwrap(),
-        workflow: args.get_one::<String>("workflow").unwrap().clone(),
         min_identity,
         min_len: *args.get_one::<usize>("min_len").unwrap(),
         fill_fragment: *args.get_one::<usize>("fill_fragment").unwrap(),

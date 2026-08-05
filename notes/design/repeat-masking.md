@@ -320,12 +320,7 @@ runlist JSON → pgr fa mask
 | :--- | :--- | :--- | :--- | :--- |
 | `-k/--smer/--window` | syncmer 种子参数 | 40 / 8 / 5（pgi 默认） | 待验证 | 种子敏感度（RM 靠 minmatch 档） |
 | `-f/--freq` | 高频 k-mer 跳过阈值 | 10（默认）→ 放宽 100 | **放宽** | 高拷贝家族（Alu 百万拷贝）种子会超频被丢 |
-| `-c/--min-span` | 链最小种子跨度 | 85（默认）→ 50 | 放宽 | RM 短重复配方 minmatch 低 |
-| `-s/--max-gap` | 链内种子最大 gap | 1000（默认） | 保持 | |
-| `--band` | 对角带半宽 | 128（默认） | 保持 | RM bandwidth 14（RMBlast 单位不同） |
-| `--merge-gap` | 共线链合并 gap | 5000（默认） | 保持 | |
-| `--min-shared` | 共享种子最小长度 | k（greedy 默认）→ 16 | 放宽 | 高分歧拷贝共享种子少 |
-| `--workflow` | greedy / tube | greedy | 对比 | FastGA tube 的 plen floor=12 更敏感 |
+| `--min-shared` | 共享种子最小长度 | 12（tube 默认）→ 16 | 放宽 | 高分歧拷贝共享种子少 |
 | `-p` | 线程数 | 8 | — | |
 
 过滤参数（CLI 默认，实施后标定）：
@@ -352,7 +347,7 @@ pub struct AlignRepeatOpts {
     // pgi 透传参数
     kmer: usize, smer: usize, window: usize,
     freq: usize, min_span: usize, max_gap: usize, band: usize,
-    merge_gap: usize, min_shared: usize, workflow: String,
+    merge_gap: usize, min_shared: usize,
     // 过滤参数
     min_identity: f64, min_len: usize, fill_fragment: usize,
     parallel: usize,
@@ -368,7 +363,7 @@ hits.psl 过滤 → 写 target .rg → runlist 合并 → runlist JSON。PSL 记
 1.  骨架：`e_align.rs` + `run_align_repeat_pipeline`，参数按 §2.3.2 初始值，
     跑通 MG1655 + 现有三个库（冒烟，确认管道与坐标方向）。
 2.  真核验证与调参（§2.5）：拟南芥/玉米 + Dfam 全库，扫描关键参数
-    （`-f`、`--min-shared`、`--workflow`、`--min-identity`），确定默认值。
+    （`-f`、`--min-shared`、`--min-identity`），确定默认值。
 3.  收尾：`docs/rept.md` 的 e-align 一节、集成测试（`tests/cli_rept.rs`）。
 
 工作量比完整 RepeatMasker 小一个数量级。遮蔽版需要的能力映射见附录 A.7。
@@ -443,7 +438,7 @@ min-identity 0.70、min-len 50）
 *   耗时：debug build 下单次 e-align 约 20–90 s（pgi 建索引占大头），
     release build 会快很多；库越大越慢（repbase 31491 条最慢）。
 *   参数尚未标定：本轮全用初始值；真核基因组（拟南芥/玉米）验证与
-    `-f`/`--min-shared`/`--workflow`/`--min-identity` 扫描见 §2.5。
+    `-f`/`--min-shared`/`--min-identity` 扫描见 §2.5。
 
 #### 遮蔽闭环与参数敏感性（2026-08-03，MG1655 + tncentral）
 
@@ -478,8 +473,13 @@ soft-mask 警告与空输入兜底；集成测试（lastz 缺失时跳过）已�
 **闭环验证**：e-align 输出直接喂 `pgr fa mask`（soft-mask），masked 序列
 中小写碱基数 = 60,423 = e-align 覆盖 bp，逐 bp 一致，检测→遮蔽闭环成立。
 
-**参数扫描**（单变量，基线 f=100 / c=50 / min-shared=16 / greedy /
-min-identity=0.70 → 60,423 bp / 1.30%）：
+> 2026-08-05：greedy 链化 + 窗口扩展已从 `pgr align pgi` 移除（pgi-align
+> §3.5.7），链化/扩展参数（`-c/-s/--band/--merge-gap/--workflow`）不再
+> 存在；`rept e-align` 仅透传 `-f` 与 `--min-shared`。下表为 tube
+> 语义下的扫描，结论方向不变（min-shared 主导）。
+
+**参数扫描**（单变量，基线 f=100 / min-shared=16 / min-identity=0.70
+→ 60,423 bp / 1.30%）：
 
 | 参数变化 | 覆盖 bp / % | 观察 |
 | :--- | :--- | :--- |
@@ -487,12 +487,10 @@ min-identity=0.70 → 60,423 bp / 1.30%）：
 | `-f 10` / `-f 500` | 75,170–75,413 / 1.62% | f 在 10–500 间影响小、非单调 |
 | `--min-identity 0.60` | 75,413 / 1.62% | 放宽略增 |
 | `--min-identity 0.80` | 64,449 / 1.39% | 收紧反而略增（碎片合并非线性） |
-| `--workflow tube` | 74,936 / 1.61% | tube 更敏感（plen floor=12） |
 | `--min-shared 12` | 269,287 / **5.80%** | **过度敏感，假阳性暴涨 4.5 倍** |
 
 结论：**min-shared 是敏感度主导参数**，默认 16 已是好平衡点（12 就失控）；
-f / min-identity / workflow 在细菌上影响温和。真核验证时优先扫描
-min-shared 与 workflow。
+f / min-identity 在细菌上影响温和。真核验证时优先扫描 min-shared。
 
 #### spanr 对带点 contig 名的截断 bug（2026-08-03 发现）
 
@@ -764,8 +762,7 @@ identity 的支持——超出 e-align 命令本身，另立主题。
     （小写比例 >0 时先 `tr a-z A-Z`），否则 e-align 严重低估。参数扫描：
     e-kmer 侧 `--min-len ∈ {100, 300}`（真核建议 100）；e-align 侧
     `-f ∈ {10, 100, 500}`、`--min-shared ∈ {12, 16}`（细菌实测
-    min-shared 是主导旋钮，12 过度敏感）、`--workflow ∈ {greedy, tube}`
-    （tube 在长重复元件场景异常，待查）、`--min-identity ∈ {0.60, 0.70}`；
+    min-shared 是主导旋钮，12 过度敏感）、`--min-identity ∈ {0.60, 0.70}`；
     每次记录耗时、hits 数、覆盖区间；
 3.  对比数据：
     *   覆盖区间 vs 现有 `e-kmer` 的差异；

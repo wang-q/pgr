@@ -94,17 +94,41 @@ PAF / PSL
 
 ### 3.4 种子链（chaining，FastGA.c align_contigs）
 
-种子 hit 按 **anti-diagonal（反对角线）空间** 排序扫描（`print_seeds` / `align_contigs`
-中维护按 `(ipost, apost)` 归并的种子流）。合法链需满足：
+**术语：Tube**（出处 FastGA.c:3160，`align_contigs` 注释）——一个覆盖
+≥ `CHAIN_MIN` 的种子链连同它的比对盒：anti 区间 `alow..ahgh` × 对角线带
+`dgmin..dgmax`。Tube 不是正式 API/类型（源码无 `Tube` 结构、无
+`tube_*` 函数），只是 Myers 在注释与调试宏（`DEBUG_TUBE`，FastGA.c:35/
+3314，输出 "Did not reach top/bottom"）里对"链 + 盒"的称呼；它是给
+wave 划定的搜索区域。pgr 移植时把 tube 提升为正式概念（`Tube` 结构体、
+`chain_tubes`/`extend_tube`），语义同源。
+
+种子 hit 按 **anti-diagonal（反对角线）空间** 排序扫描（`print_seeds` /
+`align_contigs` 中维护按 `(ipost, apost)` 归并的种子流；注意这两个变量名
+**装的是 anti**——reimport 时 `memcpy(_anti, ...)`，排序/归并键是
+`anti = i+j`，不是坐标 `i`）。合法链需满足：
 
 1. 所有种子落在宽度 128 的对角线带内；
 2. 相邻种子间距 < `CHAIN_BREAK`（源码 2000 = 2×`-s` 1000，anti-diagonal 空间 2 倍）；
 3. 链在两侧覆盖 ≥ `CHAIN_MIN`（源码 170 = 2×`-c` 85）个 anti-diagonal。
 
 满足条件的链在"tube"（`alow..ahgh` × `dgmin..dgmax`）内触发 wave aligner
-（`Local_Alignment`）。self 比对时跳过完全相同的对角线段。
+（`Local_Alignment`）。self 比对（`SELF && ctg1==ctg2 && !comp`，FastGA.c:
+3220-3240）对 tube 扩展做对角线限制：tube 带全正（`dgmin > 0`）时
+`Local_Alignment(..., dgmin-1, -1)`、全负（`dgmax < 0`）时
+`Local_Alignment(..., -1, -(dgmax+1))`，带跨 0 的 tube 整管跳过——
+`Local_Alignment` 内 `minp = low-lbord` / `maxp = hgh+hbord` 成为 wave
+`forward/reverse` 的对角线硬边界（`low >= minp` / `hgh <= maxp` 分支），
+保证路径不跨越精确自同线（diag 0）。
 
 ### 3.5 Wave-based local alignment（align.c）
+
+**术语：Wave**——Myers wavefront 算法的波前：`V[k]` 是"编辑距离恰好为
+d 时对角线 k 上的最远到达点"，随 d 逐波扩展（每波对角线 ±1）。"wave"
+是算法本身的形象叫法（调试宏 `DEBUG_WAVE`/`SHOW_MATCH_WAVE`，
+align.c:29-30），不是数据结构的名字。FastGA 用它做局部比对的两段式：
+`forward_wave`（从 mid-line 锚点向高 anti 延伸）+ `reverse_wave`（镜像
+序列上向低 anti 延伸，等价于原坐标反向），端点框定比对区间，再用
+`dandc_nd` 回溯精确路径。
 
 源自 daligner 的 wave-front 对齐：
 
@@ -119,6 +143,12 @@ PAF / PSL
   `trace_nd` / `middle_np` / `iter_np`），用 sparse DP 在 wave 之间回溯完整比对路径，
   按 `tspace`（trace spacing）压缩轨迹。
 - **Gap_Improver**（align.c:6714）：对 gap 区域做二次精修。
+
+> **术语对照（Wave / Tube / Cube）**：源码里只有 Wave（算法，`forward_/
+> reverse_wave`、`Local_Alignment`）与 Tube（种子链 + 比对盒，注释语）。
+> **没有 "Cube"**——FastGA 源码与文档均无此词（全仓 `rg -i cube` 无
+> 结果）；若在别处看到 Cube，应为 Tube 的误记（t/c 同音或拼写混淆）。
+> pgr 代码与笔记沿用 Wave/Tube 两个词，与上游一一对应。
 
 ### 3.6 Trace points 与 .1aln 编码（alncode.c / ONEaln.c）
 

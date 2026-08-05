@@ -1,12 +1,10 @@
 # pgr align pgi
 
-`pgr align pgi` aligns two genomes on the pgr k-mer index pipeline, emitting
-one PSL block per chain:
+`pgr align pgi` aligns two genomes on the pgr k-mer index pipeline:
 
 ```
 pgr align pgi ref query -o out.psl
-  [-f 10] [-c 85] [-s 1000] [--band 128] [--merge-gap 5000]
-  [--min-shared N] [--workflow greedy|tube] [--parallel 8]
+  [-f 10] [--min-shared N] [--parallel 8]
   [-k 40] [--smer 8] [--window 5] [--keep-index]
   [--ref-seq ref.fa|ref.2bit] [--query-seq query.fa|query.2bit]
 ```
@@ -35,30 +33,15 @@ pgr align pgi ref query -o out.psl
 
 With a single input (or `--self` with the same input as query) the genome is
 aligned to itself (internal repeats and haplotype-level homology, FastGA's
-self mode); exact self-identity hits are dropped.
+self mode); exact self-identity hits are dropped, and no same-contig forward
+block is emitted on diagonal 0 (FastGA's self-mode wave boundary).
 
 ## Options
 
 - `-f`/`--freq`: drop k-mers occurring at least this many times on either
   side (repeats are not seeds);
-- `-c`/`--min-span`: minimum per-axis seed span (bp) for a chain;
-- `-s`/`--max-gap`: maximum bp gap between consecutive seeds in a chain.
-  When sequences are available, a gap of at least 200 bp on both axes is
-  bridged only if the intervening sequences are homologous, so the two
-  reciprocal chains of an inverted repeat whose copies are closer than
-  `max-gap` stay separate blocks (bridging them would dilute the identity
-  below the SD filter and lose the pair);
-- `--band`: diagonal band half-width (bp) around the chain mean;
-- `--merge-gap`: merge adjacent colinear chains separated by at most this gap
-  (bp), stitching blocks split by insertions (IS elements); only chains whose
-  diagonals differ are merged, same-diagonal gaps stay independent blocks.
-  When both intervening spans are non-empty, the merge additionally requires
-  the intervening sequences to be homologous (verified by a banded
-  alignment), so independent copy pairs that happen to sit on nearby
-  diagonals stay separate;
-- `--min-shared`: minimum shared seed length (bp); default = k for greedy,
-  12 for tube;
-- `--workflow`: chaining workflow, `greedy` (default) or FastGA-style `tube`;
+- `--min-shared`: minimum shared seed length (bp); default is FastGA's plen
+  floor (12);
 - `--parallel`: rayon thread count (default 8, FastGA `-T` default);
 - `-k`/`--smer`/`--window`: sampling parameters for automatic indexing of
   genome inputs only (default 40/8/5, matching FastGA GIX);
@@ -68,11 +51,28 @@ self mode); exact self-identity hits are dropped.
 - `--ref-seq`/`--query-seq`: sequences for chain refinement of `.pgi` inputs
   (FASTA or .2bit).
 
-Without extension sequences, each chain is emitted as a single PSL block.
-With sequences, chains are refined by a banded local alignment into scored
-PSL records with real blocks; chains longer than 16 kb are split into
-overlapping windows. The output feeds directly into
+The alignment uses FastGA's `align_contigs` workflow (diagonal buckets,
+mid-line wave extension; chain break 2000 bp, min cover 85 bp, 128 bp slide).
+Without extension sequences (a `.pgi` pair without `--ref-seq`/`--query-seq`)
+each tube is emitted as one geometric block from its seed span; with
+sequences the tubes are refined by the wave into scored multi-block records.
+The output feeds directly into
 `pgr psl to-chain` / `pgr pl chainnet`.
+
+## Terminology
+
+* **Wave**: FastGA's wavefront local aligner (`forward_wave` /
+  `reverse_wave`, from Myers' wavefront algorithm). A wavefront is the
+  furthest-reaching point per diagonal at a given edit distance; it expands
+  one diagonal per edit. The two opposing waves (forward from the mid-line,
+  reverse on the mirrored sequences) frame the alignment span, and the exact
+  path is reconstructed by a divide-and-conquer edit script. `pgr` uses this
+  to refine each tube when sequences are available.
+* **Tube**: a seed chain together with its search box (anti-diagonal range ×
+  diagonal band); the wave runs inside this box. The name comes from a
+  comment in FastGA's `align_contigs` (`FastGA.c:3160`) and its
+  `DEBUG_TUBE` macro; it is not an official FastGA API term. There is no
+  "cube" in FastGA — the spelling is sometimes confused with "tube".
 
 ## Notes
 
@@ -105,9 +105,9 @@ overlapping windows. The output feeds directly into
    ```
    pgr align pgi a.fa b.fa --keep-index -o ab.psl
    ```
-4. Tune seed filtering and chaining:
+4. Tune seed filtering:
    ```
-   pgr align pgi a.fa b.fa -f 20 -c 100 -s 2000 --band 64 -o ab.psl
+   pgr align pgi a.fa b.fa -f 20 -o ab.psl
    ```
 5. Detect internal repeats via self-alignment:
    ```
