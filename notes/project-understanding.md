@@ -529,7 +529,7 @@ chainnet 后消失。`pgr psl chain` 在 2bit 序列缓存优化后（~0.3 s）�
 |------|------|------|
 | [[pbit.md]] | `pgr pbit` 格式设计（LZ-diff + CIGAR delta + 多参考，已合并原扩展草案；索引不内嵌，决策 A） | v1004 已实现，**暂停评审中** |
 | [[pgi-align.md]] | 两基因组归并比对（`pgr align pgi`，种子→tube 链→mid-line wave 扩展→PSL） | 已实现（2026-08-05 tube 单流程定稿，端到端反超 FastGA ~2.3×） |
-| [[pgi-query-layer.md]] | `PgiQuery` 抽象层与 FastGA 顺序算法（vlcp/LBYTE/变长种子）的解锁路径 | 设计稿（2026-08-05 起草，待审核） |
+| [[pgi-query-layer.md]] | `PgiQuery` 抽象层与 FastGA 顺序算法（vlcp/LBYTE/变长种子）的解锁路径 | 方案 A 已落地（2026-08-05）；LBYTE/vlcp 定稿不做，变长种子未立项 |
 | [[fas-multiz.md]] | `libs::fas_multiz` 设计与实现（banded DP 合并） | 已实现（CLI 已落地） |
 | [[spoa_port.md]] | Spoa C++ → Rust 移植（POA 引擎） | 已完成（双引擎集成已落地） |
 | [[ms2dna_port.md]] | ms2dna C → Rust 迁移设计 | 已实现（实际命令为 `pgr ms to-dna`） |

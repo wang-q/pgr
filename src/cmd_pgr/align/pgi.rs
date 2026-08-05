@@ -337,7 +337,10 @@ fn resolve_side(
             .path()
             .join(format!("{label}.pgi"))
     };
-    let mut w = std::fs::File::create(&out)?;
+    // `idx.write` issues one write per occurrence record (millions); the
+    // buffered writer turns those into large chunks instead of one syscall
+    // per record (the standalone `pgr pgi build` path uses `pgr::writer`).
+    let mut w = std::io::BufWriter::new(std::fs::File::create(&out)?);
     idx.write(&mut w)?;
     log::info!(
         "built {label} index {} (k={k}, syncmer {smer}/{window})",

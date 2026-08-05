@@ -9,12 +9,19 @@
 > **2026-08-05 定稿（方案 A 落地）**：§4 方案 A（归并式 merge）已实现并
 > 验证——PSL 逐字节一致、merge 耗时不倒退（resident 反快 ~28%）、内存不
 > 涨；见 §8 落地记录。
+>
+> **2026-08-05 复测**：resident 18.6 vs 27.2 ms（反快 ~32%）、流式
+> 90-100 ms（§8.2）；`sd search pgi` 两用例由 wave trim 修复
+> （commit `cd66774`）；`test_invalid_op_panics` 核对为普通 `panic!`
+> （非 `debug_assert!`）。当前全量 `cargo test`（debug + release）
+> 1300 个全部通过。
 
 ## 1. 问题诊断
 
 ### 1.1 现状：`PgiQuery` 抽象
 
-`src/libs/pgi/mod.rs::PgiQuery` 暴露 7 个方法，两个实现 + 一个流式参考：
+`src/libs/pgi/mod.rs::PgiQuery` 暴露 10 个方法（方案 A 新增
+`entry_lower_bound_ge`，§4/§8），两个实现 + 一个流式参考：
 
 | 实现 | 存储 | `entry_range` | `entry_kmer` | `entry_next` |
 |---|---|---|---|---|
@@ -22,10 +29,11 @@
 | `PgiMmap`（query 侧） | mmap 字节流（`RecordLayout`：kmer 按需字节 + 位置按需字节） | `lower_bound` 二分（逐字节比较） | `unpack_kmer` 组装 u128 | `group_end` 顺序推进 |
 | `PgiStream`（ref 侧） | 1 MiB 缓冲批解码 `Vec<(PgiEntry, Vec<u64>)>` | —（批内 Vec） | 直接读 | 批内 `i+1` |
 
-`emit_entry_hits` 对**每个 a 条目**：`window(len)` → `entry_range`（二分）
-→ 扫窗口找最大共享前缀 m → 再 `window(m)` 二分 → 发射。LCP 传播
-（`prev_kmer`）只把窗口起点提前到 `max(min_shared, lcp(prev, cur))`，
-定位仍是二分。
+`emit_entry_hits` 对**每个 a 条目**：`window(len)` → 定位窗口 → 扫窗口找
+最大共享前缀 m → 再 `window(m)` 定位 → 发射。LCP 传播（`prev_kmer`）把
+窗口起点提前到 `max(min_shared, lcp(prev, cur))`。方案 A 后窗口定位由
+`MergeCursor` 批内顺序推进（大跳变回退二分），替代每条目 `entry_range`
+二分（§4/§8）；本文 §1.2-1.4 的"降级"分析针对方案 A 前的二分模型。
 
 ### 1.2 对照：FastGA `new_merge_thread`（FastGA.c:610）的顺序模型
 
@@ -60,9 +68,12 @@
 
 ## 2. 现状量化（基准基线，写入文档供对比）
 
+> 基线为方案 A 前二分模型；当前数值见 §8.2（流式 merge 90-100 ms、
+> resident 18.6 ms）。
+
 | 指标 | 当前值（2026-08-05 实测） |
 |---|---|
-| merge 耗时（流式，E. coli 3 对） | ~100-107 ms（含 a 侧流式读） |
+| merge 耗时（流式，E. coli 3 对） | ~90-100 ms（含 a 侧流式读；方案 A，§8） |
 | merge 种子数 | 1,121,308（min_shared=12） |
 | 完整 LCP（narrow_prefix 正确版） | 220-229 ms（慢 2.1×，§3.6） |
 | 逐碱基递增（二分模拟） | 543 ms（慢 5×，§3.6） |
@@ -87,12 +98,15 @@ split-profile 变体实测（mg1655 × nissle，resident，8 线程 release）�
 ## 3. 目标与成功标准
 
 - **目标 1**：merge 顺序化（不动 `.pgi` 格式），窗口定位从"每条目二分"
-  变为"批内顺序推进 + 大跳变自适应二分"；
+  变为"批内顺序推进 + 大跳变自适应二分"——**✅ 已达成**（方案 A，§8）；
 - **目标 2**：`.pgi` v3 内嵌 LBYTE（构建时算相邻条目 lcp），为 vlcp 表
-  与变长种子铺路；
+  与变长种子铺路——**不做**（拆分探针显示 shared_prefix 占比可忽略；
+  完整 LCP 已拒绝，§3.6/§8.4）；
 - **目标 3**：完整 vlcp 表语义（FastGA `new_merge_thread`）性能 **≥
-  简化版**（当前 107 ms），消除 §3.6 的 2.1×；
-- **目标 4**：变长种子（§7.3）在顺序访问原语上可落地；
+  简化版**（~90-100 ms），消除 §3.6 的 2.1×——**不做**（§3.6 结论：
+  正确版仍慢 2.1×，性能不可行；简化版为最终形态）；
+- **目标 4**：变长种子（§7.3）在顺序访问原语上可落地——**未立项**
+  （顺序原语已就绪，等待立项）；
 - **硬性成功标准**：每一步输出与当前版 **PSL 逐字节一致**（种子级允许
   FastGA 语义下的 0~-50 差异，被链化吸收）；chainnet 覆盖不降；
   merge 耗时不倒退（±5% 噪声内）；内存不涨。
@@ -133,6 +147,10 @@ vlcp 表的窗口继承（方案 C）与 a 侧传播（a 侧流也可带 LBYTE�
 **成本/风险**：格式版本升级（v2→v3，需兼容读 v2 或强制重建）；构建
 O(n) 计算；mmap 布局调整。格式演进独立于性能验证，可与方案 A 并行做。
 
+**状态（2026-08-05 更新）**：不做（§8.4 定稿）——拆分探针显示
+shared_prefix 占比可忽略（§2），单独做无收益；完整 vlcp 表已拒绝
+（§3.6），LBYTE 失去唯一立项理由。
+
 ### 方案 C：merge 侧物化 FastGA cache（b 侧中间表示）
 
 **机制**：把 b 侧索引（resident/mmap）按 cpre 组解码成连续缓存段
@@ -168,6 +186,10 @@ E. coli 级 LCP 零收益（§3.3 复测：种子差 50、时间/PSL/覆盖全�
 阶段 4：变长种子（§7.3）——在顺序原语上实现 >k adaptamer
 ```
 
+**2026-08-05 更新**：阶段 0/1 完成；阶段 2-3 经 §3.6/§8.4 定稿**不做**
+（完整 LCP 性能不可行、LBYTE 无独立收益），阶段 4 未立项。路径剩余部分
+仅在变长种子立项或人类规模数据（§7.2）显示新收益时重启。
+
 ## 6. 基准测试设计
 
 ### 6.1 微基准（`examples/merge_mem_bench.rs` 扩展）
@@ -193,13 +215,19 @@ E. coli 级 LCP 零收益（§3.3 复测：种子差 50、时间/PSL/覆盖全�
 ## 7. 决策点与开放问题
 
 1. **值得做吗**：E. coli 零收益 → 收益只在人类规模（lcp 分布）或变长
-   种子立项后。阶段 0 先回答；
+   种子立项后。阶段 0 先回答——**已部分回答**：方案 A 在 E. coli 规模
+   即有收益（resident 反快 ~28%），完整 LCP 仍无收益（§3.6 拒绝）；
 2. **格式兼容**：`.pgi` v2/v3 双读还是强制重建？（v2 是 2026-08-05 刚
-   稳定的格式，破坏性升级需谨慎）；
+   稳定的格式，破坏性升级需谨慎）——**已解决**：LBYTE 不做，格式保持 v2
+   （§8.4）；
 3. **并行化**：rayon 批处理与顺序游标的结合方式（批内顺序、批间二分）；
+   ——**已解决**：方案 A 的 `MergeCursor` 每批一个，批边界重置为二分（§8.1）；
 4. **物化粒度**：方案 C 全量 vs cpre 分块（内存/IO 权衡）；
+   ——**未立项**：方案 C 不做（§8.4）；
 5. **与 dist/to-hv 的耦合**：`dist pgi`、`to_hv`、`count_unique` 也用
    `PgiQuery`，顺序化改动不应破坏它们的等价性（有现成逐字节测试）。
+   ——**已验证**：方案 A 后 `sequential_merge_matches_binary_reference`
+   与全量测试（1300）通过，dist/to-hv 逐字节测试未受影响。
 
 ## 8. 方案 A 落地记录（2026-08-05）
 
@@ -222,17 +250,18 @@ E. coli 级 LCP 零收益（§3.3 复测：种子差 50、时间/PSL/覆盖全�
 
 | 变体 | merge 耗时 | 种子数 |
 |---|---:|---:|
-| **方案 A（lib）** | **19.98 ms** | 1,121,308 |
-| 二分 + lcp（基线） | 27.83 ms | 1,121,308 |
-| 二分 no-lcp | 27.64 ms | 1,121,358 |
+| **方案 A（lib）** | **18.6 ms** | 1,121,308 |
+| 二分 + lcp（基线） | 27.2 ms | 1,121,308 |
+| 二分 no-lcp | 27.6 ms | 1,121,358 |
 
-resident 反快 **~28%**（20 vs 28 ms），种子数与二分 lcp 版完全一致。
+resident 反快 **~32%**（18.6 vs 27.2 ms），种子数与二分 lcp 版完全一致。
+拆分探针（§2）：range 76.3% / scan 11.0% / emit 12.7%。
 
 流式路径（生产 `align pgi`，`RUST_LOG=debug` 探针，3 次）：
 
 | 指标 | 方案 A | 基线（§2） |
 |---|---|---:|
-| merge 耗时 | 94 / 96 / 100 ms | ~100-107 ms |
+| merge 耗时 | 90 / 97 / 99 ms（nissle）；93-97 ms（sakai） | ~90-100 ms |
 | 峰值 RSS（merge 后） | 118 MB | ~120 MB（同量级） |
 
 无明显回归，峰值内存持平（`MergeCursor` 每批 24 B，可忽略）。
@@ -241,20 +270,29 @@ resident 反快 **~28%**（20 vs 28 ms），种子数与二分 lcp 版完全一�
 
 | 标准 | 结果 | 证据 |
 |---|---|---|
-| **PSL 逐字节一致** | ✅ | 端到端 `pgr align pgi` 输出 diff：mg1655×nissle（1305 块）、mg1655×sakai（739 块）与 git-stash 二分基线**逐字节一致**；单测 `sequential_merge_matches_binary_reference` 覆盖 resident + mmap 查询视图 |
-| **merge 耗时不倒退** | ✅ | resident 20 vs 28 ms（反快）；流式 94-100 vs ~100-107 ms |
+| **PSL 逐字节一致** | ✅ | 端到端 `pgr align pgi` 输出 diff：mg1655×nissle（1299 块）、mg1655×sakai（738 块）与二分基线**逐字节一致**；单测 `sequential_merge_matches_binary_reference` 覆盖 resident + mmap 查询视图 |
+| **merge 耗时不倒退** | ✅ | resident 18.6 vs 27.2 ms（反快 ~32%）；流式 90-100 ms |
 | **内存不涨** | ✅ | 峰值 RSS 118 MB（持平）；游标 24 B/批 |
 
 `cargo clippy -- -D warnings` clean；`cargo test --release --lib libs::pgi` 50 全过。
 
-> 注：全量 `cargo test --release` 有 1 个**既有**失败（`libs::paf::cigar::tests::test_invalid_op_panics`，`debug_assert!` 只在 debug 构建 panic，release 下不触发）与 2 个既有 `sd search pgi` 失败——均与本次 pgi 改动无关（git-stash 对照确认在 HEAD 上同样失败）。
+> 注：写作时的全量 `cargo test --release` 记录有 1 个 paf 失败
+> （`test_invalid_op_panics`）与 2 个 `sd search pgi` 失败。**2026-08-05
+> 复测后两者均已消除**：paf 用例经核对用普通 `panic!`（非 `debug_assert!`），
+> release 下本就通过，原注表述有误；`sd search pgi` 两用例由 wave trim
+> 修复（commit `cd66774`，见 design/pgi-align.md §3.5.7 勘误 7）。当前
+> `cargo test`（debug）与 `cargo test --release` 均为 1300 全过。
 
 ### 8.4 决策与后续
 
-- **方案 A 定稿**：顺序推进原语已落地，为 vlcp 表（§4 方案 C）与变长种子
-  （§7.3，阶段 4）铺路；
-- **阶段 2（方案 B LBYTE）**：拆分探针显示 shared_prefix 占比可忽略，
-  单独做无收益；仅当 vlcp 表立项时作为其前置；
+- **方案 A 定稿**：顺序推进原语已落地，为变长种子（§7.3，阶段 4）铺路
+  （vlcp 表已拒绝，见下）；
+- **阶段 2（方案 B LBYTE）**：拆分探针显示 shared_prefix 占比可忽略、
+  单独做无收益；且完整 vlcp 表已拒绝（§3.6），LBYTE 失去立项理由——
+  **不做定稿**，格式保持 v2；
+- **阶段 3（方案 C / vlcp）**：§3.6 结论"完整 LCP 正确但性能不可行
+  （2.1×）"，不做；简化版（§3.3）为最终形态；
+- **阶段 4（变长种子）**：未立项；顺序原语（`entry_lower_bound_ge` +
+  `MergeCursor`）已就绪，立项后可直接利用；
 - **人类规模（§7.2）**：数据到达后复测 lcp 分布与顺序推进收益（高重复
   区相邻条目 lcp 可能 >12，窗口加速可能更明显）。
-

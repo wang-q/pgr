@@ -4,7 +4,7 @@
 > 喂给 `pgr pl chainnet`（UCSC 链化由 pgr 承担，见 [[fastga.md]] §12.3 决策 3）。
 >
 > 状态：**2026-08-05 定稿**。管线完整、与 FastGA 对照稳定：chainnet 覆盖
-> 持平、端到端反超 ~2.3×；08-05 完成 `PgiMmap` 复用与 lcp 传播两项内部
+> 持平、端到端反超 ~3.3×；08-05 完成 `PgiMmap` 复用与 lcp 传播两项内部
 > 优化（PSL 输出逐字节一致），并对照源码裁定 Gap_Improver（§3.1）与完整
 > LCP（§3.6）不移植。
 >
@@ -18,16 +18,16 @@
 
 `pgr align pgi` 完整实现"种子归并 → tube 链化（FastGA `align_contigs`）→
 mid-line wave 扩展 → PSL"，与 FastGA 对照：chainnet 覆盖持平（差
-0.0-0.015%）、阶段耗时持平（~0.8s vs ~0.7s）、峰值内存更低（224 vs
-332 MB）、端到端反超 ~2.3×。
+0.0-0.015%）、阶段耗时持平（~0.42-0.70s vs ~0.7s）、峰值内存更低（
+~161-176 MB vs 332 MB）、端到端反超 ~3.3×。
 
 ### 0.2 关键数字（详见 §2）
 
 | 对（MG1655 vs） | pgr 覆盖 | FastGA 覆盖 | pgr 耗时 | pgr 峰值内存 |
 |---|---:|---:|---:|---:|
-| Sakai | 89.33% | 89.3% | 0.77s | **224 MB**（FastGA 332 MB） |
-| EC958 | 86.38% | 86.3% | 0.81s | 205 MB |
-| Nissle | 85.28% | 85.30% | 0.65s | 207 MB |
+| Sakai | 89.30% | 89.3% | ~0.42s | ~176 MB（FastGA 332 MB） |
+| EC958 | 86.28% | 86.3% | ~0.70s | ~161 MB |
+| Nissle | 85.21% | 85.30% | ~0.46s | ~164 MB |
 
 ### 0.3 已落地（截至 2026-08-05）
 
@@ -219,25 +219,26 @@ pgr align pgi <ref> <query> -o out.psl
 > 全通过，`cargo test` 全量 1255 通过（audit 后新增 crafted 索引/负链帧/
 > 数据安全等回归，见 [[../audit/audit-pgi-align.md]]）。
 
-### 2.2 当前基准（2026-08-02，真实数据，8 线程，release）
+### 2.2 当前基准（2026-08-05 复测，真实数据，8 线程，release）
 
-| 对（MG1655 vs） | pgr chainnet 覆盖 | 块数 | pgr 耗时 | FastGA 覆盖/耗时 | pgr 峰值内存 | FastGA 峰值内存 |
+| 对（MG1655 vs） | pgr chainnet 覆盖 | PSL 记录 | 比对耗时（预建索引） | 端到端（含建索引×2） | 峰值内存（预建索引） | FastGA 覆盖/耗时 |
 |---|---:|---:|---:|---:|---:|---:|
-| Sakai | 89.33% | 691 | 0.77s | 89.3% / ~0.7s | **224 MB** | 332 MB |
-| EC958 | 86.38% | 756 | 0.81s | 86.3% / ~0.7s | **205 MB** | — |
-| Nissle | 85.28% | 1213 | 0.65s | 85.30% / ~0.7s | **207 MB** | — |
+| Sakai | 89.30%（582 块） | 738 | ~0.42 s | ~1.23 s | ~176 MB | 89.3% / ~0.7 s |
+| EC958 | 86.28%（811 块） | 815 | ~0.70 s | ~1.3 s | ~161 MB | 86.3% / ~0.7 s |
+| Nissle | 85.21%（820 块） | 1299 | ~0.46 s | ~1.23 s | ~164 MB | 85.30% / ~0.7 s |
 
-> 注：块数/覆盖按当前默认 `min-shared=12`（tube，2026-08-05 起默认）
-> 实测；早期记录的 588/794/793 块对应 k/2=20 时代（§3.5.2）。三对 PSL
-> 与全量读入版**逐字节一致**（mmap 改动验证）。BREAK=1000→2000 对齐 FastGA 后
-> 实测（§5.1 勘误 5）：块数 +1.5%，syntenic 覆盖 Sakai +0.02%、
-> EC958 -0.09%、Nissle ±0.00%（噪声级），耗时/内存持平。
+> 口径：chainnet 覆盖 = `pgr psl to-chain` + `pgr pl chainnet --syn` 后
+> 目标（mg1655）被 syntenic 块覆盖的碱基比例；pooled PSL identity =
+> `(matches + rep_matches) / block_len`（block_len 含错配与插入）。
+> 覆盖/块数随 wave trim 更新（2026-08-05，§3.5.7）。
 
-阶段分布（Sakai，`RUST_LOG=debug` 探针，2026-08-02 数据）：merge
-**198 ms / 171 MB**、chain_tubes **237 ms / 218 MB**、extend
-**278 ms / 229 MB**，墙钟 0.77 s（另含索引流式读取、序列加载、PSL 写盘）；
-merge 命中 2,471,561。**2026-08-05 复测 merge ~107 ms**（含流式读取），
-见 §3.3 与 `examples/merge_mem_bench.rs`。
+阶段分布（预建索引 + `--ref-seq/--query-seq`，`RUST_LOG=debug` 探针，
+2026-08-05 数据）：Sakai merge 93-97 / chain_tubes 74-77 / extend
+236-242 ms；Nissle merge 90-99 / chain_tubes 70-72 / extend 284-286 ms；
+EC958 merge 115 / chain_tubes 89 / extend 450 ms。merge 命中 1,121,308
+（nissle）/ 1,181,074（sakai）/ 1,090,053（ec958）。resident 微基准
+（`examples/merge_mem_bench.rs`）merge 18.6 ms（方案 A，见
+[[pgi-query-layer.md]] §8.2）。
 
 ### 2.3 端到端管线验证
 
@@ -249,26 +250,26 @@ FastGA 驱动版本对比 syntenic MAF。下表为早期管线快照（2026-08-0
 | MG1655 vs Sakai | 87.7%（392 块） | 89.3%（506 块） |
 | MG1655 vs Nissle | 82.9%（541 块） | 85.3%（711 块） |
 
-> **当前 chainnet 覆盖以 §2.2 为准**（Sakai 89.33% / Nissle 85.28%）——
-> 87.7%/82.9% 与 89.33%/85.28% 的差距来自后续 merge-gap、种子选择与
-> 负链 PSL 修复（§3.5.2/§3.5.3）。**2026-08-04 复测**：端到端（建索引 ×2
-> + 比对）pgr 1.67 s vs FastGA 3.86 s，反超 ~2.3×（初测 1.08× 持平），见
+> **当前 chainnet 覆盖以 §2.2 为准**（Sakai 89.30% / Nissle 85.21%）——
+> 87.7%/82.9% 与 89.30%/85.21% 的差距来自后续 merge-gap、种子选择与
+> 负链 PSL 修复（§3.5.2/§3.5.3）。**2026-08-05 复测**：端到端（建索引 ×2
+> + 比对）pgr 1.23 s vs FastGA 4.04 s，反超 ~3.3×，见
 > [[../benchmarks/bench-pgi-align-vs-fastga.md]]。角色约定：`pgr align pgi
 > <ref> <query>` 的 PSL 是 q=query/t=ref，FastGA 输出相反，喂 chainnet 前
 > 需 `pgr psl swap`。
 
 ### 2.4 10 株 cohort 两两验证（45 对）
 
-扩展块身份率矩阵（初测 2026-08-02；行×列 = ref×query，块数为扩展块数，
-默认参数含 `--merge-gap 5000`；该参数随 greedy 在 2026-08-05 移除，
-当前默认即 tube 常量）：
+扩展块身份率矩阵（2026-08-05 复测；行×列 = ref×query；pooled PSL
+identity = `(matches+rep)/block_len`，口径见 §2.2；45 对完整数据见
+[[../benchmarks/dist-cohort-validation.md]]）：
 
-- 分布 97.0-99.6%，与亲缘关系一致（e24377a/se11/ec2011c_3493 聚类
-  99.1%+、nissle–cft073 99.6%）；合并块后身份率低 ~0.2-0.5%；整体比
-  FastGA 高 ~0.5%（banded 局部取精确核心）。
-- **2026-08-04 复测**（tube 链排序键 + syncmer 去重修复后）：块数整体下降
-  （如 mg1655–sakai 862 → 791），身份率分布几乎不变（0.9702–0.9960）。
-- 完整 45 对矩阵与复测数据见 [[../benchmarks/dist-cohort-validation.md]]。
+- 分布 95.4-98.8%（均值 96.8%），与亲缘关系一致（最近 nissle–cft073
+  98.8%、e24377a–se11 98.4%；最远 ec042–sakai 95.4%）；合并块后身份率
+  低 ~0.2-0.5%；与 FastGA 同口径基本持平（mg1655×sakai：pgr 97.30% vs
+  FastGA 97.28%）。
+- 块数随 wave trim 更新（2026-08-05，§3.5.7）：低身份末端被裁，块数
+  下降（如 mg1655–sakai 738 条记录）。
 
 ## 3. 决策记录（2026-08-05 重写重点）
 
@@ -387,8 +388,8 @@ mmap/resident 等价性测试（dist 指标、hv 投影、unique 计数）。
 #### 3.5.1 链化与扩展引擎演进
 
 - **v1 链块 → v2 banded SW 扩展 → v3 分窗扩展**（16 kb 窗口 + 2 kb 重叠
-  滑动）：自比对主链身份率精确 1.0000000（5.30M/0），跨株身份率 98.42%
-  （FastGA 97.83%）。
+  滑动）：自比对主链身份率精确 1.0000000（5.30M/0），跨株身份率 97.3%
+  （pooled PSL identity；同口径 FastGA 97.28%）。
 - **性能关键点**：banded DP 按带限列迭代（16000 列里只有 65 列有效，
   246× 浪费）；窗口级 rayon 负载均衡（自比对主链 332 窗口是单线程长尾 →
   摊平后自比对 37.8s→0.84s、跨株 2.0s→0.66s）。
@@ -424,11 +425,13 @@ mmap/resident 等价性测试（dist 指标、hv 投影、unique 计数）。
 
 #### 3.5.4 内存与性能优化结论
 
-- 峰值内存：0.96 GB（双索引全量）→ **224/206/210 MB**（Sakai/EC958/Nissle；
-  ref 流式 `PgiStream` + query mmap `PgiMmap` + positions 位域打包 + 种子
-  减半），已低于 FastGA 实测 332 MB。
-- 耗时：37.8s → **~0.7-0.8s**；阶段分布（Sakai）merge 198 / chain_tubes
-  244 / extend 273 ms。
+- 峰值内存：0.96 GB（双索引全量）→ 预建索引路径 **~161-176 MB**
+  （EC958/Sakai；ref 流式 `PgiStream` + query mmap `PgiMmap` + positions
+  位域打包 + 种子减半），端到端（含临时索引构建）~209-223 MB；均低于
+  FastGA 实测 332 MB。
+- 耗时：37.8s → 比对 **~0.42-0.70 s**（预建索引，Sakai/EC958/Nissle）；
+  阶段分布（2026-08-05，Sakai）merge 93-97 / chain_tubes 74-77 / extend
+  236-242 ms；端到端（含建索引×2）**~1.23 s**（§2.2）。
 - 结构上限记录：`SeedHit` contig u16（build 守卫 >65535 报错）、
   `pack_position` cid 上限 2^20、`PgiEntry` 24 B/条——人类规模复核见 §7.2。
 - 命令迁移（2026-08-03）：`pgr pgi align` → 顶层 `pgr align pgi`（`pgr pgi`
@@ -444,12 +447,12 @@ mmap/resident 等价性测试（dist 指标、hv 投影、unique 计数）。
 
 | 指标 | greedy（原默认） | tube（现默认） |
 |---|---:|---:|
-| Nissle chainnet syntenic 覆盖 | 81.85%（769 块） | **85.29%（846 块）** |
-| EC958 chainnet syntenic 覆盖 | 82.56%（724 块） | **86.32%（852 块）** |
-| Nissle PSL 记录 | 1,574（全单块） | 1,305（多块带 gap） |
-| Nissle PSL identity | 97.73% | 96.60% |
+| Nissle chainnet syntenic 覆盖 | 81.85%（769 块） | **85.21%（820 块）** |
+| EC958 chainnet syntenic 覆盖 | 82.56%（724 块） | **86.28%（811 块）** |
+| Nissle PSL 记录 | 1,574（全单块） | 1,299（多块带 gap） |
+| Nissle PSL identity | 97.73% | 96.25% |
 | 种子 | exact k-mer（min-shared=k） | partial（floor 12） |
-| 端到端（含建索引×2） | 6.3 s | **4.9 s** |
+| 端到端（含建索引×2） | 6.3 s | **1.23 s** |
 
 **greedy 为什么覆盖低**：
 
@@ -489,7 +492,8 @@ pgr 缺 `align_contigs` 的 self 分支（FastGA.c:3220-3240）：同 contig
 
 **验证**：wave 单测（正/负对角线路径不跨 0、跨 0 tube 返回 None）、
 align 单测（tandem repeat self 输出块无 diag 0）、真实数据 mg1655 self
-447 条记录 / 9,647 个 block，**零个 diag 0 块**。附带修复
+437 条记录 / 2,861 个 block（2026-08-05 复测；wave trim 后块数下降，
+pooled 身份率 0.9803），**零个 diag 0 块**。附带修复
 `align_to_psl_ext`（非流式）漏调 `drop_self_hits` 的不一致。
 
 #### 3.5.7 greedy 流程删除（2026-08-05）
@@ -607,8 +611,8 @@ PgiMmap 前缀掩码（`pack_kmer` 高位对齐，原 mask 取低位致 k%4≠0 
 
 1. **FastGA 内存 "~0 MB" → 实测 332 MB**（2026-08-02 直接实测）：FAtoGDB
    ~7 MB、GIXmake ~160 MB、FastGA 比对主进程 332 MB；源码核查全项目无
-   mmap（GIX 流式 read + GDB EXTERNAL 文件态）。pgr mmap 版 224 MB 已低于
-   FastGA。
+   mmap（GIX 流式 read + GDB EXTERNAL 文件态）。pgr mmap 版 ~161-176 MB
+   （预建索引路径，§2.2）已低于 FastGA。
 2. **Nissle 基线曾误判无效 → 有效**（文件逐字节相同）；其 0.32% 差距主因
    是负链 PSL 坐标帧 bug（§3.5.3），非 chainnet 过滤。
 3. **indel 复杂区不能用 naive 偏移身份判断**：每 ~300 bp 一个 indel，同偏移

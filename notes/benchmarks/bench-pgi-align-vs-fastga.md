@@ -40,10 +40,22 @@ FastGA 本次稳定在 ~3.9 s（初测 1.22 s，复测时主机并发负载 + �
 （同期负载）。两个数值都按同一次 hyperfine 内对比，结论方向一致
 （pgr 更快）。
 
-**输出结构（当前二进制）**：mg1655–sakai 默认参数 791 块、身份率
-0.9828；FastGA 700 块。初测的 862 块/0.9834 来自 2026-08-03 之前的管线
-（tube 链排序键修复 + syncmer 去重后块数略降、身份率基本不变，见
-[[../design/pgi-align.md]] §3.5.1）。
+## 复测结果（2026-08-05，MG1655 vs Sakai，3 次）
+
+| Command | Mean [s] | Min [s] | Max [s] | Relative |
+|---|---:|---:|---:|---:|
+| `pgr align pgi`（自动建索引 ×2，默认路径） | 1.231 ± 0.008 | 1.222 | 1.239 | 3.28 ± 0.10 |
+| `pgr full (build 2x + align ext)` | 1.260 ± 0.009 | 1.251 | 1.268 | 3.21 ± 0.10 |
+| `FastGA -psl (one-shot)` | 4.039 ± 0.121 | 3.912 | 4.153 | 1.00 |
+
+**索引写出（2026-08-05）**：`pgr align pgi` 自动建索引路径的索引写出走
+`BufWriter`（`cmd_pgr/align/pgi.rs::resolve_side`），默认路径与显式
+build+align 持平（1.23 vs 1.26 s），输出逐字节不变；默认路径反超
+FastGA **~3.3×**。
+
+**输出结构（当前二进制，2026-08-05 复测）**：mg1655–sakai 默认参数
+738 条 PSL 记录、pooled 身份率 0.9754（`(matches+rep)/block_len`，
+口径见 [[../design/pgi-align.md]] §2.2）；FastGA 700 条非 self 记录。
 
 ## 初测结果（2026-08-02，MG1655 vs Sakai，3 次）
 
@@ -77,7 +89,8 @@ FastGA 本次稳定在 ~3.9 s（初测 1.22 s，复测时主机并发负载 + �
 
 ## 对照说明
 
-- 身份率：pgr 98.42% vs FastGA 97.83%（pgr banded 局部取精确核心，略高）；
+- 身份率（pooled PSL identity，mg1655×sakai，FastGA 排除全基因组自比对块）：
+  pgr 97.30% vs FastGA 97.28%（同口径基本持平）；
 - 覆盖（**真实并集**，2026-08-02 复核）：MG1655 vs Sakai pgr 75.8% /
   FastGA 78.2%；vs Nissle 两者均为 77.3%——**基本打平**。早前的
   "95.7% vs 99.7%" 是块区间 span 求和（重叠重复计数）的假象；未覆盖的
