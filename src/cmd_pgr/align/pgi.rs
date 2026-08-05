@@ -32,9 +32,9 @@ Notes:
 * Both sides must use identical sampling parameters (k, syncmer, window).
 * The query index is memory-mapped and must be a regular file ('stdin' and
   gzipped indexes are not supported).
-* --k/--smer/--window apply only to genome-sequence inputs; .pgi inputs carry
+* --kmer/--smer/--window apply only to genome-sequence inputs; .pgi inputs carry
   their parameters in the index header.
-* K-mers occurring more than --freq times on either side are skipped.
+* K-mers occurring at least --freq times on either side are skipped.
 * Chains shorter than --min-span on either axis are dropped.
 * --ref-seq/--query-seq accept FASTA (.fa/.fa.gz) or .2bit files.
 

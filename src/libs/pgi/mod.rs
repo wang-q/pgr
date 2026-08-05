@@ -87,6 +87,14 @@ fn take_bytes<'a>(buf: &'a [u8], off: &mut usize, n: usize) -> anyhow::Result<&'
     Ok(s)
 }
 
+/// Upper bound on a contig name's byte length. Real names are far shorter;
+/// capping the untrusted length in `read_header` before it grows a buffer
+/// turns a crafted multi-GB `nb` into a friendly error instead of a huge
+/// allocation (the in-buffer `parse_header_bytes` path bounds-checks `nb`
+/// against the actual bytes, but the streaming read must not allocate on it
+/// first).
+const MAX_CONTIG_NAME: usize = 1 << 20;
+
 /// Parse and validate the header (magic/version/params/contigs) plus the
 /// per-record layout from a byte slice; returns the header, the number of
 /// occurrence records, the layout, and the bytes consumed by the header.
@@ -171,6 +179,7 @@ fn read_header<R: Read>(r: &mut R) -> anyhow::Result<(PgiHeader, usize, RecordLa
         r.read_exact(&mut nb_bytes)
             .context("reading contig name length")?;
         let nb = u32::from_le_bytes(nb_bytes) as usize;
+        anyhow::ensure!(nb <= MAX_CONTIG_NAME, "contig name too long ({nb} bytes)");
         buf.extend_from_slice(&nb_bytes);
         let start = buf.len();
         buf.resize(start + nb, 0);
@@ -644,6 +653,22 @@ mod tests {
             PgiIndex::read(&mut std::io::Cursor::new(crafted_header(u32::MAX, 0))).unwrap_err();
         assert!(
             err.to_string().contains("implausible contig count"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn crafted_huge_contig_name_rejected_not_panic() {
+        // Regression: `read_header` grows its buffer by the untrusted
+        // per-contig name length before `parse_header_bytes` can bounds-check
+        // it, so a crafted header claiming a multi-GB contig name forced a
+        // huge allocation (an OOM-abort candidate). It must error before
+        // allocating.
+        let mut h = crafted_header(1, 0);
+        h.extend_from_slice(&u32::MAX.to_le_bytes()); // nb, no name bytes follow
+        let err = PgiIndex::read(&mut std::io::Cursor::new(&h)).unwrap_err();
+        assert!(
+            err.to_string().contains("contig name too long"),
             "got: {err}"
         );
     }

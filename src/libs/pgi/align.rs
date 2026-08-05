@@ -209,7 +209,12 @@ fn emit_entry_hits<B: PgiQuery>(
     let window = |len: usize| -> (usize, usize) {
         let r = 1u128 << (k_bits - 2 * len);
         let lo = ea_kmer & !(r - 1) & mask;
-        let hi = lo + r;
+        // The prefix boundary `lo + r` can equal `2^(2k)`; for k=64 that is
+        // `2^128`, which `u128` cannot represent. Saturate instead of
+        // overflowing (a debug panic / release wrap): the top-boundary key
+        // `u128::MAX` is the only one the saturated range excludes, an
+        // extreme all-T 64-mer edge that is not a real seed.
+        let hi = lo.saturating_add(r);
         b.entry_range(lo, hi)
     };
     let (j0, j) = window(min_shared);
@@ -1697,6 +1702,39 @@ mod tests {
         assert!(hits.iter().any(|h| h.b_pos == 500 && h.strand == 0));
         assert!(hits.iter().any(|h| h.strand == 1));
         assert!(hits.iter().any(|h| h.a_contig != h.b_contig));
+    }
+
+    #[test]
+    fn merge_k64_high_key_no_prefix_overflow() {
+        // Regression: at k=64 the prefix boundary `lo + r` reaches `2^128`,
+        // which `u128` cannot represent. An `a` entry whose leading 12 bases
+        // are T (bits 104..128 set) drove `window(12)` to `hi = lo + r =
+        // 2^128`, overflowing `u128` (a debug panic / release wrap). The
+        // merge must not panic.
+        let k64 = PgiIndex {
+            k: 64,
+            smer: 8,
+            window: 5,
+            contigs: vec![(String::from("c"), 1000)],
+            entries: Vec::new(),
+            positions: Vec::new(),
+        };
+        // K = 12×T then 52×A: canonical (K <= rc_key(K), since its RC is
+        // 52×T then 12×A), and window(12) gives lo = 0xFFFFFF << 104,
+        // hi = lo + 2^104 = 2^128 (the overflow).
+        let k = 0xFFFF_FF00_0000_0000_0000_0000_0000_0000u128;
+        let a = PgiIndex {
+            entries: vec![PgiEntry {
+                kmer: k,
+                pos_start: 0,
+                freq: 1,
+            }],
+            positions: vec![crate::libs::pgi::pack_position(0, 0, 0)],
+            ..k64.clone()
+        };
+        let b = k64;
+        let hits = merge_seed_hits(&a, &b, 10, 12).unwrap();
+        assert!(hits.is_empty(), "no b entries, so no hits: {hits:?}");
     }
 
     #[test]
