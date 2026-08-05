@@ -127,6 +127,69 @@ fn test_pbit_multi_reference_routing() {
 }
 
 #[test]
+fn test_pbit_multi_ref_soft_mask_routing() {
+    // v1005: soft-mask (lowercase) intervals are preserved per sample/contig
+    // across multi-reference routing; lengths differ so routing is verifiable.
+    let temp = TempDir::new().unwrap();
+    let ref1 = temp.path().join("ref1.fa");
+    let ref2 = temp.path().join("ref2.fa");
+    let s1 = temp.path().join("s1.fa");
+    let s2 = temp.path().join("s2.fa");
+    let tsv = temp.path().join("samples.tsv");
+    let out_pbit = temp.path().join("out.pbit");
+    let out_dir = temp.path().join("out_fa");
+
+    let seq1 = "acgtACGTacgtACGT".repeat(125); // 2000 bp, masked runs
+    let seq2 = "ACGTacgtACGTacgt".repeat(63); // 1008 bp, masked runs
+    fs::write(&ref1, format!(">chr1\n{seq1}\n")).unwrap();
+    fs::write(&ref2, format!(">chr1\n{seq2}\n")).unwrap();
+    fs::write(&s1, format!(">chr1\n{seq1}\n")).unwrap();
+    fs::write(&s2, format!(">chr1\n{seq2}\n")).unwrap();
+    fs::write(
+        &tsv,
+        format!(
+            "s1\t{}\t\tref1\ns2\t{}\t\tref2\n",
+            s1.display(),
+            s2.display()
+        ),
+    )
+    .unwrap();
+
+    PgrCmd::new()
+        .args(&[
+            "pbit",
+            "create",
+            "-r",
+            ref1.to_str().unwrap(),
+            "-r",
+            ref2.to_str().unwrap(),
+            "--name",
+            tsv.to_str().unwrap(),
+            "-o",
+            out_pbit.to_str().unwrap(),
+        ])
+        .run();
+
+    PgrCmd::new()
+        .args(&[
+            "pbit",
+            "to-fa",
+            out_pbit.to_str().unwrap(),
+            "-o",
+            out_dir.to_str().unwrap(),
+        ])
+        .run();
+
+    // Routing correct (lengths differ) and soft mask preserved losslessly.
+    let s1_out = read_fasta_seq(&out_dir.join("s1.fa"));
+    let s2_out = read_fasta_seq(&out_dir.join("s2.fa"));
+    assert_eq!(s1_out.len(), 2000, "s1 must route to ref1");
+    assert_eq!(s2_out.len(), 1008, "s2 must route to ref2");
+    assert_eq!(s1_out, seq1, "s1 soft mask must be preserved");
+    assert_eq!(s2_out, seq2, "s2 soft mask must be preserved");
+}
+
+#[test]
 fn test_pbit_append_ref_preserves_samples() {
     let temp = TempDir::new().unwrap();
     let out_pbit = temp.path().join("out.pbit");
