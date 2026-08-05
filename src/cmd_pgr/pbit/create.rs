@@ -3,6 +3,7 @@
 use anyhow::Context;
 use clap::{ArgMatches, Command};
 use pgr::libs::pbit::compressor::Compressor;
+use pgr::libs::pbit::format::MAX_PACKED_SIZE;
 
 /// Build the clap subcommand for create.
 pub fn make_subcommand() -> Command {
@@ -102,6 +103,17 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         "min-match-len ({}) must not exceed segment-size ({})",
         min_match_len,
         segment_size
+    );
+    // `min_match_len` drives `LzDiff::prepare`'s `reference.resize(len + key_len)`
+    // padding (`key_len ≈ min_match_len`), so an unbounded value would force a
+    // multi-GB allocation per decoded segment. Apply the same absolute cap the
+    // decompressor enforces (`MAX_PACKED_SIZE`) so `create` never produces an
+    // archive that `stat` / `range` / `to-fa` would later reject as invalid.
+    anyhow::ensure!(
+        min_match_len as usize <= MAX_PACKED_SIZE,
+        "min-match-len ({}) must not exceed the per-segment bound ({})",
+        min_match_len,
+        MAX_PACKED_SIZE
     );
 
     // Guard against -o truncating an input file before it is read (e.g. a

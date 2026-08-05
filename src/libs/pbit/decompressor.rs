@@ -114,6 +114,22 @@ impl<R: Read + Seek> Decompressor<R> {
                 MAX_PACKED_SIZE
             ));
         }
+        // A zero segment_size / kmer_len is invalid for any well-formed archive
+        // (create validates both as positive). `open_for_append` reuses these
+        // values to re-segment sample/reference FASTAs, and `segment_sequence`
+        // calls `chunks(0)` / `detect_rev_comp` calls `windows(0)`, both of
+        // which panic. Reject here so a crafted archive cannot crash `append` /
+        // `append-ref` (Zero Panic).
+        if header.segment_size == 0 {
+            return Err(anyhow!(
+                "archive segment_size must be positive; corrupt or malicious"
+            ));
+        }
+        if header.kmer_len == 0 {
+            return Err(anyhow!(
+                "archive kmer_len must be positive; corrupt or malicious"
+            ));
+        }
         // Bound ref_group_count: it drives `Vec::with_capacity` for the delta
         // scan below, so a malicious value would force a multi-GB allocation
         // before any data is validated.
@@ -716,6 +732,58 @@ mod tests {
         assert!(res.is_err(), "expected rejection for huge ref_group_count");
         let err = res.err().unwrap().to_string();
         assert!(err.contains("ref_group_count"), "unexpected error: {}", err);
+        Ok(())
+    }
+
+    #[test]
+    fn test_decompressor_rejects_zero_segment_size() -> Result<()> {
+        // A malicious archive with segment_size=0 must be rejected up front:
+        // `open_for_append` re-segments FASTAs with this value and
+        // `segment_sequence` calls `chunks(0)`, which panics (Zero Panic).
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("bad.pbit");
+        // min_match_len=0 so the earlier `min_match_len > segment_size` and
+        // `> MAX_PACKED_SIZE` checks pass, isolating the segment_size==0 check.
+        let header = PbitHeader::new(0, 15, 0, 1, 0);
+        let footer = PbitFooter {
+            ref_index_offset: 36,
+            delta_data_offset: 36,
+            sample_index_offset: 36,
+        };
+        let mut buf = Vec::new();
+        header.write_to(&mut buf)?;
+        footer.write_to(&mut buf)?;
+        std::fs::write(&path, &buf)?;
+
+        let res = Decompressor::open(&path);
+        assert!(res.is_err(), "expected rejection for zero segment_size");
+        let err = res.err().unwrap().to_string();
+        assert!(err.contains("segment_size"), "unexpected error: {}", err);
+        Ok(())
+    }
+
+    #[test]
+    fn test_decompressor_rejects_zero_kmer_len() -> Result<()> {
+        // A malicious archive with kmer_len=0 must be rejected up front:
+        // `open_for_append` re-segments FASTAs with this value and
+        // `detect_rev_comp` calls `windows(0)`, which panics (Zero Panic).
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("bad.pbit");
+        let header = PbitHeader::new(4096, 0, 18, 1, 0);
+        let footer = PbitFooter {
+            ref_index_offset: 36,
+            delta_data_offset: 36,
+            sample_index_offset: 36,
+        };
+        let mut buf = Vec::new();
+        header.write_to(&mut buf)?;
+        footer.write_to(&mut buf)?;
+        std::fs::write(&path, &buf)?;
+
+        let res = Decompressor::open(&path);
+        assert!(res.is_err(), "expected rejection for zero kmer_len");
+        let err = res.err().unwrap().to_string();
+        assert!(err.contains("kmer_len"), "unexpected error: {}", err);
         Ok(())
     }
 

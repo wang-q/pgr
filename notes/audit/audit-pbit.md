@@ -264,6 +264,113 @@ pbit 格式（`notes/design/pbit.md` §文件格式规范 v1004）：
 - `cargo test --test cli_pbit pbit_` 46 全绿。
 - `cargo clippy --all-targets -- -D warnings` clean（记录项 27 消除后无警告）。
 
+## 第 14 轮（append/append-ref 零 panic 与 create 校验一致性）
+
+29. `append` / `append-ref` 处理畸形归档可能 panic：`Decompressor::new` 对
+    `segment_size` / `kmer_len` 仅校验正数，而 `open_for_append` 复用头部的
+    `segment_size`/`kmer_len` 对样本/参考 FASTA 重新分段，
+    `segment_sequence` 会调用 `chunks(0)`、`detect_rev_comp` 调用
+    `windows(0)`，二者在参数为 0 时 panic。构造的归档（头部 `segment_size=0`
+    或 `kmer_len=0`）可让 `append` / `append-ref` 崩溃（违反 Zero Panic）。
+    修复：`Decompressor::new` 显式拒绝 `segment_size == 0` 与 `kmer_len == 0`。
+30. `create` 的 `min_match_len` 校验与 decompressor 不一致：`create` 只校验
+    `min_match_len <= segment_size`，而 `segment_size` 上限为 `i32::MAX`
+    （≈2GB），可创建 `min_match_len` 达 2GB 的归档；decompressor（记录项 23）
+    对 `min_match_len > MAX_PACKED_SIZE`（256MB）绝对上限拒绝，导致 `create`
+    生成 `stat`/`range`/`to-fa` 都会拒绝的非法归档。修复：`create` 增加与
+    decompressor 一致的绝对上限校验（`min_match_len <= MAX_PACKED_SIZE`）。
+    为此将 `format.rs` 的 `MAX_PACKED_SIZE` 由 `pub(crate)` 提升为 `pub`
+    （二进制 crate 的 `cmd_pgr` 无法访问库 crate 的 `pub(crate)` 项）。
+
+新增回归测试：
+- `test_decompressor_rejects_zero_segment_size` / 
+  `test_decompressor_rejects_zero_kmer_len`（记录项 29，库内测试）
+- `test_pbit_create_invalid_params_rejected` 追加绝对上限用例
+  （`-s/-l 300000000`，断言 "must not exceed the per-segment bound"）（记录项 30）
+
+### 验证（第 14 轮）
+
+- `cargo test --lib pbit` 108 全绿。
+- `cargo test --test cli_pbit pbit_` 46 全绿。
+- `cargo build`、`cargo fmt`、`cargo clippy --all-targets -- -D warnings` clean。
+
+## 第 15 轮（CIGAR 段计数无界 → 内存 DoS）
+
+31. `cigar_delta.rs` `unpack_cigar` 的 `op_count` / `xi_count` 无界分配：
+    解压后的 payload 虽受 `MAX_DELTA_UNCOMPRESSED`（256MB）约束，但这两个
+    计数字段是攻击者可控的 u32（可达 ~40 亿）。`op_count` 直接用于
+    `Vec::with_capacity(op_count)`（每个 op 4 字节，~40 亿 → ~16GB 分配），
+    `xi_count` 直接用于 `vec![0u8; xi_count]`（~4GB 分配），且分配先于读取
+    循环命中 EOF，恶意归档可凭极小的 CIGAR delta 触发 OOM/abort（gzip-bomb
+    变体）。对照：`collection.rs` 用 `with_capacity(x.min(1024))` 封顶、
+    `format.rs` 的 `read_string` 有 `MAX_STRING_LEN=16MB` 上限、`lz_diff.rs`
+    `decode` 对 N-run / `ref_pos+len` / overflow 均有界，唯独 `unpack_cigar`
+    缺失。修复：在分配前按实际 payload 大小校验 —— `op_count` 不超过
+    `(raw_len - 8) / 4`，`xi_count` 不超过剩余 `raw_len - 8 - op_count*4`
+    （用 `saturating_sub`/`saturating_mul` 防下溢/溢出）。
+
+新增回归测试：
+- `test_unpack_cigar_rejects_huge_op_count`（`op_count=u32::MAX`，无 op 数据）
+- `test_unpack_cigar_rejects_huge_xi_count`（`xi_count=u32::MAX`，无 xi 数据）
+
+### 验证（第 15 轮）
+
+- `cargo test --lib pbit` 112 全绿（含两个新增测试）。
+- `cargo fmt`、`cargo clippy --lib -- -D warnings` clean。
+
+## 第 16 轮（命令层与 PAF 索引复核，无新缺陷）
+
+对前几轮未逐段复核的剩余模块与命令层做了一轮深审，均未发现需修复的缺陷：
+* `paf_index.rs`：`coord_to_i32` 对 >i32::MAX 的 PAF 坐标拒绝并 skip；
+  `query_start > query_end` / `target_start > target_end` 拒绝；`query_id`
+  分配用 `or_insert(next_id)` 处理重复名；全部行解析失败时 bail（非 PAF）。
+  内存分配量由 PAF 行数决定（用户输入），无攻击面。
+* 命令层 `create`/`append`/`append-ref`：`collect_samples_from_args` 拒绝
+  `--name` 与 `-i`/`-p` 混用、`--paf` 与 `-i` 数量不匹配、重复样本名；
+  `append` 用 `comp.has_sample` 拒绝归档内已存在的样本名；参考索引/名称
+  解析越界均报错。`stage_work_path` 原地更新走临时文件 + 原子重命名。
+* `range`/`some`/`stat`/`to-fa`：`-o` 覆盖输入防护（`ensure_outfile_distinct`
+  / `same_path`）、路径穿越防护、`-s` 过滤样本不存在时报错、坐标 1-based
+  含端点 → 0-based 半开转换正确、反向坐标在 CLI 层拒绝。
+* `args.rs` pbit 参数：段大小/`kmer`/`min_match_len` 默认值、`-s` 短选项在
+  `create`（segment-size）与 `stat`/`to-fa`（sample）分属不同子命令，无冲突。
+* CIGAR 切片（`slice_cigar_by_query`）边界 D 处理、反向链 `forward_to_rc_coords`
+  投影、`split_m_to_eqx` 的 M→=/X 拆分与 `=` 越界保护，均经既有测试覆盖。
+
+### 验证（第 16 轮）
+
+- `cargo test --test cli_pbit pbit_` 46 全绿。
+- `cargo clippy --all-targets -- -D warnings` clean。
+
+## 第 17 轮（核心库全文重读 + 文档一致性核对，无新缺陷）
+
+对核心库做了第 3 轮之外的又一次全文重读，并交叉核对文档与 CLI 实现：
+* `compressor.rs`：`slice_cigar_by_query` 边界 D 处理经完整推演正确（边界 D
+  不入 sliced_ops 但仍推进 `cur_t`，使 `target_start`/`target_end` 投影包含
+  其目标跨度，ref_slice 与 ops 消费一致）；`split_m_to_eqx` 的 `=`/`X`/`I`/`D`
+  越界与 `rt/si` 完整消费校验齐全；`encode_segment_lzdiff` 反向段路由
+  `last-saturating_sub` 防下溢；`append_reference` 的 `deltas.resize`、
+  `ref_group_count` 更新、`finish` 回写 header 均正确。
+* `decompressor.rs`：`delta_cache` 键含 `ref_start`/`ref_end` 正确处理 CIGAR
+  delta 去重后不同 ref 切片；三层解码（LZ-diff/CIGAR）长度均对
+  `delta_meta.raw_length` 校验；`decode_delta` 对 `gid`/`did` 越界、CIGAR
+  `ref_start>=ref_end`、`ref_end>ref_dna.len()` 均 bail；`get_contig` 智能切片
+  的 `offset` 累计与 `saturating_sub` 防下溢。
+* `format.rs`：`read_ref_index`/`read_ref_table`/`read_string`/`DeltaEntry::read_from`
+  对 count/len/packed_size 均有界；`PbitHeader::read_from` 校验 magic/version。
+* `cigar_delta.rs`：`apply_cigar` 对 `=`/`X`/`I`/`D` 越界、`xi` 消费、`rt`
+  消费均校验；第 15 轮的 op_count/xi_count 修复完好。
+* 文档一致性：`docs/pbit.md` 各子命令的选项名与 `make_subcommand` 完全一致；
+  `append` 的 `-o` 与归档相同时被 `stage_work_path` 拒绝（符文档"省略 -o 原地
+  更新"）；`to-fa` 样本名净化（非空/无路径分隔符/非 `.`/`..`）与文档一致；
+  `create` 的 `--name` 与 `-i`/`--paf` 互斥由 `collect_samples_from_args` 强制。
+
+### 验证（第 17 轮）
+
+- `cargo test --lib pbit` 112 全绿。
+- `cargo test --test cli_pbit pbit_` 46 全绿。
+- `cargo fmt`、`cargo clippy --all-targets -- -D warnings` clean。
+
 ## 已知限制（暂不改，非命令可达）
 
 * `Decompressor` 参考层 `SequenceReader::read_sequence` 在多参考归档中按
@@ -274,9 +381,9 @@ pbit 格式（`notes/design/pbit.md` §文件格式规范 v1004）：
 
 ## 结论
 
-共修复 28 处缺陷（数据安全 7 + 功能 2 + 文档 2 + 死代码 2 + 样本名冲突 1 +
-展示歧义 1 + 超界 UX 1 + 溯源元数据 2 + 警告措辞 1 + 内存 DoS 4 + 健壮性 1 +
-一致性/文档 1 + 报告去重 1 + 反向链压缩率 1）。
+共修复 31 处缺陷（数据安全 7 + 功能 2 + 文档 2 + 死代码 2 + 样本名冲突 1 +
+展示歧义 1 + 超界 UX 1 + 溯源元数据 2 + 警告措辞 1 + 内存 DoS 5 + 健壮性 1 +
+一致性/文档 1 + 报告去重 1 + 反向链压缩率 1 + 零 panic 校验一致性 2）。
 第 3 轮对核心库与命令层逐行深审未再发现正确性缺陷；第 4 轮修复样本名冲突数据损坏；
 第 5 轮核对了此前暂记的 `stat --refs` 展示歧义与 `range` 超界静默空输出两处记录项
 并修复；第 6 轮修复 `create` 溯源元数据缺失与 contig 无段警告措辞误导；
@@ -286,8 +393,14 @@ sample index 解压 gzip bomb 的内存 DoS；第 11 轮补 `to-fa` 空样本名
 第 12 轮封堵 `min_match_len` 无界的段 padding 内存 DoS，并补齐 `append` 多参考
 警告、`to-fa` 文档空名说明与报告去重；第 13 轮删除 `append` 中重复的不可达
 `None` 分支（死代码），并修复反向链 LZ-diff 段路由以提升压缩率（解码一致故原
-实现正确，改动仅为压缩率优化）。剩余记录项仅参考层 `read_sequence` 跨参考拼接
-（非命令可达）。pbit 命令族审核收敛。
+实现正确，改动仅为压缩率优化）；第 14 轮封堵 `append`/`append-ref` 对零
+`segment_size`/`kmer_len` 畸形归档的 panic，并使 `create` 的 `min_match_len`
+校验与 decompressor 绝对上限一致（`MAX_PACKED_SIZE` 提升为 `pub`）；
+第 15 轮封堵 `unpack_cigar` 的 `op_count`/`xi_count` 无界分配内存 DoS；
+第 16 轮对命令层与 PAF 索引复核未再发现新缺陷；第 17 轮对核心库（compressor/
+decompressor/format/cigar_delta）全文重读并核对文档与 CLI 实现一致性，亦未
+发现新缺陷（审核收敛）。
+剩余记录项仅参考层 `read_sequence` 跨参考拼接（非命令可达）。pbit 命令族审核收敛。
 
-验证：`cargo test --lib pbit`（108）+ `cargo test --test cli_pbit pbit_`（46）
+验证：`cargo test --lib pbit`（112）+ `cargo test --test cli_pbit pbit_`（46）
 全绿；`cargo fmt`、`cargo clippy --all-targets -- -D warnings` clean。

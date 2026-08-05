@@ -407,7 +407,7 @@ pub(crate) const MAX_DELTAS_PER_GROUP: usize = 1_000_000;
 /// for any realistic segment size (default 4096 bp). An inflated value read
 /// from a malicious archive would otherwise trigger a multi-GB allocation in
 /// `Decompressor::decode_delta` / `DeltaEntry::read_from`.
-pub(crate) const MAX_PACKED_SIZE: usize = 256 * 1024 * 1024;
+pub const MAX_PACKED_SIZE: usize = 256 * 1024 * 1024;
 
 /// Maximum uncompressed size of a single delta's payload (LZ-diff raw delta
 /// or packed CIGAR). A delta decodes at most one segment, so its uncompressed

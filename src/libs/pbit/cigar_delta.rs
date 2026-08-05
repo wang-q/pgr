@@ -52,10 +52,24 @@ pub fn unpack_cigar(packed: &[u8]) -> Result<(Vec<CigarOp>, Vec<u8>)> {
             MAX_DELTA_UNCOMPRESSED
         );
     }
+    let raw_len = raw.len();
     let mut cursor = std::io::Cursor::new(raw);
     let mut buf4 = [0u8; 4];
     cursor.read_exact(&mut buf4)?;
     let op_count = u32::from_le_bytes(buf4) as usize;
+    // Each op consumes 4 bytes and the two u32 count fields take 8 bytes
+    // total. The decompressed payload is bounded by MAX_DELTA_UNCOMPRESSED,
+    // but op_count itself is attacker-controlled and could be ~4 billion;
+    // `Vec::with_capacity(op_count)` would then allocate ~16 GB before the
+    // read loop hits EOF (gzip-bomb variant). Bound it by the actual payload.
+    let max_ops = raw_len.saturating_sub(8) / 4;
+    if op_count > max_ops {
+        bail!(
+            "CIGAR op_count {} exceeds decompressed payload (max {})",
+            op_count,
+            max_ops
+        );
+    }
     let mut ops = Vec::with_capacity(op_count);
     for _ in 0..op_count {
         cursor.read_exact(&mut buf4)?;
@@ -63,6 +77,17 @@ pub fn unpack_cigar(packed: &[u8]) -> Result<(Vec<CigarOp>, Vec<u8>)> {
     }
     cursor.read_exact(&mut buf4)?;
     let xi_count = u32::from_le_bytes(buf4) as usize;
+    // Same reasoning: bound xi_count by the remaining payload so a malicious
+    // value cannot drive a multi-GB zeroed allocation.
+    let consumed = 8 + op_count.saturating_mul(4);
+    let max_xi = raw_len.saturating_sub(consumed);
+    if xi_count > max_xi {
+        bail!(
+            "CIGAR xi_count {} exceeds decompressed payload (max {})",
+            xi_count,
+            max_xi
+        );
+    }
     let mut xi_bases = vec![0u8; xi_count];
     cursor.read_exact(&mut xi_bases)?;
     Ok((ops, xi_bases))
@@ -166,6 +191,44 @@ mod tests {
         let err = unpack_cigar(&packed).unwrap_err();
         assert!(
             err.to_string().contains("exceeds maximum"),
+            "unexpected error: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_unpack_cigar_rejects_huge_op_count() {
+        // A tiny payload whose op_count field is ~4 billion (with no op data)
+        // must be rejected before `Vec::with_capacity` allocates ~16 GB.
+        use std::io::Write;
+        let mut raw = Vec::new();
+        raw.extend_from_slice(&u32::MAX.to_le_bytes()); // op_count = ~4 billion
+        raw.extend_from_slice(&0u32.to_le_bytes()); // xi_count = 0
+        let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        encoder.write_all(&raw).unwrap();
+        let packed = encoder.finish().unwrap();
+        let err = unpack_cigar(&packed).unwrap_err();
+        assert!(
+            err.to_string().contains("op_count"),
+            "unexpected error: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_unpack_cigar_rejects_huge_xi_count() {
+        // A tiny payload whose xi_count field is ~4 billion (with no xi data)
+        // must be rejected before `vec![0u8; xi_count]` allocates ~4 GB.
+        use std::io::Write;
+        let mut raw = Vec::new();
+        raw.extend_from_slice(&0u32.to_le_bytes()); // op_count = 0
+        raw.extend_from_slice(&u32::MAX.to_le_bytes()); // xi_count = ~4 billion
+        let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        encoder.write_all(&raw).unwrap();
+        let packed = encoder.finish().unwrap();
+        let err = unpack_cigar(&packed).unwrap_err();
+        assert!(
+            err.to_string().contains("xi_count"),
             "unexpected error: {}",
             err
         );

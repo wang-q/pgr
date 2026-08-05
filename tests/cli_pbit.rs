@@ -1924,4 +1924,32 @@ fn test_pbit_create_invalid_params_rejected() {
         combined
     );
     assert!(!out_pbit.exists());
+
+    // min-match-len exceeds the absolute per-segment bound (MAX_PACKED_SIZE),
+    // even though it is <= segment-size. The decompressor enforces the same
+    // cap, so `create` must reject it up front rather than produce an archive
+    // that `stat` would later reject as invalid.
+    let (stdout, stderr) = PgrCmd::new()
+        .args(&[
+            "pbit",
+            "create",
+            "-r",
+            fixture("ref_2000.fa").to_str().unwrap(),
+            "-i",
+            fixture("sample_2000_identical.fa").to_str().unwrap(),
+            "-o",
+            out_pbit.to_str().unwrap(),
+            "-s",
+            "300000000",
+            "-l",
+            "300000000",
+        ])
+        .run_fail();
+    let combined = format!("{}{}", stdout, stderr);
+    assert!(
+        combined.contains("must not exceed the per-segment bound"),
+        "expected absolute min-match-len rejection, got: {}",
+        combined
+    );
+    assert!(!out_pbit.exists());
 }
