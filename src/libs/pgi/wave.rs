@@ -181,7 +181,7 @@ fn split_nd(q: &[u8], t: &[u8]) -> (usize, usize, usize) {
 ///
 /// Coordinates are absolute (`q_abs`/`t_abs` are the slice offsets in the
 /// full sequences). Returns the edit distance.
-pub fn dandc_nd(q: &[u8], t: &[u8], q_abs: usize, t_abs: usize, ops: &mut Vec<EditOp>) -> usize {
+fn dandc_nd(q: &[u8], t: &[u8], q_abs: usize, t_abs: usize, ops: &mut Vec<EditOp>) -> usize {
     let m = q.len();
     let n = t.len();
     if m == 0 {
@@ -232,7 +232,7 @@ pub fn dandc_nd(q: &[u8], t: &[u8], q_abs: usize, t_abs: usize, ops: &mut Vec<Ed
 /// to a single diagonal. Used by self mode, where the wave anchors are
 /// clipped to one side of diagonal 0 and the exact D&C path must not cross
 /// it either. Returns the edit distance.
-pub fn banded_edit_ops(
+fn banded_edit_ops(
     q: &[u8],
     t: &[u8],
     q_abs: usize,
@@ -329,7 +329,7 @@ pub fn banded_edit_ops(
 }
 
 /// Expand an edit script into aligned columns; returns `(q_aln, t_aln, matches)`.
-pub fn ops_to_columns(
+fn ops_to_columns(
     q: &[u8],
     t: &[u8],
     q_start: usize,
