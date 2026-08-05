@@ -718,6 +718,21 @@ PgiMmap 前缀掩码（`pack_kmer` 高位对齐，原 mask 取低位致 k%4≠0 
 - **多 mask union / `-S` 对称 adaptamer**：专门场景，暂缓（§7）。
 - **trace points / `.1aln`、ALNchain、GDB/GIX 分片**：pgr 用 PSL/MAF +
   UCSC chain/net + 2bit/`.pgi` 替代，不做（格式对比见 fastga.md §9/§10）。
+- **`.1aln` 紧凑存储（2026-08-06 裁定放弃）**：曾完整实现读写并保留在
+  `archive/1aln` 分支，最终从主线移除，原因如下——
+  1. **收益只在人类规模**：`.1aln` 是通过 trace point 紧凑采样 + 盒内 DP
+     expand 换文件体积的存储格式，E. coli 规模下相比 PSL/MAF 的收益可忽略，
+     而 format 复杂度极高（ONEcode 容器、LTF/vc 编码、schema/GDB 骨架、
+     trace 重采样），读写合计约 3000-4000 行——投入产出比在现有规模不成立。
+  2. **读侧会重对齐，削弱"紧凑即权威"**：FastGA 的 `ALNtoPAF` 并不直接读
+     存储的 CIGAR 值，而是用 `Compute_Trace_PTS`（GREEDIEST）+ Gap_Improver
+     重新对齐、重算 matches/block/Identity/dv:f/cg:Z（ALNtoPAF.c:455-475）。
+     即紧凑存储的 trace 并非输出的最终裁决，读侧仍要重推——紧凑格式的
+     "省存储"价值被读侧重算部分抵消。
+  3. **pgr 输出已字节级一致**：PSL/MAF 输出已与 UCSC chain/net 下游逐字节
+     对齐，`.1aln` 只是引入一条平行的存储路径，无集成增量价值。
+  → 结论：规模未到、复杂度高、读侧重对齐、无集成增量，四重原因放弃；
+    代码完整保留于 `archive/1aln` 分支，未来人类规模需要时可随时恢复。
 
 ## 7. 未来方向
 
