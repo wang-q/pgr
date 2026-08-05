@@ -43,8 +43,7 @@ impl CigarOp {
     /// Create a new `CigarOp` from length and op character (unchecked).
     ///
     /// # Panics
-    /// Panics in debug mode if `op` is not one of '=', 'X', 'I', 'D', 'M'.
-    /// In release mode, invalid ops are treated as 'M' (match/mismatch).
+    /// Panics if `op` is not one of '=', 'X', 'I', 'D', 'M'.
     pub(crate) fn new(len: u32, op: char) -> Self {
         let code = match op {
             '=' => OP_EQ,
@@ -52,10 +51,7 @@ impl CigarOp {
             'I' => OP_I,
             'D' => OP_D,
             'M' => OP_M,
-            _ => {
-                debug_assert!(false, "invalid CIGAR op: '{op}'");
-                OP_M // safe fallback in release mode
-            }
+            _ => panic!("invalid CIGAR op: '{op}'"),
         };
         Self((code << 29) | (len & 0x1FFF_FFFF))
     }

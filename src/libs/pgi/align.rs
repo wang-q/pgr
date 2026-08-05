@@ -47,6 +47,35 @@ pub struct SeedHit {
     pub strand: u8,
 }
 
+/// Cursor for the 归并式 (sequential) merge over `b` within one ascending
+/// batch of `a` entries.
+///
+/// The floor window (entries sharing the `min_shared`-base prefix, the
+/// widest window used) moves monotonically as `a` ascends, so its bounds
+/// advance by [`PgiQuery::entry_lower_bound_ge`] scanning instead of a
+/// per-entry binary search. All narrower windows (start / maximal-prefix)
+/// are sub-windows of the floor window, so they are located by advancing
+/// within it. `first` forces a batch-header binary search.
+#[derive(Debug, Clone, Copy)]
+struct MergeCursor {
+    /// Previous floor-window lower bound (a group start in `b`).
+    f0: usize,
+    /// Previous floor-window upper bound.
+    f1: usize,
+    /// Whether the next surviving entry is the batch's first (binary search).
+    first: bool,
+}
+
+impl Default for MergeCursor {
+    fn default() -> Self {
+        Self {
+            f0: 0,
+            f1: 0,
+            first: true,
+        }
+    }
+}
+
 /// Merge two sorted k-mer indexes, emitting adaptamer-style seed hits for
 /// every k-mer pair sharing at least `min_shared` bases (mirroring FastGA's
 /// lcp-driven merge with FastGA's adaptamer seed selection: each `a` entry
@@ -77,10 +106,11 @@ pub fn merge_seed_hits(
         .map(|ents| -> anyhow::Result<Vec<SeedHit>> {
             let mut hits = Vec::new();
             let mut prev_kmer = None;
+            let mut cur = MergeCursor::default();
             for ea in ents {
                 let ap = &a.positions[ea.pos_start as usize..(ea.pos_start + ea.freq) as usize];
                 hits.extend(emit_entry_hits(
-                    ea.kmer, ea.freq, ap, b, freq, min_shared, k, prev_kmer,
+                    ea.kmer, ea.freq, ap, b, freq, min_shared, k, prev_kmer, &mut cur,
                 )?);
                 prev_kmer = Some(ea.kmer);
             }
@@ -132,9 +162,10 @@ pub fn merge_seed_hits_from_stream<R: Read + Send, B: PgiQuery + Sync>(
         .map(|batch| {
             let mut hits = Vec::new();
             let mut prev_kmer = None;
+            let mut cur = MergeCursor::default();
             for (ea, poss) in batch? {
                 hits.extend(emit_entry_hits(
-                    ea.kmer, ea.freq, &poss, b, freq, min_shared, k, prev_kmer,
+                    ea.kmer, ea.freq, &poss, b, freq, min_shared, k, prev_kmer, &mut cur,
                 )?);
                 prev_kmer = Some(ea.kmer);
             }
@@ -159,6 +190,7 @@ fn emit_entry_hits<B: PgiQuery>(
     min_shared: usize,
     k: usize,
     prev_kmer: Option<u128>,
+    cur: &mut MergeCursor,
 ) -> anyhow::Result<Vec<SeedHit>> {
     let mut hits = Vec::new();
     // FastGA excludes k-mers whose count is >= the frequency cutoff on both
@@ -183,7 +215,7 @@ fn emit_entry_hits<B: PgiQuery>(
         (1u128 << k_bits) - 1
     };
     // Prefix range of `b` entries sharing the first `len` bases with the key.
-    let window = |len: usize| -> (usize, usize) {
+    let window_bounds = |len: usize| -> (u128, u128) {
         let r = 1u128 << (k_bits - 2 * len);
         let lo = ea_kmer & !(r - 1) & mask;
         // The prefix boundary `lo + r` can equal `2^(2k)`; for k=64 that is
@@ -192,7 +224,24 @@ fn emit_entry_hits<B: PgiQuery>(
         // `u128::MAX` is the only one the saturated range excludes, an
         // extreme all-T 64-mer edge that is not a real seed.
         let hi = lo.saturating_add(r);
-        b.entry_range(lo, hi)
+        (lo, hi)
+    };
+    // Floor window (widest, at `min_shared`): monotonic across ascending `a`
+    // entries, so its bounds advance sequentially from the cursor except at
+    // the batch's first surviving entry (binary search).
+    let (flo, fhi) = window_bounds(min_shared);
+    let (f0, f1) = if cur.first {
+        let (f0, f1) = b.entry_range(flo, fhi);
+        cur.f0 = f0;
+        cur.f1 = f1;
+        cur.first = false;
+        (f0, f1)
+    } else {
+        let f0 = b.entry_lower_bound_ge(flo, cur.f0);
+        let f1 = b.entry_lower_bound_ge(fhi, cur.f0.max(cur.f1));
+        cur.f0 = f0;
+        cur.f1 = f1;
+        (f0, f1)
     };
     // Lcp propagation (FastGA `new_merge_thread`'s `vlcp` table): an entry
     // shares at least `lcp(prev, cur)` bases with every match its predecessor
@@ -203,14 +252,23 @@ fn emit_entry_hits<B: PgiQuery>(
     let start = prev_kmer
         .map(|pk| shared_prefix(pk, ea_kmer, k).max(min_shared as u32))
         .unwrap_or(min_shared as u32);
-    let (mut j0, mut j) = window(start as usize);
+    let (mut j0, mut j) = if start as usize == min_shared {
+        (f0, f1)
+    } else {
+        // A narrower prefix window is a sub-window of the floor window; find
+        // it by advancing within `[f0, f1)` instead of a full binary search.
+        let (slo, shi) = window_bounds(start as usize);
+        let s0 = b.entry_lower_bound_ge(slo, f0);
+        let s1 = b.entry_lower_bound_ge(shi, s0);
+        (s0, s1)
+    };
     if j0 == j && start as usize > min_shared {
-        (j0, j) = window(min_shared);
+        (j0, j) = (f0, f1);
     }
     if j == j0 {
         return Ok(hits);
     }
-    // Maximal shared prefix over the floor window (FastGA extends each entry
+    // Maximal shared prefix over the scan window (FastGA extends each entry
     // to its longest match before filtering).
     let mut m: u32 = 0;
     let mut i = j0;
@@ -228,9 +286,12 @@ fn emit_entry_hits<B: PgiQuery>(
     if m < min_shared as u32 {
         return Ok(hits);
     }
-    // Restrict to the maximal-prefix range; its occurrence count must stay
-    // under `freq` (extended-range filter, not the floor window).
-    let (m0, m1) = window(m as usize);
+    // Restrict to the maximal-prefix range (its occurrence count must stay
+    // under `freq` -- extended-range filter, not the floor window). It is a
+    // sub-window of the scan range, so locate it by advancing within it.
+    let (mlo, mhi) = window_bounds(m as usize);
+    let m0 = b.entry_lower_bound_ge(mlo, j0);
+    let m1 = b.entry_lower_bound_ge(mhi, m0);
     let mut occ: u32 = 0;
     let mut i = m0;
     while i < m1 {
@@ -1017,6 +1078,188 @@ mod tests {
         let rnd_idx = build(&rnd);
         let hits = merge_seed_hits(&rnd_idx, &rnd_idx, 2, 10).unwrap();
         assert!(!hits.is_empty(), "unique k-mers pass freq=2");
+    }
+
+    /// Binary-search-only reference of the sequential merge (the pre-方案 A
+    /// `emit_entry_hits`): every window is located by `entry_range`, so the
+    /// sequential-advance path must produce byte-identical hits.
+    #[allow(clippy::too_many_arguments)]
+    fn emit_entry_hits_ref<B: PgiQuery>(
+        ea_kmer: u128,
+        ea_freq: u32,
+        a_positions: &[u64],
+        b: &B,
+        freq: u32,
+        min_shared: usize,
+        k: usize,
+        prev_kmer: Option<u128>,
+    ) -> anyhow::Result<Vec<SeedHit>> {
+        let mut hits = Vec::new();
+        if ea_freq >= freq || ea_kmer > rc_key(ea_kmer, k) {
+            return Ok(hits);
+        }
+        let k_bits = 2 * k;
+        let mask = if k_bits >= 128 {
+            u128::MAX
+        } else {
+            (1u128 << k_bits) - 1
+        };
+        let window = |len: usize| {
+            let r = 1u128 << (k_bits - 2 * len);
+            let lo = ea_kmer & !(r - 1) & mask;
+            b.entry_range(lo, lo.saturating_add(r))
+        };
+        let start = prev_kmer
+            .map(|pk| shared_prefix(pk, ea_kmer, k).max(min_shared as u32))
+            .unwrap_or(min_shared as u32);
+        let (mut j0, mut j) = window(start as usize);
+        if j0 == j && start as usize > min_shared {
+            (j0, j) = window(min_shared);
+        }
+        if j == j0 {
+            return Ok(hits);
+        }
+        let mut m: u32 = 0;
+        let mut i = j0;
+        while i < j {
+            if b.entry_freq(i) >= freq {
+                i = b.entry_next(i);
+                continue;
+            }
+            m = m.max(shared_prefix(ea_kmer, b.entry_kmer(i), k));
+            i = b.entry_next(i);
+        }
+        if m < min_shared as u32 {
+            return Ok(hits);
+        }
+        let (m0, m1) = window(m as usize);
+        let mut occ: u32 = 0;
+        let mut i = m0;
+        while i < m1 {
+            let f = b.entry_freq(i);
+            if f < freq {
+                occ += f;
+            }
+            i = b.entry_next(i);
+        }
+        if occ == 0 || occ >= freq {
+            return Ok(hits);
+        }
+        let mut i = m0;
+        while i < m1 {
+            if b.entry_freq(i) < freq {
+                for &arec in a_positions {
+                    let (ac, apos, astrand) = unpack_position(arec);
+                    for brec in b.entry_positions(i) {
+                        let (bc, bpos, bstrand) = unpack_position(brec);
+                        let fwd = astrand == bstrand;
+                        let b_len = b.contigs()[bc as usize].1;
+                        let oriented = if fwd {
+                            bpos as u64
+                        } else {
+                            b_len - k as u64 - bpos as u64
+                        };
+                        hits.push(SeedHit {
+                            a_contig: ac as u16,
+                            a_pos: apos,
+                            b_contig: bc as u16,
+                            b_pos: oriented as u32,
+                            shared: m as u16,
+                            strand: u8::from(!fwd),
+                        });
+                    }
+                }
+            }
+            i = b.entry_next(i);
+        }
+        Ok(hits)
+    }
+
+    fn merge_ref<B: PgiQuery>(a: &PgiIndex, b: &B, freq: u32, min_shared: usize) -> Vec<SeedHit> {
+        let k = a.k;
+        let mut hits = Vec::new();
+        let mut prev = None;
+        for ea in &a.entries {
+            let ap = &a.positions[ea.pos_start as usize..(ea.pos_start + ea.freq) as usize];
+            hits.extend(
+                emit_entry_hits_ref(ea.kmer, ea.freq, ap, b, freq, min_shared, k, prev).unwrap(),
+            );
+            prev = Some(ea.kmer);
+        }
+        hits
+    }
+
+    #[test]
+    fn sequential_merge_matches_binary_reference() {
+        // The 归并式 (sequential-advance) merge must produce byte-identical
+        // seed hits to the pre-optimization binary-search reference, on
+        // indexes with varied lcp propagation (long A-runs, RC query) and
+        // both resident and mmap query views.
+        let a = build_from_seqs(
+            vec![
+                (String::from("c1"), pseudo_random_seq(3000, 21)),
+                (String::from("c2"), pseudo_random_seq(2000, 22)),
+            ],
+            40,
+            4,
+            2,
+            false,
+            false,
+        )
+        .unwrap();
+        let mut b = build_from_seqs(
+            vec![
+                (String::from("c1"), pseudo_random_seq(3000, 23)),
+                (String::from("c2"), pseudo_random_seq(2000, 24)),
+            ],
+            40,
+            4,
+            2,
+            false,
+            false,
+        )
+        .unwrap();
+        let key = |h: &SeedHit| {
+            (
+                h.a_contig,
+                h.a_pos,
+                h.b_contig,
+                h.b_pos,
+                h.shared,
+                h.strand,
+            )
+        };
+
+        let mut ref_resident: Vec<_> = merge_ref(&a, &b, 10, 12).iter().map(key).collect();
+        let mut seq_resident: Vec<_> = merge_seed_hits(&a, &b, 10, 12)
+            .unwrap()
+            .iter()
+            .map(key)
+            .collect();
+        ref_resident.sort_unstable();
+        seq_resident.sort_unstable();
+        assert_eq!(ref_resident, seq_resident, "resident sequential mismatch");
+
+        // Mmap query view: the generic merge is the streaming one (it is the
+        // only path that accepts a `B: PgiQuery` query side).
+        let mut a_bytes = Vec::new();
+        a.write(&mut a_bytes).unwrap();
+        let mut b_bytes = Vec::new();
+        b.write(&mut b_bytes).unwrap();
+        let dir = tempfile::TempDir::new().unwrap();
+        let q_path = dir.path().join("q.pgi");
+        std::fs::write(&q_path, &b_bytes).unwrap();
+        let mapped = crate::libs::pgi::PgiMmap::open(&q_path).unwrap();
+        let mut ref_mmap: Vec<_> = merge_ref(&a, &mapped, 10, 12).iter().map(key).collect();
+        let seq_mmap = {
+            let mut s = PgiStream::open(std::io::Cursor::new(&a_bytes)).unwrap();
+            merge_seed_hits_from_stream(&mut s, &mapped, 10, 12).unwrap()
+        };
+        let mut seq_mmap: Vec<_> = seq_mmap.iter().map(key).collect();
+        ref_mmap.sort_unstable();
+        seq_mmap.sort_unstable();
+        assert_eq!(ref_mmap, seq_mmap, "mmap sequential mismatch");
+        assert!(!ref_mmap.is_empty(), "expected shared seeds");
     }
 
     #[test]

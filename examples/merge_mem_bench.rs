@@ -1,10 +1,13 @@
 //! In-memory `merge_seed_hits` timing vs the streaming command path, plus a
 //! skip-scan variant to isolate the cost of the max-shared-prefix window
-//! scan (the part the LCP optimizations touch).
+//! scan (the part the LCP optimizations touch). Includes a split-profile
+//! variant that times the four sub-components of `emit_entry_hits`:
+//! (a) `entry_range` binary search, (b) the max-m window scan, (c)
+//! `shared_prefix` calls, (d) position emission (design: pgi-query-layer.md
+//! 阶段 0).
 //!
 //! Usage: cargo run --release --example merge_mem_bench -- ref.pgi query.pgi
 
-use pgr::libs::pgi::align::merge_seed_hits;
 use pgr::libs::pgi::align::SeedHit;
 use pgr::libs::pgi::{PgiIndex, PgiQuery};
 use rayon::prelude::*;
@@ -22,8 +25,42 @@ fn shared_prefix(a: u128, b: u128, k: usize) -> u32 {
     ((2 * k).saturating_sub(bitlen as usize) / 2) as u32
 }
 
-/// Simplified `emit_entry_hits` (same semantics as the library), with an
-/// optional skip of the max-shared-prefix window scan (`m = start`).
+/// Accumulated split timers for one merge pass.
+#[derive(Default)]
+struct Probe {
+    /// Time inside `entry_range` (binary search) calls.
+    range_ns: u128,
+    /// Time inside the max-shared-prefix window scan.
+    scan_ns: u128,
+    /// Time inside the final position-emission loop.
+    emit_ns: u128,
+    /// Number of `entry_range` calls.
+    range_calls: u64,
+    /// Number of b entries visited in the max-m scan.
+    scan_entries: u64,
+    /// Number of `shared_prefix` calls.
+    shared_prefix_calls: u64,
+    /// Number of a entries processed.
+    entries: u64,
+    /// Number of empty-start-window fallbacks to the floor window.
+    fallbacks: u64,
+}
+
+impl Probe {
+    fn merge(&mut self, o: &Probe) {
+        self.range_ns += o.range_ns;
+        self.scan_ns += o.scan_ns;
+        self.emit_ns += o.emit_ns;
+        self.range_calls += o.range_calls;
+        self.scan_entries += o.scan_entries;
+        self.shared_prefix_calls += o.shared_prefix_calls;
+        self.entries += o.entries;
+        self.fallbacks += o.fallbacks;
+    }
+}
+
+/// Same semantics as the library's `emit_entry_hits`, with optional skip of
+/// the max-shared-prefix window scan (`m = start`) and a `Probe` accumulator.
 #[allow(clippy::too_many_arguments)]
 fn emit_hits<B: PgiQuery>(
     ea_kmer: u128,
@@ -35,8 +72,10 @@ fn emit_hits<B: PgiQuery>(
     k: usize,
     prev_kmer: Option<u128>,
     skip_scan: bool,
+    probe: &mut Probe,
 ) -> anyhow::Result<Vec<SeedHit>> {
     let mut hits = Vec::new();
+    probe.entries += 1;
     if ea_freq >= freq || ea_kmer > pgr::libs::nt::rc_key(ea_kmer, k) {
         return Ok(hits);
     }
@@ -46,18 +85,23 @@ fn emit_hits<B: PgiQuery>(
     } else {
         (1u128 << k_bits) - 1
     };
-    let window = |len: usize| -> (usize, usize) {
+    let window = |len: usize, probe: &mut Probe| -> (usize, usize) {
         let r = 1u128 << (k_bits - 2 * len);
         let lo = ea_kmer & !(r - 1) & mask;
         let hi = lo.saturating_add(r);
-        b.entry_range(lo, hi)
+        let t = Instant::now();
+        let r = b.entry_range(lo, hi);
+        probe.range_ns += t.elapsed().as_nanos();
+        probe.range_calls += 1;
+        r
     };
     let start = prev_kmer
         .map(|pk| shared_prefix(pk, ea_kmer, k).max(min_shared as u32))
         .unwrap_or(min_shared as u32);
-    let (mut j0, mut j) = window(start as usize);
+    let (mut j0, mut j) = window(start as usize, probe);
     if j0 == j && start as usize > min_shared {
-        (j0, j) = window(min_shared);
+        probe.fallbacks += 1;
+        (j0, j) = window(min_shared, probe);
     }
     if j == j0 {
         return Ok(hits);
@@ -72,7 +116,11 @@ fn emit_hits<B: PgiQuery>(
                 i = b.entry_next(i);
                 continue;
             }
+            probe.scan_entries += 1;
+            probe.shared_prefix_calls += 1;
+            let t = Instant::now();
             m = m.max(shared_prefix(ea_kmer, b.entry_kmer(i), k));
+            probe.scan_ns += t.elapsed().as_nanos();
             i = b.entry_next(i);
         }
         m
@@ -80,7 +128,7 @@ fn emit_hits<B: PgiQuery>(
     if m < min_shared as u32 {
         return Ok(hits);
     }
-    let (m0, m1) = window(m as usize);
+    let (m0, m1) = window(m as usize, probe);
     let mut occ: u32 = 0;
     let mut i = m0;
     while i < m1 {
@@ -93,6 +141,7 @@ fn emit_hits<B: PgiQuery>(
     if occ == 0 || occ >= freq {
         return Ok(hits);
     }
+    let t = Instant::now();
     let mut i = m0;
     while i < m1 {
         if b.entry_freq(i) < freq {
@@ -124,6 +173,7 @@ fn emit_hits<B: PgiQuery>(
         }
         i = b.entry_next(i);
     }
+    probe.emit_ns += t.elapsed().as_nanos();
     Ok(hits)
 }
 
@@ -139,7 +189,7 @@ fn merge_all(
         .map(|ents| -> anyhow::Result<Vec<SeedHit>> {
             let mut hits = Vec::new();
             let mut prev = None;
-            let mut fallbacks = 0usize;
+            let mut probe = Probe::default();
             for ea in ents {
                 let ap = &a.positions[ea.pos_start as usize..(ea.pos_start + ea.freq) as usize];
                 hits.extend(emit_hits(
@@ -152,31 +202,11 @@ fn merge_all(
                     a.k,
                     if use_lcp { prev } else { None },
                     skip_scan,
+                    &mut probe,
                 )?);
-                if use_lcp {
-                    let k = a.k;
-                    let start = prev
-                        .map(|pk| shared_prefix(pk, ea.kmer, k).max(12u32))
-                        .unwrap_or(12u32) as usize;
-                    let k_bits = 2 * k;
-                    let mask = if k_bits >= 128 {
-                        u128::MAX
-                    } else {
-                        (1u128 << k_bits) - 1
-                    };
-                    let r = 1u128 << (k_bits - 2 * start);
-                    let lo = ea.kmer & !(r - 1) & mask;
-                    let hi = lo.saturating_add(r);
-                    let (w0, w1) = b.entry_range(lo, hi);
-                    if w0 == w1 {
-                        fallbacks += 1;
-                    }
-                }
                 prev = Some(ea.kmer);
             }
-            if fallbacks > 0 {
-                eprintln!("  chunk fallbacks: {fallbacks}");
-            }
+            let _ = probe;
             Ok(hits)
         })
         .collect::<anyhow::Result<Vec<_>>>()?
@@ -184,6 +214,50 @@ fn merge_all(
         .flatten()
         .collect();
     Ok(hits)
+}
+
+/// Split-profile a full merge pass: times (a) entry_range, (b) max-m scan,
+/// (c) shared_prefix calls, (d) emission, aggregated across rayon chunks.
+fn profile_merge(
+    a: &PgiIndex,
+    b: &PgiIndex,
+    use_lcp: bool,
+) -> anyhow::Result<(Vec<SeedHit>, Probe)> {
+    let probes: Vec<Probe> = a
+        .entries
+        .par_chunks(4096)
+        .map(|ents| -> anyhow::Result<Probe> {
+            let mut hits = Vec::new();
+            let mut prev = None;
+            let mut probe = Probe::default();
+            for ea in ents {
+                let ap = &a.positions[ea.pos_start as usize..(ea.pos_start + ea.freq) as usize];
+                hits.extend(emit_hits(
+                    ea.kmer,
+                    ea.freq,
+                    ap,
+                    b,
+                    10,
+                    12,
+                    a.k,
+                    if use_lcp { prev } else { None },
+                    false,
+                    &mut probe,
+                )?);
+                prev = Some(ea.kmer);
+            }
+            let _ = hits;
+            Ok(probe)
+        })
+        .collect::<anyhow::Result<Vec<_>>>()?;
+    let mut all = Probe::default();
+    for p in probes {
+        all.merge(&p);
+    }
+    // Re-run for the hit count (the probe pass discards hits to keep the
+    // timing loop lean).
+    let hits = merge_all(a, b, use_lcp, false)?;
+    Ok((hits, all))
 }
 
 fn main() -> anyhow::Result<()> {
@@ -199,7 +273,7 @@ fn main() -> anyhow::Result<()> {
     eprintln!("load both indexes: {:?}", t.elapsed());
 
     let t = Instant::now();
-    let hits = merge_seed_hits(&a, &b, 10, 12)?;
+    let hits = pgr::libs::pgi::align::merge_seed_hits(&a, &b, 10, 12)?;
     eprintln!(
         "merge_seed_hits (lib, full scan): {:?}, {} seed hits",
         t.elapsed(),
@@ -225,6 +299,35 @@ fn main() -> anyhow::Result<()> {
         "merge_all (lcp, skip scan):    {:?}, {} seed hits",
         t.elapsed(),
         hits_skip.len()
+    );
+
+    // Split profile of the production path (lcp on).
+    let (p_hits, p) = profile_merge(&a, &b, true)?;
+    eprintln!("\nsplit profile (lcp, {:?}): {} seed hits", a.entries.len(), p_hits.len());
+    eprintln!(
+        "  a entries: {}\n  entry_range calls: {} ({} ns/entry {:.2} call/entry)",
+        p.entries,
+        p.range_calls,
+        p.range_ns / p.entries.max(1) as u128,
+        p.range_calls as f64 / p.entries.max(1) as f64
+    );
+    eprintln!(
+        "  range: {:>8.3} ms ({:>5.1}%)  scan: {:>8.3} ms ({:>5.1}%)  emit: {:>8.3} ms ({:>5.1}%)",
+        p.range_ns as f64 / 1e6,
+        p.range_ns as f64 / (p.range_ns + p.scan_ns + p.emit_ns).max(1) as f64 * 100.0,
+        p.scan_ns as f64 / 1e6,
+        p.scan_ns as f64 / (p.range_ns + p.scan_ns + p.emit_ns).max(1) as f64 * 100.0,
+        p.emit_ns as f64 / 1e6,
+        p.emit_ns as f64 / (p.range_ns + p.scan_ns + p.emit_ns).max(1) as f64 * 100.0,
+    );
+    eprintln!(
+        "  scan_entries: {} ({:.2}/entry)  shared_prefix calls: {} ({:.2}/entry)  fallbacks: {} ({:.2}%)",
+        p.scan_entries,
+        p.scan_entries as f64 / p.entries.max(1) as f64,
+        p.shared_prefix_calls,
+        p.shared_prefix_calls as f64 / p.entries.max(1) as f64,
+        p.fallbacks,
+        p.fallbacks as f64 / p.entries.max(1) as f64 * 100.0,
     );
     Ok(())
 }

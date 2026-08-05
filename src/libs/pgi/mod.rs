@@ -87,6 +87,12 @@ fn take_bytes<'a>(buf: &'a [u8], off: &mut usize, n: usize) -> anyhow::Result<&'
     Ok(s)
 }
 
+/// Forward-scan cap for [`PgiQuery::entry_lower_bound_ge`]: a sequential
+/// merge advances ~1 group per entry, so a scan exceeding this many groups
+/// is a large jump (sparse `b`, or a run of filtered `a` entries) and falls
+/// back to a binary search instead of scanning the whole gap.
+const MAX_SEQ_SCAN: usize = 64;
+
 /// Upper bound on a contig name's byte length. Real names are far shorter;
 /// capping the untrusted length in `read_header` before it grows a buffer
 /// turns a crafted multi-GB `nb` into a friendly error instead of a huge
@@ -279,6 +285,14 @@ pub trait PgiQuery {
     fn contigs(&self) -> &[(String, u64)];
     /// Entry range whose k-mers lie in `[lo, hi)`.
     fn entry_range(&self, lo: u128, hi: u128) -> (usize, usize);
+    /// First entry index whose k-mer is `>= key`, identical to
+    /// `entry_range(key, successor(key)).0`. `from` is a sequential-merge
+    /// hint (a group-start index at or below the answer, e.g. the previous
+    /// entry's window bound); the returned lower bound is correct regardless
+    /// of `from`, but the lookup may advance forward from `from` instead of
+    /// binary-searching, turning the per-entry `O(log n)` positioning of a
+    /// monotonic merge into `O(advance)` work.
+    fn entry_lower_bound_ge(&self, key: u128, from: usize) -> usize;
     /// Index one past the entry at `i` (entries may have a non-unit stride
     /// in the underlying storage).
     fn entry_next(&self, i: usize) -> usize;
@@ -354,6 +368,28 @@ impl PgiQuery for PgiIndex {
         let i0 = self.entries.partition_point(|e| e.kmer < lo);
         let i1 = self.entries.partition_point(|e| e.kmer < hi);
         (i0, i1)
+    }
+
+    fn entry_lower_bound_ge(&self, key: u128, from: usize) -> usize {
+        let n = self.entries.len();
+        let from = from.min(n);
+        if from < n && self.entries[from].kmer < key {
+            // `from` is at or below the answer: scan forward (entries are
+            // index-contiguous), falling back to a binary search on a large
+            // jump.
+            let mut i = from;
+            let mut steps = 0usize;
+            while i < n && self.entries[i].kmer < key {
+                i += 1;
+                steps += 1;
+                if steps >= MAX_SEQ_SCAN {
+                    return self.entries.partition_point(|e| e.kmer < key);
+                }
+            }
+            i
+        } else {
+            self.entries.partition_point(|e| e.kmer < key)
+        }
     }
 
     fn entry_next(&self, i: usize) -> usize {

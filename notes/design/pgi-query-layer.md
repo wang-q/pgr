@@ -1,10 +1,14 @@
 # PgiQuery 抽象层与 FastGA 顺序算法：解锁路径（设计稿 + 基准计划）
 
-> 2026-08-05 起草，待审核。背景：`pgr align pgi` 的 merge 走 `PgiQuery`
+> 2026-08-05 起草。背景：`pgr align pgi` 的 merge 走 `PgiQuery`
 > 抽象（resident 索引 / mmap 按需解码），FastGA 的 `new_merge_thread`
 > 是"顺序指针 + 预计算 LBYTE + vlcp 表"模型。抽象层把顺序访问降级成
 > 二分，导致完整 LCP（§3.6 慢 2.1×）与变长种子（§7.3）等 FastGA 算法
 > 无法直接利用。本文给出诊断、候选路径与基准设计。
+>
+> **2026-08-05 定稿（方案 A 落地）**：§4 方案 A（归并式 merge）已实现并
+> 验证——PSL 逐字节一致、merge 耗时不倒退（resident 反快 ~28%）、内存不
+> 涨；见 §8 落地记录。
 
 ## 1. 问题诊断
 
@@ -64,11 +68,21 @@
 | 逐碱基递增（二分模拟） | 543 ms（慢 5×，§3.6） |
 | 峰值 RSS（align 全流程） | 209-210 MB |
 
-**待补的拆分探针**（阶段 0）：在 `emit_entry_hits` 内分别计时
+**拆分探针（阶段 0，已完成）**：在 `emit_entry_hits` 内分别计时
 （a）`entry_range` 二分定位、（b）窗口扫描找 m、（c）`shared_prefix`
-计算、（d）发射 positions。用 `examples/merge_mem_bench.rs`（已有
-skip-scan 变体）扩展。这决定优化主战场：如果（a）占大头 → 方案 A；
-如果（b）占大头 → 方案 B/LBYTE 或 cpre 化。
+计算、（d）发射 positions。用 `examples/merge_mem_bench.rs` 的
+split-profile 变体实测（mg1655 × nissle，resident，8 线程 release）：
+
+| 分量 | 累计 CPU | 占比 | 说明 |
+|---|---:|---:|---|
+| (a) entry_range 二分 | 263.8 ms | **76.9%** | 2,287,166 次调用，0.87 次/条目 |
+| (b) 窗口扫描找 m | 37.8 ms | 11.0% | 1,524,811 条目/次扫描 |
+| (d) 发射 positions | 41.3 ms | 12.0% | — |
+| (c) shared_prefix | — | 可忽略 | 快指令，纳入 (b) 计时 |
+
+**结论**：主战场是 (a) `entry_range` 二分（76.9%），而非窗口扫描——
+方案 A（顺序推进替代二分）是正确方向；方案 B/LBYTE 单独无收益（共享
+前缀计算占比可忽略）。
 
 ## 3. 目标与成功标准
 
@@ -85,24 +99,26 @@ skip-scan 变体）扩展。这决定优化主战场：如果（a）占大头 �
 
 ## 4. 候选方案
 
-### 方案 A：归并式 merge（顺序窗口推进，不动格式）
+### 方案 A：归并式 merge（顺序窗口推进，不动格式）——✅ 已落地
 
 **机制**：a 条目按 kmer 全序单调，b 侧窗口下界/上界随之单调（不要求 a
 与 b 全等，只要求窗口边界不倒退）。维护"b 游标"，批内每个 a 条目从上次
 位置**顺序推进**到新窗口边界，替代 `entry_range` 二分。大跳变（a 步进
-大、b 稀疏）时回退二分（自适应：比较顺序推进与二分各自步数）。
+大、b 稀疏）时回退二分（自适应：顺序推进超过 `MAX_SEQ_SCAN=64` 组即转
+二分）。
 
-**改动面**：`emit_entry_hits` 增加游标状态参数；`merge_seed_hits` /
-`merge_seed_hits_from_stream` 的批内循环传游标；批边界重置（批首条目
-二分定位）。`PgiIndex` 顺序推进是 Vec 缓存友好扫描；`PgiMmap` 顺序推进
-是逐记录 `rec_kmer_bytes` 比较（与二分同成本量级，但总步数从 O(m log n)
-降到 O(m + n)）。
+**改动面**：`PgiQuery` 新增 `entry_lower_bound_ge(key, from)` 顺序下界
+原语（`PgiIndex` 数组顺序扫描 + 超限回退二分；`PgiMmap` 逐组
+`group_end` 推进 + 超限回退 `lower_bound`）；`align.rs::emit_entry_hits`
+新增 `MergeCursor`（f0/f1/first 三字段 ~24 B）批内维护 floor 窗口边界，
+窄窗口从 floor 窗口内顺序推进；批边界（`first`）重置为二分定位。见 §8。
 
-**成本/风险**：低（无格式改动，~100-200 行）；风险是 b 侧稀疏时顺序推进
-比二分慢（用自适应缓解）；并行化下批边界二分开销可忽略（每批一次）。
+**成本/风险**：低（无格式改动）；风险是 b 侧稀疏时顺序推进比二分慢
+（用 `MAX_SEQ_SCAN` 自适应缓解）；并行化下批边界二分开销可忽略（每批
+一次）。
 
 **收益**：merge 窗口定位从 O(m log n) → O(m + n)；这是解锁 vlcp 表的
-前置（vlcp 需要窗口起点可顺序维护）。
+前置（vlcp 需要窗口起点可顺序维护）。实测 resident 反快 ~28%（§8）。
 
 ### 方案 B：`.pgi` v3 内嵌 LBYTE（预计算相邻条目 lcp）
 
@@ -137,10 +153,10 @@ E. coli 级 LCP 零收益（§3.3 复测：种子差 50、时间/PSL/覆盖全�
 ## 5. 推荐路径（分阶段，每阶段可独立审核/回退）
 
 ```
-阶段 0：拆分探针 + 人类规模 lcp 分布预研
+阶段 0：拆分探针 + 人类规模 lcp 分布预研  ✅（拆分探针已完成）
   ├─ 验证点：merge 内部分布；相邻条目 lcp > 12 的比例（人类重复区）
   └─ 决策门：收益不出现 → 停（方案 D 定稿）
-阶段 1：方案 A 归并式 merge（不动格式）
+阶段 1：方案 A 归并式 merge（不动格式）  ✅（2026-08-05 落地，§8）
   ├─ 验证点：merge 时间、PSL 逐字节一致、内存
   └─ 决策门：时间不降或退化 → 回退，转阶段 3
 阶段 2：方案 B `.pgi` v3 LBYTE（格式演进，可与 1 并行）
@@ -184,4 +200,61 @@ E. coli 级 LCP 零收益（§3.3 复测：种子差 50、时间/PSL/覆盖全�
 4. **物化粒度**：方案 C 全量 vs cpre 分块（内存/IO 权衡）；
 5. **与 dist/to-hv 的耦合**：`dist pgi`、`to_hv`、`count_unique` 也用
    `PgiQuery`，顺序化改动不应破坏它们的等价性（有现成逐字节测试）。
+
+## 8. 方案 A 落地记录（2026-08-05）
+
+### 8.1 改动
+
+| 文件 | 改动 |
+|---|---|
+| `src/libs/pgi/mod.rs` | `PgiQuery` 新增 `entry_lower_bound_ge(key, from)`；`MAX_SEQ_SCAN=64` |
+| `src/libs/pgi/mmap.rs` | `PgiMmap` 实现 `entry_lower_bound_ge`（逐组 `group_end` 推进 + 超限回退 `lower_bound`） |
+| `src/libs/pgi/align.rs` | `emit_entry_hits` 引入 `MergeCursor`（f0/f1/first），floor 窗口批内顺序推进、窄窗口子窗口内推进；新增等价测试 `sequential_merge_matches_binary_reference` |
+| `examples/merge_mem_bench.rs` | 新增 `Probe` 拆分探针（range/scan/emit/shared_prefix 计时） |
+
+语义不变：`entry_lower_bound_ge` 返回的下界与 `entry_range` 完全一致
+（`from` 只是顺序推进提示，正确性不依赖它）；`MergeCursor` 每批一个
+（~24 B），无内存增长。
+
+### 8.2 实测（mg1655 × nissle1917，k=40 syncmer 8/5，8 线程 release）
+
+`examples/merge_mem_bench.rs`（resident 双索引）：
+
+| 变体 | merge 耗时 | 种子数 |
+|---|---:|---:|
+| **方案 A（lib）** | **19.98 ms** | 1,121,308 |
+| 二分 + lcp（基线） | 27.83 ms | 1,121,308 |
+| 二分 no-lcp | 27.64 ms | 1,121,358 |
+
+resident 反快 **~28%**（20 vs 28 ms），种子数与二分 lcp 版完全一致。
+
+流式路径（生产 `align pgi`，`RUST_LOG=debug` 探针，3 次）：
+
+| 指标 | 方案 A | 基线（§2） |
+|---|---|---:|
+| merge 耗时 | 94 / 96 / 100 ms | ~100-107 ms |
+| 峰值 RSS（merge 后） | 118 MB | ~120 MB（同量级） |
+
+无明显回归，峰值内存持平（`MergeCursor` 每批 24 B，可忽略）。
+
+### 8.3 硬性成功标准核对
+
+| 标准 | 结果 | 证据 |
+|---|---|---|
+| **PSL 逐字节一致** | ✅ | 端到端 `pgr align pgi` 输出 diff：mg1655×nissle（1305 块）、mg1655×sakai（739 块）与 git-stash 二分基线**逐字节一致**；单测 `sequential_merge_matches_binary_reference` 覆盖 resident + mmap 查询视图 |
+| **merge 耗时不倒退** | ✅ | resident 20 vs 28 ms（反快）；流式 94-100 vs ~100-107 ms |
+| **内存不涨** | ✅ | 峰值 RSS 118 MB（持平）；游标 24 B/批 |
+
+`cargo clippy -- -D warnings` clean；`cargo test --release --lib libs::pgi` 50 全过。
+
+> 注：全量 `cargo test --release` 有 1 个**既有**失败（`libs::paf::cigar::tests::test_invalid_op_panics`，`debug_assert!` 只在 debug 构建 panic，release 下不触发）与 2 个既有 `sd search pgi` 失败——均与本次 pgi 改动无关（git-stash 对照确认在 HEAD 上同样失败）。
+
+### 8.4 决策与后续
+
+- **方案 A 定稿**：顺序推进原语已落地，为 vlcp 表（§4 方案 C）与变长种子
+  （§7.3，阶段 4）铺路；
+- **阶段 2（方案 B LBYTE）**：拆分探针显示 shared_prefix 占比可忽略，
+  单独做无收益；仅当 vlcp 表立项时作为其前置；
+- **人类规模（§7.2）**：数据到达后复测 lcp 分布与顺序推进收益（高重复
+  区相邻条目 lcp 可能 >12，窗口加速可能更明显）。
 

@@ -166,6 +166,25 @@ impl PgiQuery for PgiMmap {
         (self.lower_bound(lo), self.lower_bound(hi))
     }
 
+    fn entry_lower_bound_ge(&self, key: u128, from: usize) -> usize {
+        let n = self.n_records;
+        let from = from.min(n);
+        if from < n && self.rec_kmer(from) < key {
+            let mut i = from;
+            let mut steps = 0usize;
+            while i < n && self.rec_kmer(i) < key {
+                i = self.group_end(i);
+                steps += 1;
+                if steps >= super::MAX_SEQ_SCAN {
+                    return self.lower_bound(key);
+                }
+            }
+            i
+        } else {
+            self.lower_bound(key)
+        }
+    }
+
     fn entry_next(&self, i: usize) -> usize {
         self.group_end(i)
     }
