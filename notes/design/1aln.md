@@ -446,8 +446,9 @@ export PATH="$PWD/FASTGA-main:$PATH"          # FastGA 经 system() 调 FAtoGDB�
 ./FASTGA-main/ALNtoPAF mg1655-sakai.1aln | head   # 回读验证
 ```
 
-- **读侧**：FastGA `ALNtoPAF`/`ALNtoPSL` 输出作 golden，pgr 输出与其逐字段一致
-  （坐标、strand、CIGAR、CS）。
+- **读侧**：FastGA `ALNtoPAF`/`ALNtoPSL` 输出作 golden，pgr 输出与其**不变字段**一致
+  （坐标、strand、mapq）。CIGAR/CS/`matches`/`block`/`dv`/`df` 由 FastGA 用其盒内 DP +
+  `Gap_Improver` 重算，不由轨迹点唯一确定，天然可能不同，故排除（见 §7.8 步骤 9）。
 - **写侧**：pgr 写出的 `.1aln` 用 FastGA `ALNshow`/`ALNtoPAF` **回读**，比对还原结果；
   若需字节级一致，逐字节对照 `vcEncode`/`Write_Aln_Trace`/`oneWriteFooter`。
 - **纯容器**：`ONElib` 自带的 `oneFile` 往返测试思想可移植为 Rust 单元测试（写→读→

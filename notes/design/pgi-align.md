@@ -302,13 +302,59 @@ mismatch**。受控测试（1 个真实 indel + 1 个真实错配）显示长度
 **尝试 B：unit-cost 盒内重算（FastGA 语义）**。复用 wave 的 `dandc_nd`
 做盒内 unit-cost 最优路径，输出与不接入**逐字节一致**（无操作）。
 
+> **忠实移植验证（供记录，代码已删）**：为把"必然无操作"从推理升级为
+> 源码级证据，曾将 `Gap_Improver` 本体（align.c:6714-7140 的 F/G/H Myers
+> 最远到达点 DP、snake/rsnake/hamming、盒检测）逐行忠实移植到
+> `src/libs/pgi/gap_improve.rs`，配套 `trace_from_columns` 把 pgr 的 `-`
+> 对齐列转成 FastGA indel trace（负=插入 / 正=删除）。8 个单元测试（含用
+> `dandc_nd` 生成真实最优 trace 的 `dandc_optimal_trace_is_noop`）验证：
+> 对任意 optimal trace，`passes < Gaps + Hamm` 恒假，trace 与 cdiff 均不变。
+> 测试还顺带暴露手写 trace [3,4] 实为非法编码（两连续删除同 B 位应为
+> [3,3]），算法正确纠正之——证明移植语义与源码一致。
+>
+> **运行时间实测（强行接入的代价，供记录）**：`scripts/bench-gap-improve.sh`
+> + `benches/gap_improve_benchmark.rs` 曾在真实 mg1655 x sakai 数据上模拟
+> 强行接入：对管线实际产出的 **738 条 alignment trace** 累加调用
+> `gap_improve`，总耗时 **~9.2 ms**；而 `pgr align pgi` 端到端 **~9.7 s**，
+> 即强行接入**仅增加 ~0.09%** 的运行时间——纯开销、零收益，与"不接入"结论
+> 一致。后续 self-mode 实测（mg1655 x mg1655，`PGR_GI_STATS`）亦为
+> 1075 条 alignment **improved=0 / saved_edits=0**。
+>
+> **删码（2026-08-06）**：确认无操作后，`gap_improve.rs`、benchmark、
+> 脚本及临时插桩已一并删除，机制链条见下（留存）。
+
 **对照源码**（align.c:6714-7140）：FastGA 盒内是 Myers 最远到达点（F/G/H
 数组）的 **unit-cost 稀疏 DP**（`n += 1`，mismatch 与 gap 同价，**无 gap
 open/extend 参数**）。它有效的根源是 FastGA 的 wave 输出为 **tspace=100
 采样的不完整 trace**，盒内 DP 负责补全；pgr 的 wave 用 `dandc_nd` 全量
 精确回溯，无采样缺口——**源码语义下 Gap_Improver 对 pgr 必然无操作**。
 
-**结论：不移植。** 两个尝试给出互补证据：
+> **为什么没有作用（机制链条，删码后留存）**
+>
+> Gap_Improver 不是"通用 gap 精修器"，它只在**一个特定前提下**才可能改变
+> 输出：输入 trace 是**次优**的。整条论证如下——
+>
+> 1. **作用对象**：FastGA 的 wave 输出是 tspace=100 采样的稀疏 trace，两个
+>    相邻采样点之间的碱基层路径缺失，需用盒内 DP **补全**；"补全"可能给出
+>    次优的 gap 摆放，Gap_Improver 据此重算。
+> 2. **判定式**：`passes < Gaps + Hamm` 是它触发重算的门槛。其中 `passes` 是
+>    盒内最远到达点 DP 推得的"通过次数"，`Gaps`/`Hamm` 是当前 trace 的
+>    indel/mismatch 计数。**仅当该不等式为真**（即当前路径非最优、存在更优
+>    路径）它才改写 trace；否则原样返回。
+> 3. **unit-cost 特性**：盒内 DP 的 `n += 1` 使 mismatch 与 gap **同价**，且
+>    无 gap open/extend 参数。因此"是否最优"只取决于差异**总数**，不取决于
+>    差异的**摆放**——只要 trace 的差异数已固定，任何摆放都同样"最优"。
+> 4. **pgr 侧**：wave 用 `dandc_nd` 全量精确回溯，产出即**完整、最优**路径，
+>    差异数已最小化，**没有采样缺口**。把 pgr 的任意 optimal trace 喂给
+>    Gap_Improver，判定式恒为假 → trace 与 cdiff 均不变（单元测试
+>    `dandc_optimal_trace_is_noop` 源码级验证）。
+> 5. **结论**：Gap_Improver 的触发前提（存在非最优路径）在 pgr 里**永不成立**，
+>    故它对 pgr 必然无操作。源码语义版 = 逐字节无操作；仿射参数版 = 有副作用
+>    （见下）。两版均不接入输出管线。
+
+**结论：不接入输出管线。** 忠实移植版曾实现并验证为无操作，**已于
+2026-08-06 连同 benchmark、脚本一并删除**（机制与实测见上）——两个尝试给出
+互补证据：
 
 1. 源码语义（unit-cost）= 逐字节无操作 → 机制前提不成立（pgr wave 已精确）；
 2. 自选参数（仿射）= 有副作用（identity -0.2%，结构失真）+ 无源码依据 →
