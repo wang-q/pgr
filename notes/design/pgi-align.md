@@ -556,11 +556,35 @@ plen ∈ [12, k] 已等价；未做的是"种子 (start, len) 直接携带 >40 �
 benchmark 明确非当前优先级（Sakai 剩余差距来自分歧区的 wave 补齐，见
 [[../benchmarks/bench-pgi-align-vs-fastga.md]]）。前置 lcp 机制已落地（§3.3）。
 
-### 7.4 对称 adaptamer（`-S`）
+### 7.4 对称 adaptamer（`-S`）：不做
 
-FastGA（FastGA.c:2340，未文档化）：`P1->maxp > P2->maxp` 时交换 T1/T2，
-双向种子合并。pgr 双输入单向（`A B` ≠ `B A`）。专门场景（对称的跨基因组
-重复/结构分析）才有价值；`sd cross` 当前单向够用，暂缓。
+FastGA `-S`（FastGA.c:2340，README:199-207 已文档化）：`P1->maxp >
+P2->maxp` 时交换 T1/T2，双向种子合并；用两方 adaptamer，结果与 A/B 顺序
+基本无关，但通常发现 B 中更多重复比对。README 明确 **synteny 场景不建议，
+仅重复结构分析时用**——pgr 的 `align pgi` 是 synteny 用途，且 `sd cross`
+当前单向够用，故**不做**（与 §3.4 select 同类判断：专门场景 + 无消费者）。
+若将来做对称跨基因组重复检测，按 FastGA.c:2340 语义实现（较小基因组做
+种子侧，双向合并）。
+
+**pbit 存储场景实测（2026-08-05，MG1655 ref × Sakai query）**：考虑
+`align → PAF → pbit`（CIGAR delta 压缩，见 [[pbit.md]]）时，-S 理论上
+可能通过"更多 query 覆盖（含重复）"改善压缩。实测：
+
+- query 覆盖：单向 4,628,115 bp vs 对称 4,671,797 bp（**+0.9%**，重复区
+  为主，符合 README）；
+- pbit 归档（同名 contig 修正后）：单向 3,009,469 B vs 对称 3,009,470 B
+  （**+1 字节，无收益**）。
+
+原因：E. coli 重复区极少（~0.5%），-S 多覆盖的片段要么被 `min_match_len`
+过滤，要么在 LZ-diff 下已近最优，CIGAR delta 边际收益≈0。
+
+**重复遮蔽边界（2026-08-05 用户指出）**：以上实测用**未遮蔽** E. coli。
+-S 的收益来源就是"更多重复比对"，而真实流程通常带重复遮蔽（`pgi build
+--mask` / FastGA `-M` 滤掉 masked 种子）——遮蔽后 -S 的额外比对被移除，
+覆盖差异趋零，归档更无差异。**结论（不做）在遮蔽场景下更稳健**。唯一例外
+是"故意不遮蔽重复区做 delta 引用"的 pbit 流程，但细菌规模已实测无收益；
+真核（重复区占比大）是唯一可能显著场景，需 §7.2 人类数据验证（且应连同
+遮蔽与否两个版本一起测）。
 
 ### 7.5 多 mask union
 

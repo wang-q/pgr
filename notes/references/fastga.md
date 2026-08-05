@@ -1,6 +1,8 @@
 # FastGA 源码与论文分析
 
 > 整理于 2026-08，源自对 `FASTGA-main/` 目录源码（约 4.6 万行 C）及 README 的通读。
+> 2026-08-05 复核：`-S`（对称 adaptamer）已由 README 文档化，本机安装版二进制
+> 更新为 `[-vkMS]`（与源码 V1.5 一致），§5/§8 相应修正。
 > 目的：理解 FastGA 的快速全基因组比对算法（adaptive seeds + wave aligner + trace points），
 > 为 pgr 的 pangenome 上游比对（verify-pangenome.sh 已用 `FastGA -psl/-pafx`）与对齐算法
 > 提供参考。
@@ -50,7 +52,7 @@ PAF / PSL
 - 自比对模式（`FastGA A`）可检测基因组内部重复/单倍型间同源。
 - **方向不对称**：adaptamer 依赖 source1 的种子，`FastGA A B` ≠ `FastGA B A`；
   `-S` 用两个基因组的 adaptamer 做对称（更慢，重复结构分析用；synteny 场景不建议；
-  未文档化、仅 V1.5 源码支持，见 §5）。
+  README:199-207 已文档化，见 §5）。
 - **Soft mask**（V1.3+）：FASTA 小写=掩码，存入 GDB 的 `.1ano` 文件；默认忽略，
   `-M` 或 `#mask.1ano` 参数启用。
 
@@ -88,7 +90,7 @@ PAF / PSL
   （canonical 方向），正反链统一——与 pgr 的 canonical minimizer/syncmer 思路一致。
 - **种子命中**：adaptamer 在 source2 的每个出现位置 (p, q) 都是一个 seed hit。
 - `-S` 对称模式取两个基因组的 adaptamer 并集（`SYMMETRIC = flags['S']`，merge
-  互换 T1/T2 跑双向再合并；未文档化，仅 V1.5 源码支持，见 §5）。
+  互换 T1/T2 跑双向再合并；README:199-207 已文档化，见 §5）。
 
 ### 3.4 种子链（chaining，FastGA.c align_contigs）
 
@@ -166,7 +168,7 @@ PAF / PSL
 | `-i` | 0.7 | 最小比对相似度（源码 `ALIGN_RATE = 1.-sim`，默认 .3；合法 [0.55,1)）| `ALIGN_RATE = .3` |
 | `-k` | 40 | GIX k-mer 大小（GIXmake）| — |
 | `-T` | 8 | 线程数 | `NTHREADS = 8` |
-| `-S` | off | 对称 adaptamer（两个基因组种子）；**未文档化**——帮助文本不解释，且安装版二进制（`[-vk]`，实测拒绝 `-S`/`-M`）不支持，仅仓库源码 V1.5（`ARG_FLAGS("vkMS")`）提供 | flags |
+| `-S` | off | 对称 adaptamer（两个基因组的种子并集）；**README:199-207 已文档化**——用两方 adaptamer，稍慢但结果与 A/B 顺序基本无关；通常发现 B 中更多重复比对；**synteny 场景不建议，仅重复结构分析时用** | flags（`ARG_FLAGS("vkMS")`） |
 | `-M` | off | 使用 GIX 中的 soft mask | flags |
 | `-v` / `-L` | — | 详细模式 / 日志文件 | flags |
 
@@ -200,14 +202,18 @@ PAF / PSL
 5. **对称性语义**：`FastGA A B` ≠ `FastGA B A`（adaptamer 不对称）对 pgr 有直接影响——
   pangenome 管线里 FastGA 的 query/target 顺序会影响找到的比对集合；
   verify-pangenome.sh 固定 `FastGA(b,a)` 方向后 chainnet 统一精修，顺序影响被下游
-  chain/net 部分吸收（但重复区域仍可能不对称）。
+  chain/net 部分吸收（但重复区域仍可能不对称）。`-S` 可消除顺序依赖，但 README
+  明确"**synteny 场景不建议**，仅理解两基因组重复结构时用"——pgr 的 `align pgi`
+  （synteny 用途）因此不实现 `-S`（见 [[../design/pgi-align.md]] §7.4）。
 
 ## 8. 版本与许可
 
 - 当前 FASTGA-main 对应 V1.5（2025-12-30），含 ONEcode ANO 文件支持。
-- **版本差异**：本机安装版二进制（`~/.cbp/bin/FastGA`，benchmark 对照用）帮助为
-  `[-vk]` 且拒绝 `-M`/`-S`，是早于 V1.5 的版本；本文 §3-§7 的源码分析基于仓库
-  V1.5（`[-vkMS]`）。两者在 `-M`/`-S` 等未文档化选项上不一致。
+- **版本核对（2026-08-05）**：本机安装版二进制（`~/.cbp/bin/FastGA`）帮助为
+  `[-vkMS] [-L:<log:path>] [-T<int(8)>] [-P<dir($TMPDIR)>] [<format(-paf)>]`——
+  支持 `-S`/`-M`/`-L`，与仓库源码 V1.5（`ARG_FLAGS("vkMS")`）一致；`-S` 语义见
+  README:199-207（§5）。早前记录"安装版为 `[-vk]`、拒绝 `-S`/`-M`"已随二进制
+  更新而过时，作废。
 - LICENSE：MIT（ALNchain 单独标注 Chenxi Zhou，MIT）。
 - 参考：https://github.com/thegenemyers/FASTGA ；ONEcode:
   https://github.com/thegenemyers/ONEcode ；daligner:
