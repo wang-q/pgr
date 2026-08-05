@@ -38,10 +38,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let idx1 = args.get_one::<String>("idx1").unwrap();
     let idx2 = args.get_one::<String>("idx2").unwrap();
 
-    let mut r1 = pgr::reader(idx1)?;
-    let mut r2 = pgr::reader(idx2)?;
-    let a = pgr::libs::pgi::PgiIndex::read(&mut r1)?;
-    let b = pgr::libs::pgi::PgiIndex::read(&mut r2)?;
+    let a = pgr::libs::pgi::PgiMmap::open(std::path::Path::new(idx1))?;
+    let b = pgr::libs::pgi::PgiMmap::open(std::path::Path::new(idx2))?;
     let d = pgr::libs::pgi::dist::dist_between(&a, &b)?;
 
     let n1 = pgr::libs::io::get_basename(idx1).unwrap_or_else(|| idx1.clone());

@@ -1,6 +1,6 @@
 //! Project a `.pgi` index onto a hypervector for cheap distance comparisons.
 
-use super::PgiIndex;
+use super::{count_unique, PgiQuery};
 use anyhow::Context;
 use std::io::{Read, Write};
 
@@ -16,8 +16,15 @@ fn key_to_seed(kmer: u128) -> u64 {
 
 /// Project the index's unique k-mer keys onto a sparse `dim`-dimension
 /// hypervector, each key updating `sparse` random dimensions with ±1.
-pub fn index_to_hv(idx: &PgiIndex, dim: usize, sparse: usize) -> Vec<i32> {
-    let seeds: Vec<u64> = idx.entries.iter().map(|e| key_to_seed(e.kmer)).collect();
+pub fn index_to_hv(idx: &impl PgiQuery, dim: usize, sparse: usize) -> Vec<i32> {
+    let (i0, i1) = idx.entry_range(0, u128::MAX);
+    let n = count_unique(idx) as usize;
+    let mut seeds = Vec::with_capacity(n);
+    let mut i = i0;
+    while i < i1 {
+        seeds.push(key_to_seed(idx.entry_kmer(i)));
+        i = idx.entry_next(i);
+    }
     crate::libs::hv::hash_hv_sparse(&seeds, dim, sparse)
 }
 

@@ -26,15 +26,14 @@ Examples:
 /// Execute the stat command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let infile = args.get_one::<String>("infile").unwrap();
-    let mut reader = pgr::reader(infile)?;
-    let idx = pgr::libs::pgi::PgiIndex::read(&mut reader)?;
+    let idx = pgr::libs::pgi::PgiMmap::open(std::path::Path::new(infile))?;
     let size = std::fs::metadata(infile)?.len();
     println!("File: {}", infile);
-    println!("K-mer size: {}", idx.k);
-    println!("Syncmer: {}/{}", idx.smer, idx.window);
-    println!("Contigs: {}", idx.contigs.len());
-    println!("Unique k-mers: {}", idx.n_unique());
-    println!("Positions: {}", idx.n_positions());
+    println!("K-mer size: {}", idx.k());
+    println!("Syncmer: {}/{}", idx.smer(), idx.window());
+    println!("Contigs: {}", idx.contigs().len());
+    println!("Unique k-mers: {}", pgr::libs::pgi::count_unique(&idx));
+    println!("Positions: {}", idx.n_records());
     println!("File size: {} bytes", size);
     Ok(())
 }

@@ -57,18 +57,18 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     );
     anyhow::ensure!(sparse > 0, "--sparse must be positive");
 
-    let mut reader = pgr::reader(infile)?;
-    let idx = pgr::libs::pgi::PgiIndex::read(&mut reader)?;
+    let idx = pgr::libs::pgi::PgiMmap::open(std::path::Path::new(infile))?;
+    let n_unique = pgr::libs::pgi::count_unique(&idx);
     let hv = pgr::libs::pgi::to_hv::index_to_hv(&idx, dim, sparse);
     let name = pgr::libs::io::get_basename(infile).unwrap_or_else(|| infile.clone());
     let mut writer = pgr::writer(outfile)?;
     pgr::libs::pgi::to_hv::write_hv(
         &mut writer,
         &name,
-        idx.k,
+        idx.k(),
         dim,
         sparse,
-        idx.n_unique() as usize,
+        n_unique as usize,
         &hv,
     )?;
     log::info!("wrote {}-dim sparse hypervector to {}", dim, outfile);
