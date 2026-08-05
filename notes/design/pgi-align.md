@@ -350,6 +350,19 @@ mmap/resident 等价性测试（dist 指标、hv 投影、unique 计数）。
 "最长匹配"（§1.3.2 注记）。纯内存路径整体比流式慢（不采用），无附加
 动作。是 §7.3 变长种子的语义前置。
 
+> **tube 语境复测（2026-08-05，greedy 移除后）**：当时的评估基于 greedy
+> （exact k-mer，min_shared=k），lcp ≤ k 使窗口无跳过空间，LCP 完全无
+> 操作。tube 唯一流程后重测（mg1655 vs nissle，min_shared=12，8 线程
+> release，各 3 次）：种子差 50（no-lcp 1,121,358 vs lcp 1,121,308，
+> 正是跳过 `[12, lcp)` 短匹配的量级），但 **merge 耗时（~105 vs ~102
+> ms）、PSL 输出（逐字节一致）、chainnet 覆盖（均 85.286%）全部无差异**。
+> 原因：syncmer 稀疏采样下相邻条目 lcp 通常 < 12（start 经常回退
+> floor），且跳过的短种子不形成独立链。**结论未变**：E. coli 级 LCP 零
+> 收益；保留理由是语义对齐（tube 种子流 = FastGA adaptamer 口径）+ §7.3
+> 变长种子前置，无害。完整 LCP（§3.6）2.1× 慢属 PgiQuery 抽象层，与
+> workflow 无关，不做结论不变。**人类规模（§7.2）需复测**：高重复基因组
+> 相邻条目 lcp 可能 > 12，窗口加速才可能显现。
+
 ### 3.4 select 表达式：不做（用处不大）
 
 **动机**：FastGA `select.c` 支持"只比对选定 contig/区间"。
