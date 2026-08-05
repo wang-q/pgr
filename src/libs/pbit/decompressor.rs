@@ -468,11 +468,11 @@ impl<R: Read + Seek> Decompressor<R> {
         let line_width = FASTA_LINE_WIDTH;
         let mut written = 0usize;
 
-        // Collect (sample_name, segments) pairs first to release the immutable
-        // borrow on self.collection before calling self.decode_delta(). We
-        // must clone the segments (not just borrow) to fully release the
-        // immutable borrow on self.collection.
-        let sample_segs: Vec<(String, Vec<crate::libs::pbit::collection::SegmentDesc>)> = self
+        // Collect (sample_name, segments, mask_blocks) first to release the
+        // immutable borrow on self.collection before calling self.decode_delta().
+        // We must clone the segments (and mask_blocks) (not just borrow) to
+        // fully release the immutable borrow on self.collection.
+        let sample_segs: Vec<SampleContig> = self
             .collection
             .samples
             .iter()
@@ -480,11 +480,11 @@ impl<R: Read + Seek> Decompressor<R> {
                 contigs
                     .iter()
                     .find(|c| c.contig_name == contig)
-                    .map(|cs| (s.clone(), cs.segments.clone()))
+                    .map(|cs| (s.clone(), cs.segments.clone(), cs.mask_blocks.clone()))
             })
             .collect();
 
-        for (sample, segments) in sample_segs {
+        for (sample, segments, mask_blocks) in sample_segs {
             // Extract raw_lengths first to release the immutable borrow on
             // self.delta_meta before calling self.decode_delta (mutable).
             let seg_lens: Vec<usize> = segments
@@ -547,6 +547,13 @@ impl<R: Read + Seek> Decompressor<R> {
                     break;
                 }
             }
+
+            // Apply soft-mask (lowercase) intervals so `some`/`range`
+            // extraction is lossless, consistent with `get_sample` (v1005).
+            // mask_blocks use 0-based forward contig coords; map to the
+            // slice-local [s, e) via offset `s`. Do this on the forward slice
+            // before any reverse-complement (rev_comp preserves case).
+            apply_mask_blocks_at(&mut result, &mask_blocks, s);
 
             // Apply reverse-complement if needed.
             let seq_bytes: Vec<u8> = if strand == "-" {
@@ -637,12 +644,21 @@ impl<R: Read + Seek> Decompressor<R> {
 
 /// Apply soft-mask intervals (lowercase) to a reconstructed sample sequence.
 fn apply_mask_blocks(seq: &mut [u8], mask_blocks: &[(u32, u32)]) {
+    apply_mask_blocks_at(seq, mask_blocks, 0);
+}
+
+/// Apply soft-mask intervals (lowercase) to a slice of a contig sequence.
+/// `slice_start` is the 0-based forward offset of `seq` within its contig;
+/// mask blocks use 0-based forward contig coordinates.
+fn apply_mask_blocks_at(seq: &mut [u8], mask_blocks: &[(u32, u32)], slice_start: usize) {
     for &(start, size) in mask_blocks {
-        let s = start as usize;
-        let e = (s + size as usize).min(seq.len());
-        if s < e {
-            for b in &mut seq[s..e] {
-                *b = b.to_ascii_lowercase();
+        let b = start as usize;
+        let e = b + size as usize;
+        let lo = b.saturating_sub(slice_start).min(seq.len());
+        let hi = e.saturating_sub(slice_start).min(seq.len());
+        if lo < hi {
+            for c in &mut seq[lo..hi] {
+                *c = c.to_ascii_lowercase();
             }
         }
     }
@@ -998,6 +1014,61 @@ mod tests {
         let seq: String = lines[1..].concat();
         // Lossless: the masked run stays lowercase, mismatches stay uppercase.
         assert_eq!(seq.as_bytes(), sample_seq.as_slice());
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_contig_roundtrip_soft_mask() -> Result<()> {
+        // v1005: soft-mask (lowercase) must survive `some`/`range` extraction
+        // (get_contig) losslessly, for both a full-contig and a sliced /
+        // negative-strand request, matching `get_sample` (to-fa).
+        let dir = tempfile::tempdir()?;
+        let ref_path = dir.path().join("ref.fa");
+        let ref_seq = random_dna(2000, 42);
+        write_fasta(ref_path.to_str().unwrap(), &[("chr1", &ref_seq)]);
+
+        let sample_path = dir.path().join("sample.fa");
+        let mut sample_seq = ref_seq.clone();
+        for b in &mut sample_seq[500..520] {
+            *b = b.to_ascii_lowercase();
+        }
+        sample_seq[100] = b'G';
+        write_fasta(sample_path.to_str().unwrap(), &[("chr1", &sample_seq)]);
+
+        let out_path = dir.path().join("out.pbit");
+        let mut comp = Compressor::create(&out_path, ref_path.to_str().unwrap(), 4096, 15, 18)?;
+        comp.append_sample("s1", sample_path.to_str().unwrap())?;
+        comp.finish()?;
+
+        let mut dec = Decompressor::open(&out_path)?;
+
+        // Full contig, positive strand: mask restored exactly.
+        let mut full = Vec::new();
+        dec.get_contig("chr1", None, None, "+", &mut full)?;
+        let full_seq: String = String::from_utf8(full)?
+            .lines()
+            .filter(|l| !l.starts_with('>'))
+            .collect();
+        assert_eq!(full_seq.as_bytes(), sample_seq.as_slice());
+
+        // Slice [490, 520): mask interval offset by the slice start.
+        let mut sliced = Vec::new();
+        dec.get_contig("chr1", Some(490), Some(520), "+", &mut sliced)?;
+        let slice_seq: String = String::from_utf8(sliced)?
+            .lines()
+            .filter(|l| !l.starts_with('>'))
+            .collect();
+        assert_eq!(slice_seq.as_bytes(), &sample_seq[490..520]);
+
+        // Negative strand: rev_comp preserves lowercase at transformed coords.
+        let mut neg = Vec::new();
+        dec.get_contig("chr1", Some(490), Some(520), "-", &mut neg)?;
+        let neg_seq: String = String::from_utf8(neg)?
+            .lines()
+            .filter(|l| !l.starts_with('>'))
+            .collect();
+        let expected_neg: Vec<u8> = nt::rev_comp(&sample_seq[490..520]).collect();
+        assert_eq!(neg_seq.as_bytes(), expected_neg);
         Ok(())
     }
 

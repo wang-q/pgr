@@ -455,6 +455,45 @@ fn test_pbit_range_slice() {
 }
 
 #[test]
+fn test_pbit_range_soft_mask_preserved() {
+    // v1005: `range` (via get_contig) must restore soft-mask (lowercase)
+    // losslessly, not just `to-fa` (already covered by test_pbit_mask_roundtrip).
+    let temp = TempDir::new().unwrap();
+    let ref_fa = temp.path().join("ref.fa");
+    let sample_fa = temp.path().join("sample.fa");
+    let out_pbit = temp.path().join("out.pbit");
+
+    let fwd = "ACGTACGTACGTACGT";
+    let masked = format!("{}{}", "ACGT".repeat(100), "acgtacgt".repeat(10)); // 400 + 80 = 480 bp
+    fs::write(&ref_fa, format!(">chr1\n{fwd}\n")).unwrap();
+    fs::write(&sample_fa, format!(">chr1\n{masked}\n")).unwrap();
+
+    PgrCmd::new()
+        .args(&[
+            "pbit",
+            "create",
+            "-r",
+            ref_fa.to_str().unwrap(),
+            "-i",
+            sample_fa.to_str().unwrap(),
+            "-o",
+            out_pbit.to_str().unwrap(),
+        ])
+        .run();
+
+    // Extract a slice covering the masked run [400, 480) via `range`.
+    let (stdout, _) = PgrCmd::new()
+        .args(&["pbit", "range", out_pbit.to_str().unwrap(), "chr1:401-480"])
+        .run();
+    let seq: String = stdout.lines().filter(|l| !l.starts_with('>')).collect();
+    assert_eq!(
+        seq,
+        masked[400..480],
+        "range must restore soft-mask lowercase"
+    );
+}
+
+#[test]
 fn test_pbit_range_neg_strand() {
     let temp = TempDir::new().unwrap();
     let out_pbit = temp.path().join("out.pbit");

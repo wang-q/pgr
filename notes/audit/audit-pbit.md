@@ -69,7 +69,7 @@ pbit 格式（`notes/design/pbit.md` §文件格式规范 v1004）：
   （`range`/`some`/`to-fa` 均用 `get_contig`/`get_sample`），仅内部测试调用，
   故暂记为 API 限制而非缺陷。
 
-## 修复的缺陷（共 31 处）
+## 修复的缺陷（共 32 处）
 
 ### 数据安全（`-o` 覆盖输入，7 处）
 
@@ -223,6 +223,18 @@ pbit 格式（`notes/design/pbit.md` §文件格式规范 v1004）：
     `pub(crate)` 提升为 `pub`（二进制 crate 的 `cmd_pgr` 无法访问库 crate 的
     `pub(crate)` 项）。
 
+### 功能正确性 / 遮蔽还原一致性（1 处）
+
+32. **`some`/`range` 丢失 soft-mask 小写还原**：`get_sample`（`to-fa`）已还原
+    小写遮蔽（v1005），但 `get_contig`（`some`/`range` 共用的提取路径）未还原
+    ，导致 `to-fa` 与 `some`/`range` 对同一归档输出不一致 —— `docs/pbit.md`
+    已声明三者均"原样还原小写"，实现与文档不符。修复：`get_contig` 在收集
+    样本段时一并克隆 `mask_blocks`，对正向切片按 `slice_start=s` 偏移应用
+    `apply_mask_blocks_at`（遮蔽区间为 contig 级 0-based 坐标，需映射到切片
+    局部坐标），再按需反向互补（`rev_comp` 保留大小写）。新增库级测试
+    `test_get_contig_roundtrip_soft_mask`（全链正/切片/负链三情形）与 CLI 测试
+    `test_pbit_range_soft_mask_preserved`。
+
 ## 验证
 
 - 数据安全：`create`/`append`/`append-ref`/`range`/`some`/`stat`/`to-fa` 的
@@ -247,20 +259,24 @@ pbit 格式（`notes/design/pbit.md` §文件格式规范 v1004）：
     `test_decompressor_rejects_zero_kmer_len`（30）、
     `test_pbit_create_invalid_params_rejected` 追加绝对上限用例（31）。
   - 反向链压缩率：`test_append_rev_comp_sample_multi_segment`（29）。
+  - 遮蔽还原一致性：`test_get_contig_roundtrip_soft_mask`（库）与
+    `test_pbit_range_soft_mask_preserved`（CLI）（32）。
 - 死代码/警告措辞/文档/一致性类修复行为不变或仅文本，无需新增测试；既有测试
   验证无回归。
-- `cargo test --lib pbit` 112 全绿；`cargo test --test cli_pbit pbit_` 46 全绿。
+- `cargo test --lib pbit` 114 全绿；`cargo test --test cli_pbit pbit_` 48 全绿。
 - `cargo build`、`cargo fmt`、`cargo clippy --all-targets -- -D warnings` 均
   clean。
 
 ## 结论
 
-`pbit` 命令族审核完成（累计修复 31 处缺陷：数据安全 7 + 数据损坏 1 + 功能
-正确性 2 + 展示歧义/UX 2 + 溯源元数据 2 + 死代码/警告措辞 3 + 文档一致性 3 +
-内存 DoS 5 + 健壮性 1 + 一致性/报告去重 2 + 反向链压缩率 1 + 零 panic 校验
-一致性 2），补回归测试与文档澄清，并经多轮纵深复审（首轮对 `compressor`/
-`decompressor`/`lz_diff`/`format`/`collection`/`segment`/`paf_index` 与全部命令
-层逐行深审；第 16 轮复核命令层与 PAF 索引；第 17 轮对核心库全文重读并核对文档
-与 CLI 实现一致性）均未再发现新缺陷，审核收敛。
+`pbit` 命令族审核完成（累计修复 32 处缺陷：数据安全 7 + 数据损坏 1 + 功能
+正确性 2 + 遮蔽还原一致性 1 + 展示歧义/UX 2 + 溯源元数据 2 + 死代码/警告措辞 3 +
+文档一致性 3 + 内存 DoS 5 + 健壮性 1 + 一致性/报告去重 2 + 反向链压缩率 1 +
+零 panic 校验一致性 2），补回归测试与文档澄清，并经多轮纵深复审（首轮对
+`compressor`/`decompressor`/`lz_diff`/`format`/`collection`/`segment`/
+`paf_index` 与全部命令层逐行深审；第 16 轮复核命令层与 PAF 索引；第 17 轮对核心
+库全文重读并核对文档与 CLI 实现一致性；第 18 轮复核 `get_contig`/`get_sample`
+遮蔽还原一致性；第 19 轮重读 `cigar_delta`/`compressor` CIGAR 处理/`paf_index`/
+`lz_diff` 解压路径）均未再发现新缺陷，审核收敛。
 
 剩余记录项仅参考层 `read_sequence` 跨参考拼接（非命令可达，见"已知限制"）。
