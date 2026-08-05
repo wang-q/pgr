@@ -1,12 +1,15 @@
 # pgr 项目理解
 
 本文档是我对 pgr (Practical Genome Refiner) 项目的整体理解，涵盖架构、设计哲学、代码模式、
-当前能力与未来方向。写作时间：2026-06-27，最后更新：2026-08-01
+当前能力与未来方向。写作时间：2026-06-27，最后更新：2026-08-05
 （2026-08-02：文档准确性审计——补全 pgi/sd 模块、pbit v1004 多参考、
-  dist pgi 与 .hv 模式、align pgi 管线；内嵌索引按决策 A 移除；修正 §2.1/§3/§4/§6/§10）。
+ dist pgi 与 .hv 模式、align pgi 管线；内嵌索引按决策 A 移除；修正 §2.1/§3/§4/§6/§10）。
 （2026-08-02：全量通读 src/ 复核——更新 §2.1/§4 的 ds 新成员（best_crossover/merge_intervals）、
 §4.4 paf/pl 描述、§6 现状（UCSC 全链路字节级一致）、§7.1 UCSC 验证矩阵（axtToMaf 已修复、
   SE11 多染色体反向验证）、§10 索引状态；
+（2026-08-05：核对 PGI 现状——align 迁出后 `pgr pgi` 为 3 子命令（build/stat/to-hv）、版本
+ 升至 0.4.0、§3.4/§6.1/§10 基准更新为 2026-08-04 复测数据（端到端反超 FastGA ~2.3×、
+ .pgi 存储小 ~23%））
 2026-08-01 深夜：全量通读 src/ 后复核——修正 §2.3 serde_json 用途、§2.4 nightly 固定版本、
 §3.1 gff rg 描述、§3.3 paf 双向镜像索引、§4.1 poa 文件清单、§4.3 maf 行数，§8 新增帮助文本脱节风险；
 2026-08-01 晚：版本升至 0.3.1、补全 §2.1 目录树（args/pbit/ds/pl/syncmer）、更新 §2.3 依赖、
@@ -23,7 +26,7 @@
 pgr 是一个**生物信息学 CLI 工具集**，定位是"基因组数据处理瑞士军刀"。它不追求成为某个领域的
 一站式平台，而是在日常生信流程中充当格式转换、数据查询、快速分析的胶水层。
 
-当前版本 0.3.1，作者 wang-q，MIT 协议，Rust 2021 edition。
+当前版本 0.4.0，作者 wang-q，MIT 协议，Rust 2021 edition。
 
 ### 1.1 与同类工具的差异
 
@@ -68,10 +71,11 @@ src/
 │   ├── psl/
 │   ├── lav/
 │   ├── maf/
+│   ├── align/          #   两基因组比对：pgi (FastGA 式)、lastz
 │   ├── paf/            #   PAF 泛基因组图操作
 │   ├── pbit/           #   群体基因组压缩
 │   ├── dist/           #   距离计算 (hv/pgi/seq)
-│   ├── pgi/            #   基因组索引 (.pgi)：build/stat/to-hv/align
+│   ├── pgi/            #   基因组索引 (.pgi)：build/stat/to-hv
 │   ├── sd/             #   分段重复检测 (align/cluster/cover/cross/decompose/run/search)
 │   ├── rg/             #   .rg 行级区间操作 (cover/coverage/count/merge/prop/runlist/sort/span)
 │   ├── runlist/        #   runlist JSON 集合操作 (combine/compare/convert/genome/merge/some/span/split/stat/statop)
@@ -175,8 +179,9 @@ src/
 | `net`   | 6        | Net 分类、过滤、split、subset、syntenic、转 AXT      |
 | `axt`   | 4        | AXT 排序、转 FAS/MAF/PSL                             |
 | `psl`   | 9        | PSL 统计、直方图、lift、swap、转 chain/range/PAF     |
-| `lav`   | 1        | LAV (lastz 原生输出) 转 PSL；lastz 调用封装在 `align` |
+| `lav`   | 1        | LAV (lastz 原生输出) 转 PSL                         |
 | `maf`   | 2        | MAF (multiple alignment format) 转 Block FA、转 PAF  |
+| `align` | 2        | 两基因组比对：pgi (两索引归并→链→扩展→PSL)、lastz (外部比对器封装) |
 
 **这是 pgr 最成熟的模块群**。完整覆盖了 UCSC 的 lastz → axtChain → chainAntiRepeat →
 chainMergeSort → chainPreNet → chainNet → netSyntenic → netChainSubset → netToAxt →
@@ -207,7 +212,7 @@ axtToMaf 标准化流程中的全部 12 步主流程。`chain`/`net`/`axt`/`psl`
 | 模块   | 子命令数 | 核心能力                                                  |
 |--------|----------|-----------------------------------------------------------|
 | `dist` | 3        | 距离计算：hv (hypervector，支持 .hv 文件直接比较)、pgi (两索引归并精确距离)、seq (minimizer/closed syncmer 双采样器) |
-| `pgi`  | 4        | 基因组索引：build (syncmer 稀疏排序 k-mer 索引)、stat、to-hv (稀疏投影)、align (两索引归并→链→banded 扩展→PSL) |
+| `pgi`  | 3        | 基因组索引：build (syncmer 稀疏排序 k-mer 索引)、stat、to-hv (稀疏投影)；比对在 `pgr align pgi` |
 
 ### 3.5 模拟、流程、可视化 (Simulation, Pipelines, Plot)
 
@@ -376,11 +381,12 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
   `scripts/verify-ucsc-pipeline.sh`，见 §7.1）。
 - **FASTA/FASTQ/2bit/pbit 处理**：`fa`(18 子命令) + `fas`(20 子命令) + `fq`(2) + `twobit`(5) +
   `pbit`(7)（含多参考），日常序列操作与群体基因组归档压缩需求基本覆盖。
-- **基因组索引与比对（.pgi）**：`pgr pgi` 的 build/stat/to-hv/align 已实现——syncmer 稀疏
-  排序 k-mer 索引（构建与 FastGA GIXmake 持平）、两索引归并精确距离、稀疏 HV 投影、
-  FastGA 式比对管线（归并→链→banded 扩展→PSL，与 FastGA 端到端 1.08× 持平，真实
-  并集覆盖基本一致）；格式 v2（GIX 式 packed：按需字节位置 + 方向位折叠，体积
-  减半且与 GIX 真实数据持平），详见 [[pgi-align.md]] 与
+- **基因组索引与比对（.pgi）**：`pgr pgi`（build/stat/to-hv）与 `pgr align pgi` 已实现——
+  syncmer 稀疏排序 k-mer 索引（构建 348 ms vs GIXmake 310 ms，基本持平）、两索引归并
+  精确距离、稀疏 HV 投影、FastGA 式比对管线（归并→链→banded 扩展→PSL；2026-08-04
+  复测端到端 1.67 s vs FastGA 3.86 s，反超 ~2.3×，chainnet 覆盖 89.33% vs 89.3%
+  持平）；格式 v2（GIX 式 packed：按需字节位置 + 方向位折叠），复测后 35.5 MB，
+  比 GIX 真实数据 48.2 MB 小 ~23%，详见 [[pgi-align.md]] 与
   `notes/benchmarks/bench-pgi-vs-gix-storage.md`。
 - **距离工具**：`dist` 的 hv/pgi/seq 三个子命令已实现；`seq` 支持 minimizer/closed syncmer
   双采样器，DNA/protein 均提供 syng 风格默认参数；`dist pgi` 为确定性精确归并距离，
@@ -520,7 +526,7 @@ chainnet 后消失。`pgr psl chain` 在 2bit 序列缓存优化后（~0.3 s）�
 | 文档 | 定位 | 状态 |
 |------|------|------|
 | [[pbit.md]] | `pgr pbit` 格式设计（LZ-diff + CIGAR delta + 多参考，已合并原扩展草案；索引不内嵌，决策 A） | v1004 已实现，**暂停评审中** |
-| [[pgi-align.md]] | 两基因组归并比对（`pgr align pgi`，种子→链→banded 扩展→PSL） | v1-v3 已实现（与 FastGA 端到端持平） |
+| [[pgi-align.md]] | 两基因组归并比对（`pgr align pgi`，种子→链→banded 扩展→PSL） | v1-v3 已实现（2026-08-04 复测端到端反超 FastGA ~2.3×） |
 | [[fas-multiz.md]] | `libs::fas_multiz` 设计与实现（banded DP 合并） | 已实现（CLI 已落地） |
 | [[spoa_port.md]] | Spoa C++ → Rust 移植（POA 引擎） | 已完成（双引擎集成已落地） |
 | [[ms2dna_port.md]] | ms2dna C → Rust 迁移设计 | 已实现（实际命令为 `pgr ms to-dna`） |

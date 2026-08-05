@@ -2,8 +2,10 @@
 
 > 定位：`.pgi` 的第一个比对消费者。输入两个已构建 .pgi，输出 PSL 块，
 > 喂给 `pgr pl chainnet`（UCSC 链化由 pgr 承担，见 [[fastga.md]] §12.3 决策 3）。
-> 状态：2026-08-02 定稿。质量（chainnet 覆盖）与 FastGA 持平、速度持平、
-> 峰值内存低于 FastGA（query 索引 mmap 零拷贝）。
+> 状态：2026-08-04 更新。质量（chainnet 覆盖）与 FastGA 持平（差
+> 0.0-0.015%）、阶段耗时持平（~0.8s vs ~0.7s）、峰值内存更低（224 vs
+> 332 MB，query 索引 mmap 零拷贝）；2026-08-04 端到端复测反超 FastGA
+> ~2.3×（见 [[../benchmarks/bench-pgi-align-vs-fastga.md]]）。
 >
 > 结构：§0 当前状态 → §1 设计 → §2 验证与基准 → §3 开发历史 →
 > §4 已排除方向 → §5 勘误与基准方法 → §6 FastGA 功能差距 →
@@ -220,6 +222,10 @@ tube anti 序、dedupe 0.95 保留延伸块、最大前缀/扩展范围过滤、
 `tests/cli_align_pgi.rs`（identical / RC / mutation / tube + 序列直入 /
 复用 / 混用 / 校验拒绝）。
 
+> **2026-08-05 更新**：`align pgi` 22 个 CLI 测试、`libs::pgi` 55 个单测
+> 全通过，`cargo test` 全量 1255 通过（audit 后新增 crafted 索引/负链帧/
+> 数据安全等回归，见 [[../audit/audit-pgi-align.md]]）。
+
 ### 2.2 当前基准（2026-08-02，真实数据，8 线程，release）
 
 | 对（MG1655 vs） | pgr chainnet 覆盖 | 块数 | pgr 耗时 | FastGA 覆盖/耗时 | pgr 峰值内存 | FastGA 峰值内存 |
@@ -253,6 +259,13 @@ FastGA 驱动版本对比 syntenic MAF：
 541 vs 711）；覆盖差 1.6-2.4% 来自分歧区（FastGA 的 wave 能桥接 banded
 窗口跳过的低分区间）。角色约定：`pgr align pgi <ref> <query>` 的 PSL 是
 q=query/t=ref，FastGA 输出相反，喂 chainnet 前需 `pgr psl swap`。
+
+> **2026-08-04 复测**：端到端（建索引 ×2 + 比对）pgr 1.67 s vs FastGA
+> 3.86 s，反超 ~2.3×（初测 1.08× 持平），见
+> [[../benchmarks/bench-pgi-align-vs-fastga.md]]。本表为早期管线快照，
+> 当前 chainnet 覆盖以 §2.2 为准（Sakai 89.33% / Nissle 85.28%）——
+> 87.7%/82.9% 与 89.33%/85.28% 的差距来自后续 merge-gap、种子选择与
+> 负链 PSL 修复（§3.2/§3.3）。
 
 ### 2.4 10 株 cohort 两两验证（45 对）
 
