@@ -1,3 +1,4 @@
+pub mod to_1aln;
 pub mod to_fas;
 pub mod to_paf;
 
@@ -8,12 +9,14 @@ pub fn make_subcommand() -> Command {
         .about("Manipulates MAF alignment files")
         .subcommand_required(true)
         .arg_required_else_help(true)
+        .subcommand(to_1aln::make_subcommand())
         .subcommand(to_fas::make_subcommand())
         .subcommand(to_paf::make_subcommand())
 }
 /// Execute the maf command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     match args.subcommand() {
+        Some(("to-1aln", sub_matches)) => to_1aln::execute(sub_matches),
         Some(("to-fas", sub_matches)) => to_fas::execute(sub_matches),
         Some(("to-paf", sub_matches)) => to_paf::execute(sub_matches),
         _ => Ok(()),
