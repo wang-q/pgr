@@ -7,6 +7,7 @@ pub mod to_fas;
 pub mod to_gfa;
 pub mod to_maf;
 pub mod to_vcf;
+pub mod validate;
 
 use clap::{ArgMatches, Command};
 /// Build the clap subcommand for paf.
@@ -24,6 +25,7 @@ pub fn make_subcommand() -> Command {
         .subcommand(to_gfa::make_subcommand())
         .subcommand(graph::make_subcommand())
         .subcommand(stat::make_subcommand())
+        .subcommand(validate::make_subcommand())
 }
 /// Execute the paf command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
@@ -37,6 +39,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         Some(("to-gfa", sub_matches)) => to_gfa::execute(sub_matches),
         Some(("graph", sub_matches)) => graph::execute(sub_matches),
         Some(("stat", sub_matches)) => stat::execute(sub_matches),
+        Some(("validate", sub_matches)) => validate::execute(sub_matches),
         _ => Ok(()),
     }
 }

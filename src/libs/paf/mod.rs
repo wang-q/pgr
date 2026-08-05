@@ -12,6 +12,7 @@ pub mod record;
 pub mod to_bed;
 pub mod to_fas;
 pub mod to_maf;
+pub mod validate;
 pub mod vcf;
 
 pub use cigar::CigarOp;
