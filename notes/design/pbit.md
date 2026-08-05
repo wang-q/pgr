@@ -40,6 +40,10 @@ pbit 为原生"2bit 参考 + delta 样本"群体基因组压缩格式（区别�
 - **不内嵌索引**（决策 A）：`.pgi` 为独立临时工作对象，比对/距离时现建；
 - 版本 1004，仅当前版本可读写（不做旧版本兼容）。
 
+> **已实现（2026-08-05，v1005）**：遮蔽（soft mask）方案 B 已落地——样本
+> 遮蔽随样本存储（`ContigSegs.mask_blocks`，继承 2bit mask_blocks 语义），
+> 存进存出一致；实现见下文"遮蔽处理：设计决策"章节。
+
 ## 快速参考
 
 | 子命令 | 分组 | 用途 | 关键参数 |
@@ -56,6 +60,9 @@ pbit 为原生"2bit 参考 + delta 样本"群体基因组压缩格式（区别�
 `sample_name<TAB>fasta_path[<TAB>paf_path][<TAB>ref_name]`。
 
 ## 文件格式规范（v1004）
+
+> v1005（遮蔽方案 B，2026-08-05）将扩展 Sample Index 的 contig 记录加
+> `mask_blocks`；本规范描述 v1004 现状，变更见下文"遮蔽处理"章节。
 
 所有整数固定大小小端序（u32/u64），字符串为 u32 长度前缀 + UTF-8，不用
 varint/null 终止。参考层直接复用标准 2bit 记录（`read_2bit_record` /
@@ -177,6 +184,14 @@ u64 ref_index_offset / u64 delta_data_offset / u64 sample_index_offset
 `packed_data = flate2(u32 op_count + [CigarOp; op_count] + u32 base_count +
 [u8; base_count])`，CigarOp 为 `(op << 29) | len` 的 u32。
 
+**X/I 差异碱基存储（2026-08-05 核实）**：CIGAR 本身只存操作 + 长度，
+`X`（mismatch）/`I`（插入）的碱基内容收集进 **`xi_bases`**（差异碱基
+流），随 CIGAR 一起 flate2 压缩存储（`u32 base_count + [u8; base_count]`）；
+解码 `apply_cigar` 按 X/I 出现顺序从 xi_bases 取回，`=` 段从参考取、
+`D` 段跳过参考。**mismatch/插入碱基不丢失**：解码端校验
+`X/I 消费数 == xi_bases 长度` 且 `参考消费 == ref 长度`，不一致即报错
+（数据损坏时拒绝输出，而非静默丢碱基）。`=` 段依赖参考 2bit 记录完整。
+
 关键决策（详见旧版决策记录，已实现）：
 - **段级回退**：最佳 alignment 未完整覆盖段、段跨多条 alignment 衔接、
   CIGAR target 投影跨参考段边界 → 整段回退 LZ-diff（不拆段、不合并）；
@@ -186,6 +201,136 @@ u64 ref_index_offset / u64 delta_data_offset / u64 sample_index_offset
   `PafIndex.reverse_trees`——其缺 `-` 链、元数据被交换、无公开查询接口）；
 - **无/坏 CIGAR**：记录级错误跳过 + 回退 LZ-diff（log 警告）；整个 PAF
   不可用则报错终止（避免"以为生效实为全回退"）。
+
+## 遮蔽（soft mask）处理：设计决策（2026-08-05）
+
+> 状态：**已实现（v1005，2026-08-05）**。`collection.rs`（格式 + 版本
+> 1005）、`compressor.rs`（两条编码路径提取 mask）、`decompressor.rs`
+> （`get_sample` 应用 mask 还原小写）、docs/pbit.md、回归测试（lib
+> `test_get_sample_roundtrip_soft_mask` + cli 两处断言更新）均已落地。
+
+### 现状与问题
+
+**参考遮蔽**：完整保留。参考 FASTA 小写（soft mask）经
+`write_2bit_record(do_mask=true)` 存入 2bit `mask_blocks`；查询/读序列时
+（`read_2bit_record` 默认 `no_mask=false`）还原小写。**但 delta 编码读
+参考时 `no_mask=true`（全大写）**——mask_blocks 只服务读取/查询，不参与
+压缩编码。
+
+**样本（query）遮蔽**：半保留、**不对称**（当前实现的副作用，非设计）。
+`read_fasta` 原样读入小写；CIGAR 编码时：
+
+- `M` 段用 `eq_ignore_ascii_case` 比较（大小写不敏感）→ `=` / `X`；
+- `X`/`I` 差异段的样本碱基**原样**进 `xi_bases`（小写保留，解码时原样
+  还原）；
+- `=` 匹配段从参考解码（大写）——样本遮蔽信息丢失。
+
+结果：同一样本存进 pbit 再取出，**匹配段大写、差异段小写，遮蔽状态取决于
+该段是否与参考匹配，完全随机**。这不是可用语义。
+
+**LZ-diff 路径（对照）**：**不保留**样本遮蔽——样本与参考编码端即转 2bit
+（`encode_base` 大小写不敏感），解码走 `decode_base` 恒输出大写
+A/C/G/T/N；`test_lowercase_input`（segment.rs）与
+`test_encode_decode_roundtrip_lowercase`（lz_diff.rs）已固化"小写输入 →
+大写输出"。方案 B 下 LZ-diff 编码路径同样不用改（2bit 层处理大写），
+样本遮蔽统一在解码端应用 mask_blocks 还原。
+
+### 方案对比
+
+| 方案 | 做法 | 代价 | 适用 |
+|---|---|---|---|
+| **A：样本统一大写** | 编码前样本序列 `make_ascii_uppercase`（含 `xi_bases`），遮蔽不进 delta | 小 | **否决**——与 2bit 血统相悖，存进存出不一致 |
+| **B：样本存 mask blocks** | `Collection` 每样本/contig 存 mask_blocks（同 2bit 语义），解码还原小写 | 格式加字段 + 每样本存储 | **决策**——继承 2bit 遮蔽存储 |
+| **C：遮蔽对齐（工作流层）** | 参考与样本用**同一套重复注释**遮蔽（`pgi build --mask` / FastGA `-M` / `fa mask`），pbit 不感知遮蔽 | 无代码，流程约定 | 与 A/B 配合，保证上游比对与存储语义一致 |
+
+### 决策：方案 B + C（修正，2026-08-05）
+
+**pbit 的格式语义：继承 2bit 的遮蔽存储**——pbit 从 2bit 演化，2bit 的
+`mask_blocks` 本就是遮蔽（小写区间）的标准存储；参考已如此（2bit 记录
+保留 mask_blocks），**样本同样应存储遮蔽，存进存出保留小写**（存小写、
+取小写），不给用户"存遮蔽、取无遮蔽"的意外。
+
+1. **样本存储遮蔽（方案 B）**：`Collection` 为每个样本/contig 增加
+   `mask_blocks`（小写区间，格式与 2bit 的 mask_blocks 一致：starts +
+   sizes）。编码时 `read_fasta` **保留小写**：序列转大写做 delta（2bit
+   层语义），小写区间提取为 mask_blocks 随样本存储；解码时 delta 还原
+   大写序列后应用样本 mask_blocks 还原小写——**存进存出一致**。
+2. **参考遮蔽不变**：参考仍用 2bit `mask_blocks`（现状），读取时还原
+   小写。
+3. **遮蔽是工作流层概念（方案 C）**：上游比对（`align pgi` / FastGA
+   `--mask`）用与参考一致的遮蔽生成 PAF；pbit 存储层只负责"遮蔽随样本
+   存进存出"，比对/压缩不因遮蔽改变编码路径。
+4. 方案 A（样本丢弃遮蔽、统一大写）**否决**——与 pbit 的 2bit 血统
+   相悖（2bit 存遮蔽），存进存出不一致会让用户疑惑。
+
+### 实施步骤（2026-08-05 已全部落地）
+
+1. **`collection.rs`**：`ContigSegs` 增加 `mask_blocks: Vec<(u32, u32)>`
+   （小写区间，0-based，与 2bit mask_blocks 同语义）；`Collection` 序列化
+   写入/读取该字段（格式变更，版本 1004 → 1005，仅新版本可读写）。
+2. **`compressor.rs`**：`read_fasta` 读取样本时**保留小写**，提取每个
+   contig 的小写区间为 mask_blocks；序列转大写后进入 delta 编码（CIGAR
+   delta 与 LZ-diff 路径不变，2bit 层本就处理大写）；mask_blocks 写入
+   `Collection`。
+3. **解码**：`to-fa` / `some` / `range` 还原大写序列后应用样本
+   mask_blocks（转小写）——存进存出一致（小写保留）。参考仍按现有
+   `read_2bit_record` 的 mask_blocks 还原。
+4. **文档**：`docs/pbit.md` 注明"pbit 样本/参考均存储遮蔽（小写区间，
+   同 2bit mask_blocks 语义），存进存出一致"。
+5. **测试**：
+   - 新回归：小写样本 FASTA → create → `to-fa` 解码 = 小写还原（遮蔽
+     保留、存进存出一致）；含 X/I 差异段与 LZ-diff 段混合样本；
+   - 现有 `cli_pbit*` 全量回归（大写输入行为不变）。
+
+### 与 `-S`（对称 adaptamer）的关联
+
+遮蔽对齐后（方案 C），`-S` 多找到的"更多重复比对"在 pbit 场景被遮蔽过滤，
+且 E. coli 实测（未遮蔽）已无归档收益（覆盖 +0.9%、归档 +1 字节，见
+[[pgi-align.md]] §7.4）——**`-S` 对 pbit 无帮助的结论在遮蔽流程下更稳健**。
+
+## 统一序列访问 API（内部 pbit、暴露 twoBit）：评估 → 不做（2026-08-05）
+
+> 状态：**不做**（通盘评估后否决；替代方案见下）。与遮蔽方案（v1005）
+> 正交，不影响遮蔽实现。
+
+**方案**：定义统一 `SequenceSource` trait（contigs / read_range / blocks /
+has，twoBit 风格），底层 `TwoBitSource`（包装 TwoBitFile）+ `PbitSource`
+（pbit 归档参考段，2bit 记录读取），现有 twoBit 消费者（psl chain、twobit
+命令族、net/chain、pgi build 等）迁移到 trait——实现"内部 pbit、对外暴露
+twoBit 风格接口"。
+
+**动机（用户提出）**：pbit 归档作为群体基因组的**最终分发格式**时，消费方
+可能只有 .pbit，需要能像 twoBit 一样访问参考序列。
+
+**评估（通盘，含自我质疑）**：
+
+1. **"分发格式" ≠ "消费者必须直接读归档"**：pbit 参考段本就是标准 2bit
+   记录，导出一个标准 twoBit/FASTA 是一行命令的量级，且外部工具也能消费；
+   统一 API 省掉的只是"先导出"一步，价值密度低，却要承担 10+ 消费者
+   trait 化的改造与回归风险。
+2. **私有格式做"最终分发"有生态锁定风险**：pgr 在 fastga.md 中批评过
+   FastGA 的 GDB"生态锁定"（私有、外部无法消费）；pbit 私有分发同样如此。
+   分发物应尽量标准（twoBit/FASTA）或提供标准导出，而非让消费方必须用
+   pgr 内部 API。统一 API 强化了"只能在 pgr 里消费"的锁定。
+3. **统一抽象掩盖 pbit 本质**：twoBit 是独立随机访问的序列文件，pbit 是
+   压缩容器（参考 + delta 样本）；让归档"伪装成序列文件"丢失"在读归档"
+   的语义，长期是混淆而非整洁。
+4. **违反简洁原则**：为"分发后直接随机查询归档参考"这一未被真实工作流
+   证实的场景做大型抽象，且样本段（delta）本就不在 twoBit 语义内（统一
+   接口实际只覆盖参考段，收益面窄）。
+
+**结论：不做统一 API 层**。若"pbit 作为最终分发格式"是真实方向，正确的事
+是让分发物可被标准工具消费，而非让 pgr 内部 API 适配私有归档。
+
+**替代方案（若分发需求出现）**：
+
+- `pbit` → 参考 twoBit / 样本 FASTA **导出命令**（复用现有
+  `read_2bit_record` / `to-fa`），外部工具可消费；
+- 个别消费者需要直接读归档参考时，做 `PbitRefReader` 轻量适配（单实现，
+  不 trait 化），按需接入。
+
+**与遮蔽方案的关系**：遮蔽（v1005）是格式层变更，统一访问 API 是访问层
+构想，两者正交；本否决不影响遮蔽方案实施。
 
 ## 多参考（v1003/v1004 扩展）
 

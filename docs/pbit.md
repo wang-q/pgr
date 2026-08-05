@@ -61,6 +61,9 @@ pgr pbit create [OPTIONS] -r <ref.fa> -i <sample.fa>... -o <out.pbit>
 
 *   样本名默认取自输入 FASTA 的文件名（使用 `--name` 可覆盖）。
 *   仅支持 `ACGTN` 字符；IUPAC 简并碱基（R、Y、S 等）会被有损映射为 `N`。
+*   参考与样本均**存储遮蔽**（soft mask，小写区间，语义同 2bit `mask_blocks`）：
+   输入 FASTA 的小写区域会保留，`to-fa`/`some`/`range` 提取时原样还原小写，
+   存进存出一致（v1005+）。
 *   `--paf` 与 `--name` 互斥；如需为每个样本指定不同 PAF，请使用 `--name` 的第三列。
 *   PAF 文件需包含 `cg:Z:` CIGAR，建议使用 `--eqx` 输出（如 `minimap2 -cx asm20 --eqx`）。
 

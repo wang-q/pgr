@@ -43,6 +43,9 @@ pub struct SegmentDesc {
 pub struct ContigSegs {
     pub contig_name: String,
     pub segments: Vec<SegmentDesc>,
+    /// Soft-mask intervals as `(start, size)` in 0-based contig coordinates,
+    /// same semantics as 2bit `mask_blocks` (v1005+).
+    pub mask_blocks: Vec<(u32, u32)>,
 }
 
 /// Collection of samples and their contig segment mappings.
@@ -72,6 +75,7 @@ impl Collection {
             contigs.push(ContigSegs {
                 contig_name: contig.to_string(),
                 segments: Vec::new(),
+                mask_blocks: Vec::new(),
             });
             // `last_mut` is safe because we just pushed an element.
             contigs.last_mut().expect("just pushed a contig entry")
@@ -144,6 +148,8 @@ impl Collection {
     ///     u32 segment_count
     ///     for each segment:
     ///       u32 ref_group_id + u32 delta_id + u32 ref_start + u32 ref_end
+    ///     u32 mask_count
+    ///     for each mask: u32 start + u32 size
     /// u32 cmd_line_len + cmd_line_bytes
     /// ```
     pub fn serialize(&self) -> Result<Vec<u8>> {
@@ -160,6 +166,11 @@ impl Collection {
                     write_u32_le(&mut raw, seg.delta_id)?;
                     write_u32_le(&mut raw, seg.ref_start)?;
                     write_u32_le(&mut raw, seg.ref_end)?;
+                }
+                write_u32_le(&mut raw, cs.mask_blocks.len() as u32)?;
+                for &(start, size) in &cs.mask_blocks {
+                    write_u32_le(&mut raw, start)?;
+                    write_u32_le(&mut raw, size)?;
                 }
             }
         }
@@ -236,9 +247,17 @@ impl Collection {
                         ref_end,
                     });
                 }
+                let mask_count = read_u32_le(&mut cursor)? as usize;
+                let mut mask_blocks = Vec::with_capacity(mask_count.min(1024));
+                for _ in 0..mask_count {
+                    let start = read_u32_le(&mut cursor)?;
+                    let size = read_u32_le(&mut cursor)?;
+                    mask_blocks.push((start, size));
+                }
                 contigs.push(ContigSegs {
                     contig_name,
                     segments,
+                    mask_blocks,
                 });
             }
             samples.insert(sample, contigs);

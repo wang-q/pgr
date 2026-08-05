@@ -13,7 +13,10 @@ pub const PBIT_MAGIC: u32 = 0x54494250;
 /// pbit format major version.
 pub const PBIT_VERSION_MAJOR: u32 = 1;
 /// pbit format minor version.
-pub const PBIT_VERSION_MINOR: u32 = 4;
+///
+/// v5 (2026-08-05): sample `ContigSegs` gains `mask_blocks` (soft-mask
+/// intervals, inherited from 2bit semantics), stored in the sample index.
+pub const PBIT_VERSION_MINOR: u32 = 5;
 /// Current file version encoded as major*1000 + minor.
 pub const PBIT_VERSION: u32 = PBIT_VERSION_MAJOR * 1000 + PBIT_VERSION_MINOR;
 

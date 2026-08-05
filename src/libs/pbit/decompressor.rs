@@ -20,6 +20,9 @@ use crate::libs::nt;
 
 use super::cigar_delta::{apply_cigar, unpack_cigar};
 use super::collection::{Collection, SegmentDesc};
+
+/// (contig_name, segments, mask_blocks) gathered for one sample's contigs.
+type SampleContig = (String, Vec<SegmentDesc>, Vec<(u32, u32)>);
 use super::format::{
     read_ref_index, read_ref_table, read_u32_le, DeltaEncoding, DeltaMeta, PbitFooter, PbitHeader,
     RefGroupEntry, RefTableEntry, MAX_DELTAS_PER_GROUP, MAX_DELTA_UNCOMPRESSED, MAX_PACKED_SIZE,
@@ -571,20 +574,25 @@ impl<R: Read + Seek> Decompressor<R> {
     pub fn get_sample(&mut self, sample: &str, out: &mut impl Write) -> Result<()> {
         let line_width = FASTA_LINE_WIDTH;
 
-        // Collect (contig_name, segments) pairs first to release the immutable
-        // borrow on self.collection before calling self.decode_delta().
-        let contig_segs: Vec<(String, Vec<SegmentDesc>)> = match self.collection.samples.get(sample)
-        {
+        // Collect (contig_name, segments, mask_blocks) first to release the
+        // immutable borrow on self.collection before calling self.decode_delta().
+        let contig_segs: Vec<SampleContig> = match self.collection.samples.get(sample) {
             Some(c) => c
                 .iter()
-                .map(|cs| (cs.contig_name.clone(), cs.segments.clone()))
+                .map(|cs| {
+                    (
+                        cs.contig_name.clone(),
+                        cs.segments.clone(),
+                        cs.mask_blocks.clone(),
+                    )
+                })
                 .collect(),
             None => {
                 return Err(anyhow!("sample '{}' not found in archive", sample));
             }
         };
 
-        for (contig_name, segments) in contig_segs {
+        for (contig_name, segments, mask_blocks) in contig_segs {
             let mut full_seq = Vec::new();
             for seg in &segments {
                 let decoded = self.decode_delta(seg)?;
@@ -617,10 +625,26 @@ impl<R: Read + Seek> Decompressor<R> {
 
                 full_seq.extend_from_slice(&decoded);
             }
+            // Restore soft-mask (lowercase) intervals so reconstruction is
+            // lossless (v1005; mask_blocks use contig-level 0-based coords).
+            apply_mask_blocks(&mut full_seq, &mask_blocks);
             writeln!(out, ">{}", contig_name)?;
             write_fasta_seq(out, &full_seq, line_width)?;
         }
         Ok(())
+    }
+}
+
+/// Apply soft-mask intervals (lowercase) to a reconstructed sample sequence.
+fn apply_mask_blocks(seq: &mut [u8], mask_blocks: &[(u32, u32)]) {
+    for &(start, size) in mask_blocks {
+        let s = start as usize;
+        let e = (s + size as usize).min(seq.len());
+        if s < e {
+            for b in &mut seq[s..e] {
+                *b = b.to_ascii_lowercase();
+            }
+        }
     }
 }
 
@@ -937,6 +961,43 @@ mod tests {
         assert!(lines[0].starts_with(">chr1"));
         let seq: String = lines[1..].concat();
         assert_eq!(seq, expected);
+        Ok(())
+    }
+
+    #[test]
+    fn test_get_sample_roundtrip_soft_mask() -> Result<()> {
+        // v1005: sample soft-mask (lowercase) intervals must survive the
+        // create → get_sample roundtrip losslessly (inherits 2bit semantics).
+        let dir = tempfile::tempdir()?;
+        let ref_path = dir.path().join("ref.fa");
+        let ref_seq = random_dna(2000, 42);
+        write_fasta(ref_path.to_str().unwrap(), &[("chr1", &ref_seq)]);
+
+        let sample_path = dir.path().join("sample.fa");
+        let mut sample_seq = ref_seq.clone();
+        // A masked (lowercase) run identical to the reference, plus some
+        // uppercase mismatches elsewhere.
+        for b in &mut sample_seq[500..520] {
+            *b = b.to_ascii_lowercase();
+        }
+        sample_seq[100] = b'G';
+        sample_seq[200] = b'C';
+        write_fasta(sample_path.to_str().unwrap(), &[("chr1", &sample_seq)]);
+
+        let out_path = dir.path().join("out.pbit");
+        let mut comp = Compressor::create(&out_path, ref_path.to_str().unwrap(), 4096, 15, 18)?;
+        comp.append_sample("sample1", sample_path.to_str().unwrap())?;
+        comp.finish()?;
+
+        let mut dec = Decompressor::open(&out_path)?;
+        let mut out_buf = Vec::new();
+        dec.get_sample("sample1", &mut out_buf)?;
+        let out_str = String::from_utf8(out_buf)?;
+        let lines: Vec<&str> = out_str.lines().collect();
+        assert!(lines[0].starts_with(">chr1"));
+        let seq: String = lines[1..].concat();
+        // Lossless: the masked run stays lowercase, mismatches stay uppercase.
+        assert_eq!(seq.as_bytes(), sample_seq.as_slice());
         Ok(())
     }
 

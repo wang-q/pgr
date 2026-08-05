@@ -1237,12 +1237,12 @@ fn test_pbit_mask_roundtrip() {
         ])
         .run();
 
-    // Extracted sequence is uppercase (mask not applied), content correct.
+    // v1005: extracted sequence preserves soft-mask (lowercase) losslessly.
     let mask_path = fixture("mask_ref.fa");
     let stem = mask_path.file_stem().unwrap().to_str().unwrap();
     let content = fs::read_to_string(out_dir.join(format!("{}.fa", stem))).unwrap();
     let seq: String = content.lines().filter(|l| !l.starts_with('>')).collect();
-    let expected = read_fasta_seq(&fixture("mask_ref.fa")).to_ascii_uppercase();
+    let expected = read_fasta_seq(&fixture("mask_ref.fa"));
     assert_eq!(seq, expected);
 }
 
@@ -1276,11 +1276,11 @@ fn test_pbit_n_roundtrip() {
         ])
         .run();
 
-    // Extracted sequence preserves N (uppercase).
+    // v1005: extracted sequence preserves N and soft-mask case losslessly.
     let stem = sample.file_stem().unwrap().to_str().unwrap();
     let content = fs::read_to_string(out_dir.join(format!("{}.fa", stem))).unwrap();
     let seq: String = content.lines().filter(|l| !l.starts_with('>')).collect();
-    let expected = read_fasta_seq(&sample).to_ascii_uppercase();
+    let expected = read_fasta_seq(&sample);
     assert_eq!(seq, expected);
 }
 

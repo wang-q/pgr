@@ -38,6 +38,25 @@ fn read_fasta(path: &str) -> Result<Vec<(String, Vec<u8>)>> {
     Ok(out)
 }
 
+/// Extract soft-mask intervals (lowercase runs) as `(start, size)` in 0-based
+/// coordinates, same semantics as 2bit `mask_blocks` (v1005).
+fn extract_mask_blocks(seq: &[u8]) -> Vec<(u32, u32)> {
+    let mut blocks = Vec::new();
+    let mut i = 0usize;
+    while i < seq.len() {
+        if seq[i].is_ascii_lowercase() {
+            let start = i;
+            while i < seq.len() && seq[i].is_ascii_lowercase() {
+                i += 1;
+            }
+            blocks.push((start as u32, (i - start) as u32));
+        } else {
+            i += 1;
+        }
+    }
+    blocks
+}
+
 /// Split a sequence into segments of `segment_size` (last segment may be
 /// shorter). Empty contigs produce no segments.
 fn segment_sequence(seq: &[u8], segment_size: usize) -> Vec<&[u8]> {
@@ -523,9 +542,11 @@ impl<W: Write + Seek> Compressor<W> {
             .with_context(|| format!("failed to read sample FASTA: {}", fasta_path))?;
 
         for (contig_name, seq) in &contigs {
-            // Clone to release the immutable borrow on self before calling
-            // &mut self methods (encode_segment_lzdiff).
-            let segs = segment_sequence(seq, self.segment_size);
+            // Soft-mask intervals come from the original case-preserving
+            // sequence; encoding uses the uppercase copy (2bit semantics).
+            let mask_blocks = extract_mask_blocks(seq);
+            let seq_upper: Vec<u8> = seq.iter().map(|b| b.to_ascii_uppercase()).collect();
+            let segs = segment_sequence(&seq_upper, self.segment_size);
             if segs.is_empty() {
                 // Empty contig: register with no segments.
                 self.collection
@@ -565,6 +586,14 @@ impl<W: Write + Seek> Compressor<W> {
                     meta.ref_name
                 );
                 continue;
+            }
+            // Register the contig entry with its soft-mask intervals (v1005);
+            // subsequent `add_segment` calls reuse this entry.
+            {
+                let cs = self
+                    .collection
+                    .register_sample_contig(sample_name, contig_name);
+                cs.mask_blocks = mask_blocks;
             }
 
             // Detect orientation using the first segment vs first reference segment.
@@ -867,6 +896,10 @@ impl<W: Write + Seek> Compressor<W> {
         };
 
         for (contig_name, seq) in &contigs {
+            // Soft-mask intervals come from the original case-preserving
+            // sequence; encoding uses the uppercase copy (2bit semantics).
+            let mask_blocks = extract_mask_blocks(seq);
+            let seq_upper: Vec<u8> = seq.iter().map(|b| b.to_ascii_uppercase()).collect();
             let ref_group_ids: Vec<u32> = match self.contig_ref_groups.get(contig_name) {
                 Some(ids) => ids
                     .iter()
@@ -883,7 +916,7 @@ impl<W: Write + Seek> Compressor<W> {
                 }
             };
 
-            let segs = segment_sequence(seq, self.segment_size);
+            let segs = segment_sequence(&seq_upper, self.segment_size);
             if segs.is_empty() {
                 self.collection
                     .register_sample_contig(sample_name, contig_name);
@@ -900,6 +933,14 @@ impl<W: Write + Seek> Compressor<W> {
                     sample_name
                 );
                 continue;
+            }
+            // Register the contig entry with its soft-mask intervals (v1005);
+            // subsequent `add_segment` calls reuse this entry.
+            {
+                let cs = self
+                    .collection
+                    .register_sample_contig(sample_name, contig_name);
+                cs.mask_blocks = mask_blocks;
             }
 
             // Detect orientation (hint for LZ-diff fallback only).
