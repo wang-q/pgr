@@ -898,3 +898,13 @@ fn command_align_pgi_lowercase_copy_has_no_all_zero_blocks() {
         );
     }
 }
+
+#[test]
+fn command_align_without_subcommand_errors_not_panics() {
+    let (_, stderr) = PgrCmd::new().args(&["align"]).run_fail();
+    assert!(
+        stderr.contains("requires a subcommand"),
+        "expected a missing-subcommand error, got: {stderr}"
+    );
+    assert!(!stderr.contains("panicked"), "got {stderr}");
+}

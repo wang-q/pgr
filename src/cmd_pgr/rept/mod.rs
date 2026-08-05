@@ -12,6 +12,7 @@ use clap::{ArgMatches, Command};
 pub fn make_subcommand() -> Command {
     Command::new("rept")
         .about("Detects repetitive regions in a genome")
+        .subcommand_required(true)
         .subcommand(e_kmer::make_subcommand())
         .subcommand(e_align::make_subcommand())
         .subcommand(s_align::make_subcommand())

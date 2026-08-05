@@ -463,3 +463,15 @@ fn command_rept_e_align_invalid_identity() -> anyhow::Result<()> {
     );
     Ok(())
 }
+
+#[test]
+fn command_rept_without_subcommand_errors_not_panics() {
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
+    let output = cmd.arg("rept").output().unwrap();
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        stderr.contains("requires a subcommand"),
+        "expected a missing-subcommand error, got: {stderr}"
+    );
+    assert!(!stderr.contains("panicked"), "got {stderr}");
+}

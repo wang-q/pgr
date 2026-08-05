@@ -10,6 +10,7 @@ use clap::{ArgMatches, Command};
 pub fn make_subcommand() -> Command {
     Command::new("pgi")
         .about("Manages pgr genome index (.pgi) files")
+        .subcommand_required(true)
         .subcommand(build::make_subcommand())
         .subcommand(stat::make_subcommand())
         .subcommand(to_hv::make_subcommand())

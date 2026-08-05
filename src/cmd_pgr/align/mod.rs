@@ -9,6 +9,7 @@ use clap::{ArgMatches, Command};
 pub fn make_subcommand() -> Command {
     Command::new("align")
         .about("Aligns genomes or .pgi indexes")
+        .subcommand_required(true)
         .subcommand(lastz::make_subcommand())
         .subcommand(pgi::make_subcommand())
 }

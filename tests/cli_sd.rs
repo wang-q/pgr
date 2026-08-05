@@ -606,3 +606,13 @@ fn command_sd_run_lastz_preset_parses() {
         );
     }
 }
+
+#[test]
+fn command_sd_without_subcommand_errors_not_panics() {
+    let (_, stderr) = PgrCmd::new().args(&["sd"]).run_fail();
+    assert!(
+        stderr.contains("requires a subcommand"),
+        "expected a missing-subcommand error, got: {stderr}"
+    );
+    assert!(!stderr.contains("panicked"), "got {stderr}");
+}

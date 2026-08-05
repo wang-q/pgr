@@ -266,3 +266,13 @@ fn command_pgi_build_invalid_k_fails() {
         .run_fail();
     assert!(stderr.contains("k must be in 1..=64"), "got {stderr}");
 }
+
+#[test]
+fn command_pgi_without_subcommand_errors_not_panics() {
+    let (_, stderr) = PgrCmd::new().args(&["pgi"]).run_fail();
+    assert!(
+        stderr.contains("requires a subcommand"),
+        "expected a missing-subcommand error, got: {stderr}"
+    );
+    assert!(!stderr.contains("panicked"), "got {stderr}");
+}

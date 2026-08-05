@@ -19,6 +19,7 @@ use clap::{ArgMatches, Command};
 pub fn make_subcommand() -> Command {
     Command::new("sd")
         .about("Segmental duplication detection and analysis")
+        .subcommand_required(true)
         .subcommand(align::make_subcommand())
         .subcommand(cluster::make_subcommand())
         .subcommand(cover::make_subcommand())
