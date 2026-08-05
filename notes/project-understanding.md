@@ -294,16 +294,17 @@ clustalw/muscle/mafft），充当工作流 glue。这与 `chain`/`net` 模块的
 - `libs/hv.rs`：hypervector 距离（哈希投影：dense bit/i8 与 sparse 三种编码，`calc_distances`）
 - `libs/fmt/twobit.rs`：2bit 格式读写
 - `libs/fmt/psl.rs`：PSL 格式
-- `libs/alignment/`：比对通用逻辑（coords/msa/slice/stat/trim/variation/banded；其中
-  `wave.rs` 的 mid-line wave 为 align pgi 的扩展器，banded 仅余通用工具用途）
+- `libs/alignment/`：FAS 比对工具箱 + 共享工具（coords/msa/slice/stat/trim/
+  variation；`banded` 已随 greedy 链化删除，2026-08-05 移除）
 - `libs/fas_multiz/`：Multiz 多序列比对处理（banded DP 合并）
 - `libs/fas_xlsx.rs`：FAS (block FA) 到 Excel 转换
 - `libs/fasta/`：FASTA 处理工具（dedup/filter/stat）
 - `libs/paf/`：PAF 隐式图核心（`index/` 区间树 + BFS、`graph/` DSU 图构建、`cigar.rs`
   CIGAR 解析、`persist.rs` 索引持久化、`msa_build.rs` POA MSA 构建、`query.rs` 查询过滤）
 - `libs/pbit/`：pbit 压缩核心（LZ-diff、CIGAR delta、PAF 驱动参考索引、segment）
-- `libs/pgi/`：基因组索引核心（build 排序 k-mer 索引、dist 两流归并、to_hv 稀疏投影、
-  align 归并→链化→banded 扩展→PSL）
+- `libs/pgi/`：基因组索引核心 + FastGA 移植（build 排序 k-mer 索引、dist 两流归并、
+  to_hv 稀疏投影、align 归并→tube 链化→wave 扩展→PSL、wave.rs 为 FastGA
+  align.c 的 Myers wavefront 移植）
 - `libs/sd/`：分段重复检测核心
 - `libs/ds/`：通用数据结构（KdTree、GapCalc、BitMap、DupeTree、TopKPurity、best_crossover、
   merge_intervals、radix_sort），以及从外部 `intspan` crate 迁入的区间集合
@@ -509,7 +510,7 @@ chainnet 后消失。`pgr psl chain` 在 2bit 序列缓存优化后（~0.3 s）�
 
 | 主题 | 参考分析 | 设计 / 实现 | 基准 | 相关命令 / 库 |
 |---|---|---|---|---|
-| FastGA 风格比对（pgi） | [[fastga.md]] | [[design/pgi-align.md]]（含 §6 功能差距） | [[benchmarks/bench-pgi-align-vs-fastga.md]]、[[benchmarks/bench-pgi-vs-gixmake.md]]、[[benchmarks/bench-pgi-vs-gix-storage.md]] | `pgr align pgi`（`libs/pgi`、`libs/alignment`） |
+| FastGA 风格比对（pgi） | [[fastga.md]] | [[design/pgi-align.md]]（含 §6 功能差距） | [[benchmarks/bench-pgi-align-vs-fastga.md]]、[[benchmarks/bench-pgi-vs-gixmake.md]]、[[benchmarks/bench-pgi-vs-gix-storage.md]] | `pgr align pgi`（`libs/pgi`，含 wave 移植） |
 | BISER / 分段重复（SD） | [[biser.md]] | [[design/sd.md]] | — | `pgr sd search/align/cluster/decompose/cover/cross/run`（`libs/sd`） |
 | multiz / 多序列合并 | [[multiz.md]] | [[design/fas-multiz.md]] | — | `pgr fas multiz`（`libs/fas_multiz`） |
 | UCSC chain/net 管线 | [[ucsc.md]] | [[chain-algorithms.md]]（实现细节） | — | `pgr pl chainnet`、`pgr chain`、`pgr net`（`libs/chain`） |

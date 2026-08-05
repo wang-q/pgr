@@ -10,6 +10,7 @@ pub mod build;
 pub mod dist;
 pub mod mmap;
 pub mod to_hv;
+pub mod wave;
 
 pub use mmap::PgiMmap;
 

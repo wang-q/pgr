@@ -400,6 +400,100 @@ const PATH_INT: u64 = PATH_TOP - 1;
 const PATH_AVE: u32 = 42; // PATH_LEN * (1 - (1 - 0.7)) for unbiased bases
 const WAVE_LAG: i64 = 70;
 const D_CAP: usize = 5_000_000;
+/// FastGA `TRIM_LEN`: the tip trim window is 2*TRIM_LEN columns.
+const TRIM_LEN: u32 = 15;
+/// FastGA `TRIM_MASK`, `(1 << TRIM_LEN) - 1`.
+const TRIM_MASK: usize = (1 << TRIM_LEN) - 1;
+
+/// FastGA tip-trim score tables (`align.c` `set_table`).
+///
+/// For every 15-column match pattern, `score[p]` is the raw score
+/// (match = `mscore`, mismatch = `-dscore`) and `table[p]` is that score
+/// minus the pattern's peak path score. A wave tip is a valid trim point
+/// only when the last 30 columns keep the score prefix-positive
+/// (`align.c` `forward_wave`).
+#[derive(Clone, Copy)]
+pub struct TrimSpec {
+    score: [i16; 1 << TRIM_LEN],
+    table: [i16; 1 << TRIM_LEN],
+}
+
+impl TrimSpec {
+    /// Builds the tables for a match score and mismatch penalty (FastGA
+    /// `New_Align_Spec` derives them from the reference base bias and
+    /// `1 - ALIGN_RATE`).
+    pub fn new(mscore: i32, dscore: i32) -> Self {
+        let mut spec = Self {
+            score: [0i16; 1 << TRIM_LEN],
+            table: [0i16; 1 << TRIM_LEN],
+        };
+        spec.fill(0, 0, 0, 0, mscore, dscore);
+        spec
+    }
+
+    /// Builds the tables for FastGA's default scoring on a reference genome:
+    /// match/mismatch derive from the base bias and `ALIGN_RATE = 0.3`
+    /// (`New_Align_Spec` with `gdb1->freq`).
+    pub fn for_seqs(a_seqs: &[(String, Vec<u8>)]) -> Self {
+        const BIAS_FACTOR: [f64; 10] = [
+            0.690, 0.690, 0.690, 0.690, 0.780, 0.850, 0.900, 0.933, 0.966, 1.000,
+        ];
+        const FRACTION: i32 = 1000;
+        const AVE_CORR: f64 = 0.7;
+        let mut count = [0u64; 4];
+        let mut total = 0u64;
+        for (_, s) in a_seqs {
+            for &b in s {
+                let i = match b {
+                    b'A' | b'a' => 0,
+                    b'C' | b'c' => 1,
+                    b'G' | b'g' => 2,
+                    b'T' | b't' => 3,
+                    _ => continue,
+                };
+                count[i] += 1;
+                total += 1;
+            }
+        }
+        let mut match_frac = if total == 0 {
+            0.5
+        } else {
+            (count[0] + count[3]) as f64 / total as f64
+        };
+        if match_frac > 0.5 {
+            match_frac = 1.0 - match_frac;
+        }
+        let bias = if match_frac < 0.2 {
+            3
+        } else {
+            ((match_frac + 0.025) * 20.0 - 1.0) as i32
+        };
+        let mscore = (FRACTION as f64 * BIAS_FACTOR[bias as usize] * (1.0 - AVE_CORR)) as i32;
+        Self::new(mscore, FRACTION - mscore)
+    }
+
+    /// FastGA `set_table` recursion: fills `table[p]`/`score[p]` for every
+    /// 15-column match pattern.
+    fn fill(&mut self, bit: u32, prefix: usize, s: i32, peak: i32, mscore: i32, dscore: i32) {
+        if bit >= TRIM_LEN {
+            self.table[prefix] = (s - peak) as i16;
+            self.score[prefix] = s as i16;
+        } else {
+            let peak = peak.max(s);
+            self.fill(bit + 1, prefix << 1, s - dscore, peak, mscore, dscore);
+            self.fill(bit + 1, (prefix << 1) | 1, s + mscore, peak, mscore, dscore);
+        }
+    }
+
+    /// FastGA's tip check: the last `TRIM_LEN` columns end at their path
+    /// peak and the previous window plus the last window keep a non-negative
+    /// score (`align.c` `forward_wave`).
+    fn tip_ok(&self, bits: u64) -> bool {
+        let last = bits as usize & TRIM_MASK;
+        let prev = (bits >> TRIM_LEN) as usize & TRIM_MASK;
+        self.table[last] >= 0 && self.table[prev] as i32 + self.score[last] as i32 >= 0
+    }
+}
 
 /// FastGA `forward_wave` from a mid-line: for every diagonal of the band
 /// `[k_lo, k_hi]`, the 0-wave starts a match snake at `(mida + k) / 2` and the
@@ -407,9 +501,11 @@ const D_CAP: usize = 5_000_000;
 /// diagonal range during the expansion (FastGA's self-mode boundaries).
 ///
 /// Only the tip is kept (no per-wave history): the endpoint is the last wave
-/// maximum whose `PATH_LEN`-column window has at least `PATH_AVE` matches
-/// (FastGA's trim point). Returns the trim point as `(a, b)` coordinates
-/// (exclusive end), or `None` when nothing extends.
+/// maximum whose `PATH_LEN`-column window has at least `PATH_AVE` matches and
+/// whose last 30 columns pass the `TrimSpec` score check (FastGA's trim
+/// point). Returns the trim point as `(a, b)` coordinates (exclusive end),
+/// or `None` when nothing extends.
+#[allow(clippy::too_many_arguments)]
 fn forward_wave_mid(
     a: &[u8],
     b: &[u8],
@@ -418,6 +514,7 @@ fn forward_wave_mid(
     mida: i64,
     minp: Option<i64>,
     maxp: Option<i64>,
+    spec: &TrimSpec,
 ) -> Option<(i64, i64)> {
     let n = a.len() as i64;
     let m = b.len() as i64;
@@ -575,8 +672,10 @@ fn forward_wave_mid(
                 besta = c;
                 if mcnt >= PATH_AVE {
                     last_good = c;
-                    trim = (c, x);
-                    last_good_d = d;
+                    if spec.tip_ok(bits) {
+                        trim = (c, x);
+                        last_good_d = d;
+                    }
                 }
             }
         }
@@ -659,6 +758,7 @@ pub fn local_alignment(
     dgmax: i64,
     amid: i64,
     selfie: bool,
+    spec: &TrimSpec,
 ) -> Option<LocalAlign> {
     const DUB_TRIM: i64 = 45;
     let n = q.len() as i64;
@@ -681,12 +781,12 @@ pub fn local_alignment(
     // hard boundaries are the mirror of the forward ones.
     let (r_minp, r_maxp) = (maxp.map(|p| (m - n) - p), minp.map(|p| (m - n) - p));
     // Forward wave from the mid-line up (a = target, b = query).
-    let (at, bt) = forward_wave_mid(t, q, dgmin, dgmax, amid, minp, maxp)?;
+    let (at, bt) = forward_wave_mid(t, q, dgmin, dgmax, amid, minp, maxp, spec)?;
     // Reverse wave on mirrored sequences (extends downward in original space).
     let mida_rev = n + m - 2 - amid;
     let k_lo = (m - n) - dgmax;
     let k_hi = (m - n) - dgmin;
-    let (ar, br) = forward_wave_mid(rt, rq, k_lo, k_hi, mida_rev, r_minp, r_maxp)?;
+    let (ar, br) = forward_wave_mid(rt, rq, k_lo, k_hi, mida_rev, r_minp, r_maxp, spec)?;
     // The mirrored trim point is an exclusive end; the original path start
     // (inclusive) is the mirror of `end - 1`.
     let (ab, bb) = (m - ar, n - br);
@@ -695,13 +795,13 @@ pub fn local_alignment(
     let (at, bt, ab, bb) = match (fshort, rshort) {
         (true, true) => return None,
         (true, false) => {
-            let (at, bt) = forward_wave_mid(t, q, ab - bb, ab - bb, ab + bb, minp, maxp)?;
+            let (at, bt) = forward_wave_mid(t, q, ab - bb, ab - bb, ab + bb, minp, maxp, spec)?;
             (at, bt, ab, bb)
         }
         (false, true) => {
             let mida_rev = n + m - 2 - (at + bt);
             let k = (m - n) - (at - bt);
-            let (ar, br) = forward_wave_mid(rt, rq, k, k, mida_rev, r_minp, r_maxp)?;
+            let (ar, br) = forward_wave_mid(rt, rq, k, k, mida_rev, r_minp, r_maxp, spec)?;
             (at, bt, m - ar, n - br)
         }
         (false, false) => (at, bt, ab, bb),
@@ -1047,6 +1147,11 @@ mod tests {
             .collect()
     }
 
+    /// Unbiased-genome trim spec (FastGA `New_Align_Spec` defaults).
+    fn trim_spec() -> TrimSpec {
+        TrimSpec::new(300, 700)
+    }
+
     fn all_seqs(len: usize) -> Vec<Vec<u8>> {
         if len == 0 {
             return vec![Vec::new()];
@@ -1104,7 +1209,7 @@ mod tests {
     fn forward_wave_mid_extends_identical_sequences_to_end() {
         let s = b"ACGTACGTACGT";
         // Mid-line at anti 11 (odd parity): the snake still reaches the end.
-        let (x, y) = forward_wave_mid(s, s, -4, 4, 11, None, None).unwrap();
+        let (x, y) = forward_wave_mid(s, s, -4, 4, 11, None, None, &trim_spec()).unwrap();
         assert_eq!((x, y), (12, 12), "identical sequences must align fully");
     }
 
@@ -1120,7 +1225,7 @@ mod tests {
         // Mid-line anti through the middle of the conserved block.
         let rt: Vec<u8> = t.iter().rev().copied().collect();
         let rq: Vec<u8> = q.iter().rev().copied().collect();
-        let aln = local_alignment(&q, &t, &rt, &rq, -2, 2, 114, false).unwrap();
+        let aln = local_alignment(&q, &t, &rt, &rq, -2, 2, 114, false, &trim_spec()).unwrap();
         assert!(
             aln.q_start <= 7 && aln.q_end >= 7 + cons.len(),
             "query span {:?}..{:?}",
@@ -1138,6 +1243,49 @@ mod tests {
         let tt: Vec<u8> = aln.t_aln.iter().copied().filter(|&c| c != b'-').collect();
         assert_eq!(qq, &q[aln.q_start..aln.q_end]);
         assert_eq!(tt, &t[aln.t_start..aln.t_end]);
+    }
+
+    #[test]
+    fn local_alignment_trim_stops_at_score_positive_tip() {
+        // An exact 60 bp block flanked by 50 bp of random noise: the wave
+        // crawl past the score-positive tip must not leak into the flanks
+        // (regression: the pgr trim dropped FastGA's TABLE/SCORE check and
+        // reported ~40 bp of non-homologous flank on each side).
+        let mut x = 7u64;
+        let mut noise = |n: usize| {
+            let mut v = Vec::with_capacity(n);
+            for _ in 0..n {
+                x = x
+                    .wrapping_mul(6364136223846793005)
+                    .wrapping_add(1442695040888963407);
+                v.push(b"ACGT"[(x >> 33) as usize & 3]);
+            }
+            v
+        };
+        let mut q = noise(50);
+        q.extend_from_slice(b"ACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT");
+        q.extend_from_slice(&noise(50));
+        let mut t = noise(50);
+        t.extend_from_slice(b"ACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGT");
+        t.extend_from_slice(&noise(50));
+        let rt: Vec<u8> = t.iter().rev().copied().collect();
+        let rq: Vec<u8> = q.iter().rev().copied().collect();
+        let aln = local_alignment(&q, &t, &rt, &rq, -2, 2, 160, false, &trim_spec()).unwrap();
+        // The aligned span must cover the whole block and stay within a few
+        // columns of its boundaries (the crawl past the score-positive tip
+        // used to leak ~10-20 columns into the noise on each side).
+        assert!(
+            aln.q_start >= 45 && aln.q_end <= 115,
+            "q span {:?}..{:?}",
+            aln.q_start,
+            aln.q_end
+        );
+        assert!(
+            aln.t_start >= 45 && aln.t_end <= 115,
+            "t span {:?}..{:?}",
+            aln.t_start,
+            aln.t_end
+        );
     }
 
     #[test]
@@ -1173,7 +1321,7 @@ mod tests {
         };
         let rt: Vec<u8> = t.iter().rev().copied().collect();
         let rq: Vec<u8> = q.iter().rev().copied().collect();
-        let aln = local_alignment(&q, &t, &rt, &rq, 3, 3, 137, true).unwrap();
+        let aln = local_alignment(&q, &t, &rt, &rq, 3, 3, 137, true, &trim_spec()).unwrap();
         let mut t_i = aln.t_start as i64;
         let mut q_i = aln.q_start as i64;
         let mut min_dg = i64::MAX;
@@ -1201,7 +1349,7 @@ mod tests {
             v
         };
         let rq: Vec<u8> = q.iter().rev().copied().collect();
-        let aln = local_alignment(&q, &t, &rt, &rq, -3, -3, 137, true).unwrap();
+        let aln = local_alignment(&q, &t, &rt, &rq, -3, -3, 137, true, &trim_spec()).unwrap();
         let mut t_i = aln.t_start as i64;
         let mut q_i = aln.q_start as i64;
         let mut max_dg = i64::MIN;
@@ -1223,7 +1371,7 @@ mod tests {
 
         // A tube straddling diagonal 0 is skipped entirely.
         assert!(
-            local_alignment(&q, &t, &rt, &rq, -2, 2, 137, true).is_none(),
+            local_alignment(&q, &t, &rt, &rq, -2, 2, 137, true, &trim_spec()).is_none(),
             "straddling tube must be skipped in self mode"
         );
     }

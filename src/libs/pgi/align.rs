@@ -1,9 +1,9 @@
 //! Two-index merge alignment: seed hits -> anti-diagonal chains -> PSL blocks.
 
 use super::dist::validate_compatible;
+use super::wave::{local_alignment, TrimSpec};
 use super::{unpack_position, PgiIndex, PgiQuery, PgiStream};
 use crate::libs::alignment::coords::{reverse_range, reverse_range_pair};
-use crate::libs::alignment::wave::local_alignment;
 use crate::libs::fmt::psl::Psl;
 use crate::libs::nt::{complement, rc_key, rev_comp};
 use rayon::prelude::*;
@@ -633,6 +633,7 @@ fn extend_tube(
     b_comps: &[Vec<u8>],
     b_rcs: &[Vec<u8>],
     self_mode: bool,
+    spec: &TrimSpec,
 ) -> Vec<Psl> {
     let Some((_, a_int)) = a_seqs.get(tube.a_contig as usize) else {
         return Vec::new();
@@ -677,7 +678,7 @@ fn extend_tube(
                 break;
             }
         }
-        if let Some(aln) = local_alignment(q, a_int, rt, rq, dgmin, dgmax, amid, selfie) {
+        if let Some(aln) = local_alignment(q, a_int, rt, rq, dgmin, dgmax, amid, selfie, spec) {
             let rlen = (aln.t_end - aln.t_start) as i64;
             if rlen >= TUBE_MIN_LEN && TUBE_MIN_RATE * rlen as f64 >= aln.diffs as f64 {
                 let strand = if tube.strand == 0 { "+" } else { "-" };
@@ -984,12 +985,14 @@ fn psls_from_hits(
         .collect();
     let b_rcs: Vec<Vec<u8>> = b_seqs.iter().map(|(_, s)| rev_comp(s).collect()).collect();
     let t_ext = std::time::Instant::now();
+    let spec = TrimSpec::for_seqs(a_seqs);
     let records: Vec<Vec<Psl>> = tubes
         .par_iter()
         .map(|t| {
             let mut alast = 0i64;
             extend_tube(
                 t, &mut alast, &a, &b, a_seqs, b_seqs, &a_revs, &b_revs, &b_comps, &b_rcs, is_self,
+                &spec,
             )
         })
         .collect();
@@ -1207,7 +1210,7 @@ mod tests {
             false,
         )
         .unwrap();
-        let mut b = build_from_seqs(
+        let b = build_from_seqs(
             vec![
                 (String::from("c1"), pseudo_random_seq(3000, 23)),
                 (String::from("c2"), pseudo_random_seq(2000, 24)),
@@ -1219,16 +1222,7 @@ mod tests {
             false,
         )
         .unwrap();
-        let key = |h: &SeedHit| {
-            (
-                h.a_contig,
-                h.a_pos,
-                h.b_contig,
-                h.b_pos,
-                h.shared,
-                h.strand,
-            )
-        };
+        let key = |h: &SeedHit| (h.a_contig, h.a_pos, h.b_contig, h.b_pos, h.shared, h.strand);
 
         let mut ref_resident: Vec<_> = merge_ref(&a, &b, 10, 12).iter().map(key).collect();
         let mut seq_resident: Vec<_> = merge_seed_hits(&a, &b, 10, 12)

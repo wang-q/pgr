@@ -394,7 +394,8 @@ mmap/resident 等价性测试（dist 指标、hv 投影、unique 计数）。
   摊平后自比对 37.8s→0.84s、跨株 2.0s→0.66s）。
 - **仿射 gap**（open -8 + extend -6）：块数 -25%，身份率不变，仅 indel
   结构更干净。
-- **Myers wavefront 移植**（`src/libs/alignment/wave.rs`，FastGA align.c）：
+- **Myers wavefront 移植**（`src/libs/pgi/wave.rs`，FastGA align.c；2026-08-05
+  从 `libs/alignment/` 迁入，与 pgi 链化/扩展同属 FastGA 移植）：
   - 单独接入 banded 路径**不可用**（块数 3-4×、覆盖 71.6%/32.7%）——
     wave 依赖 tube 的锚定上下文；
   - 按 FastGA `align_contigs` 语义接入 tube：643 块/88.2%/425 MB vs
@@ -522,6 +523,26 @@ CLI 参数）不值得。
 保留（tube 几何块与 greedy 几何块同为种子跨度单块 PSL）。`rept e-align`
 管线同步清理（RM 配方只用 `-f`/`--min-shared`，见 repeat-masking.md）。
 
+**遗留**：`libs/alignment/banded.rs`（`align_banded_local`）的唯一调用者
+`middle_is_homologous` 随 greedy 删除，成为孤儿，2026-08-05 已删除（无
+消费者；git 历史可恢复）。
+
+**副作用与修复（2026-08-05 定位，2026-08-05 修复，§5.1 勘误 7）**：本条
+删除动作（commit `1a75965`）后 `tests/cli_sd.rs` 的两个倒位重复测试失败
+（`command_sd_search_pgi_inverted_repeat` /
+`command_sd_search_pgi_close_inverted_repeat`，断言 PSL 块 M 列应为 0，
+实际 18/24/15）。git bisect 确认引入 commit = `1a75965`（`a2bfabd` PASS →
+`1a75965` FAIL）。根因不是链化（tube 本身干净）：pgr 移植 FastGA
+`forward_wave` 时 trim 判断只保留 `PATH_AVE`（60 列 ≥ 42 匹配），丢掉了
+`TABLE`/`SCORE` 打分表检查（align.c `set_table`，TRIM_LEN=15，最近 30 列
+比分"前缀正"才更新 trim 点），wave 端点因此爬进非同源侧翼 ~35-40 bp
+（~50-72% 身份的噪声列）。修复：`wave.rs` 补 `TrimSpec`（复刻 `set_table`，
+mscore/dscore 由参考碱基偏差 + 默认 ALIGN_RATE=0.3 推导），trim 更新加
+`tip_ok` 检查；合成数据输出与 FastGA `-psl` 逐字节一致（1200 bp、M=0），
+32768 项打分表与 C 版逐项一致。附带：mmap 重构 commit `2189b90` 本身是
+broken 中间态（`to_hv.rs` 引用不存在的 `count_unique`，编译不过），被
+下一个 commit `a2bfabd` 修复。
+
 ### 3.6 完整 LCP（vlcp 表 / `.pgi` v3 LBYTE）：尝试 → 不做
 
 **动机**：FastGA `new_merge_thread`（FastGA.c:610）用 `vlcp[plen]` 表 +
@@ -599,6 +620,11 @@ PgiMmap 前缀掩码（`pack_kmer` 高位对齐，原 mask 取低位致 k%4≠0 
    2000；修正后块数 +1.5%、三对覆盖 ±0.1% 内。
 6. **验证数据统一**：早期 mmap 验证用合成随机序列 → tests/genome 真实数据
    （数字以 §2.2 为准）。
+7. **wave trim 打分表丢失导致端点爬进非同源侧翼**（2026-08-05）：pgr 移植
+   `forward_wave` 时只留 `PATH_AVE` 匹配数检查，丢掉 FastGA `set_table` 的
+   最近 30 列"前缀正"比分检查（TRIM_LEN=15），倒位重复的互惠块端点各爬进
+   侧翼 ~35-40 bp，M 列 18/24/15（§3.5.7）。修复后与 FastGA `-psl` 输出
+   逐字节一致（§3.5.7）。
 
 ### 5.2 基准方法
 

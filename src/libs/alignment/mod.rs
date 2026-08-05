@@ -1,13 +1,10 @@
-pub mod banded;
 pub mod coords;
 pub mod msa;
 pub mod slice;
 pub mod stat;
 pub mod trim;
 pub mod variation;
-pub mod wave;
 
-pub use banded::{align_banded_local, BandedAlign};
 pub use coords::{
     align_to_chr, chr_to_align, indel_intspan, reverse_range, reverse_range_1based,
     reverse_range_1based_pair, reverse_range_pair, seq_intspan,
@@ -22,4 +19,3 @@ pub use variation::{
     collect_indels, collect_subs, get_indels, get_subs, polarize_indels, polarize_subs,
     vcf_alt_bases, Indel, Substitution,
 };
-pub use wave::{wave_extend, WaveAlign};
