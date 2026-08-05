@@ -185,7 +185,7 @@ pgr paf to-bed <infile> <region> [options]
 ```
 
 `pgr paf query` 的管道友好、仅坐标视图。每条查询结果输出 `name<TAB>start<TAB>end`。所有 query 选项
-（区域、`--transitive`、过滤）都支持。
+（区域、`--transitive`、过滤）都支持。`--merge-distance` 需要 `-f/--fasta-tsv`（可选，拓扑模式）。
 
 ```bash
 pgr paf to-bed aln.paf A:0-30 --transitive
@@ -399,7 +399,7 @@ C    /data/genomes/C.fa.gz
 - 输入 PAF 文件应包含 `cg:Z:` tag，以便准确做坐标投影和图切分。缺少 CIGAR 时部分子命令会降级或报错。
 - `index` / `query` / `to-bed` 支持 PAF 与 `.paf.idx` 输入；`to-fas` / `to-maf` / `to-vcf` / `to-gfa`
   同样支持两种输入，但都额外要求 `-f/--fasta-tsv` 提供 BGZF FASTA。
-- `graph` / `stat` 的 `-f` 参数与 query 类子命令相同，均为 TSV 文件（`genome_name<TAB>bgzf_fasta_path`），用于提供节点序列和长度。两者均可省略 `-f` 进入 topology-only 模式。
+- `graph` / `stat` 的 `-f` 参数与 query 类子命令相同，均为 TSV 文件（`genome_name<TAB>bgzf_fasta_path`），用于提供节点序列和长度。两者均可省略 `-f` 进入 topology-only 模式。`to-bed` 的 `-f` 同样可选（仅 `--merge-distance` 需要）。
 - 支持纯文本和 gzip（`.gz`）文件（含 BGZF）。BGZF 输入启用 CIGAR 懒加载，降低内存占用。
 - 输入文件为 `stdin` 时从 stdin 读取 PAF。
 

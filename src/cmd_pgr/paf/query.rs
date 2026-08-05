@@ -59,6 +59,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     if let Some(tsv) = opts.fasta_tsv.as_deref() {
         inputs.push(tsv);
     }
+    if let Some(s) = opts.subset_list.as_deref() {
+        inputs.push(s);
+    }
+    if let Some(s) = opts.syntenic_filter.as_deref() {
+        inputs.push(s);
+    }
     crate::cmd_pgr::args::ensure_outfile_distinct(outfile, inputs)?;
     let (idx, all_results, _fasta_store) = pgr::libs::paf::query::run_query(&opts)?;
     let mut writer =

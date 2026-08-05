@@ -44,7 +44,7 @@
 * `query --transitive --merge-distance` 依赖 `--fasta-tsv` 重算 CIGAR；若用户
   未提供 `-f` 会硬报错。属有意约束，未改。
 
-## 修复的缺陷（共 13 处）
+## 修复的缺陷（共 15 处）
 
 ### 坐标投影正确性（Zero-Panic / 精度，3 处）
 
@@ -68,7 +68,7 @@ overhang_clamps_len`、`test_project_empty_cigar_left_overhang_minus_strand`。
 `checked_add` + 越界 `bail!` 友好报错。回归
 `test_minus_strand_interval_exceeding_src_size_rejected`。
 
-### 数据安全（`-o` 覆盖保护，5 处）
+### 数据安全（`-o` 覆盖保护，6 处）
 
 `paf` 家族各输出命令此前未调用 `ensure_outfile_distinct`，`-o` 指向输入文件
 会把 PAF/TSV 输入覆盖成输出（exit 0，静默数据丢失）。修复：在 `index`（保护
@@ -79,6 +79,15 @@ overhang_clamps_len`、`test_project_empty_cigar_left_overhang_minus_strand`。
 `command_paf_query_output_same_as_input_rejected`、
 `command_paf_to_bed_output_same_as_input_rejected`、
 `command_paf_graph_output_same_as_input_rejected`，断言输入文件未被改动。
+
+**查询类子命令未保护 `--subset-sequence-list` / `--syntenic-filter` 辅助输入**
+（`query.rs`、`to_bed.rs`、`to_fas.rs`、`to_maf.rs`、`to_vcf.rs`、`to_gfa.rs`）。
+这些命令的 `ensure_outfile_distinct` 调用只覆盖 infile（+fasta_tsv），但
+`-o` 指向 subset/syntenic 过滤文件时同样会把辅助输入覆盖成输出。修复：在
+上述 6 个命令的输入列表中补上 `subset_list` / `syntenic_filter`。回归
+`command_paf_to_vcf_protects_syntenic_filter_from_overwrite`、
+`command_paf_to_gfa_protects_subset_list_from_overwrite`，断言辅助文件未被
+改动。
 
 ### 参数校验（CLI，3 处）
 
@@ -113,7 +122,7 @@ overhang_clamps_len`、`test_project_empty_cigar_left_overhang_minus_strand`。
 静默丢弃第二片的碱基。修复：判据改 `qs <= last.2`。回归
 `test_build_msa_entries_merges_touching_fragments`。
 
-### 输出坐标 / 图节点序列（2 处）
+### 输出坐标 / 图节点序列 / 命令可用性（3 处）
 
 **`to-fas` pairwise `-` 链头坐标用正向区间而非反向坐标**（`to_fas.rs`）。pairwise
 FAS 头原先用 `q_start_fwd`/`q_end_fwd`（正向 query 区间），对 `-` 链显示的
@@ -126,6 +135,16 @@ FAS 头原先用 `q_start_fwd`/`q_end_fwd`（正向 query 区间），对 `-` �
 域，导致该 `-` 步长与存储序列不一致。修复：由 `-` 取向段填充时对区域做反向互
 补，使节点序列保持在代表段正向取向。回归
 `test_node_sequence_revcomp_when_filling_from_minus_segment`。
+
+**`to-bed` 未接受 `--fasta-tsv`，导致 `--merge-distance` 无法使用**
+（`to_bed.rs`）。`to-bed` 的查询参数来自共享的 `add_query_args`（含
+`--merge-distance`），但命令本身未注册 `-f/--fasta-tsv`；而 `run_query` 在
+`--merge-distance > 0` 时强制要求 `--fasta-tsv`，于是该选项对 `to-bed` 完全不可
+用，且 `docs/paf.md` 声称"所有 query 选项（含 `--merge-distance`）都支持"，与
+代码不符。修复：为 `to-bed` 补上 `add_optional_fasta_tsv_arg`（topology-only 语义，
+`-f` 可选），并在 `ensure_outfile_distinct` 输入列表中纳入 `fasta_tsv`。回归
+`command_paf_to_bed_accepts_fasta_tsv_and_merge_distance`（无 `-f` 时报
+`--merge-distance requires --fasta-tsv`；有 `-f` 时命令正常运行并输出 BED3）。
 
 ## 文档修复
 
@@ -156,10 +175,55 @@ FAS 头原先用 `q_start_fwd`/`q_end_fwd`（正向 query 区间），对 `-` �
 * 复审轮（2026-08-05）复跑 `cargo test`、`cargo clippy --all-targets -- -D
   warnings`、`cargo fmt --check`，均干净；对 `project`、`query` 过滤、`vcf`
   左对齐、`graph` 节点取向等关键路径做了防御性逐行复核，未再发现新问题。
+* 再复审轮（2026-08-05，本轮）：对 `libs/paf` 全量文件（`vcf`、
+  `poa_compact`、`to_maf`/`to_fas`、`msa_build`、`cigar`、`index/query`、
+  `index/bfs`、`index/builder`、`index/mod`、`persist`、`parser`、
+  `graph/builder`、`graph/segment`、`fasta`、`query`、`record`）与
+  `cmd_pgr/paf/*` 各子命令 execute 层及 `cmd_pgr/args.rs`、`docs/paf.md`
+  逐行复核，未发现新的实质性缺陷。补记的几项低风险观察（均非 bug，实际
+  数据不可触发）：
+  * `filter_by_chain_length` / BFS 中 `(last - first).abs()`：PAF 坐标非负且
+    `first >= 0, last <= i32::MAX`，差值落在 `[0, i32::MAX]`，`.abs()` 不会
+    到达 `i32::MIN`，无溢出。
+  * lazy 模式下 `insert_record` 仍调用 `extract_cigar` 做 CIGAR 校验（结果
+    丢弃），属 fail-fast 设计权衡，非缺陷。
+  * `CigarOp` 对 > 2^29 的 op 长度位截断：受实际比对长度约束，不可达。
+  * `merge_results` 的 `same_record` 判定用 `(rec_ts, rec_qs, strand)` 三元组，
+    不同源记录恰好同三点时可能误判；概率极低且落入 `slice_cigar_by_target`
+    截断保护，低风险。
+  * 本轮 `cargo test --lib paf::`：120 个测试全部通过。当前工作区唯一的
+    `clippy -D warnings` 报错位于 `src/libs/alignment/wave.rs:652`
+    （`too_many_arguments`），属 pgi 未提交进行中改动引入，不在 paf 审计
+    范围内，未改动。
+
+* 第四轮（2026-08-05，本轮）：复核 `to-vcf` / `to-gfa` execute 层，发现其
+  `ensure_outfile_distinct` 仍只覆盖 infile + fasta_tsv，未保护
+  `--subset-sequence-list` / `--syntenic-filter` 辅助输入（同为上一轮数据安全
+  修复的遗漏，其余 4 个查询类命令已补）。补齐并新增回归
+  `command_paf_to_vcf_protects_syntenic_filter_from_overwrite`、
+  `command_paf_to_gfa_protects_subset_list_from_overwrite`。
+  `cargo test --test cli_paf`（21 个测试）、`cargo fmt`、`cargo clippy --all-targets`
+  干净。本轮后未再发现新问题。
+
+* 第五轮（2026-08-05，本轮）：复核各查询类子命令的 `-f/--fasta-tsv` 注册与
+  `--merge-distance` 可用性，发现 `to-bed` 未注册 `--fasta-tsv`，导致
+  `--merge-distance > 0`（依赖 `-f`）对 `to-bed` 完全不可用，且与 `docs/paf.md`
+  "所有 query 选项都支持"的表述不符（第 15 处缺陷）。修复：为 `to-bed` 补
+  `add_optional_fasta_tsv_arg`，并在注释/文档（`docs/paf.md` 的 `to-bed` 小节、
+  FASTA TSV 小节、`to_bed.rs` 的 after_help）补上 `-f` 与 `--merge-distance`
+  的说明。新增回归
+  `command_paf_to_bed_accepts_fasta_tsv_and_merge_distance`。复核 `cli_paf`
+  （22 个测试）、`cargo fmt`、`cargo clippy --all-targets` 干净。本轮后未再
+  发现新问题。注：全量 `cargo test` 中 `cli_sd` 的 2 个用例（`command_sd_search_
+  pgi_inverted_repeat`、`command_sd_search_pgi_close_inverted_repeat`）失败，
+  系未提交的 pgi 引擎进行中改动（`src/libs/pgi/align.rs`、`src/libs/alignment/
+  wave.rs`）引入，与 paf 无关；paf 相关全部测试（`cli_paf` 22、`cli_paf_to_fas`
+  11、`cli_paf_to_maf` 15、`cli_paf_to_vcf` 6、`lib paf::` 120）均通过。
 
 ## 结论
 
-`paf` 命令族审核完成（累计修复 13 处缺陷、补回归测试与文档澄清），并经多轮
+`paf` 命令族审核完成（累计修复 15 处缺陷、补回归测试与文档澄清），并经多轮
 纵深复核（`index/project` 坐标投影、BFS 传递遍历、`query` 过滤、`vcf` 变异
 调用、`msa_build` 合并、`graph` 节点取向、`maf_import` 反向链、`-o` 覆盖保护、
-POA/查询参数校验）收敛，未再发现新问题。
+POA/查询参数校验、`to-bed` 的 `--fasta-tsv`/`--merge-distance` 可用性）收敛，
+未再发现新问题。

@@ -449,3 +449,126 @@ fn command_paf_graph_output_same_as_input_rejected() {
     let after = fs::read_to_string(&paf_path).unwrap();
     assert_eq!(after, original, "input file must not be overwritten");
 }
+
+#[test]
+fn command_paf_to_vcf_protects_syntenic_filter_from_overwrite() {
+    use std::fs;
+    let temp = tempfile::TempDir::new().unwrap();
+    let paf_path = temp.path().join("overwrite_vcf.paf");
+    let chain_path = temp.path().join("overwrite_vcf.chain");
+    let tsv_path = temp.path().join("overwrite_vcf.tsv");
+    let paf = "A\t100\t0\t100\t+\tB\t100\t0\t100\t95\t100\t255\tcg:Z:100M\n";
+    let chain_original = "chain 100 B 100 + 0 100 A 100 + 0 100 1\n100\n\n";
+    fs::write(&paf_path, paf).unwrap();
+    fs::write(&chain_path, chain_original).unwrap();
+    fs::write(&tsv_path, "A\na.fa\nB\nb.fa\n").unwrap();
+    // The -o overwrite check runs before the fasta-tsv is read, so the TSV content is unused here.
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "paf",
+            "to-vcf",
+            paf_path.to_str().unwrap(),
+            "B:0-100",
+            "-f",
+            tsv_path.to_str().unwrap(),
+            "--syntenic-filter",
+            chain_path.to_str().unwrap(),
+            "-o",
+            chain_path.to_str().unwrap(),
+        ])
+        .run_fail();
+    assert!(
+        stderr.contains("is also an input file"),
+        "should reject -o == syntenic file: {stderr}"
+    );
+    let after = fs::read_to_string(&chain_path).unwrap();
+    assert_eq!(
+        after, chain_original,
+        "syntenic file must not be overwritten"
+    );
+}
+
+#[test]
+fn command_paf_to_gfa_protects_subset_list_from_overwrite() {
+    use std::fs;
+    let temp = tempfile::TempDir::new().unwrap();
+    let paf_path = temp.path().join("overwrite_gfa.paf");
+    let subset_path = temp.path().join("overwrite_gfa.subset");
+    let tsv_path = temp.path().join("overwrite_gfa.tsv");
+    let paf = "A\t100\t0\t100\t+\tB\t100\t0\t100\t95\t100\t255\tcg:Z:100M\n";
+    let subset_original = "A\n";
+    fs::write(&paf_path, paf).unwrap();
+    fs::write(&subset_path, subset_original).unwrap();
+    fs::write(&tsv_path, "A\na.fa\nB\nb.fa\n").unwrap();
+    // The -o overwrite check runs before the fasta-tsv is read, so the TSV content is unused here.
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "paf",
+            "to-gfa",
+            paf_path.to_str().unwrap(),
+            "B:0-100",
+            "-f",
+            tsv_path.to_str().unwrap(),
+            "--subset-sequence-list",
+            subset_path.to_str().unwrap(),
+            "-o",
+            subset_path.to_str().unwrap(),
+        ])
+        .run_fail();
+    assert!(
+        stderr.contains("is also an input file"),
+        "should reject -o == subset file: {stderr}"
+    );
+    let after = fs::read_to_string(&subset_path).unwrap();
+    assert_eq!(
+        after, subset_original,
+        "subset file must not be overwritten"
+    );
+}
+
+#[test]
+fn command_paf_to_bed_accepts_fasta_tsv_and_merge_distance() {
+    // Regression: to-bed previously didn't accept the --fasta-tsv option, so
+    // --merge-distance > 0 (which requires --fasta-tsv) couldn't be used at all.
+    // Verify that the CLI accepts -f and the check works (--merge-distance > 0
+    // without -f is rejected).
+    let paf = "A\t10\t0\t10\t+\tB\t10\t0\t10\t10\t10\t255\tcg:Z:10=\n";
+
+    // --merge-distance 10 without -f should error (as required by run_query)
+    let (_, stderr) = PgrCmd::new()
+        .args(&["paf", "to-bed", "stdin", "B:0-10", "--merge-distance", "10"])
+        .stdin(paf)
+        .run_fail();
+    assert!(
+        stderr.contains("--merge-distance requires --fasta-tsv"),
+        "should reject merge-distance without fasta-tsv: {stderr}"
+    );
+
+    // With -f, the CLI accepts the option and the command runs (producing BED
+    // output). Before the fix, `-f` was rejected as an unexpected argument.
+    use std::path::PathBuf;
+    let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/paf/input")
+        .join("AB.tsv");
+    let (stdout, stderr) = PgrCmd::new()
+        .args(&[
+            "paf",
+            "to-bed",
+            "stdin",
+            "B:0-10",
+            "--merge-distance",
+            "10",
+            "-f",
+            fixture.to_str().unwrap(),
+        ])
+        .stdin(paf)
+        .run();
+    assert!(
+        !stderr.contains("unexpected argument") && !stderr.contains("wasn't expected"),
+        "-f should be accepted, not rejected by clap: {stderr}"
+    );
+    assert!(
+        stdout.contains("A\t0\t10"),
+        "expected BED3 output for A, got {stdout:?}"
+    );
+}
