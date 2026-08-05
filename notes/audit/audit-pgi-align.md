@@ -330,6 +330,25 @@
   通过；本族 release 模式全绿（pgi、alignment 各 lib + 相关 CLI）；`cargo fmt
   --check` 与 `cargo clippy --all-targets -- -D warnings` 干净。
 
+## 收尾复核（2026-08-05）
+
+在前述收敛结论之上，对当前工作区代码与文档做最终回归核对，确认报告所述修复
+均已落地且状态一致：
+
+* 代码逐项核对：`cmd_pgr/align/pgi.rs`（`--self` 校验、`ensure_outfile_distinct`
+  含 sibling 索引、`pool.install` 约束 `--parallel`、mtime / 参数一致性检查、
+  `.gz` 分离命名）、`libs/pgi/build.rs`（`mask` 软掩码、pending 去重、按位置
+  重算 key、`rc_key`）、`libs/pgi/align.rs`（`saturating_add` 防 k=64 前缀溢出、
+  `freq >=` 双侧过滤、streaming 逐记录校验、负链 RC frame）、`libs/pgi/mmap.rs`
+  （惰性解码 + 越界校验、截断拒绝）均与报告一致。
+* 文档核对：`docs/align-pgi.md` 的 `--freq`("at least")、`--kmer`（非 `--k`）、
+  `.gz` 分离命名、mtime 失效、缓存参数一致性、软掩码说明均与代码一致。
+* 测试回归：`cargo test --lib libs::pgi` 64 通过；`cargo test --test
+  cli_align_pgi` 23 通过（含 `crafted_index_errors_not_panics`、
+  `output_not_overwrite_sibling_index`、`stale_sibling_index_rebuilt` 等）。
+
+本轮未再发现新的代码/行为/CLI/文档问题，审核收敛状态得到确认。
+
 ## 结论
 
 `align` 命令族审核完成（累计修复 41 处缺陷：26 处代码/行为 + 15 处 CLI/帮助/

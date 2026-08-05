@@ -65,8 +65,7 @@ pub fn lastz_to_hits(
     }
 
     // lastz cannot read gzipped input; decompress .gz files into the workdir.
-    let plain_target = decompress_if_gz(target_files, workdir)?;
-    let plain_query = decompress_if_gz(query_files, workdir)?;
+    let (plain_target, plain_query) = decompress_target_query(&target_files, &query_files, workdir)?;
 
     let (common_args, _matrix_handle) =
         build_common_args(opts.preset.as_deref(), opts.query_depth)?;
@@ -117,37 +116,55 @@ pub fn search_lastz(
     lastz_to_hits(genome, genome, true, workdir, opts)
 }
 
-/// Decompress `.gz` FASTA files into the workdir; returns plain-text paths.
-fn decompress_if_gz(
-    files: Vec<std::path::PathBuf>,
+/// Decompress any `.gz` FASTA inputs into `workdir`, returning plain-text
+/// paths for the target and query lists.
+///
+/// A single used-basename set spans both lists so a cross-mode run cannot have
+/// the target and query overwrite each other's decompressed file when they
+/// share a basename (`a/sample.fa.gz` vs `b/sample.fa.gz` would both map to
+/// `sample.plain.fa` otherwise, and the query would silently replace the
+/// target). Each unique input path is decompressed once, so self-mode
+/// (target == query lists) still maps every file to the same plain path on
+/// both sides and `run_lastz`'s `--self` detection keeps working.
+fn decompress_target_query(
+    target_files: &[std::path::PathBuf],
+    query_files: &[std::path::PathBuf],
     workdir: &str,
-) -> anyhow::Result<Vec<std::path::PathBuf>> {
-    let mut plain = Vec::with_capacity(files.len());
-    // Nested directories can hold same-named `.fa.gz` files whose basename
-    // (first dot segment) collides in the flat workdir; the second would
-    // silently overwrite the first. Suffix the duplicate outputs with the
-    // input index. The index is deterministic, so the self-mode second call
-    // over the same list reproduces the same paths.
+) -> anyhow::Result<(Vec<std::path::PathBuf>, Vec<std::path::PathBuf>)> {
+    let mut plain: std::collections::HashMap<std::path::PathBuf, std::path::PathBuf> =
+        std::collections::HashMap::new();
     let mut used: std::collections::HashSet<String> = std::collections::HashSet::new();
-    for (idx, f) in files.iter().enumerate() {
-        let is_gz = f.extension().and_then(|e| e.to_str()) == Some("gz");
-        if !is_gz {
-            plain.push(f.clone());
-            continue;
+    let mut assign = |f: &std::path::PathBuf| -> anyhow::Result<std::path::PathBuf> {
+        if let Some(p) = plain.get(f) {
+            return Ok(p.clone());
         }
-        let base = crate::libs::io::get_basename(&f.to_string_lossy()).unwrap_or_default();
-        let out = if used.insert(base.clone()) {
-            std::path::Path::new(workdir).join(format!("{base}.plain.fa"))
+        let out = if f.extension().and_then(|e| e.to_str()) == Some("gz") {
+            let base = crate::libs::io::get_basename(&f.to_string_lossy()).unwrap_or_default();
+            let out = if used.insert(base.clone()) {
+                std::path::Path::new(workdir).join(format!("{base}.plain.fa"))
+            } else {
+                std::path::Path::new(workdir).join(format!("{base}.{}.plain.fa", plain.len()))
+            };
+            let mut reader = crate::libs::io::reader(&f.to_string_lossy())
+                .with_context(|| format!("failed to open {}", f.display()))?;
+            let mut writer = std::io::BufWriter::new(std::fs::File::create(&out)?);
+            std::io::copy(&mut reader, &mut writer)?;
+            out
         } else {
-            std::path::Path::new(workdir).join(format!("{base}.{idx}.plain.fa"))
+            f.clone()
         };
-        let mut reader = crate::libs::io::reader(&f.to_string_lossy())
-            .with_context(|| format!("failed to open {}", f.display()))?;
-        let mut writer = std::io::BufWriter::new(std::fs::File::create(&out)?);
-        std::io::copy(&mut reader, &mut writer)?;
-        plain.push(out);
+        plain.insert(f.clone(), out.clone());
+        Ok(out)
+    };
+    let mut plain_target = Vec::with_capacity(target_files.len());
+    for f in target_files {
+        plain_target.push(assign(f)?);
     }
-    Ok(plain)
+    let mut plain_query = Vec::with_capacity(query_files.len());
+    for f in query_files {
+        plain_query.push(assign(f)?);
+    }
+    Ok((plain_target, plain_query))
 }
 
 #[cfg(test)]
@@ -212,17 +229,34 @@ mod tests {
         }
         let files = crate::libs::fmt::fa::find_fasta_files(dir.path());
         assert_eq!(files.len(), 2);
-        let plain = decompress_if_gz(files, workdir.to_str().unwrap()).unwrap();
-        assert_eq!(plain.len(), 2);
-        assert_ne!(plain[0], plain[1], "colliding basenames must stay distinct");
-        let contents: Vec<String> = plain
-            .iter()
-            .map(|p| std::fs::read_to_string(p).unwrap())
-            .collect();
-        assert_eq!(contents.len(), 2);
-        assert!(
-            contents[0] != contents[1],
+        let is_a = |p: &std::path::PathBuf| p.to_str().unwrap().contains("/a/");
+        let a = files.iter().find(|p| is_a(p)).unwrap().clone();
+        let b = files.iter().find(|p| !is_a(p)).unwrap().clone();
+        // Cross mode: target and query are different files sharing a basename.
+        let (target, query) = decompress_target_query(
+            std::slice::from_ref(&a),
+            std::slice::from_ref(&b),
+            workdir.to_str().unwrap(),
+        )
+        .unwrap();
+        assert_eq!(target.len(), 1);
+        assert_eq!(query.len(), 1);
+        assert_ne!(
+            target[0], query[0],
+            "cross-mode target/query must stay distinct"
+        );
+        assert_ne!(
+            std::fs::read_to_string(&target[0]).unwrap(),
+            std::fs::read_to_string(&query[0]).unwrap(),
             "each input must keep its own sequence"
         );
+        // Self mode: the same file on both sides maps to the same plain path.
+        let (self_t, self_q) = decompress_target_query(
+            std::slice::from_ref(&a),
+            std::slice::from_ref(&a),
+            workdir.to_str().unwrap(),
+        )
+        .unwrap();
+        assert_eq!(self_t, self_q, "self-mode target and query must match");
     }
 }

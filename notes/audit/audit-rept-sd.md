@@ -6,9 +6,9 @@
 合并为一份审核记录。缺陷按类别分组记录；关键修复均附回归测试，验证概况见文末
 "验证"一节。
 
-> 注：`pgr align` 命令族的审核记录见 `notes/audit/audit-align.md`。`libs/pgi`
+> 注：`pgr align` 命令族的审核记录见 `notes/audit/audit-pgi-align.md`。`libs/pgi`
 > 索引的**构建**缺陷（k-mer key、构造头、记录越界、sibling 索引、`--parallel`
-> 等）记录在 audit-align.md；本文件记录 sd 对 pgi 的**消费**缺陷（`sd search`
+> 等）记录在 audit-pgi-align.md；本文件记录 sd 对 pgi 的**消费**缺陷（`sd search`
 > 传 `.pgi` 拒绝、pgi merge 频率过滤、greedy/tube 链逻辑等）。
 
 审核范围：
@@ -88,6 +88,11 @@
   同名区间并簇。`sd cluster` 文档仅面向自比对 PAF，记录不修。
 * 顶层路径为 `.pgi` 扩展名的目录会被 `is_pgi_input` 误判拒绝（目录名恰好
   以 .pgi 结尾）。概率极低，记录不修。
+* `save_repeat_cache` 中途失败（`.ktab` 已写、部分 part 文件已写、`.complete`
+  未写）时，残留的 `.ktab`/part 文件无 `.complete` 标记，`cache_is_fresh`
+  判陈旧会自动重建，不会复用；但若后续一次**成功**重建后 part 文件数变少，
+  旧的高序号 part 文件（`.<base>.ktab.N`）可能残留被 FastK `-p:` 读到。
+  需"保存中途失败 + 后续重建 part 数减少"同时成立，概率极低，记录不修。
 * `sd search --engine pgi` 接受 `.2bit` 输入（`align pgi` 原生支持），但
   下游 `sd align`/`sd run` 的 chainnet 需要 FASTA，2bit 在 `fa size` 步骤
   报错（外层 run_cmd 只显示失败命令、不含根因）。文档仅承诺 FASTA；2bit
@@ -360,10 +365,17 @@
   1239→1240→1241→1243→1249→1250→1253→1254→1255 递增）；本族 sd 13、pl 1
   个 lib + 相关 CLI 测试 release 模式全绿；`cargo fmt --check` 与 `cargo
   clippy --all-targets -- -D warnings` 干净。
+* 本轮复核（cross 解压 + e-align 文档修复后）：`cargo test --lib` 568 通过、
+  `cli_sd` 15 / `cli_rept` 17 通过、clippy 干净。上一轮新增的回归测试
+  `decompress_colliding_basenames_stay_distinct` 触发 clippy
+  `cloned_ref_to_slice_refs`（`&[a.clone()]`），已改为 `std::slice::from_ref(&a)`
+  消除（测试代码，非生产逻辑）。复查 sd/rept 六命令 lib 与 repeat 管线
+  （runlist JSON 恢复、`-` 空标记丢弃、safe 名双射、DSU 容量、`set_id` 全局
+  重编号）未再发现新问题。
 
 ## 结论
 
 `sd`/`rept` 两个命令族审核完成（累计修复 49 处缺陷：39 处代码/行为 + 10 处
 CLI/帮助/文档），并经多轮纵深复核（`libs/sd`、`libs/pl/repeat`、tube/greedy
 双工作流、索引/缓存新鲜度、确定性、`-o` 覆盖保护、HashMap 迭代序、外部工具
-封装）复核，未再发现新问题，审核收敛。pgi 索引构建侧缺陷见 audit-align.md。
+封装）复核，未再发现新问题，审核收敛。pgi 索引构建侧缺陷见 audit-pgi-align.md。

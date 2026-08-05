@@ -311,12 +311,7 @@ pgr rept e-align [OPTIONS] <repeat> <infile>
 | `smer` | | `--smer` | Int | Syncmer s-mer length (default: 8) |
 | `window` | | `--window` | Int | Syncmer window (default: 5) |
 | `freq` | `-f` | `--freq` | Int | Max k-mer frequency to keep as seed (default: 100) |
-| `min_span` | `-c` | `--min-span` | Int | Min per-axis seed span for a chain (default: 50) |
-| `max_gap` | `-s` | `--max-gap` | Int | Max gap between seeds in a chain (default: 1000) |
-| `band` | | `--band` | Int | Diagonal band half-width (default: 128) |
-| `merge_gap` | | `--merge-gap` | Int | Max gap to merge colinear chains with different diagonals (IS-element breaks; default: 5000) |
 | `min_shared` | | `--min-shared` | Int | Min shared seed length (default: 16) |
-| `workflow` | | `--workflow` | Str | Chaining workflow: greedy or tube (default: greedy) |
 | `min_identity` | | `--min-identity` | Float | Min alignment identity (default: 0.70) |
 | `min_len` | | `--min-len` | Int | Min length of repetitive fragments (default: 50) |
 | `fill_fragment` | | `--fill-fragment` | Int | Fill holes between fragments (default: 10) |
