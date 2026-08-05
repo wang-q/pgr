@@ -288,7 +288,7 @@ pgr pbit to-fa [OPTIONS] <infile> -o <outdir>
 
 *   输出文件为 `{outdir}/{sample_name}.fa`。
 *   序列行宽固定为 60 bp。
-*   样本名不能包含 `/`、`\` 或为 `.`/`..`。
+*   样本名不能为空、不能包含 `/`、`\`，且不能为 `.`/`..`。
 
 #### Examples
 

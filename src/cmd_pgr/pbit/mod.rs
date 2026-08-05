@@ -175,6 +175,21 @@ pub(crate) fn collect_samples_from_args(args: &ArgMatches) -> Result<Vec<SampleS
         anyhow::bail!("no sample FASTA files provided");
     }
 
+    // Reject duplicate sample names within this command. Sample names derived
+    // from `-i` basenames collapse distinct files (e.g. `sample.1.fa` and
+    // `sample.2.fa` both become `sample`), and `append_sample` would silently
+    // merge their segments into one sample, corrupting the archive on extract.
+    let mut seen = std::collections::HashSet::new();
+    for (name, _, _, _) in &samples {
+        if !seen.insert(name.as_str()) {
+            anyhow::bail!(
+                "duplicate sample name '{}'; sample names must be distinct \
+                 (use --name to assign explicit names)",
+                name
+            );
+        }
+    }
+
     Ok(samples)
 }
 

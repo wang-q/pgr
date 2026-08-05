@@ -505,6 +505,14 @@ impl<W: Write + Seek> Compressor<W> {
         self.ref_meta.iter().map(|r| r.ref_name.as_str()).collect()
     }
 
+    /// Whether a sample `name` already exists in the archive. Appending a
+    /// sample whose name collides with an existing one would silently merge
+    /// their segments (corrupting the sample on extract); callers should
+    /// reject this before calling `append_sample`.
+    pub fn has_sample(&self, name: &str) -> bool {
+        self.collection.samples.contains_key(name)
+    }
+
     /// Append a sample from a FASTA file. The sample name is provided by the
     /// caller (derived from the FASTA basename in the CLI layer).
     pub fn append_sample(&mut self, sample_name: &str, fasta_path: &str) -> Result<()> {
@@ -597,8 +605,17 @@ impl<W: Write + Seek> Compressor<W> {
             contig_name,
             sample_name
         );
-        // Match to reference segment by position (clamped to last).
-        let ref_idx = seg_idx.min(ref_group_ids.len().saturating_sub(1));
+        // Match to reference segment by position (clamped to last). For a
+        // reverse-complemented contig, the sample's segment i is the rev-comp
+        // of reference segment N-1-i (the reference's last segments appear
+        // first in the RC sample), so route in reverse order; routing forward
+        // would still decode correctly but yield a poor LZ-diff match.
+        let last = ref_group_ids.len().saturating_sub(1);
+        let ref_idx = if contig_is_rev_comp {
+            last.saturating_sub(seg_idx)
+        } else {
+            seg_idx.min(last)
+        };
         let ref_group_id = ref_group_ids[ref_idx];
 
         // Try contig-level orientation first.
@@ -873,10 +890,12 @@ impl<W: Write + Seek> Compressor<W> {
                 continue;
             }
 
-            // Reference contig exists but is 0 bp (no segments); cannot encode.
+            // The contig exists in the reference index but has no segments in
+            // the current reference (it may be present only in another reference);
+            // cannot encode against the current reference.
             if ref_group_ids.is_empty() {
                 log::warn!(
-                    "contig '{}' in sample '{}' has empty reference (0 bp); skipping",
+                    "contig '{}' in sample '{}' has no segments in the current reference; skipping",
                     contig_name,
                     sample_name
                 );
@@ -1157,6 +1176,46 @@ mod tests {
         let mut file = std::fs::File::open(&out_path)?;
         let header = PbitHeader::read_from(&mut file)?;
         assert_eq!(header.sample_count, 1);
+        Ok(())
+    }
+
+    #[test]
+    fn test_append_rev_comp_sample_multi_segment() -> Result<()> {
+        // A reverse-complemented sample against a multi-segment reference must
+        // route its segments in reverse order (segment i ↔ ref segment N-1-i).
+        // Roundtrip must still reproduce the sample exactly (uppercase).
+        let dir = tempfile::tempdir()?;
+        let ref_path = dir.path().join("ref.fa");
+        let ref_seq = random_dna(5000, 42); // 2 segments (4096 + 904)
+        write_fasta(ref_path.to_str().unwrap(), &[("chr1", &ref_seq)]);
+
+        let mut sample_fwd = ref_seq.clone();
+        sample_fwd[100] = b'G';
+        sample_fwd[4600] = b'C';
+        let sample_seq: Vec<u8> = nt::rev_comp(&sample_fwd).collect();
+        let sample_path = dir.path().join("sample.fa");
+        write_fasta(sample_path.to_str().unwrap(), &[("chr1", &sample_seq)]);
+
+        let out_path = dir.path().join("out.pbit");
+        let mut comp = Compressor::create(&out_path, ref_path.to_str().unwrap(), 4096, 15, 18)?;
+        comp.append_sample("sample1", sample_path.to_str().unwrap())?;
+        comp.finish()?;
+
+        let mut dec = crate::libs::pbit::decompressor::Decompressor::open(&out_path)?;
+        let mut buf = Vec::new();
+        dec.get_sample("sample1", &mut buf)?;
+        let out_str = String::from_utf8(buf)?;
+        let lines: Vec<&str> = out_str.lines().collect();
+        let seq: String = lines[1..].concat();
+        let expected =
+            String::from_utf8(sample_seq.iter().map(|&c| c.to_ascii_uppercase()).collect())
+                .unwrap();
+        assert_eq!(seq, expected);
+
+        // The sample spans 2 reference segments; both must round-trip.
+        let header =
+            crate::libs::pbit::format::PbitHeader::read_from(&mut std::fs::File::open(&out_path)?)?;
+        assert_eq!(header.ref_group_count, 2);
         Ok(())
     }
 

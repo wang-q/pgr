@@ -112,7 +112,17 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         };
 
         let strand = if rg.strand() == "-" { "-" } else { "+" };
-        dec.get_contig(contig, start, end, strand, &mut writer)?;
+        let written = dec.get_contig(contig, start, end, strand, &mut writer)?;
+        // A sliced range that is entirely beyond the contig's length clamps to
+        // an empty interval and writes nothing; warn instead of returning
+        // silently-empty output.
+        if !is_full_contig && written == 0 {
+            log::warn!(
+                "range {} is beyond contig '{}' length; nothing extracted",
+                el,
+                contig
+            );
+        }
     }
 
     writer.flush()?;

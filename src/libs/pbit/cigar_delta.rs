@@ -15,6 +15,8 @@ use anyhow::{bail, Result};
 
 use crate::libs::paf::cigar::CigarOp;
 
+use super::format::MAX_DELTA_UNCOMPRESSED;
+
 /// Pack CIGAR ops + X/I bases into a flate2-compressed byte buffer.
 pub fn pack_cigar(ops: &[CigarOp], xi_bases: &[u8]) -> Result<Vec<u8>> {
     use std::io::Write;
@@ -32,11 +34,24 @@ pub fn pack_cigar(ops: &[CigarOp], xi_bases: &[u8]) -> Result<Vec<u8>> {
 }
 
 /// Unpack a flate2-compressed buffer into (CIGAR ops, X/I bases).
+///
+/// The decompressed size is bounded by [`MAX_DELTA_UNCOMPRESSED`] to reject
+/// gzip bombs: an attacker can embed a tiny compressed payload that expands to
+/// gigabytes, which would otherwise drive a multi-GB allocation in the caller.
 pub fn unpack_cigar(packed: &[u8]) -> Result<(Vec<CigarOp>, Vec<u8>)> {
     use std::io::Read;
     let mut decoder = flate2::read::GzDecoder::new(packed);
     let mut raw = Vec::new();
-    decoder.read_to_end(&mut raw)?;
+    decoder
+        .by_ref()
+        .take(MAX_DELTA_UNCOMPRESSED as u64 + 1)
+        .read_to_end(&mut raw)?;
+    if raw.len() > MAX_DELTA_UNCOMPRESSED {
+        bail!(
+            "CIGAR delta decompressed size exceeds maximum {} bytes",
+            MAX_DELTA_UNCOMPRESSED
+        );
+    }
     let mut cursor = std::io::Cursor::new(raw);
     let mut buf4 = [0u8; 4];
     cursor.read_exact(&mut buf4)?;
@@ -131,6 +146,29 @@ mod tests {
             .iter()
             .map(|(len, op)| CigarOp::try_new(*len, *op).unwrap())
             .collect()
+    }
+
+    #[test]
+    fn test_unpack_cigar_rejects_gzip_bomb() {
+        // A tiny compressed payload that expands to just over the bound must be
+        // rejected (gzip bomb), not allocate unbounded memory. Compressing a
+        // run of zeros yields a small stream even though it decompresses to
+        // > MAX_DELTA_UNCOMPRESSED bytes.
+        use std::io::Write;
+        let bomb_len = MAX_DELTA_UNCOMPRESSED + 1024;
+        let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        encoder.write_all(&vec![0u8; bomb_len]).unwrap();
+        let packed = encoder.finish().unwrap();
+        assert!(
+            packed.len() < 1024 * 1024,
+            "bomb should compress much smaller than the decompressed bound"
+        );
+        let err = unpack_cigar(&packed).unwrap_err();
+        assert!(
+            err.to_string().contains("exceeds maximum"),
+            "unexpected error: {}",
+            err
+        );
     }
 
     #[test]

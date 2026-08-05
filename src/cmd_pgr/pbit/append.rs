@@ -85,10 +85,44 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     if let Some(out) = outfile_opt {
         cmd_line.push_str(&format!(" -o {}", out));
     }
+    // Record the sample inputs for provenance (consistent with `create`).
+    for (name, path, paf_opt, ref_spec) in &samples {
+        cmd_line.push_str(&format!(" -i {}:{}", name, path));
+        if let Some(paf) = paf_opt {
+            cmd_line.push_str(&format!(" -p {}", paf));
+        }
+        if let Some(ref_spec) = ref_spec {
+            cmd_line.push_str(&format!(" @ref {}", ref_spec));
+        }
+    }
     comp.set_cmd_line(&cmd_line);
 
+    // Reject appending a sample whose name already exists in the archive;
+    // append_sample would silently merge its segments into the existing sample.
+    for (name, _, _, _) in &samples {
+        if comp.has_sample(name.as_str()) {
+            anyhow::bail!(
+                "sample '{}' already exists in the archive; append would corrupt it \
+                 (use a distinct --name)",
+                name
+            );
+        }
+    }
+
+    let num_refs = comp.ref_names().len();
     for (name, path, paf_opt, ref_spec) in &samples {
         let ref_id = match ref_spec {
+            None => {
+                if num_refs > 1 {
+                    log::warn!(
+                        "no reference specified for sample '{}'; defaulting to reference 0 of \
+                         {} (route samples with the 4th TSV column or --name)",
+                        name,
+                        num_refs
+                    );
+                }
+                0
+            }
             Some(spec) => {
                 let names = comp.ref_names();
                 if let Ok(n) = spec.parse::<usize>() {
@@ -105,7 +139,6 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                     })? as u32
                 }
             }
-            None => 0,
         };
         comp.set_cur_ref_id(ref_id);
         match paf_opt {

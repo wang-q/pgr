@@ -460,6 +460,46 @@ fn test_pbit_range_multi_ranges() {
 }
 
 #[test]
+fn test_pbit_range_out_of_bounds_warns() {
+    // A sliced range entirely beyond the contig's length must warn instead of
+    // silently producing empty output.
+    let temp = TempDir::new().unwrap();
+    let out_pbit = temp.path().join("out.pbit");
+
+    PgrCmd::new()
+        .args(&[
+            "pbit",
+            "create",
+            "-r",
+            fixture("ref_5000.fa").to_str().unwrap(),
+            "-i",
+            fixture("sample_5000_identical.fa").to_str().unwrap(),
+            "-o",
+            out_pbit.to_str().unwrap(),
+        ])
+        .run();
+
+    let (stdout, stderr) = PgrCmd::new()
+        .args(&[
+            "pbit",
+            "range",
+            out_pbit.to_str().unwrap(),
+            "chr1:100000-200000",
+        ])
+        .run();
+
+    // No FASTA output, but a clear warning on stderr.
+    assert!(
+        !stdout.contains('>'),
+        "expected empty stdout, got: {stdout}"
+    );
+    assert!(
+        stderr.contains("nothing extracted"),
+        "expected out-of-bounds warning, got: {stderr}"
+    );
+}
+
+#[test]
 fn test_pbit_some_basic() {
     let temp = TempDir::new().unwrap();
     let out_pbit = temp.path().join("out.pbit");
@@ -1588,4 +1628,300 @@ fn test_pbit_to_fa_output_not_overwrite_input() {
         .args(&["pbit", "stat", out_pbit.to_str().unwrap()])
         .run();
     assert!(stdout.contains("Samples: 1"));
+}
+
+#[test]
+fn test_pbit_create_duplicate_sample_name_rejected() {
+    // Two distinct files whose basenames collapse to the same sample name
+    // (e.g. `dup.1.fa`/`dup.2.fa` both -> `dup`) must be rejected, not
+    // silently merged into one sample (which would corrupt it on extract).
+    let temp = TempDir::new().unwrap();
+    let d1 = temp.path().join("d1");
+    let d2 = temp.path().join("d2");
+    fs::create_dir_all(&d1).unwrap();
+    fs::create_dir_all(&d2).unwrap();
+    let f1 = d1.join("dup.fa");
+    let f2 = d2.join("dup.fa");
+    fs::copy(fixture("sample_1000_identical.fa"), &f1).unwrap();
+    fs::copy(fixture("sample_1000_identical.fa"), &f2).unwrap();
+    let out_pbit = temp.path().join("out.pbit");
+
+    let (stdout, stderr) = PgrCmd::new()
+        .args(&[
+            "pbit",
+            "create",
+            "-r",
+            fixture("ref_1000.fa").to_str().unwrap(),
+            "-i",
+            f1.to_str().unwrap(),
+            "-i",
+            f2.to_str().unwrap(),
+            "-o",
+            out_pbit.to_str().unwrap(),
+        ])
+        .run_fail();
+    let combined = format!("{}{}", stdout, stderr);
+    assert!(
+        combined.contains("duplicate sample name 'dup'"),
+        "expected duplicate-name rejection, got: {}",
+        combined
+    );
+    // The duplicate check runs before the output file is created.
+    assert!(!out_pbit.exists());
+}
+
+#[test]
+fn test_pbit_append_existing_sample_name_rejected() {
+    // Appending a sample whose name already exists in the archive must be
+    // rejected (previously append_sample would silently merge its segments
+    // into the existing sample, corrupting it on extract).
+    let temp = TempDir::new().unwrap();
+    let out_pbit = temp.path().join("out.pbit");
+    let name_tsv = temp.path().join("names.tsv");
+    fs::write(
+        &name_tsv,
+        format!("s1\t{}\n", fixture("sample_1000_identical.fa").display()),
+    )
+    .unwrap();
+
+    PgrCmd::new()
+        .args(&[
+            "pbit",
+            "create",
+            "-r",
+            fixture("ref_1000.fa").to_str().unwrap(),
+            "--name",
+            name_tsv.to_str().unwrap(),
+            "-o",
+            out_pbit.to_str().unwrap(),
+        ])
+        .run();
+
+    // Append a file whose basename is "s1" (already present in the archive).
+    let s1_fa = temp.path().join("s1.fa");
+    fs::copy(fixture("sample_1000_identical.fa"), &s1_fa).unwrap();
+
+    let (stdout, stderr) = PgrCmd::new()
+        .args(&[
+            "pbit",
+            "append",
+            out_pbit.to_str().unwrap(),
+            "-i",
+            s1_fa.to_str().unwrap(),
+        ])
+        .run_fail();
+    let combined = format!("{}{}", stdout, stderr);
+    assert!(
+        combined.contains("already exists"),
+        "expected existing-sample rejection, got: {}",
+        combined
+    );
+
+    // The archive is unchanged (still exactly one sample).
+    let (stdout, _) = PgrCmd::new()
+        .args(&["pbit", "stat", out_pbit.to_str().unwrap(), "--samples"])
+        .run();
+    assert_eq!(stdout.lines().count(), 1);
+}
+
+#[test]
+fn test_pbit_create_cmd_line_includes_samples() {
+    // Regression test: the archive's `cmd_line` provenance must record the
+    // sample inputs (name, FASTA path, PAF path, reference spec) so the
+    // archive creation is fully traceable.
+    let temp = TempDir::new().unwrap();
+    let out_pbit = temp.path().join("out.pbit");
+    let name_tsv = temp.path().join("names.tsv");
+    let sample1 = fixture("sample_2000_identical.fa");
+    let sample2 = fixture("sample_2000_snps100.fa");
+    let paf = fixture("sample_2000_identical.paf");
+    fs::write(
+        &name_tsv,
+        format!(
+            "s1\t{}\t{}\tref_2000\ns2\t{}\t\tref_2000\n",
+            sample1.display(),
+            paf.display(),
+            sample2.display()
+        ),
+    )
+    .unwrap();
+
+    PgrCmd::new()
+        .args(&[
+            "pbit",
+            "create",
+            "-r",
+            fixture("ref_2000.fa").to_str().unwrap(),
+            "-r",
+            fixture("ref_1000.fa").to_str().unwrap(),
+            "--name",
+            name_tsv.to_str().unwrap(),
+            "-o",
+            out_pbit.to_str().unwrap(),
+        ])
+        .run();
+
+    let dec = pgr::libs::pbit::decompressor::Decompressor::open(&out_pbit).unwrap();
+    let cmd_line = dec.collection().cmd_line.clone();
+    assert!(
+        cmd_line.contains("-i s1:"),
+        "cmd_line missing s1: {cmd_line}"
+    );
+    assert!(
+        cmd_line.contains(&format!("-p {}", paf.display())),
+        "cmd_line missing PAF: {cmd_line}"
+    );
+    assert!(
+        cmd_line.contains("@ref ref_2000"),
+        "cmd_line missing ref_spec for s1: {cmd_line}"
+    );
+    assert!(
+        cmd_line.contains("-i s2:"),
+        "cmd_line missing s2: {cmd_line}"
+    );
+}
+
+#[test]
+fn test_pbit_append_cmd_line_includes_samples() {
+    // Regression test: `append` must record the appended sample inputs in the
+    // archive's cmd_line provenance (consistent with `create`).
+    let temp = TempDir::new().unwrap();
+    let out_pbit = temp.path().join("out.pbit");
+    let name_tsv = temp.path().join("names.tsv");
+    let s2_fa = temp.path().join("s2.fa");
+    let sample = fixture("sample_2000_identical.fa");
+
+    fs::write(&name_tsv, format!("s1\t{}\n", sample.display())).unwrap();
+    fs::copy(&sample, &s2_fa).unwrap();
+
+    PgrCmd::new()
+        .args(&[
+            "pbit",
+            "create",
+            "-r",
+            fixture("ref_2000.fa").to_str().unwrap(),
+            "--name",
+            name_tsv.to_str().unwrap(),
+            "-o",
+            out_pbit.to_str().unwrap(),
+        ])
+        .run();
+
+    PgrCmd::new()
+        .args(&[
+            "pbit",
+            "append",
+            out_pbit.to_str().unwrap(),
+            "-i",
+            s2_fa.to_str().unwrap(),
+        ])
+        .run();
+
+    let dec = pgr::libs::pbit::decompressor::Decompressor::open(&out_pbit).unwrap();
+    let cmd_line = dec.collection().cmd_line.clone();
+    assert!(
+        cmd_line.contains(&format!("-i s2:{}", s2_fa.display())),
+        "append cmd_line must record sample input, got: {cmd_line}"
+    );
+}
+
+#[test]
+fn test_pbit_append_ref_cmd_line_includes_refs() {
+    // Regression test: `append-ref` must record the appended reference inputs
+    // in the archive's cmd_line provenance.
+    let temp = TempDir::new().unwrap();
+    let out_pbit = temp.path().join("out.pbit");
+    let out2 = temp.path().join("out2.pbit");
+
+    PgrCmd::new()
+        .args(&[
+            "pbit",
+            "create",
+            "-r",
+            fixture("ref_2000.fa").to_str().unwrap(),
+            "-i",
+            fixture("sample_2000_identical.fa").to_str().unwrap(),
+            "-o",
+            out_pbit.to_str().unwrap(),
+        ])
+        .run();
+
+    let ref_1000 = fixture("ref_1000.fa");
+    PgrCmd::new()
+        .args(&[
+            "pbit",
+            "append-ref",
+            out_pbit.to_str().unwrap(),
+            "-r",
+            ref_1000.to_str().unwrap(),
+            "-o",
+            out2.to_str().unwrap(),
+        ])
+        .run();
+
+    let dec = pgr::libs::pbit::decompressor::Decompressor::open(&out2).unwrap();
+    let cmd_line = dec.collection().cmd_line.clone();
+    assert!(
+        cmd_line.contains(&format!("-r {}", ref_1000.display())),
+        "append-ref cmd_line must record reference input, got: {cmd_line}"
+    );
+}
+
+#[test]
+fn test_pbit_create_invalid_params_rejected() {
+    // Regression test: kmer-len and min-match-len must not exceed segment-size
+    // (a match cannot span more than one segment). An unbounded min-match-len
+    // would otherwise trigger a multi-GB allocation per segment in LzDiff.
+    let temp = TempDir::new().unwrap();
+    let out_pbit = temp.path().join("out.pbit");
+
+    // kmer-len > segment-size.
+    let (stdout, stderr) = PgrCmd::new()
+        .args(&[
+            "pbit",
+            "create",
+            "-r",
+            fixture("ref_2000.fa").to_str().unwrap(),
+            "-i",
+            fixture("sample_2000_identical.fa").to_str().unwrap(),
+            "-o",
+            out_pbit.to_str().unwrap(),
+            "-s",
+            "100",
+            "-k",
+            "200",
+        ])
+        .run_fail();
+    let combined = format!("{}{}", stdout, stderr);
+    assert!(
+        combined.contains("must not exceed segment-size"),
+        "expected kmer-len rejection, got: {}",
+        combined
+    );
+    assert!(!out_pbit.exists());
+
+    // min-match-len > segment-size.
+    let (stdout, stderr) = PgrCmd::new()
+        .args(&[
+            "pbit",
+            "create",
+            "-r",
+            fixture("ref_2000.fa").to_str().unwrap(),
+            "-i",
+            fixture("sample_2000_identical.fa").to_str().unwrap(),
+            "-o",
+            out_pbit.to_str().unwrap(),
+            "-s",
+            "100",
+            "-l",
+            "200",
+        ])
+        .run_fail();
+    let combined = format!("{}{}", stdout, stderr);
+    assert!(
+        combined.contains("must not exceed segment-size"),
+        "expected min-match-len rejection, got: {}",
+        combined
+    );
+    assert!(!out_pbit.exists());
 }

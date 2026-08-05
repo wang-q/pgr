@@ -86,6 +86,23 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     );
     anyhow::ensure!(kmer_len > 0, "kmer-len must be positive");
     anyhow::ensure!(min_match_len > 0, "min-match-len must be positive");
+    // A match/k-mer cannot span more than one reference segment, so lengths
+    // greater than segment-size are meaningless. More importantly, min_match_len
+    // drives `LzDiff::prepare`'s `reference.resize(len + key_len)` padding: an
+    // unbounded value (e.g. `-l 4294967295`) would trigger a multi-GB allocation
+    // per segment. Bound both to keep the CLI sane.
+    anyhow::ensure!(
+        kmer_len <= segment_size,
+        "kmer-len ({}) must not exceed segment-size ({})",
+        kmer_len,
+        segment_size
+    );
+    anyhow::ensure!(
+        min_match_len as usize <= segment_size,
+        "min-match-len ({}) must not exceed segment-size ({})",
+        min_match_len,
+        segment_size
+    );
 
     // Guard against -o truncating an input file before it is read (e.g. a
     // reference or sample FASTA, PAF, or the --name TSV). create_multi opens
@@ -107,7 +124,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         Compressor::create_multi(outfile, &ref_fastas, segment_size, kmer_len, min_match_len)
             .with_context(|| format!("failed to create pbit archive: {}", outfile))?;
 
-    let cmd_line = format!(
+    let mut cmd_line = format!(
         "pgr pbit create -r {} -o {} -s {} -k {} -l {}",
         ref_fastas.join(" -r "),
         outfile,
@@ -115,6 +132,17 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         kmer_len,
         min_match_len
     );
+    // Record the sample inputs for provenance (the gathered sample names and
+    // paths are not re-parsed — they document which FASTA/PAF fed the archive).
+    for (name, path, paf_opt, ref_spec) in &samples {
+        cmd_line.push_str(&format!(" -i {}:{}", name, path));
+        if let Some(paf) = paf_opt {
+            cmd_line.push_str(&format!(" -p {}", paf));
+        }
+        if let Some(ref_spec) = ref_spec {
+            cmd_line.push_str(&format!(" @ref {}", ref_spec));
+        }
+    }
     comp.set_cmd_line(&cmd_line);
 
     for (name, path, paf_opt, ref_spec) in &samples {

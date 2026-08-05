@@ -14,6 +14,15 @@ const MAX_SAMPLE_COUNT: usize = 1_000_000;
 const MAX_CONTIG_COUNT: usize = 1_000_000;
 /// Maximum segment count per contig (100 million).
 const MAX_SEGMENT_COUNT: usize = 100_000_000;
+/// Maximum uncompressed size of the sample-index (collection) payload. The
+/// counts above bound each structure individually, but the whole serialized
+/// payload is decompressed with one `read_to_end` before any count is parsed;
+/// an attacker can embed a tiny compressed stream that expands to gigabytes
+/// (gzip bomb). This bound rejects such archives while leaving ample headroom
+/// for any realistic archive (a whole human genome per sample is ~12 MB of
+/// segment descriptors at 4096 bp, so 256 MB covers ~20 samples). Raised
+/// trivially here if larger archives are ever needed.
+const MAX_COLLECTION_UNCOMPRESSED: usize = 256 * 1024 * 1024;
 
 /// One segment of a sample's contig: a pointer into the reference group /
 /// delta tables. `is_rev_comp` / `raw_length` / `encoding` live in
@@ -171,7 +180,16 @@ impl Collection {
         use std::io::Read;
         let mut decoder = flate2::read::GzDecoder::new(data);
         let mut raw = Vec::new();
-        decoder.read_to_end(&mut raw)?;
+        decoder
+            .by_ref()
+            .take(MAX_COLLECTION_UNCOMPRESSED as u64 + 1)
+            .read_to_end(&mut raw)?;
+        if raw.len() > MAX_COLLECTION_UNCOMPRESSED {
+            return Err(anyhow!(
+                "sample index decompressed size exceeds maximum {} bytes",
+                MAX_COLLECTION_UNCOMPRESSED
+            ));
+        }
         let mut cursor = std::io::Cursor::new(raw);
 
         let sample_count = read_u32_le(&mut cursor)? as usize;
@@ -248,6 +266,30 @@ mod tests {
         assert_eq!(back.sample_count(), 0);
         assert!(back.cmd_line.is_empty());
         Ok(())
+    }
+
+    #[test]
+    fn test_deserialize_rejects_gzip_bomb() {
+        // A tiny compressed stream that expands to just over the bound must be
+        // rejected (gzip bomb), not allocate unbounded memory.
+        use std::io::Write;
+        let bomb_len = MAX_COLLECTION_UNCOMPRESSED + 1024;
+        let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        encoder.write_all(&vec![0u8; bomb_len]).unwrap();
+        let packed = encoder.finish().unwrap();
+        assert!(
+            packed.len() < 1024 * 1024,
+            "bomb should compress much smaller than the decompressed bound"
+        );
+        let err = match Collection::deserialize(&packed) {
+            Err(e) => e,
+            Ok(_) => panic!("expected gzip bomb to be rejected"),
+        };
+        assert!(
+            err.to_string().contains("exceeds maximum"),
+            "unexpected error: {}",
+            err
+        );
     }
 
     #[test]

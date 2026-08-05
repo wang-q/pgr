@@ -68,9 +68,16 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     for sample in &samples {
         // Guard against path traversal: sample names come from the archive
         // (untrusted .pbit input) and must not escape the output directory.
-        if sample.contains('/') || sample.contains('\\') || sample == "." || sample == ".." {
+        // An empty name would otherwise produce a stray `{outdir}/.fa` file.
+        if sample.is_empty()
+            || sample.contains('/')
+            || sample.contains('\\')
+            || sample == "."
+            || sample == ".."
+        {
             anyhow::bail!(
-                "invalid sample name '{}': must not contain path separators or be '.'/'..'",
+                "invalid sample name '{}': must be non-empty and not contain path \
+                 separators or be '.'/'..'",
                 sample
             );
         }

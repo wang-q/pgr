@@ -105,13 +105,29 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     }
 
     if show_refs {
-        // Count segments per reference contig.
-        let mut ref_counts: indexmap::IndexMap<&str, usize> = indexmap::IndexMap::new();
+        // Count segments per reference contig. The same contig name can
+        // appear in several references (e.g. both have `chr1`); when more
+        // than one reference exists, prefix each row with the reference name
+        // so the row stays unambiguous. Single-reference output is unchanged.
+        let ref_names: Vec<&str> = dec
+            .ref_table()
+            .iter()
+            .map(|r| r.ref_name.as_str())
+            .collect();
+        let multi_ref = ref_names.len() > 1;
+        let mut ref_counts: indexmap::IndexMap<(u32, &str), usize> = indexmap::IndexMap::new();
         for entry in dec.ref_groups() {
-            *ref_counts.entry(entry.contig_name.as_str()).or_default() += 1;
+            *ref_counts
+                .entry((entry.ref_id, entry.contig_name.as_str()))
+                .or_default() += 1;
         }
-        for (name, count) in ref_counts {
-            writeln!(writer, "{}\t{}", name, count)?;
+        for ((ref_id, name), count) in ref_counts {
+            if multi_ref {
+                let rn = ref_names.get(ref_id as usize).copied().unwrap_or("?");
+                writeln!(writer, "{}\t{}\t{}", rn, name, count)?;
+            } else {
+                writeln!(writer, "{}\t{}", name, count)?;
+            }
         }
     }
 

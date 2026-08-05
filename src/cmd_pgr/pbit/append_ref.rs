@@ -61,6 +61,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     if let Some(out) = outfile_opt {
         cmd_line.push_str(&format!(" -o {}", out));
     }
+    // Record the reference inputs for provenance.
+    for ref_fasta in &ref_fastas {
+        cmd_line.push_str(&format!(" -r {}", ref_fasta));
+    }
     comp.set_cmd_line(&cmd_line);
 
     for ref_fasta in &ref_fastas {

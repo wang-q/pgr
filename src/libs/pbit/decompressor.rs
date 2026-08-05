@@ -22,7 +22,8 @@ use super::cigar_delta::{apply_cigar, unpack_cigar};
 use super::collection::{Collection, SegmentDesc};
 use super::format::{
     read_ref_index, read_ref_table, read_u32_le, DeltaEncoding, DeltaMeta, PbitFooter, PbitHeader,
-    RefGroupEntry, RefTableEntry,
+    RefGroupEntry, RefTableEntry, MAX_DELTAS_PER_GROUP, MAX_DELTA_UNCOMPRESSED, MAX_PACKED_SIZE,
+    MAX_REF_GROUPS,
 };
 use super::segment::Segment;
 
@@ -89,6 +90,41 @@ impl<R: Read + Seek> Decompressor<R> {
         // Read header.
         let header = PbitHeader::read_from(&mut reader)?;
 
+        // Guard against a malicious/corrupt archive: `min_match_len` drives
+        // `LzDiff::prepare`'s `reference.resize(len + key_len)` padding, so a
+        // value far larger than segment_size would trigger a multi-GB allocation
+        // per reference segment during extraction. A match cannot span more than
+        // one segment, so min_match_len > segment_size is always invalid.
+        if header.min_match_len > header.segment_size {
+            return Err(anyhow!(
+                "archive min_match_len {} exceeds segment_size {}; corrupt or malicious",
+                header.min_match_len,
+                header.segment_size
+            ));
+        }
+        // `min_match_len` drives `LzDiff::prepare`'s `reference.resize(len + key_len)`
+        // padding (key_len ≈ min_match_len), so a huge value would force a
+        // multi-GB allocation per decoded segment even when `segment_size` is
+        // also huge enough to pass the segment_size check above. A match cannot
+        // span more than one segment, so cap it at the per-segment payload bound.
+        if header.min_match_len as usize > MAX_PACKED_SIZE {
+            return Err(anyhow!(
+                "archive min_match_len {} exceeds maximum {}; corrupt or malicious",
+                header.min_match_len,
+                MAX_PACKED_SIZE
+            ));
+        }
+        // Bound ref_group_count: it drives `Vec::with_capacity` for the delta
+        // scan below, so a malicious value would force a multi-GB allocation
+        // before any data is validated.
+        if header.ref_group_count as usize > MAX_REF_GROUPS {
+            return Err(anyhow!(
+                "archive ref_group_count {} exceeds maximum {}; corrupt or malicious",
+                header.ref_group_count,
+                MAX_REF_GROUPS
+            ));
+        }
+
         // Read footer.
         let footer = PbitFooter::read_at_end(&mut reader)?;
 
@@ -131,11 +167,28 @@ impl<R: Read + Seek> Decompressor<R> {
         let mut delta_offsets: Vec<Vec<u64>> = Vec::with_capacity(ref_group_count);
         for _ in 0..ref_group_count {
             let delta_count = read_u32_le(&mut reader)? as usize;
+            if delta_count > MAX_DELTAS_PER_GROUP {
+                return Err(anyhow!(
+                    "delta_count {} exceeds maximum {}; corrupt or malicious",
+                    delta_count,
+                    MAX_DELTAS_PER_GROUP
+                ));
+            }
             let mut metas = Vec::with_capacity(delta_count);
             let mut offsets = Vec::with_capacity(delta_count);
             for _ in 0..delta_count {
                 let offset = reader.stream_position()?;
                 let meta = DeltaMeta::read_header(&mut reader)?;
+                // An inflated packed_size would trigger a multi-GB allocation
+                // in `decode_delta`; reject it while scanning (before any data
+                // is read into memory).
+                if meta.packed_size as usize > MAX_PACKED_SIZE {
+                    return Err(anyhow!(
+                        "delta packed_size {} exceeds maximum {}; corrupt or malicious",
+                        meta.packed_size,
+                        MAX_PACKED_SIZE
+                    ));
+                }
                 metas.push(meta);
                 offsets.push(offset);
                 // Skip the packed data.
@@ -324,10 +377,21 @@ impl<R: Read + Seek> Decompressor<R> {
         // Decode by encoding type.
         let decoded = match meta.encoding {
             DeltaEncoding::LzDiff => {
-                // LZ-diff: packed_data is flate2-compressed raw delta.
+                // LZ-diff: packed_data is flate2-compressed raw delta. Bound the
+                // decompressed size to reject gzip bombs (an attacker could
+                // otherwise expand a tiny payload into a multi-GB allocation).
                 let mut decoder = flate2::read::GzDecoder::new(&packed[..]);
                 let mut delta = Vec::new();
-                decoder.read_to_end(&mut delta)?;
+                decoder
+                    .by_ref()
+                    .take(MAX_DELTA_UNCOMPRESSED as u64 + 1)
+                    .read_to_end(&mut delta)?;
+                if delta.len() > MAX_DELTA_UNCOMPRESSED {
+                    anyhow::bail!(
+                        "LZ-diff delta decompressed size exceeds maximum {} bytes",
+                        MAX_DELTA_UNCOMPRESSED
+                    );
+                }
                 let mut lz = Segment::new(self.min_match_len);
                 lz.prepare(&ref_dna);
                 lz.get(&delta)?
@@ -369,6 +433,11 @@ impl<R: Read + Seek> Decompressor<R> {
     /// to `[start, end)`. Writes one FASTA entry per sample that has this
     /// contig. If `strand` is `"-"`, each sequence is reverse-complemented
     /// before writing.
+    ///
+    /// Returns the number of FASTA entries written (0 means the contig exists
+    /// but the requested `[start, end)` slice is empty after clamping — e.g.
+    /// a range entirely beyond the sequence length). Callers can use this to
+    /// warn about silently-empty output.
     pub fn get_contig(
         &mut self,
         contig: &str,
@@ -376,8 +445,9 @@ impl<R: Read + Seek> Decompressor<R> {
         end: Option<usize>,
         strand: &str,
         out: &mut impl Write,
-    ) -> Result<()> {
+    ) -> Result<usize> {
         let line_width = FASTA_LINE_WIDTH;
+        let mut written = 0usize;
 
         // Collect (sample_name, segments) pairs first to release the immutable
         // borrow on self.collection before calling self.decode_delta(). We
@@ -476,8 +546,9 @@ impl<R: Read + Seek> Decompressor<R> {
             };
             writeln!(out, "{}", header)?;
             write_fasta_seq(out, &seq_bytes, line_width)?;
+            written += 1;
         }
-        Ok(())
+        Ok(written)
     }
 
     /// Extract all contigs of a single sample, writing FASTA entries.
@@ -621,6 +692,120 @@ mod tests {
             writeln!(f, ">{}", name).unwrap();
             writeln!(f, "{}", std::str::from_utf8(seq).unwrap()).unwrap();
         }
+    }
+
+    #[test]
+    fn test_decompressor_rejects_huge_ref_group_count() -> Result<()> {
+        // A malicious archive with a tiny body but an absurd ref_group_count
+        // must be rejected up front (valid magic/version), not crash on a
+        // multi-GB allocation.
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("bad.pbit");
+        let header = PbitHeader::new(4096, 15, 18, MAX_REF_GROUPS as u32 + 1, 0);
+        let footer = PbitFooter {
+            ref_index_offset: 36,
+            delta_data_offset: 36,
+            sample_index_offset: 36,
+        };
+        let mut buf = Vec::new();
+        header.write_to(&mut buf)?;
+        footer.write_to(&mut buf)?;
+        std::fs::write(&path, &buf)?;
+
+        let res = Decompressor::open(&path);
+        assert!(res.is_err(), "expected rejection for huge ref_group_count");
+        let err = res.err().unwrap().to_string();
+        assert!(err.contains("ref_group_count"), "unexpected error: {}", err);
+        Ok(())
+    }
+
+    #[test]
+    fn test_decompressor_rejects_huge_min_match_len() -> Result<()> {
+        // A malicious archive with a huge min_match_len (and an equally huge
+        // segment_size so the `min_match_len <= segment_size` check passes)
+        // must be rejected up front: min_match_len drives
+        // `LzDiff::prepare`'s `reference.resize(len + key_len)` padding, so an
+        // unbounded value would trigger a multi-GB allocation per decode.
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("bad.pbit");
+        let header = PbitHeader::new(
+            MAX_PACKED_SIZE as u32 + 1,
+            MAX_PACKED_SIZE as u32 + 1,
+            MAX_PACKED_SIZE as u32 + 1,
+            1,
+            0,
+        );
+        let footer = PbitFooter {
+            ref_index_offset: 36,
+            delta_data_offset: 36,
+            sample_index_offset: 36,
+        };
+        let mut buf = Vec::new();
+        header.write_to(&mut buf)?;
+        footer.write_to(&mut buf)?;
+        std::fs::write(&path, &buf)?;
+
+        let res = Decompressor::open(&path);
+        assert!(res.is_err(), "expected rejection for huge min_match_len");
+        let err = res.err().unwrap().to_string();
+        assert!(err.contains("min_match_len"), "unexpected error: {}", err);
+        Ok(())
+    }
+
+    #[test]
+    fn test_decompressor_rejects_huge_packed_size() -> Result<()> {
+        // A malicious archive with an inflated delta packed_size must be
+        // rejected up front (valid magic/version), not allocate a multi-GB
+        // buffer in decode_delta.
+        use crate::libs::fmt::twobit::write_2bit_record;
+        use crate::libs::pbit::format::{write_ref_index, DeltaEncoding, DeltaMeta, RefGroupEntry};
+
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("bad.pbit");
+        let header = PbitHeader::new(4096, 15, 18, 1, 1);
+        let mut buf = Vec::new();
+        header.write_to(&mut buf)?; // 36 bytes
+
+        // One reference record for "chr1" at offset 36.
+        let ref_offset = buf.len() as u64;
+        write_2bit_record(&mut buf, "ACGT", false)?;
+
+        // Reference index.
+        let ref_index_offset = buf.len() as u64;
+        write_ref_index(
+            &mut buf,
+            &[RefGroupEntry {
+                contig_name: "chr1".to_string(),
+                ref_id: 0,
+                segment_offset: ref_offset,
+            }],
+        )?;
+
+        // Delta data: 1 group, 1 delta with an inflated packed_size.
+        let delta_data_offset = buf.len() as u64;
+        buf.extend_from_slice(&1u32.to_le_bytes()); // ref_group_count
+        buf.extend_from_slice(&1u32.to_le_bytes()); // delta_count
+        DeltaMeta {
+            is_rev_comp: false,
+            raw_length: 4,
+            packed_size: MAX_PACKED_SIZE as u32 + 1,
+            encoding: DeltaEncoding::LzDiff,
+        }
+        .write_header(&mut buf)?;
+
+        let footer = PbitFooter {
+            ref_index_offset,
+            delta_data_offset,
+            sample_index_offset: buf.len() as u64,
+        };
+        footer.write_to(&mut buf)?;
+        std::fs::write(&path, &buf)?;
+
+        let res = Decompressor::open(&path);
+        assert!(res.is_err(), "expected rejection for huge packed_size");
+        let err = res.err().unwrap().to_string();
+        assert!(err.contains("packed_size"), "unexpected error: {}", err);
+        Ok(())
     }
 
     #[test]

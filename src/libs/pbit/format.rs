@@ -210,6 +210,13 @@ pub fn write_ref_index<W: Write>(writer: &mut W, entries: &[RefGroupEntry]) -> R
 /// Read a reference index section and return the entries.
 pub fn read_ref_index<R: Read>(reader: &mut R) -> Result<Vec<RefGroupEntry>> {
     let count = read_u32_le(reader)? as usize;
+    if count > MAX_REF_GROUPS {
+        return Err(anyhow!(
+            "reference index count {} exceeds maximum {}; corrupt or malicious",
+            count,
+            MAX_REF_GROUPS
+        ));
+    }
     let mut entries = Vec::with_capacity(count);
     for _ in 0..count {
         entries.push(RefGroupEntry::read_from(reader)?);
@@ -240,6 +247,13 @@ pub fn write_ref_table<W: Write>(writer: &mut W, refs: &[RefTableEntry]) -> Resu
 /// Read a reference table (after the per-group entries).
 pub fn read_ref_table<R: Read>(reader: &mut R) -> Result<Vec<RefTableEntry>> {
     let count = read_u32_le(reader)? as usize;
+    if count > MAX_REF_GROUPS {
+        return Err(anyhow!(
+            "reference table count {} exceeds maximum {}; corrupt or malicious",
+            count,
+            MAX_REF_GROUPS
+        ));
+    }
     let mut refs = Vec::with_capacity(count);
     for _ in 0..count {
         let ref_name = read_string(reader)?;
@@ -323,6 +337,13 @@ impl DeltaEntry {
     /// current reader position.
     pub fn read_from<R: Read>(reader: &mut R) -> Result<Self> {
         let meta = DeltaMeta::read_header(reader)?;
+        if meta.packed_size as usize > MAX_PACKED_SIZE {
+            return Err(anyhow!(
+                "delta packed_size {} exceeds maximum {}; corrupt or malicious",
+                meta.packed_size,
+                MAX_PACKED_SIZE
+            ));
+        }
         let mut packed_data = vec![0u8; meta.packed_size as usize];
         reader.read_exact(&mut packed_data)?;
         Ok(Self {
@@ -370,6 +391,31 @@ pub fn write_string<W: Write>(writer: &mut W, s: &str) -> Result<()> {
 
 /// Maximum string length (16 MB) — guards against malicious length prefixes.
 const MAX_STRING_LEN: usize = 16 * 1024 * 1024;
+
+/// Maximum reference groups (segments) read from an index or header. A
+/// malicious count drives `Vec::with_capacity` before validation, so it must
+/// be bounded to avoid a multi-GB upfront allocation. 1M segments covers
+/// any realistic reference (whole human genome ≈ 750k segments at 4096 bp).
+pub(crate) const MAX_REF_GROUPS: usize = 1_000_000;
+
+/// Maximum per-group delta count. Bounds the per-group `Vec::with_capacity`
+/// in the decompressor's delta scan.
+pub(crate) const MAX_DELTAS_PER_GROUP: usize = 1_000_000;
+
+/// Maximum packed (compressed) size of a single delta. A delta encodes at
+/// most one reference segment, whose compressed form is far below this bound
+/// for any realistic segment size (default 4096 bp). An inflated value read
+/// from a malicious archive would otherwise trigger a multi-GB allocation in
+/// `Decompressor::decode_delta` / `DeltaEntry::read_from`.
+pub(crate) const MAX_PACKED_SIZE: usize = 256 * 1024 * 1024;
+
+/// Maximum uncompressed size of a single delta's payload (LZ-diff raw delta
+/// or packed CIGAR). A delta decodes at most one segment, so its uncompressed
+/// form is O(segment_size) and far below this bound for any realistic archive.
+/// An attacker can embed a gzip bomb (small compressed, huge expansion) inside
+/// an otherwise small delta; bounding the decompressed size prevents a
+/// multi-GB allocation in `Decompressor::decode_delta` / `unpack_cigar`.
+pub(crate) const MAX_DELTA_UNCOMPRESSED: usize = 256 * 1024 * 1024;
 
 /// Read a length-prefixed string (u32 len + UTF-8 bytes).
 pub fn read_string<R: Read>(reader: &mut R) -> Result<String> {
