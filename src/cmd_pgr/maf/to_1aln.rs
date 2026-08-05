@@ -163,9 +163,12 @@ fn write_block(
     b_index: &HashMap<String, usize>,
     tspace: i64,
 ) -> Result<()> {
-    // The CIGAR walks the `s` texts as given. When `b` is on the `-` strand its
-    // text is already the reverse complement, matching the `.1aln` `R` marker.
-    let ops = cigar_from_alignment(a.text.as_bytes(), b.text.as_bytes())?;
+    // The CIGAR walks the `s` texts as given. `cigar_from_alignment(ref, qry)`
+    // reports `qry` as the query, so pass `b` as ref and `a` as qry to make the
+    // CIGAR a-vs-b (query = `a`, target = `b`), matching `paf to-1aln` and the
+    // `.1aln` convention. When `b` is on the `-` strand its text is already the
+    // reverse complement, matching the `.1aln` `R` marker.
+    let ops = cigar_from_alignment(b.text.as_bytes(), a.text.as_bytes())?;
     if ops.is_empty() {
         bail!(
             "MAF block {}({}) vs {} has an empty alignment",

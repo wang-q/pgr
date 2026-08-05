@@ -16,7 +16,7 @@ fn main() -> anyhow::Result<()> {
         .color(ColorChoice::Auto)
         .subcommand(cmd_pgr::ms::make_subcommand())
         .subcommand(cmd_pgr::align::make_subcommand())
-        .subcommand(cmd_pgr::aln::make_subcommand())
+        .subcommand(cmd_pgr::onealn::make_subcommand())
         .subcommand(cmd_pgr::axt::make_subcommand())
         .subcommand(cmd_pgr::chain::make_subcommand())
         .subcommand(cmd_pgr::dist::make_subcommand())
@@ -50,6 +50,7 @@ fn main() -> anyhow::Result<()> {
     * pbit - Population 2bit + delta: create, append, append-ref, stat, range, some, to-fa
 
 * Genome alignments:
+    * 1aln  - FastGA .1aln alignment container: stat, to-paf, to-psl
     * align - Pairwise genome alignment: pgi, lastz
     * chain - Chain operations: sort, filter, transform, to-net
     * net   - Net operations: info, subset, transform, convert
@@ -85,7 +86,7 @@ fn main() -> anyhow::Result<()> {
     match app.get_matches().subcommand() {
         Some(("ms", sub_matches)) => cmd_pgr::ms::execute(sub_matches),
         Some(("align", sub_matches)) => cmd_pgr::align::execute(sub_matches),
-        Some(("1aln", sub_matches)) => cmd_pgr::aln::execute(sub_matches),
+        Some(("1aln", sub_matches)) => cmd_pgr::onealn::execute(sub_matches),
         Some(("axt", sub_matches)) => cmd_pgr::axt::execute(sub_matches),
         Some(("chain", sub_matches)) => cmd_pgr::chain::execute(sub_matches),
         Some(("dist", sub_matches)) => cmd_pgr::dist::execute(sub_matches),

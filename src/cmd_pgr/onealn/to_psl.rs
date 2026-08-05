@@ -2,7 +2,8 @@ use anyhow::Context;
 use clap::{ArgMatches, Command};
 use std::io::Write;
 
-use super::expand::{open_aln, record_to_psl};
+use super::expand::open_aln;
+use pgr::libs::onepack::expand::record_to_psl;
 
 /// Build the clap subcommand for to-psl.
 pub fn make_subcommand() -> Command {

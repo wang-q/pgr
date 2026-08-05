@@ -1,7 +1,6 @@
 //! Subcommand modules for the `pgr` binary.
 
 pub mod align;
-pub mod aln;
 pub mod args;
 pub mod axt;
 pub mod chain;
@@ -14,6 +13,7 @@ pub mod lav;
 pub mod maf;
 pub mod ms;
 pub mod net;
+pub mod onealn;
 pub mod paf;
 pub mod pbit;
 pub mod pgi;

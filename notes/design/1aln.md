@@ -5,8 +5,8 @@
 > 引入它是为了**后续 40k E. coli 计划**：大规模全基因组比对会产生巨量 PAF，用紧凑的
 > `.1aln` 落盘能**有效减少总文件大小**。
 >
-> 状态：**2026-08-05 起设计**，本文档为实施参考。用户规划确定为**"读 + 写"**
-> （§3 第三档，~2700–3800 行），见 §6。
+> 状态：**2026-08-05 起设计，2026-08-06 读 + 写已实现并验证**。本文档为格式参考与
+> 实施记录，实现位置见 §7.0。规划确定为**"读 + 写"**（§3 第三档，~2700–3800 行）。
 >
 > 结构：§0 结论 → §1 格式是什么 → §2 迁移拆解与工作量 → §3 三个范围档位 →
 > §4 关键注意点 → §5 与既有 pgr 资产/决策的关系 → §6 决策与写侧要点 →
@@ -169,7 +169,7 @@ sequence（contig），`s` 行的 `srcSize` 即该 contig 全长。因此：
 命名对齐项目惯例：统计类用 `stat`（同 `paf stat`），转换类一律 `to-<输出>`（同
 `maf to-paf`、`psl to-paf`、`axt to-psl`）。
 
-**读侧（`.1aln` → 其他）**——新命令 `pgr 1aln`（`src/cmd_pgr/1aln/`）：
+**读侧（`.1aln` → 其他）**——新命令 `pgr 1aln`（`src/cmd_pgr/onealn/`）：
 
 | 子命令 | 作用 | 需源序列 |
 |---|---|---|
@@ -192,62 +192,27 @@ sequence（contig），`s` 行的 `srcSize` 即该 contig 全长。因此：
 
 ## 7. 实施细节（精读参考代码后补全）
 
-> 本节基于 `ONElib.c`/`alncode.c`/`ONEaln.c`/`ALNtoPAF.c`/`PAFtoALN.c`/`GDB.c`
-> 精读整理，作为迁移实现参考。所有函数名/行类型均以 `FASTGA-main/` 为准。
+### 7.0 实现状态（2026-08-06 已完成）
 
-### 7.0 建议实现顺序（依赖排序）
+读 + 写 `.1aln` 已按本文档实现并验证（测试策略见 §7.11）。各组件落点：
 
-算法部分已确认由 `wave.rs` + `paf/cigar.rs` 覆盖，故实现主体是**格式管道**。按依赖
-自底向上构建，每阶段可独立验证：
-
-| 阶段 | 内容 | 依赖 FastGA 参考 | pgr 侧重 | 验证 |
-|---|---|---|---|---|
-| P1 | 整数 codec（LTF） | `intPut`/`intGet` §7.3 | 新写 | `intPut`→`intGet` 往返单测 |
-| P2 | vc Huffman + DNA codec | `vc*`/`Compress_DNA` §7.4 | 新写 | `vcEncode`→`vcDecode` 往返单测 |
-| P3 | ONEcode 容器（头部/行 I/O/对象索引/footer） | `writeHeader`/`one[Read\|Write]Line`/`oneWriteFooter` §7.2 | 新写 | 往返字段比对 |
-| P4 | `.1aln` 记录层（schema + A/D/R/T/X/U + 骨架） | `alncode.c` §7.5/7.6/7.7 | 新写 | 读 gold `.1aln` 字段对齐 |
-| P5 | 读侧展开编排 | `ALNtoPAF.c gen_paf` §7.8 | **改可见性** + 薄编排 | `pgr 1aln to-paf` vs `ALNtoPAF` |
-| P6 | 写侧 `cigar2tp` + 编排 | `cigar2tp` + `open_Aln_Write` §7.9 | **`cigar2tp` 新写** + 编排 | `ALNshow`/`ALNtoPAF` 回读 |
-| P7 | CLI 命令 | §6.4 | 新写 | 集成测试 |
-
-> 关键：P1–P4 是全新代码（容器 + codec + schema），P5–P6 的**算法已被现有资产覆盖**，
-> pgr 侧只补可见性（`pub`）+ 编排 + `cigar2tp`。P5/P6 是"组装"，不是"新算法"。
-
-### 7.1 参考文件与依赖
-
-> 行号随文标注（`文件:行`），供实现时直接定位。`ONElib.c` 有两处声明+定义，
-> 行号取**定义处**。
-
-| 文件 | 作用 | pgr 对应 |
+| 组件 | FastGA 参考 | pgr 实现位置 |
 |---|---|---|
-| `ONElib.c` | ONEcode 容器（header/schema/行编码/footer）+ vc Huffman + LTF 整数 + DNA 2bit | 需全移植（读+写） |
-| `alncode.c` | `.1aln` schema 常量 + `open/read/write` 记录骨架 | 直接复刻常量 |
-| `ONEaln.c` | 对齐器，产出 `.1aln`（tspace 采样 + 写轨迹） | 复用 wave.rs，只取写侧 |
-| `ALNtoPAF.c` | 读侧展开 `.1aln`→PAF（CIGAR/CS） | 读侧主参考 |
-| `PAFtoALN.c` | 写侧 PAF(cg:Z)→`.1aln`（`cigar2tp`） | 写侧主参考 |
-| `align.c` | `Compute_Trace_PTS`/`Gap_Improver`/`Decompress_TraceTo16` | 大部已由 wave.rs 覆盖 |
-| `GDB.c` | `Read_Skeleton`/`Write_Skeleton`/`Get_GDB` | 骨架 + 序列访问 |
+| ONEcode 容器（读/写，头部/行 I/O/对象索引/footer） | `ONElib.c` | `src/libs/onepack/container.rs` |
+| LTF 整数 codec | `intGet`/`intPut` | `src/libs/onepack/ltf.rs` |
+| vc Huffman + DNA 2bit codec | `vc*`/`Compress_DNA` | `src/libs/onepack/vc.rs` |
+| schema（`alnSchemaText` 常量 + 解析） | `alncode.c` | `src/libs/onepack/schema.rs` |
+| 记录层（A/D/R/T/X/U + GDB 骨架） | `alncode.c`/`GDB.c` | `src/libs/onepack/record.rs` |
+| 读侧展开：轨迹 → 对齐列 | `align.c`/`ALNtoPAF.c` | `src/libs/onepack/expand.rs`（`trace_to_columns`） |
+| 读侧：记录 → PAF/PSL | `ALNtoPAF.c gen_paf` | `src/libs/onepack/expand.rs`（`record_to_paf`/`record_to_psl`） |
+| 写侧 `cigar2tp` 轨迹点重采样 | `PAFtoALN.c` | `src/libs/onepack/write.rs` |
+| 写侧容器编排（writer/tspace/骨架/记录） | `open_Aln_Write` 系 | `src/libs/onepack/write.rs` |
+| CLI 读侧（stat/to-paf/to-psl） | — | `src/cmd_pgr/onealn/{stat,to_paf,to_psl}.rs` |
+| CLI 写侧（paf/maf → .1aln） | — | `src/cmd_pgr/{paf,maf}/to_1aln.rs` |
 
-**关键函数行号速查**：
-
-| 符号 | 位置 |
-|---|---|
-| `.1aln` schema 常量 `alnSchemaText` | `alncode.c:19` |
-| `open_Aln_Read` / `open_Aln_Write` | `alncode.c:59` / `alncode.c:239` |
-| `Read_Aln_Overlap` / `Read_Aln_Trace` / `Skip_Aln_Trace` | `alncode.c:136` / `168` / `210` |
-| `Write_Aln_Overlap` / `Write_Aln_Trace` / `Copy_Aln_Trace` | `alncode.c:272` / `288` / `307` |
-| `oneFileOpenRead` / `oneFileOpenWriteNew` | `ONElib.c:1350` / `1817` |
-| `oneReadLine` / `oneWriteLine` | `ONElib.c:1077` / `2355` |
-| `writeHeader` / `writeInfoSpec` / `writeCounts` | `ONElib.c:2211` / `455` / `2186` |
-| `oneWriteFooter` / `oneFinalizeCounts` / `oneFileClose` | `ONElib.c:2617` / `2678` / `2803` |
-| `intPut` / `intGet` / `ltfWrite` / `ltfRead` | `ONElib.c:3778` / `3737` / `3835` / `3804` |
-| `vcAddToTable` / `vcCreateCodec` / `vcSerialize` / `vcDeserialize` | `ONElib.c:2971` / `3012` / `3298` / `3338` |
-| `vcEncode` / `vcDecode` / `vcMaxSerialSize` | `ONElib.c:3479` / `3621` / `3293` |
-| `Compress_DNA` / `Uncompress_DNA` | `ONElib.c:3443` / `3577` |
-| `Read_Skeleton` / `Skip_Skeleton` / `Write_Skeleton` / `Get_GDB` | `GDB.c:1952` / `2062` / `2070` / `1655` |
-| `Compute_Trace_PTS` / `Gap_Improver` / `Decompress_TraceTo16` | `align.c:6171` / `6714` / `3912` |
-| `gen_paf` / `main`（读侧展开） | `ALNtoPAF.c:102` / `638` |
-| `cigar2tp` / `main`（写侧） | `PAFtoALN.c:215` / `745` |
+> 注：命令名 `pgr 1aln` 对应模块目录 `cmd_pgr/onealn/`（Rust 标识符不能以数字开头，
+> 同 `2bit`→`twobit`）。比对回溯复用 `pgi::wave::{banded_edit_ops, ops_to_columns}`，
+> CIGAR 复用 `paf/cigar::cigar_from_alignment`，未重复实现。
 
 ### 7.2 ONEcode 容器二进制布局
 
@@ -405,8 +370,8 @@ scaffold 层时**（我们的 contig 级场景）即每个 scaffold 恰好一个
 9. **输出 PAF/PSL**：坐标换算（COMP 时逆转 b），`blocksum`、`iid=blocksum-diffs`、
    mapq 255、`dv:f:` 恒等分数、`df:i:` diffs、可选 `cg:Z:`/`cs:Z:`。
 
-> 步骤 6–8 的**算法全部复用**，仅需给 `wave.rs` 三个私有函数加 `pub`；pgr 侧新写的是
-> 步骤 1–5 的轨迹点解码/骨架编排，以及步骤 9 的 PSL/PAF 落盘。
+> 步骤 6–8 的**算法全部复用**（`banded_edit_ops`/`dandc_nd`/`ops_to_columns` 已改 `pub`）；
+> pgr 侧新写的是步骤 1–5 的轨迹点解码/骨架编排，以及步骤 9 的 PSL/PAF 落盘。
 
 ### 7.9 写侧数据流（→ `.1aln`，参考 `PAFtoALN.c` + `alncode.c`）
 
@@ -459,8 +424,8 @@ PAF 带 `cg:Z`，或 MAF `s` 行）。pgr 侧链条：
 - `CigarOp` 位打包 `cigar.rs:9`：`bits[31:29]`=0/1/2/3/4 → `=`/`X`/`I`/`D`/`M`，
   与 FastGA `cigar2tp` 消费的字符一一对应，解包转换平凡。
 
-**可见性缺口**：`banded_edit_ops`/`dandc_nd`/`ops_to_columns` 在 `wave.rs` 中是**私有
-`fn`**，读侧需先改 `pub`（各一行）。读侧还需一段**薄编排**：给定两个轨迹点，决定对角带
+**可见性**：`banded_edit_ops`/`dandc_nd`/`ops_to_columns` 原为 `wave.rs` 私有 `fn`，
+实现时已改 `pub`（各一行）。读侧还需一段**薄编排**：给定两个轨迹点，决定对角带
 `[k_lo,k_hi]` 再调 `banded_edit_ops`（对应 FastGA `Compute_Trace_PTS` 的 box 选择）。
 
 > 结论：迁移主体是 **ONEcode 容器 + codec + schema 的格式管道**；比对逻辑（读侧盒内

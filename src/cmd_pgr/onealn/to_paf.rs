@@ -2,7 +2,8 @@ use anyhow::Context;
 use clap::{ArgMatches, Command};
 use std::io::Write;
 
-use super::expand::{open_aln, record_to_paf, write_paf};
+use super::expand::{open_aln, write_paf};
+use pgr::libs::onepack::expand::record_to_paf;
 
 /// Build the clap subcommand for to-paf.
 pub fn make_subcommand() -> Command {
