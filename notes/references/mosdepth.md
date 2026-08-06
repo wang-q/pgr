@@ -40,11 +40,13 @@ duplicate），`-Q/--mapq`、`-l/-u/--min-frag-len/--max-frag-len`（按 `abs(is
 
 对每条 read 的 CIGAR 逐 op 扫描，只处理 `consumes.reference` 的 op：
 
-* **match/ins 不推进参考位置**（`if not con.reference: continue`，insertion 的
-  query 长度不进入参考坐标）；
-* **deletion / intron（N）推进参考位置但该段不计深度**——即 `-split` 语义：
-  每个对齐块贡献独立的 `(pos, +1)` 与 `(last_stop, -1)`，两个块之间的
-  deletion/N 区域深度为 0（事件 `+1@15, -1@10` 按位置归位后 `[10,15)` 深度 0）；
+* **只有消耗 reference 的 op 才推进参考位置**（`if not con.reference: continue`；
+  insertion/soft-clip 等只消耗 query 的 op 直接跳过，其长度不进入参考坐标；
+  match `M`/`=`/`X` 同时消耗 query 与 reference）；
+* **deletion / intron（N）消耗 reference 但不消耗 query，推进参考位置但该段不计深度**——
+  即 `-split` 语义：每个对齐块贡献独立的 `(pos, +1)` 与 `(last_stop, -1)`，两个块之间的
+  deletion/N 区域深度为 0（如块 `[10,15)`、`[20,25)` 中间 5 bp deletion：事件
+  `+1@10, -1@15, +1@20, -1@25` 归位后 `[15,20)` 深度 0）；
 * 相邻参考块之间只有 deletion/N 时**不重复开段**（`pos == last_stop` 检查），
   块的起止事件精确对齐 CIGAR 的 M/= /X 段。
 
@@ -84,7 +86,8 @@ proper pair 且两条 read 在同染色体、有重叠时（`rec.stop > matepos`
 * **distribution**：直方图数组从 512 动态增长（`inc` 在 `v >= len` 时
   `set_len(v+10)`），深度 > 400000（`MAX_COVERAGE`）截断到 399990（只影响
   分布，不影响 per-base/quantized）；输出时反序 cumsum，得到
-  "深度 ≥ X 的碱基占比"，跳过占比 < 8e-5 的尾部。
+  "深度 ≥ X 的碱基占比"；先跳过深度索引 > 300 的 0 计数桶（`irev > 300 and
+  v == 0`），再跳过累计占比 < 8e-5 的行。
 * **summary**：length / bases（= 深度总和，即总比对碱基数）/ mean / min / max；
   空染色体 min 记 0；数值精度由 `MOSDEPTH_PRECISION` 控制（默认 2）。
 
@@ -145,9 +148,14 @@ samtools 输出），本笔记的 CIGAR 事件语义（deletion/N 计 0、ins �
   fragment 末端是否超出染色体长度（Nim 默认边界检查会 IndexDefect，release
   可关）。
 * **中位数近似**：`CountStat` 65536 桶截断，>65535 深度的区域 median 偏小。
-* **`gen_depths` 的 `offset/istop` 参数**：per-base 输出只全染色体调用
-  （`istop=0`），区域用途的分支（尾部 `yield (last_i, len(arr)-1, ...)`）实际
-  未使用，属死参数。
+* **`gen_depths` 的 `offset/istop` 参数**：全代码只在 per-base 输出处以默认值
+  `gen_depths(arr)`（`offset=0, istop=0`）调用，区域用途的偏移/截断参数从未
+  生效，属死参数；尾部三路 `yield` 是历史遗留（正常全染色体输出由
+  `last_i < stop` 分支闭合到 `len(arr)-1`，另两路实际不可达）。
+* **`gen_quantized` 末两位 off-by-one**：循环 `for pos in 0..<(arr.high-1)` 只
+  比较到 `len-3` 位置处的 bin，最后两个位置不参与比较，被并入上一段的 bin
+  （尾部 `yield (last_pos, len(arr)-1, ...)`）；当染色体末尾两碱基落入不同 bin
+  时 quantized 输出会错标（功能测试的 MT 用例末尾深度稳定，未暴露该问题）。
 * **数值**：`arr` 为 `int32`，深度 > 2^31 会溢出（实际不可能）；分布截断
   `MAX_COVERAGE` 只影响直方图。
 
@@ -156,6 +164,9 @@ samtools 输出），本笔记的 CIGAR 事件语义（deletion/N 计 0、ins �
 * `functional-tests.sh`：ssshtest 框架 + 真实小型 BAM（`tests/ovl.bam`、
   `tests/overlapping-pairs.bam`、`tests/nanopore.bam`），黄金断言覆盖 mate
   重叠校正（默认 vs fast-mode 的 MT 深度）、CRAM 缺引用报错、缺失染色体、
-  乱序 BED、区域越界、插入长度过滤等；用 `--boundChecks:on` 构建。
-* `tests/all.nim`：`depthstat` 的 CountStat 中位数单测（`depthstat.nim`
-  内嵌 `isMainModule` 测试块）。
+  乱序 BED、区域越界、插入长度过滤等；构建带
+  `--boundChecks:on -d:useSysAssert -d:useGcAssert`（`tests/funcs.nim` 同参数）。
+* `tests/funcs.nim`（由 `tests/all.nim` 导入执行）：`depthstat` min、quantize
+  参数解析、`linear_search`/`make_lookup`、threshold 解析、region 解析、BED
+  index preset 等单测；CountStat 中位数单测在 `depthstat.nim` 自己的
+  `isMainModule` 块里（需直接 `nim c -r depthstat.nim` 才会执行）。
