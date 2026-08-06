@@ -11,6 +11,9 @@ FastK 是一个专为处理高质量 DNA 组装数据（如 Illumina 或 PacBio 
 
 ### 1. K-mer 与 Canonical K-mer
 *   **K-mer**: 长度为 k 的 DNA 序列片段（FastK 支持 k >= 5，默认为 40）。
+    注：代码对 k 只做 `ARG_POSITIVE` 校验（k > 0），**没有 k >= 5 的下限**；"5" 实际是
+    split.c 的 seed minimizer 长度（`#define MIN_LEN 5 // Seed minimizer length`），
+    不是 k-mer 的最小值。
 *   **Canonical K-mer (规范 K-mer)**: 为了处理测序读取方向未知的问题，FastK 将一个 k-mer 及其反向互补序列（Watson-Crick complement）视为同一个 k-mer。在两者中，字典序较小的那个被称为“规范 k-mer”。FastK 的统计表（Table）只记录规范 k-mer。
 
 ### 2. Super-mer (超 k-mer)
@@ -26,6 +29,7 @@ FastK 是一个专为处理高质量 DNA 组装数据（如 Illumina 或 PacBio 
     *   FastK 做法: 存 1 个条目 `ABCDE` (Super-mer)。
 *   优势:
     *   压缩数据: 极大减少了需要写入磁盘和排序的条目数量（通常减少 10-50 倍）。
+       （注：本 checkout 的 README/代码中无此数字出处，系估计值，可能来自论文或其他版本。）
     *   提升速度: 排序 1 个长条目比排序 10 个短条目要快得多。在最后阶段，程序再从 Super-mer 中还原出具体的 k-mer 进行计数。
 
 ### 3. Minimizer (最小标识符)

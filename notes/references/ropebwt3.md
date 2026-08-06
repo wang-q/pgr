@@ -53,7 +53,9 @@ FM-index（rld rank + 采样 SA）
    - `-r` 用 RCLO（reverse-complement + 计数排序优化），适合短读。
 2. **libsais 批量算法**（默认）：
    - 按 batch 读入序列（含正反链），用 **libsais 构建广义后缀数组**（libsais.c，
-     外部库，V3.10 用 libsais16x64 省内存）→ 由 SA 生成部分 BWT；
+     外部库；`sais-ss.c` 的 `rb3_build_sais` 按 batch 长度选择：`len + sais_extra_len >=
+     INT32_MAX` 时用 64 位 `libsais64_gsa`，否则用 32 位 `libsais_gsa` 省内存；
+     "libsais16x64" 并不存在）→ 由 SA 生成部分 BWT；
    - 多批次时把部分 BWT **增量合并**到已有 rope（`rb3_fmi_merge_plain`）；
    - `-p` 可让部分 SA 构建与 BWT 合并并行（3.9+）。
 
@@ -103,14 +105,17 @@ FMD 的核心数据结构 `rld_t`（rld0.h）：
   `sw_cell_dedup` 删除 out-of-band cells（3.4 提速 20%）；
 - **回溯**：`sw_backtrack1` / `sw_backtrack` 从最优位置回溯路径，输出 CIGAR
   （`cs` tag，3.7+）；
-- 评分默认 BLASTN（3.5 起）；`-N` 设带宽、`-k` 用精确匹配种子启动；`-e`
-  end-to-end 模式输出相似单倍型（`--all-e2e` 紧凑输出）。
+- 评分默认 BLASTN（3.5 起）；`-N` 设每个 DAWG 节点保留的候选 hit 数（`n_best`，
+  默认 25），`-k` 要求比对末端有 k-mer 精确匹配（`end_len`，默认 11），`-j` 设启动
+  比对所需的最小 MEM 长度（`min_mem_len`，默认 0）；`-e` end-to-end 模式输出相似
+  单倍型（`--all-e2e` 紧凑输出）。
 - **性能提示**：局部比对比 SMEM 慢数十倍，不用于高通量 reads。
 
 ### 3.6 hapdiv（单倍型多样性）
 
 把 end-to-end 模式应用于滑动的 101-mer，报告：命中的不同等位基因数、最大编辑距离、
-完美匹配单倍型数、编辑距离 1-5 的分桶计数（3.6 起到距离 5，3.10 为 6 及以上）。
+完美匹配单倍型数、按编辑距离分桶的计数（`RB2_SW_MAX_ED=6`，桶 ed=0..6，≥6 的编辑
+距离并入末桶；3.6 版为距离 5）。
 
 ## 4. 源码模块结构
 
@@ -136,8 +141,8 @@ FMD 的核心数据结构 `rld_t`（rld0.h）：
 | 命令 | 功能 | 关键参数 |
 |------|------|----------|
 | `build` | 构建 BWT（FMR/FMD）| `-2/-s/-r` ropebwt2 算法、`-m` batch、`-p` SA 并行、`-d/-b` 格式、`-i` 续建 |
-| `mem` | SMEM 查找 | `-l` 最小长度、`-p` 输出位置、`--gap/--cov`、`-T` Gagie/原始算法 |
-| `sw` | BWA-SW 局部比对 | `-N` 带宽、`-k` 种子、`-e` 端到端、`-p` 多位置、`--all-e2e` |
+| `mem` | SMEM 查找 | `-l` 最小长度、`-p` 输出位置、`--gap/--cov`、`--old-mem` 切回原始算法（默认 Gagie）|
+| `sw` | BWA-SW 局部比对 | `-N` 每 DAWG 节点候选数、`-k` 末端 k-mer（`end_len`）、`-j` 启动 MEM 长度、`-e` 端到端、`-p` 多位置、`--all-e2e` |
 | `ssa` | 采样后缀数组 | `-s` 采样率、`-t` 线程 |
 | `get` | 按索引取序列 | — |
 | `hapdiv` | 101-mer 单倍型多样性 | 内部调用 sw -e |

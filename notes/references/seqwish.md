@@ -96,7 +96,7 @@ fn rank1(&self, i: usize) -> usize { self.positions.binary_search(&i).unwrap_or_
 **InMemoryTree 的 IAITree 算法**：`finalize()` 先按 `(start, end)` 排序，再自底向上算 每个节点的
 `max`（子树最大 end），是 iitree-rs `index_core()` 的直接移植。查询时 `overlap_iaitree` 用
 64 槽显式栈做迭代（不递归），核心剪枝：节点的 `max <= query_start`时整棵子树跳过。小 subtree
-（`k <= 3`，即 ≤8 个节点）退化为线性扫描，避免栈操作开销。
+（`k <= 3`，线性段最大 `2^(k+1)-1` = 15 个节点）退化为线性扫描，避免栈操作开销。
 
 ```rust
 // overlap_iaitree 的核心分支
@@ -142,7 +142,8 @@ Woll 1991 的 wait-free 算法：`find` 做路径压缩（CAS 失败容忍，不
 loop {
     id1 = self.find(id1); id2 = self.find(id2);
     if id1 == id2 { return id1; }
-    // union-by-rank: r1 < r2 或 (r1 == r2 且 id1 < id2) 时交换，保证小 rank 挂大 rank
+    // union-by-rank: r1 > r2（或 r1 == r2 且 id1 < id2）时交换，
+    // 使较小 rank 的根作为 id1 挂到 id2 下（等 rank 时 id 更大的成为新根）
     let old = ((r1 as u128) << 64) | (id1 as u128);  // parent=id1, rank=r1
     let new = ((r1 as u128) << 64) | (id2 as u128);  // parent=id2, rank=r1
     // CAS 失败说明并发改写，重试整个 find+unite
@@ -270,6 +271,10 @@ phase 2 用 `DisjointSetsAsm`（无锁 CAS），`component_seqs.par_iter()` 并�
 });
 ```
 
+> 注：摘录只画了正向 match 的边界标记（`set(offset(pos_start_in_s))` 与
+> `set(offset(pos_end_in_s))`）；反向 match 实际标记 `offset(pos_end_in_s)` 与
+> `offset(pos_start_in_s) + 1`（反链段在图中反向，边界位置不同）。
+
 输出 `seq_id_bv: BitVec`，1-bit 表示节点边界。再用 `RankSelectBitVector::from_bitvec` 转成只存
 1-bit 位置数组，供后续 select/rank。
 
@@ -342,11 +347,12 @@ overlap 详情，否则用户报错时无法定位是哪个 chunk 的哪个序�
 输入序列做**4 级校验**，任一级失败都 `return Err` 带详细诊断。这是 seqwish 正确性的最后兜底，保证
 P 路径与 S 节点序列严格一致。
 
-**Level 1 — overlap 唯一性**（每碱基）： 对输入序列的每个碱基 `j` 查 `path_iitree.overlap(j, j+1)`，
+**Level 1 — overlap 唯一性**（按段跳步）： 从 `j` 起查 `path_iitree.overlap(j, j+1)`，
 `overlap_count` 必须恰好为 1。0 个说明图断裂（transclosure 漏标），> 1 说明 `path_iitree` 写重了。
 失败信息：`"found {overlap_count} overlaps for seq {seq_name} idx {i} at j={j} of {k}"`。与
 [compact.rs](../../../seqwish-master/src/compact.rs) §5.1.2 的检查 同源，
-但 compact 用 panic，gfa 用 Err——因为 gfa 是最后输出阶段，错误可恢复（跳过该序列）。
+但 compact 用 panic、gfa 用 `return Err`——后者同样中止整个 GFA 输出（main 的 `?` 传播），并不会
+跳过该序列继续；区别只是崩溃方式（panic vs 可传播的 `io::Error`）。
 
 **Level 2 — 逐碱基一致性**（每 overlap 段）： 对每个
 overlap 段的 `(q, p)` 对，取 `input_char = seqidx.at(q)` 与
@@ -448,19 +454,22 @@ seqwish 作为"图物化器"的正确性契约。
 
 [lib.rs](../../../seqwish-master/src/lib.rs) 共 1020 行，其中约 70% 是
 `#[no_mangle] pub extern "C"` 的 FFI 包装函数——这是 seqwish 从 C++ 原版重写到 Rust 的 产物：Rust
-实现作为库被 C++ 主程序调用，FFI 层保持与原 C++ 头文件兼容。
+实现同时以 cdylib/staticlib 形式提供 C ABI（供外部 C++ 如 PGGB 调用，保持与原 C++ 头文件兼容），
+而本仓库的 CLI 由 Rust 的 `main.rs` 驱动。
 
 #### 7.5.1 lib.rs 的两层结构
 
-- **顶层模块声明**（21 个 `pub mod`）— 对应 §2 的 6 阶段实现： `seqindex`（阶段 1）、`alignments`/
+- **顶层模块声明**（20 个 `pub mod`）— 对应 §2 的 6 阶段实现： `seqindex`（阶段 1）、`alignments`/
   `paf`/`cigar`（阶段 2）、`transclosure`/`dset64`/`dset64_asm`/`dset64_unsafe`（阶段 3）、
   `compact`（阶段 4）、`links`（阶段 5）、`gfa`（阶段 6），加上 `pos`/`dna`/`intervaltree`/
   `mmap`/`tempfile`/`time`/`utils`/`sxs`/`version` 等基础设施模块。模块划分与算法阶段一一对应，
   是阅读源码的天然地图。
-- **FFI 包装层**（约 700 行）— 把 Rust API 翻译成 C ABI，按模块分组： `tempfile_*`（5 个）、
-  `pos_*`（8 个）、`dna_*`（3 个）、`cigar_*`（5 个）、`mmap_*`（2 个）、`paf_row_*`（13 个）、
-  `sxs_*`（9 个）、`alignments::match_hash`/`keep_sparse`、`utils::file_exists`/`handy_parameter`、
-  `time::time_since_epoch_ms`。
+- **FFI 包装层**（约 700 行）— 把 Rust API 翻译成 C ABI，按模块分组： `tempfile_*`（7 个）、
+  `pos_*`（9 个）、`dna_*`（3 个）、cigar（5 个，含 `seqwish_cigar_free`）、`mmap_*`（2 个）、
+  `paf_row_*`（15 个）、`sxs_*`（14 个），加上 `alignments::match_hash`/`keep_sparse`、
+  `utils::file_exists`/`handy_parameter`、`time::time_since_epoch_ms`、`transclosure_compute`、
+  `compact_compact_nodes`、`parse_paf_spec` 等，lib.rs 内共 65 个 FFI 函数（另有 `version.rs` 的
+  5 个 `version_*` 导出，crate 合计 70 个）。
 
 #### 7.5.2 opaque handle 模式
 
@@ -496,7 +505,7 @@ FFI 层是 `unsafe` 的集中地，但遵循三条纪律：
 
 1. **pgr 不需要 FFI 层** — pgr 是纯 Rust 项目，无 C++ 主程序，不应模仿 seqwish 的 FFI 包装。 pgr 的
    `lib.rs` 应保持简洁的 `pub mod` 声明 + 公共类型，不引入 `extern "C"`。
-2. **模块划分与算法阶段对应** — seqwish 的 21 个 `pub mod` 与 §2 的 6 阶段一一对应，
+2. **模块划分与算法阶段对应** — seqwish 的 20 个 `pub mod` 与 §2 的 6 阶段一一对应，
    是阅读源码的天然地图。pgr 的 `libs/paf/` 已有类似实践（`index/`/`query.rs`/`graph/`
    按处理阶段划分），可继续保持。
 3. **opaque handle 模式的 Rust 纯净版** — 若 pgr 未来需要把图构建引擎抽象成可替换后端 （如 seqwish
@@ -522,8 +531,8 @@ FFI 层是 `unsafe` 的集中地，但遵循三条纪律：
   在其中建带后缀的文件。fd 建后立即 `File::from_raw_fd` + `drop` 关闭，只保留路径——后续按需
   reopen。
 - **Drop 清理 + 显式 cleanup**：`TempFileState::Drop` 在程序退出时扫 `filenames` 集合 +
-  父目录残余文件，`remove_file` + `remove_dir`。`cleanup()` 供多次构建之间显式调用 （main.rs 在每次
-  graph build 后调）。
+  父目录残余文件，`remove_file` + `remove_dir`。`cleanup()` 可显式调用（仅 FFI 导出
+  `temp_file_cleanup` 使用；本仓库 CLI 的 `main.rs` 不调用，退出清理靠 Drop 兜底）。
 - **`keep_temp` 调试开关**：`--keep-temp` 设 true 后 Drop 不删文件，便于调试中间产物。
 
 **对 pgr 的启示**：pgr 的 `pgr paf` 若产生大中间文件（如 graph 的 `seq_v`、`node_iitree`），
@@ -582,8 +591,8 @@ FFI 层是 `unsafe` 的集中地，但遵循三条纪律：
 #### 7.6.6 sxs.rs：seqwish 私有对齐格式（不借鉴）
 
 [sxs.rs](../../../seqwish-master/src/sxs.rs) 定义 `SxsAlignment`， 解析
-6 行格式的对齐记录（A/I/M/C/Q 各一行 + 空行分隔）。这是 seqwish C++ 原版的私有输入 格式，Rust
-移植保留以兼容旧数据。pgr 用 PAF/MAF，**不需要这个模块**（见 §8）。
+按行扫描 A/I/M/C/Q 类型字段的对齐记录（`T` 行未处理被跳过，空行直接跳过）。这是 seqwish C++
+原版的私有输入格式，Rust 移植保留以兼容旧数据。pgr 用 PAF/MAF，**不需要这个模块**（见 §8）。
 
 #### 7.6.7 utils.rs：file_exists + handy_parameter
 
@@ -668,8 +677,9 @@ seqwish 每个阶段都打 `%` 进度，格式统一：
 
 #### 7.7.4 Rayon par_iter + RwLock 并行读
 
-seqwish 的 compact/links/gfa 三个阶段都用 `(1..=n).into_par_iter().for_each(...)` 并行
-处理每条序列/每个节点，共享数据用 `Arc<RwLock<AdaptiveTree>>` 包裹：
+seqwish 的 compact/links 阶段用 `(1..=n).into_par_iter()` 并行处理每条序列/每个节点，
+gfa 阶段则是顺序实现（`node_sequences` 用 `.map`、P 行用 `for` 循环，`num_threads` 被忽略），
+共享数据用 `Arc<RwLock<AdaptiveTree>>` 包裹：
 
 - **写阶段独占**（`Mutex`）：`alignments.rs` 写 `aln_iitree` 用 `Arc<Mutex<...>>`， 多 worker
   串行写入。
@@ -729,4 +739,3 @@ seqwish 的错误处理分三层，对应不同严重性：
 - 关联文档：[[pangenome-tools.md]] §4.2（PGGB 流水线中 seqwish 的位置）、 [[impg.md]] §1.1.2
   （隐式图 vs 物化图适用边界）、[[minigraph.md]]（粗框架过滤哲学）、[[paf-pangenome.md]]（pgr
   graph / to-gfa 路线）、[[paf-pangenome.md]]（pgr 隐式图核心原则）。
-

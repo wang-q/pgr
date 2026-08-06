@@ -61,7 +61,8 @@ consensus path 嵌入与合并（`merged_block_id_intervals_tree_vector` 处理�
 **未在主流程调用的模块**：[chain.hpp](../../../smoothxg-master/src/chain.hpp)
 定义了 `collinear_blocks`/`chains`/`superchains`（锚点链式化算法，类似 minimap2 的链式化），
 但 main.cpp 没有调用它们。这应该是 smoothxg 早期版本用锚点链找共线块的遗留代码，现已被
-`smoothable_blocks` 的"path step 遍历 + 跳距切分"方案取代。文档中该模块一律从略。
+`smoothable_blocks` 的"path step 遍历 + 跳距切分"方案取代（main.cpp 仅 `#include "chain.hpp"`
+未调用其函数，chain.cpp 仍被编译）。文档中该模块一律从略。
 
 ## 3. 关键数据结构
 
@@ -117,7 +118,8 @@ using path_position_range_t = std::tuple<path_handle_t, uint64_t, uint64_t, path
 // get<0>: base_path（原 path）
 // get<1>: start_pos（原 path 上的起始碱基坐标）
 // get<2>: end_pos（原 path 上的结束碱基坐标）
-// get<3>: target_path（block 内的 path，可能是 consensus path）
+// get<3>: target_path（block 内 path 的 rank：as_path_handle(++path_id)，按 path_range 顺序递增；
+//         consensus path 的映射单独记录在 consensus_mapping[block_id]，不在这里）
 // get<4>: block_id
 ```
 
@@ -143,9 +145,11 @@ void incr_pos(pos_t& pos) { is_rev(pos) ? pos -= 2 : pos += 2; }  // ±2 步进
 ```
 
 **与 seqwish 的对比**：seqwish 的 `PosT` 把方向位放低位（bit 0），offset 放高位；
-smoothxg 的 `pos_t` 也是方向位放低位，但用 `<<1` 而非 `<<1 | is_rev`，实现略有差异但语义
-相同。两者都支持 `±2` 步进（反链时反向步进）。pgr 若要统一反链位置编码，建议直接采用
-seqwish 的 `make_pos_t` 版本（更简洁）。
+smoothxg 的 `pos_t` 同样把方向位放低位，**编码完全相同**（都是 `offset<<1 | is_rev`）——
+smoothxg 只是用无分支位操作技巧（`(pos & ~1) | (-is_rev & 1)`，
+ConditionalSetOrClearBitsWithoutBranching）代替直接的 `|` 运算。两者都支持 `±2` 步进
+（反链时反向步进）。pgr 若要统一反链位置编码，建议直接采用 seqwish 的 `make_pos_t` 版本
+（更简洁）。
 
 注意 chain.hpp 里有另一个 `seq_pos_t`，方向位在**最高位**（MSB），与 `pos_t` 不兼容——
 这是 chain 模块遗留的独立编码，主流程不用。
@@ -179,6 +183,7 @@ struct consensus_spec_t {
     int min_allele_len = 0;        // 保留的偏离 consensus 的最小长度
     int max_allele_len = 1e6;      // 最大 allele 长度
     std::string ref_file;          // 参考路径列表文件
+    std::string ref_file_sanitized; // 参考文件名（'/' 替换为 '_'，用于 displayname）
     bool keep_consensus_paths;     // 是否保留 POA consensus paths
     double min_consensus_path_cov = 0;  // consensus path 最低覆盖度
 };
@@ -200,6 +205,7 @@ struct link_path_t {
     path_handle_t from_cons_path, to_cons_path;
     path_part_t from_cons_part, to_cons_part;  // 起止在 consensus path 的哪一段
     uint64_t length;      // 核苷酸数
+    uint64_t hash;
     uint64_t jump_length; // 在偏序中的跳距
     step_handle_t begin, end;  // off-consensus 的 step 区间
     path_handle_t path;
@@ -324,7 +330,8 @@ consensus → VCF），但输出格式不同。
   `get_block_graph`/`save_block_graph`（zstd 压缩块图的序列化/反序列化）、`modulo`（位运算
   取模，要求 d 是 2 的幂）。
 - **[tempfile.cpp](../../../smoothxg-master/src/tempfile.cpp)** —
-  线程安全临时文件管理，`mkdtemp` + `mkstemp`，程序退出时 `atexit` 自动清理。
+  线程安全临时文件管理，`mkdtemp` + `mkstemp`，程序退出时由静态 `Handler` 对象的析构函数
+  自动清理（非显式 `atexit()` 注册）。
 - **[progress.hpp](../../../smoothxg-master/src/progress.hpp)** —
   `ProgressMeter` 异步进度条，原子计数 + 后台线程每 500ms 打印。
 - **[zstdutil.cpp](../../../smoothxg-master/src/zstdutil.cpp)** —
@@ -365,8 +372,10 @@ smoothxg 同时支持 SPOA 和 abPOA 两个 POA 引擎，通过 `-A` 切换：
 
 `poa_padding_fraction`（默认 0.001）是个精巧的设计：在每条序列两端加 `avg_seq_len * 0.001`
 的 flanking 序列，让 POA 在 block 边界有重叠，事后修剪。这避免了"block 边界处的 POA
-对齐不完整"问题。`max_block_depth_for_padding_more`（默认 1000）控制深 block 不再加
-padding（节省算力）。
+对齐不完整"问题。实际 padding = `max(avg_seq_len * 0.001, 311)`：浅 block
+（depth ≤ `max_block_depth_for_padding_more`，默认 1000）保证至少 311 bp 的 flanking，
+深 block 跳过该固定最小值但仍按 `avg_seq_len * 0.001` 加 padding（可能很短，避免深 block
+浪费算力）。
 
 **对 pgr 的启示**：pgr 的 `libs/poa/` 已有 SPOA 移植（参见 `notes/design/spoa_port.md`）。smoothxg
 的 padding 机制是 pgr 当前 POA 没有的——若 `pgr paf to-gfa` 在 block 边界产出不完整
@@ -444,8 +453,8 @@ if (orig_seq != smoothed_seq) {
 3. **`ProgressMeter` 异步进度条** — 原子计数 + 后台线程每 500ms 打印，不阻塞主线程。
    pgr 的长任务（如 `pgr paf index`）可借鉴此模式。
 4. **`tempfile` 的 atexit 自动清理** — `mkdtemp` + `atexit` 注册清理函数，程序退出自动
-   删临时目录。pgr 当前用 `tempfile::TempDir`（Rust 生态）已有类似能力，但 smoothxg 的
-   C++ 实现思路值得了解。
+   删临时目录（实际是静态 `Handler` 析构，非显式 `atexit()`）。pgr 当前用
+   `tempfile::TempDir`（Rust 生态）已有类似能力，但 smoothxg 的 C++ 实现思路值得了解。
 5. **padding 机制** — POA 块边界加 flanking 序列避免对齐不完整。`pgr paf to-gfa`
    若遇边界问题可借鉴。
 

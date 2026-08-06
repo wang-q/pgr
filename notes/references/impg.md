@@ -109,7 +109,7 @@ impg 的 22 个子命令并非平级，而是按**数据流方向**构成四层�
   平级命令，而是同一个 `Query` 的两种模式（`-x` 开关）。后者是前者的扩展。
 - **图构建层的两种形态** — 直接构建（`Graph` 单图）与分区构建（`Partition` 切窗口 + `Lace` 拼回）
   是同一层的两种内存策略，不是独立步骤。`Crush` 是图构建的后处理（压缩 bubble），不是 独立的图构建路径。
-  图构建层另有 [`SeqwishOpts`](../../../impg-0.4.1/src/main.rs#L2063)的
+  图构建层另有 [`SeqwishOpts`](../../../impg-0.4.1/src/main.rs#L2059)的
   `--min-match-len`（默认 23）/`--repeat-max`/`--sparse-factor` 控制传递闭包的比对挑选。
 - **应用层依赖图构建** — 基因分型需要图或隐式图作为 evidence 来源，是能力栈的顶端消费者。
 
@@ -219,6 +219,9 @@ impg 的子 crate 全部来自 Erik Garrison/Andrea Guarracino 团队的 pangeno
       模块：[`pansn`](../../../impg-0.4.1/src/lib.rs#L875)、
       [`knn_graph`](../../../impg-0.4.1/src/syng_graph.rs#L600)、
       [`paf_filter`](../../../impg-0.4.1/src/syng_graph.rs#L825)。
+      注：这三个都是 sweepga 自己的模块，impg 侧标注的行号是**调用点**（lib.rs:875 →
+      `sweepga::pansn::count_pansn_keys`；syng_graph.rs:600 → `sweepga::knn_graph::extract_tree_pairs`；
+      syng_graph.rs:825 → `sweepga::paf_filter::*`），定义在 sweepga 依赖中。
       调用位置：`graph`/`align`/`syng2gfa`。
     - **seqwish**（pangenome/seqwish）— 从 PAF 诱导 GFA。 入口：
       [`generate_gfa_seqwish_from_intervals`](../../../impg-0.4.1/src/graph.rs#L1036)。
@@ -706,7 +709,7 @@ impg 的天然优势：impg 的 MSA 路径是 per-bubble POA，pgr 的 MSA 路�
 1. 初始化 `missing_regions` = 所有序列的全长（尚未被任何 partition 覆盖）； `masked_regions` = 空
    （已被 partition 认领的区段）。
 2. `select_and_window_sequences`（
-   [L714](../../../impg-0.4.1/src/commands/partition.rs#L714)）按
+   [L715](../../../impg-0.4.1/src/commands/partition.rs#L715)）按
    `--selection-mode`（longest/total/sample/haplotype）选"缺失最多"的序列，切成 `--window-size` bp
    的**初始窗口**（窗口只是起点，不是最终 partition 边界）。
 3. 对每个窗口跑**传递闭包 BFS**（`query_transitive_bfs`，与 `query -x` 同一实现），找全所有同源片段。
@@ -716,7 +719,7 @@ impg 的天然优势：impg 的 MSA 路径是 per-bubble POA，pgr 的 MSA 路�
 6. 输出这个 partition（BED/FASTA/GFA/VCF/MAF）。
 7. 回到 2，选下一个"缺失最多"的序列。当 `missing_regions` 全空时停止（L906）。
 8. `rehome_singleton_slivers`（
-   [L27](../../../impg-0.4.1/src/commands/partition.rs#L27)）把贪心
+   [L45](../../../impg-0.4.1/src/commands/partition.rs#L45)）把贪心
    masking 产生的碎片归并到相邻 partition。
 
 **关键认识**：
@@ -941,8 +944,10 @@ method zoo。
 
 **测试基础设施约定**
 
-- 二进制定位：`CARGO_BIN_EXE_impg` 环境变量，回退到 `target/{debug,release}/impg`，再回退到
-  `/home/erikg/impg/target/release/impg`（作者机器路径，硬编码）。
+- 二进制定位：`test_transitive_integrity.rs` 的 `get_impg_binary` 依次尝试
+  `CARGO_BIN_EXE_impg` → `manifest_dir/target/release/impg` → `target/debug/impg` → 最后回退
+  `"impg"`（PATH）；其余测试直接用 `env!("CARGO_BIN_EXE_impg")`。**本 checkout 中不存在
+  `/home/erikg` 硬编码路径**（全仓库 0 处 erikg 字样）。
 - 外部依赖：gfaffix 必须存在；wfmash/samtools 可选（`#[ignore]` 标记）。
 - 串行化：syng 测试用 `LazyLock<Mutex<()>>` 全局锁（C 库非线程安全）；C4 fragment 测试用 `Once` +
   `Mutex` 32 线程池串行。
@@ -1063,8 +1068,9 @@ impg 的 `genotype`/`infer` 命令实现基于 graph feature 的基因分型，�
 **cosine 评分实现** — 当前 `ScoringMethod::Cos` 把候选 haplotype
 组合与 sample 都表示为 `FxHashMap<u32, u64>`（feature_id → count），用
 [`score_cosine_combination`](../../../impg-0.4.1/src/genotyping.rs#L190)
-计算 cosine 相似度，并转换为 QV：`qv = -10 * log10(1 - similarity)`（similarity ≥ 1.0 时 QV =
-999）。`CombinationScore` 返回 `similarity`/`qv`/`dot`/`sample_norm`/`genotype_norm` 五个量，供
+计算 cosine 相似度，并转换为 QV：`similarity ≥ 1.0 → 999`、`similarity ≤ 0.0 → 0`、否则
+`qv = -10 * log10(1 - similarity)`。`CombinationScore` 返回 `similarity`/`qv`/`dot`/`sample_norm`/
+`genotype_norm` 五个量，供
 ploidy 组合搜索排序。这种"feature 向量 + cosine"的评分模型是后端中立的数学核心——pgr 若做基因分型，
 可在 BFS 等价类（§4.2）的 feature 向量上直接复用此评分，无需物化 GFA。
 
@@ -1132,9 +1138,10 @@ impg 的设计有很多亮点，但以下局限性是 `pgr` 借鉴时必须清�
    若引入类似 agent 工作流，应确保评分 rubric 明确。
 6. **main.rs 巨型化** — 单文件 1.5 万行 + 60 万字符，承担所有 clap 命令定义、参数解析、stage 解析、
    命令分发（§2.1）。这是 impg 最显著的工程反例，pgr 应坚持 `cmd_pgr/` 按格式/功能分组的结构。
-7. **single-developer 工作流痕迹** — artifact 路径硬编码 `/home/erikg/impg/data/<RUN_ID>/`、PNG
-   上传 `hypervolu.me/~erik/impg/`、测试二进制定位回退到 `/home/erikg/impg/target/release/impg`
-   （§6.7）。这些是 single-developer (Erik Garrison) 工作流的产物，pgr 移植时需参数化。
+7. **single-developer 工作流痕迹** — 笔记所依据的源码版本有 artifact 路径硬编码
+   `/home/erikg/impg/data/<RUN_ID>/`、PNG 上传 `hypervolu.me/~erik/impg/` 等（§6.7、§10.2）。
+   **本 checkout（impg-0.4.1）未发现这些路径**（scripts 用相对路径，全仓库无 erikg/hypervolu
+   字样），此类痕迹应视为当时版本遗留；pgr 移植时仍应参数化路径。
 8. **大量 `unwrap_or_else(|e| panic!(...))`** — impg 源码中存在大量 panic 风格错误处理（如
    `get_cigar_ops`、`get_target_sequence_cached`），违反 pgr 的 Zero Panic 原则。pgr 借鉴其算法时
    应改为 `anyhow::Result` + `bail!`。
@@ -1326,7 +1333,8 @@ with `=`/`X` CIGAR）。这是 pgr 复用已有 pairwise 基础设施的天然�
 `scripts/` 是 21 个独立可执行脚本（Python 14 + Bash 6 + R 1），几乎都是
 **实验驱动器 (experiment driver)**：不属于 impg 二进制，而是封装"调用 impg 子命令 → 跑 sweep/参数
 搜索 → 收集时间/RSS/graph-report → 写 TSV/JSON → 渲染"的工作流。重型 artifact 写到仓库外的
-`/home/erikg/impg/data/<RUN_ID>/`，仅驱动器本身入库。
+`<RUN_DIR>/` 等相对路径（笔记所依据版本曾用 `/home/erikg/impg/data/<RUN_ID>/`；本 checkout
+未发现该硬编码），仅驱动器本身入库。
 
 **主题分布**：C4 难用例实验矩阵占 10 个（围绕 GRCh38 chr6:31891045-32123783 这一"超难"区域跑
 参数/算法矩阵），crush 诊断与通用图 QC 3 个，demo 等价验证 5 个，杂项 3 个。C4 主题占比近半，反映
@@ -1347,14 +1355,15 @@ crush/C4 难用例是 impg 开发后期的主战场。
    × 12 methods 笛卡尔积，写 scoreboard。这是"多方法 × 多场景"回归矩阵的可执行实现，pgr 若引入
    crush/POA 类算法可借鉴该 fixture matrix 模式。
 
-**单开发者工作流痕迹**：artifact 路径硬编码 `/home/erikg/impg/data/<RUN_ID>/`、PNG 上传
-`hypervolu.me/~erik/impg/`、`hprcv2-syng-smoke.py` 等 syng 主题脚本（2 个，本笔记不参考）。pgr 移植
-时需参数化路径。
+**单开发者工作流痕迹**：笔记所依据版本曾有 artifact 路径硬编码 `/home/erikg/impg/data/<RUN_ID>/`、
+PNG 上传 `hypervolu.me/~erik/impg/` 等（**本 checkout 未发现**，见 §8.1.7）；`hprcv2-syng-smoke.py`
+等 syng 主题脚本（2 个，本笔记不参考）。pgr 移植时需参数化路径。
 
 ### 10.3 impg-0.4.1/docs 文档结构
 
 `impg-0.4.1/docs/` 是项目的开发文档目录，规模庞大：
-**109 个顶层 Markdown 文件 + 2 个子目录 (`designs/`、`evaluations/`)，合计约 3.5 MB / 34619 行**。
+**109 个顶层 Markdown 文件 + 2 个子目录 (`designs/`、`evaluations/`)，合计 163 个 .md 文件、
+34619 行、约 1.8 MB（docs/ 全部 325 个文件约 2.8 MB）**。
 它不是面向最终用户的文档（那是 `README.md` 与 `--help`），而是开发过程中的设计笔记、实验报告、bug
 诊断与审计记录。下面按主题脉络梳理，突出对 `pgr` 有借鉴价值的模式与教训，而非逐文件罗列。
 
@@ -1480,8 +1489,8 @@ fixture ×method 的 `fixture_class`/`tier`/`method_family`/`method_parameters`/
 3. **agent-assisted 工作流痕迹** — `evaluations/` 下多数文件以 `Task: <id>` + `Evaluator: agent-<N>`
     - `Overall score: X.XX / 1.00` + `Rubric underspecified: true/false` 开头；实验文档记录
       `Branch: wg/agent-<N>/<topic>` 与 binary commit hash 便于复现；artifact 路径硬编码
-      `/home/erikg/impg/data/<dir>/` 与 `hypervolu.me/~erik/impg/<png>`。这些是
-      single-developer (Erik Garrison) + agent-assisted 工作流的产物。
+      `/home/erikg/impg/data/<dir>/` 与 `hypervolu.me/~erik/impg/<png>`（本 checkout 未发现，
+      见 §8.1.7）。这些是 single-developer (Erik Garrison) + agent-assisted 工作流的产物。
 
 #### 10.3.7 与 `pgr` 文档实践的对比
 
