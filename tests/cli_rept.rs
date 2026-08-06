@@ -108,12 +108,12 @@ fn command_rept_e_align_end_to_end() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// rmblast on synthetic data: a 400 bp "repeat" inserted twice in a random
-/// genome should be reported as covered intervals (needs makeblastdb and
-/// rmblastn in $PATH).
+/// rm on synthetic data: a 400 bp "repeat" inserted twice in a random genome
+/// should be reported as covered intervals (needs makeblastdb, rmblastn and
+/// trf in $PATH).
 #[test]
-fn command_rept_rmblast_end_to_end() -> anyhow::Result<()> {
-    for tool in ["makeblastdb", "rmblastn"] {
+fn command_rept_masker_end_to_end() -> anyhow::Result<()> {
+    for tool in ["makeblastdb", "rmblastn", "trf"] {
         if which::which(tool).is_err() {
             eprintln!("skipping: {tool} not found");
             return Ok(());
@@ -142,7 +142,7 @@ fn command_rept_rmblast_end_to_end() -> anyhow::Result<()> {
     let (_, stderr) = common::PgrCmd::new()
         .args(&[
             "rept",
-            "rmblast",
+            "masker",
             lib.to_str().unwrap(),
             genome_fa.to_str().unwrap(),
             "-o",

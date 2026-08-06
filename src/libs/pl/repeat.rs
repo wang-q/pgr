@@ -81,6 +81,82 @@ fn rm_batches(len: usize, frag: usize, overlap: usize) -> Vec<(usize, usize)> {
     batches
 }
 
+/// Run `trf` on `file` with RepeatMasker-style flags and write the compact
+/// `.dat` (stdout) to `out`.
+fn run_trf(file: &str, args: &[&str; 7], out: &str) -> anyhow::Result<()> {
+    let status = std::process::Command::new("trf")
+        .arg(file)
+        .args(args)
+        .args(["-d", "-h", "-ngs"])
+        .output()?;
+    if !status.status.success() {
+        anyhow::bail!("trf failed on {file}");
+    }
+    std::fs::write(out, status.stdout)?;
+    Ok(())
+}
+
+/// Parse TRF `.dat` rows, keeping intervals whose copy number is greater than
+/// `min_copy` (RepeatMasker keeps `copyNumber > minCopyNumber`). Writes
+/// `chr:start-end` lines offset by `offset` and returns the batch-local
+/// 1-based intervals for masking.
+fn parse_trf_dat<R: BufRead, W: Write>(
+    reader: R,
+    chr: &str,
+    offset: usize,
+    min_copy: f64,
+    writer: &mut W,
+) -> anyhow::Result<Vec<(usize, usize)>> {
+    let mut intervals = Vec::new();
+    for line in reader.lines() {
+        let line = line?;
+        let fields: Vec<&str> = line.split_ascii_whitespace().collect();
+        if fields.len() < 15 {
+            continue;
+        }
+        let start: usize = fields[0].parse()?;
+        let end: usize = fields[1].parse()?;
+        let copy: f64 = fields[3].parse()?;
+        if copy <= min_copy {
+            continue;
+        }
+        writer.write_fmt(format_args!(
+            "{}:{}-{}\n",
+            chr,
+            start + offset,
+            end + offset
+        ))?;
+        intervals.push((start, end));
+    }
+    Ok(intervals)
+}
+
+/// Write a FASTA with the given 1-based inclusive intervals replaced by `X`
+/// (RepeatMasker excises PERFECT simple repeats and masks IS hits between
+/// stages; X-masking is hit-set equivalent and keeps coordinates simple).
+fn write_masked_fasta(
+    path: &str,
+    name: &str,
+    seq: &[u8],
+    intervals: &[(usize, usize)],
+) -> anyhow::Result<()> {
+    let mut masked = seq.to_vec();
+    for (s, e) in intervals {
+        if *s >= 1 && *e <= masked.len() {
+            for b in &mut masked[*s - 1..*e] {
+                *b = b'X';
+            }
+        }
+    }
+    let mut w = crate::writer(path)?;
+    writeln!(w, ">{name}")?;
+    for chunk in masked.chunks(60) {
+        w.write_all(chunk)?;
+        w.write_all(b"\n")?;
+    }
+    Ok(())
+}
+
 /// Run `Profex -z genome` per chromosome and write `.rg` files.
 ///
 /// For each chromosome, runs `Profex -z genome <sn>` writing `prof.<sn>.txt`,
@@ -455,9 +531,9 @@ pub fn run_align_repeat_pipeline(opts: &AlignRepeatOpts) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Options for the RMBlast repeat pipeline (`pgr rept rmblast`), replicating
-/// RepeatMasker 4.2.4's `-lib` search recipe.
-pub struct RmblastOpts {
+/// Options for the RepeatMasker-simulating pipeline (`pgr rept masker`),
+/// replicating RepeatMasker 4.2.4's `-lib` flow (TRF + RMBlast + TRF).
+pub struct MaskerOpts {
     /// Absolute path to the `pgr` executable.
     pub pgr: String,
     /// Absolute path to the repeat library FASTA (`.gz` accepted).
@@ -485,10 +561,10 @@ pub struct RmblastOpts {
     pub rmblast_dir: Option<PathBuf>,
 }
 
-/// Run the RMBlast repeat pipeline: split the genome by chromosome, build a
-/// makeblastdb from the library, search each chromosome with the RepeatMasker
-/// `general_search_parameters` recipe, and write a runlist JSON.
-pub fn run_rmblast_repeat_pipeline(opts: &RmblastOpts) -> anyhow::Result<()> {
+/// Run the RepeatMasker-simulating pipeline: fragment per RepeatMasker's
+/// batcher, run TRF PERFECT (excised), rmblastn (`general_search_parameters`)
+/// and TRF DIVERGED per batch, then write a runlist JSON.
+pub fn run_masker_pipeline(opts: &MaskerOpts) -> anyhow::Result<()> {
     let pgr = &opts.pgr;
     let cwd = std::env::current_dir()?;
 
@@ -585,7 +661,8 @@ pub fn run_rmblast_repeat_pipeline(opts: &RmblastOpts) -> anyhow::Result<()> {
     // batch is a single sequence longer than 2000 bp, else 43).
     run_cmd!(info "==> Fragment genome (RepeatMasker batching)")?;
     let overlap = 2000usize;
-    let mut jobs: Vec<(String, String, String, usize, &'static str)> = Vec::new();
+    // (safe chr, raw batch fasta, batch start, matrix, batch sequence)
+    let mut jobs: Vec<(String, String, usize, &'static str, Vec<u8>)> = Vec::new();
     for (i, chr) in chrs.iter().enumerate() {
         let safe = format!("c{}", i + 1);
         safe_map.insert(safe.clone(), chr.clone());
@@ -595,7 +672,6 @@ pub fn run_rmblast_repeat_pipeline(opts: &RmblastOpts) -> anyhow::Result<()> {
         for (j, (start, len)) in batches.iter().enumerate() {
             let idx = jobs.len();
             let query = format!("batch.{idx}.fa");
-            let out = format!("hits.{idx}.out");
             let mut w = crate::writer(&query)?;
             writeln!(w, ">c{}frag-{}", i + 1, j + 1)?;
             for chunk in seq[*start..*start + len].chunks(60) {
@@ -610,7 +686,13 @@ pub fn run_rmblast_repeat_pipeline(opts: &RmblastOpts) -> anyhow::Result<()> {
                     &seq[*start..*start + len],
                 )),
             };
-            jobs.push((safe.clone(), query, out, *start, matrix_name));
+            jobs.push((
+                safe.clone(),
+                query,
+                *start,
+                matrix_name,
+                seq[*start..*start + len].to_vec(),
+            ));
         }
     }
 
@@ -622,20 +704,43 @@ pub fn run_rmblast_repeat_pipeline(opts: &RmblastOpts) -> anyhow::Result<()> {
         .num_threads((opts.parallel / 4).max(1))
         .build()?;
 
-    run_cmd!(info "==> Search repeats vs genome (rmblastn)")?;
-    let rg_results: Vec<anyhow::Result<Option<String>>> = pool.install(|| {
+    run_cmd!(info "==> Search repeats (TRF + rmblastn + TRF)")?;
+    let rg_results: Vec<anyhow::Result<Vec<String>>> = pool.install(|| {
         jobs.par_iter()
             .enumerate()
             .map(
-                |(i, (safe, query, out, start, matrix_name))| -> anyhow::Result<Option<String>> {
-                    let rg = format!("hits.{i}.rg");
+                |(i, (safe, query, start, matrix_name, seq))| -> anyhow::Result<Vec<String>> {
+                    let mut rg_files = Vec::new();
+
+                    // Stage 1: TRF PERFECT (young simple repeats), excised
+                    // from the query like RepeatMasker's first TRF stage.
+                    let perfect_dat = format!("trf.{i}.perfect.dat");
+                    run_trf(query, &crate::libs::rmblast::TRF_PERFECT_ARGS, &perfect_dat)?;
+                    let perfect_rg = format!("hits.{i}.perfect.rg");
+                    let perfect_iv = {
+                        let mut writer = crate::writer(&perfect_rg)?;
+                        let reader = crate::reader(&perfect_dat)?;
+                        parse_trf_dat(
+                            reader,
+                            safe,
+                            *start,
+                            crate::libs::rmblast::TRF_PERFECT_MIN_COPY,
+                            &mut writer,
+                        )?
+                    };
+                    rg_files.push(perfect_rg);
+
+                    // Stage 2: rmblastn library search on the masked query.
+                    let masked = format!("masked.{i}.fa");
+                    write_masked_fasta(&masked, safe, seq, &perfect_iv)?;
+                    let out = format!("hits.{i}.out");
                     let args = crate::libs::rmblast::build_args(
                         lib_fa,
-                        query,
+                        &masked,
                         matrix_name,
                         minscore,
                         opts.word_size,
-                        out,
+                        &out,
                         4,
                     );
                     let mut cmd = std::process::Command::new(&rmblastn);
@@ -643,10 +748,12 @@ pub fn run_rmblast_repeat_pipeline(opts: &RmblastOpts) -> anyhow::Result<()> {
                     cmd.env("BLASTMAT", &matrices_dir);
                     log::info!("rmblastn: {cmd:?}");
 
-                    match cmd.output() {
+                    let is_iv: Vec<(usize, usize)> = match cmd.output() {
                         Ok(o) if o.status.success() => {
-                            let mut writer = crate::writer(&rg)?;
-                            let reader = crate::reader(out)?;
+                            let is_rg = format!("hits.{i}.is.rg");
+                            let mut writer = crate::writer(&is_rg)?;
+                            let reader = crate::reader(&out)?;
+                            let mut iv = Vec::new();
                             for line in reader.lines() {
                                 let line = line?;
                                 if let Some((_, qstart, qend)) =
@@ -658,9 +765,11 @@ pub fn run_rmblast_repeat_pipeline(opts: &RmblastOpts) -> anyhow::Result<()> {
                                         qstart + *start as i64,
                                         qend + *start as i64
                                     ))?;
+                                    iv.push((qstart as usize, qend as usize));
                                 }
                             }
-                            Ok(Some(rg))
+                            rg_files.push(is_rg);
+                            iv
                         }
                         Ok(o) => {
                             let msg = String::from_utf8_lossy(&o.stderr).trim().to_string();
@@ -671,14 +780,44 @@ pub fn run_rmblast_repeat_pipeline(opts: &RmblastOpts) -> anyhow::Result<()> {
                                 }
                             }
                             failures.fetch_add(1, Ordering::Relaxed);
-                            Ok(None)
+                            Vec::new()
                         }
                         Err(e) => {
                             log::error!("failed to spawn rmblastn for {query}: {e}");
                             failures.fetch_add(1, Ordering::Relaxed);
-                            Ok(None)
+                            Vec::new()
                         }
+                    };
+
+                    // Stage 3: TRF DIVERGED (old simple repeats) on the
+                    // PERFECT + IS masked query, like RepeatMasker's last TRF
+                    // stage (IS regions are X-masked so repeats inside them
+                    // are excluded).
+                    let mut masked_iv = perfect_iv;
+                    masked_iv.extend(is_iv);
+                    let masked2 = format!("masked2.{i}.fa");
+                    write_masked_fasta(&masked2, safe, seq, &masked_iv)?;
+                    let diverged_dat = format!("trf.{i}.diverged.dat");
+                    run_trf(
+                        &masked2,
+                        &crate::libs::rmblast::TRF_DIVERGED_ARGS,
+                        &diverged_dat,
+                    )?;
+                    let diverged_rg = format!("hits.{i}.diverged.rg");
+                    {
+                        let mut writer = crate::writer(&diverged_rg)?;
+                        let reader = crate::reader(&diverged_dat)?;
+                        parse_trf_dat(
+                            reader,
+                            safe,
+                            *start,
+                            crate::libs::rmblast::TRF_DIVERGED_MIN_COPY,
+                            &mut writer,
+                        )?;
                     }
+                    rg_files.push(diverged_rg);
+
+                    Ok(rg_files)
                 },
             )
             .collect()

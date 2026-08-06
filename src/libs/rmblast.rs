@@ -31,6 +31,18 @@ pub const OUTFMT: &str =
     "6 score perc_sub perc_query_gap perc_db_gap qseqid qstart qend qlen sstrand sseqid \
      sstart send slen kdiv cpg_kdiv transi transv cpg_sites";
 
+/// RepeatMasker `runTRFStage` PERFECT parameters (young simple repeats).
+pub const TRF_PERFECT_ARGS: [&str; 7] = ["2", "7", "7", "80", "10", "50", "10"];
+
+/// RepeatMasker PERFECT-stage minimum copy number (kept when `> value`).
+pub const TRF_PERFECT_MIN_COPY: f64 = 4.0;
+
+/// RepeatMasker `runTRFStage` DIVERGED parameters (old simple repeats).
+pub const TRF_DIVERGED_ARGS: [&str; 7] = ["2", "3", "5", "75", "20", "33", "7"];
+
+/// RepeatMasker DIVERGED-stage minimum copy number (kept when `> value`).
+pub const TRF_DIVERGED_MIN_COPY: f64 = 5.0;
+
 /// The GC-keyed nucleotide matrices shipped with RepeatMasker
 /// (Matrices/ncbi/nt/20p##g.matrix), embedded like the lastz presets.
 pub const MATRIX_GC_NAMES: [&str; 10] = [

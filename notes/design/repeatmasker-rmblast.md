@@ -1,19 +1,28 @@
-# 复刻 RepeatMasker 的 RMBlast 路径：`pgr rept rmblast` 设计
+# 复刻 RepeatMasker 完整流程：`pgr rept masker` 设计
 
-> 2026-08-07。目标：按 RepeatMasker 4.2.4 的 `-lib` 搜索路径**逐参数复刻**，
-> 调用外部 `makeblastdb` / `rmblastn`，只输出 runlist 区间（直接喂
-> `pgr fa mask`），不做 family/class 注释与 ProcessRepeats 后处理。
-> TRF 阶段已有 `pgr rept trf`，本命令不重复（对应 RM 的 `-nolow` 视角）。
+> 2026-08-07。目标：按 RepeatMasker 4.2.4 的 `-lib` 流程**逐阶段复刻**，
+> 调用外部 `trf`（两阶段）+ `makeblastdb` / `rmblastn`，只输出 runlist
+> 区间（直接喂 `pgr fa mask`），不做 family/class 注释与 ProcessRepeats
+> 后处理。`pgr rept trf` 保持独立的通用串联重复命令不变。
 
-> **状态（2026-08-07 更新）**：`pgr rept rmblast` 已实现落地——
+> **状态（2026-08-07 最终）**：`pgr rept masker` 已实现落地——
 > `src/libs/rmblast.rs`（矩阵/参数/tab 解析 + 单测）、
-> `src/libs/pl/repeat.rs::run_rmblast_repeat_pipeline`、
-> `src/cmd_pgr/rept/rmblast.rs`。两处复刻修正后与 RM 默认输出几乎完全一致：
-> ① minscore 直接用 cutoff=225（早期误读了 `runTestStage` 的 7.5% 折扣，
-> 正式 `runStage` 不打折）；② 默认 `--frag 60000` 复刻 RM 分片 + 每片段
-> GC 选矩阵。10 株 × TnCentral：RM 原始 IS 被我们覆盖 100.0%、我们被 RM
-> 覆盖 99.7%，RM-strict 100%（残差是 RM ProcessRepeats 的元件端点裁剪，
-> 见 §2.8）。
+> `src/libs/pl/repeat.rs::run_rm_pipeline`（TRF PERFECT → rmblastn →
+> TRF DIVERGED，阶段间 X 掩蔽）、`src/cmd_pgr/rept/rm.rs`。三处修正后与
+> RM 默认输出**完全一致**：① minscore 直接用 cutoff=225（7.5% 折扣只在
+> 未使用的 `runTestStage`）；② 默认 `--frag 60000` 复刻分片 + 每片段 GC
+> 选矩阵；③ 补上 RM 的两个 TRF 阶段（PERFECT 2/7/7/80/10/50/10 拷贝>4 +
+> DIVERGED 2/3/5/75/20/33/7 拷贝>5）。10 株 × TnCentral：RM 全量 .out
+> 被我们覆盖 100.0%（见 §2.8）。
+
+> **TRF 两阶段发现（源码核对）**：`runSearchStages` 对 blast 引擎在
+> 自定义库阶段**前后各跑一次 `runTRFStage`**（PERFECT 与 DIVERGED 参数
+> 不同，见 RepeatMasker:3594 与 4084 附近）。PERFECT 找到的简单重复被
+> **切除**（postProcessSearch excise=1，中间文件变短 118 bp 可复现），
+> rmblastn 在切除后序列上搜索，DIVERGED 再在 IS 掩蔽后序列上跑。本命令
+> 用 X 掩蔽近似切除（hit 集等价、坐标不漂移）。`pgr rept rmblast` 旧名
+> 已更名 `pgr rept masker`（RMBlast 只存在于 RM 流程内，无需独立命令；
+> 原名 `rm` 易被误认为删除命令，弃用）。
 
 ## 1. 复刻对象：RM 的 `-lib` 单阶段路径
 
@@ -64,7 +73,7 @@
 
 ### 4.1 命令
 
-`pgr rept rmblast <repeats> <genome> [options]`，输出 runlist JSON
+`pgr rept masker <repeats> <genome> [options]`，输出 runlist JSON
 （与 e-kmer / e-align / trf 同构）。
 
 命名理由：**与 `trf` 保持一致**（工具名即子命令名，无 e/s 前缀）；库仍作
@@ -100,8 +109,8 @@ genome.fa(.gz) + repeats.fa(.gz)
   └─ runlist JSON（空结果输出 {}）
 ```
 
-实现位置：薄壳 `src/cmd_pgr/rept/rmblast.rs`；管道/解析逻辑在
-`src/libs/pl/repeat.rs` 新增 `run_rmblast_repeat_pipeline`（与
+实现位置：薄壳 `src/cmd_pgr/rept/rm.rs`；管道/解析逻辑在
+`src/libs/pl/repeat.rs` 新增 `run_rm_pipeline`（与
 `run_align_repeat_pipeline` 并列），tab 解析器独立函数 + 单测。
 
 ## 5. 一致性决策（复刻 vs 简化）
@@ -136,8 +145,8 @@ genome.fa(.gz) + repeats.fa(.gz)
 2. 集成测试（`tests/cli_rept.rs` 风格）：合成数据（400 bp 重复插入两次）检出；
    `makeblastdb`/`rmblastn` 不在 PATH 时跳过（同 trf 测试）。
 3. 对拍（10 株 E. coli + TnCentral，沿用 `scripts/rm-gold-compare.sh` 流程）：
-   * rmblast vs RM 原始 IS（`rm-is`）：期望高重合，差异 ≈ 无后处理损失；
-   * rmblast（`--min-len 50`）vs RM-strict：验证阈值对齐；
+   * rm vs RM 全量 .out（IS + Simple_repeat）：期望 100% 覆盖；
+   * rm（`--min-len 50`）vs RM-strict：验证阈值对齐；
    * 与 e-align PGI(k31) / LASTZ 并列，补齐方法梯队。
    指标：bp、片段数、`runlist statop` 双向覆盖、diff 平均长度。
 4. 结论写回 `notes/ecoli-repeats.md`（新增 §2.8）与 `docs/rept.md`。
@@ -146,7 +155,7 @@ genome.fa(.gz) + repeats.fa(.gz)
 
 1. `src/libs/pl/repeat.rs`：tab 解析 + GC/矩阵 + minscore 折扣 + 管道
    → 验证：`cargo test`
-2. `src/cmd_pgr/rept/rmblast.rs` + `mod.rs` 注册 + `--help`
+2. `src/cmd_pgr/rept/rm.rs` + `mod.rs` 注册 + `--help`
    → 验证：合成数据 e2e
 3. 矩阵内置（方案 B）→ 验证：无 RM 目录依赖下跑通
 4. 10 株对拍 → 写回 notes/docs

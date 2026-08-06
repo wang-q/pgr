@@ -1,17 +1,18 @@
 use clap::{value_parser, Arg, ArgMatches, Command};
 use cmd_lib::run_cmd;
 
-/// Build the clap subcommand for rmblast.
+/// Build the clap subcommand for masker.
 pub fn make_subcommand() -> Command {
-    Command::new("rmblast")
-        .about("Identifies repeats against an external library via rmblastn")
+    Command::new("masker")
+        .about("Simulates RepeatMasker: rmblastn library search plus TRF simple repeats")
         .after_help(
             r###"
-This command replicates RepeatMasker 4.2.4's `-lib` search recipe
-(`general_search_parameters`): it builds a makeblastdb from the library and
-searches the genome with the external `rmblastn`, then writes a runlist JSON
-ready for `pgr fa mask`. RepeatMasker's annotation post-processing
-(family/class, fragment re-joining, boundary refinement) is not replicated.
+This command simulates RepeatMasker 4.2.4's `-lib` pipeline per batch:
+TRF PERFECT (simple repeats, excised) -> rmblastn library search
+(`general_search_parameters`) -> TRF DIVERGED (diverged simple repeats),
+then writes a runlist JSON ready for `pgr fa mask`. RepeatMasker's annotation
+post-processing (family/class, fragment re-joining, boundary refinement) is
+not replicated.
 
 * <repeat> is path to the fasta file containing the repeat library, .fa.gz
   is supported.
@@ -21,13 +22,18 @@ ready for `pgr fa mask`. RepeatMasker's annotation post-processing
   = cutoff (225), `-word_size` by speed tier
   (slow/default/quick/rush = 8/9/11/13), `-gapopen 24 -gapextend 6`,
   `-mask_level 101`, `-complexity_adjust`, `-dust no`, xdrops 450/225/112,
-  and the GC-keyed `20p##g.matrix` scoring matrix selected per chromosome
+  and the GC-keyed `20p##g.matrix` scoring matrix selected per fragment
   (RepeatMasker `chooseMatrices`).
+* TRF stages use RepeatMasker's own parameters: PERFECT
+  (2/7/7/80/10/50/10, copy > 4) then DIVERGED (2/3/5/75/20/33/7, copy > 5),
+  with PERFECT simple repeats and library hits X-masked between stages like
+  RepeatMasker's excise/mask flow.
 
 * All operations run in a tempdir and no intermediate files are retained.
 
 * External dependencies
     * makeblastdb and rmblastn (RMBlast >= 2.13), from $PATH or --rmblast-dir
+    * trf, from $PATH
 
 * Soft-masked (lowercase) genomes are warned about: rmblastn skips lowercase
   regions, so uppercase the genome first (`tr a-z A-Z`) if warned.
@@ -110,7 +116,7 @@ ready for `pgr fa mask`. RepeatMasker's annotation post-processing
         )
 }
 
-/// Execute the rmblast command.
+/// Execute the masker command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let outfile = crate::cmd_pgr::args::get_outfile(args);
     crate::cmd_pgr::args::ensure_outfile_distinct(
@@ -160,7 +166,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
 
     let _cwd_guard = ctx.enter()?;
 
-    let opts = pgr::libs::pl::RmblastOpts {
+    let opts = pgr::libs::pl::MaskerOpts {
         pgr: ctx.pgr.clone(),
         abs_repeat,
         abs_infile,
@@ -175,7 +181,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         rmblast_dir,
     };
 
-    pgr::libs::pl::run_rmblast_repeat_pipeline(&opts)?;
+    pgr::libs::pl::run_masker_pipeline(&opts)?;
 
     Ok(())
 }

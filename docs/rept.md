@@ -203,7 +203,7 @@ Notes:
 | :--- | :--- |
 | `e-kmer` | Identify repeats against an external library (k-mer) |
 | `e-align` | Identify repeats against an external library (alignment) |
-| `rmblast` | Identify repeats against an external library via `rmblastn` (RepeatMasker recipe) |
+| `masker` | Simulate RepeatMasker (TRF + `rmblastn` library search + TRF) |
 | `s-kmer` | Identify repetitive regions by self k-mer depth (no library) |
 | `s-align` | Identify repetitive regions by self alignment |
 | `trf` | Identify tandem repeats via `trf` |
@@ -214,8 +214,8 @@ All six emit runlist JSON ready for `pgr fa mask`:
 pgr rept e-kmer tests/pgr/tncentral.fa.gz tests/genome/mg1655.fa.gz \
     > tests/pgr/mg1655.ir.json
 
-pgr rept rmblast tests/pgr/tncentral.fa.gz tests/genome/mg1655.fa.gz \
-    > tests/pgr/mg1655.rmblast.json
+pgr rept masker tests/pgr/tncentral.fa.gz tests/genome/mg1655.fa.gz \
+    > tests/pgr/mg1655.rmask.json
 
 pgr runlist stat tests/genome/mg1655.chr.sizes tests/pgr/mg1655.ir.json
 
@@ -357,20 +357,21 @@ insert bases in the denominator.
 
 ---
 
-## rmblast
+## masker
 
-Identify repeats in a genome against an external repeat library by calling
-the external `rmblastn`, replicating RepeatMasker 4.2.4's `-lib` search
-recipe (`general_search_parameters`) parameter-for-parameter. Like
-`e-align`, it emits a runlist JSON ready for `pgr fa mask`, but it is the
-closest pgr equivalent to a real RepeatMasker run: same scoring matrix,
-word size, gap penalties, and cutoff, so its hit set matches RepeatMasker's
-raw output (notes/ecoli-repeats.md §2.8).
+Simulate RepeatMasker 4.2.4's `-lib` pipeline: per 60 kb / 2 kb batch, run
+TRF PERFECT (young simple repeats, excised), the rmblastn library search
+(`general_search_parameters`, parameter-for-parameter), then TRF DIVERGED
+(old simple repeats) on the masked query, and merge everything into a runlist
+JSON ready for `pgr fa mask`. This is the closest pgr equivalent to a real
+RepeatMasker run: it covers both the library hits (IS elements etc.) and the
+simple repeats, with RepeatMasker's scoring matrix, word size, gap penalties,
+cutoff, and TRF parameters (notes/ecoli-repeats.md §2.8).
 
 ### Usage
 
 ```bash
-pgr rept rmblast [OPTIONS] <repeat> <infile>
+pgr rept masker [OPTIONS] <repeat> <infile>
 ```
 
 ### Arguments
@@ -392,6 +393,7 @@ pgr rept rmblast [OPTIONS] <repeat> <infile>
 ### Dependencies
 
 *   `makeblastdb`, `rmblastn` (RMBlast ≥ 2.13)
+*   `trf`
 
 ### Notes
 
@@ -400,14 +402,17 @@ pgr rept rmblast [OPTIONS] <repeat> <infile>
     xdrops 450/225/112, `-num_alignments 9999999`, and the GC-keyed
     `20p##g.matrix` scoring matrix (RepeatMasker `chooseMatrices`, selected
     per fragment, RepeatMasker's 60 kb / 2 kb batching).
+*   TRF stages use RepeatMasker's own parameters: PERFECT (2/7/7/80/10/50/10,
+    copy > 4) then DIVERGED (2/3/5/75/20/33/7, copy > 5), with PERFECT simple
+    repeats and library hits X-masked between stages (RepeatMasker excises
+    them; X-masking is hit-set equivalent and keeps coordinates simple).
 *   RepeatMasker's annotation post-processing (family/class, fragment
     re-joining, boundary refinement) is not replicated; intervals are the
-    raw rmblastn hits merged by chromosome. `--min-len` / `--fill-fragment`
-    can be raised to match `e-align`'s filtering.
-*   On the 10-strain E. coli cohort, RepeatMasker's IS intervals are fully
-    covered (100.0%) and 99.7% of our intervals fall inside RepeatMasker's
-    (the residual is a few base pairs at element ends that RepeatMasker's
-    boundary refinement trims).
+    stage outputs merged per chromosome. `--min-len` / `--fill-fragment` can
+    be raised to match `e-align`'s filtering.
+*   On the 10-strain E. coli cohort, RepeatMasker's full output (IS + simple
+    repeats) is fully covered (100.0%); our extra ~0.6% is element-end
+    flanks that RepeatMasker's boundary refinement trims.
 *   Soft-masked (lowercase) genomes are warned about: rmblastn skips
     lowercase regions, so uppercase the genome first (`tr a-z A-Z`).
 
