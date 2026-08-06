@@ -128,7 +128,7 @@ k-mer（tie 时取最右）。期望指纹大小为 `2|G|/(w+1)`。论文/代码
 
 **分解算法**:
 
-1. 将所有 SD 覆盖区域 `R` 取出，按重叠关系用 union-find 聚类（`cluster.codon`）。
+1. 将所有 SD 覆盖区域 `R` 取出，按重叠关系做区间染色聚类（`cluster.codon`）。
 2. 对每个 cluster，构建 `R` 上所有 k-mer 的索引 `I_k`（不使用 winnowing，默认 `k=10`）。
 3. 用与 search 类似的 plane-sweep，在 `R` 上扫描相同 k-mer 的多个位置，通过距离阈值 `d_g = 50`
    将位置链式合并，得到 putative elementary SDs。
@@ -157,7 +157,8 @@ k-mer（tie 时取最右）。期望指纹大小为 `2|G|/(w+1)`。论文/代码
 ### 3.2 源码模块与论文算法对应
 
 - `biser/codon/__init__.codon`（入口）：子命令分发、参数解析、全局常量（`MAX_ERROR`、`KMER_SIZE`、
-  `WINNOW_SIZE` 等）。
+  `WINNOW_SIZE` 等）；`align` 子命令对 span > 300 kb 的 putative SD 直接跳过（其中
+  `max_iter = 50` 因紧跟 `continue` 而不会生效）。
 - `biser/codon/search.codon`（Putative SD detection）：k-mer 索引、winnowing、plane-sweep、putative
   SD 输出；含 `cross_search`。
 - `biser/codon/hit.codon`（数据结构）：`Hit` / `Chromosome` / `Locus` 定义、CIGAR 操作、错误率计算、
@@ -166,14 +167,17 @@ k-mer（tie 时取最右）。期望指纹大小为 `2|G|/(w+1)`。论文/代码
   锚点链构建。
 - `biser/codon/align.codon`（Alignment refinement）：`generate_anchors()` 10-mer 锚点生成、
   `refine()` 基于 DP 的边界精修。
-- `biser/codon/cluster.codon`（SD clustering）：重叠 SD 的 union-find 风格聚类、提取每个 cluster 的
-  FASTA。
+- `biser/codon/cluster.codon`（SD clustering）：重叠 SD 的区间染色聚类（interval coloring，
+  颜色合并表近似 union-find）、提取每个 cluster 的 FASTA。
 - `biser/codon/decompose.codon`（SD decomposition）：k-mer chaining 分解 elementary SDs。
-- `biser/codon/mask.codon`（预处理/后处理）：hard-mask 生成、hard-masked 与原基因组坐标互转。
+- `biser/codon/mask.codon`（预处理/后处理）：hard-mask 生成、hard-masked 与原基因组坐标互转；
+  `translate()` 在映射回原坐标时会把 CIGAR 的 `M` 按 lowercase 区间重新切分为 `M`/`S`/`N`。
 - `biser/cover.py`（Core duplicon）：用 `ncls` 做区间重叠查询，再用贪心 set cover 找 core duplicons。
 - `biser/__main__.py`（Pipeline）：多进程任务拆分、临时目录管理、各阶段串接。
 
 ### 3.3 关键实现细节
+
+> **源码复核（2026-08-07）**：以下为重新通读 `biser-master/` 全部源码后的修正与补充。
 
 #### 3.3.1 Plane-sweep in `search.codon`
 
@@ -182,8 +186,14 @@ k-mer（tie 时取最右）。期望指纹大小为 `2|G|/(w+1)`。论文/代码
 > `QUERY_THRESHOLD=100`、`REF_THRESHOLD=500`、`MAX_EXTEND=5_000`；§3.3.2 的
 > `MATCH_SCORE=4`、`MAX_CHAIN_GAP=210`、`MIN_UPPERCASE_MATCH=90`、
 > `MIN_READ_SIZE=700`；§3.3.3 的 `MATCH=10/MISMATCH=1/GAP=0.5/GAPOPEN=100`、
-> `SIDE_ALIGN=500`、`MAX_GAP=10*1024`；`hit.codon` 打分
+> `SIDE_ALIGN=500`、`MAX_GAP=10*1024`、`MIN_READ=900`；此外还有
+> `MERGE_DIST=500`、`MAX_CHROMOSOME_SIZE=300_000_000`、`INDEX_CUTOFF=0.001`
+> （search/decompose 共用，按 0.1% 累积频率过滤高频 k-mer）；`hit.codon` 打分
 > `MATCH=5/MISMATCH=-4/GAPO=-40/GAPE=-1`。
+
+search 按染色体逐条处理（Python 侧默认跳过含 `_` 的 contig 与 `chrM`，`--keep-contigs` 关闭该
+过滤）。对每条染色体先建前向 + 反向互补两条索引，长度截断到 `MAX_CHROMOSOME_SIZE + MAX_SD_LEN`；
+同一染色体超出截断的部分以及排在 `-c chr` 之后的染色体只作为 query 侧扫描，不再扩索引。
 
 `build_index()` 同时承担两种角色：
 
@@ -251,8 +261,9 @@ anchor 的 y 位置 `(y + l - 1, anchor_idx)`。支持：
       `prev[i] = j`。
 3. 在右端点事件时，以 `dp[i] - gap_to_end` 激活当前 anchor，其中 `gap_to_end` 是从当前 anchor 到
    序列末端的最大可能距离惩罚。
-4. 按 DP 得分排序并重构链，过滤掉 span 小于 `MIN_UPPERCASE_MATCH` 或 `MIN_READ_SIZE * (1 - MAX_ERROR)`
-   的链。
+4. 按 DP 得分排序并重构链，保留满足 `span >= MIN_UPPERCASE_MATCH or span >=
+   int(MIN_READ_SIZE * (1 - MAX_ERROR))` 的链；由于后者（490）大于前者（90），实际起约束作用的是
+   90 bp。
 
 anchor 得分模型：第一个碱基得 `MATCH_SCORE`（默认 4），每多一个匹配碱基加 `MATCH_SCORE // 2`（即
 2）。gap 惩罚为 reference gap 与 query gap 之和（`dx + dy`），无 open 项。
@@ -271,22 +282,29 @@ anchor 得分模型：第一个碱基得 `MATCH_SCORE`（默认 4），每多一
 
 `refine(orig_h, hits, max_iter=500)` 对 anchors 做第二次 DP 精修：
 
-- anchors 先按 `(x.chr, y.chr, x.end, x.start, y)` 排序。
+- anchors 先排序：`Hit.__lt__` 按 `(x.chr, y.chr, x.start, x.end, y.start, y.end)`（Interval
+  dataclass 的字典序，源码中的注释 lambda 是旧键，未生效）。
 - 每个 anchor 的自身得分 `score = MATCH * matches - MISMATCH * mismatches - GAP * indel_bp`。
 - DP 仅向后查找最多 `max_iter=500` 个候选前驱；对每对 `(aj, ai)` 计算：
     - `mi = min(c_xs - p.x.end, c_ys - p.y.end)`
     - `ma = max(c_xs - p.x.end, c_ys - p.y.end)`
-    - 若 `ma ≥ MAX_GAP` 或同染色体且中间无 gap，则跳过。
+    - 若 `ma ≥ MAX_GAP` 则跳过。
+    - 同染色体时另有双重过滤：(a) 单个 anchor 的 x/y 区间若几乎重叠
+      （`max(span_x, span_y) - max(qo, 0) < SIDE_ALIGN`，即贴近对角线的自匹配）直接跳过该 anchor；
+      (b) 若两个 anchor 在两个轴上都不相交（`max(0, min(c_xs, c_ys) - max(p.x.end, p.y.end)) ≥ 1`）
+      则跳过该前驱。
     - 更新 `dp[ai] = max(dp[ai], dp[aj] + score[ai] - MISMATCH * mi - GAPOPEN - GAP * (ma - mi))`。
-- 按 `dp` 得分降序回溯，得到不相交的 anchor 链；合并被已有结果完全覆盖的链。
+- 按 `dp` 得分降序回溯，得到不相交的 anchor 链；若候选链相对已有结果在两个轴上都被覆盖到
+  `SIDE_ALIGN` 以内则丢弃；最终链 span 须 `≥ MIN_READ`（900）。
 - 对最终链，用 `Hit(orig_h, [anchors], SIDE_ALIGN)` 拼接 anchors：
-    - 相邻 anchors 之间的 gap 调用 `align_gap()`，小 gap（≤1000）用 `bio.seq.align()` 做精确比对；
-      大 gap 用两端各比对 1000bp 并取分高者，中间用 `I`/`D` 表示。
+    - 重叠的 anchor 先经 `extend()` 合并，其余相邻 anchors 之间的 gap 调用 `align_gap()`：
+      令 `mi = min(Δx, Δy)`（较短侧长度），若 `max(Δx, Δy) ≤ 1000` 直接用 `bio.seq.align()`
+      精确比对；否则两端各比对 `mi` bp 并取分高者，中间 `max(Δx, Δy) - mi` 用 `I`/`D` 表示。
     - 在链两端各取 `SIDE_ALIGN=500` 做 `ltrim()` / `rtrim()`：从端点向内侧扫描，找到累积比对得分
       最大的位置作为新边界。
 
-`hit.codon` 中的 `Hit.align()` 会调用 `bio.seq.align()`，并将返回的 `M` 操作细分为 `=`（匹配）与
-`X`（错配），CIGAR 操作仅使用 `=`, `X`, `I`, `D`。
+`hit.codon` 中的 `Hit.align()` 按 `MAX_ALIGN=60 kb` 分块调用 `bio.seq.align()`，并将返回的 `M`
+操作细分为 `=`（匹配）与 `X`（错配），CIGAR 操作仅使用 `=`, `X`, `I`, `D`。
 
 #### 3.3.4 Decomposition in `decompose.codon`
 
@@ -303,7 +321,7 @@ decompose 阶段需要跟踪同一 elementary SD 在多个序列上的多个拷�
 - `gap`：自上次命中以来的未命中步数；
 - `score`：命中计数。
 
-处理当前 k-mer 的位置列表 `index`（按 `(chr, loc)` 降序排列）时：
+处理当前 k-mer 的位置列表 `index`（按 `(chr, loc)` 升序构建，`update_list` 自列表末尾向前遍历）时：
 
 1. 对尚未进入链表的新位置，在链表头部插入新节点，并继承当前 `mappings`。
 2. 对可延伸的节点，更新 `end`、`score`、`gap=0`、`count += 1`。
