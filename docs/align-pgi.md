@@ -105,6 +105,12 @@ The output feeds directly into
   reference is the target (`tName`) and the second input the query
   (`qName`). This is the opposite positional order of FastGA's
   `FastGA <query> <target>` but matches `pgr pl chainnet`.
+* Seed semantics are always anchored to the reference genome: seeds are
+  defined and emitted from the reference (the first input) and matched
+  against the query. Swapping the inputs is therefore not symmetric, and
+  results differ from FastGA's query-anchored model by design; the same
+  reference yields reproducible seeds regardless of which query set is
+  compared against it.
 * 2bit inputs are preferred for speed and random access.
 * Both sides must use identical sampling parameters (k, syncmer, window);
   `.pgi` inputs carry theirs in the index header.

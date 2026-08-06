@@ -193,6 +193,11 @@ Query 在后**；种子侧 = ref（第一个参数），**不采用 FastGA 的
 "query 做种子侧"角色分配**。pgr 的 CLI/输出/种子语义三者一致，均为
 ref 主导。
 
+> **核心原则（2026-08-06 用户定稿）：种子语义永远锚定参考基因组。**
+> `pgr align pgi` 的种子始终从 ref（第一个参数）定义和发射，query 只是
+> 被匹配的对象；query 集合如何增长/替换都不改变种子侧，结果对同一 ref
+> 可复现。这与 FastGA 的"种子锚定第一个参数 = query"模型相反，是有意为之。
+
 **与 FastGA 的对照**（FastGA.c / ALNtoPAF.c / ALNtoPSL.c 核对）：
 
 | 方面 | FastGA | pgr align pgi |
@@ -214,6 +219,20 @@ ref 主导。
   target=a）再 `chainnet(a, b)`（target=a、query=b），两段抵消后 MG1655
   （恒为 a）在每对里都是 target；直接拿 FastGA PSL 喂 chainnet 时也可
   `pgr psl swap` 换 q/t。
+
+**种子侧的影响（2026-08-06，用户确认习惯"从第一个参数产生种子"）**：
+
+- adaptamer 不对称是 FastGA 语义的固有部分：种子侧（= ref）定义种子
+  长度与发射位置，另一侧只在匹配种子处获得覆盖；`swap(ref, query)` 会得到
+  略不同的比对集合（FastGA README 与论文均明确 `FastGA A B` ≠ `FastGA B A`）。
+  pgi 基准中 pgr 与 FastGA 都锚定 mg1655（前者 ref 侧、后者第一个参数），
+  两者覆盖差距 ~2.4 pp 归因于 wave 补齐而非种子侧（见
+  [[../benchmarks/bench-pgi-align-vs-fastga.md]]）。
+- **泛基因组场景 ref 做种子侧是稳定选择**：多 query 对固定 ref，种子语义
+  始终锚定参考，query 集合增长/替换不改变种子侧；下游 chainnet 不关心
+  种子侧，只消费 PSL 的 q/t 角色。
+- 需要顺序无关时对应 FastGA `-S`（双向并集）语义，pgr 明确不做（§7.4）；
+  若未来做对称跨基因组重复检测再按 FastGA.c:2340 语义实现。
 
 ### 1.4 CLI
 
@@ -738,7 +757,7 @@ PgiMmap 前缀掩码（`pack_kmer` 高位对齐，原 mask 取低位致 k%4≠0 
 | 完整 LCP（vlcp 表 / `.pgi` v3 LBYTE） | **不做**（正确版性能不可行，§3.6） |
 | select 表达式 | **不做**（低价值，§3.4） |
 | 多 mask union | 暂缓 |
-| `-S` 对称 adaptamer | 暂缓（专门场景） |
+| `-S` 对称 adaptamer（`--sym` 候选） | 默认不做；场景开关候选（对称 SD / 全对图），待方向偏差量化（§7.4.1） |
 | trace points / `.1aln` 紧凑存储 | 不做 |
 | ALNchain | 不做 |
 | GDB / scaffold / 完整 GIX 分片 | 不做 |
@@ -748,7 +767,9 @@ PgiMmap 前缀掩码（`pack_kmer` 高位对齐，原 mask 取低位致 k%4≠0 
 - **Gap_Improver**：FastGA 盒内 unit-cost DP 针对 tspace 采样 trace 的补全；
   pgr wave 精确回溯，无需补全（§3.1）。
 - **select 表达式**：`fa range` + 子索引可间接实现（§3.4）。
-- **多 mask union / `-S` 对称 adaptamer**：专门场景，暂缓（§7）。
+- **多 mask union**：低优先便利，暂缓（§7.5）。
+- **`-S` 对称 adaptamer**：默认不做；2026-08-06 调整为场景开关候选
+  （`--sym`，对称 SD / 全对图需要时），先量化方向偏差再实现（§7.4.1）。
 - **trace points / `.1aln`、ALNchain、GDB/GIX 分片**：pgr 用 PSL/MAF +
   UCSC chain/net + 2bit/`.pgi` 替代，不做（格式对比见 fastga.md §9/§10）。
 - **`.1aln` 紧凑存储（2026-08-06 裁定放弃）**：曾完整实现读写并保留在
@@ -833,6 +854,30 @@ FastGA `-S`（FastGA.c:2340，README:199-207 与论文 §3.1 均已文档化：
 是"故意不遮蔽重复区做 delta 引用"的 pbit 流程，但细菌规模已实测无收益；
 真核（重复区占比大）是唯一可能显著场景，需 §7.2 人类数据验证（且应连同
 遮蔽与否两个版本一起测）。
+
+#### 7.4.1 重新评估（2026-08-06，情况变化后）
+
+> 触发变化：①"种子语义永远锚定参考基因组"定稿（§1.3.6）——方向不对称成为
+> 默认设计，固定 ref 的 synteny/泛基因组是优点，但**所有全对/双向比较现在都
+> 带方向偏差**；②全对场景现实存在：10 株 cohort 45 对（§2.4，每对单向）、
+> 泛基因组图（paf graph/to-gfa/to-vcf）、impg sparsify all-vs-all；
+> ③`sd cross`（docs/sd.md）是单向映射，对称跨基因组重复检测需要双向；
+> ④hybrid（pgi+lastz）定稿为仅共线性，与 -S 无关。
+
+**重新评估结论**：
+
+- **默认仍不做**——种子锚定 ref 是定稿原则，synteny/泛基因组不需要，
+  且 -S 会引入重复噪音（README 明确 synteny 场景不建议）；
+- 调整为**场景开关候选**：如 `pgr align pgi --sym`（或 `sd cross` 侧），
+  双向 merge 取种子并集，链化/扩展/去重复用现有流程；FastGA 自身也是
+  默认关；
+- **触发条件（先量化再实现）**：
+  1. 45 对 cohort 抽 5–10 对跑 (A,B) vs (B,A)，对比覆盖/身份/块数——
+     差异在噪声级则全对场景也不需要；
+  2. 明确 `sd cross` 是否需要双向全量（找两个基因组各自的 SD）——是则
+     -S 是正确工具（§7.4 早前预留的"对称跨基因组重复检测"条件已接近现实）。
+- **不变的结论**：pbit 存储无收益（E. coli 实测 +1 字节、遮蔽后趋零），
+  -S 的动机不应来自存储压缩。
 
 ### 7.5 多 mask union
 
