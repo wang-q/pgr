@@ -300,6 +300,66 @@ pgr runlist compare json/$g.rm-strict.json json/$g.<method>.json --op diff -o tm
 运行产物（临时）：`/tmp/rm_gold/`（每株 `.out`/GFF/runlist JSON，`rm-is`/
 `rm-strict` 两套）、`rm_vs_ours.tsv` / `rm_strict_vs_ours.tsv` / `diff_stats.tsv`。
 
+### 2.8 `pgr rept rmblast` 复刻验证（RMBlast 后端，10 株全跑）
+
+2026-08-07 实现 `pgr rept rmblast`：按 RepeatMasker 4.2.4 `-lib` 配方
+（`general_search_parameters`）逐参数复刻，调外部 `makeblastdb` / `rmblastn`
+（设计见 [design/repeatmasker-rmblast.md](design/repeatmasker-rmblast.md)）。
+10 株 × TnCentral 全跑，每株约 20 s（60 kb 分片 × 2 进程并行，4 线程/进程）。
+默认参数：`-min_raw_gapped_score 225`（cutoff 原样传入，**不打折**——
+7.5% 折扣只在未使用的 `runTestStage` 里，正式 `runStage` 直接用配方值；
+早期版本误读为 209）、
+`-word_size 9`、`-gapopen 24 -gapextend 6`、`-mask_level 101`、
+`-complexity_adjust`、`-dust no`、xdrops 450/225/112、GC 矩阵
+（按 RM `SimpleBatcher` 分片：fragmentLen=60000/overlap=2000，每片段
+独立 batch、按片段 GC 走 `chooseMatrices`）。
+
+10 株合计（总长 52,425,656 bp），rmblast 共遮蔽 2,157,560 bp（4.12%）：
+
+| 对比方 | 对方 bp | 交集 bp | 对方被 rmblast 覆盖 | rmblast 被对方覆盖 |
+| :--- | ---: | ---: | ---: | ---: |
+| RM-is（原始 IS） | 2,150,773 | 2,150,771 | **100.0%** | 99.7% |
+| RM-strict（≥50 bp / ≥70%） | 1,366,188 | 1,366,188 | **100.0%** | 63.3% |
+| e-align PGI k31 | 1,250,721 | 1,248,057 | 99.8% | 58.9% |
+| e-align LASTZ | 1,361,723 | 1,360,402 | 99.9% | 64.2% |
+
+逐株（rmblast bp / RM-is 被覆盖 / RM-strict 被覆盖 / k31 被覆盖）：
+
+| 基因组 | rmblast bp | RM-is | RM-strict | k31 |
+| :--- | ---: | ---: | ---: | ---: |
+| cft073 | 200,122 | 100.0% | 100.0% | 99.99% |
+| e2348_69 | 224,891 | 100.0% | 100.0% | 99.9% |
+| e24377a | 282,122 | 100.0% | 100.0% | 99.7% |
+| ec042 | 211,298 | 100.0% | 100.0% | 99.5% |
+| ec2011c_3493 | 295,469 | 100.0% | 100.0% | 99.9% |
+| ec958 | 228,983 | 100.0% | 100.0% | 99.9% |
+| mg1655 | 163,908 | 100.0% | 100.0% | 99.7% |
+| nissle1917 | 197,590 | 100.0% | 100.0% | 99.98% |
+| sakai | 199,019 | 100.0% | 100.0% | 99.9% |
+| se11 | 154,158 | 100.0% | 100.0% | 98.9% |
+
+要点：
+
+1. **与 RM 默认输出几乎完全一致**：10 株 RM-is 全部落在我们区间内
+   （100.0%，仅 2 bp 含入差），我们被 RM 覆盖 99.7%——残差 ~6.8 kb
+   全是**元件端点的小尾巴**（mg1655 如 IS186A/B 我们报 15388–16730、
+   RM 报 15390–16728，两端各差 2 bp）：RM 的 ProcessRepeats 会做边界
+   精修裁掉端点，我们保留原始命中跨度。对遮蔽目标是"更完整"而非缺陷。
+2. **为什么之前差一点（根因复盘）**：① minscore 误用 209（读错源码，
+   折扣在未使用的 runTestStage）；② 未复刻 RM 默认 60 kb/2 kb 分片与
+   每片段 GC 矩阵（整染色体搜索矩阵选择不同，E. coli 差 ~7 kb，真核
+   GC 变异更大时会被放大）。两处修正后差距从 95–97% 收敛到 99.7–100%。
+   这两点正是"换物种会更大"的隐患，已消除。
+3. **rmblast ⊇ 此前所有方法**：RM-strict / e-align k31 / LASTZ 均被
+   rmblast 覆盖 99.8%+——新后端是"最接近 RepeatMasker"的一档。
+4. **定位**：e-kmer / e-align（PGI/LASTZ）是快速近似，rmblast 是 RM 的
+   忠实复刻（每株 ~20 s vs e-align PGI 秒级）。追求与 RM 一致选 rmblast，
+   追求速度选 e-align / e-kmer。
+5. rmblast 默认不带长度/相似度过滤（min-len=0，同 RM 原始输出）；要与
+   e-align 可比时加 `--min-len 50 --fill-fragment 10`（≈ RM-strict 口径）。
+
+运行产物：`/tmp/rmblast11/`（每株 runlist JSON + log）、`agg2.tsv`。
+
 ## 3. 解读
 
 1. **真核 TE 库（RepBase/Dfam）在 E. coli 中的检出很少**：每株 e-kmer 仅 2–19 个
@@ -345,6 +405,11 @@ pgr runlist compare json/$g.rm-strict.json json/$g.<method>.json --op diff -o tm
    LASTZ 覆盖 RM-strict 93.6%、PGI k31 88.0%、旧默认 83.0%、e-kmer 64.1%；
    LASTZ 的总量已与 RM-strict 相当（1,361,723 vs 1,366,188 bp）。"金标准"
    必须声明所用库与过滤口径——同一基因组用 Dfam-RM 与 TnCentral-RM 差 3 倍以上。
+10. **`pgr rept rmblast` 复刻成功（§2.8）**：修正 minscore（225 无折扣）
+    与 RM 默认分片后，RM 原始 IS 被其覆盖 100.0%、RM-strict 100%、
+    e-align k31 / LASTZ 99.8%+，残差仅元件端点 2–30 bp（RM 边界精修
+    裁剪）。它成为方法梯队里最接近 RepeatMasker 的一档；快速近似仍用
+    e-kmer / e-align。
 
 ## 4. 参考
 

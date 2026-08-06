@@ -108,6 +108,66 @@ fn command_rept_e_align_end_to_end() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// rmblast on synthetic data: a 400 bp "repeat" inserted twice in a random
+/// genome should be reported as covered intervals (needs makeblastdb and
+/// rmblastn in $PATH).
+#[test]
+fn command_rept_rmblast_end_to_end() -> anyhow::Result<()> {
+    for tool in ["makeblastdb", "rmblastn"] {
+        if which::which(tool).is_err() {
+            eprintln!("skipping: {tool} not found");
+            return Ok(());
+        }
+    }
+
+    let repeat = random_seq(400, 7);
+    let genome = format!(
+        "{}{}{}{}{}",
+        random_seq(400, 1),
+        repeat,
+        random_seq(200, 2),
+        repeat,
+        random_seq(400, 3)
+    );
+
+    let temp = tempfile::TempDir::new()?;
+    let lib = temp.path().join("lib.fa");
+    let genome_fa = temp.path().join("genome.fa");
+    let out = temp.path().join("out.json");
+    std::fs::write(&lib, format!(">rep1\n{}\n", repeat))?;
+    // Dotted contig name: the runlist parser truncates these to the last
+    // '.' segment, and rmblast must restore the full name in the runlist.
+    std::fs::write(&genome_fa, format!(">chr1.1\n{}\n", genome))?;
+
+    let (_, stderr) = common::PgrCmd::new()
+        .args(&[
+            "rept",
+            "rmblast",
+            lib.to_str().unwrap(),
+            genome_fa.to_str().unwrap(),
+            "-o",
+            out.to_str().unwrap(),
+        ])
+        .run();
+    assert!(stderr.contains("==> Outputs"), "pipeline failed: {stderr}");
+
+    let json: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&out)?)?;
+    let spans = json["chr1.1"].as_str().expect("chr1.1 spans missing");
+    let covered: usize = spans
+        .split(',')
+        .filter_map(|s| {
+            let mut it = s.split('-');
+            let start: usize = it.next()?.parse().ok()?;
+            let end: usize = it.next()?.parse().ok()?;
+            Some(end - start + 1)
+        })
+        .sum();
+    // Both 400 bp copies overlap the reported intervals; allow partial
+    // boundary trimming, so require at least one full copy worth of coverage.
+    assert!(covered >= 400, "expected repeat coverage, got: {spans}");
+    Ok(())
+}
+
 /// s-kmer on a genome with a dotted contig name must report the full name
 /// in the runlist (regression for runlist-name truncation; needs FastK and
 /// Profex in $PATH).

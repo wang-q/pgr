@@ -1,8 +1,11 @@
 //! Repeat-identification pipeline drivers (FastK → Profex → runlist).
 
 use cmd_lib::run_cmd;
+use rayon::prelude::*;
 use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Mutex;
 
 /// True when any base of the input FASTA is lowercase (soft-masked).
 ///
@@ -35,6 +38,47 @@ fn has_sequences(infile: &str) -> anyhow::Result<bool> {
         }
     }
     Ok(false)
+}
+
+/// Find an executable by name in `$PATH`, or `None` when absent.
+fn find_in_path(name: &str) -> Option<PathBuf> {
+    std::env::var_os("PATH").and_then(|paths| {
+        std::env::split_paths(&paths)
+            .map(|dir| dir.join(name))
+            .find(|p| p.is_file())
+    })
+}
+
+/// Read the first FASTA record's sequence bytes.
+fn read_fasta_sequence(path: &str) -> anyhow::Result<Vec<u8>> {
+    let mut reader = crate::libs::fmt::fa::reader(path)?;
+    if let Some(result) = reader.records().next() {
+        let rec = result?;
+        return Ok(rec.sequence().as_ref().to_vec());
+    }
+    anyhow::bail!("no FASTA records in {path}")
+}
+
+/// RepeatMasker `SimpleBatcher` fragment layout for one sequence: a list of
+/// (0-based start, length) fragments with `overlap` bp between neighbours.
+fn rm_batches(len: usize, frag: usize, overlap: usize) -> Vec<(usize, usize)> {
+    if len <= frag {
+        return vec![(0, len)];
+    }
+    let mut divisor = 2usize;
+    while (len + (divisor - 1) * overlap) / divisor > frag {
+        divisor += 1;
+    }
+    let mut size = (len + (divisor - 1) * overlap) / divisor;
+    let mut batches = Vec::new();
+    for i in 0..divisor - 1 {
+        let start = i * (size - overlap);
+        batches.push((start, size));
+    }
+    let rem = (len + (divisor - 1) * overlap) % divisor;
+    size += rem;
+    batches.push((len - size, size));
+    batches
 }
 
 /// Run `Profex -z genome` per chromosome and write `.rg` files.
@@ -386,6 +430,288 @@ pub fn run_align_repeat_pipeline(opts: &AlignRepeatOpts) -> anyhow::Result<()> {
         opts.fill_fragment,
         "out.json",
     )?;
+
+    // Restore the real contig names in the runlist json.
+    let mut val: serde_json::Value = serde_json::from_slice(&std::fs::read("out.json")?)?;
+    if let Some(obj) = val.as_object_mut() {
+        let old = std::mem::take(obj);
+        for (k, v) in old {
+            // Drop the empty marker `-` so the runlist stays clean.
+            if v.as_str() == Some("-") {
+                continue;
+            }
+            obj.insert(safe_map.get(&k).cloned().unwrap_or(k), v);
+        }
+    }
+    let out_bytes = serde_json::to_vec_pretty(&val)?;
+    if opts.abs_outfile == "stdout" {
+        let mut w = crate::writer("stdout")?;
+        w.write_all(&out_bytes)?;
+        w.write_all(b"\n")?;
+    } else {
+        std::fs::write(&opts.abs_outfile, out_bytes)?;
+    }
+
+    Ok(())
+}
+
+/// Options for the RMBlast repeat pipeline (`pgr rept rmblast`), replicating
+/// RepeatMasker 4.2.4's `-lib` search recipe.
+pub struct RmblastOpts {
+    /// Absolute path to the `pgr` executable.
+    pub pgr: String,
+    /// Absolute path to the repeat library FASTA (`.gz` accepted).
+    pub abs_repeat: String,
+    /// Absolute path to the genome FASTA (`.gz` accepted).
+    pub abs_infile: String,
+    /// Absolute path to the output (or `stdout`).
+    pub abs_outfile: String,
+    /// RepeatMasker `-cutoff` (default 225, passed to rmblastn unchanged).
+    pub cutoff: i32,
+    /// rmblastn `-word_size` (default 9).
+    pub word_size: usize,
+    /// Fixed GC percentage for matrix selection; `None` = per chromosome.
+    pub matrix_gc: Option<i64>,
+    /// Shortest fragment kept after merging (0 = RepeatMasker raw hits).
+    pub min_len: usize,
+    /// Fill holes between fragments (0 = RepeatMasker raw hits).
+    pub fill_fragment: usize,
+    /// Total threads across rmblastn processes (4 per process, like RM).
+    pub parallel: usize,
+    /// RepeatMasker `-frag`: max fragment length before splitting (0 = no
+    /// fragmentation, whole chromosome per job).
+    pub frag: usize,
+    /// Directory containing `makeblastdb` / `rmblastn` (default `$PATH`).
+    pub rmblast_dir: Option<PathBuf>,
+}
+
+/// Run the RMBlast repeat pipeline: split the genome by chromosome, build a
+/// makeblastdb from the library, search each chromosome with the RepeatMasker
+/// `general_search_parameters` recipe, and write a runlist JSON.
+pub fn run_rmblast_repeat_pipeline(opts: &RmblastOpts) -> anyhow::Result<()> {
+    let pgr = &opts.pgr;
+    let cwd = std::env::current_dir()?;
+
+    if has_soft_mask(&opts.abs_infile)? {
+        log::warn!(
+            "input genome contains soft-masked (lowercase) regions; rmblastn \
+             will skip them, consider uppercasing first (`tr a-z A-Z`)"
+        );
+    }
+
+    // Resolve the RMBlast binaries: `--rmblast-dir` overrides, otherwise
+    // fall back to `$PATH` with a friendly error when missing.
+    let makeblastdb = match &opts.rmblast_dir {
+        Some(dir) => {
+            let bin = dir.join("makeblastdb");
+            anyhow::ensure!(
+                bin.is_file(),
+                "makeblastdb not found in {}; is the RMBlast directory correct?",
+                dir.display()
+            );
+            bin
+        }
+        None => find_in_path("makeblastdb").ok_or_else(|| {
+            anyhow::anyhow!(
+                "makeblastdb not found in $PATH; install RMBlast or pass --rmblast-dir <dir>"
+            )
+        })?,
+    };
+    let rmblastn = match &opts.rmblast_dir {
+        Some(dir) => {
+            let bin = dir.join("rmblastn");
+            anyhow::ensure!(
+                bin.is_file(),
+                "rmblastn not found in {}; is the RMBlast directory correct?",
+                dir.display()
+            );
+            bin
+        }
+        None => find_in_path("rmblastn").ok_or_else(|| {
+            anyhow::anyhow!(
+                "rmblastn not found in $PATH; install RMBlast or pass --rmblast-dir <dir>"
+            )
+        })?,
+    };
+
+    // makeblastdb does not read gzipped FASTA; normalize the library to a
+    // plain file in the tempdir (also keeps the db files out of the user dir).
+    run_cmd!(info "==> Prepare repeat library")?;
+    let lib_fa = "repeats.fa";
+    if opts.abs_repeat.ends_with(".gz") {
+        let mut reader = crate::reader(&opts.abs_repeat)?;
+        let mut writer = crate::writer(lib_fa)?;
+        std::io::copy(&mut reader, &mut writer)?;
+    } else {
+        std::fs::copy(&opts.abs_repeat, lib_fa)?;
+    }
+
+    run_cmd!(info "==> Build library database")?;
+    let db_status = std::process::Command::new(&makeblastdb)
+        .args(["-dbtype", "nucl", "-in", lib_fa, "-out", lib_fa])
+        .output()?;
+    if !db_status.status.success() {
+        anyhow::bail!(
+            "makeblastdb failed: {}",
+            String::from_utf8_lossy(&db_status.stderr)
+        );
+    }
+
+    // rmblastn resolves `-matrix <name>` through `BLASTMAT`; write all GC
+    // matrices once and point every job at the same directory.
+    run_cmd!(info "==> Write scoring matrices")?;
+    let matrices_dir = cwd.join("matrices");
+    std::fs::create_dir_all(&matrices_dir)?;
+    for name in crate::libs::rmblast::MATRIX_GC_NAMES {
+        let content = crate::libs::rmblast::matrix_content(name).expect("matrix list mismatch");
+        std::fs::write(matrices_dir.join(format!("20p{name}.matrix")), content)?;
+    }
+
+    // Split the genome into per-chromosome files (sanitized names, .fa.gz ok).
+    run_cmd!(info "==> Split genome by chromosomes")?;
+    let abs_infile = &opts.abs_infile;
+    run_cmd!(${pgr} fa size ${abs_infile} -o chr.sizes)?;
+    let chrs = crate::libs::io::read_names::<Vec<String>>("chr.sizes")?;
+    run_cmd!(${pgr} fa split name ${abs_infile} -o .)?;
+
+    // The runlist parser truncates dotted contig names (e.g. `NC_000913.1` ->
+    // `1`) at the last '.', so map real names to dot-free placeholders and
+    // restore them after the runlist pass (same as trf / e-align).
+    let mut safe_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+
+    // Fragment each chromosome with RepeatMasker's `SimpleBatcher` layout
+    // (fragmentLen/overlap), write one query file per batch, and pick the
+    // GC-keyed matrix per batch (RepeatMasker uses per-batch GC when the
+    // batch is a single sequence longer than 2000 bp, else 43).
+    run_cmd!(info "==> Fragment genome (RepeatMasker batching)")?;
+    let overlap = 2000usize;
+    let mut jobs: Vec<(String, String, String, usize, &'static str)> = Vec::new();
+    for (i, chr) in chrs.iter().enumerate() {
+        let safe = format!("c{}", i + 1);
+        safe_map.insert(safe.clone(), chr.clone());
+        let chr_file = format!("{}.fa", crate::libs::io::sanitize_filename(chr));
+        let seq = read_fasta_sequence(&chr_file)?;
+        let batches = rm_batches(seq.len(), opts.frag, overlap);
+        for (j, (start, len)) in batches.iter().enumerate() {
+            let idx = jobs.len();
+            let query = format!("batch.{idx}.fa");
+            let out = format!("hits.{idx}.out");
+            let mut w = crate::writer(&query)?;
+            writeln!(w, ">c{}frag-{}", i + 1, j + 1)?;
+            for chunk in seq[*start..*start + len].chunks(60) {
+                w.write_all(chunk)?;
+                w.write_all(b"\n")?;
+            }
+            drop(w);
+            let matrix_name = match opts.matrix_gc {
+                Some(gc) => crate::libs::rmblast::matrix_name_for_gc(gc),
+                None if batches.len() == 1 && *len <= 2000 => "43g",
+                None => crate::libs::rmblast::matrix_name_for_gc(crate::libs::rmblast::gc_bytes(
+                    &seq[*start..*start + len],
+                )),
+            };
+            jobs.push((safe.clone(), query, out, *start, matrix_name));
+        }
+    }
+
+    let minscore = crate::libs::rmblast::effective_minscore(opts.cutoff);
+    let n_jobs = jobs.len();
+    let failures = AtomicUsize::new(0);
+    let first_err: Mutex<Option<String>> = Mutex::new(None);
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads((opts.parallel / 4).max(1))
+        .build()?;
+
+    run_cmd!(info "==> Search repeats vs genome (rmblastn)")?;
+    let rg_results: Vec<anyhow::Result<Option<String>>> = pool.install(|| {
+        jobs.par_iter()
+            .enumerate()
+            .map(
+                |(i, (safe, query, out, start, matrix_name))| -> anyhow::Result<Option<String>> {
+                    let rg = format!("hits.{i}.rg");
+                    let args = crate::libs::rmblast::build_args(
+                        lib_fa,
+                        query,
+                        matrix_name,
+                        minscore,
+                        opts.word_size,
+                        out,
+                        4,
+                    );
+                    let mut cmd = std::process::Command::new(&rmblastn);
+                    cmd.args(&args);
+                    cmd.env("BLASTMAT", &matrices_dir);
+                    log::info!("rmblastn: {cmd:?}");
+
+                    match cmd.output() {
+                        Ok(o) if o.status.success() => {
+                            let mut writer = crate::writer(&rg)?;
+                            let reader = crate::reader(out)?;
+                            for line in reader.lines() {
+                                let line = line?;
+                                if let Some((_, qstart, qend)) =
+                                    crate::libs::rmblast::parse_tab_row(&line)
+                                {
+                                    writer.write_fmt(format_args!(
+                                        "{}:{}-{}\n",
+                                        safe,
+                                        qstart + *start as i64,
+                                        qend + *start as i64
+                                    ))?;
+                                }
+                            }
+                            Ok(Some(rg))
+                        }
+                        Ok(o) => {
+                            let msg = String::from_utf8_lossy(&o.stderr).trim().to_string();
+                            if !msg.is_empty() {
+                                let mut guard = first_err.lock().unwrap();
+                                if guard.is_none() {
+                                    *guard = Some(msg);
+                                }
+                            }
+                            failures.fetch_add(1, Ordering::Relaxed);
+                            Ok(None)
+                        }
+                        Err(e) => {
+                            log::error!("failed to spawn rmblastn for {query}: {e}");
+                            failures.fetch_add(1, Ordering::Relaxed);
+                            Ok(None)
+                        }
+                    }
+                },
+            )
+            .collect()
+    });
+    let rg_files: Vec<String> = rg_results
+        .into_iter()
+        .collect::<anyhow::Result<Vec<_>>>()?
+        .into_iter()
+        .flatten()
+        .collect();
+
+    let n_failures = failures.load(Ordering::Relaxed);
+    if n_failures > 0 {
+        let detail = first_err.lock().unwrap().clone().unwrap_or_default();
+        if detail.is_empty() {
+            anyhow::bail!("rmblastn failed for {n_failures} of {n_jobs} jobs");
+        } else {
+            anyhow::bail!("rmblastn failed for {n_failures} of {n_jobs} jobs: {detail}");
+        }
+    }
+
+    if rg_files.is_empty() {
+        // No hits: emit an empty runlist directly.
+        let empty = b"{}\n";
+        if opts.abs_outfile == "stdout" {
+            std::io::stdout().write_all(empty)?;
+        } else {
+            std::fs::write(&opts.abs_outfile, empty)?;
+        }
+        return Ok(());
+    }
+
+    run_repeat_runlist_pipeline(&rg_files, 0, opts.min_len, opts.fill_fragment, "out.json")?;
 
     // Restore the real contig names in the runlist json.
     let mut val: serde_json::Value = serde_json::from_slice(&std::fs::read("out.json")?)?;

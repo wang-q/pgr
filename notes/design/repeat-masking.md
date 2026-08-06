@@ -794,6 +794,11 @@ identity 的支持——超出 e-align 命令本身，另立主题。
 
 ## 4. 待办
 
+* **RMBlast 复刻（2026-08-07 计划）**：新增 `pgr rept rmblast`，按
+  RepeatMasker 4.2.4 `-lib` 路径逐参数复刻（makeblastdb + rmblastn），只出
+  runlist 区间。完整设计见
+  [[repeatmasker-rmblast.md]]；TRF 阶段不重复（`pgr rept trf` 已有）。
+
 *   `e-kmer` 依赖重复库（Dfam/RepBase/TnCentral），下载与准备见
     [docs/rept.md](../../docs/rept.md)；三库已备于 `~/data/repeats/`
     （`tncentral.fa.gz` / `repbase.fa.gz` / `dfam.fa.gz`，2026-08-03 整理），

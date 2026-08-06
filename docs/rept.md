@@ -203,15 +203,19 @@ Notes:
 | :--- | :--- |
 | `e-kmer` | Identify repeats against an external library (k-mer) |
 | `e-align` | Identify repeats against an external library (alignment) |
+| `rmblast` | Identify repeats against an external library via `rmblastn` (RepeatMasker recipe) |
 | `s-kmer` | Identify repetitive regions by self k-mer depth (no library) |
 | `s-align` | Identify repetitive regions by self alignment |
 | `trf` | Identify tandem repeats via `trf` |
 
-All five emit runlist JSON ready for `pgr fa mask`:
+All six emit runlist JSON ready for `pgr fa mask`:
 
 ```bash
 pgr rept e-kmer tests/pgr/tncentral.fa.gz tests/genome/mg1655.fa.gz \
     > tests/pgr/mg1655.ir.json
+
+pgr rept rmblast tests/pgr/tncentral.fa.gz tests/genome/mg1655.fa.gz \
+    > tests/pgr/mg1655.rmblast.json
 
 pgr runlist stat tests/genome/mg1655.chr.sizes tests/pgr/mg1655.ir.json
 
@@ -350,6 +354,62 @@ insert bases in the denominator.
     speed or specificity.
 *   `--keep-index` caches the pgi indexes next to the inputs for reuse, same
     convention as `pgr align pgi`.
+
+---
+
+## rmblast
+
+Identify repeats in a genome against an external repeat library by calling
+the external `rmblastn`, replicating RepeatMasker 4.2.4's `-lib` search
+recipe (`general_search_parameters`) parameter-for-parameter. Like
+`e-align`, it emits a runlist JSON ready for `pgr fa mask`, but it is the
+closest pgr equivalent to a real RepeatMasker run: same scoring matrix,
+word size, gap penalties, and cutoff, so its hit set matches RepeatMasker's
+raw output (notes/ecoli-repeats.md §2.8).
+
+### Usage
+
+```bash
+pgr rept rmblast [OPTIONS] <repeat> <infile>
+```
+
+### Arguments
+
+| Argument | Short | Long | Value | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| `repeat` | | | File | Repeat database FASTA (`.fa.gz` supported) |
+| `infile` | | | File | Input genome FASTA (`.fa.gz` supported) |
+| `outfile` | `-o` | `--outfile` | File | Output filename (default: stdout) |
+| `cutoff` | | `--cutoff` | Int | RepeatMasker cutoff score (default: 225) |
+| `speed` | | `--speed` | slow/default/quick/rush | Search speed tier; sets `-word_size` 8/9/11/13 (default: default → 9) |
+| `matrix_gc` | | `--matrix-gc` | Int | Fixed GC % for scoring matrix selection (default: per fragment) |
+| `min_len` | | `--min-len` | Int | Min length of repetitive fragments (default: 0 = RepeatMasker raw hits) |
+| `fill_fragment` | | `--fill-fragment` | Int | Fill holes between fragments (default: 0 = RepeatMasker raw hits) |
+| `parallel` | `-p` | `--parallel` | Int | Total threads across rmblastn processes (default: 8; 4 per process, like RepeatMasker) |
+| `frag` | | `--frag` | Int | Max fragment length before splitting (default: 60000, RepeatMasker `-frag`; 0 = whole chromosome) |
+| `rmblast_dir` | | `--rmblast-dir` | Dir | Directory with makeblastdb/rmblastn (optional; falls back to `$PATH`) |
+
+### Dependencies
+
+*   `makeblastdb`, `rmblastn` (RMBlast ≥ 2.13)
+
+### Notes
+
+*   Replicated RepeatMasker 4.2.4 `general_search_parameters`: `-gapopen 24
+    -gapextend 6`, `-mask_level 101`, `-complexity_adjust`, `-dust no`,
+    xdrops 450/225/112, `-num_alignments 9999999`, and the GC-keyed
+    `20p##g.matrix` scoring matrix (RepeatMasker `chooseMatrices`, selected
+    per fragment, RepeatMasker's 60 kb / 2 kb batching).
+*   RepeatMasker's annotation post-processing (family/class, fragment
+    re-joining, boundary refinement) is not replicated; intervals are the
+    raw rmblastn hits merged by chromosome. `--min-len` / `--fill-fragment`
+    can be raised to match `e-align`'s filtering.
+*   On the 10-strain E. coli cohort, RepeatMasker's IS intervals are fully
+    covered (100.0%) and 99.7% of our intervals fall inside RepeatMasker's
+    (the residual is a few base pairs at element ends that RepeatMasker's
+    boundary refinement trims).
+*   Soft-masked (lowercase) genomes are warned about: rmblastn skips
+    lowercase regions, so uppercase the genome first (`tr a-z A-Z`).
 
 ---
 
