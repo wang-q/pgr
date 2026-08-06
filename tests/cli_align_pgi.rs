@@ -731,6 +731,38 @@ fn command_align_pgi_self_flag_requires_both_extension_sequences() {
 }
 
 #[test]
+fn command_align_pgi_single_input_conflicting_extension_sequences() {
+    // Regression: a single-input (omitted query) self-alignment is a
+    // self-alignment, so its two extension sequences must describe the same
+    // genome. Different --ref-seq/--query-seq files used to be accepted
+    // silently (the check only ran under --self), cross-aligning two files
+    // instead of self-aligning the input.
+    let temp = tempfile::TempDir::new().unwrap();
+    let (_, pgi) = build_pgi(temp.path(), "genome");
+    let ref_fa = write_fa(temp.path(), "seqA", &random_seq(400, 42));
+    let other_fa = write_fa(temp.path(), "seqB", &random_seq(400, 7));
+    let out = temp.path().join("out.psl");
+
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "align",
+            "pgi",
+            &pgi,
+            "--ref-seq",
+            &ref_fa,
+            "--query-seq",
+            &other_fa,
+            "-o",
+            out.to_str().unwrap(),
+        ])
+        .run_fail();
+    assert!(
+        stderr.contains("expects the two extension sequences to be the same"),
+        "expected conflicting-extension error: {stderr}"
+    );
+}
+
+#[test]
 fn command_align_pgi_default_kmer_conflicts_with_cached_index() {
     // Regression: the sibling-index parameter check only fired when `-k` was
     // given explicitly, so a default run (k=40) silently reused a `k=20`

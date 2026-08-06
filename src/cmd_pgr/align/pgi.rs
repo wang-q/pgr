@@ -51,7 +51,7 @@ Examples:
    pgr align pgi ref.pgi query.pgi --ref-seq ref.fa --query-seq query.fa -o out.psl
 4. Chain without extension sequences (geometric blocks):
    pgr align pgi ref.pgi query.pgi -o out.psl
-5. Lower the partial-seed floor (default is FastGA's plen floor of 12):
+5. Adjust the partial-seed floor (default is FastGA's plen floor of 12):
    pgr align pgi ref.fa query.fa --min-shared 16 -o out.psl
 6. Keep the automatically built indexes:
    pgr align pgi ref.fa query.fa --keep-index -o out.psl
@@ -142,7 +142,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let ref_input = args.get_one::<String>("ref").unwrap();
     let query_input = args.get_one::<String>("query");
     let is_self = args.get_flag("self_align");
-    if is_self {
+    let self_mode = is_self || query_input.is_none();
+    if self_mode {
+        // A single-input alignment is a self-alignment: the query must be the
+        // same input as the reference.
         if let Some(q) = query_input {
             anyhow::ensure!(
                 q == ref_input,
@@ -158,14 +161,17 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 "--self with --ref-seq/--query-seq expects the two extension \
                  sequences to be the same file (got {r} vs {q})"
             ),
-            (Some(_), None) | (None, Some(_)) => anyhow::bail!(
+            // Self mode with only one extension sequence reuses it for both
+            // sides below; but the explicit --self flag requires both (it
+            // cannot tell which side the single sequence belongs to).
+            (Some(_), None) | (None, Some(_)) => anyhow::ensure!(
+                !is_self,
                 "--self with extension sequences needs both --ref-seq and \
                  --query-seq (they must be the same file)"
             ),
             (None, None) => {}
         }
     }
-    let self_mode = is_self || query_input.is_none();
     let query_input = query_input.map(|s| s.as_str()).unwrap_or(ref_input);
     let outfile = args.get_one::<String>("outfile").unwrap();
     let mut inputs: Vec<String> = vec![ref_input.to_string(), query_input.to_string()];

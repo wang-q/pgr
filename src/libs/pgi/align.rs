@@ -270,18 +270,32 @@ fn emit_entry_hits<B: PgiQuery>(
     }
     // Maximal shared prefix over the scan window (FastGA extends each entry
     // to its longest match before filtering).
-    let mut m: u32 = 0;
-    let mut i = j0;
-    while i < j {
-        // Entries with `freq >= cutoff` are absent from FastGA's GIX index;
-        // treat them as absent here too (they must not influence the maximal
-        // shared prefix).
-        if b.entry_freq(i) >= freq {
+    let max_shared_over = |mut i: usize, j: usize| -> u32 {
+        let mut m = 0u32;
+        while i < j {
+            // Entries with `freq >= cutoff` are absent from FastGA's GIX
+            // index; treat them as absent here too (they must not influence
+            // the maximal shared prefix).
+            if b.entry_freq(i) >= freq {
+                i = b.entry_next(i);
+                continue;
+            }
+            m = m.max(shared_prefix(ea_kmer, b.entry_kmer(i), k));
             i = b.entry_next(i);
-            continue;
         }
-        m = m.max(shared_prefix(ea_kmer, b.entry_kmer(i), k));
-        i = b.entry_next(i);
+        m
+    };
+    let mut m = max_shared_over(j0, j);
+    if m < min_shared as u32 && start as usize > min_shared {
+        // FastGA's GIX index omits `>= freq` k-mers, so its lcp-narrowed
+        // window is empty whenever no under-frequency entry shares the lcp
+        // prefix, and it falls back to the floor window. pgr keeps those
+        // entries in the index, so the narrowed window can be non-empty yet
+        // hold only high-frequency k-mers, leaving `m < min_shared` even
+        // though an under-frequency match exists in the floor window below
+        // the lcp. Recover the same way the empty-window path does.
+        (j0, j) = (f0, f1);
+        m = max_shared_over(j0, j);
     }
     if m < min_shared as u32 {
         return Ok(hits);
@@ -1122,15 +1136,22 @@ mod tests {
         if j == j0 {
             return Ok(hits);
         }
-        let mut m: u32 = 0;
-        let mut i = j0;
-        while i < j {
-            if b.entry_freq(i) >= freq {
+        let max_shared_over = |mut i: usize, j: usize| -> u32 {
+            let mut m = 0u32;
+            while i < j {
+                if b.entry_freq(i) >= freq {
+                    i = b.entry_next(i);
+                    continue;
+                }
+                m = m.max(shared_prefix(ea_kmer, b.entry_kmer(i), k));
                 i = b.entry_next(i);
-                continue;
             }
-            m = m.max(shared_prefix(ea_kmer, b.entry_kmer(i), k));
-            i = b.entry_next(i);
+            m
+        };
+        let mut m = max_shared_over(j0, j);
+        if m < min_shared as u32 && start as usize > min_shared {
+            (j0, j) = window(min_shared);
+            m = max_shared_over(j0, j);
         }
         if m < min_shared as u32 {
             return Ok(hits);
@@ -1586,6 +1607,73 @@ mod tests {
         assert_eq!(hits.len(), 1, "rare entry must seed: {hits:?}");
         assert_eq!(hits[0].shared, 25);
         assert_eq!(hits[0].b_pos, 60);
+    }
+
+    #[test]
+    fn lcp_narrowed_window_all_high_freq_falls_back_to_floor() {
+        // Regression: the lcp-narrowed window for an `a` entry can be
+        // non-empty yet hold only `>= freq` (high-frequency) k-mers, which
+        // the merge treats as absent. FastGA's GIX index omits those k-mers,
+        // so its narrowed window would be empty and it falls back to the
+        // floor window; pgr keeps them in the index, so the narrowed window
+        // looked non-empty and the merge returned no hits, missing an
+        // under-frequency seed in the floor window below the lcp.
+        let mk = |entries: Vec<PgiEntry>, positions: Vec<u64>| PgiIndex {
+            k: 8,
+            smer: 4,
+            window: 2,
+            contigs: vec![(String::from("c"), 1000)],
+            entries,
+            positions,
+        };
+        // a1 = AAAAAAAA (0x0000), a0 = AAAAAATT (0x000F); lcp(a1, a0) = 6.
+        let a = mk(
+            vec![
+                PgiEntry {
+                    kmer: 0x0000,
+                    pos_start: 0,
+                    freq: 1,
+                },
+                PgiEntry {
+                    kmer: 0x000F,
+                    pos_start: 1,
+                    freq: 1,
+                },
+            ],
+            vec![
+                crate::libs::pgi::pack_position(0, 0, 0),
+                crate::libs::pgi::pack_position(0, 10, 0),
+            ],
+        );
+        // b' = AAAAAACA (0x0004) shares 6 bases -> in the narrowed window,
+        // but is high-frequency (freq 2 == cutoff). b = AAAAACAA (0x0040)
+        // shares 4 bases (< lcp 6, >= min-shared 4) -> in the floor window
+        // only, under-frequency.
+        let b = mk(
+            vec![
+                PgiEntry {
+                    kmer: 0x0004,
+                    pos_start: 0,
+                    freq: 2,
+                },
+                PgiEntry {
+                    kmer: 0x0040,
+                    pos_start: 1,
+                    freq: 1,
+                },
+            ],
+            vec![
+                crate::libs::pgi::pack_position(0, 60, 0),
+                crate::libs::pgi::pack_position(0, 50, 0),
+            ],
+        );
+        let hits = merge_seed_hits(&a, &b, 2, 4).unwrap();
+        // a0 (AAAAAATT) must still seed the under-frequency 4-base match even
+        // though its lcp-narrowed window held only a high-frequency entry.
+        assert!(
+            hits.iter().any(|h| h.a_pos == 10 && h.shared == 4),
+            "a0 must fall back to the floor window and seed its 4-base match: {hits:?}"
+        );
     }
 
     #[test]

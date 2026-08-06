@@ -75,7 +75,10 @@ whole-genome complement.
 - `--self`: self-alignment; the query input may be omitted or must be the same
   as the reference;
 - `--ref-seq`/`--query-seq`: sequences for chain refinement of `.pgi` inputs
-  (FASTA or .2bit).
+  (FASTA or .2bit). In self mode the two extension sequences describe the same
+  genome and must be the same file. When the query is omitted (single-input
+  self alignment) a single `--ref-seq` or `--query-seq` is reused for both
+  sides; the explicit `--self` flag requires both.
 
 The alignment uses FastGA's `align_contigs` workflow (diagonal buckets,
 mid-line wave extension; chain break 2000 bp, min cover 85 bp, 128 bp slide).

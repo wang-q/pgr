@@ -251,14 +251,25 @@ pub fn build_from_seqs(
         let kmer = keys[i];
         let pos_start = positions.len() as u32;
         let mut j = i;
+        // A syncmer position can be selected twice (it is the minimum of two
+        // adjacent windows); `collect_one_contig` dedups via `queued` only
+        // while the position is still pending, so when the position is
+        // flushed before its second selection (small-k parameters) the same
+        // (kmer, pos, strand) record is emitted twice. Drop the exact
+        // duplicate payloads here so the index holds one record per physical
+        // position (a diff frequency would falsely trip the `--freq` filter).
+        let mut seen: std::collections::HashSet<u64> =
+            std::collections::HashSet::with_capacity((j - i).min(64));
         while j < keys.len() && keys[j] == kmer {
-            positions.push(payloads[j]);
+            if seen.insert(payloads[j]) {
+                positions.push(payloads[j]);
+            }
             j += 1;
         }
         entries.push(PgiEntry {
             kmer,
             pos_start,
-            freq: (j - i) as u32,
+            freq: (positions.len() - pos_start as usize) as u32,
         });
         i = j;
     }
@@ -374,6 +385,52 @@ mod tests {
         }
         std::fs::write(&path, text).unwrap();
         path.to_string_lossy().into_owned()
+    }
+
+    #[test]
+    fn no_duplicate_records_small_k() {
+        // Regression: under small-k parameters (k <= window+smer-1) a
+        // syncmer position selected twice could be re-emitted after it was
+        // already flushed (`collect_one_contig`'s `queued` dedup only holds
+        // while the position is pending), corrupting the index with duplicate
+        // (kmer, pos, strand) records and falsely inflating the `--freq`
+        // filter counts. The index must hold exactly one record per position.
+        for (k, smer, window) in [
+            (8usize, 8usize, 8usize),
+            (10, 8, 5),
+            (6, 4, 4),
+            (4, 4, 4),
+            (40, 8, 5), // defaults: must stay clean too
+            (12, 8, 5),
+            (20, 16, 6),
+        ] {
+            for seed in 0..20u64 {
+                let seq = pseudo_random_seq(50_000, seed);
+                let idx = build_from_seqs(
+                    vec![(String::from("c"), seq)],
+                    k,
+                    smer,
+                    window,
+                    false,
+                    false,
+                )
+                .unwrap();
+                let mut seen: std::collections::HashSet<(u128, u32, u8)> = Default::default();
+                for e in &idx.entries {
+                    for &rec in
+                        &idx.positions[e.pos_start as usize..(e.pos_start + e.freq) as usize]
+                    {
+                        let (cid, pos, strand) = crate::libs::pgi::unpack_position(rec);
+                        assert!(
+                            seen.insert((e.kmer, pos, strand)),
+                            "duplicate record (k={k}, smer={smer}, window={window}, seed={seed}): \
+                             key={:x} pos={pos} strand={strand} cid={cid}",
+                            e.kmer
+                        );
+                    }
+                }
+            }
+        }
     }
 
     #[test]
