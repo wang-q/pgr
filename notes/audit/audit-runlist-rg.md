@@ -69,6 +69,29 @@ runlist 家族对照 spanr 0.6.7 源码、rg 家族对照 rgr 源码逐条核对
     `holes` 直接取相邻 span 空隙（不构造补集），`find_pos` 二分无误。
   * `stat`/`statop` 四种 `--all`×单/多 组合的表头与数据字段数一致
     （multi/single 各 5/4 与 9/8 列，`--all` 下 4/3 与 8/7 列）。
+  * 追加深审（2026-08-07，本轮）复核无新增问题：
+    * 复跑 `cargo test --test cli_rg`（36 通过）、`--test cli_runlist`（19
+      通过）、`--lib runlist`（19 通过），全部通过。
+    * 逐命令重读全部 8 个 rg 命令（cover/coverage/count/merge/prop/
+      runlist/sort/span）与 10 个 runlist 命令（combine/compare/convert/
+      genome/merge/some/span/split/stat/statop）的 `execute`：`#` 注释跳过、
+      无效行跳过、先开输入后建 writer、`clamp_to_domain`/`saturating_neg`
+      溢出收敛、`--all`×单/多 表头与数据字段数一致，均验证无误。
+    * 重读 `libs/runlist`（`depth_runs` 扫描线归并对、`rg_merge_mapping`
+      聚类/f32 判据/`part==merged` 自映射跳过、`stat_lines`/`statop_lines`
+      `all` 行剔除标签逻辑）、`libs/ds/intspan`（`from_pairs` 边合并、
+      `covered` 二分 + i64 累加饱和、`holes` 直接取间隙、`inset`/`excise`/
+      `fill` 边界、`banish` 的 i64 平移）、`libs/ds/range`（`decode`/
+      `match_at`/`tail_match`/`parse_i32` 最左匹配与溢出即无效）——均通过。
+    * `rg runlist`/`rg prop`/`rg count` 的 `length = end - start + 1` 在
+      `usable_range` 约束下（start ≥ 1、end ≤ POS_INF-1）不会溢出 i32；
+      `rg merge --coverage` 超出 [0,1] 区间时仅退化为"不合并/全合并"，无
+      panic。
+    * **范围外（未改动）**：`cargo clippy --all-targets -- -D warnings` 与
+      `cargo fmt --check` 在无关模块 `src/libs/syncmer.rs`（`needless_range
+      _loop`）与 `tests/cli_fas.rs`（格式）存在既有告警/差异；grep 确认
+      `runlist`/`rg`/`intspan`/`range`/`io` 相关文件全部干净，与 `runlist
+      rg` 审核范畴无关。
 
 ## 记录项（未改，低风险 / 待决策）
 
@@ -318,6 +341,11 @@ same_as_input_rejected` 覆盖 `merge`/`compare`/`some`/`combine`/`span` 各
 * 复审轮（2026-08-05）复跑 `cargo test`（36 cli_rg、18 cli_runlist、
   19 lib runlist、31 lib intspan 等全部通过）、`cargo clippy --all-targets
   -- -D warnings` 与 `cargo fmt --check`，均干净。
+* 复审轮（2026-08-07）复跑 `cargo test --test cli_rg`（36 通过）、
+  `--test cli_runlist`（19 通过）、`--lib runlist`（19 通过）；逐命令与核心
+  库重读复核，未发现新问题（详见"排除的疑点"本轮追加项）。`runlist`/`rg`
+  相关文件 `clippy`/`fmt` 干净；`syncmer.rs` 与 `cli_fas.rs` 的告警/差异为
+  范围外既有问题。
 * 新增回归测试（主要）：runlist 阶段 14 个函数；rg 阶段
   `command_rg_span_extreme_no_panic`、`command_rg_comments_skipped`、
   `extreme_ops_do_not_overflow`、`overflow_end_is_invalid_not_start`、
@@ -347,4 +375,5 @@ same_as_input_rejected` 覆盖 `merge`/`compare`/`some`/`combine`/`span` 各
 澄清），并经多轮纵深复审（`libs/runlist`、`libs/ds/intspan`、`libs/ds/range`
 与全部 8 个 rg、10 个 runlist 命令的执行路径、集合运算、`depth_runs` 扫描线、
 `rg_merge_mapping` 聚类、`covered` 二分、`stat`/`statop` 表头一致性、`-o`
-覆盖保护）复核，未再发现新问题，审核收敛。
+覆盖保护）复核，未再发现新问题，审核收敛。2026-08-07 复审轮再次逐命令与
+核心库重读、复跑测试，确认无新增问题，收敛结论保持不变。
