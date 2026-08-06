@@ -73,6 +73,18 @@
   panic。
 * `fq write_fq`/`write_fa` 对空序列输出 `@name\n\n` / `>name\n\n`，合法。
 * 文档一致性：`docs/fa.md`、`docs/fq.md` 中参数的默认值、坐标约定与代码一致。
+* `fa window`/`split`：`windows()` 用 `saturating_add` 防溢出；`run_window`
+  四种（shuffle × chunk）组合的 writer 初始化与收尾路径均正确，chunk 文件命名
+  `<stem>.NNN<ext>`；`SizeChunker` 轮转（`>` / 每 2 条）与 `max_files_exceeded`
+  提前 `break 'outer` 正确，`gen_fh` 逐输出路径 `same_path` 反向检查已覆盖。
+* `six-frame` 短序列：`unwrap_or(&[])` 与 `orfs.is_empty()` 早返回，配
+  `translate` 的 `end*3 <= dna_len - frame` 约束，反链坐标无下溢；
+  `chunks_exact(3)` 丢弃尾部不完整密码子属标准行为。
+* `fq interleave`：`write_pair` 用 `{prefix}{idx}/1`、`/2` 命名 R1/R2；单文件
+  虚拟 R2 统一为 `b"N"`（FA 与 FQ 输入一致）；`interleave_pair_iter` 对两文件
+  计数不匹配显式报错；`fq to-fa` 多文件顺序追加、质量被丢弃（符合文档）。
+* `args.rs` 共享参数构建器：各 arg 默认值与命令内实际取值一致；
+  `ensure_outfile_distinct` 对 `stdout`/`stdin` 哨兵的跳过逻辑正确。
 
 **2bit：**
 * 全部 5 个子命令的 `unwrap()` 均为 clap `required` 参数（`infile`/`infiles`/
@@ -110,6 +122,7 @@
   * `some` 的 invert 逻辑 `contains != invert`、大小写敏感、`#` 注释/空行忽略、
     首列取名，与文档一致。
   * 5 个子命令 `-o` 覆盖保护（含 `some` 的 list、`range` 的 rgfile）均已覆盖。
+  * `read_2bit_record`/`write_2bit_record` 被 pbit 参考层复用，非死代码。
 
 ## 已知限制（有意保留）
 
