@@ -807,6 +807,10 @@ identity 的支持——超出 e-align 命令本身，另立主题。
     几乎全部），遮蔽后 pgi/lastz 引擎 SD 检出收敛（互相漏检 3.2%/6.0%）；
     详见 `design/sd.md` §4.10。真核对标（§2.5，拟南芥/玉米 + RepeatMasker
     参考）仍需真核数据验证。
+    **soft mask 补充（2026-08-06）**：mask 仅用于 `sd search` 发现阶段，
+    后续 align/cluster/decompose 读原始基因组自动补回空缺，任何引擎都
+    无需 hard mask；pgi 引擎硬编码 mask=true 对小写天然有效（详见
+    `design/sd.md` §4.10 与 [[biser.md]] §1.2）。
 *   若未来要接近 RepeatMasker 能力，可考虑对检测出的区间补一步 family 注释（如对区间
     重跑库比对），但目前无此需求，不做推测性设计。
 

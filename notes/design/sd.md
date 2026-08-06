@@ -188,3 +188,21 @@ freq 50 > freq 10）。
 **结论**：标准 SD 流程建议 = **先重复遮蔽（`rept e-kmer` + `fa mask`），
 再 `sd search --engine pgi`（默认 freq=50/k=31）**；pgi 引擎在遮蔽后与
 lastz 等价。
+
+**soft mask vs hard mask（2026-08-06 修正：mask 只是发现阶段过滤）**：
+
+- **mask 仅用于 `sd search` 发现候选**；后续 `sd align`/`cluster`/`decompose`
+  全部读**原始 genome**（cluster 用 loc 索引提取），被 mask 的空缺自动补回，
+  **任何引擎都不需要 hard mask**。BISER 同样：soft-mask 输入 → 内部转
+  hard-mask 发现 → `translate` 映射回原基因组坐标（[[biser.md]] §1.2）。
+- `pgr align pgi` 索引构建**硬编码 `mask=true`**（soft-mask 感知种子），
+  pgi 引擎对 `fa mask` 默认小写天然有效（sakai soft 353 ≈ hard 351，
+  且小写保留序列）；
+- lastz 引擎大小写不敏感，soft mask 只部分过滤（sakai soft 386 vs
+  hard 346）——多出的候选由下游 chain/net 精修吸收，**无需 hard mask**。
+
+**实证（sakai，lastz 引擎，`sd align` 后对比）**：soft mask 候选 align 出
+211 条 PAF，hard mask 189 条；**soft 独有的 22 条全部是真实 SD**
+（含 12679 bp/id=0.981、1296 bp/0.977、1266 bp/0.973、1389 bp/0.940 等），
+hard mask 因 N 区打断 lastz 比对而全部漏检。**hard mask 不仅不必要，还会
+误伤真实 SD——pgr 只用 soft mask（`fa mask` 默认小写）**。

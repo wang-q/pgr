@@ -29,6 +29,15 @@ pgr sd search <genome.fa> -o hits.psl
   self-alignment, no external tools) or `lastz` (external `lastz --self`,
   requires lastz in PATH; each input FASTA must contain a single sequence —
   split multi-contig genomes with `pgr fa split name` first);
+* Repeat masking is a **search-stage filter only**: the downstream stages
+  (`sd align` / `cluster` / `decompose`) read the **original genome** and
+  refill the masked gaps, so no hard mask is ever needed (BISER likewise
+  converts its soft-masked input to hard-masked only internally, then maps
+  coordinates back to the original genome). Use the default **soft mask**
+  (`pgr fa mask --runlist ...`): the `pgi` engine skips lowercase seeds
+  natively; the case-insensitive `lastz` engine only partially filters
+  lowercase, which just yields a few extra candidates that the downstream
+  refinement absorbs.
 * `--min-len` / `--min-identity`: T2T-CHM13 SD filter (default 1000 bp /
   0.90 identity);
 * `--preset` / `--query-depth`: lastz-only parameters (set01..set07 presets,
