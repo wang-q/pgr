@@ -1,22 +1,26 @@
 # pgr align
 
 `pgr align` performs pairwise genome alignment. It is a top-level wrapper
-around three engines:
+around four engines:
 
 - **`pgr align pgi`** — native FastGA-style pipeline: syncmer-sparse k-mer
   indexes, two-index merge, chaining and banded extension. See
   [align-pgi.md](align-pgi.md) and `notes/design/pgi-align.md`.
 - **`pgr align lastz`** — wrapper around the external `lastz` aligner with
   Cactus-style presets. See [align-lastz.md](align-lastz.md).
-- **`pgr align hybrid`** — pgi anchors + LASTZ gap filling (FastGA-gapfill):
+- **`pgr align fill`** — pgi anchors + LASTZ 2D gap filling (FastGA-gapfill):
   pgi produces coarse anchors, LASTZ fills the colinear gaps between anchors,
-  and the two PSL sets are merged. See [align-hybrid.md](align-hybrid.md).
+  and the two PSL sets are merged. See [align-fill.md](align-fill.md).
+- **`pgr align rest`** — pgi anchors + LASTZ whole-genome complement fill:
+  everything the anchors do not cover (contig ends, anchor-free contigs) is
+  aligned against the trimmed query complement. See
+  [align-rest.md](align-rest.md).
 
 `pgr align pgi` emits PSL blocks directly; `pgr align lastz` emits LAV files
 (one per target/query pair), which convert to PSL with `pgr lav to-psl`;
-`pgr align hybrid` emits merged PSL. Either way the PSL blocks feed the
-UCSC-style chain pipeline (`pgr psl to-chain` → `pgr pl chainnet`) or PAF
-conversion (`pgr psl to-paf`).
+`pgr align fill` / `pgr align rest` emit merged PSL. Either way the PSL blocks
+feed the UCSC-style chain pipeline (`pgr psl to-chain` → `pgr pl chainnet`) or
+PAF conversion (`pgr psl to-paf`).
 
 ## Core positioning
 
@@ -47,10 +51,12 @@ conversion (`pgr psl to-paf`).
    directory; convert them with `pgr lav to-psl` (see
    [align-lastz.md](align-lastz.md)).
 
-3. Hybrid (pgi anchors + LASTZ gap filling):
+3. Gap fill (pgi anchors + LASTZ):
 
    ```bash
-   pgr align hybrid ref.fa query.fa -o out.psl
+   pgr align fill ref.fa query.fa -o out.psl
    ```
 
-   Requires `lastz`. See [align-hybrid.md](align-hybrid.md).
+   Requires `lastz`. See [align-fill.md](align-fill.md). Use
+   `pgr align rest` to fill the whole-genome complement instead (see
+   [align-rest.md](align-rest.md)).

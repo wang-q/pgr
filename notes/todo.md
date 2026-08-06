@@ -5,9 +5,25 @@
 
 ## 1. 手头数据就能做
 
-- [ ] `align hybrid` 三路验证（pgi-only / hybrid / lastz-only，MG1655 vs Sakai）：
-      对比 chainnet 覆盖率、碎片化、重复覆盖块；目标"覆盖接近 lastz-only、耗时接近 pgi-only"
-      （来源：`design/pgi-lastz-hybrid.md` §5.2，§6 其余待办已完成）。
+- [x] `align hybrid` 三路验证（2026-08-06，`scripts/verify-hybrid-real.sh`）：
+      MG1655 vs Sakai 实测覆盖 pgi 90.74% / hybrid **93.08%** / lastz 93.11%，
+      耗时 1.2 s / 116.6 s / 135 s——补集方案覆盖几乎追平 lastz（差 0.03 pp）、
+      无碎片化（MAF 565 块 < pgi 582）；模拟灵敏度 hybrid 256/600 = lastz
+      （补集语义下 gapfill 只是子集，作者 2026-08-06 定稿，实现为
+      `compute_holes` + hole × 全 query LASTZ job，`--min-gap` 移除、
+      `--max-gap` 默认不限制）（来源：`design/pgi-lastz-hybrid.md` §5.2）。
+- [x] `align hybrid` 拆分 → **已实现**（2026-08-06）：`pgr align fill`（2D
+      gap fill）+ `pgr align rest`（两侧 trim→excise→holes 一维补集，ref
+      holes × 整套 query holes 多序列）+ 复用 `pgr psl lift`（含
+      `chr(+):` range 名修复）；**rest 已加采样预筛配对**（默认 syncmer
+      s17/w5/ms1：rest 6.5 s/91.81%（PSL 并集口径；**chainnet --syn
+      MAF 口径下预筛 vs 全量差仅 0.012 pp**，syntenic 场景无实际损失），
+      比全量快 3.7×；--sampler none 全量 92.20%，--smer 15 折中
+      92.00%）；集成
+      测试 fill 7 例 + rest 4 例，全量 1341 测试通过；模拟灵敏度
+      rest 255/600 ≈ lastz 256/600；
+      脚本 `scripts/verify-align-fill-rest.sh`（五路，含 fill+rest 组合）+ 改造后的
+      `verify-hybrid-sensitivity.sh`（来源：`design/pgi-lastz-hybrid.md` 前半）。
 - [ ] repeat masking 闭环：e2e 回归已固化（`tests/cli_rept.rs` 的
       `command_rept_e_kmer_end_to_end`，用 `tests/pgr/tncentral.fa.gz`，已实测通过）；
       三库备于 `~/data/repeats/`，本机手跑示例见 `docs/rept.md`（大库不进 CI）；
@@ -60,8 +76,9 @@
       导致的 4.3× 退化）（来源：`project-understanding.md` §8.1）。
 - [ ] 命令树三跳 dispatch 宏简化，防新增命令漏注册（来源：§8.3）。
 - [ ] `fas` 模块职责过重（20 子命令），`fas multiz` 等复杂逻辑考虑拆分（来源：§8.6）。
-- [ ] 分层一致性：commit `d5281bc` 将 hybrid 逻辑迁入 `cmd_pgr/align/hybrid.rs`，
-      与 AGENTS.md"复杂逻辑放 libs"相悖——确认是有意取舍，还是回迁/更新文档。
+- [x] 分层一致性：commit `d5281bc` 将 hybrid 逻辑迁入 `cmd_pgr/align/hybrid.rs`，
+      与 AGENTS.md"复杂逻辑放 libs"相悖——2026-08-06 作者确认**有意为之**
+      （消除跨模块导入开销，代码仅此命令使用），维持现状不回迁；此条不再作为技术债。
 
 ## 5. 明确不做（避免重复立项）
 

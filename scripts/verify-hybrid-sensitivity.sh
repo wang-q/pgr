@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 
 # verify-hybrid-sensitivity.sh
-# Sensitivity evaluation for `pgr align hybrid` following fastga.md §12.1
+# Sensitivity evaluation for `pgr align rest` following fastga.md §12.1
 # (adapted from the FastGA paper §5.1): simulate two genomes of 10 kb blocks,
 # each block = a similar region (length L at divergence d) + random filler,
 # block order shuffled identically so no long-range colinear homology exists.
 # A target region is "recovered" iff it is covered >= 95% on BOTH genomes.
 #
-# Produces a per-(L, d) recovery matrix for pgi-only / hybrid / lastz-only,
+# Produces a per-(L, d) recovery matrix for pgi-only / rest / lastz-only,
 # plus the false-positive aligned-base fraction on the A genome, then asserts
 # the design's qualitative claims:
-#   * hybrid sensitivity >= pgi sensitivity (strictly better on >= 1 cell)
-#   * hybrid sensitivity ~= lastz sensitivity (within a small cell tolerance)
+#   * rest sensitivity >= pgi sensitivity (strictly better on >= 1 cell)
+#   * rest sensitivity ~= lastz sensitivity (within a small cell tolerance)
 #   * all three false-positive fractions < 1%
 #
 # Requires:
@@ -85,8 +85,8 @@ PY
 # --- 2. Three engines ---
 echo "==> pgi-only"
 "$PGR" align pgi "$WORK/A.fa" "$WORK/B.fa" -o "$WORK/pgi.psl" --parallel 8 >/dev/null 2>&1
-echo "==> hybrid (pgi anchors + LASTZ gap fill)"
-"$PGR" align hybrid "$WORK/A.fa" "$WORK/B.fa" --pgi-psl "$WORK/pgi.psl" -o "$WORK/hybrid.psl" --parallel 8 >/dev/null 2>&1
+echo "==> rest (pgi anchors + LASTZ whole-genome complement fill)"
+"$PGR" align rest "$WORK/A.fa" "$WORK/B.fa" --avail-psl "$WORK/pgi.psl" -o "$WORK/rest.psl" --parallel 8 >/dev/null 2>&1
 echo "==> lastz-only"
 "$PGR" align lastz "$WORK/A.fa" "$WORK/B.fa" -o "$WORK/lastz_out" --parallel 8 >/dev/null 2>&1
 "$PGR" lav to-psl "$WORK"/lastz_out/*.lav -o "$WORK/lastz.psl" >/dev/null 2>&1
@@ -142,23 +142,23 @@ def spec(path):
             tot += max(0, te-ts); fp += sum(1 for i in range(ts,te) if bits[i]==0)
     return (fp/tot*100) if tot else 0.0
 
-eng = {k: evaluate(f"{BASE}/{k}.psl") for k in ("pgi","hybrid","lastz")}
-fs = {k: spec(f"{BASE}/{k}.psl") for k in ("pgi","hybrid","lastz")}
+eng = {k: evaluate(f"{BASE}/{k}.psl") for k in ("pgi","rest","lastz")}
+fs = {k: spec(f"{BASE}/{k}.psl") for k in ("pgi","rest","lastz")}
 
-print("recovered/20 per (L, d); cells shown as hybrid/pgi/lastz:")
+print("recovered/20 per (L, d); cells shown as rest/pgi/lastz:")
 print("L\\d    " + " ".join(f"{d:>12}%" for d in DIVERGEN))
 for L in LENGTHS:
     print(f"{L:<5} " + " ".join(
-        f"{eng['hybrid'][(L,d)]:>3}/{eng['pgi'][(L,d)]:>2}/{eng['lastz'][(L,d)]:>2}"
+        f"{eng['rest'][(L,d)]:>3}/{eng['pgi'][(L,d)]:>2}/{eng['lastz'][(L,d)]:>2}"
         for d in DIVERGEN))
-print("false-positive aligned-base %% on A: pgi=%.3f hybrid=%.3f lastz=%.3f"
-      % (fs['pgi'], fs['hybrid'], fs['lastz']))
+print("false-positive aligned-base %% on A: pgi=%.3f rest=%.3f lastz=%.3f"
+      % (fs['pgi'], fs['rest'], fs['lastz']))
 
-tp = sum(eng['hybrid'].values()); pg = sum(eng['pgi'].values()); lz = sum(eng['lastz'].values())
-assert tp >= pg, f"hybrid ({tp}) not >= pgi ({pg})"
-diff = sum(abs(eng['hybrid'][k]-eng['lastz'][k]) for k in eng['hybrid'].keys())
-assert tp > pg, "hybrid must strictly beat pgi on sensitivity"
-assert diff <= 5, f"hybrid vs lastz cell diff {diff} too large"
-assert fs['pgi'] < 1.0 and fs['hybrid'] < 1.0 and fs['lastz'] < 1.0, "false-positive too high"
-print(f"PASS: hybrid={tp}/600 >= pgi={pg}/600, ~lastz={lz}/600 (cell diff {diff}); FP all < 1%")
+tp = sum(eng['rest'].values()); pg = sum(eng['pgi'].values()); lz = sum(eng['lastz'].values())
+assert tp >= pg, f"rest ({tp}) not >= pgi ({pg})"
+diff = sum(abs(eng['rest'][k]-eng['lastz'][k]) for k in eng['rest'].keys())
+assert tp > pg, "rest must strictly beat pgi on sensitivity"
+assert diff <= 5, f"rest vs lastz cell diff {diff} too large"
+assert fs['pgi'] < 1.0 and fs['rest'] < 1.0 and fs['lastz'] < 1.0, "false-positive too high"
+print(f"PASS: rest={tp}/600 >= pgi={pg}/600, ~lastz={lz}/600 (cell diff {diff}); FP all < 1%")
 PY

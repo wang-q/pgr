@@ -192,8 +192,9 @@ axtToMaf 标准化流程中的全部 12 步主流程。`chain`/`net`/`axt`/`psl`
 与 kent-tools **字节级一致**（含 `--syn`、medium gap model、多染色体反向场景，见 §7.1 与
 [[ucsc.md]]）。
 
-> 规划中：`pgr align hybrid`（pgi 锚点 + LASTZ 补 gap 的混合比对，见
-> [[design/pgi-lastz-hybrid.md]]）将挂在本模块下——不放 `pgr pl`，方便用户发现。
+> 已实现（2026-08-06）：`pgr align fill`（pgi 锚点 + LASTZ 2D gap fill）与
+> `pgr align rest`（两侧 trim→excise→holes 全基因组补集填充），设计见
+> [[design/pgi-lastz-hybrid.md]]；坐标回移复用 `pgr psl lift`。
 
 ### 3.3 泛基因组 (Pangenome)
 

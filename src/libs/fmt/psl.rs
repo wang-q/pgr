@@ -984,6 +984,13 @@ pub fn parse_subrange(name: &str) -> Option<(String, u32, u32)> {
     if contig.is_empty() {
         return None;
     }
+    // `chr(+):start-end` style names (e.g. `pgr rg` output) carry a strand
+    // suffix redundant with the PSL strand field; strip it so the sizes
+    // lookup uses the bare contig name.
+    let contig = contig
+        .strip_suffix("(+)")
+        .or_else(|| contig.strip_suffix("(-)"))
+        .unwrap_or(contig);
     let (start, end) = parse_range_tail(&name[i + 1..])?;
     Some((contig.to_string(), start, end))
 }
@@ -1413,6 +1420,21 @@ mod tests {
         assert_eq!(parse_subrange("chr1:0-10"), None);
         assert_eq!(parse_subrange("chr1"), None);
         assert_eq!(parse_subrange("chr1:1x"), None);
+    }
+
+    #[test]
+    fn parse_subrange_strips_strand_suffix() {
+        // `pgr rg` emits `chr(+):start-end` names; the strand is redundant
+        // with the PSL strand field and must not leak into the contig name
+        // (otherwise the sizes lookup fails and the lift is silently skipped).
+        assert_eq!(
+            parse_subrange("chr1(+):1000-2000"),
+            Some(("chr1".to_string(), 1000, 2000))
+        );
+        assert_eq!(
+            parse_subrange("chr1(-):1000-2000"),
+            Some(("chr1".to_string(), 1000, 2000))
+        );
     }
 
     #[test]

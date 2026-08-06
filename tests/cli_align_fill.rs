@@ -116,9 +116,9 @@ fn covers(records: &[(String, u32, u32, u32, u32)], s: u32, e: u32) -> bool {
     records.iter().any(|r| r.3 < e && r.4 > s && r.1 < r.2)
 }
 
-/// Run `align hybrid` on the given pgi PSL (or None to auto-run pgi).
+/// Run `align fill` on the given pgi PSL (or None to auto-run pgi).
 /// Returns the output PSL text.
-fn run_hybrid(
+fn run_fill(
     temp: &tempfile::TempDir,
     target: &str,
     query: &str,
@@ -126,7 +126,7 @@ fn run_hybrid(
     extra: &[&str],
 ) -> (String, String) {
     let out = temp.path().join("out.psl");
-    let mut args: Vec<String> = vec!["align".into(), "hybrid".into(), target.into(), query.into()];
+    let mut args: Vec<String> = vec!["align".into(), "fill".into(), target.into(), query.into()];
     if let Some(p) = pgi_psl {
         args.push("--avail-psl".into());
         args.push(p.into());
@@ -150,7 +150,7 @@ fn lastz_missing() -> bool {
 }
 
 #[test]
-fn command_align_hybrid_all_regions_pgi_visible_no_extra_block() {
+fn command_align_fill_all_regions_pgi_visible_no_extra_block() {
     if lastz_missing() {
         eprintln!("lastz not installed; skipping");
         return;
@@ -164,9 +164,9 @@ fn command_align_hybrid_all_regions_pgi_visible_no_extra_block() {
     let t = write_fa(temp.path(), "target", &g.target);
     let q = write_fa(temp.path(), "query", &g.query);
 
-    let (hybrid, _) = run_hybrid(&temp, &t, &q, None, &[]);
-    let records = parse_psl(&hybrid);
-    assert!(records.len() >= 3, "expected >=3 regions: {hybrid}");
+    let (fill, _) = run_fill(&temp, &t, &q, None, &[]);
+    let records = parse_psl(&fill);
+    assert!(records.len() >= 3, "expected >=3 regions: {fill}");
     // All three conserved regions must be covered.
     for &s in &g.r {
         assert!(
@@ -177,7 +177,7 @@ fn command_align_hybrid_all_regions_pgi_visible_no_extra_block() {
 }
 
 #[test]
-fn command_align_hybrid_fills_missing_anchor_gap() {
+fn command_align_fill_fills_missing_anchor_gap() {
     if lastz_missing() {
         eprintln!("lastz not installed; skipping");
         return;
@@ -212,21 +212,21 @@ fn command_align_hybrid_fills_missing_anchor_gap() {
     )
     .unwrap();
 
-    let (hybrid, _) = run_hybrid(&temp, &t, &q, Some(reduced.to_str().unwrap()), &[]);
-    let records = parse_psl(&hybrid);
+    let (fill, _) = run_fill(&temp, &t, &q, Some(reduced.to_str().unwrap()), &[]);
+    let records = parse_psl(&fill);
     assert!(
         records.len() >= 2,
-        "expected the anchors plus a LASTZ fill: {hybrid}"
+        "expected the anchors plus a LASTZ fill: {fill}"
     );
     // The middle region (r2) must now be covered.
     assert!(
         covers(&records, g.r[1] as u32, (g.r[1] + 2000) as u32),
-        "lastz must recover the dropped middle region: {hybrid}"
+        "lastz must recover the dropped middle region: {fill}"
     );
 }
 
 #[test]
-fn command_align_hybrid_negative_strand_fill() {
+fn command_align_fill_negative_strand_fill() {
     if lastz_missing() {
         eprintln!("lastz not installed; skipping");
         return;
@@ -277,16 +277,16 @@ fn command_align_hybrid_negative_strand_fill() {
         .collect();
     fs::write(&reduced, format!("{}\n", kept.join("\n"))).unwrap();
 
-    let (hybrid, _) = run_hybrid(&temp, &t, &q, Some(reduced.to_str().unwrap()), &[]);
-    let records = parse_psl(&hybrid);
+    let (fill, _) = run_fill(&temp, &t, &q, Some(reduced.to_str().unwrap()), &[]);
+    let records = parse_psl(&fill);
     assert!(
         records.iter().any(|r| r.0 == "-"),
-        "lastz must recover the '-' strand region: {hybrid}"
+        "lastz must recover the '-' strand region: {fill}"
     );
 }
 
 #[test]
-fn command_align_hybrid_avail_psl_overwrite_protected() {
+fn command_align_fill_avail_psl_overwrite_protected() {
     if lastz_missing() {
         eprintln!("lastz not installed; skipping");
         return;
@@ -302,11 +302,11 @@ fn command_align_hybrid_avail_psl_overwrite_protected() {
         .run();
     let before = fs::read_to_string(&pgi_out).unwrap();
 
-    // Try to write the hybrid output over the avail-psl input.
+    // Try to write the fill output over the avail-psl input.
     let (_, stderr) = PgrCmd::new()
         .args(&[
             "align",
-            "hybrid",
+            "fill",
             &t,
             &q,
             "--avail-psl",
@@ -327,7 +327,7 @@ fn command_align_hybrid_avail_psl_overwrite_protected() {
 }
 
 #[test]
-fn command_align_hybrid_extreme_parallel_rejected() {
+fn command_align_fill_extreme_parallel_rejected() {
     // Even without lastz, clap must reject an out-of-range --parallel before
     // any rayon pool is built (Zero Panic convention).
     let temp = tempfile::TempDir::new().unwrap();
@@ -338,7 +338,7 @@ fn command_align_hybrid_extreme_parallel_rejected() {
         let (_, stderr) = PgrCmd::new()
             .args(&[
                 "align",
-                "hybrid",
+                "fill",
                 &t,
                 &q,
                 "--parallel",
@@ -356,12 +356,12 @@ fn command_align_hybrid_extreme_parallel_rejected() {
 }
 
 #[test]
-fn command_align_hybrid_reuses_sibling_2bit() {
+fn command_align_fill_reuses_sibling_2bit() {
     if lastz_missing() {
         eprintln!("lastz not installed; skipping");
         return;
     }
-    // When a sibling `.2bit` sits next to a `.fa` input, hybrid must reuse it
+    // When a sibling `.2bit` sits next to a `.fa` input, fill must reuse it
     // instead of converting the FASTA again (random-access extraction source).
     let temp = tempfile::TempDir::new().unwrap();
     let g = build_genomes(46);
@@ -378,14 +378,14 @@ fn command_align_hybrid_reuses_sibling_2bit() {
         .args(&["fa", "to-2bit", &q, "-o", &q_2bit])
         .run();
 
-    let (hybrid, stderr) = run_hybrid(&temp, &t, &q, None, &[]);
+    let (fill, stderr) = run_fill(&temp, &t, &q, None, &[]);
     assert!(
         stderr.contains("reusing sibling 2bit"),
         "expected sibling 2bit reuse logged: {stderr}"
     );
     // The merged output must still be valid (3 conserved regions covered).
-    let records = parse_psl(&hybrid);
-    assert!(records.len() >= 3, "expected >=3 regions: {hybrid}");
+    let records = parse_psl(&fill);
+    assert!(records.len() >= 3, "expected >=3 regions: {fill}");
     for &s in &g.r {
         assert!(
             covers(&records, s as u32, (s + 2000) as u32),
@@ -395,7 +395,7 @@ fn command_align_hybrid_reuses_sibling_2bit() {
 }
 
 #[test]
-fn command_align_hybrid_missing_subcommand_errors_not_panics() {
+fn command_align_fill_missing_subcommand_errors_not_panics() {
     let (_, stderr) = PgrCmd::new().args(&["align"]).run_fail();
     assert!(
         stderr.contains("requires a subcommand"),

@@ -96,7 +96,7 @@
    主场景差异小，默认贴近的 set01/set02，远缘比较才选 set06/set07，不默认远缘
    （2026-08-06 与用户讨论后调整，见 [[../design/pgi-lastz-hybrid.md]] §3.2/§3.6）。
 7. **坐标回移**：alnfill 在进程内完成区间坐标 → 全长坐标（含 ql/tl 换全长）；
-   pgr 若实现 `pgr align hybrid`（2026-08-06 命名定稿，不做 `pgr pl align`），
+   pgr 已实现 `pgr align fill` / `pgr align rest`（2026-08-06 命名定稿，不做 `pgr pl align`），
    `fa range` 提取时须记录 offset，
    lastz 输出回移后再并 PSL（现有 `pgr align lastz` 只出 LAV、单序列限制）。
 8. **合并**：ALNfill 直接 cat 不查重（README 承认 `-e` 造成的重叠是已知问题）；
