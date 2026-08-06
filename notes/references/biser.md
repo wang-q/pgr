@@ -1,6 +1,6 @@
 # BISER 源码与论文分析
 
-> 整理于 2026-07，源自对 `biser-master/` 目录源码及 published paper 的通读。目的：理解 BISER 在
+> 源自对 `biser-master/` 目录源码及 published paper 的通读。目的：理解 BISER 在
 > segmental duplication (SD) 检测与分解中的算法设计，并为 pgr 中重复/同源区域分析提供参考。
 
 > **与 pgr 的关系**：pgr 的 SD 管线（`pgr sd`，检测用外部比对路线 `--engine pgi|lastz`
@@ -111,6 +111,9 @@ Jaccard。因此可用 `Ĵ ≥ τ` 作为过滤条件。
 **Winnowing**: 为加速索引构建，BISER 不索引所有 k-mer，而是对每个大小为 `w` 的滑动窗口取字典序最小的
 k-mer（tie 时取最右）。期望指纹大小为 `2|G|/(w+1)`。论文/代码默认 `k=14`, `w=16`。
 
+> 注：代码中的 winnowing 实现与上述“滑动窗口最小值”语义有偏差（见 §3.3.1），实测指纹密度约为
+> `2|G|/(w+1)` 的一半，且不再保证每个窗口内必然命中。
+
 ### 2.3 局部比对：Seed-and-Extend + Chaining + Refinement
 
 对每对 putative SD，BISER 执行：
@@ -136,6 +139,7 @@ k-mer（tie 时取最右）。期望指纹大小为 `2|G|/(w+1)`。论文/代码
 
 **Core duplicon**: 定义为能覆盖所有 SD 的 elementary SD 最小集合。BISER 使用贪心 set-cover 近似算法
 （`cover.py` 中的 `greedy_set_cover`）识别 core duplicons，并在 `.elem` 文件中标记为 `CORE`。
+（每个 core 需覆盖至少 2 个 SD，`len(sds) < 2` 的集合被跳过。）
 
 ### 2.5 多基因组扩展
 
@@ -150,15 +154,15 @@ k-mer（tie 时取最右）。期望指纹大小为 `2|G|/(w+1)`。论文/代码
 - **实现语言**: 核心算法用 [Codon](https://github.com/exaloop/codon/)（带 Seq plugin）编写，编译为
   `biser/exe/biser.exe`；流程调度与多进程用 Python (`biser/__main__.py`) 完成。
 - **构建**: `setup.py` 中的 `CustomBuild` 调用
-  `codon build -plugin seq biser/codon/__init__.codon -release -o biser/exe/biser.exe`，并拷贝
-  Codon runtime 动态库。
+  `codon build -plugin seq biser/codon/__init__.codon -release -o <build_lib>/biser/exe/biser.exe`
+  （安装后即 `biser/exe/biser.exe`），并拷贝 Codon runtime 动态库（`libcodonrt`、`libomp`）。
 - **依赖**: Python 侧需要 `tqdm`、`ncls`、`multiprocess`；运行时需要 `samtools faidx`。
 
 ### 3.2 源码模块与论文算法对应
 
-- `biser/codon/__init__.codon`（入口）：子命令分发、参数解析、全局常量（`MAX_ERROR`、`KMER_SIZE`、
-  `WINNOW_SIZE` 等）；`align` 子命令对 span > 300 kb 的 putative SD 直接跳过（其中
-  `max_iter = 50` 因紧跟 `continue` 而不会生效）。
+- `biser/codon/__init__.codon`（入口）：子命令分发、参数解析；常量实际定义于 `search.codon`，此处
+  `import` 并用 `global` 声明以便命令行覆盖（`MAX_ERROR`、`KMER_SIZE`、`WINNOW_SIZE` 等）；`align`
+  子命令对 span > 300 kb 的 putative SD 直接跳过（其中 `max_iter = 50` 因紧跟 `continue` 而不会生效）。
 - `biser/codon/search.codon`（Putative SD detection）：k-mer 索引、winnowing、plane-sweep、putative
   SD 输出；含 `cross_search`。
 - `biser/codon/hit.codon`（数据结构）：`Hit` / `Chromosome` / `Locus` 定义、CIGAR 操作、错误率计算、
@@ -171,17 +175,16 @@ k-mer（tie 时取最右）。期望指纹大小为 `2|G|/(w+1)`。论文/代码
   颜色合并表近似 union-find）、提取每个 cluster 的 FASTA。
 - `biser/codon/decompose.codon`（SD decomposition）：k-mer chaining 分解 elementary SDs。
 - `biser/codon/mask.codon`（预处理/后处理）：hard-mask 生成、hard-masked 与原基因组坐标互转；
-  `translate()` 在映射回原坐标时会把 CIGAR 的 `M` 按 lowercase 区间重新切分为 `M`/`S`/`N`。
+  `translate()` 在映射回原坐标时会把 CIGAR 的 `M` 按 lowercase 区间重新切分为 `M`/`S`/`N`
+  （`I`/`D` 同理切分为 `I`/`S`、`D`/`N`）。
 - `biser/cover.py`（Core duplicon）：用 `ncls` 做区间重叠查询，再用贪心 set cover 找 core duplicons。
 - `biser/__main__.py`（Pipeline）：多进程任务拆分、临时目录管理、各阶段串接。
 
 ### 3.3 关键实现细节
 
-> **源码复核（2026-08-07）**：以下为重新通读 `biser-master/` 全部源码后的修正与补充。
-
 #### 3.3.1 Plane-sweep in `search.codon`
 
-> **源码核对（2026-08-03）**：关键常量 `MAX_ERROR=0.3`、`MAX_EDIT_ERROR=0.15`、
+> 关键常量 `MAX_ERROR=0.3`、`MAX_EDIT_ERROR=0.15`、
 > `KMER_SIZE=14`、`WINNOW_SIZE=16`、`MAX_DISTANCE=250`、`MAX_SD_LEN=2_000_000`、
 > `QUERY_THRESHOLD=100`、`REF_THRESHOLD=500`、`MAX_EXTEND=5_000`；§3.3.2 的
 > `MATCH_SCORE=4`、`MAX_CHAIN_GAP=210`、`MIN_UPPERCASE_MATCH=90`、
@@ -191,9 +194,12 @@ k-mer（tie 时取最右）。期望指纹大小为 `2|G|/(w+1)`。论文/代码
 > （search/decompose 共用，按 0.1% 累积频率过滤高频 k-mer）；`hit.codon` 打分
 > `MATCH=5/MISMATCH=-4/GAPO=-40/GAPE=-1`。
 
-search 按染色体逐条处理（Python 侧默认跳过含 `_` 的 contig 与 `chrM`，`--keep-contigs` 关闭该
-过滤）。对每条染色体先建前向 + 反向互补两条索引，长度截断到 `MAX_CHROMOSOME_SIZE + MAX_SD_LEN`；
-同一染色体超出截断的部分以及排在 `-c chr` 之后的染色体只作为 query 侧扫描，不再扩索引。
+search 按（染色体, chunk）逐段处理：Python 侧按 `--max-chromosome-size` 将每条染色体切成若干段，
+每段一个 search job（默认跳过含 `_` 的 contig 与 `chrM`，`--keep-contigs` 关闭该过滤）。对目标
+染色体先建前向 + 反向互补两个拷贝的索引（写入同一个 k-mer 索引），长度截断到
+`MAX_CHROMOSOME_SIZE + MAX_SD_LEN`；反向互补拷贝作为 query 扫描时只接受来自前向拷贝
+（`chr == current.chr - 1`）的 loci，避免 rc↔rc 重复配对。同一染色体超出截断的部分以及排在
+`-c chr` 之后的染色体只作为 query 侧扫描，不再扩索引。
 
 `build_index()` 同时承担两种角色：
 
@@ -204,17 +210,24 @@ search 按染色体逐条处理（Python 侧默认跳过含 `_` 的 contig 与 `
 `A=0, C=1, G=2, T=3`），`(int(si) & 3)` 是防御性掩码。滚动哈希
 `h = ((h << 2) | base) & ((1 << 28) - 1)`（`KMER_SIZE=14`）生成 28-bit k-mer hash。
 
-**Winnowing 实现**: `build_index()` 中用单调栈/队列维护 `(hash, pos)`：
+**Winnowing 实现**: `build_index()` 用单调队列维护 `(hash, pos)`，但实现与论文的“滑动窗口最小值”
+语义存在偏差（疑似 `winnow[-1][1]` 应为 `winnow[0][1]`）：
 
-- 新 k-mer 入队前，从队尾弹出 hash 不小于新 hash 的元素，保证队首为窗口最小值。
-- 弹出位置超出窗口的元素（判断用队尾位置 `< i - KMER_SIZE + 1 - WINNOW_SIZE`，
-  `pop(0)` 弹队首）。
-- 窗口填满 (`i - KMER_SIZE + 1 >= WINNOW_SIZE`) 后，队首 hash 即为一个 fingerprint； 只有
+- 新 k-mer 入队前，从队尾弹出 hash 不小于新 hash 的元素，使队列 hash 严格递增、队首为最小。
+- “窗口过期”循环 `while winnow and winnow[-1][1] < (i - KMER_SIZE + 1) - WINNOW_SIZE:
+  winnow.pop(0)` 检查的是**队尾**位置却弹出**队首**；条件只依赖不随弹首变化的队尾，因此一旦触发会
+  一直弹到队列清空（模拟实测 100% 以空队列结束）。队首因此不是真正的窗口最小值，而是自上次清空以来
+  的 running minimum（记录最小值）；触发条件等价于队尾（最右的右到左最小值）落后当前 k-mer 超过
+  `WINNOW_SIZE` 个位置。
+- 后果：指纹密度约为论文期望值 `2|G|/(w+1)` 的一半（随机/GC41 序列实测约 `0.056|G|` vs
+  `0.118|G|`，`w=16`），且“每个窗口内必有指纹”的保证被破坏（相邻指纹间距实测最大 94，约 50% 的
+  间距 > `w+1`）。
+- 窗口填满 (`i - KMER_SIZE + 1 >= WINNOW_SIZE`) 后，队首 hash 即为一个 fingerprint；只有
   fingerprint 变化时才进入 plane-sweep/索引插入，避免同一 hash 连续处理。
 
 **Plane-sweep 链表 `update_list()`**: 维护按 `(chr, first)` 排序的 `ListNode` 链表， 每个节点保存：
 
-- query 区间 `(first, last)` 与 reference 对应区间 `(ref, ref_last)`；
+- reference（索引侧）区间 `(first, last)` 与 query（扫描侧）区间 `(ref, ref_last)`；
 - 已扫描步数 `age`、命中次数 `count`；
 - 是否曾经满足阈值 `potentional`。
 
@@ -231,6 +244,10 @@ search 按染色体逐条处理（Python 侧默认跳过含 `_` 的 contig 与 `
     - 若满足且长度 `< MAX_SD_LEN`，标记 `potentional`。
     - 若不满足或长度超限，且此前为 `potentional`，并满足 `last - first > QUERY_THRESHOLD` 与
       `current.loc - walker.ref ≥ REF_THRESHOLD`，则调用 `save_sd()` 输出该 hit。
+
+另外，`update_list()` 遍历前会把 `loci` 中位于首节点之前的元素从链表头部逐个插入，遍历结束后把剩余
+`loci` 追加到链表尾部；`build_index()` 在 `find_sds=True` 扫描结束时，对 `L` 中剩余满足
+`potentional` 且 (`last - first > QUERY_THRESHOLD` 或 `count >= 4`) 的节点调用 `save_sd()` 兜底输出。
 
 **Tau 计算**: `tau()` 先算 `ratio = (MAX_ERROR - MAX_EDIT_ERROR) / MAX_EDIT_ERROR`（=1），
 `gap_error = min(1.0, ratio * MAX_EDIT_ERROR)`（=0.15），再返回
@@ -262,8 +279,8 @@ anchor 的 y 位置 `(y + l - 1, anchor_idx)`。支持：
 3. 在右端点事件时，以 `dp[i] - gap_to_end` 激活当前 anchor，其中 `gap_to_end` 是从当前 anchor 到
    序列末端的最大可能距离惩罚。
 4. 按 DP 得分排序并重构链，保留满足 `span >= MIN_UPPERCASE_MATCH or span >=
-   int(MIN_READ_SIZE * (1 - MAX_ERROR))` 的链；由于后者（490）大于前者（90），实际起约束作用的是
-   90 bp。
+   int(MIN_READ_SIZE * (1 - MAX_ERROR))` 的链；`int(700 * 0.7) = 490 > 90`，OR 条件等价于
+   `span >= 490`，实际起约束作用的是 490 bp。
 
 anchor 得分模型：第一个碱基得 `MATCH_SCORE`（默认 4），每多一个匹配碱基加 `MATCH_SCORE // 2`（即
 2）。gap 惩罚为 reference gap 与 query gap 之和（`dx + dy`），无 open 项。
@@ -294,8 +311,9 @@ anchor 得分模型：第一个碱基得 `MATCH_SCORE`（默认 4），每多一
       (b) 若两个 anchor 在两个轴上都不相交（`max(0, min(c_xs, c_ys) - max(p.x.end, p.y.end)) ≥ 1`）
       则跳过该前驱。
     - 更新 `dp[ai] = max(dp[ai], dp[aj] + score[ai] - MISMATCH * mi - GAPOPEN - GAP * (ma - mi))`。
-- 按 `dp` 得分降序回溯，得到不相交的 anchor 链；若候选链相对已有结果在两个轴上都被覆盖到
-  `SIDE_ALIGN` 以内则丢弃；最终链 span 须 `≥ MIN_READ`（900）。
+- 按 `dp` 得分降序回溯，得到不相交的 anchor 链；候选链先过滤 `est_size < MIN_READ - SIDE_ALIGN`
+  （400），再丢弃相对已有结果在两个轴上都被覆盖到 `SIDE_ALIGN` 以内的链；最终链 span 须
+  `≥ MIN_READ`（900）。
 - 对最终链，用 `Hit(orig_h, [anchors], SIDE_ALIGN)` 拼接 anchors：
     - 重叠的 anchor 先经 `extend()` 合并，其余相邻 anchors 之间的 gap 调用 `align_gap()`：
       令 `mi = min(Δx, Δy)`（较短侧长度），若 `max(Δx, Δy) ≤ 1000` 直接用 `bio.seq.align()`
@@ -312,7 +330,8 @@ anchor 得分模型：第一个碱基得 `MATCH_SCORE`（默认 4），每多一
 
 **索引构建**: 对 cluster 中所有序列（来自 `cluster.codon` 输出的 `.fa`）建立完整 k-mer 索引，
 `kmer.as_int()` 作为 key，记录每个 k-mer 出现的 `(chr_id, loc)` 列表。同样用频率阈值过滤最高的 0.1%
-k-mer。
+k-mer。`find_elems()` 扫描时跳过频率 ≥ threshold 的 k-mer，遇到已 `visited` 位置时先 flush 当前
+链表 `L` 再继续。
 
 **`update_list()` 与 search 的差异**: search 阶段每个节点只跟踪一段 putative SD 的两个 mate；
 decompose 阶段需要跟踪同一 elementary SD 在多个序列上的多个拷贝，因此每个 `ListNode` 额外维护：
@@ -324,13 +343,17 @@ decompose 阶段需要跟踪同一 elementary SD 在多个序列上的多个拷�
 处理当前 k-mer 的位置列表 `index`（按 `(chr, loc)` 升序构建，`update_list` 自列表末尾向前遍历）时：
 
 1. 对尚未进入链表的新位置，在链表头部插入新节点，并继承当前 `mappings`。
-2. 对可延伸的节点，更新 `end`、`score`、`gap=0`、`count += 1`。
+2. 对可延伸的节点，更新 `end`、`score`、`gap=0`、`count += 1`；若本次延伸使节点长度首次跨过
+   `MIN_MATE_LEN` 且 `mappings` 中已跟踪多个节点（即该 elementary SD 有多个拷贝），先触发一次
+   `process(L, visited, [], n.mappings)` 输出各拷贝已覆盖的前缀区间。
 3. 对老化节点（`gap >= diff=50`），若此前为 `potentional` 且长度超过 `MIN_MATE_LEN`， 调用
    `process()` 输出：
     - 若 `mappings` 为空，输出 `(chr, begin, end, score)`；
     - 否则对每个 chromosome 输出从 `begin` 到 `mappings[chr]` 的区间，并更新 `begin` 为
       `mappings[chr]+1`。
-4. 清空已输出区域对应的 `visited` 标记，避免同一碱基被多次分解。
+4. 将已输出区域对应的 `visited` 位置置为已访问（`process()` 中 `visited[c][i] = True`），避免同一
+   碱基被多次分解。注意 `process()` 仅在输出区域数 ≠ 1 时才标记 `visited` 并返回结果；若恰好只
+   输出 1 个区域，则返回空列表，调用方不会记录该 elementary SD（该区域也不标记 visited）。
 
 **合并 `merge()`**: 对相邻的 elementary SD 集合，若它们在所有 chromosome 上连续且间隔不超过 500bp，
 则合并为一个集合。
@@ -472,7 +495,8 @@ P(X ≤ k) = B(k, n, p)
    虽然支持低同源性检测，但该能力不在 PGR 当前需求范围内；若未来确需检测古老重复，可再参考其
    colinear k-mer matching + 扫描线设计。
 2. **Winnowing 作为采样手段**: BISER 用 winnowing 将 k-mer 采样率降到约 `2/(w+1)`，
-   同时保证同一 windows 内必然命中。这与 pgr sketching 的有损采样不同，
+   并声称同一 windows 内必然命中（注：代码实测指纹密度约 `2|G|/(w+1)` 的一半且该保证被破坏，见
+   §3.3.1）。这与 pgr sketching 的有损采样不同，
    但为“在保敏感度的前提下降低索引规模”提供了可借鉴的参数化方法。pgr 现已落地 closed syncmer
    （`src/libs/syncmer.rs`）：同属有界间隔采样（连续点距 ≤ `2(w-1)`、密度约 `2/(w+1)`），且
    canonical 哈希使其链向对称，Jaccard/Mash 距离偏差小于 minimizer （Edgar 2021）；未来原生 BISER
