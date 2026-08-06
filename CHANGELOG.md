@@ -2,6 +2,107 @@
 
 ## Unreleased - ReleaseDate
 
+### New Features
+
+#### Interval Operations (`rg` / `runlist`)
+
+* **`pgr rg`** - New command family for line-oriented operations on `.rg` range
+  files (8 subcommands): `cover`, `count`, `coverage`, `merge`, `prop`,
+  `runlist`, `sort`, `span`.
+* **`pgr runlist`** - New command family internalizing `spanr` functionality
+  (10 subcommands): `combine`, `compare`, `convert`, `genome`, `merge`, `some`,
+  `span`, `split`, `stat`, `statop`.
+
+#### Repeat Detection (`rept`)
+
+* **`pgr rept`** - New command family (migrated from `pl`) for repeat detection
+  and masking: `e-kmer` (against an external library, k-mer), `e-align`
+  (against an external library, alignment), `s-kmer` (self k-mer), `s-align`
+  (self alignment), `trf` (tandem repeats), `masker` (simulates RepeatMasker:
+  TRF PERFECT + `rmblastn` library search + TRF DIVERGED, writes runlist JSON).
+
+#### Hybrid Alignment (`align`)
+
+* **`pgr align fill`** - Fills the 2D gaps between pgi anchors with LASTZ
+  (syntenic) using the FastGA-gapfill idea.
+* **`pgr align rest`** - Searches beyond the given pgi anchors with LASTZ,
+  filling the rest of the genome (syntenic).
+* **`pgr align pgi`** - Hybrid alignment mode; added parameter controls and
+  sensitivity improvements.
+
+#### PAF
+
+* **`pgr paf validate`** - Checks PAF end coordinates against the `cg:Z:`
+  CIGAR tag.
+
+#### pbit
+
+* **v1005 format upgrade** - Soft-mask (lowercase) preservation across
+  `range`/`some`/`to-fa` extraction.
+
+### Enhancements
+
+* `pgi` index switched from in-memory to mmap for PGI operations.
+* LCP propagation for seed-hit scanning; sequential merge optimization with
+  `entry_lower_bound_ge`.
+* `pgr psl to-rg` renamed from `to-range`.
+* `subcommand_required` checks added across all top-level commands.
+
+### Fixes
+
+* Output-file overwrite protection added across `fa`, `fq`, `fas`, `stat`,
+  `2bit`, `pbit`, `rg`, and `runlist` command families.
+* Zero-panic hardening across `pgi`, `paf`, `pbit`, `sd`, `rept`, and `align`
+  command families (boundary/overflow/clamping bugs, `i32::MIN` handling).
+* `paf` auxiliary-input protection for all query subcommands.
+* `pbit` multi-reference soft-mask routing restored; reverse-chain routing and
+  dead code removed; memory DoS fixes.
+* `fas to-xlsx` now handles IUPAC ambiguity bases in outgroups.
+* `sd/lastz` resolved decompressed-file collision between target/query.
+
+### Refactors
+
+* `spanr` dependency removed and its functionality internalized into the
+  `runlist` command family.
+* External `intspan` crate replaced with an internal `libs/ds/intspan`
+  implementation (linear span ops, `IntSpan::covered` added).
+* Repeat detection commands moved from `pl` into `rept`.
+* Shared output-file conflict check added in `cmd_pgr/args`.
+
+### Performance
+
+* SIMD/HV/Jaccard benchmarks added; HV implementations optimized.
+* Runlist file merging and IntSpan construction optimized.
+* Range parser replaced regex with a hand-written scanner.
+
+### Core Libraries
+
+* **`src/libs/ds/intspan.rs`** - Internal IntSpan interval-set implementation.
+* **`src/libs/ds/range.rs`** - Range parsing/operations.
+* **`src/libs/runlist/`** - Runlist interval operations.
+* **`src/libs/fmt/gff.rs`** - GFF parsing library.
+* **`src/libs/paf/validate.rs`** - PAF CIGAR coordinate validation.
+* **`src/libs/rmblast.rs`** - RepeatMasker search-parameter constants and helpers
+  used by `pgr rept masker`.
+
+### Toolchain & Dependencies
+
+* Migrated from `portable_simd` to `wide` 1.6.0; switched to the stable
+  toolchain.
+
+### Tests
+
+* Dozens of UCSC-style test fixtures and CLI tests.
+* Regression tests for soft-mask preservation, zero-panic, overwrite
+  protection, and edge cases.
+* New benchmarks: `intspan_setops`, `interval_overlap`, `range_parse`,
+  `rg_merge`, `simd`, `jaccard`, `hv`.
+
+### Docs
+
+* Added repeat-masking design/user guides, `pgi-align`, `pgi-lastz-hybrid`,
+  FastGA, and benchmark docs; reorganized audit notes and project docs.
+
 ## 0.4.0 - 2026-08-02
 
 ### New Features
