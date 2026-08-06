@@ -1,11 +1,13 @@
 # pgr pgi + LASTZ 混合比对（FastGA-gapfill 思路）
 
-> 设计笔记（未实现）。背景：FASTGA 论文（*FastGA: fast genome alignment*，
+> 设计笔记（已实现，2026-08-06）。背景：FASTGA 论文（*FastGA: fast genome alignment*，
 > Bioinformatics Advances 5(1):vbaf238，DOI 10.1093/bioadv/vbaf238）提出混合方案
 > FastGA-gapfill——以 FastGA 比对为锚点，对每对连续同向锚点之间的区间跑 LASTZ
 > 填 gap，最后合并两者结果。pgr 的本地对应物：`pgr align pgi`（原生 FastGA 风格）
 > 快速找片段，`pgr align lastz` 精修，两套 PSL 合并喂 `pgr pl chainnet`。
-> 日期：2026-08-06。状态：方案已讨论，未实现（不着急）。
+> 日期：2026-08-06。状态：已实现为 `pgr align hybrid`（算法
+> `libs/align/hybrid.rs` + CLI/编排薄壳 `cmd_pgr/align/hybrid.rs`），集成测试
+> `tests/cli_align_hybrid.rs`，文档 `docs/align-hybrid.md`。
 > 关联：[[pgi-align.md]]、[[sd.md]]、[[references/fastga.md]]、[[paf-pangenome.md]]。
 > 命令命名（2026-08-06 与用户讨论）：不做 `pgr pl align --hybrid`，直接做
 > `pgr align hybrid`——`pgr pl` 是"暂时没想好该放到哪边"的命令的临时存放处，
@@ -47,14 +49,16 @@
 3. 提取区间序列并切单序列：`pgr fa range` / `pgr fa split name`
 4. 精修：`pgr align lastz --preset <预设>`（预设由用户选择，见 §3.2/§3.6）→ LAV
 5. 转换：`pgr lav to-psl` → `lastz.psl`
-6. 合并去重：丢弃与 pgi 块重叠 >50% 的 lastz 块（或保长去短），避免 chain 分支碎片化
+6. 合并（cat）：两套 PSL 直接并列输出，**不做去重**——重叠冗余交给 chainnet
+   的链化处理（2026-08-06 与用户讨论后改为不做粗合并，见 §3.7）
 7. ChainNet：
    `pgr pl chainnet [--syn] target.fa query.fa psl_all/ -o out`
 
 ### 3.2 关键决策点
 
 - **补比对区间**：锚点间 gap（命中率高、链得进去）vs 全未覆盖区（简单但白跑多）。
-- **去重规则**：重叠阈值与保长/保 pgi 的选择，需小规模数据实测。
+- **合并方式**：不做去重，两套 PSL cat 并列，交给 chainnet 链化时处理重叠冗余
+  （§3.7；与论文 FastGA-gapfill 直接 cat 合并一致）。
 - **`--syn`**：syntenic 共线性比对加；重复/SD 分析必须不加（`pgr sd align` 明确
   规定 chain/net 精修非 `--syn`，否则重排同源丢失）。
 - **预设**：做成用户选项（复用 `pgr align lastz --preset set01..set07`）。
@@ -73,9 +77,10 @@ pgi 块边界一般比真实同源区短 1–11 bp。处理方式**不是缩短 
    `trim(n)`（n ≈ 25–50 bp，大于 pgi 边界误差 1–11 bp 即可）——补集因此向外
    大出一个缓冲带，真实边界落进 LASTZ 的搜索范围；
 3. LASTZ 跑补集，覆盖真实边界，与 pgi 完整块边界产生**少量有意重叠**；
-4. 合并时 pgi 完整块 + lastz 块，重叠 >50% 保长去重兜底（chain 分支防护）。
+4. 合并时 pgi 完整块 + lastz 块直接并列输出，不做去重（chain 分支的合理归并
+   交由 chainnet 链化时处理，见 §3.7）。
 
-实现上只需要一维区间运算：`pgr psl to-range` → `pgr runlist span --op trim`
+实现上只需要一维区间运算：`pgr psl to-rg` → `pgr runlist span --op trim`
 → `pgr runlist span --op holes`，全部是现有命令，**不需要新增 PSL 记录变换
 函数**。这块逻辑与 `rept`/`ir` 的 `run_repeat_runlist_pipeline`
 （`libs/pl/repeat.rs` 的 Fill → Excise → Fill）同源，复用的正是
@@ -106,8 +111,10 @@ Hybrid（pgi 锚点 + LASTZ 补 gap）模式**只适合共线性（syntenic）�
   但合并时冗余/重叠越多（ALNfill 已把 `-e` 造成的重叠列为已知问题）。
 - **box 去嵌套**：论文只保留最小 bounding box（无包含关系）——对应我们的
   `runlist holes` 天然产出非重叠区间，无需额外处理。
-- **合并方式**：论文直接把两套输出 cat 合并（PAF），未做去重；我们计划保留
-  >50% 重叠保长去重兜底（§3.2），仍值得保留。
+- **合并方式**：论文直接把两套输出 cat 合并（PAF），未做去重；我们同样不做
+  去重，两套 PSL 直接并列交给 chainnet 链化（§3.7）。重叠越大，chainnet 阶段
+  冗余越多（ALNfill 已把 `-e` 造成的重叠列为已知问题），但这些都是下游链化
+  的归并范畴，不在此处粗合并。
 
 > 论文的 FastGA-gapfill 灵敏度接近 LastZ、速度比 LastZ 快 19.3×–137.5×——
 > 这是本方案可行性的直接证据，也是后续验证的对照目标。
@@ -137,33 +144,94 @@ ALNfill（`alnfill-main/`，Chenxi Zhou）是论文 FastGA-gapfill 的工程化�
 - **内存**：ALNfill 把两个基因组整库读进内存（sdict strdup），超大基因组不现实；
   pgr 的 2bit/loc 区间提取无此问题。
 
+### 3.7 合并策略（定稿，2026-08-06 与用户讨论后）
+
+早先计划在 `libs/align/hybrid.rs` 里做"重叠 >50% 保长去重"的粗合并。用户指出
+pgr 的 chainnet 链化流程本身就处理重叠合并，这里粗合并既粗糙又多余，改为：
+
+- **不做去重**：`run_hybrid` 把 pgi/锚点块与 LASTZ 补块**直接并列**输出
+  （anchor 在前、lastz 在后），重叠冗余交给 `pgr pl chainnet` 链化时归并。
+- 这与论文 FastGA-gapfill 直接 cat 两套 PAF 一致（§3.5）。
+- 相应删除 `merge_dedup`/`overlap_count` 及其单元测试；集成测试改为断言
+  "region 被覆盖"而非"精确块数"。
+- 锚点来源参数定名 `--avail-psl`（"已有的 PSL"，不限于 pgi——FastGA、
+  minimap2 等任意比对器输出均可直接喂入），复用一个已有 PSL 时跳过内部
+  `align pgi`。
+
 ## 4. 已知的坑
 
 - LASTZ 输入单序列限制 → 提取/切分是主要工程量。
 - `pgr align lastz` 只出 LAV，需 `pgr lav to-psl`。
-- pgi 边界短 1–11 bp → lastz 补块与 pgi 块边界重叠 → 合并前去重。
+- pgi 边界短 1–11 bp → lastz 补块与 pgi 块边界重叠 → 重叠交给 chainnet 归并
+  （不做去重，见 §3.7）。
   决策见 §3.3：pgi PSL 原样保留，仅 trim 补集计算区间，不缩 PSL 记录本身。
 - 全未覆盖区含物种特异插入/着丝粒等无同源序列，LASTZ 白跑；应优先锚点间 gap。
 - `pgr align lastz` 默认 query-depth 50 是"先到先得"式截断，补 gap 场景若覆盖深
   可能丢块，必要时调大 `--query-depth`。
 
-## 5. 验证方案（后续执行）
+## 5. 验证方案
+
+### 5.1 灵敏度评估（已执行，2026-08-06，`scripts/verify-hybrid-sensitivity.sh`）
+
+口径借鉴论文 §5.1（[[references/fastga.md]] §12.1）：模拟 A、B 两个基因组
+（各 6 Mb，由 10 kb 块组成；每块 = 目标区[长度 100–5000 bp × 分歧度
+1–40%] + 随机填充；块序两基因组同序打乱，无跨块共线性；分歧按 80% 替换 +
+10% 插入 + 10% 缺失引入）。每 (长度, 分歧度) 组合 20 重复（共 600 目标区）。
+"恢复" = 目标区被比对覆盖 ≥95%（A、B 两侧都算）。结果为每格
+`hybrid/pgi/lastz`（恢复数 /20）：
+
+| L\d | 1% | 10% | 20% | 30% | 40% |
+|-----|----|----|----|----|----|
+| 100 | 2/1/2 | 1/0/1 | 1/0/1 | 0/0/0 | 0/0/0 |
+| 200 | 3/1/3 | 4/1/4 | 6/0/6 | 2/0/2 | 1/0/1 |
+| 500 | 6/6/6 | 6/6/6 | 6/3/6 | 6/0/6 | 1/0/1 |
+| 1000 | 9/7/9 | 8/7/8 | 5/4/5 | 11/5/11 | 2/0/2 |
+| 2000 | 15/15/15 | 15/15/15 | 14/14/16 | 15/13/16 | 13/1/14 |
+| 5000 | 20/20/20 | 20/20/20 | 20/20/20 | 20/20/20 | 19/7/20 |
+
+合计（/600）：**pgi 186 / hybrid 251 / lastz 256**。假阳性碱基比例（A 侧落在
+目标区之外的比对碱基）：pgi 0.061% / hybrid 0.455% / lastz 0.491%。
+
+结论（与论文 "FastGA-gapfill 灵敏度接近 LastZ" 的结论形态一致）：
+
+- **hybrid 灵敏度显著高于 pgi**（+65 目标区），gap-fill 主要补的是高分歧大目标区
+  （2000 bp@40%: 1→13，5000 bp@40%: 7→19）——正是 §1 里 pgi 对 SD 身份下限
+  附近漏块的场景。
+- **hybrid 灵敏度 ≈ lastz**（251 vs 256，逐格差 ≤5），几乎追平最灵敏的 lastz。
+- **三者假阳性都极低**（<1%）；hybrid 比 pgi 略高、与 lastz 相当——来自 lastz
+  块边界超出 pgi 块的真实边界扩展（§3.3 的 buffer），是预期行为，非噪声 bridging。
+  实证：全部假阳性碱基 100% 落在目标区边界 500 bp 内（无一条在随机填充区深处）；
+  界外尾巴 pgi 中位数 2 bp/最大 15 bp，lastz 中位数 9 bp/最大 81 bp（X-drop 在
+  随机序列上很快截断），hybrid 继承 lastz 尾巴。用论文 §12.1 的"按比对判定假阳性"
+  口径（>95% 比对碱基在目标区外才算 false），这些尾巴不会把任何一条 lastz
+  比对判假，真正的假阳性比对接近 0——碱基口径与论文口径不可直接比。
+
+耗时（debug 构建，--parallel 8，6 Mb）：pgi-only 9.5s；hybrid 补 gap 本身
+2.7s（复用 pgi 锚点，246 个 box），整链路含 pgi ≈ 12s；lastz 15s。补 gap 的
+边际开销很小，真实数据里 lastz 开销随基因组规模放大更快（论文 19–137×），
+hybrid 的省时优势会更强。
+
+### 5.2 待补充验证
 
 - 用 MG1655 vs Sakai（已有测试数据）跑 pgi-only / hybrid / lastz-only 三路，
   对比 chainnet 输出的覆盖率与链完整性；hybrid 目标：覆盖接近 lastz-only，
   耗时接近 pgi-only（论文 gapfill 的结论形态）。
 - 检查 hybrid 输出是否碎片化、有无重复覆盖块。
-- **灵敏度口径（借鉴论文 §5.1）**：模拟含已知目标区的序列对（10 kb 块 = 相似区 +
-  随机序列、目标区长度 100–5000 bp × 分歧度 1–40%、每组合 100 重复），
-  统计"目标区被比对覆盖 ≥95%（两侧都算）"的恢复比例；同时统计目标区外的
-  假阳性碱基比例。pgr 侧用 `pgr psl to-range` / `pgr runlist` 做覆盖统计即可。
 - **真实数据口径（借鉴论文 §12.4，[[references/fastga.md]]）**：覆盖统计只按
   比对 start/end 计（比对内 gap 也算覆盖）；LastZ 侧可考虑喂 soft-mask 序列、
   按染色体对跑（与论文实验一致，作为对照时口径要对齐）。
 
 ## 6. 待办
 
-- [ ] 手动脚本跑通小规模验证（临时，不入库）。
-- [ ] 若效果达标，做成 `pgr align hybrid` 子命令（见头部命名说明），
-      复杂逻辑放 `src/libs/`（如 `libs/align/`），`cmd_pgr` 保持薄壳。
-- [ ] 按 AGENTS.md 要求补 `cargo fmt` / `cargo clippy` 与测试（如进入实现阶段）。
+- [x] 手动脚本跑通小规模验证（临时，不入库）。已验证：'+' / '-' 链的 box 计算、
+      序列提取、lastz 补 gap、LAV→PSL 坐标回移、合并（cat）全链路。
+- [x] 做成 `pgr align hybrid` 子命令：算法放 `src/libs/align/hybrid.rs`，
+      编排（PipelineCtx + run_cmd）内联在薄壳 `cmd_pgr/align/hybrid.rs`（参考
+      `pl/chainnet.rs`；编排不复杂、无共享部分，故不另立 `libs/pl/` 文件）。
+- [x] 按 AGENTS.md 要求补 `cargo fmt` / `cargo clippy` 与测试：集成测试
+      `tests/cli_align_hybrid.rs`（6 例）+ `hybrid.rs` 单元测试（7 例），
+      全仓 1334 测试通过，fmt/clippy clean。
+- [x] 灵敏度评估（fastga.md §12.1 口径）：`scripts/verify-hybrid-sensitivity.sh`
+      已跑通并入库，结果见 §5.1、结论形态与论文 FastGA-gapfill 一致。
+- [ ] （可选）真实数据对比：MG1655 vs Sakai 跑 pgi-only / hybrid / lastz-only，
+      对比 chainnet 覆盖率与链完整性（§5.2 验证方案）。

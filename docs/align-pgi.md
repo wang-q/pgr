@@ -58,7 +58,8 @@ chaining to a second step. The paper also evaluates a FastGA + LastZ hybrid
 ("FastGA-gapfill": FastGA anchors, LastZ fills the gaps between them with a
 1 kb overlap for seeding), whose sensitivity approaches LastZ's at
 19.3×–137.5× its speed; the same hybrid design with `pgr align pgi` anchors
-and `pgr align lastz` gap filling is tracked as a planned `pgr align hybrid`.
+and `pgr align lastz` gap filling is implemented as `pgr align hybrid` (see
+[align-hybrid.md](align-hybrid.md)).
 
 ## Options
 

@@ -113,7 +113,7 @@ runlist 家族对照 spanr 0.6.7 源码、rg 家族对照 rgr 源码逐条核对
 spanr 时代 `chr:start-end` 按 `.` 截断 contig 名（`NC_000913.1` → `"1"`），
 当时以 `c1..cN` 名字映射规避；解析器迁入后重新评估：**不修改解析语义**。
 理由：`name.chr(strand)` 是 `.rg` 物种前缀约定（`S288c.I(-):190-200` →
-`I`），且 `Range` 拆分同时服务 FASTA 头与 `psl to-range`；四个 rept 管线的
+`I`），且 `Range` 拆分同时服务 FASTA 头与 `psl to-rg`；四个 rept 管线的
 实际影响已由 `c1..cN` 映射修复验证。若需原生支持带点名，正解是新增严格
 解析模式（新特性，不建议按 bug 修）。
 

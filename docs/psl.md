@@ -11,7 +11,7 @@
 *   `stats`: Collect statistics from a PSL file (per-query or per-alignment).
 *   `swap`: Swap target and query.
 *   `to-chain`: Convert PSL to Chain format.
-*   `to-range`: Extract alignment coordinates as ranges (.rg).
+*   `to-rg`: Extract alignment coordinates as ranges (.rg).
 
 ---
 
@@ -234,12 +234,12 @@ pgr psl to-chain [OPTIONS] <input>
 
 ---
 
-## to-range
+## to-rg
 
 Extracts alignment coordinates from PSL files as ranges (chr:start-end).
 
 ```bash
-pgr psl to-range [OPTIONS] <infile>
+pgr psl to-rg [OPTIONS] <infile>
 ```
 
 ### Options
@@ -252,10 +252,10 @@ pgr psl to-range [OPTIONS] <infile>
 
 1.  **Extract query ranges**:
     ```bash
-    pgr psl to-range input.psl > query.rg
+    pgr psl to-rg input.psl > query.rg
     ```
 
 2.  **Extract target ranges**:
     ```bash
-    pgr psl to-range input.psl --target-coords > target.rg
+    pgr psl to-rg input.psl --target-coords > target.rg
     ```

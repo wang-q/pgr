@@ -270,7 +270,7 @@
   * `stats`: Display alignment statistics
   * `swap`: Swap target/query
   * `to-chain`: Convert to chain format
-  * `to-range`: Convert to range format
+  * `to-rg`: Convert to .rg range format
 
 * **`pgr lav`** - LAV alignment manipulation (2 subcommands)
   * `lastz`: LASTZ-specific operations

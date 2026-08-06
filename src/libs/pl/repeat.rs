@@ -492,7 +492,7 @@ pub fn run_self_align_pipeline(opts: &SelfAlignOpts) -> anyhow::Result<()> {
 
     run_cmd!(info "==> Extract ranges")?;
     run_cmd!(
-        ${pgr} psl to-range lifted.psl -o coverage.rg
+        ${pgr} psl to-rg lifted.psl -o coverage.rg
     )?;
 
     if count_rg_lines(&["coverage.rg".to_string()])? == 0 {
@@ -524,7 +524,7 @@ pub fn run_self_align_pipeline(opts: &SelfAlignOpts) -> anyhow::Result<()> {
         if line.trim().is_empty() {
             continue;
         }
-        // The rg line is `{contig}:{start}-{end}`; `to-range` writes the real
+        // The rg line is `{contig}:{start}-{end}`; `to-rg` writes the real
         // contig name, which may contain '.' or ':' (e.g. `NC_000913.1`,
         // `chr1:alt`). Parse via the range suffix and rewrite with the
         // dot/colon-free placeholder so the downstream rg parser cannot

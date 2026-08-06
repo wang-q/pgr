@@ -108,7 +108,7 @@ prop/runlist/span/sort 均遵守同一契约。
 `runlist` 家族从此只收 runlist JSON 输入。迁移内容：新建
 `cmd_pgr/rg/`（mod/cover/coverage）、注册 `pgr rg`、删除 runlist 的
 cover/coverage 命令、测试迁至 `tests/cli_rg.rs`、新增 `docs/rg.md` 并
-更新 `docs/runlist.md` 与内部引用（psl to-range 帮助、notes）。
+更新 `docs/runlist.md` 与内部引用（psl to-rg 帮助、notes）。
 
 ### 3.2 高价值
 

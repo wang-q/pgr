@@ -70,7 +70,7 @@ predictable:
    prefix (about 25 commands across 12 families):
    `to-psl`, `to-maf`, `to-fas`, `to-paf`, `to-vcf`, `to-gfa`, `to-bed`,
    `to-chain`, `to-axt`, `to-hv`, `to-fa`, `to-2bit`, `to-dna`, `to-xlsx`,
-   `to-range`. This is the project-wide rule that answers "input or output":
+   `to-rg`. This is the project-wide rule that answers "input or output":
    conversion commands are named after the output format.
 3. **A few commands are named after the artifact or the argument**:
    `gff rg`, `gff runlist` (output format, without the `to-` prefix),

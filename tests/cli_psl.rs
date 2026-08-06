@@ -430,13 +430,13 @@ fn test_lift_minus_strand_forward_coordinates() {
         "qStarts must lift in the RC frame: {output_content}"
     );
 
-    // `psl to-range` on the lifted record must recover the genomic span
+    // `psl to-rg` on the lifted record must recover the genomic span
     // [1200, 1301) as 1-based inclusive "chr:1201-1301".
     let range_out = temp.path().join("ranges.rg");
     PgrCmd::new()
         .args(&[
             "psl",
-            "to-range",
+            "to-rg",
             output.to_str().unwrap(),
             "-o",
             range_out.to_str().unwrap(),
@@ -445,7 +445,7 @@ fn test_lift_minus_strand_forward_coordinates() {
     let ranges = fs::read_to_string(&range_out).unwrap();
     assert!(
         ranges.contains("chr:1201-1301"),
-        "to-range must recover the genomic span: {ranges}"
+        "to-rg must recover the genomic span: {ranges}"
     );
 }
 
@@ -506,11 +506,11 @@ fn test_stats_empty() {
 }
 
 //
-// psl to-range
+// psl to-rg
 //
 
 #[test]
-fn test_to_range_basic() {
+fn test_to_rg_basic() {
     let temp = TempDir::new().unwrap();
     let input = get_path("lift", "", "test_fragment.psl");
     let output = temp.path().join("ranges.rg");
@@ -518,7 +518,7 @@ fn test_to_range_basic() {
     PgrCmd::new()
         .args(&[
             "psl",
-            "to-range",
+            "to-rg",
             input.to_str().unwrap(),
             "-o",
             output.to_str().unwrap(),

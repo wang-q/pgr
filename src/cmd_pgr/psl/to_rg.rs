@@ -2,10 +2,10 @@ use anyhow::Context;
 use clap::{Arg, ArgAction, ArgMatches, Command};
 use std::io::Write;
 
-/// Build the clap subcommand for to-range.
+/// Build the clap subcommand for to-rg.
 pub fn make_subcommand() -> Command {
-    Command::new("to-range")
-        .about("Extracts coordinates from PSL as ranges (.rg)")
+    Command::new("to-rg")
+        .about("Extracts coordinates from PSL as .rg range lines")
         .after_help(
             r###"
 Extract alignment coordinates from PSL files and output in .rg format (chr:start-end).
@@ -18,10 +18,10 @@ Notes:
 
 Examples:
 1. Extract query ranges:
-   pgr psl to-range input.psl > query.rg
+   pgr psl to-rg input.psl > query.rg
 
 2. Extract target ranges:
-   pgr psl to-range input.psl --target-coords > target.rg
+   pgr psl to-rg input.psl --target-coords > target.rg
 "###,
         )
         .arg(crate::cmd_pgr::args::infile_arg_required_with_help(
@@ -42,7 +42,7 @@ Examples:
         )
 }
 
-/// Execute the to-range command.
+/// Execute the to-rg command.
 pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let infile = args.get_one::<String>("infile").unwrap();
     let output = crate::cmd_pgr::args::get_outfile(args);

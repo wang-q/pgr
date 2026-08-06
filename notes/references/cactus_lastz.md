@@ -335,7 +335,7 @@ pgr psl lift $WORK_DIR/fragments.psl --q-sizes $WORK_DIR/genome.sizes -o $WORK_D
 # 5. 深度计算与区间提取
 # 5.1 PSL -> Range (.rg)
 # 提取比对到的区间，自动处理正负链
-pgr psl to-range $WORK_DIR/lifted.psl > $WORK_DIR/query_coverage.rg
+pgr psl to-rg $WORK_DIR/lifted.psl > $WORK_DIR/query_coverage.rg
 
 # 5.2 计算深度 (Depth > 10)
 # 任何深度超过 10 的区域被视为重复序列

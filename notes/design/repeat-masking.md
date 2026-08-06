@@ -283,7 +283,7 @@ PSL 过滤（Rust 内）：identity ≥ min-identity 且 block ≥ min-len
   │ 3. 按 matches / (matches+mismatches+ins+del) 计算每条 alignment 的 identity
   ▼
 target 侧 .rg（基因组坐标，1-based inclusive）
-  │ 4. pgr psl to-range --target-coords 语义
+  │ 4. pgr psl to-rg --target-coords 语义
   ▼
 rg cover → span --op excise -n <min> → span --op fill -n <ff>
   │ 5. 合并重叠、切短碎片、填邻近孔（同 e-kmer 的 runlist 管道）
@@ -294,7 +294,7 @@ runlist JSON → pgr fa mask
 要点：
 
 1.  **比对方向**：ref = 基因组、query = 库。理由：遮蔽要的是基因组坐标，
-    PSL 的 target 侧正是 ref；`pgr psl to-range --target-coords` 直接给出
+    PSL 的 target 侧正是 ref；`pgr psl to-rg --target-coords` 直接给出
     基因组区间。query 索引按 pgi 约定 memory-map（库约 50 MB，无压力）。
     注意 `pgr align pgi` 的 PSL 输出是"每链一个 block"，不是逐 hit 列表。
 2.  **身份过滤**：转座子拷贝与 consensus 的 identity 通常 70–90%（`sd search`
@@ -453,7 +453,7 @@ min-identity 0.70、min-len 50）
 
 `pgr rept s-align <genome>` 已实现：窗口化（200 bp / 100 bp 步长 = 2x
 覆盖）→ `fa split name` 拆染色体 → `align lastz`（genome vs fragments，
-preset set01）→ LAV→PSL → `psl lift` 回基因组坐标 → `psl to-range` →
+preset set01）→ LAV→PSL → `psl lift` 回基因组坐标 → `psl to-rg` →
 `pgr rg coverage -m 4`（深度 ≥4 = ≥2 拷贝）。管道在 tempdir 内、含
 soft-mask 警告与空输入兜底；集成测试（lastz 缺失时跳过）已加。
 
@@ -532,7 +532,7 @@ trf/e-align 下 json key 均完整；三个 e-kmer **并行**（-P 修复后）�
 （选项 1）等价于改 pgr 自己的解析器。重新评估后决定**不修改解析语义**：
 `name.chr(strand):start-end` 是 `.rg` 格式的物种前缀约定（兼容测试断言
 `S288c.I(-):190-200` → 染色体 `I`、输出不含 `S288c`），且
-`Range::from_str` 的 `.` 拆分同时服务 FASTA 头解析、`psl to-range` 等
+`Range::from_str` 的 `.` 拆分同时服务 FASTA 头解析、`psl to-rg` 等
 消费者；全局去掉拆分是破坏性变更。继续沿用方案 3 的 `c1..cN` 映射
 （成本极低、已验证 `NC_000913.1` 与 Fusarium 44 条 scaffold 的 key
 完整）。完整论证见 notes/audit/audit-runlist-rg.md「带点 contig 名截断

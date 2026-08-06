@@ -78,7 +78,7 @@ pgr psl lift "$WORK_DIR/fragments.psl" --q-sizes "$WORK_DIR/chrom.sizes" -o "$WO
 echo "==> Step 4: Range Extraction"
 # Convert PSL alignments to depth coverage ranges (.rg)
 # This extracts the query coordinates from the alignments
-pgr psl to-range "$WORK_DIR/lifted.psl" > "$WORK_DIR/coverage.rg"
+pgr psl to-rg "$WORK_DIR/lifted.psl" > "$WORK_DIR/coverage.rg"
 
 echo "==> Step 5: Depth Calculation"
 # Use spanr to identify regions with depth >= 4

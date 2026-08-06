@@ -1,18 +1,22 @@
 # pgr align
 
 `pgr align` performs pairwise genome alignment. It is a top-level wrapper
-around two engines:
+around three engines:
 
 - **`pgr align pgi`** — native FastGA-style pipeline: syncmer-sparse k-mer
   indexes, two-index merge, chaining and banded extension. See
   [align-pgi.md](align-pgi.md) and `notes/design/pgi-align.md`.
 - **`pgr align lastz`** — wrapper around the external `lastz` aligner with
   Cactus-style presets. See [align-lastz.md](align-lastz.md).
+- **`pgr align hybrid`** — pgi anchors + LASTZ gap filling (FastGA-gapfill):
+  pgi produces coarse anchors, LASTZ fills the colinear gaps between anchors,
+  and the two PSL sets are merged. See [align-hybrid.md](align-hybrid.md).
 
 `pgr align pgi` emits PSL blocks directly; `pgr align lastz` emits LAV files
-(one per target/query pair), which convert to PSL with `pgr lav to-psl`.
-Either way the PSL blocks feed the UCSC-style chain pipeline
-(`pgr psl to-chain` → `pgr pl chainnet`) or PAF conversion (`pgr psl to-paf`).
+(one per target/query pair), which convert to PSL with `pgr lav to-psl`;
+`pgr align hybrid` emits merged PSL. Either way the PSL blocks feed the
+UCSC-style chain pipeline (`pgr psl to-chain` → `pgr pl chainnet`) or PAF
+conversion (`pgr psl to-paf`).
 
 ## Core positioning
 
@@ -42,3 +46,11 @@ Either way the PSL blocks feed the UCSC-style chain pipeline
    `align lastz` writes one LAV file per target/query pair into the output
    directory; convert them with `pgr lav to-psl` (see
    [align-lastz.md](align-lastz.md)).
+
+3. Hybrid (pgi anchors + LASTZ gap filling):
+
+   ```bash
+   pgr align hybrid ref.fa query.fa -o out.psl
+   ```
+
+   Requires `lastz`. See [align-hybrid.md](align-hybrid.md).
