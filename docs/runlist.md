@@ -101,7 +101,8 @@ pgr runlist some <infile> <list> -o out.json
 ## split
 
 Splits a multi runlist JSON into one JSON per top-level key, written to
-`<outdir>/<key><suffix>` or printed line by line with `-o stdout`.
+`<outdir>/<key><suffix>` or printed as `key\tvalue` lines with `-o stdout`
+(the key is included so same-valued keys are distinguishable).
 
 ```bash
 pgr runlist split <infile> -o out_dir

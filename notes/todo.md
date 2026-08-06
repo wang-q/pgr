@@ -50,14 +50,22 @@
 
 ## 3. 低风险审计记录项（可顺手修）
 
-- [ ] `align lastz --lastz-args` 帮助文本提示 `--lastz-args=<val>` 写法（值以 `-` 开头时）。
-- [ ] `align pgi --self` 校验 `--ref-seq` / `--query-seq` 一致（现在只校验索引 ref==query）。
+- [x] `align lastz --lastz-args` 帮助文本提示 `--lastz-args=<val>` 写法
+      （值以 `-` 开头时；2026-08-06 已修：Arg help + docs/align-lastz.md）。
+- [x] `align pgi --self` 校验 `--ref-seq` / `--query-seq` 一致
+      （2026-08-06 已修：不一致/只给一个均报错，2 个集成测试）。
 - [ ] PAF 输出 `query_length` / `target_length` 恒 0：需改索引格式持久化 `src_size`，
-      属跨格式变更，明确决策做不做（来源：`audit/audit-paf.md`）。
-- [ ] `runlist split -o stdout` 丢弃键名，无法区分同值不同键。
-- [ ] `run_lastz` self 模式 n×n job 列表，大目录可提前过滤。
-- [ ] `syncmer.rs` 参考实现与 `collect_one_contig` 重复发射同一位置，消费方已去重，可合并。
-- [ ] `fa size --no-ns` 把非 IUPAC 字符计为"有效碱基"。
+      属跨格式变更，**待决策**：改 `.paf.idx` 持久化 src_size 才能填充，
+      影响索引格式兼容性（来源：`audit/audit-paf.md`）。
+- [x] `runlist split -o stdout` 丢弃键名 → 已修（2026-08-06：输出 `key\tvalue`，
+      1 个集成测试 + docs/runlist.md 更新）。
+- [x] `run_lastz` self 模式 n×n job 列表 → 已修（2026-08-06：self 只构建
+      对角 n 个 job，执行期防御保留）。
+- [ ] `syncmer.rs` 参考实现与 `collect_one_contig` 重复发射同一位置，消费方已去重，
+      可合并——**暂缓**：涉及 pgi build 种子发射核心，收益小风险高，消费方已去重
+      （来源：`audit/audit-rept-sd.md`）。
+- [x] `fa size --no-ns` 把非 IUPAC 字符计为"有效碱基" → 已修（2026-08-06：
+      排除 N + IUPAC 模糊码 + Invalid，1 个集成测试）。
 
 ## 4. 技术债（有空再议）
 

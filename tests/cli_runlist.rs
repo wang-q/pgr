@@ -334,6 +334,22 @@ fn command_runlist_split() {
 }
 
 #[test]
+fn command_runlist_split_stdout_keeps_keys() {
+    // `-o stdout` must print `key\tvalue` lines so same-valued keys are
+    // distinguishable (regression: keys were dropped before).
+    let dir = TempDir::new().unwrap();
+    let json = dir.path().join("multi.json");
+    std::fs::write(&json, r#"{"a":{"chr1":"1-5"},"b":{"chr2":"1-5"}}"#).unwrap();
+    let (stdout, _) = PgrCmd::new()
+        .args(&["runlist", "split", json.to_str().unwrap(), "-o", "stdout"])
+        .run();
+    assert!(
+        stdout.contains("a\t{\"chr1\":\"1-5\"}") && stdout.contains("b\t{\"chr2\":\"1-5\"}"),
+        "stdout split must keep keys: {stdout}"
+    );
+}
+
+#[test]
 fn command_runlist_stat() {
     let dir = TempDir::new().unwrap();
     let sizes = dir.path().join("sizes.txt");

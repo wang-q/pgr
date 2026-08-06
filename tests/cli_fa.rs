@@ -98,6 +98,22 @@ fn command_fa_size_no_ns() {
 }
 
 #[test]
+fn command_fa_size_no_ns_excludes_iupac_and_invalid() {
+    // `--no-ns` must also exclude IUPAC ambiguous codes (R) and non-IUPAC
+    // characters (`-`, `*`, digits): only ACGT count.
+    let temp = TempDir::new().unwrap();
+    let fa = temp.path().join("mix.fa");
+    std::fs::write(&fa, ">seq\nACGT-R*1\n").unwrap();
+    let (stdout, _) = PgrCmd::new()
+        .args(&["fa", "size", fa.to_str().unwrap(), "--no-ns"])
+        .run();
+    assert!(
+        stdout.contains("seq\t4\n"),
+        "--no-ns must keep only ACGT: {stdout}"
+    );
+}
+
+#[test]
 fn command_fa_some() {
     let temp = TempDir::new().unwrap();
     let list = temp.path().join("list.txt");

@@ -29,7 +29,8 @@ gzipped files are not read by lastz. Split multi-contig genomes with
 *   `--show-preset`: Display the configuration (parameters & matrix) for the
     selected preset and exit.
 *   `--lastz-args <string>`: Additional arguments passed directly to `lastz`
-    (overrides preset settings).
+    (overrides preset settings). Values starting with `-` need the
+    `--lastz-args=<val>` form (clap would otherwise treat them as flags).
 *   `-o, --outdir <dir>`: Output directory (default: "lastz_out").
 *   `-p, --parallel <int>`: Number of parallel threads (default: 4).
 

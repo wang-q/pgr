@@ -55,7 +55,15 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
             let seq = record.sequence();
 
             let len = if no_ns {
-                seq[..].iter().filter(|&&b| !pgr::libs::nt::is_n(b)).count()
+                seq[..]
+                    .iter()
+                    .filter(|&&b| {
+                        !matches!(
+                            pgr::libs::nt::to_nt(b),
+                            pgr::libs::nt::Nt::N | pgr::libs::nt::Nt::Invalid
+                        )
+                    })
+                    .count()
             } else {
                 seq.len()
             };

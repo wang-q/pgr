@@ -150,6 +150,20 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                  (omit the query or pass the same file)"
             );
         }
+        let ref_seq = args.get_one::<String>("ref_seq");
+        let query_seq = args.get_one::<String>("query_seq");
+        match (ref_seq, query_seq) {
+            (Some(r), Some(q)) => anyhow::ensure!(
+                r == q,
+                "--self with --ref-seq/--query-seq expects the two extension \
+                 sequences to be the same file (got {r} vs {q})"
+            ),
+            (Some(_), None) | (None, Some(_)) => anyhow::bail!(
+                "--self with extension sequences needs both --ref-seq and \
+                 --query-seq (they must be the same file)"
+            ),
+            (None, None) => {}
+        }
     }
     let self_mode = is_self || query_input.is_none();
     let query_input = query_input.map(|s| s.as_str()).unwrap_or(ref_input);

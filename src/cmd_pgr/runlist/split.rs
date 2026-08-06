@@ -52,8 +52,8 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
     let parts = pgr::libs::runlist::split_json(&json)?;
     if outdir == "stdout" {
         let mut w = pgr::writer("stdout")?;
-        for (_, s) in parts {
-            writeln!(w, "{}", s)?;
+        for (key, s) in parts {
+            writeln!(w, "{}\t{}", key, s)?;
         }
         w.flush()?;
     } else {

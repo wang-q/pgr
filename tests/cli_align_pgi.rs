@@ -677,6 +677,60 @@ fn command_align_pgi_self_flag_conflicting_query() {
 }
 
 #[test]
+fn command_align_pgi_self_flag_conflicting_extension_sequences() {
+    // --self with different --ref-seq/--query-seq extension sequences must be
+    // rejected (they describe the same genome and must be the same file).
+    let temp = tempfile::TempDir::new().unwrap();
+    let ref_fa = write_fa(temp.path(), "ref", &random_seq(400, 42));
+    let other_fa = write_fa(temp.path(), "other", &random_seq(400, 7));
+    let out = temp.path().join("out.psl");
+
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "align",
+            "pgi",
+            &ref_fa,
+            "--self",
+            "--ref-seq",
+            &ref_fa,
+            "--query-seq",
+            &other_fa,
+            "-o",
+            out.to_str().unwrap(),
+        ])
+        .run_fail();
+    assert!(
+        stderr.contains("expects the two extension sequences to be the same"),
+        "expected conflicting-extension error: {stderr}"
+    );
+}
+
+#[test]
+fn command_align_pgi_self_flag_requires_both_extension_sequences() {
+    // --self with only one of --ref-seq/--query-seq must be rejected.
+    let temp = tempfile::TempDir::new().unwrap();
+    let ref_fa = write_fa(temp.path(), "ref", &random_seq(400, 42));
+    let out = temp.path().join("out.psl");
+
+    let (_, stderr) = PgrCmd::new()
+        .args(&[
+            "align",
+            "pgi",
+            &ref_fa,
+            "--self",
+            "--ref-seq",
+            &ref_fa,
+            "-o",
+            out.to_str().unwrap(),
+        ])
+        .run_fail();
+    assert!(
+        stderr.contains("needs both --ref-seq and --query-seq"),
+        "expected missing-extension error: {stderr}"
+    );
+}
+
+#[test]
 fn command_align_pgi_default_kmer_conflicts_with_cached_index() {
     // Regression: the sibling-index parameter check only fired when `-k` was
     // given explicitly, so a default run (k=40) silently reused a `k=20`

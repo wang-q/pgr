@@ -181,10 +181,20 @@ pub fn run_lastz(
 
     let n_targets = target_files.len();
     let n_queries = query_files.len();
-    let mut jobs: Vec<(PathBuf, PathBuf)> = Vec::with_capacity(n_targets * n_queries);
-    for t in &target_files {
-        for q in &query_files {
-            jobs.push((t.clone(), q.clone()));
+    // Self mode aligns each file to itself only, so build just the n diagonal
+    // pairs instead of the full n x n cartesian product (the per-pair guard
+    // below remains as defense against a non-diagonal pair sneaking in).
+    let mut jobs: Vec<(PathBuf, PathBuf)> = Vec::new();
+    if opts.is_self {
+        for t in &target_files {
+            jobs.push((t.clone(), t.clone()));
+        }
+    } else {
+        jobs.reserve(n_targets * n_queries);
+        for t in &target_files {
+            for q in &query_files {
+                jobs.push((t.clone(), q.clone()));
+            }
         }
     }
 
