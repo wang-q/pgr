@@ -434,3 +434,24 @@
 `chain_tubes` 排序键布局、负链坐标、reference 侧记录校验、极端 `-k`/`--window`/
 `--parallel` 参数边界、构造 .pgi 头大 `k`、`tubes_for_group`/`extend_tube`
 边界复核），未再发现新的问题，审核收敛。
+
+## 追加复核（2026-08-06）：`align pgi` 帮助文本残留命令名
+
+对 `align pgi` 的 after_help 与 `docs/align-pgi.md` 做最后一轮用户可见命令名
+核对，发现并修复 1 处文档残留：
+
+* **`align pgi` after_help 引用不存在的 `pgr psl to_chain`**：`src/cmd_pgr/
+  align/pgi.rs` 的 after_help 写 "meant to be chained by `pgr psl to_chain` /
+  `pgr pl chainnet`"，而实际子命令为 `pgr psl to-chain`（`to_chain.rs` 的
+  `Command::new("to-chain")`），`to_chain` 仅是内部模块/函数名。用户按帮助去壳
+  `pgr psl to_chain` 会得到 "unexpected argument"。修复：改为 `` `pgr psl
+  to-chain` ``。`pgr pl chainnet` 与 `docs/align-pgi.md` 核验无误（后者本就用
+  `to-chain`），全库其余 `to_chain` 均为内部符号，非用户可见命令。
+
+**本复核确认的既有观察（记录不修）**：`-f/--freq 0` 会因 `ea_freq >= 0` 恒成立
+而丢弃全部 reference 条目，静默输出空 PSL（FastGA 默认 10，`0` 是无意义取值，
+非崩溃、非错误结果，按"简洁优先"记录不修）。
+
+回归：`cargo test --test cli_align_pgi` 25 通过、`cargo test --lib pgi` 65 通过、
+`cargo fmt -- --check` 与 `cargo clippy --all-targets -- -D warnings` 干净。
+本轮除上述 1 处文档残留外未发现新的代码/行为/CLI/文档问题，审核收敛。

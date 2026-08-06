@@ -13,7 +13,7 @@ pub fn make_subcommand() -> Command {
             r###"
 Merges the sorted k-mer streams of two genomes, chains the shared seeds in
 anti-diagonal space, and emits one PSL block per chain. Block-level output is
-meant to be chained by `pgr psl to_chain` / `pgr pl chainnet`.
+meant to be chained by `pgr psl to-chain` / `pgr pl chainnet`.
 
 Inputs may be genome sequences (FASTA, gzipped FASTA or .2bit) or .pgi indexes,
 mixed freely:
