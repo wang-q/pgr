@@ -100,6 +100,11 @@ The output feeds directly into
 
 ## Notes
 
+* Follows the UCSC/LastZ convention: the reference genome comes first,
+  the query second (`pgr align pgi <ref> <query>`); in the output PSL the
+  reference is the target (`tName`) and the second input the query
+  (`qName`). This is the opposite positional order of FastGA's
+  `FastGA <query> <target>` but matches `pgr pl chainnet`.
 * 2bit inputs are preferred for speed and random access.
 * Both sides must use identical sampling parameters (k, syncmer, window);
   `.pgi` inputs carry theirs in the index header.

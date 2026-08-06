@@ -184,6 +184,37 @@ release）；greedy 的身份率略高（97.73% vs 96.60%）但那是"挑容易�
 *   反向安全：N 当 A 参与哈希只影响"选不选这个位置"，k-mer key 失效
     保证不会发射错误序列内容的种子，无假阳性。
 
+#### 1.3.6 参数顺序与种子侧（2026-08-06 定稿）
+
+`pgr align pgi <ref> <query>`：**ref 在前、query 在后**，PSL 输出
+`qName=query`、`tName=ref`——与 `pgr pl chainnet <target> <query>` 直接衔接。
+**约定定稿（与用户确认）**：采用 **UCSC/LastZ 惯例——Reference 在前、
+Query 在后**；种子侧 = ref（第一个参数），**不采用 FastGA 的
+"query 做种子侧"角色分配**。pgr 的 CLI/输出/种子语义三者一致，均为
+ref 主导。
+
+**与 FastGA 的对照**（FastGA.c / ALNtoPAF.c / ALNtoPSL.c 核对）：
+
+| 方面 | FastGA | pgr align pgi |
+|---|---|---|
+| 位置参数 | 第一个 = query，第二个 = target | 第一个 = ref，第二个 = query |
+| PSL/PAF 输出 | qName = 第一个参数 | qName = query（第二个参数） |
+| merge 种子侧 | 第一个参数（query 侧）| `a` = ref（第一个参数）|
+
+- FastGA 是 **query 在前**：`FastGA A B` 的 PAF/PSL qName=A、tName=B
+  （ALNtoPAF.c 默认无 `-w` 即如此；ALNtoPSL.c 无 swap 选项）；
+  merge 以 T1=第一个基因组的 GIX 为种子扫描侧（FastGA.c "For each k-mer
+  in T1 ... in T2"），即第一个参数同时是 adaptamer 种子侧 → 不对称。
+- pgr **刻意不与 FastGA 一致**（2026-08-06 与用户确认）：ref 在前，走
+  UCSC/chainnet 惯例；种子侧跟随"第一个参数"规则，即 **ref 做种子侧**
+  （`align.rs` merge 逐 `a` 条目查询 `b`）。若未来要完全镜像 FastGA 的
+  种子语义（query 侧做种子），需在 merge 侧交换 a/b 角色，输出不变——
+  **已明确不做**（用户习惯 LastZ 那一套，ref 主导）。
+- 外部 FastGA 输出的适配：verify-pangenome.sh 用 `FastGA(b, a)`（query=b、
+  target=a）再 `chainnet(a, b)`（target=a、query=b），两段抵消后 MG1655
+  （恒为 a）在每对里都是 target；直接拿 FastGA PSL 喂 chainnet 时也可
+  `pgr psl swap` 换 q/t。
+
 ### 1.4 CLI
 
 ```

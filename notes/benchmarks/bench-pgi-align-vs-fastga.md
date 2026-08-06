@@ -27,6 +27,14 @@ hyperfine --warmup 1 --runs 3 --export-markdown "$B/bench.md" \
 cat "$B/bench.md"
 ```
 
+> **FastGA 参数顺序说明（2026-08-06 复核）**：`FastGA $REF $QUERY` 中第一个
+> 参数是 FastGA 的 **query/种子侧**，即 mg1655。pgr 侧 `align pgi` 的种子侧是
+> ref（= mg1655），两者种子侧一致，比对内容才可比。**不要**按 pgr 的
+> ref-first 直觉"修正"成 `FastGA $QUERY $REF`——那会把种子侧换成 sakai，
+> 结果不可比（FastGA 不对称，见 [[../references/fastga.md]] §3.3/§7.5 与
+> [[../design/pgi-align.md]] §1.3.6）。两套 PSL 的 q/t 标签相反（FastGA
+> qName=mg1655、pgr tName=mg1655），但覆盖/身份统计按基因组算，不受影响。
+
 ## 复测结果（2026-08-04，MG1655 vs Sakai，5 次）
 
 | Command | Mean [s] | Min [s] | Max [s] | Relative |
