@@ -132,14 +132,6 @@
   留下一个空文件（`-o`）。`fq to-fa`/`interleave` 打开 writer 后若输入读取
   失败也同样会留空/部分输出文件。属一般的"出错留空文件"行为，非数据损坏，
   `-o` 与输入重叠已被 `ensure_outfile_distinct` 前置拦截，未改。
-* `fa size --no-ns` 对 `-`/`*`/数字等非 IUPAC 字符计数为"有效碱基"：实现用
-  `!is_n(b)`（仅排除 N 与 IUPAC），`-`/`*` 会被计入长度，与"仅计算有效碱基"
-  的字面略有出入；但文档明确把排除范围限定为"N 及 IUPAC 歧义码"，行为与文档
-  字面一致，且与 `count` 的 `len`（仅 A/C/G/T/N）语义不同属两命令各自定义。
-  > ✅ 已修复（2026-08-06）：`--no-ns` 改为排除 N + IUPAC 歧义码 + Invalid
-  （`-`/`*`/数字），与"仅有效碱基"语义一致；新增集成测试
-  `command_fa_size_no_ns_excludes_iupac_and_invalid`。
-  低风险文档歧义，未改。
 * `fa replace` 的 `read_replace_tsv` 不跳过 `#` 注释行，而 `read_names`
   （`some`/`order` 等）会跳过：若 TSV 带 `#` 表头/注释行，会被误当作 key
   （如 `#old\tnew` 生成 key=`#old`）。`replace` 命令文档未承诺注释支持，属
@@ -160,7 +152,7 @@
 * `read_u32_vec` 在畸形文件给出超大 `count` 时会尝试分配巨大缓冲（可能 OOM
   abort，而非 panic）。属全局既有模式与畸形输入鲁棒性范畴，低风险，未改。
 
-## 修复的缺陷（共 24 处）
+## 修复的缺陷（共 25 处）
 
 ### 崩溃 / 越界 / 溢出（Zero Panic，3 处，均 fa）
 
@@ -313,8 +305,6 @@
   实际同时排除 N 与 IUPAC 歧义码。`docs/fa.md` 已准确描述（"排除 N 及 IUPAC
   歧义码"），仅 CLI 帮助不准确。修复：帮助文本改为 "Output size without Ns and
   IUPAC ambiguous codes"，与行为及 `docs/fa.md` 一致（`twobit size` 共用该
-  > ✅ 已修复（2026-08-06）：`no_ns_arg` 帮助文本已改为 "Output size without
-  Ns and IUPAC ambiguous codes"。
   arg，2bit 掩码块即 N，语义同样准确）。
 
 **`fa six-frame` 帮助文本的 frame 编号与实际输出不符**：`after_help` 的
@@ -333,7 +323,7 @@
   已修复的同类文档缺陷一致。修复：帮助文本改为 "Supports compressed input"
   （仅输入可为 gzipped）。核对 `docs/fq.md` 未声称输出压缩，无需改。
 
-### 统计正确性（1 处，fa）
+### 统计正确性（2 处，fa）
 
 **`n50` 的 Nx 边界条件用 `>` 而非 `>=`**：`calc_n50_stats` 在
   `cumul_size > goal` 时赋 Nx 值。当累计长度**恰好等于** goal 时（如总长 100、
@@ -342,6 +332,11 @@
   `cumul_size >= *goal`。回归 `n50_boundary_exact_goal`（`[50,30,20]`→50）与
   `n50_standard`（`[40,30,20,10]`→30）单元测试；既有 `command_fa_n50*` 测试
   保持不变（ufasta 无恰好相等边界）。
+
+**`fa size --no-ns` 对 `-`/`*`/数字等非 IUPAC 字符计数为"有效碱基"**（2026-08-06
+  从记录项移入）：`--no-ns` 改为排除 N + IUPAC 歧义码 + Invalid（`-`/`*`/
+  数字），与"仅有效碱基"语义一致；新增集成测试
+  `command_fa_size_no_ns_excludes_iupac_and_invalid`。
 
 ### 算法正确性（2 处，fa）
 
@@ -395,9 +390,9 @@
 
 ## 结论
 
-`fa`（18 子命令）、`fq`（2 子命令）与 `2bit`（5 子命令）命令族合计修复 24 处
+`fa`（18 子命令）、`fq`（2 子命令）与 `2bit`（5 子命令）命令族合计修复 25 处
 缺陷：崩溃/越界/溢出 3 处、数据安全/参数校验 9 处、输入校验/静默错误 3 处、
-行为一致性/算法 2 处、文档一致性 4 处、统计正确性 1 处、算法正确性 2 处。全部
+行为一致性/算法 2 处、文档一致性 4 处、统计正确性 2 处、算法正确性 2 处。全部
 关键修复附回归测试与文档澄清。
 
 审核经多轮纵深复审收敛：全部子命令的执行路径、`-o` 覆盖保护（含单文件、

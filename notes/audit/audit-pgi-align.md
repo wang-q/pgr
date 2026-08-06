@@ -79,10 +79,6 @@
 
 ## 记录项（未改，低风险 / 待决策）
 
-* `align lastz --lastz-args` 的值以 `-` 开头时需用 `--lastz-args=<val>` 形式
-  （clap 对空格形式的值为标准行为）；帮助文本未提示该写法。
-  > ✅ 已修复（2026-08-06）：Arg help 与 `docs/align-lastz.md` 均提示
-  `--lastz-args=<val>` 写法。
 * `align lastz -o dir` 重复使用旧 LAV 残留：影响链短（`sd run`/`s-align`/`sd
   search lastz` 均用临时 workdir 免疫），且 LAV 是通用扩展名清理易误伤，
   记录不修。
@@ -90,13 +86,6 @@
   docs/align-pgi.md 明确说明 "apply only to genome-sequence inputs; .pgi
   inputs carry their parameters in the index header"——文档化预期行为，
   记录不修（sibling 索引路径的冲突报错是额外保护）。
-* `--self` 只校验索引输入 `ref == query`，不校验 `--ref-seq` 与 `--query-seq`
-  是否一致。`align pgi ref.pgi --self --ref-seq a.fa --query-seq b.fa`（两文件
-  均匹配索引 contig 表但内容不同）会在 self 模式比对 a.fa vs b.fa，仅丢弃"精确
-  自同一性"命中，对结果影响极小；属用户自相矛盾的请求，且 contig 校验在文件名/
-  长度不符时已能拦截。按"简洁优先"记录不修。
-  > ✅ 已修复（2026-08-06）：`--self` 时校验 `--ref-seq`/`--query-seq` 一致
-  （不一致或只给一个均报错），新增 2 个集成测试。
 * crafted 索引可携带超大 contig `len`（u64 无上限），`oriented = b_len - k -
   bpos` 超出 `u32` 时 `as u32` 截断、`chain_to_psl` 的 `*len as u32` 同样截
   断——仅产生错误坐标，不 panic。真实索引受"单 contig ≤ 4.3 Gb"的已知限制
@@ -114,7 +103,7 @@
   罕见用户错误，且 mtime 新鲜度检查在 `ref.2bit` 更新时自动重建，已部分
   缓解。若改为 `ref.2bit.pgi` 分离会破坏 drop-in 语义，故不修。
 
-## 修复的缺陷（共 45 处：30 处代码/行为 + 15 处 CLI/帮助/文档）
+## 修复的缺陷（共 47 处：31 处代码/行为 + 16 处 CLI/帮助/文档）
 
 ### 崩溃 / 越界 / 溢出（Zero Panic，14 处）
 
@@ -274,7 +263,12 @@
     `rept e-align` 经由 `align pgi` 同步受益）。`-p 1/2/8` 输出逐字节一致
     （确定性未破坏）。
 
-### 外部工具与参数 / CLI（3 处）
+### 外部工具与参数 / CLI（4 处）
+
+**`align pgi --self` 未校验 `--ref-seq`/`--query-seq` 一致**（2026-08-06 从
+  记录项移入）：`ref.pgi --self --ref-seq a.fa --query-seq b.fa` 会在 self
+  模式比对两个不同文件。修复：`--self` 时校验两者一致（不一致或只给一个
+  均报错），新增 2 个集成测试。
 
 **lastz 静默失败**（只打日志返回 Ok）。修复：统计失败数并 bail。
 **lastz 失败原因被吞**（status 丢 stderr）。修复：`cmd.output()` 记录
@@ -282,7 +276,7 @@
 **参数校验缺失/不一致（align 侧）**：kmer/window/parallel 正值有限性。
     修复：统一校验，帮助同步。
 
-### CLI / 文档（15 处）
+### CLI / 文档（16 处）
 
 **噪音与帮助文本多处小修**：lav mask stanza 静默、`#` 元数据行跳过、lastz
     `[multiple]`/`-s` 修正、align.md 示例输出修正、pgi 帮助默认 syncmer 修正。
@@ -321,6 +315,10 @@
 **`sibling_pgi_path` 陈旧 doc 注释**：原写 "ref.fa / ref.fa.gz / ref.2bit all
     map to ref.pgi"，与 `.gz` 分离为 `ref.fa.pgi` 的实现不符。修复：更正注释
     （仅注释，无行为变化）。
+
+**`align lastz --lastz-args` 帮助未提示 `=` 写法**（2026-08-06 从记录项
+  移入）：值以 `-` 开头时需用 `--lastz-args=<val>` 形式（clap 对空格形式的
+  值为标准行为）。修复：Arg help 与 `docs/align-lastz.md` 均提示该写法。
 
 ## 验证
 
@@ -431,7 +429,7 @@
 
 ## 结论
 
-`align` 命令族审核完成（累计修复 45 处缺陷：30 处代码/行为 + 15 处 CLI/帮助/
+`align` 命令族审核完成（累计修复 47 处缺陷：31 处代码/行为 + 16 处 CLI/帮助/
 文档），并经多轮纵深复核（`libs/pgi` 索引构建/读取、`libs/lastz`、
 `libs/fmt/lav`、`libs/fmt/psl`、`alignment` DP、sibling/缓存索引新鲜度与
 `-o` 覆盖保护、`--parallel` 确定性、`emit_entry_hits` 频率过滤与 k=64 前缀域、

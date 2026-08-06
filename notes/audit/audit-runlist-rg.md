@@ -80,13 +80,6 @@ runlist 家族对照 spanr 0.6.7 源码、rg 家族对照 rgr 源码逐条核对
   影响，仅磁盘输入被覆盖）。与 spanr 一致，且需键名匹配输入文件名，属
   窄边角；未加 `ensure_outfile_distinct`（split 输出为目录内多文件，检查
   需逐输出路径比对，成本高于收益）。
-* `runlist split -o stdout` 逐行打印各键的 JSON 值，但**丢弃键名**（文件
-  模式键名是文件名，stdout 模式无对应物）。实测输出仅为
-  `{"chr1":"1-5"}` 之类值，无法区分同值不同键。文档仅写"line by line"，
-  未承诺格式；`command_runlist_split` 只覆盖目录模式，stdout 模式无测试。
-  属低风险 UX 疑点，未改（若按管道扁平化设计则为有意）。
-  > ✅ 已修复（2026-08-06）：stdout 模式输出 `key\tvalue`，新增集成测试
-  `command_runlist_split_stdout_keeps_keys`；`docs/runlist.md` 同步更新。
 * `runlist merge`（未加 `--all`）两个输入若首段 stem 相同（如
   `sample.a.json` 与 `sample.b.json`）会以同一键写入，后者**静默覆盖**前者
   （实测输出仅保留 `sample.b` 的数据）。属键控方案固有行为（与 spanr 一致，
@@ -119,7 +112,7 @@ spanr 时代 `chr:start-end` 按 `.` 截断 contig 名（`NC_000913.1` → `"1"`
 实际影响已由 `c1..cN` 映射修复验证。若需原生支持带点名，正解是新增严格
 解析模式（新特性，不建议按 bug 修）。
 
-## 修复的缺陷（共 47 处）
+## 修复的缺陷（共 48 处）
 
 ### 崩溃 / 越界 / 溢出（Zero Panic，20 处）
 
@@ -191,7 +184,7 @@ spanr 时代 `chr:start-end` 按 `.` 截断 contig 名（`NC_000913.1` → `"1"`
 **`IntSpan::inset` clamp 下界把 i32::MIN 静默改写**。修复：下界改
     i32::MIN。回归 `inset_identity_at_i32_min`。
 
-### 外部工具与参数 / CLI / 文档（2 处）
+### 外部工具与参数 / CLI / 文档（3 处）
 
 **`span -n` 缺帮助文本**。补 "Number of bases to trim or pad; length
     threshold for excise/fill"。
@@ -202,6 +195,11 @@ spanr 时代 `chr:start-end` 按 `.` 截断 contig 名（`NC_000913.1` → `"1"`
     part is used)"。回归 `command_runlist_merge_all_uses_full_stem`（此前
     `--all` 行为无测试覆盖，`sample.a.json`/`sample.b.json` 在 `--all` 下
     不再因共享 `sample` 前缀而碰撞）。
+
+**`runlist split -o stdout` 丢弃键名**（2026-08-06 从记录项移入）：原逐行
+    打印各键 JSON 值，无法区分同值不同键。修复：stdout 模式输出
+    `key\tvalue`，新增集成测试 `command_runlist_split_stdout_keeps_keys`；
+    `docs/runlist.md` 同步更新。
 
 ### 迁移遗留 / 行为一致性（5 处）
 
@@ -345,7 +343,7 @@ same_as_input_rejected` 覆盖 `merge`/`compare`/`some`/`combine`/`span` 各
 
 ## 结论
 
-`rg`/`runlist` 两个命令族审核完成（累计修复 47 处缺陷、补回归测试与文档
+`rg`/`runlist` 两个命令族审核完成（累计修复 48 处缺陷、补回归测试与文档
 澄清），并经多轮纵深复审（`libs/runlist`、`libs/ds/intspan`、`libs/ds/range`
 与全部 8 个 rg、10 个 runlist 命令的执行路径、集合运算、`depth_runs` 扫描线、
 `rg_merge_mapping` 聚类、`covered` 二分、`stat`/`statop` 表头一致性、`-o`

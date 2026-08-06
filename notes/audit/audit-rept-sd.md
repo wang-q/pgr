@@ -66,16 +66,15 @@
   `fa size` 首字段约定一致（spanr 系既有行为），非缺陷。
 * `syncmer_dna` 的 `encode_base` 对 N 返回 0（当作 A）与生产路径 N→4 不一致，
   但 syncmer_dna 非生产路径（仅内部测试），不影响 align/rept/sd——记录观察。
+* tube 工作流"库 vs 基因组"结构性失效（2026-08-06 重测确认**无需修复**）：
+  原疑"跨对角桶链被切断"；greedy 已移除、tube 为唯一流程后，MG1655 vs
+  TnCentral 库 `rept e-align` 正常检出（71.6 kb，79% 与 e-kmer 重叠），
+  失效随 syncmer/排序键修复消失。
 
 ## 记录项（未改，低风险 / 待决策）
 
-* tube 工作流对"库 vs 基因组"的结构性失效：根因是跨对角桶链被切断，结论
-  基于修复前代码，syncmer/排序键修复后待真实数据重测。
 * `decompose.rs` 负链投影依赖 header 与序列长度一致（cluster 内部保证）。
 * cluster/cover 的 u32→i32 坐标转换（仅 >2.1 Gb 染色体溢出）。
-* `run_lastz` self 模式仍构建 n×n job 列表，大目录可提前过滤。
-  > ✅ 已修复（2026-08-06）：self 模式只构建对角 n 个 job（不再生成 n²），
-  执行期防御保留。
 * `syncmer.rs` 参考实现与 `collect_one_contig` 重复发射同一位置，消费方
   已 HashSet 去重，可后续合并。
 * s_align / sd search --engine pgi 传不支持类型时报错可读性差，不 panic。
@@ -116,10 +115,6 @@
 * 纯四联体重复（如 ACGT）只有 4 种不同 10-mer，低于 `MIN_SHARED_KMERS=5`
   防过度分组阈值，同源片段不会合并为同一 set_id——极端低复杂度序列，非 SD
   场景，行为符合设计意图。
-* `open_indexed` 的 `.loc` 索引按存在性复用（`force_update=false`）：基因组
-  修改后 `.loc` 字节偏移可能过期。复核 104 已加 mtime 新鲜度重建；但修改
-  中间基因组本身是用户错误，其余索引（`.paf.idx` 仅显式传入、`.2bit` 显式
-  生成）无自动陈旧路径。
 * s-kmer 尾 run 保守丢弃：Profex `-z` 从不闭合 read 的最后一个 run，s-kmer
   （min_depth=2）按设计保守丢弃尾部（mg1655 尾 run 起点 4641601、约 52 bp，
   低于 min-len 100 会被 excise 过滤，实际影响有限）。行为与 repeat.rs 文档
@@ -129,16 +124,8 @@
 
 * s-kmer 对染色体尾部重复保守丢弃：Profex `-z` 不输出末 run 深度，有阈值
   时无法区分唯一尾与重复尾（与 anchr 参考管线一致）。
-* pgi 引擎灵敏度限制：精确 k-mer seed（默认 k=40 + syncmer 8/5）对近
-  90–93% identity 或真长恰在 `--min-len` 附近的拷贝可能只锚定子块、边界
-  损失 1–11 bp，低于阈值被滤（lastz 用 12-mer seed + 扩展覆盖全长）。属
-  引擎语义差异而非逻辑 bug，文档已提示降 `--min-len` 或用 lastz（见
-  docs/sd.md）。
-  > ✅ 已解决（2026-08-06）：`sd search` 默认 `freq=50/k=31` 后，10 个 E.
-  coli 漏检率 13.1%→0.26%，遮蔽流程（§4.10）后 pgi/lastz 互相漏检
-  3.2%/6.0%；详见 `design/sd.md` §4.9/§4.10。
 
-## 修复的缺陷（共 49 处：39 处代码/行为 + 10 处 CLI/帮助/文档）
+## 修复的缺陷（共 51 处：41 处代码/行为 + 10 处 CLI/帮助/文档）
 
 ### 崩溃 / 越界 / 溢出（Zero Panic，4 处）
 
@@ -151,13 +138,19 @@
 **e-align span 过滤 `(t_end - t_start) as usize` 回绕**。修复：i64
    运算 `.max(0)` 再转 usize。
 
-### 功能正确性 / 算法（21 处，含 2 处重大链算法缺陷）
+### 功能正确性 / 算法（22 处，含 2 处重大链算法缺陷）
 
 **（重大）tube 排序键 anti/bucket 溢出**（>8 Mb 基因组失效）。修复：
    anti/bucket 扩到 32 位。回归
    `tube_sort_key_supports_large_anti_coordinates`。
 **（重大）tube 排序键负对角线回绕**（>64 Mb 间距失效）。修复：
    `BUCK_OFF = 1 << 26`。回归深负对角线两个测试。
+
+**pgi 引擎灵敏度限制**（2026-08-06 记录项升级）：精确 k-mer seed 对近
+  90–93% identity 或真长恰在 `--min-len` 附近的拷贝可能只锚定子块被滤。
+  已解决：`sd search` 默认 `freq=50/k=31` 后，10 个 E. coli 漏检率
+  13.1%→0.26%，遮蔽流程后 pgi/lastz 互相漏检 3.2%/6.0%（详见
+  `design/sd.md` §4.9/§4.10）。
 **cluster 重叠 union 漏连嵌套区间**。修复：扫描时跟踪最大右端。回归
     `nested_overlapping_intervals_form_one_cluster`。
 **sd cluster 去重键忽略链向/物种**（回文倒位拷贝被折叠）。修复：键加
@@ -292,6 +285,11 @@
     性校验，不一致即视为陈旧重建。实测重建后输出与原 48 区间逐字节一致。
     回归 `truncated_cache_table_is_not_fresh`。
 
+### 性能（1 处）
+
+**`run_lastz` self 模式 n×n job 列表**（2026-08-06 记录项移入）：self 模式
+  只构建对角 n 个 job（不再生成 n²），执行期防御保留。
+
 ### 外部工具与参数 / CLI（4 处）
 
 **参数校验缺失/不一致（sd 侧）**：`--min-identity` 范围、minscore 正值
@@ -323,6 +321,8 @@
     也可能因 seed 边界损失差几 bp 被滤（复核 121）。
 **sd.md Notes 补充软掩码语义**：pgi（`-M` 语义）与 lastz（小写视为掩码）
     都不比对小写，软掩码的 SD 拷贝不被检出，建议先 `tr a-z A-Z`。
+    > 2026-08-06 修正：实测 lastz 大小写不敏感（小写仍参与匹配），仅 pgi
+    感知小写；且 mask 仅影响 `sd search` 发现阶段，后续阶段读原始基因组。
 
 ## 验证
 
@@ -380,7 +380,7 @@
 
 ## 结论
 
-`sd`/`rept` 两个命令族审核完成（累计修复 49 处缺陷：39 处代码/行为 + 10 处
+`sd`/`rept` 两个命令族审核完成（累计修复 51 处缺陷：41 处代码/行为 + 10 处
 CLI/帮助/文档），并经多轮纵深复核（`libs/sd`、`libs/pl/repeat`、tube/greedy
 双工作流、索引/缓存新鲜度、确定性、`-o` 覆盖保护、HashMap 迭代序、外部工具
 封装）复核，未再发现新问题，审核收敛。pgi 索引构建侧缺陷见 audit-pgi-align.md。

@@ -19,8 +19,10 @@
       （互相漏检 3.2%/6.0%，未遮蔽时 pgi 漏检 13.1%）；标准 SD 流程 =
       先遮蔽再 `sd search --engine pgi`（默认 freq=50/k=31）
       （详见 `design/sd.md` §4.10）。
-- [ ] tube 工作流"库 vs 基因组"失效重测：原结论基于修复前代码，syncmer/排序键修复后
-      用真实数据重测（来源：`audit/audit-rept-sd.md`）。
+- [x] tube 工作流"库 vs 基因组"失效重测（2026-08-06）：greedy 已移除、tube
+      唯一流程；MG1655 vs TnCentral `rept e-align` 正常检出（71.6 kb，
+      79% 与 e-kmer 重叠），**失效未复现**（随 syncmer/排序键修复消失），
+      无需改动（来源：`audit/audit-rept-sd.md`）。
 
 ## 2. 等数据/场景到位再启动
 
