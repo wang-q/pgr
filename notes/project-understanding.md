@@ -593,3 +593,4 @@ chainnet 后消失。`pgr psl chain` 在 2bit 序列缓存优化后（~0.3 s）�
 | [[benchmarks/bench-rg-prop.md]] | `pgr rg prop` vs `rgr prop`（同源 IntSpan 算法）命令行基准：持平（rgr 快 ~6%）；含二分重叠段优化方向 |
 | [[benchmarks/bench-intspan-setops.md]] | IntSpan 集合运算（intersect/union/diff/xor）线性化与 `from_pairs` 批量构建的 criterion 基准：20k span 时 ~100–220×、100k 构建 ~105× |
 | [[benchmarks/bench-rg-runlist.md]] | `pgr rg runlist` vs `rgr runlist`：`IntSpan::covered` 二分后 overlap ~83×、superset ~588×（rgr 走旧 diff） |
+| [[benchmarks/bench-simd-hv-jaccard.md]] | SIMD/HV/Jaccard 基准（hnsm 迁移）：norm SIMD ~7.8×、HV i8 最优（快于 bit ~1.5×）、rapidhash Jaccard 最快（2026-08-06） |

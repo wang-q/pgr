@@ -45,12 +45,19 @@
 
 ## 4. 技术债（有空再议）
 
+- [ ] HV 矢量化提速不明显（作者长期疑虑，2026-08-06 记录）：`hash_hv_bit` /
+      `hash_hv_i8` 用 SIMD 后相对标量只有 ~1.5–2×，8-lane 向量理论上应有更高
+      收益——疑点可能在 RNG 生成、字节→向量转换或内存带宽，待深挖
+      （基准见 `benchmarks/bench-simd-hv-jaccard.md` §2）。
 - [x] nightly `portable_simd` 依赖 → 已迁移 `wide` 1.6.0（2026-08-06）：std::simd 仍未稳定
       （tracking issue #86656 未完成），wide 已 1.x（~2590 万下载、284 个运行时依赖，
       维护活跃）；`hv.rs` 位操作（u32x8 shift/and、u8→i8→i32 转换）与 `linalg.rs`
       （f32x8 reduce_sum→reduce_add、simd_min/max→min/max）已逐项核对迁移，
       `rust-toolchain.toml` 切 stable 1.97；顺手清理 stable 新增 clippy lint 12 处
-      （byte_char_slices / collapsible_match）（来源：`project-understanding.md` §8.1）。
+      （byte_char_slices / collapsible_match）；hnsm 三个基准已迁移并复跑
+      （norm ~7.8×、HV i8 快于 bit ~1.5×、rapidhash Jaccard 最快，见
+      `benchmarks/bench-simd-hv-jaccard.md`；迁移中修复 hash_hv_i8 标量转换
+      导致的 4.3× 退化）（来源：`project-understanding.md` §8.1）。
 - [ ] 命令树三跳 dispatch 宏简化，防新增命令漏注册（来源：§8.3）。
 - [ ] `fas` 模块职责过重（20 子命令），`fas multiz` 等复杂逻辑考虑拆分（来源：§8.6）。
 - [ ] 分层一致性：commit `d5281bc` 将 hybrid 逻辑迁入 `cmd_pgr/align/hybrid.rs`，

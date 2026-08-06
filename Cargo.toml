@@ -98,6 +98,18 @@ harness = false
 name = "paf_graph_benchmark"
 harness = false
 
+[[bench]]
+name = "simd_benchmark"
+harness = false
+
+[[bench]]
+name = "jaccard_benchmark"
+harness = false
+
+[[bench]]
+name = "hv_benchmark"
+harness = false
+
 [build-dependencies]
 
 [dev-dependencies]
@@ -107,6 +119,12 @@ predicates = "3.1.0"
 approx = "0.5.1"
 criterion = "0.5.1"
 rust-lapper = "1.3"
+rand = { version = "0.9.0", features = ["small_rng"] }
+nalgebra = "0.34.1"
+
+# jaccard benchmark
+nohash-hasher = "0.2.0"
+tinyset = { version = "0.5.1", default-features = false }
 
 [profile.release]
 lto = true

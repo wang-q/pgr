@@ -1,6 +1,6 @@
 use rand::{RngCore, SeedableRng};
 use rapidhash::RapidRng;
-use wide::{i32x8, u32x8};
+use wide::{bytemuck, i32x8, u16x8, u32x8, u8x16};
 
 /// Generates a hypervector (HV) from a set of k-mer hash values using a SIMD-optimized implementation.
 ///
@@ -49,8 +49,10 @@ pub fn hash_hv_bit(seed_vec: &[u64], hv_d: usize) -> Vec<i32> {
                 ]);
                 let bits = (u32x8::splat(rnd_bits) >> shift) & bit_mask;
 
-                // Convert bits to i32 and shift left by 1
-                let bits_i32 = i32x8::from(bits.to_array().map(|b| b as i32)) << i32x8::splat(1);
+                // Convert bits to i32 and shift left by 1 (0/1 bit pattern
+                // is identical in u32 and i32, so a reinterpret cast suffices)
+                let bits_i32: i32x8 = bytemuck::cast(bits);
+                let bits_i32 = bits_i32 << i32x8::splat(1);
 
                 // Load the target HV values
                 let mut hv_simd = i32x8::from(&hv[i * 32 + j..i * 32 + j + 8]);
@@ -96,9 +98,14 @@ pub fn hash_hv_i8(seed_vec: &[u64], hv_d: usize) -> Vec<i32> {
             let rnd_bits = rng.next_u64();
             let bytes = rnd_bits.to_ne_bytes();
 
-            // Cast u8 to i8 (0..255 -> 0..127, -128..-1)
-            // Then cast to i32 for accumulation
-            let vec_vals = i32x8::from(bytes.map(|b| b as i8 as i32));
+            // Sign-extend each byte as i8, then to i32: (b << 24) >> 24
+            // with an arithmetic right shift equals b as i8 as i32.
+            let mut arr = [0u8; 16];
+            arr[..8].copy_from_slice(&bytes);
+            let vec_u8 = u8x16::from(arr);
+            let vec_u16 = u16x8::from_u8x16_low(vec_u8);
+            let vec_i32 = i32x8::from_u16x8(vec_u16);
+            let vec_vals = (vec_i32 << i32x8::splat(24)) >> i32x8::splat(24);
 
             // Load current HV values
             let mut hv_simd = i32x8::from(&hv[i * 8..(i + 1) * 8]);
