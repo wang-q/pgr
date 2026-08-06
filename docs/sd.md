@@ -33,6 +33,11 @@ pgr sd search <genome.fa> -o hits.psl
   0.90 identity);
 * `--preset` / `--query-depth`: lastz-only parameters (set01..set07 presets,
   query-depth coverage cutoff);
+* `--freq` / `--kmer` / `--smer` / `--window`: pgi-only seed parameters.
+  `--freq` is the seed frequency cutoff (default 50 — higher retains
+  high-copy repeat seeds) and `--kmer` the seed k-mer length (default 31 —
+  lower is more sensitive; measured on 10 E. coli genomes to reduce
+  identity 90-93% SD misses from ~13% to ~0.3% overall);
 * `--parallel`: worker threads (default 4).
 
 The `pgi` engine chains exact k-mer seeds (default k=40 with syncmer 8/5). For

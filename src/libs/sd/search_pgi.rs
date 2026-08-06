@@ -15,6 +15,15 @@ pub struct SearchPgiOptions {
     pub min_len: u32,
     /// Minimum block identity, 0.0-1.0 (T2T-CHM13 SD standard: 0.90).
     pub min_identity: f64,
+    /// Seed frequency cutoff (FastGA style: keep at most this many positions
+    /// per k-mer). Higher values retain high-copy repeat seeds.
+    pub freq: u32,
+    /// Seed k-mer length (pgi default: 40; lower is more sensitive).
+    pub kmer: usize,
+    /// Syncmer s-mer length (pgi default: 8).
+    pub smer: usize,
+    /// Syncmer window (pgi default: 5; smaller is denser/more sensitive).
+    pub window: usize,
 }
 
 impl Default for SearchPgiOptions {
@@ -23,6 +32,10 @@ impl Default for SearchPgiOptions {
             parallel: 4,
             min_len: 1000,
             min_identity: 0.90,
+            freq: 50,
+            kmer: 31,
+            smer: 8,
+            window: 5,
         }
     }
 }
@@ -52,10 +65,20 @@ pub fn pgi_to_hits(
     let raw = ctx.abs_path(&Path::new(workdir).join("hits.raw.psl").to_string_lossy())?;
     let _cwd_guard = ctx.enter()?;
     let parallel = opts.parallel;
+    let freq = opts.freq;
+    let kmer = opts.kmer;
+    let smer = opts.smer;
+    let window = opts.window;
     if is_self {
-        run_cmd!(${pgr} align pgi ${abs_target} -o ${raw} --parallel ${parallel})?;
+        run_cmd!(
+            ${pgr} align pgi ${abs_target} -o ${raw} --parallel ${parallel}
+                --freq ${freq} --kmer ${kmer} --smer ${smer} --window ${window}
+        )?;
     } else {
-        run_cmd!(${pgr} align pgi ${abs_target} ${abs_query} -o ${raw} --parallel ${parallel})?;
+        run_cmd!(
+            ${pgr} align pgi ${abs_target} ${abs_query} -o ${raw} --parallel ${parallel}
+                --freq ${freq} --kmer ${kmer} --smer ${smer} --window ${window}
+        )?;
     }
 
     let mut hits = Vec::new();

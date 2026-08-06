@@ -8,12 +8,17 @@
 
 ## 1. 手头数据就能做
 
-- [ ] repeat masking 闭环：e2e 回归已固化（`tests/cli_rept.rs` 的
-      `command_rept_e_kmer_end_to_end`，用 `tests/pgr/tncentral.fa.gz`，已实测通过）；
-      三库备于 `~/data/repeats/`，本机手跑示例见 `docs/rept.md`（大库不进 CI）；
-      剩余：遮蔽版（`pgi build --mask`）按 `design/repeat-masking.md` §2.5 验证。
-- [ ] sd 边界扩展（可选）：BISER MAX_EXTEND 未移植，`sd search` 块边界比真实短 1–11 bp，
-      检出后向两侧扩展再进 chain/net（来源：`design/sd.md` §4.8）。
+- [x] **pgi 引擎 SD 灵敏度优化**（2026-08-06 已实现）：`sd search` 透传
+      pgi 参数，默认 `freq=50, kmer=31`——10 个 E. coli 整体漏检率
+      **13.1% → 0.26%**（e2348_69 高拷贝重复 562→0、sakai/e24377a 的
+      90–93% 分歧漏检归零）；剩余 11 个边缘个案（低复杂度结构）记为
+      已知限制（详见 `design/sd.md` §4.9）。
+- [x] repeat masking 闭环（2026-08-06）：e2e 回归已固化 + **遮蔽版验证完成**——
+      10 个 E. coli 基因组跑 `rept e-kmer` 三库 → `fa mask --hard` → `sd search`：
+      遮蔽 ~1.2%（IS 元件主导），遮蔽后 pgi/lastz 引擎 SD 检出收敛
+      （互相漏检 3.2%/6.0%，未遮蔽时 pgi 漏检 13.1%）；标准 SD 流程 =
+      先遮蔽再 `sd search --engine pgi`（默认 freq=50/k=31）
+      （详见 `design/sd.md` §4.10）。
 - [ ] tube 工作流"库 vs 基因组"失效重测：原结论基于修复前代码，syncmer/排序键修复后
       用真实数据重测（来源：`audit/audit-rept-sd.md`）。
 
@@ -58,3 +63,6 @@
 - `-S` 对称 adaptamer：默认不做，仅场景开关候选（§7.4.1）。
 - hybrid 逻辑留在 `cmd_pgr/`（commit `d5281bc`，作者 2026-08-06 确认有意为之，
   消除跨模块导入开销、代码仅该命令使用；不回迁 libs，不再作为技术债讨论）。
+- sd 边界扩展（BISER MAX_EXTEND 移植）：**已评估后不做**（2026-08-06，与 lastz
+  比较：pgi hit 左边界仅短 2–6 bp、右边界一致，收益边际；且灵敏度优化
+  freq=50/k=31 已解决更实质的漏检问题——详见 `design/sd.md` §4.8/§4.9）。

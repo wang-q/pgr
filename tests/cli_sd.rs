@@ -31,6 +31,20 @@ fn tandem_genome() -> String {
     format!(">genome\n{dup}\n{dup}\n{}\n", random_seq(400, 12))
 }
 
+/// 15 identical copies of a 1200 bp repeat (> the default pgi freq cutoff):
+/// `--freq 50` must recover more copies than `--freq 10`.
+fn multi_copy_genome() -> String {
+    let dup = random_seq(1200, 21);
+    let mut s = String::from(">genome\n");
+    for _ in 0..15 {
+        s.push_str(&dup);
+        s.push('\n');
+    }
+    s.push_str(&random_seq(400, 22));
+    s.push('\n');
+    s
+}
+
 #[test]
 fn command_sd_search_pgi_engine() {
     // The native pgi engine needs no external tools and must find the tandem
@@ -73,6 +87,53 @@ fn command_sd_search_pgi_engine() {
     assert!(
         fs::read_to_string(&filtered).unwrap().trim().is_empty(),
         "min-len filter must drop short hits"
+    );
+}
+
+#[test]
+fn command_sd_search_pgi_freq_retains_high_copy_repeats() {
+    // Regression/feature: `--freq` is passed through to `pgr align pgi`;
+    // a higher cutoff keeps high-copy repeat seeds, so 15 identical copies
+    // yield more hits than the low cutoff.
+    let temp = tempfile::TempDir::new().unwrap();
+    let fa = write_fa(temp.path(), "genome", &multi_copy_genome());
+    let out_low = temp.path().join("low.psl");
+    let out_high = temp.path().join("high.psl");
+
+    PgrCmd::new()
+        .args(&[
+            "sd",
+            "search",
+            &fa,
+            "-o",
+            out_low.to_str().unwrap(),
+            "--engine",
+            "pgi",
+            "--freq",
+            "10",
+        ])
+        .run();
+    PgrCmd::new()
+        .args(&[
+            "sd",
+            "search",
+            &fa,
+            "-o",
+            out_high.to_str().unwrap(),
+            "--engine",
+            "pgi",
+            "--freq",
+            "50",
+        ])
+        .run();
+
+    let low = fs::read_to_string(&out_low).unwrap();
+    let high = fs::read_to_string(&out_high).unwrap();
+    let n_low = low.lines().filter(|l| !l.trim().is_empty()).count();
+    let n_high = high.lines().filter(|l| !l.trim().is_empty()).count();
+    assert!(
+        n_high > n_low,
+        "--freq 50 ({n_high}) must retain more high-copy hits than --freq 10 ({n_low})"
     );
 }
 

@@ -73,6 +73,34 @@ Examples:
                 .help("lastz query depth threshold (lastz engine only)"),
         )
         .arg(
+            Arg::new("freq")
+                .long("freq")
+                .default_value("50")
+                .value_parser(value_parser!(u32))
+                .help("Seed frequency cutoff (pgi engine only; higher retains high-copy repeat seeds)"),
+        )
+        .arg(
+            Arg::new("kmer")
+                .long("kmer")
+                .default_value("31")
+                .value_parser(value_parser!(usize))
+                .help("Seed k-mer length (pgi engine only; lower is more sensitive)"),
+        )
+        .arg(
+            Arg::new("smer")
+                .long("smer")
+                .default_value("8")
+                .value_parser(value_parser!(usize))
+                .help("Syncmer s-mer length (pgi engine only)"),
+        )
+        .arg(
+            Arg::new("window")
+                .long("window")
+                .default_value("5")
+                .value_parser(value_parser!(usize))
+                .help("Syncmer window (pgi engine only; smaller is denser/more sensitive)"),
+        )
+        .arg(
             Arg::new("engine")
                 .long("engine")
                 .value_parser(["pgi", "lastz"])
@@ -103,6 +131,10 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 min_len,
                 min_identity,
                 parallel,
+                freq: *args.get_one::<u32>("freq").unwrap(),
+                kmer: *args.get_one::<usize>("kmer").unwrap(),
+                smer: *args.get_one::<usize>("smer").unwrap(),
+                window: *args.get_one::<usize>("window").unwrap(),
             };
             pgr::libs::sd::search_pgi::search_pgi(
                 genome,

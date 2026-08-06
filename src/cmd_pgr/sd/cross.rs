@@ -102,6 +102,7 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 min_len,
                 min_identity,
                 parallel,
+                ..Default::default()
             };
             pgi_to_hits(
                 target,
