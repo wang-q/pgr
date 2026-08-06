@@ -596,6 +596,7 @@ chainnet 后消失。`pgr psl chain` 在 2bit 序列缓存优化后（~0.3 s）�
 | [[ecoli-cohort.md]] | E. coli 泛基因组端到端路线：4 万 cohort 去冗余/sparsify + 小 cohort（3 基因组）先行验证 |
 | [[chain-algorithms.md]] | pgr chain 模块各算法的运行流程（实现细节）+ 通用算法复用地图（§12） |
 | [[ecoli-genome.md]] | 测试基因组数据（MG1655/Sakai/SE11）下载与使用说明 |
+| [[ecoli-repeats.md]] | 10 株 E. coli 重复遮蔽实测：`rept` 5 方法 × 3 外部库的片段数/平均长度与解读 |
 | [[todo.md]] | pgr 近期待办：验证项、数据触发项、审计记录项与技术债（含 checkbox 追踪） |
 ## 13. 基准索引（notes/benchmarks/）
 

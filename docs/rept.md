@@ -142,7 +142,10 @@ pgr runlist stat mg1655.sizes tncentral.json
 pgr runlist statop mg1655.sizes repbase.json dfam.json
 ```
 
-Measured on MG1655 (RepeatMasker reference output: 49,379 bp, 1.06%):
+Measured on MG1655 (RepeatMasker reference run with the Dfam library:
+49,379 bp, 1.06%; the same run with the TnCentral library masks 163,249 bp
+raw, 89,743 bp after the ≥50 bp / ≥70% identity filter used by `e-align` —
+see notes/ecoli-repeats.md §2.7):
 
 | Library | Intervals | Covered (bp / %) | RM overlap |
 | :--- | :--- | :--- | :--- |
@@ -171,17 +174,28 @@ Notes:
 ## RepeatMasker (reference)
 
 RepeatMasker remains the reference annotation tool. Example run through a
-singularity image, converting its `.out` to a GFF runlist for comparison:
+native installation (4.2.4; RMBlast 2.14.1 + TRF configured via
+`perl ./configure`), using TnCentral as a custom library, then converting its
+`.out` to a GFF runlist for comparison:
 
 ```bash
-singularity run ~/bin/repeatmasker_master.sif /app/RepeatMasker/RepeatMasker \
-    ./genome.fa -xsmall -species "bacteria"
-
-singularity run ~/bin/repeatmasker_master.sif /app/RepeatMasker/util/rmOutToGFF3.pl \
-    ./genome.fa.out > mg1655.rm.gff
-
-pgr gff runlist tests/pgr/mg1655.rm.gff -o tests/pgr/mg1655.rm.json
+~/share/RepeatMasker/RepeatMasker genome.fa -lib tncentral.fa -pa 8 -e rmblast -dir rm_out
+perl ~/share/RepeatMasker/util/rmOutToGFF3.pl rm_out/genome.fa.out > genome.rm.gff
+pgr gff runlist genome.rm.gff -o genome.rm.json
 ```
+
+Notes:
+
+*   `-lib` takes any FASTA library (TnCentral, RepBase, Dfam, ...) directly;
+    it does **not** accept gzipped files — decompress first. `-species` needs a
+    FamDB/Dfam installation, which is not configured here.
+*   On the 10-strain E. coli cohort (notes/ecoli-repeats.md §2.7), all `e-kmer`
+    / `e-align` hits fall inside the RepeatMasker intervals (99%+), while
+    RepeatMasker's raw output is more permissive: TnCentral hits total
+    ~2.15 Mb (4.1% of the cohort) before filtering. After applying the same
+    thresholds as `e-align` (span ≥ 50 bp, identity ≥ 70%), the totals
+    converge (RepeatMasker 1.37 Mb vs LASTZ 1.36 Mb) and LASTZ covers 93.6%
+    of the RepeatMasker intervals.
 
 ## Subcommands
 
@@ -307,11 +321,11 @@ pgr rept e-align [OPTIONS] <repeat> <infile>
 | `repeat` | | | File | Repeat database FASTA (Dfam, RepBase, etc.) |
 | `infile` | | | File | Input genome FASTA (`.fa.gz` supported) |
 | `outfile` | `-o` | `--outfile` | File | Output filename (default: stdout) |
-| `kmer` | `-k` | `--kmer` | Int | k-mer size for indexing (default: 40) |
+| `kmer` | `-k` | `--kmer` | Int | k-mer size for indexing (default: 31) |
 | `smer` | | `--smer` | Int | Syncmer s-mer length (default: 8) |
 | `window` | | `--window` | Int | Syncmer window (default: 5) |
-| `freq` | `-f` | `--freq` | Int | Max k-mer frequency to keep as seed (default: 100) |
-| `min_shared` | | `--min-shared` | Int | Min shared seed length (default: 16) |
+| `freq` | `-f` | `--freq` | Int | Max k-mer frequency to keep as seed (default: 50) |
+| `min_shared` | | `--min-shared` | Int | Min shared seed length (default: 12) |
 | `min_identity` | | `--min-identity` | Float | Min alignment identity (default: 0.70) |
 | `min_len` | | `--min-len` | Int | Min length of repetitive fragments (default: 50) |
 | `fill_fragment` | | `--fill-fragment` | Int | Fill holes between fragments (default: 10) |
@@ -329,6 +343,11 @@ insert bases in the denominator.
     regions fragment the alignment and drastically underestimate coverage.
     `e-align` warns when it detects lowercase; uppercase the genome first
     (`tr a-z A-Z`) if warned. (`e-kmer` is case-insensitive and unaffected.)
+*   The defaults (k=31, freq=50, min-shared=12) are tuned for sensitivity,
+    matching the empirically chosen `pgr sd` pgi parameters (TnCentral × 10
+    E. coli: ~47% closer to a LASTZ `set01` baseline than the previous
+    k=40/freq=100/min-shared=16 defaults). Raise k/freq/min-shared for
+    speed or specificity.
 *   `--keep-index` caches the pgi indexes next to the inputs for reuse, same
     convention as `pgr align pgi`.
 
