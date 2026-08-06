@@ -276,9 +276,15 @@ where
         // Writer thread (runs on this thread).
         let mut result = Ok(());
         for out_string in rcv2.iter() {
+            // Keep draining the channel even after a write failure so the
+            // worker and reader threads can finish and exit. Stopping here
+            // would leave them blocked on full channels and deadlock the
+            // crossbeam scope.
+            if result.is_err() {
+                continue;
+            }
             if let Err(e) = writer.write_all(out_string.as_ref()) {
                 result = Err(e);
-                break;
             }
         }
         result
@@ -359,7 +365,13 @@ pub fn check_entry_against_ref(
         .replace('-', "");
 
     let gseq = if loc_of.contains_key(range.chr()) {
-        crate::libs::loc::fetch_range_seq(reader, loc_of, range)?.to_ascii_uppercase()
+        match crate::libs::loc::fetch_range_seq(reader, loc_of, range) {
+            Ok(s) => s.to_ascii_uppercase(),
+            // A coordinate beyond the reference chromosome length (e.g. the
+            // block FA and the genome come from different assemblies) is a
+            // FAILED match, not a reason to abort the whole check command.
+            Err(_) => return Ok("FAILED".to_string()),
+        }
     } else {
         String::new()
     };
@@ -454,7 +466,13 @@ pub fn find_best_pairs(entries: &[FasEntry]) -> anyhow::Result<Vec<(usize, usize
             if i == j {
                 continue;
             }
-            let dist = crate::libs::alignment::pair_d(entries[i].seq(), entries[j].seq())?;
+            // A pair with no comparable bases (e.g. an all-gap entry) or two
+            // entries of different length cannot be scored. Skip it rather
+            // than aborting the whole `link --best` command.
+            let dist = match crate::libs::alignment::pair_d(entries[i].seq(), entries[j].seq()) {
+                Ok(d) => d,
+                Err(_) => continue,
+            };
             if dist_idx.map(|d| dist < d.0).unwrap_or(true) {
                 dist_idx = Some((dist, j));
             }
@@ -882,7 +900,17 @@ pub fn create_from_links<R: io::BufRead, W: Write>(
             if !name.is_empty() {
                 *range.name_mut() = name.to_string();
             }
-            let seq = crate::libs::loc::get_seq_loc(genome, &range.to_string())?;
+            let seq = match crate::libs::loc::get_seq_loc(genome, &range.to_string()) {
+                Ok(s) => s,
+                // A coordinate beyond the reference chromosome length (e.g. a
+                // link from a different assembly) is skipped like an invalid
+                // or empty range instead of aborting the whole create run.
+                Err(e) if e.to_string().starts_with("slice error") => {
+                    log::warn!("skipping out-of-range range: {} ({})", range, e);
+                    continue;
+                }
+                Err(e) => return Err(e),
+            };
             if seq.is_empty() {
                 log::warn!("skipping range with no sequence: {}", range);
                 continue;
@@ -978,6 +1006,11 @@ pub fn consensus_block(block: &FasBlock, opts: &ConsensusOptions) -> anyhow::Res
     if outgroup.is_some() {
         seqs.pop(); // Remove the outgroup sequence
     }
+    // An all-gap sequence contributes no bases. If left in, an all-gap first
+    // sequence injects spurious '-' nodes into the POA graph that win the
+    // heaviest-bundle tie-break (lowest index), making the consensus empty.
+    // Drop such sequences so only real bases vote.
+    seqs.retain(|s| s.iter().any(|&b| b != b'-'));
 
     // Generate consensus sequence
     let mut cons = match opts.engine.as_str() {
@@ -1161,5 +1194,24 @@ GCATATAATATGAACCAATATCTA\n";
 
         let block = crate::libs::fmt::fas::next_fas_block(&mut reader).unwrap();
         assert_eq!(block.entries.len(), 1, "second block should have one entry");
+    }
+
+    /// Regression: an all-gap entry has no comparable bases with any other
+    /// entry, so `pair_d` cannot score it. `find_best_pairs` must skip such
+    /// pairs instead of erroring and aborting the whole `link --best` run.
+    #[test]
+    fn find_best_pairs_skips_all_gap_entry() {
+        use crate::libs::ds::Range;
+        let r1 = Range::from("chr1", 1, 3);
+        let r2 = Range::from("chr2", 1, 3);
+        let r3 = Range::from("chr3", 1, 3);
+        let entries = vec![
+            super::FasEntry::from(&r1, b"ACG"),
+            super::FasEntry::from(&r2, b"---"),
+            super::FasEntry::from(&r3, b"ACG"),
+        ];
+        let pairs = crate::libs::fmt::fas::find_best_pairs(&entries).unwrap();
+        // The all-gap entry is skipped; the two real entries pair together.
+        assert_eq!(pairs, vec![(0, 2)]);
     }
 }

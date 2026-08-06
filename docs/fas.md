@@ -133,7 +133,7 @@ pgr fas stat [OPTIONS] <infiles>...
 - `gap`：所有序列均含 gap 的位置数。
 - `ambiguous`：至少含一个模糊碱基且不含 gap 的位置数。
 - `D`：所有序列对之间的平均成对分歧度。
-- `indel`：所有 indel 区域的总跨度。
+- `indel`：内群序列中 indel 区域（连续 gap 段）的数量。
 
 ---
 

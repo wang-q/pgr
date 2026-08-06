@@ -436,7 +436,10 @@ pub fn get_indels(seqs: &[&[u8]]) -> anyhow::Result<Vec<Indel>> {
             .to_string();
 
         let itype = if uniq_indel_seqs.len() < 2 {
-            bail!("No indel found at position {}..{}", start, end);
+            // A union span where every sequence is a gap (e.g. a shared
+            // all-gap region) has no variation to report. Skip it rather
+            // than aborting the whole command (previously `bail!`).
+            continue;
         } else if uniq_indel_seqs.len() > 2 || indel_seq.contains('-') {
             "C".to_string() // Complex indel
         } else if indel_seqs[0] == indel_seq {

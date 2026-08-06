@@ -75,7 +75,22 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
                 let (range_str, seq) = if is_rc && entry.range().strand() == "-" {
                     let mut range = entry.range().clone();
                     *range.strand_mut() = "+".to_string();
-                    let rc_seq = pgr::libs::nt::rev_comp(entry.seq()).collect::<Vec<u8>>();
+                    // Reverse complement that preserves non-IUPAC bytes (e.g.
+                    // `-`, `*`) as-is instead of mapping them to the 255
+                    // sentinel (which `format_sequence` would render as `ÿ`).
+                    let rc_seq: Vec<u8> = entry
+                        .seq()
+                        .iter()
+                        .rev()
+                        .map(|&b| {
+                            let c = pgr::libs::nt::NT_COMP[b as usize];
+                            if c == 255 {
+                                b
+                            } else {
+                                c
+                            }
+                        })
+                        .collect();
                     (
                         range.to_string(),
                         pgr::libs::fmt::fas::format_sequence(&rc_seq, true, false),

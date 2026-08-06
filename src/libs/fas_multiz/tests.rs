@@ -1,5 +1,6 @@
 use super::*;
 use crate::libs::ds::Range;
+use crate::libs::fas_multiz::windows::derive_windows_from_blocks;
 
 fn make_entry(name: &str, start: i32, end: i32, seq: &str) -> (FasEntry, String, String) {
     let range = Range::from(name, start, end);
@@ -30,6 +31,21 @@ fn default_config() -> FasMultizConfig {
         radius: 5,
         min_width: 1,
     }
+}
+
+#[test]
+fn derive_windows_inverted_reference_range_no_panic() {
+    // A malformed but parseable header like `>ref.chr1(+):100-1` yields an
+    // inverted reference range (start > end). Deriving windows from it used to
+    // underflow `width = e - s` (debug panic, release wrap). It must be
+    // skipped without panicking.
+    let (ref_entry, ref_name, ref_header) = make_entry("ref", 100, 1, "ACGT");
+    let block = make_block(vec![(ref_entry, ref_name, ref_header)]);
+    let blocks_per_input = vec![vec![block]];
+
+    let cfg = default_config();
+    let windows = derive_windows_from_blocks("ref", &blocks_per_input, &cfg);
+    assert!(windows.is_empty());
 }
 
 #[test]

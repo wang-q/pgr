@@ -66,13 +66,21 @@ pub fn generate_consensus(graph: &PoaGraph) -> Vec<u8> {
             }
         }
 
-        // Calculate total score for this node
+        // Calculate total score for this node. The heaviest-bundle score is
+        // the node's own coverage (how many sequences visit it) plus the best
+        // incoming (edge weight + predecessor score). Including the node
+        // weight is what makes majority bases beat the first-sequence backbone.
         let mut total_score = -1;
         if let Some(prev) = best_prev {
             predecessors.insert(node_idx, prev);
             let prev_score = *scores.get(&prev).unwrap_or(&-1);
             total_score = best_edge_weight + prev_score;
         }
+        // Start nodes (no predecessor) start from an empty path score of 0.
+        if total_score < 0 {
+            total_score = 0;
+        }
+        total_score += graph.graph[node_idx].weight as i64;
 
         scores.insert(node_idx, total_score);
     }
@@ -197,5 +205,29 @@ mod tests {
         // Consensus should be ACGT (2 votes for T, 1 for C)
         let consensus = generate_consensus(&graph);
         assert_eq!(consensus, b"ACGT");
+    }
+
+    /// Regression: the consensus must favor the majority base by node coverage,
+    /// not pick the first sequence's backbone. With sequences C, A, A the
+    /// consensus is A (weight 2) even though C was added first (weight 1).
+    #[test]
+    fn test_consensus_prefers_majority_by_node_weight() {
+        let mut graph = PoaGraph::new();
+        let engine = ScalarAlignmentEngine::new(AlignmentParams::default(), AlignmentType::Global);
+
+        let s1 = b"C";
+        let a1 = engine.align(s1, &graph);
+        graph.add_alignment(&a1, s1);
+
+        let s2 = b"A";
+        let a2 = engine.align(s2, &graph);
+        graph.add_alignment(&a2, s2);
+
+        let s3 = b"A";
+        let a3 = engine.align(s3, &graph);
+        graph.add_alignment(&a3, s3);
+
+        let consensus = generate_consensus(&graph);
+        assert_eq!(consensus, b"A");
     }
 }

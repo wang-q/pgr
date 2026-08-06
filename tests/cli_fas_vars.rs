@@ -258,6 +258,36 @@ fn command_to_xlsx_outgroup_ambiguity_no_error() -> anyhow::Result<()> {
 }
 
 #[test]
+fn command_to_xlsx_shared_all_gap_region_no_error() -> anyhow::Result<()> {
+    // A block where every sequence shares an all-gap region (here positions
+    // 2-3) has no variation in that span. `to-xlsx --indel` must skip such a
+    // span instead of bailing and aborting the whole command.
+    let input = tempfile::NamedTempFile::new()?;
+    std::io::Write::write_all(
+        &mut std::fs::File::create(input.path())?,
+        b">A.chr1(+):1-4\nA--A\n>B.chr2(+):1-4\nA--A\n",
+    )?;
+    let out = tempfile::NamedTempFile::new()?;
+
+    let mut cmd = assert_cmd::Command::cargo_bin("pgr").unwrap();
+    let output = cmd
+        .arg("fas")
+        .arg("to-xlsx")
+        .arg(input.path())
+        .arg("--indel")
+        .arg("-o")
+        .arg(out.path())
+        .output()?;
+    assert!(
+        output.status.success(),
+        "to-xlsx must skip a shared all-gap region: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    Ok(())
+}
+
+#[test]
 fn command_variation_outgroup_unequal_length_no_panic() -> anyhow::Result<()> {
     // Last (outgroup) sequence is shorter than the ingroup sequences: the
     // polarization step must return a friendly error instead of panicking.

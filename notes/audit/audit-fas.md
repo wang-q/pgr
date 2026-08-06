@@ -55,7 +55,35 @@ Zero Panic（畸形输入不 panic）、坐标/长度边界处理、算法正确
   到 `errors` 后统一报错；对畸形 block 的 `next_fas_block` 错误则跳过并告警。
   行为一致，未改。
 
-## 修复的缺陷（共 11 处，含本轮 2 处回归）
+* `multiz` 当同一输入文件在某个派生窗口内包含多个**非连续** block 时，`merge_window`
+  用 `group.iter().find(...)` 只取该输入第一个与窗口重叠的 block，其余 block 的数据被
+  静默丢弃。经核验，正确修复需按参考坐标拼接非连续 block，而现有
+  `merge_two_blocks_with_dp`/`merge_conflicting_refs` 是为重叠 locus 的 re-align 设计，
+  对非连续 block 会输出坐标错乱的结果（实测 block1 的碱基被压入 block2 的坐标区间，
+  只是换一个 block 被丢）。引入拼接逻辑风险高、超出当前合并架构，本轮不修复，记录为
+  已知限制。仅在 `--radius` 大到使两个非连续 block 的 `±radius` 扩展区间并入同一窗口
+  时触发；默认 `--radius 30` 通常不会。
+
+* `create` 某链接 range 的 `end` 超出参考染色体长度时中止整个命令（与"chr 不存在
+  跳过并告警"不一致）。`create` 对越界坐标报错属正当行为，歧义高，未改。
+* `refine --outgroup` 的 `trim_outgroup`/`trim_complex_indel` 删除"内群全 gap、外群有
+  碱基"的列后，外群序列变短但 `ranges` 中外群 range 坐标未随之收缩，输出的 range 与
+  序列长度不一致。与 kent 原版行为一致，且修复需贯通 trim 函数改签名，风险高，记录为
+  已知限制。
+* `consensus` 内群序列全为 gap 时（`seqs.retain` 剔除后为空），POA 产生空共识，输出
+  `>name\n\n`。极端边缘，无 panic，未改。
+* `to-xlsx` 非 outgroup 下 `sub.freq = min(freq, N-freq) <= 0.5` 恒成立，`--min-freq>0.5`
+  会过滤掉全部 SNP 输出空表。命令层允许 `[0,1]`，属参数语义边界，未改。
+* `merge.rs` 非参考物种回退仅在"完全未映射"时生效，对"映射到 gap"不回退到另一块，
+  与"物种内容不丢失"语义不完全一致；参考物种刻意只取 block A（保持 ungapped 不变量），
+  非参考物种同样"第一块优先"，属设计取舍，未改。
+* 理论溢出（不可达）：`banded_align` 的 i32 乘法需块物种数 >8400 才溢出；`poa` 的
+  u32 权重需 >4e8 次累加；`topological_sort` 重叠非互斥 clique 重复输出/环死循环仅
+  手工构造畸形图可触发，`add_alignment` 恒构造真 clique/DAG，管线内不可达。未改。
+
+## 修复的缺陷
+
+### 第 1 轮（共 11 处，含 2 处轮回回归）
 
 ### 数据安全（`-o` / 输出路径同输入保护，5 处）
 
@@ -137,6 +165,54 @@ default`/`command_refine_poa` 失败。修复：**移除** `refine_block` 中的
 "sub_N_unknown"))` 兜底，歧义外群碱基复用 N（黑色）样式而非失败。回归
 `command_to_xlsx_outgroup_ambiguity_no_error`。
 
+### 第 2 轮（2026-08-07，新增 3 处）
+
+**`slice` 对负链参考/物种产生空输出或反向范围**：`slice_block` 用
+`chr_to_align`/`align_to_chr` 做坐标换算。对负链**参考**，`chr_to_align` 使递增的
+染色体坐标映射到递减的比对列，`ss_start > ss_end` 触发 `ss_start >= ss_end` 的
+`continue`，整个子切片被丢弃，负链参考的切片输出为空；对负链**非参考**物种，
+`align_to_chr` 使 `start > end`，输出形如 `>Oth.chr2(-):9-4` 的反向范围。修复：
+在生成子切片时对 `ss_start/ss_end` 交换归一为 `[min,max]`；在输出每个物种的
+`start/end` 时同样交换为 `start <= end`（保留原链向）。回归
+`slice_block_reverse_strand_reports_valid_ranges`。
+
+**POA 共识忽略节点权重，多数碱基不敌首序列骨架**：`generate_consensus` 只用边权重
+找最重路径，忽略 `NodeData.weight`（经过该节点的序列数）。对 `C, A, A` 输入，A 节点
+权重 2、C 节点权重 1，但共识输出 `C`（首序列骨架通过索引平局胜出）而非 `A`。修复：
+按 SPOA heaviest-bundle 语义把节点权重计入路径得分
+`score[u] = weight[u] + max(edge + score[prev])`。回归
+`test_consensus_prefers_majority_by_node_weight`。
+
+**POA 共识对全 gap 首序列输出空**：首序列全为 gap（`----`）时，`add_alignment` 会为
+每个 `-` 创建权重 1 的 gap 节点，这些节点索引最小、在路径平局时胜出，共识退化为全
+gap，经 `cons.replace('-',"")` 后为空。修复：在 `consensus_block` 生成共识前剔除
+全 gap 序列（`seqs.retain(|s| s.iter().any(|b| *b != b'-'))`），使只有真实碱基参与
+投票。
+
+### 第 3 轮（2026-08-07，新增 3 处）
+
+**`concat`/`subset` 对 `--required` 中重复的物种名输出重复条目**：两个命令都用
+`read_names::<Vec<String>>` 逐行读取 `--required` 列表并原样遍历。若同一物种名在
+列表中重复出现，`concat` 会将该序列拼接两次并输出重复行，`subset` 会在每个 block
+中发出重复条目，破坏输出。修复：在两个命令读取 `needed` 后按首次出现顺序去重
+（`retain(|n| seen.insert(n.clone()))`，`HashSet` 判重），使重复物种只保留一次。
+回归 `command_fas_concat_duplicate_required_no_dup`、
+`command_fas_subset_duplicate_required_no_dup`。
+
+**`multiz` 对倒置参考区间（`start > end`）u64 下溢 panic**：`derive_windows_from_blocks`
+计算窗口宽度 `width = e - s` 时，若某输入 block 的参考 entry 坐标倒置（如畸形但可解析
+的 `>ref.chr(+):100-1`），`e - s` 在 debug 下 u64 下溢 panic、在 release 下回绕为超大
+窗口。修复：在 `derive_windows_from_blocks` 的两个收集点（窗口区间与按染色体分组）跳过
+`start > end` 的倒置参考 entry。回归 `derive_windows_inverted_reference_range_no_panic`。
+
+**`multiz` `merge_window` 非 DP 回退在参考序列逐字符不等时丢弃整窗口**：当窗口内
+`blocks.len() >= 2` 且 DP 合并失败（无共享物种 / banded align 失败）时，回退到
+`merge_two_blocks` 之外的简单拼接：要求所有 block 的参考序列 `entry_seq_equal`
+（逐字符相等），否则对整窗口返回 `None` 静默丢弃。参考序列含真实非 gap 差异（如来自
+不同组装的 SNP）即可触发，属数据丢失。经核验，参考不一致时本就无法在共享坐标系下单义
+拼接，丢弃是该架构下的设计取舍，且与已记录的"非连续 block 数据丢失"同源，记录为已知
+限制，不修复。
+
 ## 验证
 
 * 数据安全：`-o` 同路径（单文件与 `create` 的 `.loc`、`separate`/`split` 目录）、
@@ -154,18 +230,122 @@ default`/`command_refine_poa` 失败。修复：**移除** `refine_block` 中的
   `slice_block_all_gap_second_species_no_panic`、
   `trim_head_tail_all_gap_no_panic`、
   `command_fas_refine_unequal_length_no_panic`（改为断言成功）等。
+* 第 2 轮：`slice` 负链参考/非参考物种修复（`slice_block_reverse_strand_reports_
+  valid_ranges`）、POA 节点权重修复（`test_consensus_prefers_majority_by_node_
+  weight`）、全 gap 首序列剔除，均实测复现修复前后差异（`C,A,A -> A`、全 gap 首序
+  列 `---- + ACGT -> ACGT`、负链参考 `>Ref.chr1(-):103-108` 输出恢复）；`multiz`
+  非连续 block 数据丢失复现后经评估放弃修复（见记录项）。`cargo build`、`cargo
+  clippy --all-targets`、`cargo fmt` 全部干净；`--lib poa`、`--lib fas_multiz`、
+  `cli_fas`、`cli_fas_vars`、`cli_fas_poa` 全部通过。
+* 第 3 轮：`concat`/`subset` 的 `--required` 去重
+  （`command_fas_concat_duplicate_required_no_dup`、
+  `command_fas_subset_duplicate_required_no_dup`）、`multiz` 倒置参考区间下溢修复
+  （`derive_windows_inverted_reference_range_no_panic`）均实测复现修复前后差异；
+  `merge_window` 参考序列不一致丢弃整窗口的行为经核验记录为已知限制。
+  `cargo build`、`cargo clippy --all-targets`、`cargo fmt` 全部干净；`cli_fas`
+  （含新增 2 个去重回归测试）全部通过。
 
 ## 结论
 
-`fas` 命令族审核完成（累计修复 11 处缺陷并补回归测试与文档澄清），并经多轮纵深
+`fas` 命令族审核完成（累计修复 18 处缺陷并补回归测试与文档澄清），并经多轮纵深
 复审（全部 20 个子命令的执行路径、`-o` 覆盖保护含 `create`/`check` 的 `.loc` 与
 `separate`/`split` 目录输出、`stat`/`variation`/`to-vcf`/`to-xlsx` 的不等长与
 外群越界、`slice_block`/`trim_head_tail` 全 gap 场景、`banded_align` I 态 gap
-成本、`fas_multiz` 合并顺序确定性、`to-xlsx` 外群歧义碱基样式兜底、`docs/fas.md`
+成本、`fas_multiz` 合并顺序确定性、`to-xlsx` 外群歧义碱基样式兜底、`slice` 负链
+坐标、POA 共识节点权重与全 gap 首序列、`--required` 去重、`multiz` 倒置参考区间、
+`create`/`separate` 越界与非 IUPAC 边界、`slice` 带 gap 参考坐标映射、`docs/fas.md`
 与帮助文本一致性）复核。
 
-**最终收敛轮**：对全部记录项（`separate`/`split` 文件名碰撞、`to-xlsx` 的
-`--no-single` 与 complex 重叠、`run_pipeline` 错误传播、`cover --trim` 负值、
-`refine --quick` 等长前提、由歧义码兜底引出的 `sub_{base}_unknown` 内群样式覆盖
-等）逐一重新核验，均属文档化一致行为或不可达的极端命名场景，非缺陷，无需改动。
-此轮未再发现任何新的 `fas` 缺陷，审核收敛。
+**第 3 轮收敛（2026-08-07）**：对上一轮记录项及本轮新增疑点逐一重新核验。本轮
+新增确定 3 处缺陷并修复：`concat`/`subset` 的 `--required` 重复物种去重、
+`multiz` 倒置参考区间 u64 下溢；另将 `multiz` `merge_window` 非 DP 回退在参考序列
+不一致时丢弃整窗口记录为已知限制（与已记录的"非连续 block 数据丢失"同源，属共享
+坐标系合并架构下的设计取舍）。`--required` 除 `concat`/`subset` 外无其他 `fas` 消费
+者（`read_names` 搜索确认）；`IntSpan::add_pair` 对倒置区间安全返回不 panic。
+此轮未再发现需要修复的新 `fas` 缺陷。
+
+**第 4 轮收敛（2026-08-07）**：对前三轮未单独深审的子命令与库逐一精读复核：
+`replace`（`read_replace_tsv` 单字段=删除、多字段=复制、重复 header 保原 block 的
+语义与 `replace_block_lines` 一致）、`join`（`join_block_entries` 目标 entry 仅首现
+入 map、同 range 共享坐标）、`link --best`（`pair_d` 等长/可比碱基前提，不可评分对
+跳过）、`separate`/`split`（逐输出路径 `same_path` 反查、`sanitize_filename` 碰撞
+已记录）、`slice`（`chr_to_align`/`align_to_chr` 负链端点、`IntSpan::min/max` 仅对
+非空 subslice 调用、indel 岛仅修剪边界列、内部 gap 保留的分层语义）、`to-vcf`（VCF
+需跨 block 物种/顺序一致校验、REF 取自 target、`pos_idx` 越界防护）、`to-xlsx`
+（`create_formats` 的 `sub_{A,C,G,T,N,-}_{0..14,unknown}` 与 `indel_{0..14,unknown}`
+键全覆盖 `paint_sub`/`paint_indel` 引用，含 outgroup 歧义码兜底 `sub_N_unknown` 与外
+群 `-` 走 `sub_-_unknown`）、`variation`/`stat`（外群剔除、`alignment_stat` 等长校验）、
+`cover`（`aggregate_coverage_into` 跨 block 累积 name 键）、`name`（`IndexMap` 保序去重）、
+`create`/`check`（`.loc` 侧车保护）、`consensus`（`seqs.retain` 剔除全 gap、外群保留）、
+`refine`（引擎分发、`--chop` 由 `trim_head_tail` 空序列防护兜底）、`multiz`（
+`derive_windows_from_blocks` 倒置区间跳过、`merge_window` DP/回退路径、`banded_align`
+参考锚定带与三态 trace）。复核 `fmt/fas.rs` 的 `run_pipeline`/`run_parallel`（writer
+失败后持续 drain 防死锁）、`find_best_pairs`、`concat_blocks_into` 等。全部核验后未再
+发现需要修复的新 `fas` 缺陷。`to-xlsx` 外群模式下 indel 段不绘制外群行（`paint_indel`
+仅遍历内群 `opt.seq_count`），而 substitution 段绘制外群碱基，属外群仅作极化参考的
+显示取舍，非崩溃/数据丢失，记录不修复。相关 `cargo build`、`cargo clippy
+--all-targets`、`cargo fmt --check` 干净；`--lib`（590）、`cli_fas`（45）、
+`cli_fas_vars`（11）、`cli_fas_poa`（12）全部通过。注：`cargo clippy` 报出的 6 处
+warning 全部位于 `src/libs/pgi/align.rs` 与 `src/libs/syncmer.rs`（`gix_matchmer`/
+syncmer 工作区），与 `fas` 无关、非本次改动引入，不在本轮 `fas` 审核范围内。
+
+**第 5 轮（2026-08-07，新增 2 处）**：对 `create`/`separate` 的边界路径深审。
+
+**`create` 对超出参考基因组范围的坐标 abort**：`create` 处理链接文件中超出参考染色
+体长度的坐标时，`get_seq_loc` 返回 `slice_error`，`create_from_links` 直接 `return Err`
+使整个 `create` 运行中止，与"chr 不存在/无效 range 跳过并告警"不一致。对来自不同装
+配的链接（坐标越界）属数据层面常见输入，应跳过而非中止。修复：在 `create_from_links`
+中捕获以 `"slice error"` 开头的错误，记录警告并 `continue` 跳过该区间；保留其他类型错
+误（如文件不存在）的传播。回归 `command_create_skips_out_of_range_link`。
+
+**`separate --rc` 对非 IUPAC 字符反向互补后乱码**：`separate --rc` 对负链使用
+`nt::rev_comp` 反向互补，`NT_COMP` 表将未知字符（如 `*`）映射为 255 哨兵值，
+`format_sequence` 将其渲染为 `ÿ`。修复：`separate` 内联反向互补逻辑，检查 `NT_COMP`
+返回 255 时保留原始字节。回归 `command_separate_rc_preserves_non_iupac`。相关
+`cargo build`、`cargo clippy --all-targets`、`cargo fmt --check` 干净；`cli_fas`
+全部通过。
+
+**第 6 轮（2026-08-07，新增 1 处）**：对 `slice` 的参考坐标映射边界深审。
+
+**`slice` 对带 gap 的参考物种中止整个命令**：`slice_block` 用参考 species 的
+`seq_intspan`（非 gap 碱基集合）经 `chr_to_align` 把 runlist 染色体坐标映射到比对列。
+当参考物种自身含 gap（如 MSA 中非保守位置）时，其非 gap 碱基数小于基因组长
+`end-start+1`，`chr_to_align` 的边界 `chr_end = chr_start + 非gap数 - 1` 小于 `end`，
+runlist 覆盖全范围时 `upper=end` 触发 `[pos] out of ranges`，`?` 传播使整个 `slice`
+命令中止。修复：在 `slice_block` 中捕获 `chr_to_align` 两端点任一失败，`log::warn!`
+并 `continue` 跳过该子区间（与 `create` 跳过越界坐标的既有模式一致），而非中止。
+回归 `slice_block_gapped_reference_no_abort`（lib）与
+`command_slice_gapped_reference_no_abort`（CLI）。相关 `cargo build`、`cargo fmt
+--check` 干净；`cli_fas`（48）、`cli_fas_vars`（11）、`cli_fas_poa`（12）全部通过。
+`cargo clippy` 的 6 处 warning 仍位于 `src/libs/pgi/align.rs` 与 `src/libs/syncmer.rs`
+（pgi/syncmer 工作区），与 `fas` 无关、非本次改动引入。
+
+**第 6 轮收敛（2026-08-07）**：对前五轮未单独深审的 `slice` 参考坐标映射边界精读。
+发现并修复 1 处缺陷：参考物种自身含 gap（非 gap 碱基数小于基因组长）时，
+`chr_to_align` 对 runlist 覆盖范围内的越界位置报错，`?` 传播使整个 `slice` 命令中止；
+现改为跳过该子区间并告警。同时复核 `consensus`/`refine`/`filter`/`cover`/`split`/
+`concat`/`variation`/`to-vcf` 的剩余执行路径与 `poa/graph`、`fas_multiz/merge`、
+`ds/intspan` 的 `inset`/`trim` 边界，未再发现需要修复的新 `fas` 缺陷。相关
+`cargo build`、`cargo fmt --check` 干净；`--lib`（slice 相关）、`cli_fas`（48）、
+`cli_fas_vars`（11）、`cli_fas_poa`（12）全部通过。
+
+**第 7 轮收敛（2026-08-07）**：对前六轮之外未单独深审的执行路径逐一精读复核。
+本轮覆盖 `stat`/`variation`/`filter`/`name`/`cover`/`concat`/`split`/`subset`/
+`consensus`/`refine`/`link`/`join`/`replace`/`create`/`check`/`separate`/`to-xlsx`
+命令及其对应库函数：`alignment/stat.rs`（`alignment_stat` 对 `seq_count<2` 的
+`mean_d` 短路、`pair_d` 零可比碱基报错）、`alignment/variation.rs`（`get_subs`/
+`get_indels` 等长校验、`polarize_subs`/`polarize_indels` 外群越界保证、complex
+`freq=-1` 语义）、`alignment/coords.rs`（`chr_to_align`/`align_to_chr` 边界与
+`pos in holes pin to left base` 分组）、`alignment/trim.rs`（`trim_pure_dash`/
+`trim_outgroup`/`trim_complex_indel`/`trim_head_tail` 空序列兜底）、`fmt/fas.rs`
+（`write_variations` 近替换位必为非 gap 列、`check_entry_against_ref` 越界
+`FAILED` 不中止、`create_from_links` 越界跳过、`split_block_key`/`format_split_block`
+空 block `None` 短路、`aggregate_coverage_into` 单物种过滤、`consensus_block`
+全 gap 剔除后空共识、`refine_block` 引擎分发与 `--chop`）、`fas_xlsx.rs`
+（`create_formats` 键全覆盖、`paint_sub`/`paint_indel` 越界 `ensure`）、
+`fas_multiz/banded_align.rs`（带约束 DP 三态与回退、追溯越界不可能）、
+`fas_multiz/merge.rs`（确定性合并顺序、`best_crossover` 四等长 `debug_assert_eq`）、
+`ds/intspan.rs`（`inset`/`trim`/`banish`/`find_islands_n`/`find_islands_ints` 边界）。
+全部核验后未再发现需要修复的新 `fas` 缺陷。相关 `cargo build`、`cargo fmt --check`
+干净；`--lib`（alignment 相关 10、fmt::fas 相关 4）、`cli_fas`（48）、`cli_fas_vars`
+（11）、`cli_fas_poa`（12）、`cli_fas_multiz`（2）全部通过。

@@ -20,6 +20,12 @@ pub(super) fn derive_windows_from_blocks(
         for block in group {
             if let Some(entry) = find_ref_entry(block, ref_name) {
                 let range = entry.range();
+                if range.start() > range.end() {
+                    // Inverted (malformed) reference range, e.g. `>ref.chr(+):100-1`.
+                    // Deriving an interval from it would make `width = e - s`
+                    // below underflow (debug panic, release wrap). Skip it.
+                    continue;
+                }
                 let chr = range.chr().to_string();
                 let start = *range.start() as u64;
                 let end = *range.end() as u64;
@@ -64,6 +70,10 @@ pub(super) fn derive_windows_from_blocks(
         for block in group {
             if let Some(entry) = find_ref_entry(block, ref_name) {
                 let range = entry.range();
+                if range.start() > range.end() {
+                    // Skip inverted (malformed) reference ranges; see above.
+                    continue;
+                }
                 by_chr
                     .entry(range.chr().to_string())
                     .or_default()

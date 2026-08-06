@@ -59,7 +59,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
     let is_strict = args.get_flag("strict");
 
-    let needed = pgr::libs::io::read_names::<Vec<String>>(required)?;
+    let mut needed = pgr::libs::io::read_names::<Vec<String>>(required)?;
+    // A species listed twice would otherwise be emitted as duplicate entries in
+    // every block. Keep the first occurrence and drop the rest (mirrors the
+    // `concat` dedup so both `--required` consumers behave consistently).
+    let mut seen = std::collections::HashSet::new();
+    needed.retain(|n| seen.insert(n.clone()));
 
     // Operating
     for infile in args.get_many::<String>("infiles").unwrap() {

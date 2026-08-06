@@ -60,8 +60,12 @@ pub fn execute(args: &ArgMatches) -> anyhow::Result<()> {
         pgr::writer(outfile).with_context(|| format!("Failed to open writer for {}", outfile))?;
     let is_phylip = args.get_flag("phylip");
 
-    let needed = pgr::libs::io::read_names::<Vec<String>>(required)?;
+    let mut needed = pgr::libs::io::read_names::<Vec<String>>(required)?;
     anyhow::ensure!(!needed.is_empty(), "--required file is empty");
+    // A species listed twice would otherwise be concatenated twice and emitted
+    // as duplicate output lines. Keep the first occurrence and drop the rest.
+    let mut seen = std::collections::HashSet::new();
+    needed.retain(|n| seen.insert(n.clone()));
 
     let mut seq_of: BTreeMap<String, String> = BTreeMap::new();
     for name in &needed {

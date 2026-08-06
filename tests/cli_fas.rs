@@ -124,6 +124,36 @@ fn command_subset() {
 }
 
 #[test]
+fn command_fas_subset_duplicate_required_no_dup() {
+    // A species listed twice in --required must not be emitted as duplicate
+    // entries in the output blocks (mirrors the `concat` dedup).
+    let temp = TempDir::new().unwrap();
+    let fas_file = temp.path().join("dedup.fas");
+    fs::write(
+        &fas_file,
+        ">speciesA.chr1:1-5\nACGTA\n>speciesB.chr1:1-5\nACGTG\n\n",
+    )
+    .unwrap();
+
+    let name_lst = temp.path().join("names.lst");
+    fs::write(&name_lst, "speciesA\nspeciesB\nspeciesA\n").unwrap();
+
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "fas",
+            "subset",
+            fas_file.to_str().unwrap(),
+            "-R",
+            name_lst.to_str().unwrap(),
+        ])
+        .run();
+
+    assert_eq!(stdout.matches(">speciesA").count(), 1, "got: {stdout}");
+    assert_eq!(stdout.matches(">speciesB").count(), 1, "got: {stdout}");
+    assert_eq!(stdout.matches("ACGTA").count(), 1, "got: {stdout}");
+}
+
+#[test]
 fn command_link() {
     let (stdout, _) = PgrCmd::new()
         .args(&["fas", "link", "tests/fas/example.fas"])
@@ -232,6 +262,32 @@ fn command_check() {
 }
 
 #[test]
+fn command_fas_check_out_of_range_is_failed_not_abort() {
+    // A block FA coordinate beyond the reference chromosome length must be
+    // reported as FAILED for that line, not abort the whole check command.
+    let temp = TempDir::new().unwrap();
+    let fas_file = temp.path().join("oob.fas");
+    fs::write(&fas_file, ">NC_000932:1-999999\nATGGGCGAAC\n\n").unwrap();
+
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "fas",
+            "check",
+            fas_file.to_str().unwrap(),
+            "-g",
+            "tests/fas/NC_000932.fa",
+        ])
+        .run();
+
+    assert_eq!(stdout.lines().count(), 1);
+    assert!(
+        stdout.lines().next().unwrap().contains("\tFAILED"),
+        "out-of-range coordinate must be FAILED, got {}",
+        stdout
+    );
+}
+
+#[test]
 fn command_create() {
     let (stdout, _) = PgrCmd::new()
         .args(&[
@@ -264,6 +320,24 @@ fn command_separate() {
     );
     assert!(!stdout.contains("(-)"), "all strands are +");
     assert!(!stdout.contains("T-C"), "no dash, line 24");
+}
+
+#[test]
+fn command_separate_rc_preserves_non_iupac() {
+    // `separate --rc` reverse-complements minus-strand sequences. Non-IUPAC
+    // bytes such as `*` must be preserved as-is, not mangled to the 255
+    // sentinel (which previously rendered as `ÿ`).
+    let temp = TempDir::new().unwrap();
+    let fas_file = temp.path().join("rc.fas");
+    fs::write(&fas_file, ">sp.chr1(-):1-5\nACG*T\n").unwrap();
+
+    let (stdout, _) = PgrCmd::new()
+        .args(&["fas", "separate", fas_file.to_str().unwrap(), "--rc"])
+        .run();
+
+    // Reverse complement of "ACG*T" is "A*CGT" (dashes removed in both).
+    assert!(stdout.contains("A*CGT"), "got: {stdout}");
+    assert!(!stdout.contains('ÿ'), "got: {stdout}");
 }
 
 #[test]
@@ -472,6 +546,45 @@ fn command_slice() {
     assert!(stdout.contains("\nTAGTCATCTCAG"), "sliced S288c seq");
 }
 
+/// A reference species whose own sequence has a gap covers fewer genomic
+/// positions than its range length. A runlist spanning the full range used
+/// to abort the whole slice immediately; it must instead skip the subspan
+/// and keep processing.
+#[test]
+fn command_slice_gapped_reference_no_abort() {
+    let temp = TempDir::new().unwrap();
+    let fas_file = temp.path().join("gap_ref.fas");
+    fs::write(
+        &fas_file,
+        ">Ref.chr1(+):1-5\nA-CGT\n>Oth.chr2(+):1-5\nATGCA\n",
+    )
+    .unwrap();
+    let runlist = temp.path().join("all.json");
+    fs::write(&runlist, "{\"chr1\": \"1-5\"}").unwrap();
+
+    let (stdout, stderr) = PgrCmd::new()
+        .args(&[
+            "fas",
+            "slice",
+            fas_file.to_str().unwrap(),
+            "--runlist",
+            runlist.to_str().unwrap(),
+            "--name",
+            "Ref",
+        ])
+        .run();
+
+    // The command must not abort; the out-of-range subspan is skipped.
+    assert!(
+        stderr.contains("skipping slice subspan"),
+        "stderr: {stderr}"
+    );
+    assert!(
+        stdout.trim().is_empty(),
+        "stdout should be empty, got: {stdout}"
+    );
+}
+
 #[test]
 fn command_stat() {
     let (stdout, _) = PgrCmd::new()
@@ -667,6 +780,37 @@ fn command_fas_concat_required_order() {
         "output should follow --required order, got {}",
         first_header
     );
+}
+
+#[test]
+fn command_fas_concat_duplicate_required_no_dup() {
+    // A species listed twice in --required must not be concatenated twice nor
+    // emitted as duplicate output lines.
+    let temp = TempDir::new().unwrap();
+    let fas_file = temp.path().join("dedup.fas");
+    fs::write(
+        &fas_file,
+        ">speciesA.chr1:1-5\nACGTA\n>speciesB.chr1:1-5\nACGTG\n\n",
+    )
+    .unwrap();
+
+    let name_lst = temp.path().join("names.lst");
+    fs::write(&name_lst, "speciesA\nspeciesB\nspeciesA\n").unwrap();
+
+    let (stdout, _) = PgrCmd::new()
+        .args(&[
+            "fas",
+            "concat",
+            fas_file.to_str().unwrap(),
+            "-R",
+            name_lst.to_str().unwrap(),
+        ])
+        .run();
+
+    assert_eq!(stdout.matches(">speciesA").count(), 1, "got: {stdout}");
+    assert_eq!(stdout.matches(">speciesB").count(), 1, "got: {stdout}");
+    // No duplicated sequence: speciesA appears exactly once.
+    assert_eq!(stdout.matches("ACGTA").count(), 1, "got: {stdout}");
 }
 
 #[test]
@@ -1057,6 +1201,50 @@ fn command_create_output_not_overwrite_loc_index() {
         stderr.contains("is also an input file"),
         "expected rejection of -o matching .loc, got {}",
         stderr
+    );
+}
+
+#[test]
+fn command_create_skips_out_of_range_link() {
+    // A link coordinate beyond the reference chromosome length must be
+    // skipped (with a warning) rather than aborting the whole create run.
+    let temp = TempDir::new().unwrap();
+    let genome = temp.path().join("genome.fa");
+    fs::write(&genome, ">chr1\nACGTACGTACGTACGT\n").unwrap();
+
+    let connect = temp.path().join("connect.tsv");
+    fs::write(
+        &connect,
+        "A.chr1:1-4\tB.chr1:1-4\nA.chr1:100-110\tB.chr1:1-4\n",
+    )
+    .unwrap();
+
+    let (stdout, stderr) = PgrCmd::new()
+        .args(&[
+            "fas",
+            "create",
+            connect.to_str().unwrap(),
+            "-g",
+            genome.to_str().unwrap(),
+        ])
+        .run();
+
+    // The in-range block is emitted; the out-of-range range is skipped.
+    assert!(stdout.starts_with(">A.chr1:1-4\n"), "got: {stdout}");
+    assert!(
+        !stdout.contains(">A.chr1:100-110"),
+        "out-of-range range must be skipped, got: {stdout}"
+    );
+    // Both valid ranges (line 1 and line 2 `B.chr1:1-4`) are fetched; a run
+    // that aborts on the out-of-range range would emit only one.
+    assert_eq!(
+        stdout.matches(">B.chr1:1-4\n").count(),
+        2,
+        "expected both valid ranges to be emitted, got: {stdout}"
+    );
+    assert!(
+        stderr.contains("out-of-range"),
+        "expected a warning about the out-of-range range, got: {stderr}"
     );
 }
 

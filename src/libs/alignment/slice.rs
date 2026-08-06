@@ -49,11 +49,35 @@ pub fn slice_block<W: Write>(
     // collect subslices (chr-position intersections)
     let mut sub_slices: Vec<IntSpan> = vec![];
     for (lower, upper) in i_ints_chr.spans() {
-        let ss_start = chr_to_align(&t_ints_seq, lower, trange.start, trange.strand())?;
-        let ss_end = chr_to_align(&t_ints_seq, upper, trange.start, trange.strand())?;
-        if ss_start >= ss_end {
-            continue;
+        // On the reverse strand, increasing chr positions map to decreasing
+        // alignment columns, so the two endpoints come out reversed. Normalize
+        // to the [min, max] column span so the subslice is well-formed.
+        let (mut ss_start, mut ss_end) = match (
+            chr_to_align(&t_ints_seq, lower, trange.start, trange.strand()),
+            chr_to_align(&t_ints_seq, upper, trange.start, trange.strand()),
+        ) {
+            (Ok(l), Ok(u)) => (l, u),
+            // A reference species with its own gaps covers fewer genomic
+            // positions than its range length, so a requested position can
+            // fall outside the reference's non-gap span. Skip that subspan
+            // (like an out-of-range coordinate) instead of aborting the whole
+            // slice run.
+            (l, u) => {
+                let msg = l
+                    .err()
+                    .or(u.err())
+                    .map(|e| e.to_string())
+                    .unwrap_or_default();
+                log::warn!("skipping slice subspan {}-{}: {}", lower, upper, msg);
+                continue;
+            }
+        };
+        if ss_start > ss_end {
+            std::mem::swap(&mut ss_start, &mut ss_end);
         }
+        // A single-base request maps both endpoints to the same column, so the
+        // subslice is one column wide (a valid, length-1 slice). An empty span
+        // is handled below by the `ss_ints.is_empty()` check.
         let mut ss_ints = IntSpan::from_pair(ss_start, ss_end);
 
         // trim indel borders
@@ -78,18 +102,24 @@ pub fn slice_block<W: Write>(
 
         for (i, n) in block.names.iter().enumerate() {
             let range = block.entries[i].range();
-            let start = align_to_chr(
+            let mut start = align_to_chr(
                 ints_seq_of.get(n.as_str()).unwrap(),
                 ss_start,
                 range.start,
                 range.strand(),
             )?;
-            let end = align_to_chr(
+            let mut end = align_to_chr(
                 ints_seq_of.get(n.as_str()).unwrap(),
                 ss_end,
                 range.start,
                 range.strand(),
             )?;
+            // On the reverse strand, the leftmost alignment column maps to the
+            // largest chr coordinate, so the endpoints come out backwards.
+            // Report the genomic span as [min, max] with the strand preserved.
+            if start > end {
+                std::mem::swap(&mut start, &mut end);
+            }
             let ss_range = crate::libs::ds::Range::from_full(
                 range.name(),
                 range.chr(),
@@ -161,5 +191,90 @@ mod tests {
             "slicing must not panic or error: {:?}",
             result
         );
+    }
+
+    /// Regression: a reverse-strand reference must still produce a subslice
+    /// (previously the reversed endpoints made `ss_start >= ss_end`, so every
+    /// subslice was dropped), and a reverse-strand non-reference species must
+    /// report its genomic span as `start-end` with `start <= end` (previously
+    /// it emitted a backwards range like `9-4`).
+    #[test]
+    fn slice_block_reverse_strand_reports_valid_ranges() {
+        let target = Range::from_full("Ref", "chr1", "-", 100, 112);
+        let other = Range::from_full("Oth", "chr2", "-", 1, 12);
+        let block = FasBlock {
+            entries: vec![
+                FasEntry::from(&target, b"ACGTACGTACGT"),
+                FasEntry::from(&other, b"TGCATGCATGCA"),
+            ],
+            names: vec!["Ref".to_string(), "Oth".to_string()],
+            headers: vec![target.to_string(), other.to_string()],
+        };
+        let mut set: BTreeMap<String, IntSpan> = BTreeMap::new();
+        set.insert("chr1".to_string(), IntSpan::from("103-108"));
+
+        let mut out: Vec<u8> = vec![];
+        slice_block(&block, "Ref", &set, &mut out).unwrap();
+        let text = String::from_utf8(out).unwrap();
+        // Reverse-strand reference must be sliced (was previously empty).
+        assert!(
+            text.contains(">Ref.chr1(-):103-108\nTACGTA\n"),
+            "got: {text}"
+        );
+        // Reverse-strand non-reference species range must be non-backwards.
+        assert!(text.contains(">Oth.chr2(-):4-9\nATGCAT\n"), "got: {text}");
+    }
+
+    /// Regression: a reference species whose own sequence contains a gap
+    /// (fewer non-gap bases than its genomic range length) makes
+    /// `chr_to_align` reject a runlist position beyond
+    /// `chr_start + non_gap - 1`. Slicing must skip such a subspan instead
+    /// of aborting the whole command.
+    #[test]
+    fn slice_block_gapped_reference_no_abort() {
+        let target = Range::from_full("Ref", "chr1", "+", 1, 5);
+        let other = Range::from_full("Oth", "chr2", "+", 1, 5);
+        let block = FasBlock {
+            entries: vec![
+                // Reference has a gap at column 2 -> only 4 non-gap bases over
+                // a 5-base genomic range.
+                FasEntry::from(&target, b"A-CGT"),
+                FasEntry::from(&other, b"ATGCA"),
+            ],
+            names: vec!["Ref".to_string(), "Oth".to_string()],
+            headers: vec![target.to_string(), other.to_string()],
+        };
+        let mut set: BTreeMap<String, IntSpan> = BTreeMap::new();
+        set.insert("chr1".to_string(), IntSpan::from("1-5"));
+
+        let mut out: Vec<u8> = vec![];
+        let result = slice_block(&block, "Ref", &set, &mut out);
+        assert!(
+            result.is_ok(),
+            "slicing a gapped reference must skip, not abort: {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn slice_block_single_base_subslice() {
+        let target = Range::from_full("Ref", "chr1", "+", 1, 4);
+        let other = Range::from_full("Oth", "chr2", "+", 1, 4);
+        let block = FasBlock {
+            entries: vec![
+                FasEntry::from(&target, b"ACGT"),
+                FasEntry::from(&other, b"TGCA"),
+            ],
+            names: vec!["Ref".to_string(), "Oth".to_string()],
+            headers: vec![target.to_string(), other.to_string()],
+        };
+        let mut set: BTreeMap<String, IntSpan> = BTreeMap::new();
+        set.insert("chr1".to_string(), IntSpan::from("2"));
+
+        let mut out: Vec<u8> = vec![];
+        slice_block(&block, "Ref", &set, &mut out).unwrap();
+        let text = String::from_utf8(out).unwrap();
+        assert!(text.contains(">Ref.chr1(+):2\nC\n"), "got: {text}");
+        assert!(text.contains(">Oth.chr2(+):2\nG\n"), "got: {text}");
     }
 }
