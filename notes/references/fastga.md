@@ -395,6 +395,18 @@ syncmer 起始"的 k=40 的 k-mer（2-bit 压缩 10 字节），按字典序桶�
 > 全后缀数组），这正是 §10.4 建议 pgr"用 syncmer 稀疏化借鉴"的依据：**FastGA 自己
 > 就是这么做的**，pgr 不必重新发明。
 
+> **锚定差异（2026-08-07 核对确认，勿混淆）**：尽管同属"检测窗口最小 s-mer 在端点"
+> 的 syncmer 族采样，GIX 的 match-mer 与 pgr 的 closed syncmer **锚点不同**：
+> - GIX（`GIXmake.c`）把 seed k-mer 锚在**窗口起点**（`j = i-SOFF`，`GIXmake.c:569`）；
+> - pgr（`syncmer.rs` / `pgi build`）锚在**最小 s-mer 端点**（为链对称性 / Mash-Jaccard，
+>   见 `syncmer.rs` 注释）。
+>
+> 实证（smer=8/window=5）：两者采样密度相同（GIX=235258 vs pgr=235258），但 **~61%
+> 位置锚点不同**，最大偏移 8 bp。端到端验证（self 比对 + 含 ~2% 替换/indel 的两基因组
+> 比对）表明**最终对齐结果一致**（同 block 数、同覆盖度），锚点差异只影响 seed 层噪声，
+> 不影响 `pgi align` 输出。`pgi build` 的 CLI 帮助与 `docs/pgi.md` / `docs/align-pgi.md`
+> 均已注明此差异。
+
 > **为何用户"排人类基因组没感觉生成多大的数据"**：FastGA 默认（不加 `-k`）在
 > 结束时 `GIXrm` 清理自己创建的 GDB/GIX，只留下输出 PAF/PSL；GIX 分片只存在于
 > 运行期（`TMPDIR`/`-P`，人类 ~42 GB），结束后即被删除。只有显式 `-k` 或预建

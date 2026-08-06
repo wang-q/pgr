@@ -70,7 +70,9 @@ whole-genome complement.
   floor (12);
 - `--parallel`: rayon thread count (default 8, FastGA `-T` default);
 - `-k`/`--smer`/`--window`: sampling parameters for automatic indexing of
-  genome inputs only (default 40/8/5, matching FastGA GIX);
+  genome inputs only (default 40/8/5; parameters match FastGA GIX, but the
+  sampling rule is a closed syncmer that anchors each seed at the window's
+  minimal s-mer endpoint, not GIX's window-start match-mer);
 - `--keep-index`: write automatically built indexes next to the inputs;
 - `--self`: self-alignment; the query input may be omitted or must be the same
   as the reference;

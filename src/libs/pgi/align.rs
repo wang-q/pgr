@@ -1021,7 +1021,343 @@ fn psls_from_hits(
 mod tests {
     use super::*;
     use crate::libs::pgi::build::build_from_seqs;
+    use crate::libs::pgi::pack_position;
     use crate::libs::pgi::PgiEntry;
+
+    /// Build an index using GIXmake's match-mer syncmer rule (emit a k-mer at
+    /// the window START whenever the window minimum sits at either endpoint),
+    /// everything else identical to `build_from_seqs`. Test-only: used to
+    /// compare the two syncmer rules end-to-end.
+    fn build_gix(
+        contigs: Vec<(String, Vec<u8>)>,
+        k: usize,
+        smer: usize,
+        window: usize,
+    ) -> PgiIndex {
+        let factor = crate::libs::syncmer::hash_factor(7);
+        let smask = (1u64 << (2 * smer)) - 1;
+        let sshift = (64 - 2 * smer) as u32;
+        let pattern_rc: [u64; 4] = std::array::from_fn(|i| ((3 - i) as u64) << (2 * (smer - 1)));
+        let codes = {
+            let mut c = [4u64; 256];
+            for b in b"ACGT" {
+                c[*b as usize] = (b"ACGT".iter().position(|x| x == b).unwrap()) as u64;
+            }
+            for b in b"acgt" {
+                c[*b as usize] = (b"acgt".iter().position(|x| x == b).unwrap()) as u64;
+            }
+            c
+        };
+        let mut keys = Vec::new();
+        let mut payloads = Vec::new();
+        for (cid, (_, seq)) in contigs.iter().enumerate() {
+            let mut hashes = Vec::new();
+            if seq.len() >= smer {
+                let mut h = 0u64;
+                let mut hr = 0u64;
+                for &b in &seq[..smer] {
+                    let sb = {
+                        let c = codes[b as usize];
+                        if c == 4 {
+                            0
+                        } else {
+                            c
+                        }
+                    };
+                    h = ((h << 2) | sb) & smask;
+                    hr = (hr >> 2) | pattern_rc[sb as usize];
+                }
+                hashes.push(
+                    (h.wrapping_mul(factor) >> sshift).min(hr.wrapping_mul(factor) >> sshift),
+                );
+                for &b in &seq[smer..] {
+                    let sb = {
+                        let c = codes[b as usize];
+                        if c == 4 {
+                            0
+                        } else {
+                            c
+                        }
+                    };
+                    h = ((h << 2) | sb) & smask;
+                    hr = (hr >> 2) | pattern_rc[sb as usize];
+                    hashes.push(
+                        (h.wrapping_mul(factor) >> sshift).min(hr.wrapping_mul(factor) >> sshift),
+                    );
+                }
+            }
+            let soff = window - 1;
+            if hashes.len() >= window {
+                let mut min4 = hashes[0];
+                let mut pos4 = 0usize;
+                for i in 1..soff {
+                    if hashes[i] < min4 {
+                        min4 = hashes[i];
+                        pos4 = i;
+                    }
+                }
+                for i in soff..hashes.len() {
+                    let mz = hashes[i];
+                    let mut emit = false;
+                    if mz < min4 {
+                        min4 = mz;
+                        pos4 = i;
+                        emit = true;
+                    } else if pos4 == i - soff {
+                        pos4 += 1;
+                        min4 = hashes[pos4];
+                        for j in pos4 + 1..=i {
+                            if hashes[j] < min4 {
+                                min4 = hashes[j];
+                                pos4 = j;
+                            }
+                        }
+                        emit = true;
+                    } else if mz > min4 {
+                        // no event
+                    } else {
+                        emit = true;
+                    }
+                    if emit {
+                        let pos = i - soff;
+                        if pos + k <= seq.len() {
+                            let mut key = 0u128;
+                            let mut has_n = false;
+                            for &b in &seq[pos..pos + k] {
+                                let c = codes[b as usize];
+                                if c == 4 {
+                                    has_n = true;
+                                    break;
+                                }
+                                key = (key << 2) | c as u128;
+                            }
+                            if !has_n {
+                                keys.push(key);
+                                payloads.push(pack_position(cid as u32, pos as u32, 0));
+                                keys.push(crate::libs::nt::rc_key(key, k));
+                                payloads.push(pack_position(cid as u32, pos as u32, 1));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        crate::libs::ds::radix_sort::radix_sort_u128_par(&mut keys, &mut payloads, 2 * k as u32);
+        let mut entries = Vec::new();
+        let mut positions = Vec::new();
+        let mut i = 0usize;
+        while i < keys.len() {
+            let kmer = keys[i];
+            let pos_start = positions.len() as u32;
+            let mut j = i;
+            let mut seen = std::collections::HashSet::new();
+            while j < keys.len() && keys[j] == kmer {
+                if seen.insert(payloads[j]) {
+                    positions.push(payloads[j]);
+                }
+                j += 1;
+            }
+            entries.push(PgiEntry {
+                kmer,
+                pos_start,
+                freq: (positions.len() - pos_start as usize) as u32,
+            });
+            i = j;
+        }
+        PgiIndex {
+            k,
+            smer,
+            window,
+            contigs: contigs
+                .into_iter()
+                .map(|(n, s)| (n, s.len() as u64))
+                .collect(),
+            entries,
+            positions,
+        }
+    }
+
+    #[test]
+    fn gix_matchmer_vs_closed_syncmer_end_to_end() {
+        // Same genome indexed two ways: pgr's closed syncmer (build_from_seqs)
+        // vs GIX's match-mer (build_gix). Self-aligning must detect the tandem
+        // copy pair in both; compare seed-hit counts, block counts, and that
+        // the copy is covered.
+        let copy = pseudo_random_seq(1000, 7);
+        let filler = pseudo_random_seq(2000, 11);
+        let mut seq: Vec<u8> = filler.clone();
+        seq.extend_from_slice(&copy);
+        seq.extend_from_slice(&copy);
+        seq.extend_from_slice(&filler);
+        let (k, smer, window) = (40usize, 8usize, 5usize);
+
+        let pgr = build_from_seqs(
+            vec![(String::from("c"), seq.clone())],
+            k,
+            smer,
+            window,
+            false,
+            false,
+        )
+        .unwrap();
+        let gix = build_gix(vec![(String::from("c"), seq.clone())], k, smer, window);
+
+        let params = AlignParams::default();
+        let min_shared = effective_min_shared(k, &params);
+        let pgr_hits = merge_seed_hits(&pgr, &pgr, params.freq, min_shared).unwrap();
+        let gix_hits = merge_seed_hits(&gix, &gix, params.freq, min_shared).unwrap();
+        let a_seqs = vec![(String::from("c"), seq.clone())];
+        let b_seqs = vec![(String::from("c"), seq)];
+        let pgr_psls = align_to_psl_ext(pgr.clone(), pgr, &params, &a_seqs, &b_seqs, true).unwrap();
+        let gix_psls = align_to_psl_ext(gix.clone(), gix, &params, &a_seqs, &b_seqs, true).unwrap();
+
+        let pgr_len = pgr_psls.len();
+        let gix_len = gix_psls.len();
+        let pgr_cov = pgr_psls
+            .iter()
+            .map(|p| (p.t_end - p.t_start).max(0) as usize)
+            .sum::<usize>();
+        let gix_cov = gix_psls
+            .iter()
+            .map(|p| (p.t_end - p.t_start).max(0) as usize)
+            .sum::<usize>();
+        println!(
+            "pgr: hits={} blocks={} cov={} | gix: hits={} blocks={} cov={} (k={k} smer={smer} window={window})",
+            pgr_hits.len(),
+            pgr_len,
+            pgr_cov,
+            gix_hits.len(),
+            gix_len,
+            gix_cov
+        );
+        // Both must detect the tandem copy pair as a real block.
+        assert!(!pgr_psls.is_empty(), "pgr must find the copy pair");
+        assert!(!gix_psls.is_empty(), "gix must find the copy pair");
+    }
+
+    #[test]
+    fn gix_matchmer_vs_closed_syncmer_two_genomes() {
+        // Two *different* genomes sharing a homologous region that carries
+        // substitutions and short indels. Unlike the self-alignment test, this
+        // exercises the case where the two syncmer rules emit k-mers at shifted
+        // anchors near mutation boundaries, so the surviving seed sets (and
+        // hence the exact chains) can differ. Both rules must still chain and
+        // extend to the same homologous block.
+        fn mutate(seq: &[u8], seed: u64, sub_rate: f64) -> Vec<u8> {
+            use rand::{Rng, SeedableRng};
+            let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+            let bases = *b"ACGT";
+            let mut out = Vec::with_capacity(seq.len());
+            let mut i = 0usize;
+            while i < seq.len() {
+                // Occasional deletion (skip one base) and insertion (duplicate
+                // the current base).
+                if rng.random_range(0f64..1f64) < 0.002 {
+                    i += 1;
+                    continue;
+                }
+                if rng.random_range(0f64..1f64) < 0.002 {
+                    out.push(seq[i]);
+                }
+                let b = seq[i];
+                if rng.random_range(0f64..1f64) < sub_rate {
+                    let mut nb = bases[rng.random_range(0..4)];
+                    while nb == b {
+                        nb = bases[rng.random_range(0..4)];
+                    }
+                    out.push(nb);
+                } else {
+                    out.push(b);
+                }
+                i += 1;
+            }
+            out
+        }
+
+        let hom = pseudo_random_seq(1500, 99);
+        let mut a: Vec<u8> = pseudo_random_seq(4000, 1);
+        let a_start = a.len();
+        a.extend_from_slice(&hom);
+        let a_end = a.len();
+        a.extend_from_slice(&pseudo_random_seq(3000, 2));
+
+        let mut b: Vec<u8> = pseudo_random_seq(3500, 3);
+        b.extend_from_slice(&mutate(&hom, 77, 0.02));
+        b.extend_from_slice(&pseudo_random_seq(4500, 4));
+
+        let (k, smer, window) = (40usize, 8usize, 5usize);
+        let pgr_a = build_from_seqs(
+            vec![(String::from("a"), a.clone())],
+            k,
+            smer,
+            window,
+            false,
+            false,
+        )
+        .unwrap();
+        let pgr_b = build_from_seqs(
+            vec![(String::from("b"), b.clone())],
+            k,
+            smer,
+            window,
+            false,
+            false,
+        )
+        .unwrap();
+        let gix_a = build_gix(vec![(String::from("a"), a.clone())], k, smer, window);
+        let gix_b = build_gix(vec![(String::from("b"), b.clone())], k, smer, window);
+
+        let params = AlignParams::default();
+        let min_shared = effective_min_shared(k, &params);
+        let pgr_hits = merge_seed_hits(&pgr_a, &pgr_b, params.freq, min_shared).unwrap();
+        let gix_hits = merge_seed_hits(&gix_a, &gix_b, params.freq, min_shared).unwrap();
+
+        let a_seqs = vec![(String::from("a"), a.clone())];
+        let b_seqs = vec![(String::from("b"), b.clone())];
+        let pgr_psls = align_to_psl_ext(pgr_a, pgr_b, &params, &a_seqs, &b_seqs, false).unwrap();
+        let gix_psls = align_to_psl_ext(gix_a, gix_b, &params, &a_seqs, &b_seqs, false).unwrap();
+
+        let pgr_cov = pgr_psls
+            .iter()
+            .map(|p| (p.t_end - p.t_start).max(0) as usize)
+            .sum::<usize>();
+        let gix_cov = gix_psls
+            .iter()
+            .map(|p| (p.t_end - p.t_start).max(0) as usize)
+            .sum::<usize>();
+        let pgr_qcov = pgr_psls
+            .iter()
+            .map(|p| (p.q_end - p.q_start).abs() as usize)
+            .sum::<usize>();
+        let gix_qcov = gix_psls
+            .iter()
+            .map(|p| (p.q_end - p.q_start).abs() as usize)
+            .sum::<usize>();
+        println!(
+            "pgr: hits={} blocks={} tcov={} qcov={} | gix: hits={} blocks={} tcov={} qcov={} (k={k} smer={smer} window={window})",
+            pgr_hits.len(), pgr_psls.len(), pgr_cov, pgr_qcov,
+            gix_hits.len(), gix_psls.len(), gix_cov, gix_qcov
+        );
+        // The homologous insertion must be recovered by both rules, spanning
+        // its true target range and mapping to the homologous query range.
+        assert!(!pgr_psls.is_empty(), "pgr must align the homologous region");
+        assert!(!gix_psls.is_empty(), "gix must align the homologous region");
+        assert!(
+            pgr_psls
+                .iter()
+                .any(|p| p.t_start >= a_start as i32 && p.t_end <= a_end as i32),
+            "pgr block must lie within the homologous target range"
+        );
+        assert!(
+            gix_psls
+                .iter()
+                .any(|p| p.t_start >= a_start as i32 && p.t_end <= a_end as i32),
+            "gix block must lie within the homologous target range"
+        );
+        assert_eq!(pgr_psls.len(), gix_psls.len(), "block count must match");
+        assert_eq!(pgr_cov, gix_cov, "target coverage must match");
+        assert_eq!(pgr_qcov, gix_qcov, "query coverage must match");
+    }
 
     fn pseudo_random_seq(len: usize, seed: u64) -> Vec<u8> {
         let bases = *b"ACGT";

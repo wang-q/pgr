@@ -59,8 +59,13 @@ pgr pgi build <infile> -o out.pgi [-k 40] [--smer 8] [--window 5] [--no-rev] [--
   blocks), matching FastGA `-M` — masked repeats and low-complexity regions
   produce no seeds.
 
-The default parameters align with FastGA's GIX so indexes can be compared
-against the C tool. 2bit input is fastest (no FASTA decoding).
+The default parameters (k=40, syncmer 8/5) align with FastGA's GIX so the
+index parameter set is comparable against the C tool. Note the sampling rule
+differs: pgr uses Edgar's closed syncmer and anchors each seed k-mer at its
+window's minimal s-mer endpoint, whereas GIX's match-mer anchors at the window
+start. On divergent sequences the two rules can yield different seed
+positions, but the resulting alignment is equivalent (verified end-to-end).
+2bit input is fastest (no FASTA decoding).
 
 ### `pgr pgi stat`
 

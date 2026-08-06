@@ -8,9 +8,11 @@ pub fn make_subcommand() -> Command {
         .about("Builds a pgr genome index (.pgi) from FASTA or 2bit")
         .after_help(
             r###"
-Builds a syncmer-sparse sorted k-mer index. Each syncmer position (default
-syncmer 8/5, matching FastGA GIX) seeds a k-mer of length k on both strands
-(unless --no-rev). The result is a single binary file, usable for
+Builds a syncmer-sparse sorted k-mer index. Each closed-syncmer position
+(default syncmer 8/5, parameters matching FastGA GIX) seeds a k-mer of length
+k on both strands (unless --no-rev). The seed is anchored at the window's
+minimal s-mer endpoint (syng-style closed syncmer), not GIX's window-start
+match-mer. The result is a single binary file, usable for
 `pgr dist pgi` (merge distance), `pgr pgi to-hv` (hypervector projection) and
 future FastGA-style seed discovery.
 

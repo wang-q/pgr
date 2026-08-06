@@ -193,6 +193,25 @@ Query 在后**；种子侧 = ref（第一个参数），**不采用 FastGA 的
 "query 做种子侧"角色分配**。pgr 的 CLI/输出/种子语义三者一致，均为
 ref 主导。
 
+#### 1.3.7 同步子采样锚点与 GIX 的差异（2026-08-07 核对）
+
+`pgi build` 用 closed syncmer（[[../references/syng.md]] 的 `seqhash.c` 移植），其
+**锚点与 FastGA GIX 的 match-mer 不同**：
+
+- GIX（`GIXmake.c`）把 seed k-mer 锚在**窗口起点**（`j = i-SOFF`）；
+- pgr 锚在**最小 s-mer 端点**（`syncmer.rs` / `build.rs`），为链对称性
+  （Mash/Jaccard：使两条链产生同一哈希集合）。
+
+注意：**算法血统是 syng，不是 GIX**——`pgi build` 的采样器来自 `syncmer.rs`
+（syng 移植），只是参数 (smer=8, window=5) 与 GIX (SMER=8, SOFF+1=5) 对齐。
+之前 `docs/` 与 CLI 帮助把参数写成"matching FastGA GIX"，易误读为算法一致，
+已澄清（2026-08-07）。
+
+实证（smer8/window5）：两者采样密度相同（235258 vs 235258），但 **~61% 位置锚点
+不同**、最大偏移 8 bp。端到端验证（self 比对 + 含 ~2% 分歧的两基因组比对）确认
+**最终对齐结果一致**（同 block 数、同覆盖度）——锚点差异只影响 seed 层噪声，对
+`pgi align` 输出无影响。因此**保持 min 端点锚定**（不改回 GIX 的窗口起点）。
+
 > **核心原则（2026-08-06 用户定稿）：种子语义永远锚定参考基因组。**
 > `pgr align pgi` 的种子始终从 ref（第一个参数）定义和发射，query 只是
 > 被匹配的对象；query 集合如何增长/替换都不改变种子侧，结果对同一 ref

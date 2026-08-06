@@ -451,6 +451,134 @@ mod tests {
     /// endpoints `a < b` to satisfy `b-w+1 <= p* <= a+w-1`, i.e. `b-a <=
     /// 2*(w-1)`.
     #[test]
+    fn gix_matchmer_vs_closed_syncmer_empirical() {
+        // Empirical comparison of GIXmake's match-mer rule vs pgr's closed
+        // syncmer rule, on the same canonical s-mer hash stream. GIX emits a
+        // k-mer at the window START whenever the window [start, end] minimum
+        // sits at either endpoint; pgr emits at the minimal endpoint. They
+        // agree when the minimum is at the window start, and diverge (by up
+        // to window-1) when it is at the end.
+        fn gix_matchmer(hashes: &[u64], window: usize) -> Vec<usize> {
+            let soff = window - 1;
+            let mut out = Vec::new();
+            if hashes.len() < window {
+                return out;
+            }
+            let mut min4 = hashes[0];
+            let mut pos4 = 0usize;
+            for i in 1..soff {
+                if hashes[i] < min4 {
+                    min4 = hashes[i];
+                    pos4 = i;
+                }
+            }
+            for i in soff..hashes.len() {
+                let mz = hashes[i];
+                let mut emit = false;
+                if mz < min4 {
+                    min4 = mz;
+                    pos4 = i;
+                    emit = true;
+                } else if pos4 == i - soff {
+                    pos4 += 1;
+                    min4 = hashes[pos4];
+                    for j in pos4 + 1..=i {
+                        if hashes[j] < min4 {
+                            min4 = hashes[j];
+                            pos4 = j;
+                        }
+                    }
+                    emit = true;
+                } else if mz > min4 {
+                    // no event
+                } else {
+                    emit = true; // tie
+                }
+                if emit {
+                    out.push(i - soff);
+                }
+            }
+            out
+        }
+        fn closed_syncmer_endpoints(hashes: &[u64], window: usize) -> Vec<usize> {
+            let mut out = Vec::new();
+            if hashes.len() < window {
+                return out;
+            }
+            for start in 0..=hashes.len() - window {
+                let end = start + window - 1;
+                let wmin = *hashes[start..=end].iter().min().unwrap();
+                if hashes[start] == wmin {
+                    out.push(start);
+                } else if hashes[end] == wmin {
+                    out.push(end);
+                }
+            }
+            out
+        }
+        // The equivalent "min at start or end -> emit window start" reading.
+        fn gix_as_characterization(hashes: &[u64], window: usize) -> Vec<usize> {
+            let mut out = Vec::new();
+            if hashes.len() < window {
+                return out;
+            }
+            for start in 0..=hashes.len() - window {
+                let end = start + window - 1;
+                let wmin = *hashes[start..=end].iter().min().unwrap();
+                if hashes[start] == wmin || hashes[end] == wmin {
+                    out.push(start);
+                }
+            }
+            out
+        }
+
+        let params = SyncmerParams {
+            smer: 8,
+            window: 5,
+            seed: 7,
+        };
+        use rand::{Rng, SeedableRng};
+        let mut rng = rand::rngs::StdRng::seed_from_u64(99);
+        let (mut tg, mut tp, mut tonly) = (0usize, 0usize, 0usize);
+        let mut maxshift = 0u64;
+        let mut trials = 0;
+        for _ in 0..200 {
+            let n = 500 + rng.random_range(0..5000);
+            let seq: Vec<u8> = (0..n).map(|_| b"ACGT"[rng.random_range(0..4)]).collect();
+            let hashes: Vec<u64> = dna_canonical_hashes(&seq, &params)
+                .unwrap()
+                .map(|(h, _)| h)
+                .collect();
+            let g = gix_matchmer(&hashes, params.window);
+            let gc = gix_as_characterization(&hashes, params.window);
+            assert_eq!(g, gc, "GIX rule vs characterization mismatch");
+            let p = closed_syncmer_endpoints(&hashes, params.window);
+            tg += g.len();
+            tp += p.len();
+            let gs: std::collections::HashSet<usize> = g.iter().copied().collect();
+            let ps: std::collections::HashSet<usize> = p.iter().copied().collect();
+            tonly += gs.symmetric_difference(&ps).count();
+            // max |shift| between a GIX position and its nearest pgr position.
+            let mut gi = 0usize;
+            let mut pi = 0usize;
+            while gi < g.len() && pi < p.len() {
+                let d = (g[gi] as i64 - p[pi] as i64).unsigned_abs();
+                if d > maxshift {
+                    maxshift = d;
+                }
+                if g[gi] < p[pi] {
+                    gi += 1;
+                } else {
+                    pi += 1;
+                }
+            }
+            trials += 1;
+        }
+        assert!(trials == 200);
+        println!("GIX={tg} pgr={tp} differing={tonly} max_shift={maxshift} (GIX=smer8/window5)");
+    }
+
+    #[test]
     fn test_core_bounded_gap_property() {
         // Deterministic LCG for reproducible random hash streams.
         fn lcg(state: &mut u64) -> u64 {
