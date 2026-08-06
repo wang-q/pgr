@@ -210,7 +210,7 @@ pub fn read_2bit_record<R: Read + Seek>(
     let mut packed_buf = vec![0u8; last_byte_idx - first_byte_idx + 1];
     reader.read_exact(&mut packed_buf)?;
 
-    let table = [b'T', b'C', b'A', b'G'];
+    let table = *b"TCAG";
 
     let mut seq_vec = Vec::with_capacity(end_pos - start_pos);
     for i in start_pos..end_pos {
@@ -305,7 +305,7 @@ fn load_full_record<R: Read + Seek>(
     let mut packed_buf = vec![0u8; dna_size.div_ceil(4)];
     reader.read_exact(&mut packed_buf)?;
 
-    let table = [b'T', b'C', b'A', b'G'];
+    let table = *b"TCAG";
 
     let mut seq_vec = Vec::with_capacity(dna_size);
     for i in 0..dna_size {

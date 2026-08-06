@@ -210,10 +210,8 @@ pub fn slice_cigar_by_target(
                     push_or_merge(&mut out, op.op(), (oe - os) as u32);
                 }
             }
-            'I' => {
-                if ct >= ts && ct < te {
-                    push_or_merge(&mut out, 'I', op.len());
-                }
+            'I' if ct >= ts && ct < te => {
+                push_or_merge(&mut out, 'I', op.len());
             }
             _ => {}
         }

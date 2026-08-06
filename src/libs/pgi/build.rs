@@ -353,7 +353,7 @@ mod tests {
     use std::collections::HashSet;
 
     fn pseudo_random_seq(len: usize, seed: u64) -> Vec<u8> {
-        let bases = [b'A', b'C', b'G', b'T'];
+        let bases = *b"ACGT";
         let mut x = seed;
         (0..len)
             .map(|_| {

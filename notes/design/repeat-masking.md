@@ -794,8 +794,13 @@ identity 的支持——超出 e-align 命令本身，另立主题。
 
 ## 4. 待办
 
-*   `e-kmer` 需要用户自备重复库（Dfam/RepBase/TnCentral，下载与准备见
-    [docs/rept.md](../../docs/rept.md)），本机缺库，端到端测试待补。
+*   `e-kmer` 依赖重复库（Dfam/RepBase/TnCentral），下载与准备见
+    [docs/rept.md](../../docs/rept.md)；三库已备于 `~/data/repeats/`
+    （`tncentral.fa.gz` / `repbase.fa.gz` / `dfam.fa.gz`，2026-08-03 整理），
+    `docs/rept.md` 的 MG1655 端到端示例已手跑过（含各库覆盖/重叠实测）。
+    e2e 回归已固化于 `tests/cli_rept.rs::command_rept_e_kmer_end_to_end`
+    （用 `tests/pgr/tncentral.fa.gz`，6073 条 / 12 Mb，与本机库几乎同规模；
+    大库不进 CI，`docs/rept.md` 示例为本机手跑路径）。
 *   若未来要接近 RepeatMasker 能力，可考虑对检测出的区间补一步 family 注释（如对区间
     重跑库比对），但目前无此需求，不做推测性设计。
 

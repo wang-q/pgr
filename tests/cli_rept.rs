@@ -44,7 +44,7 @@ fn command_rept_e_align_help() -> anyhow::Result<()> {
 
 /// Deterministic pseudo-random DNA (same LCG as cli_align_pgi).
 fn random_seq(len: usize, seed: u64) -> String {
-    let bases = [b'A', b'C', b'G', b'T'];
+    let bases = *b"ACGT";
     let mut x = seed;
     let mut s = String::with_capacity(len);
     for _ in 0..len {

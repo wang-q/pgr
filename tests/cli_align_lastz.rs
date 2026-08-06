@@ -7,7 +7,7 @@ use std::fs;
 
 /// Deterministic pseudo-random DNA (LCG, no ACGT periodicity).
 fn random_seq(len: usize, seed: u64) -> String {
-    let bases = [b'A', b'C', b'G', b'T'];
+    let bases = *b"ACGT";
     let mut x = seed;
     (0..len)
         .map(|_| {

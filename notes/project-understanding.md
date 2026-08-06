@@ -1,7 +1,10 @@
 # pgr 项目理解
 
 本文档是我对 pgr (Practical Genome Refiner) 项目的整体理解，涵盖架构、设计哲学、代码模式、
-当前能力与未来方向。写作时间：2026-06-27，最后更新：2026-08-05
+当前能力与未来方向。写作时间：2026-06-27，最后更新：2026-08-06
+（2026-08-06：新增 notes/todo.md 近期待办索引，见 §12）。
+（2026-08-06：SIMD 迁移——`std::simd`（nightly portable_simd）→ `wide` 1.6.0，
+ `rust-toolchain.toml` 切 stable 1.97，更新 §2.4/§8.1）。
 （2026-08-02：文档准确性审计——补全 pgi/sd 模块、pbit v1004 多参考、
  dist pgi 与 .hv 模式、align pgi 管线；内嵌索引按决策 A 移除；修正 §2.1/§3/§4/§6/§10）。
 （2026-08-02：全量通读 src/ 复核——更新 §2.1/§4 的 ds 新成员（best_crossover/merge_intervals）、
@@ -146,8 +149,8 @@ src/
 
 ### 2.4 构建配置
 
-- `#![feature(portable_simd)]` — 使用了 nightly 的 portable SIMD
-- `rust-toolchain.toml` 固定 `nightly-2026-01-26`（与 portable_simd 同步），组件含 clippy/miri/rust-src
+- `wide` 1.6.0 — portable SIMD（2026-08-06 自 `std::simd` 迁移，去 nightly）
+- `rust-toolchain.toml` 固定 stable 1.97，组件含 clippy/rust-src（miri 未使用已移除）
 - `lto = true` — release 构建启用链接时优化
 - 测试框架：`assert_cmd` + `predicates` 做 CLI 集成测试，`criterion` 做基准测试
 - 发布流程：`release.toml`（cargo release 预处理 README/CHANGELOG 版本与日期），CI 在
@@ -487,8 +490,10 @@ chainnet 后消失。`pgr psl chain` 在 2bit 序列缓存优化后（~0.3 s）�
 
 ## 8. 关键风险与技术债
 
-1. **nightly 依赖**：`#![feature(portable_simd)]` 是 nightly-only，`rust-toolchain.toml`
-   固定 `nightly-2026-01-26`。如果 portable_simd 迟迟不稳定，可能成为包袱。
+1. ~~nightly 依赖~~（已解决 2026-08-06）：`#![feature(portable_simd)]` 迁移到
+   `wide` 1.6.0（stable，1.x semver 承诺），`rust-toolchain.toml` 已切 stable 1.97；
+   迁移同时清理了 stable 1.97 新增 clippy lint（byte_char_slices /
+   collapsible_match）触发的 12 处告警。
 2. **maf 保持边界转换定位（设计约束，非欠账）**：`maf` 目前有 `to-fas` 和 `to-paf` 两个
    子命令，这是有意的——MAF 只是与外部工具的**交换格式**（上游比对工具产出、下游生态
    消费），pgr 内部的多序列比对/核心基因组工作格式是 **Block FA（`fas` 层）**，过滤、
@@ -575,6 +580,7 @@ chainnet 后消失。`pgr psl chain` 在 2bit 序列缓存优化后（~0.3 s）�
 | [[ecoli-cohort.md]] | E. coli 泛基因组端到端路线：4 万 cohort 去冗余/sparsify + 小 cohort（3 基因组）先行验证 |
 | [[chain-algorithms.md]] | pgr chain 模块各算法的运行流程（实现细节）+ 通用算法复用地图（§12） |
 | [[ecoli-genome.md]] | 测试基因组数据（MG1655/Sakai/SE11）下载与使用说明 |
+| [[todo.md]] | pgr 近期待办：验证项、数据触发项、审计记录项与技术债（含 checkbox 追踪） |
 ## 13. 基准索引（notes/benchmarks/）
 
 | 文档 | 定位 |

@@ -1,6 +1,6 @@
 use rand::{RngCore, SeedableRng};
 use rapidhash::RapidRng;
-use std::simd::prelude::*;
+use wide::{i32x8, u32x8};
 
 /// Generates a hypervector (HV) from a set of k-mer hash values using a SIMD-optimized implementation.
 ///
@@ -37,7 +37,7 @@ pub fn hash_hv_bit(seed_vec: &[u64], hv_d: usize) -> Vec<i32> {
             // Use SIMD to process 8 bits at a time
             for j in (0..32).step_by(8) {
                 let bit_mask = u32x8::splat(1);
-                let shift = Simd::from_array([
+                let shift = u32x8::from([
                     j as u32,
                     (j + 1) as u32,
                     (j + 2) as u32,
@@ -50,16 +50,16 @@ pub fn hash_hv_bit(seed_vec: &[u64], hv_d: usize) -> Vec<i32> {
                 let bits = (u32x8::splat(rnd_bits) >> shift) & bit_mask;
 
                 // Convert bits to i32 and shift left by 1
-                let bits_i32 = bits.cast::<i32>() << Simd::splat(1);
+                let bits_i32 = i32x8::from(bits.to_array().map(|b| b as i32)) << i32x8::splat(1);
 
                 // Load the target HV values
-                let mut hv_simd = i32x8::from_slice(&hv[i * 32 + j..i * 32 + j + 8]);
+                let mut hv_simd = i32x8::from(&hv[i * 32 + j..i * 32 + j + 8]);
 
                 // Accumulate the bits
                 hv_simd += bits_i32;
 
                 // Store the updated HV values
-                hv_simd.copy_to_slice(&mut hv[i * 32 + j..i * 32 + j + 8]);
+                hv[i * 32 + j..i * 32 + j + 8].copy_from_slice(&hv_simd.to_array());
             }
         }
     }
@@ -96,21 +96,18 @@ pub fn hash_hv_i8(seed_vec: &[u64], hv_d: usize) -> Vec<i32> {
             let rnd_bits = rng.next_u64();
             let bytes = rnd_bits.to_ne_bytes();
 
-            // Load 8 bytes into SIMD vector
-            let vec_u8 = u8x8::from_array(bytes);
-
             // Cast u8 to i8 (0..255 -> 0..127, -128..-1)
             // Then cast to i32 for accumulation
-            let vec_vals = vec_u8.cast::<i8>().cast::<i32>();
+            let vec_vals = i32x8::from(bytes.map(|b| b as i8 as i32));
 
             // Load current HV values
-            let mut hv_simd = i32x8::from_slice(&hv[i * 8..(i + 1) * 8]);
+            let mut hv_simd = i32x8::from(&hv[i * 8..(i + 1) * 8]);
 
             // Accumulate
             hv_simd += vec_vals;
 
             // Store back
-            hv_simd.copy_to_slice(&mut hv[i * 8..(i + 1) * 8]);
+            hv[i * 8..(i + 1) * 8].copy_from_slice(&hv_simd.to_array());
         }
     }
 

@@ -55,21 +55,19 @@ pub fn parse_header(line: &str) -> Result<MsHeader> {
                     continue;
                 }
             }
-            "-I" => {
-                if i + 1 < tokens.len() {
-                    if let Ok(v) = tokens[i + 1].parse::<usize>() {
-                        npop = v;
-                        let mut sizes = Vec::with_capacity(npop);
-                        for k in 0..npop {
-                            if i + 2 + k < tokens.len() {
-                                sizes.push(tokens[i + 2 + k].parse::<usize>().unwrap_or(0));
-                            }
+            "-I" if i + 1 < tokens.len() => {
+                if let Ok(v) = tokens[i + 1].parse::<usize>() {
+                    npop = v;
+                    let mut sizes = Vec::with_capacity(npop);
+                    for k in 0..npop {
+                        if i + 2 + k < tokens.len() {
+                            sizes.push(tokens[i + 2 + k].parse::<usize>().unwrap_or(0));
                         }
-                        sample_sizes = Some(sizes);
                     }
-                    i += 2 + npop;
-                    continue;
+                    sample_sizes = Some(sizes);
                 }
+                i += 2 + npop;
+                continue;
             }
             _ => {}
         }

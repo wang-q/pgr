@@ -1,4 +1,4 @@
-use std::simd::prelude::*;
+use wide::f32x8;
 
 /// Number of lanes in the SIMD vector.
 /// Each SIMD vector can process 8 `f32` elements at once.
@@ -34,13 +34,13 @@ pub fn euclidean_distance(a: &[f32], b: &[f32]) -> f32 {
         *d = diff * diff;
     }
 
-    let mut sums = f32x8::from_array(sums);
+    let mut sums = f32x8::from(sums);
     std::iter::zip(a_chunks, b_chunks).for_each(|(x, y)| {
-        let diff = f32x8::from_array(*x) - f32x8::from_array(*y);
+        let diff = f32x8::from(*x) - f32x8::from(*y);
         sums += diff * diff;
     });
 
-    sums.reduce_sum().sqrt()
+    sums.reduce_add().sqrt()
 }
 
 /// Computes the dot product of two vectors `a` and `b`.
@@ -68,12 +68,12 @@ pub fn dot_product(a: &[f32], b: &[f32]) -> f32 {
         *d = x * y;
     }
 
-    let mut sums = f32x8::from_array(sums);
+    let mut sums = f32x8::from(sums);
     std::iter::zip(a_chunks, b_chunks).for_each(|(x, y)| {
-        sums += f32x8::from_array(*x) * f32x8::from_array(*y);
+        sums += f32x8::from(*x) * f32x8::from(*y);
     });
 
-    sums.reduce_sum()
+    sums.reduce_add()
 }
 
 /// Computes the L2 norm (Euclidean norm) of a vector `a`.
@@ -117,12 +117,12 @@ pub fn norm_l2_sq(a: &[f32]) -> f32 {
         *d = x * x;
     }
 
-    let mut sums = f32x8::from_array(sums);
+    let mut sums = f32x8::from(sums);
     a_chunks.iter().for_each(|x| {
-        sums += f32x8::from_array(*x) * f32x8::from_array(*x);
+        sums += f32x8::from(*x) * f32x8::from(*x);
     });
 
-    sums.reduce_sum()
+    sums.reduce_add()
 }
 
 /// Computes the sum of all elements in a vector `a`.
@@ -147,12 +147,12 @@ pub fn sum(a: &[f32]) -> f32 {
         *d = *x;
     }
 
-    let mut sums = f32x8::from_array(sums);
+    let mut sums = f32x8::from(sums);
     a_chunks.iter().for_each(|x| {
-        sums += f32x8::from_array(*x);
+        sums += f32x8::from(*x);
     });
 
-    sums.reduce_sum()
+    sums.reduce_add()
 }
 
 /// Computes the mean (average) of a vector `a`.
@@ -202,12 +202,12 @@ pub fn jaccard_intersection(a: &[f32], b: &[f32]) -> f32 {
         *d = f32::min(*x, *y);
     }
 
-    let mut sums = f32x8::from_array(sums);
+    let mut sums = f32x8::from(sums);
     std::iter::zip(a_chunks, b_chunks).for_each(|(x, y)| {
-        sums += f32x8::simd_min(f32x8::from_array(*x), f32x8::from_array(*y));
+        sums += f32x8::min(f32x8::from(*x), f32x8::from(*y));
     });
 
-    sums.reduce_sum()
+    sums.reduce_add()
 }
 
 /// Computes the Jaccard union of two vectors `a` and `b`.
@@ -236,12 +236,12 @@ pub fn jaccard_union(a: &[f32], b: &[f32]) -> f32 {
         *d = f32::max(*x, *y);
     }
 
-    let mut sums = f32x8::from_array(sums);
+    let mut sums = f32x8::from(sums);
     std::iter::zip(a_chunks, b_chunks).for_each(|(x, y)| {
-        sums += f32x8::simd_max(f32x8::from_array(*x), f32x8::from_array(*y));
+        sums += f32x8::max(f32x8::from(*x), f32x8::from(*y));
     });
 
-    sums.reduce_sum()
+    sums.reduce_add()
 }
 
 /// Computes the Pearson correlation coefficient between two vectors `a` and `b`.
