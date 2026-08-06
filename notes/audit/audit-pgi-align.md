@@ -81,6 +81,8 @@
 
 * `align lastz --lastz-args` 的值以 `-` 开头时需用 `--lastz-args=<val>` 形式
   （clap 对空格形式的值为标准行为）；帮助文本未提示该写法。
+  > ✅ 已修复（2026-08-06）：Arg help 与 `docs/align-lastz.md` 均提示
+  `--lastz-args=<val>` 写法。
 * `align lastz -o dir` 重复使用旧 LAV 残留：影响链短（`sd run`/`s-align`/`sd
   search lastz` 均用临时 workdir 免疫），且 LAV 是通用扩展名清理易误伤，
   记录不修。
@@ -93,6 +95,8 @@
   均匹配索引 contig 表但内容不同）会在 self 模式比对 a.fa vs b.fa，仅丢弃"精确
   自同一性"命中，对结果影响极小；属用户自相矛盾的请求，且 contig 校验在文件名/
   长度不符时已能拦截。按"简洁优先"记录不修。
+  > ✅ 已修复（2026-08-06）：`--self` 时校验 `--ref-seq`/`--query-seq` 一致
+  （不一致或只给一个均报错），新增 2 个集成测试。
 * crafted 索引可携带超大 contig `len`（u64 无上限），`oriented = b_len - k -
   bpos` 超出 `u32` 时 `as u32` 截断、`chain_to_psl` 的 `*len as u32` 同样截
   断——仅产生错误坐标，不 panic。真实索引受"单 contig ≤ 4.3 Gb"的已知限制

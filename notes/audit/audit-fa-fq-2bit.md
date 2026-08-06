@@ -136,6 +136,9 @@
   `!is_n(b)`（仅排除 N 与 IUPAC），`-`/`*` 会被计入长度，与"仅计算有效碱基"
   的字面略有出入；但文档明确把排除范围限定为"N 及 IUPAC 歧义码"，行为与文档
   字面一致，且与 `count` 的 `len`（仅 A/C/G/T/N）语义不同属两命令各自定义。
+  > ✅ 已修复（2026-08-06）：`--no-ns` 改为排除 N + IUPAC 歧义码 + Invalid
+  （`-`/`*`/数字），与"仅有效碱基"语义一致；新增集成测试
+  `command_fa_size_no_ns_excludes_iupac_and_invalid`。
   低风险文档歧义，未改。
 * `fa replace` 的 `read_replace_tsv` 不跳过 `#` 注释行，而 `read_names`
   （`some`/`order` 等）会跳过：若 TSV 带 `#` 表头/注释行，会被误当作 key
@@ -310,6 +313,8 @@
   实际同时排除 N 与 IUPAC 歧义码。`docs/fa.md` 已准确描述（"排除 N 及 IUPAC
   歧义码"），仅 CLI 帮助不准确。修复：帮助文本改为 "Output size without Ns and
   IUPAC ambiguous codes"，与行为及 `docs/fa.md` 一致（`twobit size` 共用该
+  > ✅ 已修复（2026-08-06）：`no_ns_arg` 帮助文本已改为 "Output size without
+  Ns and IUPAC ambiguous codes"。
   arg，2bit 掩码块即 N，语义同样准确）。
 
 **`fa six-frame` 帮助文本的 frame 编号与实际输出不符**：`after_help` 的

@@ -74,6 +74,8 @@
 * `decompose.rs` 负链投影依赖 header 与序列长度一致（cluster 内部保证）。
 * cluster/cover 的 u32→i32 坐标转换（仅 >2.1 Gb 染色体溢出）。
 * `run_lastz` self 模式仍构建 n×n job 列表，大目录可提前过滤。
+  > ✅ 已修复（2026-08-06）：self 模式只构建对角 n 个 job（不再生成 n²），
+  执行期防御保留。
 * `syncmer.rs` 参考实现与 `collect_one_contig` 重复发射同一位置，消费方
   已 HashSet 去重，可后续合并。
 * s_align / sd search --engine pgi 传不支持类型时报错可读性差，不 panic。
@@ -132,6 +134,9 @@
   损失 1–11 bp，低于阈值被滤（lastz 用 12-mer seed + 扩展覆盖全长）。属
   引擎语义差异而非逻辑 bug，文档已提示降 `--min-len` 或用 lastz（见
   docs/sd.md）。
+  > ✅ 已解决（2026-08-06）：`sd search` 默认 `freq=50/k=31` 后，10 个 E.
+  coli 漏检率 13.1%→0.26%，遮蔽流程（§4.10）后 pgi/lastz 互相漏检
+  3.2%/6.0%；详见 `design/sd.md` §4.9/§4.10。
 
 ## 修复的缺陷（共 49 处：39 处代码/行为 + 10 处 CLI/帮助/文档）
 

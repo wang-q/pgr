@@ -83,7 +83,8 @@ sketch + 全对距离矩阵可在数小时内完成，把 N² 降到可管理的
 
 判定冗余对后，需要为每个冗余 cluster 选一个**代表基因组**：
 
-- 用 `pgr clust` 的 k_medoids（已实现）可选 cluster 中心作为代表
+- 用 k_medoids 可选 cluster 中心作为代表（`pgr clust` 已随 phylo 系迁移至
+  `necom` 项目，见 `project-understanding.md` §2026-07 迁移说明）
 - 或按用户指定的优先级（如 NCBI RefSeq 优先、组装质量优先）
 
 ### 2.4 与 impg sparsify 的区别

@@ -5,6 +5,8 @@
 （2026-08-06：新增 notes/todo.md 近期待办索引，见 §12）。
 （2026-08-06：SIMD 迁移——`std::simd`（nightly portable_simd）→ `wide` 1.6.0，
  `rust-toolchain.toml` 切 stable 1.97，更新 §2.4/§8.1）。
+（2026-08-06：align fill/rest 拆分 + rest 采样预筛 + sd search 灵敏度优化
+ （freq=50/k=31）+ 重复遮蔽完整流程验证 + 审计项批量修复，更新 §6.2/§6.3）。
 （2026-08-02：文档准确性审计——补全 pgi/sd 模块、pbit v1004 多参考、
  dist pgi 与 .hv 模式、align pgi 管线；内嵌索引按决策 A 移除；修正 §2.1/§3/§4/§6/§10）。
 （2026-08-02：全量通读 src/ 复核——更新 §2.1/§4 的 ds 新成员（best_crossover/merge_intervals）、
@@ -424,11 +426,24 @@ pub fn execute(matches: &ArgMatches) -> anyhow::Result<()> {
 - **`pl` 流程模块**：`chainnet`（纯 pgr 原生管道，与 UCSC 字节级一致）、`ucsc`、`trf`、
   `rept`、`ir`、`p2m`、`prefilter` 等 pipeline。
 
+- **`align` 补全（fill/rest）**：`pgr align hybrid` 拆分为 `fill`（2D 锚点间
+  gap fill）与 `rest`（两侧 trim→excise→holes 一维补集 + syncmer 预筛配对），
+  `rest` 默认 s17/w5/ms1 预筛（6.3 s，syntenic 口径与全量差 0.012 pp）；
+  坐标回移复用 `pgr psl lift`（含 `chr(+):` range 名修复）。合并 fill+rest
+  反而伤害链化，建议单路使用（详见 [[design/pgi-lastz-hybrid.md]]）。
+
+- **SD 检测灵敏度优化**：`sd search` 透传 pgi 参数，默认 `freq=50/k=31`
+  （漏检率 13.1%→0.26%，无假阳性引入）；重复遮蔽完整流程验证
+  （`rept e-kmer` 三库 → `fa mask --hard` → `sd search`，遮蔽后 pgi/lastz
+  引擎互相漏检 3.2%/6.0%，pgi 可替代 lastz）。详见
+  [[design/sd.md]] §4.9/§4.10。
+
 ### 6.3 待补全的（TODO / 设计阶段）
 
 设计笔记（§10 索引）均已落地；PAF 泛基因组方向（query / to-maf / graph / to-gfa / to-vcf /
 stat）已全部完成，后续规划见 [[paf-pangenome.md]] §5（规模扩展与应用层，均待真实 cohort
-数据）。当前无待补全的具体功能。
+数据）。剩余项为数据驱动或低优先级（见 `notes/todo.md`）：4 万 cohort、
+人类规模验证、pbit 触发项、SD 边缘漏检个案等，无阻塞性待补功能。
 
 ### 6.4 不做 / 不适合做的
 

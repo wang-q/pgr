@@ -862,7 +862,7 @@ FastGA `-S`（FastGA.c:2340，README:199-207 与论文 §3.1 均已文档化：
 > 带方向偏差**；②全对场景现实存在：10 株 cohort 45 对（§2.4，每对单向）、
 > 泛基因组图（paf graph/to-gfa/to-vcf）、impg sparsify all-vs-all；
 > ③`sd cross`（docs/sd.md）是单向映射，对称跨基因组重复检测需要双向；
-> ④hybrid（pgi+lastz）定稿为仅共线性，与 -S 无关。
+> ④hybrid（pgi+lastz，现为 `pgr align fill`/`rest`）定稿为仅共线性，与 -S 无关。
 
 **重新评估结论**：
 

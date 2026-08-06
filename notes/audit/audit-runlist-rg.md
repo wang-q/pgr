@@ -85,6 +85,8 @@ runlist 家族对照 spanr 0.6.7 源码、rg 家族对照 rgr 源码逐条核对
   `{"chr1":"1-5"}` 之类值，无法区分同值不同键。文档仅写"line by line"，
   未承诺格式；`command_runlist_split` 只覆盖目录模式，stdout 模式无测试。
   属低风险 UX 疑点，未改（若按管道扁平化设计则为有意）。
+  > ✅ 已修复（2026-08-06）：stdout 模式输出 `key\tvalue`，新增集成测试
+  `command_runlist_split_stdout_keeps_keys`；`docs/runlist.md` 同步更新。
 * `runlist merge`（未加 `--all`）两个输入若首段 stem 相同（如
   `sample.a.json` 与 `sample.b.json`）会以同一键写入，后者**静默覆盖**前者
   （实测输出仅保留 `sample.b` 的数据）。属键控方案固有行为（与 spanr 一致，

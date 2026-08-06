@@ -801,6 +801,12 @@ identity 的支持——超出 e-align 命令本身，另立主题。
     e2e 回归已固化于 `tests/cli_rept.rs::command_rept_e_kmer_end_to_end`
     （用 `tests/pgr/tncentral.fa.gz`，6073 条 / 12 Mb，与本机库几乎同规模；
     大库不进 CI，`docs/rept.md` 示例为本机手跑路径）。
+*   **遮蔽版验证 ✅（2026-08-06）**：10 个 E. coli 基因组跑
+    `rept e-kmer` 三库（tncentral/repbase/dfam）→ `fa mask --hard` →
+    `sd search` 完整流程，遮蔽 ~1.2%（IS 元件主导，tncentral 库贡献
+    几乎全部），遮蔽后 pgi/lastz 引擎 SD 检出收敛（互相漏检 3.2%/6.0%）；
+    详见 `design/sd.md` §4.10。真核对标（§2.5，拟南芥/玉米 + RepeatMasker
+    参考）仍需真核数据验证。
 *   若未来要接近 RepeatMasker 能力，可考虑对检测出的区间补一步 family 注释（如对区间
     重跑库比对），但目前无此需求，不做推测性设计。
 
