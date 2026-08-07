@@ -1,4 +1,4 @@
-# align 命令族代码审核记录（2026-08-04 / 2026-08-07）
+# align 命令族代码审核记录（2026-08-07）
 
 对 `pgr align` 命令族（pgi/lastz + `libs/pgi`、`libs/lastz`、`libs/fmt/lav`、
 `libs/fmt/psl`、`alignment` DP）约 3000 行代码及全部文档
@@ -450,20 +450,6 @@
   相关 CLI）；`cargo fmt --check` 与 `cargo clippy --all-targets -- -D warnings`
   干净。
 
-## 收尾复核（2026-08-05）
-
-在前述收敛结论之上，对当前工作区代码与文档做最终回归核对，确认报告所述修复
-均已落地且状态一致：
-
-* 代码逐项核对：`cmd_pgr/align/pgi.rs`（`--self` 校验、`ensure_outfile_distinct`
-  含 sibling 索引、`pool.install` 约束 `--parallel`、mtime / 参数一致性检查、
-  `.gz` 分离命名）、`libs/pgi/build.rs`（`mask` 软掩码、pending 去重、按位置
-  重算 key、`rc_key`）、`libs/pgi/align.rs`（`saturating_add` 防 k=64 前缀溢出、
-  `freq >=` 双侧过滤、streaming 逐记录校验、负链 RC frame）、`libs/pgi/mmap.rs`
-  （惰性解码 + 越界校验、截断拒绝）均与报告一致。
-* 文档核对：`docs/align-pgi.md` 的 `--freq`("at least")、`--kmer`（非 `--k`）、
-  `.gz` 分离命名、mtime 失效、缓存参数一致性、软掩码说明均与代码一致。
-
 ## 结论
 
 `align` 命令族审核完成，累计修复 **52 处缺陷**（34 处代码/行为 + 18 处 CLI/
@@ -474,6 +460,16 @@ k=64 前缀域、`chain_tubes` 排序键布局、负链坐标、reference 侧记
 `-k`/`--window`/`--parallel` 参数边界、构造 .pgi 头大 `k`、`tubes_for_group`/
 `extend_tube` 边界、wave.rs 波前算法与 TrimSpec 数值域），未再发现新的问题，
 审核收敛。
+
+收尾回归核对确认报告所述修复均已落地且状态一致：
+* 代码逐项核对：`cmd_pgr/align/pgi.rs`（`--self` 校验、`ensure_outfile_distinct`
+  含 sibling 索引、`pool.install` 约束 `--parallel`、mtime / 参数一致性检查、
+  `.gz` 分离命名）、`libs/pgi/build.rs`（`mask` 软掩码、pending 去重、按位置
+  重算 key、`rc_key`）、`libs/pgi/align.rs`（`saturating_add` 防 k=64 前缀溢出、
+  `freq >=` 双侧过滤、streaming 逐记录校验、负链 RC frame）、`libs/pgi/mmap.rs`
+  （惰性解码 + 越界校验、截断拒绝）均与报告一致。
+* 文档核对：`docs/align-pgi.md` 的 `--freq`("at least")、`--kmer`（非 `--k`）、
+  `.gz` 分离命名、mtime 失效、缓存参数一致性、软掩码说明均与代码一致。
 
 > 注：工作区另有 `fas_multiz/merge.rs`、`alignment/slice.rs` 等**其他命令族的
 > 未提交 WIP**（含一次 stale clippy 缓存下的 E0596 误报，`touch` 后

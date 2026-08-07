@@ -195,7 +195,7 @@ pbit 格式（`notes/design/pbit.md` §文件格式规范 v1004）：
 27. **`append` 多参考缺警告**：未指定 `ref_spec`（TSV 无第 4 列）时静默路由到
     参考 0，与 `create`/`resolve_ref_id` 的多参考警告不一致。修复：参考数 > 1
     且未指定参考时对每个样本 `log::warn!`。
-28. **报告重复记录项**：第 8 轮 `packed_size` 条目在报告中重复出现（两处同标题
+28. **报告重复记录项**：`packed_size` 条目在报告中重复出现（两处同标题
     与重复条目）。修复：删除重复块。
 
 ### 反向链压缩率（1 处）
@@ -272,11 +272,9 @@ pbit 格式（`notes/design/pbit.md` §文件格式规范 v1004）：
 `pbit` 命令族审核完成（累计修复 32 处缺陷：数据安全 7 + 数据损坏 1 + 功能
 正确性 2 + 遮蔽还原一致性 1 + 展示歧义/UX 2 + 溯源元数据 2 + 死代码/警告措辞 3 +
 文档一致性 3 + 内存 DoS 5 + 健壮性 1 + 一致性/报告去重 2 + 反向链压缩率 1 +
-零 panic 校验一致性 2），补回归测试与文档澄清，并经多轮纵深复审（首轮对
+零 panic 校验一致性 2），补回归测试与文档澄清，并经多轮纵深复审（对
 `compressor`/`decompressor`/`lz_diff`/`format`/`collection`/`segment`/
-`paf_index` 与全部命令层逐行深审；第 16 轮复核命令层与 PAF 索引；第 17 轮对核心
-库全文重读并核对文档与 CLI 实现一致性；第 18 轮复核 `get_contig`/`get_sample`
-遮蔽还原一致性；第 19 轮重读 `cigar_delta`/`compressor` CIGAR 处理/`paf_index`/
-`lz_diff` 解压路径）均未再发现新缺陷，审核收敛。
+`paf_index`/`cigar_delta` 全部库文件与命令层、文档及 CLI 实现一致性逐行重读复核）
+均未再发现新缺陷，审核收敛。
 
 剩余记录项仅参考层 `read_sequence` 跨参考拼接（非命令可达，见"已知限制"）。

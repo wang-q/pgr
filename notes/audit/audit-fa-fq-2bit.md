@@ -92,6 +92,9 @@
 * `Range::from_str` 为手写字节扫描器（不 panic），无 `:` 时回退 `chr` 为首个
   空白 token；`range` 命令对含 `:` 的输入用 `rg.is_valid()`（`start != 0`）
   兜底，对无 `:` 的全序列请求绕过坐标校验，畸形输入均返回友好错误而非 panic。
+* `range` 坐标 1-based→0-based 换算、首端越界跳过/末端越界截断告警、单点
+  `chr1:1`（end 默认 start）、`chr1:0`/反向区间报错均正确；头部用原始 range
+  字符串，与文档一致。
 * `from_dna` 打包：`packed.len()` 恒等于 `ceil(len/4)`，与读取端
   `dna_size.div_ceil(4)` 一致；`bit_offset` 归零即推入整字节，尾部半字节在循环
   结束后补推。`test_blocks_from_dna`/`test_write_read_roundtrip` 验证一致。
@@ -105,24 +108,18 @@
   2bit 序列只含 ACGTN（含软屏蔽小写），无越界。
 * `masked` 输出坐标：0-based 半开 `[start,end)` → 1-based 包含
   `start+1..=end`，单碱基输出 `name:pos`，与文档一致。
-* `merge_intervals` 对相邻（`block.start <= last.end`）的 N/mask 块合并，
-  半开区间相邻即合并，行为正确。
+* `merge_intervals` 先按 start 排序，相邻（`block.start <= last.end`）的 N/mask
+  块合并（半开区间相邻即合并），重叠位置正确合并为单区域。
+* `read_sequence` 的 `cached` 记录缓存与 `get_sequence_len`/`get_sequence_blocks`
+  的 seek 无位置串扰：所有读取方法均在使用前显式 seek，缓存命中时不再 seek，
+  混用（`range` 中 `get_sequence_len` + `read_sequence`）正确。
+* `some` 的 invert 逻辑 `contains != invert`、大小写敏感、`#` 注释/空行忽略、
+  首列取名，与文档一致。
+* 5 个子命令 `-o` 覆盖保护（含 `some` 的 list、`range` 的 rgfile）均已覆盖；
+  `read_2bit_record`/`write_2bit_record` 被 pbit 参考层复用，非死代码。
 * 文档一致性：`docs/twobit.md` 与各子命令 `after_help` 的坐标、`--no-ns`、
   `--no-mask`、`-l 0`（不换行）、`-i`（invert）、大小写敏感、`#` 注释忽略等
   描述一致；命令分组（Info/Subset/Transform）一致。
-* 纵深复核（跨轮）无新增问题的项：
-  * `read_sequence` 的 `cached` 记录缓存与 `get_sequence_len`/`get_sequence_blocks`
-    的 seek 无位置串扰：所有读取方法均在使用前显式 seek，缓存命中时不再 seek，
-    混用（`range` 中 `get_sequence_len` + `read_sequence`）正确。
-  * `range` 坐标 1-based→0-based 换算、首端越界跳过/末端越界截断告警、负链
-    `rev_comp(NT_COMP)`、单点 `chr1:1`（end 默认 start）、`chr1:0`/反向区间报错，
-    均正确；头部用原始 range 字符串，与文档一致。
-  * `merge_intervals` 先按 start 排序、相邻（`block.start <= last.end`）合并，
-    半开区间相邻即合并，N/mask 重叠位置正确合并为单区域。
-  * `some` 的 invert 逻辑 `contains != invert`、大小写敏感、`#` 注释/空行忽略、
-    首列取名，与文档一致。
-  * 5 个子命令 `-o` 覆盖保护（含 `some` 的 list、`range` 的 rgfile）均已覆盖。
-  * `read_2bit_record`/`write_2bit_record` 被 pbit 参考层复用，非死代码。
 
 ## 已知限制（有意保留）
 
@@ -346,8 +343,7 @@
   `n50_standard`（`[40,30,20,10]`→30）单元测试；既有 `command_fa_n50*` 测试
   保持不变（ufasta 无恰好相等边界）。
 
-**`fa size --no-ns` 对 `-`/`*`/数字等非 IUPAC 字符计数为"有效碱基"**（2026-08-06
-  从记录项移入）：`--no-ns` 改为排除 N + IUPAC 歧义码 + Invalid（`-`/`*`/
+**`fa size --no-ns` 对 `-`/`*`/数字等非 IUPAC 字符计数为"有效碱基"**（从记录项移入）：`--no-ns` 改为排除 N + IUPAC 歧义码 + Invalid（`-`/`*`/
   数字），与"仅有效碱基"语义一致；新增集成测试
   `command_fa_size_no_ns_excludes_iupac_and_invalid`。
 
@@ -420,5 +416,4 @@
 `split about -c + stdout` 截断、`to-2bit` 名称去重、`fq` 双文件格式检测、
 `2bit seq_name(-)` 全序列反链、`2bit range` 空输入静默输出、`read_u32_vec`
 大 count 分配等）均属文档化一致行为或不可达的极端命名场景，非缺陷，无需改动。
-
-最终收敛轮未再发现任何新问题，审核收敛。
+未再发现任何新问题，审核收敛。

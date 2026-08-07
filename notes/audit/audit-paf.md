@@ -156,8 +156,8 @@ FAS 头原先用 `q_start_fwd`/`q_end_fwd`（正向 query 区间），对 `-` �
 
 * `cargo fmt` 与 `cargo clippy --all-targets -- -D warnings` 干净。
 * `cargo test`：569 个单元测试 + 71 个 doctest + 全部集成测试通过，零失败。
-  paf 相关：`cli_paf`（19）、`cli_paf_to_fas`（11）、`cli_paf_to_maf`（15）、
-  `cli_paf_to_vcf`（6）、`libs::paf::*`（含持久化、索引、BFS、MSA、VCF 等）
+  paf 相关：`cli_paf`（22）、`cli_paf_to_fas`（11）、`cli_paf_to_maf`（15）、
+  `cli_paf_to_vcf`（6）、`libs::paf::*`（120，含持久化、索引、BFS、MSA、VCF 等）
   全部通过。
 * 新增回归测试（主要）：`test_project_empty_cigar_left_overhang_clamps_len`、
   `test_project_empty_cigar_left_overhang_minus_strand`、
@@ -169,56 +169,27 @@ FAS 头原先用 `q_start_fwd`/`q_end_fwd`（正向 query 区间），对 `-` �
   `test_node_sequence_revcomp_when_filling_from_minus_segment`、
   `command_paf_poa_score_params_validated`、
   `command_paf_negative_query_filters_rejected`、
-  `command_paf_query_min_identity_out_of_range_rejected`，以及
+  `command_paf_query_min_identity_out_of_range_rejected`、
+  `command_paf_to_vcf_protects_syntenic_filter_from_overwrite`、
+  `command_paf_to_gfa_protects_subset_list_from_overwrite`、
+  `command_paf_to_bed_accepts_fasta_tsv_and_merge_distance`，以及
   `command_paf_index/query/to_bed/graph_output_same_as_input_rejected` 的
   `-o` 同输入保护各用例（断言输入文件未被改动）。
-* 复审轮（2026-08-05）复跑 `cargo test`、`cargo clippy --all-targets -- -D
-  warnings`、`cargo fmt --check`，均干净；对 `project`、`query` 过滤、`vcf`
-  左对齐、`graph` 节点取向等关键路径做了防御性逐行复核，未再发现新问题。
-* 再复审轮（2026-08-05，本轮）：对 `libs/paf` 全量文件（`vcf`、
-  `poa_compact`、`to_maf`/`to_fas`、`msa_build`、`cigar`、`index/query`、
-  `index/bfs`、`index/builder`、`index/mod`、`persist`、`parser`、
-  `graph/builder`、`graph/segment`、`fasta`、`query`、`record`）与
-  `cmd_pgr/paf/*` 各子命令 execute 层及 `cmd_pgr/args.rs`、`docs/paf.md`
-  逐行复核，未发现新的实质性缺陷。补记的几项低风险观察（均非 bug，实际
-  数据不可触发）：
-  * `filter_by_chain_length` / BFS 中 `(last - first).abs()`：PAF 坐标非负且
-    `first >= 0, last <= i32::MAX`，差值落在 `[0, i32::MAX]`，`.abs()` 不会
-    到达 `i32::MIN`，无溢出。
-  * lazy 模式下 `insert_record` 仍调用 `extract_cigar` 做 CIGAR 校验（结果
-    丢弃），属 fail-fast 设计权衡，非缺陷。
-  * `CigarOp` 对 > 2^29 的 op 长度位截断：受实际比对长度约束，不可达。
-  * `merge_results` 的 `same_record` 判定用 `(rec_ts, rec_qs, strand)` 三元组，
-    不同源记录恰好同三点时可能误判；概率极低且落入 `slice_cigar_by_target`
-    截断保护，低风险。
-  * 本轮 `cargo test --lib paf::`：120 个测试全部通过。当前工作区唯一的
-    `clippy -D warnings` 报错位于 `src/libs/alignment/wave.rs:652`
-    （`too_many_arguments`），属 pgi 未提交进行中改动引入，不在 paf 审计
-    范围内，未改动。
-
-* 第四轮（2026-08-05，本轮）：复核 `to-vcf` / `to-gfa` execute 层，发现其
-  `ensure_outfile_distinct` 仍只覆盖 infile + fasta_tsv，未保护
-  `--subset-sequence-list` / `--syntenic-filter` 辅助输入（同为上一轮数据安全
-  修复的遗漏，其余 4 个查询类命令已补）。补齐并新增回归
-  `command_paf_to_vcf_protects_syntenic_filter_from_overwrite`、
-  `command_paf_to_gfa_protects_subset_list_from_overwrite`。
-  `cargo test --test cli_paf`（21 个测试）、`cargo fmt`、`cargo clippy --all-targets`
-  干净。本轮后未再发现新问题。
-
-* 第五轮（2026-08-05，本轮）：复核各查询类子命令的 `-f/--fasta-tsv` 注册与
-  `--merge-distance` 可用性，发现 `to-bed` 未注册 `--fasta-tsv`，导致
-  `--merge-distance > 0`（依赖 `-f`）对 `to-bed` 完全不可用，且与 `docs/paf.md`
-  "所有 query 选项都支持"的表述不符（第 15 处缺陷）。修复：为 `to-bed` 补
-  `add_optional_fasta_tsv_arg`，并在注释/文档（`docs/paf.md` 的 `to-bed` 小节、
-  FASTA TSV 小节、`to_bed.rs` 的 after_help）补上 `-f` 与 `--merge-distance`
-  的说明。新增回归
-  `command_paf_to_bed_accepts_fasta_tsv_and_merge_distance`。复核 `cli_paf`
-  （22 个测试）、`cargo fmt`、`cargo clippy --all-targets` 干净。本轮后未再
-  发现新问题。注：全量 `cargo test` 中 `cli_sd` 的 2 个用例（`command_sd_search_
-  pgi_inverted_repeat`、`command_sd_search_pgi_close_inverted_repeat`）失败，
-  系未提交的 pgi 引擎进行中改动（`src/libs/pgi/align.rs`、`src/libs/alignment/
-  wave.rs`）引入，与 paf 无关；paf 相关全部测试（`cli_paf` 22、`cli_paf_to_fas`
-  11、`cli_paf_to_maf` 15、`cli_paf_to_vcf` 6、`lib paf::` 120）均通过。
+* 对 `libs/paf` 全量文件（`vcf`/`poa_compact`/`to_maf`/`to_fas`/`msa_build`/
+  `cigar`/`index/{query,bfs,builder,mod}`/`persist`/`parser`/`graph/{builder,segment}`/
+  `fasta`/`query`/`record`）与 `cmd_pgr/paf/*` 各命令 execute 层及 `cmd_pgr/args.rs`、
+  `docs/paf.md` 逐行复核，并对 `project`、`query` 过滤、`vcf` 左对齐、`graph` 节点
+  取向等关键路径做防御性复核后，未再发现新的实质性缺陷。
+* 补记的低风险观察（均非 bug，实际数据不可触发）：`filter_by_chain_length`/BFS 中
+  `(last - first).abs()` 差值落在 `[0, i32::MAX]` 无溢出；lazy 模式下 `insert_record`
+  仍调用 `extract_cigar` 做 CIGAR 校验属 fail-fast 设计权衡；`CigarOp` 对 > 2^29 的
+  op 长度位截断受实际比对长度约束不可达；`merge_results` 的 `same_record` 三元组判定
+  误判概率极低且落入 `slice_cigar_by_target` 截断保护。
+* 注：当前工作区唯一的 `clippy -D warnings` 报错位于 `src/libs/alignment/wave.rs:652`
+  （`too_many_arguments`），另 `cli_sd` 的 2 个用例（`command_sd_search_pgi_inverted_
+  repeat`、`command_sd_search_pgi_close_inverted_repeat`）失败，均系未提交的 pgi 引擎
+  进行中改动（`src/libs/pgi/align.rs`、`src/libs/alignment/wave.rs`）引入，不在 paf
+  审计范围内，未改动。
 
 ## 结论
 

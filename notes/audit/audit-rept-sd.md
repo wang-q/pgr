@@ -1,4 +1,4 @@
-# sd / rept 命令族代码审核记录（2026-08-04 / 2026-08-05）
+# sd / rept 命令族代码审核记录（2026-08-05）
 
 对 `pgr sd`（8 命令 + `libs/sd`）与 `pgr rept`（6 命令 + `libs/pl`）两个命令族
 约 5000 行代码及全部文档（`docs/{sd,rept}.md`）进行审核。两个命令族结构相近
@@ -66,7 +66,7 @@
   `fa size` 首字段约定一致（spanr 系既有行为），非缺陷。
 * `syncmer_dna` 的 `encode_base` 对 N 返回 0（当作 A）与生产路径 N→4 不一致，
   但 syncmer_dna 非生产路径（仅内部测试），不影响 align/rept/sd——记录观察。
-* tube 工作流"库 vs 基因组"结构性失效（2026-08-06 重测确认**无需修复**）：
+* tube 工作流"库 vs 基因组"结构性失效（重测确认**无需修复**）：
   原疑"跨对角桶链被切断"；greedy 已移除、tube 为唯一流程后，MG1655 vs
   TnCentral 库 `rept e-align` 正常检出（71.6 kb，79% 与 e-kmer 重叠），
   失效随 syncmer/排序键修复消失。
@@ -146,7 +146,7 @@
 **（重大）tube 排序键负对角线回绕**（>64 Mb 间距失效）。修复：
    `BUCK_OFF = 1 << 26`。回归深负对角线两个测试。
 
-**pgi 引擎灵敏度限制**（2026-08-06 记录项升级）：精确 k-mer seed 对近
+**pgi 引擎灵敏度限制**（记录项升级）：精确 k-mer seed 对近
   90–93% identity 或真长恰在 `--min-len` 附近的拷贝可能只锚定子块被滤。
   已解决：`sd search` 默认 `freq=50/k=31` 后，10 个 E. coli 漏检率
   13.1%→0.26%，遮蔽流程后 pgi/lastz 互相漏检 3.2%/6.0%（详见
@@ -287,7 +287,7 @@
 
 ### 性能（1 处）
 
-**`run_lastz` self 模式 n×n job 列表**（2026-08-06 记录项移入）：self 模式
+**`run_lastz` self 模式 n×n job 列表**（记录项移入）：self 模式
   只构建对角 n 个 job（不再生成 n²），执行期防御保留。
 
 ### 外部工具与参数 / CLI（4 处）
@@ -321,7 +321,7 @@
     也可能因 seed 边界损失差几 bp 被滤（复核 121）。
 **sd.md Notes 补充软掩码语义**：pgi（`-M` 语义）与 lastz（小写视为掩码）
     都不比对小写，软掩码的 SD 拷贝不被检出，建议先 `tr a-z A-Z`。
-    > 2026-08-06 修正：实测 lastz 大小写不敏感（小写仍参与匹配），仅 pgi
+    > 修正：实测 lastz 大小写不敏感（小写仍参与匹配），仅 pgi
     感知小写；且 mask 仅影响 `sd search` 发现阶段，后续阶段读原始基因组。
 
 ## 验证
@@ -365,13 +365,11 @@
   `soft_mask_detection_ignores_n_gaps` 等。
 * 共享库回归：`randomized_single_pass_matches_reference`、
   `merge_checks_minus_strand_middle_in_rc_space` 等。
-* `cargo test` 全量 1255 通过（历轮 995→1201→1209→1210→1211→1212→1213→
-  1218→1219→1220→1223→1224→1226→1227→1229→1230→1231→1232→1234→1236→
-  1239→1240→1241→1243→1249→1250→1253→1254→1255 递增）；本族 sd 13、pl 1
+* `cargo test` 全量 1255 通过（逐轮递增至收敛）；本族 sd 13、pl 1
   个 lib + 相关 CLI 测试 release 模式全绿；`cargo fmt --check` 与 `cargo
   clippy --all-targets -- -D warnings` 干净。
-* 本轮复核（cross 解压 + e-align 文档修复后）：`cargo test --lib` 568 通过、
-  `cli_sd` 15 / `cli_rept` 17 通过、clippy 干净。上一轮新增的回归测试
+* 复查（cross 解压 + e-align 文档修复后）：`cargo test --lib` 568 通过、
+  `cli_sd` 15 / `cli_rept` 17 通过、clippy 干净。新增的回归测试
   `decompress_colliding_basenames_stay_distinct` 触发 clippy
   `cloned_ref_to_slice_refs`（`&[a.clone()]`），已改为 `std::slice::from_ref(&a)`
   消除（测试代码，非生产逻辑）。复查 sd/rept 六命令 lib 与 repeat 管线
