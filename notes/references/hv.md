@@ -1,10 +1,10 @@
-# HV 外部参考（HyperGen + hdlib）
+# HV 与测距聚类外部参考
 
-> 整理于 2026-08-07（自 `design/hv.md` §4 迁出），后续将随更多
-> HDC / 基因组草图文献持续扩充。目的：了解超维计算（HDC）基因组草图的
-> 主流做法与参数选择，为 pgr 的 HV 实现（`src/libs/hv.rs`、
-> [[../design/hv.md]]）提供外部参考。本文是背景材料；pgr 的实现决策以
-> [[../design/hv.md]] §1/§2 为准。
+> 整理于 2026-08-07（自 `design/hv.md` §4 迁出），2026-08-08 并入测距/
+> 聚类文献（来源 `~/sync/zotero/bacteria/clustering/`），后续随更多文献
+> 持续扩充。目的：为 pgr 的 HV 实现（`src/libs/hv.rs`、[[../design/hv.md]]）
+> 与细菌测距/聚类方向提供外部参考。本文是背景材料；pgr 的实现决策以
+> [[../design/hv.md]] §1/§2 与 §6 审计为准。
 >
 > 来源：
 > * HyperGen 论文：Xu et al., *Bioinformatics* 2024, 40(7), btae452
@@ -108,3 +108,65 @@ cosine/hamming/euclidean 距离）、`arithmetic`（bind/bundle/permute）、
   等价（cos = 1 − 2·hamming/D）；我们主路径已用 cosine（.hv v2）与
   Jaccard/Mash，无新增。
 * 随机向量生成与 seed 复现：与我们一致，无新增。
+
+## 5. 测距与聚类文献（bacteria clustering）
+
+> 来源：`~/sync/zotero/bacteria/clustering/`（作者收集，准备"测距用于
+> 聚类"方向）。与 HV 直接相关的条目被 [[../design/hv.md]] §2.6/§2.7 与
+> §6 审计引用。
+
+### 5.1 集合相似度与距离估计（测距核心）
+
+| 文献 | 定位 | 与 pgr 的关系 |
+|---|---|---|
+| Irber et al. 2022, bioRxiv 2022.01.11.475838（FracMinHash） | FracMinHash 采样 + 最小 metagenome cover | [[../design/hv.md]] §2.6 数值 ANI 的推荐采样器 |
+| Liu & Koslicki 2023, bioRxiv 2023.11.09.566463 | open syncmer 与 FracMinHash 在 Jaccard/containment 意义上等价 | hv.md §2.6 已有引用 |
+| Belbasi et al. 2022, ISMB, *Bioinformatics* 38:i169–i176 | minimizer Jaccard 估计**有偏且不一致** | hv.md §2.6 已有引用 |
+| Edgar 2021, *PeerJ* 9:e10805（syncmer） | closed syncmer 定义，比 minimizer 更敏感 | pgr syncmer 采样来源（见 [[syng.md]]） |
+| Kille et al. 2023, *Bioinformatics* 39(9):btad512（minmer） | minmer 泛化 minimizer，修正其偏差 | hv.md §2.6 已有引用 |
+| **Nunes et al. 2023, KDD'23（DotHash）** | 超维向量（HDC）估计集合相似度：**Theorem 2 证明点积无偏估计交集 + 误差概率界** | 与 pgr HV 最直接：稀疏/稠密投影的同类工作，§6 审计的核心依据 |
+| Ertl 2020/2022, IEEE TKDE（ProbMinHash） | 概率 Jaccard（带权重集合）的 LSH 族 | 若未来支持多重度/加权 k-mer（hv.md §4.4 weighted bundle 方向）可参考 |
+| Marçais et al. 2019, ISMB, *Bioinformatics* 35:i127–i135 | edit distance 的 LSH（Order Min Hash） | pgr 距离方向的 LSH 参考 |
+| Sahlin 2021, *Genome Res* 31（strobemers） | 成组短 k-mer 采样，抗 indel | 采样层候选（对比 syncmer/minimizer） |
+| Ndiaye et al. 2024, *Genome Biol* 25:270 | minimizer sketching 综述（何时用、理论、局限） | 采样方法全景，补 hv.md §2.6 背景 |
+| Yu et al. 2022, *Bioinformatics* 38:4659–4669 | local k-mer selection 理论：conservation 精确表达式 + syncmer 闭式解 + minimap2 实证 8.2% | 采样器选择的定量理论框架（§6 审计指出 hv.md 未引用） |
+| Pibiri 2022, ISMB, *Bioinformatics* 38:i185–i194 | 基于 minimizer 统计性质的压缩 k-mer 字典 | k-mer 集合压缩存储方向 |
+
+### 5.2 大规模聚类与搜索（测距的消费者）
+
+| 文献 | 定位 | 与 pgr 的关系 |
+|---|---|---|
+| **Xu et al. 2023, *Genome Biol* 24:121（RabbitTClust）** | 百万细菌基因组快速聚类（含 k-mer 距离 + 聚类） | pgr 4 万 E. coli cohort 聚类的直接对标 |
+| Bradley et al. 2019, *Nat Biotechnol* 37:152–159（BIGSI） | 全部已公开细菌/病毒基因组索引与搜索 | 大规模索引搜索的里程碑 |
+| Shen et al. 2025, *Nat Biotechnol*（LexicMap） | 百万原核基因组高效比对（k-mer + 索引） | 大规模 pairwise 比对的工程参考 |
+| Zhao et al. 2024, *NAR* 52:e74（GSearch） | k-mer hashing + HNSW 图做基因组搜索 | pgr dist 的近似搜索（ANN）方向 |
+| Malkov & Yashunin 2020, IEEE TPAMI（HNSW） | 分层可导航小世界图 ANN 搜索 | 距离矩阵之外的图式近邻搜索经典 |
+| Steinegger & Söding 2018, *Nat Commun* 9（MMseqs2 聚类） | 线性时间蛋白序列聚类（Linclust） | 蛋白侧聚类（若 pgr 扩展蛋白距离） |
+| Zhao et al. 2024, NAR Genom Bioinform 6:lqae172 | 近似近邻图 + 嵌入，大规模生物数据 | embedding + ANN 结合方向 |
+| Roy et al. 2023, *Bioinformatics* 39:btad101（MetaProFi） | chunked Bloom filter 存储查询蛋白/核酸序列 | 大规模集合存储查询方向 |
+
+### 5.3 k-mer 哈希与采样
+
+| 文献 | 定位 | 与 pgr 的关系 |
+|---|---|---|
+| Mohamadi et al. 2016, *Bioinformatics* 32:3492（ntHash） | 递归核苷酸哈希（滚动） | pgr syncmer 乘性滚动哈希的对照 |
+| Kazemi et al. 2022, *Bioinformatics* 38:4812（ntHash2） | 递归 spaced seed 哈希 | spaced seed 采样方向 |
+| aaHash 2023, *Bioinformatics Advances*（递归氨基酸哈希） | 蛋白 k-mer 滚动哈希 | 蛋白距离（dist seq protein）方向 |
+| Groot Koerkamp & Pibiri 2024, WABI（mod-minimizer） | 长 k-mer 的简单高效采样 | 采样器候选（长 k-mer 场景） |
+| Seeding with minimized subsequence 2023, *Bioinformatics* | 最小化子序列做种子 | 采样理论补充 |
+| Moeckel et al. 2024, CSBJ 23:2289（k-mer 方法综述） | k-mer 方法与应用全景 | 方向总览入口 |
+
+### 5.4 超维计算
+
+| 文献 | 定位 | 与 pgr 的关系 |
+|---|---|---|
+| **Kanerva 2009, *Cogn Comput* 1:139–159** | HDC 奠基：高维随机向量准正交 + bind/bundle/permute | pgr HV（§1–§4 对照）的理论源头 |
+
+### 5.5 未收录（相关性弱或重复）
+
+* Manifold Learning 综述（两份，降维非测距核心）、WebGraph（图压缩）、Statist Med 1996
+  （logistic regression）、wheat pangenome 应用、UniProt 去冗余、SECOM/domain identity/
+  compressed amino acid alphabets（蛋白域方向）、Flexible protein database、Snekmer、
+  Improved protein homolog、Matchtigs/Simplitigs/CBL/BWT/Strobealign/Block Aligner/
+  Exact global alignment（比对与表示，非测距聚类核心，可在需要时补充）。
+* ProbMinHash、Syncmers、Ultrafast search 各有重复 PDF（同一文献的两个版本）。

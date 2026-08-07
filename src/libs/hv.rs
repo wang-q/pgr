@@ -561,6 +561,95 @@ mod tests {
     }
 
     #[test]
+    fn test_hash_hv_sparse_jaccard_s_scan() {
+        // Sparse projection: the expected cosine is shared/n (independent of
+        // s — s only controls variance), matching the dense ±1 expectation.
+        // `.hv` v2 stores n_kmer and uses cosine, not the dense cardinality
+        // formula (which reads n²s²/D² for sparse HVs).
+        let n = 3000usize;
+        let shared = 500usize;
+        let hv_d = 4096;
+        let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+        let pool: Vec<u64> = (0..(2 * n - shared)).map(|_| rng.random()).collect();
+        let set_a: Vec<u64> = pool[..n].to_vec();
+        let set_b: Vec<u64> = pool[..shared]
+            .iter()
+            .chain(pool[n..].iter())
+            .copied()
+            .collect();
+        let expected = shared as f64 / n as f64; // 500/3000 ≈ 0.1667
+
+        for s in [1usize, 3, 8, 16, 64] {
+            let hv_a = hash_hv_sparse(&set_a, hv_d, s);
+            let hv_b = hash_hv_sparse(&set_b, hv_d, s);
+            let dot: i64 = hv_a
+                .iter()
+                .zip(&hv_b)
+                .map(|(a, b)| (*a as i64) * (*b as i64))
+                .sum();
+            let na: f64 = hv_a.iter().map(|v| (*v as f64).powi(2)).sum::<f64>().sqrt();
+            let nb: f64 = hv_b.iter().map(|v| (*v as f64).powi(2)).sum::<f64>().sqrt();
+            let cos = dot as f64 / (na * nb);
+            // s only reduces variance; the estimate must stay near expected.
+            assert!(
+                (cos - expected).abs() < 0.02,
+                "s={} cos={} drifted from expected {}",
+                s,
+                cos,
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn test_hash_hv_sparse_s_error_scan() {
+        // Error vs s over many independent trials: expected cosine is
+        // shared/n regardless of s, but the variance (and thus the typical
+        // error) should shrink as s grows. Answers "why s=3?" quantitatively.
+        let n = 3000usize;
+        let shared = 500usize;
+        let hv_d = 4096;
+        let ideal = shared as f64 / n as f64; // 500/3000 ≈ 0.1667
+        let trials = 50usize;
+        let mut maes = Vec::new();
+        for s in [1usize, 2, 3, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 4096] {
+            let mut errs = Vec::with_capacity(trials);
+            for t in 0..trials {
+                let mut rng = rand::rngs::StdRng::seed_from_u64(1000 + t as u64);
+                let pool: Vec<u64> = (0..(2 * n - shared)).map(|_| rng.random()).collect();
+                let set_a: Vec<u64> = pool[..n].to_vec();
+                let set_b: Vec<u64> = pool[..shared]
+                    .iter()
+                    .chain(pool[n..].iter())
+                    .copied()
+                    .collect();
+                let hv_a = hash_hv_sparse(&set_a, hv_d, s);
+                let hv_b = hash_hv_sparse(&set_b, hv_d, s);
+                let dot: i64 = hv_a
+                    .iter()
+                    .zip(&hv_b)
+                    .map(|(a, b)| (*a as i64) * (*b as i64))
+                    .sum();
+                let na: f64 = hv_a.iter().map(|v| (*v as f64).powi(2)).sum::<f64>().sqrt();
+                let nb: f64 = hv_b.iter().map(|v| (*v as f64).powi(2)).sum::<f64>().sqrt();
+                let cos = dot as f64 / (na * nb);
+                errs.push((cos - ideal).abs());
+            }
+            let mae = errs.iter().sum::<f64>() / trials as f64;
+            println!("s={:4} MAE={:.5}", s, mae);
+            maes.push(mae);
+        }
+        // s is not an accuracy lever: errors stay flat across the whole range
+        // (D decides accuracy, s only decides speed).
+        let min_mae = maes.iter().cloned().fold(f64::INFINITY, f64::min);
+        let max_mae = maes.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        assert!(
+            max_mae - min_mae < 0.01 && max_mae < 0.02,
+            "MAE should be flat across s: {maes:?}"
+        );
+    }
+
+    #[test]
     fn test_hash_hv_i8_serial_vs_simd() {
         // Generate random input data
         let mut rng = rand::rng();

@@ -26,6 +26,10 @@
 
 ## 2. 等数据/场景到位再启动
 
+- [ ] 重新审视 `.hv` 路径的稀疏选择（`design/hv.md` §2.7/§5.4）：稀疏是
+      历史性能优化压力下的产物（非有意设计）、无产品先例；实施方案前
+      权衡稠密 bit（1.11 ms，成熟）vs 稀疏 s=3（0.055 ms，~20× 快但
+      距离语义不同）。
 - [ ] FASTA `dist hv` 量纲问题（`design/hv.md` §3.4/§5.3）：
       `load_hv_from_fasta` / `load_hv_from_fasta_syncmer` 仍走 `hash_hv_i8`，
       直流偏置污染 Jaccard（N=3000/shared=500 模拟 reported 0.154 vs 真值

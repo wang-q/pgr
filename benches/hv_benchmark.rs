@@ -1,5 +1,5 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use pgr::libs::hv::{hash_hv_bit, hash_hv_i8};
+use pgr::libs::hv::{hash_hv_bit, hash_hv_i8, hash_hv_sparse};
 use rand::rngs::{SmallRng, StdRng};
 use rand::{Rng, RngCore, SeedableRng};
 use rapidhash::{RapidHashSet, RapidRng};
@@ -653,6 +653,57 @@ unsafe fn hash_hv_bit_i16(seed_vec: &[u64], hv_d: usize) -> Vec<i32> {
     hv
 }
 
+/// AVX2 bit encoding via **pshufb 4-bit LUT expansion** (2026-08-08): each
+/// 64-bit `rnd_at` output is split into 16 nibbles; per nibble-bit position
+/// one `pshufb` expands 16 nibbles into 16 0/1 bytes, widened with
+/// `vpmovzxbd` and accumulated as ±1 (deferred −N). Tests whether table
+/// lookup beats the srlv+and+slli expansion (expectation: more ops per bit,
+/// since byte-level LUTs need extra widening).
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+unsafe fn hash_hv_bit_pshufb(seed_vec: &[u64], hv_d: usize) -> Vec<i32> {
+    use std::arch::x86_64::*;
+    let n = seed_vec.len() as i32;
+    let mut hv = vec![0i32; hv_d];
+    let num_chunk = hv_d / 64;
+    // LUT for each nibble bit position: T[k] = bit value (0/1 byte).
+    let t0 = _mm_setr_epi8(0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1);
+    let t1 = _mm_setr_epi8(0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1);
+    let t2 = _mm_setr_epi8(0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1);
+    let t3 = _mm_setr_epi8(0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1);
+    let nv = _mm256_set1_epi32(n);
+    for b in 0..num_chunk {
+        let j = b as u64 + 1;
+        let mut acc = [_mm256_setzero_si256(); 8];
+        for &seed in seed_vec {
+            let r = rnd_at(seed, j);
+            let mut nidx = [0u8; 16];
+            for (k, v) in nidx.iter_mut().enumerate() {
+                *v = ((r >> (4 * k)) & 0xF) as u8;
+            }
+            let idx = _mm_loadu_si128(nidx.as_ptr() as *const __m128i);
+            for (bit, tab) in [t0, t1, t2, t3].iter().enumerate() {
+                let out = _mm_shuffle_epi8(*tab, idx);
+                let lo = _mm256_cvtepu8_epi32(out);
+                let hi = _mm256_cvtepu8_epi32(_mm_srli_si128(out, 8));
+                acc[bit * 2] = _mm256_add_epi32(acc[bit * 2], _mm256_slli_epi32(lo, 1));
+                acc[bit * 2 + 1] = _mm256_add_epi32(acc[bit * 2 + 1], _mm256_slli_epi32(hi, 1));
+            }
+        }
+        let base = b * 64;
+        for (k, a) in acc.iter().enumerate() {
+            _mm256_storeu_si256(
+                hv[base + k * 8..base + k * 8 + 8].as_mut_ptr() as *mut _,
+                _mm256_sub_epi32(*a, nv),
+            );
+        }
+    }
+    for v in &mut hv[num_chunk * 64..] {
+        *v = -n;
+    }
+    hv
+}
+
 // Generate a random k-mer hash set
 fn generate_kmer_hash_set(size: usize) -> RapidHashSet<u64> {
     let mut rng = StdRng::seed_from_u64(42); // Fixed seed for reproducibility
@@ -756,6 +807,19 @@ fn bench_encode_hash_hd(c: &mut Criterion) {
     });
     c.bench_function("hash_hv_bit_i16_medium", |b| {
         b.iter(|| unsafe { hash_hv_bit_i16(black_box(&seed_vec_medium), hv_d) })
+    });
+    c.bench_function("hash_hv_bit_pshufb_medium", |b| {
+        b.iter(|| unsafe { hash_hv_bit_pshufb(black_box(&seed_vec_medium), hv_d) })
+    });
+
+    // Sparse projection (`.hv` v2 path): s random dims per seed, splitmix64.
+    for s in [1usize, 3, 8, 16, 64] {
+        c.bench_function(&format!("hash_hv_sparse_s{}_medium", s), |b| {
+            b.iter(|| hash_hv_sparse(black_box(&seed_vec_medium), hv_d, s))
+        });
+    }
+    c.bench_function("hash_hv_sparse_s3_large", |b| {
+        b.iter(|| hash_hv_sparse(black_box(&seed_vec_large), hv_d, 3))
     });
 
     // Large dataset (n=100k, D=4096)

@@ -570,6 +570,7 @@ chainnet 后消失。`pgr psl chain` 在 2bit 序列缓存优化后（~0.3 s）�
 | pbit 压缩 | [[agc-cpp.md]] | [[design/pbit.md]] | — | `pgr pbit`（`libs/pbit`） |
 | 重复标记（repeat masking） | [[fastk.md]] | [[design/repeat-masking.md]] | — | `pgr rept e-kmer/e-align/s-kmer/s-align/trf/masker` + `pgr fa mask`（`libs/pl`、`libs/rmblast`、`cmd_pgr/rept`） |
 | 区间操作（runlist / rg） | — | [[design/runlist.md]]、[[design/rgr-tva-audit.md]] | [[benchmarks/bench-rg-count.md]]、[[benchmarks/bench-rg-prop.md]]、[[benchmarks/bench-rg-runlist.md]] | `pgr runlist`、`pgr rg`（`libs/runlist`、`libs/ds/{IntSpan,Range}`） |
+| 测距 / 聚类（bacteria） | [[hv.md]] §5（FracMinHash/syncmer/DotHash/RabbitTClust/HNSW 等） | [[design/hv.md]] §2.6/§2.7/§6 | [[benchmarks/dist-cohort-validation.md]] | `pgr dist`、4 万 cohort（[[ecoli-cohort.md]]） |
 | 其他参考 | [[fastk.md]]、[[kaks.md]]、[[gfa.md]]、[[ropebwt3.md]]、[[pangenome-tools.md]] | [[design/ms2dna_port.md]]（ms→dna 移植） | — | `pgr ms to-dna`、`pgr paf to-gfa` 等 |
 
 ## 10. 设计笔记索引（notes/design/）

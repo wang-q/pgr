@@ -226,13 +226,18 @@ i16 lane 分段累加不采用。
 （2026-08-08 64 位用满后再降至 1.11 ms），展开仍是主体。
 
 每 bit 至少需要 ~5 个向量 op（variable shift → and → shift-left → add，
-加上 broadcast 摊销）；i16 lane 不能减少每 bit 的 op 数（实测更慢，
-见 §2.3）。
+加上 broadcast 摊销）。两条"减少每 bit 指令数"的替代路线均被实测否决：
+i16 lane（见 §2.3，慢 2.5–3.3×）与 **pshufb 4-bit 查表**（2026-08-08
+实测 5.21 ms vs 主实现 1.11 ms，慢 ~4.7×——字节级 LUT 展开需要标量
+nibble 提取 + `vpmovzxbd` 字节→i32 扩展，每 bit op 数反而更多）。
+srlv 家族已接近该方向的最优。
 
 **决策**：进一步提速应从"减少每 bit 指令数"入手，而不是换 RNG 或换
-lane 宽度。AVX-512 参考实现（旧式每步 sub，已同步 64 位用满）Zen 4 实测
-1.44 ms，反而比当前 AVX2 主路径（1.11 ms）慢，作者决策不采用 AVX-512
-（见 [[../benchmarks/bench-simd-hv-jaccard.md]] §2）。
+lane 宽度——该方向已被 i16/pshufb 实测否定，剩余杠杆在广播/依赖链
+（const 实验显示其占 ~98% 成本）。AVX-512 参考实现（旧式每步 sub，已
+同步 64 位用满）Zen 4 实测 1.44 ms，反而比当前 AVX2 主路径（1.11 ms）
+慢，作者决策不采用 AVX-512（见 [[../benchmarks/bench-simd-hv-jaccard.md]]
+§2）。
 
 ### 2.5 幅度与区分度
 
@@ -310,13 +315,74 @@ lane 宽度。AVX-512 参考实现（旧式每步 sub，已同步 64 位用满�
 4. 与 §1.4 / §2.5 呼应：敏感度与偏差由**采样层**决定，投影层只负责
    精确计数——换编码路径救不回采样偏差。
 
+### 2.7 稀疏投影（`.hv` v2 路径）
+
+> **定位说明（2026-08-08 澄清）**：稀疏编码**不是有意设计的产品方案**，
+> 而是历史对话中在"尽全力提高速度"的压力下形成的实现（为绕开稠密 i8
+> 的饱和问题与速度瓶颈）。它当前是 `.hv` v2 的实际路径（`pgi to-hv` →
+> `dist hv`），但**应视为待重新审视的候选**，而非确定的实施方案——作为
+> 实施方案依据时需与稠密 bit 路线重新权衡（见 §5.4）。
+
+第三种编码路径，与稠密 bit/i8 并列：`hash_hv_sparse` 用 splitmix64 派生
+随机维度，**每个 seed 只更新 s 个随机维度**（±1），`.hv` v2 采用
+（`pgi to-hv` → `dist hv`）。
+
+**理论依据（稀疏随机投影）**：每个元素经哈希映射到 s 个随机维度、±1
+计数，属于稀疏随机投影 / 特征哈希家族——Achlioptas (2003) 证明随机 ±1
+矩阵保持内积结构（JL 型保距）；Li, Hastie & Church (2006) 证明**稀疏化**
+随机投影仍保持该性质，稀疏度只放大方差；Weinberger et al. (2009)
+feature hashing 是同一模式的工业实践。无偏性可严格推导：设两集合共享
+`shared` 个元素，每个元素选某维概率 s/D、符号 ±1 均匀，则
+`E[dot] = shared·s`、`E[‖H‖²] = n·s`，余弦期望
+`cos ≈ shared·s / √(n₁s·n₂s) = shared/√(n₁·n₂)`——**与 s 无关**，
+s 只控制方差（近似质量）。
+
+> **产品先例（诚实标注）**：该思想（稀疏随机投影 / feature hashing）
+> 在工业界有先例（Google feature hashing、SimHash、count sketch），但
+> "基因组 k-mer 集合 → 每元素 s 个 ±1 桶 → 余弦 ≈ 集合重叠"这个具体
+> 组合**无直接产品对标**：HyperGen 用稠密（[[../references/hv.md]]）、
+> Mash/sourmash 用 minhash、Dashing 2 用 SetSketch。pgr 稀疏路径的
+> 合理性目前主要靠 cohort 实测（见下）+ 无偏性推导，无成熟产品背书。
+
+**性能**（2026-08-08，n=10k、D=4096，AVX2 无关的标量路径）：
+
+| s | medium 耗时 | vs 稠密 bit（1.11 ms） |
+|---:|---:|---:|
+| 1 | 0.022 ms | ~50× 快 |
+| **3（默认）** | **0.055 ms** | **~20× 快**（vs i8 ~38×） |
+| 8 | 0.155 ms | ~7× |
+| 16 | 0.365 ms | ~3× |
+| 64 | 1.622 ms | ~0.7× |
+
+耗时近似随 s 线性（每 seed s 次 splitmix + 内存更新）。
+
+**距离语义**：稀疏 HV 的每维是碰撞计数，`‖H‖²/D ≈ n²s²/D²`，稠密
+cardinality 公式不成立；`.hv` v2 用**余弦 + 文件头存储的 n_kmer**
+（`inter = cos·√(n1·n2)`），与稠密 Jaccard 公式不同。
+
+**s 参数与估计质量（2026-08-08 系统扫描）**：50 组独立随机集合对
+（N=3000、shared=500、D=4096），s=1..4096 全范围扫描，**MAE 完全平坦**
+（0.010–0.013，无单调趋势，s=4096 与 s=1 误差相同）——**s 不是精度
+杠杆**：误差由 D 决定（~1/√D，随机投影的固有噪声），s 只决定速度。
+固化为 `test_hash_hv_sparse_s_error_scan` / `_jaccard_s_scan`。
+cohort 验证（s=3）与 `dist pgi` mash 排序 Spearman 0.969、共享计数
+平均误差 2.39%（见 [[../benchmarks/dist-cohort-validation.md]] §2）。
+
+**决策**：**s=3 无精度依据**——它是历史实现（commit d967d16,
+2026-08-02）拍脑袋定的默认值；实测 s 不影响精度、只影响速度（线性）。
+按速度最优应取 s=1（0.022 ms）；提高精度应**增大 D**（误差 ~1/√D）
+而非 s。稀疏路径不受 §2.3 的累加器宽度问题与 §3.4 的直流偏置问题影响
+（每维小整数，i32 安全）。**注意**：此决策建立在"稀疏为主路径"的历史
+前提下；若 §5.4 重新审视后改回稠密 bit，s 参数决策需一并重估。
+
 ## 3. 实现现状（pgr 落地）
 
 > **当前推荐配置速查**：编码用 bit（±1）+ i32 累加 + AVX2 跳步 RNG
 > （块主序）、D=4096；FASTA 侧采样用 closed syncmer（`dist seq` 默认
 > k=8/w=5）；需要可标定 ANI 时优先 FracMinHash（§2.6）。⚠️ FASTA
 > `dist hv` 路径（`load_hv_from_fasta` / `load_hv_from_fasta_syncmer`）
-> 仍走 i8，量纲问题未修（§3.4）。
+> 仍走 i8，量纲问题未修（§3.4）；`.hv` 索引路径走稀疏 s=3，其选择为
+> 历史产物、待 §5.4 重新审视。
 
 ### 3.1 `src/libs/hv.rs` 当前实现与分派
 
@@ -324,7 +390,7 @@ lane 宽度。AVX-512 参考实现（旧式每步 sub，已同步 64 位用满�
 |---|---|---|
 | `hash_hv_bit` | 稠密位编码 ±1，i32 | AVX2 主路径：跳步 RNG + 块主序 + 延迟 −N；每 64 维 1 次 RNG（用满 64 位，低 32 位→前 32 维、高 32 位→后 32 维） |
 | `hash_hv_i8` | 稠密 i8 累加，i32 | AVX2 路径：每 8 维 1 次 RNG；保留原语义（含直流偏置） |
-| `hash_hv_sparse` | 稀疏 ±1，i32 | splitmix64 派生，每 k-mer 只更新 `s`（默认 3）个随机维度；`.hv` v2 采用 |
+| `hash_hv_sparse` | 稀疏 ±1，i32 | splitmix64 派生，每 k-mer 只更新 `s`（默认 3）个随机维度；`.hv` v2 采用（历史产物，待 §5.4 重新审视） |
 | `hv_norm_l2_sq` / `hv_cardinality` / `hv_dot` | — | wide SIMD 范数；cardinality=‖H‖²/D；dot 按 √D 归一 |
 | `calc_distances` | — | jaccard / containment / mash 多口径输出 |
 | `load_hv_from_fasta(_syncmer)` | i8 | FASTA → minimizer / closed syncmer 集合 → `hash_hv_i8` |
@@ -342,7 +408,8 @@ AVX-512 实现只保留在 `benches/hv_benchmark.rs` 作参考对照，不参与
   `calc_distances`）；`.hv` 路径（`pgi to-hv` 产物直接比较，稀疏余弦）。
 * `pgr pgi to-hv`：把 `.pgi` 的 unique k-mer keys 投影成**稀疏** HV；
   `.hv` v2 格式：`PGV1` magic + version 2 + `k/dim/sparse/n_kmer/name` +
-  i32 数组。稀疏投影 + 存储真实 n_kmer 是 v2 的关键修复。
+  i32 数组。稀疏投影 + 存储真实 n_kmer 是 v2 的关键修复（注：稀疏是
+  历史性能优化压力下的产物，非有意设计，见 §2.7 定位说明 / §5.4）。
 * `pgr dist hv a.hv b.hv`：余弦相似度 → `inter = cos·√(n1·n2)`，
   集合大小用文件头存储的 n_kmer。
 
@@ -369,11 +436,12 @@ FASTA 路径 `hash_hv_i8` + `calc_distances` 存在**量纲不匹配**（§2.1 �
 路径应改用 bit 编码或稀疏投影，先用两株 E. coli 对照 `dist seq` /
 `dist pgi` 实测确认（§5.3）。
 
-## 4. 外部参考（HyperGen + hdlib）
+## 4. 外部参考（HyperGen / hdlib / 测距聚类文献）
 
 > 外部参考分析已迁至 [[../references/hv.md]]（该文件将随后续文献持续
-> 扩充）。参考用途：了解 HDC 草图的主流做法与参数选择。实现决策以
-> §1/§2 为准。
+> 扩充）：§1–4 为 HyperGen 与 hdlib（HDC 主流做法），§5 为测距/聚类
+> 文献。参考用途：了解 HDC 草图的主流做法与参数选择。实现决策以
+> §1/§2 与 §6 审计为准。
 
 ## 5. 后续方向与待办
 
@@ -401,13 +469,87 @@ FASTA 路径 `hash_hv_i8` + `calc_distances` 存在**量纲不匹配**（§2.1 �
 2. HV 编码 SIMD 深挖（todo.md §4）：**已解决（2026-08-07，见 §2.2/§2.4）**；
 3. 若决策 B 立项，按 §5.1 做设计。
 
+### 5.4 重新审视 `.hv` 路径的稀疏选择（2026-08-08 立项）
+
+稀疏投影是历史性能优化压力下的产物（§2.7 定位说明），当前是 `.hv` v2
+实际路径但无产品先例、验证以 cohort 实测为主。作为实施方案前应重新
+权衡：稠密 bit（§2.1–2.5 全套调优 + 64 位用满，1.11 ms）vs 稀疏 s=3
+（0.055 ms，~20× 快，但距离语义不同、无先例）。决策点：
+
+* 速度是否仍是刚需（稀疏 ~20× 的优势是否值得放弃稠密的成熟度）；
+* 稀疏的距离语义（余弦 + n_kmer）是否可接受，或改回稠密 Jaccard；
+* 若保留稀疏，s 的选择：实测 s 不影响精度（0.010–0.013 平坦），只影响
+  速度——s=3 是历史默认无依据，速度最优是 s=1，精度靠 D 而非 s。
+
+### 5.5 文献驱动的未来方向（2026-08-08）
+
+基于 [[../references/hv.md]] §5 的文献审计（评估详见 §6），按优先级：
+
+1. **DotHash 误差界 → D/s 选择理论**（Nunes 2023, §5.1）：把 DotHash 的
+   误差概率界引入 pgr，推导"给定误差容忍度所需的 D"（替换 D=4096 的
+   经验默认），并评估"每元素 s 个随机 ±1 桶"与 s=1 / 稠密的误差对比。
+2. **FracMinHash 落地**（Irber 2022 / Hera 2023）：按 Hera 校正公式实现
+   数值 ANI（dist seq 的 FracMinHash 采样器 + 置信区间）。
+3. **minmer 替代 minimizer**（Kille 2023）：无偏 Jaccard + MashMap 10×
+   快；`seq_mins` 的 minimizer 采样（dist seq / fa）可升级，消除 §2.6
+   的 minimizer 偏差。
+4. **Yu 2022 conservation 理论**：采样器选择的定量框架（syncmer 闭式解），
+   补 §2.6 的"排序/粗筛够用"论断。
+5. **ProbMinHash 加权 Jaccard**（Ertl）：若支持 k-mer 多重度（拷贝数），
+   对应 §4.4 的 weighted bundle 方向。
+6. **大规模聚类集成**（§5.2）：RabbitTClust（4 万 cohort 对标）、
+   GSearch / HNSW（ANN 搜索）。
+7. **采样层新方法**（§5.3）：spaced seeds（ntHash2）、strobemers、
+   mod-minimizer（长 k-mer），待测距应用需求驱动。
+
+## 6. 决策理论依据审计（2026-08-08）
+
+对照 [[../references/hv.md]] §5 文献，逐条审计 §2 的 7 个算法决策。
+评估等级：强（定理/证明直接支持）、中（思想支持但参数无依据）、弱
+（工程决策，文献无指导）。汇总：
+
+| # | 决策 | 评估 | 关键依据 / 缺口 |
+|---|---|---|---|
+| 1 | 编码：bit ±1 为主 | 中偏强 | Kanerva 2009 准正交性、SimHash/DotHash ±1 超向量；i8 无文献先例 |
+| 2 | RapidRng | 弱（工程合理） | HDC 文献只要求"随机"，不约束具体 RNG |
+| 3 | i32 累加器 | 强 | 值域数学证明 + HyperGen i16 溢出教训 |
+| 4 | srlv 展开 | 无理论（工程） | i16/pshufb 实测否决，实验闭环 |
+| 5 | 幅度无关 | 强 | Jaccard 比值度量 + DotHash 点积框架 |
+| 6 | syncmer + FracMinHash | 最强 | 8 篇文献；缺口：Yu 2022 未引用、minmer 仅一句 |
+| 7 | 稀疏 s=3 | 中 | **DotHash Theorem 2 支持核心**（点积无偏）；s/D 无依据、误差界缺失 |
+
+### 6.1 逐条详情
+
+1. **编码路径 bit（±1）**：Kanerva 2009（[[../references/hv.md]] §5.4）
+   的"高维随机 ±1 向量准正交"是 bit 的理论源头；SimHash 与 DotHash
+   （§5.1，Theorem 2：点积无偏估计交集）同属该框架。i8 字节编码在 HDC
+   文献中无先例，直流偏置是 pgr 独有历史实现（§3.4）——文献支持
+   "围绕 0 平衡的 bipolar 表示"，即 bit 路径。
+2. **RapidRng**：HDC 文献只要求"均匀 + 独立"的随机向量；8 个 RNG 的
+   实测对比（[[../benchmarks/bench-simd-hv-jaccard.md]]）是工程证据。
+3. **i32 累加器**：值域确定性分析（bit 路径 [−N,N] 不溢出）+ HyperGen
+   i16 溢出教训（[[../references/hv.md]] §2）。
+4. **srlv 展开**：纯 SIMD 工程；i16 / pshufb 替代实测否决，无理论缺口。
+5. **幅度与区分度无关**：Jaccard 比值度量的数学性质；DotHash 的点积/
+   范数框架支持"点积估计交集、范数估计基数"。
+6. **采样方法**：最强文献支撑——Belbasi（minimizer 有偏）、Edgar
+   （syncmer）、Irber（FracMinHash）、Liu & Koslicki（syncmer≡FracMinHash）、
+   Kille（minmer 无偏）、Shibuya（closed syncmer 无偏）、Hera（FracMinHash
+   校正）。缺口：**Yu et al. 2022（conservation 理论，minimap2 实证
+   8.2%）未引用**；minmer 条目可强化（无偏 + 10× 快）。
+7. **稀疏投影 s=3**：DotHash Theorem 2 直接支持"随机超向量叠加点积无偏
+   估计交集"（含误差概率界）；稀疏随机投影（Achlioptas 2003 / Li 2006）
+   支持稀疏化不破坏保距。缺口：s=3 无文献依据（DotHash 稀疏版为每元素
+   1 个标准基维度、稠密版全维，未讨论中间稀疏度）；误差界与 D 选择缺失。
+
 ## 参考
 
 * [[pbit.md]]（决策 B 与 `.hv` 消费链）
 * [[../benchmarks/bench-simd-hv-jaccard.md]]（HV 编码基准与限速分解）
 * [[../benchmarks/dist-cohort-validation.md]]（饱和问题与稀疏 v2 验证）
 * [[../todo.md]]（§4 HV SIMD 疑虑）
-* [[../references/hv.md]]（外部参考：HyperGen 论文与代码、hdlib）
+* [[../references/hv.md]]（外部参考：HyperGen / hdlib（§1–4）+ 测距聚类
+  文献（§5），§2.6 采样方法与 §6 审计的文献链）
 * 采样方法文献（§2.6）：Edgar 2021, *PeerJ* 9:e10805（syncmer 定义）；
   Belbasi et al. 2022, *Bioinformatics* 38(Suppl 1):i169–i176,
   doi:10.1093/bioinformatics/btac244（minimizer Jaccard 有偏且不一致）；
